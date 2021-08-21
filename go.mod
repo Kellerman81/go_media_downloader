@@ -1,4 +1,4 @@
-module github.com/Kellerman81/github_downloader
+module github.com/Kellerman81/go_media_downloader
 
 go 1.17
 
