@@ -1,0 +1,12 @@
+version: "3"
+
+services:
+ media_downloader:
+  build:
+   context: ..
+   dockerfile: /dev/Dockerfile
+  volumes:
+      - /dev:/app
+  command: ./media_downloader
+  ports:
+    - 9090:9090

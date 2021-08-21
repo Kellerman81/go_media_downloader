@@ -1,0 +1,257 @@
+package main
+
+import (
+	"fmt"
+	"html/template"
+	"log"
+	"net/http"
+	"os/signal"
+	"strings"
+	"time"
+
+	"os"
+
+	"github.com/Kellerman81/go_media_downloader/api"
+	"github.com/Kellerman81/go_media_downloader/apiexternal"
+	"github.com/Kellerman81/go_media_downloader/config"
+	"github.com/Kellerman81/go_media_downloader/database"
+	"github.com/Kellerman81/go_media_downloader/logger"
+	"github.com/Kellerman81/go_media_downloader/newznab"
+	"github.com/Kellerman81/go_media_downloader/scheduler"
+	"github.com/Kellerman81/go_media_downloader/utils"
+	"github.com/pkg/profile"
+	"github.com/sirupsen/logrus"
+
+	"github.com/foolin/goview"
+	"github.com/foolin/goview/supports/ginview"
+	"github.com/gin-gonic/gin"
+	ginlog "github.com/toorop/gin-logrus"
+)
+
+// func importfiles(c *gin.Context) {
+// 	db := database.InitDb()
+// 	var list []database.Lists
+// 	db.Table("Lists").Find(&list)
+// 	for _, listrow := range list {
+// 		fmt.Printf("Import List: %d", listrow.ID)
+// 		importfileslist(listrow.Rootfolder, listrow.ID)
+// 	}
+// }
+// GenericJobStruct is a generic structure we'll use for submitting a job,
+// this can be any structure.
+type GenericJobStruct struct {
+	Name string
+}
+
+// An example function, ProcessWork.
+func (gjs *GenericJobStruct) ProcessWork() error {
+	// Generic process, let's print out something, then wait for a time:
+	logger.Log.WithFields(logrus.Fields{"Name": gjs.Name}).Info("Processing some work.")
+	time.Sleep(5 * time.Second)
+	logger.Log.Info("Work finished.")
+	return nil
+}
+
+func main() {
+	what := []string{"General", "Regex", "Quality", "Path", "Indexer", "Scheduler", "Movie", "Serie", "Imdb", "Downloader", "Notification", "List"}
+	cfg, f, errcfg := config.LoadCfg(what, config.Configfile)
+	if errcfg != nil {
+		fmt.Println(errcfg)
+		return
+	}
+
+	logger.InitLogger(logger.LoggerConfig{
+		LogLevel:     cfg.General.LogLevel,
+		LogFileSize:  cfg.General.LogFileSize,
+		LogFileCount: cfg.General.LogFileCount,
+	})
+
+	// database.InitDb(cfg.General.DBLogLevel)
+	// database.GetMovies(database.Query{Where: })
+	// utils.GetHighestMoviePriorityByFiles(cfg, )
+	// counter2, _ := database.CountRows("movie_files", database.Query{Where: "movie_id =?", WhereArgs: []interface{}{999}})
+	// fmt.Println(counter2)
+	// return
+	// dbimdb2 := database.InitImdbdb(cfg.General.DBLogLevel, "imdb")
+	// database.DBImdb = dbimdb2
+	// table, tableerr := database.QueryVersions(database.Query{})
+	// // var inInterface map[string]interface{}
+	// // inrec, _ := json.Marshal(table)
+	// // json.Unmarshal(inrec, &inInterface)
+	// // fmt.Println(inInterface)
+	// fmt.Println(len(table))
+	// fmt.Println(tableerr)
+	// return
+	//parse, _ := utils.NewFileParser(cfg, "Bull.2016.S03E12.HDTV.x264-KILLERS (tvdb311945) (tvdb1234)", true, "series")
+	//parse, _ := utils.NewFileParser(cfg, "Rampage.Capital.Punishment.2014.BRRIP.H264.AAC-MAJESTiC (tt3448226)", false, "movie")
+	// fmt.Println("aud: ", parse.Audio)
+	// fmt.Println("cod: ", parse.Codec)
+	// fmt.Println("im: ", parse.Imdb)
+	// fmt.Println("ql: ", parse.Quality)
+	// fmt.Println("res: ", parse.Resolution)
+	// fmt.Println("tit: ", parse.Title)
+	// fmt.Println("year: ", parse.Year)
+	// fmt.Println("season: ", parse.Season)
+	// fmt.Println("episode: ", parse.Episode)
+	// fmt.Println("iden: ", parse.Identifier)
+	// return
+	config.Watch(f, config.Configfile, what)
+
+	apiexternal.NewOmdbClient(cfg.General.OmdbApiKey, cfg.General.Omdblimiterseconds, cfg.General.Omdblimitercalls)
+	apiexternal.NewTmdbClient(cfg.General.TheMovieDBApiKey, cfg.General.Tmdblimiterseconds, cfg.General.Tmdblimitercalls)
+	apiexternal.NewTvdbClient(cfg.General.Tvdblimiterseconds, cfg.General.Tvdblimitercalls)
+	apiexternal.NewTraktClient(cfg.General.TraktClientId, cfg.General.Traktlimiterseconds, cfg.General.Traktlimitercalls)
+	apiexternal.NewznabClients = make(map[string]newznab.Client, 10)
+	//watch_file, parser := config.LoadConfigV2(configfile)
+	//config.WatchConfig(watch_file, parser)q
+
+	utils.SeriesStructureJobRunning = make(map[string]bool, 10)
+	utils.MovieImportJobRunning = make(map[string]bool, 10)
+	utils.SeriesImportJobRunning = make(map[string]bool, 10)
+	api.SerieJobRunning = make(map[string]bool, 10)
+	api.MovieJobRunning = make(map[string]bool, 10)
+
+	database.InitDb(cfg.General.DBLogLevel)
+
+	dbimdb := database.InitImdbdb(cfg.General.DBLogLevel, "imdb")
+	database.DBImdb = dbimdb
+
+	database.UpgradeDB()
+	database.InitQualities()
+	database.GetVars()
+
+	scheduler.InitScheduler()
+
+	counter, _ := database.CountRows("dbmovies", database.Query{})
+	if counter == 0 {
+		utils.InitFillImdb()
+		api.Movies_all_jobs_cfg(cfg, "feeds", true)
+		api.Movies_all_jobs_cfg(cfg, "data", true)
+	}
+	counter, _ = database.CountRows("dbseries", database.Query{})
+	if counter == 0 {
+		api.Series_all_jobs_cfg(cfg, "feeds", true)
+		api.Series_all_jobs_cfg(cfg, "data", true)
+	}
+
+	router := gin.New()
+	router.Use(ginlog.Logger(logger.Log), gin.Recovery())
+
+	router.HTMLRender = ginview.New(goview.Config{
+		Root:      "views",
+		Extension: ".html",
+		Master:    "layouts/master",
+		//Partials:  []string{"partials/ad"},
+		Funcs: template.FuncMap{"copy": func() string {
+			return time.Now().Format("2006")
+		}},
+		DisableCache: false,
+		Delims:       goview.Delims{},
+	})
+	//router.HTMLRender = ginview.Default()
+	router.Static("/dist", "./views/dist")
+	router.Static("/pages", "./views/pages")
+	router.Static("/plugins", "./views/plugins")
+	router.Static("/build", "./views/build")
+	router.GET("/", func(ctx *gin.Context) {
+		//render with master-
+		ctx.HTML(http.StatusOK, "index", gin.H{
+			"title": "Index title!",
+			"add": func(a int, b int) int {
+				return a + b
+			},
+		})
+	})
+	router.GET("/dbmovies", func(ctx *gin.Context) {
+		//render with master-
+		ctx.HTML(http.StatusOK, "dbmovies", gin.H{
+			"title": "DB Movies",
+		})
+	})
+	routerapi := router.Group("/api/" + cfg.General.WebApiKey)
+	{
+		routerapi.GET("/fillimdb", func(ctx *gin.Context) {
+			go utils.InitFillImdb()
+		})
+		routerapi.GET("/clear/:name", func(ctx *gin.Context) {
+			database.ReadWriteMu.Lock()
+			database.DB.Exec("DELETE FROM " + ctx.Param("name") + "; VACUUM;")
+			database.ReadWriteMu.Unlock()
+			ctx.JSON(http.StatusOK, gin.H{"data": "ok"})
+		})
+		routerapi.GET("/vacuum", func(ctx *gin.Context) {
+			database.ReadWriteMu.Lock()
+			database.DB.Exec("VACUUM;")
+			database.ReadWriteMu.Unlock()
+			ctx.JSON(http.StatusOK, gin.H{"data": "ok"})
+		})
+
+		routerall := routerapi.Group("/all")
+		api.AddAllRoutes(routerall)
+
+		routermovies := routerapi.Group("/movies")
+		api.AddMoviesRoutes(routermovies)
+
+		routerseries := routerapi.Group("/series")
+		api.AddSeriesRoutes(routerseries)
+
+		routerscheduler := routerapi.Group("/scheduler")
+		scheduler.AddSchedulerRoutes(routerscheduler)
+	}
+	router.GET("/stopmemprofile", func(ctx *gin.Context) {
+		if strings.EqualFold(cfg.General.LogLevel, "Debug") {
+			logger.Memprofiler.Stop()
+		}
+	})
+	router.GET("/startmemprofile", func(ctx *gin.Context) {
+		if strings.EqualFold(cfg.General.LogLevel, "Debug") {
+			logger.Memprofiler = profile.Start(profile.ProfilePath("."), profile.MemProfile, profile.MemProfileHeap)
+		}
+	})
+	router.GET("/stopcpuprofile", func(ctx *gin.Context) {
+		if strings.EqualFold(cfg.General.LogLevel, "Debug") {
+			logger.Cpuprofiler.Stop()
+		}
+	})
+	router.GET("/startcpuprofile", func(ctx *gin.Context) {
+		if strings.EqualFold(cfg.General.LogLevel, "Debug") {
+			logger.Cpuprofiler = profile.Start(profile.ProfilePath("."), profile.CPUProfile)
+		}
+	})
+	router.GET("/dbclose", func(ctx *gin.Context) {
+		database.DB = nil
+	})
+	router.GET("/page", func(ctx *gin.Context) {
+		//render only file, must full name with extension
+		ctx.HTML(http.StatusOK, "page.html", gin.H{"title": "Page file title!!"})
+	})
+
+	server := &http.Server{
+		Addr:    ":" + cfg.General.WebPort,
+		Handler: router,
+	}
+
+	quit := make(chan os.Signal)
+	signal.Notify(quit, os.Interrupt)
+
+	go func() {
+		<-quit
+		log.Println("receive interrupt signal")
+		if err := server.Close(); err != nil {
+			log.Fatal("Server Close:", err)
+		}
+	}()
+
+	if err := server.ListenAndServe(); err != nil {
+		if err == http.ErrServerClosed {
+			if strings.EqualFold(cfg.General.LogLevel, "Debug") {
+				logger.Cpuprofiler.Stop()
+			}
+			log.Println("Server closed under request")
+		} else {
+			log.Fatal("Server closed unexpect")
+		}
+	}
+
+	log.Println("Server exiting")
+}

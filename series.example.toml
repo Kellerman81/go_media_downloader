@@ -1,0 +1,8 @@
+[global]
+identifiedby = "ep"
+upgrade = "yes"
+search = "yes"
+[[series]]
+name = "Battlestar Galactica 2003"
+alternatename = ["Battlestar Galactica (2003)"]
+tvdb_id = 73545

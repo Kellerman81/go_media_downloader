@@ -1,0 +1,127 @@
+package apiexternal
+
+import (
+	"encoding/json"
+	"net/http"
+	"strconv"
+	"time"
+
+	"github.com/RussellLuo/slidingwindow"
+	"golang.org/x/time/rate"
+)
+
+type TheTVDBSeries struct {
+	Data struct {
+		ID              int      `json:"id"`
+		SeriesID        int      `json:"seriesId"`
+		SeriesName      string   `json:"seriesName"`
+		Aliases         []string `json:"aliases"`
+		Season          string   `json:"season"`
+		Status          string   `json:"status"`
+		FirstAired      string   `json:"firstAired"`
+		Network         string   `json:"network"`
+		NetworkID       string   `json:"networkId"`
+		Runtime         string   `json:"runtime"`
+		Language        string   `json:"language"`
+		Genre           []string `json:"genre"`
+		Overview        string   `json:"overview"`
+		Rating          string   `json:"rating"`
+		ImdbID          string   `json:"imdbId"`
+		SiteRating      string   `json:"siteRating"`
+		SiteRatingCount string   `json:"siteRatingCount"`
+		Slug            string   `json:"slug"`
+		Banner          string   `json:"banner"`
+		Poster          string   `json:"poster"`
+		Fanart          string   `json:"fanart"`
+	} `json:"data"`
+}
+
+type TheTVDBEpisodes struct {
+	Links struct {
+		First int `json:"first"`
+		Last  int `json:"last"`
+	} `json:"links"`
+	Data []struct {
+		ID                 int    `json:"id"`
+		AiredSeason        int    `json:"airedSeason"`
+		AiredEpisodeNumber int    `json:"airedEpisodeNumber"`
+		EpisodeName        string `json:"episodeName"`
+		FirstAired         string `json:"firstAired"`
+		Overview           string `json:"overview"`
+		Language           []struct {
+			EpisodeName string `json:"episodeName"`
+			Overview    string `json:"overview"`
+		} `json:"language"`
+		ProductionCode  string `json:"productionCode"`
+		ShowURL         string `json:"showUrl"`
+		SeriesID        int    `json:"seriesId"`
+		ImdbID          string `json:"imdbId"`
+		ContentRating   string `json:"contentRating"`
+		SiteRating      string `json:"siteRating"`
+		SiteRatingCount string `json:"siteRatingCount"`
+		IsMovie         int    `json:"isMovie"`
+		Poster          string `json:"filename"`
+	} `json:"data"`
+}
+
+type TvdbClient struct {
+	Client *RLHTTPClient
+}
+
+var TvdbApi TvdbClient
+
+func NewTvdbClient(seconds int, calls int) {
+	rl := rate.NewLimiter(rate.Every(time.Duration(seconds)*time.Second), calls) // 50 request every 10 seconds
+	limiter, _ := slidingwindow.NewLimiter(time.Duration(seconds)*time.Second, int64(calls), func() (slidingwindow.Window, slidingwindow.StopFunc) { return slidingwindow.NewLocalWindow() })
+	TvdbApi = TvdbClient{Client: NewClient(rl, limiter)}
+}
+
+func (t TvdbClient) GetSeries(id int, language string) (TheTVDBSeries, error) {
+	req, _ := http.NewRequest("GET", "https://api.thetvdb.com/series/"+strconv.Itoa(id), nil)
+	if len(language) >= 1 {
+		req.Header.Add("Accept-Language", language)
+	}
+	resp, responseData, err := t.Client.Do(req)
+	if err != nil {
+		return TheTVDBSeries{}, err
+	}
+	if resp.StatusCode == 429 {
+		return TheTVDBSeries{}, err
+	}
+	var result TheTVDBSeries
+	json.Unmarshal(responseData, &result)
+	return result, nil
+}
+func (t TvdbClient) GetSeriesEpisodes(id int, language string) (TheTVDBEpisodes, error) {
+	req, _ := http.NewRequest("GET", "https://api.thetvdb.com/series/"+strconv.Itoa(id)+"/episodes", nil)
+	if len(language) >= 1 {
+		req.Header.Add("Accept-Language", language)
+	}
+	resp, responseData, err := t.Client.Do(req)
+	if err != nil {
+		return TheTVDBEpisodes{}, err
+	}
+	if resp.StatusCode == 429 {
+		return TheTVDBEpisodes{}, err
+	}
+	var result TheTVDBEpisodes
+	json.Unmarshal(responseData, &result)
+	if result.Links.Last >= 2 {
+		k := 2
+		for ; k <= result.Links.Last; k++ {
+			req, _ := http.NewRequest("GET", "https://api.thetvdb.com/series/"+strconv.Itoa(id)+"/episodes?page="+strconv.Itoa(k), nil)
+			if len(language) >= 1 {
+				req.Header.Add("Accept-Language", language)
+			}
+			resp, responseData, err := t.Client.Do(req)
+
+			if err != nil || resp.StatusCode == 429 {
+				break
+			}
+			var resultadd TheTVDBEpisodes
+			json.Unmarshal(responseData, &resultadd)
+			result.Data = append(result.Data, resultadd.Data...)
+		}
+	}
+	return result, nil
+}

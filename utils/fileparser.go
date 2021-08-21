@@ -1,0 +1,850 @@
+// parser
+package utils
+
+import (
+	"fmt"
+	"html"
+	"io/ioutil"
+	"os"
+	"path"
+	"path/filepath"
+
+	"strconv"
+	"strings"
+	"unicode"
+
+	"regexp"
+
+	"github.com/Kellerman81/go_media_downloader/config"
+	"github.com/Kellerman81/go_media_downloader/database"
+	"github.com/Kellerman81/go_media_downloader/logger"
+	"github.com/goccy/go-reflect"
+	"golang.org/x/text/runes"
+	"golang.org/x/text/transform"
+	"golang.org/x/text/unicode/norm"
+)
+
+var patterns = []struct {
+	name string
+	// Use the last matching pattern. E.g. Year.
+	last bool
+	kind reflect.Kind
+	// REs need to have 2 sub expressions (groups), the first one is "raw", and
+	// the second one for the "clean" value.
+	// E.g. Epiode matching on "S01E18" will result in: raw = "E18", clean = "18".
+	re *regexp.Regexp
+}{
+	{"season", false, reflect.Int, regexp.MustCompile(`(?i)(s?(\d{1,4}))[ex]`)},
+	{"episode", false, reflect.Int, regexp.MustCompile(`(?i)((?:\d{1,4})[ex](\d{1,3})(?:\b|_|e|$))`)},
+	//{"episode", false, reflect.Int, regexp.MustCompile(`(-\s+([0-9]{1,})(?:[^0-9]|$))`)},
+	//{"identifier", false, reflect.String, regexp.MustCompile(`(?i)((s?\d{1,4}(?:(?:-?[ex]\d{2,3})+)|\d{2,4}(?:\.|-| |_)\d{1,2}(?:\.|-| |_)\d{1,2}))(?:\b|_)`, 0)},
+	{"date", false, reflect.String, regexp.MustCompile(`(?i)(?:\b|_)((\d{2,4}(?:\.|-| |_)\d{1,2}(?:\.|-| |_)\d{1,2}))(?:\b|_)`)},
+	{"year", true, reflect.Int, regexp.MustCompile(`(?:\b|_)(((?:19\d|20\d)\d))(?:\b|_)`)},
+
+	//{"resolution", false, reflect.String, regexp.MustCompile(`(?i)(?:\b|_)((\d{3,4}[pi]))(?:\b|_)`, 0)},
+	//{"quality", false, reflect.String, regexp.MustCompile(`(?i)(?:\b|_)((workprint|cam|webcam|hdts|ts|telesync|tc|telecine|r[2-8]|preair|sdtv|hdtv|pdtv|(?:(?:dvd|web|bd)\W?)?scr(?:eener)?|(?:web|dvd|hdtv|bd|br|dvb|dsr|ds|tv|ppv|hd)\W?rip|web\W?(?:dl|hd)?|hddvd|remux|(?:blu\W?ray)))(?:\b|_)`, 0)},
+	//{"codec", false, reflect.String, regexp.MustCompile(`(?i)(?:\b|_)((xvid|divx|hevc|vp9|10bit|hi10p|h\.?264|h\.?265|x\.?264|x\.?265))(?:\b|_)`, 0)},
+	//{"audio", false, reflect.String, regexp.MustCompile(`(?i)(?:\b|_)((mp3|aac|dd[0-9\\.]+|ac3|ac3d|ac3md|dd[p+][0-9\\.]+|flac|dts\W?hd(?:\W?ma)?|dts|truehd|mic|micdubbed))(?:\b|_)`, 0)},
+	{"audio", false, reflect.String, regexp.MustCompile(`(?i)(?:\b|_)((dd[0-9\\.]+|dd[p+][0-9\\.]+|dts\W?hd(?:\W?ma)?))(?:\b|_)`)},
+	//{"region", false, reflect.String, regexp.MustCompile(`(?i)\b(R([0-9]))\b`)},
+	//{"size", false, reflect.String, regexp.MustCompile(`(?i)\b((\d+(?:\.\d+)?(?:GB|MB)))\b`)},
+	//{"website", false, reflect.String, regexp.MustCompile(`^(\[ ?([^\]]+?) ?\])`)},
+	//{"language", false, reflect.String, regexp.MustCompile(`(?i)(?:\b|_)((english|eng|deutsch|german|ger|deu|french|italian|dutch|polish|fre|truefre|ita|dut|spa|spanish|rus|russian|tur|turkish|pol|nordic|kor|korean|hindi|swedish|hebrew|heb))(?:\b|_)`)},
+	//{"subs", false, reflect.String, regexp.MustCompile(`(?i)(?:\b|_)((korsub|korsubs|swesub|swesubs|hebsub|hebsubs|sup|sups|subbed))(?:\b|_)`)},
+	//{"sbs", false, reflect.String, regexp.MustCompile(`(?i)\b(((?:Half-)?SBS))\b`)},
+	//{"container", false, reflect.String, regexp.MustCompile(`(?i)\b((MKV|AVI|MP4))\b`)},
+
+	//{"group", false, reflect.String, regexp.MustCompile(`\b(- ?([^-]+(?:-={[^-]+-?$)?))$`)},
+
+	//{"extended", false, reflect.Bool, regexp.MustCompile(`(?i)(?:\b|_)(EXTENDED(:?.CUT)?)(?:\b|_)`, 0)},
+	//{"hardcoded", false, reflect.Bool, regexp.MustCompile(`(?i)\b((HC))\b`)},
+	//{"proper", false, reflect.Bool, regexp.MustCompile(`(?i)(?:\b|_)((PROPER))(?:\b|_)`, 0)},
+	{"imdb", false, reflect.String, regexp.MustCompile(`(?i)(?:\b|_)((tt[0-9]{4,9}))(?:\b|_)`)},
+	{"tvdb", false, reflect.String, regexp.MustCompile(`(?i)(?:\b|_)((tvdb[0-9]{2,9}))(?:\b|_)`)},
+	//{"repack", false, reflect.Bool, regexp.MustCompile(`(?i)(?:\b|_)((REPACK))(?:\b|_)`, 0)},
+	//{"widescreen", false, reflect.Bool, regexp.MustCompile(`(?i)\b((WS))\b`)},
+	//{"unrated", false, reflect.Bool, regexp.MustCompile(`(?i)\b((UNRATED))\b`)},
+	//{"threeD", false, reflect.Bool, regexp.MustCompile(`(?i)\b((3D))\b`)},
+}
+
+func initpatterns() {
+	for _, pat := range patterns {
+		if pat.re.NumSubexp() != 2 {
+			fmt.Printf("Pattern %q does not have enough capture groups. want 2, got %d\n", pat.name, pat.re.NumSubexp())
+			os.Exit(1)
+		}
+	}
+}
+
+func (tor *ParseInfo) setField(field, raw, val string) {
+	ttor := reflect.TypeOf(tor)
+	torV := reflect.ValueOf(tor)
+	field = strings.Title(field)
+	v, _ := ttor.Elem().FieldByName(field)
+	//fmt.Printf("    field=%v, ttor=%v, torv=%v, type=%+v, value=%v\n", field, ttor, torV, v.Type, val)
+	//fmt.Printf("    field=%v, type=%+v, value=%v\n", field, v.Type, val)
+	if v.Type == nil {
+		torV.Elem().FieldByName(field).SetString(val)
+	} else {
+		switch v.Type.Kind() {
+		case reflect.Bool:
+			torV.Elem().FieldByName(field).SetBool(true)
+		case reflect.Int:
+			clean, _ := strconv.ParseInt(val, 10, 64)
+			torV.Elem().FieldByName(field).SetInt(clean)
+		case reflect.Uint:
+			clean, _ := strconv.ParseUint(val, 10, 64)
+			torV.Elem().FieldByName(field).SetUint(clean)
+		case reflect.String:
+			torV.Elem().FieldByName(field).SetString(val)
+		}
+	}
+}
+
+type ParseInfo struct {
+	Cfg             config.Cfg `json:"-"`
+	File            string
+	Title           string
+	Season          int      `json:"season,omitempty"`
+	Episode         int      `json:"episode,omitempty"`
+	SeasonStr       string   `json:"seasonstr,omitempty"`
+	EpisodeStr      string   `json:"episodestr,omitempty"`
+	Year            int      `json:"year,omitempty"`
+	Resolution      string   `json:"resolution,omitempty"`
+	ResolutionID    uint     `json:"resolutionid,omitempty"`
+	Quality         string   `json:"quality,omitempty"`
+	QualityID       uint     `json:"qualityid,omitempty"`
+	Codec           string   `json:"codec,omitempty"`
+	CodecID         uint     `json:"codecid,omitempty"`
+	Audio           string   `json:"audio,omitempty"`
+	AudioID         uint     `json:"audioid,omitempty"`
+	Priority        int      `json:"priority,omitempty"`
+	Group           string   `json:"group,omitempty"`
+	Region          string   `json:"region,omitempty"`
+	Identifier      string   `json:"identifier,omitempty"`
+	Date            string   `json:"date,omitempty"`
+	Extended        bool     `json:"extended,omitempty"`
+	Hardcoded       bool     `json:"hardcoded,omitempty"`
+	Proper          bool     `json:"proper,omitempty"`
+	Repack          bool     `json:"repack,omitempty"`
+	Container       string   `json:"container,omitempty"`
+	Widescreen      bool     `json:"widescreen,omitempty"`
+	Website         string   `json:"website,omitempty"`
+	Language        string   `json:"language,omitempty"`
+	Sbs             string   `json:"sbs,omitempty"`
+	Unrated         bool     `json:"unrated,omitempty"`
+	Subs            string   `json:"subs,omitempty"`
+	Imdb            string   `json:"imdb,omitempty"`
+	Tvdb            string   `json:"tvdb,omitempty"`
+	Size            string   `json:"size,omitempty"`
+	ThreeD          bool     `json:"3d,omitempty"`
+	QualitySet      string   `json:"qualityset,omitempty"`
+	Prio_audio      int      `json:"Prio_audio,omitempty"`
+	Prio_codec      int      `json:"Prio_codec,omitempty"`
+	Prio_resolution int      `json:"Prio_resolution,omitempty"`
+	Prio_quality    int      `json:"Prio_quality,omitempty"`
+	Languages       []string `json:"languages,omitempty"`
+}
+
+func NewDefaultPrio(cfg config.Cfg, configEntry config.MediaTypeConfig, quality config.QualityConfig) *ParseInfo {
+	m := &ParseInfo{Quality: configEntry.DefaultQuality, Resolution: configEntry.DefaultResolution, Cfg: cfg}
+	m.GetPriority(configEntry, quality)
+	return m
+}
+
+func NewCutoffPrio(cfg config.Cfg, configEntry config.MediaTypeConfig, quality config.QualityConfig) *ParseInfo {
+	m := &ParseInfo{Quality: quality.Cutoff_quality, Resolution: quality.Cutoff_resolution, Cfg: cfg}
+	m.GetPriority(configEntry, quality)
+	return m
+}
+
+func NewFileParser(cfg config.Cfg, filename string, includeYearInTitle bool, typegroup string) (*ParseInfo, error) {
+	m := &ParseInfo{File: filename, Cfg: cfg}
+	err := m.ParseFile(includeYearInTitle, typegroup)
+	return m, err
+}
+
+// func regexp2FindAllString(re *regexp.Regexp, s string) []string {
+// 	var matches []string
+// 	m, _ := re.FindStringMatch(s)
+// 	for m != nil {
+// 		matches = append(matches, m.String())
+// 		m, _ = re.FindNextMatch(m)
+// 	}
+// 	return matches
+// }
+func (m *ParseInfo) parsegroup(cleanName string, name string, group []string, startIndex int, endIndex int) (int, int) {
+	for idx := range group {
+		if strings.Contains(strings.ToLower(cleanName), group[idx]) {
+			index := strings.Index(strings.ToLower(cleanName), group[idx])
+			substr := cleanName[index : index+len(group[idx])]
+			substrpre := ""
+			if index >= 1 {
+				substrpre = cleanName[index-1 : index]
+			}
+			substrpost_len := index + len(group[idx]) + 1
+			if len(cleanName) < substrpost_len {
+				substrpost_len = index + len(group[idx])
+			}
+			substrpost := cleanName[index+len(group[idx]) : substrpost_len]
+			isokpost := true
+			isokpre := true
+			if len(substrpost) >= 1 {
+				if unicode.IsDigit([]rune(substrpost)[0]) || unicode.IsLetter([]rune(substrpost)[0]) {
+					isokpost = false
+				}
+			}
+			if len(substrpre) >= 1 {
+				if unicode.IsDigit([]rune(substrpre)[0]) || unicode.IsLetter([]rune(substrpre)[0]) {
+					isokpre = false
+				}
+			}
+			if isokpre && isokpost {
+				switch name {
+				case "audio":
+					m.Audio = substr
+				case "codec":
+					m.Codec = substr
+				case "quality":
+					m.Quality = substr
+				case "resolution":
+					m.Resolution = substr
+				case "extended":
+					if len(substr) >= 1 {
+						m.Extended = true
+					}
+				case "proper":
+					if len(substr) >= 1 {
+						m.Proper = true
+					}
+				case "repack":
+					if len(substr) >= 1 {
+						m.Repack = true
+					}
+				}
+				//m.setField(name, substr, substr)
+			}
+		}
+	}
+	return startIndex, endIndex
+}
+func (m *ParseInfo) ParseFile(includeYearInTitle bool, typegroup string) error {
+	logger.Log.Debug("filename ", m.File)
+	initpatterns()
+	var startIndex, endIndex = 0, len(m.File)
+	cleanName := strings.Replace(m.File, "_", " ", -1)
+	if strings.HasPrefix(cleanName, "[") && strings.HasSuffix(cleanName, "]") {
+		var re = regexp.MustCompile(`^\[( )?(.*)( )?\]$`)
+		cleanName = re.ReplaceAllString(cleanName, `$2`)
+	}
+	//cleanName = strings.Replace(cleanName, "[", "(", -1)
+	//cleanName = strings.Replace(cleanName, "]", ")", -1)
+	//fmt.Printf("filename %q\n", cleanName)
+	//|dd[0-9\\.]+|dd[p+][0-9\\.]+|dts\W?hd(?:\W?ma)?
+	audio := []string{"mp3", "aac", "ac3", "ac3d", "ac3md", "flac", "dts", "truehd", "mic", "micdubbed"}
+	startIndex, endIndex = m.parsegroup(cleanName, "audio", audio, startIndex, endIndex)
+
+	codec := []string{"xvid", "divx", "hevc", "vp9", "10bit", "hi10p", "h264", "h.264", "h265", "h.265", "x264", "x.264", "x265", "x.265"}
+	startIndex, endIndex = m.parsegroup(cleanName, "codec", codec, startIndex, endIndex)
+
+	quality := []string{"workprint", "cam", "webcam", "hdts", "ts", "telesync", "tc", "telecine", "r5", "r6", "preair", "sdtv", "hdtv", "pdtv", "web", "dvd", "hdtv", "bd", "br", "dvb", "dsr", "ds", "tv", "ppv", "hd", "webrip", "dvdrip", "hdtvrip", "bdrip", "brrip", "dvbrip", "dsrrip", "dsrip", "tvrip", "ppvrip", "hdrip", "web rip", "dvd rip", "hdtv rip", "bd rip", "br rip", "dvb rip", "dsr rip", "ds rip", "tv rip", "ppv rip", "hd rip", "web.rip", "dvd.rip", "hdtv.rip", "bd.rip", "br.rip", "dvb.rip", "dsr.rip", "ds.rip", "tv.rip", "ppv.rip", "hd.rip", "web-rip", "dvd-rip", "hdtv-rip", "bd-rip", "br-rip", "dvb-rip", "dsr-rip", "ds-rip", "tv-rip", "ppv-rip", "hd-rip", "webdl", "webhd", "hddvd", "remux", "bluray", "blu.ray", "blu ray", "blu_ray", "dvdscr", "dvd.scr", "dvd-scr", "dvd scr", "dvdscreener", "dvd.screener", "dvd screener", "dvd-screener", "webscr", "web.scr", "web-scr", "web scr", "webscreener", "web.screener", "web screener", "web-screener", "bdscr", "bd.scr", "bd-scr", "bd scr", "bdscreener", "bd.screener", "bd screener", "bd-screener"}
+	startIndex, endIndex = m.parsegroup(cleanName, "quality", quality, startIndex, endIndex)
+
+	resolution := []string{"360p", "368p", "480p", "576p", "720p", "1080p", "2160p", "360i", "368i", "480i", "576i", "720i", "1080i", "2160i"}
+	startIndex, endIndex = m.parsegroup(cleanName, "resolution", resolution, startIndex, endIndex)
+
+	extended := []string{"extended", "extended cut", "extended.cut", "extended-cut", "extended_cut"}
+	startIndex, endIndex = m.parsegroup(cleanName, "extended", extended, startIndex, endIndex)
+
+	proper := []string{"proper"}
+	startIndex, endIndex = m.parsegroup(cleanName, "proper", proper, startIndex, endIndex)
+
+	repack := []string{"repack"}
+	startIndex, endIndex = m.parsegroup(cleanName, "repack", repack, startIndex, endIndex)
+
+	for idxpattern := range patterns {
+		switch patterns[idxpattern].name {
+		case "imdb":
+			if typegroup != "movie" {
+				continue
+			}
+			if !strings.Contains(strings.ToLower(cleanName), "tt") {
+				continue
+			}
+		case "tvdb":
+			if typegroup != "series" {
+				continue
+			}
+			if !strings.Contains(strings.ToLower(cleanName), "tvdb") {
+				continue
+			}
+		case "year":
+			if typegroup != "movie" {
+				continue
+			}
+		case "season":
+			if typegroup != "series" {
+				continue
+			}
+		case "episode":
+			if typegroup != "series" {
+				continue
+			}
+		case "date":
+			if typegroup != "series" {
+				continue
+			}
+		}
+		matches := patterns[idxpattern].re.FindAllStringSubmatch(cleanName, -1)
+
+		if len(matches) == 0 {
+			continue
+		}
+		matchIdx := 0
+		if patterns[idxpattern].last {
+			// Take last occurence of element.
+			matchIdx = len(matches) - 1
+		}
+		//fmt.Printf("  %s: pattern:%q match:%#v\n", pattern.name, pattern.re, matches[matchIdx])
+
+		index := strings.Index(cleanName, matches[matchIdx][1])
+		if !includeYearInTitle || (includeYearInTitle && patterns[idxpattern].name != "year") {
+			if index == 0 {
+				if len(matches[matchIdx][1]) != len(cleanName) && len(matches[matchIdx][1]) < endIndex {
+					startIndex = len(matches[matchIdx][1])
+					//fmt.Printf("    startIndex moved to %d [%q]\n", startIndex, filename[startIndex:endIndex])
+				}
+			} else if index < endIndex && index > startIndex {
+				endIndex = index
+				//fmt.Printf("    endIndex moved to %d [%q]\n", endIndex, filename[startIndex:endIndex])
+			}
+		}
+		switch patterns[idxpattern].name {
+		case "imdb":
+			m.Imdb = matches[matchIdx][2]
+		case "tvdb":
+			m.Tvdb = matches[matchIdx][2]
+		case "year":
+			mint, _ := strconv.Atoi(matches[matchIdx][2])
+			m.Year = mint
+		case "season":
+			mint, _ := strconv.Atoi(matches[matchIdx][2])
+			m.Season = mint
+			m.SeasonStr = matches[matchIdx][2]
+		case "episode":
+			mint, _ := strconv.Atoi(matches[matchIdx][2])
+			m.Episode = mint
+			m.EpisodeStr = matches[matchIdx][2]
+		case "date":
+			m.Date = matches[matchIdx][2]
+		case "audio":
+			m.Audio = matches[matchIdx][2]
+		}
+		//m.setField(patterns[idxpattern].name, matches[matchIdx][1], matches[matchIdx][2])
+	}
+	if len(m.Date) >= 1 {
+		m.Identifier = m.Date
+	} else {
+		m.Identifier = "S" + m.SeasonStr + "E" + m.EpisodeStr
+	}
+	// Start process for title
+	//fmt.Println("  title: <internal>")
+	raw := ""
+	if strings.Contains(m.File[startIndex:endIndex], "(") {
+		rawarr := strings.Split(m.File[startIndex:endIndex], "(")
+		if len(rawarr) >= 1 {
+			raw = rawarr[0]
+		} else {
+			raw = m.File[startIndex:endIndex]
+		}
+	} else {
+		raw = m.File[startIndex:endIndex]
+	}
+
+	cleanName = raw
+	if strings.HasPrefix(cleanName, "- ") {
+		cleanName = raw[2:]
+	}
+	if strings.ContainsRune(cleanName, '.') && !strings.ContainsRune(cleanName, ' ') {
+		cleanName = strings.Replace(cleanName, ".", " ", -1)
+	}
+	cleanName = strings.Replace(cleanName, "_", " ", -1)
+	cleanName = strings.Trim(cleanName, " ")
+	cleanName = strings.Trim(cleanName, "-")
+	cleanName = strings.Trim(cleanName, " ")
+	//cleanName = re.sub('([\[\(_]|- )$', '', cleanName).strip()
+	m.Title = strings.TrimSpace(cleanName)
+	//m.setField("title", raw, strings.TrimSpace(cleanName))
+
+	return nil
+}
+
+func (m *ParseInfo) GetPriority(configEntry config.MediaTypeConfig, quality config.QualityConfig) {
+	m.QualitySet = quality.Name
+
+	resolution_priority := 0
+	quality_priority := 0
+	codec_priority := 0
+	audio_priority := 0
+
+	typeid, resolution_priority, newname := gettypepriority(m.Resolution, "resolution", quality, database.Getresolutions)
+	if typeid != 0 {
+		m.Resolution = newname
+		m.ResolutionID = typeid
+		m.Prio_resolution = resolution_priority
+	} else {
+		m.Resolution = ""
+	}
+
+	typeid, quality_priority, newname = gettypepriority(m.Quality, "quality", quality, database.Getqualities)
+	if typeid != 0 {
+		m.Quality = newname
+		m.QualityID = typeid
+		m.Prio_quality = quality_priority
+	} else {
+		m.Quality = ""
+	}
+
+	typeid, codec_priority, newname = gettypepriority(m.Codec, "codec", quality, database.Getcodecs)
+	if typeid != 0 {
+		m.Codec = newname
+		m.CodecID = typeid
+		m.Prio_codec = codec_priority
+	} else {
+		m.Codec = ""
+	}
+
+	typeid, audio_priority, newname = gettypepriority(m.Audio, "audio", quality, database.Getaudios)
+	if typeid != 0 {
+		m.Audio = newname
+		m.AudioID = typeid
+		m.Prio_audio = audio_priority
+	} else {
+		m.Audio = ""
+	}
+
+	typeid, type_priority, newname := getdefaulttypepriority(configEntry.DefaultQuality, "quality", m.QualityID, quality, database.Getqualities)
+	if typeid != 0 {
+		m.Quality = newname
+		m.QualityID = typeid
+		quality_priority = type_priority
+		m.Prio_quality = type_priority
+	}
+
+	typeid, type_priority, newname = getdefaulttypepriority(configEntry.DefaultResolution, "resolution", m.ResolutionID, quality, database.Getresolutions)
+	if typeid != 0 {
+		m.Resolution = newname
+		m.ResolutionID = typeid
+		resolution_priority = type_priority
+		m.Prio_resolution = type_priority
+	}
+
+	m.Priority = m.Prio_resolution + m.Prio_quality + m.Prio_codec + m.Prio_audio
+	if m.Proper {
+		m.Priority = m.Priority + 5
+	}
+	if m.Extended {
+		m.Priority = m.Priority + 2
+	}
+	if m.Repack {
+		m.Priority = m.Priority + 1
+	}
+}
+
+func (m *ParseInfo) ParseVideoFile(file string, configEntry config.MediaTypeConfig, quality config.QualityConfig) error {
+	if m.Audio == "" || m.Codec == "" || m.Resolution == "" {
+		if m.QualitySet == "" {
+			m.QualitySet = quality.Name
+		}
+		video, err := NewVideoFile(getFFProbeFilename(), file, false)
+		if err == nil {
+			logger.Log.Debug("Parsed Video as Audio: ", video.AudioCodec)
+			logger.Log.Debug("Parsed Video as Codec: ", video.VideoCodec)
+			logger.Log.Debug("Parsed Video as Height: ", video.Height)
+			if m.Audio == "" || (!strings.EqualFold(video.AudioCodec, m.Audio) && video.AudioCodec != "") {
+				typeid, audio_priority, newname := gettypepriority(video.AudioCodec, "audio", quality, database.Getaudios)
+				if typeid != 0 {
+					logger.Log.Debug("Changed Audio from ", m.Audio, " to ", video.AudioCodec)
+					m.Audio = newname
+					m.AudioID = typeid
+					m.Prio_audio = audio_priority
+				}
+			}
+			if strings.EqualFold(video.VideoCodec, "mpeg4") && strings.EqualFold(video.VideoCodecTagString, "XVID") {
+				video.VideoCodec = video.VideoCodecTagString
+			}
+			if m.Codec == "" || (!strings.EqualFold(video.VideoCodec, m.Codec) && video.VideoCodec != "") {
+				typeid, codec_priority, newname := gettypepriority(video.VideoCodec, "codec", quality, database.Getcodecs)
+				if typeid != 0 {
+					logger.Log.Debug("Changed Codec from ", m.Codec, " to ", video.VideoCodec)
+					m.Codec = newname
+					m.CodecID = typeid
+					m.Prio_codec = codec_priority
+				}
+			}
+			getreso := ""
+			if video.Height == 360 {
+				getreso = "360p"
+			}
+			if video.Height > 360 {
+				getreso = "368p"
+			}
+			if video.Height > 368 || video.Width == 720 {
+				getreso = "480p"
+			}
+			if video.Height > 480 {
+				getreso = "576p"
+			}
+			if video.Height > 576 || video.Width == 1280 {
+				getreso = "720p"
+			}
+			if video.Height > 720 || video.Width == 1920 {
+				getreso = "1080p"
+			}
+			if video.Height > 1080 || video.Width == 3840 {
+				getreso = "2160p"
+			}
+			if m.Resolution == "" || !strings.EqualFold(getreso, m.Resolution) {
+				typeid, resolution_priority, newname := gettypepriority(getreso, "resolution", quality, database.Getresolutions)
+				if typeid != 0 {
+					logger.Log.Debug("Changed Resolution from ", m.Resolution, " to ", getreso)
+					m.Resolution = newname
+					m.ResolutionID = typeid
+					m.Prio_resolution = resolution_priority
+				}
+			}
+			m.Languages = video.AudioLanguages
+
+			m.Priority = m.Prio_resolution + m.Prio_quality + m.Prio_codec + m.Prio_audio
+			if m.Proper {
+				m.Priority = m.Priority + 5
+			}
+			if m.Extended {
+				m.Priority = m.Priority + 2
+			}
+			if m.Repack {
+				m.Priority = m.Priority + 1
+			}
+			return nil
+		} else {
+			return err
+		}
+	} else {
+		logger.Log.Debug("Already have Video data")
+	}
+	return nil
+}
+
+func gettypepriority(inval string, qualitystringtype string, qualityconfig config.QualityConfig, qualitytype []database.QualitiesRegex) (id uint, priority int, name string) {
+	for idxqual := range qualitytype {
+		if len(qualitytype[idxqual].Strings) >= 1 {
+			if strings.Contains(qualitytype[idxqual].Strings, strings.ToLower(inval)) {
+				index := strings.Index(qualitytype[idxqual].Strings, strings.ToLower(inval))
+				//substr := qualitytype[idxqual].Strings[index : index+len(inval)]
+				substrpre := ""
+				if index >= 1 {
+					substrpre = qualitytype[idxqual].Strings[index-1 : index]
+				}
+				substrpost_len := index + len(inval) + 1
+				if len(qualitytype[idxqual].Strings) < substrpost_len {
+					substrpost_len = index + len(inval)
+				}
+				substrpost := qualitytype[idxqual].Strings[index+len(inval) : substrpost_len]
+				isokpost := true
+				isokpre := true
+				if len(substrpost) >= 1 {
+					if unicode.IsDigit([]rune(substrpost)[0]) || unicode.IsLetter([]rune(substrpost)[0]) {
+						isokpost = false
+					}
+				}
+				if len(substrpre) >= 1 {
+					if unicode.IsDigit([]rune(substrpre)[0]) || unicode.IsLetter([]rune(substrpre)[0]) {
+						isokpre = false
+					}
+				}
+				if isokpre && isokpost {
+					id = qualitytype[idxqual].ID
+					name = qualitytype[idxqual].Name
+					priority = qualitytype[idxqual].Priority
+					if len(qualityconfig.QualityReorder) >= 1 {
+						for idxreorder := range qualityconfig.QualityReorder {
+							if strings.EqualFold(qualityconfig.QualityReorder[idxreorder].Type, qualitystringtype) && strings.EqualFold(qualityconfig.QualityReorder[idxreorder].Name, qualitytype[idxqual].Name) {
+								priority = qualityconfig.QualityReorder[idxreorder].Newpriority
+							}
+							if strings.EqualFold(qualityconfig.QualityReorder[idxreorder].Type, "position") && strings.EqualFold(qualityconfig.QualityReorder[idxreorder].Name, qualitystringtype) {
+								priority = priority * qualityconfig.QualityReorder[idxreorder].Newpriority
+							}
+						}
+					}
+					break
+				}
+			}
+		} else {
+			teststr := qualitytype[idxqual].Regexp.FindStringSubmatch(strings.ToLower(inval))
+			if len(teststr) >= 2 {
+				id = qualitytype[idxqual].ID
+				name = qualitytype[idxqual].Name
+				priority = qualitytype[idxqual].Priority
+				if len(qualityconfig.QualityReorder) >= 1 {
+					for idxreorder := range qualityconfig.QualityReorder {
+						if strings.EqualFold(qualityconfig.QualityReorder[idxreorder].Type, qualitystringtype) && strings.EqualFold(qualityconfig.QualityReorder[idxreorder].Name, qualitytype[idxqual].Name) {
+							priority = qualityconfig.QualityReorder[idxreorder].Newpriority
+						}
+						if strings.EqualFold(qualityconfig.QualityReorder[idxreorder].Type, "position") && strings.EqualFold(qualityconfig.QualityReorder[idxreorder].Name, qualitystringtype) {
+							priority = priority * qualityconfig.QualityReorder[idxreorder].Newpriority
+						}
+					}
+				}
+				break
+			}
+		}
+
+	}
+	return
+}
+func gettypeidpriority(id uint, qualitystringtype string, qualityconfig config.QualityConfig, qualitytype []database.QualitiesRegex) (priority int, name string) {
+	for idxqual := range qualitytype {
+		if qualitytype[idxqual].ID == id {
+			name = qualitytype[idxqual].Name
+			priority = qualitytype[idxqual].Priority
+			if len(qualityconfig.QualityReorder) >= 1 {
+				for idxreorder := range qualityconfig.QualityReorder {
+					if strings.EqualFold(qualityconfig.QualityReorder[idxreorder].Type, qualitystringtype) && strings.EqualFold(qualityconfig.QualityReorder[idxreorder].Name, qualitytype[idxqual].Name) {
+						priority = qualityconfig.QualityReorder[idxreorder].Newpriority
+					}
+					if strings.EqualFold(qualityconfig.QualityReorder[idxreorder].Type, "position") && strings.EqualFold(qualityconfig.QualityReorder[idxreorder].Name, qualitystringtype) {
+						priority = priority * qualityconfig.QualityReorder[idxreorder].Newpriority
+					}
+				}
+			}
+			break
+		}
+	}
+	return
+}
+
+func getdefaulttypepriority(qualitystring string, qualitystringtype string, qualityid uint, qualityconfig config.QualityConfig, qualitytype []database.QualitiesRegex) (id uint, priority int, name string) {
+	if qualitystring != "" && qualityid == 0 {
+		for idxqual := range qualitytype {
+			if strings.EqualFold(qualitytype[idxqual].Name, qualitystring) {
+				logger.Log.Debug("use default qual: ", qualitystring)
+				id = qualitytype[idxqual].ID
+				name = qualitytype[idxqual].Name
+
+				priority = qualitytype[idxqual].Priority
+				if len(qualityconfig.QualityReorder) >= 1 {
+					for idxreorder := range qualityconfig.QualityReorder {
+						if strings.EqualFold(qualityconfig.QualityReorder[idxreorder].Type, qualitystringtype) && strings.EqualFold(qualityconfig.QualityReorder[idxreorder].Name, qualitytype[idxqual].Name) {
+							priority = qualityconfig.QualityReorder[idxreorder].Newpriority
+						}
+						if strings.EqualFold(qualityconfig.QualityReorder[idxreorder].Type, "position") && strings.EqualFold(qualityconfig.QualityReorder[idxreorder].Name, qualitystringtype) {
+							priority = priority * qualityconfig.QualityReorder[idxreorder].Newpriority
+						}
+					}
+				}
+			}
+		}
+	}
+	return
+}
+
+func getSerieDBPriority(cfg config.Cfg, serieepisodefile database.SerieEpisodeFile, configEntry config.MediaTypeConfig, quality config.QualityConfig) int {
+	resolution_priority := 0
+	quality_priority := 0
+	codec_priority := 0
+	audio_priority := 0
+
+	if serieepisodefile.ResolutionID != 0 {
+		resolution_priority, _ = gettypeidpriority(serieepisodefile.ResolutionID, "resolution", quality, database.Getresolutions)
+	} else {
+		typeid, type_priority, _ := getdefaulttypepriority(configEntry.DefaultResolution, "resolution", serieepisodefile.ResolutionID, quality, database.Getresolutions)
+		if typeid != 0 {
+			resolution_priority = type_priority
+		}
+	}
+	if serieepisodefile.QualityID != 0 {
+		quality_priority, _ = gettypeidpriority(serieepisodefile.QualityID, "quality", quality, database.Getqualities)
+	} else {
+		typeid, type_priority, _ := getdefaulttypepriority(configEntry.DefaultQuality, "quality", serieepisodefile.QualityID, quality, database.Getqualities)
+		if typeid != 0 {
+			quality_priority = type_priority
+		}
+	}
+	if serieepisodefile.CodecID != 0 {
+		codec_priority, _ = gettypeidpriority(serieepisodefile.CodecID, "codec", quality, database.Getcodecs)
+	}
+	if serieepisodefile.AudioID != 0 {
+		audio_priority, _ = gettypeidpriority(serieepisodefile.AudioID, "audio", quality, database.Getaudios)
+	}
+
+	Priority := resolution_priority + quality_priority + codec_priority + audio_priority
+	if serieepisodefile.Proper {
+		Priority = Priority + 5
+	}
+	if serieepisodefile.Extended {
+		Priority = Priority + 2
+	}
+	if serieepisodefile.Repack {
+		Priority = Priority + 1
+	}
+	return Priority
+}
+
+func getMovieDBPriority(cfg config.Cfg, moviefile database.MovieFile, configEntry config.MediaTypeConfig, quality config.QualityConfig) int {
+	resolution_priority := 0
+	quality_priority := 0
+	codec_priority := 0
+	audio_priority := 0
+
+	if moviefile.ResolutionID != 0 {
+		resolution_priority, _ = gettypeidpriority(moviefile.ResolutionID, "resolution", quality, database.Getresolutions)
+	} else {
+		typeid, type_priority, _ := getdefaulttypepriority(configEntry.DefaultResolution, "resolution", moviefile.ResolutionID, quality, database.Getresolutions)
+		if typeid != 0 {
+			resolution_priority = type_priority
+		}
+	}
+	if moviefile.QualityID != 0 {
+		quality_priority, _ = gettypeidpriority(moviefile.QualityID, "quality", quality, database.Getqualities)
+	} else {
+		typeid, type_priority, _ := getdefaulttypepriority(configEntry.DefaultQuality, "quality", moviefile.QualityID, quality, database.Getqualities)
+		if typeid != 0 {
+			quality_priority = type_priority
+		}
+	}
+	if moviefile.CodecID != 0 {
+		codec_priority, _ = gettypeidpriority(moviefile.CodecID, "codec", quality, database.Getcodecs)
+	}
+	if moviefile.AudioID != 0 {
+		audio_priority, _ = gettypeidpriority(moviefile.AudioID, "audio", quality, database.Getaudios)
+	}
+
+	Priority := resolution_priority + quality_priority + codec_priority + audio_priority
+	if moviefile.Proper {
+		Priority = Priority + 5
+	}
+	if moviefile.Extended {
+		Priority = Priority + 2
+	}
+	if moviefile.Repack {
+		Priority = Priority + 1
+	}
+	return Priority
+}
+
+func trimStringInclAfterString(s string, search string) string {
+	if idx := strings.Index(s, search); idx != -1 {
+		return s[:idx]
+	}
+	return s
+}
+func trimStringInclAfterStringInsensitive(s string, search string) string {
+	if idx := strings.Index(strings.ToLower(s), strings.ToLower(search)); idx != -1 {
+		return s[:idx]
+	}
+	return s
+}
+func trimStringAfterString(s string, search string) string {
+	if idx := strings.Index(s, search); idx != -1 {
+		idn := idx + len(search)
+		if idn >= len(s) {
+			idn = len(s) - 1
+		}
+		return s[:idn]
+	}
+	return s
+}
+func trimStringAfterStringInsensitive(s string, search string) string {
+	if idx := strings.Index(strings.ToLower(s), strings.ToLower(search)); idx != -1 {
+		idn := idx + len(search)
+		if idn >= len(s) {
+			idn = len(s) - 1
+		}
+		return s[:idn]
+	}
+	return s
+}
+
+func StringReplaceDiacritics(instr string) string {
+	t := transform.Chain(norm.NFD, runes.Remove(runes.In(unicode.Mn)), norm.NFC)
+	result, _, _ := transform.String(t, instr)
+	return result
+}
+
+// Path makes a string safe to use as a URL path,
+// removing accents and replacing separators with -.
+// The path may still start at / and is not intended
+// for use as a file system path without prefix.
+func Path(s string, allowslash bool) string {
+	// Start with lowercase string
+	filePath := s
+	filePath = strings.Replace(filePath, "..", "", -1)
+	filePath = path.Clean(filePath)
+	if allowslash {
+		var re = regexp.MustCompile(`[:*?"<>|]`)
+		filePath = re.ReplaceAllString(filePath, "")
+	} else {
+		var re = regexp.MustCompile(`[\\/:*?"<>|]`)
+		filePath = re.ReplaceAllString(filePath, "")
+		filePath = html.UnescapeString(filePath)
+	}
+
+	filePath = strings.Trim(filePath, " ")
+
+	// NB this may be of length 0, caller must check
+	return filePath
+}
+
+func replaceStringObjectFields(s string, obj interface{}) string {
+	fields := reflect.TypeOf(obj)
+	values := reflect.ValueOf(obj)
+	num := fields.NumField()
+	for i := 0; i < num; i++ {
+		field := fields.Field(i)
+		value := values.Field(i)
+
+		replacewith := ""
+		switch value.Kind() {
+		case reflect.String:
+			replacewith = value.String()
+		case reflect.Int:
+			replacewith = strconv.Itoa(int(value.Int()))
+		case reflect.Int32:
+			replacewith = strconv.Itoa(int(value.Int()))
+		case reflect.Int64:
+			replacewith = strconv.Itoa(int(value.Int()))
+		default:
+
+		}
+		s = strings.Replace(s, "{"+field.Name+"}", replacewith, -1)
+	}
+	return s
+}
+
+func getSubFolders(sourcepath string) []string {
+	files, err := ioutil.ReadDir(sourcepath)
+	if err == nil {
+		folders := make([]string, 0, len(files))
+		for idxfile := range files {
+			if files[idxfile].IsDir() {
+				folders = append(folders, filepath.Join(sourcepath, files[idxfile].Name()))
+			}
+		}
+		return folders
+	}
+	return []string{}
+}
+
+func getSubFiles(sourcepath string) []string {
+	files, err := ioutil.ReadDir(sourcepath)
+	if err == nil {
+		folders := make([]string, 0, len(files))
+		for idxfile := range files {
+			if !files[idxfile].IsDir() {
+				folders = append(folders, filepath.Join(sourcepath, files[idxfile].Name()))
+			}
+		}
+		return folders
+	}
+	return []string{}
+}

@@ -1,0 +1,46 @@
+{{define "sidebar"}}
+
+{{end}}
+
+{{define "head"}}
+{{end}}
+{{define "content"}}
+	<table id="mydata" class="table table-bordered table-striped" style="width:100%">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Title</th>
+                <th>ImdbID</th>
+            </tr>
+        </thead>
+        <tfoot>
+            <tr>
+                <th>ID</th>
+                <th>Title</th>
+                <th>ImdbID</th>
+            </tr>
+        </tfoot>
+    </table>
+{{end}}
+
+{{define "scripts"}}
+	<script>
+  $(function () {
+    $('#mydata').DataTable({
+      "paging": true,
+      "lengthChange": false,
+      "searching": true,
+      "ordering": true,
+      "info": true,
+      "autoWidth": false,
+      "responsive": true,
+	  "ajax": "/api/movies",
+	  "columns": [
+		{ "data": "ID" },
+		{ "data": "Title" },
+		{ "data": "ImdbID" }
+	  ]
+    });
+  });
+</script>
+{{end}}

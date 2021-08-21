@@ -1,0 +1,17 @@
+version: "3"
+
+services:
+ media_downloader_builder:
+  build:
+   context: ..
+   dockerfile: /dev/Dockerfile
+  volumes:
+      - /dev:/app
+  working_dir: /app
+  command: bash -c " 
+    cd /app
+    && go get
+    && go build github.com/Kellerman81/go_media_downloader/...
+    && go build -o media_downloader main.go
+    && chmod 777 media_downloader
+    "
