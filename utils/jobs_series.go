@@ -402,6 +402,7 @@ func JobImportSeriesParseV2(cfg config.Cfg, file string, updatemissing bool, con
 
 	//find dbseries
 	series, entriesfound := findSerieByParser(*m, titleyear, seriestitle, list.Name)
+	addunmatched := false
 	if entriesfound >= 1 {
 		cutoffPrio := NewCutoffPrio(cfg, configEntry, cfg.Quality[list.Template_quality])
 
@@ -421,11 +422,9 @@ func JobImportSeriesParseV2(cfg config.Cfg, file string, updatemissing bool, con
 
 		episodeArray := getEpisodeArray(testDbSeries.Identifiedby, teststr[1], teststr[2])
 
-		for _, episodestr := range episodeArray {
-			episodestr = strings.Trim(episodestr, "-")
-			episodestr = strings.Trim(episodestr, "E")
-			episodestr = strings.Trim(episodestr, "X")
-			epi := strings.TrimLeft(episodestr, "0")
+		for _, epi := range episodeArray {
+			epi = strings.Trim(epi, "-EX")
+			epi = strings.TrimLeft(epi, "0")
 			if epi == "" {
 				continue
 			}
@@ -456,23 +455,11 @@ func JobImportSeriesParseV2(cfg config.Cfg, file string, updatemissing bool, con
 							if strings.Contains(file, pppath) {
 								rootpath = pppath
 								tempfoldername := strings.Replace(file, pppath, "", -1)
-								tempfoldername = strings.TrimLeft(tempfoldername, "/")
-								tempfoldername = strings.TrimLeft(tempfoldername, "\\")
+								tempfoldername = strings.TrimLeft(tempfoldername, "/\\")
 								tempfoldername = filepath.Dir(tempfoldername)
 								_, firstfolder := getrootpath(tempfoldername)
 								rootpath = filepath.Join(rootpath, firstfolder)
 								break
-								// if strings.Contains(tempfoldername, "/") {
-								// 	folders := strings.Split(tempfoldername, "/")
-								// 	rootpath = filepath.Join(rootpath, folders[0])
-								// }
-								// if strings.Contains(tempfoldername, "\\") {
-								// 	folders := strings.Split(tempfoldername, "\\")
-								// 	rootpath = filepath.Join(rootpath, folders[0])
-								// }
-								// if !strings.Contains(tempfoldername, "/") && !strings.Contains(tempfoldername, "\\") {
-								// 	rootpath = filepath.Join(rootpath, tempfoldername)
-								// }
 							}
 						}
 						database.UpdateColumn("series", "rootpath", rootpath, database.Query{Where: "id=?", WhereArgs: []interface{}{series.ID}})
@@ -498,18 +485,15 @@ func JobImportSeriesParseV2(cfg config.Cfg, file string, updatemissing bool, con
 					logger.Log.Debug("Already Parsed: ", file)
 				}
 			} else {
-				mjson, _ := json.Marshal(m)
-				valuesupsert := make(map[string]interface{})
-				valuesupsert["listname"] = list.Name
-				valuesupsert["filepath"] = file
-				valuesupsert["last_checked"] = time.Now()
-				valuesupsert["parsed_data"] = string(mjson)
-				database.Upsert("serie_file_unmatcheds", valuesupsert, database.Query{Where: "filepath = ? and listname = ?", WhereArgs: []interface{}{file, list.Name}})
-
+				addunmatched = true
 				logger.Log.Debug("SerieEpisode not matched loop: ", file, " as Title: ", m.Title, " TitleYear:  ", titleyear, " ", m.Resolution, " ", m.Quality, " ", m.Codec, " ", m.Audio, " Season ", m.Season, " Epi ", epi)
 			}
 		}
 	} else {
+		addunmatched = true
+		logger.Log.Debug("SerieEpisode not matched: ", file, " as Title: ", m.Title, " TitleYear:  ", titleyear, " ", m.Resolution, " ", m.Quality, " ", m.Codec, " ", m.Audio)
+	}
+	if addunmatched {
 		mjson, _ := json.Marshal(m)
 		valuesupsert := make(map[string]interface{})
 		valuesupsert["listname"] = list.Name
@@ -517,8 +501,6 @@ func JobImportSeriesParseV2(cfg config.Cfg, file string, updatemissing bool, con
 		valuesupsert["last_checked"] = time.Now()
 		valuesupsert["parsed_data"] = string(mjson)
 		database.Upsert("serie_file_unmatcheds", valuesupsert, database.Query{Where: "filepath = ? and listname = ?", WhereArgs: []interface{}{file, list.Name}})
-
-		logger.Log.Debug("SerieEpisode not matched: ", file, " as Title: ", m.Title, " TitleYear:  ", titleyear, " ", m.Resolution, " ", m.Quality, " ", m.Codec, " ", m.Audio)
 	}
 }
 

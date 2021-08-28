@@ -794,6 +794,8 @@ func JobImportMovieParseV2(cfg config.Cfg, file string, configEntry config.Media
 	logger.Log.Debug("Parse Movie: ", file)
 
 	m, err := NewFileParser(cfg, filepath.Base(file), false, "movie")
+
+	addunmatched := false
 	if err == nil {
 		m.Title = strings.Trim(m.Title, " ")
 		for idxstrip := range cfg.Quality[list.Template_quality].TitleStripSuffixForSearch {
@@ -868,8 +870,7 @@ func JobImportMovieParseV2(cfg config.Cfg, file string, configEntry config.Media
 						if strings.Contains(file, pppath) {
 							rootpath = pppath
 							tempfoldername := strings.Replace(file, pppath, "", -1)
-							tempfoldername = strings.TrimLeft(tempfoldername, "/")
-							tempfoldername = strings.TrimLeft(tempfoldername, "\\")
+							tempfoldername = strings.TrimLeft(tempfoldername, "/\\")
 							tempfoldername = filepath.Dir(tempfoldername)
 							_, firstfolder := getrootpath(tempfoldername)
 							rootpath = filepath.Join(rootpath, firstfolder)
@@ -890,17 +891,15 @@ func JobImportMovieParseV2(cfg config.Cfg, file string, configEntry config.Media
 				database.DeleteRow("movie_file_unmatcheds", database.Query{Where: "filepath = ?", WhereArgs: []interface{}{file}})
 			}
 		} else {
-			mjson, _ := json.Marshal(m)
-			valuesupsert := make(map[string]interface{})
-			valuesupsert["listname"] = list.Name
-			valuesupsert["filepath"] = file
-			valuesupsert["last_checked"] = time.Now()
-			valuesupsert["parsed_data"] = string(mjson)
-			database.Upsert("movie_file_unmatcheds", valuesupsert, database.Query{Where: "filepath = ? and listname = ?", WhereArgs: []interface{}{file, list.Name}})
-
+			addunmatched = true
 			logger.Log.Error("Movie Parse failed - not matched: ", file)
 		}
 	} else {
+		addunmatched = true
+		logger.Log.Error("Movie Parse failed: ", file)
+	}
+
+	if addunmatched {
 		mjson, _ := json.Marshal(m)
 		valuesupsert := make(map[string]interface{})
 		valuesupsert["listname"] = list.Name
@@ -909,7 +908,6 @@ func JobImportMovieParseV2(cfg config.Cfg, file string, configEntry config.Media
 		valuesupsert["parsed_data"] = string(mjson)
 		database.Upsert("movie_file_unmatcheds", valuesupsert, database.Query{Where: "filepath = ? and listname = ?", WhereArgs: []interface{}{file, list.Name}})
 
-		logger.Log.Error("Movie Parse failed: ", file)
 	}
 }
 

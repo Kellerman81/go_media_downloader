@@ -247,6 +247,8 @@ func (c Client) LoadRSSFeedUntilNZBID(categories []int, num int, id string, maxR
 		nzbcount = nzbcount * num
 	}
 	nzbs := make([]NZB, 0, nzbcount)
+	partition := make([]NZB, 0, num)
+	var errp error
 
 	for {
 		var buildurl string
@@ -274,7 +276,7 @@ func (c Client) LoadRSSFeedUntilNZBID(categories []int, num int, id string, maxR
 			buildurl += additional_query_params
 		}
 
-		partition, errp := c.processurl(buildurl, id)
+		partition, errp = c.processurl(buildurl, id)
 		if errp == nil {
 			for idx := range partition {
 				if partition[idx].ID == id && id != "" {

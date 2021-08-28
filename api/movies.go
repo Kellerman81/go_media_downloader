@@ -64,7 +64,8 @@ func AddMoviesRoutes(routermovies *gin.RouterGroup) {
 }
 
 var allowedjobsmovies []string = []string{"rss", "data", "checkmissing", "checkmissingflag", "structure", "searchmissingfull",
-	"searchmissinginc", "searchupgradefull", "searchupgradeinc", "clearhistory", "feeds"}
+	"searchmissinginc", "searchupgradefull", "searchupgradeinc", "searchmissingfulltitle",
+	"searchmissinginctitle", "searchupgradefulltitle", "searchupgradeinctitle", "clearhistory", "feeds"}
 
 func apimoviesAllJobs(c *gin.Context) {
 	allowed := false
@@ -84,7 +85,7 @@ func apimoviesAllJobs(c *gin.Context) {
 	}
 }
 func apimoviesJobs(c *gin.Context) {
-	cfg, _, _ := config.LoadCfg([]string{"Movie", "General", "Regex", "Quality", "Path", "Indexer", "Downloader", "List"}, config.Configfile)
+	cfg, _, _ := config.LoadCfg([]string{"General", "Regex", "Quality", "Path", "Indexer", "Scheduler", "Movie", "Imdb", "Downloader", "Notification", "List"}, config.Configfile)
 
 	allowed := false
 	for idxallow := range allowedjobsmovies {
@@ -144,7 +145,7 @@ func updateMovie(c *gin.Context) {
 }
 
 func apimoviesSearch(c *gin.Context) {
-	cfg, _, _ := config.LoadCfg([]string{"Movie", "General", "Regex", "Quality", "Path", "Indexer", "Downloader", "List"}, config.Configfile)
+	cfg, _, _ := config.LoadCfg([]string{"General", "Regex", "Quality", "Path", "Indexer", "Scheduler", "Movie", "Imdb", "Downloader", "Notification", "List"}, config.Configfile)
 
 	movie, _ := database.GetMovies(database.Query{Where: "id=?", WhereArgs: []interface{}{c.Param("id")}})
 	for idxmovie := range cfg.Movie {
@@ -159,19 +160,19 @@ func apimoviesSearch(c *gin.Context) {
 }
 
 func apirefreshMovies(c *gin.Context) {
-	cfg, _, _ := config.LoadCfg([]string{"Movie", "General", "Regex", "Quality", "Path", "Indexer", "Downloader", "List"}, config.Configfile)
+	cfg, _, _ := config.LoadCfg([]string{"General", "Regex", "Quality", "Path", "Indexer", "Scheduler", "Movie", "Imdb", "Downloader", "Notification", "List"}, config.Configfile)
 	go RefreshMovies(cfg)
 	c.JSON(http.StatusOK, gin.H{"data": "started"})
 }
 
 func apirefreshMoviesInc(c *gin.Context) {
-	cfg, _, _ := config.LoadCfg([]string{"Movie", "General", "Regex", "Quality", "Path", "Indexer", "Downloader", "List"}, config.Configfile)
+	cfg, _, _ := config.LoadCfg([]string{"General", "Regex", "Quality", "Path", "Indexer", "Scheduler", "Movie", "Imdb", "Downloader", "Notification", "List"}, config.Configfile)
 	go RefreshMoviesInc(cfg)
 	c.JSON(http.StatusOK, gin.H{"data": "started"})
 }
 
 func apimoviesClearHistoryName(c *gin.Context) {
-	cfg, _, _ := config.LoadCfg([]string{"Movie", "General", "Regex", "Quality", "Path", "Indexer", "Downloader", "List"}, config.Configfile)
+	cfg, _, _ := config.LoadCfg([]string{"General", "Regex", "Quality", "Path", "Indexer", "Scheduler", "Movie", "Imdb", "Downloader", "Notification", "List"}, config.Configfile)
 
 	go Movies_single_jobs(cfg, "clearhistory", c.Param("name"), "", true)
 	c.JSON(http.StatusOK, gin.H{"data": "started"})
@@ -325,7 +326,7 @@ func RefreshMoviesInc(cfg config.Cfg) {
 }
 
 func Movies_all_jobs(job string, force bool) {
-	cfg, _, _ := config.LoadCfg([]string{"Movie", "General", "Regex", "Quality", "Path", "Indexer", "Downloader", "Notification", "List"}, config.Configfile)
+	cfg, _, _ := config.LoadCfg([]string{"General", "Regex", "Quality", "Path", "Indexer", "Scheduler", "Movie", "Imdb", "Downloader", "Notification", "List"}, config.Configfile)
 
 	for idxmovie := range cfg.Movie {
 		Movies_single_jobs(cfg, job, cfg.Movie[idxmovie].Name, "", force)

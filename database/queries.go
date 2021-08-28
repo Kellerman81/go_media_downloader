@@ -1076,13 +1076,12 @@ func CountRows(table string, qu Query) (int, error) {
 	// if qu.InnerJoin != "" {
 	// 	query = buildquery("count("+table+".*)", table, qu)
 	// } else {
-	query := buildquery("count(*)", table, qu, true)
 	//}
 	var counter int
 	//logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
-	rows, err := DB.Queryx(query, qu.WhereArgs...)
+	rows, err := DB.Queryx(buildquery("count(*)", table, qu, true), qu.WhereArgs...)
 	if err != nil {
-		logger.Log.Error("Query: ", query, " error: ", err)
+		logger.Log.Error("Query: ", buildquery("count(*)", table, qu, true), " error: ", err)
 		return 0, err
 	}
 	defer rows.Close()
@@ -1189,12 +1188,10 @@ func dbexec(dbtype string, query string, args []interface{}) (sql.Result, error)
 }
 func updatearrayprepare(table string, columns []string, values []interface{}, qu Query) (string, []interface{}) {
 	query := "UPDATE " + table + " SET "
-	i := 0
 	for idx := range columns {
-		if i != 0 {
+		if idx != 0 {
 			query += ","
 		}
-		i += 1
 		query += columns[idx] + " = ?"
 	}
 	if qu.Where != "" {

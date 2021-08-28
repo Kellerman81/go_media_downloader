@@ -110,7 +110,8 @@ func AddSeriesRoutes(routerseries *gin.RouterGroup) {
 }
 
 var allowedjobsseries []string = []string{"rss", "data", "checkmissing", "checkmissingflag", "structure", "searchmissingfull",
-	"searchmissinginc", "searchupgradefull", "searchupgradeinc", "clearhistory", "feeds"}
+	"searchmissinginc", "searchupgradefull", "searchupgradeinc", "searchmissingfulltitle",
+	"searchmissinginctitle", "searchupgradefulltitle", "searchupgradeinctitle", "clearhistory", "feeds"}
 
 func apiseriesAllJobs(c *gin.Context) {
 	allowed := false
@@ -130,7 +131,7 @@ func apiseriesAllJobs(c *gin.Context) {
 	}
 }
 func apiseriesJobs(c *gin.Context) {
-	cfg, _, _ := config.LoadCfg([]string{"Serie", "General", "Regex", "Quality", "Path", "Indexer", "Imdb", "List"}, config.Configfile)
+	cfg, _, _ := config.LoadCfg([]string{"General", "Regex", "Quality", "Path", "Indexer", "Scheduler", "Serie", "Imdb", "Downloader", "Notification", "List"}, config.Configfile)
 	allowed := false
 	for idxallow := range allowedjobsseries {
 		if strings.EqualFold(allowedjobsseries[idxallow], c.Param("job")) {
@@ -229,19 +230,19 @@ func updateEpisode(c *gin.Context) {
 }
 
 func apirefreshSeries(c *gin.Context) {
-	cfg, _, _ := config.LoadCfg([]string{"Serie", "General", "Regex", "Quality", "Path", "Indexer", "Downloader", "List"}, config.Configfile)
+	cfg, _, _ := config.LoadCfg([]string{"General", "Regex", "Quality", "Path", "Indexer", "Scheduler", "Serie", "Imdb", "Downloader", "Notification", "List"}, config.Configfile)
 	go RefreshSeries(cfg)
 	c.JSON(http.StatusOK, gin.H{"data": "started"})
 }
 
 func apirefreshSeriesInc(c *gin.Context) {
-	cfg, _, _ := config.LoadCfg([]string{"Serie", "General", "Regex", "Quality", "Path", "Indexer", "Downloader", "List"}, config.Configfile)
+	cfg, _, _ := config.LoadCfg([]string{"General", "Regex", "Quality", "Path", "Indexer", "Scheduler", "Serie", "Imdb", "Downloader", "Notification", "List"}, config.Configfile)
 	go RefreshSeriesInc(cfg)
 	c.JSON(http.StatusOK, gin.H{"data": "started"})
 }
 
 func apiSeriesSearch(c *gin.Context) {
-	cfg, _, _ := config.LoadCfg([]string{"Serie", "General", "Regex", "Quality", "Path", "Indexer", "Downloader", "List"}, config.Configfile)
+	cfg, _, _ := config.LoadCfg([]string{"General", "Regex", "Quality", "Path", "Indexer", "Scheduler", "Serie", "Imdb", "Downloader", "Notification", "List"}, config.Configfile)
 
 	serie, _ := database.GetSeries(database.Query{Where: "id=?", WhereArgs: []interface{}{c.Param("id")}})
 
@@ -256,7 +257,7 @@ func apiSeriesSearch(c *gin.Context) {
 	}
 }
 func apiSeriesEpisodeSearch(c *gin.Context) {
-	cfg, _, _ := config.LoadCfg([]string{"Serie", "General", "Regex", "Quality", "Path", "Indexer", "Downloader", "List"}, config.Configfile)
+	cfg, _, _ := config.LoadCfg([]string{"General", "Regex", "Quality", "Path", "Indexer", "Scheduler", "Serie", "Imdb", "Downloader", "Notification", "List"}, config.Configfile)
 
 	serieepi, _ := database.GetSerieEpisodes(database.Query{Where: "id=?", WhereArgs: []interface{}{c.Param("id")}})
 
@@ -273,7 +274,7 @@ func apiSeriesEpisodeSearch(c *gin.Context) {
 	}
 }
 func apiSeriesClearHistoryName(c *gin.Context) {
-	cfg, _, _ := config.LoadCfg([]string{"Serie", "General", "Regex", "Quality", "Path", "Indexer", "Imdb", "List"}, config.Configfile)
+	cfg, _, _ := config.LoadCfg([]string{"General", "Regex", "Quality", "Path", "Indexer", "Scheduler", "Serie", "Imdb", "Downloader", "Notification", "List"}, config.Configfile)
 
 	go Series_single_jobs(cfg, "clearhistory", c.Param("name"), "", true)
 	c.JSON(http.StatusOK, gin.H{"data": "started"})
@@ -307,7 +308,7 @@ func RefreshSeriesInc(cfg config.Cfg) {
 }
 
 func Series_all_jobs(job string, force bool) {
-	cfg, _, _ := config.LoadCfg([]string{"Serie", "General", "Regex", "Quality", "Path", "Indexer", "Imdb", "Downloader", "Notification", "List"}, config.Configfile)
+	cfg, _, _ := config.LoadCfg([]string{"General", "Regex", "Quality", "Path", "Indexer", "Scheduler", "Serie", "Imdb", "Downloader", "Notification", "List"}, config.Configfile)
 
 	logger.Log.Info("Started Job: ", job, " for all")
 	for idxserie := range cfg.Serie {

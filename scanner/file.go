@@ -14,7 +14,8 @@ import (
 )
 
 func GetFilesGoDir(rootpath string, filetypes []string, filetypesNoRename []string, ignoredpaths []string) []string {
-	list := []string{}
+	list := make([]string, 0, 20000)
+	scratchBuffer := make([]byte, 300000)
 
 	if _, err := os.Stat(rootpath); !os.IsNotExist(err) {
 		err := godirwalk.Walk(rootpath, &godirwalk.Options{
@@ -64,7 +65,8 @@ func GetFilesGoDir(rootpath string, filetypes []string, filetypesNoRename []stri
 				//fmt.Fprintf(os.Stderr, "%s: %s\n", progname, err)
 				return godirwalk.SkipNode
 			},
-			Unsorted: true, // set true for faster yet non-deterministic enumeration (see godoc)
+			Unsorted:      true, // set true for faster yet non-deterministic enumeration (see godoc)
+			ScratchBuffer: scratchBuffer,
 		})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "%s\n", err)
@@ -279,7 +281,7 @@ func CleanUpFolder(folder string, CleanupsizeMB int) {
 }
 
 func GetFilesAdded(files []string, listname string) []string {
-	list := []string{}
+	list := make([]string, 0, 1000)
 	for idxfile := range files {
 
 		moviefile, moviefileerr := database.GetMovieFiles(database.Query{Select: "dbmovie_id", Where: "location = ?", WhereArgs: []interface{}{files[idxfile]}})
@@ -300,7 +302,7 @@ func GetFilesAdded(files []string, listname string) []string {
 	return list
 }
 func GetFilesSeriesAdded(files []string, listname string) []string {
-	list := []string{}
+	list := make([]string, 0, 1000)
 	for idxfile := range files {
 		counter, _ := database.CountRows("serie_episode_files", database.Query{InnerJoin: " Serie_episodes ON Serie_episodes.ID = Serie_episode_files.serie_episode_id INNER JOIN Series ON series.ID = Serie_episodes.serie_id", Where: "Serie_episode_files.location = ? and Series.listname = ?", WhereArgs: []interface{}{files[idxfile], listname}})
 		if counter == 0 {

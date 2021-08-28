@@ -59,14 +59,7 @@ func SearchMovieMissing(cfg config.Cfg, configEntry config.MediaTypeConfig, jobc
 	swg := sizedwaitgroup.New(cfg.General.WorkerSearch)
 	for idx := range missingmovies {
 		swg.Add()
-		searchnow := NewSearcher(cfg, configEntry, missingmovies[idx].QualityProfile)
-		searchresults := searchnow.MovieSearch(missingmovies[idx], false, titlesearch)
-		if len(searchresults.Nzbs) >= 1 {
-			logger.Log.Debug("nzb found - start downloading: ", searchresults.Nzbs[0].NZB.Title)
-			downloadnow := NewDownloader(cfg, configEntry, "missing")
-			downloadnow.SetMovie(missingmovies[idx])
-			downloadnow.DownloadNzb(searchresults.Nzbs[0])
-		}
+		SearchMovieSingle(cfg, missingmovies[idx], configEntry, titlesearch)
 		swg.Done()
 		// swg.Add()
 		// jobFindDownloadMissingNzbMovieImdb(movie, configEntry, list, &swg)
@@ -131,14 +124,7 @@ func SearchMovieUpgrade(cfg config.Cfg, configEntry config.MediaTypeConfig, jobc
 	swg := sizedwaitgroup.New(cfg.General.WorkerSearch)
 	for idx := range missingmovies {
 		swg.Add()
-		searchnow := NewSearcher(cfg, configEntry, missingmovies[idx].QualityProfile)
-		searchresults := searchnow.MovieSearch(missingmovies[idx], false, titlesearch)
-		if len(searchresults.Nzbs) >= 1 {
-			logger.Log.Debug("nzb found - start downloading: ", searchresults.Nzbs[0].NZB.Title)
-			downloadnow := NewDownloader(cfg, configEntry, "upgrade")
-			downloadnow.SetMovie(missingmovies[idx])
-			downloadnow.DownloadNzb(searchresults.Nzbs[0])
-		}
+		SearchMovieSingle(cfg, missingmovies[idx], configEntry, titlesearch)
 		swg.Done()
 
 		// swg.Add()
@@ -152,18 +138,7 @@ func SearchSerieSingle(cfg config.Cfg, serie database.Serie, configEntry config.
 	episodes, _ := database.QuerySerieEpisodes(database.Query{Where: "serie_id = ?", WhereArgs: []interface{}{serie.ID}})
 	for idx := range episodes {
 		swg.Add()
-		searchtype := "missing"
-		if !episodes[idx].Missing {
-			searchtype = "upgrade"
-		}
-		searchnow := NewSearcher(cfg, configEntry, episodes[idx].QualityProfile)
-		searchresults := searchnow.SeriesSearch(episodes[idx], false, titlesearch)
-		if len(searchresults.Nzbs) >= 1 {
-			logger.Log.Debug("nzb found - start downloading: ", searchresults.Nzbs[0].NZB.Title)
-			downloadnow := NewDownloader(cfg, configEntry, searchtype)
-			downloadnow.SetSeriesEpisode(episodes[idx])
-			downloadnow.DownloadNzb(searchresults.Nzbs[0])
-		}
+		SearchSerieEpisodeSingle(cfg, episodes[idx], configEntry, titlesearch)
 		swg.Done()
 	}
 	swg.Wait()
@@ -233,14 +208,7 @@ func SearchSerieMissing(cfg config.Cfg, configEntry config.MediaTypeConfig, jobc
 			continue
 		}
 		swg.Add()
-		searchnow := NewSearcher(cfg, configEntry, missingepisode[idx].QualityProfile)
-		searchresults := searchnow.SeriesSearch(missingepisode[idx], false, titlesearch)
-		if len(searchresults.Nzbs) >= 1 {
-			logger.Log.Debug("nzb found - start downloading: ", searchresults.Nzbs[0].NZB.Title)
-			downloadnow := NewDownloader(cfg, configEntry, "missing")
-			downloadnow.SetSeriesEpisode(missingepisode[idx])
-			downloadnow.DownloadNzb(searchresults.Nzbs[0])
-		}
+		SearchSerieEpisodeSingle(cfg, missingepisode[idx], configEntry, titlesearch)
 		swg.Done()
 		// swg.Add()
 		// jobFindDownloadMissingNzbSeriesTvdb(serieepisode, configEntry, list, &swg)
@@ -296,14 +264,7 @@ func SearchSerieUpgrade(cfg config.Cfg, configEntry config.MediaTypeConfig, jobc
 			continue
 		}
 		swg.Add()
-		searchnow := NewSearcher(cfg, configEntry, missingepisode[idx].QualityProfile)
-		searchresults := searchnow.SeriesSearch(missingepisode[idx], false, titlesearch)
-		if len(searchresults.Nzbs) >= 1 {
-			logger.Log.Debug("nzb found - start downloading: ", searchresults.Nzbs[0].NZB.Title)
-			downloadnow := NewDownloader(cfg, configEntry, "upgrade")
-			downloadnow.SetSeriesEpisode(missingepisode[idx])
-			downloadnow.DownloadNzb(searchresults.Nzbs[0])
-		}
+		SearchSerieEpisodeSingle(cfg, missingepisode[idx], configEntry, titlesearch)
 		swg.Done()
 		// swg.Add()
 		// jobFindDownloadUpgradeNzbSeriesTvdb(serieepisode, configEntry, list, &swg)

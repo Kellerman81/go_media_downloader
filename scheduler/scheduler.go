@@ -114,11 +114,6 @@ func InitScheduler() {
 				}, converttime(schedule.Interval_scan_data_missing))
 			}
 		}
-		if schedule.Interval_scan_dataimport != "" {
-			data.DispatchEvery(func() {
-				api.Movies_single_jobs(cfg, "structure", cfg.Movie[idx].Name, cfg.Movie[idx].Lists[0].Name, false)
-			}, converttime(schedule.Interval_scan_dataimport))
-		}
 	}
 
 	defaultschedule := cfg.Scheduler["Default"]
@@ -203,6 +198,10 @@ func InitScheduler() {
 	if defaultschedule.Interval_scan_dataimport != "" {
 		data.DispatchEvery(func() {
 			api.Series_all_jobs_cfg(cfg, "structure", false)
+		}, converttime(defaultschedule.Interval_scan_dataimport))
+
+		data.DispatchEvery(func() {
+			api.Movies_all_jobs_cfg(cfg, "structure", false)
 		}, converttime(defaultschedule.Interval_scan_dataimport))
 	}
 
