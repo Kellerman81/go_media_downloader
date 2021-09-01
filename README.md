@@ -31,3 +31,5 @@ First version! Bugs included
 - setup your config and name it config.toml !
 - start the run container - it will first build the imdb cache and then start importing your feeds, get metadata and scan/match the data
 - after that the scheduler does the rest
+
+[Donate](https://www.paypal.com/donate?hosted_button_id=JRT8FJ6GG8CXN)
