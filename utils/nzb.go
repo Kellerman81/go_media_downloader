@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -23,22 +24,30 @@ type nzbwithprio struct {
 	Nzbepisode database.SerieEpisode
 }
 
-func filter_size_nzbs(cfgPath map[string]config.PathsConfig, configEntry config.MediaTypeConfig, indexer config.QualityIndexerConfig, rownzb newznab.NZB) bool {
+func filter_size_nzbs(configEntry config.MediaTypeConfig, indexer config.QualityIndexerConfig, rownzb newznab.NZB) bool {
 	for idx := range configEntry.DataImport {
 
 		if indexer.Skip_empty_size && rownzb.Size == 0 {
 			logger.Log.Debug("Skipped - Size missing: ", rownzb.Title)
 			return true
 		}
-		if cfgPath[configEntry.DataImport[idx].Template_path].MinSize != 0 {
-			if rownzb.Size < int64(cfgPath[configEntry.DataImport[idx].Template_path].MinSize*1024*1024) && rownzb.Size != 0 {
+		hasPath, _ := config.ConfigDB.Has("path_" + configEntry.DataImport[idx].Template_path)
+		if !hasPath {
+			logger.Log.Errorln("Path Config not found: ", "path_"+configEntry.DataImport[idx].Template_path)
+			return false
+		}
+		var cfg_path config.PathsConfig
+		config.ConfigDB.Get("path_"+configEntry.DataImport[idx].Template_path, &cfg_path)
+
+		if cfg_path.MinSize != 0 {
+			if rownzb.Size < int64(cfg_path.MinSize*1024*1024) && rownzb.Size != 0 {
 				logger.Log.Debug("Skipped - MinSize not matched: ", rownzb.Title)
 				return true
 			}
 		}
 
-		if cfgPath[configEntry.DataImport[idx].Template_path].MaxSize != 0 {
-			if rownzb.Size > int64(cfgPath[configEntry.DataImport[idx].Template_path].MaxSize*1024*1024) {
+		if cfg_path.MaxSize != 0 {
+			if rownzb.Size > int64(cfg_path.MaxSize*1024*1024) {
 				logger.Log.Debug("Skipped - MaxSize not matched: ", rownzb.Title)
 				return true
 			}
@@ -47,7 +56,8 @@ func filter_size_nzbs(cfgPath map[string]config.PathsConfig, configEntry config.
 	return false
 }
 func filter_regex_nzbs(regexconfig config.RegexConfig, title string, wantedtitle string, wantedalternates []string) bool {
-	for rowtitle, rowrejected := range regexconfig.RejectedRegex {
+	for _, rowtitle := range regexconfig.Rejected {
+		rowrejected := regexp.MustCompile(rowtitle)
 		teststrwanted := rowrejected.FindStringSubmatch(wantedtitle)
 		if len(teststrwanted) >= 1 {
 			continue
@@ -70,7 +80,8 @@ func filter_regex_nzbs(regexconfig config.RegexConfig, title string, wantedtitle
 		}
 	}
 	requiredmatched := false
-	for rowtitle, rowrequired := range regexconfig.RequiredRegex {
+	for _, rowtitle := range regexconfig.Required {
+		rowrequired := regexp.MustCompile(rowtitle)
 		teststr := rowrequired.FindStringSubmatch(title)
 		if len(teststr) >= 1 {
 			logger.Log.Debug("Regex required matched: ", title, " Regex ", rowtitle)
@@ -84,7 +95,7 @@ func filter_regex_nzbs(regexconfig config.RegexConfig, title string, wantedtitle
 	}
 	return false
 }
-func filter_movies_nzbs(cfg config.Cfg, configEntry config.MediaTypeConfig, quality config.QualityConfig, indexer config.QualityIndexerConfig, nzbs []newznab.NZB, movieid uint, seriesepisodeid uint, minPrio int, movie database.Dbmovie, serie database.Dbserie, title string, alttitles []string, year string) []nzbwithprio {
+func filter_movies_nzbs(configEntry config.MediaTypeConfig, quality config.QualityConfig, indexer config.QualityIndexerConfig, nzbs []newznab.NZB, movieid uint, seriesepisodeid uint, minPrio int, movie database.Dbmovie, serie database.Dbserie, title string, alttitles []string, year string) []nzbwithprio {
 	retnzb := make([]nzbwithprio, 0, len(nzbs))
 	for idx := range nzbs {
 		toskip := false
@@ -93,7 +104,7 @@ func filter_movies_nzbs(cfg config.Cfg, configEntry config.MediaTypeConfig, qual
 			toskip = true
 			continue
 		}
-		if filter_size_nzbs(cfg.Path, configEntry, indexer, nzbs[idx]) {
+		if filter_size_nzbs(configEntry, indexer, nzbs[idx]) {
 			toskip = true
 			continue
 		}
@@ -146,12 +157,21 @@ func filter_movies_nzbs(cfg config.Cfg, configEntry config.MediaTypeConfig, qual
 		for idxalt := range foundalternate {
 			alternatenames = append(alternatenames, foundalternate[idxalt].Title)
 		}
-		if filter_regex_nzbs(cfg.Regex[indexer.Template_regex], nzbs[idx].Title, movie.Title, alternatenames) {
+		hasRegex, _ := config.ConfigDB.Has("regex_" + indexer.Template_regex)
+		if !hasRegex {
+			logger.Log.Errorln("Regex Config not found: ", "regex_"+indexer.Template_regex)
+			toskip = true
+			continue
+		}
+		var cfg_regex config.RegexConfig
+		config.ConfigDB.Get("regex_"+indexer.Template_regex, &cfg_regex)
+
+		if filter_regex_nzbs(cfg_regex, nzbs[idx].Title, movie.Title, alternatenames) {
 			toskip = true
 			continue
 		}
 		if !toskip {
-			m, _ := NewFileParser(cfg, nzbs[idx].Title, false, "movie")
+			m, _ := NewFileParser(nzbs[idx].Title, false, "movie")
 			for idxstrip := range quality.TitleStripSuffixForSearch {
 				if strings.HasSuffix(strings.ToLower(m.Title), strings.ToLower(quality.TitleStripSuffixForSearch[idxstrip])) {
 					m.Title = trimStringInclAfterStringInsensitive(m.Title, quality.TitleStripSuffixForSearch[idxstrip])
@@ -243,7 +263,7 @@ func checknzbtitle(movietitle string, nzbtitle string) bool {
 	return false
 }
 
-func filter_series_nzbs(cfg config.Cfg, configEntry config.MediaTypeConfig, quality config.QualityConfig, indexer config.QualityIndexerConfig, nzbs []newznab.NZB, movieid uint, seriesepisodeid uint, minPrio int, movie database.Dbmovie, serie database.Dbserie) []nzbwithprio {
+func filter_series_nzbs(configEntry config.MediaTypeConfig, quality config.QualityConfig, indexer config.QualityIndexerConfig, nzbs []newznab.NZB, movieid uint, seriesepisodeid uint, minPrio int, movie database.Dbmovie, serie database.Dbserie) []nzbwithprio {
 	retnzb := make([]nzbwithprio, 0, len(nzbs))
 	for idx := range nzbs {
 		toskip := false
@@ -252,7 +272,7 @@ func filter_series_nzbs(cfg config.Cfg, configEntry config.MediaTypeConfig, qual
 			toskip = true
 			continue
 		}
-		if filter_size_nzbs(cfg.Path, configEntry, indexer, nzbs[idx]) {
+		if filter_size_nzbs(configEntry, indexer, nzbs[idx]) {
 			toskip = true
 			continue
 		}
@@ -348,12 +368,21 @@ func filter_series_nzbs(cfg config.Cfg, configEntry config.MediaTypeConfig, qual
 		for idxalt := range foundalternate {
 			alternatenames = append(alternatenames, foundalternate[idxalt].Title)
 		}
-		if filter_regex_nzbs(cfg.Regex[indexer.Template_regex], nzbs[idx].Title, serie.Seriename, alternatenames) {
+		hasRegex, _ := config.ConfigDB.Has("regex_" + indexer.Template_regex)
+		if !hasRegex {
+			logger.Log.Errorln("Regex Config not found: ", "regex_"+indexer.Template_regex)
+			toskip = true
+			continue
+		}
+		var cfg_regex config.RegexConfig
+		config.ConfigDB.Get("regex_"+indexer.Template_regex, &cfg_regex)
+
+		if filter_regex_nzbs(cfg_regex, nzbs[idx].Title, serie.Seriename, alternatenames) {
 			toskip = true
 			continue
 		}
 		if !toskip {
-			m, _ := NewFileParser(cfg, nzbs[idx].Title, true, "series")
+			m, _ := NewFileParser(nzbs[idx].Title, true, "series")
 			m.GetPriority(configEntry, quality)
 			wanted_release_resolution := false
 			for idxqual := range quality.Wanted_resolution {
@@ -397,7 +426,7 @@ func filter_series_nzbs(cfg config.Cfg, configEntry config.MediaTypeConfig, qual
 	return retnzb
 }
 
-func filter_series_rss_nzbs(cfg config.Cfg, configEntry config.MediaTypeConfig, quality config.QualityConfig, lists []string, indexer config.QualityIndexerConfig, nzbs []newznab.NZB) []nzbwithprio {
+func filter_series_rss_nzbs(configEntry config.MediaTypeConfig, quality config.QualityConfig, lists []string, indexer config.QualityIndexerConfig, nzbs []newznab.NZB) []nzbwithprio {
 	retnzb := make([]nzbwithprio, 0, len(nzbs))
 	for idx := range nzbs {
 		toskip := false
@@ -409,7 +438,7 @@ func filter_series_rss_nzbs(cfg config.Cfg, configEntry config.MediaTypeConfig, 
 		if toskip {
 			continue
 		}
-		if filter_size_nzbs(cfg.Path, configEntry, indexer, nzbs[idx]) {
+		if filter_size_nzbs(configEntry, indexer, nzbs[idx]) {
 			toskip = true
 			continue
 		}
@@ -463,7 +492,7 @@ func filter_series_rss_nzbs(cfg config.Cfg, configEntry config.MediaTypeConfig, 
 			var founddbepisode database.DbserieEpisode
 			var founddbepisodeerr error
 			if strings.EqualFold(founddbserie.Identifiedby, "date") {
-				tempparse, _ := NewFileParser(cfg, nzbs[idx].Title, true, "series")
+				tempparse, _ := NewFileParser(nzbs[idx].Title, true, "series")
 				if tempparse.Date == "" {
 					logger.Log.Debug("Skipped - Date wanted but not found: ", nzbs[idx].Title)
 					toskip = true
@@ -502,7 +531,7 @@ func filter_series_rss_nzbs(cfg config.Cfg, configEntry config.MediaTypeConfig, 
 				toskip = true
 				continue
 			}
-			minPrio = getHighestEpisodePriorityByFiles(cfg, foundepisode, configEntry, quality)
+			minPrio = getHighestEpisodePriorityByFiles(foundepisode, configEntry, quality)
 
 			// foundfiles, _ := database.QuerySerieEpisodeFiles(database.Query{Select: "filename", Where: "serie_episode_id = ?", WhereArgs: []interface{}{foundepisode.ID}})
 			// for idxfile := range foundfiles {
@@ -517,7 +546,7 @@ func filter_series_rss_nzbs(cfg config.Cfg, configEntry config.MediaTypeConfig, 
 			// }
 		} else {
 			if quality.BackupSearchForTitle {
-				tempparse, _ := NewFileParser(cfg, nzbs[idx].Title, true, "series")
+				tempparse, _ := NewFileParser(nzbs[idx].Title, true, "series")
 				founddbserie, founddbserieerr := database.GetDbserie(database.Query{Select: "id, identifiedby, seriename", Where: "seriename = ?", WhereArgs: []interface{}{tempparse.Title}})
 				if founddbserieerr != nil {
 					founddbserie_alt, founddbserie_alterr := database.GetDbserieAlternates(database.Query{Select: "dbserie_id", Where: "Title = ?", WhereArgs: []interface{}{tempparse.Title}})
@@ -577,7 +606,7 @@ func filter_series_rss_nzbs(cfg config.Cfg, configEntry config.MediaTypeConfig, 
 					toskip = true
 					continue
 				}
-				minPrio = getHighestEpisodePriorityByFiles(cfg, foundepisode, configEntry, quality)
+				minPrio = getHighestEpisodePriorityByFiles(foundepisode, configEntry, quality)
 
 				// foundfiles, _ := database.QuerySerieEpisodeFiles(database.Query{Where: "serie_episode_id = ?", WhereArgs: []interface{}{foundepisode.ID}})
 				// for idxfile := range foundfiles {
@@ -595,12 +624,21 @@ func filter_series_rss_nzbs(cfg config.Cfg, configEntry config.MediaTypeConfig, 
 				continue
 			}
 		}
-		if filter_regex_nzbs(cfg.Regex[indexer.Template_regex], nzbs[idx].Title, regextitle, regexalternate) {
+		hasRegex, _ := config.ConfigDB.Has("regex_" + indexer.Template_regex)
+		if !hasRegex {
+			logger.Log.Errorln("Regex Config not found: ", "regex_"+indexer.Template_regex)
+			toskip = true
+			continue
+		}
+		var cfg_regex config.RegexConfig
+		config.ConfigDB.Get("regex_"+indexer.Template_regex, &cfg_regex)
+
+		if filter_regex_nzbs(cfg_regex, nzbs[idx].Title, regextitle, regexalternate) {
 			toskip = true
 			continue
 		}
 		if !toskip {
-			m, _ := NewFileParser(cfg, nzbs[idx].Title, true, "series")
+			m, _ := NewFileParser(nzbs[idx].Title, true, "series")
 			m.GetPriority(configEntry, quality)
 			wanted_release_resolution := false
 			for idxqual := range quality.Wanted_resolution {
@@ -642,7 +680,7 @@ func filter_series_rss_nzbs(cfg config.Cfg, configEntry config.MediaTypeConfig, 
 	return retnzb
 }
 
-func filter_movies_rss_nzbs(cfg config.Cfg, configEntry config.MediaTypeConfig, quality config.QualityConfig, lists []string, indexer config.QualityIndexerConfig, nzbs []newznab.NZB) []nzbwithprio {
+func filter_movies_rss_nzbs(configEntry config.MediaTypeConfig, quality config.QualityConfig, lists []string, indexer config.QualityIndexerConfig, nzbs []newznab.NZB) []nzbwithprio {
 	retnzb := make([]nzbwithprio, 0, len(nzbs))
 	for idx := range nzbs {
 		toskip := false
@@ -654,7 +692,7 @@ func filter_movies_rss_nzbs(cfg config.Cfg, configEntry config.MediaTypeConfig, 
 		if toskip {
 			continue
 		}
-		if filter_size_nzbs(cfg.Path, configEntry, indexer, nzbs[idx]) {
+		if filter_size_nzbs(configEntry, indexer, nzbs[idx]) {
 			toskip = true
 			continue
 		}
@@ -679,14 +717,14 @@ func filter_movies_rss_nzbs(cfg config.Cfg, configEntry config.MediaTypeConfig, 
 		}
 		var foundmovie database.Movie
 		if len(nzbs[idx].IMDBID) == 0 && quality.BackupSearchForTitle {
-			m, _ := NewFileParser(cfg, nzbs[idx].Title, false, "movie")
+			m, _ := NewFileParser(nzbs[idx].Title, false, "movie")
 			for idxstrip := range quality.TitleStripSuffixForSearch {
 				if strings.HasSuffix(strings.ToLower(m.Title), strings.ToLower(quality.TitleStripSuffixForSearch[idxstrip])) {
 					m.Title = trimStringInclAfterStringInsensitive(m.Title, quality.TitleStripSuffixForSearch[idxstrip])
 					m.Title = strings.Trim(m.Title, " ")
 				}
 			}
-			_, imdb, entriesfound := movieFindListByTitle(cfg, m.Title, strconv.Itoa(m.Year), lists, quality.CheckYear1, "rss")
+			_, imdb, entriesfound := movieFindListByTitle(m.Title, strconv.Itoa(m.Year), lists, quality.CheckYear1, "rss")
 			if entriesfound >= 1 {
 				nzbs[idx].IMDBID = imdb
 			}
@@ -735,7 +773,7 @@ func filter_movies_rss_nzbs(cfg config.Cfg, configEntry config.MediaTypeConfig, 
 				toskip = true
 				continue
 			}
-			minPrio = getHighestMoviePriorityByFiles(cfg, foundmovie, configEntry, quality)
+			minPrio = getHighestMoviePriorityByFiles(foundmovie, configEntry, quality)
 			// foundfiles, _ := database.QueryMovieFiles(database.Query{Where: "movie_id = ?", WhereArgs: []interface{}{foundmovie.ID}})
 			// for idxfile := range foundfiles {
 			// 	m, _ := NewFileParser(cfg, foundfiles[idxfile].Filename, false, "movie")
@@ -752,12 +790,21 @@ func filter_movies_rss_nzbs(cfg config.Cfg, configEntry config.MediaTypeConfig, 
 			logger.Log.Debug("Skipped - no imdbid: ", nzbs[idx].Title)
 			continue
 		}
-		if filter_regex_nzbs(cfg.Regex[indexer.Template_regex], nzbs[idx].Title, regextitle, regexalternate) {
+		hasRegex, _ := config.ConfigDB.Has("regex_" + indexer.Template_regex)
+		if !hasRegex {
+			logger.Log.Errorln("Regex Config not found: ", "regex_"+indexer.Template_regex)
+			toskip = true
+			continue
+		}
+		var cfg_regex config.RegexConfig
+		config.ConfigDB.Get("regex_"+indexer.Template_regex, &cfg_regex)
+
+		if filter_regex_nzbs(cfg_regex, nzbs[idx].Title, regextitle, regexalternate) {
 			toskip = true
 			continue
 		}
 		if !toskip {
-			m, _ := NewFileParser(cfg, nzbs[idx].Title, false, "movie")
+			m, _ := NewFileParser(nzbs[idx].Title, false, "movie")
 			m.GetPriority(configEntry, quality)
 			wanted_release_resolution := false
 			for idxqual := range quality.Wanted_resolution {

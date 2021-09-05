@@ -102,7 +102,6 @@ func (tor *ParseInfo) setField(field, raw, val string) {
 }
 
 type ParseInfo struct {
-	Cfg             config.Cfg `json:"-"`
 	File            string
 	Title           string
 	Season          int      `json:"season,omitempty"`
@@ -146,20 +145,20 @@ type ParseInfo struct {
 	Languages       []string `json:"languages,omitempty"`
 }
 
-func NewDefaultPrio(cfg config.Cfg, configEntry config.MediaTypeConfig, quality config.QualityConfig) *ParseInfo {
-	m := &ParseInfo{Quality: configEntry.DefaultQuality, Resolution: configEntry.DefaultResolution, Cfg: cfg}
+func NewDefaultPrio(configEntry config.MediaTypeConfig, quality config.QualityConfig) *ParseInfo {
+	m := &ParseInfo{Quality: configEntry.DefaultQuality, Resolution: configEntry.DefaultResolution}
 	m.GetPriority(configEntry, quality)
 	return m
 }
 
-func NewCutoffPrio(cfg config.Cfg, configEntry config.MediaTypeConfig, quality config.QualityConfig) *ParseInfo {
-	m := &ParseInfo{Quality: quality.Cutoff_quality, Resolution: quality.Cutoff_resolution, Cfg: cfg}
+func NewCutoffPrio(configEntry config.MediaTypeConfig, quality config.QualityConfig) *ParseInfo {
+	m := &ParseInfo{Quality: quality.Cutoff_quality, Resolution: quality.Cutoff_resolution}
 	m.GetPriority(configEntry, quality)
 	return m
 }
 
-func NewFileParser(cfg config.Cfg, filename string, includeYearInTitle bool, typegroup string) (*ParseInfo, error) {
-	m := &ParseInfo{File: filename, Cfg: cfg}
+func NewFileParser(filename string, includeYearInTitle bool, typegroup string) (*ParseInfo, error) {
+	m := &ParseInfo{File: filename}
 	err := m.ParseFile(includeYearInTitle, typegroup)
 	return m, err
 }
@@ -648,7 +647,7 @@ func getdefaulttypepriority(qualitystring string, qualitystringtype string, qual
 	return
 }
 
-func getSerieDBPriority(cfg config.Cfg, serieepisodefile database.SerieEpisodeFile, configEntry config.MediaTypeConfig, quality config.QualityConfig) int {
+func getSerieDBPriority(serieepisodefile database.SerieEpisodeFile, configEntry config.MediaTypeConfig, quality config.QualityConfig) int {
 	resolution_priority := 0
 	quality_priority := 0
 	codec_priority := 0
@@ -690,7 +689,7 @@ func getSerieDBPriority(cfg config.Cfg, serieepisodefile database.SerieEpisodeFi
 	return Priority
 }
 
-func getMovieDBPriority(cfg config.Cfg, moviefile database.MovieFile, configEntry config.MediaTypeConfig, quality config.QualityConfig) int {
+func getMovieDBPriority(moviefile database.MovieFile, configEntry config.MediaTypeConfig, quality config.QualityConfig) int {
 	resolution_priority := 0
 	quality_priority := 0
 	codec_priority := 0

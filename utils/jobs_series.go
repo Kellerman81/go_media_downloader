@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"path/filepath"
 	"regexp"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
@@ -11,12 +12,13 @@ import (
 	"github.com/Kellerman81/go_media_downloader/config"
 	"github.com/Kellerman81/go_media_downloader/database"
 	"github.com/Kellerman81/go_media_downloader/logger"
+	"github.com/Kellerman81/go_media_downloader/scanner"
 	"github.com/remeh/sizedwaitgroup"
 )
 
 var SeriesImportJobRunning map[string]bool
 
-func JobImportDbSeries(cfg config.Cfg, serieconfig config.SerieConfig, configEntry config.MediaTypeConfig, list config.MediaListsConfig, checkall bool, wg *sizedwaitgroup.SizedWaitGroup) {
+func JobImportDbSeries(serieconfig config.SerieConfig, configEntry config.MediaTypeConfig, list config.MediaListsConfig, checkall bool, wg *sizedwaitgroup.SizedWaitGroup) {
 	jobName := serieconfig.Name
 	if jobName == "" {
 		jobName = list.Name
@@ -39,6 +41,22 @@ func JobImportDbSeries(cfg config.Cfg, serieconfig config.SerieConfig, configEnt
 
 	var dbserie database.Dbserie
 	dbserieadded := false
+
+	hasGeneral, _ := config.ConfigDB.Has("general")
+	if !hasGeneral {
+		logger.Log.Errorln("General Config not found")
+		return
+	}
+	var cfg_general config.GeneralConfig
+	config.ConfigDB.Get("general", &cfg_general)
+
+	hasImdb, _ := config.ConfigDB.Has("imdb")
+	if !hasImdb {
+		logger.Log.Errorln("IMDB Config not found")
+		return
+	}
+	var cfg_imdb config.ImdbConfig
+	config.ConfigDB.Get("imdb", &cfg_imdb)
 
 	if strings.EqualFold(serieconfig.Source, "none") {
 		dbserie.Seriename = serieconfig.Name
@@ -71,9 +89,9 @@ func JobImportDbSeries(cfg config.Cfg, serieconfig config.SerieConfig, configEnt
 		cdbserie, _ := database.CountRows("dbseries", database.Query{Where: "Thetvdb_id = ?", WhereArgs: []interface{}{serieconfig.TvdbID}})
 		if cdbserie == 0 {
 			logger.Log.Debug("DbSeries get metadata for: ", serieconfig.TvdbID)
-			addaliases := dbserie.GetMetadata("", cfg.General.SerieMetaSourceTmdb, cfg.Imdb.Indexedlanguages, cfg.General.SerieMetaSourceTrakt, false)
+			addaliases := dbserie.GetMetadata("", cfg_general.SerieMetaSourceTmdb, cfg_imdb.Indexedlanguages, cfg_general.SerieMetaSourceTrakt, false)
 			if dbserie.Seriename == "" {
-				addaliases = dbserie.GetMetadata(configEntry.Metadata_language, cfg.General.SerieMetaSourceTmdb, cfg.Imdb.Indexedlanguages, cfg.General.SerieMetaSourceTrakt, false)
+				addaliases = dbserie.GetMetadata(configEntry.Metadata_language, cfg_general.SerieMetaSourceTmdb, cfg_imdb.Indexedlanguages, cfg_general.SerieMetaSourceTrakt, false)
 			}
 			serieconfig.AlternateName = append(serieconfig.AlternateName, addaliases...)
 			dbserieadded = true
@@ -132,7 +150,7 @@ func JobImportDbSeries(cfg config.Cfg, serieconfig config.SerieConfig, configEnt
 			//Don't add episodes automatically
 		} else if serieconfig.Source == "" || strings.EqualFold(serieconfig.Source, "tvdb") {
 			logger.Log.Debug("DbSeries get episodes for: ", serieconfig.TvdbID)
-			episode := dbserie.GetEpisodes(configEntry.Metadata_language, cfg.General.SerieMetaSourceTrakt)
+			episode := dbserie.GetEpisodes(configEntry.Metadata_language, cfg_general.SerieMetaSourceTrakt)
 			adddbepisodes := make([]database.DbserieEpisode, 0, len(episode))
 			for idxepi := range episode {
 				countere, _ := database.CountRows("dbserie_episodes", database.Query{Where: "Dbserie_id = ? and Season = ? and Episode = ?", WhereArgs: []interface{}{dbserie.ID, episode[idxepi].Season, episode[idxepi].Episode}})
@@ -178,7 +196,7 @@ func JobImportDbSeries(cfg config.Cfg, serieconfig config.SerieConfig, configEnt
 	}
 }
 
-func JobReloadDbSeries(cfg config.Cfg, dbserie database.Dbserie, configEntry config.MediaTypeConfig, list config.MediaListsConfig, checkall bool, wg *sizedwaitgroup.SizedWaitGroup) {
+func JobReloadDbSeries(dbserie database.Dbserie, configEntry config.MediaTypeConfig, list config.MediaListsConfig, checkall bool, wg *sizedwaitgroup.SizedWaitGroup) {
 	jobName := dbserie.Seriename
 	if jobName == "" {
 		jobName = list.Name
@@ -203,11 +221,27 @@ func JobReloadDbSeries(cfg config.Cfg, dbserie database.Dbserie, configEntry con
 
 	logger.Log.Debug("DbSeries Add for: ", dbserie.ThetvdbID)
 
+	hasGeneral, _ := config.ConfigDB.Has("general")
+	if !hasGeneral {
+		logger.Log.Errorln("General Config not found")
+		return
+	}
+	var cfg_general config.GeneralConfig
+	config.ConfigDB.Get("general", &cfg_general)
+
+	hasImdb, _ := config.ConfigDB.Has("imdb")
+	if !hasImdb {
+		logger.Log.Errorln("IMDB Config not found")
+		return
+	}
+	var cfg_imdb config.ImdbConfig
+	config.ConfigDB.Get("imdb", &cfg_imdb)
+
 	dbserie, _ = database.GetDbserie(database.Query{Where: "Thetvdb_id = ?", WhereArgs: []interface{}{dbserie.ThetvdbID}})
 	logger.Log.Debug("DbSeries get metadata for: ", dbserie.ThetvdbID)
-	addaliases := dbserie.GetMetadata("", cfg.General.SerieMetaSourceTmdb, cfg.Imdb.Indexedlanguages, cfg.General.SerieMetaSourceTrakt, false)
+	addaliases := dbserie.GetMetadata("", cfg_general.SerieMetaSourceTmdb, cfg_imdb.Indexedlanguages, cfg_general.SerieMetaSourceTrakt, false)
 	if dbserie.Seriename == "" {
-		addaliases = dbserie.GetMetadata(configEntry.Metadata_language, cfg.General.SerieMetaSourceTmdb, cfg.Imdb.Indexedlanguages, cfg.General.SerieMetaSourceTrakt, false)
+		addaliases = dbserie.GetMetadata(configEntry.Metadata_language, cfg_general.SerieMetaSourceTmdb, cfg_imdb.Indexedlanguages, cfg_general.SerieMetaSourceTrakt, false)
 	}
 	alternateNames := make([]string, 0, len(addaliases)+1)
 	alternateNames = append(alternateNames, addaliases...)
@@ -234,7 +268,7 @@ func JobReloadDbSeries(cfg config.Cfg, dbserie database.Dbserie, configEntry con
 	logger.Log.Debug("DbSeries add serie end for: ", dbserie.ThetvdbID)
 
 	logger.Log.Debug("DbSeries get episodes for: ", dbserie.ThetvdbID)
-	episode := dbserie.GetEpisodes(configEntry.Metadata_language, cfg.General.SerieMetaSourceTrakt)
+	episode := dbserie.GetEpisodes(configEntry.Metadata_language, cfg_general.SerieMetaSourceTrakt)
 	logger.Log.Debug("DbSeries get episodes end for: ", dbserie.ThetvdbID)
 	adddbepisodes := make([]database.DbserieEpisode, 0, len(episode))
 	for idxdbepi := range episode {
@@ -362,7 +396,7 @@ func getEpisodeArray(identifiedby string, str1 string, str2 string) []string {
 	}
 	return episodeArray
 }
-func JobImportSeriesParseV2(cfg config.Cfg, file string, updatemissing bool, configEntry config.MediaTypeConfig, list config.MediaListsConfig, minPrio ParseInfo, wg *sizedwaitgroup.SizedWaitGroup) {
+func JobImportSeriesParseV2(file string, updatemissing bool, configEntry config.MediaTypeConfig, list config.MediaListsConfig, minPrio ParseInfo, wg *sizedwaitgroup.SizedWaitGroup) {
 	defer wg.Done()
 	logger.Log.Debug("Series Parse: ", file)
 
@@ -376,7 +410,7 @@ func JobImportSeriesParseV2(cfg config.Cfg, file string, updatemissing bool, con
 		return
 	}
 
-	m, err := NewFileParser(cfg, filepath.Base(file), true, "series")
+	m, err := NewFileParser(filepath.Base(file), true, "series")
 	if err != nil {
 		return
 	}
@@ -404,10 +438,19 @@ func JobImportSeriesParseV2(cfg config.Cfg, file string, updatemissing bool, con
 	series, entriesfound := findSerieByParser(*m, titleyear, seriestitle, list.Name)
 	addunmatched := false
 	if entriesfound >= 1 {
-		cutoffPrio := NewCutoffPrio(cfg, configEntry, cfg.Quality[list.Template_quality])
 
-		m.GetPriority(configEntry, cfg.Quality[list.Template_quality])
-		errparsev := m.ParseVideoFile(file, configEntry, cfg.Quality[list.Template_quality])
+		hasQuality, _ := config.ConfigDB.Has("quality_" + list.Template_quality)
+		if !hasQuality {
+			logger.Log.Errorln("Quality Config not found: ", "quality_"+list.Template_quality)
+			return
+		}
+		var cfg_quality config.QualityConfig
+		config.ConfigDB.Get("quality_"+list.Template_quality, &cfg_quality)
+
+		cutoffPrio := NewCutoffPrio(configEntry, cfg_quality)
+
+		m.GetPriority(configEntry, cfg_quality)
+		errparsev := m.ParseVideoFile(file, configEntry, cfg_quality)
 		if errparsev != nil {
 			return
 		}
@@ -451,7 +494,15 @@ func JobImportSeriesParseV2(cfg config.Cfg, file string, updatemissing bool, con
 					if series.Rootpath == "" && series.ID != 0 {
 						rootpath := ""
 						for idxpath := range configEntry.Data {
-							pppath := cfg.Path[configEntry.Data[idxpath].Template_path].Path
+							hasPath, _ := config.ConfigDB.Has("path_" + configEntry.Data[idxpath].Template_path)
+							if !hasPath {
+								logger.Log.Errorln("Path Config not found: ", "path_"+configEntry.Data[idxpath].Template_path)
+								continue
+							}
+							var cfg_path config.PathsConfig
+							config.ConfigDB.Get("path_"+configEntry.Data[idxpath].Template_path, &cfg_path)
+
+							pppath := cfg_path.Path
 							if strings.Contains(file, pppath) {
 								rootpath = pppath
 								tempfoldername := strings.Replace(file, pppath, "", -1)
@@ -505,3 +556,326 @@ func JobImportSeriesParseV2(cfg config.Cfg, file string, updatemissing bool, con
 }
 
 var SeriesStructureJobRunning map[string]bool
+
+func RefreshSeries() {
+	hasGeneral, _ := config.ConfigDB.Has("general")
+	if !hasGeneral {
+		logger.Log.Errorln("General Config not found")
+		return
+	}
+	var cfg_general config.GeneralConfig
+	config.ConfigDB.Get("general", &cfg_general)
+
+	if cfg_general.SchedulerDisabled {
+		return
+	}
+	sw := sizedwaitgroup.New(cfg_general.WorkerFiles)
+	dbseries, _ := database.QueryDbserie(database.Query{})
+	for idxserie := range dbseries {
+		sw.Add()
+		JobReloadDbSeries(dbseries[idxserie], config.MediaTypeConfig{}, config.MediaListsConfig{}, true, &sw)
+	}
+	sw.Wait()
+}
+
+func RefreshSeriesInc() {
+	hasGeneral, _ := config.ConfigDB.Has("general")
+	if !hasGeneral {
+		logger.Log.Errorln("General Config not found")
+		return
+	}
+	var cfg_general config.GeneralConfig
+	config.ConfigDB.Get("general", &cfg_general)
+
+	if cfg_general.SchedulerDisabled {
+		return
+	}
+	sw := sizedwaitgroup.New(cfg_general.WorkerFiles)
+	dbseries, _ := database.QueryDbserie(database.Query{Where: "status = 'Continuing'", OrderBy: "updated_at asc", Limit: 100})
+
+	for idxserie := range dbseries {
+		sw.Add()
+		JobReloadDbSeries(dbseries[idxserie], config.MediaTypeConfig{}, config.MediaListsConfig{}, true, &sw)
+	}
+	sw.Wait()
+}
+
+func Series_all_jobs(job string, force bool) {
+	serie_keys, _ := config.ConfigDB.Keys([]byte("serie_*"), 0, 0, true)
+
+	logger.Log.Info("Started Job: ", job, " for all")
+	for _, idxserie := range serie_keys {
+		var cfg_serie config.MediaTypeConfig
+		config.ConfigDB.Get(string(idxserie), &cfg_serie)
+
+		Series_single_jobs(job, cfg_serie.Name, "", force)
+	}
+}
+
+var SerieJobRunning map[string]bool
+
+func Series_single_jobs(job string, typename string, listname string, force bool) {
+	hasGeneral, _ := config.ConfigDB.Has("general")
+	if !hasGeneral {
+		logger.Log.Errorln("General Config not found")
+		return
+	}
+	var cfg_general config.GeneralConfig
+	config.ConfigDB.Get("general", &cfg_general)
+
+	if cfg_general.SchedulerDisabled && !force {
+		logger.Log.Info("Skipped Job: ", job, " for ", typename)
+		return
+	}
+	jobName := job + typename + listname
+	defer func() {
+		database.ReadWriteMu.Lock()
+		delete(SerieJobRunning, jobName)
+		database.ReadWriteMu.Unlock()
+	}()
+	database.ReadWriteMu.Lock()
+	if _, nok := SerieJobRunning[jobName]; nok {
+		logger.Log.Debug("Job already running: ", jobName)
+		database.ReadWriteMu.Unlock()
+		return
+	} else {
+		SerieJobRunning[jobName] = true
+	}
+	database.ReadWriteMu.Unlock()
+	logger.Log.Info("Started Job: ", job, " for ", typename)
+
+	dbresult, _ := database.InsertArray("job_histories", []string{"job_type", "job_group", "job_category", "started"},
+		[]interface{}{job, typename, "Serie", time.Now()})
+	ok, _ := config.ConfigDB.Has("serie_" + typename)
+	if ok {
+		var cfg_serie config.MediaTypeConfig
+		config.ConfigDB.Get("serie_"+typename, &cfg_serie)
+
+		switch job {
+		case "searchmissingfull":
+			SearchSerieMissing(cfg_serie, 0, false)
+		case "searchmissinginc":
+			SearchSerieMissing(cfg_serie, cfg_serie.Searchmissing_incremental, false)
+		case "searchupgradefull":
+			SearchSerieUpgrade(cfg_serie, 0, false)
+		case "searchupgradeinc":
+			SearchSerieUpgrade(cfg_serie, cfg_serie.Searchupgrade_incremental, false)
+		case "searchmissingfulltitle":
+			SearchSerieMissing(cfg_serie, 0, true)
+		case "searchmissinginctitle":
+			SearchSerieMissing(cfg_serie, cfg_serie.Searchmissing_incremental, true)
+		case "searchupgradefulltitle":
+			SearchSerieUpgrade(cfg_serie, 0, true)
+		case "searchupgradeinctitle":
+			SearchSerieUpgrade(cfg_serie, cfg_serie.Searchupgrade_incremental, true)
+
+		}
+		qualis := make(map[string]bool, 10)
+		for idxlist := range cfg_serie.Lists {
+			if cfg_serie.Lists[idxlist].Name != listname && listname != "" {
+				continue
+			}
+			if _, ok := qualis[cfg_serie.Lists[idxlist].Template_quality]; !ok {
+				qualis[cfg_serie.Lists[idxlist].Template_quality] = true
+			}
+			switch job {
+			case "data":
+				config.Slepping(true, 6)
+				getnewepisodessingle(cfg_serie, cfg_serie.Lists[idxlist])
+			case "checkmissing":
+				checkmissingepisodessingle(cfg_serie, cfg_serie.Lists[idxlist])
+			case "checkmissingflag":
+				checkmissingepisodesflag(cfg_serie, cfg_serie.Lists[idxlist])
+			case "structure":
+				seriesStructureSingle(cfg_serie, cfg_serie.Lists[idxlist])
+			case "clearhistory":
+				database.DeleteRow("serie_episode_histories", database.Query{InnerJoin: "serie_episodes ON serie_episodes.id = serie_episode_histories.serie_episode_id inner join series on series.id = serie_episodes.serie_id", Where: "series.listname=?", WhereArgs: []interface{}{typename}})
+			case "feeds":
+				config.Slepping(true, 6)
+				Importnewseriessingle(cfg_serie, cfg_serie.Lists[idxlist])
+			default:
+				// other stuff
+			}
+		}
+		for qual := range qualis {
+			switch job {
+			case "rss":
+				SearchSerieRSS(cfg_serie, qual)
+			}
+		}
+	} else {
+		logger.Log.Info("Skipped Job Type not matched: ", job, " for ", typename)
+	}
+	dbid, _ := dbresult.LastInsertId()
+	database.UpdateColumn("job_histories", "ended", time.Now(), database.Query{Where: "id=?", WhereArgs: []interface{}{dbid}})
+	logger.Log.Info("Ended Job: ", job, " for ", typename)
+	debug.FreeOSMemory()
+}
+
+var Lastseries string
+
+func Importnewseriessingle(row config.MediaTypeConfig, list config.MediaListsConfig) {
+	hasGeneral, _ := config.ConfigDB.Has("general")
+	if !hasGeneral {
+		logger.Log.Errorln("General Config not found")
+		return
+	}
+	var cfg_general config.GeneralConfig
+	config.ConfigDB.Get("general", &cfg_general)
+
+	results := Feeds(row, list)
+
+	logger.Log.Info("Get Serie Config", list.Name)
+	logger.Log.Info("Workers: ", cfg_general.WorkerMetadata)
+	swg := sizedwaitgroup.New(cfg_general.WorkerMetadata)
+	for idxserie := range results.Series.Serie {
+		if strings.EqualFold(Lastseries, results.Series.Serie[idxserie].Name) && Lastseries != "" {
+			config.Slepping(false, 5)
+		}
+		Lastseries = results.Series.Serie[idxserie].Name
+		logger.Log.Info("Import Serie ", idxserie, " of ", len(results.Series.Serie), " name: ", results.Series.Serie[idxserie].Name)
+		swg.Add()
+		JobImportDbSeries(results.Series.Serie[idxserie], row, list, false, &swg)
+	}
+	swg.Wait()
+}
+
+var LastSeriesPath string
+var LastSeriesFilePath string
+
+func getnewepisodessingle(row config.MediaTypeConfig, list config.MediaListsConfig) {
+	hasGeneral, _ := config.ConfigDB.Has("general")
+	if !hasGeneral {
+		logger.Log.Errorln("General Config not found")
+		return
+	}
+	var cfg_general config.GeneralConfig
+	config.ConfigDB.Get("general", &cfg_general)
+
+	hasQuality, _ := config.ConfigDB.Has("quality_" + list.Template_quality)
+	if !hasQuality {
+		logger.Log.Errorln("Quality Config not found: ", "quality_"+list.Template_quality)
+		return
+	}
+	var cfg_quality config.QualityConfig
+	config.ConfigDB.Get("quality_"+list.Template_quality, &cfg_quality)
+
+	defaultPrio := &ParseInfo{Quality: row.DefaultQuality, Resolution: row.DefaultResolution}
+	defaultPrio.GetPriority(row, cfg_quality)
+
+	logger.Log.Info("Scan SerieEpisodeFile")
+	filesfound := make([]string, 0, 5000)
+	for idxpath := range row.Data {
+		hasPath, _ := config.ConfigDB.Has("path_" + row.Data[idxpath].Template_path)
+		if !hasPath {
+			logger.Log.Errorln("Path Config not found: ", "path_"+row.Data[idxpath].Template_path)
+			continue
+		}
+		var cfg_path config.PathsConfig
+		config.ConfigDB.Get("path_"+row.Data[idxpath].Template_path, &cfg_path)
+
+		if strings.EqualFold(LastSeriesPath, cfg_path.Path) && LastSeriesPath != "" {
+			time.Sleep(time.Duration(5) * time.Second)
+		}
+		LastSeriesPath = cfg_path.Path
+		filesfound_add := scanner.GetFilesGoDir(cfg_path.Path, cfg_path.AllowedVideoExtensions, cfg_path.AllowedVideoExtensionsNoRename, cfg_path.Blocked)
+		filesfound = append(filesfound, filesfound_add...)
+	}
+	filesadded := scanner.GetFilesSeriesAdded(filesfound, list.Name)
+	logger.Log.Info("Find SerieEpisodeFile")
+	logger.Log.Info("Workers: ", cfg_general.WorkerParse)
+	swf := sizedwaitgroup.New(cfg_general.WorkerParse)
+	for idxfile := range filesadded {
+		if strings.EqualFold(LastSeriesFilePath, filesadded[idxfile]) && LastSeriesFilePath != "" {
+			time.Sleep(time.Duration(5) * time.Second)
+		}
+		LastSeriesFilePath = filesadded[idxfile]
+		logger.Log.Info("Parse Serie ", idxfile, " of ", len(filesadded), " path: ", filesadded[idxfile])
+		swf.Add()
+		JobImportSeriesParseV2(filesadded[idxfile], true, row, list, *defaultPrio, &swf)
+	}
+	swf.Wait()
+}
+
+func checkmissingepisodesflag(row config.MediaTypeConfig, list config.MediaListsConfig) {
+	episodes, _ := database.QuerySerieEpisodes(database.Query{Select: "serie_episodes.*", InnerJoin: " series on series.id = serie_episodes.serie_id", Where: "series.listname=?", WhereArgs: []interface{}{list.Name}})
+	for idxepi := range episodes {
+		counter, _ := database.CountRows("serie_episode_files", database.Query{Where: "serie_episode_id = ?", WhereArgs: []interface{}{episodes[idxepi].ID}})
+		if counter >= 1 {
+			if episodes[idxepi].Missing {
+				database.UpdateColumn("Serie_episodes", "missing", 0, database.Query{Where: "id=?", WhereArgs: []interface{}{episodes[idxepi].ID}})
+			}
+		} else {
+			if !episodes[idxepi].Missing {
+				database.UpdateColumn("Serie_episodes", "missing", 1, database.Query{Where: "id=?", WhereArgs: []interface{}{episodes[idxepi].ID}})
+			}
+		}
+	}
+}
+
+func checkmissingepisodessingle(row config.MediaTypeConfig, list config.MediaListsConfig) {
+	hasGeneral, _ := config.ConfigDB.Has("general")
+	if !hasGeneral {
+		logger.Log.Errorln("General Config not found")
+		return
+	}
+	var cfg_general config.GeneralConfig
+	config.ConfigDB.Get("general", &cfg_general)
+
+	series, _ := database.QuerySeries(database.Query{Select: "id", Where: "listname=?", WhereArgs: []interface{}{list.Name}})
+
+	swfile := sizedwaitgroup.New(cfg_general.WorkerFiles)
+	for idx := range series {
+		seriefile, _ := database.QuerySerieEpisodeFiles(database.Query{Select: "location", Where: "Serie_id=?", WhereArgs: []interface{}{series[idx].ID}})
+
+		for idxfile := range seriefile {
+			swfile.Add()
+			JobImportFileCheck(seriefile[idxfile].Location, "serie", &swfile)
+		}
+	}
+	swfile.Wait()
+}
+
+var LastSeriesStructure string
+
+func seriesStructureSingle(row config.MediaTypeConfig, list config.MediaListsConfig) {
+	hasGeneral, _ := config.ConfigDB.Has("general")
+	if !hasGeneral {
+		logger.Log.Errorln("General Config not found")
+		return
+	}
+	var cfg_general config.GeneralConfig
+	config.ConfigDB.Get("general", &cfg_general)
+
+	swfile := sizedwaitgroup.New(cfg_general.WorkerFiles)
+
+	for idxpath := range row.DataImport {
+		mappathimport := row.DataImport[idxpath].Template_path
+		hasPathimport, _ := config.ConfigDB.Has("path_" + mappathimport)
+		if !hasPathimport {
+			logger.Log.Errorln("Path Config not found: ", "path_"+mappathimport)
+			continue
+		}
+		var cfg_path_import config.PathsConfig
+		config.ConfigDB.Get("path_"+mappathimport, &cfg_path_import)
+
+		hasPath, _ := config.ConfigDB.Has("path_" + row.Data[0].Template_path)
+		if !hasPath {
+			logger.Log.Errorln("Path Config not found: ", "path_"+row.Data[0].Template_path)
+			continue
+		}
+		var cfg_path config.PathsConfig
+		if len(row.Data) >= 1 {
+			config.ConfigDB.Get("path_"+row.Data[0].Template_path, &cfg_path)
+		}
+		if strings.EqualFold(LastSeriesStructure, cfg_path_import.Path) && LastSeriesStructure != "" {
+			time.Sleep(time.Duration(15) * time.Second)
+		}
+		LastSeriesStructure = cfg_path_import.Path
+		swfile.Add()
+
+		StructureFolders("series", cfg_path_import, cfg_path, row, list)
+		swfile.Done()
+	}
+	swfile.Wait()
+}

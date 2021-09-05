@@ -1,7 +1,7 @@
 package main
 
 import (
-	"fmt"
+	"context"
 	"html/template"
 	"log"
 	"net/http"
@@ -17,10 +17,13 @@ import (
 	"github.com/Kellerman81/go_media_downloader/database"
 	"github.com/Kellerman81/go_media_downloader/logger"
 	"github.com/Kellerman81/go_media_downloader/newznab"
+	"github.com/Kellerman81/go_media_downloader/scanner"
 	"github.com/Kellerman81/go_media_downloader/scheduler"
 	"github.com/Kellerman81/go_media_downloader/utils"
-	"github.com/pkg/profile"
+	"github.com/recoilme/pudge"
 	"github.com/sirupsen/logrus"
+
+	"github.com/DeanThompson/ginpprof"
 
 	"github.com/foolin/goview"
 	"github.com/foolin/goview/supports/ginview"
@@ -53,19 +56,42 @@ func (gjs *GenericJobStruct) ProcessWork() error {
 }
 
 func main() {
-	what := []string{"General", "Regex", "Quality", "Path", "Indexer", "Scheduler", "Movie", "Serie", "Imdb", "Downloader", "Notification", "List"}
-	cfg, f, errcfg := config.LoadCfg(what, config.Configfile)
-	if errcfg != nil {
-		fmt.Println(errcfg)
-		return
+	// what := []string{"General", "Regex", "Quality", "Path", "Indexer", "Scheduler", "Movie", "Serie", "Imdb", "Downloader", "Notification", "List"}
+	// cfg, f, errcfg := config.LoadCfg(what, config.Configfile)
+	// if errcfg != nil {
+	// 	fmt.Println(errcfg)
+	// 	return
+	// }
+
+	pudb, _ := config.OpenConfig("config.db")
+	config.ConfigDB = pudb
+	scanner.CleanUpFolder("./backup", 10)
+	pudge.BackupAll("")
+
+	f, errcfg := config.LoadCfgDB(config.Configfile)
+	if errcfg == nil {
+		config.WatchDB(f, config.Configfile)
 	}
 
+	defer func() {
+		config.ConfigDB.Close()
+	}()
+
+	var cfg_general config.GeneralConfig
+	config.ConfigDB.Get("general", &cfg_general)
+
 	logger.InitLogger(logger.LoggerConfig{
-		LogLevel:     cfg.General.LogLevel,
-		LogFileSize:  cfg.General.LogFileSize,
-		LogFileCount: cfg.General.LogFileCount,
+		LogLevel:     cfg_general.LogLevel,
+		LogFileSize:  cfg_general.LogFileSize,
+		LogFileCount: cfg_general.LogFileCount,
 	})
 
+	// keys, _ := config.ConfigDB.Keys([]byte(""), 0, 0, true)
+
+	// fmt.Println(cfg_general)
+	// for _, v := range keys {
+	// 	fmt.Print(string(v) + ", ")
+	// }
 	// database.InitDb(cfg.General.DBLogLevel)
 	// database.GetMovies(database.Query{Where: })
 	// utils.GetHighestMoviePriorityByFiles(cfg, )
@@ -95,12 +121,11 @@ func main() {
 	// fmt.Println("episode: ", parse.Episode)
 	// fmt.Println("iden: ", parse.Identifier)
 	// return
-	config.Watch(f, config.Configfile, what)
 
-	apiexternal.NewOmdbClient(cfg.General.OmdbApiKey, cfg.General.Omdblimiterseconds, cfg.General.Omdblimitercalls)
-	apiexternal.NewTmdbClient(cfg.General.TheMovieDBApiKey, cfg.General.Tmdblimiterseconds, cfg.General.Tmdblimitercalls)
-	apiexternal.NewTvdbClient(cfg.General.Tvdblimiterseconds, cfg.General.Tvdblimitercalls)
-	apiexternal.NewTraktClient(cfg.General.TraktClientId, cfg.General.Traktlimiterseconds, cfg.General.Traktlimitercalls)
+	apiexternal.NewOmdbClient(cfg_general.OmdbApiKey, cfg_general.Omdblimiterseconds, cfg_general.Omdblimitercalls)
+	apiexternal.NewTmdbClient(cfg_general.TheMovieDBApiKey, cfg_general.Tmdblimiterseconds, cfg_general.Tmdblimitercalls)
+	apiexternal.NewTvdbClient(cfg_general.Tvdblimiterseconds, cfg_general.Tvdblimitercalls)
+	apiexternal.NewTraktClient(cfg_general.TraktClientId, cfg_general.Traktlimiterseconds, cfg_general.Traktlimitercalls)
 	apiexternal.NewznabClients = make(map[string]newznab.Client, 10)
 	//watch_file, parser := config.LoadConfigV2(configfile)
 	//config.WatchConfig(watch_file, parser)q
@@ -108,12 +133,12 @@ func main() {
 	utils.SeriesStructureJobRunning = make(map[string]bool, 10)
 	utils.MovieImportJobRunning = make(map[string]bool, 10)
 	utils.SeriesImportJobRunning = make(map[string]bool, 10)
-	api.SerieJobRunning = make(map[string]bool, 10)
-	api.MovieJobRunning = make(map[string]bool, 10)
+	utils.SerieJobRunning = make(map[string]bool, 10)
+	utils.MovieJobRunning = make(map[string]bool, 10)
 
-	database.InitDb(cfg.General.DBLogLevel)
+	database.InitDb(cfg_general.DBLogLevel)
 
-	dbimdb := database.InitImdbdb(cfg.General.DBLogLevel, "imdb")
+	dbimdb := database.InitImdbdb(cfg_general.DBLogLevel, "imdb")
 	database.DBImdb = dbimdb
 
 	database.UpgradeDB()
@@ -125,13 +150,13 @@ func main() {
 	counter, _ := database.CountRows("dbmovies", database.Query{})
 	if counter == 0 {
 		utils.InitFillImdb()
-		api.Movies_all_jobs_cfg(cfg, "feeds", true)
-		api.Movies_all_jobs_cfg(cfg, "data", true)
+		utils.Movies_all_jobs("feeds", true)
+		utils.Movies_all_jobs("data", true)
 	}
 	counter, _ = database.CountRows("dbseries", database.Query{})
 	if counter == 0 {
-		api.Series_all_jobs_cfg(cfg, "feeds", true)
-		api.Series_all_jobs_cfg(cfg, "data", true)
+		utils.Series_all_jobs("feeds", true)
+		utils.Series_all_jobs("data", true)
 	}
 
 	router := gin.New()
@@ -168,7 +193,7 @@ func main() {
 			"title": "DB Movies",
 		})
 	})
-	routerapi := router.Group("/api/" + cfg.General.WebApiKey)
+	routerapi := router.Group("/api/" + cfg_general.WebApiKey)
 	{
 		routerapi.GET("/fillimdb", func(ctx *gin.Context) {
 			go utils.InitFillImdb()
@@ -198,26 +223,26 @@ func main() {
 		routerscheduler := routerapi.Group("/scheduler")
 		scheduler.AddSchedulerRoutes(routerscheduler)
 	}
-	router.GET("/stopmemprofile", func(ctx *gin.Context) {
-		if strings.EqualFold(cfg.General.LogLevel, "Debug") {
-			logger.Memprofiler.Stop()
-		}
-	})
-	router.GET("/startmemprofile", func(ctx *gin.Context) {
-		if strings.EqualFold(cfg.General.LogLevel, "Debug") {
-			logger.Memprofiler = profile.Start(profile.ProfilePath("."), profile.MemProfile, profile.MemProfileHeap)
-		}
-	})
-	router.GET("/stopcpuprofile", func(ctx *gin.Context) {
-		if strings.EqualFold(cfg.General.LogLevel, "Debug") {
-			logger.Cpuprofiler.Stop()
-		}
-	})
-	router.GET("/startcpuprofile", func(ctx *gin.Context) {
-		if strings.EqualFold(cfg.General.LogLevel, "Debug") {
-			logger.Cpuprofiler = profile.Start(profile.ProfilePath("."), profile.CPUProfile)
-		}
-	})
+	// router.GET("/stopmemprofile", func(ctx *gin.Context) {
+	// 	if strings.EqualFold(cfg_general.LogLevel, "Debug") {
+	// 		logger.Memprofiler.Stop()
+	// 	}
+	// })
+	// router.GET("/startmemprofile", func(ctx *gin.Context) {
+	// 	if strings.EqualFold(cfg_general.LogLevel, "Debug") {
+	// 		logger.Memprofiler = profile.Start(profile.ProfilePath("."), profile.MemProfile, profile.MemProfileHeap)
+	// 	}
+	// })
+	// router.GET("/stopcpuprofile", func(ctx *gin.Context) {
+	// 	if strings.EqualFold(cfg_general.LogLevel, "Debug") {
+	// 		logger.Cpuprofiler.Stop()
+	// 	}
+	// })
+	// router.GET("/startcpuprofile", func(ctx *gin.Context) {
+	// 	if strings.EqualFold(cfg_general.LogLevel, "Debug") {
+	// 		logger.Cpuprofiler = profile.Start(profile.ProfilePath("."), profile.CPUProfile)
+	// 	}
+	// })
 	router.GET("/dbclose", func(ctx *gin.Context) {
 		database.DB = nil
 	})
@@ -225,32 +250,43 @@ func main() {
 		//render only file, must full name with extension
 		ctx.HTML(http.StatusOK, "page.html", gin.H{"title": "Page file title!!"})
 	})
+	if strings.EqualFold(cfg_general.LogLevel, "Debug") {
+		ginpprof.Wrap(router)
+	}
 
 	server := &http.Server{
-		Addr:    ":" + cfg.General.WebPort,
+		Addr:    ":" + cfg_general.WebPort,
 		Handler: router,
 	}
 
-	quit := make(chan os.Signal)
-	signal.Notify(quit, os.Interrupt)
-
 	go func() {
-		<-quit
-		log.Println("receive interrupt signal")
-		if err := server.Close(); err != nil {
-			log.Fatal("Server Close:", err)
+		// service connections
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("listen: %s\n", err)
 		}
 	}()
 
-	if err := server.ListenAndServe(); err != nil {
-		if err == http.ErrServerClosed {
-			if strings.EqualFold(cfg.General.LogLevel, "Debug") {
-				logger.Cpuprofiler.Stop()
-			}
-			log.Println("Server closed under request")
-		} else {
-			log.Fatal("Server closed unexpect")
-		}
+	quit := make(chan os.Signal)
+	signal.Notify(quit, os.Interrupt)
+	<-quit
+	log.Println("receive interrupt signal")
+
+	// if strings.EqualFold(cfg_general.LogLevel, "Debug") {
+	// 	logger.Cpuprofiler.Stop()
+	// }
+	// if strings.EqualFold(cfg_general.LogLevel, "Debug") {
+	// 	logger.Memprofiler.Stop()
+	// }
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := server.Shutdown(ctx); err != nil {
+		log.Fatal("Server Shutdown:", err)
+	}
+
+	// Close db
+	if err := pudge.CloseAll(); err != nil {
+		log.Fatal("Database Shutdown:", err)
 	}
 
 	log.Println("Server exiting")

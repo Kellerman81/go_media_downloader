@@ -17,7 +17,6 @@ import (
 )
 
 type Structure struct {
-	cfg         config.Cfg
 	configEntry config.MediaTypeConfig
 	list        config.MediaListsConfig
 	groupType   string //series, movies
@@ -26,12 +25,11 @@ type Structure struct {
 	targetpath  config.PathsConfig
 }
 
-func NewStructure(cfg config.Cfg, configEntry config.MediaTypeConfig, list config.MediaListsConfig, groupType string, rootpath string, sourcepath config.PathsConfig, targetpath config.PathsConfig) (Structure, error) {
+func NewStructure(configEntry config.MediaTypeConfig, list config.MediaListsConfig, groupType string, rootpath string, sourcepath config.PathsConfig, targetpath config.PathsConfig) (Structure, error) {
 	if !configEntry.Structure {
 		return Structure{}, errors.New("not allowed")
 	}
 	return Structure{
-		cfg:         cfg,
 		configEntry: configEntry,
 		list:        list,
 		groupType:   groupType,
@@ -82,13 +80,13 @@ func (s *Structure) ParseFile(videofile string, checkfolder bool, folder string,
 	if s.groupType == "series" {
 		yearintitle = true
 	}
-	m, err = NewFileParser(s.cfg, filepath.Base(videofile), yearintitle, s.groupType)
+	m, err = NewFileParser(filepath.Base(videofile), yearintitle, s.groupType)
 	if err != nil {
 		logger.Log.Debug("Parse failed of ", filepath.Base(videofile))
 		return
 	}
 	if m.Quality == "" && m.Resolution == "" && checkfolder {
-		mf, errf := NewFileParser(s.cfg, filepath.Base(folder), yearintitle, s.groupType)
+		mf, errf := NewFileParser(filepath.Base(folder), yearintitle, s.groupType)
 		if errf != nil {
 			logger.Log.Debug("Parse failed of folder ", filepath.Base(folder))
 			err = errf
@@ -114,10 +112,19 @@ func (s *Structure) ParseFile(videofile string, checkfolder bool, folder string,
 			}
 		}
 	}
+
+	hasQuality, _ := config.ConfigDB.Has("quality_" + s.list.Template_quality)
+	if !hasQuality {
+		logger.Log.Errorln("Quality Config not found: ", "quality_"+s.list.Template_quality)
+		return
+	}
+	var cfg_quality config.QualityConfig
+	config.ConfigDB.Get("quality_"+s.list.Template_quality, &cfg_quality)
+
 	m.Title = strings.Trim(m.Title, " ")
-	for idx := range s.cfg.Quality[s.list.Template_quality].TitleStripSuffixForSearch {
-		if strings.HasSuffix(strings.ToLower(m.Title), strings.ToLower(s.cfg.Quality[s.list.Template_quality].TitleStripSuffixForSearch[idx])) {
-			m.Title = trimStringInclAfterStringInsensitive(m.Title, s.cfg.Quality[s.list.Template_quality].TitleStripSuffixForSearch[idx])
+	for idx := range cfg_quality.TitleStripSuffixForSearch {
+		if strings.HasSuffix(strings.ToLower(m.Title), strings.ToLower(cfg_quality.TitleStripSuffixForSearch[idx])) {
+			m.Title = trimStringInclAfterStringInsensitive(m.Title, cfg_quality.TitleStripSuffixForSearch[idx])
 			m.Title = strings.Trim(m.Title, " ")
 		}
 	}
@@ -126,10 +133,17 @@ func (s *Structure) ParseFile(videofile string, checkfolder bool, folder string,
 }
 
 func (s *Structure) ParseFileAdditional(videofile string, m *ParseInfo, folder string, deletewronglanguage bool) (err error) {
+	hasQuality, _ := config.ConfigDB.Has("quality_" + s.list.Template_quality)
+	if !hasQuality {
+		logger.Log.Errorln("Quality Config not found: ", "quality_"+s.list.Template_quality)
+		return
+	}
+	var cfg_quality config.QualityConfig
+	config.ConfigDB.Get("quality_"+s.list.Template_quality, &cfg_quality)
 
-	m.GetPriority(s.configEntry, s.cfg.Quality[s.list.Template_quality])
+	m.GetPriority(s.configEntry, cfg_quality)
 
-	err = m.ParseVideoFile(videofile, s.configEntry, s.cfg.Quality[s.list.Template_quality])
+	err = m.ParseVideoFile(videofile, s.configEntry, cfg_quality)
 	if err != nil {
 		return
 	}
@@ -160,7 +174,16 @@ func (s *Structure) ParseFileAdditional(videofile string, m *ParseInfo, folder s
 func (s *Structure) CheckLowerQualTarget(folder string, videofile string, m ParseInfo, cleanuplowerquality bool, movie database.Movie) ([]string, int, error) {
 	moviefiles, _ := database.QueryMovieFiles(database.Query{Where: "movie_id = ?", WhereArgs: []interface{}{movie.ID}})
 	logger.Log.Debug("Found existing files: ", len(moviefiles))
-	oldpriority := getHighestMoviePriorityByFiles(s.cfg, movie, s.configEntry, s.cfg.Quality[s.list.Template_quality])
+
+	hasQuality, _ := config.ConfigDB.Has("quality_" + s.list.Template_quality)
+	if !hasQuality {
+		logger.Log.Errorln("Quality Config not found: ", "quality_"+s.list.Template_quality)
+		return []string{}, 0, errors.New("config not found")
+	}
+	var cfg_quality config.QualityConfig
+	config.ConfigDB.Get("quality_"+s.list.Template_quality, &cfg_quality)
+
+	oldpriority := getHighestMoviePriorityByFiles(movie, s.configEntry, cfg_quality)
 	logger.Log.Debug("Found existing highest prio: ", oldpriority)
 	if m.Priority > oldpriority {
 		logger.Log.Debug("prio: ", oldpriority, " lower as ", m.Priority)
@@ -170,7 +193,7 @@ func (s *Structure) CheckLowerQualTarget(folder string, videofile string, m Pars
 				logger.Log.Debug("want to remove ", moviefiles[idx])
 				oldpath, _ := filepath.Split(moviefiles[idx].Location)
 				logger.Log.Debug("want to remove oldpath ", oldpath)
-				entry_prio := getMovieDBPriority(s.cfg, moviefiles[idx], s.configEntry, s.cfg.Quality[s.list.Template_quality])
+				entry_prio := getMovieDBPriority(moviefiles[idx], s.configEntry, cfg_quality)
 				logger.Log.Debug("want to remove oldprio ", entry_prio)
 				if m.Priority > entry_prio && s.targetpath.Upgrade {
 					oldfiles = append(oldfiles, moviefiles[idx].Location)
@@ -549,7 +572,7 @@ func (s *Structure) MoveAdditionalFiles(folder string, videotarget string, filen
 	}
 }
 
-func StructureFolders(cfg config.Cfg, grouptype string, sourcepath config.PathsConfig, targetpath config.PathsConfig, configEntry config.MediaTypeConfig, list config.MediaListsConfig) {
+func StructureFolders(grouptype string, sourcepath config.PathsConfig, targetpath config.PathsConfig, configEntry config.MediaTypeConfig, list config.MediaListsConfig) {
 	if !configEntry.Structure {
 		return
 	}
@@ -574,7 +597,7 @@ func StructureFolders(cfg config.Cfg, grouptype string, sourcepath config.PathsC
 	logger.Log.Debug("Folders found: ", folders)
 	for idx := range folders {
 		logger.Log.Debug("Process Folder: ", folders[idx])
-		structure, err := NewStructure(cfg, configEntry, list, grouptype, folders[idx], sourcepath, targetpath)
+		structure, err := NewStructure(configEntry, list, grouptype, folders[idx], sourcepath, targetpath)
 		if err != nil {
 			continue
 		}
@@ -649,12 +672,21 @@ func StructureFolders(cfg config.Cfg, grouptype string, sourcepath config.PathsC
 					}
 					entriesfound = len(movies)
 				}
+
+				hasQuality, _ := config.ConfigDB.Has("quality_" + list.Template_quality)
+				if !hasQuality {
+					logger.Log.Errorln("Quality Config not found: ", "quality_"+list.Template_quality)
+					return
+				}
+				var cfg_quality config.QualityConfig
+				config.ConfigDB.Get("quality_"+list.Template_quality, &cfg_quality)
+
 				if entriesfound == 0 && len(m.Imdb) == 0 {
 					lists := make([]string, 0, len(configEntry.Lists))
 					for idxlisttest := range configEntry.Lists {
 						lists = append(lists, configEntry.Lists[idxlisttest].Name)
 					}
-					list.Name, m.Imdb, _ = movieFindListByTitle(cfg, m.Title, strconv.Itoa(m.Year), lists, cfg.Quality[list.Template_quality].CheckYear1, "structure")
+					list.Name, m.Imdb, _ = movieFindListByTitle(m.Title, strconv.Itoa(m.Year), lists, cfg_quality.CheckYear1, "structure")
 				}
 				if entriesfound == 0 && len(m.Imdb) >= 1 {
 					movies, _ := database.QueryMovies(database.Query{Select: "movies.*", InnerJoin: "Dbmovies on Dbmovies.id = movies.dbmovie_id", Where: "Dbmovies.imdb_id = ? and movies.listname = ?", WhereArgs: []interface{}{m.Imdb, list.Name}})
@@ -697,7 +729,7 @@ func StructureFolders(cfg config.Cfg, grouptype string, sourcepath config.PathsC
 						structure.ReplaceLowerQualityFiles(oldfiles, movie, database.Serie{})
 						structure.MoveAdditionalFiles(folders[idx], videotarget, filename, videofiles[fileidx], sourcefileext)
 
-						structure.Notify(cfg, videotarget, filename, videofiles[fileidx], movie, database.SerieEpisode{}, oldfiles)
+						structure.Notify(videotarget, filename, videofiles[fileidx], movie, database.SerieEpisode{}, oldfiles)
 						scanner.CleanUpFolder(folders[idx], sourcepath.CleanupsizeMB)
 
 						//updatemovie
@@ -708,7 +740,7 @@ func StructureFolders(cfg config.Cfg, grouptype string, sourcepath config.PathsC
 
 						reached := false
 
-						cutoffPrio := NewCutoffPrio(cfg, configEntry, cfg.Quality[list.Template_quality])
+						cutoffPrio := NewCutoffPrio(configEntry, cfg_quality)
 						if m.Priority >= cutoffPrio.Priority {
 							reached = true
 						}
@@ -732,6 +764,14 @@ func StructureFolders(cfg config.Cfg, grouptype string, sourcepath config.PathsC
 					seriestitle = matched[1]
 				}
 
+				hasQuality, _ := config.ConfigDB.Has("quality_" + list.Template_quality)
+				if !hasQuality {
+					logger.Log.Errorln("Quality Config not found: ", "quality_"+list.Template_quality)
+					return
+				}
+				var cfg_quality config.QualityConfig
+				config.ConfigDB.Get("quality_"+list.Template_quality, &cfg_quality)
+
 				//find dbseries
 				series, entriesfound := findSerieByParser(*m, titleyear, seriestitle, list.Name)
 				if entriesfound >= 1 {
@@ -749,7 +789,7 @@ func StructureFolders(cfg config.Cfg, grouptype string, sourcepath config.PathsC
 							structure.UpdateRootpath(videotarget, foldername, database.Movie{}, series)
 							structure.ReplaceLowerQualityFiles(oldfiles, database.Movie{}, series)
 							structure.MoveAdditionalFiles(folders[idx], videotarget, filename, videofiles[fileidx], sourcefileext)
-							structure.Notify(cfg, videotarget, filename, videofiles[fileidx], database.Movie{}, seriesEpisode, oldfiles)
+							structure.Notify(videotarget, filename, videofiles[fileidx], database.Movie{}, seriesEpisode, oldfiles)
 							scanner.CleanUpFolder(folders[idx], sourcepath.CleanupsizeMB)
 
 							//updateserie
@@ -760,7 +800,7 @@ func StructureFolders(cfg config.Cfg, grouptype string, sourcepath config.PathsC
 
 							reached := false
 
-							cutoffPrio := NewCutoffPrio(cfg, configEntry, cfg.Quality[list.Template_quality])
+							cutoffPrio := NewCutoffPrio(configEntry, cfg_quality)
 							if m.Priority >= cutoffPrio.Priority {
 								reached = true
 							}
@@ -773,11 +813,11 @@ func StructureFolders(cfg config.Cfg, grouptype string, sourcepath config.PathsC
 		}
 	}
 }
-func (s *Structure) Notify(cfg config.Cfg, videotarget string, filename string, videofile string, movie database.Movie, serieepisode database.SerieEpisode, oldfiles []string) {
+func (s *Structure) Notify(videotarget string, filename string, videofile string, movie database.Movie, serieepisode database.SerieEpisode, oldfiles []string) {
 	if strings.ToLower(s.groupType) == "movie" {
 		dbmovie, _ := database.GetDbmovie(database.Query{Where: "id=?", WhereArgs: []interface{}{movie.DbmovieID}})
 		for idx := range s.configEntry.Notification {
-			notifier(cfg, "added_data", s.configEntry.Notification[idx], InputNotifier{
+			notifier("added_data", s.configEntry.Notification[idx], InputNotifier{
 				Targetpath:     filepath.Join(videotarget, filename),
 				SourcePath:     videofile,
 				Title:          dbmovie.Title,
@@ -792,7 +832,7 @@ func (s *Structure) Notify(cfg config.Cfg, videotarget string, filename string, 
 		dbserieepisode, _ := database.GetDbserieEpisodes(database.Query{Where: "id=?", WhereArgs: []interface{}{serieepisode.DbserieEpisodeID}})
 		dbserie, _ := database.GetDbserie(database.Query{Where: "id=?", WhereArgs: []interface{}{dbserieepisode.DbserieID}})
 		for idx := range s.configEntry.Notification {
-			notifier(cfg, "added_data", s.configEntry.Notification[idx], InputNotifier{
+			notifier("added_data", s.configEntry.Notification[idx], InputNotifier{
 				Targetpath:     filepath.Join(videotarget, filename),
 				SourcePath:     videofile,
 				Title:          dbserie.Seriename,
@@ -881,15 +921,23 @@ func (s *Structure) GetSeriesEpisodes(series database.Serie, videofile string, m
 				logger.Log.Debug("use db title: ", episodetitle)
 			}
 
+			hasQuality, _ := config.ConfigDB.Has("quality_" + s.list.Template_quality)
+			if !hasQuality {
+				logger.Log.Errorln("Quality Config not found: ", "quality_"+s.list.Template_quality)
+				return
+			}
+			var cfg_quality config.QualityConfig
+			config.ConfigDB.Get("quality_"+s.list.Template_quality, &cfg_quality)
+
 			//episodeids = append(episodeids, SeriesEpisode.ID)
-			old_prio := getHighestEpisodePriorityByFiles(s.cfg, SeriesEpisode, s.configEntry, s.cfg.Quality[s.list.Template_quality])
+			old_prio := getHighestEpisodePriorityByFiles(SeriesEpisode, s.configEntry, cfg_quality)
 
 			episodefiles, _ := database.QuerySerieEpisodeFiles(database.Query{Where: "serie_episode_id = ?", WhereArgs: []interface{}{SeriesEpisode.ID}})
 			if m.Priority > old_prio {
 				allowimport = true
 				for idx := range episodefiles {
 					//_, oldfilename := filepath.Split(episodefile.Location)
-					entry_prio := getSerieDBPriority(s.cfg, episodefiles[idx], s.configEntry, s.cfg.Quality[s.list.Template_quality])
+					entry_prio := getSerieDBPriority(episodefiles[idx], s.configEntry, cfg_quality)
 					if m.Priority > entry_prio {
 						oldfiles = append(oldfiles, episodefiles[idx].Location)
 					}

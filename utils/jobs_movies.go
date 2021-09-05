@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"path/filepath"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
@@ -13,12 +14,13 @@ import (
 	"github.com/Kellerman81/go_media_downloader/config"
 	"github.com/Kellerman81/go_media_downloader/database"
 	"github.com/Kellerman81/go_media_downloader/logger"
+	"github.com/Kellerman81/go_media_downloader/scanner"
 	"github.com/remeh/sizedwaitgroup"
 )
 
 var MovieImportJobRunning map[string]bool
 
-func JobImportMovies(cfg config.Cfg, dbmovie database.Dbmovie, configEntry config.MediaTypeConfig, list config.MediaListsConfig, wg *sizedwaitgroup.SizedWaitGroup) {
+func JobImportMovies(dbmovie database.Dbmovie, configEntry config.MediaTypeConfig, list config.MediaListsConfig, wg *sizedwaitgroup.SizedWaitGroup) {
 	jobName := dbmovie.ImdbID
 	if jobName == "" {
 		jobName = list.Name
@@ -39,31 +41,39 @@ func JobImportMovies(cfg config.Cfg, dbmovie database.Dbmovie, configEntry confi
 	}
 	database.ReadWriteMu.Unlock()
 
+	hasGeneral, _ := config.ConfigDB.Has("general")
+	if !hasGeneral {
+		logger.Log.Errorln("General Config not found")
+		return
+	}
+	var cfg_general config.GeneralConfig
+	config.ConfigDB.Get("general", &cfg_general)
+
 	finddbmovie, _ := database.GetDbmovie(database.Query{Where: "imdb_id = ?", WhereArgs: []interface{}{dbmovie.ImdbID}})
 	cdbmovie, _ := database.CountRows("dbmovies", database.Query{Where: "imdb_id = ?", WhereArgs: []interface{}{dbmovie.ImdbID}})
 	if cdbmovie == 0 {
 		logger.Log.Debug("Get Movie Metadata: ", dbmovie.ImdbID)
-		if len(cfg.General.MovieMetaSourcePriority) >= 1 {
-			for idxmeta := range cfg.General.MovieMetaSourcePriority {
-				if strings.EqualFold(cfg.General.MovieMetaSourcePriority[idxmeta], "imdb") {
+		if len(cfg_general.MovieMetaSourcePriority) >= 1 {
+			for idxmeta := range cfg_general.MovieMetaSourcePriority {
+				if strings.EqualFold(cfg_general.MovieMetaSourcePriority[idxmeta], "imdb") {
 					logger.Log.Debug("Get Movie Metadata - imdb: ", dbmovie.ImdbID)
 					dbmovie.GetImdbMetadata(false)
 				}
-				if strings.EqualFold(cfg.General.MovieMetaSourcePriority[idxmeta], "tmdb") {
+				if strings.EqualFold(cfg_general.MovieMetaSourcePriority[idxmeta], "tmdb") {
 					logger.Log.Debug("Get Movie Metadata - tmdb: ", dbmovie.ImdbID)
 					dbmovie.GetTmdbMetadata(false)
 				}
-				if strings.EqualFold(cfg.General.MovieMetaSourcePriority[idxmeta], "omdb") {
+				if strings.EqualFold(cfg_general.MovieMetaSourcePriority[idxmeta], "omdb") {
 					logger.Log.Debug("Get Movie Metadata - omdb: ", dbmovie.ImdbID)
 					dbmovie.GetOmdbMetadata(false)
 				}
-				if strings.EqualFold(cfg.General.MovieMetaSourcePriority[idxmeta], "trakt") {
+				if strings.EqualFold(cfg_general.MovieMetaSourcePriority[idxmeta], "trakt") {
 					logger.Log.Debug("Get Movie Metadata - trakt: ", dbmovie.ImdbID)
 					dbmovie.GetTraktMetadata(false)
 				}
 			}
 		} else {
-			dbmovie.GetMetadata(cfg.General.MovieMetaSourceImdb, cfg.General.MovieMetaSourceTmdb, cfg.General.MovieMetaSourceOmdb, cfg.General.MovieMetaSourceTrakt)
+			dbmovie.GetMetadata(cfg_general.MovieMetaSourceImdb, cfg_general.MovieMetaSourceTmdb, cfg_general.MovieMetaSourceOmdb, cfg_general.MovieMetaSourceTrakt)
 		}
 
 		cdbmovie2, _ := database.CountRows("dbmovies", database.Query{Where: "imdb_id = ?", WhereArgs: []interface{}{dbmovie.ImdbID}})
@@ -85,7 +95,7 @@ func JobImportMovies(cfg config.Cfg, dbmovie database.Dbmovie, configEntry confi
 				return
 			}
 			logger.Log.Debug("Get Movie Titles: ", dbmovie.Title)
-			titlegroup := dbmovie.GetTitles(configEntry.Metadata_title_languages, cfg.General.MovieMetaSourceImdb, cfg.General.MovieMetaSourceTmdb, cfg.General.MovieMetaSourceTrakt)
+			titlegroup := dbmovie.GetTitles(configEntry.Metadata_title_languages, cfg_general.MovieMetaSourceImdb, cfg_general.MovieMetaSourceTmdb, cfg_general.MovieMetaSourceTrakt)
 			for idxtitle := range titlegroup {
 				countert, _ := database.CountRows("dbmovie_titles", database.Query{Where: "dbmovie_id = ? and title = ?", WhereArgs: []interface{}{dbmovie.ID, titlegroup[idxtitle].Title}})
 				if countert == 0 {
@@ -128,8 +138,16 @@ func JobImportMovies(cfg config.Cfg, dbmovie database.Dbmovie, configEntry confi
 	}
 }
 
-func JobReloadMovies(cfg config.Cfg, dbmovie database.Dbmovie, configEntry config.MediaTypeConfig, list config.MediaListsConfig, wg *sizedwaitgroup.SizedWaitGroup) {
-	if cfg.General.SchedulerDisabled {
+func JobReloadMovies(dbmovie database.Dbmovie, configEntry config.MediaTypeConfig, list config.MediaListsConfig, wg *sizedwaitgroup.SizedWaitGroup) {
+	hasGeneral, _ := config.ConfigDB.Has("general")
+	if !hasGeneral {
+		logger.Log.Errorln("General Config not found")
+		return
+	}
+	var cfg_general config.GeneralConfig
+	config.ConfigDB.Get("general", &cfg_general)
+
+	if cfg_general.SchedulerDisabled {
 		return
 	}
 	jobName := dbmovie.ImdbID
@@ -156,27 +174,27 @@ func JobReloadMovies(cfg config.Cfg, dbmovie database.Dbmovie, configEntry confi
 
 	dbmovie, _ = database.GetDbmovie(database.Query{Where: "imdb_id = ?", WhereArgs: []interface{}{dbmovie.ImdbID}})
 	logger.Log.Debug("Get Movie Metadata: ", dbmovie.ImdbID)
-	if len(cfg.General.MovieMetaSourcePriority) >= 1 {
-		for idxmeta := range cfg.General.MovieMetaSourcePriority {
-			if strings.EqualFold(cfg.General.MovieMetaSourcePriority[idxmeta], "imdb") {
+	if len(cfg_general.MovieMetaSourcePriority) >= 1 {
+		for idxmeta := range cfg_general.MovieMetaSourcePriority {
+			if strings.EqualFold(cfg_general.MovieMetaSourcePriority[idxmeta], "imdb") {
 				logger.Log.Debug("Get Movie Titles - imdb: ", dbmovie.Title)
 				dbmovie.GetImdbMetadata(false)
 			}
-			if strings.EqualFold(cfg.General.MovieMetaSourcePriority[idxmeta], "tmdb") {
+			if strings.EqualFold(cfg_general.MovieMetaSourcePriority[idxmeta], "tmdb") {
 				logger.Log.Debug("Get Movie Titles - tmdb: ", dbmovie.Title)
 				dbmovie.GetTmdbMetadata(false)
 			}
-			if strings.EqualFold(cfg.General.MovieMetaSourcePriority[idxmeta], "omdb") {
+			if strings.EqualFold(cfg_general.MovieMetaSourcePriority[idxmeta], "omdb") {
 				logger.Log.Debug("Get Movie Titles - omdb: ", dbmovie.Title)
 				dbmovie.GetOmdbMetadata(false)
 			}
-			if strings.EqualFold(cfg.General.MovieMetaSourcePriority[idxmeta], "trakt") {
+			if strings.EqualFold(cfg_general.MovieMetaSourcePriority[idxmeta], "trakt") {
 				logger.Log.Debug("Get Movie Titles - trakt: ", dbmovie.Title)
 				dbmovie.GetTraktMetadata(false)
 			}
 		}
 	} else {
-		dbmovie.GetMetadata(cfg.General.MovieMetaSourceImdb, cfg.General.MovieMetaSourceTmdb, cfg.General.MovieMetaSourceOmdb, cfg.General.MovieMetaSourceTrakt)
+		dbmovie.GetMetadata(cfg_general.MovieMetaSourceImdb, cfg_general.MovieMetaSourceTmdb, cfg_general.MovieMetaSourceOmdb, cfg_general.MovieMetaSourceTrakt)
 	}
 	database.UpdateArray("dbmovies",
 		[]string{"Title", "Release_Date", "Year", "Adult", "Budget", "Genres", "Original_Language", "Original_Title", "Overview", "Popularity", "Revenue", "Runtime", "Spoken_Languages", "Status", "Tagline", "Vote_Average", "Vote_Count", "Trakt_ID", "Moviedb_ID", "Imdb_ID", "Freebase_M_ID", "Freebase_ID", "Facebook_ID", "Instagram_ID", "Twitter_ID", "URL", "Backdrop", "Poster", "Slug"},
@@ -184,7 +202,7 @@ func JobReloadMovies(cfg config.Cfg, dbmovie database.Dbmovie, configEntry confi
 		database.Query{Where: "id=?", WhereArgs: []interface{}{dbmovie.ID}})
 
 	logger.Log.Debug("Get Movie Titles: ", dbmovie.Title)
-	titlegroup := dbmovie.GetTitles(configEntry.Metadata_title_languages, cfg.General.MovieMetaSourceImdb, cfg.General.MovieMetaSourceTmdb, cfg.General.MovieMetaSourceTrakt)
+	titlegroup := dbmovie.GetTitles(configEntry.Metadata_title_languages, cfg_general.MovieMetaSourceImdb, cfg_general.MovieMetaSourceTmdb, cfg_general.MovieMetaSourceTrakt)
 	for idxtitle := range titlegroup {
 		_, dbmovietitleerr := database.GetDbmovieTitle(database.Query{Where: "dbmovie_id = ? and title = ?", WhereArgs: []interface{}{dbmovie.ID, titlegroup[idxtitle].Title}})
 		if dbmovietitleerr != nil {
@@ -278,7 +296,15 @@ func movieCheckAlternateIfYear(dbmovietitles []database.DbmovieTitle, listname s
 	}
 	return false, database.Movie{}, "", 0
 }
-func movieFindDbByTitle(cfg config.Cfg, title string, year string, listname string, allowyear1 bool, searchtype string) (movie database.Movie, imdb string, entriesfound int) {
+func movieFindDbByTitle(title string, year string, listname string, allowyear1 bool, searchtype string) (movie database.Movie, imdb string, entriesfound int) {
+	hasGeneral, _ := config.ConfigDB.Has("general")
+	if !hasGeneral {
+		logger.Log.Errorln("General Config not found")
+		return
+	}
+	var cfg_general config.GeneralConfig
+	config.ConfigDB.Get("general", &cfg_general)
+
 	searchfor := title
 	yearint, _ := strconv.Atoi(year)
 	slugged := logger.StringToSlug(title)
@@ -309,18 +335,18 @@ func movieFindDbByTitle(cfg config.Cfg, title string, year string, listname stri
 
 	searchprovider := []string{"imdb", "tmdb", "omdb"}
 	if strings.EqualFold(searchtype, "rss") {
-		if len(cfg.General.MovieRSSMetaSourcePriority) >= 1 {
-			searchprovider = cfg.General.MovieRSSMetaSourcePriority
+		if len(cfg_general.MovieRSSMetaSourcePriority) >= 1 {
+			searchprovider = cfg_general.MovieRSSMetaSourcePriority
 		}
 	} else {
-		if len(cfg.General.MovieParseMetaSourcePriority) >= 1 {
-			searchprovider = cfg.General.MovieParseMetaSourcePriority
+		if len(cfg_general.MovieParseMetaSourcePriority) >= 1 {
+			searchprovider = cfg_general.MovieParseMetaSourcePriority
 		}
 	}
 	if len(searchprovider) >= 1 {
 		for idxprovider := range searchprovider {
 			if strings.EqualFold(searchprovider[idxprovider], "imdb") {
-				if cfg.General.MovieMetaSourceImdb {
+				if cfg_general.MovieMetaSourceImdb {
 					//Search in Imdb
 					imdbtitles, _ := database.QueryImdbTitle(database.Query{Select: "tconst,start_year", Where: "(primary_title = ? COLLATE NOCASE or original_title = ? COLLATE NOCASE or slug = ?)", WhereArgs: []interface{}{title, title, slugged}})
 					if len(imdbtitles) >= 1 {
@@ -384,7 +410,7 @@ func movieFindDbByTitle(cfg config.Cfg, title string, year string, listname stri
 				}
 			}
 			if strings.EqualFold(searchprovider[idxprovider], "tmdb") {
-				if cfg.General.MovieMetaSourceTmdb {
+				if cfg_general.MovieMetaSourceTmdb {
 					getmovie, _ := apiexternal.TmdbApi.SearchMovie(searchfor)
 					if len(getmovie.Results) >= 1 {
 						foundtmdb := 0
@@ -437,7 +463,7 @@ func movieFindDbByTitle(cfg config.Cfg, title string, year string, listname stri
 				}
 			}
 			if strings.EqualFold(searchprovider[idxprovider], "omdb") {
-				if cfg.General.MovieMetaSourceOmdb {
+				if cfg_general.MovieMetaSourceOmdb {
 					searchomdb, _ := apiexternal.OmdbApi.SearchMovie(title, "")
 					if len(searchomdb.Search) >= 1 {
 						foundomdb := 0
@@ -509,7 +535,15 @@ func movieGetListFilter(lists []string, dbid uint, yearint int, allowyear1 bool)
 	}
 	return
 }
-func movieFindListByTitle(cfg config.Cfg, title string, year string, lists []string, allowyear1 bool, searchtype string) (list string, imdb string, entriesfound int) {
+func movieFindListByTitle(title string, year string, lists []string, allowyear1 bool, searchtype string) (list string, imdb string, entriesfound int) {
+	hasGeneral, _ := config.ConfigDB.Has("general")
+	if !hasGeneral {
+		logger.Log.Errorln("General Config not found")
+		return
+	}
+	var cfg_general config.GeneralConfig
+	config.ConfigDB.Get("general", &cfg_general)
+
 	argslist := []interface{}{}
 	for idx := range lists {
 		argslist = append(argslist, lists[idx])
@@ -569,18 +603,18 @@ func movieFindListByTitle(cfg config.Cfg, title string, year string, lists []str
 
 	searchprovider := []string{"imdb", "tmdb", "omdb"}
 	if strings.EqualFold(searchtype, "rss") {
-		if len(cfg.General.MovieRSSMetaSourcePriority) >= 1 {
-			searchprovider = cfg.General.MovieRSSMetaSourcePriority
+		if len(cfg_general.MovieRSSMetaSourcePriority) >= 1 {
+			searchprovider = cfg_general.MovieRSSMetaSourcePriority
 		}
 	} else {
-		if len(cfg.General.MovieParseMetaSourcePriority) >= 1 {
-			searchprovider = cfg.General.MovieParseMetaSourcePriority
+		if len(cfg_general.MovieParseMetaSourcePriority) >= 1 {
+			searchprovider = cfg_general.MovieParseMetaSourcePriority
 		}
 	}
 	if len(searchprovider) >= 1 {
 		for idxprovider := range searchprovider {
 			if strings.EqualFold(searchprovider[idxprovider], "imdb") {
-				if cfg.General.MovieMetaSourceImdb {
+				if cfg_general.MovieMetaSourceImdb {
 					//Search in Imdb
 					imdbtitles, _ := database.QueryImdbTitle(database.Query{Select: "tconst,start_year", Where: "(primary_title = ? COLLATE NOCASE or original_title = ? COLLATE NOCASE or slug = ?)", WhereArgs: []interface{}{title, title, slugged}})
 					if len(imdbtitles) >= 1 {
@@ -654,7 +688,7 @@ func movieFindListByTitle(cfg config.Cfg, title string, year string, lists []str
 				}
 			}
 			if strings.EqualFold(searchprovider[idxprovider], "tmdb") {
-				if cfg.General.MovieMetaSourceTmdb {
+				if cfg_general.MovieMetaSourceTmdb {
 					getmovie, _ := apiexternal.TmdbApi.SearchMovie(searchfor + " " + year)
 					if len(getmovie.Results) >= 1 {
 						foundtmdb := 0
@@ -710,7 +744,7 @@ func movieFindListByTitle(cfg config.Cfg, title string, year string, lists []str
 				}
 			}
 			if strings.EqualFold(searchprovider[idxprovider], "omdb") {
-				if cfg.General.MovieMetaSourceOmdb {
+				if cfg_general.MovieMetaSourceOmdb {
 					searchomdb, _ := apiexternal.OmdbApi.SearchMovie(title, year)
 					if len(searchomdb.Search) >= 1 {
 						foundomdb := 0
@@ -775,7 +809,7 @@ func movieFindListByTitle(cfg config.Cfg, title string, year string, lists []str
 	return
 }
 
-func JobImportMovieParseV2(cfg config.Cfg, file string, configEntry config.MediaTypeConfig, list config.MediaListsConfig, updatemissing bool, minPrio ParseInfo, wg *sizedwaitgroup.SizedWaitGroup) {
+func JobImportMovieParseV2(file string, configEntry config.MediaTypeConfig, list config.MediaListsConfig, updatemissing bool, minPrio ParseInfo, wg *sizedwaitgroup.SizedWaitGroup) {
 	defer wg.Done()
 	movie, movieerr := database.GetMovies(database.Query{Select: "movies.*", InnerJoin: "movie_files ON Movies.ID = movie_files.movie_id", Where: "movie_files.location = ? and movies.listname = ?", WhereArgs: []interface{}{file, list.Name}})
 	if movieerr == nil {
@@ -793,14 +827,22 @@ func JobImportMovieParseV2(cfg config.Cfg, file string, configEntry config.Media
 	}
 	logger.Log.Debug("Parse Movie: ", file)
 
-	m, err := NewFileParser(cfg, filepath.Base(file), false, "movie")
+	m, err := NewFileParser(filepath.Base(file), false, "movie")
+
+	hasQuality, _ := config.ConfigDB.Has("quality_" + list.Template_quality)
+	if !hasQuality {
+		logger.Log.Errorln("Quality Config not found: ", "quality_"+list.Template_quality)
+		return
+	}
+	var cfg_quality config.QualityConfig
+	config.ConfigDB.Get("quality_"+list.Template_quality, &cfg_quality)
 
 	addunmatched := false
 	if err == nil {
 		m.Title = strings.Trim(m.Title, " ")
-		for idxstrip := range cfg.Quality[list.Template_quality].TitleStripSuffixForSearch {
-			if strings.HasSuffix(strings.ToLower(m.Title), strings.ToLower(cfg.Quality[list.Template_quality].TitleStripSuffixForSearch[idxstrip])) {
-				m.Title = trimStringInclAfterStringInsensitive(m.Title, cfg.Quality[list.Template_quality].TitleStripSuffixForSearch[idxstrip])
+		for idxstrip := range cfg_quality.TitleStripSuffixForSearch {
+			if strings.HasSuffix(strings.ToLower(m.Title), strings.ToLower(cfg_quality.TitleStripSuffixForSearch[idxstrip])) {
+				m.Title = trimStringInclAfterStringInsensitive(m.Title, cfg_quality.TitleStripSuffixForSearch[idxstrip])
 				m.Title = strings.Trim(m.Title, " ")
 			}
 		}
@@ -825,7 +867,7 @@ func JobImportMovieParseV2(cfg config.Cfg, file string, configEntry config.Media
 			}
 		}
 		if entriesfound == 0 {
-			getmovie, imdb, entriesfound := movieFindDbByTitle(cfg, m.Title, strconv.Itoa(m.Year), list.Name, cfg.Quality[list.Template_quality].CheckYear1, "parse")
+			getmovie, imdb, entriesfound := movieFindDbByTitle(m.Title, strconv.Itoa(m.Year), list.Name, cfg_quality.CheckYear1, "parse")
 			if entriesfound >= 1 {
 				m.Imdb = imdb
 				movie = getmovie
@@ -839,7 +881,7 @@ func JobImportMovieParseV2(cfg config.Cfg, file string, configEntry config.Media
 					var dbmovie database.Dbmovie
 					dbmovie.ImdbID = m.Imdb
 					sww.Add()
-					JobImportMovies(cfg, dbmovie, configEntry, list, &sww)
+					JobImportMovies(dbmovie, configEntry, list, &sww)
 					sww.Wait()
 					movies, _ := database.QueryMovies(database.Query{Select: "movies.*", InnerJoin: "Dbmovies on Dbmovies.id = movies.dbmovie_id", Where: "Dbmovies.imdb_id = ? and Movies.listname = ?", WhereArgs: []interface{}{m.Imdb, list.Name}})
 					if len(movies) == 1 {
@@ -849,10 +891,10 @@ func JobImportMovieParseV2(cfg config.Cfg, file string, configEntry config.Media
 			}
 		}
 		if movie.ID >= 1 {
-			cutoffPrio := NewCutoffPrio(cfg, configEntry, cfg.Quality[list.Template_quality])
+			cutoffPrio := NewCutoffPrio(configEntry, cfg_quality)
 
-			m.GetPriority(configEntry, cfg.Quality[list.Template_quality])
-			errparsev := m.ParseVideoFile(file, configEntry, cfg.Quality[list.Template_quality])
+			m.GetPriority(configEntry, cfg_quality)
+			errparsev := m.ParseVideoFile(file, configEntry, cfg_quality)
 			if errparsev != nil {
 				return
 			}
@@ -866,7 +908,15 @@ func JobImportMovieParseV2(cfg config.Cfg, file string, configEntry config.Media
 				if movie.Rootpath == "" && movie.ID != 0 {
 					rootpath := ""
 					for idxpath := range configEntry.Data {
-						pppath := cfg.Path[configEntry.Data[idxpath].Template_path].Path
+						hasPath, _ := config.ConfigDB.Has("path_" + configEntry.Data[idxpath].Template_path)
+						if !hasPath {
+							logger.Log.Errorln("Path Config not found: ", "path_"+configEntry.Data[idxpath].Template_path)
+							continue
+						}
+						var cfg_path config.PathsConfig
+						config.ConfigDB.Get("path_"+configEntry.Data[idxpath].Template_path, &cfg_path)
+
+						pppath := cfg_path.Path
 						if strings.Contains(file, pppath) {
 							rootpath = pppath
 							tempfoldername := strings.Replace(file, pppath, "", -1)
@@ -930,14 +980,22 @@ func readCSVFromURL(url string) ([][]string, error) {
 	return data, nil
 }
 
-func getMissingIMDBMoviesV2(cfg config.Cfg, configEntry config.MediaTypeConfig, list config.MediaListsConfig) []database.Dbmovie {
+func getMissingIMDBMoviesV2(configEntry config.MediaTypeConfig, list config.MediaListsConfig) []database.Dbmovie {
 	if !list.Enabled {
 		return []database.Dbmovie{}
 	}
-	if len(cfg.List[list.Template_list].Url) >= 1 {
-		data, err := readCSVFromURL(cfg.List[list.Template_list].Url)
+	hasList, _ := config.ConfigDB.Has("list_" + list.Template_list)
+	if !hasList {
+		logger.Log.Errorln("List Config not found: ", "list_"+list.Template_list)
+		return []database.Dbmovie{}
+	}
+	var cfg_list config.ListsConfig
+	config.ConfigDB.Get("list_"+list.Template_list, &cfg_list)
+
+	if len(cfg_list.Url) >= 1 {
+		data, err := readCSVFromURL(cfg_list.Url)
 		if err != nil {
-			logger.Log.Error("Failed to read CSV from: ", cfg.List[list.Template_list].Url)
+			logger.Log.Error("Failed to read CSV from: ", cfg_list.Url)
 			return []database.Dbmovie{}
 		}
 		d := make([]database.Dbmovie, 0, len(data))
@@ -948,10 +1006,10 @@ func getMissingIMDBMoviesV2(cfg config.Cfg, configEntry config.MediaTypeConfig, 
 				continue
 			}
 
-			if len(cfg.List[list.Template_list].Excludegenre) >= 1 {
+			if len(cfg_list.Excludegenre) >= 1 {
 				excludebygenre := false
-				for idxgenre := range cfg.List[list.Template_list].Excludegenre {
-					countergenre, _ := database.ImdbCountRows("imdb_genres", database.Query{Where: "tconst = ? and genre = ?", WhereArgs: []interface{}{data[idx][1], cfg.List[list.Template_list].Excludegenre[idxgenre]}})
+				for idxgenre := range cfg_list.Excludegenre {
+					countergenre, _ := database.ImdbCountRows("imdb_genres", database.Query{Where: "tconst = ? and genre = ?", WhereArgs: []interface{}{data[idx][1], cfg_list.Excludegenre[idxgenre]}})
 					if countergenre >= 1 {
 						excludebygenre = true
 						break
@@ -961,10 +1019,10 @@ func getMissingIMDBMoviesV2(cfg config.Cfg, configEntry config.MediaTypeConfig, 
 					continue
 				}
 			}
-			if len(cfg.List[list.Template_list].Includegenre) >= 1 {
+			if len(cfg_list.Includegenre) >= 1 {
 				includebygenre := false
-				for idxgenre := range cfg.List[list.Template_list].Includegenre {
-					countergenre, _ := database.ImdbCountRows("imdb_genres", database.Query{Where: "tconst = ? and genre = ?", WhereArgs: []interface{}{data[idx][1], cfg.List[list.Template_list].Includegenre[idxgenre]}})
+				for idxgenre := range cfg_list.Includegenre {
+					countergenre, _ := database.ImdbCountRows("imdb_genres", database.Query{Where: "tconst = ? and genre = ?", WhereArgs: []interface{}{data[idx][1], cfg_list.Includegenre[idxgenre]}})
 					if countergenre >= 1 {
 						includebygenre = true
 						break
@@ -982,4 +1040,324 @@ func getMissingIMDBMoviesV2(cfg config.Cfg, configEntry config.MediaTypeConfig, 
 		return d
 	}
 	return []database.Dbmovie{}
+}
+
+var Lastmovie string
+
+func importnewmoviessingle(row config.MediaTypeConfig, list config.MediaListsConfig) {
+	results := Feeds(row, list)
+
+	hasGeneral, _ := config.ConfigDB.Has("general")
+	if !hasGeneral {
+		logger.Log.Errorln("General Config not found")
+		return
+	}
+	var cfg_general config.GeneralConfig
+	config.ConfigDB.Get("general", &cfg_general)
+
+	swg := sizedwaitgroup.New(cfg_general.WorkerMetadata)
+	for idxmovie := range results.Movies {
+		if strings.EqualFold(Lastmovie, results.Movies[idxmovie].ImdbID) && Lastmovie != "" {
+			config.Slepping(false, 5)
+		}
+		Lastmovie = results.Movies[idxmovie].ImdbID
+		logger.Log.Info("Import Movie ", idxmovie, " of ", len(results.Movies), " imdb: ", results.Movies[idxmovie].ImdbID)
+		swg.Add()
+		JobImportMovies(results.Movies[idxmovie], row, list, &swg)
+	}
+	swg.Wait()
+}
+
+var LastMoviePath string
+var LastMoviesFilePath string
+
+func getnewmoviessingle(row config.MediaTypeConfig, list config.MediaListsConfig) {
+	hasGeneral, _ := config.ConfigDB.Has("general")
+	if !hasGeneral {
+		logger.Log.Errorln("General Config not found")
+		return
+	}
+	var cfg_general config.GeneralConfig
+	config.ConfigDB.Get("general", &cfg_general)
+
+	hasQuality, _ := config.ConfigDB.Has("quality_" + list.Template_quality)
+	if !hasQuality {
+		logger.Log.Errorln("Quality Config not found: ", "quality_"+list.Template_quality)
+		return
+	}
+	var cfg_quality config.QualityConfig
+	config.ConfigDB.Get("quality_"+list.Template_quality, &cfg_quality)
+
+	defaultPrio := &ParseInfo{Quality: row.DefaultQuality, Resolution: row.DefaultResolution}
+	defaultPrio.GetPriority(row, cfg_quality)
+
+	logger.Log.Info("Scan Movie File")
+	filesfound := make([]string, 0, 5000)
+	for idxpath := range row.Data {
+		hasPath, _ := config.ConfigDB.Has("path_" + row.Data[idxpath].Template_path)
+		if !hasPath {
+			logger.Log.Errorln("Path Config not found: ", "path_"+row.Data[idxpath].Template_path)
+			continue
+		}
+		var cfg_path config.PathsConfig
+		config.ConfigDB.Get("path_"+row.Data[idxpath].Template_path, &cfg_path)
+
+		if strings.EqualFold(LastMoviePath, cfg_path.Path) && LastMoviePath != "" {
+			time.Sleep(time.Duration(5) * time.Second)
+		}
+		LastMoviePath = cfg_path.Path
+		filesfound_add := scanner.GetFilesGoDir(cfg_path.Path, cfg_path.AllowedVideoExtensions, cfg_path.AllowedVideoExtensionsNoRename, cfg_path.Blocked)
+		filesfound = append(filesfound, filesfound_add...)
+	}
+	filesadded := scanner.GetFilesAdded(filesfound, list.Name)
+	logger.Log.Info("Find Movie File")
+	swf := sizedwaitgroup.New(cfg_general.WorkerParse)
+	for idxfile := range filesadded {
+		if strings.EqualFold(LastMoviesFilePath, filesadded[idxfile]) && LastMoviesFilePath != "" {
+			time.Sleep(time.Duration(5) * time.Second)
+		}
+		LastMoviesFilePath = filesadded[idxfile]
+		logger.Log.Info("Parse Movie ", idxfile, " of ", len(filesadded), " path: ", filesadded[idxfile])
+		swf.Add()
+		JobImportMovieParseV2(filesadded[idxfile], row, list, true, *defaultPrio, &swf)
+	}
+	swf.Wait()
+}
+
+func checkmissingmoviessingle(row config.MediaTypeConfig, list config.MediaListsConfig) {
+	movies, _ := database.QueryMovies(database.Query{Where: "listname = ?", WhereArgs: []interface{}{list.Name}})
+
+	hasGeneral, _ := config.ConfigDB.Has("general")
+	if !hasGeneral {
+		logger.Log.Errorln("General Config not found")
+		return
+	}
+	var cfg_general config.GeneralConfig
+	config.ConfigDB.Get("general", &cfg_general)
+
+	swfile := sizedwaitgroup.New(cfg_general.WorkerFiles)
+	for idx := range movies {
+		moviefile, _ := database.QueryMovieFiles(database.Query{Select: "location", Where: "movie_id = ?", WhereArgs: []interface{}{movies[idx].ID}})
+		for idxfile := range moviefile {
+			swfile.Add()
+			JobImportFileCheck(moviefile[idxfile].Location, "movie", &swfile)
+		}
+	}
+	swfile.Wait()
+}
+
+func checkmissingmoviesflag(row config.MediaTypeConfig, list config.MediaListsConfig) {
+	movies, _ := database.QueryMovies(database.Query{Where: "listname = ?", WhereArgs: []interface{}{list.Name}})
+
+	for idxmovie := range movies {
+		counter, _ := database.CountRows("movie_files", database.Query{Where: "movie_id = ?", WhereArgs: []interface{}{movies[idxmovie].ID}})
+		if counter >= 1 {
+			if movies[idxmovie].Missing {
+				database.UpdateColumn("Movies", "missing", 0, database.Query{Where: "id=?", WhereArgs: []interface{}{movies[idxmovie].ID}})
+			}
+		} else {
+			if !movies[idxmovie].Missing {
+				database.UpdateColumn("Movies", "missing", 1, database.Query{Where: "id=?", WhereArgs: []interface{}{movies[idxmovie].ID}})
+			}
+		}
+	}
+}
+
+var LastMoviesStructure string
+
+func moviesStructureSingle(row config.MediaTypeConfig, list config.MediaListsConfig) {
+	hasGeneral, _ := config.ConfigDB.Has("general")
+	if !hasGeneral {
+		logger.Log.Errorln("General Config not found")
+		return
+	}
+	var cfg_general config.GeneralConfig
+	config.ConfigDB.Get("general", &cfg_general)
+
+	swfile := sizedwaitgroup.New(cfg_general.WorkerFiles)
+
+	for idxpath := range row.DataImport {
+		mappath := ""
+		hasPathimport, _ := config.ConfigDB.Has("path_" + row.DataImport[idxpath].Template_path)
+		if !hasPathimport {
+			logger.Log.Errorln("Path Config not found: ", "path_"+row.DataImport[idxpath].Template_path)
+			continue
+		}
+		var cfg_path_import config.PathsConfig
+		config.ConfigDB.Get("path_"+row.DataImport[idxpath].Template_path, &cfg_path_import)
+
+		var cfg_path config.PathsConfig
+		if len(row.Data) >= 1 {
+			mappath = row.Data[0].Template_path
+			hasPath, _ := config.ConfigDB.Has("path_" + mappath)
+			if !hasPath {
+				logger.Log.Errorln("Path Config not found: ", "path_"+mappath)
+				continue
+			}
+			config.ConfigDB.Get("path_"+mappath, &cfg_path)
+		}
+		if strings.EqualFold(LastMoviesStructure, cfg_path_import.Path) && LastMoviesStructure != "" {
+			time.Sleep(time.Duration(15) * time.Second)
+		}
+		LastMoviesStructure = cfg_path_import.Path
+		swfile.Add()
+		StructureFolders("movie", cfg_path_import, cfg_path, row, list)
+		swfile.Done()
+	}
+	swfile.Wait()
+}
+
+func RefreshMovies() {
+	hasGeneral, _ := config.ConfigDB.Has("general")
+	if !hasGeneral {
+		logger.Log.Errorln("General Config not found")
+		return
+	}
+	var cfg_general config.GeneralConfig
+	config.ConfigDB.Get("general", &cfg_general)
+
+	if cfg_general.SchedulerDisabled {
+		return
+	}
+	sw := sizedwaitgroup.New(cfg_general.WorkerFiles)
+	dbmovies, _ := database.QueryDbmovie(database.Query{})
+
+	for idxmovie := range dbmovies {
+		sw.Add()
+		JobReloadMovies(dbmovies[idxmovie], config.MediaTypeConfig{}, config.MediaListsConfig{}, &sw)
+	}
+	sw.Wait()
+}
+
+func RefreshMoviesInc() {
+	hasGeneral, _ := config.ConfigDB.Has("general")
+	if !hasGeneral {
+		logger.Log.Errorln("General Config not found")
+		return
+	}
+	var cfg_general config.GeneralConfig
+	config.ConfigDB.Get("general", &cfg_general)
+
+	if cfg_general.SchedulerDisabled {
+		return
+	}
+	sw := sizedwaitgroup.New(cfg_general.WorkerFiles)
+	dbmovies, _ := database.QueryDbmovie(database.Query{Limit: 100, OrderBy: "updated_at desc"})
+
+	for idxmovie := range dbmovies {
+		sw.Add()
+		JobReloadMovies(dbmovies[idxmovie], config.MediaTypeConfig{}, config.MediaListsConfig{}, &sw)
+	}
+	sw.Wait()
+}
+
+func Movies_all_jobs(job string, force bool) {
+
+	movie_keys, _ := config.ConfigDB.Keys([]byte("movie_*"), 0, 0, true)
+
+	for _, idxmovie := range movie_keys {
+		var cfg_movie config.MediaTypeConfig
+		config.ConfigDB.Get(string(idxmovie), &cfg_movie)
+
+		Movies_single_jobs(job, cfg_movie.Name, "", force)
+	}
+}
+
+var MovieJobRunning map[string]bool
+
+func Movies_single_jobs(job string, typename string, listname string, force bool) {
+	hasGeneral, _ := config.ConfigDB.Has("general")
+	if !hasGeneral {
+		logger.Log.Errorln("General Config not found")
+		return
+	}
+	var cfg_general config.GeneralConfig
+	config.ConfigDB.Get("general", &cfg_general)
+
+	if cfg_general.SchedulerDisabled && !force {
+		logger.Log.Info("Skipped Job: ", job, " for ", typename)
+		return
+	}
+	jobName := job + typename + listname
+	defer func() {
+		database.ReadWriteMu.Lock()
+		delete(MovieJobRunning, jobName)
+		database.ReadWriteMu.Unlock()
+	}()
+	database.ReadWriteMu.Lock()
+	if _, nok := MovieJobRunning[jobName]; nok {
+		logger.Log.Debug("Job already running: ", jobName)
+		database.ReadWriteMu.Unlock()
+		return
+	} else {
+		MovieJobRunning[jobName] = true
+	}
+	database.ReadWriteMu.Unlock()
+	job = strings.ToLower(job)
+	dbresult, _ := database.InsertArray("job_histories", []string{"job_type", "job_group", "job_category", "started"},
+		[]interface{}{job, typename, "Movie", time.Now()})
+	logger.Log.Info("Started Job: ", job, " for ", typename)
+	ok, _ := config.ConfigDB.Has("movie_" + typename)
+	if ok {
+		var cfg_movie config.MediaTypeConfig
+		config.ConfigDB.Get("movie_"+typename, &cfg_movie)
+
+		switch job {
+		case "searchmissingfull":
+			SearchMovieMissing(cfg_movie, 0, false)
+		case "searchmissinginc":
+			SearchMovieMissing(cfg_movie, cfg_movie.Searchmissing_incremental, false)
+		case "searchupgradefull":
+			SearchMovieUpgrade(cfg_movie, 0, false)
+		case "searchupgradeinc":
+			SearchMovieUpgrade(cfg_movie, cfg_movie.Searchupgrade_incremental, false)
+		case "searchmissingfulltitle":
+			SearchMovieMissing(cfg_movie, 0, true)
+		case "searchmissinginctitle":
+			SearchMovieMissing(cfg_movie, cfg_movie.Searchmissing_incremental, true)
+		case "searchupgradefulltitle":
+			SearchMovieUpgrade(cfg_movie, 0, true)
+		case "searchupgradeinctitle":
+			SearchMovieUpgrade(cfg_movie, cfg_movie.Searchupgrade_incremental, true)
+		}
+		qualis := make(map[string]bool, 10)
+		for idxlist := range cfg_movie.Lists {
+			if cfg_movie.Lists[idxlist].Name != listname && listname != "" {
+				continue
+			}
+			if _, ok := qualis[cfg_movie.Lists[idxlist].Template_quality]; !ok {
+				qualis[cfg_movie.Lists[idxlist].Template_quality] = true
+			}
+			switch job {
+			case "data":
+				config.Slepping(true, 6)
+				getnewmoviessingle(cfg_movie, cfg_movie.Lists[idxlist])
+			case "checkmissing":
+				checkmissingmoviessingle(cfg_movie, cfg_movie.Lists[idxlist])
+			case "checkmissingflag":
+				checkmissingmoviesflag(cfg_movie, cfg_movie.Lists[idxlist])
+			case "structure":
+				moviesStructureSingle(cfg_movie, cfg_movie.Lists[idxlist])
+			case "clearhistory":
+				database.DeleteRow("movie_histories", database.Query{InnerJoin: "movies ON movies.id = movie_histories.movie_id", Where: "movies.listname=?", WhereArgs: []interface{}{typename}})
+			case "feeds":
+				config.Slepping(true, 6)
+				importnewmoviessingle(cfg_movie, cfg_movie.Lists[idxlist])
+			default:
+				// other stuff
+			}
+		}
+		for qual := range qualis {
+			switch job {
+			case "rss":
+				SearchMovieRSS(cfg_movie, qual)
+			}
+		}
+	} else {
+		logger.Log.Info("Skipped Job Type not matched: ", job, " for ", typename)
+	}
+	dbid, _ := dbresult.LastInsertId()
+	database.UpdateColumn("job_histories", "ended", time.Now(), database.Query{Where: "id=?", WhereArgs: []interface{}{dbid}})
+	logger.Log.Info("Ended Job: ", job, " for ", typename)
+	debug.FreeOSMemory()
 }

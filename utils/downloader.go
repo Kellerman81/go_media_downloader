@@ -13,7 +13,6 @@ import (
 )
 
 type Downloader struct {
-	Cfg              config.Cfg
 	ConfigEntry      config.MediaTypeConfig
 	Quality          string
 	SearchGroupType  string //series, movies
@@ -34,9 +33,8 @@ type Downloader struct {
 	Targetfile string
 }
 
-func NewDownloader(cfg config.Cfg, configEntry config.MediaTypeConfig, searchActionType string) Downloader {
+func NewDownloader(configEntry config.MediaTypeConfig, searchActionType string) Downloader {
 	return Downloader{
-		Cfg:              cfg,
 		ConfigEntry:      configEntry,
 		SearchActionType: searchActionType,
 	}
@@ -64,7 +62,7 @@ func (d *Downloader) SetSeriesEpisode(seriesepisode database.SerieEpisode) {
 }
 func (d *Downloader) DownloadNzb(nzb nzbwithprio) {
 	d.Nzb = nzb
-	d.Category, d.Target, d.Downloader = getnzbconfig(d.Cfg, d.Nzb, d.Quality)
+	d.Category, d.Target, d.Downloader = getnzbconfig(d.Nzb, d.Quality)
 
 	targetfolder := ""
 	if d.SearchGroupType == "movie" {
@@ -147,7 +145,7 @@ func (d Downloader) DownloadByDeluge() {
 
 func (d Downloader) Notify() {
 	for idxnoti := range d.ConfigEntry.Notification {
-		notifier(d.Cfg, "added_download", d.ConfigEntry.Notification[idxnoti], InputNotifier{
+		notifier("added_download", d.ConfigEntry.Notification[idxnoti], InputNotifier{
 			Targetpath: d.Category + "/" + d.Targetfile + ".nzb",
 			SourcePath: d.Nzb.NZB.DownloadURL,
 			Title:      d.Nzb.NZB.Title,
@@ -199,16 +197,41 @@ func (d Downloader) History() {
 	}
 }
 
-func getnzbconfig(cfg config.Cfg, nzb nzbwithprio, quality string) (category string, target config.PathsConfig, downloader config.DownloaderConfig) {
-	for idx := range cfg.Quality[quality].Indexer {
-		if strings.EqualFold(cfg.Quality[quality].Indexer[idx].Template_indexer, nzb.Indexer) {
-			category = cfg.Quality[quality].Indexer[idx].Category_dowloader
-			target = cfg.Path[cfg.Quality[quality].Indexer[idx].Template_path_nzb]
-			downloader = cfg.Downloader[cfg.Quality[quality].Indexer[idx].Template_downloader]
+func getnzbconfig(nzb nzbwithprio, quality string) (category string, target config.PathsConfig, downloader config.DownloaderConfig) {
+
+	hasQuality, _ := config.ConfigDB.Has("quality_" + quality)
+	if !hasQuality {
+		logger.Log.Errorln("Quality Config not found: ", "quality_"+quality)
+		return
+	}
+	var cfg_quality config.QualityConfig
+	config.ConfigDB.Get("quality_"+quality, &cfg_quality)
+
+	for idx := range cfg_quality.Indexer {
+		if strings.EqualFold(cfg_quality.Indexer[idx].Template_indexer, nzb.Indexer) {
+			hasPath, _ := config.ConfigDB.Has("path_" + cfg_quality.Indexer[idx].Template_path_nzb)
+			if !hasPath {
+				logger.Log.Errorln("Path Config not found: ", "path_"+cfg_quality.Indexer[idx].Template_path_nzb)
+				continue
+			}
+			var cfg_path config.PathsConfig
+			config.ConfigDB.Get("path_"+cfg_quality.Indexer[idx].Template_path_nzb, &cfg_path)
+
+			hasDownloader, _ := config.ConfigDB.Has("downloader_" + cfg_quality.Indexer[idx].Template_downloader)
+			if !hasDownloader {
+				logger.Log.Errorln("Downloader Config not found: ", "downloader_"+cfg_quality.Indexer[idx].Template_downloader)
+				continue
+			}
+			var cfg_downloader config.DownloaderConfig
+			config.ConfigDB.Get("downloader_"+cfg_quality.Indexer[idx].Template_downloader, &cfg_downloader)
+
+			category = cfg_quality.Indexer[idx].Category_dowloader
+			target = cfg_path
+			downloader = cfg_downloader
 			logger.Log.Debug("Downloader nzb config found - category: ", category)
-			logger.Log.Debug("Downloader nzb config found - pathconfig: ", cfg.Quality[quality].Indexer[idx].Template_path_nzb)
-			logger.Log.Debug("Downloader nzb config found - dlconfig: ", cfg.Quality[quality].Indexer[idx].Template_downloader)
-			logger.Log.Debug("Downloader nzb config found - target: ", target.Path)
+			logger.Log.Debug("Downloader nzb config found - pathconfig: ", cfg_quality.Indexer[idx].Template_path_nzb)
+			logger.Log.Debug("Downloader nzb config found - dlconfig: ", cfg_quality.Indexer[idx].Template_downloader)
+			logger.Log.Debug("Downloader nzb config found - target: ", cfg_path.Path)
 			logger.Log.Debug("Downloader nzb config found - downloader: ", downloader.Type)
 			logger.Log.Debug("Downloader nzb config found - downloader: ", downloader.Name)
 			break
@@ -216,9 +239,26 @@ func getnzbconfig(cfg config.Cfg, nzb nzbwithprio, quality string) (category str
 	}
 	if category == "" {
 		logger.Log.Debug("Downloader nzb config NOT found - quality: ", quality)
-		category = cfg.Quality[quality].Indexer[0].Category_dowloader
-		target = cfg.Path[cfg.Quality[quality].Indexer[0].Template_path_nzb]
-		downloader = cfg.Downloader[cfg.Quality[quality].Indexer[0].Template_downloader]
+		category = cfg_quality.Indexer[0].Category_dowloader
+
+		hasPath, _ := config.ConfigDB.Has("path_" + cfg_quality.Indexer[0].Template_path_nzb)
+		if !hasPath {
+			logger.Log.Errorln("Path Config not found: ", "path_"+cfg_quality.Indexer[0].Template_path_nzb)
+			return
+		}
+		var cfg_path config.PathsConfig
+		config.ConfigDB.Get("path_"+cfg_quality.Indexer[0].Template_path_nzb, &cfg_path)
+
+		hasDownloader, _ := config.ConfigDB.Has("downloader_" + cfg_quality.Indexer[0].Template_downloader)
+		if !hasDownloader {
+			logger.Log.Errorln("Downloader Config not found: ", "downloader_"+cfg_quality.Indexer[0].Template_downloader)
+			return
+		}
+		var cfg_downloader config.DownloaderConfig
+		config.ConfigDB.Get("downloader_"+cfg_quality.Indexer[0].Template_downloader, &cfg_downloader)
+
+		target = cfg_path
+		downloader = cfg_downloader
 		logger.Log.Debug("Downloader nzb config NOT found - use first: ", category)
 	}
 	return
