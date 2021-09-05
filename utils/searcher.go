@@ -15,20 +15,31 @@ import (
 	"github.com/remeh/sizedwaitgroup"
 )
 
-func SearchMovieMissing(cfg config.Cfg, configEntry config.MediaTypeConfig, jobcount int, titlesearch bool) {
+func SearchMovieMissing(configEntry config.MediaTypeConfig, jobcount int, titlesearch bool) {
 	var scaninterval int
 	lists := make([]string, 0, len(configEntry.Lists))
 	for idxlisttest := range configEntry.Lists {
 		lists = append(lists, configEntry.Lists[idxlisttest].Name)
 	}
+
+	hasGeneral, _ := config.ConfigDB.Has("general")
+	if !hasGeneral {
+		logger.Log.Errorln("General Config not found")
+		return
+	}
+	var cfg_general config.GeneralConfig
+	config.ConfigDB.Get("general", &cfg_general)
+
 	if len(configEntry.Data) >= 1 {
-		_, okmap := cfg.Path[configEntry.Data[0].Template_path]
-		if okmap {
-			scaninterval = cfg.Path[configEntry.Data[0].Template_path].MissingScanInterval
-		} else {
-			logger.Log.Error("Name in PathsMap not found")
+		hasPath, _ := config.ConfigDB.Has("path_" + configEntry.Data[0].Template_path)
+		if !hasPath {
+			logger.Log.Errorln("Path Config not found: ", "path_"+configEntry.Data[0].Template_path)
 			return
 		}
+		var cfg_path config.PathsConfig
+		config.ConfigDB.Get("path_"+configEntry.Data[0].Template_path, &cfg_path)
+
+		scaninterval = cfg_path.MissingScanInterval
 	}
 	scantime := time.Now()
 	if scaninterval != 0 {
@@ -56,10 +67,10 @@ func SearchMovieMissing(cfg config.Cfg, configEntry config.MediaTypeConfig, jobc
 	missingmovies, _ := database.QueryMovies(qu)
 
 	// searchnow := NewSearcher(configEntry, list)
-	swg := sizedwaitgroup.New(cfg.General.WorkerSearch)
+	swg := sizedwaitgroup.New(cfg_general.WorkerSearch)
 	for idx := range missingmovies {
 		swg.Add()
-		SearchMovieSingle(cfg, missingmovies[idx], configEntry, titlesearch)
+		SearchMovieSingle(missingmovies[idx], configEntry, titlesearch)
 		swg.Done()
 		// swg.Add()
 		// jobFindDownloadMissingNzbMovieImdb(movie, configEntry, list, &swg)
@@ -67,35 +78,45 @@ func SearchMovieMissing(cfg config.Cfg, configEntry config.MediaTypeConfig, jobc
 	swg.Wait()
 }
 
-func SearchMovieSingle(cfg config.Cfg, movie database.Movie, configEntry config.MediaTypeConfig, titlesearch bool) {
+func SearchMovieSingle(movie database.Movie, configEntry config.MediaTypeConfig, titlesearch bool) {
 	searchtype := "missing"
 	if !movie.Missing {
 		searchtype = "upgrade"
 	}
-	searchnow := NewSearcher(cfg, configEntry, movie.QualityProfile)
+	searchnow := NewSearcher(configEntry, movie.QualityProfile)
 	searchresults := searchnow.MovieSearch(movie, false, titlesearch)
 	if len(searchresults.Nzbs) >= 1 {
 		logger.Log.Debug("nzb found - start downloading: ", searchresults.Nzbs[0].NZB.Title)
-		downloadnow := NewDownloader(cfg, configEntry, searchtype)
+		downloadnow := NewDownloader(configEntry, searchtype)
 		downloadnow.SetMovie(movie)
 		downloadnow.DownloadNzb(searchresults.Nzbs[0])
 	}
 }
 
-func SearchMovieUpgrade(cfg config.Cfg, configEntry config.MediaTypeConfig, jobcount int, titlesearch bool) {
+func SearchMovieUpgrade(configEntry config.MediaTypeConfig, jobcount int, titlesearch bool) {
 	var scaninterval int
 	lists := make([]string, 0, len(configEntry.Lists))
 	for idxlisttest := range configEntry.Lists {
 		lists = append(lists, configEntry.Lists[idxlisttest].Name)
 	}
+	hasGeneral, _ := config.ConfigDB.Has("general")
+	if !hasGeneral {
+		logger.Log.Errorln("General Config not found")
+		return
+	}
+	var cfg_general config.GeneralConfig
+	config.ConfigDB.Get("general", &cfg_general)
+
 	if len(configEntry.Data) >= 1 {
-		_, okmap := cfg.Path[configEntry.Data[0].Template_path]
-		if okmap {
-			scaninterval = cfg.Path[configEntry.Data[0].Template_path].UpgradeScanInterval
-		} else {
-			logger.Log.Error("Name in PathsMap not found")
+		hasPath, _ := config.ConfigDB.Has("path_" + configEntry.Data[0].Template_path)
+		if !hasPath {
+			logger.Log.Errorln("Path Config not found: ", "path_"+configEntry.Data[0].Template_path)
 			return
 		}
+		var cfg_path config.PathsConfig
+		config.ConfigDB.Get("path_"+configEntry.Data[0].Template_path, &cfg_path)
+
+		scaninterval = cfg_path.UpgradeScanInterval
 	}
 	scantime := time.Now()
 	if scaninterval != 0 {
@@ -121,10 +142,10 @@ func SearchMovieUpgrade(cfg config.Cfg, configEntry config.MediaTypeConfig, jobc
 	qu.OrderBy = "Lastscan asc"
 	missingmovies, _ := database.QueryMovies(qu)
 
-	swg := sizedwaitgroup.New(cfg.General.WorkerSearch)
+	swg := sizedwaitgroup.New(cfg_general.WorkerSearch)
 	for idx := range missingmovies {
 		swg.Add()
-		SearchMovieSingle(cfg, missingmovies[idx], configEntry, titlesearch)
+		SearchMovieSingle(missingmovies[idx], configEntry, titlesearch)
 		swg.Done()
 
 		// swg.Add()
@@ -133,45 +154,64 @@ func SearchMovieUpgrade(cfg config.Cfg, configEntry config.MediaTypeConfig, jobc
 	swg.Wait()
 }
 
-func SearchSerieSingle(cfg config.Cfg, serie database.Serie, configEntry config.MediaTypeConfig, titlesearch bool) {
-	swg := sizedwaitgroup.New(cfg.General.WorkerSearch)
+func SearchSerieSingle(serie database.Serie, configEntry config.MediaTypeConfig, titlesearch bool) {
+
+	hasGeneral, _ := config.ConfigDB.Has("general")
+	if !hasGeneral {
+		logger.Log.Errorln("General Config not found")
+		return
+	}
+	var cfg_general config.GeneralConfig
+	config.ConfigDB.Get("general", &cfg_general)
+
+	swg := sizedwaitgroup.New(cfg_general.WorkerSearch)
 	episodes, _ := database.QuerySerieEpisodes(database.Query{Where: "serie_id = ?", WhereArgs: []interface{}{serie.ID}})
 	for idx := range episodes {
 		swg.Add()
-		SearchSerieEpisodeSingle(cfg, episodes[idx], configEntry, titlesearch)
+		SearchSerieEpisodeSingle(episodes[idx], configEntry, titlesearch)
 		swg.Done()
 	}
 	swg.Wait()
 }
 
-func SearchSerieEpisodeSingle(cfg config.Cfg, row database.SerieEpisode, configEntry config.MediaTypeConfig, titlesearch bool) {
+func SearchSerieEpisodeSingle(row database.SerieEpisode, configEntry config.MediaTypeConfig, titlesearch bool) {
 	searchtype := "missing"
 	if !row.Missing {
 		searchtype = "upgrade"
 	}
-	searchnow := NewSearcher(cfg, configEntry, row.QualityProfile)
+	searchnow := NewSearcher(configEntry, row.QualityProfile)
 	searchresults := searchnow.SeriesSearch(row, false, titlesearch)
 	if len(searchresults.Nzbs) >= 1 {
 		logger.Log.Debug("nzb found - start downloading: ", searchresults.Nzbs[0].NZB.Title)
-		downloadnow := NewDownloader(cfg, configEntry, searchtype)
+		downloadnow := NewDownloader(configEntry, searchtype)
 		downloadnow.SetSeriesEpisode(row)
 		downloadnow.DownloadNzb(searchresults.Nzbs[0])
 	}
 }
-func SearchSerieMissing(cfg config.Cfg, configEntry config.MediaTypeConfig, jobcount int, titlesearch bool) {
+func SearchSerieMissing(configEntry config.MediaTypeConfig, jobcount int, titlesearch bool) {
 	var scaninterval int
 	lists := make([]string, 0, len(configEntry.Lists))
 	for idxlisttest := range configEntry.Lists {
 		lists = append(lists, configEntry.Lists[idxlisttest].Name)
 	}
+	hasGeneral, _ := config.ConfigDB.Has("general")
+	if !hasGeneral {
+		logger.Log.Errorln("General Config not found")
+		return
+	}
+	var cfg_general config.GeneralConfig
+	config.ConfigDB.Get("general", &cfg_general)
+
 	if len(configEntry.Data) >= 1 {
-		_, okmap := cfg.Path[configEntry.Data[0].Template_path]
-		if okmap {
-			scaninterval = cfg.Path[configEntry.Data[0].Template_path].MissingScanInterval
-		} else {
-			logger.Log.Error("Name in PathsMap not found")
+		hasPath, _ := config.ConfigDB.Has("path_" + configEntry.Data[0].Template_path)
+		if !hasPath {
+			logger.Log.Errorln("Path Config not found: ", "path_"+configEntry.Data[0].Template_path)
 			return
 		}
+		var cfg_path config.PathsConfig
+		config.ConfigDB.Get("path_"+configEntry.Data[0].Template_path, &cfg_path)
+
+		scaninterval = cfg_path.MissingScanInterval
 	}
 	scantime := time.Now()
 	if scaninterval != 0 {
@@ -200,7 +240,7 @@ func SearchSerieMissing(cfg config.Cfg, configEntry config.MediaTypeConfig, jobc
 	qu.OrderBy = "Lastscan asc"
 	missingepisode, _ := database.QuerySerieEpisodes(qu)
 
-	swg := sizedwaitgroup.New(cfg.General.WorkerSearch)
+	swg := sizedwaitgroup.New(cfg_general.WorkerSearch)
 	for idx := range missingepisode {
 		dbepi, _ := database.GetDbserieEpisodes(database.Query{Where: "id=?", WhereArgs: []interface{}{missingepisode[idx].DbserieEpisodeID}})
 		epicount, _ := database.CountRows("dbserie_episodes", database.Query{Where: "identifier=? and dbserie_id=?", WhereArgs: []interface{}{dbepi.Identifier, dbepi.DbserieID}})
@@ -208,27 +248,37 @@ func SearchSerieMissing(cfg config.Cfg, configEntry config.MediaTypeConfig, jobc
 			continue
 		}
 		swg.Add()
-		SearchSerieEpisodeSingle(cfg, missingepisode[idx], configEntry, titlesearch)
+		SearchSerieEpisodeSingle(missingepisode[idx], configEntry, titlesearch)
 		swg.Done()
 		// swg.Add()
 		// jobFindDownloadMissingNzbSeriesTvdb(serieepisode, configEntry, list, &swg)
 	}
 	swg.Wait()
 }
-func SearchSerieUpgrade(cfg config.Cfg, configEntry config.MediaTypeConfig, jobcount int, titlesearch bool) {
+func SearchSerieUpgrade(configEntry config.MediaTypeConfig, jobcount int, titlesearch bool) {
 	var scaninterval int
 	lists := make([]string, 0, len(configEntry.Lists))
 	for idxlisttest := range configEntry.Lists {
 		lists = append(lists, configEntry.Lists[idxlisttest].Name)
 	}
+	hasGeneral, _ := config.ConfigDB.Has("general")
+	if !hasGeneral {
+		logger.Log.Errorln("General Config not found")
+		return
+	}
+	var cfg_general config.GeneralConfig
+	config.ConfigDB.Get("general", &cfg_general)
+
 	if len(configEntry.Data) >= 1 {
-		_, okmap := cfg.Path[configEntry.Data[0].Template_path]
-		if okmap {
-			scaninterval = cfg.Path[configEntry.Data[0].Template_path].UpgradeScanInterval
-		} else {
-			logger.Log.Error("Name in PathsMap not found")
+		hasPath, _ := config.ConfigDB.Has("path_" + configEntry.Data[0].Template_path)
+		if !hasPath {
+			logger.Log.Errorln("Path Config not found: ", "path_"+configEntry.Data[0].Template_path)
 			return
 		}
+		var cfg_path config.PathsConfig
+		config.ConfigDB.Get("path_"+configEntry.Data[0].Template_path, &cfg_path)
+
+		scaninterval = cfg_path.UpgradeScanInterval
 	}
 	scantime := time.Now()
 	if scaninterval != 0 {
@@ -256,7 +306,7 @@ func SearchSerieUpgrade(cfg config.Cfg, configEntry config.MediaTypeConfig, jobc
 	qu.OrderBy = "Lastscan asc"
 	missingepisode, _ := database.QuerySerieEpisodes(qu)
 
-	swg := sizedwaitgroup.New(cfg.General.WorkerSearch)
+	swg := sizedwaitgroup.New(cfg_general.WorkerSearch)
 	for idx := range missingepisode {
 		dbepi, _ := database.GetDbserieEpisodes(database.Query{Where: "id=?", WhereArgs: []interface{}{missingepisode[idx].DbserieEpisodeID}})
 		epicount, _ := database.CountRows("dbserie_episodes", database.Query{Where: "identifier=? and dbserie_id=?", WhereArgs: []interface{}{dbepi.Identifier, dbepi.DbserieID}})
@@ -264,7 +314,7 @@ func SearchSerieUpgrade(cfg config.Cfg, configEntry config.MediaTypeConfig, jobc
 			continue
 		}
 		swg.Add()
-		SearchSerieEpisodeSingle(cfg, missingepisode[idx], configEntry, titlesearch)
+		SearchSerieEpisodeSingle(missingepisode[idx], configEntry, titlesearch)
 		swg.Done()
 		// swg.Add()
 		// jobFindDownloadUpgradeNzbSeriesTvdb(serieepisode, configEntry, list, &swg)
@@ -272,10 +322,10 @@ func SearchSerieUpgrade(cfg config.Cfg, configEntry config.MediaTypeConfig, jobc
 	swg.Wait()
 }
 
-func SearchSerieRSS(cfg config.Cfg, configEntry config.MediaTypeConfig, quality string) {
+func SearchSerieRSS(configEntry config.MediaTypeConfig, quality string) {
 	logger.Log.Debug("Get Rss Series List")
 
-	searchnow := NewSearcher(cfg, configEntry, quality)
+	searchnow := NewSearcher(configEntry, quality)
 	searchresults := searchnow.SearchRSS("series")
 	downloaded := make(map[int]bool, 10)
 	for idx := range searchresults.Nzbs {
@@ -284,16 +334,16 @@ func SearchSerieRSS(cfg config.Cfg, configEntry config.MediaTypeConfig, quality 
 		}
 		logger.Log.Debug("nzb found - start downloading: ", searchresults.Nzbs[idx].NZB.Title)
 		downloaded[int(searchresults.Nzbs[idx].Nzbepisode.ID)] = true
-		downloadnow := NewDownloader(cfg, configEntry, "rss")
+		downloadnow := NewDownloader(configEntry, "rss")
 		downloadnow.SetSeriesEpisode(searchresults.Nzbs[idx].Nzbepisode)
 		downloadnow.DownloadNzb(searchresults.Nzbs[idx])
 	}
 }
 
-func SearchMovieRSS(cfg config.Cfg, configEntry config.MediaTypeConfig, quality string) {
+func SearchMovieRSS(configEntry config.MediaTypeConfig, quality string) {
 	logger.Log.Debug("Get Rss Movie List")
 
-	searchnow := NewSearcher(cfg, configEntry, quality)
+	searchnow := NewSearcher(configEntry, quality)
 	searchresults := searchnow.SearchRSS("movie")
 	downloaded := make(map[int]bool, 10)
 	for idx := range searchresults.Nzbs {
@@ -302,7 +352,7 @@ func SearchMovieRSS(cfg config.Cfg, configEntry config.MediaTypeConfig, quality 
 		}
 		logger.Log.Debug("nzb found - start downloading: ", searchresults.Nzbs[idx].NZB.Title)
 		downloaded[int(searchresults.Nzbs[idx].Nzbmovie.ID)] = true
-		downloadnow := NewDownloader(cfg, configEntry, "rss")
+		downloadnow := NewDownloader(configEntry, "rss")
 		downloadnow.SetMovie(searchresults.Nzbs[idx].Nzbmovie)
 		downloadnow.DownloadNzb(searchresults.Nzbs[idx])
 	}
@@ -313,7 +363,6 @@ type searchResults struct {
 }
 
 type Searcher struct {
-	Cfg               config.Cfg
 	ConfigEntry       config.MediaTypeConfig
 	Quality           string
 	SearchGroupType   string //series, movies
@@ -335,9 +384,8 @@ type Searcher struct {
 	Dbserieepisode database.DbserieEpisode
 }
 
-func NewSearcher(cfg config.Cfg, configEntry config.MediaTypeConfig, quality string) Searcher {
+func NewSearcher(configEntry config.MediaTypeConfig, quality string) Searcher {
 	return Searcher{
-		Cfg:         cfg,
 		ConfigEntry: configEntry,
 		Quality:     quality,
 	}
@@ -345,11 +393,28 @@ func NewSearcher(cfg config.Cfg, configEntry config.MediaTypeConfig, quality str
 
 //searchGroupType == movie || series
 func (s *Searcher) SearchRSS(searchGroupType string) searchResults {
+
+	hasQuality, _ := config.ConfigDB.Has("quality_" + s.Quality)
+	if !hasQuality {
+		logger.Log.Errorln("Quality Config not found: ", "quality_"+s.Quality)
+		return searchResults{}
+	}
+	var cfg_quality config.QualityConfig
+	config.ConfigDB.Get("quality_"+s.Quality, &cfg_quality)
+
+	hasIndexer, _ := config.ConfigDB.Has("indexer_" + cfg_quality.Indexer[0].Template_indexer)
+	if !hasIndexer {
+		logger.Log.Errorln("Indexer Config not found: ", "indexer_"+cfg_quality.Indexer[0].Template_indexer)
+		return searchResults{}
+	}
+	var cfg_indexer config.IndexersConfig
+	config.ConfigDB.Get("indexer_"+cfg_quality.Indexer[0].Template_indexer, &cfg_indexer)
+
 	s.SearchGroupType = searchGroupType
 	s.SearchActionType = "rss"
-	maxitems := s.Cfg.Indexer[s.Cfg.Quality[s.Quality].Indexer[0].Template_indexer].MaxRssEntries
-	if s.Cfg.Indexer[s.Cfg.Quality[s.Quality].Indexer[0].Template_indexer].RssEntriesloop >= 1 {
-		maxitems = maxitems * s.Cfg.Indexer[s.Cfg.Quality[s.Quality].Indexer[0].Template_indexer].RssEntriesloop
+	maxitems := cfg_indexer.MaxRssEntries
+	if cfg_indexer.RssEntriesloop >= 1 {
+		maxitems = maxitems * cfg_indexer.RssEntriesloop
 	}
 	retnzb := make([]nzbwithprio, 0, maxitems)
 	lists := make([]string, 0, len(s.ConfigEntry.Lists))
@@ -360,17 +425,17 @@ func (s *Searcher) SearchRSS(searchGroupType string) searchResults {
 		logger.Log.Error("lists empty for config ", searchGroupType, " ", s.ConfigEntry.Name)
 		return searchResults{}
 	}
-	for idx := range s.Cfg.Quality[s.Quality].Indexer {
-		erri := s.InitIndexer(s.Cfg.Quality[s.Quality].Indexer[idx], "rss")
+	for idx := range cfg_quality.Indexer {
+		erri := s.InitIndexer(cfg_quality.Indexer[idx], "rss")
 		if erri != nil {
-			logger.Log.Debug("Skipped Indexer: ", s.Cfg.Quality[s.Quality].Indexer[idx].Template_indexer, " ", erri)
+			logger.Log.Debug("Skipped Indexer: ", cfg_quality.Indexer[idx].Template_indexer, " ", erri)
 			continue
 		}
-		s.Indexer = s.Cfg.Quality[s.Quality].Indexer[idx]
+		s.Indexer = cfg_quality.Indexer[idx]
 
-		nzbs, failed, lastids, nzberr := apiexternal.QueryNewznabRSSLast([]apiexternal.NzbIndexer{s.Nzbindexer}, s.Cfg.Indexer[s.Cfg.Quality[s.Quality].Indexer[idx].Template_indexer].MaxRssEntries, s.Indexercategories, s.Cfg.Indexer[s.Cfg.Quality[s.Quality].Indexer[idx].Template_indexer].RssEntriesloop)
+		nzbs, failed, lastids, nzberr := apiexternal.QueryNewznabRSSLast([]apiexternal.NzbIndexer{s.Nzbindexer}, cfg_indexer.MaxRssEntries, s.Indexercategories, cfg_indexer.RssEntriesloop)
 		if nzberr != nil {
-			logger.Log.Error("Newznab RSS Search failed ", s.Cfg.Quality[s.Quality].Indexer[idx].Template_indexer)
+			logger.Log.Error("Newznab RSS Search failed ", cfg_quality.Indexer[idx].Template_indexer)
 			for _, failedidx := range failed {
 				failmap := make(map[string]interface{})
 				failmap["indexer"] = failedidx
@@ -389,10 +454,10 @@ func (s *Searcher) SearchRSS(searchGroupType string) searchResults {
 			logger.Log.Debug("Search RSS ended - found entries: ", len(nzbs))
 			if len(nzbs) >= 1 {
 				if strings.ToLower(s.SearchGroupType) == "movie" {
-					retnzb = append(retnzb, filter_movies_rss_nzbs(s.Cfg, s.ConfigEntry, s.Cfg.Quality[s.Quality], lists, s.Cfg.Quality[s.Quality].Indexer[idx], nzbs)...)
+					retnzb = append(retnzb, filter_movies_rss_nzbs(s.ConfigEntry, cfg_quality, lists, cfg_quality.Indexer[idx], nzbs)...)
 					logger.Log.Debug("Search RSS ended - found entries after filter: ", len(retnzb))
 				} else {
-					retnzb = append(retnzb, filter_series_rss_nzbs(s.Cfg, s.ConfigEntry, s.Cfg.Quality[s.Quality], lists, s.Cfg.Quality[s.Quality].Indexer[idx], nzbs)...)
+					retnzb = append(retnzb, filter_series_rss_nzbs(s.ConfigEntry, cfg_quality, lists, cfg_quality.Indexer[idx], nzbs)...)
 					logger.Log.Debug("Search RSS ended - found entries after filter: ", len(retnzb))
 				}
 			}
@@ -422,7 +487,15 @@ func (s *Searcher) MovieSearch(movie database.Movie, forceDownload bool, titlese
 
 	dbmoviealt, _ := database.QueryDbmovieTitle(database.Query{Where: "dbmovie_id=?", WhereArgs: []interface{}{movie.DbmovieID}})
 
-	s.MinimumPriority = getHighestMoviePriorityByFiles(s.Cfg, movie, s.ConfigEntry, s.Cfg.Quality[s.Quality])
+	hasQuality, _ := config.ConfigDB.Has("quality_" + s.Quality)
+	if !hasQuality {
+		logger.Log.Errorln("Quality Config not found: ", "quality_"+s.Quality)
+		return searchResults{}
+	}
+	var cfg_quality config.QualityConfig
+	config.ConfigDB.Get("quality_"+s.Quality, &cfg_quality)
+
+	s.MinimumPriority = getHighestMoviePriorityByFiles(movie, s.ConfigEntry, cfg_quality)
 
 	if s.MinimumPriority == 0 {
 		s.SearchActionType = "missing"
@@ -439,14 +512,14 @@ func (s *Searcher) MovieSearch(movie database.Movie, forceDownload bool, titlese
 	titleschecked := make(map[string]bool, 10)
 
 	processedindexer := 0
-	for idx := range s.Cfg.Quality[s.Quality].Indexer {
-		erri := s.InitIndexer(s.Cfg.Quality[s.Quality].Indexer[idx], "api")
+	for idx := range cfg_quality.Indexer {
+		erri := s.InitIndexer(cfg_quality.Indexer[idx], "api")
 		if erri != nil {
-			logger.Log.Debug("Skipped Indexer: ", s.Cfg.Quality[s.Quality].Indexer[idx].Template_indexer, " ", erri)
+			logger.Log.Debug("Skipped Indexer: ", cfg_quality.Indexer[idx].Template_indexer, " ", erri)
 			continue
 		}
 		processedindexer += 1
-		s.Indexer = s.Cfg.Quality[s.Quality].Indexer[idx]
+		s.Indexer = cfg_quality.Indexer[idx]
 
 		releasefound := false
 		if s.Dbmovie.ImdbID != "" {
@@ -456,12 +529,12 @@ func (s *Searcher) MovieSearch(movie database.Movie, forceDownload bool, titlese
 				releasefound = true
 				dl.Nzbs = append(dl.Nzbs, dl_add.Nzbs...)
 			}
-			if len(dl_add.Nzbs) >= 1 && s.Cfg.Quality[s.Quality].CheckUntilFirstFound {
+			if len(dl_add.Nzbs) >= 1 && cfg_quality.CheckUntilFirstFound {
 				logger.Log.Debug("Break Indexer loop - entry found: ", dbmovie.Title)
 				break
 			}
 		}
-		if !releasefound && s.Cfg.Quality[s.Quality].BackupSearchForTitle && titlesearch {
+		if !releasefound && cfg_quality.BackupSearchForTitle && titlesearch {
 			dl_add := s.MoviesSearchTitle(movie, s.Dbmovie.Slug)
 			titleschecked[s.Dbmovie.Title] = true
 			if len(dl_add.Nzbs) >= 1 {
@@ -469,12 +542,12 @@ func (s *Searcher) MovieSearch(movie database.Movie, forceDownload bool, titlese
 				releasefound = true
 				dl.Nzbs = append(dl.Nzbs, dl_add.Nzbs...)
 			}
-			if len(dl_add.Nzbs) >= 1 && s.Cfg.Quality[s.Quality].CheckUntilFirstFound {
+			if len(dl_add.Nzbs) >= 1 && cfg_quality.CheckUntilFirstFound {
 				logger.Log.Debug("Break Indexer loop - entry found: ", dbmovie.Title)
 				break
 			}
 		}
-		if !releasefound && s.Cfg.Quality[s.Quality].BackupSearchForAlternateTitle && titlesearch {
+		if !releasefound && cfg_quality.BackupSearchForAlternateTitle && titlesearch {
 			for idx := range dbmoviealt {
 				if _, ok := titleschecked[dbmoviealt[idx].Slug]; !ok {
 					dl_add := s.MoviesSearchTitle(movie, dbmoviealt[idx].Title)
@@ -486,7 +559,7 @@ func (s *Searcher) MovieSearch(movie database.Movie, forceDownload bool, titlese
 					}
 				}
 			}
-			if len(dl.Nzbs) >= 1 && s.Cfg.Quality[s.Quality].CheckUntilFirstFound {
+			if len(dl.Nzbs) >= 1 && cfg_quality.CheckUntilFirstFound {
 				logger.Log.Debug("Break Indexer loop - entry found: ", dbmovie.Title)
 				break
 			}
@@ -520,7 +593,15 @@ func (s *Searcher) SeriesSearch(serieEpisode database.SerieEpisode, forceDownloa
 
 	dbseriealt, _ := database.QueryDbserieAlternates(database.Query{Where: "dbserie_id=?", WhereArgs: []interface{}{serieEpisode.DbserieID}})
 
-	s.MinimumPriority = getHighestEpisodePriorityByFiles(s.Cfg, serieEpisode, s.ConfigEntry, s.Cfg.Quality[s.Quality])
+	hasQuality, _ := config.ConfigDB.Has("quality_" + s.Quality)
+	if !hasQuality {
+		logger.Log.Errorln("Quality Config not found: ", "quality_"+s.Quality)
+		return searchResults{}
+	}
+	var cfg_quality config.QualityConfig
+	config.ConfigDB.Get("quality_"+s.Quality, &cfg_quality)
+
+	s.MinimumPriority = getHighestEpisodePriorityByFiles(serieEpisode, s.ConfigEntry, cfg_quality)
 
 	if s.MinimumPriority == 0 {
 		s.SearchActionType = "missing"
@@ -536,15 +617,15 @@ func (s *Searcher) SeriesSearch(serieEpisode database.SerieEpisode, forceDownloa
 	dl.Nzbs = make([]nzbwithprio, 0, 10)
 
 	processedindexer := 0
-	for idx := range s.Cfg.Quality[s.Quality].Indexer {
+	for idx := range cfg_quality.Indexer {
 		titleschecked := make(map[string]bool, 10)
-		erri := s.InitIndexer(s.Cfg.Quality[s.Quality].Indexer[idx], "api")
+		erri := s.InitIndexer(cfg_quality.Indexer[idx], "api")
 		if erri != nil {
-			logger.Log.Debug("Skipped Indexer: ", s.Cfg.Quality[s.Quality].Indexer[idx].Template_indexer, " ", erri)
+			logger.Log.Debug("Skipped Indexer: ", cfg_quality.Indexer[idx].Template_indexer, " ", erri)
 			continue
 		}
 		processedindexer += 1
-		s.Indexer = s.Cfg.Quality[s.Quality].Indexer[idx]
+		s.Indexer = cfg_quality.Indexer[idx]
 		releasefound := false
 		if s.Dbserie.ThetvdbID != 0 {
 			dl_add := s.SeriesSearchTvdb()
@@ -552,24 +633,24 @@ func (s *Searcher) SeriesSearch(serieEpisode database.SerieEpisode, forceDownloa
 				releasefound = true
 				dl.Nzbs = append(dl.Nzbs, dl_add.Nzbs...)
 			}
-			if len(dl_add.Nzbs) >= 1 && s.Cfg.Quality[s.Quality].CheckUntilFirstFound {
+			if len(dl_add.Nzbs) >= 1 && cfg_quality.CheckUntilFirstFound {
 				logger.Log.Debug("Break Indexer loop - entry found: ", dbserie.Seriename, " ", dbserieepisode.Identifier)
 				break
 			}
 		}
-		if !releasefound && s.Cfg.Quality[s.Quality].BackupSearchForTitle && titlesearch {
+		if !releasefound && cfg_quality.BackupSearchForTitle && titlesearch {
 			dl_add := s.SeriesSearchTitle(logger.StringToSlug(s.Dbserie.Seriename))
 			titleschecked[s.Dbserie.Seriename] = true
 			if len(dl_add.Nzbs) >= 1 {
 				releasefound = true
 				dl.Nzbs = append(dl.Nzbs, dl_add.Nzbs...)
 			}
-			if len(dl_add.Nzbs) >= 1 && s.Cfg.Quality[s.Quality].CheckUntilFirstFound {
+			if len(dl_add.Nzbs) >= 1 && cfg_quality.CheckUntilFirstFound {
 				logger.Log.Debug("Break Indexer loop - entry found: ", dbserie.Seriename, " ", dbserieepisode.Identifier)
 				break
 			}
 		}
-		if !releasefound && s.Cfg.Quality[s.Quality].BackupSearchForAlternateTitle && titlesearch {
+		if !releasefound && cfg_quality.BackupSearchForAlternateTitle && titlesearch {
 			for idx := range dbseriealt {
 				if _, ok := titleschecked[dbseriealt[idx].Title]; !ok {
 					dl_add := s.SeriesSearchTitle(logger.StringToSlug(dbseriealt[idx].Title))
@@ -578,7 +659,7 @@ func (s *Searcher) SeriesSearch(serieEpisode database.SerieEpisode, forceDownloa
 						releasefound = true
 						dl.Nzbs = append(dl.Nzbs, dl_add.Nzbs...)
 					}
-					if len(dl_add.Nzbs) >= 1 && s.Cfg.Quality[s.Quality].CheckUntilFirstFound {
+					if len(dl_add.Nzbs) >= 1 && cfg_quality.CheckUntilFirstFound {
 						logger.Log.Debug("Break Indexer loop - entry found: ", dbserie.Seriename, " ", dbserieepisode.Identifier)
 						break
 					}
@@ -601,45 +682,54 @@ func (s *Searcher) SeriesSearch(serieEpisode database.SerieEpisode, forceDownloa
 
 func (s *Searcher) InitIndexer(indexer config.QualityIndexerConfig, rssapi string) error {
 	logger.Log.Debug("Indexer search: ", indexer.Template_indexer)
-	if !(strings.ToLower(s.Cfg.Indexer[indexer.Template_indexer].Type) == "newznab") {
+
+	hasIndexer, _ := config.ConfigDB.Has("indexer_" + indexer.Template_indexer)
+	if !hasIndexer {
+		logger.Log.Errorln("Indexer Config not found: ", "indexer_"+indexer.Template_indexer)
+		return errors.New("indexer config missing")
+	}
+	var cfg_indexer config.IndexersConfig
+	config.ConfigDB.Get("indexer_"+indexer.Template_indexer, &cfg_indexer)
+
+	if !(strings.ToLower(cfg_indexer.Type) == "newznab") {
 		return errors.New("indexer Type Wrong")
 	}
-	if !s.Cfg.Indexer[indexer.Template_indexer].Rssenabled && strings.ToLower(rssapi) == "rss" {
-		logger.Log.Debug("Indexer disabled: ", s.Cfg.Indexer[indexer.Template_indexer].Name)
+	if !cfg_indexer.Rssenabled && strings.ToLower(rssapi) == "rss" {
+		logger.Log.Debug("Indexer disabled: ", cfg_indexer.Name)
 		return errors.New("indexer disabled")
-	} else if !s.Cfg.Indexer[indexer.Template_indexer].Enabled {
-		logger.Log.Debug("Indexer disabled: ", s.Cfg.Indexer[indexer.Template_indexer].Name)
+	} else if !cfg_indexer.Enabled {
+		logger.Log.Debug("Indexer disabled: ", cfg_indexer.Name)
 		return errors.New("indexer disabled")
 	}
 
-	userid, _ := strconv.Atoi(s.Cfg.Indexer[indexer.Template_indexer].Userid)
+	userid, _ := strconv.Atoi(cfg_indexer.Userid)
 
 	lastfailed := sql.NullTime{Time: time.Now().Add(time.Minute * -1), Valid: true}
-	counter, _ := database.CountRows("indexer_fails", database.Query{Where: "indexer=? and last_fail > ?", WhereArgs: []interface{}{s.Cfg.Indexer[indexer.Template_indexer].Url, lastfailed}})
+	counter, _ := database.CountRows("indexer_fails", database.Query{Where: "indexer=? and last_fail > ?", WhereArgs: []interface{}{cfg_indexer.Url, lastfailed}})
 	if counter >= 1 {
-		logger.Log.Debug("Indexer temporarily disabled due to fail in the last Minute: ", s.Cfg.Indexer[indexer.Template_indexer].Name)
+		logger.Log.Debug("Indexer temporarily disabled due to fail in the last Minute: ", cfg_indexer.Name)
 		return errors.New("indexer disabled")
 	}
 
 	var lastindexerid string
 	if s.SearchActionType == "rss" {
-		indexrssid, _ := database.GetRssHistory(database.Query{Where: "config=? and list=? and indexer=?", WhereArgs: []interface{}{s.ConfigEntry.Name, s.Quality, s.Cfg.Indexer[indexer.Template_indexer].Url}})
+		indexrssid, _ := database.GetRssHistory(database.Query{Where: "config=? and list=? and indexer=?", WhereArgs: []interface{}{s.ConfigEntry.Name, s.Quality, cfg_indexer.Url}})
 		lastindexerid = indexrssid.LastID
 	}
 
 	nzbindexer := apiexternal.NzbIndexer{
-		URL:                     s.Cfg.Indexer[indexer.Template_indexer].Url,
-		Apikey:                  s.Cfg.Indexer[indexer.Template_indexer].Apikey,
+		URL:                     cfg_indexer.Url,
+		Apikey:                  cfg_indexer.Apikey,
 		UserID:                  userid,
 		SkipSslCheck:            true,
-		Addquotesfortitlequery:  s.Cfg.Indexer[indexer.Template_indexer].Addquotesfortitlequery,
+		Addquotesfortitlequery:  cfg_indexer.Addquotesfortitlequery,
 		Additional_query_params: indexer.Additional_query_params,
 		LastRssId:               lastindexerid,
-		Customapi:               s.Cfg.Indexer[indexer.Template_indexer].Customapi,
-		Customurl:               s.Cfg.Indexer[indexer.Template_indexer].Customurl,
-		Customrssurl:            s.Cfg.Indexer[indexer.Template_indexer].Customrssurl,
-		Limitercalls:            s.Cfg.Indexer[indexer.Template_indexer].Limitercalls,
-		Limiterseconds:          s.Cfg.Indexer[indexer.Template_indexer].Limiterseconds}
+		Customapi:               cfg_indexer.Customapi,
+		Customurl:               cfg_indexer.Customurl,
+		Customrssurl:            cfg_indexer.Customrssurl,
+		Limitercalls:            cfg_indexer.Limitercalls,
+		Limiterseconds:          cfg_indexer.Limiterseconds}
 	s.Nzbindexer = nzbindexer
 	if strings.Contains(indexer.Categories_indexer, ",") {
 		catarray := strings.Split(indexer.Categories_indexer, ",")
@@ -672,8 +762,17 @@ func (s Searcher) MoviesSearchImdb(movie database.Movie) searchResults {
 			database.Upsert("indexer_fails", failmap, database.Query{Where: "indexer=?", WhereArgs: []interface{}{failedidx}})
 		}
 	}
+
+	hasQuality, _ := config.ConfigDB.Has("quality_" + s.Quality)
+	if !hasQuality {
+		logger.Log.Errorln("Quality Config not found: ", "quality_"+s.Quality)
+		return searchResults{}
+	}
+	var cfg_quality config.QualityConfig
+	config.ConfigDB.Get("quality_"+s.Quality, &cfg_quality)
+
 	if len(nzbs) >= 1 {
-		retnzb = append(retnzb, filter_movies_nzbs(s.Cfg, s.ConfigEntry, s.Cfg.Quality[s.Quality], s.Indexer, nzbs, s.Movie.ID, 0, s.MinimumPriority, s.Dbmovie, database.Dbserie{}, s.Dbmovie.Title, []string{}, strconv.Itoa(s.Dbmovie.Year))...)
+		retnzb = append(retnzb, filter_movies_nzbs(s.ConfigEntry, cfg_quality, s.Indexer, nzbs, s.Movie.ID, 0, s.MinimumPriority, s.Dbmovie, database.Dbserie{}, s.Dbmovie.Title, []string{}, strconv.Itoa(s.Dbmovie.Year))...)
 		logger.Log.Debug("Search Series by tvdbid ended - found entries after filter: ", len(retnzb))
 	}
 	return searchResults{retnzb}
@@ -684,8 +783,16 @@ func (s Searcher) MoviesSearchTitle(movie database.Movie, title string) searchRe
 	if len(title) == 0 {
 		return searchResults{retnzb}
 	}
+	hasQuality, _ := config.ConfigDB.Has("quality_" + s.Quality)
+	if !hasQuality {
+		logger.Log.Errorln("Quality Config not found: ", "quality_"+s.Quality)
+		return searchResults{}
+	}
+	var cfg_quality config.QualityConfig
+	config.ConfigDB.Get("quality_"+s.Quality, &cfg_quality)
+
 	searchfor := title + " (" + strconv.Itoa(s.Dbmovie.Year) + ")"
-	if s.Cfg.Quality[s.Quality].ExcludeYearFromTitleSearch {
+	if cfg_quality.ExcludeYearFromTitleSearch {
 		searchfor = title
 	}
 	logger.Log.Info("Search Movie by name: ", title)
@@ -700,7 +807,7 @@ func (s Searcher) MoviesSearchTitle(movie database.Movie, title string) searchRe
 		}
 	}
 	if len(nzbs) >= 1 {
-		retnzb = append(retnzb, filter_movies_nzbs(s.Cfg, s.ConfigEntry, s.Cfg.Quality[s.Quality], s.Indexer, nzbs, movie.ID, 0, s.MinimumPriority, s.Dbmovie, database.Dbserie{}, s.Dbmovie.Title, []string{}, strconv.Itoa(s.Dbmovie.Year))...)
+		retnzb = append(retnzb, filter_movies_nzbs(s.ConfigEntry, cfg_quality, s.Indexer, nzbs, movie.ID, 0, s.MinimumPriority, s.Dbmovie, database.Dbserie{}, s.Dbmovie.Title, []string{}, strconv.Itoa(s.Dbmovie.Year))...)
 		logger.Log.Debug("Search Series by tvdbid ended - found entries after filter: ", len(retnzb))
 	}
 	return searchResults{retnzb}
@@ -721,8 +828,16 @@ func (s Searcher) SeriesSearchTvdb() searchResults {
 			database.Upsert("indexer_fails", failmap, database.Query{Where: "indexer=?", WhereArgs: []interface{}{failedidx}})
 		}
 	}
+	hasQuality, _ := config.ConfigDB.Has("quality_" + s.Quality)
+	if !hasQuality {
+		logger.Log.Errorln("Quality Config not found: ", "quality_"+s.Quality)
+		return searchResults{}
+	}
+	var cfg_quality config.QualityConfig
+	config.ConfigDB.Get("quality_"+s.Quality, &cfg_quality)
+
 	if len(nzbs) >= 1 {
-		retnzb = append(retnzb, filter_series_nzbs(s.Cfg, s.ConfigEntry, s.Cfg.Quality[s.Quality], s.Indexer, nzbs, 0, s.SerieEpisode.ID, s.MinimumPriority, database.Dbmovie{}, s.Dbserie)...)
+		retnzb = append(retnzb, filter_series_nzbs(s.ConfigEntry, cfg_quality, s.Indexer, nzbs, 0, s.SerieEpisode.ID, s.MinimumPriority, database.Dbmovie{}, s.Dbserie)...)
 		logger.Log.Debug("Search Series by tvdbid ended - found entries after filter: ", len(retnzb))
 	}
 	return searchResults{retnzb}
@@ -730,7 +845,15 @@ func (s Searcher) SeriesSearchTvdb() searchResults {
 
 func (s Searcher) SeriesSearchTitle(title string) searchResults {
 	retnzb := []nzbwithprio{}
-	if title != "" && s.Dbserieepisode.Identifier != "" && s.Cfg.Quality[s.Quality].BackupSearchForTitle {
+	hasQuality, _ := config.ConfigDB.Has("quality_" + s.Quality)
+	if !hasQuality {
+		logger.Log.Errorln("Quality Config not found: ", "quality_"+s.Quality)
+		return searchResults{}
+	}
+	var cfg_quality config.QualityConfig
+	config.ConfigDB.Get("quality_"+s.Quality, &cfg_quality)
+
+	if title != "" && s.Dbserieepisode.Identifier != "" && cfg_quality.BackupSearchForTitle {
 		logger.Log.Info("Search Series by title: ", title, " ", s.Dbserieepisode.Identifier)
 		searchfor := title + " " + s.Dbserieepisode.Identifier
 		nzbs, failed, nzberr := apiexternal.QueryNewznabQuery([]apiexternal.NzbIndexer{s.Nzbindexer}, searchfor, s.Indexercategories, "search")
@@ -744,7 +867,7 @@ func (s Searcher) SeriesSearchTitle(title string) searchResults {
 			}
 		}
 		if len(nzbs) >= 1 {
-			retnzb = append(retnzb, filter_series_nzbs(s.Cfg, s.ConfigEntry, s.Cfg.Quality[s.Quality], s.Indexer, nzbs, 0, s.SerieEpisode.ID, s.MinimumPriority, database.Dbmovie{}, s.Dbserie)...)
+			retnzb = append(retnzb, filter_series_nzbs(s.ConfigEntry, cfg_quality, s.Indexer, nzbs, 0, s.SerieEpisode.ID, s.MinimumPriority, database.Dbmovie{}, s.Dbserie)...)
 			logger.Log.Debug("Search Series by tvdbid ended - found entries after filter: ", len(retnzb))
 		}
 	}

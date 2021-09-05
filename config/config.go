@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
-	"regexp"
 	"strings"
 	"time"
 
@@ -239,11 +238,11 @@ type NotificationConfig struct {
 }
 
 type RegexConfig struct {
-	Name          string   `koanf:"name"`
-	Required      []string `koanf:"Required"`
-	Rejected      []string `koanf:"Rejected"`
-	RequiredRegex map[string]*regexp.Regexp
-	RejectedRegex map[string]*regexp.Regexp
+	Name     string   `koanf:"name"`
+	Required []string `koanf:"Required"`
+	Rejected []string `koanf:"Rejected"`
+	//RequiredRegex map[string]regexp.Regexp
+	//RejectedRegex map[string]regexp.Regexp
 }
 
 type QualityConfig struct {
@@ -312,18 +311,6 @@ type SchedulerConfig struct {
 // func (a ByTaskPrio) Less(i, j int) bool { return a[i].Priority < a[j].Priority }
 // func (a ByTaskPrio) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 
-// type ByQualityTypePrio []QualityType
-
-// func (a ByQualityTypePrio) Len() int           { return len(a) }
-// func (a ByQualityTypePrio) Less(i, j int) bool { return a[i].Priority < a[j].Priority }
-// func (a ByQualityTypePrio) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-
-// type ByQualityProfileSettingPrio []QualityProfileSetting
-
-// func (a ByQualityProfileSettingPrio) Len() int           { return len(a) }
-// func (a ByQualityProfileSettingPrio) Less(i, j int) bool { return a[i].Priority < a[j].Priority }
-// func (a ByQualityProfileSettingPrio) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-
 //sorter end
 
 func LoadSerie(filepath string) MainSerieConfig {
@@ -365,24 +352,9 @@ func Slepping(random bool, seconds int) {
 	}
 }
 
-type Cfg struct {
-	Movie        map[string]MediaTypeConfig
-	Serie        map[string]MediaTypeConfig
-	Downloader   map[string]DownloaderConfig
-	General      GeneralConfig
-	Imdb         ImdbConfig
-	Indexer      map[string]IndexersConfig
-	List         map[string]ListsConfig
-	Notification map[string]NotificationConfig
-	Path         map[string]PathsConfig
-	Quality      map[string]QualityConfig
-	Regex        map[string]RegexConfig
-	Scheduler    map[string]SchedulerConfig
-}
-
 const Configfile string = "config.toml"
 
-func LoadCfg(what []string, configfile string) (Cfg, *file.File, error) {
+func LoadCfgDB(configfile string) (*file.File, error) {
 	var k = koanf.New(".")
 
 	f := file.Provider(configfile)
@@ -397,7 +369,7 @@ func LoadCfg(what []string, configfile string) (Cfg, *file.File, error) {
 		err := k.Load(f, toml.Parser())
 		if err != nil {
 			fmt.Println("Error loading config. ", err)
-			return Cfg{}, nil, err
+			return nil, err
 		}
 	}
 	// if strings.Contains(configfile, "yaml") {
@@ -410,13 +382,13 @@ func LoadCfg(what []string, configfile string) (Cfg, *file.File, error) {
 
 	if k.Sprint() == "" {
 		fmt.Println("Error loading config. Config Empty")
-		return Cfg{}, nil, errors.New("error loading config")
+		return nil, errors.New("error loading config")
 	}
-	cfg := LoadCfgData(f, configfile, what)
-	return cfg, f, nil
+	LoadCfgDataDB(f, configfile)
+	return f, nil
 }
 
-func Watch(f *file.File, parser string, what []string) {
+func WatchDB(f *file.File, parser string) {
 	f.Watch(func(event interface{}, err error) {
 		if err != nil {
 			log.Printf("watch error: %v", err)
@@ -425,11 +397,11 @@ func Watch(f *file.File, parser string, what []string) {
 
 		log.Println("cfg reloaded")
 		time.Sleep(time.Duration(2) * time.Second)
-		LoadCfgData(f, parser, what)
+		LoadCfgDataDB(f, parser)
 	})
 }
 
-func LoadCfgData(f *file.File, parser string, what []string) Cfg {
+func LoadCfgDataDB(f *file.File, parser string) {
 	var k = koanf.New(".")
 
 	// if strings.Contains(parser, "json") {
@@ -443,7 +415,6 @@ func LoadCfgData(f *file.File, parser string, what []string) Cfg {
 		err := k.Load(f, toml.Parser())
 		if err != nil {
 			fmt.Println("Error loading config. ", err)
-			return Cfg{}
 		}
 	}
 	// if strings.Contains(parser, "yaml") {
@@ -456,133 +427,130 @@ func LoadCfgData(f *file.File, parser string, what []string) Cfg {
 
 	if k.Sprint() == "" {
 		fmt.Println("Error loading config. Config Empty")
-		return Cfg{}
 	}
-	cfg := Cfg{}
-	for _, load := range what {
-		switch load {
-		case "Downloader":
-			var out []DownloaderConfig
-			err := k.Unmarshal("downloader", &out)
-			if err == nil {
-				structout := make(map[string]DownloaderConfig, len(out))
-				for idx := range out {
-					structout[out[idx].Name] = out[idx]
-				}
-				cfg.Downloader = structout
-			}
-		case "General":
-			var out GeneralConfig
-			err := k.Unmarshal("general", &out)
-			if err == nil {
-				cfg.General = out
-			}
-		case "Imdb":
-			var out ImdbConfig
-			err := k.Unmarshal("imdbindexer", &out)
-			if err == nil {
-				cfg.Imdb = out
-			}
-		case "Indexer":
-			var out []IndexersConfig
-			err := k.Unmarshal("indexers", &out)
-			if err == nil {
-				structout := make(map[string]IndexersConfig, len(out))
-				for idx := range out {
-					structout[out[idx].Name] = out[idx]
-				}
-				cfg.Indexer = structout
-			}
-		case "List":
-			fmt.Println("list")
-			var out []ListsConfig
-			err := k.Unmarshal("lists", &out)
-			if err == nil {
-				structout := make(map[string]ListsConfig, len(out))
-				for idx := range out {
-					structout[out[idx].Name] = out[idx]
-				}
-				cfg.List = structout
-			}
-		case "Notification":
-			var out []NotificationConfig
-			err := k.Unmarshal("notification", &out)
-			if err == nil {
-				structout := make(map[string]NotificationConfig, len(out))
-				for idx := range out {
-					structout[out[idx].Name] = out[idx]
-				}
-				cfg.Notification = structout
-			}
-		case "Path":
-			var out []PathsConfig
-			err := k.Unmarshal("paths", &out)
-			if err == nil {
-				structout := make(map[string]PathsConfig, len(out))
-				for idx := range out {
-					structout[out[idx].Name] = out[idx]
-				}
-				cfg.Path = structout
-			}
-		case "Quality":
-			var out []QualityConfig
-			err := k.Unmarshal("quality", &out)
-			if err == nil {
-				structout := make(map[string]QualityConfig, len(out))
-				for idx := range out {
-					structout[out[idx].Name] = out[idx]
-				}
-				cfg.Quality = structout
-			}
-		case "Regex":
-			var out []RegexConfig
-			err := k.Unmarshal("regex", &out)
-			if err == nil {
-				structout := make(map[string]RegexConfig, len(out))
-				for idx := range out {
-					out[idx].RejectedRegex = make(map[string]*regexp.Regexp, len(out[idx].Rejected))
-					for _, entry := range out[idx].Rejected {
-						out[idx].RejectedRegex[entry] = regexp.MustCompile(entry)
-					}
-					out[idx].RequiredRegex = make(map[string]*regexp.Regexp, len(out[idx].Required))
-					for _, entry := range out[idx].Required {
-						out[idx].RequiredRegex[entry] = regexp.MustCompile(entry)
-					}
-					structout[out[idx].Name] = out[idx]
-				}
-				cfg.Regex = structout
-			}
-		case "Scheduler":
-			var out []SchedulerConfig
-			err := k.Unmarshal("scheduler", &out)
-			if err == nil {
-				structout := make(map[string]SchedulerConfig, len(out))
-				for idx := range out {
-					structout[out[idx].Name] = out[idx]
-				}
-				cfg.Scheduler = structout
-			}
-		case "Movie":
-			var out []MediaTypeConfig
-			err := k.Unmarshal("media.movies", &out)
-			if err == nil {
-				structout := make(map[string]MediaTypeConfig, len(out))
-				for idx := range out {
-					structout[out[idx].Name] = out[idx]
-				}
-				cfg.Movie = structout
-			}
-		case "Serie":
-			var out []MediaTypeConfig
-			err := k.Unmarshal("media.series", &out)
-			if err == nil {
-				structout := make(map[string]MediaTypeConfig, len(out))
-				for idx := range out {
-					structout[out[idx].Name] = out[idx]
-				}
-				cfg.Serie = structout
+
+	var outdl []DownloaderConfig
+	errdl := k.Unmarshal("downloader", &outdl)
+	if errdl == nil {
+		for idx := range outdl {
+			errdlset := ConfigDB.Set("downloader_"+outdl[idx].Name, outdl[idx])
+			if errdlset != nil {
+				logger.Log.Errorln("Error downloader setting db:", errdlset)
 			}
 		}
 	}
-	return cfg
+	var outgen GeneralConfig
+	errgen := k.Unmarshal("general", &outgen)
+	if errgen == nil {
+		errgenset := ConfigDB.Set("general", &outgen)
+		if errgenset != nil {
+			logger.Log.Errorln("Error general setting db:", errgenset)
+		}
+	}
+	var outim ImdbConfig
+	errimdb := k.Unmarshal("imdbindexer", &outim)
+	if errimdb == nil {
+		errimdbset := ConfigDB.Set("imdb", &outim)
+		if errimdbset != nil {
+			logger.Log.Errorln("Error imdb setting db:", errimdbset)
+		}
+	}
+	var outind []IndexersConfig
+	errind := k.Unmarshal("indexers", &outind)
+	if errind == nil {
+		for idx := range outind {
+			errindset := ConfigDB.Set("indexer_"+outind[idx].Name, &outind[idx])
+			if errindset != nil {
+				logger.Log.Errorln("Error indexer setting db:", errindset)
+			}
+		}
+	}
+	var outlst []ListsConfig
+	errlst := k.Unmarshal("lists", &outlst)
+	if errlst == nil {
+		for idx := range outlst {
+			errlstset := ConfigDB.Set("list_"+outlst[idx].Name, &outlst[idx])
+			if errlstset != nil {
+				logger.Log.Errorln("Error list setting db:", errlstset)
+			}
+		}
+	}
+	var outntf []NotificationConfig
+	errntf := k.Unmarshal("notification", &outntf)
+	if errntf == nil {
+		for idx := range outntf {
+			errntfset := ConfigDB.Set("notification_"+outntf[idx].Name, &outntf[idx])
+			if errntfset != nil {
+				logger.Log.Errorln("Error notification setting db:", errntfset)
+			}
+		}
+	}
+	var outpth []PathsConfig
+	errpth := k.Unmarshal("paths", &outpth)
+	if errpth == nil {
+		for idx := range outpth {
+			errpthset := ConfigDB.Set("path_"+outpth[idx].Name, &outpth[idx])
+			if errpthset != nil {
+				logger.Log.Errorln("Error path setting db:", errpthset)
+			}
+		}
+	}
+	var outql []QualityConfig
+	errql := k.Unmarshal("quality", &outql)
+	if errql == nil {
+		for idx := range outql {
+			errqlset := ConfigDB.Set("quality_"+outql[idx].Name, &outql[idx])
+			if errqlset != nil {
+				logger.Log.Errorln("Error quality setting db:", errqlset)
+			}
+		}
+	}
+	var outrgx []RegexConfig
+	errrgx := k.Unmarshal("regex", &outrgx)
+	if errrgx == nil {
+		for idx := range outrgx {
+			// outrgx[idx].RejectedRegex = make(map[string]regexp.Regexp, len(outrgx[idx].Rejected))
+			// for _, entry := range outrgx[idx].Rejected {
+			// 	outrgx[idx].RejectedRegex[entry] = *regexp.MustCompile(entry)
+			// }
+			// outrgx[idx].RequiredRegex = make(map[string]regexp.Regexp, len(outrgx[idx].Required))
+			// for _, entry := range outrgx[idx].Required {
+			// 	outrgx[idx].RequiredRegex[entry] = *regexp.MustCompile(entry)
+			// }
+			errrgxset := ConfigDB.Set("regex_"+outrgx[idx].Name, outrgx[idx])
+			if errrgxset != nil {
+				logger.Log.Errorln("Error regex setting db:", errrgxset)
+			}
+		}
+	}
+	var outsch []SchedulerConfig
+	errsch := k.Unmarshal("scheduler", &outsch)
+	if errsch == nil {
+		for idx := range outsch {
+			errschset := ConfigDB.Set("scheduler_"+outsch[idx].Name, &outsch[idx])
+			if errschset != nil {
+				logger.Log.Errorln("Error scheduler setting db:", errschset)
+			}
+		}
+	}
+	var outmov []MediaTypeConfig
+	errmov := k.Unmarshal("media.movies", &outmov)
+	if errmov == nil {
+		for idx := range outmov {
+			errmovset := ConfigDB.Set("movie_"+outmov[idx].Name, &outmov[idx])
+			if errmovset != nil {
+				logger.Log.Errorln("Error movie setting db:", errmovset)
+			}
+		}
+	}
+	var out []MediaTypeConfig
+	err := k.Unmarshal("media.series", &out)
+	if err == nil {
+		for idx := range out {
+			errset := ConfigDB.Set("serie_"+out[idx].Name, &out[idx])
+			if errset != nil {
+				logger.Log.Errorln("Error serie setting db:", errset)
+			}
+		}
+	}
 }

@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Kellerman81/go_media_downloader/api"
 	"github.com/Kellerman81/go_media_downloader/config"
+	"github.com/Kellerman81/go_media_downloader/logger"
 	"github.com/Kellerman81/go_media_downloader/tasks"
 	"github.com/Kellerman81/go_media_downloader/utils"
 	"github.com/gin-gonic/gin"
@@ -32,197 +32,247 @@ func converttime(interval string) time.Duration {
 	}
 }
 func InitScheduler() {
-	what := []string{"General", "Regex", "Quality", "Path", "Indexer", "Scheduler", "Movie", "Serie", "Imdb", "Downloader", "Notification", "List"}
-	cfg, f, _ := config.LoadCfg(what, config.Configfile)
-	config.Watch(f, config.Configfile, what)
+	hasGeneral, _ := config.ConfigDB.Has("general")
+	if !hasGeneral {
+		logger.Log.Errorln("General Config not found")
+		return
+	}
+	var cfg_general config.GeneralConfig
+	config.ConfigDB.Get("general", &cfg_general)
 
-	feeds := tasks.NewDispatcher(cfg.General.ConcurrentScheduler, 100)
+	feeds := tasks.NewDispatcher(cfg_general.ConcurrentScheduler, 100)
 	feeds.Start()
 
-	data := tasks.NewDispatcher(cfg.General.ConcurrentScheduler, 100)
+	data := tasks.NewDispatcher(cfg_general.ConcurrentScheduler, 100)
 	data.Start()
 
-	search := tasks.NewDispatcher(cfg.General.ConcurrentScheduler, 100)
+	search := tasks.NewDispatcher(cfg_general.ConcurrentScheduler, 100)
 	search.Start()
 
-	for idx := range cfg.Movie {
-		schedule := cfg.Scheduler[cfg.Movie[idx].Template_scheduler]
+	movie_keys, _ := config.ConfigDB.Keys([]byte("movie_*"), 0, 0, true)
+
+	for _, idxmovie := range movie_keys {
+		var cfg_movie config.MediaTypeConfig
+		config.ConfigDB.Get(string(idxmovie), &cfg_movie)
+
+		hasScheduler, _ := config.ConfigDB.Has("scheduler_" + cfg_movie.Template_scheduler)
+		if !hasScheduler {
+			logger.Log.Errorln("Scheduler Config not found: ", "scheduler_"+cfg_movie.Template_scheduler)
+			continue
+		}
+		var schedule config.SchedulerConfig
+		config.ConfigDB.Get("scheduler_"+cfg_movie.Template_scheduler, &schedule)
+
 		if schedule.Interval_indexer_missing != "" {
 			search.DispatchEvery(func() {
-				api.Movies_single_jobs(cfg, "searchmissinginc", cfg.Movie[idx].Name, "", false)
+				utils.Movies_single_jobs("searchmissinginc", cfg_movie.Name, "", false)
 			}, converttime(schedule.Interval_indexer_missing))
 		}
 		if schedule.Interval_indexer_missing_full != "" {
 			search.DispatchEvery(func() {
-				api.Movies_single_jobs(cfg, "searchmissingfull", cfg.Movie[idx].Name, "", false)
+				utils.Movies_single_jobs("searchmissingfull", cfg_movie.Name, "", false)
 			}, converttime(schedule.Interval_indexer_missing_full))
 		}
 		if schedule.Interval_indexer_upgrade != "" {
 			search.DispatchEvery(func() {
-				api.Movies_single_jobs(cfg, "searchupgradeinc", cfg.Movie[idx].Name, "", false)
+				utils.Movies_single_jobs("searchupgradeinc", cfg_movie.Name, "", false)
 			}, converttime(schedule.Interval_indexer_upgrade))
 		}
 		if schedule.Interval_indexer_upgrade_full != "" {
 			search.DispatchEvery(func() {
-				api.Movies_single_jobs(cfg, "searchupgradefull", cfg.Movie[idx].Name, "", false)
+				utils.Movies_single_jobs("searchupgradefull", cfg_movie.Name, "", false)
 			}, converttime(schedule.Interval_indexer_upgrade_full))
 		}
 
 		if schedule.Interval_indexer_missing_title != "" {
 			search.DispatchEvery(func() {
-				api.Movies_single_jobs(cfg, "searchmissinginctitle", cfg.Movie[idx].Name, "", false)
+				utils.Movies_single_jobs("searchmissinginctitle", cfg_movie.Name, "", false)
 			}, converttime(schedule.Interval_indexer_missing_title))
 		}
 		if schedule.Interval_indexer_missing_full_title != "" {
 			search.DispatchEvery(func() {
-				api.Movies_single_jobs(cfg, "searchmissingfulltitle", cfg.Movie[idx].Name, "", false)
+				utils.Movies_single_jobs("searchmissingfulltitle", cfg_movie.Name, "", false)
 			}, converttime(schedule.Interval_indexer_missing_full_title))
 		}
 		if schedule.Interval_indexer_upgrade_title != "" {
 			search.DispatchEvery(func() {
-				api.Movies_single_jobs(cfg, "searchupgradeinctitle", cfg.Movie[idx].Name, "", false)
+				utils.Movies_single_jobs("searchupgradeinctitle", cfg_movie.Name, "", false)
 			}, converttime(schedule.Interval_indexer_upgrade_title))
 		}
 		if schedule.Interval_indexer_upgrade_full_title != "" {
 			search.DispatchEvery(func() {
-				api.Movies_single_jobs(cfg, "searchupgradefulltitle", cfg.Movie[idx].Name, "", false)
+				utils.Movies_single_jobs("searchupgradefulltitle", cfg_movie.Name, "", false)
 			}, converttime(schedule.Interval_indexer_upgrade_full_title))
 		}
 		if schedule.Interval_indexer_rss != "" {
 			search.DispatchEvery(func() {
-				api.Movies_single_jobs(cfg, "rss", cfg.Movie[idx].Name, "", false)
+				utils.Movies_single_jobs("rss", cfg_movie.Name, "", false)
 			}, converttime(schedule.Interval_indexer_rss))
 		}
 
-		for idxlist := range cfg.Movie[idx].Lists {
-			if cfg.Movie[idx].Lists[idxlist].Template_scheduler != "" {
-				schedule = cfg.Scheduler[cfg.Movie[idx].Lists[idxlist].Template_scheduler]
+		for idxlist := range cfg_movie.Lists {
+			if cfg_movie.Lists[idxlist].Template_scheduler != "" {
+				hasScheduler, _ := config.ConfigDB.Has("scheduler_" + cfg_movie.Lists[idxlist].Template_scheduler)
+				if !hasScheduler {
+					logger.Log.Errorln("Scheduler Config not found: ", "scheduler_"+cfg_movie.Lists[idxlist].Template_scheduler)
+					continue
+				}
+				config.ConfigDB.Get("scheduler_"+cfg_movie.Lists[idxlist].Template_scheduler, &schedule)
 			}
 			if schedule.Interval_feeds != "" {
 				feeds.DispatchEvery(func() {
-					api.Movies_single_jobs(cfg, "feeds", cfg.Movie[idx].Name, cfg.Movie[idx].Lists[idxlist].Name, false)
+					utils.Movies_single_jobs("feeds", cfg_movie.Name, cfg_movie.Lists[idxlist].Name, false)
 				}, converttime(schedule.Interval_feeds))
 			}
 
 			if schedule.Interval_scan_data_missing != "" {
 				data.DispatchEvery(func() {
-					api.Movies_single_jobs(cfg, "checkmissing", cfg.Movie[idx].Name, cfg.Movie[idx].Lists[idxlist].Name, false)
+					utils.Movies_single_jobs("checkmissing", cfg_movie.Name, cfg_movie.Lists[idxlist].Name, false)
 				}, converttime(schedule.Interval_scan_data_missing))
 
 				data.DispatchEvery(func() {
-					api.Movies_single_jobs(cfg, "checkmissingflag", cfg.Movie[idx].Name, cfg.Movie[idx].Lists[idxlist].Name, false)
+					utils.Movies_single_jobs("checkmissingflag", cfg_movie.Name, cfg_movie.Lists[idxlist].Name, false)
 				}, converttime(schedule.Interval_scan_data_missing))
 			}
 		}
 	}
 
-	defaultschedule := cfg.Scheduler["Default"]
+	hasDefScheduler, _ := config.ConfigDB.Has("scheduler_Default")
+	if !hasDefScheduler {
+		logger.Log.Errorln("Scheduler Config not found: ", "scheduler_Default")
+		return
+	}
+	var defaultschedule config.SchedulerConfig
+	config.ConfigDB.Get("scheduler_"+"Default", &defaultschedule)
+
 	if defaultschedule.Interval_scan_data != "" {
 		data.DispatchEvery(func() {
-			api.Movies_all_jobs_cfg(cfg, "data", false)
+			utils.Movies_all_jobs("data", false)
 		}, converttime(defaultschedule.Interval_scan_data))
 	}
 
-	for idx := range cfg.Serie {
-		schedule := cfg.Scheduler[cfg.Serie[idx].Template_scheduler]
+	serie_keys, _ := config.ConfigDB.Keys([]byte("serie_*"), 0, 0, true)
+
+	for _, idxserie := range serie_keys {
+		var cfg_serie config.MediaTypeConfig
+		config.ConfigDB.Get(string(idxserie), &cfg_serie)
+
+		hasScheduler, _ := config.ConfigDB.Has("scheduler_" + cfg_serie.Template_scheduler)
+		if !hasScheduler {
+			logger.Log.Errorln("Scheduler Config not found: ", "scheduler_"+cfg_serie.Template_scheduler)
+			continue
+		}
+		var schedule config.SchedulerConfig
+		config.ConfigDB.Get("scheduler_"+cfg_serie.Template_scheduler, &schedule)
+
 		if schedule.Interval_indexer_missing != "" {
 			search.DispatchEvery(func() {
-				api.Series_single_jobs(cfg, "searchmissinginc", cfg.Serie[idx].Name, "", false)
+				utils.Series_single_jobs("searchmissinginc", cfg_serie.Name, "", false)
 			}, converttime(schedule.Interval_indexer_missing))
 		}
 		if schedule.Interval_indexer_missing_full != "" {
 			search.DispatchEvery(func() {
-				api.Series_single_jobs(cfg, "searchmissingfull", cfg.Serie[idx].Name, "", false)
+				utils.Series_single_jobs("searchmissingfull", cfg_serie.Name, "", false)
 			}, converttime(schedule.Interval_indexer_missing_full))
 		}
 		if schedule.Interval_indexer_upgrade != "" {
 			search.DispatchEvery(func() {
-				api.Series_single_jobs(cfg, "searchupgradeinc", cfg.Serie[idx].Name, "", false)
+				utils.Series_single_jobs("searchupgradeinc", cfg_serie.Name, "", false)
 			}, converttime(schedule.Interval_indexer_upgrade))
 		}
 		if schedule.Interval_indexer_upgrade_full != "" {
 			search.DispatchEvery(func() {
-				api.Series_single_jobs(cfg, "searchupgradefull", cfg.Serie[idx].Name, "", false)
+				utils.Series_single_jobs("searchupgradefull", cfg_serie.Name, "", false)
 			}, converttime(schedule.Interval_indexer_upgrade_full))
 		}
 
 		if schedule.Interval_indexer_missing_title != "" {
 			search.DispatchEvery(func() {
-				api.Series_single_jobs(cfg, "searchmissinginctitle", cfg.Serie[idx].Name, "", false)
+				utils.Series_single_jobs("searchmissinginctitle", cfg_serie.Name, "", false)
 			}, converttime(schedule.Interval_indexer_missing_title))
 		}
 		if schedule.Interval_indexer_missing_full_title != "" {
 			search.DispatchEvery(func() {
-				api.Series_single_jobs(cfg, "searchmissingfulltitle", cfg.Serie[idx].Name, "", false)
+				utils.Series_single_jobs("searchmissingfulltitle", cfg_serie.Name, "", false)
 			}, converttime(schedule.Interval_indexer_missing_full_title))
 		}
 		if schedule.Interval_indexer_upgrade_title != "" {
 			search.DispatchEvery(func() {
-				api.Series_single_jobs(cfg, "searchupgradeinctitle", cfg.Serie[idx].Name, "", false)
+				utils.Series_single_jobs("searchupgradeinctitle", cfg_serie.Name, "", false)
 			}, converttime(schedule.Interval_indexer_upgrade_title))
 		}
 		if schedule.Interval_indexer_upgrade_full_title != "" {
 			search.DispatchEvery(func() {
-				api.Series_single_jobs(cfg, "searchupgradefulltitle", cfg.Serie[idx].Name, "", false)
+				utils.Series_single_jobs("searchupgradefulltitle", cfg_serie.Name, "", false)
 			}, converttime(schedule.Interval_indexer_upgrade_full_title))
 		}
 		if schedule.Interval_indexer_rss != "" {
 			search.DispatchEvery(func() {
-				api.Series_single_jobs(cfg, "rss", cfg.Serie[idx].Name, "", false)
+				utils.Series_single_jobs("rss", cfg_serie.Name, "", false)
 			}, converttime(schedule.Interval_indexer_rss))
 		}
-		for idxlist := range cfg.Serie[idx].Lists {
-			schedule := cfg.Scheduler[cfg.Serie[idx].Template_scheduler]
-			if cfg.Serie[idx].Lists[idxlist].Template_scheduler != "" {
-				schedule = cfg.Scheduler[cfg.Serie[idx].Lists[idxlist].Template_scheduler]
+		for idxlist := range cfg_serie.Lists {
+			hasScheduler, _ := config.ConfigDB.Has("scheduler_" + cfg_serie.Template_scheduler)
+			if !hasScheduler {
+				logger.Log.Errorln("Scheduler Config not found: ", "scheduler_"+cfg_serie.Template_scheduler)
+				continue
+			}
+			config.ConfigDB.Get("scheduler_"+cfg_serie.Template_scheduler, &schedule)
+			if cfg_serie.Lists[idxlist].Template_scheduler != "" {
+				hasScheduler, _ := config.ConfigDB.Has("scheduler_" + cfg_serie.Lists[idxlist].Template_scheduler)
+				if !hasScheduler {
+					logger.Log.Errorln("Scheduler Config not found: ", "scheduler_"+cfg_serie.Lists[idxlist].Template_scheduler)
+					continue
+				}
+				config.ConfigDB.Get("scheduler_"+cfg_serie.Lists[idxlist].Template_scheduler, &schedule)
 			}
 			if schedule.Interval_feeds != "" {
 				feeds.DispatchEvery(func() {
-					api.Series_single_jobs(cfg, "feeds", cfg.Serie[idx].Name, cfg.Serie[idx].Lists[idxlist].Name, false)
+					utils.Series_single_jobs("feeds", cfg_serie.Name, cfg_serie.Lists[idxlist].Name, false)
 				}, converttime(schedule.Interval_feeds))
 			}
 
 			if schedule.Interval_scan_data_missing != "" {
 				data.DispatchEvery(func() {
-					api.Series_single_jobs(cfg, "checkmissing", cfg.Serie[idx].Name, cfg.Serie[idx].Lists[idxlist].Name, false)
-					api.Series_single_jobs(cfg, "checkmissingflag", cfg.Serie[idx].Name, cfg.Serie[idx].Lists[idxlist].Name, false)
+					utils.Series_single_jobs("checkmissing", cfg_serie.Name, cfg_serie.Lists[idxlist].Name, false)
+					utils.Series_single_jobs("checkmissingflag", cfg_serie.Name, cfg_serie.Lists[idxlist].Name, false)
 				}, converttime(schedule.Interval_scan_data_missing))
 			}
 		}
 	}
 	if defaultschedule.Interval_scan_data != "" {
 		data.DispatchEvery(func() {
-			api.Series_all_jobs_cfg(cfg, "data", false)
+			utils.Series_all_jobs("data", false)
 		}, converttime(defaultschedule.Interval_scan_data))
 	}
 	if defaultschedule.Interval_scan_dataimport != "" {
 		data.DispatchEvery(func() {
-			api.Series_all_jobs_cfg(cfg, "structure", false)
+			utils.Series_all_jobs("structure", false)
 		}, converttime(defaultschedule.Interval_scan_dataimport))
 
 		data.DispatchEvery(func() {
-			api.Movies_all_jobs_cfg(cfg, "structure", false)
+			utils.Movies_all_jobs("structure", false)
 		}, converttime(defaultschedule.Interval_scan_dataimport))
 	}
 
 	if defaultschedule.Interval_feeds_refresh_series_full != "" {
 		feeds.DispatchEvery(func() {
-			api.RefreshSeries(cfg)
+			utils.RefreshSeries()
 		}, converttime(defaultschedule.Interval_feeds_refresh_series_full))
 	}
 	if defaultschedule.Interval_feeds_refresh_movies_full != "" {
 		feeds.DispatchEvery(func() {
-			api.RefreshMovies(cfg)
+			utils.RefreshMovies()
 		}, converttime(defaultschedule.Interval_feeds_refresh_movies_full))
 	}
 	if defaultschedule.Interval_feeds_refresh_series != "" {
 		feeds.DispatchEvery(func() {
-			api.RefreshSeriesInc(cfg)
+			utils.RefreshSeriesInc()
 		}, converttime(defaultschedule.Interval_feeds_refresh_series))
 	}
 	if defaultschedule.Interval_feeds_refresh_movies != "" {
 		feeds.DispatchEvery(func() {
-			api.RefreshMoviesInc(cfg)
+			utils.RefreshMoviesInc()
 		}, converttime(defaultschedule.Interval_feeds_refresh_movies))
 	}
 	if defaultschedule.Interval_imdb != "" {

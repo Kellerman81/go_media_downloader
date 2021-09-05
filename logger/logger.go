@@ -5,18 +5,18 @@ import (
 	"os"
 	"strings"
 
-	"github.com/pkg/profile"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
 var Log = logrus.New()
-var Cpuprofiler interface {
-	Stop()
-}
-var Memprofiler interface {
-	Stop()
-}
+
+// var Cpuprofiler interface {
+// 	Stop()
+// }
+// var Memprofiler interface {
+// 	Stop()
+// }
 
 type LoggerConfig struct {
 	LogLevel     string
@@ -30,7 +30,7 @@ func InitLogger(config LoggerConfig) {
 	// logPath := "downloader.log"
 	Log.SetFormatter(&logrus.TextFormatter{})
 	if strings.EqualFold(config.LogLevel, "Debug") {
-		Memprofiler = profile.Start(profile.ProfilePath("."), profile.MemProfile, profile.MemProfileHeap)
+		// Memprofiler = profile.Start(profile.ProfilePath("."), profile.MemProfile, profile.MemProfileHeap)
 		Log.SetLevel(logrus.DebugLevel)
 	}
 	if strings.EqualFold(config.LogLevel, "Warning") {

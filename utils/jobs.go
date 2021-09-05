@@ -53,7 +53,7 @@ type InputNotifier struct {
 	ReplacedPrefix string
 }
 
-func notifier(cfg config.Cfg, event string, noticonfig config.MediaNotificationConfig, notifierdata InputNotifier) {
+func notifier(event string, noticonfig config.MediaNotificationConfig, notifierdata InputNotifier) {
 	if !strings.EqualFold(noticonfig.Event, event) {
 		return
 	}
@@ -89,20 +89,28 @@ func notifier(cfg config.Cfg, event string, noticonfig config.MediaNotificationC
 	MessageTitle = strings.Replace(MessageTitle, "{EpisodeTitle}", notifierdata.EpisodeTitle, -1)
 	MessageTitle = strings.Replace(MessageTitle, "{Configuration}", notifierdata.Configuration, -1)
 
-	if strings.EqualFold(cfg.Notification[noticonfig.Map_notification].Type, "pushover") {
-		if apiexternal.PushoverApi.ApiKey != cfg.Notification[noticonfig.Map_notification].Apikey {
-			apiexternal.NewPushOverClient(cfg.Notification[noticonfig.Map_notification].Apikey)
+	hasNotification, _ := config.ConfigDB.Has("notification_" + noticonfig.Map_notification)
+	if !hasNotification {
+		logger.Log.Errorln("Notification Config not found: ", "notification_"+noticonfig.Map_notification)
+		return
+	}
+	var cfg_notification config.NotificationConfig
+	config.ConfigDB.Get("notification_"+noticonfig.Map_notification, &cfg_notification)
+
+	if strings.EqualFold(cfg_notification.Type, "pushover") {
+		if apiexternal.PushoverApi.ApiKey != cfg_notification.Apikey {
+			apiexternal.NewPushOverClient(cfg_notification.Apikey)
 		}
 
-		err := apiexternal.PushoverApi.SendMessage(messagetext, MessageTitle, cfg.Notification[noticonfig.Map_notification].Recipient)
+		err := apiexternal.PushoverApi.SendMessage(messagetext, MessageTitle, cfg_notification.Recipient)
 		if err != nil {
 			logger.Log.Error("Error sending pushover", err)
 		} else {
 			logger.Log.Info("Pushover message sent")
 		}
 	}
-	if strings.EqualFold(cfg.Notification[noticonfig.Map_notification].Type, "csv") {
-		f, errf := os.OpenFile(cfg.Notification[noticonfig.Map_notification].Outputto,
+	if strings.EqualFold(cfg_notification.Type, "csv") {
+		f, errf := os.OpenFile(cfg_notification.Outputto,
 			os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if errf != nil {
 			logger.Log.Error("Error opening csv to write", errf)
@@ -120,18 +128,27 @@ func notifier(cfg config.Cfg, event string, noticonfig config.MediaNotificationC
 	}
 }
 
-func Feeds(cfg config.Cfg, configEntry config.MediaTypeConfig, list config.MediaListsConfig) feedResults {
-	if strings.EqualFold(cfg.List[list.Template_list].Type, "seriesconfig") {
-		configSerie := config.LoadSerie(cfg.List[list.Template_list].Series_config_file)
+func Feeds(configEntry config.MediaTypeConfig, list config.MediaListsConfig) feedResults {
+
+	hasList, _ := config.ConfigDB.Has("list_" + list.Template_list)
+	if !hasList {
+		logger.Log.Errorln("List Config not found: ", "list_"+list.Template_list)
+		return feedResults{}
+	}
+	var cfg_list config.ListsConfig
+	config.ConfigDB.Get("list_"+list.Template_list, &cfg_list)
+
+	if strings.EqualFold(cfg_list.Type, "seriesconfig") {
+		configSerie := config.LoadSerie(cfg_list.Series_config_file)
 		return feedResults{Series: configSerie}
 	}
 
-	if strings.EqualFold(cfg.List[list.Template_list].Type, "imdbcsv") {
-		dbmovies := getMissingIMDBMoviesV2(cfg, configEntry, list)
+	if strings.EqualFold(cfg_list.Type, "imdbcsv") {
+		dbmovies := getMissingIMDBMoviesV2(configEntry, list)
 		return feedResults{Movies: dbmovies}
 	}
-	if strings.EqualFold(cfg.List[list.Template_list].Type, "traktmoviepopular") {
-		traktpopular, err := apiexternal.TraktApi.GetMoviePopular(cfg.List[list.Template_list].Limit)
+	if strings.EqualFold(cfg_list.Type, "traktmoviepopular") {
+		traktpopular, err := apiexternal.TraktApi.GetMoviePopular(cfg_list.Limit)
 		if err == nil {
 			d := make([]database.Dbmovie, 0, len(traktpopular))
 
@@ -139,10 +156,10 @@ func Feeds(cfg config.Cfg, configEntry config.MediaTypeConfig, list config.Media
 				if len(traktpopular[idx].Ids.Imdb) == 0 {
 					continue
 				}
-				if len(cfg.List[list.Template_list].Excludegenre) >= 1 {
+				if len(cfg_list.Excludegenre) >= 1 {
 					excludebygenre := false
-					for idxgenre := range cfg.List[list.Template_list].Excludegenre {
-						countergenre, _ := database.ImdbCountRows("imdb_genres", database.Query{Where: "tconst = ? and genre = ?", WhereArgs: []interface{}{traktpopular[idx].Ids.Imdb, cfg.List[list.Template_list].Excludegenre[idxgenre]}})
+					for idxgenre := range cfg_list.Excludegenre {
+						countergenre, _ := database.ImdbCountRows("imdb_genres", database.Query{Where: "tconst = ? and genre = ?", WhereArgs: []interface{}{traktpopular[idx].Ids.Imdb, cfg_list.Excludegenre[idxgenre]}})
 						if countergenre >= 1 {
 							excludebygenre = true
 							break
@@ -152,10 +169,10 @@ func Feeds(cfg config.Cfg, configEntry config.MediaTypeConfig, list config.Media
 						continue
 					}
 				}
-				if len(cfg.List[list.Template_list].Includegenre) >= 1 {
+				if len(cfg_list.Includegenre) >= 1 {
 					includebygenre := false
-					for idxgenre := range cfg.List[list.Template_list].Includegenre {
-						countergenre, _ := database.ImdbCountRows("imdb_genres", database.Query{Where: "tconst = ? and genre = ?", WhereArgs: []interface{}{traktpopular[idx].Ids.Imdb, cfg.List[list.Template_list].Includegenre[idxgenre]}})
+					for idxgenre := range cfg_list.Includegenre {
+						countergenre, _ := database.ImdbCountRows("imdb_genres", database.Query{Where: "tconst = ? and genre = ?", WhereArgs: []interface{}{traktpopular[idx].Ids.Imdb, cfg_list.Includegenre[idxgenre]}})
 						if countergenre >= 1 {
 							includebygenre = true
 							break
@@ -171,8 +188,8 @@ func Feeds(cfg config.Cfg, configEntry config.MediaTypeConfig, list config.Media
 			return feedResults{Movies: d}
 		}
 	}
-	if strings.EqualFold(cfg.List[list.Template_list].Type, "traktmovieanticipated") {
-		traktpopular, err := apiexternal.TraktApi.GetMovieAnticipated(cfg.List[list.Template_list].Limit)
+	if strings.EqualFold(cfg_list.Type, "traktmovieanticipated") {
+		traktpopular, err := apiexternal.TraktApi.GetMovieAnticipated(cfg_list.Limit)
 		if err == nil {
 			d := make([]database.Dbmovie, 0, len(traktpopular))
 
@@ -180,10 +197,10 @@ func Feeds(cfg config.Cfg, configEntry config.MediaTypeConfig, list config.Media
 				if len(traktpopular[idx].Movie.Ids.Imdb) == 0 {
 					continue
 				}
-				if len(cfg.List[list.Template_list].Excludegenre) >= 1 {
+				if len(cfg_list.Excludegenre) >= 1 {
 					excludebygenre := false
-					for idxgenre := range cfg.List[list.Template_list].Excludegenre {
-						countergenre, _ := database.ImdbCountRows("imdb_genres", database.Query{Where: "tconst = ? and genre = ?", WhereArgs: []interface{}{traktpopular[idx].Movie.Ids.Imdb, cfg.List[list.Template_list].Excludegenre[idxgenre]}})
+					for idxgenre := range cfg_list.Excludegenre {
+						countergenre, _ := database.ImdbCountRows("imdb_genres", database.Query{Where: "tconst = ? and genre = ?", WhereArgs: []interface{}{traktpopular[idx].Movie.Ids.Imdb, cfg_list.Excludegenre[idxgenre]}})
 						if countergenre >= 1 {
 							excludebygenre = true
 							break
@@ -193,10 +210,10 @@ func Feeds(cfg config.Cfg, configEntry config.MediaTypeConfig, list config.Media
 						continue
 					}
 				}
-				if len(cfg.List[list.Template_list].Includegenre) >= 1 {
+				if len(cfg_list.Includegenre) >= 1 {
 					includebygenre := false
-					for idxgenre := range cfg.List[list.Template_list].Includegenre {
-						countergenre, _ := database.ImdbCountRows("imdb_genres", database.Query{Where: "tconst = ? and genre = ?", WhereArgs: []interface{}{traktpopular[idx].Movie.Ids.Imdb, cfg.List[list.Template_list].Includegenre[idxgenre]}})
+					for idxgenre := range cfg_list.Includegenre {
+						countergenre, _ := database.ImdbCountRows("imdb_genres", database.Query{Where: "tconst = ? and genre = ?", WhereArgs: []interface{}{traktpopular[idx].Movie.Ids.Imdb, cfg_list.Includegenre[idxgenre]}})
 						if countergenre >= 1 {
 							includebygenre = true
 							break
@@ -212,8 +229,8 @@ func Feeds(cfg config.Cfg, configEntry config.MediaTypeConfig, list config.Media
 			return feedResults{Movies: d}
 		}
 	}
-	if strings.EqualFold(cfg.List[list.Template_list].Type, "traktmovietrending") {
-		traktpopular, err := apiexternal.TraktApi.GetMovieTrending(cfg.List[list.Template_list].Limit)
+	if strings.EqualFold(cfg_list.Type, "traktmovietrending") {
+		traktpopular, err := apiexternal.TraktApi.GetMovieTrending(cfg_list.Limit)
 		if err == nil {
 			d := make([]database.Dbmovie, 0, len(traktpopular))
 
@@ -221,10 +238,10 @@ func Feeds(cfg config.Cfg, configEntry config.MediaTypeConfig, list config.Media
 				if len(traktpopular[idx].Movie.Ids.Imdb) == 0 {
 					continue
 				}
-				if len(cfg.List[list.Template_list].Excludegenre) >= 1 {
+				if len(cfg_list.Excludegenre) >= 1 {
 					excludebygenre := false
-					for idxgenre := range cfg.List[list.Template_list].Excludegenre {
-						countergenre, _ := database.ImdbCountRows("imdb_genres", database.Query{Where: "tconst = ? and genre = ?", WhereArgs: []interface{}{traktpopular[idx].Movie.Ids.Imdb, cfg.List[list.Template_list].Excludegenre[idxgenre]}})
+					for idxgenre := range cfg_list.Excludegenre {
+						countergenre, _ := database.ImdbCountRows("imdb_genres", database.Query{Where: "tconst = ? and genre = ?", WhereArgs: []interface{}{traktpopular[idx].Movie.Ids.Imdb, cfg_list.Excludegenre[idxgenre]}})
 						if countergenre >= 1 {
 							excludebygenre = true
 							break
@@ -234,10 +251,10 @@ func Feeds(cfg config.Cfg, configEntry config.MediaTypeConfig, list config.Media
 						continue
 					}
 				}
-				if len(cfg.List[list.Template_list].Includegenre) >= 1 {
+				if len(cfg_list.Includegenre) >= 1 {
 					includebygenre := false
-					for idxgenre := range cfg.List[list.Template_list].Includegenre {
-						countergenre, _ := database.ImdbCountRows("imdb_genres", database.Query{Where: "tconst = ? and genre = ?", WhereArgs: []interface{}{traktpopular[idx].Movie.Ids.Imdb, cfg.List[list.Template_list].Includegenre[idxgenre]}})
+					for idxgenre := range cfg_list.Includegenre {
+						countergenre, _ := database.ImdbCountRows("imdb_genres", database.Query{Where: "tconst = ? and genre = ?", WhereArgs: []interface{}{traktpopular[idx].Movie.Ids.Imdb, cfg_list.Includegenre[idxgenre]}})
 						if countergenre >= 1 {
 							includebygenre = true
 							break
@@ -253,6 +270,6 @@ func Feeds(cfg config.Cfg, configEntry config.MediaTypeConfig, list config.Media
 			return feedResults{Movies: d}
 		}
 	}
-	logger.Log.Error("Feed Config not found - template: ", list.Template_list, " - type: ", cfg.List[list.Template_list], " - name: ", cfg.List[list.Template_list].Name, cfg.List)
+	logger.Log.Error("Feed Config not found - template: ", list.Template_list, " - type: ", cfg_list, " - name: ", cfg_list.Name)
 	return feedResults{}
 }

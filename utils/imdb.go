@@ -27,14 +27,15 @@ import (
 )
 
 func InitFillImdb() {
-	cfg, _, _ := config.LoadCfg([]string{"Imdb"}, config.Configfile)
+	var cfg_imdb config.ImdbConfig
+	config.ConfigDB.Get("imdb", &cfg_imdb)
 	logger.Log.Info("Started Imdb Import")
 	titlemap := make(map[string]bool, 10)
-	for _, row := range cfg.Imdb.Indexedtypes {
+	for _, row := range cfg_imdb.Indexedtypes {
 		titlemap[row] = true
 	}
 	akamap := make(map[string]bool, 10)
-	for _, row := range cfg.Imdb.Indexedlanguages {
+	for _, row := range cfg_imdb.Indexedlanguages {
 		akamap[row] = true
 	}
 	os.Remove("./imdbtemp.db")
@@ -133,7 +134,7 @@ func InitFillImdb() {
 			if stringtitleprimary == `\N` || record[2] == `\\N` {
 				stringtitleprimary = ""
 			}
-			if !cfg.Imdb.Indexfull {
+			if !cfg_imdb.Indexfull {
 				titlesshort = append(titlesshort, database.ImdbTitle{
 					Tconst:       record[0],
 					TitleType:    stringtitletype,
@@ -289,7 +290,7 @@ func InitFillImdb() {
 				if stringattributes == `\N` || record[6] == `\\N` {
 					stringattributes = ""
 				}
-				if !cfg.Imdb.Indexfull {
+				if !cfg_imdb.Indexfull {
 					akasshort = append(akasshort, database.ImdbAka{
 						Tconst: record[0],
 						Title:  stringtitle,

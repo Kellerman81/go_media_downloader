@@ -3,3 +3,4 @@
 **/*.pprof
 **/*.log
 **/*.log.*
+backup/**

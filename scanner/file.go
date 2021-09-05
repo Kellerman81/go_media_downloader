@@ -51,6 +51,7 @@ func GetFilesGoDir(rootpath string, filetypes []string, filetypesNoRename []stri
 					for idxignore := range ignoredpaths {
 						if strings.Contains(path, ignoredpaths[idxignore]) {
 							ok = false
+							break
 						}
 					}
 				}
