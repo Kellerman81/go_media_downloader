@@ -1,0 +1,327 @@
+[general]
+## Attention: Match Lists and Cases!! ##
+## defaults: num fields: 0, string fields: "", bool fields: false
+## Changes to web, log and scheduler are only loaded during start! So please restart after changing
+
+LogLevel = "Debug" #Info or Debug or Warning
+DBLogLevel = "Info" #Info or Debug or Warning - debug makes system extremly slow
+LogFileSize = 20 # in MB
+LogFileCount = 10 # Number of Files
+WorkerDefault = 2
+WorkerMetadata = 4
+WorkerFiles = 2
+WorkerParse = 2
+WorkerSearch = 2
+webport  = "9090" #string!
+webapikey = "mysecure" #url is http://<server>:<webport>/api/<webapikey>/...
+ConcurrentScheduler = 2
+MovieMetaSourceImdb = true #metadata priority: 1. imdb 2. tmdb 3. omdb  - imdb has no plot
+MovieMetaSourceTmdb = true #has most fields
+MovieMetaSourceOmdb = false
+MovieMetaSourceTrakt = true
+MovieMetaSourcePriority = ["imdb","tmdb","trakt"] #,"tmdb","omdb","trakt"] #first to last - either remove entry here or disable them above
+MovieParseMetaSourcePriority = ["imdb","tmdb"] #,"tmdb"] #first to last - either remove entry here or disable them above
+MovieRSSMetaSourcePriority = ["imdb"] #first to last - either remove entry here or disable them above
+SerieMetaSourceTmdb = true #add additional fields - default not to disable: tvdb
+SerieMetaSourceTrakt = true #add additional fields - default not to disable: tvdb
+SchedulerDisabled = 'true' #on your very first run change to true - after your media is indexed set to false
+OmdbApiKey =  "insert"
+TheMovieDBApiKey="insert"
+TraktClientId="insert"
+
+traktlimiterseconds=1 # will only change after restart
+traktlimitercalls=20 # max limitercalls in limiterseconds
+tvdblimiterseconds=1 # will only change after restart
+tvdblimitercalls=10 # max limitercalls in limiterseconds
+tmdblimiterseconds=1 # will only change after restart
+tmdblimitercalls=20 # max limitercalls in limiterseconds
+omdblimiterseconds=1 # will only change after restart
+omdblimitercalls=10 # max limitercalls in limiterseconds
+
+##### imdb configuaration #####
+
+[imdbindexer]
+indexedtypes=["movie","tvMovie"] #,"tvSeries","tvEpisode"] #other: movie, tvMovie, short, tvSeries, tvEpisode, video, videoGame, tvSpecial, tvMiniSeries ##over 5000000 tvepisodes - so please keep that in mind
+indexedlanguages=["DE","US","UK",'\N'] #other titles in different languages will not be imported \N==emtpy
+indexfull=true #short only imports imdbid and titles/years
+
+[media]
+
+##### movie configuarations #####
+
+	[[media.movies]]
+	Name="EN"
+	DefaultQuality="sdtv" #if quality not found
+	DefaultResolution="360p" #if resolution not found
+	Naming = '{Title} ({Year})/{Title} ({Year}) [{Resolution} {Quality} {Codec} {Audio} {Proper}] ({Imdb})' #use / as path separator #include imdb or tvdb for maximum compability
+	template_quality="SD" # Map to qualities below	
+	template_scheduler="Default" # Map to scheduler below	
+	Metadata_language="English"
+	structure=true #false leaves the files where they were downloaded to
+	searchmissing_incremental = 20 #number of elements processed during incremental scans - x*number of lists!
+	searchupgrade_incremental = 20 #number of elements processed during incremental scans
+		[[media.movies.data]]
+		template_path="en movies"
+		[[media.movies.dataimport]]
+		template_path="en movies import"
+		[[media.movies.lists]]
+		name="EN Movies" #Use unique names to match in db   - dont use same name for series and movies
+		enabled=true
+		addfound=false #Add Found movies if not in DB?
+		template_list="Movies" # Map to lists
+		template_quality="SD" # Map to qualities below
+		compare="false" # false = add only new entries - old ones will not be removed - currently not yet developed
+		ignore_template_lists=[] # Map to Name - if movie exists already in db it will be skipped
+		replace_template_lists=["EN Watchlist"] # Map to Name - if movie exists already in db it will be replaced	
+		BackupSearchForTitle=false # if false if will only search for the imdbid - if enabled it will search for title (year)
+		checktitle=true #checks if the title is correct (also for imdb search)
+		checkyear=true #checks if the year is correct (also for imdb search)
+		checkyear1=true #checks if the year is correct allow+-1 (also for imdb search)
+		CheckUntilFirstFound=true #true = on use first available release and dont try the other indexers - false=check all . rss check all always
+		TitleStripSuffixForSearch=[" dc", "repack", "unrated", "directors cut", "THEATRICAL"] #removes strings from title-end for title searches
+		[[media.movies.notification]]
+		template_notification="pushover"
+		event="added_data" #added_download #added_list
+		title="New Movie added in {Configuration}"
+		message="{Title} - moved from {Source_Path} to {Target_Path}{Replaced}"
+		ReplacedPrefix="replaced"
+		[[media.movies.notification]]
+		template_notification="csvmovies"
+		event="added_data" #added_download #added_list
+		message="{Title};{Year};{Imdb};{Source_Path};{Target_Path};{Replaced}"
+	
+	
+##### serie configuarations #####
+
+	[[media.series]]
+	Name="EN"
+	DefaultQuality="sdtv"
+	DefaultResolution="480p"
+	Naming = '{Title}/Season {Season}/{Title} - {Identifier} - {EpisodeTitle} [{Resolution} {Quality} {Codec} {Audio} {Proper}] ({Tvdb})'
+	NamingIdentifier = 'S{0Season}E{0Episode}(E{0Episode})' # in Brackets are Variants for MultiEpisodes - E{0Episode}(E{0Episode}) = E01E02E03... E{0Episode}(-E{0Episode}) = E01-E02-E03...
+	template_quality="SDSeries" # Map to qualities below	
+	template_scheduler="Default" # Map to scheduler below
+	Metadata_language="en"
+	Metadata_source="tvdb"
+	Structure=true
+	searchmissing_incremental = 20
+	searchupgrade_incremental = 20
+		[[media.series.data]]
+		template_path="en series"
+		[[media.series.dataimport]]
+		template_path="en series import"
+		[[media.series.lists]]
+		name="EN" #Use unique names to match in db
+		enabled=true
+		addfound=false #Add Found movies if not in DB?
+		template_list="SeriesEN" # Map to lists
+		template_quality="SDSeries" # Map to qualities below	
+		BackupSearchForTitle=false
+		checktitle=false #checks if the title is correct (also for tvdb search)
+		CheckUntilFirstFound=true #true = on use first available release and dont try the other indexers
+
+		
+##### templates #####
+
+
+### downloader ###
+
+[[downloader]]
+name="ennzbget"
+type="nzbget" #test8
+hostname="192.168.1.1:6789"
+username="admin"
+password=""
+enabled=true
+AddPaused=false
+Priority=0  #-100 (very low), -50 (low), 0 (normal), 50 (high), 100 (very high), 900 (force)
+autoredownloadfailed = 'false'
+removefaileddownloads = 'false'
+
+[[downloader]]
+name="en"
+type="drone"
+enabled=true
+
+[[downloader]]
+name="endeluge"
+type="deluge" #test8
+hostname="192.168.1.1"
+username="localclient"
+password=""
+enabled=true
+AddPaused=false
+Priority=0  #-100 (very low), -50 (low), 0 (normal), 50 (high), 100 (very high), 900 (force)
+autoredownloadfailed = 'false'
+removefaileddownloads = 'false'
+
+### lists ###
+
+[[lists]]
+name="Watchlist"
+type="imdbcsv"
+url="https://www.imdb.com/list/ls12345678/export"
+enabled=true
+excludegenre=[]
+includegenre=[]
+
+[[lists]]
+name="TraktPopular"
+type="traktmoviepopular"
+limit=20
+excludegenre=["Horror","Documentary"]
+includegenre=[]
+
+[[lists]]
+name="TraktTrending"
+type="traktmovietrending"
+limit=20
+excludegenre=["Horror","Documentary"]
+includegenre=[]
+
+[[lists]]
+name="TraktAnticipated"
+type="traktmovieanticipated"
+limit=20
+excludegenre=["Horror","Documentary"]
+includegenre=[]
+
+[[lists]]
+name="Series"
+type="seriesconfig"
+series_config_file="series.toml"
+
+### indexers ###
+
+[[indexers]]
+name="nzbgeek"
+type="newznab"
+url="https://api.nzbgeek.info"
+apikey=""
+userid="0"
+enabled='true'
+rssenabled='true'
+addquotesfortitlequery='false'
+MaxRssEntries = 100 #system retrieves 10*x entries at most - but stops at the last element from the previous scan
+RssEntriesloop = 5 # x rss calls x=2 == 2 api calls with 2*maxrss results - will get all but only process until last processed item
+limiterseconds=1 # will only change after restart
+limitercalls=1 # max limitercalls in limiterseconds
+
+### paths ###
+
+[[paths]]
+name="de series"
+Path='/DE_Series'
+AllowedVideoExtensions=['.avi','.mkv','.mp4','.divx','.m4v','.mpg']
+AllowedOtherExtensions=['.idx','.sub','.srt']
+Disallowed=['codec.exe','setup.exe','/codec/','\codec\','If_you_get_error','password','cd1','cd2']
+Blocked=["!old","@Recycle",".@__thumb"] #Ignored files folders on import
+MinSize = 70
+MaxSize = 1500
+Upgrade='true'
+UpgradeScanInterval = 3 #Tage
+MissingScanInterval = 1 #Tage
+replacelower='true' #Replace lower quality movies? - uses quality of specific movie
+MinVideoSize = 70
+cleanupsizeMB=25 #MB - delete source folder if size is less then
+allowed_languages=['German','Deutsch','deu','ger',''] #uses fprobe to try and extract the audio language
+
+### notifications ###
+
+[[notification]]
+name="pushover"
+type="pushover"
+apikey=""
+recipient=""
+
+[[notification]]
+name="csvmoviesde"
+type="csv"
+outputto="movedmovies-de.csv"
+
+### regex ###
+
+[[regex]]
+name="deseries"
+Required=[
+        '(?i)(\b|_)ger(man)?(\b|_)',
+        '(?i)(\b|_)(deu|und|wie|der|das|ein|eine|videomann)(tsch)?(\b|_)']
+Rejected=['(?i)(\b|_)(2160p|810p|360p|pal|ntsc)(\b|_)',
+        '(?i)(\b|_)(bonus|trailer|sample)(\b|_)',
+        '(?i)(\b|_)extra(s)?(\b|_)',
+        '(?i)(\b|_)(ac3)?md(\b|_)',
+        '(?i)(\b|_)mic(dubbed)?(\b|_)',
+        '(?i)(\b|_)(cd|disc|disk|dvd|part)[ .\-)]?(1|2|3|4|5|9|r)(\b|_)',
+        '(?i)(_|-)(a|b|c|d)(\b|_)',
+        '(?i)(\b|_)(imageset|getb8|1bet|galaxxxy|asap|3d)(\b|_)',
+        '(?i)(\b|_)(fre|fr|truefr)(nch|sub|subs)?(\b|_)',
+        '(?i)(\b|_)ita(lian)?(\b|_)',
+        '(?i)(\b|_)spa(nish)?(\b|_)',
+        '(?i)(\b|_)rus(ian)?(\b|_)',
+        '(?i)(\b|_)kor(ean|sub|subs)?(\b|_)',
+        '(?i)(\b|_)(dan|dk|pol)(ish|sub|subs)?(\b|_)',
+        '(?i)(\b|_)swe(dish|sub|subs)?(\b|_)',
+        '(?i)(\b|_)heb(rew|sub|subs|dub)?(\b|_)',
+        '(?i)(\b|_)(tur|tr)(kish)?(\b|_)',
+        '(?i)(\b|_)(dut|nl)(ch)?(\b|_)',
+        '(?i)(\b|_)(castellano|tamil|hindi|nordic|br|JAPANESE|CHINESE)(\b|_)',
+        '(?i)(\b|_)moto(2|3)(\b|_)',
+        '(?i)(\b|_)sub(s|bed)?(\b|_)',
+        '(?i)(\b|_)(webscr|screener|ts|r5)(\b|_)']
+
+### qualities ###
+
+[[quality]]
+name="HD"
+wanted_resolution=['480p','720p','1080p']
+wanted_quality=['hdtv','webdl','webrip','dvdrip','bluray']
+cutoff_quality = 'bluray'
+cutoff_resolution = '720p'
+BackupSearchForTitle=true
+checktitle=true #checks if the title is correct (also for imdb search)
+checkyear=true #checks if the year is correct (also for imdb search)
+checkyear1=true #checks if the year is correct allow+-1 (also for imdb search)
+CheckUntilFirstFound=false #true = on use first available release and dont try the other indexers
+TitleStripSuffixForSearch=[" dc", "repack", "unrated", "directors cut", "THEATRICAL"] #removes strings from title-end for title searches
+		
+	[[quality.reorder]]
+	type="resolution"
+	name="1080p"
+	newpriority=5400
+	[[quality.reorder]]
+	type="position" #multiplies names priority by x
+	name="quality"
+	newpriority=11
+	[[quality.indexers]]
+	template_indexer="nzbgeek" # Map to indexer	- 
+	template_downloader="en"  # Map to downloader - must be correct type (newnab/usenet - tornab/torrent)
+	template_regex="en" # Map to Regex
+	template_path_nzb="en movies nzb"
+	category_dowloader="Movies"
+	additional_query_params="&extended=1&maxsize=6291456000"
+	skip_empty_size=true
+	history_check_title=true
+	categories_indexer="2030,2035,2040,2045" #, separated - no array
+
+### scheduler ###
+
+[[scheduler]]
+name="Default" #support only m and d currently - custom stuff not
+interval_feeds="2h" #leave empty to disable
+interval_imdb="3d" #leave empty to disable
+interval_feeds_refresh_movies="1d"
+interval_feeds_refresh_movies_full="10d"
+interval_feeds_refresh_series="1d"
+interval_feeds_refresh_series_full="7d"
+interval_indexer_missing="30m" #this only scans for ids - no name scanning!
+interval_indexer_upgrade="45m"
+interval_indexer_missing_full="14d"
+interval_indexer_upgrade_full="30d"
+interval_indexer_missing_title="90m" #this scans for ids and names!
+interval_indexer_upgrade_title=""
+interval_indexer_missing_full_title=""
+interval_indexer_upgrade_full_title=""
+interval_indexer_rss="15m"
+interval_scan_data="60m"
+interval_scan_dataimport="15m"
+interval_scan_data_missing="3d"
