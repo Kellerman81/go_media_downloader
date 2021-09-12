@@ -187,6 +187,8 @@ type ListsConfig struct {
 	Enabled            bool     `koanf:"enabled"`
 	Series_config_file string   `koanf:"series_config_file"`
 	Limit              int      `koanf:"limit"`
+	MinVotes           int      `koanf:"min_votes"`
+	MinRating          float32  `koanf:"min_rating"`
 	Excludegenre       []string `koanf:"excludegenre"`
 	Includegenre       []string `koanf:"includegenre"`
 }

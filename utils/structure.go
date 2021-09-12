@@ -558,8 +558,8 @@ func (s *Structure) ReplaceLowerQualityFiles(oldfiles []string, movie database.M
 	}
 }
 
-func (s *Structure) MoveAdditionalFiles(folder string, videotarget string, filename string, videofile string, sourcefileext string) {
-	if strings.ToLower(s.groupType) == "movie" {
+func (s *Structure) MoveAdditionalFiles(folder string, videotarget string, filename string, videofile string, sourcefileext string, videofilecount int) {
+	if strings.ToLower(s.groupType) == "movie" || videofilecount == 1 {
 		additionalfiles := scanner.GetFilesGoDir(folder, s.sourcepath.AllowedOtherExtensions, s.sourcepath.AllowedOtherExtensionsNoRename, s.sourcepath.Blocked)
 		if len(additionalfiles) >= 1 {
 			scanner.MoveFiles(additionalfiles, videotarget, filename, s.sourcepath.AllowedOtherExtensions, s.sourcepath.AllowedOtherExtensionsNoRename)
@@ -727,7 +727,7 @@ func StructureFolders(grouptype string, sourcepath config.PathsConfig, targetpat
 					if moveok && moved >= 1 {
 						structure.UpdateRootpath(videotarget, foldername, movie, database.Serie{})
 						structure.ReplaceLowerQualityFiles(oldfiles, movie, database.Serie{})
-						structure.MoveAdditionalFiles(folders[idx], videotarget, filename, videofiles[fileidx], sourcefileext)
+						structure.MoveAdditionalFiles(folders[idx], videotarget, filename, videofiles[fileidx], sourcefileext, len(videotarget))
 
 						structure.Notify(videotarget, filename, videofiles[fileidx], movie, database.SerieEpisode{}, oldfiles)
 						scanner.CleanUpFolder(folders[idx], sourcepath.CleanupsizeMB)
@@ -788,7 +788,7 @@ func StructureFolders(grouptype string, sourcepath config.PathsConfig, targetpat
 						if moveok && moved >= 1 {
 							structure.UpdateRootpath(videotarget, foldername, database.Movie{}, series)
 							structure.ReplaceLowerQualityFiles(oldfiles, database.Movie{}, series)
-							structure.MoveAdditionalFiles(folders[idx], videotarget, filename, videofiles[fileidx], sourcefileext)
+							structure.MoveAdditionalFiles(folders[idx], videotarget, filename, videofiles[fileidx], sourcefileext, len(videotarget))
 							structure.Notify(videotarget, filename, videofiles[fileidx], database.Movie{}, seriesEpisode, oldfiles)
 							scanner.CleanUpFolder(folders[idx], sourcepath.CleanupsizeMB)
 
@@ -858,28 +858,12 @@ func (s *Structure) GetSeriesEpisodes(series database.Serie, videofile string, m
 		logger.Log.Debug("In Identifier not found: ", videofile, " Identifier: ", m.Identifier)
 		return
 	}
-	episodeArray := make([]string, 0, 10)
-	if strings.ToLower(dbserie.Identifiedby) == "date" {
-		teststr[1] = teststr[2]
-		teststr[1] = strings.Replace(teststr[1], " ", "-", -1)
-		teststr[1] = strings.Replace(teststr[1], ".", "-", -1)
-	}
-	teststr[1] = strings.ToUpper(teststr[1])
-	if strings.Contains(teststr[1], "E") {
-		episodeArray = strings.Split(teststr[1], "E")
-	} else if strings.Contains(teststr[1], "X") {
-		episodeArray = strings.Split(teststr[1], "X")
-	} else if strings.Contains(teststr[1], "-") && !(strings.ToLower(dbserie.Identifiedby) == "date") {
-		episodeArray = strings.Split(teststr[1], "-")
-	}
-	if len(episodeArray) == 0 && strings.ToLower(dbserie.Identifiedby) == "date" {
-		episodeArray = append(episodeArray, teststr[1])
-	}
+
+	episodeArray := getEpisodeArray(dbserie.Identifiedby, teststr[1], teststr[2])
+
 	for idx := range episodeArray {
 		epi := episodeArray[idx]
-		epi = strings.Trim(epi, "-")
-		epi = strings.Trim(epi, "E")
-		epi = strings.Trim(epi, "X")
+		epi = strings.Trim(epi, "-EX")
 		if strings.ToLower(dbserie.Identifiedby) != "date" {
 			epi = strings.TrimLeft(epi, "0")
 		}

@@ -1006,6 +1006,18 @@ func getMissingIMDBMoviesV2(configEntry config.MediaTypeConfig, list config.Medi
 				continue
 			}
 
+			if cfg_list.MinVotes != 0 {
+				countergenre, _ := database.ImdbCountRows("imdb_ratings", database.Query{Where: "tconst = ? and num_votes < ?", WhereArgs: []interface{}{data[idx][1], cfg_list.MinVotes}})
+				if countergenre >= 1 {
+					continue
+				}
+			}
+			if cfg_list.MinRating != 0 && cfg_list.MinRating != 0.0 {
+				countergenre, _ := database.ImdbCountRows("imdb_ratings", database.Query{Where: "tconst = ? and average_rating < ?", WhereArgs: []interface{}{data[idx][1], cfg_list.MinRating}})
+				if countergenre >= 1 {
+					continue
+				}
+			}
 			if len(cfg_list.Excludegenre) >= 1 {
 				excludebygenre := false
 				for idxgenre := range cfg_list.Excludegenre {

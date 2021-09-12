@@ -163,6 +163,12 @@ func MoveFiles(files []string, target string, newname string, filetypes []string
 					newname = filepath.Base(files[idxfile])
 				}
 				newpath := filepath.Join(target, newname+filepath.Ext(files[idxfile]))
+				if _, err := os.Stat(newpath); !os.IsNotExist(err) {
+					if target != newpath {
+						//Remove Target to supress error
+						RemoveFile(newpath)
+					}
+				}
 				err := MoveFileDriveBuffer(files[idxfile], newpath)
 				if err != nil {
 					logger.Log.Error("File could not be moved: ", files[idxfile], " Error: ", err)

@@ -318,60 +318,76 @@ func findSerieByParser(m ParseInfo, titleyear string, seriestitle string, listna
 		}
 	}
 	if entriesfound == 0 && titleyear != "" {
-		findseries, _ := database.QuerySeries(database.Query{Select: "series.*", InnerJoin: "Dbseries ON Dbseries.ID = Series.Dbserie_id", Where: "DbSeries.Seriename = ? COLLATE NOCASE AND Series.listname = ?", WhereArgs: []interface{}{titleyear, listname}})
-
-		if len(findseries) == 1 {
-			entriesfound = len(findseries)
-			return findseries[0], entriesfound
+		foundserie, foundentries := findseriebyname(titleyear, listname)
+		if foundentries == 1 {
+			entriesfound = foundentries
+			return foundserie, entriesfound
 		}
 	}
 	if entriesfound == 0 && seriestitle != "" {
-		findseries, _ := database.QuerySeries(database.Query{Select: "Series.*", InnerJoin: "Dbseries ON Dbseries.ID = Series.Dbserie_id", Where: "DbSeries.Seriename = ? COLLATE NOCASE AND Series.listname = ?", WhereArgs: []interface{}{seriestitle, listname}})
-
-		if len(findseries) == 1 {
-			entriesfound = len(findseries)
-			return findseries[0], entriesfound
+		foundserie, foundentries := findseriebyname(seriestitle, listname)
+		if foundentries == 1 {
+			entriesfound = foundentries
+			return foundserie, entriesfound
 		}
 	}
 	if entriesfound == 0 && m.Title != "" {
-		findseries, _ := database.QuerySeries(database.Query{Select: "Series.*", InnerJoin: "Dbseries ON Dbseries.ID = Series.Dbserie_id", Where: "DbSeries.Seriename = ? COLLATE NOCASE AND Series.listname = ?", WhereArgs: []interface{}{m.Title, listname}})
-
-		if len(findseries) == 1 {
-			entriesfound = len(findseries)
-			return findseries[0], entriesfound
+		foundserie, foundentries := findseriebyname(m.Title, listname)
+		if foundentries == 1 {
+			entriesfound = foundentries
+			return foundserie, entriesfound
 		}
 	}
 	if entriesfound == 0 && titleyear != "" {
-		dbseries, _ := database.QueryDbserie(database.Query{Select: "dbseries.*", InnerJoin: "Dbserie_alternates on Dbserie_alternates.dbserie_id = dbseries.id", Where: "Dbserie_alternates.Title = ? COLLATE NOCASE", WhereArgs: []interface{}{titleyear}})
-		if len(dbseries) >= 1 {
-			findseries, _ := database.QuerySeries(database.Query{Where: "DbSerie_id = ? AND listname = ?", WhereArgs: []interface{}{dbseries[0].ID, listname}})
-
-			if len(findseries) == 1 {
-				entriesfound = len(findseries)
-				return findseries[0], entriesfound
-			}
+		foundserie, foundentries := findseriebyalternatename(titleyear, listname)
+		if foundentries == 1 {
+			entriesfound = foundentries
+			return foundserie, entriesfound
 		}
 	}
 	if entriesfound == 0 && seriestitle != "" {
-		dbseries, _ := database.QueryDbserie(database.Query{Select: "dbseries.*", InnerJoin: "Dbserie_alternates on Dbserie_alternates.dbserie_id = dbseries.id", Where: "Dbserie_alternates.Title = ? COLLATE NOCASE", WhereArgs: []interface{}{seriestitle}})
-		if len(dbseries) >= 1 {
-			findseries, _ := database.QuerySeries(database.Query{Where: "DbSerie_id = ? AND listname = ?", WhereArgs: []interface{}{dbseries[0].ID, listname}})
-
-			if len(findseries) == 1 {
-				entriesfound = len(findseries)
-				return findseries[0], entriesfound
-			}
+		foundserie, foundentries := findseriebyalternatename(seriestitle, listname)
+		if foundentries == 1 {
+			entriesfound = foundentries
+			return foundserie, entriesfound
 		}
 	}
 	if entriesfound == 0 && m.Title != "" {
-		dbseries, _ := database.QueryDbserie(database.Query{Select: "dbseries.*", InnerJoin: "Dbserie_alternates on Dbserie_alternates.dbserie_id = dbseries.id", Where: "Dbserie_alternates.Title = ? COLLATE NOCASE", WhereArgs: []interface{}{m.Title}})
-		if len(dbseries) >= 1 {
-			findseries, _ := database.QuerySeries(database.Query{Where: "DbSerie_id = ? AND listname = ?", WhereArgs: []interface{}{dbseries[0].ID, listname}})
+		foundserie, foundentries := findseriebyalternatename(m.Title, listname)
+		if foundentries == 1 {
+			entriesfound = foundentries
+			return foundserie, entriesfound
+		}
+	}
+	return database.Serie{}, 0
+}
+func findseriebyname(title string, listname string) (database.Serie, int) {
+	entriesfound := 0
+	findseries, _ := database.QuerySeries(database.Query{Select: "Series.*", InnerJoin: "Dbseries ON Dbseries.ID = Series.Dbserie_id", Where: "DbSeries.Seriename = ? COLLATE NOCASE AND Series.listname = ?", WhereArgs: []interface{}{title, listname}})
+	if len(findseries) == 0 {
+		titleslug := logger.StringToSlug(title)
+		findseries, _ = database.QuerySeries(database.Query{Select: "series.*", InnerJoin: "Dbseries ON Dbseries.ID = Series.Dbserie_id", Where: "DbSeries.Slug = ? COLLATE NOCASE AND Series.listname = ?", WhereArgs: []interface{}{titleslug, listname}})
+	}
 
-			if len(findseries) == 1 {
-				entriesfound = len(findseries)
-				return findseries[0], entriesfound
-			}
+	if len(findseries) == 1 {
+		entriesfound = len(findseries)
+		return findseries[0], entriesfound
+	}
+	return database.Serie{}, 0
+}
+func findseriebyalternatename(title string, listname string) (database.Serie, int) {
+	entriesfound := 0
+	dbseries, _ := database.QueryDbserie(database.Query{Select: "dbseries.*", InnerJoin: "Dbserie_alternates on Dbserie_alternates.dbserie_id = dbseries.id", Where: "Dbserie_alternates.Title = ? COLLATE NOCASE", WhereArgs: []interface{}{title}})
+	if len(dbseries) == 0 {
+		titleslug := logger.StringToSlug(title)
+		dbseries, _ = database.QueryDbserie(database.Query{Select: "dbseries.*", InnerJoin: "Dbserie_alternates on Dbserie_alternates.dbserie_id = dbseries.id", Where: "Dbserie_alternates.Slug = ? COLLATE NOCASE", WhereArgs: []interface{}{titleslug}})
+	}
+	if len(dbseries) >= 1 {
+		findseries, _ := database.QuerySeries(database.Query{Where: "DbSerie_id = ? AND listname = ?", WhereArgs: []interface{}{dbseries[0].ID, listname}})
+
+		if len(findseries) == 1 {
+			entriesfound = len(findseries)
+			return findseries[0], entriesfound
 		}
 	}
 	return database.Serie{}, 0
@@ -467,7 +483,9 @@ func JobImportSeriesParseV2(file string, updatemissing bool, configEntry config.
 
 		for _, epi := range episodeArray {
 			epi = strings.Trim(epi, "-EX")
-			epi = strings.TrimLeft(epi, "0")
+			if strings.ToLower(testDbSeries.Identifiedby) != "date" {
+				epi = strings.TrimLeft(epi, "0")
+			}
 			if epi == "" {
 				continue
 			}

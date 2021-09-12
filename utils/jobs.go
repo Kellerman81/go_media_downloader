@@ -66,6 +66,7 @@ func notifier(event string, noticonfig config.MediaNotificationConfig, notifierd
 	messagetext = strings.Replace(messagetext, "{Tvdb}", notifierdata.Tvdb, -1)
 	messagetext = strings.Replace(messagetext, "{Season}", notifierdata.Season, -1)
 	messagetext = strings.Replace(messagetext, "{Episode}", notifierdata.Episode, -1)
+	messagetext = strings.Replace(messagetext, "{Identifier}", notifierdata.Identifier, -1)
 	messagetext = strings.Replace(messagetext, "{EpisodeTitle}", notifierdata.EpisodeTitle, -1)
 	messagetext = strings.Replace(messagetext, "{Configuration}", notifierdata.Configuration, -1)
 	if len(notifierdata.Replaced) >= 1 {
@@ -86,6 +87,7 @@ func notifier(event string, noticonfig config.MediaNotificationConfig, notifierd
 	MessageTitle = strings.Replace(MessageTitle, "{Tvdb}", notifierdata.Tvdb, -1)
 	MessageTitle = strings.Replace(MessageTitle, "{Season}", notifierdata.Season, -1)
 	MessageTitle = strings.Replace(MessageTitle, "{Episode}", notifierdata.Episode, -1)
+	MessageTitle = strings.Replace(MessageTitle, "{Identifier}", notifierdata.Identifier, -1)
 	MessageTitle = strings.Replace(MessageTitle, "{EpisodeTitle}", notifierdata.EpisodeTitle, -1)
 	MessageTitle = strings.Replace(MessageTitle, "{Configuration}", notifierdata.Configuration, -1)
 
@@ -156,6 +158,18 @@ func Feeds(configEntry config.MediaTypeConfig, list config.MediaListsConfig) fee
 				if len(traktpopular[idx].Ids.Imdb) == 0 {
 					continue
 				}
+				if cfg_list.MinVotes != 0 {
+					countergenre, _ := database.ImdbCountRows("imdb_ratings", database.Query{Where: "tconst = ? and num_votes < ?", WhereArgs: []interface{}{traktpopular[idx].Ids.Imdb, cfg_list.MinVotes}})
+					if countergenre >= 1 {
+						continue
+					}
+				}
+				if cfg_list.MinRating != 0 && cfg_list.MinRating != 0.0 {
+					countergenre, _ := database.ImdbCountRows("imdb_ratings", database.Query{Where: "tconst = ? and average_rating < ?", WhereArgs: []interface{}{traktpopular[idx].Ids.Imdb, cfg_list.MinRating}})
+					if countergenre >= 1 {
+						continue
+					}
+				}
 				if len(cfg_list.Excludegenre) >= 1 {
 					excludebygenre := false
 					for idxgenre := range cfg_list.Excludegenre {
@@ -197,6 +211,18 @@ func Feeds(configEntry config.MediaTypeConfig, list config.MediaListsConfig) fee
 				if len(traktpopular[idx].Movie.Ids.Imdb) == 0 {
 					continue
 				}
+				if cfg_list.MinVotes != 0 {
+					countergenre, _ := database.ImdbCountRows("imdb_ratings", database.Query{Where: "tconst = ? and num_votes < ?", WhereArgs: []interface{}{traktpopular[idx].Movie.Ids.Imdb, cfg_list.MinVotes}})
+					if countergenre >= 1 {
+						continue
+					}
+				}
+				if cfg_list.MinRating != 0 && cfg_list.MinRating != 0.0 {
+					countergenre, _ := database.ImdbCountRows("imdb_ratings", database.Query{Where: "tconst = ? and average_rating < ?", WhereArgs: []interface{}{traktpopular[idx].Movie.Ids.Imdb, cfg_list.MinRating}})
+					if countergenre >= 1 {
+						continue
+					}
+				}
 				if len(cfg_list.Excludegenre) >= 1 {
 					excludebygenre := false
 					for idxgenre := range cfg_list.Excludegenre {
@@ -237,6 +263,18 @@ func Feeds(configEntry config.MediaTypeConfig, list config.MediaListsConfig) fee
 			for idx := range traktpopular {
 				if len(traktpopular[idx].Movie.Ids.Imdb) == 0 {
 					continue
+				}
+				if cfg_list.MinVotes != 0 {
+					countergenre, _ := database.ImdbCountRows("imdb_ratings", database.Query{Where: "tconst = ? and num_votes < ?", WhereArgs: []interface{}{traktpopular[idx].Movie.Ids.Imdb, cfg_list.MinVotes}})
+					if countergenre >= 1 {
+						continue
+					}
+				}
+				if cfg_list.MinRating != 0 && cfg_list.MinRating != 0.0 {
+					countergenre, _ := database.ImdbCountRows("imdb_ratings", database.Query{Where: "tconst = ? and average_rating < ?", WhereArgs: []interface{}{traktpopular[idx].Movie.Ids.Imdb, cfg_list.MinRating}})
+					if countergenre >= 1 {
+						continue
+					}
 				}
 				if len(cfg_list.Excludegenre) >= 1 {
 					excludebygenre := false
