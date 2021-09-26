@@ -17,6 +17,7 @@ type NzbIndexer struct {
 	Customapi               string
 	Customurl               string
 	Customrssurl            string
+	Customrsscategory       string
 	Limitercalls            int
 	Limiterseconds          int
 }
@@ -124,7 +125,7 @@ func QueryNewznabRSS(indexers []NzbIndexer, maxitems int, categories []int) (res
 			client = newznab.New(row.URL, row.Apikey, row.UserID, row.SkipSslCheck, true, row.Limitercalls, row.Limiterseconds)
 			NewznabClients[row.URL] = client
 		}
-		resultsadd, erradd := client.LoadRSSFeed(categories, maxitems, row.Additional_query_params, row.Customapi, row.Customrssurl)
+		resultsadd, erradd := client.LoadRSSFeed(categories, maxitems, row.Additional_query_params, row.Customapi, row.Customrssurl, row.Customrsscategory)
 		results = append(results, resultsadd...)
 		if erradd != nil {
 			err = erradd
@@ -146,7 +147,7 @@ func QueryNewznabRSSLast(indexers []NzbIndexer, maxitems int, categories []int, 
 			client = newznab.New(row.URL, row.Apikey, row.UserID, row.SkipSslCheck, true, row.Limitercalls, row.Limiterseconds)
 			NewznabClients[row.URL] = client
 		}
-		resultsadd, erradd := client.LoadRSSFeedUntilNZBID(categories, maxitems, row.LastRssId, maxrequests, row.Additional_query_params, row.Customapi, row.Customrssurl)
+		resultsadd, erradd := client.LoadRSSFeedUntilNZBID(categories, maxitems, row.LastRssId, maxrequests, row.Additional_query_params, row.Customapi, row.Customrssurl, row.Customrsscategory)
 		if erradd != nil {
 			err = erradd
 			failedindexers = append(failedindexers, row.URL)

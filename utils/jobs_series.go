@@ -127,6 +127,7 @@ func JobImportDbSeries(serieconfig config.SerieConfig, configEntry config.MediaT
 		}
 	}
 
+	database.ReadWriteMu.Lock()
 	var serie database.Serie
 	findserie, serieerr := database.GetSeries(database.Query{Where: "Dbserie_id = ? and listname = ?", WhereArgs: []interface{}{dbserie.ID, list.Name}})
 	if serieerr != nil {
@@ -134,17 +135,20 @@ func JobImportDbSeries(serieconfig config.SerieConfig, configEntry config.MediaT
 		inres, inreserr := database.InsertArray("series", []string{"dbserie_id", "listname", "rootpath"}, []interface{}{dbserie.ID, list.Name, serieconfig.Target})
 		if inreserr != nil {
 			logger.Log.Error(inreserr)
+			database.ReadWriteMu.Unlock()
 			return
 		}
 		newid, newiderr := inres.LastInsertId()
 		if newiderr != nil {
 			logger.Log.Error(newiderr)
+			database.ReadWriteMu.Unlock()
 			return
 		}
 		serie.ID = uint(newid)
 	} else {
 		serie = findserie
 	}
+	database.ReadWriteMu.Unlock()
 	if checkall || dbserieadded {
 		if strings.EqualFold(serieconfig.Source, "none") {
 			//Don't add episodes automatically
@@ -633,7 +637,15 @@ func Series_all_jobs(job string, force bool) {
 var SerieJobRunning map[string]bool
 
 func Series_single_jobs(job string, typename string, listname string, force bool) {
+
+	jobName := job + typename + listname
+	defer func() {
+		database.ReadWriteMu.Lock()
+		delete(SerieJobRunning, jobName)
+		database.ReadWriteMu.Unlock()
+	}()
 	hasGeneral, _ := config.ConfigDB.Has("general")
+
 	if !hasGeneral {
 		logger.Log.Errorln("General Config not found")
 		return
@@ -645,12 +657,6 @@ func Series_single_jobs(job string, typename string, listname string, force bool
 		logger.Log.Info("Skipped Job: ", job, " for ", typename)
 		return
 	}
-	jobName := job + typename + listname
-	defer func() {
-		database.ReadWriteMu.Lock()
-		delete(SerieJobRunning, jobName)
-		database.ReadWriteMu.Unlock()
-	}()
 	database.ReadWriteMu.Lock()
 	if _, nok := SerieJobRunning[jobName]; nok {
 		logger.Log.Debug("Job already running: ", jobName)

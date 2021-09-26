@@ -200,27 +200,39 @@ func (c Client) SearchWithQueryUntilNZBID(categories []int, query string, search
 }
 
 // LoadRSSFeed returns up to <num> of the most recent NZBs of the given categories.
-func (c Client) LoadRSSFeed(categories []int, num int, additional_query_params string, customapi string, customurl string) ([]NZB, error) {
-	if len(customapi) == 0 {
-		buildurl := c.apiBaseURL + rssPath + "?r=" + c.apikey + "&i=" + strconv.Itoa(c.apiUserID)
+func (c Client) LoadRSSFeed(categories []int, num int, additional_query_params string, customapi string, customrssurl string, customrsscategory string) ([]NZB, error) {
+	if len(customrssurl) >= 1 {
+		buildurl := customrssurl
 		buildurl += "&num=" + strconv.Itoa(num)
-		buildurl += "&t=" + c.joinCats(categories)
+		if len(customrsscategory) >= 1 {
+			buildurl += "&" + customrsscategory + "=" + c.joinCats(categories)
+		} else {
+			buildurl += "&t=" + c.joinCats(categories)
+		}
 		buildurl += "&dl=1"
 		buildurl += additional_query_params
 
 		return c.processurl(buildurl, "")
-	} else if len(customurl) == 0 {
-		buildurl := customurl
+	} else if len(customapi) >= 1 {
+		buildurl := c.apiBaseURL + rssPath + "?" + customapi + "=" + c.apikey
 		buildurl += "&num=" + strconv.Itoa(num)
-		buildurl += "&t=" + c.joinCats(categories)
+		if len(customrsscategory) >= 1 {
+			buildurl += "&" + customrsscategory + "=" + c.joinCats(categories)
+		} else {
+			buildurl += "&t=" + c.joinCats(categories)
+		}
 		buildurl += "&dl=1"
 		buildurl += additional_query_params
 
 		return c.processurl(buildurl, "")
 	} else {
-		buildurl := c.apiBaseURL + rssPath + "?" + customapi + "=" + c.apikey
+		buildurl := c.apiBaseURL + rssPath + "?r=" + c.apikey + "&i=" + strconv.Itoa(c.apiUserID)
 		buildurl += "&num=" + strconv.Itoa(num)
-		buildurl += "&t=" + c.joinCats(categories)
+		if len(customrsscategory) >= 1 {
+			buildurl += "&" + customrsscategory + "=" + c.joinCats(categories)
+		} else {
+			buildurl += "&t=" + c.joinCats(categories)
+		}
 		buildurl += "&dl=1"
 		buildurl += additional_query_params
 
@@ -240,7 +252,7 @@ func (c Client) joinCats(cats []int) string {
 }
 
 // LoadRSSFeedUntilNZBID fetches NZBs until a given NZB id is reached.
-func (c Client) LoadRSSFeedUntilNZBID(categories []int, num int, id string, maxRequests int, additional_query_params string, customapi string, customurl string) ([]NZB, error) {
+func (c Client) LoadRSSFeedUntilNZBID(categories []int, num int, id string, maxRequests int, additional_query_params string, customapi string, customrssurl string, customrsscategory string) ([]NZB, error) {
 	count := 0
 	nzbcount := num
 	if maxRequests >= 1 {
@@ -253,24 +265,36 @@ func (c Client) LoadRSSFeedUntilNZBID(categories []int, num int, id string, maxR
 	for {
 		var buildurl string
 
-		if len(customapi) == 0 {
-			buildurl = c.apiBaseURL + rssPath + "?r=" + c.apikey + "&i=" + strconv.Itoa(c.apiUserID)
+		if len(customrssurl) >= 1 {
+			buildurl = customrssurl
 			buildurl += "&num=" + strconv.Itoa(num)
-			buildurl += "&t=" + c.joinCats(categories)
+			if len(customrsscategory) >= 1 {
+				buildurl += "&" + customrsscategory + "=" + c.joinCats(categories)
+			} else {
+				buildurl += "&t=" + c.joinCats(categories)
+			}
 			buildurl += "&dl=1"
 			buildurl += "&offset=" + strconv.Itoa(num*count)
 			buildurl += additional_query_params
-		} else if len(customurl) == 0 {
-			buildurl = customurl
+		} else if len(customapi) >= 1 {
+			buildurl = c.apiBaseURL + rssPath + "?" + customapi + "=" + c.apikey
 			buildurl += "&num=" + strconv.Itoa(num)
-			buildurl += "&t=" + c.joinCats(categories)
+			if len(customrsscategory) >= 1 {
+				buildurl += "&" + customrsscategory + "=" + c.joinCats(categories)
+			} else {
+				buildurl += "&t=" + c.joinCats(categories)
+			}
 			buildurl += "&dl=1"
 			buildurl += "&offset=" + strconv.Itoa(num*count)
 			buildurl += additional_query_params
 		} else {
-			buildurl = c.apiBaseURL + rssPath + "?" + customapi + "=" + c.apikey
+			buildurl = c.apiBaseURL + rssPath + "?r=" + c.apikey + "&i=" + strconv.Itoa(c.apiUserID)
 			buildurl += "&num=" + strconv.Itoa(num)
-			buildurl += "&t=" + c.joinCats(categories)
+			if len(customrsscategory) >= 1 {
+				buildurl += "&" + customrsscategory + "=" + c.joinCats(categories)
+			} else {
+				buildurl += "&t=" + c.joinCats(categories)
+			}
 			buildurl += "&dl=1"
 			buildurl += "&offset=" + strconv.Itoa(num*count)
 			buildurl += additional_query_params

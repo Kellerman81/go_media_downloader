@@ -41,9 +41,7 @@ func JobImportMovies(dbmovie database.Dbmovie, configEntry config.MediaTypeConfi
 	}
 	database.ReadWriteMu.Unlock()
 
-	hasGeneral, _ := config.ConfigDB.Has("general")
-	if !hasGeneral {
-		logger.Log.Errorln("General Config not found")
+	if !config.ConfigCheck("general") {
 		return
 	}
 	var cfg_general config.GeneralConfig
@@ -114,6 +112,8 @@ func JobImportMovies(dbmovie database.Dbmovie, configEntry config.MediaTypeConfi
 			return
 		}
 	}
+
+	database.ReadWriteMu.Lock()
 	counterm, _ := database.CountRows("movies", database.Query{Where: "dbmovie_id = ? and listname = ?", WhereArgs: []interface{}{dbmovie.ID, list.Name}})
 	if counterm >= 1 {
 		for idxreplace := range list.Replace_map_lists {
@@ -127,6 +127,7 @@ func JobImportMovies(dbmovie database.Dbmovie, configEntry config.MediaTypeConfi
 		_, moviereserr := database.InsertArray("movies", []string{"missing", "listname", "dbmovie_id", "quality_profile"}, []interface{}{true, list.Name, dbmovie.ID, list.Template_quality})
 		if moviereserr != nil {
 			logger.Log.Error(moviereserr)
+			database.ReadWriteMu.Unlock()
 			return
 		}
 		for idxreplace := range list.Replace_map_lists {
@@ -136,20 +137,10 @@ func JobImportMovies(dbmovie database.Dbmovie, configEntry config.MediaTypeConfi
 			}
 		}
 	}
+	database.ReadWriteMu.Unlock()
 }
 
 func JobReloadMovies(dbmovie database.Dbmovie, configEntry config.MediaTypeConfig, list config.MediaListsConfig, wg *sizedwaitgroup.SizedWaitGroup) {
-	hasGeneral, _ := config.ConfigDB.Has("general")
-	if !hasGeneral {
-		logger.Log.Errorln("General Config not found")
-		return
-	}
-	var cfg_general config.GeneralConfig
-	config.ConfigDB.Get("general", &cfg_general)
-
-	if cfg_general.SchedulerDisabled {
-		return
-	}
 	jobName := dbmovie.ImdbID
 	if jobName == "" {
 		jobName = list.Name
@@ -160,6 +151,15 @@ func JobReloadMovies(dbmovie database.Dbmovie, configEntry config.MediaTypeConfi
 		database.ReadWriteMu.Unlock()
 		wg.Done()
 	}()
+	if !config.ConfigCheck("general") {
+		return
+	}
+	var cfg_general config.GeneralConfig
+	config.ConfigDB.Get("general", &cfg_general)
+
+	if cfg_general.SchedulerDisabled {
+		return
+	}
 	database.ReadWriteMu.Lock()
 	if _, nok := MovieImportJobRunning[jobName]; nok {
 		if MovieImportJobRunning[jobName] {
@@ -297,9 +297,8 @@ func movieCheckAlternateIfYear(dbmovietitles []database.DbmovieTitle, listname s
 	return false, database.Movie{}, "", 0
 }
 func movieFindDbByTitle(title string, year string, listname string, allowyear1 bool, searchtype string) (movie database.Movie, imdb string, entriesfound int) {
-	hasGeneral, _ := config.ConfigDB.Has("general")
-	if !hasGeneral {
-		logger.Log.Errorln("General Config not found")
+
+	if !config.ConfigCheck("general") {
 		return
 	}
 	var cfg_general config.GeneralConfig
@@ -536,9 +535,8 @@ func movieGetListFilter(lists []string, dbid uint, yearint int, allowyear1 bool)
 	return
 }
 func movieFindListByTitle(title string, year string, lists []string, allowyear1 bool, searchtype string) (list string, imdb string, entriesfound int) {
-	hasGeneral, _ := config.ConfigDB.Has("general")
-	if !hasGeneral {
-		logger.Log.Errorln("General Config not found")
+
+	if !config.ConfigCheck("general") {
 		return
 	}
 	var cfg_general config.GeneralConfig
@@ -829,9 +827,7 @@ func JobImportMovieParseV2(file string, configEntry config.MediaTypeConfig, list
 
 	m, err := NewFileParser(filepath.Base(file), false, "movie")
 
-	hasQuality, _ := config.ConfigDB.Has("quality_" + list.Template_quality)
-	if !hasQuality {
-		logger.Log.Errorln("Quality Config not found: ", "quality_"+list.Template_quality)
+	if !config.ConfigCheck("quality_" + list.Template_quality) {
 		return
 	}
 	var cfg_quality config.QualityConfig
@@ -852,16 +848,18 @@ func JobImportMovieParseV2(file string, configEntry config.MediaTypeConfig, list
 		m.Quality = strings.ToLower(m.Quality)
 		logger.Log.Debug("Parsed Movie: ", file, " as ", m.Resolution, " ", m.Quality, " ", m.Codec, " ", m.Audio)
 
+		movies := make([]database.Movie, 0, 1)
+
 		entriesfound := 0
 		if entriesfound == 0 && len(m.Imdb) >= 1 {
-			movies, _ := database.QueryMovies(database.Query{Select: "movies.*", InnerJoin: "Dbmovies on Dbmovies.id = movies.dbmovie_id", Where: "Dbmovies.imdb_id = ? and Movies.listname = ?", WhereArgs: []interface{}{m.Imdb, list.Name}})
+			movies, _ = database.QueryMovies(database.Query{Select: "movies.*", InnerJoin: "Dbmovies on Dbmovies.id = movies.dbmovie_id", Where: "Dbmovies.imdb_id = ? and Movies.listname = ?", WhereArgs: []interface{}{m.Imdb, list.Name}})
 			entriesfound = len(movies)
 			if len(movies) == 1 {
 				movie = movies[0]
 			}
 		}
 		if entriesfound == 0 && len(m.Imdb) >= 1 {
-			movies, _ := database.QueryMovies(database.Query{Select: "movies.*", InnerJoin: "Dbmovies on Dbmovies.id = movies.dbmovie_id", Where: "Dbmovies.imdb_id = ?", WhereArgs: []interface{}{m.Imdb}})
+			movies, _ = database.QueryMovies(database.Query{Select: "movies.*", InnerJoin: "Dbmovies on Dbmovies.id = movies.dbmovie_id", Where: "Dbmovies.imdb_id = ?", WhereArgs: []interface{}{m.Imdb}})
 			if len(movies) >= 1 {
 				return
 			}
@@ -883,7 +881,7 @@ func JobImportMovieParseV2(file string, configEntry config.MediaTypeConfig, list
 					sww.Add()
 					JobImportMovies(dbmovie, configEntry, list, &sww)
 					sww.Wait()
-					movies, _ := database.QueryMovies(database.Query{Select: "movies.*", InnerJoin: "Dbmovies on Dbmovies.id = movies.dbmovie_id", Where: "Dbmovies.imdb_id = ? and Movies.listname = ?", WhereArgs: []interface{}{m.Imdb, list.Name}})
+					movies, _ = database.QueryMovies(database.Query{Select: "movies.*", InnerJoin: "Dbmovies on Dbmovies.id = movies.dbmovie_id", Where: "Dbmovies.imdb_id = ? and Movies.listname = ?", WhereArgs: []interface{}{m.Imdb, list.Name}})
 					if len(movies) == 1 {
 						movie = movies[0]
 					}
@@ -908,9 +906,7 @@ func JobImportMovieParseV2(file string, configEntry config.MediaTypeConfig, list
 				if movie.Rootpath == "" && movie.ID != 0 {
 					rootpath := ""
 					for idxpath := range configEntry.Data {
-						hasPath, _ := config.ConfigDB.Has("path_" + configEntry.Data[idxpath].Template_path)
-						if !hasPath {
-							logger.Log.Errorln("Path Config not found: ", "path_"+configEntry.Data[idxpath].Template_path)
+						if !config.ConfigCheck("path_" + configEntry.Data[idxpath].Template_path) {
 							continue
 						}
 						var cfg_path config.PathsConfig
@@ -984,9 +980,7 @@ func getMissingIMDBMoviesV2(configEntry config.MediaTypeConfig, list config.Medi
 	if !list.Enabled {
 		return []database.Dbmovie{}
 	}
-	hasList, _ := config.ConfigDB.Has("list_" + list.Template_list)
-	if !hasList {
-		logger.Log.Errorln("List Config not found: ", "list_"+list.Template_list)
+	if !config.ConfigCheck("list_" + list.Template_list) {
 		return []database.Dbmovie{}
 	}
 	var cfg_list config.ListsConfig
@@ -1059,9 +1053,7 @@ var Lastmovie string
 func importnewmoviessingle(row config.MediaTypeConfig, list config.MediaListsConfig) {
 	results := Feeds(row, list)
 
-	hasGeneral, _ := config.ConfigDB.Has("general")
-	if !hasGeneral {
-		logger.Log.Errorln("General Config not found")
+	if !config.ConfigCheck("general") {
 		return
 	}
 	var cfg_general config.GeneralConfig
@@ -1084,17 +1076,14 @@ var LastMoviePath string
 var LastMoviesFilePath string
 
 func getnewmoviessingle(row config.MediaTypeConfig, list config.MediaListsConfig) {
-	hasGeneral, _ := config.ConfigDB.Has("general")
-	if !hasGeneral {
-		logger.Log.Errorln("General Config not found")
+
+	if !config.ConfigCheck("general") {
 		return
 	}
 	var cfg_general config.GeneralConfig
 	config.ConfigDB.Get("general", &cfg_general)
 
-	hasQuality, _ := config.ConfigDB.Has("quality_" + list.Template_quality)
-	if !hasQuality {
-		logger.Log.Errorln("Quality Config not found: ", "quality_"+list.Template_quality)
+	if !config.ConfigCheck("quality_" + list.Template_quality) {
 		return
 	}
 	var cfg_quality config.QualityConfig
@@ -1106,9 +1095,7 @@ func getnewmoviessingle(row config.MediaTypeConfig, list config.MediaListsConfig
 	logger.Log.Info("Scan Movie File")
 	filesfound := make([]string, 0, 5000)
 	for idxpath := range row.Data {
-		hasPath, _ := config.ConfigDB.Has("path_" + row.Data[idxpath].Template_path)
-		if !hasPath {
-			logger.Log.Errorln("Path Config not found: ", "path_"+row.Data[idxpath].Template_path)
+		if !config.ConfigCheck("path_" + row.Data[idxpath].Template_path) {
 			continue
 		}
 		var cfg_path config.PathsConfig
@@ -1139,9 +1126,7 @@ func getnewmoviessingle(row config.MediaTypeConfig, list config.MediaListsConfig
 func checkmissingmoviessingle(row config.MediaTypeConfig, list config.MediaListsConfig) {
 	movies, _ := database.QueryMovies(database.Query{Where: "listname = ?", WhereArgs: []interface{}{list.Name}})
 
-	hasGeneral, _ := config.ConfigDB.Has("general")
-	if !hasGeneral {
-		logger.Log.Errorln("General Config not found")
+	if !config.ConfigCheck("general") {
 		return
 	}
 	var cfg_general config.GeneralConfig
@@ -1178,9 +1163,8 @@ func checkmissingmoviesflag(row config.MediaTypeConfig, list config.MediaListsCo
 var LastMoviesStructure string
 
 func moviesStructureSingle(row config.MediaTypeConfig, list config.MediaListsConfig) {
-	hasGeneral, _ := config.ConfigDB.Has("general")
-	if !hasGeneral {
-		logger.Log.Errorln("General Config not found")
+
+	if !config.ConfigCheck("general") {
 		return
 	}
 	var cfg_general config.GeneralConfig
@@ -1190,9 +1174,7 @@ func moviesStructureSingle(row config.MediaTypeConfig, list config.MediaListsCon
 
 	for idxpath := range row.DataImport {
 		mappath := ""
-		hasPathimport, _ := config.ConfigDB.Has("path_" + row.DataImport[idxpath].Template_path)
-		if !hasPathimport {
-			logger.Log.Errorln("Path Config not found: ", "path_"+row.DataImport[idxpath].Template_path)
+		if !config.ConfigCheck("path_" + row.DataImport[idxpath].Template_path) {
 			continue
 		}
 		var cfg_path_import config.PathsConfig
@@ -1201,9 +1183,7 @@ func moviesStructureSingle(row config.MediaTypeConfig, list config.MediaListsCon
 		var cfg_path config.PathsConfig
 		if len(row.Data) >= 1 {
 			mappath = row.Data[0].Template_path
-			hasPath, _ := config.ConfigDB.Has("path_" + mappath)
-			if !hasPath {
-				logger.Log.Errorln("Path Config not found: ", "path_"+mappath)
+			if !config.ConfigCheck("path_" + mappath) {
 				continue
 			}
 			config.ConfigDB.Get("path_"+mappath, &cfg_path)
@@ -1220,9 +1200,8 @@ func moviesStructureSingle(row config.MediaTypeConfig, list config.MediaListsCon
 }
 
 func RefreshMovies() {
-	hasGeneral, _ := config.ConfigDB.Has("general")
-	if !hasGeneral {
-		logger.Log.Errorln("General Config not found")
+
+	if !config.ConfigCheck("general") {
 		return
 	}
 	var cfg_general config.GeneralConfig
@@ -1242,9 +1221,7 @@ func RefreshMovies() {
 }
 
 func RefreshMoviesInc() {
-	hasGeneral, _ := config.ConfigDB.Has("general")
-	if !hasGeneral {
-		logger.Log.Errorln("General Config not found")
+	if !config.ConfigCheck("general") {
 		return
 	}
 	var cfg_general config.GeneralConfig
@@ -1278,9 +1255,14 @@ func Movies_all_jobs(job string, force bool) {
 var MovieJobRunning map[string]bool
 
 func Movies_single_jobs(job string, typename string, listname string, force bool) {
-	hasGeneral, _ := config.ConfigDB.Has("general")
-	if !hasGeneral {
-		logger.Log.Errorln("General Config not found")
+
+	jobName := job + typename + listname
+	defer func() {
+		database.ReadWriteMu.Lock()
+		delete(MovieJobRunning, jobName)
+		database.ReadWriteMu.Unlock()
+	}()
+	if !config.ConfigCheck("general") {
 		return
 	}
 	var cfg_general config.GeneralConfig
@@ -1290,12 +1272,6 @@ func Movies_single_jobs(job string, typename string, listname string, force bool
 		logger.Log.Info("Skipped Job: ", job, " for ", typename)
 		return
 	}
-	jobName := job + typename + listname
-	defer func() {
-		database.ReadWriteMu.Lock()
-		delete(MovieJobRunning, jobName)
-		database.ReadWriteMu.Unlock()
-	}()
 	database.ReadWriteMu.Lock()
 	if _, nok := MovieJobRunning[jobName]; nok {
 		logger.Log.Debug("Job already running: ", jobName)

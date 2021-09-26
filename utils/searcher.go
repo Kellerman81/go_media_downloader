@@ -436,21 +436,9 @@ func (s *Searcher) SearchRSS(searchGroupType string) searchResults {
 		nzbs, failed, lastids, nzberr := apiexternal.QueryNewznabRSSLast([]apiexternal.NzbIndexer{s.Nzbindexer}, cfg_indexer.MaxRssEntries, s.Indexercategories, cfg_indexer.RssEntriesloop)
 		if nzberr != nil {
 			logger.Log.Error("Newznab RSS Search failed ", cfg_quality.Indexer[idx].Template_indexer)
-			for _, failedidx := range failed {
-				failmap := make(map[string]interface{})
-				failmap["indexer"] = failedidx
-				failmap["last_fail"] = time.Now()
-				database.Upsert("indexer_fails", failmap, database.Query{Where: "indexer=?", WhereArgs: []interface{}{failedidx}})
-			}
+			failedindexer(failed)
 		} else {
-			for keyval, idval := range lastids {
-				rssmap := make(map[string]interface{})
-				rssmap["indexer"] = keyval
-				rssmap["last_id"] = idval
-				rssmap["list"] = s.Quality
-				rssmap["config"] = s.ConfigEntry.Name
-				database.Upsert("r_sshistories", rssmap, database.Query{Where: "config=? and list=? and indexer=?", WhereArgs: []interface{}{s.ConfigEntry.Name, s.Quality, keyval}})
-			}
+			addrsshistory(lastids, s.Quality, s.ConfigEntry.Name)
 			logger.Log.Debug("Search RSS ended - found entries: ", len(nzbs))
 			if len(nzbs) >= 1 {
 				if strings.ToLower(s.SearchGroupType) == "movie" {
@@ -472,6 +460,17 @@ func (s *Searcher) SearchRSS(searchGroupType string) searchResults {
 		logger.Log.Info("No new entries found")
 	}
 	return searchResults{Nzbs: retnzb}
+}
+
+func addrsshistory(lastids map[string]string, quality string, config string) {
+	for keyval, idval := range lastids {
+		rssmap := make(map[string]interface{})
+		rssmap["indexer"] = keyval
+		rssmap["last_id"] = idval
+		rssmap["list"] = quality
+		rssmap["config"] = config
+		database.Upsert("r_sshistories", rssmap, database.Query{Where: "config=? and list=? and indexer=?", WhereArgs: []interface{}{config, quality, keyval}})
+	}
 }
 
 func (s *Searcher) MovieSearch(movie database.Movie, forceDownload bool, titlesearch bool) searchResults {
@@ -728,6 +727,7 @@ func (s *Searcher) InitIndexer(indexer config.QualityIndexerConfig, rssapi strin
 		Customapi:               cfg_indexer.Customapi,
 		Customurl:               cfg_indexer.Customurl,
 		Customrssurl:            cfg_indexer.Customrssurl,
+		Customrsscategory:       cfg_indexer.Customrsscategory,
 		Limitercalls:            cfg_indexer.Limitercalls,
 		Limiterseconds:          cfg_indexer.Limiterseconds}
 	s.Nzbindexer = nzbindexer
@@ -755,12 +755,7 @@ func (s Searcher) MoviesSearchImdb(movie database.Movie) searchResults {
 	nzbs, failed, nzberr := apiexternal.QueryNewznabMovieImdb([]apiexternal.NzbIndexer{s.Nzbindexer}, s.Dbmovie.ImdbID, s.Indexercategories)
 	if nzberr != nil {
 		logger.Log.Error("Newznab Search failed: ", s.Dbmovie.ImdbID, " with ", s.Nzbindexer.URL)
-		for _, failedidx := range failed {
-			failmap := make(map[string]interface{})
-			failmap["indexer"] = failedidx
-			failmap["last_fail"] = time.Now()
-			database.Upsert("indexer_fails", failmap, database.Query{Where: "indexer=?", WhereArgs: []interface{}{failedidx}})
-		}
+		failedindexer(failed)
 	}
 
 	hasQuality, _ := config.ConfigDB.Has("quality_" + s.Quality)
@@ -799,18 +794,22 @@ func (s Searcher) MoviesSearchTitle(movie database.Movie, title string) searchRe
 	nzbs, failed, nzberr := apiexternal.QueryNewznabQuery([]apiexternal.NzbIndexer{s.Nzbindexer}, searchfor, s.Indexercategories, "movie")
 	if nzberr != nil {
 		logger.Log.Error("Newznab Search failed: ", title, " with ", s.Nzbindexer.URL)
-		for _, failedidx := range failed {
-			failmap := make(map[string]interface{})
-			failmap["indexer"] = failedidx
-			failmap["last_fail"] = time.Now()
-			database.Upsert("indexer_fails", failmap, database.Query{Where: "indexer=?", WhereArgs: []interface{}{failedidx}})
-		}
+		failedindexer(failed)
 	}
 	if len(nzbs) >= 1 {
 		retnzb = append(retnzb, filter_movies_nzbs(s.ConfigEntry, cfg_quality, s.Indexer, nzbs, movie.ID, 0, s.MinimumPriority, s.Dbmovie, database.Dbserie{}, s.Dbmovie.Title, []string{}, strconv.Itoa(s.Dbmovie.Year))...)
 		logger.Log.Debug("Search Series by tvdbid ended - found entries after filter: ", len(retnzb))
 	}
 	return searchResults{retnzb}
+}
+
+func failedindexer(failed []string) {
+	for _, failedidx := range failed {
+		failmap := make(map[string]interface{})
+		failmap["indexer"] = failedidx
+		failmap["last_fail"] = time.Now()
+		database.Upsert("indexer_fails", failmap, database.Query{Where: "indexer=?", WhereArgs: []interface{}{failedidx}})
+	}
 }
 
 func (s Searcher) SeriesSearchTvdb() searchResults {
@@ -821,12 +820,7 @@ func (s Searcher) SeriesSearchTvdb() searchResults {
 	nzbs, failed, nzberr := apiexternal.QueryNewznabTvTvdb([]apiexternal.NzbIndexer{s.Nzbindexer}, s.Dbserie.ThetvdbID, s.Indexercategories, seasonint, episodeint)
 	if nzberr != nil {
 		logger.Log.Error("Newznab Search failed: ", s.Dbserie.ThetvdbID, " with ", s.Nzbindexer.URL)
-		for _, failedidx := range failed {
-			failmap := make(map[string]interface{})
-			failmap["indexer"] = failedidx
-			failmap["last_fail"] = time.Now()
-			database.Upsert("indexer_fails", failmap, database.Query{Where: "indexer=?", WhereArgs: []interface{}{failedidx}})
-		}
+		failedindexer(failed)
 	}
 	hasQuality, _ := config.ConfigDB.Has("quality_" + s.Quality)
 	if !hasQuality {
@@ -859,12 +853,7 @@ func (s Searcher) SeriesSearchTitle(title string) searchResults {
 		nzbs, failed, nzberr := apiexternal.QueryNewznabQuery([]apiexternal.NzbIndexer{s.Nzbindexer}, searchfor, s.Indexercategories, "search")
 		if nzberr != nil {
 			logger.Log.Error("Newznab Search failed: ", title, " with ", s.Nzbindexer.URL)
-			for _, failedidx := range failed {
-				failmap := make(map[string]interface{})
-				failmap["indexer"] = failedidx
-				failmap["last_fail"] = time.Now()
-				database.Upsert("indexer_fails", failmap, database.Query{Where: "indexer=?", WhereArgs: []interface{}{failedidx}})
-			}
+			failedindexer(failed)
 		}
 		if len(nzbs) >= 1 {
 			retnzb = append(retnzb, filter_series_nzbs(s.ConfigEntry, cfg_quality, s.Indexer, nzbs, 0, s.SerieEpisode.ID, s.MinimumPriority, database.Dbmovie{}, s.Dbserie)...)

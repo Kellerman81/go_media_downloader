@@ -527,10 +527,20 @@ func (s *Structure) ReplaceLowerQualityFiles(oldfiles []string, movie database.M
 	if strings.ToLower(s.groupType) == "movie" {
 		logger.Log.Debug("want to remove old files")
 		for idx := range oldfiles {
+			fileext := filepath.Ext(oldfiles[idx])
 			err := scanner.RemoveFile(oldfiles[idx])
 			if err == nil {
 				logger.Log.Debug("Old File removed: ", oldfiles[idx])
 				database.DeleteRow("movie_files", database.Query{Where: "movie_id = ? and location = ?", WhereArgs: []interface{}{movie.ID, oldfiles[idx]}})
+				for idxext := range s.sourcepath.AllowedOtherExtensions {
+					additionalfile := strings.Replace(oldfiles[idx], fileext, s.sourcepath.AllowedOtherExtensions[idxext], -1)
+					err := scanner.RemoveFile(additionalfile)
+					if err == nil {
+						logger.Log.Debug("Additional File removed: ", additionalfile)
+					} else {
+						logger.Log.Error("Additional File could not be removed: ", additionalfile, " Error: ", err)
+					}
+				}
 			} else {
 				logger.Log.Error("Old File could not be removed: ", oldfiles[idx], " Error: ", err)
 			}
@@ -573,15 +583,16 @@ func (s *Structure) MoveAdditionalFiles(folder string, videotarget string, filen
 }
 
 func StructureFolders(grouptype string, sourcepath config.PathsConfig, targetpath config.PathsConfig, configEntry config.MediaTypeConfig, list config.MediaListsConfig) {
-	if !configEntry.Structure {
-		return
-	}
+
 	jobName := sourcepath.Path + "_" + list.Name
 	defer func() {
 		database.ReadWriteMu.Lock()
 		delete(SeriesStructureJobRunning, jobName)
 		database.ReadWriteMu.Unlock()
 	}()
+	if !configEntry.Structure {
+		return
+	}
 	database.ReadWriteMu.Lock()
 	if _, nok := SeriesStructureJobRunning[jobName]; nok {
 		logger.Log.Debug("Job already running: ", jobName)

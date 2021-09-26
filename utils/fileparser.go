@@ -451,87 +451,88 @@ func (m *ParseInfo) GetPriority(configEntry config.MediaTypeConfig, quality conf
 }
 
 func (m *ParseInfo) ParseVideoFile(file string, configEntry config.MediaTypeConfig, quality config.QualityConfig) error {
-	if m.Audio == "" || m.Codec == "" || m.Resolution == "" {
-		if m.QualitySet == "" {
-			m.QualitySet = quality.Name
-		}
-		video, err := NewVideoFile(getFFProbeFilename(), file, false)
-		if err == nil {
-			logger.Log.Debug("Parsed Video as Audio: ", video.AudioCodec)
-			logger.Log.Debug("Parsed Video as Codec: ", video.VideoCodec)
-			logger.Log.Debug("Parsed Video as Height: ", video.Height)
-			if m.Audio == "" || (!strings.EqualFold(video.AudioCodec, m.Audio) && video.AudioCodec != "") {
-				typeid, audio_priority, newname := gettypepriority(video.AudioCodec, "audio", quality, database.Getaudios)
-				if typeid != 0 {
-					logger.Log.Debug("Changed Audio from ", m.Audio, " to ", video.AudioCodec)
-					m.Audio = newname
-					m.AudioID = typeid
-					m.Prio_audio = audio_priority
-				}
-			}
-			if strings.EqualFold(video.VideoCodec, "mpeg4") && strings.EqualFold(video.VideoCodecTagString, "XVID") {
-				video.VideoCodec = video.VideoCodecTagString
-			}
-			if m.Codec == "" || (!strings.EqualFold(video.VideoCodec, m.Codec) && video.VideoCodec != "") {
-				typeid, codec_priority, newname := gettypepriority(video.VideoCodec, "codec", quality, database.Getcodecs)
-				if typeid != 0 {
-					logger.Log.Debug("Changed Codec from ", m.Codec, " to ", video.VideoCodec)
-					m.Codec = newname
-					m.CodecID = typeid
-					m.Prio_codec = codec_priority
-				}
-			}
-			getreso := ""
-			if video.Height == 360 {
-				getreso = "360p"
-			}
-			if video.Height > 360 {
-				getreso = "368p"
-			}
-			if video.Height > 368 || video.Width == 720 {
-				getreso = "480p"
-			}
-			if video.Height > 480 {
-				getreso = "576p"
-			}
-			if video.Height > 576 || video.Width == 1280 {
-				getreso = "720p"
-			}
-			if video.Height > 720 || video.Width == 1920 {
-				getreso = "1080p"
-			}
-			if video.Height > 1080 || video.Width == 3840 {
-				getreso = "2160p"
-			}
-			if m.Resolution == "" || !strings.EqualFold(getreso, m.Resolution) {
-				typeid, resolution_priority, newname := gettypepriority(getreso, "resolution", quality, database.Getresolutions)
-				if typeid != 0 {
-					logger.Log.Debug("Changed Resolution from ", m.Resolution, " to ", getreso)
-					m.Resolution = newname
-					m.ResolutionID = typeid
-					m.Prio_resolution = resolution_priority
-				}
-			}
-			m.Languages = video.AudioLanguages
-
-			m.Priority = m.Prio_resolution + m.Prio_quality + m.Prio_codec + m.Prio_audio
-			if m.Proper {
-				m.Priority = m.Priority + 5
-			}
-			if m.Extended {
-				m.Priority = m.Priority + 2
-			}
-			if m.Repack {
-				m.Priority = m.Priority + 1
-			}
-			return nil
-		} else {
-			return err
-		}
-	} else {
-		logger.Log.Debug("Already have Video data")
+	//if m.Audio == "" || m.Codec == "" || m.Resolution == "" || m.Resolution == "360p" {
+	if m.QualitySet == "" {
+		m.QualitySet = quality.Name
 	}
-	return nil
+	video, err := NewVideoFile(getFFProbeFilename(), file, false)
+	if err == nil {
+		logger.Log.Debug("Parsed Video as Audio: ", video.AudioCodec)
+		logger.Log.Debug("Parsed Video as Codec: ", video.VideoCodec)
+		logger.Log.Debug("Parsed Video as Height: ", video.Height)
+		if m.Audio == "" || (!strings.EqualFold(video.AudioCodec, m.Audio) && video.AudioCodec != "") {
+			typeid, audio_priority, newname := gettypepriority(video.AudioCodec, "audio", quality, database.Getaudios)
+			if typeid != 0 {
+				logger.Log.Debug("Changed Audio from ", m.Audio, " to ", video.AudioCodec)
+				m.Audio = newname
+				m.AudioID = typeid
+				m.Prio_audio = audio_priority
+			}
+		}
+		if strings.EqualFold(video.VideoCodec, "mpeg4") && strings.EqualFold(video.VideoCodecTagString, "XVID") {
+			video.VideoCodec = video.VideoCodecTagString
+		}
+		if m.Codec == "" || (!strings.EqualFold(video.VideoCodec, m.Codec) && video.VideoCodec != "") {
+			typeid, codec_priority, newname := gettypepriority(video.VideoCodec, "codec", quality, database.Getcodecs)
+			if typeid != 0 {
+				logger.Log.Debug("Changed Codec from ", m.Codec, " to ", video.VideoCodec)
+				m.Codec = newname
+				m.CodecID = typeid
+				m.Prio_codec = codec_priority
+			}
+		}
+		getreso := ""
+		if video.Height == 360 {
+			getreso = "360p"
+		}
+		if video.Height > 360 {
+			getreso = "368p"
+		}
+		if video.Height > 368 || video.Width == 720 {
+			getreso = "480p"
+		}
+		if video.Height > 480 {
+			getreso = "576p"
+		}
+		if video.Height > 576 || video.Width == 1280 {
+			getreso = "720p"
+		}
+		if video.Height > 720 || video.Width == 1920 {
+			getreso = "1080p"
+		}
+		if video.Height > 1080 || video.Width == 3840 {
+			getreso = "2160p"
+		}
+		if m.Resolution == "" || !strings.EqualFold(getreso, m.Resolution) {
+			typeid, resolution_priority, newname := gettypepriority(getreso, "resolution", quality, database.Getresolutions)
+			if typeid != 0 {
+				logger.Log.Debug("Changed Resolution from ", m.Resolution, " to ", getreso)
+				m.Resolution = newname
+				m.ResolutionID = typeid
+				m.Prio_resolution = resolution_priority
+			}
+		}
+		m.Languages = video.AudioLanguages
+
+		m.Priority = m.Prio_resolution + m.Prio_quality + m.Prio_codec + m.Prio_audio
+		if m.Proper {
+			m.Priority = m.Priority + 5
+		}
+		if m.Extended {
+			m.Priority = m.Priority + 2
+		}
+		if m.Repack {
+			m.Priority = m.Priority + 1
+		}
+		return nil
+	} else {
+		return err
+	}
+	// } else {
+	// 	logger.Log.Debug("Already have Video data")
+	// }
+	//
+	//return nil
 }
 
 func gettypepriority(inval string, qualitystringtype string, qualityconfig config.QualityConfig, qualitytype []database.QualitiesRegex) (id uint, priority int, name string) {

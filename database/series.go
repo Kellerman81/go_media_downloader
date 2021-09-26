@@ -103,9 +103,9 @@ type SerieEpisodeHistory struct {
 
 type ResultSeries struct {
 	Dbserie
-	Listname string
-	Rootpath string
-	SerieID  uint `db:"serie_id"`
+	Listname  string
+	Rootpath  string
+	DbserieID uint `db:"dbserie_id"`
 }
 type Dbserie struct {
 	ID              uint
@@ -151,14 +151,14 @@ type DbserieAlternate struct {
 
 type ResultSerieEpisodes struct {
 	DbserieEpisode
-	Listname       string
-	Rootpath       string
-	Lastscan       sql.NullTime
-	Blacklisted    bool
-	QualityReached bool   `db:"quality_reached"`
-	QualityProfile string `db:"quality_profile"`
-	Missing        bool
-	SerieEpisodeID uint `db:"serie_episode_id"`
+	Listname         string
+	Rootpath         string
+	Lastscan         sql.NullTime
+	Blacklisted      bool
+	QualityReached   bool   `db:"quality_reached"`
+	QualityProfile   string `db:"quality_profile"`
+	Missing          bool
+	DbserieEpisodeID uint `db:"dbserie_episode_id"`
 }
 
 type DbserieEpisode struct {

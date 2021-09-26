@@ -206,6 +206,7 @@ type IndexersConfig struct {
 	Customapi              string `koanf:"customapi"`
 	Customurl              string `koanf:"customurl"`
 	Customrssurl           string `koanf:"customrssurl"`
+	Customrsscategory      string `koanf:"customrsscategory"`
 	Limitercalls           int    `koanf:"limitercalls"`
 	Limiterseconds         int    `koanf:"limiterseconds"`
 }
@@ -555,4 +556,14 @@ func LoadCfgDataDB(f *file.File, parser string) {
 			}
 		}
 	}
+}
+
+func ConfigCheck(name string) bool {
+	success := true
+	hasPath, haserr := ConfigDB.Has(name)
+	if !hasPath || haserr != nil {
+		logger.Log.Errorln("Config not found: ", name)
+		success = false
+	}
+	return success
 }

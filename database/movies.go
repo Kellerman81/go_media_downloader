@@ -49,7 +49,7 @@ type ResultMovies struct {
 	QualityProfile string `db:"quality_profile"`
 	Rootpath       string
 	Missing        bool
-	MovieID        uint `db:"movie_id"`
+	DbmovieID      uint `db:"dbmovie_id"`
 }
 
 type MovieFile struct {
