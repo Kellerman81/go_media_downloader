@@ -38,8 +38,8 @@ func JobImportMovies(dbmovie database.Dbmovie, configEntry config.MediaTypeConfi
 		return
 	} else {
 		MovieImportJobRunning[jobName] = true
+		database.ReadWriteMu.Unlock()
 	}
-	database.ReadWriteMu.Unlock()
 
 	if !config.ConfigCheck("general") {
 		return
@@ -113,7 +113,6 @@ func JobImportMovies(dbmovie database.Dbmovie, configEntry config.MediaTypeConfi
 		}
 	}
 
-	database.ReadWriteMu.Lock()
 	counterm, _ := database.CountRows("movies", database.Query{Where: "dbmovie_id = ? and listname = ?", WhereArgs: []interface{}{dbmovie.ID, list.Name}})
 	if counterm >= 1 {
 		for idxreplace := range list.Replace_map_lists {
@@ -127,7 +126,6 @@ func JobImportMovies(dbmovie database.Dbmovie, configEntry config.MediaTypeConfi
 		_, moviereserr := database.InsertArray("movies", []string{"missing", "listname", "dbmovie_id", "quality_profile"}, []interface{}{true, list.Name, dbmovie.ID, list.Template_quality})
 		if moviereserr != nil {
 			logger.Log.Error(moviereserr)
-			database.ReadWriteMu.Unlock()
 			return
 		}
 		for idxreplace := range list.Replace_map_lists {
@@ -137,7 +135,6 @@ func JobImportMovies(dbmovie database.Dbmovie, configEntry config.MediaTypeConfi
 			}
 		}
 	}
-	database.ReadWriteMu.Unlock()
 }
 
 func JobReloadMovies(dbmovie database.Dbmovie, configEntry config.MediaTypeConfig, list config.MediaListsConfig, wg *sizedwaitgroup.SizedWaitGroup) {
@@ -169,8 +166,8 @@ func JobReloadMovies(dbmovie database.Dbmovie, configEntry config.MediaTypeConfi
 		}
 	} else {
 		MovieImportJobRunning[jobName] = true
+		database.ReadWriteMu.Unlock()
 	}
-	database.ReadWriteMu.Unlock()
 
 	dbmovie, _ = database.GetDbmovie(database.Query{Where: "imdb_id = ?", WhereArgs: []interface{}{dbmovie.ImdbID}})
 	logger.Log.Debug("Get Movie Metadata: ", dbmovie.ImdbID)
@@ -1279,8 +1276,8 @@ func Movies_single_jobs(job string, typename string, listname string, force bool
 		return
 	} else {
 		MovieJobRunning[jobName] = true
+		database.ReadWriteMu.Unlock()
 	}
-	database.ReadWriteMu.Unlock()
 	job = strings.ToLower(job)
 	dbresult, _ := database.InsertArray("job_histories", []string{"job_type", "job_group", "job_category", "started"},
 		[]interface{}{job, typename, "Movie", time.Now()})

@@ -600,8 +600,8 @@ func StructureFolders(grouptype string, sourcepath config.PathsConfig, targetpat
 		return
 	} else {
 		SeriesStructureJobRunning[jobName] = true
+		database.ReadWriteMu.Unlock()
 	}
-	database.ReadWriteMu.Unlock()
 
 	logger.Log.Debug("Check Source: ", sourcepath.Path)
 	folders := getSubFolders(sourcepath.Path)

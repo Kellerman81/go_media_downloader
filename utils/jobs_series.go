@@ -36,8 +36,8 @@ func JobImportDbSeries(serieconfig config.SerieConfig, configEntry config.MediaT
 		return
 	} else {
 		SeriesImportJobRunning[jobName] = true
+		database.ReadWriteMu.Unlock()
 	}
-	database.ReadWriteMu.Unlock()
 
 	var dbserie database.Dbserie
 	dbserieadded := false
@@ -220,8 +220,8 @@ func JobReloadDbSeries(dbserie database.Dbserie, configEntry config.MediaTypeCon
 		}
 	} else {
 		SeriesImportJobRunning[jobName] = true
+		database.ReadWriteMu.Unlock()
 	}
-	database.ReadWriteMu.Unlock()
 
 	logger.Log.Debug("DbSeries Add for: ", dbserie.ThetvdbID)
 
@@ -664,8 +664,8 @@ func Series_single_jobs(job string, typename string, listname string, force bool
 		return
 	} else {
 		SerieJobRunning[jobName] = true
+		database.ReadWriteMu.Unlock()
 	}
-	database.ReadWriteMu.Unlock()
 	logger.Log.Info("Started Job: ", job, " for ", typename)
 
 	dbresult, _ := database.InsertArray("job_histories", []string{"job_type", "job_group", "job_category", "started"},

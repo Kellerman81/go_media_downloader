@@ -13,6 +13,7 @@ import (
 )
 
 func JobImportFileCheck(file string, dbtype string, wg *sizedwaitgroup.SizedWaitGroup) {
+	defer wg.Done()
 	if _, err := os.Stat(file); os.IsNotExist(err) {
 		if strings.EqualFold(dbtype, "movie") {
 			moviesf, _ := database.QueryMovieFiles(database.Query{Select: "id, movie_id", Where: "location=?", WhereArgs: []interface{}{file}})
@@ -28,7 +29,6 @@ func JobImportFileCheck(file string, dbtype string, wg *sizedwaitgroup.SizedWait
 			}
 		}
 	}
-	wg.Done()
 }
 
 type feedResults struct {
