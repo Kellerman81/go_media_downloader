@@ -31,9 +31,7 @@ func filter_size_nzbs(configEntry config.MediaTypeConfig, indexer config.Quality
 			logger.Log.Debug("Skipped - Size missing: ", rownzb.Title)
 			return true
 		}
-		hasPath, _ := config.ConfigDB.Has("path_" + configEntry.DataImport[idx].Template_path)
-		if !hasPath {
-			logger.Log.Errorln("Path Config not found: ", "path_"+configEntry.DataImport[idx].Template_path)
+		if !config.ConfigCheck("path_" + configEntry.DataImport[idx].Template_path) {
 			return false
 		}
 		var cfg_path config.PathsConfig
@@ -157,9 +155,7 @@ func filter_movies_nzbs(configEntry config.MediaTypeConfig, quality config.Quali
 		for idxalt := range foundalternate {
 			alternatenames = append(alternatenames, foundalternate[idxalt].Title)
 		}
-		hasRegex, _ := config.ConfigDB.Has("regex_" + indexer.Template_regex)
-		if !hasRegex {
-			logger.Log.Errorln("Regex Config not found: ", "regex_"+indexer.Template_regex)
+		if !config.ConfigCheck("regex_" + indexer.Template_regex) {
 			toskip = true
 			continue
 		}
@@ -368,9 +364,7 @@ func filter_series_nzbs(configEntry config.MediaTypeConfig, quality config.Quali
 		for idxalt := range foundalternate {
 			alternatenames = append(alternatenames, foundalternate[idxalt].Title)
 		}
-		hasRegex, _ := config.ConfigDB.Has("regex_" + indexer.Template_regex)
-		if !hasRegex {
-			logger.Log.Errorln("Regex Config not found: ", "regex_"+indexer.Template_regex)
+		if !config.ConfigCheck("regex_" + indexer.Template_regex) {
 			toskip = true
 			continue
 		}
@@ -624,9 +618,7 @@ func filter_series_rss_nzbs(configEntry config.MediaTypeConfig, quality config.Q
 				continue
 			}
 		}
-		hasRegex, _ := config.ConfigDB.Has("regex_" + indexer.Template_regex)
-		if !hasRegex {
-			logger.Log.Errorln("Regex Config not found: ", "regex_"+indexer.Template_regex)
+		if !config.ConfigCheck("regex_" + indexer.Template_regex) {
 			toskip = true
 			continue
 		}
@@ -790,9 +782,7 @@ func filter_movies_rss_nzbs(configEntry config.MediaTypeConfig, quality config.Q
 			logger.Log.Debug("Skipped - no imdbid: ", nzbs[idx].Title)
 			continue
 		}
-		hasRegex, _ := config.ConfigDB.Has("regex_" + indexer.Template_regex)
-		if !hasRegex {
-			logger.Log.Errorln("Regex Config not found: ", "regex_"+indexer.Template_regex)
+		if !config.ConfigCheck("regex_" + indexer.Template_regex) {
 			toskip = true
 			continue
 		}

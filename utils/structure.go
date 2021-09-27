@@ -113,9 +113,7 @@ func (s *Structure) ParseFile(videofile string, checkfolder bool, folder string,
 		}
 	}
 
-	hasQuality, _ := config.ConfigDB.Has("quality_" + s.list.Template_quality)
-	if !hasQuality {
-		logger.Log.Errorln("Quality Config not found: ", "quality_"+s.list.Template_quality)
+	if !config.ConfigCheck("quality_" + s.list.Template_quality) {
 		return
 	}
 	var cfg_quality config.QualityConfig
@@ -133,9 +131,7 @@ func (s *Structure) ParseFile(videofile string, checkfolder bool, folder string,
 }
 
 func (s *Structure) ParseFileAdditional(videofile string, m *ParseInfo, folder string, deletewronglanguage bool) (err error) {
-	hasQuality, _ := config.ConfigDB.Has("quality_" + s.list.Template_quality)
-	if !hasQuality {
-		logger.Log.Errorln("Quality Config not found: ", "quality_"+s.list.Template_quality)
+	if !config.ConfigCheck("quality_" + s.list.Template_quality) {
 		return
 	}
 	var cfg_quality config.QualityConfig
@@ -175,9 +171,7 @@ func (s *Structure) CheckLowerQualTarget(folder string, videofile string, m Pars
 	moviefiles, _ := database.QueryMovieFiles(database.Query{Where: "movie_id = ?", WhereArgs: []interface{}{movie.ID}})
 	logger.Log.Debug("Found existing files: ", len(moviefiles))
 
-	hasQuality, _ := config.ConfigDB.Has("quality_" + s.list.Template_quality)
-	if !hasQuality {
-		logger.Log.Errorln("Quality Config not found: ", "quality_"+s.list.Template_quality)
+	if !config.ConfigCheck("quality_" + s.list.Template_quality) {
 		return []string{}, 0, errors.New("config not found")
 	}
 	var cfg_quality config.QualityConfig
@@ -684,9 +678,7 @@ func StructureFolders(grouptype string, sourcepath config.PathsConfig, targetpat
 					entriesfound = len(movies)
 				}
 
-				hasQuality, _ := config.ConfigDB.Has("quality_" + list.Template_quality)
-				if !hasQuality {
-					logger.Log.Errorln("Quality Config not found: ", "quality_"+list.Template_quality)
+				if !config.ConfigCheck("quality_" + list.Template_quality) {
 					return
 				}
 				var cfg_quality config.QualityConfig
@@ -775,9 +767,7 @@ func StructureFolders(grouptype string, sourcepath config.PathsConfig, targetpat
 					seriestitle = matched[1]
 				}
 
-				hasQuality, _ := config.ConfigDB.Has("quality_" + list.Template_quality)
-				if !hasQuality {
-					logger.Log.Errorln("Quality Config not found: ", "quality_"+list.Template_quality)
+				if !config.ConfigCheck("quality_" + list.Template_quality) {
 					return
 				}
 				var cfg_quality config.QualityConfig
@@ -916,9 +906,7 @@ func (s *Structure) GetSeriesEpisodes(series database.Serie, videofile string, m
 				logger.Log.Debug("use db title: ", episodetitle)
 			}
 
-			hasQuality, _ := config.ConfigDB.Has("quality_" + s.list.Template_quality)
-			if !hasQuality {
-				logger.Log.Errorln("Quality Config not found: ", "quality_"+s.list.Template_quality)
+			if !config.ConfigCheck("quality_" + s.list.Template_quality) {
 				return
 			}
 			var cfg_quality config.QualityConfig

@@ -22,18 +22,14 @@ func SearchMovieMissing(configEntry config.MediaTypeConfig, jobcount int, titles
 		lists = append(lists, configEntry.Lists[idxlisttest].Name)
 	}
 
-	hasGeneral, _ := config.ConfigDB.Has("general")
-	if !hasGeneral {
-		logger.Log.Errorln("General Config not found")
+	if !config.ConfigCheck("general") {
 		return
 	}
 	var cfg_general config.GeneralConfig
 	config.ConfigDB.Get("general", &cfg_general)
 
 	if len(configEntry.Data) >= 1 {
-		hasPath, _ := config.ConfigDB.Has("path_" + configEntry.Data[0].Template_path)
-		if !hasPath {
-			logger.Log.Errorln("Path Config not found: ", "path_"+configEntry.Data[0].Template_path)
+		if !config.ConfigCheck("path_" + configEntry.Data[0].Template_path) {
 			return
 		}
 		var cfg_path config.PathsConfig
@@ -99,18 +95,14 @@ func SearchMovieUpgrade(configEntry config.MediaTypeConfig, jobcount int, titles
 	for idxlisttest := range configEntry.Lists {
 		lists = append(lists, configEntry.Lists[idxlisttest].Name)
 	}
-	hasGeneral, _ := config.ConfigDB.Has("general")
-	if !hasGeneral {
-		logger.Log.Errorln("General Config not found")
+	if !config.ConfigCheck("general") {
 		return
 	}
 	var cfg_general config.GeneralConfig
 	config.ConfigDB.Get("general", &cfg_general)
 
 	if len(configEntry.Data) >= 1 {
-		hasPath, _ := config.ConfigDB.Has("path_" + configEntry.Data[0].Template_path)
-		if !hasPath {
-			logger.Log.Errorln("Path Config not found: ", "path_"+configEntry.Data[0].Template_path)
+		if !config.ConfigCheck("path_" + configEntry.Data[0].Template_path) {
 			return
 		}
 		var cfg_path config.PathsConfig
@@ -156,9 +148,7 @@ func SearchMovieUpgrade(configEntry config.MediaTypeConfig, jobcount int, titles
 
 func SearchSerieSingle(serie database.Serie, configEntry config.MediaTypeConfig, titlesearch bool) {
 
-	hasGeneral, _ := config.ConfigDB.Has("general")
-	if !hasGeneral {
-		logger.Log.Errorln("General Config not found")
+	if !config.ConfigCheck("general") {
 		return
 	}
 	var cfg_general config.GeneralConfig
@@ -194,18 +184,14 @@ func SearchSerieMissing(configEntry config.MediaTypeConfig, jobcount int, titles
 	for idxlisttest := range configEntry.Lists {
 		lists = append(lists, configEntry.Lists[idxlisttest].Name)
 	}
-	hasGeneral, _ := config.ConfigDB.Has("general")
-	if !hasGeneral {
-		logger.Log.Errorln("General Config not found")
+	if !config.ConfigCheck("general") {
 		return
 	}
 	var cfg_general config.GeneralConfig
 	config.ConfigDB.Get("general", &cfg_general)
 
 	if len(configEntry.Data) >= 1 {
-		hasPath, _ := config.ConfigDB.Has("path_" + configEntry.Data[0].Template_path)
-		if !hasPath {
-			logger.Log.Errorln("Path Config not found: ", "path_"+configEntry.Data[0].Template_path)
+		if !config.ConfigCheck("path_" + configEntry.Data[0].Template_path) {
 			return
 		}
 		var cfg_path config.PathsConfig
@@ -261,18 +247,14 @@ func SearchSerieUpgrade(configEntry config.MediaTypeConfig, jobcount int, titles
 	for idxlisttest := range configEntry.Lists {
 		lists = append(lists, configEntry.Lists[idxlisttest].Name)
 	}
-	hasGeneral, _ := config.ConfigDB.Has("general")
-	if !hasGeneral {
-		logger.Log.Errorln("General Config not found")
+	if !config.ConfigCheck("general") {
 		return
 	}
 	var cfg_general config.GeneralConfig
 	config.ConfigDB.Get("general", &cfg_general)
 
 	if len(configEntry.Data) >= 1 {
-		hasPath, _ := config.ConfigDB.Has("path_" + configEntry.Data[0].Template_path)
-		if !hasPath {
-			logger.Log.Errorln("Path Config not found: ", "path_"+configEntry.Data[0].Template_path)
+		if !config.ConfigCheck("path_" + configEntry.Data[0].Template_path) {
 			return
 		}
 		var cfg_path config.PathsConfig
@@ -394,17 +376,13 @@ func NewSearcher(configEntry config.MediaTypeConfig, quality string) Searcher {
 //searchGroupType == movie || series
 func (s *Searcher) SearchRSS(searchGroupType string) searchResults {
 
-	hasQuality, _ := config.ConfigDB.Has("quality_" + s.Quality)
-	if !hasQuality {
-		logger.Log.Errorln("Quality Config not found: ", "quality_"+s.Quality)
+	if !config.ConfigCheck("quality_" + s.Quality) {
 		return searchResults{}
 	}
 	var cfg_quality config.QualityConfig
 	config.ConfigDB.Get("quality_"+s.Quality, &cfg_quality)
 
-	hasIndexer, _ := config.ConfigDB.Has("indexer_" + cfg_quality.Indexer[0].Template_indexer)
-	if !hasIndexer {
-		logger.Log.Errorln("Indexer Config not found: ", "indexer_"+cfg_quality.Indexer[0].Template_indexer)
+	if !config.ConfigCheck("indexer_" + cfg_quality.Indexer[0].Template_indexer) {
 		return searchResults{}
 	}
 	var cfg_indexer config.IndexersConfig
@@ -486,9 +464,7 @@ func (s *Searcher) MovieSearch(movie database.Movie, forceDownload bool, titlese
 
 	dbmoviealt, _ := database.QueryDbmovieTitle(database.Query{Where: "dbmovie_id=?", WhereArgs: []interface{}{movie.DbmovieID}})
 
-	hasQuality, _ := config.ConfigDB.Has("quality_" + s.Quality)
-	if !hasQuality {
-		logger.Log.Errorln("Quality Config not found: ", "quality_"+s.Quality)
+	if !config.ConfigCheck("quality_" + s.Quality) {
 		return searchResults{}
 	}
 	var cfg_quality config.QualityConfig
@@ -592,9 +568,7 @@ func (s *Searcher) SeriesSearch(serieEpisode database.SerieEpisode, forceDownloa
 
 	dbseriealt, _ := database.QueryDbserieAlternates(database.Query{Where: "dbserie_id=?", WhereArgs: []interface{}{serieEpisode.DbserieID}})
 
-	hasQuality, _ := config.ConfigDB.Has("quality_" + s.Quality)
-	if !hasQuality {
-		logger.Log.Errorln("Quality Config not found: ", "quality_"+s.Quality)
+	if !config.ConfigCheck("quality_" + s.Quality) {
 		return searchResults{}
 	}
 	var cfg_quality config.QualityConfig
@@ -682,9 +656,7 @@ func (s *Searcher) SeriesSearch(serieEpisode database.SerieEpisode, forceDownloa
 func (s *Searcher) InitIndexer(indexer config.QualityIndexerConfig, rssapi string) error {
 	logger.Log.Debug("Indexer search: ", indexer.Template_indexer)
 
-	hasIndexer, _ := config.ConfigDB.Has("indexer_" + indexer.Template_indexer)
-	if !hasIndexer {
-		logger.Log.Errorln("Indexer Config not found: ", "indexer_"+indexer.Template_indexer)
+	if !config.ConfigCheck("indexer_" + indexer.Template_indexer) {
 		return errors.New("indexer config missing")
 	}
 	var cfg_indexer config.IndexersConfig
@@ -758,9 +730,7 @@ func (s Searcher) MoviesSearchImdb(movie database.Movie) searchResults {
 		failedindexer(failed)
 	}
 
-	hasQuality, _ := config.ConfigDB.Has("quality_" + s.Quality)
-	if !hasQuality {
-		logger.Log.Errorln("Quality Config not found: ", "quality_"+s.Quality)
+	if !config.ConfigCheck("quality_" + s.Quality) {
 		return searchResults{}
 	}
 	var cfg_quality config.QualityConfig
@@ -778,9 +748,7 @@ func (s Searcher) MoviesSearchTitle(movie database.Movie, title string) searchRe
 	if len(title) == 0 {
 		return searchResults{retnzb}
 	}
-	hasQuality, _ := config.ConfigDB.Has("quality_" + s.Quality)
-	if !hasQuality {
-		logger.Log.Errorln("Quality Config not found: ", "quality_"+s.Quality)
+	if !config.ConfigCheck("quality_" + s.Quality) {
 		return searchResults{}
 	}
 	var cfg_quality config.QualityConfig
@@ -822,9 +790,7 @@ func (s Searcher) SeriesSearchTvdb() searchResults {
 		logger.Log.Error("Newznab Search failed: ", s.Dbserie.ThetvdbID, " with ", s.Nzbindexer.URL)
 		failedindexer(failed)
 	}
-	hasQuality, _ := config.ConfigDB.Has("quality_" + s.Quality)
-	if !hasQuality {
-		logger.Log.Errorln("Quality Config not found: ", "quality_"+s.Quality)
+	if !config.ConfigCheck("quality_" + s.Quality) {
 		return searchResults{}
 	}
 	var cfg_quality config.QualityConfig
@@ -839,9 +805,7 @@ func (s Searcher) SeriesSearchTvdb() searchResults {
 
 func (s Searcher) SeriesSearchTitle(title string) searchResults {
 	retnzb := []nzbwithprio{}
-	hasQuality, _ := config.ConfigDB.Has("quality_" + s.Quality)
-	if !hasQuality {
-		logger.Log.Errorln("Quality Config not found: ", "quality_"+s.Quality)
+	if !config.ConfigCheck("quality_" + s.Quality) {
 		return searchResults{}
 	}
 	var cfg_quality config.QualityConfig

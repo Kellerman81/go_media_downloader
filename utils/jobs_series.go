@@ -42,17 +42,13 @@ func JobImportDbSeries(serieconfig config.SerieConfig, configEntry config.MediaT
 	var dbserie database.Dbserie
 	dbserieadded := false
 
-	hasGeneral, _ := config.ConfigDB.Has("general")
-	if !hasGeneral {
-		logger.Log.Errorln("General Config not found")
+	if !config.ConfigCheck("general") {
 		return
 	}
 	var cfg_general config.GeneralConfig
 	config.ConfigDB.Get("general", &cfg_general)
 
-	hasImdb, _ := config.ConfigDB.Has("imdb")
-	if !hasImdb {
-		logger.Log.Errorln("IMDB Config not found")
+	if !config.ConfigCheck("imdb") {
 		return
 	}
 	var cfg_imdb config.ImdbConfig
@@ -225,17 +221,13 @@ func JobReloadDbSeries(dbserie database.Dbserie, configEntry config.MediaTypeCon
 
 	logger.Log.Debug("DbSeries Add for: ", dbserie.ThetvdbID)
 
-	hasGeneral, _ := config.ConfigDB.Has("general")
-	if !hasGeneral {
-		logger.Log.Errorln("General Config not found")
+	if !config.ConfigCheck("general") {
 		return
 	}
 	var cfg_general config.GeneralConfig
 	config.ConfigDB.Get("general", &cfg_general)
 
-	hasImdb, _ := config.ConfigDB.Has("imdb")
-	if !hasImdb {
-		logger.Log.Errorln("IMDB Config not found")
+	if !config.ConfigCheck("imdb") {
 		return
 	}
 	var cfg_imdb config.ImdbConfig
@@ -459,9 +451,7 @@ func JobImportSeriesParseV2(file string, updatemissing bool, configEntry config.
 	addunmatched := false
 	if entriesfound >= 1 {
 
-		hasQuality, _ := config.ConfigDB.Has("quality_" + list.Template_quality)
-		if !hasQuality {
-			logger.Log.Errorln("Quality Config not found: ", "quality_"+list.Template_quality)
+		if !config.ConfigCheck("quality_" + list.Template_quality) {
 			return
 		}
 		var cfg_quality config.QualityConfig
@@ -516,9 +506,7 @@ func JobImportSeriesParseV2(file string, updatemissing bool, configEntry config.
 					if series.Rootpath == "" && series.ID != 0 {
 						rootpath := ""
 						for idxpath := range configEntry.Data {
-							hasPath, _ := config.ConfigDB.Has("path_" + configEntry.Data[idxpath].Template_path)
-							if !hasPath {
-								logger.Log.Errorln("Path Config not found: ", "path_"+configEntry.Data[idxpath].Template_path)
+							if !config.ConfigCheck("path_" + configEntry.Data[idxpath].Template_path) {
 								continue
 							}
 							var cfg_path config.PathsConfig
@@ -580,9 +568,7 @@ func JobImportSeriesParseV2(file string, updatemissing bool, configEntry config.
 var SeriesStructureJobRunning map[string]bool
 
 func RefreshSeries() {
-	hasGeneral, _ := config.ConfigDB.Has("general")
-	if !hasGeneral {
-		logger.Log.Errorln("General Config not found")
+	if !config.ConfigCheck("general") {
 		return
 	}
 	var cfg_general config.GeneralConfig
@@ -601,9 +587,7 @@ func RefreshSeries() {
 }
 
 func RefreshSeriesInc() {
-	hasGeneral, _ := config.ConfigDB.Has("general")
-	if !hasGeneral {
-		logger.Log.Errorln("General Config not found")
+	if !config.ConfigCheck("general") {
 		return
 	}
 	var cfg_general config.GeneralConfig
@@ -644,10 +628,7 @@ func Series_single_jobs(job string, typename string, listname string, force bool
 		delete(SerieJobRunning, jobName)
 		database.ReadWriteMu.Unlock()
 	}()
-	hasGeneral, _ := config.ConfigDB.Has("general")
-
-	if !hasGeneral {
-		logger.Log.Errorln("General Config not found")
+	if !config.ConfigCheck("general") {
 		return
 	}
 	var cfg_general config.GeneralConfig
@@ -739,9 +720,7 @@ func Series_single_jobs(job string, typename string, listname string, force bool
 var Lastseries string
 
 func Importnewseriessingle(row config.MediaTypeConfig, list config.MediaListsConfig) {
-	hasGeneral, _ := config.ConfigDB.Has("general")
-	if !hasGeneral {
-		logger.Log.Errorln("General Config not found")
+	if !config.ConfigCheck("general") {
 		return
 	}
 	var cfg_general config.GeneralConfig
@@ -768,17 +747,13 @@ var LastSeriesPath string
 var LastSeriesFilePath string
 
 func getnewepisodessingle(row config.MediaTypeConfig, list config.MediaListsConfig) {
-	hasGeneral, _ := config.ConfigDB.Has("general")
-	if !hasGeneral {
-		logger.Log.Errorln("General Config not found")
+	if !config.ConfigCheck("general") {
 		return
 	}
 	var cfg_general config.GeneralConfig
 	config.ConfigDB.Get("general", &cfg_general)
 
-	hasQuality, _ := config.ConfigDB.Has("quality_" + list.Template_quality)
-	if !hasQuality {
-		logger.Log.Errorln("Quality Config not found: ", "quality_"+list.Template_quality)
+	if !config.ConfigCheck("quality_" + list.Template_quality) {
 		return
 	}
 	var cfg_quality config.QualityConfig
@@ -790,9 +765,7 @@ func getnewepisodessingle(row config.MediaTypeConfig, list config.MediaListsConf
 	logger.Log.Info("Scan SerieEpisodeFile")
 	filesfound := make([]string, 0, 5000)
 	for idxpath := range row.Data {
-		hasPath, _ := config.ConfigDB.Has("path_" + row.Data[idxpath].Template_path)
-		if !hasPath {
-			logger.Log.Errorln("Path Config not found: ", "path_"+row.Data[idxpath].Template_path)
+		if !config.ConfigCheck("path_" + row.Data[idxpath].Template_path) {
 			continue
 		}
 		var cfg_path config.PathsConfig
@@ -838,9 +811,7 @@ func checkmissingepisodesflag(row config.MediaTypeConfig, list config.MediaLists
 }
 
 func checkmissingepisodessingle(row config.MediaTypeConfig, list config.MediaListsConfig) {
-	hasGeneral, _ := config.ConfigDB.Has("general")
-	if !hasGeneral {
-		logger.Log.Errorln("General Config not found")
+	if !config.ConfigCheck("general") {
 		return
 	}
 	var cfg_general config.GeneralConfig
@@ -863,9 +834,7 @@ func checkmissingepisodessingle(row config.MediaTypeConfig, list config.MediaLis
 var LastSeriesStructure string
 
 func seriesStructureSingle(row config.MediaTypeConfig, list config.MediaListsConfig) {
-	hasGeneral, _ := config.ConfigDB.Has("general")
-	if !hasGeneral {
-		logger.Log.Errorln("General Config not found")
+	if !config.ConfigCheck("general") {
 		return
 	}
 	var cfg_general config.GeneralConfig
@@ -875,17 +844,13 @@ func seriesStructureSingle(row config.MediaTypeConfig, list config.MediaListsCon
 
 	for idxpath := range row.DataImport {
 		mappathimport := row.DataImport[idxpath].Template_path
-		hasPathimport, _ := config.ConfigDB.Has("path_" + mappathimport)
-		if !hasPathimport {
-			logger.Log.Errorln("Path Config not found: ", "path_"+mappathimport)
+		if !config.ConfigCheck("path_" + mappathimport) {
 			continue
 		}
 		var cfg_path_import config.PathsConfig
 		config.ConfigDB.Get("path_"+mappathimport, &cfg_path_import)
 
-		hasPath, _ := config.ConfigDB.Has("path_" + row.Data[0].Template_path)
-		if !hasPath {
-			logger.Log.Errorln("Path Config not found: ", "path_"+row.Data[0].Template_path)
+		if !config.ConfigCheck("path_" + row.Data[0].Template_path) {
 			continue
 		}
 		var cfg_path config.PathsConfig

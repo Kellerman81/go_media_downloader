@@ -91,9 +91,7 @@ func notifier(event string, noticonfig config.MediaNotificationConfig, notifierd
 	MessageTitle = strings.Replace(MessageTitle, "{EpisodeTitle}", notifierdata.EpisodeTitle, -1)
 	MessageTitle = strings.Replace(MessageTitle, "{Configuration}", notifierdata.Configuration, -1)
 
-	hasNotification, _ := config.ConfigDB.Has("notification_" + noticonfig.Map_notification)
-	if !hasNotification {
-		logger.Log.Errorln("Notification Config not found: ", "notification_"+noticonfig.Map_notification)
+	if !config.ConfigCheck("notification_" + noticonfig.Map_notification) {
 		return
 	}
 	var cfg_notification config.NotificationConfig
@@ -132,9 +130,7 @@ func notifier(event string, noticonfig config.MediaNotificationConfig, notifierd
 
 func Feeds(configEntry config.MediaTypeConfig, list config.MediaListsConfig) feedResults {
 
-	hasList, _ := config.ConfigDB.Has("list_" + list.Template_list)
-	if !hasList {
-		logger.Log.Errorln("List Config not found: ", "list_"+list.Template_list)
+	if !config.ConfigCheck("list_" + list.Template_list) {
 		return feedResults{}
 	}
 	var cfg_list config.ListsConfig

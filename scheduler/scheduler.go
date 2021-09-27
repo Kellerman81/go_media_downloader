@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/config"
-	"github.com/Kellerman81/go_media_downloader/logger"
 	"github.com/Kellerman81/go_media_downloader/tasks"
 	"github.com/Kellerman81/go_media_downloader/utils"
 	"github.com/gin-gonic/gin"
@@ -32,9 +31,7 @@ func converttime(interval string) time.Duration {
 	}
 }
 func InitScheduler() {
-	hasGeneral, _ := config.ConfigDB.Has("general")
-	if !hasGeneral {
-		logger.Log.Errorln("General Config not found")
+	if !config.ConfigCheck("general") {
 		return
 	}
 	var cfg_general config.GeneralConfig
@@ -55,9 +52,7 @@ func InitScheduler() {
 		var cfg_movie config.MediaTypeConfig
 		config.ConfigDB.Get(string(idxmovie), &cfg_movie)
 
-		hasScheduler, _ := config.ConfigDB.Has("scheduler_" + cfg_movie.Template_scheduler)
-		if !hasScheduler {
-			logger.Log.Errorln("Scheduler Config not found: ", "scheduler_"+cfg_movie.Template_scheduler)
+		if !config.ConfigCheck("scheduler_" + cfg_movie.Template_scheduler) {
 			continue
 		}
 		var schedule config.SchedulerConfig
@@ -112,9 +107,7 @@ func InitScheduler() {
 
 		for idxlist := range cfg_movie.Lists {
 			if cfg_movie.Lists[idxlist].Template_scheduler != "" {
-				hasScheduler, _ := config.ConfigDB.Has("scheduler_" + cfg_movie.Lists[idxlist].Template_scheduler)
-				if !hasScheduler {
-					logger.Log.Errorln("Scheduler Config not found: ", "scheduler_"+cfg_movie.Lists[idxlist].Template_scheduler)
+				if !config.ConfigCheck("scheduler_" + cfg_movie.Lists[idxlist].Template_scheduler) {
 					continue
 				}
 				config.ConfigDB.Get("scheduler_"+cfg_movie.Lists[idxlist].Template_scheduler, &schedule)
@@ -137,9 +130,7 @@ func InitScheduler() {
 		}
 	}
 
-	hasDefScheduler, _ := config.ConfigDB.Has("scheduler_Default")
-	if !hasDefScheduler {
-		logger.Log.Errorln("Scheduler Config not found: ", "scheduler_Default")
+	if !config.ConfigCheck("scheduler_Default") {
 		return
 	}
 	var defaultschedule config.SchedulerConfig
@@ -157,9 +148,7 @@ func InitScheduler() {
 		var cfg_serie config.MediaTypeConfig
 		config.ConfigDB.Get(string(idxserie), &cfg_serie)
 
-		hasScheduler, _ := config.ConfigDB.Has("scheduler_" + cfg_serie.Template_scheduler)
-		if !hasScheduler {
-			logger.Log.Errorln("Scheduler Config not found: ", "scheduler_"+cfg_serie.Template_scheduler)
+		if !config.ConfigCheck("scheduler_" + cfg_serie.Template_scheduler) {
 			continue
 		}
 		var schedule config.SchedulerConfig
@@ -212,16 +201,12 @@ func InitScheduler() {
 			}, converttime(schedule.Interval_indexer_rss))
 		}
 		for idxlist := range cfg_serie.Lists {
-			hasScheduler, _ := config.ConfigDB.Has("scheduler_" + cfg_serie.Template_scheduler)
-			if !hasScheduler {
-				logger.Log.Errorln("Scheduler Config not found: ", "scheduler_"+cfg_serie.Template_scheduler)
+			if !config.ConfigCheck("scheduler_" + cfg_serie.Template_scheduler) {
 				continue
 			}
 			config.ConfigDB.Get("scheduler_"+cfg_serie.Template_scheduler, &schedule)
 			if cfg_serie.Lists[idxlist].Template_scheduler != "" {
-				hasScheduler, _ := config.ConfigDB.Has("scheduler_" + cfg_serie.Lists[idxlist].Template_scheduler)
-				if !hasScheduler {
-					logger.Log.Errorln("Scheduler Config not found: ", "scheduler_"+cfg_serie.Lists[idxlist].Template_scheduler)
+				if !config.ConfigCheck("scheduler_" + cfg_serie.Lists[idxlist].Template_scheduler) {
 					continue
 				}
 				config.ConfigDB.Get("scheduler_"+cfg_serie.Lists[idxlist].Template_scheduler, &schedule)
