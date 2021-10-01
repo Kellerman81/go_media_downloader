@@ -47,6 +47,12 @@ func JobImportMovies(dbmovie database.Dbmovie, configEntry config.MediaTypeConfi
 	var cfg_general config.GeneralConfig
 	config.ConfigDB.Get("general", &cfg_general)
 
+	if !config.ConfigCheck("list_" + list.Template_list) {
+		return
+	}
+	var cfg_list config.ListsConfig
+	config.ConfigDB.Get("list_"+list.Template_list, &cfg_list)
+
 	finddbmovie, _ := database.GetDbmovie(database.Query{Where: "imdb_id = ?", WhereArgs: []interface{}{dbmovie.ImdbID}})
 	cdbmovie, _ := database.CountRows("dbmovies", database.Query{Where: "imdb_id = ?", WhereArgs: []interface{}{dbmovie.ImdbID}})
 	if cdbmovie == 0 {
@@ -72,6 +78,42 @@ func JobImportMovies(dbmovie database.Dbmovie, configEntry config.MediaTypeConfi
 			}
 		} else {
 			dbmovie.GetMetadata(cfg_general.MovieMetaSourceImdb, cfg_general.MovieMetaSourceTmdb, cfg_general.MovieMetaSourceOmdb, cfg_general.MovieMetaSourceTrakt)
+		}
+
+		if cfg_list.MinVotes != 0 {
+			if dbmovie.VoteCount < cfg_list.MinVotes && dbmovie.VoteCount != 0 {
+				return
+			}
+			countergenre, _ := database.ImdbCountRows("imdb_ratings", database.Query{Where: "tconst = ? and num_votes < ?", WhereArgs: []interface{}{dbmovie.ImdbID, cfg_list.MinVotes}})
+			if countergenre >= 1 {
+				return
+			}
+		}
+		if cfg_list.MinRating != 0 && cfg_list.MinRating != 0.0 {
+			if int(dbmovie.VoteAverage) < int(cfg_list.MinRating) && dbmovie.VoteAverage != 0 && dbmovie.VoteAverage != 0.0 {
+				return
+			}
+			countergenre, _ := database.ImdbCountRows("imdb_ratings", database.Query{Where: "tconst = ? and average_rating < ?", WhereArgs: []interface{}{dbmovie.ImdbID, cfg_list.MinRating}})
+			if countergenre >= 1 {
+				return
+			}
+		}
+		if len(cfg_list.Excludegenre) >= 1 {
+			excludebygenre := false
+			for idxgenre := range cfg_list.Excludegenre {
+				if strings.Contains(strings.ToLower(dbmovie.Genres), strings.ToLower(cfg_list.Excludegenre[idxgenre])) {
+					excludebygenre = true
+					break
+				}
+				countergenre, _ := database.ImdbCountRows("imdb_genres", database.Query{Where: "tconst = ? and genre = ?", WhereArgs: []interface{}{dbmovie.ImdbID, cfg_list.Excludegenre[idxgenre]}})
+				if countergenre >= 1 {
+					excludebygenre = true
+					break
+				}
+			}
+			if excludebygenre {
+				return
+			}
 		}
 
 		cdbmovie2, _ := database.CountRows("dbmovies", database.Query{Where: "imdb_id = ?", WhereArgs: []interface{}{dbmovie.ImdbID}})
