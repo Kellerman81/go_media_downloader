@@ -43,28 +43,28 @@ jobs:
       uses: actions/upload-artifact@v2
       with:
         name: go_media_downloader-x86-win.exe
-        path: dist/go_media_downloader-x86-win.exe
+        path: go_media_downloader-x86-win.exe
         
     - name: Upload Windows64 binary
       uses: actions/upload-artifact@v2
       with:
         name: go_media_downloader-amd64-win.exe
-        path: dist/go_media_downloader-amd64-win.exe
+        path: go_media_downloader-amd64-win.exe
         
     - name: Upload Linux32 binary
       uses: actions/upload-artifact@v2
       with:
         name: go_media_downloader-x86-linux
-        path: dist/go_media_downloader-x86-linux
+        path: go_media_downloader-x86-linux
         
     - name: Upload Linux64 binary
       uses: actions/upload-artifact@v2
       with:
         name: go_media_downloader-amd64-linux
-        path: dist/go_media_downloader-amd64-linux
+        path: go_media_downloader-amd64-linux
         
     - name: Upload Macos binary
       uses: actions/upload-artifact@v2
       with:
         name: go_media_downloader-amd64-macos
-        path: dist/go_media_downloader-amd64-macos
+        path: go_media_downloader-amd64-macos
