@@ -18,6 +18,9 @@ jobs:
       with:
         go-version: 1.17
 
+    - name: Prepare
+      run: go get
+      
     - name: Build Linux64
       run: GOOS=linux GOARCH=amd64 go build -o go_media_downloader-amd64-linux -v ./...
       
