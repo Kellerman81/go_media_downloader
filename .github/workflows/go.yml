@@ -1,0 +1,34 @@
+name: Go
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Set up Go
+      uses: actions/setup-go@v2
+      with:
+        go-version: 1.17
+
+    - name: Build Linux64
+      run: GOOS=linux GOARCH=amd64 go build -o go_media_downloader-amd64-linux -v ./...
+      
+    - name: Build Linux32
+      run: GOOS=linux GOARCH=386 go build -o go_media_downloader-x86-linux -v ./...
+      
+    - name: Build Windows64
+      run: GOOS=windows GOARCH=amd64 go build -o go_media_downloader-amd64-win.exe ./...
+      
+    - name: Build Windows32
+      run: GOOS=windows GOARCH=386 go build -o go_media_downloader-x86-win.exe ./...
+      
+    - name: Build Macos64
+      run: GOOS=darwin GOARCH=amd64 go build -o go_media_downloader-amd64-macos ./...
