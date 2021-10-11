@@ -162,37 +162,44 @@ func main() {
 	router := gin.New()
 	router.Use(ginlog.Logger(logger.Log), gin.Recovery())
 
-	router.HTMLRender = ginview.New(goview.Config{
-		Root:      "views",
-		Extension: ".html",
-		Master:    "layouts/master",
-		//Partials:  []string{"partials/ad"},
-		Funcs: template.FuncMap{"copy": func() string {
-			return time.Now().Format("2006")
-		}},
-		DisableCache: false,
-		Delims:       goview.Delims{},
-	})
-	//router.HTMLRender = ginview.Default()
-	router.Static("/dist", "./views/dist")
-	router.Static("/pages", "./views/pages")
-	router.Static("/plugins", "./views/plugins")
-	router.Static("/build", "./views/build")
-	router.GET("/", func(ctx *gin.Context) {
-		//render with master-
-		ctx.HTML(http.StatusOK, "index", gin.H{
-			"title": "Index title!",
-			"add": func(a int, b int) int {
-				return a + b
-			},
+	if _, err := os.Stat("./views"); !os.IsNotExist(err) {
+		router.HTMLRender = ginview.New(goview.Config{
+			Root:      "views",
+			Extension: ".html",
+			Master:    "layouts/master",
+			//Partials:  []string{"partials/ad"},
+			Funcs: template.FuncMap{"copy": func() string {
+				return time.Now().Format("2006")
+			}},
+			DisableCache: false,
+			Delims:       goview.Delims{},
 		})
-	})
-	router.GET("/dbmovies", func(ctx *gin.Context) {
-		//render with master-
-		ctx.HTML(http.StatusOK, "dbmovies", gin.H{
-			"title": "DB Movies",
+		//router.HTMLRender = ginview.Default()
+		router.Static("/dist", "./views/dist")
+		router.Static("/pages", "./views/pages")
+		router.Static("/plugins", "./views/plugins")
+		router.Static("/build", "./views/build")
+		router.GET("/", func(ctx *gin.Context) {
+			//render with master-
+			ctx.HTML(http.StatusOK, "index", gin.H{
+				"title": "Index title!",
+				"add": func(a int, b int) int {
+					return a + b
+				},
+			})
 		})
-	})
+		router.GET("/dbmovies", func(ctx *gin.Context) {
+			//render with master-
+			ctx.HTML(http.StatusOK, "dbmovies", gin.H{
+				"title": "DB Movies",
+			})
+		})
+
+		router.GET("/page", func(ctx *gin.Context) {
+			//render only file, must full name with extension
+			ctx.HTML(http.StatusOK, "page.html", gin.H{"title": "Page file title!!"})
+		})
+	}
 	routerapi := router.Group("/api/" + cfg_general.WebApiKey)
 	{
 		routerapi.GET("/fillimdb", func(ctx *gin.Context) {
@@ -245,10 +252,6 @@ func main() {
 	// })
 	router.GET("/dbclose", func(ctx *gin.Context) {
 		database.DB = nil
-	})
-	router.GET("/page", func(ctx *gin.Context) {
-		//render only file, must full name with extension
-		ctx.HTML(http.StatusOK, "page.html", gin.H{"title": "Page file title!!"})
 	})
 	if strings.EqualFold(cfg_general.LogLevel, "Debug") {
 		ginpprof.Wrap(router)

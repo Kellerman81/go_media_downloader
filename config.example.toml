@@ -38,6 +38,8 @@ tmdblimitercalls=20 # max limitercalls in limiterseconds
 omdblimiterseconds=1 # will only change after restart
 omdblimitercalls=10 # max limitercalls in limiterseconds
 
+ffprobepath="" #Path where the ffprobe file is located in (without the actual file) - Linux Users should install with package manager (ex. apt-get -y install ffmpeg) - Windows Users please download https://www.gyan.dev/ffmpeg/builds/ffmpeg-git-github
+
 ##### imdb configuaration #####
 
 [imdbindexer]

@@ -161,6 +161,7 @@ type GeneralConfig struct {
 	Tmdblimitercalls             int      `koanf:"tmdblimitercalls"`
 	Omdblimiterseconds           int      `koanf:"omdblimiterseconds"`
 	Omdblimitercalls             int      `koanf:"omdblimitercalls"`
+	FfprobePath                  string   `koanf:"ffprobepath"`
 }
 
 type DownloaderConfig struct {
