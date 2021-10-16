@@ -10,12 +10,12 @@ require (
 	github.com/gdm85/go-libdeluge v0.5.5 //access deluge
 	github.com/gin-gonic/gin v1.7.4 //webapi
 	github.com/goccy/go-reflect v1.1.0 //alternate reflect
-	github.com/golang-migrate/migrate/v4 v4.14.1 //initialize db
+	github.com/golang-migrate/migrate/v4 v4.15.0 //initialize db
 	github.com/gregdel/pushover v1.1.0 //notification
 	github.com/h2non/filetype v1.1.1
 	github.com/jmoiron/sqlx v1.3.4 //structscan for db
 	github.com/karrick/godirwalk v1.16.1 //faster walk
-	github.com/knadh/koanf v1.2.3 //initial config
+	github.com/knadh/koanf v1.2.4 //initial config
 	github.com/mattn/go-sqlite3 v1.14.8 //data and imdb db
 	github.com/pkg/errors v0.9.1
 	github.com/recoilme/pudge v1.0.3 //config db
@@ -38,7 +38,6 @@ require (
 	github.com/go-redis/redis v6.15.9+incompatible // indirect
 	github.com/go-sql-driver/mysql v1.6.0 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
-	github.com/google/go-cmp v0.5.6 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
@@ -46,14 +45,15 @@ require (
 	github.com/lib/pq v1.10.3 // indirect
 	github.com/mattn/go-isatty v0.0.14 // indirect
 	github.com/mitchellh/copystructure v1.2.0 // indirect
-	github.com/mitchellh/mapstructure v1.4.1 // indirect
+	github.com/mitchellh/mapstructure v1.4.2 // indirect
 	github.com/mitchellh/reflectwalk v1.0.2 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/pelletier/go-toml v1.9.4 // indirect
 	github.com/ugorji/go/codec v1.2.6 // indirect
-	golang.org/x/crypto v0.0.0-20210817164053-32db794688a5 // indirect
-	golang.org/x/sys v0.0.0-20210910150752-751e447fb3d0 // indirect
+	go.uber.org/atomic v1.9.0 // indirect
+	golang.org/x/crypto v0.0.0-20210921155107-089bfa567519 // indirect
+	golang.org/x/sys v0.0.0-20211013075003-97ac67df715c // indirect
 	google.golang.org/protobuf v1.27.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
