@@ -21,6 +21,7 @@ jobs:
     - name: Build with xgo
       uses: crazy-max/ghaction-xgo@v1
       with:
+          dest: .
           prefix: go_media_downloader
           targets: windows/386,windows/amd64,linux/386,linux/amd64,darwin/amd64
           v: true
@@ -34,35 +35,35 @@ jobs:
       with:
         type: 'zip'
         filename: 'develop-windows-x86.zip'
-        exclusions: '*.git* /.github/* /api/* /apiexternal/* /config/* /database/* /logger/* /newznab/* /nzbget/* /scanner/* /scheduler/* /tasks/* /utils/* /views/* Dockerfile go.* *.zip *.go /build/go_media_downloader-linux* /build/go_media_downloader-darwin* /build/go_media_downloader-windows-*amd64.exe'
+        exclusions: '*.git* /.github/* /api/* /apiexternal/* /config/* /database/* /logger/* /newznab/* /nzbget/* /scanner/* /scheduler/* /tasks/* /utils/* /views/* Dockerfile go.* *.zip *.go go_media_downloader-linux* go_media_downloader-darwin* go_media_downloader-windows-*amd64.exe'
 
     - name: Zip Win64 binary
       uses: thedoctor0/zip-release@master
       with:
         type: 'zip'
         filename: 'develop-windows-x64.zip'
-        exclusions: '*.git* /.github/* /api/* /apiexternal/* /config/* /database/* /logger/* /newznab/* /nzbget/* /scanner/* /scheduler/* /tasks/* /utils/* /views/* Dockerfile go.* *.zip *.go /build/go_media_downloader-linux* /build/go_media_downloader-darwin* /build/go_media_downloader-windows-*386.exe'
+        exclusions: '*.git* /.github/* /api/* /apiexternal/* /config/* /database/* /logger/* /newznab/* /nzbget/* /scanner/* /scheduler/* /tasks/* /utils/* /views/* Dockerfile go.* *.zip *.go go_media_downloader-linux* go_media_downloader-darwin* go_media_downloader-windows-*386.exe'
 
     - name: Zip Linux32 binary
       uses: thedoctor0/zip-release@master
       with:
         type: 'zip'
         filename: 'develop-linux-x86.zip'
-        exclusions: '*.git* /.github/* /api/* /apiexternal/* /config/* /database/* /logger/* /newznab/* /nzbget/* /scanner/* /scheduler/* /tasks/* /utils/* /views/* Dockerfile go.* *.zip *.go /build/go_media_downloader-windows*.exe /build/go_media_downloader-darwin* /build/go_media_downloader-linux-*amd64'
+        exclusions: '*.git* /.github/* /api/* /apiexternal/* /config/* /database/* /logger/* /newznab/* /nzbget/* /scanner/* /scheduler/* /tasks/* /utils/* /views/* Dockerfile go.* *.zip *.go go_media_downloader-windows*.exe go_media_downloader-darwin* go_media_downloader-linux-*amd64'
 
     - name: Zip Linux64 binary
       uses: thedoctor0/zip-release@master
       with:
         type: 'zip'
         filename: 'develop-linux-x64.zip'
-        exclusions: '*.git* /.github/* /api/* /apiexternal/* /config/* /database/* /logger/* /newznab/* /nzbget/* /scanner/* /scheduler/* /tasks/* /utils/* /views/* Dockerfile go.* *.zip *.go /build/go_media_downloader-windows*.exe /build/go_media_downloader-darwin* /build/go_media_downloader-linux-*386'
+        exclusions: '*.git* /.github/* /api/* /apiexternal/* /config/* /database/* /logger/* /newznab/* /nzbget/* /scanner/* /scheduler/* /tasks/* /utils/* /views/* Dockerfile go.* *.zip *.go go_media_downloader-windows*.exe go_media_downloader-darwin* go_media_downloader-linux-*386'
     
     - name: Zip Mac64 binary
       uses: thedoctor0/zip-release@master
       with:
         type: 'zip'
         filename: 'develop-macos-x64.zip'
-        exclusions: '*.git* /.github/* /api/* /apiexternal/* /config/* /database/* /logger/* /newznab/* /nzbget/* /scanner/* /scheduler/* /tasks/* /utils/* /views/* Dockerfile go.* *.zip *.go /build/go_media_downloader-windows*.exe /build/go_media_downloader-linux*'
+        exclusions: '*.git* /.github/* /api/* /apiexternal/* /config/* /database/* /logger/* /newznab/* /nzbget/* /scanner/* /scheduler/* /tasks/* /utils/* /views/* Dockerfile go.* *.zip *.go go_media_downloader-windows*.exe go_media_downloader-linux*'
 
     - name: Development Release
       if: ${{ github.event_name == 'push' }}
