@@ -113,8 +113,8 @@ jobs:
         automatic_release_tag: latest_develop
         title: "Latest development build"
         files: |
-          develop-macos-x64.tar.gz
-          develop-linux-x64.tar.gz
+          develop-macos-x64.zip
+          develop-linux-x64.zip
           develop-windows-x64.zip
-          develop-linux-x86.tar.gz
+          develop-linux-x86.zip
           develop-windows-x86.zip
