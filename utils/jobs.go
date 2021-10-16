@@ -129,12 +129,18 @@ func notifier(event string, noticonfig config.MediaNotificationConfig, notifierd
 }
 
 func Feeds(configEntry config.MediaTypeConfig, list config.MediaListsConfig) feedResults {
-
+	if !list.Enabled {
+		return feedResults{}
+	}
 	if !config.ConfigCheck("list_" + list.Template_list) {
 		return feedResults{}
 	}
 	var cfg_list config.ListsConfig
 	config.ConfigDB.Get("list_"+list.Template_list, &cfg_list)
+
+	if !cfg_list.Enabled {
+		return feedResults{}
+	}
 
 	if strings.EqualFold(cfg_list.Type, "seriesconfig") {
 		configSerie := config.LoadSerie(cfg_list.Series_config_file)
@@ -160,7 +166,7 @@ func Feeds(configEntry config.MediaTypeConfig, list config.MediaListsConfig) fee
 						continue
 					}
 				}
-				if cfg_list.MinRating != 0 && cfg_list.MinRating != 0.0 {
+				if cfg_list.MinRating != 0 {
 					countergenre, _ := database.ImdbCountRows("imdb_ratings", database.Query{Where: "tconst = ? and average_rating < ?", WhereArgs: []interface{}{traktpopular[idx].Ids.Imdb, cfg_list.MinRating}})
 					if countergenre >= 1 {
 						continue
@@ -213,7 +219,7 @@ func Feeds(configEntry config.MediaTypeConfig, list config.MediaListsConfig) fee
 						continue
 					}
 				}
-				if cfg_list.MinRating != 0 && cfg_list.MinRating != 0.0 {
+				if cfg_list.MinRating != 0 {
 					countergenre, _ := database.ImdbCountRows("imdb_ratings", database.Query{Where: "tconst = ? and average_rating < ?", WhereArgs: []interface{}{traktpopular[idx].Movie.Ids.Imdb, cfg_list.MinRating}})
 					if countergenre >= 1 {
 						continue
@@ -266,7 +272,7 @@ func Feeds(configEntry config.MediaTypeConfig, list config.MediaListsConfig) fee
 						continue
 					}
 				}
-				if cfg_list.MinRating != 0 && cfg_list.MinRating != 0.0 {
+				if cfg_list.MinRating != 0 {
 					countergenre, _ := database.ImdbCountRows("imdb_ratings", database.Query{Where: "tconst = ? and average_rating < ?", WhereArgs: []interface{}{traktpopular[idx].Movie.Ids.Imdb, cfg_list.MinRating}})
 					if countergenre >= 1 {
 						continue

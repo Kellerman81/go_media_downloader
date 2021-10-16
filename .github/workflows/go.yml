@@ -68,3 +68,53 @@ jobs:
       with:
         name: go_media_downloader-amd64-macos
         path: go_media_downloader-amd64-macos
+
+    - name: Zip Win32 binary
+      uses: thedoctor0/zip-release@master
+      with:
+        type: 'zip'
+        filename: 'develop-windows-x86.zip'
+        exclusions: '*.toml* /*schema/* compose-run.yml api-examples.txt LICENSE *.md* go_media_downloader-x86-win.exe'
+      
+    - name: Zip Win64 binary
+      uses: thedoctor0/zip-release@master
+      with:
+        type: 'zip'
+        filename: 'develop-windows-x64.zip'
+        exclusions: '*.toml* /*schema/* compose-run.yml api-examples.txt LICENSE *.md* go_media_downloader-amd64-win.exe'
+    
+    - name: Zip Linux32 binary
+      uses: thedoctor0/zip-release@master
+      with:
+        type: 'tar'
+        filename: 'develop-linux-x86.tar.gz'
+        exclusions: '*.toml* /*schema/* compose-run.yml api-examples.txt LICENSE *.md* go_media_downloader-x86-linux'
+   
+    - name: Zip Linux64 binary
+      uses: thedoctor0/zip-release@master
+      with:
+        type: 'tar'
+        filename: 'develop-linux-x64.tar.gz'
+        exclusions: '*.toml* /*schema/* compose-run.yml api-examples.txt LICENSE *.md* go_media_downloader-amd64-linux'
+    
+    - name: Zip Mac64 binary
+      uses: thedoctor0/zip-release@master
+      with:
+        type: 'tar'
+        filename: 'develop-macos-x64.tar.gz'
+        exclusions: '*.toml* /*schema/* compose-run.yml api-examples.txt LICENSE *.md* go_media_downloader-amd64-macos'
+    
+    - name: Development Release
+      if: ${{ github.event_name == 'push' }}
+      uses: marvinpinto/action-automatic-releases@v1.1.2
+      with:
+        repo_token: "${{ secrets.GITHUB_TOKEN }}"
+        prerelease: true
+        automatic_release_tag: latest_develop
+        title: "Latest development build"
+        files: |
+          develop-macos-x64.tar.gz
+          develop-linux-x64.tar.gz
+          develop-windows-x64.zip
+          develop-linux-x86.tar.gz
+          develop-windows-x86.zip

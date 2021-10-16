@@ -89,8 +89,8 @@ func JobImportMovies(dbmovie database.Dbmovie, configEntry config.MediaTypeConfi
 				return
 			}
 		}
-		if cfg_list.MinRating != 0 && cfg_list.MinRating != 0.0 {
-			if int(dbmovie.VoteAverage) < int(cfg_list.MinRating) && dbmovie.VoteAverage != 0 && dbmovie.VoteAverage != 0.0 {
+		if cfg_list.MinRating != 0 {
+			if int(dbmovie.VoteAverage) < int(cfg_list.MinRating) && dbmovie.VoteAverage != 0 {
 				return
 			}
 			countergenre, _ := database.ImdbCountRows("imdb_ratings", database.Query{Where: "tconst = ? and average_rating < ?", WhereArgs: []interface{}{dbmovie.ImdbID, cfg_list.MinRating}})
@@ -1045,7 +1045,7 @@ func getMissingIMDBMoviesV2(configEntry config.MediaTypeConfig, list config.Medi
 					continue
 				}
 			}
-			if cfg_list.MinRating != 0 && cfg_list.MinRating != 0.0 {
+			if cfg_list.MinRating != 0 {
 				countergenre, _ := database.ImdbCountRows("imdb_ratings", database.Query{Where: "tconst = ? and average_rating < ?", WhereArgs: []interface{}{data[idx][1], cfg_list.MinRating}})
 				if countergenre >= 1 {
 					continue
