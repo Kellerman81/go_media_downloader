@@ -28,7 +28,7 @@ jobs:
       run: CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -o go_media_downloader-amd64-linux main.go
       
     - name: Build Linux32
-      run: CGO_ENABLED=1 GOOS=linux GOARCH=386 go build -o go_media_downloader-x86-linux main.go
+      run: GOOS=linux GOARCH=386 go build -o go_media_downloader-x86-linux main.go
       
     - name: Build Windows64
       run: CGO_ENABLED=1 GOOS=windows GOARCH=amd64 go build -o go_media_downloader-amd64-win.exe main.go
