@@ -25,19 +25,19 @@ jobs:
       run: go build -v ./...
       
     - name: Build Linux64
-      run: GOOS=linux GOARCH=amd64 go build -o go_media_downloader-amd64-linux main.go
+      run: CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -ldflags '-w -s' -o go_media_downloader-amd64-linux main.go
       
     - name: Build Linux32
-      run: GOOS=linux GOARCH=386 go build -o go_media_downloader-x86-linux main.go
+      run: CGO_ENABLED=1 GOOS=linux GOARCH=386 go build -ldflags '-w -s' -o go_media_downloader-x86-linux main.go
       
     - name: Build Windows64
-      run: GOOS=windows GOARCH=amd64 go build -o go_media_downloader-amd64-win.exe main.go
+      run: CGO_ENABLED=1 GOOS=windows GOARCH=amd64 go build -ldflags '-w -s' -o go_media_downloader-amd64-win.exe main.go
       
     - name: Build Windows32
-      run: GOOS=windows GOARCH=386 go build -o go_media_downloader-x86-win.exe main.go
+      run: CGO_ENABLED=1 GOOS=windows GOARCH=386 go build -ldflags '-w -s' -o go_media_downloader-x86-win.exe main.go
       
     - name: Build Macos64
-      run: GOOS=darwin GOARCH=amd64 go build -o go_media_downloader-amd64-macos main.go
+      run: CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build -ldflags '-w -s' -o go_media_downloader-amd64-macos main.go
       
     - name: Upload Windows32 binary
       uses: actions/upload-artifact@v2
