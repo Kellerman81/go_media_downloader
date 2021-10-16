@@ -18,91 +18,57 @@ jobs:
       with:
         go-version: 1.17
 
-    - name: Prepare
-      run: go get
-      
-    - name: Build
-      run: go build -v ./...
-      
-    - name: Build Linux64
-      run: CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -o go_media_downloader-amd64-linux main.go
-      
-    - name: Build Linux32
-      run: GOOS=linux GOARCH=386 go build -o go_media_downloader-x86-linux main.go
-      
-    - name: Build Windows64
-      run: CGO_ENABLED=1 GOOS=windows GOARCH=amd64 go build -o go_media_downloader-amd64-win.exe main.go
-      
-    - name: Build Windows32
-      run: CGO_ENABLED=1 GOOS=windows GOARCH=386 go build -o go_media_downloader-x86-win.exe main.go
-      
-    - name: Build Macos64
-      run: CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build -o go_media_downloader-amd64-macos main.go
-      
-    - name: Upload Windows32 binary
+    - name: Build with xgo
+      uses: crazy-max/ghaction-xgo@v1
+      with:
+          prefix: go_media_downloader
+          targets: windows/386,windows/amd64,linux/386,linux/amd64,darwin/amd64
+          v: true
+          x: false
+          race: false
+          ldflags: -s -w
+          buildmode: default
+    
+    - name: Upload binaries
       uses: actions/upload-artifact@v2
       with:
-        name: go_media_downloader-x86-win.exe
-        path: go_media_downloader-x86-win.exe
+        name: binaries
+        path: go_media_downloader-*
         
-    - name: Upload Windows64 binary
-      uses: actions/upload-artifact@v2
-      with:
-        name: go_media_downloader-amd64-win.exe
-        path: go_media_downloader-amd64-win.exe
-        
-    - name: Upload Linux32 binary
-      uses: actions/upload-artifact@v2
-      with:
-        name: go_media_downloader-x86-linux
-        path: go_media_downloader-x86-linux
-        
-    - name: Upload Linux64 binary
-      uses: actions/upload-artifact@v2
-      with:
-        name: go_media_downloader-amd64-linux
-        path: go_media_downloader-amd64-linux
-        
-    - name: Upload Macos binary
-      uses: actions/upload-artifact@v2
-      with:
-        name: go_media_downloader-amd64-macos
-        path: go_media_downloader-amd64-macos
-
     - name: Zip Win32 binary
       uses: thedoctor0/zip-release@master
       with:
         type: 'zip'
         filename: 'develop-windows-x86.zip'
-        exclusions: '*.git* /.github/* /api/* /apiexternal/* /config/* /database/* /logger/* /newznab/* /nzbget/* /scanner/* /scheduler/* /tasks/* /utils/* /views/* Dockerfile go.* *.zip *.go go_media_downloader-*-linux  go_media_downloader-*-macos  go_media_downloader-amd64-win.exe'
+        exclusions: '*.git* /.github/* /api/* /apiexternal/* /config/* /database/* /logger/* /newznab/* /nzbget/* /scanner/* /scheduler/* /tasks/* /utils/* /views/* Dockerfile go.* *.zip *.go go_media_downloader-linux* go_media_downloader-macos* go_media_downloader-windows-*amd64*'
 
     - name: Zip Win64 binary
       uses: thedoctor0/zip-release@master
       with:
         type: 'zip'
         filename: 'develop-windows-x64.zip'
-        exclusions: '*.git* /.github/* /api/* /apiexternal/* /config/* /database/* /logger/* /newznab/* /nzbget/* /scanner/* /scheduler/* /tasks/* /utils/* /views/* Dockerfile go.* *.zip *.go go_media_downloader-*-linux  go_media_downloader-*-macos  go_media_downloader-x86-win.exe'
+        exclusions: '*.git* /.github/* /api/* /apiexternal/* /config/* /database/* /logger/* /newznab/* /nzbget/* /scanner/* /scheduler/* /tasks/* /utils/* /views/* Dockerfile go.* *.zip *.go go_media_downloader-linux* go_media_downloader-macos* go_media_downloader-windows-*386*'
 
     - name: Zip Linux32 binary
       uses: thedoctor0/zip-release@master
       with:
         type: 'zip'
         filename: 'develop-linux-x86.zip'
-        exclusions: '*.git* /.github/* /api/* /apiexternal/* /config/* /database/* /logger/* /newznab/* /nzbget/* /scanner/* /scheduler/* /tasks/* /utils/* /views/* Dockerfile go.* *.zip *.go go_media_downloader-*-win.exe  go_media_downloader-*-macos  go_media_downloader-amd64-linux'
+        exclusions: '*.git* /.github/* /api/* /apiexternal/* /config/* /database/* /logger/* /newznab/* /nzbget/* /scanner/* /scheduler/* /tasks/* /utils/* /views/* Dockerfile go.* *.zip *.go go_media_downloader-windows* go_media_downloader-macos* go_media_downloader-linux-*amd64'
 
     - name: Zip Linux64 binary
       uses: thedoctor0/zip-release@master
       with:
         type: 'zip'
         filename: 'develop-linux-x64.zip'
-        exclusions: '*.git* /.github/* /api/* /apiexternal/* /config/* /database/* /logger/* /newznab/* /nzbget/* /scanner/* /scheduler/* /tasks/* /utils/* /views/* Dockerfile go.* *.zip *.go go_media_downloader-*-win.exe  go_media_downloader-*-macos  go_media_downloader-x86-linux'
+        exclusions: '*.git* /.github/* /api/* /apiexternal/* /config/* /database/* /logger/* /newznab/* /nzbget/* /scanner/* /scheduler/* /tasks/* /utils/* /views/* Dockerfile go.* *.zip *.go go_media_downloader-windows* go_media_downloader-macos* go_media_downloader-linux-*386'
     
     - name: Zip Mac64 binary
       uses: thedoctor0/zip-release@master
       with:
         type: 'zip'
         filename: 'develop-macos-x64.zip'
-        exclusions: '*.git* /.github/* /api/* /apiexternal/* /config/* /database/* /logger/* /newznab/* /nzbget/* /scanner/* /scheduler/* /tasks/* /utils/* /views/* Dockerfile go.* *.zip *.go go_media_downloader-*-win.exe  go_media_downloader-*-linux  go_media_downloader-x86-macos'
+        exclusions: '*.git* /.github/* /api/* /apiexternal/* /config/* /database/* /logger/* /newznab/* /nzbget/* /scanner/* /scheduler/* /tasks/* /utils/* /views/* Dockerfile go.* *.zip *.go go_media_downloader-windows* go_media_downloader-linux*'
 
     - name: Development Release
       if: ${{ github.event_name == 'push' }}
