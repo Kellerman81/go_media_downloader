@@ -130,15 +130,18 @@ func notifier(event string, noticonfig config.MediaNotificationConfig, notifierd
 
 func Feeds(configEntry config.MediaTypeConfig, list config.MediaListsConfig) feedResults {
 	if !list.Enabled {
+		logger.Log.Debug("Error - Group list not enabled")
 		return feedResults{}
 	}
 	if !config.ConfigCheck("list_" + list.Template_list) {
+		logger.Log.Debug("Error - list not found")
 		return feedResults{}
 	}
 	var cfg_list config.ListsConfig
 	config.ConfigDB.Get("list_"+list.Template_list, &cfg_list)
 
 	if !cfg_list.Enabled {
+		logger.Log.Debug("Error - list not enabled")
 		return feedResults{}
 	}
 

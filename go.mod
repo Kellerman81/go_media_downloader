@@ -10,13 +10,13 @@ require (
 	github.com/gdm85/go-libdeluge v0.5.5 //access deluge
 	github.com/gin-gonic/gin v1.7.4 //webapi
 	github.com/goccy/go-reflect v1.1.0 //alternate reflect
-	github.com/golang-migrate/migrate/v4 v4.15.0 //initialize db
+	github.com/golang-migrate/migrate/v4 v4.15.1 //initialize db
 	github.com/gregdel/pushover v1.1.0 //notification
 	github.com/h2non/filetype v1.1.1
 	github.com/jmoiron/sqlx v1.3.4 //structscan for db
 	github.com/karrick/godirwalk v1.16.1 //faster walk
-	github.com/knadh/koanf v1.2.4 //initial config
-	github.com/mattn/go-sqlite3 v1.14.8 //data and imdb db
+	github.com/knadh/koanf v1.3.0 //initial config
+	github.com/mattn/go-sqlite3 v1.14.9 //data and imdb db
 	github.com/pkg/errors v0.9.1
 	github.com/recoilme/pudge v1.0.3 //config db
 	github.com/remeh/sizedwaitgroup v1.0.0 //concurrent wait group
@@ -53,7 +53,7 @@ require (
 	github.com/ugorji/go/codec v1.2.6 // indirect
 	go.uber.org/atomic v1.9.0 // indirect
 	golang.org/x/crypto v0.0.0-20210921155107-089bfa567519 // indirect
-	golang.org/x/sys v0.0.0-20211013075003-97ac67df715c // indirect
+	golang.org/x/sys v0.0.0-20211023085530-d6a326fbbf70 // indirect
 	google.golang.org/protobuf v1.27.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )

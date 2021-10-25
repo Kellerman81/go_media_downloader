@@ -15,7 +15,7 @@ import (
 
 func GetFilesGoDir(rootpath string, filetypes []string, filetypesNoRename []string, ignoredpaths []string) []string {
 	list := make([]string, 0, 20000)
-	scratchBuffer := make([]byte, 300000)
+	scratchBuffer := make([]byte, 500000)
 
 	if _, err := os.Stat(rootpath); !os.IsNotExist(err) {
 		err := godirwalk.Walk(rootpath, &godirwalk.Options{
@@ -27,8 +27,8 @@ func GetFilesGoDir(rootpath string, filetypes []string, filetypesNoRename []stri
 				//Check Extension
 				ok := false
 				if len(filetypes) >= 1 {
-					for _, extension := range filetypes {
-						if extension == strings.ToLower(filepath.Ext(osPathname)) {
+					for idx := range filetypes {
+						if strings.EqualFold(filetypes[idx], filepath.Ext(osPathname)) {
 							ok = true
 							break
 						}
@@ -36,8 +36,8 @@ func GetFilesGoDir(rootpath string, filetypes []string, filetypesNoRename []stri
 				}
 
 				if len(filetypesNoRename) >= 1 && !ok {
-					for _, extension := range filetypesNoRename {
-						if extension == strings.ToLower(filepath.Ext(osPathname)) {
+					for idx := range filetypesNoRename {
+						if strings.EqualFold(filetypesNoRename[idx], filepath.Ext(osPathname)) {
 							ok = true
 							break
 						}
@@ -45,11 +45,10 @@ func GetFilesGoDir(rootpath string, filetypes []string, filetypesNoRename []stri
 				}
 
 				//Check IgnoredPaths
-				path, _ := filepath.Split(osPathname)
-
-				if len(ignoredpaths) >= 1 {
+				if len(ignoredpaths) >= 1 && ok {
+					path, _ := filepath.Split(osPathname)
 					for idxignore := range ignoredpaths {
-						if strings.Contains(path, ignoredpaths[idxignore]) {
+						if strings.Contains(strings.ToLower(path), strings.ToLower(ignoredpaths[idxignore])) {
 							ok = false
 							break
 						}
@@ -81,21 +80,25 @@ func GetFilesGoDir(rootpath string, filetypes []string, filetypesNoRename []stri
 func GetFolderSize(rootpath string) int64 {
 	var size int64
 	if _, err := os.Stat(rootpath); !os.IsNotExist(err) {
+		scratchBuffer := make([]byte, 500000)
 
 		err := godirwalk.Walk(rootpath, &godirwalk.Options{
 			Callback: func(osPathname string, de *godirwalk.Dirent) error {
 				if de.IsDir() {
 					return nil
 				}
-				info, _ := os.Stat(osPathname)
-				size += info.Size()
+				info, errinfo := os.Stat(osPathname)
+				if errinfo == nil {
+					size += info.Size()
+				}
 				return nil
 			},
 			ErrorCallback: func(osPathname string, err error) godirwalk.ErrorAction {
 				//fmt.Fprintf(os.Stderr, "%s: %s\n", progname, err)
 				return godirwalk.SkipNode
 			},
-			Unsorted: true, // set true for faster yet non-deterministic enumeration (see godoc)
+			Unsorted:      true, // set true for faster yet non-deterministic enumeration (see godoc)
+			ScratchBuffer: scratchBuffer,
 		})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "%s\n", err)
@@ -140,8 +143,8 @@ func MoveFiles(files []string, target string, newname string, filetypes []string
 				oknorename = true
 			} else {
 				if len(filetypes) >= 1 {
-					for _, extension := range filetypes {
-						if extension == strings.ToLower(filepath.Ext(files[idxfile])) {
+					for idx := range filetypes {
+						if strings.EqualFold(filetypes[idx], filepath.Ext(files[idxfile])) {
 							ok = true
 							break
 						}
@@ -149,8 +152,8 @@ func MoveFiles(files []string, target string, newname string, filetypes []string
 				}
 
 				if len(filetypesNoRename) >= 1 && !ok {
-					for _, extension := range filetypesNoRename {
-						if extension == strings.ToLower(filepath.Ext(files[idxfile])) {
+					for idx := range filetypesNoRename {
+						if strings.EqualFold(filetypesNoRename[idx], filepath.Ext(files[idxfile])) {
 							ok = true
 							oknorename = true
 							break
@@ -193,8 +196,8 @@ func RemoveFiles(files []string, filetypes []string, filetypesNoRename []string)
 		var ok bool
 		var oknorename bool
 		if len(filetypes) >= 1 {
-			for _, extension := range filetypes {
-				if extension == strings.ToLower(filepath.Ext(files[idxfile])) {
+			for idx := range filetypes {
+				if strings.EqualFold(filetypes[idx], filepath.Ext(files[idxfile])) {
 					ok = true
 					break
 				}
@@ -202,8 +205,8 @@ func RemoveFiles(files []string, filetypes []string, filetypesNoRename []string)
 		}
 
 		if len(filetypesNoRename) >= 1 && !ok {
-			for _, extension := range filetypesNoRename {
-				if extension == strings.ToLower(filepath.Ext(files[idxfile])) {
+			for idx := range filetypesNoRename {
+				if strings.EqualFold(filetypesNoRename[idx], filepath.Ext(files[idxfile])) {
 					ok = true
 					oknorename = true
 					break

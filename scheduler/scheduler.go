@@ -37,7 +37,7 @@ func InitScheduler() {
 	var cfg_general config.GeneralConfig
 	config.ConfigDB.Get("general", &cfg_general)
 
-	feeds := tasks.NewDispatcher(cfg_general.ConcurrentScheduler, 100)
+	feeds := tasks.NewDispatcher(1, 100)
 	feeds.Start()
 
 	data := tasks.NewDispatcher(cfg_general.ConcurrentScheduler, 100)

@@ -642,29 +642,31 @@ func StructureFolders(grouptype string, sourcepath config.PathsConfig, targetpat
 				var movie database.Movie
 
 				//determine list
-				movies, _ := database.QueryMovies(database.Query{Select: "movies.*", InnerJoin: "Dbmovies on Dbmovies.id = movies.dbmovie_id", Where: "Dbmovies.imdb_id = ?", WhereArgs: []interface{}{m.Imdb}})
-				for idxtmovie := range movies {
-					foundinlist := false
-					logger.Log.Debug("File found in other list - check list: ", videofiles[fileidx], movies[idxtmovie].Listname)
-					for idxlisttest := range configEntry.Lists {
-						if configEntry.Lists[idxlisttest].Name == movies[idxtmovie].Listname {
-							if entriesfound == 0 && len(m.Imdb) >= 1 {
-								movies, _ := database.QueryMovies(database.Query{Select: "movies.*", InnerJoin: "Dbmovies on Dbmovies.id = movies.dbmovie_id", Where: "Dbmovies.imdb_id = ? and movies.listname = ?", WhereArgs: []interface{}{m.Imdb, configEntry.Lists[idxlisttest].Name}})
-								if len(movies) == 1 {
-									movie = movies[0]
-								}
-								entriesfound = len(movies)
-								if entriesfound >= 1 {
-									structure.list = configEntry.Lists[idxlisttest]
-									list = configEntry.Lists[idxlisttest]
-									foundinlist = true
-									break
+				if m.Imdb != "" {
+					movies, _ := database.QueryMovies(database.Query{Select: "movies.*", InnerJoin: "Dbmovies on Dbmovies.id = movies.dbmovie_id", Where: "Dbmovies.imdb_id = ?", WhereArgs: []interface{}{m.Imdb}})
+					for idxtmovie := range movies {
+						foundinlist := false
+						logger.Log.Debug("File found in other list - check list: ", videofiles[fileidx], movies[idxtmovie].Listname)
+						for idxlisttest := range configEntry.Lists {
+							if configEntry.Lists[idxlisttest].Name == movies[idxtmovie].Listname {
+								if entriesfound == 0 && len(m.Imdb) >= 1 {
+									movies, _ := database.QueryMovies(database.Query{Select: "movies.*", InnerJoin: "Dbmovies on Dbmovies.id = movies.dbmovie_id", Where: "Dbmovies.imdb_id = ? and movies.listname = ?", WhereArgs: []interface{}{m.Imdb, configEntry.Lists[idxlisttest].Name}})
+									if len(movies) == 1 {
+										movie = movies[0]
+									}
+									entriesfound = len(movies)
+									if entriesfound >= 1 {
+										structure.list = configEntry.Lists[idxlisttest]
+										list = configEntry.Lists[idxlisttest]
+										foundinlist = true
+										break
+									}
 								}
 							}
 						}
-					}
-					if foundinlist {
-						break
+						if foundinlist {
+							break
+						}
 					}
 				}
 
@@ -673,12 +675,14 @@ func StructureFolders(grouptype string, sourcepath config.PathsConfig, targetpat
 				if moviehistoryerr == nil {
 					movies, _ := database.QueryMovies(database.Query{Select: "movies.*", InnerJoin: "Dbmovies on Dbmovies.id = movies.dbmovie_id", Where: "Dbmovies.id = ? and movies.listname = ?", WhereArgs: []interface{}{moviehistory.DbmovieID, list.Name}})
 					if len(movies) == 1 {
+						logger.Log.Debug("Found Movie by history_title")
 						movie = movies[0]
 					}
 					entriesfound = len(movies)
 				}
 
 				if !config.ConfigCheck("quality_" + list.Template_quality) {
+					logger.Log.Error("Template Quality not found: ", list.Template_quality)
 					return
 				}
 				var cfg_quality config.QualityConfig
@@ -689,11 +693,13 @@ func StructureFolders(grouptype string, sourcepath config.PathsConfig, targetpat
 					for idxlisttest := range configEntry.Lists {
 						lists = append(lists, configEntry.Lists[idxlisttest].Name)
 					}
+					logger.Log.Debug("Find Movie using title: ", m.Title, " and year: ", m.Year, " and lists: ", lists)
 					list.Name, m.Imdb, _ = movieFindListByTitle(m.Title, strconv.Itoa(m.Year), lists, cfg_quality.CheckYear1, "structure")
 				}
 				if entriesfound == 0 && len(m.Imdb) >= 1 {
 					movies, _ := database.QueryMovies(database.Query{Select: "movies.*", InnerJoin: "Dbmovies on Dbmovies.id = movies.dbmovie_id", Where: "Dbmovies.imdb_id = ? and movies.listname = ?", WhereArgs: []interface{}{m.Imdb, list.Name}})
 					if len(movies) == 1 {
+						logger.Log.Debug("Found Movie by title")
 						movie = movies[0]
 					}
 					entriesfound = len(movies)
@@ -701,6 +707,7 @@ func StructureFolders(grouptype string, sourcepath config.PathsConfig, targetpat
 				if entriesfound == 0 && len(m.Imdb) >= 1 {
 					counter, _ := database.CountRows("movies", database.Query{Select: "movies.*", InnerJoin: "Dbmovies on Dbmovies.id = movies.dbmovie_id", Where: "Dbmovies.imdb_id = ?", WhereArgs: []interface{}{m.Imdb, list.Name}})
 					if counter >= 1 {
+						logger.Log.Debug("Skipped Movie by title")
 						continue
 					}
 				}

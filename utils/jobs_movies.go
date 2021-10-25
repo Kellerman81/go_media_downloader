@@ -201,11 +201,9 @@ func JobReloadMovies(dbmovie database.Dbmovie, configEntry config.MediaTypeConfi
 	}
 	database.ReadWriteMu.Lock()
 	if _, nok := MovieImportJobRunning[jobName]; nok {
-		if MovieImportJobRunning[jobName] {
-			logger.Log.Debug("Job already running: ", jobName)
-			database.ReadWriteMu.Unlock()
-			return
-		}
+		logger.Log.Debug("Job already running: ", jobName)
+		database.ReadWriteMu.Unlock()
+		return
 	} else {
 		MovieImportJobRunning[jobName] = true
 		database.ReadWriteMu.Unlock()
@@ -252,58 +250,37 @@ func JobReloadMovies(dbmovie database.Dbmovie, configEntry config.MediaTypeConfi
 
 func checkifmovieyearmatches(entriesfound int, yearint int, movies []database.Movie, allowyear1 bool) (imdb string, movie database.Movie) {
 	if entriesfound >= 1 && yearint != 0 {
-		if entriesfound == 1 {
-			dbmovie, _ := database.GetDbmovie(database.Query{Where: "id=?", WhereArgs: []interface{}{movies[0].DbmovieID}})
+		foundyear := 0
+		foundyear1 := 0
+		imdbyear := ""
+		imdbyear1 := ""
+		var movieyear database.Movie
+		var movieyear1 database.Movie
+		for idx := range movies {
+			dbmovie, _ := database.GetDbmovie(database.Query{Where: "id=?", WhereArgs: []interface{}{movies[idx].DbmovieID}})
 			if dbmovie.Year == yearint {
-				imdb = dbmovie.ImdbID
-				movie = movies[0]
-				return
+				imdbyear = dbmovie.ImdbID
+				movieyear = movies[idx]
+				foundyear += 1
 			}
 			if allowyear1 {
 				if dbmovie.Year == yearint+1 {
-					imdb = dbmovie.ImdbID
-					movie = movies[0]
-					return
+					imdbyear1 = dbmovie.ImdbID
+					movieyear1 = movies[idx]
+					foundyear1 += 1
 				}
 				if dbmovie.Year == yearint-1 {
-					imdb = dbmovie.ImdbID
-					movie = movies[0]
-					return
+					imdbyear1 = dbmovie.ImdbID
+					movieyear1 = movies[idx]
+					foundyear1 += 1
 				}
 			}
-		} else {
-			foundyear := 0
-			foundyear1 := 0
-			imdbyear := ""
-			imdbyear1 := ""
-			var movieyear database.Movie
-			var movieyear1 database.Movie
-			for idx := range movies {
-				dbmovie, _ := database.GetDbmovie(database.Query{Where: "id=?", WhereArgs: []interface{}{movies[idx].DbmovieID}})
-				if dbmovie.Year == yearint {
-					imdbyear = dbmovie.ImdbID
-					movieyear = movies[idx]
-					foundyear += 1
-				}
-				if allowyear1 {
-					if dbmovie.Year == yearint+1 {
-						imdbyear1 = dbmovie.ImdbID
-						movieyear1 = movies[idx]
-						foundyear1 += 1
-					}
-					if dbmovie.Year == yearint-1 {
-						imdbyear1 = dbmovie.ImdbID
-						movieyear1 = movies[idx]
-						foundyear1 += 1
-					}
-				}
-			}
-			if foundyear == 1 {
-				return imdbyear, movieyear
-			}
-			if foundyear1 == 1 {
-				return imdbyear1, movieyear1
-			}
+		}
+		if foundyear == 1 {
+			return imdbyear, movieyear
+		}
+		if foundyear1 == 1 {
+			return imdbyear1, movieyear1
 		}
 	}
 	return "", database.Movie{}
@@ -562,13 +539,21 @@ func movieFindDbByTitle(title string, year string, listname string, allowyear1 b
 
 func movieGetListFilter(lists []string, dbid uint, yearint int, allowyear1 bool) (imdb string, list string) {
 	for idx := range lists {
-		movies, _ := database.QueryMovies(database.Query{Where: "Dbmovie_id = ? and listname = ?", WhereArgs: []interface{}{dbid, lists[idx]}})
+		movies, movieserr := database.QueryMovies(database.Query{Where: "dbmovie_id = ? and listname = ?", WhereArgs: []interface{}{dbid, lists[idx]}})
+		if movieserr != nil {
+			logger.Log.Error(movieserr)
+			return
+		}
 		entriesfound := len(movies)
-		imdb, _ = checkifmovieyearmatches(entriesfound, yearint, movies, allowyear1)
-		if imdb != "" {
-			entriesfound = 1
-			list = lists[idx]
-			break
+		if entriesfound >= 1 {
+			logger.Log.Debug("Movie found with dbid: ", dbid, " and list: ", lists[idx])
+			imdb_get, _ := checkifmovieyearmatches(entriesfound, yearint, movies, allowyear1)
+			if imdb_get != "" {
+				entriesfound = 1
+				imdb = imdb_get
+				list = lists[idx]
+				break
+			}
 		}
 	}
 	return
@@ -591,47 +576,61 @@ func movieFindListByTitle(title string, year string, lists []string, allowyear1 
 	}
 	yearint, _ := strconv.Atoi(year)
 	slugged := logger.StringToSlug(title)
+	logger.Log.Debug("DB Search for ", title)
 	dbmovies, _ := database.QueryDbmovie(database.Query{Where: "title = ? COLLATE NOCASE", WhereArgs: []interface{}{title}})
 	if len(dbmovies) >= 1 {
 		for idx := range dbmovies {
-			imdb, list = movieGetListFilter(lists, dbmovies[idx].ID, yearint, allowyear1)
-			if imdb != "" && list != "" {
+			logger.Log.Debug("DB Search for - filter dbid: ", dbmovies[idx].ID, " year: ", yearint)
+			imdb_get, list_get := movieGetListFilter(lists, dbmovies[idx].ID, yearint, allowyear1)
+			logger.Log.Debug("DB Search for - results dbid: ", dbmovies[idx].ID, " imdb: ", imdb, " list: ", list)
+			if imdb_get != "" && list_get != "" {
 				entriesfound = 1
+				imdb = imdb_get
+				list = list_get
 				logger.Log.Debug("DB Search succeded. Found Movies: ", entriesfound, " for ", title)
 				return
 			}
 		}
 	}
+	logger.Log.Debug("DB Search alternate title for ", title)
 	dbmovietitles, _ := database.QueryDbmovieTitle(database.Query{Where: "title = ? COLLATE NOCASE", WhereArgs: []interface{}{title}})
 
 	if len(dbmovietitles) >= 1 {
 		for idx := range dbmovietitles {
-			imdb, list = movieGetListFilter(lists, dbmovietitles[idx].DbmovieID, yearint, allowyear1)
-			if imdb != "" && list != "" {
+			imdb_get, list_get := movieGetListFilter(lists, dbmovietitles[idx].DbmovieID, yearint, allowyear1)
+			if imdb_get != "" && list_get != "" {
 				entriesfound = 1
+				imdb = imdb_get
+				list = list_get
 				logger.Log.Debug("DB Search succeded. Found Movies: ", entriesfound, " for ", title)
 				return
 			}
 		}
 	}
 
+	logger.Log.Debug("DB Search for ", slugged)
 	dbmovies, _ = database.QueryDbmovie(database.Query{Where: "title = ? COLLATE NOCASE", WhereArgs: []interface{}{slugged}})
 	if len(dbmovies) >= 1 {
 		for idx := range dbmovies {
-			imdb, list = movieGetListFilter(lists, dbmovies[idx].ID, yearint, allowyear1)
-			if imdb != "" && list != "" {
+			imdb_get, list_get := movieGetListFilter(lists, dbmovies[idx].ID, yearint, allowyear1)
+			if imdb_get != "" && list_get != "" {
 				entriesfound = 1
+				imdb = imdb_get
+				list = list_get
 				logger.Log.Debug("DB Search succeded. Found Movies: ", entriesfound, " for ", title)
 				return
 			}
 		}
 	}
+	logger.Log.Debug("DB Search alternate title for ", slugged)
 	dbmovietitles, _ = database.QueryDbmovieTitle(database.Query{Where: "title = ? COLLATE NOCASE", WhereArgs: []interface{}{slugged}})
 	if len(dbmovietitles) >= 1 {
 		for idx := range dbmovietitles {
-			imdb, list = movieGetListFilter(lists, dbmovietitles[idx].DbmovieID, yearint, allowyear1)
-			if imdb != "" && list != "" {
+			imdb_get, list_get := movieGetListFilter(lists, dbmovietitles[idx].DbmovieID, yearint, allowyear1)
+			if imdb_get != "" && list_get != "" {
 				entriesfound = 1
+				imdb = imdb_get
+				list = list_get
 				logger.Log.Debug("DB Search succeded. Found Movies: ", entriesfound, " for ", title)
 				return
 			}
@@ -653,6 +652,7 @@ func movieFindListByTitle(title string, year string, lists []string, allowyear1 
 			if strings.EqualFold(searchprovider[idxprovider], "imdb") {
 				if cfg_general.MovieMetaSourceImdb {
 					//Search in Imdb
+					logger.Log.Debug("Imdb Search for ", title, " and ", slugged)
 					imdbtitles, _ := database.QueryImdbTitle(database.Query{Select: "tconst,start_year", Where: "(primary_title = ? COLLATE NOCASE or original_title = ? COLLATE NOCASE or slug = ?)", WhereArgs: []interface{}{title, title, slugged}})
 					if len(imdbtitles) >= 1 {
 						foundimdb := 0
@@ -707,6 +707,7 @@ func movieFindListByTitle(title string, year string, lists []string, allowyear1 
 						}
 					}
 
+					logger.Log.Debug("Imdb Aka Search for ", title, " and ", slugged)
 					imdbaka, _ := database.QueryImdbAka(database.Query{Select: "distinct tconst", Where: "title = ? COLLATE NOCASE or slug = ?", WhereArgs: []interface{}{title, slugged}})
 					if len(imdbaka) == 1 {
 						imdb = imdbaka[0].Tconst
@@ -726,6 +727,7 @@ func movieFindListByTitle(title string, year string, lists []string, allowyear1 
 			}
 			if strings.EqualFold(searchprovider[idxprovider], "tmdb") {
 				if cfg_general.MovieMetaSourceTmdb {
+					logger.Log.Debug("Tmdb Search for ", searchfor, " ", year)
 					getmovie, _ := apiexternal.TmdbApi.SearchMovie(searchfor + " " + year)
 					if len(getmovie.Results) >= 1 {
 						foundtmdb := 0
@@ -782,6 +784,7 @@ func movieFindListByTitle(title string, year string, lists []string, allowyear1 
 			}
 			if strings.EqualFold(searchprovider[idxprovider], "omdb") {
 				if cfg_general.MovieMetaSourceOmdb {
+					logger.Log.Debug("Omdb Search for ", title, " and ", year)
 					searchomdb, _ := apiexternal.OmdbApi.SearchMovie(title, year)
 					if len(searchomdb.Search) >= 1 {
 						foundomdb := 0
@@ -887,18 +890,16 @@ func JobImportMovieParseV2(file string, configEntry config.MediaTypeConfig, list
 		m.Quality = strings.ToLower(m.Quality)
 		logger.Log.Debug("Parsed Movie: ", file, " as ", m.Resolution, " ", m.Quality, " ", m.Codec, " ", m.Audio)
 
-		movies := make([]database.Movie, 0, 1)
-
 		entriesfound := 0
 		if entriesfound == 0 && len(m.Imdb) >= 1 {
-			movies, _ = database.QueryMovies(database.Query{Select: "movies.*", InnerJoin: "Dbmovies on Dbmovies.id = movies.dbmovie_id", Where: "Dbmovies.imdb_id = ? and Movies.listname = ?", WhereArgs: []interface{}{m.Imdb, list.Name}})
+			movies, _ := database.QueryMovies(database.Query{Select: "movies.*", InnerJoin: "Dbmovies on Dbmovies.id = movies.dbmovie_id", Where: "Dbmovies.imdb_id = ? and Movies.listname = ?", WhereArgs: []interface{}{m.Imdb, list.Name}})
 			entriesfound = len(movies)
 			if len(movies) == 1 {
 				movie = movies[0]
 			}
 		}
 		if entriesfound == 0 && len(m.Imdb) >= 1 {
-			movies, _ = database.QueryMovies(database.Query{Select: "movies.*", InnerJoin: "Dbmovies on Dbmovies.id = movies.dbmovie_id", Where: "Dbmovies.imdb_id = ?", WhereArgs: []interface{}{m.Imdb}})
+			movies, _ := database.QueryMovies(database.Query{Select: "movies.*", InnerJoin: "Dbmovies on Dbmovies.id = movies.dbmovie_id", Where: "Dbmovies.imdb_id = ?", WhereArgs: []interface{}{m.Imdb}})
 			if len(movies) >= 1 {
 				return
 			}
@@ -920,7 +921,7 @@ func JobImportMovieParseV2(file string, configEntry config.MediaTypeConfig, list
 					sww.Add()
 					JobImportMovies(dbmovie, configEntry, list, &sww)
 					sww.Wait()
-					movies, _ = database.QueryMovies(database.Query{Select: "movies.*", InnerJoin: "Dbmovies on Dbmovies.id = movies.dbmovie_id", Where: "Dbmovies.imdb_id = ? and Movies.listname = ?", WhereArgs: []interface{}{m.Imdb, list.Name}})
+					movies, _ := database.QueryMovies(database.Query{Select: "movies.*", InnerJoin: "Dbmovies on Dbmovies.id = movies.dbmovie_id", Where: "Dbmovies.imdb_id = ? and Movies.listname = ?", WhereArgs: []interface{}{m.Imdb, list.Name}})
 					if len(movies) == 1 {
 						movie = movies[0]
 					}

@@ -28,8 +28,8 @@ func AddMoviesRoutes(routermovies *gin.RouterGroup) {
 	routermovies.POST("/", updateDBMovie)
 	routermovies.DELETE("/:id", func(ctx *gin.Context) {
 		database.DeleteRow("movies", database.Query{Where: "dbmovie_id=" + ctx.Param("id")})
-		result, _ := database.DeleteRow("dbmovies", database.Query{Where: "id=" + ctx.Param("id")})
-		ctx.JSON(http.StatusOK, gin.H{"data": result.RowsAffected})
+		database.DeleteRow("dbmovies", database.Query{Where: "id=" + ctx.Param("id")})
+		ctx.JSON(http.StatusOK, gin.H{"data": "ok"})
 	})
 
 	routermovies.POST("/list/", updateMovie)
@@ -39,8 +39,8 @@ func AddMoviesRoutes(routermovies *gin.RouterGroup) {
 		ctx.JSON(http.StatusOK, gin.H{"data": movies, "rows": len(movies)})
 	})
 	routermovies.DELETE("/list/:id", func(ctx *gin.Context) {
-		result, _ := database.DeleteRow("movies", database.Query{Where: "id=" + ctx.Param("id")})
-		ctx.JSON(http.StatusOK, gin.H{"data": result.RowsAffected})
+		database.DeleteRow("movies", database.Query{Where: "id=" + ctx.Param("id")})
+		ctx.JSON(http.StatusOK, gin.H{"data": "ok"})
 	})
 
 	routermovies.GET("/job/:job", apimoviesAllJobs)

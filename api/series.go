@@ -24,8 +24,8 @@ func AddSeriesRoutes(routerseries *gin.RouterGroup) {
 		database.DeleteRow("serie_episodes", database.Query{Where: "dbserie_id=?", WhereArgs: []interface{}{ctx.Param("id")}})
 		database.DeleteRow("dbserie_episodes", database.Query{Where: "dbserie_id=?", WhereArgs: []interface{}{ctx.Param("id")}})
 		database.DeleteRow("series", database.Query{Where: "dbserie_id=?", WhereArgs: []interface{}{ctx.Param("id")}})
-		result, _ := database.DeleteRow("dbseries", database.Query{Where: "id=?", WhereArgs: []interface{}{ctx.Param("id")}})
-		ctx.JSON(http.StatusOK, gin.H{"data": result.RowsAffected})
+		database.DeleteRow("dbseries", database.Query{Where: "id=?", WhereArgs: []interface{}{ctx.Param("id")}})
+		ctx.JSON(http.StatusOK, gin.H{"data": "ok"})
 	})
 
 	routerseries.GET("/list/:name", func(ctx *gin.Context) {
@@ -37,8 +37,8 @@ func AddSeriesRoutes(routerseries *gin.RouterGroup) {
 		database.DeleteRow("serie_episode_files", database.Query{Where: "dbserie_id=?", WhereArgs: []interface{}{ctx.Param("id")}})
 		database.DeleteRow("serie_episode_histories", database.Query{Where: "dbserie_id=?", WhereArgs: []interface{}{ctx.Param("id")}})
 		database.DeleteRow("serie_episodes", database.Query{Where: "dbserie_id=?", WhereArgs: []interface{}{ctx.Param("id")}})
-		result, _ := database.DeleteRow("series", database.Query{Where: "dbserie_id=?", WhereArgs: []interface{}{ctx.Param("id")}})
-		ctx.JSON(http.StatusOK, gin.H{"data": result.RowsAffected})
+		database.DeleteRow("series", database.Query{Where: "dbserie_id=?", WhereArgs: []interface{}{ctx.Param("id")}})
+		ctx.JSON(http.StatusOK, gin.H{"data": "ok"})
 	})
 
 	routerseries.GET("/all/refresh", apirefreshSeriesInc)
@@ -66,8 +66,8 @@ func AddSeriesRoutes(routerseries *gin.RouterGroup) {
 		database.DeleteRow("serie_episode_files", database.Query{Where: "dbserie_episode_id=?", WhereArgs: []interface{}{ctx.Param("id")}})
 		database.DeleteRow("serie_episode_histories", database.Query{Where: "dbserie_episode_id=?", WhereArgs: []interface{}{ctx.Param("id")}})
 		database.DeleteRow("serie_episodes", database.Query{Where: "dbserie_episode_id=?", WhereArgs: []interface{}{ctx.Param("id")}})
-		result, _ := database.DeleteRow("dbserie_episodes", database.Query{Where: "id=?", WhereArgs: []interface{}{ctx.Param("id")}})
-		ctx.JSON(http.StatusOK, gin.H{"data": result.RowsAffected})
+		database.DeleteRow("dbserie_episodes", database.Query{Where: "id=?", WhereArgs: []interface{}{ctx.Param("id")}})
+		ctx.JSON(http.StatusOK, gin.H{"data": "ok"})
 	})
 	routerseries.POST("/episodes/list/", updateEpisode)
 	routerseries.GET("/episodes/list/:id", func(ctx *gin.Context) {
@@ -77,8 +77,8 @@ func AddSeriesRoutes(routerseries *gin.RouterGroup) {
 	routerseries.DELETE("/episodes/list/:id", func(ctx *gin.Context) {
 		database.DeleteRow("serie_episode_files", database.Query{Where: "serie_episode_id=?", WhereArgs: []interface{}{ctx.Param("id")}})
 		database.DeleteRow("serie_episode_histories", database.Query{Where: "serie_episode_id=?", WhereArgs: []interface{}{ctx.Param("id")}})
-		result, _ := database.DeleteRow("serie_episodes", database.Query{Where: "id=?", WhereArgs: []interface{}{ctx.Param("id")}})
-		ctx.JSON(http.StatusOK, gin.H{"data": result.RowsAffected})
+		database.DeleteRow("serie_episodes", database.Query{Where: "id=?", WhereArgs: []interface{}{ctx.Param("id")}})
+		ctx.JSON(http.StatusOK, gin.H{"data": "ok"})
 	})
 
 	routerseriessearch := routerseries.Group("/search")
