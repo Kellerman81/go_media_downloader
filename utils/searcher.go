@@ -228,7 +228,10 @@ func SearchSerieMissing(configEntry config.MediaTypeConfig, jobcount int, titles
 
 	swg := sizedwaitgroup.New(cfg_general.WorkerSearch)
 	for idx := range missingepisode {
-		dbepi, _ := database.GetDbserieEpisodes(database.Query{Where: "id=?", WhereArgs: []interface{}{missingepisode[idx].DbserieEpisodeID}})
+		dbepi, dbepierr := database.GetDbserieEpisodes(database.Query{Where: "id=?", WhereArgs: []interface{}{missingepisode[idx].DbserieEpisodeID}})
+		if dbepierr != nil {
+			continue
+		}
 		epicount, _ := database.CountRows("dbserie_episodes", database.Query{Where: "identifier=? and dbserie_id=?", WhereArgs: []interface{}{dbepi.Identifier, dbepi.DbserieID}})
 		if epicount >= 2 {
 			continue
@@ -290,7 +293,10 @@ func SearchSerieUpgrade(configEntry config.MediaTypeConfig, jobcount int, titles
 
 	swg := sizedwaitgroup.New(cfg_general.WorkerSearch)
 	for idx := range missingepisode {
-		dbepi, _ := database.GetDbserieEpisodes(database.Query{Where: "id=?", WhereArgs: []interface{}{missingepisode[idx].DbserieEpisodeID}})
+		dbepi, dbepierr := database.GetDbserieEpisodes(database.Query{Where: "id=?", WhereArgs: []interface{}{missingepisode[idx].DbserieEpisodeID}})
+		if dbepierr != nil {
+			continue
+		}
 		epicount, _ := database.CountRows("dbserie_episodes", database.Query{Where: "identifier=? and dbserie_id=?", WhereArgs: []interface{}{dbepi.Identifier, dbepi.DbserieID}})
 		if epicount >= 2 {
 			continue

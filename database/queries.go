@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Kellerman81/go_media_downloader/config"
 	"github.com/Kellerman81/go_media_downloader/logger"
 )
 
@@ -39,6 +40,12 @@ func QueryDbmovie(qu Query) ([]Dbmovie, error) {
 		return []Dbmovie{}, nil
 	}
 	query := buildquery(columns, "dbmovies", qu, false)
+	var cfg_general config.GeneralConfig
+	config.ConfigDB.Get("general", &cfg_general)
+
+	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
+		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
+	}
 	rows, err := DB.Queryx(query, qu.WhereArgs...)
 	if err != nil {
 		logger.Log.Error("Query: ", query, " error: ", err)
@@ -80,6 +87,12 @@ func QueryDbmovieTitle(qu Query) ([]DbmovieTitle, error) {
 		return []DbmovieTitle{}, nil
 	}
 	query := buildquery(columns, "dbmovie_titles", qu, false)
+	var cfg_general config.GeneralConfig
+	config.ConfigDB.Get("general", &cfg_general)
+
+	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
+		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
+	}
 	rows, err := DB.Queryx(query, qu.WhereArgs...)
 	if err != nil {
 		logger.Log.Error("Query: ", query, " error: ", err)
@@ -121,7 +134,12 @@ func QueryDbserie(qu Query) ([]Dbserie, error) {
 		return []Dbserie{}, nil
 	}
 	query := buildquery(columns, "Dbseries", qu, false)
-	//logger.Log.Debug("Query: "+query, " -args: ", qu.WhereArgs)
+	var cfg_general config.GeneralConfig
+	config.ConfigDB.Get("general", &cfg_general)
+
+	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
+		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
+	}
 	rows, err := DB.Queryx(query, qu.WhereArgs...)
 	if err != nil {
 		logger.Log.Error("Query: ", query, " error: ", err)
@@ -163,6 +181,12 @@ func QueryDbserieEpisodes(qu Query) ([]DbserieEpisode, error) {
 		return []DbserieEpisode{}, nil
 	}
 	query := buildquery(columns, "dbserie_episodes", qu, false)
+	var cfg_general config.GeneralConfig
+	config.ConfigDB.Get("general", &cfg_general)
+
+	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
+		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
+	}
 	rows, err := DB.Queryx(query, qu.WhereArgs...)
 	if err != nil {
 		logger.Log.Error("Query: ", query, " error: ", err)
@@ -203,6 +227,12 @@ func QueryDbserieAlternates(qu Query) ([]DbserieAlternate, error) {
 		return []DbserieAlternate{}, nil
 	}
 	query := buildquery(columns, "dbserie_alternates", qu, false)
+	var cfg_general config.GeneralConfig
+	config.ConfigDB.Get("general", &cfg_general)
+
+	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
+		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
+	}
 	rows, err := DB.Queryx(query, qu.WhereArgs...)
 	if err != nil {
 		logger.Log.Error("Query: ", query, " error: ", err)
@@ -244,7 +274,12 @@ func QuerySeries(qu Query) ([]Serie, error) {
 		return []Serie{}, nil
 	}
 	query := buildquery(columns, "series", qu, false)
-	//logger.Log.Debug("Query: "+query, " -args: ", qu.WhereArgs)
+	var cfg_general config.GeneralConfig
+	config.ConfigDB.Get("general", &cfg_general)
+
+	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
+		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
+	}
 	rows, err := DB.Queryx(query, qu.WhereArgs...)
 	if err != nil {
 		logger.Log.Error("Query: ", query, " error: ", err)
@@ -286,6 +321,12 @@ func QuerySerieEpisodes(qu Query) ([]SerieEpisode, error) {
 		return []SerieEpisode{}, nil
 	}
 	query := buildquery(columns, "serie_episodes", qu, false)
+	var cfg_general config.GeneralConfig
+	config.ConfigDB.Get("general", &cfg_general)
+
+	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
+		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
+	}
 	rows, err := DB.Queryx(query, qu.WhereArgs...)
 	if err != nil {
 		logger.Log.Error("Query: ", query, " error: ", err)
@@ -327,6 +368,12 @@ func QuerySerieEpisodeHistory(qu Query) ([]SerieEpisodeHistory, error) {
 		return []SerieEpisodeHistory{}, nil
 	}
 	query := buildquery(columns, "serie_episode_histories", qu, false)
+	var cfg_general config.GeneralConfig
+	config.ConfigDB.Get("general", &cfg_general)
+
+	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
+		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
+	}
 	rows, err := DB.Queryx(query, qu.WhereArgs...)
 	if err != nil {
 		logger.Log.Error("Query: ", query, " error: ", err)
@@ -368,6 +415,12 @@ func QuerySerieEpisodeFiles(qu Query) ([]SerieEpisodeFile, error) {
 		return []SerieEpisodeFile{}, nil
 	}
 	query := buildquery(columns, "serie_episode_files", qu, false)
+	var cfg_general config.GeneralConfig
+	config.ConfigDB.Get("general", &cfg_general)
+
+	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
+		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
+	}
 	rows, err := DB.Queryx(query, qu.WhereArgs...)
 	if err != nil {
 		logger.Log.Error("Query: ", query, " error: ", err)
@@ -406,9 +459,20 @@ func QueryMovies(qu Query) ([]Movie, error) {
 	}
 	counter, counterr := CountRows("movies", qu)
 	if counter == 0 || counterr != nil {
-		return []Movie{}, nil
+		if counterr != nil {
+			logger.Log.Error(counterr)
+			return []Movie{}, counterr
+		} else {
+			return []Movie{}, nil
+		}
 	}
 	query := buildquery(columns, "movies", qu, false)
+	var cfg_general config.GeneralConfig
+	config.ConfigDB.Get("general", &cfg_general)
+
+	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
+		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
+	}
 	rows, err := DB.Queryx(query, qu.WhereArgs...)
 	if err != nil {
 		logger.Log.Error("Query: ", query, " error: ", err)
@@ -450,6 +514,12 @@ func QueryMovieFiles(qu Query) ([]MovieFile, error) {
 		return []MovieFile{}, nil
 	}
 	query := buildquery(columns, "movie_files", qu, false)
+	var cfg_general config.GeneralConfig
+	config.ConfigDB.Get("general", &cfg_general)
+
+	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
+		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
+	}
 	rows, err := DB.Queryx(query, qu.WhereArgs...)
 	if err != nil {
 		logger.Log.Error("Query: ", query, " error: ", err)
@@ -491,6 +561,12 @@ func QueryMovieHistory(qu Query) ([]MovieHistory, error) {
 		return []MovieHistory{}, nil
 	}
 	query := buildquery(columns, "movie_histories", qu, false)
+	var cfg_general config.GeneralConfig
+	config.ConfigDB.Get("general", &cfg_general)
+
+	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
+		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
+	}
 	rows, err := DB.Queryx(query, qu.WhereArgs...)
 	if err != nil {
 		logger.Log.Error("Query: ", query, " error: ", err)
@@ -532,6 +608,12 @@ func QueryRssHistory(qu Query) ([]RSSHistory, error) {
 		return []RSSHistory{}, nil
 	}
 	query := buildquery(columns, "r_sshistories", qu, false)
+	var cfg_general config.GeneralConfig
+	config.ConfigDB.Get("general", &cfg_general)
+
+	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
+		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
+	}
 	rows, err := DB.Queryx(query, qu.WhereArgs...)
 	if err != nil {
 		logger.Log.Error("Query: ", query, " error: ", err)
@@ -572,6 +654,12 @@ func QueryQualities(qu Query) ([]Qualities, error) {
 		return []Qualities{}, nil
 	}
 	query := buildquery(columns, "qualities", qu, false)
+	var cfg_general config.GeneralConfig
+	config.ConfigDB.Get("general", &cfg_general)
+
+	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
+		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
+	}
 	rows, err := DB.Queryx(query, qu.WhereArgs...)
 	if err != nil {
 		logger.Log.Error("Query: ", query, " error: ", err)
@@ -612,6 +700,12 @@ func QueryJobHistory(qu Query) ([]JobHistory, error) {
 		return []JobHistory{}, nil
 	}
 	query := buildquery(columns, "job_histories", qu, false)
+	var cfg_general config.GeneralConfig
+	config.ConfigDB.Get("general", &cfg_general)
+
+	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
+		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
+	}
 	rows, err := DB.Queryx(query, qu.WhereArgs...)
 	if err != nil {
 		logger.Log.Error("Query: ", query, " error: ", err)
@@ -652,6 +746,12 @@ func QueryIndexerFails(qu Query) ([]IndexerFail, error) {
 		return []IndexerFail{}, nil
 	}
 	query := buildquery(columns, "indexer_fails", qu, false)
+	var cfg_general config.GeneralConfig
+	config.ConfigDB.Get("general", &cfg_general)
+
+	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
+		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
+	}
 	rows, err := DB.Queryx(query, qu.WhereArgs...)
 	if err != nil {
 		logger.Log.Error("Query: ", query, " error: ", err)
@@ -693,6 +793,12 @@ func QuerySerieFileUnmatched(qu Query) ([]SerieFileUnmatched, error) {
 		return []SerieFileUnmatched{}, nil
 	}
 	query := buildquery(columns, "serie_file_unmatcheds", qu, false)
+	var cfg_general config.GeneralConfig
+	config.ConfigDB.Get("general", &cfg_general)
+
+	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
+		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
+	}
 	rows, err := DB.Queryx(query, qu.WhereArgs...)
 	if err != nil {
 		logger.Log.Error("Query: ", query, " error: ", err)
@@ -734,6 +840,12 @@ func QueryMovieFileUnmatched(qu Query) ([]MovieFileUnmatched, error) {
 		return []MovieFileUnmatched{}, nil
 	}
 	query := buildquery(columns, "movie_file_unmatcheds", qu, false)
+	var cfg_general config.GeneralConfig
+	config.ConfigDB.Get("general", &cfg_general)
+
+	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
+		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
+	}
 	rows, err := DB.Queryx(query, qu.WhereArgs...)
 	if err != nil {
 		logger.Log.Error("Query: ", query, " error: ", err)
@@ -774,6 +886,12 @@ func QueryResultMovies(qu Query) ([]ResultMovies, error) {
 		return []ResultMovies{}, nil
 	}
 	query := buildquery(columns, "movies", qu, false)
+	var cfg_general config.GeneralConfig
+	config.ConfigDB.Get("general", &cfg_general)
+
+	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
+		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
+	}
 	rows, err := DB.Queryx(query, qu.WhereArgs...)
 	if err != nil {
 		logger.Log.Error("Query: ", query, " error: ", err)
@@ -815,6 +933,12 @@ func QueryResultSeries(qu Query) ([]ResultSeries, error) {
 		return []ResultSeries{}, nil
 	}
 	query := buildquery(columns, "series", qu, false)
+	var cfg_general config.GeneralConfig
+	config.ConfigDB.Get("general", &cfg_general)
+
+	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
+		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
+	}
 	rows, err := DB.Queryx(query, qu.WhereArgs...)
 	if err != nil {
 		logger.Log.Error("Query: ", query, " error: ", err)
@@ -856,6 +980,12 @@ func QueryResultSerieEpisodes(qu Query) ([]ResultSerieEpisodes, error) {
 		return []ResultSerieEpisodes{}, nil
 	}
 	query := buildquery(columns, "serie_episodes", qu, false)
+	var cfg_general config.GeneralConfig
+	config.ConfigDB.Get("general", &cfg_general)
+
+	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
+		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
+	}
 	rows, err := DB.Queryx(query, qu.WhereArgs...)
 	if err != nil {
 		logger.Log.Error("Query: ", query, " error: ", err)
@@ -897,6 +1027,12 @@ func QueryImdbGenre(qu Query) ([]ImdbGenres, error) {
 		return []ImdbGenres{}, nil
 	}
 	query := buildquery(columns, "imdb_genres", qu, false)
+	var cfg_general config.GeneralConfig
+	config.ConfigDB.Get("general", &cfg_general)
+
+	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
+		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
+	}
 	rows, err := DBImdb.Queryx(query, qu.WhereArgs...)
 	if err != nil {
 		logger.Log.Error("Query: ", query, " error: ", err)
@@ -938,6 +1074,12 @@ func QueryImdbRating(qu Query) ([]ImdbRatings, error) {
 		return []ImdbRatings{}, nil
 	}
 	query := buildquery(columns, "imdb_ratings", qu, false)
+	var cfg_general config.GeneralConfig
+	config.ConfigDB.Get("general", &cfg_general)
+
+	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
+		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
+	}
 	rows, err := DBImdb.Queryx(query, qu.WhereArgs...)
 	if err != nil {
 		logger.Log.Error("Query: ", query, " error: ", err)
@@ -979,6 +1121,12 @@ func QueryImdbAka(qu Query) ([]ImdbAka, error) {
 		return []ImdbAka{}, nil
 	}
 	query := buildquery(columns, "imdb_akas", qu, false)
+	var cfg_general config.GeneralConfig
+	config.ConfigDB.Get("general", &cfg_general)
+
+	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
+		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
+	}
 	rows, err := DBImdb.Queryx(query, qu.WhereArgs...)
 	if err != nil {
 		logger.Log.Error("Query: ", query, " error: ", err)
@@ -1021,6 +1169,12 @@ func QueryImdbTitle(qu Query) ([]ImdbTitle, error) {
 		return []ImdbTitle{}, nil
 	}
 	query := buildquery(columns, "imdb_titles", qu, false)
+	var cfg_general config.GeneralConfig
+	config.ConfigDB.Get("general", &cfg_general)
+
+	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
+		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
+	}
 	rows, err := DBImdb.Queryx(query, qu.WhereArgs...)
 	if err != nil {
 		logger.Log.Error("Query: ", query, " error: ", err)
@@ -1077,8 +1231,13 @@ func CountRows(table string, qu Query) (int, error) {
 	// 	query = buildquery("count("+table+".*)", table, qu)
 	// } else {
 	//}
+	var cfg_general config.GeneralConfig
+	config.ConfigDB.Get("general", &cfg_general)
+
+	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
+		logger.Log.Debug("query count: ", buildquery("count(*)", table, qu, true), " -args: ", qu.WhereArgs)
+	}
 	var counter int
-	//logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
 	rows, err := DB.Queryx(buildquery("count(*)", table, qu, true), qu.WhereArgs...)
 	if err != nil {
 		logger.Log.Error("Query: ", buildquery("count(*)", table, qu, true), " error: ", err)
@@ -1173,6 +1332,12 @@ func UpdateRowMap(table string, update map[string]interface{}, qu Query) (sql.Re
 func dbexec(dbtype string, query string, args []interface{}) (sql.Result, error) {
 	var result sql.Result
 	var err error
+	var cfg_general config.GeneralConfig
+	config.ConfigDB.Get("general", &cfg_general)
+
+	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
+		logger.Log.Debug("query count: ", query, " -args: ", args)
+	}
 	ReadWriteMu.Lock()
 	if dbtype == "imdb" {
 		result, err = DBImdb.Exec(query, args...)
@@ -1237,6 +1402,12 @@ func DeleteRow(table string, qu Query) (sql.Result, error) {
 	if qu.Where != "" {
 		query += " where " + qu.Where
 	}
+	var cfg_general config.GeneralConfig
+	config.ConfigDB.Get("general", &cfg_general)
+
+	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
+		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
+	}
 	ReadWriteMu.Lock()
 	result, err := DB.Exec(query, qu.WhereArgs...)
 	if err != nil {
@@ -1271,6 +1442,12 @@ func ImdbCountRows(table string, qu Query) (int, error) {
 	query := buildquery("count(*)", table, qu, true)
 	//}
 
+	var cfg_general config.GeneralConfig
+	config.ConfigDB.Get("general", &cfg_general)
+
+	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
+		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
+	}
 	var counter int
 	rows, err := DBImdb.Queryx(query, qu.WhereArgs...)
 	if err != nil {

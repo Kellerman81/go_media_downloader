@@ -123,7 +123,6 @@ func JobImportDbSeries(serieconfig config.SerieConfig, configEntry config.MediaT
 		}
 	}
 
-	database.ReadWriteMu.Lock()
 	var serie database.Serie
 	findserie, serieerr := database.GetSeries(database.Query{Where: "Dbserie_id = ? and listname = ?", WhereArgs: []interface{}{dbserie.ID, list.Name}})
 	if serieerr != nil {
@@ -131,20 +130,17 @@ func JobImportDbSeries(serieconfig config.SerieConfig, configEntry config.MediaT
 		inres, inreserr := database.InsertArray("series", []string{"dbserie_id", "listname", "rootpath"}, []interface{}{dbserie.ID, list.Name, serieconfig.Target})
 		if inreserr != nil {
 			logger.Log.Error(inreserr)
-			database.ReadWriteMu.Unlock()
 			return
 		}
 		newid, newiderr := inres.LastInsertId()
 		if newiderr != nil {
 			logger.Log.Error(newiderr)
-			database.ReadWriteMu.Unlock()
 			return
 		}
 		serie.ID = uint(newid)
 	} else {
 		serie = findserie
 	}
-	database.ReadWriteMu.Unlock()
 	if checkall || dbserieadded {
 		if strings.EqualFold(serieconfig.Source, "none") {
 			//Don't add episodes automatically
@@ -209,11 +205,9 @@ func JobReloadDbSeries(dbserie database.Dbserie, configEntry config.MediaTypeCon
 	}()
 	database.ReadWriteMu.Lock()
 	if _, nok := SeriesImportJobRunning[jobName]; nok {
-		if SeriesImportJobRunning[jobName] {
-			logger.Log.Debug("Job already running: ", jobName)
-			database.ReadWriteMu.Unlock()
-			return
-		}
+		logger.Log.Debug("Job already running: ", jobName)
+		database.ReadWriteMu.Unlock()
+		return
 	} else {
 		SeriesImportJobRunning[jobName] = true
 		database.ReadWriteMu.Unlock()

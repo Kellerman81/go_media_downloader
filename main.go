@@ -85,7 +85,9 @@ func main() {
 		LogFileSize:  cfg_general.LogFileSize,
 		LogFileCount: cfg_general.LogFileCount,
 	})
-
+	logger.Log.Infoln("Starting go_media_downloader")
+	logger.Log.Infoln("Programmer: kellerman81")
+	logger.Log.Infoln("Hint: Set Loglevel to Debug to see possible API Paths")
 	// keys, _ := config.ConfigDB.Keys([]byte(""), 0, 0, true)
 
 	// fmt.Println(cfg_general)
@@ -149,17 +151,22 @@ func main() {
 
 	counter, _ := database.CountRows("dbmovies", database.Query{})
 	if counter == 0 {
+		logger.Log.Infoln("Starting initial DB fill for movies")
 		utils.InitFillImdb()
 		utils.Movies_all_jobs("feeds", true)
 		utils.Movies_all_jobs("data", true)
 	}
 	counter, _ = database.CountRows("dbseries", database.Query{})
 	if counter == 0 {
+		logger.Log.Infoln("Starting initial DB fill for series")
 		utils.Series_all_jobs("feeds", true)
 		utils.Series_all_jobs("data", true)
 	}
 
 	router := gin.New()
+	if !strings.EqualFold(cfg_general.LogLevel, "debug") {
+		gin.SetMode(gin.ReleaseMode)
+	}
 	router.Use(ginlog.Logger(logger.Log), gin.Recovery())
 
 	if _, err := os.Stat("./views"); !os.IsNotExist(err) {
