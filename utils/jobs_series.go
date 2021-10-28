@@ -46,13 +46,13 @@ func JobImportDbSeries(serieconfig config.SerieConfig, configEntry config.MediaT
 		return
 	}
 	var cfg_general config.GeneralConfig
-	config.ConfigDB.Get("general", &cfg_general)
+	config.ConfigGet("general", &cfg_general)
 
 	if !config.ConfigCheck("imdb") {
 		return
 	}
 	var cfg_imdb config.ImdbConfig
-	config.ConfigDB.Get("imdb", &cfg_imdb)
+	config.ConfigGet("imdb", &cfg_imdb)
 
 	if strings.EqualFold(serieconfig.Source, "none") {
 		dbserie.Seriename = serieconfig.Name
@@ -167,7 +167,7 @@ func JobImportDbSeries(serieconfig config.SerieConfig, configEntry config.MediaT
 			}
 		}
 
-		dbepisode, _ := database.QueryDbserieEpisodes(database.Query{Where: "dbserie_id = ?", WhereArgs: []interface{}{dbserie.ID}})
+		dbepisode, _ := database.QueryDbserieEpisodes(database.Query{Select: "id", Where: "dbserie_id = ?", WhereArgs: []interface{}{dbserie.ID}})
 		for idxdbepi := range dbepisode {
 			counterie, _ := database.CountRows("serie_episodes", database.Query{Where: "serie_id = ? and Dbserie_episode_id = ?", WhereArgs: []interface{}{serie.ID, dbepisode[idxdbepi].ID}})
 			if counterie == 0 {
@@ -179,7 +179,7 @@ func JobImportDbSeries(serieconfig config.SerieConfig, configEntry config.MediaT
 
 		logger.Log.Debug("DbSeries add episodes end for: ", serieconfig.TvdbID)
 	} else {
-		dbepisode, _ := database.QueryDbserieEpisodes(database.Query{Where: "dbserie_id = ?", WhereArgs: []interface{}{dbserie.ID}})
+		dbepisode, _ := database.QueryDbserieEpisodes(database.Query{Select: "id", Where: "dbserie_id = ?", WhereArgs: []interface{}{dbserie.ID}})
 		for idxdbepi := range dbepisode {
 			counterid, _ := database.CountRows("serie_episodes", database.Query{Where: "serie_id = ? and Dbserie_episode_id = ?", WhereArgs: []interface{}{serie.ID, dbepisode[idxdbepi].ID}})
 			if counterid == 0 {
@@ -219,13 +219,13 @@ func JobReloadDbSeries(dbserie database.Dbserie, configEntry config.MediaTypeCon
 		return
 	}
 	var cfg_general config.GeneralConfig
-	config.ConfigDB.Get("general", &cfg_general)
+	config.ConfigGet("general", &cfg_general)
 
 	if !config.ConfigCheck("imdb") {
 		return
 	}
 	var cfg_imdb config.ImdbConfig
-	config.ConfigDB.Get("imdb", &cfg_imdb)
+	config.ConfigGet("imdb", &cfg_imdb)
 
 	dbserie, _ = database.GetDbserie(database.Query{Where: "Thetvdb_id = ?", WhereArgs: []interface{}{dbserie.ThetvdbID}})
 	logger.Log.Debug("DbSeries get metadata for: ", dbserie.ThetvdbID)
@@ -279,9 +279,9 @@ func JobReloadDbSeries(dbserie database.Dbserie, configEntry config.MediaTypeCon
 		// }
 	}
 
-	foundseries, _ := database.QuerySeries(database.Query{Where: "Dbserie_id = ?", WhereArgs: []interface{}{dbserie.ID}})
+	foundseries, _ := database.QuerySeries(database.Query{Select: "id", Where: "Dbserie_id = ?", WhereArgs: []interface{}{dbserie.ID}})
 	for idxserie := range foundseries {
-		dbepisode, _ := database.QueryDbserieEpisodes(database.Query{Where: "Dbserie_id = ?", WhereArgs: []interface{}{dbserie.ID}})
+		dbepisode, _ := database.QueryDbserieEpisodes(database.Query{Select: "id", Where: "Dbserie_id = ?", WhereArgs: []interface{}{dbserie.ID}})
 
 		for idxdbepi := range dbepisode {
 			counter, _ := database.CountRows("serie_episodes", database.Query{Where: "Serie_id = ? and Dbserie_episode_id = ?", WhereArgs: []interface{}{foundseries[idxserie].ID, dbepisode[idxdbepi].ID}})
@@ -449,7 +449,7 @@ func JobImportSeriesParseV2(file string, updatemissing bool, configEntry config.
 			return
 		}
 		var cfg_quality config.QualityConfig
-		config.ConfigDB.Get("quality_"+list.Template_quality, &cfg_quality)
+		config.ConfigGet("quality_"+list.Template_quality, &cfg_quality)
 
 		cutoffPrio := NewCutoffPrio(configEntry, cfg_quality)
 
@@ -487,7 +487,7 @@ func JobImportSeriesParseV2(file string, updatemissing bool, configEntry config.
 				SeriesEpisode, SeriesEpisodeErr = database.GetSerieEpisodes(database.Query{Select: "Serie_episodes.*", InnerJoin: "Dbserie_episodes ON Dbserie_episodes.ID = Serie_episodes.Dbserie_episode_id", Where: "Serie_episodes.serie_id = ? AND DbSerie_episodes.Season = ? AND DbSerie_episodes.Episode = ?", WhereArgs: []interface{}{series.ID, m.Season, epi}})
 			}
 			if SeriesEpisodeErr == nil {
-				_, SeriesEpisodeFileerr := database.GetSerieEpisodeFiles(database.Query{Where: "location = ? AND serie_episode_id = ?", WhereArgs: []interface{}{file, SeriesEpisode.ID}})
+				_, SeriesEpisodeFileerr := database.GetSerieEpisodeFiles(database.Query{Select: "id", Where: "location = ? AND serie_episode_id = ?", WhereArgs: []interface{}{file, SeriesEpisode.ID}})
 				if SeriesEpisodeFileerr != nil {
 					if SeriesEpisode.DbserieID == 0 {
 						logger.Log.Warn("Failed parse match sub1: ", file, " as ", m.Title)
@@ -504,7 +504,7 @@ func JobImportSeriesParseV2(file string, updatemissing bool, configEntry config.
 								continue
 							}
 							var cfg_path config.PathsConfig
-							config.ConfigDB.Get("path_"+configEntry.Data[idxpath].Template_path, &cfg_path)
+							config.ConfigGet("path_"+configEntry.Data[idxpath].Template_path, &cfg_path)
 
 							pppath := cfg_path.Path
 							if strings.Contains(file, pppath) {
@@ -566,7 +566,7 @@ func RefreshSeries() {
 		return
 	}
 	var cfg_general config.GeneralConfig
-	config.ConfigDB.Get("general", &cfg_general)
+	config.ConfigGet("general", &cfg_general)
 
 	if cfg_general.SchedulerDisabled {
 		return
@@ -585,7 +585,7 @@ func RefreshSeriesInc() {
 		return
 	}
 	var cfg_general config.GeneralConfig
-	config.ConfigDB.Get("general", &cfg_general)
+	config.ConfigGet("general", &cfg_general)
 
 	if cfg_general.SchedulerDisabled {
 		return
@@ -606,7 +606,7 @@ func Series_all_jobs(job string, force bool) {
 	logger.Log.Info("Started Job: ", job, " for all")
 	for _, idxserie := range serie_keys {
 		var cfg_serie config.MediaTypeConfig
-		config.ConfigDB.Get(string(idxserie), &cfg_serie)
+		config.ConfigGet(string(idxserie), &cfg_serie)
 
 		Series_single_jobs(job, cfg_serie.Name, "", force)
 	}
@@ -626,7 +626,7 @@ func Series_single_jobs(job string, typename string, listname string, force bool
 		return
 	}
 	var cfg_general config.GeneralConfig
-	config.ConfigDB.Get("general", &cfg_general)
+	config.ConfigGet("general", &cfg_general)
 
 	if cfg_general.SchedulerDisabled && !force {
 		logger.Log.Info("Skipped Job: ", job, " for ", typename)
@@ -648,7 +648,7 @@ func Series_single_jobs(job string, typename string, listname string, force bool
 	ok, _ := config.ConfigDB.Has("serie_" + typename)
 	if ok {
 		var cfg_serie config.MediaTypeConfig
-		config.ConfigDB.Get("serie_"+typename, &cfg_serie)
+		config.ConfigGet("serie_"+typename, &cfg_serie)
 
 		switch job {
 		case "searchmissingfull":
@@ -718,7 +718,7 @@ func Importnewseriessingle(row config.MediaTypeConfig, list config.MediaListsCon
 		return
 	}
 	var cfg_general config.GeneralConfig
-	config.ConfigDB.Get("general", &cfg_general)
+	config.ConfigGet("general", &cfg_general)
 
 	results := Feeds(row, list)
 
@@ -745,13 +745,13 @@ func getnewepisodessingle(row config.MediaTypeConfig, list config.MediaListsConf
 		return
 	}
 	var cfg_general config.GeneralConfig
-	config.ConfigDB.Get("general", &cfg_general)
+	config.ConfigGet("general", &cfg_general)
 
 	if !config.ConfigCheck("quality_" + list.Template_quality) {
 		return
 	}
 	var cfg_quality config.QualityConfig
-	config.ConfigDB.Get("quality_"+list.Template_quality, &cfg_quality)
+	config.ConfigGet("quality_"+list.Template_quality, &cfg_quality)
 
 	defaultPrio := &ParseInfo{Quality: row.DefaultQuality, Resolution: row.DefaultResolution}
 	defaultPrio.GetPriority(row, cfg_quality)
@@ -763,7 +763,7 @@ func getnewepisodessingle(row config.MediaTypeConfig, list config.MediaListsConf
 			continue
 		}
 		var cfg_path config.PathsConfig
-		config.ConfigDB.Get("path_"+row.Data[idxpath].Template_path, &cfg_path)
+		config.ConfigGet("path_"+row.Data[idxpath].Template_path, &cfg_path)
 
 		if strings.EqualFold(LastSeriesPath, cfg_path.Path) && LastSeriesPath != "" {
 			time.Sleep(time.Duration(5) * time.Second)
@@ -789,7 +789,7 @@ func getnewepisodessingle(row config.MediaTypeConfig, list config.MediaListsConf
 }
 
 func checkmissingepisodesflag(row config.MediaTypeConfig, list config.MediaListsConfig) {
-	episodes, _ := database.QuerySerieEpisodes(database.Query{Select: "serie_episodes.*", InnerJoin: " series on series.id = serie_episodes.serie_id", Where: "series.listname=?", WhereArgs: []interface{}{list.Name}})
+	episodes, _ := database.QuerySerieEpisodes(database.Query{Select: "serie_episodes.id, serie_episodes.missing", InnerJoin: " series on series.id = serie_episodes.serie_id", Where: "series.listname=?", WhereArgs: []interface{}{list.Name}})
 	for idxepi := range episodes {
 		counter, _ := database.CountRows("serie_episode_files", database.Query{Where: "serie_episode_id = ?", WhereArgs: []interface{}{episodes[idxepi].ID}})
 		if counter >= 1 {
@@ -809,7 +809,7 @@ func checkmissingepisodessingle(row config.MediaTypeConfig, list config.MediaLis
 		return
 	}
 	var cfg_general config.GeneralConfig
-	config.ConfigDB.Get("general", &cfg_general)
+	config.ConfigGet("general", &cfg_general)
 
 	series, _ := database.QuerySeries(database.Query{Select: "id", Where: "listname=?", WhereArgs: []interface{}{list.Name}})
 
@@ -832,7 +832,7 @@ func seriesStructureSingle(row config.MediaTypeConfig, list config.MediaListsCon
 		return
 	}
 	var cfg_general config.GeneralConfig
-	config.ConfigDB.Get("general", &cfg_general)
+	config.ConfigGet("general", &cfg_general)
 
 	swfile := sizedwaitgroup.New(cfg_general.WorkerFiles)
 
@@ -842,14 +842,14 @@ func seriesStructureSingle(row config.MediaTypeConfig, list config.MediaListsCon
 			continue
 		}
 		var cfg_path_import config.PathsConfig
-		config.ConfigDB.Get("path_"+mappathimport, &cfg_path_import)
+		config.ConfigGet("path_"+mappathimport, &cfg_path_import)
 
 		if !config.ConfigCheck("path_" + row.Data[0].Template_path) {
 			continue
 		}
 		var cfg_path config.PathsConfig
 		if len(row.Data) >= 1 {
-			config.ConfigDB.Get("path_"+row.Data[0].Template_path, &cfg_path)
+			config.ConfigGet("path_"+row.Data[0].Template_path, &cfg_path)
 		}
 		if strings.EqualFold(LastSeriesStructure, cfg_path_import.Path) && LastSeriesStructure != "" {
 			time.Sleep(time.Duration(15) * time.Second)

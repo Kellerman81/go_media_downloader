@@ -229,7 +229,7 @@ func apiSeriesSearch(c *gin.Context) {
 
 	for _, idxserie := range serie_keys {
 		var cfg_serie config.MediaTypeConfig
-		config.ConfigDB.Get(string(idxserie), &cfg_serie)
+		config.ConfigGet(string(idxserie), &cfg_serie)
 
 		for idxlist := range cfg_serie.Lists {
 			if strings.EqualFold(cfg_serie.Lists[idxlist].Name, serie.Listname) {
@@ -249,7 +249,7 @@ func apiSeriesEpisodeSearch(c *gin.Context) {
 
 	for _, idxserie := range serie_keys {
 		var cfg_serie config.MediaTypeConfig
-		config.ConfigDB.Get(string(idxserie), &cfg_serie)
+		config.ConfigGet(string(idxserie), &cfg_serie)
 
 		for idxlist := range cfg_serie.Lists {
 			if strings.EqualFold(cfg_serie.Lists[idxlist].Name, serie.Listname) {

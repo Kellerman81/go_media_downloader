@@ -203,7 +203,7 @@ func getnzbconfig(nzb nzbwithprio, quality string) (category string, target conf
 		return
 	}
 	var cfg_quality config.QualityConfig
-	config.ConfigDB.Get("quality_"+quality, &cfg_quality)
+	config.ConfigGet("quality_"+quality, &cfg_quality)
 
 	for idx := range cfg_quality.Indexer {
 		if strings.EqualFold(cfg_quality.Indexer[idx].Template_indexer, nzb.Indexer) {
@@ -211,13 +211,13 @@ func getnzbconfig(nzb nzbwithprio, quality string) (category string, target conf
 				continue
 			}
 			var cfg_path config.PathsConfig
-			config.ConfigDB.Get("path_"+cfg_quality.Indexer[idx].Template_path_nzb, &cfg_path)
+			config.ConfigGet("path_"+cfg_quality.Indexer[idx].Template_path_nzb, &cfg_path)
 
 			if !config.ConfigCheck("downloader_" + cfg_quality.Indexer[idx].Template_downloader) {
 				continue
 			}
 			var cfg_downloader config.DownloaderConfig
-			config.ConfigDB.Get("downloader_"+cfg_quality.Indexer[idx].Template_downloader, &cfg_downloader)
+			config.ConfigGet("downloader_"+cfg_quality.Indexer[idx].Template_downloader, &cfg_downloader)
 
 			category = cfg_quality.Indexer[idx].Category_dowloader
 			target = cfg_path
@@ -239,13 +239,13 @@ func getnzbconfig(nzb nzbwithprio, quality string) (category string, target conf
 			return
 		}
 		var cfg_path config.PathsConfig
-		config.ConfigDB.Get("path_"+cfg_quality.Indexer[0].Template_path_nzb, &cfg_path)
+		config.ConfigGet("path_"+cfg_quality.Indexer[0].Template_path_nzb, &cfg_path)
 
 		if !config.ConfigCheck("downloader_" + cfg_quality.Indexer[0].Template_downloader) {
 			return
 		}
 		var cfg_downloader config.DownloaderConfig
-		config.ConfigDB.Get("downloader_"+cfg_quality.Indexer[0].Template_downloader, &cfg_downloader)
+		config.ConfigGet("downloader_"+cfg_quality.Indexer[0].Template_downloader, &cfg_downloader)
 
 		target = cfg_path
 		downloader = cfg_downloader

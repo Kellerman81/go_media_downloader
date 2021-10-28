@@ -41,7 +41,7 @@ func QueryDbmovie(qu Query) ([]Dbmovie, error) {
 	}
 	query := buildquery(columns, "dbmovies", qu, false)
 	var cfg_general config.GeneralConfig
-	config.ConfigDB.Get("general", &cfg_general)
+	config.ConfigGet("general", &cfg_general)
 
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
@@ -88,7 +88,7 @@ func QueryDbmovieTitle(qu Query) ([]DbmovieTitle, error) {
 	}
 	query := buildquery(columns, "dbmovie_titles", qu, false)
 	var cfg_general config.GeneralConfig
-	config.ConfigDB.Get("general", &cfg_general)
+	config.ConfigGet("general", &cfg_general)
 
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
@@ -135,7 +135,7 @@ func QueryDbserie(qu Query) ([]Dbserie, error) {
 	}
 	query := buildquery(columns, "Dbseries", qu, false)
 	var cfg_general config.GeneralConfig
-	config.ConfigDB.Get("general", &cfg_general)
+	config.ConfigGet("general", &cfg_general)
 
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
@@ -182,7 +182,7 @@ func QueryDbserieEpisodes(qu Query) ([]DbserieEpisode, error) {
 	}
 	query := buildquery(columns, "dbserie_episodes", qu, false)
 	var cfg_general config.GeneralConfig
-	config.ConfigDB.Get("general", &cfg_general)
+	config.ConfigGet("general", &cfg_general)
 
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
@@ -228,7 +228,7 @@ func QueryDbserieAlternates(qu Query) ([]DbserieAlternate, error) {
 	}
 	query := buildquery(columns, "dbserie_alternates", qu, false)
 	var cfg_general config.GeneralConfig
-	config.ConfigDB.Get("general", &cfg_general)
+	config.ConfigGet("general", &cfg_general)
 
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
@@ -275,7 +275,7 @@ func QuerySeries(qu Query) ([]Serie, error) {
 	}
 	query := buildquery(columns, "series", qu, false)
 	var cfg_general config.GeneralConfig
-	config.ConfigDB.Get("general", &cfg_general)
+	config.ConfigGet("general", &cfg_general)
 
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
@@ -322,7 +322,7 @@ func QuerySerieEpisodes(qu Query) ([]SerieEpisode, error) {
 	}
 	query := buildquery(columns, "serie_episodes", qu, false)
 	var cfg_general config.GeneralConfig
-	config.ConfigDB.Get("general", &cfg_general)
+	config.ConfigGet("general", &cfg_general)
 
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
@@ -369,7 +369,7 @@ func QuerySerieEpisodeHistory(qu Query) ([]SerieEpisodeHistory, error) {
 	}
 	query := buildquery(columns, "serie_episode_histories", qu, false)
 	var cfg_general config.GeneralConfig
-	config.ConfigDB.Get("general", &cfg_general)
+	config.ConfigGet("general", &cfg_general)
 
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
@@ -416,7 +416,7 @@ func QuerySerieEpisodeFiles(qu Query) ([]SerieEpisodeFile, error) {
 	}
 	query := buildquery(columns, "serie_episode_files", qu, false)
 	var cfg_general config.GeneralConfig
-	config.ConfigDB.Get("general", &cfg_general)
+	config.ConfigGet("general", &cfg_general)
 
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
@@ -468,7 +468,7 @@ func QueryMovies(qu Query) ([]Movie, error) {
 	}
 	query := buildquery(columns, "movies", qu, false)
 	var cfg_general config.GeneralConfig
-	config.ConfigDB.Get("general", &cfg_general)
+	config.ConfigGet("general", &cfg_general)
 
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
@@ -515,7 +515,7 @@ func QueryMovieFiles(qu Query) ([]MovieFile, error) {
 	}
 	query := buildquery(columns, "movie_files", qu, false)
 	var cfg_general config.GeneralConfig
-	config.ConfigDB.Get("general", &cfg_general)
+	config.ConfigGet("general", &cfg_general)
 
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
@@ -562,7 +562,7 @@ func QueryMovieHistory(qu Query) ([]MovieHistory, error) {
 	}
 	query := buildquery(columns, "movie_histories", qu, false)
 	var cfg_general config.GeneralConfig
-	config.ConfigDB.Get("general", &cfg_general)
+	config.ConfigGet("general", &cfg_general)
 
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
@@ -609,7 +609,7 @@ func QueryRssHistory(qu Query) ([]RSSHistory, error) {
 	}
 	query := buildquery(columns, "r_sshistories", qu, false)
 	var cfg_general config.GeneralConfig
-	config.ConfigDB.Get("general", &cfg_general)
+	config.ConfigGet("general", &cfg_general)
 
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
@@ -655,7 +655,7 @@ func QueryQualities(qu Query) ([]Qualities, error) {
 	}
 	query := buildquery(columns, "qualities", qu, false)
 	var cfg_general config.GeneralConfig
-	config.ConfigDB.Get("general", &cfg_general)
+	config.ConfigGet("general", &cfg_general)
 
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
@@ -701,7 +701,7 @@ func QueryJobHistory(qu Query) ([]JobHistory, error) {
 	}
 	query := buildquery(columns, "job_histories", qu, false)
 	var cfg_general config.GeneralConfig
-	config.ConfigDB.Get("general", &cfg_general)
+	config.ConfigGet("general", &cfg_general)
 
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
@@ -747,7 +747,7 @@ func QueryIndexerFails(qu Query) ([]IndexerFail, error) {
 	}
 	query := buildquery(columns, "indexer_fails", qu, false)
 	var cfg_general config.GeneralConfig
-	config.ConfigDB.Get("general", &cfg_general)
+	config.ConfigGet("general", &cfg_general)
 
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
@@ -794,7 +794,7 @@ func QuerySerieFileUnmatched(qu Query) ([]SerieFileUnmatched, error) {
 	}
 	query := buildquery(columns, "serie_file_unmatcheds", qu, false)
 	var cfg_general config.GeneralConfig
-	config.ConfigDB.Get("general", &cfg_general)
+	config.ConfigGet("general", &cfg_general)
 
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
@@ -841,7 +841,7 @@ func QueryMovieFileUnmatched(qu Query) ([]MovieFileUnmatched, error) {
 	}
 	query := buildquery(columns, "movie_file_unmatcheds", qu, false)
 	var cfg_general config.GeneralConfig
-	config.ConfigDB.Get("general", &cfg_general)
+	config.ConfigGet("general", &cfg_general)
 
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
@@ -887,7 +887,7 @@ func QueryResultMovies(qu Query) ([]ResultMovies, error) {
 	}
 	query := buildquery(columns, "movies", qu, false)
 	var cfg_general config.GeneralConfig
-	config.ConfigDB.Get("general", &cfg_general)
+	config.ConfigGet("general", &cfg_general)
 
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
@@ -934,7 +934,7 @@ func QueryResultSeries(qu Query) ([]ResultSeries, error) {
 	}
 	query := buildquery(columns, "series", qu, false)
 	var cfg_general config.GeneralConfig
-	config.ConfigDB.Get("general", &cfg_general)
+	config.ConfigGet("general", &cfg_general)
 
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
@@ -981,7 +981,7 @@ func QueryResultSerieEpisodes(qu Query) ([]ResultSerieEpisodes, error) {
 	}
 	query := buildquery(columns, "serie_episodes", qu, false)
 	var cfg_general config.GeneralConfig
-	config.ConfigDB.Get("general", &cfg_general)
+	config.ConfigGet("general", &cfg_general)
 
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
@@ -1028,7 +1028,7 @@ func QueryImdbGenre(qu Query) ([]ImdbGenres, error) {
 	}
 	query := buildquery(columns, "imdb_genres", qu, false)
 	var cfg_general config.GeneralConfig
-	config.ConfigDB.Get("general", &cfg_general)
+	config.ConfigGet("general", &cfg_general)
 
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
@@ -1075,7 +1075,7 @@ func QueryImdbRating(qu Query) ([]ImdbRatings, error) {
 	}
 	query := buildquery(columns, "imdb_ratings", qu, false)
 	var cfg_general config.GeneralConfig
-	config.ConfigDB.Get("general", &cfg_general)
+	config.ConfigGet("general", &cfg_general)
 
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
@@ -1122,7 +1122,7 @@ func QueryImdbAka(qu Query) ([]ImdbAka, error) {
 	}
 	query := buildquery(columns, "imdb_akas", qu, false)
 	var cfg_general config.GeneralConfig
-	config.ConfigDB.Get("general", &cfg_general)
+	config.ConfigGet("general", &cfg_general)
 
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
@@ -1170,7 +1170,7 @@ func QueryImdbTitle(qu Query) ([]ImdbTitle, error) {
 	}
 	query := buildquery(columns, "imdb_titles", qu, false)
 	var cfg_general config.GeneralConfig
-	config.ConfigDB.Get("general", &cfg_general)
+	config.ConfigGet("general", &cfg_general)
 
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
@@ -1232,7 +1232,7 @@ func CountRows(table string, qu Query) (int, error) {
 	// } else {
 	//}
 	var cfg_general config.GeneralConfig
-	config.ConfigDB.Get("general", &cfg_general)
+	config.ConfigGet("general", &cfg_general)
 
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", buildquery("count(*)", table, qu, true), " -args: ", qu.WhereArgs)
@@ -1333,7 +1333,7 @@ func dbexec(dbtype string, query string, args []interface{}) (sql.Result, error)
 	var result sql.Result
 	var err error
 	var cfg_general config.GeneralConfig
-	config.ConfigDB.Get("general", &cfg_general)
+	config.ConfigGet("general", &cfg_general)
 
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", query, " -args: ", args)
@@ -1403,7 +1403,7 @@ func DeleteRow(table string, qu Query) (sql.Result, error) {
 		query += " where " + qu.Where
 	}
 	var cfg_general config.GeneralConfig
-	config.ConfigDB.Get("general", &cfg_general)
+	config.ConfigGet("general", &cfg_general)
 
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
@@ -1443,7 +1443,7 @@ func ImdbCountRows(table string, qu Query) (int, error) {
 	//}
 
 	var cfg_general config.GeneralConfig
-	config.ConfigDB.Get("general", &cfg_general)
+	config.ConfigGet("general", &cfg_general)
 
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)

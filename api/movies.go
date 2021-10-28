@@ -138,7 +138,7 @@ func apimoviesSearch(c *gin.Context) {
 
 	for _, idxmovie := range movie_keys {
 		var cfg_movie config.MediaTypeConfig
-		config.ConfigDB.Get(string(idxmovie), &cfg_movie)
+		config.ConfigGet(string(idxmovie), &cfg_movie)
 
 		for idxlist := range cfg_movie.Lists {
 			if strings.EqualFold(cfg_movie.Lists[idxlist].Name, movie.Listname) {

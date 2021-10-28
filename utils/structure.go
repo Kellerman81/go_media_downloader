@@ -117,7 +117,7 @@ func (s *Structure) ParseFile(videofile string, checkfolder bool, folder string,
 		return
 	}
 	var cfg_quality config.QualityConfig
-	config.ConfigDB.Get("quality_"+s.list.Template_quality, &cfg_quality)
+	config.ConfigGet("quality_"+s.list.Template_quality, &cfg_quality)
 
 	m.Title = strings.Trim(m.Title, " ")
 	for idx := range cfg_quality.TitleStripSuffixForSearch {
@@ -135,7 +135,7 @@ func (s *Structure) ParseFileAdditional(videofile string, m *ParseInfo, folder s
 		return
 	}
 	var cfg_quality config.QualityConfig
-	config.ConfigDB.Get("quality_"+s.list.Template_quality, &cfg_quality)
+	config.ConfigGet("quality_"+s.list.Template_quality, &cfg_quality)
 
 	m.GetPriority(s.configEntry, cfg_quality)
 
@@ -168,14 +168,14 @@ func (s *Structure) ParseFileAdditional(videofile string, m *ParseInfo, folder s
 }
 
 func (s *Structure) CheckLowerQualTarget(folder string, videofile string, m ParseInfo, cleanuplowerquality bool, movie database.Movie) ([]string, int, error) {
-	moviefiles, _ := database.QueryMovieFiles(database.Query{Where: "movie_id = ?", WhereArgs: []interface{}{movie.ID}})
+	moviefiles, _ := database.QueryMovieFiles(database.Query{Select: "location, resolution_id, quality_id, codec_id, audio_id, proper, extended, repack", Where: "movie_id = ?", WhereArgs: []interface{}{movie.ID}})
 	logger.Log.Debug("Found existing files: ", len(moviefiles))
 
 	if !config.ConfigCheck("quality_" + s.list.Template_quality) {
 		return []string{}, 0, errors.New("config not found")
 	}
 	var cfg_quality config.QualityConfig
-	config.ConfigDB.Get("quality_"+s.list.Template_quality, &cfg_quality)
+	config.ConfigGet("quality_"+s.list.Template_quality, &cfg_quality)
 
 	oldpriority := getHighestMoviePriorityByFiles(movie, s.configEntry, cfg_quality)
 	logger.Log.Debug("Found existing highest prio: ", oldpriority)
@@ -239,7 +239,7 @@ func (s *Structure) GenerateNaming(videofile string, m ParseInfo, movie database
 		logger.Log.Debug("trimmed title: ", movietitle)
 
 		if dbmovie.Title == "" {
-			dbmoviealt, dbmoviealterr := database.GetDbmovieTitle(database.Query{Where: "dbmovie_id=?", WhereArgs: []interface{}{movie.DbmovieID}})
+			dbmoviealt, dbmoviealterr := database.GetDbmovieTitle(database.Query{Select: "title", Where: "dbmovie_id=?", WhereArgs: []interface{}{movie.DbmovieID}})
 			if dbmoviealterr == nil {
 				dbmovie.Title = dbmoviealt.Title
 			} else {
@@ -350,7 +350,7 @@ func (s *Structure) GenerateNaming(videofile string, m ParseInfo, movie database
 
 		foldername, filename = path.Split(s.configEntry.Naming)
 		if dbserie.Seriename == "" {
-			dbseriealt, dbseriealterr := database.GetDbserieAlternates(database.Query{Where: "dbserie_id=?", WhereArgs: []interface{}{series.DbserieID}})
+			dbseriealt, dbseriealterr := database.GetDbserieAlternates(database.Query{Select: "title", Where: "dbserie_id=?", WhereArgs: []interface{}{series.DbserieID}})
 			if dbseriealterr == nil {
 				dbserie.Seriename = dbseriealt.Title
 			} else {
@@ -670,7 +670,7 @@ func StructureFolders(grouptype string, sourcepath config.PathsConfig, targetpat
 					}
 				}
 
-				moviehistory, moviehistoryerr := database.GetMovieHistory(database.Query{Select: "movie_histories.*", InnerJoin: "movies on movies.id=movie_histories.movie_id", Where: "movie_histories.title = ? and movies.listname = ?", WhereArgs: []interface{}{filepath.Base(folders[idx]), list.Name}, OrderBy: "movie_histories.ID desc"})
+				moviehistory, moviehistoryerr := database.GetMovieHistory(database.Query{Select: "movie_histories.dbmovie_id", InnerJoin: "movies on movies.id=movie_histories.movie_id", Where: "movie_histories.title = ? and movies.listname = ?", WhereArgs: []interface{}{filepath.Base(folders[idx]), list.Name}, OrderBy: "movie_histories.ID desc"})
 
 				if moviehistoryerr == nil {
 					movies, _ := database.QueryMovies(database.Query{Select: "movies.*", InnerJoin: "Dbmovies on Dbmovies.id = movies.dbmovie_id", Where: "Dbmovies.id = ? and movies.listname = ?", WhereArgs: []interface{}{moviehistory.DbmovieID, list.Name}})
@@ -686,7 +686,7 @@ func StructureFolders(grouptype string, sourcepath config.PathsConfig, targetpat
 					return
 				}
 				var cfg_quality config.QualityConfig
-				config.ConfigDB.Get("quality_"+list.Template_quality, &cfg_quality)
+				config.ConfigGet("quality_"+list.Template_quality, &cfg_quality)
 
 				if entriesfound == 0 && len(m.Imdb) == 0 {
 					lists := make([]string, 0, len(configEntry.Lists))
@@ -778,7 +778,7 @@ func StructureFolders(grouptype string, sourcepath config.PathsConfig, targetpat
 					return
 				}
 				var cfg_quality config.QualityConfig
-				config.ConfigDB.Get("quality_"+list.Template_quality, &cfg_quality)
+				config.ConfigGet("quality_"+list.Template_quality, &cfg_quality)
 
 				//find dbseries
 				series, entriesfound := findSerieByParser(*m, titleyear, seriestitle, list.Name)
@@ -823,7 +823,7 @@ func StructureFolders(grouptype string, sourcepath config.PathsConfig, targetpat
 }
 func (s *Structure) Notify(videotarget string, filename string, videofile string, movie database.Movie, serieepisode database.SerieEpisode, oldfiles []string) {
 	if strings.ToLower(s.groupType) == "movie" {
-		dbmovie, _ := database.GetDbmovie(database.Query{Where: "id=?", WhereArgs: []interface{}{movie.DbmovieID}})
+		dbmovie, _ := database.GetDbmovie(database.Query{Select: "title, year, imdb_id", Where: "id=?", WhereArgs: []interface{}{movie.DbmovieID}})
 		for idx := range s.configEntry.Notification {
 			notifier("added_data", s.configEntry.Notification[idx], InputNotifier{
 				Targetpath:     filepath.Join(videotarget, filename),
@@ -837,8 +837,8 @@ func (s *Structure) Notify(videotarget string, filename string, videofile string
 			})
 		}
 	} else {
-		dbserieepisode, _ := database.GetDbserieEpisodes(database.Query{Where: "id=?", WhereArgs: []interface{}{serieepisode.DbserieEpisodeID}})
-		dbserie, _ := database.GetDbserie(database.Query{Where: "id=?", WhereArgs: []interface{}{dbserieepisode.DbserieID}})
+		dbserieepisode, _ := database.GetDbserieEpisodes(database.Query{Select: "season, episode, identifier, dbserie_id", Where: "id=?", WhereArgs: []interface{}{serieepisode.DbserieEpisodeID}})
+		dbserie, _ := database.GetDbserie(database.Query{Select: "seriename, firstaired, thetvdb_id", Where: "id=?", WhereArgs: []interface{}{dbserieepisode.DbserieID}})
 		for idx := range s.configEntry.Notification {
 			notifier("added_data", s.configEntry.Notification[idx], InputNotifier{
 				Targetpath:     filepath.Join(videotarget, filename),
@@ -917,7 +917,7 @@ func (s *Structure) GetSeriesEpisodes(series database.Serie, videofile string, m
 				return
 			}
 			var cfg_quality config.QualityConfig
-			config.ConfigDB.Get("quality_"+s.list.Template_quality, &cfg_quality)
+			config.ConfigGet("quality_"+s.list.Template_quality, &cfg_quality)
 
 			//episodeids = append(episodeids, SeriesEpisode.ID)
 			old_prio := getHighestEpisodePriorityByFiles(SeriesEpisode, s.configEntry, cfg_quality)

@@ -35,7 +35,7 @@ func InitScheduler() {
 		return
 	}
 	var cfg_general config.GeneralConfig
-	config.ConfigDB.Get("general", &cfg_general)
+	config.ConfigGet("general", &cfg_general)
 
 	feeds := tasks.NewDispatcher(1, 100)
 	feeds.Start()
@@ -50,13 +50,13 @@ func InitScheduler() {
 
 	for _, idxmovie := range movie_keys {
 		var cfg_movie config.MediaTypeConfig
-		config.ConfigDB.Get(string(idxmovie), &cfg_movie)
+		config.ConfigGet(string(idxmovie), &cfg_movie)
 
 		if !config.ConfigCheck("scheduler_" + cfg_movie.Template_scheduler) {
 			continue
 		}
 		var schedule config.SchedulerConfig
-		config.ConfigDB.Get("scheduler_"+cfg_movie.Template_scheduler, &schedule)
+		config.ConfigGet("scheduler_"+cfg_movie.Template_scheduler, &schedule)
 
 		if schedule.Interval_indexer_missing != "" {
 			search.DispatchEvery(func() {
@@ -110,7 +110,7 @@ func InitScheduler() {
 				if !config.ConfigCheck("scheduler_" + cfg_movie.Lists[idxlist].Template_scheduler) {
 					continue
 				}
-				config.ConfigDB.Get("scheduler_"+cfg_movie.Lists[idxlist].Template_scheduler, &schedule)
+				config.ConfigGet("scheduler_"+cfg_movie.Lists[idxlist].Template_scheduler, &schedule)
 			}
 			if schedule.Interval_feeds != "" {
 				feeds.DispatchEvery(func() {
@@ -134,7 +134,7 @@ func InitScheduler() {
 		return
 	}
 	var defaultschedule config.SchedulerConfig
-	config.ConfigDB.Get("scheduler_"+"Default", &defaultschedule)
+	config.ConfigGet("scheduler_"+"Default", &defaultschedule)
 
 	if defaultschedule.Interval_scan_data != "" {
 		data.DispatchEvery(func() {
@@ -146,13 +146,13 @@ func InitScheduler() {
 
 	for _, idxserie := range serie_keys {
 		var cfg_serie config.MediaTypeConfig
-		config.ConfigDB.Get(string(idxserie), &cfg_serie)
+		config.ConfigGet(string(idxserie), &cfg_serie)
 
 		if !config.ConfigCheck("scheduler_" + cfg_serie.Template_scheduler) {
 			continue
 		}
 		var schedule config.SchedulerConfig
-		config.ConfigDB.Get("scheduler_"+cfg_serie.Template_scheduler, &schedule)
+		config.ConfigGet("scheduler_"+cfg_serie.Template_scheduler, &schedule)
 
 		if schedule.Interval_indexer_missing != "" {
 			search.DispatchEvery(func() {
@@ -204,12 +204,12 @@ func InitScheduler() {
 			if !config.ConfigCheck("scheduler_" + cfg_serie.Template_scheduler) {
 				continue
 			}
-			config.ConfigDB.Get("scheduler_"+cfg_serie.Template_scheduler, &schedule)
+			config.ConfigGet("scheduler_"+cfg_serie.Template_scheduler, &schedule)
 			if cfg_serie.Lists[idxlist].Template_scheduler != "" {
 				if !config.ConfigCheck("scheduler_" + cfg_serie.Lists[idxlist].Template_scheduler) {
 					continue
 				}
-				config.ConfigDB.Get("scheduler_"+cfg_serie.Lists[idxlist].Template_scheduler, &schedule)
+				config.ConfigGet("scheduler_"+cfg_serie.Lists[idxlist].Template_scheduler, &schedule)
 			}
 			if schedule.Interval_feeds != "" {
 				feeds.DispatchEvery(func() {

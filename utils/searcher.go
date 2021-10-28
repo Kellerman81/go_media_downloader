@@ -26,14 +26,14 @@ func SearchMovieMissing(configEntry config.MediaTypeConfig, jobcount int, titles
 		return
 	}
 	var cfg_general config.GeneralConfig
-	config.ConfigDB.Get("general", &cfg_general)
+	config.ConfigGet("general", &cfg_general)
 
 	if len(configEntry.Data) >= 1 {
 		if !config.ConfigCheck("path_" + configEntry.Data[0].Template_path) {
 			return
 		}
 		var cfg_path config.PathsConfig
-		config.ConfigDB.Get("path_"+configEntry.Data[0].Template_path, &cfg_path)
+		config.ConfigGet("path_"+configEntry.Data[0].Template_path, &cfg_path)
 
 		scaninterval = cfg_path.MissingScanInterval
 	}
@@ -99,14 +99,14 @@ func SearchMovieUpgrade(configEntry config.MediaTypeConfig, jobcount int, titles
 		return
 	}
 	var cfg_general config.GeneralConfig
-	config.ConfigDB.Get("general", &cfg_general)
+	config.ConfigGet("general", &cfg_general)
 
 	if len(configEntry.Data) >= 1 {
 		if !config.ConfigCheck("path_" + configEntry.Data[0].Template_path) {
 			return
 		}
 		var cfg_path config.PathsConfig
-		config.ConfigDB.Get("path_"+configEntry.Data[0].Template_path, &cfg_path)
+		config.ConfigGet("path_"+configEntry.Data[0].Template_path, &cfg_path)
 
 		scaninterval = cfg_path.UpgradeScanInterval
 	}
@@ -152,7 +152,7 @@ func SearchSerieSingle(serie database.Serie, configEntry config.MediaTypeConfig,
 		return
 	}
 	var cfg_general config.GeneralConfig
-	config.ConfigDB.Get("general", &cfg_general)
+	config.ConfigGet("general", &cfg_general)
 
 	swg := sizedwaitgroup.New(cfg_general.WorkerSearch)
 	episodes, _ := database.QuerySerieEpisodes(database.Query{Where: "serie_id = ?", WhereArgs: []interface{}{serie.ID}})
@@ -188,14 +188,14 @@ func SearchSerieMissing(configEntry config.MediaTypeConfig, jobcount int, titles
 		return
 	}
 	var cfg_general config.GeneralConfig
-	config.ConfigDB.Get("general", &cfg_general)
+	config.ConfigGet("general", &cfg_general)
 
 	if len(configEntry.Data) >= 1 {
 		if !config.ConfigCheck("path_" + configEntry.Data[0].Template_path) {
 			return
 		}
 		var cfg_path config.PathsConfig
-		config.ConfigDB.Get("path_"+configEntry.Data[0].Template_path, &cfg_path)
+		config.ConfigGet("path_"+configEntry.Data[0].Template_path, &cfg_path)
 
 		scaninterval = cfg_path.MissingScanInterval
 	}
@@ -228,7 +228,7 @@ func SearchSerieMissing(configEntry config.MediaTypeConfig, jobcount int, titles
 
 	swg := sizedwaitgroup.New(cfg_general.WorkerSearch)
 	for idx := range missingepisode {
-		dbepi, dbepierr := database.GetDbserieEpisodes(database.Query{Where: "id=?", WhereArgs: []interface{}{missingepisode[idx].DbserieEpisodeID}})
+		dbepi, dbepierr := database.GetDbserieEpisodes(database.Query{Select: "identifier, dbserie_id", Where: "id=?", WhereArgs: []interface{}{missingepisode[idx].DbserieEpisodeID}})
 		if dbepierr != nil {
 			continue
 		}
@@ -254,14 +254,14 @@ func SearchSerieUpgrade(configEntry config.MediaTypeConfig, jobcount int, titles
 		return
 	}
 	var cfg_general config.GeneralConfig
-	config.ConfigDB.Get("general", &cfg_general)
+	config.ConfigGet("general", &cfg_general)
 
 	if len(configEntry.Data) >= 1 {
 		if !config.ConfigCheck("path_" + configEntry.Data[0].Template_path) {
 			return
 		}
 		var cfg_path config.PathsConfig
-		config.ConfigDB.Get("path_"+configEntry.Data[0].Template_path, &cfg_path)
+		config.ConfigGet("path_"+configEntry.Data[0].Template_path, &cfg_path)
 
 		scaninterval = cfg_path.UpgradeScanInterval
 	}
@@ -293,7 +293,7 @@ func SearchSerieUpgrade(configEntry config.MediaTypeConfig, jobcount int, titles
 
 	swg := sizedwaitgroup.New(cfg_general.WorkerSearch)
 	for idx := range missingepisode {
-		dbepi, dbepierr := database.GetDbserieEpisodes(database.Query{Where: "id=?", WhereArgs: []interface{}{missingepisode[idx].DbserieEpisodeID}})
+		dbepi, dbepierr := database.GetDbserieEpisodes(database.Query{Select: "identifier, dbserie_id", Where: "id=?", WhereArgs: []interface{}{missingepisode[idx].DbserieEpisodeID}})
 		if dbepierr != nil {
 			continue
 		}
@@ -386,13 +386,13 @@ func (s *Searcher) SearchRSS(searchGroupType string) searchResults {
 		return searchResults{}
 	}
 	var cfg_quality config.QualityConfig
-	config.ConfigDB.Get("quality_"+s.Quality, &cfg_quality)
+	config.ConfigGet("quality_"+s.Quality, &cfg_quality)
 
 	if !config.ConfigCheck("indexer_" + cfg_quality.Indexer[0].Template_indexer) {
 		return searchResults{}
 	}
 	var cfg_indexer config.IndexersConfig
-	config.ConfigDB.Get("indexer_"+cfg_quality.Indexer[0].Template_indexer, &cfg_indexer)
+	config.ConfigGet("indexer_"+cfg_quality.Indexer[0].Template_indexer, &cfg_indexer)
 
 	s.SearchGroupType = searchGroupType
 	s.SearchActionType = "rss"
@@ -474,7 +474,7 @@ func (s *Searcher) MovieSearch(movie database.Movie, forceDownload bool, titlese
 		return searchResults{}
 	}
 	var cfg_quality config.QualityConfig
-	config.ConfigDB.Get("quality_"+s.Quality, &cfg_quality)
+	config.ConfigGet("quality_"+s.Quality, &cfg_quality)
 
 	s.MinimumPriority = getHighestMoviePriorityByFiles(movie, s.ConfigEntry, cfg_quality)
 
@@ -578,7 +578,7 @@ func (s *Searcher) SeriesSearch(serieEpisode database.SerieEpisode, forceDownloa
 		return searchResults{}
 	}
 	var cfg_quality config.QualityConfig
-	config.ConfigDB.Get("quality_"+s.Quality, &cfg_quality)
+	config.ConfigGet("quality_"+s.Quality, &cfg_quality)
 
 	s.MinimumPriority = getHighestEpisodePriorityByFiles(serieEpisode, s.ConfigEntry, cfg_quality)
 
@@ -666,7 +666,7 @@ func (s *Searcher) InitIndexer(indexer config.QualityIndexerConfig, rssapi strin
 		return errors.New("indexer config missing")
 	}
 	var cfg_indexer config.IndexersConfig
-	config.ConfigDB.Get("indexer_"+indexer.Template_indexer, &cfg_indexer)
+	config.ConfigGet("indexer_"+indexer.Template_indexer, &cfg_indexer)
 
 	if !(strings.ToLower(cfg_indexer.Type) == "newznab") {
 		return errors.New("indexer Type Wrong")
@@ -690,7 +690,7 @@ func (s *Searcher) InitIndexer(indexer config.QualityIndexerConfig, rssapi strin
 
 	var lastindexerid string
 	if s.SearchActionType == "rss" {
-		indexrssid, _ := database.GetRssHistory(database.Query{Where: "config=? and list=? and indexer=?", WhereArgs: []interface{}{s.ConfigEntry.Name, s.Quality, cfg_indexer.Url}})
+		indexrssid, _ := database.GetRssHistory(database.Query{Select: "last_id", Where: "config=? and list=? and indexer=?", WhereArgs: []interface{}{s.ConfigEntry.Name, s.Quality, cfg_indexer.Url}})
 		lastindexerid = indexrssid.LastID
 	}
 
@@ -740,7 +740,7 @@ func (s Searcher) MoviesSearchImdb(movie database.Movie) searchResults {
 		return searchResults{}
 	}
 	var cfg_quality config.QualityConfig
-	config.ConfigDB.Get("quality_"+s.Quality, &cfg_quality)
+	config.ConfigGet("quality_"+s.Quality, &cfg_quality)
 
 	if len(nzbs) >= 1 {
 		retnzb = append(retnzb, filter_movies_nzbs(s.ConfigEntry, cfg_quality, s.Indexer, nzbs, s.Movie.ID, 0, s.MinimumPriority, s.Dbmovie, database.Dbserie{}, s.Dbmovie.Title, []string{}, strconv.Itoa(s.Dbmovie.Year))...)
@@ -758,7 +758,7 @@ func (s Searcher) MoviesSearchTitle(movie database.Movie, title string) searchRe
 		return searchResults{}
 	}
 	var cfg_quality config.QualityConfig
-	config.ConfigDB.Get("quality_"+s.Quality, &cfg_quality)
+	config.ConfigGet("quality_"+s.Quality, &cfg_quality)
 
 	searchfor := title + " (" + strconv.Itoa(s.Dbmovie.Year) + ")"
 	if cfg_quality.ExcludeYearFromTitleSearch {
@@ -800,7 +800,7 @@ func (s Searcher) SeriesSearchTvdb() searchResults {
 		return searchResults{}
 	}
 	var cfg_quality config.QualityConfig
-	config.ConfigDB.Get("quality_"+s.Quality, &cfg_quality)
+	config.ConfigGet("quality_"+s.Quality, &cfg_quality)
 
 	if len(nzbs) >= 1 {
 		retnzb = append(retnzb, filter_series_nzbs(s.ConfigEntry, cfg_quality, s.Indexer, nzbs, 0, s.SerieEpisode.ID, s.MinimumPriority, database.Dbmovie{}, s.Dbserie)...)
@@ -815,7 +815,7 @@ func (s Searcher) SeriesSearchTitle(title string) searchResults {
 		return searchResults{}
 	}
 	var cfg_quality config.QualityConfig
-	config.ConfigDB.Get("quality_"+s.Quality, &cfg_quality)
+	config.ConfigGet("quality_"+s.Quality, &cfg_quality)
 
 	if title != "" && s.Dbserieepisode.Identifier != "" && cfg_quality.BackupSearchForTitle {
 		logger.Log.Info("Search Series by title: ", title, " ", s.Dbserieepisode.Identifier)
