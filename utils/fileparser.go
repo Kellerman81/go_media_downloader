@@ -227,14 +227,16 @@ func (m *ParseInfo) parsegroup(cleanName string, name string, group []string, st
 	}
 	return startIndex, endIndex
 }
+
+var regexParseFile = regexp.MustCompile(`^\[( )?(.*)( )?\]$`)
+
 func (m *ParseInfo) ParseFile(includeYearInTitle bool, typegroup string) error {
 	logger.Log.Debug("filename ", m.File)
 	initpatterns()
 	var startIndex, endIndex = 0, len(m.File)
 	cleanName := strings.Replace(m.File, "_", " ", -1)
 	if strings.HasPrefix(cleanName, "[") && strings.HasSuffix(cleanName, "]") {
-		var re = regexp.MustCompile(`^\[( )?(.*)( )?\]$`)
-		cleanName = re.ReplaceAllString(cleanName, `$2`)
+		cleanName = regexParseFile.ReplaceAllString(cleanName, `$2`)
 	}
 	//cleanName = strings.Replace(cleanName, "[", "(", -1)
 	//cleanName = strings.Replace(cleanName, "]", ")", -1)
@@ -775,17 +777,18 @@ func StringReplaceDiacritics(instr string) string {
 // removing accents and replacing separators with -.
 // The path may still start at / and is not intended
 // for use as a file system path without prefix.
+var regexPathAllowSlash = regexp.MustCompile(`[:*?"<>|]`)
+var regexPathDisallowSlash = regexp.MustCompile(`[\\/:*?"<>|]`)
+
 func Path(s string, allowslash bool) string {
 	// Start with lowercase string
 	filePath := s
 	filePath = strings.Replace(filePath, "..", "", -1)
 	filePath = path.Clean(filePath)
 	if allowslash {
-		var re = regexp.MustCompile(`[:*?"<>|]`)
-		filePath = re.ReplaceAllString(filePath, "")
+		filePath = regexPathAllowSlash.ReplaceAllString(filePath, "")
 	} else {
-		var re = regexp.MustCompile(`[\\/:*?"<>|]`)
-		filePath = re.ReplaceAllString(filePath, "")
+		filePath = regexPathDisallowSlash.ReplaceAllString(filePath, "")
 		filePath = html.UnescapeString(filePath)
 	}
 

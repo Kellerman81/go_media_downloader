@@ -28,7 +28,7 @@ import (
 
 func InitFillImdb() {
 	var cfg_imdb config.ImdbConfig
-	config.ConfigDB.Get("imdb", &cfg_imdb)
+	config.ConfigGet("imdb", &cfg_imdb)
 	logger.Log.Info("Started Imdb Import")
 	titlemap := make(map[string]bool, 10)
 	for _, row := range cfg_imdb.Indexedtypes {

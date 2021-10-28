@@ -211,7 +211,7 @@ func getFFProbeFilename() string {
 	ffprobepath := ""
 	if config.ConfigCheck("general") {
 		var cfg_general config.GeneralConfig
-		config.ConfigDB.Get("general", &cfg_general)
+		config.ConfigGet("general", &cfg_general)
 		ffprobepath = cfg_general.FfprobePath
 	}
 

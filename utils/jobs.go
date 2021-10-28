@@ -95,7 +95,7 @@ func notifier(event string, noticonfig config.MediaNotificationConfig, notifierd
 		return
 	}
 	var cfg_notification config.NotificationConfig
-	config.ConfigDB.Get("notification_"+noticonfig.Map_notification, &cfg_notification)
+	config.ConfigGet("notification_"+noticonfig.Map_notification, &cfg_notification)
 
 	if strings.EqualFold(cfg_notification.Type, "pushover") {
 		if apiexternal.PushoverApi.ApiKey != cfg_notification.Apikey {
@@ -138,7 +138,7 @@ func Feeds(configEntry config.MediaTypeConfig, list config.MediaListsConfig) fee
 		return feedResults{}
 	}
 	var cfg_list config.ListsConfig
-	config.ConfigDB.Get("list_"+list.Template_list, &cfg_list)
+	config.ConfigGet("list_"+list.Template_list, &cfg_list)
 
 	if !cfg_list.Enabled {
 		logger.Log.Debug("Error - list not enabled")

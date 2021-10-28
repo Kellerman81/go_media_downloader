@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"regexp"
 	"strings"
 	"time"
 
@@ -242,11 +243,11 @@ type NotificationConfig struct {
 }
 
 type RegexConfig struct {
-	Name     string   `koanf:"name"`
-	Required []string `koanf:"Required"`
-	Rejected []string `koanf:"Rejected"`
-	//RequiredRegex map[string]regexp.Regexp
-	//RejectedRegex map[string]regexp.Regexp
+	Name          string   `koanf:"name"`
+	Required      []string `koanf:"Required"`
+	Rejected      []string `koanf:"Rejected"`
+	RequiredRegex map[string]*regexp.Regexp
+	RejectedRegex map[string]*regexp.Regexp
 }
 
 type QualityConfig struct {
@@ -557,12 +558,13 @@ func LoadCfgDataDB(f *file.File, parser string) {
 			}
 		}
 	}
+
+	CacheConfig()
 }
 
 func ConfigCheck(name string) bool {
 	success := true
-	hasPath, haserr := ConfigDB.Has(name)
-	if !hasPath || haserr != nil {
+	if _, ok := configEntries[name]; !ok {
 		logger.Log.Errorln("Config not found: ", name)
 		success = false
 	}

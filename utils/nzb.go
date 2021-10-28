@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"os"
 	"path"
-	"regexp"
 	"strconv"
 	"strings"
 
@@ -35,7 +34,7 @@ func filter_size_nzbs(configEntry config.MediaTypeConfig, indexer config.Quality
 			return false
 		}
 		var cfg_path config.PathsConfig
-		config.ConfigDB.Get("path_"+configEntry.DataImport[idx].Template_path, &cfg_path)
+		config.ConfigGet("path_"+configEntry.DataImport[idx].Template_path, &cfg_path)
 
 		if cfg_path.MinSize != 0 {
 			if rownzb.Size < int64(cfg_path.MinSize*1024*1024) && rownzb.Size != 0 {
@@ -55,7 +54,8 @@ func filter_size_nzbs(configEntry config.MediaTypeConfig, indexer config.Quality
 }
 func filter_regex_nzbs(regexconfig config.RegexConfig, title string, wantedtitle string, wantedalternates []string) bool {
 	for _, rowtitle := range regexconfig.Rejected {
-		rowrejected := regexp.MustCompile(rowtitle)
+		//rowrejected := regexp.MustCompile(rowtitle)
+		rowrejected := regexconfig.RejectedRegex[rowtitle]
 		teststrwanted := rowrejected.FindStringSubmatch(wantedtitle)
 		if len(teststrwanted) >= 1 {
 			continue
@@ -79,7 +79,9 @@ func filter_regex_nzbs(regexconfig config.RegexConfig, title string, wantedtitle
 	}
 	requiredmatched := false
 	for _, rowtitle := range regexconfig.Required {
-		rowrequired := regexp.MustCompile(rowtitle)
+		//rowrequired := regexp.MustCompile(rowtitle)
+		rowrequired := regexconfig.RequiredRegex[rowtitle]
+
 		teststr := rowrequired.FindStringSubmatch(title)
 		if len(teststr) >= 1 {
 			logger.Log.Debug("Regex required matched: ", title, " Regex ", rowtitle)
@@ -160,7 +162,7 @@ func filter_movies_nzbs(configEntry config.MediaTypeConfig, quality config.Quali
 			continue
 		}
 		var cfg_regex config.RegexConfig
-		config.ConfigDB.Get("regex_"+indexer.Template_regex, &cfg_regex)
+		config.ConfigGet("regex_"+indexer.Template_regex, &cfg_regex)
 
 		if filter_regex_nzbs(cfg_regex, nzbs[idx].Title, movie.Title, alternatenames) {
 			toskip = true
@@ -369,7 +371,7 @@ func filter_series_nzbs(configEntry config.MediaTypeConfig, quality config.Quali
 			continue
 		}
 		var cfg_regex config.RegexConfig
-		config.ConfigDB.Get("regex_"+indexer.Template_regex, &cfg_regex)
+		config.ConfigGet("regex_"+indexer.Template_regex, &cfg_regex)
 
 		if filter_regex_nzbs(cfg_regex, nzbs[idx].Title, serie.Seriename, alternatenames) {
 			toskip = true
@@ -623,7 +625,7 @@ func filter_series_rss_nzbs(configEntry config.MediaTypeConfig, quality config.Q
 			continue
 		}
 		var cfg_regex config.RegexConfig
-		config.ConfigDB.Get("regex_"+indexer.Template_regex, &cfg_regex)
+		config.ConfigGet("regex_"+indexer.Template_regex, &cfg_regex)
 
 		if filter_regex_nzbs(cfg_regex, nzbs[idx].Title, regextitle, regexalternate) {
 			toskip = true
@@ -787,7 +789,7 @@ func filter_movies_rss_nzbs(configEntry config.MediaTypeConfig, quality config.Q
 			continue
 		}
 		var cfg_regex config.RegexConfig
-		config.ConfigDB.Get("regex_"+indexer.Template_regex, &cfg_regex)
+		config.ConfigGet("regex_"+indexer.Template_regex, &cfg_regex)
 
 		if filter_regex_nzbs(cfg_regex, nzbs[idx].Title, regextitle, regexalternate) {
 			toskip = true

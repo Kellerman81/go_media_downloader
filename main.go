@@ -78,7 +78,7 @@ func main() {
 	}()
 
 	var cfg_general config.GeneralConfig
-	config.ConfigDB.Get("general", &cfg_general)
+	config.ConfigGet("general", &cfg_general)
 
 	logger.InitLogger(logger.LoggerConfig{
 		LogLevel:     cfg_general.LogLevel,
