@@ -3,54 +3,54 @@
 ## defaults: num fields: 0, string fields: "", bool fields: false
 ## Changes to web, log, limiter and scheduler are only loaded during start! So please restart after changing
 
-LogLevel = "Debug" #Info or Debug or Warning
-DBLogLevel = "Info" #Info or Debug or Warning - debug makes system extremly slow
-LogFileSize = 20 # in MB
-LogFileCount = 10 # Number of old Log Files to keep
-LogCompress = true # Compress old Log Files
-WorkerDefault = 2
-WorkerMetadata = 4
-WorkerFiles = 2
-WorkerParse = 2
-WorkerSearch = 2
+log_level = "Debug" #Info or Debug or Warning
+db_log_level = "Info" #Info or Debug or Warning - debug makes system extremly slow
+log_file_size = 20 # in MB
+log_file_count = 10 # Number of old Log Files to keep
+log_compress = true # Compress old Log Files
+worker_default = 2
+worker_metadata = 4
+worker_files = 2
+worker_parse = 2
+worker_search = 2
 webport  = "9090" #string!
 webapikey = "mysecure" #url is http://<server>:<webport>/api/<webapikey>/...
-ConcurrentScheduler = 2
-MovieMetaSourceImdb = true #metadata priority: 1. imdb 2. tmdb 3. omdb  - imdb has no plot
-MovieMetaSourceTmdb = true #has most fields
-MovieMetaSourceOmdb = false
-MovieMetaSourceTrakt = true
-MovieAlternateTitleMetaSourceImdb = true # use imdb for alternate title import
-MovieAlternateTitleMetaSourceTmdb = true
-MovieAlternateTitleMetaSourceOmdb = false
-MovieAlternateTitleMetaSourceTrakt = true
-MovieMetaSourcePriority = ["imdb","tmdb","trakt"] #,"tmdb","omdb","trakt"] #first to last - either remove entry here or disable them above
-MovieParseMetaSourcePriority = ["imdb","tmdb"] #,"tmdb"] #first to last - either remove entry here or disable them above
-MovieRSSMetaSourcePriority = ["imdb"] #first to last - either remove entry here or disable them above
-SerieMetaSourceTmdb = true #add additional fields - default not to disable: tvdb
-SerieMetaSourceTrakt = true #add additional fields - default not to disable: tvdb
-SchedulerDisabled = 'true' #on your very first run change to true - after your media is indexed set to false
-OmdbApiKey =  "insert"
-TheMovieDBApiKey="insert"
-TraktClientId="insert"
+concurrent_scheduler = 2
+movie_meta_source_imdb = true #metadata priority: 1. imdb 2. tmdb 3. omdb  - imdb has no plot
+movie_meta_source_tmdb = true #has most fields
+movie_meta_source_omdb = false
+movie_meta_source_trakt = true
+movie_alternate_title_meta_source_imdb = true # use imdb for alternate title import
+movie_alternate_title_meta_source_tmdb = true
+movie_alternate_title_meta_source_omdb = false
+movie_alternate_title_meta_source_trakt = true
+movie_meta_source_priority = ["imdb","tmdb","trakt"] #,"tmdb","omdb","trakt"] #first to last - either remove entry here or disable them above
+movie_parse_meta_source_priority = ["imdb","tmdb"] #,"tmdb"] #first to last - either remove entry here or disable them above
+movie_rss_meta_source_priority = ["imdb"] #first to last - either remove entry here or disable them above
+serie_meta_source_tmdb = true #add additional fields - default not to disable: tvdb
+serie_meta_source_trakt = true #add additional fields - default not to disable: tvdb
+scheduler_disabled = 'true' #on your very first run change to true - after your media is indexed set to false
+omdb_apikey =  "insert"
+themoviedb_apikey="insert"
+trakt_client_id="insert"
 
-traktlimiterseconds=1 # will only change after restart
-traktlimitercalls=20 # max limitercalls in limiterseconds
-tvdblimiterseconds=1 # will only change after restart
-tvdblimitercalls=10 # max limitercalls in limiterseconds
-tmdblimiterseconds=1 # will only change after restart
-tmdblimitercalls=20 # max limitercalls in limiterseconds
-omdblimiterseconds=1 # will only change after restart
-omdblimitercalls=10 # max limitercalls in limiterseconds
+trakt_limiter_seconds=1 # will only change after restart
+trakt_limiter_calls=20 # max limiter_calls in limiter_seconds
+tvdb_limiter_seconds=1 # will only change after restart
+tvdb_limiter_calls=10 # max limiter_calls in limiter_seconds
+tmdb_limiter_seconds=1 # will only change after restart
+tmdb_limiter_calls=20 # max limiter_calls in limiter_seconds
+omdb_limiter_seconds=1 # will only change after restart
+omdb_limiter_calls=10 # max limiter_calls in limiter_seconds
 
-ffprobepath="" #Path where the ffprobe file is located in (without the actual file) - Linux Users should install with package manager (ex. apt-get -y install ffmpeg) - Windows Users please download https://www.gyan.dev/ffmpeg/builds/ffmpeg-git-github
+ffprobe_path="" #Path where the ffprobe file is located in (without the actual file) - Linux Users should install with package manager (ex. apt-get -y install ffmpeg) - Windows Users please download https://www.gyan.dev/ffmpeg/builds/ffmpeg-git-github
 
 ##### imdb configuaration #####
 
 [imdbindexer]
-indexedtypes=["movie","tvMovie"] #,"tvSeries","tvEpisode"] #other: movie, tvMovie, short, tvSeries, tvEpisode, video, videoGame, tvSpecial, tvMiniSeries ##over 5000000 tvepisodes - so please keep that in mind
-indexedlanguages=["DE","US","UK",'\N'] #other titles in different languages will not be imported \N==emtpy
-indexfull=true #short only imports imdbid and titles/years - full also votes ratings and stuff
+indexed_types=["movie","tvMovie"] #,"tvSeries","tvEpisode"] #other: movie, tvMovie, short, tvSeries, tvEpisode, video, videoGame, tvSpecial, tvMiniSeries ##over 5000000 tvepisodes - so please keep that in mind
+indexed_languages=["DE","US","UK",'\N'] #other titles in different languages will not be imported \N==emtpy
+index_full=true #short only imports imdbid and titles/years - full also votes ratings and stuff
 
 [media]
 
@@ -58,17 +58,17 @@ indexfull=true #short only imports imdbid and titles/years - full also votes rat
 ### [[ marks an array so you can specify multiple movie/serie categories - just copy the whole block
 
 	[[media.movies]]
-	Name="EN"
-	DefaultQuality="sdtv" #if quality not found
-	DefaultResolution="360p" #if resolution not found
-	Naming = '{Title} ({Year})/{Title} ({Year}) [{Resolution} {Quality} {Codec} {Audio} {Proper}] ({Imdb})' #use / as path separator #include imdb or tvdb for maximum compability
+	name="EN"
+	default_quality="sdtv" #if quality not found
+	default_resolution="360p" #if resolution not found
+	naming = '{Title} ({Year})/{Title} ({Year}) [{Resolution} {Quality} {Codec} {Audio} {Proper}] ({Imdb})' #use / as path separator #include imdb or tvdb for maximum compability
 	template_quality="SD" # Map to qualities below	
 	template_scheduler="Default" # Map to scheduler below	
-	Metadata_language="English"
+	metadata_language="English"
 	metadata_title_languages=["US","UK"]
 	structure=true #false leaves the files where they were downloaded to
-	searchmissing_incremental = 20 #number of elements processed during incremental scans - x*number of lists!
-	searchupgrade_incremental = 20 #number of elements processed during incremental scans
+	search_missing_incremental = 20 #number of elements processed during incremental scans - x*number of lists!
+	search_upgrade_incremental = 20 #number of elements processed during incremental scans
 		[[media.movies.data]]
 		template_path="en movies"
 		[[media.movies.dataimport]]
@@ -76,18 +76,18 @@ indexfull=true #short only imports imdbid and titles/years - full also votes rat
 		[[media.movies.lists]]
 		name="EN Movies" #Use unique names to match in db   - dont use same name for series and movies
 		enabled=true
-		addfound=false #Add Found movies if not in DB?
+		add_found=false #Add Found movies if not in DB?
 		template_list="Movies" # Map to lists
 		template_quality="SD" # Map to qualities below
 		compare="false" # false = add only new entries - old ones will not be removed - currently not yet developed
-		ignore_template_lists=[] # Map to Name - if movie exists already in db it will be skipped
-		replace_template_lists=["EN Watchlist"] # Map to Name - if movie exists already in db it will be replaced	
+		ignore_template_lists=[] # Map to name - if movie exists already in db it will be skipped
+		replace_template_lists=["EN Watchlist"] # Map to name - if movie exists already in db it will be replaced	
 		[[media.movies.notification]]
 		template_notification="pushover"
 		event="added_data" #added_download #added_list
 		title="New Movie added in {Configuration}"
 		message="{Title} - moved from {Source_Path} to {Target_Path}{Replaced}"
-		ReplacedPrefix="replaced"
+		replaced_prefix="replaced"
 		[[media.movies.notification]]
 		template_notification="csvmovies"
 		event="added_data" #added_download #added_list
@@ -97,18 +97,18 @@ indexfull=true #short only imports imdbid and titles/years - full also votes rat
 ##### serie configuarations #####
 
 	[[media.series]]
-	Name="EN"
-	DefaultQuality="sdtv"
-	DefaultResolution="480p"
-	Naming = '{Title}/Season {Season}/{Title} - {Identifier} - {EpisodeTitle} [{Resolution} {Quality} {Codec} {Audio} {Proper}] ({Tvdb})'
-	NamingIdentifier = 'S{0Season}E{0Episode}(E{0Episode})' # in Brackets are Variants for MultiEpisodes - E{0Episode}(E{0Episode}) = E01E02E03... E{0Episode}(-E{0Episode}) = E01-E02-E03...
+	name="EN"
+	default_quality="sdtv"
+	default_resolution="480p"
+	naming = '{Title}/Season {Season}/{Title} - {Identifier} - {EpisodeTitle} [{Resolution} {Quality} {Codec} {Audio} {Proper}] ({Tvdb})'
+	naming_identifier = 'S{0Season}E{0Episode}(E{0Episode})' # in Brackets are Variants for MultiEpisodes - E{0Episode}(E{0Episode}) = E01E02E03... E{0Episode}(-E{0Episode}) = E01-E02-E03...
 	template_quality="SDSeries" # Map to qualities below	
 	template_scheduler="Default" # Map to scheduler below
-	Metadata_language="en"
-	Metadata_source="tvdb"
-	Structure=true
-	searchmissing_incremental = 20
-	searchupgrade_incremental = 20
+	metadata_language="en"
+	metadata_source="tvdb"
+	structure=true
+	search_missing_incremental = 20
+	search_upgrade_incremental = 20
 		[[media.series.data]]
 		template_path="en series"
 		[[media.series.dataimport]]
@@ -116,7 +116,7 @@ indexfull=true #short only imports imdbid and titles/years - full also votes rat
 		[[media.series.lists]]
 		name="EN" #Use unique names to match in db
 		enabled=true
-		addfound=false #Add Found movies if not in DB?
+		add_found=false #Add Found movies if not in DB?
 		template_list="SeriesEN" # Map to lists
 		template_quality="SDSeries" # Map to qualities below	
 
@@ -133,10 +133,10 @@ hostname="192.168.1.1:6789"
 username="admin"
 password=""
 enabled=true
-AddPaused=false
-Priority=0  #-100 (very low), -50 (low), 0 (normal), 50 (high), 100 (very high), 900 (force)
-autoredownloadfailed = 'false' # unused
-removefaileddownloads = 'false' # unused
+add_paused=false
+priority=0  #-100 (very low), -50 (low), 0 (normal), 50 (high), 100 (very high), 900 (force)
+auto_redownload_failed = 'false' # unused
+remove_failed_downloads = 'false' # unused
 
 [[downloader]]
 name="en"
@@ -150,10 +150,10 @@ hostname="192.168.1.1"
 username="localclient"
 password=""
 enabled=true
-AddPaused=false
-Priority=0  #-100 (very low), -50 (low), 0 (normal), 50 (high), 100 (very high), 900 (force)
-autoredownloadfailed = 'false' # unused
-removefaileddownloads = 'false' # unused
+add_paused=false
+priority=0  #-100 (very low), -50 (low), 0 (normal), 50 (high), 100 (very high), 900 (force)
+auto_redownload_failed = 'false' # unused
+remove_failed_downloads = 'false' # unused
 
 ### lists ###
 
@@ -162,35 +162,35 @@ name="Watchlist"
 type="imdbcsv" # Import Imdb Watchlist
 url="https://www.imdb.com/list/ls12345678/export"
 enabled=true
-excludegenre=[] # Exclude Genres from import
-includegenre=[] # Only import Movies with one of these Genres
+exclude_genre=[] # Exclude Genres from import
+include_genre=[] # Only import Movies with one of these Genres
 
 [[lists]]
 name="TraktPopular"
 type="traktmoviepopular" # Import Trakt Popular Movies
 limit=20
-MinVotes=200 # Only import movies with at least x votes
-MinRating=4.5 # Only import movies with a minimum rating of x.x 
-excludegenre=["Horror","Documentary"]
-includegenre=[]
+min_votes=200 # Only import movies with at least x votes
+min_rating=4.5 # Only import movies with a minimum rating of x.x 
+exclude_genre=["Horror","Documentary"]
+include_genre=[]
 
 [[lists]]
 name="TraktTrending"
 type="traktmovietrending" # Import Trakt Trending Movies
 limit=20
-MinVotes=200
-MinRating=4.5
-excludegenre=["Horror","Documentary"]
-includegenre=[]
+min_votes=200
+min_rating=4.5
+exclude_genre=["Horror","Documentary"]
+include_genre=[]
 
 [[lists]]
 name="TraktAnticipated"
 type="traktmovieanticipated" # Import Trakt Anticipated Movies
 limit=20
-MinVotes=200
-MinRating=4.5
-excludegenre=["Horror","Documentary"]
-includegenre=[] 
+min_votes=200
+min_rating=4.5
+exclude_genre=["Horror","Documentary"]
+include_genre=[] 
 
 [[lists]]
 name="Series"
@@ -206,34 +206,35 @@ url="https://api.nzbgeek.info"
 apikey="" # The API Key
 userid="0" # userid - might be needed for rss
 enabled='true' # use this indexer for searches
-rssenabled='true' # use this indexer for rss
-Customapi = '' # Does the indexer not use apikey as Parameter? ex. nzbfinder uses api_token
-Customurl = '' # Does the indexer use a customurl for API Calls - Specify as https://server/api?apikey=23333
-Customrssurl = '' # Does the indexer use a customurl for RSS Calls - Specify as https://server/rss?apikey=23333
-Customrsscategory = '' # Does the indexer use the default &t= Parameter for categories? ex. nzbfinder uses id
-addquotesfortitlequery='false' # does the indexer need quotes for title searches?
-MaxRssEntries = 100 #system retrieves 10*x entries at most - but stops at the last element from the previous scan
-RssEntriesloop = 5 # x rss calls x=2 == 2 api calls with 2*maxrss results - will get all but only process until last processed item
-limiterseconds=1 # will only change after restart
-limitercalls=1 # max limitercalls in limiterseconds
+rss_enabled='true' # use this indexer for rss
+custom_api = '' # Does the indexer not use apikey as Parameter? ex. nzbfinder uses api_token
+custom_url = '' # Does the indexer use a custom_url for API Calls - Specify as https://server/api?apikey=23333
+custom_rss_url = '' # Does the indexer use a custom_url for RSS Calls - Specify as https://server/rss?apikey=23333
+custom_rss_category = '' # Does the indexer use the default &t= Parameter for categories? ex. nzbfinder uses id
+add_quotes_for_title_query='false' # does the indexer need quotes for title searches?
+max_rss_entries = 100 #system retrieves 10*x entries at most - but stops at the last element from the previous scan
+rss_entries_loop = 5 # x rss calls x=2 == 2 api calls with 2*maxrss results - will get all but only process until last processed item
+limiter_seconds=1 # will only change after restart
+limiter_calls=1 # max limiter_calls in limiter_seconds
+use_presort='false' # Use presort folder for import 
 
 ### paths ###
 
 [[paths]]
 name="de series"
-Path='/DE_Series' # Path to scan for files
-AllowedVideoExtensions=['.avi','.mkv','.mp4','.divx','.m4v','.mpg'] # Video File Extensions
-AllowedOtherExtensions=['.idx','.sub','.srt'] # Subtitle Extensions or other files to keep
-Disallowed=['codec.exe','setup.exe','/codec/','\codec\','If_you_get_error','password','cd1','cd2'] # if the import folder contains one of these strings - ignore it
-Blocked=["!old","@Recycle",".@__thumb"] #Ignored files folders on import
-MinSize = 70 # Minumum Release Size (only for Indexer Scans used)
-MaxSize = 1500 # Maximum Release Size (only for Indexer Scans used)
-Upgrade='true' # Upgrade video files if better one found?
-UpgradeScanInterval = 3 #Scan for Upgrades every x days - Scan oldest first
-MissingScanInterval = 1 #Scan for Missing every x days - Scan oldest first
-replacelower='true' #Replace lower quality movies? - uses quality of specific movie
-MinVideoSize = 70 # Minumum Video File Size - smaller ones will be deleted
-cleanupsizeMB=25 #MB - delete source folder if size is less then after import
+path='/DE_Series' # Path to scan for files
+allowed_video_extensions=['.avi','.mkv','.mp4','.divx','.m4v','.mpg'] # Video File Extensions
+allowed_other_extensions=['.idx','.sub','.srt'] # Subtitle Extensions or other files to keep
+disallowed=['codec.exe','setup.exe','/codec/','\codec\','If_you_get_error','password','cd1','cd2'] # if the import folder contains one of these strings - ignore it
+blocked=["!old","@Recycle",".@__thumb"] #Ignored files folders on import
+min_size = 70 # Minumum Release Size (only for Indexer Scans used)
+max_size = 1500 # Maximum Release Size (only for Indexer Scans used)
+upgrade='true' # Upgrade video files if better one found?
+upgrade_scan_interval = 3 #Scan for Upgrades every x days - Scan oldest first
+missing_scan_interval = 1 #Scan for Missing every x days - Scan oldest first
+replace_lower='true' #Replace lower quality movies? - uses quality of specific movie
+min_video_size = 70 # Minumum Video File Size - smaller ones will be deleted
+cleanup_size_mb=25 #MB - delete source folder if size is less then after import
 allowed_languages=['German','Deutsch','deu','ger',''] #uses fprobe to try and extract the audio language - if other is found download will not be imported
 
 ### notifications ###
@@ -248,16 +249,16 @@ recipient=""
 [[notification]]
 name="csvmoviesde"
 type="csv"
-outputto="movedmovies-de.csv"
+output_to="movedmovies-de.csv"
 
 ### regex ###
 
 [[regex]] ## Define Required Strings and Rejected Strings - Will be compiled on start
 name="deseries"
-Required=[
+required=[
         '(?i)(\b|_)ger(man)?(\b|_)',
         '(?i)(\b|_)(deu|und|wie|der|das|ein|eine|videomann)(tsch)?(\b|_)']
-Rejected=['(?i)(\b|_)(2160p|810p|360p|pal|ntsc)(\b|_)',
+rejected=['(?i)(\b|_)(2160p|810p|360p|pal|ntsc)(\b|_)',
         '(?i)(\b|_)(bonus|trailer|sample)(\b|_)',
         '(?i)(\b|_)extra(s)?(\b|_)',
         '(?i)(\b|_)(ac3)?md(\b|_)',
@@ -288,23 +289,23 @@ wanted_resolution=['480p','720p','1080p']
 wanted_quality=['hdtv','webdl','webrip','dvdrip','bluray']
 cutoff_quality = 'bluray' # only upgrade until this quality is reached
 cutoff_resolution = '720p'
-ExcludeYearFromTitleSearch=true # title based searches include year - set to yes to disable (if yes make sure you have checkyear active)
-BackupSearchForTitle=true # if true not only search for id (imdb, thetvdb) but also search for the title
-BackupSearchForAlternateTitle=true # also search for all alternate titles (massive API calls!)
-checktitle=true #checks if the title is correct (also for imdb search)
-checkyear=true #checks if the year is correct (also for imdb search)
-checkyear1=true #checks if the year is correct allow+-1 (also for imdb search)
-CheckUntilFirstFound=false #true = on use first available release and dont try the other indexers
-TitleStripSuffixForSearch=[" dc", "repack", "unrated", "directors cut", "THEATRICAL"] #removes strings from title-end for title searches
+exclude_year_from_title_search=true # title based searches include year - set to yes to disable (if yes make sure you have checkyear active)
+backup_search_for_title=true # if true not only search for id (imdb, thetvdb) but also search for the title
+backup_search_for_alternate_title=true # also search for all alternate titles (massive API calls!)
+check_title=true #checks if the title is correct (also for imdb search)
+check_year=true #checks if the year is correct (also for imdb search)
+check_year1=true #checks if the year is correct allow+-1 (also for imdb search)
+check_until_first_found=false #true = on use first available release and dont try the other indexers
+title_strip_suffix_for_search=[" dc", "repack", "unrated", "directors cut", "THEATRICAL"] #removes strings from title-end for title searches
 		
 	[[quality.reorder]]
 	type="resolution"
 	name="1080p"
-	newpriority=5400
+	new_priority=5400
 	[[quality.reorder]]
 	type="position" #multiplies names priority by x
 	name="quality"
-	newpriority=11
+	new_priority=11
 	[[quality.indexers]]
 	template_indexer="nzbgeek" # Map to indexer	- 
 	template_downloader="en"  # Map to downloader - must be correct type (newnab/usenet - tornab/torrent)

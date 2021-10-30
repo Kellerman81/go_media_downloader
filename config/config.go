@@ -26,7 +26,7 @@ type GlobalSerieConfig struct {
 	Identifiedby   string `koanf:"identifiedby"`
 	Upgrade        bool   `koanf:"upgrade"`
 	Search         bool   `koanf:"search"`
-	SearchProvider string `koanf:"SearchProvider"`
+	SearchProvider string `koanf:"search_provider"`
 }
 type SerieConfig struct {
 	Name          string   `koanf:"name"`
@@ -41,9 +41,9 @@ type SerieConfig struct {
 
 //Main Config
 type MainConfig struct {
-	General      GeneralConfig        `koanf:"General"`
+	General      GeneralConfig        `koanf:"general"`
 	Imdbindexer  ImdbConfig           `koanf:"imdbindexer"`
-	Media        MediaConfig          `koanf:"Media"`
+	Media        MediaConfig          `koanf:"media"`
 	Downloader   []DownloaderConfig   `koanf:"downloader"`
 	Lists        []ListsConfig        `koanf:"lists"`
 	Indexers     []IndexersConfig     `koanf:"indexers"`
@@ -54,9 +54,9 @@ type MainConfig struct {
 	Scheduler    []SchedulerConfig    `koanf:"scheduler"`
 }
 type ImdbConfig struct {
-	Indexedtypes     []string `koanf:"indexedtypes"`
-	Indexedlanguages []string `koanf:"indexedlanguages"`
-	Indexfull        bool     `koanf:"indexfull"`
+	Indexedtypes     []string `koanf:"indexed_types"`
+	Indexedlanguages []string `koanf:"indexed_languages"`
+	Indexfull        bool     `koanf:"index_full"`
 }
 type MediaConfig struct {
 	Series []MediaTypeConfig `koanf:"series"`
@@ -64,34 +64,34 @@ type MediaConfig struct {
 }
 
 type MediaTypeConfig struct {
-	Name                      string   `koanf:"Name"`
-	DefaultQuality            string   `koanf:"DefaultQuality"`
-	DefaultResolution         string   `koanf:"DefaultResolution"`
-	Naming                    string   `koanf:"Naming"`
-	NamingIdentifier          string   `koanf:"NamingIdentifier"`
+	Name                      string   `koanf:"name"`
+	DefaultQuality            string   `koanf:"default_quality"`
+	DefaultResolution         string   `koanf:"default_resolution"`
+	Naming                    string   `koanf:"naming"`
+	NamingIdentifier          string   `koanf:"naming_identifier"`
 	Template_quality          string   `koanf:"template_quality"`
 	Template_scheduler        string   `koanf:"template_scheduler"`
 	Metadata_language         string   `koanf:"metadata_language"`
 	Metadata_title_languages  []string `koanf:"metadata_title_languages"`
 	Metadata_source           string   `koanf:"metadata_source"`
 	Structure                 bool     `koanf:"structure"`
-	Searchmissing_incremental int      `koanf:"searchmissing_incremental"`
-	Searchupgrade_incremental int      `koanf:"searchupgrade_incremental"`
+	Searchmissing_incremental int      `koanf:"search_missing_incremental"`
+	Searchupgrade_incremental int      `koanf:"search_upgrade_incremental"`
 
 	Data         []MediaDataConfig         `koanf:"data"`
-	DataImport   []MediaDataImportConfig   `koanf:"dataimport"`
+	DataImport   []MediaDataImportConfig   `koanf:"data_import"`
 	Lists        []MediaListsConfig        `koanf:"lists"`
 	Notification []MediaNotificationConfig `koanf:"notification"`
 }
 
 type MediaDataConfig struct {
 	Template_path string `koanf:"template_path"`
-	Replacelower  bool   `koanf:"replacelower"`
+	Replacelower  bool   `koanf:"replace_lower"`
 }
 
 type MediaDataImportConfig struct {
 	Template_path     string   `koanf:"template_path"`
-	CleanupsizeMB     int      `koanf:"cleanupsizeMB"`
+	CleanupsizeMB     int      `koanf:"cleanup_size_mb"`
 	Allowed_languages []string `koanf:"allowed_languages"`
 }
 
@@ -104,7 +104,7 @@ type MediaListsConfig struct {
 	Replace_map_lists  []string `koanf:"replace_template_lists"`
 	// Indexer                       []MediaListsIndexerConfig `koanf:"indexers"`
 	Enabled  bool `koanf:"enabled"`
-	Addfound bool `koanf:"addfound"`
+	Addfound bool `koanf:"add_found"`
 }
 
 // type MediaListsIndexerConfig struct {
@@ -125,49 +125,49 @@ type MediaNotificationConfig struct {
 	Event            string `koanf:"event"`
 	Title            string `koanf:"title"`
 	Message          string `koanf:"message"`
-	ReplacedPrefix   string `koanf:"ReplacedPrefix"`
+	ReplacedPrefix   string `koanf:"replaced_prefix"`
 }
 
 type GeneralConfig struct {
-	LogLevel                           string   `koanf:"LogLevel"`
-	DBLogLevel                         string   `koanf:"DBLogLevel"`
-	LogFileSize                        int      `koanf:"LogFileSize"`
-	LogFileCount                       int      `koanf:"LogFileCount"`
-	LogCompress                        bool     `koanf:"LogCompress"`
-	WorkerDefault                      int      `koanf:"WorkerDefault"`
-	WorkerMetadata                     int      `koanf:"WorkerMetadata"`
-	WorkerFiles                        int      `koanf:"WorkerFiles"`
-	WorkerParse                        int      `koanf:"WorkerParse"`
-	WorkerSearch                       int      `koanf:"WorkerSearch"`
-	OmdbApiKey                         string   `koanf:"OmdbApiKey"`
-	MovieMetaSourceImdb                bool     `koanf:"MovieMetaSourceImdb"`
-	MovieMetaSourceTmdb                bool     `koanf:"MovieMetaSourceTmdb"`
-	MovieMetaSourceOmdb                bool     `koanf:"MovieMetaSourceOmdb"`
-	MovieMetaSourceTrakt               bool     `koanf:"MovieMetaSourceTrakt"`
-	MovieAlternateTitleMetaSourceImdb  bool     `koanf:"MovieAlternateTitleMetaSourceImdb"`
-	MovieAlternateTitleMetaSourceTmdb  bool     `koanf:"MovieAlternateTitleMetaSourceTmdb"`
-	MovieAlternateTitleMetaSourceOmdb  bool     `koanf:"MovieAlternateTitleMetaSourceOmdb"`
-	MovieAlternateTitleMetaSourceTrakt bool     `koanf:"MovieAlternateTitleMetaSourceTrakt"`
-	MovieMetaSourcePriority            []string `koanf:"MovieMetaSourcePriority"`
-	MovieRSSMetaSourcePriority         []string `koanf:"MovieRSSMetaSourcePriority"`
-	MovieParseMetaSourcePriority       []string `koanf:"MovieParseMetaSourcePriority"`
-	SerieMetaSourceTmdb                bool     `koanf:"SerieMetaSourceTmdb"`
-	SerieMetaSourceTrakt               bool     `koanf:"SerieMetaSourceTrakt"`
+	LogLevel                           string   `koanf:"log_level"`
+	DBLogLevel                         string   `koanf:"db_log_level"`
+	LogFileSize                        int      `koanf:"log_file_size"`
+	LogFileCount                       int      `koanf:"log_file_count"`
+	LogCompress                        bool     `koanf:"log_compress"`
+	WorkerDefault                      int      `koanf:"worker_default"`
+	WorkerMetadata                     int      `koanf:"worker_metadata"`
+	WorkerFiles                        int      `koanf:"worker_files"`
+	WorkerParse                        int      `koanf:"worker_parse"`
+	WorkerSearch                       int      `koanf:"worker_search"`
+	OmdbApiKey                         string   `koanf:"omdb_apikey"`
+	MovieMetaSourceImdb                bool     `koanf:"movie_meta_source_imdb"`
+	MovieMetaSourceTmdb                bool     `koanf:"movie_meta_source_tmdb"`
+	MovieMetaSourceOmdb                bool     `koanf:"movie_meta_source_omdb"`
+	MovieMetaSourceTrakt               bool     `koanf:"movie_meta_source_trakt"`
+	MovieAlternateTitleMetaSourceImdb  bool     `koanf:"movie_alternate_title_meta_source_imdb"`
+	MovieAlternateTitleMetaSourceTmdb  bool     `koanf:"movie_alternate_title_meta_source_tmdb"`
+	MovieAlternateTitleMetaSourceOmdb  bool     `koanf:"movie_alternate_title_meta_source_omdb"`
+	MovieAlternateTitleMetaSourceTrakt bool     `koanf:"movie_alternate_title_meta_source_trakt"`
+	MovieMetaSourcePriority            []string `koanf:"movie_meta_source_priority"`
+	MovieRSSMetaSourcePriority         []string `koanf:"movie_rss_meta_source_priority"`
+	MovieParseMetaSourcePriority       []string `koanf:"movie_parse_meta_source_priority"`
+	SerieMetaSourceTmdb                bool     `koanf:"serie_meta_source_tmdb"`
+	SerieMetaSourceTrakt               bool     `koanf:"serie_meta_source_trakt"`
 	WebPort                            string   `koanf:"webport"`
 	WebApiKey                          string   `koanf:"webapikey"`
-	ConcurrentScheduler                int      `koanf:"ConcurrentScheduler"`
-	TheMovieDBApiKey                   string   `koanf:"TheMovieDBApiKey"`
-	TraktClientId                      string   `koanf:"TraktClientId"`
-	SchedulerDisabled                  bool     `koanf:"SchedulerDisabled"`
-	Traktlimiterseconds                int      `koanf:"traktlimiterseconds"`
-	Traktlimitercalls                  int      `koanf:"traktlimitercalls"`
-	Tvdblimiterseconds                 int      `koanf:"tvdblimiterseconds"`
-	Tvdblimitercalls                   int      `koanf:"tvdblimitercalls"`
-	Tmdblimiterseconds                 int      `koanf:"tmdblimiterseconds"`
-	Tmdblimitercalls                   int      `koanf:"tmdblimitercalls"`
-	Omdblimiterseconds                 int      `koanf:"omdblimiterseconds"`
-	Omdblimitercalls                   int      `koanf:"omdblimitercalls"`
-	FfprobePath                        string   `koanf:"ffprobepath"`
+	ConcurrentScheduler                int      `koanf:"concurrent_scheduler"`
+	TheMovieDBApiKey                   string   `koanf:"themoviedb_apikey"`
+	TraktClientId                      string   `koanf:"trakt_client_id"`
+	SchedulerDisabled                  bool     `koanf:"scheduler_disabled"`
+	Traktlimiterseconds                int      `koanf:"trakt_limiter_seconds"`
+	Traktlimitercalls                  int      `koanf:"trakt_limiter_calls"`
+	Tvdblimiterseconds                 int      `koanf:"tvdb_limiter_seconds"`
+	Tvdblimitercalls                   int      `koanf:"tvdb_limiter_calls"`
+	Tmdblimiterseconds                 int      `koanf:"tmdb_limiter_seconds"`
+	Tmdblimitercalls                   int      `koanf:"tmdb_limiter_calls"`
+	Omdblimiterseconds                 int      `koanf:"omdb_limiter_seconds"`
+	Omdblimitercalls                   int      `koanf:"omdb_limiter_calls"`
+	FfprobePath                        string   `koanf:"ffprobe_path"`
 }
 
 type DownloaderConfig struct {
@@ -177,14 +177,14 @@ type DownloaderConfig struct {
 	Port                  int    `koanf:"port"`
 	Username              string `koanf:"username"`
 	Password              string `koanf:"password"`
-	AddPaused             bool   `koanf:"AddPaused"`
-	DelugeDlTo            string `koanf:"DelugeDlTo"`
-	DelugeMoveAfter       bool   `koanf:"DelugeMoveAfter"`
-	DelugeMoveTo          string `koanf:"DelugeMoveTo"`
-	Priority              int    `koanf:"Priority"`
+	AddPaused             bool   `koanf:"add_paused"`
+	DelugeDlTo            string `koanf:"deluge_dl_to"`
+	DelugeMoveAfter       bool   `koanf:"deluge_move_after"`
+	DelugeMoveTo          string `koanf:"deluge_move_to"`
+	Priority              int    `koanf:"priority"`
 	Enabled               bool   `koanf:"enabled"`
-	Autoredownloadfailed  bool   `koanf:"autoredownloadfailed"`
-	Removefaileddownloads bool   `koanf:"removefaileddownloads"`
+	Autoredownloadfailed  bool   `koanf:"auto_redownload_failed"`
+	Removefaileddownloads bool   `koanf:"remove_failed_downloads"`
 }
 
 type ListsConfig struct {
@@ -196,8 +196,8 @@ type ListsConfig struct {
 	Limit              int      `koanf:"limit"`
 	MinVotes           int      `koanf:"min_votes"`
 	MinRating          float32  `koanf:"min_rating"`
-	Excludegenre       []string `koanf:"excludegenre"`
-	Includegenre       []string `koanf:"includegenre"`
+	Excludegenre       []string `koanf:"exclude_genre"`
+	Includegenre       []string `koanf:"include_genre"`
 }
 type IndexersConfig struct {
 	Name                   string `koanf:"name"`
@@ -206,37 +206,37 @@ type IndexersConfig struct {
 	Apikey                 string `koanf:"apikey"`
 	Userid                 string `koanf:"userid"`
 	Enabled                bool   `koanf:"enabled"`
-	Rssenabled             bool   `koanf:"rssenabled"`
-	Addquotesfortitlequery bool   `koanf:"addquotesfortitlequery"`
-	MaxRssEntries          int    `koanf:"MaxRssEntries"`
-	RssEntriesloop         int    `koanf:"RssEntriesloop"`
-	Customapi              string `koanf:"customapi"`
-	Customurl              string `koanf:"customurl"`
-	Customrssurl           string `koanf:"customrssurl"`
-	Customrsscategory      string `koanf:"customrsscategory"`
-	Limitercalls           int    `koanf:"limitercalls"`
-	Limiterseconds         int    `koanf:"limiterseconds"`
+	Rssenabled             bool   `koanf:"rss_enabled"`
+	Addquotesfortitlequery bool   `koanf:"add_quotes_for_title_query"`
+	MaxRssEntries          int    `koanf:"max_rss_entries"`
+	RssEntriesloop         int    `koanf:"rss_entries_loop"`
+	Customapi              string `koanf:"custom_api"`
+	Customurl              string `koanf:"custom_url"`
+	Customrssurl           string `koanf:"custom_rss_url"`
+	Customrsscategory      string `koanf:"custom_rss_category"`
+	Limitercalls           int    `koanf:"limiter_calls"`
+	Limiterseconds         int    `koanf:"limiter_seconds"`
 }
 
 type PathsConfig struct {
 	Name                           string   `koanf:"name"`
 	Path                           string   `koanf:"path"`
-	AllowedVideoExtensions         []string `koanf:"AllowedVideoExtensions"`
-	AllowedOtherExtensions         []string `koanf:"AllowedOtherExtensions"`
-	AllowedVideoExtensionsNoRename []string `koanf:"AllowedVideoExtensionsNoRename"`
-	AllowedOtherExtensionsNoRename []string `koanf:"AllowedOtherExtensionsNoRename"`
-	Blocked                        []string `koanf:"Blocked"`
-	Upgrade                        bool     `koanf:"Upgrade"`
-	MinSize                        int      `koanf:"MinSize"`
-	MaxSize                        int      `koanf:"MaxSize"`
-	MinVideoSize                   int      `koanf:"MinVideoSize"`
-	CleanupsizeMB                  int      `koanf:"cleanupsizeMB"`
+	AllowedVideoExtensions         []string `koanf:"allowed_video_extensions"`
+	AllowedOtherExtensions         []string `koanf:"allowed_other_extensions"`
+	AllowedVideoExtensionsNoRename []string `koanf:"allowed_video_extensions_no_rename"`
+	AllowedOtherExtensionsNoRename []string `koanf:"allowed_other_extensions_no_rename"`
+	Blocked                        []string `koanf:"blocked"`
+	Upgrade                        bool     `koanf:"upgrade"`
+	MinSize                        int      `koanf:"min_size"`
+	MaxSize                        int      `koanf:"max_size"`
+	MinVideoSize                   int      `koanf:"min_video_size"`
+	CleanupsizeMB                  int      `koanf:"cleanup_size_mb"`
 	Allowed_languages              []string `koanf:"allowed_languages"`
-	Replacelower                   bool     `koanf:"replacelower"`
-	Usepresort                     bool     `koanf:"Usepresort"`
-	UpgradeScanInterval            int      `koanf:"UpgradeScanInterval"`
-	MissingScanInterval            int      `koanf:"MissingScanInterval"`
-	Disallowed                     []string `koanf:"Disallowed"`
+	Replacelower                   bool     `koanf:"replace_lower"`
+	Usepresort                     bool     `koanf:"use_presort"`
+	UpgradeScanInterval            int      `koanf:"upgrade_scan_interval"`
+	MissingScanInterval            int      `koanf:"missing_scan_interval"`
+	Disallowed                     []string `koanf:"disallowed"`
 }
 
 type NotificationConfig struct {
@@ -244,13 +244,13 @@ type NotificationConfig struct {
 	Type      string `koanf:"type"`
 	Apikey    string `koanf:"apikey"`
 	Recipient string `koanf:"recipient"`
-	Outputto  string `koanf:"outputto"`
+	Outputto  string `koanf:"output_to"`
 }
 
 type RegexConfig struct {
 	Name          string   `koanf:"name"`
-	Required      []string `koanf:"Required"`
-	Rejected      []string `koanf:"Rejected"`
+	Required      []string `koanf:"required"`
+	Rejected      []string `koanf:"rejected"`
 	RequiredRegex map[string]*regexp.Regexp
 	RejectedRegex map[string]*regexp.Regexp
 }
@@ -261,14 +261,14 @@ type QualityConfig struct {
 	Wanted_quality                []string               `koanf:"wanted_quality"`
 	Cutoff_resolution             string                 `koanf:"cutoff_resolution"`
 	Cutoff_quality                string                 `koanf:"cutoff_quality"`
-	BackupSearchForTitle          bool                   `koanf:"BackupSearchForTitle"`
-	BackupSearchForAlternateTitle bool                   `koanf:"BackupSearchForAlternateTitle"`
-	ExcludeYearFromTitleSearch    bool                   `koanf:"excludeYearFromTitleSearch"`
-	CheckUntilFirstFound          bool                   `koanf:"CheckUntilFirstFound"`
-	CheckTitle                    bool                   `koanf:"checktitle"`
-	CheckYear                     bool                   `koanf:"checkyear"`
-	CheckYear1                    bool                   `koanf:"checkyear1"`
-	TitleStripSuffixForSearch     []string               `koanf:"TitleStripSuffixForSearch"`
+	BackupSearchForTitle          bool                   `koanf:"backup_search_for_title"`
+	BackupSearchForAlternateTitle bool                   `koanf:"backup_search_for_alternate_title"`
+	ExcludeYearFromTitleSearch    bool                   `koanf:"exclude_year_from_title_search"`
+	CheckUntilFirstFound          bool                   `koanf:"check_until_first_found"`
+	CheckTitle                    bool                   `koanf:"check_title"`
+	CheckYear                     bool                   `koanf:"check_year"`
+	CheckYear1                    bool                   `koanf:"check_year1"`
+	TitleStripSuffixForSearch     []string               `koanf:"title_strip_suffix_for_search"`
 	QualityReorder                []QualityReorderConfig `koanf:"reorder"`
 	Indexer                       []QualityIndexerConfig `koanf:"indexers"`
 	Cutoff_priority               int
@@ -277,7 +277,7 @@ type QualityConfig struct {
 type QualityReorderConfig struct {
 	Name        string `koanf:"name"`
 	Type        string `koanf:"type"`
-	Newpriority int    `koanf:"newpriority"`
+	Newpriority int    `koanf:"new_priority"`
 }
 type QualityIndexerConfig struct {
 	Template_indexer        string `koanf:"template_indexer"`
