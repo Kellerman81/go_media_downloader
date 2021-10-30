@@ -22,6 +22,7 @@ type LoggerConfig struct {
 	LogLevel     string
 	LogFileSize  int
 	LogFileCount int
+	LogCompress  bool
 }
 
 func InitLogger(config LoggerConfig) {
@@ -54,8 +55,8 @@ func InitLogger(config LoggerConfig) {
 		Filename:   "downloader.log",
 		MaxSize:    config.LogFileSize, // megabytes
 		MaxBackups: config.LogFileCount,
-		MaxAge:     28,   //days
-		Compress:   true, // disabled by default
+		MaxAge:     28,                 //days
+		Compress:   config.LogCompress, // disabled by default
 	})
 	Log.SetOutput(mw)
 	// }

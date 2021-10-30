@@ -43,6 +43,7 @@ func AddSeriesRoutes(routerseries *gin.RouterGroup) {
 
 	routerseries.GET("/all/refresh", apirefreshSeriesInc)
 	routerseries.GET("/all/refreshall", apirefreshSeries)
+	routerseries.GET("/refresh/:id", apirefreshSerie)
 
 	routerseries.GET("/job/:job", apiseriesAllJobs)
 	routerseries.GET("/job/:job/:name", apiseriesJobs)
@@ -89,7 +90,7 @@ func AddSeriesRoutes(routerseries *gin.RouterGroup) {
 
 	routerseriesepisodessearch := routerseries.Group("/episodes/search")
 	{
-		routerseriesepisodessearch.GET("/series/episodes/search/id/:id", apiSeriesEpisodeSearch)
+		routerseriesepisodessearch.GET("/id/:id", apiSeriesEpisodeSearch)
 	}
 }
 
@@ -210,6 +211,11 @@ func updateEpisode(c *gin.Context) {
 			database.Query{Where: "id != 0 and id=?", WhereArgs: []interface{}{serieepisode.ID}})
 	}
 	c.JSON(http.StatusOK, gin.H{"data": inres})
+}
+
+func apirefreshSerie(c *gin.Context) {
+	go utils.RefreshSerie(c.Param("id"))
+	c.JSON(http.StatusOK, gin.H{"data": "started"})
 }
 
 func apirefreshSeries(c *gin.Context) {

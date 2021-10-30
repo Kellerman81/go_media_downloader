@@ -1,12 +1,13 @@
 [general]
 ## Attention: Match Lists and Cases!! ##
 ## defaults: num fields: 0, string fields: "", bool fields: false
-## Changes to web, log and scheduler are only loaded during start! So please restart after changing
+## Changes to web, log, limiter and scheduler are only loaded during start! So please restart after changing
 
 LogLevel = "Debug" #Info or Debug or Warning
 DBLogLevel = "Info" #Info or Debug or Warning - debug makes system extremly slow
 LogFileSize = 20 # in MB
-LogFileCount = 10 # Number of Files
+LogFileCount = 10 # Number of old Log Files to keep
+LogCompress = true # Compress old Log Files
 WorkerDefault = 2
 WorkerMetadata = 4
 WorkerFiles = 2
@@ -19,6 +20,10 @@ MovieMetaSourceImdb = true #metadata priority: 1. imdb 2. tmdb 3. omdb  - imdb h
 MovieMetaSourceTmdb = true #has most fields
 MovieMetaSourceOmdb = false
 MovieMetaSourceTrakt = true
+MovieAlternateTitleMetaSourceImdb = true # use imdb for alternate title import
+MovieAlternateTitleMetaSourceTmdb = true
+MovieAlternateTitleMetaSourceOmdb = false
+MovieAlternateTitleMetaSourceTrakt = true
 MovieMetaSourcePriority = ["imdb","tmdb","trakt"] #,"tmdb","omdb","trakt"] #first to last - either remove entry here or disable them above
 MovieParseMetaSourcePriority = ["imdb","tmdb"] #,"tmdb"] #first to last - either remove entry here or disable them above
 MovieRSSMetaSourcePriority = ["imdb"] #first to last - either remove entry here or disable them above
@@ -45,11 +50,12 @@ ffprobepath="" #Path where the ffprobe file is located in (without the actual fi
 [imdbindexer]
 indexedtypes=["movie","tvMovie"] #,"tvSeries","tvEpisode"] #other: movie, tvMovie, short, tvSeries, tvEpisode, video, videoGame, tvSpecial, tvMiniSeries ##over 5000000 tvepisodes - so please keep that in mind
 indexedlanguages=["DE","US","UK",'\N'] #other titles in different languages will not be imported \N==emtpy
-indexfull=true #short only imports imdbid and titles/years
+indexfull=true #short only imports imdbid and titles/years - full also votes ratings and stuff
 
 [media]
 
 ##### movie configuarations #####
+### [[ marks an array so you can specify multiple movie/serie categories - just copy the whole block
 
 	[[media.movies]]
 	Name="EN"
@@ -59,6 +65,7 @@ indexfull=true #short only imports imdbid and titles/years
 	template_quality="SD" # Map to qualities below	
 	template_scheduler="Default" # Map to scheduler below	
 	Metadata_language="English"
+	metadata_title_languages=["US","UK"]
 	structure=true #false leaves the files where they were downloaded to
 	searchmissing_incremental = 20 #number of elements processed during incremental scans - x*number of lists!
 	searchupgrade_incremental = 20 #number of elements processed during incremental scans
@@ -75,12 +82,6 @@ indexfull=true #short only imports imdbid and titles/years
 		compare="false" # false = add only new entries - old ones will not be removed - currently not yet developed
 		ignore_template_lists=[] # Map to Name - if movie exists already in db it will be skipped
 		replace_template_lists=["EN Watchlist"] # Map to Name - if movie exists already in db it will be replaced	
-		BackupSearchForTitle=false # if false if will only search for the imdbid - if enabled it will search for title (year)
-		checktitle=true #checks if the title is correct (also for imdb search)
-		checkyear=true #checks if the year is correct (also for imdb search)
-		checkyear1=true #checks if the year is correct allow+-1 (also for imdb search)
-		CheckUntilFirstFound=true #true = on use first available release and dont try the other indexers - false=check all . rss check all always
-		TitleStripSuffixForSearch=[" dc", "repack", "unrated", "directors cut", "THEATRICAL"] #removes strings from title-end for title searches
 		[[media.movies.notification]]
 		template_notification="pushover"
 		event="added_data" #added_download #added_list
@@ -118,9 +119,6 @@ indexfull=true #short only imports imdbid and titles/years
 		addfound=false #Add Found movies if not in DB?
 		template_list="SeriesEN" # Map to lists
 		template_quality="SDSeries" # Map to qualities below	
-		BackupSearchForTitle=false
-		checktitle=false #checks if the title is correct (also for tvdb search)
-		CheckUntilFirstFound=true #true = on use first available release and dont try the other indexers
 
 		
 ##### templates #####
@@ -130,68 +128,74 @@ indexfull=true #short only imports imdbid and titles/years
 
 [[downloader]]
 name="ennzbget"
-type="nzbget" #test8
+type="nzbget" #Send Files to nzbget client (untested)
 hostname="192.168.1.1:6789"
 username="admin"
 password=""
 enabled=true
 AddPaused=false
 Priority=0  #-100 (very low), -50 (low), 0 (normal), 50 (high), 100 (very high), 900 (force)
-autoredownloadfailed = 'false'
-removefaileddownloads = 'false'
+autoredownloadfailed = 'false' # unused
+removefaileddownloads = 'false' # unused
 
 [[downloader]]
 name="en"
-type="drone"
+type="drone" # Type drone saves nzbs to folder
 enabled=true
 
 [[downloader]]
-name="endeluge"
-type="deluge" #test8
+name="endeluge" 
+type="deluge" #Send Files to deluge client (untested)
 hostname="192.168.1.1"
 username="localclient"
 password=""
 enabled=true
 AddPaused=false
 Priority=0  #-100 (very low), -50 (low), 0 (normal), 50 (high), 100 (very high), 900 (force)
-autoredownloadfailed = 'false'
-removefaileddownloads = 'false'
+autoredownloadfailed = 'false' # unused
+removefaileddownloads = 'false' # unused
 
 ### lists ###
 
 [[lists]]
 name="Watchlist"
-type="imdbcsv"
+type="imdbcsv" # Import Imdb Watchlist
 url="https://www.imdb.com/list/ls12345678/export"
 enabled=true
-excludegenre=[]
-includegenre=[]
+excludegenre=[] # Exclude Genres from import
+includegenre=[] # Only import Movies with one of these Genres
 
 [[lists]]
 name="TraktPopular"
-type="traktmoviepopular"
+type="traktmoviepopular" # Import Trakt Popular Movies
 limit=20
+MinVotes=200 # Only import movies with at least x votes
+MinRating=4.5 # Only import movies with a minimum rating of x.x 
 excludegenre=["Horror","Documentary"]
 includegenre=[]
 
 [[lists]]
 name="TraktTrending"
-type="traktmovietrending"
+type="traktmovietrending" # Import Trakt Trending Movies
 limit=20
+MinVotes=200
+MinRating=4.5
 excludegenre=["Horror","Documentary"]
 includegenre=[]
 
 [[lists]]
 name="TraktAnticipated"
-type="traktmovieanticipated"
+type="traktmovieanticipated" # Import Trakt Anticipated Movies
 limit=20
+MinVotes=200
+MinRating=4.5
 excludegenre=["Horror","Documentary"]
-includegenre=[]
+includegenre=[] 
 
 [[lists]]
 name="Series"
 type="seriesconfig"
-series_config_file="series.toml"
+series_config_file="series.toml" # File with Series to fetch
 
 ### indexers ###
 
@@ -199,11 +203,15 @@ series_config_file="series.toml"
 name="nzbgeek"
 type="newznab"
 url="https://api.nzbgeek.info"
-apikey=""
-userid="0"
-enabled='true'
-rssenabled='true'
-addquotesfortitlequery='false'
+apikey="" # The API Key
+userid="0" # userid - might be needed for rss
+enabled='true' # use this indexer for searches
+rssenabled='true' # use this indexer for rss
+Customapi = '' # Does the indexer not use apikey as Parameter? ex. nzbfinder uses api_token
+Customurl = '' # Does the indexer use a customurl for API Calls - Specify as https://server/api?apikey=23333
+Customrssurl = '' # Does the indexer use a customurl for RSS Calls - Specify as https://server/rss?apikey=23333
+Customrsscategory = '' # Does the indexer use the default &t= Parameter for categories? ex. nzbfinder uses id
+addquotesfortitlequery='false' # does the indexer need quotes for title searches?
 MaxRssEntries = 100 #system retrieves 10*x entries at most - but stops at the last element from the previous scan
 RssEntriesloop = 5 # x rss calls x=2 == 2 api calls with 2*maxrss results - will get all but only process until last processed item
 limiterseconds=1 # will only change after restart
@@ -213,22 +221,23 @@ limitercalls=1 # max limitercalls in limiterseconds
 
 [[paths]]
 name="de series"
-Path='/DE_Series'
-AllowedVideoExtensions=['.avi','.mkv','.mp4','.divx','.m4v','.mpg']
-AllowedOtherExtensions=['.idx','.sub','.srt']
-Disallowed=['codec.exe','setup.exe','/codec/','\codec\','If_you_get_error','password','cd1','cd2']
+Path='/DE_Series' # Path to scan for files
+AllowedVideoExtensions=['.avi','.mkv','.mp4','.divx','.m4v','.mpg'] # Video File Extensions
+AllowedOtherExtensions=['.idx','.sub','.srt'] # Subtitle Extensions or other files to keep
+Disallowed=['codec.exe','setup.exe','/codec/','\codec\','If_you_get_error','password','cd1','cd2'] # if the import folder contains one of these strings - ignore it
 Blocked=["!old","@Recycle",".@__thumb"] #Ignored files folders on import
-MinSize = 70
-MaxSize = 1500
-Upgrade='true'
-UpgradeScanInterval = 3 #Tage
-MissingScanInterval = 1 #Tage
+MinSize = 70 # Minumum Release Size (only for Indexer Scans used)
+MaxSize = 1500 # Maximum Release Size (only for Indexer Scans used)
+Upgrade='true' # Upgrade video files if better one found?
+UpgradeScanInterval = 3 #Scan for Upgrades every x days - Scan oldest first
+MissingScanInterval = 1 #Scan for Missing every x days - Scan oldest first
 replacelower='true' #Replace lower quality movies? - uses quality of specific movie
-MinVideoSize = 70
-cleanupsizeMB=25 #MB - delete source folder if size is less then
-allowed_languages=['German','Deutsch','deu','ger',''] #uses fprobe to try and extract the audio language
+MinVideoSize = 70 # Minumum Video File Size - smaller ones will be deleted
+cleanupsizeMB=25 #MB - delete source folder if size is less then after import
+allowed_languages=['German','Deutsch','deu','ger',''] #uses fprobe to try and extract the audio language - if other is found download will not be imported
 
 ### notifications ###
+### Possible pushover and csv
 
 [[notification]]
 name="pushover"
@@ -243,7 +252,7 @@ outputto="movedmovies-de.csv"
 
 ### regex ###
 
-[[regex]]
+[[regex]] ## Define Required Strings and Rejected Strings - Will be compiled on start
 name="deseries"
 Required=[
         '(?i)(\b|_)ger(man)?(\b|_)',
@@ -277,9 +286,11 @@ Rejected=['(?i)(\b|_)(2160p|810p|360p|pal|ntsc)(\b|_)',
 name="HD"
 wanted_resolution=['480p','720p','1080p']
 wanted_quality=['hdtv','webdl','webrip','dvdrip','bluray']
-cutoff_quality = 'bluray'
+cutoff_quality = 'bluray' # only upgrade until this quality is reached
 cutoff_resolution = '720p'
-BackupSearchForTitle=true
+ExcludeYearFromTitleSearch=true # title based searches include year - set to yes to disable (if yes make sure you have checkyear active)
+BackupSearchForTitle=true # if true not only search for id (imdb, thetvdb) but also search for the title
+BackupSearchForAlternateTitle=true # also search for all alternate titles (massive API calls!)
 checktitle=true #checks if the title is correct (also for imdb search)
 checkyear=true #checks if the year is correct (also for imdb search)
 checkyear1=true #checks if the year is correct allow+-1 (also for imdb search)
@@ -301,14 +312,14 @@ TitleStripSuffixForSearch=[" dc", "repack", "unrated", "directors cut", "THEATRI
 	template_path_nzb="en movies nzb"
 	category_dowloader="Movies"
 	additional_query_params="&extended=1&maxsize=6291456000"
-	skip_empty_size=true
-	history_check_title=true
+	skip_empty_size=true # remove results without a size attribute
+	history_check_title=true # if title is already in history skip release - default: only check url (same release will be downloaded from different indexers)
 	categories_indexer="2030,2035,2040,2045" #, separated - no array
 
 ### scheduler ###
 
 [[scheduler]]
-name="Default" #support only m and d currently - custom stuff not
+name="Default" #support only m, d, h, s (Minute, Day, Hour, Second) currently - custom stuff not
 interval_feeds="2h" #leave empty to disable
 interval_imdb="3d" #leave empty to disable
 interval_feeds_refresh_movies="1d"

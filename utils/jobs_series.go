@@ -229,6 +229,31 @@ func JobReloadDbSeries(dbserie database.Dbserie, configEntry config.MediaTypeCon
 
 	dbserie, _ = database.GetDbserie(database.Query{Where: "Thetvdb_id = ?", WhereArgs: []interface{}{dbserie.ThetvdbID}})
 	logger.Log.Debug("DbSeries get metadata for: ", dbserie.ThetvdbID)
+
+	getfirstseries, _ := database.QuerySeries(database.Query{Select: "id, listname", Where: "Dbserie_id = ?", WhereArgs: []interface{}{dbserie.ID}})
+
+	serie_keys, _ := config.ConfigDB.Keys([]byte("serie_*"), 0, 0, true)
+
+	if configEntry.Name == "" || list.Name == "" {
+		var cfg_serie config.MediaTypeConfig
+		for _, idx := range serie_keys {
+			config.ConfigGet(string(idx), &cfg_serie)
+
+			listfound := false
+			for idxlist := range cfg_serie.Lists {
+				if cfg_serie.Lists[idxlist].Name == getfirstseries[0].Listname {
+					listfound = true
+					configEntry = cfg_serie
+					list = cfg_serie.Lists[idxlist]
+					break
+				}
+			}
+			if listfound {
+				break
+			}
+		}
+	}
+
 	addaliases := dbserie.GetMetadata("", cfg_general.SerieMetaSourceTmdb, cfg_imdb.Indexedlanguages, cfg_general.SerieMetaSourceTrakt, false)
 	if dbserie.Seriename == "" {
 		addaliases = dbserie.GetMetadata(configEntry.Metadata_language, cfg_general.SerieMetaSourceTmdb, cfg_imdb.Indexedlanguages, cfg_general.SerieMetaSourceTrakt, false)
@@ -281,6 +306,23 @@ func JobReloadDbSeries(dbserie database.Dbserie, configEntry config.MediaTypeCon
 
 	foundseries, _ := database.QuerySeries(database.Query{Select: "id", Where: "Dbserie_id = ?", WhereArgs: []interface{}{dbserie.ID}})
 	for idxserie := range foundseries {
+		var cfg_serie config.MediaTypeConfig
+		for _, idx := range serie_keys {
+			config.ConfigGet(string(idx), &cfg_serie)
+
+			listfound := false
+			for idxlist := range cfg_serie.Lists {
+				if cfg_serie.Lists[idxlist].Name == foundseries[idxserie].Listname {
+					listfound = true
+					configEntry = cfg_serie
+					list = cfg_serie.Lists[idxlist]
+					break
+				}
+			}
+			if listfound {
+				break
+			}
+		}
 		dbepisode, _ := database.QueryDbserieEpisodes(database.Query{Select: "id", Where: "Dbserie_id = ?", WhereArgs: []interface{}{dbserie.ID}})
 
 		for idxdbepi := range dbepisode {
@@ -561,6 +603,16 @@ func JobImportSeriesParseV2(file string, updatemissing bool, configEntry config.
 
 var SeriesStructureJobRunning map[string]bool
 
+func RefreshSerie(id string) {
+	sw := sizedwaitgroup.New(1)
+	dbseries, _ := database.QueryDbserie(database.Query{Where: "id = ?", WhereArgs: []interface{}{id}})
+	for idxserie := range dbseries {
+		sw.Add()
+		JobReloadDbSeries(dbseries[idxserie], config.MediaTypeConfig{}, config.MediaListsConfig{}, true, &sw)
+	}
+	sw.Wait()
+}
+
 func RefreshSeries() {
 	if !config.ConfigCheck("general") {
 		return
@@ -679,7 +731,6 @@ func Series_single_jobs(job string, typename string, listname string, force bool
 			}
 			switch job {
 			case "data":
-				config.Slepping(true, 6)
 				getnewepisodessingle(cfg_serie, cfg_serie.Lists[idxlist])
 			case "checkmissing":
 				checkmissingepisodessingle(cfg_serie, cfg_serie.Lists[idxlist])
@@ -690,7 +741,6 @@ func Series_single_jobs(job string, typename string, listname string, force bool
 			case "clearhistory":
 				database.DeleteRow("serie_episode_histories", database.Query{InnerJoin: "serie_episodes ON serie_episodes.id = serie_episode_histories.serie_episode_id inner join series on series.id = serie_episodes.serie_id", Where: "series.listname=?", WhereArgs: []interface{}{typename}})
 			case "feeds":
-				config.Slepping(true, 6)
 				Importnewseriessingle(cfg_serie, cfg_serie.Lists[idxlist])
 			default:
 				// other stuff
@@ -726,9 +776,6 @@ func Importnewseriessingle(row config.MediaTypeConfig, list config.MediaListsCon
 	logger.Log.Info("Workers: ", cfg_general.WorkerMetadata)
 	swg := sizedwaitgroup.New(cfg_general.WorkerMetadata)
 	for idxserie := range results.Series.Serie {
-		if strings.EqualFold(Lastseries, results.Series.Serie[idxserie].Name) && Lastseries != "" {
-			config.Slepping(false, 5)
-		}
 		Lastseries = results.Series.Serie[idxserie].Name
 		logger.Log.Info("Import Serie ", idxserie, " of ", len(results.Series.Serie), " name: ", results.Series.Serie[idxserie].Name)
 		swg.Add()
@@ -765,9 +812,6 @@ func getnewepisodessingle(row config.MediaTypeConfig, list config.MediaListsConf
 		var cfg_path config.PathsConfig
 		config.ConfigGet("path_"+row.Data[idxpath].Template_path, &cfg_path)
 
-		if strings.EqualFold(LastSeriesPath, cfg_path.Path) && LastSeriesPath != "" {
-			time.Sleep(time.Duration(5) * time.Second)
-		}
 		LastSeriesPath = cfg_path.Path
 		filesfound_add := scanner.GetFilesGoDir(cfg_path.Path, cfg_path.AllowedVideoExtensions, cfg_path.AllowedVideoExtensionsNoRename, cfg_path.Blocked)
 		filesfound = append(filesfound, filesfound_add...)
@@ -777,9 +821,6 @@ func getnewepisodessingle(row config.MediaTypeConfig, list config.MediaListsConf
 	logger.Log.Info("Workers: ", cfg_general.WorkerParse)
 	swf := sizedwaitgroup.New(cfg_general.WorkerParse)
 	for idxfile := range filesadded {
-		if strings.EqualFold(LastSeriesFilePath, filesadded[idxfile]) && LastSeriesFilePath != "" {
-			time.Sleep(time.Duration(5) * time.Second)
-		}
 		LastSeriesFilePath = filesadded[idxfile]
 		logger.Log.Info("Parse Serie ", idxfile, " of ", len(filesadded), " path: ", filesadded[idxfile])
 		swf.Add()

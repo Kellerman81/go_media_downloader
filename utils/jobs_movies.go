@@ -136,7 +136,7 @@ func JobImportMovies(dbmovie database.Dbmovie, configEntry config.MediaTypeConfi
 				return
 			}
 			logger.Log.Debug("Get Movie Titles: ", dbmovie.Title)
-			titlegroup := dbmovie.GetTitles(configEntry.Metadata_title_languages, cfg_general.MovieMetaSourceImdb, cfg_general.MovieMetaSourceTmdb, cfg_general.MovieMetaSourceTrakt)
+			titlegroup := dbmovie.GetTitles(configEntry.Metadata_title_languages, cfg_general.MovieAlternateTitleMetaSourceImdb, cfg_general.MovieAlternateTitleMetaSourceTmdb, cfg_general.MovieAlternateTitleMetaSourceTrakt)
 			for idxtitle := range titlegroup {
 				countert, _ := database.CountRows("dbmovie_titles", database.Query{Where: "dbmovie_id = ? and title = ?", WhereArgs: []interface{}{dbmovie.ID, titlegroup[idxtitle].Title}})
 				if countert == 0 {
@@ -245,8 +245,31 @@ func JobReloadMovies(dbmovie database.Dbmovie, configEntry config.MediaTypeConfi
 		[]interface{}{dbmovie.Title, dbmovie.ReleaseDate, dbmovie.Year, dbmovie.Adult, dbmovie.Budget, dbmovie.Genres, dbmovie.OriginalLanguage, dbmovie.OriginalTitle, dbmovie.Overview, dbmovie.Popularity, dbmovie.Revenue, dbmovie.Runtime, dbmovie.SpokenLanguages, dbmovie.Status, dbmovie.Tagline, dbmovie.VoteAverage, dbmovie.VoteCount, dbmovie.TraktID, dbmovie.MoviedbID, dbmovie.ImdbID, dbmovie.FreebaseMID, dbmovie.FreebaseID, dbmovie.FacebookID, dbmovie.InstagramID, dbmovie.TwitterID, dbmovie.URL, dbmovie.Backdrop, dbmovie.Poster, dbmovie.Slug},
 		database.Query{Where: "id=?", WhereArgs: []interface{}{dbmovie.ID}})
 
+	movie_keys, _ := config.ConfigDB.Keys([]byte("movie_*"), 0, 0, true)
+	movies, _ := database.QueryMovies(database.Query{Where: "dbmovie_id = ?", WhereArgs: []interface{}{dbmovie.ID}})
+
+	if configEntry.Name == "" || list.Name == "" {
+		for _, idx := range movie_keys {
+			var cfg_movie config.MediaTypeConfig
+			config.ConfigGet(string(idx), &cfg_movie)
+
+			listfound := false
+			for idxlist := range cfg_movie.Lists {
+				if cfg_movie.Lists[idxlist].Name == movies[0].Listname {
+					listfound = true
+					configEntry = cfg_movie
+					list = cfg_movie.Lists[idxlist]
+					break
+				}
+			}
+			if listfound {
+				break
+			}
+		}
+	}
+
 	logger.Log.Debug("Get Movie Titles: ", dbmovie.Title)
-	titlegroup := dbmovie.GetTitles(configEntry.Metadata_title_languages, cfg_general.MovieMetaSourceImdb, cfg_general.MovieMetaSourceTmdb, cfg_general.MovieMetaSourceTrakt)
+	titlegroup := dbmovie.GetTitles(configEntry.Metadata_title_languages, cfg_general.MovieAlternateTitleMetaSourceImdb, cfg_general.MovieAlternateTitleMetaSourceTmdb, cfg_general.MovieAlternateTitleMetaSourceTrakt)
 	for idxtitle := range titlegroup {
 		_, dbmovietitleerr := database.GetDbmovieTitle(database.Query{Select: "id", Where: "dbmovie_id = ? and title = ?", WhereArgs: []interface{}{dbmovie.ID, titlegroup[idxtitle].Title}})
 		if dbmovietitleerr != nil {
@@ -343,13 +366,13 @@ func movieFindDbByTitle(title string, year string, listname string, allowyear1 b
 		return foundmovie, foundimdb, foundentries
 	}
 
-	dbmovies, _ = database.QueryDbmovie(database.Query{Where: "title = ? COLLATE NOCASE", WhereArgs: []interface{}{slugged}})
+	dbmovies, _ = database.QueryDbmovie(database.Query{Where: "title = ? COLLATE NOCASE OR slug = ? COLLATE NOCASE", WhereArgs: []interface{}{slugged, slugged}})
 	found, foundmovie, foundimdb, foundentries = movieCheckIfYear(dbmovies, listname, yearint, allowyear1)
 	if found && foundimdb != "" {
 		return foundmovie, foundimdb, foundentries
 	}
 
-	dbmovietitles, _ = database.QueryDbmovieTitle(database.Query{Where: "title = ? COLLATE NOCASE", WhereArgs: []interface{}{slugged}})
+	dbmovietitles, _ = database.QueryDbmovieTitle(database.Query{Where: "title = ? COLLATE NOCASE OR slug = ? COLLATE NOCASE", WhereArgs: []interface{}{slugged, slugged}})
 	found, foundmovie, foundimdb, foundentries = movieCheckAlternateIfYear(dbmovietitles, listname, yearint, allowyear1)
 	if found && foundimdb != "" {
 		return foundmovie, foundimdb, foundentries
@@ -616,7 +639,7 @@ func movieFindListByTitle(title string, year string, lists []string, allowyear1 
 	}
 
 	logger.Log.Debug("DB Search for ", slugged)
-	dbmovies, _ = database.QueryDbmovie(database.Query{Select: "id", Where: "title = ? COLLATE NOCASE", WhereArgs: []interface{}{slugged}})
+	dbmovies, _ = database.QueryDbmovie(database.Query{Select: "id", Where: "title = ? COLLATE NOCASE OR slug = ? COLLATE NOCASE", WhereArgs: []interface{}{slugged, slugged}})
 	if len(dbmovies) >= 1 {
 		for idx := range dbmovies {
 			imdb_get, list_get := movieGetListFilter(lists, dbmovies[idx].ID, yearint, allowyear1)
@@ -630,7 +653,7 @@ func movieFindListByTitle(title string, year string, lists []string, allowyear1 
 		}
 	}
 	logger.Log.Debug("DB Search alternate title for ", slugged)
-	dbmovietitles, _ = database.QueryDbmovieTitle(database.Query{Select: "dbmovie_id", Where: "title = ? COLLATE NOCASE", WhereArgs: []interface{}{slugged}})
+	dbmovietitles, _ = database.QueryDbmovieTitle(database.Query{Select: "dbmovie_id", Where: "title = ? COLLATE NOCASE OR slug = ? COLLATE NOCASE", WhereArgs: []interface{}{slugged, slugged}})
 	if len(dbmovietitles) >= 1 {
 		for idx := range dbmovietitles {
 			imdb_get, list_get := movieGetListFilter(lists, dbmovietitles[idx].DbmovieID, yearint, allowyear1)
@@ -1108,9 +1131,6 @@ func importnewmoviessingle(row config.MediaTypeConfig, list config.MediaListsCon
 
 	swg := sizedwaitgroup.New(cfg_general.WorkerMetadata)
 	for idxmovie := range results.Movies {
-		if strings.EqualFold(Lastmovie, results.Movies[idxmovie].ImdbID) && Lastmovie != "" {
-			config.Slepping(false, 5)
-		}
 		Lastmovie = results.Movies[idxmovie].ImdbID
 		logger.Log.Info("Import Movie ", idxmovie, " of ", len(results.Movies), " imdb: ", results.Movies[idxmovie].ImdbID)
 		swg.Add()
@@ -1148,9 +1168,6 @@ func getnewmoviessingle(row config.MediaTypeConfig, list config.MediaListsConfig
 		var cfg_path config.PathsConfig
 		config.ConfigGet("path_"+row.Data[idxpath].Template_path, &cfg_path)
 
-		if strings.EqualFold(LastMoviePath, cfg_path.Path) && LastMoviePath != "" {
-			time.Sleep(time.Duration(5) * time.Second)
-		}
 		LastMoviePath = cfg_path.Path
 		filesfound_add := scanner.GetFilesGoDir(cfg_path.Path, cfg_path.AllowedVideoExtensions, cfg_path.AllowedVideoExtensionsNoRename, cfg_path.Blocked)
 		filesfound = append(filesfound, filesfound_add...)
@@ -1159,9 +1176,6 @@ func getnewmoviessingle(row config.MediaTypeConfig, list config.MediaListsConfig
 	logger.Log.Info("Find Movie File")
 	swf := sizedwaitgroup.New(cfg_general.WorkerParse)
 	for idxfile := range filesadded {
-		if strings.EqualFold(LastMoviesFilePath, filesadded[idxfile]) && LastMoviesFilePath != "" {
-			time.Sleep(time.Duration(5) * time.Second)
-		}
 		LastMoviesFilePath = filesadded[idxfile]
 		logger.Log.Info("Parse Movie ", idxfile, " of ", len(filesadded), " path: ", filesadded[idxfile])
 		swf.Add()
@@ -1235,9 +1249,6 @@ func moviesStructureSingle(row config.MediaTypeConfig, list config.MediaListsCon
 			}
 			config.ConfigGet("path_"+mappath, &cfg_path)
 		}
-		if strings.EqualFold(LastMoviesStructure, cfg_path_import.Path) && LastMoviesStructure != "" {
-			time.Sleep(time.Duration(15) * time.Second)
-		}
 		LastMoviesStructure = cfg_path_import.Path
 		swfile.Add()
 		StructureFolders("movie", cfg_path_import, cfg_path, row, list)
@@ -1261,6 +1272,19 @@ func RefreshMovies() {
 	dbmovies, _ := database.QueryDbmovie(database.Query{})
 
 	for idxmovie := range dbmovies {
+		logger.Log.Info("Refresh Movie ", idxmovie, " of ", len(dbmovies), " imdb: ", dbmovies[idxmovie].ImdbID)
+		sw.Add()
+		JobReloadMovies(dbmovies[idxmovie], config.MediaTypeConfig{}, config.MediaListsConfig{}, &sw)
+	}
+	sw.Wait()
+}
+
+func RefreshMovie(id string) {
+	dbmovies, _ := database.QueryDbmovie(database.Query{Where: "id = ?", WhereArgs: []interface{}{id}})
+
+	sw := sizedwaitgroup.New(1)
+	for idxmovie := range dbmovies {
+		logger.Log.Info("Refresh Movie ", idxmovie, " of ", len(dbmovies), " imdb: ", dbmovies[idxmovie].ImdbID)
 		sw.Add()
 		JobReloadMovies(dbmovies[idxmovie], config.MediaTypeConfig{}, config.MediaListsConfig{}, &sw)
 	}
@@ -1367,7 +1391,6 @@ func Movies_single_jobs(job string, typename string, listname string, force bool
 			}
 			switch job {
 			case "data":
-				config.Slepping(true, 6)
 				getnewmoviessingle(cfg_movie, cfg_movie.Lists[idxlist])
 			case "checkmissing":
 				checkmissingmoviessingle(cfg_movie, cfg_movie.Lists[idxlist])
@@ -1378,7 +1401,6 @@ func Movies_single_jobs(job string, typename string, listname string, force bool
 			case "clearhistory":
 				database.DeleteRow("movie_histories", database.Query{InnerJoin: "movies ON movies.id = movie_histories.movie_id", Where: "movies.listname=?", WhereArgs: []interface{}{typename}})
 			case "feeds":
-				config.Slepping(true, 6)
 				importnewmoviessingle(cfg_movie, cfg_movie.Lists[idxlist])
 			default:
 				// other stuff

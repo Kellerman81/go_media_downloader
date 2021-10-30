@@ -16,6 +16,7 @@ func AddMoviesRoutes(routermovies *gin.RouterGroup) {
 
 	routermovies.GET("/all/refresh", apirefreshMoviesInc)
 	routermovies.GET("/all/refreshall", apirefreshMovies)
+	routermovies.GET("/refresh/:id", apirefreshMovie)
 
 	routermovies.GET("/unmatched", func(ctx *gin.Context) {
 		movies, _ := database.QueryMovieFileUnmatched(database.Query{})
@@ -152,6 +153,10 @@ func apimoviesSearch(c *gin.Context) {
 
 func apirefreshMovies(c *gin.Context) {
 	go utils.RefreshMovies()
+	c.JSON(http.StatusOK, gin.H{"data": "started"})
+}
+func apirefreshMovie(c *gin.Context) {
+	go utils.RefreshMovie(c.Param("id"))
 	c.JSON(http.StatusOK, gin.H{"data": "started"})
 }
 

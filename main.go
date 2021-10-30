@@ -84,10 +84,13 @@ func main() {
 		LogLevel:     cfg_general.LogLevel,
 		LogFileSize:  cfg_general.LogFileSize,
 		LogFileCount: cfg_general.LogFileCount,
+		LogCompress:  cfg_general.LogCompress,
 	})
 	logger.Log.Infoln("Starting go_media_downloader")
 	logger.Log.Infoln("Programmer: kellerman81")
 	logger.Log.Infoln("Hint: Set Loglevel to Debug to see possible API Paths")
+	logger.Log.Infoln("------------------------------")
+	logger.Log.Infoln("")
 	// keys, _ := config.ConfigDB.Keys([]byte(""), 0, 0, true)
 
 	// fmt.Println(cfg_general)
