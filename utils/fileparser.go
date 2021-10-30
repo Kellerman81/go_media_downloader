@@ -742,8 +742,11 @@ func trimStringInclAfterString(s string, search string) string {
 }
 func trimStringInclAfterStringInsensitive(s string, search string) string {
 	if idx := strings.Index(strings.ToLower(s), strings.ToLower(search)); idx != -1 {
-		return s[:idx]
+		s = s[:idx]
 	}
+	s = strings.TrimSuffix(s, "-")
+	s = strings.TrimSuffix(s, ".")
+	s = strings.TrimSuffix(s, " ")
 	return s
 }
 func trimStringAfterString(s string, search string) string {

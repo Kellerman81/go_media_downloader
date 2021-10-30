@@ -124,13 +124,18 @@ func filter_movies_nzbs(configEntry config.MediaTypeConfig, quality config.Quali
 				}
 			}
 			tempimdb := nzbs[idx].IMDBID
-			if !strings.HasPrefix(strings.ToLower(tempimdb), "tt") && len(tempimdb) >= 1 {
-				tempimdb = "tt" + nzbs[idx].IMDBID
-			}
+			tempimdb = strings.TrimPrefix(tempimdb, "tt")
+			tempimdb = strings.TrimPrefix(tempimdb, "0")
+			tempimdb = strings.TrimPrefix(tempimdb, "0")
+			tempimdb = strings.TrimPrefix(tempimdb, "0")
+			tempimdb = strings.TrimPrefix(tempimdb, "0")
+
 			wantedimdb := movie.ImdbID
-			if !strings.HasPrefix(strings.ToLower(wantedimdb), "tt") && len(wantedimdb) >= 1 {
-				wantedimdb = "tt" + nzbs[idx].IMDBID
-			}
+			wantedimdb = strings.TrimPrefix(wantedimdb, "tt")
+			wantedimdb = strings.TrimPrefix(wantedimdb, "0")
+			wantedimdb = strings.TrimPrefix(wantedimdb, "0")
+			wantedimdb = strings.TrimPrefix(wantedimdb, "0")
+			wantedimdb = strings.TrimPrefix(wantedimdb, "0")
 			if wantedimdb != tempimdb && len(wantedimdb) >= 1 && len(tempimdb) >= 1 {
 				logger.Log.Debug("Skipped - Imdb not match: ", nzbs[idx].Title, " - imdb in nzb: ", tempimdb, " imdb wanted: ", wantedimdb)
 				toskip = true
@@ -252,13 +257,14 @@ func filter_movies_nzbs(configEntry config.MediaTypeConfig, quality config.Quali
 }
 
 func checknzbtitle(movietitle string, nzbtitle string) bool {
+	logger.Log.Debug("check ", movietitle, " against ", nzbtitle)
 	if strings.EqualFold(movietitle, nzbtitle) {
 		return true
 	}
-	if strings.EqualFold(logger.StringToSlug(movietitle), logger.StringToSlug(nzbtitle)) {
-		return true
-	}
-	return false
+	movietitle = logger.StringToSlug(movietitle)
+	nzbtitle = logger.StringToSlug(nzbtitle)
+	logger.Log.Debug("check ", movietitle, " against ", nzbtitle)
+	return strings.EqualFold(movietitle, nzbtitle)
 }
 
 func filter_series_nzbs(configEntry config.MediaTypeConfig, quality config.QualityConfig, indexer config.QualityIndexerConfig, nzbs []newznab.NZB, movieid uint, seriesepisodeid uint, minPrio int, movie database.Dbmovie, serie database.Dbserie) []nzbwithprio {

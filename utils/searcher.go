@@ -357,6 +357,7 @@ type Searcher struct {
 	SearchActionType  string //missing,upgrade,rss
 	Indexer           config.QualityIndexerConfig
 	Indexercategories []int
+	AlternateNames    []string
 	MinimumPriority   int
 
 	//nzb
@@ -469,7 +470,10 @@ func (s *Searcher) MovieSearch(movie database.Movie, forceDownload bool, titlese
 	s.Dbmovie = dbmovie
 
 	dbmoviealt, _ := database.QueryDbmovieTitle(database.Query{Where: "dbmovie_id=?", WhereArgs: []interface{}{movie.DbmovieID}})
-
+	s.AlternateNames = []string{}
+	for idx := range dbmoviealt {
+		s.AlternateNames = append(s.AlternateNames, dbmoviealt[idx].Title)
+	}
 	if !config.ConfigCheck("quality_" + s.Quality) {
 		return searchResults{}
 	}
@@ -516,7 +520,7 @@ func (s *Searcher) MovieSearch(movie database.Movie, forceDownload bool, titlese
 			}
 		}
 		if !releasefound && cfg_quality.BackupSearchForTitle && titlesearch {
-			dl_add := s.MoviesSearchTitle(movie, s.Dbmovie.Slug)
+			dl_add := s.MoviesSearchTitle(movie, s.Dbmovie.Title)
 			titleschecked[s.Dbmovie.Title] = true
 			if len(dl_add.Nzbs) >= 1 {
 				logger.Log.Debug("Indexer loop - entries found: ", len(dl_add.Nzbs))
@@ -530,7 +534,7 @@ func (s *Searcher) MovieSearch(movie database.Movie, forceDownload bool, titlese
 		}
 		if !releasefound && cfg_quality.BackupSearchForAlternateTitle && titlesearch {
 			for idx := range dbmoviealt {
-				if _, ok := titleschecked[dbmoviealt[idx].Slug]; !ok {
+				if _, ok := titleschecked[dbmoviealt[idx].Title]; !ok {
 					dl_add := s.MoviesSearchTitle(movie, dbmoviealt[idx].Title)
 					titleschecked[dbmoviealt[idx].Title] = true
 					if len(dl_add.Nzbs) >= 1 {
@@ -743,7 +747,7 @@ func (s Searcher) MoviesSearchImdb(movie database.Movie) searchResults {
 	config.ConfigGet("quality_"+s.Quality, &cfg_quality)
 
 	if len(nzbs) >= 1 {
-		retnzb = append(retnzb, filter_movies_nzbs(s.ConfigEntry, cfg_quality, s.Indexer, nzbs, s.Movie.ID, 0, s.MinimumPriority, s.Dbmovie, database.Dbserie{}, s.Dbmovie.Title, []string{}, strconv.Itoa(s.Dbmovie.Year))...)
+		retnzb = append(retnzb, filter_movies_nzbs(s.ConfigEntry, cfg_quality, s.Indexer, nzbs, s.Movie.ID, 0, s.MinimumPriority, s.Dbmovie, database.Dbserie{}, s.Dbmovie.Title, s.AlternateNames, strconv.Itoa(s.Dbmovie.Year))...)
 		logger.Log.Debug("Search Series by tvdbid ended - found entries after filter: ", len(retnzb))
 	}
 	return searchResults{retnzb}
@@ -771,7 +775,7 @@ func (s Searcher) MoviesSearchTitle(movie database.Movie, title string) searchRe
 		failedindexer(failed)
 	}
 	if len(nzbs) >= 1 {
-		retnzb = append(retnzb, filter_movies_nzbs(s.ConfigEntry, cfg_quality, s.Indexer, nzbs, movie.ID, 0, s.MinimumPriority, s.Dbmovie, database.Dbserie{}, s.Dbmovie.Title, []string{}, strconv.Itoa(s.Dbmovie.Year))...)
+		retnzb = append(retnzb, filter_movies_nzbs(s.ConfigEntry, cfg_quality, s.Indexer, nzbs, movie.ID, 0, s.MinimumPriority, s.Dbmovie, database.Dbserie{}, s.Dbmovie.Title, s.AlternateNames, strconv.Itoa(s.Dbmovie.Year))...)
 		logger.Log.Debug("Search Series by tvdbid ended - found entries after filter: ", len(retnzb))
 	}
 	return searchResults{retnzb}
