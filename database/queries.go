@@ -78,7 +78,7 @@ func GetDbmovieTitle(qu Query) (DbmovieTitle, error) {
 	return DbmovieTitle{}, errors.New("no result")
 }
 func QueryDbmovieTitle(qu Query) ([]DbmovieTitle, error) {
-	columns := "id,created_at,updated_at,dbmovie_id,title,slug"
+	columns := "id,created_at,updated_at,dbmovie_id,title,slug,region"
 	if qu.Select != "" {
 		columns = qu.Select
 	}
@@ -218,7 +218,7 @@ func GetDbserieAlternates(qu Query) (DbserieAlternate, error) {
 	return DbserieAlternate{}, errors.New("no result")
 }
 func QueryDbserieAlternates(qu Query) ([]DbserieAlternate, error) {
-	columns := "id,created_at,updated_at,title,slug,dbserie_id"
+	columns := "id,created_at,updated_at,title,slug,region,dbserie_id"
 	if qu.Select != "" {
 		columns = qu.Select
 	}

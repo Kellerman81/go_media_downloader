@@ -1,0 +1,2 @@
+UPDATE [qualities] SET Regex = '(\b|_)(amazonhd|(web(?:[^a-zA-Z0-9]?(dl|hd))?))(\b|_)', Strings='webdl,web dl,web.dl,web-dl,web_dl,webhd,web.hd,web hd,web-hd,web_hd,amazonhd' where [Type]=2 AND Name='webdl';
+UPDATE [qualities] SET Regex = '(\b|_)(?:b[dr][^a-zA-Z0-9]?rip|blu[^a-zA-Z0-9]?ray(?:[^a-zA-Z0-9]?rip)?|bd)(\b|_)', Strings='bdrip,bd,bd.rip,bd rip,bd-rip,bd_rip,brrip,br.rip,br rip,br-rip,br_rip,bluray,blu ray,blu.ray,blu-ray,blu_ray' where [Type]=2 AND Name='bluray';

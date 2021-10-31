@@ -141,6 +141,7 @@ type DbmovieTitle struct {
 	Dbmovie   Dbmovie
 	Title     string
 	Slug      string
+	Region    string
 }
 
 func (movie *Dbmovie) GetTitles(allowed []string, queryimdb bool, querytmdb bool, querytrakt bool) []DbmovieTitle {
@@ -160,6 +161,7 @@ func (movie *Dbmovie) GetTitles(allowed []string, queryimdb bool, querytmdb bool
 					break
 				}
 			}
+			logger.Log.Debug("Title: ", akarow.Title, " Region: ", akarow.Region, " ok: ", regionok)
 			if !regionok && len(allowed) >= 1 {
 				continue
 			}
@@ -167,6 +169,7 @@ func (movie *Dbmovie) GetTitles(allowed []string, queryimdb bool, querytmdb bool
 			newmovietitle.DbmovieID = movie.ID
 			newmovietitle.Title = akarow.Title
 			newmovietitle.Slug = akarow.Slug
+			newmovietitle.Region = akarow.Region
 			c = append(c, newmovietitle)
 
 			processed[akarow.Title] = true
@@ -183,6 +186,7 @@ func (movie *Dbmovie) GetTitles(allowed []string, queryimdb bool, querytmdb bool
 						break
 					}
 				}
+				logger.Log.Debug("Title: ", row.Title, " Region: ", row.Iso31661, " ok: ", regionok)
 				if !regionok && len(allowed) >= 1 {
 					continue
 				}
@@ -191,6 +195,7 @@ func (movie *Dbmovie) GetTitles(allowed []string, queryimdb bool, querytmdb bool
 					newmovietitle.DbmovieID = movie.ID
 					newmovietitle.Title = row.Title
 					newmovietitle.Slug = logger.StringToSlug(row.Title)
+					newmovietitle.Region = row.Iso31661
 					c = append(c, newmovietitle)
 
 					processed[row.Title] = true
@@ -212,6 +217,7 @@ func (movie *Dbmovie) GetTitles(allowed []string, queryimdb bool, querytmdb bool
 						break
 					}
 				}
+				logger.Log.Debug("Title: ", row.Title, " Region: ", row.Country, " ok: ", regionok)
 				if !regionok && len(allowed) >= 1 {
 					continue
 				}
@@ -220,6 +226,7 @@ func (movie *Dbmovie) GetTitles(allowed []string, queryimdb bool, querytmdb bool
 					newmovietitle.DbmovieID = movie.ID
 					newmovietitle.Title = row.Title
 					newmovietitle.Slug = logger.StringToSlug(row.Title)
+					newmovietitle.Region = row.Country
 					c = append(c, newmovietitle)
 
 					processed[row.Title] = true
@@ -230,68 +237,9 @@ func (movie *Dbmovie) GetTitles(allowed []string, queryimdb bool, querytmdb bool
 	return c
 }
 
-func (movie *Dbmovie) ClearAndGetTitles(allowed []string, queryimdb bool, querytmdb bool) []DbmovieTitle {
-	c := make([]DbmovieTitle, 0, 10)
-	processed := make(map[string]bool, 10)
-
+func (movie *Dbmovie) ClearAndGetTitles(allowed []string, queryimdb bool, querytmdb bool, querytrakt bool) []DbmovieTitle {
 	DeleteRow("dbmovie_titles", Query{Where: "dbmovie_id=?", WhereArgs: []interface{}{movie.ID}})
-
-	if queryimdb {
-		queryimdbid := movie.ImdbID
-		if !strings.HasPrefix(movie.ImdbID, "tt") {
-			queryimdbid = "tt" + movie.ImdbID
-		}
-		imdbakadata, _ := QueryImdbAka(Query{Where: "tconst=?", WhereArgs: []interface{}{queryimdbid}})
-		for _, akarow := range imdbakadata {
-			regionok := false
-			for idxallow := range allowed {
-				if strings.EqualFold(allowed[idxallow], akarow.Region) {
-					regionok = true
-					break
-				}
-			}
-			if !regionok && len(allowed) >= 1 {
-				continue
-			}
-			var newmovietitle DbmovieTitle
-			newmovietitle.DbmovieID = movie.ID
-			newmovietitle.Title = akarow.Title
-			newmovietitle.Slug = akarow.Slug
-			c = append(c, newmovietitle)
-
-			processed[akarow.Title] = true
-		}
-	}
-
-	if querytmdb {
-		moviedbtitles, foundtitles := apiexternal.TmdbApi.GetMovieTitles(movie.MoviedbID)
-		if foundtitles == nil {
-			for _, row := range moviedbtitles.Titles {
-				regionok := false
-				for idxallow := range allowed {
-					if strings.EqualFold(allowed[idxallow], row.Iso31661) {
-						regionok = true
-						break
-					}
-				}
-				if !regionok && len(allowed) >= 1 {
-					continue
-				}
-				if _, ok := processed[row.Title]; !ok {
-					var newmovietitle DbmovieTitle
-					newmovietitle.DbmovieID = movie.ID
-					newmovietitle.Title = row.Title
-					newmovietitle.Slug = logger.StringToSlug(row.Title)
-					c = append(c, newmovietitle)
-
-					processed[row.Title] = true
-				}
-			}
-		} else {
-			logger.Log.Warning("Titles for Movie not found for: ", movie.ImdbID)
-		}
-	}
-	return c
+	return movie.GetTitles(allowed, queryimdb, querytmdb, querytrakt)
 }
 
 func (movie *Dbmovie) GetImdbMetadata(overwrite bool) {

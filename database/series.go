@@ -145,6 +145,7 @@ type DbserieAlternate struct {
 	UpdatedAt time.Time `db:"updated_at"`
 	Title     string
 	Slug      string
+	Region    string
 	DbserieID uint `db:"dbserie_id"`
 	Dbserie   Dbserie
 }
@@ -284,6 +285,72 @@ func (serie *Dbserie) GetMetadata(language string, querytmdb bool, allowed []str
 		}
 	}
 	return aliases
+}
+
+func (serie *Dbserie) GetTitles(allowed []string, queryimdb bool, querytrakt bool) []DbserieAlternate {
+	c := make([]DbserieAlternate, 0, 10)
+	processed := make(map[string]bool, 10)
+	if queryimdb {
+		queryimdbid := serie.ImdbID
+		if !strings.HasPrefix(serie.ImdbID, "tt") {
+			queryimdbid = "tt" + serie.ImdbID
+		}
+		imdbakadata, _ := QueryImdbAka(Query{Where: "tconst=?", WhereArgs: []interface{}{queryimdbid}})
+		for _, akarow := range imdbakadata {
+			regionok := false
+			for idxallow := range allowed {
+				if strings.EqualFold(allowed[idxallow], akarow.Region) {
+					regionok = true
+					break
+				}
+			}
+			logger.Log.Debug("Title: ", akarow.Title, " Region: ", akarow.Region, " ok: ", regionok)
+			if !regionok && len(allowed) >= 1 {
+				continue
+			}
+			var newserietitle DbserieAlternate
+			newserietitle.DbserieID = serie.ID
+			newserietitle.Title = akarow.Title
+			newserietitle.Slug = akarow.Slug
+			newserietitle.Region = akarow.Region
+			c = append(c, newserietitle)
+
+			processed[akarow.Title] = true
+		}
+	}
+	if querytrakt {
+		queryid := serie.ImdbID
+		if queryid == "" {
+			queryid = strconv.Itoa(serie.TraktID)
+		}
+		traktaliases, err := apiexternal.TraktApi.GetSerieAliases(queryid)
+		if err == nil {
+			for _, row := range traktaliases {
+				regionok := false
+				for idxallow := range allowed {
+					if strings.EqualFold(allowed[idxallow], row.Country) {
+						regionok = true
+						break
+					}
+				}
+				logger.Log.Debug("Title: ", row.Title, " Region: ", row.Country, " ok: ", regionok)
+				if !regionok && len(allowed) >= 1 {
+					continue
+				}
+				if _, ok := processed[row.Title]; !ok {
+					var newserietitle DbserieAlternate
+					newserietitle.DbserieID = serie.ID
+					newserietitle.Title = row.Title
+					newserietitle.Slug = logger.StringToSlug(row.Title)
+					newserietitle.Region = row.Country
+					c = append(c, newserietitle)
+
+					processed[row.Title] = true
+				}
+			}
+		}
+	}
+	return c
 }
 
 func (serie *Dbserie) GetEpisodes(language string, querytrakt bool) []DbserieEpisode {
