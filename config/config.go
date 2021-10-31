@@ -90,9 +90,7 @@ type MediaDataConfig struct {
 }
 
 type MediaDataImportConfig struct {
-	Template_path     string   `koanf:"template_path"`
-	CleanupsizeMB     int      `koanf:"cleanup_size_mb"`
-	Allowed_languages []string `koanf:"allowed_languages"`
+	Template_path string `koanf:"template_path"`
 }
 
 type MediaListsConfig struct {
@@ -148,6 +146,8 @@ type GeneralConfig struct {
 	MovieAlternateTitleMetaSourceTmdb  bool     `koanf:"movie_alternate_title_meta_source_tmdb"`
 	MovieAlternateTitleMetaSourceOmdb  bool     `koanf:"movie_alternate_title_meta_source_omdb"`
 	MovieAlternateTitleMetaSourceTrakt bool     `koanf:"movie_alternate_title_meta_source_trakt"`
+	SerieAlternateTitleMetaSourceImdb  bool     `koanf:"serie_alternate_title_meta_source_imdb"`
+	SerieAlternateTitleMetaSourceTrakt bool     `koanf:"serie_alternate_title_meta_source_trakt"`
 	MovieMetaSourcePriority            []string `koanf:"movie_meta_source_priority"`
 	MovieRSSMetaSourcePriority         []string `koanf:"movie_rss_meta_source_priority"`
 	MovieParseMetaSourcePriority       []string `koanf:"movie_parse_meta_source_priority"`

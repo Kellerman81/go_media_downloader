@@ -113,13 +113,19 @@ func JobImportDbSeries(serieconfig config.SerieConfig, configEntry config.MediaT
 			dbserie = finddbserie
 		}
 	}
-
+	titlegroup := dbserie.GetTitles(configEntry.Metadata_title_languages, cfg_general.SerieAlternateTitleMetaSourceImdb, cfg_general.SerieAlternateTitleMetaSourceTrakt)
+	for idxalt := range titlegroup {
+		countera, _ := database.CountRows("dbserie_alternates", database.Query{Where: "Dbserie_id = ? and title = ?", WhereArgs: []interface{}{dbserie.ID, titlegroup[idxalt].Title}})
+		if countera == 0 {
+			database.InsertArray("dbserie_alternates", []string{"dbserie_id", "title", "slug", "region"}, []interface{}{dbserie.ID, titlegroup[idxalt].Title, titlegroup[idxalt].Slug, titlegroup[idxalt].Region})
+		}
+	}
 	serieconfig.AlternateName = append(serieconfig.AlternateName, serieconfig.Name)
 	serieconfig.AlternateName = append(serieconfig.AlternateName, dbserie.Seriename)
 	for idxalt := range serieconfig.AlternateName {
 		countera, _ := database.CountRows("dbserie_alternates", database.Query{Where: "Dbserie_id = ? and title = ?", WhereArgs: []interface{}{dbserie.ID, serieconfig.AlternateName[idxalt]}})
 		if countera == 0 {
-			database.InsertArray("dbserie_alternates", []string{"dbserie_id", "title"}, []interface{}{dbserie.ID, serieconfig.AlternateName[idxalt]})
+			database.InsertArray("dbserie_alternates", []string{"dbserie_id", "title", "slug"}, []interface{}{dbserie.ID, serieconfig.AlternateName[idxalt], logger.StringToSlug(serieconfig.AlternateName[idxalt])})
 		}
 	}
 
@@ -270,12 +276,19 @@ func JobReloadDbSeries(dbserie database.Dbserie, configEntry config.MediaTypeCon
 	logger.Log.Debug("DbSeries get metadata end for: ", dbserie.ThetvdbID)
 
 	logger.Log.Debug("DbSeries add titles for: ", dbserie.ThetvdbID)
+	titlegroup := dbserie.GetTitles(getconfigentry.Metadata_title_languages, cfg_general.SerieAlternateTitleMetaSourceImdb, cfg_general.SerieAlternateTitleMetaSourceTrakt)
+	for idxalt := range titlegroup {
+		countera, _ := database.CountRows("dbserie_alternates", database.Query{Where: "Dbserie_id = ? and title = ?", WhereArgs: []interface{}{dbserie.ID, titlegroup[idxalt].Title}})
+		if countera == 0 {
+			database.InsertArray("dbserie_alternates", []string{"dbserie_id", "title", "slug", "region"}, []interface{}{dbserie.ID, titlegroup[idxalt].Title, titlegroup[idxalt].Slug, titlegroup[idxalt].Region})
+		}
+	}
 	for idxalt := range alternateNames {
 		counter, _ := database.CountRows("dbserie_alternates", database.Query{Where: "Dbserie_id = ? and title = ?", WhereArgs: []interface{}{dbserie.ID, alternateNames[idxalt]}})
 		if counter == 0 {
 			database.InsertArray("dbserie_alternates",
-				[]string{"dbserie_id", "title"},
-				[]interface{}{dbserie.ID, alternateNames[idxalt]})
+				[]string{"dbserie_id", "title", "slug"},
+				[]interface{}{dbserie.ID, alternateNames[idxalt], logger.StringToSlug(alternateNames[idxalt])})
 		}
 	}
 
@@ -609,6 +622,7 @@ func RefreshSerie(id string) {
 	sw := sizedwaitgroup.New(1)
 	dbseries, _ := database.QueryDbserie(database.Query{Where: "id = ?", WhereArgs: []interface{}{id}})
 	for idxserie := range dbseries {
+		logger.Log.Info("Refresh Serie ", idxserie, " of ", len(dbseries), " tvdb: ", dbseries[idxserie].ThetvdbID)
 		sw.Add()
 		JobReloadDbSeries(dbseries[idxserie], config.MediaTypeConfig{}, config.MediaListsConfig{}, true, &sw)
 	}
@@ -628,6 +642,7 @@ func RefreshSeries() {
 	sw := sizedwaitgroup.New(cfg_general.WorkerFiles)
 	dbseries, _ := database.QueryDbserie(database.Query{})
 	for idxserie := range dbseries {
+		logger.Log.Info("Refresh Serie ", idxserie, " of ", len(dbseries), " tvdb: ", dbseries[idxserie].ThetvdbID)
 		sw.Add()
 		JobReloadDbSeries(dbseries[idxserie], config.MediaTypeConfig{}, config.MediaListsConfig{}, true, &sw)
 	}
@@ -648,6 +663,7 @@ func RefreshSeriesInc() {
 	dbseries, _ := database.QueryDbserie(database.Query{Where: "status = 'Continuing'", OrderBy: "updated_at asc", Limit: 100})
 
 	for idxserie := range dbseries {
+		logger.Log.Info("Refresh Serie ", idxserie, " of ", len(dbseries), " tvdb: ", dbseries[idxserie].ThetvdbID)
 		sw.Add()
 		JobReloadDbSeries(dbseries[idxserie], config.MediaTypeConfig{}, config.MediaListsConfig{}, true, &sw)
 	}
