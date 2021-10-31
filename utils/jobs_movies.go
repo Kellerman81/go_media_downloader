@@ -248,28 +248,29 @@ func JobReloadMovies(dbmovie database.Dbmovie, configEntry config.MediaTypeConfi
 	movie_keys, _ := config.ConfigDB.Keys([]byte("movie_*"), 0, 0, true)
 	movies, _ := database.QueryMovies(database.Query{Where: "dbmovie_id = ?", WhereArgs: []interface{}{dbmovie.ID}})
 
-	if configEntry.Name == "" || list.Name == "" {
-		for _, idx := range movie_keys {
-			var cfg_movie config.MediaTypeConfig
-			config.ConfigGet(string(idx), &cfg_movie)
+	var getconfigentry config.MediaTypeConfig
+	if configEntry.Name != "" {
+		getconfigentry = configEntry
+	}
+	for _, idx := range movie_keys {
+		var cfg_movie config.MediaTypeConfig
+		config.ConfigGet(string(idx), &cfg_movie)
 
-			listfound := false
-			for idxlist := range cfg_movie.Lists {
-				if cfg_movie.Lists[idxlist].Name == movies[0].Listname {
-					listfound = true
-					configEntry = cfg_movie
-					list = cfg_movie.Lists[idxlist]
-					break
-				}
-			}
-			if listfound {
+		listfound := false
+		for idxlist := range cfg_movie.Lists {
+			if cfg_movie.Lists[idxlist].Name == movies[0].Listname {
+				listfound = true
+				getconfigentry = cfg_movie
 				break
 			}
+		}
+		if listfound {
+			break
 		}
 	}
 
 	logger.Log.Debug("Get Movie Titles: ", dbmovie.Title)
-	titlegroup := dbmovie.GetTitles(configEntry.Metadata_title_languages, cfg_general.MovieAlternateTitleMetaSourceImdb, cfg_general.MovieAlternateTitleMetaSourceTmdb, cfg_general.MovieAlternateTitleMetaSourceTrakt)
+	titlegroup := dbmovie.GetTitles(getconfigentry.Metadata_title_languages, cfg_general.MovieAlternateTitleMetaSourceImdb, cfg_general.MovieAlternateTitleMetaSourceTmdb, cfg_general.MovieAlternateTitleMetaSourceTrakt)
 	for idxtitle := range titlegroup {
 		_, dbmovietitleerr := database.GetDbmovieTitle(database.Query{Select: "id", Where: "dbmovie_id = ? and title = ?", WhereArgs: []interface{}{dbmovie.ID, titlegroup[idxtitle].Title}})
 		if dbmovietitleerr != nil {

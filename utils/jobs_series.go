@@ -234,29 +234,30 @@ func JobReloadDbSeries(dbserie database.Dbserie, configEntry config.MediaTypeCon
 
 	serie_keys, _ := config.ConfigDB.Keys([]byte("serie_*"), 0, 0, true)
 
-	if configEntry.Name == "" || list.Name == "" {
+	var getconfigentry config.MediaTypeConfig
+	if configEntry.Name != "" {
+		getconfigentry = configEntry
+	}
+	for _, idx := range serie_keys {
 		var cfg_serie config.MediaTypeConfig
-		for _, idx := range serie_keys {
-			config.ConfigGet(string(idx), &cfg_serie)
+		config.ConfigGet(string(idx), &cfg_serie)
 
-			listfound := false
-			for idxlist := range cfg_serie.Lists {
-				if cfg_serie.Lists[idxlist].Name == getfirstseries[0].Listname {
-					listfound = true
-					configEntry = cfg_serie
-					list = cfg_serie.Lists[idxlist]
-					break
-				}
-			}
-			if listfound {
+		listfound := false
+		for idxlist := range cfg_serie.Lists {
+			if cfg_serie.Lists[idxlist].Name == getfirstseries[0].Listname {
+				listfound = true
+				getconfigentry = cfg_serie
 				break
 			}
+		}
+		if listfound {
+			break
 		}
 	}
 
 	addaliases := dbserie.GetMetadata("", cfg_general.SerieMetaSourceTmdb, cfg_imdb.Indexedlanguages, cfg_general.SerieMetaSourceTrakt, false)
 	if dbserie.Seriename == "" {
-		addaliases = dbserie.GetMetadata(configEntry.Metadata_language, cfg_general.SerieMetaSourceTmdb, cfg_imdb.Indexedlanguages, cfg_general.SerieMetaSourceTrakt, false)
+		addaliases = dbserie.GetMetadata(getconfigentry.Metadata_language, cfg_general.SerieMetaSourceTmdb, cfg_imdb.Indexedlanguages, cfg_general.SerieMetaSourceTrakt, false)
 	}
 	alternateNames := make([]string, 0, len(addaliases)+1)
 	alternateNames = append(alternateNames, addaliases...)
@@ -305,17 +306,18 @@ func JobReloadDbSeries(dbserie database.Dbserie, configEntry config.MediaTypeCon
 	}
 
 	foundseries, _ := database.QuerySeries(database.Query{Select: "id", Where: "Dbserie_id = ?", WhereArgs: []interface{}{dbserie.ID}})
+	var getlist config.MediaListsConfig
 	for idxserie := range foundseries {
-		var cfg_serie config.MediaTypeConfig
+
 		for _, idx := range serie_keys {
+			var cfg_serie config.MediaTypeConfig
 			config.ConfigGet(string(idx), &cfg_serie)
 
 			listfound := false
 			for idxlist := range cfg_serie.Lists {
 				if cfg_serie.Lists[idxlist].Name == foundseries[idxserie].Listname {
 					listfound = true
-					configEntry = cfg_serie
-					list = cfg_serie.Lists[idxlist]
+					getlist = cfg_serie.Lists[idxlist]
 					break
 				}
 			}
@@ -330,7 +332,7 @@ func JobReloadDbSeries(dbserie database.Dbserie, configEntry config.MediaTypeCon
 			if counter == 0 {
 				database.InsertArray("serie_episodes",
 					[]string{"dbserie_id", "serie_id", "missing", "quality_profile", "dbserie_episode_id"},
-					[]interface{}{dbserie.ID, foundseries[idxserie].ID, true, list.Template_quality, dbepisode[idxdbepi].ID})
+					[]interface{}{dbserie.ID, foundseries[idxserie].ID, true, getlist.Template_quality, dbepisode[idxdbepi].ID})
 			}
 		}
 	}

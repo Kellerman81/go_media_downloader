@@ -71,7 +71,7 @@ index_full=true #short only imports imdbid and titles/years - full also votes ra
 	search_upgrade_incremental = 20 #number of elements processed during incremental scans
 		[[media.movies.data]]
 		template_path="en movies"
-		[[media.movies.dataimport]]
+		[[media.movies.data_import]]
 		template_path="en movies import"
 		[[media.movies.lists]]
 		name="EN Movies" #Use unique names to match in db   - dont use same name for series and movies
@@ -111,7 +111,7 @@ index_full=true #short only imports imdbid and titles/years - full also votes ra
 	search_upgrade_incremental = 20
 		[[media.series.data]]
 		template_path="en series"
-		[[media.series.dataimport]]
+		[[media.series.data_import]]
 		template_path="en series import"
 		[[media.series.lists]]
 		name="EN" #Use unique names to match in db
