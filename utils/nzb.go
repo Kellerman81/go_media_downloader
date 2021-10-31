@@ -322,9 +322,15 @@ func filter_series_nzbs(configEntry config.MediaTypeConfig, quality config.Quali
 						if foundepierr == nil {
 							founddbepi, founddbepierr := database.GetDbserieEpisodes(database.Query{Select: "identifier", Where: "id = ?", WhereArgs: []interface{}{foundepi.DbserieEpisodeID}})
 							if founddbepierr == nil {
+								alt_identifier := strings.TrimPrefix(founddbepi.Identifier, "S")
+								alt_identifier = strings.TrimPrefix(alt_identifier, "0")
+								alt_identifier = strings.Replace(alt_identifier, "E", "x", -1)
 								if strings.Contains(strings.ToLower(nzbs[idx].Title), strings.ToLower(founddbepi.Identifier)) ||
 									strings.Contains(strings.ToLower(nzbs[idx].Title), strings.ToLower(strings.Replace(founddbepi.Identifier, "-", ".", -1))) ||
-									strings.Contains(strings.ToLower(nzbs[idx].Title), strings.ToLower(strings.Replace(founddbepi.Identifier, "-", " ", -1))) {
+									strings.Contains(strings.ToLower(nzbs[idx].Title), strings.ToLower(strings.Replace(founddbepi.Identifier, "-", " ", -1))) ||
+									strings.Contains(strings.ToLower(nzbs[idx].Title), strings.ToLower(alt_identifier)) ||
+									strings.Contains(strings.ToLower(nzbs[idx].Title), strings.ToLower(strings.Replace(alt_identifier, "-", ".", -1))) ||
+									strings.Contains(strings.ToLower(nzbs[idx].Title), strings.ToLower(strings.Replace(alt_identifier, "-", " ", -1))) {
 									toskip = false
 								} else {
 									toskip = true
