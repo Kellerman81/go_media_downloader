@@ -138,7 +138,7 @@ func InitScheduler() {
 
 	if defaultschedule.Interval_scan_data != "" {
 		data.DispatchEvery(func() {
-			utils.Movies_all_jobs("data", false)
+			utils.Movies_all_jobs("datafull", false)
 		}, converttime(defaultschedule.Interval_scan_data))
 	}
 
@@ -227,7 +227,7 @@ func InitScheduler() {
 	}
 	if defaultschedule.Interval_scan_data != "" {
 		data.DispatchEvery(func() {
-			utils.Series_all_jobs("data", false)
+			utils.Series_all_jobs("datafull", false)
 		}, converttime(defaultschedule.Interval_scan_data))
 	}
 	if defaultschedule.Interval_scan_dataimport != "" {

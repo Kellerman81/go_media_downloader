@@ -1143,6 +1143,49 @@ func importnewmoviessingle(row config.MediaTypeConfig, list config.MediaListsCon
 var LastMoviePath string
 var LastMoviesFilePath string
 
+func getnewmovies(row config.MediaTypeConfig) {
+	if !config.ConfigCheck("general") {
+		return
+	}
+	var cfg_general config.GeneralConfig
+	config.ConfigGet("general", &cfg_general)
+
+	logger.Log.Info("Scan Movie File")
+	filesfound := make([]string, 0, 5000)
+	for idxpath := range row.Data {
+		if !config.ConfigCheck("path_" + row.Data[idxpath].Template_path) {
+			continue
+		}
+		var cfg_path config.PathsConfig
+		config.ConfigGet("path_"+row.Data[idxpath].Template_path, &cfg_path)
+
+		LastMoviePath = cfg_path.Path
+		filesfound_add := scanner.GetFilesGoDir(cfg_path.Path, cfg_path.AllowedVideoExtensions, cfg_path.AllowedVideoExtensionsNoRename, cfg_path.Blocked)
+		filesfound = append(filesfound, filesfound_add...)
+	}
+
+	swf := sizedwaitgroup.New(cfg_general.WorkerParse)
+	for _, list := range row.Lists {
+		if !config.ConfigCheck("quality_" + list.Template_quality) {
+			continue
+		}
+		var cfg_quality config.QualityConfig
+		config.ConfigGet("quality_"+list.Template_quality, &cfg_quality)
+
+		defaultPrio := &ParseInfo{Quality: row.DefaultQuality, Resolution: row.DefaultResolution}
+		defaultPrio.GetPriority(row, cfg_quality)
+
+		filesadded := scanner.GetFilesAdded(filesfound, list.Name)
+		logger.Log.Info("Find Movie File")
+		for idxfile := range filesadded {
+			LastMoviesFilePath = filesadded[idxfile]
+			logger.Log.Info("Parse Movie ", idxfile, " of ", len(filesadded), " path: ", filesadded[idxfile])
+			swf.Add()
+			JobImportMovieParseV2(filesadded[idxfile], row, list, true, *defaultPrio, &swf)
+		}
+	}
+	swf.Wait()
+}
 func getnewmoviessingle(row config.MediaTypeConfig, list config.MediaListsConfig) {
 
 	if !config.ConfigCheck("general") {
@@ -1365,6 +1408,8 @@ func Movies_single_jobs(job string, typename string, listname string, force bool
 		config.ConfigGet("movie_"+typename, &cfg_movie)
 
 		switch job {
+		case "datafull":
+			getnewmovies(cfg_movie)
 		case "searchmissingfull":
 			SearchMovieMissing(cfg_movie, 0, false)
 		case "searchmissinginc":

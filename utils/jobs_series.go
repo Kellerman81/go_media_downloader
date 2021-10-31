@@ -721,6 +721,8 @@ func Series_single_jobs(job string, typename string, listname string, force bool
 		config.ConfigGet("serie_"+typename, &cfg_serie)
 
 		switch job {
+		case "datafull":
+			getnewepisodes(cfg_serie)
 		case "searchmissingfull":
 			SearchSerieMissing(cfg_serie, 0, false)
 		case "searchmissinginc":
@@ -805,6 +807,49 @@ func Importnewseriessingle(row config.MediaTypeConfig, list config.MediaListsCon
 var LastSeriesPath string
 var LastSeriesFilePath string
 
+func getnewepisodes(row config.MediaTypeConfig) {
+	if !config.ConfigCheck("general") {
+		return
+	}
+	var cfg_general config.GeneralConfig
+	config.ConfigGet("general", &cfg_general)
+
+	logger.Log.Info("Scan SerieEpisodeFile")
+	filesfound := make([]string, 0, 5000)
+	for idxpath := range row.Data {
+		if !config.ConfigCheck("path_" + row.Data[idxpath].Template_path) {
+			continue
+		}
+		var cfg_path config.PathsConfig
+		config.ConfigGet("path_"+row.Data[idxpath].Template_path, &cfg_path)
+
+		LastSeriesPath = cfg_path.Path
+		filesfound_add := scanner.GetFilesGoDir(cfg_path.Path, cfg_path.AllowedVideoExtensions, cfg_path.AllowedVideoExtensionsNoRename, cfg_path.Blocked)
+		filesfound = append(filesfound, filesfound_add...)
+	}
+
+	logger.Log.Info("Workers: ", cfg_general.WorkerParse)
+	swf := sizedwaitgroup.New(cfg_general.WorkerParse)
+	for _, list := range row.Lists {
+		if !config.ConfigCheck("quality_" + list.Template_quality) {
+			continue
+		}
+		var cfg_quality config.QualityConfig
+		config.ConfigGet("quality_"+list.Template_quality, &cfg_quality)
+
+		defaultPrio := &ParseInfo{Quality: row.DefaultQuality, Resolution: row.DefaultResolution}
+		defaultPrio.GetPriority(row, cfg_quality)
+
+		filesadded := scanner.GetFilesSeriesAdded(filesfound, list.Name)
+		for idxfile := range filesadded {
+			LastSeriesFilePath = filesadded[idxfile]
+			logger.Log.Info("Parse Serie ", idxfile, " of ", len(filesadded), " path: ", filesadded[idxfile])
+			swf.Add()
+			JobImportSeriesParseV2(filesadded[idxfile], true, row, list, *defaultPrio, &swf)
+		}
+	}
+	swf.Wait()
+}
 func getnewepisodessingle(row config.MediaTypeConfig, list config.MediaListsConfig) {
 	if !config.ConfigCheck("general") {
 		return

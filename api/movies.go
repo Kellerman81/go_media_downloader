@@ -54,7 +54,7 @@ func AddMoviesRoutes(routermovies *gin.RouterGroup) {
 	}
 }
 
-var allowedjobsmovies []string = []string{"rss", "data", "checkmissing", "checkmissingflag", "structure", "searchmissingfull",
+var allowedjobsmovies []string = []string{"rss", "data", "datafull", "checkmissing", "checkmissingflag", "structure", "searchmissingfull",
 	"searchmissinginc", "searchupgradefull", "searchupgradeinc", "searchmissingfulltitle",
 	"searchmissinginctitle", "searchupgradefulltitle", "searchupgradeinctitle", "clearhistory", "feeds"}
 
