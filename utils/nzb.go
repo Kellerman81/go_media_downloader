@@ -724,6 +724,22 @@ func filter_movies_rss_nzbs(configEntry config.MediaTypeConfig, quality config.Q
 			}
 			founddbmovie, founddbmovieerr = database.GetDbmovie(database.Query{Select: "id, title", Where: "imdb_id = ? COLLATE NOCASE", WhereArgs: []interface{}{searchimdb}})
 
+			if !strings.HasPrefix(nzbs[idx].IMDBID, "tt") && founddbmovieerr != nil {
+				searchimdb = "tt0" + nzbs[idx].IMDBID
+				founddbmovie, founddbmovieerr = database.GetDbmovie(database.Query{Select: "id, title", Where: "imdb_id = ? COLLATE NOCASE", WhereArgs: []interface{}{searchimdb}})
+				if founddbmovieerr != nil {
+					searchimdb = "tt00" + nzbs[idx].IMDBID
+					founddbmovie, founddbmovieerr = database.GetDbmovie(database.Query{Select: "id, title", Where: "imdb_id = ? COLLATE NOCASE", WhereArgs: []interface{}{searchimdb}})
+					if founddbmovieerr != nil {
+						searchimdb = "tt000" + nzbs[idx].IMDBID
+						founddbmovie, founddbmovieerr = database.GetDbmovie(database.Query{Select: "id, title", Where: "imdb_id = ? COLLATE NOCASE", WhereArgs: []interface{}{searchimdb}})
+						if founddbmovieerr != nil {
+							searchimdb = "tt0000" + nzbs[idx].IMDBID
+							founddbmovie, founddbmovieerr = database.GetDbmovie(database.Query{Select: "id, title", Where: "imdb_id = ? COLLATE NOCASE", WhereArgs: []interface{}{searchimdb}})
+						}
+					}
+				}
+			}
 			if founddbmovieerr != nil {
 				logger.Log.Debug("Skipped - Not Wanted DB Movie: ", nzbs[idx].Title)
 				toskip = true
@@ -747,7 +763,7 @@ func filter_movies_rss_nzbs(configEntry config.MediaTypeConfig, quality config.Q
 				toskip = true
 				continue
 			}
-			if foundmovie.DontSearch || foundmovie.DontUpgrade || (!foundmovie.Missing && foundmovie.QualityReached) {
+			if foundmovie.DontSearch || (!foundmovie.Missing && foundmovie.DontUpgrade) || (!foundmovie.Missing && foundmovie.QualityReached) {
 				logger.Log.Debug("Skipped - Notwanted or Already reached: ", nzbs[idx].Title)
 				toskip = true
 				continue

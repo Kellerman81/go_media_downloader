@@ -5,9 +5,11 @@ import (
 	"database/sql"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/Kellerman81/go_media_downloader/config"
 	"github.com/Kellerman81/go_media_downloader/database"
+	"github.com/Kellerman81/go_media_downloader/scheduler"
 	"github.com/Kellerman81/go_media_downloader/utils"
 	gin "github.com/gin-gonic/gin"
 )
@@ -56,7 +58,7 @@ func AddMoviesRoutes(routermovies *gin.RouterGroup) {
 
 var allowedjobsmovies []string = []string{"rss", "data", "datafull", "checkmissing", "checkmissingflag", "structure", "searchmissingfull",
 	"searchmissinginc", "searchupgradefull", "searchupgradeinc", "searchmissingfulltitle",
-	"searchmissinginctitle", "searchupgradefulltitle", "searchupgradeinctitle", "clearhistory", "feeds"}
+	"searchmissinginctitle", "searchupgradefulltitle", "searchupgradeinctitle", "clearhistory", "feeds", "refresh", "refreshinc"}
 
 func apimoviesAllJobs(c *gin.Context) {
 	allowed := false
@@ -68,7 +70,32 @@ func apimoviesAllJobs(c *gin.Context) {
 	}
 	if allowed {
 		returnval := "Job " + c.Param("job") + " started"
-		go utils.Movies_all_jobs(c.Param("job"), true)
+		switch c.Param("job") {
+		case "data", "datafull", "checkmissing", "checkmissingflag", "structure", "clearhistory":
+			scheduler.QueueData.DispatchIn(func() {
+				utils.Movies_all_jobs(c.Param("job"), true)
+			}, time.Second*1)
+		case "rss", "searchmissingfull", "searchmissinginc", "searchupgradefull", "searchupgradeinc", "searchmissingfulltitle", "searchmissinginctitle", "searchupgradefulltitle", "searchupgradeinctitle":
+			scheduler.QueueSearch.DispatchIn(func() {
+				utils.Movies_all_jobs(c.Param("job"), true)
+			}, time.Second*1)
+		case "feeds":
+			scheduler.QueueFeeds.DispatchIn(func() {
+				utils.Movies_all_jobs(c.Param("job"), true)
+			}, time.Second*1)
+		case "refresh":
+			scheduler.QueueFeeds.DispatchIn(func() {
+				utils.RefreshMovies()
+			}, time.Second*1)
+		case "refreshinc":
+			scheduler.QueueFeeds.DispatchIn(func() {
+				utils.RefreshMoviesInc()
+			}, time.Second*1)
+		default:
+			scheduler.QueueData.DispatchIn(func() {
+				utils.Movies_all_jobs(c.Param("job"), true)
+			}, time.Second*1)
+		}
 		c.JSON(http.StatusOK, gin.H{"data": returnval})
 	} else {
 		returnval := "Job " + c.Param("job") + " not allowed!"
@@ -85,7 +112,32 @@ func apimoviesJobs(c *gin.Context) {
 	}
 	if allowed {
 		returnval := "Job " + c.Param("job") + " started"
-		go utils.Movies_single_jobs(c.Param("job"), c.Param("name"), "", true)
+		switch c.Param("job") {
+		case "data", "datafull", "checkmissing", "checkmissingflag", "structure", "clearhistory":
+			scheduler.QueueData.DispatchIn(func() {
+				utils.Movies_single_jobs(c.Param("job"), c.Param("name"), "", true)
+			}, time.Second*1)
+		case "rss", "searchmissingfull", "searchmissinginc", "searchupgradefull", "searchupgradeinc", "searchmissingfulltitle", "searchmissinginctitle", "searchupgradefulltitle", "searchupgradeinctitle":
+			scheduler.QueueSearch.DispatchIn(func() {
+				utils.Movies_single_jobs(c.Param("job"), c.Param("name"), "", true)
+			}, time.Second*1)
+		case "feeds":
+			scheduler.QueueFeeds.DispatchIn(func() {
+				utils.Movies_single_jobs(c.Param("job"), c.Param("name"), "", true)
+			}, time.Second*1)
+		case "refresh":
+			scheduler.QueueFeeds.DispatchIn(func() {
+				utils.RefreshMovies()
+			}, time.Second*1)
+		case "refreshinc":
+			scheduler.QueueFeeds.DispatchIn(func() {
+				utils.RefreshMoviesInc()
+			}, time.Second*1)
+		default:
+			scheduler.QueueData.DispatchIn(func() {
+				utils.Movies_single_jobs(c.Param("job"), c.Param("name"), "", true)
+			}, time.Second*1)
+		}
 		c.JSON(http.StatusOK, gin.H{"data": returnval})
 	} else {
 		returnval := "Job " + c.Param("job") + " not allowed!"
@@ -143,7 +195,9 @@ func apimoviesSearch(c *gin.Context) {
 
 		for idxlist := range cfg_movie.Lists {
 			if strings.EqualFold(cfg_movie.Lists[idxlist].Name, movie.Listname) {
-				go utils.SearchMovieSingle(movie, cfg_movie, true)
+				scheduler.QueueSearch.DispatchIn(func() {
+					utils.SearchMovieSingle(movie, cfg_movie, true)
+				}, time.Second*1)
 				c.JSON(http.StatusOK, gin.H{"data": "started"})
 				return
 			}
@@ -152,16 +206,22 @@ func apimoviesSearch(c *gin.Context) {
 }
 
 func apirefreshMovies(c *gin.Context) {
-	go utils.RefreshMovies()
+	scheduler.QueueFeeds.DispatchIn(func() {
+		utils.RefreshMovies()
+	}, time.Second*1)
 	c.JSON(http.StatusOK, gin.H{"data": "started"})
 }
 func apirefreshMovie(c *gin.Context) {
-	go utils.RefreshMovie(c.Param("id"))
+	scheduler.QueueFeeds.DispatchIn(func() {
+		utils.RefreshMovie(c.Param("id"))
+	}, time.Second*1)
 	c.JSON(http.StatusOK, gin.H{"data": "started"})
 }
 
 func apirefreshMoviesInc(c *gin.Context) {
-	go utils.RefreshMoviesInc()
+	scheduler.QueueFeeds.DispatchIn(func() {
+		utils.RefreshMoviesInc()
+	}, time.Second*1)
 	c.JSON(http.StatusOK, gin.H{"data": "started"})
 }
 
