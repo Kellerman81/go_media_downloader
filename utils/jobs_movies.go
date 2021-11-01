@@ -165,10 +165,7 @@ func JobImportMovies(dbmovie database.Dbmovie, configEntry config.MediaTypeConfi
 	counterm, _ := database.CountRows("movies", database.Query{Where: "dbmovie_id = ? and listname = ?", WhereArgs: []interface{}{dbmovie.ID, list.Name}})
 	if counterm >= 1 {
 		for idxreplace := range list.Replace_map_lists {
-			movietest, _ := database.QueryMovies(database.Query{Select: "id", Where: "dbmovie_id = ? and listname = ?", WhereArgs: []interface{}{dbmovie.ID, list.Replace_map_lists[idxreplace]}})
-			for _, replacemovie := range movietest {
-				database.UpdateArray("movies", []string{"missing", "listname", "dbmovie_id", "quality_profile"}, []interface{}{true, list.Name, dbmovie.ID, list.Template_quality}, database.Query{Where: "id=?", WhereArgs: []interface{}{replacemovie.ID}})
-			}
+			database.UpdateArray("movies", []string{"missing", "listname", "dbmovie_id", "quality_profile"}, []interface{}{true, list.Name, dbmovie.ID, list.Template_quality}, database.Query{Where: "dbmovie_id = ? and listname = ?", WhereArgs: []interface{}{dbmovie.ID, list.Replace_map_lists[idxreplace]}})
 		}
 	} else {
 		logger.Log.Debug("Add Movie: ", dbmovie.Title)
@@ -613,7 +610,7 @@ func movieFindListByTitle(title string, year string, lists []string, allowyear1 
 		for idx := range dbmovies {
 			logger.Log.Debug("DB Search for - filter dbid: ", dbmovies[idx].ID, " year: ", yearint)
 			imdb_get, list_get := movieGetListFilter(lists, dbmovies[idx].ID, yearint, allowyear1)
-			logger.Log.Debug("DB Search for - results dbid: ", dbmovies[idx].ID, " imdb: ", imdb, " list: ", list)
+			logger.Log.Debug("DB Search for - results dbid: ", dbmovies[idx].ID, " imdb: ", imdb_get, " list: ", list_get)
 			if imdb_get != "" && list_get != "" {
 				entriesfound = 1
 				imdb = imdb_get

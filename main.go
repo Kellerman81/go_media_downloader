@@ -40,7 +40,16 @@ func main() {
 
 	f, errcfg := config.LoadCfgDB(config.Configfile)
 	if errcfg == nil {
-		config.WatchDB(f, config.Configfile)
+		f.Watch(func(event interface{}, err error) {
+			if err != nil {
+				log.Printf("watch error: %v", err)
+				return
+			}
+
+			log.Println("cfg reloaded")
+			time.Sleep(time.Duration(2) * time.Second)
+			config.LoadCfgDataDB(f, config.Configfile)
+		})
 	}
 
 	defer func() {
@@ -230,6 +239,10 @@ func main() {
 	signal.Notify(quit, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 	log.Println("receive interrupt signal")
+
+	scheduler.QueueData.Stop()
+	scheduler.QueueFeeds.Stop()
+	scheduler.QueueSearch.Stop()
 
 	database.DBImdb.Close()
 	database.DB.Close()

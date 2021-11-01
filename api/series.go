@@ -5,9 +5,11 @@ import (
 	"database/sql"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/Kellerman81/go_media_downloader/config"
 	"github.com/Kellerman81/go_media_downloader/database"
+	"github.com/Kellerman81/go_media_downloader/scheduler"
 	"github.com/Kellerman81/go_media_downloader/utils"
 	"github.com/gin-gonic/gin"
 )
@@ -96,7 +98,7 @@ func AddSeriesRoutes(routerseries *gin.RouterGroup) {
 
 var allowedjobsseries []string = []string{"rss", "data", "datafull", "checkmissing", "checkmissingflag", "structure", "searchmissingfull",
 	"searchmissinginc", "searchupgradefull", "searchupgradeinc", "searchmissingfulltitle",
-	"searchmissinginctitle", "searchupgradefulltitle", "searchupgradeinctitle", "clearhistory", "feeds"}
+	"searchmissinginctitle", "searchupgradefulltitle", "searchupgradeinctitle", "clearhistory", "feeds", "refresh", "refreshinc"}
 
 func apiseriesAllJobs(c *gin.Context) {
 	allowed := false
@@ -108,7 +110,32 @@ func apiseriesAllJobs(c *gin.Context) {
 	}
 	if allowed {
 		returnval := "Job " + c.Param("job") + " started"
-		go utils.Series_all_jobs(c.Param("job"), true)
+		switch c.Param("job") {
+		case "data", "datafull", "checkmissing", "checkmissingflag", "structure", "clearhistory":
+			scheduler.QueueData.DispatchIn(func() {
+				utils.Series_all_jobs(c.Param("job"), true)
+			}, time.Second*1)
+		case "rss", "searchmissingfull", "searchmissinginc", "searchupgradefull", "searchupgradeinc", "searchmissingfulltitle", "searchmissinginctitle", "searchupgradefulltitle", "searchupgradeinctitle":
+			scheduler.QueueSearch.DispatchIn(func() {
+				utils.Series_all_jobs(c.Param("job"), true)
+			}, time.Second*1)
+		case "feeds":
+			scheduler.QueueFeeds.DispatchIn(func() {
+				utils.Series_all_jobs(c.Param("job"), true)
+			}, time.Second*1)
+		case "refresh":
+			scheduler.QueueFeeds.DispatchIn(func() {
+				utils.RefreshSeries()
+			}, time.Second*1)
+		case "refreshinc":
+			scheduler.QueueFeeds.DispatchIn(func() {
+				utils.RefreshSeriesInc()
+			}, time.Second*1)
+		default:
+			scheduler.QueueData.DispatchIn(func() {
+				utils.Series_all_jobs(c.Param("job"), true)
+			}, time.Second*1)
+		}
 		c.JSON(http.StatusOK, gin.H{"data": returnval})
 	} else {
 		returnval := "Job " + c.Param("job") + " not allowed!"
@@ -125,7 +152,32 @@ func apiseriesJobs(c *gin.Context) {
 	}
 	if allowed {
 		returnval := "Job " + c.Param("job") + " started"
-		go utils.Series_single_jobs(c.Param("job"), c.Param("name"), "", true)
+		switch c.Param("job") {
+		case "data", "datafull", "checkmissing", "checkmissingflag", "structure", "clearhistory":
+			scheduler.QueueData.DispatchIn(func() {
+				utils.Series_single_jobs(c.Param("job"), c.Param("name"), "", true)
+			}, time.Second*1)
+		case "rss", "searchmissingfull", "searchmissinginc", "searchupgradefull", "searchupgradeinc", "searchmissingfulltitle", "searchmissinginctitle", "searchupgradefulltitle", "searchupgradeinctitle":
+			scheduler.QueueSearch.DispatchIn(func() {
+				utils.Series_single_jobs(c.Param("job"), c.Param("name"), "", true)
+			}, time.Second*1)
+		case "feeds":
+			scheduler.QueueFeeds.DispatchIn(func() {
+				utils.Series_single_jobs(c.Param("job"), c.Param("name"), "", true)
+			}, time.Second*1)
+		case "refresh":
+			scheduler.QueueFeeds.DispatchIn(func() {
+				utils.RefreshSeries()
+			}, time.Second*1)
+		case "refreshinc":
+			scheduler.QueueFeeds.DispatchIn(func() {
+				utils.RefreshSeriesInc()
+			}, time.Second*1)
+		default:
+			scheduler.QueueData.DispatchIn(func() {
+				utils.Series_single_jobs(c.Param("job"), c.Param("name"), "", true)
+			}, time.Second*1)
+		}
 		c.JSON(http.StatusOK, gin.H{"data": returnval})
 	} else {
 		returnval := "Job " + c.Param("job") + " not allowed!"
@@ -214,17 +266,23 @@ func updateEpisode(c *gin.Context) {
 }
 
 func apirefreshSerie(c *gin.Context) {
-	go utils.RefreshSerie(c.Param("id"))
+	scheduler.QueueFeeds.DispatchIn(func() {
+		utils.RefreshSerie(c.Param("id"))
+	}, time.Second*1)
 	c.JSON(http.StatusOK, gin.H{"data": "started"})
 }
 
 func apirefreshSeries(c *gin.Context) {
-	go utils.RefreshSeries()
+	scheduler.QueueFeeds.DispatchIn(func() {
+		utils.RefreshSeries()
+	}, time.Second*1)
 	c.JSON(http.StatusOK, gin.H{"data": "started"})
 }
 
 func apirefreshSeriesInc(c *gin.Context) {
-	go utils.RefreshSeriesInc()
+	scheduler.QueueFeeds.DispatchIn(func() {
+		utils.RefreshSeriesInc()
+	}, time.Second*1)
 	c.JSON(http.StatusOK, gin.H{"data": "started"})
 }
 
@@ -239,7 +297,9 @@ func apiSeriesSearch(c *gin.Context) {
 
 		for idxlist := range cfg_serie.Lists {
 			if strings.EqualFold(cfg_serie.Lists[idxlist].Name, serie.Listname) {
-				go utils.SearchSerieSingle(serie, cfg_serie, true)
+				scheduler.QueueSearch.DispatchIn(func() {
+					utils.SearchSerieSingle(serie, cfg_serie, true)
+				}, time.Second*1)
 				c.JSON(http.StatusOK, gin.H{"data": "started"})
 				return
 			}
@@ -259,7 +319,9 @@ func apiSeriesEpisodeSearch(c *gin.Context) {
 
 		for idxlist := range cfg_serie.Lists {
 			if strings.EqualFold(cfg_serie.Lists[idxlist].Name, serie.Listname) {
-				go utils.SearchSerieEpisodeSingle(serieepi, cfg_serie, true)
+				scheduler.QueueSearch.DispatchIn(func() {
+					utils.SearchSerieEpisodeSingle(serieepi, cfg_serie, true)
+				}, time.Second*1)
 				c.JSON(http.StatusOK, gin.H{"data": "started"})
 				return
 			}

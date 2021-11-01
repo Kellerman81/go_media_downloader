@@ -2,9 +2,7 @@
 package config
 
 import (
-	"errors"
 	"fmt"
-	"log"
 	"math/rand"
 	"regexp"
 	"strings"
@@ -384,23 +382,9 @@ func LoadCfgDB(configfile string) (*file.File, error) {
 
 	if k.Sprint() == "" {
 		fmt.Println("Error loading config. Config Empty")
-		return nil, errors.New("error loading config")
 	}
 	LoadCfgDataDB(f, configfile)
 	return f, nil
-}
-
-func WatchDB(f *file.File, parser string) {
-	f.Watch(func(event interface{}, err error) {
-		if err != nil {
-			log.Printf("watch error: %v", err)
-			return
-		}
-
-		log.Println("cfg reloaded")
-		time.Sleep(time.Duration(2) * time.Second)
-		LoadCfgDataDB(f, parser)
-	})
 }
 
 func LoadCfgDataDB(f *file.File, parser string) {
