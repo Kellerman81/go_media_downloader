@@ -68,8 +68,6 @@ func SearchMovieMissing(configEntry config.MediaTypeConfig, jobcount int, titles
 		swg.Add()
 		SearchMovieSingle(missingmovies[idx], configEntry, titlesearch)
 		swg.Done()
-		// swg.Add()
-		// jobFindDownloadMissingNzbMovieImdb(movie, configEntry, list, &swg)
 	}
 	swg.Wait()
 }
@@ -139,9 +137,6 @@ func SearchMovieUpgrade(configEntry config.MediaTypeConfig, jobcount int, titles
 		swg.Add()
 		SearchMovieSingle(missingmovies[idx], configEntry, titlesearch)
 		swg.Done()
-
-		// swg.Add()
-		// jobFindDownloadUpgradeNzbMovieImdb(movie, configEntry, list, &swg)
 	}
 	swg.Wait()
 }
@@ -232,15 +227,13 @@ func SearchSerieMissing(configEntry config.MediaTypeConfig, jobcount int, titles
 		if dbepierr != nil {
 			continue
 		}
-		epicount, _ := database.CountRows("dbserie_episodes", database.Query{Where: "identifier=? and dbserie_id=?", WhereArgs: []interface{}{dbepi.Identifier, dbepi.DbserieID}})
+		epicount, _ := database.CountRows("dbserie_episodes", database.Query{Where: "identifier=? COLLATE NOCASE and dbserie_id=?", WhereArgs: []interface{}{dbepi.Identifier, dbepi.DbserieID}})
 		if epicount >= 2 {
 			continue
 		}
 		swg.Add()
 		SearchSerieEpisodeSingle(missingepisode[idx], configEntry, titlesearch)
 		swg.Done()
-		// swg.Add()
-		// jobFindDownloadMissingNzbSeriesTvdb(serieepisode, configEntry, list, &swg)
 	}
 	swg.Wait()
 }
@@ -297,15 +290,13 @@ func SearchSerieUpgrade(configEntry config.MediaTypeConfig, jobcount int, titles
 		if dbepierr != nil {
 			continue
 		}
-		epicount, _ := database.CountRows("dbserie_episodes", database.Query{Where: "identifier=? and dbserie_id=?", WhereArgs: []interface{}{dbepi.Identifier, dbepi.DbserieID}})
+		epicount, _ := database.CountRows("dbserie_episodes", database.Query{Where: "identifier=? COLLATE NOCASE and dbserie_id=?", WhereArgs: []interface{}{dbepi.Identifier, dbepi.DbserieID}})
 		if epicount >= 2 {
 			continue
 		}
 		swg.Add()
 		SearchSerieEpisodeSingle(missingepisode[idx], configEntry, titlesearch)
 		swg.Done()
-		// swg.Add()
-		// jobFindDownloadUpgradeNzbSeriesTvdb(serieepisode, configEntry, list, &swg)
 	}
 	swg.Wait()
 }
@@ -671,6 +662,8 @@ func (s *Searcher) InitIndexer(indexer config.QualityIndexerConfig, rssapi strin
 	}
 	var cfg_indexer config.IndexersConfig
 	config.ConfigGet("indexer_"+indexer.Template_indexer, &cfg_indexer)
+	var cfg_general config.GeneralConfig
+	config.ConfigGet("general", &cfg_general)
 
 	if !(strings.ToLower(cfg_indexer.Type) == "newznab") {
 		return errors.New("indexer Type Wrong")
@@ -685,10 +678,14 @@ func (s *Searcher) InitIndexer(indexer config.QualityIndexerConfig, rssapi strin
 
 	userid, _ := strconv.Atoi(cfg_indexer.Userid)
 
-	lastfailed := sql.NullTime{Time: time.Now().Add(time.Minute * -1), Valid: true}
+	blockinterval := -5
+	if cfg_general.FailedIndexerBlockTime != 0 {
+		blockinterval = -1 * cfg_general.FailedIndexerBlockTime
+	}
+	lastfailed := sql.NullTime{Time: time.Now().Add(time.Minute * time.Duration(blockinterval)), Valid: true}
 	counter, _ := database.CountRows("indexer_fails", database.Query{Where: "indexer=? and last_fail > ?", WhereArgs: []interface{}{cfg_indexer.Url, lastfailed}})
 	if counter >= 1 {
-		logger.Log.Debug("Indexer temporarily disabled due to fail in the last Minute: ", cfg_indexer.Name)
+		logger.Log.Debug("Indexer temporarily disabled due to fail in the last ", blockinterval, " Minute(s): ", cfg_indexer.Name)
 		return errors.New("indexer disabled")
 	}
 

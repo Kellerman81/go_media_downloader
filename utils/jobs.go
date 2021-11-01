@@ -164,13 +164,13 @@ func Feeds(configEntry config.MediaTypeConfig, list config.MediaListsConfig) fee
 					continue
 				}
 				if cfg_list.MinVotes != 0 {
-					countergenre, _ := database.ImdbCountRows("imdb_ratings", database.Query{Where: "tconst = ? and num_votes < ?", WhereArgs: []interface{}{traktpopular[idx].Ids.Imdb, cfg_list.MinVotes}})
+					countergenre, _ := database.ImdbCountRows("imdb_ratings", database.Query{Where: "tconst = ? COLLATE NOCASE and num_votes < ?", WhereArgs: []interface{}{traktpopular[idx].Ids.Imdb, cfg_list.MinVotes}})
 					if countergenre >= 1 {
 						continue
 					}
 				}
 				if cfg_list.MinRating != 0 {
-					countergenre, _ := database.ImdbCountRows("imdb_ratings", database.Query{Where: "tconst = ? and average_rating < ?", WhereArgs: []interface{}{traktpopular[idx].Ids.Imdb, cfg_list.MinRating}})
+					countergenre, _ := database.ImdbCountRows("imdb_ratings", database.Query{Where: "tconst = ? COLLATE NOCASE and average_rating < ?", WhereArgs: []interface{}{traktpopular[idx].Ids.Imdb, cfg_list.MinRating}})
 					if countergenre >= 1 {
 						continue
 					}
@@ -178,7 +178,7 @@ func Feeds(configEntry config.MediaTypeConfig, list config.MediaListsConfig) fee
 				if len(cfg_list.Excludegenre) >= 1 {
 					excludebygenre := false
 					for idxgenre := range cfg_list.Excludegenre {
-						countergenre, _ := database.ImdbCountRows("imdb_genres", database.Query{Where: "tconst = ? and genre = ?", WhereArgs: []interface{}{traktpopular[idx].Ids.Imdb, cfg_list.Excludegenre[idxgenre]}})
+						countergenre, _ := database.ImdbCountRows("imdb_genres", database.Query{Where: "tconst = ? COLLATE NOCASE and genre = ? COLLATE NOCASE", WhereArgs: []interface{}{traktpopular[idx].Ids.Imdb, cfg_list.Excludegenre[idxgenre]}})
 						if countergenre >= 1 {
 							excludebygenre = true
 							break
@@ -191,7 +191,7 @@ func Feeds(configEntry config.MediaTypeConfig, list config.MediaListsConfig) fee
 				if len(cfg_list.Includegenre) >= 1 {
 					includebygenre := false
 					for idxgenre := range cfg_list.Includegenre {
-						countergenre, _ := database.ImdbCountRows("imdb_genres", database.Query{Where: "tconst = ? and genre = ?", WhereArgs: []interface{}{traktpopular[idx].Ids.Imdb, cfg_list.Includegenre[idxgenre]}})
+						countergenre, _ := database.ImdbCountRows("imdb_genres", database.Query{Where: "tconst = ? COLLATE NOCASE and genre = ? COLLATE NOCASE", WhereArgs: []interface{}{traktpopular[idx].Ids.Imdb, cfg_list.Includegenre[idxgenre]}})
 						if countergenre >= 1 {
 							includebygenre = true
 							break
@@ -217,13 +217,13 @@ func Feeds(configEntry config.MediaTypeConfig, list config.MediaListsConfig) fee
 					continue
 				}
 				if cfg_list.MinVotes != 0 {
-					countergenre, _ := database.ImdbCountRows("imdb_ratings", database.Query{Where: "tconst = ? and num_votes < ?", WhereArgs: []interface{}{traktpopular[idx].Movie.Ids.Imdb, cfg_list.MinVotes}})
+					countergenre, _ := database.ImdbCountRows("imdb_ratings", database.Query{Where: "tconst = ? COLLATE NOCASE and num_votes < ?", WhereArgs: []interface{}{traktpopular[idx].Movie.Ids.Imdb, cfg_list.MinVotes}})
 					if countergenre >= 1 {
 						continue
 					}
 				}
 				if cfg_list.MinRating != 0 {
-					countergenre, _ := database.ImdbCountRows("imdb_ratings", database.Query{Where: "tconst = ? and average_rating < ?", WhereArgs: []interface{}{traktpopular[idx].Movie.Ids.Imdb, cfg_list.MinRating}})
+					countergenre, _ := database.ImdbCountRows("imdb_ratings", database.Query{Where: "tconst = ? COLLATE NOCASE and average_rating < ?", WhereArgs: []interface{}{traktpopular[idx].Movie.Ids.Imdb, cfg_list.MinRating}})
 					if countergenre >= 1 {
 						continue
 					}
@@ -231,7 +231,7 @@ func Feeds(configEntry config.MediaTypeConfig, list config.MediaListsConfig) fee
 				if len(cfg_list.Excludegenre) >= 1 {
 					excludebygenre := false
 					for idxgenre := range cfg_list.Excludegenre {
-						countergenre, _ := database.ImdbCountRows("imdb_genres", database.Query{Where: "tconst = ? and genre = ?", WhereArgs: []interface{}{traktpopular[idx].Movie.Ids.Imdb, cfg_list.Excludegenre[idxgenre]}})
+						countergenre, _ := database.ImdbCountRows("imdb_genres", database.Query{Where: "tconst = ? COLLATE NOCASE and genre = ? COLLATE NOCASE", WhereArgs: []interface{}{traktpopular[idx].Movie.Ids.Imdb, cfg_list.Excludegenre[idxgenre]}})
 						if countergenre >= 1 {
 							excludebygenre = true
 							break
@@ -244,7 +244,7 @@ func Feeds(configEntry config.MediaTypeConfig, list config.MediaListsConfig) fee
 				if len(cfg_list.Includegenre) >= 1 {
 					includebygenre := false
 					for idxgenre := range cfg_list.Includegenre {
-						countergenre, _ := database.ImdbCountRows("imdb_genres", database.Query{Where: "tconst = ? and genre = ?", WhereArgs: []interface{}{traktpopular[idx].Movie.Ids.Imdb, cfg_list.Includegenre[idxgenre]}})
+						countergenre, _ := database.ImdbCountRows("imdb_genres", database.Query{Where: "tconst = ? COLLATE NOCASE and genre = ? COLLATE NOCASE", WhereArgs: []interface{}{traktpopular[idx].Movie.Ids.Imdb, cfg_list.Includegenre[idxgenre]}})
 						if countergenre >= 1 {
 							includebygenre = true
 							break
@@ -270,13 +270,13 @@ func Feeds(configEntry config.MediaTypeConfig, list config.MediaListsConfig) fee
 					continue
 				}
 				if cfg_list.MinVotes != 0 {
-					countergenre, _ := database.ImdbCountRows("imdb_ratings", database.Query{Where: "tconst = ? and num_votes < ?", WhereArgs: []interface{}{traktpopular[idx].Movie.Ids.Imdb, cfg_list.MinVotes}})
+					countergenre, _ := database.ImdbCountRows("imdb_ratings", database.Query{Where: "tconst = ? COLLATE NOCASE and num_votes < ?", WhereArgs: []interface{}{traktpopular[idx].Movie.Ids.Imdb, cfg_list.MinVotes}})
 					if countergenre >= 1 {
 						continue
 					}
 				}
 				if cfg_list.MinRating != 0 {
-					countergenre, _ := database.ImdbCountRows("imdb_ratings", database.Query{Where: "tconst = ? and average_rating < ?", WhereArgs: []interface{}{traktpopular[idx].Movie.Ids.Imdb, cfg_list.MinRating}})
+					countergenre, _ := database.ImdbCountRows("imdb_ratings", database.Query{Where: "tconst = ? COLLATE NOCASE and average_rating < ?", WhereArgs: []interface{}{traktpopular[idx].Movie.Ids.Imdb, cfg_list.MinRating}})
 					if countergenre >= 1 {
 						continue
 					}
@@ -284,7 +284,7 @@ func Feeds(configEntry config.MediaTypeConfig, list config.MediaListsConfig) fee
 				if len(cfg_list.Excludegenre) >= 1 {
 					excludebygenre := false
 					for idxgenre := range cfg_list.Excludegenre {
-						countergenre, _ := database.ImdbCountRows("imdb_genres", database.Query{Where: "tconst = ? and genre = ?", WhereArgs: []interface{}{traktpopular[idx].Movie.Ids.Imdb, cfg_list.Excludegenre[idxgenre]}})
+						countergenre, _ := database.ImdbCountRows("imdb_genres", database.Query{Where: "tconst = ? COLLATE NOCASE and genre = ? COLLATE NOCASE", WhereArgs: []interface{}{traktpopular[idx].Movie.Ids.Imdb, cfg_list.Excludegenre[idxgenre]}})
 						if countergenre >= 1 {
 							excludebygenre = true
 							break
@@ -297,7 +297,7 @@ func Feeds(configEntry config.MediaTypeConfig, list config.MediaListsConfig) fee
 				if len(cfg_list.Includegenre) >= 1 {
 					includebygenre := false
 					for idxgenre := range cfg_list.Includegenre {
-						countergenre, _ := database.ImdbCountRows("imdb_genres", database.Query{Where: "tconst = ? and genre = ?", WhereArgs: []interface{}{traktpopular[idx].Movie.Ids.Imdb, cfg_list.Includegenre[idxgenre]}})
+						countergenre, _ := database.ImdbCountRows("imdb_genres", database.Query{Where: "tconst = ? COLLATE NOCASE and genre = ? COLLATE NOCASE", WhereArgs: []interface{}{traktpopular[idx].Movie.Ids.Imdb, cfg_list.Includegenre[idxgenre]}})
 						if countergenre >= 1 {
 							includebygenre = true
 							break

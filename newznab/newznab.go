@@ -39,18 +39,6 @@ func (c *RLHTTPClient) Do(req *http.Request) (*http.Response, []byte, error) {
 			return nil, nil, errors.New("please wait")
 		}
 	}
-	// ctx := context.Background()
-	// _, err := c.LimiterWindow.Limit(ctx)
-	// if err == limiters.ErrLimitExhausted {
-	// 	return nil, nil, errors.New("try again later")
-	// } else if err != nil {
-	// 	// The limiter failed. This error should be logged and examined.
-	// 	return nil, nil, errors.New("internal error")
-	// }
-	// err := c.Ratelimiter.Wait(ctx) // This is a blocking call. Honors the rate limit
-	// if err != nil {
-	// 	return nil, nil, err
-	// }
 	resp, err := c.client.Do(req)
 	if err != nil {
 		return nil, nil, err

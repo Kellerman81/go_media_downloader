@@ -168,6 +168,7 @@ type GeneralConfig struct {
 	Omdblimiterseconds                 int      `koanf:"omdb_limiter_seconds"`
 	Omdblimitercalls                   int      `koanf:"omdb_limiter_calls"`
 	FfprobePath                        string   `koanf:"ffprobe_path"`
+	FailedIndexerBlockTime             int      `koanf:"failed_indexer_block_time"`
 }
 
 type DownloaderConfig struct {
@@ -311,17 +312,8 @@ type SchedulerConfig struct {
 	Interval_indexer_rss                string `koanf:"interval_indexer_rss"`
 	Interval_scan_data                  string `koanf:"interval_scan_data"`
 	Interval_scan_data_missing          string `koanf:"interval_scan_data_missing"`
-	Interval_scan_dataimport            string `koanf:"interval_scan_dataimport"`
+	Interval_scan_dataimport            string `koanf:"interval_scan_data_import"`
 }
-
-//sorter
-// type ByTaskPrio []Task
-
-// func (a ByTaskPrio) Len() int           { return len(a) }
-// func (a ByTaskPrio) Less(i, j int) bool { return a[i].Priority < a[j].Priority }
-// func (a ByTaskPrio) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-
-//sorter end
 
 func LoadSerie(filepath string) MainSerieConfig {
 	var k = koanf.New(".")
@@ -519,14 +511,6 @@ func LoadCfgDataDB(f *file.File, parser string) {
 	errrgx := k.Unmarshal("regex", &outrgx)
 	if errrgx == nil {
 		for idx := range outrgx {
-			// outrgx[idx].RejectedRegex = make(map[string]regexp.Regexp, len(outrgx[idx].Rejected))
-			// for _, entry := range outrgx[idx].Rejected {
-			// 	outrgx[idx].RejectedRegex[entry] = *regexp.MustCompile(entry)
-			// }
-			// outrgx[idx].RequiredRegex = make(map[string]regexp.Regexp, len(outrgx[idx].Required))
-			// for _, entry := range outrgx[idx].Required {
-			// 	outrgx[idx].RequiredRegex[entry] = *regexp.MustCompile(entry)
-			// }
 			errrgxset := ConfigDB.Set("regex_"+outrgx[idx].Name, outrgx[idx])
 			if errrgxset != nil {
 				logger.Log.Errorln("Error regex setting db:", errrgxset)

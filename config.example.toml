@@ -35,6 +35,7 @@ scheduler_disabled = 'true' #on your very first run change to true - after your 
 omdb_apikey =  "insert"
 themoviedb_apikey="insert"
 trakt_client_id="insert"
+failed_indexer_block_time = 1 # Number of minutes to skip indexer after a failed query - default 5
 
 trakt_limiter_seconds=1 # will only change after restart
 trakt_limiter_calls=20 # max limiter_calls in limiter_seconds
@@ -323,24 +324,25 @@ title_strip_suffix_for_search=[" dc", "repack", "unrated", "directors cut", "THE
 	categories_indexer="2030,2035,2040,2045" #, separated - no array
 
 ### scheduler ###
+## A Scheduler with the Name "Default" is required - additional schedulers are possible
 
 [[scheduler]]
 name="Default" #support only m, d, h, s (Minute, Day, Hour, Second) currently - custom stuff not
-interval_feeds="2h" #leave empty to disable
-interval_imdb="3d" #leave empty to disable
-interval_feeds_refresh_movies="1d"
+interval_feeds="2h" #leave empty to disable - import new movies into db from feeds
+interval_imdb="3d" #leave empty to disable - refresh imdb cache every ... (only Default Scheduler)
+interval_feeds_refresh_movies="1d" # refreshes 100 movies only
 interval_feeds_refresh_movies_full="10d"
-interval_feeds_refresh_series="1d"
+interval_feeds_refresh_series="1d" # refreshes 20 series only
 interval_feeds_refresh_series_full="7d"
 interval_indexer_missing="30m" #this only scans for ids - no name scanning!
 interval_indexer_upgrade="45m"
-interval_indexer_missing_full="14d"
+interval_indexer_missing_full="14d" # the normal scan only scans the configured amount - this scans all
 interval_indexer_upgrade_full="30d"
 interval_indexer_missing_title="90m" #this scans for ids and names!
 interval_indexer_upgrade_title=""
 interval_indexer_missing_full_title=""
 interval_indexer_upgrade_full_title=""
-interval_indexer_rss="15m"
-interval_scan_data="60m"
-interval_scan_dataimport="15m"
-interval_scan_data_missing="3d"
+interval_indexer_rss="15m" # rss search for missing / upgradable media
+interval_scan_data="60m" # checks for new files in media directories
+interval_scan_data_import="15m" # checks for newly finished and ready to import media
+interval_scan_data_missing="3d" # checks for removed media

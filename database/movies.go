@@ -152,7 +152,7 @@ func (movie *Dbmovie) GetTitles(allowed []string, queryimdb bool, querytmdb bool
 		if !strings.HasPrefix(movie.ImdbID, "tt") {
 			queryimdbid = "tt" + movie.ImdbID
 		}
-		imdbakadata, _ := QueryImdbAka(Query{Where: "tconst=?", WhereArgs: []interface{}{queryimdbid}})
+		imdbakadata, _ := QueryImdbAka(Query{Where: "tconst=? COLLATE NOCASE", WhereArgs: []interface{}{queryimdbid}})
 		for _, akarow := range imdbakadata {
 			regionok := false
 			for idxallow := range allowed {
@@ -247,7 +247,7 @@ func (movie *Dbmovie) GetImdbMetadata(overwrite bool) {
 	if !strings.HasPrefix(movie.ImdbID, "tt") {
 		queryimdbid = "tt" + movie.ImdbID
 	}
-	imdbdata, imdbdataerr := GetImdbTitle(Query{Where: "tconst=?", WhereArgs: []interface{}{queryimdbid}})
+	imdbdata, imdbdataerr := GetImdbTitle(Query{Where: "tconst=? COLLATE NOCASE", WhereArgs: []interface{}{queryimdbid}})
 	if imdbdataerr == nil {
 		if movie.Title == "" || overwrite {
 			movie.Title = imdbdata.PrimaryTitle
@@ -274,7 +274,7 @@ func (movie *Dbmovie) GetImdbMetadata(overwrite bool) {
 			movie.URL = "https://www.imdb.com/title/" + queryimdbid
 		}
 	}
-	imdbratedata, imdbratedataerr := GetImdbRating(Query{Where: "tconst=?", WhereArgs: []interface{}{queryimdbid}})
+	imdbratedata, imdbratedataerr := GetImdbRating(Query{Where: "tconst=? COLLATE NOCASE", WhereArgs: []interface{}{queryimdbid}})
 
 	if imdbratedataerr == nil {
 		if movie.VoteAverage == 0 || movie.VoteAverage == 0.0 || overwrite {
@@ -443,7 +443,7 @@ func (movie *Dbmovie) GetMetadata(queryimdb bool, querytmdb bool, queryomdb bool
 			queryimdbid = "tt" + movie.ImdbID
 		}
 
-		imdbdata, imdbdataerr := GetImdbTitle(Query{Where: "tconst=?", WhereArgs: []interface{}{queryimdbid}})
+		imdbdata, imdbdataerr := GetImdbTitle(Query{Where: "tconst=? COLLATE NOCASE", WhereArgs: []interface{}{queryimdbid}})
 		if imdbdataerr == nil {
 			if movie.Title == "" {
 				movie.Title = imdbdata.PrimaryTitle
@@ -470,7 +470,7 @@ func (movie *Dbmovie) GetMetadata(queryimdb bool, querytmdb bool, queryomdb bool
 				movie.URL = "https://www.imdb.com/title/" + queryimdbid
 			}
 		}
-		imdbratedata, imdbratedataerr := GetImdbRating(Query{Where: "tconst=?", WhereArgs: []interface{}{queryimdbid}})
+		imdbratedata, imdbratedataerr := GetImdbRating(Query{Where: "tconst=? COLLATE NOCASE", WhereArgs: []interface{}{queryimdbid}})
 		if imdbratedataerr == nil {
 			if movie.VoteAverage == 0 || movie.VoteAverage == 0.0 {
 				movie.VoteAverage = imdbratedata.AverageRating
@@ -704,7 +704,7 @@ func UpgradeIMDBMovies(url string, listname string, qualityProfile string) {
 		if idx == 0 {
 			continue
 		}
-		dbmovies, _ := QueryDbmovie(Query{Where: "imdb_id=?", WhereArgs: []interface{}{row[1]}})
+		dbmovies, _ := QueryDbmovie(Query{Where: "imdb_id=? COLLATE NOCASE", WhereArgs: []interface{}{row[1]}})
 		if len(dbmovies) == 0 {
 		} else {
 			UpdateArray("movies", []string{"listname", "quality_profile"}, []interface{}{listname, qualityProfile}, Query{Where: "listname = ? and dbmovie_id = ?", WhereArgs: []interface{}{listname, dbmovies[0].ID}})
@@ -716,7 +716,7 @@ func GetIMDBMovies(imdb []string, listname string, qualityProfile string) []Dbmo
 	d := make([]Dbmovie, 0, len(imdb))
 
 	for _, row := range imdb {
-		counter, _ := CountRows("dbmovies", Query{Where: "imdb_id = ?", WhereArgs: []interface{}{row}})
+		counter, _ := CountRows("dbmovies", Query{Where: "imdb_id = ? COLLATE NOCASE", WhereArgs: []interface{}{row}})
 		if counter == 0 {
 			dbentry := Dbmovie{ImdbID: row}
 			d = append(d, dbentry)

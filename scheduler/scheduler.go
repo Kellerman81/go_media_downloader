@@ -8,18 +8,8 @@ import (
 	"github.com/Kellerman81/go_media_downloader/config"
 	"github.com/Kellerman81/go_media_downloader/tasks"
 	"github.com/Kellerman81/go_media_downloader/utils"
-	"github.com/gin-gonic/gin"
 )
 
-// var ScheduleFeeds *gocron.Scheduler
-// var ScheduleSearch *gocron.Scheduler
-// var ScheduleData *gocron.Scheduler
-
-// func ClearScheduler() {
-// 	ScheduleData.Clear()
-// 	ScheduleFeeds.Clear()
-// 	ScheduleSearch.Clear()
-// }
 func converttime(interval string) time.Duration {
 	if strings.Contains(interval, "d") {
 		intvar, _ := strconv.Atoi(strings.Replace(interval, "d", "", 1))
@@ -267,19 +257,6 @@ func InitScheduler() {
 	}
 }
 
-func AddSchedulerRoutes(rg *gin.RouterGroup) {
-	//	movies := rg.Group("/movies")
-	// movies.GET("/:ID", GetMovie)
-	// movies.GET("/", GetMovies)
-	// movies.POST("/", PostMovie)
-	// movies.DELETE("/:ID", DeleteMovie)
-	// movies.PUT("/:ID", UpdateMovie)
-	//rg.GET("/jobs", apiGetJobs)
-	//rg.GET("/runtag/:group/:name", apiRunJobs)
-	//rg.GET("/removetag/:group/:name", apiRemoveJobs)
-
-}
-
 type joblist struct {
 	Type      string
 	Lastrun   time.Time
@@ -289,69 +266,3 @@ type joblist struct {
 	IsRunning bool
 	Tags      []string
 }
-
-// func apiRemoveJobs(ctx *gin.Context) {
-// 	switch ctx.Param("group") {
-// 	case "Data":
-// 		ScheduleData.RemoveByTag(ctx.Param("name"))
-// 	case "Feeds":
-// 		ScheduleFeeds.RemoveByTag(ctx.Param("name"))
-// 	case "Search":
-// 		ScheduleSearch.RemoveByTag(ctx.Param("name"))
-// 	}
-// }
-
-// func apiRunJobs(ctx *gin.Context) {
-// 	switch ctx.Param("group") {
-// 	case "Data":
-// 		ScheduleData.RunByTag(ctx.Param("name"))
-// 	case "Feeds":
-// 		ScheduleFeeds.RunByTag(ctx.Param("name"))
-// 	case "Search":
-// 		ScheduleSearch.RunByTag(ctx.Param("name"))
-// 	}
-// }
-
-// func apiGetJobs(ctx *gin.Context) {
-// 	alljobs := []joblist{}
-// 	jobs := ScheduleData.Jobs()
-// 	for _, job := range jobs {
-// 		var addjob joblist
-// 		addjob.Type = "Data"
-// 		addjob.Lastrun = job.LastRun()
-// 		addjob.Nextrun = job.NextRun()
-// 		addjob.Runcount = job.RunCount()
-// 		addjob.Scheduled = job.ScheduledAtTime()
-// 		addjob.Tags = job.Tags()
-// 		addjob.IsRunning = ScheduleData.IsRunning()
-// 		alljobs = append(alljobs, addjob)
-// 	}
-
-// 	jobs = ScheduleFeeds.Jobs()
-// 	for _, job := range jobs {
-// 		var addjob joblist
-// 		addjob.Type = "Feeds"
-// 		addjob.Lastrun = job.LastRun()
-// 		addjob.Nextrun = job.NextRun()
-// 		addjob.Runcount = job.RunCount()
-// 		addjob.Scheduled = job.ScheduledAtTime()
-// 		addjob.Tags = job.Tags()
-// 		addjob.IsRunning = ScheduleFeeds.IsRunning()
-// 		alljobs = append(alljobs, addjob)
-// 	}
-
-// 	jobs = ScheduleSearch.Jobs()
-// 	for _, job := range jobs {
-// 		var addjob joblist
-// 		addjob.Type = "Search"
-// 		addjob.Lastrun = job.LastRun()
-// 		addjob.Nextrun = job.NextRun()
-// 		addjob.Runcount = job.RunCount()
-// 		addjob.Scheduled = job.ScheduledAtTime()
-// 		addjob.Tags = job.Tags()
-// 		addjob.IsRunning = ScheduleSearch.IsRunning()
-// 		alljobs = append(alljobs, addjob)
-// 	}
-
-// 	ctx.JSON(http.StatusOK, gin.H{"data": alljobs})
-// }

@@ -295,7 +295,7 @@ func (serie *Dbserie) GetTitles(allowed []string, queryimdb bool, querytrakt boo
 		if !strings.HasPrefix(serie.ImdbID, "tt") {
 			queryimdbid = "tt" + serie.ImdbID
 		}
-		imdbakadata, _ := QueryImdbAka(Query{Where: "tconst=?", WhereArgs: []interface{}{queryimdbid}})
+		imdbakadata, _ := QueryImdbAka(Query{Where: "tconst=? COLLATE NOCASE", WhereArgs: []interface{}{queryimdbid}})
 		for _, akarow := range imdbakadata {
 			regionok := false
 			for idxallow := range allowed {
