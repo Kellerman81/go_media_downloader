@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -48,291 +47,294 @@ func InitFillImdb() {
 		"sqlite3://imdbtemp.db?cache=shared&_fk=1&_txlock=immediate&_mutex=full&_cslike=0",
 	)
 	if err != nil {
-		log.Fatalf("migration failed... %v", err)
+		logger.Log.Errorf("migration failed... %v", err)
 	}
 
 	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-		log.Fatalf("An error occurred while syncing the database.. %v", err)
+		logger.Log.Errorf("An error occurred while syncing the database.. %v", err)
 	}
 	dbget2 := database.InitImdbdb("info", "imdbtemp")
 	database.DBImdb = dbget2
 
 	downloadimdbfiles()
 
+	logger.Log.Info("Opening titles..")
 	filetitle, err := os.Open("./title.basics.tsv")
 	if err != nil {
-		log.Fatal(err)
-	}
+		logger.Log.Errorf("An error occurred while opening titles.. %v", err)
+	} else {
+		parsertitle := csv.NewReader(filetitle)
+		parsertitle.Comma = '\t'
+		parsertitle.LazyQuotes = true
+		_, _ = parsertitle.Read() //skip header
+		titlesshort := []database.ImdbTitle{}
+		genres := []database.ImdbGenres{}
+		swtitle := sizedwaitgroup.New(4)
 
-	parsertitle := csv.NewReader(filetitle)
-	parsertitle.Comma = '\t'
-	parsertitle.LazyQuotes = true
-	_, _ = parsertitle.Read() //skip header
-	titlesshort := []database.ImdbTitle{}
-	genres := []database.ImdbGenres{}
-	swtitle := sizedwaitgroup.New(4)
+		for {
+			record, err := parsertitle.Read()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				logger.Log.Errorf("An error occurred while parsing title.. %v", err)
+				continue
+			}
+			swtitle.Add()
+			if len(titlesshort) >= 1000 {
+				database.ReadWriteMu.Lock()
+				database.DBImdb.NamedExec("insert into imdb_titles (tconst, title_type, primary_title, slug, original_title, is_adult, start_year, end_year, runtime_minutes, genres) VALUES (:tconst, :title_type, :primary_title, :slug, :original_title, :is_adult, :start_year, :end_year, :runtime_minutes, :genres)", titlesshort)
+				database.ReadWriteMu.Unlock()
+				titlesshort = []database.ImdbTitle{}
+			}
+			if len(genres) >= 1000 {
+				database.ReadWriteMu.Lock()
+				database.DBImdb.NamedExec("insert into imdb_genres (tconst, genre) VALUES (:tconst, :genre)", genres)
+				database.ReadWriteMu.Unlock()
+				genres = []database.ImdbGenres{}
+			}
+			if _, ok := titlemap[record[1]]; ok {
+				if record[5] == `\N` || record[5] == `\\N` {
+					record[5] = "0"
+				}
+				startYear, _ := strconv.Atoi(record[5])
+				stringtitletype := record[1]
+				if stringtitletype == `\N` || record[1] == `\\N` {
+					stringtitletype = ""
+				}
+				stringtitleprimary := record[2]
+				if stringtitleprimary == `\N` || record[2] == `\\N` {
+					stringtitleprimary = ""
+				}
+				if !cfg_imdb.Indexfull {
+					titlesshort = append(titlesshort, database.ImdbTitle{
+						Tconst:       record[0],
+						TitleType:    stringtitletype,
+						PrimaryTitle: stringtitleprimary,
+						Slug:         logger.StringToSlug(stringtitleprimary),
+						StartYear:    startYear,
+					})
+				} else {
+					if record[6] == `\N` || record[6] == `\\N` {
+						record[6] = "0"
+					}
+					if record[7] == `\N` || record[7] == `\\N` {
+						record[7] = "0"
+					}
+					if record[4] == `\N` || record[4] == `\\N` {
+						record[4] = "0"
+					}
+					stringtitleoriginal := record[2]
+					if stringtitleoriginal == `\N` || record[2] == `\\N` {
+						stringtitleoriginal = ""
+					}
+					stringgenre := record[8]
+					if stringgenre == `\N` || record[8] == `\\N` {
+						stringgenre = ""
+					}
+					endYear, errdate := strconv.Atoi(record[6])
+					if errdate != nil {
+						logger.Log.Error("Date error: ", record[6], " ", errdate)
+					}
+					runtimeMinutes, errrun := strconv.Atoi(record[7])
+					if errrun != nil {
+						logger.Log.Error("Runtime error: ", record[7], " ", errrun)
+					}
+					isAdult, erradu := strconv.ParseBool(record[4])
+					if erradu != nil {
+						logger.Log.Error("Adult error: ", record[4], " ", erradu)
+					}
 
-	for {
-		record, err := parsertitle.Read()
-		if err == io.EOF {
-			break
+					titlesshort = append(titlesshort, database.ImdbTitle{
+						Tconst:         record[0],
+						TitleType:      stringtitletype,
+						PrimaryTitle:   stringtitleprimary,
+						Slug:           logger.StringToSlug(stringtitleprimary),
+						OriginalTitle:  stringtitleoriginal,
+						Genres:         stringgenre,
+						IsAdult:        isAdult,
+						StartYear:      startYear,
+						RuntimeMinutes: runtimeMinutes,
+						EndYear:        endYear,
+					})
+					if strings.Contains(stringgenre, ",") {
+						genrearray := strings.Split(stringgenre, ",")
+						for idxgenre := range genrearray {
+							genres = append(genres, database.ImdbGenres{
+								Tconst: record[0],
+								Genre:  genrearray[idxgenre],
+							})
+						}
+					} else if len(stringgenre) >= 1 {
+						genres = append(genres, database.ImdbGenres{
+							Tconst: record[0],
+							Genre:  stringgenre,
+						})
+					}
+				}
+			}
+			swtitle.Done()
 		}
-		if err != nil {
-			fmt.Println("error: ", err, record)
-			continue
-		}
-		swtitle.Add()
-		if len(titlesshort) >= 1000 {
+		swtitle.Wait()
+		if len(titlesshort) >= 1 {
 			database.ReadWriteMu.Lock()
 			database.DBImdb.NamedExec("insert into imdb_titles (tconst, title_type, primary_title, slug, original_title, is_adult, start_year, end_year, runtime_minutes, genres) VALUES (:tconst, :title_type, :primary_title, :slug, :original_title, :is_adult, :start_year, :end_year, :runtime_minutes, :genres)", titlesshort)
 			database.ReadWriteMu.Unlock()
-			titlesshort = []database.ImdbTitle{}
 		}
-		if len(genres) >= 1000 {
+		if len(genres) >= 1 {
 			database.ReadWriteMu.Lock()
 			database.DBImdb.NamedExec("insert into imdb_genres (tconst, genre) VALUES (:tconst, :genre)", genres)
 			database.ReadWriteMu.Unlock()
-			genres = []database.ImdbGenres{}
 		}
-		if _, ok := titlemap[record[1]]; ok {
-			if record[5] == `\N` || record[5] == `\\N` {
-				record[5] = "0"
+	}
+
+	logger.Log.Info("Opening akas..")
+	fileaka, err := os.Open("./title.akas.tsv")
+	if err != nil {
+		logger.Log.Errorf("An error occurred while opening akas.. %v", err)
+	} else {
+
+		parseraka := csv.NewReader(fileaka)
+		parseraka.Comma = '\t'
+		parseraka.LazyQuotes = true
+		_, _ = parseraka.Read() //skip header
+		akasshort := []database.ImdbAka{}
+		swaka := sizedwaitgroup.New(10)
+		for {
+			record, err := parseraka.Read()
+			if err == io.EOF {
+				break
 			}
-			startYear, _ := strconv.Atoi(record[5])
-			stringtitletype := record[1]
-			if stringtitletype == `\N` || record[1] == `\\N` {
-				stringtitletype = ""
+			if err != nil {
+				logger.Log.Errorf("An error occurred while parsing aka.. %v", err)
+				continue
 			}
-			stringtitleprimary := record[2]
-			if stringtitleprimary == `\N` || record[2] == `\\N` {
-				stringtitleprimary = ""
+			swaka.Add()
+			if len(akasshort) >= 1000 {
+				database.ReadWriteMu.Lock()
+				database.DBImdb.NamedExec("insert into imdb_akas (tconst, ordering, title, slug, region, language, types, attributes, is_original_title) VALUES (:tconst, :ordering, :title, :slug, :region, :language, :types, :attributes, :is_original_title)", akasshort)
+				database.ReadWriteMu.Unlock()
+				akasshort = []database.ImdbAka{}
 			}
-			if !cfg_imdb.Indexfull {
-				titlesshort = append(titlesshort, database.ImdbTitle{
-					Tconst:       record[0],
-					TitleType:    stringtitletype,
-					PrimaryTitle: stringtitleprimary,
-					Slug:         logger.StringToSlug(stringtitleprimary),
-					StartYear:    startYear,
-				})
-			} else {
-				if record[6] == `\N` || record[6] == `\\N` {
-					record[6] = "0"
+
+			if _, ok := akamap[record[3]]; ok || len(record[3]) == 0 {
+				if record[1] == `\N` || record[1] == `\\N` {
+					record[1] = "0"
 				}
 				if record[7] == `\N` || record[7] == `\\N` {
 					record[7] = "0"
 				}
-				if record[4] == `\N` || record[4] == `\\N` {
-					record[4] = "0"
-				}
-				stringtitleoriginal := record[2]
-				if stringtitleoriginal == `\N` || record[2] == `\\N` {
-					stringtitleoriginal = ""
-				}
-				stringgenre := record[8]
-				if stringgenre == `\N` || record[8] == `\\N` {
-					stringgenre = ""
-				}
-				endYear, errdate := strconv.Atoi(record[6])
-				if errdate != nil {
-					logger.Log.Error("Date error: ", record[6], " ", errdate)
-				}
-				runtimeMinutes, errrun := strconv.Atoi(record[7])
-				if errrun != nil {
-					logger.Log.Error("Runtime error: ", record[7], " ", errrun)
-				}
-				isAdult, erradu := strconv.ParseBool(record[4])
-				if erradu != nil {
-					logger.Log.Error("Adult error: ", record[4], " ", erradu)
-				}
 
-				titlesshort = append(titlesshort, database.ImdbTitle{
-					Tconst:         record[0],
-					TitleType:      stringtitletype,
-					PrimaryTitle:   stringtitleprimary,
-					Slug:           logger.StringToSlug(stringtitleprimary),
-					OriginalTitle:  stringtitleoriginal,
-					Genres:         stringgenre,
-					IsAdult:        isAdult,
-					StartYear:      startYear,
-					RuntimeMinutes: runtimeMinutes,
-					EndYear:        endYear,
-				})
-				if strings.Contains(stringgenre, ",") {
-					genrearray := strings.Split(stringgenre, ",")
-					for idxgenre := range genrearray {
-						genres = append(genres, database.ImdbGenres{
+				titlecount, _ := database.ImdbCountRows("imdb_titles", database.Query{Where: "tconst = ?", WhereArgs: []interface{}{record[0]}})
+				if titlecount >= 1 {
+					stringtitle := record[2]
+					if stringtitle == `\N` || record[2] == `\\N` {
+						stringtitle = ""
+					}
+					stringregion := record[3]
+					if stringregion == `\N` || record[3] == `\\N` {
+						stringregion = ""
+					}
+					stringlanguage := record[4]
+					if stringlanguage == `\N` || record[4] == `\\N` {
+						stringlanguage = ""
+					}
+					stringtypes := record[5]
+					if stringtypes == `\N` || record[5] == `\\N` {
+						stringtypes = ""
+					}
+					stringattributes := record[6]
+					if stringattributes == `\N` || record[6] == `\\N` {
+						stringattributes = ""
+					}
+					if !cfg_imdb.Indexfull {
+						akasshort = append(akasshort, database.ImdbAka{
 							Tconst: record[0],
-							Genre:  genrearray[idxgenre],
+							Title:  stringtitle,
+							Slug:   logger.StringToSlug(stringtitle),
+							Region: stringregion,
+						})
+					} else {
+						ordering, _ := strconv.Atoi(record[1])
+						isOriginalTitle, _ := strconv.ParseBool(record[7])
+						akasshort = append(akasshort, database.ImdbAka{
+							Tconst:          record[0],
+							Ordering:        ordering,
+							Title:           stringtitle,
+							Slug:            logger.StringToSlug(stringtitle),
+							Region:          stringregion,
+							Language:        stringlanguage,
+							Types:           stringtypes,
+							Attributes:      stringattributes,
+							IsOriginalTitle: isOriginalTitle,
 						})
 					}
-				} else if len(stringgenre) >= 1 {
-					genres = append(genres, database.ImdbGenres{
-						Tconst: record[0],
-						Genre:  stringgenre,
-					})
 				}
 			}
+			swaka.Done()
 		}
-		swtitle.Done()
-	}
-	swtitle.Wait()
-	if len(titlesshort) >= 1 {
-		database.ReadWriteMu.Lock()
-		database.DBImdb.NamedExec("insert into imdb_titles (tconst, title_type, primary_title, slug, original_title, is_adult, start_year, end_year, runtime_minutes, genres) VALUES (:tconst, :title_type, :primary_title, :slug, :original_title, :is_adult, :start_year, :end_year, :runtime_minutes, :genres)", titlesshort)
-		database.ReadWriteMu.Unlock()
-	}
-	if len(genres) >= 1 {
-		database.ReadWriteMu.Lock()
-		database.DBImdb.NamedExec("insert into imdb_genres (tconst, genre) VALUES (:tconst, :genre)", genres)
-		database.ReadWriteMu.Unlock()
-	}
-
-	fileaka, err := os.Open("./title.akas.tsv")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	parseraka := csv.NewReader(fileaka)
-	parseraka.Comma = '\t'
-	parseraka.LazyQuotes = true
-	_, _ = parseraka.Read() //skip header
-	akasshort := []database.ImdbAka{}
-	swaka := sizedwaitgroup.New(4)
-	for {
-		record, err := parseraka.Read()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			fmt.Println("error: ", err, record)
-			continue
-		}
-		swaka.Add()
-		if len(akasshort) >= 1000 {
+		swaka.Wait()
+		if len(akasshort) >= 1 {
 			database.ReadWriteMu.Lock()
 			database.DBImdb.NamedExec("insert into imdb_akas (tconst, ordering, title, slug, region, language, types, attributes, is_original_title) VALUES (:tconst, :ordering, :title, :slug, :region, :language, :types, :attributes, :is_original_title)", akasshort)
 			database.ReadWriteMu.Unlock()
-			akasshort = []database.ImdbAka{}
 		}
-
-		if _, ok := akamap[record[3]]; ok || len(record[3]) == 0 {
-			if record[1] == `\N` || record[1] == `\\N` {
-				record[1] = "0"
-			}
-			if record[7] == `\N` || record[7] == `\\N` {
-				record[7] = "0"
-			}
-			_, dbtitleerr := database.GetImdbTitle(database.Query{Select: "tconst", Where: "Tconst = ? COLLATE NOCASE", WhereArgs: []interface{}{record[0]}})
-			if dbtitleerr == nil {
-				stringtitle := record[2]
-				if stringtitle == `\N` || record[2] == `\\N` {
-					stringtitle = ""
-				}
-				stringregion := record[3]
-				if stringregion == `\N` || record[3] == `\\N` {
-					stringregion = ""
-				}
-				stringlanguage := record[4]
-				if stringlanguage == `\N` || record[4] == `\\N` {
-					stringlanguage = ""
-				}
-				stringtypes := record[5]
-				if stringtypes == `\N` || record[5] == `\\N` {
-					stringtypes = ""
-				}
-				stringattributes := record[6]
-				if stringattributes == `\N` || record[6] == `\\N` {
-					stringattributes = ""
-				}
-				if !cfg_imdb.Indexfull {
-					akasshort = append(akasshort, database.ImdbAka{
-						Tconst: record[0],
-						Title:  stringtitle,
-						Slug:   logger.StringToSlug(stringtitle),
-						Region: stringregion,
-					})
-				} else {
-					ordering, _ := strconv.Atoi(record[1])
-					isOriginalTitle, _ := strconv.ParseBool(record[7])
-					akasshort = append(akasshort, database.ImdbAka{
-						Tconst:          record[0],
-						Ordering:        ordering,
-						Title:           stringtitle,
-						Slug:            logger.StringToSlug(stringtitle),
-						Region:          stringregion,
-						Language:        stringlanguage,
-						Types:           stringtypes,
-						Attributes:      stringattributes,
-						IsOriginalTitle: isOriginalTitle,
-					})
-				}
-
-			}
-		}
-		swaka.Done()
-	}
-	swaka.Wait()
-	if len(akasshort) >= 1 {
-		database.ReadWriteMu.Lock()
-		database.DBImdb.NamedExec("insert into imdb_akas (tconst, ordering, title, slug, region, language, types, attributes, is_original_title) VALUES (:tconst, :ordering, :title, :slug, :region, :language, :types, :attributes, :is_original_title)", akasshort)
-		database.ReadWriteMu.Unlock()
 	}
 
+	logger.Log.Info("Opening ratings..")
 	filerating, err := os.Open("./title.ratings.tsv")
 	if err != nil {
-		log.Fatal(err)
-	}
+		logger.Log.Errorf("An error occurred while opening ratings.. %v", err)
+	} else {
 
-	parserrating := csv.NewReader(filerating)
-	parserrating.Comma = '\t'
-	parserrating.LazyQuotes = true
-	_, _ = parserrating.Read() //skip header
-	ratings := []database.ImdbRatings{}
-	swrating := sizedwaitgroup.New(4)
-	for {
-		record, err := parserrating.Read()
-		if err == io.EOF {
-			break
+		parserrating := csv.NewReader(filerating)
+		parserrating.Comma = '\t'
+		parserrating.LazyQuotes = true
+		_, _ = parserrating.Read() //skip header
+		ratings := []database.ImdbRatings{}
+		swrating := sizedwaitgroup.New(10)
+		for {
+			record, err := parserrating.Read()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				logger.Log.Errorf("An error occurred while parsing rating.. %v", err)
+				continue
+			}
+			swrating.Add()
+			if len(ratings) >= 1000 {
+				database.ReadWriteMu.Lock()
+				database.DBImdb.NamedExec("insert into imdb_ratings (tconst, num_votes, average_rating) VALUES (:tconst, :num_votes, :average_rating)", ratings)
+				database.ReadWriteMu.Unlock()
+				ratings = []database.ImdbRatings{}
+			}
+
+			titlecount, _ := database.ImdbCountRows("imdb_titles", database.Query{Where: "tconst = ?", WhereArgs: []interface{}{record[0]}})
+			if titlecount >= 1 {
+				if record[2] == `\N` || record[2] == `\\N` {
+					record[2] = "0"
+				}
+				if record[1] == `\N` || record[1] == `\\N` {
+					record[1] = "0"
+				}
+				numvotes, _ := strconv.Atoi(record[2])
+				AverageRating, _ := strconv.ParseFloat(record[1], 32)
+				ratings = append(ratings, database.ImdbRatings{
+					Tconst:        record[0],
+					AverageRating: float32(AverageRating),
+					NumVotes:      numvotes,
+				})
+			}
+			swrating.Done()
 		}
-		if err != nil {
-			fmt.Println("error: ", err, record)
-			continue
-		}
-		swrating.Add()
-		if len(ratings) >= 1000 {
+		swrating.Wait()
+		if len(ratings) >= 1 {
 			database.ReadWriteMu.Lock()
 			database.DBImdb.NamedExec("insert into imdb_ratings (tconst, num_votes, average_rating) VALUES (:tconst, :num_votes, :average_rating)", ratings)
 			database.ReadWriteMu.Unlock()
-			ratings = []database.ImdbRatings{}
 		}
-
-		_, dbtitleerr := database.GetImdbTitle(database.Query{Select: "tconst", Where: "Tconst = ? COLLATE NOCASE", WhereArgs: []interface{}{record[0]}})
-
-		if dbtitleerr == nil {
-			if record[2] == `\N` || record[2] == `\\N` {
-				record[2] = "0"
-			}
-			if record[1] == `\N` || record[1] == `\\N` {
-				record[1] = "0"
-			}
-			numvotes, _ := strconv.Atoi(record[2])
-			AverageRating, _ := strconv.ParseFloat(record[1], 32)
-			ratings = append(ratings, database.ImdbRatings{
-				Tconst:        record[0],
-				AverageRating: float32(AverageRating),
-				NumVotes:      numvotes,
-			})
-		}
-		swrating.Done()
 	}
-	swrating.Wait()
-	if len(ratings) >= 1 {
-		database.ReadWriteMu.Lock()
-		database.DBImdb.NamedExec("insert into imdb_ratings (tconst, num_votes, average_rating) VALUES (:tconst, :num_votes, :average_rating)", ratings)
-		database.ReadWriteMu.Unlock()
-	}
-
 	database.DBImdb.Close()
 	os.Remove("./imdb.db")
 	os.Rename("./imdbtemp.db", "./imdb.db")
