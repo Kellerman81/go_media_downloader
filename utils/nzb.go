@@ -109,14 +109,14 @@ func filter_movies_nzbs(configEntry config.MediaTypeConfig, quality config.Quali
 			continue
 		}
 		if movieid >= 1 {
-			counterh1, _ := database.CountRows("movie_histories", database.Query{Where: "movie_id = ? and url = ?", WhereArgs: []interface{}{movieid, nzbs[idx].DownloadURL}})
+			counterh1, _ := database.CountRows("movie_histories", database.Query{Where: "movie_id = ? and url = ? COLLATE NOCASE", WhereArgs: []interface{}{movieid, nzbs[idx].DownloadURL}})
 			if counterh1 >= 1 {
 				logger.Log.Debug("Skipped - Already Downloaded: ", nzbs[idx].Title)
 				toskip = true
 				continue
 			}
 			if indexer.History_check_title {
-				counterh2, _ := database.CountRows("movie_histories", database.Query{Where: "movie_id = ? and title = ?", WhereArgs: []interface{}{movieid, nzbs[idx].Title}})
+				counterh2, _ := database.CountRows("movie_histories", database.Query{Where: "movie_id = ? and title = ? COLLATE NOCASE", WhereArgs: []interface{}{movieid, nzbs[idx].Title}})
 				if counterh2 >= 1 {
 					logger.Log.Debug("Skipped - Already Downloaded (Title): ", nzbs[idx].Title)
 					toskip = true
@@ -142,14 +142,14 @@ func filter_movies_nzbs(configEntry config.MediaTypeConfig, quality config.Quali
 				continue
 			}
 		} else {
-			counterh1, _ := database.CountRows("movie_histories", database.Query{Where: "url = ?", WhereArgs: []interface{}{nzbs[idx].DownloadURL}})
+			counterh1, _ := database.CountRows("movie_histories", database.Query{Where: "url = ? COLLATE NOCASE", WhereArgs: []interface{}{nzbs[idx].DownloadURL}})
 			if counterh1 >= 1 {
 				logger.Log.Debug("Skipped - Already Downloaded: ", nzbs[idx].Title)
 				toskip = true
 				continue
 			}
 			if indexer.History_check_title {
-				counterh2, _ := database.CountRows("movie_histories", database.Query{Where: "title = ?", WhereArgs: []interface{}{nzbs[idx].Title}})
+				counterh2, _ := database.CountRows("movie_histories", database.Query{Where: "title = ? COLLATE NOCASE", WhereArgs: []interface{}{nzbs[idx].Title}})
 				if counterh2 >= 1 {
 					logger.Log.Debug("Skipped - Already Downloaded (Title): ", nzbs[idx].Title)
 					toskip = true
@@ -284,14 +284,14 @@ func filter_series_nzbs(configEntry config.MediaTypeConfig, quality config.Quali
 			continue
 		}
 		if seriesepisodeid >= 1 {
-			counterh1, _ := database.CountRows("serie_episode_histories", database.Query{Where: "serie_episode_id = ? and url = ?", WhereArgs: []interface{}{seriesepisodeid, nzbs[idx].DownloadURL}})
+			counterh1, _ := database.CountRows("serie_episode_histories", database.Query{Where: "serie_episode_id = ? and url = ? COLLATE NOCASE", WhereArgs: []interface{}{seriesepisodeid, nzbs[idx].DownloadURL}})
 			if counterh1 >= 1 {
 				logger.Log.Debug("Skipped - Already Downloaded: ", nzbs[idx].Title)
 				toskip = true
 				continue
 			}
 			if indexer.History_check_title {
-				counterh2, _ := database.CountRows("serie_episode_histories", database.Query{Where: "serie_episode_id = ? and title = ?", WhereArgs: []interface{}{seriesepisodeid, nzbs[idx].Title}})
+				counterh2, _ := database.CountRows("serie_episode_histories", database.Query{Where: "serie_episode_id = ? and title = ? COLLATE NOCASE", WhereArgs: []interface{}{seriesepisodeid, nzbs[idx].Title}})
 				if counterh2 >= 1 {
 					logger.Log.Debug("Skipped - Already Downloaded (Title): ", nzbs[idx].Title)
 					toskip = true
@@ -334,7 +334,7 @@ func filter_series_nzbs(configEntry config.MediaTypeConfig, quality config.Quali
 									toskip = false
 								} else {
 									toskip = true
-									logger.Log.Debug("Skipped - seriename provided dbepi found but identifier not match ", founddbepi.Identifier)
+									logger.Log.Debug("Skipped - seriename provided dbepi found but identifier not match ", founddbepi.Identifier, " in: ", nzbs[idx].Title)
 									continue
 								}
 							} else {
@@ -358,14 +358,14 @@ func filter_series_nzbs(configEntry config.MediaTypeConfig, quality config.Quali
 				}
 			}
 		} else {
-			counterh1, _ := database.CountRows("serie_episode_histories", database.Query{Where: "url = ?", WhereArgs: []interface{}{nzbs[idx].DownloadURL}})
+			counterh1, _ := database.CountRows("serie_episode_histories", database.Query{Where: "url = ? COLLATE NOCASE", WhereArgs: []interface{}{nzbs[idx].DownloadURL}})
 			if counterh1 >= 1 {
 				logger.Log.Debug("Skipped - Already Downloaded: ", nzbs[idx].Title)
 				toskip = true
 				continue
 			}
 			if indexer.History_check_title {
-				counterh2, _ := database.CountRows("serie_episode_histories", database.Query{Where: "title = ?", WhereArgs: []interface{}{nzbs[idx].Title}})
+				counterh2, _ := database.CountRows("serie_episode_histories", database.Query{Where: "title = ? COLLATE NOCASE", WhereArgs: []interface{}{nzbs[idx].Title}})
 				if counterh2 >= 1 {
 					logger.Log.Debug("Skipped - Already Downloaded (Title): ", nzbs[idx].Title)
 					toskip = true
@@ -454,14 +454,14 @@ func filter_series_rss_nzbs(configEntry config.MediaTypeConfig, quality config.Q
 			continue
 		}
 		minPrio := 0
-		counter, _ := database.CountRows("serie_episode_histories", database.Query{Where: "url = ?", WhereArgs: []interface{}{nzbs[idx].DownloadURL}})
+		counter, _ := database.CountRows("serie_episode_histories", database.Query{Where: "url = ? COLLATE NOCASE", WhereArgs: []interface{}{nzbs[idx].DownloadURL}})
 		if counter >= 1 {
 			logger.Log.Debug("Skipped - Already Downloaded: ", nzbs[idx].Title)
 			toskip = true
 			continue
 		}
 		if indexer.History_check_title {
-			counter, _ = database.CountRows("serie_episode_histories", database.Query{Where: "title = ?", WhereArgs: []interface{}{nzbs[idx].Title}})
+			counter, _ = database.CountRows("serie_episode_histories", database.Query{Where: "title = ? COLLATE NOCASE", WhereArgs: []interface{}{nzbs[idx].Title}})
 			if counter >= 1 {
 				logger.Log.Debug("Skipped - Already Downloaded (Title): ", nzbs[idx].Title)
 				toskip = true
@@ -541,23 +541,12 @@ func filter_series_rss_nzbs(configEntry config.MediaTypeConfig, quality config.Q
 			}
 			minPrio = getHighestEpisodePriorityByFiles(foundepisode, configEntry, quality)
 
-			// foundfiles, _ := database.QuerySerieEpisodeFiles(database.Query{Select: "filename", Where: "serie_episode_id = ?", WhereArgs: []interface{}{foundepisode.ID}})
-			// for idxfile := range foundfiles {
-			// 	m, _ := NewFileParser(cfg, foundfiles[idxfile].Filename, true, "series")
-			// 	if m.Priority == 0 {
-			// 		minPrio = m.Priority
-			// 	} else {
-			// 		if minPrio < m.Priority {
-			// 			minPrio = m.Priority
-			// 		}
-			// 	}
-			// }
 		} else {
 			if quality.BackupSearchForTitle {
 				tempparse, _ := NewFileParser(nzbs[idx].Title, true, "series")
-				founddbserie, founddbserieerr := database.GetDbserie(database.Query{Select: "id, identifiedby, seriename", Where: "seriename = ?", WhereArgs: []interface{}{tempparse.Title}})
+				founddbserie, founddbserieerr := database.GetDbserie(database.Query{Select: "id, identifiedby, seriename", Where: "seriename = ? COLLATE NOCASE", WhereArgs: []interface{}{tempparse.Title}})
 				if founddbserieerr != nil {
-					founddbserie_alt, founddbserie_alterr := database.GetDbserieAlternates(database.Query{Select: "dbserie_id", Where: "Title = ?", WhereArgs: []interface{}{tempparse.Title}})
+					founddbserie_alt, founddbserie_alterr := database.GetDbserieAlternates(database.Query{Select: "dbserie_id", Where: "Title = ? COLLATE NOCASE", WhereArgs: []interface{}{tempparse.Title}})
 					if founddbserie_alterr != nil {
 						logger.Log.Debug("Skipped - Not Wanted DB Serie: ", nzbs[idx].Title)
 						toskip = true
@@ -592,7 +581,7 @@ func filter_series_rss_nzbs(configEntry config.MediaTypeConfig, quality config.Q
 					}
 					tempparse.Date = strings.Replace(tempparse.Date, ".", "-", -1)
 					tempparse.Date = strings.Replace(tempparse.Date, " ", "-", -1)
-					founddbepisode, founddbepisodeerr = database.GetDbserieEpisodes(database.Query{Select: "id", Where: "dbserie_id = ? and Identifier = ?", WhereArgs: []interface{}{founddbserie.ID, tempparse.Date}})
+					founddbepisode, founddbepisodeerr = database.GetDbserieEpisodes(database.Query{Select: "id", Where: "dbserie_id = ? and Identifier = ? COLLATE NOCASE", WhereArgs: []interface{}{founddbserie.ID, tempparse.Date}})
 
 					if founddbepisodeerr != nil {
 						logger.Log.Debug("Skipped - Not Wanted DB Episode: ", nzbs[idx].Title)
@@ -616,17 +605,6 @@ func filter_series_rss_nzbs(configEntry config.MediaTypeConfig, quality config.Q
 				}
 				minPrio = getHighestEpisodePriorityByFiles(foundepisode, configEntry, quality)
 
-				// foundfiles, _ := database.QuerySerieEpisodeFiles(database.Query{Where: "serie_episode_id = ?", WhereArgs: []interface{}{foundepisode.ID}})
-				// for idxfile := range foundfiles {
-				// 	m, _ := NewFileParser(cfg, foundfiles[idxfile].Filename, true, "series")
-				// 	if m.Priority == 0 {
-				// 		minPrio = m.Priority
-				// 	} else {
-				// 		if minPrio < m.Priority {
-				// 			minPrio = m.Priority
-				// 		}
-				// 	}
-				// }
 			} else {
 				logger.Log.Debug("Skipped - no tvbdid: ", nzbs[idx].Title)
 				continue
@@ -707,14 +685,14 @@ func filter_movies_rss_nzbs(configEntry config.MediaTypeConfig, quality config.Q
 		}
 		minPrio := 0
 
-		counter, _ := database.CountRows("movie_histories", database.Query{Where: "url = ?", WhereArgs: []interface{}{nzbs[idx].DownloadURL}})
+		counter, _ := database.CountRows("movie_histories", database.Query{Where: "url = ? COLLATE NOCASE", WhereArgs: []interface{}{nzbs[idx].DownloadURL}})
 		if counter >= 1 {
 			logger.Log.Debug("Skipped - Already Downloaded: ", nzbs[idx].Title)
 			toskip = true
 			continue
 		}
 		if indexer.History_check_title {
-			counter, _ = database.CountRows("movie_histories", database.Query{Where: "title = ?", WhereArgs: []interface{}{nzbs[idx].Title}})
+			counter, _ = database.CountRows("movie_histories", database.Query{Where: "title = ? COLLATE NOCASE", WhereArgs: []interface{}{nzbs[idx].Title}})
 			if counter >= 1 {
 				logger.Log.Debug("Skipped - Already Downloaded (Title): ", nzbs[idx].Title)
 				toskip = true
@@ -744,7 +722,7 @@ func filter_movies_rss_nzbs(configEntry config.MediaTypeConfig, quality config.Q
 			if !strings.HasPrefix(searchimdb, "tt") {
 				searchimdb = "tt" + nzbs[idx].IMDBID
 			}
-			founddbmovie, founddbmovieerr = database.GetDbmovie(database.Query{Select: "id, title", Where: "imdb_id = ?", WhereArgs: []interface{}{searchimdb}})
+			founddbmovie, founddbmovieerr = database.GetDbmovie(database.Query{Select: "id, title", Where: "imdb_id = ? COLLATE NOCASE", WhereArgs: []interface{}{searchimdb}})
 
 			if founddbmovieerr != nil {
 				logger.Log.Debug("Skipped - Not Wanted DB Movie: ", nzbs[idx].Title)
@@ -780,18 +758,6 @@ func filter_movies_rss_nzbs(configEntry config.MediaTypeConfig, quality config.Q
 				continue
 			}
 			minPrio = getHighestMoviePriorityByFiles(foundmovie, configEntry, quality)
-			// foundfiles, _ := database.QueryMovieFiles(database.Query{Where: "movie_id = ?", WhereArgs: []interface{}{foundmovie.ID}})
-			// for idxfile := range foundfiles {
-			// 	m, _ := NewFileParser(cfg, foundfiles[idxfile].Filename, false, "movie")
-			// 	m.GetPriority(configEntry, list)
-			// 	if minPrio == 0 {
-			// 		minPrio = m.Priority
-			// 	} else {
-			// 		if minPrio < m.Priority {
-			// 			minPrio = m.Priority
-			// 		}
-			// 	}
-			// }
 		} else {
 			logger.Log.Debug("Skipped - no imdbid: ", nzbs[idx].Title)
 			continue

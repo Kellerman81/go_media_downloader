@@ -711,14 +711,6 @@ func StructureFolders(grouptype string, sourcepath config.PathsConfig, targetpat
 						continue
 					}
 				}
-				// if entriesfound == 0 {
-				// 	getmovie, imdb, entriesfound2 := movieFindDbByTitle(cfg, m.Title, strconv.Itoa(m.Year), list.Name, list.CheckYear1, "structure")
-				// 	if entriesfound2 >= 1 {
-				// 		entriesfound = entriesfound2
-				// 		m.Imdb = imdb
-				// 		movie = getmovie
-				// 	}
-				// }
 				if movie.ID >= 1 && entriesfound >= 1 {
 					errpars := structure.ParseFileAdditional(videofiles[fileidx], m, folders[idx], true)
 					if errpars != nil {

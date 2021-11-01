@@ -37,19 +37,6 @@ func (p PushOverClient) SendMessage(messagetext string, title string, recipientk
 			return errors.New("please wait")
 		}
 	}
-	// ctx := context.Background()
-	// _, err := p.LimiterWindow.Limit(ctx)
-	// if err == limiters.ErrLimitExhausted {
-	// 	return errors.New("try again later")
-	// } else if err != nil {
-	// 	// The limiter failed. This error should be logged and examined.
-	// 	log.Println(err)
-	// 	return errors.New("internal error")
-	// }
-	// err := p.Limiter.Wait(ctx) // This is a blocking call. Honors the rate limit
-	// if err != nil {
-	// 	return err
-	// }
 	app := pushover.New(p.ApiKey)
 
 	// Create a new recipient

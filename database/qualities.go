@@ -62,19 +62,3 @@ var ListAudio = []Qualities{
 	{Type: 4, Name: "dtshd", Priority: 70, Regex: "(\\b|_)dts[^a-zA-Z0-9]?hd(?:[^a-zA-Z0-9]?ma)?(s)?(\\b|_)"},
 	{Type: 4, Name: "dts", Priority: 80, Regex: "(\\b|_)dts(s)?(\\b|_)", Strings: "dts,dtss"},
 	{Type: 4, Name: "truehd", Priority: 90, Regex: "(\\b|_)truehd(s)?(\\b|_)", Strings: "truehd"}}
-
-//Repack + 4 Proper + 5
-
-func InitQualities() {
-	// DB.Exec("DROP TABLE Qualities")
-
-	// DB.AutoMigrate(&Qualities{})
-
-	// DB.Create(&ListResolutions)
-	// DB.Create(&ListQualities)
-
-	// DB.Create(&ListCodecs)
-
-	// DB.Create(&ListAudio)
-
-}

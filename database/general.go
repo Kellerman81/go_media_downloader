@@ -113,13 +113,6 @@ func UpgradeDB() {
 	}
 }
 
-type Version struct {
-	ID            uint
-	CreatedAt     time.Time `db:"created_at"`
-	UpdatedAt     time.Time `db:"updated_at"`
-	Version       string
-	VersionNumber int `db:"version_number"`
-}
 type JobHistory struct {
 	ID          uint
 	CreatedAt   time.Time `db:"created_at"`

@@ -76,31 +76,6 @@ func initpatterns() {
 	}
 }
 
-func (tor *ParseInfo) setField(field, raw, val string) {
-	ttor := reflect.TypeOf(tor)
-	torV := reflect.ValueOf(tor)
-	field = strings.Title(field)
-	v, _ := ttor.Elem().FieldByName(field)
-	//fmt.Printf("    field=%v, ttor=%v, torv=%v, type=%+v, value=%v\n", field, ttor, torV, v.Type, val)
-	//fmt.Printf("    field=%v, type=%+v, value=%v\n", field, v.Type, val)
-	if v.Type == nil {
-		torV.Elem().FieldByName(field).SetString(val)
-	} else {
-		switch v.Type.Kind() {
-		case reflect.Bool:
-			torV.Elem().FieldByName(field).SetBool(true)
-		case reflect.Int:
-			clean, _ := strconv.ParseInt(val, 10, 64)
-			torV.Elem().FieldByName(field).SetInt(clean)
-		case reflect.Uint:
-			clean, _ := strconv.ParseUint(val, 10, 64)
-			torV.Elem().FieldByName(field).SetUint(clean)
-		case reflect.String:
-			torV.Elem().FieldByName(field).SetString(val)
-		}
-	}
-}
-
 type ParseInfo struct {
 	File            string
 	Title           string
@@ -163,15 +138,6 @@ func NewFileParser(filename string, includeYearInTitle bool, typegroup string) (
 	return m, err
 }
 
-// func regexp2FindAllString(re *regexp.Regexp, s string) []string {
-// 	var matches []string
-// 	m, _ := re.FindStringMatch(s)
-// 	for m != nil {
-// 		matches = append(matches, m.String())
-// 		m, _ = re.FindNextMatch(m)
-// 	}
-// 	return matches
-// }
 func (m *ParseInfo) parsegroup(cleanName string, name string, group []string, startIndex int, endIndex int) (int, int) {
 	for idx := range group {
 		if strings.Contains(strings.ToLower(cleanName), group[idx]) {
@@ -221,7 +187,6 @@ func (m *ParseInfo) parsegroup(cleanName string, name string, group []string, st
 						m.Repack = true
 					}
 				}
-				//m.setField(name, substr, substr)
 			}
 		}
 	}
@@ -238,10 +203,6 @@ func (m *ParseInfo) ParseFile(includeYearInTitle bool, typegroup string) error {
 	if strings.HasPrefix(cleanName, "[") && strings.HasSuffix(cleanName, "]") {
 		cleanName = regexParseFile.ReplaceAllString(cleanName, `$2`)
 	}
-	//cleanName = strings.Replace(cleanName, "[", "(", -1)
-	//cleanName = strings.Replace(cleanName, "]", ")", -1)
-	//fmt.Printf("filename %q\n", cleanName)
-	//|dd[0-9\\.]+|dd[p+][0-9\\.]+|dts\W?hd(?:\W?ma)?
 	audio := []string{"mp3", "aac", "ac3", "ac3d", "ac3md", "flac", "dts", "truehd", "mic", "micdubbed"}
 	startIndex, endIndex = m.parsegroup(cleanName, "audio", audio, startIndex, endIndex)
 
@@ -306,18 +267,15 @@ func (m *ParseInfo) ParseFile(includeYearInTitle bool, typegroup string) error {
 			// Take last occurence of element.
 			matchIdx = len(matches) - 1
 		}
-		//fmt.Printf("  %s: pattern:%q match:%#v\n", pattern.name, pattern.re, matches[matchIdx])
 
 		index := strings.Index(cleanName, matches[matchIdx][1])
 		if !includeYearInTitle || (includeYearInTitle && patterns[idxpattern].name != "year") {
 			if index == 0 {
 				if len(matches[matchIdx][1]) != len(cleanName) && len(matches[matchIdx][1]) < endIndex {
 					startIndex = len(matches[matchIdx][1])
-					//fmt.Printf("    startIndex moved to %d [%q]\n", startIndex, filename[startIndex:endIndex])
 				}
 			} else if index < endIndex && index > startIndex {
 				endIndex = index
-				//fmt.Printf("    endIndex moved to %d [%q]\n", endIndex, filename[startIndex:endIndex])
 			}
 		}
 		switch patterns[idxpattern].name {
@@ -341,15 +299,12 @@ func (m *ParseInfo) ParseFile(includeYearInTitle bool, typegroup string) error {
 		case "audio":
 			m.Audio = matches[matchIdx][2]
 		}
-		//m.setField(patterns[idxpattern].name, matches[matchIdx][1], matches[matchIdx][2])
 	}
 	if len(m.Date) >= 1 {
 		m.Identifier = m.Date
 	} else {
 		m.Identifier = "S" + m.SeasonStr + "E" + m.EpisodeStr
 	}
-	// Start process for title
-	//fmt.Println("  title: <internal>")
 	raw := ""
 	if strings.Contains(m.File[startIndex:endIndex], "(") {
 		rawarr := strings.Split(m.File[startIndex:endIndex], "(")
@@ -373,9 +328,7 @@ func (m *ParseInfo) ParseFile(includeYearInTitle bool, typegroup string) error {
 	cleanName = strings.Trim(cleanName, " ")
 	cleanName = strings.Trim(cleanName, "-")
 	cleanName = strings.Trim(cleanName, " ")
-	//cleanName = re.sub('([\[\(_]|- )$', '', cleanName).strip()
 	m.Title = strings.TrimSpace(cleanName)
-	//m.setField("title", raw, strings.TrimSpace(cleanName))
 
 	return nil
 }
@@ -453,7 +406,6 @@ func (m *ParseInfo) GetPriority(configEntry config.MediaTypeConfig, quality conf
 }
 
 func (m *ParseInfo) ParseVideoFile(file string, configEntry config.MediaTypeConfig, quality config.QualityConfig) error {
-	//if m.Audio == "" || m.Codec == "" || m.Resolution == "" || m.Resolution == "360p" {
 	if m.QualitySet == "" {
 		m.QualitySet = quality.Name
 	}
@@ -530,11 +482,6 @@ func (m *ParseInfo) ParseVideoFile(file string, configEntry config.MediaTypeConf
 	} else {
 		return err
 	}
-	// } else {
-	// 	logger.Log.Debug("Already have Video data")
-	// }
-	//
-	//return nil
 }
 
 func gettypepriority(inval string, qualitystringtype string, qualityconfig config.QualityConfig, qualitytype []database.QualitiesRegex) (id uint, priority int, name string) {
@@ -542,7 +489,6 @@ func gettypepriority(inval string, qualitystringtype string, qualityconfig confi
 		if len(qualitytype[idxqual].Strings) >= 1 {
 			if strings.Contains(qualitytype[idxqual].Strings, strings.ToLower(inval)) {
 				index := strings.Index(qualitytype[idxqual].Strings, strings.ToLower(inval))
-				//substr := qualitytype[idxqual].Strings[index : index+len(inval)]
 				substrpre := ""
 				if index >= 1 {
 					substrpre = qualitytype[idxqual].Strings[index-1 : index]

@@ -11,13 +11,6 @@ import (
 
 var Log = logrus.New()
 
-// var Cpuprofiler interface {
-// 	Stop()
-// }
-// var Memprofiler interface {
-// 	Stop()
-// }
-
 type LoggerConfig struct {
 	LogLevel     string
 	LogFileSize  int
@@ -38,19 +31,6 @@ func InitLogger(config LoggerConfig) {
 		Log.SetLevel(logrus.WarnLevel)
 	}
 
-	// logWriter, err := rotatelogs.New(
-	// 	logPath,
-	// 	rotatelogs.WithLinkName("downloader-current.log"), // Generate a soft link to point to the latest log file
-	// 	rotatelogs.WithRotationSize(int64(config.LogFileSize)*1024*1024),
-	// 	rotatelogs.WithRotationCount(uint(config.LogFileCount)),
-	// 	rotatelogs.WithMaxAge(0),
-	// 	rotatelogs.ForceNewFile(),
-	// )
-
-	// if err != nil {
-	// 	log.Printf("failed to create rotatelogs: %s", err)
-	// 	os.Exit(0)
-	// } else {
 	mw := io.MultiWriter(os.Stdout, &lumberjack.Logger{
 		Filename:   "downloader.log",
 		MaxSize:    config.LogFileSize, // megabytes
@@ -59,5 +39,4 @@ func InitLogger(config LoggerConfig) {
 		Compress:   config.LogCompress, // disabled by default
 	})
 	Log.SetOutput(mw)
-	// }
 }

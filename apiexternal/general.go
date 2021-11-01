@@ -19,8 +19,6 @@ type RLHTTPClient struct {
 
 //Do dispatches the HTTP request to the network
 func (c *RLHTTPClient) Do(req *http.Request) (*http.Response, []byte, error) {
-	// Comment out the below 5 lines to turn off ratelimiting
-	//ctx := context.Background()
 	if !c.LimiterWindow.Allow() {
 		isok := false
 		for i := 0; i < 10; i++ {
@@ -34,10 +32,6 @@ func (c *RLHTTPClient) Do(req *http.Request) (*http.Response, []byte, error) {
 			return nil, nil, errors.New("please wait")
 		}
 	}
-	// err := c.Ratelimiter.Wait(ctx) // This is a blocking call. Honors the rate limit
-	// if err != nil {
-	// 	return nil, nil, err
-	// }
 	resp, err := c.client.Do(req)
 	if err != nil {
 		return nil, nil, err

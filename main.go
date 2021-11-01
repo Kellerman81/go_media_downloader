@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"os"
@@ -21,7 +22,6 @@ import (
 	"github.com/Kellerman81/go_media_downloader/scheduler"
 	"github.com/Kellerman81/go_media_downloader/utils"
 	"github.com/recoilme/pudge"
-	"github.com/sirupsen/logrus"
 
 	"github.com/DeanThompson/ginpprof"
 
@@ -31,37 +31,7 @@ import (
 	ginlog "github.com/toorop/gin-logrus"
 )
 
-// func importfiles(c *gin.Context) {
-// 	db := database.InitDb()
-// 	var list []database.Lists
-// 	db.Table("Lists").Find(&list)
-// 	for _, listrow := range list {
-// 		fmt.Printf("Import List: %d", listrow.ID)
-// 		importfileslist(listrow.Rootfolder, listrow.ID)
-// 	}
-// }
-// GenericJobStruct is a generic structure we'll use for submitting a job,
-// this can be any structure.
-type GenericJobStruct struct {
-	Name string
-}
-
-// An example function, ProcessWork.
-func (gjs *GenericJobStruct) ProcessWork() error {
-	// Generic process, let's print out something, then wait for a time:
-	logger.Log.WithFields(logrus.Fields{"Name": gjs.Name}).Info("Processing some work.")
-	time.Sleep(5 * time.Second)
-	logger.Log.Info("Work finished.")
-	return nil
-}
-
 func main() {
-	// what := []string{"General", "Regex", "Quality", "Path", "Indexer", "Scheduler", "Movie", "Serie", "Imdb", "Downloader", "Notification", "List"}
-	// cfg, f, errcfg := config.LoadCfg(what, config.Configfile)
-	// if errcfg != nil {
-	// 	fmt.Println(errcfg)
-	// 	return
-	// }
 
 	pudb, _ := config.OpenConfig("config.db")
 	config.ConfigDB = pudb
@@ -147,7 +117,6 @@ func main() {
 	database.DBImdb = dbimdb
 
 	database.UpgradeDB()
-	database.InitQualities()
 	database.GetVars()
 
 	scheduler.InitScheduler()
@@ -236,30 +205,8 @@ func main() {
 
 		routerseries := routerapi.Group("/series")
 		api.AddSeriesRoutes(routerseries)
-
-		routerscheduler := routerapi.Group("/scheduler")
-		scheduler.AddSchedulerRoutes(routerscheduler)
 	}
-	// router.GET("/stopmemprofile", func(ctx *gin.Context) {
-	// 	if strings.EqualFold(cfg_general.LogLevel, "Debug") {
-	// 		logger.Memprofiler.Stop()
-	// 	}
-	// })
-	// router.GET("/startmemprofile", func(ctx *gin.Context) {
-	// 	if strings.EqualFold(cfg_general.LogLevel, "Debug") {
-	// 		logger.Memprofiler = profile.Start(profile.ProfilePath("."), profile.MemProfile, profile.MemProfileHeap)
-	// 	}
-	// })
-	// router.GET("/stopcpuprofile", func(ctx *gin.Context) {
-	// 	if strings.EqualFold(cfg_general.LogLevel, "Debug") {
-	// 		logger.Cpuprofiler.Stop()
-	// 	}
-	// })
-	// router.GET("/startcpuprofile", func(ctx *gin.Context) {
-	// 	if strings.EqualFold(cfg_general.LogLevel, "Debug") {
-	// 		logger.Cpuprofiler = profile.Start(profile.ProfilePath("."), profile.CPUProfile)
-	// 	}
-	// })
+
 	router.GET("/dbclose", func(ctx *gin.Context) {
 		database.DB = nil
 	})
@@ -279,17 +226,13 @@ func main() {
 		}
 	}()
 
-	quit := make(chan os.Signal)
-	signal.Notify(quit, os.Interrupt)
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 	log.Println("receive interrupt signal")
 
-	// if strings.EqualFold(cfg_general.LogLevel, "Debug") {
-	// 	logger.Cpuprofiler.Stop()
-	// }
-	// if strings.EqualFold(cfg_general.LogLevel, "Debug") {
-	// 	logger.Memprofiler.Stop()
-	// }
+	database.DBImdb.Close()
+	database.DB.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
