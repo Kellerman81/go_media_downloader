@@ -16,6 +16,8 @@ func stringReplaceArray(instr string, what []string, with string) string {
 	return instr
 }
 
+var Transformer transform.Transformer = transform.Chain(norm.NFD, runes.Remove(runes.In(unicode.Mn)), norm.NFC)
+
 //no chinese or cyrilic supported
 func StringToSlug(instr string) string {
 	instr = strings.ToLower(instr)
@@ -51,8 +53,8 @@ func StringToSlug(instr string) string {
 	instr = strings.Replace(instr, "-xviii-", "-18-", -1)
 	instr = strings.Replace(instr, "-xix-", "-19-", -1)
 	instr = strings.Replace(instr, "-xx-", "-20-", -1)
-	t := transform.Chain(norm.NFD, runes.Remove(runes.In(unicode.Mn)), norm.NFC)
-	result, _, _ := transform.String(t, instr)
+	//t := transform.Chain(norm.NFD, runes.Remove(runes.In(unicode.Mn)), norm.NFC)
+	result, _, _ := transform.String(Transformer, instr)
 	result = strings.Trim(result, "-")
 	return result
 }

@@ -19,9 +19,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/database"
 	"github.com/Kellerman81/go_media_downloader/logger"
 	"github.com/goccy/go-reflect"
-	"golang.org/x/text/runes"
 	"golang.org/x/text/transform"
-	"golang.org/x/text/unicode/norm"
 )
 
 var patterns = []struct {
@@ -717,8 +715,8 @@ func trimStringAfterStringInsensitive(s string, search string) string {
 }
 
 func StringReplaceDiacritics(instr string) string {
-	t := transform.Chain(norm.NFD, runes.Remove(runes.In(unicode.Mn)), norm.NFC)
-	result, _, _ := transform.String(t, instr)
+	//Transformer := transform.Chain(norm.NFD, runes.Remove(runes.In(unicode.Mn)), norm.NFC)
+	result, _, _ := transform.String(logger.Transformer, instr)
 	return result
 }
 
