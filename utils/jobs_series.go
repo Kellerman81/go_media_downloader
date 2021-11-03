@@ -116,25 +116,41 @@ func JobImportDbSeries(serieconfig config.SerieConfig, configEntry config.MediaT
 			} else {
 				dbserie, _ = database.GetDbserie(database.Query{Select: "id, thetvdb_id, imdb_id, trakt_id", Where: "Thetvdb_id = ?", WhereArgs: []interface{}{serieconfig.TvdbID}})
 			}
+			titles, _ := database.QueryDbserieAlternates(database.Query{Select: "title", Where: "dbserie_id = ?", WhereArgs: []interface{}{dbserie.ID}})
 			titlegroup := dbserie.GetTitles(configEntry.Metadata_title_languages, cfg_general.SerieAlternateTitleMetaSourceImdb, cfg_general.SerieAlternateTitleMetaSourceTrakt)
 			for idxalt := range titlegroup {
-				countera, _ := database.CountRows("dbserie_alternates", database.Query{Where: "Dbserie_id = ? and title = ? COLLATE NOCASE", WhereArgs: []interface{}{dbserie.ID, titlegroup[idxalt].Title}})
-				if countera == 0 {
+				titlefound := false
+				for idxtitle := range titles {
+					if strings.EqualFold(titles[idxtitle].Title, titlegroup[idxalt].Title) {
+						titlefound = true
+						break
+					}
+				}
+				if !titlefound {
 					database.InsertArray("dbserie_alternates", []string{"dbserie_id", "title", "slug", "region"}, []interface{}{dbserie.ID, titlegroup[idxalt].Title, titlegroup[idxalt].Slug, titlegroup[idxalt].Region})
 				}
 			}
 			serieconfig.AlternateName = append(serieconfig.AlternateName, serieconfig.Name)
 			serieconfig.AlternateName = append(serieconfig.AlternateName, dbserie.Seriename)
+			titles, _ = database.QueryDbserieAlternates(database.Query{Select: "title", Where: "dbserie_id = ?", WhereArgs: []interface{}{dbserie.ID}})
 			for idxalt := range serieconfig.AlternateName {
-				countera, _ := database.CountRows("dbserie_alternates", database.Query{Where: "Dbserie_id = ? and title = ? COLLATE NOCASE", WhereArgs: []interface{}{dbserie.ID, serieconfig.AlternateName[idxalt]}})
-				if countera == 0 {
+				titlefound := false
+				for idxtitle := range titles {
+					if strings.EqualFold(titles[idxtitle].Title, titlegroup[idxalt].Title) {
+						titlefound = true
+						break
+					}
+				}
+				if !titlefound {
 					database.InsertArray("dbserie_alternates", []string{"dbserie_id", "title", "slug"}, []interface{}{dbserie.ID, serieconfig.AlternateName[idxalt], logger.StringToSlug(serieconfig.AlternateName[idxalt])})
 				}
 			}
 			logger.Log.Debug("DbSeries get metadata end for: ", serieconfig.TvdbID)
 		} else {
-			finddbserie, _ := database.GetDbserie(database.Query{Select: "id, thetvdb_id, imdb_id, trakt_id", Where: "Thetvdb_id = ?", WhereArgs: []interface{}{serieconfig.TvdbID}})
-			dbserie = finddbserie
+			if dbserie.ID == 0 || dbserie.ThetvdbID == 0 || dbserie.ImdbID == "" || dbserie.TraktID == 0 {
+				finddbserie, _ := database.GetDbserie(database.Query{Select: "id, thetvdb_id, imdb_id, trakt_id", Where: "Thetvdb_id = ?", WhereArgs: []interface{}{serieconfig.TvdbID}})
+				dbserie = finddbserie
+			}
 		}
 	}
 
@@ -164,9 +180,16 @@ func JobImportDbSeries(serieconfig config.SerieConfig, configEntry config.MediaT
 			logger.Log.Debug("DbSeries get episodes for: ", serieconfig.TvdbID)
 			episode := dbserie.GetEpisodes(configEntry.Metadata_language, cfg_general.SerieMetaSourceTrakt)
 			adddbepisodes := make([]database.DbserieEpisode, 0, len(episode))
+			dbepisode, _ := database.QueryDbserieEpisodes(database.Query{Select: "season, episode", Where: "dbserie_id = ?", WhereArgs: []interface{}{dbserie.ID}})
 			for idxepi := range episode {
-				countere, _ := database.CountRows("dbserie_episodes", database.Query{Where: "Dbserie_id = ? and Season = ? and Episode = ?", WhereArgs: []interface{}{dbserie.ID, episode[idxepi].Season, episode[idxepi].Episode}})
-				if countere == 0 {
+				entryfound := false
+				for idxentry := range dbepisode {
+					if strings.EqualFold(dbepisode[idxentry].Season, episode[idxepi].Season) && strings.EqualFold(dbepisode[idxentry].Episode, episode[idxepi].Episode) {
+						entryfound = true
+						break
+					}
+				}
+				if !entryfound {
 					dbserieepisode := episode[idxepi]
 					dbserieepisode.DbserieID = dbserie.ID
 					adddbepisodes = append(adddbepisodes, dbserieepisode)
@@ -313,19 +336,31 @@ func JobReloadDbSeries(dbserie database.Dbserie, configEntry config.MediaTypeCon
 	logger.Log.Debug("DbSeries get metadata end for: ", dbserie.ThetvdbID)
 
 	logger.Log.Debug("DbSeries add titles for: ", dbserie.ThetvdbID)
-	titlegroup := dbserie.GetTitles(getconfigentry.Metadata_title_languages, cfg_general.SerieAlternateTitleMetaSourceImdb, cfg_general.SerieAlternateTitleMetaSourceTrakt)
+	titles, _ := database.QueryDbserieAlternates(database.Query{Select: "title", Where: "dbserie_id = ?", WhereArgs: []interface{}{dbserie.ID}})
+	titlegroup := dbserie.GetTitles(configEntry.Metadata_title_languages, cfg_general.SerieAlternateTitleMetaSourceImdb, cfg_general.SerieAlternateTitleMetaSourceTrakt)
 	for idxalt := range titlegroup {
-		countera, _ := database.CountRows("dbserie_alternates", database.Query{Where: "Dbserie_id = ? and title = ? COLLATE NOCASE", WhereArgs: []interface{}{dbserie.ID, titlegroup[idxalt].Title}})
-		if countera == 0 {
+		titlefound := false
+		for idxtitle := range titles {
+			if strings.EqualFold(titles[idxtitle].Title, titlegroup[idxalt].Title) {
+				titlefound = true
+				break
+			}
+		}
+		if !titlefound {
 			database.InsertArray("dbserie_alternates", []string{"dbserie_id", "title", "slug", "region"}, []interface{}{dbserie.ID, titlegroup[idxalt].Title, titlegroup[idxalt].Slug, titlegroup[idxalt].Region})
 		}
 	}
+	titles, _ = database.QueryDbserieAlternates(database.Query{Select: "title", Where: "dbserie_id = ?", WhereArgs: []interface{}{dbserie.ID}})
 	for idxalt := range alternateNames {
-		counter, _ := database.CountRows("dbserie_alternates", database.Query{Where: "Dbserie_id = ? and title = ? COLLATE NOCASE", WhereArgs: []interface{}{dbserie.ID, alternateNames[idxalt]}})
-		if counter == 0 {
-			database.InsertArray("dbserie_alternates",
-				[]string{"dbserie_id", "title", "slug"},
-				[]interface{}{dbserie.ID, alternateNames[idxalt], logger.StringToSlug(alternateNames[idxalt])})
+		titlefound := false
+		for idxtitle := range titles {
+			if strings.EqualFold(titles[idxtitle].Title, alternateNames[idxalt]) {
+				titlefound = true
+				break
+			}
+		}
+		if !titlefound {
+			database.InsertArray("dbserie_alternates", []string{"dbserie_id", "title", "slug"}, []interface{}{dbserie.ID, alternateNames[idxalt], logger.StringToSlug(alternateNames[idxalt])})
 		}
 	}
 
@@ -334,24 +369,33 @@ func JobReloadDbSeries(dbserie database.Dbserie, configEntry config.MediaTypeCon
 	logger.Log.Debug("DbSeries add serie end for: ", dbserie.ThetvdbID)
 
 	logger.Log.Debug("DbSeries get episodes for: ", dbserie.ThetvdbID)
-	episode := dbserie.GetEpisodes(configEntry.Metadata_language, cfg_general.SerieMetaSourceTrakt)
-	logger.Log.Debug("DbSeries get episodes end for: ", dbserie.ThetvdbID)
-	adddbepisodes := make([]database.DbserieEpisode, 0, len(episode))
-	for idxdbepi := range episode {
-		counter, _ := database.CountRows("dbserie_episodes", database.Query{Where: "Dbserie_id = ? and Season = ? and Episode = ?", WhereArgs: []interface{}{dbserie.ID, episode[idxdbepi].Season, episode[idxdbepi].Episode}})
-		if counter == 0 {
-			dbserieepisode := episode[idxdbepi]
+	dbepisode, _ := database.QueryDbserieEpisodes(database.Query{Select: "season, episode", Where: "dbserie_id = ?", WhereArgs: []interface{}{dbserie.ID}})
+	episodes := dbserie.GetEpisodes(configEntry.Metadata_language, cfg_general.SerieMetaSourceTrakt)
+	adddbepisodes := make([]database.DbserieEpisode, 0, len(episodes))
+	for idxdbepi := range dbepisode {
+		epifound := false
+		for idxepi := range episodes {
+			if strings.EqualFold(episodes[idxepi].Season, dbepisode[idxdbepi].Season) && strings.EqualFold(episodes[idxepi].Episode, dbepisode[idxdbepi].Episode) {
+				epifound = true
+				break
+			}
+		}
+		if !epifound {
+			dbserieepisode := episodes[idxdbepi]
 			dbserieepisode.DbserieID = dbserie.ID
 			adddbepisodes = append(adddbepisodes, dbserieepisode)
 		}
 	}
+
+	logger.Log.Debug("DbSeries get episodes end for: ", dbserie.ThetvdbID)
+
 	if len(adddbepisodes) >= 1 {
 		database.ReadWriteMu.Lock()
 		database.DB.NamedExec("insert into dbserie_episodes (episode, season, identifier, title, first_aired, overview, poster, dbserie_id) VALUES (:episode, :season, :identifier, :title, :first_aired, :overview, :poster, :dbserie_id)", adddbepisodes)
 		database.ReadWriteMu.Unlock()
 	}
 
-	foundseries, _ := database.QuerySeries(database.Query{Select: "id", Where: "Dbserie_id = ?", WhereArgs: []interface{}{dbserie.ID}})
+	foundseries, _ := database.QuerySeries(database.Query{Select: "id, listname", Where: "Dbserie_id = ?", WhereArgs: []interface{}{dbserie.ID}})
 	var getlist config.MediaListsConfig
 	for idxserie := range foundseries {
 
@@ -371,14 +415,23 @@ func JobReloadDbSeries(dbserie database.Dbserie, configEntry config.MediaTypeCon
 				break
 			}
 		}
-		dbepisode, _ := database.QueryDbserieEpisodes(database.Query{Select: "id", Where: "Dbserie_id = ?", WhereArgs: []interface{}{dbserie.ID}})
-
+		dbepisode, _ := database.QueryDbserieEpisodes(database.Query{Select: "id", Where: "dbserie_id = ?", WhereArgs: []interface{}{dbserie.ID}})
+		episodes, _ := database.QuerySerieEpisodes(database.Query{Select: "dbserie_episode_id", Where: "dbserie_id = ? and serie_id = ?", WhereArgs: []interface{}{dbserie.ID, foundseries[idxserie].ID}})
 		for idxdbepi := range dbepisode {
-			counter, _ := database.CountRows("serie_episodes", database.Query{Where: "Serie_id = ? and Dbserie_episode_id = ?", WhereArgs: []interface{}{foundseries[idxserie].ID, dbepisode[idxdbepi].ID}})
-			if counter == 0 {
+			epifound := false
+			for idxepi := range episodes {
+				if episodes[idxepi].DbserieEpisodeID == dbepisode[idxdbepi].ID {
+					epifound = true
+					break
+				}
+			}
+			if !epifound {
+				//counterid, _ := database.CountRows("serie_episodes", database.Query{Where: "serie_id = ? and Dbserie_episode_id = ?", WhereArgs: []interface{}{serie.ID, dbepisode[idxdbepi].ID}})
+				//if counterid == 0 {
 				database.InsertArray("serie_episodes",
 					[]string{"dbserie_id", "serie_id", "missing", "quality_profile", "dbserie_episode_id"},
 					[]interface{}{dbserie.ID, foundseries[idxserie].ID, true, getlist.Template_quality, dbepisode[idxdbepi].ID})
+				//}
 			}
 		}
 	}
