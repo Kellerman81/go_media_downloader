@@ -41,7 +41,6 @@ func JobImportMovies(dbmovie database.Dbmovie, configEntry config.MediaTypeConfi
 		database.ReadWriteMu.Unlock()
 	}
 
-	finddbmovie, _ := database.GetDbmovie(database.Query{Where: "imdb_id = ? COLLATE NOCASE", WhereArgs: []interface{}{dbmovie.ImdbID}})
 	cdbmovie, _ := database.CountRows("dbmovies", database.Query{Where: "imdb_id = ? COLLATE NOCASE", WhereArgs: []interface{}{dbmovie.ImdbID}})
 	if cdbmovie == 0 {
 		logger.Log.Debug("Get Movie Metadata: ", dbmovie.ImdbID)
@@ -136,36 +135,55 @@ func JobImportMovies(dbmovie database.Dbmovie, configEntry config.MediaTypeConfi
 				return
 			}
 			logger.Log.Debug("Get Movie Titles: ", dbmovie.Title)
+			titles, _ := database.QueryDbmovieTitle(database.Query{Select: "title", Where: "dbmovie_id = ?", WhereArgs: []interface{}{dbmovie.ID}})
 			titlegroup := dbmovie.GetTitles(configEntry.Metadata_title_languages, cfg_general.MovieAlternateTitleMetaSourceImdb, cfg_general.MovieAlternateTitleMetaSourceTmdb, cfg_general.MovieAlternateTitleMetaSourceTrakt)
 			for idxtitle := range titlegroup {
-				countert, _ := database.CountRows("dbmovie_titles", database.Query{Where: "dbmovie_id = ? and title = ? COLLATE NOCASE", WhereArgs: []interface{}{dbmovie.ID, titlegroup[idxtitle].Title}})
-				if countert == 0 {
+				titlefound := false
+				for idxtitleall := range titles {
+					if strings.EqualFold(titles[idxtitleall].Title, titlegroup[idxtitle].Title) {
+						titlefound = true
+						break
+					}
+				}
+				if !titlefound {
 					database.InsertArray("dbmovie_titles", []string{"dbmovie_id", "title", "slug", "region"}, []interface{}{dbmovie.ID, titlegroup[idxtitle].Title, titlegroup[idxtitle].Slug, titlegroup[idxtitle].Region})
 				}
 			}
 		} else {
-			dbmovie, _ = database.GetDbmovie(database.Query{Where: "imdb_id = ? COLLATE NOCASE", WhereArgs: []interface{}{dbmovie.ImdbID}})
+			dbmovie, _ = database.GetDbmovie(database.Query{Select: "id", Where: "imdb_id = ? COLLATE NOCASE", WhereArgs: []interface{}{dbmovie.ImdbID}})
 		}
 	} else {
-		dbmovie = finddbmovie
+		if dbmovie.ID == 0 {
+			finddbmovie, _ := database.GetDbmovie(database.Query{Select: "id", Where: "imdb_id = ? COLLATE NOCASE", WhereArgs: []interface{}{dbmovie.ImdbID}})
+			dbmovie = finddbmovie
+		}
 	}
 
+	movietest, _ := database.QueryMovies(database.Query{Select: "id, listname", Where: "dbmovie_id = ?", WhereArgs: []interface{}{dbmovie.ID}})
 	if len(list.Ignore_map_lists) >= 1 {
-		argsignorelist := []interface{}{}
-		argsignorelist = append(argsignorelist, dbmovie.ID)
 		for idx := range list.Ignore_map_lists {
-			argsignorelist = append(argsignorelist, list.Ignore_map_lists[idx])
-		}
-		counteri, _ := database.CountRows("movies", database.Query{Where: "dbmovie_id = ? and listname in (?" + strings.Repeat(",?", len(list.Ignore_map_lists)-1) + ")", WhereArgs: argsignorelist})
-		if counteri >= 1 {
-			return
+			for idxtest := range movietest {
+				if strings.EqualFold(list.Ignore_map_lists[idx], movietest[idxtest].Listname) {
+					return
+				}
+			}
 		}
 	}
 
-	counterm, _ := database.CountRows("movies", database.Query{Where: "dbmovie_id = ? and listname = ?", WhereArgs: []interface{}{dbmovie.ID, list.Name}})
-	if counterm >= 1 {
+	foundmovie := false
+	for idxtest := range movietest {
+		if strings.EqualFold(list.Name, movietest[idxtest].Listname) {
+			foundmovie = true
+			break
+		}
+	}
+	if foundmovie {
 		for idxreplace := range list.Replace_map_lists {
-			database.UpdateArray("movies", []string{"missing", "listname", "dbmovie_id", "quality_profile"}, []interface{}{true, list.Name, dbmovie.ID, list.Template_quality}, database.Query{Where: "dbmovie_id = ? and listname = ?", WhereArgs: []interface{}{dbmovie.ID, list.Replace_map_lists[idxreplace]}})
+			for idxtitle := range movietest {
+				if strings.EqualFold(movietest[idxtitle].Listname, list.Replace_map_lists[idxreplace]) {
+					database.UpdateArray("movies", []string{"missing", "listname", "dbmovie_id", "quality_profile"}, []interface{}{true, list.Name, dbmovie.ID, list.Template_quality}, database.Query{Where: "id=?", WhereArgs: []interface{}{movietest[idxtitle].ID}})
+				}
+			}
 		}
 	} else {
 		logger.Log.Debug("Add Movie: ", dbmovie.Title)
@@ -175,9 +193,10 @@ func JobImportMovies(dbmovie database.Dbmovie, configEntry config.MediaTypeConfi
 			return
 		}
 		for idxreplace := range list.Replace_map_lists {
-			movietest, _ := database.QueryMovies(database.Query{Select: "id", Where: "dbmovie_id = ? and listname = ?", WhereArgs: []interface{}{dbmovie.ID, list.Replace_map_lists[idxreplace]}})
-			for _, replacemovie := range movietest {
-				database.UpdateArray("movies", []string{"missing", "listname", "dbmovie_id", "quality_profile"}, []interface{}{true, list.Name, dbmovie.ID, list.Template_quality}, database.Query{Where: "id=?", WhereArgs: []interface{}{replacemovie.ID}})
+			for idxtitle := range movietest {
+				if strings.EqualFold(movietest[idxtitle].Listname, list.Replace_map_lists[idxreplace]) {
+					database.UpdateArray("movies", []string{"missing", "listname", "dbmovie_id", "quality_profile"}, []interface{}{true, list.Name, dbmovie.ID, list.Template_quality}, database.Query{Where: "id=?", WhereArgs: []interface{}{movietest[idxtitle].ID}})
+				}
 			}
 		}
 	}
@@ -243,7 +262,7 @@ func JobReloadMovies(dbmovie database.Dbmovie, configEntry config.MediaTypeConfi
 		database.Query{Where: "id=?", WhereArgs: []interface{}{dbmovie.ID}})
 
 	movie_keys, _ := config.ConfigDB.Keys([]byte("movie_*"), 0, 0, true)
-	movies, _ := database.QueryMovies(database.Query{Where: "dbmovie_id = ?", WhereArgs: []interface{}{dbmovie.ID}})
+	movies, _ := database.QueryMovies(database.Query{Select: "listname", Where: "dbmovie_id = ?", WhereArgs: []interface{}{dbmovie.ID}})
 
 	var getconfigentry config.MediaTypeConfig
 	if configEntry.Name != "" {
@@ -267,10 +286,17 @@ func JobReloadMovies(dbmovie database.Dbmovie, configEntry config.MediaTypeConfi
 	}
 
 	logger.Log.Debug("Get Movie Titles: ", dbmovie.Title)
+	titles, _ := database.QueryDbmovieTitle(database.Query{Select: "title", Where: "dbmovie_id = ?", WhereArgs: []interface{}{dbmovie.ID}})
 	titlegroup := dbmovie.GetTitles(getconfigentry.Metadata_title_languages, cfg_general.MovieAlternateTitleMetaSourceImdb, cfg_general.MovieAlternateTitleMetaSourceTmdb, cfg_general.MovieAlternateTitleMetaSourceTrakt)
 	for idxtitle := range titlegroup {
-		_, dbmovietitleerr := database.GetDbmovieTitle(database.Query{Select: "id", Where: "dbmovie_id = ? and title = ? COLLATE NOCASE", WhereArgs: []interface{}{dbmovie.ID, titlegroup[idxtitle].Title}})
-		if dbmovietitleerr != nil {
+		titlefound := false
+		for idxtitleall := range titles {
+			if strings.EqualFold(titles[idxtitleall].Title, titlegroup[idxtitle].Title) {
+				titlefound = true
+				break
+			}
+		}
+		if !titlefound {
 			database.InsertArray("dbmovie_titles", []string{"dbmovie_id", "title", "slug", "region"}, []interface{}{dbmovie.ID, titlegroup[idxtitle].Title, titlegroup[idxtitle].Slug, titlegroup[idxtitle].Region})
 		}
 	}
@@ -1127,12 +1153,34 @@ func importnewmoviessingle(row config.MediaTypeConfig, list config.MediaListsCon
 	var cfg_general config.GeneralConfig
 	config.ConfigGet("general", &cfg_general)
 
+	dbmovies, _ := database.QueryDbmovie(database.Query{Select: "id, imdb_id"})
+	movies, _ := database.QueryMovies(database.Query{Select: "dbmovie_id, listname", Where: "listname = ?", WhereArgs: []interface{}{list.Name}})
 	swg := sizedwaitgroup.New(cfg_general.WorkerMetadata)
 	for idxmovie := range results.Movies {
 		Lastmovie = results.Movies[idxmovie].ImdbID
-		logger.Log.Info("Import Movie ", idxmovie, " of ", len(results.Movies), " imdb: ", results.Movies[idxmovie].ImdbID)
-		swg.Add()
-		JobImportMovies(results.Movies[idxmovie], row, list, &swg)
+		founddbmovie := false
+		foundmovie := false
+		dbmovie_id := 0
+		for idxhasdbmov := range dbmovies {
+			if dbmovies[idxhasdbmov].ImdbID == results.Movies[idxmovie].ImdbID {
+				founddbmovie = true
+				dbmovie_id = int(dbmovies[idxhasdbmov].ID)
+				break
+			}
+		}
+		if founddbmovie {
+			for idxhasmov := range movies {
+				if movies[idxhasmov].DbmovieID == uint(dbmovie_id) && strings.EqualFold(movies[idxhasmov].Listname, list.Name) {
+					foundmovie = true
+					break
+				}
+			}
+		}
+		if !founddbmovie || !foundmovie {
+			logger.Log.Info("Import Movie ", idxmovie, " of ", len(results.Movies), " imdb: ", results.Movies[idxmovie].ImdbID)
+			swg.Add()
+			JobImportMovies(results.Movies[idxmovie], row, list, &swg)
+		}
 	}
 	swg.Wait()
 }
