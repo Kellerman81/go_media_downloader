@@ -1238,7 +1238,7 @@ func CountRows(table string, qu Query) (int, error) {
 		logger.Log.Debug("query count: ", buildquery("count(*)", table, qu, true), " -args: ", qu.WhereArgs)
 	}
 	var counter int
-	rows, err := DB.Queryx(buildquery("count(*)", table, qu, true), qu.WhereArgs...)
+	rows, err := DB.Query(buildquery("count(*)", table, qu, true), qu.WhereArgs...)
 	if err != nil {
 		logger.Log.Error("Query: ", buildquery("count(*)", table, qu, true), " error: ", err)
 		return 0, err
@@ -1449,7 +1449,7 @@ func ImdbCountRows(table string, qu Query) (int, error) {
 		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
 	}
 	var counter int
-	rows, err := DBImdb.Queryx(query, qu.WhereArgs...)
+	rows, err := DBImdb.Query(query, qu.WhereArgs...)
 	if err != nil {
 		logger.Log.Error("Query: ", query, " error: ", err)
 		return 0, err

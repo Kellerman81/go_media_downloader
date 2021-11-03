@@ -454,15 +454,15 @@ func filter_series_rss_nzbs(configEntry config.MediaTypeConfig, quality config.Q
 			continue
 		}
 		minPrio := 0
-		counter, _ := database.CountRows("serie_episode_histories", database.Query{Where: "url = ? COLLATE NOCASE", WhereArgs: []interface{}{nzbs[idx].DownloadURL}})
-		if counter >= 1 {
+		countertitle, _ := database.CountRows("serie_episode_histories", database.Query{Where: "url = ? COLLATE NOCASE", WhereArgs: []interface{}{nzbs[idx].DownloadURL}})
+		if countertitle >= 1 {
 			logger.Log.Debug("Skipped - Already Downloaded: ", nzbs[idx].Title)
 			toskip = true
 			continue
 		}
 		if indexer.History_check_title {
-			counter, _ = database.CountRows("serie_episode_histories", database.Query{Where: "title = ? COLLATE NOCASE", WhereArgs: []interface{}{nzbs[idx].Title}})
-			if counter >= 1 {
+			countertitle, _ = database.CountRows("serie_episode_histories", database.Query{Where: "title = ? COLLATE NOCASE", WhereArgs: []interface{}{nzbs[idx].Title}})
+			if countertitle >= 1 {
 				logger.Log.Debug("Skipped - Already Downloaded (Title): ", nzbs[idx].Title)
 				toskip = true
 				continue
@@ -685,15 +685,15 @@ func filter_movies_rss_nzbs(configEntry config.MediaTypeConfig, quality config.Q
 		}
 		minPrio := 0
 
-		counter, _ := database.CountRows("movie_histories", database.Query{Where: "url = ? COLLATE NOCASE", WhereArgs: []interface{}{nzbs[idx].DownloadURL}})
-		if counter >= 1 {
+		countertitle, _ := database.CountRows("movie_histories", database.Query{Where: "url = ? COLLATE NOCASE", WhereArgs: []interface{}{nzbs[idx].DownloadURL}})
+		if countertitle >= 1 {
 			logger.Log.Debug("Skipped - Already Downloaded: ", nzbs[idx].Title)
 			toskip = true
 			continue
 		}
 		if indexer.History_check_title {
-			counter, _ = database.CountRows("movie_histories", database.Query{Where: "title = ? COLLATE NOCASE", WhereArgs: []interface{}{nzbs[idx].Title}})
-			if counter >= 1 {
+			countertitle2, _ := database.CountRows("movie_histories", database.Query{Where: "title = ? COLLATE NOCASE", WhereArgs: []interface{}{nzbs[idx].Title}})
+			if countertitle2 >= 1 {
 				logger.Log.Debug("Skipped - Already Downloaded (Title): ", nzbs[idx].Title)
 				toskip = true
 				continue
