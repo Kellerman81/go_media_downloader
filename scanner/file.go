@@ -289,16 +289,22 @@ func GetFilesAdded(files []string, listname string) []string {
 	var list []string
 	for idxfile := range files {
 
-		moviefile, moviefileerr := database.GetMovieFiles(database.Query{Select: "dbmovie_id", Where: "location = ?", WhereArgs: []interface{}{files[idxfile]}})
-		if moviefileerr == nil {
-			movie, movieerr := database.GetMovies(database.Query{Select: "id", Where: "listname = ? and dbmovie_id = ?", WhereArgs: []interface{}{listname, moviefile.DbmovieID}})
-			if movieerr == nil {
-				counter, _ := database.CountRows("movie_files", database.Query{Where: "location = ? and movie_id = ?", WhereArgs: []interface{}{files[idxfile], movie.ID}})
-				if counter == 0 {
-					logger.Log.Debug("File added to list - from other", files[idxfile], " ", listname)
-					list = append(list, files[idxfile])
-				}
-			}
+		moviefiles, _ := database.QueryMovieFiles(database.Query{Select: "dbmovie_id, movie_id", Where: "location = ?", WhereArgs: []interface{}{files[idxfile]}})
+		if len(moviefiles) >= 1 {
+			// movie, movieerr := database.GetMovies(database.Query{Select: "id", Where: "listname = ? and dbmovie_id = ?", WhereArgs: []interface{}{listname, moviefiles[0].DbmovieID}})
+			// if movieerr == nil {
+			// 	foundmovieid := false
+			// 	for idxmov := range moviefiles {
+			// 		if moviefiles[idxmov].MovieID == movie.ID {
+			// 			foundmovieid = true
+			// 			break
+			// 		}
+			// 	}
+			// 	if !foundmovieid {
+			// 		logger.Log.Debug("File added to list - from other", files[idxfile], " ", listname)
+			// 		list = append(list, files[idxfile])
+			// 	}
+			// }
 		} else {
 			logger.Log.Debug("File added to list - not found", files[idxfile], " ", listname)
 			list = append(list, files[idxfile])
