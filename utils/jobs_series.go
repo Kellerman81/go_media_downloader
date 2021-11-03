@@ -179,27 +179,57 @@ func JobImportDbSeries(serieconfig config.SerieConfig, configEntry config.MediaT
 			}
 		}
 
+		//dbepisode, _ := database.QueryDbserieEpisodes(database.Query{Select: "id", Where: "dbserie_id = ? and (SELECT count(id) from serie_episodes where dbserie_episode_id=dbserie_episodes.id and serie_id=?)=0", WhereArgs: []interface{}{dbserie.ID, serie.ID}})
 		dbepisode, _ := database.QueryDbserieEpisodes(database.Query{Select: "id", Where: "dbserie_id = ?", WhereArgs: []interface{}{dbserie.ID}})
+		episodes, _ := database.QuerySerieEpisodes(database.Query{Select: "dbserie_episode_id", Where: "dbserie_id = ? and serie_id = ?", WhereArgs: []interface{}{dbserie.ID, serie.ID}})
 		for idxdbepi := range dbepisode {
-			counterie, _ := database.CountRows("serie_episodes", database.Query{Where: "serie_id = ? and Dbserie_episode_id = ?", WhereArgs: []interface{}{serie.ID, dbepisode[idxdbepi].ID}})
-			if counterie == 0 {
+			epifound := false
+			for idxepi := range episodes {
+				if episodes[idxepi].DbserieEpisodeID == dbepisode[idxdbepi].ID {
+					epifound = true
+					break
+				}
+			}
+			if !epifound {
+				//counterid, _ := database.CountRows("serie_episodes", database.Query{Where: "serie_id = ? and Dbserie_episode_id = ?", WhereArgs: []interface{}{serie.ID, dbepisode[idxdbepi].ID}})
+				//if counterid == 0 {
 				database.InsertArray("serie_episodes",
 					[]string{"dbserie_id", "serie_id", "missing", "quality_profile", "dbserie_episode_id"},
 					[]interface{}{dbserie.ID, serie.ID, true, list.Template_quality, dbepisode[idxdbepi].ID})
+				//}
 			}
 		}
+		// dbepisode, _ := database.QueryDbserieEpisodes(database.Query{Select: "id", Where: "dbserie_id = ?", WhereArgs: []interface{}{dbserie.ID}})
+		// for idxdbepi := range dbepisode {
+		// 	counterie, _ := database.CountRows("serie_episodes", database.Query{Where: "serie_id = ? and Dbserie_episode_id = ?", WhereArgs: []interface{}{serie.ID, dbepisode[idxdbepi].ID}})
+		// 	if counterie == 0 {
+		// 		database.InsertArray("serie_episodes",
+		// 			[]string{"dbserie_id", "serie_id", "missing", "quality_profile", "dbserie_episode_id"},
+		// 			[]interface{}{dbserie.ID, serie.ID, true, list.Template_quality, dbepisode[idxdbepi].ID})
+		// 	}
+		// }
 
 		logger.Log.Debug("DbSeries add episodes end for: ", serieconfig.TvdbID)
 	} else {
-		dbepisode, _ := database.QueryDbserieEpisodes(database.Query{Select: "id", Where: "dbserie_id = ? and (SELECT count(id) from serie_episodes where dbserie_episode_id=dbserie_episodes.id and serie_id=?)=0", WhereArgs: []interface{}{dbserie.ID, serie.ID}})
-		//dbepisode, _ := database.QueryDbserieEpisodes(database.Query{Select: "id", Where: "dbserie_id = ?", WhereArgs: []interface{}{dbserie.ID}})
+		//dbepisode, _ := database.QueryDbserieEpisodes(database.Query{Select: "id", Where: "dbserie_id = ? and (SELECT count(id) from serie_episodes where dbserie_episode_id=dbserie_episodes.id and serie_id=?)=0", WhereArgs: []interface{}{dbserie.ID, serie.ID}})
+		dbepisode, _ := database.QueryDbserieEpisodes(database.Query{Select: "id", Where: "dbserie_id = ?", WhereArgs: []interface{}{dbserie.ID}})
+		episodes, _ := database.QuerySerieEpisodes(database.Query{Select: "dbserie_episode_id", Where: "dbserie_id = ? and serie_id = ?", WhereArgs: []interface{}{dbserie.ID, serie.ID}})
 		for idxdbepi := range dbepisode {
-			//counterid, _ := database.CountRows("serie_episodes", database.Query{Where: "serie_id = ? and Dbserie_episode_id = ?", WhereArgs: []interface{}{serie.ID, dbepisode[idxdbepi].ID}})
-			//if counterid == 0 {
-			database.InsertArray("serie_episodes",
-				[]string{"dbserie_id", "serie_id", "missing", "quality_profile", "dbserie_episode_id"},
-				[]interface{}{dbserie.ID, serie.ID, true, list.Template_quality, dbepisode[idxdbepi].ID})
-			//}
+			epifound := false
+			for idxepi := range episodes {
+				if episodes[idxepi].DbserieEpisodeID == dbepisode[idxdbepi].ID {
+					epifound = true
+					break
+				}
+			}
+			if !epifound {
+				//counterid, _ := database.CountRows("serie_episodes", database.Query{Where: "serie_id = ? and Dbserie_episode_id = ?", WhereArgs: []interface{}{serie.ID, dbepisode[idxdbepi].ID}})
+				//if counterid == 0 {
+				database.InsertArray("serie_episodes",
+					[]string{"dbserie_id", "serie_id", "missing", "quality_profile", "dbserie_episode_id"},
+					[]interface{}{dbserie.ID, serie.ID, true, list.Template_quality, dbepisode[idxdbepi].ID})
+				//}
+			}
 		}
 		logger.Log.Debug("DbSeries add episodes end for: ", serieconfig.TvdbID)
 	}
