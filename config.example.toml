@@ -241,7 +241,9 @@ missing_scan_interval = 1 #Scan for Missing every x days - Scan oldest first
 replace_lower='true' #Replace lower quality movies? - uses quality of specific movie
 min_video_size = 70 # Minumum Video File Size - smaller ones will be deleted
 cleanup_size_mb=25 #MB - delete source folder if size is less then after import
-allowed_languages=['German','Deutsch','deu','ger',''] #uses fprobe to try and extract the audio language - if other is found download will not be imported
+allowed_languages=['German','Deutsch','deu','ger',''] #uses fprobe to try and extract the audio language - if other is found download will not be imported - '' allows downloads without language name as audio stream
+delete_disallowed=false # Delete Folders which contain one of disallowed # sourcepath
+delete_wrong_language=false # Delete Videos which don't match one of allowed_languages (if defined) # targetpath
 
 ### notifications ###
 ### Possible pushover and csv

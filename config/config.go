@@ -236,6 +236,8 @@ type PathsConfig struct {
 	UpgradeScanInterval            int      `koanf:"upgrade_scan_interval"`
 	MissingScanInterval            int      `koanf:"missing_scan_interval"`
 	Disallowed                     []string `koanf:"disallowed"`
+	DeleteWrongLanguage            bool     `koanf:"delete_wrong_language"`
+	DeleteDisallowed               bool     `koanf:"delete_disallowed"`
 }
 
 type NotificationConfig struct {

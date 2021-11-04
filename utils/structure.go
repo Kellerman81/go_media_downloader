@@ -146,19 +146,39 @@ func (s *Structure) ParseFileAdditional(videofile string, m *ParseInfo, folder s
 	if len(s.targetpath.Allowed_languages) >= 1 && deletewronglanguage {
 		language_ok := false
 		for idx := range s.targetpath.Allowed_languages {
+			if len(m.Languages) == 0 && s.targetpath.Allowed_languages[idx] == "" {
+				language_ok = true
+				break
+			}
 			for langidx := range m.Languages {
 				if strings.EqualFold(s.targetpath.Allowed_languages[idx], m.Languages[langidx]) {
 					language_ok = true
+					break
 				}
+			}
+			if language_ok {
+				break
 			}
 		}
 		if !language_ok {
 			logger.Log.Debug("Languages not matched - skipping: ", folder, " ", m.Languages)
-			emptyarr := make([]string, 0, 1)
-			filesleft := scanner.GetFilesGoDir(folder, s.sourcepath.AllowedVideoExtensions, s.sourcepath.AllowedVideoExtensionsNoRename, emptyarr)
-			scanner.RemoveFiles(filesleft, emptyarr, emptyarr)
+			if strings.ToLower(s.groupType) == "movie" {
+				emptyarr := make([]string, 0, 1)
+				filesleft := scanner.GetFilesGoDir(folder, s.sourcepath.AllowedVideoExtensions, s.sourcepath.AllowedVideoExtensionsNoRename, emptyarr)
+				scanner.RemoveFiles(filesleft, emptyarr, emptyarr)
 
-			scanner.CleanUpFolder(folder, s.sourcepath.CleanupsizeMB)
+				scanner.CleanUpFolder(folder, s.sourcepath.CleanupsizeMB)
+			} else {
+				fileext := filepath.Ext(videofile)
+				err := scanner.RemoveFile(videofile)
+				if err == nil {
+					for idxext := range s.sourcepath.AllowedOtherExtensions {
+						additionalfile := strings.Replace(videofile, fileext, s.sourcepath.AllowedOtherExtensions[idxext], -1)
+						scanner.RemoveFile(additionalfile)
+					}
+				}
+				scanner.CleanUpFolder(folder, s.sourcepath.CleanupsizeMB)
+			}
 		}
 		if !language_ok {
 			err = errors.New("wrong Language")
@@ -607,6 +627,13 @@ func StructureFolders(grouptype string, sourcepath config.PathsConfig, targetpat
 			continue
 		}
 		if structure.CheckDisallowed() {
+			if structure.targetpath.DeleteDisallowed {
+				emptyarr := make([]string, 0, 1)
+				filesleft := scanner.GetFilesGoDir(folders[idx], structure.sourcepath.AllowedVideoExtensions, structure.sourcepath.AllowedVideoExtensionsNoRename, emptyarr)
+				scanner.RemoveFiles(filesleft, emptyarr, emptyarr)
+
+				scanner.CleanUpFolder(folders[idx], structure.sourcepath.CleanupsizeMB)
+			}
 			continue
 		}
 		removesmallfiles := false
@@ -712,7 +739,7 @@ func StructureFolders(grouptype string, sourcepath config.PathsConfig, targetpat
 					}
 				}
 				if movie.ID >= 1 && entriesfound >= 1 {
-					errpars := structure.ParseFileAdditional(videofiles[fileidx], m, folders[idx], true)
+					errpars := structure.ParseFileAdditional(videofiles[fileidx], m, folders[idx], structure.targetpath.DeleteWrongLanguage)
 					if errpars != nil {
 						logger.Log.Error("Error fprobe video: ", videofiles[fileidx], " error: ", errpars)
 						continue
@@ -775,7 +802,7 @@ func StructureFolders(grouptype string, sourcepath config.PathsConfig, targetpat
 				//find dbseries
 				series, entriesfound := findSerieByParser(*m, titleyear, seriestitle, list.Name)
 				if entriesfound >= 1 {
-					errpars := structure.ParseFileAdditional(videofiles[fileidx], m, folders[idx], true)
+					errpars := structure.ParseFileAdditional(videofiles[fileidx], m, folders[idx], structure.targetpath.DeleteWrongLanguage)
 					if errpars != nil {
 						logger.Log.Error("Error fprobe video: ", videofiles[fileidx], " error: ", errpars)
 						continue
