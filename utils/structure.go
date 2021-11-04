@@ -39,12 +39,12 @@ func NewStructure(configEntry config.MediaTypeConfig, list config.MediaListsConf
 	}, nil
 }
 
-func (s *Structure) CheckDisallowed() (disallowed bool) {
-	disallowed = scanner.CheckDisallowed(s.rootpath, s.sourcepath.Disallowed, true)
-	if disallowed {
-		logger.Log.Debug("Disallowed Folder: ", s.rootpath)
+func (s *Structure) CheckDisallowed() bool {
+	if s.groupType == "series" {
+		return scanner.CheckDisallowed(s.rootpath, s.sourcepath.Disallowed, false)
+	} else {
+		return scanner.CheckDisallowed(s.rootpath, s.sourcepath.Disallowed, s.sourcepath.DeleteDisallowed)
 	}
-	return
 }
 
 func (s *Structure) GetVideoFiles(folder string, pathconfig config.PathsConfig, removesmallfiles bool) []string {
@@ -627,7 +627,7 @@ func StructureFolders(grouptype string, sourcepath config.PathsConfig, targetpat
 			continue
 		}
 		if structure.CheckDisallowed() {
-			if structure.targetpath.DeleteDisallowed {
+			if structure.sourcepath.DeleteDisallowed {
 				emptyarr := make([]string, 0, 1)
 				filesleft := scanner.GetFilesGoDir(folders[idx], structure.sourcepath.AllowedVideoExtensions, structure.sourcepath.AllowedVideoExtensionsNoRename, emptyarr)
 				scanner.RemoveFiles(filesleft, emptyarr, emptyarr)
@@ -655,7 +655,7 @@ func StructureFolders(grouptype string, sourcepath config.PathsConfig, targetpat
 				}
 			}
 
-			if strings.Contains(videofiles[fileidx], "_unpack") {
+			if strings.Contains(strings.ToLower(videofiles[fileidx]), strings.ToLower("_unpack")) {
 				logger.Log.Debug("Unpacking - skipping: ", videofiles[fileidx])
 				continue
 			}

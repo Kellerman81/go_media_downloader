@@ -43,6 +43,10 @@ func GetFilesGoDir(rootpath string, filetypes []string, filetypesNoRename []stri
 					}
 				}
 
+				if len(filetypesNoRename) == 0 && len(filetypes) == 0 {
+					ok = true
+				}
+
 				//Check IgnoredPaths
 				if len(ignoredpaths) >= 1 && ok {
 					path, _ := filepath.Split(osPathname)
@@ -243,16 +247,19 @@ func CheckDisallowed(folder string, disallowed []string, removefolder bool) bool
 	var disallow bool
 	if len(disallowed) == 0 {
 		disallow = false
+		logger.Log.Debug("Check disallowed empty")
 		return disallow
 	}
+	logger.Log.Debug("Check disallowed")
 	if _, err := os.Stat(folder); !os.IsNotExist(err) {
 		filesleft := GetFilesGoDir(folder, emptyarr, emptyarr, emptyarr)
+		logger.Log.Debug("Check disallowed: ", filesleft)
 		for idxfile := range filesleft {
 			for idxdisallow := range disallowed {
 				if disallowed[idxdisallow] == "" {
 					continue
 				}
-				if strings.Contains(filesleft[idxfile], disallowed[idxdisallow]) {
+				if strings.Contains(strings.ToLower(filesleft[idxfile]), strings.ToLower(disallowed[idxdisallow])) {
 					logger.Log.Warning(filesleft[idxfile], " is not allowd in the path!")
 					disallow = true
 					if removefolder {
