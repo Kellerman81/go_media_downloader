@@ -1337,6 +1337,8 @@ func moviesStructureSingle(row config.MediaTypeConfig, list config.MediaListsCon
 				continue
 			}
 			config.ConfigGet("path_"+mappath, &cfg_path)
+		} else {
+			continue
 		}
 		LastMoviesStructure = cfg_path_import.Path
 		swfile.Add()
