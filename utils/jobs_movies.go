@@ -1492,7 +1492,7 @@ func Movies_single_jobs(job string, typename string, listname string, force bool
 			case "structure":
 				moviesStructureSingle(cfg_movie, cfg_movie.Lists[idxlist])
 			case "clearhistory":
-				database.DeleteRow("movie_histories", database.Query{InnerJoin: "movies ON movies.id = movie_histories.movie_id", Where: "movies.listname=?", WhereArgs: []interface{}{typename}})
+				database.DeleteRow("movie_histories", database.Query{Where: "movie_id in (Select id from movies where listname=?)", WhereArgs: []interface{}{typename}})
 			case "feeds":
 				importnewmoviessingle(cfg_movie, cfg_movie.Lists[idxlist])
 			default:

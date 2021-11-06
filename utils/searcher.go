@@ -17,6 +17,7 @@ import (
 
 func SearchMovieMissing(configEntry config.MediaTypeConfig, jobcount int, titlesearch bool) {
 	var scaninterval int
+	var scandatepre int
 	lists := make([]string, 0, len(configEntry.Lists))
 	for idxlisttest := range configEntry.Lists {
 		lists = append(lists, configEntry.Lists[idxlisttest].Name)
@@ -36,6 +37,7 @@ func SearchMovieMissing(configEntry config.MediaTypeConfig, jobcount int, titles
 		config.ConfigGet("path_"+configEntry.Data[0].Template_path, &cfg_path)
 
 		scaninterval = cfg_path.MissingScanInterval
+		scandatepre = cfg_path.MissingScanReleaseDatePre
 	}
 	scantime := time.Now()
 	if scaninterval != 0 {
@@ -49,17 +51,31 @@ func SearchMovieMissing(configEntry config.MediaTypeConfig, jobcount int, titles
 
 	argsscan := append(argslist, scantime)
 	qu := database.Query{}
+	qu.Select = "movies.*"
+	qu.InnerJoin = "dbmovies on dbmovies.id=movies.dbmovie_id"
 	if scaninterval != 0 {
-		qu.Where = "missing = 1 AND listname in (?" + strings.Repeat(",?", len(lists)-1) + ") AND (lastscan is null or Lastscan < ?)"
+		qu.Where = "movies.missing = 1 AND movies.listname in (?" + strings.Repeat(",?", len(lists)-1) + ") AND (movies.lastscan is null or movies.Lastscan < ?)"
 		qu.WhereArgs = argsscan
+		if scandatepre != 0 {
+			qu.Where += " and (dbmovies.release_date < ? or dbmovies.release_date is null)"
+			scanpretime := time.Now()
+			scanpretime = scanpretime.AddDate(0, 0, 0+scandatepre)
+			qu.WhereArgs = append(argsscan, scanpretime)
+		}
 	} else {
-		qu.Where = "missing = 1 AND listname in (?" + strings.Repeat(",?", len(lists)-1) + ")"
+		qu.Where = "movies.missing = 1 AND movies.listname in (?" + strings.Repeat(",?", len(lists)-1) + ")"
 		qu.WhereArgs = argslist
+		if scandatepre != 0 {
+			qu.Where += " and (dbmovies.release_date < ? or dbmovies.release_date is null)"
+			scanpretime := time.Now()
+			scanpretime = scanpretime.AddDate(0, 0, 0+scandatepre)
+			qu.WhereArgs = append(argslist, scanpretime)
+		}
 	}
 	if jobcount >= 1 {
 		qu.Limit = uint64(jobcount)
 	}
-	qu.OrderBy = "Lastscan asc"
+	qu.OrderBy = "movies.Lastscan asc"
 	missingmovies, _ := database.QueryMovies(qu)
 
 	// searchnow := NewSearcher(configEntry, list)
@@ -175,6 +191,7 @@ func SearchSerieEpisodeSingle(row database.SerieEpisode, configEntry config.Medi
 }
 func SearchSerieMissing(configEntry config.MediaTypeConfig, jobcount int, titlesearch bool) {
 	var scaninterval int
+	var scandatepre int
 	lists := make([]string, 0, len(configEntry.Lists))
 	for idxlisttest := range configEntry.Lists {
 		lists = append(lists, configEntry.Lists[idxlisttest].Name)
@@ -193,6 +210,7 @@ func SearchSerieMissing(configEntry config.MediaTypeConfig, jobcount int, titles
 		config.ConfigGet("path_"+configEntry.Data[0].Template_path, &cfg_path)
 
 		scaninterval = cfg_path.MissingScanInterval
+		scandatepre = cfg_path.MissingScanReleaseDatePre
 	}
 	scantime := time.Now()
 	if scaninterval != 0 {
@@ -211,9 +229,21 @@ func SearchSerieMissing(configEntry config.MediaTypeConfig, jobcount int, titles
 	if scaninterval != 0 {
 		qu.Where = "serie_episodes.missing = 1 AND dbserie_episodes.Season != 0 and series.listname in (?" + strings.Repeat(",?", len(lists)-1) + ") AND (serie_episodes.lastscan is null or serie_episodes.Lastscan < ?)"
 		qu.WhereArgs = argsscan
+		if scandatepre != 0 {
+			qu.Where += " and (dbserie_episodes.first_aired < ? or dbserie_episodes.first_aired is null)"
+			scanpretime := time.Now()
+			scanpretime = scanpretime.AddDate(0, 0, 0+scandatepre)
+			qu.WhereArgs = append(argsscan, scanpretime)
+		}
 	} else {
 		qu.Where = "serie_episodes.missing = 1 AND dbserie_episodes.Season != 0 and series.listname in (?" + strings.Repeat(",?", len(lists)-1) + ")"
 		qu.WhereArgs = argslist
+		if scandatepre != 0 {
+			qu.Where += " and (dbserie_episodes.first_aired < ? or dbserie_episodes.first_aired is null)"
+			scanpretime := time.Now()
+			scanpretime = scanpretime.AddDate(0, 0, 0+scandatepre)
+			qu.WhereArgs = append(argslist, scanpretime)
+		}
 	}
 	if jobcount >= 1 {
 		qu.Limit = uint64(jobcount)

@@ -202,7 +202,6 @@ func JobImportDbSeries(serieconfig config.SerieConfig, configEntry config.MediaT
 			}
 		}
 
-		//dbepisode, _ := database.QueryDbserieEpisodes(database.Query{Select: "id", Where: "dbserie_id = ? and (SELECT count(id) from serie_episodes where dbserie_episode_id=dbserie_episodes.id and serie_id=?)=0", WhereArgs: []interface{}{dbserie.ID, serie.ID}})
 		dbepisode, _ := database.QueryDbserieEpisodes(database.Query{Select: "id", Where: "dbserie_id = ?", WhereArgs: []interface{}{dbserie.ID}})
 		episodes, _ := database.QuerySerieEpisodes(database.Query{Select: "dbserie_episode_id", Where: "dbserie_id = ? and serie_id = ?", WhereArgs: []interface{}{dbserie.ID, serie.ID}})
 		for idxdbepi := range dbepisode {
@@ -214,27 +213,14 @@ func JobImportDbSeries(serieconfig config.SerieConfig, configEntry config.MediaT
 				}
 			}
 			if !epifound {
-				//counterid, _ := database.CountRows("serie_episodes", database.Query{Where: "serie_id = ? and Dbserie_episode_id = ?", WhereArgs: []interface{}{serie.ID, dbepisode[idxdbepi].ID}})
-				//if counterid == 0 {
 				database.InsertArray("serie_episodes",
 					[]string{"dbserie_id", "serie_id", "missing", "quality_profile", "dbserie_episode_id"},
 					[]interface{}{dbserie.ID, serie.ID, true, list.Template_quality, dbepisode[idxdbepi].ID})
-				//}
 			}
 		}
-		// dbepisode, _ := database.QueryDbserieEpisodes(database.Query{Select: "id", Where: "dbserie_id = ?", WhereArgs: []interface{}{dbserie.ID}})
-		// for idxdbepi := range dbepisode {
-		// 	counterie, _ := database.CountRows("serie_episodes", database.Query{Where: "serie_id = ? and Dbserie_episode_id = ?", WhereArgs: []interface{}{serie.ID, dbepisode[idxdbepi].ID}})
-		// 	if counterie == 0 {
-		// 		database.InsertArray("serie_episodes",
-		// 			[]string{"dbserie_id", "serie_id", "missing", "quality_profile", "dbserie_episode_id"},
-		// 			[]interface{}{dbserie.ID, serie.ID, true, list.Template_quality, dbepisode[idxdbepi].ID})
-		// 	}
-		// }
 
 		logger.Log.Debug("DbSeries add episodes end for: ", serieconfig.TvdbID)
 	} else {
-		//dbepisode, _ := database.QueryDbserieEpisodes(database.Query{Select: "id", Where: "dbserie_id = ? and (SELECT count(id) from serie_episodes where dbserie_episode_id=dbserie_episodes.id and serie_id=?)=0", WhereArgs: []interface{}{dbserie.ID, serie.ID}})
 		dbepisode, _ := database.QueryDbserieEpisodes(database.Query{Select: "id", Where: "dbserie_id = ?", WhereArgs: []interface{}{dbserie.ID}})
 		episodes, _ := database.QuerySerieEpisodes(database.Query{Select: "dbserie_episode_id", Where: "dbserie_id = ? and serie_id = ?", WhereArgs: []interface{}{dbserie.ID, serie.ID}})
 		for idxdbepi := range dbepisode {
@@ -246,12 +232,9 @@ func JobImportDbSeries(serieconfig config.SerieConfig, configEntry config.MediaT
 				}
 			}
 			if !epifound {
-				//counterid, _ := database.CountRows("serie_episodes", database.Query{Where: "serie_id = ? and Dbserie_episode_id = ?", WhereArgs: []interface{}{serie.ID, dbepisode[idxdbepi].ID}})
-				//if counterid == 0 {
 				database.InsertArray("serie_episodes",
 					[]string{"dbserie_id", "serie_id", "missing", "quality_profile", "dbserie_episode_id"},
 					[]interface{}{dbserie.ID, serie.ID, true, list.Template_quality, dbepisode[idxdbepi].ID})
-				//}
 			}
 		}
 		logger.Log.Debug("DbSeries add episodes end for: ", serieconfig.TvdbID)
@@ -337,7 +320,7 @@ func JobReloadDbSeries(dbserie database.Dbserie, configEntry config.MediaTypeCon
 
 	logger.Log.Debug("DbSeries add titles for: ", dbserie.ThetvdbID)
 	titles, _ := database.QueryDbserieAlternates(database.Query{Select: "title", Where: "dbserie_id = ?", WhereArgs: []interface{}{dbserie.ID}})
-	titlegroup := dbserie.GetTitles(configEntry.Metadata_title_languages, cfg_general.SerieAlternateTitleMetaSourceImdb, cfg_general.SerieAlternateTitleMetaSourceTrakt)
+	titlegroup := dbserie.GetTitles(getconfigentry.Metadata_title_languages, cfg_general.SerieAlternateTitleMetaSourceImdb, cfg_general.SerieAlternateTitleMetaSourceTrakt)
 	for idxalt := range titlegroup {
 		titlefound := false
 		for idxtitle := range titles {
@@ -347,7 +330,9 @@ func JobReloadDbSeries(dbserie database.Dbserie, configEntry config.MediaTypeCon
 			}
 		}
 		if !titlefound {
-			database.InsertArray("dbserie_alternates", []string{"dbserie_id", "title", "slug", "region"}, []interface{}{dbserie.ID, titlegroup[idxalt].Title, titlegroup[idxalt].Slug, titlegroup[idxalt].Region})
+			database.InsertArray("dbserie_alternates",
+				[]string{"dbserie_id", "title", "slug", "region"},
+				[]interface{}{dbserie.ID, titlegroup[idxalt].Title, titlegroup[idxalt].Slug, titlegroup[idxalt].Region})
 		}
 	}
 	titles, _ = database.QueryDbserieAlternates(database.Query{Select: "title", Where: "dbserie_id = ?", WhereArgs: []interface{}{dbserie.ID}})
@@ -360,7 +345,9 @@ func JobReloadDbSeries(dbserie database.Dbserie, configEntry config.MediaTypeCon
 			}
 		}
 		if !titlefound {
-			database.InsertArray("dbserie_alternates", []string{"dbserie_id", "title", "slug"}, []interface{}{dbserie.ID, alternateNames[idxalt], logger.StringToSlug(alternateNames[idxalt])})
+			database.InsertArray("dbserie_alternates",
+				[]string{"dbserie_id", "title", "slug"},
+				[]interface{}{dbserie.ID, alternateNames[idxalt], logger.StringToSlug(alternateNames[idxalt])})
 		}
 	}
 
@@ -369,33 +356,28 @@ func JobReloadDbSeries(dbserie database.Dbserie, configEntry config.MediaTypeCon
 	logger.Log.Debug("DbSeries add serie end for: ", dbserie.ThetvdbID)
 
 	logger.Log.Debug("DbSeries get episodes for: ", dbserie.ThetvdbID)
-	dbepisode, _ := database.QueryDbserieEpisodes(database.Query{Select: "season, episode", Where: "dbserie_id = ?", WhereArgs: []interface{}{dbserie.ID}})
+	dbepisode, _ := database.QueryDbserieEpisodes(database.Query{Select: "id, season, episode", Where: "dbserie_id = ?", WhereArgs: []interface{}{dbserie.ID}})
 	episodes := dbserie.GetEpisodes(configEntry.Metadata_language, cfg_general.SerieMetaSourceTrakt)
-	adddbepisodes := make([]database.DbserieEpisode, 0, len(episodes))
-	for idxdbepi := range dbepisode {
+	for idxepi := range episodes {
 		epifound := false
-		var episode database.DbserieEpisode
-		for idxepi := range episodes {
+		for idxdbepi := range dbepisode {
 			if strings.EqualFold(episodes[idxepi].Season, dbepisode[idxdbepi].Season) && strings.EqualFold(episodes[idxepi].Episode, dbepisode[idxdbepi].Episode) {
 				epifound = true
-				episode = episodes[idxepi]
+				database.UpdateArray("dbserie_episodes",
+					[]string{"title", "first_aired", "overview", "poster"},
+					[]interface{}{episodes[idxepi].Title, episodes[idxepi].FirstAired, episodes[idxepi].Overview, episodes[idxepi].Poster},
+					database.Query{Where: "id=?", WhereArgs: []interface{}{dbepisode[idxdbepi].ID}})
 				break
 			}
 		}
 		if !epifound {
-			dbserieepisode := episode
-			dbserieepisode.DbserieID = dbserie.ID
-			adddbepisodes = append(adddbepisodes, dbserieepisode)
+			database.InsertArray("dbserie_episodes",
+				[]string{"episode", "season", "identifier", "title", "first_aired", "overview", "poster", "dbserie_id"},
+				[]interface{}{episodes[idxepi].Episode, episodes[idxepi].Season, episodes[idxepi].Identifier, episodes[idxepi].Title, episodes[idxepi].FirstAired, episodes[idxepi].Overview, episodes[idxepi].Poster, episodes[idxepi].DbserieID})
 		}
 	}
 
 	logger.Log.Debug("DbSeries get episodes end for: ", dbserie.ThetvdbID)
-
-	if len(adddbepisodes) >= 1 {
-		database.ReadWriteMu.Lock()
-		database.DB.NamedExec("insert into dbserie_episodes (episode, season, identifier, title, first_aired, overview, poster, dbserie_id) VALUES (:episode, :season, :identifier, :title, :first_aired, :overview, :poster, :dbserie_id)", adddbepisodes)
-		database.ReadWriteMu.Unlock()
-	}
 
 	foundseries, _ := database.QuerySeries(database.Query{Select: "id, listname", Where: "Dbserie_id = ?", WhereArgs: []interface{}{dbserie.ID}})
 	var getlist config.MediaListsConfig
@@ -428,12 +410,9 @@ func JobReloadDbSeries(dbserie database.Dbserie, configEntry config.MediaTypeCon
 				}
 			}
 			if !epifound {
-				//counterid, _ := database.CountRows("serie_episodes", database.Query{Where: "serie_id = ? and Dbserie_episode_id = ?", WhereArgs: []interface{}{serie.ID, dbepisode[idxdbepi].ID}})
-				//if counterid == 0 {
 				database.InsertArray("serie_episodes",
 					[]string{"dbserie_id", "serie_id", "missing", "quality_profile", "dbserie_episode_id"},
 					[]interface{}{dbserie.ID, foundseries[idxserie].ID, true, getlist.Template_quality, dbepisode[idxdbepi].ID})
-				//}
 			}
 		}
 	}
@@ -847,7 +826,7 @@ func Series_single_jobs(job string, typename string, listname string, force bool
 			case "structure":
 				seriesStructureSingle(cfg_serie, cfg_serie.Lists[idxlist])
 			case "clearhistory":
-				database.DeleteRow("serie_episode_histories", database.Query{InnerJoin: "serie_episodes ON serie_episodes.id = serie_episode_histories.serie_episode_id inner join series on series.id = serie_episodes.serie_id", Where: "series.listname=?", WhereArgs: []interface{}{typename}})
+				database.DeleteRow("serie_episode_histories", database.Query{Where: "serie_id in (Select id from series where listname=?)", WhereArgs: []interface{}{typename}})
 			case "feeds":
 				Importnewseriessingle(cfg_serie, cfg_serie.Lists[idxlist])
 			default:

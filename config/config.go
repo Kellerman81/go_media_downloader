@@ -235,6 +235,7 @@ type PathsConfig struct {
 	Usepresort                     bool     `koanf:"use_presort"`
 	UpgradeScanInterval            int      `koanf:"upgrade_scan_interval"`
 	MissingScanInterval            int      `koanf:"missing_scan_interval"`
+	MissingScanReleaseDatePre      int      `koanf:"missing_scan_release_date_pre"`
 	Disallowed                     []string `koanf:"disallowed"`
 	DeleteWrongLanguage            bool     `koanf:"delete_wrong_language"`
 	DeleteDisallowed               bool     `koanf:"delete_disallowed"`
