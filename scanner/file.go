@@ -247,13 +247,11 @@ func CheckDisallowed(folder string, disallowed []string, removefolder bool) bool
 	var disallow bool
 	if len(disallowed) == 0 {
 		disallow = false
-		logger.Log.Debug("Check disallowed empty")
 		return disallow
 	}
 	logger.Log.Debug("Check disallowed")
 	if _, err := os.Stat(folder); !os.IsNotExist(err) {
 		filesleft := GetFilesGoDir(folder, emptyarr, emptyarr, emptyarr)
-		logger.Log.Debug("Check disallowed: ", filesleft)
 		for idxfile := range filesleft {
 			for idxdisallow := range disallowed {
 				if disallowed[idxdisallow] == "" {

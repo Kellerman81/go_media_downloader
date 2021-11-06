@@ -210,7 +210,7 @@ func InitFillImdb() {
 				continue
 			}
 			swaka.Add()
-			if len(akasshort) >= 1000 {
+			if len(akasshort) >= 5000 {
 				database.ReadWriteMu.Lock()
 				database.DBImdb.NamedExec("insert into imdb_akas (tconst, ordering, title, slug, region, language, types, attributes, is_original_title) VALUES (:tconst, :ordering, :title, :slug, :region, :language, :types, :attributes, :is_original_title)", akasshort)
 				database.ReadWriteMu.Unlock()

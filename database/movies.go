@@ -102,7 +102,7 @@ type Dbmovie struct {
 	CreatedAt        time.Time `db:"created_at"`
 	UpdatedAt        time.Time `db:"updated_at"`
 	Title            string
-	ReleaseDate      string `db:"release_date"`
+	ReleaseDate      sql.NullTime `db:"release_date"`
 	Year             int
 	Adult            bool
 	Budget           int
@@ -303,7 +303,13 @@ func (movie *Dbmovie) GetTmdbMetadata(overwrite bool) {
 					movie.Slug = logger.StringToSlug(movie.Title)
 				}
 				movie.Budget = moviedbdetails.Budget
-				movie.ReleaseDate = moviedbdetails.ReleaseDate
+				if moviedbdetails.ReleaseDate != "" {
+					layout := "2006-01-02" //year-month-day
+					t, terr := time.Parse(layout, moviedbdetails.ReleaseDate)
+					if terr == nil {
+						movie.ReleaseDate = sql.NullTime{Time: t, Valid: true}
+					}
+				}
 				if movie.Genres == "" || overwrite {
 					genres := make([]string, 0, len(moviedbdetails.Genres))
 					for _, v := range moviedbdetails.Genres {
@@ -423,8 +429,14 @@ func (movie *Dbmovie) GetTraktMetadata(overwrite bool) {
 		if movie.TraktID == 0 || overwrite {
 			movie.TraktID = traktdetails.Ids.Trakt
 		}
-		if movie.ReleaseDate == "" || overwrite {
-			movie.ReleaseDate = traktdetails.Released
+		if !movie.ReleaseDate.Valid || overwrite {
+			if traktdetails.Released != "" {
+				layout := "2006-01-02" //year-month-day
+				t, terr := time.Parse(layout, traktdetails.Released)
+				if terr == nil {
+					movie.ReleaseDate = sql.NullTime{Time: t, Valid: true}
+				}
+			}
 		}
 		if movie.OriginalLanguage == "" || overwrite {
 			movie.OriginalLanguage = traktdetails.Language
@@ -497,7 +509,13 @@ func (movie *Dbmovie) GetMetadata(queryimdb bool, querytmdb bool, queryomdb bool
 						movie.Slug = logger.StringToSlug(movie.Title)
 					}
 					movie.Budget = moviedbdetails.Budget
-					movie.ReleaseDate = moviedbdetails.ReleaseDate
+					if moviedbdetails.ReleaseDate != "" {
+						layout := "2006-01-02" //year-month-day
+						t, terr := time.Parse(layout, moviedbdetails.ReleaseDate)
+						if terr == nil {
+							movie.ReleaseDate = sql.NullTime{Time: t, Valid: true}
+						}
+					}
 					if movie.Genres == "" {
 						genres := make([]string, 0, len(moviedbdetails.Genres))
 						for _, v := range moviedbdetails.Genres {
@@ -617,8 +635,14 @@ func (movie *Dbmovie) GetMetadata(queryimdb bool, querytmdb bool, queryomdb bool
 			if movie.TraktID == 0 {
 				movie.TraktID = traktdetails.Ids.Trakt
 			}
-			if movie.ReleaseDate == "" {
-				movie.ReleaseDate = traktdetails.Released
+			if !movie.ReleaseDate.Valid {
+				if traktdetails.Released != "" {
+					layout := "2006-01-02" //year-month-day
+					t, terr := time.Parse(layout, traktdetails.Released)
+					if terr == nil {
+						movie.ReleaseDate = sql.NullTime{Time: t, Valid: true}
+					}
+				}
 			}
 			if movie.OriginalLanguage == "" {
 				movie.OriginalLanguage = traktdetails.Language

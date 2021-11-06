@@ -120,8 +120,8 @@ func (d *Downloader) DownloadNzb(nzb nzbwithprio) {
 	}
 	if err == nil {
 		d.Notify()
-		d.History()
 	}
+	d.History()
 }
 func (d Downloader) DownloadByDrone() error {
 	logger.Log.Debug("Download by Drone: ", d.Nzb.NZB.DownloadURL)

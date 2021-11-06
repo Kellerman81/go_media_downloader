@@ -170,7 +170,7 @@ type DbserieEpisode struct {
 	Season     string
 	Identifier string
 	Title      string
-	FirstAired string `db:"first_aired"`
+	FirstAired sql.NullTime `db:"first_aired"`
 	Overview   string
 	Poster     string
 	DbserieID  uint `db:"dbserie_id"`
@@ -364,7 +364,13 @@ func (serie *Dbserie) GetEpisodes(language string, querytrakt bool) []DbserieEpi
 				episode.Season = strconv.Itoa(row.AiredSeason)
 				episode.Identifier = "S" + padNumberWithZero(row.AiredSeason) + "E" + padNumberWithZero(row.AiredEpisodeNumber)
 				episode.Title = row.EpisodeName
-				episode.FirstAired = row.FirstAired
+				if row.FirstAired != "" {
+					layout := "2006-01-02" //year-month-day
+					t, terr := time.Parse(layout, row.FirstAired)
+					if terr == nil {
+						episode.FirstAired = sql.NullTime{Time: t, Valid: true}
+					}
+				}
 				episode.Overview = row.Overview
 				episode.Poster = row.Poster
 				episode.DbserieID = serie.ID
@@ -396,7 +402,7 @@ func (serie *Dbserie) GetEpisodes(language string, querytrakt bool) []DbserieEpi
 						episode.Season = strconv.Itoa(row.Season)
 						episode.Identifier = "S" + padNumberWithZero(row.Season) + "E" + padNumberWithZero(row.Episode)
 						episode.Title = row.Title
-						episode.FirstAired = row.FirstAired.String()
+						episode.FirstAired = sql.NullTime{Time: row.FirstAired, Valid: true}
 						episode.Overview = row.Overview
 						episode.DbserieID = serie.ID
 						epi = append(epi, episode)
