@@ -149,10 +149,11 @@ enabled=true
 
 [[downloader]]
 name="endeluge" 
-type="deluge" #Send Files to deluge client (untested)
+type="deluge" #Send Torrents or Magnet Urls to deluge client
 hostname="192.168.1.1"
+port=58846 # Daemon Port
 username="localclient"
-password=""
+password="" #Password from auth file
 enabled=true
 add_paused=false
 priority=0  #-100 (very low), -50 (low), 0 (normal), 50 (high), 100 (very high), 900 (force)
@@ -221,6 +222,19 @@ rss_entries_loop = 5 # x rss calls x=2 == 2 api calls with 2*maxrss results - wi
 limiter_seconds=1 # will only change after restart
 limiter_calls=1 # max limiter_calls in limiter_seconds
 use_presort='false' # Use presort folder for import 
+
+[[indexers]]
+name="jackett1337x" ## Example for torrents via jackett
+type="newznab"
+url="http://192.168.1.1:9117/api/v2.0/indexers/1337x/results/torznab"
+apikey="" #Enter Api Key
+userid="0"
+enabled='true'
+add_quotes_for_title_query='false'
+max_rss_entries = 100
+rss_entries_loop = 2 # x rss calls x=2 == 2 api calls with 2*maxrss results - will get all but only process until last processed item
+limiter_seconds=1
+limiter_calls=1 # max limiter_calls in limiter_seconds
 
 ### paths ###
 

@@ -1,5 +1,7 @@
 package tasks
 
+//Source: https://github.com/mborders/artifex
+
 // Worker attaches to a provided worker pool, and
 // looks for jobs on its job channel
 type Worker struct {

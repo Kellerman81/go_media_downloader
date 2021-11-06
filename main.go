@@ -37,7 +37,7 @@ func main() {
 	config.ConfigDB = pudb
 	scanner.CleanUpFolder("./backup", 10)
 	pudge.BackupAll("")
-
+	os.Mkdir("./temp", 0777)
 	f, errcfg := config.LoadCfgDB(config.Configfile)
 	if errcfg == nil {
 		f.Watch(func(event interface{}, err error) {

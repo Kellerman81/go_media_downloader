@@ -267,7 +267,7 @@ func checknzbtitle(movietitle string, nzbtitle string) bool {
 	return strings.EqualFold(movietitle, nzbtitle)
 }
 
-func filter_series_nzbs(configEntry config.MediaTypeConfig, quality config.QualityConfig, indexer config.QualityIndexerConfig, nzbs []newznab.NZB, movieid uint, seriesepisodeid uint, minPrio int, movie database.Dbmovie, serie database.Dbserie) []nzbwithprio {
+func filter_series_nzbs(configEntry config.MediaTypeConfig, quality config.QualityConfig, indexer config.QualityIndexerConfig, nzbs []newznab.NZB, movieid uint, seriesepisodeid uint, minPrio int, movie database.Dbmovie, serie database.Dbserie, title string, alttitles []string) []nzbwithprio {
 	retnzb := make([]nzbwithprio, 0, len(nzbs))
 	for idx := range nzbs {
 		toskip := false
@@ -391,6 +391,27 @@ func filter_series_nzbs(configEntry config.MediaTypeConfig, quality config.Quali
 		}
 		if !toskip {
 			m, _ := NewFileParser(nzbs[idx].Title, true, "series")
+			if quality.CheckTitle {
+				titlefound := false
+				if quality.CheckTitle && checknzbtitle(title, m.Title) && len(title) >= 1 {
+					titlefound = true
+				}
+				alttitlefound := false
+				for idxtitle := range alttitles {
+					if checknzbtitle(alttitles[idxtitle], m.Title) {
+						alttitlefound = true
+						break
+					}
+				}
+				if len(alttitles) == 0 && !titlefound {
+					logger.Log.Debug("Skipped - unwanted title: ", nzbs[idx].Title, " wanted ", title)
+					continue
+				}
+				if len(alttitles) >= 1 && !alttitlefound && !titlefound {
+					logger.Log.Debug("Skipped - unwanted title and alternate: ", nzbs[idx].Title, " wanted ", title, " ", alttitles)
+					continue
+				}
+			}
 			m.GetPriority(configEntry, quality)
 			wanted_release_resolution := false
 			for idxqual := range quality.Wanted_resolution {

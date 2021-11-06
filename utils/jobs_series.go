@@ -374,14 +374,16 @@ func JobReloadDbSeries(dbserie database.Dbserie, configEntry config.MediaTypeCon
 	adddbepisodes := make([]database.DbserieEpisode, 0, len(episodes))
 	for idxdbepi := range dbepisode {
 		epifound := false
+		var episode database.DbserieEpisode
 		for idxepi := range episodes {
 			if strings.EqualFold(episodes[idxepi].Season, dbepisode[idxdbepi].Season) && strings.EqualFold(episodes[idxepi].Episode, dbepisode[idxdbepi].Episode) {
 				epifound = true
+				episode = episodes[idxepi]
 				break
 			}
 		}
 		if !epifound {
-			dbserieepisode := episodes[idxdbepi]
+			dbserieepisode := episode
 			dbserieepisode.DbserieID = dbserie.ID
 			adddbepisodes = append(adddbepisodes, dbserieepisode)
 		}

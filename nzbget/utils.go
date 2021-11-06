@@ -42,7 +42,7 @@ func downloadURL(URL string) (string, error) {
 	}
 	defer resp.Body.Close()
 
-	file, err := ioutil.TempFile("/tmp", "flame-download-*")
+	file, err := ioutil.TempFile("./temp", "flame-download-*")
 	if err != nil {
 		return "", errors.Wrap(err, "could not get tmp file")
 	}

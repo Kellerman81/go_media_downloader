@@ -84,17 +84,21 @@ func CacheConfig() {
 			continue
 		}
 		if strings.HasPrefix(string(idx), "regex_") {
-			var general RegexConfig
+			var general RegexConfigIn
 			ConfigDB.Get(string(idx), &general)
-			general.RejectedRegex = make(map[string]*regexp.Regexp)
-			general.RequiredRegex = make(map[string]*regexp.Regexp)
+			var generalCache RegexConfig
+			generalCache.Name = general.Name
+			generalCache.Rejected = general.Rejected
+			generalCache.Required = general.Required
+			generalCache.RejectedRegex = make(map[string]*regexp.Regexp)
+			generalCache.RequiredRegex = make(map[string]*regexp.Regexp)
 			for _, rowtitle := range general.Rejected {
-				general.RejectedRegex[rowtitle] = regexp.MustCompile(rowtitle)
+				generalCache.RejectedRegex[rowtitle] = regexp.MustCompile(rowtitle)
 			}
 			for _, rowtitle := range general.Required {
-				general.RequiredRegex[rowtitle] = regexp.MustCompile(rowtitle)
+				generalCache.RequiredRegex[rowtitle] = regexp.MustCompile(rowtitle)
 			}
-			configEntries[string(idx)] = general
+			configEntries[string(idx)] = generalCache
 			continue
 		}
 		if strings.HasPrefix(string(idx), "scheduler_") {
