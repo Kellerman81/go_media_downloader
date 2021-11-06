@@ -248,6 +248,12 @@ type NotificationConfig struct {
 	Outputto  string `koanf:"output_to"`
 }
 
+type RegexConfigIn struct {
+	Name     string   `koanf:"name"`
+	Required []string `koanf:"required"`
+	Rejected []string `koanf:"rejected"`
+}
+
 type RegexConfig struct {
 	Name          string   `koanf:"name"`
 	Required      []string `koanf:"required"`
@@ -493,7 +499,7 @@ func LoadCfgDataDB(f *file.File, parser string) {
 			}
 		}
 	}
-	var outrgx []RegexConfig
+	var outrgx []RegexConfigIn
 	errrgx := k.Unmarshal("regex", &outrgx)
 	if errrgx == nil {
 		for idx := range outrgx {
@@ -540,7 +546,7 @@ func LoadCfgDataDB(f *file.File, parser string) {
 func ConfigCheck(name string) bool {
 	success := true
 	if _, ok := configEntries[name]; !ok {
-		logger.Log.Errorln("Config not found: ", name)
+		logger.Log.Errorln("Config not found: ", name, configEntries)
 		success = false
 	}
 	return success

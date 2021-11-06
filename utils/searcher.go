@@ -569,6 +569,10 @@ func (s *Searcher) SeriesSearch(serieEpisode database.SerieEpisode, forceDownloa
 
 	dbseriealt, _ := database.QueryDbserieAlternates(database.Query{Where: "dbserie_id=?", WhereArgs: []interface{}{serieEpisode.DbserieID}})
 
+	s.AlternateNames = []string{}
+	for idx := range dbseriealt {
+		s.AlternateNames = append(s.AlternateNames, dbseriealt[idx].Title)
+	}
 	if !config.ConfigCheck("quality_" + s.Quality) {
 		return searchResults{}
 	}
@@ -804,7 +808,7 @@ func (s Searcher) SeriesSearchTvdb() searchResults {
 	config.ConfigGet("quality_"+s.Quality, &cfg_quality)
 
 	if len(nzbs) >= 1 {
-		retnzb = append(retnzb, filter_series_nzbs(s.ConfigEntry, cfg_quality, s.Indexer, nzbs, 0, s.SerieEpisode.ID, s.MinimumPriority, database.Dbmovie{}, s.Dbserie)...)
+		retnzb = append(retnzb, filter_series_nzbs(s.ConfigEntry, cfg_quality, s.Indexer, nzbs, 0, s.SerieEpisode.ID, s.MinimumPriority, database.Dbmovie{}, s.Dbserie, s.Dbserie.Seriename, s.AlternateNames)...)
 		logger.Log.Debug("Search Series by tvdbid ended - found entries after filter: ", len(retnzb))
 	}
 	return searchResults{retnzb}
@@ -827,7 +831,7 @@ func (s Searcher) SeriesSearchTitle(title string) searchResults {
 			failedindexer(failed)
 		}
 		if len(nzbs) >= 1 {
-			retnzb = append(retnzb, filter_series_nzbs(s.ConfigEntry, cfg_quality, s.Indexer, nzbs, 0, s.SerieEpisode.ID, s.MinimumPriority, database.Dbmovie{}, s.Dbserie)...)
+			retnzb = append(retnzb, filter_series_nzbs(s.ConfigEntry, cfg_quality, s.Indexer, nzbs, 0, s.SerieEpisode.ID, s.MinimumPriority, database.Dbmovie{}, s.Dbserie, s.Dbserie.Seriename, s.AlternateNames)...)
 			logger.Log.Debug("Search Series by tvdbid ended - found entries after filter: ", len(retnzb))
 		}
 	}

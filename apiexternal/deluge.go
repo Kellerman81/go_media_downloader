@@ -1,35 +1,45 @@
 package apiexternal
 
 import (
+	"fmt"
 	"strings"
 
 	delugeclient "github.com/gdm85/go-libdeluge"
 )
 
 func SendToDeluge(host string, port int, username string, password string, url string, dlpath string, moveafter bool, moveafterpath string) error {
-	deluge := delugeclient.NewV2(delugeclient.Settings{
-		Hostname: host,
-		Port:     uint(port),
-		Login:    username,
-		Password: password,
+	cl := delugeclient.NewV2(delugeclient.Settings{
+		Hostname:             host,
+		Port:                 uint(port),
+		Login:                username,
+		Password:             password,
+		DebugServerResponses: true,
 	})
 
 	// perform connection to Deluge server
-	err := deluge.Connect()
+	err := cl.Connect()
 	if err == nil {
 		if strings.HasPrefix(url, "magnet") {
-			_, err = deluge.AddTorrentMagnet(url, &delugeclient.Options{
+			_, err = cl.AddTorrentMagnet(url, &delugeclient.Options{
 				DownloadLocation:  &dlpath,
 				MoveCompleted:     &moveafter,
 				MoveCompletedPath: &moveafterpath,
 			})
+			if err != nil {
+				fmt.Println(err)
+			}
 		} else {
-			_, err = deluge.AddTorrentURL(url, &delugeclient.Options{
+			_, err = cl.AddTorrentURL(url, &delugeclient.Options{
 				DownloadLocation:  &dlpath,
 				MoveCompleted:     &moveafter,
 				MoveCompletedPath: &moveafterpath,
 			})
+			if err != nil {
+				fmt.Println(err)
+			}
 		}
+	} else {
+		fmt.Println(err)
 	}
 	return err
 }

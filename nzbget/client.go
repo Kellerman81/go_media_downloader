@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"os"
 	"time"
 
 	"github.com/pkg/errors"
@@ -122,7 +123,7 @@ func (c *Client) Add(URL string, options *AppendOptions) (int64, error) {
 	if err != nil {
 		return 0, errors.Wrap(err, "could not download url")
 	}
-
+	defer os.Remove(path)
 	str, err := readFile(path)
 	if err != nil {
 		return 0, errors.Wrap(err, "could not read downloaded file")

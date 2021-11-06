@@ -7,6 +7,8 @@ import (
 	"github.com/robfig/cron/v3"
 )
 
+//Source: https://github.com/mborders/artifex
+
 // Dispatcher maintains a pool for available workers
 // and a job queue that workers will process
 type Dispatcher struct {

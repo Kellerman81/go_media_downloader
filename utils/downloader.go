@@ -107,40 +107,53 @@ func (d *Downloader) DownloadNzb(nzb nzbwithprio) {
 
 	logger.Log.Debug("Downloader target folder: ", targetfolder)
 	logger.Log.Debug("Downloader target type: ", d.Downloader.Type)
+	var err error
 	switch strings.ToLower(d.Downloader.Type) {
 	case "drone":
-		d.DownloadByDrone()
+		err = d.DownloadByDrone()
 	case "nzbget":
-		d.DownloadByNzbget()
+		err = d.DownloadByNzbget()
 	case "deluge":
-		d.DownloadByDeluge()
+		err = d.DownloadByDeluge()
 	default:
 		return
 	}
-	d.Notify()
-	d.History()
+	if err == nil {
+		d.Notify()
+		d.History()
+	}
 }
-func (d Downloader) DownloadByDrone() {
+func (d Downloader) DownloadByDrone() error {
 	logger.Log.Debug("Download by Drone: ", d.Nzb.NZB.DownloadURL)
-	downloadFile(d.Target.Path, "", d.Targetfile+".nzb", d.Nzb.NZB.DownloadURL)
+	return downloadFile(d.Target.Path, "", d.Targetfile+".nzb", d.Nzb.NZB.DownloadURL)
 }
-func (d Downloader) DownloadByNzbget() {
+func (d Downloader) DownloadByNzbget() error {
 	logger.Log.Debug("Download by Nzbget: ", d.Nzb.NZB.DownloadURL)
 	url := "http://" + d.Downloader.Username + ":" + d.Downloader.Password + "@" + d.Downloader.Hostname + "/jsonrpc"
+	logger.Log.Debug("Download by Nzbget: ", url)
 	nzbcl := nzbget.NewClient(url)
 	options := nzbget.NewOptions()
 	options.Category = d.Category
 	options.AddPaused = d.Downloader.AddPaused
 	options.Priority = d.Downloader.Priority
 	options.NiceName = d.Targetfile + ".nzb"
-	nzbcl.Add(d.Nzb.NZB.DownloadURL, options)
+	_, err := nzbcl.Add(d.Nzb.NZB.DownloadURL, options)
+	if err != nil {
+		logger.Log.Error("Download by Nzbget - ERROR: ", err)
+	}
+	return err
 }
-func (d Downloader) DownloadByDeluge() {
+func (d Downloader) DownloadByDeluge() error {
 	logger.Log.Debug("Download by Deluge: ", d.Nzb.NZB.DownloadURL)
 
-	apiexternal.SendToDeluge(
+	err := apiexternal.SendToDeluge(
 		d.Downloader.Hostname, d.Downloader.Port, d.Downloader.Username, d.Downloader.Password,
 		d.Nzb.NZB.DownloadURL, d.Downloader.DelugeDlTo, d.Downloader.DelugeMoveAfter, d.Downloader.DelugeMoveTo)
+
+	if err != nil {
+		logger.Log.Error("Download by Deluge - ERROR: ", err)
+	}
+	return err
 }
 
 func (d Downloader) Notify() {
