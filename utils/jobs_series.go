@@ -136,7 +136,7 @@ func JobImportDbSeries(serieconfig config.SerieConfig, configEntry config.MediaT
 			for idxalt := range serieconfig.AlternateName {
 				titlefound := false
 				for idxtitle := range titles {
-					if strings.EqualFold(titles[idxtitle].Title, titlegroup[idxalt].Title) {
+					if strings.EqualFold(titles[idxtitle].Title, serieconfig.AlternateName[idxalt]) {
 						titlefound = true
 						break
 					}
@@ -789,7 +789,7 @@ func Series_single_jobs(job string, typename string, listname string, force bool
 
 		switch job {
 		case "datafull":
-			getnewepisodes(cfg_serie)
+			Getnewepisodes(cfg_serie)
 		case "searchmissingfull":
 			SearchSerieMissing(cfg_serie, 0, false)
 		case "searchmissinginc":
@@ -874,7 +874,7 @@ func Importnewseriessingle(row config.MediaTypeConfig, list config.MediaListsCon
 var LastSeriesPath string
 var LastSeriesFilePath string
 
-func getnewepisodes(row config.MediaTypeConfig) {
+func Getnewepisodes(row config.MediaTypeConfig) {
 	if !config.ConfigCheck("general") {
 		return
 	}

@@ -1144,7 +1144,7 @@ func getMissingIMDBMoviesV2(configEntry config.MediaTypeConfig, list config.Medi
 
 var Lastmovie string
 
-func importnewmoviessingle(row config.MediaTypeConfig, list config.MediaListsConfig) {
+func Importnewmoviessingle(row config.MediaTypeConfig, list config.MediaListsConfig) {
 	results := Feeds(row, list)
 
 	if !config.ConfigCheck("general") {
@@ -1188,7 +1188,7 @@ func importnewmoviessingle(row config.MediaTypeConfig, list config.MediaListsCon
 var LastMoviePath string
 var LastMoviesFilePath string
 
-func getnewmovies(row config.MediaTypeConfig) {
+func Getnewmovies(row config.MediaTypeConfig) {
 	if !config.ConfigCheck("general") {
 		return
 	}
@@ -1456,7 +1456,7 @@ func Movies_single_jobs(job string, typename string, listname string, force bool
 
 		switch job {
 		case "datafull":
-			getnewmovies(cfg_movie)
+			Getnewmovies(cfg_movie)
 		case "searchmissingfull":
 			SearchMovieMissing(cfg_movie, 0, false)
 		case "searchmissinginc":
@@ -1494,7 +1494,7 @@ func Movies_single_jobs(job string, typename string, listname string, force bool
 			case "clearhistory":
 				database.DeleteRow("movie_histories", database.Query{Where: "movie_id in (Select id from movies where listname=?)", WhereArgs: []interface{}{typename}})
 			case "feeds":
-				importnewmoviessingle(cfg_movie, cfg_movie.Lists[idxlist])
+				Importnewmoviessingle(cfg_movie, cfg_movie.Lists[idxlist])
 			default:
 				// other stuff
 			}

@@ -206,7 +206,7 @@ func updateDBSeries(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": inres, "error": inerr})
 }
 func updateDBEpisode(c *gin.Context) {
-	var dbserieepisode database.DbserieEpisode
+	var dbserieepisode database.DbserieEpisodeJson
 	if err := c.BindJSON(&dbserieepisode); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return

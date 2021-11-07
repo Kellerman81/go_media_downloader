@@ -277,6 +277,7 @@ type QualityConfig struct {
 	CheckYear                     bool                   `koanf:"check_year"`
 	CheckYear1                    bool                   `koanf:"check_year1"`
 	TitleStripSuffixForSearch     []string               `koanf:"title_strip_suffix_for_search"`
+	TitleStripPrefixForSearch     []string               `koanf:"title_strip_prefix_for_search"`
 	QualityReorder                []QualityReorderConfig `koanf:"reorder"`
 	Indexer                       []QualityIndexerConfig `koanf:"indexers"`
 	Cutoff_priority               int

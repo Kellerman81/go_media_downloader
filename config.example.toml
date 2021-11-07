@@ -323,6 +323,7 @@ check_year=true #checks if the year is correct (also for imdb search)
 check_year1=true #checks if the year is correct allow+-1 (also for imdb search)
 check_until_first_found=false #true = on use first available release and dont try the other indexers
 title_strip_suffix_for_search=[" dc", "repack", "unrated", "directors cut", "THEATRICAL"] #removes strings from title-end for title searches
+title_strip_prefix_for_search=["Uploader.presents", "Uploader presents"] #removes strings from title-start for title searches
 		
 	[[quality.reorder]]
 	type="resolution"

@@ -170,11 +170,15 @@ type DbserieEpisode struct {
 	Season     string
 	Identifier string
 	Title      string
-	FirstAired sql.NullTime `db:"first_aired"`
+	FirstAired sql.NullTime `db:"first_aired" json:"first_aired" time_format:"2006-01-02" time_utc:"1"`
 	Overview   string
 	Poster     string
 	DbserieID  uint `db:"dbserie_id"`
 	Dbserie    Dbserie
+}
+type DbserieEpisodeJson struct {
+	DbserieEpisode
+	FirstAired time.Time `db:"first_aired" json:"first_aired" time_format:"2006-01-02" time_utc:"1"`
 }
 
 func (serie *Dbserie) GetMetadata(language string, querytmdb bool, allowed []string, querytrakt bool, overwrite bool) []string {

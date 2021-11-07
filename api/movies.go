@@ -146,7 +146,7 @@ func apimoviesJobs(c *gin.Context) {
 }
 
 func updateDBMovie(c *gin.Context) {
-	var dbmovie database.Dbmovie
+	var dbmovie database.DbmovieJson
 	if err := c.ShouldBindJSON(&dbmovie); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return

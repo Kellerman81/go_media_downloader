@@ -128,21 +128,76 @@ func main() {
 	database.UpgradeDB()
 	database.GetVars()
 
-	scheduler.InitScheduler()
-
 	counter, _ := database.CountRows("dbmovies", database.Query{})
 	if counter == 0 {
 		logger.Log.Infoln("Starting initial DB fill for movies")
 		utils.InitFillImdb()
-		utils.Movies_all_jobs("feeds", true)
-		utils.Movies_all_jobs("data", true)
+
+		movie_keys, _ := config.ConfigDB.Keys([]byte("movie_*"), 0, 0, true)
+
+		for _, idxmovie := range movie_keys {
+			var cfg_movie config.MediaTypeConfig
+			config.ConfigGet(string(idxmovie), &cfg_movie)
+
+			job := strings.ToLower("feeds")
+			dbresult, _ := database.InsertArray("job_histories", []string{"job_type", "job_group", "job_category", "started"},
+				[]interface{}{job, cfg_movie.Name, "Movie", time.Now()})
+			for idxlist := range cfg_movie.Lists {
+				utils.Importnewmoviessingle(cfg_movie, cfg_movie.Lists[idxlist])
+			}
+			dbid, _ := dbresult.LastInsertId()
+			database.UpdateColumn("job_histories", "ended", time.Now(), database.Query{Where: "id=?", WhereArgs: []interface{}{dbid}})
+
+		}
+
+		for _, idxmovie := range movie_keys {
+			var cfg_movie config.MediaTypeConfig
+			config.ConfigGet(string(idxmovie), &cfg_movie)
+
+			job := strings.ToLower("datafull")
+			dbresult, _ := database.InsertArray("job_histories", []string{"job_type", "job_group", "job_category", "started"},
+				[]interface{}{job, cfg_movie.Name, "Movie", time.Now()})
+
+			utils.Getnewmovies(cfg_movie)
+			dbid, _ := dbresult.LastInsertId()
+			database.UpdateColumn("job_histories", "ended", time.Now(), database.Query{Where: "id=?", WhereArgs: []interface{}{dbid}})
+
+		}
 	}
 	counter, _ = database.CountRows("dbseries", database.Query{})
 	if counter == 0 {
 		logger.Log.Infoln("Starting initial DB fill for series")
-		utils.Series_all_jobs("feeds", true)
-		utils.Series_all_jobs("data", true)
+		serie_keys, _ := config.ConfigDB.Keys([]byte("serie_*"), 0, 0, true)
+
+		for _, idxserie := range serie_keys {
+			var cfg_serie config.MediaTypeConfig
+			config.ConfigGet(string(idxserie), &cfg_serie)
+
+			job := strings.ToLower("feeds")
+			dbresult, _ := database.InsertArray("job_histories", []string{"job_type", "job_group", "job_category", "started"},
+				[]interface{}{job, cfg_serie.Name, "Serie", time.Now()})
+			for idxlist := range cfg_serie.Lists {
+				utils.Importnewseriessingle(cfg_serie, cfg_serie.Lists[idxlist])
+			}
+			dbid, _ := dbresult.LastInsertId()
+			database.UpdateColumn("job_histories", "ended", time.Now(), database.Query{Where: "id=?", WhereArgs: []interface{}{dbid}})
+
+		}
+		for _, idxserie := range serie_keys {
+			var cfg_serie config.MediaTypeConfig
+			config.ConfigGet(string(idxserie), &cfg_serie)
+
+			job := strings.ToLower("datafull")
+			dbresult, _ := database.InsertArray("job_histories", []string{"job_type", "job_group", "job_category", "started"},
+				[]interface{}{job, cfg_serie.Name, "Serie", time.Now()})
+			utils.Getnewepisodes(cfg_serie)
+			dbid, _ := dbresult.LastInsertId()
+			database.UpdateColumn("job_histories", "ended", time.Now(), database.Query{Where: "id=?", WhereArgs: []interface{}{dbid}})
+
+		}
 	}
+
+	scheduler.InitScheduler()
 
 	router := gin.New()
 	if !strings.EqualFold(cfg_general.LogLevel, "debug") {

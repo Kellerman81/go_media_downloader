@@ -102,7 +102,7 @@ type Dbmovie struct {
 	CreatedAt        time.Time `db:"created_at"`
 	UpdatedAt        time.Time `db:"updated_at"`
 	Title            string
-	ReleaseDate      sql.NullTime `db:"release_date"`
+	ReleaseDate      sql.NullTime `db:"release_date" json:"release_date" time_format:"2006-01-02" time_utc:"1"`
 	Year             int
 	Adult            bool
 	Budget           int
@@ -131,6 +131,10 @@ type Dbmovie struct {
 	Poster           string
 	Slug             string
 	//Dbmovies_titles_id []Dbmovies_titles `gorm:"foreignKey:Dbmovies_id"`
+}
+type DbmovieJson struct {
+	Dbmovie
+	ReleaseDate time.Time `db:"release_date" json:"release_date" time_format:"2006-01-02" time_utc:"1"`
 }
 
 type DbmovieTitle struct {
