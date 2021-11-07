@@ -239,9 +239,9 @@ func (m *ParseInfo) ParseFile(includeYearInTitle bool, typegroup string) error {
 				continue
 			}
 		case "year":
-			if typegroup != "movie" {
-				continue
-			}
+			// if typegroup != "movie" {
+			// 	continue
+			// }
 		case "season":
 			if typegroup != "series" {
 				continue
