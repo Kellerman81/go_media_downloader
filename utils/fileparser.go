@@ -713,6 +713,17 @@ func trimStringAfterStringInsensitive(s string, search string) string {
 	}
 	return s
 }
+func trimStringPrefixInsensitive(s string, search string) string {
+	if idx := strings.Index(strings.ToLower(s), strings.ToLower(search)); idx != -1 {
+		idn := idx + len(search)
+		s = s[idn:]
+		s = strings.TrimPrefix(s, "-")
+		s = strings.TrimPrefix(s, ".")
+		s = strings.TrimPrefix(s, " ")
+		return s
+	}
+	return s
+}
 
 func StringReplaceDiacritics(instr string) string {
 	//Transformer := transform.Chain(norm.NFD, runes.Remove(runes.In(unicode.Mn)), norm.NFC)

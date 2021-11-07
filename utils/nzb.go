@@ -157,11 +157,6 @@ func filter_movies_nzbs(configEntry config.MediaTypeConfig, quality config.Quali
 				}
 			}
 		}
-		alternatenames := []string{}
-		foundalternate, _ := database.QueryDbmovieTitle(database.Query{Select: "id", Where: "dbmovie_id=?", WhereArgs: []interface{}{movie.ID}})
-		for idxalt := range foundalternate {
-			alternatenames = append(alternatenames, foundalternate[idxalt].Title)
-		}
 		if !config.ConfigCheck("regex_" + indexer.Template_regex) {
 			toskip = true
 			continue
@@ -169,7 +164,7 @@ func filter_movies_nzbs(configEntry config.MediaTypeConfig, quality config.Quali
 		var cfg_regex config.RegexConfig
 		config.ConfigGet("regex_"+indexer.Template_regex, &cfg_regex)
 
-		if filter_regex_nzbs(cfg_regex, nzbs[idx].Title, movie.Title, alternatenames) {
+		if filter_regex_nzbs(cfg_regex, nzbs[idx].Title, movie.Title, alttitles) {
 			toskip = true
 			continue
 		}
@@ -178,6 +173,12 @@ func filter_movies_nzbs(configEntry config.MediaTypeConfig, quality config.Quali
 			for idxstrip := range quality.TitleStripSuffixForSearch {
 				if strings.HasSuffix(strings.ToLower(m.Title), strings.ToLower(quality.TitleStripSuffixForSearch[idxstrip])) {
 					m.Title = trimStringInclAfterStringInsensitive(m.Title, quality.TitleStripSuffixForSearch[idxstrip])
+					m.Title = strings.Trim(m.Title, " ")
+				}
+			}
+			for idxstrip := range quality.TitleStripPrefixForSearch {
+				if strings.HasPrefix(strings.ToLower(m.Title), strings.ToLower(quality.TitleStripPrefixForSearch[idxstrip])) {
+					m.Title = trimStringPrefixInsensitive(m.Title, quality.TitleStripPrefixForSearch[idxstrip])
 					m.Title = strings.Trim(m.Title, " ")
 				}
 			}
@@ -198,19 +199,21 @@ func filter_movies_nzbs(configEntry config.MediaTypeConfig, quality config.Quali
 				if quality.CheckTitle && checknzbtitle(title, m.Title) && len(title) >= 1 {
 					titlefound = true
 				}
-				alttitlefound := false
-				for idxtitle := range alttitles {
-					if checknzbtitle(alttitles[idxtitle], m.Title) {
-						alttitlefound = true
-						break
+				if !titlefound {
+					alttitlefound := false
+					for idxtitle := range alttitles {
+						if checknzbtitle(alttitles[idxtitle], m.Title) {
+							alttitlefound = true
+							break
+						}
+					}
+					if len(alttitles) >= 1 && !alttitlefound {
+						logger.Log.Debug("Skipped - unwanted title and alternate: ", nzbs[idx].Title, " wanted ", title, " ", alttitles)
+						continue
 					}
 				}
 				if len(alttitles) == 0 && !titlefound {
 					logger.Log.Debug("Skipped - unwanted title: ", nzbs[idx].Title, " wanted ", title)
-					continue
-				}
-				if len(alttitles) >= 1 && !alttitlefound && !titlefound {
-					logger.Log.Debug("Skipped - unwanted title and alternate: ", nzbs[idx].Title, " wanted ", title, " ", alttitles)
 					continue
 				}
 			}
@@ -307,9 +310,8 @@ func filter_series_nzbs(configEntry config.MediaTypeConfig, quality config.Quali
 				toskip = true
 				if serie.Seriename != "" {
 					if !strings.HasPrefix(logger.StringToSlug(nzbs[idx].Title), logger.StringToSlug(serie.Seriename)) {
-						foundalternate, _ := database.QueryDbserieAlternates(database.Query{Select: "dbserie_alternates.title", InnerJoin: "dbseries on dbseries.id = dbserie_alternates.dbserie_id", Where: "dbseries.seriename=?", WhereArgs: []interface{}{serie.Seriename}})
-						for idxalt := range foundalternate {
-							if strings.HasPrefix(logger.StringToSlug(nzbs[idx].Title), logger.StringToSlug(foundalternate[idxalt].Title)) {
+						for idxalt := range alttitles {
+							if strings.HasPrefix(logger.StringToSlug(nzbs[idx].Title), logger.StringToSlug(alttitles[idxalt])) {
 								toskip = false
 								break
 							}
@@ -373,11 +375,6 @@ func filter_series_nzbs(configEntry config.MediaTypeConfig, quality config.Quali
 				}
 			}
 		}
-		alternatenames := []string{}
-		foundalternate, _ := database.QueryDbserieAlternates(database.Query{Select: "dbserie_alternates.title", InnerJoin: "dbseries on dbseries.id = dbserie_alternates.dbserie_id", Where: "dbseries.seriename=?", WhereArgs: []interface{}{serie.Seriename}})
-		for idxalt := range foundalternate {
-			alternatenames = append(alternatenames, foundalternate[idxalt].Title)
-		}
 		if !config.ConfigCheck("regex_" + indexer.Template_regex) {
 			toskip = true
 			continue
@@ -385,7 +382,7 @@ func filter_series_nzbs(configEntry config.MediaTypeConfig, quality config.Quali
 		var cfg_regex config.RegexConfig
 		config.ConfigGet("regex_"+indexer.Template_regex, &cfg_regex)
 
-		if filter_regex_nzbs(cfg_regex, nzbs[idx].Title, serie.Seriename, alternatenames) {
+		if filter_regex_nzbs(cfg_regex, nzbs[idx].Title, serie.Seriename, alttitles) {
 			toskip = true
 			continue
 		}
@@ -396,19 +393,21 @@ func filter_series_nzbs(configEntry config.MediaTypeConfig, quality config.Quali
 				if quality.CheckTitle && checknzbtitle(title, m.Title) && len(title) >= 1 {
 					titlefound = true
 				}
-				alttitlefound := false
-				for idxtitle := range alttitles {
-					if checknzbtitle(alttitles[idxtitle], m.Title) {
-						alttitlefound = true
-						break
+				if !titlefound {
+					alttitlefound := false
+					for idxtitle := range alttitles {
+						if checknzbtitle(alttitles[idxtitle], m.Title) {
+							alttitlefound = true
+							break
+						}
+					}
+					if len(alttitles) >= 1 && !alttitlefound {
+						logger.Log.Debug("Skipped - unwanted title and alternate: ", nzbs[idx].Title, " wanted ", title, " ", alttitles)
+						continue
 					}
 				}
 				if len(alttitles) == 0 && !titlefound {
 					logger.Log.Debug("Skipped - unwanted title: ", nzbs[idx].Title, " wanted ", title)
-					continue
-				}
-				if len(alttitles) >= 1 && !alttitlefound && !titlefound {
-					logger.Log.Debug("Skipped - unwanted title and alternate: ", nzbs[idx].Title, " wanted ", title, " ", alttitles)
 					continue
 				}
 			}
