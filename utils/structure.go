@@ -649,6 +649,9 @@ func StructureFolders(grouptype string, sourcepath config.PathsConfig, targetpat
 			}
 		}
 		for fileidx := range videofiles {
+			if filepath.Ext(videofiles[fileidx]) == "" {
+				continue
+			}
 			if strings.ToLower(structure.groupType) == "series" {
 				if structure.RemoveSmallVideoFile(videofiles[fileidx], sourcepath) {
 					continue
