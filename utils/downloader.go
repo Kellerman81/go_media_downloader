@@ -175,8 +175,10 @@ func (d Downloader) Notify() {
 func (d Downloader) History() {
 	if strings.EqualFold(d.SearchGroupType, "movie") {
 		movieID := d.Movie.ID
+		moviequality := d.Movie.QualityProfile
 		if movieID == 0 {
 			movieID = d.Nzb.Nzbmovie.ID
+			moviequality = d.Nzb.Nzbmovie.QualityProfile
 		}
 		dbmovieID := d.Movie.DbmovieID
 		if dbmovieID == 0 {
@@ -184,8 +186,8 @@ func (d Downloader) History() {
 		}
 
 		database.InsertArray("movie_histories",
-			[]string{"title", "url", "target", "indexer", "downloaded_at", "movie_id", "dbmovie_id", "resolution_id", "quality_id", "codec_id", "audio_id"},
-			[]interface{}{d.Nzb.NZB.Title, d.Nzb.NZB.DownloadURL, d.Target.Path, d.Nzb.Indexer, time.Now(), movieID, dbmovieID, d.Nzb.ParseInfo.ResolutionID, d.Nzb.ParseInfo.QualityID, d.Nzb.ParseInfo.CodecID, d.Nzb.ParseInfo.AudioID})
+			[]string{"title", "url", "target", "indexer", "downloaded_at", "movie_id", "dbmovie_id", "resolution_id", "quality_id", "codec_id", "audio_id", "quality_profile"},
+			[]interface{}{d.Nzb.NZB.Title, d.Nzb.NZB.DownloadURL, d.Target.Path, d.Nzb.Indexer, time.Now(), movieID, dbmovieID, d.Nzb.ParseInfo.ResolutionID, d.Nzb.ParseInfo.QualityID, d.Nzb.ParseInfo.CodecID, d.Nzb.ParseInfo.AudioID, moviequality})
 	} else {
 		serieid := d.Serie.ID
 		if serieid == 0 {
@@ -196,8 +198,10 @@ func (d Downloader) History() {
 			dbserieid = d.Nzb.Nzbepisode.DbserieID
 		}
 		serieepisodeid := d.Serieepisode.ID
+		serieepisodequality := d.Serieepisode.QualityProfile
 		if serieepisodeid == 0 {
 			serieepisodeid = d.Nzb.Nzbepisode.ID
+			serieepisodequality = d.Nzb.Nzbepisode.QualityProfile
 		}
 		dbserieepisodeid := d.Dbserieepisode.ID
 		if dbserieepisodeid == 0 {
@@ -205,8 +209,8 @@ func (d Downloader) History() {
 		}
 
 		database.InsertArray("serie_episode_histories",
-			[]string{"title", "url", "target", "indexer", "downloaded_at", "serie_id", "serie_episode_id", "dbserie_episode_id", "dbserie_id", "resolution_id", "quality_id", "codec_id", "audio_id"},
-			[]interface{}{d.Nzb.NZB.Title, d.Nzb.NZB.DownloadURL, d.Target.Path, d.Nzb.Indexer, time.Now(), serieid, serieepisodeid, dbserieepisodeid, dbserieid, d.Nzb.ParseInfo.ResolutionID, d.Nzb.ParseInfo.QualityID, d.Nzb.ParseInfo.CodecID, d.Nzb.ParseInfo.AudioID})
+			[]string{"title", "url", "target", "indexer", "downloaded_at", "serie_id", "serie_episode_id", "dbserie_episode_id", "dbserie_id", "resolution_id", "quality_id", "codec_id", "audio_id", "quality_profile"},
+			[]interface{}{d.Nzb.NZB.Title, d.Nzb.NZB.DownloadURL, d.Target.Path, d.Nzb.Indexer, time.Now(), serieid, serieepisodeid, dbserieepisodeid, dbserieid, d.Nzb.ParseInfo.ResolutionID, d.Nzb.ParseInfo.QualityID, d.Nzb.ParseInfo.CodecID, d.Nzb.ParseInfo.AudioID, serieepisodequality})
 	}
 }
 

@@ -51,6 +51,51 @@ type MainConfig struct {
 	Quality      []QualityConfig      `koanf:"quality"`
 	Scheduler    []SchedulerConfig    `koanf:"scheduler"`
 }
+type GeneralConfig struct {
+	LogLevel                           string   `koanf:"log_level"`
+	DBLogLevel                         string   `koanf:"db_log_level"`
+	LogFileSize                        int      `koanf:"log_file_size"`
+	LogFileCount                       int      `koanf:"log_file_count"`
+	LogCompress                        bool     `koanf:"log_compress"`
+	WorkerDefault                      int      `koanf:"worker_default"`
+	WorkerMetadata                     int      `koanf:"worker_metadata"`
+	WorkerFiles                        int      `koanf:"worker_files"`
+	WorkerParse                        int      `koanf:"worker_parse"`
+	WorkerSearch                       int      `koanf:"worker_search"`
+	OmdbApiKey                         string   `koanf:"omdb_apikey"`
+	MovieMetaSourceImdb                bool     `koanf:"movie_meta_source_imdb"`
+	MovieMetaSourceTmdb                bool     `koanf:"movie_meta_source_tmdb"`
+	MovieMetaSourceOmdb                bool     `koanf:"movie_meta_source_omdb"`
+	MovieMetaSourceTrakt               bool     `koanf:"movie_meta_source_trakt"`
+	MovieAlternateTitleMetaSourceImdb  bool     `koanf:"movie_alternate_title_meta_source_imdb"`
+	MovieAlternateTitleMetaSourceTmdb  bool     `koanf:"movie_alternate_title_meta_source_tmdb"`
+	MovieAlternateTitleMetaSourceOmdb  bool     `koanf:"movie_alternate_title_meta_source_omdb"`
+	MovieAlternateTitleMetaSourceTrakt bool     `koanf:"movie_alternate_title_meta_source_trakt"`
+	SerieAlternateTitleMetaSourceImdb  bool     `koanf:"serie_alternate_title_meta_source_imdb"`
+	SerieAlternateTitleMetaSourceTrakt bool     `koanf:"serie_alternate_title_meta_source_trakt"`
+	MovieMetaSourcePriority            []string `koanf:"movie_meta_source_priority"`
+	MovieRSSMetaSourcePriority         []string `koanf:"movie_rss_meta_source_priority"`
+	MovieParseMetaSourcePriority       []string `koanf:"movie_parse_meta_source_priority"`
+	SerieMetaSourceTmdb                bool     `koanf:"serie_meta_source_tmdb"`
+	SerieMetaSourceTrakt               bool     `koanf:"serie_meta_source_trakt"`
+	WebPort                            string   `koanf:"webport"`
+	WebApiKey                          string   `koanf:"webapikey"`
+	ConcurrentScheduler                int      `koanf:"concurrent_scheduler"`
+	TheMovieDBApiKey                   string   `koanf:"themoviedb_apikey"`
+	TraktClientId                      string   `koanf:"trakt_client_id"`
+	SchedulerDisabled                  bool     `koanf:"scheduler_disabled"`
+	Traktlimiterseconds                int      `koanf:"trakt_limiter_seconds"`
+	Traktlimitercalls                  int      `koanf:"trakt_limiter_calls"`
+	Tvdblimiterseconds                 int      `koanf:"tvdb_limiter_seconds"`
+	Tvdblimitercalls                   int      `koanf:"tvdb_limiter_calls"`
+	Tmdblimiterseconds                 int      `koanf:"tmdb_limiter_seconds"`
+	Tmdblimitercalls                   int      `koanf:"tmdb_limiter_calls"`
+	Omdblimiterseconds                 int      `koanf:"omdb_limiter_seconds"`
+	Omdblimitercalls                   int      `koanf:"omdb_limiter_calls"`
+	FfprobePath                        string   `koanf:"ffprobe_path"`
+	FailedIndexerBlockTime             int      `koanf:"failed_indexer_block_time"`
+}
+
 type ImdbConfig struct {
 	Indexedtypes     []string `koanf:"indexed_types"`
 	Indexedlanguages []string `koanf:"indexed_languages"`
@@ -103,70 +148,12 @@ type MediaListsConfig struct {
 	Addfound bool `koanf:"add_found"`
 }
 
-// type MediaListsIndexerConfig struct {
-// 	Template_indexer        string `koanf:"template_indexer"`
-// 	Template_downloader     string `koanf:"template_downloader"`
-// 	Template_regex          string `koanf:"template_regex"`
-// 	Template_path_nzb       string `koanf:"template_path_nzb"`
-// 	Category_dowloader      string `koanf:"category_dowloader"`
-// 	Additional_query_params string `koanf:"additional_query_params"`
-// 	CustomQueryString       string `koanf:"custom_query_string"`
-// 	Skip_empty_size         bool   `koanf:"skip_empty_size"`
-// 	History_check_title     bool   `koanf:"history_check_title"`
-// 	Categories_indexer      string `koanf:"categories_indexer"`
-// }
-
 type MediaNotificationConfig struct {
 	Map_notification string `koanf:"template_notification"`
 	Event            string `koanf:"event"`
 	Title            string `koanf:"title"`
 	Message          string `koanf:"message"`
 	ReplacedPrefix   string `koanf:"replaced_prefix"`
-}
-
-type GeneralConfig struct {
-	LogLevel                           string   `koanf:"log_level"`
-	DBLogLevel                         string   `koanf:"db_log_level"`
-	LogFileSize                        int      `koanf:"log_file_size"`
-	LogFileCount                       int      `koanf:"log_file_count"`
-	LogCompress                        bool     `koanf:"log_compress"`
-	WorkerDefault                      int      `koanf:"worker_default"`
-	WorkerMetadata                     int      `koanf:"worker_metadata"`
-	WorkerFiles                        int      `koanf:"worker_files"`
-	WorkerParse                        int      `koanf:"worker_parse"`
-	WorkerSearch                       int      `koanf:"worker_search"`
-	OmdbApiKey                         string   `koanf:"omdb_apikey"`
-	MovieMetaSourceImdb                bool     `koanf:"movie_meta_source_imdb"`
-	MovieMetaSourceTmdb                bool     `koanf:"movie_meta_source_tmdb"`
-	MovieMetaSourceOmdb                bool     `koanf:"movie_meta_source_omdb"`
-	MovieMetaSourceTrakt               bool     `koanf:"movie_meta_source_trakt"`
-	MovieAlternateTitleMetaSourceImdb  bool     `koanf:"movie_alternate_title_meta_source_imdb"`
-	MovieAlternateTitleMetaSourceTmdb  bool     `koanf:"movie_alternate_title_meta_source_tmdb"`
-	MovieAlternateTitleMetaSourceOmdb  bool     `koanf:"movie_alternate_title_meta_source_omdb"`
-	MovieAlternateTitleMetaSourceTrakt bool     `koanf:"movie_alternate_title_meta_source_trakt"`
-	SerieAlternateTitleMetaSourceImdb  bool     `koanf:"serie_alternate_title_meta_source_imdb"`
-	SerieAlternateTitleMetaSourceTrakt bool     `koanf:"serie_alternate_title_meta_source_trakt"`
-	MovieMetaSourcePriority            []string `koanf:"movie_meta_source_priority"`
-	MovieRSSMetaSourcePriority         []string `koanf:"movie_rss_meta_source_priority"`
-	MovieParseMetaSourcePriority       []string `koanf:"movie_parse_meta_source_priority"`
-	SerieMetaSourceTmdb                bool     `koanf:"serie_meta_source_tmdb"`
-	SerieMetaSourceTrakt               bool     `koanf:"serie_meta_source_trakt"`
-	WebPort                            string   `koanf:"webport"`
-	WebApiKey                          string   `koanf:"webapikey"`
-	ConcurrentScheduler                int      `koanf:"concurrent_scheduler"`
-	TheMovieDBApiKey                   string   `koanf:"themoviedb_apikey"`
-	TraktClientId                      string   `koanf:"trakt_client_id"`
-	SchedulerDisabled                  bool     `koanf:"scheduler_disabled"`
-	Traktlimiterseconds                int      `koanf:"trakt_limiter_seconds"`
-	Traktlimitercalls                  int      `koanf:"trakt_limiter_calls"`
-	Tvdblimiterseconds                 int      `koanf:"tvdb_limiter_seconds"`
-	Tvdblimitercalls                   int      `koanf:"tvdb_limiter_calls"`
-	Tmdblimiterseconds                 int      `koanf:"tmdb_limiter_seconds"`
-	Tmdblimitercalls                   int      `koanf:"tmdb_limiter_calls"`
-	Omdblimiterseconds                 int      `koanf:"omdb_limiter_seconds"`
-	Omdblimitercalls                   int      `koanf:"omdb_limiter_calls"`
-	FfprobePath                        string   `koanf:"ffprobe_path"`
-	FailedIndexerBlockTime             int      `koanf:"failed_indexer_block_time"`
 }
 
 type DownloaderConfig struct {
@@ -256,9 +243,7 @@ type RegexConfigIn struct {
 }
 
 type RegexConfig struct {
-	Name          string   `koanf:"name"`
-	Required      []string `koanf:"required"`
-	Rejected      []string `koanf:"rejected"`
+	RegexConfigIn
 	RequiredRegex map[string]*regexp.Regexp
 	RejectedRegex map[string]*regexp.Regexp
 }

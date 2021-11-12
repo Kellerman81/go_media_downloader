@@ -1,8 +1,13 @@
-[global]
-identifiedby = "ep"
+[global] # global not yet used so use series config below
+identifiedby = "ep" #or date
 upgrade = "yes"
 search = "yes"
 [[series]]
 name = "Battlestar Galactica 2003"
 alternatename = ["Battlestar Galactica (2003)"]
-tvdb_id = 73545
+tvdb_id = 73545 # currently required - except if source is none
+source = "tvdb" #chose 'none' if you want to manange the episodes
+target = "/series/BG2k3" #Path where to put your series - optional
+identifiedby = "ep" #or date ep is default!
+upgrade = "yes" #unused
+search = "yes" #unused
