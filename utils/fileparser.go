@@ -482,6 +482,51 @@ func (m *ParseInfo) ParseVideoFile(file string, configEntry config.MediaTypeConf
 	}
 }
 
+func (m *ParseInfo) GetIDPriority(configEntry config.MediaTypeConfig, quality config.QualityConfig) {
+	resolution_priority := 0
+	quality_priority := 0
+	codec_priority := 0
+	audio_priority := 0
+
+	if m.ResolutionID != 0 {
+		resolution_priority, _ = gettypeidpriority(m.ResolutionID, "resolution", quality, database.Getresolutions)
+	} else {
+		typeid, type_priority, _ := getdefaulttypepriority(configEntry.DefaultResolution, "resolution", m.ResolutionID, quality, database.Getresolutions)
+		if typeid != 0 {
+			resolution_priority = type_priority
+		}
+	}
+	if m.QualityID != 0 {
+		quality_priority, _ = gettypeidpriority(m.QualityID, "quality", quality, database.Getqualities)
+	} else {
+		typeid, type_priority, _ := getdefaulttypepriority(configEntry.DefaultQuality, "quality", m.QualityID, quality, database.Getqualities)
+		if typeid != 0 {
+			quality_priority = type_priority
+		}
+	}
+	if m.CodecID != 0 {
+		codec_priority, _ = gettypeidpriority(m.CodecID, "codec", quality, database.Getcodecs)
+	}
+	if m.AudioID != 0 {
+		audio_priority, _ = gettypeidpriority(m.AudioID, "audio", quality, database.Getaudios)
+	}
+
+	Priority := resolution_priority + quality_priority + codec_priority + audio_priority
+	if m.Proper {
+		Priority = Priority + 5
+	}
+	if m.Extended {
+		Priority = Priority + 2
+	}
+	if m.Repack {
+		Priority = Priority + 1
+	}
+	m.Priority = Priority
+	m.Prio_audio = audio_priority
+	m.Prio_codec = codec_priority
+	m.Prio_quality = quality_priority
+	m.Prio_resolution = resolution_priority
+}
 func gettypepriority(inval string, qualitystringtype string, qualityconfig config.QualityConfig, qualitytype []database.QualitiesRegex) (id uint, priority int, name string) {
 	for idxqual := range qualitytype {
 		if len(qualitytype[idxqual].Strings) >= 1 {

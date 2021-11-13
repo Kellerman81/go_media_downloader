@@ -110,6 +110,10 @@ func CacheConfig() {
 	}
 }
 
+func ConfigGetAll() map[string]interface{} {
+	return configEntries
+}
+
 func ConfigGet(key string, val interface{}) error {
 	if _, ok := configEntries[key]; ok {
 

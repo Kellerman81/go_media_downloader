@@ -15,7 +15,7 @@ require (
 	github.com/h2non/filetype v1.1.1
 	github.com/jmoiron/sqlx v1.3.4 //structscan for db
 	github.com/karrick/godirwalk v1.16.1 //faster walk
-	github.com/knadh/koanf v1.3.0 //initial config
+	github.com/knadh/koanf v1.3.2 //initial config
 	github.com/mattn/go-sqlite3 v1.14.9 //data and imdb db
 	github.com/pkg/errors v0.9.1
 	github.com/recoilme/pudge v1.0.3 //config db
@@ -29,6 +29,7 @@ require (
 )
 
 require (
+	github.com/fatih/structs v1.1.0 // indirect
 	github.com/fsnotify/fsnotify v1.5.1 // indirect
 	github.com/gdm85/go-rencode v0.1.8 // indirect
 	github.com/gin-contrib/sse v0.1.0 // indirect
@@ -42,7 +43,7 @@ require (
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/leodido/go-urn v1.2.1 // indirect
-	github.com/lib/pq v1.10.3 // indirect
+	github.com/lib/pq v1.10.4 // indirect
 	github.com/mattn/go-isatty v0.0.14 // indirect
 	github.com/mitchellh/copystructure v1.2.0 // indirect
 	github.com/mitchellh/mapstructure v1.4.2 // indirect
@@ -52,8 +53,8 @@ require (
 	github.com/pelletier/go-toml v1.9.4 // indirect
 	github.com/ugorji/go/codec v1.2.6 // indirect
 	go.uber.org/atomic v1.9.0 // indirect
-	golang.org/x/crypto v0.0.0-20210921155107-089bfa567519 // indirect
-	golang.org/x/sys v0.0.0-20211031064116-611d5d643895 // indirect
+	golang.org/x/crypto v0.0.0-20211108221036-ceb1ce70b4fa // indirect
+	golang.org/x/sys v0.0.0-20211113001501-0c823b97ae02 // indirect
 	google.golang.org/protobuf v1.27.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )

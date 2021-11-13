@@ -15,7 +15,7 @@ $a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/movies/job/se
 $a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/movies/job/searchmissingfulltitle" -Method get
 $a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/movies/job/searchupgradeinctitle" -Method get
 $a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/movies/job/searchupgradefulltitle" -Method get
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/clear/movie_file_unmatcheds" -Method get #Clears db table - unmatched files will only be tried to match once every day
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/db/clear/movie_file_unmatcheds" -Method get #Clears db table - unmatched files will only be tried to match once every day
 $a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/movies/all/refresh" -Method get # Refresh 100 Movie Metadata
 $a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/movies/all/refreshall" -Method get # Refresh all Movie Metadata
 $a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/movies/all/refresh/:id" -Method get # Refresh specific Movie Metadata
@@ -46,7 +46,7 @@ $a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/series/job/se
 $a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/series/job/searchmissingfulltitle" -Method get
 $a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/series/job/searchupgradeinctitle" -Method get
 $a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/series/job/searchupgradefulltitle" -Method get
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/clear/serie_file_unmatcheds" -Method get #Clears db table - unmatched files will only be tried to match once every day
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/db/clear/serie_file_unmatcheds" -Method get #Clears db table - unmatched files will only be tried to match once every day
 $a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/series/" -Method get #List all series
 $a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/series/" -Method post #Update Series
 $a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/series/:id" -Method delete #Delete Series
@@ -77,9 +77,19 @@ $a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/all/search/up
 $a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/all/search/upgrade/inc" -Method get
 
 $a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/fillimdb" -Method get #build local imdb cache
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/vacuum" -Method get #vacuum db
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/clear/:name" -Method get #clear db table
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/dbclose" -Method get #Closes db
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/db/vacuum" -Method get #vacuum db
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/db/clear/:name" -Method get #clear db table
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/db/close" -Method get #Closes db
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/scheduler/start" -Method get #Starts scheduler
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/scheduler/stop" -Method get #Stops scheduler
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/quality/:name/:config" -Method get #Get Calculated Quality Priorities - name ex: quality_SD - config ex: serie_EN / movie_EN
+
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/config/all" -Method get #Get full config
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/config/clear" -Method get #Clear full config (also writes config.toml!)
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/config/delete/:name" -Method delete #Remove block from config (also writes config.toml!)
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/config/update/:name" -Method post #Update block in config (can also add) (also writes config.toml!) (name possibilities: general, imdb, indexer_*, path_*, list_*, regex_*, downloader_*, serie_*, movie_*, quality_*, scheduler_*, notification_*)
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/config/get/:name" -Method get #Get config block
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/config/type/:type" -Method get #Get config blocks (ex. all path configs)
 
 ## All Job URLs can be extended by a list name to run the job only for that list
 $a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/series/job/searchmissingfull/EN" -Method get # Search all Missing Episodes for series in the list 'EN'

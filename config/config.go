@@ -3,6 +3,7 @@ package config
 
 import (
 	"fmt"
+	"io/ioutil"
 	"math/rand"
 	"regexp"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"github.com/knadh/koanf"
 	"github.com/knadh/koanf/parsers/toml"
 	"github.com/knadh/koanf/providers/file"
+	"github.com/knadh/koanf/providers/structs"
 )
 
 //Series Config
@@ -48,6 +50,19 @@ type MainConfig struct {
 	Paths        []PathsConfig        `koanf:"paths"`
 	Notification []NotificationConfig `koanf:"notification"`
 	Regex        []RegexConfig        `koanf:"regex"`
+	Quality      []QualityConfig      `koanf:"quality"`
+	Scheduler    []SchedulerConfig    `koanf:"scheduler"`
+}
+type MainConfigOut struct {
+	General      GeneralConfig        `koanf:"general"`
+	Imdbindexer  ImdbConfig           `koanf:"imdbindexer"`
+	Media        MediaConfig          `koanf:"media"`
+	Downloader   []DownloaderConfig   `koanf:"downloader"`
+	Lists        []ListsConfig        `koanf:"lists"`
+	Indexers     []IndexersConfig     `koanf:"indexers"`
+	Paths        []PathsConfig        `koanf:"paths"`
+	Notification []NotificationConfig `koanf:"notification"`
+	Regex        []RegexConfigIn      `koanf:"regex"`
 	Quality      []QualityConfig      `koanf:"quality"`
 	Scheduler    []SchedulerConfig    `koanf:"scheduler"`
 }
@@ -528,6 +543,62 @@ func LoadCfgDataDB(f *file.File, parser string) {
 	}
 
 	CacheConfig()
+}
+
+func ClearCfg() {
+	configEntries = make(map[string]interface{}, 100)
+}
+func WriteCfg() {
+	var k = koanf.New(".")
+
+	var bla MainConfigOut
+	for name, value := range configEntries {
+		if strings.HasPrefix(name, "general") {
+			bla.General = value.(GeneralConfig)
+		}
+		if strings.HasPrefix(name, "downloader_") {
+			bla.Downloader = append(bla.Downloader, value.(DownloaderConfig))
+		}
+		if strings.HasPrefix(name, "imdb") {
+			bla.Imdbindexer = value.(ImdbConfig)
+		}
+		if strings.HasPrefix(name, "indexer") {
+			bla.Indexers = append(bla.Indexers, value.(IndexersConfig))
+		}
+		if strings.HasPrefix(name, "list") {
+			bla.Lists = append(bla.Lists, value.(ListsConfig))
+		}
+		if strings.HasPrefix(name, "serie") {
+			bla.Media.Series = append(bla.Media.Series, value.(MediaTypeConfig))
+		}
+		if strings.HasPrefix(name, "movie") {
+			bla.Media.Movies = append(bla.Media.Movies, value.(MediaTypeConfig))
+		}
+		if strings.HasPrefix(name, "notification") {
+			bla.Notification = append(bla.Notification, value.(NotificationConfig))
+		}
+		if strings.HasPrefix(name, "path") {
+			bla.Paths = append(bla.Paths, value.(PathsConfig))
+		}
+		if strings.HasPrefix(name, "quality") {
+			bla.Quality = append(bla.Quality, value.(QualityConfig))
+		}
+		if strings.HasPrefix(name, "regex") {
+			tmp := value.(RegexConfig)
+			var tmpout RegexConfigIn
+			tmpout.Name = tmp.Name
+			tmpout.Rejected = tmp.Rejected
+			tmpout.Required = tmp.Required
+			bla.Regex = append(bla.Regex, tmpout)
+		}
+		if strings.HasPrefix(name, "scheduler") {
+			bla.Scheduler = append(bla.Scheduler, value.(SchedulerConfig))
+		}
+	}
+	k.Load(structs.Provider(bla, "koanf"), nil)
+
+	byteArray, _ := k.Marshal(toml.Parser())
+	ioutil.WriteFile("config.toml", byteArray, 0777)
 }
 
 func ConfigCheck(name string) bool {

@@ -248,19 +248,228 @@ func main() {
 		routerapi.GET("/fillimdb", func(ctx *gin.Context) {
 			go utils.InitFillImdb()
 		})
-		routerapi.GET("/clear/:name", func(ctx *gin.Context) {
+		routerapi.GET("/scheduler/stop", func(c *gin.Context) {
+			scheduler.QueueData.Stop()
+			scheduler.QueueFeeds.Stop()
+			scheduler.QueueSearch.Stop()
+		})
+		routerapi.GET("/scheduler/start", func(c *gin.Context) {
+			scheduler.QueueData.Start()
+			scheduler.QueueFeeds.Start()
+			scheduler.QueueSearch.Start()
+		})
+		routerapi.GET("/db/close", func(ctx *gin.Context) {
+			database.DB.Close()
+			database.DBImdb.Close()
+		})
+		routerapi.GET("/db/clear/:name", func(ctx *gin.Context) {
 			database.ReadWriteMu.Lock()
 			database.DB.Exec("DELETE FROM " + ctx.Param("name") + "; VACUUM;")
 			database.ReadWriteMu.Unlock()
 			ctx.JSON(http.StatusOK, gin.H{"data": "ok"})
 		})
-		routerapi.GET("/vacuum", func(ctx *gin.Context) {
+		routerapi.GET("/db/vacuum", func(ctx *gin.Context) {
 			database.ReadWriteMu.Lock()
 			database.DB.Exec("VACUUM;")
 			database.ReadWriteMu.Unlock()
 			ctx.JSON(http.StatusOK, gin.H{"data": "ok"})
 		})
+		routerapi.GET("/quality/:name/:config", func(c *gin.Context) {
+			if !config.ConfigCheck(c.Param("name")) {
+				c.JSON(http.StatusNotFound, gin.H{"data": "quality not found"})
+				return
+			}
+			if !config.ConfigCheck(c.Param("config")) {
+				c.JSON(http.StatusNotFound, gin.H{"data": "config not found"})
+				return
+			}
+			var qual config.QualityConfig
+			config.ConfigGet(c.Param("name"), &qual)
+			var media config.MediaTypeConfig
+			config.ConfigGet(c.Param("config"), &media)
+			var parser []utils.ParseInfo
+			for idxreso := range database.Getresolutions {
+				wantedreso := false
+				for idxwantreso := range qual.Wanted_resolution {
+					if strings.EqualFold(qual.Wanted_resolution[idxwantreso], database.Getresolutions[idxreso].Name) {
+						wantedreso = true
+						break
+					}
+				}
+				if !wantedreso {
+					continue
+				}
+				for idxqual := range database.Getqualities {
+					wantedqual := false
+					for idxwantqual := range qual.Wanted_quality {
+						if strings.EqualFold(qual.Wanted_quality[idxwantqual], database.Getqualities[idxqual].Name) {
+							wantedqual = true
+							break
+						}
+					}
+					if !wantedqual {
+						continue
+					}
+					for idxcodec := range database.Getcodecs {
+						for idxaudio := range database.Getaudios {
+							parse := utils.ParseInfo{
+								Resolution:   database.Getresolutions[idxreso].Name,
+								Quality:      database.Getqualities[idxqual].Name,
+								Codec:        database.Getcodecs[idxcodec].Name,
+								Audio:        database.Getaudios[idxaudio].Name,
+								ResolutionID: database.Getresolutions[idxreso].ID,
+								QualityID:    database.Getqualities[idxqual].ID,
+								CodecID:      database.Getcodecs[idxcodec].ID,
+								AudioID:      database.Getaudios[idxaudio].ID,
+							}
+							parse.GetIDPriority(media, qual)
+							parser = append(parser, parse)
+						}
+					}
+				}
+			}
+			c.JSON(http.StatusOK, gin.H{"data": parser})
+		})
 
+		routerapi.GET("/config/all", func(ctx *gin.Context) {
+			ctx.JSON(http.StatusOK, gin.H{"data": config.ConfigGetAll()})
+		})
+		routerapi.GET("/config/clear", func(ctx *gin.Context) {
+			keys, _ := config.ConfigDB.Keys([]byte("*"), 0, 0, true)
+			for _, idx := range keys {
+				config.ConfigDB.Delete(string(idx))
+			}
+			config.ClearCfg()
+			config.WriteCfg()
+			ctx.JSON(http.StatusOK, gin.H{"data": config.ConfigGetAll()})
+		})
+		routerapi.GET("/config/get/:name", func(ctx *gin.Context) {
+			configs := config.ConfigGetAll()
+			ctx.JSON(http.StatusOK, gin.H{"data": configs[ctx.Param("name")]})
+		})
+
+		routerapi.DELETE("/config/delete/:name", func(ctx *gin.Context) {
+			configs := config.ConfigGetAll()
+			config.ConfigDB.Delete(ctx.Param("name"))
+			delete(configs, ctx.Param("name"))
+			config.WriteCfg()
+			ctx.JSON(http.StatusOK, gin.H{"data": "ok"})
+		})
+
+		routerapi.POST("/config/update/:name", func(ctx *gin.Context) {
+			name := ctx.Param("name")
+			configs := config.ConfigGetAll()
+			if strings.HasPrefix(name, "general") {
+				var getcfg config.GeneralConfig
+				if err := ctx.ShouldBindJSON(&getcfg); err != nil {
+					ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+					return
+				}
+				configs[ctx.Param("name")] = getcfg
+			}
+			if strings.HasPrefix(name, "downloader_") {
+				var getcfg config.DownloaderConfig
+				if err := ctx.ShouldBindJSON(&getcfg); err != nil {
+					ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+					return
+				}
+				configs[ctx.Param("name")] = getcfg
+			}
+			if strings.HasPrefix(name, "imdb") {
+				var getcfg config.ImdbConfig
+				if err := ctx.ShouldBindJSON(&getcfg); err != nil {
+					ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+					return
+				}
+				configs[ctx.Param("name")] = getcfg
+			}
+			if strings.HasPrefix(name, "indexer") {
+				var getcfg config.IndexersConfig
+				if err := ctx.ShouldBindJSON(&getcfg); err != nil {
+					ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+					return
+				}
+				configs[ctx.Param("name")] = getcfg
+			}
+			if strings.HasPrefix(name, "list") {
+				var getcfg config.ListsConfig
+				if err := ctx.ShouldBindJSON(&getcfg); err != nil {
+					ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+					return
+				}
+				configs[ctx.Param("name")] = getcfg
+			}
+			if strings.HasPrefix(name, "serie") {
+				var getcfg config.MediaTypeConfig
+				if err := ctx.ShouldBindJSON(&getcfg); err != nil {
+					ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+					return
+				}
+				configs[ctx.Param("name")] = getcfg
+			}
+			if strings.HasPrefix(name, "movie") {
+				var getcfg config.MediaTypeConfig
+				if err := ctx.ShouldBindJSON(&getcfg); err != nil {
+					ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+					return
+				}
+				configs[ctx.Param("name")] = getcfg
+			}
+			if strings.HasPrefix(name, "notification") {
+				var getcfg config.NotificationConfig
+				if err := ctx.ShouldBindJSON(&getcfg); err != nil {
+					ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+					return
+				}
+				configs[ctx.Param("name")] = getcfg
+			}
+			if strings.HasPrefix(name, "path") {
+				var getcfg config.PathsConfig
+				if err := ctx.ShouldBindJSON(&getcfg); err != nil {
+					ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+					return
+				}
+				configs[ctx.Param("name")] = getcfg
+			}
+			if strings.HasPrefix(name, "quality") {
+				var getcfg config.QualityConfig
+				if err := ctx.ShouldBindJSON(&getcfg); err != nil {
+					ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+					return
+				}
+				configs[ctx.Param("name")] = getcfg
+			}
+			if strings.HasPrefix(name, "regex") {
+				var getcfg config.RegexConfigIn
+				if err := ctx.ShouldBindJSON(&getcfg); err != nil {
+					ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+					return
+				}
+				configs[ctx.Param("name")] = getcfg
+			}
+			if strings.HasPrefix(name, "scheduler") {
+				var getcfg config.SchedulerConfig
+				if err := ctx.ShouldBindJSON(&getcfg); err != nil {
+					ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+					return
+				}
+				configs[ctx.Param("name")] = getcfg
+			}
+
+			config.WriteCfg()
+			ctx.JSON(http.StatusOK, gin.H{"data": "ok"})
+		})
+
+		routerapi.GET("/config/type/:type", func(ctx *gin.Context) {
+			configs := config.ConfigGetAll()
+			list := make(map[string]interface{})
+			for name, value := range configs {
+				if strings.HasPrefix(name, ctx.Param("type")) {
+					list[name] = value
+				}
+			}
+			ctx.JSON(http.StatusOK, gin.H{"data": list})
+		})
 		routerall := routerapi.Group("/all")
 		api.AddAllRoutes(routerall)
 
@@ -271,9 +480,6 @@ func main() {
 		api.AddSeriesRoutes(routerseries)
 	}
 
-	router.GET("/dbclose", func(ctx *gin.Context) {
-		database.DB = nil
-	})
 	if strings.EqualFold(cfg_general.LogLevel, "Debug") {
 		ginpprof.Wrap(router)
 	}
