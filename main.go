@@ -352,6 +352,7 @@ func main() {
 			configs := config.ConfigGetAll()
 			config.ConfigDB.Delete(ctx.Param("name"))
 			delete(configs, ctx.Param("name"))
+			config.UpdateCfg(configs)
 			config.WriteCfg()
 			ctx.JSON(http.StatusOK, gin.H{"data": "ok"})
 		})
@@ -455,7 +456,7 @@ func main() {
 				}
 				configs[ctx.Param("name")] = getcfg
 			}
-
+			config.UpdateCfg(configs)
 			config.WriteCfg()
 			ctx.JSON(http.StatusOK, gin.H{"data": "ok"})
 		})
