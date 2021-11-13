@@ -144,7 +144,6 @@ type MediaTypeConfig struct {
 
 type MediaDataConfig struct {
 	Template_path string `koanf:"template_path"`
-	Replacelower  bool   `koanf:"replace_lower"`
 }
 
 type MediaDataImportConfig struct {
@@ -545,8 +544,69 @@ func LoadCfgDataDB(f *file.File, parser string) {
 	CacheConfig()
 }
 
+func UpdateCfg(configIn map[string]interface{}) {
+	configEntries = configIn
+}
 func ClearCfg() {
 	configEntries = make(map[string]interface{}, 100)
+	configEntries["general"] = GeneralConfig{
+		LogLevel:            "Info",
+		DBLogLevel:          "Info",
+		LogFileCount:        5,
+		LogFileSize:         5,
+		LogCompress:         false,
+		WebApiKey:           "mysecure",
+		WebPort:             "9090",
+		WorkerDefault:       1,
+		WorkerMetadata:      1,
+		WorkerFiles:         1,
+		WorkerParse:         1,
+		WorkerSearch:        1,
+		ConcurrentScheduler: 1,
+		Omdblimiterseconds:  1,
+		Omdblimitercalls:    1,
+		Tmdblimiterseconds:  1,
+		Tmdblimitercalls:    1,
+		Traktlimiterseconds: 1,
+		Traktlimitercalls:   1,
+		Tvdblimiterseconds:  1,
+		Tvdblimitercalls:    1,
+	}
+	configEntries["scheduler_Default"] = SchedulerConfig{
+		Name:                          "Default",
+		Interval_imdb:                 "3d",
+		Interval_feeds:                "1d",
+		Interval_feeds_refresh_series: "1d",
+		Interval_feeds_refresh_movies: "1d",
+		Interval_indexer_missing:      "40m",
+		Interval_indexer_upgrade:      "60m",
+		Interval_indexer_rss:          "15m",
+		Interval_scan_data:            "1h",
+		Interval_scan_data_missing:    "1d",
+		Interval_scan_dataimport:      "60m",
+	}
+	configEntries["downloader_initial"] = DownloaderConfig{Name: "initial", Type: "drone"}
+	configEntries["imdb"] = ImdbConfig{}
+	configEntries["indexer_initial"] = IndexersConfig{Name: "initial", Type: "newznab", Limitercalls: 1, Limiterseconds: 1, MaxRssEntries: 100, RssEntriesloop: 2}
+	configEntries["list_initial"] = ListsConfig{Name: "initial", Type: "traktmovieanticipated", Limit: 20}
+	var dataconfig []MediaDataConfig
+	dataconfig = append(dataconfig, MediaDataConfig{Template_path: "initial"})
+	var dataimportconfig []MediaDataImportConfig
+	dataimportconfig = append(dataimportconfig, MediaDataImportConfig{Template_path: "initial"})
+	var noticonfig []MediaNotificationConfig
+	noticonfig = append(noticonfig, MediaNotificationConfig{Map_notification: "initial"})
+	var listsconfig []MediaListsConfig
+	listsconfig = append(listsconfig, MediaListsConfig{Template_list: "initial", Template_quality: "initial", Template_scheduler: "Default"})
+	configEntries["movie_initial"] = MediaTypeConfig{Name: "initial", Template_quality: "initial", Template_scheduler: "Default", Data: dataconfig, DataImport: dataimportconfig, Lists: listsconfig, Notification: noticonfig}
+	configEntries["serie_initial"] = MediaTypeConfig{Name: "initial", Template_quality: "initial", Template_scheduler: "Default", Data: dataconfig, DataImport: dataimportconfig, Lists: listsconfig, Notification: noticonfig}
+	configEntries["notification_initial"] = NotificationConfig{Name: "initial", Type: "csv"}
+	configEntries["path_initial"] = PathsConfig{Name: "initial", AllowedVideoExtensions: []string{".avi", ".mkv", ".mp4"}, AllowedOtherExtensions: []string{".idx", ".sub", ".srt"}}
+	var quindconfig []QualityIndexerConfig
+	quindconfig = append(quindconfig, QualityIndexerConfig{Template_indexer: "initial", Template_downloader: "initial", Template_regex: "initial", Template_path_nzb: "initial"})
+	var qureoconfig []QualityReorderConfig
+	qureoconfig = append(qureoconfig, QualityReorderConfig{})
+	configEntries["quality_initial"] = QualityConfig{Name: "initial", QualityReorder: qureoconfig, Indexer: quindconfig}
+	configEntries["regex_initial"] = RegexConfig{RegexConfigIn: RegexConfigIn{Name: "initial"}}
 }
 func WriteCfg() {
 	var k = koanf.New(".")

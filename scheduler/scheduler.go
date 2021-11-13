@@ -125,11 +125,28 @@ func InitScheduler() {
 		}
 	}
 
-	if !config.ConfigCheck("scheduler_Default") {
-		return
-	}
 	var defaultschedule config.SchedulerConfig
-	config.ConfigGet("scheduler_"+"Default", &defaultschedule)
+	if !config.ConfigCheck("scheduler_Default") {
+		configs := config.ConfigGetAll()
+		defaultschedule = config.SchedulerConfig{
+			Name:                          "Default",
+			Interval_imdb:                 "3d",
+			Interval_feeds:                "1d",
+			Interval_feeds_refresh_series: "1d",
+			Interval_feeds_refresh_movies: "1d",
+			Interval_indexer_missing:      "40m",
+			Interval_indexer_upgrade:      "60m",
+			Interval_indexer_rss:          "15m",
+			Interval_scan_data:            "1h",
+			Interval_scan_data_missing:    "1d",
+			Interval_scan_dataimport:      "60m",
+		}
+		configs["scheduler_Default"] = defaultschedule
+		config.UpdateCfg(configs)
+		config.WriteCfg()
+	} else {
+		config.ConfigGet("scheduler_"+"Default", &defaultschedule)
+	}
 
 	if defaultschedule.Interval_scan_data != "" {
 		QueueData.DispatchEvery(func() {
