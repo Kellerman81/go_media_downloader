@@ -391,6 +391,8 @@ func (m *ParseInfo) GetPriority(configEntry config.MediaTypeConfig, quality conf
 		m.Prio_resolution = type_priority
 	}
 
+	getcombinedpriority(m, quality)
+
 	m.Priority = m.Prio_resolution + m.Prio_quality + m.Prio_codec + m.Prio_audio
 	if m.Proper {
 		m.Priority = m.Priority + 5
@@ -490,28 +492,36 @@ func (m *ParseInfo) GetIDPriority(configEntry config.MediaTypeConfig, quality co
 
 	if m.ResolutionID != 0 {
 		resolution_priority, _ = gettypeidpriority(m.ResolutionID, "resolution", quality, database.Getresolutions)
+		m.Prio_resolution = resolution_priority
 	} else {
 		typeid, type_priority, _ := getdefaulttypepriority(configEntry.DefaultResolution, "resolution", m.ResolutionID, quality, database.Getresolutions)
 		if typeid != 0 {
 			resolution_priority = type_priority
+			m.Prio_resolution = type_priority
 		}
 	}
 	if m.QualityID != 0 {
 		quality_priority, _ = gettypeidpriority(m.QualityID, "quality", quality, database.Getqualities)
+		m.Prio_quality = quality_priority
 	} else {
 		typeid, type_priority, _ := getdefaulttypepriority(configEntry.DefaultQuality, "quality", m.QualityID, quality, database.Getqualities)
 		if typeid != 0 {
 			quality_priority = type_priority
+			m.Prio_quality = type_priority
 		}
 	}
 	if m.CodecID != 0 {
 		codec_priority, _ = gettypeidpriority(m.CodecID, "codec", quality, database.Getcodecs)
+		m.Prio_codec = codec_priority
 	}
 	if m.AudioID != 0 {
 		audio_priority, _ = gettypeidpriority(m.AudioID, "audio", quality, database.Getaudios)
+		m.Prio_audio = audio_priority
 	}
 
-	Priority := resolution_priority + quality_priority + codec_priority + audio_priority
+	getcombinedpriority(m, quality)
+
+	Priority := m.Prio_resolution + m.Prio_quality + m.Prio_codec + m.Prio_audio
 	if m.Proper {
 		Priority = Priority + 5
 	}
@@ -522,10 +532,6 @@ func (m *ParseInfo) GetIDPriority(configEntry config.MediaTypeConfig, quality co
 		Priority = Priority + 1
 	}
 	m.Priority = Priority
-	m.Prio_audio = audio_priority
-	m.Prio_codec = codec_priority
-	m.Prio_quality = quality_priority
-	m.Prio_resolution = resolution_priority
 }
 func gettypepriority(inval string, qualitystringtype string, qualityconfig config.QualityConfig, qualitytype []database.QualitiesRegex) (id uint, priority int, name string) {
 	for idxqual := range qualitytype {
@@ -639,36 +645,63 @@ func getdefaulttypepriority(qualitystring string, qualitystringtype string, qual
 	return
 }
 
+func getcombinedpriority(m *ParseInfo, qualityconfig config.QualityConfig) {
+	if len(qualityconfig.QualityReorder) >= 1 {
+		for idxreorder := range qualityconfig.QualityReorder {
+			if strings.EqualFold(qualityconfig.QualityReorder[idxreorder].Type, "combined_res_qual") {
+				namearr := strings.Split(qualityconfig.QualityReorder[idxreorder].Name, ",")
+
+				if len(namearr) != 2 {
+					continue
+				}
+
+				if strings.EqualFold(namearr[0], m.Resolution) && strings.EqualFold(namearr[1], m.Quality) {
+					m.Prio_resolution = qualityconfig.QualityReorder[idxreorder].Newpriority
+					m.Prio_quality = 0
+				}
+			}
+		}
+	}
+}
+
 func getSerieDBPriority(serieepisodefile database.SerieEpisodeFile, configEntry config.MediaTypeConfig, quality config.QualityConfig) int {
 	resolution_priority := 0
 	quality_priority := 0
 	codec_priority := 0
 	audio_priority := 0
+	resolution_name := ""
+	quality_name := ""
+	audio_name := ""
+	codec_name := ""
 
 	if serieepisodefile.ResolutionID != 0 {
-		resolution_priority, _ = gettypeidpriority(serieepisodefile.ResolutionID, "resolution", quality, database.Getresolutions)
+		resolution_priority, resolution_name = gettypeidpriority(serieepisodefile.ResolutionID, "resolution", quality, database.Getresolutions)
 	} else {
-		typeid, type_priority, _ := getdefaulttypepriority(configEntry.DefaultResolution, "resolution", serieepisodefile.ResolutionID, quality, database.Getresolutions)
+		typeid, type_priority, type_name := getdefaulttypepriority(configEntry.DefaultResolution, "resolution", serieepisodefile.ResolutionID, quality, database.Getresolutions)
 		if typeid != 0 {
 			resolution_priority = type_priority
+			resolution_name = type_name
 		}
 	}
 	if serieepisodefile.QualityID != 0 {
-		quality_priority, _ = gettypeidpriority(serieepisodefile.QualityID, "quality", quality, database.Getqualities)
+		quality_priority, quality_name = gettypeidpriority(serieepisodefile.QualityID, "quality", quality, database.Getqualities)
 	} else {
-		typeid, type_priority, _ := getdefaulttypepriority(configEntry.DefaultQuality, "quality", serieepisodefile.QualityID, quality, database.Getqualities)
+		typeid, type_priority, type_name := getdefaulttypepriority(configEntry.DefaultQuality, "quality", serieepisodefile.QualityID, quality, database.Getqualities)
 		if typeid != 0 {
 			quality_priority = type_priority
+			quality_name = type_name
 		}
 	}
 	if serieepisodefile.CodecID != 0 {
-		codec_priority, _ = gettypeidpriority(serieepisodefile.CodecID, "codec", quality, database.Getcodecs)
+		codec_priority, codec_name = gettypeidpriority(serieepisodefile.CodecID, "codec", quality, database.Getcodecs)
 	}
 	if serieepisodefile.AudioID != 0 {
-		audio_priority, _ = gettypeidpriority(serieepisodefile.AudioID, "audio", quality, database.Getaudios)
+		audio_priority, audio_name = gettypeidpriority(serieepisodefile.AudioID, "audio", quality, database.Getaudios)
 	}
 
-	Priority := resolution_priority + quality_priority + codec_priority + audio_priority
+	m := &ParseInfo{Resolution: resolution_name, Prio_resolution: resolution_priority, Quality: quality_name, Prio_quality: quality_priority, Codec: codec_name, Prio_codec: codec_priority, Audio: audio_name, Prio_audio: audio_priority}
+	getcombinedpriority(m, quality)
+	Priority := m.Prio_resolution + m.Prio_quality + m.Prio_codec + m.Prio_audio
 	if serieepisodefile.Proper {
 		Priority = Priority + 5
 	}
@@ -686,31 +719,39 @@ func getMovieDBPriority(moviefile database.MovieFile, configEntry config.MediaTy
 	quality_priority := 0
 	codec_priority := 0
 	audio_priority := 0
+	resolution_name := ""
+	quality_name := ""
+	audio_name := ""
+	codec_name := ""
 
 	if moviefile.ResolutionID != 0 {
-		resolution_priority, _ = gettypeidpriority(moviefile.ResolutionID, "resolution", quality, database.Getresolutions)
+		resolution_priority, resolution_name = gettypeidpriority(moviefile.ResolutionID, "resolution", quality, database.Getresolutions)
 	} else {
-		typeid, type_priority, _ := getdefaulttypepriority(configEntry.DefaultResolution, "resolution", moviefile.ResolutionID, quality, database.Getresolutions)
+		typeid, type_priority, type_name := getdefaulttypepriority(configEntry.DefaultResolution, "resolution", moviefile.ResolutionID, quality, database.Getresolutions)
 		if typeid != 0 {
 			resolution_priority = type_priority
+			resolution_name = type_name
 		}
 	}
 	if moviefile.QualityID != 0 {
-		quality_priority, _ = gettypeidpriority(moviefile.QualityID, "quality", quality, database.Getqualities)
+		quality_priority, quality_name = gettypeidpriority(moviefile.QualityID, "quality", quality, database.Getqualities)
 	} else {
-		typeid, type_priority, _ := getdefaulttypepriority(configEntry.DefaultQuality, "quality", moviefile.QualityID, quality, database.Getqualities)
+		typeid, type_priority, type_name := getdefaulttypepriority(configEntry.DefaultQuality, "quality", moviefile.QualityID, quality, database.Getqualities)
 		if typeid != 0 {
 			quality_priority = type_priority
+			quality_name = type_name
 		}
 	}
 	if moviefile.CodecID != 0 {
-		codec_priority, _ = gettypeidpriority(moviefile.CodecID, "codec", quality, database.Getcodecs)
+		codec_priority, codec_name = gettypeidpriority(moviefile.CodecID, "codec", quality, database.Getcodecs)
 	}
 	if moviefile.AudioID != 0 {
-		audio_priority, _ = gettypeidpriority(moviefile.AudioID, "audio", quality, database.Getaudios)
+		audio_priority, audio_name = gettypeidpriority(moviefile.AudioID, "audio", quality, database.Getaudios)
 	}
 
-	Priority := resolution_priority + quality_priority + codec_priority + audio_priority
+	m := &ParseInfo{Resolution: resolution_name, Prio_resolution: resolution_priority, Quality: quality_name, Prio_quality: quality_priority, Codec: codec_name, Prio_codec: codec_priority, Audio: audio_name, Prio_audio: audio_priority}
+	getcombinedpriority(m, quality)
+	Priority := m.Prio_resolution + m.Prio_quality + m.Prio_codec + m.Prio_audio
 	if moviefile.Proper {
 		Priority = Priority + 5
 	}

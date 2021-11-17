@@ -225,6 +225,10 @@ func filter_movies_nzbs(configEntry config.MediaTypeConfig, quality config.Quali
 					break
 				}
 			}
+			if len(quality.Wanted_resolution) >= 1 && !wanted_release_resolution {
+				logger.Log.Debug("Skipped - unwanted resolution: ", nzbs[idx].Title)
+				continue
+			}
 			wanted_release_quality := false
 			for idxqual := range quality.Wanted_quality {
 				if !strings.EqualFold(quality.Wanted_quality[idxqual], m.Quality) {
@@ -232,12 +236,30 @@ func filter_movies_nzbs(configEntry config.MediaTypeConfig, quality config.Quali
 					break
 				}
 			}
-			if len(quality.Wanted_resolution) >= 1 && !wanted_release_resolution {
-				logger.Log.Debug("Skipped - unwanted resolution: ", nzbs[idx].Title)
-				continue
-			}
 			if len(quality.Wanted_quality) >= 1 && !wanted_release_quality {
 				logger.Log.Debug("Skipped - unwanted quality: ", nzbs[idx].Title)
+				continue
+			}
+			wanted_release_audio := false
+			for idxqual := range quality.Wanted_audio {
+				if strings.EqualFold(quality.Wanted_audio[idxqual], m.Audio) {
+					wanted_release_audio = true
+					break
+				}
+			}
+			if len(quality.Wanted_audio) >= 1 && !wanted_release_audio {
+				logger.Log.Debug("Skipped - unwanted audio: ", nzbs[idx].Title)
+				continue
+			}
+			wanted_release_codec := false
+			for idxqual := range quality.Wanted_codec {
+				if strings.EqualFold(quality.Wanted_codec[idxqual], m.Codec) {
+					wanted_release_codec = true
+					break
+				}
+			}
+			if len(quality.Wanted_codec) >= 1 && !wanted_release_codec {
+				logger.Log.Debug("Skipped - unwanted codec: ", nzbs[idx].Title)
 				continue
 			}
 			if m.Priority != 0 {
@@ -419,6 +441,10 @@ func filter_series_nzbs(configEntry config.MediaTypeConfig, quality config.Quali
 					break
 				}
 			}
+			if len(quality.Wanted_resolution) >= 1 && !wanted_release_resolution {
+				logger.Log.Debug("Skipped - unwanted resolution: ", nzbs[idx].Title)
+				continue
+			}
 			wanted_release_quality := false
 			for idxqual := range quality.Wanted_quality {
 				if !strings.EqualFold(quality.Wanted_quality[idxqual], m.Quality) {
@@ -426,12 +452,30 @@ func filter_series_nzbs(configEntry config.MediaTypeConfig, quality config.Quali
 					break
 				}
 			}
-			if len(quality.Wanted_resolution) >= 1 && !wanted_release_resolution {
-				logger.Log.Debug("Skipped - unwanted resolution: ", nzbs[idx].Title)
-				continue
-			}
 			if len(quality.Wanted_quality) >= 1 && !wanted_release_quality {
 				logger.Log.Debug("Skipped - unwanted quality: ", nzbs[idx].Title)
+				continue
+			}
+			wanted_release_audio := false
+			for idxqual := range quality.Wanted_audio {
+				if strings.EqualFold(quality.Wanted_audio[idxqual], m.Audio) {
+					wanted_release_audio = true
+					break
+				}
+			}
+			if len(quality.Wanted_audio) >= 1 && !wanted_release_audio {
+				logger.Log.Debug("Skipped - unwanted audio: ", nzbs[idx].Title)
+				continue
+			}
+			wanted_release_codec := false
+			for idxqual := range quality.Wanted_codec {
+				if strings.EqualFold(quality.Wanted_codec[idxqual], m.Codec) {
+					wanted_release_codec = true
+					break
+				}
+			}
+			if len(quality.Wanted_codec) >= 1 && !wanted_release_codec {
+				logger.Log.Debug("Skipped - unwanted codec: ", nzbs[idx].Title)
 				continue
 			}
 			if m.Priority != 0 {
@@ -651,6 +695,10 @@ func filter_series_rss_nzbs(configEntry config.MediaTypeConfig, quality config.Q
 					break
 				}
 			}
+			if len(quality.Wanted_resolution) >= 1 && !wanted_release_resolution {
+				logger.Log.Debug("Skipped - unwanted resolution: ", nzbs[idx].Title)
+				continue
+			}
 			wanted_release_quality := false
 			for idxqual := range quality.Wanted_quality {
 				if !strings.EqualFold(quality.Wanted_quality[idxqual], m.Quality) {
@@ -658,12 +706,30 @@ func filter_series_rss_nzbs(configEntry config.MediaTypeConfig, quality config.Q
 					break
 				}
 			}
-			if len(quality.Wanted_resolution) >= 1 && !wanted_release_resolution {
-				logger.Log.Debug("Skipped - unwanted resolution: ", nzbs[idx].Title)
-				continue
-			}
 			if len(quality.Wanted_quality) >= 1 && !wanted_release_quality {
 				logger.Log.Debug("Skipped - unwanted quality: ", nzbs[idx].Title)
+				continue
+			}
+			wanted_release_audio := false
+			for idxqual := range quality.Wanted_audio {
+				if strings.EqualFold(quality.Wanted_audio[idxqual], m.Audio) {
+					wanted_release_audio = true
+					break
+				}
+			}
+			if len(quality.Wanted_audio) >= 1 && !wanted_release_audio {
+				logger.Log.Debug("Skipped - unwanted audio: ", nzbs[idx].Title)
+				continue
+			}
+			wanted_release_codec := false
+			for idxqual := range quality.Wanted_codec {
+				if strings.EqualFold(quality.Wanted_codec[idxqual], m.Codec) {
+					wanted_release_codec = true
+					break
+				}
+			}
+			if len(quality.Wanted_codec) >= 1 && !wanted_release_codec {
+				logger.Log.Debug("Skipped - unwanted codec: ", nzbs[idx].Title)
 				continue
 			}
 			if m.Priority != 0 {
@@ -819,6 +885,10 @@ func filter_movies_rss_nzbs(configEntry config.MediaTypeConfig, quality config.Q
 					break
 				}
 			}
+			if len(quality.Wanted_resolution) >= 1 && !wanted_release_resolution {
+				logger.Log.Debug("Skipped - unwanted resolution: ", nzbs[idx].Title)
+				continue
+			}
 			wanted_release_quality := false
 			for idxqual := range quality.Wanted_quality {
 				if !strings.EqualFold(quality.Wanted_quality[idxqual], m.Quality) {
@@ -826,12 +896,30 @@ func filter_movies_rss_nzbs(configEntry config.MediaTypeConfig, quality config.Q
 					break
 				}
 			}
-			if len(quality.Wanted_resolution) >= 1 && !wanted_release_resolution {
-				logger.Log.Debug("Skipped - unwanted resolution: ", nzbs[idx].Title)
-				continue
-			}
 			if len(quality.Wanted_quality) >= 1 && !wanted_release_quality {
 				logger.Log.Debug("Skipped - unwanted quality: ", nzbs[idx].Title)
+				continue
+			}
+			wanted_release_audio := false
+			for idxqual := range quality.Wanted_audio {
+				if strings.EqualFold(quality.Wanted_audio[idxqual], m.Audio) {
+					wanted_release_audio = true
+					break
+				}
+			}
+			if len(quality.Wanted_audio) >= 1 && !wanted_release_audio {
+				logger.Log.Debug("Skipped - unwanted audio: ", nzbs[idx].Title)
+				continue
+			}
+			wanted_release_codec := false
+			for idxqual := range quality.Wanted_codec {
+				if strings.EqualFold(quality.Wanted_codec[idxqual], m.Codec) {
+					wanted_release_codec = true
+					break
+				}
+			}
+			if len(quality.Wanted_codec) >= 1 && !wanted_release_codec {
+				logger.Log.Debug("Skipped - unwanted codec: ", nzbs[idx].Title)
 				continue
 			}
 			if m.Priority != 0 {

@@ -313,6 +313,8 @@ rejected=['(?i)(\b|_)(2160p|810p|360p|pal|ntsc)(\b|_)',
 name="HD"
 wanted_resolution=['480p','720p','1080p']
 wanted_quality=['hdtv','webdl','webrip','dvdrip','bluray']
+wanted_codec=['h264','h265'] # Warning: Most release names don't have this and would be skipped ! Delete Row if possible
+wanted_audio=['mp3','ac3'] # Warning: Most release names don't have this and would be skipped ! Delete Row if possible
 cutoff_quality = 'bluray' # only upgrade until this quality is reached
 cutoff_resolution = '720p'
 exclude_year_from_title_search=true # title based searches include year - set to yes to disable (if yes make sure you have checkyear active)
@@ -325,14 +327,18 @@ check_until_first_found=false #true = on use first available release and dont tr
 title_strip_suffix_for_search=[" dc", "repack", "unrated", "directors cut", "THEATRICAL"] #removes strings from title-end for title searches
 title_strip_prefix_for_search=["Uploader.presents", "Uploader presents"] #removes strings from title-start for title searches
 		
-	[[quality.reorder]]
+	[[quality.reorder]] # Look into schema/db/000001_initialize.up.sql at the end for qualities their names and default priorities
 	type="resolution"
 	name="1080p"
 	new_priority=5400
-	[[quality.reorder]]
+	[[quality.reorder]] # check api Endpoint /quality/quality_<name>/movie_<movieconfigname> or /quality/quality_<name>/serie_<serieconfigname> for priorities
 	type="position" #multiplies names priority by x
 	name="quality"
 	new_priority=11
+	[[quality.reorder]]
+	type="combined_res_qual" #set combined priority for (Name = resolution, quality) this way you can arrange qualities a bit more freely
+	name="480p,bluray" #enter in form: resolution,quality (no spaces - 1 Comma)
+	new_priority=110000000
 	[[quality.indexers]]
 	template_indexer="nzbgeek" # Map to indexer	- 
 	template_downloader="en"  # Map to downloader - must be correct type (newnab/usenet - tornab/torrent)
