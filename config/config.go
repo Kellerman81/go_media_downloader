@@ -266,6 +266,8 @@ type QualityConfig struct {
 	Name                          string                 `koanf:"name"`
 	Wanted_resolution             []string               `koanf:"wanted_resolution"`
 	Wanted_quality                []string               `koanf:"wanted_quality"`
+	Wanted_audio                  []string               `koanf:"wanted_audio"`
+	Wanted_codec                  []string               `koanf:"wanted_codec"`
 	Cutoff_resolution             string                 `koanf:"cutoff_resolution"`
 	Cutoff_quality                string                 `koanf:"cutoff_quality"`
 	BackupSearchForTitle          bool                   `koanf:"backup_search_for_title"`

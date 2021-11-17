@@ -758,7 +758,15 @@ func StructureFolders(grouptype string, sourcepath config.PathsConfig, targetpat
 					videotarget, moveok, moved := structure.MoveVideoFile(foldername, filename, []string{videofiles[fileidx]}, movie.Rootpath)
 					if moveok && moved >= 1 {
 						structure.UpdateRootpath(videotarget, foldername, movie, database.Serie{})
-						structure.ReplaceLowerQualityFiles(oldfiles, movie, database.Serie{})
+						var oldfiles_remove []string
+						for idx := range oldfiles {
+							if strings.HasPrefix(strings.ToLower(oldfiles[idx]), strings.ToLower(videotarget)) && strings.Contains(strings.ToLower(oldfiles[idx]), strings.ToLower(filename)) {
+								//skip
+							} else {
+								oldfiles_remove = append(oldfiles_remove, oldfiles[idx])
+							}
+						}
+						structure.ReplaceLowerQualityFiles(oldfiles_remove, movie, database.Serie{})
 						structure.MoveAdditionalFiles(folders[idx], videotarget, filename, videofiles[fileidx], sourcefileext, len(videotarget))
 
 						structure.Notify(videotarget, filename, videofiles[fileidx], movie, database.SerieEpisode{}, oldfiles)
@@ -817,7 +825,15 @@ func StructureFolders(grouptype string, sourcepath config.PathsConfig, targetpat
 						videotarget, moveok, moved := structure.MoveVideoFile(foldername, filename, []string{videofiles[fileidx]}, series.Rootpath)
 						if moveok && moved >= 1 {
 							structure.UpdateRootpath(videotarget, foldername, database.Movie{}, series)
-							structure.ReplaceLowerQualityFiles(oldfiles, database.Movie{}, series)
+							var oldfiles_remove []string
+							for idx := range oldfiles {
+								if strings.HasPrefix(strings.ToLower(oldfiles[idx]), strings.ToLower(videotarget)) && strings.Contains(strings.ToLower(oldfiles[idx]), strings.ToLower(filename)) {
+									//skip
+								} else {
+									oldfiles_remove = append(oldfiles_remove, oldfiles[idx])
+								}
+							}
+							structure.ReplaceLowerQualityFiles(oldfiles_remove, database.Movie{}, series)
 							structure.MoveAdditionalFiles(folders[idx], videotarget, filename, videofiles[fileidx], sourcefileext, len(videotarget))
 							structure.Notify(videotarget, filename, videofiles[fileidx], database.Movie{}, seriesEpisode, oldfiles)
 							scanner.CleanUpFolder(folders[idx], sourcepath.CleanupsizeMB)
