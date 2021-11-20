@@ -87,6 +87,7 @@ func AddSeriesRoutes(routerseries *gin.RouterGroup) {
 	routerseriessearch := routerseries.Group("/search")
 	{
 		routerseriessearch.GET("/id/:id", apiSeriesSearch)
+		routerseriessearch.GET("/id/:id/:season", apiSeriesSearchSeason)
 		routerseriessearch.GET("/history/clear/:name", apiSeriesClearHistoryName)
 	}
 
@@ -306,6 +307,28 @@ func apiSeriesSearch(c *gin.Context) {
 		}
 	}
 }
+
+func apiSeriesSearchSeason(c *gin.Context) {
+	serie, _ := database.GetSeries(database.Query{Where: "id=?", WhereArgs: []interface{}{c.Param("id")}})
+
+	serie_keys, _ := config.ConfigDB.Keys([]byte("serie_*"), 0, 0, true)
+
+	for _, idxserie := range serie_keys {
+		var cfg_serie config.MediaTypeConfig
+		config.ConfigGet(string(idxserie), &cfg_serie)
+
+		for idxlist := range cfg_serie.Lists {
+			if strings.EqualFold(cfg_serie.Lists[idxlist].Name, serie.Listname) {
+				scheduler.QueueSearch.DispatchIn(func() {
+					utils.SearchSerieSeasonSingle(serie, c.Param("season"), cfg_serie, true)
+				}, time.Second*1)
+				c.JSON(http.StatusOK, gin.H{"data": "started"})
+				return
+			}
+		}
+	}
+}
+
 func apiSeriesEpisodeSearch(c *gin.Context) {
 	serieepi, _ := database.GetSerieEpisodes(database.Query{Where: "id=?", WhereArgs: []interface{}{c.Param("id")}})
 

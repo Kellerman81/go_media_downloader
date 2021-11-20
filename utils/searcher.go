@@ -175,6 +175,24 @@ func SearchSerieSingle(serie database.Serie, configEntry config.MediaTypeConfig,
 	swg.Wait()
 }
 
+func SearchSerieSeasonSingle(serie database.Serie, season string, configEntry config.MediaTypeConfig, titlesearch bool) {
+
+	if !config.ConfigCheck("general") {
+		return
+	}
+	var cfg_general config.GeneralConfig
+	config.ConfigGet("general", &cfg_general)
+
+	swg := sizedwaitgroup.New(cfg_general.WorkerSearch)
+	episodes, _ := database.QuerySerieEpisodes(database.Query{Where: "serie_id = ? and dbserie_episode_id IN (Select id from dbserie_episodes where Season=?)", WhereArgs: []interface{}{serie.ID, season}})
+	for idx := range episodes {
+		swg.Add()
+		SearchSerieEpisodeSingle(episodes[idx], configEntry, titlesearch)
+		swg.Done()
+	}
+	swg.Wait()
+}
+
 func SearchSerieEpisodeSingle(row database.SerieEpisode, configEntry config.MediaTypeConfig, titlesearch bool) {
 	searchtype := "missing"
 	if !row.Missing {

@@ -534,6 +534,54 @@ func (s *Structure) UpdateRootpath(videotarget string, foldername string, movie 
 	}
 }
 
+func (s *Structure) MoveOldFiles(oldfiles []string, movie database.Movie, series database.Serie) {
+	if !s.targetpath.MoveReplaced || len(oldfiles) == 0 || s.targetpath.MoveReplacedTargetPath == "" {
+		return
+	}
+	if strings.ToLower(s.groupType) == "movie" {
+		logger.Log.Debug("want to remove old files")
+		for idx := range oldfiles {
+			fileext := filepath.Ext(oldfiles[idx])
+			move_ok, _ := scanner.MoveFiles([]string{oldfiles[idx]}, filepath.Join(s.targetpath.MoveReplacedTargetPath, filepath.Base(filepath.Dir(oldfiles[idx]))), "", []string{}, []string{})
+			if move_ok {
+				logger.Log.Debug("Old File moved: ", oldfiles[idx])
+				database.DeleteRow("movie_files", database.Query{Where: "movie_id = ? and location = ?", WhereArgs: []interface{}{movie.ID, oldfiles[idx]}})
+				for idxext := range s.sourcepath.AllowedOtherExtensions {
+					additionalfile := strings.Replace(oldfiles[idx], fileext, s.sourcepath.AllowedOtherExtensions[idxext], -1)
+					move_sub_ok, _ := scanner.MoveFiles([]string{additionalfile}, filepath.Join(s.targetpath.MoveReplacedTargetPath, filepath.Base(filepath.Dir(oldfiles[idx]))), "", []string{}, []string{})
+					if move_sub_ok {
+						logger.Log.Debug("Additional File removed: ", additionalfile)
+					} else {
+						logger.Log.Error("Additional File could not be removed: ", additionalfile)
+					}
+				}
+			} else {
+				logger.Log.Error("Old File could not be removed: ", oldfiles[idx])
+			}
+		}
+	} else {
+		for idx := range oldfiles {
+			fileext := filepath.Ext(oldfiles[idx])
+			move_ok, _ := scanner.MoveFiles([]string{oldfiles[idx]}, filepath.Join(s.targetpath.MoveReplacedTargetPath, filepath.Base(filepath.Dir(oldfiles[idx]))), "", []string{}, []string{})
+			if move_ok {
+				logger.Log.Debug("Old File removed: ", oldfiles[idx])
+				database.DeleteRow("serie_episode_files", database.Query{Where: "serie_id = ? and location = ?", WhereArgs: []interface{}{series.ID, oldfiles[idx]}})
+				for idxext := range s.sourcepath.AllowedOtherExtensions {
+					additionalfile := strings.Replace(oldfiles[idx], fileext, s.sourcepath.AllowedOtherExtensions[idxext], -1)
+					move_sub_ok, _ := scanner.MoveFiles([]string{additionalfile}, filepath.Join(s.targetpath.MoveReplacedTargetPath, filepath.Base(filepath.Dir(oldfiles[idx]))), "", []string{}, []string{})
+					if move_sub_ok {
+						logger.Log.Debug("Additional File removed: ", additionalfile)
+					} else {
+						logger.Log.Error("Additional File could not be removed: ", additionalfile)
+					}
+				}
+			} else {
+				logger.Log.Error("Old File could not be removed: ", oldfiles[idx])
+			}
+		}
+	}
+}
+
 func (s *Structure) ReplaceLowerQualityFiles(oldfiles []string, movie database.Movie, series database.Serie) {
 	if !s.targetpath.Replacelower || len(oldfiles) == 0 {
 		return
@@ -755,6 +803,9 @@ func StructureFolders(grouptype string, sourcepath config.PathsConfig, targetpat
 					foldername, filename := structure.GenerateNaming(videofiles[fileidx], *m, movie, database.Serie{}, "", database.SerieEpisode{}, "", []int{})
 
 					sourcefileext := filepath.Ext(videofiles[fileidx])
+
+					structure.MoveOldFiles(oldfiles, movie, database.Serie{})
+					oldfiles = []string{}
 					videotarget, moveok, moved := structure.MoveVideoFile(foldername, filename, []string{videofiles[fileidx]}, movie.Rootpath)
 					if moveok && moved >= 1 {
 						structure.UpdateRootpath(videotarget, foldername, movie, database.Serie{})
@@ -822,6 +873,8 @@ func StructureFolders(grouptype string, sourcepath config.PathsConfig, targetpat
 					if allowimport {
 						foldername, filename := structure.GenerateNaming(videofiles[fileidx], *m, database.Movie{}, series, serietitle, seriesEpisode, episodetitle, episodes)
 						sourcefileext := filepath.Ext(videofiles[fileidx])
+						structure.MoveOldFiles(oldfiles, database.Movie{}, series)
+						oldfiles = []string{}
 						videotarget, moveok, moved := structure.MoveVideoFile(foldername, filename, []string{videofiles[fileidx]}, series.Rootpath)
 						if moveok && moved >= 1 {
 							structure.UpdateRootpath(videotarget, foldername, database.Movie{}, series)

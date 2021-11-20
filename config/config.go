@@ -240,6 +240,8 @@ type PathsConfig struct {
 	Disallowed                     []string `koanf:"disallowed"`
 	DeleteWrongLanguage            bool     `koanf:"delete_wrong_language"`
 	DeleteDisallowed               bool     `koanf:"delete_disallowed"`
+	MoveReplaced                   bool     `koanf:"move_replaced"`
+	MoveReplacedTargetPath         string   `koanf:"move_replaced_target_path"`
 }
 
 type NotificationConfig struct {
