@@ -17,6 +17,8 @@ require (
 	github.com/karrick/godirwalk v1.16.1 //faster walk
 	github.com/knadh/koanf v1.3.2 //initial config
 	github.com/mattn/go-sqlite3 v1.14.9 //data and imdb db
+	github.com/mrobinsn/go-rtorrent v1.6.0
+	github.com/mrobinsn/go-sabnzbd v0.0.0-20170707144533-63837cbec46d
 	github.com/pkg/errors v0.9.1
 	github.com/recoilme/pudge v1.0.3 //config db
 	github.com/remeh/sizedwaitgroup v1.0.0 //concurrent wait group
