@@ -132,15 +132,23 @@ index_full=true #short only imports imdbid and titles/years - full also votes ra
 
 [[downloader]]
 name="ennzbget"
-type="nzbget" #Send Files to nzbget client (untested)
-hostname="192.168.1.1:6789"
-username="admin"
-password=""
-enabled=true
-add_paused=false
+type="nzbget" #Send Files to nzbget client
+hostname="192.168.1.1:6789" # hostname:port
+username="admin" #username
+password="" #pwd
+enabled=true #is downloader active?
+add_paused=false #add download in paused state?
 priority=0  #-100 (very low), -50 (low), 0 (normal), 50 (high), 100 (very high), 900 (force)
 auto_redownload_failed = 'false' # unused
 remove_failed_downloads = 'false' # unused
+
+[[downloader]]
+name="ensab"
+type="sabnzbd" #Send Files to sabnzbd client (untested)
+hostname="192.168.1.1:8080" #hostname:port
+password="" #enter api key here
+enabled=true
+priority=0  #-100 = Default Priority (of category), -3 = Duplicate, -2 = Paused, -1 = Low Priority, 0 = Normal Priority, 1 = High Priority, 2 = Force
 
 [[downloader]]
 name="en"

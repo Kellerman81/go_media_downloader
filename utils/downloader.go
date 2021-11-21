@@ -113,6 +113,10 @@ func (d *Downloader) DownloadNzb(nzb nzbwithprio) {
 		err = d.DownloadByDrone()
 	case "nzbget":
 		err = d.DownloadByNzbget()
+	case "sabnzbd":
+		err = d.DownloadBySabnzbd()
+	case "rtorrent":
+		err = d.DownloadByRTorrent()
 	case "deluge":
 		err = d.DownloadByDeluge()
 	default:
@@ -140,6 +144,22 @@ func (d Downloader) DownloadByNzbget() error {
 	_, err := nzbcl.Add(d.Nzb.NZB.DownloadURL, options)
 	if err != nil {
 		logger.Log.Error("Download by Nzbget - ERROR: ", err)
+	}
+	return err
+}
+func (d Downloader) DownloadBySabnzbd() error {
+	logger.Log.Debug("Download by Sabnzbd: ", d.Nzb.NZB.DownloadURL)
+	err := apiexternal.SendToSabnzbd(d.Downloader.Hostname, d.Downloader.Password, d.Nzb.NZB.DownloadURL, d.Category, d.Targetfile, d.Downloader.Priority)
+	if err != nil {
+		logger.Log.Error("Download by Sabnzbd - ERROR: ", err)
+	}
+	return err
+}
+func (d Downloader) DownloadByRTorrent() error {
+	logger.Log.Debug("Download by rTorrent: ", d.Nzb.NZB.DownloadURL)
+	err := apiexternal.SendToRtorrent(d.Downloader.Hostname, false, d.Nzb.NZB.DownloadURL, d.Downloader.DelugeDlTo, d.Targetfile)
+	if err != nil {
+		logger.Log.Error("Download by rTorrent - ERROR: ", err)
 	}
 	return err
 }
