@@ -14,6 +14,7 @@ type Qualities struct {
 	Regex     string
 	Strings   string
 	Priority  int
+	UseRegex  bool `db:"use_regex"`
 }
 
 var ListResolutions = []Qualities{

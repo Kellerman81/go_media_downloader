@@ -22,7 +22,7 @@ import (
 	"golang.org/x/text/transform"
 )
 
-var patterns = []struct {
+type regexpattern struct {
 	name string
 	// Use the last matching pattern. E.g. Year.
 	last bool
@@ -30,20 +30,23 @@ var patterns = []struct {
 	// REs need to have 2 sub expressions (groups), the first one is "raw", and
 	// the second one for the "clean" value.
 	// E.g. Epiode matching on "S01E18" will result in: raw = "E18", clean = "18".
-	re *regexp.Regexp
-}{
-	{"season", false, reflect.Int, regexp.MustCompile(`(?i)(s?(\d{1,4}))[ex]`)},
-	{"episode", false, reflect.Int, regexp.MustCompile(`(?i)((?:\d{1,4})[ex](\d{1,3})(?:\b|_|e|$))`)},
+	re       *regexp.Regexp
+	getgroup int
+}
+
+var patterns = []regexpattern{
+	{"season", false, reflect.Int, regexp.MustCompile(`(?i)(s?(\d{1,4}))[ex]`), 2},
+	{"episode", false, reflect.Int, regexp.MustCompile(`(?i)((?:\d{1,4})[ex](\d{1,3})(?:\b|_|e|$))`), 2},
 	//{"episode", false, reflect.Int, regexp.MustCompile(`(-\s+([0-9]{1,})(?:[^0-9]|$))`)},
 	//{"identifier", false, reflect.String, regexp.MustCompile(`(?i)((s?\d{1,4}(?:(?:-?[ex]\d{2,3})+)|\d{2,4}(?:\.|-| |_)\d{1,2}(?:\.|-| |_)\d{1,2}))(?:\b|_)`, 0)},
-	{"date", false, reflect.String, regexp.MustCompile(`(?i)(?:\b|_)((\d{2,4}(?:\.|-| |_)\d{1,2}(?:\.|-| |_)\d{1,2}))(?:\b|_)`)},
-	{"year", true, reflect.Int, regexp.MustCompile(`(?:\b|_)(((?:19\d|20\d)\d))(?:\b|_)`)},
+	{"date", false, reflect.String, regexp.MustCompile(`(?i)(?:\b|_)((\d{2,4}(?:\.|-| |_)\d{1,2}(?:\.|-| |_)\d{1,2}))(?:\b|_)`), 2},
+	{"year", true, reflect.Int, regexp.MustCompile(`(?:\b|_)(((?:19\d|20\d)\d))(?:\b|_)`), 2},
 
 	//{"resolution", false, reflect.String, regexp.MustCompile(`(?i)(?:\b|_)((\d{3,4}[pi]))(?:\b|_)`, 0)},
 	//{"quality", false, reflect.String, regexp.MustCompile(`(?i)(?:\b|_)((workprint|cam|webcam|hdts|ts|telesync|tc|telecine|r[2-8]|preair|sdtv|hdtv|pdtv|(?:(?:dvd|web|bd)\W?)?scr(?:eener)?|(?:web|dvd|hdtv|bd|br|dvb|dsr|ds|tv|ppv|hd)\W?rip|web\W?(?:dl|hd)?|hddvd|remux|(?:blu\W?ray)))(?:\b|_)`, 0)},
 	//{"codec", false, reflect.String, regexp.MustCompile(`(?i)(?:\b|_)((xvid|divx|hevc|vp9|10bit|hi10p|h\.?264|h\.?265|x\.?264|x\.?265))(?:\b|_)`, 0)},
 	//{"audio", false, reflect.String, regexp.MustCompile(`(?i)(?:\b|_)((mp3|aac|dd[0-9\\.]+|ac3|ac3d|ac3md|dd[p+][0-9\\.]+|flac|dts\W?hd(?:\W?ma)?|dts|truehd|mic|micdubbed))(?:\b|_)`, 0)},
-	{"audio", false, reflect.String, regexp.MustCompile(`(?i)(?:\b|_)((dd[0-9\\.]+|dd[p+][0-9\\.]+|dts\W?hd(?:\W?ma)?))(?:\b|_)`)},
+	{"audio", false, reflect.String, regexp.MustCompile(`(?i)(?:\b|_)((dd[0-9\\.]+|dd[p+][0-9\\.]+|dts\W?hd(?:\W?ma)?))(?:\b|_)`), 2},
 	//{"region", false, reflect.String, regexp.MustCompile(`(?i)\b(R([0-9]))\b`)},
 	//{"size", false, reflect.String, regexp.MustCompile(`(?i)\b((\d+(?:\.\d+)?(?:GB|MB)))\b`)},
 	//{"website", false, reflect.String, regexp.MustCompile(`^(\[ ?([^\]]+?) ?\])`)},
@@ -57,8 +60,8 @@ var patterns = []struct {
 	//{"extended", false, reflect.Bool, regexp.MustCompile(`(?i)(?:\b|_)(EXTENDED(:?.CUT)?)(?:\b|_)`, 0)},
 	//{"hardcoded", false, reflect.Bool, regexp.MustCompile(`(?i)\b((HC))\b`)},
 	//{"proper", false, reflect.Bool, regexp.MustCompile(`(?i)(?:\b|_)((PROPER))(?:\b|_)`, 0)},
-	{"imdb", false, reflect.String, regexp.MustCompile(`(?i)(?:\b|_)((tt[0-9]{4,9}))(?:\b|_)`)},
-	{"tvdb", false, reflect.String, regexp.MustCompile(`(?i)(?:\b|_)((tvdb[0-9]{2,9}))(?:\b|_)`)},
+	{"imdb", false, reflect.String, regexp.MustCompile(`(?i)(?:\b|_)((tt[0-9]{4,9}))(?:\b|_)`), 2},
+	{"tvdb", false, reflect.String, regexp.MustCompile(`(?i)(?:\b|_)((tvdb[0-9]{2,9}))(?:\b|_)`), 2},
 	//{"repack", false, reflect.Bool, regexp.MustCompile(`(?i)(?:\b|_)((REPACK))(?:\b|_)`, 0)},
 	//{"widescreen", false, reflect.Bool, regexp.MustCompile(`(?i)\b((WS))\b`)},
 	//{"unrated", false, reflect.Bool, regexp.MustCompile(`(?i)\b((UNRATED))\b`)},
@@ -201,6 +204,28 @@ func (m *ParseInfo) ParseFile(includeYearInTitle bool, typegroup string) error {
 	if strings.HasPrefix(cleanName, "[") && strings.HasSuffix(cleanName, "]") {
 		cleanName = regexParseFile.ReplaceAllString(cleanName, `$2`)
 	}
+
+	scanpatterns := patterns
+	for idx := range database.Getaudios {
+		if database.Getaudios[idx].UseRegex {
+			scanpatterns = append(scanpatterns, regexpattern{name: "audio", last: false, kind: reflect.String, re: database.Getaudios[idx].Regexp, getgroup: 0})
+		}
+	}
+	for idx := range database.Getresolutions {
+		if database.Getresolutions[idx].UseRegex {
+			scanpatterns = append(scanpatterns, regexpattern{name: "resolution", last: false, kind: reflect.String, re: database.Getresolutions[idx].Regexp, getgroup: 0})
+		}
+	}
+	for idx := range database.Getqualities {
+		if database.Getqualities[idx].UseRegex {
+			scanpatterns = append(scanpatterns, regexpattern{name: "quality", last: false, kind: reflect.String, re: database.Getqualities[idx].Regexp, getgroup: 0})
+		}
+	}
+	for idx := range database.Getcodecs {
+		if database.Getcodecs[idx].UseRegex {
+			scanpatterns = append(scanpatterns, regexpattern{name: "codec", last: false, kind: reflect.String, re: database.Getcodecs[idx].Regexp, getgroup: 0})
+		}
+	}
 	audio := []string{"mp3", "aac", "ac3", "ac3d", "ac3md", "flac", "dts", "truehd", "mic", "micdubbed"}
 	startIndex, endIndex = m.parsegroup(cleanName, "audio", audio, startIndex, endIndex)
 
@@ -222,8 +247,14 @@ func (m *ParseInfo) ParseFile(includeYearInTitle bool, typegroup string) error {
 	repack := []string{"repack"}
 	startIndex, endIndex = m.parsegroup(cleanName, "repack", repack, startIndex, endIndex)
 
-	for idxpattern := range patterns {
-		switch patterns[idxpattern].name {
+	// fmt.Println(scanpatterns)
+	for idxpattern := range scanpatterns {
+		// if scanpatterns[idxpattern].re.String() == "0" {
+		// 	fmt.Println("Skip Pattern: ", scanpatterns[idxpattern].re.String(), scanpatterns[idxpattern].name)
+		// 	continue
+		// }
+		// fmt.Println("Pattern: ", scanpatterns[idxpattern].re.String())
+		switch scanpatterns[idxpattern].name {
 		case "imdb":
 			if typegroup != "movie" {
 				continue
@@ -255,19 +286,25 @@ func (m *ParseInfo) ParseFile(includeYearInTitle bool, typegroup string) error {
 				continue
 			}
 		}
-		matches := patterns[idxpattern].re.FindAllStringSubmatch(cleanName, -1)
+		matches := scanpatterns[idxpattern].re.FindAllStringSubmatch(cleanName, -1)
 
+		// for idxm := range matches {
+		// 	for idxs := range matches[idxm] {
+		// 		fmt.Println("Group ", idxm, idxs, matches[idxm][idxs], "name", cleanName)
+		// 	}
+		// }
+		// fmt.Println(matches, cleanName)
 		if len(matches) == 0 {
 			continue
 		}
 		matchIdx := 0
-		if patterns[idxpattern].last {
+		if scanpatterns[idxpattern].last {
 			// Take last occurence of element.
 			matchIdx = len(matches) - 1
 		}
 
 		index := strings.Index(cleanName, matches[matchIdx][1])
-		if !includeYearInTitle || (includeYearInTitle && patterns[idxpattern].name != "year") {
+		if !includeYearInTitle || (includeYearInTitle && scanpatterns[idxpattern].name != "year") {
 			if index == 0 {
 				if len(matches[matchIdx][1]) != len(cleanName) && len(matches[matchIdx][1]) < endIndex {
 					startIndex = len(matches[matchIdx][1])
@@ -276,26 +313,32 @@ func (m *ParseInfo) ParseFile(includeYearInTitle bool, typegroup string) error {
 				endIndex = index
 			}
 		}
-		switch patterns[idxpattern].name {
+		switch scanpatterns[idxpattern].name {
 		case "imdb":
-			m.Imdb = matches[matchIdx][2]
+			m.Imdb = matches[matchIdx][scanpatterns[idxpattern].getgroup]
 		case "tvdb":
-			m.Tvdb = matches[matchIdx][2]
+			m.Tvdb = matches[matchIdx][scanpatterns[idxpattern].getgroup]
 		case "year":
-			mint, _ := strconv.Atoi(matches[matchIdx][2])
+			mint, _ := strconv.Atoi(matches[matchIdx][scanpatterns[idxpattern].getgroup])
 			m.Year = mint
 		case "season":
-			mint, _ := strconv.Atoi(matches[matchIdx][2])
+			mint, _ := strconv.Atoi(matches[matchIdx][scanpatterns[idxpattern].getgroup])
 			m.Season = mint
-			m.SeasonStr = matches[matchIdx][2]
+			m.SeasonStr = matches[matchIdx][scanpatterns[idxpattern].getgroup]
 		case "episode":
-			mint, _ := strconv.Atoi(matches[matchIdx][2])
+			mint, _ := strconv.Atoi(matches[matchIdx][scanpatterns[idxpattern].getgroup])
 			m.Episode = mint
-			m.EpisodeStr = matches[matchIdx][2]
+			m.EpisodeStr = matches[matchIdx][scanpatterns[idxpattern].getgroup]
 		case "date":
-			m.Date = matches[matchIdx][2]
+			m.Date = matches[matchIdx][scanpatterns[idxpattern].getgroup]
 		case "audio":
-			m.Audio = matches[matchIdx][2]
+			m.Audio = matches[matchIdx][scanpatterns[idxpattern].getgroup]
+		case "resolution":
+			m.Resolution = matches[matchIdx][scanpatterns[idxpattern].getgroup]
+		case "quality":
+			m.Quality = matches[matchIdx][scanpatterns[idxpattern].getgroup]
+		case "codec":
+			m.Codec = matches[matchIdx][scanpatterns[idxpattern].getgroup]
 		}
 	}
 	if len(m.Date) >= 1 {

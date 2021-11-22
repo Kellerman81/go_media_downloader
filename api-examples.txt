@@ -94,3 +94,25 @@ $a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/config/type/:
 
 ## All Job URLs can be extended by a list name to run the job only for that list
 $a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/series/job/searchmissingfull/EN" -Method get # Search all Missing Episodes for series in the list 'EN'
+
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/quality" -Method get #List qualities
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/quality/:id" -Method delete #Delete qualities
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/quality" -Method post #Update/add qualities
+
+$body = @{
+    "name" = "Alias - S01E01 - Truth Be Told - 480P DVDRIP XVID - proper"
+    "typ" = "series"
+    "year" = $false
+    "config" = "EN"
+    "quality" = "SD"
+}
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/parse/string" -Method post -Body ($body | ConvertTo-Json) #Parses a string (for testing)
+
+$body = @{
+    "path" = "/media/Alias - S01E01 - Truth Be Told - 480P DVDRIP XVID - proper.mp4"
+    "typ" = "series"
+    "year" = $false
+    "config" = "EN"
+    "quality" = "SD"
+}
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/parse/file" -Method post -Body ($body | ConvertTo-Json) #Parses a file (for testing)

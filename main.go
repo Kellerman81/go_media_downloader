@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"html/template"
 	"log"
 	"net/http"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -30,6 +32,15 @@ import (
 	"github.com/gin-gonic/gin"
 	ginlog "github.com/toorop/gin-logrus"
 )
+
+type apiparse struct {
+	Name    string
+	Year    bool
+	Typ     string
+	Path    string
+	Config  string
+	Quality string
+}
 
 func main() {
 
@@ -92,19 +103,6 @@ func main() {
 	// fmt.Println(len(table))
 	// fmt.Println(tableerr)
 	// return
-	//parse, _ := utils.NewFileParser(cfg, "Bull.2016.S03E12.HDTV.x264-KILLERS (tvdb311945) (tvdb1234)", true, "series")
-	//parse, _ := utils.NewFileParser(cfg, "Rampage.Capital.Punishment.2014.BRRIP.H264.AAC-MAJESTiC (tt3448226)", false, "movie")
-	// fmt.Println("aud: ", parse.Audio)
-	// fmt.Println("cod: ", parse.Codec)
-	// fmt.Println("im: ", parse.Imdb)
-	// fmt.Println("ql: ", parse.Quality)
-	// fmt.Println("res: ", parse.Resolution)
-	// fmt.Println("tit: ", parse.Title)
-	// fmt.Println("year: ", parse.Year)
-	// fmt.Println("season: ", parse.Season)
-	// fmt.Println("episode: ", parse.Episode)
-	// fmt.Println("iden: ", parse.Identifier)
-	// return
 
 	apiexternal.NewOmdbClient(cfg_general.OmdbApiKey, cfg_general.Omdblimiterseconds, cfg_general.Omdblimitercalls)
 	apiexternal.NewTmdbClient(cfg_general.TheMovieDBApiKey, cfg_general.Tmdblimiterseconds, cfg_general.Tmdblimitercalls)
@@ -127,6 +125,20 @@ func main() {
 
 	database.UpgradeDB()
 	database.GetVars()
+
+	//parse, _ := utils.NewFileParser(cfg, "Bull.2016.S03E12.HDTV.x264-KILLERS (tvdb311945) (tvdb1234)", true, "series")
+	// parse, _ := utils.NewFileParser("Rampage.Capital.Punishment.2014.BRRIP.H264.AAC-MAJESTiC (tt3448226)", false, "movie")
+	// fmt.Println("aud: ", parse.Audio)
+	// fmt.Println("cod: ", parse.Codec)
+	// fmt.Println("im: ", parse.Imdb)
+	// fmt.Println("ql: ", parse.Quality)
+	// fmt.Println("res: ", parse.Resolution)
+	// fmt.Println("tit: ", parse.Title)
+	// fmt.Println("year: ", parse.Year)
+	// fmt.Println("season: ", parse.Season)
+	// fmt.Println("episode: ", parse.Episode)
+	// fmt.Println("iden: ", parse.Identifier)
+	// return
 
 	counter, _ := database.CountRows("dbmovies", database.Query{})
 	if counter == 0 {
@@ -273,6 +285,83 @@ func main() {
 			database.DB.Exec("VACUUM;")
 			database.ReadWriteMu.Unlock()
 			ctx.JSON(http.StatusOK, gin.H{"data": "ok"})
+		})
+		routerapi.POST("/parse/string", func(ctx *gin.Context) {
+			var getcfg apiparse
+			if err := ctx.ShouldBindJSON(&getcfg); err != nil {
+				ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+			fmt.Println(getcfg)
+			parse, _ := utils.NewFileParser(getcfg.Name, getcfg.Year, getcfg.Typ)
+			if getcfg.Typ == "movie" {
+				var typcfg config.MediaTypeConfig
+				config.ConfigGet("movie_"+getcfg.Config, typcfg)
+				var qualcfg config.QualityConfig
+				config.ConfigGet("quality_"+getcfg.Quality, qualcfg)
+				parse.GetPriority(typcfg, qualcfg)
+			}
+			if getcfg.Typ == "series" {
+				var typcfg config.MediaTypeConfig
+				config.ConfigGet("serie_"+getcfg.Config, typcfg)
+				var qualcfg config.QualityConfig
+				config.ConfigGet("quality_"+getcfg.Quality, qualcfg)
+				parse.GetPriority(typcfg, qualcfg)
+			}
+			ctx.JSON(http.StatusOK, gin.H{"parsed": parse})
+		})
+		routerapi.POST("/parse/file", func(ctx *gin.Context) {
+			var getcfg apiparse
+			if err := ctx.ShouldBindJSON(&getcfg); err != nil {
+				ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+			parse, _ := utils.NewFileParser(filepath.Base(getcfg.Path), getcfg.Year, getcfg.Typ)
+			if getcfg.Typ == "movie" {
+				var typcfg config.MediaTypeConfig
+				config.ConfigGet("movie_"+getcfg.Config, typcfg)
+				var qualcfg config.QualityConfig
+				config.ConfigGet("quality_"+getcfg.Quality, qualcfg)
+
+				parse.ParseVideoFile(getcfg.Path, typcfg, qualcfg)
+				parse.GetPriority(typcfg, qualcfg)
+			}
+			if getcfg.Typ == "series" {
+				var typcfg config.MediaTypeConfig
+				config.ConfigGet("serie_"+getcfg.Config, typcfg)
+				var qualcfg config.QualityConfig
+				config.ConfigGet("quality_"+getcfg.Quality, qualcfg)
+
+				parse.ParseVideoFile(getcfg.Path, typcfg, qualcfg)
+				parse.GetPriority(typcfg, qualcfg)
+			}
+			ctx.JSON(http.StatusOK, gin.H{"parsed": parse})
+		})
+		routerapi.GET("/quality", func(c *gin.Context) {
+			qualities, _ := database.QueryQualities(database.Query{})
+			c.JSON(http.StatusOK, gin.H{"data": qualities})
+		})
+		routerapi.DELETE("/quality/:id", func(c *gin.Context) {
+			database.DeleteRow("qualities", database.Query{Where: "id=?", WhereArgs: []interface{}{c.Param("id")}})
+			c.JSON(http.StatusOK, gin.H{"data": "ok"})
+		})
+		routerapi.POST("/quality", func(c *gin.Context) {
+			var quality database.Qualities
+			if err := c.ShouldBindJSON(&quality); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+			counter, _ := database.CountRows("qualities", database.Query{Where: "id != 0 and id=?", WhereArgs: []interface{}{quality.ID}})
+
+			if counter == 0 {
+				database.InsertArray("qualities", []string{"Type", "Name", "Regex", "Strings", "Priority", "Use_Regex"},
+					[]interface{}{quality.Type, quality.Name, quality.Regex, quality.Strings, quality.Priority, quality.UseRegex})
+			} else {
+				database.UpdateArray("qualities", []string{"Type", "Name", "Regex", "Strings", "Priority", "Use_Regex"},
+					[]interface{}{quality.Type, quality.Name, quality.Regex, quality.Strings, quality.Priority, quality.UseRegex},
+					database.Query{Where: "id != 0 and id=?", WhereArgs: []interface{}{quality.ID}})
+			}
+			c.JSON(http.StatusOK, gin.H{"data": "ok"})
 		})
 		routerapi.GET("/quality/:name/:config", func(c *gin.Context) {
 			if !config.ConfigCheck(c.Param("name")) {

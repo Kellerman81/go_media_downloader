@@ -645,7 +645,7 @@ func GetQualities(qu Query) (Qualities, error) {
 	return Qualities{}, errors.New("no result")
 }
 func QueryQualities(qu Query) ([]Qualities, error) {
-	columns := "id,created_at,updated_at,type,name,regex,strings,priority"
+	columns := "id,created_at,updated_at,type,name,regex,strings,priority,use_regex"
 	if qu.Select != "" {
 		columns = qu.Select
 	}
