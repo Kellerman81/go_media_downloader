@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"html/template"
 	"log"
 	"net/http"
@@ -292,20 +291,19 @@ func main() {
 				ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 				return
 			}
-			fmt.Println(getcfg)
 			parse, _ := utils.NewFileParser(getcfg.Name, getcfg.Year, getcfg.Typ)
 			if getcfg.Typ == "movie" {
 				var typcfg config.MediaTypeConfig
-				config.ConfigGet("movie_"+getcfg.Config, typcfg)
+				config.ConfigGet("movie_"+getcfg.Config, &typcfg)
 				var qualcfg config.QualityConfig
-				config.ConfigGet("quality_"+getcfg.Quality, qualcfg)
+				config.ConfigGet("quality_"+getcfg.Quality, &qualcfg)
 				parse.GetPriority(typcfg, qualcfg)
 			}
 			if getcfg.Typ == "series" {
 				var typcfg config.MediaTypeConfig
-				config.ConfigGet("serie_"+getcfg.Config, typcfg)
+				config.ConfigGet("serie_"+getcfg.Config, &typcfg)
 				var qualcfg config.QualityConfig
-				config.ConfigGet("quality_"+getcfg.Quality, qualcfg)
+				config.ConfigGet("quality_"+getcfg.Quality, &qualcfg)
 				parse.GetPriority(typcfg, qualcfg)
 			}
 			ctx.JSON(http.StatusOK, gin.H{"parsed": parse})
@@ -319,18 +317,18 @@ func main() {
 			parse, _ := utils.NewFileParser(filepath.Base(getcfg.Path), getcfg.Year, getcfg.Typ)
 			if getcfg.Typ == "movie" {
 				var typcfg config.MediaTypeConfig
-				config.ConfigGet("movie_"+getcfg.Config, typcfg)
+				config.ConfigGet("movie_"+getcfg.Config, &typcfg)
 				var qualcfg config.QualityConfig
-				config.ConfigGet("quality_"+getcfg.Quality, qualcfg)
+				config.ConfigGet("quality_"+getcfg.Quality, &qualcfg)
 
 				parse.ParseVideoFile(getcfg.Path, typcfg, qualcfg)
 				parse.GetPriority(typcfg, qualcfg)
 			}
 			if getcfg.Typ == "series" {
 				var typcfg config.MediaTypeConfig
-				config.ConfigGet("serie_"+getcfg.Config, typcfg)
+				config.ConfigGet("serie_"+getcfg.Config, &typcfg)
 				var qualcfg config.QualityConfig
-				config.ConfigGet("quality_"+getcfg.Quality, qualcfg)
+				config.ConfigGet("quality_"+getcfg.Quality, &qualcfg)
 
 				parse.ParseVideoFile(getcfg.Path, typcfg, qualcfg)
 				parse.GetPriority(typcfg, qualcfg)
