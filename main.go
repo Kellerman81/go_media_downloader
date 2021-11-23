@@ -6,7 +6,6 @@ import (
 	"log"
 	"net/http"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -26,20 +25,16 @@ import (
 
 	"github.com/DeanThompson/ginpprof"
 
+	docs "github.com/Kellerman81/go_media_downloader/docs"
 	"github.com/foolin/goview"
 	"github.com/foolin/goview/supports/ginview"
 	"github.com/gin-gonic/gin"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 	ginlog "github.com/toorop/gin-logrus"
 )
 
-type apiparse struct {
-	Name    string
-	Year    bool
-	Typ     string
-	Path    string
-	Config  string
-	Quality string
-}
+// @title go_media_downloader API
 
 func main() {
 
@@ -208,9 +203,11 @@ func main() {
 		}
 	}
 
+	database.DBImdb.SetMaxOpenConns(5)
 	scheduler.InitScheduler()
 
 	router := gin.New()
+	docs.SwaggerInfo.BasePath = "/"
 	if !strings.EqualFold(cfg_general.LogLevel, "debug") {
 		gin.SetMode(gin.ReleaseMode)
 	}
@@ -254,310 +251,30 @@ func main() {
 			ctx.HTML(http.StatusOK, "page.html", gin.H{"title": "Page file title!!"})
 		})
 	}
-	routerapi := router.Group("/api/" + cfg_general.WebApiKey)
+	routerapi := router.Group("/api")
 	{
-		routerapi.GET("/fillimdb", func(ctx *gin.Context) {
-			go utils.InitFillImdb()
-		})
-		routerapi.GET("/scheduler/stop", func(c *gin.Context) {
-			scheduler.QueueData.Stop()
-			scheduler.QueueFeeds.Stop()
-			scheduler.QueueSearch.Stop()
-		})
-		routerapi.GET("/scheduler/start", func(c *gin.Context) {
-			scheduler.QueueData.Start()
-			scheduler.QueueFeeds.Start()
-			scheduler.QueueSearch.Start()
-		})
-		routerapi.GET("/db/close", func(ctx *gin.Context) {
-			database.DB.Close()
-			database.DBImdb.Close()
-		})
-		routerapi.GET("/db/clear/:name", func(ctx *gin.Context) {
-			database.ReadWriteMu.Lock()
-			database.DB.Exec("DELETE FROM " + ctx.Param("name") + "; VACUUM;")
-			database.ReadWriteMu.Unlock()
-			ctx.JSON(http.StatusOK, gin.H{"data": "ok"})
-		})
-		routerapi.GET("/db/vacuum", func(ctx *gin.Context) {
-			database.ReadWriteMu.Lock()
-			database.DB.Exec("VACUUM;")
-			database.ReadWriteMu.Unlock()
-			ctx.JSON(http.StatusOK, gin.H{"data": "ok"})
-		})
-		routerapi.POST("/parse/string", func(ctx *gin.Context) {
-			var getcfg apiparse
-			if err := ctx.ShouldBindJSON(&getcfg); err != nil {
-				ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-				return
-			}
-			parse, _ := utils.NewFileParser(getcfg.Name, getcfg.Year, getcfg.Typ)
-			if getcfg.Typ == "movie" {
-				var typcfg config.MediaTypeConfig
-				config.ConfigGet("movie_"+getcfg.Config, &typcfg)
-				var qualcfg config.QualityConfig
-				config.ConfigGet("quality_"+getcfg.Quality, &qualcfg)
-				parse.GetPriority(typcfg, qualcfg)
-			}
-			if getcfg.Typ == "series" {
-				var typcfg config.MediaTypeConfig
-				config.ConfigGet("serie_"+getcfg.Config, &typcfg)
-				var qualcfg config.QualityConfig
-				config.ConfigGet("quality_"+getcfg.Quality, &qualcfg)
-				parse.GetPriority(typcfg, qualcfg)
-			}
-			ctx.JSON(http.StatusOK, gin.H{"parsed": parse})
-		})
-		routerapi.POST("/parse/file", func(ctx *gin.Context) {
-			var getcfg apiparse
-			if err := ctx.ShouldBindJSON(&getcfg); err != nil {
-				ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-				return
-			}
-			parse, _ := utils.NewFileParser(filepath.Base(getcfg.Path), getcfg.Year, getcfg.Typ)
-			if getcfg.Typ == "movie" {
-				var typcfg config.MediaTypeConfig
-				config.ConfigGet("movie_"+getcfg.Config, &typcfg)
-				var qualcfg config.QualityConfig
-				config.ConfigGet("quality_"+getcfg.Quality, &qualcfg)
+		routerapi.GET("/fillimdb", api.ApiFillImdb)
+		routerapi.GET("/scheduler/stop", api.ApiSchedulerStop)
+		routerapi.GET("/scheduler/start", api.ApiSchedulerStart)
+		routerapi.GET("/db/close", api.ApiDbClose)
+		routerapi.GET("/db/clear/:name", api.ApiDbClear)
+		routerapi.GET("/db/vacuum", api.ApiDbVacuum)
+		routerapi.POST("/parse/string", api.ApiParseString)
+		routerapi.POST("/parse/file", api.ApiParseFile)
+		routerapi.GET("/quality", api.ApiGetQualities)
+		routerapi.DELETE("/quality/:id", api.ApiQualityDelete)
+		routerapi.POST("/quality", api.ApiQualityUpdate)
+		routerapi.GET("/quality/:name/:config", api.ApiListQualityPriorities)
 
-				parse.ParseVideoFile(getcfg.Path, typcfg, qualcfg)
-				parse.GetPriority(typcfg, qualcfg)
-			}
-			if getcfg.Typ == "series" {
-				var typcfg config.MediaTypeConfig
-				config.ConfigGet("serie_"+getcfg.Config, &typcfg)
-				var qualcfg config.QualityConfig
-				config.ConfigGet("quality_"+getcfg.Quality, &qualcfg)
+		routerapi.GET("/config/all", api.ApiConfigAll)
+		routerapi.GET("/config/clear", api.ApiConfigClear)
+		routerapi.GET("/config/get/:name", api.ApiConfigGet)
 
-				parse.ParseVideoFile(getcfg.Path, typcfg, qualcfg)
-				parse.GetPriority(typcfg, qualcfg)
-			}
-			ctx.JSON(http.StatusOK, gin.H{"parsed": parse})
-		})
-		routerapi.GET("/quality", func(c *gin.Context) {
-			qualities, _ := database.QueryQualities(database.Query{})
-			c.JSON(http.StatusOK, gin.H{"data": qualities})
-		})
-		routerapi.DELETE("/quality/:id", func(c *gin.Context) {
-			database.DeleteRow("qualities", database.Query{Where: "id=?", WhereArgs: []interface{}{c.Param("id")}})
-			c.JSON(http.StatusOK, gin.H{"data": "ok"})
-		})
-		routerapi.POST("/quality", func(c *gin.Context) {
-			var quality database.Qualities
-			if err := c.ShouldBindJSON(&quality); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-				return
-			}
-			counter, _ := database.CountRows("qualities", database.Query{Where: "id != 0 and id=?", WhereArgs: []interface{}{quality.ID}})
+		routerapi.DELETE("/config/delete/:name", api.ApiConfigDelete)
 
-			if counter == 0 {
-				database.InsertArray("qualities", []string{"Type", "Name", "Regex", "Strings", "Priority", "Use_Regex"},
-					[]interface{}{quality.Type, quality.Name, quality.Regex, quality.Strings, quality.Priority, quality.UseRegex})
-			} else {
-				database.UpdateArray("qualities", []string{"Type", "Name", "Regex", "Strings", "Priority", "Use_Regex"},
-					[]interface{}{quality.Type, quality.Name, quality.Regex, quality.Strings, quality.Priority, quality.UseRegex},
-					database.Query{Where: "id != 0 and id=?", WhereArgs: []interface{}{quality.ID}})
-			}
-			c.JSON(http.StatusOK, gin.H{"data": "ok"})
-		})
-		routerapi.GET("/quality/:name/:config", func(c *gin.Context) {
-			if !config.ConfigCheck(c.Param("name")) {
-				c.JSON(http.StatusNotFound, gin.H{"data": "quality not found"})
-				return
-			}
-			if !config.ConfigCheck(c.Param("config")) {
-				c.JSON(http.StatusNotFound, gin.H{"data": "config not found"})
-				return
-			}
-			var qual config.QualityConfig
-			config.ConfigGet(c.Param("name"), &qual)
-			var media config.MediaTypeConfig
-			config.ConfigGet(c.Param("config"), &media)
-			var parser []utils.ParseInfo
-			for idxreso := range database.Getresolutions {
-				wantedreso := false
-				for idxwantreso := range qual.Wanted_resolution {
-					if strings.EqualFold(qual.Wanted_resolution[idxwantreso], database.Getresolutions[idxreso].Name) {
-						wantedreso = true
-						break
-					}
-				}
-				if !wantedreso {
-					continue
-				}
-				for idxqual := range database.Getqualities {
-					wantedqual := false
-					for idxwantqual := range qual.Wanted_quality {
-						if strings.EqualFold(qual.Wanted_quality[idxwantqual], database.Getqualities[idxqual].Name) {
-							wantedqual = true
-							break
-						}
-					}
-					if !wantedqual {
-						continue
-					}
-					for idxcodec := range database.Getcodecs {
-						for idxaudio := range database.Getaudios {
-							parse := utils.ParseInfo{
-								Resolution:   database.Getresolutions[idxreso].Name,
-								Quality:      database.Getqualities[idxqual].Name,
-								Codec:        database.Getcodecs[idxcodec].Name,
-								Audio:        database.Getaudios[idxaudio].Name,
-								ResolutionID: database.Getresolutions[idxreso].ID,
-								QualityID:    database.Getqualities[idxqual].ID,
-								CodecID:      database.Getcodecs[idxcodec].ID,
-								AudioID:      database.Getaudios[idxaudio].ID,
-							}
-							parse.GetIDPriority(media, qual)
-							parser = append(parser, parse)
-						}
-					}
-				}
-			}
-			c.JSON(http.StatusOK, gin.H{"data": parser})
-		})
+		routerapi.POST("/config/update/:name", api.ApiConfigUpdate)
 
-		routerapi.GET("/config/all", func(ctx *gin.Context) {
-			ctx.JSON(http.StatusOK, gin.H{"data": config.ConfigGetAll()})
-		})
-		routerapi.GET("/config/clear", func(ctx *gin.Context) {
-			keys, _ := config.ConfigDB.Keys([]byte("*"), 0, 0, true)
-			for _, idx := range keys {
-				config.ConfigDB.Delete(string(idx))
-			}
-			config.ClearCfg()
-			config.WriteCfg()
-			ctx.JSON(http.StatusOK, gin.H{"data": config.ConfigGetAll()})
-		})
-		routerapi.GET("/config/get/:name", func(ctx *gin.Context) {
-			configs := config.ConfigGetAll()
-			ctx.JSON(http.StatusOK, gin.H{"data": configs[ctx.Param("name")]})
-		})
-
-		routerapi.DELETE("/config/delete/:name", func(ctx *gin.Context) {
-			configs := config.ConfigGetAll()
-			config.ConfigDB.Delete(ctx.Param("name"))
-			delete(configs, ctx.Param("name"))
-			config.UpdateCfg(configs)
-			config.WriteCfg()
-			ctx.JSON(http.StatusOK, gin.H{"data": "ok"})
-		})
-
-		routerapi.POST("/config/update/:name", func(ctx *gin.Context) {
-			name := ctx.Param("name")
-			configs := config.ConfigGetAll()
-			if strings.HasPrefix(name, "general") {
-				var getcfg config.GeneralConfig
-				if err := ctx.ShouldBindJSON(&getcfg); err != nil {
-					ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-					return
-				}
-				configs[ctx.Param("name")] = getcfg
-			}
-			if strings.HasPrefix(name, "downloader_") {
-				var getcfg config.DownloaderConfig
-				if err := ctx.ShouldBindJSON(&getcfg); err != nil {
-					ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-					return
-				}
-				configs[ctx.Param("name")] = getcfg
-			}
-			if strings.HasPrefix(name, "imdb") {
-				var getcfg config.ImdbConfig
-				if err := ctx.ShouldBindJSON(&getcfg); err != nil {
-					ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-					return
-				}
-				configs[ctx.Param("name")] = getcfg
-			}
-			if strings.HasPrefix(name, "indexer") {
-				var getcfg config.IndexersConfig
-				if err := ctx.ShouldBindJSON(&getcfg); err != nil {
-					ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-					return
-				}
-				configs[ctx.Param("name")] = getcfg
-			}
-			if strings.HasPrefix(name, "list") {
-				var getcfg config.ListsConfig
-				if err := ctx.ShouldBindJSON(&getcfg); err != nil {
-					ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-					return
-				}
-				configs[ctx.Param("name")] = getcfg
-			}
-			if strings.HasPrefix(name, "serie") {
-				var getcfg config.MediaTypeConfig
-				if err := ctx.ShouldBindJSON(&getcfg); err != nil {
-					ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-					return
-				}
-				configs[ctx.Param("name")] = getcfg
-			}
-			if strings.HasPrefix(name, "movie") {
-				var getcfg config.MediaTypeConfig
-				if err := ctx.ShouldBindJSON(&getcfg); err != nil {
-					ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-					return
-				}
-				configs[ctx.Param("name")] = getcfg
-			}
-			if strings.HasPrefix(name, "notification") {
-				var getcfg config.NotificationConfig
-				if err := ctx.ShouldBindJSON(&getcfg); err != nil {
-					ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-					return
-				}
-				configs[ctx.Param("name")] = getcfg
-			}
-			if strings.HasPrefix(name, "path") {
-				var getcfg config.PathsConfig
-				if err := ctx.ShouldBindJSON(&getcfg); err != nil {
-					ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-					return
-				}
-				configs[ctx.Param("name")] = getcfg
-			}
-			if strings.HasPrefix(name, "quality") {
-				var getcfg config.QualityConfig
-				if err := ctx.ShouldBindJSON(&getcfg); err != nil {
-					ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-					return
-				}
-				configs[ctx.Param("name")] = getcfg
-			}
-			if strings.HasPrefix(name, "regex") {
-				var getcfg config.RegexConfigIn
-				if err := ctx.ShouldBindJSON(&getcfg); err != nil {
-					ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-					return
-				}
-				configs[ctx.Param("name")] = getcfg
-			}
-			if strings.HasPrefix(name, "scheduler") {
-				var getcfg config.SchedulerConfig
-				if err := ctx.ShouldBindJSON(&getcfg); err != nil {
-					ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-					return
-				}
-				configs[ctx.Param("name")] = getcfg
-			}
-			config.UpdateCfg(configs)
-			config.WriteCfg()
-			ctx.JSON(http.StatusOK, gin.H{"data": "ok"})
-		})
-
-		routerapi.GET("/config/type/:type", func(ctx *gin.Context) {
-			configs := config.ConfigGetAll()
-			list := make(map[string]interface{})
-			for name, value := range configs {
-				if strings.HasPrefix(name, ctx.Param("type")) {
-					list[name] = value
-				}
-			}
-			ctx.JSON(http.StatusOK, gin.H{"data": list})
-		})
+		routerapi.GET("/config/type/:type", api.ApiListConfigType)
 		routerall := routerapi.Group("/all")
 		api.AddAllRoutes(routerall)
 
@@ -566,6 +283,7 @@ func main() {
 
 		routerseries := routerapi.Group("/series")
 		api.AddSeriesRoutes(routerseries)
+		router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 	}
 
 	if strings.EqualFold(cfg_general.LogLevel, "Debug") {

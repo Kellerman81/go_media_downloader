@@ -36,6 +36,7 @@ omdb_apikey =  "insert"
 themoviedb_apikey="insert"
 trakt_client_id="insert"
 failed_indexer_block_time = 1 # Number of minutes to skip indexer after a failed query - default 5
+disable_parser_string_match = true #Disables String Matcher (Only Regex is used for matching) - UseRegex for qualities must be enabled
 
 trakt_limiter_seconds=1 # will only change after restart
 trakt_limiter_calls=20 # max limiter_calls in limiter_seconds

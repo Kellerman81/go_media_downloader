@@ -99,6 +99,7 @@ type GeneralConfig struct {
 	TheMovieDBApiKey                   string   `koanf:"themoviedb_apikey"`
 	TraktClientId                      string   `koanf:"trakt_client_id"`
 	SchedulerDisabled                  bool     `koanf:"scheduler_disabled"`
+	DisableParserStringMatch           bool     `koanf:"disable_parser_string_match"`
 	Traktlimiterseconds                int      `koanf:"trakt_limiter_seconds"`
 	Traktlimitercalls                  int      `koanf:"trakt_limiter_calls"`
 	Tvdblimiterseconds                 int      `koanf:"tvdb_limiter_seconds"`

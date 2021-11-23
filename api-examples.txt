@@ -1,103 +1,103 @@
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/movies/job/checkmissingflag" -Method get # Update Missing Field in Table
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/movies/job/checkmissing" -Method get # Scan for removed media from your repository
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/movies/job/structure" -Method get # Structure your downloaded media
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/movies/job/data" -Method get # Scan your media repository
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/movies/job/datafull" -Method get # Scan your media repository - performance is better than data since only one filesystem scan is run (no list parameter supported)
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/movies/job/feeds" -Method get # Scan for new movies to get
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/movies/job/refresh" -Method get # Refresh metadata of all movies
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/movies/job/refreshinc" -Method get # Refresh metadata of 100 movies
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/movies/job/rss" -Method get # Get RSS feed and check if a upgrade or a missing release is in the feed
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/movies/job/searchmissinginc" -Method get
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/movies/job/searchmissingfull" -Method get
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/movies/job/searchupgradeinc" -Method get
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/movies/job/searchupgradefull" -Method get
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/movies/job/searchmissinginctitle" -Method get
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/movies/job/searchmissingfulltitle" -Method get
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/movies/job/searchupgradeinctitle" -Method get
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/movies/job/searchupgradefulltitle" -Method get
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/db/clear/movie_file_unmatcheds" -Method get #Clears db table - unmatched files will only be tried to match once every day
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/movies/all/refresh" -Method get # Refresh 100 Movie Metadata
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/movies/all/refreshall" -Method get # Refresh all Movie Metadata
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/movies/all/refresh/:id" -Method get # Refresh specific Movie Metadata
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/movies/unmatched" -Method get #List all unmatched movies
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/movies/" -Method get #List all movies
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/movies/" -Method post -Body ($obj | ConvertTo-Json) #Update Movie - look into database/movies.go for fields (Struct dbmovies) - not all fields can be updated!
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/movies/:id" -Method delete #Delete Movie
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/movies/list" -Method post -Body ($obj | ConvertTo-Json) #Update List Movie - look into database/movies.go for fields (Struct movies) - not all fields can be updated!
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/movies/list/:name" -Method get #list movies of a List
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/movies/list/:id" -Method delete #Delete List Movie
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/movies/search/id/:id" -Method get #search and dl movie by movie-id - get movie id by statement above
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/movies/search/history/clear/:name" -Method get #clear downloaded history by list name
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/movies/job/checkmissingflag?apikey=mysecure" -Method get # Update Missing Field in Table
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/movies/job/checkmissing?apikey=mysecure" -Method get # Scan for removed media from your repository
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/movies/job/structure?apikey=mysecure" -Method get # Structure your downloaded media
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/movies/job/data?apikey=mysecure" -Method get # Scan your media repository
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/movies/job/datafull?apikey=mysecure" -Method get # Scan your media repository - performance is better than data since only one filesystem scan is run (no list parameter supported)
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/movies/job/feeds?apikey=mysecure" -Method get # Scan for new movies to get
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/movies/job/refresh?apikey=mysecure" -Method get # Refresh metadata of all movies
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/movies/job/refreshinc?apikey=mysecure" -Method get # Refresh metadata of 100 movies
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/movies/job/rss?apikey=mysecure" -Method get # Get RSS feed and check if a upgrade or a missing release is in the feed
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/movies/job/searchmissinginc?apikey=mysecure" -Method get
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/movies/job/searchmissingfull?apikey=mysecure" -Method get
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/movies/job/searchupgradeinc?apikey=mysecure" -Method get
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/movies/job/searchupgradefull?apikey=mysecure" -Method get
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/movies/job/searchmissinginctitle?apikey=mysecure" -Method get
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/movies/job/searchmissingfulltitle?apikey=mysecure" -Method get
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/movies/job/searchupgradeinctitle?apikey=mysecure" -Method get
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/movies/job/searchupgradefulltitle?apikey=mysecure" -Method get
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/db/clear/movie_file_unmatcheds?apikey=mysecure" -Method get #Clears db table - unmatched files will only be tried to match once every day
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/movies/all/refresh?apikey=mysecure" -Method get # Refresh 100 Movie Metadata
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/movies/all/refreshall?apikey=mysecure" -Method get # Refresh all Movie Metadata
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/movies/all/refresh/:id?apikey=mysecure" -Method get # Refresh specific Movie Metadata
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/movies/unmatched?apikey=mysecure" -Method get #List all unmatched movies
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/movies?apikey=mysecure" -Method get #List all movies
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/movies?apikey=mysecure" -Method post -Body ($obj | ConvertTo-Json) #Update Movie - look into database/movies.go for fields (Struct dbmovies) - not all fields can be updated!
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/movies/:id?apikey=mysecure" -Method delete #Delete Movie
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/movies/list?apikey=mysecure" -Method post -Body ($obj | ConvertTo-Json) #Update List Movie - look into database/movies.go for fields (Struct movies) - not all fields can be updated!
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/movies/list/:name?apikey=mysecure" -Method get #list movies of a List
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/movies/list/:id?apikey=mysecure" -Method delete #Delete List Movie
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/movies/search/id/:id?apikey=mysecure" -Method get #search and dl movie by movie-id - get movie id by statement above
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/movies/search/history/clear/:name?apikey=mysecure" -Method get #clear downloaded history by list name
 
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/series/job/checkmissingflag" -Method get # Update Missing Field in Table
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/series/job/checkmissing" -Method get # Scan for removed media from your repository
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/series/job/structure" -Method get # Structure your downloaded media
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/series/job/data" -Method get # Scan your media repository
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/series/job/datafull" -Method get # Scan your media repository - performance is better than data since only one filesystem scan is run (no list parameter supported)
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/series/job/feeds" -Method get # Scan for new series/episodes to get
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/series/job/refresh" -Method get # Refresh metadata of all series
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/series/job/refreshinc" -Method get # Refresh metadata of 20 series
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/series/job/rss/" -Method get # Get RSS feed and check if a upgrade or a missing release is in the feed
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/series/job/searchmissinginc" -Method get # Search x Missing Episodes 
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/series/job/searchmissingfull" -Method get # Search all Missing Episodes
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/series/job/searchupgradeinc" -Method get
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/series/job/searchupgradefull" -Method get
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/series/job/searchmissinginctitle" -Method get
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/series/job/searchmissingfulltitle" -Method get
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/series/job/searchupgradeinctitle" -Method get
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/series/job/searchupgradefulltitle" -Method get
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/db/clear/serie_file_unmatcheds" -Method get #Clears db table - unmatched files will only be tried to match once every day
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/series/" -Method get #List all series
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/series/" -Method post -Body ($obj | ConvertTo-Json) #Update Series - look into database/series.go for fields (Struct dbseries) - not all fields can be updated!
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/series/:id" -Method delete #Delete Series
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/series/list/:name" -Method delete #List series of a list
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/series/list/" -Method post -Body ($obj | ConvertTo-Json) #Update List Series - look into database/series.go for fields (Struct series) - not all fields can be updated!
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/series/list/:id" -Method delete #Delete List Series
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/series/all/refresh" -Method get # Refresh 20 Series Metadata
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/series/all/refreshall" -Method get # Refresh all Series Metadata
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/series/all/refresh/:id" -Method get # Refresh specific Series Metadata
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/series/unmatched" -Method get #List all unmatched files
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/series/episodes" -Method get #List all series episodes
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/series/episodes" -Method post -Body ($obj | ConvertTo-Json) #Update Series episode - look into database/series.go for fields (Struct dbserie_episodes) - not all fields can be updated!
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/series/episodes/:id" -Method delete #Delete Series Episode
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/series/episodes/:id" -Method get #List Series Episodes
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/series/episodes/list/:id" -Method get #List all series episodes of a list entry (lists missing and reached data)
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/series/episodes/list/:id" -Method delete #Removes a episode from a list 
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/series/episodes/list/" -Method post -Body ($obj | ConvertTo-Json) #Updates a episode from a list - look into database/series.go for fields (Struct serie_episodes) - not all fields can be updated!
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/series/search/id/:id" -Method get #search and dl episode by series list id (search complete series including Season 0/Specials) (Searches for missing and upgrades!)
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/series/search/id/:id/:season" -Method get #search and dl episode by series list id (search complete series season) (Searches for missing and upgrades!)
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/series/search/history/clear/:name" -Method get #clear downloaded history by list name
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/series/episodes/search/id/:id" -Method get #search and dl episode by episode list id (search single episode) (Searches for missing and upgrades!)
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/series/job/checkmissingflag?apikey=mysecure" -Method get # Update Missing Field in Table
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/series/job/checkmissing?apikey=mysecure" -Method get # Scan for removed media from your repository
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/series/job/structure?apikey=mysecure" -Method get # Structure your downloaded media
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/series/job/data?apikey=mysecure" -Method get # Scan your media repository
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/series/job/datafull?apikey=mysecure" -Method get # Scan your media repository - performance is better than data since only one filesystem scan is run (no list parameter supported)
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/series/job/feeds?apikey=mysecure" -Method get # Scan for new series/episodes to get
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/series/job/refresh?apikey=mysecure" -Method get # Refresh metadata of all series
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/series/job/refreshinc?apikey=mysecure" -Method get # Refresh metadata of 20 series
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/series/job/rss?apikey=mysecure" -Method get # Get RSS feed and check if a upgrade or a missing release is in the feed
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/series/job/searchmissinginc?apikey=mysecure" -Method get # Search x Missing Episodes 
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/series/job/searchmissingfull?apikey=mysecure" -Method get # Search all Missing Episodes
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/series/job/searchupgradeinc?apikey=mysecure" -Method get
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/series/job/searchupgradefull?apikey=mysecure" -Method get
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/series/job/searchmissinginctitle?apikey=mysecure" -Method get
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/series/job/searchmissingfulltitle?apikey=mysecure" -Method get
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/series/job/searchupgradeinctitle?apikey=mysecure" -Method get
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/series/job/searchupgradefulltitle?apikey=mysecure" -Method get
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/db/clear/serie_file_unmatcheds?apikey=mysecure" -Method get #Clears db table - unmatched files will only be tried to match once every day
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/series/?apikey=mysecure" -Method get #List all series
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/series/?apikey=mysecure" -Method post -Body ($obj | ConvertTo-Json) #Update Series - look into database/series.go for fields (Struct dbseries) - not all fields can be updated!
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/series/:id?apikey=mysecure" -Method delete #Delete Series
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/series/list/:name?apikey=mysecure" -Method delete #List series of a list
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/series/list/?apikey=mysecure" -Method post -Body ($obj | ConvertTo-Json) #Update List Series - look into database/series.go for fields (Struct series) - not all fields can be updated!
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/series/list/:id?apikey=mysecure" -Method delete #Delete List Series
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/series/all/refresh?apikey=mysecure" -Method get # Refresh 20 Series Metadata
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/series/all/refreshall?apikey=mysecure" -Method get # Refresh all Series Metadata
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/series/all/refresh/:id?apikey=mysecure" -Method get # Refresh specific Series Metadata
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/series/unmatched?apikey=mysecure" -Method get #List all unmatched files
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/series/episodes?apikey=mysecure" -Method get #List all series episodes
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/series/episodes?apikey=mysecure" -Method post -Body ($obj | ConvertTo-Json) #Update Series episode - look into database/series.go for fields (Struct dbserie_episodes) - not all fields can be updated!
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/series/episodes/:id?apikey=mysecure" -Method delete #Delete Series Episode
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/series/episodes/:id?apikey=mysecure" -Method get #List Series Episodes
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/series/episodes/list/:id?apikey=mysecure" -Method get #List all series episodes of a list entry (lists missing and reached data)
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/series/episodes/list/:id?apikey=mysecure" -Method delete #Removes a episode from a list 
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/series/episodes/list/?apikey=mysecure" -Method post -Body ($obj | ConvertTo-Json) #Updates a episode from a list - look into database/series.go for fields (Struct serie_episodes) - not all fields can be updated!
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/series/search/id/:id?apikey=mysecure" -Method get #search and dl episode by series list id (search complete series including Season 0/Specials) (Searches for missing and upgrades!)
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/series/search/id/:id/:season?apikey=mysecure" -Method get #search and dl episode by series list id (search complete series season) (Searches for missing and upgrades!)
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/series/search/history/clear/:name?apikey=mysecure" -Method get #clear downloaded history by list name
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/series/episodes/search/id/:id?apikey=mysecure" -Method get #search and dl episode by episode list id (search single episode) (Searches for missing and upgrades!)
 
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/all/data" -Method get # Scan your media repository movies and series
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/all/feeds" -Method get # Scan for new series/episodes to get movies and series
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/all/search/rss/" -Method get # Get RSS feed and check if a upgrade or a missing release is in the feed
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/all/search/missing/full" -Method get
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/all/search/missing/inc" -Method get
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/all/search/upgrade/full" -Method get
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/all/search/upgrade/inc" -Method get
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/all/data?apikey=mysecure" -Method get # Scan your media repository movies and series
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/all/feeds?apikey=mysecure" -Method get # Scan for new series/episodes to get movies and series
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/all/search/rss?apikey=mysecure" -Method get # Get RSS feed and check if a upgrade or a missing release is in the feed
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/all/search/missing/full?apikey=mysecure" -Method get
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/all/search/missing/inc?apikey=mysecure" -Method get
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/all/search/upgrade/full?apikey=mysecure" -Method get
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/all/search/upgrade/inc?apikey=mysecure" -Method get
 
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/fillimdb" -Method get #build local imdb cache
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/db/vacuum" -Method get #vacuum db
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/db/clear/:name" -Method get #clear db table
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/db/close" -Method get #Closes db
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/scheduler/start" -Method get #Starts scheduler
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/scheduler/stop" -Method get #Stops scheduler
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/quality/:name/:config" -Method get #Get Calculated Quality Priorities - name ex: quality_SD - config ex: serie_EN / movie_EN
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/fillimdb?apikey=mysecure" -Method get #build local imdb cache
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/db/vacuum?apikey=mysecure" -Method get #vacuum db
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/db/clear/:name?apikey=mysecure" -Method get #clear db table
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/db/close?apikey=mysecure" -Method get #Closes db
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/scheduler/start?apikey=mysecure" -Method get #Starts scheduler
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/scheduler/stop?apikey=mysecure" -Method get #Stops scheduler
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/quality/:name/:config?apikey=mysecure" -Method get #Get Calculated Quality Priorities - name ex: quality_SD - config ex: serie_EN / movie_EN
 
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/config/all" -Method get #Get full config
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/config/clear" -Method get #Clear full config (also writes config.toml!)
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/config/delete/:name" -Method delete #Remove block from config (also writes config.toml!)
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/config/update/:name" -Method post -Body ($obj | ConvertTo-Json) #Update block in config (can also add) (also writes config.toml!) (name possibilities: general, imdb, indexer_*, path_*, list_*, regex_*, downloader_*, serie_*, movie_*, quality_*, scheduler_*, notification_*) - look into config.go for fields - skipped fields will be set to default
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/config/get/:name" -Method get #Get config block
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/config/type/:type" -Method get #Get config blocks (ex. all path configs)
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/config/all?apikey=mysecure" -Method get #Get full config
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/config/clear?apikey=mysecure" -Method get #Clear full config (also writes config.toml!)
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/config/delete/:name?apikey=mysecure" -Method delete #Remove block from config (also writes config.toml!)
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/config/update/:name?apikey=mysecure" -Method post -Body ($obj | ConvertTo-Json) #Update block in config (can also add) (also writes config.toml!) (name possibilities: general, imdb, indexer_*, path_*, list_*, regex_*, downloader_*, serie_*, movie_*, quality_*, scheduler_*, notification_*) - look into config.go for fields - skipped fields will be set to default
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/config/get/:name?apikey=mysecure" -Method get #Get config block
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/config/type/:type?apikey=mysecure" -Method get #Get config blocks (ex. all path configs)
 
 ## All Job URLs can be extended by a list name to run the job only for that list
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/series/job/searchmissingfull/EN" -Method get # Search all Missing Episodes for series in the list 'EN'
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/series/job/searchmissingfull/EN?apikey=mysecure" -Method get # Search all Missing Episodes for series in the list 'EN'
 
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/quality" -Method get #List qualities
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/quality/:id" -Method delete #Delete qualities
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/quality" -Method post #Update/add qualities
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/quality?apikey=mysecure" -Method get #List qualities
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/quality/:id?apikey=mysecure" -Method delete #Delete qualities
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/quality?apikey=mysecure" -Method post #Update/add qualities
 
 $body = @{
     "name" = "Alias - S01E01 - Truth Be Told - 480P DVDRIP XVID - proper"
@@ -106,7 +106,7 @@ $body = @{
     "config" = "EN"
     "quality" = "SD"
 }
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/parse/string" -Method post -Body ($body | ConvertTo-Json) #Parses a string (for testing)
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/parse/string?apikey=mysecure" -Method post -Body ($body | ConvertTo-Json) #Parses a string (for testing)
 
 $body = @{
     "path" = "/media/Alias - S01E01 - Truth Be Told - 480P DVDRIP XVID - proper.mp4"
@@ -115,4 +115,4 @@ $body = @{
     "config" = "EN"
     "quality" = "SD"
 }
-$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/mysecure/parse/file" -Method post -Body ($body | ConvertTo-Json) #Parses a file (for testing)
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/parse/file?apikey=mysecure" -Method post -Body ($body | ConvertTo-Json) #Parses a file (for testing)

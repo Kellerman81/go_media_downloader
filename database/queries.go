@@ -66,6 +66,42 @@ func QueryDbmovie(qu Query) ([]Dbmovie, error) {
 	return result, nil
 }
 
+func QueryDbmovieJson(qu Query) ([]DbmovieJson, error) {
+	columns := "id,created_at,updated_at,title,release_date,year,adult,budget,genres,original_language,original_title,overview,popularity,revenue,runtime,spoken_languages,status,tagline,vote_average,vote_count,moviedb_id,imdb_id,freebase_m_id,freebase_id,facebook_id,instagram_id,twitter_id,url,backdrop,poster,slug,trakt_id"
+	if qu.Select != "" {
+		columns = qu.Select
+	}
+	counter, counterr := CountRows("dbmovies", qu)
+	if counter == 0 || counterr != nil {
+		return []DbmovieJson{}, nil
+	}
+	query := buildquery(columns, "dbmovies", qu, false)
+	var cfg_general config.GeneralConfig
+	config.ConfigGet("general", &cfg_general)
+
+	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
+		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
+	}
+	rows, err := DB.Queryx(query, qu.WhereArgs...)
+	if err != nil {
+		logger.Log.Error("Query: ", query, " error: ", err)
+		return []DbmovieJson{}, err
+	}
+
+	defer rows.Close()
+	result := make([]DbmovieJson, 0, counter)
+	for rows.Next() {
+		item := DbmovieJson{}
+		err2 := rows.StructScan(&item)
+		if err2 != nil {
+			logger.Log.Error("Query2: ", query, " error: ", err2)
+			return []DbmovieJson{}, err2
+		}
+		result = append(result, item)
+	}
+	return result, nil
+}
+
 func GetDbmovieTitle(qu Query) (DbmovieTitle, error) {
 	qu.Limit = 1
 	results, err := QueryDbmovieTitle(qu)

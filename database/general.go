@@ -69,30 +69,22 @@ func GetVars() {
 	quali, _ := QueryQualities(Query{Where: "Type=1", OrderBy: "priority desc"})
 	Getresolutions = make([]QualitiesRegex, 0, len(quali))
 	for _, qu := range quali {
-		r := regexp.MustCompile(qu.Regex)
-		p := QualitiesRegex{Regexp: r, Qualities: qu}
-		Getresolutions = append(Getresolutions, p)
+		Getresolutions = append(Getresolutions, QualitiesRegex{Regexp: regexp.MustCompile(qu.Regex), Qualities: qu})
 	}
 	quali, _ = QueryQualities(Query{Where: "Type=2", OrderBy: "priority desc"})
 	Getqualities = make([]QualitiesRegex, 0, len(quali))
 	for _, qu := range quali {
-		r := regexp.MustCompile(qu.Regex)
-		p := QualitiesRegex{Regexp: r, Qualities: qu}
-		Getqualities = append(Getqualities, p)
+		Getqualities = append(Getqualities, QualitiesRegex{Regexp: regexp.MustCompile(qu.Regex), Qualities: qu})
 	}
 	quali, _ = QueryQualities(Query{Where: "Type=3", OrderBy: "priority desc"})
 	Getcodecs = make([]QualitiesRegex, 0, len(quali))
 	for _, qu := range quali {
-		r := regexp.MustCompile(qu.Regex)
-		p := QualitiesRegex{Regexp: r, Qualities: qu}
-		Getcodecs = append(Getcodecs, p)
+		Getcodecs = append(Getcodecs, QualitiesRegex{Regexp: regexp.MustCompile(qu.Regex), Qualities: qu})
 	}
 	quali, _ = QueryQualities(Query{Where: "Type=4", OrderBy: "priority desc"})
 	Getaudios = make([]QualitiesRegex, 0, len(quali))
 	for _, qu := range quali {
-		r := regexp.MustCompile(qu.Regex)
-		p := QualitiesRegex{Regexp: r, Qualities: qu}
-		Getaudios = append(Getaudios, p)
+		Getaudios = append(Getaudios, QualitiesRegex{Regexp: regexp.MustCompile(qu.Regex), Qualities: qu})
 	}
 }
 func Upgrade(c *gin.Context) {
