@@ -1,0 +1,2292 @@
+definitions:
+  api.apiparse:
+    properties:
+      config:
+        type: string
+      name:
+        type: string
+      path:
+        type: string
+      quality:
+        type: string
+      typ:
+        type: string
+      year:
+        type: boolean
+    type: object
+  database.DbmovieJson:
+    properties:
+      adult:
+        type: boolean
+      backdrop:
+        type: string
+      budget:
+        type: integer
+      createdAt:
+        type: string
+      facebookID:
+        type: string
+      freebaseID:
+        type: string
+      freebaseMID:
+        type: string
+      genres:
+        type: string
+      id:
+        type: integer
+      imdbID:
+        type: string
+      instagramID:
+        type: string
+      moviedbID:
+        type: integer
+      originalLanguage:
+        type: string
+      originalTitle:
+        type: string
+      overview:
+        type: string
+      popularity:
+        type: number
+      poster:
+        type: string
+      release_date:
+        type: string
+      revenue:
+        type: integer
+      runtime:
+        type: integer
+      slug:
+        type: string
+      spokenLanguages:
+        type: string
+      status:
+        type: string
+      tagline:
+        type: string
+      title:
+        type: string
+      traktID:
+        type: integer
+      twitterID:
+        type: string
+      updatedAt:
+        type: string
+      url:
+        type: string
+      voteAverage:
+        type: number
+      voteCount:
+        type: integer
+      year:
+        type: integer
+    type: object
+  database.Dbserie:
+    properties:
+      aliases:
+        type: string
+      banner:
+        type: string
+      createdAt:
+        type: string
+      facebook:
+        type: string
+      fanart:
+        type: string
+      firstaired:
+        type: string
+      freebaseID:
+        type: string
+      freebaseMID:
+        type: string
+      genre:
+        type: string
+      id:
+        type: integer
+      identifiedby:
+        type: string
+      imdbID:
+        type: string
+      instagram:
+        type: string
+      language:
+        type: string
+      network:
+        type: string
+      overview:
+        type: string
+      poster:
+        type: string
+      rating:
+        type: string
+      runtime:
+        type: string
+      season:
+        type: string
+      seriename:
+        type: string
+      siterating:
+        type: string
+      siteratingCount:
+        type: string
+      slug:
+        type: string
+      status:
+        type: string
+      thetvdbID:
+        type: integer
+      traktID:
+        type: integer
+      tvrageID:
+        type: integer
+      twitter:
+        type: string
+      updatedAt:
+        type: string
+    type: object
+  database.DbserieEpisodeJson:
+    properties:
+      createdAt:
+        type: string
+      dbserieID:
+        type: integer
+      episode:
+        type: string
+      first_aired:
+        type: string
+      id:
+        type: integer
+      identifier:
+        type: string
+      overview:
+        type: string
+      poster:
+        type: string
+      season:
+        type: string
+      title:
+        type: string
+      updatedAt:
+        type: string
+    type: object
+  database.MovieFileUnmatchedJson:
+    properties:
+      createdAt:
+        type: string
+      filepath:
+        type: string
+      id:
+        type: integer
+      last_checked:
+        type: string
+      listname:
+        type: string
+      parsedData:
+        type: string
+      updatedAt:
+        type: string
+    type: object
+  database.MovieJson:
+    properties:
+      blacklisted:
+        type: boolean
+      createdAt:
+        type: string
+      dbmovieID:
+        type: integer
+      dontSearch:
+        type: boolean
+      dontUpgrade:
+        type: boolean
+      id:
+        type: integer
+      lastscan:
+        type: string
+      listname:
+        type: string
+      missing:
+        type: boolean
+      qualityProfile:
+        type: string
+      qualityReached:
+        type: boolean
+      rootpath:
+        type: string
+      updatedAt:
+        type: string
+    type: object
+  database.Qualities:
+    properties:
+      createdAt:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+      priority:
+        type: integer
+      regex:
+        type: string
+      strings:
+        type: string
+      type:
+        type: integer
+      updatedAt:
+        type: string
+      useRegex:
+        type: boolean
+    type: object
+  database.ResultMoviesJson:
+    properties:
+      adult:
+        type: boolean
+      backdrop:
+        type: string
+      blacklisted:
+        type: boolean
+      budget:
+        type: integer
+      createdAt:
+        type: string
+      dbmovieID:
+        type: integer
+      facebookID:
+        type: string
+      freebaseID:
+        type: string
+      freebaseMID:
+        type: string
+      genres:
+        type: string
+      id:
+        type: integer
+      imdbID:
+        type: string
+      instagramID:
+        type: string
+      lastscan:
+        type: string
+      listname:
+        type: string
+      missing:
+        type: boolean
+      moviedbID:
+        type: integer
+      originalLanguage:
+        type: string
+      originalTitle:
+        type: string
+      overview:
+        type: string
+      popularity:
+        type: number
+      poster:
+        type: string
+      qualityProfile:
+        type: string
+      qualityReached:
+        type: boolean
+      release_date:
+        type: string
+      revenue:
+        type: integer
+      rootpath:
+        type: string
+      runtime:
+        type: integer
+      slug:
+        type: string
+      spokenLanguages:
+        type: string
+      status:
+        type: string
+      tagline:
+        type: string
+      title:
+        type: string
+      traktID:
+        type: integer
+      twitterID:
+        type: string
+      updatedAt:
+        type: string
+      url:
+        type: string
+      voteAverage:
+        type: number
+      voteCount:
+        type: integer
+      year:
+        type: integer
+    type: object
+  database.ResultSerieEpisodesJson:
+    properties:
+      blacklisted:
+        type: boolean
+      createdAt:
+        type: string
+      dbserieEpisodeID:
+        type: integer
+      dbserieID:
+        type: integer
+      episode:
+        type: string
+      first_aired:
+        type: string
+      id:
+        type: integer
+      identifier:
+        type: string
+      lastscan:
+        type: string
+      listname:
+        type: string
+      missing:
+        type: boolean
+      overview:
+        type: string
+      poster:
+        type: string
+      qualityProfile:
+        type: string
+      qualityReached:
+        type: boolean
+      rootpath:
+        type: string
+      season:
+        type: string
+      title:
+        type: string
+      updatedAt:
+        type: string
+    type: object
+  database.ResultSeries:
+    properties:
+      aliases:
+        type: string
+      banner:
+        type: string
+      createdAt:
+        type: string
+      dbserieID:
+        type: integer
+      facebook:
+        type: string
+      fanart:
+        type: string
+      firstaired:
+        type: string
+      freebaseID:
+        type: string
+      freebaseMID:
+        type: string
+      genre:
+        type: string
+      id:
+        type: integer
+      identifiedby:
+        type: string
+      imdbID:
+        type: string
+      instagram:
+        type: string
+      language:
+        type: string
+      listname:
+        type: string
+      network:
+        type: string
+      overview:
+        type: string
+      poster:
+        type: string
+      rating:
+        type: string
+      rootpath:
+        type: string
+      runtime:
+        type: string
+      season:
+        type: string
+      seriename:
+        type: string
+      siterating:
+        type: string
+      siteratingCount:
+        type: string
+      slug:
+        type: string
+      status:
+        type: string
+      thetvdbID:
+        type: integer
+      traktID:
+        type: integer
+      tvrageID:
+        type: integer
+      twitter:
+        type: string
+      updatedAt:
+        type: string
+    type: object
+  database.SerieEpisodeJson:
+    properties:
+      blacklisted:
+        type: boolean
+      createdAt:
+        type: string
+      dbserieEpisodeID:
+        type: integer
+      dbserieID:
+        type: integer
+      dontSearch:
+        type: boolean
+      dontUpgrade:
+        type: boolean
+      id:
+        type: integer
+      lastscan:
+        type: string
+      missing:
+        type: boolean
+      qualityProfile:
+        type: string
+      qualityReached:
+        type: boolean
+      serieID:
+        type: integer
+      updatedAt:
+        type: string
+    type: object
+  database.SerieFileUnmatchedJson:
+    properties:
+      createdAt:
+        type: string
+      filepath:
+        type: string
+      id:
+        type: integer
+      last_checked:
+        type: string
+      listname:
+        type: string
+      parsedData:
+        type: string
+      updatedAt:
+        type: string
+    type: object
+  database.SerieJson:
+    properties:
+      createdAt:
+        type: string
+      dbserieID:
+        type: integer
+      dontSearch:
+        type: boolean
+      dontUpgrade:
+        type: boolean
+      id:
+        type: integer
+      listname:
+        type: string
+      rootpath:
+        type: string
+      updatedAt:
+        type: string
+    type: object
+  utils.ParseInfo:
+    properties:
+      3d:
+        type: boolean
+      Prio_audio:
+        type: integer
+      Prio_codec:
+        type: integer
+      Prio_quality:
+        type: integer
+      Prio_resolution:
+        type: integer
+      audio:
+        type: string
+      audioid:
+        type: integer
+      codec:
+        type: string
+      codecid:
+        type: integer
+      container:
+        type: string
+      date:
+        type: string
+      episode:
+        type: integer
+      episodestr:
+        type: string
+      extended:
+        type: boolean
+      file:
+        type: string
+      group:
+        type: string
+      hardcoded:
+        type: boolean
+      identifier:
+        type: string
+      imdb:
+        type: string
+      language:
+        type: string
+      languages:
+        items:
+          type: string
+        type: array
+      priority:
+        type: integer
+      proper:
+        type: boolean
+      quality:
+        type: string
+      qualityid:
+        type: integer
+      qualityset:
+        type: string
+      region:
+        type: string
+      repack:
+        type: boolean
+      resolution:
+        type: string
+      resolutionid:
+        type: integer
+      sbs:
+        type: string
+      season:
+        type: integer
+      seasonstr:
+        type: string
+      size:
+        type: string
+      subs:
+        type: string
+      title:
+        type: string
+      tvdb:
+        type: string
+      unrated:
+        type: boolean
+      website:
+        type: string
+      widescreen:
+        type: boolean
+      year:
+        type: integer
+    type: object
+info:
+  contact: {}
+  title: go_media_downloader API
+paths:
+  /api/all/data:
+    get:
+      consumes:
+      - application/json
+      description: Search all folders of movies and series for new entries
+      parameters:
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Search all folders
+      tags:
+      - data
+  /api/all/feeds:
+    get:
+      consumes:
+      - application/json
+      description: Search all feeds of movies and series for new entries
+      parameters:
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Search all feeds
+      tags:
+      - feeds
+  /api/all/search/missing/full:
+    get:
+      consumes:
+      - application/json
+      description: Search all media of movies and series for missing releases
+      parameters:
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Search all Missing
+      tags:
+      - search
+  /api/all/search/missing/inc:
+    get:
+      consumes:
+      - application/json
+      description: Search all media of movies and series for missing releases (incremental)
+      parameters:
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Search all Missing Incremental
+      tags:
+      - search
+  /api/all/search/rss:
+    get:
+      consumes:
+      - application/json
+      description: Search all rss feeds of movies and series for new releases
+      parameters:
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Search all rss feeds
+      tags:
+      - search
+  /api/all/search/upgrade/full:
+    get:
+      consumes:
+      - application/json
+      description: Search all media of movies and series for upgrades
+      parameters:
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Search all Upgrades
+      tags:
+      - search
+  /api/all/search/upgrade/inc:
+    get:
+      consumes:
+      - application/json
+      description: Search all media of movies and series for upgrades (incremental)
+      parameters:
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Search all Upgrades Incremental
+      tags:
+      - search
+  /api/config/all:
+    get:
+      consumes:
+      - application/json
+      description: Get All Config Parameters
+      parameters:
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Get Complete Config
+      tags:
+      - config
+  /api/config/clear:
+    get:
+      consumes:
+      - application/json
+      description: Clears the configuration and sets some examples
+      parameters:
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Clear Config
+      tags:
+      - config
+  /api/config/delete/{name}:
+    delete:
+      consumes:
+      - application/json
+      description: Deletes a configuration
+      parameters:
+      - description: 'Type Name: ex. quality_SD'
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: ""
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Delete Config
+      tags:
+      - config
+  /api/config/get/{name}:
+    get:
+      consumes:
+      - application/json
+      description: Gets a configuration
+      parameters:
+      - description: 'Type Name: ex. quality_SD'
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Get Config
+      tags:
+      - config
+  /api/config/type/{type}:
+    get:
+      consumes:
+      - application/json
+      description: List configurations of type
+      parameters:
+      - description: 'Type Name: ex. quality'
+        in: path
+        name: type
+        required: true
+        type: string
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: List Config Type
+      tags:
+      - config
+  /api/config/update/{name}:
+    post:
+      consumes:
+      - application/json
+      description: Updates a configuration
+      parameters:
+      - description: Config
+        in: body
+        name: config
+        required: true
+        schema:
+          type: object
+      - description: 'Type Name: ex. quality_SD'
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: ""
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Update Config
+      tags:
+      - config
+  /api/db/clear/{name}:
+    get:
+      consumes:
+      - application/json
+      description: Clears a DB Table
+      parameters:
+      - description: Table Name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: ""
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Clear DB Table
+      tags:
+      - database
+  /api/db/close:
+    get:
+      consumes:
+      - application/json
+      description: Closes all database connections
+      parameters:
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: ""
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Close DB
+      tags:
+      - database
+  /api/db/vacuum:
+    get:
+      consumes:
+      - application/json
+      description: Vacuum database
+      parameters:
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: ""
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Vacuum DB
+      tags:
+      - database
+  /api/fillimdb:
+    get:
+      consumes:
+      - application/json
+      description: Downloads IMDB Dataset and creates a new database from it
+      parameters:
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: ""
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Generate IMDB Cache
+      tags:
+      - general
+  /api/movies:
+    get:
+      consumes:
+      - application/json
+      description: List Movies
+      parameters:
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/database.DbmovieJson'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: List Movies
+      tags:
+      - movie
+    post:
+      consumes:
+      - application/json
+      description: Updates or creates a movie
+      parameters:
+      - description: Movie
+        in: body
+        name: movie
+        required: true
+        schema:
+          $ref: '#/definitions/database.DbmovieJson'
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: ""
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Update Movie (Global)
+      tags:
+      - movie
+  /api/movies/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Deletes Movies from all lists
+      parameters:
+      - description: 'Movie ID: ex. 1'
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: ""
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Delete Movies
+      tags:
+      - movie
+  /api/movies/all/refresh:
+    get:
+      consumes:
+      - application/json
+      description: Refreshes Movie Metadata
+      parameters:
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: ""
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Refresh Movies (Incremental)
+      tags:
+      - movie
+  /api/movies/all/refresh/{id}:
+    get:
+      consumes:
+      - application/json
+      description: Refreshes specific Movie Metadata
+      parameters:
+      - description: Movie ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: ""
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Refresh a Movie
+      tags:
+      - movie
+  /api/movies/all/refreshall:
+    get:
+      consumes:
+      - application/json
+      description: Refreshes Movie Metadata
+      parameters:
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: ""
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Refresh Movies
+      tags:
+      - movie
+  /api/movies/job/{job}:
+    get:
+      consumes:
+      - application/json
+      description: Starts a Job
+      parameters:
+      - description: 'Job Name: ex. datafull'
+        in: path
+        name: job
+        required: true
+        type: string
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: ""
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Start Jobs (All Lists)
+      tags:
+      - movie
+  /api/movies/job/{job}/{name}:
+    get:
+      consumes:
+      - application/json
+      description: Starts a Job
+      parameters:
+      - description: 'Job Name: ex. datafull'
+        in: path
+        name: job
+        required: true
+        type: string
+      - description: 'List Name: ex. list'
+        in: path
+        name: name
+        type: string
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: ""
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Start Jobs
+      tags:
+      - movie
+  /api/movies/list:
+    post:
+      consumes:
+      - application/json
+      description: Updates or creates a movie in a list
+      parameters:
+      - description: Movie
+        in: body
+        name: movie
+        required: true
+        schema:
+          $ref: '#/definitions/database.MovieJson'
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: ""
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Update Movie (List)
+      tags:
+      - movie
+  /api/movies/list/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Deletes a Movie from a list
+      parameters:
+      - description: 'Movie ID: ex. 1'
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: ""
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Delete a Movie (List)
+      tags:
+      - movie
+  /api/movies/list/{name}:
+    get:
+      consumes:
+      - application/json
+      description: Lists Movies from a list
+      parameters:
+      - description: 'List Name: ex. EN'
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/database.ResultMoviesJson'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: List Movies (List)
+      tags:
+      - movie
+  /api/movies/search/history/clear/{name}:
+    get:
+      consumes:
+      - application/json
+      description: Clear Movies Download History
+      parameters:
+      - description: List Name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: ""
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Clear History (Full List)
+      tags:
+      - movie
+  /api/movies/search/id/{id}:
+    get:
+      consumes:
+      - application/json
+      description: Searches for upgrades and missing
+      parameters:
+      - description: Movie ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: ""
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Search a movie
+      tags:
+      - movie
+  /api/movies/unmatched:
+    get:
+      consumes:
+      - application/json
+      description: List Unmatched Movies
+      parameters:
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/database.MovieFileUnmatchedJson'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: List Unmatched Movies
+      tags:
+      - movie
+  /api/parse/file:
+    get:
+      consumes:
+      - application/json
+      description: Parses a file for testing
+      parameters:
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.apiparse'
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Parse a file
+      tags:
+      - parse
+  /api/parse/string:
+    get:
+      consumes:
+      - application/json
+      description: Parses a string for testing
+      parameters:
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.apiparse'
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Parse a string
+      tags:
+      - parse
+  /api/quality:
+    get:
+      consumes:
+      - application/json
+      description: List Qualities with regex filters
+      parameters:
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/database.Qualities'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: List Qualities
+      tags:
+      - quality
+    post:
+      consumes:
+      - application/json
+      description: Updates or adds a quality
+      parameters:
+      - description: Quality
+        in: body
+        name: quality
+        required: true
+        schema:
+          $ref: '#/definitions/database.Qualities'
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: ""
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Update Quality
+      tags:
+      - quality
+  /api/quality/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Deletes a quality
+      parameters:
+      - description: Id of Quality to delete
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: ""
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Delete Quality
+      tags:
+      - quality
+  /api/quality/{name}/{config}:
+    get:
+      consumes:
+      - application/json
+      description: List allowed qualities and their priorities
+      parameters:
+      - description: 'Quality Name: ex. quality_SD'
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: 'Config Name: ex. movie_EN or serie_EN'
+        in: path
+        name: config
+        required: true
+        type: string
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/utils.ParseInfo'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: List Quality Priorities
+      tags:
+      - quality
+  /api/scheduler/start:
+    get:
+      consumes:
+      - application/json
+      description: Start all Schedulers
+      parameters:
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: ""
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Start Scheduler
+      tags:
+      - scheduler
+  /api/scheduler/stop:
+    get:
+      consumes:
+      - application/json
+      description: Stops all Schedulers
+      parameters:
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: ""
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Stop Scheduler
+      tags:
+      - scheduler
+  /api/series:
+    get:
+      consumes:
+      - application/json
+      description: List Series
+      parameters:
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/database.Dbserie'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: List Series
+      tags:
+      - series
+    post:
+      consumes:
+      - application/json
+      description: Updates or creates a series
+      parameters:
+      - description: Series
+        in: body
+        name: series
+        required: true
+        schema:
+          $ref: '#/definitions/database.Dbserie'
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: ""
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Update Series (Global)
+      tags:
+      - series
+  /api/series/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete Series
+      parameters:
+      - description: Series ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: ""
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Delete Series
+      tags:
+      - series
+  /api/series/{name}:
+    get:
+      consumes:
+      - application/json
+      description: List Series
+      parameters:
+      - description: List Name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/database.ResultSeries'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: List Series (List)
+      tags:
+      - series
+  /api/series/all/refresh:
+    get:
+      consumes:
+      - application/json
+      description: Refreshes Series Metadata
+      parameters:
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: ""
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Refresh Series Incremental
+      tags:
+      - series
+  /api/series/all/refresh/{id}:
+    get:
+      consumes:
+      - application/json
+      description: Refreshes Series Metadata
+      parameters:
+      - description: Serie ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: ""
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Refresh Single Series
+      tags:
+      - series
+  /api/series/all/refreshall:
+    get:
+      consumes:
+      - application/json
+      description: Refreshes Series Metadata
+      parameters:
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: ""
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Refresh Series
+      tags:
+      - series
+  /api/series/episodes:
+    get:
+      consumes:
+      - application/json
+      description: List episodes
+      parameters:
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/database.DbserieEpisodeJson'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: List Series Episodes
+      tags:
+      - series
+    post:
+      consumes:
+      - application/json
+      description: Updates or creates a episode
+      parameters:
+      - description: Episode
+        in: body
+        name: episode
+        required: true
+        schema:
+          $ref: '#/definitions/database.DbserieEpisodeJson'
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: ""
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Update Series Episodes (Global)
+      tags:
+      - series
+  /api/series/episodes/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete Series Episode
+      parameters:
+      - description: Episode ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: ""
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Delete Episode
+      tags:
+      - series
+    get:
+      consumes:
+      - application/json
+      description: List episodes
+      parameters:
+      - description: Series ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/database.DbserieEpisodeJson'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: List Series Episodes (Single)
+      tags:
+      - series
+  /api/series/episodes/list:
+    post:
+      consumes:
+      - application/json
+      description: Updates or creates a episode
+      parameters:
+      - description: Episode
+        in: body
+        name: episode
+        required: true
+        schema:
+          $ref: '#/definitions/database.SerieEpisodeJson'
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: ""
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Update Series Episodes (List)
+      tags:
+      - series
+  /api/series/episodes/list/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete Series Episode
+      parameters:
+      - description: Episode ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: ""
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Delete Episode (List)
+      tags:
+      - series
+    get:
+      consumes:
+      - application/json
+      description: List episodes
+      parameters:
+      - description: Series ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/database.ResultSerieEpisodesJson'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: List Series Episodes (List)
+      tags:
+      - series
+  /api/series/episodes/search/id/{id}:
+    get:
+      consumes:
+      - application/json
+      description: Searches for upgrades and missing
+      parameters:
+      - description: Episode ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: ""
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Search a episode
+      tags:
+      - series
+  /api/series/job/{job}:
+    get:
+      consumes:
+      - application/json
+      description: Starts a Job
+      parameters:
+      - description: 'Job Name: ex. datafull'
+        in: path
+        name: job
+        required: true
+        type: string
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: ""
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Start Jobs (All Lists)
+      tags:
+      - series
+  /api/series/job/{job}/{name}:
+    get:
+      consumes:
+      - application/json
+      description: Starts a Job
+      parameters:
+      - description: 'Job Name: ex. datafull'
+        in: path
+        name: job
+        required: true
+        type: string
+      - description: 'List Name: ex. list'
+        in: path
+        name: name
+        type: string
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: ""
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Start Jobs
+      tags:
+      - series
+  /api/series/list:
+    post:
+      consumes:
+      - application/json
+      description: Updates or creates a series
+      parameters:
+      - description: Series
+        in: body
+        name: series
+        required: true
+        schema:
+          $ref: '#/definitions/database.SerieJson'
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: ""
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Update Series (List)
+      tags:
+      - series
+  /api/series/list/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete Series
+      parameters:
+      - description: Series ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: ""
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Delete Series (List)
+      tags:
+      - series
+  /api/series/search/history/clear/{name}:
+    get:
+      consumes:
+      - application/json
+      description: Clear Episode Download History
+      parameters:
+      - description: List Name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: ""
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Clear History (Full List)
+      tags:
+      - series
+  /api/series/search/id/{id}:
+    get:
+      consumes:
+      - application/json
+      description: Searches for upgrades and missing
+      parameters:
+      - description: Series ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: ""
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Search a series
+      tags:
+      - series
+  /api/series/search/id/{id}/{season}:
+    get:
+      consumes:
+      - application/json
+      description: Searches for upgrades and missing
+      parameters:
+      - description: Series ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Season
+        in: path
+        name: season
+        required: true
+        type: string
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: ""
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Search a series
+      tags:
+      - series
+  /api/series/unmatched:
+    get:
+      consumes:
+      - application/json
+      description: List Unmatched episodes
+      parameters:
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/database.SerieFileUnmatchedJson'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: List Series Unmatched
+      tags:
+      - series
+swagger: "2.0"

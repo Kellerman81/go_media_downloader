@@ -388,6 +388,7 @@ func InitFillImdb() {
 	os.Remove("./imdb.db")
 	os.Rename("./imdbtemp.db", "./imdb.db")
 	dbnew := database.InitImdbdb("info", "imdb")
+	dbnew.SetMaxOpenConns(5)
 	database.DBImdb = dbnew
 	logger.Log.Info("Ended Imdb Import")
 }

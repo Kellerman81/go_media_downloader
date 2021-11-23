@@ -21,7 +21,7 @@ First version! Bugs included
 ## Missing
 
 - Webinterface - currently included [AdminLTE - Bootstrap 4 Admin Dashboard](https://adminlte.io)
-- better api -already done: /debug/pprof if Debug Mode is enabled
+- better api -already done: /debug/pprof if Debug Mode is enabled, added some documentation
 - better scheduler -to directly start or run at specific times
 - optimize Parser
 - DB Config instead of toml -partially done: use pudge as key-value-db for toml config and load config from there in each function - the backup folder will be cleared on each start!
@@ -39,4 +39,6 @@ First version! Bugs included
 - after the initial scan is finished the API and the scheduler will be started
 - the scheduler will the scan for new releases and new/missing data in your folders and refresh your feeds
 
+Find the API Documentation after start at:
+(http://localhost:9090/swagger/index.html)
 [Donate](https://www.paypal.com/donate?hosted_button_id=JRT8FJ6GG8CXN)

@@ -226,18 +226,26 @@ func (m *ParseInfo) ParseFile(includeYearInTitle bool, typegroup string) error {
 			scanpatterns = append(scanpatterns, regexpattern{name: "codec", last: false, kind: reflect.String, re: database.Getcodecs[idx].Regexp, getgroup: 0})
 		}
 	}
-	audio := []string{"mp3", "aac", "ac3", "ac3d", "ac3md", "flac", "dts", "truehd", "mic", "micdubbed"}
-	startIndex, endIndex = m.parsegroup(cleanName, "audio", audio, startIndex, endIndex)
 
-	codec := []string{"xvid", "divx", "hevc", "vp9", "10bit", "hi10p", "h264", "h.264", "h265", "h.265", "x264", "x.264", "x265", "x.265"}
-	startIndex, endIndex = m.parsegroup(cleanName, "codec", codec, startIndex, endIndex)
+	if !config.ConfigCheck("general") {
+		return nil
+	}
+	var cfg_general config.GeneralConfig
+	config.ConfigGet("general", &cfg_general)
 
-	quality := []string{"workprint", "cam", "webcam", "hdts", "ts", "telesync", "tc", "telecine", "r5", "r6", "preair", "sdtv", "hdtv", "pdtv", "web", "dvd", "hdtv", "bd", "br", "dvb", "dsr", "ds", "tv", "ppv", "hd", "webrip", "dvdrip", "hdtvrip", "bdrip", "brrip", "dvbrip", "dsrrip", "dsrip", "tvrip", "ppvrip", "hdrip", "web rip", "dvd rip", "hdtv rip", "bd rip", "br rip", "dvb rip", "dsr rip", "ds rip", "tv rip", "ppv rip", "hd rip", "web.rip", "dvd.rip", "hdtv.rip", "bd.rip", "br.rip", "dvb.rip", "dsr.rip", "ds.rip", "tv.rip", "ppv.rip", "hd.rip", "web-rip", "dvd-rip", "hdtv-rip", "bd-rip", "br-rip", "dvb-rip", "dsr-rip", "ds-rip", "tv-rip", "ppv-rip", "hd-rip", "webdl", "webhd", "hddvd", "remux", "bluray", "blu.ray", "blu ray", "blu_ray", "dvdscr", "dvd.scr", "dvd-scr", "dvd scr", "dvdscreener", "dvd.screener", "dvd screener", "dvd-screener", "webscr", "web.scr", "web-scr", "web scr", "webscreener", "web.screener", "web screener", "web-screener", "bdscr", "bd.scr", "bd-scr", "bd scr", "bdscreener", "bd.screener", "bd screener", "bd-screener"}
-	startIndex, endIndex = m.parsegroup(cleanName, "quality", quality, startIndex, endIndex)
+	if !cfg_general.DisableParserStringMatch {
+		audio := []string{"mp3", "aac", "ac3", "ac3d", "ac3md", "flac", "dts", "truehd", "mic", "micdubbed"}
+		startIndex, endIndex = m.parsegroup(cleanName, "audio", audio, startIndex, endIndex)
 
-	resolution := []string{"360p", "368p", "480p", "576p", "720p", "1080p", "2160p", "360i", "368i", "480i", "576i", "720i", "1080i", "2160i"}
-	startIndex, endIndex = m.parsegroup(cleanName, "resolution", resolution, startIndex, endIndex)
+		codec := []string{"xvid", "divx", "hevc", "vp9", "10bit", "hi10p", "h264", "h.264", "h265", "h.265", "x264", "x.264", "x265", "x.265"}
+		startIndex, endIndex = m.parsegroup(cleanName, "codec", codec, startIndex, endIndex)
 
+		quality := []string{"workprint", "cam", "webcam", "hdts", "ts", "telesync", "tc", "telecine", "r5", "r6", "preair", "sdtv", "hdtv", "pdtv", "web", "dvd", "hdtv", "bd", "br", "dvb", "dsr", "ds", "tv", "ppv", "hd", "webrip", "dvdrip", "hdtvrip", "bdrip", "brrip", "dvbrip", "dsrrip", "dsrip", "tvrip", "ppvrip", "hdrip", "web rip", "dvd rip", "hdtv rip", "bd rip", "br rip", "dvb rip", "dsr rip", "ds rip", "tv rip", "ppv rip", "hd rip", "web.rip", "dvd.rip", "hdtv.rip", "bd.rip", "br.rip", "dvb.rip", "dsr.rip", "ds.rip", "tv.rip", "ppv.rip", "hd.rip", "web-rip", "dvd-rip", "hdtv-rip", "bd-rip", "br-rip", "dvb-rip", "dsr-rip", "ds-rip", "tv-rip", "ppv-rip", "hd-rip", "webdl", "webhd", "hddvd", "remux", "bluray", "blu.ray", "blu ray", "blu_ray", "dvdscr", "dvd.scr", "dvd-scr", "dvd scr", "dvdscreener", "dvd.screener", "dvd screener", "dvd-screener", "webscr", "web.scr", "web-scr", "web scr", "webscreener", "web.screener", "web screener", "web-screener", "bdscr", "bd.scr", "bd-scr", "bd scr", "bdscreener", "bd.screener", "bd screener", "bd-screener"}
+		startIndex, endIndex = m.parsegroup(cleanName, "quality", quality, startIndex, endIndex)
+
+		resolution := []string{"360p", "368p", "480p", "576p", "720p", "1080p", "2160p", "360i", "368i", "480i", "576i", "720i", "1080i", "2160i"}
+		startIndex, endIndex = m.parsegroup(cleanName, "resolution", resolution, startIndex, endIndex)
+	}
 	extended := []string{"extended", "extended cut", "extended.cut", "extended-cut", "extended_cut"}
 	startIndex, endIndex = m.parsegroup(cleanName, "extended", extended, startIndex, endIndex)
 

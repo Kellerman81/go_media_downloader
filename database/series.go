@@ -22,6 +22,16 @@ type Serie struct {
 	DontUpgrade bool `db:"dont_upgrade"`
 	DontSearch  bool `db:"dont_search"`
 }
+type SerieJson struct {
+	ID          uint
+	CreatedAt   time.Time `db:"created_at"`
+	UpdatedAt   time.Time `db:"updated_at"`
+	Listname    string
+	Rootpath    string
+	DbserieID   uint `db:"dbserie_id"`
+	DontUpgrade bool `db:"dont_upgrade"`
+	DontSearch  bool `db:"dont_search"`
+}
 type SerieEpisode struct {
 	ID               uint
 	CreatedAt        time.Time `db:"created_at"`
@@ -40,6 +50,21 @@ type SerieEpisode struct {
 	DbserieID        uint `db:"dbserie_id"`
 	Dbserie          Dbserie
 }
+type SerieEpisodeJson struct {
+	ID               uint
+	CreatedAt        time.Time `db:"created_at"`
+	UpdatedAt        time.Time `db:"updated_at"`
+	Lastscan         time.Time `db:"lastscan" json:"lastscan" time_format:"2006-01-02 22:00" time_utc:"1"`
+	Blacklisted      bool
+	QualityReached   bool   `db:"quality_reached"`
+	QualityProfile   string `db:"quality_profile"`
+	Missing          bool
+	DontUpgrade      bool `db:"dont_upgrade"`
+	DontSearch       bool `db:"dont_search"`
+	DbserieEpisodeID uint `db:"dbserie_episode_id"`
+	SerieID          uint `db:"serie_id"`
+	DbserieID        uint `db:"dbserie_id"`
+}
 type SerieFileUnmatched struct {
 	ID          uint
 	CreatedAt   time.Time `db:"created_at"`
@@ -48,6 +73,15 @@ type SerieFileUnmatched struct {
 	Filepath    string
 	LastChecked sql.NullTime `db:"last_checked"`
 	ParsedData  string       `db:"parsed_data"`
+}
+type SerieFileUnmatchedJson struct {
+	ID          uint
+	CreatedAt   time.Time `db:"created_at"`
+	UpdatedAt   time.Time `db:"updated_at"`
+	Listname    string
+	Filepath    string
+	LastChecked time.Time `db:"last_checked" json:"last_checked" time_format:"2006-01-02 22:00" time_utc:"1"`
+	ParsedData  string    `db:"parsed_data"`
 }
 type SerieEpisodeFile struct {
 	ID               uint
@@ -161,6 +195,17 @@ type ResultSerieEpisodes struct {
 	Missing          bool
 	DbserieEpisodeID uint `db:"dbserie_episode_id"`
 }
+type ResultSerieEpisodesJson struct {
+	DbserieEpisodeJson
+	Listname         string
+	Rootpath         string
+	Lastscan         time.Time `db:"lastscan" json:"lastscan" time_format:"2006-01-02 22:00" time_utc:"1"`
+	Blacklisted      bool
+	QualityReached   bool   `db:"quality_reached"`
+	QualityProfile   string `db:"quality_profile"`
+	Missing          bool
+	DbserieEpisodeID uint `db:"dbserie_episode_id"`
+}
 
 type DbserieEpisode struct {
 	ID         uint
@@ -177,8 +222,17 @@ type DbserieEpisode struct {
 	Dbserie    Dbserie
 }
 type DbserieEpisodeJson struct {
-	DbserieEpisode
+	ID         uint
+	CreatedAt  time.Time `db:"created_at"`
+	UpdatedAt  time.Time `db:"updated_at"`
+	Episode    string
+	Season     string
+	Identifier string
+	Title      string
 	FirstAired time.Time `db:"first_aired" json:"first_aired" time_format:"2006-01-02" time_utc:"1"`
+	Overview   string
+	Poster     string
+	DbserieID  uint `db:"dbserie_id"`
 }
 
 func (serie *Dbserie) GetMetadata(language string, querytmdb bool, allowed []string, querytrakt bool, overwrite bool) []string {
