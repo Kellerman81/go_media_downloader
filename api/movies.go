@@ -4,8 +4,8 @@ package api
 import (
 	"database/sql"
 	"net/http"
+	"strconv"
 	"strings"
-	"time"
 
 	"github.com/Kellerman81/go_media_downloader/config"
 	"github.com/Kellerman81/go_media_downloader/database"
@@ -46,6 +46,9 @@ func AddMoviesRoutes(routermovies *gin.RouterGroup) {
 // @Accept  json
 // @Produce  json
 // @Param apikey query string true "apikey"
+// @Param limit query int false "Limit"
+// @Param page query int false "Page"
+// @Param order query string false "Order By"
 // @Success 200 {array} database.DbmovieJson
 // @Failure 401 {object} string
 // @Router /api/movies [get]
@@ -53,8 +56,32 @@ func ApiMovieList(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
-	movies, _ := database.QueryDbmovieJson(database.Query{})
-	ctx.JSON(http.StatusOK, gin.H{"data": movies, "rows": len(movies)})
+	query := database.Query{}
+
+	rows, _ := database.CountRows("dbmovies", query)
+	limit := 0
+	page := 0
+	if queryParam, ok := ctx.GetQuery("limit"); ok {
+		if queryParam != "" {
+			limit, _ = strconv.Atoi(queryParam)
+			query.Limit = uint64(limit)
+		}
+	}
+	if limit != 0 {
+		if queryParam, ok := ctx.GetQuery("page"); ok {
+			if queryParam != "" {
+				page, _ = strconv.Atoi(queryParam)
+				query.Offset = uint64(page * limit)
+			}
+		}
+	}
+	if queryParam, ok := ctx.GetQuery("order"); ok {
+		if queryParam != "" {
+			query.OrderBy = queryParam
+		}
+	}
+	movies, _ := database.QueryDbmovie(query)
+	ctx.JSON(http.StatusOK, gin.H{"data": movies, "total": rows})
 }
 
 // @Summary List Unmatched Movies
@@ -63,6 +90,9 @@ func ApiMovieList(ctx *gin.Context) {
 // @Accept  json
 // @Produce  json
 // @Param apikey query string true "apikey"
+// @Param limit query int false "Limit"
+// @Param page query int false "Page"
+// @Param order query string false "Order By"
 // @Success 200 {array} database.MovieFileUnmatchedJson
 // @Failure 401 {object} string
 // @Router /api/movies/unmatched [get]
@@ -70,8 +100,31 @@ func ApiMovieListUnmatched(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
-	movies, _ := database.QueryMovieFileUnmatched(database.Query{})
-	ctx.JSON(http.StatusOK, gin.H{"data": movies, "rows": len(movies)})
+	query := database.Query{}
+	rows, _ := database.CountRows("movie_file_unmatcheds", query)
+	limit := 0
+	page := 0
+	if queryParam, ok := ctx.GetQuery("limit"); ok {
+		if queryParam != "" {
+			limit, _ = strconv.Atoi(queryParam)
+			query.Limit = uint64(limit)
+		}
+	}
+	if limit != 0 {
+		if queryParam, ok := ctx.GetQuery("page"); ok {
+			if queryParam != "" {
+				page, _ = strconv.Atoi(queryParam)
+				query.Offset = uint64(page * limit)
+			}
+		}
+	}
+	if queryParam, ok := ctx.GetQuery("order"); ok {
+		if queryParam != "" {
+			query.OrderBy = queryParam
+		}
+	}
+	movies, _ := database.QueryMovieFileUnmatched(query)
+	ctx.JSON(http.StatusOK, gin.H{"data": movies, "total": rows})
 }
 
 // @Summary Delete Movies
@@ -81,7 +134,7 @@ func ApiMovieListUnmatched(ctx *gin.Context) {
 // @Produce  json
 // @Param id path int true "Movie ID: ex. 1"
 // @Param apikey query string true "apikey"
-// @Success 200
+// @Success 200 {string} string
 // @Failure 401 {object} string
 // @Router /api/movies/{id} [delete]
 func ApiMovieDelete(ctx *gin.Context) {
@@ -89,8 +142,13 @@ func ApiMovieDelete(ctx *gin.Context) {
 		return
 	}
 	database.DeleteRow("movies", database.Query{Where: "dbmovie_id=" + ctx.Param("id")})
-	database.DeleteRow("dbmovies", database.Query{Where: "id=" + ctx.Param("id")})
-	ctx.JSON(http.StatusOK, "ok")
+	_, err := database.DeleteRow("dbmovies", database.Query{Where: "id=" + ctx.Param("id")})
+
+	if err == nil {
+		ctx.JSON(http.StatusOK, "ok")
+	} else {
+		ctx.JSON(http.StatusForbidden, err)
+	}
 }
 
 // @Summary List Movies (List)
@@ -99,6 +157,9 @@ func ApiMovieDelete(ctx *gin.Context) {
 // @Accept  json
 // @Produce  json
 // @Param name path string true "List Name: ex. EN"
+// @Param limit query int false "Limit"
+// @Param page query int false "Page"
+// @Param order query string false "Order By"
 // @Param apikey query string true "apikey"
 // @Success 200 {array} database.ResultMoviesJson
 // @Failure 401 {object} string
@@ -107,8 +168,35 @@ func ApiMovieListGet(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
-	movies, _ := database.QueryResultMovies(database.Query{InnerJoin: "dbmovies on movies.dbmovie_id=dbmovies.id", Where: "movies.listname=?", WhereArgs: []interface{}{ctx.Param("name")}})
-	ctx.JSON(http.StatusOK, gin.H{"data": movies, "rows": len(movies)})
+	query := database.Query{}
+	query.InnerJoin = "dbmovies on movies.dbmovie_id=dbmovies.id"
+	query.Where = "movies.listname=?"
+	query.WhereArgs = []interface{}{ctx.Param("name")}
+
+	rows, _ := database.CountRows("movies", query)
+	limit := 0
+	page := 0
+	if queryParam, ok := ctx.GetQuery("limit"); ok {
+		if queryParam != "" {
+			limit, _ = strconv.Atoi(queryParam)
+			query.Limit = uint64(limit)
+		}
+	}
+	if limit != 0 {
+		if queryParam, ok := ctx.GetQuery("page"); ok {
+			if queryParam != "" {
+				page, _ = strconv.Atoi(queryParam)
+				query.Offset = uint64(page * limit)
+			}
+		}
+	}
+	if queryParam, ok := ctx.GetQuery("order"); ok {
+		if queryParam != "" {
+			query.OrderBy = queryParam
+		}
+	}
+	movies, _ := database.QueryResultMovies(query)
+	ctx.JSON(http.StatusOK, gin.H{"data": movies, "total": rows})
 }
 
 // @Summary Delete a Movie (List)
@@ -118,15 +206,20 @@ func ApiMovieListGet(ctx *gin.Context) {
 // @Produce  json
 // @Param id path int true "Movie ID: ex. 1"
 // @Param apikey query string true "apikey"
-// @Success 200
+// @Success 200 {string} string
 // @Failure 401 {object} string
 // @Router /api/movies/list/{id} [delete]
 func ApiMovieDeleteList(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
-	database.DeleteRow("movies", database.Query{Where: "id=" + ctx.Param("id")})
-	ctx.JSON(http.StatusOK, "ok")
+	_, err := database.DeleteRow("movies", database.Query{Where: "id=" + ctx.Param("id")})
+
+	if err == nil {
+		ctx.JSON(http.StatusOK, "ok")
+	} else {
+		ctx.JSON(http.StatusForbidden, err)
+	}
 }
 
 var allowedjobsmovies []string = []string{"rss", "data", "datafull", "checkmissing", "checkmissingflag", "structure", "searchmissingfull",
@@ -138,9 +231,10 @@ var allowedjobsmovies []string = []string{"rss", "data", "datafull", "checkmissi
 // @Tags movie
 // @Accept  json
 // @Produce  json
-// @Param job path string true "Job Name: ex. datafull"
+// @Param job path string true "Job Name one of: rss, data, datafull, checkmissing, checkmissingflag, structure, searchmissingfull, searchmissinginc, searchupgradefull, searchupgradeinc, searchmissingfulltitle, searchmissinginctitle, searchupgradefulltitle, searchupgradeinctitle, clearhistory, feeds, refresh, refreshinc"
 // @Param apikey query string true "apikey"
-// @Success 200
+// @Success 200 {string} string
+// @Failure 204 {object} string
 // @Failure 401 {object} string
 // @Router /api/movies/job/{job} [get]
 func apimoviesAllJobs(c *gin.Context) {
@@ -158,34 +252,34 @@ func apimoviesAllJobs(c *gin.Context) {
 		returnval := "Job " + c.Param("job") + " started"
 		switch c.Param("job") {
 		case "data", "datafull", "checkmissing", "checkmissingflag", "structure", "clearhistory":
-			scheduler.QueueData.DispatchIn(func() {
+			scheduler.QueueData.Dispatch(func() {
 				utils.Movies_all_jobs(c.Param("job"), true)
-			}, time.Second*1)
+			})
 		case "rss", "searchmissingfull", "searchmissinginc", "searchupgradefull", "searchupgradeinc", "searchmissingfulltitle", "searchmissinginctitle", "searchupgradefulltitle", "searchupgradeinctitle":
-			scheduler.QueueSearch.DispatchIn(func() {
+			scheduler.QueueSearch.Dispatch(func() {
 				utils.Movies_all_jobs(c.Param("job"), true)
-			}, time.Second*1)
+			})
 		case "feeds":
-			scheduler.QueueFeeds.DispatchIn(func() {
+			scheduler.QueueFeeds.Dispatch(func() {
 				utils.Movies_all_jobs(c.Param("job"), true)
-			}, time.Second*1)
+			})
 		case "refresh":
-			scheduler.QueueFeeds.DispatchIn(func() {
+			scheduler.QueueFeeds.Dispatch(func() {
 				utils.RefreshMovies()
-			}, time.Second*1)
+			})
 		case "refreshinc":
-			scheduler.QueueFeeds.DispatchIn(func() {
+			scheduler.QueueFeeds.Dispatch(func() {
 				utils.RefreshMoviesInc()
-			}, time.Second*1)
+			})
 		default:
-			scheduler.QueueData.DispatchIn(func() {
+			scheduler.QueueData.Dispatch(func() {
 				utils.Movies_all_jobs(c.Param("job"), true)
-			}, time.Second*1)
+			})
 		}
 		c.JSON(http.StatusOK, returnval)
 	} else {
 		returnval := "Job " + c.Param("job") + " not allowed!"
-		c.JSON(http.StatusOK, returnval)
+		c.JSON(http.StatusNoContent, returnval)
 	}
 }
 
@@ -194,10 +288,11 @@ func apimoviesAllJobs(c *gin.Context) {
 // @Tags movie
 // @Accept  json
 // @Produce  json
-// @Param job path string true "Job Name: ex. datafull"
+// @Param job path string true "Job Name one of: rss, data, datafull, checkmissing, checkmissingflag, structure, searchmissingfull, searchmissinginc, searchupgradefull, searchupgradeinc, searchmissingfulltitle, searchmissinginctitle, searchupgradefulltitle, searchupgradeinctitle, clearhistory, feeds, refresh, refreshinc"
 // @Param name path string false "List Name: ex. list"
 // @Param apikey query string true "apikey"
-// @Success 200
+// @Success 200 {string} string
+// @Failure 204 {object} string
 // @Failure 401 {object} string
 // @Router /api/movies/job/{job}/{name} [get]
 func apimoviesJobs(c *gin.Context) {
@@ -215,34 +310,34 @@ func apimoviesJobs(c *gin.Context) {
 		returnval := "Job " + c.Param("job") + " started"
 		switch c.Param("job") {
 		case "data", "datafull", "checkmissing", "checkmissingflag", "structure", "clearhistory":
-			scheduler.QueueData.DispatchIn(func() {
+			scheduler.QueueData.Dispatch(func() {
 				utils.Movies_single_jobs(c.Param("job"), c.Param("name"), "", true)
-			}, time.Second*1)
+			})
 		case "rss", "searchmissingfull", "searchmissinginc", "searchupgradefull", "searchupgradeinc", "searchmissingfulltitle", "searchmissinginctitle", "searchupgradefulltitle", "searchupgradeinctitle":
-			scheduler.QueueSearch.DispatchIn(func() {
+			scheduler.QueueSearch.Dispatch(func() {
 				utils.Movies_single_jobs(c.Param("job"), c.Param("name"), "", true)
-			}, time.Second*1)
+			})
 		case "feeds":
-			scheduler.QueueFeeds.DispatchIn(func() {
+			scheduler.QueueFeeds.Dispatch(func() {
 				utils.Movies_single_jobs(c.Param("job"), c.Param("name"), "", true)
-			}, time.Second*1)
+			})
 		case "refresh":
-			scheduler.QueueFeeds.DispatchIn(func() {
+			scheduler.QueueFeeds.Dispatch(func() {
 				utils.RefreshMovies()
-			}, time.Second*1)
+			})
 		case "refreshinc":
-			scheduler.QueueFeeds.DispatchIn(func() {
+			scheduler.QueueFeeds.Dispatch(func() {
 				utils.RefreshMoviesInc()
-			}, time.Second*1)
+			})
 		default:
-			scheduler.QueueData.DispatchIn(func() {
+			scheduler.QueueData.Dispatch(func() {
 				utils.Movies_single_jobs(c.Param("job"), c.Param("name"), "", true)
-			}, time.Second*1)
+			})
 		}
 		c.JSON(http.StatusOK, returnval)
 	} else {
 		returnval := "Job " + c.Param("job") + " not allowed!"
-		c.JSON(http.StatusOK, returnval)
+		c.JSON(http.StatusNoContent, returnval)
 	}
 }
 
@@ -253,7 +348,8 @@ func apimoviesJobs(c *gin.Context) {
 // @Produce  json
 // @Param movie body database.DbmovieJson true "Movie"
 // @Param apikey query string true "apikey"
-// @Success 200
+// @Success 200 {string} string
+// @Failure 400 {object} string
 // @Failure 401 {object} string
 // @Router /api/movies [post]
 func updateDBMovie(c *gin.Context) {
@@ -267,16 +363,20 @@ func updateDBMovie(c *gin.Context) {
 	}
 	counter, _ := database.CountRows("dbmovies", database.Query{Where: "id != 0 and id=?", WhereArgs: []interface{}{dbmovie.ID}})
 	var inres sql.Result
-
+	var err error
 	if counter == 0 {
-		inres, _ = database.InsertArray("dbmovies", []string{"Title", "Release_Date", "Year", "Adult", "Budget", "Genres", "Original_Language", "Original_Title", "Overview", "Popularity", "Revenue", "Runtime", "Spoken_Languages", "Status", "Tagline", "Vote_Average", "Vote_Count", "Trakt_ID", "Moviedb_ID", "Imdb_ID", "Freebase_M_ID", "Freebase_ID", "Facebook_ID", "Instagram_ID", "Twitter_ID", "URL", "Backdrop", "Poster", "Slug"},
+		inres, err = database.InsertArray("dbmovies", []string{"Title", "Release_Date", "Year", "Adult", "Budget", "Genres", "Original_Language", "Original_Title", "Overview", "Popularity", "Revenue", "Runtime", "Spoken_Languages", "Status", "Tagline", "Vote_Average", "Vote_Count", "Trakt_ID", "Moviedb_ID", "Imdb_ID", "Freebase_M_ID", "Freebase_ID", "Facebook_ID", "Instagram_ID", "Twitter_ID", "URL", "Backdrop", "Poster", "Slug"},
 			[]interface{}{dbmovie.Title, dbmovie.ReleaseDate, dbmovie.Year, dbmovie.Adult, dbmovie.Budget, dbmovie.Genres, dbmovie.OriginalLanguage, dbmovie.OriginalTitle, dbmovie.Overview, dbmovie.Popularity, dbmovie.Revenue, dbmovie.Runtime, dbmovie.SpokenLanguages, dbmovie.Status, dbmovie.Tagline, dbmovie.VoteAverage, dbmovie.VoteCount, dbmovie.TraktID, dbmovie.MoviedbID, dbmovie.ImdbID, dbmovie.FreebaseMID, dbmovie.FreebaseID, dbmovie.FacebookID, dbmovie.InstagramID, dbmovie.TwitterID, dbmovie.URL, dbmovie.Backdrop, dbmovie.Poster, dbmovie.Slug})
 	} else {
-		inres, _ = database.UpdateArray("dbmovies", []string{"Title", "Release_Date", "Year", "Adult", "Budget", "Genres", "Original_Language", "Original_Title", "Overview", "Popularity", "Revenue", "Runtime", "Spoken_Languages", "Status", "Tagline", "Vote_Average", "Vote_Count", "Trakt_ID", "Moviedb_ID", "Imdb_ID", "Freebase_M_ID", "Freebase_ID", "Facebook_ID", "Instagram_ID", "Twitter_ID", "URL", "Backdrop", "Poster", "Slug"},
+		inres, err = database.UpdateArray("dbmovies", []string{"Title", "Release_Date", "Year", "Adult", "Budget", "Genres", "Original_Language", "Original_Title", "Overview", "Popularity", "Revenue", "Runtime", "Spoken_Languages", "Status", "Tagline", "Vote_Average", "Vote_Count", "Trakt_ID", "Moviedb_ID", "Imdb_ID", "Freebase_M_ID", "Freebase_ID", "Facebook_ID", "Instagram_ID", "Twitter_ID", "URL", "Backdrop", "Poster", "Slug"},
 			[]interface{}{dbmovie.Title, dbmovie.ReleaseDate, dbmovie.Year, dbmovie.Adult, dbmovie.Budget, dbmovie.Genres, dbmovie.OriginalLanguage, dbmovie.OriginalTitle, dbmovie.Overview, dbmovie.Popularity, dbmovie.Revenue, dbmovie.Runtime, dbmovie.SpokenLanguages, dbmovie.Status, dbmovie.Tagline, dbmovie.VoteAverage, dbmovie.VoteCount, dbmovie.TraktID, dbmovie.MoviedbID, dbmovie.ImdbID, dbmovie.FreebaseMID, dbmovie.FreebaseID, dbmovie.FacebookID, dbmovie.InstagramID, dbmovie.TwitterID, dbmovie.URL, dbmovie.Backdrop, dbmovie.Poster, dbmovie.Slug},
 			database.Query{Where: "id != 0 and id=?", WhereArgs: []interface{}{dbmovie.ID}})
 	}
-	c.JSON(http.StatusOK, gin.H{"data": inres})
+	if err == nil {
+		c.JSON(http.StatusOK, inres)
+	} else {
+		c.JSON(http.StatusForbidden, err)
+	}
 }
 
 // @Summary Update Movie (List)
@@ -286,7 +386,8 @@ func updateDBMovie(c *gin.Context) {
 // @Produce  json
 // @Param movie body database.MovieJson true "Movie"
 // @Param apikey query string true "apikey"
-// @Success 200
+// @Success 200 {string} string
+// @Failure 400 {object} string
 // @Failure 401 {object} string
 // @Router /api/movies/list [post]
 func updateMovie(c *gin.Context) {
@@ -300,16 +401,20 @@ func updateMovie(c *gin.Context) {
 	}
 	counter, _ := database.CountRows("dbmovies", database.Query{Where: "id != 0 and id=?", WhereArgs: []interface{}{movie.ID}})
 	var inres sql.Result
-
+	var err error
 	if counter == 0 {
-		inres, _ = database.InsertArray("movies", []string{"missing", "listname", "dbmovie_id", "quality_profile", "blacklisted", "quality_reached", "dont_upgrade", "dont_search", "rootpath"},
+		inres, err = database.InsertArray("movies", []string{"missing", "listname", "dbmovie_id", "quality_profile", "blacklisted", "quality_reached", "dont_upgrade", "dont_search", "rootpath"},
 			[]interface{}{movie.Missing, movie.Listname, movie.DbmovieID, movie.QualityProfile, movie.Blacklisted, movie.QualityReached, movie.DontUpgrade, movie.DontSearch, movie.Rootpath})
 	} else {
-		inres, _ = database.UpdateArray("dbmovies", []string{"missing", "listname", "dbmovie_id", "quality_profile", "blacklisted", "quality_reached", "dont_upgrade", "dont_search", "rootpath"},
+		inres, err = database.UpdateArray("dbmovies", []string{"missing", "listname", "dbmovie_id", "quality_profile", "blacklisted", "quality_reached", "dont_upgrade", "dont_search", "rootpath"},
 			[]interface{}{movie.Missing, movie.Listname, movie.DbmovieID, movie.QualityProfile, movie.Blacklisted, movie.QualityReached, movie.DontUpgrade, movie.DontSearch, movie.Rootpath},
 			database.Query{Where: "id != 0 and id=?", WhereArgs: []interface{}{movie.ID}})
 	}
-	c.JSON(http.StatusOK, gin.H{"data": inres})
+	if err == nil {
+		c.JSON(http.StatusOK, inres)
+	} else {
+		c.JSON(http.StatusForbidden, err)
+	}
 }
 
 // @Summary Search a movie
@@ -319,7 +424,7 @@ func updateMovie(c *gin.Context) {
 // @Produce  json
 // @Param id path int true "Movie ID"
 // @Param apikey query string true "apikey"
-// @Success 200
+// @Success 200 {string} string
 // @Failure 401 {object} string
 // @Router /api/movies/search/id/{id} [get]
 func apimoviesSearch(c *gin.Context) {
@@ -335,14 +440,15 @@ func apimoviesSearch(c *gin.Context) {
 
 		for idxlist := range cfg_movie.Lists {
 			if strings.EqualFold(cfg_movie.Lists[idxlist].Name, movie.Listname) {
-				scheduler.QueueSearch.DispatchIn(func() {
+				scheduler.QueueSearch.Dispatch(func() {
 					utils.SearchMovieSingle(movie, cfg_movie, true)
-				}, time.Second*1)
+				})
 				c.JSON(http.StatusOK, "started")
 				return
 			}
 		}
 	}
+	c.JSON(http.StatusNoContent, "Nothing Done")
 }
 
 // @Summary Refresh Movies
@@ -351,16 +457,16 @@ func apimoviesSearch(c *gin.Context) {
 // @Accept  json
 // @Produce  json
 // @Param apikey query string true "apikey"
-// @Success 200
+// @Success 200 {string} string
 // @Failure 401 {object} string
 // @Router /api/movies/all/refreshall [get]
 func apirefreshMovies(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
 		return
 	}
-	scheduler.QueueFeeds.DispatchIn(func() {
+	scheduler.QueueFeeds.Dispatch(func() {
 		utils.RefreshMovies()
-	}, time.Second*1)
+	})
 	c.JSON(http.StatusOK, "started")
 }
 
@@ -371,16 +477,16 @@ func apirefreshMovies(c *gin.Context) {
 // @Produce  json
 // @Param id path int true "Movie ID"
 // @Param apikey query string true "apikey"
-// @Success 200
+// @Success 200 {string} string
 // @Failure 401 {object} string
 // @Router /api/movies/all/refresh/{id} [get]
 func apirefreshMovie(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
 		return
 	}
-	scheduler.QueueFeeds.DispatchIn(func() {
+	scheduler.QueueFeeds.Dispatch(func() {
 		utils.RefreshMovie(c.Param("id"))
-	}, time.Second*1)
+	})
 	c.JSON(http.StatusOK, "started")
 }
 
@@ -390,16 +496,16 @@ func apirefreshMovie(c *gin.Context) {
 // @Accept  json
 // @Produce  json
 // @Param apikey query string true "apikey"
-// @Success 200
+// @Success 200 {string} string
 // @Failure 401 {object} string
 // @Router /api/movies/all/refresh [get]
 func apirefreshMoviesInc(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
 		return
 	}
-	scheduler.QueueFeeds.DispatchIn(func() {
+	scheduler.QueueFeeds.Dispatch(func() {
 		utils.RefreshMoviesInc()
-	}, time.Second*1)
+	})
 	c.JSON(http.StatusOK, "started")
 }
 
@@ -410,7 +516,7 @@ func apirefreshMoviesInc(c *gin.Context) {
 // @Produce  json
 // @Param name path string true "List Name"
 // @Param apikey query string true "apikey"
-// @Success 200
+// @Success 200 {string} string
 // @Failure 401 {object} string
 // @Router /api/movies/search/history/clear/{name} [get]
 func apimoviesClearHistoryName(c *gin.Context) {

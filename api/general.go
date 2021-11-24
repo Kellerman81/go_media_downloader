@@ -26,8 +26,10 @@ type apiparse struct {
 // @Tags parse
 // @Accept  json
 // @Produce  json
+// @Param toparse body apiparse true "To Parse"
 // @Param apikey query string true "apikey"
-// @Success 200 {object} apiparse
+// @Success 200 {object} utils.ParseInfo
+// @Failure 400 {object} string
 // @Failure 401 {object} string
 // @Router /api/parse/string [get]
 func ApiParseString(ctx *gin.Context) {
@@ -62,8 +64,10 @@ func ApiParseString(ctx *gin.Context) {
 // @Tags parse
 // @Accept  json
 // @Produce  json
+// @Param toparse body apiparse true "To Parse"
 // @Param apikey query string true "apikey"
-// @Success 200 {object} apiparse
+// @Success 200 {object} utils.ParseInfo
+// @Failure 400 {object} string
 // @Failure 401 {object} string
 // @Router /api/parse/file [get]
 func ApiParseFile(ctx *gin.Context) {
@@ -103,7 +107,7 @@ func ApiParseFile(ctx *gin.Context) {
 // @Accept  json
 // @Produce  json
 // @Param apikey query string true "apikey"
-// @Success 200
+// @Success 200 {string} string
 // @Failure 401 {object} string
 // @Router /api/fillimdb [get]
 func ApiFillImdb(ctx *gin.Context) {
@@ -120,7 +124,7 @@ func ApiFillImdb(ctx *gin.Context) {
 // @Accept  json
 // @Produce  json
 // @Param apikey query string true "apikey"
-// @Success 200
+// @Success 200 {string} string
 // @Failure 401 {object} string
 // @Router /api/scheduler/stop [get]
 func ApiSchedulerStop(c *gin.Context) {
@@ -139,7 +143,7 @@ func ApiSchedulerStop(c *gin.Context) {
 // @Accept  json
 // @Produce  json
 // @Param apikey query string true "apikey"
-// @Success 200
+// @Success 200 {string} string
 // @Failure 401 {object} string
 // @Router /api/scheduler/start [get]
 func ApiSchedulerStart(c *gin.Context) {
@@ -158,7 +162,7 @@ func ApiSchedulerStart(c *gin.Context) {
 // @Accept  json
 // @Produce  json
 // @Param apikey query string true "apikey"
-// @Success 200
+// @Success 200 {string} string
 // @Failure 401 {object} string
 // @Router /api/db/close [get]
 func ApiDbClose(ctx *gin.Context) {
@@ -177,7 +181,7 @@ func ApiDbClose(ctx *gin.Context) {
 // @Produce  json
 // @Param name path string true "Table Name"
 // @Param apikey query string true "apikey"
-// @Success 200
+// @Success 200 {string} string
 // @Failure 401 {object} string
 // @Router /api/db/clear/{name} [get]
 func ApiDbClear(ctx *gin.Context) {
@@ -185,9 +189,13 @@ func ApiDbClear(ctx *gin.Context) {
 		return
 	}
 	database.ReadWriteMu.Lock()
-	database.DB.Exec("DELETE FROM " + ctx.Param("name") + "; VACUUM;")
+	_, err := database.DB.Exec("DELETE FROM " + ctx.Param("name") + "; VACUUM;")
 	database.ReadWriteMu.Unlock()
-	ctx.JSON(http.StatusOK, "ok")
+	if err == nil {
+		ctx.JSON(http.StatusOK, "ok")
+	} else {
+		ctx.JSON(http.StatusForbidden, err)
+	}
 }
 
 // @Summary Vacuum DB
@@ -196,7 +204,7 @@ func ApiDbClear(ctx *gin.Context) {
 // @Accept  json
 // @Produce  json
 // @Param apikey query string true "apikey"
-// @Success 200
+// @Success 200 {string} string
 // @Failure 401 {object} string
 // @Router /api/db/vacuum [get]
 func ApiDbVacuum(ctx *gin.Context) {
@@ -204,9 +212,13 @@ func ApiDbVacuum(ctx *gin.Context) {
 		return
 	}
 	database.ReadWriteMu.Lock()
-	database.DB.Exec("VACUUM;")
+	_, err := database.DB.Exec("VACUUM;")
 	database.ReadWriteMu.Unlock()
-	ctx.JSON(http.StatusOK, "ok")
+	if err == nil {
+		ctx.JSON(http.StatusOK, "ok")
+	} else {
+		ctx.JSON(http.StatusForbidden, err)
+	}
 }
 
 // @Summary List Qualities
@@ -233,7 +245,7 @@ func ApiGetQualities(ctx *gin.Context) {
 // @Produce  json
 // @Param id path string true "Id of Quality to delete"
 // @Param apikey query string true "apikey"
-// @Success 200
+// @Success 200 {array} database.Qualities
 // @Failure 401 {object} string
 // @Router /api/quality/{id} [delete]
 func ApiQualityDelete(ctx *gin.Context) {
@@ -242,7 +254,8 @@ func ApiQualityDelete(ctx *gin.Context) {
 	}
 	database.DeleteRow("qualities", database.Query{Where: "id=?", WhereArgs: []interface{}{ctx.Param("id")}})
 	database.GetVars()
-	ctx.JSON(http.StatusOK, "ok")
+	qualities, _ := database.QueryQualities(database.Query{})
+	ctx.JSON(http.StatusOK, qualities)
 }
 
 // @Summary Update Quality
@@ -252,7 +265,8 @@ func ApiQualityDelete(ctx *gin.Context) {
 // @Produce  json
 // @Param quality body database.Qualities true "Quality"
 // @Param apikey query string true "apikey"
-// @Success 200
+// @Success 200 {array} database.Qualities
+// @Failure 400 {object} string
 // @Failure 401 {object} string
 // @Router /api/quality [post]
 func ApiQualityUpdate(ctx *gin.Context) {
@@ -275,7 +289,8 @@ func ApiQualityUpdate(ctx *gin.Context) {
 			database.Query{Where: "id != 0 and id=?", WhereArgs: []interface{}{quality.ID}})
 	}
 	database.GetVars()
-	ctx.JSON(http.StatusOK, "ok")
+	qualities, _ := database.QueryQualities(database.Query{})
+	ctx.JSON(http.StatusOK, qualities)
 }
 
 // @Summary List Quality Priorities
@@ -288,6 +303,7 @@ func ApiQualityUpdate(ctx *gin.Context) {
 // @Param apikey query string true "apikey"
 // @Success 200 {array} utils.ParseInfo
 // @Failure 401 {object} string
+// @Failure 404 {object} string
 // @Router /api/quality/{name}/{config} [get]
 func ApiListQualityPriorities(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
@@ -412,7 +428,7 @@ func ApiConfigGet(ctx *gin.Context) {
 // @Produce  json
 // @Param name path string true "Type Name: ex. quality_SD"
 // @Param apikey query string true "apikey"
-// @Success 200
+// @Success 200 {object} map[string]interface{}
 // @Failure 401 {object} string
 // @Router /api/config/delete/{name} [delete]
 func ApiConfigDelete(ctx *gin.Context) {
@@ -424,7 +440,7 @@ func ApiConfigDelete(ctx *gin.Context) {
 	delete(configs, ctx.Param("name"))
 	config.UpdateCfg(configs)
 	config.WriteCfg()
-	ctx.JSON(http.StatusOK, "ok")
+	ctx.JSON(http.StatusOK, config.ConfigGetAll())
 }
 
 // @Summary Update Config
@@ -435,7 +451,8 @@ func ApiConfigDelete(ctx *gin.Context) {
 // @Param config body interface{} true "Config"
 // @Param name path string true "Type Name: ex. quality_SD"
 // @Param apikey query string true "apikey"
-// @Success 200
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} string
 // @Failure 401 {object} string
 // @Router /api/config/update/{name} [post]
 func ApiConfigUpdate(ctx *gin.Context) {
@@ -542,7 +559,7 @@ func ApiConfigUpdate(ctx *gin.Context) {
 	}
 	config.UpdateCfg(configs)
 	config.WriteCfg()
-	ctx.JSON(http.StatusOK, "ok")
+	ctx.JSON(http.StatusOK, config.ConfigGetAll())
 }
 
 // @Summary List Config Type
