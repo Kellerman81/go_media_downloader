@@ -16,6 +16,7 @@ type Query struct {
 	WhereArgs []interface{}
 	OrderBy   string
 	Limit     uint64
+	Offset    uint64
 	InnerJoin string
 }
 
@@ -53,6 +54,9 @@ func QueryDbmovie(qu Query) ([]Dbmovie, error) {
 	}
 
 	defer rows.Close()
+	if qu.Limit >= 1 && qu.Limit < uint64(counter) {
+		counter = int(qu.Limit)
+	}
 	result := make([]Dbmovie, 0, counter)
 	for rows.Next() {
 		item := Dbmovie{}
@@ -89,6 +93,9 @@ func QueryDbmovieJson(qu Query) ([]DbmovieJson, error) {
 	}
 
 	defer rows.Close()
+	if qu.Limit >= 1 && qu.Limit < uint64(counter) {
+		counter = int(qu.Limit)
+	}
 	result := make([]DbmovieJson, 0, counter)
 	for rows.Next() {
 		item := DbmovieJson{}
@@ -136,6 +143,9 @@ func QueryDbmovieTitle(qu Query) ([]DbmovieTitle, error) {
 	}
 
 	defer rows.Close()
+	if qu.Limit >= 1 && qu.Limit < uint64(counter) {
+		counter = int(qu.Limit)
+	}
 	result := make([]DbmovieTitle, 0, counter)
 	for rows.Next() {
 		item := DbmovieTitle{}
@@ -183,6 +193,9 @@ func QueryDbserie(qu Query) ([]Dbserie, error) {
 	}
 
 	defer rows.Close()
+	if qu.Limit >= 1 && qu.Limit < uint64(counter) {
+		counter = int(qu.Limit)
+	}
 	result := make([]Dbserie, 0, counter)
 	for rows.Next() {
 		item := Dbserie{}
@@ -230,6 +243,9 @@ func QueryDbserieEpisodes(qu Query) ([]DbserieEpisode, error) {
 	}
 
 	defer rows.Close()
+	if qu.Limit >= 1 && qu.Limit < uint64(counter) {
+		counter = int(qu.Limit)
+	}
 	result := make([]DbserieEpisode, 0, counter)
 	for rows.Next() {
 		item := DbserieEpisode{}
@@ -276,6 +292,9 @@ func QueryDbserieAlternates(qu Query) ([]DbserieAlternate, error) {
 	}
 
 	defer rows.Close()
+	if qu.Limit >= 1 && qu.Limit < uint64(counter) {
+		counter = int(qu.Limit)
+	}
 	result := make([]DbserieAlternate, 0, counter)
 	for rows.Next() {
 		item := DbserieAlternate{}
@@ -323,6 +342,9 @@ func QuerySeries(qu Query) ([]Serie, error) {
 	}
 
 	defer rows.Close()
+	if qu.Limit >= 1 && qu.Limit < uint64(counter) {
+		counter = int(qu.Limit)
+	}
 	result := make([]Serie, 0, counter)
 	for rows.Next() {
 		item := Serie{}
@@ -370,6 +392,9 @@ func QuerySerieEpisodes(qu Query) ([]SerieEpisode, error) {
 	}
 
 	defer rows.Close()
+	if qu.Limit >= 1 && qu.Limit < uint64(counter) {
+		counter = int(qu.Limit)
+	}
 	result := make([]SerieEpisode, 0, counter)
 	for rows.Next() {
 		item := SerieEpisode{}
@@ -417,6 +442,9 @@ func QuerySerieEpisodeHistory(qu Query) ([]SerieEpisodeHistory, error) {
 	}
 
 	defer rows.Close()
+	if qu.Limit >= 1 && qu.Limit < uint64(counter) {
+		counter = int(qu.Limit)
+	}
 	result := make([]SerieEpisodeHistory, 0, counter)
 	for rows.Next() {
 		item := SerieEpisodeHistory{}
@@ -464,6 +492,9 @@ func QuerySerieEpisodeFiles(qu Query) ([]SerieEpisodeFile, error) {
 	}
 
 	defer rows.Close()
+	if qu.Limit >= 1 && qu.Limit < uint64(counter) {
+		counter = int(qu.Limit)
+	}
 	result := make([]SerieEpisodeFile, 0, counter)
 	for rows.Next() {
 		item := SerieEpisodeFile{}
@@ -516,6 +547,9 @@ func QueryMovies(qu Query) ([]Movie, error) {
 	}
 
 	defer rows.Close()
+	if qu.Limit >= 1 && qu.Limit < uint64(counter) {
+		counter = int(qu.Limit)
+	}
 	result := make([]Movie, 0, counter)
 	for rows.Next() {
 		item := Movie{}
@@ -563,6 +597,9 @@ func QueryMovieFiles(qu Query) ([]MovieFile, error) {
 	}
 
 	defer rows.Close()
+	if qu.Limit >= 1 && qu.Limit < uint64(counter) {
+		counter = int(qu.Limit)
+	}
 	result := make([]MovieFile, 0, counter)
 	for rows.Next() {
 		item := MovieFile{}
@@ -610,6 +647,9 @@ func QueryMovieHistory(qu Query) ([]MovieHistory, error) {
 	}
 
 	defer rows.Close()
+	if qu.Limit >= 1 && qu.Limit < uint64(counter) {
+		counter = int(qu.Limit)
+	}
 	result := make([]MovieHistory, 0, counter)
 	for rows.Next() {
 		item := MovieHistory{}
@@ -657,6 +697,9 @@ func QueryRssHistory(qu Query) ([]RSSHistory, error) {
 	}
 
 	defer rows.Close()
+	if qu.Limit >= 1 && qu.Limit < uint64(counter) {
+		counter = int(qu.Limit)
+	}
 	result := make([]RSSHistory, 0, counter)
 	for rows.Next() {
 		item := RSSHistory{}
@@ -703,6 +746,9 @@ func QueryQualities(qu Query) ([]Qualities, error) {
 	}
 
 	defer rows.Close()
+	if qu.Limit >= 1 && qu.Limit < uint64(counter) {
+		counter = int(qu.Limit)
+	}
 	result := make([]Qualities, 0, counter)
 	for rows.Next() {
 		item := Qualities{}
@@ -749,6 +795,9 @@ func QueryJobHistory(qu Query) ([]JobHistory, error) {
 	}
 
 	defer rows.Close()
+	if qu.Limit >= 1 && qu.Limit < uint64(counter) {
+		counter = int(qu.Limit)
+	}
 	result := make([]JobHistory, 0, counter)
 	for rows.Next() {
 		item := JobHistory{}
@@ -795,6 +844,9 @@ func QueryIndexerFails(qu Query) ([]IndexerFail, error) {
 	}
 
 	defer rows.Close()
+	if qu.Limit >= 1 && qu.Limit < uint64(counter) {
+		counter = int(qu.Limit)
+	}
 	result := make([]IndexerFail, 0, counter)
 	for rows.Next() {
 		item := IndexerFail{}
@@ -842,6 +894,9 @@ func QuerySerieFileUnmatched(qu Query) ([]SerieFileUnmatched, error) {
 	}
 
 	defer rows.Close()
+	if qu.Limit >= 1 && qu.Limit < uint64(counter) {
+		counter = int(qu.Limit)
+	}
 	result := make([]SerieFileUnmatched, 0, counter)
 	for rows.Next() {
 		item := SerieFileUnmatched{}
@@ -889,6 +944,9 @@ func QueryMovieFileUnmatched(qu Query) ([]MovieFileUnmatched, error) {
 	}
 
 	defer rows.Close()
+	if qu.Limit >= 1 && qu.Limit < uint64(counter) {
+		counter = int(qu.Limit)
+	}
 	result := make([]MovieFileUnmatched, 0, counter)
 	for rows.Next() {
 		item := MovieFileUnmatched{}
@@ -935,6 +993,9 @@ func QueryResultMovies(qu Query) ([]ResultMovies, error) {
 	}
 
 	defer rows.Close()
+	if qu.Limit >= 1 && qu.Limit < uint64(counter) {
+		counter = int(qu.Limit)
+	}
 	result := make([]ResultMovies, 0, counter)
 	for rows.Next() {
 		item := ResultMovies{}
@@ -982,6 +1043,9 @@ func QueryResultSeries(qu Query) ([]ResultSeries, error) {
 	}
 
 	defer rows.Close()
+	if qu.Limit >= 1 && qu.Limit < uint64(counter) {
+		counter = int(qu.Limit)
+	}
 	result := make([]ResultSeries, 0, counter)
 	for rows.Next() {
 		item := ResultSeries{}
@@ -1029,6 +1093,9 @@ func QueryResultSerieEpisodes(qu Query) ([]ResultSerieEpisodes, error) {
 	}
 
 	defer rows.Close()
+	if qu.Limit >= 1 && qu.Limit < uint64(counter) {
+		counter = int(qu.Limit)
+	}
 	result := make([]ResultSerieEpisodes, 0, counter)
 	for rows.Next() {
 		item := ResultSerieEpisodes{}
@@ -1076,6 +1143,9 @@ func QueryImdbGenre(qu Query) ([]ImdbGenres, error) {
 	}
 
 	defer rows.Close()
+	if qu.Limit >= 1 && qu.Limit < uint64(counter) {
+		counter = int(qu.Limit)
+	}
 	result := make([]ImdbGenres, 0, counter)
 	for rows.Next() {
 		item := ImdbGenres{}
@@ -1123,6 +1193,9 @@ func QueryImdbRating(qu Query) ([]ImdbRatings, error) {
 	}
 
 	defer rows.Close()
+	if qu.Limit >= 1 && qu.Limit < uint64(counter) {
+		counter = int(qu.Limit)
+	}
 	result := make([]ImdbRatings, 0, counter)
 	for rows.Next() {
 		item := ImdbRatings{}
@@ -1170,6 +1243,9 @@ func QueryImdbAka(qu Query) ([]ImdbAka, error) {
 	}
 
 	defer rows.Close()
+	if qu.Limit >= 1 && qu.Limit < uint64(counter) {
+		counter = int(qu.Limit)
+	}
 	result := make([]ImdbAka, 0, counter)
 	for rows.Next() {
 		item := ImdbAka{}
@@ -1218,7 +1294,9 @@ func QueryImdbTitle(qu Query) ([]ImdbTitle, error) {
 	}
 
 	defer rows.Close()
-
+	if qu.Limit >= 1 && qu.Limit < uint64(counter) {
+		counter = int(qu.Limit)
+	}
 	result := make([]ImdbTitle, 0, counter)
 	for rows.Next() {
 		item := ImdbTitle{}
@@ -1256,7 +1334,11 @@ func buildquery(columns string, table string, qu Query, count bool) string {
 		query += " order by " + qu.OrderBy
 	}
 	if qu.Limit != 0 {
-		query += " limit " + strconv.Itoa(int(qu.Limit))
+		if qu.Offset != 0 {
+			query += " limit " + strconv.Itoa(int(qu.Offset)) + ", " + strconv.Itoa(int(qu.Limit))
+		} else {
+			query += " limit " + strconv.Itoa(int(qu.Limit))
+		}
 	}
 	return query
 }
@@ -1269,7 +1351,8 @@ func CountRows(table string, qu Query) (int, error) {
 	//}
 	var cfg_general config.GeneralConfig
 	config.ConfigGet("general", &cfg_general)
-
+	qu.Offset = 0
+	qu.Limit = 0
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", buildquery("count(*)", table, qu, true), " -args: ", qu.WhereArgs)
 	}
@@ -1480,7 +1563,8 @@ func ImdbCountRows(table string, qu Query) (int, error) {
 
 	var cfg_general config.GeneralConfig
 	config.ConfigGet("general", &cfg_general)
-
+	qu.Limit = 0
+	qu.Offset = 0
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
 	}

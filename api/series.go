@@ -4,8 +4,8 @@ package api
 import (
 	"database/sql"
 	"net/http"
+	"strconv"
 	"strings"
-	"time"
 
 	"github.com/Kellerman81/go_media_downloader/config"
 	"github.com/Kellerman81/go_media_downloader/database"
@@ -63,6 +63,9 @@ var allowedjobsseries []string = []string{"rss", "data", "datafull", "checkmissi
 // @Tags series
 // @Accept  json
 // @Produce  json
+// @Param limit query int false "Limit"
+// @Param page query int false "Page"
+// @Param order query string false "Order By"
 // @Param apikey query string true "apikey"
 // @Success 200 {array} database.Dbserie
 // @Failure 401 {object} string
@@ -71,8 +74,31 @@ func ApiSeriesGet(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
-	series, _ := database.QueryDbserie(database.Query{})
-	ctx.JSON(http.StatusOK, gin.H{"data": series, "rows": len(series)})
+	query := database.Query{}
+	rows, _ := database.CountRows("dbseries", query)
+	limit := 0
+	page := 0
+	if queryParam, ok := ctx.GetQuery("limit"); ok {
+		if queryParam != "" {
+			limit, _ = strconv.Atoi(queryParam)
+			query.Limit = uint64(limit)
+		}
+	}
+	if limit != 0 {
+		if queryParam, ok := ctx.GetQuery("page"); ok {
+			if queryParam != "" {
+				page, _ = strconv.Atoi(queryParam)
+				query.Offset = uint64(page * limit)
+			}
+		}
+	}
+	if queryParam, ok := ctx.GetQuery("order"); ok {
+		if queryParam != "" {
+			query.OrderBy = queryParam
+		}
+	}
+	series, _ := database.QueryDbserie(query)
+	ctx.JSON(http.StatusOK, gin.H{"data": series, "total": rows})
 }
 
 // @Summary Delete Series
@@ -82,7 +108,7 @@ func ApiSeriesGet(ctx *gin.Context) {
 // @Produce  json
 // @Param id path int true "Series ID"
 // @Param apikey query string true "apikey"
-// @Success 200
+// @Success 200 {string} string
 // @Failure 401 {object} string
 // @Router /api/series/{id} [delete]
 func ApiSeriesDelete(ctx *gin.Context) {
@@ -94,8 +120,13 @@ func ApiSeriesDelete(ctx *gin.Context) {
 	database.DeleteRow("serie_episodes", database.Query{Where: "dbserie_id=?", WhereArgs: []interface{}{ctx.Param("id")}})
 	database.DeleteRow("dbserie_episodes", database.Query{Where: "dbserie_id=?", WhereArgs: []interface{}{ctx.Param("id")}})
 	database.DeleteRow("series", database.Query{Where: "dbserie_id=?", WhereArgs: []interface{}{ctx.Param("id")}})
-	database.DeleteRow("dbseries", database.Query{Where: "id=?", WhereArgs: []interface{}{ctx.Param("id")}})
-	ctx.JSON(http.StatusOK, "ok")
+	_, err := database.DeleteRow("dbseries", database.Query{Where: "id=?", WhereArgs: []interface{}{ctx.Param("id")}})
+
+	if err == nil {
+		ctx.JSON(http.StatusOK, "ok")
+	} else {
+		ctx.JSON(http.StatusForbidden, err)
+	}
 }
 
 // @Summary List Series (List)
@@ -104,6 +135,9 @@ func ApiSeriesDelete(ctx *gin.Context) {
 // @Accept  json
 // @Produce  json
 // @Param name path string true "List Name"
+// @Param limit query int false "Limit"
+// @Param page query int false "Page"
+// @Param order query string false "Order By"
 // @Param apikey query string true "apikey"
 // @Success 200 {array} database.ResultSeries
 // @Failure 401 {object} string
@@ -112,8 +146,34 @@ func ApiSeriesListGet(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
-	movies, _ := database.QueryResultSeries(database.Query{InnerJoin: "Dbseries on series.dbserie_id=dbseries.id", Where: "series.listname=?", WhereArgs: []interface{}{ctx.Param("name")}})
-	ctx.JSON(http.StatusOK, gin.H{"data": movies, "rows": len(movies)})
+	query := database.Query{}
+	query.InnerJoin = "Dbseries on series.dbserie_id=dbseries.id"
+	query.Where = "series.listname=?"
+	query.WhereArgs = []interface{}{ctx.Param("name")}
+	rows, _ := database.CountRows("series", query)
+	limit := 0
+	page := 0
+	if queryParam, ok := ctx.GetQuery("limit"); ok {
+		if queryParam != "" {
+			limit, _ = strconv.Atoi(queryParam)
+			query.Limit = uint64(limit)
+		}
+	}
+	if limit != 0 {
+		if queryParam, ok := ctx.GetQuery("page"); ok {
+			if queryParam != "" {
+				page, _ = strconv.Atoi(queryParam)
+				query.Offset = uint64(page * limit)
+			}
+		}
+	}
+	if queryParam, ok := ctx.GetQuery("order"); ok {
+		if queryParam != "" {
+			query.OrderBy = queryParam
+		}
+	}
+	movies, _ := database.QueryResultSeries(query)
+	ctx.JSON(http.StatusOK, gin.H{"data": movies, "total": rows})
 }
 
 // @Summary Delete Series (List)
@@ -123,7 +183,7 @@ func ApiSeriesListGet(ctx *gin.Context) {
 // @Produce  json
 // @Param id path int true "Series ID"
 // @Param apikey query string true "apikey"
-// @Success 200
+// @Success 200 {string} string
 // @Failure 401 {object} string
 // @Router /api/series/list/{id} [delete]
 func ApiSeriesListDelete(ctx *gin.Context) {
@@ -133,8 +193,13 @@ func ApiSeriesListDelete(ctx *gin.Context) {
 	database.DeleteRow("serie_episode_files", database.Query{Where: "dbserie_id=?", WhereArgs: []interface{}{ctx.Param("id")}})
 	database.DeleteRow("serie_episode_histories", database.Query{Where: "dbserie_id=?", WhereArgs: []interface{}{ctx.Param("id")}})
 	database.DeleteRow("serie_episodes", database.Query{Where: "dbserie_id=?", WhereArgs: []interface{}{ctx.Param("id")}})
-	database.DeleteRow("series", database.Query{Where: "dbserie_id=?", WhereArgs: []interface{}{ctx.Param("id")}})
-	ctx.JSON(http.StatusOK, "ok")
+	_, err := database.DeleteRow("series", database.Query{Where: "dbserie_id=?", WhereArgs: []interface{}{ctx.Param("id")}})
+
+	if err == nil {
+		ctx.JSON(http.StatusOK, "ok")
+	} else {
+		ctx.JSON(http.StatusForbidden, err)
+	}
 }
 
 // @Summary List Series Unmatched
@@ -142,6 +207,9 @@ func ApiSeriesListDelete(ctx *gin.Context) {
 // @Tags series
 // @Accept  json
 // @Produce  json
+// @Param limit query int false "Limit"
+// @Param page query int false "Page"
+// @Param order query string false "Order By"
 // @Param apikey query string true "apikey"
 // @Success 200 {array} database.SerieFileUnmatchedJson
 // @Failure 401 {object} string
@@ -150,8 +218,31 @@ func ApiSeriesUnmatched(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
-	movies, _ := database.QuerySerieFileUnmatched(database.Query{})
-	ctx.JSON(http.StatusOK, gin.H{"data": movies, "rows": len(movies)})
+	query := database.Query{}
+	rows, _ := database.CountRows("serie_file_unmatcheds", query)
+	limit := 0
+	page := 0
+	if queryParam, ok := ctx.GetQuery("limit"); ok {
+		if queryParam != "" {
+			limit, _ = strconv.Atoi(queryParam)
+			query.Limit = uint64(limit)
+		}
+	}
+	if limit != 0 {
+		if queryParam, ok := ctx.GetQuery("page"); ok {
+			if queryParam != "" {
+				page, _ = strconv.Atoi(queryParam)
+				query.Offset = uint64(page * limit)
+			}
+		}
+	}
+	if queryParam, ok := ctx.GetQuery("order"); ok {
+		if queryParam != "" {
+			query.OrderBy = queryParam
+		}
+	}
+	movies, _ := database.QuerySerieFileUnmatched(query)
+	ctx.JSON(http.StatusOK, gin.H{"data": movies, "total": rows})
 }
 
 // @Summary List Series Episodes
@@ -159,6 +250,9 @@ func ApiSeriesUnmatched(ctx *gin.Context) {
 // @Tags series
 // @Accept  json
 // @Produce  json
+// @Param limit query int false "Limit"
+// @Param page query int false "Page"
+// @Param order query string false "Order By"
 // @Param apikey query string true "apikey"
 // @Success 200 {array} database.DbserieEpisodeJson
 // @Failure 401 {object} string
@@ -167,8 +261,31 @@ func ApiSeriesEpisodesGet(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
-	series, _ := database.QueryDbserieEpisodes(database.Query{})
-	ctx.JSON(http.StatusOK, gin.H{"data": series, "rows": len(series)})
+	query := database.Query{}
+	rows, _ := database.CountRows("dbserie_episodes", query)
+	limit := 0
+	page := 0
+	if queryParam, ok := ctx.GetQuery("limit"); ok {
+		if queryParam != "" {
+			limit, _ = strconv.Atoi(queryParam)
+			query.Limit = uint64(limit)
+		}
+	}
+	if limit != 0 {
+		if queryParam, ok := ctx.GetQuery("page"); ok {
+			if queryParam != "" {
+				page, _ = strconv.Atoi(queryParam)
+				query.Offset = uint64(page * limit)
+			}
+		}
+	}
+	if queryParam, ok := ctx.GetQuery("order"); ok {
+		if queryParam != "" {
+			query.OrderBy = queryParam
+		}
+	}
+	series, _ := database.QueryDbserieEpisodes(query)
+	ctx.JSON(http.StatusOK, gin.H{"data": series, "total": rows})
 }
 
 // @Summary List Series Episodes (Single)
@@ -177,6 +294,9 @@ func ApiSeriesEpisodesGet(ctx *gin.Context) {
 // @Accept  json
 // @Produce  json
 // @Param id path int true "Series ID"
+// @Param limit query int false "Limit"
+// @Param page query int false "Page"
+// @Param order query string false "Order By"
 // @Param apikey query string true "apikey"
 // @Success 200 {array} database.DbserieEpisodeJson
 // @Failure 401 {object} string
@@ -185,8 +305,33 @@ func ApiSeriesEpisodesGetSingle(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
-	series, _ := database.QueryDbserieEpisodes(database.Query{Where: "dbserie_id=?", WhereArgs: []interface{}{ctx.Param("id")}})
-	ctx.JSON(http.StatusOK, gin.H{"data": series, "rows": len(series)})
+	query := database.Query{}
+	query.Where = "dbserie_id=?"
+	query.WhereArgs = []interface{}{ctx.Param("id")}
+	rows, _ := database.CountRows("dbserie_episodes", query)
+	limit := 0
+	page := 0
+	if queryParam, ok := ctx.GetQuery("limit"); ok {
+		if queryParam != "" {
+			limit, _ = strconv.Atoi(queryParam)
+			query.Limit = uint64(limit)
+		}
+	}
+	if limit != 0 {
+		if queryParam, ok := ctx.GetQuery("page"); ok {
+			if queryParam != "" {
+				page, _ = strconv.Atoi(queryParam)
+				query.Offset = uint64(page * limit)
+			}
+		}
+	}
+	if queryParam, ok := ctx.GetQuery("order"); ok {
+		if queryParam != "" {
+			query.OrderBy = queryParam
+		}
+	}
+	series, _ := database.QueryDbserieEpisodes(query)
+	ctx.JSON(http.StatusOK, gin.H{"data": series, "total": rows})
 }
 
 // @Summary Delete Episode
@@ -196,7 +341,7 @@ func ApiSeriesEpisodesGetSingle(ctx *gin.Context) {
 // @Produce  json
 // @Param id path int true "Episode ID"
 // @Param apikey query string true "apikey"
-// @Success 200
+// @Success 200 {string} string
 // @Failure 401 {object} string
 // @Router /api/series/episodes/{id} [delete]
 func ApiSeriesEpisodesDelete(ctx *gin.Context) {
@@ -206,8 +351,13 @@ func ApiSeriesEpisodesDelete(ctx *gin.Context) {
 	database.DeleteRow("serie_episode_files", database.Query{Where: "dbserie_episode_id=?", WhereArgs: []interface{}{ctx.Param("id")}})
 	database.DeleteRow("serie_episode_histories", database.Query{Where: "dbserie_episode_id=?", WhereArgs: []interface{}{ctx.Param("id")}})
 	database.DeleteRow("serie_episodes", database.Query{Where: "dbserie_episode_id=?", WhereArgs: []interface{}{ctx.Param("id")}})
-	database.DeleteRow("dbserie_episodes", database.Query{Where: "id=?", WhereArgs: []interface{}{ctx.Param("id")}})
-	ctx.JSON(http.StatusOK, "ok")
+	_, err := database.DeleteRow("dbserie_episodes", database.Query{Where: "id=?", WhereArgs: []interface{}{ctx.Param("id")}})
+
+	if err == nil {
+		ctx.JSON(http.StatusOK, "ok")
+	} else {
+		ctx.JSON(http.StatusForbidden, err)
+	}
 }
 
 // @Summary List Series Episodes (List)
@@ -216,6 +366,9 @@ func ApiSeriesEpisodesDelete(ctx *gin.Context) {
 // @Accept  json
 // @Produce  json
 // @Param id path int true "Series ID"
+// @Param limit query int false "Limit"
+// @Param page query int false "Page"
+// @Param order query string false "Order By"
 // @Param apikey query string true "apikey"
 // @Success 200 {array} database.ResultSerieEpisodesJson
 // @Failure 401 {object} string
@@ -224,8 +377,34 @@ func ApiSeriesEpisodesListGet(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
-	movies, _ := database.QueryResultSerieEpisodes(database.Query{InnerJoin: "dbserie_episodes on serie_episodes.dbserie_episode_id=dbserie_episodes.id inner join series on series.id=serie_episodes.serie_id", Where: "series.id=?", WhereArgs: []interface{}{ctx.Param("id")}})
-	ctx.JSON(http.StatusOK, gin.H{"data": movies, "rows": len(movies)})
+	query := database.Query{}
+	query.InnerJoin = "dbserie_episodes on serie_episodes.dbserie_episode_id=dbserie_episodes.id inner join series on series.id=serie_episodes.serie_id"
+	query.Where = "series.id=?"
+	query.WhereArgs = []interface{}{ctx.Param("id")}
+	rows, _ := database.CountRows("serie_episodes", query)
+	limit := 0
+	page := 0
+	if queryParam, ok := ctx.GetQuery("limit"); ok {
+		if queryParam != "" {
+			limit, _ = strconv.Atoi(queryParam)
+			query.Limit = uint64(limit)
+		}
+	}
+	if limit != 0 {
+		if queryParam, ok := ctx.GetQuery("page"); ok {
+			if queryParam != "" {
+				page, _ = strconv.Atoi(queryParam)
+				query.Offset = uint64(page * limit)
+			}
+		}
+	}
+	if queryParam, ok := ctx.GetQuery("order"); ok {
+		if queryParam != "" {
+			query.OrderBy = queryParam
+		}
+	}
+	movies, _ := database.QueryResultSerieEpisodes(query)
+	ctx.JSON(http.StatusOK, gin.H{"data": movies, "total": rows})
 }
 
 // @Summary Delete Episode (List)
@@ -235,7 +414,7 @@ func ApiSeriesEpisodesListGet(ctx *gin.Context) {
 // @Produce  json
 // @Param id path int true "Episode ID"
 // @Param apikey query string true "apikey"
-// @Success 200
+// @Success 200 {string} string
 // @Failure 401 {object} string
 // @Router /api/series/episodes/list/{id} [delete]
 func ApiSeriesEpisodesListDelete(ctx *gin.Context) {
@@ -244,8 +423,13 @@ func ApiSeriesEpisodesListDelete(ctx *gin.Context) {
 	}
 	database.DeleteRow("serie_episode_files", database.Query{Where: "serie_episode_id=?", WhereArgs: []interface{}{ctx.Param("id")}})
 	database.DeleteRow("serie_episode_histories", database.Query{Where: "serie_episode_id=?", WhereArgs: []interface{}{ctx.Param("id")}})
-	database.DeleteRow("serie_episodes", database.Query{Where: "id=?", WhereArgs: []interface{}{ctx.Param("id")}})
-	ctx.JSON(http.StatusOK, "ok")
+	_, err := database.DeleteRow("serie_episodes", database.Query{Where: "id=?", WhereArgs: []interface{}{ctx.Param("id")}})
+
+	if err == nil {
+		ctx.JSON(http.StatusOK, "ok")
+	} else {
+		ctx.JSON(http.StatusForbidden, err)
+	}
 }
 
 // @Summary Start Jobs (All Lists)
@@ -253,9 +437,10 @@ func ApiSeriesEpisodesListDelete(ctx *gin.Context) {
 // @Tags series
 // @Accept  json
 // @Produce  json
-// @Param job path string true "Job Name: ex. datafull"
+// @Param job path string true "Job Name one of: rss, data, datafull, checkmissing, checkmissingflag, structure, searchmissingfull, searchmissinginc, searchupgradefull, searchupgradeinc, searchmissingfulltitle, searchmissinginctitle, searchupgradefulltitle, searchupgradeinctitle, clearhistory, feeds, refresh, refreshinc"
 // @Param apikey query string true "apikey"
-// @Success 200
+// @Success 200 {string} string
+// @Failure 204 {object} string
 // @Failure 401 {object} string
 // @Router /api/series/job/{job} [get]
 func apiseriesAllJobs(c *gin.Context) {
@@ -273,34 +458,34 @@ func apiseriesAllJobs(c *gin.Context) {
 		returnval := "Job " + c.Param("job") + " started"
 		switch c.Param("job") {
 		case "data", "datafull", "checkmissing", "checkmissingflag", "structure", "clearhistory":
-			scheduler.QueueData.DispatchIn(func() {
+			scheduler.QueueData.Dispatch(func() {
 				utils.Series_all_jobs(c.Param("job"), true)
-			}, time.Second*1)
+			})
 		case "rss", "searchmissingfull", "searchmissinginc", "searchupgradefull", "searchupgradeinc", "searchmissingfulltitle", "searchmissinginctitle", "searchupgradefulltitle", "searchupgradeinctitle":
-			scheduler.QueueSearch.DispatchIn(func() {
+			scheduler.QueueSearch.Dispatch(func() {
 				utils.Series_all_jobs(c.Param("job"), true)
-			}, time.Second*1)
+			})
 		case "feeds":
-			scheduler.QueueFeeds.DispatchIn(func() {
+			scheduler.QueueFeeds.Dispatch(func() {
 				utils.Series_all_jobs(c.Param("job"), true)
-			}, time.Second*1)
+			})
 		case "refresh":
-			scheduler.QueueFeeds.DispatchIn(func() {
+			scheduler.QueueFeeds.Dispatch(func() {
 				utils.RefreshSeries()
-			}, time.Second*1)
+			})
 		case "refreshinc":
-			scheduler.QueueFeeds.DispatchIn(func() {
+			scheduler.QueueFeeds.Dispatch(func() {
 				utils.RefreshSeriesInc()
-			}, time.Second*1)
+			})
 		default:
-			scheduler.QueueData.DispatchIn(func() {
+			scheduler.QueueData.Dispatch(func() {
 				utils.Series_all_jobs(c.Param("job"), true)
-			}, time.Second*1)
+			})
 		}
 		c.JSON(http.StatusOK, returnval)
 	} else {
 		returnval := "Job " + c.Param("job") + " not allowed!"
-		c.JSON(http.StatusOK, returnval)
+		c.JSON(http.StatusNoContent, returnval)
 	}
 }
 
@@ -309,10 +494,11 @@ func apiseriesAllJobs(c *gin.Context) {
 // @Tags series
 // @Accept  json
 // @Produce  json
-// @Param job path string true "Job Name: ex. datafull"
+// @Param job path string true "Job Name one of: rss, data, datafull, checkmissing, checkmissingflag, structure, searchmissingfull, searchmissinginc, searchupgradefull, searchupgradeinc, searchmissingfulltitle, searchmissinginctitle, searchupgradefulltitle, searchupgradeinctitle, clearhistory, feeds, refresh, refreshinc"
 // @Param name path string false "List Name: ex. list"
 // @Param apikey query string true "apikey"
-// @Success 200
+// @Success 200 {string} string
+// @Failure 204 {object} string
 // @Failure 401 {object} string
 // @Router /api/series/job/{job}/{name} [get]
 func apiseriesJobs(c *gin.Context) {
@@ -330,34 +516,34 @@ func apiseriesJobs(c *gin.Context) {
 		returnval := "Job " + c.Param("job") + " started"
 		switch c.Param("job") {
 		case "data", "datafull", "checkmissing", "checkmissingflag", "structure", "clearhistory":
-			scheduler.QueueData.DispatchIn(func() {
+			scheduler.QueueData.Dispatch(func() {
 				utils.Series_single_jobs(c.Param("job"), c.Param("name"), "", true)
-			}, time.Second*1)
+			})
 		case "rss", "searchmissingfull", "searchmissinginc", "searchupgradefull", "searchupgradeinc", "searchmissingfulltitle", "searchmissinginctitle", "searchupgradefulltitle", "searchupgradeinctitle":
-			scheduler.QueueSearch.DispatchIn(func() {
+			scheduler.QueueSearch.Dispatch(func() {
 				utils.Series_single_jobs(c.Param("job"), c.Param("name"), "", true)
-			}, time.Second*1)
+			})
 		case "feeds":
-			scheduler.QueueFeeds.DispatchIn(func() {
+			scheduler.QueueFeeds.Dispatch(func() {
 				utils.Series_single_jobs(c.Param("job"), c.Param("name"), "", true)
-			}, time.Second*1)
+			})
 		case "refresh":
-			scheduler.QueueFeeds.DispatchIn(func() {
+			scheduler.QueueFeeds.Dispatch(func() {
 				utils.RefreshSeries()
-			}, time.Second*1)
+			})
 		case "refreshinc":
-			scheduler.QueueFeeds.DispatchIn(func() {
+			scheduler.QueueFeeds.Dispatch(func() {
 				utils.RefreshSeriesInc()
-			}, time.Second*1)
+			})
 		default:
-			scheduler.QueueData.DispatchIn(func() {
+			scheduler.QueueData.Dispatch(func() {
 				utils.Series_single_jobs(c.Param("job"), c.Param("name"), "", true)
-			}, time.Second*1)
+			})
 		}
 		c.JSON(http.StatusOK, returnval)
 	} else {
 		returnval := "Job " + c.Param("job") + " not allowed!"
-		c.JSON(http.StatusOK, returnval)
+		c.JSON(http.StatusNoContent, returnval)
 	}
 }
 
@@ -368,7 +554,8 @@ func apiseriesJobs(c *gin.Context) {
 // @Produce  json
 // @Param series body database.Dbserie true "Series"
 // @Param apikey query string true "apikey"
-// @Success 200
+// @Success 200 {string} string
+// @Failure 400 {object} string
 // @Failure 401 {object} string
 // @Router /api/series [post]
 func updateDBSeries(c *gin.Context) {
@@ -392,7 +579,11 @@ func updateDBSeries(c *gin.Context) {
 			[]interface{}{dbserie.Seriename, dbserie.Aliases, dbserie.Season, dbserie.Status, dbserie.Firstaired, dbserie.Network, dbserie.Runtime, dbserie.Language, dbserie.Genre, dbserie.Overview, dbserie.Rating, dbserie.Siterating, dbserie.SiteratingCount, dbserie.Slug, dbserie.TraktID, dbserie.ImdbID, dbserie.ThetvdbID, dbserie.FreebaseMID, dbserie.FreebaseID, dbserie.TvrageID, dbserie.Facebook, dbserie.Instagram, dbserie.Twitter, dbserie.Banner, dbserie.Poster, dbserie.Fanart, dbserie.Identifiedby},
 			database.Query{Where: "id != 0 and id=?", WhereArgs: []interface{}{dbserie.ID}})
 	}
-	c.JSON(http.StatusOK, gin.H{"data": inres, "error": inerr})
+	if inerr == nil {
+		c.JSON(http.StatusOK, inres)
+	} else {
+		c.JSON(http.StatusForbidden, inerr)
+	}
 }
 
 // @Summary Update Series Episodes (Global)
@@ -402,7 +593,8 @@ func updateDBSeries(c *gin.Context) {
 // @Produce  json
 // @Param episode body database.DbserieEpisodeJson true "Episode"
 // @Param apikey query string true "apikey"
-// @Success 200
+// @Success 200 {string} string
+// @Failure 400 {object} string
 // @Failure 401 {object} string
 // @Router /api/series/episodes [post]
 func updateDBEpisode(c *gin.Context) {
@@ -426,7 +618,11 @@ func updateDBEpisode(c *gin.Context) {
 			[]interface{}{dbserieepisode.Episode, dbserieepisode.Season, dbserieepisode.Identifier, dbserieepisode.Title, dbserieepisode.FirstAired, dbserieepisode.Overview, dbserieepisode.Poster, dbserieepisode.DbserieID},
 			database.Query{Where: "id != 0 and id=?", WhereArgs: []interface{}{dbserieepisode.ID}})
 	}
-	c.JSON(http.StatusOK, gin.H{"data": inres, "error": inerr})
+	if inerr == nil {
+		c.JSON(http.StatusOK, inres)
+	} else {
+		c.JSON(http.StatusForbidden, inerr)
+	}
 }
 
 // @Summary Update Series (List)
@@ -436,7 +632,8 @@ func updateDBEpisode(c *gin.Context) {
 // @Produce  json
 // @Param series body database.SerieJson true "Series"
 // @Param apikey query string true "apikey"
-// @Success 200
+// @Success 200 {string} string
+// @Failure 400 {object} string
 // @Failure 401 {object} string
 // @Router /api/series/list [post]
 func updateSeries(c *gin.Context) {
@@ -450,16 +647,21 @@ func updateSeries(c *gin.Context) {
 	}
 	counter, _ := database.CountRows("series", database.Query{Where: "id != 0 and id=?", WhereArgs: []interface{}{serie.ID}})
 	var inres sql.Result
+	var inerr error
 
 	if counter == 0 {
-		inres, _ = database.InsertArray("series", []string{"dbserie_id", "listname", "rootpath", "dont_upgrade", "dont_search"},
+		inres, inerr = database.InsertArray("series", []string{"dbserie_id", "listname", "rootpath", "dont_upgrade", "dont_search"},
 			[]interface{}{serie.DbserieID, serie.Listname, serie.Rootpath, serie.DontUpgrade, serie.DontSearch})
 	} else {
-		inres, _ = database.UpdateArray("series", []string{"dbserie_id", "listname", "rootpath", "dont_upgrade", "dont_search"},
+		inres, inerr = database.UpdateArray("series", []string{"dbserie_id", "listname", "rootpath", "dont_upgrade", "dont_search"},
 			[]interface{}{serie.DbserieID, serie.Listname, serie.Rootpath, serie.DontUpgrade, serie.DontSearch},
 			database.Query{Where: "id != 0 and id=?", WhereArgs: []interface{}{serie.ID}})
 	}
-	c.JSON(http.StatusOK, gin.H{"data": inres})
+	if inerr == nil {
+		c.JSON(http.StatusOK, inres)
+	} else {
+		c.JSON(http.StatusForbidden, inerr)
+	}
 }
 
 // @Summary Update Series Episodes (List)
@@ -469,7 +671,8 @@ func updateSeries(c *gin.Context) {
 // @Produce  json
 // @Param episode body database.SerieEpisodeJson true "Episode"
 // @Param apikey query string true "apikey"
-// @Success 200
+// @Success 200 {string} string
+// @Failure 400 {object} string
 // @Failure 401 {object} string
 // @Router /api/series/episodes/list [post]
 func updateEpisode(c *gin.Context) {
@@ -483,17 +686,21 @@ func updateEpisode(c *gin.Context) {
 	}
 	counter, _ := database.CountRows("serie_episodes", database.Query{Where: "id != 0 and id=?", WhereArgs: []interface{}{serieepisode.ID}})
 	var inres sql.Result
-
+	var inerr error
 	if counter == 0 {
-		inres, _ = database.InsertArray("serie_episodes",
+		inres, inerr = database.InsertArray("serie_episodes",
 			[]string{"dbserie_id", "serie_id", "missing", "quality_profile", "dbserie_episode_id", "blacklisted", "quality_reached", "dont_upgrade", "dont_search"},
 			[]interface{}{serieepisode.DbserieID, serieepisode.SerieID, serieepisode.Missing, serieepisode.QualityProfile, serieepisode.DbserieEpisodeID, serieepisode.Blacklisted, serieepisode.QualityReached, serieepisode.DontUpgrade, serieepisode.DontSearch})
 	} else {
-		inres, _ = database.UpdateArray("serie_episodes", []string{"dbserie_id", "serie_id", "missing", "quality_profile", "dbserie_episode_id", "blacklisted", "quality_reached", "dont_upgrade", "dont_search"},
+		inres, inerr = database.UpdateArray("serie_episodes", []string{"dbserie_id", "serie_id", "missing", "quality_profile", "dbserie_episode_id", "blacklisted", "quality_reached", "dont_upgrade", "dont_search"},
 			[]interface{}{serieepisode.DbserieID, serieepisode.SerieID, serieepisode.Missing, serieepisode.QualityProfile, serieepisode.DbserieEpisodeID, serieepisode.Blacklisted, serieepisode.QualityReached, serieepisode.DontUpgrade, serieepisode.DontSearch},
 			database.Query{Where: "id != 0 and id=?", WhereArgs: []interface{}{serieepisode.ID}})
 	}
-	c.JSON(http.StatusOK, gin.H{"data": inres})
+	if inerr == nil {
+		c.JSON(http.StatusOK, inres)
+	} else {
+		c.JSON(http.StatusForbidden, inerr)
+	}
 }
 
 // @Summary Refresh Single Series
@@ -503,16 +710,16 @@ func updateEpisode(c *gin.Context) {
 // @Produce  json
 // @Param id path int true "Serie ID"
 // @Param apikey query string true "apikey"
-// @Success 200
+// @Success 200 {string} string
 // @Failure 401 {object} string
 // @Router /api/series/all/refresh/{id} [get]
 func apirefreshSerie(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
 		return
 	}
-	scheduler.QueueFeeds.DispatchIn(func() {
+	scheduler.QueueFeeds.Dispatch(func() {
 		utils.RefreshSerie(c.Param("id"))
-	}, time.Second*1)
+	})
 	c.JSON(http.StatusOK, "started")
 }
 
@@ -522,16 +729,16 @@ func apirefreshSerie(c *gin.Context) {
 // @Accept  json
 // @Produce  json
 // @Param apikey query string true "apikey"
-// @Success 200
+// @Success 200 {string} string
 // @Failure 401 {object} string
 // @Router /api/series/all/refreshall [get]
 func apirefreshSeries(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
 		return
 	}
-	scheduler.QueueFeeds.DispatchIn(func() {
+	scheduler.QueueFeeds.Dispatch(func() {
 		utils.RefreshSeries()
-	}, time.Second*1)
+	})
 	c.JSON(http.StatusOK, "started")
 }
 
@@ -541,16 +748,16 @@ func apirefreshSeries(c *gin.Context) {
 // @Accept  json
 // @Produce  json
 // @Param apikey query string true "apikey"
-// @Success 200
+// @Success 200 {string} string
 // @Failure 401 {object} string
 // @Router /api/series/all/refresh [get]
 func apirefreshSeriesInc(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
 		return
 	}
-	scheduler.QueueFeeds.DispatchIn(func() {
+	scheduler.QueueFeeds.Dispatch(func() {
 		utils.RefreshSeriesInc()
-	}, time.Second*1)
+	})
 	c.JSON(http.StatusOK, "started")
 }
 
@@ -561,7 +768,7 @@ func apirefreshSeriesInc(c *gin.Context) {
 // @Produce  json
 // @Param id path int true "Series ID"
 // @Param apikey query string true "apikey"
-// @Success 200
+// @Success 200 {string} string
 // @Failure 401 {object} string
 // @Router /api/series/search/id/{id} [get]
 func apiSeriesSearch(c *gin.Context) {
@@ -578,14 +785,15 @@ func apiSeriesSearch(c *gin.Context) {
 
 		for idxlist := range cfg_serie.Lists {
 			if strings.EqualFold(cfg_serie.Lists[idxlist].Name, serie.Listname) {
-				scheduler.QueueSearch.DispatchIn(func() {
+				scheduler.QueueSearch.Dispatch(func() {
 					utils.SearchSerieSingle(serie, cfg_serie, true)
-				}, time.Second*1)
+				})
 				c.JSON(http.StatusOK, "started")
 				return
 			}
 		}
 	}
+	c.JSON(http.StatusNoContent, "Nothing Done")
 }
 
 // @Summary Search a series
@@ -596,7 +804,7 @@ func apiSeriesSearch(c *gin.Context) {
 // @Param id path int true "Series ID"
 // @Param season path string true "Season"
 // @Param apikey query string true "apikey"
-// @Success 200
+// @Success 200 {string} string
 // @Failure 401 {object} string
 // @Router /api/series/search/id/{id}/{season} [get]
 func apiSeriesSearchSeason(c *gin.Context) {
@@ -613,14 +821,15 @@ func apiSeriesSearchSeason(c *gin.Context) {
 
 		for idxlist := range cfg_serie.Lists {
 			if strings.EqualFold(cfg_serie.Lists[idxlist].Name, serie.Listname) {
-				scheduler.QueueSearch.DispatchIn(func() {
+				scheduler.QueueSearch.Dispatch(func() {
 					utils.SearchSerieSeasonSingle(serie, c.Param("season"), cfg_serie, true)
-				}, time.Second*1)
+				})
 				c.JSON(http.StatusOK, "started")
 				return
 			}
 		}
 	}
+	c.JSON(http.StatusNoContent, "Nothing Done")
 }
 
 // @Summary Search a episode
@@ -630,7 +839,7 @@ func apiSeriesSearchSeason(c *gin.Context) {
 // @Produce  json
 // @Param id path int true "Episode ID"
 // @Param apikey query string true "apikey"
-// @Success 200
+// @Success 200 {string} string
 // @Failure 401 {object} string
 // @Router /api/series/episodes/search/id/{id} [get]
 func apiSeriesEpisodeSearch(c *gin.Context) {
@@ -649,14 +858,15 @@ func apiSeriesEpisodeSearch(c *gin.Context) {
 
 		for idxlist := range cfg_serie.Lists {
 			if strings.EqualFold(cfg_serie.Lists[idxlist].Name, serie.Listname) {
-				scheduler.QueueSearch.DispatchIn(func() {
+				scheduler.QueueSearch.Dispatch(func() {
 					utils.SearchSerieEpisodeSingle(serieepi, cfg_serie, true)
-				}, time.Second*1)
+				})
 				c.JSON(http.StatusOK, "started")
 				return
 			}
 		}
 	}
+	c.JSON(http.StatusNoContent, "Nothing Done")
 }
 
 // @Summary Clear History (Full List)
@@ -666,7 +876,7 @@ func apiSeriesEpisodeSearch(c *gin.Context) {
 // @Produce  json
 // @Param name path string true "List Name"
 // @Param apikey query string true "apikey"
-// @Success 200
+// @Success 200 {string} string
 // @Failure 401 {object} string
 // @Router /api/series/search/history/clear/{name} [get]
 func apiSeriesClearHistoryName(c *gin.Context) {

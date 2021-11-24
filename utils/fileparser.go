@@ -355,15 +355,29 @@ func (m *ParseInfo) ParseFile(includeYearInTitle bool, typegroup string) error {
 		m.Identifier = "S" + m.SeasonStr + "E" + m.EpisodeStr
 	}
 	raw := ""
-	if strings.Contains(m.File[startIndex:endIndex], "(") {
-		rawarr := strings.Split(m.File[startIndex:endIndex], "(")
-		if len(rawarr) >= 1 {
-			raw = rawarr[0]
+	if endIndex < startIndex {
+		logger.Log.Debug("EndIndex < startindex", startIndex, endIndex, m.File)
+		if strings.Contains(m.File[startIndex:], "(") {
+			rawarr := strings.Split(m.File[startIndex:], "(")
+			if len(rawarr) >= 1 {
+				raw = rawarr[0]
+			} else {
+				raw = m.File[startIndex:]
+			}
+		} else {
+			raw = m.File[startIndex:]
+		}
+	} else {
+		if strings.Contains(m.File[startIndex:endIndex], "(") {
+			rawarr := strings.Split(m.File[startIndex:endIndex], "(")
+			if len(rawarr) >= 1 {
+				raw = rawarr[0]
+			} else {
+				raw = m.File[startIndex:endIndex]
+			}
 		} else {
 			raw = m.File[startIndex:endIndex]
 		}
-	} else {
-		raw = m.File[startIndex:endIndex]
 	}
 
 	cleanName = raw

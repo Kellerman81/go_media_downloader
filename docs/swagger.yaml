@@ -832,7 +832,10 @@ paths:
       - application/json
       responses:
         "200":
-          description: ""
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
         "401":
           description: Unauthorized
           schema:
@@ -927,7 +930,14 @@ paths:
       - application/json
       responses:
         "200":
-          description: ""
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            type: string
         "401":
           description: Unauthorized
           schema:
@@ -955,7 +965,9 @@ paths:
       - application/json
       responses:
         "200":
-          description: ""
+          description: OK
+          schema:
+            type: string
         "401":
           description: Unauthorized
           schema:
@@ -978,7 +990,9 @@ paths:
       - application/json
       responses:
         "200":
-          description: ""
+          description: OK
+          schema:
+            type: string
         "401":
           description: Unauthorized
           schema:
@@ -1001,7 +1015,9 @@ paths:
       - application/json
       responses:
         "200":
-          description: ""
+          description: OK
+          schema:
+            type: string
         "401":
           description: Unauthorized
           schema:
@@ -1024,7 +1040,9 @@ paths:
       - application/json
       responses:
         "200":
-          description: ""
+          description: OK
+          schema:
+            type: string
         "401":
           description: Unauthorized
           schema:
@@ -1042,6 +1060,18 @@ paths:
         in: query
         name: apikey
         required: true
+        type: string
+      - description: Limit
+        in: query
+        name: limit
+        type: integer
+      - description: Page
+        in: query
+        name: page
+        type: integer
+      - description: Order By
+        in: query
+        name: order
         type: string
       produces:
       - application/json
@@ -1079,7 +1109,13 @@ paths:
       - application/json
       responses:
         "200":
-          description: ""
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            type: string
         "401":
           description: Unauthorized
           schema:
@@ -1107,7 +1143,9 @@ paths:
       - application/json
       responses:
         "200":
-          description: ""
+          description: OK
+          schema:
+            type: string
         "401":
           description: Unauthorized
           schema:
@@ -1130,7 +1168,9 @@ paths:
       - application/json
       responses:
         "200":
-          description: ""
+          description: OK
+          schema:
+            type: string
         "401":
           description: Unauthorized
           schema:
@@ -1158,7 +1198,9 @@ paths:
       - application/json
       responses:
         "200":
-          description: ""
+          description: OK
+          schema:
+            type: string
         "401":
           description: Unauthorized
           schema:
@@ -1181,7 +1223,9 @@ paths:
       - application/json
       responses:
         "200":
-          description: ""
+          description: OK
+          schema:
+            type: string
         "401":
           description: Unauthorized
           schema:
@@ -1195,7 +1239,10 @@ paths:
       - application/json
       description: Starts a Job
       parameters:
-      - description: 'Job Name: ex. datafull'
+      - description: 'Job Name one of: rss, data, datafull, checkmissing, checkmissingflag,
+          structure, searchmissingfull, searchmissinginc, searchupgradefull, searchupgradeinc,
+          searchmissingfulltitle, searchmissinginctitle, searchupgradefulltitle, searchupgradeinctitle,
+          clearhistory, feeds, refresh, refreshinc'
         in: path
         name: job
         required: true
@@ -1209,7 +1256,13 @@ paths:
       - application/json
       responses:
         "200":
-          description: ""
+          description: OK
+          schema:
+            type: string
+        "204":
+          description: No Content
+          schema:
+            type: string
         "401":
           description: Unauthorized
           schema:
@@ -1223,7 +1276,10 @@ paths:
       - application/json
       description: Starts a Job
       parameters:
-      - description: 'Job Name: ex. datafull'
+      - description: 'Job Name one of: rss, data, datafull, checkmissing, checkmissingflag,
+          structure, searchmissingfull, searchmissinginc, searchupgradefull, searchupgradeinc,
+          searchmissingfulltitle, searchmissinginctitle, searchupgradefulltitle, searchupgradeinctitle,
+          clearhistory, feeds, refresh, refreshinc'
         in: path
         name: job
         required: true
@@ -1241,7 +1297,13 @@ paths:
       - application/json
       responses:
         "200":
-          description: ""
+          description: OK
+          schema:
+            type: string
+        "204":
+          description: No Content
+          schema:
+            type: string
         "401":
           description: Unauthorized
           schema:
@@ -1270,7 +1332,13 @@ paths:
       - application/json
       responses:
         "200":
-          description: ""
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            type: string
         "401":
           description: Unauthorized
           schema:
@@ -1298,7 +1366,9 @@ paths:
       - application/json
       responses:
         "200":
-          description: ""
+          description: OK
+          schema:
+            type: string
         "401":
           description: Unauthorized
           schema:
@@ -1316,6 +1386,18 @@ paths:
         in: path
         name: name
         required: true
+        type: string
+      - description: Limit
+        in: query
+        name: limit
+        type: integer
+      - description: Page
+        in: query
+        name: page
+        type: integer
+      - description: Order By
+        in: query
+        name: order
         type: string
       - description: apikey
         in: query
@@ -1358,7 +1440,9 @@ paths:
       - application/json
       responses:
         "200":
-          description: ""
+          description: OK
+          schema:
+            type: string
         "401":
           description: Unauthorized
           schema:
@@ -1386,7 +1470,9 @@ paths:
       - application/json
       responses:
         "200":
-          description: ""
+          description: OK
+          schema:
+            type: string
         "401":
           description: Unauthorized
           schema:
@@ -1404,6 +1490,18 @@ paths:
         in: query
         name: apikey
         required: true
+        type: string
+      - description: Limit
+        in: query
+        name: limit
+        type: integer
+      - description: Page
+        in: query
+        name: page
+        type: integer
+      - description: Order By
+        in: query
+        name: order
         type: string
       produces:
       - application/json
@@ -1427,6 +1525,12 @@ paths:
       - application/json
       description: Parses a file for testing
       parameters:
+      - description: To Parse
+        in: body
+        name: toparse
+        required: true
+        schema:
+          $ref: '#/definitions/api.apiparse'
       - description: apikey
         in: query
         name: apikey
@@ -1438,7 +1542,11 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/api.apiparse'
+            $ref: '#/definitions/utils.ParseInfo'
+        "400":
+          description: Bad Request
+          schema:
+            type: string
         "401":
           description: Unauthorized
           schema:
@@ -1452,6 +1560,12 @@ paths:
       - application/json
       description: Parses a string for testing
       parameters:
+      - description: To Parse
+        in: body
+        name: toparse
+        required: true
+        schema:
+          $ref: '#/definitions/api.apiparse'
       - description: apikey
         in: query
         name: apikey
@@ -1463,7 +1577,11 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/api.apiparse'
+            $ref: '#/definitions/utils.ParseInfo'
+        "400":
+          description: Bad Request
+          schema:
+            type: string
         "401":
           description: Unauthorized
           schema:
@@ -1518,7 +1636,15 @@ paths:
       - application/json
       responses:
         "200":
-          description: ""
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/database.Qualities'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            type: string
         "401":
           description: Unauthorized
           schema:
@@ -1546,7 +1672,11 @@ paths:
       - application/json
       responses:
         "200":
-          description: ""
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/database.Qualities'
+            type: array
         "401":
           description: Unauthorized
           schema:
@@ -1588,6 +1718,10 @@ paths:
           description: Unauthorized
           schema:
             type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
       summary: List Quality Priorities
       tags:
       - quality
@@ -1606,7 +1740,9 @@ paths:
       - application/json
       responses:
         "200":
-          description: ""
+          description: OK
+          schema:
+            type: string
         "401":
           description: Unauthorized
           schema:
@@ -1629,7 +1765,9 @@ paths:
       - application/json
       responses:
         "200":
-          description: ""
+          description: OK
+          schema:
+            type: string
         "401":
           description: Unauthorized
           schema:
@@ -1643,6 +1781,18 @@ paths:
       - application/json
       description: List Series
       parameters:
+      - description: Limit
+        in: query
+        name: limit
+        type: integer
+      - description: Page
+        in: query
+        name: page
+        type: integer
+      - description: Order By
+        in: query
+        name: order
+        type: string
       - description: apikey
         in: query
         name: apikey
@@ -1684,7 +1834,13 @@ paths:
       - application/json
       responses:
         "200":
-          description: ""
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            type: string
         "401":
           description: Unauthorized
           schema:
@@ -1712,7 +1868,9 @@ paths:
       - application/json
       responses:
         "200":
-          description: ""
+          description: OK
+          schema:
+            type: string
         "401":
           description: Unauthorized
           schema:
@@ -1730,6 +1888,18 @@ paths:
         in: path
         name: name
         required: true
+        type: string
+      - description: Limit
+        in: query
+        name: limit
+        type: integer
+      - description: Page
+        in: query
+        name: page
+        type: integer
+      - description: Order By
+        in: query
+        name: order
         type: string
       - description: apikey
         in: query
@@ -1767,7 +1937,9 @@ paths:
       - application/json
       responses:
         "200":
-          description: ""
+          description: OK
+          schema:
+            type: string
         "401":
           description: Unauthorized
           schema:
@@ -1795,7 +1967,9 @@ paths:
       - application/json
       responses:
         "200":
-          description: ""
+          description: OK
+          schema:
+            type: string
         "401":
           description: Unauthorized
           schema:
@@ -1818,7 +1992,9 @@ paths:
       - application/json
       responses:
         "200":
-          description: ""
+          description: OK
+          schema:
+            type: string
         "401":
           description: Unauthorized
           schema:
@@ -1832,6 +2008,18 @@ paths:
       - application/json
       description: List episodes
       parameters:
+      - description: Limit
+        in: query
+        name: limit
+        type: integer
+      - description: Page
+        in: query
+        name: page
+        type: integer
+      - description: Order By
+        in: query
+        name: order
+        type: string
       - description: apikey
         in: query
         name: apikey
@@ -1873,7 +2061,13 @@ paths:
       - application/json
       responses:
         "200":
-          description: ""
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            type: string
         "401":
           description: Unauthorized
           schema:
@@ -1901,7 +2095,9 @@ paths:
       - application/json
       responses:
         "200":
-          description: ""
+          description: OK
+          schema:
+            type: string
         "401":
           description: Unauthorized
           schema:
@@ -1919,6 +2115,18 @@ paths:
         name: id
         required: true
         type: integer
+      - description: Limit
+        in: query
+        name: limit
+        type: integer
+      - description: Page
+        in: query
+        name: page
+        type: integer
+      - description: Order By
+        in: query
+        name: order
+        type: string
       - description: apikey
         in: query
         name: apikey
@@ -1961,7 +2169,13 @@ paths:
       - application/json
       responses:
         "200":
-          description: ""
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            type: string
         "401":
           description: Unauthorized
           schema:
@@ -1989,7 +2203,9 @@ paths:
       - application/json
       responses:
         "200":
-          description: ""
+          description: OK
+          schema:
+            type: string
         "401":
           description: Unauthorized
           schema:
@@ -2007,6 +2223,18 @@ paths:
         name: id
         required: true
         type: integer
+      - description: Limit
+        in: query
+        name: limit
+        type: integer
+      - description: Page
+        in: query
+        name: page
+        type: integer
+      - description: Order By
+        in: query
+        name: order
+        type: string
       - description: apikey
         in: query
         name: apikey
@@ -2048,7 +2276,9 @@ paths:
       - application/json
       responses:
         "200":
-          description: ""
+          description: OK
+          schema:
+            type: string
         "401":
           description: Unauthorized
           schema:
@@ -2062,7 +2292,10 @@ paths:
       - application/json
       description: Starts a Job
       parameters:
-      - description: 'Job Name: ex. datafull'
+      - description: 'Job Name one of: rss, data, datafull, checkmissing, checkmissingflag,
+          structure, searchmissingfull, searchmissinginc, searchupgradefull, searchupgradeinc,
+          searchmissingfulltitle, searchmissinginctitle, searchupgradefulltitle, searchupgradeinctitle,
+          clearhistory, feeds, refresh, refreshinc'
         in: path
         name: job
         required: true
@@ -2076,7 +2309,13 @@ paths:
       - application/json
       responses:
         "200":
-          description: ""
+          description: OK
+          schema:
+            type: string
+        "204":
+          description: No Content
+          schema:
+            type: string
         "401":
           description: Unauthorized
           schema:
@@ -2090,7 +2329,10 @@ paths:
       - application/json
       description: Starts a Job
       parameters:
-      - description: 'Job Name: ex. datafull'
+      - description: 'Job Name one of: rss, data, datafull, checkmissing, checkmissingflag,
+          structure, searchmissingfull, searchmissinginc, searchupgradefull, searchupgradeinc,
+          searchmissingfulltitle, searchmissinginctitle, searchupgradefulltitle, searchupgradeinctitle,
+          clearhistory, feeds, refresh, refreshinc'
         in: path
         name: job
         required: true
@@ -2108,7 +2350,13 @@ paths:
       - application/json
       responses:
         "200":
-          description: ""
+          description: OK
+          schema:
+            type: string
+        "204":
+          description: No Content
+          schema:
+            type: string
         "401":
           description: Unauthorized
           schema:
@@ -2137,7 +2385,13 @@ paths:
       - application/json
       responses:
         "200":
-          description: ""
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            type: string
         "401":
           description: Unauthorized
           schema:
@@ -2165,7 +2419,9 @@ paths:
       - application/json
       responses:
         "200":
-          description: ""
+          description: OK
+          schema:
+            type: string
         "401":
           description: Unauthorized
           schema:
@@ -2193,7 +2449,9 @@ paths:
       - application/json
       responses:
         "200":
-          description: ""
+          description: OK
+          schema:
+            type: string
         "401":
           description: Unauthorized
           schema:
@@ -2221,7 +2479,9 @@ paths:
       - application/json
       responses:
         "200":
-          description: ""
+          description: OK
+          schema:
+            type: string
         "401":
           description: Unauthorized
           schema:
@@ -2254,7 +2514,9 @@ paths:
       - application/json
       responses:
         "200":
-          description: ""
+          description: OK
+          schema:
+            type: string
         "401":
           description: Unauthorized
           schema:
@@ -2268,6 +2530,18 @@ paths:
       - application/json
       description: List Unmatched episodes
       parameters:
+      - description: Limit
+        in: query
+        name: limit
+        type: integer
+      - description: Page
+        in: query
+        name: page
+        type: integer
+      - description: Order By
+        in: query
+        name: order
+        type: string
       - description: apikey
         in: query
         name: apikey
