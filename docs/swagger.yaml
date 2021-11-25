@@ -558,6 +558,8 @@ definitions:
         type: string
       resolutionid:
         type: integer
+      runtime:
+        type: integer
       sbs:
         type: string
       season:
@@ -1520,7 +1522,7 @@ paths:
       tags:
       - movie
   /api/parse/file:
-    get:
+    post:
       consumes:
       - application/json
       description: Parses a file for testing
@@ -1555,7 +1557,7 @@ paths:
       tags:
       - parse
   /api/parse/string:
-    get:
+    post:
       consumes:
       - application/json
       description: Parses a string for testing

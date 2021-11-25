@@ -14,7 +14,7 @@ worker_files = 2
 worker_parse = 2
 worker_search = 2
 webport  = "9090" #string!
-webapikey = "mysecure" #url is http://<server>:<webport>/api/<webapikey>/...
+webapikey = "mysecure" #url is http://<server>:<webport>/api/...?apikey=mysecure
 concurrent_scheduler = 2
 movie_meta_source_imdb = true #metadata priority: 1. imdb 2. tmdb 3. omdb  - imdb has no plot
 movie_meta_source_tmdb = true #has most fields
@@ -273,6 +273,9 @@ delete_disallowed=false # Delete Folders which contain one of disallowed # sourc
 delete_wrong_language=false # Delete Videos which don't match one of allowed_languages (if defined) # targetpath
 move_replaced=false #Move old media files to new location before structure
 move_replaced_target_path="" #Move old media files to new location before structure (Path)
+check_runtime = 'true' # should the runtime be checked?
+max_runtime_difference = 15 #Number of minutes the runtime should be in ex Runtime=60 RealRuntime=45
+delete_wrong_runtime = false # Delete Media if the runtime is not within the difference (+ and - is allowed) so if Runtime=50 and Difference=5 - all from 45-55 Minutes is ok
 
 ### notifications ###
 ### Possible pushover and csv

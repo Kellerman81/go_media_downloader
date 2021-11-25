@@ -241,6 +241,9 @@ type PathsConfig struct {
 	Disallowed                     []string `koanf:"disallowed"`
 	DeleteWrongLanguage            bool     `koanf:"delete_wrong_language"`
 	DeleteDisallowed               bool     `koanf:"delete_disallowed"`
+	CheckRuntime                   bool     `koanf:"check_runtime"`
+	MaxRuntimeDifference           int      `koanf:"max_runtime_difference"`
+	DeleteWrongRuntime             bool     `koanf:"delete_wrong_runtime"`
 	MoveReplaced                   bool     `koanf:"move_replaced"`
 	MoveReplacedTargetPath         string   `koanf:"move_replaced_target_path"`
 }
