@@ -119,6 +119,7 @@ type ParseInfo struct {
 	Prio_resolution int      `json:"Prio_resolution,omitempty"`
 	Prio_quality    int      `json:"Prio_quality,omitempty"`
 	Languages       []string `json:"languages,omitempty"`
+	Runtime         int      `json:"runtime,omitempty"`
 }
 
 func NewDefaultPrio(configEntry config.MediaTypeConfig, quality config.QualityConfig) *ParseInfo {
@@ -479,6 +480,7 @@ func (m *ParseInfo) ParseVideoFile(file string, configEntry config.MediaTypeConf
 		logger.Log.Debug("Parsed Video as Audio: ", video.AudioCodec)
 		logger.Log.Debug("Parsed Video as Codec: ", video.VideoCodec)
 		logger.Log.Debug("Parsed Video as Height: ", video.Height)
+		m.Runtime = int(video.Duration)
 		if m.Audio == "" || (!strings.EqualFold(video.AudioCodec, m.Audio) && video.AudioCodec != "") {
 			typeid, audio_priority, newname := gettypepriority(video.AudioCodec, "audio", quality, database.Getaudios)
 			if typeid != 0 {

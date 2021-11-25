@@ -1422,7 +1422,7 @@ var doc = `{
             }
         },
         "/api/parse/file": {
-            "get": {
+            "post": {
                 "description": "Parses a file for testing",
                 "consumes": [
                     "application/json"
@@ -1475,7 +1475,7 @@ var doc = `{
             }
         },
         "/api/parse/string": {
-            "get": {
+            "post": {
                 "description": "Parses a string for testing",
                 "consumes": [
                     "application/json"
@@ -3827,6 +3827,9 @@ var doc = `{
                     "type": "string"
                 },
                 "resolutionid": {
+                    "type": "integer"
+                },
+                "runtime": {
                     "type": "integer"
                 },
                 "sbs": {

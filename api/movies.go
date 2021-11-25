@@ -71,7 +71,9 @@ func ApiMovieList(ctx *gin.Context) {
 		if queryParam, ok := ctx.GetQuery("page"); ok {
 			if queryParam != "" {
 				page, _ = strconv.Atoi(queryParam)
-				query.Offset = uint64(page * limit)
+				if page >= 2 {
+					query.Offset = uint64((page - 1) * limit)
+				}
 			}
 		}
 	}
@@ -114,7 +116,9 @@ func ApiMovieListUnmatched(ctx *gin.Context) {
 		if queryParam, ok := ctx.GetQuery("page"); ok {
 			if queryParam != "" {
 				page, _ = strconv.Atoi(queryParam)
-				query.Offset = uint64(page * limit)
+				if page >= 2 {
+					query.Offset = uint64((page - 1) * limit)
+				}
 			}
 		}
 	}
@@ -186,7 +190,9 @@ func ApiMovieListGet(ctx *gin.Context) {
 		if queryParam, ok := ctx.GetQuery("page"); ok {
 			if queryParam != "" {
 				page, _ = strconv.Atoi(queryParam)
-				query.Offset = uint64(page * limit)
+				if page >= 2 {
+					query.Offset = uint64((page - 1) * limit)
+				}
 			}
 		}
 	}

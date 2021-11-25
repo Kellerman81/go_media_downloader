@@ -31,7 +31,7 @@ type apiparse struct {
 // @Success 200 {object} utils.ParseInfo
 // @Failure 400 {object} string
 // @Failure 401 {object} string
-// @Router /api/parse/string [get]
+// @Router /api/parse/string [post]
 func ApiParseString(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
@@ -69,7 +69,7 @@ func ApiParseString(ctx *gin.Context) {
 // @Success 200 {object} utils.ParseInfo
 // @Failure 400 {object} string
 // @Failure 401 {object} string
-// @Router /api/parse/file [get]
+// @Router /api/parse/file [post]
 func ApiParseFile(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return

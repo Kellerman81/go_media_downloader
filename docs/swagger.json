@@ -1404,7 +1404,7 @@
             }
         },
         "/api/parse/file": {
-            "get": {
+            "post": {
                 "description": "Parses a file for testing",
                 "consumes": [
                     "application/json"
@@ -1457,7 +1457,7 @@
             }
         },
         "/api/parse/string": {
-            "get": {
+            "post": {
                 "description": "Parses a string for testing",
                 "consumes": [
                     "application/json"
@@ -3809,6 +3809,9 @@
                     "type": "string"
                 },
                 "resolutionid": {
+                    "type": "integer"
+                },
+                "runtime": {
                     "type": "integer"
                 },
                 "sbs": {

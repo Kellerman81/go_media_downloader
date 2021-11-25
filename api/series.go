@@ -88,7 +88,9 @@ func ApiSeriesGet(ctx *gin.Context) {
 		if queryParam, ok := ctx.GetQuery("page"); ok {
 			if queryParam != "" {
 				page, _ = strconv.Atoi(queryParam)
-				query.Offset = uint64(page * limit)
+				if page >= 2 {
+					query.Offset = uint64((page - 1) * limit)
+				}
 			}
 		}
 	}
@@ -163,7 +165,9 @@ func ApiSeriesListGet(ctx *gin.Context) {
 		if queryParam, ok := ctx.GetQuery("page"); ok {
 			if queryParam != "" {
 				page, _ = strconv.Atoi(queryParam)
-				query.Offset = uint64(page * limit)
+				if page >= 2 {
+					query.Offset = uint64((page - 1) * limit)
+				}
 			}
 		}
 	}
@@ -232,7 +236,9 @@ func ApiSeriesUnmatched(ctx *gin.Context) {
 		if queryParam, ok := ctx.GetQuery("page"); ok {
 			if queryParam != "" {
 				page, _ = strconv.Atoi(queryParam)
-				query.Offset = uint64(page * limit)
+				if page >= 2 {
+					query.Offset = uint64((page - 1) * limit)
+				}
 			}
 		}
 	}
@@ -275,7 +281,9 @@ func ApiSeriesEpisodesGet(ctx *gin.Context) {
 		if queryParam, ok := ctx.GetQuery("page"); ok {
 			if queryParam != "" {
 				page, _ = strconv.Atoi(queryParam)
-				query.Offset = uint64(page * limit)
+				if page >= 2 {
+					query.Offset = uint64((page - 1) * limit)
+				}
 			}
 		}
 	}
@@ -321,7 +329,9 @@ func ApiSeriesEpisodesGetSingle(ctx *gin.Context) {
 		if queryParam, ok := ctx.GetQuery("page"); ok {
 			if queryParam != "" {
 				page, _ = strconv.Atoi(queryParam)
-				query.Offset = uint64(page * limit)
+				if page >= 2 {
+					query.Offset = uint64((page - 1) * limit)
+				}
 			}
 		}
 	}
@@ -394,7 +404,9 @@ func ApiSeriesEpisodesListGet(ctx *gin.Context) {
 		if queryParam, ok := ctx.GetQuery("page"); ok {
 			if queryParam != "" {
 				page, _ = strconv.Atoi(queryParam)
-				query.Offset = uint64(page * limit)
+				if page >= 2 {
+					query.Offset = uint64((page - 1) * limit)
+				}
 			}
 		}
 	}

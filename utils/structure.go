@@ -130,7 +130,7 @@ func (s *Structure) ParseFile(videofile string, checkfolder bool, folder string,
 	return
 }
 
-func (s *Structure) ParseFileAdditional(videofile string, m *ParseInfo, folder string, deletewronglanguage bool) (err error) {
+func (s *Structure) ParseFileAdditional(videofile string, m *ParseInfo, folder string, deletewronglanguage bool, wantedruntime int) (err error) {
 	if !config.ConfigCheck("quality_" + s.list.Template_quality) {
 		return
 	}
@@ -142,6 +142,41 @@ func (s *Structure) ParseFileAdditional(videofile string, m *ParseInfo, folder s
 	err = m.ParseVideoFile(videofile, s.configEntry, cfg_quality)
 	if err != nil {
 		return
+	}
+	if m.Runtime >= 1 && s.targetpath.CheckRuntime && wantedruntime != 0 && s.targetpath.MaxRuntimeDifference != 0 {
+		intruntime := int(m.Runtime / 60)
+		if intruntime != wantedruntime {
+			maxdifference := s.targetpath.MaxRuntimeDifference
+			difference := 0
+			if wantedruntime > intruntime {
+				difference = wantedruntime - intruntime
+			} else {
+				difference = intruntime - wantedruntime
+			}
+			if difference > maxdifference {
+				if s.targetpath.DeleteWrongRuntime {
+					if strings.ToLower(s.groupType) == "movie" {
+						emptyarr := make([]string, 0, 1)
+						filesleft := scanner.GetFilesGoDir(folder, s.sourcepath.AllowedVideoExtensions, s.sourcepath.AllowedVideoExtensionsNoRename, emptyarr)
+						scanner.RemoveFiles(filesleft, emptyarr, emptyarr)
+
+						scanner.CleanUpFolder(folder, s.sourcepath.CleanupsizeMB)
+					} else {
+						fileext := filepath.Ext(videofile)
+						err := scanner.RemoveFile(videofile)
+						if err == nil {
+							for idxext := range s.sourcepath.AllowedOtherExtensions {
+								additionalfile := strings.Replace(videofile, fileext, s.sourcepath.AllowedOtherExtensions[idxext], -1)
+								scanner.RemoveFile(additionalfile)
+							}
+						}
+						scanner.CleanUpFolder(folder, s.sourcepath.CleanupsizeMB)
+					}
+				}
+				logger.Log.Error("Wrong runtime: Wanted", wantedruntime, " Having", intruntime, " difference", difference, " for", m.File)
+				return errors.New("wrong runtime")
+			}
+		}
 	}
 	if len(s.targetpath.Allowed_languages) >= 1 && deletewronglanguage {
 		language_ok := false
@@ -181,6 +216,7 @@ func (s *Structure) ParseFileAdditional(videofile string, m *ParseInfo, folder s
 			}
 		}
 		if !language_ok {
+			logger.Log.Error("Wrong language: Wanted", s.targetpath.Allowed_languages, " Having", m.Languages, " for", m.File)
 			err = errors.New("wrong Language")
 		}
 	}
@@ -221,7 +257,7 @@ func (s *Structure) CheckLowerQualTarget(folder string, videofile string, m Pars
 		}
 		return oldfiles, oldpriority, nil
 	} else if len(moviefiles) >= 1 {
-		logger.Log.Debug("Skipped import due to lower quality: ", videofile)
+		logger.Log.Info("Skipped import due to lower quality: ", videofile)
 		err := errors.New("import file has lower quality")
 		if cleanuplowerquality {
 			emptyarr := make([]string, 0, 1)
@@ -790,7 +826,8 @@ func StructureFolders(grouptype string, sourcepath config.PathsConfig, targetpat
 					}
 				}
 				if movie.ID >= 1 && entriesfound >= 1 {
-					errpars := structure.ParseFileAdditional(videofiles[fileidx], m, folders[idx], structure.targetpath.DeleteWrongLanguage)
+					dbmovie, _ := database.GetDbmovie(database.Query{Where: "id=?", WhereArgs: []interface{}{movie.DbmovieID}})
+					errpars := structure.ParseFileAdditional(videofiles[fileidx], m, folders[idx], structure.targetpath.DeleteWrongLanguage, dbmovie.Runtime)
 					if errpars != nil {
 						logger.Log.Error("Error fprobe video: ", videofiles[fileidx], " error: ", errpars)
 						continue
@@ -863,7 +900,9 @@ func StructureFolders(grouptype string, sourcepath config.PathsConfig, targetpat
 				//find dbseries
 				series, entriesfound := findSerieByParser(*m, titleyear, seriestitle, list.Name)
 				if entriesfound >= 1 {
-					errpars := structure.ParseFileAdditional(videofiles[fileidx], m, folders[idx], structure.targetpath.DeleteWrongLanguage)
+					dbseries, _ := database.GetDbserie(database.Query{Where: "id=?", WhereArgs: []interface{}{series.DbserieID}})
+					runtime, _ := strconv.Atoi(dbseries.Runtime)
+					errpars := structure.ParseFileAdditional(videofiles[fileidx], m, folders[idx], structure.targetpath.DeleteWrongLanguage, runtime)
 					if errpars != nil {
 						logger.Log.Error("Error fprobe video: ", videofiles[fileidx], " error: ", errpars)
 						continue
