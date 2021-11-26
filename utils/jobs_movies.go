@@ -1142,6 +1142,76 @@ func getMissingIMDBMoviesV2(configEntry config.MediaTypeConfig, list config.Medi
 	return []database.Dbmovie{}
 }
 
+func GetTraktUserPublicMovieList(configEntry config.MediaTypeConfig, list config.MediaListsConfig) []database.Dbmovie {
+	if !list.Enabled {
+		return []database.Dbmovie{}
+	}
+	if !config.ConfigCheck("list_" + list.Template_list) {
+		return []database.Dbmovie{}
+	}
+	var cfg_list config.ListsConfig
+	config.ConfigGet("list_"+list.Template_list, &cfg_list)
+
+	if len(cfg_list.TraktUsername) >= 1 && len(cfg_list.TraktListName) >= 1 {
+		if len(cfg_list.TraktListType) == 0 {
+			cfg_list.TraktListType = "movie,show"
+		}
+		data, err := apiexternal.TraktApi.GetUserList(cfg_list.TraktUsername, cfg_list.TraktListName, cfg_list.TraktListType, cfg_list.Limit)
+		if err != nil {
+			logger.Log.Error("Failed to read trakt list: ", cfg_list.TraktListName)
+			return []database.Dbmovie{}
+		}
+		d := make([]database.Dbmovie, 0, len(data))
+
+		for idx := range data {
+
+			if cfg_list.MinVotes != 0 {
+				countergenre, _ := database.ImdbCountRows("imdb_ratings", database.Query{Where: "tconst = ? COLLATE NOCASE and num_votes < ?", WhereArgs: []interface{}{data[idx].Movie.Ids.Imdb, cfg_list.MinVotes}})
+				if countergenre >= 1 {
+					continue
+				}
+			}
+			if cfg_list.MinRating != 0 {
+				countergenre, _ := database.ImdbCountRows("imdb_ratings", database.Query{Where: "tconst = ? COLLATE NOCASE and average_rating < ?", WhereArgs: []interface{}{data[idx].Movie.Ids.Imdb, cfg_list.MinRating}})
+				if countergenre >= 1 {
+					continue
+				}
+			}
+			if len(cfg_list.Excludegenre) >= 1 {
+				excludebygenre := false
+				for idxgenre := range cfg_list.Excludegenre {
+					countergenre, _ := database.ImdbCountRows("imdb_genres", database.Query{Where: "tconst = ? COLLATE NOCASE and genre = ? COLLATE NOCASE", WhereArgs: []interface{}{data[idx].Movie.Ids.Imdb, cfg_list.Excludegenre[idxgenre]}})
+					if countergenre >= 1 {
+						excludebygenre = true
+						break
+					}
+				}
+				if excludebygenre {
+					continue
+				}
+			}
+			if len(cfg_list.Includegenre) >= 1 {
+				includebygenre := false
+				for idxgenre := range cfg_list.Includegenre {
+					countergenre, _ := database.ImdbCountRows("imdb_genres", database.Query{Where: "tconst = ? COLLATE NOCASE and genre = ? COLLATE NOCASE", WhereArgs: []interface{}{data[idx].Movie.Ids.Imdb, cfg_list.Includegenre[idxgenre]}})
+					if countergenre >= 1 {
+						includebygenre = true
+						break
+					}
+				}
+				if !includebygenre {
+					continue
+				}
+			}
+			year := data[idx].Movie.Year
+			url := "https://www.imdb.com/title/" + data[idx].Movie.Ids.Imdb
+			d = append(d, database.Dbmovie{ImdbID: data[idx].Movie.Ids.Imdb, Title: data[idx].Movie.Title, URL: url, Year: int(year)})
+		}
+		return d
+	}
+	return []database.Dbmovie{}
+}
+
 var Lastmovie string
 
 func Importnewmoviessingle(row config.MediaTypeConfig, list config.MediaListsConfig) {

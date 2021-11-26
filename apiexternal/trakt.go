@@ -23,6 +23,15 @@ type TraktMovieTrending struct {
 	Movie    TraktMovie `json:"movie"`
 }
 
+type TraktUserList struct {
+	Rank  int        `json:"rank"`
+	Id    int        `json:"id"`
+	Notes string     `json:"notes"`
+	Type  string     `json:"type"`
+	Movie TraktMovie `json:"movie"`
+	Serie TraktSerie `json:"show"`
+}
+
 type TraktMovie struct {
 	Title string `json:"title"`
 	Year  int    `json:"year"`
@@ -62,6 +71,19 @@ type TraktSerieSeasonEpisodes struct {
 	AvailableTranslations []string  `json:"available_translations"`
 	Runtime               int       `json:"runtime"`
 	FirstAired            time.Time `json:"first_aired"`
+}
+
+type TraktSerie struct {
+	Title string `json:"title"`
+	Year  int    `json:"year"`
+	Ids   struct {
+		Trakt  int    `json:"trakt"`
+		Slug   string `json:"slug"`
+		Tvdb   int    `json:"tvdb"`
+		Tvrage int    `json:"tvrage"`
+		Imdb   string `json:"imdb"`
+		Tmdb   int    `json:"tmdb"`
+	} `json:"ids"`
 }
 
 type TraktSerieData struct {
@@ -328,6 +350,29 @@ func (t TraktClient) GetSerieSeasonEpisodes(movieid string, season int) ([]Trakt
 		return []TraktSerieSeasonEpisodes{}, err
 	}
 	result := make([]TraktSerieSeasonEpisodes, 0, 10)
+	json.Unmarshal(responseData, &result)
+	return result, nil
+}
+
+func (t TraktClient) GetUserList(username string, listname string, listtype string, limit int) ([]TraktUserList, error) {
+	url := "https://api.trakt.tv/users/" + username + "/lists/" + listname + "/items/" + listtype
+	if limit >= 1 {
+		url = url + "?limit=" + strconv.Itoa(limit)
+	}
+
+	req, _ := http.NewRequest("GET", url, nil)
+	req.Header.Add("Content-Type", "application/json")
+	req.Header.Add("trakt-api-version", "2")
+	req.Header.Add("trakt-api-key", t.ApiKey)
+
+	resp, responseData, err := t.Client.Do(req)
+	if err != nil {
+		return []TraktUserList{}, err
+	}
+	if resp.StatusCode == 429 {
+		return []TraktUserList{}, err
+	}
+	var result []TraktUserList
 	json.Unmarshal(responseData, &result)
 	return result, nil
 }

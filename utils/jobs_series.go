@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Kellerman81/go_media_downloader/apiexternal"
 	"github.com/Kellerman81/go_media_downloader/config"
 	"github.com/Kellerman81/go_media_downloader/database"
 	"github.com/Kellerman81/go_media_downloader/logger"
@@ -997,6 +998,38 @@ func checkmissingepisodessingle(row config.MediaTypeConfig, list config.MediaLis
 		}
 	}
 	swfile.Wait()
+}
+
+func GetTraktUserPublicShowList(configEntry config.MediaTypeConfig, list config.MediaListsConfig) config.MainSerieConfig {
+	if !list.Enabled {
+		return config.MainSerieConfig{}
+	}
+	if !config.ConfigCheck("list_" + list.Template_list) {
+		return config.MainSerieConfig{}
+	}
+	var cfg_list config.ListsConfig
+	config.ConfigGet("list_"+list.Template_list, &cfg_list)
+
+	if len(cfg_list.TraktUsername) >= 1 && len(cfg_list.TraktListName) >= 1 {
+		if len(cfg_list.TraktListType) == 0 {
+			cfg_list.TraktListType = "show"
+		}
+		data, err := apiexternal.TraktApi.GetUserList(cfg_list.TraktUsername, cfg_list.TraktListName, cfg_list.TraktListType, cfg_list.Limit)
+		if err != nil {
+			logger.Log.Error("Failed to read trakt list: ", cfg_list.TraktListName)
+			return config.MainSerieConfig{}
+		}
+		d := config.MainSerieConfig{}
+
+		for idx := range data {
+			d.Serie = append(d.Serie, config.SerieConfig{
+				Name:   data[idx].Serie.Title,
+				TvdbID: data[idx].Serie.Ids.Tvdb,
+			})
+		}
+		return d
+	}
+	return config.MainSerieConfig{}
 }
 
 var LastSeriesStructure string

@@ -1452,6 +1452,36 @@ paths:
       summary: Clear History (Full List)
       tags:
       - movie
+  /api/movies/search/history/clearid/{id}:
+    get:
+      consumes:
+      - application/json
+      description: Clear Episode Download History
+      parameters:
+      - description: Movie ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Clear History (Single Item)
+      tags:
+      - movie
   /api/movies/search/id/{id}:
     get:
       consumes:
@@ -2459,6 +2489,36 @@ paths:
           schema:
             type: string
       summary: Clear History (Full List)
+      tags:
+      - series
+  /api/series/search/history/clearid/{id}:
+    get:
+      consumes:
+      - application/json
+      description: Clear Episode Download History
+      parameters:
+      - description: Episode ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Clear History (Single Item)
       tags:
       - series
   /api/series/search/id/{id}:

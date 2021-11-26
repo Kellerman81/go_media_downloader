@@ -146,13 +146,17 @@ func Feeds(configEntry config.MediaTypeConfig, list config.MediaListsConfig) fee
 	}
 
 	if strings.EqualFold(cfg_list.Type, "seriesconfig") {
-		configSerie := config.LoadSerie(cfg_list.Series_config_file)
-		return feedResults{Series: configSerie}
+		return feedResults{Series: config.LoadSerie(cfg_list.Series_config_file)}
+	}
+	if strings.EqualFold(cfg_list.Type, "traktpublicshowlist") {
+		return feedResults{Series: GetTraktUserPublicShowList(configEntry, list)}
 	}
 
 	if strings.EqualFold(cfg_list.Type, "imdbcsv") {
-		dbmovies := getMissingIMDBMoviesV2(configEntry, list)
-		return feedResults{Movies: dbmovies}
+		return feedResults{Movies: getMissingIMDBMoviesV2(configEntry, list)}
+	}
+	if strings.EqualFold(cfg_list.Type, "traktpublicmovielist") {
+		return feedResults{Movies: GetTraktUserPublicMovieList(configEntry, list)}
 	}
 	if strings.EqualFold(cfg_list.Type, "traktmoviepopular") {
 		traktpopular, err := apiexternal.TraktApi.GetMoviePopular(cfg_list.Limit)
