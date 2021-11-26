@@ -194,6 +194,9 @@ type ListsConfig struct {
 	Url                string   `koanf:"url"`
 	Enabled            bool     `koanf:"enabled"`
 	Series_config_file string   `koanf:"series_config_file"`
+	TraktUsername      string   `koanf:"trakt_username"`
+	TraktListName      string   `koanf:"trakt_listname"`
+	TraktListType      string   `koanf:"trakt_listtype"`
 	Limit              int      `koanf:"limit"`
 	MinVotes           int      `koanf:"min_votes"`
 	MinRating          float32  `koanf:"min_rating"`

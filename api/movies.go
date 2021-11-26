@@ -37,6 +37,7 @@ func AddMoviesRoutes(routermovies *gin.RouterGroup) {
 	{
 		routermoviessearch.GET("/id/:id", apimoviesSearch)
 		routermoviessearch.GET("/history/clear/:name", apimoviesClearHistoryName)
+		routermoviessearch.GET("/history/clearid/:id", apiMoviesClearHistoryID)
 	}
 }
 
@@ -531,4 +532,27 @@ func apimoviesClearHistoryName(c *gin.Context) {
 	}
 	go utils.Movies_single_jobs("clearhistory", c.Param("name"), "", true)
 	c.JSON(http.StatusOK, "started")
+}
+
+// @Summary Clear History (Single Item)
+// @Description Clear Episode Download History
+// @Tags movie
+// @Accept  json
+// @Produce  json
+// @Param id path string true "Movie ID"
+// @Param apikey query string true "apikey"
+// @Success 200 {string} string
+// @Failure 401 {object} string
+// @Router /api/movies/search/history/clearid/{id} [get]
+func apiMoviesClearHistoryID(c *gin.Context) {
+	if ApiAuth(c) == http.StatusUnauthorized {
+		return
+	}
+	inres, inerr := database.DeleteRow("movie_histories", database.Query{Where: "movie_id = ?)", WhereArgs: []interface{}{c.Param("id")}})
+
+	if inerr == nil {
+		c.JSON(http.StatusOK, inres)
+	} else {
+		c.JSON(http.StatusForbidden, inerr)
+	}
 }

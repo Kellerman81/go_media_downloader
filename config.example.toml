@@ -26,15 +26,15 @@ movie_alternate_title_meta_source_omdb = false
 movie_alternate_title_meta_source_trakt = true
 serie_alternate_title_meta_source_imdb = true
 serie_alternate_title_meta_source_trakt = true
-movie_meta_source_priority = ["imdb","tmdb","trakt"] #,"tmdb","omdb","trakt"] #first to last - either remove entry here or disable them above
-movie_parse_meta_source_priority = ["imdb","tmdb"] #,"tmdb"] #first to last - either remove entry here or disable them above
-movie_rss_meta_source_priority = ["imdb"] #first to last - either remove entry here or disable them above
+movie_meta_source_priority = ["imdb","tmdb","trakt"] #,"tmdb","omdb","trakt"] #first to last - either remove entry here or disable them above - possible: imdb, omdb, tmdb, trakt
+movie_parse_meta_source_priority = ["imdb","tmdb"] #,"tmdb"] #first to last - either remove entry here or disable them above - possible: imdb, omdb, tmdb, trakt
+movie_rss_meta_source_priority = ["imdb"] #first to last - either remove entry here or disable them above, enabling apis makes rss searches slower - possible: imdb, omdb, tmdb, trakt
 serie_meta_source_tmdb = true #add additional fields - default not to disable: tvdb
 serie_meta_source_trakt = true #add additional fields - default not to disable: tvdb
 scheduler_disabled = 'true' #on your very first run change to true - after your media is indexed set to false
-omdb_apikey =  "insert"
-themoviedb_apikey="insert"
-trakt_client_id="insert"
+omdb_apikey =  "insert" # insert your omdb apikey
+themoviedb_apikey="insert" # insert your themoviedb apikey
+trakt_client_id="insert" # insert your trakt apikey
 failed_indexer_block_time = 1 # Number of minutes to skip indexer after a failed query - default 5
 disable_parser_string_match = true #Disables String Matcher (Only Regex is used for matching) - UseRegex for qualities must be enabled
 
@@ -68,15 +68,15 @@ index_full=true #short only imports imdbid and titles/years - full also votes ra
 	naming = '{Title} ({Year})/{Title} ({Year}) [{Resolution} {Quality} {Codec} {Audio} {Proper}] ({Imdb})' #use / as path separator #include imdb or tvdb for maximum compability
 	template_quality="SD" # Map to qualities below	
 	template_scheduler="Default" # Map to scheduler below	
-	metadata_language="English"
-	metadata_title_languages=["US","UK"]
+	metadata_language="English" #language definition for tmdb
+	metadata_title_languages=["US","UK"] #allow titles with the languages
 	structure=true #false leaves the files where they were downloaded to
 	search_missing_incremental = 20 #number of elements processed during incremental scans - x*number of lists!
 	search_upgrade_incremental = 20 #number of elements processed during incremental scans
 		[[media.movies.data]]
-		template_path="en movies"
+		template_path="en movies" #match to path template name
 		[[media.movies.data_import]]
-		template_path="en movies import"
+		template_path="en movies import" #match to path template name
 		[[media.movies.lists]]
 		name="EN Movies" #Use unique names to match in db   - dont use same name for series and movies
 		enabled=true
@@ -108,9 +108,9 @@ index_full=true #short only imports imdbid and titles/years - full also votes ra
 	naming_identifier = 'S{0Season}E{0Episode}(E{0Episode})' # in Brackets are Variants for MultiEpisodes - E{0Episode}(E{0Episode}) = E01E02E03... E{0Episode}(-E{0Episode}) = E01-E02-E03...
 	template_quality="SDSeries" # Map to qualities below	
 	template_scheduler="Default" # Map to scheduler below
-	metadata_language="en"
+	metadata_language="en" #tvdb title language
 	metadata_source="tvdb"
-	metadata_title_languages=["US","UK"]
+	metadata_title_languages=["US","UK"] #allow titles with language
 	structure=true
 	search_missing_incremental = 20
 	search_upgrade_incremental = 20
@@ -176,7 +176,7 @@ remove_failed_downloads = 'false' # unused
 
 [[lists]]
 name="Watchlist"
-type="imdbcsv" # Import Imdb Watchlist
+type="imdbcsv" # Import Imdb Watchlist (need to be public lists)
 url="https://www.imdb.com/list/ls12345678/export"
 enabled=true
 exclude_genre=[] # Exclude Genres from import
@@ -185,6 +185,7 @@ include_genre=[] # Only import Movies with one of these Genres
 [[lists]]
 name="TraktPopular"
 type="traktmoviepopular" # Import Trakt Popular Movies
+enabled=true
 limit=20
 min_votes=200 # Only import movies with at least x votes
 min_rating=4.5 # Only import movies with a minimum rating of x.x 
@@ -192,8 +193,31 @@ exclude_genre=["Horror","Documentary"]
 include_genre=[]
 
 [[lists]]
+name="TraktUserMovie"
+type="traktpublicmovielist" # Import Trakt Public User List
+enabled=true
+limit=20
+min_votes=200 # Only import movies with at least x votes
+min_rating=4.5 # Only import movies with a minimum rating of x.x 
+exclude_genre=["Horror","Documentary"]
+include_genre=[]
+trakt_username="mytraktname"
+trakt_listname="mytraktlist"
+trakt_listtype="movie" #movie or show
+
+[[lists]]
+name="TraktUserShow"
+type="traktpublicshowlist" # Import Trakt Public User List
+enabled=true
+limit=20
+trakt_username="mytraktname"
+trakt_listname="mytraktlist"
+trakt_listtype="show" #movie or show
+
+[[lists]]
 name="TraktTrending"
 type="traktmovietrending" # Import Trakt Trending Movies
+enabled=true
 limit=20
 min_votes=200
 min_rating=4.5
@@ -203,6 +227,7 @@ include_genre=[]
 [[lists]]
 name="TraktAnticipated"
 type="traktmovieanticipated" # Import Trakt Anticipated Movies
+enabled=true
 limit=20
 min_votes=200
 min_rating=4.5
@@ -212,6 +237,7 @@ include_genre=[]
 [[lists]]
 name="Series"
 type="seriesconfig"
+enabled=true
 series_config_file="series.toml" # File with Series to fetch
 
 ### indexers ###

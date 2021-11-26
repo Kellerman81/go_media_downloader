@@ -46,6 +46,7 @@ func AddSeriesRoutes(routerseries *gin.RouterGroup) {
 		routerseriessearch.GET("/id/:id", apiSeriesSearch)
 		routerseriessearch.GET("/id/:id/:season", apiSeriesSearchSeason)
 		routerseriessearch.GET("/history/clear/:name", apiSeriesClearHistoryName)
+		routerseriessearch.GET("/history/clearid/:id", apiSeriesClearHistoryID)
 	}
 
 	routerseriesepisodessearch := routerseries.Group("/episodes/search")
@@ -897,4 +898,27 @@ func apiSeriesClearHistoryName(c *gin.Context) {
 	}
 	go utils.Series_single_jobs("clearhistory", c.Param("name"), "", true)
 	c.JSON(http.StatusOK, "started")
+}
+
+// @Summary Clear History (Single Item)
+// @Description Clear Episode Download History
+// @Tags series
+// @Accept  json
+// @Produce  json
+// @Param id path string true "Episode ID"
+// @Param apikey query string true "apikey"
+// @Success 200 {string} string
+// @Failure 401 {object} string
+// @Router /api/series/search/history/clearid/{id} [get]
+func apiSeriesClearHistoryID(c *gin.Context) {
+	if ApiAuth(c) == http.StatusUnauthorized {
+		return
+	}
+	inres, inerr := database.DeleteRow("serie_episode_histories", database.Query{Where: "serie_episode_id = ?)", WhereArgs: []interface{}{c.Param("id")}})
+
+	if inerr == nil {
+		c.JSON(http.StatusOK, inres)
+	} else {
+		c.JSON(http.StatusForbidden, inerr)
+	}
 }
