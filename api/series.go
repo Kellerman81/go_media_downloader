@@ -914,7 +914,7 @@ func apiSeriesClearHistoryID(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
 		return
 	}
-	inres, inerr := database.DeleteRow("serie_episode_histories", database.Query{Where: "serie_episode_id = ?)", WhereArgs: []interface{}{c.Param("id")}})
+	inres, inerr := database.DeleteRow("serie_episode_histories", database.Query{Where: "serie_episode_id = ?", WhereArgs: []interface{}{c.Param("id")}})
 
 	if inerr == nil {
 		c.JSON(http.StatusOK, inres)
