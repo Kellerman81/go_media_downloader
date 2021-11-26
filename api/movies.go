@@ -548,7 +548,7 @@ func apiMoviesClearHistoryID(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
 		return
 	}
-	inres, inerr := database.DeleteRow("movie_histories", database.Query{Where: "movie_id = ?)", WhereArgs: []interface{}{c.Param("id")}})
+	inres, inerr := database.DeleteRow("movie_histories", database.Query{Where: "movie_id = ?", WhereArgs: []interface{}{c.Param("id")}})
 
 	if inerr == nil {
 		c.JSON(http.StatusOK, inres)
