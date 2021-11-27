@@ -257,7 +257,8 @@ func main() {
 		routerapi.GET("/scheduler/stop", api.ApiSchedulerStop)
 		routerapi.GET("/scheduler/start", api.ApiSchedulerStart)
 		routerapi.GET("/db/close", api.ApiDbClose)
-		routerapi.GET("/db/clear/:name", api.ApiDbClear)
+		routerapi.DELETE("/db/clear/:name", api.ApiDbClear)
+		routerapi.DELETE("/db/oldjobs", api.ApiDbRemoveOldJobs)
 		routerapi.GET("/db/vacuum", api.ApiDbVacuum)
 		routerapi.POST("/parse/string", api.ApiParseString)
 		routerapi.POST("/parse/file", api.ApiParseFile)
@@ -267,7 +268,7 @@ func main() {
 		routerapi.GET("/quality/:name/:config", api.ApiListQualityPriorities)
 
 		routerapi.GET("/config/all", api.ApiConfigAll)
-		routerapi.GET("/config/clear", api.ApiConfigClear)
+		routerapi.DELETE("/config/clear", api.ApiConfigClear)
 		routerapi.GET("/config/get/:name", api.ApiConfigGet)
 
 		routerapi.DELETE("/config/delete/:name", api.ApiConfigDelete)

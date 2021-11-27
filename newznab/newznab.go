@@ -189,43 +189,8 @@ func (c Client) SearchWithQueryUntilNZBID(categories []int, query string, search
 
 // LoadRSSFeed returns up to <num> of the most recent NZBs of the given categories.
 func (c Client) LoadRSSFeed(categories []int, num int, additional_query_params string, customapi string, customrssurl string, customrsscategory string) ([]NZB, error) {
-	if len(customrssurl) >= 1 {
-		buildurl := customrssurl
-		buildurl += "&num=" + strconv.Itoa(num)
-		if len(customrsscategory) >= 1 {
-			buildurl += "&" + customrsscategory + "=" + c.joinCats(categories)
-		} else {
-			buildurl += "&t=" + c.joinCats(categories)
-		}
-		buildurl += "&dl=1"
-		buildurl += additional_query_params
-
-		return c.processurl(buildurl, "")
-	} else if len(customapi) >= 1 {
-		buildurl := c.apiBaseURL + rssPath + "?" + customapi + "=" + c.apikey
-		buildurl += "&num=" + strconv.Itoa(num)
-		if len(customrsscategory) >= 1 {
-			buildurl += "&" + customrsscategory + "=" + c.joinCats(categories)
-		} else {
-			buildurl += "&t=" + c.joinCats(categories)
-		}
-		buildurl += "&dl=1"
-		buildurl += additional_query_params
-
-		return c.processurl(buildurl, "")
-	} else {
-		buildurl := c.apiBaseURL + rssPath + "?r=" + c.apikey + "&i=" + strconv.Itoa(c.apiUserID)
-		buildurl += "&num=" + strconv.Itoa(num)
-		if len(customrsscategory) >= 1 {
-			buildurl += "&" + customrsscategory + "=" + c.joinCats(categories)
-		} else {
-			buildurl += "&t=" + c.joinCats(categories)
-		}
-		buildurl += "&dl=1"
-		buildurl += additional_query_params
-
-		return c.processurl(buildurl, "")
-	}
+	buildurl := c.BuildRssUrl(customrssurl, customrsscategory, customapi, additional_query_params, num, categories, 0)
+	return c.processurl(buildurl, "")
 }
 
 func (c Client) joinCats(cats []int) string {
@@ -239,52 +204,62 @@ func (c Client) joinCats(cats []int) string {
 	return strings.Join(catstemp, ",")
 }
 
+func (c Client) BuildRssUrl(customrssurl string, customrsscategory string, customapi string, additional_query_params string, num int, categories []int, offset int) string {
+	var buildurl string
+	if len(customrssurl) >= 1 {
+		buildurl = customrssurl
+		buildurl += "&num=" + strconv.Itoa(num)
+		if len(customrsscategory) >= 1 {
+			buildurl += "&" + customrsscategory + "=" + c.joinCats(categories)
+		} else {
+			buildurl += "&t=" + c.joinCats(categories)
+		}
+		buildurl += "&dl=1"
+		if offset != 0 {
+			buildurl += "&offset=" + strconv.Itoa(offset)
+		}
+		buildurl += additional_query_params
+	} else if len(customapi) >= 1 {
+		buildurl = c.apiBaseURL + rssPath + "?" + customapi + "=" + c.apikey
+		buildurl += "&num=" + strconv.Itoa(num)
+		if len(customrsscategory) >= 1 {
+			buildurl += "&" + customrsscategory + "=" + c.joinCats(categories)
+		} else {
+			buildurl += "&t=" + c.joinCats(categories)
+		}
+		buildurl += "&dl=1"
+		if offset != 0 {
+			buildurl += "&offset=" + strconv.Itoa(offset)
+		}
+		buildurl += additional_query_params
+	} else {
+		buildurl = c.apiBaseURL + rssPath + "?r=" + c.apikey + "&i=" + strconv.Itoa(c.apiUserID)
+		buildurl += "&num=" + strconv.Itoa(num)
+		if len(customrsscategory) >= 1 {
+			buildurl += "&" + customrsscategory + "=" + c.joinCats(categories)
+		} else {
+			buildurl += "&t=" + c.joinCats(categories)
+		}
+		buildurl += "&dl=1"
+		if offset != 0 {
+			buildurl += "&offset=" + strconv.Itoa(offset)
+		}
+		buildurl += additional_query_params
+	}
+	return buildurl
+}
+
 // LoadRSSFeedUntilNZBID fetches NZBs until a given NZB id is reached.
 func (c Client) LoadRSSFeedUntilNZBID(categories []int, num int, id string, maxRequests int, additional_query_params string, customapi string, customrssurl string, customrsscategory string) ([]NZB, error) {
 	count := 0
-	nzbcount := num
-	if maxRequests >= 1 {
-		nzbcount = nzbcount * num
-	}
-	nzbs := make([]NZB, 0, nzbcount)
+	// nzbcount := num
+	// if maxRequests >= 1 {
+	// 	nzbcount = nzbcount * num
+	// }
+	var nzbs []NZB
 
 	for {
-		var buildurl string
-
-		if len(customrssurl) >= 1 {
-			buildurl = customrssurl
-			buildurl += "&num=" + strconv.Itoa(num)
-			if len(customrsscategory) >= 1 {
-				buildurl += "&" + customrsscategory + "=" + c.joinCats(categories)
-			} else {
-				buildurl += "&t=" + c.joinCats(categories)
-			}
-			buildurl += "&dl=1"
-			buildurl += "&offset=" + strconv.Itoa(num*count)
-			buildurl += additional_query_params
-		} else if len(customapi) >= 1 {
-			buildurl = c.apiBaseURL + rssPath + "?" + customapi + "=" + c.apikey
-			buildurl += "&num=" + strconv.Itoa(num)
-			if len(customrsscategory) >= 1 {
-				buildurl += "&" + customrsscategory + "=" + c.joinCats(categories)
-			} else {
-				buildurl += "&t=" + c.joinCats(categories)
-			}
-			buildurl += "&dl=1"
-			buildurl += "&offset=" + strconv.Itoa(num*count)
-			buildurl += additional_query_params
-		} else {
-			buildurl = c.apiBaseURL + rssPath + "?r=" + c.apikey + "&i=" + strconv.Itoa(c.apiUserID)
-			buildurl += "&num=" + strconv.Itoa(num)
-			if len(customrsscategory) >= 1 {
-				buildurl += "&" + customrsscategory + "=" + c.joinCats(categories)
-			} else {
-				buildurl += "&t=" + c.joinCats(categories)
-			}
-			buildurl += "&dl=1"
-			buildurl += "&offset=" + strconv.Itoa(num*count)
-			buildurl += additional_query_params
-		}
+		buildurl := c.BuildRssUrl(customrssurl, customrsscategory, customapi, additional_query_params, num, categories, (num * count))
 
 		partition, errp := c.processurl(buildurl, id)
 		if errp == nil {

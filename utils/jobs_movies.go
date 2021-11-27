@@ -1266,7 +1266,7 @@ func Getnewmovies(row config.MediaTypeConfig) {
 	config.ConfigGet("general", &cfg_general)
 
 	logger.Log.Info("Scan Movie File")
-	filesfound := make([]string, 0, 5000)
+	var filesfound []string
 	for idxpath := range row.Data {
 		if !config.ConfigCheck("path_" + row.Data[idxpath].Template_path) {
 			continue
@@ -1275,7 +1275,7 @@ func Getnewmovies(row config.MediaTypeConfig) {
 		config.ConfigGet("path_"+row.Data[idxpath].Template_path, &cfg_path)
 
 		LastMoviePath = cfg_path.Path
-		filesfound_add := scanner.GetFilesGoDir(cfg_path.Path, cfg_path.AllowedVideoExtensions, cfg_path.AllowedVideoExtensionsNoRename, cfg_path.Blocked)
+		filesfound_add := scanner.GetFilesDir(cfg_path.Path, cfg_path.AllowedVideoExtensions, cfg_path.AllowedVideoExtensionsNoRename, cfg_path.Blocked)
 		filesfound = append(filesfound, filesfound_add...)
 	}
 
@@ -1319,7 +1319,7 @@ func getnewmoviessingle(row config.MediaTypeConfig, list config.MediaListsConfig
 	defaultPrio.GetPriority(row, cfg_quality)
 
 	logger.Log.Info("Scan Movie File")
-	filesfound := make([]string, 0, 5000)
+	var filesfound []string
 	for idxpath := range row.Data {
 		if !config.ConfigCheck("path_" + row.Data[idxpath].Template_path) {
 			continue
@@ -1328,7 +1328,7 @@ func getnewmoviessingle(row config.MediaTypeConfig, list config.MediaListsConfig
 		config.ConfigGet("path_"+row.Data[idxpath].Template_path, &cfg_path)
 
 		LastMoviePath = cfg_path.Path
-		filesfound_add := scanner.GetFilesGoDir(cfg_path.Path, cfg_path.AllowedVideoExtensions, cfg_path.AllowedVideoExtensionsNoRename, cfg_path.Blocked)
+		filesfound_add := scanner.GetFilesDir(cfg_path.Path, cfg_path.AllowedVideoExtensions, cfg_path.AllowedVideoExtensionsNoRename, cfg_path.Blocked)
 		filesfound = append(filesfound, filesfound_add...)
 	}
 	filesadded := scanner.GetFilesAdded(filesfound, list.Name)

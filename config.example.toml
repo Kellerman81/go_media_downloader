@@ -37,6 +37,7 @@ themoviedb_apikey="insert" # insert your themoviedb apikey
 trakt_client_id="insert" # insert your trakt apikey
 failed_indexer_block_time = 1 # Number of minutes to skip indexer after a failed query - default 5
 disable_parser_string_match = true #Disables String Matcher (Only Regex is used for matching) - UseRegex for qualities must be enabled
+use_godir = true #if true use godirwalk - scans files slightly faster and might handle syms but uses more ram
 
 trakt_limiter_seconds=1 # will only change after restart
 trakt_limiter_calls=20 # max limiter_calls in limiter_seconds
