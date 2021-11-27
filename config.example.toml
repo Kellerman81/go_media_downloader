@@ -15,7 +15,7 @@ worker_parse = 2
 worker_search = 2
 webport  = "9090" #string!
 webapikey = "mysecure" #url is http://<server>:<webport>/api/...?apikey=mysecure
-concurrent_scheduler = 2
+concurrent_scheduler = 2 # only applies to search jobs - not for feed import or file scans
 movie_meta_source_imdb = true #metadata priority: 1. imdb 2. tmdb 3. omdb  - imdb has no plot
 movie_meta_source_tmdb = true #has most fields
 movie_meta_source_omdb = false
@@ -38,6 +38,7 @@ trakt_client_id="insert" # insert your trakt apikey
 failed_indexer_block_time = 1 # Number of minutes to skip indexer after a failed query - default 5
 disable_parser_string_match = true #Disables String Matcher (Only Regex is used for matching) - UseRegex for qualities must be enabled
 use_godir = true #if true use godirwalk - scans files slightly faster and might handle syms but uses more ram
+move_buffer_size_kb = 10 # Buffer Size for File Move Jobs (in KB)
 
 trakt_limiter_seconds=1 # will only change after restart
 trakt_limiter_calls=20 # max limiter_calls in limiter_seconds
@@ -184,16 +185,6 @@ exclude_genre=[] # Exclude Genres from import
 include_genre=[] # Only import Movies with one of these Genres
 
 [[lists]]
-name="TraktPopular"
-type="traktmoviepopular" # Import Trakt Popular Movies
-enabled=true
-limit=20
-min_votes=200 # Only import movies with at least x votes
-min_rating=4.5 # Only import movies with a minimum rating of x.x 
-exclude_genre=["Horror","Documentary"]
-include_genre=[]
-
-[[lists]]
 name="TraktUserMovie"
 type="traktpublicmovielist" # Import Trakt Public User List
 enabled=true
@@ -216,6 +207,16 @@ trakt_listname="mytraktlist"
 trakt_listtype="show" #movie or show
 
 [[lists]]
+name="TraktPopular"
+type="traktmoviepopular" # Import Trakt Popular Movies
+enabled=true
+limit=20
+min_votes=200 # Only import movies with at least x votes
+min_rating=4.5 # Only import movies with a minimum rating of x.x 
+exclude_genre=["Horror","Documentary"]
+include_genre=[]
+
+[[lists]]
 name="TraktTrending"
 type="traktmovietrending" # Import Trakt Trending Movies
 enabled=true
@@ -234,6 +235,25 @@ min_votes=200
 min_rating=4.5
 exclude_genre=["Horror","Documentary"]
 include_genre=[] 
+
+
+[[lists]]
+name="TraktPopularShows"
+type="traktseriepopular" # Import Trakt Popular Movies
+enabled=true
+limit=20 # no votes or include/exlude here
+
+[[lists]]
+name="TraktTrendingShows"
+type="traktserietrending" # Import Trakt Trending Movies
+enabled=true
+limit=20 # no votes or include/exlude here
+
+[[lists]]
+name="TraktAnticipatedShows"
+type="traktserieanticipated" # Import Trakt Anticipated Movies
+enabled=true
+limit=20 # no votes or include/exlude here
 
 [[lists]]
 name="Series"
@@ -261,6 +281,7 @@ rss_entries_loop = 5 # x rss calls x=2 == 2 api calls with 2*maxrss results - wi
 limiter_seconds=1 # will only change after restart
 limiter_calls=1 # max limiter_calls in limiter_seconds
 use_presort='false' # Use presort folder for import 
+max_age=2300 # Max Age of Published Release (in days) - skip or set to 0 to ignore
 
 [[indexers]]
 name="jackett1337x" ## Example for torrents via jackett
@@ -299,10 +320,12 @@ allowed_languages=['German','Deutsch','deu','ger',''] #uses fprobe to try and ex
 delete_disallowed=false # Delete Folders which contain one of disallowed # sourcepath
 delete_wrong_language=false # Delete Videos which don't match one of allowed_languages (if defined) # targetpath
 move_replaced=false #Move old media files to new location before structure
-move_replaced_target_path="" #Move old media files to new location before structure (Path)
+move_replaced_target_path="/media/movies/!replaced" #Move old media files to new location before structure (Path)
 check_runtime = 'true' # should the runtime be checked?
 max_runtime_difference = 15 #Number of minutes the runtime should be in ex Runtime=60 RealRuntime=45
 delete_wrong_runtime = false # Delete Media if the runtime is not within the difference (+ and - is allowed) so if Runtime=50 and Difference=5 - all from 45-55 Minutes is ok
+use_presort=false # Use Presort folder for storing structured media - set replace_lower to false!
+presort_folder_path="/media/movies_presort" # Path to presort folder
 
 ### notifications ###
 ### Possible pushover and csv

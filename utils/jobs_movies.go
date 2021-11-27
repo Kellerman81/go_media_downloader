@@ -1223,6 +1223,10 @@ func Importnewmoviessingle(row config.MediaTypeConfig, list config.MediaListsCon
 	var cfg_general config.GeneralConfig
 	config.ConfigGet("general", &cfg_general)
 
+	if cfg_general.WorkerMetadata == 0 {
+		cfg_general.WorkerMetadata = 1
+	}
+
 	dbmovies, _ := database.QueryDbmovie(database.Query{Select: "id, imdb_id"})
 	movies, _ := database.QueryMovies(database.Query{Select: "dbmovie_id, listname", Where: "listname = ?", WhereArgs: []interface{}{list.Name}})
 	swg := sizedwaitgroup.New(cfg_general.WorkerMetadata)
@@ -1264,6 +1268,9 @@ func Getnewmovies(row config.MediaTypeConfig) {
 	}
 	var cfg_general config.GeneralConfig
 	config.ConfigGet("general", &cfg_general)
+	if cfg_general.WorkerParse == 0 {
+		cfg_general.WorkerParse = 1
+	}
 
 	logger.Log.Info("Scan Movie File")
 	var filesfound []string
@@ -1308,6 +1315,9 @@ func getnewmoviessingle(row config.MediaTypeConfig, list config.MediaListsConfig
 	}
 	var cfg_general config.GeneralConfig
 	config.ConfigGet("general", &cfg_general)
+	if cfg_general.WorkerParse == 0 {
+		cfg_general.WorkerParse = 1
+	}
 
 	if !config.ConfigCheck("quality_" + list.Template_quality) {
 		return
@@ -1351,6 +1361,9 @@ func checkmissingmoviessingle(row config.MediaTypeConfig, list config.MediaLists
 	}
 	var cfg_general config.GeneralConfig
 	config.ConfigGet("general", &cfg_general)
+	if cfg_general.WorkerFiles == 0 {
+		cfg_general.WorkerFiles = 1
+	}
 
 	swfile := sizedwaitgroup.New(cfg_general.WorkerFiles)
 	for idx := range movies {
@@ -1389,6 +1402,9 @@ func moviesStructureSingle(row config.MediaTypeConfig, list config.MediaListsCon
 	}
 	var cfg_general config.GeneralConfig
 	config.ConfigGet("general", &cfg_general)
+	if cfg_general.WorkerFiles == 0 {
+		cfg_general.WorkerFiles = 1
+	}
 
 	swfile := sizedwaitgroup.New(cfg_general.WorkerFiles)
 
@@ -1425,6 +1441,9 @@ func RefreshMovies() {
 	}
 	var cfg_general config.GeneralConfig
 	config.ConfigGet("general", &cfg_general)
+	if cfg_general.WorkerFiles == 0 {
+		cfg_general.WorkerFiles = 1
+	}
 
 	if cfg_general.SchedulerDisabled {
 		return
@@ -1458,6 +1477,9 @@ func RefreshMoviesInc() {
 	}
 	var cfg_general config.GeneralConfig
 	config.ConfigGet("general", &cfg_general)
+	if cfg_general.WorkerFiles == 0 {
+		cfg_general.WorkerFiles = 1
+	}
 
 	if cfg_general.SchedulerDisabled {
 		return
@@ -1523,6 +1545,12 @@ func Movies_single_jobs(job string, typename string, listname string, force bool
 	if ok {
 		var cfg_movie config.MediaTypeConfig
 		config.ConfigGet("movie_"+typename, &cfg_movie)
+		if cfg_movie.Searchmissing_incremental == 0 {
+			cfg_movie.Searchmissing_incremental = 20
+		}
+		if cfg_movie.Searchupgrade_incremental == 0 {
+			cfg_movie.Searchupgrade_incremental = 20
+		}
 
 		switch job {
 		case "datafull":

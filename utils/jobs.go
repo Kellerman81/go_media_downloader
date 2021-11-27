@@ -317,6 +317,52 @@ func Feeds(configEntry config.MediaTypeConfig, list config.MediaListsConfig) fee
 			return feedResults{Movies: d}
 		}
 	}
+
+	if strings.EqualFold(cfg_list.Type, "traktseriepopular") {
+		traktpopular, err := apiexternal.TraktApi.GetSeriePopular(cfg_list.Limit)
+		if err == nil {
+			d := make([]config.SerieConfig, 0, len(traktpopular))
+
+			for idx := range traktpopular {
+				if traktpopular[idx].Ids.Tvdb == 0 {
+					continue
+				}
+				dbentry := config.SerieConfig{Name: traktpopular[idx].Title, TvdbID: traktpopular[idx].Ids.Tvdb}
+				d = append(d, dbentry)
+			}
+			return feedResults{Series: config.MainSerieConfig{Serie: d}}
+		}
+	}
+	if strings.EqualFold(cfg_list.Type, "traktserieanticipated") {
+		traktpopular, err := apiexternal.TraktApi.GetSerieAnticipated(cfg_list.Limit)
+		if err == nil {
+			d := make([]config.SerieConfig, 0, len(traktpopular))
+
+			for idx := range traktpopular {
+				if traktpopular[idx].Serie.Ids.Tvdb == 0 {
+					continue
+				}
+				dbentry := config.SerieConfig{Name: traktpopular[idx].Serie.Title, TvdbID: traktpopular[idx].Serie.Ids.Tvdb}
+				d = append(d, dbentry)
+			}
+			return feedResults{Series: config.MainSerieConfig{Serie: d}}
+		}
+	}
+	if strings.EqualFold(cfg_list.Type, "traktserietrending") {
+		traktpopular, err := apiexternal.TraktApi.GetSerieTrending(cfg_list.Limit)
+		if err == nil {
+			d := make([]config.SerieConfig, 0, len(traktpopular))
+
+			for idx := range traktpopular {
+				if traktpopular[idx].Serie.Ids.Tvdb == 0 {
+					continue
+				}
+				dbentry := config.SerieConfig{Name: traktpopular[idx].Serie.Title, TvdbID: traktpopular[idx].Serie.Ids.Tvdb}
+				d = append(d, dbentry)
+			}
+			return feedResults{Series: config.MainSerieConfig{Serie: d}}
+		}
+	}
 	logger.Log.Error("Feed Config not found - template: ", list.Template_list, " - type: ", cfg_list, " - name: ", cfg_list.Name)
 	return feedResults{}
 }

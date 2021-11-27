@@ -292,11 +292,6 @@ func (s *Structure) GenerateNaming(videofile string, m ParseInfo, movie database
 		}
 
 		naming := s.configEntry.Naming
-		if s.targetpath.Usepresort {
-			fmt.Println("usepresort")
-			naming = "!presort/" + naming
-			fmt.Println("usepresort: ", naming)
-		}
 		foldername, filename = path.Split(naming)
 		//Naming = '{Title} ({Year})/{Title} ({Year}) German [{Resolution} {Quality} {Codec}]'
 		if movie.Rootpath != "" {
@@ -541,6 +536,9 @@ func (s *Structure) MoveVideoFile(foldername string, filename string, videofiles
 }
 
 func (s *Structure) UpdateRootpath(videotarget string, foldername string, movie database.Movie, serie database.Serie) {
+	if s.targetpath.Usepresort {
+		return
+	}
 	rootpath := videotarget
 
 	folders := strings.Split(foldername, "/")
@@ -823,7 +821,11 @@ func StructureFolders(grouptype string, sourcepath config.PathsConfig, targetpat
 					sourcefileext := filepath.Ext(videofiles[fileidx])
 
 					structure.MoveOldFiles(oldfiles, movie, database.Serie{})
-					videotarget, moveok, moved := structure.MoveVideoFile(foldername, filename, []string{videofiles[fileidx]}, movie.Rootpath)
+					mediatargetpath := movie.Rootpath
+					if structure.targetpath.Usepresort && structure.targetpath.PresortFolderPath != "" {
+						mediatargetpath = filepath.Join(structure.targetpath.PresortFolderPath, foldername)
+					}
+					videotarget, moveok, moved := structure.MoveVideoFile(foldername, filename, []string{videofiles[fileidx]}, mediatargetpath)
 					if moveok && moved >= 1 {
 						structure.UpdateRootpath(videotarget, foldername, movie, database.Serie{})
 						var oldfiles_remove []string
@@ -893,7 +895,11 @@ func StructureFolders(grouptype string, sourcepath config.PathsConfig, targetpat
 						foldername, filename := structure.GenerateNaming(videofiles[fileidx], *m, database.Movie{}, series, serietitle, seriesEpisode, episodetitle, episodes)
 						sourcefileext := filepath.Ext(videofiles[fileidx])
 						structure.MoveOldFiles(oldfiles, database.Movie{}, series)
-						videotarget, moveok, moved := structure.MoveVideoFile(foldername, filename, []string{videofiles[fileidx]}, series.Rootpath)
+						mediatargetpath := series.Rootpath
+						if structure.targetpath.Usepresort && structure.targetpath.PresortFolderPath != "" {
+							mediatargetpath = filepath.Join(structure.targetpath.PresortFolderPath, foldername)
+						}
+						videotarget, moveok, moved := structure.MoveVideoFile(foldername, filename, []string{videofiles[fileidx]}, mediatargetpath)
 						if moveok && moved >= 1 {
 							structure.UpdateRootpath(videotarget, foldername, database.Movie{}, series)
 							var oldfiles_remove []string

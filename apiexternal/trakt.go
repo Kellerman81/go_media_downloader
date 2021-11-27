@@ -42,6 +42,14 @@ type TraktMovie struct {
 		Tmdb  int    `json:"tmdb"`
 	} `json:"ids"`
 }
+type TraktSerieTrending struct {
+	Watchers int        `json:"watchers"`
+	Serie    TraktSerie `json:"show"`
+}
+type TraktSerieAnticipated struct {
+	ListCount int        `json:"list_count"`
+	Serie     TraktSerie `json:"show"`
+}
 type TraktSerieSeason struct {
 	Number int `json:"number"`
 	Ids    struct {
@@ -158,6 +166,12 @@ type TraktClient struct {
 var TraktApi TraktClient
 
 func NewTraktClient(apikey string, seconds int, calls int) {
+	if seconds == 0 {
+		seconds = 1
+	}
+	if calls == 0 {
+		calls = 1
+	}
 	rl := rate.NewLimiter(rate.Every(time.Duration(seconds)*time.Second), calls) // 50 request every 10 seconds
 	limiter, _ := slidingwindow.NewLimiter(time.Duration(seconds)*time.Second, int64(calls), func() (slidingwindow.Window, slidingwindow.StopFunc) { return slidingwindow.NewLocalWindow() })
 	TraktApi = TraktClient{ApiKey: apikey, Client: NewClient(rl, limiter)}
@@ -373,6 +387,81 @@ func (t TraktClient) GetUserList(username string, listname string, listtype stri
 		return []TraktUserList{}, err
 	}
 	var result []TraktUserList
+	json.Unmarshal(responseData, &result)
+	return result, nil
+}
+
+func (t TraktClient) GetSeriePopular(limit int) ([]TraktSerie, error) {
+	url := "https://api.trakt.tv/shows/popular"
+	if limit >= 1 {
+		url = url + "?limit=" + strconv.Itoa(limit)
+	} else {
+		limit = 10
+	}
+
+	req, _ := http.NewRequest("GET", url, nil)
+	req.Header.Add("Content-Type", "application/json")
+	req.Header.Add("trakt-api-version", "2")
+	req.Header.Add("trakt-api-key", t.ApiKey)
+
+	resp, responseData, err := t.Client.Do(req)
+	if err != nil {
+		return []TraktSerie{}, err
+	}
+	if resp.StatusCode == 429 {
+		return []TraktSerie{}, err
+	}
+	result := make([]TraktSerie, 0, limit)
+	json.Unmarshal(responseData, &result)
+	return result, nil
+}
+
+func (t TraktClient) GetSerieTrending(limit int) ([]TraktSerieTrending, error) {
+	url := "https://api.trakt.tv/shows/trending"
+	if limit >= 1 {
+		url = url + "?limit=" + strconv.Itoa(limit)
+	} else {
+		limit = 10
+	}
+
+	req, _ := http.NewRequest("GET", url, nil)
+	req.Header.Add("Content-Type", "application/json")
+	req.Header.Add("trakt-api-version", "2")
+	req.Header.Add("trakt-api-key", t.ApiKey)
+
+	resp, responseData, err := t.Client.Do(req)
+	if err != nil {
+		return []TraktSerieTrending{}, err
+	}
+	if resp.StatusCode == 429 {
+		return []TraktSerieTrending{}, err
+	}
+	result := make([]TraktSerieTrending, 0, limit)
+	json.Unmarshal(responseData, &result)
+	return result, nil
+}
+
+func (t TraktClient) GetSerieAnticipated(limit int) ([]TraktSerieAnticipated, error) {
+	url := "https://api.trakt.tv/shows/anticipated"
+	if limit >= 1 {
+		url = url + "?limit=" + strconv.Itoa(limit)
+	} else {
+		limit = 10
+	}
+
+	req, _ := http.NewRequest("GET", url, nil)
+	req.Header.Add("Content-Type", "application/json")
+	req.Header.Add("trakt-api-version", "2")
+	req.Header.Add("trakt-api-key", t.ApiKey)
+
+	resp, responseData, err := t.Client.Do(req)
+	if err != nil {
+		return []TraktSerieAnticipated{}, err
+	}
+	if resp.StatusCode == 429 {
+		return []TraktSerieAnticipated{}, err
+	}
+	result := make([]TraktSerieAnticipated, 0, limit)
 	json.Unmarshal(responseData, &result)
 	return result, nil
 }

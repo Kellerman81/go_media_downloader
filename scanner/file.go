@@ -1,6 +1,7 @@
 package scanner
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -435,8 +436,17 @@ func MoveFileDriveReadWrite(sourcePath, destPath string) error {
 }
 
 func MoveFileDriveBuffer(sourcePath, destPath string) error {
+	if !config.ConfigCheck("general") {
+		return errors.New("missing config")
+	}
+	var cfg_general config.GeneralConfig
+	config.ConfigGet("general", &cfg_general)
+	bufferkb := 1024
+	if cfg_general.MoveBufferSizeKB != 0 {
+		bufferkb = cfg_general.MoveBufferSizeKB
+	}
 
-	var BUFFERSIZE int64 = 1 * 1024 * 1024 //10MB!
+	var BUFFERSIZE int64 = int64(bufferkb) * 1024 //have to convert to bytes
 
 	sourceFileStat, err := os.Stat(sourcePath)
 	if err != nil {

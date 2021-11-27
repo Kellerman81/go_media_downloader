@@ -71,6 +71,12 @@ type TvdbClient struct {
 var TvdbApi TvdbClient
 
 func NewTvdbClient(seconds int, calls int) {
+	if seconds == 0 {
+		seconds = 1
+	}
+	if calls == 0 {
+		calls = 1
+	}
 	rl := rate.NewLimiter(rate.Every(time.Duration(seconds)*time.Second), calls) // 50 request every 10 seconds
 	limiter, _ := slidingwindow.NewLimiter(time.Duration(seconds)*time.Second, int64(calls), func() (slidingwindow.Window, slidingwindow.StopFunc) { return slidingwindow.NewLocalWindow() })
 	TvdbApi = TvdbClient{Client: NewClient(rl, limiter)}
