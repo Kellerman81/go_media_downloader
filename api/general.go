@@ -1,9 +1,12 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Kellerman81/go_media_downloader/config"
 	"github.com/Kellerman81/go_media_downloader/database"
@@ -183,7 +186,7 @@ func ApiDbClose(ctx *gin.Context) {
 // @Param apikey query string true "apikey"
 // @Success 200 {string} string
 // @Failure 401 {object} string
-// @Router /api/db/clear/{name} [get]
+// @Router /api/db/clear/{name} [delete]
 func ApiDbClear(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
@@ -218,6 +221,42 @@ func ApiDbVacuum(ctx *gin.Context) {
 		ctx.JSON(http.StatusOK, "ok")
 	} else {
 		ctx.JSON(http.StatusForbidden, err)
+	}
+}
+
+// @Summary Clean Old Jobs
+// @Description Removes Jobs started over x days ago from db
+// @Tags database
+// @Accept  json
+// @Produce  json
+// @Param apikey query string true "apikey"
+// @Param days query int true "Days ago"
+// @Success 200 {string} string
+// @Failure 401 {object} string
+// @Router /api/db/oldjobs [delete]
+func ApiDbRemoveOldJobs(ctx *gin.Context) {
+	if ApiAuth(ctx) == http.StatusUnauthorized {
+		return
+	}
+	if queryParam, ok := ctx.GetQuery("days"); ok {
+		if queryParam != "" {
+			days, _ := strconv.Atoi(queryParam)
+
+			scantime := time.Now()
+			if days != 0 {
+				scantime = scantime.AddDate(0, 0, 0-days)
+				_, err := database.DeleteRow("job_histories", database.Query{Where: "created_at < ?", WhereArgs: []interface{}{scantime}})
+				if err == nil {
+					ctx.JSON(http.StatusOK, "ok")
+				} else {
+					ctx.JSON(http.StatusForbidden, err)
+				}
+			}
+		} else {
+			ctx.JSON(http.StatusForbidden, errors.New("days empty"))
+		}
+	} else {
+		ctx.JSON(http.StatusForbidden, errors.New("days missing"))
 	}
 }
 
@@ -389,7 +428,7 @@ func ApiConfigAll(ctx *gin.Context) {
 // @Param apikey query string true "apikey"
 // @Success 200 {object} map[string]interface{}
 // @Failure 401 {object} string
-// @Router /api/config/clear [get]
+// @Router /api/config/clear [delete]
 func ApiConfigClear(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return

@@ -329,7 +329,7 @@ var doc = `{
             }
         },
         "/api/config/clear": {
-            "get": {
+            "delete": {
                 "description": "Clears the configuration and sets some examples",
                 "consumes": [
                     "application/json"
@@ -566,7 +566,7 @@ var doc = `{
             }
         },
         "/api/db/clear/{name}": {
-            "get": {
+            "delete": {
                 "description": "Clears a DB Table",
                 "consumes": [
                     "application/json"
@@ -628,6 +628,51 @@ var doc = `{
                         "type": "string",
                         "description": "apikey",
                         "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/db/oldjobs": {
+            "delete": {
+                "description": "Removes Jobs started over x days ago from db",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "database"
+                ],
+                "summary": "Clean Old Jobs",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "apikey",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Days ago",
+                        "name": "days",
                         "in": "query",
                         "required": true
                     }

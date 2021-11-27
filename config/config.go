@@ -93,6 +93,7 @@ type GeneralConfig struct {
 	MovieParseMetaSourcePriority       []string `koanf:"movie_parse_meta_source_priority"`
 	SerieMetaSourceTmdb                bool     `koanf:"serie_meta_source_tmdb"`
 	SerieMetaSourceTrakt               bool     `koanf:"serie_meta_source_trakt"`
+	UseGoDir                           bool     `koanf:"use_godir"`
 	WebPort                            string   `koanf:"webport"`
 	WebApiKey                          string   `koanf:"webapikey"`
 	ConcurrentScheduler                int      `koanf:"concurrent_scheduler"`

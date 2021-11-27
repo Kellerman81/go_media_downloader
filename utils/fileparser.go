@@ -398,6 +398,9 @@ func (m *ParseInfo) ParseFile(includeYearInTitle bool, typegroup string) error {
 }
 
 func (m *ParseInfo) GetPriority(configEntry config.MediaTypeConfig, quality config.QualityConfig) {
+	if m.Priority != 0 && m.Resolution != "" && m.ResolutionID != 0 && m.Prio_resolution != 0 && m.Quality != "" && m.QualityID != 0 && m.Prio_quality != 0 {
+		return
+	}
 	m.QualitySet = quality.Name
 
 	resolution_priority := 0

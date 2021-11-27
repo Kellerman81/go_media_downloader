@@ -789,7 +789,7 @@ paths:
       tags:
       - config
   /api/config/clear:
-    get:
+    delete:
       consumes:
       - application/json
       description: Clears the configuration and sets some examples
@@ -948,7 +948,7 @@ paths:
       tags:
       - config
   /api/db/clear/{name}:
-    get:
+    delete:
       consumes:
       - application/json
       description: Clears a DB Table
@@ -1000,6 +1000,36 @@ paths:
           schema:
             type: string
       summary: Close DB
+      tags:
+      - database
+  /api/db/oldjobs:
+    delete:
+      consumes:
+      - application/json
+      description: Removes Jobs started over x days ago from db
+      parameters:
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      - description: Days ago
+        in: query
+        name: days
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Clean Old Jobs
       tags:
       - database
   /api/db/vacuum:

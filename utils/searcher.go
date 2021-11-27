@@ -436,11 +436,7 @@ func (s *Searcher) SearchRSS(searchGroupType string) searchResults {
 
 	s.SearchGroupType = searchGroupType
 	s.SearchActionType = "rss"
-	maxitems := cfg_indexer.MaxRssEntries
-	if cfg_indexer.RssEntriesloop >= 1 {
-		maxitems = maxitems * cfg_indexer.RssEntriesloop
-	}
-	retnzb := make([]nzbwithprio, 0, maxitems)
+	var retnzb []nzbwithprio
 	lists := make([]string, 0, len(s.ConfigEntry.Lists))
 	for idxlisttest := range s.ConfigEntry.Lists {
 		lists = append(lists, s.ConfigEntry.Lists[idxlisttest].Name)

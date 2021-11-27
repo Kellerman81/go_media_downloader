@@ -8,10 +8,81 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Kellerman81/go_media_downloader/config"
 	"github.com/Kellerman81/go_media_downloader/database"
 	"github.com/Kellerman81/go_media_downloader/logger"
 	"github.com/karrick/godirwalk"
 )
+
+func GetFilesDir(rootpath string, filetypes []string, filetypesNoRename []string, ignoredpaths []string) []string {
+
+	if !config.ConfigCheck("general") {
+		return []string{}
+	}
+	var cfg_general config.GeneralConfig
+	config.ConfigGet("general", &cfg_general)
+
+	if cfg_general.UseGoDir {
+		return GetFilesGoDir(rootpath, filetypes, filetypesNoRename, ignoredpaths)
+	}
+	var list []string
+
+	if _, err := os.Stat(rootpath); !os.IsNotExist(err) {
+		err := filepath.Walk(rootpath, func(path string, info os.FileInfo, err error) error {
+			if info.IsDir() {
+				return nil
+			}
+
+			//Check Extension
+			ok := false
+			if len(filetypes) >= 1 {
+				for idx := range filetypes {
+					if strings.EqualFold(filetypes[idx], filepath.Ext(path)) {
+						ok = true
+						break
+					}
+				}
+			}
+
+			if len(filetypesNoRename) >= 1 && !ok {
+				for idx := range filetypesNoRename {
+					if strings.EqualFold(filetypesNoRename[idx], filepath.Ext(path)) {
+						ok = true
+						break
+					}
+				}
+			}
+
+			if len(filetypesNoRename) == 0 && len(filetypes) == 0 {
+				ok = true
+			}
+
+			//Check IgnoredPaths
+			if len(ignoredpaths) >= 1 && ok {
+				path, _ := filepath.Split(path)
+				for idxignore := range ignoredpaths {
+					if strings.Contains(strings.ToLower(path), strings.ToLower(ignoredpaths[idxignore])) {
+						ok = false
+						break
+					}
+				}
+			}
+
+			if ok {
+				list = append(list, path)
+			}
+
+			return nil
+
+		})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%s\n", err)
+		}
+	} else {
+		logger.Log.Error("Path not found: ", rootpath)
+	}
+	return list
+}
 
 func GetFilesGoDir(rootpath string, filetypes []string, filetypesNoRename []string, ignoredpaths []string) []string {
 	var list []string
@@ -251,7 +322,7 @@ func CheckDisallowed(folder string, disallowed []string, removefolder bool) bool
 	}
 	logger.Log.Debug("Check disallowed")
 	if _, err := os.Stat(folder); !os.IsNotExist(err) {
-		filesleft := GetFilesGoDir(folder, emptyarr, emptyarr, emptyarr)
+		filesleft := GetFilesDir(folder, emptyarr, emptyarr, emptyarr)
 		for idxfile := range filesleft {
 			for idxdisallow := range disallowed {
 				if disallowed[idxdisallow] == "" {
@@ -273,7 +344,7 @@ func CheckDisallowed(folder string, disallowed []string, removefolder bool) bool
 func CleanUpFolder(folder string, CleanupsizeMB int) {
 	emptyarr := make([]string, 0, 1)
 	if _, err := os.Stat(folder); !os.IsNotExist(err) {
-		filesleft := GetFilesGoDir(folder, emptyarr, emptyarr, emptyarr)
+		filesleft := GetFilesDir(folder, emptyarr, emptyarr, emptyarr)
 		logger.Log.Debug("Left files: ", filesleft)
 		if CleanupsizeMB >= 1 {
 			leftsize := GetFolderSize(folder)
@@ -293,26 +364,15 @@ func CleanUpFolder(folder string, CleanupsizeMB int) {
 func GetFilesAdded(files []string, listname string) []string {
 	var list []string
 	for idxfile := range files {
-
-		moviefiles, _ := database.QueryMovieFiles(database.Query{Select: "dbmovie_id, movie_id", Where: "location = ?", WhereArgs: []interface{}{files[idxfile]}})
-		if len(moviefiles) >= 1 {
-			// movie, movieerr := database.GetMovies(database.Query{Select: "id", Where: "listname = ? and dbmovie_id = ?", WhereArgs: []interface{}{listname, moviefiles[0].DbmovieID}})
-			// if movieerr == nil {
-			// 	foundmovieid := false
-			// 	for idxmov := range moviefiles {
-			// 		if moviefiles[idxmov].MovieID == movie.ID {
-			// 			foundmovieid = true
-			// 			break
-			// 		}
-			// 	}
-			// 	if !foundmovieid {
-			// 		logger.Log.Debug("File added to list - from other", files[idxfile], " ", listname)
-			// 		list = append(list, files[idxfile])
-			// 	}
-			// }
-		} else {
-			logger.Log.Debug("File added to list - not found", files[idxfile], " ", listname)
-			list = append(list, files[idxfile])
+		counter, _ := database.CountRows("movie_files", database.Query{InnerJoin: "movies on movie_files.movie_id = movies.id", Where: "movie_files.location = ? and movies.listname = ?", WhereArgs: []interface{}{files[idxfile], listname}})
+		if counter == 0 {
+			counter2, _ := database.CountRows("movie_files", database.Query{Where: "location = ?", WhereArgs: []interface{}{files[idxfile]}})
+			if counter2 == 0 {
+				logger.Log.Debug("File added to list - not found", files[idxfile], " ", listname)
+				list = append(list, files[idxfile])
+			} else {
+				logger.Log.Debug("File not added to list - already in another list", files[idxfile], " ", listname)
+			}
 		}
 	}
 	return list
@@ -330,7 +390,6 @@ func GetFilesSeriesAdded(files []string, listname string) []string {
 
 func GetFilesRemoved(listname string) []string {
 	var list []string
-
 	moviefile, _ := database.QueryMovieFiles(database.Query{Select: "Movie_files.location", InnerJoin: "Movies on Movies.ID=movie_files.movie_id", Where: "Movies.listname = ?", WhereArgs: []interface{}{listname}})
 	for idxmovie := range moviefile {
 		if _, err := os.Stat(moviefile[idxmovie].Location); os.IsNotExist(err) {

@@ -48,7 +48,7 @@ func (s *Structure) CheckDisallowed() bool {
 }
 
 func (s *Structure) GetVideoFiles(folder string, pathconfig config.PathsConfig, removesmallfiles bool) []string {
-	videofiles := scanner.GetFilesGoDir(folder, pathconfig.AllowedVideoExtensions, pathconfig.AllowedVideoExtensionsNoRename, pathconfig.Blocked)
+	videofiles := scanner.GetFilesDir(folder, pathconfig.AllowedVideoExtensions, pathconfig.AllowedVideoExtensionsNoRename, pathconfig.Blocked)
 	if removesmallfiles {
 		for idx := range videofiles {
 			info, err := os.Stat(videofiles[idx])
@@ -58,7 +58,7 @@ func (s *Structure) GetVideoFiles(folder string, pathconfig config.PathsConfig, 
 				}
 			}
 		}
-		videofiles = scanner.GetFilesGoDir(folder, pathconfig.AllowedVideoExtensions, pathconfig.AllowedVideoExtensionsNoRename, pathconfig.Blocked)
+		videofiles = scanner.GetFilesDir(folder, pathconfig.AllowedVideoExtensions, pathconfig.AllowedVideoExtensionsNoRename, pathconfig.Blocked)
 	}
 	return videofiles
 }
@@ -130,6 +130,24 @@ func (s *Structure) ParseFile(videofile string, checkfolder bool, folder string,
 	return
 }
 
+func (s Structure) FileCleanup(folder string, videofile string) {
+	if strings.ToLower(s.groupType) == "movie" || videofile == "" {
+		filesleft := scanner.GetFilesDir(folder, s.sourcepath.AllowedVideoExtensions, s.sourcepath.AllowedVideoExtensionsNoRename, []string{})
+		scanner.RemoveFiles(filesleft, []string{}, []string{})
+
+		scanner.CleanUpFolder(folder, s.sourcepath.CleanupsizeMB)
+	} else {
+		fileext := filepath.Ext(videofile)
+		err := scanner.RemoveFile(videofile)
+		if err == nil {
+			for idxext := range s.sourcepath.AllowedOtherExtensions {
+				additionalfile := strings.Replace(videofile, fileext, s.sourcepath.AllowedOtherExtensions[idxext], -1)
+				scanner.RemoveFile(additionalfile)
+			}
+		}
+		scanner.CleanUpFolder(folder, s.sourcepath.CleanupsizeMB)
+	}
+}
 func (s *Structure) ParseFileAdditional(videofile string, m *ParseInfo, folder string, deletewronglanguage bool, wantedruntime int) (err error) {
 	if !config.ConfigCheck("quality_" + s.list.Template_quality) {
 		return
@@ -147,6 +165,9 @@ func (s *Structure) ParseFileAdditional(videofile string, m *ParseInfo, folder s
 		intruntime := int(m.Runtime / 60)
 		if intruntime != wantedruntime {
 			maxdifference := s.targetpath.MaxRuntimeDifference
+			if m.Extended && strings.ToLower(s.groupType) == "movie" {
+				maxdifference += 10
+			}
 			difference := 0
 			if wantedruntime > intruntime {
 				difference = wantedruntime - intruntime
@@ -155,23 +176,7 @@ func (s *Structure) ParseFileAdditional(videofile string, m *ParseInfo, folder s
 			}
 			if difference > maxdifference {
 				if s.targetpath.DeleteWrongRuntime {
-					if strings.ToLower(s.groupType) == "movie" {
-						emptyarr := make([]string, 0, 1)
-						filesleft := scanner.GetFilesGoDir(folder, s.sourcepath.AllowedVideoExtensions, s.sourcepath.AllowedVideoExtensionsNoRename, emptyarr)
-						scanner.RemoveFiles(filesleft, emptyarr, emptyarr)
-
-						scanner.CleanUpFolder(folder, s.sourcepath.CleanupsizeMB)
-					} else {
-						fileext := filepath.Ext(videofile)
-						err := scanner.RemoveFile(videofile)
-						if err == nil {
-							for idxext := range s.sourcepath.AllowedOtherExtensions {
-								additionalfile := strings.Replace(videofile, fileext, s.sourcepath.AllowedOtherExtensions[idxext], -1)
-								scanner.RemoveFile(additionalfile)
-							}
-						}
-						scanner.CleanUpFolder(folder, s.sourcepath.CleanupsizeMB)
-					}
+					s.FileCleanup(folder, videofile)
 				}
 				logger.Log.Error("Wrong runtime: Wanted", wantedruntime, " Having", intruntime, " difference", difference, " for", m.File)
 				return errors.New("wrong runtime")
@@ -197,23 +202,7 @@ func (s *Structure) ParseFileAdditional(videofile string, m *ParseInfo, folder s
 		}
 		if !language_ok {
 			logger.Log.Debug("Languages not matched - skipping: ", folder, " ", m.Languages)
-			if strings.ToLower(s.groupType) == "movie" {
-				emptyarr := make([]string, 0, 1)
-				filesleft := scanner.GetFilesGoDir(folder, s.sourcepath.AllowedVideoExtensions, s.sourcepath.AllowedVideoExtensionsNoRename, emptyarr)
-				scanner.RemoveFiles(filesleft, emptyarr, emptyarr)
-
-				scanner.CleanUpFolder(folder, s.sourcepath.CleanupsizeMB)
-			} else {
-				fileext := filepath.Ext(videofile)
-				err := scanner.RemoveFile(videofile)
-				if err == nil {
-					for idxext := range s.sourcepath.AllowedOtherExtensions {
-						additionalfile := strings.Replace(videofile, fileext, s.sourcepath.AllowedOtherExtensions[idxext], -1)
-						scanner.RemoveFile(additionalfile)
-					}
-				}
-				scanner.CleanUpFolder(folder, s.sourcepath.CleanupsizeMB)
-			}
+			s.FileCleanup(folder, videofile)
 		}
 		if !language_ok {
 			logger.Log.Error("Wrong language: Wanted", s.targetpath.Allowed_languages, " Having", m.Languages, " for", m.File)
@@ -248,8 +237,7 @@ func (s *Structure) CheckLowerQualTarget(folder string, videofile string, m Pars
 				if m.Priority > entry_prio && s.targetpath.Upgrade {
 					oldfiles = append(oldfiles, moviefiles[idx].Location)
 					logger.Log.Debug("get all old files ", oldpath)
-					emptyarr := make([]string, 0, 1)
-					oldfilesadd := scanner.GetFilesGoDir(oldpath, emptyarr, emptyarr, emptyarr)
+					oldfilesadd := scanner.GetFilesDir(oldpath, []string{}, []string{}, []string{})
 					logger.Log.Debug("found old files ", len(oldfilesadd))
 					oldfiles = append(oldfiles, oldfilesadd...)
 				}
@@ -260,10 +248,7 @@ func (s *Structure) CheckLowerQualTarget(folder string, videofile string, m Pars
 		logger.Log.Info("Skipped import due to lower quality: ", videofile)
 		err := errors.New("import file has lower quality")
 		if cleanuplowerquality {
-			emptyarr := make([]string, 0, 1)
-			filesleft := scanner.GetFilesGoDir(folder, s.sourcepath.AllowedVideoExtensions, s.sourcepath.AllowedVideoExtensionsNoRename, emptyarr)
-			scanner.RemoveFiles(filesleft, emptyarr, emptyarr)
-			scanner.CleanUpFolder(folder, s.sourcepath.CleanupsizeMB)
+			s.FileCleanup(folder, videofile)
 		}
 		return []string{}, oldpriority, err
 	}
@@ -668,7 +653,7 @@ func (s *Structure) ReplaceLowerQualityFiles(oldfiles []string, movie database.M
 
 func (s *Structure) MoveAdditionalFiles(folder string, videotarget string, filename string, videofile string, sourcefileext string, videofilecount int) {
 	if strings.ToLower(s.groupType) == "movie" || videofilecount == 1 {
-		additionalfiles := scanner.GetFilesGoDir(folder, s.sourcepath.AllowedOtherExtensions, s.sourcepath.AllowedOtherExtensionsNoRename, s.sourcepath.Blocked)
+		additionalfiles := scanner.GetFilesDir(folder, s.sourcepath.AllowedOtherExtensions, s.sourcepath.AllowedOtherExtensionsNoRename, s.sourcepath.Blocked)
 		if len(additionalfiles) >= 1 {
 			scanner.MoveFiles(additionalfiles, videotarget, filename, s.sourcepath.AllowedOtherExtensions, s.sourcepath.AllowedOtherExtensionsNoRename)
 		}
@@ -712,11 +697,7 @@ func StructureFolders(grouptype string, sourcepath config.PathsConfig, targetpat
 		}
 		if structure.CheckDisallowed() {
 			if structure.sourcepath.DeleteDisallowed {
-				emptyarr := make([]string, 0, 1)
-				filesleft := scanner.GetFilesGoDir(folders[idx], structure.sourcepath.AllowedVideoExtensions, structure.sourcepath.AllowedVideoExtensionsNoRename, emptyarr)
-				scanner.RemoveFiles(filesleft, emptyarr, emptyarr)
-
-				scanner.CleanUpFolder(folders[idx], structure.sourcepath.CleanupsizeMB)
+				structure.FileCleanup(folders[idx], "")
 			}
 			continue
 		}
@@ -902,12 +883,12 @@ func StructureFolders(grouptype string, sourcepath config.PathsConfig, targetpat
 				if entriesfound >= 1 {
 					dbseries, _ := database.GetDbserie(database.Query{Where: "id=?", WhereArgs: []interface{}{series.DbserieID}})
 					runtime, _ := strconv.Atoi(dbseries.Runtime)
-					errpars := structure.ParseFileAdditional(videofiles[fileidx], m, folders[idx], structure.targetpath.DeleteWrongLanguage, runtime)
+					oldfiles, episodes, allowimport, serietitle, episodetitle, seriesEpisode := structure.GetSeriesEpisodes(series, videofiles[fileidx], *m, folders[idx])
+					errpars := structure.ParseFileAdditional(videofiles[fileidx], m, folders[idx], structure.targetpath.DeleteWrongLanguage, runtime*len(episodes))
 					if errpars != nil {
 						logger.Log.Error("Error fprobe video: ", videofiles[fileidx], " error: ", errpars)
 						continue
 					}
-					oldfiles, episodes, allowimport, serietitle, episodetitle, seriesEpisode := structure.GetSeriesEpisodes(series, videofiles[fileidx], *m, folders[idx])
 					if allowimport {
 						foldername, filename := structure.GenerateNaming(videofiles[fileidx], *m, database.Movie{}, series, serietitle, seriesEpisode, episodetitle, episodes)
 						sourcefileext := filepath.Ext(videofiles[fileidx])
@@ -997,6 +978,9 @@ func (s *Structure) GetSeriesEpisodes(series database.Serie, videofile string, m
 
 	episodeArray := getEpisodeArray(dbserie.Identifiedby, teststr[1], teststr[2])
 
+	var cfg_quality config.QualityConfig
+	config.ConfigGet("quality_"+s.list.Template_quality, &cfg_quality)
+	m.GetPriority(s.configEntry, cfg_quality)
 	for idx := range episodeArray {
 		epi := episodeArray[idx]
 		epi = strings.Trim(epi, "-EX")
