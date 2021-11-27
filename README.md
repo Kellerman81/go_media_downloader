@@ -79,7 +79,6 @@ First version! Bugs included
 - Unpacking of Downloaded stuff? Currently I let the downloaders do that and don't care about it that much
 - Other Media Type Support (i could think of music but don't want to include this currently)
 - Switch to db only configuration if I include a full webinterface
-- Scheduler optimizations to also allow jobs to run at specific times
 - Other Feed Sources (currently i don't need more - start a discussion if you want one specific - also you can add stuff using the API)
 - Other Indexer Sources (currently i don't need more - start a discussion if you want one specific)
 - Other Downloaders (currently i don't need more - start a discussion if you want one specific - ex qBittorrent)

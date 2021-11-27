@@ -85,9 +85,10 @@ index_full=true #short only imports imdbid and titles/years - full also votes ra
 		add_found=false #Add Found movies if not in DB?
 		template_list="Movies" # Map to lists
 		template_quality="SD" # Map to qualities below
+		template_scheduler="Default" # Different Lists can have different Scheduler Configs but don't have to!
 		compare="false" # false = add only new entries - old ones will not be removed - currently not yet developed
-		ignore_template_lists=[] # Map to name - if movie exists already in db it will be skipped
-		replace_template_lists=["EN Watchlist"] # Map to name - if movie exists already in db it will be replaced	
+		ignore_template_lists=[] # Map to name - if movie exists already in db in that list it will be skipped
+		replace_template_lists=["EN Watchlist"] # Map to name - if movie exists already in db it will be replaced with this Quality and listname
 		[[media.movies.notification]]
 		template_notification="pushover"
 		event="added_data" #added_download #added_list
@@ -437,3 +438,15 @@ interval_indexer_rss="15m" # rss search for missing / upgradable media
 interval_scan_data="60m" # checks for new files in media directories
 interval_scan_data_import="15m" # checks for newly finished and ready to import media
 interval_scan_data_missing="3d" # checks for removed media
+
+## all interval_* schedulers have also a cron_* entry - you can use both!
+## cron format: seconds minutes hours day month day_of_week
+## write cron_feeds="0 0 2 * * *" to update the feeds at 2 in the morning
+## write cron_feeds="0 0 2,11 * * *" to update the feeds at 2 and 11 in the morning
+## write cron_feeds="0 0 5 * * sat" to update the feeds at 5 every saturday
+## write cron_feeds="0 */15 * * * *" to update the feeds every 15 minutes
+## write cron_feeds="0 0 0 1 * *" to update the feeds once a month
+## 0 */15 12-16 * * sat == Every 15 minutes, between 12:00 PM and 04:59 PM, only on Saturday
+## 0 0 11 * * 7#4 == At 11:00 AM, on the fourth Sunday of the month
+## 0 0 11 * * 7L == At 11:00 AM, on the last Sunday of the month
+## https://en.wikipedia.org/wiki/Cron  https://www.jstoolset.com/cron

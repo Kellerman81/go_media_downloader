@@ -335,6 +335,24 @@ type SchedulerConfig struct {
 	Interval_scan_data                  string `koanf:"interval_scan_data"`
 	Interval_scan_data_missing          string `koanf:"interval_scan_data_missing"`
 	Interval_scan_dataimport            string `koanf:"interval_scan_data_import"`
+	Cron_imdb                           string `koanf:"cron_imdb"`
+	Cron_feeds                          string `koanf:"cron_feeds"`
+	Cron_feeds_refresh_series           string `koanf:"cron_feeds_refresh_series"`
+	Cron_feeds_refresh_movies           string `koanf:"cron_feeds_refresh_movies"`
+	Cron_feeds_refresh_series_full      string `koanf:"cron_feeds_refresh_series_full"`
+	Cron_feeds_refresh_movies_full      string `koanf:"cron_feeds_refresh_movies_full"`
+	Cron_indexer_missing                string `koanf:"cron_indexer_missing"`
+	Cron_indexer_upgrade                string `koanf:"cron_indexer_upgrade"`
+	Cron_indexer_missing_full           string `koanf:"cron_indexer_missing_full"`
+	Cron_indexer_upgrade_full           string `koanf:"cron_indexer_upgrade_full"`
+	Cron_indexer_missing_title          string `koanf:"cron_indexer_missing_title"`
+	Cron_indexer_upgrade_title          string `koanf:"cron_indexer_upgrade_title"`
+	Cron_indexer_missing_full_title     string `koanf:"cron_indexer_missing_full_title"`
+	Cron_indexer_upgrade_full_title     string `koanf:"cron_indexer_upgrade_full_title"`
+	Cron_indexer_rss                    string `koanf:"cron_indexer_rss"`
+	Cron_scan_data                      string `koanf:"cron_scan_data"`
+	Cron_scan_data_missing              string `koanf:"cron_scan_data_missing"`
+	Cron_scan_dataimport                string `koanf:"cron_scan_data_import"`
 }
 
 func LoadSerie(filepath string) MainSerieConfig {
