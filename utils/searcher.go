@@ -28,6 +28,9 @@ func SearchMovieMissing(configEntry config.MediaTypeConfig, jobcount int, titles
 	}
 	var cfg_general config.GeneralConfig
 	config.ConfigGet("general", &cfg_general)
+	if cfg_general.WorkerSearch == 0 {
+		cfg_general.WorkerSearch = 1
+	}
 
 	if len(configEntry.Data) >= 1 {
 		if !config.ConfigCheck("path_" + configEntry.Data[0].Template_path) {
@@ -114,6 +117,9 @@ func SearchMovieUpgrade(configEntry config.MediaTypeConfig, jobcount int, titles
 	}
 	var cfg_general config.GeneralConfig
 	config.ConfigGet("general", &cfg_general)
+	if cfg_general.WorkerSearch == 0 {
+		cfg_general.WorkerSearch = 1
+	}
 
 	if len(configEntry.Data) >= 1 {
 		if !config.ConfigCheck("path_" + configEntry.Data[0].Template_path) {
@@ -164,6 +170,9 @@ func SearchSerieSingle(serie database.Serie, configEntry config.MediaTypeConfig,
 	}
 	var cfg_general config.GeneralConfig
 	config.ConfigGet("general", &cfg_general)
+	if cfg_general.WorkerSearch == 0 {
+		cfg_general.WorkerSearch = 1
+	}
 
 	swg := sizedwaitgroup.New(cfg_general.WorkerSearch)
 	episodes, _ := database.QuerySerieEpisodes(database.Query{Where: "serie_id = ?", WhereArgs: []interface{}{serie.ID}})
@@ -182,6 +191,9 @@ func SearchSerieSeasonSingle(serie database.Serie, season string, configEntry co
 	}
 	var cfg_general config.GeneralConfig
 	config.ConfigGet("general", &cfg_general)
+	if cfg_general.WorkerSearch == 0 {
+		cfg_general.WorkerSearch = 1
+	}
 
 	swg := sizedwaitgroup.New(cfg_general.WorkerSearch)
 	episodes, _ := database.QuerySerieEpisodes(database.Query{Where: "serie_id = ? and dbserie_episode_id IN (Select id from dbserie_episodes where Season=?)", WhereArgs: []interface{}{serie.ID, season}})
@@ -219,6 +231,9 @@ func SearchSerieMissing(configEntry config.MediaTypeConfig, jobcount int, titles
 	}
 	var cfg_general config.GeneralConfig
 	config.ConfigGet("general", &cfg_general)
+	if cfg_general.WorkerSearch == 0 {
+		cfg_general.WorkerSearch = 1
+	}
 
 	if len(configEntry.Data) >= 1 {
 		if !config.ConfigCheck("path_" + configEntry.Data[0].Template_path) {
@@ -296,6 +311,9 @@ func SearchSerieUpgrade(configEntry config.MediaTypeConfig, jobcount int, titles
 	}
 	var cfg_general config.GeneralConfig
 	config.ConfigGet("general", &cfg_general)
+	if cfg_general.WorkerSearch == 0 {
+		cfg_general.WorkerSearch = 1
+	}
 
 	if len(configEntry.Data) >= 1 {
 		if !config.ConfigCheck("path_" + configEntry.Data[0].Template_path) {
@@ -452,7 +470,12 @@ func (s *Searcher) SearchRSS(searchGroupType string) searchResults {
 			continue
 		}
 		s.Indexer = cfg_quality.Indexer[idx]
-
+		if cfg_indexer.MaxRssEntries == 0 {
+			cfg_indexer.MaxRssEntries = 10
+		}
+		if cfg_indexer.RssEntriesloop == 0 {
+			cfg_indexer.RssEntriesloop = 2
+		}
 		nzbs, failed, lastids, nzberr := apiexternal.QueryNewznabRSSLast([]apiexternal.NzbIndexer{s.Nzbindexer}, cfg_indexer.MaxRssEntries, s.Indexercategories, cfg_indexer.RssEntriesloop)
 		if nzberr != nil {
 			logger.Log.Error("Newznab RSS Search failed ", cfg_quality.Indexer[idx].Template_indexer)
@@ -756,7 +779,8 @@ func (s *Searcher) InitIndexer(indexer config.QualityIndexerConfig, rssapi strin
 		Customrssurl:            cfg_indexer.Customrssurl,
 		Customrsscategory:       cfg_indexer.Customrsscategory,
 		Limitercalls:            cfg_indexer.Limitercalls,
-		Limiterseconds:          cfg_indexer.Limiterseconds}
+		Limiterseconds:          cfg_indexer.Limiterseconds,
+		MaxAge:                  cfg_indexer.MaxAge}
 	s.Nzbindexer = nzbindexer
 	if strings.Contains(indexer.Categories_indexer, ",") {
 		catarray := strings.Split(indexer.Categories_indexer, ",")

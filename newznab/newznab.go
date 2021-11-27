@@ -93,7 +93,7 @@ func New(baseURL string, apikey string, userID int, insecure bool, debug bool, l
 }
 
 // SearchWithTVDB returns NZBs for the given parameters
-func (c Client) SearchWithTVDB(categories []int, tvDBID int, season int, episode int, additional_query_params string, customurl string) ([]NZB, error) {
+func (c Client) SearchWithTVDB(categories []int, tvDBID int, season int, episode int, additional_query_params string, customurl string, maxage int) ([]NZB, error) {
 	buildurl := ""
 	if len(customurl) >= 1 {
 		buildurl = customurl
@@ -108,11 +108,11 @@ func (c Client) SearchWithTVDB(categories []int, tvDBID int, season int, episode
 	buildurl += "&t=tvsearch"
 	buildurl += additional_query_params
 
-	return c.processurl(buildurl, "")
+	return c.processurl(buildurl, "", maxage)
 }
 
 // SearchWithIMDB returns NZBs for the given parameters
-func (c Client) SearchWithIMDB(categories []int, imdbID string, additional_query_params string, customurl string) ([]NZB, error) {
+func (c Client) SearchWithIMDB(categories []int, imdbID string, additional_query_params string, customurl string, maxage int) ([]NZB, error) {
 	buildurl := ""
 	if len(customurl) >= 1 {
 		buildurl = customurl
@@ -125,11 +125,11 @@ func (c Client) SearchWithIMDB(categories []int, imdbID string, additional_query
 	buildurl += "&t=movie"
 	buildurl += additional_query_params
 
-	return c.processurl(buildurl, "")
+	return c.processurl(buildurl, "", maxage)
 }
 
 // SearchWithQuery returns NZBs for the given parameters
-func (c Client) SearchWithQuery(categories []int, query string, searchType string, addquotes bool, additional_query_params string, customurl string) ([]NZB, error) {
+func (c Client) SearchWithQuery(categories []int, query string, searchType string, addquotes bool, additional_query_params string, customurl string, maxage int) ([]NZB, error) {
 	buildurl := ""
 	if len(customurl) >= 1 {
 		buildurl = customurl
@@ -149,11 +149,11 @@ func (c Client) SearchWithQuery(categories []int, query string, searchType strin
 	buildurl += "&t=" + searchType
 	buildurl += additional_query_params
 
-	return c.processurl(buildurl, "")
+	return c.processurl(buildurl, "", maxage)
 }
 
 // LoadRSSFeedUntilNZBID fetches NZBs until a given NZB id is reached.
-func (c Client) SearchWithQueryUntilNZBID(categories []int, query string, searchType string, addquotes bool, id string, additional_query_params string, customurl string) ([]NZB, error) {
+func (c Client) SearchWithQueryUntilNZBID(categories []int, query string, searchType string, addquotes bool, id string, additional_query_params string, customurl string, maxage int) ([]NZB, error) {
 	buildurl := ""
 	if len(customurl) >= 1 {
 		buildurl = customurl
@@ -173,7 +173,7 @@ func (c Client) SearchWithQueryUntilNZBID(categories []int, query string, search
 	buildurl += "&t=" + searchType
 	buildurl += additional_query_params
 
-	partition, err := c.processurl(buildurl, id)
+	partition, err := c.processurl(buildurl, id, maxage)
 
 	if err != nil {
 		return nil, err
@@ -188,9 +188,9 @@ func (c Client) SearchWithQueryUntilNZBID(categories []int, query string, search
 }
 
 // LoadRSSFeed returns up to <num> of the most recent NZBs of the given categories.
-func (c Client) LoadRSSFeed(categories []int, num int, additional_query_params string, customapi string, customrssurl string, customrsscategory string) ([]NZB, error) {
+func (c Client) LoadRSSFeed(categories []int, num int, additional_query_params string, customapi string, customrssurl string, customrsscategory string, maxage int) ([]NZB, error) {
 	buildurl := c.BuildRssUrl(customrssurl, customrsscategory, customapi, additional_query_params, num, categories, 0)
-	return c.processurl(buildurl, "")
+	return c.processurl(buildurl, "", maxage)
 }
 
 func (c Client) joinCats(cats []int) string {
@@ -250,7 +250,7 @@ func (c Client) BuildRssUrl(customrssurl string, customrsscategory string, custo
 }
 
 // LoadRSSFeedUntilNZBID fetches NZBs until a given NZB id is reached.
-func (c Client) LoadRSSFeedUntilNZBID(categories []int, num int, id string, maxRequests int, additional_query_params string, customapi string, customrssurl string, customrsscategory string) ([]NZB, error) {
+func (c Client) LoadRSSFeedUntilNZBID(categories []int, num int, id string, maxRequests int, additional_query_params string, customapi string, customrssurl string, customrsscategory string, maxage int) ([]NZB, error) {
 	count := 0
 	// nzbcount := num
 	// if maxRequests >= 1 {
@@ -261,7 +261,7 @@ func (c Client) LoadRSSFeedUntilNZBID(categories []int, num int, id string, maxR
 	for {
 		buildurl := c.BuildRssUrl(customrssurl, customrsscategory, customapi, additional_query_params, num, categories, (num * count))
 
-		partition, errp := c.processurl(buildurl, id)
+		partition, errp := c.processurl(buildurl, id, maxage)
 		if errp == nil {
 			for idx := range partition {
 				if partition[idx].ID == id && id != "" {
@@ -281,7 +281,7 @@ func (c Client) LoadRSSFeedUntilNZBID(categories []int, num int, id string, maxR
 
 }
 
-func (c Client) processurl(url string, tillid string) ([]NZB, error) {
+func (c Client) processurl(url string, tillid string, maxage int) ([]NZB, error) {
 	var feed SearchResponse
 	body, err := c.getURL(url)
 	if err != nil {
@@ -304,6 +304,13 @@ func (c Client) processurl(url string, tillid string) ([]NZB, error) {
 		newEntry.SourceAPIKey = c.apikey
 		if item.Date != "" {
 			newEntry.PubDate, _ = parseDate(item.Date)
+			if maxage != 0 {
+				scantime := time.Now()
+				scantime = scantime.AddDate(0, 0, 0-maxage)
+				if newEntry.PubDate.Before(scantime) {
+					continue
+				}
+			}
 		}
 		newEntry.IsTorrent = false
 		if strings.Contains(item.Enclosure.URL, ".torrent") || strings.Contains(item.Enclosure.URL, "magnet:?") {

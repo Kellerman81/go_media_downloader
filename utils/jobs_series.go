@@ -156,6 +156,25 @@ func JobImportDbSeries(serieconfig config.SerieConfig, configEntry config.MediaT
 	}
 
 	var serie database.Serie
+
+	serietest, _ := database.QuerySeries(database.Query{Where: "Dbserie_id = ?", WhereArgs: []interface{}{dbserie.ID}})
+	if len(list.Ignore_map_lists) >= 1 {
+		for idx := range list.Ignore_map_lists {
+			for idxtest := range serietest {
+				if strings.EqualFold(list.Ignore_map_lists[idx], serietest[idxtest].Listname) {
+					return
+				}
+			}
+		}
+	}
+	for idxreplace := range list.Replace_map_lists {
+		for idxtitle := range serietest {
+			if strings.EqualFold(serietest[idxtitle].Listname, list.Replace_map_lists[idxreplace]) {
+				database.UpdateArray("series", []string{"missing", "listname", "dbserie_id", "quality_profile"}, []interface{}{true, list.Name, dbserie.ID, list.Template_quality}, database.Query{Where: "id=?", WhereArgs: []interface{}{serietest[idxtitle].ID}})
+			}
+		}
+	}
+
 	cserie, _ := database.CountRows("series", database.Query{Where: "Dbserie_id = ? and listname = ?", WhereArgs: []interface{}{dbserie.ID, list.Name}})
 	if cserie == 0 {
 		logger.Log.Debug("Series add for: ", serieconfig.TvdbID)
@@ -706,6 +725,9 @@ func RefreshSeries() {
 	}
 	var cfg_general config.GeneralConfig
 	config.ConfigGet("general", &cfg_general)
+	if cfg_general.WorkerFiles == 0 {
+		cfg_general.WorkerFiles = 1
+	}
 
 	if cfg_general.SchedulerDisabled {
 		return
@@ -726,6 +748,9 @@ func RefreshSeriesInc() {
 	}
 	var cfg_general config.GeneralConfig
 	config.ConfigGet("general", &cfg_general)
+	if cfg_general.WorkerFiles == 0 {
+		cfg_general.WorkerFiles = 1
+	}
 
 	if cfg_general.SchedulerDisabled {
 		return
@@ -790,6 +815,12 @@ func Series_single_jobs(job string, typename string, listname string, force bool
 	if ok {
 		var cfg_serie config.MediaTypeConfig
 		config.ConfigGet("serie_"+typename, &cfg_serie)
+		if cfg_serie.Searchmissing_incremental == 0 {
+			cfg_serie.Searchmissing_incremental = 20
+		}
+		if cfg_serie.Searchupgrade_incremental == 0 {
+			cfg_serie.Searchupgrade_incremental = 20
+		}
 
 		switch job {
 		case "datafull":
@@ -861,6 +892,10 @@ func Importnewseriessingle(row config.MediaTypeConfig, list config.MediaListsCon
 	var cfg_general config.GeneralConfig
 	config.ConfigGet("general", &cfg_general)
 
+	if cfg_general.WorkerMetadata == 0 {
+		cfg_general.WorkerMetadata = 1
+	}
+
 	results := Feeds(row, list)
 
 	logger.Log.Info("Get Serie Config", list.Name)
@@ -884,6 +919,9 @@ func Getnewepisodes(row config.MediaTypeConfig) {
 	}
 	var cfg_general config.GeneralConfig
 	config.ConfigGet("general", &cfg_general)
+	if cfg_general.WorkerParse == 0 {
+		cfg_general.WorkerParse = 1
+	}
 
 	logger.Log.Info("Scan SerieEpisodeFile")
 	var filesfound []string
@@ -927,6 +965,9 @@ func getnewepisodessingle(row config.MediaTypeConfig, list config.MediaListsConf
 	}
 	var cfg_general config.GeneralConfig
 	config.ConfigGet("general", &cfg_general)
+	if cfg_general.WorkerParse == 0 {
+		cfg_general.WorkerParse = 1
+	}
 
 	if !config.ConfigCheck("quality_" + list.Template_quality) {
 		return
@@ -985,6 +1026,9 @@ func checkmissingepisodessingle(row config.MediaTypeConfig, list config.MediaLis
 	}
 	var cfg_general config.GeneralConfig
 	config.ConfigGet("general", &cfg_general)
+	if cfg_general.WorkerFiles == 0 {
+		cfg_general.WorkerFiles = 1
+	}
 
 	series, _ := database.QuerySeries(database.Query{Select: "id", Where: "listname=?", WhereArgs: []interface{}{list.Name}})
 
@@ -1040,6 +1084,9 @@ func seriesStructureSingle(row config.MediaTypeConfig, list config.MediaListsCon
 	}
 	var cfg_general config.GeneralConfig
 	config.ConfigGet("general", &cfg_general)
+	if cfg_general.WorkerFiles == 0 {
+		cfg_general.WorkerFiles = 1
+	}
 
 	swfile := sizedwaitgroup.New(cfg_general.WorkerFiles)
 

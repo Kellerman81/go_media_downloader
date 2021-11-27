@@ -129,7 +129,11 @@ func (d *Downloader) DownloadNzb(nzb nzbwithprio) {
 }
 func (d Downloader) DownloadByDrone() error {
 	logger.Log.Debug("Download by Drone: ", d.Nzb.NZB.DownloadURL)
-	return downloadFile(d.Target.Path, "", d.Targetfile+".nzb", d.Nzb.NZB.DownloadURL)
+	filename := d.Targetfile + ".nzb"
+	if d.Nzb.NZB.IsTorrent {
+		filename = d.Targetfile + ".torrent"
+	}
+	return downloadFile(d.Target.Path, "", filename, d.Nzb.NZB.DownloadURL)
 }
 func (d Downloader) DownloadByNzbget() error {
 	logger.Log.Debug("Download by Nzbget: ", d.Nzb.NZB.DownloadURL)

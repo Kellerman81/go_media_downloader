@@ -30,6 +30,12 @@ func InitLogger(config LoggerConfig) {
 	if strings.EqualFold(config.LogLevel, "Warning") {
 		Log.SetLevel(logrus.WarnLevel)
 	}
+	if config.LogFileSize == 0 {
+		config.LogFileSize = 10
+	}
+	if config.LogFileCount == 0 {
+		config.LogFileCount = 5
+	}
 
 	mw := io.MultiWriter(os.Stdout, &lumberjack.Logger{
 		Filename:   "downloader.log",

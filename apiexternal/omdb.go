@@ -52,6 +52,12 @@ type OmdbClient struct {
 var OmdbApi OmdbClient
 
 func NewOmdbClient(apikey string, seconds int, calls int) {
+	if seconds == 0 {
+		seconds = 1
+	}
+	if calls == 0 {
+		calls = 1
+	}
 	rl := rate.NewLimiter(rate.Every(time.Duration(seconds)*time.Second), calls) // 50 request every 10 seconds
 	limiter, _ := slidingwindow.NewLimiter(time.Duration(seconds)*time.Second, int64(calls), func() (slidingwindow.Window, slidingwindow.StopFunc) { return slidingwindow.NewLocalWindow() })
 	OmdbApi = OmdbClient{OmdbApiKey: apikey, Client: NewClient(rl, limiter)}

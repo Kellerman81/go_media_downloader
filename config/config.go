@@ -94,6 +94,7 @@ type GeneralConfig struct {
 	SerieMetaSourceTmdb                bool     `koanf:"serie_meta_source_tmdb"`
 	SerieMetaSourceTrakt               bool     `koanf:"serie_meta_source_trakt"`
 	UseGoDir                           bool     `koanf:"use_godir"`
+	MoveBufferSizeKB                   int      `koanf:"move_buffer_size_kb"`
 	WebPort                            string   `koanf:"webport"`
 	WebApiKey                          string   `koanf:"webapikey"`
 	ConcurrentScheduler                int      `koanf:"concurrent_scheduler"`
@@ -221,6 +222,7 @@ type IndexersConfig struct {
 	Customrsscategory      string `koanf:"custom_rss_category"`
 	Limitercalls           int    `koanf:"limiter_calls"`
 	Limiterseconds         int    `koanf:"limiter_seconds"`
+	MaxAge                 int    `koanf:"max_age"`
 }
 
 type PathsConfig struct {
@@ -239,6 +241,7 @@ type PathsConfig struct {
 	Allowed_languages              []string `koanf:"allowed_languages"`
 	Replacelower                   bool     `koanf:"replace_lower"`
 	Usepresort                     bool     `koanf:"use_presort"`
+	PresortFolderPath              string   `koanf:"presort_folder_path"`
 	UpgradeScanInterval            int      `koanf:"upgrade_scan_interval"`
 	MissingScanInterval            int      `koanf:"missing_scan_interval"`
 	MissingScanReleaseDatePre      int      `koanf:"missing_scan_release_date_pre"`
