@@ -262,6 +262,7 @@ func main() {
 		routerapi.GET("/db/vacuum", api.ApiDbVacuum)
 		routerapi.POST("/parse/string", api.ApiParseString)
 		routerapi.POST("/parse/file", api.ApiParseFile)
+		routerapi.POST("/naming", api.ApiNamingGenerate)
 		routerapi.GET("/quality", api.ApiGetQualities)
 		routerapi.DELETE("/quality/:id", api.ApiQualityDelete)
 		routerapi.POST("/quality", api.ApiQualityUpdate)

@@ -1,6 +1,10 @@
 package utils
 
 import (
+	"bytes"
+	"html/template"
+	"io"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -180,19 +184,72 @@ func (d Downloader) DownloadByDeluge() error {
 	return err
 }
 
+func (d Downloader) SendNotify(event string, noticonfig config.MediaNotificationConfig) {
+	if !strings.EqualFold(noticonfig.Event, event) {
+		return
+	}
+	//messagetext := noticonfig.Message
+	tmplmessage, err := template.New("tmplfile").Parse(noticonfig.Message)
+	if err != nil {
+		logger.Log.Error(err)
+	}
+	var docmessage bytes.Buffer
+	err = tmplmessage.Execute(&docmessage, d)
+	if err != nil {
+		logger.Log.Error(err)
+	}
+	messagetext := docmessage.String()
+
+	tmpltitle, err := template.New("tmplfile").Parse(noticonfig.Title)
+	if err != nil {
+		logger.Log.Error(err)
+	}
+	var doctitle bytes.Buffer
+	err = tmpltitle.Execute(&doctitle, d)
+	if err != nil {
+		logger.Log.Error(err)
+	}
+	MessageTitle := doctitle.String()
+
+	if !config.ConfigCheck("notification_" + noticonfig.Map_notification) {
+		return
+	}
+	var cfg_notification config.NotificationConfig
+	config.ConfigGet("notification_"+noticonfig.Map_notification, &cfg_notification)
+
+	if strings.EqualFold(cfg_notification.Type, "pushover") {
+		if apiexternal.PushoverApi.ApiKey != cfg_notification.Apikey {
+			apiexternal.NewPushOverClient(cfg_notification.Apikey)
+		}
+
+		err := apiexternal.PushoverApi.SendMessage(messagetext, MessageTitle, cfg_notification.Recipient)
+		if err != nil {
+			logger.Log.Error("Error sending pushover", err)
+		} else {
+			logger.Log.Info("Pushover message sent")
+		}
+	}
+	if strings.EqualFold(cfg_notification.Type, "csv") {
+		f, errf := os.OpenFile(cfg_notification.Outputto,
+			os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if errf != nil {
+			logger.Log.Error("Error opening csv to write", errf)
+			return
+		}
+		defer f.Close()
+		if errf == nil {
+			_, errc := io.WriteString(f, messagetext+"\n")
+			if errc != nil {
+				logger.Log.Error("Error writing to csv", errc)
+			} else {
+				logger.Log.Info("csv written")
+			}
+		}
+	}
+}
 func (d Downloader) Notify() {
 	for idxnoti := range d.ConfigEntry.Notification {
-		notifier("added_download", d.ConfigEntry.Notification[idxnoti], InputNotifier{
-			Targetpath: d.Category + "/" + d.Targetfile + ".nzb",
-			SourcePath: d.Nzb.NZB.DownloadURL,
-			Title:      d.Nzb.NZB.Title,
-			Season:     d.Nzb.NZB.Season,
-			Episode:    d.Nzb.NZB.Episode,
-			Series:     d.Nzb.ParseInfo.Title,
-			Identifier: d.Nzb.ParseInfo.Identifier,
-			Tvdb:       d.Nzb.NZB.TVDBID,
-			Imdb:       d.Nzb.NZB.IMDBID,
-		})
+		d.SendNotify("added_download", d.ConfigEntry.Notification[idxnoti])
 	}
 }
 
