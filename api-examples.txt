@@ -147,3 +147,8 @@ $json = '{
 }'
 
 Invoke-RestMethod -Uri "http://192.168.1.19:9090/api/structure?apikey=mymy" -Method post -Body $json | fl #Structure Folder - use forceid (movie_id or serie_id) to skip detection
+
+$a = (Invoke-RestMethod -Uri "http://192.168.1.19:9090/api/movies/search/list/9666?apikey=mymy" -Method get) # Search Movie by id and list accepted, rejected releases (with reason why rejected)
+
+(Invoke-RestMethod -Uri "http://192.168.1.19:9090/api/movies/search/download/9666?apikey=mymy" -Method post -Body ($a.Rejected[7] | ConvertTo-Json)) # Download Rejected Release Number 7
+(Invoke-RestMethod -Uri "http://192.168.1.19:9090/api/movies/search/download/9666?apikey=mymy" -Method post -Body ($a.Accepted[2] | ConvertTo-Json)) # Download Accepted Release Number 2

@@ -3414,6 +3414,120 @@
                     }
                 }
             }
+        },
+        "/api/trakt/authorize": {
+            "get": {
+                "description": "List Qualities with regex filters",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "general"
+                ],
+                "summary": "Trakt Auhtorize",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "apikey",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/trakt/token/{code}": {
+            "get": {
+                "description": "Saves Trakt token after Authorization",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "general"
+                ],
+                "summary": "Trakt Save Token",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "apikey",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/trakt/user/{user}/{list}": {
+            "get": {
+                "description": "Get User List",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "general"
+                ],
+                "summary": "Trakt Get List (Auth Test)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "apikey",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {

@@ -100,6 +100,7 @@ type GeneralConfig struct {
 	ConcurrentScheduler                int      `koanf:"concurrent_scheduler"`
 	TheMovieDBApiKey                   string   `koanf:"themoviedb_apikey"`
 	TraktClientId                      string   `koanf:"trakt_client_id"`
+	TraktClientSecret                  string   `koanf:"trakt_client_secret"`
 	SchedulerDisabled                  bool     `koanf:"scheduler_disabled"`
 	DisableParserStringMatch           bool     `koanf:"disable_parser_string_match"`
 	Traktlimiterseconds                int      `koanf:"trakt_limiter_seconds"`

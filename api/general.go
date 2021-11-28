@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Kellerman81/go_media_downloader/apiexternal"
 	"github.com/Kellerman81/go_media_downloader/config"
 	"github.com/Kellerman81/go_media_downloader/database"
 	"github.com/Kellerman81/go_media_downloader/scheduler"
@@ -22,6 +23,61 @@ type apiparse struct {
 	Path    string
 	Config  string
 	Quality string
+}
+
+// @Summary Trakt Auhtorize
+// @Description List Qualities with regex filters
+// @Tags general
+// @Accept  json
+// @Produce  json
+// @Param apikey query string true "apikey"
+// @Success 200 {string} string
+// @Failure 401 {object} string
+// @Router /api/trakt/authorize [get]
+func ApiTraktGetAuthUrl(ctx *gin.Context) {
+	if ApiAuth(ctx) == http.StatusUnauthorized {
+		return
+	}
+	ctx.JSON(http.StatusOK, apiexternal.TraktApi.GetAuthUrl())
+}
+
+// @Summary Trakt Save Token
+// @Description Saves Trakt token after Authorization
+// @Tags general
+// @Accept  json
+// @Produce  json
+// @Param apikey query string true "apikey"
+// @Success 200 {string} string
+// @Failure 401 {object} string
+// @Router /api/trakt/token/{code} [get]
+func ApiTraktGetStoreToken(ctx *gin.Context) {
+	if ApiAuth(ctx) == http.StatusUnauthorized {
+		return
+	}
+	token := apiexternal.TraktApi.GetAuthToken(ctx.Param("code"))
+	apiexternal.TraktApi.Token = token
+	configs := config.ConfigGetAll()
+	configs["trakt_token"] = *token
+	config.UpdateCfg(configs)
+	config.ConfigDB.Set("trakt_token", *token)
+	ctx.JSON(http.StatusOK, *token)
+}
+
+// @Summary Trakt Get List (Auth Test)
+// @Description Get User List
+// @Tags general
+// @Accept  json
+// @Produce  json
+// @Param apikey query string true "apikey"
+// @Success 200 {string} string
+// @Failure 401 {object} string
+// @Router /api/trakt/user/{user}/{list} [get]
+func ApiTraktGetUserList(ctx *gin.Context) {
+	if ApiAuth(ctx) == http.StatusUnauthorized {
+		return
+	}
+	list, err := apiexternal.TraktApi.GetUserList(ctx.Param("user"), ctx.Param("list"), "movie,show", 10)
+	ctx.JSON(http.StatusOK, gin.H{"list": list, "error": err})
 }
 
 // @Summary Parse a string
