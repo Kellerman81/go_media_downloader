@@ -578,9 +578,14 @@ func LoadCfgDataDB(f *file.File, parser string) {
 }
 
 func UpdateCfg(configIn map[string]interface{}) {
+	cfglock.Lock()
+	defer cfglock.Unlock()
 	configEntries = configIn
 }
 func ClearCfg() {
+
+	cfglock.Lock()
+	defer cfglock.Unlock()
 	configEntries = make(map[string]interface{}, 100)
 	configEntries["general"] = GeneralConfig{
 		LogLevel:            "Info",
@@ -644,6 +649,8 @@ func ClearCfg() {
 func WriteCfg() {
 	var k = koanf.New(".")
 
+	cfglock.RLock()
+	defer cfglock.RUnlock()
 	var bla MainConfigOut
 	for name, value := range configEntries {
 		if strings.HasPrefix(name, "general") {
