@@ -93,9 +93,9 @@ Swap Memory: Default ~300-600MB - on file move the complete file size so for a 8
 
 - Create a Application within Trakt: https://trakt.tv/oauth/applications
 - Write down ClientID and Secret
-- Open : http://<server>:<port>/api/trakt/auhorize?apikey=<apikey>  to get a url to open
+- Open : http://{server}:{port}/api/trakt/auhorize?apikey={apikey}  to get a url to open
 - Open Url in Browser
-- Open : http://<server>:<port>/api/trakt/token/<code>?apikey=<apikey>  to get the token and save it - the code is in the url from the step above
+- Open : http://{server}:{port}/api/trakt/token/{code}?apikey={apikey}  to get the token and save it - the code is in the url from the step above
 - Best Practice restart App - You need to do this only once every 3 month if the expiry is reached
 
 ## Get started
