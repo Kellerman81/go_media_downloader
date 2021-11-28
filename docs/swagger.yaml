@@ -12,6 +12,25 @@ definitions:
       serieid:
         type: integer
     type: object
+  api.ApiStructureJson:
+    properties:
+      configentry:
+        type: string
+      disabledisallowed:
+        type: boolean
+      disableruntimecheck:
+        type: boolean
+      folder:
+        type: string
+      forceid:
+        type: integer
+      grouptype:
+        type: string
+      sourcepathtemplate:
+        type: string
+      targetpathtemplate:
+        type: string
+    type: object
   api.apiparse:
     properties:
       config:
@@ -2703,4 +2722,39 @@ paths:
       summary: List Series Unmatched
       tags:
       - series
+  /api/structure:
+    post:
+      consumes:
+      - application/json
+      description: Structure a single folder
+      parameters:
+      - description: Config
+        in: body
+        name: config
+        required: true
+        schema:
+          $ref: '#/definitions/api.ApiStructureJson'
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Structure Single Item
+      tags:
+      - general
 swagger: "2.0"
