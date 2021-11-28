@@ -3169,6 +3169,59 @@ var doc = `{
                     }
                 }
             }
+        },
+        "/api/structure": {
+            "post": {
+                "description": "Structure a single folder",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "general"
+                ],
+                "summary": "Structure Single Item",
+                "parameters": [
+                    {
+                        "description": "Config",
+                        "name": "config",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.ApiStructureJson"
+                        }
+                    },
+                    {
+                        "type": "string",
+                        "description": "apikey",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
@@ -3189,6 +3242,35 @@ var doc = `{
                 },
                 "serieid": {
                     "type": "integer"
+                }
+            }
+        },
+        "api.ApiStructureJson": {
+            "type": "object",
+            "properties": {
+                "configentry": {
+                    "type": "string"
+                },
+                "disabledisallowed": {
+                    "type": "boolean"
+                },
+                "disableruntimecheck": {
+                    "type": "boolean"
+                },
+                "folder": {
+                    "type": "string"
+                },
+                "forceid": {
+                    "type": "integer"
+                },
+                "grouptype": {
+                    "type": "string"
+                },
+                "sourcepathtemplate": {
+                    "type": "string"
+                },
+                "targetpathtemplate": {
+                    "type": "string"
                 }
             }
         },

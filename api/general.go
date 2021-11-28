@@ -715,3 +715,68 @@ func ApiNamingGenerate(ctx *gin.Context) {
 		ctx.JSON(http.StatusOK, gin.H{"foldername": foldername, "filename": filename})
 	}
 }
+
+type ApiStructureJson struct {
+	Folder              string
+	Disableruntimecheck bool
+	Disabledisallowed   bool
+	Grouptype           string
+	Sourcepathtemplate  string
+	Targetpathtemplate  string
+	Configentry         string
+	Forceid             int
+}
+
+// @Summary Structure Single Item
+// @Description Structure a single folder
+// @Tags general
+// @Accept  json
+// @Produce  json
+// @Param config body ApiStructureJson true "Config"
+// @Param apikey query string true "apikey"
+// @Success 200 {object} string
+// @Failure 400 {object} string
+// @Failure 401 {object} string
+// @Router /api/structure [post]
+func ApiStructure(ctx *gin.Context) {
+	if ApiAuth(ctx) == http.StatusUnauthorized {
+		return
+	}
+	var cfg ApiStructureJson
+	if err := ctx.BindJSON(&cfg); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var cfg_media config.MediaTypeConfig
+	if strings.EqualFold(cfg.Grouptype, "movie") {
+		cfg.Configentry = "movie_" + cfg.Configentry
+	}
+	if strings.EqualFold(cfg.Grouptype, "series") {
+		cfg.Configentry = "serie_" + cfg.Configentry
+	}
+	if config.ConfigGet(cfg.Configentry, &cfg_media) != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "media config not found"})
+		return
+	}
+
+	var cfg_source config.PathsConfig
+	if config.ConfigGet("path_"+cfg.Sourcepathtemplate, &cfg_source) != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "source config not found"})
+		return
+	}
+
+	var cfg_target config.PathsConfig
+	if config.ConfigGet("path_"+cfg.Targetpathtemplate, &cfg_target) != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "target config not found"})
+		return
+	}
+
+	for idxlist := range cfg_media.Lists {
+		if cfg.Forceid != 0 {
+			utils.StructureSingleFolderAs(cfg.Folder, cfg.Forceid, cfg.Disableruntimecheck, cfg.Disabledisallowed, cfg.Grouptype, cfg_source, cfg_target, cfg_media, cfg_media.Lists[idxlist])
+		} else {
+			utils.StructureSingleFolder(cfg.Folder, cfg.Disableruntimecheck, cfg.Disabledisallowed, cfg.Grouptype, cfg_source, cfg_target, cfg_media, cfg_media.Lists[idxlist])
+		}
+	}
+}

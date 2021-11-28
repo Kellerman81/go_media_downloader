@@ -836,6 +836,359 @@ func (s *Structure) MoveAdditionalFiles(folder string, videotarget string, filen
 	}
 }
 
+func StructureSeries(structure Structure, folder string, m *ParseInfo, series database.Serie, videofile string) {
+	if !config.ConfigCheck("quality_" + structure.list.Template_quality) {
+		logger.Log.Error("Template Quality not found: ", structure.list.Template_quality)
+		return
+	}
+	var cfg_quality config.QualityConfig
+	config.ConfigGet("quality_"+structure.list.Template_quality, &cfg_quality)
+
+	dbseries, _ := database.GetDbserie(database.Query{Where: "id=?", WhereArgs: []interface{}{series.DbserieID}})
+	runtime, _ := strconv.Atoi(dbseries.Runtime)
+	oldfiles, episodes, allowimport, serietitle, episodetitle, seriesEpisode := structure.GetSeriesEpisodes(series, videofile, *m, folder)
+	errpars := structure.ParseFileAdditional(videofile, m, folder, structure.targetpath.DeleteWrongLanguage, runtime*len(episodes))
+	if errpars != nil {
+		logger.Log.Error("Error fprobe video: ", videofile, " error: ", errpars)
+		return
+	}
+	if allowimport {
+		foldername, filename := structure.GenerateNamingTemplate(videofile, *m, database.Movie{}, series, serietitle, seriesEpisode, episodetitle, episodes)
+		sourcefileext := filepath.Ext(videofile)
+		structure.MoveOldFiles(oldfiles, database.Movie{}, series)
+		mediatargetpath := series.Rootpath
+		if structure.targetpath.Usepresort && structure.targetpath.PresortFolderPath != "" {
+			mediatargetpath = filepath.Join(structure.targetpath.PresortFolderPath, foldername)
+		}
+		videotarget, moveok, moved := structure.MoveVideoFile(foldername, filename, []string{videofile}, mediatargetpath)
+		if moveok && moved >= 1 {
+			structure.UpdateRootpath(videotarget, foldername, database.Movie{}, series)
+			var oldfiles_remove []string
+			for idx := range oldfiles {
+				if strings.HasPrefix(strings.ToLower(oldfiles[idx]), strings.ToLower(videotarget)) && strings.Contains(strings.ToLower(oldfiles[idx]), strings.ToLower(filename)) {
+					//skip
+				} else {
+					oldfiles_remove = append(oldfiles_remove, oldfiles[idx])
+				}
+			}
+			structure.ReplaceLowerQualityFiles(oldfiles_remove, database.Movie{}, series)
+			structure.MoveAdditionalFiles(folder, videotarget, filename, videofile, sourcefileext, len(videotarget))
+			structure.Notify(videotarget, filename, videofile, database.Movie{}, seriesEpisode, oldfiles)
+			scanner.CleanUpFolder(folder, structure.sourcepath.CleanupsizeMB)
+
+			//updateserie
+			targetfile := filepath.Join(videotarget, filename)
+			database.InsertArray("serie_episode_files",
+				[]string{"location", "filename", "extension", "quality_profile", "resolution_id", "quality_id", "codec_id", "audio_id", "proper", "repack", "extended", "serie_id", "serie_episode_id", "dbserie_episode_id", "dbserie_id"},
+				[]interface{}{targetfile, filepath.Base(targetfile), filepath.Ext(targetfile), structure.list.Template_quality, m.ResolutionID, m.QualityID, m.CodecID, m.AudioID, m.Proper, m.Repack, m.Extended, seriesEpisode.SerieID, seriesEpisode.ID, seriesEpisode.DbserieEpisodeID, seriesEpisode.DbserieID})
+
+			reached := false
+
+			cutoffPrio := NewCutoffPrio(structure.configEntry, cfg_quality)
+			if m.Priority >= cutoffPrio.Priority {
+				reached = true
+			}
+			database.UpdateColumn("serie_episodes", "missing", false, database.Query{Where: "id=?", WhereArgs: []interface{}{seriesEpisode.ID}})
+			database.UpdateColumn("serie_episodes", "quality_reached", reached, database.Query{Where: "id=?", WhereArgs: []interface{}{seriesEpisode.ID}})
+		}
+	}
+}
+func StructureMovie(structure Structure, folder string, m *ParseInfo, movie database.Movie, videofile string) {
+	if !config.ConfigCheck("quality_" + structure.list.Template_quality) {
+		logger.Log.Error("Template Quality not found: ", structure.list.Template_quality)
+		return
+	}
+	var cfg_quality config.QualityConfig
+	config.ConfigGet("quality_"+structure.list.Template_quality, &cfg_quality)
+
+	dbmovie, _ := database.GetDbmovie(database.Query{Where: "id=?", WhereArgs: []interface{}{movie.DbmovieID}})
+	errpars := structure.ParseFileAdditional(videofile, m, folder, structure.targetpath.DeleteWrongLanguage, dbmovie.Runtime)
+	if errpars != nil {
+		logger.Log.Error("Error fprobe video: ", videofile, " error: ", errpars)
+		return
+	}
+	oldfiles, _, errold := structure.CheckLowerQualTarget(folder, videofile, *m, true, movie)
+	if errold != nil {
+		logger.Log.Error("Error checking oldfiles: ", videofile, " error: ", errold)
+		return
+	}
+	foldername, filename := structure.GenerateNamingTemplate(videofile, *m, movie, database.Serie{}, "", database.SerieEpisode{}, "", []int{})
+
+	sourcefileext := filepath.Ext(videofile)
+
+	structure.MoveOldFiles(oldfiles, movie, database.Serie{})
+	mediatargetpath := movie.Rootpath
+	if structure.targetpath.Usepresort && structure.targetpath.PresortFolderPath != "" {
+		mediatargetpath = filepath.Join(structure.targetpath.PresortFolderPath, foldername)
+	}
+	videotarget, moveok, moved := structure.MoveVideoFile(foldername, filename, []string{videofile}, mediatargetpath)
+	if moveok && moved >= 1 {
+		structure.UpdateRootpath(videotarget, foldername, movie, database.Serie{})
+		var oldfiles_remove []string
+		for idx := range oldfiles {
+			if strings.HasPrefix(strings.ToLower(oldfiles[idx]), strings.ToLower(videotarget)) && strings.Contains(strings.ToLower(oldfiles[idx]), strings.ToLower(filename)) {
+				//skip
+			} else {
+				oldfiles_remove = append(oldfiles_remove, oldfiles[idx])
+			}
+		}
+		structure.ReplaceLowerQualityFiles(oldfiles_remove, movie, database.Serie{})
+		structure.MoveAdditionalFiles(folder, videotarget, filename, videofile, sourcefileext, len(videotarget))
+
+		structure.Notify(videotarget, filename, videofile, movie, database.SerieEpisode{}, oldfiles)
+		scanner.CleanUpFolder(folder, structure.sourcepath.CleanupsizeMB)
+
+		//updatemovie
+		targetfile := filepath.Join(videotarget, filename)
+		database.InsertArray("movie_files",
+			[]string{"location", "filename", "extension", "quality_profile", "resolution_id", "quality_id", "codec_id", "audio_id", "proper", "repack", "extended", "movie_id", "dbmovie_id"},
+			[]interface{}{targetfile, filepath.Base(targetfile), filepath.Ext(targetfile), structure.list.Template_quality, m.ResolutionID, m.QualityID, m.CodecID, m.AudioID, m.Proper, m.Repack, m.Extended, movie.ID, movie.DbmovieID})
+
+		reached := false
+
+		cutoffPrio := NewCutoffPrio(structure.configEntry, cfg_quality)
+		if m.Priority >= cutoffPrio.Priority {
+			reached = true
+		}
+		database.UpdateColumn("movies", "missing", false, database.Query{Where: "id=?", WhereArgs: []interface{}{movie.ID}})
+		database.UpdateColumn("movies", "quality_reached", reached, database.Query{Where: "id=?", WhereArgs: []interface{}{movie.ID}})
+	} else {
+		logger.Log.Error("Error moving video - unknown reason")
+	}
+}
+func StructureSingleFolderAs(folder string, id int, disableruntimecheck bool, disabledisallowed bool, grouptype string, sourcepath config.PathsConfig, targetpath config.PathsConfig, configEntry config.MediaTypeConfig, list config.MediaListsConfig) {
+	logger.Log.Debug("Process Folder: ", folder)
+	if disableruntimecheck {
+		targetpath.CheckRuntime = false
+	}
+	structure, err := NewStructure(configEntry, list, grouptype, folder, sourcepath, targetpath)
+	if err != nil {
+		return
+	}
+	if disabledisallowed {
+		structure.sourcepath.Disallowed = []string{}
+	}
+	if structure.CheckDisallowed() {
+		if structure.sourcepath.DeleteDisallowed {
+			structure.FileCleanup(folder, "")
+		}
+		return
+	}
+	removesmallfiles := false
+	if strings.ToLower(structure.groupType) == "movie" {
+		removesmallfiles = true
+	}
+	videofiles := structure.GetVideoFiles(folder, sourcepath, removesmallfiles)
+
+	if strings.ToLower(structure.groupType) == "movie" {
+		if len(videofiles) >= 2 {
+			//skip too many  files
+			return
+		}
+	}
+	for fileidx := range videofiles {
+		if filepath.Ext(videofiles[fileidx]) == "" {
+			continue
+		}
+		if strings.ToLower(structure.groupType) == "series" {
+			if structure.RemoveSmallVideoFile(videofiles[fileidx], sourcepath) {
+				continue
+			}
+		}
+
+		if strings.Contains(strings.ToLower(videofiles[fileidx]), strings.ToLower("_unpack")) {
+			logger.Log.Debug("Unpacking - skipping: ", videofiles[fileidx])
+			continue
+		}
+		m, err := structure.ParseFile(videofiles[fileidx], true, folder, true)
+		if err != nil {
+			logger.Log.Error("Error parsing: ", videofiles[fileidx], " error: ", err)
+			continue
+		}
+		if strings.ToLower(structure.groupType) == "movie" {
+			movie, movierr := database.GetMovies(database.Query{Where: "id=?", WhereArgs: []interface{}{id}})
+			if movierr != nil {
+				return
+			}
+
+			if movie.ID >= 1 {
+				StructureMovie(structure, folder, m, movie, videofiles[fileidx])
+			} else {
+				logger.Log.Debug("Movie not matched: ", videofiles[fileidx])
+			}
+		} else if strings.ToLower(structure.groupType) == "series" {
+			//SerieEpisodeHistory, _ := database.QuerySerieEpisodeHistory(database.Query{InnerJoin: "series on series.id=serie_episode_histories.serie_id", Where: "serie_episode_histories.target = ? and series.listname = ?", WhereArgs: []interface{}{filepath.Base(folders[idx]), list.Name}})
+			if !config.ConfigCheck("quality_" + list.Template_quality) {
+				return
+			}
+			var cfg_quality config.QualityConfig
+			config.ConfigGet("quality_"+list.Template_quality, &cfg_quality)
+
+			//find dbseries
+			series, serierr := database.GetSeries(database.Query{Where: "id=?", WhereArgs: []interface{}{id}})
+			if serierr != nil {
+				logger.Log.Debug("Serie not matched: ", videofiles[fileidx])
+				return
+			}
+			StructureSeries(structure, folder, m, series, videofiles[fileidx])
+		}
+	}
+}
+
+func StructureSingleFolder(folder string, disableruntimecheck bool, disabledisallowed bool, grouptype string, sourcepath config.PathsConfig, targetpath config.PathsConfig, configEntry config.MediaTypeConfig, list config.MediaListsConfig) {
+	logger.Log.Debug("Process Folder: ", folder)
+	if disableruntimecheck {
+		targetpath.CheckRuntime = false
+	}
+	structure, err := NewStructure(configEntry, list, grouptype, folder, sourcepath, targetpath)
+	if err != nil {
+		return
+	}
+	if disabledisallowed {
+		structure.sourcepath.Disallowed = []string{}
+	}
+	if structure.CheckDisallowed() {
+		if structure.sourcepath.DeleteDisallowed {
+			structure.FileCleanup(folder, "")
+		}
+		return
+	}
+	removesmallfiles := false
+	if strings.ToLower(structure.groupType) == "movie" {
+		removesmallfiles = true
+	}
+	videofiles := structure.GetVideoFiles(folder, sourcepath, removesmallfiles)
+
+	if strings.ToLower(structure.groupType) == "movie" {
+		if len(videofiles) >= 2 {
+			//skip too many  files
+			return
+		}
+	}
+	for fileidx := range videofiles {
+		if filepath.Ext(videofiles[fileidx]) == "" {
+			continue
+		}
+		if strings.ToLower(structure.groupType) == "series" {
+			if structure.RemoveSmallVideoFile(videofiles[fileidx], sourcepath) {
+				continue
+			}
+		}
+
+		if strings.Contains(strings.ToLower(videofiles[fileidx]), strings.ToLower("_unpack")) {
+			logger.Log.Debug("Unpacking - skipping: ", videofiles[fileidx])
+			continue
+		}
+		m, err := structure.ParseFile(videofiles[fileidx], true, folder, true)
+		if err != nil {
+			logger.Log.Error("Error parsing: ", videofiles[fileidx], " error: ", err)
+			continue
+		}
+		if strings.ToLower(structure.groupType) == "movie" {
+			var entriesfound int
+			var movie database.Movie
+
+			//determine list
+			if m.Imdb != "" {
+				movies, _ := database.QueryMovies(database.Query{Select: "movies.*", InnerJoin: "Dbmovies on Dbmovies.id = movies.dbmovie_id", Where: "Dbmovies.imdb_id = ?", WhereArgs: []interface{}{m.Imdb}})
+				for idxtmovie := range movies {
+					foundinlist := false
+					logger.Log.Debug("File found in other list - check list: ", videofiles[fileidx], movies[idxtmovie].Listname)
+					for idxlisttest := range configEntry.Lists {
+						if configEntry.Lists[idxlisttest].Name == movies[idxtmovie].Listname {
+							if entriesfound == 0 && len(m.Imdb) >= 1 {
+								movies, _ := database.QueryMovies(database.Query{Select: "movies.*", InnerJoin: "Dbmovies on Dbmovies.id = movies.dbmovie_id", Where: "Dbmovies.imdb_id = ? and movies.listname = ?", WhereArgs: []interface{}{m.Imdb, configEntry.Lists[idxlisttest].Name}})
+								if len(movies) == 1 {
+									movie = movies[0]
+								}
+								entriesfound = len(movies)
+								if entriesfound >= 1 {
+									structure.list = configEntry.Lists[idxlisttest]
+									list = configEntry.Lists[idxlisttest]
+									foundinlist = true
+									break
+								}
+							}
+						}
+					}
+					if foundinlist {
+						break
+					}
+				}
+			}
+
+			moviehistory, moviehistoryerr := database.GetMovieHistory(database.Query{Select: "movie_histories.dbmovie_id", InnerJoin: "movies on movies.id=movie_histories.movie_id", Where: "movie_histories.title = ? and movies.listname = ?", WhereArgs: []interface{}{filepath.Base(folder), list.Name}, OrderBy: "movie_histories.ID desc"})
+
+			if moviehistoryerr == nil {
+				movies, _ := database.QueryMovies(database.Query{Select: "movies.*", InnerJoin: "Dbmovies on Dbmovies.id = movies.dbmovie_id", Where: "Dbmovies.id = ? and movies.listname = ?", WhereArgs: []interface{}{moviehistory.DbmovieID, list.Name}})
+				if len(movies) == 1 {
+					logger.Log.Debug("Found Movie by history_title")
+					movie = movies[0]
+				}
+				entriesfound = len(movies)
+			}
+
+			if !config.ConfigCheck("quality_" + list.Template_quality) {
+				logger.Log.Error("Template Quality not found: ", list.Template_quality)
+				return
+			}
+			var cfg_quality config.QualityConfig
+			config.ConfigGet("quality_"+list.Template_quality, &cfg_quality)
+
+			if entriesfound == 0 && len(m.Imdb) == 0 {
+				lists := make([]string, 0, len(configEntry.Lists))
+				for idxlisttest := range configEntry.Lists {
+					lists = append(lists, configEntry.Lists[idxlisttest].Name)
+				}
+				logger.Log.Debug("Find Movie using title: ", m.Title, " and year: ", m.Year, " and lists: ", lists)
+				list.Name, m.Imdb, _ = movieFindListByTitle(m.Title, strconv.Itoa(m.Year), lists, cfg_quality.CheckYear1, "structure")
+			}
+			if entriesfound == 0 && len(m.Imdb) >= 1 {
+				movies, _ := database.QueryMovies(database.Query{Select: "movies.*", InnerJoin: "Dbmovies on Dbmovies.id = movies.dbmovie_id", Where: "Dbmovies.imdb_id = ? and movies.listname = ?", WhereArgs: []interface{}{m.Imdb, list.Name}})
+				if len(movies) == 1 {
+					logger.Log.Debug("Found Movie by title")
+					movie = movies[0]
+				}
+				entriesfound = len(movies)
+			}
+			if entriesfound == 0 && len(m.Imdb) >= 1 {
+				counter, _ := database.CountRows("movies", database.Query{Select: "movies.*", InnerJoin: "Dbmovies on Dbmovies.id = movies.dbmovie_id", Where: "Dbmovies.imdb_id = ?", WhereArgs: []interface{}{m.Imdb, list.Name}})
+				if counter >= 1 {
+					logger.Log.Debug("Skipped Movie by title")
+					continue
+				}
+			}
+			if movie.ID >= 1 && entriesfound >= 1 {
+				StructureMovie(structure, folder, m, movie, videofiles[fileidx])
+			} else {
+				logger.Log.Debug("Movie not matched: ", videofiles[fileidx], " list ", list.Name)
+			}
+		} else if strings.ToLower(structure.groupType) == "series" {
+			//SerieEpisodeHistory, _ := database.QuerySerieEpisodeHistory(database.Query{InnerJoin: "series on series.id=serie_episode_histories.serie_id", Where: "serie_episode_histories.target = ? and series.listname = ?", WhereArgs: []interface{}{filepath.Base(folders[idx]), list.Name}})
+
+			yearstr := strconv.Itoa(m.Year)
+			titleyear := m.Title + " (" + yearstr + ")"
+			seriestitle := ""
+			re, _ := regexp.Compile(`^(.*)(?i)(?:(?:\.| - |-)S?(?:\d+)[ex](?:\d+)(?:[^0-9]|$))`)
+			matched := re.FindStringSubmatch(filepath.Base(videofiles[fileidx]))
+			if len(matched) >= 2 {
+				seriestitle = matched[1]
+			}
+
+			if !config.ConfigCheck("quality_" + list.Template_quality) {
+				return
+			}
+			var cfg_quality config.QualityConfig
+			config.ConfigGet("quality_"+list.Template_quality, &cfg_quality)
+
+			//find dbseries
+			series, entriesfound := FindSerieByParser(*m, titleyear, seriestitle, list.Name)
+			if entriesfound >= 1 {
+				StructureSeries(structure, folder, m, series, videofiles[fileidx])
+			}
+		}
+	}
+}
 func StructureFolders(grouptype string, sourcepath config.PathsConfig, targetpath config.PathsConfig, configEntry config.MediaTypeConfig, list config.MediaListsConfig) {
 
 	jobName := sourcepath.Path + "_" + list.Name
@@ -861,252 +1214,7 @@ func StructureFolders(grouptype string, sourcepath config.PathsConfig, targetpat
 	folders := getSubFolders(sourcepath.Path)
 	logger.Log.Debug("Folders found: ", folders)
 	for idx := range folders {
-		logger.Log.Debug("Process Folder: ", folders[idx])
-		structure, err := NewStructure(configEntry, list, grouptype, folders[idx], sourcepath, targetpath)
-		if err != nil {
-			continue
-		}
-		if structure.CheckDisallowed() {
-			if structure.sourcepath.DeleteDisallowed {
-				structure.FileCleanup(folders[idx], "")
-			}
-			continue
-		}
-		removesmallfiles := false
-		if strings.ToLower(structure.groupType) == "movie" {
-			removesmallfiles = true
-		}
-		videofiles := structure.GetVideoFiles(folders[idx], sourcepath, removesmallfiles)
-
-		if strings.ToLower(structure.groupType) == "movie" {
-			if len(videofiles) >= 2 {
-				//skip too many  files
-				continue
-			}
-		}
-		for fileidx := range videofiles {
-			if filepath.Ext(videofiles[fileidx]) == "" {
-				continue
-			}
-			if strings.ToLower(structure.groupType) == "series" {
-				if structure.RemoveSmallVideoFile(videofiles[fileidx], sourcepath) {
-					continue
-				}
-			}
-
-			if strings.Contains(strings.ToLower(videofiles[fileidx]), strings.ToLower("_unpack")) {
-				logger.Log.Debug("Unpacking - skipping: ", videofiles[fileidx])
-				continue
-			}
-			m, err := structure.ParseFile(videofiles[fileidx], true, folders[idx], true)
-			if err != nil {
-				logger.Log.Error("Error parsing: ", videofiles[fileidx], " error: ", err)
-				continue
-			}
-			if strings.ToLower(structure.groupType) == "movie" {
-				var entriesfound int
-				var movie database.Movie
-
-				//determine list
-				if m.Imdb != "" {
-					movies, _ := database.QueryMovies(database.Query{Select: "movies.*", InnerJoin: "Dbmovies on Dbmovies.id = movies.dbmovie_id", Where: "Dbmovies.imdb_id = ?", WhereArgs: []interface{}{m.Imdb}})
-					for idxtmovie := range movies {
-						foundinlist := false
-						logger.Log.Debug("File found in other list - check list: ", videofiles[fileidx], movies[idxtmovie].Listname)
-						for idxlisttest := range configEntry.Lists {
-							if configEntry.Lists[idxlisttest].Name == movies[idxtmovie].Listname {
-								if entriesfound == 0 && len(m.Imdb) >= 1 {
-									movies, _ := database.QueryMovies(database.Query{Select: "movies.*", InnerJoin: "Dbmovies on Dbmovies.id = movies.dbmovie_id", Where: "Dbmovies.imdb_id = ? and movies.listname = ?", WhereArgs: []interface{}{m.Imdb, configEntry.Lists[idxlisttest].Name}})
-									if len(movies) == 1 {
-										movie = movies[0]
-									}
-									entriesfound = len(movies)
-									if entriesfound >= 1 {
-										structure.list = configEntry.Lists[idxlisttest]
-										list = configEntry.Lists[idxlisttest]
-										foundinlist = true
-										break
-									}
-								}
-							}
-						}
-						if foundinlist {
-							break
-						}
-					}
-				}
-
-				moviehistory, moviehistoryerr := database.GetMovieHistory(database.Query{Select: "movie_histories.dbmovie_id", InnerJoin: "movies on movies.id=movie_histories.movie_id", Where: "movie_histories.title = ? and movies.listname = ?", WhereArgs: []interface{}{filepath.Base(folders[idx]), list.Name}, OrderBy: "movie_histories.ID desc"})
-
-				if moviehistoryerr == nil {
-					movies, _ := database.QueryMovies(database.Query{Select: "movies.*", InnerJoin: "Dbmovies on Dbmovies.id = movies.dbmovie_id", Where: "Dbmovies.id = ? and movies.listname = ?", WhereArgs: []interface{}{moviehistory.DbmovieID, list.Name}})
-					if len(movies) == 1 {
-						logger.Log.Debug("Found Movie by history_title")
-						movie = movies[0]
-					}
-					entriesfound = len(movies)
-				}
-
-				if !config.ConfigCheck("quality_" + list.Template_quality) {
-					logger.Log.Error("Template Quality not found: ", list.Template_quality)
-					return
-				}
-				var cfg_quality config.QualityConfig
-				config.ConfigGet("quality_"+list.Template_quality, &cfg_quality)
-
-				if entriesfound == 0 && len(m.Imdb) == 0 {
-					lists := make([]string, 0, len(configEntry.Lists))
-					for idxlisttest := range configEntry.Lists {
-						lists = append(lists, configEntry.Lists[idxlisttest].Name)
-					}
-					logger.Log.Debug("Find Movie using title: ", m.Title, " and year: ", m.Year, " and lists: ", lists)
-					list.Name, m.Imdb, _ = movieFindListByTitle(m.Title, strconv.Itoa(m.Year), lists, cfg_quality.CheckYear1, "structure")
-				}
-				if entriesfound == 0 && len(m.Imdb) >= 1 {
-					movies, _ := database.QueryMovies(database.Query{Select: "movies.*", InnerJoin: "Dbmovies on Dbmovies.id = movies.dbmovie_id", Where: "Dbmovies.imdb_id = ? and movies.listname = ?", WhereArgs: []interface{}{m.Imdb, list.Name}})
-					if len(movies) == 1 {
-						logger.Log.Debug("Found Movie by title")
-						movie = movies[0]
-					}
-					entriesfound = len(movies)
-				}
-				if entriesfound == 0 && len(m.Imdb) >= 1 {
-					counter, _ := database.CountRows("movies", database.Query{Select: "movies.*", InnerJoin: "Dbmovies on Dbmovies.id = movies.dbmovie_id", Where: "Dbmovies.imdb_id = ?", WhereArgs: []interface{}{m.Imdb, list.Name}})
-					if counter >= 1 {
-						logger.Log.Debug("Skipped Movie by title")
-						continue
-					}
-				}
-				if movie.ID >= 1 && entriesfound >= 1 {
-					dbmovie, _ := database.GetDbmovie(database.Query{Where: "id=?", WhereArgs: []interface{}{movie.DbmovieID}})
-					errpars := structure.ParseFileAdditional(videofiles[fileidx], m, folders[idx], structure.targetpath.DeleteWrongLanguage, dbmovie.Runtime)
-					if errpars != nil {
-						logger.Log.Error("Error fprobe video: ", videofiles[fileidx], " error: ", errpars)
-						continue
-					}
-					oldfiles, _, errold := structure.CheckLowerQualTarget(folders[idx], videofiles[fileidx], *m, true, movie)
-					if errold != nil {
-						logger.Log.Error("Error checking oldfiles: ", videofiles[fileidx], " error: ", errold)
-						continue
-					}
-					foldername, filename := structure.GenerateNamingTemplate(videofiles[fileidx], *m, movie, database.Serie{}, "", database.SerieEpisode{}, "", []int{})
-
-					sourcefileext := filepath.Ext(videofiles[fileidx])
-
-					structure.MoveOldFiles(oldfiles, movie, database.Serie{})
-					mediatargetpath := movie.Rootpath
-					if structure.targetpath.Usepresort && structure.targetpath.PresortFolderPath != "" {
-						mediatargetpath = filepath.Join(structure.targetpath.PresortFolderPath, foldername)
-					}
-					videotarget, moveok, moved := structure.MoveVideoFile(foldername, filename, []string{videofiles[fileidx]}, mediatargetpath)
-					if moveok && moved >= 1 {
-						structure.UpdateRootpath(videotarget, foldername, movie, database.Serie{})
-						var oldfiles_remove []string
-						for idx := range oldfiles {
-							if strings.HasPrefix(strings.ToLower(oldfiles[idx]), strings.ToLower(videotarget)) && strings.Contains(strings.ToLower(oldfiles[idx]), strings.ToLower(filename)) {
-								//skip
-							} else {
-								oldfiles_remove = append(oldfiles_remove, oldfiles[idx])
-							}
-						}
-						structure.ReplaceLowerQualityFiles(oldfiles_remove, movie, database.Serie{})
-						structure.MoveAdditionalFiles(folders[idx], videotarget, filename, videofiles[fileidx], sourcefileext, len(videotarget))
-
-						structure.Notify(videotarget, filename, videofiles[fileidx], movie, database.SerieEpisode{}, oldfiles)
-						scanner.CleanUpFolder(folders[idx], sourcepath.CleanupsizeMB)
-
-						//updatemovie
-						targetfile := filepath.Join(videotarget, filename)
-						database.InsertArray("movie_files",
-							[]string{"location", "filename", "extension", "quality_profile", "resolution_id", "quality_id", "codec_id", "audio_id", "proper", "repack", "extended", "movie_id", "dbmovie_id"},
-							[]interface{}{targetfile, filepath.Base(targetfile), filepath.Ext(targetfile), list.Template_quality, m.ResolutionID, m.QualityID, m.CodecID, m.AudioID, m.Proper, m.Repack, m.Extended, movie.ID, movie.DbmovieID})
-
-						reached := false
-
-						cutoffPrio := NewCutoffPrio(configEntry, cfg_quality)
-						if m.Priority >= cutoffPrio.Priority {
-							reached = true
-						}
-						database.UpdateColumn("movies", "missing", false, database.Query{Where: "id=?", WhereArgs: []interface{}{movie.ID}})
-						database.UpdateColumn("movies", "quality_reached", reached, database.Query{Where: "id=?", WhereArgs: []interface{}{movie.ID}})
-					} else {
-						logger.Log.Error("Error moving video - unknown reason")
-					}
-				} else {
-					logger.Log.Debug("Movie not matched: ", videofiles[fileidx], " list ", list.Name)
-				}
-			} else if strings.ToLower(structure.groupType) == "series" {
-				//SerieEpisodeHistory, _ := database.QuerySerieEpisodeHistory(database.Query{InnerJoin: "series on series.id=serie_episode_histories.serie_id", Where: "serie_episode_histories.target = ? and series.listname = ?", WhereArgs: []interface{}{filepath.Base(folders[idx]), list.Name}})
-
-				yearstr := strconv.Itoa(m.Year)
-				titleyear := m.Title + " (" + yearstr + ")"
-				seriestitle := ""
-				re, _ := regexp.Compile(`^(.*)(?i)(?:(?:\.| - |-)S?(?:\d+)[ex](?:\d+)(?:[^0-9]|$))`)
-				matched := re.FindStringSubmatch(filepath.Base(videofiles[fileidx]))
-				if len(matched) >= 2 {
-					seriestitle = matched[1]
-				}
-
-				if !config.ConfigCheck("quality_" + list.Template_quality) {
-					return
-				}
-				var cfg_quality config.QualityConfig
-				config.ConfigGet("quality_"+list.Template_quality, &cfg_quality)
-
-				//find dbseries
-				series, entriesfound := FindSerieByParser(*m, titleyear, seriestitle, list.Name)
-				if entriesfound >= 1 {
-					dbseries, _ := database.GetDbserie(database.Query{Where: "id=?", WhereArgs: []interface{}{series.DbserieID}})
-					runtime, _ := strconv.Atoi(dbseries.Runtime)
-					oldfiles, episodes, allowimport, serietitle, episodetitle, seriesEpisode := structure.GetSeriesEpisodes(series, videofiles[fileidx], *m, folders[idx])
-					errpars := structure.ParseFileAdditional(videofiles[fileidx], m, folders[idx], structure.targetpath.DeleteWrongLanguage, runtime*len(episodes))
-					if errpars != nil {
-						logger.Log.Error("Error fprobe video: ", videofiles[fileidx], " error: ", errpars)
-						continue
-					}
-					if allowimport {
-						foldername, filename := structure.GenerateNamingTemplate(videofiles[fileidx], *m, database.Movie{}, series, serietitle, seriesEpisode, episodetitle, episodes)
-						sourcefileext := filepath.Ext(videofiles[fileidx])
-						structure.MoveOldFiles(oldfiles, database.Movie{}, series)
-						mediatargetpath := series.Rootpath
-						if structure.targetpath.Usepresort && structure.targetpath.PresortFolderPath != "" {
-							mediatargetpath = filepath.Join(structure.targetpath.PresortFolderPath, foldername)
-						}
-						videotarget, moveok, moved := structure.MoveVideoFile(foldername, filename, []string{videofiles[fileidx]}, mediatargetpath)
-						if moveok && moved >= 1 {
-							structure.UpdateRootpath(videotarget, foldername, database.Movie{}, series)
-							var oldfiles_remove []string
-							for idx := range oldfiles {
-								if strings.HasPrefix(strings.ToLower(oldfiles[idx]), strings.ToLower(videotarget)) && strings.Contains(strings.ToLower(oldfiles[idx]), strings.ToLower(filename)) {
-									//skip
-								} else {
-									oldfiles_remove = append(oldfiles_remove, oldfiles[idx])
-								}
-							}
-							structure.ReplaceLowerQualityFiles(oldfiles_remove, database.Movie{}, series)
-							structure.MoveAdditionalFiles(folders[idx], videotarget, filename, videofiles[fileidx], sourcefileext, len(videotarget))
-							structure.Notify(videotarget, filename, videofiles[fileidx], database.Movie{}, seriesEpisode, oldfiles)
-							scanner.CleanUpFolder(folders[idx], sourcepath.CleanupsizeMB)
-
-							//updateserie
-							targetfile := filepath.Join(videotarget, filename)
-							database.InsertArray("serie_episode_files",
-								[]string{"location", "filename", "extension", "quality_profile", "resolution_id", "quality_id", "codec_id", "audio_id", "proper", "repack", "extended", "serie_id", "serie_episode_id", "dbserie_episode_id", "dbserie_id"},
-								[]interface{}{targetfile, filepath.Base(targetfile), filepath.Ext(targetfile), list.Template_quality, m.ResolutionID, m.QualityID, m.CodecID, m.AudioID, m.Proper, m.Repack, m.Extended, seriesEpisode.SerieID, seriesEpisode.ID, seriesEpisode.DbserieEpisodeID, seriesEpisode.DbserieID})
-
-							reached := false
-
-							cutoffPrio := NewCutoffPrio(configEntry, cfg_quality)
-							if m.Priority >= cutoffPrio.Priority {
-								reached = true
-							}
-							database.UpdateColumn("serie_episodes", "missing", false, database.Query{Where: "id=?", WhereArgs: []interface{}{seriesEpisode.ID}})
-							database.UpdateColumn("serie_episodes", "quality_reached", reached, database.Query{Where: "id=?", WhereArgs: []interface{}{seriesEpisode.ID}})
-						}
-					}
-				}
-			}
-		}
+		StructureSingleFolder(folders[idx], false, false, grouptype, sourcepath, targetpath, configEntry, list)
 	}
 }
 

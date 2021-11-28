@@ -134,3 +134,16 @@ $json = '{
 }'
 
 Invoke-RestMethod -Uri "http://192.168.1.19:9090/api/naming?apikey=mymy" -Method post -Body $json | fl
+
+$json = '{
+  "folder": "/toimport/What.The.Deaf.Man.Heard.1997.Hallmark.DvDrip.XviD",
+  "sourcepathtemplate": "en movies import",
+  "grouptype": "movie",
+  "targetpathtemplate": "en movies",
+  "configentry": "EN",
+  "disableruntimecheck": true,
+  "disabledisallowed": false,
+  "forceid": 0
+}'
+
+Invoke-RestMethod -Uri "http://192.168.1.19:9090/api/structure?apikey=mymy" -Method post -Body $json | fl #Structure Folder - use forceid (movie_id or serie_id) to skip detection

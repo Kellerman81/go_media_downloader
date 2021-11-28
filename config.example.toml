@@ -97,7 +97,7 @@ index_full=true #short only imports imdbid and titles/years - full also votes ra
 		[[media.movies.notification]]
 		template_notification="csvmovies"
 		event="added_data" #added_download #added_list
-		message="{{.Title}};{{.Year}};{{.Imdb}};{{.InputNotifier.SourcePath}};{{.InputNotifier.Targetpath}};{{ range .Replaced }}{{.}}{{else}}{{.Replaced}}{{end}}"
+		message="{{.Title}};{{.Year}};{{.Imdb}};{{.InputNotifier.SourcePath}};{{.InputNotifier.Targetpath}};{{ range .Replaced }}{{.}}{{end}}"
 		
 ##### serie configuarations #####
 
