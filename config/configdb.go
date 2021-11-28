@@ -4,12 +4,14 @@ import (
 	"errors"
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/recoilme/pudge"
 )
 
 var ConfigDB *pudge.Db
 var configEntries map[string]interface{}
+var cfglock = sync.RWMutex{}
 
 func OpenConfig(file string) (db *pudge.Db, err error) {
 	cfg := &pudge.Config{
@@ -21,7 +23,7 @@ func OpenConfig(file string) (db *pudge.Db, err error) {
 
 func CacheConfig() {
 	keys, _ := ConfigDB.Keys([]byte("*"), 0, 0, true)
-
+	cfglock.Lock()
 	for _, idx := range keys {
 		if strings.HasPrefix(string(idx), "general") {
 			var general GeneralConfig
@@ -108,13 +110,18 @@ func CacheConfig() {
 			continue
 		}
 	}
+	cfglock.Unlock()
 }
 
 func ConfigGetAll() map[string]interface{} {
+	cfglock.RLock()
+	defer cfglock.RUnlock()
 	return configEntries
 }
 
 func ConfigGet(key string, val interface{}) error {
+	cfglock.RLock()
+	defer cfglock.RUnlock()
 	if _, ok := configEntries[key]; ok {
 
 		if strings.HasPrefix(key, "general") {
