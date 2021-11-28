@@ -116,3 +116,21 @@ $body = @{
     "quality" = "SD"
 }
 $a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/parse/file?apikey=mysecure" -Method post -Body ($body | ConvertTo-Json) #Parses a file (for testing)
+
+$json = '{
+  "cfg_Media": "movie_EN",
+  "filePath": "/movies/Cloudy with a Chance of Meatballs (2009)/Cloudy with a Chance of Meatballs (2009).avi",
+  "grouptype": "movie",
+  "movieid": 11278
+}'
+
+Invoke-RestMethod -Uri "http://192.168.1.19:9090/api/naming?apikey=mymy" -Method post -Body $json # Tests the Name Generation
+
+$json = '{
+  "cfg_Media": "serie_EN",
+  "filePath": "/series/2 Broke Girls/Season 1/2 Broke Girls - S01E19 - And the Spring Break.mkv",
+  "grouptype": "series",
+  "serieid": 169
+}'
+
+Invoke-RestMethod -Uri "http://192.168.1.19:9090/api/naming?apikey=mymy" -Method post -Body $json | fl

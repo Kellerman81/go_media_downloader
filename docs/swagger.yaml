@@ -1,4 +1,17 @@
 definitions:
+  api.ApiNameInputJson:
+    properties:
+      cfg_media:
+        type: string
+      filepath:
+        type: string
+      grouptype:
+        type: string
+      movieid:
+        type: integer
+      serieid:
+        type: integer
+    type: object
   api.apiparse:
     properties:
       config:
@@ -1581,6 +1594,41 @@ paths:
       summary: List Unmatched Movies
       tags:
       - movie
+  /api/naming:
+    post:
+      consumes:
+      - application/json
+      description: Test your Naming Convention
+      parameters:
+      - description: Config
+        in: body
+        name: config
+        required: true
+        schema:
+          $ref: '#/definitions/api.ApiNameInputJson'
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Name Generation Test
+      tags:
+      - general
   /api/parse/file:
     post:
       consumes:

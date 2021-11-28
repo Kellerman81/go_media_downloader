@@ -624,3 +624,94 @@ func ApiListConfigType(ctx *gin.Context) {
 	}
 	ctx.JSON(http.StatusOK, list)
 }
+
+type ApiNameInput struct {
+	Cfg_Media string `json:"cfg_media"`
+	GroupType string `json:"grouptype"`
+	FilePath  string `json:"filepath"`
+	MovieID   int    `json:"movieid"`
+	SerieID   int    `json:"serieid"`
+}
+type ApiNameInputJson struct {
+	Cfg_Media string `json:"cfg_media"`
+	GroupType string `json:"grouptype"`
+	FilePath  string `json:"filepath"`
+	MovieID   int    `json:"movieid"`
+	SerieID   int    `json:"serieid"`
+}
+
+// @Summary Name Generation Test
+// @Description Test your Naming Convention
+// @Tags general
+// @Accept  json
+// @Produce  json
+// @Param config body ApiNameInputJson true "Config"
+// @Param apikey query string true "apikey"
+// @Success 200 {object} string
+// @Failure 400 {object} string
+// @Failure 401 {object} string
+// @Router /api/naming [post]
+func ApiNamingGenerate(ctx *gin.Context) {
+	if ApiAuth(ctx) == http.StatusUnauthorized {
+		return
+	}
+	var cfg ApiNameInput
+	if err := ctx.BindJSON(&cfg); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	var cfg_media config.MediaTypeConfig
+	config.ConfigGet(cfg.Cfg_Media, &cfg_media)
+
+	if cfg.GroupType == "movie" {
+		movie, _ := database.GetMovies(database.Query{Where: "id=?", WhereArgs: []interface{}{cfg.MovieID}})
+
+		var cfg_list config.MediaListsConfig
+		for idxlist := range cfg_media.Lists {
+			if cfg_media.Lists[idxlist].Name == movie.Listname {
+				cfg_list = cfg_media.Lists[idxlist]
+				break
+			}
+		}
+
+		s, _ := utils.NewStructure(
+			cfg_media,
+			cfg_list,
+			cfg.GroupType,
+			movie.Rootpath,
+			config.PathsConfig{},
+			config.PathsConfig{},
+		)
+		m, _ := s.ParseFile(cfg.FilePath, true, filepath.Dir(cfg.FilePath), false)
+		s.ParseFileAdditional(cfg.FilePath, m, filepath.Dir(cfg.FilePath), false, 0)
+
+		foldername, filename := s.GenerateNamingTemplate(cfg.FilePath, *m, movie, database.Serie{}, "", database.SerieEpisode{}, "", []int{})
+		ctx.JSON(http.StatusOK, gin.H{"foldername": foldername, "filename": filename})
+	} else {
+		series, _ := database.GetSeries(database.Query{Where: "id=?", WhereArgs: []interface{}{cfg.SerieID}})
+
+		var cfg_list config.MediaListsConfig
+		for idxlist := range cfg_media.Lists {
+			if cfg_media.Lists[idxlist].Name == series.Listname {
+				cfg_list = cfg_media.Lists[idxlist]
+				break
+			}
+		}
+
+		s, _ := utils.NewStructure(
+			cfg_media,
+			cfg_list,
+			cfg.GroupType,
+			series.Rootpath,
+			config.PathsConfig{},
+			config.PathsConfig{},
+		)
+		m, _ := s.ParseFile(cfg.FilePath, true, filepath.Dir(cfg.FilePath), false)
+		s.ParseFileAdditional(cfg.FilePath, m, filepath.Dir(cfg.FilePath), false, 0)
+
+		_, episodes, _, serietitle, episodetitle, seriesEpisode := s.GetSeriesEpisodes(series, cfg.FilePath, *m, filepath.Dir(cfg.FilePath))
+
+		foldername, filename := s.GenerateNamingTemplate(cfg.FilePath, *m, database.Movie{}, series, serietitle, seriesEpisode, episodetitle, episodes)
+		ctx.JSON(http.StatusOK, gin.H{"foldername": foldername, "filename": filename})
+	}
+}

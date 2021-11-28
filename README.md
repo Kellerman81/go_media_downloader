@@ -74,8 +74,6 @@ First version! Bugs included
 - Downloading of images from Meta Sites (unlikely)
 - Handle multi media releases (ex. -CD1 -CD2) (maybe even joining those) (at the bottom of the list)
 - Maybe also add the ability to download non matched episodes (which could't be found on a meta source site - risky since you might get a lot unwanted stuff) (at the bottom of the list)
-- Rewrite Release Renaming to use templates (in parts prepared already)
-- Rewrite Notifications to use templates
 - Unpacking of Downloaded stuff? Currently I let the downloaders do that and don't care about it that much
 - Other Media Type Support (i could think of music but don't want to include this currently)
 - Switch to db only configuration if I include a full webinterface
@@ -86,9 +84,14 @@ First version! Bugs included
 - Always: Add Additional Logging (currently mostly debugging stuff)
 - Always: API Changes
 
+## Ram Usage
+
+Currently seen: 
+Constanly in use - between 30MB-150MB
+Swap Memory: Default ~300-600MB - on file move the complete file size so for a 8GB file expect also this much!
 ## Get started
 
-- for Docker: Download Repository - and create docker container for build/run using compose files/nzbs (~300-700mb RAM)
+- for Docker: Download Repository - and create docker container for build/run using compose files/nzbs
 - for Windows/Linux/Mac: Download latest [prebuild zip](https://github.com/Kellerman81/go_media_downloader/releases/tag/latest_develop) for your OS
 - for all: setup your config and name it config.toml ! - this will initialize the config.db and also update it on change
 - for all: setup your series.toml if wanted

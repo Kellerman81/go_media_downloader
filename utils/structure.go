@@ -1,8 +1,11 @@
 package utils
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"html/template"
+	"io"
 	"os"
 	"path"
 	"path/filepath"
@@ -10,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Kellerman81/go_media_downloader/apiexternal"
 	"github.com/Kellerman81/go_media_downloader/config"
 	"github.com/Kellerman81/go_media_downloader/database"
 	"github.com/Kellerman81/go_media_downloader/logger"
@@ -256,12 +260,16 @@ func (s *Structure) CheckLowerQualTarget(folder string, videofile string, m Pars
 }
 
 type parser struct {
-	Dbmovie        database.Dbmovie
-	Movie          database.Movie
-	Dbserie        database.Dbserie
-	DbserieEpisode database.DbserieEpisode
-	Source         ParseInfo
-	Identifier     string
+	Dbmovie            database.Dbmovie
+	Movie              database.Movie
+	Serie              database.Serie
+	Dbserie            database.Dbserie
+	DbserieEpisode     database.DbserieEpisode
+	Source             ParseInfo
+	TitleSource        string
+	EpisodeTitleSource string
+	Identifier         string
+	Episodes           []int
 }
 
 func (s *Structure) GenerateNaming(videofile string, m ParseInfo, movie database.Movie,
@@ -300,7 +308,7 @@ func (s *Structure) GenerateNaming(videofile string, m ParseInfo, movie database
 
 		forparser.Dbmovie = dbmovie
 		forparser.Source = m
-		//Naming = '{{.Dbmovie.Title}} ({{.Dbmovie.Year}})/{{.Dbmovie.Title}} ({{.Dbmovie.Year}}) [{{.Source.Resolution}} {{.Source.Quality}} {{.Source.Codec}} {{.Source.Audio}}{{if eq .Source.Proper 1}} proper{{end}}] ({{.Source.Imdb}})'
+		//Naming = '{{.Dbmovie.Title}} ({{.Dbmovie.Year}})/{{.Dbmovie.Title}} ({{.Dbmovie.Year}}) [{{.Source.Resolution}} {{.Source.Quality}} {{.Source.Codec}} {{.Source.Audio}}{{if eq .Source.Proper 1}} proper{{end}}{{if eq .Source.Extended 1}} extended{{end}}] ({{.Source.Imdb}})'
 		// tmplfolder, err := template.New("tmplfolder").Parse(foldername)
 		// if err != nil {
 		// 	logger.Log.Error(err)
@@ -500,6 +508,171 @@ func (s *Structure) GenerateNaming(videofile string, m ParseInfo, movie database
 
 		foldername = Path(foldername, true)
 		filename = Path(filename, false)
+	}
+	return
+}
+
+func (s *Structure) GenerateNamingTemplate(videofile string, m ParseInfo, movie database.Movie,
+	series database.Serie, serietitle string, serieepisode database.SerieEpisode, episodetitle string, episodes []int) (foldername string, filename string) {
+
+	forparser := parser{}
+	if strings.ToLower(s.groupType) == "movie" {
+		dbmovie, _ := database.GetDbmovie(database.Query{Where: "id=?", WhereArgs: []interface{}{movie.DbmovieID}})
+
+		movietitle := filepath.Base(videofile)
+		movietitle = trimStringInclAfterString(movietitle, m.Quality)
+		movietitle = trimStringInclAfterString(movietitle, m.Resolution)
+		movietitle = trimStringInclAfterString(movietitle, strconv.Itoa(m.Year))
+		movietitle = strings.Trim(movietitle, ".")
+		movietitle = strings.Replace(movietitle, ".", " ", -1)
+		forparser.TitleSource = movietitle
+		logger.Log.Debug("trimmed title: ", movietitle)
+
+		if dbmovie.Title == "" {
+			dbmoviealt, dbmoviealterr := database.GetDbmovieTitle(database.Query{Select: "title", Where: "dbmovie_id=?", WhereArgs: []interface{}{movie.DbmovieID}})
+			if dbmoviealterr == nil {
+				dbmovie.Title = dbmoviealt.Title
+			} else {
+				dbmovie.Title = movietitle
+			}
+		}
+		if dbmovie.Year == 0 {
+			dbmovie.Year = m.Year
+		}
+
+		naming := s.configEntry.Naming
+
+		foldername, filename = path.Split(naming)
+		if movie.Rootpath != "" {
+			foldername, _ = getrootpath(foldername)
+		}
+
+		forparser.Dbmovie = dbmovie
+		if !strings.HasPrefix(m.Imdb, "tt") && len(m.Imdb) >= 1 {
+			m.Imdb = "tt" + m.Imdb
+		}
+		if m.Imdb == "" {
+			m.Imdb = dbmovie.ImdbID
+		}
+		forparser.Source = m
+
+		logger.Log.Debug("Parse folder: " + foldername)
+		tmplfolder, err := template.New("tmplfolder").Parse(foldername)
+		if err != nil {
+			logger.Log.Error(err)
+		}
+		var doc bytes.Buffer
+		err = tmplfolder.Execute(&doc, forparser)
+		if err != nil {
+			logger.Log.Error(err)
+		}
+		foldername = doc.String()
+		logger.Log.Debug("Folder parsed: " + foldername)
+		foldername = strings.Trim(foldername, ".")
+		foldername = StringReplaceDiacritics(foldername)
+		foldername = Path(foldername, true)
+
+		logger.Log.Debug("Parse file: " + filename)
+		tmplfile, err := template.New("tmplfile").Parse(filename)
+		if err != nil {
+			logger.Log.Error(err)
+		}
+		var docfile bytes.Buffer
+		err = tmplfile.Execute(&docfile, forparser)
+		if err != nil {
+			logger.Log.Error(err)
+		}
+		filename = docfile.String()
+		logger.Log.Debug("File parsed: " + filename)
+		filename = strings.Trim(filename, ".")
+		filename = strings.Replace(filename, "  ", " ", -1)
+		filename = strings.Replace(filename, " ]", "]", -1)
+		filename = strings.Replace(filename, "[ ", "[", -1)
+		filename = strings.Replace(filename, "[ ]", "", -1)
+		filename = strings.Replace(filename, "( )", "", -1)
+		filename = strings.Replace(filename, "[]", "", -1)
+		filename = strings.Replace(filename, "()", "", -1)
+		filename = strings.Replace(filename, "  ", " ", -1)
+		filename = StringReplaceDiacritics(filename)
+		filename = Path(filename, true)
+	} else {
+		dbserie, _ := database.GetDbserie(database.Query{Where: "id=?", WhereArgs: []interface{}{series.DbserieID}})
+
+		dbserieepisode, _ := database.GetDbserieEpisodes(database.Query{Where: "id=?", WhereArgs: []interface{}{serieepisode.DbserieEpisodeID}})
+
+		foldername, filename = path.Split(s.configEntry.Naming)
+
+		if dbserie.Seriename == "" {
+			dbseriealt, dbseriealterr := database.GetDbserieAlternates(database.Query{Select: "title", Where: "dbserie_id=?", WhereArgs: []interface{}{series.DbserieID}})
+			if dbseriealterr == nil {
+				dbserie.Seriename = dbseriealt.Title
+			} else {
+				dbserie.Seriename = serietitle
+			}
+		}
+		if dbserieepisode.Title == "" {
+			dbserieepisode.Title = episodetitle
+		}
+		if series.Rootpath != "" {
+			foldername, _ = getrootpath(foldername)
+		}
+
+		forparser.Serie = series
+		forparser.TitleSource = serietitle
+		forparser.EpisodeTitleSource = episodetitle
+		forparser.Dbserie = dbserie
+		forparser.DbserieEpisode = dbserieepisode
+		forparser.Episodes = episodes
+		if m.Tvdb == "" {
+			m.Tvdb = strconv.Itoa(dbserie.ThetvdbID)
+		}
+		if !strings.HasPrefix(m.Tvdb, "tvdb") && len(m.Tvdb) >= 1 {
+			m.Tvdb = "tvdb" + m.Tvdb
+		}
+		forparser.Source = m
+
+		//Naming = '{Title}/Season {Season}/{Title} - {Identifier} - German [{Resolution} {Quality} {Codec}] (tvdb{tvdb})'
+		//Naming = '{{.Dbmovie.Title}} ({{.Dbmovie.Year}})/{{.Dbmovie.Title}} ({{.Dbmovie.Year}}) [{{.Source.Resolution}} {{.Source.Quality}} {{.Source.Codec}} {{.Source.Audio}}{{if eq .Source.Proper 1}} proper{{end}}] ({{.Source.Imdb}})'
+		logger.Log.Debug("Parse folder: " + foldername)
+		tmplfolder, err := template.New("tmplfolder").Parse(foldername)
+		if err != nil {
+			logger.Log.Error(err)
+		}
+		var doc bytes.Buffer
+		err = tmplfolder.Execute(&doc, forparser)
+		if err != nil {
+			logger.Log.Error(err)
+		}
+		foldername = doc.String()
+		logger.Log.Debug("Folder parsed: " + foldername)
+		foldername = strings.Trim(foldername, ".")
+		foldername = StringReplaceDiacritics(foldername)
+		foldername = Path(foldername, true)
+		//S{0Season}E{0Episode}(E{0Episode})
+
+		logger.Log.Debug("Parse file: " + filename)
+		tmplfile, err := template.New("tmplfile").Parse(filename)
+		if err != nil {
+			logger.Log.Error(err)
+		}
+		var docfile bytes.Buffer
+		err = tmplfile.Execute(&docfile, forparser)
+		if err != nil {
+			logger.Log.Error(err)
+		}
+		filename = docfile.String()
+		logger.Log.Debug("File parsed: " + filename)
+		filename = strings.Trim(filename, ".")
+		filename = strings.Replace(filename, "  ", " ", -1)
+		filename = strings.Replace(filename, " ]", "]", -1)
+		filename = strings.Replace(filename, "[ ", "[", -1)
+		filename = strings.Replace(filename, "[ ]", "", -1)
+		filename = strings.Replace(filename, "( )", "", -1)
+		filename = strings.Replace(filename, "[]", "", -1)
+		filename = strings.Replace(filename, "()", "", -1)
+		filename = strings.Replace(filename, "  ", " ", -1)
+		filename = StringReplaceDiacritics(filename)
+		filename = Path(filename, true)
 	}
 	return
 }
@@ -816,7 +989,7 @@ func StructureFolders(grouptype string, sourcepath config.PathsConfig, targetpat
 						logger.Log.Error("Error checking oldfiles: ", videofiles[fileidx], " error: ", errold)
 						continue
 					}
-					foldername, filename := structure.GenerateNaming(videofiles[fileidx], *m, movie, database.Serie{}, "", database.SerieEpisode{}, "", []int{})
+					foldername, filename := structure.GenerateNamingTemplate(videofiles[fileidx], *m, movie, database.Serie{}, "", database.SerieEpisode{}, "", []int{})
 
 					sourcefileext := filepath.Ext(videofiles[fileidx])
 
@@ -881,7 +1054,7 @@ func StructureFolders(grouptype string, sourcepath config.PathsConfig, targetpat
 				config.ConfigGet("quality_"+list.Template_quality, &cfg_quality)
 
 				//find dbseries
-				series, entriesfound := findSerieByParser(*m, titleyear, seriestitle, list.Name)
+				series, entriesfound := FindSerieByParser(*m, titleyear, seriestitle, list.Name)
 				if entriesfound >= 1 {
 					dbseries, _ := database.GetDbserie(database.Query{Where: "id=?", WhereArgs: []interface{}{series.DbserieID}})
 					runtime, _ := strconv.Atoi(dbseries.Runtime)
@@ -892,7 +1065,7 @@ func StructureFolders(grouptype string, sourcepath config.PathsConfig, targetpat
 						continue
 					}
 					if allowimport {
-						foldername, filename := structure.GenerateNaming(videofiles[fileidx], *m, database.Movie{}, series, serietitle, seriesEpisode, episodetitle, episodes)
+						foldername, filename := structure.GenerateNamingTemplate(videofiles[fileidx], *m, database.Movie{}, series, serietitle, seriesEpisode, episodetitle, episodes)
 						sourcefileext := filepath.Ext(videofiles[fileidx])
 						structure.MoveOldFiles(oldfiles, database.Movie{}, series)
 						mediatargetpath := series.Rootpath
@@ -936,11 +1109,80 @@ func StructureFolders(grouptype string, sourcepath config.PathsConfig, targetpat
 		}
 	}
 }
+
+type forstructurenotify struct {
+	Structure
+	InputNotifier
+}
+
+func StructureSendNotify(event string, noticonfig config.MediaNotificationConfig, notifierdata forstructurenotify) {
+	if !strings.EqualFold(noticonfig.Event, event) {
+		return
+	}
+	//messagetext := noticonfig.Message
+	tmplmessage, err := template.New("tmplfile").Parse(noticonfig.Message)
+	if err != nil {
+		logger.Log.Error(err)
+	}
+	var docmessage bytes.Buffer
+	err = tmplmessage.Execute(&docmessage, notifierdata)
+	if err != nil {
+		logger.Log.Error(err)
+	}
+	messagetext := docmessage.String()
+
+	tmpltitle, err := template.New("tmplfile").Parse(noticonfig.Title)
+	if err != nil {
+		logger.Log.Error(err)
+	}
+	var doctitle bytes.Buffer
+	err = tmpltitle.Execute(&doctitle, notifierdata)
+	if err != nil {
+		logger.Log.Error(err)
+	}
+	MessageTitle := doctitle.String()
+
+	if !config.ConfigCheck("notification_" + noticonfig.Map_notification) {
+		return
+	}
+	var cfg_notification config.NotificationConfig
+	config.ConfigGet("notification_"+noticonfig.Map_notification, &cfg_notification)
+
+	if strings.EqualFold(cfg_notification.Type, "pushover") {
+		if apiexternal.PushoverApi.ApiKey != cfg_notification.Apikey {
+			apiexternal.NewPushOverClient(cfg_notification.Apikey)
+		}
+
+		err := apiexternal.PushoverApi.SendMessage(messagetext, MessageTitle, cfg_notification.Recipient)
+		if err != nil {
+			logger.Log.Error("Error sending pushover", err)
+		} else {
+			logger.Log.Info("Pushover message sent")
+		}
+	}
+	if strings.EqualFold(cfg_notification.Type, "csv") {
+		f, errf := os.OpenFile(cfg_notification.Outputto,
+			os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if errf != nil {
+			logger.Log.Error("Error opening csv to write", errf)
+			return
+		}
+		defer f.Close()
+		if errf == nil {
+			_, errc := io.WriteString(f, messagetext+"\n")
+			if errc != nil {
+				logger.Log.Error("Error writing to csv", errc)
+			} else {
+				logger.Log.Info("csv written")
+			}
+		}
+	}
+}
 func (s *Structure) Notify(videotarget string, filename string, videofile string, movie database.Movie, serieepisode database.SerieEpisode, oldfiles []string) {
 	if strings.ToLower(s.groupType) == "movie" {
 		dbmovie, _ := database.GetDbmovie(database.Query{Select: "title, year, imdb_id", Where: "id=?", WhereArgs: []interface{}{movie.DbmovieID}})
 		for idx := range s.configEntry.Notification {
-			notifier("added_data", s.configEntry.Notification[idx], InputNotifier{
+			StructureSendNotify("added_data", s.configEntry.Notification[idx], forstructurenotify{*s, InputNotifier{
 				Targetpath:     filepath.Join(videotarget, filename),
 				SourcePath:     videofile,
 				Title:          dbmovie.Title,
@@ -949,13 +1191,13 @@ func (s *Structure) Notify(videotarget string, filename string, videofile string
 				Replaced:       oldfiles,
 				ReplacedPrefix: s.configEntry.Notification[idx].ReplacedPrefix,
 				Configuration:  s.list.Name,
-			})
+			}})
 		}
 	} else {
 		dbserieepisode, _ := database.GetDbserieEpisodes(database.Query{Select: "season, episode, identifier, dbserie_id", Where: "id=?", WhereArgs: []interface{}{serieepisode.DbserieEpisodeID}})
 		dbserie, _ := database.GetDbserie(database.Query{Select: "seriename, firstaired, thetvdb_id", Where: "id=?", WhereArgs: []interface{}{dbserieepisode.DbserieID}})
 		for idx := range s.configEntry.Notification {
-			notifier("added_data", s.configEntry.Notification[idx], InputNotifier{
+			StructureSendNotify("added_data", s.configEntry.Notification[idx], forstructurenotify{*s, InputNotifier{
 				Targetpath:     filepath.Join(videotarget, filename),
 				SourcePath:     videofile,
 				Title:          dbserie.Seriename,
@@ -968,7 +1210,7 @@ func (s *Structure) Notify(videotarget string, filename string, videofile string
 				Replaced:       oldfiles,
 				ReplacedPrefix: s.configEntry.Notification[idx].ReplacedPrefix,
 				Configuration:  s.list.Name,
-			})
+			}})
 		}
 	}
 }

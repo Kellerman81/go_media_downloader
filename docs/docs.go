@@ -1511,6 +1511,59 @@ var doc = `{
                 }
             }
         },
+        "/api/naming": {
+            "post": {
+                "description": "Test your Naming Convention",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "general"
+                ],
+                "summary": "Name Generation Test",
+                "parameters": [
+                    {
+                        "description": "Config",
+                        "name": "config",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.ApiNameInputJson"
+                        }
+                    },
+                    {
+                        "type": "string",
+                        "description": "apikey",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
         "/api/parse/file": {
             "post": {
                 "description": "Parses a file for testing",
@@ -3119,6 +3172,26 @@ var doc = `{
         }
     },
     "definitions": {
+        "api.ApiNameInputJson": {
+            "type": "object",
+            "properties": {
+                "cfg_media": {
+                    "type": "string"
+                },
+                "filepath": {
+                    "type": "string"
+                },
+                "grouptype": {
+                    "type": "string"
+                },
+                "movieid": {
+                    "type": "integer"
+                },
+                "serieid": {
+                    "type": "integer"
+                }
+            }
+        },
         "api.apiparse": {
             "type": "object",
             "properties": {

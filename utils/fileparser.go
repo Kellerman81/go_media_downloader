@@ -882,6 +882,7 @@ func trimStringPrefixInsensitive(s string, search string) string {
 }
 
 func StringReplaceDiacritics(instr string) string {
+	instr = strings.Replace(instr, "ß", "ss", -1)
 	//Transformer := transform.Chain(norm.NFD, runes.Remove(runes.In(unicode.Mn)), norm.NFC)
 	result, _, _ := transform.String(logger.Transformer, instr)
 	return result

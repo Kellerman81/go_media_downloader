@@ -67,7 +67,7 @@ index_full=true #short only imports imdbid and titles/years - full also votes ra
 	name="EN"
 	default_quality="sdtv" #if quality not found
 	default_resolution="360p" #if resolution not found
-	naming = '{Title} ({Year})/{Title} ({Year}) [{Resolution} {Quality} {Codec} {Audio} {Proper}] ({Imdb})' #use / as path separator #include imdb or tvdb for maximum compability
+	naming = "{{.Dbmovie.Title}} ({{.Dbmovie.Year}})/{{.Dbmovie.Title}} ({{.Dbmovie.Year}}) [{{.Source.Resolution}} {{.Source.Quality}} {{.Source.Codec}} {{.Source.Audio}}{{if eq .Source.Proper true}} proper{{end}}{{if eq .Source.Extended true}} extended{{end}}] ({{.Source.Imdb}})"naming = '{Title} ({Year})/{Title} ({Year}) [{Resolution} {Quality} {Codec} {Audio} {Proper}] ({Imdb})' #use / as path separator #include imdb or tvdb for maximum compability
 	template_quality="SD" # Map to qualities below	
 	template_scheduler="Default" # Map to scheduler below	
 	metadata_language="English" #language definition for tmdb
@@ -92,23 +92,20 @@ index_full=true #short only imports imdbid and titles/years - full also votes ra
 		[[media.movies.notification]]
 		template_notification="pushover"
 		event="added_data" #added_download #added_list
-		title="New Movie added in {Configuration}"
-		message="{Title} - moved from {Source_Path} to {Target_Path}{Replaced}"
-		replaced_prefix="replaced"
+		title="New Movie added in {{.Configuration}}"
+		message="{{.Title}} - moved from {{.InputNotifier.SourcePath}} to {{.InputNotifier.Targetpath}}{{if .Replaced }} Replaced: {{ range .Replaced }}{{.}}{{else}}{{.Replaced}}{{end}}{{end}}"
 		[[media.movies.notification]]
 		template_notification="csvmovies"
 		event="added_data" #added_download #added_list
-		message="{Title};{Year};{Imdb};{Source_Path};{Target_Path};{Replaced}"
-	
-	
+		message="{{.Title}};{{.Year}};{{.Imdb}};{{.InputNotifier.SourcePath}};{{.InputNotifier.Targetpath}};{{ range .Replaced }}{{.}}{{else}}{{.Replaced}}{{end}}"
+		
 ##### serie configuarations #####
 
 	[[media.series]]
 	name="EN"
 	default_quality="sdtv"
 	default_resolution="480p"
-	naming = '{Title}/Season {Season}/{Title} - {Identifier} - {EpisodeTitle} [{Resolution} {Quality} {Codec} {Audio} {Proper}] ({Tvdb})'
-	naming_identifier = 'S{0Season}E{0Episode}(E{0Episode})' # in Brackets are Variants for MultiEpisodes - E{0Episode}(E{0Episode}) = E01E02E03... E{0Episode}(-E{0Episode}) = E01-E02-E03...
+	naming = "{{.Dbserie.Seriename}}/Season {{.DbserieEpisode.Season}}/{{.Dbserie.Seriename}} S{{printf \"%02s\" .DbserieEpisode.Season}}{{range .Episodes}}E{{printf \"%02d\" . }}{{end}} [{{.Source.Resolution}} {{.Source.Quality}} {{.Source.Codec}} {{.Source.Audio}}{{if eq .Source.Proper true}} proper{{end}}] ({{.Source.Tvdb}})"
 	template_quality="SDSeries" # Map to qualities below	
 	template_scheduler="Default" # Map to scheduler below
 	metadata_language="en" #tvdb title language
@@ -450,3 +447,226 @@ interval_scan_data_missing="3d" # checks for removed media
 ## 0 0 11 * * 7#4 == At 11:00 AM, on the fourth Sunday of the month
 ## 0 0 11 * * 7L == At 11:00 AM, on the last Sunday of the month
 ## https://en.wikipedia.org/wiki/Cron  https://www.jstoolset.com/cron
+
+
+##Golang Template Engine - for Nameing and Notifications - #Important Match Cases or Fields!
+## {{.Title}}	Renders the “Title”-field
+## {{.Dbmovie.Title}}	Renders the “Title”-field of the dbmovie
+## {{.Dbserie.Seriename}}	Renders the “Seriename”-field of the dbseries
+## {{if .Movie.Missing true}} {{else}} {{end}}	Defines an if-Statement (Condiiton)
+## {{if .Movie.Missing}} {{else}} {{end}}	Defines an if-Statement (has Data)
+## {{range .Todos}} {{.}} {{end}}    Starts a loop
+## {{printf \"%02s\" .DbserieEpisode.Season}}    Uses the function "printf" to prefix the Season Field with a "0" (%2) until the length of 2 (s) marks a string (yes the season is a string the episode not)
+## {{printf \"%02d\" .DbserieEpisode.Episode}}    Uses the function "printf" to prefix the Episode Field with a "0" (%2) until the length of 2 (d) marks a integer (yes the season is a string the episode not)
+## Additional functions available: html (htmlencode), urlquery (urlencode), not, or, and, len
+## More examples in the golang documentation: https://pkg.go.dev/text/template
+## Good Comparison with python: https://siongui.github.io/2015/02/21/python-jinja2-vs-go-html-template-1/
+
+#Fields for Naming: 
+#   Dbmovie            database.Dbmovie
+#	Movie              database.Movie
+#	Serie              database.Serie
+#	Dbserie            database.Dbserie
+#	DbserieEpisode     database.DbserieEpisode
+#	Source             ParseInfo # fields can be seen in the parser api test
+#	TitleSource        string
+#	EpisodeTitleSource string
+#	Identifier         string
+#	Episodes           []int
+
+#Fields for Notifications during download:
+#
+#	 ConfigEntry      Group Parameters (object) - Entries from this config
+#    Quality          Quality (string)
+#    SearchGroupType  string //series, movies
+#    SearchActionType string //missing,upgrade,rss
+#    Nzb            nzbwithprio   
+#    Movie          database.Movie
+#    Dbmovie        database.Dbmovie
+#    Serie          database.Serie
+#    Dbserie        database.Dbserie
+#    Serieepisode   database.SerieEpisode
+#    Dbserieepisode database.DbserieEpisode
+#    Category   string
+#    Target     config.PathsConfig - Entries from this config
+#    Downloader config.DownloaderConfig - Entries from this config
+#    Targetfile string
+
+#type: nzbwithprio:
+#   Prio       int
+#	Indexer    string
+#	ParseInfo  ParseInfo
+#	NZB        newznab.NZB
+#	Nzbmovie   database.Movie
+#	Nzbepisode database.SerieEpisode
+
+#type: newznab.NZB: 
+#	ID          string    `json:"id,omitempty"`
+#	Title       string    `json:"title,omitempty"`
+#	Description string    `json:"description,omitempty"`
+#	Size        int64     `json:"size,omitempty"`
+#	AirDate     time.Time `json:"air_date,omitempty"`
+#	PubDate     time.Time `json:"pub_date,omitempty"`
+#	UsenetDate  time.Time `json:"usenet_date,omitempty"`
+#	NumGrabs    int       `json:"num_grabs,omitempty"`
+#
+#	SourceEndpoint string `json:"source_endpoint"`
+#	SourceAPIKey   string `json:"source_apikey"`
+#
+#	Category []string `json:"category,omitempty"`
+#	Info     string   `json:"info,omitempty"`
+#	Genre    string   `json:"genre,omitempty"`
+#
+#	Resolution string `json:"resolution,omitempty"`
+#
+#	// TV Specific stuff
+#	TVDBID  string `json:"tvdbid,omitempty"`
+#	Season  string `json:"season,omitempty"`
+#	Episode string `json:"episode,omitempty"`
+#	TVTitle string `json:"tvtitle,omitempty"`
+#	Rating  int    `json:"rating,omitempty"`
+#
+#	// Movie Specific stuff
+#	IMDBID    string  `json:"imdb,omitempty"`
+#	IMDBTitle string  `json:"imdbtitle,omitempty"`
+#	IMDBYear  int     `json:"imdbyear,omitempty"`
+#	IMDBScore float32 `json:"imdbscore,omitempty"`
+#	CoverURL  string  `json:"coverurl,omitempty"`
+#
+#	// Torznab specific stuff
+#	Seeders     int    `json:"seeders,omitempty"`
+#	Peers       int    `json:"peers,omitempty"`
+#	InfoHash    string `json:"infohash,omitempty"`
+#	DownloadURL string `json:"download_url,omitempty"`
+#	IsTorrent   bool   `json:"is_torrent,omitempty"`
+
+#Fields for Notifications during Structure:
+#
+#	 configEntry config.MediaTypeConfig - Entries from this config
+#    list        config.MediaListsConfig - Entries from this config
+#    groupType   string //series, movies
+#    rootpath    string //1st level below input
+#    Structure.sourcepath  config.PathsConfig - Entries from this config
+#    Structure.targetpath  config.PathsConfig - Entries from this config
+#    inputNotifier.Targetpath     string
+#    inputNotifier.SourcePath     string
+#    Title          string
+#    Season         string
+#    Episode        string
+#    Identifier     string
+#    Series         string
+#    EpisodeTitle   string
+#    Tvdb           string
+#    Year           string
+#    Imdb           string
+#    Configuration  string
+#    Replaced       []string
+#    ReplacedPrefix string
+
+#Fields dbmovies:
+#
+#	Title            string
+#	ReleaseDate      sql.NullTime `db:"release_date" json:"release_date" time_format:"2006-01-02" time_utc:"1"`
+#	Year             int
+#	Adult            bool
+#	Budget           int
+#	Genres           string
+#	OriginalLanguage string `db:"original_language"`
+#	OriginalTitle    string `db:"original_title"`
+#	Overview         string
+#	Popularity       float32
+#	Revenue          int
+#	Runtime          int
+#	SpokenLanguages  string `db:"spoken_languages"`
+#	Status           string
+#	Tagline          string
+#	VoteAverage      float32 `db:"vote_average"`
+#	VoteCount        int     `db:"vote_count"`
+#	TraktID          int     `db:"trakt_id"`
+#	MoviedbID        int     `db:"moviedb_id"`
+#	ImdbID           string  `db:"imdb_id"`
+#	FreebaseMID      string  `db:"freebase_m_id"`
+#	FreebaseID       string  `db:"freebase_id"`
+#	FacebookID       string  `db:"facebook_id"`
+#	InstagramID      string  `db:"instagram_id"`
+#	TwitterID        string  `db:"twitter_id"`
+#	URL              string
+#	Backdrop         string
+#	Poster           string
+#	Slug             string	
+
+#Fields dbseries:
+#
+#	Seriename       string
+#	Aliases         string
+#	Season          string
+#	Status          string
+#	Firstaired      string
+#	Network         string
+#	Runtime         string
+#	Language        string
+#	Genre           string
+#	Overview        string
+#	Rating          string
+#	Siterating      string
+#	SiteratingCount string `db:"siterating_count"`
+#	Slug            string
+#	TraktID         int    `db:"trakt_id"`
+#	ImdbID          string `db:"imdb_id"`
+#	ThetvdbID       int    `db:"thetvdb_id"`
+#	FreebaseMID     string `db:"freebase_m_id"`
+#	FreebaseID      string `db:"freebase_id"`
+#	TvrageID        int    `db:"tvrage_id"`
+#	Facebook        string
+#	Instagram       string
+#	Twitter         string
+#	Banner          string
+#	Poster          string
+#	Fanart          string
+#	Identifiedby    string
+	
+#Fields DbserieEpisode:
+#
+#	Episode    string
+#	Season     string
+#	Identifier string
+#	Title      string
+#	FirstAired sql.NullTime `db:"first_aired" json:"first_aired" time_format:"2006-01-02" time_utc:"1"`
+#	Overview   string
+#	Poster     string
+#	DbserieID  uint `db:"dbserie_id"`
+
+#Fields ParseInfo:
+#
+#	File            string
+#	Title           string
+#	Season          int      `json:"season,omitempty"`
+#	Episode         int      `json:"episode,omitempty"`
+#	SeasonStr       string   `json:"seasonstr,omitempty"`
+#	EpisodeStr      string   `json:"episodestr,omitempty"`
+#	Year            int      `json:"year,omitempty"`
+#	Resolution      string   `json:"resolution,omitempty"`
+#	ResolutionID    uint     `json:"resolutionid,omitempty"`
+#	Quality         string   `json:"quality,omitempty"`
+#	QualityID       uint     `json:"qualityid,omitempty"`
+#	Codec           string   `json:"codec,omitempty"`
+#	CodecID         uint     `json:"codecid,omitempty"`
+#	Audio           string   `json:"audio,omitempty"`
+#	AudioID         uint     `json:"audioid,omitempty"`
+#	Priority        int      `json:"priority,omitempty"`
+#	Identifier      string   `json:"identifier,omitempty"`
+#	Date            string   `json:"date,omitempty"`
+#	Extended        bool     `json:"extended,omitempty"`
+#	Proper          bool     `json:"proper,omitempty"`
+#	Repack          bool     `json:"repack,omitempty"`
+#	Container       string   `json:"container,omitempty"`
+#	Language        string   `json:"language,omitempty"`
+#	Imdb            string   `json:"imdb,omitempty"`
+#	Tvdb            string   `json:"tvdb,omitempty"`
+#	QualitySet      string   `json:"qualityset,omitempty"`
+#	Prio_audio      int      `json:"Prio_audio,omitempty"`
+#	Prio_codec      int      `json:"Prio_codec,omitempty"`
+#	Prio_resolution int      `json:"Prio_resolution,omitempty"`
+#	Prio_quality    int      `json:"Prio_quality,omitempty"`
+#	Languages       []string `json:"languages,omitempty"`
+#	Runtime         int      `json:"runtime,omitempty"`

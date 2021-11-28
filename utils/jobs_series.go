@@ -440,7 +440,7 @@ func JobReloadDbSeries(dbserie database.Dbserie, configEntry config.MediaTypeCon
 	logger.Log.Debug("DbSeries add episodes end for: ", dbserie.ThetvdbID)
 }
 
-func findSerieByParser(m ParseInfo, titleyear string, seriestitle string, listname string) (database.Serie, int) {
+func FindSerieByParser(m ParseInfo, titleyear string, seriestitle string, listname string) (database.Serie, int) {
 	var entriesfound int
 
 	if m.Tvdb != "" {
@@ -585,7 +585,7 @@ func JobImportSeriesParseV2(file string, updatemissing bool, configEntry config.
 	//logger.Log.Debug("Parse Data: ", m)
 
 	//find dbseries
-	series, entriesfound := findSerieByParser(*m, titleyear, seriestitle, list.Name)
+	series, entriesfound := FindSerieByParser(*m, titleyear, seriestitle, list.Name)
 	addunmatched := false
 	if entriesfound >= 1 {
 
