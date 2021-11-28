@@ -22,7 +22,7 @@ type Downloader struct {
 	SearchGroupType  string //series, movies
 	SearchActionType string //missing,upgrade,rss
 
-	Nzb            nzbwithprio
+	Nzb            Nzbwithprio
 	Movie          database.Movie
 	Dbmovie        database.Dbmovie
 	Serie          database.Serie
@@ -64,7 +64,7 @@ func (d *Downloader) SetSeriesEpisode(seriesepisode database.SerieEpisode) {
 	d.Quality = seriesepisode.QualityProfile
 	d.Dbserieepisode = dbserieepisode
 }
-func (d *Downloader) DownloadNzb(nzb nzbwithprio) {
+func (d *Downloader) DownloadNzb(nzb Nzbwithprio) {
 	d.Nzb = nzb
 	d.Category, d.Target, d.Downloader = getnzbconfig(d.Nzb, d.Quality)
 
@@ -295,7 +295,7 @@ func (d Downloader) History() {
 	}
 }
 
-func getnzbconfig(nzb nzbwithprio, quality string) (category string, target config.PathsConfig, downloader config.DownloaderConfig) {
+func getnzbconfig(nzb Nzbwithprio, quality string) (category string, target config.PathsConfig, downloader config.DownloaderConfig) {
 
 	if !config.ConfigCheck("quality_" + quality) {
 		return

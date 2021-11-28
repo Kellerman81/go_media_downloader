@@ -1272,6 +1272,60 @@ var doc = `{
                 }
             }
         },
+        "/api/movies/search/download/{id}": {
+            "post": {
+                "description": "Downloads a release after select",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "movie"
+                ],
+                "summary": "Download a movie (manual)",
+                "parameters": [
+                    {
+                        "description": "Nzb: Req. Title, Indexer, imdbid, downloadurl, parseinfo",
+                        "name": "nzb",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/utils.NzbwithprioJson"
+                        }
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Movie ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "apikey",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
         "/api/movies/search/history/clear/{name}": {
             "get": {
                 "description": "Clear Movies Download History",
@@ -1389,6 +1443,57 @@ var doc = `{
                         "name": "apikey",
                         "in": "query",
                         "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/movies/search/list/{id}": {
+            "get": {
+                "description": "Searches for upgrades and missing",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "movie"
+                ],
+                "summary": "Search a movie (List ok, nok)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Movie ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "apikey",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "apikey",
+                        "name": "searchByTitle",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -2453,6 +2558,60 @@ var doc = `{
                 }
             }
         },
+        "/api/series/episodes/search/download/{id}": {
+            "post": {
+                "description": "Downloads a release after select",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "series"
+                ],
+                "summary": "Download a episode (manual)",
+                "parameters": [
+                    {
+                        "description": "Nzb: Req. Title, Indexer, tvdbid, downloadurl, parseinfo",
+                        "name": "nzb",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/utils.NzbwithprioJson"
+                        }
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Episode ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "apikey",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
         "/api/series/episodes/search/id/{id}": {
             "get": {
                 "description": "Searches for upgrades and missing",
@@ -2480,6 +2639,57 @@ var doc = `{
                         "name": "apikey",
                         "in": "query",
                         "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/series/episodes/search/list/{id}": {
+            "get": {
+                "description": "Searches for upgrades and missing",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "series"
+                ],
+                "summary": "Search a episode (list ok, nok)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Episode ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "apikey",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "apikey",
+                        "name": "searchByTitle",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -4019,6 +4229,133 @@ var doc = `{
                     "type": "string"
                 },
                 "updatedAt": {
+                    "type": "string"
+                }
+            }
+        },
+        "newznab.NZB": {
+            "type": "object",
+            "properties": {
+                "air_date": {
+                    "type": "string"
+                },
+                "category": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "coverurl": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "download_url": {
+                    "type": "string"
+                },
+                "episode": {
+                    "type": "string"
+                },
+                "genre": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "imdb": {
+                    "description": "Movie Specific stuff",
+                    "type": "string"
+                },
+                "imdbscore": {
+                    "type": "number"
+                },
+                "imdbtitle": {
+                    "type": "string"
+                },
+                "imdbyear": {
+                    "type": "integer"
+                },
+                "info": {
+                    "type": "string"
+                },
+                "infohash": {
+                    "type": "string"
+                },
+                "is_torrent": {
+                    "type": "boolean"
+                },
+                "num_grabs": {
+                    "type": "integer"
+                },
+                "peers": {
+                    "type": "integer"
+                },
+                "pub_date": {
+                    "type": "string"
+                },
+                "rating": {
+                    "type": "integer"
+                },
+                "resolution": {
+                    "type": "string"
+                },
+                "season": {
+                    "type": "string"
+                },
+                "seeders": {
+                    "description": "Torznab specific stuff",
+                    "type": "integer"
+                },
+                "size": {
+                    "type": "integer"
+                },
+                "source_apikey": {
+                    "type": "string"
+                },
+                "source_endpoint": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "tvdbid": {
+                    "description": "TV Specific stuff",
+                    "type": "string"
+                },
+                "tvtitle": {
+                    "type": "string"
+                },
+                "usenet_date": {
+                    "type": "string"
+                }
+            }
+        },
+        "utils.NzbwithprioJson": {
+            "type": "object",
+            "properties": {
+                "denied": {
+                    "type": "boolean"
+                },
+                "indexer": {
+                    "type": "string"
+                },
+                "nzb": {
+                    "$ref": "#/definitions/newznab.NZB"
+                },
+                "nzbepisode": {
+                    "$ref": "#/definitions/database.SerieEpisodeJson"
+                },
+                "nzbmovie": {
+                    "$ref": "#/definitions/database.MovieJson"
+                },
+                "parseInfo": {
+                    "$ref": "#/definitions/utils.ParseInfo"
+                },
+                "prio": {
+                    "type": "integer"
+                },
+                "reason": {
                     "type": "string"
                 }
             }

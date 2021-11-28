@@ -526,6 +526,91 @@ definitions:
       updatedAt:
         type: string
     type: object
+  newznab.NZB:
+    properties:
+      air_date:
+        type: string
+      category:
+        items:
+          type: string
+        type: array
+      coverurl:
+        type: string
+      description:
+        type: string
+      download_url:
+        type: string
+      episode:
+        type: string
+      genre:
+        type: string
+      id:
+        type: string
+      imdb:
+        description: Movie Specific stuff
+        type: string
+      imdbscore:
+        type: number
+      imdbtitle:
+        type: string
+      imdbyear:
+        type: integer
+      info:
+        type: string
+      infohash:
+        type: string
+      is_torrent:
+        type: boolean
+      num_grabs:
+        type: integer
+      peers:
+        type: integer
+      pub_date:
+        type: string
+      rating:
+        type: integer
+      resolution:
+        type: string
+      season:
+        type: string
+      seeders:
+        description: Torznab specific stuff
+        type: integer
+      size:
+        type: integer
+      source_apikey:
+        type: string
+      source_endpoint:
+        type: string
+      title:
+        type: string
+      tvdbid:
+        description: TV Specific stuff
+        type: string
+      tvtitle:
+        type: string
+      usenet_date:
+        type: string
+    type: object
+  utils.NzbwithprioJson:
+    properties:
+      denied:
+        type: boolean
+      indexer:
+        type: string
+      nzb:
+        $ref: '#/definitions/newznab.NZB'
+      nzbepisode:
+        $ref: '#/definitions/database.SerieEpisodeJson'
+      nzbmovie:
+        $ref: '#/definitions/database.MovieJson'
+      parseInfo:
+        $ref: '#/definitions/utils.ParseInfo'
+      prio:
+        type: integer
+      reason:
+        type: string
+    type: object
   utils.ParseInfo:
     properties:
       3d:
@@ -1484,6 +1569,42 @@ paths:
       summary: List Movies (List)
       tags:
       - movie
+  /api/movies/search/download/{id}:
+    post:
+      consumes:
+      - application/json
+      description: Downloads a release after select
+      parameters:
+      - description: 'Nzb: Req. Title, Indexer, imdbid, downloadurl, parseinfo'
+        in: body
+        name: nzb
+        required: true
+        schema:
+          $ref: '#/definitions/utils.NzbwithprioJson'
+      - description: Movie ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Download a movie (manual)
+      tags:
+      - movie
   /api/movies/search/history/clear/{name}:
     get:
       consumes:
@@ -1572,6 +1693,40 @@ paths:
           schema:
             type: string
       summary: Search a movie
+      tags:
+      - movie
+  /api/movies/search/list/{id}:
+    get:
+      consumes:
+      - application/json
+      description: Searches for upgrades and missing
+      parameters:
+      - description: Movie ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      - description: apikey
+        in: query
+        name: searchByTitle
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Search a movie (List ok, nok)
       tags:
       - movie
   /api/movies/unmatched:
@@ -2385,6 +2540,42 @@ paths:
       summary: List Series Episodes (List)
       tags:
       - series
+  /api/series/episodes/search/download/{id}:
+    post:
+      consumes:
+      - application/json
+      description: Downloads a release after select
+      parameters:
+      - description: 'Nzb: Req. Title, Indexer, tvdbid, downloadurl, parseinfo'
+        in: body
+        name: nzb
+        required: true
+        schema:
+          $ref: '#/definitions/utils.NzbwithprioJson'
+      - description: Episode ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Download a episode (manual)
+      tags:
+      - series
   /api/series/episodes/search/id/{id}:
     get:
       consumes:
@@ -2413,6 +2604,40 @@ paths:
           schema:
             type: string
       summary: Search a episode
+      tags:
+      - series
+  /api/series/episodes/search/list/{id}:
+    get:
+      consumes:
+      - application/json
+      description: Searches for upgrades and missing
+      parameters:
+      - description: Episode ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      - description: apikey
+        in: query
+        name: searchByTitle
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Search a episode (list ok, nok)
       tags:
       - series
   /api/series/job/{job}:
