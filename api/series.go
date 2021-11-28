@@ -52,6 +52,8 @@ func AddSeriesRoutes(routerseries *gin.RouterGroup) {
 	routerseriesepisodessearch := routerseries.Group("/episodes/search")
 	{
 		routerseriesepisodessearch.GET("/id/:id", apiSeriesEpisodeSearch)
+		routerseriesepisodessearch.GET("/list/:id", apiSeriesEpisodeSearchList)
+		routerseriesepisodessearch.POST("/download/:id", apiSeriesEpisodeSearchDownload)
 	}
 }
 
@@ -874,6 +876,97 @@ func apiSeriesEpisodeSearch(c *gin.Context) {
 				scheduler.QueueSearch.Dispatch(func() {
 					utils.SearchSerieEpisodeSingle(serieepi, cfg_serie, true)
 				})
+				c.JSON(http.StatusOK, "started")
+				return
+			}
+		}
+	}
+	c.JSON(http.StatusNoContent, "Nothing Done")
+}
+
+// @Summary Search a episode (list ok, nok)
+// @Description Searches for upgrades and missing
+// @Tags series
+// @Accept  json
+// @Produce  json
+// @Param id path int true "Episode ID"
+// @Param apikey query string true "apikey"
+// @Param searchByTitle query string false "apikey"
+// @Success 200 {string} string
+// @Failure 401 {object} string
+// @Router /api/series/episodes/search/list/{id} [get]
+func apiSeriesEpisodeSearchList(c *gin.Context) {
+	if ApiAuth(c) == http.StatusUnauthorized {
+		return
+	}
+	serieepi, _ := database.GetSerieEpisodes(database.Query{Where: "id=?", WhereArgs: []interface{}{c.Param("id")}})
+
+	serie, _ := database.GetSeries(database.Query{Where: "id=?", WhereArgs: []interface{}{serieepi.SerieID}})
+
+	serie_keys, _ := config.ConfigDB.Keys([]byte("serie_*"), 0, 0, true)
+
+	titlesearch := false
+	if queryParam, ok := c.GetQuery("searchByTitle"); ok {
+		if queryParam == "true" || queryParam == "yes" {
+			titlesearch = true
+		}
+	}
+	for _, idxserie := range serie_keys {
+		var cfg_serie config.MediaTypeConfig
+		config.ConfigGet(string(idxserie), &cfg_serie)
+
+		for idxlist := range cfg_serie.Lists {
+			if strings.EqualFold(cfg_serie.Lists[idxlist].Name, serie.Listname) {
+				searchnow := utils.NewSearcher(cfg_serie, serieepi.QualityProfile)
+				searchresults := searchnow.SeriesSearch(serieepi, false, titlesearch)
+				c.JSON(http.StatusOK, gin.H{"accepted": searchresults.Nzbs, "rejected": searchresults.Rejected})
+				return
+			}
+		}
+	}
+	c.JSON(http.StatusNoContent, "Nothing Done")
+}
+
+// @Summary Download a episode (manual)
+// @Description Downloads a release after select
+// @Tags series
+// @Accept  json
+// @Produce  json
+// @Param nzb body utils.NzbwithprioJson true "Nzb: Req. Title, Indexer, tvdbid, downloadurl, parseinfo"
+// @Param id path int true "Episode ID"
+// @Param apikey query string true "apikey"
+// @Success 200 {string} string
+// @Failure 401 {object} string
+// @Router /api/series/episodes/search/download/{id} [post]
+func apiSeriesEpisodeSearchDownload(c *gin.Context) {
+	if ApiAuth(c) == http.StatusUnauthorized {
+		return
+	}
+	serieepi, _ := database.GetSerieEpisodes(database.Query{Where: "id=?", WhereArgs: []interface{}{c.Param("id")}})
+
+	serie, _ := database.GetSeries(database.Query{Where: "id=?", WhereArgs: []interface{}{serieepi.SerieID}})
+
+	serie_keys, _ := config.ConfigDB.Keys([]byte("serie_*"), 0, 0, true)
+	searchtype := "missing"
+	if !serieepi.Missing {
+		searchtype = "upgrade"
+	}
+
+	var nzb utils.Nzbwithprio
+	if err := c.ShouldBindJSON(&nzb); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	for _, idxserie := range serie_keys {
+		var cfg_serie config.MediaTypeConfig
+		config.ConfigGet(string(idxserie), &cfg_serie)
+
+		for idxlist := range cfg_serie.Lists {
+			if strings.EqualFold(cfg_serie.Lists[idxlist].Name, serie.Listname) {
+				downloadnow := utils.NewDownloader(cfg_serie, searchtype)
+				downloadnow.SetSeriesEpisode(serieepi)
+				downloadnow.DownloadNzb(nzb)
 				c.JSON(http.StatusOK, "started")
 				return
 			}

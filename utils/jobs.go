@@ -1,7 +1,6 @@
 package utils
 
 import (
-	"io"
 	"os"
 	"strings"
 
@@ -51,81 +50,10 @@ type InputNotifier struct {
 	Configuration  string
 	Replaced       []string
 	ReplacedPrefix string
-}
-
-func notifier(event string, noticonfig config.MediaNotificationConfig, notifierdata InputNotifier) {
-	if !strings.EqualFold(noticonfig.Event, event) {
-		return
-	}
-	messagetext := noticonfig.Message
-	messagetext = strings.Replace(messagetext, "{Target_Path}", notifierdata.Targetpath, -1)
-	messagetext = strings.Replace(messagetext, "{Source_Path}", notifierdata.SourcePath, -1)
-	messagetext = strings.Replace(messagetext, "{Title}", notifierdata.Title, -1)
-	messagetext = strings.Replace(messagetext, "{Year}", notifierdata.Year, -1)
-	messagetext = strings.Replace(messagetext, "{Imdb}", notifierdata.Imdb, -1)
-	messagetext = strings.Replace(messagetext, "{Tvdb}", notifierdata.Tvdb, -1)
-	messagetext = strings.Replace(messagetext, "{Season}", notifierdata.Season, -1)
-	messagetext = strings.Replace(messagetext, "{Episode}", notifierdata.Episode, -1)
-	messagetext = strings.Replace(messagetext, "{Identifier}", notifierdata.Identifier, -1)
-	messagetext = strings.Replace(messagetext, "{EpisodeTitle}", notifierdata.EpisodeTitle, -1)
-	messagetext = strings.Replace(messagetext, "{Configuration}", notifierdata.Configuration, -1)
-	if len(notifierdata.Replaced) >= 1 {
-		replacedstr := notifierdata.Replaced[0]
-		if notifierdata.ReplacedPrefix != "" {
-			replacedstr = notifierdata.ReplacedPrefix + " " + replacedstr
-		}
-		messagetext = strings.Replace(messagetext, "{Replaced}", " "+replacedstr, -1)
-	} else {
-		messagetext = strings.Replace(messagetext, "{Replaced}", "", -1)
-	}
-	MessageTitle := noticonfig.Title
-	MessageTitle = strings.Replace(MessageTitle, "{Target_Path}", notifierdata.Targetpath, -1)
-	MessageTitle = strings.Replace(MessageTitle, "{Source_Path}", notifierdata.SourcePath, -1)
-	MessageTitle = strings.Replace(MessageTitle, "{Title}", notifierdata.Title, -1)
-	MessageTitle = strings.Replace(MessageTitle, "{Year}", notifierdata.Year, -1)
-	MessageTitle = strings.Replace(MessageTitle, "{Imdb}", notifierdata.Imdb, -1)
-	MessageTitle = strings.Replace(MessageTitle, "{Tvdb}", notifierdata.Tvdb, -1)
-	MessageTitle = strings.Replace(MessageTitle, "{Season}", notifierdata.Season, -1)
-	MessageTitle = strings.Replace(MessageTitle, "{Episode}", notifierdata.Episode, -1)
-	MessageTitle = strings.Replace(MessageTitle, "{Identifier}", notifierdata.Identifier, -1)
-	MessageTitle = strings.Replace(MessageTitle, "{EpisodeTitle}", notifierdata.EpisodeTitle, -1)
-	MessageTitle = strings.Replace(MessageTitle, "{Configuration}", notifierdata.Configuration, -1)
-
-	if !config.ConfigCheck("notification_" + noticonfig.Map_notification) {
-		return
-	}
-	var cfg_notification config.NotificationConfig
-	config.ConfigGet("notification_"+noticonfig.Map_notification, &cfg_notification)
-
-	if strings.EqualFold(cfg_notification.Type, "pushover") {
-		if apiexternal.PushoverApi.ApiKey != cfg_notification.Apikey {
-			apiexternal.NewPushOverClient(cfg_notification.Apikey)
-		}
-
-		err := apiexternal.PushoverApi.SendMessage(messagetext, MessageTitle, cfg_notification.Recipient)
-		if err != nil {
-			logger.Log.Error("Error sending pushover", err)
-		} else {
-			logger.Log.Info("Pushover message sent")
-		}
-	}
-	if strings.EqualFold(cfg_notification.Type, "csv") {
-		f, errf := os.OpenFile(cfg_notification.Outputto,
-			os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		if errf != nil {
-			logger.Log.Error("Error opening csv to write", errf)
-			return
-		}
-		defer f.Close()
-		if errf == nil {
-			_, errc := io.WriteString(f, messagetext+"\n")
-			if errc != nil {
-				logger.Log.Error("Error writing to csv", errc)
-			} else {
-				logger.Log.Info("csv written")
-			}
-		}
-	}
+	Dbmovie        database.Dbmovie
+	Dbserie        database.Dbserie
+	DbserieEpisode database.DbserieEpisode
+	Source         ParseInfo
 }
 
 func Feeds(configEntry config.MediaTypeConfig, list config.MediaListsConfig) feedResults {

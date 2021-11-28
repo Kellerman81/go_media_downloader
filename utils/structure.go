@@ -873,7 +873,7 @@ func StructureSeries(structure Structure, folder string, m *ParseInfo, series da
 			}
 			structure.ReplaceLowerQualityFiles(oldfiles_remove, database.Movie{}, series)
 			structure.MoveAdditionalFiles(folder, videotarget, filename, videofile, sourcefileext, len(videotarget))
-			structure.Notify(videotarget, filename, videofile, database.Movie{}, seriesEpisode, oldfiles)
+			structure.Notify(videotarget, filename, videofile, *m, database.Movie{}, seriesEpisode, oldfiles)
 			scanner.CleanUpFolder(folder, structure.sourcepath.CleanupsizeMB)
 
 			//updateserie
@@ -935,7 +935,7 @@ func StructureMovie(structure Structure, folder string, m *ParseInfo, movie data
 		structure.ReplaceLowerQualityFiles(oldfiles_remove, movie, database.Serie{})
 		structure.MoveAdditionalFiles(folder, videotarget, filename, videofile, sourcefileext, len(videotarget))
 
-		structure.Notify(videotarget, filename, videofile, movie, database.SerieEpisode{}, oldfiles)
+		structure.Notify(videotarget, filename, videofile, *m, movie, database.SerieEpisode{}, oldfiles)
 		scanner.CleanUpFolder(folder, structure.sourcepath.CleanupsizeMB)
 
 		//updatemovie
@@ -1286,9 +1286,9 @@ func StructureSendNotify(event string, noticonfig config.MediaNotificationConfig
 		}
 	}
 }
-func (s *Structure) Notify(videotarget string, filename string, videofile string, movie database.Movie, serieepisode database.SerieEpisode, oldfiles []string) {
+func (s *Structure) Notify(videotarget string, filename string, videofile string, m ParseInfo, movie database.Movie, serieepisode database.SerieEpisode, oldfiles []string) {
 	if strings.ToLower(s.groupType) == "movie" {
-		dbmovie, _ := database.GetDbmovie(database.Query{Select: "title, year, imdb_id", Where: "id=?", WhereArgs: []interface{}{movie.DbmovieID}})
+		dbmovie, _ := database.GetDbmovie(database.Query{Where: "id=?", WhereArgs: []interface{}{movie.DbmovieID}})
 		for idx := range s.configEntry.Notification {
 			StructureSendNotify("added_data", s.configEntry.Notification[idx], forstructurenotify{*s, InputNotifier{
 				Targetpath:     filepath.Join(videotarget, filename),
@@ -1299,11 +1299,13 @@ func (s *Structure) Notify(videotarget string, filename string, videofile string
 				Replaced:       oldfiles,
 				ReplacedPrefix: s.configEntry.Notification[idx].ReplacedPrefix,
 				Configuration:  s.list.Name,
+				Dbmovie:        dbmovie,
+				Source:         m,
 			}})
 		}
 	} else {
-		dbserieepisode, _ := database.GetDbserieEpisodes(database.Query{Select: "season, episode, identifier, dbserie_id", Where: "id=?", WhereArgs: []interface{}{serieepisode.DbserieEpisodeID}})
-		dbserie, _ := database.GetDbserie(database.Query{Select: "seriename, firstaired, thetvdb_id", Where: "id=?", WhereArgs: []interface{}{dbserieepisode.DbserieID}})
+		dbserieepisode, _ := database.GetDbserieEpisodes(database.Query{Where: "id=?", WhereArgs: []interface{}{serieepisode.DbserieEpisodeID}})
+		dbserie, _ := database.GetDbserie(database.Query{Where: "id=?", WhereArgs: []interface{}{dbserieepisode.DbserieID}})
 		for idx := range s.configEntry.Notification {
 			StructureSendNotify("added_data", s.configEntry.Notification[idx], forstructurenotify{*s, InputNotifier{
 				Targetpath:     filepath.Join(videotarget, filename),
@@ -1318,6 +1320,9 @@ func (s *Structure) Notify(videotarget string, filename string, videofile string
 				Replaced:       oldfiles,
 				ReplacedPrefix: s.configEntry.Notification[idx].ReplacedPrefix,
 				Configuration:  s.list.Name,
+				Dbserie:        dbserie,
+				DbserieEpisode: dbserieepisode,
+				Source:         m,
 			}})
 		}
 	}

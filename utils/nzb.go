@@ -14,13 +14,25 @@ import (
 	"github.com/Kellerman81/go_media_downloader/newznab"
 )
 
-type nzbwithprio struct {
+type Nzbwithprio struct {
 	Prio       int
 	Indexer    string
 	ParseInfo  ParseInfo
 	NZB        newznab.NZB
 	Nzbmovie   database.Movie
 	Nzbepisode database.SerieEpisode
+	Denied     bool
+	Reason     string
+}
+type NzbwithprioJson struct {
+	Prio       int
+	Indexer    string
+	ParseInfo  ParseInfo
+	NZB        newznab.NZB
+	Nzbmovie   database.MovieJson
+	Nzbepisode database.SerieEpisodeJson
+	Denied     bool
+	Reason     string
 }
 
 func filter_size_nzbs(configEntry config.MediaTypeConfig, indexer config.QualityIndexerConfig, rownzb newznab.NZB) bool {
@@ -51,6 +63,53 @@ func filter_size_nzbs(configEntry config.MediaTypeConfig, indexer config.Quality
 		}
 	}
 	return false
+}
+func filter_test_quality_wanted(quality config.QualityConfig, m *ParseInfo, rownzb newznab.NZB) bool {
+	wanted_release_resolution := false
+	for idxqual := range quality.Wanted_resolution {
+		if strings.EqualFold(quality.Wanted_resolution[idxqual], m.Resolution) {
+			wanted_release_resolution = true
+			break
+		}
+	}
+	if len(quality.Wanted_resolution) >= 1 && !wanted_release_resolution {
+		logger.Log.Debug("Skipped - unwanted resolution: ", rownzb.Title)
+		return false
+	}
+	wanted_release_quality := false
+	for idxqual := range quality.Wanted_quality {
+		if !strings.EqualFold(quality.Wanted_quality[idxqual], m.Quality) {
+			wanted_release_quality = true
+			break
+		}
+	}
+	if len(quality.Wanted_quality) >= 1 && !wanted_release_quality {
+		logger.Log.Debug("Skipped - unwanted quality: ", rownzb.Title)
+		return false
+	}
+	wanted_release_audio := false
+	for idxqual := range quality.Wanted_audio {
+		if strings.EqualFold(quality.Wanted_audio[idxqual], m.Audio) {
+			wanted_release_audio = true
+			break
+		}
+	}
+	if len(quality.Wanted_audio) >= 1 && !wanted_release_audio {
+		logger.Log.Debug("Skipped - unwanted audio: ", rownzb.Title)
+		return false
+	}
+	wanted_release_codec := false
+	for idxqual := range quality.Wanted_codec {
+		if strings.EqualFold(quality.Wanted_codec[idxqual], m.Codec) {
+			wanted_release_codec = true
+			break
+		}
+	}
+	if len(quality.Wanted_codec) >= 1 && !wanted_release_codec {
+		logger.Log.Debug("Skipped - unwanted codec: ", rownzb.Title)
+		return false
+	}
+	return true
 }
 func filter_regex_nzbs(regexconfig config.RegexConfig, title string, wantedtitle string, wantedalternates []string) bool {
 	for _, rowtitle := range regexconfig.Rejected {
@@ -95,17 +154,33 @@ func filter_regex_nzbs(regexconfig config.RegexConfig, title string, wantedtitle
 	}
 	return false
 }
-func filter_movies_nzbs(configEntry config.MediaTypeConfig, quality config.QualityConfig, indexer config.QualityIndexerConfig, nzbs []newznab.NZB, movieid uint, seriesepisodeid uint, minPrio int, movie database.Dbmovie, serie database.Dbserie, title string, alttitles []string, year string) []nzbwithprio {
-	retnzb := make([]nzbwithprio, 0, len(nzbs))
+func filter_movies_nzbs(configEntry config.MediaTypeConfig, quality config.QualityConfig, indexer config.QualityIndexerConfig, nzbs []newznab.NZB, movieid uint, seriesepisodeid uint, minPrio int, movie database.Dbmovie, serie database.Dbserie, title string, alttitles []string, year string) ([]Nzbwithprio, []Nzbwithprio) {
+	retnzb := make([]Nzbwithprio, 0, len(nzbs))
+	denied := make([]Nzbwithprio, 0, len(nzbs))
+	getmovie, _ := database.GetMovies(database.Query{Where: "id=?", WhereArgs: []interface{}{movieid}})
 	for idx := range nzbs {
 		toskip := false
 		if len(strings.Trim(Path(nzbs[idx].Title, false), " ")) <= 3 {
+			nzbprio := Nzbwithprio{
+				Indexer:  indexer.Template_indexer,
+				NZB:      nzbs[idx],
+				Nzbmovie: getmovie,
+				Denied:   true,
+				Reason:   "Title too short"}
+			denied = append(denied, nzbprio)
 			logger.Log.Debug("Skipped - Title too short: ", nzbs[idx].Title)
 			toskip = true
 			continue
 		}
 		if filter_size_nzbs(configEntry, indexer, nzbs[idx]) {
 			toskip = true
+			nzbprio := Nzbwithprio{
+				Indexer:  indexer.Template_indexer,
+				NZB:      nzbs[idx],
+				Nzbmovie: getmovie,
+				Denied:   true,
+				Reason:   "Size not in Range"}
+			denied = append(denied, nzbprio)
 			continue
 		}
 		if movieid >= 1 {
@@ -113,6 +188,13 @@ func filter_movies_nzbs(configEntry config.MediaTypeConfig, quality config.Quali
 			if counterh1 >= 1 {
 				logger.Log.Debug("Skipped - Already Downloaded: ", nzbs[idx].Title)
 				toskip = true
+				nzbprio := Nzbwithprio{
+					Indexer:  indexer.Template_indexer,
+					NZB:      nzbs[idx],
+					Nzbmovie: getmovie,
+					Denied:   true,
+					Reason:   "Already Downloaded"}
+				denied = append(denied, nzbprio)
 				continue
 			}
 			if indexer.History_check_title {
@@ -120,6 +202,13 @@ func filter_movies_nzbs(configEntry config.MediaTypeConfig, quality config.Quali
 				if counterh2 >= 1 {
 					logger.Log.Debug("Skipped - Already Downloaded (Title): ", nzbs[idx].Title)
 					toskip = true
+					nzbprio := Nzbwithprio{
+						Indexer:  indexer.Template_indexer,
+						NZB:      nzbs[idx],
+						Nzbmovie: getmovie,
+						Denied:   true,
+						Reason:   "Already Downloaded"}
+					denied = append(denied, nzbprio)
 					continue
 				}
 			}
@@ -139,6 +228,13 @@ func filter_movies_nzbs(configEntry config.MediaTypeConfig, quality config.Quali
 			if wantedimdb != tempimdb && len(wantedimdb) >= 1 && len(tempimdb) >= 1 {
 				logger.Log.Debug("Skipped - Imdb not match: ", nzbs[idx].Title, " - imdb in nzb: ", tempimdb, " imdb wanted: ", wantedimdb)
 				toskip = true
+				nzbprio := Nzbwithprio{
+					Indexer:  indexer.Template_indexer,
+					NZB:      nzbs[idx],
+					Nzbmovie: getmovie,
+					Denied:   true,
+					Reason:   "Imdbid not correct"}
+				denied = append(denied, nzbprio)
 				continue
 			}
 		} else {
@@ -146,6 +242,13 @@ func filter_movies_nzbs(configEntry config.MediaTypeConfig, quality config.Quali
 			if counterh1 >= 1 {
 				logger.Log.Debug("Skipped - Already Downloaded: ", nzbs[idx].Title)
 				toskip = true
+				nzbprio := Nzbwithprio{
+					Indexer:  indexer.Template_indexer,
+					NZB:      nzbs[idx],
+					Nzbmovie: getmovie,
+					Denied:   true,
+					Reason:   "Already Downloaded"}
+				denied = append(denied, nzbprio)
 				continue
 			}
 			if indexer.History_check_title {
@@ -153,12 +256,26 @@ func filter_movies_nzbs(configEntry config.MediaTypeConfig, quality config.Quali
 				if counterh2 >= 1 {
 					logger.Log.Debug("Skipped - Already Downloaded (Title): ", nzbs[idx].Title)
 					toskip = true
+					nzbprio := Nzbwithprio{
+						Indexer:  indexer.Template_indexer,
+						NZB:      nzbs[idx],
+						Nzbmovie: getmovie,
+						Denied:   true,
+						Reason:   "Already Downloaded"}
+					denied = append(denied, nzbprio)
 					continue
 				}
 			}
 		}
 		if !config.ConfigCheck("regex_" + indexer.Template_regex) {
 			toskip = true
+			nzbprio := Nzbwithprio{
+				Indexer:  indexer.Template_indexer,
+				NZB:      nzbs[idx],
+				Nzbmovie: getmovie,
+				Denied:   true,
+				Reason:   "Denied by Regex"}
+			denied = append(denied, nzbprio)
 			continue
 		}
 		var cfg_regex config.RegexConfig
@@ -166,6 +283,13 @@ func filter_movies_nzbs(configEntry config.MediaTypeConfig, quality config.Quali
 
 		if filter_regex_nzbs(cfg_regex, nzbs[idx].Title, movie.Title, alttitles) {
 			toskip = true
+			nzbprio := Nzbwithprio{
+				Indexer:  indexer.Template_indexer,
+				NZB:      nzbs[idx],
+				Nzbmovie: getmovie,
+				Denied:   true,
+				Reason:   "Denied by Regex"}
+			denied = append(denied, nzbprio)
 			continue
 		}
 		if !toskip {
@@ -184,12 +308,30 @@ func filter_movies_nzbs(configEntry config.MediaTypeConfig, quality config.Quali
 			}
 			if quality.CheckYear && !quality.CheckYear1 && !strings.Contains(nzbs[idx].Title, year) && len(year) >= 1 && year != "0" {
 				logger.Log.Debug("Skipped - unwanted year: ", nzbs[idx].Title, " wanted ", year)
+				nzbprio := Nzbwithprio{
+					Prio:      m.Priority,
+					Indexer:   indexer.Template_indexer,
+					ParseInfo: *m,
+					NZB:       nzbs[idx],
+					Nzbmovie:  getmovie,
+					Denied:    true,
+					Reason:    "Wrong year"}
+				denied = append(denied, nzbprio)
 				continue
 			} else {
 				if quality.CheckYear1 && len(year) >= 1 && year != "0" {
 					yearint, _ := strconv.Atoi(year)
 					if !strings.Contains(nzbs[idx].Title, strconv.Itoa(yearint+1)) && !strings.Contains(nzbs[idx].Title, strconv.Itoa(yearint-1)) && !strings.Contains(nzbs[idx].Title, strconv.Itoa(yearint)) {
 						logger.Log.Debug("Skipped - unwanted year: ", nzbs[idx].Title, " wanted (+-1) ", yearint)
+						nzbprio := Nzbwithprio{
+							Prio:      m.Priority,
+							Indexer:   indexer.Template_indexer,
+							ParseInfo: *m,
+							NZB:       nzbs[idx],
+							Nzbmovie:  getmovie,
+							Denied:    true,
+							Reason:    "Wrong year"}
+						denied = append(denied, nzbprio)
 						continue
 					}
 				}
@@ -209,76 +351,87 @@ func filter_movies_nzbs(configEntry config.MediaTypeConfig, quality config.Quali
 					}
 					if len(alttitles) >= 1 && !alttitlefound {
 						logger.Log.Debug("Skipped - unwanted title and alternate: ", nzbs[idx].Title, " wanted ", title, " ", alttitles)
+						nzbprio := Nzbwithprio{
+							Prio:      m.Priority,
+							Indexer:   indexer.Template_indexer,
+							ParseInfo: *m,
+							NZB:       nzbs[idx],
+							Nzbmovie:  getmovie,
+							Denied:    true,
+							Reason:    "Wrong title"}
+						denied = append(denied, nzbprio)
 						continue
 					}
 				}
 				if len(alttitles) == 0 && !titlefound {
 					logger.Log.Debug("Skipped - unwanted title: ", nzbs[idx].Title, " wanted ", title)
+					nzbprio := Nzbwithprio{
+						Prio:      m.Priority,
+						Indexer:   indexer.Template_indexer,
+						ParseInfo: *m,
+						NZB:       nzbs[idx],
+						Nzbmovie:  getmovie,
+						Denied:    true,
+						Reason:    "Wrong title"}
+					denied = append(denied, nzbprio)
 					continue
 				}
 			}
 			m.GetPriority(configEntry, quality)
-			wanted_release_resolution := false
-			for idxqual := range quality.Wanted_resolution {
-				if strings.EqualFold(quality.Wanted_resolution[idxqual], m.Resolution) {
-					wanted_release_resolution = true
-					break
-				}
-			}
-			if len(quality.Wanted_resolution) >= 1 && !wanted_release_resolution {
-				logger.Log.Debug("Skipped - unwanted resolution: ", nzbs[idx].Title)
-				continue
-			}
-			wanted_release_quality := false
-			for idxqual := range quality.Wanted_quality {
-				if !strings.EqualFold(quality.Wanted_quality[idxqual], m.Quality) {
-					wanted_release_quality = true
-					break
-				}
-			}
-			if len(quality.Wanted_quality) >= 1 && !wanted_release_quality {
+			if !filter_test_quality_wanted(quality, m, nzbs[idx]) {
 				logger.Log.Debug("Skipped - unwanted quality: ", nzbs[idx].Title)
-				continue
-			}
-			wanted_release_audio := false
-			for idxqual := range quality.Wanted_audio {
-				if strings.EqualFold(quality.Wanted_audio[idxqual], m.Audio) {
-					wanted_release_audio = true
-					break
-				}
-			}
-			if len(quality.Wanted_audio) >= 1 && !wanted_release_audio {
-				logger.Log.Debug("Skipped - unwanted audio: ", nzbs[idx].Title)
-				continue
-			}
-			wanted_release_codec := false
-			for idxqual := range quality.Wanted_codec {
-				if strings.EqualFold(quality.Wanted_codec[idxqual], m.Codec) {
-					wanted_release_codec = true
-					break
-				}
-			}
-			if len(quality.Wanted_codec) >= 1 && !wanted_release_codec {
-				logger.Log.Debug("Skipped - unwanted codec: ", nzbs[idx].Title)
+				nzbprio := Nzbwithprio{
+					Prio:      m.Priority,
+					Indexer:   indexer.Template_indexer,
+					ParseInfo: *m,
+					NZB:       nzbs[idx],
+					Nzbmovie:  getmovie,
+					Denied:    true,
+					Reason:    "unwanted quality"}
+				denied = append(denied, nzbprio)
 				continue
 			}
 			if m.Priority != 0 {
 				if minPrio != 0 {
 					if m.Priority <= minPrio {
+						nzbprio := Nzbwithprio{
+							Prio:      m.Priority,
+							Indexer:   indexer.Template_indexer,
+							ParseInfo: *m,
+							NZB:       nzbs[idx],
+							Nzbmovie:  getmovie,
+							Denied:    true,
+							Reason:    "Prio lower. have: " + strconv.Itoa(minPrio)}
+						denied = append(denied, nzbprio)
 						logger.Log.Debug("Skipped - Prio lower: ", nzbs[idx].Title, " old prio ", minPrio, " found prio ", m.Priority)
 						continue
 					}
 					logger.Log.Debug("ok - prio higher: ", nzbs[idx].Title, " old prio ", minPrio, " found prio ", m.Priority)
 				}
 				setmovie, _ := database.GetMovies(database.Query{Where: "id=?", WhereArgs: []interface{}{movieid}})
-				nzbprio := nzbwithprio{m.Priority, indexer.Template_indexer, *m, nzbs[idx], setmovie, database.SerieEpisode{}}
+				nzbprio := Nzbwithprio{
+					Prio:       m.Priority,
+					Indexer:    indexer.Template_indexer,
+					ParseInfo:  *m,
+					NZB:        nzbs[idx],
+					Nzbmovie:   setmovie,
+					Nzbepisode: database.SerieEpisode{}}
 				retnzb = append(retnzb, nzbprio)
 			} else {
+				nzbprio := Nzbwithprio{
+					Prio:      m.Priority,
+					Indexer:   indexer.Template_indexer,
+					ParseInfo: *m,
+					NZB:       nzbs[idx],
+					Nzbmovie:  getmovie,
+					Denied:    true,
+					Reason:    "Prio not matched"}
+				denied = append(denied, nzbprio)
 				logger.Log.Debug("Skipped - Prio not matched: ", nzbs[idx].Title)
 			}
 		}
 	}
-	return retnzb
+	return retnzb, denied
 }
 
 func checknzbtitle(movietitle string, nzbtitle string) bool {
@@ -292,17 +445,33 @@ func checknzbtitle(movietitle string, nzbtitle string) bool {
 	return strings.EqualFold(movietitle, nzbtitle)
 }
 
-func filter_series_nzbs(configEntry config.MediaTypeConfig, quality config.QualityConfig, indexer config.QualityIndexerConfig, nzbs []newznab.NZB, movieid uint, seriesepisodeid uint, minPrio int, movie database.Dbmovie, serie database.Dbserie, title string, alttitles []string) []nzbwithprio {
-	retnzb := make([]nzbwithprio, 0, len(nzbs))
+func filter_series_nzbs(configEntry config.MediaTypeConfig, quality config.QualityConfig, indexer config.QualityIndexerConfig, nzbs []newznab.NZB, movieid uint, seriesepisodeid uint, minPrio int, movie database.Dbmovie, serie database.Dbserie, title string, alttitles []string) ([]Nzbwithprio, []Nzbwithprio) {
+	retnzb := make([]Nzbwithprio, 0, len(nzbs))
+	denied := make([]Nzbwithprio, 0, len(nzbs))
+	serieEpisode, _ := database.GetSerieEpisodes(database.Query{Where: "id = ?", WhereArgs: []interface{}{seriesepisodeid}})
 	for idx := range nzbs {
 		toskip := false
 		if len(strings.Trim(Path(nzbs[idx].Title, false), " ")) <= 3 {
 			logger.Log.Debug("Skipped - Title too short: ", nzbs[idx].Title)
+			nzbprio := Nzbwithprio{
+				Indexer:    indexer.Template_indexer,
+				NZB:        nzbs[idx],
+				Nzbepisode: serieEpisode,
+				Denied:     true,
+				Reason:     "Title too short"}
+			denied = append(denied, nzbprio)
 			toskip = true
 			continue
 		}
 		if filter_size_nzbs(configEntry, indexer, nzbs[idx]) {
 			toskip = true
+			nzbprio := Nzbwithprio{
+				Indexer:    indexer.Template_indexer,
+				NZB:        nzbs[idx],
+				Nzbepisode: serieEpisode,
+				Denied:     true,
+				Reason:     "Wrong size"}
+			denied = append(denied, nzbprio)
 			continue
 		}
 		if toskip {
@@ -313,6 +482,13 @@ func filter_series_nzbs(configEntry config.MediaTypeConfig, quality config.Quali
 			if counterh1 >= 1 {
 				logger.Log.Debug("Skipped - Already Downloaded: ", nzbs[idx].Title)
 				toskip = true
+				nzbprio := Nzbwithprio{
+					Indexer:    indexer.Template_indexer,
+					NZB:        nzbs[idx],
+					Nzbepisode: serieEpisode,
+					Denied:     true,
+					Reason:     "Already downloaded"}
+				denied = append(denied, nzbprio)
 				continue
 			}
 			if indexer.History_check_title {
@@ -320,12 +496,26 @@ func filter_series_nzbs(configEntry config.MediaTypeConfig, quality config.Quali
 				if counterh2 >= 1 {
 					logger.Log.Debug("Skipped - Already Downloaded (Title): ", nzbs[idx].Title)
 					toskip = true
+					nzbprio := Nzbwithprio{
+						Indexer:    indexer.Template_indexer,
+						NZB:        nzbs[idx],
+						Nzbepisode: serieEpisode,
+						Denied:     true,
+						Reason:     "Already downloaded"}
+					denied = append(denied, nzbprio)
 					continue
 				}
 			}
 			if strconv.Itoa(serie.ThetvdbID) != nzbs[idx].TVDBID && serie.ThetvdbID >= 1 && len(nzbs[idx].TVDBID) >= 1 {
 				logger.Log.Debug("Skipped - Tvdb not match: ", nzbs[idx].Title, " - Tvdb in nzb: ", nzbs[idx].TVDBID, " Tvdb wanted: ", serie.ThetvdbID)
 				toskip = true
+				nzbprio := Nzbwithprio{
+					Indexer:    indexer.Template_indexer,
+					NZB:        nzbs[idx],
+					Nzbepisode: serieEpisode,
+					Denied:     true,
+					Reason:     "Wrong tvdb id"}
+				denied = append(denied, nzbprio)
 				continue
 			}
 			if quality.CheckTitle || (serie.ThetvdbID == 0 && quality.BackupSearchForTitle) {
@@ -359,23 +549,60 @@ func filter_series_nzbs(configEntry config.MediaTypeConfig, quality config.Quali
 								} else {
 									toskip = true
 									logger.Log.Debug("Skipped - seriename provided dbepi found but identifier not match ", founddbepi.Identifier, " in: ", nzbs[idx].Title)
+									nzbprio := Nzbwithprio{
+										Indexer:    indexer.Template_indexer,
+										NZB:        nzbs[idx],
+										Denied:     true,
+										Nzbepisode: foundepi,
+										Reason:     "Wrong episode identifier"}
+									denied = append(denied, nzbprio)
 									continue
 								}
 							} else {
 								toskip = true
 								logger.Log.Debug("Skipped - seriename provided dbepi not found", serie.Seriename)
+								nzbprio := Nzbwithprio{
+									Indexer:    indexer.Template_indexer,
+									NZB:        nzbs[idx],
+									Denied:     true,
+									Nzbepisode: foundepi,
+									Reason:     "DB Episode not found"}
+								denied = append(denied, nzbprio)
 								continue
 							}
 						} else {
 							toskip = true
 							logger.Log.Debug("Skipped - seriename provided epi not found", serie.Seriename)
+							nzbprio := Nzbwithprio{
+								Indexer:    indexer.Template_indexer,
+								NZB:        nzbs[idx],
+								Nzbepisode: serieEpisode,
+								Denied:     true,
+								Reason:     "Episode not found"}
+							denied = append(denied, nzbprio)
 							continue
 						}
 					} else {
 						logger.Log.Debug("Skipped - seriename provided but not found ", serie.Seriename)
+						nzbprio := Nzbwithprio{
+							Indexer:    indexer.Template_indexer,
+							NZB:        nzbs[idx],
+							Nzbepisode: serieEpisode,
+							Denied:     true,
+							Reason:     "Serie not found"}
+						denied = append(denied, nzbprio)
+						continue
 					}
 				} else {
 					logger.Log.Debug("Skipped - seriename not provided or searchfortitle disabled")
+					nzbprio := Nzbwithprio{
+						Indexer:    indexer.Template_indexer,
+						NZB:        nzbs[idx],
+						Nzbepisode: serieEpisode,
+						Denied:     true,
+						Reason:     "Serie not found"}
+					denied = append(denied, nzbprio)
+					continue
 				}
 				if toskip {
 					logger.Log.Debug("Skipped - wrong seriename - wanted: ", serie.Seriename, " have: ", nzbs[idx].Title)
@@ -386,6 +613,13 @@ func filter_series_nzbs(configEntry config.MediaTypeConfig, quality config.Quali
 			if counterh1 >= 1 {
 				logger.Log.Debug("Skipped - Already Downloaded: ", nzbs[idx].Title)
 				toskip = true
+				nzbprio := Nzbwithprio{
+					Indexer:    indexer.Template_indexer,
+					NZB:        nzbs[idx],
+					Nzbepisode: serieEpisode,
+					Denied:     true,
+					Reason:     "Already downloaded"}
+				denied = append(denied, nzbprio)
 				continue
 			}
 			if indexer.History_check_title {
@@ -393,12 +627,26 @@ func filter_series_nzbs(configEntry config.MediaTypeConfig, quality config.Quali
 				if counterh2 >= 1 {
 					logger.Log.Debug("Skipped - Already Downloaded (Title): ", nzbs[idx].Title)
 					toskip = true
+					nzbprio := Nzbwithprio{
+						Indexer:    indexer.Template_indexer,
+						NZB:        nzbs[idx],
+						Nzbepisode: serieEpisode,
+						Denied:     true,
+						Reason:     "Already downloaded"}
+					denied = append(denied, nzbprio)
 					continue
 				}
 			}
 		}
 		if !config.ConfigCheck("regex_" + indexer.Template_regex) {
 			toskip = true
+			nzbprio := Nzbwithprio{
+				Indexer:    indexer.Template_indexer,
+				NZB:        nzbs[idx],
+				Nzbepisode: serieEpisode,
+				Denied:     true,
+				Reason:     "Regex"}
+			denied = append(denied, nzbprio)
 			continue
 		}
 		var cfg_regex config.RegexConfig
@@ -406,6 +654,13 @@ func filter_series_nzbs(configEntry config.MediaTypeConfig, quality config.Quali
 
 		if filter_regex_nzbs(cfg_regex, nzbs[idx].Title, serie.Seriename, alttitles) {
 			toskip = true
+			nzbprio := Nzbwithprio{
+				Indexer:    indexer.Template_indexer,
+				NZB:        nzbs[idx],
+				Nzbepisode: serieEpisode,
+				Denied:     true,
+				Reason:     "Regex"}
+			denied = append(denied, nzbprio)
 			continue
 		}
 		if !toskip {
@@ -425,81 +680,92 @@ func filter_series_nzbs(configEntry config.MediaTypeConfig, quality config.Quali
 					}
 					if len(alttitles) >= 1 && !alttitlefound {
 						logger.Log.Debug("Skipped - unwanted title and alternate: ", nzbs[idx].Title, " wanted ", title, " ", alttitles)
+						nzbprio := Nzbwithprio{
+							Prio:       m.Priority,
+							Indexer:    indexer.Template_indexer,
+							ParseInfo:  *m,
+							NZB:        nzbs[idx],
+							Nzbepisode: serieEpisode,
+							Denied:     true,
+							Reason:     "Wrong title"}
+						denied = append(denied, nzbprio)
 						continue
 					}
 				}
 				if len(alttitles) == 0 && !titlefound {
 					logger.Log.Debug("Skipped - unwanted title: ", nzbs[idx].Title, " wanted ", title)
+					nzbprio := Nzbwithprio{
+						Prio:       m.Priority,
+						Indexer:    indexer.Template_indexer,
+						ParseInfo:  *m,
+						NZB:        nzbs[idx],
+						Nzbepisode: serieEpisode,
+						Denied:     true,
+						Reason:     "Wrong title"}
+					denied = append(denied, nzbprio)
 					continue
 				}
 			}
 			m.GetPriority(configEntry, quality)
-			wanted_release_resolution := false
-			for idxqual := range quality.Wanted_resolution {
-				if strings.EqualFold(quality.Wanted_resolution[idxqual], m.Resolution) {
-					wanted_release_resolution = true
-					break
-				}
-			}
-			if len(quality.Wanted_resolution) >= 1 && !wanted_release_resolution {
-				logger.Log.Debug("Skipped - unwanted resolution: ", nzbs[idx].Title)
-				continue
-			}
-			wanted_release_quality := false
-			for idxqual := range quality.Wanted_quality {
-				if !strings.EqualFold(quality.Wanted_quality[idxqual], m.Quality) {
-					wanted_release_quality = true
-					break
-				}
-			}
-			if len(quality.Wanted_quality) >= 1 && !wanted_release_quality {
+			if !filter_test_quality_wanted(quality, m, nzbs[idx]) {
 				logger.Log.Debug("Skipped - unwanted quality: ", nzbs[idx].Title)
-				continue
-			}
-			wanted_release_audio := false
-			for idxqual := range quality.Wanted_audio {
-				if strings.EqualFold(quality.Wanted_audio[idxqual], m.Audio) {
-					wanted_release_audio = true
-					break
-				}
-			}
-			if len(quality.Wanted_audio) >= 1 && !wanted_release_audio {
-				logger.Log.Debug("Skipped - unwanted audio: ", nzbs[idx].Title)
-				continue
-			}
-			wanted_release_codec := false
-			for idxqual := range quality.Wanted_codec {
-				if strings.EqualFold(quality.Wanted_codec[idxqual], m.Codec) {
-					wanted_release_codec = true
-					break
-				}
-			}
-			if len(quality.Wanted_codec) >= 1 && !wanted_release_codec {
-				logger.Log.Debug("Skipped - unwanted codec: ", nzbs[idx].Title)
+				nzbprio := Nzbwithprio{
+					Prio:       m.Priority,
+					Indexer:    indexer.Template_indexer,
+					ParseInfo:  *m,
+					NZB:        nzbs[idx],
+					Nzbepisode: serieEpisode,
+					Denied:     true,
+					Reason:     "Unwanted quality"}
+				denied = append(denied, nzbprio)
 				continue
 			}
 			if m.Priority != 0 {
 				if minPrio != 0 {
 					if m.Priority <= minPrio {
 						logger.Log.Debug("Skipped - Prio lower: ", nzbs[idx].Title, " old prio ", minPrio, " found prio ", m.Priority)
+						nzbprio := Nzbwithprio{
+							Prio:       m.Priority,
+							Indexer:    indexer.Template_indexer,
+							ParseInfo:  *m,
+							NZB:        nzbs[idx],
+							Nzbepisode: serieEpisode,
+							Denied:     true,
+							Reason:     "Prio lower"}
+						denied = append(denied, nzbprio)
 						continue
 					}
 					logger.Log.Debug("ok - prio higher: ", nzbs[idx].Title, " old prio ", minPrio, " found prio ", m.Priority)
 				}
 
 				setserieepisode, _ := database.GetSerieEpisodes(database.Query{Where: "id=?", WhereArgs: []interface{}{seriesepisodeid}})
-				nzbprio := nzbwithprio{m.Priority, indexer.Template_indexer, *m, nzbs[idx], database.Movie{}, setserieepisode}
+				nzbprio := Nzbwithprio{
+					Prio:       m.Priority,
+					Indexer:    indexer.Template_indexer,
+					ParseInfo:  *m,
+					NZB:        nzbs[idx],
+					Nzbmovie:   database.Movie{},
+					Nzbepisode: setserieepisode}
 				retnzb = append(retnzb, nzbprio)
 			} else {
 				logger.Log.Debug("Skipped - Prio not matched: ", nzbs[idx].Title)
+				nzbprio := Nzbwithprio{
+					Prio:       m.Priority,
+					Indexer:    indexer.Template_indexer,
+					ParseInfo:  *m,
+					NZB:        nzbs[idx],
+					Nzbepisode: serieEpisode,
+					Denied:     true,
+					Reason:     "Prio not matched"}
+				denied = append(denied, nzbprio)
 			}
 		}
 	}
-	return retnzb
+	return retnzb, denied
 }
 
-func filter_series_rss_nzbs(configEntry config.MediaTypeConfig, quality config.QualityConfig, lists []string, indexer config.QualityIndexerConfig, nzbs []newznab.NZB) []nzbwithprio {
-	retnzb := make([]nzbwithprio, 0, len(nzbs))
+func filter_series_rss_nzbs(configEntry config.MediaTypeConfig, quality config.QualityConfig, lists []string, indexer config.QualityIndexerConfig, nzbs []newznab.NZB) []Nzbwithprio {
+	retnzb := make([]Nzbwithprio, 0, len(nzbs))
 	for idx := range nzbs {
 		toskip := false
 		if len(strings.Trim(Path(nzbs[idx].Title, false), " ")) <= 3 {
@@ -688,48 +954,8 @@ func filter_series_rss_nzbs(configEntry config.MediaTypeConfig, quality config.Q
 		if !toskip {
 			m, _ := NewFileParser(nzbs[idx].Title, true, "series")
 			m.GetPriority(configEntry, quality)
-			wanted_release_resolution := false
-			for idxqual := range quality.Wanted_resolution {
-				if strings.EqualFold(quality.Wanted_resolution[idxqual], m.Resolution) {
-					wanted_release_resolution = true
-					break
-				}
-			}
-			if len(quality.Wanted_resolution) >= 1 && !wanted_release_resolution {
-				logger.Log.Debug("Skipped - unwanted resolution: ", nzbs[idx].Title)
-				continue
-			}
-			wanted_release_quality := false
-			for idxqual := range quality.Wanted_quality {
-				if !strings.EqualFold(quality.Wanted_quality[idxqual], m.Quality) {
-					wanted_release_quality = true
-					break
-				}
-			}
-			if len(quality.Wanted_quality) >= 1 && !wanted_release_quality {
+			if !filter_test_quality_wanted(quality, m, nzbs[idx]) {
 				logger.Log.Debug("Skipped - unwanted quality: ", nzbs[idx].Title)
-				continue
-			}
-			wanted_release_audio := false
-			for idxqual := range quality.Wanted_audio {
-				if strings.EqualFold(quality.Wanted_audio[idxqual], m.Audio) {
-					wanted_release_audio = true
-					break
-				}
-			}
-			if len(quality.Wanted_audio) >= 1 && !wanted_release_audio {
-				logger.Log.Debug("Skipped - unwanted audio: ", nzbs[idx].Title)
-				continue
-			}
-			wanted_release_codec := false
-			for idxqual := range quality.Wanted_codec {
-				if strings.EqualFold(quality.Wanted_codec[idxqual], m.Codec) {
-					wanted_release_codec = true
-					break
-				}
-			}
-			if len(quality.Wanted_codec) >= 1 && !wanted_release_codec {
-				logger.Log.Debug("Skipped - unwanted codec: ", nzbs[idx].Title)
 				continue
 			}
 			if m.Priority != 0 {
@@ -741,7 +967,15 @@ func filter_series_rss_nzbs(configEntry config.MediaTypeConfig, quality config.Q
 					logger.Log.Debug("ok - prio higher: ", nzbs[idx].Title, " old prio ", minPrio, " found prio ", m.Priority)
 
 				}
-				retnzb = append(retnzb, nzbwithprio{m.Priority, indexer.Template_indexer, *m, nzbs[idx], database.Movie{}, foundepisode})
+				nzbprio := Nzbwithprio{
+					Prio:       m.Priority,
+					Indexer:    indexer.Template_indexer,
+					ParseInfo:  *m,
+					NZB:        nzbs[idx],
+					Nzbmovie:   database.Movie{},
+					Nzbepisode: foundepisode}
+				retnzb = append(retnzb, nzbprio)
+
 			} else {
 				logger.Log.Debug("Skipped - Prio not matched: ", nzbs[idx].Title)
 			}
@@ -750,8 +984,8 @@ func filter_series_rss_nzbs(configEntry config.MediaTypeConfig, quality config.Q
 	return retnzb
 }
 
-func filter_movies_rss_nzbs(configEntry config.MediaTypeConfig, quality config.QualityConfig, lists []string, indexer config.QualityIndexerConfig, nzbs []newznab.NZB) []nzbwithprio {
-	retnzb := make([]nzbwithprio, 0, len(nzbs))
+func filter_movies_rss_nzbs(configEntry config.MediaTypeConfig, quality config.QualityConfig, lists []string, indexer config.QualityIndexerConfig, nzbs []newznab.NZB) []Nzbwithprio {
+	retnzb := make([]Nzbwithprio, 0, len(nzbs))
 	for idx := range nzbs {
 		toskip := false
 		if len(strings.Trim(Path(nzbs[idx].Title, false), " ")) <= 3 {
@@ -878,48 +1112,8 @@ func filter_movies_rss_nzbs(configEntry config.MediaTypeConfig, quality config.Q
 		if !toskip {
 			m, _ := NewFileParser(nzbs[idx].Title, false, "movie")
 			m.GetPriority(configEntry, quality)
-			wanted_release_resolution := false
-			for idxqual := range quality.Wanted_resolution {
-				if strings.EqualFold(quality.Wanted_resolution[idxqual], m.Resolution) {
-					wanted_release_resolution = true
-					break
-				}
-			}
-			if len(quality.Wanted_resolution) >= 1 && !wanted_release_resolution {
-				logger.Log.Debug("Skipped - unwanted resolution: ", nzbs[idx].Title)
-				continue
-			}
-			wanted_release_quality := false
-			for idxqual := range quality.Wanted_quality {
-				if !strings.EqualFold(quality.Wanted_quality[idxqual], m.Quality) {
-					wanted_release_quality = true
-					break
-				}
-			}
-			if len(quality.Wanted_quality) >= 1 && !wanted_release_quality {
+			if !filter_test_quality_wanted(quality, m, nzbs[idx]) {
 				logger.Log.Debug("Skipped - unwanted quality: ", nzbs[idx].Title)
-				continue
-			}
-			wanted_release_audio := false
-			for idxqual := range quality.Wanted_audio {
-				if strings.EqualFold(quality.Wanted_audio[idxqual], m.Audio) {
-					wanted_release_audio = true
-					break
-				}
-			}
-			if len(quality.Wanted_audio) >= 1 && !wanted_release_audio {
-				logger.Log.Debug("Skipped - unwanted audio: ", nzbs[idx].Title)
-				continue
-			}
-			wanted_release_codec := false
-			for idxqual := range quality.Wanted_codec {
-				if strings.EqualFold(quality.Wanted_codec[idxqual], m.Codec) {
-					wanted_release_codec = true
-					break
-				}
-			}
-			if len(quality.Wanted_codec) >= 1 && !wanted_release_codec {
-				logger.Log.Debug("Skipped - unwanted codec: ", nzbs[idx].Title)
 				continue
 			}
 			if m.Priority != 0 {
@@ -930,7 +1124,13 @@ func filter_movies_rss_nzbs(configEntry config.MediaTypeConfig, quality config.Q
 					}
 					logger.Log.Debug("ok - prio higher: ", nzbs[idx].Title, " old prio ", minPrio, " found prio ", m.Priority)
 				}
-				nzbprio := nzbwithprio{m.Priority, indexer.Template_indexer, *m, nzbs[idx], foundmovie, database.SerieEpisode{}}
+				nzbprio := Nzbwithprio{
+					Prio:       m.Priority,
+					Indexer:    indexer.Template_indexer,
+					ParseInfo:  *m,
+					NZB:        nzbs[idx],
+					Nzbmovie:   foundmovie,
+					Nzbepisode: database.SerieEpisode{}}
 				retnzb = append(retnzb, nzbprio)
 			} else {
 				logger.Log.Debug("Skipped - Prio not matched: ", nzbs[idx].Title)

@@ -93,11 +93,11 @@ index_full=true #short only imports imdbid and titles/years - full also votes ra
 		template_notification="pushover"
 		event="added_data" #added_download #added_list
 		title="New Movie added in {{.Configuration}}"
-		message="{{.Title}} - moved from {{.InputNotifier.SourcePath}} to {{.InputNotifier.Targetpath}}{{if .Replaced }} Replaced: {{ range .Replaced }}{{.}}{{else}}{{.Replaced}}{{end}}{{end}}"
+		message="{{.Title}} - moved from {{.InputNotifier.SourcePath}} to {{.InputNotifier.Targetpath}}{{if .Replaced }} Replaced: {{ range .Replaced }},{{.}}{{else}}{{.Replaced}}{{end}}{{end}}"
 		[[media.movies.notification]]
 		template_notification="csvmovies"
 		event="added_data" #added_download #added_list
-		message="{{.Title}};{{.Year}};{{.Imdb}};{{.InputNotifier.SourcePath}};{{.InputNotifier.Targetpath}};{{ range .Replaced }}{{.}}{{end}}"
+		message="{{.Title}};{{.Year}};{{.Imdb}};{{.InputNotifier.SourcePath}};{{.InputNotifier.Targetpath}};{{ range .Replaced }}{{.}},{{end}}"
 		
 ##### serie configuarations #####
 
@@ -468,7 +468,7 @@ interval_scan_data_missing="3d" # checks for removed media
 #	Serie              database.Serie
 #	Dbserie            database.Dbserie
 #	DbserieEpisode     database.DbserieEpisode
-#	Source             ParseInfo # fields can be seen in the parser api test
+#	Source             ParseInfo
 #	TitleSource        string
 #	EpisodeTitleSource string
 #	Identifier         string
@@ -562,6 +562,10 @@ interval_scan_data_missing="3d" # checks for removed media
 #    Configuration  string
 #    Replaced       []string
 #    ReplacedPrefix string
+#    Dbmovie        database.Dbmovie
+#	 Dbserie        database.Dbserie
+#	 DbserieEpisode database.DbserieEpisode
+#	 Source         ParseInfo
 
 #Fields dbmovies:
 #

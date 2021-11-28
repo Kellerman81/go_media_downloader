@@ -36,6 +36,8 @@ func AddMoviesRoutes(routermovies *gin.RouterGroup) {
 	routermoviessearch := routermovies.Group("/search")
 	{
 		routermoviessearch.GET("/id/:id", apimoviesSearch)
+		routermoviessearch.GET("/list/:id", apimoviesSearchList)
+		routermoviessearch.POST("/download/:id", apimoviesSearchDownload)
 		routermoviessearch.GET("/history/clear/:name", apimoviesClearHistoryName)
 		routermoviessearch.GET("/history/clearid/:id", apiMoviesClearHistoryID)
 	}
@@ -450,6 +452,91 @@ func apimoviesSearch(c *gin.Context) {
 				scheduler.QueueSearch.Dispatch(func() {
 					utils.SearchMovieSingle(movie, cfg_movie, true)
 				})
+				c.JSON(http.StatusOK, "started")
+				return
+			}
+		}
+	}
+	c.JSON(http.StatusNoContent, "Nothing Done")
+}
+
+// @Summary Search a movie (List ok, nok)
+// @Description Searches for upgrades and missing
+// @Tags movie
+// @Accept  json
+// @Produce  json
+// @Param id path int true "Movie ID"
+// @Param apikey query string true "apikey"
+// @Param searchByTitle query string false "apikey"
+// @Success 200 {string} string
+// @Failure 401 {object} string
+// @Router /api/movies/search/list/{id} [get]
+func apimoviesSearchList(c *gin.Context) {
+	if ApiAuth(c) == http.StatusUnauthorized {
+		return
+	}
+	movie, _ := database.GetMovies(database.Query{Where: "id=?", WhereArgs: []interface{}{c.Param("id")}})
+	movie_keys, _ := config.ConfigDB.Keys([]byte("movie_*"), 0, 0, true)
+
+	titlesearch := false
+	if queryParam, ok := c.GetQuery("searchByTitle"); ok {
+		if queryParam == "true" || queryParam == "yes" {
+			titlesearch = true
+		}
+	}
+	for _, idxmovie := range movie_keys {
+		var cfg_movie config.MediaTypeConfig
+		config.ConfigGet(string(idxmovie), &cfg_movie)
+
+		for idxlist := range cfg_movie.Lists {
+			if strings.EqualFold(cfg_movie.Lists[idxlist].Name, movie.Listname) {
+				searchnow := utils.NewSearcher(cfg_movie, movie.QualityProfile)
+				searchresults := searchnow.MovieSearch(movie, false, titlesearch)
+				c.JSON(http.StatusOK, gin.H{"accepted": searchresults.Nzbs, "rejected": searchresults.Rejected})
+				return
+			}
+		}
+	}
+	c.JSON(http.StatusNoContent, "Nothing Done")
+}
+
+// @Summary Download a movie (manual)
+// @Description Downloads a release after select
+// @Tags movie
+// @Accept  json
+// @Produce  json
+// @Param nzb body utils.NzbwithprioJson true "Nzb: Req. Title, Indexer, imdbid, downloadurl, parseinfo"
+// @Param id path int true "Movie ID"
+// @Param apikey query string true "apikey"
+// @Success 200 {string} string
+// @Failure 401 {object} string
+// @Router /api/movies/search/download/{id} [post]
+func apimoviesSearchDownload(c *gin.Context) {
+	if ApiAuth(c) == http.StatusUnauthorized {
+		return
+	}
+	movie, _ := database.GetMovies(database.Query{Where: "id=?", WhereArgs: []interface{}{c.Param("id")}})
+	movie_keys, _ := config.ConfigDB.Keys([]byte("movie_*"), 0, 0, true)
+	searchtype := "missing"
+	if !movie.Missing {
+		searchtype = "upgrade"
+	}
+
+	var nzb utils.Nzbwithprio
+	if err := c.ShouldBindJSON(&nzb); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	for _, idxmovie := range movie_keys {
+		var cfg_movie config.MediaTypeConfig
+		config.ConfigGet(string(idxmovie), &cfg_movie)
+
+		for idxlist := range cfg_movie.Lists {
+			if strings.EqualFold(cfg_movie.Lists[idxlist].Name, movie.Listname) {
+				downloadnow := utils.NewDownloader(cfg_movie, searchtype)
+				downloadnow.SetMovie(movie)
+				downloadnow.DownloadNzb(nzb)
 				c.JSON(http.StatusOK, "started")
 				return
 			}
