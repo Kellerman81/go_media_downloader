@@ -27,7 +27,6 @@ type Movie struct {
 	Listname       string
 	Rootpath       string
 	DbmovieID      uint `db:"dbmovie_id"`
-	Dbmovie        Dbmovie
 }
 type MovieJson struct {
 	ID             uint
@@ -106,9 +105,7 @@ type MovieFile struct {
 	CodecID        uint `db:"codec_id"`
 	AudioID        uint `db:"audio_id"`
 	MovieID        uint `db:"movie_id"`
-	Movie          Movie
 	DbmovieID      uint `db:"dbmovie_id"`
-	Dbmovie        Dbmovie
 }
 
 type MovieHistory struct {
@@ -128,9 +125,7 @@ type MovieHistory struct {
 	CodecID        uint   `db:"codec_id"`
 	AudioID        uint   `db:"audio_id"`
 	MovieID        uint   `db:"movie_id"`
-	Movie          Movie
-	DbmovieID      uint `db:"dbmovie_id"`
-	Dbmovie        Dbmovie
+	DbmovieID      uint   `db:"dbmovie_id"`
 }
 
 type Dbmovie struct {
@@ -208,7 +203,6 @@ type DbmovieTitle struct {
 	CreatedAt time.Time `db:"created_at"`
 	UpdatedAt time.Time `db:"updated_at"`
 	DbmovieID uint      `db:"dbmovie_id"`
-	Dbmovie   Dbmovie
 	Title     string
 	Slug      string
 	Region    string

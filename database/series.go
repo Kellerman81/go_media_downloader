@@ -18,7 +18,6 @@ type Serie struct {
 	Listname    string
 	Rootpath    string
 	DbserieID   uint `db:"dbserie_id"`
-	Dbserie     Dbserie
 	DontUpgrade bool `db:"dont_upgrade"`
 	DontSearch  bool `db:"dont_search"`
 }
@@ -44,11 +43,8 @@ type SerieEpisode struct {
 	DontUpgrade      bool `db:"dont_upgrade"`
 	DontSearch       bool `db:"dont_search"`
 	DbserieEpisodeID uint `db:"dbserie_episode_id"`
-	DbserieEpisode   DbserieEpisode
 	SerieID          uint `db:"serie_id"`
-	Serie            Serie
 	DbserieID        uint `db:"dbserie_id"`
-	Dbserie          Dbserie
 }
 type SerieEpisodeJson struct {
 	ID               uint
@@ -101,13 +97,9 @@ type SerieEpisodeFile struct {
 	CodecID          uint `db:"codec_id"`
 	AudioID          uint `db:"audio_id"`
 	SerieID          uint `db:"serie_id"`
-	Serie            Serie
 	SerieEpisodeID   uint `db:"serie_episode_id"`
-	SerieEpisode     SerieEpisode
 	DbserieEpisodeID uint `db:"dbserie_episode_id"`
-	DbserieEpisode   DbserieEpisode
 	DbserieID        uint `db:"dbserie_id"`
-	Dbserie          Dbserie
 }
 type SerieEpisodeHistory struct {
 	ID               uint
@@ -126,13 +118,9 @@ type SerieEpisodeHistory struct {
 	CodecID          uint   `db:"codec_id"`
 	AudioID          uint   `db:"audio_id"`
 	SerieID          uint   `db:"serie_id"`
-	Serie            Serie
-	SerieEpisodeID   uint `db:"serie_episode_id"`
-	SerieEpisode     SerieEpisode
-	DbserieEpisodeID uint `db:"dbserie_episode_id"`
-	DbserieEpisode   DbserieEpisode
-	DbserieID        uint `db:"dbserie_id"`
-	Dbserie          Dbserie
+	SerieEpisodeID   uint   `db:"serie_episode_id"`
+	DbserieEpisodeID uint   `db:"dbserie_episode_id"`
+	DbserieID        uint   `db:"dbserie_id"`
 }
 
 type ResultSeries struct {
@@ -181,7 +169,6 @@ type DbserieAlternate struct {
 	Slug      string
 	Region    string
 	DbserieID uint `db:"dbserie_id"`
-	Dbserie   Dbserie
 }
 
 type ResultSerieEpisodes struct {
@@ -219,7 +206,6 @@ type DbserieEpisode struct {
 	Overview   string
 	Poster     string
 	DbserieID  uint `db:"dbserie_id"`
-	Dbserie    Dbserie
 }
 type DbserieEpisodeJson struct {
 	ID         uint
