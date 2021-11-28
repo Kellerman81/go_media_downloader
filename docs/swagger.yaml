@@ -2982,4 +2982,79 @@ paths:
       summary: Structure Single Item
       tags:
       - general
+  /api/trakt/authorize:
+    get:
+      consumes:
+      - application/json
+      description: List Qualities with regex filters
+      parameters:
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Trakt Auhtorize
+      tags:
+      - general
+  /api/trakt/token/{code}:
+    get:
+      consumes:
+      - application/json
+      description: Saves Trakt token after Authorization
+      parameters:
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Trakt Save Token
+      tags:
+      - general
+  /api/trakt/user/{user}/{list}:
+    get:
+      consumes:
+      - application/json
+      description: Get User List
+      parameters:
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Trakt Get List (Auth Test)
+      tags:
+      - general
 swagger: "2.0"

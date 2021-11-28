@@ -1,12 +1,16 @@
 package apiexternal
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/RussellLuo/slidingwindow"
+	"golang.org/x/oauth2"
 	"golang.org/x/time/rate"
 )
 
@@ -159,13 +163,17 @@ type TraktMovieExtend struct {
 }
 
 type TraktClient struct {
-	ApiKey string
-	Client *RLHTTPClient
+	ApiKey       string
+	ClientID     string
+	ClientSecret string
+	Client       *RLHTTPClient
+	Auth         *oauth2.Config
+	Token        *oauth2.Token
 }
 
 var TraktApi TraktClient
 
-func NewTraktClient(apikey string, seconds int, calls int) {
+func NewTraktClient(clientid string, clientsecret string, token oauth2.Token, seconds int, calls int) {
 	if seconds == 0 {
 		seconds = 1
 	}
@@ -174,7 +182,22 @@ func NewTraktClient(apikey string, seconds int, calls int) {
 	}
 	rl := rate.NewLimiter(rate.Every(time.Duration(seconds)*time.Second), calls) // 50 request every 10 seconds
 	limiter, _ := slidingwindow.NewLimiter(time.Duration(seconds)*time.Second, int64(calls), func() (slidingwindow.Window, slidingwindow.StopFunc) { return slidingwindow.NewLocalWindow() })
-	TraktApi = TraktClient{ApiKey: apikey, Client: NewClient(rl, limiter)}
+	conf := &oauth2.Config{
+		ClientID:     clientid,
+		ClientSecret: clientsecret,
+		RedirectURL:  "http://localhost:9090",
+		Endpoint: oauth2.Endpoint{
+			AuthURL:  "https://api.trakt.tv/oauth/authorize",
+			TokenURL: "https://api.trakt.tv/oauth/token",
+		},
+	}
+	TraktApi = TraktClient{
+		ApiKey:       clientid,
+		ClientID:     clientid,
+		ClientSecret: clientsecret,
+		Client:       NewClient(rl, limiter),
+		Auth:         conf,
+		Token:        &token}
 }
 
 func (t TraktClient) GetMoviePopular(limit int) ([]TraktMovie, error) {
@@ -376,6 +399,9 @@ func (t TraktClient) GetUserList(username string, listname string, listtype stri
 
 	req, _ := http.NewRequest("GET", url, nil)
 	req.Header.Add("Content-Type", "application/json")
+	if t.Token.AccessToken != "" {
+		req.Header.Add("Authorization", "Bearer "+t.Token.AccessToken)
+	}
 	req.Header.Add("trakt-api-version", "2")
 	req.Header.Add("trakt-api-key", t.ApiKey)
 
@@ -462,6 +488,51 @@ func (t TraktClient) GetSerieAnticipated(limit int) ([]TraktSerieAnticipated, er
 		return []TraktSerieAnticipated{}, err
 	}
 	result := make([]TraktSerieAnticipated, 0, limit)
+	json.Unmarshal(responseData, &result)
+	return result, nil
+}
+
+func (t TraktClient) GetAuthUrl() string {
+	// Redirect user to consent page to ask for permission
+	// for the scopes specified above.
+	url := t.Auth.AuthCodeURL("state", oauth2.AccessTypeOffline)
+	fmt.Printf("Visit the URL for the auth dialog: %v", url)
+
+	return url
+}
+func (t TraktClient) GetAuthToken(clientcode string) *oauth2.Token {
+	// Redirect user to consent page to ask for permission
+	// for the scopes specified above.
+	ctx := context.Background()
+	tok, err := t.Auth.Exchange(ctx, clientcode)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return tok
+}
+
+func (t TraktClient) GetUserListAuth(username string, listname string, listtype string, limit int) ([]TraktUserList, error) {
+	url := "https://api.trakt.tv/users/" + username + "/lists/" + listname + "/items/" + listtype
+	if limit >= 1 {
+		url = url + "?limit=" + strconv.Itoa(limit)
+	}
+
+	req, _ := http.NewRequest("GET", url, nil)
+	req.Header.Add("Content-Type", "application/json")
+	if t.Token.AccessToken != "" {
+		req.Header.Add("Authorization", "Bearer "+t.Token.AccessToken)
+	}
+	req.Header.Add("trakt-api-version", "2")
+	req.Header.Add("trakt-api-key", t.ApiKey)
+
+	resp, responseData, err := t.Client.Do(req)
+	if err != nil {
+		return []TraktUserList{}, err
+	}
+	if resp.StatusCode == 429 {
+		return []TraktUserList{}, err
+	}
+	var result []TraktUserList
 	json.Unmarshal(responseData, &result)
 	return result, nil
 }

@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/recoilme/pudge"
+	"golang.org/x/oauth2"
 )
 
 var ConfigDB *pudge.Db
@@ -34,6 +35,12 @@ func CacheConfig() {
 		if strings.HasPrefix(string(idx), "imdb") {
 			var general ImdbConfig
 			ConfigDB.Get("imdb", &general)
+			configEntries[string(idx)] = general
+			continue
+		}
+		if strings.HasPrefix(string(idx), "trakt_token") {
+			var general oauth2.Token
+			ConfigDB.Get("trakt_token", &general)
 			configEntries[string(idx)] = general
 			continue
 		}
@@ -130,6 +137,10 @@ func ConfigGet(key string, val interface{}) error {
 		}
 		if strings.HasPrefix(key, "imdb") {
 			*val.(*ImdbConfig) = configEntries[key].(ImdbConfig)
+			return nil
+		}
+		if strings.HasPrefix(key, "trakt_token") {
+			*val.(*oauth2.Token) = configEntries[key].(oauth2.Token)
 			return nil
 		}
 		if strings.HasPrefix(key, "path_") {

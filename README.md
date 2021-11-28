@@ -69,7 +69,6 @@ First version! Bugs included
 
 ### Under Consideration
 
-- Trakt User Lists - incl Adding and Removing from list may be
 - Download State Tracking
 - Downloading of images from Meta Sites (unlikely)
 - Handle multi media releases (ex. -CD1 -CD2) (maybe even joining those) (at the bottom of the list)
@@ -89,6 +88,16 @@ First version! Bugs included
 Currently seen: 
 Constanly in use - between 30MB-150MB
 Swap Memory: Default ~300-600MB - on file move the complete file size so for a 8GB file expect also this much!
+
+## Trakt Authorize
+
+- Create a Application within Trakt: https://trakt.tv/oauth/applications
+- Write down ClientID and Secret
+- Open : http://<server>:<port>/api/trakt/auhorize?apikey=<apikey>  to get a url to open
+- Open Url in Browser
+- Open : http://<server>:<port>/api/trakt/token/<code>?apikey=<apikey>  to get the token and save it - the code is in the url from the step above
+- Best Practice restart App - You need to do this only once every 3 month if the expiry is reached
+
 ## Get started
 
 - for Docker: Download Repository - and create docker container for build/run using compose files/nzbs

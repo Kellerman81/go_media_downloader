@@ -22,6 +22,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/scheduler"
 	"github.com/Kellerman81/go_media_downloader/utils"
 	"github.com/recoilme/pudge"
+	"golang.org/x/oauth2"
 
 	"github.com/DeanThompson/ginpprof"
 
@@ -101,7 +102,14 @@ func main() {
 	apiexternal.NewOmdbClient(cfg_general.OmdbApiKey, cfg_general.Omdblimiterseconds, cfg_general.Omdblimitercalls)
 	apiexternal.NewTmdbClient(cfg_general.TheMovieDBApiKey, cfg_general.Tmdblimiterseconds, cfg_general.Tmdblimitercalls)
 	apiexternal.NewTvdbClient(cfg_general.Tvdblimiterseconds, cfg_general.Tvdblimitercalls)
-	apiexternal.NewTraktClient(cfg_general.TraktClientId, cfg_general.Traktlimiterseconds, cfg_general.Traktlimitercalls)
+	if config.ConfigCheck("trakt_token") {
+		var cfg_trakt oauth2.Token
+		config.ConfigGet("trakt_token", &cfg_trakt)
+		apiexternal.NewTraktClient(cfg_general.TraktClientId, cfg_general.TraktClientSecret, cfg_trakt, cfg_general.Traktlimiterseconds, cfg_general.Traktlimitercalls)
+	} else {
+		apiexternal.NewTraktClient(cfg_general.TraktClientId, cfg_general.TraktClientSecret, oauth2.Token{}, cfg_general.Traktlimiterseconds, cfg_general.Traktlimitercalls)
+	}
+
 	apiexternal.NewznabClients = make(map[string]newznab.Client, 10)
 	//watch_file, parser := config.LoadConfigV2(configfile)
 	//config.WatchConfig(watch_file, parser)q
@@ -253,6 +261,9 @@ func main() {
 	}
 	routerapi := router.Group("/api")
 	{
+		routerapi.GET("/trakt/authorize", api.ApiTraktGetAuthUrl)
+		routerapi.GET("/trakt/token/:code", api.ApiTraktGetStoreToken)
+		routerapi.GET("/trakt/user/:user/:list", api.ApiTraktGetUserList)
 		routerapi.GET("/fillimdb", api.ApiFillImdb)
 		routerapi.GET("/scheduler/stop", api.ApiSchedulerStop)
 		routerapi.GET("/scheduler/start", api.ApiSchedulerStart)
