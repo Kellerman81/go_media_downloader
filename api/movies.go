@@ -261,27 +261,27 @@ func apimoviesAllJobs(c *gin.Context) {
 		returnval := "Job " + c.Param("job") + " started"
 		switch c.Param("job") {
 		case "data", "datafull", "checkmissing", "checkmissingflag", "structure", "clearhistory":
-			scheduler.QueueData.Dispatch(func() {
+			scheduler.QueueData.Dispatch(c.Param("job")+"_movies", func() {
 				utils.Movies_all_jobs(c.Param("job"), true)
 			})
 		case "rss", "searchmissingfull", "searchmissinginc", "searchupgradefull", "searchupgradeinc", "searchmissingfulltitle", "searchmissinginctitle", "searchupgradefulltitle", "searchupgradeinctitle":
-			scheduler.QueueSearch.Dispatch(func() {
+			scheduler.QueueSearch.Dispatch(c.Param("job")+"_movies", func() {
 				utils.Movies_all_jobs(c.Param("job"), true)
 			})
 		case "feeds":
-			scheduler.QueueFeeds.Dispatch(func() {
+			scheduler.QueueFeeds.Dispatch(c.Param("job")+"_movies", func() {
 				utils.Movies_all_jobs(c.Param("job"), true)
 			})
 		case "refresh":
-			scheduler.QueueFeeds.Dispatch(func() {
+			scheduler.QueueFeeds.Dispatch("Refresh Movies", func() {
 				utils.RefreshMovies()
 			})
 		case "refreshinc":
-			scheduler.QueueFeeds.Dispatch(func() {
+			scheduler.QueueFeeds.Dispatch("Refresh Movies Incremental", func() {
 				utils.RefreshMoviesInc()
 			})
 		default:
-			scheduler.QueueData.Dispatch(func() {
+			scheduler.QueueData.Dispatch(c.Param("job")+"_movies", func() {
 				utils.Movies_all_jobs(c.Param("job"), true)
 			})
 		}
@@ -319,27 +319,27 @@ func apimoviesJobs(c *gin.Context) {
 		returnval := "Job " + c.Param("job") + " started"
 		switch c.Param("job") {
 		case "data", "datafull", "checkmissing", "checkmissingflag", "structure", "clearhistory":
-			scheduler.QueueData.Dispatch(func() {
+			scheduler.QueueData.Dispatch(c.Param("job")+"_movies_"+c.Param("name"), func() {
 				utils.Movies_single_jobs(c.Param("job"), c.Param("name"), "", true)
 			})
 		case "rss", "searchmissingfull", "searchmissinginc", "searchupgradefull", "searchupgradeinc", "searchmissingfulltitle", "searchmissinginctitle", "searchupgradefulltitle", "searchupgradeinctitle":
-			scheduler.QueueSearch.Dispatch(func() {
+			scheduler.QueueSearch.Dispatch(c.Param("job")+"_movies_"+c.Param("name"), func() {
 				utils.Movies_single_jobs(c.Param("job"), c.Param("name"), "", true)
 			})
 		case "feeds":
-			scheduler.QueueFeeds.Dispatch(func() {
+			scheduler.QueueFeeds.Dispatch(c.Param("job")+"_movies_"+c.Param("name"), func() {
 				utils.Movies_single_jobs(c.Param("job"), c.Param("name"), "", true)
 			})
 		case "refresh":
-			scheduler.QueueFeeds.Dispatch(func() {
+			scheduler.QueueFeeds.Dispatch("Refresh Movies", func() {
 				utils.RefreshMovies()
 			})
 		case "refreshinc":
-			scheduler.QueueFeeds.Dispatch(func() {
+			scheduler.QueueFeeds.Dispatch("Refresh Movies Incremental", func() {
 				utils.RefreshMoviesInc()
 			})
 		default:
-			scheduler.QueueData.Dispatch(func() {
+			scheduler.QueueData.Dispatch(c.Param("job")+"_movies_"+c.Param("name"), func() {
 				utils.Movies_single_jobs(c.Param("job"), c.Param("name"), "", true)
 			})
 		}
@@ -449,7 +449,7 @@ func apimoviesSearch(c *gin.Context) {
 
 		for idxlist := range cfg_movie.Lists {
 			if strings.EqualFold(cfg_movie.Lists[idxlist].Name, movie.Listname) {
-				scheduler.QueueSearch.Dispatch(func() {
+				scheduler.QueueSearch.Dispatch("searchmovie_movies_"+cfg_movie.Name+"_"+strconv.Itoa(int(movie.ID)), func() {
 					utils.SearchMovieSingle(movie, cfg_movie, true)
 				})
 				c.JSON(http.StatusOK, "started")
@@ -558,7 +558,7 @@ func apirefreshMovies(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
 		return
 	}
-	scheduler.QueueFeeds.Dispatch(func() {
+	scheduler.QueueFeeds.Dispatch("Refresh Movies", func() {
 		utils.RefreshMovies()
 	})
 	c.JSON(http.StatusOK, "started")
@@ -578,7 +578,7 @@ func apirefreshMovie(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
 		return
 	}
-	scheduler.QueueFeeds.Dispatch(func() {
+	scheduler.QueueFeeds.Dispatch("Refresh Single Movie_"+c.Param("id"), func() {
 		utils.RefreshMovie(c.Param("id"))
 	})
 	c.JSON(http.StatusOK, "started")
@@ -597,7 +597,7 @@ func apirefreshMoviesInc(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
 		return
 	}
-	scheduler.QueueFeeds.Dispatch(func() {
+	scheduler.QueueFeeds.Dispatch("Refresh Movies Incremental", func() {
 		utils.RefreshMoviesInc()
 	})
 	c.JSON(http.StatusOK, "started")

@@ -12,6 +12,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/config"
 	"github.com/Kellerman81/go_media_downloader/database"
 	"github.com/Kellerman81/go_media_downloader/scheduler"
+	"github.com/Kellerman81/go_media_downloader/tasks"
 	"github.com/Kellerman81/go_media_downloader/utils"
 	gin "github.com/gin-gonic/gin"
 )
@@ -23,6 +24,68 @@ type apiparse struct {
 	Path    string
 	Config  string
 	Quality string
+}
+
+// @Summary Queue
+// @Description Lists Queued and Started Jobs (but not finished)
+// @Tags general
+// @Accept  json
+// @Produce  json
+// @Param apikey query string true "apikey"
+// @Success 200 {object} map[string]tasks.Job
+// @Failure 401 {object} string
+// @Router /api/queue [get]
+func ApiQueueList(ctx *gin.Context) {
+	if ApiAuth(ctx) == http.StatusUnauthorized {
+		return
+	}
+	ctx.JSON(http.StatusOK, tasks.GlobalQueue.Queue)
+}
+
+// @Summary Queue History
+// @Description Lists Started Jobs and finished but not queued jobs
+// @Tags general
+// @Accept  json
+// @Produce  json
+// @Param limit query int false "Limit"
+// @Param page query int false "Page"
+// @Param order query string false "Order By"
+// @Param apikey query string true "apikey"
+// @Success 200 {array} database.JobHistoryJson
+// @Failure 401 {object} string
+// @Router /api/queue/history [get]
+func ApiQueueListStarted(ctx *gin.Context) {
+	if ApiAuth(ctx) == http.StatusUnauthorized {
+		return
+	}
+	query := database.Query{}
+	limit := 0
+	query.OrderBy = "ID desc"
+	query.Limit = 100
+	page := 0
+	if queryParam, ok := ctx.GetQuery("limit"); ok {
+		if queryParam != "" {
+			limit, _ = strconv.Atoi(queryParam)
+			query.Limit = uint64(limit)
+		}
+	}
+	if limit != 0 {
+		if queryParam, ok := ctx.GetQuery("page"); ok {
+			if queryParam != "" {
+				page, _ = strconv.Atoi(queryParam)
+				if page >= 2 {
+					query.Offset = uint64((page - 1) * limit)
+				}
+			}
+		}
+	}
+	if queryParam, ok := ctx.GetQuery("order"); ok {
+		if queryParam != "" {
+			query.OrderBy = queryParam
+		}
+	}
+	jobs, _ := database.QueryJobHistory(query)
+	ctx.JSON(http.StatusOK, jobs)
 }
 
 // @Summary Trakt Auhtorize

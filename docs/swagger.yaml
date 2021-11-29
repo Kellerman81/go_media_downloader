@@ -201,6 +201,25 @@ definitions:
       updatedAt:
         type: string
     type: object
+  database.JobHistoryJson:
+    properties:
+      createdAt:
+        type: string
+      ended:
+        type: string
+      id:
+        type: integer
+      jobCategory:
+        type: string
+      jobGroup:
+        type: string
+      jobType:
+        type: string
+      started:
+        type: string
+      updatedAt:
+        type: string
+    type: object
   database.MovieFileUnmatchedJson:
     properties:
       createdAt:
@@ -590,6 +609,19 @@ definitions:
       tvtitle:
         type: string
       usenet_date:
+        type: string
+    type: object
+  tasks.Job:
+    properties:
+      added:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      queue:
+        type: string
+      started:
         type: string
     type: object
   utils.NzbwithprioJson:
@@ -2009,6 +2041,72 @@ paths:
       summary: List Quality Priorities
       tags:
       - quality
+  /api/queue:
+    get:
+      consumes:
+      - application/json
+      description: Lists Queued and Started Jobs (but not finished)
+      parameters:
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              $ref: '#/definitions/tasks.Job'
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Queue
+      tags:
+      - general
+  /api/queue/history:
+    get:
+      consumes:
+      - application/json
+      description: Lists Started Jobs and finished but not queued jobs
+      parameters:
+      - description: Limit
+        in: query
+        name: limit
+        type: integer
+      - description: Page
+        in: query
+        name: page
+        type: integer
+      - description: Order By
+        in: query
+        name: order
+        type: string
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/database.JobHistoryJson'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Queue History
+      tags:
+      - general
   /api/scheduler/start:
     get:
       consumes:

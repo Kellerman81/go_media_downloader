@@ -2,8 +2,10 @@ package tasks
 
 import (
 	"errors"
+	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/robfig/cron/v3"
 )
 
@@ -19,15 +21,46 @@ type Dispatcher struct {
 	crons      []*DispatchCron
 	workerPool chan chan Job
 	jobQueue   chan Job
-	quit       chan bool
-	active     bool
+
+	quit          chan bool
+	active        bool
+	name          string
+	DispatchQueue DispatcherQueue
+}
+
+type DispatcherQueue struct {
+	Queue map[string]Job
+}
+
+var Mu sync.Mutex
+var GlobalQueue DispatcherQueue
+
+func (d DispatcherQueue) AddQueue(job Job) {
+	Mu.Lock()
+	defer Mu.Unlock()
+	d.Queue[job.ID] = job
+}
+func (d DispatcherQueue) RemoveQueue(job Job) {
+	Mu.Lock()
+	defer Mu.Unlock()
+	delete(d.Queue, job.ID)
+}
+func (d DispatcherQueue) UpdateStartedQueue(job Job) {
+	Mu.Lock()
+	defer Mu.Unlock()
+	job.Started = time.Now()
+	d.Queue[job.ID] = job
 }
 
 // NewDispatcher creates a new dispatcher with the given
 // number of workers and buffers the job queue based on maxQueue.
 // It also initializes the channels for the worker pool and job queue
-func NewDispatcher(maxWorkers int, maxQueue int) *Dispatcher {
+func NewDispatcher(name string, maxWorkers int, maxQueue int) *Dispatcher {
+	if GlobalQueue.Queue == nil {
+		GlobalQueue.Queue = make(map[string]Job)
+	}
 	return &Dispatcher{
+		name:       name,
 		maxWorkers: maxWorkers,
 		maxQueue:   maxQueue,
 	}
@@ -42,6 +75,7 @@ func (d *Dispatcher) Start() {
 	d.crons = []*DispatchCron{}
 	d.workerPool = make(chan chan Job, d.maxWorkers)
 	d.jobQueue = make(chan Job, d.maxQueue)
+	d.DispatchQueue.Queue = make(map[string]Job, d.maxQueue)
 	d.quit = make(chan bool)
 
 	for i := 0; i < d.maxWorkers; i++ {
@@ -59,6 +93,7 @@ func (d *Dispatcher) Start() {
 				go func(job Job) {
 					jobChannel := <-d.workerPool
 					jobChannel <- job
+					d.DispatchQueue.RemoveQueue(job)
 				}(job)
 			case <-d.quit:
 				return
@@ -96,25 +131,30 @@ func (d *Dispatcher) Stop() {
 
 // Dispatch pushes the given job into the job queue.
 // The first available worker will perform the job
-func (d *Dispatcher) Dispatch(run func()) error {
+func (d *Dispatcher) Dispatch(name string, run func()) error {
 	if !d.active {
 		return errors.New("dispatcher is not active")
 	}
-
-	d.jobQueue <- Job{Run: run}
+	job := Job{Queue: d.name, ID: uuid.New().String(), Added: time.Now(), Name: name, Run: run}
+	d.jobQueue <- job
+	GlobalQueue.AddQueue(job)
+	d.DispatchQueue.AddQueue(job)
 	return nil
 }
 
 // DispatchIn pushes the given job into the job queue
 // after the given duration has elapsed
-func (d *Dispatcher) DispatchIn(run func(), duration time.Duration) error {
+func (d *Dispatcher) DispatchIn(name string, run func(), duration time.Duration) error {
 	if !d.active {
 		return errors.New("dispatcher is not active")
 	}
 
 	go func() {
 		time.Sleep(duration)
-		d.jobQueue <- Job{Run: run}
+		job := Job{Queue: d.name, ID: uuid.New().String(), Added: time.Now(), Name: name, Run: run}
+		d.jobQueue <- job
+		GlobalQueue.AddQueue(job)
+		d.DispatchQueue.AddQueue(job)
 	}()
 
 	return nil
@@ -122,7 +162,7 @@ func (d *Dispatcher) DispatchIn(run func(), duration time.Duration) error {
 
 // DispatchEvery pushes the given job into the job queue
 // continuously at the given interval
-func (d *Dispatcher) DispatchEvery(run func(), interval time.Duration) (*DispatchTicker, error) {
+func (d *Dispatcher) DispatchEvery(name string, run func(), interval time.Duration) (*DispatchTicker, error) {
 	if !d.active {
 		return nil, errors.New("dispatcher is not active")
 	}
@@ -135,7 +175,10 @@ func (d *Dispatcher) DispatchEvery(run func(), interval time.Duration) (*Dispatc
 		for {
 			select {
 			case <-t.C:
-				d.jobQueue <- Job{Run: run}
+				job := Job{Queue: d.name, ID: uuid.New().String(), Added: time.Now(), Name: name, Run: run}
+				d.jobQueue <- job
+				GlobalQueue.AddQueue(job)
+				d.DispatchQueue.AddQueue(job)
 			case <-dt.quit:
 				return
 			}
@@ -147,7 +190,7 @@ func (d *Dispatcher) DispatchEvery(run func(), interval time.Duration) (*Dispatc
 
 // DispatchEvery pushes the given job into the job queue
 // each time the cron definition is met
-func (d *Dispatcher) DispatchCron(run func(), cronStr string) (*DispatchCron, error) {
+func (d *Dispatcher) DispatchCron(name string, run func(), cronStr string) (*DispatchCron, error) {
 	if !d.active {
 		return nil, errors.New("dispatcher is not active")
 	}
@@ -156,7 +199,10 @@ func (d *Dispatcher) DispatchCron(run func(), cronStr string) (*DispatchCron, er
 	d.crons = append(d.crons, dc)
 
 	_, err := dc.cron.AddFunc(cronStr, func() {
-		d.jobQueue <- Job{Run: run}
+		job := Job{Queue: d.name, ID: uuid.New().String(), Added: time.Now(), Name: name, Run: run}
+		d.jobQueue <- job
+		GlobalQueue.AddQueue(job)
+		d.DispatchQueue.AddQueue(job)
 	})
 
 	if err != nil {

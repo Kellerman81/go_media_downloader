@@ -34,7 +34,6 @@ serie_meta_source_trakt = true #add additional fields - default not to disable: 
 scheduler_disabled = 'true' #on your very first run change to true - after your media is indexed set to false
 omdb_apikey =  "insert" # insert your omdb apikey
 themoviedb_apikey="insert" # insert your themoviedb apikey
-trakt_api_key="insert" # insert your trakt apikey
 trakt_client_id="insert" # insert your trakt clientid
 trakt_client_secret="insert" # insert your trakt clientsecret
 failed_indexer_block_time = 1 # Number of minutes to skip indexer after a failed query - default 5
