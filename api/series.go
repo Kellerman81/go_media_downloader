@@ -473,27 +473,27 @@ func apiseriesAllJobs(c *gin.Context) {
 		returnval := "Job " + c.Param("job") + " started"
 		switch c.Param("job") {
 		case "data", "datafull", "checkmissing", "checkmissingflag", "structure", "clearhistory":
-			scheduler.QueueData.Dispatch(func() {
+			scheduler.QueueData.Dispatch(c.Param("job")+"_series", func() {
 				utils.Series_all_jobs(c.Param("job"), true)
 			})
 		case "rss", "searchmissingfull", "searchmissinginc", "searchupgradefull", "searchupgradeinc", "searchmissingfulltitle", "searchmissinginctitle", "searchupgradefulltitle", "searchupgradeinctitle":
-			scheduler.QueueSearch.Dispatch(func() {
+			scheduler.QueueSearch.Dispatch(c.Param("job")+"_series", func() {
 				utils.Series_all_jobs(c.Param("job"), true)
 			})
 		case "feeds":
-			scheduler.QueueFeeds.Dispatch(func() {
+			scheduler.QueueFeeds.Dispatch(c.Param("job")+"_series", func() {
 				utils.Series_all_jobs(c.Param("job"), true)
 			})
 		case "refresh":
-			scheduler.QueueFeeds.Dispatch(func() {
+			scheduler.QueueFeeds.Dispatch("Refresh Series", func() {
 				utils.RefreshSeries()
 			})
 		case "refreshinc":
-			scheduler.QueueFeeds.Dispatch(func() {
+			scheduler.QueueFeeds.Dispatch("Refresh Series Incremental", func() {
 				utils.RefreshSeriesInc()
 			})
 		default:
-			scheduler.QueueData.Dispatch(func() {
+			scheduler.QueueData.Dispatch(c.Param("job")+"_series", func() {
 				utils.Series_all_jobs(c.Param("job"), true)
 			})
 		}
@@ -531,27 +531,27 @@ func apiseriesJobs(c *gin.Context) {
 		returnval := "Job " + c.Param("job") + " started"
 		switch c.Param("job") {
 		case "data", "datafull", "checkmissing", "checkmissingflag", "structure", "clearhistory":
-			scheduler.QueueData.Dispatch(func() {
+			scheduler.QueueData.Dispatch(c.Param("job")+"_series_"+c.Param("name"), func() {
 				utils.Series_single_jobs(c.Param("job"), c.Param("name"), "", true)
 			})
 		case "rss", "searchmissingfull", "searchmissinginc", "searchupgradefull", "searchupgradeinc", "searchmissingfulltitle", "searchmissinginctitle", "searchupgradefulltitle", "searchupgradeinctitle":
-			scheduler.QueueSearch.Dispatch(func() {
+			scheduler.QueueSearch.Dispatch(c.Param("job")+"_series_"+c.Param("name"), func() {
 				utils.Series_single_jobs(c.Param("job"), c.Param("name"), "", true)
 			})
 		case "feeds":
-			scheduler.QueueFeeds.Dispatch(func() {
+			scheduler.QueueFeeds.Dispatch(c.Param("job")+"_series_"+c.Param("name"), func() {
 				utils.Series_single_jobs(c.Param("job"), c.Param("name"), "", true)
 			})
 		case "refresh":
-			scheduler.QueueFeeds.Dispatch(func() {
+			scheduler.QueueFeeds.Dispatch("Refresh Series", func() {
 				utils.RefreshSeries()
 			})
 		case "refreshinc":
-			scheduler.QueueFeeds.Dispatch(func() {
+			scheduler.QueueFeeds.Dispatch("Refresh Series Incremental", func() {
 				utils.RefreshSeriesInc()
 			})
 		default:
-			scheduler.QueueData.Dispatch(func() {
+			scheduler.QueueData.Dispatch(c.Param("job")+"_series_"+c.Param("name"), func() {
 				utils.Series_single_jobs(c.Param("job"), c.Param("name"), "", true)
 			})
 		}
@@ -732,7 +732,7 @@ func apirefreshSerie(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
 		return
 	}
-	scheduler.QueueFeeds.Dispatch(func() {
+	scheduler.QueueFeeds.Dispatch("Refresh Single Serie", func() {
 		utils.RefreshSerie(c.Param("id"))
 	})
 	c.JSON(http.StatusOK, "started")
@@ -751,7 +751,7 @@ func apirefreshSeries(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
 		return
 	}
-	scheduler.QueueFeeds.Dispatch(func() {
+	scheduler.QueueFeeds.Dispatch("Refresh Series", func() {
 		utils.RefreshSeries()
 	})
 	c.JSON(http.StatusOK, "started")
@@ -770,7 +770,7 @@ func apirefreshSeriesInc(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
 		return
 	}
-	scheduler.QueueFeeds.Dispatch(func() {
+	scheduler.QueueFeeds.Dispatch("Refresh Series Incremental", func() {
 		utils.RefreshSeriesInc()
 	})
 	c.JSON(http.StatusOK, "started")
@@ -800,7 +800,7 @@ func apiSeriesSearch(c *gin.Context) {
 
 		for idxlist := range cfg_serie.Lists {
 			if strings.EqualFold(cfg_serie.Lists[idxlist].Name, serie.Listname) {
-				scheduler.QueueSearch.Dispatch(func() {
+				scheduler.QueueSearch.Dispatch("searchseries_series_"+cfg_serie.Name+"_"+strconv.Itoa(int(serie.ID)), func() {
 					utils.SearchSerieSingle(serie, cfg_serie, true)
 				})
 				c.JSON(http.StatusOK, "started")
@@ -836,7 +836,7 @@ func apiSeriesSearchSeason(c *gin.Context) {
 
 		for idxlist := range cfg_serie.Lists {
 			if strings.EqualFold(cfg_serie.Lists[idxlist].Name, serie.Listname) {
-				scheduler.QueueSearch.Dispatch(func() {
+				scheduler.QueueSearch.Dispatch("searchseriesseason_series_"+cfg_serie.Name+"_"+strconv.Itoa(int(serie.ID))+"_"+c.Param("season"), func() {
 					utils.SearchSerieSeasonSingle(serie, c.Param("season"), cfg_serie, true)
 				})
 				c.JSON(http.StatusOK, "started")
@@ -873,7 +873,7 @@ func apiSeriesEpisodeSearch(c *gin.Context) {
 
 		for idxlist := range cfg_serie.Lists {
 			if strings.EqualFold(cfg_serie.Lists[idxlist].Name, serie.Listname) {
-				scheduler.QueueSearch.Dispatch(func() {
+				scheduler.QueueSearch.Dispatch("searchseriesepisode_series_"+cfg_serie.Name+"_"+strconv.Itoa(int(serieepi.ID)), func() {
 					utils.SearchSerieEpisodeSingle(serieepi, cfg_serie, true)
 				})
 				c.JSON(http.StatusOK, "started")

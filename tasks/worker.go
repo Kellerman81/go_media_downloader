@@ -29,7 +29,9 @@ func (w Worker) Start() {
 
 			select {
 			case job := <-w.jobChannel:
+				GlobalQueue.UpdateStartedQueue(job)
 				job.Run()
+				GlobalQueue.RemoveQueue(job)
 			case <-w.quit:
 				return
 			}

@@ -1979,6 +1979,106 @@ var doc = `{
                 }
             }
         },
+        "/api/queue": {
+            "get": {
+                "description": "Lists Queued and Started Jobs (but not finished)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "general"
+                ],
+                "summary": "Queue",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "apikey",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "$ref": "#/definitions/tasks.Job"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/queue/history": {
+            "get": {
+                "description": "Lists Started Jobs and finished but not queued jobs",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "general"
+                ],
+                "summary": "Queue History",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Limit",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Order By",
+                        "name": "order",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "apikey",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/database.JobHistoryJson"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
         "/api/scheduler/start": {
             "get": {
                 "description": "Start all Schedulers",
@@ -3855,6 +3955,35 @@ var doc = `{
                 }
             }
         },
+        "database.JobHistoryJson": {
+            "type": "object",
+            "properties": {
+                "createdAt": {
+                    "type": "string"
+                },
+                "ended": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "jobCategory": {
+                    "type": "string"
+                },
+                "jobGroup": {
+                    "type": "string"
+                },
+                "jobType": {
+                    "type": "string"
+                },
+                "started": {
+                    "type": "string"
+                },
+                "updatedAt": {
+                    "type": "string"
+                }
+            }
+        },
         "database.MovieFileUnmatchedJson": {
             "type": "object",
             "properties": {
@@ -4441,6 +4570,26 @@ var doc = `{
                     "type": "string"
                 },
                 "usenet_date": {
+                    "type": "string"
+                }
+            }
+        },
+        "tasks.Job": {
+            "type": "object",
+            "properties": {
+                "added": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "queue": {
+                    "type": "string"
+                },
+                "started": {
                     "type": "string"
                 }
             }

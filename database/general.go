@@ -115,6 +115,16 @@ type JobHistory struct {
 	Started     sql.NullTime
 	Ended       sql.NullTime
 }
+type JobHistoryJson struct {
+	ID          uint
+	CreatedAt   time.Time `db:"created_at"`
+	UpdatedAt   time.Time `db:"updated_at"`
+	JobType     string    `db:"job_type"`
+	JobCategory string    `db:"job_category"`
+	JobGroup    string    `db:"job_group"`
+	Started     time.Time
+	Ended       time.Time
+}
 type RSSHistory struct {
 	ID        uint
 	CreatedAt time.Time `db:"created_at"`

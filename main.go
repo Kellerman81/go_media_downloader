@@ -264,6 +264,8 @@ func main() {
 		routerapi.GET("/trakt/authorize", api.ApiTraktGetAuthUrl)
 		routerapi.GET("/trakt/token/:code", api.ApiTraktGetStoreToken)
 		routerapi.GET("/trakt/user/:user/:list", api.ApiTraktGetUserList)
+		routerapi.GET("/queue", api.ApiQueueList)
+		routerapi.GET("/queue/history", api.ApiQueueListStarted)
 		routerapi.GET("/fillimdb", api.ApiFillImdb)
 		routerapi.GET("/scheduler/stop", api.ApiSchedulerStop)
 		routerapi.GET("/scheduler/start", api.ApiSchedulerStart)
