@@ -82,7 +82,7 @@ func Feeds(configEntry config.MediaTypeConfig, list config.MediaListsConfig) fee
 
 	if strings.EqualFold(cfg_list.Type, "newznabrss") {
 		searchnow := NewSearcher(configEntry, list.Template_quality)
-		searchresults := searchnow.GetRSSFeed("rss", list)
+		searchresults := searchnow.GetRSSFeed("movie", list)
 		for idxres := range searchresults.Nzbs {
 			logger.Log.Debug("nzb found - start downloading: ", searchresults.Nzbs[idxres].NZB.Title)
 			downloadnow := NewDownloader(configEntry, "rss")
@@ -94,6 +94,7 @@ func Feeds(configEntry config.MediaTypeConfig, list config.MediaListsConfig) fee
 				downloadnow.DownloadNzb(searchresults.Nzbs[idxres])
 			}
 		}
+		return feedResults{}
 	}
 	if strings.EqualFold(cfg_list.Type, "imdbcsv") {
 		return feedResults{Movies: getMissingIMDBMoviesV2(configEntry, list)}
