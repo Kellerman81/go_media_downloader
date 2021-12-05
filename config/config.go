@@ -103,6 +103,7 @@ type GeneralConfig struct {
 	TraktClientSecret                  string   `koanf:"trakt_client_secret"`
 	SchedulerDisabled                  bool     `koanf:"scheduler_disabled"`
 	DisableParserStringMatch           bool     `koanf:"disable_parser_string_match"`
+	UseCronInsteadOfInterval           bool     `koanf:"use_cron_instead_of_interval"`
 	Traktlimiterseconds                int      `koanf:"trakt_limiter_seconds"`
 	Traktlimitercalls                  int      `koanf:"trakt_limiter_calls"`
 	Tvdblimiterseconds                 int      `koanf:"tvdb_limiter_seconds"`
@@ -217,6 +218,7 @@ type IndexersConfig struct {
 	Addquotesfortitlequery bool   `koanf:"add_quotes_for_title_query"`
 	MaxRssEntries          int    `koanf:"max_rss_entries"`
 	RssEntriesloop         int    `koanf:"rss_entries_loop"`
+	RssDownloadAll         bool   `koanf:"rss_downlood_all"`
 	Customapi              string `koanf:"custom_api"`
 	Customurl              string `koanf:"custom_url"`
 	Customrssurl           string `koanf:"custom_rss_url"`

@@ -40,6 +40,7 @@ func AddSeriesRoutes(routerseries *gin.RouterGroup) {
 	routerseries.POST("/episodes/list/", updateEpisode)
 	routerseries.GET("/episodes/list/:id", ApiSeriesEpisodesListGet)
 	routerseries.DELETE("/episodes/list/:id", ApiSeriesEpisodesListDelete)
+	routerseries.GET("/rss/search/list/:group", apiSeriesRssSearchList)
 
 	routerseriessearch := routerseries.Group("/search")
 	{
@@ -922,6 +923,35 @@ func apiSeriesEpisodeSearchList(c *gin.Context) {
 				c.JSON(http.StatusOK, gin.H{"accepted": searchresults.Nzbs, "rejected": searchresults.Rejected})
 				return
 			}
+		}
+	}
+	c.JSON(http.StatusNoContent, "Nothing Done")
+}
+
+// @Summary Series RSS (list ok, nok)
+// @Description Series RSS
+// @Tags series
+// @Accept  json
+// @Produce  json
+// @Param group path string true "Group Name"
+// @Param apikey query string true "apikey"
+// @Success 200 {string} string
+// @Failure 401 {object} string
+// @Router /api/series/rss/search/list/{group} [get]
+func apiSeriesRssSearchList(c *gin.Context) {
+	if ApiAuth(c) == http.StatusUnauthorized {
+		return
+	}
+
+	serie_keys, _ := config.ConfigDB.Keys([]byte("serie_*"), 0, 0, true)
+	for _, idxserie := range serie_keys {
+		var cfg_serie config.MediaTypeConfig
+		config.ConfigGet(string(idxserie), &cfg_serie)
+		if strings.EqualFold(cfg_serie.Name, c.Param("group")) {
+			searchnow := utils.NewSearcher(cfg_serie, cfg_serie.Template_quality)
+			searchresults := searchnow.SearchRSS("series", true)
+			c.JSON(http.StatusOK, gin.H{"accepted": searchresults.Nzbs, "rejected": searchresults.Rejected})
+			return
 		}
 	}
 	c.JSON(http.StatusNoContent, "Nothing Done")

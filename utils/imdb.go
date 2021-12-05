@@ -44,7 +44,7 @@ func InitFillImdb() {
 
 	m, err := migrate.New(
 		"file://./schema/imdbdb",
-		"sqlite3://imdbtemp.db?cache=shared&_fk=1&_txlock=immediate&_mutex=full&_cslike=0",
+		"sqlite3://imdbtemp.db?cache=shared&_fk=1&_mutex=no&_cslike=0",
 	)
 	if err != nil {
 		logger.Log.Errorf("migration failed... %v", err)
@@ -53,10 +53,10 @@ func InitFillImdb() {
 	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
 		logger.Log.Errorf("An error occurred while syncing the database.. %v", err)
 	}
-	dbget2 := database.InitImdbdb("info", "imdbtemp")
-	database.DBImdb = dbget2
 
 	downloadimdbfiles()
+
+	cacherowlimit := 1999
 
 	logger.Log.Info("Opening titles..")
 	filetitle, err := os.Open("./title.basics.tsv")
@@ -67,9 +67,10 @@ func InitFillImdb() {
 		parsertitle.Comma = '\t'
 		parsertitle.LazyQuotes = true
 		_, _ = parsertitle.Read() //skip header
-		titlesshort := []database.ImdbTitle{}
-		genres := []database.ImdbGenres{}
-		swtitle := sizedwaitgroup.New(10)
+
+		titlesshort := make([]database.ImdbTitle, 0, cacherowlimit)
+		genres := make([]database.ImdbGenres, 0, cacherowlimit)
+		swtitle := sizedwaitgroup.New(4)
 		// namedtitle, _ := database.DBImdb.PrepareNamed("insert into imdb_titles (tconst, title_type, primary_title, slug, original_title, is_adult, start_year, end_year, runtime_minutes, genres) VALUES (:tconst, :title_type, :primary_title, :slug, :original_title, :is_adult, :start_year, :end_year, :runtime_minutes, :genres)")
 		// namedgenre, _ := database.DBImdb.PrepareNamed("insert into imdb_genres (tconst, genre) VALUES (:tconst, :genre)")
 
@@ -83,7 +84,7 @@ func InitFillImdb() {
 				continue
 			}
 			swtitle.Add()
-			if len(titlesshort) >= 1999 {
+			if len(titlesshort) >= cacherowlimit {
 				database.ReadWriteMu.Lock()
 				_, err := database.DBImdb.NamedExec("insert into imdb_titles (tconst, title_type, primary_title, slug, original_title, is_adult, start_year, end_year, runtime_minutes, genres) VALUES (:tconst, :title_type, :primary_title, :slug, :original_title, :is_adult, :start_year, :end_year, :runtime_minutes, :genres)", titlesshort)
 				database.ReadWriteMu.Unlock()
@@ -91,9 +92,9 @@ func InitFillImdb() {
 					logger.Log.Errorf("An error occurred while inserting titles.. %v", err)
 					break
 				}
-				titlesshort = []database.ImdbTitle{}
+				titlesshort = make([]database.ImdbTitle, 0, cacherowlimit)
 			}
-			if len(genres) >= 1999 {
+			if len(genres) >= cacherowlimit {
 				database.ReadWriteMu.Lock()
 				_, err := database.DBImdb.NamedExec("insert into imdb_genres (tconst, genre) VALUES (:tconst, :genre)", genres)
 				database.ReadWriteMu.Unlock()
@@ -101,7 +102,7 @@ func InitFillImdb() {
 					logger.Log.Errorf("An error occurred while inserting genres.. %v", err)
 					break
 				}
-				genres = []database.ImdbGenres{}
+				genres = make([]database.ImdbGenres, 0, cacherowlimit)
 			}
 			if _, ok := titlemap[record[1]]; ok {
 				if record[5] == `\N` || record[5] == `\\N` {
@@ -220,10 +221,10 @@ func InitFillImdb() {
 		parseraka.Comma = '\t'
 		parseraka.LazyQuotes = true
 		_, _ = parseraka.Read() //skip header
-		akasshort := []database.ImdbAka{}
+		akasshort := make([]database.ImdbAka, 0, cacherowlimit)
 		//namedaka, _ := database.DBImdb.PrepareNamed("insert into imdb_akas (tconst, ordering, title, slug, region, language, types, attributes, is_original_title) VALUES (:tconst, :ordering, :title, :slug, :region, :language, :types, :attributes, :is_original_title)")
 
-		swaka := sizedwaitgroup.New(10)
+		swaka := sizedwaitgroup.New(4)
 		for {
 			record, err := parseraka.Read()
 			if err == io.EOF {
@@ -234,7 +235,7 @@ func InitFillImdb() {
 				continue
 			}
 			swaka.Add()
-			if len(akasshort) >= 1999 {
+			if len(akasshort) >= cacherowlimit {
 				database.ReadWriteMu.Lock()
 				_, err := database.DBImdb.NamedExec("insert into imdb_akas (tconst, ordering, title, slug, region, language, types, attributes, is_original_title) VALUES (:tconst, :ordering, :title, :slug, :region, :language, :types, :attributes, :is_original_title)", akasshort)
 				database.ReadWriteMu.Unlock()
@@ -242,7 +243,7 @@ func InitFillImdb() {
 					logger.Log.Errorf("An error occurred while inserting aka.. %v", err)
 					break
 				}
-				akasshort = []database.ImdbAka{}
+				akasshort = make([]database.ImdbAka, 0, cacherowlimit)
 			}
 
 			if _, ok := akamap[record[3]]; ok || len(record[3]) == 0 {
@@ -328,11 +329,11 @@ func InitFillImdb() {
 		parserrating.Comma = '\t'
 		parserrating.LazyQuotes = true
 		_, _ = parserrating.Read() //skip header
-		ratings := []database.ImdbRatings{}
+		ratings := make([]database.ImdbRatings, 0, cacherowlimit)
 
 		//namedrating, _ := database.DBImdb.PrepareNamed("insert into imdb_ratings (tconst, num_votes, average_rating) VALUES (:tconst, :num_votes, :average_rating)")
 
-		swrating := sizedwaitgroup.New(10)
+		swrating := sizedwaitgroup.New(4)
 		for {
 			record, err := parserrating.Read()
 			if err == io.EOF {
@@ -343,7 +344,7 @@ func InitFillImdb() {
 				continue
 			}
 			swrating.Add()
-			if len(ratings) >= 1999 {
+			if len(ratings) >= cacherowlimit {
 				database.ReadWriteMu.Lock()
 				_, err := database.DBImdb.NamedExec("insert into imdb_ratings (tconst, num_votes, average_rating) VALUES (:tconst, :num_votes, :average_rating)", ratings)
 				database.ReadWriteMu.Unlock()
@@ -351,7 +352,7 @@ func InitFillImdb() {
 					logger.Log.Errorf("An error occurred while inserting rating.. %v", err)
 					break
 				}
-				ratings = []database.ImdbRatings{}
+				ratings = make([]database.ImdbRatings, 0, cacherowlimit)
 			}
 
 			titlecount, _ := database.ImdbCountRows("imdb_titles", database.Query{Where: "tconst = ?", WhereArgs: []interface{}{record[0]}})

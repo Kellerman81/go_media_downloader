@@ -13,8 +13,8 @@ First version! Bugs included
 - Parse files/nzbs
 - Structure releases and delete lower quality files/nzbs
 - Send Notification after Download start and/or Download finish (currently csv or pushover)
-- Scheduler interval based (every x Minutes, Hours, Days)
-- Api to start jobs, list/add/edit/delete movies/series/episodes, other actions. For API Call examples look at the Powershell examples in the api example file
+- Scheduler interval based (every x Minutes, Hours, Days) and/or cron based
+- Api to start jobs, list/add/edit/delete movies/series/episodes, other actions. For API Call examples look at the Powershell examples in the api example file and at the Swagger Documentation
 - External Api Limiter to reduce the chance of getting blocked
 - toml Config for inital config and reconfiguration since there is no webinterface currently
 
@@ -22,8 +22,8 @@ First version! Bugs included
 #### Feed Sources
 
 - IMDB Public List (Movies)
-- Trakt Public List (Movies + Shows)
-- Trakt Popuplar (Movies, Shows)
+- Trakt Public+Private List (Movies + Shows)
+- Trakt Popular (Movies, Shows)
 - Trakt Trending (Movies, Shows)
 - Trakt Anticipated (Movies, Shows)
 - local wanted file (Shows)
@@ -42,7 +42,7 @@ First version! Bugs included
 
 #### Downloaders
 
-- Drone (File Download NZB)
+- Drone (File Download NZB,Torrent)
 - Nzbget (Nzb)
 - Sabnzb (Nzb)
 - Deluge (Torrent/Magnet)
@@ -60,7 +60,7 @@ First version! Bugs included
 #### General
 
 - Regex Filtering Releases (Custom Filters for required and rejected)
-- Schedulers (different intervals for all the actions)
+- Schedulers (different intervals for all the actions) Support Interval and Cron based
 - Limiters (You can define how much you want to storm an API)
 - Configure which Meta Sources to use
 - Configure your Qualities and their priorities (use parse/quality api to test this) including wanted and Defaults
@@ -72,7 +72,7 @@ First version! Bugs included
 - Download State Tracking
 - Downloading of images from Meta Sites (unlikely)
 - Handle multi media releases (ex. -CD1 -CD2) (maybe even joining those) (at the bottom of the list)
-- Maybe also add the ability to download non matched episodes (which could't be found on a meta source site - risky since you might get a lot unwanted stuff) (at the bottom of the list)
+- Maybe also add the ability to download non matched episodes (which could't be found on a meta source site - risky since you might get a lot unwanted stuff) (at the bottom of the list) - using the download API you can Download excluded releases
 - Unpacking of Downloaded stuff? Currently I let the downloaders do that and don't care about it that much
 - Other Media Type Support (i could think of music but don't want to include this currently)
 - Switch to db only configuration if I include a full webinterface
@@ -87,16 +87,7 @@ First version! Bugs included
 
 Currently seen: 
 Constanly in use - between 30MB-150MB
-Swap Memory: Default ~300-600MB - on file move the complete file size so for a 8GB file expect also this much!
-
-## Trakt Authorize
-
-- Create a Application within Trakt: https://trakt.tv/oauth/applications
-- Write down ClientID and Secret
-- Open : http://{server}:{port}/api/trakt/auhorize?apikey={apikey}  to get a url to open
-- Open Url in Browser
-- Open : http://{server}:{port}/api/trakt/token/{code}?apikey={apikey}  to get the token and save it - the code is in the url from the step above
-- Best Practice restart App - You need to do this only once every 3 month if the expiry is reached
+Swap Memory: Default ~300-600MB - on a file move action the swap memory will grow to at least the complete file size - so for a 8GB file expect also this much!
 
 ## Get started
 
@@ -113,7 +104,21 @@ Swap Memory: Default ~300-600MB - on file move the complete file size so for a 8
 - You have to configure the templates and Media Groups - also if you want to use trakt, tmdb or omdb you have to get API Keys from them and enter them in the config
 
 Find the API Documentation after start at:
-http://localhost:9090/swagger/index.html
+http://{server}:{port}/swagger/index.html
+
+
+## After first Start - Trakt Authorize
+
+- Create a Application within Trakt: https://trakt.tv/oauth/applications
+- Write down ClientID and Secret
+- Put ClientID and Secret into the config.toml
+- Start app
+- Open : http://{server}:{port}/api/trakt/auhorize?apikey={apikey}  to get a url to open
+- Open Url in Browser
+- Open : http://{server}:{port}/api/trakt/token/{code}?apikey={apikey}  to get the token and save it - the code is in the url from the step above
+- Best Practice restart App - You need to do this only once every 3 month if the expiry is reached
+
+## Donate
 
 [Donate](https://www.paypal.com/donate?hosted_button_id=JRT8FJ6GG8CXN)
 

@@ -363,7 +363,7 @@ func CleanUpFolder(folder string, CleanupsizeMB int) {
 }
 
 func GetFilesAdded(files []string, listname string) []string {
-	var list []string
+	list := make([]string, 0, len(files))
 	for idxfile := range files {
 		counter, _ := database.CountRows("movie_files", database.Query{InnerJoin: "movies on movie_files.movie_id = movies.id", Where: "movie_files.location = ? and movies.listname = ?", WhereArgs: []interface{}{files[idxfile], listname}})
 		if counter == 0 {
@@ -371,15 +371,13 @@ func GetFilesAdded(files []string, listname string) []string {
 			if counter2 == 0 {
 				logger.Log.Debug("File added to list - not found", files[idxfile], " ", listname)
 				list = append(list, files[idxfile])
-			} else {
-				logger.Log.Debug("File not added to list - already in another list", files[idxfile], " ", listname)
 			}
 		}
 	}
 	return list
 }
 func GetFilesSeriesAdded(files []string, listname string) []string {
-	var list []string
+	list := make([]string, 0, len(files))
 	for idxfile := range files {
 		counter, _ := database.CountRows("serie_episode_files", database.Query{InnerJoin: " Serie_episodes ON Serie_episodes.ID = Serie_episode_files.serie_episode_id INNER JOIN Series ON series.ID = Serie_episodes.serie_id", Where: "Serie_episode_files.location = ? and Series.listname = ?", WhereArgs: []interface{}{files[idxfile], listname}})
 		if counter == 0 {
@@ -390,8 +388,8 @@ func GetFilesSeriesAdded(files []string, listname string) []string {
 }
 
 func GetFilesRemoved(listname string) []string {
-	var list []string
 	moviefile, _ := database.QueryMovieFiles(database.Query{Select: "Movie_files.location", InnerJoin: "Movies on Movies.ID=movie_files.movie_id", Where: "Movies.listname = ?", WhereArgs: []interface{}{listname}})
+	list := make([]string, 0, len(moviefile))
 	for idxmovie := range moviefile {
 		if _, err := os.Stat(moviefile[idxmovie].Location); os.IsNotExist(err) {
 			list = append(list, moviefile[idxmovie].Location)
@@ -401,8 +399,8 @@ func GetFilesRemoved(listname string) []string {
 }
 
 func GetFilesSeriesRemoved(listname string) []string {
-	var list []string
 	seriefile, _ := database.QuerySerieEpisodeFiles(database.Query{Select: "Serie_episode_files.location", InnerJoin: "Serie_episodes ON Serie_episodes.ID = Serie_episode_files.serie_episode_id INNER JOIN Series ON series.ID = Serie_episodes.serie_id", Where: "Series.listname = ?", WhereArgs: []interface{}{listname}})
+	list := make([]string, 0, len(seriefile))
 	for idxserie := range seriefile {
 		if _, err := os.Stat(seriefile[idxserie].Location); os.IsNotExist(err) {
 			list = append(list, seriefile[idxserie].Location)

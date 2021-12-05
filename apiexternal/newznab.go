@@ -18,6 +18,7 @@ type NzbIndexer struct {
 	Customurl               string
 	Customrssurl            string
 	Customrsscategory       string
+	RssDownloadAll          bool
 	Limitercalls            int
 	Limiterseconds          int
 	MaxAge                  int

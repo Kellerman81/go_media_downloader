@@ -1272,6 +1272,51 @@ var doc = `{
                 }
             }
         },
+        "/api/movies/rss/search/list/{group}": {
+            "get": {
+                "description": "Movie RSS",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "movie"
+                ],
+                "summary": "Movie RSS (list ok, nok)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Group Name",
+                        "name": "group",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "apikey",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
         "/api/movies/search/download/{id}": {
             "post": {
                 "description": "Downloads a release after select",
@@ -2068,6 +2113,44 @@ var doc = `{
                             "items": {
                                 "$ref": "#/definitions/database.JobHistoryJson"
                             }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/scheduler/list": {
+            "get": {
+                "description": "Lists Planned Jobs",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "scheduler"
+                ],
+                "summary": "Scheduler Jobs",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "apikey",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
                         }
                     },
                     "401": {
@@ -3123,6 +3206,51 @@ var doc = `{
                 }
             }
         },
+        "/api/series/rss/search/list/{group}": {
+            "get": {
+                "description": "Series RSS",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "series"
+                ],
+                "summary": "Series RSS (list ok, nok)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Group Name",
+                        "name": "group",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "apikey",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
         "/api/series/search/history/clear/{name}": {
             "get": {
                 "description": "Clear Episode Download History",
@@ -3718,6 +3846,141 @@ var doc = `{
                 },
                 "year": {
                     "type": "boolean"
+                }
+            }
+        },
+        "config.QualityConfig": {
+            "type": "object",
+            "properties": {
+                "backupSearchForAlternateTitle": {
+                    "type": "boolean"
+                },
+                "backupSearchForTitle": {
+                    "type": "boolean"
+                },
+                "checkTitle": {
+                    "type": "boolean"
+                },
+                "checkUntilFirstFound": {
+                    "type": "boolean"
+                },
+                "checkYear": {
+                    "type": "boolean"
+                },
+                "checkYear1": {
+                    "type": "boolean"
+                },
+                "cutoff_priority": {
+                    "type": "integer"
+                },
+                "cutoff_quality": {
+                    "type": "string"
+                },
+                "cutoff_resolution": {
+                    "type": "string"
+                },
+                "excludeYearFromTitleSearch": {
+                    "type": "boolean"
+                },
+                "indexer": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/config.QualityIndexerConfig"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "qualityReorder": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/config.QualityReorderConfig"
+                    }
+                },
+                "titleStripPrefixForSearch": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "titleStripSuffixForSearch": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "wanted_audio": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "wanted_codec": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "wanted_quality": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "wanted_resolution": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "config.QualityIndexerConfig": {
+            "type": "object",
+            "properties": {
+                "additional_query_params": {
+                    "type": "string"
+                },
+                "categories_indexer": {
+                    "type": "string"
+                },
+                "category_dowloader": {
+                    "type": "string"
+                },
+                "customQueryString": {
+                    "type": "string"
+                },
+                "history_check_title": {
+                    "type": "boolean"
+                },
+                "skip_empty_size": {
+                    "type": "boolean"
+                },
+                "template_downloader": {
+                    "type": "string"
+                },
+                "template_indexer": {
+                    "type": "string"
+                },
+                "template_path_nzb": {
+                    "type": "string"
+                },
+                "template_regex": {
+                    "type": "string"
+                }
+            }
+        },
+        "config.QualityReorderConfig": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "newpriority": {
+                    "type": "integer"
+                },
+                "type": {
+                    "type": "string"
                 }
             }
         },
@@ -4589,6 +4852,9 @@ var doc = `{
                 "queue": {
                     "type": "string"
                 },
+                "schedulerId": {
+                    "type": "string"
+                },
                 "started": {
                     "type": "string"
                 }
@@ -4618,7 +4884,19 @@ var doc = `{
                 "prio": {
                     "type": "integer"
                 },
+                "quality": {
+                    "$ref": "#/definitions/config.QualityConfig"
+                },
                 "reason": {
+                    "type": "string"
+                },
+                "wantedAlternates": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "wantedTitle": {
                     "type": "string"
                 }
             }

@@ -46,6 +46,95 @@ definitions:
       year:
         type: boolean
     type: object
+  config.QualityConfig:
+    properties:
+      backupSearchForAlternateTitle:
+        type: boolean
+      backupSearchForTitle:
+        type: boolean
+      checkTitle:
+        type: boolean
+      checkUntilFirstFound:
+        type: boolean
+      checkYear:
+        type: boolean
+      checkYear1:
+        type: boolean
+      cutoff_priority:
+        type: integer
+      cutoff_quality:
+        type: string
+      cutoff_resolution:
+        type: string
+      excludeYearFromTitleSearch:
+        type: boolean
+      indexer:
+        items:
+          $ref: '#/definitions/config.QualityIndexerConfig'
+        type: array
+      name:
+        type: string
+      qualityReorder:
+        items:
+          $ref: '#/definitions/config.QualityReorderConfig'
+        type: array
+      titleStripPrefixForSearch:
+        items:
+          type: string
+        type: array
+      titleStripSuffixForSearch:
+        items:
+          type: string
+        type: array
+      wanted_audio:
+        items:
+          type: string
+        type: array
+      wanted_codec:
+        items:
+          type: string
+        type: array
+      wanted_quality:
+        items:
+          type: string
+        type: array
+      wanted_resolution:
+        items:
+          type: string
+        type: array
+    type: object
+  config.QualityIndexerConfig:
+    properties:
+      additional_query_params:
+        type: string
+      categories_indexer:
+        type: string
+      category_dowloader:
+        type: string
+      customQueryString:
+        type: string
+      history_check_title:
+        type: boolean
+      skip_empty_size:
+        type: boolean
+      template_downloader:
+        type: string
+      template_indexer:
+        type: string
+      template_path_nzb:
+        type: string
+      template_regex:
+        type: string
+    type: object
+  config.QualityReorderConfig:
+    properties:
+      name:
+        type: string
+      newpriority:
+        type: integer
+      type:
+        type: string
+    type: object
   database.DbmovieJson:
     properties:
       adult:
@@ -621,6 +710,8 @@ definitions:
         type: string
       queue:
         type: string
+      schedulerId:
+        type: string
       started:
         type: string
     type: object
@@ -640,7 +731,15 @@ definitions:
         $ref: '#/definitions/utils.ParseInfo'
       prio:
         type: integer
+      quality:
+        $ref: '#/definitions/config.QualityConfig'
       reason:
+        type: string
+      wantedAlternates:
+        items:
+          type: string
+        type: array
+      wantedTitle:
         type: string
     type: object
   utils.ParseInfo:
@@ -1601,6 +1700,36 @@ paths:
       summary: List Movies (List)
       tags:
       - movie
+  /api/movies/rss/search/list/{group}:
+    get:
+      consumes:
+      - application/json
+      description: Movie RSS
+      parameters:
+      - description: Group Name
+        in: path
+        name: group
+        required: true
+        type: string
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Movie RSS (list ok, nok)
+      tags:
+      - movie
   /api/movies/search/download/{id}:
     post:
       consumes:
@@ -2107,6 +2236,31 @@ paths:
       summary: Queue History
       tags:
       - general
+  /api/scheduler/list:
+    get:
+      consumes:
+      - application/json
+      description: Lists Planned Jobs
+      parameters:
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Scheduler Jobs
+      tags:
+      - scheduler
   /api/scheduler/start:
     get:
       consumes:
@@ -2879,6 +3033,36 @@ paths:
           schema:
             type: string
       summary: Delete Series (List)
+      tags:
+      - series
+  /api/series/rss/search/list/{group}:
+    get:
+      consumes:
+      - application/json
+      description: Series RSS
+      parameters:
+      - description: Group Name
+        in: path
+        name: group
+        required: true
+        type: string
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Series RSS (list ok, nok)
       tags:
       - series
   /api/series/search/history/clear/{name}:

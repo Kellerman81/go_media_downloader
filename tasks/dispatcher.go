@@ -10,6 +10,7 @@ import (
 )
 
 //Source: https://github.com/mborders/artifex
+//Several Mods
 
 // Dispatcher maintains a pool for available workers
 // and a job queue that workers will process
@@ -17,8 +18,8 @@ type Dispatcher struct {
 	maxWorkers int
 	maxQueue   int
 	workers    []*Worker
-	tickers    []*DispatchTicker
-	crons      []*DispatchCron
+	Tickers    []*DispatchTicker
+	Crons      []*DispatchCron
 	workerPool chan chan Job
 	jobQueue   chan Job
 
@@ -32,20 +33,79 @@ type DispatcherQueue struct {
 	Queue map[string]Job
 }
 
+type JobSchedule struct {
+	JobName        string
+	JobId          string
+	Id             string
+	ScheduleTyp    string
+	ScheduleString string
+	Interval       time.Duration
+	CronSchedule   cron.Schedule
+	CronID         cron.EntryID
+
+	LastRun   time.Time
+	NextRun   time.Time
+	IsRunning bool
+}
+
+type JobSchedules struct {
+	Schedule map[string]JobSchedule
+}
+
 var Mu sync.Mutex
 var GlobalQueue DispatcherQueue
+var GlobalSchedules JobSchedules
 
-func (d DispatcherQueue) AddQueue(job Job) {
+func (d *JobSchedules) AddQueue(job JobSchedule) {
+	Mu.Lock()
+	defer Mu.Unlock()
+	d.Schedule[job.Id] = job
+}
+func (d *JobSchedules) RemoveQueue(job JobSchedule) {
+	Mu.Lock()
+	defer Mu.Unlock()
+	delete(d.Schedule, job.Id)
+}
+func UpdateStartedSchedule(job Job) {
+	Mu.Lock()
+	defer Mu.Unlock()
+	findname := job.SchedulerId
+	if _, ok := GlobalSchedules.Schedule[findname]; ok {
+		jobschedule := GlobalSchedules.Schedule[findname]
+		if jobschedule.LastRun.IsZero() {
+			jobschedule.LastRun = time.Now()
+		}
+		if jobschedule.ScheduleTyp == "cron" {
+			jobschedule.NextRun = jobschedule.CronSchedule.Next(time.Now())
+			jobschedule.LastRun = time.Now()
+		} else {
+			jobschedule.NextRun = jobschedule.LastRun.Add(jobschedule.Interval)
+			jobschedule.LastRun = time.Now()
+		}
+		GlobalSchedules.Schedule[findname] = jobschedule
+	}
+}
+func UpdateIsRunningSchedule(job Job, isrunning bool) {
+	Mu.Lock()
+	defer Mu.Unlock()
+	findname := job.SchedulerId
+	if _, ok := GlobalSchedules.Schedule[findname]; ok {
+		jobschedule := GlobalSchedules.Schedule[findname]
+		jobschedule.IsRunning = isrunning
+		GlobalSchedules.Schedule[findname] = jobschedule
+	}
+}
+func (d *DispatcherQueue) AddQueue(job Job) {
 	Mu.Lock()
 	defer Mu.Unlock()
 	d.Queue[job.ID] = job
 }
-func (d DispatcherQueue) RemoveQueue(job Job) {
+func (d *DispatcherQueue) RemoveQueue(job Job) {
 	Mu.Lock()
 	defer Mu.Unlock()
 	delete(d.Queue, job.ID)
 }
-func (d DispatcherQueue) UpdateStartedQueue(job Job) {
+func (d *DispatcherQueue) UpdateStartedQueue(job Job) {
 	Mu.Lock()
 	defer Mu.Unlock()
 	job.Started = time.Now()
@@ -59,6 +119,9 @@ func NewDispatcher(name string, maxWorkers int, maxQueue int) *Dispatcher {
 	if GlobalQueue.Queue == nil {
 		GlobalQueue.Queue = make(map[string]Job)
 	}
+	if GlobalSchedules.Schedule == nil {
+		GlobalSchedules.Schedule = make(map[string]JobSchedule)
+	}
 	return &Dispatcher{
 		name:       name,
 		maxWorkers: maxWorkers,
@@ -71,8 +134,8 @@ func NewDispatcher(name string, maxWorkers int, maxQueue int) *Dispatcher {
 // to available workers
 func (d *Dispatcher) Start() {
 	d.workers = []*Worker{}
-	d.tickers = []*DispatchTicker{}
-	d.crons = []*DispatchCron{}
+	d.Tickers = []*DispatchTicker{}
+	d.Crons = []*DispatchCron{}
 	d.workerPool = make(chan chan Job, d.maxWorkers)
 	d.jobQueue = make(chan Job, d.maxQueue)
 	d.DispatchQueue.Queue = make(map[string]Job, d.maxQueue)
@@ -90,6 +153,7 @@ func (d *Dispatcher) Start() {
 		for {
 			select {
 			case job := <-d.jobQueue:
+				UpdateStartedSchedule(job)
 				go func(job Job) {
 					jobChannel := <-d.workerPool
 					jobChannel <- job
@@ -115,17 +179,17 @@ func (d *Dispatcher) Stop() {
 		d.workers[i].Stop()
 	}
 
-	for i := range d.tickers {
-		d.tickers[i].Stop()
+	for i := range d.Tickers {
+		d.Tickers[i].Stop()
 	}
 
-	for i := range d.crons {
-		d.crons[i].Stop()
+	for i := range d.Crons {
+		d.Crons[i].Stop()
 	}
 
 	d.workers = []*Worker{}
-	d.tickers = []*DispatchTicker{}
-	d.crons = []*DispatchCron{}
+	d.Tickers = []*DispatchTicker{}
+	d.Crons = []*DispatchCron{}
 	d.quit <- true
 }
 
@@ -168,14 +232,26 @@ func (d *Dispatcher) DispatchEvery(name string, run func(), interval time.Durati
 	}
 
 	t := time.NewTicker(interval)
-	dt := &DispatchTicker{ticker: t, quit: make(chan bool)}
-	d.tickers = append(d.tickers, dt)
+	schedulerid := uuid.New().String()
+	jobid := uuid.New().String()
+	GlobalSchedules.AddQueue(JobSchedule{
+		JobId:          jobid,
+		Id:             schedulerid,
+		JobName:        name,
+		ScheduleTyp:    "interval",
+		ScheduleString: interval.String(),
+		LastRun:        time.Time{},
+		Interval:       interval,
+		NextRun:        time.Now().Add(interval)})
+
+	dt := &DispatchTicker{Ticker: t, quit: make(chan bool), schedulerid: schedulerid}
+	d.Tickers = append(d.Tickers, dt)
 
 	go func() {
 		for {
 			select {
 			case <-t.C:
-				job := Job{Queue: d.name, ID: uuid.New().String(), Added: time.Now(), Name: name, Run: run}
+				job := Job{Queue: d.name, ID: jobid, Added: time.Now(), Name: name, Run: run, SchedulerId: schedulerid}
 				d.jobQueue <- job
 				GlobalQueue.AddQueue(job)
 				d.DispatchQueue.AddQueue(job)
@@ -195,21 +271,34 @@ func (d *Dispatcher) DispatchCron(name string, run func(), cronStr string) (*Dis
 		return nil, errors.New("dispatcher is not active")
 	}
 
-	dc := &DispatchCron{cron: cron.New(cron.WithSeconds())}
-	d.crons = append(d.crons, dc)
+	schedulerid := uuid.New().String()
+	dc := &DispatchCron{Cron: cron.New(cron.WithSeconds()), schedulerid: schedulerid}
+	d.Crons = append(d.Crons, dc)
 
-	_, err := dc.cron.AddFunc(cronStr, func() {
-		job := Job{Queue: d.name, ID: uuid.New().String(), Added: time.Now(), Name: name, Run: run}
+	jobid := uuid.New().String()
+	cjob, err := dc.Cron.AddFunc(cronStr, func() {
+		job := Job{Queue: d.name, ID: jobid, Added: time.Now(), Name: name, Run: run, SchedulerId: schedulerid}
 		d.jobQueue <- job
 		GlobalQueue.AddQueue(job)
 		d.DispatchQueue.AddQueue(job)
 	})
-
 	if err != nil {
 		return nil, errors.New("invalid cron definition")
 	}
 
-	dc.cron.Start()
+	dc.Cron.Start()
+
+	GlobalSchedules.AddQueue(JobSchedule{
+		JobName:        name,
+		JobId:          jobid,
+		Id:             schedulerid,
+		ScheduleTyp:    "cron",
+		ScheduleString: cronStr,
+		LastRun:        time.Time{},
+		NextRun:        dc.Cron.Entry(cjob).Next,
+		CronSchedule:   dc.Cron.Entry(cjob).Schedule,
+		CronID:         cjob})
+
 	return dc, nil
 }
 
@@ -217,23 +306,33 @@ func (d *Dispatcher) DispatchCron(name string, run func(), cronStr string) (*Dis
 // that executes on a given interval. This provides
 // a means for stopping the execution cycle from continuing.
 type DispatchTicker struct {
-	ticker *time.Ticker
-	quit   chan bool
+	Ticker      *time.Ticker
+	schedulerid string
+	quit        chan bool
 }
 
 // Stop ends the execution cycle for the given ticker.
 func (dt *DispatchTicker) Stop() {
-	dt.ticker.Stop()
+	dt.Ticker.Stop()
+	GlobalSchedules.RemoveQueue(JobSchedule{Id: dt.schedulerid})
 	dt.quit <- true
 }
 
 // DispatchCron represents a dispatched cron job
 // that executes using cron expression formats.
 type DispatchCron struct {
-	cron *cron.Cron
+	Cron        *cron.Cron
+	schedulerid string
 }
 
 // Stops ends the execution cycle for the given cron.
 func (c *DispatchCron) Stop() {
-	c.cron.Stop()
+	c.Cron.Stop()
+}
+func (c *DispatchCron) Start() {
+	c.Cron.Start()
+}
+func (c *DispatchCron) Remove(id cron.EntryID) {
+	c.Cron.Remove(id)
+	GlobalSchedules.RemoveQueue(JobSchedule{Id: c.schedulerid})
 }

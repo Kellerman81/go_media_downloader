@@ -35,10 +35,10 @@ type regexpattern struct {
 }
 
 var patterns = []regexpattern{
-	{"season", false, reflect.Int, regexp.MustCompile(`(?i)(s?(\d{1,4}))[ex]`), 2},
-	{"episode", false, reflect.Int, regexp.MustCompile(`(?i)((?:\d{1,4})[ex](\d{1,3})(?:\b|_|e|$))`), 2},
+	{"season", false, reflect.Int, regexp.MustCompile(`(?i)(s?(\d{1,4}))(?: )?[ex]`), 2},
+	{"episode", false, reflect.Int, regexp.MustCompile(`(?i)((?:\d{1,4})(?: )?[ex](?: )?(\d{1,3})(?:\b|_|e|$))`), 2},
 	//{"episode", false, reflect.Int, regexp.MustCompile(`(-\s+([0-9]{1,})(?:[^0-9]|$))`)},
-	//{"identifier", false, reflect.String, regexp.MustCompile(`(?i)((s?\d{1,4}(?:(?:-?[ex]\d{2,3})+)|\d{2,4}(?:\.|-| |_)\d{1,2}(?:\.|-| |_)\d{1,2}))(?:\b|_)`, 0)},
+	{"identifier", false, reflect.String, regexp.MustCompile(`(?i)((s?\d{1,4}(?:(?:(?: )?-?(?: )?[ex]\d{2,3})+)|\d{2,4}(?:\.|-| |_)\d{1,2}(?:\.|-| |_)\d{1,2}))(?:\b|_)`), 2},
 	{"date", false, reflect.String, regexp.MustCompile(`(?i)(?:\b|_)((\d{2,4}(?:\.|-| |_)\d{1,2}(?:\.|-| |_)\d{1,2}))(?:\b|_)`), 2},
 	{"year", true, reflect.Int, regexp.MustCompile(`(?:\b|_)(((?:19\d|20\d)\d))(?:\b|_)`), 2},
 
@@ -290,6 +290,10 @@ func (m *ParseInfo) ParseFile(includeYearInTitle bool, typegroup string) error {
 			if typegroup != "series" {
 				continue
 			}
+		case "identifier":
+			if typegroup != "series" {
+				continue
+			}
 		case "date":
 			if typegroup != "series" {
 				continue
@@ -338,6 +342,8 @@ func (m *ParseInfo) ParseFile(includeYearInTitle bool, typegroup string) error {
 			mint, _ := strconv.Atoi(matches[matchIdx][scanpatterns[idxpattern].getgroup])
 			m.Episode = mint
 			m.EpisodeStr = matches[matchIdx][scanpatterns[idxpattern].getgroup]
+		case "identifier":
+			m.Identifier = matches[matchIdx][scanpatterns[idxpattern].getgroup]
 		case "date":
 			m.Date = matches[matchIdx][scanpatterns[idxpattern].getgroup]
 		case "audio":
@@ -353,7 +359,10 @@ func (m *ParseInfo) ParseFile(includeYearInTitle bool, typegroup string) error {
 	if len(m.Date) >= 1 {
 		m.Identifier = m.Date
 	} else {
-		m.Identifier = "S" + m.SeasonStr + "E" + m.EpisodeStr
+		if len(m.Identifier) == 0 {
+			m.Identifier = "S" + m.SeasonStr + "E" + m.EpisodeStr
+		}
+		//m.Identifier = "S" + m.SeasonStr + "E" + m.EpisodeStr
 	}
 	raw := ""
 	if endIndex < startIndex {
