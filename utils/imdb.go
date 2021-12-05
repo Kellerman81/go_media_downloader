@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"encoding/csv"
 	"fmt"
+	"html"
 	"io"
 	"io/ioutil"
 	"os"
@@ -121,7 +122,7 @@ func InitFillImdb() {
 					titleentry := database.ImdbTitle{
 						Tconst:       record[0],
 						TitleType:    stringtitletype,
-						PrimaryTitle: stringtitleprimary,
+						PrimaryTitle: html.UnescapeString(stringtitleprimary),
 						Slug:         logger.StringToSlug(stringtitleprimary),
 						StartYear:    startYear,
 					}
@@ -163,9 +164,9 @@ func InitFillImdb() {
 					titleentry := database.ImdbTitle{
 						Tconst:         record[0],
 						TitleType:      stringtitletype,
-						PrimaryTitle:   stringtitleprimary,
+						PrimaryTitle:   html.UnescapeString(stringtitleprimary),
 						Slug:           logger.StringToSlug(stringtitleprimary),
-						OriginalTitle:  stringtitleoriginal,
+						OriginalTitle:  html.UnescapeString(stringtitleoriginal),
 						Genres:         stringgenre,
 						IsAdult:        isAdult,
 						StartYear:      startYear,
@@ -279,7 +280,7 @@ func InitFillImdb() {
 					if !cfg_imdb.Indexfull {
 						akaentry := database.ImdbAka{
 							Tconst: record[0],
-							Title:  stringtitle,
+							Title:  html.UnescapeString(stringtitle),
 							Slug:   logger.StringToSlug(stringtitle),
 							Region: stringregion,
 						}
@@ -294,7 +295,7 @@ func InitFillImdb() {
 						akaentry := database.ImdbAka{
 							Tconst:          record[0],
 							Ordering:        ordering,
-							Title:           stringtitle,
+							Title:           html.UnescapeString(stringtitle),
 							Slug:            logger.StringToSlug(stringtitle),
 							Region:          stringregion,
 							Language:        stringlanguage,

@@ -4,6 +4,7 @@ package database
 import (
 	"database/sql"
 	"encoding/csv"
+	"html"
 	"net/http"
 	"strconv"
 	"strings"
@@ -361,7 +362,7 @@ func (movie *Dbmovie) GetTmdbMetadata(overwrite bool) {
 					movie.Adult = moviedbdetails.Adult
 				}
 				if movie.Title == "" || overwrite {
-					movie.Title = moviedbdetails.Title
+					movie.Title = html.UnescapeString(moviedbdetails.Title)
 				}
 				if movie.Slug == "" || overwrite {
 					movie.Slug = logger.StringToSlug(movie.Title)
@@ -430,7 +431,7 @@ func (movie *Dbmovie) GetOmdbMetadata(overwrite bool) {
 	omdbdetails, founddetail := apiexternal.OmdbApi.GetMovie(movie.ImdbID)
 	if founddetail == nil {
 		if movie.Title == "" || overwrite {
-			movie.Title = omdbdetails.Title
+			movie.Title = html.UnescapeString(omdbdetails.Title)
 		}
 		if movie.Slug == "" || overwrite {
 			movie.Slug = logger.StringToSlug(movie.Title)
@@ -461,7 +462,7 @@ func (movie *Dbmovie) GetTraktMetadata(overwrite bool) {
 	traktdetails, err := apiexternal.TraktApi.GetMovie(movie.ImdbID)
 	if err == nil {
 		if movie.Title == "" || overwrite {
-			movie.Title = traktdetails.Title
+			movie.Title = html.UnescapeString(traktdetails.Title)
 		}
 		if movie.Slug == "" || overwrite {
 			movie.Slug = traktdetails.Ids.Slug
@@ -567,7 +568,7 @@ func (movie *Dbmovie) GetMetadata(queryimdb bool, querytmdb bool, queryomdb bool
 						movie.Adult = moviedbdetails.Adult
 					}
 					if movie.Title == "" {
-						movie.Title = moviedbdetails.Title
+						movie.Title = html.UnescapeString(moviedbdetails.Title)
 					}
 					if movie.Slug == "" {
 						movie.Slug = logger.StringToSlug(movie.Title)
@@ -636,7 +637,7 @@ func (movie *Dbmovie) GetMetadata(queryimdb bool, querytmdb bool, queryomdb bool
 			omdbdetails, founddetail := apiexternal.OmdbApi.GetMovie(movie.ImdbID)
 			if founddetail == nil {
 				if movie.Title == "" {
-					movie.Title = omdbdetails.Title
+					movie.Title = html.UnescapeString(omdbdetails.Title)
 				}
 				if movie.Slug == "" {
 					movie.Slug = logger.StringToSlug(movie.Title)
@@ -667,7 +668,7 @@ func (movie *Dbmovie) GetMetadata(queryimdb bool, querytmdb bool, queryomdb bool
 		traktdetails, err := apiexternal.TraktApi.GetMovie(movie.ImdbID)
 		if err == nil {
 			if movie.Title == "" {
-				movie.Title = traktdetails.Title
+				movie.Title = html.UnescapeString(traktdetails.Title)
 			}
 			if movie.Slug == "" {
 				movie.Slug = traktdetails.Ids.Slug

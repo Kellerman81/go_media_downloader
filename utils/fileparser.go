@@ -906,7 +906,8 @@ var regexPathDisallowSlash = regexp.MustCompile(`[\\/:*?"<>|]`)
 
 func Path(s string, allowslash bool) string {
 	// Start with lowercase string
-	filePath := s
+	filePath := html.UnescapeString(s)
+
 	filePath = strings.Replace(filePath, "..", "", -1)
 	filePath = path.Clean(filePath)
 	if allowslash {

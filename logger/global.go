@@ -1,6 +1,7 @@
 package logger
 
 import (
+	"html"
 	"strings"
 	"unicode"
 
@@ -20,7 +21,7 @@ var Transformer transform.Transformer = transform.Chain(norm.NFD, runes.Remove(r
 
 //no chinese or cyrilic supported
 func StringToSlug(instr string) string {
-	instr = strings.ToLower(instr)
+	instr = strings.ToLower(html.UnescapeString(instr))
 	instr = strings.Replace(instr, "ä", "ae", -1)
 	instr = strings.Replace(instr, "ö", "oe", -1)
 	instr = strings.Replace(instr, "ü", "ue", -1)
