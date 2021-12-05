@@ -1,6 +1,7 @@
 package scheduler
 
 import (
+	"math/rand"
 	"strconv"
 	"strings"
 	"time"
@@ -19,6 +20,18 @@ func converttime(interval string) time.Duration {
 		dur, _ := time.ParseDuration(interval)
 		return dur
 	}
+}
+func convertcron(interval string) string {
+	if strings.Contains(interval, "d") {
+		h := strconv.Itoa(rand.Intn(24))
+		m := strconv.Itoa(rand.Intn(60))
+		return "0 " + m + " " + h + " */" + strings.Replace(interval, "d", "", 1) + " * *"
+	}
+	if strings.Contains(interval, "h") {
+		m := strconv.Itoa(rand.Intn(60))
+		return "0 " + m + " */" + strings.Replace(interval, "h", "", 1) + " * * *"
+	}
+	return "0 */" + strings.Replace(interval, "m", "", 1) + " * * * *"
 }
 
 var QueueFeeds *tasks.Dispatcher
@@ -54,9 +67,15 @@ func InitScheduler() {
 		config.ConfigGet("scheduler_"+cfg_movie.Template_scheduler, &schedule)
 
 		if schedule.Interval_indexer_missing != "" {
-			QueueSearch.DispatchEvery("searchmissinginc_movies_"+cfg_movie.Name, func() {
-				utils.Movies_single_jobs("searchmissinginc", cfg_movie.Name, "", false)
-			}, converttime(schedule.Interval_indexer_missing))
+			if cfg_general.UseCronInsteadOfInterval {
+				QueueSearch.DispatchCron("searchmissinginc_movies_"+cfg_movie.Name, func() {
+					utils.Movies_single_jobs("searchmissinginc", cfg_movie.Name, "", false)
+				}, convertcron(schedule.Interval_indexer_missing))
+			} else {
+				QueueSearch.DispatchEvery("searchmissinginc_movies_"+cfg_movie.Name, func() {
+					utils.Movies_single_jobs("searchmissinginc", cfg_movie.Name, "", false)
+				}, converttime(schedule.Interval_indexer_missing))
+			}
 		}
 		if schedule.Cron_indexer_missing != "" {
 			QueueSearch.DispatchCron("searchmissinginc_movies_"+cfg_movie.Name, func() {
@@ -64,9 +83,15 @@ func InitScheduler() {
 			}, schedule.Cron_indexer_missing)
 		}
 		if schedule.Interval_indexer_missing_full != "" {
-			QueueSearch.DispatchEvery("searchmissingfull_movies_"+cfg_movie.Name, func() {
-				utils.Movies_single_jobs("searchmissingfull", cfg_movie.Name, "", false)
-			}, converttime(schedule.Interval_indexer_missing_full))
+			if cfg_general.UseCronInsteadOfInterval {
+				QueueSearch.DispatchCron("searchmissingfull_movies_"+cfg_movie.Name, func() {
+					utils.Movies_single_jobs("searchmissingfull", cfg_movie.Name, "", false)
+				}, convertcron(schedule.Interval_indexer_missing_full))
+			} else {
+				QueueSearch.DispatchEvery("searchmissingfull_movies_"+cfg_movie.Name, func() {
+					utils.Movies_single_jobs("searchmissingfull", cfg_movie.Name, "", false)
+				}, converttime(schedule.Interval_indexer_missing_full))
+			}
 		}
 		if schedule.Cron_indexer_missing_full != "" {
 			QueueSearch.DispatchCron("searchmissingfull_movies_"+cfg_movie.Name, func() {
@@ -74,9 +99,15 @@ func InitScheduler() {
 			}, schedule.Cron_indexer_missing_full)
 		}
 		if schedule.Interval_indexer_upgrade != "" {
-			QueueSearch.DispatchEvery("searchupgradeinc_movies_"+cfg_movie.Name, func() {
-				utils.Movies_single_jobs("searchupgradeinc", cfg_movie.Name, "", false)
-			}, converttime(schedule.Interval_indexer_upgrade))
+			if cfg_general.UseCronInsteadOfInterval {
+				QueueSearch.DispatchCron("searchupgradeinc_movies_"+cfg_movie.Name, func() {
+					utils.Movies_single_jobs("searchupgradeinc", cfg_movie.Name, "", false)
+				}, convertcron(schedule.Interval_indexer_upgrade))
+			} else {
+				QueueSearch.DispatchEvery("searchupgradeinc_movies_"+cfg_movie.Name, func() {
+					utils.Movies_single_jobs("searchupgradeinc", cfg_movie.Name, "", false)
+				}, converttime(schedule.Interval_indexer_upgrade))
+			}
 		}
 		if schedule.Cron_indexer_upgrade != "" {
 			QueueSearch.DispatchCron("searchupgradeinc_movies_"+cfg_movie.Name, func() {
@@ -84,9 +115,15 @@ func InitScheduler() {
 			}, schedule.Cron_indexer_upgrade)
 		}
 		if schedule.Interval_indexer_upgrade_full != "" {
-			QueueSearch.DispatchEvery("searchupgradefull_movies_"+cfg_movie.Name, func() {
-				utils.Movies_single_jobs("searchupgradefull", cfg_movie.Name, "", false)
-			}, converttime(schedule.Interval_indexer_upgrade_full))
+			if cfg_general.UseCronInsteadOfInterval {
+				QueueSearch.DispatchCron("searchupgradefull_movies_"+cfg_movie.Name, func() {
+					utils.Movies_single_jobs("searchupgradefull", cfg_movie.Name, "", false)
+				}, convertcron(schedule.Interval_indexer_upgrade_full))
+			} else {
+				QueueSearch.DispatchEvery("searchupgradefull_movies_"+cfg_movie.Name, func() {
+					utils.Movies_single_jobs("searchupgradefull", cfg_movie.Name, "", false)
+				}, converttime(schedule.Interval_indexer_upgrade_full))
+			}
 		}
 		if schedule.Cron_indexer_upgrade_full != "" {
 			QueueSearch.DispatchCron("searchupgradefull_movies_"+cfg_movie.Name, func() {
@@ -95,9 +132,15 @@ func InitScheduler() {
 		}
 
 		if schedule.Interval_indexer_missing_title != "" {
-			QueueSearch.DispatchEvery("searchmissinginctitle_movies_"+cfg_movie.Name, func() {
-				utils.Movies_single_jobs("searchmissinginctitle", cfg_movie.Name, "", false)
-			}, converttime(schedule.Interval_indexer_missing_title))
+			if cfg_general.UseCronInsteadOfInterval {
+				QueueSearch.DispatchCron("searchmissinginctitle_movies_"+cfg_movie.Name, func() {
+					utils.Movies_single_jobs("searchmissinginctitle", cfg_movie.Name, "", false)
+				}, convertcron(schedule.Interval_indexer_missing_title))
+			} else {
+				QueueSearch.DispatchEvery("searchmissinginctitle_movies_"+cfg_movie.Name, func() {
+					utils.Movies_single_jobs("searchmissinginctitle", cfg_movie.Name, "", false)
+				}, converttime(schedule.Interval_indexer_missing_title))
+			}
 		}
 		if schedule.Cron_indexer_missing_title != "" {
 			QueueSearch.DispatchCron("searchmissinginctitle_movies_"+cfg_movie.Name, func() {
@@ -105,9 +148,15 @@ func InitScheduler() {
 			}, schedule.Cron_indexer_missing_title)
 		}
 		if schedule.Interval_indexer_missing_full_title != "" {
-			QueueSearch.DispatchEvery("searchmissingfulltitle_movies_"+cfg_movie.Name, func() {
-				utils.Movies_single_jobs("searchmissingfulltitle", cfg_movie.Name, "", false)
-			}, converttime(schedule.Interval_indexer_missing_full_title))
+			if cfg_general.UseCronInsteadOfInterval {
+				QueueSearch.DispatchCron("searchmissingfulltitle_movies_"+cfg_movie.Name, func() {
+					utils.Movies_single_jobs("searchmissingfulltitle", cfg_movie.Name, "", false)
+				}, convertcron(schedule.Interval_indexer_missing_full_title))
+			} else {
+				QueueSearch.DispatchEvery("searchmissingfulltitle_movies_"+cfg_movie.Name, func() {
+					utils.Movies_single_jobs("searchmissingfulltitle", cfg_movie.Name, "", false)
+				}, converttime(schedule.Interval_indexer_missing_full_title))
+			}
 		}
 		if schedule.Cron_indexer_missing_full_title != "" {
 			QueueSearch.DispatchCron("searchmissingfulltitle_movies_"+cfg_movie.Name, func() {
@@ -115,9 +164,15 @@ func InitScheduler() {
 			}, schedule.Cron_indexer_missing_full_title)
 		}
 		if schedule.Interval_indexer_upgrade_title != "" {
-			QueueSearch.DispatchEvery("searchupgradeinctitle_movies_"+cfg_movie.Name, func() {
-				utils.Movies_single_jobs("searchupgradeinctitle", cfg_movie.Name, "", false)
-			}, converttime(schedule.Interval_indexer_upgrade_title))
+			if cfg_general.UseCronInsteadOfInterval {
+				QueueSearch.DispatchCron("searchupgradeinctitle_movies_"+cfg_movie.Name, func() {
+					utils.Movies_single_jobs("searchupgradeinctitle", cfg_movie.Name, "", false)
+				}, convertcron(schedule.Interval_indexer_upgrade_title))
+			} else {
+				QueueSearch.DispatchEvery("searchupgradeinctitle_movies_"+cfg_movie.Name, func() {
+					utils.Movies_single_jobs("searchupgradeinctitle", cfg_movie.Name, "", false)
+				}, converttime(schedule.Interval_indexer_upgrade_title))
+			}
 		}
 		if schedule.Cron_indexer_upgrade_title != "" {
 			QueueSearch.DispatchCron("searchupgradeinctitle_movies_"+cfg_movie.Name, func() {
@@ -125,9 +180,15 @@ func InitScheduler() {
 			}, schedule.Cron_indexer_upgrade_title)
 		}
 		if schedule.Interval_indexer_upgrade_full_title != "" {
-			QueueSearch.DispatchEvery("searchupgradefulltitle_movies_"+cfg_movie.Name, func() {
-				utils.Movies_single_jobs("searchupgradefulltitle", cfg_movie.Name, "", false)
-			}, converttime(schedule.Interval_indexer_upgrade_full_title))
+			if cfg_general.UseCronInsteadOfInterval {
+				QueueSearch.DispatchCron("searchupgradefulltitle_movies_"+cfg_movie.Name, func() {
+					utils.Movies_single_jobs("searchupgradefulltitle", cfg_movie.Name, "", false)
+				}, convertcron(schedule.Interval_indexer_upgrade_full_title))
+			} else {
+				QueueSearch.DispatchEvery("searchupgradefulltitle_movies_"+cfg_movie.Name, func() {
+					utils.Movies_single_jobs("searchupgradefulltitle", cfg_movie.Name, "", false)
+				}, converttime(schedule.Interval_indexer_upgrade_full_title))
+			}
 		}
 		if schedule.Cron_indexer_upgrade_full_title != "" {
 			QueueSearch.DispatchCron("searchupgradefulltitle_movies_"+cfg_movie.Name, func() {
@@ -135,9 +196,15 @@ func InitScheduler() {
 			}, schedule.Cron_indexer_upgrade_full_title)
 		}
 		if schedule.Interval_indexer_rss != "" {
-			QueueSearch.DispatchEvery("rss_movies_"+cfg_movie.Name, func() {
-				utils.Movies_single_jobs("rss", cfg_movie.Name, "", false)
-			}, converttime(schedule.Interval_indexer_rss))
+			if cfg_general.UseCronInsteadOfInterval {
+				QueueSearch.DispatchCron("rss_movies_"+cfg_movie.Name, func() {
+					utils.Movies_single_jobs("rss", cfg_movie.Name, "", false)
+				}, convertcron(schedule.Interval_indexer_rss))
+			} else {
+				QueueSearch.DispatchEvery("rss_movies_"+cfg_movie.Name, func() {
+					utils.Movies_single_jobs("rss", cfg_movie.Name, "", false)
+				}, converttime(schedule.Interval_indexer_rss))
+			}
 		}
 		if schedule.Cron_indexer_rss != "" {
 			QueueSearch.DispatchCron("rss_movies_"+cfg_movie.Name, func() {
@@ -146,6 +213,17 @@ func InitScheduler() {
 		}
 
 		for idxlist := range cfg_movie.Lists {
+			if !cfg_movie.Lists[idxlist].Enabled {
+				continue
+			}
+			if !config.ConfigCheck("list_" + cfg_movie.Lists[idxlist].Template_list) {
+				continue
+			}
+			var cfg_list config.ListsConfig
+			config.ConfigGet("list_"+cfg_movie.Lists[idxlist].Template_list, &cfg_list)
+			if !cfg_list.Enabled {
+				continue
+			}
 			if cfg_movie.Lists[idxlist].Template_scheduler != "" {
 				if !config.ConfigCheck("scheduler_" + cfg_movie.Lists[idxlist].Template_scheduler) {
 					continue
@@ -153,9 +231,15 @@ func InitScheduler() {
 				config.ConfigGet("scheduler_"+cfg_movie.Lists[idxlist].Template_scheduler, &schedule)
 			}
 			if schedule.Interval_feeds != "" {
-				QueueFeeds.DispatchEvery("feeds_movies_"+cfg_movie.Name+"_"+cfg_movie.Lists[idxlist].Name, func() {
-					utils.Movies_single_jobs("feeds", cfg_movie.Name, cfg_movie.Lists[idxlist].Name, false)
-				}, converttime(schedule.Interval_feeds))
+				if cfg_general.UseCronInsteadOfInterval {
+					QueueFeeds.DispatchCron("feeds_movies_"+cfg_movie.Name+"_"+cfg_movie.Lists[idxlist].Name, func() {
+						utils.Movies_single_jobs("feeds", cfg_movie.Name, cfg_movie.Lists[idxlist].Name, false)
+					}, convertcron(schedule.Interval_feeds))
+				} else {
+					QueueFeeds.DispatchEvery("feeds_movies_"+cfg_movie.Name+"_"+cfg_movie.Lists[idxlist].Name, func() {
+						utils.Movies_single_jobs("feeds", cfg_movie.Name, cfg_movie.Lists[idxlist].Name, false)
+					}, converttime(schedule.Interval_feeds))
+				}
 			}
 			if schedule.Cron_feeds != "" {
 				QueueFeeds.DispatchCron("feeds_movies_"+cfg_movie.Name+"_"+cfg_movie.Lists[idxlist].Name, func() {
@@ -164,13 +248,23 @@ func InitScheduler() {
 			}
 
 			if schedule.Interval_scan_data_missing != "" {
-				QueueData.DispatchEvery("checkmissing_movies_"+cfg_movie.Name+"_"+cfg_movie.Lists[idxlist].Name, func() {
-					utils.Movies_single_jobs("checkmissing", cfg_movie.Name, cfg_movie.Lists[idxlist].Name, false)
-				}, converttime(schedule.Interval_scan_data_missing))
+				if cfg_general.UseCronInsteadOfInterval {
+					QueueData.DispatchCron("checkmissing_movies_"+cfg_movie.Name+"_"+cfg_movie.Lists[idxlist].Name, func() {
+						utils.Movies_single_jobs("checkmissing", cfg_movie.Name, cfg_movie.Lists[idxlist].Name, false)
+					}, convertcron(schedule.Interval_scan_data_missing))
 
-				QueueData.DispatchEvery("checkmissingflag_movies_"+cfg_movie.Name+"_"+cfg_movie.Lists[idxlist].Name, func() {
-					utils.Movies_single_jobs("checkmissingflag", cfg_movie.Name, cfg_movie.Lists[idxlist].Name, false)
-				}, converttime(schedule.Interval_scan_data_missing))
+					QueueData.DispatchCron("checkmissingflag_movies_"+cfg_movie.Name+"_"+cfg_movie.Lists[idxlist].Name, func() {
+						utils.Movies_single_jobs("checkmissingflag", cfg_movie.Name, cfg_movie.Lists[idxlist].Name, false)
+					}, convertcron(schedule.Interval_scan_data_missing))
+				} else {
+					QueueData.DispatchEvery("checkmissing_movies_"+cfg_movie.Name+"_"+cfg_movie.Lists[idxlist].Name, func() {
+						utils.Movies_single_jobs("checkmissing", cfg_movie.Name, cfg_movie.Lists[idxlist].Name, false)
+					}, converttime(schedule.Interval_scan_data_missing))
+
+					QueueData.DispatchEvery("checkmissingflag_movies_"+cfg_movie.Name+"_"+cfg_movie.Lists[idxlist].Name, func() {
+						utils.Movies_single_jobs("checkmissingflag", cfg_movie.Name, cfg_movie.Lists[idxlist].Name, false)
+					}, converttime(schedule.Interval_scan_data_missing))
+				}
 			}
 			if schedule.Cron_scan_data_missing != "" {
 				QueueData.DispatchCron("checkmissing_movies_"+cfg_movie.Name+"_"+cfg_movie.Lists[idxlist].Name, func() {
@@ -208,9 +302,15 @@ func InitScheduler() {
 	}
 
 	if defaultschedule.Interval_scan_data != "" {
-		QueueData.DispatchEvery("datafull_movies", func() {
-			utils.Movies_all_jobs("datafull", false)
-		}, converttime(defaultschedule.Interval_scan_data))
+		if cfg_general.UseCronInsteadOfInterval {
+			QueueData.DispatchCron("datafull_movies", func() {
+				utils.Movies_all_jobs("datafull", false)
+			}, convertcron(defaultschedule.Interval_scan_data))
+		} else {
+			QueueData.DispatchEvery("datafull_movies", func() {
+				utils.Movies_all_jobs("datafull", false)
+			}, converttime(defaultschedule.Interval_scan_data))
+		}
 	}
 	if defaultschedule.Cron_scan_data != "" {
 		QueueData.DispatchCron("datafull_movies", func() {
@@ -231,9 +331,15 @@ func InitScheduler() {
 		config.ConfigGet("scheduler_"+cfg_serie.Template_scheduler, &schedule)
 
 		if schedule.Interval_indexer_missing != "" {
-			QueueSearch.DispatchEvery("searchmissinginc_series_"+cfg_serie.Name, func() {
-				utils.Series_single_jobs("searchmissinginc", cfg_serie.Name, "", false)
-			}, converttime(schedule.Interval_indexer_missing))
+			if cfg_general.UseCronInsteadOfInterval {
+				QueueSearch.DispatchCron("searchmissinginc_series_"+cfg_serie.Name, func() {
+					utils.Series_single_jobs("searchmissinginc", cfg_serie.Name, "", false)
+				}, convertcron(schedule.Interval_indexer_missing))
+			} else {
+				QueueSearch.DispatchEvery("searchmissinginc_series_"+cfg_serie.Name, func() {
+					utils.Series_single_jobs("searchmissinginc", cfg_serie.Name, "", false)
+				}, converttime(schedule.Interval_indexer_missing))
+			}
 		}
 		if schedule.Cron_indexer_missing != "" {
 			QueueSearch.DispatchCron("searchmissinginc_series_"+cfg_serie.Name, func() {
@@ -241,9 +347,15 @@ func InitScheduler() {
 			}, schedule.Cron_indexer_missing)
 		}
 		if schedule.Interval_indexer_missing_full != "" {
-			QueueSearch.DispatchEvery("searchmissingfull_series_"+cfg_serie.Name, func() {
-				utils.Series_single_jobs("searchmissingfull", cfg_serie.Name, "", false)
-			}, converttime(schedule.Interval_indexer_missing_full))
+			if cfg_general.UseCronInsteadOfInterval {
+				QueueSearch.DispatchCron("searchmissingfull_series_"+cfg_serie.Name, func() {
+					utils.Series_single_jobs("searchmissingfull", cfg_serie.Name, "", false)
+				}, convertcron(schedule.Interval_indexer_missing_full))
+			} else {
+				QueueSearch.DispatchEvery("searchmissingfull_series_"+cfg_serie.Name, func() {
+					utils.Series_single_jobs("searchmissingfull", cfg_serie.Name, "", false)
+				}, converttime(schedule.Interval_indexer_missing_full))
+			}
 		}
 		if schedule.Cron_indexer_missing_full != "" {
 			QueueSearch.DispatchCron("searchmissingfull_series_"+cfg_serie.Name, func() {
@@ -251,9 +363,15 @@ func InitScheduler() {
 			}, schedule.Cron_indexer_missing_full)
 		}
 		if schedule.Interval_indexer_upgrade != "" {
-			QueueSearch.DispatchEvery("searchupgradeinc_series_"+cfg_serie.Name, func() {
-				utils.Series_single_jobs("searchupgradeinc", cfg_serie.Name, "", false)
-			}, converttime(schedule.Interval_indexer_upgrade))
+			if cfg_general.UseCronInsteadOfInterval {
+				QueueSearch.DispatchCron("searchupgradeinc_series_"+cfg_serie.Name, func() {
+					utils.Series_single_jobs("searchupgradeinc", cfg_serie.Name, "", false)
+				}, convertcron(schedule.Interval_indexer_upgrade))
+			} else {
+				QueueSearch.DispatchEvery("searchupgradeinc_series_"+cfg_serie.Name, func() {
+					utils.Series_single_jobs("searchupgradeinc", cfg_serie.Name, "", false)
+				}, converttime(schedule.Interval_indexer_upgrade))
+			}
 		}
 		if schedule.Cron_indexer_upgrade != "" {
 			QueueSearch.DispatchCron("searchupgradeinc_series_"+cfg_serie.Name, func() {
@@ -261,9 +379,15 @@ func InitScheduler() {
 			}, schedule.Cron_indexer_upgrade)
 		}
 		if schedule.Interval_indexer_upgrade_full != "" {
-			QueueSearch.DispatchEvery("searchupgradefull_series_"+cfg_serie.Name, func() {
-				utils.Series_single_jobs("searchupgradefull", cfg_serie.Name, "", false)
-			}, converttime(schedule.Interval_indexer_upgrade_full))
+			if cfg_general.UseCronInsteadOfInterval {
+				QueueSearch.DispatchCron("searchupgradefull_series_"+cfg_serie.Name, func() {
+					utils.Series_single_jobs("searchupgradefull", cfg_serie.Name, "", false)
+				}, convertcron(schedule.Interval_indexer_upgrade_full))
+			} else {
+				QueueSearch.DispatchEvery("searchupgradefull_series_"+cfg_serie.Name, func() {
+					utils.Series_single_jobs("searchupgradefull", cfg_serie.Name, "", false)
+				}, converttime(schedule.Interval_indexer_upgrade_full))
+			}
 		}
 		if schedule.Cron_indexer_upgrade_full != "" {
 			QueueSearch.DispatchCron("searchupgradefull_series_"+cfg_serie.Name, func() {
@@ -272,9 +396,15 @@ func InitScheduler() {
 		}
 
 		if schedule.Interval_indexer_missing_title != "" {
-			QueueSearch.DispatchEvery("searchmissinginctitle_series_"+cfg_serie.Name, func() {
-				utils.Series_single_jobs("searchmissinginctitle", cfg_serie.Name, "", false)
-			}, converttime(schedule.Interval_indexer_missing_title))
+			if cfg_general.UseCronInsteadOfInterval {
+				QueueSearch.DispatchCron("searchmissinginctitle_series_"+cfg_serie.Name, func() {
+					utils.Series_single_jobs("searchmissinginctitle", cfg_serie.Name, "", false)
+				}, convertcron(schedule.Interval_indexer_missing_title))
+			} else {
+				QueueSearch.DispatchEvery("searchmissinginctitle_series_"+cfg_serie.Name, func() {
+					utils.Series_single_jobs("searchmissinginctitle", cfg_serie.Name, "", false)
+				}, converttime(schedule.Interval_indexer_missing_title))
+			}
 		}
 		if schedule.Cron_indexer_missing_title != "" {
 			QueueSearch.DispatchCron("searchmissinginctitle_series_"+cfg_serie.Name, func() {
@@ -282,9 +412,15 @@ func InitScheduler() {
 			}, schedule.Cron_indexer_missing_title)
 		}
 		if schedule.Interval_indexer_missing_full_title != "" {
-			QueueSearch.DispatchEvery("searchmissingfulltitle_series_"+cfg_serie.Name, func() {
-				utils.Series_single_jobs("searchmissingfulltitle", cfg_serie.Name, "", false)
-			}, converttime(schedule.Interval_indexer_missing_full_title))
+			if cfg_general.UseCronInsteadOfInterval {
+				QueueSearch.DispatchCron("searchmissingfulltitle_series_"+cfg_serie.Name, func() {
+					utils.Series_single_jobs("searchmissingfulltitle", cfg_serie.Name, "", false)
+				}, convertcron(schedule.Interval_indexer_missing_full_title))
+			} else {
+				QueueSearch.DispatchEvery("searchmissingfulltitle_series_"+cfg_serie.Name, func() {
+					utils.Series_single_jobs("searchmissingfulltitle", cfg_serie.Name, "", false)
+				}, converttime(schedule.Interval_indexer_missing_full_title))
+			}
 		}
 		if schedule.Cron_indexer_missing_full_title != "" {
 			QueueSearch.DispatchCron("searchmissingfulltitle_series_"+cfg_serie.Name, func() {
@@ -292,9 +428,15 @@ func InitScheduler() {
 			}, schedule.Cron_indexer_missing_full_title)
 		}
 		if schedule.Interval_indexer_upgrade_title != "" {
-			QueueSearch.DispatchEvery("searchupgradeinctitle_series_"+cfg_serie.Name, func() {
-				utils.Series_single_jobs("searchupgradeinctitle", cfg_serie.Name, "", false)
-			}, converttime(schedule.Interval_indexer_upgrade_title))
+			if cfg_general.UseCronInsteadOfInterval {
+				QueueSearch.DispatchCron("searchupgradeinctitle_series_"+cfg_serie.Name, func() {
+					utils.Series_single_jobs("searchupgradeinctitle", cfg_serie.Name, "", false)
+				}, convertcron(schedule.Interval_indexer_upgrade_title))
+			} else {
+				QueueSearch.DispatchEvery("searchupgradeinctitle_series_"+cfg_serie.Name, func() {
+					utils.Series_single_jobs("searchupgradeinctitle", cfg_serie.Name, "", false)
+				}, converttime(schedule.Interval_indexer_upgrade_title))
+			}
 		}
 		if schedule.Cron_indexer_upgrade_title != "" {
 			QueueSearch.DispatchCron("searchupgradeinctitle_series_"+cfg_serie.Name, func() {
@@ -302,9 +444,15 @@ func InitScheduler() {
 			}, schedule.Cron_indexer_upgrade_title)
 		}
 		if schedule.Interval_indexer_upgrade_full_title != "" {
-			QueueSearch.DispatchEvery("searchupgradefulltitle_series_"+cfg_serie.Name, func() {
-				utils.Series_single_jobs("searchupgradefulltitle", cfg_serie.Name, "", false)
-			}, converttime(schedule.Interval_indexer_upgrade_full_title))
+			if cfg_general.UseCronInsteadOfInterval {
+				QueueSearch.DispatchCron("searchupgradefulltitle_series_"+cfg_serie.Name, func() {
+					utils.Series_single_jobs("searchupgradefulltitle", cfg_serie.Name, "", false)
+				}, convertcron(schedule.Interval_indexer_upgrade_full_title))
+			} else {
+				QueueSearch.DispatchEvery("searchupgradefulltitle_series_"+cfg_serie.Name, func() {
+					utils.Series_single_jobs("searchupgradefulltitle", cfg_serie.Name, "", false)
+				}, converttime(schedule.Interval_indexer_upgrade_full_title))
+			}
 		}
 		if schedule.Cron_indexer_upgrade_full_title != "" {
 			QueueSearch.DispatchCron("searchupgradefulltitle_series_"+cfg_serie.Name, func() {
@@ -312,9 +460,15 @@ func InitScheduler() {
 			}, schedule.Cron_indexer_upgrade_full_title)
 		}
 		if schedule.Interval_indexer_rss != "" {
-			QueueSearch.DispatchEvery("rss_series_"+cfg_serie.Name, func() {
-				utils.Series_single_jobs("rss", cfg_serie.Name, "", false)
-			}, converttime(schedule.Interval_indexer_rss))
+			if cfg_general.UseCronInsteadOfInterval {
+				QueueSearch.DispatchCron("rss_series_"+cfg_serie.Name, func() {
+					utils.Series_single_jobs("rss", cfg_serie.Name, "", false)
+				}, convertcron(schedule.Interval_indexer_rss))
+			} else {
+				QueueSearch.DispatchEvery("rss_series_"+cfg_serie.Name, func() {
+					utils.Series_single_jobs("rss", cfg_serie.Name, "", false)
+				}, converttime(schedule.Interval_indexer_rss))
+			}
 		}
 		if schedule.Cron_indexer_rss != "" {
 			QueueSearch.DispatchCron("rss_series_"+cfg_serie.Name, func() {
@@ -322,6 +476,19 @@ func InitScheduler() {
 			}, schedule.Cron_indexer_rss)
 		}
 		for idxlist := range cfg_serie.Lists {
+			if !cfg_serie.Lists[idxlist].Enabled {
+				continue
+			}
+
+			if !config.ConfigCheck("list_" + cfg_serie.Lists[idxlist].Template_list) {
+				continue
+			}
+			var cfg_list config.ListsConfig
+			config.ConfigGet("list_"+cfg_serie.Lists[idxlist].Template_list, &cfg_list)
+			if !cfg_list.Enabled {
+				continue
+			}
+
 			if !config.ConfigCheck("scheduler_" + cfg_serie.Template_scheduler) {
 				continue
 			}
@@ -333,9 +500,15 @@ func InitScheduler() {
 				config.ConfigGet("scheduler_"+cfg_serie.Lists[idxlist].Template_scheduler, &schedule)
 			}
 			if schedule.Interval_feeds != "" {
-				QueueFeeds.DispatchEvery("feeds_series_"+cfg_serie.Name+"_"+cfg_serie.Lists[idxlist].Name, func() {
-					utils.Series_single_jobs("feeds", cfg_serie.Name, cfg_serie.Lists[idxlist].Name, false)
-				}, converttime(schedule.Interval_feeds))
+				if cfg_general.UseCronInsteadOfInterval {
+					QueueFeeds.DispatchCron("feeds_series_"+cfg_serie.Name+"_"+cfg_serie.Lists[idxlist].Name, func() {
+						utils.Series_single_jobs("feeds", cfg_serie.Name, cfg_serie.Lists[idxlist].Name, false)
+					}, convertcron(schedule.Interval_feeds))
+				} else {
+					QueueFeeds.DispatchEvery("feeds_series_"+cfg_serie.Name+"_"+cfg_serie.Lists[idxlist].Name, func() {
+						utils.Series_single_jobs("feeds", cfg_serie.Name, cfg_serie.Lists[idxlist].Name, false)
+					}, converttime(schedule.Interval_feeds))
+				}
 			}
 			if schedule.Cron_feeds != "" {
 				QueueFeeds.DispatchCron("feeds_series_"+cfg_serie.Name+"_"+cfg_serie.Lists[idxlist].Name, func() {
@@ -344,10 +517,17 @@ func InitScheduler() {
 			}
 
 			if schedule.Interval_scan_data_missing != "" {
-				QueueData.DispatchEvery("checkmissing_series_"+cfg_serie.Name+"_"+cfg_serie.Lists[idxlist].Name, func() {
-					utils.Series_single_jobs("checkmissing", cfg_serie.Name, cfg_serie.Lists[idxlist].Name, false)
-					utils.Series_single_jobs("checkmissingflag", cfg_serie.Name, cfg_serie.Lists[idxlist].Name, false)
-				}, converttime(schedule.Interval_scan_data_missing))
+				if cfg_general.UseCronInsteadOfInterval {
+					QueueData.DispatchCron("checkmissing_series_"+cfg_serie.Name+"_"+cfg_serie.Lists[idxlist].Name, func() {
+						utils.Series_single_jobs("checkmissing", cfg_serie.Name, cfg_serie.Lists[idxlist].Name, false)
+						utils.Series_single_jobs("checkmissingflag", cfg_serie.Name, cfg_serie.Lists[idxlist].Name, false)
+					}, convertcron(schedule.Interval_scan_data_missing))
+				} else {
+					QueueData.DispatchEvery("checkmissing_series_"+cfg_serie.Name+"_"+cfg_serie.Lists[idxlist].Name, func() {
+						utils.Series_single_jobs("checkmissing", cfg_serie.Name, cfg_serie.Lists[idxlist].Name, false)
+						utils.Series_single_jobs("checkmissingflag", cfg_serie.Name, cfg_serie.Lists[idxlist].Name, false)
+					}, converttime(schedule.Interval_scan_data_missing))
+				}
 			}
 			if schedule.Cron_scan_data_missing != "" {
 				QueueData.DispatchCron("checkmissing_series_"+cfg_serie.Name+"_"+cfg_serie.Lists[idxlist].Name, func() {
@@ -357,10 +537,17 @@ func InitScheduler() {
 			}
 		}
 	}
+
 	if defaultschedule.Interval_scan_data != "" {
-		QueueData.DispatchEvery("datafull_series", func() {
-			utils.Series_all_jobs("datafull", false)
-		}, converttime(defaultschedule.Interval_scan_data))
+		if cfg_general.UseCronInsteadOfInterval {
+			QueueData.DispatchCron("datafull_series", func() {
+				utils.Series_all_jobs("datafull", false)
+			}, convertcron(defaultschedule.Interval_scan_data))
+		} else {
+			QueueData.DispatchEvery("datafull_series", func() {
+				utils.Series_all_jobs("datafull", false)
+			}, converttime(defaultschedule.Interval_scan_data))
+		}
 	}
 	if defaultschedule.Cron_scan_data != "" {
 		QueueData.DispatchCron("datafull_series", func() {
@@ -368,13 +555,23 @@ func InitScheduler() {
 		}, defaultschedule.Cron_scan_data)
 	}
 	if defaultschedule.Interval_scan_dataimport != "" {
-		QueueData.DispatchEvery("structure_series", func() {
-			utils.Series_all_jobs("structure", false)
-		}, converttime(defaultschedule.Interval_scan_dataimport))
+		if cfg_general.UseCronInsteadOfInterval {
+			QueueData.DispatchCron("structure_series", func() {
+				utils.Series_all_jobs("structure", false)
+			}, convertcron(defaultschedule.Interval_scan_dataimport))
 
-		QueueData.DispatchEvery("structure_movies", func() {
-			utils.Movies_all_jobs("structure", false)
-		}, converttime(defaultschedule.Interval_scan_dataimport))
+			QueueData.DispatchCron("structure_movies", func() {
+				utils.Movies_all_jobs("structure", false)
+			}, convertcron(defaultschedule.Interval_scan_dataimport))
+		} else {
+			QueueData.DispatchEvery("structure_series", func() {
+				utils.Series_all_jobs("structure", false)
+			}, converttime(defaultschedule.Interval_scan_dataimport))
+
+			QueueData.DispatchEvery("structure_movies", func() {
+				utils.Movies_all_jobs("structure", false)
+			}, converttime(defaultschedule.Interval_scan_dataimport))
+		}
 	}
 	if defaultschedule.Cron_scan_dataimport != "" {
 		QueueData.DispatchCron("structure_series", func() {
@@ -387,9 +584,15 @@ func InitScheduler() {
 	}
 
 	if defaultschedule.Interval_feeds_refresh_series_full != "" {
-		QueueFeeds.DispatchEvery("Refresh Series", func() {
-			utils.RefreshSeries()
-		}, converttime(defaultschedule.Interval_feeds_refresh_series_full))
+		if cfg_general.UseCronInsteadOfInterval {
+			QueueFeeds.DispatchCron("Refresh Series", func() {
+				utils.RefreshSeries()
+			}, convertcron(defaultschedule.Interval_feeds_refresh_series_full))
+		} else {
+			QueueFeeds.DispatchEvery("Refresh Series", func() {
+				utils.RefreshSeries()
+			}, converttime(defaultschedule.Interval_feeds_refresh_series_full))
+		}
 	}
 	if defaultschedule.Cron_feeds_refresh_series_full != "" {
 		QueueFeeds.DispatchCron("Refresh Series", func() {
@@ -397,9 +600,15 @@ func InitScheduler() {
 		}, defaultschedule.Cron_feeds_refresh_series_full)
 	}
 	if defaultschedule.Interval_feeds_refresh_movies_full != "" {
-		QueueFeeds.DispatchEvery("Refresh Movies", func() {
-			utils.RefreshMovies()
-		}, converttime(defaultschedule.Interval_feeds_refresh_movies_full))
+		if cfg_general.UseCronInsteadOfInterval {
+			QueueFeeds.DispatchCron("Refresh Movies", func() {
+				utils.RefreshMovies()
+			}, convertcron(defaultschedule.Interval_feeds_refresh_movies_full))
+		} else {
+			QueueFeeds.DispatchEvery("Refresh Movies", func() {
+				utils.RefreshMovies()
+			}, converttime(defaultschedule.Interval_feeds_refresh_movies_full))
+		}
 	}
 	if defaultschedule.Cron_feeds_refresh_movies_full != "" {
 		QueueFeeds.DispatchCron("Refresh Movies", func() {
@@ -407,9 +616,15 @@ func InitScheduler() {
 		}, defaultschedule.Cron_feeds_refresh_movies_full)
 	}
 	if defaultschedule.Interval_feeds_refresh_series != "" {
-		QueueFeeds.DispatchEvery("Refresh Series Incremental", func() {
-			utils.RefreshSeriesInc()
-		}, converttime(defaultschedule.Interval_feeds_refresh_series))
+		if cfg_general.UseCronInsteadOfInterval {
+			QueueFeeds.DispatchCron("Refresh Series Incremental", func() {
+				utils.RefreshSeriesInc()
+			}, convertcron(defaultschedule.Interval_feeds_refresh_series))
+		} else {
+			QueueFeeds.DispatchEvery("Refresh Series Incremental", func() {
+				utils.RefreshSeriesInc()
+			}, converttime(defaultschedule.Interval_feeds_refresh_series))
+		}
 	}
 	if defaultschedule.Cron_feeds_refresh_series != "" {
 		QueueFeeds.DispatchCron("Refresh Series Incremental", func() {
@@ -417,9 +632,15 @@ func InitScheduler() {
 		}, defaultschedule.Cron_feeds_refresh_series)
 	}
 	if defaultschedule.Interval_feeds_refresh_movies != "" {
-		QueueFeeds.DispatchEvery("Refresh Movies Incremental", func() {
-			utils.RefreshMoviesInc()
-		}, converttime(defaultschedule.Interval_feeds_refresh_movies))
+		if cfg_general.UseCronInsteadOfInterval {
+			QueueFeeds.DispatchCron("Refresh Movies Incremental", func() {
+				utils.RefreshMoviesInc()
+			}, convertcron(defaultschedule.Interval_feeds_refresh_movies))
+		} else {
+			QueueFeeds.DispatchEvery("Refresh Movies Incremental", func() {
+				utils.RefreshMoviesInc()
+			}, converttime(defaultschedule.Interval_feeds_refresh_movies))
+		}
 	}
 	if defaultschedule.Cron_feeds_refresh_movies != "" {
 		QueueFeeds.DispatchCron("Refresh Movies Incremental", func() {
@@ -427,9 +648,15 @@ func InitScheduler() {
 		}, defaultschedule.Cron_feeds_refresh_movies)
 	}
 	if defaultschedule.Interval_imdb != "" {
-		QueueFeeds.DispatchEvery("Refresh IMDB", func() {
-			utils.InitFillImdb()
-		}, converttime(defaultschedule.Interval_imdb))
+		if cfg_general.UseCronInsteadOfInterval {
+			QueueFeeds.DispatchCron("Refresh IMDB", func() {
+				utils.InitFillImdb()
+			}, convertcron(defaultschedule.Interval_imdb))
+		} else {
+			QueueFeeds.DispatchEvery("Refresh IMDB", func() {
+				utils.InitFillImdb()
+			}, converttime(defaultschedule.Interval_imdb))
+		}
 	}
 	if defaultschedule.Cron_imdb != "" {
 		QueueFeeds.DispatchCron("Refresh IMDB", func() {

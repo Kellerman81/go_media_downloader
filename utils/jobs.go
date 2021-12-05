@@ -80,6 +80,21 @@ func Feeds(configEntry config.MediaTypeConfig, list config.MediaListsConfig) fee
 		return feedResults{Series: GetTraktUserPublicShowList(configEntry, list)}
 	}
 
+	if strings.EqualFold(cfg_list.Type, "newznabrss") {
+		searchnow := NewSearcher(configEntry, list.Template_quality)
+		searchresults := searchnow.GetRSSFeed("rss", list)
+		for idxres := range searchresults.Nzbs {
+			logger.Log.Debug("nzb found - start downloading: ", searchresults.Nzbs[idxres].NZB.Title)
+			downloadnow := NewDownloader(configEntry, "rss")
+			if searchresults.Nzbs[idxres].Nzbmovie.ID != 0 {
+				downloadnow.SetMovie(searchresults.Nzbs[idxres].Nzbmovie)
+				downloadnow.DownloadNzb(searchresults.Nzbs[idxres])
+			} else if searchresults.Nzbs[idxres].Nzbepisode.ID != 0 {
+				downloadnow.SetSeriesEpisode(searchresults.Nzbs[idxres].Nzbepisode)
+				downloadnow.DownloadNzb(searchresults.Nzbs[idxres])
+			}
+		}
+	}
 	if strings.EqualFold(cfg_list.Type, "imdbcsv") {
 		return feedResults{Movies: getMissingIMDBMoviesV2(configEntry, list)}
 	}

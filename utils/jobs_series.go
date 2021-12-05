@@ -576,7 +576,7 @@ func JobImportSeriesParseV2(file string, updatemissing bool, configEntry config.
 		titleyear = m.Title
 	}
 	seriestitle := ""
-	re, _ := regexp.Compile(`^(.*)(?i)(?:(?:\.| - |-)S(?:[0-9]+)[ex](?:[0-9]{1,3})(?:[^0-9]|$))`)
+	re, _ := regexp.Compile(`^(.*)(?i)(?:(?:\.| - |-)S(?:[0-9]+)(?: )?[ex](?:[0-9]{1,3})(?:[^0-9]|$))`)
 	matched := re.FindStringSubmatch(filepath.Base(file))
 	if len(matched) >= 2 {
 		seriestitle = matched[1]
@@ -602,7 +602,7 @@ func JobImportSeriesParseV2(file string, updatemissing bool, configEntry config.
 		if errparsev != nil {
 			return
 		}
-		r := regexp.MustCompile(`(?i)s?[0-9]{1,4}((?:(?:-?[ex][0-9]{1,3})+))|(\d{2,4}(?:\.|-| |_)\d{1,2}(?:\.|-| |_)\d{1,2})(?:\b|_)`)
+		r := regexp.MustCompile(`(?i)s?[0-9]{1,4}((?:(?:(?: )?-?(?: )?[ex][0-9]{1,3})+))|(\d{2,4}(?:\.|-| |_)\d{1,2}(?:\.|-| |_)\d{1,2})(?:\b|_)`)
 		teststr := r.FindStringSubmatch(m.Identifier)
 		if len(teststr) == 0 {
 			logger.Log.Warn("Failed parse identifier: ", file, " as ", m.Title, m.Identifier)

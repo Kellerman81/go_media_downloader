@@ -9,10 +9,10 @@ log_file_size = 20 # in MB
 log_file_count = 10 # Number of old Log Files to keep
 log_compress = true # Compress old Log Files
 worker_default = 2
-worker_metadata = 4
+worker_metadata = 4 # parallel Metadata scans
 worker_files = 2
-worker_parse = 2
-worker_search = 2
+worker_parse = 2 # parallel file parsings
+worker_search = 2 # parallel searches for missing/upgrade scans
 webport  = "9090" #string!
 webapikey = "mysecure" #url is http://<server>:<webport>/api/...?apikey=mysecure
 concurrent_scheduler = 2 # only applies to search jobs - not for feed import or file scans
@@ -37,9 +37,10 @@ themoviedb_apikey="insert" # insert your themoviedb apikey
 trakt_client_id="insert" # insert your trakt clientid
 trakt_client_secret="insert" # insert your trakt clientsecret
 failed_indexer_block_time = 1 # Number of minutes to skip indexer after a failed query - default 5
-disable_parser_string_match = true #Disables String Matcher (Only Regex is used for matching) - UseRegex for qualities must be enabled
+disable_parser_string_match = true #Disables String Matcher (Only Regex is used for matching) - UseRegex for qualities must be enabled - Regex has a higher CPU load
 use_godir = true #if true use godirwalk - scans files slightly faster and might handle syms but uses more ram
 move_buffer_size_kb = 10 # Buffer Size for File Move Jobs (in KB)
+use_cron_instead_of_interval = true #Converts the intervals to cron strings for better scheduling
 
 trakt_limiter_seconds=1 # will only change after restart
 trakt_limiter_calls=20 # max limiter_calls in limiter_seconds
@@ -74,7 +75,7 @@ index_full=true #short only imports imdbid and titles/years - full also votes ra
 	metadata_language="English" #language definition for tmdb
 	metadata_title_languages=["US","UK"] #allow titles with the languages
 	structure=true #false leaves the files where they were downloaded to
-	search_missing_incremental = 20 #number of elements processed during incremental scans - x*number of lists!
+	search_missing_incremental = 20 #number of elements processed during incremental scans
 	search_upgrade_incremental = 20 #number of elements processed during incremental scans
 		[[media.movies.data]]
 		template_path="en movies" #match to path template name
@@ -113,8 +114,8 @@ index_full=true #short only imports imdbid and titles/years - full also votes ra
 	metadata_source="tvdb"
 	metadata_title_languages=["US","UK"] #allow titles with language
 	structure=true
-	search_missing_incremental = 20
-	search_upgrade_incremental = 20
+	search_missing_incremental = 20 #number of elements processed during incremental scans
+	search_upgrade_incremental = 20 #number of elements processed during incremental scans
 		[[media.series.data]]
 		template_path="en series"
 		[[media.series.data_import]]
@@ -454,7 +455,7 @@ interval_scan_data_missing="3d" # checks for removed media
 ## {{.Title}}	Renders the “Title”-field
 ## {{.Dbmovie.Title}}	Renders the “Title”-field of the dbmovie
 ## {{.Dbserie.Seriename}}	Renders the “Seriename”-field of the dbseries
-## {{if eq .Source.Proper true}} {{else}} {{end}}	Defines an if-Statement (Condiiton)
+## {{if eq .Source.Proper true}} {{else}} {{end}}	Defines an if-Statement (Conditon)
 ## {{if .Movie.Missing}} {{else}} {{end}}	Defines an if-Statement (has Data)
 ## {{range .Todos}} {{.}} {{end}}    Starts a loop
 ## {{printf \"%02s\" .DbserieEpisode.Season}}    Uses the function "printf" to prefix the Season Field with a "0" (%2) until the length of 2 (s) marks a string (yes the season is a string the episode not)

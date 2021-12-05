@@ -33,6 +33,8 @@ func AddMoviesRoutes(routermovies *gin.RouterGroup) {
 	routermovies.GET("/job/:job", apimoviesAllJobs)
 	routermovies.GET("/job/:job/:name", apimoviesJobs)
 
+	routermovies.GET("/rss/search/list/:group", apiMoviesRssSearchList)
+
 	routermoviessearch := routermovies.Group("/search")
 	{
 		routermoviessearch.GET("/id/:id", apimoviesSearch)
@@ -495,6 +497,35 @@ func apimoviesSearchList(c *gin.Context) {
 				c.JSON(http.StatusOK, gin.H{"accepted": searchresults.Nzbs, "rejected": searchresults.Rejected})
 				return
 			}
+		}
+	}
+	c.JSON(http.StatusNoContent, "Nothing Done")
+}
+
+// @Summary Movie RSS (list ok, nok)
+// @Description Movie RSS
+// @Tags movie
+// @Accept  json
+// @Produce  json
+// @Param group path string true "Group Name"
+// @Param apikey query string true "apikey"
+// @Success 200 {string} string
+// @Failure 401 {object} string
+// @Router /api/movies/rss/search/list/{group} [get]
+func apiMoviesRssSearchList(c *gin.Context) {
+	if ApiAuth(c) == http.StatusUnauthorized {
+		return
+	}
+
+	movie_keys, _ := config.ConfigDB.Keys([]byte("movie_*"), 0, 0, true)
+	for _, idxmovie := range movie_keys {
+		var cfg_movie config.MediaTypeConfig
+		config.ConfigGet(string(idxmovie), &cfg_movie)
+		if strings.EqualFold(cfg_movie.Name, c.Param("group")) {
+			searchnow := utils.NewSearcher(cfg_movie, cfg_movie.Template_quality)
+			searchresults := searchnow.SearchRSS("movie", true)
+			c.JSON(http.StatusOK, gin.H{"accepted": searchresults.Nzbs, "rejected": searchresults.Rejected})
+			return
 		}
 	}
 	c.JSON(http.StatusNoContent, "Nothing Done")

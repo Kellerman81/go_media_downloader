@@ -76,28 +76,6 @@ func main() {
 	logger.Log.Infoln("Hint: Set Loglevel to Debug to see possible API Paths")
 	logger.Log.Infoln("------------------------------")
 	logger.Log.Infoln("")
-	// keys, _ := config.ConfigDB.Keys([]byte(""), 0, 0, true)
-
-	// fmt.Println(cfg_general)
-	// for _, v := range keys {
-	// 	fmt.Print(string(v) + ", ")
-	// }
-	// database.InitDb(cfg.General.DBLogLevel)
-	// database.GetMovies(database.Query{Where: })
-	// utils.GetHighestMoviePriorityByFiles(cfg, )
-	// counter2, _ := database.CountRows("movie_files", database.Query{Where: "movie_id =?", WhereArgs: []interface{}{999}})
-	// fmt.Println(counter2)
-	// return
-	// dbimdb2 := database.InitImdbdb(cfg.General.DBLogLevel, "imdb")
-	// database.DBImdb = dbimdb2
-	// table, tableerr := database.QueryVersions(database.Query{})
-	// // var inInterface map[string]interface{}
-	// // inrec, _ := json.Marshal(table)
-	// // json.Unmarshal(inrec, &inInterface)
-	// // fmt.Println(inInterface)
-	// fmt.Println(len(table))
-	// fmt.Println(tableerr)
-	// return
 
 	apiexternal.NewOmdbClient(cfg_general.OmdbApiKey, cfg_general.Omdblimiterseconds, cfg_general.Omdblimitercalls)
 	apiexternal.NewTmdbClient(cfg_general.TheMovieDBApiKey, cfg_general.Tmdblimiterseconds, cfg_general.Tmdblimitercalls)
@@ -111,8 +89,6 @@ func main() {
 	}
 
 	apiexternal.NewznabClients = make(map[string]newznab.Client, 10)
-	//watch_file, parser := config.LoadConfigV2(configfile)
-	//config.WatchConfig(watch_file, parser)q
 
 	utils.SeriesStructureJobRunning = make(map[string]bool, 10)
 	utils.MovieImportJobRunning = make(map[string]bool, 10)
@@ -127,20 +103,6 @@ func main() {
 
 	database.UpgradeDB()
 	database.GetVars()
-
-	//parse, _ := utils.NewFileParser(cfg, "Bull.2016.S03E12.HDTV.x264-KILLERS (tvdb311945) (tvdb1234)", true, "series")
-	// parse, _ := utils.NewFileParser("Rampage.Capital.Punishment.2014.BRRIP.H264.AAC-MAJESTiC (tt3448226)", false, "movie")
-	// fmt.Println("aud: ", parse.Audio)
-	// fmt.Println("cod: ", parse.Codec)
-	// fmt.Println("im: ", parse.Imdb)
-	// fmt.Println("ql: ", parse.Quality)
-	// fmt.Println("res: ", parse.Resolution)
-	// fmt.Println("tit: ", parse.Title)
-	// fmt.Println("year: ", parse.Year)
-	// fmt.Println("season: ", parse.Season)
-	// fmt.Println("episode: ", parse.Episode)
-	// fmt.Println("iden: ", parse.Identifier)
-	// return
 
 	counter, _ := database.CountRows("dbmovies", database.Query{})
 	if counter == 0 {
@@ -269,6 +231,7 @@ func main() {
 		routerapi.GET("/fillimdb", api.ApiFillImdb)
 		routerapi.GET("/scheduler/stop", api.ApiSchedulerStop)
 		routerapi.GET("/scheduler/start", api.ApiSchedulerStart)
+		routerapi.GET("/scheduler/list", api.ApiSchedulerList)
 		routerapi.GET("/db/close", api.ApiDbClose)
 		routerapi.DELETE("/db/clear/:name", api.ApiDbClear)
 		routerapi.DELETE("/db/oldjobs", api.ApiDbRemoveOldJobs)

@@ -39,7 +39,12 @@ func ApiQueueList(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
-	ctx.JSON(http.StatusOK, tasks.GlobalQueue.Queue)
+
+	var r []tasks.Job
+	for _, value := range tasks.GlobalQueue.Queue {
+		r = append(r, value)
+	}
+	ctx.JSON(http.StatusOK, r)
 }
 
 // @Summary Queue History
@@ -276,6 +281,26 @@ func ApiSchedulerStart(c *gin.Context) {
 	scheduler.QueueFeeds.Start()
 	scheduler.QueueSearch.Start()
 	c.JSON(http.StatusOK, "ok")
+}
+
+// @Summary Scheduler Jobs
+// @Description Lists Planned Jobs
+// @Tags scheduler
+// @Accept  json
+// @Produce  json
+// @Param apikey query string true "apikey"
+// @Success 200 {object} string
+// @Failure 401 {object} string
+// @Router /api/scheduler/list [get]
+func ApiSchedulerList(ctx *gin.Context) {
+	if ApiAuth(ctx) == http.StatusUnauthorized {
+		return
+	}
+	var r []tasks.JobSchedule
+	for _, value := range tasks.GlobalSchedules.Schedule {
+		r = append(r, value)
+	}
+	ctx.JSON(http.StatusOK, r)
 }
 
 // @Summary Close DB
