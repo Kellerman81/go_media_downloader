@@ -176,7 +176,7 @@ func (d Downloader) DownloadByDeluge() error {
 
 	err := apiexternal.SendToDeluge(
 		d.Downloader.Hostname, d.Downloader.Port, d.Downloader.Username, d.Downloader.Password,
-		d.Nzb.NZB.DownloadURL, d.Downloader.DelugeDlTo, d.Downloader.DelugeMoveAfter, d.Downloader.DelugeMoveTo)
+		d.Nzb.NZB.DownloadURL, d.Downloader.DelugeDlTo, d.Downloader.DelugeMoveAfter, d.Downloader.DelugeMoveTo, d.Downloader.AddPaused)
 
 	if err != nil {
 		logger.Log.Error("Download by Deluge - ERROR: ", err)

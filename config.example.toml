@@ -239,21 +239,28 @@ include_genre=[]
 
 [[lists]]
 name="TraktPopularShows"
-type="traktseriepopular" # Import Trakt Popular Movies
+type="traktseriepopular" # Import Trakt Popular Series
 enabled=true
 limit=20 # no votes or include/exlude here
 
 [[lists]]
 name="TraktTrendingShows"
-type="traktserietrending" # Import Trakt Trending Movies
+type="traktserietrending" # Import Trakt Trending Series
 enabled=true
 limit=20 # no votes or include/exlude here
 
 [[lists]]
 name="TraktAnticipatedShows"
-type="traktserieanticipated" # Import Trakt Anticipated Movies
+type="traktserieanticipated" # Import Trakt Anticipated Series
 enabled=true
 limit=20 # no votes or include/exlude here
+
+[[lists]]
+name="RSSFeed"
+type="newznabrss" # List to use as source with auto download of missing/upgrades - add "Name" as template_indexer in quality of list - only movies supported - use add_found of list in group to add found movies
+url="http://ip:9117/api/v2.0/indexers/1337x/results/torznab/api?apikey=&t=search&cat=&q=%22test%22" #use full url
+enabled=true
+limit=20 # Number of items to fetch - no votes or include/exlude here
 
 [[lists]]
 name="Series"

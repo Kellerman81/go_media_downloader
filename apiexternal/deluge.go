@@ -7,7 +7,7 @@ import (
 	delugeclient "github.com/gdm85/go-libdeluge"
 )
 
-func SendToDeluge(host string, port int, username string, password string, url string, dlpath string, moveafter bool, moveafterpath string) error {
+func SendToDeluge(host string, port int, username string, password string, url string, dlpath string, moveafter bool, moveafterpath string, addpaused bool) error {
 	cl := delugeclient.NewV2(delugeclient.Settings{
 		Hostname:             host,
 		Port:                 uint(port),
@@ -16,6 +16,7 @@ func SendToDeluge(host string, port int, username string, password string, url s
 		DebugServerResponses: true,
 	})
 
+	fls := false
 	// perform connection to Deluge server
 	err := cl.Connect()
 	if err == nil {
@@ -24,6 +25,8 @@ func SendToDeluge(host string, port int, username string, password string, url s
 				DownloadLocation:  &dlpath,
 				MoveCompleted:     &moveafter,
 				MoveCompletedPath: &moveafterpath,
+				AutoManaged:       &fls,
+				AddPaused:         &addpaused,
 			})
 			if err != nil {
 				fmt.Println(err)
@@ -33,6 +36,8 @@ func SendToDeluge(host string, port int, username string, password string, url s
 				DownloadLocation:  &dlpath,
 				MoveCompleted:     &moveafter,
 				MoveCompletedPath: &moveafterpath,
+				AutoManaged:       &fls,
+				AddPaused:         &addpaused,
 			})
 			if err != nil {
 				fmt.Println(err)

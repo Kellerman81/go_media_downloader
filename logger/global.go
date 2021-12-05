@@ -54,7 +54,11 @@ func StringToSlug(instr string) string {
 	instr = strings.Replace(instr, "-xix-", "-19-", -1)
 	instr = strings.Replace(instr, "-xx-", "-20-", -1)
 	//t := transform.Chain(norm.NFD, runes.Remove(runes.In(unicode.Mn)), norm.NFC)
-	result, _, _ := transform.String(Transformer, instr)
-	result = strings.Trim(result, "-")
+	result, _, err := transform.String(Transformer, instr)
+	if err != nil {
+		result = instr
+	} else {
+		result = strings.Trim(result, "-")
+	}
 	return result
 }

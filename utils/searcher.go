@@ -1415,12 +1415,6 @@ func (s *Searcher) GetRSSFeed(searchGroupType string, list config.MediaListsConf
 	var cfg_quality config.QualityConfig
 	config.ConfigGet("quality_"+s.Quality, &cfg_quality)
 
-	if !config.ConfigCheck("indexer_" + cfg_quality.Indexer[0].Template_indexer) {
-		return searchResults{}
-	}
-	var cfg_indexer config.IndexersConfig
-	config.ConfigGet("indexer_"+cfg_quality.Indexer[0].Template_indexer, &cfg_indexer)
-
 	s.SearchGroupType = searchGroupType
 	s.SearchActionType = "rss"
 
@@ -1430,8 +1424,23 @@ func (s *Searcher) GetRSSFeed(searchGroupType string, list config.MediaListsConf
 	var cfg_list config.ListsConfig
 	config.ConfigGet("list_"+list.Template_list, &cfg_list)
 
-	indexer := apiexternal.NzbIndexer{Name: cfg_list.Name, URL: cfg_list.Url}
-	nzbs, failed, lastids, nzberr := apiexternal.QueryNewznabRSSLast([]apiexternal.NzbIndexer{indexer}, 100, []int{}, 1)
+	var cfg_indexer config.QualityIndexerConfig
+	for idx := range cfg_quality.Indexer {
+		if cfg_quality.Indexer[idx].Template_indexer == cfg_list.Name {
+			cfg_indexer = cfg_quality.Indexer[idx]
+		}
+	}
+	if cfg_indexer.Template_regex == "" {
+		return searchResults{}
+	}
+
+	var lastindexerid string
+	indexrssid, _ := database.GetRssHistory(database.Query{Select: "last_id", Where: "config=? and list=? and indexer=?", WhereArgs: []interface{}{cfg_list.Name, s.Quality, ""}})
+	lastindexerid = indexrssid.LastID
+
+	indexer := apiexternal.NzbIndexer{Name: cfg_list.Name, Customrssurl: cfg_list.Url, LastRssId: lastindexerid}
+	s.Indexer = cfg_indexer
+	nzbs, failed, lastids, nzberr := apiexternal.QueryNewznabRSSLast([]apiexternal.NzbIndexer{indexer}, cfg_list.Limit, []int{}, 1)
 	if nzberr != nil {
 		logger.Log.Error("Newznab RSS Search failed")
 		failedindexer(failed)
@@ -1442,7 +1451,7 @@ func (s *Searcher) GetRSSFeed(searchGroupType string, list config.MediaListsConf
 			s.FilterNzbTitleLength()
 			s.FilterNzbSize()
 			s.FilterNzbHistory()
-			s.SetDataField([]string{list.Name}, false)
+			s.SetDataField([]string{list.Name}, list.Addfound)
 			s.FilterNzbRegex()
 			s.NzbParse()
 			s.NzbCheckTitle()
@@ -1453,7 +1462,7 @@ func (s *Searcher) GetRSSFeed(searchGroupType string, list config.MediaListsConf
 			s.FilterNzbTitleLength()
 			s.FilterNzbSize()
 			s.FilterNzbHistory()
-			s.SetDataField([]string{list.Name}, false)
+			s.SetDataField([]string{list.Name}, list.Addfound)
 			s.FilterNzbRegex()
 			s.NzbParse()
 			//s.NzbCheckYear(cfg_quality, strconv.Itoa(s.Dbmovie.Year))
