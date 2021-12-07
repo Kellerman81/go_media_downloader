@@ -846,7 +846,7 @@ func StructureSeries(structure Structure, folder string, m *ParseInfo, series da
 
 	dbseries, _ := database.GetDbserie(database.Query{Where: "id=?", WhereArgs: []interface{}{series.DbserieID}})
 	runtime, _ := strconv.Atoi(dbseries.Runtime)
-	oldfiles, episodes, allowimport, serietitle, episodetitle, seriesEpisode := structure.GetSeriesEpisodes(series, videofile, *m, folder)
+	oldfiles, episodes, allowimport, serietitle, episodetitle, seriesEpisode, seriesEpisodes := structure.GetSeriesEpisodes(series, videofile, *m, folder)
 	errpars := structure.ParseFileAdditional(videofile, m, folder, structure.targetpath.DeleteWrongLanguage, runtime*len(episodes))
 	if errpars != nil {
 		logger.Log.Error("Error fprobe video: ", videofile, " error: ", errpars)
@@ -878,9 +878,6 @@ func StructureSeries(structure Structure, folder string, m *ParseInfo, series da
 
 			//updateserie
 			targetfile := filepath.Join(videotarget, filename)
-			database.InsertArray("serie_episode_files",
-				[]string{"location", "filename", "extension", "quality_profile", "resolution_id", "quality_id", "codec_id", "audio_id", "proper", "repack", "extended", "serie_id", "serie_episode_id", "dbserie_episode_id", "dbserie_id"},
-				[]interface{}{targetfile, filepath.Base(targetfile), filepath.Ext(targetfile), structure.list.Template_quality, m.ResolutionID, m.QualityID, m.CodecID, m.AudioID, m.Proper, m.Repack, m.Extended, seriesEpisode.SerieID, seriesEpisode.ID, seriesEpisode.DbserieEpisodeID, seriesEpisode.DbserieID})
 
 			reached := false
 
@@ -888,8 +885,14 @@ func StructureSeries(structure Structure, folder string, m *ParseInfo, series da
 			if m.Priority >= cutoffPrio.Priority {
 				reached = true
 			}
-			database.UpdateColumn("serie_episodes", "missing", false, database.Query{Where: "id=?", WhereArgs: []interface{}{seriesEpisode.ID}})
-			database.UpdateColumn("serie_episodes", "quality_reached", reached, database.Query{Where: "id=?", WhereArgs: []interface{}{seriesEpisode.ID}})
+			for idxepi := range seriesEpisodes {
+				database.InsertArray("serie_episode_files",
+					[]string{"location", "filename", "extension", "quality_profile", "resolution_id", "quality_id", "codec_id", "audio_id", "proper", "repack", "extended", "serie_id", "serie_episode_id", "dbserie_episode_id", "dbserie_id"},
+					[]interface{}{targetfile, filepath.Base(targetfile), filepath.Ext(targetfile), structure.list.Template_quality, m.ResolutionID, m.QualityID, m.CodecID, m.AudioID, m.Proper, m.Repack, m.Extended, seriesEpisodes[idxepi].SerieID, seriesEpisodes[idxepi].ID, seriesEpisodes[idxepi].DbserieEpisodeID, seriesEpisodes[idxepi].DbserieID})
+
+				database.UpdateColumn("serie_episodes", "missing", false, database.Query{Where: "id=?", WhereArgs: []interface{}{seriesEpisodes[idxepi].ID}})
+				database.UpdateColumn("serie_episodes", "quality_reached", reached, database.Query{Where: "id=?", WhereArgs: []interface{}{seriesEpisodes[idxepi].ID}})
+			}
 		}
 	}
 }
@@ -1328,7 +1331,7 @@ func (s *Structure) Notify(videotarget string, filename string, videofile string
 	}
 }
 
-func (s *Structure) GetSeriesEpisodes(series database.Serie, videofile string, m ParseInfo, folder string) (oldfiles []string, episodes []int, allowimport bool, serietitle string, episodetitle string, SeriesEpisode database.SerieEpisode) {
+func (s *Structure) GetSeriesEpisodes(series database.Serie, videofile string, m ParseInfo, folder string) (oldfiles []string, episodes []int, allowimport bool, serietitle string, episodetitle string, SeriesEpisode database.SerieEpisode, SeriesEpisodes []database.SerieEpisode) {
 	dbserie, _ := database.GetDbserie(database.Query{Where: "id=?", WhereArgs: []interface{}{series.DbserieID}})
 	r := regexp.MustCompile(`(?i)s?[0-9]{1,4}((?:(?:(?: )?-?(?: )?[ex][0-9]{1,3})+))|(\d{2,4}(?:\.|-| |_)\d{1,2}(?:\.|-| |_)\d{1,2})(?:\b|_)`)
 	teststr := r.FindStringSubmatch(m.Identifier)
@@ -1357,9 +1360,14 @@ func (s *Structure) GetSeriesEpisodes(series database.Serie, videofile string, m
 		var SeriesEpisodeerr error
 		if strings.ToLower(dbserie.Identifiedby) == "date" {
 			SeriesEpisode, SeriesEpisodeerr = database.GetSerieEpisodes(database.Query{Select: "Serie_episodes.*", InnerJoin: "Dbserie_episodes ON Dbserie_episodes.ID = Serie_episodes.Dbserie_episode_id", Where: "Serie_episodes.serie_id = ? AND DbSerie_episodes.Identifier = ?", WhereArgs: []interface{}{series.ID, strings.Replace(epi, ".", "-", -1)}})
-
+			if SeriesEpisodeerr == nil {
+				SeriesEpisodes = append(SeriesEpisodes, SeriesEpisode)
+			}
 		} else {
 			SeriesEpisode, SeriesEpisodeerr = database.GetSerieEpisodes(database.Query{Select: "Serie_episodes.*", InnerJoin: "Dbserie_episodes ON Dbserie_episodes.ID = Serie_episodes.Dbserie_episode_id", Where: "Serie_episodes.serie_id = ? AND DbSerie_episodes.Season = ? AND DbSerie_episodes.Episode = ?", WhereArgs: []interface{}{series.ID, m.Season, epi}})
+			if SeriesEpisodeerr == nil {
+				SeriesEpisodes = append(SeriesEpisodes, SeriesEpisode)
+			}
 		}
 		if SeriesEpisodeerr == nil {
 			dbserieepisode, _ := database.GetDbserieEpisodes(database.Query{Where: "id=?", WhereArgs: []interface{}{SeriesEpisode.DbserieEpisodeID}})

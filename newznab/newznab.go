@@ -3,6 +3,7 @@ package newznab
 import (
 	"bytes"
 	"encoding/xml"
+	"html"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -298,7 +299,7 @@ func (c Client) processurl(url string, tillid string, maxage int) ([]NZB, error)
 	entries := make([]NZB, 0, len(feed.NZBs))
 	for _, item := range feed.NZBs {
 		var newEntry NZB
-		newEntry.Title = item.Title
+		newEntry.Title = html.UnescapeString(item.Title)
 		newEntry.DownloadURL = item.Enclosure.URL
 		newEntry.SourceEndpoint = c.apiBaseURL
 		newEntry.SourceAPIKey = c.apikey
