@@ -1137,6 +1137,18 @@ func StructureSingleFolder(folder string, disableruntimecheck bool, disabledisal
 			}
 			var cfg_quality config.QualityConfig
 			config.ConfigGet("quality_"+list.Template_quality, &cfg_quality)
+			for idxstrip := range cfg_quality.TitleStripSuffixForSearch {
+				if strings.HasSuffix(strings.ToLower(m.Title), strings.ToLower(cfg_quality.TitleStripSuffixForSearch[idxstrip])) {
+					m.Title = trimStringInclAfterStringInsensitive(m.Title, cfg_quality.TitleStripSuffixForSearch[idxstrip])
+					m.Title = strings.Trim(m.Title, " ")
+				}
+			}
+			for idxstrip := range cfg_quality.TitleStripPrefixForSearch {
+				if strings.HasPrefix(strings.ToLower(m.Title), strings.ToLower(cfg_quality.TitleStripPrefixForSearch[idxstrip])) {
+					m.Title = trimStringPrefixInsensitive(m.Title, cfg_quality.TitleStripPrefixForSearch[idxstrip])
+					m.Title = strings.Trim(m.Title, " ")
+				}
+			}
 
 			if entriesfound == 0 && len(m.Imdb) == 0 {
 				lists := make([]string, 0, len(configEntry.Lists))
@@ -1162,6 +1174,32 @@ func StructureSingleFolder(folder string, disableruntimecheck bool, disabledisal
 				}
 			}
 			if movie.ID >= 1 && entriesfound >= 1 {
+				if cfg_quality.CheckTitle {
+					titlefound := false
+					dbmovie, _ := database.GetDbmovie(database.Query{Where: "id=?", WhereArgs: []interface{}{movie.DbmovieID}})
+					if cfg_quality.CheckTitle && checknzbtitle(dbmovie.Title, m.Title) && len(dbmovie.Title) >= 1 {
+						titlefound = true
+					}
+					if !titlefound {
+						alttitlefound := false
+						dbtitle, _ := database.QueryDbmovieTitle(database.Query{Where: "dbmovie_id=?", WhereArgs: []interface{}{movie.DbmovieID}})
+
+						for idxtitle := range dbtitle {
+							if checknzbtitle(dbtitle[idxtitle].Title, m.Title) {
+								alttitlefound = true
+								break
+							}
+						}
+						if len(dbtitle) >= 1 && !alttitlefound {
+							logger.Log.Debug("Skipped - unwanted title and alternate: ", m.Title, " wanted ", dbmovie.Title, " ", dbtitle)
+							return
+						}
+					}
+					if !titlefound {
+						logger.Log.Debug("Skipped - unwanted title: ", m.Title, " wanted ", dbmovie.Title)
+						return
+					}
+				}
 				StructureMovie(structure, folder, m, movie, videofiles[fileidx])
 			} else {
 				logger.Log.Debug("Movie not matched: ", videofiles[fileidx], " list ", list.Name)
@@ -1183,10 +1221,48 @@ func StructureSingleFolder(folder string, disableruntimecheck bool, disabledisal
 			}
 			var cfg_quality config.QualityConfig
 			config.ConfigGet("quality_"+list.Template_quality, &cfg_quality)
+			for idxstrip := range cfg_quality.TitleStripSuffixForSearch {
+				if strings.HasSuffix(strings.ToLower(m.Title), strings.ToLower(cfg_quality.TitleStripSuffixForSearch[idxstrip])) {
+					m.Title = trimStringInclAfterStringInsensitive(m.Title, cfg_quality.TitleStripSuffixForSearch[idxstrip])
+					m.Title = strings.Trim(m.Title, " ")
+				}
+			}
+			for idxstrip := range cfg_quality.TitleStripPrefixForSearch {
+				if strings.HasPrefix(strings.ToLower(m.Title), strings.ToLower(cfg_quality.TitleStripPrefixForSearch[idxstrip])) {
+					m.Title = trimStringPrefixInsensitive(m.Title, cfg_quality.TitleStripPrefixForSearch[idxstrip])
+					m.Title = strings.Trim(m.Title, " ")
+				}
+			}
 
 			//find dbseries
 			series, entriesfound := FindSerieByParser(*m, titleyear, seriestitle, list.Name)
 			if entriesfound >= 1 {
+				if cfg_quality.CheckTitle {
+					titlefound := false
+					dbseries, _ := database.GetDbserie(database.Query{Where: "id=?", WhereArgs: []interface{}{series.DbserieID}})
+					if cfg_quality.CheckTitle && checknzbtitle(dbseries.Seriename, m.Title) && len(dbseries.Seriename) >= 1 {
+						titlefound = true
+					}
+					if !titlefound {
+						alttitlefound := false
+						dbtitle, _ := database.QueryDbserieAlternates(database.Query{Where: "dbserie_id=?", WhereArgs: []interface{}{series.DbserieID}})
+
+						for idxtitle := range dbtitle {
+							if checknzbtitle(dbtitle[idxtitle].Title, m.Title) {
+								alttitlefound = true
+								break
+							}
+						}
+						if len(dbtitle) >= 1 && !alttitlefound {
+							logger.Log.Debug("Skipped - unwanted title and alternate: ", m.Title, " wanted ", dbseries.Seriename, " ", dbtitle)
+							return
+						}
+					}
+					if !titlefound {
+						logger.Log.Debug("Skipped - unwanted title: ", m.Title, " wanted ", dbseries.Seriename)
+						return
+					}
+				}
 				StructureSeries(structure, folder, m, series, videofiles[fileidx])
 			}
 		}

@@ -121,6 +121,8 @@ func (d *Downloader) DownloadNzb(nzb Nzbwithprio) {
 		err = d.DownloadBySabnzbd()
 	case "rtorrent":
 		err = d.DownloadByRTorrent()
+	case "qbittorrent":
+		err = d.DownloadByQBittorrent()
 	case "deluge":
 		err = d.DownloadByDeluge()
 	default:
@@ -180,6 +182,18 @@ func (d Downloader) DownloadByDeluge() error {
 
 	if err != nil {
 		logger.Log.Error("Download by Deluge - ERROR: ", err)
+	}
+	return err
+}
+func (d Downloader) DownloadByQBittorrent() error {
+	logger.Log.Debug("Download by qBittorrent: ", d.Nzb.NZB.DownloadURL)
+
+	err := apiexternal.SendToQBittorrent(
+		d.Downloader.Hostname, strconv.Itoa(d.Downloader.Port), d.Downloader.Username, d.Downloader.Password,
+		d.Nzb.NZB.DownloadURL, d.Downloader.DelugeDlTo, strconv.FormatBool(d.Downloader.AddPaused))
+
+	if err != nil {
+		logger.Log.Error("Download by qBittorrent - ERROR: ", err)
 	}
 	return err
 }
