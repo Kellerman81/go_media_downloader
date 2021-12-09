@@ -159,6 +159,17 @@ type="drone" # Type drone saves nzbs to folder
 enabled=true
 
 [[downloader]]
+name="enqbit" 
+type="qbittorrent" #Send Torrents or Magnet Urls to deluge client
+hostname="192.168.1.1"
+port=8080 # Daemon Port
+username="localclient"
+password="" #Password
+enabled=true
+add_paused=false
+deluge_dl_to="/downloads/incomplete" # Download incomplete to path
+
+[[downloader]]
 name="endeluge" 
 type="deluge" #Send Torrents or Magnet Urls to deluge client
 hostname="192.168.1.1"
@@ -260,7 +271,11 @@ name="RSSFeed"
 type="newznabrss" # List to use as source with auto download of missing/upgrades - add "Name" as template_indexer in quality of list - only movies supported - use add_found of list in group to add found movies
 url="http://ip:9117/api/v2.0/indexers/1337x/results/torznab/api?apikey=&t=search&cat=&q=%22test%22" #use full url
 enabled=true
-limit=20 # Number of items to fetch - no votes or include/exlude here
+limit=20 # Number of items to fetch
+min_votes=200 # Only import movies with at least x votes
+min_rating=4.5 # Only import movies with a minimum rating of x.x 
+exclude_genre=["Horror","Documentary"]
+include_genre=[]
 
 [[lists]]
 name="Series"

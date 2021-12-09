@@ -432,6 +432,7 @@ type Searcher struct {
 	Dbserie        database.Dbserie
 	Dbserieepisode database.DbserieEpisode
 
+	List       config.ListsConfig
 	NzbsDenied []Nzbwithprio
 	Nzbs       []Nzbwithprio
 }
@@ -700,6 +701,44 @@ func (s *Searcher) SetDataField(lists []string, addifnotfound bool) {
 								break
 							}
 						}
+						if s.List.MinVotes != 0 {
+							countergenre, _ := database.ImdbCountRows("imdb_ratings", database.Query{Where: "tconst = ? COLLATE NOCASE and num_votes < ?", WhereArgs: []interface{}{s.Nzbs[idx].NZB.IMDBID, s.List.MinVotes}})
+							if countergenre >= 1 {
+								continue
+							}
+						}
+						if s.List.MinRating != 0 {
+							countergenre, _ := database.ImdbCountRows("imdb_ratings", database.Query{Where: "tconst = ? COLLATE NOCASE and average_rating < ?", WhereArgs: []interface{}{s.Nzbs[idx].NZB.IMDBID, s.List.MinRating}})
+							if countergenre >= 1 {
+								continue
+							}
+						}
+						if len(s.List.Excludegenre) >= 1 {
+							excludebygenre := false
+							for idxgenre := range s.List.Excludegenre {
+								countergenre, _ := database.ImdbCountRows("imdb_genres", database.Query{Where: "tconst = ? COLLATE NOCASE and genre = ? COLLATE NOCASE", WhereArgs: []interface{}{s.Nzbs[idx].NZB.IMDBID, s.List.Excludegenre[idxgenre]}})
+								if countergenre >= 1 {
+									excludebygenre = true
+									break
+								}
+							}
+							if excludebygenre {
+								continue
+							}
+						}
+						if len(s.List.Includegenre) >= 1 {
+							includebygenre := false
+							for idxgenre := range s.List.Includegenre {
+								countergenre, _ := database.ImdbCountRows("imdb_genres", database.Query{Where: "tconst = ? COLLATE NOCASE and genre = ? COLLATE NOCASE", WhereArgs: []interface{}{s.Nzbs[idx].NZB.IMDBID, s.List.Includegenre[idxgenre]}})
+								if countergenre >= 1 {
+									includebygenre = true
+									break
+								}
+							}
+							if !includebygenre {
+								continue
+							}
+						}
 
 						sww := sizedwaitgroup.New(1)
 						var dbmovie database.Dbmovie
@@ -788,6 +827,44 @@ func (s *Searcher) SetDataField(lists []string, addifnotfound bool) {
 									if s.ConfigEntry.Lists[idxlist].Name == lists[0] {
 										cfg_list = s.ConfigEntry.Lists[idxlist]
 										break
+									}
+								}
+								if s.List.MinVotes != 0 {
+									countergenre, _ := database.ImdbCountRows("imdb_ratings", database.Query{Where: "tconst = ? COLLATE NOCASE and num_votes < ?", WhereArgs: []interface{}{s.Nzbs[idx].NZB.IMDBID, s.List.MinVotes}})
+									if countergenre >= 1 {
+										continue
+									}
+								}
+								if s.List.MinRating != 0 {
+									countergenre, _ := database.ImdbCountRows("imdb_ratings", database.Query{Where: "tconst = ? COLLATE NOCASE and average_rating < ?", WhereArgs: []interface{}{s.Nzbs[idx].NZB.IMDBID, s.List.MinRating}})
+									if countergenre >= 1 {
+										continue
+									}
+								}
+								if len(s.List.Excludegenre) >= 1 {
+									excludebygenre := false
+									for idxgenre := range s.List.Excludegenre {
+										countergenre, _ := database.ImdbCountRows("imdb_genres", database.Query{Where: "tconst = ? COLLATE NOCASE and genre = ? COLLATE NOCASE", WhereArgs: []interface{}{s.Nzbs[idx].NZB.IMDBID, s.List.Excludegenre[idxgenre]}})
+										if countergenre >= 1 {
+											excludebygenre = true
+											break
+										}
+									}
+									if excludebygenre {
+										continue
+									}
+								}
+								if len(s.List.Includegenre) >= 1 {
+									includebygenre := false
+									for idxgenre := range s.List.Includegenre {
+										countergenre, _ := database.ImdbCountRows("imdb_genres", database.Query{Where: "tconst = ? COLLATE NOCASE and genre = ? COLLATE NOCASE", WhereArgs: []interface{}{s.Nzbs[idx].NZB.IMDBID, s.List.Includegenre[idxgenre]}})
+										if countergenre >= 1 {
+											includebygenre = true
+											break
+										}
+									}
+									if !includebygenre {
+										continue
 									}
 								}
 
@@ -1423,6 +1500,7 @@ func (s *Searcher) GetRSSFeed(searchGroupType string, list config.MediaListsConf
 	}
 	var cfg_list config.ListsConfig
 	config.ConfigGet("list_"+list.Template_list, &cfg_list)
+	s.List = cfg_list
 
 	var cfg_indexer config.QualityIndexerConfig
 	for idx := range cfg_quality.Indexer {
