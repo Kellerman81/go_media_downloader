@@ -44,7 +44,7 @@ jobs:
           working_dir: imdb
     
     - name: Rename Win32 binary
-      run: mv imdb-windows-4.0-386.exe init_imdb.exe
+      run: mv ./imdb/imdb-windows-4.0-386.exe init_imdb.exe
 
     - name: Zip Win32 binary
       uses: thedoctor0/zip-release@master
@@ -54,7 +54,7 @@ jobs:
         exclusions: '*.git* /.github/* /api/* /apiexternal/* /config/* /database/* /imdb/* /logger/* /newznab/* /nzbget/* /scanner/* /scheduler/* /tasks/* /utils/* /views/* Dockerfile go.* *.zip *.go go_media_downloader-linux* go_media_downloader-darwin* go_media_downloader-windows-*amd64.exe imdb-*'
 
     - name: Rename Win64 binary
-      run: mv imdb-windows-4.0-amd64.exe init_imdb.exe
+      run: mv ./imdb/imdb-windows-4.0-amd64.exe init_imdb.exe
 
     - name: Zip Win64 binary
       uses: thedoctor0/zip-release@master
@@ -67,7 +67,7 @@ jobs:
       run: rm init_imdb.exe
 
     - name: Rename Linux32 binary
-      run: mv imdb-linux-386 init_imdb
+      run: mv ./imdb/imdb-linux-386 init_imdb
 
     - name: Zip Linux32 binary
       uses: thedoctor0/zip-release@master
@@ -77,7 +77,7 @@ jobs:
         exclusions: '*.git* /.github/* /api/* /apiexternal/* /config/* /database/* /imdb/* /logger/* /newznab/* /nzbget/* /scanner/* /scheduler/* /tasks/* /utils/* /views/* Dockerfile go.* *.zip *.go go_media_downloader-windows*.exe go_media_downloader-darwin* go_media_downloader-linux-*amd64 imdb-*'
 
     - name: Rename Linux64 binary
-      run: mv imdb-linux-amd64 init_imdb
+      run: mv ./imdb/imdb-linux-amd64 init_imdb
 
     - name: Zip Linux64 binary
       uses: thedoctor0/zip-release@master
@@ -87,7 +87,7 @@ jobs:
         exclusions: '*.git* /.github/* /api/* /apiexternal/* /config/* /database/* /imdb/* /logger/* /newznab/* /nzbget/* /scanner/* /scheduler/* /tasks/* /utils/* /views/* Dockerfile go.* *.zip *.go go_media_downloader-windows*.exe go_media_downloader-darwin* go_media_downloader-linux-*386 imdb-*'
     
     - name: Rename Mac64 binary
-      run: mv imdb-darwin-10.12-amd64 init_imdb
+      run: mv ./imdb/imdb-darwin-10.12-amd64 init_imdb
 
     - name: Zip Mac64 binary
       uses: thedoctor0/zip-release@master
