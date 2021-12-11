@@ -34,7 +34,7 @@ jobs:
       uses: crazy-max/ghaction-xgo@v1
       with:
           dest: .
-          pkg: imdb
+          pkg: github.com/Kellerman81/go_media_downloader/imdb
           prefix: imdb
           targets: windows/386,windows/amd64,linux/386,linux/amd64,darwin/amd64
           v: true
