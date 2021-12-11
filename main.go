@@ -5,7 +5,9 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"os/exec"
 	"os/signal"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -45,7 +47,9 @@ func main() {
 	pudge.BackupAll("")
 	os.Mkdir("./temp", 0777)
 	f, errcfg := config.LoadCfgDB(config.Configfile)
-	if errcfg == nil {
+	var cfg_general config.GeneralConfig
+	config.ConfigGet("general", &cfg_general)
+	if errcfg == nil && cfg_general.EnableFileWatcher {
 		f.Watch(func(event interface{}, err error) {
 			if err != nil {
 				log.Printf("watch error: %v", err)
@@ -61,9 +65,6 @@ func main() {
 	defer func() {
 		config.ConfigDB.Close()
 	}()
-
-	var cfg_general config.GeneralConfig
-	config.ConfigGet("general", &cfg_general)
 
 	logger.InitLogger(logger.LoggerConfig{
 		LogLevel:     cfg_general.LogLevel,
@@ -103,11 +104,24 @@ func main() {
 
 	database.UpgradeDB()
 	database.GetVars()
+	utils.LoadDBPatterns()
 
 	counter, _ := database.CountRows("dbmovies", database.Query{})
 	if counter == 0 {
 		logger.Log.Infoln("Starting initial DB fill for movies")
-		utils.InitFillImdb()
+		file := "./init_imdb"
+		if runtime.GOOS == "windows" {
+			file = "init_imdb.exe"
+		}
+		exec.Command(file).Run()
+		if _, err := os.Stat(file); !os.IsNotExist(err) {
+			database.DBImdb.Close()
+			os.Remove("./imdb.db")
+			os.Rename("./imdbtemp.db", "./imdb.db")
+			dbnew := database.InitImdbdb("info", "imdb")
+			dbnew.SetMaxOpenConns(5)
+			database.DBImdb = dbnew
+		}
 
 		movie_keys, _ := config.ConfigDB.Keys([]byte("movie_*"), 0, 0, true)
 

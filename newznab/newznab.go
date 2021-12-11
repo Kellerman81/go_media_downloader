@@ -1,9 +1,9 @@
 package newznab
 
 import (
-	"bytes"
 	"encoding/xml"
 	"html"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -51,6 +51,69 @@ func (c *RLHTTPClient) Do(req *http.Request) (*http.Response, []byte, error) {
 		return nil, nil, err
 	}
 	return resp, body, nil
+}
+
+//Do dispatches the HTTP request to the network
+func (c *RLHTTPClient) DoNew(req *http.Request) (*http.Response, io.ReadCloser, error) {
+	// Comment out the below 5 lines to turn off ratelimiting
+	if !c.LimiterWindow.Allow() {
+		isok := false
+		for i := 0; i < 10; i++ {
+			time.Sleep(1 * time.Second)
+			if c.LimiterWindow.Allow() {
+				isok = true
+				break
+			}
+		}
+		if !isok {
+			return nil, nil, errors.New("please wait")
+		}
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if err != nil {
+		return nil, nil, err
+	}
+	return resp, resp.Body, nil
+}
+
+//Do dispatches the HTTP request to the network
+func (c *RLHTTPClient) DoXml(req *http.Request, xmlobj interface{}) error {
+	// Comment out the below 5 lines to turn off ratelimiting
+	if !c.LimiterWindow.Allow() {
+		isok := false
+		for i := 0; i < 10; i++ {
+			time.Sleep(1 * time.Second)
+			if c.LimiterWindow.Allow() {
+				isok = true
+				break
+			}
+		}
+		if !isok {
+			return errors.New("please wait")
+		}
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == 429 {
+		return errors.New("429")
+	}
+
+	d := xml.NewDecoder(resp.Body)
+	d.Strict = false
+	errd := d.Decode(&xmlobj)
+	if errd != nil {
+		logger.Log.Error("Err Decode ", req.RequestURI, " error ", errd)
+		return errd
+	}
+	return nil
 }
 
 //NewClient return http client with a ratelimiter
@@ -284,18 +347,28 @@ func (c Client) LoadRSSFeedUntilNZBID(categories []int, num int, id string, maxR
 
 func (c Client) processurl(url string, tillid string, maxage int) ([]NZB, error) {
 	var feed SearchResponse
-	body, err := c.getURL(url)
+	req, _ := http.NewRequest("GET", url, nil)
+	err := c.client.DoXml(req, &feed)
 	if err != nil {
-		logger.Log.Error("Err Download ", url, " error ", err)
 		return []NZB{}, err
 	}
-	d := xml.NewDecoder(bytes.NewReader(body))
-	d.Strict = false
-	errd := d.Decode(&feed)
-	if errd != nil {
-		logger.Log.Error("Err Decode ", url, " error ", errd)
-		return []NZB{}, errd
-	}
+	// if resp.StatusCode == 429 {
+	// 	return []NZB{}, err
+	// }
+	// defer body.Close()
+
+	// //body, err := c.getURLNew(url)
+	// if err != nil {
+	// 	logger.Log.Error("Err Download ", url, " error ", err)
+	// 	return []NZB{}, err
+	// }
+	// d := xml.NewDecoder(body)
+	// d.Strict = false
+	// errd := d.Decode(&feed)
+	// if errd != nil {
+	// 	logger.Log.Error("Err Decode ", url, " error ", errd)
+	// 	return []NZB{}, errd
+	// }
 	entries := make([]NZB, 0, len(feed.NZBs))
 	for _, item := range feed.NZBs {
 		var newEntry NZB
@@ -415,6 +488,17 @@ func (c Client) getURL(url string) ([]byte, error) {
 		return []byte{}, err
 	}
 	return responseData, nil
+}
+func (c Client) getURLNew(url string) (*http.Response, error) {
+	req, _ := http.NewRequest("GET", url, nil)
+	resp, _, err := c.client.DoNew(req)
+	if err != nil {
+		return &http.Response{}, err
+	}
+	if resp.StatusCode == 429 {
+		return &http.Response{}, err
+	}
+	return resp, nil
 }
 
 // parseDate attempts to parse a date string

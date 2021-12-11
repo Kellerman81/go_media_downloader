@@ -2,7 +2,6 @@ package apiexternal
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -213,15 +212,12 @@ func (t TraktClient) GetMoviePopular(limit int) ([]TraktMovie, error) {
 	req.Header.Add("trakt-api-version", "2")
 	req.Header.Add("trakt-api-key", t.ApiKey)
 
-	resp, responseData, err := t.Client.Do(req)
+	var result []TraktMovie
+	err := t.Client.DoJson(req, &result)
 	if err != nil {
 		return []TraktMovie{}, err
 	}
-	if resp.StatusCode == 429 {
-		return []TraktMovie{}, err
-	}
-	result := make([]TraktMovie, 0, limit)
-	json.Unmarshal(responseData, &result)
+	//json.Unmarshal(responseData, &result)
 	return result, nil
 }
 
@@ -238,15 +234,12 @@ func (t TraktClient) GetMovieTrending(limit int) ([]TraktMovieTrending, error) {
 	req.Header.Add("trakt-api-version", "2")
 	req.Header.Add("trakt-api-key", t.ApiKey)
 
-	resp, responseData, err := t.Client.Do(req)
+	var result []TraktMovieTrending
+	err := t.Client.DoJson(req, &result)
 	if err != nil {
 		return []TraktMovieTrending{}, err
 	}
-	if resp.StatusCode == 429 {
-		return []TraktMovieTrending{}, err
-	}
-	result := make([]TraktMovieTrending, 0, limit)
-	json.Unmarshal(responseData, &result)
+	//json.Unmarshal(responseData, &result)
 	return result, nil
 }
 
@@ -263,15 +256,12 @@ func (t TraktClient) GetMovieAnticipated(limit int) ([]TraktMovieAnticipated, er
 	req.Header.Add("trakt-api-version", "2")
 	req.Header.Add("trakt-api-key", t.ApiKey)
 
-	resp, responseData, err := t.Client.Do(req)
+	var result []TraktMovieAnticipated
+	err := t.Client.DoJson(req, &result)
 	if err != nil {
 		return []TraktMovieAnticipated{}, err
 	}
-	if resp.StatusCode == 429 {
-		return []TraktMovieAnticipated{}, err
-	}
-	result := make([]TraktMovieAnticipated, 0, limit)
-	json.Unmarshal(responseData, &result)
+	//json.Unmarshal(responseData, &result)
 	return result, nil
 }
 
@@ -283,15 +273,12 @@ func (t TraktClient) GetMovieAliases(movieid string) ([]TraktMovieAliases, error
 	req.Header.Add("trakt-api-version", "2")
 	req.Header.Add("trakt-api-key", t.ApiKey)
 
-	resp, responseData, err := t.Client.Do(req)
+	var result []TraktMovieAliases
+	err := t.Client.DoJson(req, &result)
 	if err != nil {
 		return []TraktMovieAliases{}, err
 	}
-	if resp.StatusCode == 429 {
-		return []TraktMovieAliases{}, err
-	}
-	result := make([]TraktMovieAliases, 0, 10)
-	json.Unmarshal(responseData, &result)
+	//json.Unmarshal(responseData, &result)
 	return result, nil
 }
 func (t TraktClient) GetMovie(movieid string) (TraktMovieExtend, error) {
@@ -302,15 +289,12 @@ func (t TraktClient) GetMovie(movieid string) (TraktMovieExtend, error) {
 	req.Header.Add("trakt-api-version", "2")
 	req.Header.Add("trakt-api-key", t.ApiKey)
 
-	resp, responseData, err := t.Client.Do(req)
+	var result TraktMovieExtend
+	err := t.Client.DoJson(req, &result)
 	if err != nil {
 		return TraktMovieExtend{}, err
 	}
-	if resp.StatusCode == 429 {
-		return TraktMovieExtend{}, err
-	}
-	result := TraktMovieExtend{}
-	json.Unmarshal(responseData, &result)
+	//json.Unmarshal(responseData, &result)
 	return result, nil
 }
 func (t TraktClient) GetSerie(movieid string) (TraktSerieData, error) {
@@ -321,15 +305,12 @@ func (t TraktClient) GetSerie(movieid string) (TraktSerieData, error) {
 	req.Header.Add("trakt-api-version", "2")
 	req.Header.Add("trakt-api-key", t.ApiKey)
 
-	resp, responseData, err := t.Client.Do(req)
+	var result TraktSerieData
+	err := t.Client.DoJson(req, &result)
 	if err != nil {
 		return TraktSerieData{}, err
 	}
-	if resp.StatusCode == 429 {
-		return TraktSerieData{}, err
-	}
-	result := TraktSerieData{}
-	json.Unmarshal(responseData, &result)
+	//json.Unmarshal(responseData, &result)
 	return result, nil
 }
 
@@ -341,15 +322,12 @@ func (t TraktClient) GetSerieAliases(movieid string) ([]TraktShowAliases, error)
 	req.Header.Add("trakt-api-version", "2")
 	req.Header.Add("trakt-api-key", t.ApiKey)
 
-	resp, responseData, err := t.Client.Do(req)
+	var result []TraktShowAliases
+	err := t.Client.DoJson(req, &result)
 	if err != nil {
 		return []TraktShowAliases{}, err
 	}
-	if resp.StatusCode == 429 {
-		return []TraktShowAliases{}, err
-	}
-	result := make([]TraktShowAliases, 0, 10)
-	json.Unmarshal(responseData, &result)
+	//json.Unmarshal(responseData, &result)
 	return result, nil
 }
 func (t TraktClient) GetSerieSeasons(movieid string) ([]TraktSerieSeason, error) {
@@ -360,15 +338,12 @@ func (t TraktClient) GetSerieSeasons(movieid string) ([]TraktSerieSeason, error)
 	req.Header.Add("trakt-api-version", "2")
 	req.Header.Add("trakt-api-key", t.ApiKey)
 
-	resp, responseData, err := t.Client.Do(req)
+	var result []TraktSerieSeason
+	err := t.Client.DoJson(req, &result)
 	if err != nil {
 		return []TraktSerieSeason{}, err
 	}
-	if resp.StatusCode == 429 {
-		return []TraktSerieSeason{}, err
-	}
-	result := make([]TraktSerieSeason, 0, 10)
-	json.Unmarshal(responseData, &result)
+	//json.Unmarshal(responseData, &result)
 	return result, nil
 }
 func (t TraktClient) GetSerieSeasonEpisodes(movieid string, season int) ([]TraktSerieSeasonEpisodes, error) {
@@ -379,15 +354,12 @@ func (t TraktClient) GetSerieSeasonEpisodes(movieid string, season int) ([]Trakt
 	req.Header.Add("trakt-api-version", "2")
 	req.Header.Add("trakt-api-key", t.ApiKey)
 
-	resp, responseData, err := t.Client.Do(req)
+	var result []TraktSerieSeasonEpisodes
+	err := t.Client.DoJson(req, &result)
 	if err != nil {
 		return []TraktSerieSeasonEpisodes{}, err
 	}
-	if resp.StatusCode == 429 {
-		return []TraktSerieSeasonEpisodes{}, err
-	}
-	result := make([]TraktSerieSeasonEpisodes, 0, 10)
-	json.Unmarshal(responseData, &result)
+	//json.Unmarshal(responseData, &result)
 	return result, nil
 }
 
@@ -405,15 +377,12 @@ func (t TraktClient) GetUserList(username string, listname string, listtype stri
 	req.Header.Add("trakt-api-version", "2")
 	req.Header.Add("trakt-api-key", t.ApiKey)
 
-	resp, responseData, err := t.Client.Do(req)
+	var result []TraktUserList
+	err := t.Client.DoJson(req, &result)
 	if err != nil {
 		return []TraktUserList{}, err
 	}
-	if resp.StatusCode == 429 {
-		return []TraktUserList{}, err
-	}
-	var result []TraktUserList
-	json.Unmarshal(responseData, &result)
+	//json.Unmarshal(responseData, &result)
 	return result, nil
 }
 
@@ -430,15 +399,12 @@ func (t TraktClient) GetSeriePopular(limit int) ([]TraktSerie, error) {
 	req.Header.Add("trakt-api-version", "2")
 	req.Header.Add("trakt-api-key", t.ApiKey)
 
-	resp, responseData, err := t.Client.Do(req)
+	var result []TraktSerie
+	err := t.Client.DoJson(req, &result)
 	if err != nil {
 		return []TraktSerie{}, err
 	}
-	if resp.StatusCode == 429 {
-		return []TraktSerie{}, err
-	}
-	result := make([]TraktSerie, 0, limit)
-	json.Unmarshal(responseData, &result)
+	//json.Unmarshal(responseData, &result)
 	return result, nil
 }
 
@@ -455,15 +421,12 @@ func (t TraktClient) GetSerieTrending(limit int) ([]TraktSerieTrending, error) {
 	req.Header.Add("trakt-api-version", "2")
 	req.Header.Add("trakt-api-key", t.ApiKey)
 
-	resp, responseData, err := t.Client.Do(req)
+	var result []TraktSerieTrending
+	err := t.Client.DoJson(req, &result)
 	if err != nil {
 		return []TraktSerieTrending{}, err
 	}
-	if resp.StatusCode == 429 {
-		return []TraktSerieTrending{}, err
-	}
-	result := make([]TraktSerieTrending, 0, limit)
-	json.Unmarshal(responseData, &result)
+	//json.Unmarshal(responseData, &result)
 	return result, nil
 }
 
@@ -480,15 +443,12 @@ func (t TraktClient) GetSerieAnticipated(limit int) ([]TraktSerieAnticipated, er
 	req.Header.Add("trakt-api-version", "2")
 	req.Header.Add("trakt-api-key", t.ApiKey)
 
-	resp, responseData, err := t.Client.Do(req)
+	var result []TraktSerieAnticipated
+	err := t.Client.DoJson(req, &result)
 	if err != nil {
 		return []TraktSerieAnticipated{}, err
 	}
-	if resp.StatusCode == 429 {
-		return []TraktSerieAnticipated{}, err
-	}
-	result := make([]TraktSerieAnticipated, 0, limit)
-	json.Unmarshal(responseData, &result)
+	//json.Unmarshal(responseData, &result)
 	return result, nil
 }
 
@@ -525,14 +485,11 @@ func (t TraktClient) GetUserListAuth(username string, listname string, listtype 
 	req.Header.Add("trakt-api-version", "2")
 	req.Header.Add("trakt-api-key", t.ApiKey)
 
-	resp, responseData, err := t.Client.Do(req)
+	var result []TraktUserList
+	err := t.Client.DoJson(req, &result)
 	if err != nil {
 		return []TraktUserList{}, err
 	}
-	if resp.StatusCode == 429 {
-		return []TraktUserList{}, err
-	}
-	var result []TraktUserList
-	json.Unmarshal(responseData, &result)
+	//json.Unmarshal(responseData, &result)
 	return result, nil
 }

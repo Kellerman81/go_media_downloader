@@ -14,4 +14,8 @@ services:
     && go build github.com/Kellerman81/go_media_downloader/...
     && go build -o media_downloader main.go
     && chmod 777 media_downloader
+    && cd ./imdb/
+    && go build -o init_imdb imdb.go
+    && chmod 777 init_imdb
+    && mv init_imdb ../init_imdb
     "

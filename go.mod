@@ -13,7 +13,6 @@ require (
 	github.com/golang-migrate/migrate/v4 v4.15.1 //initialize db
 	github.com/google/uuid v1.3.0 //scheduler
 	github.com/gregdel/pushover v1.1.0 //notification
-	github.com/h2non/filetype v1.1.3
 	github.com/jmoiron/sqlx v1.3.4 //structscan for db
 	github.com/karrick/godirwalk v1.16.1 //faster walk
 	github.com/knadh/koanf v1.3.3 //initial config

@@ -3320,6 +3320,16 @@ paths:
       - application/json
       description: Get User List
       parameters:
+      - description: Trakt Username
+        in: path
+        name: user
+        required: true
+        type: string
+      - description: List Name
+        in: path
+        name: list
+        required: true
+        type: string
       - description: apikey
         in: query
         name: apikey

@@ -104,6 +104,7 @@ type GeneralConfig struct {
 	SchedulerDisabled                  bool     `koanf:"scheduler_disabled"`
 	DisableParserStringMatch           bool     `koanf:"disable_parser_string_match"`
 	UseCronInsteadOfInterval           bool     `koanf:"use_cron_instead_of_interval"`
+	EnableFileWatcher                  bool     `koanf:"enable_file_watcher"`
 	Traktlimiterseconds                int      `koanf:"trakt_limiter_seconds"`
 	Traktlimitercalls                  int      `koanf:"trakt_limiter_calls"`
 	Tvdblimiterseconds                 int      `koanf:"tvdb_limiter_seconds"`
@@ -627,7 +628,7 @@ func ClearCfg() {
 		Interval_scan_dataimport:      "60m",
 	}
 	configEntries["downloader_initial"] = DownloaderConfig{Name: "initial", Type: "drone"}
-	configEntries["imdb"] = ImdbConfig{}
+	configEntries["imdb"] = ImdbConfig{Indexedtypes: []string{"movie"}, Indexedlanguages: []string{"US", "UK", "\\N"}}
 	configEntries["indexer_initial"] = IndexersConfig{Name: "initial", Type: "newznab", Limitercalls: 1, Limiterseconds: 1, MaxRssEntries: 100, RssEntriesloop: 2}
 	configEntries["list_initial"] = ListsConfig{Name: "initial", Type: "traktmovieanticipated", Limit: 20}
 	var dataconfig []MediaDataConfig
@@ -658,33 +659,43 @@ func WriteCfg() {
 	for name, value := range configEntries {
 		if strings.HasPrefix(name, "general") {
 			bla.General = value.(GeneralConfig)
+			ConfigDB.Set(name, value)
 		}
 		if strings.HasPrefix(name, "downloader_") {
 			bla.Downloader = append(bla.Downloader, value.(DownloaderConfig))
+			ConfigDB.Set(name, value)
 		}
 		if strings.HasPrefix(name, "imdb") {
 			bla.Imdbindexer = value.(ImdbConfig)
+			ConfigDB.Set(name, value)
 		}
 		if strings.HasPrefix(name, "indexer") {
 			bla.Indexers = append(bla.Indexers, value.(IndexersConfig))
+			ConfigDB.Set(name, value)
 		}
 		if strings.HasPrefix(name, "list") {
 			bla.Lists = append(bla.Lists, value.(ListsConfig))
+			ConfigDB.Set(name, value)
 		}
 		if strings.HasPrefix(name, "serie") {
 			bla.Media.Series = append(bla.Media.Series, value.(MediaTypeConfig))
+			ConfigDB.Set(name, value)
 		}
 		if strings.HasPrefix(name, "movie") {
 			bla.Media.Movies = append(bla.Media.Movies, value.(MediaTypeConfig))
+			ConfigDB.Set(name, value)
 		}
 		if strings.HasPrefix(name, "notification") {
 			bla.Notification = append(bla.Notification, value.(NotificationConfig))
+			ConfigDB.Set(name, value)
 		}
 		if strings.HasPrefix(name, "path") {
 			bla.Paths = append(bla.Paths, value.(PathsConfig))
+			ConfigDB.Set(name, value)
 		}
 		if strings.HasPrefix(name, "quality") {
 			bla.Quality = append(bla.Quality, value.(QualityConfig))
+			ConfigDB.Set(name, value)
 		}
 		if strings.HasPrefix(name, "regex") {
 			tmp := value.(RegexConfig)
@@ -693,9 +704,11 @@ func WriteCfg() {
 			tmpout.Rejected = tmp.Rejected
 			tmpout.Required = tmp.Required
 			bla.Regex = append(bla.Regex, tmpout)
+			ConfigDB.Set(name, value)
 		}
 		if strings.HasPrefix(name, "scheduler") {
 			bla.Scheduler = append(bla.Scheduler, value.(SchedulerConfig))
+			ConfigDB.Set(name, value)
 		}
 	}
 	k.Load(structs.Provider(bla, "koanf"), nil)
@@ -707,7 +720,7 @@ func WriteCfg() {
 func ConfigCheck(name string) bool {
 	success := true
 	if _, ok := configEntries[name]; !ok {
-		logger.Log.Errorln("Config not found: ", name, configEntries)
+		logger.Log.Errorln("Config not found: ", name)
 		success = false
 	}
 	return success

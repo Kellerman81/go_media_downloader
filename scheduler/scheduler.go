@@ -2,11 +2,15 @@ package scheduler
 
 import (
 	"math/rand"
+	"os"
+	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/config"
+	"github.com/Kellerman81/go_media_downloader/database"
 	"github.com/Kellerman81/go_media_downloader/tasks"
 	"github.com/Kellerman81/go_media_downloader/utils"
 )
@@ -650,17 +654,56 @@ func InitScheduler() {
 	if defaultschedule.Interval_imdb != "" {
 		if cfg_general.UseCronInsteadOfInterval {
 			QueueFeeds.DispatchCron("Refresh IMDB", func() {
-				utils.InitFillImdb()
+				//utils.InitFillImdb()
+				file := "./init_imdb"
+				if runtime.GOOS == "windows" {
+					file = "init_imdb.exe"
+				}
+				exec.Command(file).Run()
+				if _, err := os.Stat(file); !os.IsNotExist(err) {
+					database.DBImdb.Close()
+					os.Remove("./imdb.db")
+					os.Rename("./imdbtemp.db", "./imdb.db")
+					dbnew := database.InitImdbdb("info", "imdb")
+					dbnew.SetMaxOpenConns(5)
+					database.DBImdb = dbnew
+				}
 			}, convertcron(defaultschedule.Interval_imdb))
 		} else {
 			QueueFeeds.DispatchEvery("Refresh IMDB", func() {
-				utils.InitFillImdb()
+				//utils.InitFillImdb()
+				file := "./init_imdb"
+				if runtime.GOOS == "windows" {
+					file = "init_imdb.exe"
+				}
+				exec.Command(file).Run()
+				if _, err := os.Stat(file); !os.IsNotExist(err) {
+					database.DBImdb.Close()
+					os.Remove("./imdb.db")
+					os.Rename("./imdbtemp.db", "./imdb.db")
+					dbnew := database.InitImdbdb("info", "imdb")
+					dbnew.SetMaxOpenConns(5)
+					database.DBImdb = dbnew
+				}
 			}, converttime(defaultschedule.Interval_imdb))
 		}
 	}
 	if defaultschedule.Cron_imdb != "" {
 		QueueFeeds.DispatchCron("Refresh IMDB", func() {
-			utils.InitFillImdb()
+			//utils.InitFillImdb()
+			file := "./init_imdb"
+			if runtime.GOOS == "windows" {
+				file = "init_imdb.exe"
+			}
+			exec.Command(file).Run()
+			if _, err := os.Stat(file); !os.IsNotExist(err) {
+				database.DBImdb.Close()
+				os.Remove("./imdb.db")
+				os.Rename("./imdbtemp.db", "./imdb.db")
+				dbnew := database.InitImdbdb("info", "imdb")
+				dbnew.SetMaxOpenConns(5)
+				database.DBImdb = dbnew
+			}
 		}, defaultschedule.Cron_imdb)
 	}
 }

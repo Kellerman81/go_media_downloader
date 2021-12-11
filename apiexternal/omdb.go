@@ -1,7 +1,6 @@
 package apiexternal
 
 import (
-	"encoding/json"
 	"net/http"
 	"net/url"
 	"time"
@@ -65,15 +64,13 @@ func NewOmdbClient(apikey string, seconds int, calls int) {
 
 func (o OmdbClient) GetMovie(imdbid string) (OmDBMovie, error) {
 	req, _ := http.NewRequest("GET", "http://www.omdbapi.com/?i="+imdbid+"&apikey="+o.OmdbApiKey, nil)
-	resp, responseData, err := o.Client.Do(req)
+
+	var result OmDBMovie
+	err := o.Client.DoJson(req, &result)
 	if err != nil {
 		return OmDBMovie{}, err
 	}
-	if resp.StatusCode == 429 {
-		return OmDBMovie{}, err
-	}
-	var result OmDBMovie
-	json.Unmarshal(responseData, &result)
+	//json.Unmarshal(responseData, &result)
 	return result, nil
 }
 
@@ -85,14 +82,12 @@ func (o OmdbClient) SearchMovie(title string, year string) (OmDBMovieSearchGloba
 	url = url + "&apikey=" + o.OmdbApiKey
 
 	req, _ := http.NewRequest("GET", url, nil)
-	resp, responseData, err := o.Client.Do(req)
+
+	var result OmDBMovieSearchGlobal
+	err := o.Client.DoJson(req, &result)
 	if err != nil {
 		return OmDBMovieSearchGlobal{}, err
 	}
-	if resp.StatusCode == 429 {
-		return OmDBMovieSearchGlobal{}, err
-	}
-	var result OmDBMovieSearchGlobal
-	json.Unmarshal(responseData, &result)
+	//json.Unmarshal(responseData, &result)
 	return result, nil
 }

@@ -3753,6 +3753,20 @@ var doc = `{
                 "parameters": [
                     {
                         "type": "string",
+                        "description": "Trakt Username",
+                        "name": "user",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "List Name",
+                        "name": "list",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
                         "description": "apikey",
                         "name": "apikey",
                         "in": "query",
