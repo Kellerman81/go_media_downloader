@@ -34,7 +34,6 @@ jobs:
       uses: crazy-max/ghaction-xgo@v1
       with:
           dest: .
-          pkg: github.com/Kellerman81/go_media_downloader/imdb
           prefix: imdb
           targets: windows/386,windows/amd64,linux/386,linux/amd64,darwin/amd64
           v: true
@@ -42,6 +41,7 @@ jobs:
           race: false
           ldflags: -s -w
           buildmode: default
+          working_dir: imdb
     
     - name: Rename Win32 binary
       run: mv imdb-windows-4.0-386.exe init_imdb.exe
