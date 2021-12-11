@@ -6,10 +6,10 @@ require (
 	github.com/Kellerman81/go_media_downloader v0.0.0-20211209202851-8edb999bf5d8
 	github.com/golang-migrate/migrate/v4 v4.15.1 //initialize db
 	github.com/h2non/filetype v1.1.3
-	github.com/mattn/go-sqlite3 v1.14.9 //data and imdb db
-	github.com/remeh/sizedwaitgroup v1.0.0 //concurrent wait group
 	github.com/jmoiron/sqlx v1.3.4
 	github.com/knadh/koanf v1.3.3
+	github.com/mattn/go-sqlite3 v1.14.9 //data and imdb db
+	github.com/remeh/sizedwaitgroup v1.0.0 //concurrent wait group
 )
 
 require (
