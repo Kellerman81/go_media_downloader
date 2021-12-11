@@ -1193,11 +1193,10 @@ func StructureSingleFolder(folder string, disableruntimecheck bool, disabledisal
 						if len(dbtitle) >= 1 && !alttitlefound {
 							logger.Log.Debug("Skipped - unwanted title and alternate: ", m.Title, " wanted ", dbmovie.Title, " ", dbtitle)
 							return
+						} else if len(dbtitle) == 0 {
+							logger.Log.Debug("Skipped - unwanted title: ", m.Title, " wanted ", dbmovie.Title, " ", dbtitle)
+							return
 						}
-					}
-					if !titlefound {
-						logger.Log.Debug("Skipped - unwanted title: ", m.Title, " wanted ", dbmovie.Title)
-						return
 					}
 				}
 				StructureMovie(structure, folder, m, movie, videofiles[fileidx])
@@ -1256,11 +1255,10 @@ func StructureSingleFolder(folder string, disableruntimecheck bool, disabledisal
 						if len(dbtitle) >= 1 && !alttitlefound {
 							logger.Log.Debug("Skipped - unwanted title and alternate: ", m.Title, " wanted ", dbseries.Seriename, " ", dbtitle)
 							return
+						} else if len(dbtitle) == 0 {
+							logger.Log.Debug("Skipped - unwanted title: ", m.Title, " wanted ", dbseries.Seriename)
+							return
 						}
-					}
-					if !titlefound {
-						logger.Log.Debug("Skipped - unwanted title: ", m.Title, " wanted ", dbseries.Seriename)
-						return
 					}
 				}
 				StructureSeries(structure, folder, m, series, videofiles[fileidx])

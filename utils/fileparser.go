@@ -877,6 +877,12 @@ func trimStringPrefixInsensitive(s string, search string) string {
 
 func StringReplaceDiacritics(instr string) string {
 	instr = strings.Replace(instr, "ß", "ss", -1)
+	instr = strings.Replace(instr, "ä", "ae", -1)
+	instr = strings.Replace(instr, "ö", "oe", -1)
+	instr = strings.Replace(instr, "ü", "ue", -1)
+	instr = strings.Replace(instr, "Ä", "Ae", -1)
+	instr = strings.Replace(instr, "Ö", "Oe", -1)
+	instr = strings.Replace(instr, "Ü", "Ue", -1)
 	//Transformer := transform.Chain(norm.NFD, runes.Remove(runes.In(unicode.Mn)), norm.NFC)
 	result, _, _ := transform.String(logger.Transformer, instr)
 	return result
