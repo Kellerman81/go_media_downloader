@@ -1,7 +1,9 @@
 package apiexternal
 
 import (
+	"encoding/json"
 	"errors"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"time"
@@ -43,6 +45,65 @@ func (c *RLHTTPClient) Do(req *http.Request) (*http.Response, []byte, error) {
 		return nil, nil, err
 	}
 	return resp, body, nil
+}
+
+//Do dispatches the HTTP request to the network
+func (c *RLHTTPClient) DoNew(req *http.Request) (*http.Response, io.ReadCloser, error) {
+	// Comment out the below 5 lines to turn off ratelimiting
+	if !c.LimiterWindow.Allow() {
+		isok := false
+		for i := 0; i < 10; i++ {
+			time.Sleep(1 * time.Second)
+			if c.LimiterWindow.Allow() {
+				isok = true
+				break
+			}
+		}
+		if !isok {
+			return nil, nil, errors.New("please wait")
+		}
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if err != nil {
+		return nil, nil, err
+	}
+	return resp, resp.Body, nil
+}
+
+//Do dispatches the HTTP request to the network
+func (c *RLHTTPClient) DoJson(req *http.Request, jsonobj interface{}) error {
+	// Comment out the below 5 lines to turn off ratelimiting
+	if !c.LimiterWindow.Allow() {
+		isok := false
+		for i := 0; i < 10; i++ {
+			time.Sleep(1 * time.Second)
+			if c.LimiterWindow.Allow() {
+				isok = true
+				break
+			}
+		}
+		if !isok {
+			return errors.New("please wait")
+		}
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == 429 {
+		return errors.New("429")
+	}
+	errd := json.NewDecoder(resp.Body).Decode(&jsonobj)
+	if errd != nil {
+		return errd
+	}
+	return nil
 }
 
 //NewClient return http client with a ratelimiter

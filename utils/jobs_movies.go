@@ -1100,9 +1100,8 @@ func readCSVFromURL(url string) ([][]string, error) {
 	}
 
 	defer resp.Body.Close()
-	reader := csv.NewReader(resp.Body)
 	//reader.Comma = ';'
-	data, err := reader.ReadAll()
+	data, err := csv.NewReader(resp.Body).ReadAll()
 	if err != nil {
 		logger.Log.Error("Failed to read CSV from: ", url)
 		return nil, err
@@ -1270,6 +1269,7 @@ func Importnewmoviessingle(row config.MediaTypeConfig, list config.MediaListsCon
 
 	dbmovies, _ := database.QueryDbmovie(database.Query{Select: "id, imdb_id"})
 	movies, _ := database.QueryMovies(database.Query{Select: "dbmovie_id, listname", Where: "listname = ?", WhereArgs: []interface{}{list.Name}})
+	moviesall, _ := database.QueryMovies(database.Query{Select: "dbmovie_id, listname"})
 	swg := sizedwaitgroup.New(cfg_general.WorkerMetadata)
 	for idxmovie := range results.Movies {
 		Lastmovie = results.Movies[idxmovie].ImdbID
@@ -1287,6 +1287,21 @@ func Importnewmoviessingle(row config.MediaTypeConfig, list config.MediaListsCon
 			for idxhasmov := range movies {
 				if movies[idxhasmov].DbmovieID == uint(dbmovie_id) && strings.EqualFold(movies[idxhasmov].Listname, list.Name) {
 					foundmovie = true
+					break
+				}
+			}
+		}
+		if len(list.Ignore_map_lists) >= 1 && !foundmovie {
+			for idx := range list.Ignore_map_lists {
+				for idxtest := range moviesall {
+					if moviesall[idxtest].DbmovieID == uint(dbmovie_id) {
+						if strings.EqualFold(list.Ignore_map_lists[idx], moviesall[idxtest].Listname) {
+							foundmovie = true
+							break
+						}
+					}
+				}
+				if foundmovie {
 					break
 				}
 			}

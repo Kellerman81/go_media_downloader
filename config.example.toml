@@ -32,6 +32,7 @@ movie_rss_meta_source_priority = ["imdb"] #first to last - either remove entry h
 serie_meta_source_tmdb = true #add additional fields - default not to disable: tvdb
 serie_meta_source_trakt = true #add additional fields - default not to disable: tvdb
 scheduler_disabled = 'true' #on your very first run change to true - after your media is indexed set to false
+enable_file_watcher = false # causes load during imdb import - watches full directory
 omdb_apikey =  "insert" # insert your omdb apikey
 themoviedb_apikey="insert" # insert your themoviedb apikey
 trakt_client_id="insert" # insert your trakt clientid

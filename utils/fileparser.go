@@ -2,10 +2,8 @@
 package utils
 
 import (
-	"fmt"
 	"html"
 	"io/ioutil"
-	"os"
 	"path"
 	"path/filepath"
 
@@ -68,11 +66,28 @@ var patterns = []regexpattern{
 	//{"threeD", false, reflect.Bool, regexp.MustCompile(`(?i)\b((3D))\b`)},
 }
 
-func initpatterns() {
-	for _, pat := range patterns {
-		if pat.re.NumSubexp() != 2 {
-			fmt.Printf("Pattern %q does not have enough capture groups. want 2, got %d\n", pat.name, pat.re.NumSubexp())
-			os.Exit(1)
+var scanpatterns []regexpattern
+
+func LoadDBPatterns() {
+	scanpatterns = patterns
+	for idx := range database.Getaudios {
+		if database.Getaudios[idx].UseRegex {
+			scanpatterns = append(scanpatterns, regexpattern{name: "audio", last: false, kind: reflect.String, re: database.Getaudios[idx].Regexp, getgroup: 0})
+		}
+	}
+	for idx := range database.Getresolutions {
+		if database.Getresolutions[idx].UseRegex {
+			scanpatterns = append(scanpatterns, regexpattern{name: "resolution", last: false, kind: reflect.String, re: database.Getresolutions[idx].Regexp, getgroup: 0})
+		}
+	}
+	for idx := range database.Getqualities {
+		if database.Getqualities[idx].UseRegex {
+			scanpatterns = append(scanpatterns, regexpattern{name: "quality", last: false, kind: reflect.String, re: database.Getqualities[idx].Regexp, getgroup: 0})
+		}
+	}
+	for idx := range database.Getcodecs {
+		if database.Getcodecs[idx].UseRegex {
+			scanpatterns = append(scanpatterns, regexpattern{name: "codec", last: false, kind: reflect.String, re: database.Getcodecs[idx].Regexp, getgroup: 0})
 		}
 	}
 }
@@ -199,33 +214,10 @@ var regexParseFile = regexp.MustCompile(`^\[( )?(.*)( )?\]$`)
 
 func (m *ParseInfo) ParseFile(includeYearInTitle bool, typegroup string) error {
 	logger.Log.Debug("filename ", m.File)
-	initpatterns()
 	var startIndex, endIndex = 0, len(m.File)
 	cleanName := strings.Replace(m.File, "_", " ", -1)
 	if strings.HasPrefix(cleanName, "[") && strings.HasSuffix(cleanName, "]") {
 		cleanName = regexParseFile.ReplaceAllString(cleanName, `$2`)
-	}
-
-	scanpatterns := patterns
-	for idx := range database.Getaudios {
-		if database.Getaudios[idx].UseRegex {
-			scanpatterns = append(scanpatterns, regexpattern{name: "audio", last: false, kind: reflect.String, re: database.Getaudios[idx].Regexp, getgroup: 0})
-		}
-	}
-	for idx := range database.Getresolutions {
-		if database.Getresolutions[idx].UseRegex {
-			scanpatterns = append(scanpatterns, regexpattern{name: "resolution", last: false, kind: reflect.String, re: database.Getresolutions[idx].Regexp, getgroup: 0})
-		}
-	}
-	for idx := range database.Getqualities {
-		if database.Getqualities[idx].UseRegex {
-			scanpatterns = append(scanpatterns, regexpattern{name: "quality", last: false, kind: reflect.String, re: database.Getqualities[idx].Regexp, getgroup: 0})
-		}
-	}
-	for idx := range database.Getcodecs {
-		if database.Getcodecs[idx].UseRegex {
-			scanpatterns = append(scanpatterns, regexpattern{name: "codec", last: false, kind: reflect.String, re: database.Getcodecs[idx].Regexp, getgroup: 0})
-		}
 	}
 
 	if !config.ConfigCheck("general") {
@@ -301,12 +293,6 @@ func (m *ParseInfo) ParseFile(includeYearInTitle bool, typegroup string) error {
 		}
 		matches := scanpatterns[idxpattern].re.FindAllStringSubmatch(cleanName, -1)
 
-		// for idxm := range matches {
-		// 	for idxs := range matches[idxm] {
-		// 		fmt.Println("Group ", idxm, idxs, matches[idxm][idxs], "name", cleanName)
-		// 	}
-		// }
-		// fmt.Println(matches, cleanName)
 		if len(matches) == 0 {
 			continue
 		}
@@ -362,7 +348,6 @@ func (m *ParseInfo) ParseFile(includeYearInTitle bool, typegroup string) error {
 		if len(m.Identifier) == 0 {
 			m.Identifier = "S" + m.SeasonStr + "E" + m.EpisodeStr
 		}
-		//m.Identifier = "S" + m.SeasonStr + "E" + m.EpisodeStr
 	}
 	raw := ""
 	if endIndex < startIndex {

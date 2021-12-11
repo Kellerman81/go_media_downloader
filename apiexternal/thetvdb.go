@@ -1,7 +1,6 @@
 package apiexternal
 
 import (
-	"encoding/json"
 	"net/http"
 	"strconv"
 	"time"
@@ -87,15 +86,13 @@ func (t TvdbClient) GetSeries(id int, language string) (TheTVDBSeries, error) {
 	if len(language) >= 1 {
 		req.Header.Add("Accept-Language", language)
 	}
-	resp, responseData, err := t.Client.Do(req)
+
+	var result TheTVDBSeries
+	err := t.Client.DoJson(req, &result)
 	if err != nil {
 		return TheTVDBSeries{}, err
 	}
-	if resp.StatusCode == 429 {
-		return TheTVDBSeries{}, err
-	}
-	var result TheTVDBSeries
-	json.Unmarshal(responseData, &result)
+	//json.Unmarshal(responseData, &result)
 	return result, nil
 }
 func (t TvdbClient) GetSeriesEpisodes(id int, language string) (TheTVDBEpisodes, error) {
@@ -103,15 +100,12 @@ func (t TvdbClient) GetSeriesEpisodes(id int, language string) (TheTVDBEpisodes,
 	if len(language) >= 1 {
 		req.Header.Add("Accept-Language", language)
 	}
-	resp, responseData, err := t.Client.Do(req)
+	var result TheTVDBEpisodes
+	err := t.Client.DoJson(req, &result)
 	if err != nil {
 		return TheTVDBEpisodes{}, err
 	}
-	if resp.StatusCode == 429 {
-		return TheTVDBEpisodes{}, err
-	}
-	var result TheTVDBEpisodes
-	json.Unmarshal(responseData, &result)
+	//json.Unmarshal(responseData, &result)
 	if result.Links.Last >= 2 {
 		k := 2
 		for ; k <= result.Links.Last; k++ {
@@ -119,13 +113,9 @@ func (t TvdbClient) GetSeriesEpisodes(id int, language string) (TheTVDBEpisodes,
 			if len(language) >= 1 {
 				req.Header.Add("Accept-Language", language)
 			}
-			resp, responseData, err := t.Client.Do(req)
 
-			if err != nil || resp.StatusCode == 429 {
-				break
-			}
 			var resultadd TheTVDBEpisodes
-			json.Unmarshal(responseData, &resultadd)
+			t.Client.DoJson(req, &resultadd)
 			result.Data = append(result.Data, resultadd.Data...)
 		}
 	}

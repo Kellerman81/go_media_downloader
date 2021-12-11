@@ -3,7 +3,10 @@ package api
 import (
 	"errors"
 	"net/http"
+	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -136,6 +139,8 @@ func ApiTraktGetStoreToken(ctx *gin.Context) {
 // @Tags general
 // @Accept  json
 // @Produce  json
+// @Param user path string true "Trakt Username"
+// @Param list path string true "List Name"
 // @Param apikey query string true "apikey"
 // @Success 200 {string} string
 // @Failure 401 {object} string
@@ -241,7 +246,23 @@ func ApiFillImdb(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
-	go utils.InitFillImdb()
+	//go utils.InitFillImdb()
+	file := "./init_imdb"
+	if runtime.GOOS == "windows" {
+		file = "init_imdb.exe"
+	}
+	go func() {
+		exec.Command(file).Run()
+		if _, err := os.Stat(file); !os.IsNotExist(err) {
+			database.DBImdb.Close()
+			os.Remove("./imdb.db")
+			os.Rename("./imdbtemp.db", "./imdb.db")
+			dbnew := database.InitImdbdb("info", "imdb")
+			dbnew.SetMaxOpenConns(5)
+			database.DBImdb = dbnew
+		}
+	}()
+
 	ctx.JSON(http.StatusOK, "ok")
 }
 
@@ -437,6 +458,7 @@ func ApiQualityDelete(ctx *gin.Context) {
 	}
 	database.DeleteRow("qualities", database.Query{Where: "id=?", WhereArgs: []interface{}{ctx.Param("id")}})
 	database.GetVars()
+	utils.LoadDBPatterns()
 	qualities, _ := database.QueryQualities(database.Query{})
 	ctx.JSON(http.StatusOK, qualities)
 }
@@ -472,6 +494,7 @@ func ApiQualityUpdate(ctx *gin.Context) {
 			database.Query{Where: "id != 0 and id=?", WhereArgs: []interface{}{quality.ID}})
 	}
 	database.GetVars()
+	utils.LoadDBPatterns()
 	qualities, _ := database.QueryQualities(database.Query{})
 	ctx.JSON(http.StatusOK, qualities)
 }
