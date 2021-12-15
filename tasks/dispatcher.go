@@ -173,45 +173,38 @@ func (d *Dispatcher) Start() {
 
 func CheckQueue(job string) bool {
 	alternatequeuejobnames := make([]string, 0, 3)
-	if strings.HasPrefix(job, "searchmissinginc") {
-		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchmissinginc", "searchmissinginctitle", 1))
-		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchmissinginc", "searchmissingfull", 1))
-		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchmissinginc", "searchmissingfulltitle", 1))
-	}
-	if strings.HasPrefix(job, "searchmissinginctitle") {
-		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchmissinginctitle", "searchmissinginc", 1))
-		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchmissinginctitle", "searchmissingfull", 1))
-		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchmissinginctitle", "searchmissingfulltitle", 1))
-	}
-	if strings.HasPrefix(job, "searchmissingfull") {
-		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchmissingfull", "searchmissinginctitle", 1))
-		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchmissingfull", "searchmissinginc", 1))
-		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchmissingfull", "searchmissingfulltitle", 1))
-	}
-	if strings.HasPrefix(job, "searchmissingfulltitle") {
-		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchmissingfulltitle", "searchmissinginctitle", 1))
-		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchmissingfulltitle", "searchmissingfull", 1))
-		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchmissingfulltitle", "searchmissinginc", 1))
-	}
-	if strings.HasPrefix(job, "searchupgradeinc") {
-		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchupgradeinc", "searchupgradeinctitle", 1))
-		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchupgradeinc", "searchupgradefull", 1))
-		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchupgradeinc", "searchupgradefulltitle", 1))
-	}
-	if strings.HasPrefix(job, "searchupgradeinctitle") {
-		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchupgradeinctitle", "searchupgradeinc", 1))
-		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchupgradeinctitle", "searchupgradefull", 1))
-		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchupgradeinctitle", "searchupgradefulltitle", 1))
-	}
-	if strings.HasPrefix(job, "searchupgradefull") {
-		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchupgradefull", "searchupgradeinctitle", 1))
-		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchupgradefull", "searchupgradeinc", 1))
-		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchupgradefull", "searchupgradefulltitle", 1))
-	}
-	if strings.HasPrefix(job, "searchupgradefulltitle") {
-		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchupgradefulltitle", "searchupgradeinctitle", 1))
-		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchupgradefulltitle", "searchupgradefull", 1))
-		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchupgradefulltitle", "searchupgradeinc", 1))
+	if strings.HasPrefix(job, "searchmissinginc_") {
+		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchmissinginc_", "searchmissinginctitle_", 1))
+		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchmissinginc_", "searchmissingfull_", 1))
+		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchmissinginc_", "searchmissingfulltitle_", 1))
+	} else if strings.HasPrefix(job, "searchmissinginctitle_") {
+		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchmissinginctitle_", "searchmissinginc_", 1))
+		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchmissinginctitle_", "searchmissingfull_", 1))
+		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchmissinginctitle_", "searchmissingfulltitle_", 1))
+	} else if strings.HasPrefix(job, "searchmissingfull_") {
+		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchmissingfull_", "searchmissinginctitle_", 1))
+		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchmissingfull_", "searchmissinginc_", 1))
+		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchmissingfull_", "searchmissingfulltitle_", 1))
+	} else if strings.HasPrefix(job, "searchmissingfulltitle_") {
+		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchmissingfulltitle_", "searchmissinginctitle_", 1))
+		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchmissingfulltitle_", "searchmissingfull_", 1))
+		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchmissingfulltitle_", "searchmissinginc_", 1))
+	} else if strings.HasPrefix(job, "searchupgradeinc_") {
+		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchupgradeinc_", "searchupgradeinctitle_", 1))
+		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchupgradeinc_", "searchupgradefull_", 1))
+		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchupgradeinc_", "searchupgradefulltitle_", 1))
+	} else if strings.HasPrefix(job, "searchupgradeinctitle_") {
+		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchupgradeinctitle_", "searchupgradeinc_", 1))
+		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchupgradeinctitle_", "searchupgradefull_", 1))
+		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchupgradeinctitle_", "searchupgradefulltitle_", 1))
+	} else if strings.HasPrefix(job, "searchupgradefull_") {
+		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchupgradefull_", "searchupgradeinctitle_", 1))
+		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchupgradefull_", "searchupgradeinc_", 1))
+		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchupgradefull_", "searchupgradefulltitle_", 1))
+	} else if strings.HasPrefix(job, "searchupgradefulltitle_") {
+		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchupgradefulltitle_", "searchupgradeinctitle_", 1))
+		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchupgradefulltitle_", "searchupgradefull_", 1))
+		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchupgradefulltitle_", "searchupgradeinc_", 1))
 	}
 	Mu.Lock()
 	defer Mu.Unlock()
