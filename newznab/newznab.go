@@ -365,23 +365,10 @@ func (c Client) processurl(url string, tillid string, maxage int) ([]NZB, error)
 	if err != nil {
 		return []NZB{}, err
 	}
-	// if resp.StatusCode == 429 {
-	// 	return []NZB{}, err
-	// }
-	// defer body.Close()
-
-	// //body, err := c.getURLNew(url)
-	// if err != nil {
-	// 	logger.Log.Error("Err Download ", url, " error ", err)
-	// 	return []NZB{}, err
-	// }
-	// d := xml.NewDecoder(body)
-	// d.Strict = false
-	// errd := d.Decode(&feed)
-	// if errd != nil {
-	// 	logger.Log.Error("Err Decode ", url, " error ", errd)
-	// 	return []NZB{}, errd
-	// }
+	scantime := time.Now()
+	if maxage != 0 {
+		scantime = scantime.AddDate(0, 0, 0-maxage)
+	}
 	entries := make([]NZB, 0, len(feed.NZBs))
 	for _, item := range feed.NZBs {
 		var newEntry NZB
@@ -392,8 +379,6 @@ func (c Client) processurl(url string, tillid string, maxage int) ([]NZB, error)
 		if item.Date != "" {
 			newEntry.PubDate, _ = parseDate(item.Date)
 			if maxage != 0 {
-				scantime := time.Now()
-				scantime = scantime.AddDate(0, 0, 0-maxage)
 				if newEntry.PubDate.Before(scantime) {
 					continue
 				}
@@ -410,10 +395,37 @@ func (c Client) processurl(url string, tillid string, maxage int) ([]NZB, error)
 
 			switch name {
 
-			case "tvairdate":
-				newEntry.AirDate, _ = parseDate(value)
 			case "guid":
 				newEntry.ID = value
+			case "genre":
+				newEntry.Genre = value
+			case "tvdbid":
+				newEntry.TVDBID = value
+			case "info":
+				newEntry.Info = value
+			case "season":
+				newEntry.Season = value
+			case "episode":
+				newEntry.Episode = value
+			case "tvtitle":
+				newEntry.TVTitle = value
+			case "imdb":
+				newEntry.IMDBID = value
+			case "imdbtitle":
+				newEntry.IMDBTitle = value
+			case "coverurl":
+				newEntry.CoverURL = value
+			case "resolution":
+				newEntry.Resolution = value
+			case "infohash":
+				newEntry.InfoHash = value
+				newEntry.IsTorrent = true
+			case "category":
+				newEntry.Category = append(newEntry.Category, value)
+			case "tvairdate":
+				newEntry.AirDate, _ = parseDate(value)
+			case "usenetdate":
+				newEntry.UsenetDate, _ = parseDate(value)
 			case "size":
 				intValue, _ := strconv.ParseInt(value, 10, 64)
 				newEntry.Size = intValue
@@ -428,42 +440,15 @@ func (c Client) processurl(url string, tillid string, maxage int) ([]NZB, error)
 				intValue, _ := strconv.ParseInt(value, 10, 64)
 				newEntry.Peers = int(intValue)
 				newEntry.IsTorrent = true
-			case "infohash":
-				newEntry.InfoHash = value
-				newEntry.IsTorrent = true
-			case "category":
-				newEntry.Category = append(newEntry.Category, value)
-			case "genre":
-				newEntry.Genre = value
-			case "tvdbid":
-				newEntry.TVDBID = value
-			case "info":
-				newEntry.Info = value
-			case "season":
-				newEntry.Season = value
-			case "episode":
-				newEntry.Episode = value
-			case "tvtitle":
-				newEntry.TVTitle = value
 			case "rating":
 				intValue, _ := strconv.ParseInt(value, 10, 64)
 				newEntry.Rating = int(intValue)
-			case "imdb":
-				newEntry.IMDBID = value
-			case "imdbtitle":
-				newEntry.IMDBTitle = value
 			case "imdbyear":
 				intValue, _ := strconv.ParseInt(value, 10, 64)
 				newEntry.IMDBYear = int(intValue)
 			case "imdbscore":
 				parsedFloat, _ := strconv.ParseFloat(value, 32)
 				newEntry.IMDBScore = float32(parsedFloat)
-			case "coverurl":
-				newEntry.CoverURL = value
-			case "usenetdate":
-				newEntry.UsenetDate, _ = parseDate(value)
-			case "resolution":
-				newEntry.Resolution = value
 			}
 		}
 		if newEntry.Size == 0 && item.Size != 0 {
@@ -490,29 +475,6 @@ const (
 	apiPath = "/api"
 	rssPath = "/rss"
 )
-
-func (c Client) getURL(url string) ([]byte, error) {
-	req, _ := http.NewRequest("GET", url, nil)
-	resp, responseData, err := c.client.Do(req)
-	if err != nil {
-		return []byte{}, err
-	}
-	if resp.StatusCode == 429 {
-		return []byte{}, err
-	}
-	return responseData, nil
-}
-func (c Client) getURLNew(url string) (*http.Response, error) {
-	req, _ := http.NewRequest("GET", url, nil)
-	resp, _, err := c.client.DoNew(req)
-	if err != nil {
-		return &http.Response{}, err
-	}
-	if resp.StatusCode == 429 {
-		return &http.Response{}, err
-	}
-	return resp, nil
-}
 
 // parseDate attempts to parse a date string
 func parseDate(date string) (time.Time, error) {

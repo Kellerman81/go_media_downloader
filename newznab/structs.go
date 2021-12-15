@@ -1,7 +1,6 @@
 package newznab
 
 import (
-	"encoding/xml"
 	"time"
 )
 
@@ -49,10 +48,7 @@ type NZB struct {
 
 // SearchResponse is a RSS version of the response.
 type SearchResponse struct {
-	Version   string   `xml:"version,attr"`
-	ErrorCode int      `xml:"code,attr"`
-	ErrorDesc string   `xml:"description,attr"`
-	NZBs      []RawNZB `xml:"channel>item"`
+	NZBs []RawNZB `xml:"channel>item"`
 }
 
 // RawNZB represents a single NZB item in search results.
@@ -62,30 +58,21 @@ type RawNZB struct {
 	Size  int64  `xml:"size,omitempty"`
 
 	GUID struct {
-		GUID        string `xml:",chardata"`
-		IsPermaLink bool   `xml:"isPermaLink,attr"`
+		GUID string `xml:",chardata"`
 	} `xml:"guid,omitempty"`
 
 	Source struct {
-		URL   string `xml:"url,attr"`
-		Value string `xml:",chardata"`
+		URL string `xml:"url,attr"`
 	} `xml:"source,omitempty"`
 
 	Date string `xml:"pubDate,omitempty"`
 
 	Enclosure struct {
-		URL    string `xml:"url,attr"`
-		Length string `xml:"length,attr"`
-		Type   string `xml:"type,attr"`
+		URL string `xml:"url,attr"`
 	} `xml:"enclosure,omitempty"`
 
 	Attributes []struct {
-		XMLName xml.Name
-		Name    string `xml:"name,attr"`
-		Value   string `xml:"value,attr"`
+		Name  string `xml:"name,attr"`
+		Value string `xml:"value,attr"`
 	} `xml:"attr"`
-}
-
-type Time struct {
-	time.Time
 }
