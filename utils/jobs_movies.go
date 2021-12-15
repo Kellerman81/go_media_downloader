@@ -1267,42 +1267,30 @@ func Importnewmoviessingle(row config.MediaTypeConfig, list config.MediaListsCon
 		cfg_general.WorkerMetadata = 1
 	}
 
-	dbmovies, _ := database.QueryDbmovie(database.Query{Select: "id, imdb_id"})
-	movies, _ := database.QueryMovies(database.Query{Select: "dbmovie_id, listname", Where: "listname = ?", WhereArgs: []interface{}{list.Name}})
-	moviesall, _ := database.QueryMovies(database.Query{Select: "dbmovie_id, listname"})
 	swg := sizedwaitgroup.New(cfg_general.WorkerMetadata)
 	for idxmovie := range results.Movies {
 		Lastmovie = results.Movies[idxmovie].ImdbID
 		founddbmovie := false
 		foundmovie := false
 		dbmovie_id := 0
-		for idxhasdbmov := range dbmovies {
-			if dbmovies[idxhasdbmov].ImdbID == results.Movies[idxmovie].ImdbID {
-				founddbmovie = true
-				dbmovie_id = int(dbmovies[idxhasdbmov].ID)
-				break
-			}
+		dbmovie, dbmovieerr := database.GetDbmovie(database.Query{Select: "id", Where: "imdb_id=?", WhereArgs: []interface{}{results.Movies[idxmovie].ImdbID}})
+		if dbmovieerr == nil {
+			founddbmovie = true
+			dbmovie_id = int(dbmovie.ID)
 		}
 		if founddbmovie {
-			for idxhasmov := range movies {
-				if movies[idxhasmov].DbmovieID == uint(dbmovie_id) && strings.EqualFold(movies[idxhasmov].Listname, list.Name) {
-					foundmovie = true
-					break
-				}
+			counter, _ := database.CountRows("movies", database.Query{Where: "dbmovie_id=? and listname=?", WhereArgs: []interface{}{dbmovie_id, list.Name}})
+			if counter >= 1 {
+				foundmovie = true
 			}
-		}
-		if len(list.Ignore_map_lists) >= 1 && !foundmovie {
-			for idx := range list.Ignore_map_lists {
-				for idxtest := range moviesall {
-					if moviesall[idxtest].DbmovieID == uint(dbmovie_id) {
-						if strings.EqualFold(list.Ignore_map_lists[idx], moviesall[idxtest].Listname) {
-							foundmovie = true
-							break
-						}
+
+			if len(list.Ignore_map_lists) >= 1 && !foundmovie {
+				for idx := range list.Ignore_map_lists {
+					counter, _ := database.CountRows("movies", database.Query{Where: "dbmovie_id=? and listname=?", WhereArgs: []interface{}{dbmovie_id, list.Ignore_map_lists[idx]}})
+					if counter >= 1 {
+						foundmovie = true
+						break
 					}
-				}
-				if foundmovie {
-					break
 				}
 			}
 		}
