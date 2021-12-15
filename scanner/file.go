@@ -243,13 +243,20 @@ func MoveFiles(files []string, target string, newname string, filetypes []string
 						RemoveFile(newpath)
 					}
 				}
-				err := MoveFileDriveBuffer(files[idxfile], newpath)
-				if err != nil {
-					logger.Log.Error("File could not be moved: ", files[idxfile], " Error: ", err)
+				err1 := os.Rename(files[idxfile], newpath)
+				if err1 != nil {
+					err := MoveFileDriveBuffer(files[idxfile], newpath)
+					if err != nil {
+						logger.Log.Error("File could not be moved: ", files[idxfile], " Error: ", err)
+					} else {
+						logger.Log.Debug("File moved from ", files[idxfile], " to ", newpath)
+						moved = moved + 1
+					}
 				} else {
 					logger.Log.Debug("File moved from ", files[idxfile], " to ", newpath)
 					moved = moved + 1
 				}
+
 			}
 		} else {
 			logger.Log.Error("File not found: ", files[idxfile])

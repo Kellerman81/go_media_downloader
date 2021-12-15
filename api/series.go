@@ -472,31 +472,58 @@ func apiseriesAllJobs(c *gin.Context) {
 	}
 	if allowed {
 		returnval := "Job " + c.Param("job") + " started"
-		switch c.Param("job") {
-		case "data", "datafull", "checkmissing", "checkmissingflag", "structure", "clearhistory":
-			scheduler.QueueData.Dispatch(c.Param("job")+"_series", func() {
-				utils.Series_all_jobs(c.Param("job"), true)
-			})
-		case "rss", "searchmissingfull", "searchmissinginc", "searchupgradefull", "searchupgradeinc", "searchmissingfulltitle", "searchmissinginctitle", "searchupgradefulltitle", "searchupgradeinctitle":
-			scheduler.QueueSearch.Dispatch(c.Param("job")+"_series", func() {
-				utils.Series_all_jobs(c.Param("job"), true)
-			})
-		case "feeds":
-			scheduler.QueueFeeds.Dispatch(c.Param("job")+"_series", func() {
-				utils.Series_all_jobs(c.Param("job"), true)
-			})
-		case "refresh":
-			scheduler.QueueFeeds.Dispatch("Refresh Series", func() {
-				utils.RefreshSeries()
-			})
-		case "refreshinc":
-			scheduler.QueueFeeds.Dispatch("Refresh Series Incremental", func() {
-				utils.RefreshSeriesInc()
-			})
-		default:
-			scheduler.QueueData.Dispatch(c.Param("job")+"_series", func() {
-				utils.Series_all_jobs(c.Param("job"), true)
-			})
+		serie_keys, _ := config.ConfigDB.Keys([]byte("serie_*"), 0, 0, true)
+
+		for _, idxserie := range serie_keys {
+			var cfg_serie config.MediaTypeConfig
+			config.ConfigGet(string(idxserie), &cfg_serie)
+
+			switch c.Param("job") {
+			case "data", "datafull", "structure", "clearhistory":
+				scheduler.QueueData.Dispatch(c.Param("job")+"_series_"+cfg_serie.Name, func() {
+					utils.Series_single_jobs(c.Param("job"), cfg_serie.Name, "", true)
+				})
+			case "rss", "searchmissingfull", "searchmissinginc", "searchupgradefull", "searchupgradeinc", "searchmissingfulltitle", "searchmissinginctitle", "searchupgradefulltitle", "searchupgradeinctitle":
+				scheduler.QueueSearch.Dispatch(c.Param("job")+"_series_"+cfg_serie.Name, func() {
+					utils.Series_single_jobs(c.Param("job"), cfg_serie.Name, "", true)
+				})
+			case "feeds", "checkmissing", "checkmissingflag":
+				for idxlist := range cfg_serie.Lists {
+					if !cfg_serie.Lists[idxlist].Enabled {
+						continue
+					}
+					if !config.ConfigCheck("list_" + cfg_serie.Lists[idxlist].Template_list) {
+						continue
+					}
+					var cfg_list config.ListsConfig
+					config.ConfigGet("list_"+cfg_serie.Lists[idxlist].Template_list, &cfg_list)
+					if !cfg_list.Enabled {
+						continue
+					}
+					if c.Param("job") == "feeds" {
+						scheduler.QueueFeeds.Dispatch(c.Param("job")+"_series_"+cfg_serie.Name, func() {
+							utils.Series_single_jobs(c.Param("job"), cfg_serie.Name, "", true)
+						})
+					}
+					if c.Param("job") == "checkmissing" || c.Param("job") == "checkmissingflag" {
+						scheduler.QueueData.Dispatch(c.Param("job")+"_series_"+cfg_serie.Name, func() {
+							utils.Series_single_jobs(c.Param("job"), cfg_serie.Name, "", true)
+						})
+					}
+				}
+			case "refresh":
+				scheduler.QueueFeeds.Dispatch("Refresh Series", func() {
+					utils.RefreshSeries()
+				})
+			case "refreshinc":
+				scheduler.QueueFeeds.Dispatch("Refresh Series Incremental", func() {
+					utils.RefreshSeriesInc()
+				})
+			default:
+				scheduler.QueueData.Dispatch(c.Param("job")+"_series_"+cfg_serie.Name, func() {
+					utils.Series_single_jobs(c.Param("job"), cfg_serie.Name, "", true)
+				})
+			}
 		}
 		c.JSON(http.StatusOK, returnval)
 	} else {
@@ -531,7 +558,7 @@ func apiseriesJobs(c *gin.Context) {
 	if allowed {
 		returnval := "Job " + c.Param("job") + " started"
 		switch c.Param("job") {
-		case "data", "datafull", "checkmissing", "checkmissingflag", "structure", "clearhistory":
+		case "data", "datafull", "structure", "clearhistory":
 			scheduler.QueueData.Dispatch(c.Param("job")+"_series_"+c.Param("name"), func() {
 				utils.Series_single_jobs(c.Param("job"), c.Param("name"), "", true)
 			})
@@ -539,10 +566,38 @@ func apiseriesJobs(c *gin.Context) {
 			scheduler.QueueSearch.Dispatch(c.Param("job")+"_series_"+c.Param("name"), func() {
 				utils.Series_single_jobs(c.Param("job"), c.Param("name"), "", true)
 			})
-		case "feeds":
-			scheduler.QueueFeeds.Dispatch(c.Param("job")+"_series_"+c.Param("name"), func() {
-				utils.Series_single_jobs(c.Param("job"), c.Param("name"), "", true)
-			})
+		case "feeds", "checkmissing", "checkmissingflag":
+			serie_keys, _ := config.ConfigDB.Keys([]byte("serie_*"), 0, 0, true)
+
+			for _, idxserie := range serie_keys {
+				var cfg_serie config.MediaTypeConfig
+				config.ConfigGet(string(idxserie), &cfg_serie)
+				if strings.EqualFold(cfg_serie.Name, c.Param("name")) {
+					for idxlist := range cfg_serie.Lists {
+						if !cfg_serie.Lists[idxlist].Enabled {
+							continue
+						}
+						if !config.ConfigCheck("list_" + cfg_serie.Lists[idxlist].Template_list) {
+							continue
+						}
+						var cfg_list config.ListsConfig
+						config.ConfigGet("list_"+cfg_serie.Lists[idxlist].Template_list, &cfg_list)
+						if !cfg_list.Enabled {
+							continue
+						}
+						if c.Param("job") == "feeds" {
+							scheduler.QueueFeeds.Dispatch(c.Param("job")+"_series_"+c.Param("name"), func() {
+								utils.Series_single_jobs(c.Param("job"), c.Param("name"), cfg_serie.Lists[idxlist].Name, true)
+							})
+						}
+						if c.Param("job") == "checkmissing" || c.Param("job") == "checkmissingflag" {
+							scheduler.QueueData.Dispatch(c.Param("job")+"_series_"+c.Param("name"), func() {
+								utils.Series_single_jobs(c.Param("job"), c.Param("name"), cfg_serie.Lists[idxlist].Name, true)
+							})
+						}
+					}
+				}
+			}
 		case "refresh":
 			scheduler.QueueFeeds.Dispatch("Refresh Series", func() {
 				utils.RefreshSeries()

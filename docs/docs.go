@@ -458,6 +458,45 @@ var doc = `{
                 }
             }
         },
+        "/api/config/refresh": {
+            "get": {
+                "description": "Refreshes the config from the file",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "config"
+                ],
+                "summary": "Reload ConfigFile",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "apikey",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
         "/api/config/type/{type}": {
             "get": {
                 "description": "List configurations of type",
@@ -3816,6 +3855,9 @@ var doc = `{
             "properties": {
                 "configentry": {
                     "type": "string"
+                },
+                "disabledeletewronglanguage": {
+                    "type": "boolean"
                 },
                 "disabledisallowed": {
                     "type": "boolean"

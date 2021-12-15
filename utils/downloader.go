@@ -35,6 +35,7 @@ type Downloader struct {
 	Downloader config.DownloaderConfig
 
 	Targetfile string
+	Time       string
 }
 
 func NewDownloader(configEntry config.MediaTypeConfig, searchActionType string) Downloader {
@@ -262,6 +263,7 @@ func (d Downloader) SendNotify(event string, noticonfig config.MediaNotification
 	}
 }
 func (d Downloader) Notify() {
+	d.Time = time.Now().Format(time.RFC3339)
 	for idxnoti := range d.ConfigEntry.Notification {
 		d.SendNotify("added_download", d.ConfigEntry.Notification[idxnoti])
 	}

@@ -44,7 +44,9 @@ First version! Bugs included
 
 - Drone (File Download NZB,Torrent)
 - Nzbget (Nzb)
-- Sabnzb (Nzb)
+- Sabnzb (Nzb untested)
+- qBittorrent (Torrent/Magnet untested)
+- rTorrent (Torrent/Magnet untested)
 - Deluge (Torrent/Magnet)
 
 #### Notifications

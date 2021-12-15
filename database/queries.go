@@ -1311,36 +1311,37 @@ func QueryImdbTitle(qu Query) ([]ImdbTitle, error) {
 }
 
 func buildquery(columns string, table string, qu Query, count bool) string {
-	query := "select "
+	var query strings.Builder
+	query.WriteString("select ")
 
 	if qu.InnerJoin != "" {
 		if strings.Contains(columns, table+".") {
-			query += columns + " from " + table
+			query.WriteString(columns + " from " + table)
 		} else {
 			if count {
-				query += "count(*) from " + table
+				query.WriteString("count(*) from " + table)
 			} else {
-				query += table + ".* from " + table
+				query.WriteString(table + ".* from " + table)
 			}
 		}
-		query += " inner join " + qu.InnerJoin
+		query.WriteString(" inner join " + qu.InnerJoin)
 	} else {
-		query += columns + " from " + table
+		query.WriteString(columns + " from " + table)
 	}
 	if qu.Where != "" {
-		query += " where " + qu.Where
+		query.WriteString(" where " + qu.Where)
 	}
 	if qu.OrderBy != "" {
-		query += " order by " + qu.OrderBy
+		query.WriteString(" order by " + qu.OrderBy)
 	}
 	if qu.Limit != 0 {
 		if qu.Offset != 0 {
-			query += " limit " + strconv.Itoa(int(qu.Offset)) + ", " + strconv.Itoa(int(qu.Limit))
+			query.WriteString(" limit " + strconv.Itoa(int(qu.Offset)) + ", " + strconv.Itoa(int(qu.Limit)))
 		} else {
-			query += " limit " + strconv.Itoa(int(qu.Limit))
+			query.WriteString(" limit " + strconv.Itoa(int(qu.Limit)))
 		}
 	}
-	return query
+	return query.String()
 }
 
 //Uses column id

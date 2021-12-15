@@ -16,6 +16,8 @@ definitions:
     properties:
       configentry:
         type: string
+      disabledeletewronglanguage:
+        type: boolean
       disabledisallowed:
         type: boolean
       disableruntimecheck:
@@ -1121,6 +1123,32 @@ paths:
           schema:
             type: string
       summary: Get Config
+      tags:
+      - config
+  /api/config/refresh:
+    get:
+      consumes:
+      - application/json
+      description: Refreshes the config from the file
+      parameters:
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Reload ConfigFile
       tags:
       - config
   /api/config/type/{type}:
