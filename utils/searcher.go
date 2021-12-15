@@ -1585,12 +1585,17 @@ func (s *Searcher) MovieSearch(movie database.Movie, forceDownload bool, titlese
 	dbmovie, _ := database.GetDbmovie(database.Query{Where: "id=?", WhereArgs: []interface{}{movie.DbmovieID}})
 	s.Dbmovie = dbmovie
 
-	dbmoviealt, _ := database.QueryDbmovieTitle(database.Query{Where: "dbmovie_id=?", WhereArgs: []interface{}{movie.DbmovieID}})
 	if !config.ConfigCheck("quality_" + s.Movie.QualityProfile) {
 		return searchResults{}
 	}
 	var cfg_quality config.QualityConfig
 	config.ConfigGet("quality_"+s.Movie.QualityProfile, &cfg_quality)
+	s.Quality = s.Movie.QualityProfile
+
+	var dbmoviealt []database.DbmovieTitle
+	if (cfg_quality.BackupSearchForTitle || cfg_quality.BackupSearchForAlternateTitle) && titlesearch {
+		dbmoviealt, _ = database.QueryDbmovieTitle(database.Query{Select: "title", Where: "dbmovie_id=?", WhereArgs: []interface{}{movie.DbmovieID}})
+	}
 
 	s.MinimumPriority = getHighestMoviePriorityByFiles(movie, s.ConfigEntry, cfg_quality)
 
@@ -1605,12 +1610,12 @@ func (s *Searcher) MovieSearch(movie database.Movie, forceDownload bool, titlese
 	}
 
 	var dl searchResults
-	dl.Nzbs = []Nzbwithprio{}
-	dl.Rejected = []Nzbwithprio{}
-	titleschecked := make(map[string]bool, 10)
+	dl.Nzbs = make([]Nzbwithprio, 0, 10)
+	dl.Rejected = make([]Nzbwithprio, 0, 10)
 
 	processedindexer := 0
 	for idx := range cfg_quality.Indexer {
+		titleschecked := make([]string, 0, 1+len(dbmoviealt))
 		erri := s.InitIndexer(cfg_quality.Indexer[idx], "api")
 		if erri != nil {
 			logger.Log.Debug("Skipped Indexer: ", cfg_quality.Indexer[idx].Template_indexer, " ", erri)
@@ -1619,44 +1624,49 @@ func (s *Searcher) MovieSearch(movie database.Movie, forceDownload bool, titlese
 		processedindexer += 1
 		s.Indexer = cfg_quality.Indexer[idx]
 
+		var dl_add searchResults
 		releasefound := false
 		if s.Dbmovie.ImdbID != "" {
-			dl_add := s.MoviesSearchImdb(movie, []string{s.Movie.Listname})
+			dl_add = s.MoviesSearchImdb(movie, []string{s.Movie.Listname})
 			dl.Rejected = append(dl.Rejected, dl_add.Rejected...)
 			if len(dl_add.Nzbs) >= 1 {
 				logger.Log.Debug("Indexer loop - entries found: ", len(dl_add.Nzbs))
 				releasefound = true
 				dl.Nzbs = append(dl.Nzbs, dl_add.Nzbs...)
-			}
-			if len(dl_add.Nzbs) >= 1 && cfg_quality.CheckUntilFirstFound {
-				logger.Log.Debug("Break Indexer loop - entry found: ", dbmovie.Title)
-				break
+				if cfg_quality.CheckUntilFirstFound {
+					logger.Log.Debug("Break Indexer loop - entry found: ", dbmovie.Title)
+					break
+				}
 			}
 		}
 		if !releasefound && cfg_quality.BackupSearchForTitle && titlesearch {
-			dl_add := s.MoviesSearchTitle(movie, s.Dbmovie.Title, []string{s.Movie.Listname})
+			dl_add = s.MoviesSearchTitle(movie, s.Dbmovie.Title, []string{s.Movie.Listname})
 			dl.Rejected = append(dl.Rejected, dl_add.Rejected...)
-			titleschecked[s.Dbmovie.Title] = true
+			titleschecked = append(titleschecked, s.Dbmovie.Title)
 			if len(dl_add.Nzbs) >= 1 {
 				logger.Log.Debug("Indexer loop - entries found: ", len(dl_add.Nzbs))
 				releasefound = true
 				dl.Nzbs = append(dl.Nzbs, dl_add.Nzbs...)
-			}
-			if len(dl_add.Nzbs) >= 1 && cfg_quality.CheckUntilFirstFound {
-				logger.Log.Debug("Break Indexer loop - entry found: ", dbmovie.Title)
-				break
+				if cfg_quality.CheckUntilFirstFound {
+					logger.Log.Debug("Break Indexer loop - entry found: ", dbmovie.Title)
+					break
+				}
 			}
 		}
 		if !releasefound && cfg_quality.BackupSearchForAlternateTitle && titlesearch {
 			for idxalt := range dbmoviealt {
-				if _, ok := titleschecked[dbmoviealt[idxalt].Title]; !ok {
-					dl_add := s.MoviesSearchTitle(movie, dbmoviealt[idxalt].Title, []string{s.Movie.Listname})
+				if !CheckStringArray(titleschecked, dbmoviealt[idxalt].Title) {
+					dl_add = s.MoviesSearchTitle(movie, dbmoviealt[idxalt].Title, []string{s.Movie.Listname})
 					dl.Rejected = append(dl.Rejected, dl_add.Rejected...)
-					titleschecked[dbmoviealt[idxalt].Title] = true
+					titleschecked = append(titleschecked, dbmoviealt[idxalt].Title)
 					if len(dl_add.Nzbs) >= 1 {
 						logger.Log.Debug("Indexer loop - entries found: ", len(dl_add.Nzbs))
 						releasefound = true
 						dl.Nzbs = append(dl.Nzbs, dl_add.Nzbs...)
+						if cfg_quality.CheckUntilFirstFound {
+							logger.Log.Debug("Break Indexer loop - entry found: ", dbmovie.Title)
+							break
+						}
 					}
 				}
 			}
@@ -1692,14 +1702,12 @@ func (s *Searcher) SeriesSearch(serieEpisode database.SerieEpisode, forceDownloa
 	dbserieepisode, _ := database.GetDbserieEpisodes(database.Query{Where: "id=?", WhereArgs: []interface{}{serieEpisode.DbserieEpisodeID}})
 	s.Dbserieepisode = dbserieepisode
 
-	dbseriealt, _ := database.QueryDbserieAlternates(database.Query{Where: "dbserie_id=?", WhereArgs: []interface{}{serieEpisode.DbserieID}})
-
 	if !config.ConfigCheck("quality_" + s.SerieEpisode.QualityProfile) {
 		return searchResults{}
 	}
 	var cfg_quality config.QualityConfig
 	config.ConfigGet("quality_"+s.SerieEpisode.QualityProfile, &cfg_quality)
-
+	s.Quality = s.SerieEpisode.QualityProfile
 	s.MinimumPriority = getHighestEpisodePriorityByFiles(serieEpisode, s.ConfigEntry, cfg_quality)
 
 	if s.MinimumPriority == 0 {
@@ -1713,13 +1721,18 @@ func (s *Searcher) SeriesSearch(serieEpisode database.SerieEpisode, forceDownloa
 	}
 
 	var dl searchResults
-	dl.Nzbs = []Nzbwithprio{}
-	dl.Rejected = []Nzbwithprio{}
-	series, _ := database.GetSeries(database.Query{Where: "id=?", WhereArgs: []interface{}{serieEpisode.SerieID}})
+	dl.Nzbs = make([]Nzbwithprio, 0, 10)
+	dl.Rejected = make([]Nzbwithprio, 0, 10)
+	series, _ := database.GetSeries(database.Query{Select: "listname", Where: "id=?", WhereArgs: []interface{}{serieEpisode.SerieID}})
+
+	var dbseriealt []database.DbserieAlternate
+	if (cfg_quality.BackupSearchForTitle || cfg_quality.BackupSearchForAlternateTitle) && titlesearch {
+		dbseriealt, _ = database.QueryDbserieAlternates(database.Query{Select: "title", Where: "dbserie_id=?", WhereArgs: []interface{}{serieEpisode.DbserieID}})
+	}
 
 	processedindexer := 0
 	for idx := range cfg_quality.Indexer {
-		titleschecked := make(map[string]bool, 10)
+		titleschecked := make([]string, 0, 1+len(dbseriealt))
 		erri := s.InitIndexer(cfg_quality.Indexer[idx], "api")
 		if erri != nil {
 			logger.Log.Debug("Skipped Indexer: ", cfg_quality.Indexer[idx].Template_indexer, " ", erri)
@@ -1728,46 +1741,52 @@ func (s *Searcher) SeriesSearch(serieEpisode database.SerieEpisode, forceDownloa
 		processedindexer += 1
 		s.Indexer = cfg_quality.Indexer[idx]
 		releasefound := false
+		var dl_add searchResults
+
 		if s.Dbserie.ThetvdbID != 0 {
-			dl_add := s.SeriesSearchTvdb([]string{series.Listname})
+			dl_add = s.SeriesSearchTvdb([]string{series.Listname})
 			dl.Rejected = append(dl.Rejected, dl_add.Rejected...)
 			if len(dl_add.Nzbs) >= 1 {
 				releasefound = true
 				dl.Nzbs = append(dl.Nzbs, dl_add.Nzbs...)
-			}
-			if len(dl_add.Nzbs) >= 1 && cfg_quality.CheckUntilFirstFound {
-				logger.Log.Debug("Break Indexer loop - entry found: ", dbserie.Seriename, " ", dbserieepisode.Identifier)
-				break
+				if cfg_quality.CheckUntilFirstFound {
+					logger.Log.Debug("Break Indexer loop - entry found: ", dbserie.Seriename, " ", dbserieepisode.Identifier)
+					break
+				}
 			}
 		}
 		if !releasefound && cfg_quality.BackupSearchForTitle && titlesearch {
-			dl_add := s.SeriesSearchTitle(logger.StringToSlug(s.Dbserie.Seriename), []string{series.Listname})
+			dl_add = s.SeriesSearchTitle(logger.StringToSlug(s.Dbserie.Seriename), []string{series.Listname})
 			dl.Rejected = append(dl.Rejected, dl_add.Rejected...)
-			titleschecked[s.Dbserie.Seriename] = true
+			titleschecked = append(titleschecked, s.Dbserie.Seriename)
 			if len(dl_add.Nzbs) >= 1 {
 				releasefound = true
 				dl.Nzbs = append(dl.Nzbs, dl_add.Nzbs...)
-			}
-			if len(dl_add.Nzbs) >= 1 && cfg_quality.CheckUntilFirstFound {
-				logger.Log.Debug("Break Indexer loop - entry found: ", dbserie.Seriename, " ", dbserieepisode.Identifier)
-				break
+				if cfg_quality.CheckUntilFirstFound {
+					logger.Log.Debug("Break Indexer loop - entry found: ", dbserie.Seriename, " ", dbserieepisode.Identifier)
+					break
+				}
 			}
 		}
 		if !releasefound && cfg_quality.BackupSearchForAlternateTitle && titlesearch {
 			for idxalt := range dbseriealt {
-				if _, ok := titleschecked[dbseriealt[idxalt].Title]; !ok {
-					dl_add := s.SeriesSearchTitle(logger.StringToSlug(dbseriealt[idxalt].Title), []string{series.Listname})
+				if !CheckStringArray(titleschecked, dbseriealt[idxalt].Title) {
+					dl_add = s.SeriesSearchTitle(logger.StringToSlug(dbseriealt[idxalt].Title), []string{series.Listname})
 					dl.Rejected = append(dl.Rejected, dl_add.Rejected...)
-					titleschecked[dbseriealt[idxalt].Title] = true
+					titleschecked = append(titleschecked, dbseriealt[idxalt].Title)
 					if len(dl_add.Nzbs) >= 1 {
 						releasefound = true
 						dl.Nzbs = append(dl.Nzbs, dl_add.Nzbs...)
-					}
-					if len(dl_add.Nzbs) >= 1 && cfg_quality.CheckUntilFirstFound {
-						logger.Log.Debug("Break Indexer loop - entry found: ", dbserie.Seriename, " ", dbserieepisode.Identifier)
-						break
+						if cfg_quality.CheckUntilFirstFound {
+							logger.Log.Debug("Break Indexer loop - entry found: ", dbserie.Seriename, " ", dbserieepisode.Identifier)
+							break
+						}
 					}
 				}
+			}
+			if len(dl.Nzbs) >= 1 && cfg_quality.CheckUntilFirstFound {
+				logger.Log.Debug("Break Indexer loop - entry found: ", dbserie.Seriename, " ", dbserieepisode.Identifier)
+				break
 			}
 		}
 	}
@@ -1825,7 +1844,7 @@ func (s *Searcher) InitIndexer(indexer config.QualityIndexerConfig, rssapi strin
 		lastindexerid = indexrssid.LastID
 	}
 
-	nzbindexer := apiexternal.NzbIndexer{
+	s.Nzbindexer = apiexternal.NzbIndexer{
 		URL:                     cfg_indexer.Url,
 		Apikey:                  cfg_indexer.Apikey,
 		UserID:                  userid,
@@ -1841,7 +1860,6 @@ func (s *Searcher) InitIndexer(indexer config.QualityIndexerConfig, rssapi strin
 		Limitercalls:            cfg_indexer.Limitercalls,
 		Limiterseconds:          cfg_indexer.Limiterseconds,
 		MaxAge:                  cfg_indexer.MaxAge}
-	s.Nzbindexer = nzbindexer
 	if strings.Contains(indexer.Categories_indexer, ",") {
 		catarray := strings.Split(indexer.Categories_indexer, ",")
 		cats := make([]int, 0, len(catarray))
@@ -1866,12 +1884,6 @@ func (s Searcher) MoviesSearchImdb(movie database.Movie, lists []string) searchR
 		logger.Log.Error("Newznab Search failed: ", s.Dbmovie.ImdbID, " with ", s.Nzbindexer.URL)
 		failedindexer(failed)
 	}
-
-	if !config.ConfigCheck("quality_" + s.Quality) {
-		return searchResults{}
-	}
-	var cfg_quality config.QualityConfig
-	config.ConfigGet("quality_"+s.Quality, &cfg_quality)
 
 	if len(nzbs) >= 1 {
 		s.NzbsToNzbsPrio(nzbs)
@@ -1954,11 +1966,6 @@ func (s Searcher) SeriesSearchTvdb(lists []string) searchResults {
 		logger.Log.Error("Newznab Search failed: ", s.Dbserie.ThetvdbID, " with ", s.Nzbindexer.URL)
 		failedindexer(failed)
 	}
-	if !config.ConfigCheck("quality_" + s.Quality) {
-		return searchResults{}
-	}
-	var cfg_quality config.QualityConfig
-	config.ConfigGet("quality_"+s.Quality, &cfg_quality)
 
 	if len(nzbs) >= 1 {
 		s.NzbsToNzbsPrio(nzbs)

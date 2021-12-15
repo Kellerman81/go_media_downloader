@@ -261,31 +261,58 @@ func apimoviesAllJobs(c *gin.Context) {
 	}
 	if allowed {
 		returnval := "Job " + c.Param("job") + " started"
-		switch c.Param("job") {
-		case "data", "datafull", "checkmissing", "checkmissingflag", "structure", "clearhistory":
-			scheduler.QueueData.Dispatch(c.Param("job")+"_movies", func() {
-				utils.Movies_all_jobs(c.Param("job"), true)
-			})
-		case "rss", "searchmissingfull", "searchmissinginc", "searchupgradefull", "searchupgradeinc", "searchmissingfulltitle", "searchmissinginctitle", "searchupgradefulltitle", "searchupgradeinctitle":
-			scheduler.QueueSearch.Dispatch(c.Param("job")+"_movies", func() {
-				utils.Movies_all_jobs(c.Param("job"), true)
-			})
-		case "feeds":
-			scheduler.QueueFeeds.Dispatch(c.Param("job")+"_movies", func() {
-				utils.Movies_all_jobs(c.Param("job"), true)
-			})
-		case "refresh":
-			scheduler.QueueFeeds.Dispatch("Refresh Movies", func() {
-				utils.RefreshMovies()
-			})
-		case "refreshinc":
-			scheduler.QueueFeeds.Dispatch("Refresh Movies Incremental", func() {
-				utils.RefreshMoviesInc()
-			})
-		default:
-			scheduler.QueueData.Dispatch(c.Param("job")+"_movies", func() {
-				utils.Movies_all_jobs(c.Param("job"), true)
-			})
+		movie_keys, _ := config.ConfigDB.Keys([]byte("movie_*"), 0, 0, true)
+
+		for _, idxmovie := range movie_keys {
+			var cfg_movie config.MediaTypeConfig
+			config.ConfigGet(string(idxmovie), &cfg_movie)
+
+			switch c.Param("job") {
+			case "data", "datafull", "structure", "clearhistory":
+				scheduler.QueueData.Dispatch(c.Param("job")+"_movies_"+cfg_movie.Name, func() {
+					utils.Movies_single_jobs(c.Param("job"), cfg_movie.Name, "", true)
+				})
+			case "rss", "searchmissingfull", "searchmissinginc", "searchupgradefull", "searchupgradeinc", "searchmissingfulltitle", "searchmissinginctitle", "searchupgradefulltitle", "searchupgradeinctitle":
+				scheduler.QueueSearch.Dispatch(c.Param("job")+"_movies_"+cfg_movie.Name, func() {
+					utils.Movies_single_jobs(c.Param("job"), cfg_movie.Name, "", true)
+				})
+			case "feeds", "checkmissing", "checkmissingflag":
+				for idxlist := range cfg_movie.Lists {
+					if !cfg_movie.Lists[idxlist].Enabled {
+						continue
+					}
+					if !config.ConfigCheck("list_" + cfg_movie.Lists[idxlist].Template_list) {
+						continue
+					}
+					var cfg_list config.ListsConfig
+					config.ConfigGet("list_"+cfg_movie.Lists[idxlist].Template_list, &cfg_list)
+					if !cfg_list.Enabled {
+						continue
+					}
+					if c.Param("job") == "feeds" {
+						scheduler.QueueFeeds.Dispatch(c.Param("job")+"_movies_"+cfg_movie.Name+"_"+cfg_movie.Lists[idxlist].Name, func() {
+							utils.Movies_single_jobs(c.Param("job"), cfg_movie.Name, cfg_movie.Lists[idxlist].Name, true)
+						})
+					}
+					if c.Param("job") == "checkmissing" || c.Param("job") == "checkmissingflag" {
+						scheduler.QueueData.Dispatch(c.Param("job")+"_movies_"+cfg_movie.Name+"_"+cfg_movie.Lists[idxlist].Name, func() {
+							utils.Movies_single_jobs(c.Param("job"), cfg_movie.Name, cfg_movie.Lists[idxlist].Name, true)
+						})
+					}
+				}
+			case "refresh":
+				scheduler.QueueFeeds.Dispatch("Refresh Movies", func() {
+					utils.RefreshMovies()
+				})
+			case "refreshinc":
+				scheduler.QueueFeeds.Dispatch("Refresh Movies Incremental", func() {
+					utils.RefreshMoviesInc()
+				})
+			default:
+				scheduler.QueueData.Dispatch(c.Param("job")+"_movies_"+cfg_movie.Name, func() {
+					utils.Movies_single_jobs(c.Param("job"), cfg_movie.Name, "", true)
+				})
+			}
 		}
 		c.JSON(http.StatusOK, returnval)
 	} else {
@@ -320,7 +347,7 @@ func apimoviesJobs(c *gin.Context) {
 	if allowed {
 		returnval := "Job " + c.Param("job") + " started"
 		switch c.Param("job") {
-		case "data", "datafull", "checkmissing", "checkmissingflag", "structure", "clearhistory":
+		case "data", "datafull", "structure", "clearhistory":
 			scheduler.QueueData.Dispatch(c.Param("job")+"_movies_"+c.Param("name"), func() {
 				utils.Movies_single_jobs(c.Param("job"), c.Param("name"), "", true)
 			})
@@ -328,10 +355,38 @@ func apimoviesJobs(c *gin.Context) {
 			scheduler.QueueSearch.Dispatch(c.Param("job")+"_movies_"+c.Param("name"), func() {
 				utils.Movies_single_jobs(c.Param("job"), c.Param("name"), "", true)
 			})
-		case "feeds":
-			scheduler.QueueFeeds.Dispatch(c.Param("job")+"_movies_"+c.Param("name"), func() {
-				utils.Movies_single_jobs(c.Param("job"), c.Param("name"), "", true)
-			})
+		case "feeds", "checkmissing", "checkmissingflag":
+			movie_keys, _ := config.ConfigDB.Keys([]byte("movie_*"), 0, 0, true)
+
+			for _, idxmovie := range movie_keys {
+				var cfg_movie config.MediaTypeConfig
+				config.ConfigGet(string(idxmovie), &cfg_movie)
+				if strings.EqualFold(cfg_movie.Name, c.Param("name")) {
+					for idxlist := range cfg_movie.Lists {
+						if !cfg_movie.Lists[idxlist].Enabled {
+							continue
+						}
+						if !config.ConfigCheck("list_" + cfg_movie.Lists[idxlist].Template_list) {
+							continue
+						}
+						var cfg_list config.ListsConfig
+						config.ConfigGet("list_"+cfg_movie.Lists[idxlist].Template_list, &cfg_list)
+						if !cfg_list.Enabled {
+							continue
+						}
+						if c.Param("job") == "feeds" {
+							scheduler.QueueFeeds.Dispatch(c.Param("job")+"_movies_"+cfg_movie.Name+"_"+cfg_movie.Lists[idxlist].Name, func() {
+								utils.Movies_single_jobs(c.Param("job"), cfg_movie.Name, cfg_movie.Lists[idxlist].Name, true)
+							})
+						}
+						if c.Param("job") == "checkmissing" || c.Param("job") == "checkmissingflag" {
+							scheduler.QueueData.Dispatch(c.Param("job")+"_movies_"+cfg_movie.Name+"_"+cfg_movie.Lists[idxlist].Name, func() {
+								utils.Movies_single_jobs(c.Param("job"), cfg_movie.Name, cfg_movie.Lists[idxlist].Name, true)
+							})
+						}
+					}
+				}
+			}
 		case "refresh":
 			scheduler.QueueFeeds.Dispatch("Refresh Movies", func() {
 				utils.RefreshMovies()

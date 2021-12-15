@@ -216,6 +216,39 @@ func InitScheduler() {
 			}, schedule.Cron_indexer_rss)
 		}
 
+		if schedule.Interval_scan_data != "" {
+			if cfg_general.UseCronInsteadOfInterval {
+				QueueData.DispatchCron("datafull_movies_"+cfg_movie.Name, func() {
+					utils.Movies_single_jobs("datafull", cfg_movie.Name, "", false)
+				}, convertcron(schedule.Interval_scan_data))
+			} else {
+				QueueData.DispatchEvery("datafull_movies_"+cfg_movie.Name, func() {
+					utils.Movies_single_jobs("datafull", cfg_movie.Name, "", false)
+				}, converttime(schedule.Interval_scan_data))
+			}
+		}
+		if schedule.Cron_scan_data != "" {
+			QueueData.DispatchCron("datafull_movies_"+cfg_movie.Name, func() {
+				utils.Movies_single_jobs("datafull", cfg_movie.Name, "", false)
+			}, schedule.Cron_scan_data)
+		}
+		if schedule.Interval_scan_dataimport != "" {
+			if cfg_general.UseCronInsteadOfInterval {
+				QueueData.DispatchCron("structure_movies_"+cfg_movie.Name, func() {
+					utils.Movies_single_jobs("structure", cfg_movie.Name, "", false)
+				}, convertcron(schedule.Interval_scan_dataimport))
+			} else {
+				QueueData.DispatchEvery("structure_movies_"+cfg_movie.Name, func() {
+					utils.Movies_single_jobs("structure", cfg_movie.Name, "", false)
+				}, converttime(schedule.Interval_scan_dataimport))
+			}
+		}
+		if schedule.Cron_scan_dataimport != "" {
+			QueueData.DispatchCron("structure_movies_"+cfg_movie.Name, func() {
+				utils.Movies_single_jobs("structure", cfg_movie.Name, "", false)
+			}, schedule.Cron_scan_dataimport)
+		}
+
 		for idxlist := range cfg_movie.Lists {
 			if !cfg_movie.Lists[idxlist].Enabled {
 				continue
@@ -280,46 +313,6 @@ func InitScheduler() {
 				}, schedule.Cron_scan_data_missing)
 			}
 		}
-	}
-
-	var defaultschedule config.SchedulerConfig
-	if !config.ConfigCheck("scheduler_Default") {
-		configs := config.ConfigGetAll()
-		defaultschedule = config.SchedulerConfig{
-			Name:                          "Default",
-			Interval_imdb:                 "3d",
-			Interval_feeds:                "1d",
-			Interval_feeds_refresh_series: "1d",
-			Interval_feeds_refresh_movies: "1d",
-			Interval_indexer_missing:      "40m",
-			Interval_indexer_upgrade:      "60m",
-			Interval_indexer_rss:          "15m",
-			Interval_scan_data:            "1h",
-			Interval_scan_data_missing:    "1d",
-			Interval_scan_dataimport:      "60m",
-		}
-		configs["scheduler_Default"] = defaultschedule
-		config.UpdateCfg(configs)
-		config.WriteCfg()
-	} else {
-		config.ConfigGet("scheduler_"+"Default", &defaultschedule)
-	}
-
-	if defaultschedule.Interval_scan_data != "" {
-		if cfg_general.UseCronInsteadOfInterval {
-			QueueData.DispatchCron("datafull_movies", func() {
-				utils.Movies_all_jobs("datafull", false)
-			}, convertcron(defaultschedule.Interval_scan_data))
-		} else {
-			QueueData.DispatchEvery("datafull_movies", func() {
-				utils.Movies_all_jobs("datafull", false)
-			}, converttime(defaultschedule.Interval_scan_data))
-		}
-	}
-	if defaultschedule.Cron_scan_data != "" {
-		QueueData.DispatchCron("datafull_movies", func() {
-			utils.Movies_all_jobs("datafull", false)
-		}, defaultschedule.Cron_scan_data)
 	}
 
 	serie_keys, _ := config.ConfigDB.Keys([]byte("serie_*"), 0, 0, true)
@@ -479,6 +472,40 @@ func InitScheduler() {
 				utils.Series_single_jobs("rss", cfg_serie.Name, "", false)
 			}, schedule.Cron_indexer_rss)
 		}
+
+		if schedule.Interval_scan_data != "" {
+			if cfg_general.UseCronInsteadOfInterval {
+				QueueData.DispatchCron("datafull_series_"+cfg_serie.Name, func() {
+					utils.Series_single_jobs("datafull", cfg_serie.Name, "", false)
+				}, convertcron(schedule.Interval_scan_data))
+			} else {
+				QueueData.DispatchEvery("datafull_series_"+cfg_serie.Name, func() {
+					utils.Series_single_jobs("datafull", cfg_serie.Name, "", false)
+				}, converttime(schedule.Interval_scan_data))
+			}
+		}
+		if schedule.Cron_scan_data != "" {
+			QueueData.DispatchCron("datafull_series_"+cfg_serie.Name, func() {
+				utils.Series_single_jobs("datafull", cfg_serie.Name, "", false)
+			}, schedule.Cron_scan_data)
+		}
+		if schedule.Interval_scan_dataimport != "" {
+			if cfg_general.UseCronInsteadOfInterval {
+				QueueData.DispatchCron("structure_series_"+cfg_serie.Name, func() {
+					utils.Series_single_jobs("structure", cfg_serie.Name, "", false)
+				}, convertcron(schedule.Interval_scan_dataimport))
+			} else {
+				QueueData.DispatchEvery("structure_series_"+cfg_serie.Name, func() {
+					utils.Series_single_jobs("structure", cfg_serie.Name, "", false)
+				}, converttime(schedule.Interval_scan_dataimport))
+			}
+		}
+		if schedule.Cron_scan_dataimport != "" {
+			QueueData.DispatchCron("structure_series_"+cfg_serie.Name, func() {
+				utils.Series_single_jobs("structure", cfg_serie.Name, "", false)
+			}, schedule.Cron_scan_dataimport)
+		}
+
 		for idxlist := range cfg_serie.Lists {
 			if !cfg_serie.Lists[idxlist].Enabled {
 				continue
@@ -542,51 +569,28 @@ func InitScheduler() {
 		}
 	}
 
-	if defaultschedule.Interval_scan_data != "" {
-		if cfg_general.UseCronInsteadOfInterval {
-			QueueData.DispatchCron("datafull_series", func() {
-				utils.Series_all_jobs("datafull", false)
-			}, convertcron(defaultschedule.Interval_scan_data))
-		} else {
-			QueueData.DispatchEvery("datafull_series", func() {
-				utils.Series_all_jobs("datafull", false)
-			}, converttime(defaultschedule.Interval_scan_data))
+	var defaultschedule config.SchedulerConfig
+	if !config.ConfigCheck("scheduler_Default") {
+		configs := config.ConfigGetAll()
+		defaultschedule = config.SchedulerConfig{
+			Name:                          "Default",
+			Interval_imdb:                 "3d",
+			Interval_feeds:                "1d",
+			Interval_feeds_refresh_series: "1d",
+			Interval_feeds_refresh_movies: "1d",
+			Interval_indexer_missing:      "40m",
+			Interval_indexer_upgrade:      "60m",
+			Interval_indexer_rss:          "15m",
+			Interval_scan_data:            "1h",
+			Interval_scan_data_missing:    "1d",
+			Interval_scan_dataimport:      "60m",
 		}
+		configs["scheduler_Default"] = defaultschedule
+		config.UpdateCfg(configs)
+		config.WriteCfg()
+	} else {
+		config.ConfigGet("scheduler_"+"Default", &defaultschedule)
 	}
-	if defaultschedule.Cron_scan_data != "" {
-		QueueData.DispatchCron("datafull_series", func() {
-			utils.Series_all_jobs("datafull", false)
-		}, defaultschedule.Cron_scan_data)
-	}
-	if defaultschedule.Interval_scan_dataimport != "" {
-		if cfg_general.UseCronInsteadOfInterval {
-			QueueData.DispatchCron("structure_series", func() {
-				utils.Series_all_jobs("structure", false)
-			}, convertcron(defaultschedule.Interval_scan_dataimport))
-
-			QueueData.DispatchCron("structure_movies", func() {
-				utils.Movies_all_jobs("structure", false)
-			}, convertcron(defaultschedule.Interval_scan_dataimport))
-		} else {
-			QueueData.DispatchEvery("structure_series", func() {
-				utils.Series_all_jobs("structure", false)
-			}, converttime(defaultschedule.Interval_scan_dataimport))
-
-			QueueData.DispatchEvery("structure_movies", func() {
-				utils.Movies_all_jobs("structure", false)
-			}, converttime(defaultschedule.Interval_scan_dataimport))
-		}
-	}
-	if defaultschedule.Cron_scan_dataimport != "" {
-		QueueData.DispatchCron("structure_series", func() {
-			utils.Series_all_jobs("structure", false)
-		}, defaultschedule.Cron_scan_dataimport)
-
-		QueueData.DispatchCron("structure_movies", func() {
-			utils.Movies_all_jobs("structure", false)
-		}, defaultschedule.Cron_scan_dataimport)
-	}
-
 	if defaultschedule.Interval_feeds_refresh_series_full != "" {
 		if cfg_general.UseCronInsteadOfInterval {
 			QueueFeeds.DispatchCron("Refresh Series", func() {

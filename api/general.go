@@ -649,6 +649,23 @@ func ApiConfigDelete(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, config.ConfigGetAll())
 }
 
+// @Summary Reload ConfigFile
+// @Description Refreshes the config from the file
+// @Tags config
+// @Accept  json
+// @Produce  json
+// @Param apikey query string true "apikey"
+// @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} string
+// @Router /api/config/refresh [get]
+func ApiConfigRefreshFile(ctx *gin.Context) {
+	if ApiAuth(ctx) == http.StatusUnauthorized {
+		return
+	}
+	config.LoadCfgDB(config.Configfile)
+	ctx.JSON(http.StatusOK, config.ConfigGetAll())
+}
+
 // @Summary Update Config
 // @Description Updates a configuration
 // @Tags config
@@ -884,14 +901,15 @@ func ApiNamingGenerate(ctx *gin.Context) {
 }
 
 type ApiStructureJson struct {
-	Folder              string
-	Disableruntimecheck bool
-	Disabledisallowed   bool
-	Grouptype           string
-	Sourcepathtemplate  string
-	Targetpathtemplate  string
-	Configentry         string
-	Forceid             int
+	Folder                     string
+	Disableruntimecheck        bool
+	Disabledisallowed          bool
+	Disabledeletewronglanguage bool
+	Grouptype                  string
+	Sourcepathtemplate         string
+	Targetpathtemplate         string
+	Configentry                string
+	Forceid                    int
 }
 
 // @Summary Structure Single Item
@@ -941,9 +959,9 @@ func ApiStructure(ctx *gin.Context) {
 
 	for idxlist := range cfg_media.Lists {
 		if cfg.Forceid != 0 {
-			utils.StructureSingleFolderAs(cfg.Folder, cfg.Forceid, cfg.Disableruntimecheck, cfg.Disabledisallowed, cfg.Grouptype, cfg_source, cfg_target, cfg_media, cfg_media.Lists[idxlist])
+			utils.StructureSingleFolderAs(cfg.Folder, cfg.Forceid, cfg.Disableruntimecheck, cfg.Disabledisallowed, cfg.Disabledeletewronglanguage, cfg.Grouptype, cfg_source, cfg_target, cfg_media, cfg_media.Lists[idxlist])
 		} else {
-			utils.StructureSingleFolder(cfg.Folder, cfg.Disableruntimecheck, cfg.Disabledisallowed, cfg.Grouptype, cfg_source, cfg_target, cfg_media, cfg_media.Lists[idxlist])
+			utils.StructureSingleFolder(cfg.Folder, cfg.Disableruntimecheck, cfg.Disabledisallowed, cfg.Disabledeletewronglanguage, cfg.Grouptype, cfg_source, cfg_target, cfg_media, cfg_media.Lists[idxlist])
 		}
 	}
 }

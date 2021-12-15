@@ -94,8 +94,6 @@ func main() {
 	utils.SeriesStructureJobRunning = make(map[string]bool, 10)
 	utils.MovieImportJobRunning = make(map[string]bool, 10)
 	utils.SeriesImportJobRunning = make(map[string]bool, 10)
-	utils.SerieJobRunning = make(map[string]bool, 10)
-	utils.MovieJobRunning = make(map[string]bool, 10)
 
 	database.InitDb(cfg_general.DBLogLevel)
 
@@ -261,6 +259,7 @@ func main() {
 
 		routerapi.GET("/config/all", api.ApiConfigAll)
 		routerapi.DELETE("/config/clear", api.ApiConfigClear)
+		routerapi.GET("/config/refresh", api.ApiConfigRefreshFile)
 		routerapi.GET("/config/get/:name", api.ApiConfigGet)
 
 		routerapi.DELETE("/config/delete/:name", api.ApiConfigDelete)

@@ -1562,18 +1562,14 @@ func Movies_all_jobs(job string, force bool) {
 	}
 }
 
-var MovieJobRunning map[string]bool
-
 func Movies_single_jobs(job string, typename string, listname string, force bool) {
-	jobName := job
-	if !strings.EqualFold(job, "feeds") {
-		jobName = job + typename + listname
+	jobName := job + "_movies"
+	if typename != "" {
+		jobName += "_" + typename
 	}
-	defer func() {
-		database.ReadWriteMu.Lock()
-		delete(MovieJobRunning, jobName)
-		database.ReadWriteMu.Unlock()
-	}()
+	if listname != "" {
+		jobName += "_" + listname
+	}
 	if !config.ConfigCheck("general") {
 		return
 	}
@@ -1584,19 +1580,11 @@ func Movies_single_jobs(job string, typename string, listname string, force bool
 		logger.Log.Info("Skipped Job: ", job, " for ", typename)
 		return
 	}
-	database.ReadWriteMu.Lock()
-	if _, nok := MovieJobRunning[jobName]; nok {
-		logger.Log.Debug("Job already running: ", jobName)
-		database.ReadWriteMu.Unlock()
-		return
-	} else {
-		MovieJobRunning[jobName] = true
-		database.ReadWriteMu.Unlock()
-	}
+
 	job = strings.ToLower(job)
 	dbresult, _ := database.InsertArray("job_histories", []string{"job_type", "job_group", "job_category", "started"},
 		[]interface{}{job, typename, "Movie", time.Now()})
-	logger.Log.Info("Started Job: ", job, " for ", typename)
+	logger.Log.Info("Started Job: ", jobName)
 	ok, _ := config.ConfigDB.Has("movie_" + typename)
 	if ok {
 		var cfg_movie config.MediaTypeConfig

@@ -2,6 +2,7 @@ package tasks
 
 import (
 	"errors"
+	"strings"
 	"sync"
 	"time"
 
@@ -153,17 +154,80 @@ func (d *Dispatcher) Start() {
 		for {
 			select {
 			case job := <-d.jobQueue:
-				UpdateStartedSchedule(job)
-				go func(job Job) {
-					jobChannel := <-d.workerPool
-					jobChannel <- job
+				if !CheckQueue(job.Name) {
+					UpdateStartedSchedule(job)
+					go func(job Job) {
+						jobChannel := <-d.workerPool
+						jobChannel <- job
+						d.DispatchQueue.RemoveQueue(job)
+					}(job)
+				} else {
 					d.DispatchQueue.RemoveQueue(job)
-				}(job)
+				}
 			case <-d.quit:
 				return
 			}
 		}
 	}()
+}
+
+func CheckQueue(job string) bool {
+	alternatequeuejobnames := make([]string, 0, 3)
+	if strings.HasPrefix(job, "searchmissinginc") {
+		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchmissinginc", "searchmissinginctitle", 1))
+		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchmissinginc", "searchmissingfull", 1))
+		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchmissinginc", "searchmissingfulltitle", 1))
+	}
+	if strings.HasPrefix(job, "searchmissinginctitle") {
+		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchmissinginctitle", "searchmissinginc", 1))
+		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchmissinginctitle", "searchmissingfull", 1))
+		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchmissinginctitle", "searchmissingfulltitle", 1))
+	}
+	if strings.HasPrefix(job, "searchmissingfull") {
+		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchmissingfull", "searchmissinginctitle", 1))
+		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchmissingfull", "searchmissinginc", 1))
+		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchmissingfull", "searchmissingfulltitle", 1))
+	}
+	if strings.HasPrefix(job, "searchmissingfulltitle") {
+		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchmissingfulltitle", "searchmissinginctitle", 1))
+		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchmissingfulltitle", "searchmissingfull", 1))
+		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchmissingfulltitle", "searchmissinginc", 1))
+	}
+	if strings.HasPrefix(job, "searchupgradeinc") {
+		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchupgradeinc", "searchupgradeinctitle", 1))
+		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchupgradeinc", "searchupgradefull", 1))
+		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchupgradeinc", "searchupgradefulltitle", 1))
+	}
+	if strings.HasPrefix(job, "searchupgradeinctitle") {
+		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchupgradeinctitle", "searchupgradeinc", 1))
+		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchupgradeinctitle", "searchupgradefull", 1))
+		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchupgradeinctitle", "searchupgradefulltitle", 1))
+	}
+	if strings.HasPrefix(job, "searchupgradefull") {
+		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchupgradefull", "searchupgradeinctitle", 1))
+		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchupgradefull", "searchupgradeinc", 1))
+		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchupgradefull", "searchupgradefulltitle", 1))
+	}
+	if strings.HasPrefix(job, "searchupgradefulltitle") {
+		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchupgradefulltitle", "searchupgradeinctitle", 1))
+		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchupgradefulltitle", "searchupgradefull", 1))
+		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchupgradefulltitle", "searchupgradeinc", 1))
+	}
+	Mu.Lock()
+	defer Mu.Unlock()
+	for _, value := range GlobalQueue.Queue {
+		if value.Name == job && !value.Started.IsZero() {
+			return true
+		}
+		if len(alternatequeuejobnames) >= 1 {
+			for idx := range alternatequeuejobnames {
+				if value.Name == alternatequeuejobnames[idx] && !value.Started.IsZero() {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 // Stop ends execution for all workers/tickers and

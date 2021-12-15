@@ -54,8 +54,17 @@ type InputNotifier struct {
 	Dbserie        database.Dbserie
 	DbserieEpisode database.DbserieEpisode
 	Source         ParseInfo
+	Time           string
 }
 
+func CheckStringArray(array []string, find string) bool {
+	for idx := range array {
+		if array[idx] == find {
+			return true
+		}
+	}
+	return false
+}
 func Feeds(configEntry config.MediaTypeConfig, list config.MediaListsConfig) feedResults {
 	if !list.Enabled {
 		logger.Log.Debug("Error - Group list not enabled")

@@ -1,7 +1,7 @@
 [general]
 ## Attention: Match Lists and Cases!! ##
 ## defaults: num fields: 0, string fields: "", bool fields: false
-## Changes to web, log, limiter and scheduler are only loaded during start! So please restart after changing
+## Changes to web, log, limiter and scheduler are only loaded during start! So please restart after changing - you can reload the file using the /api/config/refresh Endpoint
 
 log_level = "Debug" #Info or Debug or Warning
 db_log_level = "Info" #Info or Debug or Warning - debug makes system extremly slow
@@ -100,7 +100,7 @@ index_full=true #short only imports imdbid and titles/years - full also votes ra
 		[[media.movies.notification]]
 		template_notification="csvmovies"
 		event="added_data" #added_download #added_list
-		message="{{.Title}};{{.Year}};{{.Imdb}};{{.InputNotifier.SourcePath}};{{.InputNotifier.Targetpath}};{{ range .Replaced }}{{.}},{{end}}"
+		message="{{.InputNotifier.Time}};{{.Title}};{{.Year}};{{.Imdb}};{{.InputNotifier.SourcePath}};{{.InputNotifier.Targetpath}};{{ range .Replaced }}{{.}},{{end}}"
 		
 ##### serie configuarations #####
 
@@ -516,6 +516,7 @@ interval_scan_data_missing="3d" # checks for removed media
 #    Target     config.PathsConfig - Entries from this config
 #    Downloader config.DownloaderConfig - Entries from this config
 #    Targetfile string
+#    Time           string
 
 #type: nzbwithprio:
 #   Prio       int
@@ -591,6 +592,7 @@ interval_scan_data_missing="3d" # checks for removed media
 #	 Dbserie        database.Dbserie
 #	 DbserieEpisode database.DbserieEpisode
 #	 Source         ParseInfo
+#    Time           string
 
 #Fields dbmovies:
 #

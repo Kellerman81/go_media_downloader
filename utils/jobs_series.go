@@ -778,16 +778,15 @@ func Series_all_jobs(job string, force bool) {
 	}
 }
 
-var SerieJobRunning map[string]bool
-
 func Series_single_jobs(job string, typename string, listname string, force bool) {
 
-	jobName := job + typename + listname
-	defer func() {
-		database.ReadWriteMu.Lock()
-		delete(SerieJobRunning, jobName)
-		database.ReadWriteMu.Unlock()
-	}()
+	jobName := job + "_series"
+	if typename != "" {
+		jobName += "_" + typename
+	}
+	if listname != "" {
+		jobName += "_" + listname
+	}
 	if !config.ConfigCheck("general") {
 		return
 	}
@@ -798,16 +797,8 @@ func Series_single_jobs(job string, typename string, listname string, force bool
 		logger.Log.Info("Skipped Job: ", job, " for ", typename)
 		return
 	}
-	database.ReadWriteMu.Lock()
-	if _, nok := SerieJobRunning[jobName]; nok {
-		logger.Log.Debug("Job already running: ", jobName)
-		database.ReadWriteMu.Unlock()
-		return
-	} else {
-		SerieJobRunning[jobName] = true
-		database.ReadWriteMu.Unlock()
-	}
-	logger.Log.Info("Started Job: ", job, " for ", typename)
+
+	logger.Log.Info("Started Job: ", jobName)
 
 	dbresult, _ := database.InsertArray("job_histories", []string{"job_type", "job_group", "job_category", "started"},
 		[]interface{}{job, typename, "Serie", time.Now()})

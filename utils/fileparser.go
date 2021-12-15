@@ -905,9 +905,8 @@ func Path(s string, allowslash bool) string {
 		filePath = regexPathAllowSlash.ReplaceAllString(filePath, "")
 	} else {
 		filePath = regexPathDisallowSlash.ReplaceAllString(filePath, "")
-		filePath = html.UnescapeString(filePath)
 	}
-
+	filePath = html.UnescapeString(filePath)
 	filePath = strings.Trim(filePath, " ")
 
 	// NB this may be of length 0, caller must check

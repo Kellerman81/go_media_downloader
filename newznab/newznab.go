@@ -158,86 +158,104 @@ func New(baseURL string, apikey string, userID int, insecure bool, debug bool, l
 
 // SearchWithTVDB returns NZBs for the given parameters
 func (c Client) SearchWithTVDB(categories []int, tvDBID int, season int, episode int, additional_query_params string, customurl string, maxage int) ([]NZB, error) {
-	buildurl := ""
+	var buildurl strings.Builder
 	if len(customurl) >= 1 {
-		buildurl = customurl
+		buildurl.WriteString(customurl)
 	} else {
-		buildurl = c.apiBaseURL + apiPath + "?apikey=" + c.apikey
+		buildurl.WriteString(c.apiBaseURL)
+		buildurl.WriteString(apiPath)
+		buildurl.WriteString("?apikey=")
+		buildurl.WriteString(c.apikey)
 	}
-	buildurl += "&tvdbid=" + strconv.Itoa(tvDBID)
-	buildurl += "&season=" + strconv.Itoa(season)
-	buildurl += "&ep=" + strconv.Itoa(episode)
-	buildurl += "&cat=" + c.joinCats(categories)
-	buildurl += "&dl=1"
-	buildurl += "&t=tvsearch"
-	buildurl += additional_query_params
+	buildurl.WriteString("&tvdbid=")
+	buildurl.WriteString(strconv.Itoa(tvDBID))
+	buildurl.WriteString("&season=")
+	buildurl.WriteString(strconv.Itoa(season))
+	buildurl.WriteString("&ep=")
+	buildurl.WriteString(strconv.Itoa(episode))
+	buildurl.WriteString("&cat=")
+	buildurl.WriteString(c.joinCats(categories))
+	buildurl.WriteString("&dl=1&t=tvsearch")
+	buildurl.WriteString(additional_query_params)
 
-	return c.processurl(buildurl, "", maxage)
+	return c.processurl(buildurl.String(), "", maxage)
 }
 
 // SearchWithIMDB returns NZBs for the given parameters
 func (c Client) SearchWithIMDB(categories []int, imdbID string, additional_query_params string, customurl string, maxage int) ([]NZB, error) {
-	buildurl := ""
+	var buildurl strings.Builder
 	if len(customurl) >= 1 {
-		buildurl = customurl
+		buildurl.WriteString(customurl)
 	} else {
-		buildurl = c.apiBaseURL + apiPath + "?apikey=" + c.apikey
+		buildurl.WriteString(c.apiBaseURL)
+		buildurl.WriteString(apiPath)
+		buildurl.WriteString("?apikey=")
+		buildurl.WriteString(c.apikey)
 	}
-	buildurl += "&imdbid=" + imdbID
-	buildurl += "&cat=" + c.joinCats(categories)
-	buildurl += "&dl=1"
-	buildurl += "&t=movie"
-	buildurl += additional_query_params
+	buildurl.WriteString("&imdbid=")
+	buildurl.WriteString(imdbID)
+	buildurl.WriteString("&cat=")
+	buildurl.WriteString(c.joinCats(categories))
+	buildurl.WriteString("&dl=1&t=movie")
+	buildurl.WriteString(additional_query_params)
 
-	return c.processurl(buildurl, "", maxage)
+	return c.processurl(buildurl.String(), "", maxage)
 }
 
 // SearchWithQuery returns NZBs for the given parameters
 func (c Client) SearchWithQuery(categories []int, query string, searchType string, addquotes bool, additional_query_params string, customurl string, maxage int) ([]NZB, error) {
-	buildurl := ""
+	var buildurl strings.Builder
 	if len(customurl) >= 1 {
-		buildurl = customurl
+		buildurl.WriteString(customurl)
 	} else {
-		buildurl = c.apiBaseURL + apiPath + "?apikey=" + c.apikey
+		buildurl.WriteString(c.apiBaseURL)
+		buildurl.WriteString(apiPath)
+		buildurl.WriteString("?apikey=")
+		buildurl.WriteString(c.apikey)
 	}
-	buildurl += "&q="
+	buildurl.WriteString("&q=")
 	if addquotes {
-		buildurl += "%22"
+		buildurl.WriteString("%22")
 	}
-	buildurl += url.PathEscape(query)
+	buildurl.WriteString(url.PathEscape(query))
 	if addquotes {
-		buildurl += "%22"
+		buildurl.WriteString("%22")
 	}
-	buildurl += "&cat=" + c.joinCats(categories)
-	buildurl += "&dl=1"
-	buildurl += "&t=" + searchType
-	buildurl += additional_query_params
+	buildurl.WriteString("&cat=")
+	buildurl.WriteString(c.joinCats(categories))
+	buildurl.WriteString("&dl=1&t=")
+	buildurl.WriteString(searchType)
+	buildurl.WriteString(additional_query_params)
 
-	return c.processurl(buildurl, "", maxage)
+	return c.processurl(buildurl.String(), "", maxage)
 }
 
 // LoadRSSFeedUntilNZBID fetches NZBs until a given NZB id is reached.
 func (c Client) SearchWithQueryUntilNZBID(categories []int, query string, searchType string, addquotes bool, id string, additional_query_params string, customurl string, maxage int) ([]NZB, error) {
-	buildurl := ""
+	var buildurl strings.Builder
 	if len(customurl) >= 1 {
-		buildurl = customurl
+		buildurl.WriteString(customurl)
 	} else {
-		buildurl = c.apiBaseURL + apiPath + "?apikey=" + c.apikey
+		buildurl.WriteString(c.apiBaseURL)
+		buildurl.WriteString(apiPath)
+		buildurl.WriteString("?apikey=")
+		buildurl.WriteString(c.apikey)
 	}
-	buildurl += "&q="
+	buildurl.WriteString("&q=")
 	if addquotes {
-		buildurl += "%22"
+		buildurl.WriteString("%22")
 	}
-	buildurl += url.PathEscape(query)
+	buildurl.WriteString(url.PathEscape(query))
 	if addquotes {
-		buildurl += "%22"
+		buildurl.WriteString("%22")
 	}
-	buildurl += "&cat=" + c.joinCats(categories)
-	buildurl += "&dl=1"
-	buildurl += "&t=" + searchType
-	buildurl += additional_query_params
+	buildurl.WriteString("&cat=")
+	buildurl.WriteString(c.joinCats(categories))
+	buildurl.WriteString("&dl=1&t=")
+	buildurl.WriteString(searchType)
+	buildurl.WriteString(additional_query_params)
 
-	partition, err := c.processurl(buildurl, id, maxage)
+	partition, err := c.processurl(buildurl.String(), id, maxage)
 
 	if err != nil {
 		return nil, err
@@ -269,48 +287,43 @@ func (c Client) joinCats(cats []int) string {
 }
 
 func (c Client) BuildRssUrl(customrssurl string, customrsscategory string, customapi string, additional_query_params string, num int, categories []int, offset int) string {
-	var buildurl string
+	var buildurl strings.Builder
 	if len(customrssurl) >= 1 {
-		buildurl = customrssurl
-		buildurl += "&num=" + strconv.Itoa(num)
-		if len(customrsscategory) >= 1 {
-			buildurl += "&" + customrsscategory + "=" + c.joinCats(categories)
-		} else {
-			buildurl += "&t=" + c.joinCats(categories)
-		}
-		buildurl += "&dl=1"
-		if offset != 0 {
-			buildurl += "&offset=" + strconv.Itoa(offset)
-		}
-		buildurl += additional_query_params
+		buildurl.WriteString(customrssurl)
 	} else if len(customapi) >= 1 {
-		buildurl = c.apiBaseURL + rssPath + "?" + customapi + "=" + c.apikey
-		buildurl += "&num=" + strconv.Itoa(num)
-		if len(customrsscategory) >= 1 {
-			buildurl += "&" + customrsscategory + "=" + c.joinCats(categories)
-		} else {
-			buildurl += "&t=" + c.joinCats(categories)
-		}
-		buildurl += "&dl=1"
-		if offset != 0 {
-			buildurl += "&offset=" + strconv.Itoa(offset)
-		}
-		buildurl += additional_query_params
+		buildurl.WriteString(c.apiBaseURL)
+		buildurl.WriteString(rssPath)
+		buildurl.WriteString("?")
+		buildurl.WriteString(customapi)
+		buildurl.WriteString("=")
+		buildurl.WriteString(c.apikey)
 	} else {
-		buildurl = c.apiBaseURL + rssPath + "?r=" + c.apikey + "&i=" + strconv.Itoa(c.apiUserID)
-		buildurl += "&num=" + strconv.Itoa(num)
-		if len(customrsscategory) >= 1 {
-			buildurl += "&" + customrsscategory + "=" + c.joinCats(categories)
-		} else {
-			buildurl += "&t=" + c.joinCats(categories)
-		}
-		buildurl += "&dl=1"
-		if offset != 0 {
-			buildurl += "&offset=" + strconv.Itoa(offset)
-		}
-		buildurl += additional_query_params
+		buildurl.WriteString(c.apiBaseURL)
+		buildurl.WriteString(rssPath)
+		buildurl.WriteString("?r=")
+		buildurl.WriteString(c.apikey)
+		buildurl.WriteString("&i=")
+		buildurl.WriteString(strconv.Itoa(c.apiUserID))
 	}
-	return buildurl
+	buildurl.WriteString("&num=")
+	buildurl.WriteString(strconv.Itoa(num))
+	if len(customrsscategory) >= 1 {
+		buildurl.WriteString("&")
+		buildurl.WriteString(customrsscategory)
+		buildurl.WriteString("=")
+		buildurl.WriteString(c.joinCats(categories))
+	} else {
+		buildurl.WriteString("&t=")
+		buildurl.WriteString(c.joinCats(categories))
+	}
+	buildurl.WriteString("&dl=1")
+	if offset != 0 {
+		buildurl.WriteString("&offset=")
+		buildurl.WriteString(strconv.Itoa(offset))
+	}
+	buildurl.WriteString(additional_query_params)
+
+	return buildurl.String()
 }
 
 // LoadRSSFeedUntilNZBID fetches NZBs until a given NZB id is reached.
