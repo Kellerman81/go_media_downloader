@@ -163,6 +163,7 @@ func (d *Dispatcher) Start() {
 					}(job)
 				} else {
 					d.DispatchQueue.RemoveQueue(job)
+					GlobalQueue.RemoveQueue(job)
 				}
 			case <-d.quit:
 				return
