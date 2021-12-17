@@ -245,6 +245,8 @@ func main() {
 		routerapi.GET("/scheduler/start", api.ApiSchedulerStart)
 		routerapi.GET("/scheduler/list", api.ApiSchedulerList)
 		routerapi.GET("/db/close", api.ApiDbClose)
+		routerapi.GET("/db/integrity", api.ApiDbIntegrity)
+		routerapi.GET("/db/backup", api.ApiDbBackup)
 		routerapi.DELETE("/db/clear/:name", api.ApiDbClear)
 		routerapi.DELETE("/db/oldjobs", api.ApiDbRemoveOldJobs)
 		routerapi.GET("/db/vacuum", api.ApiDbVacuum)
@@ -302,6 +304,8 @@ func main() {
 	scheduler.QueueData.Stop()
 	scheduler.QueueFeeds.Stop()
 	scheduler.QueueSearch.Stop()
+
+	config.Slepping(true, 5)
 
 	database.DBImdb.Close()
 	database.DB.Close()

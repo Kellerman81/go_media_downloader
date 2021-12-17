@@ -120,43 +120,9 @@ func Feeds(configEntry config.MediaTypeConfig, list config.MediaListsConfig) fee
 				if len(traktpopular[idx].Ids.Imdb) == 0 {
 					continue
 				}
-				if cfg_list.MinVotes != 0 {
-					countergenre, _ := database.ImdbCountRows("imdb_ratings", database.Query{Where: "tconst = ? COLLATE NOCASE and num_votes < ?", WhereArgs: []interface{}{traktpopular[idx].Ids.Imdb, cfg_list.MinVotes}})
-					if countergenre >= 1 {
-						continue
-					}
-				}
-				if cfg_list.MinRating != 0 {
-					countergenre, _ := database.ImdbCountRows("imdb_ratings", database.Query{Where: "tconst = ? COLLATE NOCASE and average_rating < ?", WhereArgs: []interface{}{traktpopular[idx].Ids.Imdb, cfg_list.MinRating}})
-					if countergenre >= 1 {
-						continue
-					}
-				}
-				if len(cfg_list.Excludegenre) >= 1 {
-					excludebygenre := false
-					for idxgenre := range cfg_list.Excludegenre {
-						countergenre, _ := database.ImdbCountRows("imdb_genres", database.Query{Where: "tconst = ? COLLATE NOCASE and genre = ? COLLATE NOCASE", WhereArgs: []interface{}{traktpopular[idx].Ids.Imdb, cfg_list.Excludegenre[idxgenre]}})
-						if countergenre >= 1 {
-							excludebygenre = true
-							break
-						}
-					}
-					if excludebygenre {
-						continue
-					}
-				}
-				if len(cfg_list.Includegenre) >= 1 {
-					includebygenre := false
-					for idxgenre := range cfg_list.Includegenre {
-						countergenre, _ := database.ImdbCountRows("imdb_genres", database.Query{Where: "tconst = ? COLLATE NOCASE and genre = ? COLLATE NOCASE", WhereArgs: []interface{}{traktpopular[idx].Ids.Imdb, cfg_list.Includegenre[idxgenre]}})
-						if countergenre >= 1 {
-							includebygenre = true
-							break
-						}
-					}
-					if !includebygenre {
-						continue
-					}
+
+				if !AllowMovieImport(traktpopular[idx].Ids.Imdb, cfg_list) {
+					continue
 				}
 				dbentry := database.Dbmovie{ImdbID: traktpopular[idx].Ids.Imdb, Title: traktpopular[idx].Title, Year: traktpopular[idx].Year}
 				d = append(d, dbentry)
@@ -173,43 +139,8 @@ func Feeds(configEntry config.MediaTypeConfig, list config.MediaListsConfig) fee
 				if len(traktpopular[idx].Movie.Ids.Imdb) == 0 {
 					continue
 				}
-				if cfg_list.MinVotes != 0 {
-					countergenre, _ := database.ImdbCountRows("imdb_ratings", database.Query{Where: "tconst = ? COLLATE NOCASE and num_votes < ?", WhereArgs: []interface{}{traktpopular[idx].Movie.Ids.Imdb, cfg_list.MinVotes}})
-					if countergenre >= 1 {
-						continue
-					}
-				}
-				if cfg_list.MinRating != 0 {
-					countergenre, _ := database.ImdbCountRows("imdb_ratings", database.Query{Where: "tconst = ? COLLATE NOCASE and average_rating < ?", WhereArgs: []interface{}{traktpopular[idx].Movie.Ids.Imdb, cfg_list.MinRating}})
-					if countergenre >= 1 {
-						continue
-					}
-				}
-				if len(cfg_list.Excludegenre) >= 1 {
-					excludebygenre := false
-					for idxgenre := range cfg_list.Excludegenre {
-						countergenre, _ := database.ImdbCountRows("imdb_genres", database.Query{Where: "tconst = ? COLLATE NOCASE and genre = ? COLLATE NOCASE", WhereArgs: []interface{}{traktpopular[idx].Movie.Ids.Imdb, cfg_list.Excludegenre[idxgenre]}})
-						if countergenre >= 1 {
-							excludebygenre = true
-							break
-						}
-					}
-					if excludebygenre {
-						continue
-					}
-				}
-				if len(cfg_list.Includegenre) >= 1 {
-					includebygenre := false
-					for idxgenre := range cfg_list.Includegenre {
-						countergenre, _ := database.ImdbCountRows("imdb_genres", database.Query{Where: "tconst = ? COLLATE NOCASE and genre = ? COLLATE NOCASE", WhereArgs: []interface{}{traktpopular[idx].Movie.Ids.Imdb, cfg_list.Includegenre[idxgenre]}})
-						if countergenre >= 1 {
-							includebygenre = true
-							break
-						}
-					}
-					if !includebygenre {
-						continue
-					}
+				if !AllowMovieImport(traktpopular[idx].Movie.Ids.Imdb, cfg_list) {
+					continue
 				}
 				dbentry := database.Dbmovie{ImdbID: traktpopular[idx].Movie.Ids.Imdb, Title: traktpopular[idx].Movie.Title, Year: traktpopular[idx].Movie.Year}
 				d = append(d, dbentry)
@@ -226,43 +157,8 @@ func Feeds(configEntry config.MediaTypeConfig, list config.MediaListsConfig) fee
 				if len(traktpopular[idx].Movie.Ids.Imdb) == 0 {
 					continue
 				}
-				if cfg_list.MinVotes != 0 {
-					countergenre, _ := database.ImdbCountRows("imdb_ratings", database.Query{Where: "tconst = ? COLLATE NOCASE and num_votes < ?", WhereArgs: []interface{}{traktpopular[idx].Movie.Ids.Imdb, cfg_list.MinVotes}})
-					if countergenre >= 1 {
-						continue
-					}
-				}
-				if cfg_list.MinRating != 0 {
-					countergenre, _ := database.ImdbCountRows("imdb_ratings", database.Query{Where: "tconst = ? COLLATE NOCASE and average_rating < ?", WhereArgs: []interface{}{traktpopular[idx].Movie.Ids.Imdb, cfg_list.MinRating}})
-					if countergenre >= 1 {
-						continue
-					}
-				}
-				if len(cfg_list.Excludegenre) >= 1 {
-					excludebygenre := false
-					for idxgenre := range cfg_list.Excludegenre {
-						countergenre, _ := database.ImdbCountRows("imdb_genres", database.Query{Where: "tconst = ? COLLATE NOCASE and genre = ? COLLATE NOCASE", WhereArgs: []interface{}{traktpopular[idx].Movie.Ids.Imdb, cfg_list.Excludegenre[idxgenre]}})
-						if countergenre >= 1 {
-							excludebygenre = true
-							break
-						}
-					}
-					if excludebygenre {
-						continue
-					}
-				}
-				if len(cfg_list.Includegenre) >= 1 {
-					includebygenre := false
-					for idxgenre := range cfg_list.Includegenre {
-						countergenre, _ := database.ImdbCountRows("imdb_genres", database.Query{Where: "tconst = ? COLLATE NOCASE and genre = ? COLLATE NOCASE", WhereArgs: []interface{}{traktpopular[idx].Movie.Ids.Imdb, cfg_list.Includegenre[idxgenre]}})
-						if countergenre >= 1 {
-							includebygenre = true
-							break
-						}
-					}
-					if !includebygenre {
-						continue
-					}
+				if !AllowMovieImport(traktpopular[idx].Movie.Ids.Imdb, cfg_list) {
+					continue
 				}
 				dbentry := database.Dbmovie{ImdbID: traktpopular[idx].Movie.Ids.Imdb, Title: traktpopular[idx].Movie.Title, Year: traktpopular[idx].Movie.Year}
 				d = append(d, dbentry)

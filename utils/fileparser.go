@@ -155,6 +155,21 @@ func NewFileParser(filename string, includeYearInTitle bool, typegroup string) (
 	return m, err
 }
 
+func (n *ParseInfo) StripTitlePrefixPostfix(quality config.QualityConfig) {
+
+	for idxstrip := range quality.TitleStripSuffixForSearch {
+		if strings.HasSuffix(strings.ToLower(n.Title), strings.ToLower(quality.TitleStripSuffixForSearch[idxstrip])) {
+			n.Title = trimStringInclAfterStringInsensitive(n.Title, quality.TitleStripSuffixForSearch[idxstrip])
+			n.Title = strings.Trim(n.Title, " ")
+		}
+	}
+	for idxstrip := range quality.TitleStripPrefixForSearch {
+		if strings.HasPrefix(strings.ToLower(n.Title), strings.ToLower(quality.TitleStripPrefixForSearch[idxstrip])) {
+			n.Title = trimStringPrefixInsensitive(n.Title, quality.TitleStripPrefixForSearch[idxstrip])
+			n.Title = strings.Trim(n.Title, " ")
+		}
+	}
+}
 func (m *ParseInfo) parsegroup(cleanName string, name string, group []string, startIndex int, endIndex int) (int, int) {
 	for idx := range group {
 		if strings.Contains(strings.ToLower(cleanName), group[idx]) {

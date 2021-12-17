@@ -915,7 +915,7 @@ func Getnewepisodes(row config.MediaTypeConfig) {
 	}
 
 	logger.Log.Info("Scan SerieEpisodeFile")
-	var filesfound []string
+	filesfound := make([]string, 0, 1000)
 	for idxpath := range row.Data {
 		if !config.ConfigCheck("path_" + row.Data[idxpath].Template_path) {
 			continue
@@ -924,8 +924,7 @@ func Getnewepisodes(row config.MediaTypeConfig) {
 		config.ConfigGet("path_"+row.Data[idxpath].Template_path, &cfg_path)
 
 		LastSeriesPath = cfg_path.Path
-		filesfound_add := scanner.GetFilesDir(cfg_path.Path, cfg_path.AllowedVideoExtensions, cfg_path.AllowedVideoExtensionsNoRename, cfg_path.Blocked)
-		filesfound = append(filesfound, filesfound_add...)
+		filesfound = append(filesfound, scanner.GetFilesDir(cfg_path.Path, cfg_path.AllowedVideoExtensions, cfg_path.AllowedVideoExtensionsNoRename, cfg_path.Blocked)...)
 	}
 
 	logger.Log.Info("Workers: ", cfg_general.WorkerParse)

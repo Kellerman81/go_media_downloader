@@ -2,6 +2,8 @@ package nzbget
 
 import "time"
 
+//Source: https://github.com/dashotv/flame
+
 type Status struct {
 	RemainingSizeMB     int  // 0
 	ForcedSizeMB        int  // 0

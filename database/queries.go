@@ -1316,29 +1316,40 @@ func buildquery(columns string, table string, qu Query, count bool) string {
 
 	if qu.InnerJoin != "" {
 		if strings.Contains(columns, table+".") {
-			query.WriteString(columns + " from " + table)
+			query.WriteString(columns)
 		} else {
 			if count {
-				query.WriteString("count(*) from " + table)
+				query.WriteString("count(*)")
 			} else {
-				query.WriteString(table + ".* from " + table)
+				query.WriteString(table)
+				query.WriteString(".*")
 			}
 		}
+		query.WriteString(" from ")
+		query.WriteString(table)
 		query.WriteString(" inner join " + qu.InnerJoin)
 	} else {
-		query.WriteString(columns + " from " + table)
+		query.WriteString(columns)
+		query.WriteString(" from ")
+		query.WriteString(table)
 	}
 	if qu.Where != "" {
-		query.WriteString(" where " + qu.Where)
+		query.WriteString(" where ")
+		query.WriteString(qu.Where)
 	}
 	if qu.OrderBy != "" {
-		query.WriteString(" order by " + qu.OrderBy)
+		query.WriteString(" order by ")
+		query.WriteString(qu.OrderBy)
 	}
 	if qu.Limit != 0 {
 		if qu.Offset != 0 {
-			query.WriteString(" limit " + strconv.Itoa(int(qu.Offset)) + ", " + strconv.Itoa(int(qu.Limit)))
+			query.WriteString(" limit ")
+			query.WriteString(strconv.Itoa(int(qu.Offset)))
+			query.WriteString(", ")
+			query.WriteString(strconv.Itoa(int(qu.Limit)))
 		} else {
-			query.WriteString(" limit " + strconv.Itoa(int(qu.Limit)))
+			query.WriteString(" limit ")
+			query.WriteString(strconv.Itoa(int(qu.Limit)))
 		}
 	}
 	return query.String()

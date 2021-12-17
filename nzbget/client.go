@@ -13,6 +13,8 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+//Source: https://github.com/dashotv/flame
+
 const PriorityVeryLow = -100
 const PriorityLow = -50
 const PriorityNormal = 0

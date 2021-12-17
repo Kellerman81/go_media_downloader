@@ -1,6 +1,7 @@
 package scheduler
 
 import (
+	"fmt"
 	"math/rand"
 	"os"
 	"os/exec"
@@ -709,5 +710,40 @@ func InitScheduler() {
 				database.DBImdb = dbnew
 			}
 		}, defaultschedule.Cron_imdb)
+	}
+
+	if defaultschedule.Interval_database_check != "" {
+		QueueData.DispatchEvery("Check Database", func() {
+			rows, _ := database.DB.Query("PRAGMA integrity_check;")
+			defer rows.Close()
+			rows.Next()
+			var str string
+			rows.Scan(&str)
+			if str != "ok" {
+				os.Exit(100)
+			}
+		}, converttime(defaultschedule.Interval_database_check))
+	}
+	if defaultschedule.Cron_database_check != "" {
+		QueueData.DispatchCron("Check Database", func() {
+			rows, _ := database.DB.Query("PRAGMA integrity_check;")
+			defer rows.Close()
+			rows.Next()
+			var str string
+			rows.Scan(&str)
+			if str != "ok" {
+				os.Exit(100)
+			}
+		}, defaultschedule.Cron_database_check)
+	}
+	if defaultschedule.Interval_database_backup != "" {
+		QueueData.DispatchEvery("Backup Database", func() {
+			database.Backup(database.DB, fmt.Sprintf("%s.%s.%s", "./backup/data.db", database.DBVersion, time.Now().Format("20060102_150405")))
+		}, converttime(defaultschedule.Interval_database_backup))
+	}
+	if defaultschedule.Cron_database_backup != "" {
+		QueueData.DispatchCron("Backup Database", func() {
+			database.Backup(database.DB, fmt.Sprintf("%s.%s.%s", "./backup/data.db", database.DBVersion, time.Now().Format("20060102_150405")))
+		}, defaultschedule.Cron_database_backup)
 	}
 }

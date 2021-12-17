@@ -11,6 +11,8 @@ import (
 	"strconv"
 )
 
+//Source: https://github.com/dashotv/flame
+
 const (
 	jsonrpcVersion = "2.0"
 )

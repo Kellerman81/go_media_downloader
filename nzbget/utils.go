@@ -11,6 +11,8 @@ import (
 	"github.com/pkg/errors"
 )
 
+//Source: https://github.com/dashotv/flame
+
 func readFile(path string) (string, error) {
 	b, err := ioutil.ReadFile(path)
 	if err != nil {
