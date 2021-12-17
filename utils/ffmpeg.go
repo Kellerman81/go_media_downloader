@@ -17,6 +17,8 @@ import (
 	"github.com/Kellerman81/go_media_downloader/logger"
 )
 
+//Original Source: https://github.com/stashapp/stash/blob/develop/pkg/ffmpeg/ffprobe.go
+
 var currentLocation = time.Now().Location()
 
 type JSONTime struct {
@@ -30,8 +32,6 @@ func (jt *JSONTime) UnmarshalJSON(b []byte) error {
 		return nil
 	}
 
-	// #731 - returning an error here causes the entire JSON parse to fail for ffprobe.
-	// Changing so that it logs a warning instead.
 	var err error
 	jt.Time, err = ParseDateStringAsTime(s)
 	if err != nil {
@@ -224,9 +224,6 @@ func getFFProbeFilename() string {
 // Execute exec command and bind result to struct.
 func NewVideoFile(ffprobePath string, videoPath string, stripExt bool) (*VideoFile, error) {
 	args := []string{"-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", "-show_error", videoPath}
-	//if runtime.GOOS != "windows" {
-	//	args = append(args, "-count_frames")
-	//}
 	out, err := exec.Command(ffprobePath, args...).Output()
 
 	if err != nil {
@@ -252,9 +249,6 @@ func VideoParse(filePath string, probeJSON *FFProbeJSON, stripExt bool) (*VideoF
 	if result.JSON.Error.Code != 0 {
 		return nil, fmt.Errorf("ffprobe error code %d: %s", result.JSON.Error.Code, result.JSON.Error.String)
 	}
-	//} else if (ffprobeResult.stderr.includes("could not find codec parameters")) {
-	//	throw new Error(`FFProbe [${filePath}] -> Could not find codec parameters`);
-	//} // TODO nil_or_unsupported.(video_stream) && nil_or_unsupported.(audio_stream)
 
 	result.Path = filePath
 	result.Title = probeJSON.Format.Tags.Title

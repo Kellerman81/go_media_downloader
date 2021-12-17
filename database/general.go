@@ -2,9 +2,11 @@ package database
 
 import (
 	"database/sql"
+	"fmt"
 	"log"
 	"os"
 	"regexp"
+	"strconv"
 	"sync"
 	"time"
 
@@ -91,11 +93,35 @@ func Upgrade(c *gin.Context) {
 	UpgradeDB()
 }
 
+// Backup the database. If db is nil, then uses the existing database
+// connection.
+func Backup(db *sqlx.DB, backupPath string) error {
+	if db == nil {
+		var err error
+		db, err = sqlx.Connect("sqlite3", "file:data.db?_fk=true")
+		if err != nil {
+			return fmt.Errorf("open database data.db failed:%s", err)
+		}
+		defer db.Close()
+	}
+
+	_, err := db.Exec(`VACUUM INTO "` + backupPath + `"`)
+	if err != nil {
+		return fmt.Errorf("vacuum failed: %s", err)
+	}
+
+	return nil
+}
+
+var DBVersion string
+
 func UpgradeDB() {
 	m, err := migrate.New(
 		"file://./schema/db",
 		"sqlite3://data.db?cache=shared&_fk=1&_mutex=no&_cslike=0",
 	)
+	vers, _, _ := m.Version()
+	DBVersion = strconv.Itoa(int(vers))
 	if err != nil {
 		log.Fatalf("migration failed... %v", err)
 	}

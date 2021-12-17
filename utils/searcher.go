@@ -701,43 +701,8 @@ func (s *Searcher) SetDataField(lists []string, addifnotfound bool) {
 								break
 							}
 						}
-						if s.List.MinVotes != 0 {
-							countergenre, _ := database.ImdbCountRows("imdb_ratings", database.Query{Where: "tconst = ? COLLATE NOCASE and num_votes < ?", WhereArgs: []interface{}{s.Nzbs[idx].NZB.IMDBID, s.List.MinVotes}})
-							if countergenre >= 1 {
-								continue
-							}
-						}
-						if s.List.MinRating != 0 {
-							countergenre, _ := database.ImdbCountRows("imdb_ratings", database.Query{Where: "tconst = ? COLLATE NOCASE and average_rating < ?", WhereArgs: []interface{}{s.Nzbs[idx].NZB.IMDBID, s.List.MinRating}})
-							if countergenre >= 1 {
-								continue
-							}
-						}
-						if len(s.List.Excludegenre) >= 1 {
-							excludebygenre := false
-							for idxgenre := range s.List.Excludegenre {
-								countergenre, _ := database.ImdbCountRows("imdb_genres", database.Query{Where: "tconst = ? COLLATE NOCASE and genre = ? COLLATE NOCASE", WhereArgs: []interface{}{s.Nzbs[idx].NZB.IMDBID, s.List.Excludegenre[idxgenre]}})
-								if countergenre >= 1 {
-									excludebygenre = true
-									break
-								}
-							}
-							if excludebygenre {
-								continue
-							}
-						}
-						if len(s.List.Includegenre) >= 1 {
-							includebygenre := false
-							for idxgenre := range s.List.Includegenre {
-								countergenre, _ := database.ImdbCountRows("imdb_genres", database.Query{Where: "tconst = ? COLLATE NOCASE and genre = ? COLLATE NOCASE", WhereArgs: []interface{}{s.Nzbs[idx].NZB.IMDBID, s.List.Includegenre[idxgenre]}})
-								if countergenre >= 1 {
-									includebygenre = true
-									break
-								}
-							}
-							if !includebygenre {
-								continue
-							}
+						if !AllowMovieImport(s.Nzbs[idx].NZB.IMDBID, s.List) {
+							continue
 						}
 
 						sww := sizedwaitgroup.New(1)
@@ -764,18 +729,7 @@ func (s *Searcher) SetDataField(lists []string, addifnotfound bool) {
 						s.NzbsDenied = append(s.NzbsDenied, s.Nzbs[idx])
 						continue
 					}
-					for idxstrip := range s.Nzbs[idx].Quality.TitleStripSuffixForSearch {
-						if strings.HasSuffix(strings.ToLower(n.Title), strings.ToLower(s.Nzbs[idx].Quality.TitleStripSuffixForSearch[idxstrip])) {
-							n.Title = trimStringInclAfterStringInsensitive(n.Title, s.Nzbs[idx].Quality.TitleStripSuffixForSearch[idxstrip])
-							n.Title = strings.Trim(n.Title, " ")
-						}
-					}
-					for idxstrip := range s.Nzbs[idx].Quality.TitleStripPrefixForSearch {
-						if strings.HasPrefix(strings.ToLower(n.Title), strings.ToLower(s.Nzbs[idx].Quality.TitleStripPrefixForSearch[idxstrip])) {
-							n.Title = trimStringPrefixInsensitive(n.Title, s.Nzbs[idx].Quality.TitleStripPrefixForSearch[idxstrip])
-							n.Title = strings.Trim(n.Title, " ")
-						}
-					}
+					n.StripTitlePrefixPostfix(s.Nzbs[idx].Quality)
 					s.Nzbs[idx].ParseInfo = *n
 					list, imdb := movieGetListFilter(lists, founddbmovie.ID, n.Year)
 					if list != "" {
@@ -798,18 +752,7 @@ func (s *Searcher) SetDataField(lists []string, addifnotfound bool) {
 						logger.Log.Error("Error parsing: ", s.Nzbs[idx].NZB.Title, " error: ", errparse)
 						continue
 					}
-					for idxstrip := range s.Nzbs[idx].Quality.TitleStripSuffixForSearch {
-						if strings.HasSuffix(strings.ToLower(n.Title), strings.ToLower(s.Nzbs[idx].Quality.TitleStripSuffixForSearch[idxstrip])) {
-							n.Title = trimStringInclAfterStringInsensitive(n.Title, s.Nzbs[idx].Quality.TitleStripSuffixForSearch[idxstrip])
-							n.Title = strings.Trim(n.Title, " ")
-						}
-					}
-					for idxstrip := range s.Nzbs[idx].Quality.TitleStripPrefixForSearch {
-						if strings.HasPrefix(strings.ToLower(n.Title), strings.ToLower(s.Nzbs[idx].Quality.TitleStripPrefixForSearch[idxstrip])) {
-							n.Title = trimStringPrefixInsensitive(n.Title, s.Nzbs[idx].Quality.TitleStripPrefixForSearch[idxstrip])
-							n.Title = strings.Trim(n.Title, " ")
-						}
-					}
+					n.StripTitlePrefixPostfix(s.Nzbs[idx].Quality)
 					s.Nzbs[idx].ParseInfo = *n
 					list, imdb, entriesfound, dbmovie := movieFindListByTitle(n.Title, strconv.Itoa(n.Year), lists, "rss")
 					if entriesfound >= 1 {
@@ -829,43 +772,8 @@ func (s *Searcher) SetDataField(lists []string, addifnotfound bool) {
 										break
 									}
 								}
-								if s.List.MinVotes != 0 {
-									countergenre, _ := database.ImdbCountRows("imdb_ratings", database.Query{Where: "tconst = ? COLLATE NOCASE and num_votes < ?", WhereArgs: []interface{}{s.Nzbs[idx].NZB.IMDBID, s.List.MinVotes}})
-									if countergenre >= 1 {
-										continue
-									}
-								}
-								if s.List.MinRating != 0 {
-									countergenre, _ := database.ImdbCountRows("imdb_ratings", database.Query{Where: "tconst = ? COLLATE NOCASE and average_rating < ?", WhereArgs: []interface{}{s.Nzbs[idx].NZB.IMDBID, s.List.MinRating}})
-									if countergenre >= 1 {
-										continue
-									}
-								}
-								if len(s.List.Excludegenre) >= 1 {
-									excludebygenre := false
-									for idxgenre := range s.List.Excludegenre {
-										countergenre, _ := database.ImdbCountRows("imdb_genres", database.Query{Where: "tconst = ? COLLATE NOCASE and genre = ? COLLATE NOCASE", WhereArgs: []interface{}{s.Nzbs[idx].NZB.IMDBID, s.List.Excludegenre[idxgenre]}})
-										if countergenre >= 1 {
-											excludebygenre = true
-											break
-										}
-									}
-									if excludebygenre {
-										continue
-									}
-								}
-								if len(s.List.Includegenre) >= 1 {
-									includebygenre := false
-									for idxgenre := range s.List.Includegenre {
-										countergenre, _ := database.ImdbCountRows("imdb_genres", database.Query{Where: "tconst = ? COLLATE NOCASE and genre = ? COLLATE NOCASE", WhereArgs: []interface{}{s.Nzbs[idx].NZB.IMDBID, s.List.Includegenre[idxgenre]}})
-										if countergenre >= 1 {
-											includebygenre = true
-											break
-										}
-									}
-									if !includebygenre {
-										continue
-									}
+								if !AllowMovieImport(s.Nzbs[idx].NZB.IMDBID, s.List) {
+									continue
 								}
 
 								sww := sizedwaitgroup.New(1)
@@ -975,18 +883,7 @@ func (s *Searcher) SetDataField(lists []string, addifnotfound bool) {
 							s.NzbsDenied = append(s.NzbsDenied, s.Nzbs[idx])
 							continue
 						}
-						for idxstrip := range s.Nzbs[idx].Quality.TitleStripSuffixForSearch {
-							if strings.HasSuffix(strings.ToLower(tempparse.Title), strings.ToLower(s.Nzbs[idx].Quality.TitleStripSuffixForSearch[idxstrip])) {
-								tempparse.Title = trimStringInclAfterStringInsensitive(tempparse.Title, s.Nzbs[idx].Quality.TitleStripSuffixForSearch[idxstrip])
-								tempparse.Title = strings.Trim(tempparse.Title, " ")
-							}
-						}
-						for idxstrip := range s.Nzbs[idx].Quality.TitleStripPrefixForSearch {
-							if strings.HasPrefix(strings.ToLower(tempparse.Title), strings.ToLower(s.Nzbs[idx].Quality.TitleStripPrefixForSearch[idxstrip])) {
-								tempparse.Title = trimStringPrefixInsensitive(tempparse.Title, s.Nzbs[idx].Quality.TitleStripPrefixForSearch[idxstrip])
-								tempparse.Title = strings.Trim(tempparse.Title, " ")
-							}
-						}
+						tempparse.StripTitlePrefixPostfix(s.Nzbs[idx].Quality)
 						s.Nzbs[idx].ParseInfo = *tempparse
 						tempparse.Date = strings.Replace(tempparse.Date, ".", "-", -1)
 						tempparse.Date = strings.Replace(tempparse.Date, " ", "-", -1)
@@ -1037,18 +934,7 @@ func (s *Searcher) SetDataField(lists []string, addifnotfound bool) {
 				} else {
 					var foundserie database.Serie
 					tempparse, _ := NewFileParser(s.Nzbs[idx].NZB.Title, true, "series")
-					for idxstrip := range s.Nzbs[idx].Quality.TitleStripSuffixForSearch {
-						if strings.HasSuffix(strings.ToLower(tempparse.Title), strings.ToLower(s.Nzbs[idx].Quality.TitleStripSuffixForSearch[idxstrip])) {
-							tempparse.Title = trimStringInclAfterStringInsensitive(tempparse.Title, s.Nzbs[idx].Quality.TitleStripSuffixForSearch[idxstrip])
-							tempparse.Title = strings.Trim(tempparse.Title, " ")
-						}
-					}
-					for idxstrip := range s.Nzbs[idx].Quality.TitleStripPrefixForSearch {
-						if strings.HasPrefix(strings.ToLower(tempparse.Title), strings.ToLower(s.Nzbs[idx].Quality.TitleStripPrefixForSearch[idxstrip])) {
-							tempparse.Title = trimStringPrefixInsensitive(tempparse.Title, s.Nzbs[idx].Quality.TitleStripPrefixForSearch[idxstrip])
-							tempparse.Title = strings.Trim(tempparse.Title, " ")
-						}
-					}
+					tempparse.StripTitlePrefixPostfix(s.Nzbs[idx].Quality)
 					s.Nzbs[idx].ParseInfo = *tempparse
 					yearstr := strconv.Itoa(tempparse.Year)
 					titleyear := tempparse.Title + " (" + yearstr + ")"
@@ -1242,18 +1128,7 @@ func (s *Searcher) NzbParse() {
 			m.GetPriority(s.ConfigEntry, s.Nzbs[idx].Quality)
 		}
 
-		for idxstrip := range s.Nzbs[idx].Quality.TitleStripSuffixForSearch {
-			if strings.HasSuffix(strings.ToLower(m.Title), strings.ToLower(s.Nzbs[idx].Quality.TitleStripSuffixForSearch[idxstrip])) {
-				m.Title = trimStringInclAfterStringInsensitive(m.Title, s.Nzbs[idx].Quality.TitleStripSuffixForSearch[idxstrip])
-				m.Title = strings.Trim(m.Title, " ")
-			}
-		}
-		for idxstrip := range s.Nzbs[idx].Quality.TitleStripPrefixForSearch {
-			if strings.HasPrefix(strings.ToLower(m.Title), strings.ToLower(s.Nzbs[idx].Quality.TitleStripPrefixForSearch[idxstrip])) {
-				m.Title = trimStringPrefixInsensitive(m.Title, s.Nzbs[idx].Quality.TitleStripPrefixForSearch[idxstrip])
-				m.Title = strings.Trim(m.Title, " ")
-			}
-		}
+		m.StripTitlePrefixPostfix(s.Nzbs[idx].Quality)
 		s.Nzbs[idx].ParseInfo = *m
 		s.Nzbs[idx].Prio = m.Priority
 		retnzb = append(retnzb, s.Nzbs[idx])

@@ -444,10 +444,10 @@ title_strip_prefix_for_search=["Uploader.presents", "Uploader presents"] #remove
 name="Default" #support only m, d, h, s (Minute, Day, Hour, Second) currently - custom stuff not
 interval_feeds="2h" #leave empty to disable - import new movies into db from feeds
 interval_imdb="3d" #leave empty to disable - refresh imdb cache every ... (only Default Scheduler)
-interval_feeds_refresh_movies="1d" # refreshes 100 movies only
-interval_feeds_refresh_movies_full="10d"
-interval_feeds_refresh_series="1d" # refreshes 20 series only
-interval_feeds_refresh_series_full="7d"
+interval_feeds_refresh_movies="1d" # refreshes 100 movies only (only Default Scheduler)
+interval_feeds_refresh_movies_full="10d" # (only Default Scheduler)
+interval_feeds_refresh_series="1d" # refreshes 20 series only (only Default Scheduler)
+interval_feeds_refresh_series_full="7d" # (only Default Scheduler)
 interval_indexer_missing="30m" #this only scans for ids - no name scanning!
 interval_indexer_upgrade="45m"
 interval_indexer_missing_full="14d" # the normal scan only scans the configured amount - this scans all
@@ -460,6 +460,8 @@ interval_indexer_rss="15m" # rss search for missing / upgradable media
 interval_scan_data="60m" # checks for new files in media directories
 interval_scan_data_import="15m" # checks for newly finished and ready to import media
 interval_scan_data_missing="3d" # checks for removed media
+interval_database_backup="3d" # backup db (only Default Scheduler)
+interval_database_check="1d" # check db - program exits on check fail (only Default Scheduler)
 
 ## all interval_* schedulers have also a cron_* entry - you can use both!
 ## cron format: seconds minutes hours day month day_of_week

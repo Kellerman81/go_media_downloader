@@ -3,8 +3,6 @@ package newznab
 import (
 	"encoding/xml"
 	"html"
-	"io"
-	"io/ioutil"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -14,6 +12,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/logger"
 	"github.com/RussellLuo/slidingwindow"
 	"github.com/pkg/errors"
+	"golang.org/x/net/html/charset"
 	"golang.org/x/time/rate"
 )
 
@@ -22,62 +21,6 @@ type RLHTTPClient struct {
 	client        *http.Client
 	Ratelimiter   *rate.Limiter
 	LimiterWindow *slidingwindow.Limiter
-}
-
-//Do dispatches the HTTP request to the network
-func (c *RLHTTPClient) Do(req *http.Request) (*http.Response, []byte, error) {
-	// Comment out the below 5 lines to turn off ratelimiting
-	if !c.LimiterWindow.Allow() {
-		isok := false
-		for i := 0; i < 10; i++ {
-			time.Sleep(1 * time.Second)
-			if c.LimiterWindow.Allow() {
-				isok = true
-				break
-			}
-		}
-		if !isok {
-			return nil, nil, errors.New("please wait")
-		}
-	}
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return nil, nil, err
-	}
-	defer resp.Body.Close()
-
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return nil, nil, err
-	}
-	return resp, body, nil
-}
-
-//Do dispatches the HTTP request to the network
-func (c *RLHTTPClient) DoNew(req *http.Request) (*http.Response, io.ReadCloser, error) {
-	// Comment out the below 5 lines to turn off ratelimiting
-	if !c.LimiterWindow.Allow() {
-		isok := false
-		for i := 0; i < 10; i++ {
-			time.Sleep(1 * time.Second)
-			if c.LimiterWindow.Allow() {
-				isok = true
-				break
-			}
-		}
-		if !isok {
-			return nil, nil, errors.New("please wait")
-		}
-	}
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	if err != nil {
-		return nil, nil, err
-	}
-	return resp, resp.Body, nil
 }
 
 //Do dispatches the HTTP request to the network
@@ -107,6 +50,8 @@ func (c *RLHTTPClient) DoXml(req *http.Request, xmlobj interface{}) error {
 	}
 
 	d := xml.NewDecoder(resp.Body)
+	d.CharsetReader = charset.NewReaderLabel
+
 	d.Strict = false
 	errd := d.Decode(&xmlobj)
 	if errd != nil {

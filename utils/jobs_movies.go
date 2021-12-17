@@ -80,40 +80,8 @@ func JobImportMovies(dbmovie database.Dbmovie, configEntry config.MediaTypeConfi
 		var cfg_list config.ListsConfig
 		config.ConfigGet("list_"+list.Template_list, &cfg_list)
 
-		if cfg_list.MinVotes != 0 {
-			if dbmovie.VoteCount < cfg_list.MinVotes && dbmovie.VoteCount != 0 {
-				return
-			}
-			countergenre, _ := database.ImdbCountRows("imdb_ratings", database.Query{Where: "tconst = ? COLLATE NOCASE and num_votes < ?", WhereArgs: []interface{}{dbmovie.ImdbID, cfg_list.MinVotes}})
-			if countergenre >= 1 {
-				return
-			}
-		}
-		if cfg_list.MinRating != 0 {
-			if int(dbmovie.VoteAverage) < int(cfg_list.MinRating) && dbmovie.VoteAverage != 0 {
-				return
-			}
-			countergenre, _ := database.ImdbCountRows("imdb_ratings", database.Query{Where: "tconst = ? COLLATE NOCASE and average_rating < ?", WhereArgs: []interface{}{dbmovie.ImdbID, cfg_list.MinRating}})
-			if countergenre >= 1 {
-				return
-			}
-		}
-		if len(cfg_list.Excludegenre) >= 1 {
-			excludebygenre := false
-			for idxgenre := range cfg_list.Excludegenre {
-				if strings.Contains(strings.ToLower(dbmovie.Genres), strings.ToLower(cfg_list.Excludegenre[idxgenre])) {
-					excludebygenre = true
-					break
-				}
-				countergenre, _ := database.ImdbCountRows("imdb_genres", database.Query{Where: "tconst = ? COLLATE NOCASE and genre = ? COLLATE NOCASE", WhereArgs: []interface{}{dbmovie.ImdbID, cfg_list.Excludegenre[idxgenre]}})
-				if countergenre >= 1 {
-					excludebygenre = true
-					break
-				}
-			}
-			if excludebygenre {
-				return
-			}
+		if !AllowMovieImport(dbmovie.ImdbID, cfg_list) {
+			return
 		}
 
 		cdbmovie2, _ := database.CountRows("dbmovies", database.Query{Where: "imdb_id = ? COLLATE NOCASE", WhereArgs: []interface{}{dbmovie.ImdbID}})
@@ -973,12 +941,7 @@ func JobImportMovieParseV2(file string, configEntry config.MediaTypeConfig, list
 	addunmatched := false
 	if err == nil {
 		m.Title = strings.Trim(m.Title, " ")
-		for idxstrip := range cfg_quality.TitleStripSuffixForSearch {
-			if strings.HasSuffix(strings.ToLower(m.Title), strings.ToLower(cfg_quality.TitleStripSuffixForSearch[idxstrip])) {
-				m.Title = trimStringInclAfterStringInsensitive(m.Title, cfg_quality.TitleStripSuffixForSearch[idxstrip])
-				m.Title = strings.Trim(m.Title, " ")
-			}
-		}
+		m.StripTitlePrefixPostfix(cfg_quality)
 		m.Resolution = strings.ToLower(m.Resolution)
 		m.Audio = strings.ToLower(m.Audio)
 		m.Codec = strings.ToLower(m.Codec)
@@ -1134,43 +1097,8 @@ func getMissingIMDBMoviesV2(configEntry config.MediaTypeConfig, list config.Medi
 				continue
 			}
 
-			if cfg_list.MinVotes != 0 {
-				countergenre, _ := database.ImdbCountRows("imdb_ratings", database.Query{Where: "tconst = ? COLLATE NOCASE and num_votes < ?", WhereArgs: []interface{}{data[idx][1], cfg_list.MinVotes}})
-				if countergenre >= 1 {
-					continue
-				}
-			}
-			if cfg_list.MinRating != 0 {
-				countergenre, _ := database.ImdbCountRows("imdb_ratings", database.Query{Where: "tconst = ? COLLATE NOCASE and average_rating < ?", WhereArgs: []interface{}{data[idx][1], cfg_list.MinRating}})
-				if countergenre >= 1 {
-					continue
-				}
-			}
-			if len(cfg_list.Excludegenre) >= 1 {
-				excludebygenre := false
-				for idxgenre := range cfg_list.Excludegenre {
-					countergenre, _ := database.ImdbCountRows("imdb_genres", database.Query{Where: "tconst = ? COLLATE NOCASE and genre = ? COLLATE NOCASE", WhereArgs: []interface{}{data[idx][1], cfg_list.Excludegenre[idxgenre]}})
-					if countergenre >= 1 {
-						excludebygenre = true
-						break
-					}
-				}
-				if excludebygenre {
-					continue
-				}
-			}
-			if len(cfg_list.Includegenre) >= 1 {
-				includebygenre := false
-				for idxgenre := range cfg_list.Includegenre {
-					countergenre, _ := database.ImdbCountRows("imdb_genres", database.Query{Where: "tconst = ? COLLATE NOCASE and genre = ? COLLATE NOCASE", WhereArgs: []interface{}{data[idx][1], cfg_list.Includegenre[idxgenre]}})
-					if countergenre >= 1 {
-						includebygenre = true
-						break
-					}
-				}
-				if !includebygenre {
-					continue
-				}
+			if !AllowMovieImport(data[idx][1], cfg_list) {
+				continue
 			}
 			year, _ := strconv.ParseInt(data[idx][10], 0, 64)
 			votes, _ := strconv.ParseInt(data[idx][12], 0, 64)
@@ -1205,43 +1133,8 @@ func GetTraktUserPublicMovieList(configEntry config.MediaTypeConfig, list config
 
 		for idx := range data {
 
-			if cfg_list.MinVotes != 0 {
-				countergenre, _ := database.ImdbCountRows("imdb_ratings", database.Query{Where: "tconst = ? COLLATE NOCASE and num_votes < ?", WhereArgs: []interface{}{data[idx].Movie.Ids.Imdb, cfg_list.MinVotes}})
-				if countergenre >= 1 {
-					continue
-				}
-			}
-			if cfg_list.MinRating != 0 {
-				countergenre, _ := database.ImdbCountRows("imdb_ratings", database.Query{Where: "tconst = ? COLLATE NOCASE and average_rating < ?", WhereArgs: []interface{}{data[idx].Movie.Ids.Imdb, cfg_list.MinRating}})
-				if countergenre >= 1 {
-					continue
-				}
-			}
-			if len(cfg_list.Excludegenre) >= 1 {
-				excludebygenre := false
-				for idxgenre := range cfg_list.Excludegenre {
-					countergenre, _ := database.ImdbCountRows("imdb_genres", database.Query{Where: "tconst = ? COLLATE NOCASE and genre = ? COLLATE NOCASE", WhereArgs: []interface{}{data[idx].Movie.Ids.Imdb, cfg_list.Excludegenre[idxgenre]}})
-					if countergenre >= 1 {
-						excludebygenre = true
-						break
-					}
-				}
-				if excludebygenre {
-					continue
-				}
-			}
-			if len(cfg_list.Includegenre) >= 1 {
-				includebygenre := false
-				for idxgenre := range cfg_list.Includegenre {
-					countergenre, _ := database.ImdbCountRows("imdb_genres", database.Query{Where: "tconst = ? COLLATE NOCASE and genre = ? COLLATE NOCASE", WhereArgs: []interface{}{data[idx].Movie.Ids.Imdb, cfg_list.Includegenre[idxgenre]}})
-					if countergenre >= 1 {
-						includebygenre = true
-						break
-					}
-				}
-				if !includebygenre {
-					continue
-				}
+			if !AllowMovieImport(data[idx].Movie.Ids.Imdb, cfg_list) {
+				continue
 			}
 			year := data[idx].Movie.Year
 			url := "https://www.imdb.com/title/" + data[idx].Movie.Ids.Imdb
@@ -1306,6 +1199,48 @@ func Importnewmoviessingle(row config.MediaTypeConfig, list config.MediaListsCon
 var LastMoviePath string
 var LastMoviesFilePath string
 
+func AllowMovieImport(imdb string, list config.ListsConfig) bool {
+
+	if list.MinVotes != 0 {
+		countergenre, _ := database.ImdbCountRows("imdb_ratings", database.Query{Where: "tconst = ? COLLATE NOCASE and num_votes < ?", WhereArgs: []interface{}{imdb, list.MinVotes}})
+		if countergenre >= 1 {
+			return false
+		}
+	}
+	if list.MinRating != 0 {
+		countergenre, _ := database.ImdbCountRows("imdb_ratings", database.Query{Where: "tconst = ? COLLATE NOCASE and average_rating < ?", WhereArgs: []interface{}{imdb, list.MinRating}})
+		if countergenre >= 1 {
+			return false
+		}
+	}
+	if len(list.Excludegenre) >= 1 {
+		excludebygenre := false
+		for idxgenre := range list.Excludegenre {
+			countergenre, _ := database.ImdbCountRows("imdb_genres", database.Query{Where: "tconst = ? COLLATE NOCASE and genre = ? COLLATE NOCASE", WhereArgs: []interface{}{imdb, list.Excludegenre[idxgenre]}})
+			if countergenre >= 1 {
+				excludebygenre = true
+				break
+			}
+		}
+		if excludebygenre {
+			return false
+		}
+	}
+	if len(list.Includegenre) >= 1 {
+		includebygenre := false
+		for idxgenre := range list.Includegenre {
+			countergenre, _ := database.ImdbCountRows("imdb_genres", database.Query{Where: "tconst = ? COLLATE NOCASE and genre = ? COLLATE NOCASE", WhereArgs: []interface{}{imdb, list.Includegenre[idxgenre]}})
+			if countergenre >= 1 {
+				includebygenre = true
+				break
+			}
+		}
+		if !includebygenre {
+			return false
+		}
+	}
+	return true
+}
 func Getnewmovies(row config.MediaTypeConfig) {
 	if !config.ConfigCheck("general") {
 		return
@@ -1317,7 +1252,7 @@ func Getnewmovies(row config.MediaTypeConfig) {
 	}
 
 	logger.Log.Info("Scan Movie File")
-	var filesfound []string
+	filesfound := make([]string, 0, 1000)
 	for idxpath := range row.Data {
 		if !config.ConfigCheck("path_" + row.Data[idxpath].Template_path) {
 			continue
@@ -1326,8 +1261,7 @@ func Getnewmovies(row config.MediaTypeConfig) {
 		config.ConfigGet("path_"+row.Data[idxpath].Template_path, &cfg_path)
 
 		LastMoviePath = cfg_path.Path
-		filesfound_add := scanner.GetFilesDir(cfg_path.Path, cfg_path.AllowedVideoExtensions, cfg_path.AllowedVideoExtensionsNoRename, cfg_path.Blocked)
-		filesfound = append(filesfound, filesfound_add...)
+		filesfound = append(filesfound, scanner.GetFilesDir(cfg_path.Path, cfg_path.AllowedVideoExtensions, cfg_path.AllowedVideoExtensionsNoRename, cfg_path.Blocked)...)
 	}
 
 	swf := sizedwaitgroup.New(cfg_general.WorkerParse)

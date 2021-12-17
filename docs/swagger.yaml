@@ -1223,6 +1223,31 @@ paths:
       summary: Update Config
       tags:
       - config
+  /api/db/backup:
+    get:
+      consumes:
+      - application/json
+      description: Saves DB
+      parameters:
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Backup DB
+      tags:
+      - database
   /api/db/clear/{name}:
     delete:
       consumes:
@@ -1276,6 +1301,31 @@ paths:
           schema:
             type: string
       summary: Close DB
+      tags:
+      - database
+  /api/db/integrity:
+    get:
+      consumes:
+      - application/json
+      description: Integrity Check DB
+      parameters:
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Integrity DB
       tags:
       - database
   /api/db/oldjobs:

@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
@@ -340,6 +341,44 @@ func ApiDbClose(ctx *gin.Context) {
 	database.DB.Close()
 	database.DBImdb.Close()
 	ctx.JSON(http.StatusOK, "ok")
+}
+
+// @Summary Backup DB
+// @Description Saves DB
+// @Tags database
+// @Accept  json
+// @Produce  json
+// @Param apikey query string true "apikey"
+// @Success 200 {string} string
+// @Failure 401 {object} string
+// @Router /api/db/backup [get]
+func ApiDbBackup(ctx *gin.Context) {
+	if ApiAuth(ctx) == http.StatusUnauthorized {
+		return
+	}
+	database.Backup(database.DB, fmt.Sprintf("%s.%s.%s", "./backup/data.db", database.DBVersion, time.Now().Format("20060102_150405")))
+	ctx.JSON(http.StatusOK, "ok")
+}
+
+// @Summary Integrity DB
+// @Description Integrity Check DB
+// @Tags database
+// @Accept  json
+// @Produce  json
+// @Param apikey query string true "apikey"
+// @Success 200 {string} string
+// @Failure 401 {object} string
+// @Router /api/db/integrity [get]
+func ApiDbIntegrity(ctx *gin.Context) {
+	if ApiAuth(ctx) == http.StatusUnauthorized {
+		return
+	}
+	rows, _ := database.DB.Query("PRAGMA integrity_check;")
+	defer rows.Close()
+	rows.Next()
+	var ret interface{}
+	rows.Scan(&ret)
+	ctx.JSON(http.StatusOK, ret)
 }
 
 // @Summary Clear DB Table

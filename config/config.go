@@ -339,6 +339,8 @@ type SchedulerConfig struct {
 	Interval_scan_data                  string `koanf:"interval_scan_data"`
 	Interval_scan_data_missing          string `koanf:"interval_scan_data_missing"`
 	Interval_scan_dataimport            string `koanf:"interval_scan_data_import"`
+	Interval_database_backup            string `koanf:"interval_database_backup"`
+	Interval_database_check             string `koanf:"interval_database_check"`
 	Cron_imdb                           string `koanf:"cron_imdb"`
 	Cron_feeds                          string `koanf:"cron_feeds"`
 	Cron_feeds_refresh_series           string `koanf:"cron_feeds_refresh_series"`
@@ -357,6 +359,8 @@ type SchedulerConfig struct {
 	Cron_scan_data                      string `koanf:"cron_scan_data"`
 	Cron_scan_data_missing              string `koanf:"cron_scan_data_missing"`
 	Cron_scan_dataimport                string `koanf:"cron_scan_data_import"`
+	Cron_database_backup                string `koanf:"cron_database_backup"`
+	Cron_database_check                 string `koanf:"cron_database_check"`
 }
 
 func LoadSerie(filepath string) MainSerieConfig {
