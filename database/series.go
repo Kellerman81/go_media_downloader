@@ -352,12 +352,7 @@ func (serie *Dbserie) GetTitles(allowed []string, queryimdb bool, querytrakt boo
 			if !regionok && len(allowed) >= 1 {
 				continue
 			}
-			var newserietitle DbserieAlternate
-			newserietitle.DbserieID = serie.ID
-			newserietitle.Title = akarow.Title
-			newserietitle.Slug = akarow.Slug
-			newserietitle.Region = akarow.Region
-			c = append(c, newserietitle)
+			c = append(c, DbserieAlternate{DbserieID: serie.ID, Title: akarow.Title, Slug: akarow.Slug, Region: akarow.Region})
 
 			processed[akarow.Title] = true
 		}
@@ -382,12 +377,7 @@ func (serie *Dbserie) GetTitles(allowed []string, queryimdb bool, querytrakt boo
 					continue
 				}
 				if _, ok := processed[row.Title]; !ok {
-					var newserietitle DbserieAlternate
-					newserietitle.DbserieID = serie.ID
-					newserietitle.Title = row.Title
-					newserietitle.Slug = logger.StringToSlug(row.Title)
-					newserietitle.Region = row.Country
-					c = append(c, newserietitle)
+					c = append(c, DbserieAlternate{DbserieID: serie.ID, Title: row.Title, Slug: logger.StringToSlug(row.Title), Region: row.Country})
 
 					processed[row.Title] = true
 				}

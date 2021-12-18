@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os/exec"
 	"os/signal"
+	"regexp"
 	"runtime"
 	"strings"
 	"syscall"
@@ -187,6 +188,9 @@ func main() {
 
 	database.DBImdb.SetMaxOpenConns(5)
 	scheduler.InitScheduler()
+
+	config.RegexSeriesIdentifier, _ = regexp.Compile(`(?i)s?[0-9]{1,4}((?:(?:(?: )?-?(?: )?[ex][0-9]{1,3})+))|(\d{2,4}(?:\.|-| |_)\d{1,2}(?:\.|-| |_)\d{1,2})(?:\b|_)`)
+	config.RegexSeriesTitle, _ = regexp.Compile(`^(.*)(?i)(?:(?:\.| - |-)S(?:[0-9]+)(?: )?[ex](?:[0-9]{1,3})(?:[^0-9]|$))`)
 
 	router := gin.New()
 	docs.SwaggerInfo.BasePath = "/"

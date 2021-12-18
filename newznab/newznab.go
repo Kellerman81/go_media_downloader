@@ -103,6 +103,7 @@ func New(baseURL string, apikey string, userID int, insecure bool, debug bool, l
 // SearchWithTVDB returns NZBs for the given parameters
 func (c Client) SearchWithTVDB(categories []int, tvDBID int, season int, episode int, additional_query_params string, customurl string, maxage int) ([]NZB, error) {
 	var buildurl strings.Builder
+	buildurl.Grow(150)
 	if len(customurl) >= 1 {
 		buildurl.WriteString(customurl)
 	} else {
@@ -128,6 +129,7 @@ func (c Client) SearchWithTVDB(categories []int, tvDBID int, season int, episode
 // SearchWithIMDB returns NZBs for the given parameters
 func (c Client) SearchWithIMDB(categories []int, imdbID string, additional_query_params string, customurl string, maxage int) ([]NZB, error) {
 	var buildurl strings.Builder
+	buildurl.Grow(150)
 	if len(customurl) >= 1 {
 		buildurl.WriteString(customurl)
 	} else {
@@ -149,6 +151,7 @@ func (c Client) SearchWithIMDB(categories []int, imdbID string, additional_query
 // SearchWithQuery returns NZBs for the given parameters
 func (c Client) SearchWithQuery(categories []int, query string, searchType string, addquotes bool, additional_query_params string, customurl string, maxage int) ([]NZB, error) {
 	var buildurl strings.Builder
+	buildurl.Grow(150)
 	if len(customurl) >= 1 {
 		buildurl.WriteString(customurl)
 	} else {
@@ -177,6 +180,7 @@ func (c Client) SearchWithQuery(categories []int, query string, searchType strin
 // LoadRSSFeedUntilNZBID fetches NZBs until a given NZB id is reached.
 func (c Client) SearchWithQueryUntilNZBID(categories []int, query string, searchType string, addquotes bool, id string, additional_query_params string, customurl string, maxage int) ([]NZB, error) {
 	var buildurl strings.Builder
+	buildurl.Grow(150)
 	if len(customurl) >= 1 {
 		buildurl.WriteString(customurl)
 	} else {
@@ -220,6 +224,7 @@ func (c Client) LoadRSSFeed(categories []int, num int, additional_query_params s
 
 func (c Client) joinCats(cats []int) string {
 	var b strings.Builder
+	b.Grow(30)
 	for idx := range cats {
 		if cats[idx] == 0 {
 			continue
@@ -234,6 +239,7 @@ func (c Client) joinCats(cats []int) string {
 
 func (c Client) BuildRssUrl(customrssurl string, customrsscategory string, customapi string, additional_query_params string, num int, categories []int, offset int) string {
 	var buildurl strings.Builder
+	buildurl.Grow(150)
 	if len(customrssurl) >= 1 {
 		buildurl.WriteString(customrssurl)
 	} else if len(customapi) >= 1 {

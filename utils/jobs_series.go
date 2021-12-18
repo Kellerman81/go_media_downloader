@@ -3,7 +3,6 @@ package utils
 import (
 	"encoding/json"
 	"path/filepath"
-	"regexp"
 	"runtime/debug"
 	"strconv"
 	"strings"
@@ -567,25 +566,24 @@ func JobImportSeriesParseV2(file string, updatemissing bool, configEntry config.
 	m.Resolution = strings.ToLower(m.Resolution)
 	m.Audio = strings.ToLower(m.Audio)
 	m.Codec = strings.ToLower(m.Codec)
-	m.Quality = strings.ToLower(m.Quality)
-	yearstr := strconv.Itoa(m.Year)
-	var titleyear string
+	var titlebuilder strings.Builder
+	titlebuilder.Grow(50)
+	titlebuilder.WriteString(m.Title)
 	if m.Year != 0 {
-		titleyear = m.Title + " (" + yearstr + ")"
-	} else {
-		titleyear = m.Title
+		titlebuilder.WriteString(" (")
+		titlebuilder.WriteString(strconv.Itoa(m.Year))
+		titlebuilder.WriteString(")")
 	}
 	seriestitle := ""
-	re, _ := regexp.Compile(`^(.*)(?i)(?:(?:\.| - |-)S(?:[0-9]+)(?: )?[ex](?:[0-9]{1,3})(?:[^0-9]|$))`)
-	matched := re.FindStringSubmatch(filepath.Base(file))
+	matched := config.RegexSeriesTitle.FindStringSubmatch(filepath.Base(file))
 	if len(matched) >= 2 {
 		seriestitle = matched[1]
 	}
-	logger.Log.Debug("Parsed SerieEpisode: ", file, " as Title: ", m.Title, " TitleYear:  ", titleyear, " Matched: ", matched, " Identifier: ", m.Identifier, " Date: ", m.Date, " ", m.Resolution, " ", m.Quality, " ", m.Codec, " ", m.Audio)
+	logger.Log.Debug("Parsed SerieEpisode: ", file, " as Title: ", m.Title, " TitleYear:  ", titlebuilder.String(), " Matched: ", matched, " Identifier: ", m.Identifier, " Date: ", m.Date, " ", m.Resolution, " ", m.Quality, " ", m.Codec, " ", m.Audio)
 	//logger.Log.Debug("Parse Data: ", m)
 
 	//find dbseries
-	series, entriesfound := FindSerieByParser(*m, titleyear, seriestitle, list.Name)
+	series, entriesfound := FindSerieByParser(*m, titlebuilder.String(), seriestitle, list.Name)
 	addunmatched := false
 	if entriesfound >= 1 {
 
@@ -602,8 +600,7 @@ func JobImportSeriesParseV2(file string, updatemissing bool, configEntry config.
 		if errparsev != nil {
 			return
 		}
-		r := regexp.MustCompile(`(?i)s?[0-9]{1,4}((?:(?:(?: )?-?(?: )?[ex][0-9]{1,3})+))|(\d{2,4}(?:\.|-| |_)\d{1,2}(?:\.|-| |_)\d{1,2})(?:\b|_)`)
-		teststr := r.FindStringSubmatch(m.Identifier)
+		teststr := config.RegexSeriesIdentifier.FindStringSubmatch(m.Identifier)
 		if len(teststr) == 0 {
 			logger.Log.Warn("Failed parse identifier: ", file, " as ", m.Title, m.Identifier)
 			return
@@ -611,9 +608,7 @@ func JobImportSeriesParseV2(file string, updatemissing bool, configEntry config.
 
 		testDbSeries, _ := database.GetDbserie(database.Query{Where: "id=?", WhereArgs: []interface{}{series.DbserieID}})
 
-		episodeArray := getEpisodeArray(testDbSeries.Identifiedby, teststr[1], teststr[2])
-
-		for _, epi := range episodeArray {
+		for _, epi := range getEpisodeArray(testDbSeries.Identifiedby, teststr[1], teststr[2]) {
 			epi = strings.Trim(epi, "-EX")
 			if strings.ToLower(testDbSeries.Identifiedby) != "date" {
 				epi = strings.TrimLeft(epi, "0")
@@ -688,12 +683,12 @@ func JobImportSeriesParseV2(file string, updatemissing bool, configEntry config.
 				}
 			} else {
 				addunmatched = true
-				logger.Log.Debug("SerieEpisode not matched loop: ", file, " as Title: ", m.Title, " TitleYear:  ", titleyear, " ", m.Resolution, " ", m.Quality, " ", m.Codec, " ", m.Audio, " Season ", m.Season, " Epi ", epi)
+				logger.Log.Debug("SerieEpisode not matched loop: ", file, " as Title: ", m.Title, " TitleYear:  ", titlebuilder.String(), " ", m.Resolution, " ", m.Quality, " ", m.Codec, " ", m.Audio, " Season ", m.Season, " Epi ", epi)
 			}
 		}
 	} else {
 		addunmatched = true
-		logger.Log.Debug("SerieEpisode not matched: ", file, " as Title: ", m.Title, " TitleYear:  ", titleyear, " ", m.Resolution, " ", m.Quality, " ", m.Codec, " ", m.Audio)
+		logger.Log.Debug("SerieEpisode not matched: ", file, " as Title: ", m.Title, " TitleYear:  ", titlebuilder.String(), " ", m.Resolution, " ", m.Quality, " ", m.Codec, " ", m.Audio)
 	}
 	if addunmatched {
 		mjson, _ := json.Marshal(m)
