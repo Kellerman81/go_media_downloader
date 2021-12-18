@@ -220,6 +220,7 @@ type IndexersConfig struct {
 	MaxRssEntries          int    `koanf:"max_rss_entries"`
 	RssEntriesloop         int    `koanf:"rss_entries_loop"`
 	RssDownloadAll         bool   `koanf:"rss_downlood_all"`
+	OutputAsJson           bool   `koanf:"output_as_json"`
 	Customapi              string `koanf:"custom_api"`
 	Customurl              string `koanf:"custom_url"`
 	Customrssurl           string `koanf:"custom_rss_url"`
