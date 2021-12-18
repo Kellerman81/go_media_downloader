@@ -1327,7 +1327,8 @@ func buildquery(columns string, table string, qu Query, count bool) string {
 		}
 		query.WriteString(" from ")
 		query.WriteString(table)
-		query.WriteString(" inner join " + qu.InnerJoin)
+		query.WriteString(" inner join ")
+		query.WriteString(qu.InnerJoin)
 	} else {
 		query.WriteString(columns)
 		query.WriteString(" from ")
@@ -1381,23 +1382,30 @@ func CountRows(table string, qu Query) (int, error) {
 }
 
 func insertmapprepare(table string, insert map[string]interface{}) (string, []interface{}) {
-	query := "INSERT INTO " + table + " ("
+	var query strings.Builder
+	query.WriteString("INSERT INTO ")
+	query.WriteString(table)
+	query.WriteString(" (")
 	i := 0
-	columns := ""
-	values := ""
+	var columns strings.Builder
+	var values strings.Builder
+
 	args := make([]interface{}, 0, len(insert))
 	for idx, val := range insert {
 		if i != 0 {
-			columns += ","
-			values += ","
+			columns.WriteString(",")
+			values.WriteString(",")
 		}
 		i += 1
-		columns += idx
-		values += "?"
+		columns.WriteString(idx)
+		values.WriteString("?")
 		args = append(args, val)
 	}
-	query += columns + ") VALUES (" + values + ")"
-	return query, args
+	query.WriteString(columns.String())
+	query.WriteString(") VALUES (")
+	query.WriteString(values.String())
+	query.WriteString(")")
+	return query.String(), args
 }
 func InsertRowMap(table string, insert map[string]interface{}) (sql.Result, error) {
 	query, args := insertmapprepare(table, insert)
@@ -1409,19 +1417,25 @@ func InsertRowMap(table string, insert map[string]interface{}) (sql.Result, erro
 }
 
 func insertarrayprepare(table string, columns []string) string {
-	query := "INSERT INTO " + table + " ("
-	cols := ""
-	vals := ""
+	var query strings.Builder
+	query.WriteString("INSERT INTO ")
+	query.WriteString(table)
+	query.WriteString(" (")
+	var cols strings.Builder
+	var vals strings.Builder
 	for idx := range columns {
 		if idx != 0 {
-			cols += ","
-			vals += ","
+			cols.WriteString(",")
+			vals.WriteString(",")
 		}
-		cols += columns[idx]
-		vals += "?"
+		cols.WriteString(columns[idx])
+		vals.WriteString("?")
 	}
-	query += cols + ") VALUES (" + vals + ")"
-	return query
+	query.WriteString(cols.String())
+	query.WriteString(") VALUES (")
+	query.WriteString(vals.String())
+	query.WriteString(")")
+	return query.String()
 }
 func InsertArray(table string, columns []string, values []interface{}) (sql.Result, error) {
 	query := insertarrayprepare(table, columns)
@@ -1433,24 +1447,29 @@ func InsertArray(table string, columns []string, values []interface{}) (sql.Resu
 }
 
 func updatemapprepare(table string, update map[string]interface{}, qu Query) (string, []interface{}) {
-	query := "UPDATE " + table + " SET "
+	var query strings.Builder
+	query.WriteString("UPDATE ")
+	query.WriteString(table)
+	query.WriteString(" SET ")
 	i := 0
 	args := make([]interface{}, 0, len(update))
 	for idx, val := range update {
 		if i != 0 {
-			query += ","
+			query.WriteString(",")
 		}
 		i += 1
-		query += idx + " = ?"
+		query.WriteString(idx)
+		query.WriteString(" = ?")
 		args = append(args, val)
 	}
 	if qu.Where != "" {
-		query += " where " + qu.Where
+		query.WriteString(" where ")
+		query.WriteString(qu.Where)
 	}
 	if len(qu.WhereArgs) >= 1 {
 		args = append(args, qu.WhereArgs...)
 	}
-	return query, args
+	return query.String(), args
 }
 func UpdateRowMap(table string, update map[string]interface{}, qu Query) (sql.Result, error) {
 	query, args := updatemapprepare(table, update, qu)
@@ -1483,20 +1502,25 @@ func dbexec(dbtype string, query string, args []interface{}) (sql.Result, error)
 	return result, err
 }
 func updatearrayprepare(table string, columns []string, values []interface{}, qu Query) (string, []interface{}) {
-	query := "UPDATE " + table + " SET "
+	var query strings.Builder
+	query.WriteString("UPDATE ")
+	query.WriteString(table)
+	query.WriteString(" SET ")
 	for idx := range columns {
 		if idx != 0 {
-			query += ","
+			query.WriteString(",")
 		}
-		query += columns[idx] + " = ?"
+		query.WriteString(columns[idx])
+		query.WriteString(" = ?")
 	}
 	if qu.Where != "" {
-		query += " where " + qu.Where
+		query.WriteString(" where ")
+		query.WriteString(qu.Where)
 	}
 	if len(qu.WhereArgs) >= 1 {
 		values = append(values, qu.WhereArgs...)
 	}
-	return query, values
+	return query.String(), values
 }
 func UpdateArray(table string, columns []string, values []interface{}, qu Query) (sql.Result, error) {
 	query, args := updatearrayprepare(table, columns, values, qu)
@@ -1508,16 +1532,22 @@ func UpdateArray(table string, columns []string, values []interface{}, qu Query)
 }
 
 func updatecolprepare(table string, column string, value interface{}, qu Query) (string, []interface{}) {
-	query := "UPDATE " + table + " SET " + column + " = ?"
+	var query strings.Builder
+	query.WriteString("UPDATE ")
+	query.WriteString(table)
+	query.WriteString(" SET ")
+	query.WriteString(column)
+	query.WriteString(" = ?")
 	if qu.Where != "" {
-		query += " where " + qu.Where
+		query.WriteString(" where ")
+		query.WriteString(qu.Where)
 	}
 	args := make([]interface{}, 0, len(qu.WhereArgs)+1)
 	args = append(args, value)
 	if len(qu.WhereArgs) >= 1 {
 		args = append(args, qu.WhereArgs...)
 	}
-	return query, args
+	return query.String(), args
 }
 func UpdateColumn(table string, column string, value interface{}, qu Query) (sql.Result, error) {
 	query, args := updatecolprepare(table, column, value, qu)
@@ -1529,9 +1559,12 @@ func UpdateColumn(table string, column string, value interface{}, qu Query) (sql
 }
 
 func DeleteRow(table string, qu Query) (sql.Result, error) {
-	query := "DELETE FROM " + table
+	var query strings.Builder
+	query.WriteString("DELETE FROM ")
+	query.WriteString(table)
 	if qu.Where != "" {
-		query += " where " + qu.Where
+		query.WriteString(" where ")
+		query.WriteString(qu.Where)
 	}
 	var cfg_general config.GeneralConfig
 	config.ConfigGet("general", &cfg_general)
@@ -1540,7 +1573,7 @@ func DeleteRow(table string, qu Query) (sql.Result, error) {
 		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
 	}
 	ReadWriteMu.Lock()
-	result, err := DB.Exec(query, qu.WhereArgs...)
+	result, err := DB.Exec(query.String(), qu.WhereArgs...)
 	if err != nil {
 		logger.Log.Error("Delete: ", table, " where: ", qu.Where, " whereargs: ", qu.WhereArgs, " error: ", err)
 	}

@@ -24,7 +24,7 @@ type RLHTTPClient struct {
 }
 
 //Do dispatches the HTTP request to the network
-func (c *RLHTTPClient) DoXml(req *http.Request, xmlobj interface{}) error {
+func (c *RLHTTPClient) DoXml(url string, xmlobj interface{}) error {
 	// Comment out the below 5 lines to turn off ratelimiting
 	if !c.LimiterWindow.Allow() {
 		isok := false
@@ -39,7 +39,7 @@ func (c *RLHTTPClient) DoXml(req *http.Request, xmlobj interface{}) error {
 			return errors.New("please wait")
 		}
 	}
-	resp, err := c.client.Do(req)
+	resp, err := c.client.Get(url)
 	if err != nil {
 		return err
 	}
@@ -51,11 +51,10 @@ func (c *RLHTTPClient) DoXml(req *http.Request, xmlobj interface{}) error {
 
 	d := xml.NewDecoder(resp.Body)
 	d.CharsetReader = charset.NewReaderLabel
-
 	d.Strict = false
 	errd := d.Decode(&xmlobj)
 	if errd != nil {
-		logger.Log.Error("Err Decode ", req.RequestURI, " error ", errd)
+		logger.Log.Error("Err Decode ", url, " error ", errd)
 		return errd
 	}
 	return nil
@@ -216,19 +215,21 @@ func (c Client) SearchWithQueryUntilNZBID(categories []int, query string, search
 
 // LoadRSSFeed returns up to <num> of the most recent NZBs of the given categories.
 func (c Client) LoadRSSFeed(categories []int, num int, additional_query_params string, customapi string, customrssurl string, customrsscategory string, maxage int) ([]NZB, error) {
-	buildurl := c.BuildRssUrl(customrssurl, customrsscategory, customapi, additional_query_params, num, categories, 0)
-	return c.processurl(buildurl, "", maxage)
+	return c.processurl(c.BuildRssUrl(customrssurl, customrsscategory, customapi, additional_query_params, num, categories, 0), "", maxage)
 }
 
 func (c Client) joinCats(cats []int) string {
-	var catstemp []string
+	var b strings.Builder
 	for idx := range cats {
 		if cats[idx] == 0 {
 			continue
 		}
-		catstemp = append(catstemp, strconv.Itoa(cats[idx]))
+		if b.Len() >= 1 {
+			b.WriteString(",")
+		}
+		b.WriteString(strconv.Itoa(cats[idx]))
 	}
-	return strings.Join(catstemp, ",")
+	return b.String()
 }
 
 func (c Client) BuildRssUrl(customrssurl string, customrsscategory string, customapi string, additional_query_params string, num int, categories []int, offset int) string {
@@ -274,10 +275,10 @@ func (c Client) BuildRssUrl(customrssurl string, customrsscategory string, custo
 // LoadRSSFeedUntilNZBID fetches NZBs until a given NZB id is reached.
 func (c Client) LoadRSSFeedUntilNZBID(categories []int, num int, id string, maxRequests int, additional_query_params string, customapi string, customrssurl string, customrsscategory string, maxage int) ([]NZB, error) {
 	count := 0
-	// nzbcount := num
-	// if maxRequests >= 1 {
-	// 	nzbcount = nzbcount * num
-	// }
+	//nzbcount := num
+	//if maxRequests >= 1 {
+	//	nzbcount = nzbcount * num
+	//}
 	var nzbs []NZB
 
 	for {
@@ -287,6 +288,9 @@ func (c Client) LoadRSSFeedUntilNZBID(categories []int, num int, id string, maxR
 		if errp == nil {
 			for idx := range partition {
 				if partition[idx].ID == id && id != "" {
+					if count == 0 {
+						return partition[:idx], nil
+					}
 					return append(nzbs, partition[:idx]...), nil
 				}
 			}
@@ -305,8 +309,7 @@ func (c Client) LoadRSSFeedUntilNZBID(categories []int, num int, id string, maxR
 
 func (c Client) processurl(url string, tillid string, maxage int) ([]NZB, error) {
 	var feed SearchResponse
-	req, _ := http.NewRequest("GET", url, nil)
-	err := c.client.DoXml(req, &feed)
+	err := c.client.DoXml(url, &feed)
 	if err != nil {
 		return []NZB{}, err
 	}
