@@ -119,7 +119,6 @@ func filter_test_quality_wanted(quality config.QualityConfig, m *ParseInfo, rown
 }
 func filter_regex_nzbs(regexconfig config.RegexConfig, title string, wantedtitle string, wantedalternates []string) (bool, string) {
 	for _, rowtitle := range regexconfig.Rejected {
-		//rowrejected := regexp.MustCompile(rowtitle)
 		rowrejected := regexconfig.RejectedRegex[rowtitle]
 		teststrwanted := rowrejected.FindStringSubmatch(wantedtitle)
 		if len(teststrwanted) >= 1 {
@@ -144,7 +143,6 @@ func filter_regex_nzbs(regexconfig config.RegexConfig, title string, wantedtitle
 	}
 	requiredmatched := false
 	for _, rowtitle := range regexconfig.Required {
-		//rowrequired := regexp.MustCompile(rowtitle)
 		rowrequired := regexconfig.RequiredRegex[rowtitle]
 
 		teststr := rowrequired.FindStringSubmatch(title)

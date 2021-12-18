@@ -1312,6 +1312,7 @@ func QueryImdbTitle(qu Query) ([]ImdbTitle, error) {
 
 func buildquery(columns string, table string, qu Query, count bool) string {
 	var query strings.Builder
+	query.Grow(150 + len(qu.InnerJoin) + len(qu.Where) + len(columns))
 	query.WriteString("select ")
 
 	if qu.InnerJoin != "" {
@@ -1383,12 +1384,15 @@ func CountRows(table string, qu Query) (int, error) {
 
 func insertmapprepare(table string, insert map[string]interface{}) (string, []interface{}) {
 	var query strings.Builder
+	query.Grow(300)
 	query.WriteString("INSERT INTO ")
 	query.WriteString(table)
 	query.WriteString(" (")
 	i := 0
 	var columns strings.Builder
+	columns.Grow(100)
 	var values strings.Builder
+	values.Grow(30)
 
 	args := make([]interface{}, 0, len(insert))
 	for idx, val := range insert {
@@ -1418,11 +1422,14 @@ func InsertRowMap(table string, insert map[string]interface{}) (sql.Result, erro
 
 func insertarrayprepare(table string, columns []string) string {
 	var query strings.Builder
+	query.Grow(300)
 	query.WriteString("INSERT INTO ")
 	query.WriteString(table)
 	query.WriteString(" (")
 	var cols strings.Builder
+	cols.Grow(100)
 	var vals strings.Builder
+	vals.Grow(30)
 	for idx := range columns {
 		if idx != 0 {
 			cols.WriteString(",")
@@ -1448,11 +1455,12 @@ func InsertArray(table string, columns []string, values []interface{}) (sql.Resu
 
 func updatemapprepare(table string, update map[string]interface{}, qu Query) (string, []interface{}) {
 	var query strings.Builder
+	query.Grow(300)
 	query.WriteString("UPDATE ")
 	query.WriteString(table)
 	query.WriteString(" SET ")
 	i := 0
-	args := make([]interface{}, 0, len(update))
+	args := make([]interface{}, 0, len(update)+len(qu.WhereArgs))
 	for idx, val := range update {
 		if i != 0 {
 			query.WriteString(",")
@@ -1503,6 +1511,7 @@ func dbexec(dbtype string, query string, args []interface{}) (sql.Result, error)
 }
 func updatearrayprepare(table string, columns []string, values []interface{}, qu Query) (string, []interface{}) {
 	var query strings.Builder
+	query.Grow(300)
 	query.WriteString("UPDATE ")
 	query.WriteString(table)
 	query.WriteString(" SET ")
@@ -1533,6 +1542,7 @@ func UpdateArray(table string, columns []string, values []interface{}, qu Query)
 
 func updatecolprepare(table string, column string, value interface{}, qu Query) (string, []interface{}) {
 	var query strings.Builder
+	query.Grow(300)
 	query.WriteString("UPDATE ")
 	query.WriteString(table)
 	query.WriteString(" SET ")
@@ -1560,6 +1570,7 @@ func UpdateColumn(table string, column string, value interface{}, qu Query) (sql
 
 func DeleteRow(table string, qu Query) (sql.Result, error) {
 	var query strings.Builder
+	query.Grow(300)
 	query.WriteString("DELETE FROM ")
 	query.WriteString(table)
 	if qu.Where != "" {

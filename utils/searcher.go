@@ -3,7 +3,6 @@ package utils
 import (
 	"database/sql"
 	"errors"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -519,7 +518,6 @@ func (s *Searcher) SearchRSS(searchGroupType string, fetchall bool) searchResult
 }
 
 func (s *Searcher) NzbsToNzbsPrio(nzbs []newznab.NZB) {
-	regexSeriesTitle, _ = regexp.Compile(`^(.*)(?i)(?:(?:\.| - |-)S?(?:\d+)(?: )?[ex](?:\d+)(?:[^0-9]|$))`)
 	s.Nzbs = make([]Nzbwithprio, 0, len(nzbs))
 	s.NzbsDenied = make([]Nzbwithprio, 0, len(nzbs))
 	for idx := range nzbs {
@@ -643,8 +641,6 @@ func (s *Searcher) CheckMatchingID() {
 	}
 	s.Nzbs = retnzb
 }
-
-var regexSeriesTitle *regexp.Regexp
 
 //Needs s.Movie or s.SerieEpisode (for non RSS)
 func (s *Searcher) SetDataField(lists []string, addifnotfound bool) {
@@ -924,7 +920,7 @@ func (s *Searcher) SetDataField(lists []string, addifnotfound bool) {
 					s.Nzbs[idx].ParseInfo = *tempparse
 					titleyear := tempparse.Title + " (" + strconv.Itoa(tempparse.Year) + ")"
 					seriestitle := ""
-					matched := regexSeriesTitle.FindStringSubmatch(s.Nzbs[idx].NZB.Title)
+					matched := config.RegexSeriesTitle.FindStringSubmatch(s.Nzbs[idx].NZB.Title)
 					if len(matched) >= 2 {
 						seriestitle = matched[1]
 					}

@@ -230,12 +230,7 @@ func (movie *Dbmovie) GetTitles(allowed []string, queryimdb bool, querytmdb bool
 			if !regionok && len(allowed) >= 1 {
 				continue
 			}
-			var newmovietitle DbmovieTitle
-			newmovietitle.DbmovieID = movie.ID
-			newmovietitle.Title = akarow.Title
-			newmovietitle.Slug = akarow.Slug
-			newmovietitle.Region = akarow.Region
-			c = append(c, newmovietitle)
+			c = append(c, DbmovieTitle{DbmovieID: movie.ID, Title: akarow.Title, Slug: akarow.Slug, Region: akarow.Region})
 
 			processed[akarow.Title] = true
 		}
@@ -256,12 +251,7 @@ func (movie *Dbmovie) GetTitles(allowed []string, queryimdb bool, querytmdb bool
 					continue
 				}
 				if _, ok := processed[row.Title]; !ok {
-					var newmovietitle DbmovieTitle
-					newmovietitle.DbmovieID = movie.ID
-					newmovietitle.Title = row.Title
-					newmovietitle.Slug = logger.StringToSlug(row.Title)
-					newmovietitle.Region = row.Iso31661
-					c = append(c, newmovietitle)
+					c = append(c, DbmovieTitle{DbmovieID: movie.ID, Title: row.Title, Slug: logger.StringToSlug(row.Title), Region: row.Iso31661})
 
 					processed[row.Title] = true
 				}
@@ -287,12 +277,7 @@ func (movie *Dbmovie) GetTitles(allowed []string, queryimdb bool, querytmdb bool
 					continue
 				}
 				if _, ok := processed[row.Title]; !ok {
-					var newmovietitle DbmovieTitle
-					newmovietitle.DbmovieID = movie.ID
-					newmovietitle.Title = row.Title
-					newmovietitle.Slug = logger.StringToSlug(row.Title)
-					newmovietitle.Region = row.Country
-					c = append(c, newmovietitle)
+					c = append(c, DbmovieTitle{DbmovieID: movie.ID, Title: row.Title, Slug: logger.StringToSlug(row.Title), Region: row.Country})
 
 					processed[row.Title] = true
 				}
@@ -376,11 +361,14 @@ func (movie *Dbmovie) GetTmdbMetadata(overwrite bool) {
 					}
 				}
 				if movie.Genres == "" || overwrite {
-					genres := make([]string, 0, len(moviedbdetails.Genres))
+					var genrebuilder strings.Builder
 					for _, v := range moviedbdetails.Genres {
-						genres = append(genres, v.Name)
+						if genrebuilder.Len() >= 1 {
+							genrebuilder.WriteString(",")
+						}
+						genrebuilder.WriteString(v.Name)
 					}
-					movie.Genres = strings.Join(genres, ",")
+					movie.Genres = genrebuilder.String()
 				}
 				movie.OriginalLanguage = moviedbdetails.OriginalLanguage
 				if movie.OriginalTitle == "" || overwrite {
@@ -392,11 +380,14 @@ func (movie *Dbmovie) GetTmdbMetadata(overwrite bool) {
 				if movie.Runtime == 0 {
 					movie.Runtime = moviedbdetails.Runtime
 				}
-				languages := make([]string, 0, len(moviedbdetails.SpokenLanguages))
+				var languagebuilder strings.Builder
 				for _, v := range moviedbdetails.SpokenLanguages {
-					languages = append(languages, v.EnglishName)
+					if languagebuilder.Len() >= 1 {
+						languagebuilder.WriteString(",")
+					}
+					languagebuilder.WriteString(v.EnglishName)
 				}
-				movie.SpokenLanguages = strings.Join(languages, ",")
+				movie.SpokenLanguages = languagebuilder.String()
 				movie.Status = moviedbdetails.Status
 				movie.Tagline = moviedbdetails.Tagline
 				if movie.VoteAverage == 0 || movie.VoteAverage == 0.0 || overwrite {
@@ -582,11 +573,14 @@ func (movie *Dbmovie) GetMetadata(queryimdb bool, querytmdb bool, queryomdb bool
 						}
 					}
 					if movie.Genres == "" {
-						genres := make([]string, 0, len(moviedbdetails.Genres))
+						var genrebuilder strings.Builder
 						for _, v := range moviedbdetails.Genres {
-							genres = append(genres, v.Name)
+							if genrebuilder.Len() >= 1 {
+								genrebuilder.WriteString(",")
+							}
+							genrebuilder.WriteString(v.Name)
 						}
-						movie.Genres = strings.Join(genres, ",")
+						movie.Genres = genrebuilder.String()
 					}
 					movie.OriginalLanguage = moviedbdetails.OriginalLanguage
 					if movie.OriginalTitle == "" {
@@ -598,11 +592,14 @@ func (movie *Dbmovie) GetMetadata(queryimdb bool, querytmdb bool, queryomdb bool
 					if movie.Runtime == 0 {
 						movie.Runtime = moviedbdetails.Runtime
 					}
-					languages := make([]string, 0, len(moviedbdetails.SpokenLanguages))
+					var languagebuilder strings.Builder
 					for _, v := range moviedbdetails.SpokenLanguages {
-						languages = append(languages, v.EnglishName)
+						if languagebuilder.Len() >= 1 {
+							languagebuilder.WriteString(",")
+						}
+						languagebuilder.WriteString(v.EnglishName)
 					}
-					movie.SpokenLanguages = strings.Join(languages, ",")
+					movie.SpokenLanguages = languagebuilder.String()
 					movie.Status = moviedbdetails.Status
 					movie.Tagline = moviedbdetails.Tagline
 					if movie.VoteAverage == 0 || movie.VoteAverage == 0.0 {
@@ -720,14 +717,11 @@ func (movie *Dbmovie) GetMetadata(queryimdb bool, querytmdb bool, queryomdb bool
 }
 
 func (dbmovie *Dbmovie) AddMissingMoviesMapping(listname string, quality string) []Movie {
-	c := make([]Movie, 0, 1)
-
 	counter, _ := CountRows("movies", Query{Where: "listname = ? and dbmovie_id = ?", WhereArgs: []interface{}{listname, dbmovie.ID}})
 	if counter == 0 {
-		entry := Movie{DbmovieID: dbmovie.ID, Blacklisted: false, QualityReached: false, QualityProfile: quality, Missing: true, Listname: listname}
-		c = append(c, entry)
+		return []Movie{{DbmovieID: dbmovie.ID, Blacklisted: false, QualityReached: false, QualityProfile: quality, Missing: true, Listname: listname}}
 	}
-	return c
+	return []Movie{}
 }
 
 func (movie *Movie) UpdateMoviesMapping(listname string, quality string) {
@@ -754,8 +748,8 @@ func readCSVFromURL(url string) ([][]string, error) {
 }
 
 func GetMissingIMDBMovies(urls []string, listname string, qualityProfile string, ignorelistname string) []Dbmovie {
+	var d []Dbmovie
 	for _, url := range urls {
-		d := make([]Dbmovie, 0, 1)
 		if len(url) >= 1 {
 			data, err := readCSVFromURL(url)
 			if err != nil {
@@ -763,7 +757,6 @@ func GetMissingIMDBMovies(urls []string, listname string, qualityProfile string,
 				panic(err)
 			}
 
-			d = make([]Dbmovie, 0, len(data))
 			for idx, row := range data {
 				// skip header
 				if idx == 0 {
@@ -772,13 +765,11 @@ func GetMissingIMDBMovies(urls []string, listname string, qualityProfile string,
 				year, _ := strconv.ParseInt(row[10], 0, 64)
 				votes, _ := strconv.ParseInt(row[12], 0, 64)
 				voteavg, _ := strconv.ParseFloat(row[8], 32)
-				dbentry := Dbmovie{ImdbID: row[1], Title: row[5], URL: row[6], VoteAverage: float32(voteavg), Year: int(year), VoteCount: int(votes)}
-				d = append(d, dbentry)
+				d = append(d, Dbmovie{ImdbID: row[1], Title: row[5], URL: row[6], VoteAverage: float32(voteavg), Year: int(year), VoteCount: int(votes)})
 			}
 		}
-		return d
 	}
-	return []Dbmovie{}
+	return d
 }
 
 func UpgradeIMDBMovies(url string, listname string, qualityProfile string) {
@@ -807,8 +798,7 @@ func GetIMDBMovies(imdb []string, listname string, qualityProfile string) []Dbmo
 	for _, row := range imdb {
 		counter, _ := CountRows("dbmovies", Query{Where: "imdb_id = ? COLLATE NOCASE", WhereArgs: []interface{}{row}})
 		if counter == 0 {
-			dbentry := Dbmovie{ImdbID: row}
-			d = append(d, dbentry)
+			d = append(d, Dbmovie{ImdbID: row})
 		}
 	}
 	return d

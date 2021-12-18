@@ -1219,8 +1219,7 @@ func StructureSingleFolder(folder string, disableruntimecheck bool, disabledisal
 			yearstr := strconv.Itoa(m.Year)
 			titleyear := m.Title + " (" + yearstr + ")"
 			seriestitle := ""
-			re, _ := regexp.Compile(`^(.*)(?i)(?:(?:\.| - |-)S?(?:\d+)(?: )?[ex](?:\d+)(?:[^0-9]|$))`)
-			matched := re.FindStringSubmatch(filepath.Base(videofiles[fileidx]))
+			matched := config.RegexSeriesTitle.FindStringSubmatch(filepath.Base(videofiles[fileidx]))
 			if len(matched) >= 2 {
 				seriestitle = matched[1]
 			}
@@ -1419,8 +1418,7 @@ func (s *Structure) Notify(videotarget string, filename string, videofile string
 
 func (s *Structure) GetSeriesEpisodes(series database.Serie, videofile string, m ParseInfo, folder string) (oldfiles []string, episodes []int, allowimport bool, serietitle string, episodetitle string, SeriesEpisode database.SerieEpisode, SeriesEpisodes []database.SerieEpisode) {
 	dbserie, _ := database.GetDbserie(database.Query{Where: "id=?", WhereArgs: []interface{}{series.DbserieID}})
-	r := regexp.MustCompile(`(?i)s?[0-9]{1,4}((?:(?:(?: )?-?(?: )?[ex][0-9]{1,3})+))|(\d{2,4}(?:\.|-| |_)\d{1,2}(?:\.|-| |_)\d{1,2})(?:\b|_)`)
-	teststr := r.FindStringSubmatch(m.Identifier)
+	teststr := config.RegexSeriesIdentifier.FindStringSubmatch(m.Identifier)
 	if len(teststr) == 0 {
 		logger.Log.Debug("In Identifier not found: ", videofile, " Identifier: ", m.Identifier)
 		return
