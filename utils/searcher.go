@@ -55,32 +55,25 @@ func SearchMovieMissing(configEntry config.MediaTypeConfig, jobcount int, titles
 	}
 
 	argsscan := append(argslist, scantime)
-	qu := database.Query{}
-	qu.Select = "movies.*"
-	qu.InnerJoin = "dbmovies on dbmovies.id=movies.dbmovie_id"
+	qu := database.Query{Select: "movies.*", InnerJoin: "dbmovies on dbmovies.id=movies.dbmovie_id", OrderBy: "movies.Lastscan asc"}
 	if scaninterval != 0 {
 		qu.Where = "movies.missing = 1 AND movies.listname in (?" + strings.Repeat(",?", len(lists)-1) + ") AND (movies.lastscan is null or movies.Lastscan < ?)"
 		qu.WhereArgs = argsscan
 		if scandatepre != 0 {
 			qu.Where += " and (dbmovies.release_date < ? or dbmovies.release_date is null)"
-			scanpretime := time.Now()
-			scanpretime = scanpretime.AddDate(0, 0, 0+scandatepre)
-			qu.WhereArgs = append(argsscan, scanpretime)
+			qu.WhereArgs = append(argsscan, time.Now().AddDate(0, 0, 0+scandatepre))
 		}
 	} else {
 		qu.Where = "movies.missing = 1 AND movies.listname in (?" + strings.Repeat(",?", len(lists)-1) + ")"
 		qu.WhereArgs = argslist
 		if scandatepre != 0 {
 			qu.Where += " and (dbmovies.release_date < ? or dbmovies.release_date is null)"
-			scanpretime := time.Now()
-			scanpretime = scanpretime.AddDate(0, 0, 0+scandatepre)
-			qu.WhereArgs = append(argslist, scanpretime)
+			qu.WhereArgs = append(argslist, time.Now().AddDate(0, 0, 0+scandatepre))
 		}
 	}
 	if jobcount >= 1 {
 		qu.Limit = uint64(jobcount)
 	}
-	qu.OrderBy = "movies.Lastscan asc"
 	missingmovies, _ := database.QueryMovies(qu)
 
 	// searchnow := NewSearcher(configEntry, list)
@@ -258,32 +251,25 @@ func SearchSerieMissing(configEntry config.MediaTypeConfig, jobcount int, titles
 	}
 	argsscan := append(argslist, scantime)
 
-	qu := database.Query{}
-	qu.Select = "Serie_episodes.*"
-	qu.InnerJoin = "dbserie_episodes on dbserie_episodes.id=serie_episodes.Dbserie_episode_id inner join series on series.id=serie_episodes.serie_id"
+	qu := database.Query{Select: "Serie_episodes.*", OrderBy: "Lastscan asc", InnerJoin: "dbserie_episodes on dbserie_episodes.id=serie_episodes.Dbserie_episode_id inner join series on series.id=serie_episodes.serie_id"}
 	if scaninterval != 0 {
 		qu.Where = "serie_episodes.missing = 1 AND dbserie_episodes.Season != 0 and series.listname in (?" + strings.Repeat(",?", len(lists)-1) + ") AND (serie_episodes.lastscan is null or serie_episodes.Lastscan < ?)"
 		qu.WhereArgs = argsscan
 		if scandatepre != 0 {
 			qu.Where += " and (dbserie_episodes.first_aired < ? or dbserie_episodes.first_aired is null)"
-			scanpretime := time.Now()
-			scanpretime = scanpretime.AddDate(0, 0, 0+scandatepre)
-			qu.WhereArgs = append(argsscan, scanpretime)
+			qu.WhereArgs = append(argsscan, time.Now().AddDate(0, 0, 0+scandatepre))
 		}
 	} else {
 		qu.Where = "serie_episodes.missing = 1 AND dbserie_episodes.Season != 0 and series.listname in (?" + strings.Repeat(",?", len(lists)-1) + ")"
 		qu.WhereArgs = argslist
 		if scandatepre != 0 {
 			qu.Where += " and (dbserie_episodes.first_aired < ? or dbserie_episodes.first_aired is null)"
-			scanpretime := time.Now()
-			scanpretime = scanpretime.AddDate(0, 0, 0+scandatepre)
-			qu.WhereArgs = append(argslist, scanpretime)
+			qu.WhereArgs = append(argslist, time.Now().AddDate(0, 0, 0+scandatepre))
 		}
 	}
 	if jobcount >= 1 {
 		qu.Limit = uint64(jobcount)
 	}
-	qu.OrderBy = "Lastscan asc"
 	missingepisode, _ := database.QuerySerieEpisodes(qu)
 
 	swg := sizedwaitgroup.New(cfg_general.WorkerSearch)
@@ -336,9 +322,7 @@ func SearchSerieUpgrade(configEntry config.MediaTypeConfig, jobcount int, titles
 	}
 	argsscan := append(args, scantime)
 
-	qu := database.Query{}
-	qu.Select = "Serie_episodes.*"
-	qu.InnerJoin = "dbserie_episodes on dbserie_episodes.id=serie_episodes.Dbserie_episode_id inner join series on series.id=serie_episodes.serie_id"
+	qu := database.Query{Select: "Serie_episodes.*", OrderBy: "Lastscan asc", InnerJoin: "dbserie_episodes on dbserie_episodes.id=serie_episodes.Dbserie_episode_id inner join series on series.id=serie_episodes.serie_id"}
 	if scaninterval != 0 {
 		qu.Where = "serie_episodes.missing = 0 AND serie_episodes.quality_reached = 0 AND dbserie_episodes.Season != 0 and series.listname in (?" + strings.Repeat(",?", len(lists)-1) + ") AND (serie_episodes.lastscan is null or serie_episodes.Lastscan < ?)"
 		qu.WhereArgs = argsscan
@@ -349,7 +333,6 @@ func SearchSerieUpgrade(configEntry config.MediaTypeConfig, jobcount int, titles
 	if jobcount >= 1 {
 		qu.Limit = uint64(jobcount)
 	}
-	qu.OrderBy = "Lastscan asc"
 	missingepisode, _ := database.QuerySerieEpisodes(qu)
 
 	swg := sizedwaitgroup.New(cfg_general.WorkerSearch)
@@ -374,13 +357,13 @@ func SearchSerieRSS(configEntry config.MediaTypeConfig, quality string) {
 
 	searchnow := NewSearcher(configEntry, quality)
 	searchresults := searchnow.SearchRSS("series", false)
-	downloaded := make(map[int]bool, 10)
+	downloaded := make(map[uint]bool, len(searchresults.Nzbs))
 	for idx := range searchresults.Nzbs {
-		if _, nok := downloaded[int(searchresults.Nzbs[idx].Nzbepisode.ID)]; nok {
+		if _, nok := downloaded[searchresults.Nzbs[idx].Nzbepisode.ID]; nok {
 			continue
 		}
 		logger.Log.Debug("nzb found - start downloading: ", searchresults.Nzbs[idx].NZB.Title)
-		downloaded[int(searchresults.Nzbs[idx].Nzbepisode.ID)] = true
+		downloaded[searchresults.Nzbs[idx].Nzbepisode.ID] = true
 		downloadnow := NewDownloader(configEntry, "rss")
 		downloadnow.SetSeriesEpisode(searchresults.Nzbs[idx].Nzbepisode)
 		downloadnow.DownloadNzb(searchresults.Nzbs[idx])
@@ -392,13 +375,13 @@ func SearchMovieRSS(configEntry config.MediaTypeConfig, quality string) {
 
 	searchnow := NewSearcher(configEntry, quality)
 	searchresults := searchnow.SearchRSS("movie", false)
-	downloaded := make(map[int]bool, 10)
+	downloaded := make(map[uint]bool, len(searchresults.Nzbs))
 	for idx := range searchresults.Nzbs {
-		if _, nok := downloaded[int(searchresults.Nzbs[idx].Nzbmovie.ID)]; nok {
+		if _, nok := downloaded[searchresults.Nzbs[idx].Nzbmovie.ID]; nok {
 			continue
 		}
 		logger.Log.Debug("nzb found - start downloading: ", searchresults.Nzbs[idx].NZB.Title)
-		downloaded[int(searchresults.Nzbs[idx].Nzbmovie.ID)] = true
+		downloaded[searchresults.Nzbs[idx].Nzbmovie.ID] = true
 		downloadnow := NewDownloader(configEntry, "rss")
 		downloadnow.SetMovie(searchresults.Nzbs[idx].Nzbmovie)
 		downloadnow.DownloadNzb(searchresults.Nzbs[idx])
@@ -536,6 +519,7 @@ func (s *Searcher) SearchRSS(searchGroupType string, fetchall bool) searchResult
 }
 
 func (s *Searcher) NzbsToNzbsPrio(nzbs []newznab.NZB) {
+	regexSeriesTitle, _ = regexp.Compile(`^(.*)(?i)(?:(?:\.| - |-)S?(?:\d+)(?: )?[ex](?:\d+)(?:[^0-9]|$))`)
 	s.Nzbs = make([]Nzbwithprio, 0, len(nzbs))
 	s.NzbsDenied = make([]Nzbwithprio, 0, len(nzbs))
 	for idx := range nzbs {
@@ -587,8 +571,8 @@ func (s *Searcher) FilterNzbHistory() {
 				continue
 			}
 			if s.Indexer.History_check_title {
-				countertitle2, _ := database.CountRows("movie_histories", database.Query{Where: "title = ? COLLATE NOCASE", WhereArgs: []interface{}{s.Nzbs[idx].NZB.Title}})
-				if countertitle2 >= 1 {
+				countertitle, _ = database.CountRows("movie_histories", database.Query{Where: "title = ? COLLATE NOCASE", WhereArgs: []interface{}{s.Nzbs[idx].NZB.Title}})
+				if countertitle >= 1 {
 					logger.Log.Debug("Skipped - Already Downloaded (Title): ", s.Nzbs[idx].NZB.Title)
 					s.Nzbs[idx].Denied = true
 					s.Nzbs[idx].Reason = "Already downloaded"
@@ -659,6 +643,8 @@ func (s *Searcher) CheckMatchingID() {
 	}
 	s.Nzbs = retnzb
 }
+
+var regexSeriesTitle *regexp.Regexp
 
 //Needs s.Movie or s.SerieEpisode (for non RSS)
 func (s *Searcher) SetDataField(lists []string, addifnotfound bool) {
@@ -830,7 +816,7 @@ func (s *Searcher) SetDataField(lists []string, addifnotfound bool) {
 				}
 			}
 			dbmoviealt, _ := database.QueryDbmovieTitle(database.Query{Where: "dbmovie_id=?", WhereArgs: []interface{}{loopdbmovie.ID}})
-			s.Nzbs[idx].WantedAlternates = []string{}
+			s.Nzbs[idx].WantedAlternates = make([]string, 0, len(dbmoviealt))
 			for idxalt := range dbmoviealt {
 				s.Nzbs[idx].WantedAlternates = append(s.Nzbs[idx].WantedAlternates, dbmoviealt[idxalt].Title)
 			}
@@ -854,7 +840,7 @@ func (s *Searcher) SetDataField(lists []string, addifnotfound bool) {
 					loopdbseries = founddbserie
 
 					foundalternate, _ := database.QueryDbserieAlternates(database.Query{Select: "title", Where: "dbserie_id=?", WhereArgs: []interface{}{founddbserie.ID}})
-					s.AlternateNames = []string{}
+					s.AlternateNames = make([]string, 0, len(foundalternate))
 					for idxalt := range foundalternate {
 						s.AlternateNames = append(s.AlternateNames, foundalternate[idxalt].Title)
 					}
@@ -936,11 +922,9 @@ func (s *Searcher) SetDataField(lists []string, addifnotfound bool) {
 					tempparse, _ := NewFileParser(s.Nzbs[idx].NZB.Title, true, "series")
 					tempparse.StripTitlePrefixPostfix(s.Nzbs[idx].Quality)
 					s.Nzbs[idx].ParseInfo = *tempparse
-					yearstr := strconv.Itoa(tempparse.Year)
-					titleyear := tempparse.Title + " (" + yearstr + ")"
+					titleyear := tempparse.Title + " (" + strconv.Itoa(tempparse.Year) + ")"
 					seriestitle := ""
-					re, _ := regexp.Compile(`^(.*)(?i)(?:(?:\.| - |-)S?(?:\d+)(?: )?[ex](?:\d+)(?:[^0-9]|$))`)
-					matched := re.FindStringSubmatch(s.Nzbs[idx].NZB.Title)
+					matched := regexSeriesTitle.FindStringSubmatch(s.Nzbs[idx].NZB.Title)
 					if len(matched) >= 2 {
 						seriestitle = matched[1]
 					}
@@ -1065,7 +1049,7 @@ func (s *Searcher) SetDataField(lists []string, addifnotfound bool) {
 			s.Nzbs[idx].Quality = cfg_quality
 			s.Nzbs[idx].WantedTitle = loopdbseries.Seriename
 			dbseriealt, _ := database.QueryDbserieAlternates(database.Query{Where: "dbserie_id=?", WhereArgs: []interface{}{loopepisode.DbserieID}})
-			s.Nzbs[idx].WantedAlternates = []string{}
+			s.Nzbs[idx].WantedAlternates = make([]string, 0, len(dbseriealt))
 			for idxalt := range dbseriealt {
 				s.Nzbs[idx].WantedAlternates = append(s.Nzbs[idx].WantedAlternates, dbseriealt[idxalt].Title)
 			}
