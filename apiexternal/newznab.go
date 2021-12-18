@@ -19,6 +19,7 @@ type NzbIndexer struct {
 	Customrssurl            string
 	Customrsscategory       string
 	RssDownloadAll          bool
+	OutputAsJson            bool
 	Limitercalls            int
 	Limiterseconds          int
 	MaxAge                  int
@@ -37,7 +38,7 @@ func QueryNewznabMovieImdb(indexers []NzbIndexer, imdbid string, categories []in
 			client = newznab.New(row.URL, row.Apikey, row.UserID, row.SkipSslCheck, true, row.Limitercalls, row.Limiterseconds)
 			NewznabClients[row.URL] = client
 		}
-		resultsadd, erradd := nzbQueryImdb(client, categories, imdbid, row.Additional_query_params, row.Customurl, row.MaxAge)
+		resultsadd, erradd := nzbQueryImdb(client, categories, imdbid, row.Additional_query_params, row.Customurl, row.MaxAge, row.OutputAsJson)
 		results = append(results, resultsadd...)
 		if erradd != nil {
 			err = erradd
@@ -60,7 +61,7 @@ func QueryNewznabTvTvdb(indexers []NzbIndexer, tvdbid int, categories []int, sea
 			client = newznab.New(row.URL, row.Apikey, row.UserID, row.SkipSslCheck, true, row.Limitercalls, row.Limiterseconds)
 			NewznabClients[row.URL] = client
 		}
-		resultsadd, erradd := nzbQueryTvdb(client, categories, tvdbid, season, episode, row.Additional_query_params, row.Customurl, row.MaxAge)
+		resultsadd, erradd := nzbQueryTvdb(client, categories, tvdbid, season, episode, row.Additional_query_params, row.Customurl, row.MaxAge, row.OutputAsJson)
 		results = append(results, resultsadd...)
 		if erradd != nil {
 			err = erradd
@@ -80,7 +81,7 @@ func QueryNewznabQuery(indexers []NzbIndexer, query string, categories []int, se
 			client = newznab.New(row.URL, row.Apikey, row.UserID, row.SkipSslCheck, true, row.Limitercalls, row.Limiterseconds)
 			NewznabClients[row.URL] = client
 		}
-		resultsadd, erradd := nzbQuery(client, categories, query, searchtype, row.Addquotesfortitlequery, row.Additional_query_params, row.Customurl, row.MaxAge)
+		resultsadd, erradd := nzbQuery(client, categories, query, searchtype, row.Addquotesfortitlequery, row.Additional_query_params, row.Customurl, row.MaxAge, row.OutputAsJson)
 		results = append(results, resultsadd...)
 		if erradd != nil {
 			err = erradd
@@ -102,7 +103,7 @@ func QueryNewznabQueryUntil(indexers []NzbIndexer, query string, categories []in
 			client = newznab.New(row.URL, row.Apikey, row.UserID, row.SkipSslCheck, true, row.Limitercalls, row.Limiterseconds)
 			NewznabClients[row.URL] = client
 		}
-		resultsadd, erradd := nzbQueryUntil(client, categories, query, searchtype, row.Addquotesfortitlequery, row.LastRssId, row.Additional_query_params, row.Customurl, row.MaxAge)
+		resultsadd, erradd := nzbQueryUntil(client, categories, query, searchtype, row.Addquotesfortitlequery, row.LastRssId, row.Additional_query_params, row.Customurl, row.MaxAge, row.OutputAsJson)
 		if erradd != nil {
 			err = erradd
 			failedindexers = append(failedindexers, row.URL)
@@ -127,7 +128,7 @@ func QueryNewznabRSS(indexers []NzbIndexer, maxitems int, categories []int) (res
 			client = newznab.New(row.URL, row.Apikey, row.UserID, row.SkipSslCheck, true, row.Limitercalls, row.Limiterseconds)
 			NewznabClients[row.URL] = client
 		}
-		resultsadd, erradd := client.LoadRSSFeed(categories, maxitems, row.Additional_query_params, row.Customapi, row.Customrssurl, row.Customrsscategory, 0)
+		resultsadd, erradd := client.LoadRSSFeed(categories, maxitems, row.Additional_query_params, row.Customapi, row.Customrssurl, row.Customrsscategory, 0, row.OutputAsJson)
 		results = append(results, resultsadd...)
 		if erradd != nil {
 			err = erradd
@@ -149,7 +150,7 @@ func QueryNewznabRSSLast(indexers []NzbIndexer, maxitems int, categories []int, 
 			client = newznab.New(row.URL, row.Apikey, row.UserID, row.SkipSslCheck, true, row.Limitercalls, row.Limiterseconds)
 			NewznabClients[row.URL] = client
 		}
-		resultsadd, erradd := client.LoadRSSFeedUntilNZBID(categories, maxitems, row.LastRssId, maxrequests, row.Additional_query_params, row.Customapi, row.Customrssurl, row.Customrsscategory, 0)
+		resultsadd, erradd := client.LoadRSSFeedUntilNZBID(categories, maxitems, row.LastRssId, maxrequests, row.Additional_query_params, row.Customapi, row.Customrssurl, row.Customrsscategory, 0, row.OutputAsJson)
 		if erradd != nil {
 			err = erradd
 			failedindexers = append(failedindexers, row.URL)
@@ -163,8 +164,8 @@ func QueryNewznabRSSLast(indexers []NzbIndexer, maxitems int, categories []int, 
 	return
 }
 
-func nzbQuery(client newznab.Client, categories []int, query string, searchtype string, addquotes bool, additional_query_params string, customurl string, maxage int) ([]newznab.NZB, error) {
-	resp, err := client.SearchWithQuery(categories, query, searchtype, addquotes, additional_query_params, customurl, maxage)
+func nzbQuery(client newznab.Client, categories []int, query string, searchtype string, addquotes bool, additional_query_params string, customurl string, maxage int, outputAsJson bool) ([]newznab.NZB, error) {
+	resp, err := client.SearchWithQuery(categories, query, searchtype, addquotes, additional_query_params, customurl, maxage, outputAsJson)
 
 	if err != nil {
 		return nil, err
@@ -173,8 +174,8 @@ func nzbQuery(client newznab.Client, categories []int, query string, searchtype 
 	return resp, nil
 }
 
-func nzbQueryUntil(client newznab.Client, categories []int, query string, searchtype string, addquotes bool, id string, additional_query_params string, customurl string, maxage int) ([]newznab.NZB, error) {
-	resp, err := client.SearchWithQueryUntilNZBID(categories, query, searchtype, addquotes, id, additional_query_params, customurl, maxage)
+func nzbQueryUntil(client newznab.Client, categories []int, query string, searchtype string, addquotes bool, id string, additional_query_params string, customurl string, maxage int, outputAsJson bool) ([]newznab.NZB, error) {
+	resp, err := client.SearchWithQueryUntilNZBID(categories, query, searchtype, addquotes, id, additional_query_params, customurl, maxage, outputAsJson)
 
 	if err != nil {
 		return nil, err
@@ -183,8 +184,8 @@ func nzbQueryUntil(client newznab.Client, categories []int, query string, search
 	return resp, nil
 }
 
-func nzbQueryTvdb(client newznab.Client, categories []int, tvdbid int, season int, episode int, additional_query_params string, customurl string, maxage int) ([]newznab.NZB, error) {
-	resp, err := client.SearchWithTVDB(categories, tvdbid, season, episode, additional_query_params, customurl, maxage)
+func nzbQueryTvdb(client newznab.Client, categories []int, tvdbid int, season int, episode int, additional_query_params string, customurl string, maxage int, outputAsJson bool) ([]newznab.NZB, error) {
+	resp, err := client.SearchWithTVDB(categories, tvdbid, season, episode, additional_query_params, customurl, maxage, outputAsJson)
 
 	if err != nil {
 		return nil, err
@@ -193,8 +194,8 @@ func nzbQueryTvdb(client newznab.Client, categories []int, tvdbid int, season in
 	return resp, nil
 }
 
-func nzbQueryImdb(client newznab.Client, categories []int, imdbid string, additional_query_params string, customurl string, maxage int) ([]newznab.NZB, error) {
-	resp, err := client.SearchWithIMDB(categories, imdbid, additional_query_params, customurl, maxage)
+func nzbQueryImdb(client newznab.Client, categories []int, imdbid string, additional_query_params string, customurl string, maxage int, outputAsJson bool) ([]newznab.NZB, error) {
+	resp, err := client.SearchWithIMDB(categories, imdbid, additional_query_params, customurl, maxage, outputAsJson)
 
 	if err != nil {
 		return nil, err

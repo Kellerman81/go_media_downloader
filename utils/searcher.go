@@ -1714,7 +1714,8 @@ func (s *Searcher) InitIndexer(indexer config.QualityIndexerConfig, rssapi strin
 		Customrsscategory:       cfg_indexer.Customrsscategory,
 		Limitercalls:            cfg_indexer.Limitercalls,
 		Limiterseconds:          cfg_indexer.Limiterseconds,
-		MaxAge:                  cfg_indexer.MaxAge}
+		MaxAge:                  cfg_indexer.MaxAge,
+		OutputAsJson:            cfg_indexer.OutputAsJson}
 	if strings.Contains(indexer.Categories_indexer, ",") {
 		catarray := strings.Split(indexer.Categories_indexer, ",")
 		cats := make([]int, 0, len(catarray))
