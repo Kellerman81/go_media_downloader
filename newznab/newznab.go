@@ -280,7 +280,7 @@ func (c Client) SearchWithQueryUntilNZBID(categories []int, query string, search
 
 // LoadRSSFeed returns up to <num> of the most recent NZBs of the given categories.
 func (c Client) LoadRSSFeed(categories []int, num int, additional_query_params string, customapi string, customrssurl string, customrsscategory string, maxage int, outputasjson bool) ([]NZB, error) {
-	return c.processurl(c.BuildRssUrl(customrssurl, customrsscategory, customapi, additional_query_params, num, categories, 0, outputasjson), "", maxage, outputasjson)
+	return c.processurl(c.BuildRssUrl(customrssurl, customrsscategory, customapi, additional_query_params, num, categories, 0, false), "", maxage, false)
 }
 
 func (c Client) joinCats(cats []int) string {
@@ -352,9 +352,9 @@ func (c Client) LoadRSSFeedUntilNZBID(categories []int, num int, id string, maxR
 	var nzbs []NZB
 
 	for {
-		buildurl := c.BuildRssUrl(customrssurl, customrsscategory, customapi, additional_query_params, num, categories, (num * count), outputasjson)
+		buildurl := c.BuildRssUrl(customrssurl, customrsscategory, customapi, additional_query_params, num, categories, (num * count), false)
 
-		partition, errp := c.processurl(buildurl, id, maxage, outputasjson)
+		partition, errp := c.processurl(buildurl, id, maxage, false)
 		if errp == nil {
 			for idx := range partition {
 				if partition[idx].ID == id && id != "" {
