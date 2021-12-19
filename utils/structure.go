@@ -849,7 +849,10 @@ func StructureSeries(structure Structure, folder string, m *ParseInfo, series da
 
 	dbseries, _ := database.GetDbserie(database.Query{Where: "id=?", WhereArgs: []interface{}{series.DbserieID}})
 	runtime, _ := strconv.Atoi(dbseries.Runtime)
-	oldfiles, episodes, allowimport, serietitle, episodetitle, seriesEpisode, seriesEpisodes := structure.GetSeriesEpisodes(series, videofile, *m, folder)
+	oldfiles, episodes, allowimport, serietitle, episodetitle, seriesEpisode, seriesEpisodes, epiruntime := structure.GetSeriesEpisodes(series, videofile, *m, folder)
+	if epiruntime != 0 {
+		runtime = epiruntime
+	}
 	errpars := structure.ParseFileAdditional(videofile, m, folder, deletewronglanguage, runtime*len(episodes))
 	if errpars != nil {
 		logger.Log.Error("Error fprobe video: ", videofile, " error: ", errpars)
@@ -1420,7 +1423,7 @@ func (s *Structure) Notify(videotarget string, filename string, videofile string
 	}
 }
 
-func (s *Structure) GetSeriesEpisodes(series database.Serie, videofile string, m ParseInfo, folder string) (oldfiles []string, episodes []int, allowimport bool, serietitle string, episodetitle string, SeriesEpisode database.SerieEpisode, SeriesEpisodes []database.SerieEpisode) {
+func (s *Structure) GetSeriesEpisodes(series database.Serie, videofile string, m ParseInfo, folder string) (oldfiles []string, episodes []int, allowimport bool, serietitle string, episodetitle string, SeriesEpisode database.SerieEpisode, SeriesEpisodes []database.SerieEpisode, runtime int) {
 	dbserie, _ := database.GetDbserie(database.Query{Where: "id=?", WhereArgs: []interface{}{series.DbserieID}})
 	teststr := config.RegexSeriesIdentifier.FindStringSubmatch(m.Identifier)
 	if len(teststr) == 0 {
@@ -1459,7 +1462,9 @@ func (s *Structure) GetSeriesEpisodes(series database.Serie, videofile string, m
 		}
 		if SeriesEpisodeerr == nil {
 			dbserieepisode, _ := database.GetDbserieEpisodes(database.Query{Where: "id=?", WhereArgs: []interface{}{SeriesEpisode.DbserieEpisodeID}})
-
+			if runtime == 0 {
+				runtime = dbserieepisode.Runtime
+			}
 			reepi, _ := regexp.Compile(`^(.*)(?i)` + m.Identifier + `(?:\.| |-)(.*)$`)
 			matched := reepi.FindStringSubmatch(filepath.Base(videofile))
 			if len(matched) >= 2 {

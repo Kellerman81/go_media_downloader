@@ -383,16 +383,16 @@ func JobReloadDbSeries(dbserie database.Dbserie, configEntry config.MediaTypeCon
 			if strings.EqualFold(episodes[idxepi].Season, dbepisode[idxdbepi].Season) && strings.EqualFold(episodes[idxepi].Episode, dbepisode[idxdbepi].Episode) {
 				epifound = true
 				database.UpdateArray("dbserie_episodes",
-					[]string{"title", "first_aired", "overview", "poster"},
-					[]interface{}{episodes[idxepi].Title, episodes[idxepi].FirstAired, episodes[idxepi].Overview, episodes[idxepi].Poster},
+					[]string{"title", "first_aired", "overview", "poster", "runtime"},
+					[]interface{}{episodes[idxepi].Title, episodes[idxepi].FirstAired, episodes[idxepi].Overview, episodes[idxepi].Poster, episodes[idxepi].Runtime},
 					database.Query{Where: "id=?", WhereArgs: []interface{}{dbepisode[idxdbepi].ID}})
 				break
 			}
 		}
 		if !epifound {
 			database.InsertArray("dbserie_episodes",
-				[]string{"episode", "season", "identifier", "title", "first_aired", "overview", "poster", "dbserie_id"},
-				[]interface{}{episodes[idxepi].Episode, episodes[idxepi].Season, episodes[idxepi].Identifier, episodes[idxepi].Title, episodes[idxepi].FirstAired, episodes[idxepi].Overview, episodes[idxepi].Poster, episodes[idxepi].DbserieID})
+				[]string{"episode", "season", "identifier", "title", "first_aired", "overview", "poster", "runtime", "dbserie_id"},
+				[]interface{}{episodes[idxepi].Episode, episodes[idxepi].Season, episodes[idxepi].Identifier, episodes[idxepi].Title, episodes[idxepi].FirstAired, episodes[idxepi].Overview, episodes[idxepi].Poster, episodes[idxepi].Runtime, episodes[idxepi].DbserieID})
 		}
 	}
 
