@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"strings"
 
 	wrapper "github.com/pkg/errors"
 
@@ -20,8 +21,8 @@ func SendToQBittorrent(host string, port string, username string, password strin
 	_, err = cl.Login(username, password)
 	if err == nil {
 		options := map[string]string{
-			"savepath":  dlpath,
-			"is_paused": addpaused,
+			"savepath": dlpath,
+			"paused":   addpaused,
 		}
 		// perform connection to Deluge server
 		_, err = cl.DownloadFromLink(url, options)
@@ -54,7 +55,7 @@ func NewQBittorrentClient(url string) *QbtClient {
 		url += "/"
 	}
 
-	client.URL = url
+	client.URL = url + "api/v2/"
 
 	// create cookie jar
 	client.Jar, _ = cookiejar.New(&cookiejar.Options{PublicSuffixList: publicsuffix.List})
@@ -66,7 +67,19 @@ func NewQBittorrentClient(url string) *QbtClient {
 
 //post will perform a POST request with no content-type specified
 func (client *QbtClient) post(endpoint string, opts map[string]string) (*http.Response, error) {
-	req, err := http.NewRequest("POST", client.URL+endpoint, nil)
+	var req *http.Request
+	var err error
+	// add optional parameters that the user wants
+	if opts != nil {
+		form := url.Values{}
+		for k, v := range opts {
+			form.Add(k, v)
+		}
+		req, err = http.NewRequest("POST", client.URL+endpoint, strings.NewReader(form.Encode()))
+
+	} else {
+		req, err = http.NewRequest("POST", client.URL+endpoint, nil)
+	}
 	if err != nil {
 		return nil, wrapper.Wrap(err, "failed to build request")
 	}
@@ -75,15 +88,6 @@ func (client *QbtClient) post(endpoint string, opts map[string]string) (*http.Re
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	// add user-agent header to allow qbittorrent to identify us
 	req.Header.Set("User-Agent", "go-qbittorrent v0.1")
-
-	// add optional parameters that the user wants
-	if opts != nil {
-		form := url.Values{}
-		for k, v := range opts {
-			form.Add(k, v)
-		}
-		req.PostForm = form
-	}
 
 	resp, err := client.http.Do(req)
 	if err != nil {
@@ -150,11 +154,11 @@ func (client *QbtClient) Login(username string, password string) (loggedIn bool,
 	credentials["username"] = username
 	credentials["password"] = password
 
-	resp, err := client.post("login", credentials)
+	resp, err := client.post("auth/login", credentials)
 	if err != nil {
 		return false, err
 	} else if resp.Status != "200 OK" { // check for correct status code
-		return false, wrapper.Wrap(ErrBadResponse, "couldnt log in")
+		return false, wrapper.Wrap(ErrBadResponse, "couldnt log in with "+client.URL+"auth/login")
 	}
 
 	// change authentication status so we know were authenticated in later requests
@@ -162,7 +166,7 @@ func (client *QbtClient) Login(username string, password string) (loggedIn bool,
 
 	// add the cookie to cookie jar to authenticate later requests
 	if cookies := resp.Cookies(); len(cookies) > 0 {
-		cookieURL, _ := url.Parse("http://localhost:8080")
+		cookieURL, _ := url.Parse(client.URL)
 		client.Jar.SetCookies(cookieURL, cookies)
 	}
 
@@ -178,5 +182,5 @@ func (client *QbtClient) Login(username string, password string) (loggedIn bool,
 //DownloadFromLink starts downloading a torrent from a link
 func (client *QbtClient) DownloadFromLink(link string, options map[string]string) (*http.Response, error) {
 	options["urls"] = link
-	return client.postMultipartData("command/download", options)
+	return client.postMultipartData("torrents/add", options)
 }

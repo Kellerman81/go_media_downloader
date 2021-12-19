@@ -3,7 +3,7 @@ package apiexternal
 import (
 	"errors"
 
-	"github.com/mrobinsn/go-sabnzbd"
+	"github.com/Kellerman81/go_media_downloader/sabnzbd"
 )
 
 func SendToSabnzbd(server string, apikey string, url string, category string, nzbname string, priority int) error {
@@ -20,8 +20,7 @@ func SendToSabnzbd(server string, apikey string, url string, category string, nz
 	if auth != "apikey" {
 		return errors.New("sabnzbd instance must be using apikey authentication")
 	}
-
-	_, err = s.AddURL(sabnzbd.AddNzbUrl(url), sabnzbd.AddNzbCategory(category), sabnzbd.AddNzbName(nzbname), sabnzbd.AddNzbPriority(priority))
+	_, err = s.AddURL(sabnzbd.AddNzbUrl(url), sabnzbd.AddNzbName(nzbname), sabnzbd.AddNzbCategory(category), sabnzbd.AddNzbPriority(priority))
 	if err != nil {
 		return err
 	}

@@ -149,8 +149,8 @@ remove_failed_downloads = 'false' # unused
 
 [[downloader]]
 name="ensab"
-type="sabnzbd" #Send Files to sabnzbd client (untested)
-hostname="192.168.1.1:8080" #hostname:port
+type="sabnzbd" #Send Files to sabnzbd client
+hostname="192.168.1.1:8080" #hostname:port!
 password="" #enter api key here
 enabled=true
 priority=0  #-100 = Default Priority (of category), -3 = Duplicate, -2 = Paused, -1 = Low Priority, 0 = Normal Priority, 1 = High Priority, 2 = Force
@@ -162,11 +162,11 @@ enabled=true
 
 [[downloader]]
 name="enqbit" 
-type="qbittorrent" #Send Torrents or Magnet Urls to deluge client
+type="qbittorrent" #Send Torrents or Magnet Urls to qbittorrent client (qBittorrent v4.1+ only)
 hostname="192.168.1.1"
-port=8080 # Daemon Port
-username="localclient"
-password="" #Password
+port=6363 # Daemon Port
+username="admin"
+password="adminadmin" #Password
 enabled=true
 add_paused=false
 deluge_dl_to="/downloads/incomplete" # Download incomplete to path

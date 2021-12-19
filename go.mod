@@ -18,7 +18,6 @@ require (
 	github.com/knadh/koanf v1.3.3 //initial config
 	github.com/mattn/go-sqlite3 v1.14.9 //data and imdb db
 	github.com/mrobinsn/go-rtorrent v1.6.0
-	github.com/mrobinsn/go-sabnzbd v0.0.0-20170707144533-63837cbec46d
 	github.com/pkg/errors v0.9.1
 	github.com/recoilme/pudge v1.0.3 //config db
 	github.com/remeh/sizedwaitgroup v1.0.0 //concurrent wait group
@@ -28,7 +27,7 @@ require (
 	github.com/swaggo/gin-swagger v1.3.3 //api docs
 	github.com/swaggo/swag v1.7.6 //api docs
 	github.com/toorop/gin-logrus v0.0.0-20210225092905-2c785434f26f //log gin stuff to logfile also
-	golang.org/x/net v0.0.0-20211206223403-eba003a116a9
+	golang.org/x/net v0.0.0-20211216030914-fe4d6282115f
 	golang.org/x/oauth2 v0.0.0-20211104180415-d3ed0bb246c8 //trakt
 	golang.org/x/text v0.3.7
 	golang.org/x/time v0.0.0-20211116232009-f0f3c7e86c11
@@ -53,7 +52,6 @@ require (
 	github.com/go-redis/redis v6.15.9+incompatible // indirect
 	github.com/go-sql-driver/mysql v1.6.0 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
-	github.com/h2non/filetype v1.1.3
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
@@ -70,8 +68,8 @@ require (
 	github.com/pelletier/go-toml v1.9.4 // indirect
 	github.com/ugorji/go/codec v1.2.6 // indirect
 	go.uber.org/atomic v1.9.0 // indirect
-	golang.org/x/crypto v0.0.0-20211202192323-5770296d904e // indirect
-	golang.org/x/sys v0.0.0-20211205182925-97ca703d548d // indirect
+	golang.org/x/crypto v0.0.0-20211215153901-e495a2d5b3d3 // indirect
+	golang.org/x/sys v0.0.0-20211216021012-1d35b9e2eb4e // indirect
 	golang.org/x/tools v0.1.8 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/protobuf v1.27.1 // indirect
