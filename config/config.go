@@ -115,6 +115,7 @@ type GeneralConfig struct {
 	Omdblimitercalls                   int      `koanf:"omdb_limiter_calls"`
 	FfprobePath                        string   `koanf:"ffprobe_path"`
 	FailedIndexerBlockTime             int      `koanf:"failed_indexer_block_time"`
+	MaxDatabaseBackups                 int      `koanf:"max_database_backups"`
 }
 
 type ImdbConfig struct {

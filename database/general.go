@@ -2,11 +2,16 @@ package database
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"os"
+	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -166,4 +171,112 @@ type IndexerFail struct {
 	UpdatedAt time.Time `db:"updated_at"`
 	Indexer   string
 	LastFail  sql.NullTime `db:"last_fail"`
+}
+
+func RemoveOldDbBackups(max int) error {
+	if max == 0 {
+		return nil
+	}
+
+	prefix := "data.db." + DBVersion + "."
+	oldDbVersion, _ := strconv.Atoi(DBVersion)
+	if oldDbVersion != 0 {
+		oldDbVersion = oldDbVersion - 1
+	}
+	oldprefix := "data.db." + strconv.Itoa(oldDbVersion) + "."
+	files, err := oldDatabaseFiles(prefix, oldprefix)
+	if err != nil {
+		return err
+	}
+
+	var remove []backupInfo
+
+	if max > 0 && max < len(files) {
+		preserved := make(map[string]bool)
+		for _, f := range files {
+			// Only count the uncompressed log file or the
+			// compressed log file, not both.
+			fn := f.Name()
+			if !strings.HasPrefix(fn, prefix) && !strings.HasPrefix(fn, oldprefix) {
+				continue
+			}
+
+			preserved[fn] = true
+
+			if len(preserved) > max {
+				remove = append(remove, f)
+			}
+		}
+	}
+
+	for _, f := range remove {
+		errRemove := os.Remove(filepath.Join("./backup", f.Name()))
+		if err == nil && errRemove != nil {
+			err = errRemove
+		}
+	}
+
+	return err
+}
+
+func oldDatabaseFiles(prefix string, oldprefix string) ([]backupInfo, error) {
+	files, err := ioutil.ReadDir("./backup")
+	if err != nil {
+		return nil, fmt.Errorf("can't read log file directory: %s", err)
+	}
+	backupFiles := []backupInfo{}
+
+	for _, f := range files {
+		if f.IsDir() {
+			continue
+		}
+		if strings.HasPrefix(f.Name(), prefix) {
+			if t, err := timeFromName(f.Name(), prefix, ""); err == nil {
+				backupFiles = append(backupFiles, backupInfo{t, f})
+				continue
+			}
+		}
+
+		if strings.HasPrefix(f.Name(), oldprefix) {
+			if t, err := timeFromName(f.Name(), oldprefix, ""); err == nil {
+				backupFiles = append(backupFiles, backupInfo{t, f})
+				continue
+			}
+		}
+	}
+
+	sort.Sort(byFormatTime(backupFiles))
+
+	return backupFiles, nil
+}
+
+func timeFromName(filename, prefix, ext string) (time.Time, error) {
+	if !strings.HasPrefix(filename, prefix) {
+		return time.Time{}, errors.New("mismatched prefix")
+	}
+	if !strings.HasSuffix(filename, ext) {
+		return time.Time{}, errors.New("mismatched extension")
+	}
+	ts := filename[len(prefix) : len(filename)-len(ext)]
+	return time.Parse("20060102_150405", ts)
+}
+
+type backupInfo struct {
+	timestamp time.Time
+	os.FileInfo
+}
+
+// byFormatTime sorts by newest time formatted in the name.
+type byFormatTime []backupInfo
+
+func (b byFormatTime) Less(i, j int) bool {
+	return b[i].timestamp.After(b[j].timestamp)
+}
+
+func (b byFormatTime) Swap(i, j int) {
+	b[i], b[j] = b[j], b[i]
+}
+
+func (b byFormatTime) Len() int {
+	return len(b)
 }

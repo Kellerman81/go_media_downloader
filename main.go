@@ -44,6 +44,7 @@ func main() {
 
 	pudb, _ := config.OpenConfig("config.db")
 	config.ConfigDB = pudb
+	config.CacheConfig()
 	scanner.CleanUpFolder("./backup", 10)
 	pudge.BackupAll("")
 	os.Mkdir("./temp", 0777)
@@ -105,14 +106,14 @@ func main() {
 	database.GetVars()
 	utils.LoadDBPatterns()
 
-	rows, _ := database.DB.Query("PRAGMA integrity_check;")
-	defer rows.Close()
-	rows.Next()
-	var str string
-	rows.Scan(&str)
+	str := database.DbQuickCheck()
 	if str != "ok" {
+		logger.Log.Errorln("integrity check failed", str)
 		os.Exit(100)
 	}
+
+	database.RemoveOldDbBackups(cfg_general.MaxDatabaseBackups)
+
 	counter, _ := database.CountRows("dbmovies", database.Query{})
 	if counter == 0 {
 		logger.Log.Infoln("Starting initial DB fill for movies")
