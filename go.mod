@@ -14,6 +14,7 @@ require (
 	github.com/google/uuid v1.3.0 //scheduler
 	github.com/gregdel/pushover v1.1.0 //notification
 	github.com/jmoiron/sqlx v1.3.4 //structscan for db
+	github.com/h2non/filetype v1.1.3
 	github.com/karrick/godirwalk v1.16.1 //faster walk
 	github.com/knadh/koanf v1.3.3 //initial config
 	github.com/mattn/go-sqlite3 v1.14.9 //data and imdb db
