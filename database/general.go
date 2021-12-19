@@ -100,7 +100,7 @@ func Upgrade(c *gin.Context) {
 
 // Backup the database. If db is nil, then uses the existing database
 // connection.
-func Backup(db *sqlx.DB, backupPath string) error {
+func Backup(db *sqlx.DB, backupPath string, maxbackups int) error {
 	if db == nil {
 		var err error
 		db, err = sqlx.Connect("sqlite3", "file:data.db?_fk=true")
@@ -114,6 +114,7 @@ func Backup(db *sqlx.DB, backupPath string) error {
 	if err != nil {
 		return fmt.Errorf("vacuum failed: %s", err)
 	}
+	RemoveOldDbBackups(maxbackups)
 
 	return nil
 }
