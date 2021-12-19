@@ -178,13 +178,8 @@ func RemoveOldDbBackups(max int) error {
 		return nil
 	}
 
-	prefix := "data.db." + DBVersion + "."
-	oldDbVersion, _ := strconv.Atoi(DBVersion)
-	if oldDbVersion != 0 {
-		oldDbVersion = oldDbVersion - 1
-	}
-	oldprefix := "data.db." + strconv.Itoa(oldDbVersion) + "."
-	files, err := oldDatabaseFiles(prefix, oldprefix)
+	prefix := "data.db."
+	files, err := oldDatabaseFiles(prefix)
 	if err != nil {
 		return err
 	}
@@ -197,7 +192,7 @@ func RemoveOldDbBackups(max int) error {
 			// Only count the uncompressed log file or the
 			// compressed log file, not both.
 			fn := f.Name()
-			if !strings.HasPrefix(fn, prefix) && !strings.HasPrefix(fn, oldprefix) {
+			if !strings.HasPrefix(fn, prefix) {
 				continue
 			}
 
@@ -219,7 +214,7 @@ func RemoveOldDbBackups(max int) error {
 	return err
 }
 
-func oldDatabaseFiles(prefix string, oldprefix string) ([]backupInfo, error) {
+func oldDatabaseFiles(prefix string) ([]backupInfo, error) {
 	files, err := ioutil.ReadDir("./backup")
 	if err != nil {
 		return nil, fmt.Errorf("can't read log file directory: %s", err)
@@ -232,13 +227,6 @@ func oldDatabaseFiles(prefix string, oldprefix string) ([]backupInfo, error) {
 		}
 		if strings.HasPrefix(f.Name(), prefix) {
 			if t, err := timeFromName(f.Name(), prefix, ""); err == nil {
-				backupFiles = append(backupFiles, backupInfo{t, f})
-				continue
-			}
-		}
-
-		if strings.HasPrefix(f.Name(), oldprefix) {
-			if t, err := timeFromName(f.Name(), oldprefix, ""); err == nil {
 				backupFiles = append(backupFiles, backupInfo{t, f})
 				continue
 			}
@@ -258,6 +246,10 @@ func timeFromName(filename, prefix, ext string) (time.Time, error) {
 		return time.Time{}, errors.New("mismatched extension")
 	}
 	ts := filename[len(prefix) : len(filename)-len(ext)]
+	if idx := strings.Index(ts, "."); idx != -1 {
+		idn := idx + 1
+		ts = ts[idn:]
+	}
 	return time.Parse("20060102_150405", ts)
 }
 
