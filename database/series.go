@@ -205,6 +205,7 @@ type DbserieEpisode struct {
 	FirstAired sql.NullTime `db:"first_aired" json:"first_aired" time_format:"2006-01-02" time_utc:"1"`
 	Overview   string
 	Poster     string
+	Runtime    int
 	DbserieID  uint `db:"dbserie_id"`
 }
 type DbserieEpisodeJson struct {
@@ -422,9 +423,21 @@ func (serie *Dbserie) GetEpisodes(language string, querytrakt bool) []DbserieEpi
 				if err == nil {
 					for _, row := range episodes {
 						breakloop := false
-						for _, added := range epi {
+						for idxadded, added := range epi {
 							if added.Season == strconv.Itoa(row.Season) && added.Episode == strconv.Itoa(row.Episode) {
 								breakloop = true
+								if added.Title == "" {
+									epi[idxadded].Title = row.Title
+								}
+								if added.FirstAired.Time.IsZero() {
+									epi[idxadded].FirstAired = sql.NullTime{Time: row.FirstAired, Valid: true}
+								}
+								if added.Overview == "" {
+									epi[idxadded].Overview = row.Overview
+								}
+								if added.Runtime == 0 {
+									epi[idxadded].Runtime = row.Runtime
+								}
 								break
 							}
 						}
@@ -439,6 +452,7 @@ func (serie *Dbserie) GetEpisodes(language string, querytrakt bool) []DbserieEpi
 						episode.FirstAired = sql.NullTime{Time: row.FirstAired, Valid: true}
 						episode.Overview = row.Overview
 						episode.DbserieID = serie.ID
+						episode.Runtime = row.Runtime
 						epi = append(epi, episode)
 					}
 				}

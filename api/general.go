@@ -932,7 +932,7 @@ func ApiNamingGenerate(ctx *gin.Context) {
 		m, _ := s.ParseFile(cfg.FilePath, true, filepath.Dir(cfg.FilePath), false)
 		s.ParseFileAdditional(cfg.FilePath, m, filepath.Dir(cfg.FilePath), false, 0)
 
-		_, episodes, _, serietitle, episodetitle, seriesEpisode, _ := s.GetSeriesEpisodes(series, cfg.FilePath, *m, filepath.Dir(cfg.FilePath))
+		_, episodes, _, serietitle, episodetitle, seriesEpisode, _, _ := s.GetSeriesEpisodes(series, cfg.FilePath, *m, filepath.Dir(cfg.FilePath))
 
 		foldername, filename := s.GenerateNamingTemplate(cfg.FilePath, *m, database.Movie{}, series, serietitle, seriesEpisode, episodetitle, episodes)
 		ctx.JSON(http.StatusOK, gin.H{"foldername": foldername, "filename": filename})

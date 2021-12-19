@@ -1,0 +1,1 @@
+ALTER TABLE dbserie_episodes ADD COLUMN runtime integer default 0;

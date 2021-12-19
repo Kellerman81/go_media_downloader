@@ -221,7 +221,7 @@ func GetDbserieEpisodes(qu Query) (DbserieEpisode, error) {
 	return DbserieEpisode{}, errors.New("no result")
 }
 func QueryDbserieEpisodes(qu Query) ([]DbserieEpisode, error) {
-	columns := "id,created_at,updated_at,episode,season,identifier,title,first_aired,overview,poster,dbserie_id"
+	columns := "id,created_at,updated_at,episode,season,identifier,title,first_aired,overview,poster,runtime,dbserie_id"
 	if qu.Select != "" {
 		columns = qu.Select
 	}
@@ -1071,7 +1071,7 @@ func GetResultSerieEpisodes(qu Query) (ResultSerieEpisodes, error) {
 	return ResultSerieEpisodes{}, errors.New("no result")
 }
 func QueryResultSerieEpisodes(qu Query) ([]ResultSerieEpisodes, error) {
-	columns := `dbserie_episodes.id as dbserie_episode_id,dbserie_episodes.created_at,dbserie_episodes.updated_at,dbserie_episodes.episode,dbserie_episodes.season,dbserie_episodes.identifier,dbserie_episodes.title,dbserie_episodes.first_aired,dbserie_episodes.overview,dbserie_episodes.poster,dbserie_episodes.dbserie_id,series.listname,series.rootpath,serie_episodes.lastscan,serie_episodes.blacklisted,serie_episodes.quality_reached,serie_episodes.quality_profile,serie_episodes.missing,serie_episodes.id as id`
+	columns := `dbserie_episodes.id as dbserie_episode_id,dbserie_episodes.created_at,dbserie_episodes.updated_at,dbserie_episodes.episode,dbserie_episodes.season,dbserie_episodes.identifier,dbserie_episodes.title,dbserie_episodes.first_aired,dbserie_episodes.overview,dbserie_episodes.poster,dbserie_episodes.dbserie_id,dbserie_episodes.runtime,series.listname,series.rootpath,serie_episodes.lastscan,serie_episodes.blacklisted,serie_episodes.quality_reached,serie_episodes.quality_profile,serie_episodes.missing,serie_episodes.id as id`
 	if qu.Select != "" {
 		columns = qu.Select
 	}
