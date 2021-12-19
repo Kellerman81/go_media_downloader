@@ -730,12 +730,12 @@ func InitScheduler() {
 	}
 	if defaultschedule.Interval_database_backup != "" {
 		QueueData.DispatchEvery("Backup Database", func() {
-			database.Backup(database.DB, fmt.Sprintf("%s.%s.%s", "./backup/data.db", database.DBVersion, time.Now().Format("20060102_150405")))
+			database.Backup(database.DB, fmt.Sprintf("%s.%s.%s", "./backup/data.db", database.DBVersion, time.Now().Format("20060102_150405")), cfg_general.MaxDatabaseBackups)
 		}, converttime(defaultschedule.Interval_database_backup))
 	}
 	if defaultschedule.Cron_database_backup != "" {
 		QueueData.DispatchCron("Backup Database", func() {
-			database.Backup(database.DB, fmt.Sprintf("%s.%s.%s", "./backup/data.db", database.DBVersion, time.Now().Format("20060102_150405")))
+			database.Backup(database.DB, fmt.Sprintf("%s.%s.%s", "./backup/data.db", database.DBVersion, time.Now().Format("20060102_150405")), cfg_general.MaxDatabaseBackups)
 		}, defaultschedule.Cron_database_backup)
 	}
 }

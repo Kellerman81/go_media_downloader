@@ -356,7 +356,9 @@ func ApiDbBackup(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
-	database.Backup(database.DB, fmt.Sprintf("%s.%s.%s", "./backup/data.db", database.DBVersion, time.Now().Format("20060102_150405")))
+	var cfg_general config.GeneralConfig
+	config.ConfigGet("general", &cfg_general)
+	database.Backup(database.DB, fmt.Sprintf("%s.%s.%s", "./backup/data.db", database.DBVersion, time.Now().Format("20060102_150405")), cfg_general.MaxDatabaseBackups)
 	ctx.JSON(http.StatusOK, "ok")
 }
 
