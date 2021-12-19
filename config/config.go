@@ -589,6 +589,8 @@ func LoadCfgDataDB(f *file.File, parser string) {
 var RegexSeriesTitle *regexp.Regexp
 var RegexSeriesIdentifier *regexp.Regexp
 
+var RegexParseFile *regexp.Regexp
+
 func UpdateCfg(configIn map[string]interface{}) {
 	cfglock.Lock()
 	defer cfglock.Unlock()

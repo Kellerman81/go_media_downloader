@@ -130,21 +130,19 @@ func JobImportMovies(dbmovie database.Dbmovie, configEntry config.MediaTypeConfi
 	movietest, _ := database.QueryMovies(database.Query{Select: "id, listname", Where: "dbmovie_id = ?", WhereArgs: []interface{}{dbmovie.ID}})
 	if len(list.Ignore_map_lists) >= 1 {
 		for idx := range list.Ignore_map_lists {
-			for idxtest := range movietest {
-				if strings.EqualFold(list.Ignore_map_lists[idx], movietest[idxtest].Listname) {
-					return
-				}
+			counter, _ := database.CountRows("movies", database.Query{Where: "listname=? and dbmovie_id=?", WhereArgs: []interface{}{list.Ignore_map_lists[idx], dbmovie.ID}})
+			if counter >= 1 {
+				return
 			}
 		}
 	}
 
 	foundmovie := false
-	for idxtest := range movietest {
-		if strings.EqualFold(list.Name, movietest[idxtest].Listname) {
-			foundmovie = true
-			break
-		}
+	counter, _ := database.CountRows("movies", database.Query{Where: "listname=? and dbmovie_id=?", WhereArgs: []interface{}{list.Name, dbmovie.ID}})
+	if counter >= 1 {
+		foundmovie = true
 	}
+
 	if foundmovie {
 		for idxreplace := range list.Replace_map_lists {
 			for idxtitle := range movietest {
@@ -154,7 +152,7 @@ func JobImportMovies(dbmovie database.Dbmovie, configEntry config.MediaTypeConfi
 			}
 		}
 	} else {
-		logger.Log.Debug("Add Movie: ", dbmovie.Title)
+		logger.Log.Debug("Add Movie: ", dbmovie.ImdbID)
 		_, moviereserr := database.InsertArray("movies", []string{"missing", "listname", "dbmovie_id", "quality_profile"}, []interface{}{true, list.Name, dbmovie.ID, list.Template_quality})
 		if moviereserr != nil {
 			logger.Log.Error(moviereserr)

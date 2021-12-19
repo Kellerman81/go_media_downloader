@@ -105,6 +105,14 @@ func main() {
 	database.GetVars()
 	utils.LoadDBPatterns()
 
+	rows, _ := database.DB.Query("PRAGMA integrity_check;")
+	defer rows.Close()
+	rows.Next()
+	var str string
+	rows.Scan(&str)
+	if str != "ok" {
+		os.Exit(100)
+	}
 	counter, _ := database.CountRows("dbmovies", database.Query{})
 	if counter == 0 {
 		logger.Log.Infoln("Starting initial DB fill for movies")
@@ -191,6 +199,7 @@ func main() {
 
 	config.RegexSeriesIdentifier, _ = regexp.Compile(`(?i)s?[0-9]{1,4}((?:(?:(?: )?-?(?: )?[ex][0-9]{1,3})+))|(\d{2,4}(?:\.|-| |_)\d{1,2}(?:\.|-| |_)\d{1,2})(?:\b|_)`)
 	config.RegexSeriesTitle, _ = regexp.Compile(`^(.*)(?i)(?:(?:\.| - |-)S(?:[0-9]+)(?: )?[ex](?:[0-9]{1,3})(?:[^0-9]|$))`)
+	config.RegexParseFile, _ = regexp.Compile(`^\[( )?(.*)( )?\]$`)
 
 	router := gin.New()
 	docs.SwaggerInfo.BasePath = "/"

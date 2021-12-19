@@ -225,14 +225,12 @@ func (m *ParseInfo) parsegroup(cleanName string, name string, group []string, st
 	return startIndex, endIndex
 }
 
-var regexParseFile = regexp.MustCompile(`^\[( )?(.*)( )?\]$`)
-
 func (m *ParseInfo) ParseFile(includeYearInTitle bool, typegroup string) error {
 	logger.Log.Debug("filename ", m.File)
 	var startIndex, endIndex = 0, len(m.File)
 	cleanName := strings.Replace(m.File, "_", " ", -1)
 	if strings.HasPrefix(cleanName, "[") && strings.HasSuffix(cleanName, "]") {
-		cleanName = regexParseFile.ReplaceAllString(cleanName, `$2`)
+		cleanName = config.RegexParseFile.ReplaceAllString(cleanName, `$2`)
 	}
 
 	if !config.ConfigCheck("general") {
@@ -360,7 +358,7 @@ func (m *ParseInfo) ParseFile(includeYearInTitle bool, typegroup string) error {
 	if len(m.Date) >= 1 {
 		m.Identifier = m.Date
 	} else {
-		if len(m.Identifier) == 0 {
+		if len(m.Identifier) == 0 && m.SeasonStr != "" && m.EpisodeStr != "" {
 			m.Identifier = "S" + m.SeasonStr + "E" + m.EpisodeStr
 		}
 	}

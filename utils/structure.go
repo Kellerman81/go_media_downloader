@@ -91,6 +91,8 @@ func (s *Structure) ParseFile(videofile string, checkfolder bool, folder string,
 		return
 	}
 	if m.Quality == "" && m.Resolution == "" && checkfolder {
+		logger.Log.Debug("Parse of folder ", filepath.Base(folder), m)
+
 		mf, errf := NewFileParser(filepath.Base(folder), yearintitle, s.groupType)
 		if errf != nil {
 			logger.Log.Debug("Parse failed of folder ", filepath.Base(folder))
@@ -1271,6 +1273,8 @@ func StructureSingleFolder(folder string, disableruntimecheck bool, disabledisal
 					}
 				}
 				StructureSeries(structure, folder, m, series, videofiles[fileidx], deletewronglanguage)
+			} else {
+				logger.Log.Errorln("serie not matched", m, titleyear, seriestitle, list.Name)
 			}
 		}
 	}
