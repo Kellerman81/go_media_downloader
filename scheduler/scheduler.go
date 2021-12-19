@@ -714,11 +714,7 @@ func InitScheduler() {
 
 	if defaultschedule.Interval_database_check != "" {
 		QueueData.DispatchEvery("Check Database", func() {
-			rows, _ := database.DB.Query("PRAGMA integrity_check;")
-			defer rows.Close()
-			rows.Next()
-			var str string
-			rows.Scan(&str)
+			str := database.DbIntegrityCheck()
 			if str != "ok" {
 				os.Exit(100)
 			}
@@ -726,11 +722,7 @@ func InitScheduler() {
 	}
 	if defaultschedule.Cron_database_check != "" {
 		QueueData.DispatchCron("Check Database", func() {
-			rows, _ := database.DB.Query("PRAGMA integrity_check;")
-			defer rows.Close()
-			rows.Next()
-			var str string
-			rows.Scan(&str)
+			str := database.DbIntegrityCheck()
 			if str != "ok" {
 				os.Exit(100)
 			}

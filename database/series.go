@@ -257,8 +257,8 @@ func (serie *Dbserie) GetMetadata(language string, querytmdb bool, allowed []str
 		serie.Genre = strings.Join(tvdbdetails.Data.Genre, ",")
 		serie.Overview = tvdbdetails.Data.Overview
 		serie.Rating = tvdbdetails.Data.Rating
-		serie.Siterating = tvdbdetails.Data.SiteRating
-		serie.SiteratingCount = tvdbdetails.Data.SiteRatingCount
+		serie.Siterating = strconv.FormatFloat(float64(tvdbdetails.Data.SiteRating), 'f', 1, 32)
+		serie.SiteratingCount = strconv.Itoa(tvdbdetails.Data.SiteRatingCount)
 		serie.Slug = tvdbdetails.Data.Slug
 		serie.Banner = tvdbdetails.Data.Banner
 		serie.Poster = tvdbdetails.Data.Poster
@@ -412,7 +412,7 @@ func (serie *Dbserie) GetEpisodes(language string, querytrakt bool) []DbserieEpi
 				epi = append(epi, episode)
 			}
 		} else {
-			logger.Log.Warning("Serie episode not found for: ", serie.ThetvdbID)
+			logger.Log.Warning("Serie episode not found for: ", serie.ThetvdbID, founddetail)
 		}
 	}
 	if querytrakt && serie.ImdbID != "" {

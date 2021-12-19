@@ -1709,3 +1709,21 @@ func ImdbUpsert(table string, update map[string]interface{}, qu Query) (sql.Resu
 	}
 	return result, err
 }
+
+func DbQuickCheck() string {
+	rows, _ := DB.Query("PRAGMA quick_check;")
+	defer rows.Close()
+	rows.Next()
+	var str string
+	rows.Scan(&str)
+	return str
+}
+
+func DbIntegrityCheck() string {
+	rows, _ := DB.Query("PRAGMA integrity_check;")
+	defer rows.Close()
+	rows.Next()
+	var str string
+	rows.Scan(&str)
+	return str
+}

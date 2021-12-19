@@ -373,12 +373,7 @@ func ApiDbIntegrity(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
-	rows, _ := database.DB.Query("PRAGMA integrity_check;")
-	defer rows.Close()
-	rows.Next()
-	var ret interface{}
-	rows.Scan(&ret)
-	ctx.JSON(http.StatusOK, ret)
+	ctx.JSON(http.StatusOK, database.DbIntegrityCheck())
 }
 
 // @Summary Clear DB Table

@@ -26,8 +26,8 @@ type TheTVDBSeries struct {
 		Overview        string   `json:"overview"`
 		Rating          string   `json:"rating"`
 		ImdbID          string   `json:"imdbId"`
-		SiteRating      string   `json:"siteRating"`
-		SiteRatingCount string   `json:"siteRatingCount"`
+		SiteRating      float32  `json:"siteRating"`
+		SiteRatingCount int      `json:"siteRatingCount"`
 		Slug            string   `json:"slug"`
 		Banner          string   `json:"banner"`
 		Poster          string   `json:"poster"`
@@ -47,19 +47,19 @@ type TheTVDBEpisodes struct {
 		EpisodeName        string `json:"episodeName"`
 		FirstAired         string `json:"firstAired"`
 		Overview           string `json:"overview"`
-		Language           []struct {
+		Language           struct {
 			EpisodeName string `json:"episodeName"`
 			Overview    string `json:"overview"`
 		} `json:"language"`
-		ProductionCode  string `json:"productionCode"`
-		ShowURL         string `json:"showUrl"`
-		SeriesID        int    `json:"seriesId"`
-		ImdbID          string `json:"imdbId"`
-		ContentRating   string `json:"contentRating"`
-		SiteRating      string `json:"siteRating"`
-		SiteRatingCount string `json:"siteRatingCount"`
-		IsMovie         int    `json:"isMovie"`
-		Poster          string `json:"filename"`
+		ProductionCode  string  `json:"productionCode"`
+		ShowURL         string  `json:"showUrl"`
+		SeriesID        int     `json:"seriesId"`
+		ImdbID          string  `json:"imdbId"`
+		ContentRating   string  `json:"contentRating"`
+		SiteRating      float32 `json:"siteRating"`
+		SiteRatingCount int     `json:"siteRatingCount"`
+		IsMovie         int     `json:"isMovie"`
+		Poster          string  `json:"filename"`
 	} `json:"data"`
 }
 
