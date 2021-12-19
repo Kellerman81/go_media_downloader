@@ -442,7 +442,7 @@ func (serie *Dbserie) GetEpisodes(language string, querytrakt bool) []DbserieEpi
 							}
 						}
 						if breakloop {
-							break
+							continue
 						}
 						var episode DbserieEpisode
 						episode.Episode = strconv.Itoa(row.Episode)
