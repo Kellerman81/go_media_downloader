@@ -1146,7 +1146,9 @@ func GetTraktUserPublicMovieList(configEntry config.MediaTypeConfig, list config
 var Lastmovie string
 
 func Importnewmoviessingle(row config.MediaTypeConfig, list config.MediaListsConfig) {
+	logger.Log.Debug("get feeds for ", row.Name, list.Name)
 	results := Feeds(row, list)
+	logger.Log.Debug("RESULT -get feeds for ", row.Name, list.Name, len(results.Movies))
 
 	if !config.ConfigCheck("general") {
 		return
@@ -1163,21 +1165,17 @@ func Importnewmoviessingle(row config.MediaTypeConfig, list config.MediaListsCon
 		Lastmovie = results.Movies[idxmovie].ImdbID
 		founddbmovie := false
 		foundmovie := false
-		dbmovie_id := 0
 		dbmovie, dbmovieerr := database.GetDbmovie(database.Query{Select: "id", Where: "imdb_id=?", WhereArgs: []interface{}{results.Movies[idxmovie].ImdbID}})
 		if dbmovieerr == nil {
 			founddbmovie = true
-			dbmovie_id = int(dbmovie.ID)
-		}
-		if founddbmovie {
-			counter, _ := database.CountRows("movies", database.Query{Where: "dbmovie_id=? and listname=?", WhereArgs: []interface{}{dbmovie_id, list.Name}})
+			counter, _ := database.CountRows("movies", database.Query{Where: "dbmovie_id=? and listname=?", WhereArgs: []interface{}{dbmovie.ID, list.Name}})
 			if counter >= 1 {
 				foundmovie = true
 			}
 
 			if len(list.Ignore_map_lists) >= 1 && !foundmovie {
 				for idx := range list.Ignore_map_lists {
-					counter, _ := database.CountRows("movies", database.Query{Where: "dbmovie_id=? and listname=?", WhereArgs: []interface{}{dbmovie_id, list.Ignore_map_lists[idx]}})
+					counter, _ := database.CountRows("movies", database.Query{Where: "dbmovie_id=? and listname=?", WhereArgs: []interface{}{dbmovie.ID, list.Ignore_map_lists[idx]}})
 					if counter >= 1 {
 						foundmovie = true
 						break
@@ -1202,12 +1200,14 @@ func AllowMovieImport(imdb string, list config.ListsConfig) bool {
 	if list.MinVotes != 0 {
 		countergenre, _ := database.ImdbCountRows("imdb_ratings", database.Query{Where: "tconst = ? COLLATE NOCASE and num_votes < ?", WhereArgs: []interface{}{imdb, list.MinVotes}})
 		if countergenre >= 1 {
+			logger.Log.Debug("error vote count too low for", imdb)
 			return false
 		}
 	}
 	if list.MinRating != 0 {
 		countergenre, _ := database.ImdbCountRows("imdb_ratings", database.Query{Where: "tconst = ? COLLATE NOCASE and average_rating < ?", WhereArgs: []interface{}{imdb, list.MinRating}})
 		if countergenre >= 1 {
+			logger.Log.Debug("error average vote too low for", imdb)
 			return false
 		}
 	}
@@ -1217,6 +1217,7 @@ func AllowMovieImport(imdb string, list config.ListsConfig) bool {
 			countergenre, _ := database.ImdbCountRows("imdb_genres", database.Query{Where: "tconst = ? COLLATE NOCASE and genre = ? COLLATE NOCASE", WhereArgs: []interface{}{imdb, list.Excludegenre[idxgenre]}})
 			if countergenre >= 1 {
 				excludebygenre = true
+				logger.Log.Debug("error excluded genre", list.Excludegenre[idxgenre], imdb)
 				break
 			}
 		}
@@ -1234,6 +1235,7 @@ func AllowMovieImport(imdb string, list config.ListsConfig) bool {
 			}
 		}
 		if !includebygenre {
+			logger.Log.Debug("error included genre not found", list.Includegenre, imdb)
 			return false
 		}
 	}
@@ -1365,6 +1367,31 @@ func checkmissingmoviesflag(row config.MediaTypeConfig, list config.MediaListsCo
 			if !movies[idxmovie].Missing {
 				database.UpdateColumn("Movies", "missing", 1, database.Query{Where: "id=?", WhereArgs: []interface{}{movies[idxmovie].ID}})
 			}
+		}
+	}
+}
+
+func checkreachedmoviesflag(row config.MediaTypeConfig, list config.MediaListsConfig) {
+	movies, _ := database.QueryMovies(database.Query{Select: "id, quality_reached, quality_profile", Where: "listname=?", WhereArgs: []interface{}{list.Name}})
+	for idxepi := range movies {
+		if !config.ConfigCheck("quality_" + movies[idxepi].QualityProfile) {
+			continue
+		}
+		var cfg_quality config.QualityConfig
+		config.ConfigGet("quality_"+movies[idxepi].QualityProfile, &cfg_quality)
+
+		MinimumPriority := getHighestMoviePriorityByFiles(movies[idxepi], row, cfg_quality)
+		cutoffPrio := NewCutoffPrio(row, cfg_quality)
+		reached := false
+		if MinimumPriority >= cutoffPrio.Priority {
+			reached = true
+		}
+		if movies[idxepi].QualityReached && !reached {
+			database.UpdateColumn("movies", "quality_reached", 0, database.Query{Where: "id=?", WhereArgs: []interface{}{movies[idxepi].ID}})
+		}
+
+		if !movies[idxepi].QualityReached && reached {
+			database.UpdateColumn("movies", "quality_reached", 1, database.Query{Where: "id=?", WhereArgs: []interface{}{movies[idxepi].ID}})
 		}
 	}
 }
@@ -1536,11 +1563,19 @@ func Movies_single_jobs(job string, typename string, listname string, force bool
 		case "searchupgradeinctitle":
 			SearchMovieUpgrade(cfg_movie, cfg_movie.Searchupgrade_incremental, true)
 		}
+		if listname != "" {
+			logger.Log.Debug("Listname: ", listname)
+			var templists []config.MediaListsConfig
+			for idxlist := range cfg_movie.Lists {
+				if cfg_movie.Lists[idxlist].Name == listname {
+					templists = append(templists, cfg_movie.Lists[idxlist])
+				}
+			}
+			logger.Log.Debug("Listname: found: ", templists)
+			cfg_movie.Lists = templists
+		}
 		qualis := make(map[string]bool, 10)
 		for idxlist := range cfg_movie.Lists {
-			if cfg_movie.Lists[idxlist].Name != listname && listname != "" {
-				continue
-			}
 			if _, ok := qualis[cfg_movie.Lists[idxlist].Template_quality]; !ok {
 				qualis[cfg_movie.Lists[idxlist].Template_quality] = true
 			}
@@ -1551,6 +1586,8 @@ func Movies_single_jobs(job string, typename string, listname string, force bool
 				checkmissingmoviessingle(cfg_movie, cfg_movie.Lists[idxlist])
 			case "checkmissingflag":
 				checkmissingmoviesflag(cfg_movie, cfg_movie.Lists[idxlist])
+			case "checkreachedflag":
+				checkreachedmoviesflag(cfg_movie, cfg_movie.Lists[idxlist])
 			case "structure":
 				moviesStructureSingle(cfg_movie, cfg_movie.Lists[idxlist])
 			case "clearhistory":
@@ -1572,6 +1609,6 @@ func Movies_single_jobs(job string, typename string, listname string, force bool
 	}
 	dbid, _ := dbresult.LastInsertId()
 	database.UpdateColumn("job_histories", "ended", time.Now(), database.Query{Where: "id=?", WhereArgs: []interface{}{dbid}})
-	logger.Log.Info("Ended Job: ", job, " for ", typename)
+	logger.Log.Info("Ended Job: ", jobName)
 	debug.FreeOSMemory()
 }

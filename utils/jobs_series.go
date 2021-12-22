@@ -829,11 +829,19 @@ func Series_single_jobs(job string, typename string, listname string, force bool
 			SearchSerieUpgrade(cfg_serie, cfg_serie.Searchupgrade_incremental, true)
 
 		}
+		if listname != "" {
+			logger.Log.Debug("Listname: ", listname)
+			var templists []config.MediaListsConfig
+			for idxlist := range cfg_serie.Lists {
+				if cfg_serie.Lists[idxlist].Name == listname {
+					templists = append(templists, cfg_serie.Lists[idxlist])
+				}
+			}
+			logger.Log.Debug("Listname: found: ", templists)
+			cfg_serie.Lists = templists
+		}
 		qualis := make(map[string]bool, 10)
 		for idxlist := range cfg_serie.Lists {
-			if cfg_serie.Lists[idxlist].Name != listname && listname != "" {
-				continue
-			}
 			if _, ok := qualis[cfg_serie.Lists[idxlist].Template_quality]; !ok {
 				qualis[cfg_serie.Lists[idxlist].Template_quality] = true
 			}
@@ -844,6 +852,8 @@ func Series_single_jobs(job string, typename string, listname string, force bool
 				checkmissingepisodessingle(cfg_serie, cfg_serie.Lists[idxlist])
 			case "checkmissingflag":
 				checkmissingepisodesflag(cfg_serie, cfg_serie.Lists[idxlist])
+			case "checkreachedflag":
+				checkreachedepisodesflag(cfg_serie, cfg_serie.Lists[idxlist])
 			case "structure":
 				seriesStructureSingle(cfg_serie, cfg_serie.Lists[idxlist])
 			case "clearhistory":
@@ -1001,6 +1011,31 @@ func checkmissingepisodesflag(row config.MediaTypeConfig, list config.MediaLists
 			if !episodes[idxepi].Missing {
 				database.UpdateColumn("Serie_episodes", "missing", 1, database.Query{Where: "id=?", WhereArgs: []interface{}{episodes[idxepi].ID}})
 			}
+		}
+	}
+}
+
+func checkreachedepisodesflag(row config.MediaTypeConfig, list config.MediaListsConfig) {
+	episodes, _ := database.QuerySerieEpisodes(database.Query{Select: "serie_episodes.id, serie_episodes.quality_reached, serie_episodes.quality_profile", InnerJoin: " series on series.id = serie_episodes.serie_id", Where: "series.listname=?", WhereArgs: []interface{}{list.Name}})
+	for idxepi := range episodes {
+		if !config.ConfigCheck("quality_" + episodes[idxepi].QualityProfile) {
+			continue
+		}
+		var cfg_quality config.QualityConfig
+		config.ConfigGet("quality_"+episodes[idxepi].QualityProfile, &cfg_quality)
+
+		MinimumPriority := getHighestEpisodePriorityByFiles(episodes[idxepi], row, cfg_quality)
+		cutoffPrio := NewCutoffPrio(row, cfg_quality)
+		reached := false
+		if MinimumPriority >= cutoffPrio.Priority {
+			reached = true
+		}
+		if episodes[idxepi].QualityReached && !reached {
+			database.UpdateColumn("Serie_episodes", "quality_reached", 0, database.Query{Where: "id=?", WhereArgs: []interface{}{episodes[idxepi].ID}})
+		}
+
+		if !episodes[idxepi].QualityReached && reached {
+			database.UpdateColumn("Serie_episodes", "quality_reached", 1, database.Query{Where: "id=?", WhereArgs: []interface{}{episodes[idxepi].ID}})
 		}
 	}
 }

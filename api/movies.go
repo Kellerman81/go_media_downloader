@@ -9,6 +9,7 @@ import (
 
 	"github.com/Kellerman81/go_media_downloader/config"
 	"github.com/Kellerman81/go_media_downloader/database"
+	"github.com/Kellerman81/go_media_downloader/logger"
 	"github.com/Kellerman81/go_media_downloader/scheduler"
 	"github.com/Kellerman81/go_media_downloader/utils"
 	gin "github.com/gin-gonic/gin"
@@ -233,7 +234,7 @@ func ApiMovieDeleteList(ctx *gin.Context) {
 	}
 }
 
-var allowedjobsmovies []string = []string{"rss", "data", "datafull", "checkmissing", "checkmissingflag", "structure", "searchmissingfull",
+var allowedjobsmovies []string = []string{"rss", "data", "datafull", "checkmissing", "checkmissingflag", "checkreachedflag", "structure", "searchmissingfull",
 	"searchmissinginc", "searchupgradefull", "searchupgradeinc", "searchmissingfulltitle",
 	"searchmissinginctitle", "searchupgradefulltitle", "searchupgradeinctitle", "clearhistory", "feeds", "refresh", "refreshinc"}
 
@@ -276,7 +277,7 @@ func apimoviesAllJobs(c *gin.Context) {
 				scheduler.QueueSearch.Dispatch(c.Param("job")+"_movies_"+cfg_movie.Name, func() {
 					utils.Movies_single_jobs(c.Param("job"), cfg_movie.Name, "", true)
 				})
-			case "feeds", "checkmissing", "checkmissingflag":
+			case "feeds", "checkmissing", "checkmissingflag", "checkreachedflag":
 				for idxlist := range cfg_movie.Lists {
 					if !cfg_movie.Lists[idxlist].Enabled {
 						continue
@@ -294,7 +295,7 @@ func apimoviesAllJobs(c *gin.Context) {
 							utils.Movies_single_jobs(c.Param("job"), cfg_movie.Name, cfg_movie.Lists[idxlist].Name, true)
 						})
 					}
-					if c.Param("job") == "checkmissing" || c.Param("job") == "checkmissingflag" {
+					if c.Param("job") == "checkmissing" || c.Param("job") == "checkmissingflag" || c.Param("job") == "checkreachedflag" {
 						scheduler.QueueData.Dispatch(c.Param("job")+"_movies_"+cfg_movie.Name+"_"+cfg_movie.Lists[idxlist].Name, func() {
 							utils.Movies_single_jobs(c.Param("job"), cfg_movie.Name, cfg_movie.Lists[idxlist].Name, true)
 						})
@@ -355,7 +356,7 @@ func apimoviesJobs(c *gin.Context) {
 			scheduler.QueueSearch.Dispatch(c.Param("job")+"_movies_"+c.Param("name"), func() {
 				utils.Movies_single_jobs(c.Param("job"), c.Param("name"), "", true)
 			})
-		case "feeds", "checkmissing", "checkmissingflag":
+		case "feeds", "checkmissing", "checkmissingflag", "checkreachedflag":
 			movie_keys, _ := config.ConfigDB.Keys([]byte("movie_*"), 0, 0, true)
 
 			for _, idxmovie := range movie_keys {
@@ -374,14 +375,16 @@ func apimoviesJobs(c *gin.Context) {
 						if !cfg_list.Enabled {
 							continue
 						}
+						listname := cfg_movie.Lists[idxlist].Name
 						if c.Param("job") == "feeds" {
+							logger.Log.Debug("add job ", cfg_movie.Name, " ", cfg_movie.Lists[idxlist].Name)
 							scheduler.QueueFeeds.Dispatch(c.Param("job")+"_movies_"+cfg_movie.Name+"_"+cfg_movie.Lists[idxlist].Name, func() {
-								utils.Movies_single_jobs(c.Param("job"), cfg_movie.Name, cfg_movie.Lists[idxlist].Name, true)
+								utils.Movies_single_jobs(c.Param("job"), cfg_movie.Name, listname, true)
 							})
 						}
-						if c.Param("job") == "checkmissing" || c.Param("job") == "checkmissingflag" {
+						if c.Param("job") == "checkmissing" || c.Param("job") == "checkmissingflag" || c.Param("job") == "checkreachedflag" {
 							scheduler.QueueData.Dispatch(c.Param("job")+"_movies_"+cfg_movie.Name+"_"+cfg_movie.Lists[idxlist].Name, func() {
-								utils.Movies_single_jobs(c.Param("job"), cfg_movie.Name, cfg_movie.Lists[idxlist].Name, true)
+								utils.Movies_single_jobs(c.Param("job"), cfg_movie.Name, listname, true)
 							})
 						}
 					}

@@ -413,7 +413,7 @@ func (c Client) prepareNzbs(nzbs []RawNZB, tillid string, maxage int) []NZB {
 	for _, item := range nzbs {
 		var newEntry NZB
 		newEntry.Title = html.UnescapeString(item.Title)
-		newEntry.DownloadURL = item.Enclosure.URL
+		newEntry.DownloadURL = html.UnescapeString(item.Enclosure.URL)
 		newEntry.SourceEndpoint = c.apiBaseURL
 		newEntry.SourceAPIKey = c.apikey
 		if item.Date != "" {
@@ -463,7 +463,7 @@ func (c Client) prepareNzbsJson2(nzbs []RawNZBJson2, tillid string, maxage int) 
 		}
 		var newEntry NZB
 		newEntry.Title = html.UnescapeString(item.Title)
-		newEntry.DownloadURL = item.Enclosure.URL
+		newEntry.DownloadURL = html.UnescapeString(item.Enclosure.URL)
 		newEntry.SourceEndpoint = c.apiBaseURL
 		newEntry.SourceAPIKey = c.apikey
 		if item.Date != "" {
@@ -519,7 +519,7 @@ func (c Client) prepareNzbsJson1(nzbs []RawNZBJson1, tillid string, maxage int) 
 		}
 		var newEntry NZB
 		newEntry.Title = html.UnescapeString(item.Title)
-		newEntry.DownloadURL = item.Enclosure.Attributes.URL
+		newEntry.DownloadURL = html.UnescapeString(item.Enclosure.Attributes.URL)
 		newEntry.SourceEndpoint = c.apiBaseURL
 		newEntry.SourceAPIKey = c.apikey
 		if item.Date != "" {

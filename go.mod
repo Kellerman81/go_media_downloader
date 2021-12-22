@@ -13,8 +13,8 @@ require (
 	github.com/golang-migrate/migrate/v4 v4.15.1 //initialize db
 	github.com/google/uuid v1.3.0 //scheduler
 	github.com/gregdel/pushover v1.1.0 //notification
-	github.com/jmoiron/sqlx v1.3.4 //structscan for db
 	github.com/h2non/filetype v1.1.3
+	github.com/jmoiron/sqlx v1.3.4 //structscan for db
 	github.com/karrick/godirwalk v1.16.1 //faster walk
 	github.com/knadh/koanf v1.3.3 //initial config
 	github.com/mattn/go-sqlite3 v1.14.9 //data and imdb db
@@ -33,6 +33,7 @@ require (
 	golang.org/x/text v0.3.7
 	golang.org/x/time v0.0.0-20211116232009-f0f3c7e86c11
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0 //Loop Logs
+	github.com/odwrtw/transmission v0.0.0-20211003115842-e3a58d4370e9
 )
 
 require (

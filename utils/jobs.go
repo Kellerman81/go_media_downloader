@@ -17,19 +17,25 @@ func JobImportFileCheck(file string, dbtype string, wg *sizedwaitgroup.SizedWait
 		if strings.EqualFold(dbtype, "movie") {
 			moviesf, _ := database.QueryMovieFiles(database.Query{Select: "id, movie_id", Where: "location=?", WhereArgs: []interface{}{file}})
 			for idx := range moviesf {
-				database.DeleteRow("movie_files", database.Query{Where: "id=?", WhereArgs: []interface{}{moviesf[idx].ID}})
-				counter, _ := database.CountRows("movie_files", database.Query{Where: "movie_id=?", WhereArgs: []interface{}{moviesf[idx].MovieID}})
-				if counter == 0 {
-					database.UpdateColumn("movies", "missing", true, database.Query{Where: "id=?", WhereArgs: []interface{}{moviesf[idx].MovieID}})
+				movie_id := moviesf[idx].MovieID
+				_, sqlerr := database.DeleteRow("movie_files", database.Query{Where: "id=?", WhereArgs: []interface{}{moviesf[idx].ID}})
+				if sqlerr == nil {
+					counter, _ := database.CountRows("movie_files", database.Query{Where: "movie_id=?", WhereArgs: []interface{}{movie_id}})
+					if counter == 0 {
+						database.UpdateColumn("movies", "missing", true, database.Query{Where: "id=?", WhereArgs: []interface{}{movie_id}})
+					}
 				}
 			}
 		} else {
 			seriefiles, _ := database.QuerySerieEpisodeFiles(database.Query{Select: "id, serie_episode_id", Where: "location=?", WhereArgs: []interface{}{file}})
 			for idx := range seriefiles {
-				database.DeleteRow("serie_episode_files", database.Query{Where: "id=?", WhereArgs: []interface{}{seriefiles[idx].ID}})
-				counter, _ := database.CountRows("serie_episode_files", database.Query{Where: "serie_episode_id=?", WhereArgs: []interface{}{seriefiles[idx].SerieEpisodeID}})
-				if counter == 0 {
-					database.UpdateColumn("serie_episodes", "missing", true, database.Query{Where: "id=?", WhereArgs: []interface{}{seriefiles[idx].SerieEpisodeID}})
+				episode_id := seriefiles[idx].SerieEpisodeID
+				_, sqlerr := database.DeleteRow("serie_episode_files", database.Query{Where: "id=?", WhereArgs: []interface{}{seriefiles[idx].ID}})
+				if sqlerr == nil {
+					counter, _ := database.CountRows("serie_episode_files", database.Query{Where: "serie_episode_id=?", WhereArgs: []interface{}{episode_id}})
+					if counter == 0 {
+						database.UpdateColumn("serie_episodes", "missing", true, database.Query{Where: "id=?", WhereArgs: []interface{}{episode_id}})
+					}
 				}
 			}
 		}

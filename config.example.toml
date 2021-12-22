@@ -172,6 +172,16 @@ add_paused=false
 deluge_dl_to="/downloads/incomplete" # Download incomplete to path
 
 [[downloader]]
+name="entransmission" 
+type="transmission" #Send Torrents or Magnet Urls to transmission client
+hostname="http://localhost:9091/transmission/rpc"
+username="admin"
+password="adminadmin" #Password
+enabled=true
+add_paused=false
+deluge_dl_to="/downloads/incomplete" # Download incomplete to path
+	
+[[downloader]]
 name="endeluge" 
 type="deluge" #Send Torrents or Magnet Urls to deluge client
 hostname="192.168.1.1"
