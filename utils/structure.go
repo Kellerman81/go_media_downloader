@@ -127,12 +127,8 @@ func (s *Structure) ParseFile(videofile string, checkfolder bool, folder string,
 	config.ConfigGet("quality_"+s.list.Template_quality, &cfg_quality)
 
 	m.Title = strings.Trim(m.Title, " ")
-	for idx := range cfg_quality.TitleStripSuffixForSearch {
-		if strings.HasSuffix(strings.ToLower(m.Title), strings.ToLower(cfg_quality.TitleStripSuffixForSearch[idx])) {
-			m.Title = trimStringInclAfterStringInsensitive(m.Title, cfg_quality.TitleStripSuffixForSearch[idx])
-			m.Title = strings.Trim(m.Title, " ")
-		}
-	}
+	m.StripTitlePrefixPostfix(cfg_quality)
+
 	//logger.Log.Debug("Parsed as: ", m)
 	return
 }
@@ -1107,42 +1103,33 @@ func StructureSingleFolder(folder string, disableruntimecheck bool, disabledisal
 
 			//determine list
 			if m.Imdb != "" {
-				movies, _ := database.QueryMovies(database.Query{Select: "movies.*", InnerJoin: "Dbmovies on Dbmovies.id = movies.dbmovie_id", Where: "Dbmovies.imdb_id = ?", WhereArgs: []interface{}{m.Imdb}})
-				for idxtmovie := range movies {
-					foundinlist := false
-					logger.Log.Debug("File found in other list - check list: ", videofiles[fileidx], movies[idxtmovie].Listname)
-					for idxlisttest := range configEntry.Lists {
-						if configEntry.Lists[idxlisttest].Name == movies[idxtmovie].Listname {
-							if entriesfound == 0 && len(m.Imdb) >= 1 {
-								moviesget, _ := database.QueryMovies(database.Query{Select: "movies.*", InnerJoin: "Dbmovies on Dbmovies.id = movies.dbmovie_id", Where: "Dbmovies.imdb_id = ? and movies.listname = ?", WhereArgs: []interface{}{m.Imdb, configEntry.Lists[idxlisttest].Name}})
-								if len(moviesget) == 1 {
-									movie = moviesget[0]
-								}
-								entriesfound = len(moviesget)
-								if entriesfound >= 1 {
-									structure.list = configEntry.Lists[idxlisttest]
-									list = configEntry.Lists[idxlisttest]
-									foundinlist = true
-									break
-								}
-							}
+				for idxlisttest := range configEntry.Lists {
+					movies, movieserr := database.QueryMovies(database.Query{Select: "movies.*", InnerJoin: "Dbmovies on Dbmovies.id = movies.dbmovie_id", Where: "Dbmovies.imdb_id = ? and movies.listname=?", WhereArgs: []interface{}{m.Imdb, configEntry.Lists[idxlisttest].Name}})
+					if movieserr == nil {
+						if len(movies) == 1 {
+							movie = movies[0]
 						}
-					}
-					if foundinlist {
-						break
+						entriesfound = len(movies)
+						if entriesfound >= 1 {
+							structure.list = configEntry.Lists[idxlisttest]
+							list = configEntry.Lists[idxlisttest]
+							break
+						}
 					}
 				}
 			}
 
-			moviehistory, moviehistoryerr := database.GetMovieHistory(database.Query{Select: "movie_histories.dbmovie_id", InnerJoin: "movies on movies.id=movie_histories.movie_id", Where: "movie_histories.title = ? and movies.listname = ?", WhereArgs: []interface{}{filepath.Base(folder), list.Name}, OrderBy: "movie_histories.ID desc"})
+			if entriesfound == 0 {
+				moviehistory, moviehistoryerr := database.GetMovieHistory(database.Query{Select: "movie_histories.dbmovie_id", InnerJoin: "movies on movies.id=movie_histories.movie_id", Where: "movie_histories.title = ? and movies.listname = ?", WhereArgs: []interface{}{filepath.Base(folder), list.Name}, OrderBy: "movie_histories.ID desc"})
 
-			if moviehistoryerr == nil {
-				movies, _ := database.QueryMovies(database.Query{Select: "movies.*", InnerJoin: "Dbmovies on Dbmovies.id = movies.dbmovie_id", Where: "Dbmovies.id = ? and movies.listname = ?", WhereArgs: []interface{}{moviehistory.DbmovieID, list.Name}})
-				if len(movies) == 1 {
-					logger.Log.Debug("Found Movie by history_title")
-					movie = movies[0]
+				if moviehistoryerr == nil {
+					movies, _ := database.QueryMovies(database.Query{Select: "movies.*", InnerJoin: "Dbmovies on Dbmovies.id = movies.dbmovie_id", Where: "Dbmovies.id = ? and movies.listname = ?", WhereArgs: []interface{}{moviehistory.DbmovieID, list.Name}})
+					if len(movies) == 1 {
+						logger.Log.Debug("Found Movie by history_title")
+						movie = movies[0]
+					}
+					entriesfound = len(movies)
 				}
-				entriesfound = len(movies)
 			}
 
 			if !config.ConfigCheck("quality_" + list.Template_quality) {
@@ -1152,18 +1139,7 @@ func StructureSingleFolder(folder string, disableruntimecheck bool, disabledisal
 			var cfg_quality config.QualityConfig
 			config.ConfigGet("quality_"+list.Template_quality, &cfg_quality)
 
-			for idxstrip := range cfg_quality.TitleStripSuffixForSearch {
-				if strings.HasSuffix(strings.ToLower(m.Title), strings.ToLower(cfg_quality.TitleStripSuffixForSearch[idxstrip])) {
-					m.Title = trimStringInclAfterStringInsensitive(m.Title, cfg_quality.TitleStripSuffixForSearch[idxstrip])
-					m.Title = strings.Trim(m.Title, " ")
-				}
-			}
-			for idxstrip := range cfg_quality.TitleStripPrefixForSearch {
-				if strings.HasPrefix(strings.ToLower(m.Title), strings.ToLower(cfg_quality.TitleStripPrefixForSearch[idxstrip])) {
-					m.Title = trimStringPrefixInsensitive(m.Title, cfg_quality.TitleStripPrefixForSearch[idxstrip])
-					m.Title = strings.Trim(m.Title, " ")
-				}
-			}
+			m.StripTitlePrefixPostfix(cfg_quality)
 
 			if entriesfound == 0 && len(m.Imdb) == 0 {
 				lists := make([]string, 0, len(configEntry.Lists))
@@ -1182,10 +1158,12 @@ func StructureSingleFolder(folder string, disableruntimecheck bool, disabledisal
 				entriesfound = len(movies)
 			}
 			if entriesfound == 0 && len(m.Imdb) >= 1 {
-				counter, _ := database.CountRows("movies", database.Query{Select: "movies.*", InnerJoin: "Dbmovies on Dbmovies.id = movies.dbmovie_id", Where: "Dbmovies.imdb_id = ?", WhereArgs: []interface{}{m.Imdb, list.Name}})
-				if counter >= 1 {
-					logger.Log.Debug("Skipped Movie by title")
-					continue
+				for idxlisttest := range configEntry.Lists {
+					counter, _ := database.CountRows("movies", database.Query{Select: "movies.*", InnerJoin: "Dbmovies on Dbmovies.id = movies.dbmovie_id", Where: "Dbmovies.imdb_id = ? and movies.listname=?", WhereArgs: []interface{}{m.Imdb, configEntry.Lists[idxlisttest].Name}})
+					if counter >= 1 {
+						logger.Log.Debug("Skipped Movie by title")
+						continue
+					}
 				}
 			}
 			if movie.ID >= 1 && entriesfound >= 1 {
@@ -1234,18 +1212,8 @@ func StructureSingleFolder(folder string, disableruntimecheck bool, disabledisal
 			}
 			var cfg_quality config.QualityConfig
 			config.ConfigGet("quality_"+list.Template_quality, &cfg_quality)
-			for idxstrip := range cfg_quality.TitleStripSuffixForSearch {
-				if strings.HasSuffix(strings.ToLower(m.Title), strings.ToLower(cfg_quality.TitleStripSuffixForSearch[idxstrip])) {
-					m.Title = trimStringInclAfterStringInsensitive(m.Title, cfg_quality.TitleStripSuffixForSearch[idxstrip])
-					m.Title = strings.Trim(m.Title, " ")
-				}
-			}
-			for idxstrip := range cfg_quality.TitleStripPrefixForSearch {
-				if strings.HasPrefix(strings.ToLower(m.Title), strings.ToLower(cfg_quality.TitleStripPrefixForSearch[idxstrip])) {
-					m.Title = trimStringPrefixInsensitive(m.Title, cfg_quality.TitleStripPrefixForSearch[idxstrip])
-					m.Title = strings.Trim(m.Title, " ")
-				}
-			}
+
+			m.StripTitlePrefixPostfix(cfg_quality)
 
 			//find dbseries
 			series, entriesfound := FindSerieByParser(*m, titleyear, seriestitle, list.Name)

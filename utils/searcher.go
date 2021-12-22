@@ -1482,6 +1482,7 @@ func (s *Searcher) MovieSearch(movie database.Movie, forceDownload bool, titlese
 		var dl_add searchResults
 		releasefound := false
 		if s.Dbmovie.ImdbID != "" {
+			logger.Log.Info("Search movie by imdb ", s.Dbmovie.ImdbID, " with indexer ", cfg_quality.Indexer[idx].Template_indexer)
 			dl_add = s.MoviesSearchImdb(movie, []string{s.Movie.Listname})
 			dl.Rejected = append(dl.Rejected, dl_add.Rejected...)
 			if len(dl_add.Nzbs) >= 1 {
@@ -1495,6 +1496,7 @@ func (s *Searcher) MovieSearch(movie database.Movie, forceDownload bool, titlese
 			}
 		}
 		if !releasefound && cfg_quality.BackupSearchForTitle && titlesearch {
+			logger.Log.Info("Search movie by title ", s.Dbmovie.Title, " with indexer ", cfg_quality.Indexer[idx].Template_indexer)
 			dl_add = s.MoviesSearchTitle(movie, s.Dbmovie.Title, []string{s.Movie.Listname})
 			dl.Rejected = append(dl.Rejected, dl_add.Rejected...)
 			titleschecked = append(titleschecked, s.Dbmovie.Title)
@@ -1511,6 +1513,7 @@ func (s *Searcher) MovieSearch(movie database.Movie, forceDownload bool, titlese
 		if !releasefound && cfg_quality.BackupSearchForAlternateTitle && titlesearch {
 			for idxalt := range dbmoviealt {
 				if !CheckStringArray(titleschecked, dbmoviealt[idxalt].Title) {
+					logger.Log.Info("Search movie by title ", dbmoviealt[idxalt].Title, " with indexer ", cfg_quality.Indexer[idx].Template_indexer)
 					dl_add = s.MoviesSearchTitle(movie, dbmoviealt[idxalt].Title, []string{s.Movie.Listname})
 					dl.Rejected = append(dl.Rejected, dl_add.Rejected...)
 					titleschecked = append(titleschecked, dbmoviealt[idxalt].Title)
@@ -1599,6 +1602,7 @@ func (s *Searcher) SeriesSearch(serieEpisode database.SerieEpisode, forceDownloa
 		var dl_add searchResults
 
 		if s.Dbserie.ThetvdbID != 0 {
+			logger.Log.Info("Search serie by tvdbid ", s.Dbserie.ThetvdbID, " with indexer ", cfg_quality.Indexer[idx].Template_indexer)
 			dl_add = s.SeriesSearchTvdb([]string{series.Listname})
 			dl.Rejected = append(dl.Rejected, dl_add.Rejected...)
 			if len(dl_add.Nzbs) >= 1 {
@@ -1611,7 +1615,8 @@ func (s *Searcher) SeriesSearch(serieEpisode database.SerieEpisode, forceDownloa
 			}
 		}
 		if !releasefound && cfg_quality.BackupSearchForTitle && titlesearch {
-			dl_add = s.SeriesSearchTitle(logger.StringToSlug(s.Dbserie.Seriename), []string{series.Listname})
+			logger.Log.Info("Search serie by title ", s.Dbserie.Seriename, " with indexer ", cfg_quality.Indexer[idx].Template_indexer)
+			dl_add = s.SeriesSearchTitle(s.Dbserie.Seriename, []string{series.Listname})
 			dl.Rejected = append(dl.Rejected, dl_add.Rejected...)
 			titleschecked = append(titleschecked, s.Dbserie.Seriename)
 			if len(dl_add.Nzbs) >= 1 {
@@ -1626,7 +1631,8 @@ func (s *Searcher) SeriesSearch(serieEpisode database.SerieEpisode, forceDownloa
 		if !releasefound && cfg_quality.BackupSearchForAlternateTitle && titlesearch {
 			for idxalt := range dbseriealt {
 				if !CheckStringArray(titleschecked, dbseriealt[idxalt].Title) {
-					dl_add = s.SeriesSearchTitle(logger.StringToSlug(dbseriealt[idxalt].Title), []string{series.Listname})
+					logger.Log.Info("Search serie by title ", dbseriealt[idxalt].Title, " with indexer ", cfg_quality.Indexer[idx].Template_indexer)
+					dl_add = s.SeriesSearchTitle(dbseriealt[idxalt].Title, []string{series.Listname})
 					dl.Rejected = append(dl.Rejected, dl_add.Rejected...)
 					titleschecked = append(titleschecked, dbseriealt[idxalt].Title)
 					if len(dl_add.Nzbs) >= 1 {
@@ -1735,6 +1741,7 @@ func (s Searcher) MoviesSearchImdb(movie database.Movie, lists []string) searchR
 	if strings.HasPrefix(s.Dbmovie.ImdbID, "tt") {
 		s.Dbmovie.ImdbID = strings.Trim(s.Dbmovie.ImdbID, "t")
 	}
+	logger.Log.Info("Search Movie by imdb: ", s.Dbmovie.ImdbID)
 	nzbs, failed, nzberr := apiexternal.QueryNewznabMovieImdb([]apiexternal.NzbIndexer{s.Nzbindexer}, s.Dbmovie.ImdbID, s.Indexercategories)
 	if nzberr != nil {
 		logger.Log.Error("Newznab Search failed: ", s.Dbmovie.ImdbID, " with ", s.Nzbindexer.URL)
@@ -1757,7 +1764,7 @@ func (s Searcher) MoviesSearchImdb(movie database.Movie, lists []string) searchR
 		//accepted, denied := filter_movies_nzbs(s.ConfigEntry, cfg_quality, s.Indexer, s.Nzbindexer, nzbs, s.Movie.ID, 0, s.MinimumPriority, s.Dbmovie, database.Dbserie{}, s.Dbmovie.Title, s.AlternateNames, strconv.Itoa(s.Dbmovie.Year))
 		//retnzb = append(retnzb, accepted...)
 		//retdenied = append(retdenied, denied...)
-		logger.Log.Debug("Search Series by tvdbid ended - found entries after filter: ", len(s.Nzbs))
+		logger.Log.Debug("Search Movie by imdb ended - found entries after filter: ", len(s.Nzbs))
 	}
 	return searchResults{Nzbs: s.Nzbs, Rejected: s.NzbsDenied}
 }
@@ -1799,7 +1806,7 @@ func (s Searcher) MoviesSearchTitle(movie database.Movie, title string, lists []
 		// accepted, denied := filter_movies_nzbs(s.ConfigEntry, cfg_quality, s.Indexer, s.Nzbindexer, nzbs, movie.ID, 0, s.MinimumPriority, s.Dbmovie, database.Dbserie{}, s.Dbmovie.Title, s.AlternateNames, strconv.Itoa(s.Dbmovie.Year))
 		// retdenied = append(retdenied, denied...)
 		// retnzb = append(retnzb, accepted...)
-		logger.Log.Debug("Search Series by tvdbid ended - found entries after filter: ", len(s.Nzbs))
+		logger.Log.Debug("Search Movie by title ended - found entries after filter: ", len(s.Nzbs))
 	}
 	return searchResults{Nzbs: s.Nzbs, Rejected: s.NzbsDenied}
 }
@@ -1878,7 +1885,7 @@ func (s Searcher) SeriesSearchTitle(title string, lists []string) searchResults 
 			// accepted, denied := filter_series_nzbs(s.ConfigEntry, cfg_quality, s.Indexer, s.Nzbindexer, nzbs, 0, s.SerieEpisode.ID, s.MinimumPriority, database.Dbmovie{}, s.Dbserie, s.Dbserie.Seriename, s.AlternateNames)
 			// retnzb = append(retnzb, accepted...)
 			// retdenied = append(retdenied, denied...)
-			logger.Log.Debug("Search Series by tvdbid ended - found entries after filter: ", len(s.Nzbs))
+			logger.Log.Debug("Search Series by title ended - found entries after filter: ", len(s.Nzbs))
 		}
 	}
 	return searchResults{Nzbs: s.Nzbs, Rejected: s.NzbsDenied}

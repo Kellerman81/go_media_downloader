@@ -58,7 +58,7 @@ func AddSeriesRoutes(routerseries *gin.RouterGroup) {
 	}
 }
 
-var allowedjobsseries []string = []string{"rss", "data", "datafull", "checkmissing", "checkmissingflag", "structure", "searchmissingfull",
+var allowedjobsseries []string = []string{"rss", "data", "datafull", "checkmissing", "checkmissingflag", "checkreachedflag", "structure", "searchmissingfull",
 	"searchmissinginc", "searchupgradefull", "searchupgradeinc", "searchmissingfulltitle",
 	"searchmissinginctitle", "searchupgradefulltitle", "searchupgradeinctitle", "clearhistory", "feeds", "refresh", "refreshinc"}
 
@@ -487,7 +487,7 @@ func apiseriesAllJobs(c *gin.Context) {
 				scheduler.QueueSearch.Dispatch(c.Param("job")+"_series_"+cfg_serie.Name, func() {
 					utils.Series_single_jobs(c.Param("job"), cfg_serie.Name, "", true)
 				})
-			case "feeds", "checkmissing", "checkmissingflag":
+			case "feeds", "checkmissing", "checkmissingflag", "checkreachedflag":
 				for idxlist := range cfg_serie.Lists {
 					if !cfg_serie.Lists[idxlist].Enabled {
 						continue
@@ -505,7 +505,7 @@ func apiseriesAllJobs(c *gin.Context) {
 							utils.Series_single_jobs(c.Param("job"), cfg_serie.Name, "", true)
 						})
 					}
-					if c.Param("job") == "checkmissing" || c.Param("job") == "checkmissingflag" {
+					if c.Param("job") == "checkmissing" || c.Param("job") == "checkmissingflag" || c.Param("job") == "checkreachedflag" {
 						scheduler.QueueData.Dispatch(c.Param("job")+"_series_"+cfg_serie.Name, func() {
 							utils.Series_single_jobs(c.Param("job"), cfg_serie.Name, "", true)
 						})
@@ -566,7 +566,7 @@ func apiseriesJobs(c *gin.Context) {
 			scheduler.QueueSearch.Dispatch(c.Param("job")+"_series_"+c.Param("name"), func() {
 				utils.Series_single_jobs(c.Param("job"), c.Param("name"), "", true)
 			})
-		case "feeds", "checkmissing", "checkmissingflag":
+		case "feeds", "checkmissing", "checkmissingflag", "checkreachedflag":
 			serie_keys, _ := config.ConfigDB.Keys([]byte("serie_*"), 0, 0, true)
 
 			for _, idxserie := range serie_keys {
@@ -585,14 +585,15 @@ func apiseriesJobs(c *gin.Context) {
 						if !cfg_list.Enabled {
 							continue
 						}
+						listname := cfg_serie.Lists[idxlist].Name
 						if c.Param("job") == "feeds" {
 							scheduler.QueueFeeds.Dispatch(c.Param("job")+"_series_"+c.Param("name"), func() {
-								utils.Series_single_jobs(c.Param("job"), c.Param("name"), cfg_serie.Lists[idxlist].Name, true)
+								utils.Series_single_jobs(c.Param("job"), c.Param("name"), listname, true)
 							})
 						}
-						if c.Param("job") == "checkmissing" || c.Param("job") == "checkmissingflag" {
+						if c.Param("job") == "checkmissing" || c.Param("job") == "checkmissingflag" || c.Param("job") == "checkreachedflag" {
 							scheduler.QueueData.Dispatch(c.Param("job")+"_series_"+c.Param("name"), func() {
-								utils.Series_single_jobs(c.Param("job"), c.Param("name"), cfg_serie.Lists[idxlist].Name, true)
+								utils.Series_single_jobs(c.Param("job"), c.Param("name"), listname, true)
 							})
 						}
 					}

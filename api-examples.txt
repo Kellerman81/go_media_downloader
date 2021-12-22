@@ -1,3 +1,4 @@
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/movies/job/checkreachedflag?apikey=mysecure" -Method get # Update qualityreached Field in Table - use this after a quality change
 $a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/movies/job/checkmissingflag?apikey=mysecure" -Method get # Update Missing Field in Table
 $a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/movies/job/checkmissing?apikey=mysecure" -Method get # Scan for removed media from your repository
 $a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/movies/job/structure?apikey=mysecure" -Method get # Structure your downloaded media
@@ -29,6 +30,7 @@ $a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/movies/list/:id?apikey
 $a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/movies/search/id/:id?apikey=mysecure" -Method get #search and dl movie by movie-id - get movie id by statement above
 $a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/movies/search/history/clear/:name?apikey=mysecure" -Method get #clear downloaded history by list name
 
+$a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/series/job/checkreachedflag?apikey=mysecure" -Method get # Update qualityreached Field in Table - use this after a quality change
 $a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/series/job/checkmissingflag?apikey=mysecure" -Method get # Update Missing Field in Table
 $a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/series/job/checkmissing?apikey=mysecure" -Method get # Scan for removed media from your repository
 $a = Invoke-RestMethod -Uri "http://192.168.1.10:9090/api/series/job/structure?apikey=mysecure" -Method get # Structure your downloaded media

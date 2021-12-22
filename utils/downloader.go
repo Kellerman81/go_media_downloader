@@ -120,6 +120,8 @@ func (d *Downloader) DownloadNzb(nzb Nzbwithprio) {
 		err = d.DownloadByNzbget()
 	case "sabnzbd":
 		err = d.DownloadBySabnzbd()
+	case "transmission":
+		err = d.DownloadByTransmission()
 	case "rtorrent":
 		err = d.DownloadByRTorrent()
 	case "qbittorrent":
@@ -174,6 +176,15 @@ func (d Downloader) DownloadByRTorrent() error {
 	}
 	return err
 }
+func (d Downloader) DownloadByTransmission() error {
+	logger.Log.Debug("Download by transmission: ", d.Nzb.NZB.DownloadURL)
+	err := apiexternal.SendToTransmission(d.Downloader.Hostname, d.Downloader.Username, d.Downloader.Password, d.Nzb.NZB.DownloadURL, d.Downloader.DelugeDlTo, d.Downloader.AddPaused)
+	if err != nil {
+		logger.Log.Error("Download by transmission - ERROR: ", err)
+	}
+	return err
+}
+
 func (d Downloader) DownloadByDeluge() error {
 	logger.Log.Debug("Download by Deluge: ", d.Nzb.NZB.DownloadURL)
 
