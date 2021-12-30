@@ -46,55 +46,73 @@ jobs:
     - name: Rename Win32 binary
       run: mv ./imdb/imdb-windows-4.0-386.exe init_imdb.exe
 
+    - name: Rename Win32 binary dl
+      run: mv ./go_media_downloader-windows-4.0-386.exe go_media_downloader.exe
+
     - name: Zip Win32 binary
       uses: thedoctor0/zip-release@master
       with:
         type: 'zip'
         filename: 'develop-windows-x86.zip'
-        exclusions: '*.git* /.github/* /api/* /apiexternal/* /config/* /database/* /imdb/* /logger/* /newznab/* /nzbget/* /sabnzbd/* /scanner/* /scheduler/* /tasks/* /utils/* /views/* Dockerfile go.* *.zip *.go go_media_downloader-linux* go_media_downloader-darwin* go_media_downloader-windows-*amd64.exe imdb-*'
+        exclusions: '*.git* /.github/* /api/* /apiexternal/* /config/* /database/* /downloader/* /imdb/* /importfeed/* /logger/* /newznab/* /nzbget/* /parser/* /sabnzbd/* /scanner/* /scheduler/* /searcher/* /structure/* /tasks/* /utils/* /views/* Dockerfile go.* *.zip *.go go_media_downloader-*'
 
     - name: Rename Win64 binary
       run: mv ./imdb/imdb-windows-4.0-amd64.exe init_imdb.exe
+
+    - name: Rename Win64 binary dl
+      run: mv ./go_media_downloader-windows-4.0-amd64.exe go_media_downloader.exe
 
     - name: Zip Win64 binary
       uses: thedoctor0/zip-release@master
       with:
         type: 'zip'
         filename: 'develop-windows-x64.zip'
-        exclusions: '*.git* /.github/* /api/* /apiexternal/* /config/* /database/* /imdb/* /logger/* /newznab/* /nzbget/* /sabnzbd/* /scanner/* /scheduler/* /tasks/* /utils/* /views/* Dockerfile go.* *.zip *.go go_media_downloader-linux* go_media_downloader-darwin* go_media_downloader-windows-*386.exe imdb-*'
+        exclusions: '*.git* /.github/* /api/* /apiexternal/* /config/* /database/* /downloader/* /imdb/* /importfeed/* /logger/* /newznab/* /nzbget/* /parser/* /sabnzbd/* /scanner/* /scheduler/* /searcher/* /structure/* /tasks/* /utils/* /views/* Dockerfile go.* *.zip *.go go_media_downloader-*'
 
     - name: Remove Win binary
       run: rm init_imdb.exe
 
+    - name: Remove Win binary dl
+      run: rm ./go_media_downloader.exe
+
     - name: Rename Linux32 binary
       run: mv ./imdb/imdb-linux-386 init_imdb
+
+    - name: Rename Linux32 binary dl
+      run: mv ./go_media_downloader-linux-386 go_media_downloader
 
     - name: Zip Linux32 binary
       uses: thedoctor0/zip-release@master
       with:
         type: 'zip'
         filename: 'develop-linux-x86.zip'
-        exclusions: '*.git* /.github/* /api/* /apiexternal/* /config/* /database/* /imdb/* /logger/* /newznab/* /nzbget/* /sabnzbd/* /scanner/* /scheduler/* /tasks/* /utils/* /views/* Dockerfile go.* *.zip *.go go_media_downloader-windows*.exe go_media_downloader-darwin* go_media_downloader-linux-*amd64 imdb-*'
+        exclusions: '*.git* /.github/* /api/* /apiexternal/* /config/* /database/* /downloader/* /imdb/* /importfeed/* /logger/* /newznab/* /nzbget/* /parser/* /sabnzbd/* /scanner/* /scheduler/* /searcher/* /structure/* /tasks/* /utils/* /views/* Dockerfile go.* *.zip *.go go_media_downloader-*'
 
     - name: Rename Linux64 binary
       run: mv ./imdb/imdb-linux-amd64 init_imdb
+
+    - name: Rename Linux64 binary dl
+      run: mv ./go_media_downloader-linux-amd64 go_media_downloader
 
     - name: Zip Linux64 binary
       uses: thedoctor0/zip-release@master
       with:
         type: 'zip'
         filename: 'develop-linux-x64.zip'
-        exclusions: '*.git* /.github/* /api/* /apiexternal/* /config/* /database/* /imdb/* /logger/* /newznab/* /nzbget/* /sabnzbd/* /scanner/* /scheduler/* /tasks/* /utils/* /views/* Dockerfile go.* *.zip *.go go_media_downloader-windows*.exe go_media_downloader-darwin* go_media_downloader-linux-*386 imdb-*'
+        exclusions: '*.git* /.github/* /api/* /apiexternal/* /config/* /database/* /downloader/* /imdb/* /importfeed/* /logger/* /newznab/* /nzbget/* /parser/* /sabnzbd/* /scanner/* /scheduler/* /searcher/* /structure/* /tasks/* /utils/* /views/* Dockerfile go.* *.zip *.go go_media_downloader-*'
     
     - name: Rename Mac64 binary
       run: mv ./imdb/imdb-darwin-10.12-amd64 init_imdb
+
+    - name: Rename Mac64 binary dl
+      run: mv ./go_media_downloader-darwin-10.12-amd64 go_media_downloader
 
     - name: Zip Mac64 binary
       uses: thedoctor0/zip-release@master
       with:
         type: 'zip'
         filename: 'develop-macos-x64.zip'
-        exclusions: '*.git* /.github/* /api/* /apiexternal/* /config/* /database/* /imdb/* /logger/* /newznab/* /nzbget/* /sabnzbd/* /scanner/* /scheduler/* /tasks/* /utils/* /views/* Dockerfile go.* *.zip *.go go_media_downloader-windows*.exe go_media_downloader-linux* imdb-*'
+        exclusions: '*.git* /.github/* /api/* /apiexternal/* /config/* /database/* /downloader/* /imdb/* /importfeed/* /logger/* /newznab/* /nzbget/* /parser/* /sabnzbd/* /scanner/* /scheduler/* /searcher/* /structure/* /tasks/* /utils/* /views/* Dockerfile go.* *.zip *.go go_media_downloader-*'
 
     - name: Development Release
       if: ${{ github.event_name == 'push' }}
