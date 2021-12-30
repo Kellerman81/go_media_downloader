@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"regexp"
 	"runtime"
+	"runtime/debug"
 	"strings"
 	"syscall"
 	"time"
@@ -19,10 +20,13 @@ import (
 	"github.com/Kellerman81/go_media_downloader/apiexternal"
 	"github.com/Kellerman81/go_media_downloader/config"
 	"github.com/Kellerman81/go_media_downloader/database"
+	"github.com/Kellerman81/go_media_downloader/importfeed"
 	"github.com/Kellerman81/go_media_downloader/logger"
 	"github.com/Kellerman81/go_media_downloader/newznab"
+	"github.com/Kellerman81/go_media_downloader/parser"
 	"github.com/Kellerman81/go_media_downloader/scanner"
 	"github.com/Kellerman81/go_media_downloader/scheduler"
+	"github.com/Kellerman81/go_media_downloader/structure"
 	"github.com/Kellerman81/go_media_downloader/utils"
 	"github.com/recoilme/pudge"
 	"golang.org/x/oauth2"
@@ -41,6 +45,7 @@ import (
 // @title go_media_downloader API
 
 func main() {
+	debug.SetGCPercent(20)
 
 	pudb, _ := config.OpenConfig("config.db")
 	config.ConfigDB = pudb
@@ -93,9 +98,9 @@ func main() {
 
 	apiexternal.NewznabClients = make(map[string]newznab.Client, 10)
 
-	utils.SeriesStructureJobRunning = make(map[string]bool, 10)
-	utils.MovieImportJobRunning = make(map[string]bool, 10)
-	utils.SeriesImportJobRunning = make(map[string]bool, 10)
+	structure.StructureJobRunning = make(map[string]bool, 10)
+	importfeed.MovieImportJobRunning = make(map[string]bool, 10)
+	importfeed.SeriesImportJobRunning = make(map[string]bool, 10)
 
 	database.InitDb(cfg_general.DBLogLevel)
 
@@ -104,7 +109,7 @@ func main() {
 
 	database.UpgradeDB()
 	database.GetVars()
-	utils.LoadDBPatterns()
+	parser.LoadDBPatterns()
 
 	str := database.DbQuickCheck()
 	if str != "ok" {
