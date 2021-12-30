@@ -2,6 +2,27 @@
 Media Manager similar to Radarr and Sonarr written in go
 First version! Bugs included
 
+Main goal of project: Support multiple configurations for Series/Movies in one. Also do some additional checks and reduce memory footprint. API Only currently - no Interface
+
+Inspirations: Radarr/Sonarr and Flexget
+
+## Table of Contents
+* [Features](#features)
+  * [Supported](#supported)
+    * [Feed Sources](#feed-sources)
+    * [External Meta Sources](#external-meta-sources)
+    * [Indexers](#indexers)
+    * [Downloaders](#downloaders)
+    * [Notifications](#notifications)
+    * [Media Templates](#media-templates)
+    * [General](#general)
+  * [Under Consideration](#under-consideration)
+* [Ram Usage](#ram-usage)
+* [Get started](#get-started)
+* [After first Start - Trakt Authorize](#after-first-start---trakt-authorize)
+* [Donate](#donate)
+* [Examples](#examples)
+
 ## Features
 
 - Get Feeds of wanted media (Movies: Imdb Public Lists, Series: Local Wanted file --series.toml--)
@@ -126,5 +147,6 @@ http://{server}:{port}/swagger/index.html
 
 ## Examples
 
+- Look into [Wiki](https://github.com/Kellerman81/go_media_downloader/wiki)
 - config: Movies FR and EN as Groups with the same or different feeds - Folders have to be different for the group (don't mix for example english and French Movies) - Use Different Qualities for each group! in the qualities are the Downloader/Indexer Definitions thats why - also please let the downloader place them in different directories otherwise they might mix
 - exceptions: if a movie/show is in multiple lists i try to exclude them from the others (can be done in the config) so that i have the movie/show only in the list with the highest quality - if a movie/show is in 2 lists with different qualities the release would be constantly redownloaded
