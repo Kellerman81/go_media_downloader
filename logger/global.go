@@ -3,6 +3,11 @@ package logger
 import (
 	"fmt"
 	"html"
+	"io"
+	"net/http"
+	"os"
+	"path"
+	"regexp"
 	"strings"
 	"unicode"
 
@@ -11,7 +16,7 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
-func stringReplaceArray(instr string, what []string, with string) string {
+func StringReplaceArray(instr string, what []string, with string) string {
 	for _, line := range what {
 		instr = strings.Replace(instr, line, with, -1)
 	}
@@ -201,7 +206,7 @@ func mapDecomposeUnavailable(r rune) rune {
 }
 
 //var Transformer transform.Transformer = transform.Chain(norm.NFD, runes.Remove(runes.In(unicode.Mn)), norm.NFC)
-var Transformer transform.Transformer = transform.Chain(runes.Map(mapDecomposeUnavailable), norm.NFD, runes.Remove(runes.In(unicode.Mn)), norm.NFC)
+var transformer transform.Transformer = transform.Chain(runes.Map(mapDecomposeUnavailable), norm.NFD, runes.Remove(runes.In(unicode.Mn)), norm.NFC)
 
 //no chinese or cyrilic supported
 func StringToSlug(instr string) string {
@@ -215,7 +220,7 @@ func StringToSlug(instr string) string {
 	instr = strings.Replace(instr, "@", "at", -1)
 	instr = strings.Replace(instr, "½", ",5", -1)
 	instr = strings.Replace(instr, "'", "", -1)
-	instr = stringReplaceArray(instr, []string{" ", "§", "$", "%", "/", "(", ")", "=", "!", "?", "`", "\\", "}", "]", "[", "{", "|", ",", ".", ";", ":", "_", "+", "#", "<", ">", "*"}, "-")
+	instr = StringReplaceArray(instr, []string{" ", "§", "$", "%", "/", "(", ")", "=", "!", "?", "`", "\\", "}", "]", "[", "{", "|", ",", ".", ";", ":", "_", "+", "#", "<", ">", "*"}, "-")
 	instr = strings.Replace(instr, "--", "-", -1)
 	instr = strings.Replace(instr, "--", "-", -1)
 	instr = strings.Replace(instr, "--", "-", -1)
@@ -247,11 +252,149 @@ func StringToSlug(instr string) string {
 	}()
 
 	//t := transform.Chain(norm.NFD, runes.Remove(runes.In(unicode.Mn)), norm.NFC)
-	result, _, err := transform.String(Transformer, instr)
+	result, _, err := transform.String(transformer, instr)
 	if err != nil {
 		result = instr
 	} else {
 		result = strings.Trim(result, "-")
 	}
 	return result
+}
+
+var regexPathAllowSlash = regexp.MustCompile(`[:*?"<>|]`)
+var regexPathDisallowSlash = regexp.MustCompile(`[\\/:*?"<>|]`)
+
+func Path(s string, allowslash bool) string {
+	// Start with lowercase string
+	filePath := html.UnescapeString(s)
+
+	filePath = strings.Replace(filePath, "..", "", -1)
+	filePath = path.Clean(filePath)
+	if allowslash {
+		filePath = regexPathAllowSlash.ReplaceAllString(filePath, "")
+	} else {
+		filePath = regexPathDisallowSlash.ReplaceAllString(filePath, "")
+	}
+	filePath = html.UnescapeString(filePath)
+	filePath = strings.Trim(filePath, " ")
+
+	// NB this may be of length 0, caller must check
+	return filePath
+}
+
+// DownloadFile will download a url to a local file. It's efficient because it will
+// write as it downloads and not load the whole file into memory.
+func DownloadFile(saveIn string, fileprefix string, filename string, url string) error {
+
+	// Get the data
+	resp, err := http.Get(url)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	// Create the file
+	if len(filename) == 0 {
+		filename = path.Base(resp.Request.URL.String())
+	}
+	var filepath string
+	if len(fileprefix) >= 1 {
+		filename = fileprefix + filename
+	}
+	filepath = path.Join(saveIn, filename)
+	out, err := os.Create(filepath)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	// Write the body to file
+	_, err = io.Copy(out, resp.Body)
+	return err
+}
+
+func CheckStringArray(array []string, find string) bool {
+	for idx := range array {
+		if array[idx] == find {
+			return true
+		}
+	}
+	return false
+}
+
+func TrimStringInclAfterString(s string, search string) string {
+	if idx := strings.Index(s, search); idx != -1 {
+		return strings.Repeat(s[:idx], 1)
+	}
+	return s
+}
+func TrimStringInclAfterStringInsensitive(s string, search string) string {
+	if idx := strings.Index(strings.ToLower(s), strings.ToLower(search)); idx != -1 {
+		s = strings.Repeat(s[:idx], 1)
+	}
+	s = strings.TrimSuffix(s, "-")
+	s = strings.TrimSuffix(s, ".")
+	s = strings.TrimSuffix(s, " ")
+	return s
+}
+func TrimStringAfterString(s string, search string) string {
+	if idx := strings.Index(s, search); idx != -1 {
+		idn := idx + len(search)
+		if idn >= len(s) {
+			idn = len(s) - 1
+		}
+		return strings.Repeat(s[:idn], 1)
+	}
+	return s
+}
+func TrimStringAfterStringInsensitive(s string, search string) string {
+	if idx := strings.Index(strings.ToLower(s), strings.ToLower(search)); idx != -1 {
+		idn := idx + len(search)
+		if idn >= len(s) {
+			idn = len(s) - 1
+		}
+		return strings.Repeat(s[:idn], 1)
+	}
+	return s
+}
+func TrimStringPrefixInsensitive(s string, search string) string {
+	if idx := strings.Index(strings.ToLower(s), strings.ToLower(search)); idx != -1 {
+		idn := idx + len(search)
+		s = strings.Repeat(s[idn:], 1)
+		s = strings.TrimPrefix(s, "-")
+		s = strings.TrimPrefix(s, ".")
+		s = strings.TrimPrefix(s, " ")
+		return s
+	}
+	return s
+}
+
+func StringReplaceDiacritics(instr string) string {
+	instr = strings.Replace(instr, "ß", "ss", -1)
+	instr = strings.Replace(instr, "ä", "ae", -1)
+	instr = strings.Replace(instr, "ö", "oe", -1)
+	instr = strings.Replace(instr, "ü", "ue", -1)
+	instr = strings.Replace(instr, "Ä", "Ae", -1)
+	instr = strings.Replace(instr, "Ö", "Oe", -1)
+	instr = strings.Replace(instr, "Ü", "Ue", -1)
+	//Transformer := transform.Chain(norm.NFD, runes.Remove(runes.In(unicode.Mn)), norm.NFC)
+	result, _, _ := transform.String(transformer, instr)
+	return result
+}
+
+func Getrootpath(foldername string) (string, string) {
+	folders := make([]string, 0, 10)
+	if strings.Contains(foldername, "/") {
+		folders = strings.Split(foldername, "/")
+	}
+	if strings.Contains(foldername, "\\") {
+		folders = strings.Split(foldername, "\\")
+	}
+	if !strings.Contains(foldername, "/") && !strings.Contains(foldername, "\\") {
+		folders = []string{foldername}
+	}
+	foldername = strings.TrimPrefix(foldername, strings.TrimRight(folders[0], "/"))
+	foldername = strings.Trim(foldername, "/")
+	Log.Debug("Removed ", folders[0], " from ", foldername)
+	return foldername, strings.TrimRight(folders[0], "/")
 }

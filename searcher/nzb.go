@@ -1,45 +1,13 @@
-package utils
+package searcher
 
 import (
-	"io"
-	"net/http"
-	"os"
-	"path"
 	"strings"
 
 	"github.com/Kellerman81/go_media_downloader/config"
-	"github.com/Kellerman81/go_media_downloader/database"
 	"github.com/Kellerman81/go_media_downloader/logger"
 	"github.com/Kellerman81/go_media_downloader/newznab"
+	"github.com/Kellerman81/go_media_downloader/parser"
 )
-
-type Nzbwithprio struct {
-	Prio             int
-	Indexer          string
-	ParseInfo        ParseInfo
-	NZB              newznab.NZB
-	Nzbmovie         database.Movie
-	Nzbepisode       database.SerieEpisode
-	WantedTitle      string
-	WantedAlternates []string
-	Quality          config.QualityConfig
-	MinimumPriority  int
-	Denied           bool
-	Reason           string
-}
-type NzbwithprioJson struct {
-	Prio             int
-	Indexer          string
-	ParseInfo        ParseInfo
-	NZB              newznab.NZB
-	Nzbmovie         database.MovieJson
-	Nzbepisode       database.SerieEpisodeJson
-	WantedTitle      string
-	WantedAlternates []string
-	Quality          config.QualityConfig
-	Denied           bool
-	Reason           string
-}
 
 func filter_size_nzbs(configEntry config.MediaTypeConfig, indexer config.QualityIndexerConfig, rownzb newznab.NZB) bool {
 	for idx := range configEntry.DataImport {
@@ -70,7 +38,7 @@ func filter_size_nzbs(configEntry config.MediaTypeConfig, indexer config.Quality
 	}
 	return false
 }
-func filter_test_quality_wanted(quality config.QualityConfig, m *ParseInfo, rownzb newznab.NZB) bool {
+func filter_test_quality_wanted(quality config.QualityConfig, m *parser.ParseInfo, rownzb newznab.NZB) bool {
 	wanted_release_resolution := false
 	for idxqual := range quality.Wanted_resolution {
 		if strings.EqualFold(quality.Wanted_resolution[idxqual], m.Resolution) {
@@ -157,46 +125,4 @@ func filter_regex_nzbs(regexconfig config.RegexConfig, title string, wantedtitle
 		return true, ""
 	}
 	return false, ""
-}
-
-func checknzbtitle(movietitle string, nzbtitle string) bool {
-	logger.Log.Debug("check ", movietitle, " against ", nzbtitle)
-	if strings.EqualFold(movietitle, nzbtitle) {
-		return true
-	}
-	movietitle = logger.StringToSlug(movietitle)
-	nzbtitle = logger.StringToSlug(nzbtitle)
-	logger.Log.Debug("check ", movietitle, " against ", nzbtitle)
-	return strings.EqualFold(movietitle, nzbtitle)
-}
-
-// DownloadFile will download a url to a local file. It's efficient because it will
-// write as it downloads and not load the whole file into memory.
-func downloadFile(saveIn string, fileprefix string, filename string, url string) error {
-
-	// Get the data
-	resp, err := http.Get(url)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	// Create the file
-	if len(filename) == 0 {
-		filename = path.Base(resp.Request.URL.String())
-	}
-	var filepath string
-	if len(fileprefix) >= 1 {
-		filename = fileprefix + filename
-	}
-	filepath = path.Join(saveIn, filename)
-	out, err := os.Create(filepath)
-	if err != nil {
-		return err
-	}
-	defer out.Close()
-
-	// Write the body to file
-	_, err = io.Copy(out, resp.Body)
-	return err
 }

@@ -249,73 +249,109 @@ func InitScheduler() {
 				utils.Movies_single_jobs("structure", cfg_movie.Name, "", false)
 			}, schedule.Cron_scan_dataimport)
 		}
-
-		for idxlist := range cfg_movie.Lists {
-			if !cfg_movie.Lists[idxlist].Enabled {
-				continue
-			}
-			if !config.ConfigCheck("list_" + cfg_movie.Lists[idxlist].Template_list) {
-				continue
-			}
-			var cfg_list config.ListsConfig
-			config.ConfigGet("list_"+cfg_movie.Lists[idxlist].Template_list, &cfg_list)
-			if !cfg_list.Enabled {
-				continue
-			}
-
-			listname := cfg_movie.Lists[idxlist].Name
-			if cfg_movie.Lists[idxlist].Template_scheduler != "" {
-				if !config.ConfigCheck("scheduler_" + cfg_movie.Lists[idxlist].Template_scheduler) {
-					continue
-				}
-				config.ConfigGet("scheduler_"+cfg_movie.Lists[idxlist].Template_scheduler, &schedule)
-			}
-			if schedule.Interval_feeds != "" {
-				if cfg_general.UseCronInsteadOfInterval {
-					QueueFeeds.DispatchCron("feeds_movies_"+cfg_movie.Name+"_"+cfg_movie.Lists[idxlist].Name, func() {
-						utils.Movies_single_jobs("feeds", cfg_movie.Name, listname, false)
-					}, convertcron(schedule.Interval_feeds))
-				} else {
-					QueueFeeds.DispatchEvery("feeds_movies_"+cfg_movie.Name+"_"+cfg_movie.Lists[idxlist].Name, func() {
-						utils.Movies_single_jobs("feeds", cfg_movie.Name, listname, false)
-					}, converttime(schedule.Interval_feeds))
-				}
-			}
-			if schedule.Cron_feeds != "" {
-				QueueFeeds.DispatchCron("feeds_movies_"+cfg_movie.Name+"_"+cfg_movie.Lists[idxlist].Name, func() {
-					utils.Movies_single_jobs("feeds", cfg_movie.Name, listname, false)
-				}, schedule.Cron_feeds)
-			}
-
-			if schedule.Interval_scan_data_missing != "" {
-				if cfg_general.UseCronInsteadOfInterval {
-					QueueData.DispatchCron("checkmissing_movies_"+cfg_movie.Name+"_"+cfg_movie.Lists[idxlist].Name, func() {
-						utils.Movies_single_jobs("checkmissing", cfg_movie.Name, listname, false)
-					}, convertcron(schedule.Interval_scan_data_missing))
-
-					QueueData.DispatchCron("checkmissingflag_movies_"+cfg_movie.Name+"_"+cfg_movie.Lists[idxlist].Name, func() {
-						utils.Movies_single_jobs("checkmissingflag", cfg_movie.Name, listname, false)
-					}, convertcron(schedule.Interval_scan_data_missing))
-				} else {
-					QueueData.DispatchEvery("checkmissing_movies_"+cfg_movie.Name+"_"+cfg_movie.Lists[idxlist].Name, func() {
-						utils.Movies_single_jobs("checkmissing", cfg_movie.Name, listname, false)
-					}, converttime(schedule.Interval_scan_data_missing))
-
-					QueueData.DispatchEvery("checkmissingflag_movies_"+cfg_movie.Name+"_"+cfg_movie.Lists[idxlist].Name, func() {
-						utils.Movies_single_jobs("checkmissingflag", cfg_movie.Name, listname, false)
-					}, converttime(schedule.Interval_scan_data_missing))
-				}
-			}
-			if schedule.Cron_scan_data_missing != "" {
-				QueueData.DispatchCron("checkmissing_movies_"+cfg_movie.Name+"_"+cfg_movie.Lists[idxlist].Name, func() {
-					utils.Movies_single_jobs("checkmissing", cfg_movie.Name, cfg_movie.Lists[idxlist].Name, false)
-				}, schedule.Cron_scan_data_missing)
-
-				QueueData.DispatchCron("checkmissingflag_movies_"+cfg_movie.Name+"_"+cfg_movie.Lists[idxlist].Name, func() {
-					utils.Movies_single_jobs("checkmissingflag", cfg_movie.Name, cfg_movie.Lists[idxlist].Name, false)
-				}, schedule.Cron_scan_data_missing)
+		if schedule.Interval_feeds != "" {
+			if cfg_general.UseCronInsteadOfInterval {
+				QueueFeeds.DispatchCron("feeds_movies_"+cfg_movie.Name, func() {
+					utils.Movies_single_jobs("feeds", cfg_movie.Name, "", false)
+				}, convertcron(schedule.Interval_feeds))
+			} else {
+				QueueFeeds.DispatchEvery("feeds_movies_"+cfg_movie.Name, func() {
+					utils.Movies_single_jobs("feeds", cfg_movie.Name, "", false)
+				}, converttime(schedule.Interval_feeds))
 			}
 		}
+		if schedule.Cron_feeds != "" {
+			QueueFeeds.DispatchCron("feeds_movies_"+cfg_movie.Name, func() {
+				utils.Movies_single_jobs("feeds", cfg_movie.Name, "", false)
+			}, schedule.Cron_feeds)
+		}
+
+		if schedule.Interval_scan_data_missing != "" {
+			if cfg_general.UseCronInsteadOfInterval {
+				QueueData.DispatchCron("checkmissing_movies_"+cfg_movie.Name, func() {
+					utils.Movies_single_jobs("checkmissing", cfg_movie.Name, "", false)
+					utils.Movies_single_jobs("checkmissingflag", cfg_movie.Name, "", false)
+				}, convertcron(schedule.Interval_scan_data_missing))
+			} else {
+				QueueData.DispatchEvery("checkmissing_movies_"+cfg_movie.Name, func() {
+					utils.Movies_single_jobs("checkmissing", cfg_movie.Name, "", false)
+					utils.Movies_single_jobs("checkmissingflag", cfg_movie.Name, "", false)
+				}, converttime(schedule.Interval_scan_data_missing))
+			}
+		}
+		if schedule.Cron_scan_data_missing != "" {
+			QueueData.DispatchCron("checkmissing_movies_"+cfg_movie.Name, func() {
+				utils.Movies_single_jobs("checkmissing", cfg_movie.Name, "", false)
+				utils.Movies_single_jobs("checkmissingflag", cfg_movie.Name, "", false)
+			}, schedule.Cron_scan_data_missing)
+		}
+
+		// for idxlist := range cfg_movie.Lists {
+		// 	if !cfg_movie.Lists[idxlist].Enabled {
+		// 		continue
+		// 	}
+		// 	if !config.ConfigCheck("list_" + cfg_movie.Lists[idxlist].Template_list) {
+		// 		continue
+		// 	}
+		// 	var cfg_list config.ListsConfig
+		// 	config.ConfigGet("list_"+cfg_movie.Lists[idxlist].Template_list, &cfg_list)
+		// 	if !cfg_list.Enabled {
+		// 		continue
+		// 	}
+
+		// 	listname := cfg_movie.Lists[idxlist].Name
+		// 	if cfg_movie.Lists[idxlist].Template_scheduler != "" {
+		// 		if !config.ConfigCheck("scheduler_" + cfg_movie.Lists[idxlist].Template_scheduler) {
+		// 			continue
+		// 		}
+		// 		config.ConfigGet("scheduler_"+cfg_movie.Lists[idxlist].Template_scheduler, &schedule)
+		// 	}
+		// 	if schedule.Interval_feeds != "" {
+		// 		if cfg_general.UseCronInsteadOfInterval {
+		// 			QueueFeeds.DispatchCron("feeds_movies_"+cfg_movie.Name+"_"+cfg_movie.Lists[idxlist].Name, func() {
+		// 				utils.Movies_single_jobs("feeds", cfg_movie.Name, listname, false)
+		// 			}, convertcron(schedule.Interval_feeds))
+		// 		} else {
+		// 			QueueFeeds.DispatchEvery("feeds_movies_"+cfg_movie.Name+"_"+cfg_movie.Lists[idxlist].Name, func() {
+		// 				utils.Movies_single_jobs("feeds", cfg_movie.Name, listname, false)
+		// 			}, converttime(schedule.Interval_feeds))
+		// 		}
+		// 	}
+		// 	if schedule.Cron_feeds != "" {
+		// 		QueueFeeds.DispatchCron("feeds_movies_"+cfg_movie.Name+"_"+cfg_movie.Lists[idxlist].Name, func() {
+		// 			utils.Movies_single_jobs("feeds", cfg_movie.Name, listname, false)
+		// 		}, schedule.Cron_feeds)
+		// 	}
+
+		// 	if schedule.Interval_scan_data_missing != "" {
+		// 		if cfg_general.UseCronInsteadOfInterval {
+		// 			QueueData.DispatchCron("checkmissing_movies_"+cfg_movie.Name+"_"+cfg_movie.Lists[idxlist].Name, func() {
+		// 				utils.Movies_single_jobs("checkmissing", cfg_movie.Name, listname, false)
+		// 			}, convertcron(schedule.Interval_scan_data_missing))
+
+		// 			QueueData.DispatchCron("checkmissingflag_movies_"+cfg_movie.Name+"_"+cfg_movie.Lists[idxlist].Name, func() {
+		// 				utils.Movies_single_jobs("checkmissingflag", cfg_movie.Name, listname, false)
+		// 			}, convertcron(schedule.Interval_scan_data_missing))
+		// 		} else {
+		// 			QueueData.DispatchEvery("checkmissing_movies_"+cfg_movie.Name+"_"+cfg_movie.Lists[idxlist].Name, func() {
+		// 				utils.Movies_single_jobs("checkmissing", cfg_movie.Name, listname, false)
+		// 			}, converttime(schedule.Interval_scan_data_missing))
+
+		// 			QueueData.DispatchEvery("checkmissingflag_movies_"+cfg_movie.Name+"_"+cfg_movie.Lists[idxlist].Name, func() {
+		// 				utils.Movies_single_jobs("checkmissingflag", cfg_movie.Name, listname, false)
+		// 			}, converttime(schedule.Interval_scan_data_missing))
+		// 		}
+		// 	}
+		// 	if schedule.Cron_scan_data_missing != "" {
+		// 		QueueData.DispatchCron("checkmissing_movies_"+cfg_movie.Name+"_"+cfg_movie.Lists[idxlist].Name, func() {
+		// 			utils.Movies_single_jobs("checkmissing", cfg_movie.Name, cfg_movie.Lists[idxlist].Name, false)
+		// 		}, schedule.Cron_scan_data_missing)
+
+		// 		QueueData.DispatchCron("checkmissingflag_movies_"+cfg_movie.Name+"_"+cfg_movie.Lists[idxlist].Name, func() {
+		// 			utils.Movies_single_jobs("checkmissingflag", cfg_movie.Name, cfg_movie.Lists[idxlist].Name, false)
+		// 		}, schedule.Cron_scan_data_missing)
+		// 	}
+		// }
 	}
 
 	serie_keys, _ := config.ConfigDB.Keys([]byte("serie_*"), 0, 0, true)
@@ -508,69 +544,105 @@ func InitScheduler() {
 				utils.Series_single_jobs("structure", cfg_serie.Name, "", false)
 			}, schedule.Cron_scan_dataimport)
 		}
-
-		for idxlist := range cfg_serie.Lists {
-			if !cfg_serie.Lists[idxlist].Enabled {
-				continue
-			}
-
-			if !config.ConfigCheck("list_" + cfg_serie.Lists[idxlist].Template_list) {
-				continue
-			}
-			var cfg_list config.ListsConfig
-			config.ConfigGet("list_"+cfg_serie.Lists[idxlist].Template_list, &cfg_list)
-			if !cfg_list.Enabled {
-				continue
-			}
-
-			listname := cfg_serie.Lists[idxlist].Name
-			if !config.ConfigCheck("scheduler_" + cfg_serie.Template_scheduler) {
-				continue
-			}
-			config.ConfigGet("scheduler_"+cfg_serie.Template_scheduler, &schedule)
-			if cfg_serie.Lists[idxlist].Template_scheduler != "" {
-				if !config.ConfigCheck("scheduler_" + cfg_serie.Lists[idxlist].Template_scheduler) {
-					continue
-				}
-				config.ConfigGet("scheduler_"+cfg_serie.Lists[idxlist].Template_scheduler, &schedule)
-			}
-			if schedule.Interval_feeds != "" {
-				if cfg_general.UseCronInsteadOfInterval {
-					QueueFeeds.DispatchCron("feeds_series_"+cfg_serie.Name+"_"+cfg_serie.Lists[idxlist].Name, func() {
-						utils.Series_single_jobs("feeds", cfg_serie.Name, listname, false)
-					}, convertcron(schedule.Interval_feeds))
-				} else {
-					QueueFeeds.DispatchEvery("feeds_series_"+cfg_serie.Name+"_"+cfg_serie.Lists[idxlist].Name, func() {
-						utils.Series_single_jobs("feeds", cfg_serie.Name, listname, false)
-					}, converttime(schedule.Interval_feeds))
-				}
-			}
-			if schedule.Cron_feeds != "" {
-				QueueFeeds.DispatchCron("feeds_series_"+cfg_serie.Name+"_"+cfg_serie.Lists[idxlist].Name, func() {
-					utils.Series_single_jobs("feeds", cfg_serie.Name, listname, false)
-				}, schedule.Cron_feeds)
-			}
-
-			if schedule.Interval_scan_data_missing != "" {
-				if cfg_general.UseCronInsteadOfInterval {
-					QueueData.DispatchCron("checkmissing_series_"+cfg_serie.Name+"_"+cfg_serie.Lists[idxlist].Name, func() {
-						utils.Series_single_jobs("checkmissing", cfg_serie.Name, listname, false)
-						utils.Series_single_jobs("checkmissingflag", cfg_serie.Name, listname, false)
-					}, convertcron(schedule.Interval_scan_data_missing))
-				} else {
-					QueueData.DispatchEvery("checkmissing_series_"+cfg_serie.Name+"_"+cfg_serie.Lists[idxlist].Name, func() {
-						utils.Series_single_jobs("checkmissing", cfg_serie.Name, listname, false)
-						utils.Series_single_jobs("checkmissingflag", cfg_serie.Name, listname, false)
-					}, converttime(schedule.Interval_scan_data_missing))
-				}
-			}
-			if schedule.Cron_scan_data_missing != "" {
-				QueueData.DispatchCron("checkmissing_series_"+cfg_serie.Name+"_"+cfg_serie.Lists[idxlist].Name, func() {
-					utils.Series_single_jobs("checkmissing", cfg_serie.Name, listname, false)
-					utils.Series_single_jobs("checkmissingflag", cfg_serie.Name, listname, false)
-				}, schedule.Cron_scan_data_missing)
+		if schedule.Interval_feeds != "" {
+			if cfg_general.UseCronInsteadOfInterval {
+				QueueFeeds.DispatchCron("feeds_series_"+cfg_serie.Name, func() {
+					utils.Series_single_jobs("feeds", cfg_serie.Name, "", false)
+				}, convertcron(schedule.Interval_feeds))
+			} else {
+				QueueFeeds.DispatchEvery("feeds_series_"+cfg_serie.Name, func() {
+					utils.Series_single_jobs("feeds", cfg_serie.Name, "", false)
+				}, converttime(schedule.Interval_feeds))
 			}
 		}
+		if schedule.Cron_feeds != "" {
+			QueueFeeds.DispatchCron("feeds_series_"+cfg_serie.Name, func() {
+				utils.Series_single_jobs("feeds", cfg_serie.Name, "", false)
+			}, schedule.Cron_feeds)
+		}
+
+		if schedule.Interval_scan_data_missing != "" {
+			if cfg_general.UseCronInsteadOfInterval {
+				QueueData.DispatchCron("checkmissing_series_"+cfg_serie.Name, func() {
+					utils.Series_single_jobs("checkmissing", cfg_serie.Name, "", false)
+					utils.Series_single_jobs("checkmissingflag", cfg_serie.Name, "", false)
+				}, convertcron(schedule.Interval_scan_data_missing))
+			} else {
+				QueueData.DispatchEvery("checkmissing_series_"+cfg_serie.Name, func() {
+					utils.Series_single_jobs("checkmissing", cfg_serie.Name, "", false)
+					utils.Series_single_jobs("checkmissingflag", cfg_serie.Name, "", false)
+				}, converttime(schedule.Interval_scan_data_missing))
+			}
+		}
+		if schedule.Cron_scan_data_missing != "" {
+			QueueData.DispatchCron("checkmissing_series_"+cfg_serie.Name, func() {
+				utils.Series_single_jobs("checkmissing", cfg_serie.Name, "", false)
+				utils.Series_single_jobs("checkmissingflag", cfg_serie.Name, "", false)
+			}, schedule.Cron_scan_data_missing)
+		}
+
+		// for idxlist := range cfg_serie.Lists {
+		// 	if !cfg_serie.Lists[idxlist].Enabled {
+		// 		continue
+		// 	}
+
+		// 	if !config.ConfigCheck("list_" + cfg_serie.Lists[idxlist].Template_list) {
+		// 		continue
+		// 	}
+		// 	var cfg_list config.ListsConfig
+		// 	config.ConfigGet("list_"+cfg_serie.Lists[idxlist].Template_list, &cfg_list)
+		// 	if !cfg_list.Enabled {
+		// 		continue
+		// 	}
+
+		// 	listname := cfg_serie.Lists[idxlist].Name
+		// 	if !config.ConfigCheck("scheduler_" + cfg_serie.Template_scheduler) {
+		// 		continue
+		// 	}
+		// 	config.ConfigGet("scheduler_"+cfg_serie.Template_scheduler, &schedule)
+		// 	if cfg_serie.Lists[idxlist].Template_scheduler != "" {
+		// 		if !config.ConfigCheck("scheduler_" + cfg_serie.Lists[idxlist].Template_scheduler) {
+		// 			continue
+		// 		}
+		// 		config.ConfigGet("scheduler_"+cfg_serie.Lists[idxlist].Template_scheduler, &schedule)
+		// 	}
+		// 	if schedule.Interval_feeds != "" {
+		// 		if cfg_general.UseCronInsteadOfInterval {
+		// 			QueueFeeds.DispatchCron("feeds_series_"+cfg_serie.Name+"_"+cfg_serie.Lists[idxlist].Name, func() {
+		// 				utils.Series_single_jobs("feeds", cfg_serie.Name, listname, false)
+		// 			}, convertcron(schedule.Interval_feeds))
+		// 		} else {
+		// 			QueueFeeds.DispatchEvery("feeds_series_"+cfg_serie.Name+"_"+cfg_serie.Lists[idxlist].Name, func() {
+		// 				utils.Series_single_jobs("feeds", cfg_serie.Name, listname, false)
+		// 			}, converttime(schedule.Interval_feeds))
+		// 		}
+		// 	}
+		// 	if schedule.Cron_feeds != "" {
+		// 		QueueFeeds.DispatchCron("feeds_series_"+cfg_serie.Name+"_"+cfg_serie.Lists[idxlist].Name, func() {
+		// 			utils.Series_single_jobs("feeds", cfg_serie.Name, listname, false)
+		// 		}, schedule.Cron_feeds)
+		// 	}
+
+		// 	if schedule.Interval_scan_data_missing != "" {
+		// 		if cfg_general.UseCronInsteadOfInterval {
+		// 			QueueData.DispatchCron("checkmissing_series_"+cfg_serie.Name+"_"+cfg_serie.Lists[idxlist].Name, func() {
+		// 				utils.Series_single_jobs("checkmissing", cfg_serie.Name, listname, false)
+		// 				utils.Series_single_jobs("checkmissingflag", cfg_serie.Name, listname, false)
+		// 			}, convertcron(schedule.Interval_scan_data_missing))
+		// 		} else {
+		// 			QueueData.DispatchEvery("checkmissing_series_"+cfg_serie.Name+"_"+cfg_serie.Lists[idxlist].Name, func() {
+		// 				utils.Series_single_jobs("checkmissing", cfg_serie.Name, listname, false)
+		// 				utils.Series_single_jobs("checkmissingflag", cfg_serie.Name, listname, false)
+		// 			}, converttime(schedule.Interval_scan_data_missing))
+		// 		}
+		// 	}
+		// 	if schedule.Cron_scan_data_missing != "" {
+		// 		QueueData.DispatchCron("checkmissing_series_"+cfg_serie.Name+"_"+cfg_serie.Lists[idxlist].Name, func() {
+		// 			utils.Series_single_jobs("checkmissing", cfg_serie.Name, listname, false)
+		// 			utils.Series_single_jobs("checkmissingflag", cfg_serie.Name, listname, false)
+		// 		}, schedule.Cron_scan_data_missing)
+		// 	}
+		// }
 	}
 
 	var defaultschedule config.SchedulerConfig

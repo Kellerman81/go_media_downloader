@@ -9,21 +9,21 @@ import (
 	"golang.org/x/time/rate"
 )
 
-type PushOverClient struct {
+type pushOverClient struct {
 	ApiKey        string
 	Limiter       *rate.Limiter
 	LimiterWindow *slidingwindow.Limiter
 }
 
-var PushoverApi PushOverClient
+var PushoverApi pushOverClient
 
 func NewPushOverClient(apikey string) {
 	limiter, _ := slidingwindow.NewLimiter(10*time.Second, 3, func() (slidingwindow.Window, slidingwindow.StopFunc) { return slidingwindow.NewLocalWindow() })
 	rl := rate.NewLimiter(rate.Every(10*time.Second), 3) // 3 request every 10 seconds
-	PushoverApi = PushOverClient{ApiKey: apikey, Limiter: rl, LimiterWindow: limiter}
+	PushoverApi = pushOverClient{ApiKey: apikey, Limiter: rl, LimiterWindow: limiter}
 }
 
-func (p PushOverClient) SendMessage(messagetext string, title string, recipientkey string) error {
+func (p pushOverClient) SendMessage(messagetext string, title string, recipientkey string) error {
 	if !p.LimiterWindow.Allow() {
 		isok := false
 		for i := 0; i < 10; i++ {

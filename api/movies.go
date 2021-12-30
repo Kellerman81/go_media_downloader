@@ -9,8 +9,11 @@ import (
 
 	"github.com/Kellerman81/go_media_downloader/config"
 	"github.com/Kellerman81/go_media_downloader/database"
+	"github.com/Kellerman81/go_media_downloader/downloader"
 	"github.com/Kellerman81/go_media_downloader/logger"
+	"github.com/Kellerman81/go_media_downloader/parser"
 	"github.com/Kellerman81/go_media_downloader/scheduler"
+	"github.com/Kellerman81/go_media_downloader/searcher"
 	"github.com/Kellerman81/go_media_downloader/utils"
 	gin "github.com/gin-gonic/gin"
 )
@@ -290,14 +293,15 @@ func apimoviesAllJobs(c *gin.Context) {
 					if !cfg_list.Enabled {
 						continue
 					}
+					listname := cfg_movie.Lists[idxlist].Name
 					if c.Param("job") == "feeds" {
-						scheduler.QueueFeeds.Dispatch(c.Param("job")+"_movies_"+cfg_movie.Name+"_"+cfg_movie.Lists[idxlist].Name, func() {
-							utils.Movies_single_jobs(c.Param("job"), cfg_movie.Name, cfg_movie.Lists[idxlist].Name, true)
+						scheduler.QueueFeeds.Dispatch(c.Param("job")+"_movies_"+cfg_movie.Name+"_"+listname, func() {
+							utils.Movies_single_jobs(c.Param("job"), cfg_movie.Name, listname, true)
 						})
 					}
 					if c.Param("job") == "checkmissing" || c.Param("job") == "checkmissingflag" || c.Param("job") == "checkreachedflag" {
-						scheduler.QueueData.Dispatch(c.Param("job")+"_movies_"+cfg_movie.Name+"_"+cfg_movie.Lists[idxlist].Name, func() {
-							utils.Movies_single_jobs(c.Param("job"), cfg_movie.Name, cfg_movie.Lists[idxlist].Name, true)
+						scheduler.QueueData.Dispatch(c.Param("job")+"_movies_"+cfg_movie.Name+"_"+listname, func() {
+							utils.Movies_single_jobs(c.Param("job"), cfg_movie.Name, listname, true)
 						})
 					}
 				}
@@ -510,7 +514,7 @@ func apimoviesSearch(c *gin.Context) {
 		for idxlist := range cfg_movie.Lists {
 			if strings.EqualFold(cfg_movie.Lists[idxlist].Name, movie.Listname) {
 				scheduler.QueueSearch.Dispatch("searchmovie_movies_"+cfg_movie.Name+"_"+strconv.Itoa(int(movie.ID)), func() {
-					utils.SearchMovieSingle(movie, cfg_movie, true)
+					searcher.SearchMovieSingle(movie, cfg_movie, true)
 				})
 				c.JSON(http.StatusOK, "started")
 				return
@@ -550,7 +554,7 @@ func apimoviesSearchList(c *gin.Context) {
 
 		for idxlist := range cfg_movie.Lists {
 			if strings.EqualFold(cfg_movie.Lists[idxlist].Name, movie.Listname) {
-				searchnow := utils.NewSearcher(cfg_movie, movie.QualityProfile)
+				searchnow := searcher.NewSearcher(cfg_movie, movie.QualityProfile)
 				searchresults := searchnow.MovieSearch(movie, false, titlesearch)
 				c.JSON(http.StatusOK, gin.H{"accepted": searchresults.Nzbs, "rejected": searchresults.Rejected})
 				return
@@ -580,7 +584,7 @@ func apiMoviesRssSearchList(c *gin.Context) {
 		var cfg_movie config.MediaTypeConfig
 		config.ConfigGet(string(idxmovie), &cfg_movie)
 		if strings.EqualFold(cfg_movie.Name, c.Param("group")) {
-			searchnow := utils.NewSearcher(cfg_movie, cfg_movie.Template_quality)
+			searchnow := searcher.NewSearcher(cfg_movie, cfg_movie.Template_quality)
 			searchresults := searchnow.SearchRSS("movie", true)
 			c.JSON(http.StatusOK, gin.H{"accepted": searchresults.Nzbs, "rejected": searchresults.Rejected})
 			return
@@ -594,7 +598,7 @@ func apiMoviesRssSearchList(c *gin.Context) {
 // @Tags movie
 // @Accept  json
 // @Produce  json
-// @Param nzb body utils.NzbwithprioJson true "Nzb: Req. Title, Indexer, imdbid, downloadurl, parseinfo"
+// @Param nzb body parser.NzbwithprioJson true "Nzb: Req. Title, Indexer, imdbid, downloadurl, parseinfo"
 // @Param id path int true "Movie ID"
 // @Param apikey query string true "apikey"
 // @Success 200 {string} string
@@ -611,7 +615,7 @@ func apimoviesSearchDownload(c *gin.Context) {
 		searchtype = "upgrade"
 	}
 
-	var nzb utils.Nzbwithprio
+	var nzb parser.Nzbwithprio
 	if err := c.ShouldBindJSON(&nzb); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -623,7 +627,7 @@ func apimoviesSearchDownload(c *gin.Context) {
 
 		for idxlist := range cfg_movie.Lists {
 			if strings.EqualFold(cfg_movie.Lists[idxlist].Name, movie.Listname) {
-				downloadnow := utils.NewDownloader(cfg_movie, searchtype)
+				downloadnow := downloader.NewDownloader(cfg_movie, searchtype)
 				downloadnow.SetMovie(movie)
 				downloadnow.DownloadNzb(nzb)
 				c.JSON(http.StatusOK, "started")

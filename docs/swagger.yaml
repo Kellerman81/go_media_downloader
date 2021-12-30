@@ -1,5 +1,5 @@
 definitions:
-  api.ApiNameInputJson:
+  api.apiNameInputJson:
     properties:
       cfg_media:
         type: string
@@ -12,7 +12,7 @@ definitions:
       serieid:
         type: integer
     type: object
-  api.ApiStructureJson:
+  api.apiStructureJson:
     properties:
       configentry:
         type: string
@@ -654,6 +654,8 @@ definitions:
         type: string
       genre:
         type: string
+      group:
+        type: string
       id:
         type: string
       imdb:
@@ -675,6 +677,8 @@ definitions:
         type: integer
       peers:
         type: integer
+      poster:
+        type: string
       pub_date:
         type: string
       rating:
@@ -702,22 +706,7 @@ definitions:
       usenet_date:
         type: string
     type: object
-  tasks.Job:
-    properties:
-      added:
-        type: string
-      id:
-        type: string
-      name:
-        type: string
-      queue:
-        type: string
-      schedulerId:
-        type: string
-      started:
-        type: string
-    type: object
-  utils.NzbwithprioJson:
+  parser.NzbwithprioJson:
     properties:
       denied:
         type: boolean
@@ -730,7 +719,7 @@ definitions:
       nzbmovie:
         $ref: '#/definitions/database.MovieJson'
       parseInfo:
-        $ref: '#/definitions/utils.ParseInfo'
+        $ref: '#/definitions/parser.ParseInfo'
       prio:
         type: integer
       quality:
@@ -744,7 +733,7 @@ definitions:
       wantedTitle:
         type: string
     type: object
-  utils.ParseInfo:
+  parser.ParseInfo:
     properties:
       3d:
         type: boolean
@@ -832,6 +821,21 @@ definitions:
         type: boolean
       year:
         type: integer
+    type: object
+  tasks.Job:
+    properties:
+      added:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      queue:
+        type: string
+      schedulerId:
+        type: string
+      started:
+        type: string
     type: object
 info:
   contact: {}
@@ -1819,7 +1823,7 @@ paths:
         name: nzb
         required: true
         schema:
-          $ref: '#/definitions/utils.NzbwithprioJson'
+          $ref: '#/definitions/parser.NzbwithprioJson'
       - description: Movie ID
         in: path
         name: id
@@ -2018,7 +2022,7 @@ paths:
         name: config
         required: true
         schema:
-          $ref: '#/definitions/api.ApiNameInputJson'
+          $ref: '#/definitions/api.apiNameInputJson'
       - description: apikey
         in: query
         name: apikey
@@ -2065,7 +2069,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/utils.ParseInfo'
+            $ref: '#/definitions/parser.ParseInfo'
         "400":
           description: Bad Request
           schema:
@@ -2100,7 +2104,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/utils.ParseInfo'
+            $ref: '#/definitions/parser.ParseInfo'
         "400":
           description: Bad Request
           schema:
@@ -2235,7 +2239,7 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/utils.ParseInfo'
+              $ref: '#/definitions/parser.ParseInfo'
             type: array
         "401":
           description: Unauthorized
@@ -2881,7 +2885,7 @@ paths:
         name: nzb
         required: true
         schema:
-          $ref: '#/definitions/utils.NzbwithprioJson'
+          $ref: '#/definitions/parser.NzbwithprioJson'
       - description: Episode ID
         in: path
         name: id
@@ -3318,7 +3322,7 @@ paths:
         name: config
         required: true
         schema:
-          $ref: '#/definitions/api.ApiStructureJson'
+          $ref: '#/definitions/api.apiStructureJson'
       - description: apikey
         in: query
         name: apikey

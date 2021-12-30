@@ -15,9 +15,10 @@ import (
 	"github.com/Kellerman81/go_media_downloader/apiexternal"
 	"github.com/Kellerman81/go_media_downloader/config"
 	"github.com/Kellerman81/go_media_downloader/database"
+	"github.com/Kellerman81/go_media_downloader/parser"
 	"github.com/Kellerman81/go_media_downloader/scheduler"
+	"github.com/Kellerman81/go_media_downloader/structure"
 	"github.com/Kellerman81/go_media_downloader/tasks"
-	"github.com/Kellerman81/go_media_downloader/utils"
 	gin "github.com/gin-gonic/gin"
 )
 
@@ -161,7 +162,7 @@ func ApiTraktGetUserList(ctx *gin.Context) {
 // @Produce  json
 // @Param toparse body apiparse true "To Parse"
 // @Param apikey query string true "apikey"
-// @Success 200 {object} utils.ParseInfo
+// @Success 200 {object} parser.ParseInfo
 // @Failure 400 {object} string
 // @Failure 401 {object} string
 // @Router /api/parse/string [post]
@@ -174,7 +175,7 @@ func ApiParseString(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	parse, _ := utils.NewFileParser(getcfg.Name, getcfg.Year, getcfg.Typ)
+	parse, _ := parser.NewFileParser(getcfg.Name, getcfg.Year, getcfg.Typ)
 	if getcfg.Typ == "movie" {
 		var typcfg config.MediaTypeConfig
 		config.ConfigGet("movie_"+getcfg.Config, &typcfg)
@@ -199,7 +200,7 @@ func ApiParseString(ctx *gin.Context) {
 // @Produce  json
 // @Param toparse body apiparse true "To Parse"
 // @Param apikey query string true "apikey"
-// @Success 200 {object} utils.ParseInfo
+// @Success 200 {object} parser.ParseInfo
 // @Failure 400 {object} string
 // @Failure 401 {object} string
 // @Router /api/parse/file [post]
@@ -212,7 +213,7 @@ func ApiParseFile(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	parse, _ := utils.NewFileParser(filepath.Base(getcfg.Path), getcfg.Year, getcfg.Typ)
+	parse, _ := parser.NewFileParser(filepath.Base(getcfg.Path), getcfg.Year, getcfg.Typ)
 	if getcfg.Typ == "movie" {
 		var typcfg config.MediaTypeConfig
 		config.ConfigGet("movie_"+getcfg.Config, &typcfg)
@@ -494,7 +495,7 @@ func ApiQualityDelete(ctx *gin.Context) {
 	}
 	database.DeleteRow("qualities", database.Query{Where: "id=?", WhereArgs: []interface{}{ctx.Param("id")}})
 	database.GetVars()
-	utils.LoadDBPatterns()
+	parser.LoadDBPatterns()
 	qualities, _ := database.QueryQualities(database.Query{})
 	ctx.JSON(http.StatusOK, qualities)
 }
@@ -530,7 +531,7 @@ func ApiQualityUpdate(ctx *gin.Context) {
 			database.Query{Where: "id != 0 and id=?", WhereArgs: []interface{}{quality.ID}})
 	}
 	database.GetVars()
-	utils.LoadDBPatterns()
+	parser.LoadDBPatterns()
 	qualities, _ := database.QueryQualities(database.Query{})
 	ctx.JSON(http.StatusOK, qualities)
 }
@@ -543,7 +544,7 @@ func ApiQualityUpdate(ctx *gin.Context) {
 // @Param name path string true "Quality Name: ex. quality_SD"
 // @Param config path string true "Config Name: ex. movie_EN or serie_EN"
 // @Param apikey query string true "apikey"
-// @Success 200 {array} utils.ParseInfo
+// @Success 200 {array} parser.ParseInfo
 // @Failure 401 {object} string
 // @Failure 404 {object} string
 // @Router /api/quality/{name}/{config} [get]
@@ -563,7 +564,7 @@ func ApiListQualityPriorities(ctx *gin.Context) {
 	config.ConfigGet(ctx.Param("name"), &qual)
 	var media config.MediaTypeConfig
 	config.ConfigGet(ctx.Param("config"), &media)
-	var parser []utils.ParseInfo
+	var parserreturn []parser.ParseInfo
 	for idxreso := range database.Getresolutions {
 		wantedreso := false
 		for idxwantreso := range qual.Wanted_resolution {
@@ -588,7 +589,7 @@ func ApiListQualityPriorities(ctx *gin.Context) {
 			}
 			for idxcodec := range database.Getcodecs {
 				for idxaudio := range database.Getaudios {
-					parse := utils.ParseInfo{
+					parse := parser.ParseInfo{
 						Resolution:   database.Getresolutions[idxreso].Name,
 						Quality:      database.Getqualities[idxqual].Name,
 						Codec:        database.Getcodecs[idxcodec].Name,
@@ -599,12 +600,12 @@ func ApiListQualityPriorities(ctx *gin.Context) {
 						AudioID:      database.Getaudios[idxaudio].ID,
 					}
 					parse.GetIDPriority(media, qual)
-					parser = append(parser, parse)
+					parserreturn = append(parserreturn, parse)
 				}
 			}
 		}
 	}
-	ctx.JSON(http.StatusOK, parser)
+	ctx.JSON(http.StatusOK, parserreturn)
 }
 
 // @Summary Get Complete Config
@@ -845,14 +846,14 @@ func ApiListConfigType(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, list)
 }
 
-type ApiNameInput struct {
+type apiNameInput struct {
 	Cfg_Media string `json:"cfg_media"`
 	GroupType string `json:"grouptype"`
 	FilePath  string `json:"filepath"`
 	MovieID   int    `json:"movieid"`
 	SerieID   int    `json:"serieid"`
 }
-type ApiNameInputJson struct {
+type apiNameInputJson struct {
 	Cfg_Media string `json:"cfg_media"`
 	GroupType string `json:"grouptype"`
 	FilePath  string `json:"filepath"`
@@ -865,7 +866,7 @@ type ApiNameInputJson struct {
 // @Tags general
 // @Accept  json
 // @Produce  json
-// @Param config body ApiNameInputJson true "Config"
+// @Param config body apiNameInputJson true "Config"
 // @Param apikey query string true "apikey"
 // @Success 200 {object} string
 // @Failure 400 {object} string
@@ -875,7 +876,7 @@ func ApiNamingGenerate(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
-	var cfg ApiNameInput
+	var cfg apiNameInput
 	if err := ctx.BindJSON(&cfg); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -894,7 +895,7 @@ func ApiNamingGenerate(ctx *gin.Context) {
 			}
 		}
 
-		s, _ := utils.NewStructure(
+		s, _ := structure.NewStructure(
 			cfg_media,
 			cfg_list,
 			cfg.GroupType,
@@ -918,7 +919,7 @@ func ApiNamingGenerate(ctx *gin.Context) {
 			}
 		}
 
-		s, _ := utils.NewStructure(
+		s, _ := structure.NewStructure(
 			cfg_media,
 			cfg_list,
 			cfg.GroupType,
@@ -936,7 +937,7 @@ func ApiNamingGenerate(ctx *gin.Context) {
 	}
 }
 
-type ApiStructureJson struct {
+type apiStructureJson struct {
 	Folder                     string
 	Disableruntimecheck        bool
 	Disabledisallowed          bool
@@ -953,7 +954,7 @@ type ApiStructureJson struct {
 // @Tags general
 // @Accept  json
 // @Produce  json
-// @Param config body ApiStructureJson true "Config"
+// @Param config body apiStructureJson true "Config"
 // @Param apikey query string true "apikey"
 // @Success 200 {object} string
 // @Failure 400 {object} string
@@ -963,7 +964,7 @@ func ApiStructure(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
-	var cfg ApiStructureJson
+	var cfg apiStructureJson
 	if err := ctx.BindJSON(&cfg); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -995,9 +996,9 @@ func ApiStructure(ctx *gin.Context) {
 
 	for idxlist := range cfg_media.Lists {
 		if cfg.Forceid != 0 {
-			utils.StructureSingleFolderAs(cfg.Folder, cfg.Forceid, cfg.Disableruntimecheck, cfg.Disabledisallowed, cfg.Disabledeletewronglanguage, cfg.Grouptype, cfg_source, cfg_target, cfg_media, cfg_media.Lists[idxlist])
+			structure.StructureSingleFolderAs(cfg.Folder, cfg.Forceid, cfg.Disableruntimecheck, cfg.Disabledisallowed, cfg.Disabledeletewronglanguage, cfg.Grouptype, cfg_source, cfg_target, cfg_media, cfg_media.Lists[idxlist])
 		} else {
-			utils.StructureSingleFolder(cfg.Folder, cfg.Disableruntimecheck, cfg.Disabledisallowed, cfg.Disabledeletewronglanguage, cfg.Grouptype, cfg_source, cfg_target, cfg_media, cfg_media.Lists[idxlist])
+			structure.StructureSingleFolder(cfg.Folder, cfg.Disableruntimecheck, cfg.Disabledisallowed, cfg.Disabledeletewronglanguage, cfg.Grouptype, cfg_source, cfg_target, cfg_media, cfg_media.Lists[idxlist])
 		}
 	}
 }

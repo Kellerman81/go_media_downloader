@@ -1,5 +1,7 @@
 package tasks
 
+import "runtime/debug"
+
 //Source: https://github.com/mborders/artifex
 
 // Worker attaches to a provided worker pool, and
@@ -34,6 +36,7 @@ func (w Worker) Start() {
 				job.Run()
 				UpdateIsRunningSchedule(job, false)
 				GlobalQueue.RemoveQueue(job)
+				debug.FreeOSMemory()
 			case <-w.quit:
 				return
 			}

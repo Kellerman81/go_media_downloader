@@ -22,34 +22,34 @@ const PriorityHigh = 50
 const PriorityVeryHigh = 100
 const PriorityForce = 900
 
-func NewOptions() *AppendOptions {
-	return &AppendOptions{
+func NewOptions() *appendOptions {
+	return &appendOptions{
 		Category: "",
 		Priority: PriorityNormal,
 		DupeMode: "SCORE",
 	}
 }
 
-func NewClient(endpoint string) *Client {
-	client := &Client{
+func NewClient(endpoint string) *client {
+	client := &client{
 		URL: endpoint,
 		rpc: NewJsonClient(endpoint),
 	}
 	return client
 }
 
-func (c *Client) List() (*GroupResponse, error) {
+func (c *client) List() (*groupResponse, error) {
 	s, err := c.Status()
 	if err != nil {
 		return nil, err
 	}
 
-	r := &GroupResponse{Response: &Response{Timestamp: time.Now(), Status: s}}
+	r := &groupResponse{response: &response{Timestamp: time.Now(), Status: s}}
 	err = c.request("listgroups", nil, r)
 	return r, err
 }
 
-func (c *Client) Groups() ([]Group, error) {
+func (c *client) Groups() ([]group, error) {
 	r, err := c.List()
 	if err != nil {
 		return nil, errors.Wrap(err, "could not get list")
@@ -57,28 +57,28 @@ func (c *Client) Groups() ([]Group, error) {
 	return r.Result, nil
 }
 
-func (c *Client) Remove(number int) error {
+func (c *client) Remove(number int) error {
 	// group delete
 	return c.EditQueue("GroupDelete", "", []int{number})
 }
 
-func (c *Client) Delete(number int) error {
+func (c *client) Delete(number int) error {
 	return c.EditQueue("HistoryDelete", "", []int{number})
 }
 
-func (c *Client) Destroy(number int) error {
+func (c *client) Destroy(number int) error {
 	return c.EditQueue("HistoryFinalDelete", "", []int{number})
 }
 
-func (c *Client) Pause(number int) error {
+func (c *client) Pause(number int) error {
 	return c.EditQueue("GroupPause", "", []int{number})
 }
 
-func (c *Client) Resume(number int) error {
+func (c *client) Resume(number int) error {
 	return c.EditQueue("GroupResume", "", []int{number})
 }
 
-func (c *Client) PauseAll() error {
+func (c *client) PauseAll() error {
 	r, err := c.rpc.Call("pausedownload", nil)
 	if err != nil {
 		return errors.Wrap(err, "could not pause all")
@@ -92,7 +92,7 @@ func (c *Client) PauseAll() error {
 	return nil
 }
 
-func (c *Client) ResumeAll() error {
+func (c *client) ResumeAll() error {
 	r, err := c.rpc.Call("resumedownload", nil)
 	if err != nil {
 		return errors.Wrap(err, "could not pause all")
@@ -106,7 +106,7 @@ func (c *Client) ResumeAll() error {
 	return nil
 }
 
-func (c *Client) EditQueue(command, param string, ids []int) error {
+func (c *client) EditQueue(command, param string, ids []int) error {
 	r, err := c.rpc.Call("editqueue", command, param, ids)
 	if err != nil {
 		return errors.Wrap(err, "could not pause all")
@@ -120,7 +120,7 @@ func (c *Client) EditQueue(command, param string, ids []int) error {
 	return nil
 }
 
-func (c *Client) Add(URL string, options *AppendOptions) (int64, error) {
+func (c *client) Add(URL string, options *appendOptions) (int64, error) {
 	path, err := downloadURL(URL)
 	if err != nil {
 		return 0, errors.Wrap(err, "could not download url")
@@ -158,8 +158,8 @@ func (c *Client) Add(URL string, options *AppendOptions) (int64, error) {
 	return i, nil
 }
 
-func (c *Client) History(hidden bool) ([]History, error) {
-	r := &HistoryResponse{}
+func (c *client) History(hidden bool) ([]history, error) {
+	r := &historyResponse{}
 	err := c.request("history", url.Values{"": []string{fmt.Sprintf("%t", hidden)}}, r)
 	if err != nil {
 		return nil, err
@@ -167,8 +167,8 @@ func (c *Client) History(hidden bool) ([]History, error) {
 	return r.Result, nil
 }
 
-func (c *Client) Status() (*Status, error) {
-	r := &StatusResponse{}
+func (c *client) Status() (*status, error) {
+	r := &statusResponse{}
 	err := c.request("status", url.Values{}, r)
 	if err != nil {
 		return r.Result, err
@@ -176,8 +176,8 @@ func (c *Client) Status() (*Status, error) {
 	return r.Result, nil
 }
 
-func (c *Client) Version() (string, error) {
-	version := &VersionResponse{}
+func (c *client) Version() (string, error) {
+	version := &versionResponse{}
 	err := c.request("version", url.Values{}, version)
 	if err != nil {
 		return "", err
@@ -185,7 +185,7 @@ func (c *Client) Version() (string, error) {
 	return version.Version, nil
 }
 
-func (c *Client) request(path string, params url.Values, target interface{}) (err error) {
+func (c *client) request(path string, params url.Values, target interface{}) (err error) {
 	var url string
 	var client *http.Client
 	var request *http.Request

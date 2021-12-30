@@ -9,7 +9,7 @@ import (
 	"golang.org/x/time/rate"
 )
 
-type TheTVDBSeries struct {
+type theTVDBSeries struct {
 	Data struct {
 		ID              int      `json:"id"`
 		SeriesID        int      `json:"seriesId"`
@@ -35,7 +35,7 @@ type TheTVDBSeries struct {
 	} `json:"data"`
 }
 
-type TheTVDBEpisodes struct {
+type theTVDBEpisodes struct {
 	Links struct {
 		First int `json:"first"`
 		Last  int `json:"last"`
@@ -63,11 +63,11 @@ type TheTVDBEpisodes struct {
 	} `json:"data"`
 }
 
-type TvdbClient struct {
+type tvdbClient struct {
 	Client *RLHTTPClient
 }
 
-var TvdbApi TvdbClient
+var TvdbApi tvdbClient
 
 func NewTvdbClient(seconds int, calls int) {
 	if seconds == 0 {
@@ -78,32 +78,32 @@ func NewTvdbClient(seconds int, calls int) {
 	}
 	rl := rate.NewLimiter(rate.Every(time.Duration(seconds)*time.Second), calls) // 50 request every 10 seconds
 	limiter, _ := slidingwindow.NewLimiter(time.Duration(seconds)*time.Second, int64(calls), func() (slidingwindow.Window, slidingwindow.StopFunc) { return slidingwindow.NewLocalWindow() })
-	TvdbApi = TvdbClient{Client: NewClient(rl, limiter)}
+	TvdbApi = tvdbClient{Client: NewClient(rl, limiter)}
 }
 
-func (t TvdbClient) GetSeries(id int, language string) (TheTVDBSeries, error) {
+func (t tvdbClient) GetSeries(id int, language string) (theTVDBSeries, error) {
 	req, _ := http.NewRequest("GET", "https://api.thetvdb.com/series/"+strconv.Itoa(id), nil)
 	if len(language) >= 1 {
 		req.Header.Add("Accept-Language", language)
 	}
 
-	var result TheTVDBSeries
+	var result theTVDBSeries
 	err := t.Client.DoJson(req, &result)
 	if err != nil {
-		return TheTVDBSeries{}, err
+		return theTVDBSeries{}, err
 	}
 	//json.Unmarshal(responseData, &result)
 	return result, nil
 }
-func (t TvdbClient) GetSeriesEpisodes(id int, language string) (TheTVDBEpisodes, error) {
+func (t tvdbClient) GetSeriesEpisodes(id int, language string) (theTVDBEpisodes, error) {
 	req, _ := http.NewRequest("GET", "https://api.thetvdb.com/series/"+strconv.Itoa(id)+"/episodes", nil)
 	if len(language) >= 1 {
 		req.Header.Add("Accept-Language", language)
 	}
-	var result TheTVDBEpisodes
+	var result theTVDBEpisodes
 	err := t.Client.DoJson(req, &result)
 	if err != nil {
-		return TheTVDBEpisodes{}, err
+		return theTVDBEpisodes{}, err
 	}
 	//json.Unmarshal(responseData, &result)
 	if result.Links.Last >= 2 {
@@ -114,7 +114,7 @@ func (t TvdbClient) GetSeriesEpisodes(id int, language string) (TheTVDBEpisodes,
 				req.Header.Add("Accept-Language", language)
 			}
 
-			var resultadd TheTVDBEpisodes
+			var resultadd theTVDBEpisodes
 			t.Client.DoJson(req, &resultadd)
 			result.Data = append(result.Data, resultadd.Data...)
 		}

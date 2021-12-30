@@ -10,7 +10,7 @@ import (
 	"golang.org/x/time/rate"
 )
 
-type TheMovieDBSearch struct {
+type theMovieDBSearch struct {
 	TotalPages   int `json:"total_pages"`
 	TotalResults int `json:"total_results"`
 	Page         int `json:"page"`
@@ -27,7 +27,7 @@ type TheMovieDBSearch struct {
 		OriginalLanguage string    `json:"original_language"`
 	} `json:"results"`
 }
-type TheMovieDBSearchTV struct {
+type theMovieDBSearchTV struct {
 	TotalPages   int `json:"total_pages"`
 	TotalResults int `json:"total_results"`
 	Page         int `json:"page"`
@@ -45,11 +45,11 @@ type TheMovieDBSearchTV struct {
 	} `json:"results"`
 }
 
-type TheMovieDBFind struct {
-	MovieResults []TheMovieDBFindMovieresults `json:"movie_results"`
-	TvResults    []TheMovieDBFindTvresults    `json:"tv_results"`
+type theMovieDBFind struct {
+	MovieResults []theMovieDBFindMovieresults `json:"movie_results"`
+	TvResults    []theMovieDBFindTvresults    `json:"tv_results"`
 }
-type TheMovieDBFindMovieresults struct {
+type theMovieDBFindMovieresults struct {
 	VoteAverage      float32 `json:"vote_average"`
 	Overview         string  `json:"overview"`
 	ReleaseDate      string  `json:"release_date"`
@@ -61,7 +61,7 @@ type TheMovieDBFindMovieresults struct {
 	ID               int     `json:"id"`
 	Popularity       float32 `json:"popularity"`
 }
-type TheMovieDBFindTvresults struct {
+type theMovieDBFindTvresults struct {
 	ID               int       `json:"id"`
 	OriginalLanguage string    `json:"original_language"`
 	FirstAirDate     time.Time `json:"first_air_date"`
@@ -74,7 +74,7 @@ type TheMovieDBFindTvresults struct {
 	Popularity       string    `json:"popularity"`
 }
 
-type TheMovieDBMovie struct {
+type theMovieDBMovie struct {
 	Adult  bool `json:"adult"`
 	Budget int  `json:"budget"`
 	Genres []struct {
@@ -104,17 +104,17 @@ type TheMovieDBMovie struct {
 	Poster      string  `json:"poster_path"`
 }
 
-type TheMovieDBMovieTitles struct {
+type theMovieDBMovieTitles struct {
 	ID     int                         `json:"id"`
-	Titles []TheMovieDBMovieTitlesList `json:"titles"`
+	Titles []theMovieDBMovieTitlesList `json:"titles"`
 }
-type TheMovieDBMovieTitlesList struct {
+type theMovieDBMovieTitlesList struct {
 	Type     string `json:"type"`
 	Title    string `json:"title"`
 	Iso31661 string `json:"iso_3166_1"`
 }
 
-type TheMovieDBTVExternal struct {
+type theMovieDBTVExternal struct {
 	ID          int    `json:"id"`
 	ImdbID      string `json:"imdb_id"`
 	FreebaseMID string `json:"freebase_mid"`
@@ -126,12 +126,12 @@ type TheMovieDBTVExternal struct {
 	TwitterID   string `json:"twitter_id"`
 }
 
-type TmdbClient struct {
+type tmdbClient struct {
 	ApiKey string
 	Client *RLHTTPClient
 }
 
-var TmdbApi TmdbClient
+var TmdbApi tmdbClient
 
 func NewTmdbClient(apikey string, seconds int, calls int) {
 	if seconds == 0 {
@@ -142,95 +142,95 @@ func NewTmdbClient(apikey string, seconds int, calls int) {
 	}
 	rl := rate.NewLimiter(rate.Every(time.Duration(seconds)*time.Second), calls) // 50 request every 10 seconds
 	limiter, _ := slidingwindow.NewLimiter(time.Duration(seconds)*time.Second, int64(calls), func() (slidingwindow.Window, slidingwindow.StopFunc) { return slidingwindow.NewLocalWindow() })
-	TmdbApi = TmdbClient{ApiKey: apikey, Client: NewClient(rl, limiter)}
+	TmdbApi = tmdbClient{ApiKey: apikey, Client: NewClient(rl, limiter)}
 }
 
-func (t TmdbClient) SearchMovie(name string) (TheMovieDBSearch, error) {
+func (t tmdbClient) SearchMovie(name string) (theMovieDBSearch, error) {
 	req, _ := http.NewRequest("GET", "https://api.themoviedb.org/3/search/movie?api_key="+t.ApiKey+"&query="+url.PathEscape(name), nil)
 
-	var result TheMovieDBSearch
+	var result theMovieDBSearch
 	err := t.Client.DoJson(req, &result)
 	if err != nil {
-		return TheMovieDBSearch{}, err
+		return theMovieDBSearch{}, err
 	}
 	//json.Unmarshal(responseData, &result)
 	return result, nil
 }
 
-func (t TmdbClient) SearchTV(name string) (TheMovieDBSearchTV, error) {
+func (t tmdbClient) SearchTV(name string) (theMovieDBSearchTV, error) {
 	req, _ := http.NewRequest("GET", "https://api.themoviedb.org/3/search/tv?api_key="+t.ApiKey+"&query="+url.PathEscape(name), nil)
 
-	var result TheMovieDBSearchTV
+	var result theMovieDBSearchTV
 	err := t.Client.DoJson(req, &result)
 	if err != nil {
-		return TheMovieDBSearchTV{}, err
+		return theMovieDBSearchTV{}, err
 	}
 	//json.Unmarshal(responseData, &result)
 	return result, nil
 }
 
-func (t TmdbClient) FindImdb(imdbid string) (TheMovieDBFind, error) {
+func (t tmdbClient) FindImdb(imdbid string) (theMovieDBFind, error) {
 	req, _ := http.NewRequest("GET", "https://api.themoviedb.org/3/find/"+imdbid+"?api_key="+t.ApiKey+"&language=en-US&external_source=imdb_id", nil)
 
-	var result TheMovieDBFind
+	var result theMovieDBFind
 	err := t.Client.DoJson(req, &result)
 	if err != nil {
-		return TheMovieDBFind{}, err
+		return theMovieDBFind{}, err
 	}
 	//json.Unmarshal(responseData, &result)
 	return result, nil
 }
-func (t TmdbClient) FindTvdb(thetvdbid int) (TheMovieDBFind, error) {
+func (t tmdbClient) FindTvdb(thetvdbid int) (theMovieDBFind, error) {
 	req, _ := http.NewRequest("GET", "https://api.themoviedb.org/3/find/"+strconv.Itoa(thetvdbid)+"?api_key="+t.ApiKey+"&language=en-US&external_source=tvdb_id", nil)
 
-	var result TheMovieDBFind
+	var result theMovieDBFind
 	err := t.Client.DoJson(req, &result)
 	if err != nil {
-		return TheMovieDBFind{}, err
+		return theMovieDBFind{}, err
 	}
 	//json.Unmarshal(responseData, &result)
 	return result, nil
 }
-func (t TmdbClient) GetMovie(id int) (TheMovieDBMovie, error) {
+func (t tmdbClient) GetMovie(id int) (theMovieDBMovie, error) {
 	req, _ := http.NewRequest("GET", "https://api.themoviedb.org/3/movie/"+strconv.Itoa(id)+"?api_key="+t.ApiKey, nil)
 
-	var result TheMovieDBMovie
+	var result theMovieDBMovie
 	err := t.Client.DoJson(req, &result)
 	if err != nil {
-		return TheMovieDBMovie{}, err
+		return theMovieDBMovie{}, err
 	}
 	//json.Unmarshal(responseData, &result)
 	return result, nil
 }
-func (t TmdbClient) GetMovieTitles(id int) (TheMovieDBMovieTitles, error) {
+func (t tmdbClient) GetMovieTitles(id int) (theMovieDBMovieTitles, error) {
 	req, _ := http.NewRequest("GET", "https://api.themoviedb.org/3/movie/"+strconv.Itoa(id)+"/alternative_titles?api_key="+t.ApiKey, nil)
 
-	var result TheMovieDBMovieTitles
+	var result theMovieDBMovieTitles
 	err := t.Client.DoJson(req, &result)
 	if err != nil {
-		return TheMovieDBMovieTitles{}, err
+		return theMovieDBMovieTitles{}, err
 	}
 	//json.Unmarshal(responseData, &result)
 	return result, nil
 }
-func (t TmdbClient) GetMovieExternal(id int) (TheMovieDBTVExternal, error) {
+func (t tmdbClient) GetMovieExternal(id int) (theMovieDBTVExternal, error) {
 	req, _ := http.NewRequest("GET", "https://api.themoviedb.org/3/movie/"+strconv.Itoa(id)+"/external_ids?api_key="+t.ApiKey, nil)
 
-	var result TheMovieDBTVExternal
+	var result theMovieDBTVExternal
 	err := t.Client.DoJson(req, &result)
 	if err != nil {
-		return TheMovieDBTVExternal{}, err
+		return theMovieDBTVExternal{}, err
 	}
 	//json.Unmarshal(responseData, &result)
 	return result, nil
 }
-func (t TmdbClient) GetTVExternal(id int) (TheMovieDBTVExternal, error) {
+func (t tmdbClient) GetTVExternal(id int) (theMovieDBTVExternal, error) {
 	req, _ := http.NewRequest("GET", "https://api.themoviedb.org/3/tv/"+strconv.Itoa(id)+"/external_ids?api_key="+t.ApiKey, nil)
 
-	var result TheMovieDBTVExternal
+	var result theMovieDBTVExternal
 	err := t.Client.DoJson(req, &result)
 	if err != nil {
-		return TheMovieDBTVExternal{}, err
+		return theMovieDBTVExternal{}, err
 	}
 	//json.Unmarshal(responseData, &result)
 	return result, nil

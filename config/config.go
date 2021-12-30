@@ -105,6 +105,7 @@ type GeneralConfig struct {
 	DisableParserStringMatch           bool     `koanf:"disable_parser_string_match"`
 	UseCronInsteadOfInterval           bool     `koanf:"use_cron_instead_of_interval"`
 	EnableFileWatcher                  bool     `koanf:"enable_file_watcher"`
+	UseFileBufferCopy                  bool     `koanf:"use_file_buffer_copy"`
 	Traktlimiterseconds                int      `koanf:"trakt_limiter_seconds"`
 	Traktlimitercalls                  int      `koanf:"trakt_limiter_calls"`
 	Tvdblimiterseconds                 int      `koanf:"tvdb_limiter_seconds"`
