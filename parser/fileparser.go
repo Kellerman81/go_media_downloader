@@ -1,12 +1,7 @@
 // parser
-package utils
+package parser
 
 import (
-	"html"
-	"io/ioutil"
-	"path"
-	"path/filepath"
-
 	"strconv"
 	"strings"
 	"unicode"
@@ -17,7 +12,6 @@ import (
 	"github.com/Kellerman81/go_media_downloader/database"
 	"github.com/Kellerman81/go_media_downloader/logger"
 	"github.com/goccy/go-reflect"
-	"golang.org/x/text/transform"
 )
 
 type regexpattern struct {
@@ -159,13 +153,13 @@ func (n *ParseInfo) StripTitlePrefixPostfix(quality config.QualityConfig) {
 
 	for idxstrip := range quality.TitleStripSuffixForSearch {
 		if strings.HasSuffix(strings.ToLower(n.Title), strings.ToLower(quality.TitleStripSuffixForSearch[idxstrip])) {
-			n.Title = trimStringInclAfterStringInsensitive(n.Title, quality.TitleStripSuffixForSearch[idxstrip])
+			n.Title = logger.TrimStringInclAfterStringInsensitive(n.Title, quality.TitleStripSuffixForSearch[idxstrip])
 			n.Title = strings.Trim(n.Title, " ")
 		}
 	}
 	for idxstrip := range quality.TitleStripPrefixForSearch {
 		if strings.HasPrefix(strings.ToLower(n.Title), strings.ToLower(quality.TitleStripPrefixForSearch[idxstrip])) {
-			n.Title = trimStringPrefixInsensitive(n.Title, quality.TitleStripPrefixForSearch[idxstrip])
+			n.Title = logger.TrimStringPrefixInsensitive(n.Title, quality.TitleStripPrefixForSearch[idxstrip])
 			n.Title = strings.Trim(n.Title, " ")
 		}
 	}
@@ -365,15 +359,16 @@ func (m *ParseInfo) ParseFile(includeYearInTitle bool, typegroup string) error {
 	raw := ""
 	if endIndex < startIndex {
 		logger.Log.Debug("EndIndex < startindex", startIndex, endIndex, m.File)
-		if strings.Contains(m.File[startIndex:], "(") {
-			rawarr := strings.Split(m.File[startIndex:], "(")
+		strstart := strings.Repeat(m.File[startIndex:], 1)
+		if strings.Contains(strstart, "(") {
+			rawarr := strings.Split(strstart, "(")
 			if len(rawarr) >= 1 {
 				raw = rawarr[0]
 			} else {
-				raw = m.File[startIndex:]
+				raw = strstart
 			}
 		} else {
-			raw = m.File[startIndex:]
+			raw = strstart
 		}
 	} else {
 		if strings.Contains(m.File[startIndex:endIndex], "(") {
@@ -381,16 +376,16 @@ func (m *ParseInfo) ParseFile(includeYearInTitle bool, typegroup string) error {
 			if len(rawarr) >= 1 {
 				raw = rawarr[0]
 			} else {
-				raw = m.File[startIndex:endIndex]
+				raw = strings.Repeat(m.File[startIndex:endIndex], 1)
 			}
 		} else {
-			raw = m.File[startIndex:endIndex]
+			raw = strings.Repeat(m.File[startIndex:endIndex], 1)
 		}
 	}
 
 	cleanName = raw
 	if strings.HasPrefix(cleanName, "- ") {
-		cleanName = raw[2:]
+		cleanName = strings.Repeat(raw[2:], 1)
 	}
 	if strings.ContainsRune(cleanName, '.') && !strings.ContainsRune(cleanName, ' ') {
 		cleanName = strings.Replace(cleanName, ".", " ", -1)
@@ -741,7 +736,7 @@ func getcombinedpriority(m *ParseInfo, qualityconfig config.QualityConfig) {
 	}
 }
 
-func getSerieDBPriority(serieepisodefile database.SerieEpisodeFile, configEntry config.MediaTypeConfig, quality config.QualityConfig) int {
+func GetSerieDBPriority(serieepisodefile database.SerieEpisodeFile, configEntry config.MediaTypeConfig, quality config.QualityConfig) int {
 	resolution_priority := 0
 	quality_priority := 0
 	codec_priority := 0
@@ -791,7 +786,7 @@ func getSerieDBPriority(serieepisodefile database.SerieEpisodeFile, configEntry 
 	return Priority
 }
 
-func getMovieDBPriority(moviefile database.MovieFile, configEntry config.MediaTypeConfig, quality config.QualityConfig) int {
+func GetMovieDBPriority(moviefile database.MovieFile, configEntry config.MediaTypeConfig, quality config.QualityConfig) int {
 	resolution_priority := 0
 	quality_priority := 0
 	codec_priority := 0
@@ -841,90 +836,10 @@ func getMovieDBPriority(moviefile database.MovieFile, configEntry config.MediaTy
 	return Priority
 }
 
-func trimStringInclAfterString(s string, search string) string {
-	if idx := strings.Index(s, search); idx != -1 {
-		return s[:idx]
-	}
-	return s
-}
-func trimStringInclAfterStringInsensitive(s string, search string) string {
-	if idx := strings.Index(strings.ToLower(s), strings.ToLower(search)); idx != -1 {
-		s = s[:idx]
-	}
-	s = strings.TrimSuffix(s, "-")
-	s = strings.TrimSuffix(s, ".")
-	s = strings.TrimSuffix(s, " ")
-	return s
-}
-func trimStringAfterString(s string, search string) string {
-	if idx := strings.Index(s, search); idx != -1 {
-		idn := idx + len(search)
-		if idn >= len(s) {
-			idn = len(s) - 1
-		}
-		return s[:idn]
-	}
-	return s
-}
-func trimStringAfterStringInsensitive(s string, search string) string {
-	if idx := strings.Index(strings.ToLower(s), strings.ToLower(search)); idx != -1 {
-		idn := idx + len(search)
-		if idn >= len(s) {
-			idn = len(s) - 1
-		}
-		return s[:idn]
-	}
-	return s
-}
-func trimStringPrefixInsensitive(s string, search string) string {
-	if idx := strings.Index(strings.ToLower(s), strings.ToLower(search)); idx != -1 {
-		idn := idx + len(search)
-		s = s[idn:]
-		s = strings.TrimPrefix(s, "-")
-		s = strings.TrimPrefix(s, ".")
-		s = strings.TrimPrefix(s, " ")
-		return s
-	}
-	return s
-}
-
-func StringReplaceDiacritics(instr string) string {
-	instr = strings.Replace(instr, "ß", "ss", -1)
-	instr = strings.Replace(instr, "ä", "ae", -1)
-	instr = strings.Replace(instr, "ö", "oe", -1)
-	instr = strings.Replace(instr, "ü", "ue", -1)
-	instr = strings.Replace(instr, "Ä", "Ae", -1)
-	instr = strings.Replace(instr, "Ö", "Oe", -1)
-	instr = strings.Replace(instr, "Ü", "Ue", -1)
-	//Transformer := transform.Chain(norm.NFD, runes.Remove(runes.In(unicode.Mn)), norm.NFC)
-	result, _, _ := transform.String(logger.Transformer, instr)
-	return result
-}
-
 // Path makes a string safe to use as a URL path,
 // removing accents and replacing separators with -.
 // The path may still start at / and is not intended
 // for use as a file system path without prefix.
-var regexPathAllowSlash = regexp.MustCompile(`[:*?"<>|]`)
-var regexPathDisallowSlash = regexp.MustCompile(`[\\/:*?"<>|]`)
-
-func Path(s string, allowslash bool) string {
-	// Start with lowercase string
-	filePath := html.UnescapeString(s)
-
-	filePath = strings.Replace(filePath, "..", "", -1)
-	filePath = path.Clean(filePath)
-	if allowslash {
-		filePath = regexPathAllowSlash.ReplaceAllString(filePath, "")
-	} else {
-		filePath = regexPathDisallowSlash.ReplaceAllString(filePath, "")
-	}
-	filePath = html.UnescapeString(filePath)
-	filePath = strings.Trim(filePath, " ")
-
-	// NB this may be of length 0, caller must check
-	return filePath
-}
 
 func replaceStringObjectFields(s string, obj interface{}) string {
 	fields := reflect.TypeOf(obj)
@@ -950,32 +865,4 @@ func replaceStringObjectFields(s string, obj interface{}) string {
 		s = strings.Replace(s, "{"+field.Name+"}", replacewith, -1)
 	}
 	return s
-}
-
-func getSubFolders(sourcepath string) []string {
-	files, err := ioutil.ReadDir(sourcepath)
-	if err == nil {
-		folders := make([]string, 0, len(files))
-		for idxfile := range files {
-			if files[idxfile].IsDir() {
-				folders = append(folders, filepath.Join(sourcepath, files[idxfile].Name()))
-			}
-		}
-		return folders
-	}
-	return []string{}
-}
-
-func getSubFiles(sourcepath string) []string {
-	files, err := ioutil.ReadDir(sourcepath)
-	if err == nil {
-		folders := make([]string, 0, len(files))
-		for idxfile := range files {
-			if !files[idxfile].IsDir() {
-				folders = append(folders, filepath.Join(sourcepath, files[idxfile].Name()))
-			}
-		}
-		return folders
-	}
-	return []string{}
 }

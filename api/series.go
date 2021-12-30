@@ -9,7 +9,10 @@ import (
 
 	"github.com/Kellerman81/go_media_downloader/config"
 	"github.com/Kellerman81/go_media_downloader/database"
+	"github.com/Kellerman81/go_media_downloader/downloader"
+	"github.com/Kellerman81/go_media_downloader/parser"
 	"github.com/Kellerman81/go_media_downloader/scheduler"
+	"github.com/Kellerman81/go_media_downloader/searcher"
 	"github.com/Kellerman81/go_media_downloader/utils"
 	"github.com/gin-gonic/gin"
 )
@@ -500,14 +503,15 @@ func apiseriesAllJobs(c *gin.Context) {
 					if !cfg_list.Enabled {
 						continue
 					}
+					listname := cfg_serie.Lists[idxlist].Name
 					if c.Param("job") == "feeds" {
 						scheduler.QueueFeeds.Dispatch(c.Param("job")+"_series_"+cfg_serie.Name, func() {
-							utils.Series_single_jobs(c.Param("job"), cfg_serie.Name, "", true)
+							utils.Series_single_jobs(c.Param("job"), cfg_serie.Name, listname, true)
 						})
 					}
 					if c.Param("job") == "checkmissing" || c.Param("job") == "checkmissingflag" || c.Param("job") == "checkreachedflag" {
 						scheduler.QueueData.Dispatch(c.Param("job")+"_series_"+cfg_serie.Name, func() {
-							utils.Series_single_jobs(c.Param("job"), cfg_serie.Name, "", true)
+							utils.Series_single_jobs(c.Param("job"), cfg_serie.Name, listname, true)
 						})
 					}
 				}
@@ -858,7 +862,7 @@ func apiSeriesSearch(c *gin.Context) {
 		for idxlist := range cfg_serie.Lists {
 			if strings.EqualFold(cfg_serie.Lists[idxlist].Name, serie.Listname) {
 				scheduler.QueueSearch.Dispatch("searchseries_series_"+cfg_serie.Name+"_"+strconv.Itoa(int(serie.ID)), func() {
-					utils.SearchSerieSingle(serie, cfg_serie, true)
+					searcher.SearchSerieSingle(serie, cfg_serie, true)
 				})
 				c.JSON(http.StatusOK, "started")
 				return
@@ -894,7 +898,7 @@ func apiSeriesSearchSeason(c *gin.Context) {
 		for idxlist := range cfg_serie.Lists {
 			if strings.EqualFold(cfg_serie.Lists[idxlist].Name, serie.Listname) {
 				scheduler.QueueSearch.Dispatch("searchseriesseason_series_"+cfg_serie.Name+"_"+strconv.Itoa(int(serie.ID))+"_"+c.Param("season"), func() {
-					utils.SearchSerieSeasonSingle(serie, c.Param("season"), cfg_serie, true)
+					searcher.SearchSerieSeasonSingle(serie, c.Param("season"), cfg_serie, true)
 				})
 				c.JSON(http.StatusOK, "started")
 				return
@@ -931,7 +935,7 @@ func apiSeriesEpisodeSearch(c *gin.Context) {
 		for idxlist := range cfg_serie.Lists {
 			if strings.EqualFold(cfg_serie.Lists[idxlist].Name, serie.Listname) {
 				scheduler.QueueSearch.Dispatch("searchseriesepisode_series_"+cfg_serie.Name+"_"+strconv.Itoa(int(serieepi.ID)), func() {
-					utils.SearchSerieEpisodeSingle(serieepi, cfg_serie, true)
+					searcher.SearchSerieEpisodeSingle(serieepi, cfg_serie, true)
 				})
 				c.JSON(http.StatusOK, "started")
 				return
@@ -974,7 +978,7 @@ func apiSeriesEpisodeSearchList(c *gin.Context) {
 
 		for idxlist := range cfg_serie.Lists {
 			if strings.EqualFold(cfg_serie.Lists[idxlist].Name, serie.Listname) {
-				searchnow := utils.NewSearcher(cfg_serie, serieepi.QualityProfile)
+				searchnow := searcher.NewSearcher(cfg_serie, serieepi.QualityProfile)
 				searchresults := searchnow.SeriesSearch(serieepi, false, titlesearch)
 				c.JSON(http.StatusOK, gin.H{"accepted": searchresults.Nzbs, "rejected": searchresults.Rejected})
 				return
@@ -1004,7 +1008,7 @@ func apiSeriesRssSearchList(c *gin.Context) {
 		var cfg_serie config.MediaTypeConfig
 		config.ConfigGet(string(idxserie), &cfg_serie)
 		if strings.EqualFold(cfg_serie.Name, c.Param("group")) {
-			searchnow := utils.NewSearcher(cfg_serie, cfg_serie.Template_quality)
+			searchnow := searcher.NewSearcher(cfg_serie, cfg_serie.Template_quality)
 			searchresults := searchnow.SearchRSS("series", true)
 			c.JSON(http.StatusOK, gin.H{"accepted": searchresults.Nzbs, "rejected": searchresults.Rejected})
 			return
@@ -1018,7 +1022,7 @@ func apiSeriesRssSearchList(c *gin.Context) {
 // @Tags series
 // @Accept  json
 // @Produce  json
-// @Param nzb body utils.NzbwithprioJson true "Nzb: Req. Title, Indexer, tvdbid, downloadurl, parseinfo"
+// @Param nzb body parser.NzbwithprioJson true "Nzb: Req. Title, Indexer, tvdbid, downloadurl, parseinfo"
 // @Param id path int true "Episode ID"
 // @Param apikey query string true "apikey"
 // @Success 200 {string} string
@@ -1038,7 +1042,7 @@ func apiSeriesEpisodeSearchDownload(c *gin.Context) {
 		searchtype = "upgrade"
 	}
 
-	var nzb utils.Nzbwithprio
+	var nzb parser.Nzbwithprio
 	if err := c.ShouldBindJSON(&nzb); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -1050,7 +1054,7 @@ func apiSeriesEpisodeSearchDownload(c *gin.Context) {
 
 		for idxlist := range cfg_serie.Lists {
 			if strings.EqualFold(cfg_serie.Lists[idxlist].Name, serie.Listname) {
-				downloadnow := utils.NewDownloader(cfg_serie, searchtype)
+				downloadnow := downloader.NewDownloader(cfg_serie, searchtype)
 				downloadnow.SetSeriesEpisode(serieepi)
 				downloadnow.DownloadNzb(nzb)
 				c.JSON(http.StatusOK, "started")

@@ -73,14 +73,11 @@ func UpdateStartedSchedule(job Job) {
 	findname := job.SchedulerId
 	if _, ok := GlobalSchedules.Schedule[findname]; ok {
 		jobschedule := GlobalSchedules.Schedule[findname]
-		if jobschedule.LastRun.IsZero() {
-			jobschedule.LastRun = time.Now()
-		}
 		if jobschedule.ScheduleTyp == "cron" {
 			jobschedule.NextRun = jobschedule.CronSchedule.Next(time.Now())
 			jobschedule.LastRun = time.Now()
 		} else {
-			jobschedule.NextRun = jobschedule.LastRun.Add(jobschedule.Interval)
+			jobschedule.NextRun = time.Now().Add(jobschedule.Interval)
 			jobschedule.LastRun = time.Now()
 		}
 		GlobalSchedules.Schedule[findname] = jobschedule

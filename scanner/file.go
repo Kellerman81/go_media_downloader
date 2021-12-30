@@ -201,7 +201,7 @@ func CreateFolderWithSubfolders(path string, security uint32) error {
 	return err
 }
 
-func MoveFiles(files []string, target string, newname string, filetypes []string, filetypesNoRename []string) (bool, int) {
+func MoveFiles(files []string, target string, newname string, filetypes []string, filetypesNoRename []string, usebuffercopy bool) (bool, int) {
 	moved := 0
 	moveok := false
 
@@ -245,7 +245,12 @@ func MoveFiles(files []string, target string, newname string, filetypes []string
 				}
 				err1 := os.Rename(files[idxfile], newpath)
 				if err1 != nil {
-					err := MoveFileDriveBuffer(files[idxfile], newpath)
+					var err error
+					if usebuffercopy {
+						err = MoveFileDriveBuffer(files[idxfile], newpath)
+					} else {
+						err = MoveFileDrive(files[idxfile], newpath)
+					}
 					if err != nil {
 						logger.Log.Error("File could not be moved: ", files[idxfile], " Error: ", err)
 					} else {
@@ -369,13 +374,28 @@ func CleanUpFolder(folder string, CleanupsizeMB int) {
 	}
 }
 
+func checkmoviefilespath(array []database.MovieFile, find string) bool {
+	for idx := range array {
+		if strings.EqualFold(array[idx].Location, find) {
+			return true
+		}
+	}
+	return false
+}
+func checkmoviefilespathlist(array []database.MovieFile, find string, listname string) bool {
+	for idx := range array {
+		if strings.EqualFold(array[idx].Location, find) && strings.EqualFold(array[idx].Filename, listname) {
+			return true
+		}
+	}
+	return false
+}
 func GetFilesAdded(files []string, listname string) []string {
 	list := make([]string, 0, len(files))
+	filesdb, _ := database.QueryMovieFiles(database.Query{Select: "movie_files.location, movies.listname AS filename", InnerJoin: "movies on movie_files.movie_id = movies.id"})
 	for idxfile := range files {
-		counter, _ := database.CountRows("movie_files", database.Query{InnerJoin: "movies on movie_files.movie_id = movies.id", Where: "movie_files.location = ? and movies.listname = ?", WhereArgs: []interface{}{files[idxfile], listname}})
-		if counter == 0 {
-			counter2, _ := database.CountRows("movie_files", database.Query{Where: "location = ?", WhereArgs: []interface{}{files[idxfile]}})
-			if counter2 == 0 {
+		if !checkmoviefilespathlist(filesdb, files[idxfile], listname) {
+			if !checkmoviefilespath(filesdb, files[idxfile]) {
 				logger.Log.Debug("File added to list - not found", files[idxfile], " ", listname)
 				list = append(list, files[idxfile])
 			}
@@ -383,12 +403,31 @@ func GetFilesAdded(files []string, listname string) []string {
 	}
 	return list
 }
+func checkseriesfilespath(array []database.SerieEpisodeFile, find string) bool {
+	for idx := range array {
+		if strings.EqualFold(array[idx].Location, find) {
+			return true
+		}
+	}
+	return false
+}
+func checkseriesfilespathlist(array []database.SerieEpisodeFile, find string, listname string) bool {
+	for idx := range array {
+		if strings.EqualFold(array[idx].Location, find) && strings.EqualFold(array[idx].Filename, listname) {
+			return true
+		}
+	}
+	return false
+}
 func GetFilesSeriesAdded(files []string, listname string) []string {
 	list := make([]string, 0, len(files))
+	filesdb, _ := database.QuerySerieEpisodeFiles(database.Query{Select: "serie_episode_files.location, series.listname AS filename", InnerJoin: "series on serie_episode_files.serie_id = series.id"})
 	for idxfile := range files {
-		counter, _ := database.CountRows("serie_episode_files", database.Query{InnerJoin: " Serie_episodes ON Serie_episodes.ID = Serie_episode_files.serie_episode_id INNER JOIN Series ON series.ID = Serie_episodes.serie_id", Where: "Serie_episode_files.location = ? and Series.listname = ?", WhereArgs: []interface{}{files[idxfile], listname}})
-		if counter == 0 {
-			list = append(list, files[idxfile])
+		if !checkseriesfilespathlist(filesdb, files[idxfile], listname) {
+			if !checkseriesfilespath(filesdb, files[idxfile]) {
+				logger.Log.Debug("File added to list - not found", files[idxfile], " ", listname)
+				list = append(list, files[idxfile])
+			}
 		}
 	}
 	return list
@@ -616,4 +655,32 @@ func copyFileContents(src, dst string) (err error) {
 	}
 	err = dstFile.Sync()
 	return
+}
+
+func GetSubFolders(sourcepath string) []string {
+	files, err := ioutil.ReadDir(sourcepath)
+	if err == nil {
+		folders := make([]string, 0, len(files))
+		for idxfile := range files {
+			if files[idxfile].IsDir() {
+				folders = append(folders, filepath.Join(sourcepath, files[idxfile].Name()))
+			}
+		}
+		return folders
+	}
+	return []string{}
+}
+
+func GetSubFiles(sourcepath string) []string {
+	files, err := ioutil.ReadDir(sourcepath)
+	if err == nil {
+		folders := make([]string, 0, len(files))
+		for idxfile := range files {
+			if !files[idxfile].IsDir() {
+				folders = append(folders, filepath.Join(sourcepath, files[idxfile].Name()))
+			}
+		}
+		return folders
+	}
+	return []string{}
 }

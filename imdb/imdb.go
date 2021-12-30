@@ -39,14 +39,14 @@ func csvsetdefault(instr string, def string) string {
 	return instr
 }
 
-const Configfile string = "config.toml"
+const configfile string = "config.toml"
 
-type ImdbConfig struct {
+type imdbConfig struct {
 	Indexedtypes     []string `koanf:"indexed_types"`
 	Indexedlanguages []string `koanf:"indexed_languages"`
 	Indexfull        bool     `koanf:"index_full"`
 }
-type ImdbTitle struct {
+type imdbTitle struct {
 	Tconst         string
 	TitleType      string `db:"title_type"`
 	PrimaryTitle   string `db:"primary_title"`
@@ -58,7 +58,7 @@ type ImdbTitle struct {
 	RuntimeMinutes int    `db:"runtime_minutes"`
 	Genres         string
 }
-type ImdbAka struct {
+type imdbAka struct {
 	ID              uint
 	CreatedAt       time.Time `db:"created_at"`
 	UpdatedAt       time.Time `db:"updated_at"`
@@ -73,7 +73,7 @@ type ImdbAka struct {
 	IsOriginalTitle bool `db:"is_original_title"`
 }
 
-type ImdbRatings struct {
+type imdbRatings struct {
 	ID            uint
 	CreatedAt     time.Time `db:"created_at"`
 	UpdatedAt     time.Time `db:"updated_at"`
@@ -81,7 +81,7 @@ type ImdbRatings struct {
 	NumVotes      int     `db:"num_votes"`
 	AverageRating float32 `db:"average_rating"`
 }
-type ImdbGenres struct {
+type imdbGenres struct {
 	ID        uint
 	CreatedAt time.Time `db:"created_at"`
 	UpdatedAt time.Time `db:"updated_at"`
@@ -89,9 +89,9 @@ type ImdbGenres struct {
 	Genre     string
 }
 
-func LoadCfgDataDB() ImdbConfig {
+func LoadCfgDataDB() imdbConfig {
 	var k = koanf.New(".")
-	f := file.Provider(Configfile)
+	f := file.Provider(configfile)
 	// if strings.Contains(parser, "json") {
 	// 	err := k.Load(f, json.Parser())
 	// 	if err != nil {
@@ -99,7 +99,7 @@ func LoadCfgDataDB() ImdbConfig {
 	// 		return Cfg{}
 	// 	}
 	// }
-	if strings.Contains(Configfile, "toml") {
+	if strings.Contains(configfile, "toml") {
 		err := k.Load(f, toml.Parser())
 		if err != nil {
 			fmt.Println("Error loading config. ", err)
@@ -116,17 +116,17 @@ func LoadCfgDataDB() ImdbConfig {
 	if k.Sprint() == "" {
 		fmt.Println("Error loading config. Config Empty")
 	}
-	var outim ImdbConfig
+	var outim imdbConfig
 	errimdb := k.Unmarshal("imdbindexer", &outim)
 	if errimdb == nil {
 		return outim
 	}
-	return ImdbConfig{}
+	return imdbConfig{}
 }
 
-var DBImdb *sqlx.DB
+var dbimdb *sqlx.DB
 
-func InitImdbdb(dbloglevel string, dbfile string) *sqlx.DB {
+func initImdbdb(dbloglevel string, dbfile string) *sqlx.DB {
 	if _, err := os.Stat("./" + dbfile + ".db"); os.IsNotExist(err) {
 		_, err := os.Create("./" + dbfile + ".db") // Create SQLite file
 		if err != nil {
@@ -143,7 +143,7 @@ func InitImdbdb(dbloglevel string, dbfile string) *sqlx.DB {
 }
 
 func main() {
-	var cfg_imdb ImdbConfig = LoadCfgDataDB()
+	var cfg_imdb imdbConfig = LoadCfgDataDB()
 	fmt.Println("Started Imdb Import")
 	titlemap := make(map[string]bool, 10)
 	for _, row := range cfg_imdb.Indexedtypes {
@@ -154,10 +154,10 @@ func main() {
 		akamap[row] = true
 	}
 	os.Remove("./imdbtemp.db")
-	dbget := InitImdbdb("info", "imdbtemp")
-	DBImdb = dbget
+	dbget := initImdbdb("info", "imdbtemp")
+	dbimdb = dbget
 
-	ReadWriteMu := &sync.Mutex{}
+	readWriteMu := &sync.Mutex{}
 	m, err := migrate.New(
 		"file://./schema/imdbdb",
 		"sqlite3://imdbtemp.db?cache=shared&_fk=1&_mutex=no&_cslike=0",
@@ -187,11 +187,11 @@ func main() {
 		parsertitle.TrimLeadingSpace = true
 		_, _ = parsertitle.Read() //skip header
 
-		titlesshort := make([]ImdbTitle, 0, cacherowlimit)
-		genres := make([]ImdbGenres, 0, cacherowlimit)
+		titlesshort := make([]imdbTitle, 0, cacherowlimit)
+		genres := make([]imdbGenres, 0, cacherowlimit)
 		swtitle := sizedwaitgroup.New(4)
-		// namedtitle, _ := database.DBImdb.PrepareNamed("insert into imdb_titles (tconst, title_type, primary_title, slug, original_title, is_adult, start_year, end_year, runtime_minutes, genres) VALUES (:tconst, :title_type, :primary_title, :slug, :original_title, :is_adult, :start_year, :end_year, :runtime_minutes, :genres)")
-		// namedgenre, _ := database.DBImdb.PrepareNamed("insert into imdb_genres (tconst, genre) VALUES (:tconst, :genre)")
+		// namedtitle, _ := database.dbimdb.PrepareNamed("insert into imdb_titles (tconst, title_type, primary_title, slug, original_title, is_adult, start_year, end_year, runtime_minutes, genres) VALUES (:tconst, :title_type, :primary_title, :slug, :original_title, :is_adult, :start_year, :end_year, :runtime_minutes, :genres)")
+		// namedgenre, _ := database.dbimdb.PrepareNamed("insert into imdb_genres (tconst, genre) VALUES (:tconst, :genre)")
 
 		for {
 			record, err := parsertitle.Read()
@@ -204,35 +204,35 @@ func main() {
 			}
 			swtitle.Add()
 			if len(titlesshort) >= cacherowlimit {
-				ReadWriteMu.Lock()
-				_, err := DBImdb.NamedExec("insert into imdb_titles (tconst, title_type, primary_title, slug, original_title, is_adult, start_year, end_year, runtime_minutes, genres) VALUES (:tconst, :title_type, :primary_title, :slug, :original_title, :is_adult, :start_year, :end_year, :runtime_minutes, :genres)", titlesshort)
-				ReadWriteMu.Unlock()
+				readWriteMu.Lock()
+				_, err := dbimdb.NamedExec("insert into imdb_titles (tconst, title_type, primary_title, slug, original_title, is_adult, start_year, end_year, runtime_minutes, genres) VALUES (:tconst, :title_type, :primary_title, :slug, :original_title, :is_adult, :start_year, :end_year, :runtime_minutes, :genres)", titlesshort)
+				readWriteMu.Unlock()
 				if err != nil {
 					fmt.Println(fmt.Errorf("an error occurred while inserting titles.. %v", err))
 					break
 				}
-				titlesshort = make([]ImdbTitle, 0, cacherowlimit)
+				titlesshort = make([]imdbTitle, 0, cacherowlimit)
 			}
 			if len(genres) >= cacherowlimit {
-				ReadWriteMu.Lock()
-				_, err := DBImdb.NamedExec("insert into imdb_genres (tconst, genre) VALUES (:tconst, :genre)", genres)
-				ReadWriteMu.Unlock()
+				readWriteMu.Lock()
+				_, err := dbimdb.NamedExec("insert into imdb_genres (tconst, genre) VALUES (:tconst, :genre)", genres)
+				readWriteMu.Unlock()
 				if err != nil {
 					fmt.Println(fmt.Errorf("an error occurred while inserting genres.. %v", err))
 					break
 				}
-				genres = make([]ImdbGenres, 0, cacherowlimit)
+				genres = make([]imdbGenres, 0, cacherowlimit)
 			}
 			if _, ok := titlemap[record[1]]; ok {
-				ReadWriteMu.Lock()
+				readWriteMu.Lock()
 				cachetconst[record[0]] = true
-				ReadWriteMu.Unlock()
+				readWriteMu.Unlock()
 				startYear, _ := strconv.Atoi(csvsetdefault(record[5], "0"))
 				stringtitletype := csvsetdefault(record[1], "")
 				stringtitleprimary := html.UnescapeString(csvsetdefault(record[2], ""))
 				stringtitleprimaryslug := logger.StringToSlug(stringtitleprimary)
 				if !cfg_imdb.Indexfull {
-					titlesshort = append(titlesshort, ImdbTitle{
+					titlesshort = append(titlesshort, imdbTitle{
 						Tconst:       record[0],
 						TitleType:    stringtitletype,
 						PrimaryTitle: stringtitleprimary,
@@ -257,7 +257,7 @@ func main() {
 						fmt.Println("Adult error: ", record[4], " ", erradu)
 						continue
 					}
-					titlesshort = append(titlesshort, ImdbTitle{
+					titlesshort = append(titlesshort, imdbTitle{
 						Tconst:         record[0],
 						TitleType:      stringtitletype,
 						PrimaryTitle:   stringtitleprimary,
@@ -276,7 +276,7 @@ func main() {
 						genrearray = []string{stringgenre}
 					}
 					for idxgenre := range genrearray {
-						genreentry := ImdbGenres{
+						genreentry := imdbGenres{
 							Tconst: record[0],
 							Genre:  genrearray[idxgenre],
 						}
@@ -288,14 +288,14 @@ func main() {
 		}
 		swtitle.Wait()
 		if len(titlesshort) >= 1 {
-			ReadWriteMu.Lock()
-			DBImdb.NamedExec("insert into imdb_titles (tconst, title_type, primary_title, slug, original_title, is_adult, start_year, end_year, runtime_minutes, genres) VALUES (:tconst, :title_type, :primary_title, :slug, :original_title, :is_adult, :start_year, :end_year, :runtime_minutes, :genres)", titlesshort)
-			ReadWriteMu.Unlock()
+			readWriteMu.Lock()
+			dbimdb.NamedExec("insert into imdb_titles (tconst, title_type, primary_title, slug, original_title, is_adult, start_year, end_year, runtime_minutes, genres) VALUES (:tconst, :title_type, :primary_title, :slug, :original_title, :is_adult, :start_year, :end_year, :runtime_minutes, :genres)", titlesshort)
+			readWriteMu.Unlock()
 		}
 		if len(genres) >= 1 {
-			ReadWriteMu.Lock()
-			DBImdb.NamedExec("insert into imdb_genres (tconst, genre) VALUES (:tconst, :genre)", genres)
-			ReadWriteMu.Unlock()
+			readWriteMu.Lock()
+			dbimdb.NamedExec("insert into imdb_genres (tconst, genre) VALUES (:tconst, :genre)", genres)
+			readWriteMu.Unlock()
 		}
 	}
 
@@ -311,7 +311,7 @@ func main() {
 		parseraka.ReuseRecord = true
 		parseraka.TrimLeadingSpace = true
 		_, _ = parseraka.Read() //skip header
-		akasshort := make([]ImdbAka, 0, cacherowlimit)
+		akasshort := make([]imdbAka, 0, cacherowlimit)
 
 		swaka := sizedwaitgroup.New(4)
 		for {
@@ -325,14 +325,14 @@ func main() {
 			}
 			swaka.Add()
 			if len(akasshort) >= cacherowlimit {
-				ReadWriteMu.Lock()
-				_, err := DBImdb.NamedExec("insert into imdb_akas (tconst, ordering, title, slug, region, language, types, attributes, is_original_title) VALUES (:tconst, :ordering, :title, :slug, :region, :language, :types, :attributes, :is_original_title)", akasshort)
-				ReadWriteMu.Unlock()
+				readWriteMu.Lock()
+				_, err := dbimdb.NamedExec("insert into imdb_akas (tconst, ordering, title, slug, region, language, types, attributes, is_original_title) VALUES (:tconst, :ordering, :title, :slug, :region, :language, :types, :attributes, :is_original_title)", akasshort)
+				readWriteMu.Unlock()
 				if err != nil {
 					fmt.Println(fmt.Errorf("an error occurred while inserting aka.. %v", err))
 					break
 				}
-				akasshort = make([]ImdbAka, 0, cacherowlimit)
+				akasshort = make([]imdbAka, 0, cacherowlimit)
 			}
 
 			if _, ok := akamap[record[3]]; ok || len(record[3]) == 0 {
@@ -342,7 +342,7 @@ func main() {
 					stringtitleslug := logger.StringToSlug(stringtitle)
 					stringregion := csvsetdefault(record[3], "")
 					if !cfg_imdb.Indexfull {
-						akasshort = append(akasshort, ImdbAka{
+						akasshort = append(akasshort, imdbAka{
 							Tconst: record[0],
 							Title:  stringtitle,
 							Slug:   stringtitleslug,
@@ -354,7 +354,7 @@ func main() {
 						stringattributes := csvsetdefault(record[6], "")
 						ordering, _ := strconv.Atoi(csvsetdefault(record[1], "0"))
 						isOriginalTitle, _ := strconv.ParseBool(csvsetdefault(record[7], "0"))
-						akasshort = append(akasshort, ImdbAka{
+						akasshort = append(akasshort, imdbAka{
 							Tconst:          record[0],
 							Ordering:        ordering,
 							Title:           stringtitle,
@@ -372,9 +372,9 @@ func main() {
 		}
 		swaka.Wait()
 		if len(akasshort) >= 1 {
-			ReadWriteMu.Lock()
-			DBImdb.NamedExec("insert into imdb_akas (tconst, ordering, title, slug, region, language, types, attributes, is_original_title) VALUES (:tconst, :ordering, :title, :slug, :region, :language, :types, :attributes, :is_original_title)", akasshort)
-			ReadWriteMu.Unlock()
+			readWriteMu.Lock()
+			dbimdb.NamedExec("insert into imdb_akas (tconst, ordering, title, slug, region, language, types, attributes, is_original_title) VALUES (:tconst, :ordering, :title, :slug, :region, :language, :types, :attributes, :is_original_title)", akasshort)
+			readWriteMu.Unlock()
 		}
 	}
 
@@ -390,9 +390,9 @@ func main() {
 		parserrating.ReuseRecord = true
 		parserrating.TrimLeadingSpace = true
 		_, _ = parserrating.Read() //skip header
-		ratings := make([]ImdbRatings, 0, cacherowlimit)
+		ratings := make([]imdbRatings, 0, cacherowlimit)
 
-		//namedrating, _ := database.DBImdb.PrepareNamed("insert into imdb_ratings (tconst, num_votes, average_rating) VALUES (:tconst, :num_votes, :average_rating)")
+		//namedrating, _ := database.dbimdb.PrepareNamed("insert into imdb_ratings (tconst, num_votes, average_rating) VALUES (:tconst, :num_votes, :average_rating)")
 
 		swrating := sizedwaitgroup.New(4)
 		for {
@@ -406,20 +406,20 @@ func main() {
 			}
 			swrating.Add()
 			if len(ratings) >= cacherowlimit {
-				ReadWriteMu.Lock()
-				_, err := DBImdb.NamedExec("insert into imdb_ratings (tconst, num_votes, average_rating) VALUES (:tconst, :num_votes, :average_rating)", ratings)
-				ReadWriteMu.Unlock()
+				readWriteMu.Lock()
+				_, err := dbimdb.NamedExec("insert into imdb_ratings (tconst, num_votes, average_rating) VALUES (:tconst, :num_votes, :average_rating)", ratings)
+				readWriteMu.Unlock()
 				if err != nil {
 					fmt.Println(fmt.Errorf("an error occurred while inserting rating.. %v", err))
 					break
 				}
-				ratings = make([]ImdbRatings, 0, cacherowlimit)
+				ratings = make([]imdbRatings, 0, cacherowlimit)
 			}
 			//titlecount, _ := database.ImdbCountRows("imdb_titles", database.Query{Where: "tconst = ?", WhereArgs: []interface{}{record[0]}})
 			if _, ok := cachetconst[record[0]]; ok {
 				numvotes, _ := strconv.Atoi(csvsetdefault(record[2], "0"))
 				AverageRating, _ := strconv.ParseFloat(csvsetdefault(record[1], "0"), 32)
-				ratings = append(ratings, ImdbRatings{
+				ratings = append(ratings, imdbRatings{
 					Tconst:        record[0],
 					AverageRating: float32(AverageRating),
 					NumVotes:      numvotes,
@@ -429,15 +429,15 @@ func main() {
 		}
 		swrating.Wait()
 		if len(ratings) >= 1 {
-			ReadWriteMu.Lock()
-			DBImdb.NamedExec("insert into imdb_ratings (tconst, num_votes, average_rating) VALUES (:tconst, :num_votes, :average_rating)", ratings)
-			ReadWriteMu.Unlock()
+			readWriteMu.Lock()
+			dbimdb.NamedExec("insert into imdb_ratings (tconst, num_votes, average_rating) VALUES (:tconst, :num_votes, :average_rating)", ratings)
+			readWriteMu.Unlock()
 		}
 	}
 
-	rows, err := DBImdb.Query("Select count(*) from imdb_titles")
+	rows, err := dbimdb.Query("Select count(*) from imdb_titles")
 	if err != nil {
-		DBImdb.Close()
+		dbimdb.Close()
 		os.Remove("./imdbtemp.db")
 		return
 	}
@@ -446,11 +446,11 @@ func main() {
 	var counter int
 	rows.Scan(&counter)
 	if counter == 0 {
-		DBImdb.Close()
+		dbimdb.Close()
 		os.Remove("./imdbtemp.db")
 		return
 	}
-	DBImdb.Close()
+	dbimdb.Close()
 	fmt.Println("Ended Imdb Import")
 }
 

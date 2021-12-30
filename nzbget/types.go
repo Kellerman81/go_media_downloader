@@ -4,7 +4,7 @@ import "time"
 
 //Source: https://github.com/dashotv/flame
 
-type Status struct {
+type status struct {
 	RemainingSizeMB     int  // 0
 	ForcedSizeMB        int  // 0
 	DownloadedSizeMB    int  // 0
@@ -28,7 +28,7 @@ type Status struct {
 	ResumeTime          int  // 0
 	FeedActive          bool // false
 	QueueScriptCount    int  // 0
-	NewsServers         []NewsServer
+	NewsServers         []newsServer
 	//RemainingSizeLo     int  // 0
 	//RemainingSizeHi     int  // 0
 	//ForcedSizeLo        int  // 0
@@ -49,22 +49,22 @@ type Status struct {
 	//FreeDiskSpaceHi     int  // 32
 }
 
-type NewsServer struct {
+type newsServer struct {
 	ID     int
 	Active bool
 }
 
-type StatusResponse struct {
-	*Response
-	Result *Status
+type statusResponse struct {
+	*response
+	Result *status
 }
 
-type VersionResponse struct {
-	*Response
+type versionResponse struct {
+	*response
 	Version string `json:"result"`
 }
 
-type History struct {
+type history struct {
 	ID                 int `json:"nzbid"`
 	Name               string
 	RemainingFileCount int
@@ -113,28 +113,28 @@ type History struct {
 	UnpackTimeSec      int
 	MessageCount       int
 	ExtraParBlocks     int
-	Parameters         []Parameter
-	ScriptStatuses     []ScriptStatus
-	ServerStats        []ServerStat
+	Parameters         []parameter
+	ScriptStatuses     []scriptStatus
+	ServerStats        []serverStat
 }
 
-type Parameter struct {
+type parameter struct {
 	Name  string
 	Value string
 }
 
-type ServerStat struct {
+type serverStat struct {
 	ServerID        int
 	SuccessArticles int
 	FailedArticles  int
 }
 
-type HistoryResponse struct {
-	*Response
-	Result []History `json:"Result"`
+type historyResponse struct {
+	*response
+	Result []history `json:"Result"`
 }
 
-type Group struct {
+type group struct {
 	ID                 int    `json:"nzbid"` // 4
 	RemainingSizeMB    int    // 3497
 	PausedSizeMB       int    // 3497
@@ -181,13 +181,13 @@ type Group struct {
 	UnpackTimeSec      int // 0
 	MessageCount       int // 95
 	ExtraParBlocks     int // 0
-	Parameters         []Parameter
-	ScriptStatuses     []ScriptStatus
-	ServerStats        []ServerStat
+	Parameters         []parameter
+	ScriptStatuses     []scriptStatus
+	ServerStats        []serverStat
 	PostInfoText       string // NONE
 	PostStageProgress  int    // 9193728
 	PostStageTimeSec   int    // 0
-	Log                []Log
+	Log                []log
 	//FirstID            int    // 4
 	//LastID             int    // 4
 	//RemainingSizeLo    int    // 3666882216
@@ -200,25 +200,25 @@ type Group struct {
 	//DownloadedSizeHi   int // 0
 }
 
-type ScriptStatus struct {
+type scriptStatus struct {
 	Name   string
 	Status string
 }
 
-type Log struct {
+type log struct {
 }
 
-type GroupResponse struct {
-	*Response
-	Result []Group
+type groupResponse struct {
+	*response
+	Result []group
 }
 
-type Client struct {
+type client struct {
 	URL string
 	rpc RPCClient
 }
 
-type AppendOptions struct {
+type appendOptions struct {
 	NiceName   string
 	Category   string
 	Priority   int
@@ -233,9 +233,9 @@ type AppendOptions struct {
 	}
 }
 
-type Response struct {
+type response struct {
 	APIVersion string `json:"version"`
 	Error      string
-	Status     *Status
+	Status     *status
 	Timestamp  time.Time
 }

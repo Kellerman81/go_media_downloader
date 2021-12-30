@@ -1434,7 +1434,7 @@
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/utils.NzbwithprioJson"
+                            "$ref": "#/definitions/parser.NzbwithprioJson"
                         }
                     },
                     {
@@ -1778,7 +1778,7 @@
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/api.ApiNameInputJson"
+                            "$ref": "#/definitions/api.apiNameInputJson"
                         }
                     },
                     {
@@ -1846,7 +1846,7 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/utils.ParseInfo"
+                            "$ref": "#/definitions/parser.ParseInfo"
                         }
                     },
                     "400": {
@@ -1899,7 +1899,7 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/utils.ParseInfo"
+                            "$ref": "#/definitions/parser.ParseInfo"
                         }
                     },
                     "400": {
@@ -2102,7 +2102,7 @@
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/utils.ParseInfo"
+                                "$ref": "#/definitions/parser.ParseInfo"
                             }
                         }
                     },
@@ -2858,7 +2858,7 @@
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/utils.NzbwithprioJson"
+                            "$ref": "#/definitions/parser.NzbwithprioJson"
                         }
                     },
                     {
@@ -3725,7 +3725,7 @@
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/api.ApiStructureJson"
+                            "$ref": "#/definitions/api.apiStructureJson"
                         }
                     },
                     {
@@ -3888,7 +3888,7 @@
         }
     },
     "definitions": {
-        "api.ApiNameInputJson": {
+        "api.apiNameInputJson": {
             "type": "object",
             "properties": {
                 "cfg_media": {
@@ -3908,7 +3908,7 @@
                 }
             }
         },
-        "api.ApiStructureJson": {
+        "api.apiStructureJson": {
             "type": "object",
             "properties": {
                 "configentry": {
@@ -4880,6 +4880,9 @@
                 "genre": {
                     "type": "string"
                 },
+                "group": {
+                    "type": "string"
+                },
                 "id": {
                     "type": "string"
                 },
@@ -4910,6 +4913,9 @@
                 },
                 "peers": {
                     "type": "integer"
+                },
+                "poster": {
+                    "type": "string"
                 },
                 "pub_date": {
                     "type": "string"
@@ -4951,30 +4957,7 @@
                 }
             }
         },
-        "tasks.Job": {
-            "type": "object",
-            "properties": {
-                "added": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "queue": {
-                    "type": "string"
-                },
-                "schedulerId": {
-                    "type": "string"
-                },
-                "started": {
-                    "type": "string"
-                }
-            }
-        },
-        "utils.NzbwithprioJson": {
+        "parser.NzbwithprioJson": {
             "type": "object",
             "properties": {
                 "denied": {
@@ -4993,7 +4976,7 @@
                     "$ref": "#/definitions/database.MovieJson"
                 },
                 "parseInfo": {
-                    "$ref": "#/definitions/utils.ParseInfo"
+                    "$ref": "#/definitions/parser.ParseInfo"
                 },
                 "prio": {
                     "type": "integer"
@@ -5015,7 +4998,7 @@
                 }
             }
         },
-        "utils.ParseInfo": {
+        "parser.ParseInfo": {
             "type": "object",
             "properties": {
                 "3d": {
@@ -5146,6 +5129,29 @@
                 },
                 "year": {
                     "type": "integer"
+                }
+            }
+        },
+        "tasks.Job": {
+            "type": "object",
+            "properties": {
+                "added": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "queue": {
+                    "type": "string"
+                },
+                "schedulerId": {
+                    "type": "string"
+                },
+                "started": {
+                    "type": "string"
                 }
             }
         }

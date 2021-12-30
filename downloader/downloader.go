@@ -1,4 +1,4 @@
-package utils
+package downloader
 
 import (
 	"bytes"
@@ -14,15 +14,16 @@ import (
 	"github.com/Kellerman81/go_media_downloader/database"
 	"github.com/Kellerman81/go_media_downloader/logger"
 	"github.com/Kellerman81/go_media_downloader/nzbget"
+	"github.com/Kellerman81/go_media_downloader/parser"
 )
 
-type Downloader struct {
+type downloadertype struct {
 	ConfigEntry      config.MediaTypeConfig
 	Quality          string
 	SearchGroupType  string //series, movies
 	SearchActionType string //missing,upgrade,rss
 
-	Nzb            Nzbwithprio
+	Nzb            parser.Nzbwithprio
 	Movie          database.Movie
 	Dbmovie        database.Dbmovie
 	Serie          database.Serie
@@ -38,13 +39,13 @@ type Downloader struct {
 	Time       string
 }
 
-func NewDownloader(configEntry config.MediaTypeConfig, searchActionType string) Downloader {
-	return Downloader{
+func NewDownloader(configEntry config.MediaTypeConfig, searchActionType string) downloadertype {
+	return downloadertype{
 		ConfigEntry:      configEntry,
 		SearchActionType: searchActionType,
 	}
 }
-func (d *Downloader) SetMovie(movie database.Movie) {
+func (d *downloadertype) SetMovie(movie database.Movie) {
 	d.SearchGroupType = "movie"
 	dbmovie, _ := database.GetDbmovie(database.Query{Where: "id=?", WhereArgs: []interface{}{movie.DbmovieID}})
 
@@ -54,7 +55,7 @@ func (d *Downloader) SetMovie(movie database.Movie) {
 	logger.Log.Debug("Downloader movie quality: ", movie.QualityProfile)
 	d.Quality = movie.QualityProfile
 }
-func (d *Downloader) SetSeriesEpisode(seriesepisode database.SerieEpisode) {
+func (d *downloadertype) SetSeriesEpisode(seriesepisode database.SerieEpisode) {
 	d.SearchGroupType = "series"
 	dbserie, _ := database.GetDbserie(database.Query{Where: "id=?", WhereArgs: []interface{}{seriesepisode.DbserieID}})
 	dbserieepisode, _ := database.GetDbserieEpisodes(database.Query{Where: "id=?", WhereArgs: []interface{}{seriesepisode.DbserieEpisodeID}})
@@ -65,44 +66,44 @@ func (d *Downloader) SetSeriesEpisode(seriesepisode database.SerieEpisode) {
 	d.Quality = seriesepisode.QualityProfile
 	d.Dbserieepisode = dbserieepisode
 }
-func (d *Downloader) DownloadNzb(nzb Nzbwithprio) {
+func (d *downloadertype) DownloadNzb(nzb parser.Nzbwithprio) {
 	d.Nzb = nzb
-	d.Category, d.Target, d.Downloader = getnzbconfig(d.Nzb, d.Quality)
+	d.Category, d.Target, d.Downloader = parser.Getnzbconfig(d.Nzb, d.Quality)
 
 	targetfolder := ""
 	if d.SearchGroupType == "movie" {
 		if d.Dbmovie.ImdbID != "" {
-			targetfolder = Path(d.Nzb.NZB.Title+" ("+d.Dbmovie.ImdbID+")", false)
+			targetfolder = logger.Path(d.Nzb.NZB.Title+" ("+d.Dbmovie.ImdbID+")", false)
 		} else if d.Nzb.NZB.IMDBID != "" {
 			if !strings.Contains(d.Nzb.NZB.IMDBID, "tt") {
 				nzb.NZB.IMDBID = "tt" + d.Nzb.NZB.IMDBID
 			}
 			if nzb.NZB.Title == "" {
-				targetfolder = Path(nzb.ParseInfo.Title+"["+nzb.ParseInfo.Resolution+" "+nzb.ParseInfo.Quality+"]"+" ("+nzb.NZB.IMDBID+")", false)
+				targetfolder = logger.Path(nzb.ParseInfo.Title+"["+nzb.ParseInfo.Resolution+" "+nzb.ParseInfo.Quality+"]"+" ("+nzb.NZB.IMDBID+")", false)
 			} else {
-				targetfolder = Path(nzb.NZB.Title+" ("+nzb.NZB.IMDBID+")", false)
+				targetfolder = logger.Path(nzb.NZB.Title+" ("+nzb.NZB.IMDBID+")", false)
 			}
 		} else {
-			targetfolder = Path(nzb.NZB.Title, false)
+			targetfolder = logger.Path(nzb.NZB.Title, false)
 		}
 	} else {
 		if d.Dbserie.ThetvdbID != 0 {
 			if d.Nzb.NZB.Title == "" {
-				targetfolder = Path(d.Nzb.ParseInfo.Title+"["+d.Nzb.ParseInfo.Resolution+" "+d.Nzb.ParseInfo.Quality+"]"+" (tvdb"+strconv.Itoa(d.Dbserie.ThetvdbID)+")", false)
+				targetfolder = logger.Path(d.Nzb.ParseInfo.Title+"["+d.Nzb.ParseInfo.Resolution+" "+d.Nzb.ParseInfo.Quality+"]"+" (tvdb"+strconv.Itoa(d.Dbserie.ThetvdbID)+")", false)
 			} else {
-				targetfolder = Path(d.Nzb.NZB.Title+" (tvdb"+strconv.Itoa(d.Dbserie.ThetvdbID)+")", false)
+				targetfolder = logger.Path(d.Nzb.NZB.Title+" (tvdb"+strconv.Itoa(d.Dbserie.ThetvdbID)+")", false)
 			}
 		} else if d.Nzb.NZB.TVDBID != "" {
 			if d.Nzb.NZB.Title == "" {
-				targetfolder = Path(d.Nzb.ParseInfo.Title+"["+d.Nzb.ParseInfo.Resolution+" "+d.Nzb.ParseInfo.Quality+"]"+" (tvdb"+d.Nzb.NZB.TVDBID+")", false)
+				targetfolder = logger.Path(d.Nzb.ParseInfo.Title+"["+d.Nzb.ParseInfo.Resolution+" "+d.Nzb.ParseInfo.Quality+"]"+" (tvdb"+d.Nzb.NZB.TVDBID+")", false)
 			} else {
-				targetfolder = Path(d.Nzb.NZB.Title+" (tvdb"+d.Nzb.NZB.TVDBID+")", false)
+				targetfolder = logger.Path(d.Nzb.NZB.Title+" (tvdb"+d.Nzb.NZB.TVDBID+")", false)
 			}
 		} else {
 			if d.Nzb.NZB.Title == "" {
-				targetfolder = Path(d.Nzb.ParseInfo.Title+"["+d.Nzb.ParseInfo.Resolution+" "+d.Nzb.ParseInfo.Quality+"]", false)
+				targetfolder = logger.Path(d.Nzb.ParseInfo.Title+"["+d.Nzb.ParseInfo.Resolution+" "+d.Nzb.ParseInfo.Quality+"]", false)
 			} else {
-				targetfolder = Path(d.Nzb.NZB.Title, false)
+				targetfolder = logger.Path(d.Nzb.NZB.Title, false)
 			}
 		}
 	}
@@ -115,36 +116,36 @@ func (d *Downloader) DownloadNzb(nzb Nzbwithprio) {
 	var err error
 	switch strings.ToLower(d.Downloader.Type) {
 	case "drone":
-		err = d.DownloadByDrone()
+		err = d.downloadByDrone()
 	case "nzbget":
-		err = d.DownloadByNzbget()
+		err = d.downloadByNzbget()
 	case "sabnzbd":
-		err = d.DownloadBySabnzbd()
+		err = d.downloadBySabnzbd()
 	case "transmission":
-		err = d.DownloadByTransmission()
+		err = d.downloadByTransmission()
 	case "rtorrent":
-		err = d.DownloadByRTorrent()
+		err = d.downloadByRTorrent()
 	case "qbittorrent":
-		err = d.DownloadByQBittorrent()
+		err = d.downloadByQBittorrent()
 	case "deluge":
-		err = d.DownloadByDeluge()
+		err = d.downloadByDeluge()
 	default:
 		return
 	}
 	if err == nil {
-		d.Notify()
+		d.notify()
 	}
-	d.History()
+	d.history()
 }
-func (d Downloader) DownloadByDrone() error {
+func (d downloadertype) downloadByDrone() error {
 	logger.Log.Debug("Download by Drone: ", d.Nzb.NZB.DownloadURL)
 	filename := d.Targetfile + ".nzb"
 	if d.Nzb.NZB.IsTorrent {
 		filename = d.Targetfile + ".torrent"
 	}
-	return downloadFile(d.Target.Path, "", filename, d.Nzb.NZB.DownloadURL)
+	return logger.DownloadFile(d.Target.Path, "", filename, d.Nzb.NZB.DownloadURL)
 }
-func (d Downloader) DownloadByNzbget() error {
+func (d downloadertype) downloadByNzbget() error {
 	logger.Log.Debug("Download by Nzbget: ", d.Nzb.NZB.DownloadURL)
 	url := "http://" + d.Downloader.Username + ":" + d.Downloader.Password + "@" + d.Downloader.Hostname + "/jsonrpc"
 	logger.Log.Debug("Download by Nzbget: ", url)
@@ -160,7 +161,7 @@ func (d Downloader) DownloadByNzbget() error {
 	}
 	return err
 }
-func (d Downloader) DownloadBySabnzbd() error {
+func (d downloadertype) downloadBySabnzbd() error {
 	logger.Log.Debug("Download by Sabnzbd: ", d.Nzb.NZB.DownloadURL)
 	err := apiexternal.SendToSabnzbd(d.Downloader.Hostname, d.Downloader.Password, d.Nzb.NZB.DownloadURL, d.Category, d.Targetfile, d.Downloader.Priority)
 	if err != nil {
@@ -168,7 +169,7 @@ func (d Downloader) DownloadBySabnzbd() error {
 	}
 	return err
 }
-func (d Downloader) DownloadByRTorrent() error {
+func (d downloadertype) downloadByRTorrent() error {
 	logger.Log.Debug("Download by rTorrent: ", d.Nzb.NZB.DownloadURL)
 	err := apiexternal.SendToRtorrent(d.Downloader.Hostname, false, d.Nzb.NZB.DownloadURL, d.Downloader.DelugeDlTo, d.Targetfile)
 	if err != nil {
@@ -176,7 +177,7 @@ func (d Downloader) DownloadByRTorrent() error {
 	}
 	return err
 }
-func (d Downloader) DownloadByTransmission() error {
+func (d downloadertype) downloadByTransmission() error {
 	logger.Log.Debug("Download by transmission: ", d.Nzb.NZB.DownloadURL)
 	err := apiexternal.SendToTransmission(d.Downloader.Hostname, d.Downloader.Username, d.Downloader.Password, d.Nzb.NZB.DownloadURL, d.Downloader.DelugeDlTo, d.Downloader.AddPaused)
 	if err != nil {
@@ -185,7 +186,7 @@ func (d Downloader) DownloadByTransmission() error {
 	return err
 }
 
-func (d Downloader) DownloadByDeluge() error {
+func (d downloadertype) downloadByDeluge() error {
 	logger.Log.Debug("Download by Deluge: ", d.Nzb.NZB.DownloadURL)
 
 	err := apiexternal.SendToDeluge(
@@ -197,7 +198,7 @@ func (d Downloader) DownloadByDeluge() error {
 	}
 	return err
 }
-func (d Downloader) DownloadByQBittorrent() error {
+func (d downloadertype) downloadByQBittorrent() error {
 	logger.Log.Debug("Download by qBittorrent: ", d.Nzb.NZB.DownloadURL)
 
 	err := apiexternal.SendToQBittorrent(
@@ -210,7 +211,7 @@ func (d Downloader) DownloadByQBittorrent() error {
 	return err
 }
 
-func (d Downloader) SendNotify(event string, noticonfig config.MediaNotificationConfig) {
+func (d downloadertype) sendNotify(event string, noticonfig config.MediaNotificationConfig) {
 	if !strings.EqualFold(noticonfig.Event, event) {
 		return
 	}
@@ -273,14 +274,14 @@ func (d Downloader) SendNotify(event string, noticonfig config.MediaNotification
 		}
 	}
 }
-func (d Downloader) Notify() {
+func (d downloadertype) notify() {
 	d.Time = time.Now().Format(time.RFC3339)
 	for idxnoti := range d.ConfigEntry.Notification {
-		d.SendNotify("added_download", d.ConfigEntry.Notification[idxnoti])
+		d.sendNotify("added_download", d.ConfigEntry.Notification[idxnoti])
 	}
 }
 
-func (d Downloader) History() {
+func (d downloadertype) history() {
 	if strings.EqualFold(d.SearchGroupType, "movie") {
 		movieID := d.Movie.ID
 		moviequality := d.Movie.QualityProfile
@@ -320,61 +321,4 @@ func (d Downloader) History() {
 			[]string{"title", "url", "target", "indexer", "downloaded_at", "serie_id", "serie_episode_id", "dbserie_episode_id", "dbserie_id", "resolution_id", "quality_id", "codec_id", "audio_id", "quality_profile"},
 			[]interface{}{d.Nzb.NZB.Title, d.Nzb.NZB.DownloadURL, d.Target.Path, d.Nzb.Indexer, time.Now(), serieid, serieepisodeid, dbserieepisodeid, dbserieid, d.Nzb.ParseInfo.ResolutionID, d.Nzb.ParseInfo.QualityID, d.Nzb.ParseInfo.CodecID, d.Nzb.ParseInfo.AudioID, serieepisodequality})
 	}
-}
-
-func getnzbconfig(nzb Nzbwithprio, quality string) (category string, target config.PathsConfig, downloader config.DownloaderConfig) {
-
-	if !config.ConfigCheck("quality_" + quality) {
-		return
-	}
-	var cfg_quality config.QualityConfig
-	config.ConfigGet("quality_"+quality, &cfg_quality)
-
-	for idx := range cfg_quality.Indexer {
-		if strings.EqualFold(cfg_quality.Indexer[idx].Template_indexer, nzb.Indexer) {
-			if !config.ConfigCheck("path_" + cfg_quality.Indexer[idx].Template_path_nzb) {
-				continue
-			}
-			var cfg_path config.PathsConfig
-			config.ConfigGet("path_"+cfg_quality.Indexer[idx].Template_path_nzb, &cfg_path)
-
-			if !config.ConfigCheck("downloader_" + cfg_quality.Indexer[idx].Template_downloader) {
-				continue
-			}
-			var cfg_downloader config.DownloaderConfig
-			config.ConfigGet("downloader_"+cfg_quality.Indexer[idx].Template_downloader, &cfg_downloader)
-
-			category = cfg_quality.Indexer[idx].Category_dowloader
-			target = cfg_path
-			downloader = cfg_downloader
-			logger.Log.Debug("Downloader nzb config found - category: ", category)
-			logger.Log.Debug("Downloader nzb config found - pathconfig: ", cfg_quality.Indexer[idx].Template_path_nzb)
-			logger.Log.Debug("Downloader nzb config found - dlconfig: ", cfg_quality.Indexer[idx].Template_downloader)
-			logger.Log.Debug("Downloader nzb config found - target: ", cfg_path.Path)
-			logger.Log.Debug("Downloader nzb config found - downloader: ", downloader.Type)
-			logger.Log.Debug("Downloader nzb config found - downloader: ", downloader.Name)
-			break
-		}
-	}
-	if category == "" {
-		logger.Log.Debug("Downloader nzb config NOT found - quality: ", quality)
-		category = cfg_quality.Indexer[0].Category_dowloader
-
-		if !config.ConfigCheck("path_" + cfg_quality.Indexer[0].Template_path_nzb) {
-			return
-		}
-		var cfg_path config.PathsConfig
-		config.ConfigGet("path_"+cfg_quality.Indexer[0].Template_path_nzb, &cfg_path)
-
-		if !config.ConfigCheck("downloader_" + cfg_quality.Indexer[0].Template_downloader) {
-			return
-		}
-		var cfg_downloader config.DownloaderConfig
-		config.ConfigGet("downloader_"+cfg_quality.Indexer[0].Template_downloader, &cfg_downloader)
-
-		target = cfg_path
-		downloader = cfg_downloader
-		logger.Log.Debug("Downloader nzb config NOT found - use first: ", category)
-	}
-	return
 }

@@ -7,7 +7,10 @@ import (
 	"github.com/Kellerman81/go_media_downloader/apiexternal"
 	"github.com/Kellerman81/go_media_downloader/config"
 	"github.com/Kellerman81/go_media_downloader/database"
+	"github.com/Kellerman81/go_media_downloader/downloader"
+	"github.com/Kellerman81/go_media_downloader/importfeed"
 	"github.com/Kellerman81/go_media_downloader/logger"
+	"github.com/Kellerman81/go_media_downloader/searcher"
 	"github.com/remeh/sizedwaitgroup"
 )
 
@@ -47,36 +50,6 @@ type feedResults struct {
 	Movies []database.Dbmovie
 }
 
-type InputNotifier struct {
-	Targetpath     string
-	SourcePath     string
-	Title          string
-	Season         string
-	Episode        string
-	Identifier     string
-	Series         string
-	EpisodeTitle   string
-	Tvdb           string
-	Year           string
-	Imdb           string
-	Configuration  string
-	Replaced       []string
-	ReplacedPrefix string
-	Dbmovie        database.Dbmovie
-	Dbserie        database.Dbserie
-	DbserieEpisode database.DbserieEpisode
-	Source         ParseInfo
-	Time           string
-}
-
-func CheckStringArray(array []string, find string) bool {
-	for idx := range array {
-		if array[idx] == find {
-			return true
-		}
-	}
-	return false
-}
 func Feeds(configEntry config.MediaTypeConfig, list config.MediaListsConfig) feedResults {
 	if !list.Enabled {
 		logger.Log.Debug("Error - Group list not enabled")
@@ -102,11 +75,11 @@ func Feeds(configEntry config.MediaTypeConfig, list config.MediaListsConfig) fee
 	}
 
 	if strings.EqualFold(cfg_list.Type, "newznabrss") {
-		searchnow := NewSearcher(configEntry, list.Template_quality)
+		searchnow := searcher.NewSearcher(configEntry, list.Template_quality)
 		searchresults := searchnow.GetRSSFeed("movie", list)
 		for idxres := range searchresults.Nzbs {
 			logger.Log.Debug("nzb found - start downloading: ", searchresults.Nzbs[idxres].NZB.Title)
-			downloadnow := NewDownloader(configEntry, "rss")
+			downloadnow := downloader.NewDownloader(configEntry, "rss")
 			if searchresults.Nzbs[idxres].Nzbmovie.ID != 0 {
 				downloadnow.SetMovie(searchresults.Nzbs[idxres].Nzbmovie)
 				downloadnow.DownloadNzb(searchresults.Nzbs[idxres])
@@ -133,7 +106,7 @@ func Feeds(configEntry config.MediaTypeConfig, list config.MediaListsConfig) fee
 					continue
 				}
 
-				if !AllowMovieImport(traktpopular[idx].Ids.Imdb, cfg_list) {
+				if !importfeed.AllowMovieImport(traktpopular[idx].Ids.Imdb, cfg_list) {
 					continue
 				}
 				dbentry := database.Dbmovie{ImdbID: traktpopular[idx].Ids.Imdb, Title: traktpopular[idx].Title, Year: traktpopular[idx].Year}
@@ -151,7 +124,7 @@ func Feeds(configEntry config.MediaTypeConfig, list config.MediaListsConfig) fee
 				if len(traktpopular[idx].Movie.Ids.Imdb) == 0 {
 					continue
 				}
-				if !AllowMovieImport(traktpopular[idx].Movie.Ids.Imdb, cfg_list) {
+				if !importfeed.AllowMovieImport(traktpopular[idx].Movie.Ids.Imdb, cfg_list) {
 					continue
 				}
 				dbentry := database.Dbmovie{ImdbID: traktpopular[idx].Movie.Ids.Imdb, Title: traktpopular[idx].Movie.Title, Year: traktpopular[idx].Movie.Year}
@@ -169,7 +142,7 @@ func Feeds(configEntry config.MediaTypeConfig, list config.MediaListsConfig) fee
 				if len(traktpopular[idx].Movie.Ids.Imdb) == 0 {
 					continue
 				}
-				if !AllowMovieImport(traktpopular[idx].Movie.Ids.Imdb, cfg_list) {
+				if !importfeed.AllowMovieImport(traktpopular[idx].Movie.Ids.Imdb, cfg_list) {
 					continue
 				}
 				dbentry := database.Dbmovie{ImdbID: traktpopular[idx].Movie.Ids.Imdb, Title: traktpopular[idx].Movie.Title, Year: traktpopular[idx].Movie.Year}

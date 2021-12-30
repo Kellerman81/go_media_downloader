@@ -43,7 +43,8 @@ use_godir = true #if true use godirwalk - scans files slightly faster and might 
 move_buffer_size_kb = 10 # Buffer Size for File Move Jobs (in KB)
 use_cron_instead_of_interval = true #Converts the intervals to cron strings for better scheduling
 max_database_backups = 5 # Max Number of database Backups
-  
+UseFileBufferCopy = false # Uses io.copy - if true uses small buffer to copy files
+
 trakt_limiter_seconds=1 # will only change after restart
 trakt_limiter_calls=20 # max limiter_calls in limiter_seconds
 tvdb_limiter_seconds=1 # will only change after restart
