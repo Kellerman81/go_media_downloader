@@ -161,7 +161,10 @@ func JobImportMovieParseV2(file string, configEntry config.MediaTypeConfig, list
 		valuesupsert["last_checked"] = time.Now()
 		valuesupsert["parsed_data"] = string(mjson)
 		database.Upsert("movie_file_unmatcheds", valuesupsert, database.Query{Where: "filepath = ? and listname = ?", WhereArgs: []interface{}{file, list.Name}})
-
+		for key := range valuesupsert {
+			delete(valuesupsert, key)
+		}
+		valuesupsert = nil
 	}
 }
 
@@ -312,25 +315,7 @@ func Getnewmovies(row config.MediaTypeConfig) {
 	}
 
 	logger.Log.Info("Scan Movie File")
-	var filesfound []string
-	if len(row.Data) == 1 {
-		if config.ConfigCheck("path_" + row.Data[0].Template_path) {
-			var cfg_path config.PathsConfig
-			config.ConfigGet("path_"+row.Data[0].Template_path, &cfg_path)
-
-			filesfound = scanner.GetFilesDir(cfg_path.Path, cfg_path.AllowedVideoExtensions, cfg_path.AllowedVideoExtensionsNoRename, cfg_path.Blocked)
-		}
-	} else {
-		for idxpath := range row.Data {
-			if !config.ConfigCheck("path_" + row.Data[idxpath].Template_path) {
-				continue
-			}
-			var cfg_path config.PathsConfig
-			config.ConfigGet("path_"+row.Data[idxpath].Template_path, &cfg_path)
-
-			filesfound = append(filesfound, scanner.GetFilesDir(cfg_path.Path, cfg_path.AllowedVideoExtensions, cfg_path.AllowedVideoExtensionsNoRename, cfg_path.Blocked)...)
-		}
-	}
+	filesfound := findFiles(row)
 
 	swf := sizedwaitgroup.New(cfg_general.WorkerParse)
 	for _, list := range row.Lists {
@@ -343,12 +328,11 @@ func Getnewmovies(row config.MediaTypeConfig) {
 		defaultPrio := &parser.ParseInfo{Quality: row.DefaultQuality, Resolution: row.DefaultResolution}
 		defaultPrio.GetPriority(row, cfg_quality)
 
-		filesadded := scanner.GetFilesAdded(filesfound, list.Name)
 		logger.Log.Info("Find Movie File")
-		for idxfile := range filesadded {
-			logger.Log.Info("Parse Movie ", idxfile, " of ", len(filesadded), " path: ", filesadded[idxfile])
+		for idxfile, file := range scanner.GetFilesAdded(filesfound, list.Name) {
+			logger.Log.Info("Parse Movie ", idxfile, " path: ", file)
 			swf.Add()
-			JobImportMovieParseV2(filesadded[idxfile], row, list, true, *defaultPrio, &swf)
+			JobImportMovieParseV2(file, row, list, true, *defaultPrio, &swf)
 		}
 	}
 	swf.Wait()
@@ -666,6 +650,10 @@ func Movies_single_jobs(job string, typename string, listname string, force bool
 				searcher.SearchMovieRSS(cfg_movie, qual)
 			}
 		}
+		for key := range qualis {
+			delete(qualis, key)
+		}
+		qualis = nil
 	} else {
 		logger.Log.Info("Skipped Job Type not matched: ", job, " for ", typename)
 	}

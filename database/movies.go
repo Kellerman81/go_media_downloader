@@ -284,6 +284,11 @@ func (movie *Dbmovie) GetTitles(allowed []string, queryimdb bool, querytmdb bool
 			}
 		}
 	}
+
+	for key := range processed {
+		delete(processed, key)
+	}
+	processed = nil
 	return c
 }
 

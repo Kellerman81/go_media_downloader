@@ -478,6 +478,10 @@ func (s *searcher) SearchRSS(searchGroupType string, fetchall bool) searchResult
 			if !fetchall {
 				addrsshistory(lastids, s.Quality, s.ConfigEntry.Name)
 			}
+			for key := range lastids {
+				delete(lastids, key)
+			}
+			lastids = nil
 			logger.Log.Debug("Search RSS ended - found entries: ", len(nzbs))
 			if len(nzbs) >= 1 {
 				if strings.ToLower(s.SearchGroupType) == "movie" {
@@ -1382,6 +1386,10 @@ func (s *searcher) GetRSSFeed(searchGroupType string, list config.MediaListsConf
 		failedindexer(failed)
 	} else {
 		addrsshistory(lastids, s.Quality, cfg_list.Name)
+		for key := range lastids {
+			delete(lastids, key)
+		}
+		lastids = nil
 		if strings.ToLower(s.SearchGroupType) == "movie" {
 			s.nzbsToNzbsPrio(nzbs)
 			s.filterNzbTitleLength()
@@ -1430,6 +1438,10 @@ func addrsshistory(lastids map[string]string, quality string, config string) {
 		rssmap["config"] = config
 		database.Upsert("r_sshistories", rssmap, database.Query{Where: "config=? and list=? and indexer=?", WhereArgs: []interface{}{config, quality, keyval}})
 	}
+	for key := range lastids {
+		delete(lastids, key)
+	}
+	lastids = nil
 }
 
 func (s *searcher) MovieSearch(movie database.Movie, forceDownload bool, titlesearch bool) searchResults {
@@ -1820,6 +1832,11 @@ func failedindexer(failed []string) {
 		failmap["indexer"] = failedidx
 		failmap["last_fail"] = time.Now()
 		database.Upsert("indexer_fails", failmap, database.Query{Where: "indexer=?", WhereArgs: []interface{}{failedidx}})
+
+		for key := range failmap {
+			delete(failmap, key)
+		}
+		failmap = nil
 	}
 }
 

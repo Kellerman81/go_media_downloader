@@ -739,14 +739,13 @@ func InitScheduler() {
 				if runtime.GOOS == "windows" {
 					file = "init_imdb.exe"
 				}
-				exec.Command(file).Run()
-				if _, err := os.Stat(file); !os.IsNotExist(err) {
+				errexec := exec.Command(file).Run()
+				if _, err := os.Stat(file); !os.IsNotExist(err) && errexec == nil {
 					database.DBImdb.Close()
 					os.Remove("./imdb.db")
 					os.Rename("./imdbtemp.db", "./imdb.db")
-					dbnew := database.InitImdbdb("info", "imdb")
-					dbnew.SetMaxOpenConns(5)
-					database.DBImdb = dbnew
+					database.DBImdb = database.InitImdbdb("info", "imdb")
+					database.DBImdb.SetMaxOpenConns(5)
 				}
 			}, convertcron(defaultschedule.Interval_imdb))
 		} else {
@@ -756,14 +755,13 @@ func InitScheduler() {
 				if runtime.GOOS == "windows" {
 					file = "init_imdb.exe"
 				}
-				exec.Command(file).Run()
-				if _, err := os.Stat(file); !os.IsNotExist(err) {
+				errexec := exec.Command(file).Run()
+				if _, err := os.Stat(file); !os.IsNotExist(err) && errexec == nil {
 					database.DBImdb.Close()
 					os.Remove("./imdb.db")
 					os.Rename("./imdbtemp.db", "./imdb.db")
-					dbnew := database.InitImdbdb("info", "imdb")
-					dbnew.SetMaxOpenConns(5)
-					database.DBImdb = dbnew
+					database.DBImdb = database.InitImdbdb("info", "imdb")
+					database.DBImdb.SetMaxOpenConns(5)
 				}
 			}, converttime(defaultschedule.Interval_imdb))
 		}
@@ -775,14 +773,13 @@ func InitScheduler() {
 			if runtime.GOOS == "windows" {
 				file = "init_imdb.exe"
 			}
-			exec.Command(file).Run()
-			if _, err := os.Stat(file); !os.IsNotExist(err) {
+			errexec := exec.Command(file).Run()
+			if _, err := os.Stat(file); !os.IsNotExist(err) && errexec == nil {
 				database.DBImdb.Close()
 				os.Remove("./imdb.db")
 				os.Rename("./imdbtemp.db", "./imdb.db")
-				dbnew := database.InitImdbdb("info", "imdb")
-				dbnew.SetMaxOpenConns(5)
-				database.DBImdb = dbnew
+				database.DBImdb = database.InitImdbdb("info", "imdb")
+				database.DBImdb.SetMaxOpenConns(5)
 			}
 		}, defaultschedule.Cron_imdb)
 	}

@@ -176,7 +176,7 @@ func main() {
 
 	fmt.Println("Opening titles..")
 	filetitle, err := os.Open("./title.basics.tsv")
-	cachetconst := make(map[string]bool, 9000000)
+	cachetconst := make(map[uint32]bool, 9000000)
 	if err != nil {
 		fmt.Println(fmt.Errorf("an error occurred while opening titles.. %v", err))
 	} else {
@@ -224,8 +224,9 @@ func main() {
 				genres = make([]imdbGenres, 0, cacherowlimit)
 			}
 			if _, ok := titlemap[record[1]]; ok {
+				recordint, _ := strconv.Atoi(strings.Trim(record[0], "t"))
 				readWriteMu.Lock()
-				cachetconst[record[0]] = true
+				cachetconst[uint32(recordint)] = true
 				readWriteMu.Unlock()
 				startYear, _ := strconv.Atoi(csvsetdefault(record[5], "0"))
 				stringtitletype := csvsetdefault(record[1], "")
@@ -298,6 +299,8 @@ func main() {
 			readWriteMu.Unlock()
 		}
 	}
+	filetitle.Close()
+	filetitle = nil
 
 	fmt.Println("Opening akas..")
 	fileaka, err := os.Open("./title.akas.tsv")
@@ -336,8 +339,9 @@ func main() {
 			}
 
 			if _, ok := akamap[record[3]]; ok || len(record[3]) == 0 {
+				recordint, _ := strconv.Atoi(strings.Trim(record[0], "t"))
 				//titlecount, _ := database.ImdbCountRows("imdb_titles", database.Query{Where: "tconst = ?", WhereArgs: []interface{}{record[0]}})
-				if _, ok := cachetconst[record[0]]; ok {
+				if _, ok := cachetconst[uint32(recordint)]; ok {
 					stringtitle := html.UnescapeString(csvsetdefault(record[2], ""))
 					stringtitleslug := logger.StringToSlug(stringtitle)
 					stringregion := csvsetdefault(record[3], "")
@@ -377,6 +381,8 @@ func main() {
 			readWriteMu.Unlock()
 		}
 	}
+	fileaka.Close()
+	fileaka = nil
 
 	fmt.Println("Opening ratings..")
 	filerating, err := os.Open("./title.ratings.tsv")
@@ -415,8 +421,9 @@ func main() {
 				}
 				ratings = make([]imdbRatings, 0, cacherowlimit)
 			}
+			recordint, _ := strconv.Atoi(strings.Trim(record[0], "t"))
 			//titlecount, _ := database.ImdbCountRows("imdb_titles", database.Query{Where: "tconst = ?", WhereArgs: []interface{}{record[0]}})
-			if _, ok := cachetconst[record[0]]; ok {
+			if _, ok := cachetconst[uint32(recordint)]; ok {
 				numvotes, _ := strconv.Atoi(csvsetdefault(record[2], "0"))
 				AverageRating, _ := strconv.ParseFloat(csvsetdefault(record[1], "0"), 32)
 				ratings = append(ratings, imdbRatings{
@@ -435,6 +442,23 @@ func main() {
 		}
 	}
 
+	filerating.Close()
+	filerating = nil
+	for key := range titlemap {
+		delete(titlemap, key)
+	}
+	titlemap = nil
+
+	for key := range akamap {
+		delete(akamap, key)
+	}
+	akamap = nil
+
+	for key := range cachetconst {
+		delete(cachetconst, key)
+	}
+	cachetconst = nil
+
 	rows, err := dbimdb.Query("Select count(*) from imdb_titles")
 	if err != nil {
 		dbimdb.Close()
@@ -451,6 +475,7 @@ func main() {
 		return
 	}
 	dbimdb.Close()
+
 	fmt.Println("Ended Imdb Import")
 }
 

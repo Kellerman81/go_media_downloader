@@ -132,8 +132,13 @@ func ApiTraktGetStoreToken(ctx *gin.Context) {
 	configs := config.ConfigGetAll()
 	configs["trakt_token"] = *token
 	config.UpdateCfg(configs)
+	for key := range configs {
+		delete(configs, key)
+	}
+	configs = nil
 	config.ConfigDB.Set("trakt_token", *token)
 	ctx.JSON(http.StatusOK, *token)
+
 }
 
 // @Summary Trakt Get List (Auth Test)
@@ -254,14 +259,13 @@ func ApiFillImdb(ctx *gin.Context) {
 		file = "init_imdb.exe"
 	}
 	go func() {
-		exec.Command(file).Run()
-		if _, err := os.Stat(file); !os.IsNotExist(err) {
+		errexec := exec.Command(file).Run()
+		if _, err := os.Stat(file); !os.IsNotExist(err) && errexec == nil {
 			database.DBImdb.Close()
 			os.Remove("./imdb.db")
 			os.Rename("./imdbtemp.db", "./imdb.db")
-			dbnew := database.InitImdbdb("info", "imdb")
-			dbnew.SetMaxOpenConns(5)
-			database.DBImdb = dbnew
+			database.DBImdb = database.InitImdbdb("info", "imdb")
+			database.DBImdb.SetMaxOpenConns(5)
 		}
 	}()
 
@@ -660,8 +664,7 @@ func ApiConfigGet(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
-	configs := config.ConfigGetAll()
-	ctx.JSON(http.StatusOK, configs[ctx.Param("name")])
+	ctx.JSON(http.StatusOK, config.ConfigGetAll()[ctx.Param("name")])
 }
 
 // @Summary Delete Config
@@ -683,6 +686,10 @@ func ApiConfigDelete(ctx *gin.Context) {
 	delete(configs, ctx.Param("name"))
 	config.UpdateCfg(configs)
 	config.WriteCfg()
+	for key := range configs {
+		delete(configs, key)
+	}
+	configs = nil
 	ctx.JSON(http.StatusOK, config.ConfigGetAll())
 }
 
@@ -819,6 +826,10 @@ func ApiConfigUpdate(ctx *gin.Context) {
 	}
 	config.UpdateCfg(configs)
 	config.WriteCfg()
+	for key := range configs {
+		delete(configs, key)
+	}
+	configs = nil
 	ctx.JSON(http.StatusOK, config.ConfigGetAll())
 }
 
@@ -843,6 +854,10 @@ func ApiListConfigType(ctx *gin.Context) {
 			list[name] = value
 		}
 	}
+	for key := range configs {
+		delete(configs, key)
+	}
+	configs = nil
 	ctx.JSON(http.StatusOK, list)
 }
 

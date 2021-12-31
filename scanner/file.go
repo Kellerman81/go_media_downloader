@@ -374,60 +374,46 @@ func CleanUpFolder(folder string, CleanupsizeMB int) {
 	}
 }
 
-func checkmoviefilespath(array []database.MovieFile, find string) bool {
-	for idx := range array {
-		if strings.EqualFold(array[idx].Location, find) {
-			return true
-		}
-	}
-	return false
-}
 func checkmoviefilespathlist(array []database.MovieFile, find string, listname string) bool {
+	var ret bool = false
 	for idx := range array {
-		if strings.EqualFold(array[idx].Location, find) && strings.EqualFold(array[idx].Filename, listname) {
+		if array[idx].Location == find && strings.EqualFold(array[idx].Filename, listname) {
 			return true
+		} else if array[idx].Location == find {
+			ret = true
 		}
 	}
-	return false
+	return ret
 }
 func GetFilesAdded(files []string, listname string) []string {
 	list := make([]string, 0, len(files))
 	filesdb, _ := database.QueryMovieFiles(database.Query{Select: "movie_files.location, movies.listname AS filename", InnerJoin: "movies on movie_files.movie_id = movies.id"})
 	for idxfile := range files {
 		if !checkmoviefilespathlist(filesdb, files[idxfile], listname) {
-			if !checkmoviefilespath(filesdb, files[idxfile]) {
-				logger.Log.Debug("File added to list - not found", files[idxfile], " ", listname)
-				list = append(list, files[idxfile])
-			}
+			logger.Log.Debug("File added to list - not found", files[idxfile], " ", listname)
+			list = append(list, files[idxfile])
 		}
 	}
 	return list
 }
-func checkseriesfilespath(array []database.SerieEpisodeFile, find string) bool {
-	for idx := range array {
-		if strings.EqualFold(array[idx].Location, find) {
-			return true
-		}
-	}
-	return false
-}
 func checkseriesfilespathlist(array []database.SerieEpisodeFile, find string, listname string) bool {
+	var ret bool = false
 	for idx := range array {
-		if strings.EqualFold(array[idx].Location, find) && strings.EqualFold(array[idx].Filename, listname) {
+		if array[idx].Location == find && strings.EqualFold(array[idx].Filename, listname) {
 			return true
+		} else if array[idx].Location == find {
+			ret = true
 		}
 	}
-	return false
+	return ret
 }
 func GetFilesSeriesAdded(files []string, listname string) []string {
 	list := make([]string, 0, len(files))
 	filesdb, _ := database.QuerySerieEpisodeFiles(database.Query{Select: "serie_episode_files.location, series.listname AS filename", InnerJoin: "series on serie_episode_files.serie_id = series.id"})
 	for idxfile := range files {
 		if !checkseriesfilespathlist(filesdb, files[idxfile], listname) {
-			if !checkseriesfilespath(filesdb, files[idxfile]) {
-				logger.Log.Debug("File added to list - not found", files[idxfile], " ", listname)
-				list = append(list, files[idxfile])
-			}
+			logger.Log.Debug("File added to list - not found", files[idxfile], " ", listname)
+			list = append(list, files[idxfile])
 		}
 	}
 	return list

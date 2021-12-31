@@ -107,6 +107,14 @@ func CacheConfig() {
 			for _, rowtitle := range general.Required {
 				generalCache.RequiredRegex[rowtitle] = regexp.MustCompile(rowtitle)
 			}
+			if configEntries[string(idx)] != nil {
+				for key := range configEntries[string(idx)].(RegexConfig).RejectedRegex {
+					delete(configEntries[string(idx)].(RegexConfig).RejectedRegex, key)
+				}
+				for key := range configEntries[string(idx)].(RegexConfig).RequiredRegex {
+					delete(configEntries[string(idx)].(RegexConfig).RequiredRegex, key)
+				}
+			}
 			configEntries[string(idx)] = generalCache
 			continue
 		}
