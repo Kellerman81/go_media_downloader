@@ -10,6 +10,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/downloader"
 	"github.com/Kellerman81/go_media_downloader/importfeed"
 	"github.com/Kellerman81/go_media_downloader/logger"
+	"github.com/Kellerman81/go_media_downloader/scanner"
 	"github.com/Kellerman81/go_media_downloader/searcher"
 	"github.com/remeh/sizedwaitgroup"
 )
@@ -199,4 +200,28 @@ func Feeds(configEntry config.MediaTypeConfig, list config.MediaListsConfig) fee
 	}
 	logger.Log.Error("Feed Config not found - template: ", list.Template_list, " - type: ", cfg_list, " - name: ", cfg_list.Name)
 	return feedResults{}
+}
+
+func findFiles(row config.MediaTypeConfig) []string {
+	if len(row.Data) == 1 {
+		if config.ConfigCheck("path_" + row.Data[0].Template_path) {
+			var cfg_path config.PathsConfig
+			config.ConfigGet("path_"+row.Data[0].Template_path, &cfg_path)
+
+			return scanner.GetFilesDir(cfg_path.Path, cfg_path.AllowedVideoExtensions, cfg_path.AllowedVideoExtensionsNoRename, cfg_path.Blocked)
+		}
+	} else {
+		var filesfound []string
+		for idxpath := range row.Data {
+			if !config.ConfigCheck("path_" + row.Data[idxpath].Template_path) {
+				continue
+			}
+			var cfg_path config.PathsConfig
+			config.ConfigGet("path_"+row.Data[idxpath].Template_path, &cfg_path)
+
+			filesfound = append(filesfound, scanner.GetFilesDir(cfg_path.Path, cfg_path.AllowedVideoExtensions, cfg_path.AllowedVideoExtensionsNoRename, cfg_path.Blocked)...)
+		}
+		return filesfound
+	}
+	return []string{}
 }

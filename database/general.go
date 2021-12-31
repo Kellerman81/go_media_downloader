@@ -203,6 +203,10 @@ func RemoveOldDbBackups(max int) error {
 				remove = append(remove, f)
 			}
 		}
+		for key := range preserved {
+			delete(preserved, key)
+		}
+		preserved = nil
 	}
 
 	for _, f := range remove {

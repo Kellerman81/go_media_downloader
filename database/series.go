@@ -385,6 +385,11 @@ func (serie *Dbserie) GetTitles(allowed []string, queryimdb bool, querytrakt boo
 			}
 		}
 	}
+
+	for key := range processed {
+		delete(processed, key)
+	}
+	processed = nil
 	return c
 }
 

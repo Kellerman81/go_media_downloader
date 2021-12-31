@@ -173,6 +173,10 @@ func JobImportSeriesParseV2(file string, updatemissing bool, configEntry config.
 		valuesupsert["last_checked"] = time.Now()
 		valuesupsert["parsed_data"] = string(mjson)
 		database.Upsert("serie_file_unmatcheds", valuesupsert, database.Query{Where: "filepath = ? and listname = ?", WhereArgs: []interface{}{file, list.Name}})
+		for key := range valuesupsert {
+			delete(valuesupsert, key)
+		}
+		valuesupsert = nil
 	}
 }
 
@@ -343,6 +347,10 @@ func Series_single_jobs(job string, typename string, listname string, force bool
 				searcher.SearchSerieRSS(cfg_serie, qual)
 			}
 		}
+		for key := range qualis {
+			delete(qualis, key)
+		}
+		qualis = nil
 	} else {
 		logger.Log.Info("Skipped Job Type not matched: ", job, " for ", typename)
 	}
@@ -387,25 +395,7 @@ func Getnewepisodes(row config.MediaTypeConfig) {
 	}
 
 	logger.Log.Info("Scan SerieEpisodeFile")
-	var filesfound []string
-	if len(row.Data) == 1 {
-		if config.ConfigCheck("path_" + row.Data[0].Template_path) {
-			var cfg_path config.PathsConfig
-			config.ConfigGet("path_"+row.Data[0].Template_path, &cfg_path)
-
-			filesfound = scanner.GetFilesDir(cfg_path.Path, cfg_path.AllowedVideoExtensions, cfg_path.AllowedVideoExtensionsNoRename, cfg_path.Blocked)
-		}
-	} else {
-		for idxpath := range row.Data {
-			if !config.ConfigCheck("path_" + row.Data[idxpath].Template_path) {
-				continue
-			}
-			var cfg_path config.PathsConfig
-			config.ConfigGet("path_"+row.Data[idxpath].Template_path, &cfg_path)
-
-			filesfound = append(filesfound, scanner.GetFilesDir(cfg_path.Path, cfg_path.AllowedVideoExtensions, cfg_path.AllowedVideoExtensionsNoRename, cfg_path.Blocked)...)
-		}
-	}
+	filesfound := findFiles(row)
 
 	logger.Log.Info("Workers: ", cfg_general.WorkerParse)
 	swf := sizedwaitgroup.New(cfg_general.WorkerParse)
@@ -419,11 +409,10 @@ func Getnewepisodes(row config.MediaTypeConfig) {
 		defaultPrio := &parser.ParseInfo{Quality: row.DefaultQuality, Resolution: row.DefaultResolution}
 		defaultPrio.GetPriority(row, cfg_quality)
 
-		filesadded := scanner.GetFilesSeriesAdded(filesfound, list.Name)
-		for idxfile := range filesadded {
-			logger.Log.Info("Parse Serie ", idxfile, " of ", len(filesadded), " path: ", filesadded[idxfile])
+		for idxfile, file := range scanner.GetFilesSeriesAdded(filesfound, list.Name) {
+			logger.Log.Info("Parse Serie ", idxfile, " path: ", file)
 			swf.Add()
-			JobImportSeriesParseV2(filesadded[idxfile], true, row, list, *defaultPrio, &swf)
+			JobImportSeriesParseV2(file, true, row, list, *defaultPrio, &swf)
 		}
 	}
 	swf.Wait()
