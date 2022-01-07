@@ -11,6 +11,9 @@ func SendToSabnzbd(server string, apikey string, url string, category string, nz
 	if err != nil {
 		return err
 	}
+	defer func() {
+		s = nil
+	}()
 
 	auth, err := s.Auth()
 	if err != nil {

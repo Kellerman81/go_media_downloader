@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
@@ -15,12 +16,50 @@ import (
 	"github.com/Kellerman81/go_media_downloader/apiexternal"
 	"github.com/Kellerman81/go_media_downloader/config"
 	"github.com/Kellerman81/go_media_downloader/database"
+	"github.com/Kellerman81/go_media_downloader/logger"
 	"github.com/Kellerman81/go_media_downloader/parser"
 	"github.com/Kellerman81/go_media_downloader/scheduler"
 	"github.com/Kellerman81/go_media_downloader/structure"
 	"github.com/Kellerman81/go_media_downloader/tasks"
 	gin "github.com/gin-gonic/gin"
 )
+
+func AddGeneralRoutes(routerapi *gin.RouterGroup) {
+	routerapi.GET("/trakt/authorize", apiTraktGetAuthUrl)
+	routerapi.GET("/trakt/token/:code", apiTraktGetStoreToken)
+	routerapi.GET("/trakt/user/:user/:list", apiTraktGetUserList)
+	routerapi.GET("/queue", apiQueueList)
+	routerapi.GET("/queue/history", apiQueueListStarted)
+	routerapi.GET("/fillimdb", apiFillImdb)
+	routerapi.GET("/scheduler/stop", apiSchedulerStop)
+	routerapi.GET("/scheduler/start", apiSchedulerStart)
+	routerapi.GET("/scheduler/list", apiSchedulerList)
+	routerapi.GET("/db/close", apiDbClose)
+	routerapi.GET("/db/integrity", apiDbIntegrity)
+	routerapi.GET("/db/backup", apiDbBackup)
+	routerapi.DELETE("/db/clear/:name", apiDbClear)
+	routerapi.DELETE("/db/oldjobs", apiDbRemoveOldJobs)
+	routerapi.GET("/db/vacuum", apiDbVacuum)
+	routerapi.POST("/parse/string", apiParseString)
+	routerapi.POST("/parse/file", apiParseFile)
+	routerapi.POST("/naming", apiNamingGenerate)
+	routerapi.POST("/structure", apiStructure)
+	routerapi.GET("/quality", apiGetQualities)
+	routerapi.DELETE("/quality/:id", apiQualityDelete)
+	routerapi.POST("/quality", apiQualityUpdate)
+	routerapi.GET("/quality/:name/:config", apiListQualityPriorities)
+
+	routerapi.GET("/config/all", apiConfigAll)
+	routerapi.DELETE("/config/clear", apiConfigClear)
+	routerapi.GET("/config/refresh", apiConfigRefreshFile)
+	routerapi.GET("/config/get/:name", apiConfigGet)
+
+	routerapi.DELETE("/config/delete/:name", apiConfigDelete)
+
+	routerapi.POST("/config/update/:name", apiConfigUpdate)
+
+	routerapi.GET("/config/type/:type", apiListConfigType)
+}
 
 type apiparse struct {
 	Name    string
@@ -40,7 +79,7 @@ type apiparse struct {
 // @Success 200 {object} map[string]tasks.Job
 // @Failure 401 {object} string
 // @Router /api/queue [get]
-func ApiQueueList(ctx *gin.Context) {
+func apiQueueList(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
@@ -64,7 +103,7 @@ func ApiQueueList(ctx *gin.Context) {
 // @Success 200 {array} database.JobHistoryJson
 // @Failure 401 {object} string
 // @Router /api/queue/history [get]
-func ApiQueueListStarted(ctx *gin.Context) {
+func apiQueueListStarted(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
@@ -107,7 +146,7 @@ func ApiQueueListStarted(ctx *gin.Context) {
 // @Success 200 {string} string
 // @Failure 401 {object} string
 // @Router /api/trakt/authorize [get]
-func ApiTraktGetAuthUrl(ctx *gin.Context) {
+func apiTraktGetAuthUrl(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
@@ -123,19 +162,16 @@ func ApiTraktGetAuthUrl(ctx *gin.Context) {
 // @Success 200 {string} string
 // @Failure 401 {object} string
 // @Router /api/trakt/token/{code} [get]
-func ApiTraktGetStoreToken(ctx *gin.Context) {
+func apiTraktGetStoreToken(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
+
 	token := apiexternal.TraktApi.GetAuthToken(ctx.Param("code"))
 	apiexternal.TraktApi.Token = token
-	configs := config.ConfigGetAll()
-	configs["trakt_token"] = *token
-	config.UpdateCfg(configs)
-	for key := range configs {
-		delete(configs, key)
-	}
-	configs = nil
+
+	config.UpdateCfgEntry(config.Conf{Name: "trakt_token", Data: *token})
+
 	config.ConfigDB.Set("trakt_token", *token)
 	ctx.JSON(http.StatusOK, *token)
 
@@ -152,7 +188,7 @@ func ApiTraktGetStoreToken(ctx *gin.Context) {
 // @Success 200 {string} string
 // @Failure 401 {object} string
 // @Router /api/trakt/user/{user}/{list} [get]
-func ApiTraktGetUserList(ctx *gin.Context) {
+func apiTraktGetUserList(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
@@ -171,7 +207,7 @@ func ApiTraktGetUserList(ctx *gin.Context) {
 // @Failure 400 {object} string
 // @Failure 401 {object} string
 // @Router /api/parse/string [post]
-func ApiParseString(ctx *gin.Context) {
+func apiParseString(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
@@ -182,18 +218,14 @@ func ApiParseString(ctx *gin.Context) {
 	}
 	parse, _ := parser.NewFileParser(getcfg.Name, getcfg.Year, getcfg.Typ)
 	if getcfg.Typ == "movie" {
-		var typcfg config.MediaTypeConfig
-		config.ConfigGet("movie_"+getcfg.Config, &typcfg)
-		var qualcfg config.QualityConfig
-		config.ConfigGet("quality_"+getcfg.Quality, &qualcfg)
-		parse.GetPriority(typcfg, qualcfg)
+		parse.GetPriority("movie_"+getcfg.Config, getcfg.Quality)
+		ctx.JSON(http.StatusOK, parse)
+		return
 	}
 	if getcfg.Typ == "series" {
-		var typcfg config.MediaTypeConfig
-		config.ConfigGet("serie_"+getcfg.Config, &typcfg)
-		var qualcfg config.QualityConfig
-		config.ConfigGet("quality_"+getcfg.Quality, &qualcfg)
-		parse.GetPriority(typcfg, qualcfg)
+		parse.GetPriority("serie_"+getcfg.Config, getcfg.Quality)
+		ctx.JSON(http.StatusOK, parse)
+		return
 	}
 	ctx.JSON(http.StatusOK, parse)
 }
@@ -209,7 +241,7 @@ func ApiParseString(ctx *gin.Context) {
 // @Failure 400 {object} string
 // @Failure 401 {object} string
 // @Router /api/parse/file [post]
-func ApiParseFile(ctx *gin.Context) {
+func apiParseFile(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
@@ -220,22 +252,16 @@ func ApiParseFile(ctx *gin.Context) {
 	}
 	parse, _ := parser.NewFileParser(filepath.Base(getcfg.Path), getcfg.Year, getcfg.Typ)
 	if getcfg.Typ == "movie" {
-		var typcfg config.MediaTypeConfig
-		config.ConfigGet("movie_"+getcfg.Config, &typcfg)
-		var qualcfg config.QualityConfig
-		config.ConfigGet("quality_"+getcfg.Quality, &qualcfg)
-
-		parse.ParseVideoFile(getcfg.Path, typcfg, qualcfg)
-		parse.GetPriority(typcfg, qualcfg)
+		parse.ParseVideoFile(getcfg.Path, "movie_"+getcfg.Config, getcfg.Quality)
+		parse.GetPriority("movie_"+getcfg.Config, getcfg.Quality)
+		ctx.JSON(http.StatusOK, parse)
+		return
 	}
 	if getcfg.Typ == "series" {
-		var typcfg config.MediaTypeConfig
-		config.ConfigGet("serie_"+getcfg.Config, &typcfg)
-		var qualcfg config.QualityConfig
-		config.ConfigGet("quality_"+getcfg.Quality, &qualcfg)
-
-		parse.ParseVideoFile(getcfg.Path, typcfg, qualcfg)
-		parse.GetPriority(typcfg, qualcfg)
+		parse.ParseVideoFile(getcfg.Path, "serie_"+getcfg.Config, getcfg.Quality)
+		parse.GetPriority("serie_"+getcfg.Config, getcfg.Quality)
+		ctx.JSON(http.StatusOK, parse)
+		return
 	}
 	ctx.JSON(http.StatusOK, parse)
 }
@@ -249,7 +275,7 @@ func ApiParseFile(ctx *gin.Context) {
 // @Success 200 {string} string
 // @Failure 401 {object} string
 // @Router /api/fillimdb [get]
-func ApiFillImdb(ctx *gin.Context) {
+func apiFillImdb(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
@@ -259,13 +285,15 @@ func ApiFillImdb(ctx *gin.Context) {
 		file = "init_imdb.exe"
 	}
 	go func() {
-		errexec := exec.Command(file).Run()
+		out, errexec := exec.Command(file).Output()
+		logger.Log.Infoln(string(out))
 		if _, err := os.Stat(file); !os.IsNotExist(err) && errexec == nil {
 			database.DBImdb.Close()
 			os.Remove("./imdb.db")
 			os.Rename("./imdbtemp.db", "./imdb.db")
 			database.DBImdb = database.InitImdbdb("info", "imdb")
 			database.DBImdb.SetMaxOpenConns(5)
+			debug.FreeOSMemory()
 		}
 	}()
 
@@ -281,7 +309,7 @@ func ApiFillImdb(ctx *gin.Context) {
 // @Success 200 {string} string
 // @Failure 401 {object} string
 // @Router /api/scheduler/stop [get]
-func ApiSchedulerStop(c *gin.Context) {
+func apiSchedulerStop(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
 		return
 	}
@@ -300,7 +328,7 @@ func ApiSchedulerStop(c *gin.Context) {
 // @Success 200 {string} string
 // @Failure 401 {object} string
 // @Router /api/scheduler/start [get]
-func ApiSchedulerStart(c *gin.Context) {
+func apiSchedulerStart(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
 		return
 	}
@@ -319,7 +347,7 @@ func ApiSchedulerStart(c *gin.Context) {
 // @Success 200 {object} string
 // @Failure 401 {object} string
 // @Router /api/scheduler/list [get]
-func ApiSchedulerList(ctx *gin.Context) {
+func apiSchedulerList(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
@@ -339,7 +367,7 @@ func ApiSchedulerList(ctx *gin.Context) {
 // @Success 200 {string} string
 // @Failure 401 {object} string
 // @Router /api/db/close [get]
-func ApiDbClose(ctx *gin.Context) {
+func apiDbClose(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
@@ -357,12 +385,11 @@ func ApiDbClose(ctx *gin.Context) {
 // @Success 200 {string} string
 // @Failure 401 {object} string
 // @Router /api/db/backup [get]
-func ApiDbBackup(ctx *gin.Context) {
+func apiDbBackup(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
-	var cfg_general config.GeneralConfig
-	config.ConfigGet("general", &cfg_general)
+	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
 	database.Backup(database.DB, fmt.Sprintf("%s.%s.%s", "./backup/data.db", database.DBVersion, time.Now().Format("20060102_150405")), cfg_general.MaxDatabaseBackups)
 	ctx.JSON(http.StatusOK, "ok")
 }
@@ -376,7 +403,7 @@ func ApiDbBackup(ctx *gin.Context) {
 // @Success 200 {string} string
 // @Failure 401 {object} string
 // @Router /api/db/integrity [get]
-func ApiDbIntegrity(ctx *gin.Context) {
+func apiDbIntegrity(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
@@ -393,7 +420,7 @@ func ApiDbIntegrity(ctx *gin.Context) {
 // @Success 200 {string} string
 // @Failure 401 {object} string
 // @Router /api/db/clear/{name} [delete]
-func ApiDbClear(ctx *gin.Context) {
+func apiDbClear(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
@@ -416,7 +443,7 @@ func ApiDbClear(ctx *gin.Context) {
 // @Success 200 {string} string
 // @Failure 401 {object} string
 // @Router /api/db/vacuum [get]
-func ApiDbVacuum(ctx *gin.Context) {
+func apiDbVacuum(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
@@ -440,7 +467,7 @@ func ApiDbVacuum(ctx *gin.Context) {
 // @Success 200 {string} string
 // @Failure 401 {object} string
 // @Router /api/db/oldjobs [delete]
-func ApiDbRemoveOldJobs(ctx *gin.Context) {
+func apiDbRemoveOldJobs(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
@@ -475,7 +502,7 @@ func ApiDbRemoveOldJobs(ctx *gin.Context) {
 // @Success 200 {array} database.Qualities
 // @Failure 401 {object} string
 // @Router /api/quality [get]
-func ApiGetQualities(ctx *gin.Context) {
+func apiGetQualities(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
@@ -493,7 +520,7 @@ func ApiGetQualities(ctx *gin.Context) {
 // @Success 200 {array} database.Qualities
 // @Failure 401 {object} string
 // @Router /api/quality/{id} [delete]
-func ApiQualityDelete(ctx *gin.Context) {
+func apiQualityDelete(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
@@ -515,7 +542,7 @@ func ApiQualityDelete(ctx *gin.Context) {
 // @Failure 400 {object} string
 // @Failure 401 {object} string
 // @Router /api/quality [post]
-func ApiQualityUpdate(ctx *gin.Context) {
+func apiQualityUpdate(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
@@ -552,11 +579,11 @@ func ApiQualityUpdate(ctx *gin.Context) {
 // @Failure 401 {object} string
 // @Failure 404 {object} string
 // @Router /api/quality/{name}/{config} [get]
-func ApiListQualityPriorities(ctx *gin.Context) {
+func apiListQualityPriorities(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
-	if !config.ConfigCheck(ctx.Param("name")) {
+	if !config.ConfigCheck("quality_" + ctx.Param("name")) {
 		ctx.JSON(http.StatusNotFound, "quality not found")
 		return
 	}
@@ -564,10 +591,8 @@ func ApiListQualityPriorities(ctx *gin.Context) {
 		ctx.JSON(http.StatusNotFound, "config not found")
 		return
 	}
-	var qual config.QualityConfig
-	config.ConfigGet(ctx.Param("name"), &qual)
-	var media config.MediaTypeConfig
-	config.ConfigGet(ctx.Param("config"), &media)
+	qual := config.ConfigGet("quality_" + ctx.Param("name")).Data.(config.QualityConfig)
+
 	var parserreturn []parser.ParseInfo
 	for idxreso := range database.Getresolutions {
 		wantedreso := false
@@ -603,7 +628,7 @@ func ApiListQualityPriorities(ctx *gin.Context) {
 						CodecID:      database.Getcodecs[idxcodec].ID,
 						AudioID:      database.Getaudios[idxaudio].ID,
 					}
-					parse.GetIDPriority(media, qual)
+					parse.GetIDPriority(ctx.Param("config"), ctx.Param("name"))
 					parserreturn = append(parserreturn, parse)
 				}
 			}
@@ -621,7 +646,7 @@ func ApiListQualityPriorities(ctx *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Failure 401 {object} string
 // @Router /api/config/all [get]
-func ApiConfigAll(ctx *gin.Context) {
+func apiConfigAll(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
@@ -637,13 +662,13 @@ func ApiConfigAll(ctx *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Failure 401 {object} string
 // @Router /api/config/clear [delete]
-func ApiConfigClear(ctx *gin.Context) {
+func apiConfigClear(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
-	keys, _ := config.ConfigDB.Keys([]byte("*"), 0, 0, true)
+	keys := config.ConfigGetAll()
 	for _, idx := range keys {
-		config.ConfigDB.Delete(string(idx))
+		config.ConfigDB.Delete(idx.Name)
 	}
 	config.ClearCfg()
 	config.WriteCfg()
@@ -660,11 +685,11 @@ func ApiConfigClear(ctx *gin.Context) {
 // @Success 200 {object} interface{}
 // @Failure 401 {object} string
 // @Router /api/config/get/{name} [get]
-func ApiConfigGet(ctx *gin.Context) {
+func apiConfigGet(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
-	ctx.JSON(http.StatusOK, config.ConfigGetAll()[ctx.Param("name")])
+	ctx.JSON(http.StatusOK, config.ConfigGet(ctx.Param("name")).Data)
 }
 
 // @Summary Delete Config
@@ -677,19 +702,13 @@ func ApiConfigGet(ctx *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Failure 401 {object} string
 // @Router /api/config/delete/{name} [delete]
-func ApiConfigDelete(ctx *gin.Context) {
+func apiConfigDelete(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
-	configs := config.ConfigGetAll()
 	config.ConfigDB.Delete(ctx.Param("name"))
-	delete(configs, ctx.Param("name"))
-	config.UpdateCfg(configs)
+	config.DeleteCfgEntry(ctx.Param("name"))
 	config.WriteCfg()
-	for key := range configs {
-		delete(configs, key)
-	}
-	configs = nil
 	ctx.JSON(http.StatusOK, config.ConfigGetAll())
 }
 
@@ -702,7 +721,7 @@ func ApiConfigDelete(ctx *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Failure 401 {object} string
 // @Router /api/config/refresh [get]
-func ApiConfigRefreshFile(ctx *gin.Context) {
+func apiConfigRefreshFile(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
@@ -722,19 +741,18 @@ func ApiConfigRefreshFile(ctx *gin.Context) {
 // @Failure 400 {object} string
 // @Failure 401 {object} string
 // @Router /api/config/update/{name} [post]
-func ApiConfigUpdate(ctx *gin.Context) {
+func apiConfigUpdate(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
 	name := ctx.Param("name")
-	configs := config.ConfigGetAll()
 	if strings.HasPrefix(name, "general") {
 		var getcfg config.GeneralConfig
 		if err := ctx.ShouldBindJSON(&getcfg); err != nil {
 			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		configs[ctx.Param("name")] = getcfg
+		config.UpdateCfgEntry(config.Conf{Name: ctx.Param("name"), Data: getcfg})
 	}
 	if strings.HasPrefix(name, "downloader_") {
 		var getcfg config.DownloaderConfig
@@ -742,7 +760,7 @@ func ApiConfigUpdate(ctx *gin.Context) {
 			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		configs[ctx.Param("name")] = getcfg
+		config.UpdateCfgEntry(config.Conf{Name: ctx.Param("name"), Data: getcfg})
 	}
 	if strings.HasPrefix(name, "imdb") {
 		var getcfg config.ImdbConfig
@@ -750,7 +768,7 @@ func ApiConfigUpdate(ctx *gin.Context) {
 			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		configs[ctx.Param("name")] = getcfg
+		config.UpdateCfgEntry(config.Conf{Name: ctx.Param("name"), Data: getcfg})
 	}
 	if strings.HasPrefix(name, "indexer") {
 		var getcfg config.IndexersConfig
@@ -758,7 +776,7 @@ func ApiConfigUpdate(ctx *gin.Context) {
 			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		configs[ctx.Param("name")] = getcfg
+		config.UpdateCfgEntry(config.Conf{Name: ctx.Param("name"), Data: getcfg})
 	}
 	if strings.HasPrefix(name, "list") {
 		var getcfg config.ListsConfig
@@ -766,7 +784,7 @@ func ApiConfigUpdate(ctx *gin.Context) {
 			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		configs[ctx.Param("name")] = getcfg
+		config.UpdateCfgEntry(config.Conf{Name: ctx.Param("name"), Data: getcfg})
 	}
 	if strings.HasPrefix(name, "serie") {
 		var getcfg config.MediaTypeConfig
@@ -774,7 +792,7 @@ func ApiConfigUpdate(ctx *gin.Context) {
 			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		configs[ctx.Param("name")] = getcfg
+		config.UpdateCfgEntry(config.Conf{Name: ctx.Param("name"), Data: getcfg})
 	}
 	if strings.HasPrefix(name, "movie") {
 		var getcfg config.MediaTypeConfig
@@ -782,7 +800,7 @@ func ApiConfigUpdate(ctx *gin.Context) {
 			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		configs[ctx.Param("name")] = getcfg
+		config.UpdateCfgEntry(config.Conf{Name: ctx.Param("name"), Data: getcfg})
 	}
 	if strings.HasPrefix(name, "notification") {
 		var getcfg config.NotificationConfig
@@ -790,7 +808,7 @@ func ApiConfigUpdate(ctx *gin.Context) {
 			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		configs[ctx.Param("name")] = getcfg
+		config.UpdateCfgEntry(config.Conf{Name: ctx.Param("name"), Data: getcfg})
 	}
 	if strings.HasPrefix(name, "path") {
 		var getcfg config.PathsConfig
@@ -798,7 +816,7 @@ func ApiConfigUpdate(ctx *gin.Context) {
 			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		configs[ctx.Param("name")] = getcfg
+		config.UpdateCfgEntry(config.Conf{Name: ctx.Param("name"), Data: getcfg})
 	}
 	if strings.HasPrefix(name, "quality") {
 		var getcfg config.QualityConfig
@@ -806,7 +824,7 @@ func ApiConfigUpdate(ctx *gin.Context) {
 			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		configs[ctx.Param("name")] = getcfg
+		config.UpdateCfgEntry(config.Conf{Name: ctx.Param("name"), Data: getcfg})
 	}
 	if strings.HasPrefix(name, "regex") {
 		var getcfg config.RegexConfigIn
@@ -814,7 +832,7 @@ func ApiConfigUpdate(ctx *gin.Context) {
 			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		configs[ctx.Param("name")] = getcfg
+		config.UpdateCfgEntry(config.Conf{Name: ctx.Param("name"), Data: getcfg})
 	}
 	if strings.HasPrefix(name, "scheduler") {
 		var getcfg config.SchedulerConfig
@@ -822,14 +840,9 @@ func ApiConfigUpdate(ctx *gin.Context) {
 			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		configs[ctx.Param("name")] = getcfg
+		config.UpdateCfgEntry(config.Conf{Name: ctx.Param("name"), Data: getcfg})
 	}
-	config.UpdateCfg(configs)
 	config.WriteCfg()
-	for key := range configs {
-		delete(configs, key)
-	}
-	configs = nil
 	ctx.JSON(http.StatusOK, config.ConfigGetAll())
 }
 
@@ -840,24 +853,20 @@ func ApiConfigUpdate(ctx *gin.Context) {
 // @Produce  json
 // @Param type path string true "Type Name: ex. quality"
 // @Param apikey query string true "apikey"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} [map[string]interface{}]
 // @Failure 401 {object} string
 // @Router /api/config/type/{type} [get]
-func ApiListConfigType(ctx *gin.Context) {
+func apiListConfigType(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
 	configs := config.ConfigGetAll()
 	list := make(map[string]interface{})
-	for name, value := range configs {
-		if strings.HasPrefix(name, ctx.Param("type")) {
-			list[name] = value
+	for _, value := range configs {
+		if strings.HasPrefix(value.Name, ctx.Param("type")) {
+			list[value.Name] = value.Data
 		}
 	}
-	for key := range configs {
-		delete(configs, key)
-	}
-	configs = nil
 	ctx.JSON(http.StatusOK, list)
 }
 
@@ -887,7 +896,7 @@ type apiNameInputJson struct {
 // @Failure 400 {object} string
 // @Failure 401 {object} string
 // @Router /api/naming [post]
-func ApiNamingGenerate(ctx *gin.Context) {
+func apiNamingGenerate(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
@@ -896,58 +905,40 @@ func ApiNamingGenerate(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	var cfg_media config.MediaTypeConfig
-	config.ConfigGet(cfg.Cfg_Media, &cfg_media)
 
 	if cfg.GroupType == "movie" {
 		movie, _ := database.GetMovies(database.Query{Where: "id=?", WhereArgs: []interface{}{cfg.MovieID}})
 
-		var cfg_list config.MediaListsConfig
-		for idxlist := range cfg_media.Lists {
-			if cfg_media.Lists[idxlist].Name == movie.Listname {
-				cfg_list = cfg_media.Lists[idxlist]
-				break
-			}
-		}
-
 		s, _ := structure.NewStructure(
-			cfg_media,
-			cfg_list,
+			cfg.Cfg_Media,
+			movie.Listname,
 			cfg.GroupType,
 			movie.Rootpath,
 			config.PathsConfig{},
 			config.PathsConfig{},
 		)
 		m, _ := s.ParseFile(cfg.FilePath, true, filepath.Dir(cfg.FilePath), false)
-		s.ParseFileAdditional(cfg.FilePath, m, filepath.Dir(cfg.FilePath), false, 0)
+		m, _ = s.ParseFileAdditional(cfg.FilePath, m, filepath.Dir(cfg.FilePath), false, 0)
 
-		foldername, filename := s.GenerateNamingTemplate(cfg.FilePath, *m, movie, database.Serie{}, "", database.SerieEpisode{}, "", []int{})
+		foldername, filename := s.GenerateNamingTemplate(cfg.FilePath, m, movie, database.Serie{}, "", database.SerieEpisode{}, "", []int{})
 		ctx.JSON(http.StatusOK, gin.H{"foldername": foldername, "filename": filename})
 	} else {
 		series, _ := database.GetSeries(database.Query{Where: "id=?", WhereArgs: []interface{}{cfg.SerieID}})
 
-		var cfg_list config.MediaListsConfig
-		for idxlist := range cfg_media.Lists {
-			if cfg_media.Lists[idxlist].Name == series.Listname {
-				cfg_list = cfg_media.Lists[idxlist]
-				break
-			}
-		}
-
 		s, _ := structure.NewStructure(
-			cfg_media,
-			cfg_list,
+			cfg.Cfg_Media,
+			series.Listname,
 			cfg.GroupType,
 			series.Rootpath,
 			config.PathsConfig{},
 			config.PathsConfig{},
 		)
 		m, _ := s.ParseFile(cfg.FilePath, true, filepath.Dir(cfg.FilePath), false)
-		s.ParseFileAdditional(cfg.FilePath, m, filepath.Dir(cfg.FilePath), false, 0)
+		m, _ = s.ParseFileAdditional(cfg.FilePath, m, filepath.Dir(cfg.FilePath), false, 0)
 
-		_, episodes, _, serietitle, episodetitle, seriesEpisode, _, _ := s.GetSeriesEpisodes(series, cfg.FilePath, *m, filepath.Dir(cfg.FilePath))
+		_, episodes, _, serietitle, episodetitle, seriesEpisode, _, _ := s.GetSeriesEpisodes(series, cfg.FilePath, m, filepath.Dir(cfg.FilePath))
 
-		foldername, filename := s.GenerateNamingTemplate(cfg.FilePath, *m, database.Movie{}, series, serietitle, seriesEpisode, episodetitle, episodes)
+		foldername, filename := s.GenerateNamingTemplate(cfg.FilePath, m, database.Movie{}, series, serietitle, seriesEpisode, episodetitle, episodes)
 		ctx.JSON(http.StatusOK, gin.H{"foldername": foldername, "filename": filename})
 	}
 }
@@ -975,7 +966,7 @@ type apiStructureJson struct {
 // @Failure 400 {object} string
 // @Failure 401 {object} string
 // @Router /api/structure [post]
-func ApiStructure(ctx *gin.Context) {
+func apiStructure(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
@@ -992,28 +983,35 @@ func ApiStructure(ctx *gin.Context) {
 	if strings.EqualFold(cfg.Grouptype, "series") {
 		cfg.Configentry = "serie_" + cfg.Configentry
 	}
-	if config.ConfigGet(cfg.Configentry, &cfg_media) != nil {
+	var media config.MediaTypeConfig
+	if strings.HasPrefix(ctx.Param("config"), "movie_") {
+		media = config.ConfigGet("movie_" + cfg.Configentry).Data.(config.MediaTypeConfig)
+	} else {
+		media = config.ConfigGet("serie_" + cfg.Configentry).Data.(config.MediaTypeConfig)
+	}
+	if media.Name != cfg.Configentry {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "media config not found"})
 		return
 	}
 
-	var cfg_source config.PathsConfig
-	if config.ConfigGet("path_"+cfg.Sourcepathtemplate, &cfg_source) != nil {
+	cfg_source := config.ConfigGet("path_" + cfg.Sourcepathtemplate).Data.(config.PathsConfig)
+	if !config.ConfigCheck("path_" + cfg.Sourcepathtemplate) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "source config not found"})
 		return
 	}
 
-	var cfg_target config.PathsConfig
-	if config.ConfigGet("path_"+cfg.Targetpathtemplate, &cfg_target) != nil {
+	cfg_target := config.ConfigGet("path_" + cfg.Targetpathtemplate).Data.(config.PathsConfig)
+
+	if !config.ConfigCheck("path_" + cfg.Targetpathtemplate) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "target config not found"})
 		return
 	}
 
 	for idxlist := range cfg_media.Lists {
 		if cfg.Forceid != 0 {
-			structure.StructureSingleFolderAs(cfg.Folder, cfg.Forceid, cfg.Disableruntimecheck, cfg.Disabledisallowed, cfg.Disabledeletewronglanguage, cfg.Grouptype, cfg_source, cfg_target, cfg_media, cfg_media.Lists[idxlist])
+			structure.StructureSingleFolderAs(cfg.Folder, cfg.Forceid, cfg.Disableruntimecheck, cfg.Disabledisallowed, cfg.Disabledeletewronglanguage, cfg.Grouptype, cfg_source, cfg_target, cfg.Configentry, cfg_media.Lists[idxlist].Name)
 		} else {
-			structure.StructureSingleFolder(cfg.Folder, cfg.Disableruntimecheck, cfg.Disabledisallowed, cfg.Disabledeletewronglanguage, cfg.Grouptype, cfg_source, cfg_target, cfg_media, cfg_media.Lists[idxlist])
+			structure.StructureSingleFolder(cfg.Folder, cfg.Disableruntimecheck, cfg.Disabledisallowed, cfg.Disabledeletewronglanguage, cfg.Grouptype, cfg_source, cfg_target, cfg.Configentry, cfg_media.Lists[idxlist].Name)
 		}
 	}
 }

@@ -3,6 +3,7 @@ package database
 import (
 	"database/sql"
 	"errors"
+	"reflect"
 	"strconv"
 	"strings"
 
@@ -41,13 +42,14 @@ func QueryDbmovie(qu Query) ([]Dbmovie, error) {
 		return []Dbmovie{}, nil
 	}
 	query := buildquery(columns, "dbmovies", qu, false)
-	var cfg_general config.GeneralConfig
-	config.ConfigGet("general", &cfg_general)
+	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
 
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
 	}
+	ReadWriteMu.RLock()
 	rows, err := DB.Queryx(query, qu.WhereArgs...)
+	ReadWriteMu.RUnlock()
 	if err != nil {
 		logger.Log.Error("Query: ", query, " error: ", err)
 		return []Dbmovie{}, err
@@ -80,13 +82,14 @@ func QueryDbmovieJson(qu Query) ([]DbmovieJson, error) {
 		return []DbmovieJson{}, nil
 	}
 	query := buildquery(columns, "dbmovies", qu, false)
-	var cfg_general config.GeneralConfig
-	config.ConfigGet("general", &cfg_general)
+	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
 
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
 	}
+	ReadWriteMu.RLock()
 	rows, err := DB.Queryx(query, qu.WhereArgs...)
+	ReadWriteMu.RUnlock()
 	if err != nil {
 		logger.Log.Error("Query: ", query, " error: ", err)
 		return []DbmovieJson{}, err
@@ -130,13 +133,14 @@ func QueryDbmovieTitle(qu Query) ([]DbmovieTitle, error) {
 		return []DbmovieTitle{}, nil
 	}
 	query := buildquery(columns, "dbmovie_titles", qu, false)
-	var cfg_general config.GeneralConfig
-	config.ConfigGet("general", &cfg_general)
+	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
 
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
 	}
+	ReadWriteMu.RLock()
 	rows, err := DB.Queryx(query, qu.WhereArgs...)
+	ReadWriteMu.RUnlock()
 	if err != nil {
 		logger.Log.Error("Query: ", query, " error: ", err)
 		return []DbmovieTitle{}, err
@@ -180,13 +184,14 @@ func QueryDbserie(qu Query) ([]Dbserie, error) {
 		return []Dbserie{}, nil
 	}
 	query := buildquery(columns, "Dbseries", qu, false)
-	var cfg_general config.GeneralConfig
-	config.ConfigGet("general", &cfg_general)
+	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
 
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
 	}
+	ReadWriteMu.RLock()
 	rows, err := DB.Queryx(query, qu.WhereArgs...)
+	ReadWriteMu.RUnlock()
 	if err != nil {
 		logger.Log.Error("Query: ", query, " error: ", err)
 		return []Dbserie{}, err
@@ -230,13 +235,14 @@ func QueryDbserieEpisodes(qu Query) ([]DbserieEpisode, error) {
 		return []DbserieEpisode{}, nil
 	}
 	query := buildquery(columns, "dbserie_episodes", qu, false)
-	var cfg_general config.GeneralConfig
-	config.ConfigGet("general", &cfg_general)
+	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
 
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
 	}
+	ReadWriteMu.RLock()
 	rows, err := DB.Queryx(query, qu.WhereArgs...)
+	ReadWriteMu.RUnlock()
 	if err != nil {
 		logger.Log.Error("Query: ", query, " error: ", err)
 		return []DbserieEpisode{}, err
@@ -279,13 +285,14 @@ func QueryDbserieAlternates(qu Query) ([]DbserieAlternate, error) {
 		return []DbserieAlternate{}, nil
 	}
 	query := buildquery(columns, "dbserie_alternates", qu, false)
-	var cfg_general config.GeneralConfig
-	config.ConfigGet("general", &cfg_general)
+	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
 
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
 	}
+	ReadWriteMu.RLock()
 	rows, err := DB.Queryx(query, qu.WhereArgs...)
+	ReadWriteMu.RUnlock()
 	if err != nil {
 		logger.Log.Error("Query: ", query, " error: ", err)
 		return []DbserieAlternate{}, err
@@ -329,13 +336,14 @@ func QuerySeries(qu Query) ([]Serie, error) {
 		return []Serie{}, nil
 	}
 	query := buildquery(columns, "series", qu, false)
-	var cfg_general config.GeneralConfig
-	config.ConfigGet("general", &cfg_general)
+	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
 
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
 	}
+	ReadWriteMu.RLock()
 	rows, err := DB.Queryx(query, qu.WhereArgs...)
+	ReadWriteMu.RUnlock()
 	if err != nil {
 		logger.Log.Error("Query: ", query, " error: ", err)
 		return []Serie{}, err
@@ -379,13 +387,14 @@ func QuerySerieEpisodes(qu Query) ([]SerieEpisode, error) {
 		return []SerieEpisode{}, nil
 	}
 	query := buildquery(columns, "serie_episodes", qu, false)
-	var cfg_general config.GeneralConfig
-	config.ConfigGet("general", &cfg_general)
+	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
 
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
 	}
+	ReadWriteMu.RLock()
 	rows, err := DB.Queryx(query, qu.WhereArgs...)
+	ReadWriteMu.RUnlock()
 	if err != nil {
 		logger.Log.Error("Query: ", query, " error: ", err)
 		return []SerieEpisode{}, err
@@ -429,13 +438,14 @@ func QuerySerieEpisodeHistory(qu Query) ([]SerieEpisodeHistory, error) {
 		return []SerieEpisodeHistory{}, nil
 	}
 	query := buildquery(columns, "serie_episode_histories", qu, false)
-	var cfg_general config.GeneralConfig
-	config.ConfigGet("general", &cfg_general)
+	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
 
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
 	}
+	ReadWriteMu.RLock()
 	rows, err := DB.Queryx(query, qu.WhereArgs...)
+	ReadWriteMu.RUnlock()
 	if err != nil {
 		logger.Log.Error("Query: ", query, " error: ", err)
 		return []SerieEpisodeHistory{}, err
@@ -479,13 +489,14 @@ func QuerySerieEpisodeFiles(qu Query) ([]SerieEpisodeFile, error) {
 		return []SerieEpisodeFile{}, nil
 	}
 	query := buildquery(columns, "serie_episode_files", qu, false)
-	var cfg_general config.GeneralConfig
-	config.ConfigGet("general", &cfg_general)
+	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
 
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
 	}
+	ReadWriteMu.RLock()
 	rows, err := DB.Queryx(query, qu.WhereArgs...)
+	ReadWriteMu.RUnlock()
 	if err != nil {
 		logger.Log.Error("Query: ", query, " error: ", err)
 		return []SerieEpisodeFile{}, err
@@ -534,13 +545,14 @@ func QueryMovies(qu Query) ([]Movie, error) {
 		}
 	}
 	query := buildquery(columns, "movies", qu, false)
-	var cfg_general config.GeneralConfig
-	config.ConfigGet("general", &cfg_general)
+	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
 
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
 	}
+	ReadWriteMu.RLock()
 	rows, err := DB.Queryx(query, qu.WhereArgs...)
+	ReadWriteMu.RUnlock()
 	if err != nil {
 		logger.Log.Error("Query: ", query, " error: ", err)
 		return []Movie{}, err
@@ -584,13 +596,14 @@ func QueryMovieFiles(qu Query) ([]MovieFile, error) {
 		return []MovieFile{}, nil
 	}
 	query := buildquery(columns, "movie_files", qu, false)
-	var cfg_general config.GeneralConfig
-	config.ConfigGet("general", &cfg_general)
+	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
 
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
 	}
+	ReadWriteMu.RLock()
 	rows, err := DB.Queryx(query, qu.WhereArgs...)
+	ReadWriteMu.RUnlock()
 	if err != nil {
 		logger.Log.Error("Query: ", query, " error: ", err)
 		return []MovieFile{}, err
@@ -634,13 +647,14 @@ func QueryMovieHistory(qu Query) ([]MovieHistory, error) {
 		return []MovieHistory{}, nil
 	}
 	query := buildquery(columns, "movie_histories", qu, false)
-	var cfg_general config.GeneralConfig
-	config.ConfigGet("general", &cfg_general)
+	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
 
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
 	}
+	ReadWriteMu.RLock()
 	rows, err := DB.Queryx(query, qu.WhereArgs...)
+	ReadWriteMu.RUnlock()
 	if err != nil {
 		logger.Log.Error("Query: ", query, " error: ", err)
 		return []MovieHistory{}, err
@@ -684,13 +698,14 @@ func QueryRssHistory(qu Query) ([]RSSHistory, error) {
 		return []RSSHistory{}, nil
 	}
 	query := buildquery(columns, "r_sshistories", qu, false)
-	var cfg_general config.GeneralConfig
-	config.ConfigGet("general", &cfg_general)
+	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
 
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
 	}
+	ReadWriteMu.RLock()
 	rows, err := DB.Queryx(query, qu.WhereArgs...)
+	ReadWriteMu.RUnlock()
 	if err != nil {
 		logger.Log.Error("Query: ", query, " error: ", err)
 		return []RSSHistory{}, err
@@ -733,13 +748,14 @@ func QueryQualities(qu Query) ([]Qualities, error) {
 		return []Qualities{}, nil
 	}
 	query := buildquery(columns, "qualities", qu, false)
-	var cfg_general config.GeneralConfig
-	config.ConfigGet("general", &cfg_general)
+	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
 
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
 	}
+	ReadWriteMu.RLock()
 	rows, err := DB.Queryx(query, qu.WhereArgs...)
+	ReadWriteMu.RUnlock()
 	if err != nil {
 		logger.Log.Error("Query: ", query, " error: ", err)
 		return []Qualities{}, err
@@ -782,13 +798,14 @@ func QueryJobHistory(qu Query) ([]JobHistory, error) {
 		return []JobHistory{}, nil
 	}
 	query := buildquery(columns, "job_histories", qu, false)
-	var cfg_general config.GeneralConfig
-	config.ConfigGet("general", &cfg_general)
+	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
 
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
 	}
+	ReadWriteMu.RLock()
 	rows, err := DB.Queryx(query, qu.WhereArgs...)
+	ReadWriteMu.RUnlock()
 	if err != nil {
 		logger.Log.Error("Query: ", query, " error: ", err)
 		return []JobHistory{}, err
@@ -831,13 +848,14 @@ func QueryIndexerFails(qu Query) ([]IndexerFail, error) {
 		return []IndexerFail{}, nil
 	}
 	query := buildquery(columns, "indexer_fails", qu, false)
-	var cfg_general config.GeneralConfig
-	config.ConfigGet("general", &cfg_general)
+	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
 
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
 	}
+	ReadWriteMu.RLock()
 	rows, err := DB.Queryx(query, qu.WhereArgs...)
+	ReadWriteMu.RUnlock()
 	if err != nil {
 		logger.Log.Error("Query: ", query, " error: ", err)
 		return []IndexerFail{}, err
@@ -881,13 +899,14 @@ func QuerySerieFileUnmatched(qu Query) ([]SerieFileUnmatched, error) {
 		return []SerieFileUnmatched{}, nil
 	}
 	query := buildquery(columns, "serie_file_unmatcheds", qu, false)
-	var cfg_general config.GeneralConfig
-	config.ConfigGet("general", &cfg_general)
+	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
 
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
 	}
+	ReadWriteMu.RLock()
 	rows, err := DB.Queryx(query, qu.WhereArgs...)
+	ReadWriteMu.RUnlock()
 	if err != nil {
 		logger.Log.Error("Query: ", query, " error: ", err)
 		return []SerieFileUnmatched{}, err
@@ -931,13 +950,14 @@ func QueryMovieFileUnmatched(qu Query) ([]MovieFileUnmatched, error) {
 		return []MovieFileUnmatched{}, nil
 	}
 	query := buildquery(columns, "movie_file_unmatcheds", qu, false)
-	var cfg_general config.GeneralConfig
-	config.ConfigGet("general", &cfg_general)
+	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
 
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
 	}
+	ReadWriteMu.RLock()
 	rows, err := DB.Queryx(query, qu.WhereArgs...)
+	ReadWriteMu.RUnlock()
 	if err != nil {
 		logger.Log.Error("Query: ", query, " error: ", err)
 		return []MovieFileUnmatched{}, err
@@ -980,13 +1000,14 @@ func QueryResultMovies(qu Query) ([]ResultMovies, error) {
 		return []ResultMovies{}, nil
 	}
 	query := buildquery(columns, "movies", qu, false)
-	var cfg_general config.GeneralConfig
-	config.ConfigGet("general", &cfg_general)
+	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
 
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
 	}
+	ReadWriteMu.RLock()
 	rows, err := DB.Queryx(query, qu.WhereArgs...)
+	ReadWriteMu.RUnlock()
 	if err != nil {
 		logger.Log.Error("Query: ", query, " error: ", err)
 		return []ResultMovies{}, err
@@ -1030,13 +1051,14 @@ func QueryResultSeries(qu Query) ([]ResultSeries, error) {
 		return []ResultSeries{}, nil
 	}
 	query := buildquery(columns, "series", qu, false)
-	var cfg_general config.GeneralConfig
-	config.ConfigGet("general", &cfg_general)
+	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
 
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
 	}
+	ReadWriteMu.RLock()
 	rows, err := DB.Queryx(query, qu.WhereArgs...)
+	ReadWriteMu.RUnlock()
 	if err != nil {
 		logger.Log.Error("Query: ", query, " error: ", err)
 		return []ResultSeries{}, err
@@ -1080,13 +1102,14 @@ func QueryResultSerieEpisodes(qu Query) ([]ResultSerieEpisodes, error) {
 		return []ResultSerieEpisodes{}, nil
 	}
 	query := buildquery(columns, "serie_episodes", qu, false)
-	var cfg_general config.GeneralConfig
-	config.ConfigGet("general", &cfg_general)
+	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
 
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
 	}
+	ReadWriteMu.RLock()
 	rows, err := DB.Queryx(query, qu.WhereArgs...)
+	ReadWriteMu.RUnlock()
 	if err != nil {
 		logger.Log.Error("Query: ", query, " error: ", err)
 		return []ResultSerieEpisodes{}, err
@@ -1130,13 +1153,14 @@ func QueryImdbGenre(qu Query) ([]ImdbGenres, error) {
 		return []ImdbGenres{}, nil
 	}
 	query := buildquery(columns, "imdb_genres", qu, false)
-	var cfg_general config.GeneralConfig
-	config.ConfigGet("general", &cfg_general)
+	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
 
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
 	}
+	ReadWriteMu.RLock()
 	rows, err := DBImdb.Queryx(query, qu.WhereArgs...)
+	ReadWriteMu.RUnlock()
 	if err != nil {
 		logger.Log.Error("Query: ", query, " error: ", err)
 		return []ImdbGenres{}, err
@@ -1180,13 +1204,14 @@ func QueryImdbRating(qu Query) ([]ImdbRatings, error) {
 		return []ImdbRatings{}, nil
 	}
 	query := buildquery(columns, "imdb_ratings", qu, false)
-	var cfg_general config.GeneralConfig
-	config.ConfigGet("general", &cfg_general)
+	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
 
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
 	}
+	ReadWriteMu.RLock()
 	rows, err := DBImdb.Queryx(query, qu.WhereArgs...)
+	ReadWriteMu.RUnlock()
 	if err != nil {
 		logger.Log.Error("Query: ", query, " error: ", err)
 		return []ImdbRatings{}, err
@@ -1230,13 +1255,14 @@ func QueryImdbAka(qu Query) ([]ImdbAka, error) {
 		return []ImdbAka{}, nil
 	}
 	query := buildquery(columns, "imdb_akas", qu, false)
-	var cfg_general config.GeneralConfig
-	config.ConfigGet("general", &cfg_general)
+	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
 
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
 	}
+	ReadWriteMu.RLock()
 	rows, err := DBImdb.Queryx(query, qu.WhereArgs...)
+	ReadWriteMu.RUnlock()
 	if err != nil {
 		logger.Log.Error("Query: ", query, " error: ", err)
 		return []ImdbAka{}, err
@@ -1281,13 +1307,14 @@ func QueryImdbTitle(qu Query) ([]ImdbTitle, error) {
 		return []ImdbTitle{}, nil
 	}
 	query := buildquery(columns, "imdb_titles", qu, false)
-	var cfg_general config.GeneralConfig
-	config.ConfigGet("general", &cfg_general)
+	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
 
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
 	}
+	ReadWriteMu.RLock()
 	rows, err := DBImdb.Queryx(query, qu.WhereArgs...)
+	ReadWriteMu.RUnlock()
 	if err != nil {
 		logger.Log.Error("Query: ", query, " error: ", err)
 		return []ImdbTitle{}, err
@@ -1357,21 +1384,302 @@ func buildquery(columns string, table string, qu Query, count bool) string {
 	return query.String()
 }
 
+func QueryStructStatic(query string, getstruct interface{}, args ...interface{}) error {
+	ReadWriteMu.RLock()
+	rows, err := DB.Queryx(query, args...)
+	ReadWriteMu.RUnlock()
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	errnext := rows.Next()
+	if !errnext {
+		return errors.New("no row")
+	}
+	rows.StructScan(&getstruct)
+	return nil
+}
+
+//requires 2 columns - string and uint (location and id)
+func QueryDbfiles(query string, querycount string, args ...interface{}) ([]Dbfiles, error) {
+	rowcount, _ := CountRowsStatic(querycount, args...)
+	ReadWriteMu.RLock()
+	rows, err := DB.Queryx(query, args...)
+	ReadWriteMu.RUnlock()
+	if err != nil {
+		return []Dbfiles{}, err
+	}
+	returnarray := make([]Dbfiles, 0, rowcount)
+
+	defer rows.Close()
+	for rows.Next() {
+		var location string
+		var id uint
+		err2 := rows.Scan(&location, &id)
+		if err2 != nil {
+			logger.Log.Error("Query2: ", query, " error: ", err2)
+			return []Dbfiles{}, err2
+		}
+		returnarray = append(returnarray, Dbfiles{Location: location, ID: id})
+	}
+	return returnarray, nil
+}
+
+type Dbstatic_OneInt struct {
+	Num int
+}
+
+//requires 1 column - int
+func QueryStaticColumnsOneInt(query string, querycount string, args ...interface{}) ([]Dbstatic_OneInt, error) {
+	rowcount, _ := CountRowsStatic(querycount, args...)
+	ReadWriteMu.RLock()
+	rows, err := DB.Queryx(query, args...)
+	ReadWriteMu.RUnlock()
+	if err != nil {
+		return []Dbstatic_OneInt{}, err
+	}
+	returnarray := make([]Dbstatic_OneInt, 0, rowcount)
+
+	defer rows.Close()
+	var num int
+	for rows.Next() {
+		err2 := rows.Scan(&num)
+		if err2 != nil {
+			logger.Log.Error("Query2: ", query, " error: ", err2)
+			return []Dbstatic_OneInt{}, err2
+		}
+		returnarray = append(returnarray, Dbstatic_OneInt{Num: num})
+	}
+	return returnarray, nil
+}
+
+type Dbstatic_OneString struct {
+	Str string
+}
+
+//requires 1 column - string
+func QueryStaticColumnsOneString(query string, querycount string, args ...interface{}) ([]Dbstatic_OneString, error) {
+	rowcount, _ := CountRowsStatic(querycount, args...)
+	ReadWriteMu.RLock()
+	rows, err := DB.Queryx(query, args...)
+	ReadWriteMu.RUnlock()
+	if err != nil {
+		return []Dbstatic_OneString{}, err
+	}
+	returnarray := make([]Dbstatic_OneString, 0, rowcount)
+
+	defer rows.Close()
+	var str string
+	for rows.Next() {
+		err2 := rows.Scan(&str)
+		if err2 != nil {
+			logger.Log.Error("Query2: ", query, " error: ", err2)
+			return []Dbstatic_OneString{}, err2
+		}
+		returnarray = append(returnarray, Dbstatic_OneString{Str: str})
+	}
+	return returnarray, nil
+}
+
+//requires 1 column - string
+func QueryStaticColumnsOneStringNoError(query string, querycount string, args ...interface{}) []Dbstatic_OneString {
+	rowcount, _ := CountRowsStatic(querycount, args...)
+	ReadWriteMu.RLock()
+	rows, err := DB.Queryx(query, args...)
+	ReadWriteMu.RUnlock()
+	if err != nil {
+		return []Dbstatic_OneString{}
+	}
+	returnarray := make([]Dbstatic_OneString, 0, rowcount)
+
+	defer rows.Close()
+	var str string
+	for rows.Next() {
+		err2 := rows.Scan(&str)
+		if err2 != nil {
+			logger.Log.Error("Query2: ", query, " error: ", err2)
+			return []Dbstatic_OneString{}
+		}
+		returnarray = append(returnarray, Dbstatic_OneString{Str: str})
+	}
+	return returnarray
+}
+
+//requires 1 column - string
+func QueryImdbStaticColumnsOneString(query string, querycount string, args ...interface{}) ([]Dbstatic_OneString, error) {
+	rowcount, _ := CountRowsStatic(querycount, args...)
+	ReadWriteMu.RLock()
+	rows, err := DBImdb.Queryx(query, args...)
+	ReadWriteMu.RUnlock()
+	if err != nil {
+		return []Dbstatic_OneString{}, err
+	}
+	returnarray := make([]Dbstatic_OneString, 0, rowcount)
+
+	defer rows.Close()
+	var str string
+	for rows.Next() {
+		err2 := rows.Scan(&str)
+		if err2 != nil {
+			logger.Log.Error("Query2: ", query, " error: ", err2)
+			return []Dbstatic_OneString{}, err2
+		}
+		returnarray = append(returnarray, Dbstatic_OneString{Str: str})
+	}
+	return returnarray, nil
+}
+
+type Dbstatic_TwoString struct {
+	Str1 string
+	Str2 string
+}
+
+//requires 2 columns - string
+func QueryStaticColumnsTwoString(query string, querycount string, args ...interface{}) ([]Dbstatic_TwoString, error) {
+	rowcount, _ := CountRowsStatic(querycount, args...)
+	ReadWriteMu.RLock()
+	rows, err := DB.Queryx(query, args...)
+	ReadWriteMu.RUnlock()
+	if err != nil {
+		return []Dbstatic_TwoString{}, err
+	}
+	returnarray := make([]Dbstatic_TwoString, 0, rowcount)
+
+	defer rows.Close()
+	var str1, str2 string
+	for rows.Next() {
+		err2 := rows.Scan(&str1, &str2)
+		if err2 != nil {
+			logger.Log.Error("Query2: ", query, " error: ", err2)
+			return []Dbstatic_TwoString{}, err2
+		}
+		returnarray = append(returnarray, Dbstatic_TwoString{Str1: str1, Str2: str2})
+	}
+	return returnarray, nil
+}
+
+type Dbstatic_OneStringOneInt struct {
+	Str string
+	Num int
+}
+
+//requires 2 columns- string and int
+func QueryStaticColumnsOneStringOneInt(query string, querycount string, args ...interface{}) ([]Dbstatic_OneStringOneInt, error) {
+	rowcount, _ := CountRowsStatic(querycount, args...)
+	ReadWriteMu.RLock()
+	rows, err := DB.Queryx(query, args...)
+	ReadWriteMu.RUnlock()
+	if err != nil {
+		return []Dbstatic_OneStringOneInt{}, err
+	}
+	returnarray := make([]Dbstatic_OneStringOneInt, 0, rowcount)
+
+	defer rows.Close()
+	for rows.Next() {
+		var str string
+		var num int
+		err2 := rows.Scan(&str, &num)
+		if err2 != nil {
+			logger.Log.Error("Query2: ", query, " error: ", err2)
+			return []Dbstatic_OneStringOneInt{}, err2
+		}
+		returnarray = append(returnarray, Dbstatic_OneStringOneInt{Str: str, Num: num})
+	}
+	return returnarray, nil
+}
+
+//requires 2 columns- string and int
+func QueryImdbStaticColumnsOneStringOneInt(query string, querycount string, args ...interface{}) ([]Dbstatic_OneStringOneInt, error) {
+	rowcount, _ := ImdbCountRowsStatic(querycount, args...)
+	ReadWriteMu.RLock()
+	rows, err := DBImdb.Queryx(query, args...)
+	ReadWriteMu.RUnlock()
+	if err != nil {
+		return []Dbstatic_OneStringOneInt{}, err
+	}
+	returnarray := make([]Dbstatic_OneStringOneInt, 0, rowcount)
+
+	defer rows.Close()
+	var str string
+	var num int
+	for rows.Next() {
+		err2 := rows.Scan(&str, &num)
+		if err2 != nil {
+			logger.Log.Error("Query2: ", query, " error: ", err2)
+			return []Dbstatic_OneStringOneInt{}, err2
+		}
+		returnarray = append(returnarray, Dbstatic_OneStringOneInt{Str: str, Num: num})
+	}
+	return returnarray, nil
+}
+
+type Dbstatic_TwoInt struct {
+	Num1 int
+	Num2 int
+}
+
+//requires 2 columns- int and int
+func QueryStaticColumnsTwoInt(query string, querycount string, args ...interface{}) ([]Dbstatic_TwoInt, error) {
+	rowcount, _ := CountRowsStatic(querycount, args...)
+	ReadWriteMu.RLock()
+	rows, err := DB.Queryx(query, args...)
+	ReadWriteMu.RUnlock()
+	if err != nil {
+		return []Dbstatic_TwoInt{}, err
+	}
+	returnarray := make([]Dbstatic_TwoInt, 0, rowcount)
+
+	defer rows.Close()
+	var num1, num2 int
+	for rows.Next() {
+		err2 := rows.Scan(&num1, &num2)
+		if err2 != nil {
+			logger.Log.Error("Query2: ", query, " error: ", err2)
+			return []Dbstatic_TwoInt{}, err2
+		}
+		returnarray = append(returnarray, Dbstatic_TwoInt{Num1: num1, Num2: num2})
+	}
+	return returnarray, nil
+}
+func QueryStructStaticArray(query string, querycount string, getstruct interface{}, args ...interface{}) ([]interface{}, error) {
+	rowcount, _ := CountRowsStatic(querycount, args...)
+	ReadWriteMu.RLock()
+	rows, err := DB.Queryx(query, args...)
+	ReadWriteMu.RUnlock()
+	if err != nil {
+		return []interface{}{}, err
+	}
+	returnarray := make([]interface{}, 0, rowcount)
+	defer rows.Close()
+	v := reflect.New(reflect.TypeOf(getstruct).Elem())
+	for rows.Next() {
+		err2 := rows.StructScan(v.Interface())
+		if err2 != nil {
+			logger.Log.Error("Query2: ", query, " error: ", err2)
+			return []interface{}{}, err2
+		}
+		returnarray = append(returnarray, v.Elem().Interface())
+	}
+	return returnarray, nil
+}
+
 //Uses column id
 func CountRows(table string, qu Query) (int, error) {
 	// if qu.InnerJoin != "" {
 	// 	query = buildquery("count("+table+".*)", table, qu)
 	// } else {
 	//}
-	var cfg_general config.GeneralConfig
-	config.ConfigGet("general", &cfg_general)
+	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
+
 	qu.Offset = 0
 	qu.Limit = 0
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", buildquery("count(*)", table, qu, true), " -args: ", qu.WhereArgs)
 	}
 	var counter int
+	ReadWriteMu.RLock()
 	rows, err := DB.Query(buildquery("count(*)", table, qu, true), qu.WhereArgs...)
+	ReadWriteMu.RUnlock()
 	if err != nil {
 		logger.Log.Error("Query: ", buildquery("count(*)", table, qu, true), " error: ", err)
 		return 0, err
@@ -1380,6 +1688,40 @@ func CountRows(table string, qu Query) (int, error) {
 	rows.Next()
 	rows.Scan(&counter)
 	return counter, nil
+}
+
+func CountRowsStatic(query string, args ...interface{}) (int, error) {
+	var counter int
+	ReadWriteMu.RLock()
+	rows, err := DB.Query(query, args...)
+	ReadWriteMu.RUnlock()
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+	errnext := rows.Next()
+	if !errnext {
+		return 0, errors.New("no row")
+	}
+	rows.Scan(&counter)
+	return counter, nil
+}
+
+func QueryColumnStatic(query string, args ...interface{}) (interface{}, error) {
+	var ret interface{}
+	ReadWriteMu.RLock()
+	rows, err := DB.Query(query, args...)
+	ReadWriteMu.RUnlock()
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	errnext := rows.Next()
+	if !errnext {
+		return nil, errors.New("no row")
+	}
+	rows.Scan(&ret)
+	return ret, nil
 }
 
 func insertmapprepare(table string, insert map[string]interface{}) (string, []interface{}) {
@@ -1409,6 +1751,8 @@ func insertmapprepare(table string, insert map[string]interface{}) (string, []in
 	query.WriteString(") VALUES (")
 	query.WriteString(values.String())
 	query.WriteString(")")
+	columns.Reset()
+	values.Reset()
 	return query.String(), args
 }
 func InsertRowMap(table string, insert map[string]interface{}) (sql.Result, error) {
@@ -1442,6 +1786,8 @@ func insertarrayprepare(table string, columns []string) string {
 	query.WriteString(") VALUES (")
 	query.WriteString(vals.String())
 	query.WriteString(")")
+	cols.Reset()
+	vals.Reset()
 	return query.String()
 }
 func InsertArray(table string, columns []string, values []interface{}) (sql.Result, error) {
@@ -1473,9 +1819,11 @@ func updatemapprepare(table string, update map[string]interface{}, qu Query) (st
 	if qu.Where != "" {
 		query.WriteString(" where ")
 		query.WriteString(qu.Where)
-	}
-	if len(qu.WhereArgs) >= 1 {
-		args = append(args, qu.WhereArgs...)
+		if len(qu.WhereArgs) >= 1 {
+			for idx := range qu.WhereArgs {
+				args = append(args, qu.WhereArgs[idx])
+			}
+		}
 	}
 	return query.String(), args
 }
@@ -1490,8 +1838,7 @@ func UpdateRowMap(table string, update map[string]interface{}, qu Query) (sql.Re
 func dbexec(dbtype string, query string, args []interface{}) (sql.Result, error) {
 	var result sql.Result
 	var err error
-	var cfg_general config.GeneralConfig
-	config.ConfigGet("general", &cfg_general)
+	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
 
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", query, " -args: ", args)
@@ -1525,9 +1872,12 @@ func updatearrayprepare(table string, columns []string, values []interface{}, qu
 	if qu.Where != "" {
 		query.WriteString(" where ")
 		query.WriteString(qu.Where)
-	}
-	if len(qu.WhereArgs) >= 1 {
-		values = append(values, qu.WhereArgs...)
+
+		if len(qu.WhereArgs) >= 1 {
+			for idx := range qu.WhereArgs {
+				values = append(values, qu.WhereArgs[idx])
+			}
+		}
 	}
 	return query.String(), values
 }
@@ -1577,8 +1927,7 @@ func DeleteRow(table string, qu Query) (sql.Result, error) {
 		query.WriteString(" where ")
 		query.WriteString(qu.Where)
 	}
-	var cfg_general config.GeneralConfig
-	config.ConfigGet("general", &cfg_general)
+	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
 
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
@@ -1589,6 +1938,7 @@ func DeleteRow(table string, qu Query) (sql.Result, error) {
 		logger.Log.Error("Delete: ", table, " where: ", qu.Where, " whereargs: ", qu.WhereArgs, " error: ", err)
 	}
 	ReadWriteMu.Unlock()
+	query.Reset()
 	return result, err
 }
 
@@ -1609,6 +1959,23 @@ func Upsert(table string, update map[string]interface{}, qu Query) (sql.Result, 
 	return result, err
 }
 
+func UpsertArray(table string, columns []string, values []interface{}, qu Query) (sql.Result, error) {
+	var counter int
+	counter, _ = CountRows(table, qu)
+	if counter == 0 {
+		result, err := InsertArray(table, columns, values)
+		if err != nil {
+			logger.Log.Error("Upsert-insert: ", table, " values: ", columns, values, " where: ", qu.Where, " whereargs: ", qu.WhereArgs, " error: ", err)
+		}
+		return result, err
+	}
+	result, err := UpdateArray(table, columns, values, qu)
+	if err != nil {
+		logger.Log.Error("Upsert-update: ", table, " values: ", columns, values, " where: ", qu.Where, " whereargs: ", qu.WhereArgs, " error: ", err)
+	}
+	return result, err
+}
+
 //Uses column id
 func ImdbCountRows(table string, qu Query) (int, error) {
 	// if qu.InnerJoin != "" {
@@ -1617,21 +1984,40 @@ func ImdbCountRows(table string, qu Query) (int, error) {
 	query := buildquery("count(*)", table, qu, true)
 	//}
 
-	var cfg_general config.GeneralConfig
-	config.ConfigGet("general", &cfg_general)
+	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
+
 	qu.Limit = 0
 	qu.Offset = 0
 	if strings.EqualFold(cfg_general.DBLogLevel, "debug") {
 		logger.Log.Debug("query count: ", query, " -args: ", qu.WhereArgs)
 	}
 	var counter int
+	ReadWriteMu.RLock()
 	rows, err := DBImdb.Query(query, qu.WhereArgs...)
+	ReadWriteMu.RUnlock()
 	if err != nil {
 		logger.Log.Error("Query: ", query, " error: ", err)
 		return 0, err
 	}
 	defer rows.Close()
 	rows.Next()
+	rows.Scan(&counter)
+	return counter, nil
+}
+
+func ImdbCountRowsStatic(query string, args ...interface{}) (int, error) {
+	var counter int
+	ReadWriteMu.RLock()
+	rows, err := DBImdb.Query(query, args...)
+	ReadWriteMu.RUnlock()
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+	errnext := rows.Next()
+	if !errnext {
+		return 0, errors.New("no row")
+	}
 	rows.Scan(&counter)
 	return counter, nil
 }
@@ -1711,19 +2097,23 @@ func ImdbUpsert(table string, update map[string]interface{}, qu Query) (sql.Resu
 }
 
 func DbQuickCheck() string {
+	ReadWriteMu.Lock()
 	rows, _ := DB.Query("PRAGMA quick_check;")
 	defer rows.Close()
 	rows.Next()
 	var str string
 	rows.Scan(&str)
+	ReadWriteMu.Unlock()
 	return str
 }
 
 func DbIntegrityCheck() string {
+	ReadWriteMu.Lock()
 	rows, _ := DB.Query("PRAGMA integrity_check;")
 	defer rows.Close()
 	rows.Next()
 	var str string
 	rows.Scan(&str)
+	ReadWriteMu.Unlock()
 	return str
 }

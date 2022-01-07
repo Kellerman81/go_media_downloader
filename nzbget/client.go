@@ -199,7 +199,7 @@ func (c *client) request(path string, params url.Values, target interface{}) (er
 	}
 	request.URL.RawQuery = params.Encode()
 
-	client = &http.Client{Timeout: 5 * time.Second}
+	client = &http.Client{Timeout: 10 * time.Second}
 	if response, err = client.Do(request); err != nil {
 		//log.Fatal(err)
 		return errors.Wrap(err, "error making http request")

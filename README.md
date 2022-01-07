@@ -132,6 +132,7 @@ http://{server}:{port}/swagger/index.html
 
 ## After first Start - Trakt Authorize
 
+- (This part is optional and only needed if you want to get private trakt lists)
 - Create a Application within Trakt: https://trakt.tv/oauth/applications
 - Write down ClientID and Secret
 - Put ClientID and Secret into the config.toml

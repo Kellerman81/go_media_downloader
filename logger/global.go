@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 	"path"
-	"regexp"
 	"strings"
 	"unicode"
 
@@ -251,7 +250,6 @@ func StringToSlug(instr string) string {
 		}
 	}()
 
-	//t := transform.Chain(norm.NFD, runes.Remove(runes.In(unicode.Mn)), norm.NFC)
 	result, _, err := transform.String(transformer, instr)
 	if err != nil {
 		result = instr
@@ -261,9 +259,6 @@ func StringToSlug(instr string) string {
 	return result
 }
 
-var regexPathAllowSlash = regexp.MustCompile(`[:*?"<>|]`)
-var regexPathDisallowSlash = regexp.MustCompile(`[\\/:*?"<>|]`)
-
 func Path(s string, allowslash bool) string {
 	// Start with lowercase string
 	filePath := html.UnescapeString(s)
@@ -271,9 +266,11 @@ func Path(s string, allowslash bool) string {
 	filePath = strings.Replace(filePath, "..", "", -1)
 	filePath = path.Clean(filePath)
 	if allowslash {
-		filePath = regexPathAllowSlash.ReplaceAllString(filePath, "")
+		filePath = StringReplaceArray(filePath, []string{":", "*", "?", "\"", "<", ">", "|"}, "")
+		//filePath = regexPathAllowSlash.ReplaceAllString(filePath, "")
 	} else {
-		filePath = regexPathDisallowSlash.ReplaceAllString(filePath, "")
+		filePath = StringReplaceArray(filePath, []string{"\\", "/", ":", "*", "?", "\"", "<", ">", "|"}, "")
+		//filePath = regexPathDisallowSlash.ReplaceAllString(filePath, "")
 	}
 	filePath = html.UnescapeString(filePath)
 	filePath = strings.Trim(filePath, " ")
@@ -310,6 +307,7 @@ func DownloadFile(saveIn string, fileprefix string, filename string, url string)
 
 	// Write the body to file
 	_, err = io.Copy(out, resp.Body)
+	out.Sync()
 	return err
 }
 
@@ -332,9 +330,7 @@ func TrimStringInclAfterStringInsensitive(s string, search string) string {
 	if idx := strings.Index(strings.ToLower(s), strings.ToLower(search)); idx != -1 {
 		s = strings.Repeat(s[:idx], 1)
 	}
-	s = strings.TrimSuffix(s, "-")
-	s = strings.TrimSuffix(s, ".")
-	s = strings.TrimSuffix(s, " ")
+	s = strings.TrimRight(s, "-. ")
 	return s
 }
 func TrimStringAfterString(s string, search string) string {
@@ -361,9 +357,7 @@ func TrimStringPrefixInsensitive(s string, search string) string {
 	if idx := strings.Index(strings.ToLower(s), strings.ToLower(search)); idx != -1 {
 		idn := idx + len(search)
 		s = strings.Repeat(s[idn:], 1)
-		s = strings.TrimPrefix(s, "-")
-		s = strings.TrimPrefix(s, ".")
-		s = strings.TrimPrefix(s, " ")
+		s = strings.TrimLeft(s, "-. ")
 		return s
 	}
 	return s
@@ -383,7 +377,8 @@ func StringReplaceDiacritics(instr string) string {
 }
 
 func Getrootpath(foldername string) (string, string) {
-	folders := make([]string, 0, 10)
+	folders := []string{}
+
 	if strings.Contains(foldername, "/") {
 		folders = strings.Split(foldername, "/")
 	}

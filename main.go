@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"html/template"
 	"log"
 	"net/http"
@@ -24,7 +25,6 @@ import (
 	"github.com/Kellerman81/go_media_downloader/logger"
 	"github.com/Kellerman81/go_media_downloader/newznab"
 	"github.com/Kellerman81/go_media_downloader/parser"
-	"github.com/Kellerman81/go_media_downloader/scanner"
 	"github.com/Kellerman81/go_media_downloader/scheduler"
 	"github.com/Kellerman81/go_media_downloader/structure"
 	"github.com/Kellerman81/go_media_downloader/utils"
@@ -49,13 +49,17 @@ func main() {
 
 	pudb, _ := config.OpenConfig("config.db")
 	config.ConfigDB = pudb
-	config.CacheConfig()
-	scanner.CleanUpFolder("./backup", 10)
+	//config.CacheConfig()
+	//scanner.CleanUpFolder("./backup", 10)
 	pudge.BackupAll("")
 	os.Mkdir("./temp", 0777)
 	f, errcfg := config.LoadCfgDB(config.Configfile)
-	var cfg_general config.GeneralConfig
-	config.ConfigGet("general", &cfg_general)
+	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
+
+	if cfg_general.WebPort == "" {
+		fmt.Println("Checked for general - config is missing", cfg_general)
+		os.Exit(0)
+	}
 	if errcfg == nil && cfg_general.EnableFileWatcher {
 		f.Watch(func(event interface{}, err error) {
 			if err != nil {
@@ -68,10 +72,6 @@ func main() {
 			config.LoadCfgDataDB(f, config.Configfile)
 		})
 	}
-
-	defer func() {
-		config.ConfigDB.Close()
-	}()
 
 	logger.InitLogger(logger.LoggerConfig{
 		LogLevel:     cfg_general.LogLevel,
@@ -89,34 +89,39 @@ func main() {
 	apiexternal.NewTmdbClient(cfg_general.TheMovieDBApiKey, cfg_general.Tmdblimiterseconds, cfg_general.Tmdblimitercalls)
 	apiexternal.NewTvdbClient(cfg_general.Tvdblimiterseconds, cfg_general.Tvdblimitercalls)
 	if config.ConfigCheck("trakt_token") {
-		var cfg_trakt oauth2.Token
-		config.ConfigGet("trakt_token", &cfg_trakt)
+		cfg_trakt := config.ConfigGet("trakt_token").Data.(oauth2.Token)
 		apiexternal.NewTraktClient(cfg_general.TraktClientId, cfg_general.TraktClientSecret, cfg_trakt, cfg_general.Traktlimiterseconds, cfg_general.Traktlimitercalls)
 	} else {
 		apiexternal.NewTraktClient(cfg_general.TraktClientId, cfg_general.TraktClientSecret, oauth2.Token{}, cfg_general.Traktlimiterseconds, cfg_general.Traktlimitercalls)
 	}
 
-	apiexternal.NewznabClients = make(map[string]newznab.Client, 10)
+	apiexternal.NewznabClients = make(map[string]*newznab.Client, 10)
 
 	structure.StructureJobRunning = make(map[string]bool, 10)
 	importfeed.MovieImportJobRunning = make(map[string]bool, 10)
 	importfeed.SeriesImportJobRunning = make(map[string]bool, 10)
 
+	logger.Log.Infoln("Initialize Database")
 	database.InitDb(cfg_general.DBLogLevel)
 
 	dbimdb := database.InitImdbdb(cfg_general.DBLogLevel, "imdb")
 	database.DBImdb = dbimdb
 
+	logger.Log.Infoln("Check Database for Upgrades")
 	database.UpgradeDB()
 	database.GetVars()
 	parser.LoadDBPatterns()
 
+	logger.Log.Infoln("Check Database for Errors")
 	str := database.DbQuickCheck()
 	if str != "ok" {
 		logger.Log.Errorln("integrity check failed", str)
+		config.ConfigDB.Close()
+		database.DB.Close()
 		os.Exit(100)
 	}
 
+	logger.Log.Infoln("Remove Old DB Backups")
 	database.RemoveOldDbBackups(cfg_general.MaxDatabaseBackups)
 
 	counter, _ := database.CountRows("dbmovies", database.Query{})
@@ -136,32 +141,34 @@ func main() {
 			database.DBImdb = dbnew
 		}
 
-		movie_keys, _ := config.ConfigDB.Keys([]byte("movie_*"), 0, 0, true)
-
-		for _, idxmovie := range movie_keys {
-			var cfg_movie config.MediaTypeConfig
-			config.ConfigGet(string(idxmovie), &cfg_movie)
+		for _, idxmovie := range config.ConfigGetPrefix("movie_") {
+			if !config.ConfigCheck(idxmovie.Name) {
+				continue
+			}
+			cfg_movie := config.ConfigGet(idxmovie.Name).Data.(config.MediaTypeConfig)
 
 			job := strings.ToLower("feeds")
 			dbresult, _ := database.InsertArray("job_histories", []string{"job_type", "job_group", "job_category", "started"},
 				[]interface{}{job, cfg_movie.Name, "Movie", time.Now()})
 			for idxlist := range cfg_movie.Lists {
-				utils.Importnewmoviessingle(cfg_movie, cfg_movie.Lists[idxlist])
+				utils.Importnewmoviessingle(idxmovie.Name, cfg_movie.Lists[idxlist].Name)
 			}
 			dbid, _ := dbresult.LastInsertId()
 			database.UpdateColumn("job_histories", "ended", time.Now(), database.Query{Where: "id=?", WhereArgs: []interface{}{dbid}})
 
 		}
 
-		for _, idxmovie := range movie_keys {
-			var cfg_movie config.MediaTypeConfig
-			config.ConfigGet(string(idxmovie), &cfg_movie)
+		for _, idxmovie := range config.ConfigGetPrefix("movie_") {
+			if !config.ConfigCheck(idxmovie.Name) {
+				continue
+			}
+			cfg_movie := config.ConfigGet(idxmovie.Name).Data.(config.MediaTypeConfig)
 
 			job := strings.ToLower("datafull")
 			dbresult, _ := database.InsertArray("job_histories", []string{"job_type", "job_group", "job_category", "started"},
 				[]interface{}{job, cfg_movie.Name, "Movie", time.Now()})
 
-			utils.Getnewmovies(cfg_movie)
+			utils.Getnewmovies(idxmovie.Name)
 			dbid, _ := dbresult.LastInsertId()
 			database.UpdateColumn("job_histories", "ended", time.Now(), database.Query{Where: "id=?", WhereArgs: []interface{}{dbid}})
 
@@ -170,51 +177,56 @@ func main() {
 	counter, _ = database.CountRows("dbseries", database.Query{})
 	if counter == 0 {
 		logger.Log.Infoln("Starting initial DB fill for series")
-		serie_keys, _ := config.ConfigDB.Keys([]byte("serie_*"), 0, 0, true)
 
-		for _, idxserie := range serie_keys {
-			var cfg_serie config.MediaTypeConfig
-			config.ConfigGet(string(idxserie), &cfg_serie)
+		for _, idxserie := range config.ConfigGetPrefix("serie_") {
+			if !config.ConfigCheck(idxserie.Name) {
+				continue
+			}
+			cfg_serie := config.ConfigGet(idxserie.Name).Data.(config.MediaTypeConfig)
 
 			job := strings.ToLower("feeds")
 			dbresult, _ := database.InsertArray("job_histories", []string{"job_type", "job_group", "job_category", "started"},
 				[]interface{}{job, cfg_serie.Name, "Serie", time.Now()})
 			for idxlist := range cfg_serie.Lists {
-				utils.Importnewseriessingle(cfg_serie, cfg_serie.Lists[idxlist])
+				utils.Importnewseriessingle(idxserie.Name, cfg_serie.Lists[idxlist].Name)
 			}
 			dbid, _ := dbresult.LastInsertId()
 			database.UpdateColumn("job_histories", "ended", time.Now(), database.Query{Where: "id=?", WhereArgs: []interface{}{dbid}})
 
 		}
-		for _, idxserie := range serie_keys {
-			var cfg_serie config.MediaTypeConfig
-			config.ConfigGet(string(idxserie), &cfg_serie)
+		for _, idxserie := range config.ConfigGetPrefix("serie_") {
+			if !config.ConfigCheck(idxserie.Name) {
+				continue
+			}
+			cfg_serie := config.ConfigGet(idxserie.Name).Data.(config.MediaTypeConfig)
 
 			job := strings.ToLower("datafull")
 			dbresult, _ := database.InsertArray("job_histories", []string{"job_type", "job_group", "job_category", "started"},
 				[]interface{}{job, cfg_serie.Name, "Serie", time.Now()})
-			utils.Getnewepisodes(cfg_serie)
+			utils.Getnewepisodes(idxserie.Name)
 			dbid, _ := dbresult.LastInsertId()
 			database.UpdateColumn("job_histories", "ended", time.Now(), database.Query{Where: "id=?", WhereArgs: []interface{}{dbid}})
 
 		}
 	}
 
-	database.DBImdb.SetMaxOpenConns(5)
+	logger.Log.Infoln("Starting Scheduler")
 	scheduler.InitScheduler()
 
 	config.RegexSeriesIdentifier, _ = regexp.Compile(`(?i)s?[0-9]{1,4}((?:(?:(?: )?-?(?: )?[ex][0-9]{1,3})+))|(\d{2,4}(?:\.|-| |_)\d{1,2}(?:\.|-| |_)\d{1,2})(?:\b|_)`)
 	config.RegexSeriesTitle, _ = regexp.Compile(`^(.*)(?i)(?:(?:\.| - |-)S(?:[0-9]+)(?: )?[ex](?:[0-9]{1,3})(?:[^0-9]|$))`)
-	config.RegexParseFile, _ = regexp.Compile(`^\[( )?(.*)( )?\]$`)
 
+	logger.Log.Infoln("Starting API")
 	router := gin.New()
 	docs.SwaggerInfo.BasePath = "/"
 	if !strings.EqualFold(cfg_general.LogLevel, "debug") {
 		gin.SetMode(gin.ReleaseMode)
 	}
+	logger.Log.Infoln("Starting API Logger")
 	router.Use(ginlog.Logger(logger.Log), gin.Recovery())
 
 	if _, err := os.Stat("./views"); !os.IsNotExist(err) {
+		logger.Log.Infoln("Starting API Websites")
 		router.HTMLRender = ginview.New(goview.Config{
 			Root:      "views",
 			Extension: ".html",
@@ -252,57 +264,28 @@ func main() {
 			ctx.HTML(http.StatusOK, "page.html", gin.H{"title": "Page file title!!"})
 		})
 	}
+	logger.Log.Infoln("Starting API Endpoints")
 	routerapi := router.Group("/api")
-	{
-		routerapi.GET("/trakt/authorize", api.ApiTraktGetAuthUrl)
-		routerapi.GET("/trakt/token/:code", api.ApiTraktGetStoreToken)
-		routerapi.GET("/trakt/user/:user/:list", api.ApiTraktGetUserList)
-		routerapi.GET("/queue", api.ApiQueueList)
-		routerapi.GET("/queue/history", api.ApiQueueListStarted)
-		routerapi.GET("/fillimdb", api.ApiFillImdb)
-		routerapi.GET("/scheduler/stop", api.ApiSchedulerStop)
-		routerapi.GET("/scheduler/start", api.ApiSchedulerStart)
-		routerapi.GET("/scheduler/list", api.ApiSchedulerList)
-		routerapi.GET("/db/close", api.ApiDbClose)
-		routerapi.GET("/db/integrity", api.ApiDbIntegrity)
-		routerapi.GET("/db/backup", api.ApiDbBackup)
-		routerapi.DELETE("/db/clear/:name", api.ApiDbClear)
-		routerapi.DELETE("/db/oldjobs", api.ApiDbRemoveOldJobs)
-		routerapi.GET("/db/vacuum", api.ApiDbVacuum)
-		routerapi.POST("/parse/string", api.ApiParseString)
-		routerapi.POST("/parse/file", api.ApiParseFile)
-		routerapi.POST("/naming", api.ApiNamingGenerate)
-		routerapi.POST("/structure", api.ApiStructure)
-		routerapi.GET("/quality", api.ApiGetQualities)
-		routerapi.DELETE("/quality/:id", api.ApiQualityDelete)
-		routerapi.POST("/quality", api.ApiQualityUpdate)
-		routerapi.GET("/quality/:name/:config", api.ApiListQualityPriorities)
+	api.AddGeneralRoutes(routerapi)
 
-		routerapi.GET("/config/all", api.ApiConfigAll)
-		routerapi.DELETE("/config/clear", api.ApiConfigClear)
-		routerapi.GET("/config/refresh", api.ApiConfigRefreshFile)
-		routerapi.GET("/config/get/:name", api.ApiConfigGet)
+	logger.Log.Infoln("Starting API Endpoints-2")
+	routerall := routerapi.Group("/all")
+	api.AddAllRoutes(routerall)
 
-		routerapi.DELETE("/config/delete/:name", api.ApiConfigDelete)
+	logger.Log.Infoln("Starting API Endpoints-3")
+	routermovies := routerapi.Group("/movies")
+	api.AddMoviesRoutes(routermovies)
 
-		routerapi.POST("/config/update/:name", api.ApiConfigUpdate)
-
-		routerapi.GET("/config/type/:type", api.ApiListConfigType)
-		routerall := routerapi.Group("/all")
-		api.AddAllRoutes(routerall)
-
-		routermovies := routerapi.Group("/movies")
-		api.AddMoviesRoutes(routermovies)
-
-		routerseries := routerapi.Group("/series")
-		api.AddSeriesRoutes(routerseries)
-		router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
-	}
+	logger.Log.Infoln("Starting API Endpoints-4")
+	routerseries := routerapi.Group("/series")
+	api.AddSeriesRoutes(routerseries)
+	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	if strings.EqualFold(cfg_general.LogLevel, "Debug") {
 		ginpprof.Wrap(router)
 	}
 
+	logger.Log.Infoln("Starting API Webserver on port", cfg_general.WebPort)
 	server := &http.Server{
 		Addr:    ":" + cfg_general.WebPort,
 		Handler: router,
@@ -311,6 +294,8 @@ func main() {
 	go func() {
 		// service connections
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			config.ConfigDB.Close()
+			database.DB.Close()
 			log.Fatalf("listen: %s\n", err)
 		}
 	}()
@@ -328,6 +313,7 @@ func main() {
 
 	database.DBImdb.Close()
 	database.DB.Close()
+	config.ConfigDB.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

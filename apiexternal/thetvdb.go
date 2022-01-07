@@ -67,7 +67,7 @@ type tvdbClient struct {
 	Client *RLHTTPClient
 }
 
-var TvdbApi tvdbClient
+var TvdbApi *tvdbClient
 
 func NewTvdbClient(seconds int, calls int) {
 	if seconds == 0 {
@@ -78,10 +78,10 @@ func NewTvdbClient(seconds int, calls int) {
 	}
 	rl := rate.NewLimiter(rate.Every(time.Duration(seconds)*time.Second), calls) // 50 request every 10 seconds
 	limiter, _ := slidingwindow.NewLimiter(time.Duration(seconds)*time.Second, int64(calls), func() (slidingwindow.Window, slidingwindow.StopFunc) { return slidingwindow.NewLocalWindow() })
-	TvdbApi = tvdbClient{Client: NewClient(rl, limiter)}
+	TvdbApi = &tvdbClient{Client: NewClient(rl, limiter)}
 }
 
-func (t tvdbClient) GetSeries(id int, language string) (theTVDBSeries, error) {
+func (t *tvdbClient) GetSeries(id int, language string) (theTVDBSeries, error) {
 	req, _ := http.NewRequest("GET", "https://api.thetvdb.com/series/"+strconv.Itoa(id), nil)
 	if len(language) >= 1 {
 		req.Header.Add("Accept-Language", language)
@@ -95,7 +95,7 @@ func (t tvdbClient) GetSeries(id int, language string) (theTVDBSeries, error) {
 	//json.Unmarshal(responseData, &result)
 	return result, nil
 }
-func (t tvdbClient) GetSeriesEpisodes(id int, language string) (theTVDBEpisodes, error) {
+func (t *tvdbClient) GetSeriesEpisodes(id int, language string) (theTVDBEpisodes, error) {
 	req, _ := http.NewRequest("GET", "https://api.thetvdb.com/series/"+strconv.Itoa(id)+"/episodes", nil)
 	if len(language) >= 1 {
 		req.Header.Add("Accept-Language", language)

@@ -4,10 +4,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/Kellerman81/go_media_downloader/config"
 	"github.com/Kellerman81/go_media_downloader/database"
@@ -20,16 +22,24 @@ func GetFilesDir(rootpath string, filetypes []string, filetypesNoRename []string
 	if !config.ConfigCheck("general") {
 		return []string{}
 	}
-	var cfg_general config.GeneralConfig
-	config.ConfigGet("general", &cfg_general)
+	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
 
 	if cfg_general.UseGoDir {
 		return GetFilesGoDir(rootpath, filetypes, filetypesNoRename, ignoredpaths)
 	}
-	var list []string
 
 	if _, err := os.Stat(rootpath); !os.IsNotExist(err) {
-		err := filepath.Walk(rootpath, func(path string, info os.FileInfo, err error) error {
+		counter := 0
+		filepath.WalkDir(rootpath, func(path string, info fs.DirEntry, err error) error {
+			if info.IsDir() {
+				return nil
+			}
+			counter += 1
+
+			return nil
+		})
+		list := make([]string, 0, counter)
+		err := filepath.WalkDir(rootpath, func(path string, info fs.DirEntry, err error) error {
 			if info.IsDir() {
 				return nil
 			}
@@ -60,9 +70,9 @@ func GetFilesDir(rootpath string, filetypes []string, filetypesNoRename []string
 
 			//Check IgnoredPaths
 			if len(ignoredpaths) >= 1 && ok {
-				path, _ := filepath.Split(path)
+				pathdir, _ := filepath.Split(path)
 				for idxignore := range ignoredpaths {
-					if strings.Contains(strings.ToLower(path), strings.ToLower(ignoredpaths[idxignore])) {
+					if strings.Contains(strings.ToLower(pathdir), strings.ToLower(ignoredpaths[idxignore])) {
 						ok = false
 						break
 					}
@@ -79,10 +89,11 @@ func GetFilesDir(rootpath string, filetypes []string, filetypesNoRename []string
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "%s\n", err)
 		}
+		return list
 	} else {
 		logger.Log.Error("Path not found: ", rootpath)
 	}
-	return list
+	return []string{}
 }
 
 func GetFilesGoDir(rootpath string, filetypes []string, filetypesNoRename []string, ignoredpaths []string) []string {
@@ -151,28 +162,51 @@ func GetFilesGoDir(rootpath string, filetypes []string, filetypesNoRename []stri
 	return list
 }
 
-func GetFolderSize(rootpath string) int64 {
+func getFolderSize(rootpath string) int64 {
 	var size int64
+
+	if !config.ConfigCheck("general") {
+		return 0
+	}
+	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
+
 	if _, err := os.Stat(rootpath); !os.IsNotExist(err) {
-		err := godirwalk.Walk(rootpath, &godirwalk.Options{
-			Callback: func(osPathname string, de *godirwalk.Dirent) error {
-				if de.IsDir() {
+		if cfg_general.UseGoDir {
+			err := godirwalk.Walk(rootpath, &godirwalk.Options{
+				Callback: func(osPathname string, de *godirwalk.Dirent) error {
+					if de.IsDir() {
+						return nil
+					}
+					info, errinfo := os.Stat(osPathname)
+					if errinfo == nil {
+						size += info.Size()
+					}
+					info = nil
+					return nil
+				},
+				ErrorCallback: func(osPathname string, err error) godirwalk.ErrorAction {
+					//fmt.Fprintf(os.Stderr, "%s: %s\n", progname, err)
+					return godirwalk.SkipNode
+				},
+				Unsorted: true, // set true for faster yet non-deterministic enumeration (see godoc)
+			})
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "%s\n", err)
+			}
+		} else {
+			err := filepath.WalkDir(rootpath, func(path string, info fs.DirEntry, err error) error {
+				if info.IsDir() {
 					return nil
 				}
-				info, errinfo := os.Stat(osPathname)
+				fsinfo, errinfo := info.Info()
 				if errinfo == nil {
-					size += info.Size()
+					size += fsinfo.Size()
 				}
 				return nil
-			},
-			ErrorCallback: func(osPathname string, err error) godirwalk.ErrorAction {
-				//fmt.Fprintf(os.Stderr, "%s: %s\n", progname, err)
-				return godirwalk.SkipNode
-			},
-			Unsorted: true, // set true for faster yet non-deterministic enumeration (see godoc)
-		})
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "%s\n", err)
+			})
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "%s\n", err)
+			}
 		}
 	} else {
 		logger.Log.Error("Path not found: ", rootpath)
@@ -180,20 +214,21 @@ func GetFolderSize(rootpath string) int64 {
 	return size
 }
 
-func GetFileSize(file string) int64 {
+func getFileSize(file string) int64 {
 	var size int64
 	if _, err := os.Stat(file); !os.IsNotExist(err) {
 		info, err := os.Stat(file)
 		if err == nil {
 			size += info.Size()
 		}
+		info = nil
 	} else {
 		logger.Log.Error("File not found: ", file)
 	}
 	return size
 }
 
-func CreateFolderWithSubfolders(path string, security uint32) error {
+func createFolderWithSubfolders(path string, security uint32) error {
 	if security == 0 {
 		security = 0777
 	}
@@ -247,9 +282,9 @@ func MoveFiles(files []string, target string, newname string, filetypes []string
 				if err1 != nil {
 					var err error
 					if usebuffercopy {
-						err = MoveFileDriveBuffer(files[idxfile], newpath)
+						err = moveFileDriveBuffer(files[idxfile], newpath)
 					} else {
-						err = MoveFileDrive(files[idxfile], newpath)
+						err = moveFileDrive(files[idxfile], newpath)
 					}
 					if err != nil {
 						logger.Log.Error("File could not be moved: ", files[idxfile], " Error: ", err)
@@ -327,7 +362,7 @@ func RemoveFile(file string) error {
 }
 
 func CheckDisallowed(folder string, disallowed []string, removefolder bool) bool {
-	emptyarr := make([]string, 0, 1)
+	emptyarr := []string{}
 	var disallow bool
 	if len(disallowed) == 0 {
 		disallow = false
@@ -355,12 +390,12 @@ func CheckDisallowed(folder string, disallowed []string, removefolder bool) bool
 	return disallow
 }
 func CleanUpFolder(folder string, CleanupsizeMB int) {
-	emptyarr := make([]string, 0, 1)
+	emptyarr := []string{}
 	if _, err := os.Stat(folder); !os.IsNotExist(err) {
 		filesleft := GetFilesDir(folder, emptyarr, emptyarr, emptyarr)
 		logger.Log.Debug("Left files: ", filesleft)
 		if CleanupsizeMB >= 1 {
-			leftsize := GetFolderSize(folder)
+			leftsize := getFolderSize(folder)
 			logger.Log.Debug("Left size: ", int(leftsize/1024/1024))
 			if CleanupsizeMB >= int(leftsize/1024/1024) {
 				err := os.RemoveAll(folder)
@@ -374,74 +409,118 @@ func CleanUpFolder(folder string, CleanupsizeMB int) {
 	}
 }
 
-func checkmoviefilespathlist(array []database.MovieFile, find string, listname string) bool {
-	var ret bool = false
+func checkfilespathlist(array []database.Dbfiles, typeof string, find string, configTemplate string, listname string, listConfig string) bool {
 	for idx := range array {
-		if array[idx].Location == find && strings.EqualFold(array[idx].Filename, listname) {
-			return true
-		} else if array[idx].Location == find {
-			ret = true
+		if array[idx].Location == find {
+			var getlist interface{}
+			var errget error
+			if typeof != "movies" {
+				counter, err := database.CountRowsStatic("select count(id) FROM serie_file_unmatcheds WHERE filepath = ? and listname = ? and (last_checked > ? or last_checked is null)", find, listname, time.Now().Add(time.Hour*-12))
+				if err == nil {
+					if counter >= 1 {
+						return true
+					}
+				}
+				getlist, errget = database.QueryColumnStatic("select listname FROM series WHERE id = ?", array[idx].ID)
+				if errget != nil {
+					continue
+				}
+			} else {
+				counter, err := database.CountRowsStatic("select count(id) FROM movie_file_unmatcheds WHERE filepath = ? and listname = ? and (last_checked > ? or last_checked is null)", find, listname, time.Now().Add(time.Hour*-12))
+				if err == nil {
+					if counter >= 1 {
+						return true
+					}
+				}
+				getlist, errget = database.QueryColumnStatic("select listname FROM movies WHERE id = ?", array[idx].ID)
+				if errget != nil {
+					continue
+				}
+			}
+			if getlist == nil {
+				continue
+			}
+			var getlistname string = getlist.(string)
+			if getlistname == "" {
+				continue
+			}
+			if strings.EqualFold(getlistname, listname) {
+				return true
+			}
+			list := config.ConfigGetMediaListConfig(configTemplate, listConfig)
+			for idxignore := range list.Replace_map_lists {
+				if strings.EqualFold(getlistname, list.Replace_map_lists[idxignore]) {
+					return true
+				}
+			}
+			for idxignore := range list.Ignore_map_lists {
+				if strings.EqualFold(getlistname, list.Ignore_map_lists[idxignore]) {
+					return true
+				}
+			}
 		}
 	}
-	return ret
+	return false
 }
-func GetFilesAdded(files []string, listname string) []string {
-	list := make([]string, 0, len(files))
-	filesdb, _ := database.QueryMovieFiles(database.Query{Select: "movie_files.location, movies.listname AS filename", InnerJoin: "movies on movie_files.movie_id = movies.id"})
+
+func GetFilesAdded(files []string, listname string, configTemplate string, listConfig string) []string {
+	listentries := files[:0]
+
+	filesdb, fileerr := database.QueryDbfiles("Select location, movie_id as id from movie_files", "Select count(id) from movie_files")
+	if len(filesdb) == 0 {
+		logger.Log.Error("File Struct error", fileerr)
+		return listentries
+	}
+	//filesdb, _ := database.QueryMovieFiles(database.Query{Select: "location, movie_id"})
 	for idxfile := range files {
-		if !checkmoviefilespathlist(filesdb, files[idxfile], listname) {
+		if !checkfilespathlist(filesdb, "movies", files[idxfile], configTemplate, listname, listConfig) {
 			logger.Log.Debug("File added to list - not found", files[idxfile], " ", listname)
-			list = append(list, files[idxfile])
+			listentries = append(listentries, files[idxfile])
 		}
 	}
-	return list
+	return listentries
 }
-func checkseriesfilespathlist(array []database.SerieEpisodeFile, find string, listname string) bool {
-	var ret bool = false
-	for idx := range array {
-		if array[idx].Location == find && strings.EqualFold(array[idx].Filename, listname) {
-			return true
-		} else if array[idx].Location == find {
-			ret = true
-		}
+func GetFilesSeriesAdded(files []string, configTemplate string, listname string, listConfig string) []string {
+	listentries := files[:0]
+
+	filesdb, fileerr := database.QueryDbfiles("Select location, serie_id as id from serie_episode_files", "Select count(id) from serie_episode_files")
+	if len(filesdb) == 0 {
+		logger.Log.Error("File Struct error", fileerr)
+		return listentries
 	}
-	return ret
-}
-func GetFilesSeriesAdded(files []string, listname string) []string {
-	list := make([]string, 0, len(files))
-	filesdb, _ := database.QuerySerieEpisodeFiles(database.Query{Select: "serie_episode_files.location, series.listname AS filename", InnerJoin: "series on serie_episode_files.serie_id = series.id"})
+	//filesdb, _ := database.QuerySerieEpisodeFiles(database.Query{Select: "location, serie_id"})
 	for idxfile := range files {
-		if !checkseriesfilespathlist(filesdb, files[idxfile], listname) {
+		if !checkfilespathlist(filesdb, "series", files[idxfile], configTemplate, listname, listConfig) {
 			logger.Log.Debug("File added to list - not found", files[idxfile], " ", listname)
-			list = append(list, files[idxfile])
+			listentries = append(listentries, files[idxfile])
 		}
 	}
-	return list
+	return listentries
 }
 
 func GetFilesRemoved(listname string) []string {
-	moviefile, _ := database.QueryMovieFiles(database.Query{Select: "Movie_files.location", InnerJoin: "Movies on Movies.ID=movie_files.movie_id", Where: "Movies.listname = ?", WhereArgs: []interface{}{listname}})
-	list := make([]string, 0, len(moviefile))
+	moviefile, _ := database.QueryStaticColumnsOneString("Select location from movie_files where movie_id in (Select id from movies where listname=?)", "Select count(id) from movie_files where movie_id in (Select id from movies where listname=?)", listname)
+	var listentries []string
 	for idxmovie := range moviefile {
-		if _, err := os.Stat(moviefile[idxmovie].Location); os.IsNotExist(err) {
-			list = append(list, moviefile[idxmovie].Location)
+		if _, err := os.Stat(moviefile[idxmovie].Str); os.IsNotExist(err) {
+			listentries = append(listentries, moviefile[idxmovie].Str)
 		}
 	}
-	return list
+	return listentries
 }
 
 func GetFilesSeriesRemoved(listname string) []string {
-	seriefile, _ := database.QuerySerieEpisodeFiles(database.Query{Select: "Serie_episode_files.location", InnerJoin: "Serie_episodes ON Serie_episodes.ID = Serie_episode_files.serie_episode_id INNER JOIN Series ON series.ID = Serie_episodes.serie_id", Where: "Series.listname = ?", WhereArgs: []interface{}{listname}})
-	list := make([]string, 0, len(seriefile))
+	seriefile, _ := database.QueryStaticColumnsOneString("Select location from serie_episode_files where serie_id in (Select id from series where listname=?)", "Select count(id) from serie_episode_files where serie_id in (Select id from series where listname=?)", listname)
+	var listentries []string
 	for idxserie := range seriefile {
-		if _, err := os.Stat(seriefile[idxserie].Location); os.IsNotExist(err) {
-			list = append(list, seriefile[idxserie].Location)
+		if _, err := os.Stat(seriefile[idxserie].Str); os.IsNotExist(err) {
+			listentries = append(listentries, seriefile[idxserie].Str)
 		}
 	}
-	return list
+	return listentries
 }
 
-func MoveFileDriveReadWrite(sourcePath, destPath string) error {
+func moveFileDriveReadWrite(sourcePath, destPath string) error {
 
 	//High Ram Usage !!!
 	input, err := ioutil.ReadFile(sourcePath)
@@ -465,12 +544,12 @@ func MoveFileDriveReadWrite(sourcePath, destPath string) error {
 	return nil
 }
 
-func MoveFileDriveBuffer(sourcePath, destPath string) error {
+func moveFileDriveBuffer(sourcePath, destPath string) error {
 	if !config.ConfigCheck("general") {
 		return errors.New("missing config")
 	}
-	var cfg_general config.GeneralConfig
-	config.ConfigGet("general", &cfg_general)
+	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
+
 	bufferkb := 1024
 	if cfg_general.MoveBufferSizeKB != 0 {
 		bufferkb = cfg_general.MoveBufferSizeKB
@@ -486,6 +565,7 @@ func MoveFileDriveBuffer(sourcePath, destPath string) error {
 	if !sourceFileStat.Mode().IsRegular() {
 		return fmt.Errorf("%s is not a regular file", sourcePath)
 	}
+	sourceFileStat = nil
 
 	source, err := os.Open(sourcePath)
 	if err != nil {
@@ -530,13 +610,15 @@ func MoveFileDriveBuffer(sourcePath, destPath string) error {
 	return nil
 }
 
-func MoveFileDrive(sourcePath, destPath string) error {
+func moveFileDrive(sourcePath, destPath string) error {
 	if _, err := os.Stat(sourcePath); !os.IsNotExist(err) {
-		err := CopyFile(sourcePath, destPath, false)
+		err := copyFile(sourcePath, destPath, false)
 		if err != nil {
 			fmt.Println("Error copiing source", sourcePath, destPath, err)
 			return err
 		}
+	} else {
+		return errors.New("source doesnt exist")
 	}
 	if _, err := os.Stat(sourcePath); !os.IsNotExist(err) {
 		// The copy was successful, so now delete the original file
@@ -551,7 +633,7 @@ func MoveFileDrive(sourcePath, destPath string) error {
 
 // AbsolutePath converts a path (relative or absolute) into an absolute one.
 // Supports '~' notation for $HOME directory of the current user.
-func AbsolutePath(path string) (string, error) {
+func absolutePath(path string) (string, error) {
 	homeReplaced := path
 	return filepath.Abs(homeReplaced)
 }
@@ -560,18 +642,21 @@ func AbsolutePath(path string) (string, error) {
 // the same, then return success. Otherwise, attempt to create a hard link
 // between the two files. If that fails, copy the file contents from src to dst.
 // Creates any missing directories. Supports '~' notation for $HOME directory of the current user.
-func CopyFile(src, dst string, allowFileLink bool) (err error) {
-	srcAbs, err := AbsolutePath(src)
+func copyFile(src, dst string, allowFileLink bool) (err error) {
+	srcAbs, err := absolutePath(src)
 	if err != nil {
 		return err
 	}
-	dstAbs, err := AbsolutePath(dst)
+	dstAbs, err := absolutePath(dst)
 	if err != nil {
 		return err
 	}
 
 	// open source file
 	sfi, err := os.Stat(srcAbs)
+	defer func() {
+		sfi = nil
+	}()
 	if err != nil {
 		return
 	}
@@ -583,6 +668,9 @@ func CopyFile(src, dst string, allowFileLink bool) (err error) {
 
 	// open dest file
 	dfi, err := os.Stat(dstAbs)
+	defer func() {
+		dfi = nil
+	}()
 	if err != nil {
 		if !os.IsNotExist(err) {
 			return
@@ -606,14 +694,6 @@ func CopyFile(src, dst string, allowFileLink bool) (err error) {
 			return
 		}
 	}
-	return copyFileContents(src, dst)
-}
-
-// copyFileContents copies the contents of the file named src to the file named
-// by dst. The file will be created if it does not already exist. If the
-// destination file exists, all it's contents will be replaced by the contents
-// of the source file.
-func copyFileContents(src, dst string) (err error) {
 	// Open the source file for reading
 	srcFile, err := os.Open(src)
 	if err != nil {
@@ -628,18 +708,17 @@ func copyFileContents(src, dst string) (err error) {
 	}
 	// Return any errors that result from closing the destination file
 	// Will return nil if no errors occurred
-	defer func() {
-		cerr := dstFile.Close()
-		if err == nil {
-			err = cerr
-		}
-	}()
 
 	// Copy the contents of the source file into the destination files
 	if _, err = io.Copy(dstFile, srcFile); err != nil {
+		dstFile.Close()
 		return
 	}
-	err = dstFile.Sync()
+	dstFile.Sync()
+	cerr := dstFile.Close()
+	if err == nil {
+		err = cerr
+	}
 	return
 }
 
@@ -657,7 +736,7 @@ func GetSubFolders(sourcepath string) []string {
 	return []string{}
 }
 
-func GetSubFiles(sourcepath string) []string {
+func getSubFiles(sourcepath string) []string {
 	files, err := ioutil.ReadDir(sourcepath)
 	if err == nil {
 		folders := make([]string, 0, len(files))

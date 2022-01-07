@@ -15,15 +15,15 @@ type pushOverClient struct {
 	LimiterWindow *slidingwindow.Limiter
 }
 
-var PushoverApi pushOverClient
+var PushoverApi *pushOverClient
 
 func NewPushOverClient(apikey string) {
 	limiter, _ := slidingwindow.NewLimiter(10*time.Second, 3, func() (slidingwindow.Window, slidingwindow.StopFunc) { return slidingwindow.NewLocalWindow() })
 	rl := rate.NewLimiter(rate.Every(10*time.Second), 3) // 3 request every 10 seconds
-	PushoverApi = pushOverClient{ApiKey: apikey, Limiter: rl, LimiterWindow: limiter}
+	PushoverApi = &pushOverClient{ApiKey: apikey, Limiter: rl, LimiterWindow: limiter}
 }
 
-func (p pushOverClient) SendMessage(messagetext string, title string, recipientkey string) error {
+func (p *pushOverClient) SendMessage(messagetext string, title string, recipientkey string) error {
 	if !p.LimiterWindow.Allow() {
 		isok := false
 		for i := 0; i < 10; i++ {
@@ -45,6 +45,11 @@ func (p pushOverClient) SendMessage(messagetext string, title string, recipientk
 	// Create the message to send
 	message := pushover.NewMessageWithTitle(messagetext, title)
 
+	defer func() {
+		message = nil
+		recipient = nil
+		app = nil
+	}()
 	// Send the message to the recipient
 	_, errp := app.SendMessage(message, recipient)
 	if errp != nil {

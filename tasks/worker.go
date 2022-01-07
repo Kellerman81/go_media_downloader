@@ -24,18 +24,18 @@ func NewWorker(workerPool chan chan Job) *Worker {
 }
 
 // Start initializes a select loop to listen for jobs to execute
-func (w Worker) Start() {
+func (w *Worker) start() {
 	go func() {
 		for {
 			w.workerPool <- w.jobChannel
 
 			select {
 			case job := <-w.jobChannel:
-				GlobalQueue.UpdateStartedQueue(job)
-				UpdateIsRunningSchedule(job, true)
+				GlobalQueue.updateStartedQueue(job)
+				updateIsRunningSchedule(job, true)
 				job.Run()
-				UpdateIsRunningSchedule(job, false)
-				GlobalQueue.RemoveQueue(job)
+				updateIsRunningSchedule(job, false)
+				GlobalQueue.removeQueue(job)
 				debug.FreeOSMemory()
 			case <-w.quit:
 				return
@@ -45,7 +45,7 @@ func (w Worker) Start() {
 }
 
 // Stop will end the job select loop for the worker
-func (w Worker) Stop() {
+func (w *Worker) stop() {
 	go func() {
 		w.quit <- true
 	}()

@@ -224,6 +224,7 @@ type DbserieEpisodeJson struct {
 
 func (serie *Dbserie) GetMetadata(language string, querytmdb bool, allowed []string, querytrakt bool, overwrite bool) []string {
 	aliases := make([]string, 0, 10)
+
 	if querytmdb {
 		moviedb, found := apiexternal.TmdbApi.FindTvdb(serie.ThetvdbID)
 		if found == nil {
@@ -244,6 +245,7 @@ func (serie *Dbserie) GetMetadata(language string, querytmdb bool, allowed []str
 		}
 	}
 	tvdbdetails, founddetail := apiexternal.TvdbApi.GetSeries(serie.ThetvdbID, language)
+
 	if founddetail == nil {
 
 		serie.Seriename = tvdbdetails.Data.SeriesName
@@ -334,6 +336,7 @@ func (serie *Dbserie) GetMetadata(language string, querytmdb bool, allowed []str
 
 func (serie *Dbserie) GetTitles(allowed []string, queryimdb bool, querytrakt bool) []DbserieAlternate {
 	c := make([]DbserieAlternate, 0, 10)
+
 	processed := make(map[string]bool, 10)
 	if queryimdb {
 		queryimdbid := serie.ImdbID
@@ -389,14 +392,15 @@ func (serie *Dbserie) GetTitles(allowed []string, queryimdb bool, querytrakt boo
 	for key := range processed {
 		delete(processed, key)
 	}
-	processed = nil
 	return c
 }
 
 func (serie *Dbserie) GetEpisodes(language string, querytrakt bool) []DbserieEpisode {
 	epi := make([]DbserieEpisode, 0, 30)
+
 	if serie.ThetvdbID != 0 {
 		tvdbdetails, founddetail := apiexternal.TvdbApi.GetSeriesEpisodes(serie.ThetvdbID, language)
+
 		if founddetail == nil {
 			for _, row := range tvdbdetails.Data {
 				var episode DbserieEpisode

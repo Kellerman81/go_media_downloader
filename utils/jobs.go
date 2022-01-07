@@ -15,30 +15,32 @@ import (
 	"github.com/remeh/sizedwaitgroup"
 )
 
-func JobImportFileCheck(file string, dbtype string, wg *sizedwaitgroup.SizedWaitGroup) {
+func jobImportFileCheck(file string, dbtype string, wg *sizedwaitgroup.SizedWaitGroup) {
 	defer wg.Done()
 	if _, err := os.Stat(file); os.IsNotExist(err) {
 		if strings.EqualFold(dbtype, "movie") {
-			moviesf, _ := database.QueryMovieFiles(database.Query{Select: "id, movie_id", Where: "location=?", WhereArgs: []interface{}{file}})
+			moviesf, _ := database.QueryStaticColumnsTwoInt("select id, movie_id from movie_files where location=?", "select count(id) from movie_files where location=?", file)
+			//moviesf, _ := database.QueryMovieFiles(database.Query{Select: "id, movie_id", Where: "location=?", WhereArgs: []interface{}{file}})
 			for idx := range moviesf {
-				movie_id := moviesf[idx].MovieID
-				_, sqlerr := database.DeleteRow("movie_files", database.Query{Where: "id=?", WhereArgs: []interface{}{moviesf[idx].ID}})
+				_, sqlerr := database.DeleteRow("movie_files", database.Query{Where: "id=?", WhereArgs: []interface{}{moviesf[idx].Num1}})
 				if sqlerr == nil {
-					counter, _ := database.CountRows("movie_files", database.Query{Where: "movie_id=?", WhereArgs: []interface{}{movie_id}})
+					counter, _ := database.CountRowsStatic("Select count(id) from movie_files where movie_id = ?", moviesf[idx].Num2)
+					//counter, _ := database.CountRows("movie_files", database.Query{Where: "movie_id=?", WhereArgs: []interface{}{movie_id}})
 					if counter == 0 {
-						database.UpdateColumn("movies", "missing", true, database.Query{Where: "id=?", WhereArgs: []interface{}{movie_id}})
+						database.UpdateColumn("movies", "missing", true, database.Query{Where: "id=?", WhereArgs: []interface{}{moviesf[idx].Num2}})
 					}
 				}
 			}
 		} else {
-			seriefiles, _ := database.QuerySerieEpisodeFiles(database.Query{Select: "id, serie_episode_id", Where: "location=?", WhereArgs: []interface{}{file}})
+			seriefiles, _ := database.QueryStaticColumnsTwoInt("select id, serie_episode_id from serie_episode_files where location=?", "select count(id) from serie_episode_files where location=?", file)
+			//seriefiles, _ := database.QuerySerieEpisodeFiles(database.Query{Select: "id, serie_episode_id", Where: "location=?", WhereArgs: []interface{}{file}})
 			for idx := range seriefiles {
-				episode_id := seriefiles[idx].SerieEpisodeID
-				_, sqlerr := database.DeleteRow("serie_episode_files", database.Query{Where: "id=?", WhereArgs: []interface{}{seriefiles[idx].ID}})
+				_, sqlerr := database.DeleteRow("serie_episode_files", database.Query{Where: "id=?", WhereArgs: []interface{}{seriefiles[idx].Num1}})
 				if sqlerr == nil {
-					counter, _ := database.CountRows("serie_episode_files", database.Query{Where: "serie_episode_id=?", WhereArgs: []interface{}{episode_id}})
+					counter, _ := database.CountRowsStatic("Select count(id) from serie_episode_files where serie_episode_id = ?", seriefiles[idx].Num2)
+					//counter, _ := database.CountRows("serie_episode_files", database.Query{Where: "serie_episode_id=?", WhereArgs: []interface{}{episode_id}})
 					if counter == 0 {
-						database.UpdateColumn("serie_episodes", "missing", true, database.Query{Where: "id=?", WhereArgs: []interface{}{episode_id}})
+						database.UpdateColumn("serie_episodes", "missing", true, database.Query{Where: "id=?", WhereArgs: []interface{}{seriefiles[idx].Num2}})
 					}
 				}
 			}
@@ -51,7 +53,8 @@ type feedResults struct {
 	Movies []database.Dbmovie
 }
 
-func Feeds(configEntry config.MediaTypeConfig, list config.MediaListsConfig) feedResults {
+func feeds(configTemplate string, listConfig string) feedResults {
+	list := config.ConfigGetMediaListConfig(configTemplate, listConfig)
 	if !list.Enabled {
 		logger.Log.Debug("Error - Group list not enabled")
 		return feedResults{}
@@ -60,8 +63,7 @@ func Feeds(configEntry config.MediaTypeConfig, list config.MediaListsConfig) fee
 		logger.Log.Debug("Error - list not found")
 		return feedResults{}
 	}
-	var cfg_list config.ListsConfig
-	config.ConfigGet("list_"+list.Template_list, &cfg_list)
+	cfg_list := config.ConfigGet("list_" + list.Template_list).Data.(config.ListsConfig)
 
 	if !cfg_list.Enabled {
 		logger.Log.Debug("Error - list not enabled")
@@ -72,15 +74,15 @@ func Feeds(configEntry config.MediaTypeConfig, list config.MediaListsConfig) fee
 		return feedResults{Series: config.LoadSerie(cfg_list.Series_config_file)}
 	}
 	if strings.EqualFold(cfg_list.Type, "traktpublicshowlist") {
-		return feedResults{Series: GetTraktUserPublicShowList(configEntry, list)}
+		return feedResults{Series: getTraktUserPublicShowList(configTemplate, listConfig)}
 	}
 
 	if strings.EqualFold(cfg_list.Type, "newznabrss") {
-		searchnow := searcher.NewSearcher(configEntry, list.Template_quality)
-		searchresults := searchnow.GetRSSFeed("movie", list)
+		searchnow := searcher.NewSearcher(configTemplate, list.Template_quality)
+		searchresults := searchnow.GetRSSFeed("movie", listConfig)
 		for idxres := range searchresults.Nzbs {
 			logger.Log.Debug("nzb found - start downloading: ", searchresults.Nzbs[idxres].NZB.Title)
-			downloadnow := downloader.NewDownloader(configEntry, "rss")
+			downloadnow := downloader.NewDownloader(configTemplate, "rss")
 			if searchresults.Nzbs[idxres].Nzbmovie.ID != 0 {
 				downloadnow.SetMovie(searchresults.Nzbs[idxres].Nzbmovie)
 				downloadnow.DownloadNzb(searchresults.Nzbs[idxres])
@@ -92,29 +94,30 @@ func Feeds(configEntry config.MediaTypeConfig, list config.MediaListsConfig) fee
 		return feedResults{}
 	}
 	if strings.EqualFold(cfg_list.Type, "imdbcsv") {
-		return feedResults{Movies: getMissingIMDBMoviesV2(configEntry, list)}
+		return feedResults{Movies: getMissingIMDBMoviesV2(configTemplate, listConfig)}
 	}
 	if strings.EqualFold(cfg_list.Type, "traktpublicmovielist") {
-		return feedResults{Movies: GetTraktUserPublicMovieList(configEntry, list)}
+		return feedResults{Movies: getTraktUserPublicMovieList(configTemplate, listConfig)}
 	}
 	if strings.EqualFold(cfg_list.Type, "traktmoviepopular") {
 		traktpopular, err := apiexternal.TraktApi.GetMoviePopular(cfg_list.Limit)
 		if err == nil {
 			d := make([]database.Dbmovie, 0, len(traktpopular))
-
 			for idx := range traktpopular {
 				if len(traktpopular[idx].Ids.Imdb) == 0 {
 					continue
 				}
 
-				if !importfeed.AllowMovieImport(traktpopular[idx].Ids.Imdb, cfg_list) {
+				if !importfeed.AllowMovieImport(traktpopular[idx].Ids.Imdb, list.Template_list) {
 					continue
 				}
-				dbentry := database.Dbmovie{ImdbID: traktpopular[idx].Ids.Imdb, Title: traktpopular[idx].Title, Year: traktpopular[idx].Year}
-				d = append(d, dbentry)
+
+				d = append(d, database.Dbmovie{ImdbID: traktpopular[idx].Ids.Imdb, Title: traktpopular[idx].Title, Year: traktpopular[idx].Year})
 			}
+
 			return feedResults{Movies: d}
 		}
+
 	}
 	if strings.EqualFold(cfg_list.Type, "traktmovieanticipated") {
 		traktpopular, err := apiexternal.TraktApi.GetMovieAnticipated(cfg_list.Limit)
@@ -125,14 +128,16 @@ func Feeds(configEntry config.MediaTypeConfig, list config.MediaListsConfig) fee
 				if len(traktpopular[idx].Movie.Ids.Imdb) == 0 {
 					continue
 				}
-				if !importfeed.AllowMovieImport(traktpopular[idx].Movie.Ids.Imdb, cfg_list) {
+				if !importfeed.AllowMovieImport(traktpopular[idx].Movie.Ids.Imdb, list.Template_list) {
 					continue
 				}
-				dbentry := database.Dbmovie{ImdbID: traktpopular[idx].Movie.Ids.Imdb, Title: traktpopular[idx].Movie.Title, Year: traktpopular[idx].Movie.Year}
-				d = append(d, dbentry)
+
+				d = append(d, database.Dbmovie{ImdbID: traktpopular[idx].Movie.Ids.Imdb, Title: traktpopular[idx].Movie.Title, Year: traktpopular[idx].Movie.Year})
 			}
+
 			return feedResults{Movies: d}
 		}
+
 	}
 	if strings.EqualFold(cfg_list.Type, "traktmovietrending") {
 		traktpopular, err := apiexternal.TraktApi.GetMovieTrending(cfg_list.Limit)
@@ -143,14 +148,16 @@ func Feeds(configEntry config.MediaTypeConfig, list config.MediaListsConfig) fee
 				if len(traktpopular[idx].Movie.Ids.Imdb) == 0 {
 					continue
 				}
-				if !importfeed.AllowMovieImport(traktpopular[idx].Movie.Ids.Imdb, cfg_list) {
+				if !importfeed.AllowMovieImport(traktpopular[idx].Movie.Ids.Imdb, list.Template_list) {
 					continue
 				}
-				dbentry := database.Dbmovie{ImdbID: traktpopular[idx].Movie.Ids.Imdb, Title: traktpopular[idx].Movie.Title, Year: traktpopular[idx].Movie.Year}
-				d = append(d, dbentry)
+
+				d = append(d, database.Dbmovie{ImdbID: traktpopular[idx].Movie.Ids.Imdb, Title: traktpopular[idx].Movie.Title, Year: traktpopular[idx].Movie.Year})
 			}
+
 			return feedResults{Movies: d}
 		}
+
 	}
 
 	if strings.EqualFold(cfg_list.Type, "traktseriepopular") {
@@ -162,11 +169,12 @@ func Feeds(configEntry config.MediaTypeConfig, list config.MediaListsConfig) fee
 				if traktpopular[idx].Ids.Tvdb == 0 {
 					continue
 				}
-				dbentry := config.SerieConfig{Name: traktpopular[idx].Title, TvdbID: traktpopular[idx].Ids.Tvdb}
-				d = append(d, dbentry)
+				d = append(d, config.SerieConfig{Name: traktpopular[idx].Title, TvdbID: traktpopular[idx].Ids.Tvdb})
 			}
+
 			return feedResults{Series: config.MainSerieConfig{Serie: d}}
 		}
+
 	}
 	if strings.EqualFold(cfg_list.Type, "traktserieanticipated") {
 		traktpopular, err := apiexternal.TraktApi.GetSerieAnticipated(cfg_list.Limit)
@@ -177,11 +185,12 @@ func Feeds(configEntry config.MediaTypeConfig, list config.MediaListsConfig) fee
 				if traktpopular[idx].Serie.Ids.Tvdb == 0 {
 					continue
 				}
-				dbentry := config.SerieConfig{Name: traktpopular[idx].Serie.Title, TvdbID: traktpopular[idx].Serie.Ids.Tvdb}
-				d = append(d, dbentry)
+				d = append(d, config.SerieConfig{Name: traktpopular[idx].Serie.Title, TvdbID: traktpopular[idx].Serie.Ids.Tvdb})
 			}
+
 			return feedResults{Series: config.MainSerieConfig{Serie: d}}
 		}
+
 	}
 	if strings.EqualFold(cfg_list.Type, "traktserietrending") {
 		traktpopular, err := apiexternal.TraktApi.GetSerieTrending(cfg_list.Limit)
@@ -192,21 +201,22 @@ func Feeds(configEntry config.MediaTypeConfig, list config.MediaListsConfig) fee
 				if traktpopular[idx].Serie.Ids.Tvdb == 0 {
 					continue
 				}
-				dbentry := config.SerieConfig{Name: traktpopular[idx].Serie.Title, TvdbID: traktpopular[idx].Serie.Ids.Tvdb}
-				d = append(d, dbentry)
+				d = append(d, config.SerieConfig{Name: traktpopular[idx].Serie.Title, TvdbID: traktpopular[idx].Serie.Ids.Tvdb})
 			}
+
 			return feedResults{Series: config.MainSerieConfig{Serie: d}}
 		}
+
 	}
 	logger.Log.Error("Feed Config not found - template: ", list.Template_list, " - type: ", cfg_list, " - name: ", cfg_list.Name)
 	return feedResults{}
 }
 
-func findFiles(row config.MediaTypeConfig) []string {
+func findFiles(configTemplate string) []string {
+	row := config.ConfigGet(configTemplate).Data.(config.MediaTypeConfig)
 	if len(row.Data) == 1 {
 		if config.ConfigCheck("path_" + row.Data[0].Template_path) {
-			var cfg_path config.PathsConfig
-			config.ConfigGet("path_"+row.Data[0].Template_path, &cfg_path)
+			cfg_path := config.ConfigGet("path_" + row.Data[0].Template_path).Data.(config.PathsConfig)
 
 			return scanner.GetFilesDir(cfg_path.Path, cfg_path.AllowedVideoExtensions, cfg_path.AllowedVideoExtensionsNoRename, cfg_path.Blocked)
 		}
@@ -216,10 +226,12 @@ func findFiles(row config.MediaTypeConfig) []string {
 			if !config.ConfigCheck("path_" + row.Data[idxpath].Template_path) {
 				continue
 			}
-			var cfg_path config.PathsConfig
-			config.ConfigGet("path_"+row.Data[idxpath].Template_path, &cfg_path)
-
-			filesfound = append(filesfound, scanner.GetFilesDir(cfg_path.Path, cfg_path.AllowedVideoExtensions, cfg_path.AllowedVideoExtensionsNoRename, cfg_path.Blocked)...)
+			cfg_path := config.ConfigGet("path_" + row.Data[idxpath].Template_path).Data.(config.PathsConfig)
+			if idxpath == 0 {
+				filesfound = scanner.GetFilesDir(cfg_path.Path, cfg_path.AllowedVideoExtensions, cfg_path.AllowedVideoExtensionsNoRename, cfg_path.Blocked)
+			} else {
+				filesfound = append(filesfound, scanner.GetFilesDir(cfg_path.Path, cfg_path.AllowedVideoExtensions, cfg_path.AllowedVideoExtensionsNoRename, cfg_path.Blocked)...)
+			}
 		}
 		return filesfound
 	}

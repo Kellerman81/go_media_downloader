@@ -9,7 +9,8 @@ import (
 	"github.com/Kellerman81/go_media_downloader/parser"
 )
 
-func filter_size_nzbs(configEntry config.MediaTypeConfig, indexer config.QualityIndexerConfig, rownzb newznab.NZB) bool {
+func filter_size_nzbs(configTemplate string, indexer config.QualityIndexerConfig, rownzb newznab.NZB) bool {
+	configEntry := config.ConfigGet(configTemplate).Data.(config.MediaTypeConfig)
 	for idx := range configEntry.DataImport {
 
 		if indexer.Skip_empty_size && rownzb.Size == 0 {
@@ -19,8 +20,7 @@ func filter_size_nzbs(configEntry config.MediaTypeConfig, indexer config.Quality
 		if !config.ConfigCheck("path_" + configEntry.DataImport[idx].Template_path) {
 			return false
 		}
-		var cfg_path config.PathsConfig
-		config.ConfigGet("path_"+configEntry.DataImport[idx].Template_path, &cfg_path)
+		cfg_path := config.ConfigGet("path_" + configEntry.DataImport[idx].Template_path).Data.(config.PathsConfig)
 
 		if cfg_path.MinSize != 0 {
 			if rownzb.Size < int64(cfg_path.MinSize*1024*1024) && rownzb.Size != 0 {
@@ -38,48 +38,49 @@ func filter_size_nzbs(configEntry config.MediaTypeConfig, indexer config.Quality
 	}
 	return false
 }
-func filter_test_quality_wanted(quality config.QualityConfig, m *parser.ParseInfo, rownzb newznab.NZB) bool {
+func filter_test_quality_wanted(qualityTemplate string, m parser.ParseInfo, rownzb newznab.NZB) bool {
+	qualityconfig := config.ConfigGet("quality_" + qualityTemplate).Data.(config.QualityConfig)
 	wanted_release_resolution := false
-	for idxqual := range quality.Wanted_resolution {
-		if strings.EqualFold(quality.Wanted_resolution[idxqual], m.Resolution) {
+	for idxqual := range qualityconfig.Wanted_resolution {
+		if strings.EqualFold(qualityconfig.Wanted_resolution[idxqual], m.Resolution) {
 			wanted_release_resolution = true
 			break
 		}
 	}
-	if len(quality.Wanted_resolution) >= 1 && !wanted_release_resolution {
+	if len(qualityconfig.Wanted_resolution) >= 1 && !wanted_release_resolution {
 		logger.Log.Debug("Skipped - unwanted resolution: ", rownzb.Title)
 		return false
 	}
 	wanted_release_quality := false
-	for idxqual := range quality.Wanted_quality {
-		if !strings.EqualFold(quality.Wanted_quality[idxqual], m.Quality) {
+	for idxqual := range qualityconfig.Wanted_quality {
+		if !strings.EqualFold(qualityconfig.Wanted_quality[idxqual], m.Quality) {
 			wanted_release_quality = true
 			break
 		}
 	}
-	if len(quality.Wanted_quality) >= 1 && !wanted_release_quality {
+	if len(qualityconfig.Wanted_quality) >= 1 && !wanted_release_quality {
 		logger.Log.Debug("Skipped - unwanted quality: ", rownzb.Title)
 		return false
 	}
 	wanted_release_audio := false
-	for idxqual := range quality.Wanted_audio {
-		if strings.EqualFold(quality.Wanted_audio[idxqual], m.Audio) {
+	for idxqual := range qualityconfig.Wanted_audio {
+		if strings.EqualFold(qualityconfig.Wanted_audio[idxqual], m.Audio) {
 			wanted_release_audio = true
 			break
 		}
 	}
-	if len(quality.Wanted_audio) >= 1 && !wanted_release_audio {
+	if len(qualityconfig.Wanted_audio) >= 1 && !wanted_release_audio {
 		logger.Log.Debug("Skipped - unwanted audio: ", rownzb.Title)
 		return false
 	}
 	wanted_release_codec := false
-	for idxqual := range quality.Wanted_codec {
-		if strings.EqualFold(quality.Wanted_codec[idxqual], m.Codec) {
+	for idxqual := range qualityconfig.Wanted_codec {
+		if strings.EqualFold(qualityconfig.Wanted_codec[idxqual], m.Codec) {
 			wanted_release_codec = true
 			break
 		}
 	}
-	if len(quality.Wanted_codec) >= 1 && !wanted_release_codec {
+	if len(qualityconfig.Wanted_codec) >= 1 && !wanted_release_codec {
 		logger.Log.Debug("Skipped - unwanted codec: ", rownzb.Title)
 		return false
 	}

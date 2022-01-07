@@ -18,7 +18,7 @@ import (
 )
 
 type downloadertype struct {
-	ConfigEntry      config.MediaTypeConfig
+	ConfigTemplate   string
 	Quality          string
 	SearchGroupType  string //series, movies
 	SearchActionType string //missing,upgrade,rss
@@ -39,9 +39,9 @@ type downloadertype struct {
 	Time       string
 }
 
-func NewDownloader(configEntry config.MediaTypeConfig, searchActionType string) downloadertype {
+func NewDownloader(configTemplate string, searchActionType string) downloadertype {
 	return downloadertype{
-		ConfigEntry:      configEntry,
+		ConfigTemplate:   configTemplate,
 		SearchActionType: searchActionType,
 	}
 }
@@ -137,7 +137,7 @@ func (d *downloadertype) DownloadNzb(nzb parser.Nzbwithprio) {
 	}
 	d.history()
 }
-func (d downloadertype) downloadByDrone() error {
+func (d *downloadertype) downloadByDrone() error {
 	logger.Log.Debug("Download by Drone: ", d.Nzb.NZB.DownloadURL)
 	filename := d.Targetfile + ".nzb"
 	if d.Nzb.NZB.IsTorrent {
@@ -145,7 +145,7 @@ func (d downloadertype) downloadByDrone() error {
 	}
 	return logger.DownloadFile(d.Target.Path, "", filename, d.Nzb.NZB.DownloadURL)
 }
-func (d downloadertype) downloadByNzbget() error {
+func (d *downloadertype) downloadByNzbget() error {
 	logger.Log.Debug("Download by Nzbget: ", d.Nzb.NZB.DownloadURL)
 	url := "http://" + d.Downloader.Username + ":" + d.Downloader.Password + "@" + d.Downloader.Hostname + "/jsonrpc"
 	logger.Log.Debug("Download by Nzbget: ", url)
@@ -161,7 +161,7 @@ func (d downloadertype) downloadByNzbget() error {
 	}
 	return err
 }
-func (d downloadertype) downloadBySabnzbd() error {
+func (d *downloadertype) downloadBySabnzbd() error {
 	logger.Log.Debug("Download by Sabnzbd: ", d.Nzb.NZB.DownloadURL)
 	err := apiexternal.SendToSabnzbd(d.Downloader.Hostname, d.Downloader.Password, d.Nzb.NZB.DownloadURL, d.Category, d.Targetfile, d.Downloader.Priority)
 	if err != nil {
@@ -169,7 +169,7 @@ func (d downloadertype) downloadBySabnzbd() error {
 	}
 	return err
 }
-func (d downloadertype) downloadByRTorrent() error {
+func (d *downloadertype) downloadByRTorrent() error {
 	logger.Log.Debug("Download by rTorrent: ", d.Nzb.NZB.DownloadURL)
 	err := apiexternal.SendToRtorrent(d.Downloader.Hostname, false, d.Nzb.NZB.DownloadURL, d.Downloader.DelugeDlTo, d.Targetfile)
 	if err != nil {
@@ -177,7 +177,7 @@ func (d downloadertype) downloadByRTorrent() error {
 	}
 	return err
 }
-func (d downloadertype) downloadByTransmission() error {
+func (d *downloadertype) downloadByTransmission() error {
 	logger.Log.Debug("Download by transmission: ", d.Nzb.NZB.DownloadURL)
 	err := apiexternal.SendToTransmission(d.Downloader.Hostname, d.Downloader.Username, d.Downloader.Password, d.Nzb.NZB.DownloadURL, d.Downloader.DelugeDlTo, d.Downloader.AddPaused)
 	if err != nil {
@@ -186,7 +186,7 @@ func (d downloadertype) downloadByTransmission() error {
 	return err
 }
 
-func (d downloadertype) downloadByDeluge() error {
+func (d *downloadertype) downloadByDeluge() error {
 	logger.Log.Debug("Download by Deluge: ", d.Nzb.NZB.DownloadURL)
 
 	err := apiexternal.SendToDeluge(
@@ -198,7 +198,7 @@ func (d downloadertype) downloadByDeluge() error {
 	}
 	return err
 }
-func (d downloadertype) downloadByQBittorrent() error {
+func (d *downloadertype) downloadByQBittorrent() error {
 	logger.Log.Debug("Download by qBittorrent: ", d.Nzb.NZB.DownloadURL)
 
 	err := apiexternal.SendToQBittorrent(
@@ -211,7 +211,7 @@ func (d downloadertype) downloadByQBittorrent() error {
 	return err
 }
 
-func (d downloadertype) sendNotify(event string, noticonfig config.MediaNotificationConfig) {
+func (d *downloadertype) sendNotify(event string, noticonfig config.MediaNotificationConfig) {
 	if !strings.EqualFold(noticonfig.Event, event) {
 		return
 	}
@@ -241,10 +241,12 @@ func (d downloadertype) sendNotify(event string, noticonfig config.MediaNotifica
 	if !config.ConfigCheck("notification_" + noticonfig.Map_notification) {
 		return
 	}
-	var cfg_notification config.NotificationConfig
-	config.ConfigGet("notification_"+noticonfig.Map_notification, &cfg_notification)
+	cfg_notification := config.ConfigGet("notification_" + noticonfig.Map_notification).Data.(config.NotificationConfig)
 
 	if strings.EqualFold(cfg_notification.Type, "pushover") {
+		if apiexternal.PushoverApi == nil {
+			apiexternal.NewPushOverClient(cfg_notification.Apikey)
+		}
 		if apiexternal.PushoverApi.ApiKey != cfg_notification.Apikey {
 			apiexternal.NewPushOverClient(cfg_notification.Apikey)
 		}
@@ -274,14 +276,19 @@ func (d downloadertype) sendNotify(event string, noticonfig config.MediaNotifica
 		}
 	}
 }
-func (d downloadertype) notify() {
+func (d *downloadertype) notify() {
+	prefix := "serie_"
+	if d.SearchGroupType == "movie" {
+		prefix = "movie_"
+	}
+	configEntry := config.ConfigGet(prefix + d.ConfigTemplate).Data.(config.MediaTypeConfig)
 	d.Time = time.Now().Format(time.RFC3339)
-	for idxnoti := range d.ConfigEntry.Notification {
-		d.sendNotify("added_download", d.ConfigEntry.Notification[idxnoti])
+	for idxnoti := range configEntry.Notification {
+		d.sendNotify("added_download", configEntry.Notification[idxnoti])
 	}
 }
 
-func (d downloadertype) history() {
+func (d *downloadertype) history() {
 	if strings.EqualFold(d.SearchGroupType, "movie") {
 		movieID := d.Movie.ID
 		moviequality := d.Movie.QualityProfile

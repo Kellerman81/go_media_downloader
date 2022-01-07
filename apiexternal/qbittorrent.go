@@ -158,9 +158,10 @@ func (client *qbtClient) Login(username string, password string) (loggedIn bool,
 	if err != nil {
 		return false, err
 	} else if resp.Status != "200 OK" { // check for correct status code
+		resp.Body.Close()
 		return false, wrapper.Wrap(ErrBadResponse, "couldnt log in with "+client.URL+"auth/login")
 	}
-
+	defer resp.Body.Close()
 	// change authentication status so we know were authenticated in later requests
 	client.Authenticated = true
 

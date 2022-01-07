@@ -14,6 +14,7 @@ import (
 	"github.com/knadh/koanf/parsers/toml"
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/providers/structs"
+	"golang.org/x/oauth2"
 )
 
 //Series Config
@@ -77,6 +78,7 @@ type GeneralConfig struct {
 	WorkerFiles                        int      `koanf:"worker_files"`
 	WorkerParse                        int      `koanf:"worker_parse"`
 	WorkerSearch                       int      `koanf:"worker_search"`
+	WorkerIndexer                      int      `koanf:"worker_indexer"`
 	OmdbApiKey                         string   `koanf:"omdb_apikey"`
 	MovieMetaSourceImdb                bool     `koanf:"movie_meta_source_imdb"`
 	MovieMetaSourceTmdb                bool     `koanf:"movie_meta_source_tmdb"`
@@ -152,6 +154,8 @@ type MediaTypeConfig struct {
 
 type MediaDataConfig struct {
 	Template_path string `koanf:"template_path"`
+	AddFound      bool   `koanf:"add_found"`
+	AddFoundList  string `koanf:"add_found_list"`
 }
 
 type MediaDataImportConfig struct {
@@ -341,6 +345,7 @@ type SchedulerConfig struct {
 	Interval_indexer_rss                string `koanf:"interval_indexer_rss"`
 	Interval_scan_data                  string `koanf:"interval_scan_data"`
 	Interval_scan_data_missing          string `koanf:"interval_scan_data_missing"`
+	Interval_scan_data_flags            string `koanf:"interval_scan_data_flags"`
 	Interval_scan_dataimport            string `koanf:"interval_scan_data_import"`
 	Interval_database_backup            string `koanf:"interval_database_backup"`
 	Interval_database_check             string `koanf:"interval_database_check"`
@@ -361,6 +366,7 @@ type SchedulerConfig struct {
 	Cron_indexer_rss                    string `koanf:"cron_indexer_rss"`
 	Cron_scan_data                      string `koanf:"cron_scan_data"`
 	Cron_scan_data_missing              string `koanf:"cron_scan_data_missing"`
+	Cron_scan_data_flags                string `koanf:"cron_scan_data_flags"`
 	Cron_scan_dataimport                string `koanf:"cron_scan_data_import"`
 	Cron_database_backup                string `koanf:"cron_database_backup"`
 	Cron_database_check                 string `koanf:"cron_database_check"`
@@ -467,21 +473,29 @@ func LoadCfgDataDB(f *file.File, parser string) {
 	if k.Sprint() == "" {
 		fmt.Println("Error loading config. Config Empty")
 	}
+	cfglock.Lock()
 
+	configEntries = nil
 	var outdl []DownloaderConfig
 	errdl := k.Unmarshal("downloader", &outdl)
 	if errdl == nil {
 		for idx := range outdl {
 			errdlset := ConfigDB.Set("downloader_"+outdl[idx].Name, outdl[idx])
+			configEntries = append(configEntries, Conf{Name: "downloader_" + outdl[idx].Name, Data: outdl[idx]})
+
 			if errdlset != nil {
 				logger.Log.Errorln("Error downloader setting db:", errdlset)
 			}
 		}
+	} else {
+		fmt.Println("Error unmarschall config. ", errdl)
 	}
 	var outgen GeneralConfig
 	errgen := k.Unmarshal("general", &outgen)
 	if errgen == nil {
-		errgenset := ConfigDB.Set("general", &outgen)
+		errgenset := ConfigDB.Set("general", outgen)
+
+		configEntries = append(configEntries, Conf{Name: "general", Data: outgen})
 		if errgenset != nil {
 			logger.Log.Errorln("Error general setting db:", errgenset)
 		}
@@ -490,6 +504,7 @@ func LoadCfgDataDB(f *file.File, parser string) {
 	errimdb := k.Unmarshal("imdbindexer", &outim)
 	if errimdb == nil {
 		errimdbset := ConfigDB.Set("imdb", &outim)
+		configEntries = append(configEntries, Conf{Name: "imdb", Data: outim})
 		if errimdbset != nil {
 			logger.Log.Errorln("Error imdb setting db:", errimdbset)
 		}
@@ -499,6 +514,7 @@ func LoadCfgDataDB(f *file.File, parser string) {
 	if errind == nil {
 		for idx := range outind {
 			errindset := ConfigDB.Set("indexer_"+outind[idx].Name, &outind[idx])
+			configEntries = append(configEntries, Conf{Name: "indexer_" + outind[idx].Name, Data: outind[idx]})
 			if errindset != nil {
 				logger.Log.Errorln("Error indexer setting db:", errindset)
 			}
@@ -509,6 +525,7 @@ func LoadCfgDataDB(f *file.File, parser string) {
 	if errlst == nil {
 		for idx := range outlst {
 			errlstset := ConfigDB.Set("list_"+outlst[idx].Name, &outlst[idx])
+			configEntries = append(configEntries, Conf{Name: "list_" + outlst[idx].Name, Data: outlst[idx]})
 			if errlstset != nil {
 				logger.Log.Errorln("Error list setting db:", errlstset)
 			}
@@ -519,6 +536,7 @@ func LoadCfgDataDB(f *file.File, parser string) {
 	if errntf == nil {
 		for idx := range outntf {
 			errntfset := ConfigDB.Set("notification_"+outntf[idx].Name, &outntf[idx])
+			configEntries = append(configEntries, Conf{Name: "notification_" + outntf[idx].Name, Data: outntf[idx]})
 			if errntfset != nil {
 				logger.Log.Errorln("Error notification setting db:", errntfset)
 			}
@@ -529,6 +547,7 @@ func LoadCfgDataDB(f *file.File, parser string) {
 	if errpth == nil {
 		for idx := range outpth {
 			errpthset := ConfigDB.Set("path_"+outpth[idx].Name, &outpth[idx])
+			configEntries = append(configEntries, Conf{Name: "path_" + outpth[idx].Name, Data: outpth[idx]})
 			if errpthset != nil {
 				logger.Log.Errorln("Error path setting db:", errpthset)
 			}
@@ -539,6 +558,7 @@ func LoadCfgDataDB(f *file.File, parser string) {
 	if errql == nil {
 		for idx := range outql {
 			errqlset := ConfigDB.Set("quality_"+outql[idx].Name, &outql[idx])
+			configEntries = append(configEntries, Conf{Name: "quality_" + outql[idx].Name, Data: outql[idx]})
 			if errqlset != nil {
 				logger.Log.Errorln("Error quality setting db:", errqlset)
 			}
@@ -549,6 +569,20 @@ func LoadCfgDataDB(f *file.File, parser string) {
 	if errrgx == nil {
 		for idx := range outrgx {
 			errrgxset := ConfigDB.Set("regex_"+outrgx[idx].Name, outrgx[idx])
+
+			var generalCache RegexConfig
+			generalCache.Name = outrgx[idx].Name
+			generalCache.Rejected = outrgx[idx].Rejected
+			generalCache.Required = outrgx[idx].Required
+			generalCache.RejectedRegex = make(map[string]*regexp.Regexp)
+			generalCache.RequiredRegex = make(map[string]*regexp.Regexp)
+			for _, rowtitle := range outrgx[idx].Rejected {
+				generalCache.RejectedRegex[rowtitle] = regexp.MustCompile(rowtitle)
+			}
+			for _, rowtitle := range outrgx[idx].Required {
+				generalCache.RequiredRegex[rowtitle] = regexp.MustCompile(rowtitle)
+			}
+			configEntries = append(configEntries, Conf{Name: "regex_" + outrgx[idx].Name, Data: generalCache})
 			if errrgxset != nil {
 				logger.Log.Errorln("Error regex setting db:", errrgxset)
 			}
@@ -559,6 +593,7 @@ func LoadCfgDataDB(f *file.File, parser string) {
 	if errsch == nil {
 		for idx := range outsch {
 			errschset := ConfigDB.Set("scheduler_"+outsch[idx].Name, &outsch[idx])
+			configEntries = append(configEntries, Conf{Name: "scheduler_" + outsch[idx].Name, Data: outsch[idx]})
 			if errschset != nil {
 				logger.Log.Errorln("Error scheduler setting db:", errschset)
 			}
@@ -569,6 +604,7 @@ func LoadCfgDataDB(f *file.File, parser string) {
 	if errmov == nil {
 		for idx := range outmov {
 			errmovset := ConfigDB.Set("movie_"+outmov[idx].Name, &outmov[idx])
+			configEntries = append(configEntries, Conf{Name: "movie_" + outmov[idx].Name, Data: outmov[idx]})
 			if errmovset != nil {
 				logger.Log.Errorln("Error movie setting db:", errmovset)
 			}
@@ -578,32 +614,72 @@ func LoadCfgDataDB(f *file.File, parser string) {
 	err := k.Unmarshal("media.series", &out)
 	if err == nil {
 		for idx := range out {
+
 			errset := ConfigDB.Set("serie_"+out[idx].Name, &out[idx])
+
+			configEntries = append(configEntries, Conf{Name: "serie_" + out[idx].Name, Data: out[idx]})
 			if errset != nil {
 				logger.Log.Errorln("Error serie setting db:", errset)
 			}
 		}
 	}
 
-	CacheConfig()
+	//Get from DB and not config
+	hastoken, _ := ConfigDB.Has("trakt_token")
+	if hastoken {
+		var token oauth2.Token
+		errtoken := ConfigDB.Get("trakt_token", &token)
+		if errtoken == nil {
+			configEntries = append(configEntries, Conf{Name: "trakt_token", Data: token})
+		}
+	}
+	cfglock.Unlock()
 }
 
 var RegexSeriesTitle *regexp.Regexp
 var RegexSeriesIdentifier *regexp.Regexp
 
-var RegexParseFile *regexp.Regexp
+func UpdateCfg(configIn []*Conf) {
+	configEntries = nil
 
-func UpdateCfg(configIn map[string]interface{}) {
-	cfglock.Lock()
-	defer cfglock.Unlock()
-	configEntries = configIn
+	for idx := range configIn {
+		configEntries = append(configEntries, *configIn[idx])
+	}
 }
+
+func UpdateCfgEntry(configIn Conf) {
+	configfound := false
+	for idx := range configEntries {
+		if configEntries[idx].Name == configIn.Name {
+			configEntries[idx].Data = configIn.Data
+			configfound = true
+			break
+		}
+	}
+	if !configfound {
+		data := Conf{Name: configIn.Name, Data: configIn.Data}
+		configEntries = append(configEntries, data)
+	}
+}
+func findAndDelete(s []Conf, item string) []Conf {
+	new := s[:0]
+	for _, i := range s {
+		if i.Name != item {
+			new = append(new, i)
+		}
+	}
+	return new
+}
+func DeleteCfgEntry(name string) {
+	configEntries = findAndDelete(configEntries, name)
+}
+
 func ClearCfg() {
 
 	cfglock.Lock()
 	defer cfglock.Unlock()
-	configEntries = make(map[string]interface{}, 100)
-	configEntries["general"] = GeneralConfig{
+	configEntries = []Conf{}
+	configEntries = append(configEntries, Conf{Name: "general", Data: GeneralConfig{
 		LogLevel:            "Info",
 		DBLogLevel:          "Info",
 		LogFileCount:        5,
@@ -616,6 +692,7 @@ func ClearCfg() {
 		WorkerFiles:         1,
 		WorkerParse:         1,
 		WorkerSearch:        1,
+		WorkerIndexer:       1,
 		ConcurrentScheduler: 1,
 		Omdblimiterseconds:  1,
 		Omdblimitercalls:    1,
@@ -625,8 +702,8 @@ func ClearCfg() {
 		Traktlimitercalls:   1,
 		Tvdblimiterseconds:  1,
 		Tvdblimitercalls:    1,
-	}
-	configEntries["scheduler_Default"] = SchedulerConfig{
+	}})
+	configEntries = append(configEntries, Conf{Name: "scheduler_Default", Data: SchedulerConfig{
 		Name:                          "Default",
 		Interval_imdb:                 "3d",
 		Interval_feeds:                "1d",
@@ -638,11 +715,11 @@ func ClearCfg() {
 		Interval_scan_data:            "1h",
 		Interval_scan_data_missing:    "1d",
 		Interval_scan_dataimport:      "60m",
-	}
-	configEntries["downloader_initial"] = DownloaderConfig{Name: "initial", Type: "drone"}
-	configEntries["imdb"] = ImdbConfig{Indexedtypes: []string{"movie"}, Indexedlanguages: []string{"US", "UK", "\\N"}}
-	configEntries["indexer_initial"] = IndexersConfig{Name: "initial", Type: "newznab", Limitercalls: 1, Limiterseconds: 1, MaxRssEntries: 100, RssEntriesloop: 2}
-	configEntries["list_initial"] = ListsConfig{Name: "initial", Type: "traktmovieanticipated", Limit: 20}
+	}})
+	configEntries = append(configEntries, Conf{Name: "downloader_initial", Data: DownloaderConfig{Name: "initial", Type: "drone"}})
+	configEntries = append(configEntries, Conf{Name: "imdb", Data: ImdbConfig{Indexedtypes: []string{"movie"}, Indexedlanguages: []string{"US", "UK", "\\N"}}})
+	configEntries = append(configEntries, Conf{Name: "indexer_initial", Data: IndexersConfig{Name: "initial", Type: "newznab", Limitercalls: 1, Limiterseconds: 1, MaxRssEntries: 100, RssEntriesloop: 2}})
+	configEntries = append(configEntries, Conf{Name: "list_initial", Data: ListsConfig{Name: "initial", Type: "traktmovieanticipated", Limit: 20}})
 	var dataconfig []MediaDataConfig
 	dataconfig = append(dataconfig, MediaDataConfig{Template_path: "initial"})
 	var dataimportconfig []MediaDataImportConfig
@@ -651,16 +728,16 @@ func ClearCfg() {
 	noticonfig = append(noticonfig, MediaNotificationConfig{Map_notification: "initial"})
 	var listsconfig []MediaListsConfig
 	listsconfig = append(listsconfig, MediaListsConfig{Template_list: "initial", Template_quality: "initial", Template_scheduler: "Default"})
-	configEntries["movie_initial"] = MediaTypeConfig{Name: "initial", Template_quality: "initial", Template_scheduler: "Default", Data: dataconfig, DataImport: dataimportconfig, Lists: listsconfig, Notification: noticonfig}
-	configEntries["serie_initial"] = MediaTypeConfig{Name: "initial", Template_quality: "initial", Template_scheduler: "Default", Data: dataconfig, DataImport: dataimportconfig, Lists: listsconfig, Notification: noticonfig}
-	configEntries["notification_initial"] = NotificationConfig{Name: "initial", Type: "csv"}
-	configEntries["path_initial"] = PathsConfig{Name: "initial", AllowedVideoExtensions: []string{".avi", ".mkv", ".mp4"}, AllowedOtherExtensions: []string{".idx", ".sub", ".srt"}}
+	configEntries = append(configEntries, Conf{Name: "movie_initial", Data: MediaTypeConfig{Name: "initial", Template_quality: "initial", Template_scheduler: "Default", Data: dataconfig, DataImport: dataimportconfig, Lists: listsconfig, Notification: noticonfig}})
+	configEntries = append(configEntries, Conf{Name: "serie_initial", Data: MediaTypeConfig{Name: "initial", Template_quality: "initial", Template_scheduler: "Default", Data: dataconfig, DataImport: dataimportconfig, Lists: listsconfig, Notification: noticonfig}})
+	configEntries = append(configEntries, Conf{Name: "notification_initial", Data: NotificationConfig{Name: "initial", Type: "csv"}})
+	configEntries = append(configEntries, Conf{Name: "path_initial", Data: PathsConfig{Name: "initial", AllowedVideoExtensions: []string{".avi", ".mkv", ".mp4"}, AllowedOtherExtensions: []string{".idx", ".sub", ".srt"}}})
 	var quindconfig []QualityIndexerConfig
 	quindconfig = append(quindconfig, QualityIndexerConfig{Template_indexer: "initial", Template_downloader: "initial", Template_regex: "initial", Template_path_nzb: "initial"})
 	var qureoconfig []QualityReorderConfig
 	qureoconfig = append(qureoconfig, QualityReorderConfig{})
-	configEntries["quality_initial"] = QualityConfig{Name: "initial", QualityReorder: qureoconfig, Indexer: quindconfig}
-	configEntries["regex_initial"] = RegexConfig{RegexConfigIn: RegexConfigIn{Name: "initial"}}
+	configEntries = append(configEntries, Conf{Name: "quality_initial", Data: QualityConfig{Name: "initial", QualityReorder: qureoconfig, Indexer: quindconfig}})
+	configEntries = append(configEntries, Conf{Name: "regex_initial", Data: RegexConfig{RegexConfigIn: RegexConfigIn{Name: "initial"}}})
 }
 func WriteCfg() {
 	var k = koanf.New(".")
@@ -668,72 +745,63 @@ func WriteCfg() {
 	cfglock.RLock()
 	defer cfglock.RUnlock()
 	var bla MainConfigOut
-	for name, value := range configEntries {
-		if strings.HasPrefix(name, "general") {
-			bla.General = value.(GeneralConfig)
-			ConfigDB.Set(name, value)
+	for _, value := range configEntries {
+		if strings.HasPrefix(value.Name, "general") {
+			bla.General = value.Data.(GeneralConfig)
+			ConfigDB.Set(value.Name, value.Data)
 		}
-		if strings.HasPrefix(name, "downloader_") {
-			bla.Downloader = append(bla.Downloader, value.(DownloaderConfig))
-			ConfigDB.Set(name, value)
+		if strings.HasPrefix(value.Name, "downloader_") {
+			bla.Downloader = append(bla.Downloader, value.Data.(DownloaderConfig))
+			ConfigDB.Set(value.Name, value.Data)
 		}
-		if strings.HasPrefix(name, "imdb") {
-			bla.Imdbindexer = value.(ImdbConfig)
-			ConfigDB.Set(name, value)
+		if strings.HasPrefix(value.Name, "imdb") {
+			bla.Imdbindexer = value.Data.(ImdbConfig)
+			ConfigDB.Set(value.Name, value.Data)
 		}
-		if strings.HasPrefix(name, "indexer") {
-			bla.Indexers = append(bla.Indexers, value.(IndexersConfig))
-			ConfigDB.Set(name, value)
+		if strings.HasPrefix(value.Name, "indexer") {
+			bla.Indexers = append(bla.Indexers, value.Data.(IndexersConfig))
+			ConfigDB.Set(value.Name, value.Data)
 		}
-		if strings.HasPrefix(name, "list") {
-			bla.Lists = append(bla.Lists, value.(ListsConfig))
-			ConfigDB.Set(name, value)
+		if strings.HasPrefix(value.Name, "list") {
+			bla.Lists = append(bla.Lists, value.Data.(ListsConfig))
+			ConfigDB.Set(value.Name, value.Data)
 		}
-		if strings.HasPrefix(name, "serie") {
-			bla.Media.Series = append(bla.Media.Series, value.(MediaTypeConfig))
-			ConfigDB.Set(name, value)
+		if strings.HasPrefix(value.Name, "serie") {
+			bla.Media.Series = append(bla.Media.Series, value.Data.(MediaTypeConfig))
+			ConfigDB.Set(value.Name, value.Data)
 		}
-		if strings.HasPrefix(name, "movie") {
-			bla.Media.Movies = append(bla.Media.Movies, value.(MediaTypeConfig))
-			ConfigDB.Set(name, value)
+		if strings.HasPrefix(value.Name, "movie") {
+			bla.Media.Movies = append(bla.Media.Movies, value.Data.(MediaTypeConfig))
+			ConfigDB.Set(value.Name, value.Data)
 		}
-		if strings.HasPrefix(name, "notification") {
-			bla.Notification = append(bla.Notification, value.(NotificationConfig))
-			ConfigDB.Set(name, value)
+		if strings.HasPrefix(value.Name, "notification") {
+			bla.Notification = append(bla.Notification, value.Data.(NotificationConfig))
+			ConfigDB.Set(value.Name, value.Data)
 		}
-		if strings.HasPrefix(name, "path") {
-			bla.Paths = append(bla.Paths, value.(PathsConfig))
-			ConfigDB.Set(name, value)
+		if strings.HasPrefix(value.Name, "path") {
+			bla.Paths = append(bla.Paths, value.Data.(PathsConfig))
+			ConfigDB.Set(value.Name, value.Data)
 		}
-		if strings.HasPrefix(name, "quality") {
-			bla.Quality = append(bla.Quality, value.(QualityConfig))
-			ConfigDB.Set(name, value)
+		if strings.HasPrefix(value.Name, "quality") {
+			bla.Quality = append(bla.Quality, value.Data.(QualityConfig))
+			ConfigDB.Set(value.Name, value.Data)
 		}
-		if strings.HasPrefix(name, "regex") {
-			tmp := value.(RegexConfig)
+		if strings.HasPrefix(value.Name, "regex") {
+			tmp := value.Data.(RegexConfig)
 			var tmpout RegexConfigIn
 			tmpout.Name = tmp.Name
 			tmpout.Rejected = tmp.Rejected
 			tmpout.Required = tmp.Required
 			bla.Regex = append(bla.Regex, tmpout)
-			ConfigDB.Set(name, value)
+			ConfigDB.Set(value.Name, value.Data)
 		}
-		if strings.HasPrefix(name, "scheduler") {
-			bla.Scheduler = append(bla.Scheduler, value.(SchedulerConfig))
-			ConfigDB.Set(name, value)
+		if strings.HasPrefix(value.Name, "scheduler") {
+			bla.Scheduler = append(bla.Scheduler, value.Data.(SchedulerConfig))
+			ConfigDB.Set(value.Name, value.Data)
 		}
 	}
 	k.Load(structs.Provider(bla, "koanf"), nil)
 
 	byteArray, _ := k.Marshal(toml.Parser())
 	ioutil.WriteFile("config.toml", byteArray, 0777)
-}
-
-func ConfigCheck(name string) bool {
-	success := true
-	if _, ok := configEntries[name]; !ok {
-		logger.Log.Errorln("Config not found: ", name)
-		success = false
-	}
-	return success
 }

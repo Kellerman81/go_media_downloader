@@ -24,14 +24,14 @@ func AddMoviesRoutes(routermovies *gin.RouterGroup) {
 	routermovies.GET("/all/refreshall", apirefreshMovies)
 	routermovies.GET("/refresh/:id", apirefreshMovie)
 
-	routermovies.GET("/unmatched", ApiMovieListUnmatched)
-	routermovies.GET("/", ApiMovieList)
+	routermovies.GET("/unmatched", apiMovieListUnmatched)
+	routermovies.GET("/", apiMovieList)
 	routermovies.POST("/", updateDBMovie)
-	routermovies.DELETE("/:id", ApiMovieDelete)
+	routermovies.DELETE("/:id", apiMovieDelete)
 
 	routermovies.POST("/list/", updateMovie)
 
-	routermovies.GET("/list/:name", ApiMovieListGet)
+	routermovies.GET("/list/:name", apiMovieListGet)
 	routermovies.DELETE("/list/:id", ApiMovieDeleteList)
 
 	routermovies.GET("/job/:job", apimoviesAllJobs)
@@ -61,7 +61,7 @@ func AddMoviesRoutes(routermovies *gin.RouterGroup) {
 // @Success 200 {array} database.DbmovieJson
 // @Failure 401 {object} string
 // @Router /api/movies [get]
-func ApiMovieList(ctx *gin.Context) {
+func apiMovieList(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
@@ -107,7 +107,7 @@ func ApiMovieList(ctx *gin.Context) {
 // @Success 200 {array} database.MovieFileUnmatchedJson
 // @Failure 401 {object} string
 // @Router /api/movies/unmatched [get]
-func ApiMovieListUnmatched(ctx *gin.Context) {
+func apiMovieListUnmatched(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
@@ -150,7 +150,7 @@ func ApiMovieListUnmatched(ctx *gin.Context) {
 // @Success 200 {string} string
 // @Failure 401 {object} string
 // @Router /api/movies/{id} [delete]
-func ApiMovieDelete(ctx *gin.Context) {
+func apiMovieDelete(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
@@ -177,7 +177,7 @@ func ApiMovieDelete(ctx *gin.Context) {
 // @Success 200 {array} database.ResultMoviesJson
 // @Failure 401 {object} string
 // @Router /api/movies/list/{name} [get]
-func ApiMovieListGet(ctx *gin.Context) {
+func apiMovieListGet(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
@@ -265,20 +265,21 @@ func apimoviesAllJobs(c *gin.Context) {
 	}
 	if allowed {
 		returnval := "Job " + c.Param("job") + " started"
-		movie_keys, _ := config.ConfigDB.Keys([]byte("movie_*"), 0, 0, true)
 
-		for _, idxmovie := range movie_keys {
-			var cfg_movie config.MediaTypeConfig
-			config.ConfigGet(string(idxmovie), &cfg_movie)
+		for _, idxmovie := range config.ConfigGetPrefix("movie_") {
+			if !config.ConfigCheck(idxmovie.Name) {
+				continue
+			}
+			cfg_movie := config.ConfigGet(idxmovie.Name).Data.(config.MediaTypeConfig)
 
 			switch c.Param("job") {
 			case "data", "datafull", "structure", "clearhistory":
 				scheduler.QueueData.Dispatch(c.Param("job")+"_movies_"+cfg_movie.Name, func() {
-					utils.Movies_single_jobs(c.Param("job"), cfg_movie.Name, "", true)
+					utils.Movies_single_jobs(c.Param("job"), idxmovie.Name, "", true)
 				})
 			case "rss", "searchmissingfull", "searchmissinginc", "searchupgradefull", "searchupgradeinc", "searchmissingfulltitle", "searchmissinginctitle", "searchupgradefulltitle", "searchupgradeinctitle":
 				scheduler.QueueSearch.Dispatch(c.Param("job")+"_movies_"+cfg_movie.Name, func() {
-					utils.Movies_single_jobs(c.Param("job"), cfg_movie.Name, "", true)
+					utils.Movies_single_jobs(c.Param("job"), idxmovie.Name, "", true)
 				})
 			case "feeds", "checkmissing", "checkmissingflag", "checkreachedflag":
 				for idxlist := range cfg_movie.Lists {
@@ -288,20 +289,19 @@ func apimoviesAllJobs(c *gin.Context) {
 					if !config.ConfigCheck("list_" + cfg_movie.Lists[idxlist].Template_list) {
 						continue
 					}
-					var cfg_list config.ListsConfig
-					config.ConfigGet("list_"+cfg_movie.Lists[idxlist].Template_list, &cfg_list)
+					cfg_list := config.ConfigGet("list_" + cfg_movie.Lists[idxlist].Template_list).Data.(config.ListsConfig)
 					if !cfg_list.Enabled {
 						continue
 					}
 					listname := cfg_movie.Lists[idxlist].Name
 					if c.Param("job") == "feeds" {
 						scheduler.QueueFeeds.Dispatch(c.Param("job")+"_movies_"+cfg_movie.Name+"_"+listname, func() {
-							utils.Movies_single_jobs(c.Param("job"), cfg_movie.Name, listname, true)
+							utils.Movies_single_jobs(c.Param("job"), idxmovie.Name, listname, true)
 						})
 					}
 					if c.Param("job") == "checkmissing" || c.Param("job") == "checkmissingflag" || c.Param("job") == "checkreachedflag" {
 						scheduler.QueueData.Dispatch(c.Param("job")+"_movies_"+cfg_movie.Name+"_"+listname, func() {
-							utils.Movies_single_jobs(c.Param("job"), cfg_movie.Name, listname, true)
+							utils.Movies_single_jobs(c.Param("job"), idxmovie.Name, listname, true)
 						})
 					}
 				}
@@ -315,7 +315,7 @@ func apimoviesAllJobs(c *gin.Context) {
 				})
 			default:
 				scheduler.QueueData.Dispatch(c.Param("job")+"_movies_"+cfg_movie.Name, func() {
-					utils.Movies_single_jobs(c.Param("job"), cfg_movie.Name, "", true)
+					utils.Movies_single_jobs(c.Param("job"), idxmovie.Name, "", true)
 				})
 			}
 		}
@@ -354,18 +354,18 @@ func apimoviesJobs(c *gin.Context) {
 		switch c.Param("job") {
 		case "data", "datafull", "structure", "clearhistory":
 			scheduler.QueueData.Dispatch(c.Param("job")+"_movies_"+c.Param("name"), func() {
-				utils.Movies_single_jobs(c.Param("job"), c.Param("name"), "", true)
+				utils.Movies_single_jobs(c.Param("job"), "movie_"+c.Param("name"), "", true)
 			})
 		case "rss", "searchmissingfull", "searchmissinginc", "searchupgradefull", "searchupgradeinc", "searchmissingfulltitle", "searchmissinginctitle", "searchupgradefulltitle", "searchupgradeinctitle":
 			scheduler.QueueSearch.Dispatch(c.Param("job")+"_movies_"+c.Param("name"), func() {
-				utils.Movies_single_jobs(c.Param("job"), c.Param("name"), "", true)
+				utils.Movies_single_jobs(c.Param("job"), "movie_"+c.Param("name"), "", true)
 			})
 		case "feeds", "checkmissing", "checkmissingflag", "checkreachedflag":
-			movie_keys, _ := config.ConfigDB.Keys([]byte("movie_*"), 0, 0, true)
-
-			for _, idxmovie := range movie_keys {
-				var cfg_movie config.MediaTypeConfig
-				config.ConfigGet(string(idxmovie), &cfg_movie)
+			for _, idxmovie := range config.ConfigGetPrefix("movie_") {
+				if !config.ConfigCheck(idxmovie.Name) {
+					continue
+				}
+				cfg_movie := config.ConfigGet(idxmovie.Name).Data.(config.MediaTypeConfig)
 				if strings.EqualFold(cfg_movie.Name, c.Param("name")) {
 					for idxlist := range cfg_movie.Lists {
 						if !cfg_movie.Lists[idxlist].Enabled {
@@ -374,8 +374,7 @@ func apimoviesJobs(c *gin.Context) {
 						if !config.ConfigCheck("list_" + cfg_movie.Lists[idxlist].Template_list) {
 							continue
 						}
-						var cfg_list config.ListsConfig
-						config.ConfigGet("list_"+cfg_movie.Lists[idxlist].Template_list, &cfg_list)
+						cfg_list := config.ConfigGet("list_" + cfg_movie.Lists[idxlist].Template_list).Data.(config.ListsConfig)
 						if !cfg_list.Enabled {
 							continue
 						}
@@ -383,12 +382,12 @@ func apimoviesJobs(c *gin.Context) {
 						if c.Param("job") == "feeds" {
 							logger.Log.Debug("add job ", cfg_movie.Name, " ", cfg_movie.Lists[idxlist].Name)
 							scheduler.QueueFeeds.Dispatch(c.Param("job")+"_movies_"+cfg_movie.Name+"_"+cfg_movie.Lists[idxlist].Name, func() {
-								utils.Movies_single_jobs(c.Param("job"), cfg_movie.Name, listname, true)
+								utils.Movies_single_jobs(c.Param("job"), idxmovie.Name, listname, true)
 							})
 						}
 						if c.Param("job") == "checkmissing" || c.Param("job") == "checkmissingflag" || c.Param("job") == "checkreachedflag" {
 							scheduler.QueueData.Dispatch(c.Param("job")+"_movies_"+cfg_movie.Name+"_"+cfg_movie.Lists[idxlist].Name, func() {
-								utils.Movies_single_jobs(c.Param("job"), cfg_movie.Name, listname, true)
+								utils.Movies_single_jobs(c.Param("job"), idxmovie.Name, listname, true)
 							})
 						}
 					}
@@ -404,7 +403,7 @@ func apimoviesJobs(c *gin.Context) {
 			})
 		default:
 			scheduler.QueueData.Dispatch(c.Param("job")+"_movies_"+c.Param("name"), func() {
-				utils.Movies_single_jobs(c.Param("job"), c.Param("name"), "", true)
+				utils.Movies_single_jobs(c.Param("job"), "movie_"+c.Param("name"), "", true)
 			})
 		}
 		c.JSON(http.StatusOK, returnval)
@@ -505,16 +504,16 @@ func apimoviesSearch(c *gin.Context) {
 		return
 	}
 	movie, _ := database.GetMovies(database.Query{Where: "id=?", WhereArgs: []interface{}{c.Param("id")}})
-	movie_keys, _ := config.ConfigDB.Keys([]byte("movie_*"), 0, 0, true)
 
-	for _, idxmovie := range movie_keys {
-		var cfg_movie config.MediaTypeConfig
-		config.ConfigGet(string(idxmovie), &cfg_movie)
-
+	for _, idxmovie := range config.ConfigGetPrefix("movie_") {
+		if !config.ConfigCheck(idxmovie.Name) {
+			continue
+		}
+		cfg_movie := config.ConfigGet(idxmovie.Name).Data.(config.MediaTypeConfig)
 		for idxlist := range cfg_movie.Lists {
 			if strings.EqualFold(cfg_movie.Lists[idxlist].Name, movie.Listname) {
 				scheduler.QueueSearch.Dispatch("searchmovie_movies_"+cfg_movie.Name+"_"+strconv.Itoa(int(movie.ID)), func() {
-					searcher.SearchMovieSingle(movie, cfg_movie, true)
+					searcher.SearchMovieSingle(movie, idxmovie.Name, true)
 				})
 				c.JSON(http.StatusOK, "started")
 				return
@@ -540,7 +539,6 @@ func apimoviesSearchList(c *gin.Context) {
 		return
 	}
 	movie, _ := database.GetMovies(database.Query{Where: "id=?", WhereArgs: []interface{}{c.Param("id")}})
-	movie_keys, _ := config.ConfigDB.Keys([]byte("movie_*"), 0, 0, true)
 
 	titlesearch := false
 	if queryParam, ok := c.GetQuery("searchByTitle"); ok {
@@ -548,13 +546,14 @@ func apimoviesSearchList(c *gin.Context) {
 			titlesearch = true
 		}
 	}
-	for _, idxmovie := range movie_keys {
-		var cfg_movie config.MediaTypeConfig
-		config.ConfigGet(string(idxmovie), &cfg_movie)
-
+	for _, idxmovie := range config.ConfigGetPrefix("movie_") {
+		if !config.ConfigCheck(idxmovie.Name) {
+			continue
+		}
+		cfg_movie := config.ConfigGet(idxmovie.Name).Data.(config.MediaTypeConfig)
 		for idxlist := range cfg_movie.Lists {
 			if strings.EqualFold(cfg_movie.Lists[idxlist].Name, movie.Listname) {
-				searchnow := searcher.NewSearcher(cfg_movie, movie.QualityProfile)
+				searchnow := searcher.NewSearcher(idxmovie.Name, movie.QualityProfile)
 				searchresults := searchnow.MovieSearch(movie, false, titlesearch)
 				c.JSON(http.StatusOK, gin.H{"accepted": searchresults.Nzbs, "rejected": searchresults.Rejected})
 				return
@@ -579,12 +578,13 @@ func apiMoviesRssSearchList(c *gin.Context) {
 		return
 	}
 
-	movie_keys, _ := config.ConfigDB.Keys([]byte("movie_*"), 0, 0, true)
-	for _, idxmovie := range movie_keys {
-		var cfg_movie config.MediaTypeConfig
-		config.ConfigGet(string(idxmovie), &cfg_movie)
+	for _, idxmovie := range config.ConfigGetPrefix("movie_") {
+		if !config.ConfigCheck(idxmovie.Name) {
+			continue
+		}
+		cfg_movie := config.ConfigGet(idxmovie.Name).Data.(config.MediaTypeConfig)
 		if strings.EqualFold(cfg_movie.Name, c.Param("group")) {
-			searchnow := searcher.NewSearcher(cfg_movie, cfg_movie.Template_quality)
+			searchnow := searcher.NewSearcher(idxmovie.Name, cfg_movie.Template_quality)
 			searchresults := searchnow.SearchRSS("movie", true)
 			c.JSON(http.StatusOK, gin.H{"accepted": searchresults.Nzbs, "rejected": searchresults.Rejected})
 			return
@@ -609,7 +609,6 @@ func apimoviesSearchDownload(c *gin.Context) {
 		return
 	}
 	movie, _ := database.GetMovies(database.Query{Where: "id=?", WhereArgs: []interface{}{c.Param("id")}})
-	movie_keys, _ := config.ConfigDB.Keys([]byte("movie_*"), 0, 0, true)
 	searchtype := "missing"
 	if !movie.Missing {
 		searchtype = "upgrade"
@@ -621,13 +620,14 @@ func apimoviesSearchDownload(c *gin.Context) {
 		return
 	}
 
-	for _, idxmovie := range movie_keys {
-		var cfg_movie config.MediaTypeConfig
-		config.ConfigGet(string(idxmovie), &cfg_movie)
-
+	for _, idxmovie := range config.ConfigGetPrefix("movie_") {
+		if !config.ConfigCheck(idxmovie.Name) {
+			continue
+		}
+		cfg_movie := config.ConfigGet(idxmovie.Name).Data.(config.MediaTypeConfig)
 		for idxlist := range cfg_movie.Lists {
 			if strings.EqualFold(cfg_movie.Lists[idxlist].Name, movie.Listname) {
-				downloadnow := downloader.NewDownloader(cfg_movie, searchtype)
+				downloadnow := downloader.NewDownloader(idxmovie.Name, searchtype)
 				downloadnow.SetMovie(movie)
 				downloadnow.DownloadNzb(nzb)
 				c.JSON(http.StatusOK, "started")
@@ -710,7 +710,7 @@ func apimoviesClearHistoryName(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
 		return
 	}
-	go utils.Movies_single_jobs("clearhistory", c.Param("name"), "", true)
+	go utils.Movies_single_jobs("clearhistory", "movie_"+c.Param("name"), "", true)
 	c.JSON(http.StatusOK, "started")
 }
 
