@@ -7,18 +7,18 @@ require (
 	github.com/RussellLuo/slidingwindow v0.0.0-20200528002341-535bb99d338b //Limiter
 	github.com/andrewstuart/go-nzb v0.0.0-20151130213409-4af25f1cccf1 //access nzbget
 	github.com/foolin/goview v0.3.0 //provide website with gin with templates
-	github.com/gdm85/go-libdeluge v0.5.5 //access deluge
+	github.com/gdm85/go-libdeluge v0.5.6 //access deluge
 	github.com/gin-gonic/gin v1.7.7 //webapi
 	github.com/goccy/go-reflect v1.1.0 //alternate reflect
 	github.com/golang-migrate/migrate/v4 v4.15.1 //initialize db
 	github.com/google/uuid v1.3.0 //scheduler
 	github.com/gregdel/pushover v1.1.0 //notification
-	github.com/h2non/filetype v1.1.3
 	github.com/jmoiron/sqlx v1.3.4 //structscan for db
 	github.com/karrick/godirwalk v1.16.1 //faster walk
-	github.com/knadh/koanf v1.3.3 //initial config
-	github.com/mattn/go-sqlite3 v1.14.9 //data and imdb db
-	github.com/mrobinsn/go-rtorrent v1.6.0
+	github.com/knadh/koanf v1.4.0 //initial config
+	github.com/mattn/go-sqlite3 v1.14.10 //data and imdb db
+	github.com/mrobinsn/go-rtorrent v1.7.0
+	github.com/odwrtw/transmission v0.0.0-20211003115842-e3a58d4370e9
 	github.com/pkg/errors v0.9.1
 	github.com/recoilme/pudge v1.0.3 //config db
 	github.com/remeh/sizedwaitgroup v1.0.0 //concurrent wait group
@@ -26,14 +26,13 @@ require (
 	github.com/sirupsen/logrus v1.8.1 //logger
 	github.com/swaggo/files v0.0.0-20210815190702-a29dd2bc99b2 //api docs
 	github.com/swaggo/gin-swagger v1.3.3 //api docs
-	github.com/swaggo/swag v1.7.6 //api docs
+	github.com/swaggo/swag v1.7.8 //api docs
 	github.com/toorop/gin-logrus v0.0.0-20210225092905-2c785434f26f //log gin stuff to logfile also
-	golang.org/x/net v0.0.0-20211216030914-fe4d6282115f
+	golang.org/x/net v0.0.0-20220107192237-5cfca573fb4d
 	golang.org/x/oauth2 v0.0.0-20211104180415-d3ed0bb246c8 //trakt
 	golang.org/x/text v0.3.7
 	golang.org/x/time v0.0.0-20211116232009-f0f3c7e86c11
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0 //Loop Logs
-	github.com/odwrtw/transmission v0.0.0-20211003115842-e3a58d4370e9
 )
 
 require (
@@ -50,7 +49,7 @@ require (
 	github.com/go-openapi/swag v0.19.15 // indirect
 	github.com/go-playground/locales v0.14.0 // indirect
 	github.com/go-playground/universal-translator v0.18.0 // indirect
-	github.com/go-playground/validator/v10 v10.9.0 // indirect
+	github.com/go-playground/validator/v10 v10.10.0 // indirect
 	github.com/go-redis/redis v6.15.9+incompatible // indirect
 	github.com/go-sql-driver/mysql v1.6.0 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect

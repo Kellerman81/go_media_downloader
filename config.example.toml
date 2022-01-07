@@ -13,6 +13,7 @@ worker_metadata = 4 # parallel Metadata scans
 worker_files = 2
 worker_parse = 2 # parallel file parsings
 worker_search = 2 # parallel searches for missing/upgrade scans
+worker_indexer = 2 # parallel indexers to query for one query - set to 1 if you want to use the check_until_first_found - WARNING: up to concurrent_scheduler*worker_search*worker_indexer tasks in parallel so here 8 tasks
 webport  = "9090" #string!
 webapikey = "mysecure" #url is http://<server>:<webport>/api/...?apikey=mysecure
 concurrent_scheduler = 2 # only applies to search jobs - not for feed import or file scans
@@ -316,7 +317,7 @@ rss_entries_loop = 5 # x rss calls x=2 == 2 api calls with 2*maxrss results - wi
 limiter_seconds=1 # will only change after restart
 limiter_calls=1 # max limiter_calls in limiter_seconds
 max_age=2300 # Max Age of Published Release (in days) - skip or set to 0 to ignore
-output_as_json='true' # Use Json output - might work better with some indexers - please use /search/list/ api to check  (adds &o=json to the call)
+output_as_json='true' # Use Json output - might work better with some indexers - please use /search/list/ api to check  (adds &o=json to the call) - from benchmark json is also more resource intensive and xml is the default output
 
 [[indexers]]
 name="jackett1337x" ## Example for torrents via jackett
@@ -473,6 +474,7 @@ interval_indexer_rss="15m" # rss search for missing / upgradable media
 interval_scan_data="60m" # checks for new files in media directories
 interval_scan_data_import="15m" # checks for newly finished and ready to import media
 interval_scan_data_missing="3d" # checks for removed media
+interval_scan_data_flags="14d" # checks for wrong flagged media (high CPU load)
 interval_database_backup="3d" # backup db (only Default Scheduler)
 interval_database_check="1d" # check db - program exits on check fail (only Default Scheduler)
 
@@ -583,31 +585,31 @@ interval_database_check="1d" # check db - program exits on check fail (only Defa
 
 #Fields for Notifications during Structure:
 #
-#	 configEntry config.MediaTypeConfig - Entries from this config
-#    list        config.MediaListsConfig - Entries from this config
-#    groupType   string //series, movies
-#    rootpath    string //1st level below input
+#	 Structure.configEntry config.MediaTypeConfig - Entries from this config
+#    Structure.list        config.MediaListsConfig - Entries from this config
+#    Structure.groupType   string //series, movies
+#    Structure.rootpath    string //1st level below input
 #    Structure.sourcepath  config.PathsConfig - Entries from this config
 #    Structure.targetpath  config.PathsConfig - Entries from this config
-#    inputNotifier.Targetpath     string
-#    inputNotifier.SourcePath     string
-#    Title          string
-#    Season         string
-#    Episode        string
-#    Identifier     string
-#    Series         string
-#    EpisodeTitle   string
-#    Tvdb           string
-#    Year           string
-#    Imdb           string
-#    Configuration  string
-#    Replaced       []string
-#    ReplacedPrefix string
-#    Dbmovie        database.Dbmovie
-#	 Dbserie        database.Dbserie
-#	 DbserieEpisode database.DbserieEpisode
-#	 Source         ParseInfo
-#    Time           string
+#    InputNotifier.Targetpath     string
+#    InputNotifier.SourcePath     string
+#    InputNotifier.Title          string
+#    InputNotifier.Season         string
+#    InputNotifier.Episode        string
+#    InputNotifier.Identifier     string
+#    InputNotifier.Series         string
+#    InputNotifier.EpisodeTitle   string
+#    InputNotifier.Tvdb           string
+#    InputNotifier.Year           string
+#    InputNotifier.Imdb           string
+#    InputNotifier.Configuration  string
+#    InputNotifier.Replaced       []string
+#    InputNotifier.ReplacedPrefix string
+#    InputNotifier.Dbmovie        database.Dbmovie
+#	 InputNotifier.Dbserie        database.Dbserie
+#	 InputNotifier.DbserieEpisode database.DbserieEpisode
+#	 InputNotifier.Source         ParseInfo
+#    InputNotifier.Time           string
 
 #Fields dbmovies:
 #

@@ -57,17 +57,17 @@ var Mu sync.Mutex
 var GlobalQueue DispatcherQueue
 var GlobalSchedules JobSchedules
 
-func (d *JobSchedules) AddQueue(job JobSchedule) {
+func (d *JobSchedules) addQueue(job JobSchedule) {
 	Mu.Lock()
 	defer Mu.Unlock()
 	d.Schedule[job.Id] = job
 }
-func (d *JobSchedules) RemoveQueue(job JobSchedule) {
+func (d *JobSchedules) removeQueue(job JobSchedule) {
 	Mu.Lock()
 	defer Mu.Unlock()
 	delete(d.Schedule, job.Id)
 }
-func UpdateStartedSchedule(job Job) {
+func updateStartedSchedule(job Job) {
 	Mu.Lock()
 	defer Mu.Unlock()
 	findname := job.SchedulerId
@@ -83,7 +83,7 @@ func UpdateStartedSchedule(job Job) {
 		GlobalSchedules.Schedule[findname] = jobschedule
 	}
 }
-func UpdateIsRunningSchedule(job Job, isrunning bool) {
+func updateIsRunningSchedule(job Job, isrunning bool) {
 	Mu.Lock()
 	defer Mu.Unlock()
 	findname := job.SchedulerId
@@ -93,17 +93,17 @@ func UpdateIsRunningSchedule(job Job, isrunning bool) {
 		GlobalSchedules.Schedule[findname] = jobschedule
 	}
 }
-func (d *DispatcherQueue) AddQueue(job Job) {
+func (d *DispatcherQueue) addQueue(job Job) {
 	Mu.Lock()
 	defer Mu.Unlock()
 	d.Queue[job.ID] = job
 }
-func (d *DispatcherQueue) RemoveQueue(job Job) {
+func (d *DispatcherQueue) removeQueue(job Job) {
 	Mu.Lock()
 	defer Mu.Unlock()
 	delete(d.Queue, job.ID)
 }
-func (d *DispatcherQueue) UpdateStartedQueue(job Job) {
+func (d *DispatcherQueue) updateStartedQueue(job Job) {
 	Mu.Lock()
 	defer Mu.Unlock()
 	job.Started = time.Now()
@@ -141,7 +141,7 @@ func (d *Dispatcher) Start() {
 
 	for i := 0; i < d.maxWorkers; i++ {
 		worker := NewWorker(d.workerPool)
-		worker.Start()
+		worker.start()
 		d.workers = append(d.workers, worker)
 	}
 
@@ -151,16 +151,16 @@ func (d *Dispatcher) Start() {
 		for {
 			select {
 			case job := <-d.jobQueue:
-				if !CheckQueue(job.Name) {
-					UpdateStartedSchedule(job)
+				if !checkQueue(job.Name) {
+					updateStartedSchedule(job)
 					go func(job Job) {
 						jobChannel := <-d.workerPool
 						jobChannel <- job
-						d.DispatchQueue.RemoveQueue(job)
+						d.DispatchQueue.removeQueue(job)
 					}(job)
 				} else {
-					d.DispatchQueue.RemoveQueue(job)
-					GlobalQueue.RemoveQueue(job)
+					d.DispatchQueue.removeQueue(job)
+					GlobalQueue.removeQueue(job)
 				}
 			case <-d.quit:
 				return
@@ -169,7 +169,7 @@ func (d *Dispatcher) Start() {
 	}()
 }
 
-func CheckQueue(job string) bool {
+func checkQueue(job string) bool {
 	alternatequeuejobnames := make([]string, 0, 3)
 	if strings.HasPrefix(job, "searchmissinginc_") {
 		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchmissinginc_", "searchmissinginctitle_", 1))
@@ -231,15 +231,15 @@ func (d *Dispatcher) Stop() {
 	d.active = false
 
 	for i := range d.workers {
-		d.workers[i].Stop()
+		d.workers[i].stop()
 	}
 
 	for i := range d.Tickers {
-		d.Tickers[i].Stop()
+		d.Tickers[i].stop()
 	}
 
 	for i := range d.Crons {
-		d.Crons[i].Stop()
+		d.Crons[i].stop()
 	}
 
 	d.workers = []*Worker{}
@@ -256,8 +256,8 @@ func (d *Dispatcher) Dispatch(name string, run func()) error {
 	}
 	job := Job{Queue: d.name, ID: uuid.New().String(), Added: time.Now(), Name: name, Run: run}
 	d.jobQueue <- job
-	GlobalQueue.AddQueue(job)
-	d.DispatchQueue.AddQueue(job)
+	GlobalQueue.addQueue(job)
+	d.DispatchQueue.addQueue(job)
 	return nil
 }
 
@@ -272,8 +272,8 @@ func (d *Dispatcher) DispatchIn(name string, run func(), duration time.Duration)
 		time.Sleep(duration)
 		job := Job{Queue: d.name, ID: uuid.New().String(), Added: time.Now(), Name: name, Run: run}
 		d.jobQueue <- job
-		GlobalQueue.AddQueue(job)
-		d.DispatchQueue.AddQueue(job)
+		GlobalQueue.addQueue(job)
+		d.DispatchQueue.addQueue(job)
 	}()
 
 	return nil
@@ -289,7 +289,7 @@ func (d *Dispatcher) DispatchEvery(name string, run func(), interval time.Durati
 	t := time.NewTicker(interval)
 	schedulerid := uuid.New().String()
 	jobid := uuid.New().String()
-	GlobalSchedules.AddQueue(JobSchedule{
+	GlobalSchedules.addQueue(JobSchedule{
 		JobId:          jobid,
 		Id:             schedulerid,
 		JobName:        name,
@@ -308,8 +308,8 @@ func (d *Dispatcher) DispatchEvery(name string, run func(), interval time.Durati
 			case <-t.C:
 				job := Job{Queue: d.name, ID: jobid, Added: time.Now(), Name: name, Run: run, SchedulerId: schedulerid}
 				d.jobQueue <- job
-				GlobalQueue.AddQueue(job)
-				d.DispatchQueue.AddQueue(job)
+				GlobalQueue.addQueue(job)
+				d.DispatchQueue.addQueue(job)
 			case <-dt.quit:
 				return
 			}
@@ -334,8 +334,8 @@ func (d *Dispatcher) DispatchCron(name string, run func(), cronStr string) (*Dis
 	cjob, err := dc.Cron.AddFunc(cronStr, func() {
 		job := Job{Queue: d.name, ID: jobid, Added: time.Now(), Name: name, Run: run, SchedulerId: schedulerid}
 		d.jobQueue <- job
-		GlobalQueue.AddQueue(job)
-		d.DispatchQueue.AddQueue(job)
+		GlobalQueue.addQueue(job)
+		d.DispatchQueue.addQueue(job)
 	})
 	if err != nil {
 		return nil, errors.New("invalid cron definition")
@@ -343,7 +343,7 @@ func (d *Dispatcher) DispatchCron(name string, run func(), cronStr string) (*Dis
 
 	dc.Cron.Start()
 
-	GlobalSchedules.AddQueue(JobSchedule{
+	GlobalSchedules.addQueue(JobSchedule{
 		JobName:        name,
 		JobId:          jobid,
 		Id:             schedulerid,
@@ -367,9 +367,9 @@ type DispatchTicker struct {
 }
 
 // Stop ends the execution cycle for the given ticker.
-func (dt *DispatchTicker) Stop() {
+func (dt *DispatchTicker) stop() {
 	dt.Ticker.Stop()
-	GlobalSchedules.RemoveQueue(JobSchedule{Id: dt.schedulerid})
+	GlobalSchedules.removeQueue(JobSchedule{Id: dt.schedulerid})
 	dt.quit <- true
 }
 
@@ -381,13 +381,13 @@ type DispatchCron struct {
 }
 
 // Stops ends the execution cycle for the given cron.
-func (c *DispatchCron) Stop() {
+func (c *DispatchCron) stop() {
 	c.Cron.Stop()
 }
-func (c *DispatchCron) Start() {
+func (c *DispatchCron) start() {
 	c.Cron.Start()
 }
-func (c *DispatchCron) Remove(id cron.EntryID) {
+func (c *DispatchCron) remove(id cron.EntryID) {
 	c.Cron.Remove(id)
-	GlobalSchedules.RemoveQueue(JobSchedule{Id: c.schedulerid})
+	GlobalSchedules.removeQueue(JobSchedule{Id: c.schedulerid})
 }

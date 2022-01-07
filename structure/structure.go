@@ -3,7 +3,6 @@ package structure
 import (
 	"bytes"
 	"errors"
-	"fmt"
 	"html/template"
 	"io"
 	"os"
@@ -24,29 +23,30 @@ import (
 )
 
 type structure struct {
-	configEntry config.MediaTypeConfig
-	list        config.MediaListsConfig
-	groupType   string //series, movies
-	rootpath    string //1st level below input
-	sourcepath  config.PathsConfig
-	targetpath  config.PathsConfig
+	configTemplate string
+	listConfig     string
+	groupType      string //series, movies
+	rootpath       string //1st level below input
+	sourcepath     config.PathsConfig
+	targetpath     config.PathsConfig
 }
 
-func NewStructure(configEntry config.MediaTypeConfig, list config.MediaListsConfig, groupType string, rootpath string, sourcepath config.PathsConfig, targetpath config.PathsConfig) (structure, error) {
+func NewStructure(configTemplate string, listConfig string, groupType string, rootpath string, sourcepath config.PathsConfig, targetpath config.PathsConfig) (structure, error) {
+	configEntry := config.ConfigGet(configTemplate).Data.(config.MediaTypeConfig)
 	if !configEntry.Structure {
 		return structure{}, errors.New("not allowed")
 	}
 	return structure{
-		configEntry: configEntry,
-		list:        list,
-		groupType:   groupType,
-		rootpath:    rootpath,
-		sourcepath:  sourcepath,
-		targetpath:  targetpath,
+		configTemplate: configTemplate,
+		listConfig:     listConfig,
+		groupType:      groupType,
+		rootpath:       rootpath,
+		sourcepath:     sourcepath,
+		targetpath:     targetpath,
 	}, nil
 }
 
-func (s *structure) CheckDisallowed() bool {
+func (s *structure) checkDisallowed() bool {
 	if s.groupType == "series" {
 		return scanner.CheckDisallowed(s.rootpath, s.sourcepath.Disallowed, false)
 	} else {
@@ -54,8 +54,9 @@ func (s *structure) CheckDisallowed() bool {
 	}
 }
 
-func (s *structure) GetVideoFiles(folder string, pathconfig config.PathsConfig, removesmallfiles bool) []string {
+func (s *structure) getVideoFiles(folder string, pathconfig config.PathsConfig, removesmallfiles bool) []string {
 	videofiles := scanner.GetFilesDir(folder, pathconfig.AllowedVideoExtensions, pathconfig.AllowedVideoExtensionsNoRename, pathconfig.Blocked)
+
 	if removesmallfiles {
 		for idx := range videofiles {
 			info, err := os.Stat(videofiles[idx])
@@ -64,13 +65,14 @@ func (s *structure) GetVideoFiles(folder string, pathconfig config.PathsConfig, 
 					scanner.RemoveFiles([]string{videofiles[idx]}, pathconfig.AllowedVideoExtensions, pathconfig.AllowedVideoExtensionsNoRename)
 				}
 			}
+			info = nil
 		}
 		videofiles = scanner.GetFilesDir(folder, pathconfig.AllowedVideoExtensions, pathconfig.AllowedVideoExtensionsNoRename, pathconfig.Blocked)
 	}
 	return videofiles
 }
 
-func (s *structure) RemoveSmallVideoFile(file string, pathconfig config.PathsConfig) (removed bool) {
+func (s *structure) removeSmallVideoFile(file string, pathconfig config.PathsConfig) (removed bool) {
 	info, err := os.Stat(file)
 	if pathconfig.MinVideoSize > 0 && err == nil {
 		if info.Size() < int64(pathconfig.MinVideoSize*1024*1024) {
@@ -78,11 +80,12 @@ func (s *structure) RemoveSmallVideoFile(file string, pathconfig config.PathsCon
 			removed = true
 		}
 	}
+	info = nil
 	return
 }
 
 //Parses - uses fprobe and checks language
-func (s *structure) ParseFile(videofile string, checkfolder bool, folder string, deletewronglanguage bool) (m *parser.ParseInfo, err error) {
+func (s *structure) ParseFile(videofile string, checkfolder bool, folder string, deletewronglanguage bool) (m parser.ParseInfo, err error) {
 	yearintitle := false
 	if s.groupType == "series" {
 		yearintitle = true
@@ -122,23 +125,20 @@ func (s *structure) ParseFile(videofile string, checkfolder bool, folder string,
 		}
 	}
 
-	if !config.ConfigCheck("quality_" + s.list.Template_quality) {
+	list := config.ConfigGetMediaListConfig(s.configTemplate, s.listConfig)
+	if !config.ConfigCheck("quality_" + list.Template_quality) {
 		return
 	}
-	var cfg_quality config.QualityConfig
-	config.ConfigGet("quality_"+s.list.Template_quality, &cfg_quality)
 
 	m.Title = strings.Trim(m.Title, " ")
-	m.StripTitlePrefixPostfix(cfg_quality)
+	m.StripTitlePrefixPostfix(list.Template_quality)
 
-	//logger.Log.Debug("Parsed as: ", m)
 	return
 }
 
-func (s structure) FileCleanup(folder string, videofile string) {
+func (s *structure) fileCleanup(folder string, videofile string) {
 	if strings.ToLower(s.groupType) == "movie" || videofile == "" {
-		filesleft := scanner.GetFilesDir(folder, s.sourcepath.AllowedVideoExtensions, s.sourcepath.AllowedVideoExtensionsNoRename, []string{})
-		scanner.RemoveFiles(filesleft, []string{}, []string{})
+		scanner.RemoveFiles(scanner.GetFilesDir(folder, s.sourcepath.AllowedVideoExtensions, s.sourcepath.AllowedVideoExtensionsNoRename, []string{}), []string{}, []string{})
 
 		scanner.CleanUpFolder(folder, s.sourcepath.CleanupsizeMB)
 	} else {
@@ -146,25 +146,23 @@ func (s structure) FileCleanup(folder string, videofile string) {
 		err := scanner.RemoveFile(videofile)
 		if err == nil {
 			for idxext := range s.sourcepath.AllowedOtherExtensions {
-				additionalfile := strings.Replace(videofile, fileext, s.sourcepath.AllowedOtherExtensions[idxext], -1)
-				scanner.RemoveFile(additionalfile)
+				scanner.RemoveFile(strings.Replace(videofile, fileext, s.sourcepath.AllowedOtherExtensions[idxext], -1))
 			}
 		}
 		scanner.CleanUpFolder(folder, s.sourcepath.CleanupsizeMB)
 	}
 }
-func (s *structure) ParseFileAdditional(videofile string, m *parser.ParseInfo, folder string, deletewronglanguage bool, wantedruntime int) (err error) {
-	if !config.ConfigCheck("quality_" + s.list.Template_quality) {
-		return
+func (s *structure) ParseFileAdditional(videofile string, m parser.ParseInfo, folder string, deletewronglanguage bool, wantedruntime int) (parser.ParseInfo, error) {
+	list := config.ConfigGetMediaListConfig(s.configTemplate, s.listConfig)
+	if !config.ConfigCheck("quality_" + list.Template_quality) {
+		return m, errors.New("no quality")
 	}
-	var cfg_quality config.QualityConfig
-	config.ConfigGet("quality_"+s.list.Template_quality, &cfg_quality)
 
-	m.GetPriority(s.configEntry, cfg_quality)
-
-	err = m.ParseVideoFile(videofile, s.configEntry, cfg_quality)
+	m.GetPriority(s.configTemplate, list.Template_quality)
+	var err error
+	err = m.ParseVideoFile(videofile, s.configTemplate, list.Template_quality)
 	if err != nil {
-		return
+		return m, err
 	}
 	if m.Runtime >= 1 && s.targetpath.CheckRuntime && wantedruntime != 0 && s.targetpath.MaxRuntimeDifference != 0 {
 		intruntime := int(m.Runtime / 60)
@@ -181,10 +179,10 @@ func (s *structure) ParseFileAdditional(videofile string, m *parser.ParseInfo, f
 			}
 			if difference > maxdifference {
 				if s.targetpath.DeleteWrongRuntime {
-					s.FileCleanup(folder, videofile)
+					s.fileCleanup(folder, videofile)
 				}
 				logger.Log.Error("Wrong runtime: Wanted", wantedruntime, " Having", intruntime, " difference", difference, " for", m.File)
-				return errors.New("wrong runtime")
+				return m, errors.New("wrong runtime")
 			}
 		}
 	}
@@ -207,38 +205,38 @@ func (s *structure) ParseFileAdditional(videofile string, m *parser.ParseInfo, f
 		}
 		if !language_ok {
 			logger.Log.Debug("Languages not matched - skipping: ", folder, " ", m.Languages)
-			s.FileCleanup(folder, videofile)
+			s.fileCleanup(folder, videofile)
 		}
 		if !language_ok {
 			logger.Log.Error("Wrong language: Wanted", s.targetpath.Allowed_languages, " Having", m.Languages, " for", m.File)
 			err = errors.New("wrong Language")
 		}
 	}
-	return err
+	return m, err
 }
 
-func (s *structure) CheckLowerQualTarget(folder string, videofile string, m parser.ParseInfo, cleanuplowerquality bool, movie database.Movie) ([]string, int, error) {
+func (s *structure) checkLowerQualTarget(folder string, videofile string, m parser.ParseInfo, cleanuplowerquality bool, movie database.Movie) ([]string, int, error) {
+	list := config.ConfigGetMediaListConfig(s.configTemplate, s.listConfig)
 	moviefiles, _ := database.QueryMovieFiles(database.Query{Select: "location, resolution_id, quality_id, codec_id, audio_id, proper, extended, repack", Where: "movie_id = ?", WhereArgs: []interface{}{movie.ID}})
 	logger.Log.Debug("Found existing files: ", len(moviefiles))
 
-	if !config.ConfigCheck("quality_" + s.list.Template_quality) {
+	if !config.ConfigCheck("quality_" + list.Template_quality) {
 		return []string{}, 0, errors.New("config not found")
 	}
-	var cfg_quality config.QualityConfig
-	config.ConfigGet("quality_"+s.list.Template_quality, &cfg_quality)
 
-	oldpriority := parser.GetHighestMoviePriorityByFiles(movie, s.configEntry, cfg_quality)
+	oldpriority := parser.GetHighestMoviePriorityByFiles(movie, s.configTemplate, list.Template_quality)
 	logger.Log.Debug("Found existing highest prio: ", oldpriority)
 	if m.Priority > oldpriority {
 		logger.Log.Debug("prio: ", oldpriority, " lower as ", m.Priority)
-		oldfiles := make([]string, 0, len(moviefiles)*3)
+		//oldfiles := make([]string, 0, len(moviefiles)*3)
+		oldfiles := []string{}
 		if len(moviefiles) >= 1 {
 			lastprocessed := ""
 			for idx := range moviefiles {
 				logger.Log.Debug("want to remove ", moviefiles[idx])
 				oldpath, _ := filepath.Split(moviefiles[idx].Location)
 				logger.Log.Debug("want to remove oldpath ", oldpath)
-				entry_prio := parser.GetMovieDBPriority(moviefiles[idx], s.configEntry, cfg_quality)
+				entry_prio := parser.GetMovieDBPriority(moviefiles[idx], s.configTemplate, list.Template_quality)
 				logger.Log.Debug("want to remove oldprio ", entry_prio)
 				if m.Priority > entry_prio && s.targetpath.Upgrade {
 					oldfiles = append(oldfiles, moviefiles[idx].Location)
@@ -262,7 +260,7 @@ func (s *structure) CheckLowerQualTarget(folder string, videofile string, m pars
 		logger.Log.Info("Skipped import due to lower quality: ", videofile)
 		err := errors.New("import file has lower quality")
 		if cleanuplowerquality {
-			s.FileCleanup(folder, videofile)
+			s.fileCleanup(folder, videofile)
 		}
 		return []string{}, oldpriority, err
 	}
@@ -280,246 +278,6 @@ type parsertype struct {
 	EpisodeTitleSource string
 	Identifier         string
 	Episodes           []int
-}
-
-func (s *structure) GenerateNaming(videofile string, m parser.ParseInfo, movie database.Movie,
-	series database.Serie, serietitle string, serieepisode database.SerieEpisode, episodetitle string, episodes []int) (foldername string, filename string) {
-
-	forparser := parsertype{}
-	if strings.ToLower(s.groupType) == "movie" {
-		dbmovie, _ := database.GetDbmovie(database.Query{Where: "id=?", WhereArgs: []interface{}{movie.DbmovieID}})
-
-		movietitle := filepath.Base(videofile)
-		movietitle = logger.TrimStringInclAfterString(movietitle, m.Quality)
-		movietitle = logger.TrimStringInclAfterString(movietitle, m.Resolution)
-		movietitle = logger.TrimStringInclAfterString(movietitle, strconv.Itoa(m.Year))
-		movietitle = strings.Trim(movietitle, ".")
-		movietitle = strings.Replace(movietitle, ".", " ", -1)
-		logger.Log.Debug("trimmed title: ", movietitle)
-
-		if dbmovie.Title == "" {
-			dbmoviealt, dbmoviealterr := database.GetDbmovieTitle(database.Query{Select: "title", Where: "dbmovie_id=?", WhereArgs: []interface{}{movie.DbmovieID}})
-			if dbmoviealterr == nil {
-				dbmovie.Title = dbmoviealt.Title
-			} else {
-				dbmovie.Title = movietitle
-			}
-		}
-		if dbmovie.Year == 0 {
-			dbmovie.Year = m.Year
-		}
-
-		naming := s.configEntry.Naming
-		foldername, filename = path.Split(naming)
-		//Naming = '{Title} ({Year})/{Title} ({Year}) German [{Resolution} {Quality} {Codec}]'
-		if movie.Rootpath != "" {
-			foldername, _ = logger.Getrootpath(foldername)
-		}
-
-		forparser.Dbmovie = dbmovie
-		forparser.Source = m
-		//Naming = '{{.Dbmovie.Title}} ({{.Dbmovie.Year}})/{{.Dbmovie.Title}} ({{.Dbmovie.Year}}) [{{.Source.Resolution}} {{.Source.Quality}} {{.Source.Codec}} {{.Source.Audio}}{{if eq .Source.Proper 1}} proper{{end}}{{if eq .Source.Extended 1}} extended{{end}}] ({{.Source.Imdb}})'
-		// tmplfolder, err := template.New("tmplfolder").Parse(foldername)
-		// if err != nil {
-		// 	logger.Log.Error(err)
-		// }
-		// var doc bytes.Buffer
-		// err = tmplfolder.Execute(&doc, parser{Dbmovie: dbmovie, Source: m})
-		// if err != nil {
-		// 	logger.Log.Error(err)
-		// }
-		// foldername = doc.String()
-		// foldername = strings.Trim(foldername, ".")
-		// foldername = StringReplaceDiacritics(foldername)
-		// foldername = Path(foldername, true)
-
-		// tmplfile, err := template.New("tmplfile").Parse(filename)
-		// if err != nil {
-		// 	logger.Log.Error(err)
-		// }
-		// err = tmplfile.Execute(&doc, parser{Dbmovie: dbmovie, Source: m})
-		// if err != nil {
-		// 	logger.Log.Error(err)
-		// }
-		// filename = doc.String()
-		// filename = strings.Trim(filename, ".")
-		// filename = strings.Replace(filename, "  ", " ", -1)
-		// filename = strings.Replace(filename, " ]", "]", -1)
-		// filename = strings.Replace(filename, "[ ", "[", -1)
-		// filename = strings.Replace(filename, "[ ]", "", -1)
-		// filename = strings.Replace(filename, "( )", "", -1)
-		// filename = strings.Replace(filename, "[]", "", -1)
-		// filename = strings.Replace(filename, "()", "", -1)
-		// filename = StringReplaceDiacritics(filename)
-		// filename = Path(filename, true)
-
-		foldername = strings.Replace(foldername, "{Title}", dbmovie.Title, -1)
-		foldername = strings.Replace(foldername, "{TitleSource}", movietitle, -1)
-		foldername = strings.Replace(foldername, "{Year}", strconv.Itoa(dbmovie.Year), -1)
-		foldername = strings.Replace(foldername, "{YearSource}", strconv.Itoa(m.Year), -1)
-		foldername = strings.Trim(foldername, ".")
-		foldername = logger.StringReplaceDiacritics(foldername)
-		foldername = logger.Path(foldername, true)
-
-		filename = strings.Replace(filename, "{Title}", dbmovie.Title, -1)
-		filename = strings.Replace(filename, "{TitleSource}", movietitle, -1)
-		filename = strings.Replace(filename, "{Year}", strconv.Itoa(dbmovie.Year), -1)
-		filename = strings.Replace(filename, "{YearSource}", strconv.Itoa(m.Year), -1)
-		proper := ""
-		if m.Proper {
-			proper = "proper"
-		}
-		filename = strings.Replace(filename, "{Proper}", proper, -1)
-		extended := ""
-		if m.Extended {
-			extended = "extended"
-		}
-		if m.Imdb == "" {
-			m.Imdb = dbmovie.ImdbID
-		}
-		filename = strings.Replace(filename, "{Extended}", extended, -1)
-		filename = strings.Replace(filename, "{Resolution}", m.Resolution, -1)
-		filename = strings.Replace(filename, "{Quality}", m.Quality, -1)
-		filename = strings.Replace(filename, "{Codec}", m.Codec, -1)
-		filename = strings.Replace(filename, "{Audio}", m.Audio, -1)
-		if !strings.HasPrefix(m.Imdb, "tt") && len(m.Imdb) >= 1 {
-			m.Imdb = "tt" + m.Imdb
-		}
-		filename = strings.Replace(filename, "{Imdb}", m.Imdb, -1)
-		//filename = ReplaceStringObjectFields(filename, dbmovie)
-		//filename = ReplaceStringObjectFields(filename, m)
-		filename = strings.Replace(filename, "  ", " ", -1)
-		filename = strings.Replace(filename, " ]", "]", -1)
-		filename = strings.Replace(filename, "[ ", "[", -1)
-		filename = strings.Replace(filename, "[ ]", "", -1)
-		filename = strings.Replace(filename, "( )", "", -1)
-		filename = strings.Replace(filename, "[]", "", -1)
-		filename = strings.Replace(filename, "()", "", -1)
-		filename = logger.StringReplaceDiacritics(filename)
-		filename = logger.Path(filename, false)
-	} else {
-		dbserie, _ := database.GetDbserie(database.Query{Where: "id=?", WhereArgs: []interface{}{series.DbserieID}})
-
-		dbserieepisode, _ := database.GetDbserieEpisodes(database.Query{Where: "id=?", WhereArgs: []interface{}{serieepisode.DbserieEpisodeID}})
-
-		foldername, filename = path.Split(s.configEntry.Naming)
-		if dbserie.Seriename == "" {
-			dbseriealt, dbseriealterr := database.GetDbserieAlternates(database.Query{Select: "title", Where: "dbserie_id=?", WhereArgs: []interface{}{series.DbserieID}})
-			if dbseriealterr == nil {
-				dbserie.Seriename = dbseriealt.Title
-			} else {
-				dbserie.Seriename = serietitle
-			}
-		}
-		if dbserieepisode.Title == "" {
-			dbserieepisode.Title = episodetitle
-		}
-		if series.Rootpath != "" {
-			foldername, _ = logger.Getrootpath(foldername)
-		}
-
-		forparser.Dbserie = dbserie
-		forparser.DbserieEpisode = dbserieepisode
-		forparser.Source = m
-
-		//Naming = '{Title}/Season {Season}/{Title} - {Identifier} - German [{Resolution} {Quality} {Codec}] (tvdb{tvdb})'
-		//Naming = '{{.Dbmovie.Title}} ({{.Dbmovie.Year}})/{{.Dbmovie.Title}} ({{.Dbmovie.Year}}) [{{.Source.Resolution}} {{.Source.Quality}} {{.Source.Codec}} {{.Source.Audio}}{{if eq .Source.Proper 1}} proper{{end}}] ({{.Source.Imdb}})'
-		// tmplfolder, err := template.New("tmplfolder").Parse(foldername)
-		// if err != nil {
-		// 	logger.Log.Error(err)
-		// }
-		// var doc bytes.Buffer
-		// err = tmplfolder.Execute(&doc, parser{Dbmovie: dbmovie, Source: m})
-		// if err != nil {
-		// 	logger.Log.Error(err)
-		// }
-		// foldername = doc.String()
-		// foldername = strings.Trim(foldername, ".")
-		// foldername = StringReplaceDiacritics(foldername)
-		// foldername = Path(foldername, true)
-		//S{0Season}E{0Episode}(E{0Episode})
-		foldername = strings.Replace(foldername, "{Title}", dbserie.Seriename, -1)
-		foldername = strings.Replace(foldername, "{TitleSource}", serietitle, -1)
-		foldername = strings.Replace(foldername, "{Season}", dbserieepisode.Season, -1)
-		foldername = strings.Replace(foldername, "{0Season}", fmt.Sprintf("%02s", dbserieepisode.Season), -1)
-		foldername = strings.Trim(foldername, ".")
-		foldername = logger.StringReplaceDiacritics(foldername)
-
-		filename = strings.Replace(filename, "{Title}", dbserie.Seriename, -1)
-		filename = strings.Replace(filename, "{Season}", dbserieepisode.Season, -1)
-		filename = strings.Replace(filename, "{0Season}", fmt.Sprintf("%02s", dbserieepisode.Season), -1)
-		identifier := s.configEntry.NamingIdentifier
-		identifier = strings.Replace(identifier, "{0Season}", fmt.Sprintf("%02s", dbserieepisode.Season), -1)
-		identifier = strings.Replace(identifier, "{Season}", dbserieepisode.Season, -1)
-		identifier = strings.Replace(identifier, "{Identifier}", dbserieepisode.Identifier, -1)
-
-		r := regexp.MustCompile(`(?i)(\(.*\))`)
-		teststr := r.FindStringSubmatch(identifier)
-		if len(episodes) == 1 {
-			identifier = strings.Replace(identifier, "{0Episode}", fmt.Sprintf("%02d", episodes[0]), 1)
-			identifier = strings.Replace(identifier, "{Episode}", strconv.Itoa(episodes[0]), 1)
-			if len(teststr) == 2 {
-				identifier = strings.Replace(identifier, teststr[1], "", -1)
-			}
-		} else {
-			if len(teststr) == 2 {
-				for i := range episodes {
-					if i == 0 {
-						identifier = strings.Replace(identifier, "{0Episode}", fmt.Sprintf("%02d", episodes[i]), 1)
-						identifier = strings.Replace(identifier, "{Episode}", strconv.Itoa(episodes[i]), 1)
-						identifier = strings.Replace(identifier, teststr[1], "", -1)
-					} else {
-						otheridentifier := teststr[1]
-						otheridentifier = strings.Trim(otheridentifier, "(")
-						otheridentifier = strings.Trim(otheridentifier, ")")
-						otheridentifier = strings.Replace(otheridentifier, "{0Episode}", fmt.Sprintf("%02d", episodes[i]), 1)
-						otheridentifier = strings.Replace(otheridentifier, "{Episode}", strconv.Itoa(episodes[i]), 1)
-						identifier = identifier + otheridentifier
-					}
-				}
-			}
-		}
-		filename = strings.Replace(filename, "{Identifier}", identifier, -1)
-		proper := ""
-		if m.Proper {
-			proper = "proper"
-		}
-		filename = strings.Replace(filename, "{Proper}", proper, -1)
-		extended := ""
-		if m.Extended {
-			extended = "extended"
-		}
-		if m.Tvdb == "" {
-			m.Tvdb = strconv.Itoa(dbserie.ThetvdbID)
-		}
-		filename = strings.Replace(filename, "{Extended}", extended, -1)
-		filename = strings.Replace(filename, "{Resolution}", m.Resolution, -1)
-		filename = strings.Replace(filename, "{Quality}", m.Quality, -1)
-		filename = strings.Replace(filename, "{Codec}", m.Codec, -1)
-		filename = strings.Replace(filename, "{Audio}", m.Audio, -1)
-
-		if !strings.HasPrefix(m.Tvdb, "tvdb") && len(m.Tvdb) >= 1 {
-			m.Tvdb = "tvdb" + m.Tvdb
-		}
-		filename = strings.Replace(filename, "{Tvdb}", m.Tvdb, -1)
-		filename = strings.Replace(filename, "{EpisodeTitle}", dbserieepisode.Title, -1)
-		filename = strings.Replace(filename, "{EpisodeTitleSource}", episodetitle, -1)
-		filename = strings.Replace(filename, "{TitleSource}", serietitle, -1)
-		//filename = ReplaceStringObjectFields(filename, dbmovie)
-		//filename = ReplaceStringObjectFields(filename, m)
-		filename = strings.Replace(filename, "  ", " ", -1)
-		filename = strings.Replace(filename, " ]", "]", -1)
-		filename = strings.Replace(filename, "[ ", "[", -1)
-		filename = strings.Replace(filename, "[ ]", "", -1)
-		filename = strings.Replace(filename, "( )", "", -1)
-		filename = strings.Replace(filename, "[]", "", -1)
-		filename = strings.Replace(filename, "()", "", -1)
-		filename = logger.StringReplaceDiacritics(filename)
-
-		foldername = logger.Path(foldername, true)
-		filename = logger.Path(filename, false)
-	}
-	return
 }
 
 func (s *structure) GenerateNamingTemplate(videofile string, m parser.ParseInfo, movie database.Movie,
@@ -550,7 +308,8 @@ func (s *structure) GenerateNamingTemplate(videofile string, m parser.ParseInfo,
 			dbmovie.Year = m.Year
 		}
 
-		naming := s.configEntry.Naming
+		configEntry := config.ConfigGet(s.configTemplate).Data.(config.MediaTypeConfig)
+		naming := configEntry.Naming
 
 		foldername, filename = path.Split(naming)
 		if movie.Rootpath != "" {
@@ -577,6 +336,7 @@ func (s *structure) GenerateNamingTemplate(videofile string, m parser.ParseInfo,
 			logger.Log.Error(err)
 		}
 		foldername = doc.String()
+		tmplfolder = nil
 		logger.Log.Debug("Folder parsed: " + foldername)
 		foldername = strings.Trim(foldername, ".")
 		foldername = logger.StringReplaceDiacritics(foldername)
@@ -593,6 +353,7 @@ func (s *structure) GenerateNamingTemplate(videofile string, m parser.ParseInfo,
 			logger.Log.Error(err)
 		}
 		filename = docfile.String()
+		tmplfile = nil
 		logger.Log.Debug("File parsed: " + filename)
 		filename = strings.Trim(filename, ".")
 		filename = strings.Replace(filename, "  ", " ", -1)
@@ -610,7 +371,8 @@ func (s *structure) GenerateNamingTemplate(videofile string, m parser.ParseInfo,
 
 		dbserieepisode, _ := database.GetDbserieEpisodes(database.Query{Where: "id=?", WhereArgs: []interface{}{serieepisode.DbserieEpisodeID}})
 
-		foldername, filename = path.Split(s.configEntry.Naming)
+		configEntry := config.ConfigGet(s.configTemplate).Data.(config.MediaTypeConfig)
+		foldername, filename = path.Split(configEntry.Naming)
 
 		if dbserie.Seriename == "" {
 			dbseriealt, dbseriealterr := database.GetDbserieAlternates(database.Query{Select: "title", Where: "dbserie_id=?", WhereArgs: []interface{}{series.DbserieID}})
@@ -654,6 +416,7 @@ func (s *structure) GenerateNamingTemplate(videofile string, m parser.ParseInfo,
 			logger.Log.Error(err)
 		}
 		foldername = doc.String()
+		tmplfolder = nil
 		logger.Log.Debug("Folder parsed: " + foldername)
 		foldername = strings.Trim(foldername, ".")
 		foldername = logger.StringReplaceDiacritics(foldername)
@@ -671,6 +434,7 @@ func (s *structure) GenerateNamingTemplate(videofile string, m parser.ParseInfo,
 			logger.Log.Error(err)
 		}
 		filename = docfile.String()
+		tmplfile = nil
 		logger.Log.Debug("File parsed: " + filename)
 		filename = strings.Trim(filename, ".")
 		filename = strings.Replace(filename, "  ", " ", -1)
@@ -687,9 +451,9 @@ func (s *structure) GenerateNamingTemplate(videofile string, m parser.ParseInfo,
 	return
 }
 
-func (s *structure) MoveVideoFile(foldername string, filename string, videofiles []string, rootpath string) (videotarget string, moveok bool, moved int) {
-	var cfg_general config.GeneralConfig
-	config.ConfigGet("general", &cfg_general)
+func (s *structure) moveVideoFile(foldername string, filename string, videofiles []string, rootpath string) (videotarget string, moveok bool, moved int) {
+	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
+
 	videotarget = filepath.Join(s.targetpath.Path, foldername)
 	logger.Log.Debug("Default target ", videotarget)
 	if rootpath != "" {
@@ -703,7 +467,7 @@ func (s *structure) MoveVideoFile(foldername string, filename string, videofiles
 	return
 }
 
-func (s *structure) UpdateRootpath(videotarget string, foldername string, movie database.Movie, serie database.Serie) {
+func (s *structure) updateRootpath(videotarget string, foldername string, movie database.Movie, serie database.Serie) {
 	if s.targetpath.Usepresort {
 		return
 	}
@@ -721,9 +485,9 @@ func (s *structure) UpdateRootpath(videotarget string, foldername string, movie 
 	}
 }
 
-func (s *structure) MoveOldFiles(oldfiles []string, movie database.Movie, series database.Serie) {
-	var cfg_general config.GeneralConfig
-	config.ConfigGet("general", &cfg_general)
+func (s *structure) moveOldFiles(oldfiles []string, movie database.Movie, series database.Serie) {
+	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
+
 	if !s.targetpath.MoveReplaced || len(oldfiles) == 0 || s.targetpath.MoveReplacedTargetPath == "" {
 		return
 	}
@@ -771,7 +535,7 @@ func (s *structure) MoveOldFiles(oldfiles []string, movie database.Movie, series
 	}
 }
 
-func (s *structure) ReplaceLowerQualityFiles(oldfiles []string, movie database.Movie, series database.Serie) {
+func (s *structure) replaceLowerQualityFiles(oldfiles []string, movie database.Movie, series database.Serie) {
 	if !s.targetpath.Replacelower || len(oldfiles) == 0 {
 		return
 	}
@@ -819,9 +583,9 @@ func (s *structure) ReplaceLowerQualityFiles(oldfiles []string, movie database.M
 	}
 }
 
-func (s *structure) MoveAdditionalFiles(folder string, videotarget string, filename string, videofile string, sourcefileext string, videofilecount int) {
-	var cfg_general config.GeneralConfig
-	config.ConfigGet("general", &cfg_general)
+func (s *structure) moveAdditionalFiles(folder string, videotarget string, filename string, videofile string, sourcefileext string, videofilecount int) {
+	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
+
 	if strings.ToLower(s.groupType) == "movie" || videofilecount == 1 {
 		additionalfiles := scanner.GetFilesDir(folder, s.sourcepath.AllowedOtherExtensions, s.sourcepath.AllowedOtherExtensionsNoRename, s.sourcepath.Blocked)
 		if len(additionalfiles) >= 1 {
@@ -829,42 +593,41 @@ func (s *structure) MoveAdditionalFiles(folder string, videotarget string, filen
 		}
 	} else {
 		for idx := range s.sourcepath.AllowedOtherExtensions {
-			additionalfile := strings.Replace(videofile, sourcefileext, s.sourcepath.AllowedOtherExtensions[idx], -1)
-			scanner.MoveFiles([]string{additionalfile}, videotarget, filename, s.sourcepath.AllowedOtherExtensions, s.sourcepath.AllowedOtherExtensionsNoRename, cfg_general.UseFileBufferCopy)
+			scanner.MoveFiles([]string{strings.Replace(videofile, sourcefileext, s.sourcepath.AllowedOtherExtensions[idx], -1)}, videotarget, filename, s.sourcepath.AllowedOtherExtensions, s.sourcepath.AllowedOtherExtensionsNoRename, cfg_general.UseFileBufferCopy)
 		}
 	}
 }
 
-func structureSeries(structure structure, folder string, m *parser.ParseInfo, series database.Serie, videofile string, deletewronglanguage bool) {
-	if !config.ConfigCheck("quality_" + structure.list.Template_quality) {
-		logger.Log.Error("Template Quality not found: ", structure.list.Template_quality)
+func (structurevar *structure) structureSeries(folder string, m parser.ParseInfo, series database.Serie, videofile string, deletewronglanguage bool) {
+	list := config.ConfigGetMediaListConfig(structurevar.configTemplate, structurevar.listConfig)
+	if !config.ConfigCheck("quality_" + list.Template_quality) {
+		logger.Log.Error("Template Quality not found: ", list.Template_quality)
 		return
 	}
-	var cfg_quality config.QualityConfig
-	config.ConfigGet("quality_"+structure.list.Template_quality, &cfg_quality)
 
 	dbseries, _ := database.GetDbserie(database.Query{Where: "id=?", WhereArgs: []interface{}{series.DbserieID}})
 	runtime, _ := strconv.Atoi(dbseries.Runtime)
-	oldfiles, episodes, allowimport, serietitle, episodetitle, seriesEpisode, seriesEpisodes, epiruntime := structure.GetSeriesEpisodes(series, videofile, *m, folder)
+	oldfiles, episodes, allowimport, serietitle, episodetitle, seriesEpisode, seriesEpisodes, epiruntime := structurevar.GetSeriesEpisodes(series, videofile, m, folder)
 	if epiruntime != 0 {
 		runtime = epiruntime
 	}
-	errpars := structure.ParseFileAdditional(videofile, m, folder, deletewronglanguage, runtime*len(episodes))
+	var errpars error
+	m, errpars = structurevar.ParseFileAdditional(videofile, m, folder, deletewronglanguage, runtime*len(episodes))
 	if errpars != nil {
 		logger.Log.Error("Error fprobe video: ", videofile, " error: ", errpars)
 		return
 	}
 	if allowimport {
-		foldername, filename := structure.GenerateNamingTemplate(videofile, *m, database.Movie{}, series, serietitle, seriesEpisode, episodetitle, episodes)
+		foldername, filename := structurevar.GenerateNamingTemplate(videofile, m, database.Movie{}, series, serietitle, seriesEpisode, episodetitle, episodes)
 		sourcefileext := filepath.Ext(videofile)
-		structure.MoveOldFiles(oldfiles, database.Movie{}, series)
+		structurevar.moveOldFiles(oldfiles, database.Movie{}, series)
 		mediatargetpath := series.Rootpath
-		if structure.targetpath.Usepresort && structure.targetpath.PresortFolderPath != "" {
-			mediatargetpath = filepath.Join(structure.targetpath.PresortFolderPath, foldername)
+		if structurevar.targetpath.Usepresort && structurevar.targetpath.PresortFolderPath != "" {
+			mediatargetpath = filepath.Join(structurevar.targetpath.PresortFolderPath, foldername)
 		}
-		videotarget, moveok, moved := structure.MoveVideoFile(foldername, filename, []string{videofile}, mediatargetpath)
+		videotarget, moveok, moved := structurevar.moveVideoFile(foldername, filename, []string{videofile}, mediatargetpath)
 		if moveok && moved >= 1 {
-			structure.UpdateRootpath(videotarget, foldername, database.Movie{}, series)
+			structurevar.updateRootpath(videotarget, foldername, database.Movie{}, series)
 			var oldfiles_remove []string
 			for idx := range oldfiles {
 				if strings.HasPrefix(strings.ToLower(oldfiles[idx]), strings.ToLower(videotarget)) && strings.Contains(strings.ToLower(oldfiles[idx]), strings.ToLower(filename)) {
@@ -873,24 +636,23 @@ func structureSeries(structure structure, folder string, m *parser.ParseInfo, se
 					oldfiles_remove = append(oldfiles_remove, oldfiles[idx])
 				}
 			}
-			structure.ReplaceLowerQualityFiles(oldfiles_remove, database.Movie{}, series)
-			structure.MoveAdditionalFiles(folder, videotarget, filename, videofile, sourcefileext, len(videotarget))
-			structure.Notify(videotarget, filename, videofile, *m, database.Movie{}, seriesEpisode, oldfiles)
-			scanner.CleanUpFolder(folder, structure.sourcepath.CleanupsizeMB)
+			structurevar.replaceLowerQualityFiles(oldfiles_remove, database.Movie{}, series)
+			structurevar.moveAdditionalFiles(folder, videotarget, filename, videofile, sourcefileext, len(videotarget))
+			structurevar.notify(videotarget, filename, videofile, m, database.Movie{}, seriesEpisode, oldfiles)
+			scanner.CleanUpFolder(folder, structurevar.sourcepath.CleanupsizeMB)
 
 			//updateserie
 			targetfile := filepath.Join(videotarget, filename)
 
 			reached := false
 
-			cutoffPrio := parser.NewCutoffPrio(structure.configEntry, cfg_quality)
-			if m.Priority >= cutoffPrio.Priority {
+			if m.Priority >= parser.NewCutoffPrio(structurevar.configTemplate, list.Template_quality).Priority {
 				reached = true
 			}
 			for idxepi := range seriesEpisodes {
 				database.InsertArray("serie_episode_files",
-					[]string{"location", "filename", "extension", "quality_profile", "resolution_id", "quality_id", "codec_id", "audio_id", "proper", "repack", "extended", "serie_id", "serie_episode_id", "dbserie_episode_id", "dbserie_id"},
-					[]interface{}{targetfile, filepath.Base(targetfile), filepath.Ext(targetfile), structure.list.Template_quality, m.ResolutionID, m.QualityID, m.CodecID, m.AudioID, m.Proper, m.Repack, m.Extended, seriesEpisodes[idxepi].SerieID, seriesEpisodes[idxepi].ID, seriesEpisodes[idxepi].DbserieEpisodeID, seriesEpisodes[idxepi].DbserieID})
+					[]string{"location", "filename", "extension", "quality_profile", "resolution_id", "quality_id", "codec_id", "audio_id", "proper", "repack", "extended", "serie_id", "serie_episode_id", "dbserie_episode_id", "dbserie_id", "height", "width"},
+					[]interface{}{targetfile, filepath.Base(targetfile), filepath.Ext(targetfile), list.Template_quality, m.ResolutionID, m.QualityID, m.CodecID, m.AudioID, m.Proper, m.Repack, m.Extended, seriesEpisodes[idxepi].SerieID, seriesEpisodes[idxepi].ID, seriesEpisodes[idxepi].DbserieEpisodeID, seriesEpisodes[idxepi].DbserieID, m.Height, m.Width})
 
 				database.UpdateColumn("serie_episodes", "missing", false, database.Query{Where: "id=?", WhereArgs: []interface{}{seriesEpisodes[idxepi].ID}})
 				database.UpdateColumn("serie_episodes", "quality_reached", reached, database.Query{Where: "id=?", WhereArgs: []interface{}{seriesEpisodes[idxepi].ID}})
@@ -898,37 +660,37 @@ func structureSeries(structure structure, folder string, m *parser.ParseInfo, se
 		}
 	}
 }
-func structureMovie(structure structure, folder string, m *parser.ParseInfo, movie database.Movie, videofile string, deletewronglanguage bool) {
-	if !config.ConfigCheck("quality_" + structure.list.Template_quality) {
-		logger.Log.Error("Template Quality not found: ", structure.list.Template_quality)
+func (structurevar *structure) structureMovie(folder string, m parser.ParseInfo, movie database.Movie, videofile string, deletewronglanguage bool) {
+	list := config.ConfigGetMediaListConfig(structurevar.configTemplate, structurevar.listConfig)
+	if !config.ConfigCheck("quality_" + list.Template_quality) {
+		logger.Log.Error("Template Quality not found: ", list.Template_quality)
 		return
 	}
-	var cfg_quality config.QualityConfig
-	config.ConfigGet("quality_"+structure.list.Template_quality, &cfg_quality)
 
 	dbmovie, _ := database.GetDbmovie(database.Query{Where: "id=?", WhereArgs: []interface{}{movie.DbmovieID}})
-	errpars := structure.ParseFileAdditional(videofile, m, folder, deletewronglanguage, dbmovie.Runtime)
+	var errpars error
+	m, errpars = structurevar.ParseFileAdditional(videofile, m, folder, deletewronglanguage, dbmovie.Runtime)
 	if errpars != nil {
 		logger.Log.Error("Error fprobe video: ", videofile, " error: ", errpars)
 		return
 	}
-	oldfiles, _, errold := structure.CheckLowerQualTarget(folder, videofile, *m, true, movie)
+	oldfiles, _, errold := structurevar.checkLowerQualTarget(folder, videofile, m, true, movie)
 	if errold != nil {
 		logger.Log.Error("Error checking oldfiles: ", videofile, " error: ", errold)
 		return
 	}
-	foldername, filename := structure.GenerateNamingTemplate(videofile, *m, movie, database.Serie{}, "", database.SerieEpisode{}, "", []int{})
+	foldername, filename := structurevar.GenerateNamingTemplate(videofile, m, movie, database.Serie{}, "", database.SerieEpisode{}, "", []int{})
 
 	sourcefileext := filepath.Ext(videofile)
 
-	structure.MoveOldFiles(oldfiles, movie, database.Serie{})
+	structurevar.moveOldFiles(oldfiles, movie, database.Serie{})
 	mediatargetpath := movie.Rootpath
-	if structure.targetpath.Usepresort && structure.targetpath.PresortFolderPath != "" {
-		mediatargetpath = filepath.Join(structure.targetpath.PresortFolderPath, foldername)
+	if structurevar.targetpath.Usepresort && structurevar.targetpath.PresortFolderPath != "" {
+		mediatargetpath = filepath.Join(structurevar.targetpath.PresortFolderPath, foldername)
 	}
-	videotarget, moveok, moved := structure.MoveVideoFile(foldername, filename, []string{videofile}, mediatargetpath)
+	videotarget, moveok, moved := structurevar.moveVideoFile(foldername, filename, []string{videofile}, mediatargetpath)
 	if moveok && moved >= 1 {
-		structure.UpdateRootpath(videotarget, foldername, movie, database.Serie{})
+		structurevar.updateRootpath(videotarget, foldername, movie, database.Serie{})
 		var oldfiles_remove []string
 		for idx := range oldfiles {
 			if strings.HasPrefix(strings.ToLower(oldfiles[idx]), strings.ToLower(videotarget)) && strings.Contains(strings.ToLower(oldfiles[idx]), strings.ToLower(filename)) {
@@ -937,22 +699,21 @@ func structureMovie(structure structure, folder string, m *parser.ParseInfo, mov
 				oldfiles_remove = append(oldfiles_remove, oldfiles[idx])
 			}
 		}
-		structure.ReplaceLowerQualityFiles(oldfiles_remove, movie, database.Serie{})
-		structure.MoveAdditionalFiles(folder, videotarget, filename, videofile, sourcefileext, len(videotarget))
+		structurevar.replaceLowerQualityFiles(oldfiles_remove, movie, database.Serie{})
+		structurevar.moveAdditionalFiles(folder, videotarget, filename, videofile, sourcefileext, len(videotarget))
 
-		structure.Notify(videotarget, filename, videofile, *m, movie, database.SerieEpisode{}, oldfiles)
-		scanner.CleanUpFolder(folder, structure.sourcepath.CleanupsizeMB)
+		structurevar.notify(videotarget, filename, videofile, m, movie, database.SerieEpisode{}, oldfiles)
+		scanner.CleanUpFolder(folder, structurevar.sourcepath.CleanupsizeMB)
 
 		//updatemovie
-		targetfile := filepath.Join(videotarget, filename)
+		targetfile := filepath.Join(videotarget, filename+filepath.Ext(videofile))
 		database.InsertArray("movie_files",
-			[]string{"location", "filename", "extension", "quality_profile", "resolution_id", "quality_id", "codec_id", "audio_id", "proper", "repack", "extended", "movie_id", "dbmovie_id"},
-			[]interface{}{targetfile, filepath.Base(targetfile), filepath.Ext(targetfile), structure.list.Template_quality, m.ResolutionID, m.QualityID, m.CodecID, m.AudioID, m.Proper, m.Repack, m.Extended, movie.ID, movie.DbmovieID})
+			[]string{"location", "filename", "extension", "quality_profile", "resolution_id", "quality_id", "codec_id", "audio_id", "proper", "repack", "extended", "movie_id", "dbmovie_id", "height", "width"},
+			[]interface{}{targetfile, filepath.Base(targetfile), filepath.Ext(targetfile), list.Template_quality, m.ResolutionID, m.QualityID, m.CodecID, m.AudioID, m.Proper, m.Repack, m.Extended, movie.ID, movie.DbmovieID, m.Height, m.Width})
 
 		reached := false
 
-		cutoffPrio := parser.NewCutoffPrio(structure.configEntry, cfg_quality)
-		if m.Priority >= cutoffPrio.Priority {
+		if m.Priority >= parser.NewCutoffPrio(structurevar.configTemplate, list.Template_quality).Priority {
 			reached = true
 		}
 		database.UpdateColumn("movies", "missing", false, database.Query{Where: "id=?", WhereArgs: []interface{}{movie.ID}})
@@ -961,31 +722,31 @@ func structureMovie(structure structure, folder string, m *parser.ParseInfo, mov
 		logger.Log.Error("Error moving video - unknown reason")
 	}
 }
-func StructureSingleFolderAs(folder string, id int, disableruntimecheck bool, disabledisallowed bool, disabledeletewronglanguage bool, grouptype string, sourcepath config.PathsConfig, targetpath config.PathsConfig, configEntry config.MediaTypeConfig, list config.MediaListsConfig) {
+func StructureSingleFolderAs(folder string, id int, disableruntimecheck bool, disabledisallowed bool, disabledeletewronglanguage bool, grouptype string, sourcepath config.PathsConfig, targetpath config.PathsConfig, configTemplate string, listConfig string) {
 	logger.Log.Debug("Process Folder: ", folder)
 	if disableruntimecheck {
 		targetpath.CheckRuntime = false
 	}
-	structure, err := NewStructure(configEntry, list, grouptype, folder, sourcepath, targetpath)
+	structurevar, err := NewStructure(configTemplate, listConfig, grouptype, folder, sourcepath, targetpath)
 	if err != nil {
 		return
 	}
 	if disabledisallowed {
-		structure.sourcepath.Disallowed = []string{}
+		structurevar.sourcepath.Disallowed = []string{}
 	}
-	if structure.CheckDisallowed() {
-		if structure.sourcepath.DeleteDisallowed {
-			structure.FileCleanup(folder, "")
+	if structurevar.checkDisallowed() {
+		if structurevar.sourcepath.DeleteDisallowed {
+			structurevar.fileCleanup(folder, "")
 		}
 		return
 	}
 	removesmallfiles := false
-	if strings.ToLower(structure.groupType) == "movie" {
+	if structurevar.groupType == "movie" {
 		removesmallfiles = true
 	}
-	videofiles := structure.GetVideoFiles(folder, sourcepath, removesmallfiles)
+	videofiles := structurevar.getVideoFiles(folder, sourcepath, removesmallfiles)
 
-	if strings.ToLower(structure.groupType) == "movie" {
+	if structurevar.groupType == "movie" {
 		if len(videofiles) >= 2 {
 			//skip too many  files
 			return
@@ -995,8 +756,8 @@ func StructureSingleFolderAs(folder string, id int, disableruntimecheck bool, di
 		if filepath.Ext(videofiles[fileidx]) == "" {
 			continue
 		}
-		if strings.ToLower(structure.groupType) == "series" {
-			if structure.RemoveSmallVideoFile(videofiles[fileidx], sourcepath) {
+		if structurevar.groupType == "series" {
+			if structurevar.removeSmallVideoFile(videofiles[fileidx], sourcepath) {
 				continue
 			}
 		}
@@ -1005,81 +766,82 @@ func StructureSingleFolderAs(folder string, id int, disableruntimecheck bool, di
 			logger.Log.Debug("Unpacking - skipping: ", videofiles[fileidx])
 			continue
 		}
-		deletewronglanguage := structure.targetpath.DeleteWrongLanguage
+		deletewronglanguage := structurevar.targetpath.DeleteWrongLanguage
 		if disabledeletewronglanguage {
 			deletewronglanguage = false
 		}
-		m, err := structure.ParseFile(videofiles[fileidx], true, folder, deletewronglanguage)
+		m, err := structurevar.ParseFile(videofiles[fileidx], true, folder, deletewronglanguage)
 		if err != nil {
 			logger.Log.Error("Error parsing: ", videofiles[fileidx], " error: ", err)
 			continue
 		}
-		if strings.ToLower(structure.groupType) == "movie" {
+		n := m
+		if structurevar.groupType == "movie" {
 			movie, movierr := database.GetMovies(database.Query{Where: "id=?", WhereArgs: []interface{}{id}})
 			if movierr != nil {
 				return
 			}
 
 			if movie.ID >= 1 {
-				structureMovie(structure, folder, m, movie, videofiles[fileidx], deletewronglanguage)
+				structurevar.structureMovie(folder, n, movie, videofiles[fileidx], deletewronglanguage)
 			} else {
 				logger.Log.Debug("Movie not matched: ", videofiles[fileidx])
 			}
-		} else if strings.ToLower(structure.groupType) == "series" {
+		} else if structurevar.groupType == "series" {
+			list := config.ConfigGetMediaListConfig(structurevar.configTemplate, structurevar.listConfig)
 			//SerieEpisodeHistory, _ := database.QuerySerieEpisodeHistory(database.Query{InnerJoin: "series on series.id=serie_episode_histories.serie_id", Where: "serie_episode_histories.target = ? and series.listname = ?", WhereArgs: []interface{}{filepath.Base(folders[idx]), list.Name}})
 			if !config.ConfigCheck("quality_" + list.Template_quality) {
 				return
 			}
-			var cfg_quality config.QualityConfig
-			config.ConfigGet("quality_"+list.Template_quality, &cfg_quality)
-
 			//find dbseries
 			series, serierr := database.GetSeries(database.Query{Where: "id=?", WhereArgs: []interface{}{id}})
 			if serierr != nil {
 				logger.Log.Debug("Serie not matched: ", videofiles[fileidx])
 				return
 			}
-			structureSeries(structure, folder, m, series, videofiles[fileidx], deletewronglanguage)
+			structurevar.structureSeries(folder, n, series, videofiles[fileidx], deletewronglanguage)
 		}
 	}
 }
 
-func StructureSingleFolder(folder string, disableruntimecheck bool, disabledisallowed bool, disabledeletewronglanguage bool, grouptype string, sourcepath config.PathsConfig, targetpath config.PathsConfig, configEntry config.MediaTypeConfig, list config.MediaListsConfig) {
+func StructureSingleFolder(folder string, disableruntimecheck bool, disabledisallowed bool, disabledeletewronglanguage bool, grouptype string, sourcepath config.PathsConfig, targetpath config.PathsConfig, configTemplate string, listConfig string) {
 	logger.Log.Debug("Process Folder: ", folder)
 	if disableruntimecheck {
 		targetpath.CheckRuntime = false
 	}
-	structure, err := NewStructure(configEntry, list, grouptype, folder, sourcepath, targetpath)
+	structurevar, err := NewStructure(configTemplate, listConfig, grouptype, folder, sourcepath, targetpath)
 	if err != nil {
 		return
 	}
 	if disabledisallowed {
-		structure.sourcepath.Disallowed = []string{}
+		structurevar.sourcepath.Disallowed = []string{}
 	}
-	if structure.CheckDisallowed() {
-		if structure.sourcepath.DeleteDisallowed {
-			structure.FileCleanup(folder, "")
+	if structurevar.checkDisallowed() {
+		if structurevar.sourcepath.DeleteDisallowed {
+			structurevar.fileCleanup(folder, "")
 		}
 		return
 	}
 	removesmallfiles := false
-	if strings.ToLower(structure.groupType) == "movie" {
+	if structurevar.groupType == "movie" {
 		removesmallfiles = true
 	}
-	videofiles := structure.GetVideoFiles(folder, sourcepath, removesmallfiles)
+	videofiles := structurevar.getVideoFiles(folder, sourcepath, removesmallfiles)
 
-	if strings.ToLower(structure.groupType) == "movie" {
+	if structurevar.groupType == "movie" {
 		if len(videofiles) >= 2 {
 			//skip too many  files
 			return
 		}
 	}
+	list := config.ConfigGetMediaListConfig(structurevar.configTemplate, structurevar.listConfig)
+
 	for fileidx := range videofiles {
 		if filepath.Ext(videofiles[fileidx]) == "" {
 			continue
 		}
-		if strings.ToLower(structure.groupType) == "series" {
-			if structure.RemoveSmallVideoFile(videofiles[fileidx], sourcepath) {
+		if structurevar.groupType == "series" {
+			if structurevar.removeSmallVideoFile(videofiles[fileidx], sourcepath) {
 				continue
 			}
 		}
@@ -1088,47 +850,50 @@ func StructureSingleFolder(folder string, disableruntimecheck bool, disabledisal
 			logger.Log.Debug("Unpacking - skipping: ", videofiles[fileidx])
 			continue
 		}
-		deletewronglanguage := structure.targetpath.DeleteWrongLanguage
+		deletewronglanguage := structurevar.targetpath.DeleteWrongLanguage
 		if disabledeletewronglanguage {
 			deletewronglanguage = false
 		}
-		m, err := structure.ParseFile(videofiles[fileidx], true, folder, deletewronglanguage)
+		m, err := structurevar.ParseFile(videofiles[fileidx], true, folder, deletewronglanguage)
 		if err != nil {
 			logger.Log.Error("Error parsing: ", videofiles[fileidx], " error: ", err)
 			continue
 		}
-		if strings.ToLower(structure.groupType) == "movie" {
+		n := m
+		if structurevar.groupType == "movie" {
 			var entriesfound int
 			var movie database.Movie
 
 			//determine list
-			if m.Imdb != "" {
+			if n.Imdb != "" {
+				configEntry := config.ConfigGet(configTemplate).Data.(config.MediaTypeConfig)
 				for idxlisttest := range configEntry.Lists {
-					movies, movieserr := database.QueryMovies(database.Query{Select: "movies.*", InnerJoin: "Dbmovies on Dbmovies.id = movies.dbmovie_id", Where: "Dbmovies.imdb_id = ? and movies.listname=?", WhereArgs: []interface{}{m.Imdb, configEntry.Lists[idxlisttest].Name}})
+					movies, movieserr := database.QueryMovies(database.Query{Select: "movies.*", Where: "dbmovie_id in (Select id from dbmovies where imdb_id = ?) and listname=?", WhereArgs: []interface{}{n.Imdb, configEntry.Lists[idxlisttest].Name}})
 					if movieserr == nil {
 						if len(movies) == 1 {
 							movie = movies[0]
 						}
 						entriesfound = len(movies)
+
 						if entriesfound >= 1 {
-							structure.list = configEntry.Lists[idxlisttest]
 							list = configEntry.Lists[idxlisttest]
 							break
 						}
 					}
+
 				}
 			}
 
 			if entriesfound == 0 {
-				moviehistory, moviehistoryerr := database.GetMovieHistory(database.Query{Select: "movie_histories.dbmovie_id", InnerJoin: "movies on movies.id=movie_histories.movie_id", Where: "movie_histories.title = ? and movies.listname = ?", WhereArgs: []interface{}{filepath.Base(folder), list.Name}, OrderBy: "movie_histories.ID desc"})
-
-				if moviehistoryerr == nil {
-					movies, _ := database.QueryMovies(database.Query{Select: "movies.*", InnerJoin: "Dbmovies on Dbmovies.id = movies.dbmovie_id", Where: "Dbmovies.id = ? and movies.listname = ?", WhereArgs: []interface{}{moviehistory.DbmovieID, list.Name}})
+				id, err := database.QueryColumnStatic("Select dbmovie_id from movie_histories where title = ? and movie_id in (Select id from movies where listname = ?)", filepath.Base(folder), listConfig)
+				if err == nil {
+					movies, _ := database.QueryMovies(database.Query{Where: "Dbmovie_id = ? and listname = ?", WhereArgs: []interface{}{id, listConfig}})
 					if len(movies) == 1 {
 						logger.Log.Debug("Found Movie by history_title")
 						movie = movies[0]
 					}
 					entriesfound = len(movies)
+
 				}
 			}
 
@@ -1136,30 +901,32 @@ func StructureSingleFolder(folder string, disableruntimecheck bool, disabledisal
 				logger.Log.Error("Template Quality not found: ", list.Template_quality)
 				return
 			}
-			var cfg_quality config.QualityConfig
-			config.ConfigGet("quality_"+list.Template_quality, &cfg_quality)
+			cfg_quality := config.ConfigGet("quality_" + list.Template_quality).Data.(config.QualityConfig)
+			n.StripTitlePrefixPostfix(list.Template_quality)
 
-			m.StripTitlePrefixPostfix(cfg_quality)
-
-			if entriesfound == 0 && len(m.Imdb) == 0 {
+			if entriesfound == 0 && len(n.Imdb) == 0 {
+				configEntry := config.ConfigGet(configTemplate).Data.(config.MediaTypeConfig)
 				lists := make([]string, 0, len(configEntry.Lists))
 				for idxlisttest := range configEntry.Lists {
 					lists = append(lists, configEntry.Lists[idxlisttest].Name)
 				}
-				logger.Log.Debug("Find Movie using title: ", m.Title, " and year: ", m.Year, " and lists: ", lists)
-				list.Name, m.Imdb, _, _ = importfeed.MovieFindListByTitle(m.Title, strconv.Itoa(m.Year), lists, "structure")
+				logger.Log.Debug("Find Movie using title: ", n.Title, " and year: ", n.Year, " and lists: ", lists)
+				listConfig, n.Imdb, _, _ = importfeed.MovieFindListByTitle(n.Title, strconv.Itoa(n.Year), lists, "structure")
 			}
-			if entriesfound == 0 && len(m.Imdb) >= 1 {
-				movies, _ := database.QueryMovies(database.Query{Select: "movies.*", InnerJoin: "Dbmovies on Dbmovies.id = movies.dbmovie_id", Where: "Dbmovies.imdb_id = ? and movies.listname = ?", WhereArgs: []interface{}{m.Imdb, list.Name}})
+			if entriesfound == 0 && len(n.Imdb) >= 1 {
+				movies, _ := database.QueryMovies(database.Query{Where: "dbmovie_id in (Select id from dbmovies where imdb_id = ?) and listname = ?", WhereArgs: []interface{}{n.Imdb, listConfig}})
 				if len(movies) == 1 {
 					logger.Log.Debug("Found Movie by title")
 					movie = movies[0]
 				}
 				entriesfound = len(movies)
+
 			}
-			if entriesfound == 0 && len(m.Imdb) >= 1 {
+			if entriesfound == 0 && len(n.Imdb) >= 1 {
+				configEntry := config.ConfigGet(configTemplate).Data.(config.MediaTypeConfig)
 				for idxlisttest := range configEntry.Lists {
-					counter, _ := database.CountRows("movies", database.Query{Select: "movies.*", InnerJoin: "Dbmovies on Dbmovies.id = movies.dbmovie_id", Where: "Dbmovies.imdb_id = ? and movies.listname=?", WhereArgs: []interface{}{m.Imdb, configEntry.Lists[idxlisttest].Name}})
+					counter, _ := database.CountRowsStatic("Select count(id) from movies where dbmovie_id in (Select id from dbmovies where imdb_id = ?) and listname=?", n.Imdb, configEntry.Lists[idxlisttest].Name)
+					//counter, _ := database.CountRows("movies", database.Query{Where: "dbmovie_id in (Select id from dbmovies where imdb_id = ?) and listname=?", WhereArgs: []interface{}{m.Imdb, configEntry.Lists[idxlisttest].Name}})
 					if counter >= 1 {
 						logger.Log.Debug("Skipped Movie by title")
 						continue
@@ -1169,83 +936,87 @@ func StructureSingleFolder(folder string, disableruntimecheck bool, disabledisal
 			if movie.ID >= 1 && entriesfound >= 1 {
 				if cfg_quality.CheckTitle {
 					titlefound := false
-					dbmovie, _ := database.GetDbmovie(database.Query{Where: "id=?", WhereArgs: []interface{}{movie.DbmovieID}})
-					if cfg_quality.CheckTitle && parser.Checknzbtitle(dbmovie.Title, m.Title) && len(dbmovie.Title) >= 1 {
+					dbmovie, _ := database.QueryStaticColumnsOneString("select title from dbmovies where id=?", "select count(id) from dbmovies where id=?", movie.DbmovieID)
+					if len(dbmovie) == 0 {
+						continue
+					}
+					//dbmovie, _ := database.GetDbmovie(database.Query{Where: "id=?", WhereArgs: []interface{}{movie.DbmovieID}})
+					if cfg_quality.CheckTitle && parser.Checknzbtitle(dbmovie[0].Str, n.Title) && len(dbmovie[0].Str) >= 1 {
 						titlefound = true
 					}
 					if !titlefound {
 						alttitlefound := false
-						dbtitle, _ := database.QueryDbmovieTitle(database.Query{Where: "dbmovie_id=?", WhereArgs: []interface{}{movie.DbmovieID}})
+						dbtitle, _ := database.QueryStaticColumnsOneString("select title from dbmovie_titles where dbmovie_id=?", "select count(id) from dbmovie_titles where dbmovie_id=?", movie.DbmovieID)
+						//dbtitle, _ := database.QueryDbmovieTitle(database.Query{Where: "dbmovie_id=?", WhereArgs: []interface{}{movie.DbmovieID}})
 
 						for idxtitle := range dbtitle {
-							if parser.Checknzbtitle(dbtitle[idxtitle].Title, m.Title) {
+							if parser.Checknzbtitle(dbtitle[idxtitle].Str, n.Title) {
 								alttitlefound = true
 								break
 							}
 						}
 						if len(dbtitle) >= 1 && !alttitlefound {
-							logger.Log.Debug("Skipped - unwanted title and alternate: ", m.Title, " wanted ", dbmovie.Title, " ", dbtitle)
+							logger.Log.Debug("Skipped - unwanted title and alternate: ", n.Title, " wanted ", dbmovie[0].Str, " ", dbtitle)
 							return
 						} else if len(dbtitle) == 0 {
-							logger.Log.Debug("Skipped - unwanted title: ", m.Title, " wanted ", dbmovie.Title, " ", dbtitle)
+							logger.Log.Debug("Skipped - unwanted title: ", n.Title, " wanted ", dbmovie[0].Str, " ", dbtitle)
 							return
 						}
 					}
 				}
-				structureMovie(structure, folder, m, movie, videofiles[fileidx], deletewronglanguage)
+				structurevar.structureMovie(folder, n, movie, videofiles[fileidx], deletewronglanguage)
 			} else {
-				logger.Log.Debug("Movie not matched: ", videofiles[fileidx], " list ", list.Name)
+				logger.Log.Debug("Movie not matched: ", videofiles[fileidx], " list ", listConfig)
 			}
-		} else if strings.ToLower(structure.groupType) == "series" {
+
+		} else if structurevar.groupType == "series" {
 			//SerieEpisodeHistory, _ := database.QuerySerieEpisodeHistory(database.Query{InnerJoin: "series on series.id=serie_episode_histories.serie_id", Where: "serie_episode_histories.target = ? and series.listname = ?", WhereArgs: []interface{}{filepath.Base(folders[idx]), list.Name}})
 
-			yearstr := strconv.Itoa(m.Year)
-			titleyear := m.Title + " (" + yearstr + ")"
+			yearstr := strconv.Itoa(n.Year)
+			titleyear := n.Title + " (" + yearstr + ")"
 			seriestitle := ""
 			matched := config.RegexSeriesTitle.FindStringSubmatch(filepath.Base(videofiles[fileidx]))
 			if len(matched) >= 2 {
 				seriestitle = matched[1]
 			}
-
 			if !config.ConfigCheck("quality_" + list.Template_quality) {
 				return
 			}
-			var cfg_quality config.QualityConfig
-			config.ConfigGet("quality_"+list.Template_quality, &cfg_quality)
-
-			m.StripTitlePrefixPostfix(cfg_quality)
+			cfg_quality := config.ConfigGet("quality_" + list.Template_quality).Data.(config.QualityConfig)
+			n.StripTitlePrefixPostfix(list.Template_quality)
 
 			//find dbseries
-			series, entriesfound := importfeed.FindSerieByParser(*m, titleyear, seriestitle, list.Name)
+			series, entriesfound := n.FindSerieByParser(titleyear, seriestitle, listConfig)
 			if entriesfound >= 1 {
 				if cfg_quality.CheckTitle {
 					titlefound := false
 					dbseries, _ := database.GetDbserie(database.Query{Where: "id=?", WhereArgs: []interface{}{series.DbserieID}})
-					if cfg_quality.CheckTitle && parser.Checknzbtitle(dbseries.Seriename, m.Title) && len(dbseries.Seriename) >= 1 {
+					if cfg_quality.CheckTitle && parser.Checknzbtitle(dbseries.Seriename, n.Title) && len(dbseries.Seriename) >= 1 {
 						titlefound = true
 					}
 					if !titlefound {
 						alttitlefound := false
-						dbtitle, _ := database.QueryDbserieAlternates(database.Query{Where: "dbserie_id=?", WhereArgs: []interface{}{series.DbserieID}})
+						dbtitle, _ := database.QueryStaticColumnsOneString("select title from dbserie_alternates where dbserie_id = ?", "select count(id) from dbserie_alternates where dbserie_id = ?", series.DbserieID)
+						//dbtitle, _ := database.QueryDbserieAlternates(database.Query{Where: "dbserie_id=?", WhereArgs: []interface{}{series.DbserieID}})
 
 						for idxtitle := range dbtitle {
-							if parser.Checknzbtitle(dbtitle[idxtitle].Title, m.Title) {
+							if parser.Checknzbtitle(dbtitle[idxtitle].Str, n.Title) {
 								alttitlefound = true
 								break
 							}
 						}
 						if len(dbtitle) >= 1 && !alttitlefound {
-							logger.Log.Debug("Skipped - unwanted title and alternate: ", m.Title, " wanted ", dbseries.Seriename, " ", dbtitle)
-							return
+							logger.Log.Debug("Skipped - unwanted title and alternate: ", n.Title, " wanted ", dbseries.Seriename, " ", dbtitle)
+							continue
 						} else if len(dbtitle) == 0 {
-							logger.Log.Debug("Skipped - unwanted title: ", m.Title, " wanted ", dbseries.Seriename)
-							return
+							logger.Log.Debug("Skipped - unwanted title: ", n.Title, " wanted ", dbseries.Seriename)
+							continue
 						}
 					}
 				}
-				structureSeries(structure, folder, m, series, videofiles[fileidx], deletewronglanguage)
+				structurevar.structureSeries(folder, n, series, videofiles[fileidx], deletewronglanguage)
 			} else {
-				logger.Log.Errorln("serie not matched", m, titleyear, seriestitle, list.Name)
+				logger.Log.Errorln("serie not matched", n, titleyear, seriestitle, listConfig)
 			}
 		}
 	}
@@ -1253,9 +1024,10 @@ func StructureSingleFolder(folder string, disableruntimecheck bool, disabledisal
 
 var StructureJobRunning map[string]bool
 
-func StructureFolders(grouptype string, sourcepath config.PathsConfig, targetpath config.PathsConfig, configEntry config.MediaTypeConfig, list config.MediaListsConfig) {
+func StructureFolders(grouptype string, sourcepath config.PathsConfig, targetpath config.PathsConfig, configTemplate string, listConfig string) {
 
-	jobName := sourcepath.Path + "_" + list.Name
+	configEntry := config.ConfigGet(configTemplate).Data.(config.MediaTypeConfig)
+	jobName := sourcepath.Path + "_" + listConfig
 	defer func() {
 		database.ReadWriteMu.Lock()
 		delete(StructureJobRunning, jobName)
@@ -1276,9 +1048,8 @@ func StructureFolders(grouptype string, sourcepath config.PathsConfig, targetpat
 
 	logger.Log.Debug("Check Source: ", sourcepath.Path)
 	folders := scanner.GetSubFolders(sourcepath.Path)
-	logger.Log.Debug("Folders found: ", folders)
 	for idx := range folders {
-		StructureSingleFolder(folders[idx], false, false, false, grouptype, sourcepath, targetpath, configEntry, list)
+		StructureSingleFolder(folders[idx], false, false, false, grouptype, sourcepath, targetpath, configTemplate, listConfig)
 	}
 }
 
@@ -1304,8 +1075,8 @@ type inputNotifier struct {
 	Time           string
 }
 type forstructurenotify struct {
-	structure
-	inputNotifier
+	Structure     structure
+	InputNotifier inputNotifier
 }
 
 func structureSendNotify(event string, noticonfig config.MediaNotificationConfig, notifierdata forstructurenotify) {
@@ -1323,6 +1094,8 @@ func structureSendNotify(event string, noticonfig config.MediaNotificationConfig
 		logger.Log.Error(err)
 	}
 	messagetext := docmessage.String()
+	tmplmessage = nil
+	docmessage = bytes.Buffer{}
 
 	tmpltitle, err := template.New("tmplfile").Parse(noticonfig.Title)
 	if err != nil {
@@ -1334,14 +1107,18 @@ func structureSendNotify(event string, noticonfig config.MediaNotificationConfig
 		logger.Log.Error(err)
 	}
 	MessageTitle := doctitle.String()
+	tmpltitle = nil
+	doctitle = bytes.Buffer{}
 
 	if !config.ConfigCheck("notification_" + noticonfig.Map_notification) {
 		return
 	}
-	var cfg_notification config.NotificationConfig
-	config.ConfigGet("notification_"+noticonfig.Map_notification, &cfg_notification)
+	cfg_notification := config.ConfigGet("notification_" + noticonfig.Map_notification).Data.(config.NotificationConfig)
 
 	if strings.EqualFold(cfg_notification.Type, "pushover") {
+		if apiexternal.PushoverApi == nil {
+			apiexternal.NewPushOverClient(cfg_notification.Apikey)
+		}
 		if apiexternal.PushoverApi.ApiKey != cfg_notification.Apikey {
 			apiexternal.NewPushOverClient(cfg_notification.Apikey)
 		}
@@ -1371,19 +1148,20 @@ func structureSendNotify(event string, noticonfig config.MediaNotificationConfig
 		}
 	}
 }
-func (s *structure) Notify(videotarget string, filename string, videofile string, m parser.ParseInfo, movie database.Movie, serieepisode database.SerieEpisode, oldfiles []string) {
+func (s *structure) notify(videotarget string, filename string, videofile string, m parser.ParseInfo, movie database.Movie, serieepisode database.SerieEpisode, oldfiles []string) {
+	configEntry := config.ConfigGet(s.configTemplate).Data.(config.MediaTypeConfig)
 	if strings.ToLower(s.groupType) == "movie" {
 		dbmovie, _ := database.GetDbmovie(database.Query{Where: "id=?", WhereArgs: []interface{}{movie.DbmovieID}})
-		for idx := range s.configEntry.Notification {
-			structureSendNotify("added_data", s.configEntry.Notification[idx], forstructurenotify{*s, inputNotifier{
+		for idx := range configEntry.Notification {
+			structureSendNotify("added_data", configEntry.Notification[idx], forstructurenotify{Structure: *s, InputNotifier: inputNotifier{
 				Targetpath:     filepath.Join(videotarget, filename),
 				SourcePath:     videofile,
 				Title:          dbmovie.Title,
 				Year:           strconv.Itoa(dbmovie.Year),
 				Imdb:           dbmovie.ImdbID,
 				Replaced:       oldfiles,
-				ReplacedPrefix: s.configEntry.Notification[idx].ReplacedPrefix,
-				Configuration:  s.list.Name,
+				ReplacedPrefix: configEntry.Notification[idx].ReplacedPrefix,
+				Configuration:  s.listConfig,
 				Dbmovie:        dbmovie,
 				Source:         m,
 				Time:           time.Now().Format(time.RFC3339),
@@ -1392,8 +1170,8 @@ func (s *structure) Notify(videotarget string, filename string, videofile string
 	} else {
 		dbserieepisode, _ := database.GetDbserieEpisodes(database.Query{Where: "id=?", WhereArgs: []interface{}{serieepisode.DbserieEpisodeID}})
 		dbserie, _ := database.GetDbserie(database.Query{Where: "id=?", WhereArgs: []interface{}{dbserieepisode.DbserieID}})
-		for idx := range s.configEntry.Notification {
-			structureSendNotify("added_data", s.configEntry.Notification[idx], forstructurenotify{*s, inputNotifier{
+		for idx := range configEntry.Notification {
+			structureSendNotify("added_data", configEntry.Notification[idx], forstructurenotify{*s, inputNotifier{
 				Targetpath:     filepath.Join(videotarget, filename),
 				SourcePath:     videofile,
 				Title:          dbserie.Seriename,
@@ -1404,8 +1182,8 @@ func (s *structure) Notify(videotarget string, filename string, videofile string
 				Identifier:     dbserieepisode.Identifier,
 				Tvdb:           strconv.Itoa(dbserie.ThetvdbID),
 				Replaced:       oldfiles,
-				ReplacedPrefix: s.configEntry.Notification[idx].ReplacedPrefix,
-				Configuration:  s.list.Name,
+				ReplacedPrefix: configEntry.Notification[idx].ReplacedPrefix,
+				Configuration:  s.listConfig,
 				Dbserie:        dbserie,
 				DbserieEpisode: dbserieepisode,
 				Source:         m,
@@ -1424,14 +1202,14 @@ func (s *structure) GetSeriesEpisodes(series database.Serie, videofile string, m
 	}
 
 	episodeArray := importfeed.GetEpisodeArray(dbserie.Identifiedby, teststr[1], teststr[2])
+	list := config.ConfigGetMediaListConfig(s.configTemplate, s.listConfig)
 
-	var cfg_quality config.QualityConfig
-	config.ConfigGet("quality_"+s.list.Template_quality, &cfg_quality)
-	m.GetPriority(s.configEntry, cfg_quality)
+	m.GetPriority(s.configTemplate, list.Template_quality)
+	identifiedby := strings.ToLower(dbserie.Identifiedby)
 	for idx := range episodeArray {
 		epi := episodeArray[idx]
 		epi = strings.Trim(epi, "-EX")
-		if strings.ToLower(dbserie.Identifiedby) != "date" {
+		if identifiedby != "date" {
 			epi = strings.TrimLeft(epi, "0")
 		}
 		epinum, _ := strconv.Atoi(epi)
@@ -1441,7 +1219,7 @@ func (s *structure) GetSeriesEpisodes(series database.Serie, videofile string, m
 		episodes = append(episodes, epinum)
 
 		var SeriesEpisodeerr error
-		if strings.ToLower(dbserie.Identifiedby) == "date" {
+		if identifiedby == "date" {
 			SeriesEpisode, SeriesEpisodeerr = database.GetSerieEpisodes(database.Query{Select: "Serie_episodes.*", InnerJoin: "Dbserie_episodes ON Dbserie_episodes.ID = Serie_episodes.Dbserie_episode_id", Where: "Serie_episodes.serie_id = ? AND DbSerie_episodes.Identifier = ?", WhereArgs: []interface{}{series.ID, strings.Replace(epi, ".", "-", -1)}})
 			if SeriesEpisodeerr == nil {
 				SeriesEpisodes = append(SeriesEpisodes, SeriesEpisode)
@@ -1479,21 +1257,18 @@ func (s *structure) GetSeriesEpisodes(series database.Serie, videofile string, m
 				logger.Log.Debug("use db title: ", episodetitle)
 			}
 
-			if !config.ConfigCheck("quality_" + s.list.Template_quality) {
+			list := config.ConfigGetMediaListConfig(s.configTemplate, s.listConfig)
+			if !config.ConfigCheck("quality_" + list.Template_quality) {
 				return
 			}
-			var cfg_quality config.QualityConfig
-			config.ConfigGet("quality_"+s.list.Template_quality, &cfg_quality)
-
-			//episodeids = append(episodeids, SeriesEpisode.ID)
-			old_prio := parser.GetHighestEpisodePriorityByFiles(SeriesEpisode, s.configEntry, cfg_quality)
 
 			episodefiles, _ := database.QuerySerieEpisodeFiles(database.Query{Where: "serie_episode_id = ?", WhereArgs: []interface{}{SeriesEpisode.ID}})
+			old_prio := parser.GetHighestEpisodePriorityByFiles(SeriesEpisode, s.configTemplate, list.Template_quality)
 			if m.Priority > old_prio {
 				allowimport = true
 				for idx := range episodefiles {
 					//_, oldfilename := filepath.Split(episodefile.Location)
-					entry_prio := parser.GetSerieDBPriority(episodefiles[idx], s.configEntry, cfg_quality)
+					entry_prio := parser.GetSerieDBPriority(episodefiles[idx], s.configTemplate, list.Template_quality)
 					if m.Priority > entry_prio {
 						oldfiles = append(oldfiles, episodefiles[idx].Location)
 					}

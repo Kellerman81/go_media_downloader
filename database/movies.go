@@ -3,9 +3,7 @@ package database
 
 import (
 	"database/sql"
-	"encoding/csv"
 	"html"
-	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -210,8 +208,9 @@ type DbmovieTitle struct {
 }
 
 func (movie *Dbmovie) GetTitles(allowed []string, queryimdb bool, querytmdb bool, querytrakt bool) []DbmovieTitle {
-	c := make([]DbmovieTitle, 0, 10)
-	processed := make(map[string]bool, 10)
+	c := []DbmovieTitle{}
+
+	processed := make(map[string]bool)
 	if queryimdb {
 		queryimdbid := movie.ImdbID
 		if !strings.HasPrefix(movie.ImdbID, "tt") {
@@ -288,7 +287,6 @@ func (movie *Dbmovie) GetTitles(allowed []string, queryimdb bool, querytmdb bool
 	for key := range processed {
 		delete(processed, key)
 	}
-	processed = nil
 	return c
 }
 
@@ -374,6 +372,7 @@ func (movie *Dbmovie) GetTmdbMetadata(overwrite bool) {
 						genrebuilder.WriteString(v.Name)
 					}
 					movie.Genres = genrebuilder.String()
+					genrebuilder.Reset()
 				}
 				movie.OriginalLanguage = moviedbdetails.OriginalLanguage
 				if movie.OriginalTitle == "" || overwrite {
@@ -393,6 +392,7 @@ func (movie *Dbmovie) GetTmdbMetadata(overwrite bool) {
 					languagebuilder.WriteString(v.EnglishName)
 				}
 				movie.SpokenLanguages = languagebuilder.String()
+				languagebuilder.Reset()
 				movie.Status = moviedbdetails.Status
 				movie.Tagline = moviedbdetails.Tagline
 				if movie.VoteAverage == 0 || movie.VoteAverage == 0.0 || overwrite {
@@ -464,7 +464,15 @@ func (movie *Dbmovie) GetTraktMetadata(overwrite bool) {
 			movie.Slug = traktdetails.Ids.Slug
 		}
 		if movie.Genres == "" || overwrite {
-			movie.Genres = strings.Join(traktdetails.Genres, ",")
+			var genrebuilder strings.Builder
+			for _, v := range traktdetails.Genres {
+				if genrebuilder.Len() >= 1 {
+					genrebuilder.WriteString(",")
+				}
+				genrebuilder.WriteString(v)
+			}
+			movie.Genres = genrebuilder.String()
+			genrebuilder.Reset()
 		}
 		if movie.VoteCount == 0 || overwrite {
 			movie.VoteCount = traktdetails.Votes
@@ -586,6 +594,7 @@ func (movie *Dbmovie) GetMetadata(queryimdb bool, querytmdb bool, queryomdb bool
 							genrebuilder.WriteString(v.Name)
 						}
 						movie.Genres = genrebuilder.String()
+						genrebuilder.Reset()
 					}
 					movie.OriginalLanguage = moviedbdetails.OriginalLanguage
 					if movie.OriginalTitle == "" {
@@ -605,6 +614,7 @@ func (movie *Dbmovie) GetMetadata(queryimdb bool, querytmdb bool, queryomdb bool
 						languagebuilder.WriteString(v.EnglishName)
 					}
 					movie.SpokenLanguages = languagebuilder.String()
+					languagebuilder.Reset()
 					movie.Status = moviedbdetails.Status
 					movie.Tagline = moviedbdetails.Tagline
 					if movie.VoteAverage == 0 || movie.VoteAverage == 0.0 {
@@ -676,7 +686,15 @@ func (movie *Dbmovie) GetMetadata(queryimdb bool, querytmdb bool, queryomdb bool
 				movie.Slug = traktdetails.Ids.Slug
 			}
 			if movie.Genres == "" {
-				movie.Genres = strings.Join(traktdetails.Genres, ",")
+				var genrebuilder strings.Builder
+				for _, v := range traktdetails.Genres {
+					if genrebuilder.Len() >= 1 {
+						genrebuilder.WriteString(",")
+					}
+					genrebuilder.WriteString(v)
+				}
+				movie.Genres = genrebuilder.String()
+				genrebuilder.Reset()
 			}
 			if movie.VoteCount == 0 {
 				movie.VoteCount = traktdetails.Votes
@@ -731,80 +749,4 @@ func (dbmovie *Dbmovie) AddMissingMoviesMapping(listname string, quality string)
 
 func (movie *Movie) UpdateMoviesMapping(listname string, quality string) {
 	UpdateArray("movies", []string{"listname", "quality_profile"}, []interface{}{listname, quality}, Query{Where: "id=?", WhereArgs: []interface{}{movie.ID}})
-}
-
-func readCSVFromURL(url string) ([][]string, error) {
-	resp, err := http.Get(url)
-	if err != nil {
-		logger.Log.Error("Failed to get CSV from: ", url)
-		return nil, err
-	}
-
-	defer resp.Body.Close()
-	reader := csv.NewReader(resp.Body)
-	//reader.Comma = ';'
-	data, err := reader.ReadAll()
-	if err != nil {
-		logger.Log.Error("Failed to read CSV from: ", url)
-		return nil, err
-	}
-
-	return data, nil
-}
-
-func GetMissingIMDBMovies(urls []string, listname string, qualityProfile string, ignorelistname string) []Dbmovie {
-	var d []Dbmovie
-	for _, url := range urls {
-		if len(url) >= 1 {
-			data, err := readCSVFromURL(url)
-			if err != nil {
-				logger.Log.Error("Failed to read CSV from: ", url)
-				panic(err)
-			}
-
-			for idx, row := range data {
-				// skip header
-				if idx == 0 {
-					continue
-				}
-				year, _ := strconv.ParseInt(row[10], 0, 64)
-				votes, _ := strconv.ParseInt(row[12], 0, 64)
-				voteavg, _ := strconv.ParseFloat(row[8], 32)
-				d = append(d, Dbmovie{ImdbID: row[1], Title: row[5], URL: row[6], VoteAverage: float32(voteavg), Year: int(year), VoteCount: int(votes)})
-			}
-		}
-	}
-	return d
-}
-
-func UpgradeIMDBMovies(url string, listname string, qualityProfile string) {
-	data, err := readCSVFromURL(url)
-	if err != nil {
-		logger.Log.Error("Failed to read CSV from: ", url)
-		panic(err)
-	}
-
-	for idx, row := range data {
-		// skip header
-		if idx == 0 {
-			continue
-		}
-		dbmovies, _ := QueryDbmovie(Query{Where: "imdb_id=? COLLATE NOCASE", WhereArgs: []interface{}{row[1]}})
-		if len(dbmovies) == 0 {
-		} else {
-			UpdateArray("movies", []string{"listname", "quality_profile"}, []interface{}{listname, qualityProfile}, Query{Where: "listname = ? and dbmovie_id = ?", WhereArgs: []interface{}{listname, dbmovies[0].ID}})
-		}
-	}
-}
-
-func GetIMDBMovies(imdb []string, listname string, qualityProfile string) []Dbmovie {
-	d := make([]Dbmovie, 0, len(imdb))
-
-	for _, row := range imdb {
-		counter, _ := CountRows("dbmovies", Query{Where: "imdb_id = ? COLLATE NOCASE", WhereArgs: []interface{}{row}})
-		if counter == 0 {
-			d = append(d, Dbmovie{ImdbID: row})
-		}
-	}
-	return d
 }

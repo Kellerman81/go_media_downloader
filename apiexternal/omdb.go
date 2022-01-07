@@ -48,7 +48,7 @@ type omdbClient struct {
 	Client     *RLHTTPClient
 }
 
-var OmdbApi omdbClient
+var OmdbApi *omdbClient
 
 func NewOmdbClient(apikey string, seconds int, calls int) {
 	if seconds == 0 {
@@ -59,10 +59,10 @@ func NewOmdbClient(apikey string, seconds int, calls int) {
 	}
 	rl := rate.NewLimiter(rate.Every(time.Duration(seconds)*time.Second), calls) // 50 request every 10 seconds
 	limiter, _ := slidingwindow.NewLimiter(time.Duration(seconds)*time.Second, int64(calls), func() (slidingwindow.Window, slidingwindow.StopFunc) { return slidingwindow.NewLocalWindow() })
-	OmdbApi = omdbClient{OmdbApiKey: apikey, Client: NewClient(rl, limiter)}
+	OmdbApi = &omdbClient{OmdbApiKey: apikey, Client: NewClient(rl, limiter)}
 }
 
-func (o omdbClient) GetMovie(imdbid string) (omDBMovie, error) {
+func (o *omdbClient) GetMovie(imdbid string) (omDBMovie, error) {
 	req, _ := http.NewRequest("GET", "http://www.omdbapi.com/?i="+imdbid+"&apikey="+o.OmdbApiKey, nil)
 
 	var result omDBMovie
@@ -74,7 +74,7 @@ func (o omdbClient) GetMovie(imdbid string) (omDBMovie, error) {
 	return result, nil
 }
 
-func (o omdbClient) SearchMovie(title string, year string) (omDBMovieSearchGlobal, error) {
+func (o *omdbClient) SearchMovie(title string, year string) (omDBMovieSearchGlobal, error) {
 	url := "http://www.omdbapi.com/?s=" + url.PathEscape(title)
 	if year != "" && year != "0" {
 		url = url + "&y=" + year
@@ -84,6 +84,7 @@ func (o omdbClient) SearchMovie(title string, year string) (omDBMovieSearchGloba
 	req, _ := http.NewRequest("GET", url, nil)
 
 	var result omDBMovieSearchGlobal
+
 	err := o.Client.DoJson(req, &result)
 	if err != nil {
 		return omDBMovieSearchGlobal{}, err

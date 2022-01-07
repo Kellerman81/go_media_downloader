@@ -1,6 +1,8 @@
 package apiexternal
 
 import (
+	"errors"
+
 	"github.com/Kellerman81/go_media_downloader/newznab"
 )
 
@@ -26,102 +28,93 @@ type NzbIndexer struct {
 }
 
 // QueryNewznabMovieImdb searches Indexers for imbid - strip tt at beginning!
-func QueryNewznabMovieImdb(indexers []NzbIndexer, imdbid string, categories []int) (results []newznab.NZB, failedindexers []string, err error) {
+func QueryNewznabMovieImdb(indexers []NzbIndexer, imdbid string, categories []int) ([]newznab.NZB, []string, error) {
+	results := []newznab.NZB{}
+	failedindexers := []string{}
+	var err error
 	if imdbid == "" {
-		return
+		return results, failedindexers, errors.New("no imdbid")
 	}
 	for _, row := range indexers {
-		var client newznab.Client
+		var client *newznab.Client
 		if _, ok := NewznabClients[row.URL]; ok {
 			client = NewznabClients[row.URL]
 		} else {
 			client = newznab.New(row.URL, row.Apikey, row.UserID, row.SkipSslCheck, true, row.Limitercalls, row.Limiterseconds)
 			NewznabClients[row.URL] = client
 		}
-		resultsadd, erradd := nzbQueryImdb(client, categories, imdbid, row.Additional_query_params, row.Customurl, row.MaxAge, row.OutputAsJson)
-		results = append(results, resultsadd...)
+		resultsadd, erradd := client.SearchWithIMDB(categories, imdbid, row.Additional_query_params, row.Customurl, row.MaxAge, row.OutputAsJson)
+
 		if erradd != nil {
 			err = erradd
 			failedindexers = append(failedindexers, row.URL)
+		} else {
+			results = append(results, resultsadd...)
 		}
 	}
-	return
+	return results, failedindexers, err
 }
 
 // QueryNewznabTvTvdb searches Indexers for tvdbid using season and episodes
-func QueryNewznabTvTvdb(indexers []NzbIndexer, tvdbid int, categories []int, season int, episode int) (results []newznab.NZB, failedindexers []string, err error) {
+func QueryNewznabTvTvdb(indexers []NzbIndexer, tvdbid int, categories []int, season int, episode int) ([]newznab.NZB, []string, error) {
+	results := []newznab.NZB{}
+	failedindexers := []string{}
+	var err error
 	if tvdbid == 0 {
-		return
+		return results, failedindexers, errors.New("no tvdbid")
 	}
 	for _, row := range indexers {
-		var client newznab.Client
+		var client *newznab.Client
 		if _, ok := NewznabClients[row.URL]; ok {
 			client = NewznabClients[row.URL]
 		} else {
 			client = newznab.New(row.URL, row.Apikey, row.UserID, row.SkipSslCheck, true, row.Limitercalls, row.Limiterseconds)
 			NewznabClients[row.URL] = client
 		}
-		resultsadd, erradd := nzbQueryTvdb(client, categories, tvdbid, season, episode, row.Additional_query_params, row.Customurl, row.MaxAge, row.OutputAsJson)
-		results = append(results, resultsadd...)
+		resultsadd, erradd := client.SearchWithTVDB(categories, tvdbid, season, episode, row.Additional_query_params, row.Customurl, row.MaxAge, row.OutputAsJson)
 		if erradd != nil {
 			err = erradd
 			failedindexers = append(failedindexers, row.URL)
+		} else {
+			results = append(results, resultsadd...)
 		}
 	}
-	return
+	return results, failedindexers, err
 }
 
 // QueryNewznabQuery searches Indexers for string
-func QueryNewznabQuery(indexers []NzbIndexer, query string, categories []int, searchtype string) (results []newznab.NZB, failedindexers []string, err error) {
+func QueryNewznabQuery(indexers []NzbIndexer, query string, categories []int, searchtype string) ([]newznab.NZB, []string, error) {
+	results := []newznab.NZB{}
+	failedindexers := []string{}
+	var err error
 	for _, row := range indexers {
-		var client newznab.Client
+		var client *newznab.Client
 		if _, ok := NewznabClients[row.URL]; ok {
 			client = NewznabClients[row.URL]
 		} else {
 			client = newznab.New(row.URL, row.Apikey, row.UserID, row.SkipSslCheck, true, row.Limitercalls, row.Limiterseconds)
 			NewznabClients[row.URL] = client
 		}
-		resultsadd, erradd := nzbQuery(client, categories, query, searchtype, row.Addquotesfortitlequery, row.Additional_query_params, row.Customurl, row.MaxAge, row.OutputAsJson)
-		results = append(results, resultsadd...)
-		if erradd != nil {
-			err = erradd
-			failedindexers = append(failedindexers, row.URL)
-		}
-	}
-	return
-}
-
-var NewznabClients map[string]newznab.Client
-
-func QueryNewznabQueryUntil(indexers []NzbIndexer, query string, categories []int, searchtype string) (results []newznab.NZB, failedindexers []string, lastindexerids map[string]string, err error) {
-	lastindexerids = make(map[string]string, 5)
-	for _, row := range indexers {
-		var client newznab.Client
-		if _, ok := NewznabClients[row.URL]; ok {
-			client = NewznabClients[row.URL]
-		} else {
-			client = newznab.New(row.URL, row.Apikey, row.UserID, row.SkipSslCheck, true, row.Limitercalls, row.Limiterseconds)
-			NewznabClients[row.URL] = client
-		}
-		resultsadd, erradd := nzbQueryUntil(client, categories, query, searchtype, row.Addquotesfortitlequery, row.LastRssId, row.Additional_query_params, row.Customurl, row.MaxAge, row.OutputAsJson)
+		resultsadd, erradd := client.SearchWithQuery(categories, query, searchtype, row.Addquotesfortitlequery, row.Additional_query_params, row.Customurl, row.MaxAge, row.OutputAsJson)
 		if erradd != nil {
 			err = erradd
 			failedindexers = append(failedindexers, row.URL)
 		} else {
-			if len(resultsadd) >= 1 {
-
-				lastindexerids[row.URL] = resultsadd[0].ID
-				results = append(results, resultsadd...)
-			}
+			results = append(results, resultsadd...)
 		}
 	}
-	return
+	return results, failedindexers, err
 }
+
+var NewznabClients map[string]*newznab.Client
 
 // QueryNewznabRSS returns x entries of given category
-func QueryNewznabRSS(indexers []NzbIndexer, maxitems int, categories []int) (results []newznab.NZB, failedindexers []string, err error) {
+func QueryNewznabRSS(indexers []NzbIndexer, maxitems int, categories []int) ([]newznab.NZB, []string, error) {
+	results := []newznab.NZB{}
+	failedindexers := []string{}
+	var err error
 	for _, row := range indexers {
-		var client newznab.Client
+		var client *newznab.Client
 		if _, ok := NewznabClients[row.URL]; ok {
 			client = NewznabClients[row.URL]
 		} else {
@@ -135,15 +128,17 @@ func QueryNewznabRSS(indexers []NzbIndexer, maxitems int, categories []int) (res
 			failedindexers = append(failedindexers, row.URL)
 		}
 	}
-	return
+	return results, failedindexers, err
 }
 
 // QueryNewznabRSS returns entries of given category up to id
-func QueryNewznabRSSLast(indexers []NzbIndexer, maxitems int, categories []int, maxrequests int) (results []newznab.NZB, failedindexers []string, lastindexerids map[string]string, err error) {
-	lastindexerids = make(map[string]string, 5)
-	results = []newznab.NZB{}
+func QueryNewznabRSSLast(indexers []NzbIndexer, maxitems int, categories []int, maxrequests int) ([]newznab.NZB, []string, map[string]string, error) {
+	results := []newznab.NZB{}
+	lastindexerids := make(map[string]string, 1)
+	failedindexers := []string{}
+	var err error
 	for _, row := range indexers {
-		var client newznab.Client
+		var client *newznab.Client
 		if _, ok := NewznabClients[row.URL]; ok {
 			client = NewznabClients[row.URL]
 		} else {
@@ -161,45 +156,5 @@ func QueryNewznabRSSLast(indexers []NzbIndexer, maxitems int, categories []int, 
 			}
 		}
 	}
-	return
-}
-
-func nzbQuery(client newznab.Client, categories []int, query string, searchtype string, addquotes bool, additional_query_params string, customurl string, maxage int, outputAsJson bool) ([]newznab.NZB, error) {
-	resp, err := client.SearchWithQuery(categories, query, searchtype, addquotes, additional_query_params, customurl, maxage, outputAsJson)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return resp, nil
-}
-
-func nzbQueryUntil(client newznab.Client, categories []int, query string, searchtype string, addquotes bool, id string, additional_query_params string, customurl string, maxage int, outputAsJson bool) ([]newznab.NZB, error) {
-	resp, err := client.SearchWithQueryUntilNZBID(categories, query, searchtype, addquotes, id, additional_query_params, customurl, maxage, outputAsJson)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return resp, nil
-}
-
-func nzbQueryTvdb(client newznab.Client, categories []int, tvdbid int, season int, episode int, additional_query_params string, customurl string, maxage int, outputAsJson bool) ([]newznab.NZB, error) {
-	resp, err := client.SearchWithTVDB(categories, tvdbid, season, episode, additional_query_params, customurl, maxage, outputAsJson)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return resp, nil
-}
-
-func nzbQueryImdb(client newznab.Client, categories []int, imdbid string, additional_query_params string, customurl string, maxage int, outputAsJson bool) ([]newznab.NZB, error) {
-	resp, err := client.SearchWithIMDB(categories, imdbid, additional_query_params, customurl, maxage, outputAsJson)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return resp, nil
+	return results, failedindexers, lastindexerids, err
 }

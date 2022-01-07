@@ -25,8 +25,8 @@ import (
 
 var DB *sqlx.DB
 var DBImdb *sqlx.DB
-var WriteMu *sync.RWMutex
-var ReadWriteMu *sync.Mutex
+var ReadWriteMu *sync.RWMutex
+var WriteMu *sync.Mutex
 var Getqualities []QualitiesRegex
 var Getresolutions []QualitiesRegex
 var Getcodecs []QualitiesRegex
@@ -35,6 +35,11 @@ var Getaudios []QualitiesRegex
 type QualitiesRegex struct {
 	Regexp *regexp.Regexp
 	Qualities
+}
+
+type Dbfiles struct {
+	Location string
+	ID       uint
 }
 
 func InitDb(dbloglevel string) {
@@ -48,10 +53,10 @@ func InitDb(dbloglevel string) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	db.SetMaxIdleConns(5)
-	db.SetMaxOpenConns(1)
-	ReadWriteMu = &sync.Mutex{}
-	WriteMu = &sync.RWMutex{}
+	db.SetMaxIdleConns(15)
+	db.SetMaxOpenConns(5)
+	WriteMu = &sync.Mutex{}
+	ReadWriteMu = &sync.RWMutex{}
 	DB = db
 }
 
@@ -66,8 +71,8 @@ func InitImdbdb(dbloglevel string, dbfile string) *sqlx.DB {
 	if err != nil {
 		log.Fatal(err)
 	}
-	db.SetMaxIdleConns(5)
-	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(15)
+	db.SetMaxOpenConns(5)
 	return db
 }
 
@@ -206,7 +211,6 @@ func RemoveOldDbBackups(max int) error {
 		for key := range preserved {
 			delete(preserved, key)
 		}
-		preserved = nil
 	}
 
 	for _, f := range remove {

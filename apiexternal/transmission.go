@@ -24,6 +24,7 @@ func SendToTransmission(server string, username string, password string, url str
 	if erradd != nil {
 		return erradd
 	}
+	t = nil
 
 	return nil
 }
