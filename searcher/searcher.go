@@ -536,7 +536,8 @@ func rsssearchindexer(t searcher, index config.QualityIndexerConfig, fetchall bo
 		}
 		logger.Log.Debug("Search RSS ended - found entries: ", len(nzbs))
 		if len(nzbs) >= 1 {
-			tofilter := nzbsFilterStart(t, nzbs)
+			tofilter := convertnzbs(t, nzbs)
+			tofilter.nzbsFilterStart()
 			tofilter.setDataField(lists, false)
 			tofilter.nzbsFilterBlock2()
 			if len(tofilter.NzbsDenied) >= 1 {
@@ -563,7 +564,7 @@ type nzbFilter struct {
 	NzbsDenied []parser.Nzbwithprio
 }
 
-func nzbsFilterStart(s searcher, nzbs []newznab.NZB) *nzbFilter {
+func convertnzbs(s searcher, nzbs []newznab.NZB) *nzbFilter {
 	nzbs_out := make([]parser.Nzbwithprio, 0, len(nzbs))
 	for idx := range nzbs {
 		nzbs_out = append(nzbs_out, parser.Nzbwithprio{
@@ -572,70 +573,74 @@ func nzbsFilterStart(s searcher, nzbs []newznab.NZB) *nzbFilter {
 		})
 	}
 
-	n := &nzbFilter{T: s, NzbsDenied: make([]parser.Nzbwithprio, 0, len(nzbs_out)), ToFilter: make([]parser.Nzbwithprio, 0, int(len(nzbs_out)/50))}
-	for idx := range nzbs_out {
-		if len(strings.Trim(nzbs_out[idx].NZB.Title, " ")) <= 3 {
-			logger.Log.Debug("Skipped - Title too short: ", nzbs_out[idx].NZB.Title)
-			nzbs_out[idx].Denied = true
-			nzbs_out[idx].Reason = "Title too short"
-			n.NzbsDenied = append(n.NzbsDenied, nzbs_out[idx])
+	n := &nzbFilter{T: s, NzbsDenied: make([]parser.Nzbwithprio, 0, len(nzbs_out)), ToFilter: nzbs_out}
+	return n
+}
+func (n *nzbFilter) nzbsFilterStart() {
+	nextup := make([]parser.Nzbwithprio, 0, int(len(n.ToFilter)/50))
+	for idx := range n.ToFilter {
+		if len(strings.Trim(n.ToFilter[idx].NZB.Title, " ")) <= 3 {
+			logger.Log.Debug("Skipped - Title too short: ", n.ToFilter[idx].NZB.Title)
+			n.ToFilter[idx].Denied = true
+			n.ToFilter[idx].Reason = "Title too short"
+			n.NzbsDenied = append(n.NzbsDenied, n.ToFilter[idx])
 			continue
 		}
-		if filter_size_nzbs(s.ConfigTemplate, s.Indexer, nzbs_out[idx].NZB) {
-			nzbs_out[idx].Denied = true
-			nzbs_out[idx].Reason = "Wrong size"
-			n.NzbsDenied = append(n.NzbsDenied, nzbs_out[idx])
+		if filter_size_nzbs(n.T.ConfigTemplate, n.T.Indexer, n.ToFilter[idx].NZB) {
+			n.ToFilter[idx].Denied = true
+			n.ToFilter[idx].Reason = "Wrong size"
+			n.NzbsDenied = append(n.NzbsDenied, n.ToFilter[idx])
 			continue
 		}
 		historytable := "serie_episode_histories"
-		if strings.ToLower(s.SearchGroupType) == "movie" {
+		if strings.ToLower(n.T.SearchGroupType) == "movie" {
 			historytable = "movie_histories"
 		}
-		countertitle, _ := database.CountRowsStatic("Select count(id) from "+historytable+" where url = ? COLLATE NOCASE", nzbs_out[idx].NZB.DownloadURL)
+		countertitle, _ := database.CountRowsStatic("Select count(id) from "+historytable+" where url = ? COLLATE NOCASE", n.ToFilter[idx].NZB.DownloadURL)
 		if countertitle >= 1 {
-			logger.Log.Debug("Skipped - Already Downloaded: ", nzbs_out[idx].NZB.Title)
-			nzbs_out[idx].Denied = true
-			nzbs_out[idx].Reason = "Already downloaded"
-			n.NzbsDenied = append(n.NzbsDenied, nzbs_out[idx])
+			logger.Log.Debug("Skipped - Already Downloaded: ", n.ToFilter[idx].NZB.Title)
+			n.ToFilter[idx].Denied = true
+			n.ToFilter[idx].Reason = "Already downloaded"
+			n.NzbsDenied = append(n.NzbsDenied, n.ToFilter[idx])
 			continue
 		}
-		if s.Indexer.History_check_title {
-			countertitle, _ = database.CountRowsStatic("Select count(id) from "+historytable+" where title = ? COLLATE NOCASE", nzbs_out[idx].NZB.Title)
+		if n.T.Indexer.History_check_title {
+			countertitle, _ = database.CountRowsStatic("Select count(id) from "+historytable+" where title = ? COLLATE NOCASE", n.ToFilter[idx].NZB.Title)
 			if countertitle >= 1 {
-				logger.Log.Debug("Skipped - Already Downloaded (Title): ", nzbs_out[idx].NZB.Title)
-				nzbs_out[idx].Denied = true
-				nzbs_out[idx].Reason = "Already downloaded"
-				n.NzbsDenied = append(n.NzbsDenied, nzbs_out[idx])
+				logger.Log.Debug("Skipped - Already Downloaded (Title): ", n.ToFilter[idx].NZB.Title)
+				n.ToFilter[idx].Denied = true
+				n.ToFilter[idx].Reason = "Already downloaded"
+				n.NzbsDenied = append(n.NzbsDenied, n.ToFilter[idx])
 				continue
 			}
 		}
-		if s.SearchActionType != "rss" {
-			if strings.ToLower(s.SearchGroupType) == "movie" {
-				tempimdb := strings.TrimPrefix(nzbs_out[idx].NZB.IMDBID, "tt")
+		if n.T.SearchActionType != "rss" {
+			if strings.ToLower(n.T.SearchGroupType) == "movie" {
+				tempimdb := strings.TrimPrefix(n.ToFilter[idx].NZB.IMDBID, "tt")
 				tempimdb = strings.TrimLeft(tempimdb, "0")
 
-				wantedimdb := strings.TrimPrefix(s.Imdb, "tt")
+				wantedimdb := strings.TrimPrefix(n.T.Imdb, "tt")
 				wantedimdb = strings.TrimLeft(wantedimdb, "0")
 				if wantedimdb != tempimdb && len(wantedimdb) >= 1 && len(tempimdb) >= 1 {
-					logger.Log.Debug("Skipped - Imdb not match: ", nzbs_out[idx].NZB.Title, " - imdb in nzb: ", tempimdb, " imdb wanted: ", wantedimdb)
-					nzbs_out[idx].Denied = true
-					nzbs_out[idx].Reason = "Imdbid not correct"
-					n.NzbsDenied = append(n.NzbsDenied, nzbs_out[idx])
+					logger.Log.Debug("Skipped - Imdb not match: ", n.ToFilter[idx].NZB.Title, " - imdb in nzb: ", tempimdb, " imdb wanted: ", wantedimdb)
+					n.ToFilter[idx].Denied = true
+					n.ToFilter[idx].Reason = "Imdbid not correct"
+					n.NzbsDenied = append(n.NzbsDenied, n.ToFilter[idx])
 					continue
 				}
 			} else {
-				if strconv.Itoa(s.Tvdb) != nzbs_out[idx].NZB.TVDBID && s.Tvdb >= 1 && len(nzbs_out[idx].NZB.TVDBID) >= 1 {
-					logger.Log.Debug("Skipped - Tvdb not match: ", nzbs_out[idx].NZB.Title, " - Tvdb in nzb: ", nzbs_out[idx].NZB.TVDBID, " Tvdb wanted: ", s.Tvdb)
-					nzbs_out[idx].Denied = true
-					nzbs_out[idx].Reason = "Tvdbid not correct"
-					n.NzbsDenied = append(n.NzbsDenied, nzbs_out[idx])
+				if strconv.Itoa(n.T.Tvdb) != n.ToFilter[idx].NZB.TVDBID && n.T.Tvdb >= 1 && len(n.ToFilter[idx].NZB.TVDBID) >= 1 {
+					logger.Log.Debug("Skipped - Tvdb not match: ", n.ToFilter[idx].NZB.Title, " - Tvdb in nzb: ", n.ToFilter[idx].NZB.TVDBID, " Tvdb wanted: ", n.T.Tvdb)
+					n.ToFilter[idx].Denied = true
+					n.ToFilter[idx].Reason = "Tvdbid not correct"
+					n.NzbsDenied = append(n.NzbsDenied, n.ToFilter[idx])
 					continue
 				}
 			}
 		}
-		n.ToFilter = append(n.ToFilter, nzbs_out[idx])
+		nextup = append(nextup, n.ToFilter[idx])
 	}
-	return n
+	n.ToFilter = nextup
 }
 
 //regex
@@ -1341,7 +1346,8 @@ func (s searcher) GetRSSFeed(searchGroupType string, listConfig string) searchRe
 		for key := range lastids {
 			delete(lastids, key)
 		}
-		tofilter := nzbsFilterStart(s, nzbs)
+		tofilter := convertnzbs(s, nzbs)
+		tofilter.nzbsFilterStart()
 		tofilter.setDataField([]string{listConfig}, list.Addfound)
 		tofilter.nzbsFilterBlock2()
 
@@ -1455,12 +1461,11 @@ func moviesearchindexer(t searcher, index config.QualityIndexerConfig, movie dat
 	}
 	t.Indexer = index
 
-	var dl_add searchResults
 	var dl searchResults
 	releasefound := false
 	if t.Imdb != "" {
 		logger.Log.Info("Search movie by imdb ", t.Imdb, " with indexer ", index.Template_indexer)
-		dl_add = t.moviesSearchImdb(movie, []string{t.Movie.Listname}, cats)
+		dl_add := t.moviesSearchImdb(movie, []string{t.Movie.Listname}, cats)
 		dl.Rejected = append(dl.Rejected, dl_add.Rejected...)
 		if len(dl_add.Nzbs) >= 1 {
 			logger.Log.Debug("Indexer loop - entries found: ", len(dl_add.Nzbs))
@@ -1477,7 +1482,7 @@ func moviesearchindexer(t searcher, index config.QualityIndexerConfig, movie dat
 			return dl, true
 		}
 		logger.Log.Info("Search movie by title ", t.Name, " with indexer ", index.Template_indexer)
-		dl_add = t.moviesSearchTitle(movie, t.Name, []string{t.Movie.Listname}, cats)
+		dl_add := t.moviesSearchTitle(movie, t.Name, []string{t.Movie.Listname}, cats)
 		dl.Rejected = append(dl.Rejected, dl_add.Rejected...)
 		titleschecked = append(titleschecked, t.Name)
 		if len(dl_add.Nzbs) >= 1 {
@@ -1498,7 +1503,7 @@ func moviesearchindexer(t searcher, index config.QualityIndexerConfig, movie dat
 			}
 			if !logger.CheckStringArray(titleschecked, foundalternate[idxalt].Str) {
 				logger.Log.Info("Search movie by title ", foundalternate[idxalt].Str, " with indexer ", index.Template_indexer)
-				dl_add = t.moviesSearchTitle(movie, foundalternate[idxalt].Str, []string{t.Movie.Listname}, cats)
+				dl_add := t.moviesSearchTitle(movie, foundalternate[idxalt].Str, []string{t.Movie.Listname}, cats)
 				dl.Rejected = append(dl.Rejected, dl_add.Rejected...)
 				titleschecked = append(titleschecked, foundalternate[idxalt].Str)
 				if len(dl_add.Nzbs) >= 1 {
@@ -1607,11 +1612,10 @@ func seriessearchindexer(t searcher, index config.QualityIndexerConfig, series d
 	}
 	t.Indexer = index
 	releasefound := false
-	var dl_add searchResults
 	var dl searchResults
 	if t.Tvdb != 0 {
 		logger.Log.Info("Search serie by tvdbid ", t.Tvdb, " with indexer ", index.Template_indexer)
-		dl_add = t.seriesSearchTvdb([]string{series.Listname}, cats)
+		dl_add := t.seriesSearchTvdb([]string{series.Listname}, cats)
 		dl.Rejected = append(dl.Rejected, dl_add.Rejected...)
 		if len(dl_add.Nzbs) >= 1 {
 			releasefound = true
@@ -1627,7 +1631,7 @@ func seriessearchindexer(t searcher, index config.QualityIndexerConfig, series d
 			return dl, true
 		}
 		logger.Log.Info("Search serie by title ", t.Name, " with indexer ", index.Template_indexer)
-		dl_add = t.seriesSearchTitle(t.Name, []string{series.Listname}, cats)
+		dl_add := t.seriesSearchTitle(t.Name, []string{series.Listname}, cats)
 		dl.Rejected = append(dl.Rejected, dl_add.Rejected...)
 		titleschecked = append(titleschecked, t.Name)
 		if len(dl_add.Nzbs) >= 1 {
@@ -1647,7 +1651,7 @@ func seriessearchindexer(t searcher, index config.QualityIndexerConfig, series d
 			}
 			if !logger.CheckStringArray(titleschecked, foundalternate[idxalt].Str) {
 				logger.Log.Info("Search serie by title ", foundalternate[idxalt].Str, " with indexer ", index.Template_indexer)
-				dl_add = t.seriesSearchTitle(foundalternate[idxalt].Str, []string{series.Listname}, cats)
+				dl_add := t.seriesSearchTitle(foundalternate[idxalt].Str, []string{series.Listname}, cats)
 				dl.Rejected = append(dl.Rejected, dl_add.Rejected...)
 				titleschecked = append(titleschecked, foundalternate[idxalt].Str)
 				if len(dl_add.Nzbs) >= 1 {
@@ -1770,7 +1774,8 @@ func (s searcher) moviesSearchImdb(movie database.Movie, lists []string, cats []
 	}
 
 	if len(nzbs) >= 1 {
-		tofilter := nzbsFilterStart(s, nzbs)
+		tofilter := convertnzbs(s, nzbs)
+		tofilter.nzbsFilterStart()
 		tofilter.setDataField(lists, false)
 		tofilter.nzbsFilterBlock2()
 
@@ -1807,7 +1812,8 @@ func (s searcher) moviesSearchTitle(movie database.Movie, title string, lists []
 	}
 
 	if len(nzbs) >= 1 {
-		tofilter := nzbsFilterStart(s, nzbs)
+		tofilter := convertnzbs(s, nzbs)
+		tofilter.nzbsFilterStart()
 		tofilter.setDataField(lists, false)
 		tofilter.nzbsFilterBlock2()
 
@@ -1839,7 +1845,8 @@ func (s searcher) seriesSearchTvdb(lists []string, cats []int) searchResults {
 	}
 
 	if len(nzbs) >= 1 {
-		tofilter := nzbsFilterStart(s, nzbs)
+		tofilter := convertnzbs(s, nzbs)
+		tofilter.nzbsFilterStart()
 		tofilter.setDataField(lists, false)
 		tofilter.nzbsFilterBlock2()
 
@@ -1870,7 +1877,8 @@ func (s searcher) seriesSearchTitle(title string, lists []string, cats []int) se
 		}
 
 		if len(nzbs) >= 1 {
-			tofilter := nzbsFilterStart(s, nzbs)
+			tofilter := convertnzbs(s, nzbs)
+			tofilter.nzbsFilterStart()
 			tofilter.setDataField(lists, false)
 			tofilter.nzbsFilterBlock2()
 

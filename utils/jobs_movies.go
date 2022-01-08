@@ -482,6 +482,7 @@ func checkreachedmoviesflag(configTemplate string, listConfig string) {
 func moviesStructureSingle(configTemplate string, listConfig string) {
 
 	if !config.ConfigCheck("general") {
+		logger.Log.Debug("General not found")
 		return
 	}
 	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
@@ -490,12 +491,13 @@ func moviesStructureSingle(configTemplate string, listConfig string) {
 		cfg_general.WorkerFiles = 1
 	}
 
-	swfile := sizedwaitgroup.New(cfg_general.WorkerFiles)
+	//swfile := sizedwaitgroup.New(1)
 
 	row := config.ConfigGet(configTemplate).Data.(config.MediaTypeConfig)
 	for idxpath := range row.DataImport {
 		mappath := ""
 		if !config.ConfigCheck("path_" + row.DataImport[idxpath].Template_path) {
+			logger.Log.Debug("Path not found: ", "path_"+row.DataImport[idxpath].Template_path)
 			continue
 		}
 		cfg_path_import := config.ConfigGet("path_" + row.DataImport[idxpath].Template_path).Data.(config.PathsConfig)
@@ -504,20 +506,22 @@ func moviesStructureSingle(configTemplate string, listConfig string) {
 		if len(row.Data) >= 1 {
 			mappath = row.Data[0].Template_path
 			if !config.ConfigCheck("path_" + mappath) {
+				logger.Log.Debug("Path not found: ", "path_"+mappath)
 				continue
 			}
 			cfg_path = config.ConfigGet("path_" + mappath).Data.(config.PathsConfig)
 
 		} else {
+			logger.Log.Debug("No Path not found")
 			continue
 		}
-		swfile.Add()
+		//swfile.Add()
 		go func(source config.PathsConfig, target config.PathsConfig) {
 			structure.StructureFolders("movie", source, target, configTemplate, listConfig)
-			swfile.Done()
+			//swfile.Done()
 		}(cfg_path_import, cfg_path)
 	}
-	swfile.Wait()
+	//swfile.Wait()
 }
 
 func RefreshMovies() {

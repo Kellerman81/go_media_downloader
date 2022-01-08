@@ -28,7 +28,7 @@ func GetFilesDir(rootpath string, filetypes []string, filetypesNoRename []string
 		return GetFilesGoDir(rootpath, filetypes, filetypesNoRename, ignoredpaths)
 	}
 
-	if _, err := os.Stat(rootpath); !os.IsNotExist(err) {
+	if CheckFileExist(rootpath) {
 		counter := 0
 		filepath.WalkDir(rootpath, func(path string, info fs.DirEntry, err error) error {
 			if info.IsDir() {
@@ -99,7 +99,7 @@ func GetFilesDir(rootpath string, filetypes []string, filetypesNoRename []string
 func GetFilesGoDir(rootpath string, filetypes []string, filetypesNoRename []string, ignoredpaths []string) []string {
 	var list []string
 
-	if _, err := os.Stat(rootpath); !os.IsNotExist(err) {
+	if CheckFileExist(rootpath) {
 		err := godirwalk.Walk(rootpath, &godirwalk.Options{
 			Callback: func(osPathname string, de *godirwalk.Dirent) error {
 				if de.IsDir() {
@@ -170,7 +170,7 @@ func getFolderSize(rootpath string) int64 {
 	}
 	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
 
-	if _, err := os.Stat(rootpath); !os.IsNotExist(err) {
+	if CheckFileExist(rootpath) {
 		if cfg_general.UseGoDir {
 			err := godirwalk.Walk(rootpath, &godirwalk.Options{
 				Callback: func(osPathname string, de *godirwalk.Dirent) error {
@@ -216,7 +216,7 @@ func getFolderSize(rootpath string) int64 {
 
 func getFileSize(file string) int64 {
 	var size int64
-	if _, err := os.Stat(file); !os.IsNotExist(err) {
+	if CheckFileExist(file) {
 		info, err := os.Stat(file)
 		if err == nil {
 			size += info.Size()
@@ -241,7 +241,7 @@ func MoveFiles(files []string, target string, newname string, filetypes []string
 	moveok := false
 
 	for idxfile := range files {
-		if _, err := os.Stat(files[idxfile]); !os.IsNotExist(err) {
+		if CheckFileExist(files[idxfile]) {
 			var ok bool
 			var oknorename bool
 			if len(filetypes) == 0 {
@@ -272,7 +272,7 @@ func MoveFiles(files []string, target string, newname string, filetypes []string
 					newname = filepath.Base(files[idxfile])
 				}
 				newpath := filepath.Join(target, newname+filepath.Ext(files[idxfile]))
-				if _, err := os.Stat(newpath); !os.IsNotExist(err) {
+				if CheckFileExist(newpath) {
 					if target != newpath {
 						//Remove Target to supress error
 						RemoveFile(newpath)
@@ -332,7 +332,7 @@ func RemoveFiles(files []string, filetypes []string, filetypesNoRename []string)
 			}
 		}
 		if ok || oknorename || len(filetypes) == 0 {
-			if _, err := os.Stat(files[idxfile]); !os.IsNotExist(err) {
+			if CheckFileExist(files[idxfile]) {
 				err := os.Remove(files[idxfile])
 				if err != nil {
 					logger.Log.Error("File could not be removed: ", files[idxfile], " Error: ", err)
@@ -348,7 +348,7 @@ func RemoveFiles(files []string, filetypes []string, filetypesNoRename []string)
 
 func RemoveFile(file string) error {
 	var err error
-	if _, err := os.Stat(file); !os.IsNotExist(err) {
+	if CheckFileExist(file) {
 		err := os.Remove(file)
 		if err != nil {
 			logger.Log.Error("File could not be removed: ", file, " Error: ", err)
@@ -369,7 +369,7 @@ func CheckDisallowed(folder string, disallowed []string, removefolder bool) bool
 		return disallow
 	}
 	logger.Log.Debug("Check disallowed")
-	if _, err := os.Stat(folder); !os.IsNotExist(err) {
+	if CheckFileExist(folder) {
 		filesleft := GetFilesDir(folder, emptyarr, emptyarr, emptyarr)
 		for idxfile := range filesleft {
 			for idxdisallow := range disallowed {
@@ -391,7 +391,7 @@ func CheckDisallowed(folder string, disallowed []string, removefolder bool) bool
 }
 func CleanUpFolder(folder string, CleanupsizeMB int) {
 	emptyarr := []string{}
-	if _, err := os.Stat(folder); !os.IsNotExist(err) {
+	if CheckFileExist(folder) {
 		filesleft := GetFilesDir(folder, emptyarr, emptyarr, emptyarr)
 		logger.Log.Debug("Left files: ", filesleft)
 		if CleanupsizeMB >= 1 {
@@ -502,7 +502,7 @@ func GetFilesRemoved(listname string) []string {
 	moviefile, _ := database.QueryStaticColumnsOneString("Select location from movie_files where movie_id in (Select id from movies where listname=?)", "Select count(id) from movie_files where movie_id in (Select id from movies where listname=?)", listname)
 	var listentries []string
 	for idxmovie := range moviefile {
-		if _, err := os.Stat(moviefile[idxmovie].Str); os.IsNotExist(err) {
+		if !CheckFileExist(moviefile[idxmovie].Str) {
 			listentries = append(listentries, moviefile[idxmovie].Str)
 		}
 	}
@@ -513,7 +513,7 @@ func GetFilesSeriesRemoved(listname string) []string {
 	seriefile, _ := database.QueryStaticColumnsOneString("Select location from serie_episode_files where serie_id in (Select id from series where listname=?)", "Select count(id) from serie_episode_files where serie_id in (Select id from series where listname=?)", listname)
 	var listentries []string
 	for idxserie := range seriefile {
-		if _, err := os.Stat(seriefile[idxserie].Str); os.IsNotExist(err) {
+		if !CheckFileExist(seriefile[idxserie].Str) {
 			listentries = append(listentries, seriefile[idxserie].Str)
 		}
 	}
@@ -611,7 +611,7 @@ func moveFileDriveBuffer(sourcePath, destPath string) error {
 }
 
 func moveFileDrive(sourcePath, destPath string) error {
-	if _, err := os.Stat(sourcePath); !os.IsNotExist(err) {
+	if CheckFileExist(sourcePath) {
 		err := copyFile(sourcePath, destPath, false)
 		if err != nil {
 			fmt.Println("Error copiing source", sourcePath, destPath, err)
@@ -620,9 +620,9 @@ func moveFileDrive(sourcePath, destPath string) error {
 	} else {
 		return errors.New("source doesnt exist")
 	}
-	if _, err := os.Stat(sourcePath); !os.IsNotExist(err) {
+	if CheckFileExist(sourcePath) {
 		// The copy was successful, so now delete the original file
-		err = os.Remove(sourcePath)
+		err := os.Remove(sourcePath)
 		if err != nil {
 			fmt.Println("Error removing source", sourcePath, err)
 			return err
@@ -636,6 +636,13 @@ func moveFileDrive(sourcePath, destPath string) error {
 func absolutePath(path string) (string, error) {
 	homeReplaced := path
 	return filepath.Abs(homeReplaced)
+}
+
+func CheckFileExist(path string) bool {
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return false
+	}
+	return true
 }
 
 // CopyFile copies a file from src to dst. If src and dst files exist, and are
