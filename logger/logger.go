@@ -26,6 +26,7 @@ func InitLogger(config LoggerConfig) {
 	if strings.EqualFold(config.LogLevel, "Debug") {
 		// Memprofiler = profile.Start(profile.ProfilePath("."), profile.MemProfile, profile.MemProfileHeap)
 		Log.SetLevel(logrus.DebugLevel)
+		Log.SetReportCaller(true)
 	}
 	if strings.EqualFold(config.LogLevel, "Warning") {
 		Log.SetLevel(logrus.WarnLevel)

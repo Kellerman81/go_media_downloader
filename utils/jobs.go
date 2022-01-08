@@ -1,7 +1,6 @@
 package utils
 
 import (
-	"os"
 	"strings"
 
 	"github.com/Kellerman81/go_media_downloader/apiexternal"
@@ -17,7 +16,7 @@ import (
 
 func jobImportFileCheck(file string, dbtype string, wg *sizedwaitgroup.SizedWaitGroup) {
 	defer wg.Done()
-	if _, err := os.Stat(file); os.IsNotExist(err) {
+	if !scanner.CheckFileExist(file) {
 		if strings.EqualFold(dbtype, "movie") {
 			moviesf, _ := database.QueryStaticColumnsTwoInt("select id, movie_id from movie_files where location=?", "select count(id) from movie_files where location=?", file)
 			//moviesf, _ := database.QueryMovieFiles(database.Query{Select: "id, movie_id", Where: "location=?", WhereArgs: []interface{}{file}})

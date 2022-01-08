@@ -477,18 +477,19 @@ func apiseriesAllJobs(c *gin.Context) {
 		returnval := "Job " + c.Param("job") + " started"
 
 		for _, idxserie := range config.ConfigGetPrefix("serie_") {
-			if !config.ConfigCheck(idxserie.Name) {
+			configTemplate := *idxserie
+			if !config.ConfigCheck(configTemplate.Name) {
 				continue
 			}
-			cfg_serie := config.ConfigGet(idxserie.Name).Data.(config.MediaTypeConfig)
+			cfg_serie := config.ConfigGet(configTemplate.Name).Data.(config.MediaTypeConfig)
 			switch c.Param("job") {
 			case "data", "datafull", "structure", "clearhistory":
 				scheduler.QueueData.Dispatch(c.Param("job")+"_series_"+cfg_serie.Name, func() {
-					utils.Series_single_jobs(c.Param("job"), idxserie.Name, "", true)
+					utils.Series_single_jobs(c.Param("job"), configTemplate.Name, "", true)
 				})
 			case "rss", "searchmissingfull", "searchmissinginc", "searchupgradefull", "searchupgradeinc", "searchmissingfulltitle", "searchmissinginctitle", "searchupgradefulltitle", "searchupgradeinctitle":
 				scheduler.QueueSearch.Dispatch(c.Param("job")+"_series_"+cfg_serie.Name, func() {
-					utils.Series_single_jobs(c.Param("job"), idxserie.Name, "", true)
+					utils.Series_single_jobs(c.Param("job"), configTemplate.Name, "", true)
 				})
 			case "feeds", "checkmissing", "checkmissingflag", "checkreachedflag":
 				for idxlist := range cfg_serie.Lists {
@@ -505,12 +506,12 @@ func apiseriesAllJobs(c *gin.Context) {
 					listname := cfg_serie.Lists[idxlist].Name
 					if c.Param("job") == "feeds" {
 						scheduler.QueueFeeds.Dispatch(c.Param("job")+"_series_"+cfg_serie.Name, func() {
-							utils.Series_single_jobs(c.Param("job"), idxserie.Name, listname, true)
+							utils.Series_single_jobs(c.Param("job"), configTemplate.Name, listname, true)
 						})
 					}
 					if c.Param("job") == "checkmissing" || c.Param("job") == "checkmissingflag" || c.Param("job") == "checkreachedflag" {
 						scheduler.QueueData.Dispatch(c.Param("job")+"_series_"+cfg_serie.Name, func() {
-							utils.Series_single_jobs(c.Param("job"), idxserie.Name, listname, true)
+							utils.Series_single_jobs(c.Param("job"), configTemplate.Name, listname, true)
 						})
 					}
 				}
@@ -524,7 +525,7 @@ func apiseriesAllJobs(c *gin.Context) {
 				})
 			default:
 				scheduler.QueueData.Dispatch(c.Param("job")+"_series_"+cfg_serie.Name, func() {
-					utils.Series_single_jobs(c.Param("job"), idxserie.Name, "", true)
+					utils.Series_single_jobs(c.Param("job"), configTemplate.Name, "", true)
 				})
 			}
 		}
@@ -572,10 +573,11 @@ func apiseriesJobs(c *gin.Context) {
 		case "feeds", "checkmissing", "checkmissingflag", "checkreachedflag":
 
 			for _, idxserie := range config.ConfigGetPrefix("serie_") {
-				if !config.ConfigCheck(idxserie.Name) {
+				configTemplate := *idxserie
+				if !config.ConfigCheck(configTemplate.Name) {
 					continue
 				}
-				cfg_serie := config.ConfigGet(idxserie.Name).Data.(config.MediaTypeConfig)
+				cfg_serie := config.ConfigGet(configTemplate.Name).Data.(config.MediaTypeConfig)
 				if strings.EqualFold(cfg_serie.Name, c.Param("name")) {
 					for idxlist := range cfg_serie.Lists {
 						if !cfg_serie.Lists[idxlist].Enabled {
@@ -853,14 +855,15 @@ func apiSeriesSearch(c *gin.Context) {
 	serie, _ := database.GetSeries(database.Query{Where: "id=?", WhereArgs: []interface{}{c.Param("id")}})
 
 	for _, idxserie := range config.ConfigGetPrefix("serie_") {
-		if !config.ConfigCheck(idxserie.Name) {
+		configTemplate := *idxserie
+		if !config.ConfigCheck(configTemplate.Name) {
 			continue
 		}
-		cfg_serie := config.ConfigGet(idxserie.Name).Data.(config.MediaTypeConfig)
+		cfg_serie := config.ConfigGet(configTemplate.Name).Data.(config.MediaTypeConfig)
 		for idxlist := range cfg_serie.Lists {
 			if strings.EqualFold(cfg_serie.Lists[idxlist].Name, serie.Listname) {
 				scheduler.QueueSearch.Dispatch("searchseries_series_"+cfg_serie.Name+"_"+strconv.Itoa(int(serie.ID)), func() {
-					searcher.SearchSerieSingle(serie, idxserie.Name, true)
+					searcher.SearchSerieSingle(serie, configTemplate.Name, true)
 				})
 				c.JSON(http.StatusOK, "started")
 				return
@@ -888,14 +891,15 @@ func apiSeriesSearchSeason(c *gin.Context) {
 	serie, _ := database.GetSeries(database.Query{Where: "id=?", WhereArgs: []interface{}{c.Param("id")}})
 
 	for _, idxserie := range config.ConfigGetPrefix("serie_") {
-		if !config.ConfigCheck(idxserie.Name) {
+		configTemplate := *idxserie
+		if !config.ConfigCheck(configTemplate.Name) {
 			continue
 		}
-		cfg_serie := config.ConfigGet(idxserie.Name).Data.(config.MediaTypeConfig)
+		cfg_serie := config.ConfigGet(configTemplate.Name).Data.(config.MediaTypeConfig)
 		for idxlist := range cfg_serie.Lists {
 			if strings.EqualFold(cfg_serie.Lists[idxlist].Name, serie.Listname) {
 				scheduler.QueueSearch.Dispatch("searchseriesseason_series_"+cfg_serie.Name+"_"+strconv.Itoa(int(serie.ID))+"_"+c.Param("season"), func() {
-					searcher.SearchSerieSeasonSingle(serie, c.Param("season"), idxserie.Name, true)
+					searcher.SearchSerieSeasonSingle(serie, c.Param("season"), configTemplate.Name, true)
 				})
 				c.JSON(http.StatusOK, "started")
 				return
@@ -924,14 +928,15 @@ func apiSeriesEpisodeSearch(c *gin.Context) {
 	serie, _ := database.GetSeries(database.Query{Where: "id=?", WhereArgs: []interface{}{serieepi.SerieID}})
 
 	for _, idxserie := range config.ConfigGetPrefix("serie_") {
-		if !config.ConfigCheck(idxserie.Name) {
+		configTemplate := *idxserie
+		if !config.ConfigCheck(configTemplate.Name) {
 			continue
 		}
-		cfg_serie := config.ConfigGet(idxserie.Name).Data.(config.MediaTypeConfig)
+		cfg_serie := config.ConfigGet(configTemplate.Name).Data.(config.MediaTypeConfig)
 		for idxlist := range cfg_serie.Lists {
 			if strings.EqualFold(cfg_serie.Lists[idxlist].Name, serie.Listname) {
 				scheduler.QueueSearch.Dispatch("searchseriesepisode_series_"+cfg_serie.Name+"_"+strconv.Itoa(int(serieepi.ID)), func() {
-					searcher.SearchSerieEpisodeSingle(serieepi, idxserie.Name, true)
+					searcher.SearchSerieEpisodeSingle(serieepi, configTemplate.Name, true)
 				})
 				c.JSON(http.StatusOK, "started")
 				return
@@ -967,13 +972,14 @@ func apiSeriesEpisodeSearchList(c *gin.Context) {
 		}
 	}
 	for _, idxserie := range config.ConfigGetPrefix("serie_") {
-		if !config.ConfigCheck(idxserie.Name) {
+		configTemplate := *idxserie
+		if !config.ConfigCheck(configTemplate.Name) {
 			continue
 		}
-		cfg_serie := config.ConfigGet(idxserie.Name).Data.(config.MediaTypeConfig)
+		cfg_serie := config.ConfigGet(configTemplate.Name).Data.(config.MediaTypeConfig)
 		for idxlist := range cfg_serie.Lists {
 			if strings.EqualFold(cfg_serie.Lists[idxlist].Name, serie.Listname) {
-				searchnow := searcher.NewSearcher(idxserie.Name, serieepi.QualityProfile)
+				searchnow := searcher.NewSearcher(configTemplate.Name, serieepi.QualityProfile)
 				searchresults := searchnow.SeriesSearch(serieepi, false, titlesearch)
 				c.JSON(http.StatusOK, gin.H{"accepted": searchresults.Nzbs, "rejected": searchresults.Rejected})
 				return
@@ -999,12 +1005,13 @@ func apiSeriesRssSearchList(c *gin.Context) {
 	}
 
 	for _, idxserie := range config.ConfigGetPrefix("serie_") {
-		if !config.ConfigCheck(idxserie.Name) {
+		configTemplate := *idxserie
+		if !config.ConfigCheck(configTemplate.Name) {
 			continue
 		}
-		cfg_serie := config.ConfigGet(idxserie.Name).Data.(config.MediaTypeConfig)
+		cfg_serie := config.ConfigGet(configTemplate.Name).Data.(config.MediaTypeConfig)
 		if strings.EqualFold(cfg_serie.Name, c.Param("group")) {
-			searchnow := searcher.NewSearcher(idxserie.Name, cfg_serie.Template_quality)
+			searchnow := searcher.NewSearcher(configTemplate.Name, cfg_serie.Template_quality)
 			searchresults := searchnow.SearchRSS("series", true)
 			c.JSON(http.StatusOK, gin.H{"accepted": searchresults.Nzbs, "rejected": searchresults.Rejected})
 			return
@@ -1044,13 +1051,14 @@ func apiSeriesEpisodeSearchDownload(c *gin.Context) {
 	}
 
 	for _, idxserie := range config.ConfigGetPrefix("serie_") {
-		if !config.ConfigCheck(idxserie.Name) {
+		configTemplate := *idxserie
+		if !config.ConfigCheck(configTemplate.Name) {
 			continue
 		}
-		cfg_serie := config.ConfigGet(idxserie.Name).Data.(config.MediaTypeConfig)
+		cfg_serie := config.ConfigGet(configTemplate.Name).Data.(config.MediaTypeConfig)
 		for idxlist := range cfg_serie.Lists {
 			if strings.EqualFold(cfg_serie.Lists[idxlist].Name, serie.Listname) {
-				downloadnow := downloader.NewDownloader(idxserie.Name, searchtype)
+				downloadnow := downloader.NewDownloader(configTemplate.Name, searchtype)
 				downloadnow.SetSeriesEpisode(serieepi)
 				downloadnow.DownloadNzb(nzb)
 				c.JSON(http.StatusOK, "started")

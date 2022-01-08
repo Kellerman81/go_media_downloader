@@ -18,6 +18,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/database"
 	"github.com/Kellerman81/go_media_downloader/logger"
 	"github.com/Kellerman81/go_media_downloader/parser"
+	"github.com/Kellerman81/go_media_downloader/scanner"
 	"github.com/Kellerman81/go_media_downloader/scheduler"
 	"github.com/Kellerman81/go_media_downloader/structure"
 	"github.com/Kellerman81/go_media_downloader/tasks"
@@ -287,7 +288,8 @@ func apiFillImdb(ctx *gin.Context) {
 	go func() {
 		out, errexec := exec.Command(file).Output()
 		logger.Log.Infoln(string(out))
-		if _, err := os.Stat(file); !os.IsNotExist(err) && errexec == nil {
+
+		if !scanner.CheckFileExist(file) && errexec == nil {
 			database.DBImdb.Close()
 			os.Remove("./imdb.db")
 			os.Rename("./imdbtemp.db", "./imdb.db")
@@ -983,12 +985,7 @@ func apiStructure(ctx *gin.Context) {
 	if strings.EqualFold(cfg.Grouptype, "series") {
 		cfg.Configentry = "serie_" + cfg.Configentry
 	}
-	var media config.MediaTypeConfig
-	if strings.HasPrefix(ctx.Param("config"), "movie_") {
-		media = config.ConfigGet("movie_" + cfg.Configentry).Data.(config.MediaTypeConfig)
-	} else {
-		media = config.ConfigGet("serie_" + cfg.Configentry).Data.(config.MediaTypeConfig)
-	}
+	media := config.ConfigGet(cfg.Configentry).Data.(config.MediaTypeConfig)
 	if media.Name != cfg.Configentry {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "media config not found"})
 		return

@@ -556,17 +556,20 @@ func seriesStructureSingle(configTemplate string, listConfig string) {
 		cfg_general.WorkerFiles = 1
 	}
 
-	swfile := sizedwaitgroup.New(cfg_general.WorkerFiles)
+	//swfile := sizedwaitgroup.New(cfg_general.WorkerFiles)
 
 	row := config.ConfigGet(configTemplate).Data.(config.MediaTypeConfig)
 	for idxpath := range row.DataImport {
 		mappathimport := row.DataImport[idxpath].Template_path
 		if !config.ConfigCheck("path_" + mappathimport) {
+			logger.Log.Debug("Path not found: ", "path_"+mappathimport)
+
 			continue
 		}
 		cfg_path_import := config.ConfigGet("path_" + mappathimport).Data.(config.PathsConfig)
 
 		if !config.ConfigCheck("path_" + row.Data[0].Template_path) {
+			logger.Log.Debug("Path not found: ", "path_"+row.Data[0].Template_path)
 			continue
 		}
 		var cfg_path config.PathsConfig
@@ -578,13 +581,13 @@ func seriesStructureSingle(configTemplate string, listConfig string) {
 			time.Sleep(time.Duration(15) * time.Second)
 		}
 		lastSeriesStructure = cfg_path_import.Path
-		swfile.Add()
+		//swfile.Add()
 
 		go func(source config.PathsConfig, target config.PathsConfig) {
 			structure.StructureFolders("series", source, target, configTemplate, listConfig)
-			swfile.Done()
+			//swfile.Done()
 		}(cfg_path_import, cfg_path)
 
 	}
-	swfile.Wait()
+	//swfile.Wait()
 }

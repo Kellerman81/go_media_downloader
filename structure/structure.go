@@ -1034,6 +1034,7 @@ func StructureFolders(grouptype string, sourcepath config.PathsConfig, targetpat
 		database.ReadWriteMu.Unlock()
 	}()
 	if !configEntry.Structure {
+		logger.Log.Debug("Structure disabled: ", jobName)
 		return
 	}
 	database.ReadWriteMu.Lock()
