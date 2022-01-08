@@ -102,10 +102,10 @@ jobs:
         exclusions: '*.git* /.github/* /api/* /apiexternal/* /config/* /database/* /downloader/* /imdb/* /importfeed/* /logger/* /newznab/* /nzbget/* /parser/* /sabnzbd/* /scanner/* /scheduler/* /searcher/* /structure/* /tasks/* /utils/* /views/* Dockerfile go.* *.zip *.go go_media_downloader-*'
     
     - name: Rename Mac64 binary
-      run: mv ./imdb/imdb-darwin-10.12-amd64 init_imdb
+      run: mv ./imdb/imdb-darwin-10.16-amd64 init_imdb
 
     - name: Rename Mac64 binary dl
-      run: mv ./go_media_downloader-darwin-10.12-amd64 go_media_downloader
+      run: mv ./go_media_downloader-darwin-10.16-amd64 go_media_downloader
 
     - name: Zip Mac64 binary
       uses: thedoctor0/zip-release@master
