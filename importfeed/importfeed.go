@@ -1459,8 +1459,7 @@ func JobReloadDbSeries(dbserie database.Dbserie, configTemplate string, listConf
 	//dbepisode, _ := database.QueryStaticColumnsOneInt("select id from dbserie_episodes where dbserie_id = ?", "select count(id) from dbserie_episodes where dbserie_id = ?", dbserie.ID)
 	dbepisode, _ := database.QueryDbserieEpisodes(database.Query{Select: "id, season, episode", Where: "dbserie_id = ?", WhereArgs: []interface{}{dbserie.ID}})
 
-	configEntry := config.ConfigGet(configTemplate).Data.(config.MediaTypeConfig)
-	episodes := dbserie.GetEpisodes(configEntry.Metadata_language, cfg_general.SerieMetaSourceTrakt)
+	episodes := dbserie.GetEpisodes(getconfigentry.Metadata_language, cfg_general.SerieMetaSourceTrakt)
 	for idxepi := range episodes {
 		epifound := false
 		for idxdbepi := range dbepisode {
