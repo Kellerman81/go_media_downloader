@@ -106,7 +106,6 @@ func jobImportSeriesParseV2(file string, updatemissing bool, configTemplate stri
 			}
 			if SeriesEpisodeErr == nil {
 				filecounter2, _ := database.CountRowsStatic("Select count(id) from serie_episode_files where location = ? and serie_episode_id = ?", file, SeriesEpisode.ID)
-				//_, SeriesEpisodeFileerr := database.GetSerieEpisodeFiles(database.Query{Select: "id", Where: "location = ? AND serie_episode_id = ?", WhereArgs: []interface{}{file, SeriesEpisode.ID}})
 				if filecounter2 == 0 {
 					if SeriesEpisode.DbserieID == 0 {
 						logger.Log.Warn("Failed parse match sub1: ", file, " as ", m.Title)
@@ -314,6 +313,8 @@ func Series_single_jobs(job string, configTemplate string, listname string, forc
 			searcher.SearchSerieUpgrade(configTemplate, 0, true)
 		case "searchupgradeinctitle":
 			searcher.SearchSerieUpgrade(configTemplate, cfg_serie.Searchupgrade_incremental, true)
+		case "structure":
+			seriesStructureSingle(configTemplate)
 
 		}
 		if listname != "" {
@@ -341,8 +342,6 @@ func Series_single_jobs(job string, configTemplate string, listname string, forc
 				checkmissingepisodesflag(configTemplate, cfg_serie.Lists[idxlist].Name)
 			case "checkreachedflag":
 				checkreachedepisodesflag(configTemplate, cfg_serie.Lists[idxlist].Name)
-			case "structure":
-				seriesStructureSingle(configTemplate, cfg_serie.Lists[idxlist].Name)
 			case "clearhistory":
 				database.DeleteRow("serie_episode_histories", database.Query{Where: "serie_id in (Select id from series where listname=?)", WhereArgs: []interface{}{cfg_serie.Lists[idxlist].Name}})
 			case "feeds":
@@ -503,7 +502,6 @@ func checkmissingepisodessingle(configTemplate string, listConfig string) {
 
 	swfile := sizedwaitgroup.New(cfg_general.WorkerFiles)
 
-	//seriefile, _ := database.QuerySerieEpisodeFiles(database.Query{Select: "location", Where: "serie_id in (Select id from series where listname = ?)", WhereArgs: []interface{}{list.Name}})
 	for _, filerow := range database.QueryStaticColumnsOneStringNoError("Select location from serie_episode_files where serie_id in (Select id from series where listname = ?)", "Select count(id) from serie_episode_files where serie_id in (Select id from series where listname = ?)", listConfig) {
 		swfile.Add()
 		go func(file string) {
@@ -546,7 +544,7 @@ func getTraktUserPublicShowList(configTemplate string, listConfig string) config
 
 var lastSeriesStructure string
 
-func seriesStructureSingle(configTemplate string, listConfig string) {
+func seriesStructureSingle(configTemplate string) {
 	if !config.ConfigCheck("general") {
 		return
 	}
@@ -584,7 +582,7 @@ func seriesStructureSingle(configTemplate string, listConfig string) {
 		//swfile.Add()
 
 		go func(source config.PathsConfig, target config.PathsConfig) {
-			structure.StructureFolders("series", source, target, configTemplate, listConfig)
+			structure.StructureFolders("series", source, target, configTemplate)
 			//swfile.Done()
 		}(cfg_path_import, cfg_path)
 

@@ -323,12 +323,8 @@ func Importnewmoviessingle(configTemplate string, listConfig string) {
 				break
 			}
 		}
-		//dbmovie, dbmovieerr := database.GetDbmovie(database.Query{Select: "id", Where: "imdb_id=?", WhereArgs: []interface{}{results.Movies[idxmovie].ImdbID}})
-		//if dbmovieerr == nil {
-		//founddbmovie = true
 		if founddbmovie {
 			counter, _ := database.CountRowsStatic("Select count(id) from movies where dbmovie_id=? and listname=?", id, listConfig)
-			//counter, _ := database.CountRows("movies", database.Query{Where: "dbmovie_id=? and listname=?", WhereArgs: []interface{}{dbmovie.ID, list.Name}})
 			if counter >= 1 {
 				foundmovie = true
 			}
@@ -336,7 +332,6 @@ func Importnewmoviessingle(configTemplate string, listConfig string) {
 			if len(list.Ignore_map_lists) >= 1 && !foundmovie {
 				for idx := range list.Ignore_map_lists {
 					counter, _ = database.CountRowsStatic("Select count(id) from movies where dbmovie_id=? and listname=?", id, list.Ignore_map_lists[idx])
-					//counter, _ := database.CountRows("movies", database.Query{Where: "dbmovie_id=? and listname=?", WhereArgs: []interface{}{dbmovie.ID, list.Ignore_map_lists[idx]}})
 					if counter >= 1 {
 						foundmovie = true
 						break
@@ -428,7 +423,6 @@ func checkmissingmoviessingle(configTemplate string, listConfig string) {
 	}
 
 	swfile := sizedwaitgroup.New(cfg_general.WorkerFiles)
-	//moviefile, _ := database.QueryMovieFiles(database.Query{Select: "location", Where: "movie_id in (Select id from movies where listname = ?)", WhereArgs: []interface{}{list.Name}})
 	for _, filerow := range database.QueryStaticColumnsOneStringNoError("Select location from movie_files where movie_id in (Select id from movies where listname = ?)", "Select count(id) from movie_files where movie_id in (Select id from movies where listname = ?)", listConfig) {
 		swfile.Add()
 		go func(file string) {
@@ -479,7 +473,7 @@ func checkreachedmoviesflag(configTemplate string, listConfig string) {
 
 }
 
-func moviesStructureSingle(configTemplate string, listConfig string) {
+func moviesStructureSingle(configTemplate string) {
 
 	if !config.ConfigCheck("general") {
 		logger.Log.Debug("General not found")
@@ -517,7 +511,7 @@ func moviesStructureSingle(configTemplate string, listConfig string) {
 		}
 		//swfile.Add()
 		go func(source config.PathsConfig, target config.PathsConfig) {
-			structure.StructureFolders("movie", source, target, configTemplate, listConfig)
+			structure.StructureFolders("movie", source, target, configTemplate)
 			//swfile.Done()
 		}(cfg_path_import, cfg_path)
 	}
@@ -658,6 +652,8 @@ func Movies_single_jobs(job string, configTemplate string, listname string, forc
 			searcher.SearchMovieUpgrade(configTemplate, 0, true)
 		case "searchupgradeinctitle":
 			searcher.SearchMovieUpgrade(configTemplate, cfg_movie.Searchupgrade_incremental, true)
+		case "structure":
+			moviesStructureSingle(configTemplate)
 		}
 		if listname != "" {
 			logger.Log.Debug("Listname: ", listname)
@@ -684,8 +680,6 @@ func Movies_single_jobs(job string, configTemplate string, listname string, forc
 				checkmissingmoviesflag(configTemplate, cfg_movie.Lists[idxlist].Name)
 			case "checkreachedflag":
 				checkreachedmoviesflag(configTemplate, cfg_movie.Lists[idxlist].Name)
-			case "structure":
-				moviesStructureSingle(configTemplate, cfg_movie.Lists[idxlist].Name)
 			case "clearhistory":
 				database.DeleteRow("movie_histories", database.Query{Where: "movie_id in (Select id from movies where listname=?)", WhereArgs: []interface{}{cfg_movie.Lists[idxlist].Name}})
 			case "feeds":

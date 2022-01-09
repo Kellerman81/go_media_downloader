@@ -27,6 +27,22 @@ type NzbIndexer struct {
 	MaxAge                  int
 }
 
+func myappendincrease(original []newznab.NZB, increaseby int) []newznab.NZB {
+	l := len(original)
+	if cap(original) < len(original)+increaseby {
+		if len(original)+increaseby > len(original)*2 {
+			target := original
+			target = make([]newznab.NZB, l, l+increaseby)
+			copy(target, original)
+			return target
+		} else {
+			return original
+		}
+	} else {
+		return original
+	}
+}
+
 // QueryNewznabMovieImdb searches Indexers for imbid - strip tt at beginning!
 func QueryNewznabMovieImdb(indexers []NzbIndexer, imdbid string, categories []int) ([]newznab.NZB, []string, error) {
 	results := []newznab.NZB{}
@@ -49,6 +65,9 @@ func QueryNewznabMovieImdb(indexers []NzbIndexer, imdbid string, categories []in
 			err = erradd
 			failedindexers = append(failedindexers, row.URL)
 		} else {
+			if len(indexers) == 1 {
+				return resultsadd, failedindexers, err
+			}
 			results = append(results, resultsadd...)
 		}
 	}
@@ -76,6 +95,9 @@ func QueryNewznabTvTvdb(indexers []NzbIndexer, tvdbid int, categories []int, sea
 			err = erradd
 			failedindexers = append(failedindexers, row.URL)
 		} else {
+			if len(indexers) == 1 {
+				return resultsadd, failedindexers, err
+			}
 			results = append(results, resultsadd...)
 		}
 	}
@@ -100,6 +122,9 @@ func QueryNewznabQuery(indexers []NzbIndexer, query string, categories []int, se
 			err = erradd
 			failedindexers = append(failedindexers, row.URL)
 		} else {
+			if len(indexers) == 1 {
+				return resultsadd, failedindexers, err
+			}
 			results = append(results, resultsadd...)
 		}
 	}
@@ -122,11 +147,15 @@ func QueryNewznabRSS(indexers []NzbIndexer, maxitems int, categories []int) ([]n
 			NewznabClients[row.URL] = client
 		}
 		resultsadd, erradd := client.LoadRSSFeed(categories, maxitems, row.Additional_query_params, row.Customapi, row.Customrssurl, row.Customrsscategory, 0, row.OutputAsJson)
-		results = append(results, resultsadd...)
 		if erradd != nil {
 			err = erradd
 			failedindexers = append(failedindexers, row.URL)
 		}
+		if len(indexers) == 1 {
+			return resultsadd, failedindexers, err
+		}
+		results = append(results, resultsadd...)
+
 	}
 	return results, failedindexers, err
 }
@@ -150,8 +179,13 @@ func QueryNewznabRSSLast(indexers []NzbIndexer, maxitems int, categories []int, 
 			err = erradd
 			failedindexers = append(failedindexers, row.URL)
 		} else {
+			if len(indexers) == 1 {
+				if len(resultsadd) >= 1 {
+					lastindexerids[row.URL] = resultsadd[0].ID
+				}
+				return resultsadd, failedindexers, lastindexerids, err
+			}
 			if len(resultsadd) >= 1 {
-				lastindexerids[row.URL] = resultsadd[0].ID
 				results = append(results, resultsadd...)
 			}
 		}

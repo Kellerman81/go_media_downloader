@@ -978,7 +978,6 @@ func apiStructure(ctx *gin.Context) {
 		return
 	}
 
-	var cfg_media config.MediaTypeConfig
 	if strings.EqualFold(cfg.Grouptype, "movie") {
 		cfg.Configentry = "movie_" + cfg.Configentry
 	}
@@ -1003,12 +1002,9 @@ func apiStructure(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "target config not found"})
 		return
 	}
-
-	for idxlist := range cfg_media.Lists {
-		if cfg.Forceid != 0 {
-			structure.StructureSingleFolderAs(cfg.Folder, cfg.Forceid, cfg.Disableruntimecheck, cfg.Disabledisallowed, cfg.Disabledeletewronglanguage, cfg.Grouptype, cfg_source, cfg_target, cfg.Configentry, cfg_media.Lists[idxlist].Name)
-		} else {
-			structure.StructureSingleFolder(cfg.Folder, cfg.Disableruntimecheck, cfg.Disabledisallowed, cfg.Disabledeletewronglanguage, cfg.Grouptype, cfg_source, cfg_target, cfg.Configentry, cfg_media.Lists[idxlist].Name)
-		}
+	if cfg.Forceid != 0 {
+		structure.StructureSingleFolderAs(cfg.Folder, cfg.Forceid, cfg.Disableruntimecheck, cfg.Disabledisallowed, cfg.Disabledeletewronglanguage, cfg.Grouptype, cfg_source, cfg_target, cfg.Configentry)
+	} else {
+		structure.StructureSingleFolder(cfg.Folder, cfg.Disableruntimecheck, cfg.Disabledisallowed, cfg.Disabledeletewronglanguage, cfg.Grouptype, cfg_source, cfg_target, cfg.Configentry)
 	}
 }

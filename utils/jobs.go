@@ -19,8 +19,8 @@ func jobImportFileCheck(file string, dbtype string, wg *sizedwaitgroup.SizedWait
 	if !scanner.CheckFileExist(file) {
 		if strings.EqualFold(dbtype, "movie") {
 			moviesf, _ := database.QueryStaticColumnsTwoInt("select id, movie_id from movie_files where location=?", "select count(id) from movie_files where location=?", file)
-			//moviesf, _ := database.QueryMovieFiles(database.Query{Select: "id, movie_id", Where: "location=?", WhereArgs: []interface{}{file}})
 			for idx := range moviesf {
+				logger.Log.Debug("File was removed: ", file)
 				_, sqlerr := database.DeleteRow("movie_files", database.Query{Where: "id=?", WhereArgs: []interface{}{moviesf[idx].Num1}})
 				if sqlerr == nil {
 					counter, _ := database.CountRowsStatic("Select count(id) from movie_files where movie_id = ?", moviesf[idx].Num2)
@@ -32,8 +32,8 @@ func jobImportFileCheck(file string, dbtype string, wg *sizedwaitgroup.SizedWait
 			}
 		} else {
 			seriefiles, _ := database.QueryStaticColumnsTwoInt("select id, serie_episode_id from serie_episode_files where location=?", "select count(id) from serie_episode_files where location=?", file)
-			//seriefiles, _ := database.QuerySerieEpisodeFiles(database.Query{Select: "id, serie_episode_id", Where: "location=?", WhereArgs: []interface{}{file}})
 			for idx := range seriefiles {
+				logger.Log.Debug("File was removed: ", file)
 				_, sqlerr := database.DeleteRow("serie_episode_files", database.Query{Where: "id=?", WhereArgs: []interface{}{seriefiles[idx].Num1}})
 				if sqlerr == nil {
 					counter, _ := database.CountRowsStatic("Select count(id) from serie_episode_files where serie_episode_id = ?", seriefiles[idx].Num2)

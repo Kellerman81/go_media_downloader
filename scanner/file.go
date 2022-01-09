@@ -471,7 +471,6 @@ func GetFilesAdded(files []string, listname string, configTemplate string, listC
 		logger.Log.Error("File Struct error", fileerr)
 		return listentries
 	}
-	//filesdb, _ := database.QueryMovieFiles(database.Query{Select: "location, movie_id"})
 	for idxfile := range files {
 		if !checkfilespathlist(filesdb, "movies", files[idxfile], configTemplate, listname, listConfig) {
 			logger.Log.Debug("File added to list - not found", files[idxfile], " ", listname)
@@ -488,7 +487,6 @@ func GetFilesSeriesAdded(files []string, configTemplate string, listname string,
 		logger.Log.Error("File Struct error", fileerr)
 		return listentries
 	}
-	//filesdb, _ := database.QuerySerieEpisodeFiles(database.Query{Select: "location, serie_id"})
 	for idxfile := range files {
 		if !checkfilespathlist(filesdb, "series", files[idxfile], configTemplate, listname, listConfig) {
 			logger.Log.Debug("File added to list - not found", files[idxfile], " ", listname)
