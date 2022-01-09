@@ -125,14 +125,6 @@ func (s *structure) ParseFile(videofile string, checkfolder bool, folder string,
 		}
 	}
 
-	list := config.ConfigGetMediaListConfig(s.configTemplate, s.listConfig)
-	if !config.ConfigCheck("quality_" + list.Template_quality) {
-		return
-	}
-
-	m.Title = strings.Trim(m.Title, " ")
-	m.StripTitlePrefixPostfix(list.Template_quality)
-
 	return
 }
 
@@ -599,11 +591,6 @@ func (s *structure) moveAdditionalFiles(folder string, videotarget string, filen
 }
 
 func (structurevar *structure) structureSeries(folder string, m parser.ParseInfo, series database.Serie, videofile string, deletewronglanguage bool) {
-	list := config.ConfigGetMediaListConfig(structurevar.configTemplate, structurevar.listConfig)
-	if !config.ConfigCheck("quality_" + list.Template_quality) {
-		logger.Log.Error("Template Quality not found: ", list.Template_quality)
-		return
-	}
 
 	dbseries, _ := database.GetDbserie(database.Query{Where: "id=?", WhereArgs: []interface{}{series.DbserieID}})
 	runtime, _ := strconv.Atoi(dbseries.Runtime)
@@ -645,7 +632,11 @@ func (structurevar *structure) structureSeries(folder string, m parser.ParseInfo
 			targetfile := filepath.Join(videotarget, filename)
 
 			reached := false
-
+			list := config.ConfigGetMediaListConfig(structurevar.configTemplate, structurevar.listConfig)
+			if !config.ConfigCheck("quality_" + list.Template_quality) {
+				logger.Log.Error("Template Quality not found: ", list.Template_quality)
+				return
+			}
 			if m.Priority >= parser.NewCutoffPrio(structurevar.configTemplate, list.Template_quality).Priority {
 				reached = true
 			}
@@ -661,12 +652,6 @@ func (structurevar *structure) structureSeries(folder string, m parser.ParseInfo
 	}
 }
 func (structurevar *structure) structureMovie(folder string, m parser.ParseInfo, movie database.Movie, videofile string, deletewronglanguage bool) {
-	list := config.ConfigGetMediaListConfig(structurevar.configTemplate, structurevar.listConfig)
-	if !config.ConfigCheck("quality_" + list.Template_quality) {
-		logger.Log.Error("Template Quality not found: ", list.Template_quality)
-		return
-	}
-
 	dbmovie, _ := database.GetDbmovie(database.Query{Where: "id=?", WhereArgs: []interface{}{movie.DbmovieID}})
 	var errpars error
 	m, errpars = structurevar.ParseFileAdditional(videofile, m, folder, deletewronglanguage, dbmovie.Runtime)
@@ -705,6 +690,11 @@ func (structurevar *structure) structureMovie(folder string, m parser.ParseInfo,
 		structurevar.notify(videotarget, filename, videofile, m, movie, database.SerieEpisode{}, oldfiles)
 		scanner.CleanUpFolder(folder, structurevar.sourcepath.CleanupsizeMB)
 
+		list := config.ConfigGetMediaListConfig(structurevar.configTemplate, structurevar.listConfig)
+		if !config.ConfigCheck("quality_" + list.Template_quality) {
+			logger.Log.Error("Template Quality not found: ", list.Template_quality)
+			return
+		}
 		//updatemovie
 		targetfile := filepath.Join(videotarget, filename+filepath.Ext(videofile))
 		database.InsertArray("movie_files",
@@ -722,12 +712,12 @@ func (structurevar *structure) structureMovie(folder string, m parser.ParseInfo,
 		logger.Log.Error("Error moving video - unknown reason")
 	}
 }
-func StructureSingleFolderAs(folder string, id int, disableruntimecheck bool, disabledisallowed bool, disabledeletewronglanguage bool, grouptype string, sourcepath config.PathsConfig, targetpath config.PathsConfig, configTemplate string, listConfig string) {
+func StructureSingleFolderAs(folder string, id int, disableruntimecheck bool, disabledisallowed bool, disabledeletewronglanguage bool, grouptype string, sourcepath config.PathsConfig, targetpath config.PathsConfig, configTemplate string) {
 	logger.Log.Debug("Process Folder: ", folder)
 	if disableruntimecheck {
 		targetpath.CheckRuntime = false
 	}
-	structurevar, err := NewStructure(configTemplate, listConfig, grouptype, folder, sourcepath, targetpath)
+	structurevar, err := NewStructure(configTemplate, "", grouptype, folder, sourcepath, targetpath)
 	if err != nil {
 		return
 	}
@@ -770,46 +760,43 @@ func StructureSingleFolderAs(folder string, id int, disableruntimecheck bool, di
 		if disabledeletewronglanguage {
 			deletewronglanguage = false
 		}
-		m, err := structurevar.ParseFile(videofiles[fileidx], true, folder, deletewronglanguage)
+		n, err := structurevar.ParseFile(videofiles[fileidx], true, folder, deletewronglanguage)
 		if err != nil {
 			logger.Log.Error("Error parsing: ", videofiles[fileidx], " error: ", err)
 			continue
 		}
-		n := m
 		if structurevar.groupType == "movie" {
 			movie, movierr := database.GetMovies(database.Query{Where: "id=?", WhereArgs: []interface{}{id}})
 			if movierr != nil {
 				return
 			}
 
+			structurevar.listConfig = movie.Listname
 			if movie.ID >= 1 {
 				structurevar.structureMovie(folder, n, movie, videofiles[fileidx], deletewronglanguage)
 			} else {
 				logger.Log.Debug("Movie not matched: ", videofiles[fileidx])
 			}
 		} else if structurevar.groupType == "series" {
-			list := config.ConfigGetMediaListConfig(structurevar.configTemplate, structurevar.listConfig)
 			//SerieEpisodeHistory, _ := database.QuerySerieEpisodeHistory(database.Query{InnerJoin: "series on series.id=serie_episode_histories.serie_id", Where: "serie_episode_histories.target = ? and series.listname = ?", WhereArgs: []interface{}{filepath.Base(folders[idx]), list.Name}})
-			if !config.ConfigCheck("quality_" + list.Template_quality) {
-				return
-			}
 			//find dbseries
 			series, serierr := database.GetSeries(database.Query{Where: "id=?", WhereArgs: []interface{}{id}})
 			if serierr != nil {
 				logger.Log.Debug("Serie not matched: ", videofiles[fileidx])
 				return
 			}
+			structurevar.listConfig = series.Listname
 			structurevar.structureSeries(folder, n, series, videofiles[fileidx], deletewronglanguage)
 		}
 	}
 }
 
-func StructureSingleFolder(folder string, disableruntimecheck bool, disabledisallowed bool, disabledeletewronglanguage bool, grouptype string, sourcepath config.PathsConfig, targetpath config.PathsConfig, configTemplate string, listConfig string) {
+func StructureSingleFolder(folder string, disableruntimecheck bool, disabledisallowed bool, disabledeletewronglanguage bool, grouptype string, sourcepath config.PathsConfig, targetpath config.PathsConfig, configTemplate string) {
 	logger.Log.Debug("Process Folder: ", folder)
 	if disableruntimecheck {
 		targetpath.CheckRuntime = false
 	}
-	structurevar, err := NewStructure(configTemplate, listConfig, grouptype, folder, sourcepath, targetpath)
+	structurevar, err := NewStructure(configTemplate, "", grouptype, folder, sourcepath, targetpath)
 	if err != nil {
 		return
 	}
@@ -827,21 +814,27 @@ func StructureSingleFolder(folder string, disableruntimecheck bool, disabledisal
 		removesmallfiles = true
 	}
 	videofiles := structurevar.getVideoFiles(folder, sourcepath, removesmallfiles)
-
+	if len(videofiles) == 0 {
+		logger.Log.Debug("Folder skipped due to no video files found ", folder)
+		//skip too many  files
+		return
+	}
 	if structurevar.groupType == "movie" {
 		if len(videofiles) >= 2 {
+			logger.Log.Debug("Folder skipped due to too many video files ", folder)
 			//skip too many  files
 			return
 		}
 	}
-	list := config.ConfigGetMediaListConfig(structurevar.configTemplate, structurevar.listConfig)
-
+	//list := config.ConfigGetMediaListConfig(structurevar.configTemplate, structurevar.listConfig)
 	for fileidx := range videofiles {
+		var list config.MediaListsConfig
 		if filepath.Ext(videofiles[fileidx]) == "" {
 			continue
 		}
 		if structurevar.groupType == "series" {
 			if structurevar.removeSmallVideoFile(videofiles[fileidx], sourcepath) {
+				logger.Log.Debug("Folder skipped due to small video files - file was removed ", videofiles[fileidx])
 				continue
 			}
 		}
@@ -854,12 +847,11 @@ func StructureSingleFolder(folder string, disableruntimecheck bool, disabledisal
 		if disabledeletewronglanguage {
 			deletewronglanguage = false
 		}
-		m, err := structurevar.ParseFile(videofiles[fileidx], true, folder, deletewronglanguage)
+		n, err := structurevar.ParseFile(videofiles[fileidx], true, folder, deletewronglanguage)
 		if err != nil {
 			logger.Log.Error("Error parsing: ", videofiles[fileidx], " error: ", err)
 			continue
 		}
-		n := m
 		if structurevar.groupType == "movie" {
 			var entriesfound int
 			var movie database.Movie
@@ -877,23 +869,42 @@ func StructureSingleFolder(folder string, disableruntimecheck bool, disabledisal
 
 						if entriesfound >= 1 {
 							list = configEntry.Lists[idxlisttest]
+							structurevar.listConfig = list.Name
+
 							break
 						}
 					}
-
 				}
 			}
 
-			if entriesfound == 0 {
-				id, err := database.QueryColumnStatic("Select dbmovie_id from movie_histories where title = ? and movie_id in (Select id from movies where listname = ?)", filepath.Base(folder), listConfig)
+			if entriesfound == 0 && list.Name != "" {
+				id, err := database.QueryColumnStatic("Select dbmovie_id from movie_histories where title = ? and movie_id in (Select id from movies where listname = ?)", filepath.Base(folder), list.Name)
 				if err == nil {
-					movies, _ := database.QueryMovies(database.Query{Where: "Dbmovie_id = ? and listname = ?", WhereArgs: []interface{}{id, listConfig}})
+					movies, _ := database.QueryMovies(database.Query{Where: "Dbmovie_id = ? and listname = ?", WhereArgs: []interface{}{id, list.Name}})
 					if len(movies) == 1 {
 						logger.Log.Debug("Found Movie by history_title")
 						movie = movies[0]
 					}
 					entriesfound = len(movies)
 
+				}
+			}
+			if entriesfound == 0 && len(n.Imdb) == 0 {
+				configEntry := config.ConfigGet(configTemplate).Data.(config.MediaTypeConfig)
+				lists := make([]string, 0, len(configEntry.Lists))
+				for idxlisttest := range configEntry.Lists {
+					lists = append(lists, configEntry.Lists[idxlisttest].Name)
+				}
+				logger.Log.Debug("Find Movie using title: ", n.Title, " and year: ", n.Year, " and lists: ", lists)
+				list.Name, n.Imdb, _, _ = importfeed.MovieFindListByTitle(n.Title, strconv.Itoa(n.Year), lists, "structure")
+				if list.Name != "" {
+					structurevar.listConfig = list.Name
+					for idxlisttest := range configEntry.Lists {
+						if configEntry.Lists[idxlisttest].Name == list.Name {
+							list = configEntry.Lists[idxlisttest]
+							break
+						}
+					}
 				}
 			}
 
@@ -904,17 +915,8 @@ func StructureSingleFolder(folder string, disableruntimecheck bool, disabledisal
 			cfg_quality := config.ConfigGet("quality_" + list.Template_quality).Data.(config.QualityConfig)
 			n.StripTitlePrefixPostfix(list.Template_quality)
 
-			if entriesfound == 0 && len(n.Imdb) == 0 {
-				configEntry := config.ConfigGet(configTemplate).Data.(config.MediaTypeConfig)
-				lists := make([]string, 0, len(configEntry.Lists))
-				for idxlisttest := range configEntry.Lists {
-					lists = append(lists, configEntry.Lists[idxlisttest].Name)
-				}
-				logger.Log.Debug("Find Movie using title: ", n.Title, " and year: ", n.Year, " and lists: ", lists)
-				listConfig, n.Imdb, _, _ = importfeed.MovieFindListByTitle(n.Title, strconv.Itoa(n.Year), lists, "structure")
-			}
-			if entriesfound == 0 && len(n.Imdb) >= 1 {
-				movies, _ := database.QueryMovies(database.Query{Where: "dbmovie_id in (Select id from dbmovies where imdb_id = ?) and listname = ?", WhereArgs: []interface{}{n.Imdb, listConfig}})
+			if entriesfound == 0 && len(n.Imdb) >= 1 && list.Name != "" {
+				movies, _ := database.QueryMovies(database.Query{Where: "dbmovie_id in (Select id from dbmovies where imdb_id = ?) and listname = ?", WhereArgs: []interface{}{n.Imdb, list.Name}})
 				if len(movies) == 1 {
 					logger.Log.Debug("Found Movie by title")
 					movie = movies[0]
@@ -966,31 +968,88 @@ func StructureSingleFolder(folder string, disableruntimecheck bool, disabledisal
 				}
 				structurevar.structureMovie(folder, n, movie, videofiles[fileidx], deletewronglanguage)
 			} else {
-				logger.Log.Debug("Movie not matched: ", videofiles[fileidx], " list ", listConfig)
+				logger.Log.Debug("Movie not matched: ", videofiles[fileidx], " list ", list.Name)
 			}
 
 		} else if structurevar.groupType == "series" {
 			//SerieEpisodeHistory, _ := database.QuerySerieEpisodeHistory(database.Query{InnerJoin: "series on series.id=serie_episode_histories.serie_id", Where: "serie_episode_histories.target = ? and series.listname = ?", WhereArgs: []interface{}{filepath.Base(folders[idx]), list.Name}})
 
-			yearstr := strconv.Itoa(n.Year)
-			titleyear := n.Title + " (" + yearstr + ")"
-			seriestitle := ""
-			matched := config.RegexSeriesTitle.FindStringSubmatch(filepath.Base(videofiles[fileidx]))
-			if len(matched) >= 2 {
-				seriestitle = matched[1]
+			configEntry := config.ConfigGet(configTemplate).Data.(config.MediaTypeConfig)
+			var series database.Serie
+			var entriesfound int
+			if n.Tvdb != "" {
+				logger.Log.Debug("Find Serie by tvdb", n.Tvdb)
+				founddbserie, founddbserieerr := database.GetDbserie(database.Query{Select: "id, seriename", Where: "thetvdb_id = ?", WhereArgs: []interface{}{n.Tvdb}})
+
+				if founddbserieerr != nil {
+					logger.Log.Debug("Skipped - Not Wanted DB Serie: ", n.Title)
+					return
+				}
+				args := []interface{}{}
+				args = append(args, founddbserie.ID)
+				for idxlist := range configEntry.Lists {
+					args = append(args, configEntry.Lists[idxlist].Name)
+				}
+				logger.Log.Debug("Find Serie by tvdb in lists ", n.Tvdb)
+				foundserie, foundserieerr := database.GetSeries(database.Query{Where: "dbserie_id = ? and listname IN (?" + strings.Repeat(",?", len(configEntry.Lists)-1) + ")", WhereArgs: args})
+
+				if foundserieerr != nil {
+					logger.Log.Debug("Skipped - Not Wanted Serie: ", n.Title)
+					return
+				}
+				series = foundserie
+				entriesfound = 1
+				for idxlist := range configEntry.Lists {
+					if configEntry.Lists[idxlist].Name == series.Listname {
+						list = configEntry.Lists[idxlist]
+						structurevar.listConfig = series.Listname
+						n.StripTitlePrefixPostfix(configEntry.Lists[idxlist].Template_quality)
+						logger.Log.Debug("Found Serie by tvdb ", n.Tvdb, " in ", list.Name)
+					}
+				}
+			}
+			if entriesfound == 0 {
+				yearstr := strconv.Itoa(n.Year)
+				seriestitle := ""
+				matched := config.RegexSeriesTitle.FindStringSubmatch(filepath.Base(videofiles[fileidx]))
+				if len(matched) >= 2 {
+					seriestitle = matched[1]
+				}
+				temptitle := n.Title
+				for idxlisttest := range configEntry.Lists {
+					n.Title = temptitle
+					n.StripTitlePrefixPostfix(configEntry.Lists[idxlisttest].Template_quality)
+					titleyear := n.Title
+					if n.Year != 0 {
+						titleyear += " (" + yearstr + ")"
+					}
+					var getseries database.Serie
+					getseries, entriesfound = n.FindSerieByParser(titleyear, seriestitle, configEntry.Lists[idxlisttest].Name)
+					if entriesfound >= 1 {
+						list = configEntry.Lists[idxlisttest]
+						structurevar.listConfig = list.Name
+						series = getseries
+						break
+					}
+
+				}
+			}
+			if series.ID == 0 {
+				logger.Log.Info("Series not matched", n.Title)
+				return
 			}
 			if !config.ConfigCheck("quality_" + list.Template_quality) {
 				return
 			}
 			cfg_quality := config.ConfigGet("quality_" + list.Template_quality).Data.(config.QualityConfig)
-			n.StripTitlePrefixPostfix(list.Template_quality)
 
 			//find dbseries
-			series, entriesfound := n.FindSerieByParser(titleyear, seriestitle, listConfig)
 			if entriesfound >= 1 {
 				if cfg_quality.CheckTitle {
 					titlefound := false
+					logger.Log.Debug(series)
 					dbseries, _ := database.GetDbserie(database.Query{Where: "id=?", WhereArgs: []interface{}{series.DbserieID}})
+					logger.Log.Debug(dbseries)
 					if cfg_quality.CheckTitle && parser.Checknzbtitle(dbseries.Seriename, n.Title) && len(dbseries.Seriename) >= 1 {
 						titlefound = true
 					}
@@ -1016,7 +1075,7 @@ func StructureSingleFolder(folder string, disableruntimecheck bool, disabledisal
 				}
 				structurevar.structureSeries(folder, n, series, videofiles[fileidx], deletewronglanguage)
 			} else {
-				logger.Log.Errorln("serie not matched", n, titleyear, seriestitle, listConfig)
+				logger.Log.Errorln("serie not matched", n, list.Name)
 			}
 		}
 	}
@@ -1024,10 +1083,10 @@ func StructureSingleFolder(folder string, disableruntimecheck bool, disabledisal
 
 var StructureJobRunning map[string]bool
 
-func StructureFolders(grouptype string, sourcepath config.PathsConfig, targetpath config.PathsConfig, configTemplate string, listConfig string) {
+func StructureFolders(grouptype string, sourcepath config.PathsConfig, targetpath config.PathsConfig, configTemplate string) {
 
 	configEntry := config.ConfigGet(configTemplate).Data.(config.MediaTypeConfig)
-	jobName := sourcepath.Path + "_" + listConfig
+	jobName := sourcepath.Path
 	defer func() {
 		database.ReadWriteMu.Lock()
 		delete(StructureJobRunning, jobName)
@@ -1050,7 +1109,7 @@ func StructureFolders(grouptype string, sourcepath config.PathsConfig, targetpat
 	logger.Log.Debug("Check Source: ", sourcepath.Path)
 	folders := scanner.GetSubFolders(sourcepath.Path)
 	for idx := range folders {
-		StructureSingleFolder(folders[idx], false, false, false, grouptype, sourcepath, targetpath, configTemplate, listConfig)
+		StructureSingleFolder(folders[idx], false, false, false, grouptype, sourcepath, targetpath, configTemplate)
 	}
 }
 

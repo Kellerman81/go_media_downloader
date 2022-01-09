@@ -64,10 +64,8 @@ func queryseriequalityids(query string, querycount string, args ...interface{}) 
 func GetHighestMoviePriorityByFiles(movies database.Movie, configTemplate string, qualityTemplate string) (minPrio int) {
 	counter, _ := database.CountRowsStatic("Select count(id) from movie_files where movie_id = ?", movies.ID)
 
-	//counter, _ := database.CountRows("movie_files", database.Query{Where: "movie_id = ?", WhereArgs: []interface{}{movies.ID}})
 	if counter >= 1 {
 		foundfiles, _ := querymoviequalityids("select location, resolution_id, quality_id, codec_id, audio_id, proper, extended, repack from movie_files where movie_id = ?", "select count(id) from movie_files where movie_id = ?", movies.ID)
-		//foundfiles, _ := database.QueryMovieFiles(database.Query{Select: "location, resolution_id, quality_id, codec_id, audio_id, proper, extended, repack", Where: "movie_id = ?", WhereArgs: []interface{}{movies.ID}})
 		for idxfile := range foundfiles {
 			prio := GetMovieDBPriority(foundfiles[idxfile], configTemplate, qualityTemplate)
 			if minPrio == 0 {
@@ -86,11 +84,9 @@ func GetHighestMoviePriorityByFiles(movies database.Movie, configTemplate string
 
 func GetHighestEpisodePriorityByFiles(episode database.SerieEpisode, configTemplate string, qualityTemplate string) int {
 	counter, _ := database.CountRowsStatic("Select count(id) from serie_episode_files where serie_episode_id = ?", episode.ID)
-	//counter, _ := database.CountRows("serie_episode_files", database.Query{Where: "serie_episode_id = ?", WhereArgs: []interface{}{episode.ID}})
 	minPrio := 0
 	if counter >= 1 {
 		foundfiles, _ := queryseriequalityids("select location, resolution_id, quality_id, codec_id, audio_id, proper, extended, repack from serie_episode_files where serie_episode_id = ?", "select count(id) from serie_episode_files where serie_episode_id = ?", episode.ID)
-		//foundfiles, _ := database.QuerySerieEpisodeFiles(database.Query{Select: "location, resolution_id, quality_id, codec_id, audio_id, proper, extended, repack", Where: "serie_episode_id = ?", WhereArgs: []interface{}{episode.ID}})
 		for idxfile := range foundfiles {
 			prio := GetSerieDBPriority(foundfiles[idxfile], configTemplate, qualityTemplate)
 			if minPrio == 0 {

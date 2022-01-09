@@ -5,16 +5,15 @@ import (
 
 	"github.com/Kellerman81/go_media_downloader/config"
 	"github.com/Kellerman81/go_media_downloader/logger"
-	"github.com/Kellerman81/go_media_downloader/newznab"
 	"github.com/Kellerman81/go_media_downloader/parser"
 )
 
-func filter_size_nzbs(configTemplate string, indexer config.QualityIndexerConfig, rownzb newznab.NZB) bool {
+func filter_size_nzbs(configTemplate string, indexer *config.QualityIndexerConfig, title string, size int64) bool {
 	configEntry := config.ConfigGet(configTemplate).Data.(config.MediaTypeConfig)
 	for idx := range configEntry.DataImport {
 
-		if indexer.Skip_empty_size && rownzb.Size == 0 {
-			logger.Log.Debug("Skipped - Size missing: ", rownzb.Title)
+		if indexer.Skip_empty_size && size == 0 {
+			logger.Log.Debug("Skipped - Size missing: ", title)
 			return true
 		}
 		if !config.ConfigCheck("path_" + configEntry.DataImport[idx].Template_path) {
@@ -23,22 +22,22 @@ func filter_size_nzbs(configTemplate string, indexer config.QualityIndexerConfig
 		cfg_path := config.ConfigGet("path_" + configEntry.DataImport[idx].Template_path).Data.(config.PathsConfig)
 
 		if cfg_path.MinSize != 0 {
-			if rownzb.Size < int64(cfg_path.MinSize*1024*1024) && rownzb.Size != 0 {
-				logger.Log.Debug("Skipped - MinSize not matched: ", rownzb.Title)
+			if size < int64(cfg_path.MinSize*1024*1024) && size != 0 {
+				logger.Log.Debug("Skipped - MinSize not matched: ", title)
 				return true
 			}
 		}
 
 		if cfg_path.MaxSize != 0 {
-			if rownzb.Size > int64(cfg_path.MaxSize*1024*1024) {
-				logger.Log.Debug("Skipped - MaxSize not matched: ", rownzb.Title)
+			if size > int64(cfg_path.MaxSize*1024*1024) {
+				logger.Log.Debug("Skipped - MaxSize not matched: ", title)
 				return true
 			}
 		}
 	}
 	return false
 }
-func filter_test_quality_wanted(qualityTemplate string, m parser.ParseInfo, rownzb newznab.NZB) bool {
+func filter_test_quality_wanted(qualityTemplate string, m parser.ParseInfo, title string) bool {
 	qualityconfig := config.ConfigGet("quality_" + qualityTemplate).Data.(config.QualityConfig)
 	wanted_release_resolution := false
 	for idxqual := range qualityconfig.Wanted_resolution {
@@ -48,7 +47,7 @@ func filter_test_quality_wanted(qualityTemplate string, m parser.ParseInfo, rown
 		}
 	}
 	if len(qualityconfig.Wanted_resolution) >= 1 && !wanted_release_resolution {
-		logger.Log.Debug("Skipped - unwanted resolution: ", rownzb.Title)
+		logger.Log.Debug("Skipped - unwanted resolution: ", title)
 		return false
 	}
 	wanted_release_quality := false
@@ -59,7 +58,7 @@ func filter_test_quality_wanted(qualityTemplate string, m parser.ParseInfo, rown
 		}
 	}
 	if len(qualityconfig.Wanted_quality) >= 1 && !wanted_release_quality {
-		logger.Log.Debug("Skipped - unwanted quality: ", rownzb.Title)
+		logger.Log.Debug("Skipped - unwanted quality: ", title)
 		return false
 	}
 	wanted_release_audio := false
@@ -70,7 +69,7 @@ func filter_test_quality_wanted(qualityTemplate string, m parser.ParseInfo, rown
 		}
 	}
 	if len(qualityconfig.Wanted_audio) >= 1 && !wanted_release_audio {
-		logger.Log.Debug("Skipped - unwanted audio: ", rownzb.Title)
+		logger.Log.Debug("Skipped - unwanted audio: ", title)
 		return false
 	}
 	wanted_release_codec := false
@@ -81,7 +80,7 @@ func filter_test_quality_wanted(qualityTemplate string, m parser.ParseInfo, rown
 		}
 	}
 	if len(qualityconfig.Wanted_codec) >= 1 && !wanted_release_codec {
-		logger.Log.Debug("Skipped - unwanted codec: ", rownzb.Title)
+		logger.Log.Debug("Skipped - unwanted codec: ", title)
 		return false
 	}
 	return true

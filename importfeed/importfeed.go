@@ -96,7 +96,6 @@ func JobImportMovies(dbmovie database.Dbmovie, configTemplate string, listConfig
 			}
 			logger.Log.Debug("Get Movie Titles: ", dbmovie.Title)
 			titles, _ := database.QueryStaticColumnsOneString("select title from dbmovie_titles where dbmovie_id=?", "select count(id) from dbmovie_titles where dbmovie_id=?", dbmovie.ID)
-			//titles, _ := database.QueryDbmovieTitle(database.Query{Select: "title", Where: "dbmovie_id = ?", WhereArgs: []interface{}{dbmovie.ID}})
 
 			configEntry := config.ConfigGet(configTemplate).Data.(config.MediaTypeConfig)
 			titlegroup := dbmovie.GetTitles(configEntry.Metadata_title_languages, cfg_general.MovieAlternateTitleMetaSourceImdb, cfg_general.MovieAlternateTitleMetaSourceTmdb, cfg_general.MovieAlternateTitleMetaSourceTrakt)
@@ -117,7 +116,6 @@ func JobImportMovies(dbmovie database.Dbmovie, configTemplate string, listConfig
 			if err == nil {
 				dbmovie = database.Dbmovie{ID: uint(id.(int64))}
 			}
-			//dbmovie, _ = database.GetDbmovie(database.Query{Select: "id", Where: "imdb_id = ? COLLATE NOCASE", WhereArgs: []interface{}{dbmovie.ImdbID}})
 		}
 	} else {
 		if dbmovie.ID == 0 {
@@ -125,18 +123,14 @@ func JobImportMovies(dbmovie database.Dbmovie, configTemplate string, listConfig
 			if err == nil {
 				dbmovie = database.Dbmovie{ID: uint(id.(int64))}
 			}
-			// finddbmovie, _ := database.GetDbmovie(database.Query{Select: "id", Where: "imdb_id = ? COLLATE NOCASE", WhereArgs: []interface{}{dbmovie.ImdbID}})
-			// dbmovie = finddbmovie
 		}
 	}
 	movietest, _ := database.QueryStaticColumnsOneStringOneInt("select listname, id from movies where dbmovie_id=?", "select count(id) from movies where dbmovie_id=?", dbmovie.ID)
-	//movietest, _ := database.QueryMovies(database.Query{Select: "id, listname", Where: "dbmovie_id = ?", WhereArgs: []interface{}{dbmovie.ID}})
 	list := config.ConfigGetMediaListConfig(configTemplate, listConfig)
 	if len(list.Ignore_map_lists) >= 1 {
 		list := config.ConfigGetMediaListConfig(configTemplate, listConfig)
 		for idx := range list.Ignore_map_lists {
 			counter, _ := database.CountRowsStatic("Select count(id) from movies where listname=? and dbmovie_id=?", list.Ignore_map_lists[idx], dbmovie.ID)
-			//counter, _ := database.CountRows("movies", database.Query{Where: "listname=? and dbmovie_id=?", WhereArgs: []interface{}{list.Ignore_map_lists[idx], dbmovie.ID}})
 			if counter >= 1 {
 				return
 			}
@@ -284,7 +278,6 @@ func JobReloadMovies(dbmovie database.Dbmovie, configTemplate string, listConfig
 		[]interface{}{dbmovie.Title, dbmovie.ReleaseDate, dbmovie.Year, dbmovie.Adult, dbmovie.Budget, dbmovie.Genres, dbmovie.OriginalLanguage, dbmovie.OriginalTitle, dbmovie.Overview, dbmovie.Popularity, dbmovie.Revenue, dbmovie.Runtime, dbmovie.SpokenLanguages, dbmovie.Status, dbmovie.Tagline, dbmovie.VoteAverage, dbmovie.VoteCount, dbmovie.TraktID, dbmovie.MoviedbID, dbmovie.ImdbID, dbmovie.FreebaseMID, dbmovie.FreebaseID, dbmovie.FacebookID, dbmovie.InstagramID, dbmovie.TwitterID, dbmovie.URL, dbmovie.Backdrop, dbmovie.Poster, dbmovie.Slug},
 		database.Query{Where: "id=?", WhereArgs: []interface{}{dbmovie.ID}})
 
-	//movies, _ := database.QueryMovies(database.Query{Select: "listname", Where: "dbmovie_id = ?", WhereArgs: []interface{}{dbmovie.ID}})
 	movies, _ := database.QueryStaticColumnsOneString("select listname from movies where dbmovie_id=?", "select count(id) from movies where dbmovie_id=?", dbmovie.ID)
 
 	var getconfigentry config.MediaTypeConfig //:= config.ConfigGet(configTemplate).Data.(config.MediaTypeConfig)
@@ -310,7 +303,6 @@ func JobReloadMovies(dbmovie database.Dbmovie, configTemplate string, listConfig
 	}
 	logger.Log.Debug("Get Movie Titles: ", dbmovie.Title)
 	titles, _ := database.QueryStaticColumnsOneString("select title from dbmovie_titles where dbmovie_id=?", "select count(id) from dbmovie_titles where dbmovie_id=?", dbmovie.ID)
-	//titles, _ := database.QueryDbmovieTitle(database.Query{Select: "title", Where: "dbmovie_id = ?", WhereArgs: []interface{}{dbmovie.ID}})
 	titlegroup := dbmovie.GetTitles(getconfigentry.Metadata_title_languages, cfg_general.MovieAlternateTitleMetaSourceImdb, cfg_general.MovieAlternateTitleMetaSourceTmdb, cfg_general.MovieAlternateTitleMetaSourceTrakt)
 	for idxtitle := range titlegroup {
 		titlefound := false
@@ -418,7 +410,6 @@ func MovieFindDbByTitle(title string, year string, listname string, allowyear1 b
 	for idx := range dbmoviestemp {
 		dbmovies = append(dbmovies, database.Dbmovie{ID: uint(dbmoviestemp[idx].Num), Title: dbmoviestemp[idx].Str})
 	}
-	//dbmovies, _ := database.QueryDbmovie(database.Query{Select: "id, title", Where: "title = ? COLLATE NOCASE", WhereArgs: []interface{}{title}})
 	found, foundmovie, foundimdb, foundentries := movieCheckIfYear(dbmovies, listname, yearint, allowyear1)
 	if found && foundimdb != "" {
 		return foundmovie, foundimdb, foundentries
@@ -430,7 +421,6 @@ func MovieFindDbByTitle(title string, year string, listname string, allowyear1 b
 	for idx := range dbmoviestitletemp {
 		dbmovietitles = append(dbmovietitles, database.DbmovieTitle{ID: uint(dbmoviestitletemp[idx].Num), Title: dbmoviestitletemp[idx].Str})
 	}
-	//dbmovietitles, _ := database.QueryDbmovieTitle(database.Query{Select: "dbmovie_id, title", Where: "title = ? COLLATE NOCASE", WhereArgs: []interface{}{title}})
 	found, foundmovie, foundimdb, foundentries = movieCheckAlternateIfYear(dbmovietitles, listname, yearint, allowyear1)
 	if found && foundimdb != "" {
 		return foundmovie, foundimdb, foundentries
@@ -441,7 +431,6 @@ func MovieFindDbByTitle(title string, year string, listname string, allowyear1 b
 	for idx := range dbmoviestemp {
 		dbmovies = append(dbmovies, database.Dbmovie{ID: uint(dbmoviestemp[idx].Num), Title: dbmoviestemp[idx].Str})
 	}
-	//dbmovies, _ = database.QueryDbmovie(database.Query{Select: "id, title", Where: "title = ? COLLATE NOCASE OR slug = ? COLLATE NOCASE", WhereArgs: []interface{}{slugged, slugged}})
 	found, foundmovie, foundimdb, foundentries = movieCheckIfYear(dbmovies, listname, yearint, allowyear1)
 	if found && foundimdb != "" {
 		return foundmovie, foundimdb, foundentries
@@ -452,7 +441,6 @@ func MovieFindDbByTitle(title string, year string, listname string, allowyear1 b
 	for idx := range dbmoviestitletemp {
 		dbmovietitles = append(dbmovietitles, database.DbmovieTitle{ID: uint(dbmoviestitletemp[idx].Num), Title: dbmoviestitletemp[idx].Str})
 	}
-	//dbmovietitles, _ = database.QueryDbmovieTitle(database.Query{Select: "dbmovie_id, title", Where: "title = ? COLLATE NOCASE OR slug = ? COLLATE NOCASE", WhereArgs: []interface{}{slugged, slugged}})
 	found, foundmovie, foundimdb, foundentries = movieCheckAlternateIfYear(dbmovietitles, listname, yearint, allowyear1)
 	if found && foundimdb != "" {
 		return foundmovie, foundimdb, foundentries
@@ -476,7 +464,6 @@ func MovieFindDbByTitle(title string, year string, listname string, allowyear1 b
 					//Search in Imdb
 					imdbtitles, _ := database.QueryImdbStaticColumnsOneStringOneInt("select tconst,start_year from imdb_titles where (primary_title = ? COLLATE NOCASE or original_title = ? COLLATE NOCASE or slug = ? COLLATE NOCASE)", "select count(tconst) from imdb_titles where (primary_title = ? COLLATE NOCASE or original_title = ? COLLATE NOCASE or slug = ? COLLATE NOCASE)", title, title, slugged)
 
-					//imdbtitles, _ := database.QueryImdbTitle(database.Query{Select: "tconst,start_year", Where: "(primary_title = ? COLLATE NOCASE or original_title = ? COLLATE NOCASE or slug = ? COLLATE NOCASE)", WhereArgs: []interface{}{title, title, slugged}})
 					if len(imdbtitles) >= 1 {
 						foundimdb := 0
 						foundimdb1 := 0
@@ -528,7 +515,6 @@ func MovieFindDbByTitle(title string, year string, listname string, allowyear1 b
 
 					imdbaka, _ := database.QueryImdbStaticColumnsOneString("select distinct tconst from imdb_akas where title = ? COLLATE NOCASE or slug = ? COLLATE NOCASE", "select count(tconst) from imdb_akas where title = ? COLLATE NOCASE or slug = ? COLLATE NOCASE", title, slugged)
 
-					//imdbaka, _ := database.QueryImdbAka(database.Query{Select: "distinct tconst", Where: "title = ? COLLATE NOCASE or slug = ? COLLATE NOCASE", WhereArgs: []interface{}{title, slugged}})
 					if len(imdbaka) >= 1 {
 						imdb = imdbaka[0].Str
 						movies, _ := database.QueryMovies(database.Query{Select: "movies.*", InnerJoin: " Dbmovies on Dbmovies.id = movies.dbmovie_id", Where: "Dbmovies.imdb_id = ? COLLATE NOCASE and Movies.listname = ?", WhereArgs: []interface{}{imdb, listname}})
@@ -720,8 +706,6 @@ func MovieFindListByTitle(title string, year string, lists []string, searchtype 
 	logger.Log.Debug("DB Search alternate title for ", title)
 	dbmovietitles, _ := database.QueryStaticColumnsOneInt("select dbmovie_id from dbmovie_titles where title = ? COLLATE NOCASE", "select count(id) from dbmovie_titles where title = ? COLLATE NOCASE", title)
 
-	//dbmovietitles, _ := database.QueryDbmovieTitle(database.Query{Select: "dbmovie_id", Where: "title = ? COLLATE NOCASE", WhereArgs: []interface{}{title}})
-
 	if len(dbmovietitles) >= 1 {
 		for idx := range dbmovietitles {
 			imdb_get, list_get := MovieGetListFilter(lists, uint(dbmovietitles[idx].Num), yearint)
@@ -754,7 +738,6 @@ func MovieFindListByTitle(title string, year string, lists []string, searchtype 
 	}
 	logger.Log.Debug("DB Search alternate title for ", slugged)
 	dbmovietitles, _ = database.QueryStaticColumnsOneInt("select dbmovie_id from dbmovie_titles where title = ? COLLATE NOCASE OR slug = ? COLLATE NOCASE", "select count(id) from dbmovie_titles where title = ? COLLATE NOCASE OR slug = ? COLLATE NOCASE", slugged, slugged)
-	//dbmovietitles, _ = database.QueryDbmovieTitle(database.Query{Select: "dbmovie_id", Where: "title = ? COLLATE NOCASE OR slug = ? COLLATE NOCASE", WhereArgs: []interface{}{slugged, slugged}})
 	if len(dbmovietitles) >= 1 {
 		for idx := range dbmovietitles {
 			imdb_get, list_get := MovieGetListFilter(lists, uint(dbmovietitles[idx].Num), yearint)
@@ -789,7 +772,6 @@ func MovieFindListByTitle(title string, year string, lists []string, searchtype 
 					logger.Log.Debug("Imdb Search for ", title, " and ", slugged)
 					imdbtitles, _ := database.QueryImdbStaticColumnsOneStringOneInt("select tconst,start_year from imdb_titles where (primary_title = ? COLLATE NOCASE or original_title = ? COLLATE NOCASE or slug = ? COLLATE NOCASE)", "select count(tconst) from imdb_titles where (primary_title = ? COLLATE NOCASE or original_title = ? COLLATE NOCASE or slug = ? COLLATE NOCASE)", title, title, slugged)
 
-					//imdbtitles, _ := database.QueryImdbTitle(database.Query{Select: "tconst,start_year", Where: "(primary_title = ? COLLATE NOCASE or original_title = ? COLLATE NOCASE or slug = ? COLLATE NOCASE)", WhereArgs: []interface{}{title, title, slugged}})
 					if len(imdbtitles) >= 1 {
 						foundimdb := 0
 						foundimdb1 := 0
@@ -856,7 +838,6 @@ func MovieFindListByTitle(title string, year string, lists []string, searchtype 
 					logger.Log.Debug("Imdb Aka Search for ", title, " and ", slugged)
 					imdbaka, _ := database.QueryImdbStaticColumnsOneString("select distinct tconst from imdb_akas where title = ? COLLATE NOCASE or slug = ? COLLATE NOCASE", "select count(tconst) from imdb_akas where title = ? COLLATE NOCASE or slug = ? COLLATE NOCASE", title, slugged)
 
-					//imdbaka, _ := database.QueryImdbAka(database.Query{Select: "distinct tconst", Where: "title = ? COLLATE NOCASE or slug = ? COLLATE NOCASE", WhereArgs: []interface{}{title, slugged}})
 					if len(imdbaka) == 1 {
 						imdb = imdbaka[0].Str
 						argsimdb := []interface{}{}
@@ -1019,8 +1000,7 @@ func MovieFindListByTitle(title string, year string, lists []string, searchtype 
 }
 
 func Findseriebyname(title string, listname string) (database.Serie, int) {
-	entriesfound := 0
-
+	logger.Log.Debug("Find Serie by Name", title, " in ", listname)
 	titleslug := logger.StringToSlug(title)
 	counter, _ := database.CountRowsStatic("Select count(id) from dbseries where Seriename = ? COLLATE NOCASE or Slug = ? COLLATE NOCASE", title, titleslug)
 	if counter >= 2 || counter == 0 {
@@ -1031,17 +1011,18 @@ func Findseriebyname(title string, listname string) (database.Serie, int) {
 		id, err = database.QueryColumnStatic("Select id from dbseries where Slug = ? COLLATE NOCASE", titleslug)
 	}
 	if err == nil {
+		logger.Log.Debug("Find Serie by Name", title, " in ", listname, " dbserie found ", id)
 		findseries, _ := database.QuerySeries(database.Query{Where: "dbserie_id=? AND listname = ?", WhereArgs: []interface{}{id, listname}})
 
 		if len(findseries) == 1 {
-			entriesfound = len(findseries)
-			return findseries[0], entriesfound
+			logger.Log.Debug("Found Serie by Name", title, " in ", listname)
+			return findseries[0], len(findseries)
 		}
 	}
 	return database.Serie{}, 0
 }
 func Findseriebyalternatename(title string, listname string) (database.Serie, int) {
-	entriesfound := 0
+	logger.Log.Debug("Find Serie by Name", title, " in ", listname)
 	titleslug := logger.StringToSlug(title)
 	counter, _ := database.CountRowsStatic("Select count(id) from dbseries inner join Dbserie_alternates on Dbserie_alternates.dbserie_id = dbseries.id where Dbserie_alternates.Title = ? COLLATE NOCASE or Dbserie_alternates.Slug = ? COLLATE NOCASE", title, titleslug)
 	if counter >= 2 || counter == 0 {
@@ -1055,8 +1036,8 @@ func Findseriebyalternatename(title string, listname string) (database.Serie, in
 		findseries, _ := database.QuerySeries(database.Query{Where: "DbSerie_id = ? AND listname = ?", WhereArgs: []interface{}{id, listname}})
 
 		if len(findseries) == 1 {
-			entriesfound = len(findseries)
-			return findseries[0], entriesfound
+			logger.Log.Debug("Found Serie by Name", title, " in ", listname)
+			return findseries[0], len(findseries)
 		}
 	}
 	return database.Serie{}, 0
@@ -1185,7 +1166,6 @@ func JobImportDbSeries(serieconfig config.SerieConfig, configTemplate string, li
 				dbserie, _ = database.GetDbserie(database.Query{Select: "id, thetvdb_id, imdb_id, trakt_id", Where: "Thetvdb_id = ?", WhereArgs: []interface{}{serieconfig.TvdbID}})
 			}
 			titles, _ := database.QueryStaticColumnsOneString("select title from dbserie_alternates where dbserie_id=?", "select count(id) from dbserie_alternates where dbserie_id=?", dbserie.ID)
-			//titles, _ := database.QueryDbserieAlternates(database.Query{Select: "title", Where: "dbserie_id = ?", WhereArgs: []interface{}{dbserie.ID}})
 			titlegroup := dbserie.GetTitles(configEntry.Metadata_title_languages, cfg_general.SerieAlternateTitleMetaSourceImdb, cfg_general.SerieAlternateTitleMetaSourceTrakt)
 			for idxalt := range titlegroup {
 				titlefound := false
@@ -1202,7 +1182,6 @@ func JobImportDbSeries(serieconfig config.SerieConfig, configTemplate string, li
 			serieconfig.AlternateName = append(serieconfig.AlternateName, serieconfig.Name)
 			serieconfig.AlternateName = append(serieconfig.AlternateName, dbserie.Seriename)
 			titles, _ = database.QueryStaticColumnsOneString("select title from dbserie_alternates where dbserie_id=?", "select count(id) from dbserie_alternates where dbserie_id=?", dbserie.ID)
-			//titles, _ = database.QueryDbserieAlternates(database.Query{Select: "title", Where: "dbserie_id = ?", WhereArgs: []interface{}{dbserie.ID}})
 			for idxalt := range serieconfig.AlternateName {
 				titlefound := false
 				for idxtitle := range titles {
@@ -1277,7 +1256,6 @@ func JobImportDbSeries(serieconfig config.SerieConfig, configTemplate string, li
 			episode := dbserie.GetEpisodes(configEntry.Metadata_language, cfg_general.SerieMetaSourceTrakt)
 			adddbepisodes := make([]database.DbserieEpisode, 0, len(episode))
 			dbepisode, _ := database.QueryStaticColumnsTwoString("select season, episode from dbserie_episodes where dbserie_id = ?", "select count(id) from dbserie_episodes where dbserie_id = ?", dbserie.ID)
-			//dbepisode, _ := database.QueryDbserieEpisodes(database.Query{Select: "season, episode", Where: "dbserie_id = ?", WhereArgs: []interface{}{dbserie.ID}})
 			for idxepi := range episode {
 				entryfound := false
 				for idxentry := range dbepisode {
@@ -1301,8 +1279,6 @@ func JobImportDbSeries(serieconfig config.SerieConfig, configTemplate string, li
 		}
 		dbepisode, _ := database.QueryStaticColumnsOneInt("select id from dbserie_episodes where dbserie_id = ?", "select count(id) from dbserie_episodes where dbserie_id = ?", dbserie.ID)
 		episodes, _ := database.QueryStaticColumnsOneInt("select dbserie_episode_id from serie_episodes where dbserie_id = ? and serie_id = ?", "select count(id) from serie_episodes where dbserie_id = ? and serie_id = ?", dbserie.ID, serie.ID)
-		//dbepisode, _ := database.QueryDbserieEpisodes(database.Query{Select: "id", Where: "dbserie_id = ?", WhereArgs: []interface{}{dbserie.ID}})
-		//episodes, _ := database.QuerySerieEpisodes(database.Query{Select: "dbserie_episode_id", Where: "dbserie_id = ? and serie_id = ?", WhereArgs: []interface{}{dbserie.ID, serie.ID}})
 		for idxdbepi := range dbepisode {
 			epifound := false
 			for idxepi := range episodes {
@@ -1322,8 +1298,6 @@ func JobImportDbSeries(serieconfig config.SerieConfig, configTemplate string, li
 	} else {
 		dbepisode, _ := database.QueryStaticColumnsOneInt("select id from dbserie_episodes where dbserie_id = ?", "select count(id) from dbserie_episodes where dbserie_id = ?", dbserie.ID)
 		episodes, _ := database.QueryStaticColumnsOneInt("select dbserie_episode_id from serie_episodes where dbserie_id = ? and serie_id = ?", "select count(id) from serie_episodes where dbserie_id = ? and serie_id = ?", dbserie.ID, serie.ID)
-		//dbepisode, _ := database.QueryDbserieEpisodes(database.Query{Select: "id", Where: "dbserie_id = ?", WhereArgs: []interface{}{dbserie.ID}})
-		//episodes, _ := database.QuerySerieEpisodes(database.Query{Select: "dbserie_episode_id", Where: "dbserie_id = ? and serie_id = ?", WhereArgs: []interface{}{dbserie.ID, serie.ID}})
 		for idxdbepi := range dbepisode {
 			epifound := false
 			for idxepi := range episodes {
@@ -1418,7 +1392,6 @@ func JobReloadDbSeries(dbserie database.Dbserie, configTemplate string, listConf
 
 	logger.Log.Debug("DbSeries add titles for: ", dbserie.ThetvdbID)
 	titles, _ := database.QueryStaticColumnsOneString("select title from dbserie_alternates where dbserie_id=?", "select count(id) from dbserie_alternates where dbserie_id=?", dbserie.ID)
-	//titles, _ := database.QueryDbserieAlternates(database.Query{Select: "title", Where: "dbserie_id = ?", WhereArgs: []interface{}{dbserie.ID}})
 	titlegroup := dbserie.GetTitles(getconfigentry.Metadata_title_languages, cfg_general.SerieAlternateTitleMetaSourceImdb, cfg_general.SerieAlternateTitleMetaSourceTrakt)
 	for idxalt := range titlegroup {
 		titlefound := false
@@ -1435,7 +1408,6 @@ func JobReloadDbSeries(dbserie database.Dbserie, configTemplate string, listConf
 		}
 	}
 	titles, _ = database.QueryStaticColumnsOneString("select title from dbserie_alternates where dbserie_id=?", "select count(id) from dbserie_alternates where dbserie_id=?", dbserie.ID)
-	//titles, _ = database.QueryDbserieAlternates(database.Query{Select: "title", Where: "dbserie_id = ?", WhereArgs: []interface{}{dbserie.ID}})
 	for idxalt := range alternateNames {
 		titlefound := false
 		for idxtitle := range titles {
@@ -1456,7 +1428,6 @@ func JobReloadDbSeries(dbserie database.Dbserie, configTemplate string, listConf
 	logger.Log.Debug("DbSeries add serie end for: ", dbserie.ThetvdbID)
 
 	logger.Log.Debug("DbSeries get episodes for: ", dbserie.ThetvdbID)
-	//dbepisode, _ := database.QueryStaticColumnsOneInt("select id from dbserie_episodes where dbserie_id = ?", "select count(id) from dbserie_episodes where dbserie_id = ?", dbserie.ID)
 	dbepisode, _ := database.QueryDbserieEpisodes(database.Query{Select: "id, season, episode", Where: "dbserie_id = ?", WhereArgs: []interface{}{dbserie.ID}})
 
 	episodes := dbserie.GetEpisodes(getconfigentry.Metadata_language, cfg_general.SerieMetaSourceTrakt)
@@ -1488,8 +1459,6 @@ func JobReloadDbSeries(dbserie database.Dbserie, configTemplate string, listConf
 
 		for _, idx := range config.ConfigGetPrefix("serie_") {
 			cfg_serie := config.ConfigGet(idx.Name).Data.(config.MediaTypeConfig)
-			//var cfg_serie config.MediaTypeConfig
-			//	config.ConfigGet(string(idx), &cfg_serie)
 
 			listfound := false
 			for idxlist := range cfg_serie.Lists {
@@ -1505,8 +1474,6 @@ func JobReloadDbSeries(dbserie database.Dbserie, configTemplate string, listConf
 		}
 		dbepisode, _ := database.QueryStaticColumnsOneInt("select id from dbserie_episodes where dbserie_id = ?", "select count(id) from dbserie_episodes where dbserie_id = ?", dbserie.ID)
 		episodes, _ := database.QueryStaticColumnsOneInt("select dbserie_episode_id from serie_episodes where dbserie_id = ? and serie_id = ?", "select count(id) from serie_episodes where dbserie_id = ? and serie_id = ?", dbserie.ID, foundseries[idxserie].ID)
-		//dbepisode, _ := database.QueryDbserieEpisodes(database.Query{Select: "id", Where: "dbserie_id = ?", WhereArgs: []interface{}{dbserie.ID}})
-		//episodes, _ := database.QuerySerieEpisodes(database.Query{Select: "dbserie_episode_id", Where: "dbserie_id = ? and serie_id = ?", WhereArgs: []interface{}{dbserie.ID, foundseries[idxserie].ID}})
 		for idxdbepi := range dbepisode {
 			epifound := false
 			for idxepi := range episodes {

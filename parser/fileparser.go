@@ -339,6 +339,7 @@ func (m *ParseInfo) ParseFile(includeYearInTitle bool, typegroup string) error {
 			m.Imdb = matches[matchIdx][scanpatterns[idxpattern].getgroup]
 		case "tvdb":
 			m.Tvdb = matches[matchIdx][scanpatterns[idxpattern].getgroup]
+			m.Tvdb = strings.TrimPrefix(m.Tvdb, "tvdb")
 		case "year":
 			mint, _ := strconv.Atoi(matches[matchIdx][scanpatterns[idxpattern].getgroup])
 			m.Year = mint
@@ -933,7 +934,6 @@ func (m *ParseInfo) FindSerieByParser(titleyear string, seriestitle string, list
 	var entriesfound int
 
 	if m.Tvdb != "" {
-		//findseries, _ := database.QuerySeries(database.Query{Select: "series.*", InnerJoin: "Dbseries ON Dbseries.ID = Series.Dbserie_id", Where: "DbSeries.thetvdb_id = ? AND Series.listname = ?", WhereArgs: []interface{}{strings.Replace(m.Tvdb, "tvdb", "", -1), listname}})
 		counter, _ := database.CountRowsStatic("Select count(id) from dbseries where thetvdb_id = ?", strings.Replace(m.Tvdb, "tvdb", "", -1))
 		if counter == 1 {
 			id, _ := database.QueryColumnStatic("Select id from dbseries where thetvdb_id = ?", strings.Replace(m.Tvdb, "tvdb", "", -1))

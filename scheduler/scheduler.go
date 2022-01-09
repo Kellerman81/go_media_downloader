@@ -694,12 +694,21 @@ func InitScheduler() {
 	}
 
 	if defaultschedule.Interval_database_check != "" {
-		QueueData.DispatchEvery("Check Database", func() {
-			str := database.DbIntegrityCheck()
-			if str != "ok" {
-				os.Exit(100)
-			}
-		}, converttime(defaultschedule.Interval_database_check))
+		if cfg_general.UseCronInsteadOfInterval {
+			QueueData.DispatchCron("Check Database", func() {
+				str := database.DbIntegrityCheck()
+				if str != "ok" {
+					os.Exit(100)
+				}
+			}, convertcron(defaultschedule.Interval_database_check))
+		} else {
+			QueueData.DispatchEvery("Check Database", func() {
+				str := database.DbIntegrityCheck()
+				if str != "ok" {
+					os.Exit(100)
+				}
+			}, converttime(defaultschedule.Interval_database_check))
+		}
 	}
 	if defaultschedule.Cron_database_check != "" {
 		QueueData.DispatchCron("Check Database", func() {
@@ -710,9 +719,15 @@ func InitScheduler() {
 		}, defaultschedule.Cron_database_check)
 	}
 	if defaultschedule.Interval_database_backup != "" {
-		QueueData.DispatchEvery("Backup Database", func() {
-			database.Backup(database.DB, fmt.Sprintf("%s.%s.%s", "./backup/data.db", database.DBVersion, time.Now().Format("20060102_150405")), cfg_general.MaxDatabaseBackups)
-		}, converttime(defaultschedule.Interval_database_backup))
+		if cfg_general.UseCronInsteadOfInterval {
+			QueueData.DispatchCron("Backup Database", func() {
+				database.Backup(database.DB, fmt.Sprintf("%s.%s.%s", "./backup/data.db", database.DBVersion, time.Now().Format("20060102_150405")), cfg_general.MaxDatabaseBackups)
+			}, convertcron(defaultschedule.Interval_database_backup))
+		} else {
+			QueueData.DispatchEvery("Backup Database", func() {
+				database.Backup(database.DB, fmt.Sprintf("%s.%s.%s", "./backup/data.db", database.DBVersion, time.Now().Format("20060102_150405")), cfg_general.MaxDatabaseBackups)
+			}, converttime(defaultschedule.Interval_database_backup))
+		}
 	}
 	if defaultschedule.Cron_database_backup != "" {
 		QueueData.DispatchCron("Backup Database", func() {
