@@ -18,8 +18,8 @@ type SearchResponseJson2 struct {
 // RawNZB represents a single NZB item in search results.
 type RawNZB struct {
 	Title string `xml:"title,omitempty"`
-	Link  string `xml:"link,omitempty"`
-	Size  int64  `xml:"size,omitempty"`
+	//Link  string `xml:"link,omitempty"`
+	Size int64 `xml:"size,omitempty"`
 
 	GUID struct {
 		GUID string `xml:",chardata"`
@@ -29,7 +29,7 @@ type RawNZB struct {
 		URL string `xml:"url,attr"`
 	} `xml:"source,omitempty"`
 
-	Date string `xml:"pubDate,omitempty"`
+	//Date string `xml:"pubDate,omitempty"`
 
 	Enclosure struct {
 		URL string `xml:"url,attr"`
@@ -42,11 +42,11 @@ type RawNZB struct {
 }
 
 type RawNZBJson1 struct {
-	Title     string `json:"title,omitempty"`
-	Link      string `json:"link,omitempty"`
-	Guid      string `json:"guid,omitempty"`
-	Size      int64  `json:"size,omitempty"`
-	Date      string `json:"pubDate,omitempty"`
+	Title string `json:"title,omitempty"`
+	//Link      string `json:"link,omitempty"`
+	Guid string `json:"guid,omitempty"`
+	Size int64  `json:"size,omitempty"`
+	//Date      string `json:"pubDate,omitempty"`
 	Enclosure struct {
 		Attributes struct {
 			URL string `json:"url"`
@@ -63,12 +63,12 @@ type RawNZBJson1 struct {
 
 type RawNZBJson2 struct {
 	Title string `json:"title,omitempty"`
-	Link  string `json:"link,omitempty"`
-	Size  int64  `json:"size,omitempty"`
-	GUID  struct {
+	//Link  string `json:"link,omitempty"`
+	Size int64 `json:"size,omitempty"`
+	GUID struct {
 		GUID string `json:"text,omitempty"`
 	} `json:"guid,omitempty"`
-	Date      string `json:"pubDate,omitempty"`
+	//Date      string `json:"pubDate,omitempty"`
 	Enclosure struct {
 		URL string `json:"_url"`
 	} `json:"enclosure,omitempty"`

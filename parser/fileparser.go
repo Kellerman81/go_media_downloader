@@ -23,23 +23,23 @@ type regexpattern struct {
 	// REs need to have 2 sub expressions (groups), the first one is "raw", and
 	// the second one for the "clean" value.
 	// E.g. Epiode matching on "S01E18" will result in: raw = "E18", clean = "18".
-	re       *regexp.Regexp
+	re       regexp.Regexp
 	getgroup int
 }
 
 var patterns = []regexpattern{
-	{"season", false, reflect.Int, regexp.MustCompile(`(?i)(s?(\d{1,4}))(?: )?[ex]`), 2},
-	{"episode", false, reflect.Int, regexp.MustCompile(`(?i)((?:\d{1,4})(?: )?[ex](?: )?(\d{1,3})(?:\b|_|e|$))`), 2},
+	{"season", false, reflect.Int, *regexp.MustCompile(`(?i)(s?(\d{1,4}))(?: )?[ex]`), 2},
+	{"episode", false, reflect.Int, *regexp.MustCompile(`(?i)((?:\d{1,4})(?: )?[ex](?: )?(\d{1,3})(?:\b|_|e|$))`), 2},
 	//{"episode", false, reflect.Int, regexp.MustCompile(`(-\s+([0-9]{1,})(?:[^0-9]|$))`)},
-	{"identifier", false, reflect.String, regexp.MustCompile(`(?i)((s?\d{1,4}(?:(?:(?: )?-?(?: )?[ex]\d{2,3})+)|\d{2,4}(?:\.|-| |_)\d{1,2}(?:\.|-| |_)\d{1,2}))(?:\b|_)`), 2},
-	{"date", false, reflect.String, regexp.MustCompile(`(?i)(?:\b|_)((\d{2,4}(?:\.|-| |_)\d{1,2}(?:\.|-| |_)\d{1,2}))(?:\b|_)`), 2},
-	{"year", true, reflect.Int, regexp.MustCompile(`(?:\b|_)(((?:19\d|20\d)\d))(?:\b|_)`), 2},
+	{"identifier", false, reflect.String, *regexp.MustCompile(`(?i)((s?\d{1,4}(?:(?:(?: )?-?(?: )?[ex]\d{2,3})+)|\d{2,4}(?:\.|-| |_)\d{1,2}(?:\.|-| |_)\d{1,2}))(?:\b|_)`), 2},
+	{"date", false, reflect.String, *regexp.MustCompile(`(?i)(?:\b|_)((\d{2,4}(?:\.|-| |_)\d{1,2}(?:\.|-| |_)\d{1,2}))(?:\b|_)`), 2},
+	{"year", true, reflect.Int, *regexp.MustCompile(`(?:\b|_)(((?:19\d|20\d)\d))(?:\b|_)`), 2},
 
 	//{"resolution", false, reflect.String, regexp.MustCompile(`(?i)(?:\b|_)((\d{3,4}[pi]))(?:\b|_)`, 0)},
 	//{"quality", false, reflect.String, regexp.MustCompile(`(?i)(?:\b|_)((workprint|cam|webcam|hdts|ts|telesync|tc|telecine|r[2-8]|preair|sdtv|hdtv|pdtv|(?:(?:dvd|web|bd)\W?)?scr(?:eener)?|(?:web|dvd|hdtv|bd|br|dvb|dsr|ds|tv|ppv|hd)\W?rip|web\W?(?:dl|hd)?|hddvd|remux|(?:blu\W?ray)))(?:\b|_)`, 0)},
 	//{"codec", false, reflect.String, regexp.MustCompile(`(?i)(?:\b|_)((xvid|divx|hevc|vp9|10bit|hi10p|h\.?264|h\.?265|x\.?264|x\.?265))(?:\b|_)`, 0)},
 	//{"audio", false, reflect.String, regexp.MustCompile(`(?i)(?:\b|_)((mp3|aac|dd[0-9\\.]+|ac3|ac3d|ac3md|dd[p+][0-9\\.]+|flac|dts\W?hd(?:\W?ma)?|dts|truehd|mic|micdubbed))(?:\b|_)`, 0)},
-	{"audio", false, reflect.String, regexp.MustCompile(`(?i)(?:\b|_)((dd[0-9\\.]+|dd[p+][0-9\\.]+|dts\W?hd(?:\W?ma)?))(?:\b|_)`), 2},
+	{"audio", false, reflect.String, *regexp.MustCompile(`(?i)(?:\b|_)((dd[0-9\\.]+|dd[p+][0-9\\.]+|dts\W?hd(?:\W?ma)?))(?:\b|_)`), 2},
 	//{"region", false, reflect.String, regexp.MustCompile(`(?i)\b(R([0-9]))\b`)},
 	//{"size", false, reflect.String, regexp.MustCompile(`(?i)\b((\d+(?:\.\d+)?(?:GB|MB)))\b`)},
 	//{"website", false, reflect.String, regexp.MustCompile(`^(\[ ?([^\]]+?) ?\])`)},
@@ -53,8 +53,8 @@ var patterns = []regexpattern{
 	//{"extended", false, reflect.Bool, regexp.MustCompile(`(?i)(?:\b|_)(EXTENDED(:?.CUT)?)(?:\b|_)`, 0)},
 	//{"hardcoded", false, reflect.Bool, regexp.MustCompile(`(?i)\b((HC))\b`)},
 	//{"proper", false, reflect.Bool, regexp.MustCompile(`(?i)(?:\b|_)((PROPER))(?:\b|_)`, 0)},
-	{"imdb", false, reflect.String, regexp.MustCompile(`(?i)(?:\b|_)((tt[0-9]{4,9}))(?:\b|_)`), 2},
-	{"tvdb", false, reflect.String, regexp.MustCompile(`(?i)(?:\b|_)((tvdb[0-9]{2,9}))(?:\b|_)`), 2},
+	{"imdb", false, reflect.String, *regexp.MustCompile(`(?i)(?:\b|_)((tt[0-9]{4,9}))(?:\b|_)`), 2},
+	{"tvdb", false, reflect.String, *regexp.MustCompile(`(?i)(?:\b|_)((tvdb[0-9]{2,9}))(?:\b|_)`), 2},
 	//{"repack", false, reflect.Bool, regexp.MustCompile(`(?i)(?:\b|_)((REPACK))(?:\b|_)`, 0)},
 	//{"widescreen", false, reflect.Bool, regexp.MustCompile(`(?i)\b((WS))\b`)},
 	//{"unrated", false, reflect.Bool, regexp.MustCompile(`(?i)\b((UNRATED))\b`)},
@@ -227,6 +227,7 @@ func (m *ParseInfo) parsegroup(cleanName string, name string, group []string, st
 					m.Repack = true
 				}
 			}
+			break
 		}
 	}
 	return startIndex, endIndex
@@ -248,16 +249,44 @@ func (m *ParseInfo) ParseFile(includeYearInTitle bool, typegroup string) error {
 	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
 
 	if !cfg_general.DisableParserStringMatch {
-		audio := []string{"mp3", "aac", "ac3", "ac3d", "ac3md", "flac", "dts", "truehd", "mic", "micdubbed"}
+		audio := []string{}
+		for idx := range database.Getaudios {
+			audio = append(audio, strings.Split(database.Getaudios[idx].Strings, ",")...)
+		}
+		//audio := []string{"mp3", "aac", "ac3", "ac3d", "ac3md", "flac", "dts", "truehd", "mic", "micdubbed"}
 		startIndex, endIndex = m.parsegroup(cleanName, "audio", audio, startIndex, endIndex)
 
-		codec := []string{"xvid", "divx", "hevc", "vp9", "10bit", "hi10p", "h264", "h.264", "h265", "h.265", "x264", "x.264", "x265", "x.265"}
+		codec := []string{}
+		for idx := range database.Getcodecs {
+			codec = append(codec, strings.Split(database.Getcodecs[idx].Strings, ",")...)
+		}
+		//codec := []string{"xvid", "divx", "hevc", "vp9", "10bit", "hi10p", "h264", "h.264", "h265", "h.265",
+		//	"x264", "x.264", "x265", "x.265"}
 		startIndex, endIndex = m.parsegroup(cleanName, "codec", codec, startIndex, endIndex)
 
-		quality := []string{"workprint", "cam", "webcam", "hdts", "ts", "telesync", "tc", "telecine", "r5", "r6", "preair", "sdtv", "hdtv", "pdtv", "web", "dvd", "hdtv", "bd", "br", "dvb", "dsr", "ds", "tv", "ppv", "hd", "webrip", "dvdrip", "hdtvrip", "bdrip", "brrip", "dvbrip", "dsrrip", "dsrip", "tvrip", "ppvrip", "hdrip", "web rip", "dvd rip", "hdtv rip", "bd rip", "br rip", "dvb rip", "dsr rip", "ds rip", "tv rip", "ppv rip", "hd rip", "web.rip", "dvd.rip", "hdtv.rip", "bd.rip", "br.rip", "dvb.rip", "dsr.rip", "ds.rip", "tv.rip", "ppv.rip", "hd.rip", "web-rip", "dvd-rip", "hdtv-rip", "bd-rip", "br-rip", "dvb-rip", "dsr-rip", "ds-rip", "tv-rip", "ppv-rip", "hd-rip", "webdl", "webhd", "hddvd", "remux", "bluray", "blu.ray", "blu ray", "blu_ray", "dvdscr", "dvd.scr", "dvd-scr", "dvd scr", "dvdscreener", "dvd.screener", "dvd screener", "dvd-screener", "webscr", "web.scr", "web-scr", "web scr", "webscreener", "web.screener", "web screener", "web-screener", "bdscr", "bd.scr", "bd-scr", "bd scr", "bdscreener", "bd.screener", "bd screener", "bd-screener"}
+		quality := []string{}
+		for idx := range database.Getqualities {
+			quality = append(quality, strings.Split(database.Getqualities[idx].Strings, ",")...)
+		}
+		// quality := []string{"workprint", "cam", "webcam", "hdts", "telesync", "telecine", "r5", "r6",
+		// 	"preair", "sdtv", "hdtv", "pdtv", "web", "dvd", "hdtv", "dvb", "dsr", "ppv", "webrip", "dvdrip",
+		// 	"hdtvrip", "bdrip", "brrip", "dvbrip", "dsrrip", "dsrip", "tvrip", "ppvrip", "hdrip", "web rip",
+		// 	"dvd rip", "hdtv rip", "bd rip", "br rip", "dvb rip", "dsr rip", "ds rip", "tv rip", "ppv rip",
+		// 	"hd rip", "web.rip", "dvd.rip", "hdtv.rip", "bd.rip", "br.rip", "dvb.rip", "dsr.rip", "ds.rip",
+		// 	"tv.rip", "ppv.rip", "hd.rip", "web-rip", "dvd-rip", "hdtv-rip", "bd-rip", "br-rip", "dvb-rip", "dsr-rip",
+		// 	"ds-rip", "tv-rip", "ppv-rip", "hd-rip", "webdl", "webhd", "hddvd", "remux", "bluray", "blu.ray", "blu ray",
+		// 	"blu_ray", "dvdscr", "dvd.scr", "dvd-scr", "dvd scr", "dvdscreener", "dvd.screener", "dvd screener",
+		// 	"dvd-screener", "webscr", "web.scr", "web-scr", "web scr", "webscreener", "web.screener", "web screener",
+		// 	"web-screener", "bdscr", "bd.scr", "bd-scr", "bd scr", "bdscreener", "bd.screener", "bd screener",
+		// 	"bd-screener", "bd", "br", "ds", "hd", "tv", "ts", "tc"}
 		startIndex, endIndex = m.parsegroup(cleanName, "quality", quality, startIndex, endIndex)
 
-		resolution := []string{"360p", "368p", "480p", "576p", "720p", "1080p", "2160p", "360i", "368i", "480i", "576i", "720i", "1080i", "2160i"}
+		resolution := []string{}
+		for idx := range database.Getresolutions {
+			resolution = append(resolution, strings.Split(database.Getresolutions[idx].Strings, ",")...)
+		}
+		//resolution := []string{"360p", "368p", "480p", "576p", "720p", "1080p", "2160p", "360i", "368i", "480i",
+		//	"576i", "720i", "1080i", "2160i"}
 		startIndex, endIndex = m.parsegroup(cleanName, "resolution", resolution, startIndex, endIndex)
 	}
 	extended := []string{"extended", "extended cut", "extended.cut", "extended-cut", "extended_cut"}
@@ -312,6 +341,22 @@ func (m *ParseInfo) ParseFile(includeYearInTitle bool, typegroup string) error {
 			if typegroup != "series" {
 				continue
 			}
+		case "audio":
+			if m.Audio != "" {
+				continue
+			}
+		case "codec":
+			if m.Codec != "" {
+				continue
+			}
+		case "quality":
+			if m.Quality != "" {
+				continue
+			}
+		case "resolution":
+			if m.Resolution != "" {
+				continue
+			}
 		}
 		matches := scanpatterns[idxpattern].re.FindAllStringSubmatch(cleanName, -1)
 
@@ -364,6 +409,7 @@ func (m *ParseInfo) ParseFile(includeYearInTitle bool, typegroup string) error {
 		case "codec":
 			m.Codec = matches[matchIdx][scanpatterns[idxpattern].getgroup]
 		}
+		matches = nil
 	}
 	if len(m.Date) >= 1 {
 		m.Identifier = m.Date
@@ -939,6 +985,7 @@ func (m *ParseInfo) FindSerieByParser(titleyear string, seriestitle string, list
 			id, _ := database.QueryColumnStatic("Select id from dbseries where thetvdb_id = ?", strings.Replace(m.Tvdb, "tvdb", "", -1))
 			findseries, _ := database.QuerySeries(database.Query{Where: "dbserie_id = ? AND listname = ?", WhereArgs: []interface{}{id, listname}})
 
+			id = nil
 			if len(findseries) == 1 {
 				entriesfound = len(findseries)
 				return findseries[0], entriesfound

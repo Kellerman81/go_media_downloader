@@ -113,6 +113,10 @@ func (d *downloadertype) DownloadNzb(nzb parser.Nzbwithprio) {
 
 	logger.Log.Debug("Downloader target folder: ", targetfolder)
 	logger.Log.Debug("Downloader target type: ", d.Downloader.Type)
+	logger.Log.Debug("Downloader debug priority minimum: ", d.Nzb.MinimumPriority)
+	logger.Log.Debug("Downloader debug priority found: ", d.Nzb.ParseInfo.Priority)
+	logger.Log.Debug("Downloader debug quality: ", d.Nzb.QualityTemplate)
+	logger.Log.Debug("Downloader debug all: ", d)
 	var err error
 	switch strings.ToLower(d.Downloader.Type) {
 	case "drone":
@@ -222,6 +226,7 @@ func (d *downloadertype) sendNotify(event string, noticonfig config.MediaNotific
 	}
 	var docmessage bytes.Buffer
 	err = tmplmessage.Execute(&docmessage, d)
+	tmplmessage = nil
 	if err != nil {
 		logger.Log.Error(err)
 	}
@@ -233,6 +238,7 @@ func (d *downloadertype) sendNotify(event string, noticonfig config.MediaNotific
 	}
 	var doctitle bytes.Buffer
 	err = tmpltitle.Execute(&doctitle, d)
+	tmpltitle = nil
 	if err != nil {
 		logger.Log.Error(err)
 	}

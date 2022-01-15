@@ -4,7 +4,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/RussellLuo/slidingwindow"
+	"github.com/Kellerman81/go_media_downloader/slidingwindow"
 	"github.com/gregdel/pushover"
 	"golang.org/x/time/rate"
 )

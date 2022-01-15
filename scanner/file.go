@@ -96,6 +96,74 @@ func GetFilesDir(rootpath string, filetypes []string, filetypesNoRename []string
 	return []string{}
 }
 
+func GetFilesDirAll(rootpath string) []string {
+
+	if !config.ConfigCheck("general") {
+		return []string{}
+	}
+
+	if CheckFileExist(rootpath) {
+		counter := 0
+		filepath.WalkDir(rootpath, func(path string, info fs.DirEntry, err error) error {
+			if info.IsDir() {
+				return nil
+			}
+			counter += 1
+
+			return nil
+		})
+		list := make([]string, 0, counter)
+		err := filepath.WalkDir(rootpath, func(path string, info fs.DirEntry, err error) error {
+			if info.IsDir() {
+				return nil
+			}
+			list = append(list, path)
+			return nil
+		})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%s\n", err)
+		}
+		return list
+	} else {
+		logger.Log.Error("Path not found: ", rootpath)
+	}
+	return []string{}
+}
+
+func CheckDisallowed(rootpath string, notwanted []string, removefolder bool) bool {
+
+	if !config.ConfigCheck("general") {
+		return true
+	}
+
+	if CheckFileExist(rootpath) {
+		isok := true
+		filepath.WalkDir(rootpath, func(path string, info fs.DirEntry, err error) error {
+			if info.IsDir() {
+				return nil
+			}
+			for _, disallowedstr := range notwanted {
+				if disallowedstr == "" {
+					continue
+				}
+				if strings.Contains(strings.ToLower(path), strings.ToLower(disallowedstr)) {
+					logger.Log.Warning(path, " is not allowd in the path!")
+					isok = false
+					return io.EOF
+				}
+			}
+			return nil
+		})
+		if removefolder && !isok {
+			CleanUpFolder(rootpath, 80000)
+		}
+		return isok
+	} else {
+		logger.Log.Error("Path not found: ", rootpath)
+	}
+	return true
+}
+
 func GetFilesGoDir(rootpath string, filetypes []string, filetypesNoRename []string, ignoredpaths []string) []string {
 	var list []string
 
@@ -361,34 +429,6 @@ func RemoveFile(file string) error {
 	return err
 }
 
-func CheckDisallowed(folder string, disallowed []string, removefolder bool) bool {
-	emptyarr := []string{}
-	var disallow bool
-	if len(disallowed) == 0 {
-		disallow = false
-		return disallow
-	}
-	logger.Log.Debug("Check disallowed")
-	if CheckFileExist(folder) {
-		filesleft := GetFilesDir(folder, emptyarr, emptyarr, emptyarr)
-		for idxfile := range filesleft {
-			for idxdisallow := range disallowed {
-				if disallowed[idxdisallow] == "" {
-					continue
-				}
-				if strings.Contains(strings.ToLower(filesleft[idxfile]), strings.ToLower(disallowed[idxdisallow])) {
-					logger.Log.Warning(filesleft[idxfile], " is not allowd in the path!")
-					disallow = true
-					if removefolder {
-						CleanUpFolder(folder, 80000)
-					}
-					return disallow
-				}
-			}
-		}
-	}
-	return disallow
-}
 func CleanUpFolder(folder string, CleanupsizeMB int) {
 	emptyarr := []string{}
 	if CheckFileExist(folder) {
@@ -418,22 +458,26 @@ func checkfilespathlist(array []database.Dbfiles, typeof string, find string, co
 				counter, err := database.CountRowsStatic("select count(id) FROM serie_file_unmatcheds WHERE filepath = ? and listname = ? and (last_checked > ? or last_checked is null)", find, listname, time.Now().Add(time.Hour*-12))
 				if err == nil {
 					if counter >= 1 {
+						getlist = nil
 						return true
 					}
 				}
 				getlist, errget = database.QueryColumnStatic("select listname FROM series WHERE id = ?", array[idx].ID)
 				if errget != nil {
+					getlist = nil
 					continue
 				}
 			} else {
 				counter, err := database.CountRowsStatic("select count(id) FROM movie_file_unmatcheds WHERE filepath = ? and listname = ? and (last_checked > ? or last_checked is null)", find, listname, time.Now().Add(time.Hour*-12))
 				if err == nil {
 					if counter >= 1 {
+						getlist = nil
 						return true
 					}
 				}
 				getlist, errget = database.QueryColumnStatic("select listname FROM movies WHERE id = ?", array[idx].ID)
 				if errget != nil {
+					getlist = nil
 					continue
 				}
 			}
@@ -441,6 +485,7 @@ func checkfilespathlist(array []database.Dbfiles, typeof string, find string, co
 				continue
 			}
 			var getlistname string = getlist.(string)
+			getlist = nil
 			if getlistname == "" {
 				continue
 			}
@@ -528,6 +573,7 @@ func moveFileDriveReadWrite(sourcePath, destPath string) error {
 	}
 
 	err = ioutil.WriteFile(destPath, input, 0644)
+	input = nil
 	if err != nil {
 		fmt.Println("Error creating", destPath)
 		fmt.Println(err)
@@ -552,8 +598,6 @@ func moveFileDriveBuffer(sourcePath, destPath string) error {
 	if cfg_general.MoveBufferSizeKB != 0 {
 		bufferkb = cfg_general.MoveBufferSizeKB
 	}
-
-	var BUFFERSIZE int64 = int64(bufferkb) * 1024 //have to convert to bytes
 
 	sourceFileStat, err := os.Stat(sourcePath)
 	if err != nil {
@@ -586,7 +630,7 @@ func moveFileDriveBuffer(sourcePath, destPath string) error {
 		return err
 	}
 
-	buf := make([]byte, BUFFERSIZE)
+	buf := make([]byte, int64(bufferkb)*1024)
 	for {
 		n, err := source.Read(buf)
 		if err != nil && err != io.EOF {
@@ -599,6 +643,8 @@ func moveFileDriveBuffer(sourcePath, destPath string) error {
 		if _, err := destination.Write(buf[:n]); err != nil {
 			return err
 		}
+		buf = nil
+		buf = make([]byte, int64(bufferkb)*1024)
 	}
 	// The copy was successful, so now delete the original file
 	err = os.Remove(sourcePath)
@@ -728,7 +774,7 @@ func copyFile(src, dst string, allowFileLink bool) (err error) {
 }
 
 func GetSubFolders(sourcepath string) []string {
-	files, err := ioutil.ReadDir(sourcepath)
+	files, err := os.ReadDir(sourcepath)
 	if err == nil {
 		folders := make([]string, 0, len(files))
 		for idxfile := range files {
@@ -736,13 +782,15 @@ func GetSubFolders(sourcepath string) []string {
 				folders = append(folders, filepath.Join(sourcepath, files[idxfile].Name()))
 			}
 		}
+		files = nil
 		return folders
 	}
+	files = nil
 	return []string{}
 }
 
 func getSubFiles(sourcepath string) []string {
-	files, err := ioutil.ReadDir(sourcepath)
+	files, err := os.ReadDir(sourcepath)
 	if err == nil {
 		folders := make([]string, 0, len(files))
 		for idxfile := range files {

@@ -638,72 +638,33 @@ definitions:
     type: object
   newznab.NZB:
     properties:
-      air_date:
-        type: string
-      category:
-        items:
-          type: string
-        type: array
-      coverurl:
-        type: string
-      description:
-        type: string
       download_url:
+        description: |-
+          Torznab specific stuff
+          Seeders     int    `json:"seeders,omitempty"`
+          Peers       int    `json:"peers,omitempty"`
+          InfoHash    string `json:"infohash,omitempty"`
         type: string
       episode:
-        type: string
-      genre:
-        type: string
-      group:
         type: string
       id:
         type: string
       imdb:
         description: Movie Specific stuff
         type: string
-      imdbscore:
-        type: number
-      imdbtitle:
-        type: string
-      imdbyear:
-        type: integer
-      info:
-        type: string
-      infohash:
-        type: string
       is_torrent:
         type: boolean
-      num_grabs:
-        type: integer
-      peers:
-        type: integer
-      poster:
-        type: string
-      pub_date:
-        type: string
-      rating:
-        type: integer
-      resolution:
-        type: string
       season:
         type: string
-      seeders:
-        description: Torznab specific stuff
-        type: integer
       size:
+        description: Description string    `json:"description,omitempty"`
         type: integer
-      source_apikey:
-        type: string
       source_endpoint:
         type: string
       title:
         type: string
       tvdbid:
         description: TV Specific stuff
-        type: string
-      tvtitle:
-        type: string
-      usenet_date:
         type: string
     type: object
   parser.NzbwithprioJson:
@@ -735,8 +696,6 @@ definitions:
     type: object
   parser.ParseInfo:
     properties:
-      3d:
-        type: boolean
       Prio_audio:
         type: integer
       Prio_codec:
@@ -753,8 +712,6 @@ definitions:
         type: string
       codecid:
         type: integer
-      container:
-        type: string
       date:
         type: string
       episode:
@@ -765,15 +722,24 @@ definitions:
         type: boolean
       file:
         type: string
-      group:
-        type: string
-      hardcoded:
-        type: boolean
+      height:
+        type: integer
       identifier:
+        description: |-
+          Group           string   `json:"group,omitempty"`
+          Region          string   `json:"region,omitempty"`
         type: string
       imdb:
+        description: |-
+          Sbs             string   `json:"sbs,omitempty"`
+          Unrated         bool     `json:"unrated,omitempty"`
+          Subs            string   `json:"subs,omitempty"`
         type: string
       language:
+        description: |-
+          Container       string   `json:"container,omitempty"`
+          Widescreen      bool     `json:"widescreen,omitempty"`
+          Website         string   `json:"website,omitempty"`
         type: string
       languages:
         items:
@@ -782,14 +748,14 @@ definitions:
       priority:
         type: integer
       proper:
+        description: Hardcoded       bool     `json:"hardcoded,omitempty"`
         type: boolean
       quality:
         type: string
       qualityid:
         type: integer
       qualityset:
-        type: string
-      region:
+        description: ThreeD          bool     `json:"3d,omitempty"`
         type: string
       repack:
         type: boolean
@@ -799,26 +765,18 @@ definitions:
         type: integer
       runtime:
         type: integer
-      sbs:
-        type: string
       season:
         type: integer
       seasonstr:
         type: string
       size:
         type: string
-      subs:
-        type: string
       title:
         type: string
       tvdb:
         type: string
-      unrated:
-        type: boolean
-      website:
-        type: string
-      widescreen:
-        type: boolean
+      width:
+        type: integer
       year:
         type: integer
     type: object

@@ -1,13 +1,14 @@
 package apiexternal
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
 	"time"
 
-	"github.com/RussellLuo/slidingwindow"
+	"github.com/Kellerman81/go_media_downloader/slidingwindow"
 	"golang.org/x/time/rate"
 )
 
@@ -51,10 +52,12 @@ func (c *RLHTTPClient) DoJson(req *http.Request, jsonobj interface{}) error {
 }
 
 //NewClient return http client with a ratelimiter
-func NewClient(rl *rate.Limiter, rl2 *slidingwindow.Limiter) *RLHTTPClient {
+func NewClient(skiptlsverify bool, rl *rate.Limiter, rl2 *slidingwindow.Limiter) *RLHTTPClient {
 	c := &RLHTTPClient{
 		client: &http.Client{Timeout: 5 * time.Second,
-			Transport: &http.Transport{MaxIdleConns: 20, MaxConnsPerHost: 10, DisableCompression: false, IdleConnTimeout: 20 * time.Second}},
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{InsecureSkipVerify: skiptlsverify},
+				MaxIdleConns:    20, MaxConnsPerHost: 10, DisableCompression: false, IdleConnTimeout: 20 * time.Second}},
 		Ratelimiter:   rl,
 		LimiterWindow: rl2,
 	}

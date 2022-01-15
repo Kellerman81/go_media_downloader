@@ -1,6 +1,7 @@
 package searcher
 
 import (
+	"regexp"
 	"strings"
 
 	"github.com/Kellerman81/go_media_downloader/config"
@@ -85,11 +86,20 @@ func filter_test_quality_wanted(qualityTemplate string, m parser.ParseInfo, titl
 	}
 	return true
 }
+func findregex(array []config.RegexGroup, find string) regexp.Regexp {
+	for idx := range array {
+		if array[idx].Name == find {
+			return array[idx].Re
+		}
+	}
+	return regexp.Regexp{}
+}
 func filter_regex_nzbs(regexconfig config.RegexConfig, title string, wantedtitle string, wantedalternates []string) (bool, string) {
 	for _, rowtitle := range regexconfig.Rejected {
-		rowrejected := regexconfig.RejectedRegex[rowtitle]
+		rowrejected := findregex(regexconfig.RejectedRegex, rowtitle)
 		teststrwanted := rowrejected.FindStringSubmatch(wantedtitle)
 		if len(teststrwanted) >= 1 {
+			//Regex is in title - skip test
 			continue
 		}
 		breakfor := false
@@ -101,7 +111,8 @@ func filter_regex_nzbs(regexconfig config.RegexConfig, title string, wantedtitle
 			}
 		}
 		if breakfor {
-			break
+			//Regex is in alternate title - skip test
+			continue
 		}
 		teststr := rowrejected.FindStringSubmatch(title)
 		if len(teststr) >= 1 {
@@ -111,7 +122,7 @@ func filter_regex_nzbs(regexconfig config.RegexConfig, title string, wantedtitle
 	}
 	requiredmatched := false
 	for _, rowtitle := range regexconfig.Required {
-		rowrequired := regexconfig.RequiredRegex[rowtitle]
+		rowrequired := findregex(regexconfig.RequiredRegex, rowtitle)
 
 		teststr := rowrequired.FindStringSubmatch(title)
 		if len(teststr) >= 1 {

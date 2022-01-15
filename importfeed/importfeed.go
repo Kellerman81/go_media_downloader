@@ -8,10 +8,8 @@ import (
 	"github.com/Kellerman81/go_media_downloader/config"
 	"github.com/Kellerman81/go_media_downloader/database"
 	"github.com/Kellerman81/go_media_downloader/logger"
-	"github.com/remeh/sizedwaitgroup"
+	"github.com/Kellerman81/go_media_downloader/sizedwaitgroup"
 )
-
-var MovieImportJobRunning map[string]bool
 
 func JobImportMovies(dbmovie database.Dbmovie, configTemplate string, listConfig string, wg *sizedwaitgroup.SizedWaitGroup) {
 	jobName := dbmovie.ImdbID
@@ -19,19 +17,14 @@ func JobImportMovies(dbmovie database.Dbmovie, configTemplate string, listConfig
 		jobName = listConfig
 	}
 	defer func() {
-		database.ReadWriteMu.Lock()
-		delete(MovieImportJobRunning, jobName)
-		database.ReadWriteMu.Unlock()
+		importJobRunning = logger.FindAndDeleteStringArray(importJobRunning, jobName)
 		wg.Done()
 	}()
-	database.ReadWriteMu.Lock()
-	if _, nok := MovieImportJobRunning[jobName]; nok {
+	if logger.CheckStringArray(importJobRunning, jobName) {
 		logger.Log.Debug("Job already running: ", jobName)
-		database.ReadWriteMu.Unlock()
 		return
 	} else {
-		MovieImportJobRunning[jobName] = true
-		database.ReadWriteMu.Unlock()
+		importJobRunning = append(importJobRunning, jobName)
 	}
 
 	cdbmovie, _ := database.CountRowsStatic("Select count(id) from dbmovies where imdb_id = ? COLLATE NOCASE", dbmovie.ImdbID)
@@ -116,6 +109,7 @@ func JobImportMovies(dbmovie database.Dbmovie, configTemplate string, listConfig
 			if err == nil {
 				dbmovie = database.Dbmovie{ID: uint(id.(int64))}
 			}
+			id = nil
 		}
 	} else {
 		if dbmovie.ID == 0 {
@@ -123,6 +117,7 @@ func JobImportMovies(dbmovie database.Dbmovie, configTemplate string, listConfig
 			if err == nil {
 				dbmovie = database.Dbmovie{ID: uint(id.(int64))}
 			}
+			id = nil
 		}
 	}
 	movietest, _ := database.QueryStaticColumnsOneStringOneInt("select listname, id from movies where dbmovie_id=?", "select count(id) from movies where dbmovie_id=?", dbmovie.ID)
@@ -170,6 +165,9 @@ func JobImportMovies(dbmovie database.Dbmovie, configTemplate string, listConfig
 }
 
 func AllowMovieImport(imdb string, listTemplate string) bool {
+	if !config.ConfigCheck("list_" + listTemplate) {
+		return false
+	}
 	list := config.ConfigGet("list_" + listTemplate).Data.(config.ListsConfig)
 
 	if list.MinVotes != 0 {
@@ -226,11 +224,15 @@ func JobReloadMovies(dbmovie database.Dbmovie, configTemplate string, listConfig
 		jobName = listConfig
 	}
 	defer func() {
-		database.ReadWriteMu.Lock()
-		delete(MovieImportJobRunning, jobName)
-		database.ReadWriteMu.Unlock()
+		importJobRunning = logger.FindAndDeleteStringArray(importJobRunning, jobName)
 		wg.Done()
 	}()
+	if logger.CheckStringArray(importJobRunning, jobName) {
+		logger.Log.Debug("Job already running: ", jobName)
+		return
+	} else {
+		importJobRunning = append(importJobRunning, jobName)
+	}
 	if !config.ConfigCheck("general") {
 		return
 	}
@@ -238,15 +240,6 @@ func JobReloadMovies(dbmovie database.Dbmovie, configTemplate string, listConfig
 
 	if cfg_general.SchedulerDisabled {
 		return
-	}
-	database.ReadWriteMu.Lock()
-	if _, nok := MovieImportJobRunning[jobName]; nok {
-		logger.Log.Debug("Job already running: ", jobName)
-		database.ReadWriteMu.Unlock()
-		return
-	} else {
-		MovieImportJobRunning[jobName] = true
-		database.ReadWriteMu.Unlock()
 	}
 
 	dbmovie, _ = database.GetDbmovie(database.Query{Where: "imdb_id = ? COLLATE NOCASE", WhereArgs: []interface{}{dbmovie.ImdbID}})
@@ -329,25 +322,20 @@ func checkifmovieyearmatches(entriesfound int, yearint int, movies []database.Mo
 		var movieyear1 database.Movie
 		for idx := range movies {
 
-			if !config.ConfigCheck("quality_" + movies[idx].QualityProfile) {
-				continue
-			}
-			cfg_quality := config.ConfigGet("quality_" + movies[idx].QualityProfile).Data.(config.QualityConfig)
-			allowyear1 := cfg_quality.CheckYear1
-
 			dbmovie, _ := database.GetDbmovie(database.Query{Select: "year, imdb_id", Where: "id=?", WhereArgs: []interface{}{movies[idx].DbmovieID}})
 			if dbmovie.Year == yearint {
 				imdbyear = dbmovie.ImdbID
 				movieyear = movies[idx]
 				foundyear += 1
 			}
+			if !config.ConfigCheck("quality_" + movies[idx].QualityProfile) {
+				continue
+			}
+			cfg_quality := config.ConfigGet("quality_" + movies[idx].QualityProfile).Data.(config.QualityConfig)
+			allowyear1 := cfg_quality.CheckYear1
+
 			if allowyear1 {
-				if dbmovie.Year == yearint+1 {
-					imdbyear1 = dbmovie.ImdbID
-					movieyear1 = movies[idx]
-					foundyear1 += 1
-				}
-				if dbmovie.Year == yearint-1 {
+				if dbmovie.Year == yearint+1 || dbmovie.Year == yearint-1 {
 					imdbyear1 = dbmovie.ImdbID
 					movieyear1 = movies[idx]
 					foundyear1 += 1
@@ -675,10 +663,6 @@ func MovieFindListByTitle(title string, year string, lists []string, searchtype 
 	}
 	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
 
-	argslist := []interface{}{}
-	for idx := range lists {
-		argslist = append(argslist, lists[idx])
-	}
 	searchfor := title
 	if year == "0" {
 		year = ""
@@ -765,6 +749,10 @@ func MovieFindListByTitle(title string, year string, lists []string, searchtype 
 		}
 	}
 	if len(searchprovider) >= 1 {
+		argslist := []interface{}{}
+		for idx := range lists {
+			argslist = append(argslist, lists[idx])
+		}
 		for idxprovider := range searchprovider {
 			if strings.EqualFold(searchprovider[idxprovider], "imdb") {
 				if cfg_general.MovieMetaSourceImdb {
@@ -807,7 +795,7 @@ func MovieFindListByTitle(title string, year string, lists []string, searchtype 
 								dbmovie = dbmovieget
 							}
 							entriesfound = len(movies)
-
+							argsimdb = nil
 							logger.Log.Debug("Imdb Search (Year) succeded. Found Movies: ", entriesfound, " for ", title)
 							return
 						}
@@ -816,6 +804,7 @@ func MovieFindListByTitle(title string, year string, lists []string, searchtype 
 							argsimdb = append(argsimdb, imdbloop1)
 							argsimdb = append(argsimdb, argslist...)
 							movies, _ := database.QueryMovies(database.Query{Select: "movies.listname, movies.quality_profile, movies.dbmovie_id", InnerJoin: " Dbmovies on Dbmovies.id = movies.dbmovie_id", Where: "Dbmovies.imdb_id = ? COLLATE NOCASE and Movies.listname in (?" + strings.Repeat(",?", len(lists)-1) + ")", WhereArgs: argsimdb})
+							argsimdb = nil
 							if len(movies) >= 1 {
 								if !config.ConfigCheck("quality_" + movies[0].QualityProfile) {
 									continue
@@ -844,6 +833,7 @@ func MovieFindListByTitle(title string, year string, lists []string, searchtype 
 						argsimdb = append(argsimdb, imdb)
 						argsimdb = append(argsimdb, argslist...)
 						movies, _ := database.QueryMovies(database.Query{Select: "movies.listname, movies.dbmovie_id", InnerJoin: " Dbmovies on Dbmovies.id = movies.dbmovie_id", Where: "Dbmovies.imdb_id = ? COLLATE NOCASE and Movies.listname in (?" + strings.Repeat(",?", len(lists)-1) + ")", WhereArgs: argsimdb})
+						argsimdb = nil
 						if len(movies) >= 1 {
 							list = movies[0].Listname
 							dbmovieget, _ := database.GetDbmovie(database.Query{Where: "id=?", WhereArgs: []interface{}{movies[0].DbmovieID}})
@@ -899,6 +889,7 @@ func MovieFindListByTitle(title string, year string, lists []string, searchtype 
 								argsimdb = append(argsimdb, imdb)
 								argsimdb = append(argsimdb, argslist...)
 								movies, _ := database.QueryMovies(database.Query{Select: "movies.listname, movies.quality_profile, movies.dbmovie_id", InnerJoin: " Dbmovies on Dbmovies.id = movies.dbmovie_id", Where: "Dbmovies.imdb_id = ? COLLATE NOCASE and Movies.listname in (?" + strings.Repeat(",?", len(lists)-1) + ")", WhereArgs: argsimdb})
+								argsimdb = nil
 								if len(movies) >= 1 {
 									if !config.ConfigCheck("quality_" + movies[0].QualityProfile) {
 										continue
@@ -957,6 +948,7 @@ func MovieFindListByTitle(title string, year string, lists []string, searchtype 
 							argsimdb = append(argsimdb, imdb)
 							argsimdb = append(argsimdb, argslist...)
 							movies, _ := database.QueryMovies(database.Query{Select: "movies.listname, movies.dbmovie_id", InnerJoin: " Dbmovies on Dbmovies.id = movies.dbmovie_id", Where: "Dbmovies.imdb_id = ? COLLATE NOCASE and Movies.listname in (?" + strings.Repeat(",?", len(lists)-1) + ")", WhereArgs: argsimdb})
+							argsimdb = nil
 							if len(movies) >= 1 {
 								list = movies[0].Listname
 								dbmovieget, _ := database.GetDbmovie(database.Query{Where: "id=?", WhereArgs: []interface{}{movies[0].DbmovieID}})
@@ -973,6 +965,7 @@ func MovieFindListByTitle(title string, year string, lists []string, searchtype 
 							argsimdb = append(argsimdb, imdb)
 							argsimdb = append(argsimdb, argslist...)
 							movies, _ := database.QueryMovies(database.Query{Select: "movies.listname, movies.quality_profile, movies.dbmovie_id", InnerJoin: " Dbmovies on Dbmovies.id = movies.dbmovie_id", Where: "Dbmovies.imdb_id = ? COLLATE NOCASE and Movies.listname in (?" + strings.Repeat(",?", len(lists)-1) + ")", WhereArgs: argsimdb})
+							argsimdb = nil
 							if len(movies) >= 1 {
 								if !config.ConfigCheck("quality_" + movies[0].QualityProfile) {
 									continue
@@ -993,6 +986,7 @@ func MovieFindListByTitle(title string, year string, lists []string, searchtype 
 				}
 			}
 		}
+		argslist = nil
 	}
 
 	logger.Log.Debug("All Movie Lookups failed: ", title)
@@ -1014,11 +1008,13 @@ func Findseriebyname(title string, listname string) (database.Serie, int) {
 		logger.Log.Debug("Find Serie by Name", title, " in ", listname, " dbserie found ", id)
 		findseries, _ := database.QuerySeries(database.Query{Where: "dbserie_id=? AND listname = ?", WhereArgs: []interface{}{id, listname}})
 
+		id = nil
 		if len(findseries) == 1 {
 			logger.Log.Debug("Found Serie by Name", title, " in ", listname)
 			return findseries[0], len(findseries)
 		}
 	}
+	id = nil
 	return database.Serie{}, 0
 }
 func Findseriebyalternatename(title string, listname string) (database.Serie, int) {
@@ -1035,11 +1031,13 @@ func Findseriebyalternatename(title string, listname string) (database.Serie, in
 	if err == nil {
 		findseries, _ := database.QuerySeries(database.Query{Where: "DbSerie_id = ? AND listname = ?", WhereArgs: []interface{}{id, listname}})
 
+		id = nil
 		if len(findseries) == 1 {
 			logger.Log.Debug("Found Serie by Name", title, " in ", listname)
 			return findseries[0], len(findseries)
 		}
 	}
+	id = nil
 	return database.Serie{}, 0
 }
 func GetEpisodeArray(identifiedby string, str1 string, str2 string) []string {
@@ -1063,27 +1061,23 @@ func GetEpisodeArray(identifiedby string, str1 string, str2 string) []string {
 	return episodeArray
 }
 
-var SeriesImportJobRunning map[string]bool
+var importJobRunning []string
 
 func JobImportDbSeries(serieconfig config.SerieConfig, configTemplate string, listConfig string, checkall bool, wg *sizedwaitgroup.SizedWaitGroup) {
 	jobName := serieconfig.Name
 	if jobName == "" {
 		jobName = listConfig
 	}
+
 	defer func() {
-		database.ReadWriteMu.Lock()
-		delete(SeriesImportJobRunning, jobName)
-		database.ReadWriteMu.Unlock()
+		importJobRunning = logger.FindAndDeleteStringArray(importJobRunning, jobName)
 		wg.Done()
 	}()
-	database.ReadWriteMu.Lock()
-	if _, nok := SeriesImportJobRunning[jobName]; nok {
+	if logger.CheckStringArray(importJobRunning, jobName) {
 		logger.Log.Debug("Job already running: ", jobName)
-		database.ReadWriteMu.Unlock()
 		return
 	} else {
-		SeriesImportJobRunning[jobName] = true
-		database.ReadWriteMu.Unlock()
+		importJobRunning = append(importJobRunning, jobName)
 	}
 
 	var dbserie database.Dbserie
@@ -1246,6 +1240,7 @@ func JobImportDbSeries(serieconfig config.SerieConfig, configTemplate string, li
 		if err == nil {
 			serie = database.Serie{ID: uint(id.(int64))}
 		}
+		id = nil
 	}
 	if checkall || dbserieadded {
 		if strings.EqualFold(serieconfig.Source, "none") {
@@ -1322,19 +1317,14 @@ func JobReloadDbSeries(dbserie database.Dbserie, configTemplate string, listConf
 		jobName = listConfig
 	}
 	defer func() {
-		database.ReadWriteMu.Lock()
-		delete(SeriesImportJobRunning, jobName)
-		database.ReadWriteMu.Unlock()
+		importJobRunning = logger.FindAndDeleteStringArray(importJobRunning, jobName)
 		wg.Done()
 	}()
-	database.ReadWriteMu.Lock()
-	if _, nok := SeriesImportJobRunning[jobName]; nok {
+	if logger.CheckStringArray(importJobRunning, jobName) {
 		logger.Log.Debug("Job already running: ", jobName)
-		database.ReadWriteMu.Unlock()
 		return
 	} else {
-		SeriesImportJobRunning[jobName] = true
-		database.ReadWriteMu.Unlock()
+		importJobRunning = append(importJobRunning, jobName)
 	}
 
 	logger.Log.Debug("DbSeries Add for: ", dbserie.ThetvdbID)

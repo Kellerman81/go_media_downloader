@@ -130,6 +130,8 @@ func LoadCfgDataDB() imdbConfig {
 	}
 	var outim imdbConfig
 	errimdb := k.Unmarshal("imdbindexer", &outim)
+	k = nil
+	f = nil
 	if errimdb == nil {
 		return outim
 	}
@@ -190,6 +192,7 @@ func main() {
 	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
 		fmt.Println(fmt.Errorf("an error occurred while syncing the database.. %v", err))
 	}
+	m = nil
 
 	downloadimdbfiles()
 
@@ -253,17 +256,17 @@ func main() {
 					titlesshort = append(titlesshort, imdbTitle{
 						Tconst:       record[0],
 						TitleType:    csvsetdefault(record[1], ""),
-						PrimaryTitle: html.UnescapeString(csvsetdefault(record[2], "")),
-						Slug:         StringToSlug(html.UnescapeString(csvsetdefault(record[2], ""))),
+						PrimaryTitle: UnescapeString(csvsetdefault(record[2], "")),
+						Slug:         StringToSlug(UnescapeString(csvsetdefault(record[2], ""))),
 						StartYear:    csvgetint(record[5]),
 					})
 				} else {
 					titlesshort = append(titlesshort, imdbTitle{
 						Tconst:         record[0],
 						TitleType:      csvsetdefault(record[1], ""),
-						PrimaryTitle:   html.UnescapeString(csvsetdefault(record[2], "")),
-						Slug:           StringToSlug(html.UnescapeString(csvsetdefault(record[2], ""))),
-						OriginalTitle:  html.UnescapeString(csvsetdefault(record[2], "")),
+						PrimaryTitle:   UnescapeString(csvsetdefault(record[2], "")),
+						Slug:           StringToSlug(UnescapeString(csvsetdefault(record[2], ""))),
+						OriginalTitle:  UnescapeString(csvsetdefault(record[2], "")),
 						Genres:         csvsetdefault(record[8], ""),
 						IsAdult:        csvgetbool(record[4]),
 						StartYear:      csvgetint(record[5]),
@@ -346,16 +349,16 @@ func main() {
 					if !cfg_imdb.Indexfull {
 						akasshort = append(akasshort, imdbAka{
 							Tconst: record[0],
-							Title:  html.UnescapeString(csvsetdefault(record[2], "")),
-							Slug:   StringToSlug(html.UnescapeString(csvsetdefault(record[2], ""))),
+							Title:  UnescapeString(csvsetdefault(record[2], "")),
+							Slug:   StringToSlug(UnescapeString(csvsetdefault(record[2], ""))),
 							Region: csvsetdefault(record[3], ""),
 						})
 					} else {
 						akasshort = append(akasshort, imdbAka{
 							Tconst:          record[0],
 							Ordering:        csvgetint(record[1]),
-							Title:           html.UnescapeString(csvsetdefault(record[2], "")),
-							Slug:            StringToSlug(html.UnescapeString(csvsetdefault(record[2], ""))),
+							Title:           UnescapeString(csvsetdefault(record[2], "")),
+							Slug:            StringToSlug(UnescapeString(csvsetdefault(record[2], ""))),
 							Region:          csvsetdefault(record[3], ""),
 							Language:        csvsetdefault(record[4], ""),
 							Types:           csvsetdefault(record[5], ""),
@@ -731,13 +734,31 @@ func mapDecomposeUnavailable(r rune) rune {
 	return r
 }
 
+func UnescapeString(instr string) string {
+	if strings.Contains(instr, "&") || strings.Contains(instr, "%") {
+		return html.UnescapeString(instr)
+	} else {
+		return instr
+	}
+}
+
 //var Transformer transform.Transformer = transform.Chain(norm.NFD, runes.Remove(runes.In(unicode.Mn)), norm.NFC)
 var transformer transform.Transformer = transform.Chain(runes.Map(mapDecomposeUnavailable), norm.NFD, runes.Remove(runes.In(unicode.Mn)), norm.NFC)
 
 //no chinese or cyrilic supported
 func StringToSlug(instr string) string {
 	instr = strings.Replace(instr, "\u00df", "ss", -1) // ß to ss handling
-	instr = strings.ToLower(html.UnescapeString(instr))
+	if strings.Contains(instr, "&") || strings.Contains(instr, "%") {
+		instr = strings.ToLower(html.UnescapeString(instr))
+	} else {
+		instr = strings.ToLower(instr)
+	}
+	if strings.Contains(instr, "\\u") {
+		instr2, err := strconv.Unquote("\"" + instr + "\"")
+		if err != nil {
+			instr = instr2
+		}
+	}
 	instr = strings.Replace(instr, "ä", "ae", -1)
 	instr = strings.Replace(instr, "ö", "oe", -1)
 	instr = strings.Replace(instr, "ü", "ue", -1)

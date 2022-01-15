@@ -1,7 +1,12 @@
 package utils
 
 import (
+	"os"
+	"os/exec"
+	"regexp"
+	"runtime"
 	"strings"
+	"time"
 
 	"github.com/Kellerman81/go_media_downloader/apiexternal"
 	"github.com/Kellerman81/go_media_downloader/config"
@@ -11,7 +16,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/logger"
 	"github.com/Kellerman81/go_media_downloader/scanner"
 	"github.com/Kellerman81/go_media_downloader/searcher"
-	"github.com/remeh/sizedwaitgroup"
+	"github.com/Kellerman81/go_media_downloader/sizedwaitgroup"
 )
 
 func jobImportFileCheck(file string, dbtype string, wg *sizedwaitgroup.SizedWaitGroup) {
@@ -45,6 +50,107 @@ func jobImportFileCheck(file string, dbtype string, wg *sizedwaitgroup.SizedWait
 			}
 		}
 	}
+}
+
+func InitRegex() {
+
+	ident, _ := regexp.Compile(`(?i)s?[0-9]{1,4}((?:(?:(?: )?-?(?: )?[ex][0-9]{1,3})+))|(\d{2,4}(?:\.|-| |_)\d{1,2}(?:\.|-| |_)\d{1,2})(?:\b|_)`)
+	title, _ := regexp.Compile(`^(.*)(?i)(?:(?:\.| - |-)S(?:[0-9]+)(?: )?[ex](?:[0-9]{1,3})(?:[^0-9]|$))`)
+
+	config.RegexSeriesIdentifier = *ident
+	config.RegexSeriesTitle = *title
+}
+
+func InitialFillSeries() {
+	logger.Log.Infoln("Starting initial DB fill for series")
+
+	for _, idxserie := range config.ConfigGetPrefix("serie_") {
+		if !config.ConfigCheck(idxserie.Name) {
+			continue
+		}
+		cfg_serie := config.ConfigGet(idxserie.Name).Data.(config.MediaTypeConfig)
+
+		job := strings.ToLower("feeds")
+		dbresult, _ := database.InsertArray("job_histories", []string{"job_type", "job_group", "job_category", "started"},
+			[]interface{}{job, cfg_serie.Name, "Serie", time.Now()})
+		for idxlist := range cfg_serie.Lists {
+			Importnewseriessingle(idxserie.Name, cfg_serie.Lists[idxlist].Name)
+		}
+		dbid, _ := dbresult.LastInsertId()
+		database.UpdateColumn("job_histories", "ended", time.Now(), database.Query{Where: "id=?", WhereArgs: []interface{}{dbid}})
+
+	}
+	for _, idxserie := range config.ConfigGetPrefix("serie_") {
+		if !config.ConfigCheck(idxserie.Name) {
+			continue
+		}
+		cfg_serie := config.ConfigGet(idxserie.Name).Data.(config.MediaTypeConfig)
+
+		job := strings.ToLower("datafull")
+		dbresult, _ := database.InsertArray("job_histories", []string{"job_type", "job_group", "job_category", "started"},
+			[]interface{}{job, cfg_serie.Name, "Serie", time.Now()})
+		Getnewepisodes(idxserie.Name)
+		dbid, _ := dbresult.LastInsertId()
+		database.UpdateColumn("job_histories", "ended", time.Now(), database.Query{Where: "id=?", WhereArgs: []interface{}{dbid}})
+
+	}
+}
+
+func InitialFillMovies() {
+	logger.Log.Infoln("Starting initial DB fill for movies")
+
+	FillImdb()
+
+	for _, idxmovie := range config.ConfigGetPrefix("movie_") {
+		if !config.ConfigCheck(idxmovie.Name) {
+			continue
+		}
+		cfg_movie := config.ConfigGet(idxmovie.Name).Data.(config.MediaTypeConfig)
+
+		job := strings.ToLower("feeds")
+		dbresult, _ := database.InsertArray("job_histories", []string{"job_type", "job_group", "job_category", "started"},
+			[]interface{}{job, cfg_movie.Name, "Movie", time.Now()})
+		for idxlist := range cfg_movie.Lists {
+			Importnewmoviessingle(idxmovie.Name, cfg_movie.Lists[idxlist].Name)
+		}
+		dbid, _ := dbresult.LastInsertId()
+		database.UpdateColumn("job_histories", "ended", time.Now(), database.Query{Where: "id=?", WhereArgs: []interface{}{dbid}})
+
+	}
+
+	for _, idxmovie := range config.ConfigGetPrefix("movie_") {
+		if !config.ConfigCheck(idxmovie.Name) {
+			continue
+		}
+		cfg_movie := config.ConfigGet(idxmovie.Name).Data.(config.MediaTypeConfig)
+
+		job := strings.ToLower("datafull")
+		dbresult, _ := database.InsertArray("job_histories", []string{"job_type", "job_group", "job_category", "started"},
+			[]interface{}{job, cfg_movie.Name, "Movie", time.Now()})
+
+		Getnewmovies(idxmovie.Name)
+		dbid, _ := dbresult.LastInsertId()
+		database.UpdateColumn("job_histories", "ended", time.Now(), database.Query{Where: "id=?", WhereArgs: []interface{}{dbid}})
+
+	}
+}
+
+func FillImdb() {
+	file := "./init_imdb"
+	if runtime.GOOS == "windows" {
+		file = "init_imdb.exe"
+	}
+	cmd := exec.Command(file)
+	out, errexec := cmd.Output()
+	logger.Log.Infoln(string(out))
+	if scanner.CheckFileExist(file) && errexec == nil {
+		database.DBImdb.Close()
+		os.Remove("./imdb.db")
+		os.Rename("./imdbtemp.db", "./imdb.db")
+		database.DBImdb = database.InitImdbdb("info", "imdb")
+	}
+	cmd = nil
+	out = nil
 }
 
 type feedResults struct {

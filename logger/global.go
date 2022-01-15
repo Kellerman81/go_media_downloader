@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -210,7 +211,17 @@ var transformer transform.Transformer = transform.Chain(runes.Map(mapDecomposeUn
 //no chinese or cyrilic supported
 func StringToSlug(instr string) string {
 	instr = strings.Replace(instr, "\u00df", "ss", -1) // ß to ss handling
-	instr = strings.ToLower(html.UnescapeString(instr))
+	if strings.Contains(instr, "&") || strings.Contains(instr, "%") {
+		instr = strings.ToLower(html.UnescapeString(instr))
+	} else {
+		instr = strings.ToLower(instr)
+	}
+	if strings.Contains(instr, "\\u") {
+		instr2, err := strconv.Unquote("\"" + instr + "\"")
+		if err != nil {
+			instr = instr2
+		}
+	}
 	instr = strings.Replace(instr, "ä", "ae", -1)
 	instr = strings.Replace(instr, "ö", "oe", -1)
 	instr = strings.Replace(instr, "ü", "ue", -1)
@@ -261,7 +272,18 @@ func StringToSlug(instr string) string {
 
 func Path(s string, allowslash bool) string {
 	// Start with lowercase string
-	filePath := html.UnescapeString(s)
+	filePath := ""
+	if strings.Contains(s, "&") || strings.Contains(s, "%") {
+		filePath = html.UnescapeString(s)
+	} else {
+		filePath = s
+	}
+	if strings.Contains(filePath, "\\u") {
+		filePath2, err := strconv.Unquote("\"" + filePath + "\"")
+		if err != nil {
+			filePath = filePath2
+		}
+	}
 
 	filePath = strings.Replace(filePath, "..", "", -1)
 	filePath = path.Clean(filePath)
@@ -272,7 +294,6 @@ func Path(s string, allowslash bool) string {
 		filePath = StringReplaceArray(filePath, []string{"\\", "/", ":", "*", "?", "\"", "<", ">", "|"}, "")
 		//filePath = regexPathDisallowSlash.ReplaceAllString(filePath, "")
 	}
-	filePath = html.UnescapeString(filePath)
 	filePath = strings.Trim(filePath, " ")
 
 	// NB this may be of length 0, caller must check
@@ -318,6 +339,16 @@ func CheckStringArray(array []string, find string) bool {
 		}
 	}
 	return false
+}
+
+func FindAndDeleteStringArray(array []string, item string) []string {
+	new := array[:0]
+	for _, i := range array {
+		if i != item {
+			new = append(new, i)
+		}
+	}
+	return new
 }
 
 func TrimStringInclAfterString(s string, search string) string {

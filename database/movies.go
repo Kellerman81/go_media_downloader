@@ -210,7 +210,7 @@ type DbmovieTitle struct {
 func (movie *Dbmovie) GetTitles(allowed []string, queryimdb bool, querytmdb bool, querytrakt bool) []DbmovieTitle {
 	c := []DbmovieTitle{}
 
-	processed := make(map[string]bool)
+	processed := []string{}
 	if queryimdb {
 		queryimdbid := movie.ImdbID
 		if !strings.HasPrefix(movie.ImdbID, "tt") {
@@ -230,8 +230,7 @@ func (movie *Dbmovie) GetTitles(allowed []string, queryimdb bool, querytmdb bool
 				continue
 			}
 			c = append(c, DbmovieTitle{DbmovieID: movie.ID, Title: akarow.Title, Slug: akarow.Slug, Region: akarow.Region})
-
-			processed[akarow.Title] = true
+			processed = append(processed, akarow.Title)
 		}
 	}
 	if querytmdb {
@@ -249,10 +248,10 @@ func (movie *Dbmovie) GetTitles(allowed []string, queryimdb bool, querytmdb bool
 				if !regionok && len(allowed) >= 1 {
 					continue
 				}
-				if _, ok := processed[row.Title]; !ok {
+				if !logger.CheckStringArray(processed, row.Title) {
 					c = append(c, DbmovieTitle{DbmovieID: movie.ID, Title: row.Title, Slug: logger.StringToSlug(row.Title), Region: row.Iso31661})
 
-					processed[row.Title] = true
+					processed = append(processed, row.Title)
 				}
 			}
 		} else {
@@ -275,17 +274,13 @@ func (movie *Dbmovie) GetTitles(allowed []string, queryimdb bool, querytmdb bool
 				if !regionok && len(allowed) >= 1 {
 					continue
 				}
-				if _, ok := processed[row.Title]; !ok {
+				if !logger.CheckStringArray(processed, row.Title) {
 					c = append(c, DbmovieTitle{DbmovieID: movie.ID, Title: row.Title, Slug: logger.StringToSlug(row.Title), Region: row.Country})
 
-					processed[row.Title] = true
+					processed = append(processed, row.Title)
 				}
 			}
 		}
-	}
-
-	for key := range processed {
-		delete(processed, key)
 	}
 	return c
 }
@@ -350,7 +345,11 @@ func (movie *Dbmovie) GetTmdbMetadata(overwrite bool) {
 					movie.Adult = moviedbdetails.Adult
 				}
 				if movie.Title == "" || overwrite {
-					movie.Title = html.UnescapeString(moviedbdetails.Title)
+					if strings.Contains(moviedbdetails.Title, "&") || strings.Contains(moviedbdetails.Title, "%") {
+						movie.Title = html.UnescapeString(moviedbdetails.Title)
+					} else {
+						movie.Title = moviedbdetails.Title
+					}
 				}
 				if movie.Slug == "" || overwrite {
 					movie.Slug = logger.StringToSlug(movie.Title)
@@ -427,7 +426,11 @@ func (movie *Dbmovie) GetOmdbMetadata(overwrite bool) {
 	omdbdetails, founddetail := apiexternal.OmdbApi.GetMovie(movie.ImdbID)
 	if founddetail == nil {
 		if movie.Title == "" || overwrite {
-			movie.Title = html.UnescapeString(omdbdetails.Title)
+			if strings.Contains(omdbdetails.Title, "&") || strings.Contains(omdbdetails.Title, "%") {
+				movie.Title = html.UnescapeString(omdbdetails.Title)
+			} else {
+				movie.Title = omdbdetails.Title
+			}
 		}
 		if movie.Slug == "" || overwrite {
 			movie.Slug = logger.StringToSlug(movie.Title)
@@ -458,7 +461,11 @@ func (movie *Dbmovie) GetTraktMetadata(overwrite bool) {
 	traktdetails, err := apiexternal.TraktApi.GetMovie(movie.ImdbID)
 	if err == nil {
 		if movie.Title == "" || overwrite {
-			movie.Title = html.UnescapeString(traktdetails.Title)
+			if strings.Contains(traktdetails.Title, "&") || strings.Contains(traktdetails.Title, "%") {
+				movie.Title = html.UnescapeString(traktdetails.Title)
+			} else {
+				movie.Title = traktdetails.Title
+			}
 		}
 		if movie.Slug == "" || overwrite {
 			movie.Slug = traktdetails.Ids.Slug
@@ -572,7 +579,11 @@ func (movie *Dbmovie) GetMetadata(queryimdb bool, querytmdb bool, queryomdb bool
 						movie.Adult = moviedbdetails.Adult
 					}
 					if movie.Title == "" {
-						movie.Title = html.UnescapeString(moviedbdetails.Title)
+						if strings.Contains(moviedbdetails.Title, "&") || strings.Contains(moviedbdetails.Title, "%") {
+							movie.Title = html.UnescapeString(moviedbdetails.Title)
+						} else {
+							movie.Title = moviedbdetails.Title
+						}
 					}
 					if movie.Slug == "" {
 						movie.Slug = logger.StringToSlug(movie.Title)
@@ -649,7 +660,11 @@ func (movie *Dbmovie) GetMetadata(queryimdb bool, querytmdb bool, queryomdb bool
 			omdbdetails, founddetail := apiexternal.OmdbApi.GetMovie(movie.ImdbID)
 			if founddetail == nil {
 				if movie.Title == "" {
-					movie.Title = html.UnescapeString(omdbdetails.Title)
+					if strings.Contains(omdbdetails.Title, "&") || strings.Contains(omdbdetails.Title, "%") {
+						movie.Title = html.UnescapeString(omdbdetails.Title)
+					} else {
+						movie.Title = omdbdetails.Title
+					}
 				}
 				if movie.Slug == "" {
 					movie.Slug = logger.StringToSlug(movie.Title)
@@ -680,7 +695,11 @@ func (movie *Dbmovie) GetMetadata(queryimdb bool, querytmdb bool, queryomdb bool
 		traktdetails, err := apiexternal.TraktApi.GetMovie(movie.ImdbID)
 		if err == nil {
 			if movie.Title == "" {
-				movie.Title = html.UnescapeString(traktdetails.Title)
+				if strings.Contains(traktdetails.Title, "&") || strings.Contains(traktdetails.Title, "%") {
+					movie.Title = html.UnescapeString(traktdetails.Title)
+				} else {
+					movie.Title = traktdetails.Title
+				}
 			}
 			if movie.Slug == "" {
 				movie.Slug = traktdetails.Ids.Slug

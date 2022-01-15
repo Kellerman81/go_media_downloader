@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/RussellLuo/slidingwindow"
+	"github.com/Kellerman81/go_media_downloader/slidingwindow"
 	"golang.org/x/oauth2"
 	"golang.org/x/time/rate"
 )
@@ -169,7 +169,7 @@ type traktClient struct {
 
 var TraktApi *traktClient
 
-func NewTraktClient(clientid string, clientsecret string, token oauth2.Token, seconds int, calls int) {
+func NewTraktClient(clientid string, clientsecret string, token oauth2.Token, seconds int, calls int, disabletls bool) {
 	if seconds == 0 {
 		seconds = 1
 	}
@@ -191,7 +191,7 @@ func NewTraktClient(clientid string, clientsecret string, token oauth2.Token, se
 		ApiKey:       clientid,
 		ClientID:     clientid,
 		ClientSecret: clientsecret,
-		Client:       NewClient(rl, limiter),
+		Client:       NewClient(disabletls, rl, limiter),
 		Auth:         conf,
 		Token:        &token}
 }

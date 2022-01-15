@@ -5,7 +5,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/RussellLuo/slidingwindow"
+	"github.com/Kellerman81/go_media_downloader/slidingwindow"
 	"golang.org/x/time/rate"
 )
 
@@ -50,7 +50,7 @@ type omdbClient struct {
 
 var OmdbApi *omdbClient
 
-func NewOmdbClient(apikey string, seconds int, calls int) {
+func NewOmdbClient(apikey string, seconds int, calls int, disabletls bool) {
 	if seconds == 0 {
 		seconds = 1
 	}
@@ -59,7 +59,7 @@ func NewOmdbClient(apikey string, seconds int, calls int) {
 	}
 	rl := rate.NewLimiter(rate.Every(time.Duration(seconds)*time.Second), calls) // 50 request every 10 seconds
 	limiter, _ := slidingwindow.NewLimiter(time.Duration(seconds)*time.Second, int64(calls), func() (slidingwindow.Window, slidingwindow.StopFunc) { return slidingwindow.NewLocalWindow() })
-	OmdbApi = &omdbClient{OmdbApiKey: apikey, Client: NewClient(rl, limiter)}
+	OmdbApi = &omdbClient{OmdbApiKey: apikey, Client: NewClient(disabletls, rl, limiter)}
 }
 
 func (o *omdbClient) GetMovie(imdbid string) (omDBMovie, error) {
