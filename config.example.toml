@@ -55,6 +55,11 @@ tmdb_limiter_calls=20 # max limiter_calls in limiter_seconds
 omdb_limiter_seconds=1 # will only change after restart
 omdb_limiter_calls=10 # max limiter_calls in limiter_seconds
 
+tmdb_disable_tls_verify = true  # disables ssl checks
+omdb_disable_tls_verify = true  # disables ssl checks
+tvdb_disable_tls_verify = true  # disables ssl checks
+trakt_disable_tls_verify = true  # disables ssl checks
+
 ffprobe_path="" #Path where the ffprobe file is located in (without the actual file) - Linux Users should install with package manager (ex. apt-get -y install ffmpeg) - Windows Users please download https://www.gyan.dev/ffmpeg/builds/ffmpeg-git-github
 
 ##### imdb configuaration #####
@@ -318,6 +323,7 @@ limiter_seconds=1 # will only change after restart
 limiter_calls=1 # max limiter_calls in limiter_seconds
 max_age=2300 # Max Age of Published Release (in days) - skip or set to 0 to ignore
 output_as_json='true' # Use Json output - might work better with some indexers - please use /search/list/ api to check  (adds &o=json to the call) - from benchmark json is also more resource intensive and xml is the default output
+disable_tls_verify = true  # disables ssl checks
 
 [[indexers]]
 name="jackett1337x" ## Example for torrents via jackett
@@ -332,6 +338,7 @@ rss_entries_loop = 2 # x rss calls x=2 == 2 api calls with 2*maxrss results - wi
 limiter_seconds=1
 limiter_calls=1 # max limiter_calls in limiter_seconds
 output_as_json='false' # Jackett doesn't support json output 
+disable_tls_verify = true  # disables ssl checks - improves performance a bit
 
 ### paths ###
 

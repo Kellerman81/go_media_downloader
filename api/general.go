@@ -4,11 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
-	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
@@ -16,12 +12,11 @@ import (
 	"github.com/Kellerman81/go_media_downloader/apiexternal"
 	"github.com/Kellerman81/go_media_downloader/config"
 	"github.com/Kellerman81/go_media_downloader/database"
-	"github.com/Kellerman81/go_media_downloader/logger"
 	"github.com/Kellerman81/go_media_downloader/parser"
-	"github.com/Kellerman81/go_media_downloader/scanner"
 	"github.com/Kellerman81/go_media_downloader/scheduler"
 	"github.com/Kellerman81/go_media_downloader/structure"
 	"github.com/Kellerman81/go_media_downloader/tasks"
+	"github.com/Kellerman81/go_media_downloader/utils"
 	gin "github.com/gin-gonic/gin"
 )
 
@@ -86,8 +81,8 @@ func apiQueueList(ctx *gin.Context) {
 	}
 
 	var r []tasks.Job
-	for _, value := range tasks.GlobalQueue.Queue {
-		r = append(r, value)
+	for _, value := range tasks.GlobalQueue {
+		r = append(r, value.Queue)
 	}
 	ctx.JSON(http.StatusOK, r)
 }
@@ -172,8 +167,6 @@ func apiTraktGetStoreToken(ctx *gin.Context) {
 	apiexternal.TraktApi.Token = token
 
 	config.UpdateCfgEntry(config.Conf{Name: "trakt_token", Data: *token})
-
-	config.ConfigDB.Set("trakt_token", *token)
 	ctx.JSON(http.StatusOK, *token)
 
 }
@@ -281,23 +274,8 @@ func apiFillImdb(ctx *gin.Context) {
 		return
 	}
 	//go utils.InitFillImdb()
-	file := "./init_imdb"
-	if runtime.GOOS == "windows" {
-		file = "init_imdb.exe"
-	}
-	go func() {
-		out, errexec := exec.Command(file).Output()
-		logger.Log.Infoln(string(out))
 
-		if !scanner.CheckFileExist(file) && errexec == nil {
-			database.DBImdb.Close()
-			os.Remove("./imdb.db")
-			os.Rename("./imdbtemp.db", "./imdb.db")
-			database.DBImdb = database.InitImdbdb("info", "imdb")
-			database.DBImdb.SetMaxOpenConns(5)
-			debug.FreeOSMemory()
-		}
-	}()
+	go utils.FillImdb()
 
 	ctx.JSON(http.StatusOK, "ok")
 }
@@ -354,8 +332,8 @@ func apiSchedulerList(ctx *gin.Context) {
 		return
 	}
 	var r []tasks.JobSchedule
-	for _, value := range tasks.GlobalSchedules.Schedule {
-		r = append(r, value)
+	for _, value := range tasks.GlobalSchedules {
+		r = append(r, value.Schedule)
 	}
 	ctx.JSON(http.StatusOK, r)
 }
@@ -668,10 +646,6 @@ func apiConfigClear(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
-	keys := config.ConfigGetAll()
-	for _, idx := range keys {
-		config.ConfigDB.Delete(idx.Name)
-	}
 	config.ClearCfg()
 	config.WriteCfg()
 	ctx.JSON(http.StatusOK, config.ConfigGetAll())
@@ -708,7 +682,6 @@ func apiConfigDelete(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
-	config.ConfigDB.Delete(ctx.Param("name"))
 	config.DeleteCfgEntry(ctx.Param("name"))
 	config.WriteCfg()
 	ctx.JSON(http.StatusOK, config.ConfigGetAll())
@@ -855,7 +828,7 @@ func apiConfigUpdate(ctx *gin.Context) {
 // @Produce  json
 // @Param type path string true "Type Name: ex. quality"
 // @Param apikey query string true "apikey"
-// @Success 200 {object} [map[string]interface{}]
+// @Success 200 {object} map[string]interface{}
 // @Failure 401 {object} string
 // @Router /api/config/type/{type} [get]
 func apiListConfigType(ctx *gin.Context) {
@@ -920,7 +893,7 @@ func apiNamingGenerate(ctx *gin.Context) {
 			config.PathsConfig{},
 		)
 		m, _ := s.ParseFile(cfg.FilePath, true, filepath.Dir(cfg.FilePath), false)
-		m, _ = s.ParseFileAdditional(cfg.FilePath, m, filepath.Dir(cfg.FilePath), false, 0)
+		s.ParseFileAdditional(cfg.FilePath, &m, filepath.Dir(cfg.FilePath), false, 0)
 
 		foldername, filename := s.GenerateNamingTemplate(cfg.FilePath, m, movie, database.Serie{}, "", database.SerieEpisode{}, "", []int{})
 		ctx.JSON(http.StatusOK, gin.H{"foldername": foldername, "filename": filename})
@@ -936,7 +909,7 @@ func apiNamingGenerate(ctx *gin.Context) {
 			config.PathsConfig{},
 		)
 		m, _ := s.ParseFile(cfg.FilePath, true, filepath.Dir(cfg.FilePath), false)
-		m, _ = s.ParseFileAdditional(cfg.FilePath, m, filepath.Dir(cfg.FilePath), false, 0)
+		s.ParseFileAdditional(cfg.FilePath, &m, filepath.Dir(cfg.FilePath), false, 0)
 
 		_, episodes, _, serietitle, episodetitle, seriesEpisode, _, _ := s.GetSeriesEpisodes(series, cfg.FilePath, m, filepath.Dir(cfg.FilePath))
 
@@ -978,13 +951,14 @@ func apiStructure(ctx *gin.Context) {
 		return
 	}
 
+	getconfig := ""
 	if strings.EqualFold(cfg.Grouptype, "movie") {
-		cfg.Configentry = "movie_" + cfg.Configentry
+		getconfig = "movie_" + cfg.Configentry
 	}
 	if strings.EqualFold(cfg.Grouptype, "series") {
-		cfg.Configentry = "serie_" + cfg.Configentry
+		getconfig = "serie_" + cfg.Configentry
 	}
-	media := config.ConfigGet(cfg.Configentry).Data.(config.MediaTypeConfig)
+	media := config.ConfigGet(getconfig).Data.(config.MediaTypeConfig)
 	if media.Name != cfg.Configentry {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "media config not found"})
 		return

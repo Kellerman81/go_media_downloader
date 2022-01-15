@@ -2,42 +2,27 @@ package config
 
 import (
 	"strings"
-	"sync"
 
 	"github.com/Kellerman81/go_media_downloader/logger"
-	"github.com/recoilme/pudge"
 )
 
-var ConfigDB *pudge.Db
-
-//var configEntries map[string]interface{}
-var cfglock = sync.RWMutex{}
-
-func OpenConfig(file string) (db *pudge.Db, err error) {
-	cfg := &pudge.Config{
-		SyncInterval: 1} // every second fsync
-	mydb, err := pudge.Open(file, cfg)
-	configEntries = []Conf{}
-	return mydb, err
-}
-
-func ConfigCheck(key string) bool {
-	key = strings.Replace(key, "list_list_", "list_", 1)
-	key = strings.Replace(key, "path_path_", "path_", 1)
-	key = strings.Replace(key, "indexer_indexer_", "indexer_", 1)
-	key = strings.Replace(key, "downloader_downloader_", "downloader_", 1)
-	key = strings.Replace(key, "regex_regex_", "regex_", 1)
-	key = strings.Replace(key, "notification_notification_", "notification_", 1)
-	key = strings.Replace(key, "scheduler_scheduler_", "scheduler_", 1)
-	key = strings.Replace(key, "movie_movie_", "movie_", 1)
-	key = strings.Replace(key, "serie_serie_", "serie_", 1)
-	key = strings.Replace(key, "quality_quality_", "quality_", 1)
-	if key != "general" && key != "imdb" && key != "trakt_token" {
-		if !strings.Contains(key, "_") {
-			logger.Log.Errorln("Config not found: ", key)
-			return false
-		}
+func checkduplicateprefix(key string, prefix string) string {
+	if strings.HasPrefix(key, prefix+prefix) {
+		return strings.TrimPrefix(key, prefix)
 	}
+	return key
+}
+func ConfigCheck(key string) bool {
+	// key = checkduplicateprefix(key, "list_")
+	// key = checkduplicateprefix(key, "path_")
+	// key = checkduplicateprefix(key, "indexer_")
+	// key = checkduplicateprefix(key, "downloader_")
+	// key = checkduplicateprefix(key, "regex_")
+	// key = checkduplicateprefix(key, "notification_")
+	// key = checkduplicateprefix(key, "scheduler_")
+	// key = checkduplicateprefix(key, "movie_")
+	// key = checkduplicateprefix(key, "serie_")
+	// key = checkduplicateprefix(key, "quality_")
 	for idx := range configEntries {
 		if configEntries[idx].Name == key {
 			return true

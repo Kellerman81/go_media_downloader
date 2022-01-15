@@ -3,7 +3,6 @@ package tasks
 import (
 	"errors"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -27,11 +26,12 @@ type Dispatcher struct {
 	quit          chan bool
 	active        bool
 	name          string
-	DispatchQueue DispatcherQueue
+	DispatchQueue []DispatcherQueue
 }
 
 type DispatcherQueue struct {
-	Queue map[string]Job
+	Name  string
+	Queue Job
 }
 
 type JobSchedule struct {
@@ -50,29 +50,68 @@ type JobSchedule struct {
 }
 
 type JobSchedules struct {
-	Schedule map[string]JobSchedule
+	Name     string
+	Schedule JobSchedule
 }
 
-var Mu sync.Mutex
-var GlobalQueue DispatcherQueue
-var GlobalSchedules JobSchedules
+var GlobalQueue []DispatcherQueue
+var GlobalSchedules []JobSchedules
 
-func (d *JobSchedules) addQueue(job JobSchedule) {
-	Mu.Lock()
-	defer Mu.Unlock()
-	d.Schedule[job.Id] = job
+func findAndDeleteQueue(item string) {
+	new := GlobalQueue[:0]
+	for _, i := range GlobalQueue {
+		if i.Name != item {
+			new = append(new, i)
+		}
+	}
+	GlobalQueue = new
 }
-func (d *JobSchedules) removeQueue(job JobSchedule) {
-	Mu.Lock()
-	defer Mu.Unlock()
-	delete(d.Schedule, job.Id)
+
+func findAndDeleteSchedule(item string) {
+	new := GlobalSchedules[:0]
+	for _, i := range GlobalSchedules {
+		if i.Name != item {
+			new = append(new, i)
+		}
+	}
+	GlobalSchedules = new
+}
+
+func checkSchedule(find string) bool {
+	for idx := range GlobalSchedules {
+		if GlobalSchedules[idx].Name == find {
+			return true
+		}
+	}
+	return false
+}
+
+func getSchedule(find string) JobSchedules {
+	for idx := range GlobalSchedules {
+		if GlobalSchedules[idx].Name == find {
+			return GlobalSchedules[idx]
+		}
+	}
+	return JobSchedules{}
+}
+
+func updateSchedule(find string, schedule JobSchedule) {
+	for idx := range GlobalSchedules {
+		if GlobalSchedules[idx].Name == find {
+			GlobalSchedules[idx].Schedule = schedule
+		}
+	}
+}
+func addScheduleQueue(job JobSchedule) {
+	GlobalSchedules = append(GlobalSchedules, JobSchedules{Name: job.Id, Schedule: job})
+}
+func removeScheduleQueue(job JobSchedule) {
+	findAndDeleteSchedule(job.Id)
 }
 func updateStartedSchedule(job Job) {
-	Mu.Lock()
-	defer Mu.Unlock()
 	findname := job.SchedulerId
-	if _, ok := GlobalSchedules.Schedule[findname]; ok {
-		jobschedule := GlobalSchedules.Schedule[findname]
+	if checkSchedule(findname) {
+		jobschedule := getSchedule(findname).Schedule
 		if jobschedule.ScheduleTyp == "cron" {
 			jobschedule.NextRun = jobschedule.CronSchedule.Next(time.Now())
 			jobschedule.LastRun = time.Now()
@@ -80,46 +119,41 @@ func updateStartedSchedule(job Job) {
 			jobschedule.NextRun = time.Now().Add(jobschedule.Interval)
 			jobschedule.LastRun = time.Now()
 		}
-		GlobalSchedules.Schedule[findname] = jobschedule
+		updateSchedule(findname, jobschedule)
 	}
 }
 func updateIsRunningSchedule(job Job, isrunning bool) {
-	Mu.Lock()
-	defer Mu.Unlock()
 	findname := job.SchedulerId
-	if _, ok := GlobalSchedules.Schedule[findname]; ok {
-		jobschedule := GlobalSchedules.Schedule[findname]
+	if checkSchedule(findname) {
+		jobschedule := getSchedule(findname).Schedule
 		jobschedule.IsRunning = isrunning
-		GlobalSchedules.Schedule[findname] = jobschedule
+		updateSchedule(findname, jobschedule)
 	}
 }
-func (d *DispatcherQueue) addQueue(job Job) {
-	Mu.Lock()
-	defer Mu.Unlock()
-	d.Queue[job.ID] = job
+func (d *Dispatcher) addDispatcherQueue(job Job) {
+	d.DispatchQueue = append(d.DispatchQueue, DispatcherQueue{Name: job.Name, Queue: job})
 }
-func (d *DispatcherQueue) removeQueue(job Job) {
-	Mu.Lock()
-	defer Mu.Unlock()
-	delete(d.Queue, job.ID)
+func (d *Dispatcher) removeDispatcherQueue(job Job) {
+	new := d.DispatchQueue[:0]
+	for _, i := range d.DispatchQueue {
+		if i.Name != job.Name {
+			new = append(new, i)
+		}
+	}
+	d.DispatchQueue = new
 }
-func (d *DispatcherQueue) updateStartedQueue(job Job) {
-	Mu.Lock()
-	defer Mu.Unlock()
-	job.Started = time.Now()
-	d.Queue[job.ID] = job
+func updateStartedQueue(job Job) {
+	for idx := range GlobalQueue {
+		if GlobalQueue[idx].Name == job.Name {
+			GlobalQueue[idx].Queue.Started = time.Now()
+		}
+	}
 }
 
 // NewDispatcher creates a new dispatcher with the given
 // number of workers and buffers the job queue based on maxQueue.
 // It also initializes the channels for the worker pool and job queue
 func NewDispatcher(name string, maxWorkers int, maxQueue int) *Dispatcher {
-	if GlobalQueue.Queue == nil {
-		GlobalQueue.Queue = make(map[string]Job)
-	}
-	if GlobalSchedules.Schedule == nil {
-		GlobalSchedules.Schedule = make(map[string]JobSchedule)
-	}
 	return &Dispatcher{
 		name:       name,
 		maxWorkers: maxWorkers,
@@ -136,7 +170,7 @@ func (d *Dispatcher) Start() {
 	d.Crons = []*DispatchCron{}
 	d.workerPool = make(chan chan Job, d.maxWorkers)
 	d.jobQueue = make(chan Job, d.maxQueue)
-	d.DispatchQueue.Queue = make(map[string]Job, d.maxQueue)
+	d.DispatchQueue = []DispatcherQueue{}
 	d.quit = make(chan bool)
 
 	for i := 0; i < d.maxWorkers; i++ {
@@ -156,11 +190,11 @@ func (d *Dispatcher) Start() {
 					go func(job Job) {
 						jobChannel := <-d.workerPool
 						jobChannel <- job
-						d.DispatchQueue.removeQueue(job)
+						d.removeDispatcherQueue(job)
 					}(job)
 				} else {
-					d.DispatchQueue.removeQueue(job)
-					GlobalQueue.removeQueue(job)
+					d.removeDispatcherQueue(job)
+					findAndDeleteQueue(job.Name)
 				}
 			case <-d.quit:
 				return
@@ -204,15 +238,13 @@ func checkQueue(job string) bool {
 		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchupgradefulltitle_", "searchupgradefull_", 1))
 		alternatequeuejobnames = append(alternatequeuejobnames, strings.Replace(job, "searchupgradefulltitle_", "searchupgradeinc_", 1))
 	}
-	Mu.Lock()
-	defer Mu.Unlock()
-	for _, value := range GlobalQueue.Queue {
-		if value.Name == job && !value.Started.IsZero() {
+	for _, value := range GlobalQueue {
+		if value.Name == job && !value.Queue.Started.IsZero() {
 			return true
 		}
 		if len(alternatequeuejobnames) >= 1 {
 			for idx := range alternatequeuejobnames {
-				if value.Name == alternatequeuejobnames[idx] && !value.Started.IsZero() {
+				if value.Name == alternatequeuejobnames[idx] && !value.Queue.Started.IsZero() {
 					return true
 				}
 			}
@@ -256,8 +288,8 @@ func (d *Dispatcher) Dispatch(name string, run func()) error {
 	}
 	job := Job{Queue: d.name, ID: uuid.New().String(), Added: time.Now(), Name: name, Run: run}
 	d.jobQueue <- job
-	GlobalQueue.addQueue(job)
-	d.DispatchQueue.addQueue(job)
+	GlobalQueue = append(GlobalQueue, DispatcherQueue{Name: job.Name, Queue: job})
+	d.addDispatcherQueue(job)
 	return nil
 }
 
@@ -272,8 +304,8 @@ func (d *Dispatcher) DispatchIn(name string, run func(), duration time.Duration)
 		time.Sleep(duration)
 		job := Job{Queue: d.name, ID: uuid.New().String(), Added: time.Now(), Name: name, Run: run}
 		d.jobQueue <- job
-		GlobalQueue.addQueue(job)
-		d.DispatchQueue.addQueue(job)
+		GlobalQueue = append(GlobalQueue, DispatcherQueue{Name: job.Name, Queue: job})
+		d.addDispatcherQueue(job)
 	}()
 
 	return nil
@@ -289,7 +321,7 @@ func (d *Dispatcher) DispatchEvery(name string, run func(), interval time.Durati
 	t := time.NewTicker(interval)
 	schedulerid := uuid.New().String()
 	jobid := uuid.New().String()
-	GlobalSchedules.addQueue(JobSchedule{
+	addScheduleQueue(JobSchedule{
 		JobId:          jobid,
 		Id:             schedulerid,
 		JobName:        name,
@@ -308,8 +340,8 @@ func (d *Dispatcher) DispatchEvery(name string, run func(), interval time.Durati
 			case <-t.C:
 				job := Job{Queue: d.name, ID: jobid, Added: time.Now(), Name: name, Run: run, SchedulerId: schedulerid}
 				d.jobQueue <- job
-				GlobalQueue.addQueue(job)
-				d.DispatchQueue.addQueue(job)
+				GlobalQueue = append(GlobalQueue, DispatcherQueue{Name: job.Name, Queue: job})
+				d.addDispatcherQueue(job)
 			case <-dt.quit:
 				return
 			}
@@ -334,8 +366,8 @@ func (d *Dispatcher) DispatchCron(name string, run func(), cronStr string) (*Dis
 	cjob, err := dc.Cron.AddFunc(cronStr, func() {
 		job := Job{Queue: d.name, ID: jobid, Added: time.Now(), Name: name, Run: run, SchedulerId: schedulerid}
 		d.jobQueue <- job
-		GlobalQueue.addQueue(job)
-		d.DispatchQueue.addQueue(job)
+		GlobalQueue = append(GlobalQueue, DispatcherQueue{Name: job.Name, Queue: job})
+		d.addDispatcherQueue(job)
 	})
 	if err != nil {
 		return nil, errors.New("invalid cron definition")
@@ -343,7 +375,7 @@ func (d *Dispatcher) DispatchCron(name string, run func(), cronStr string) (*Dis
 
 	dc.Cron.Start()
 
-	GlobalSchedules.addQueue(JobSchedule{
+	addScheduleQueue(JobSchedule{
 		JobName:        name,
 		JobId:          jobid,
 		Id:             schedulerid,
@@ -369,7 +401,7 @@ type DispatchTicker struct {
 // Stop ends the execution cycle for the given ticker.
 func (dt *DispatchTicker) stop() {
 	dt.Ticker.Stop()
-	GlobalSchedules.removeQueue(JobSchedule{Id: dt.schedulerid})
+	removeScheduleQueue(JobSchedule{Id: dt.schedulerid})
 	dt.quit <- true
 }
 
@@ -389,5 +421,5 @@ func (c *DispatchCron) start() {
 }
 func (c *DispatchCron) remove(id cron.EntryID) {
 	c.Cron.Remove(id)
-	GlobalSchedules.removeQueue(JobSchedule{Id: c.schedulerid})
+	removeScheduleQueue(JobSchedule{Id: c.schedulerid})
 }

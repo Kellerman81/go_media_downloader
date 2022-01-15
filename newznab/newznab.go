@@ -1,6 +1,7 @@
 package newznab
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"encoding/xml"
 	"html"
@@ -13,7 +14,7 @@ import (
 
 	"github.com/Kellerman81/go_media_downloader/config"
 	"github.com/Kellerman81/go_media_downloader/logger"
-	"github.com/RussellLuo/slidingwindow"
+	"github.com/Kellerman81/go_media_downloader/slidingwindow"
 	"github.com/pkg/errors"
 	"golang.org/x/net/html/charset"
 	"golang.org/x/time/rate"
@@ -102,6 +103,9 @@ func (c *RLHTTPClient) DoJson(url string) (string, interface{}, error) {
 	//errd := ffjson.Unmarshal(data, &json1)
 
 	data, errdata := ioutil.ReadAll(resp.Body)
+	defer func() {
+		data = nil
+	}()
 	if errdata != nil {
 		return "", retint, errdata
 	}
@@ -132,10 +136,12 @@ func (c *RLHTTPClient) DoJson(url string) (string, interface{}, error) {
 }
 
 //NewClient return http client with a ratelimiter
-func NewRlClient(rl *rate.Limiter, rl2 *slidingwindow.Limiter) *RLHTTPClient {
+func NewRlClient(skiptlsverify bool, rl *rate.Limiter, rl2 *slidingwindow.Limiter) *RLHTTPClient {
 	c := &RLHTTPClient{
 		Client: &http.Client{Timeout: 10 * time.Second,
-			Transport: &http.Transport{MaxIdleConns: 30, MaxConnsPerHost: 10, DisableCompression: false, IdleConnTimeout: 30 * time.Second}},
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{InsecureSkipVerify: skiptlsverify},
+				MaxIdleConns:    30, MaxConnsPerHost: 10, DisableCompression: false, IdleConnTimeout: 30 * time.Second}},
 		Ratelimiter:   rl,
 		LimiterWindow: rl2,
 	}
@@ -167,13 +173,13 @@ func New(baseURL string, apikey string, userID int, insecure bool, debug bool, l
 		ApiBaseURL: baseURL,
 		ApiUserID:  userID,
 		Debug:      debug,
-		Client:     NewRlClient(rl, limiter),
+		Client:     NewRlClient(insecure, rl, limiter),
 	}
 	return &ret
 }
 
 // SearchWithTVDB returns NZBs for the given parameters
-func (c *Client) SearchWithTVDB(categories []int, tvDBID int, season int, episode int, additional_query_params string, customurl string, maxage int, outputasjson bool) ([]NZB, error) {
+func (c *Client) SearchWithTVDB(categories []int, tvDBID int, season int, episode int, additional_query_params string, customurl string, maxage int, outputasjson bool) (*[]NZB, error) {
 	var buildurl strings.Builder
 	buildurl.Grow(150 + len(additional_query_params))
 	if len(customurl) >= 1 {
@@ -202,7 +208,7 @@ func (c *Client) SearchWithTVDB(categories []int, tvDBID int, season int, episod
 }
 
 // SearchWithIMDB returns NZBs for the given parameters
-func (c *Client) SearchWithIMDB(categories []int, imdbID string, additional_query_params string, customurl string, maxage int, outputasjson bool) ([]NZB, error) {
+func (c *Client) SearchWithIMDB(categories []int, imdbID string, additional_query_params string, customurl string, maxage int, outputasjson bool) (*[]NZB, error) {
 	var buildurl strings.Builder
 	buildurl.Grow(150 + len(additional_query_params))
 	if len(customurl) >= 1 {
@@ -227,7 +233,7 @@ func (c *Client) SearchWithIMDB(categories []int, imdbID string, additional_quer
 }
 
 // SearchWithQuery returns NZBs for the given parameters
-func (c *Client) SearchWithQuery(categories []int, query string, searchType string, addquotes bool, additional_query_params string, customurl string, maxage int, outputasjson bool) ([]NZB, error) {
+func (c *Client) SearchWithQuery(categories []int, query string, searchType string, addquotes bool, additional_query_params string, customurl string, maxage int, outputasjson bool) (*[]NZB, error) {
 	var buildurl strings.Builder
 	buildurl.Grow(150 + len(query) + len(additional_query_params))
 	if len(customurl) >= 1 {
@@ -292,17 +298,17 @@ func (c *Client) SearchWithQueryUntilNZBID(categories []int, query string, searc
 	if err != nil {
 		return nil, err
 	}
-	nzbs := make([]NZB, 0, len(partition))
-	for idx := range partition {
-		if partition[idx].ID == id && id != "" {
-			return append(nzbs, partition[:idx]...), nil
+	nzbs := make([]NZB, 0, len((*partition)))
+	for idx := range *partition {
+		if (*partition)[idx].ID == id && id != "" {
+			return append(nzbs, (*partition)[:idx]...), nil
 		}
 	}
-	return append(nzbs, partition...), nil
+	return append(nzbs, (*partition)...), nil
 }
 
 // LoadRSSFeed returns up to <num> of the most recent NZBs of the given categories.
-func (c *Client) LoadRSSFeed(categories []int, num int, additional_query_params string, customapi string, customrssurl string, customrsscategory string, maxage int, outputasjson bool) ([]NZB, error) {
+func (c *Client) LoadRSSFeed(categories []int, num int, additional_query_params string, customapi string, customrssurl string, customrsscategory string, maxage int, outputasjson bool) (*[]NZB, error) {
 	return c.processurl(c.buildRssUrl(customrssurl, customrsscategory, customapi, additional_query_params, num, categories, 0, false), "", maxage, false)
 }
 
@@ -366,7 +372,7 @@ func (c *Client) buildRssUrl(customrssurl string, customrsscategory string, cust
 }
 
 // LoadRSSFeedUntilNZBID fetches NZBs until a given NZB id is reached.
-func (c *Client) LoadRSSFeedUntilNZBID(categories []int, num int, id string, maxRequests int, additional_query_params string, customapi string, customrssurl string, customrsscategory string, maxage int, outputasjson bool) ([]NZB, error) {
+func (c *Client) LoadRSSFeedUntilNZBID(categories []int, num int, id string, maxRequests int, additional_query_params string, customapi string, customrssurl string, customrsscategory string, maxage int, outputasjson bool) (*[]NZB, error) {
 	count := 0
 	nzbs := []NZB{}
 	for {
@@ -374,18 +380,22 @@ func (c *Client) LoadRSSFeedUntilNZBID(categories []int, num int, id string, max
 
 		partition, errp := c.processurl(buildurl, id, maxage, false)
 		if errp == nil {
-			if len(partition) == 0 {
+			if len((*partition)) == 0 {
 				break
 			}
-			for idx := range partition {
-				if partition[idx].ID == id && id != "" {
+			for idx := range *partition {
+				if (*partition)[idx].ID == id && id != "" {
+
 					if count == 0 {
-						return partition[:idx], nil
+						returnn := (*partition)[:idx]
+						return &returnn, nil
 					}
-					return append(nzbs, partition[:idx]...), nil
+					returnn := append(nzbs, (*partition)[:idx]...)
+
+					return &returnn, nil
 				}
 			}
-			nzbs = append(nzbs, partition...)
+			nzbs = append(nzbs, (*partition)...)
 		} else {
 			break
 		}
@@ -394,84 +404,106 @@ func (c *Client) LoadRSSFeedUntilNZBID(categories []int, num int, id string, max
 			break
 		}
 	}
-	return nzbs, nil
+	return &nzbs, nil
 
 }
 
-func (c *Client) processurl(url string, tillid string, maxage int, outputasjson bool) ([]NZB, error) {
+func (c *Client) processurl(url string, tillid string, maxage int, outputasjson bool) (*[]NZB, error) {
 	if outputasjson {
 		rettype, feed, err := c.Client.DoJson(url)
-
+		defer func() {
+			feed = nil
+		}()
 		if err != nil {
 			if err == errors.New("429") {
 				config.Slepping(false, 60)
 				rettype, feed, err = c.Client.DoJson(url)
 				if err != nil {
-					return []NZB{}, err
+					return &[]NZB{}, err
 				}
 			}
 			if err == errors.New("please wait") {
 				config.Slepping(false, 10)
 				rettype, feed, err = c.Client.DoJson(url)
 				if err != nil {
-					return []NZB{}, err
+					return &[]NZB{}, err
 				}
 			}
 		}
 		if rettype == "json1" {
-			return c.prepareNzbsJson1(feed.(SearchResponseJson1).Channel.Item, tillid, maxage), nil
+			nzbs := feed.(SearchResponseJson1).Channel.Item
+			return c.prepareNzbsJson1(&nzbs, tillid, maxage), nil
 		}
 		if rettype == "json2" {
-			return c.prepareNzbsJson2(feed.(SearchResponseJson2).Item, tillid, maxage), nil
+			nzbs := feed.(SearchResponseJson2).Item
+			return c.prepareNzbsJson2(&nzbs, tillid, maxage), nil
 		}
-		return []NZB{}, nil
+		return &[]NZB{}, nil
 	} else {
 		var feed SearchResponse
+		defer func() {
+			feed.NZBs = nil
+		}()
 		err := c.Client.DoXml(url, &feed)
 		if err != nil {
 			if err == errors.New("429") {
 				config.Slepping(false, 60)
 				err = c.Client.DoXml(url, &feed)
 				if err != nil {
-					return []NZB{}, err
+					return &[]NZB{}, err
 				}
 			}
 			if err == errors.New("please wait") {
 				config.Slepping(false, 10)
 				err = c.Client.DoXml(url, &feed)
 				if err != nil {
-					return []NZB{}, err
+					return &[]NZB{}, err
 				}
 			}
 		}
 		if c.Debug {
-			logger.Log.Debug("url: ", url)
-			logger.Log.Debug("Results: ", len(feed.NZBs))
+			logger.Log.Debug("url: ", url, " results ", len(feed.NZBs))
 		}
-		return c.prepareNzbs(feed.NZBs, tillid, maxage), nil
+		return c.prepareNzbs(&feed.NZBs, tillid, maxage), nil
 	}
 }
 
-func (c *Client) prepareNzbs(nzbs []RawNZB, tillid string, maxage int) []NZB {
+func (c *Client) prepareNzbs(nzbs *[]RawNZB, tillid string, maxage int) *[]NZB {
 	scantime := time.Now()
 	if maxage != 0 {
 		scantime = scantime.AddDate(0, 0, 0-maxage)
 	}
-	entries := make([]NZB, 0, len(nzbs))
-	for _, item := range nzbs {
+	entries := make([]NZB, 0, len((*nzbs)))
+	for _, item := range *nzbs {
 		var newEntry NZB
-		newEntry.Title = html.UnescapeString(item.Title)
-		newEntry.DownloadURL = html.UnescapeString(item.Enclosure.URL)
-		newEntry.SourceEndpoint = c.ApiBaseURL
-		newEntry.SourceAPIKey = c.Apikey
-		if item.Date != "" {
-			newEntry.PubDate, _ = parseDate(item.Date)
-			if maxage != 0 {
-				if newEntry.PubDate.Before(scantime) {
-					continue
+		if strings.Contains(item.Title, "&") || strings.Contains(item.Title, "%") {
+			newEntry.Title = html.UnescapeString(item.Title)
+		} else {
+			if strings.Contains(item.Title, "\\u") {
+				var err error
+				newEntry.Title, err = strconv.Unquote("\"" + item.Title + "\"")
+				if err != nil {
+					newEntry.Title = item.Title
 				}
+			} else {
+				newEntry.Title = item.Title
 			}
 		}
+		if strings.Contains(item.Enclosure.URL, "&amp") || strings.Contains(item.Enclosure.URL, "%") {
+			newEntry.DownloadURL = html.UnescapeString(item.Enclosure.URL)
+		} else {
+			newEntry.DownloadURL = item.Enclosure.URL
+		}
+		newEntry.SourceEndpoint = c.ApiBaseURL
+		//newEntry.SourceAPIKey = c.Apikey
+		// if item.Date != "" {
+		// 	newEntry.PubDate, _ = parseDate(item.Date)
+		// 	if maxage != 0 {
+		// 		if newEntry.PubDate.Before(scantime) {
+		// 			continue
+		// 		}
+		// 	}
+		// }
 		newEntry.IsTorrent = false
 		if strings.Contains(item.Enclosure.URL, ".torrent") || strings.Contains(item.Enclosure.URL, "magnet:?") {
 			newEntry.IsTorrent = true
@@ -497,32 +529,48 @@ func (c *Client) prepareNzbs(nzbs []RawNZB, tillid string, maxage int) []NZB {
 		}
 	}
 
-	return entries
+	return &entries
 }
 
-func (c *Client) prepareNzbsJson2(nzbs []RawNZBJson2, tillid string, maxage int) []NZB {
+func (c *Client) prepareNzbsJson2(nzbs *[]RawNZBJson2, tillid string, maxage int) *[]NZB {
 	scantime := time.Now()
 	if maxage != 0 {
 		scantime = scantime.AddDate(0, 0, 0-maxage)
 	}
-	entries := make([]NZB, 0, len(nzbs))
-	for _, item := range nzbs {
+	entries := make([]NZB, 0, len((*nzbs)))
+	for _, item := range *nzbs {
 		if len(item.Enclosure.URL) == 0 {
 			continue
 		}
 		var newEntry NZB
-		newEntry.Title = html.UnescapeString(item.Title)
-		newEntry.DownloadURL = html.UnescapeString(item.Enclosure.URL)
-		newEntry.SourceEndpoint = c.ApiBaseURL
-		newEntry.SourceAPIKey = c.Apikey
-		if item.Date != "" {
-			newEntry.PubDate, _ = parseDate(item.Date)
-			if maxage != 0 {
-				if newEntry.PubDate.Before(scantime) {
-					continue
+		if strings.Contains(item.Title, "&") || strings.Contains(item.Title, "%") {
+			newEntry.Title = html.UnescapeString(item.Title)
+		} else {
+			if strings.Contains(item.Title, "\\u") {
+				var err error
+				newEntry.Title, err = strconv.Unquote("\"" + item.Title + "\"")
+				if err != nil {
+					newEntry.Title = item.Title
 				}
+			} else {
+				newEntry.Title = item.Title
 			}
 		}
+		if strings.Contains(item.Enclosure.URL, "&amp") || strings.Contains(item.Enclosure.URL, "%") {
+			newEntry.DownloadURL = html.UnescapeString(item.Enclosure.URL)
+		} else {
+			newEntry.DownloadURL = item.Enclosure.URL
+		}
+		newEntry.SourceEndpoint = c.ApiBaseURL
+		//newEntry.SourceAPIKey = c.Apikey
+		// if item.Date != "" {
+		// 	newEntry.PubDate, _ = parseDate(item.Date)
+		// 	if maxage != 0 {
+		// 		if newEntry.PubDate.Before(scantime) {
+		// 			continue
+		// 		}
+		// 	}
+		// }
 		newEntry.IsTorrent = false
 		if strings.Contains(item.Enclosure.URL, ".torrent") || strings.Contains(item.Enclosure.URL, "magnet:?") {
 			newEntry.IsTorrent = true
@@ -554,32 +602,48 @@ func (c *Client) prepareNzbsJson2(nzbs []RawNZBJson2, tillid string, maxage int)
 		}
 	}
 
-	return entries
+	return &entries
 }
 
-func (c *Client) prepareNzbsJson1(nzbs []RawNZBJson1, tillid string, maxage int) []NZB {
+func (c *Client) prepareNzbsJson1(nzbs *[]RawNZBJson1, tillid string, maxage int) *[]NZB {
 	scantime := time.Now()
 	if maxage != 0 {
 		scantime = scantime.AddDate(0, 0, 0-maxage)
 	}
-	entries := make([]NZB, 0, len(nzbs))
-	for _, item := range nzbs {
+	entries := make([]NZB, 0, len((*nzbs)))
+	for _, item := range *nzbs {
 		if len(item.Enclosure.Attributes.URL) == 0 {
 			continue
 		}
 		var newEntry NZB
-		newEntry.Title = html.UnescapeString(item.Title)
-		newEntry.DownloadURL = html.UnescapeString(item.Enclosure.Attributes.URL)
-		newEntry.SourceEndpoint = c.ApiBaseURL
-		newEntry.SourceAPIKey = c.Apikey
-		if item.Date != "" {
-			newEntry.PubDate, _ = parseDate(item.Date)
-			if maxage != 0 {
-				if newEntry.PubDate.Before(scantime) {
-					continue
+		if strings.Contains(item.Title, "&") || strings.Contains(item.Title, "%") {
+			newEntry.Title = html.UnescapeString(item.Title)
+		} else {
+			if strings.Contains(item.Title, "\\u") {
+				var err error
+				newEntry.Title, err = strconv.Unquote("\"" + item.Title + "\"")
+				if err != nil {
+					newEntry.Title = item.Title
 				}
+			} else {
+				newEntry.Title = item.Title
 			}
 		}
+		if strings.Contains(item.Enclosure.Attributes.URL, "&amp") || strings.Contains(item.Enclosure.Attributes.URL, "%") {
+			newEntry.DownloadURL = html.UnescapeString(item.Enclosure.Attributes.URL)
+		} else {
+			newEntry.DownloadURL = item.Enclosure.Attributes.URL
+		}
+		newEntry.SourceEndpoint = c.ApiBaseURL
+		//newEntry.SourceAPIKey = c.Apikey
+		// if item.Date != "" {
+		// 	newEntry.PubDate, _ = parseDate(item.Date)
+		// 	if maxage != 0 {
+		// 		if newEntry.PubDate.Before(scantime) {
+		// 			continue
+		// 		}
+		// 	}
+		// }
 		newEntry.IsTorrent = false
 		if strings.Contains(item.Enclosure.Attributes.URL, ".torrent") || strings.Contains(item.Enclosure.Attributes.URL, "magnet:?") {
 			newEntry.IsTorrent = true
@@ -605,7 +669,7 @@ func (c *Client) prepareNzbsJson1(nzbs []RawNZBJson1, tillid string, maxage int)
 		}
 	}
 
-	return entries
+	return &entries
 }
 
 func saveAttributes(newEntry *NZB, name string, value string) {
@@ -613,62 +677,62 @@ func saveAttributes(newEntry *NZB, name string, value string) {
 
 	case "guid":
 		newEntry.ID = value
-	case "genre":
-		newEntry.Genre = value
+	// case "genre":
+	// 	newEntry.Genre = value
 	case "tvdbid":
 		newEntry.TVDBID = value
-	case "info":
-		newEntry.Info = value
+	// case "info":
+	// 	newEntry.Info = value
 	case "season":
 		newEntry.Season = value
 	case "episode":
 		newEntry.Episode = value
-	case "tvtitle":
-		newEntry.TVTitle = value
+	// case "tvtitle":
+	// 	newEntry.TVTitle = value
 	case "imdb":
 		newEntry.IMDBID = value
-	case "imdbtitle":
-		newEntry.IMDBTitle = value
-	case "coverurl":
-		newEntry.CoverURL = value
-	case "resolution":
-		newEntry.Resolution = value
-	case "poster":
-		newEntry.Poster = value
-	case "group":
-		newEntry.Group = value
-	case "infohash":
-		newEntry.InfoHash = value
-		newEntry.IsTorrent = true
-	case "category":
-		newEntry.Category = append(newEntry.Category, value)
-	case "tvairdate":
-		newEntry.AirDate, _ = parseDate(value)
-	case "usenetdate":
-		newEntry.UsenetDate, _ = parseDate(value)
+	// case "imdbtitle":
+	// 	newEntry.IMDBTitle = value
+	// case "coverurl":
+	// 	newEntry.CoverURL = value
+	// case "resolution":
+	// 	newEntry.Resolution = value
+	// case "poster":
+	// 	newEntry.Poster = value
+	// case "group":
+	// 	newEntry.Group = value
+	// case "infohash":
+	// 	newEntry.InfoHash = value
+	// 	newEntry.IsTorrent = true
+	// case "category":
+	// 	newEntry.Category = append(newEntry.Category, value)
+	// case "tvairdate":
+	// 	newEntry.AirDate, _ = parseDate(value)
+	// case "usenetdate":
+	// 	newEntry.UsenetDate, _ = parseDate(value)
 	case "size":
 		intValue, _ := strconv.ParseInt(value, 10, 64)
 		newEntry.Size = intValue
-	case "grabs":
-		intValue, _ := strconv.ParseInt(value, 10, 64)
-		newEntry.NumGrabs = int(intValue)
-	case "seeders":
-		intValue, _ := strconv.ParseInt(value, 10, 64)
-		newEntry.Seeders = int(intValue)
-		newEntry.IsTorrent = true
-	case "peers":
-		intValue, _ := strconv.ParseInt(value, 10, 64)
-		newEntry.Peers = int(intValue)
-		newEntry.IsTorrent = true
-	case "rating":
-		intValue, _ := strconv.ParseInt(value, 10, 64)
-		newEntry.Rating = int(intValue)
-	case "imdbyear":
-		intValue, _ := strconv.ParseInt(value, 10, 64)
-		newEntry.IMDBYear = int(intValue)
-	case "imdbscore":
-		parsedFloat, _ := strconv.ParseFloat(value, 32)
-		newEntry.IMDBScore = float32(parsedFloat)
+		// case "grabs":
+		// 	intValue, _ := strconv.ParseInt(value, 10, 64)
+		// 	newEntry.NumGrabs = int(intValue)
+		// case "seeders":
+		// 	intValue, _ := strconv.ParseInt(value, 10, 64)
+		// 	newEntry.Seeders = int(intValue)
+		// 	newEntry.IsTorrent = true
+		// case "peers":
+		// 	intValue, _ := strconv.ParseInt(value, 10, 64)
+		// 	newEntry.Peers = int(intValue)
+		// 	newEntry.IsTorrent = true
+		// case "rating":
+		// 	intValue, _ := strconv.ParseInt(value, 10, 64)
+		// 	newEntry.Rating = int(intValue)
+		// case "imdbyear":
+		// 	intValue, _ := strconv.ParseInt(value, 10, 64)
+		// 	newEntry.IMDBYear = int(intValue)
+		// case "imdbscore":
+		// 	parsedFloat, _ := strconv.ParseFloat(value, 32)
+		// 	newEntry.IMDBScore = float32(parsedFloat)
 	}
 }
 
@@ -692,44 +756,44 @@ func parseDate(date string) (time.Time, error) {
 
 // NZB represents an NZB found on the index
 type NZB struct {
-	ID          string    `json:"id,omitempty"`
-	Title       string    `json:"title,omitempty"`
-	Description string    `json:"description,omitempty"`
-	Size        int64     `json:"size,omitempty"`
-	AirDate     time.Time `json:"air_date,omitempty"`
-	PubDate     time.Time `json:"pub_date,omitempty"`
-	UsenetDate  time.Time `json:"usenet_date,omitempty"`
-	NumGrabs    int       `json:"num_grabs,omitempty"`
+	ID    string `json:"id,omitempty"`
+	Title string `json:"title,omitempty"`
+	//Description string    `json:"description,omitempty"`
+	Size int64 `json:"size,omitempty"`
+	//AirDate     time.Time `json:"air_date,omitempty"`
+	//PubDate time.Time `json:"pub_date,omitempty"`
+	//UsenetDate  time.Time `json:"usenet_date,omitempty"`
+	//NumGrabs    int       `json:"num_grabs,omitempty"`
 
 	SourceEndpoint string `json:"source_endpoint"`
-	SourceAPIKey   string `json:"source_apikey"`
+	//SourceAPIKey   string `json:"source_apikey"`
 
-	Category []string `json:"category,omitempty"`
-	Info     string   `json:"info,omitempty"`
-	Genre    string   `json:"genre,omitempty"`
+	//Category []string `json:"category,omitempty"`
+	//Info     string   `json:"info,omitempty"`
+	//Genre    string   `json:"genre,omitempty"`
 
-	Resolution string `json:"resolution,omitempty"`
-	Poster     string `json:"poster,omitempty"`
-	Group      string `json:"group,omitempty"`
+	//Resolution string `json:"resolution,omitempty"`
+	//Poster     string `json:"poster,omitempty"`
+	//Group      string `json:"group,omitempty"`
 
 	// TV Specific stuff
 	TVDBID  string `json:"tvdbid,omitempty"`
 	Season  string `json:"season,omitempty"`
 	Episode string `json:"episode,omitempty"`
-	TVTitle string `json:"tvtitle,omitempty"`
-	Rating  int    `json:"rating,omitempty"`
+	//TVTitle string `json:"tvtitle,omitempty"`
+	//Rating  int    `json:"rating,omitempty"`
 
 	// Movie Specific stuff
-	IMDBID    string  `json:"imdb,omitempty"`
-	IMDBTitle string  `json:"imdbtitle,omitempty"`
-	IMDBYear  int     `json:"imdbyear,omitempty"`
-	IMDBScore float32 `json:"imdbscore,omitempty"`
-	CoverURL  string  `json:"coverurl,omitempty"`
+	IMDBID string `json:"imdb,omitempty"`
+	//IMDBTitle string  `json:"imdbtitle,omitempty"`
+	//IMDBYear  int     `json:"imdbyear,omitempty"`
+	//IMDBScore float32 `json:"imdbscore,omitempty"`
+	//CoverURL  string  `json:"coverurl,omitempty"`
 
 	// Torznab specific stuff
-	Seeders     int    `json:"seeders,omitempty"`
-	Peers       int    `json:"peers,omitempty"`
-	InfoHash    string `json:"infohash,omitempty"`
+	//Seeders     int    `json:"seeders,omitempty"`
+	//Peers       int    `json:"peers,omitempty"`
+	//InfoHash    string `json:"infohash,omitempty"`
 	DownloadURL string `json:"download_url,omitempty"`
 	IsTorrent   bool   `json:"is_torrent,omitempty"`
 }

@@ -21,8 +21,8 @@ import (
 	"github.com/Kellerman81/go_media_downloader/parser"
 	"github.com/Kellerman81/go_media_downloader/scanner"
 	"github.com/Kellerman81/go_media_downloader/searcher"
+	"github.com/Kellerman81/go_media_downloader/sizedwaitgroup"
 	"github.com/Kellerman81/go_media_downloader/structure"
-	"github.com/remeh/sizedwaitgroup"
 )
 
 func jobImportMovieParseV2(file string, configTemplate string, listConfig string, updatemissing bool, minPrio parser.ParseInfo, wg *sizedwaitgroup.SizedWaitGroup) {
@@ -197,7 +197,7 @@ func jobImportMovieParseV2(file string, configTemplate string, listConfig string
 			[]string{"listname", "filepath", "last_checked", "parsed_data"},
 			[]interface{}{listConfig, file, time.Now(), string(mjson)},
 			database.Query{Where: "filepath = ? and listname = ?", WhereArgs: []interface{}{file, listConfig}})
-
+		mjson = nil
 	}
 }
 
@@ -298,8 +298,6 @@ func Importnewmoviessingle(configTemplate string, listConfig string) {
 	list := config.ConfigGetMediaListConfig(configTemplate, listConfig)
 
 	logger.Log.Debug("get feeds for ", configTemplate, listConfig)
-	results := feeds(configTemplate, listConfig)
-	logger.Log.Debug("RESULT -get feeds for ", configTemplate, listConfig, len(results.Movies))
 
 	if !config.ConfigCheck("general") {
 		return
@@ -312,12 +310,12 @@ func Importnewmoviessingle(configTemplate string, listConfig string) {
 
 	swg := sizedwaitgroup.New(cfg_general.WorkerMetadata)
 	dbmovies, _ := database.QueryStaticColumnsOneStringOneInt("Select imdb_id, id from dbmovies", "Select count(id) from dbmovies")
-	for idxmovie := range results.Movies {
+	for idxmovie, movie := range feeds(configTemplate, listConfig).Movies {
 		founddbmovie := false
 		foundmovie := false
 		var id int
 		for idxdbmovie := range dbmovies {
-			if dbmovies[idxdbmovie].Str == results.Movies[idxmovie].ImdbID {
+			if dbmovies[idxdbmovie].Str == movie.ImdbID {
 				id = dbmovies[idxdbmovie].Num
 				founddbmovie = true
 				break
@@ -340,11 +338,11 @@ func Importnewmoviessingle(configTemplate string, listConfig string) {
 			}
 		}
 		if !founddbmovie || !foundmovie {
-			logger.Log.Info("Import Movie ", idxmovie, " of ", len(results.Movies), " imdb: ", results.Movies[idxmovie].ImdbID)
+			logger.Log.Info("Import Movie ", idxmovie, " imdb: ", movie.ImdbID)
 			swg.Add()
 			go func(missing database.Dbmovie) {
 				importfeed.JobImportMovies(missing, configTemplate, listConfig, &swg)
-			}(results.Movies[idxmovie])
+			}(movie)
 		}
 	}
 	swg.Wait()
@@ -364,22 +362,21 @@ func Getnewmovies(configTemplate string) {
 	filesfound := findFiles(configTemplate)
 
 	swf := sizedwaitgroup.New(cfg_general.WorkerParse)
-	row := config.ConfigGet(configTemplate).Data.(config.MediaTypeConfig)
-	for _, list := range row.Lists {
+	for _, list := range config.ConfigGet(configTemplate).Data.(config.MediaTypeConfig).Lists {
 		if !config.ConfigCheck("quality_" + list.Template_quality) {
 			continue
 		}
-		added := scanner.GetFilesAdded(filesfound, list.Name, configTemplate, list.Name)
 		logger.Log.Info("Find Movie File")
-		for idxfile := range added {
-			logger.Log.Info("Parse Movie ", idxfile, " path: ", added[idxfile])
+		for idx, file := range scanner.GetFilesAdded(filesfound, list.Name, configTemplate, list.Name) {
+			logger.Log.Info("Parse Movie ", idx, " path: ", file)
 			swf.Add()
 			go func(file string) {
 				jobImportMovieParseV2(file, configTemplate, list.Name, true, parser.NewDefaultPrio(configTemplate, list.Template_quality), &swf)
-			}(added[idxfile])
+			}(file)
 		}
 	}
 	swf.Wait()
+	filesfound = nil
 }
 func getnewmoviessingle(configTemplate string, listConfig string) {
 	list := config.ConfigGetMediaListConfig(configTemplate, listConfig)
@@ -400,14 +397,13 @@ func getnewmoviessingle(configTemplate string, listConfig string) {
 	logger.Log.Info("Scan Movie File")
 	swf := sizedwaitgroup.New(cfg_general.WorkerParse)
 
-	added := scanner.GetFilesAdded(findFiles(configTemplate), configTemplate, listConfig, listConfig)
 	logger.Log.Info("Find Movie File")
-	for idxfile := range added {
-		logger.Log.Info("Parse Movie ", idxfile, " path: ", added[idxfile])
+	for idxfile, file := range scanner.GetFilesAdded(findFiles(configTemplate), configTemplate, listConfig, listConfig) {
+		logger.Log.Info("Parse Movie ", idxfile, " path: ", file)
 		swf.Add()
 		go func(file string) {
 			jobImportMovieParseV2(file, configTemplate, listConfig, true, parser.NewDefaultPrio(configTemplate, list.Template_quality), &swf)
-		}(added[idxfile])
+		}(file)
 	}
 	swf.Wait()
 }
@@ -510,10 +506,8 @@ func moviesStructureSingle(configTemplate string) {
 			continue
 		}
 		//swfile.Add()
-		go func(source config.PathsConfig, target config.PathsConfig) {
-			structure.StructureFolders("movie", source, target, configTemplate)
-			//swfile.Done()
-		}(cfg_path_import, cfg_path)
+		structure.StructureFolders("movie", cfg_path_import, cfg_path, configTemplate)
+		//swfile.Done()
 	}
 	//swfile.Wait()
 }
@@ -626,13 +620,6 @@ func Movies_single_jobs(job string, configTemplate string, listname string, forc
 			cfg_movie.Searchupgrade_incremental = 20
 		}
 
-		if job == "rss" || job == "searchmissingfull" || job == "searchmissinginc" ||
-			job == "searchupgradefull" || job == "searchupgradeinc" || job == "searchmissingfulltitle" ||
-			job == "searchmissinginctitle" || job == "searchupgradefulltitle" || job == "searchupgradeinctitle" {
-			for _, val := range apiexternal.NewznabClients {
-				val.Client.Client.CloseIdleConnections()
-			}
-		}
 		switch job {
 		case "datafull":
 			Getnewmovies(configTemplate)
@@ -666,10 +653,10 @@ func Movies_single_jobs(job string, configTemplate string, listname string, forc
 			logger.Log.Debug("Listname: found: ", templists)
 			cfg_movie.Lists = templists
 		}
-		qualis := make(map[string]bool, 10)
+		qualis := []string{}
 		for idxlist := range cfg_movie.Lists {
-			if _, ok := qualis[cfg_movie.Lists[idxlist].Template_quality]; !ok {
-				qualis[cfg_movie.Lists[idxlist].Template_quality] = true
+			if !logger.CheckStringArray(qualis, cfg_movie.Lists[idxlist].Template_quality) {
+				qualis = append(qualis, cfg_movie.Lists[idxlist].Template_quality)
 			}
 			switch job {
 			case "data":
@@ -688,14 +675,11 @@ func Movies_single_jobs(job string, configTemplate string, listname string, forc
 				// other stuff
 			}
 		}
-		for qual := range qualis {
+		for idx := range qualis {
 			switch job {
 			case "rss":
-				searcher.SearchMovieRSS(configTemplate, qual)
+				searcher.SearchMovieRSS(configTemplate, qualis[idx])
 			}
-		}
-		for key := range qualis {
-			delete(qualis, key)
 		}
 	} else {
 		logger.Log.Info("Skipped Job Type not matched: ", job, " for ", configTemplate)

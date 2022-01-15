@@ -1,6 +1,9 @@
 package tasks
 
-import "runtime/debug"
+import (
+	"runtime/debug"
+	"time"
+)
 
 //Source: https://github.com/mborders/artifex
 
@@ -31,11 +34,12 @@ func (w *Worker) start() {
 
 			select {
 			case job := <-w.jobChannel:
-				GlobalQueue.updateStartedQueue(job)
+				updateStartedQueue(job)
 				updateIsRunningSchedule(job, true)
 				job.Run()
 				updateIsRunningSchedule(job, false)
-				GlobalQueue.removeQueue(job)
+				time.Sleep(time.Duration(2) * time.Second)
+				findAndDeleteQueue(job.Name)
 				debug.FreeOSMemory()
 			case <-w.quit:
 				return

@@ -337,7 +337,7 @@ func (serie *Dbserie) GetMetadata(language string, querytmdb bool, allowed []str
 func (serie *Dbserie) GetTitles(allowed []string, queryimdb bool, querytrakt bool) []DbserieAlternate {
 	c := make([]DbserieAlternate, 0, 10)
 
-	processed := make(map[string]bool, 10)
+	processed := []string{}
 	if queryimdb {
 		queryimdbid := serie.ImdbID
 		if !strings.HasPrefix(serie.ImdbID, "tt") {
@@ -357,8 +357,7 @@ func (serie *Dbserie) GetTitles(allowed []string, queryimdb bool, querytrakt boo
 				continue
 			}
 			c = append(c, DbserieAlternate{DbserieID: serie.ID, Title: akarow.Title, Slug: akarow.Slug, Region: akarow.Region})
-
-			processed[akarow.Title] = true
+			processed = append(processed, akarow.Title)
 		}
 	}
 	if querytrakt {
@@ -380,17 +379,12 @@ func (serie *Dbserie) GetTitles(allowed []string, queryimdb bool, querytrakt boo
 				if !regionok && len(allowed) >= 1 {
 					continue
 				}
-				if _, ok := processed[row.Title]; !ok {
+				if !logger.CheckStringArray(processed, row.Title) {
 					c = append(c, DbserieAlternate{DbserieID: serie.ID, Title: row.Title, Slug: logger.StringToSlug(row.Title), Region: row.Country})
-
-					processed[row.Title] = true
+					processed = append(processed, row.Title)
 				}
 			}
 		}
-	}
-
-	for key := range processed {
-		delete(processed, key)
 	}
 	return c
 }

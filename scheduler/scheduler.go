@@ -4,17 +4,12 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
-	"os/exec"
-	"runtime"
-	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/config"
 	"github.com/Kellerman81/go_media_downloader/database"
-	"github.com/Kellerman81/go_media_downloader/logger"
-	"github.com/Kellerman81/go_media_downloader/scanner"
 	"github.com/Kellerman81/go_media_downloader/tasks"
 	"github.com/Kellerman81/go_media_downloader/utils"
 )
@@ -641,55 +636,19 @@ func InitScheduler() {
 		if cfg_general.UseCronInsteadOfInterval {
 			QueueFeeds.DispatchCron("Refresh IMDB", func() {
 				//utils.InitFillImdb()
-				file := "./init_imdb"
-				if runtime.GOOS == "windows" {
-					file = "init_imdb.exe"
-				}
-				out, errexec := exec.Command(file).Output()
-				logger.Log.Infoln(string(out))
-				if scanner.CheckFileExist(file) && errexec == nil {
-					database.DBImdb.Close()
-					os.Remove("./imdb.db")
-					os.Rename("./imdbtemp.db", "./imdb.db")
-					database.DBImdb = database.InitImdbdb("info", "imdb")
-					debug.FreeOSMemory()
-				}
+				utils.FillImdb()
 			}, convertcron(defaultschedule.Interval_imdb))
 		} else {
 			QueueFeeds.DispatchEvery("Refresh IMDB", func() {
 				//utils.InitFillImdb()
-				file := "./init_imdb"
-				if runtime.GOOS == "windows" {
-					file = "init_imdb.exe"
-				}
-				out, errexec := exec.Command(file).Output()
-				logger.Log.Infoln(string(out))
-				if scanner.CheckFileExist(file) && errexec == nil {
-					database.DBImdb.Close()
-					os.Remove("./imdb.db")
-					os.Rename("./imdbtemp.db", "./imdb.db")
-					database.DBImdb = database.InitImdbdb("info", "imdb")
-					debug.FreeOSMemory()
-				}
+				utils.FillImdb()
 			}, converttime(defaultschedule.Interval_imdb))
 		}
 	}
 	if defaultschedule.Cron_imdb != "" {
 		QueueFeeds.DispatchCron("Refresh IMDB", func() {
 			//utils.InitFillImdb()
-			file := "./init_imdb"
-			if runtime.GOOS == "windows" {
-				file = "init_imdb.exe"
-			}
-			out, errexec := exec.Command(file).Output()
-			logger.Log.Infoln(string(out))
-			if scanner.CheckFileExist(file) && errexec == nil {
-				database.DBImdb.Close()
-				os.Remove("./imdb.db")
-				os.Rename("./imdbtemp.db", "./imdb.db")
-				database.DBImdb = database.InitImdbdb("info", "imdb")
-				debug.FreeOSMemory()
-			}
+			utils.FillImdb()
 		}, defaultschedule.Cron_imdb)
 	}
 

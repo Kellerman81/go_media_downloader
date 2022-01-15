@@ -33,7 +33,7 @@ var Getcodecs []QualitiesRegex
 var Getaudios []QualitiesRegex
 
 type QualitiesRegex struct {
-	Regexp *regexp.Regexp
+	Regexp regexp.Regexp
 	Qualities
 }
 
@@ -81,22 +81,22 @@ func GetVars() {
 	quali, _ := QueryQualities(Query{Where: "Type=1", OrderBy: "priority desc"})
 	Getresolutions = make([]QualitiesRegex, 0, len(quali))
 	for _, qu := range quali {
-		Getresolutions = append(Getresolutions, QualitiesRegex{Regexp: regexp.MustCompile(qu.Regex), Qualities: qu})
+		Getresolutions = append(Getresolutions, QualitiesRegex{Regexp: *regexp.MustCompile(qu.Regex), Qualities: qu})
 	}
 	quali, _ = QueryQualities(Query{Where: "Type=2", OrderBy: "priority desc"})
 	Getqualities = make([]QualitiesRegex, 0, len(quali))
 	for _, qu := range quali {
-		Getqualities = append(Getqualities, QualitiesRegex{Regexp: regexp.MustCompile(qu.Regex), Qualities: qu})
+		Getqualities = append(Getqualities, QualitiesRegex{Regexp: *regexp.MustCompile(qu.Regex), Qualities: qu})
 	}
 	quali, _ = QueryQualities(Query{Where: "Type=3", OrderBy: "priority desc"})
 	Getcodecs = make([]QualitiesRegex, 0, len(quali))
 	for _, qu := range quali {
-		Getcodecs = append(Getcodecs, QualitiesRegex{Regexp: regexp.MustCompile(qu.Regex), Qualities: qu})
+		Getcodecs = append(Getcodecs, QualitiesRegex{Regexp: *regexp.MustCompile(qu.Regex), Qualities: qu})
 	}
 	quali, _ = QueryQualities(Query{Where: "Type=4", OrderBy: "priority desc"})
 	Getaudios = make([]QualitiesRegex, 0, len(quali))
 	for _, qu := range quali {
-		Getaudios = append(Getaudios, QualitiesRegex{Regexp: regexp.MustCompile(qu.Regex), Qualities: qu})
+		Getaudios = append(Getaudios, QualitiesRegex{Regexp: *regexp.MustCompile(qu.Regex), Qualities: qu})
 	}
 }
 func Upgrade(c *gin.Context) {
@@ -140,6 +140,7 @@ func UpgradeDB() {
 	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
 		log.Fatalf("An error occurred while syncing the database.. %v", err)
 	}
+	m = nil
 }
 
 type JobHistory struct {
@@ -193,7 +194,7 @@ func RemoveOldDbBackups(max int) error {
 	var remove []backupInfo
 
 	if max > 0 && max < len(files) {
-		preserved := make(map[string]bool)
+		preserved := []string{}
 		for _, f := range files {
 			// Only count the uncompressed log file or the
 			// compressed log file, not both.
@@ -202,14 +203,11 @@ func RemoveOldDbBackups(max int) error {
 				continue
 			}
 
-			preserved[fn] = true
+			preserved = append(preserved, fn)
 
 			if len(preserved) > max {
 				remove = append(remove, f)
 			}
-		}
-		for key := range preserved {
-			delete(preserved, key)
 		}
 	}
 

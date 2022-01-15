@@ -1724,46 +1724,6 @@ func QueryColumnStatic(query string, args ...interface{}) (interface{}, error) {
 	return ret, nil
 }
 
-func insertmapprepare(table string, insert map[string]interface{}) (string, []interface{}) {
-	var query strings.Builder
-	query.Grow(300)
-	query.WriteString("INSERT INTO ")
-	query.WriteString(table)
-	query.WriteString(" (")
-	i := 0
-	var columns strings.Builder
-	columns.Grow(100)
-	var values strings.Builder
-	values.Grow(30)
-
-	args := make([]interface{}, 0, len(insert))
-	for idx, val := range insert {
-		if i != 0 {
-			columns.WriteString(",")
-			values.WriteString(",")
-		}
-		i += 1
-		columns.WriteString(idx)
-		values.WriteString("?")
-		args = append(args, val)
-	}
-	query.WriteString(columns.String())
-	query.WriteString(") VALUES (")
-	query.WriteString(values.String())
-	query.WriteString(")")
-	columns.Reset()
-	values.Reset()
-	return query.String(), args
-}
-func InsertRowMap(table string, insert map[string]interface{}) (sql.Result, error) {
-	query, args := insertmapprepare(table, insert)
-	result, err := dbexec("main", query, args)
-	if err != nil {
-		logger.Log.Error("Insert: ", table, " values: ", insert, " error: ", err)
-	}
-	return result, err
-}
-
 func insertarrayprepare(table string, columns []string) string {
 	var query strings.Builder
 	query.Grow(300)
@@ -1799,42 +1759,6 @@ func InsertArray(table string, columns []string, values []interface{}) (sql.Resu
 	return result, err
 }
 
-func updatemapprepare(table string, update map[string]interface{}, qu Query) (string, []interface{}) {
-	var query strings.Builder
-	query.Grow(300)
-	query.WriteString("UPDATE ")
-	query.WriteString(table)
-	query.WriteString(" SET ")
-	i := 0
-	args := make([]interface{}, 0, len(update)+len(qu.WhereArgs))
-	for idx, val := range update {
-		if i != 0 {
-			query.WriteString(",")
-		}
-		i += 1
-		query.WriteString(idx)
-		query.WriteString(" = ?")
-		args = append(args, val)
-	}
-	if qu.Where != "" {
-		query.WriteString(" where ")
-		query.WriteString(qu.Where)
-		if len(qu.WhereArgs) >= 1 {
-			for idx := range qu.WhereArgs {
-				args = append(args, qu.WhereArgs[idx])
-			}
-		}
-	}
-	return query.String(), args
-}
-func UpdateRowMap(table string, update map[string]interface{}, qu Query) (sql.Result, error) {
-	query, args := updatemapprepare(table, update, qu)
-	result, err := dbexec("main", query, args)
-	if err != nil {
-		logger.Log.Error("Update: ", table, " values: ", update, " where: ", qu.Where, " whereargs: ", qu.WhereArgs, " error: ", err)
-	}
-	return result, err
-}
 func dbexec(dbtype string, query string, args []interface{}) (sql.Result, error) {
 	var result sql.Result
 	var err error
@@ -1942,23 +1866,6 @@ func DeleteRow(table string, qu Query) (sql.Result, error) {
 	return result, err
 }
 
-func Upsert(table string, update map[string]interface{}, qu Query) (sql.Result, error) {
-	var counter int
-	counter, _ = CountRows(table, qu)
-	if counter == 0 {
-		result, err := InsertRowMap(table, update)
-		if err != nil {
-			logger.Log.Error("Upsert-insert: ", table, " values: ", update, " where: ", qu.Where, " whereargs: ", qu.WhereArgs, " error: ", err)
-		}
-		return result, err
-	}
-	result, err := UpdateRowMap(table, update, qu)
-	if err != nil {
-		logger.Log.Error("Upsert-update: ", table, " values: ", update, " where: ", qu.Where, " whereargs: ", qu.WhereArgs, " error: ", err)
-	}
-	return result, err
-}
-
 func UpsertArray(table string, columns []string, values []interface{}, qu Query) (sql.Result, error) {
 	var counter int
 	counter, _ = CountRows(table, qu)
@@ -2022,14 +1929,6 @@ func ImdbCountRowsStatic(query string, args ...interface{}) (int, error) {
 	return counter, nil
 }
 
-func ImdbInsertRowMap(table string, insert map[string]interface{}) (sql.Result, error) {
-	query, args := insertmapprepare(table, insert)
-	result, err := dbexec("imdb", query, args)
-	if err != nil {
-		logger.Log.Error("Insert: ", table, " values: ", insert, " error: ", err)
-	}
-	return result, err
-}
 func ImdbInsertArray(table string, columns []string, values []interface{}) (sql.Result, error) {
 	query := insertarrayprepare(table, columns)
 	result, err := dbexec("imdb", query, values)
@@ -2039,14 +1938,6 @@ func ImdbInsertArray(table string, columns []string, values []interface{}) (sql.
 	return result, err
 }
 
-func ImdbUpdateRowMap(table string, update map[string]interface{}, qu Query) (sql.Result, error) {
-	query, args := updatemapprepare(table, update, qu)
-	result, err := dbexec("imdb", query, args)
-	if err != nil {
-		logger.Log.Error("Update: ", table, " values: ", update, " where: ", qu.Where, " whereargs: ", qu.WhereArgs, " error: ", err)
-	}
-	return result, err
-}
 func ImdbUpdateArray(table string, columns []string, values []interface{}, qu Query) (sql.Result, error) {
 	query, args := updatearrayprepare(table, columns, values, qu)
 	result, err := dbexec("imdb", query, args)
@@ -2076,23 +1967,6 @@ func ImdbDeleteRow(table string, qu Query) (sql.Result, error) {
 		logger.Log.Error("Delete: ", table, " where: ", qu.Where, " whereargs: ", qu.WhereArgs, " error: ", err)
 	}
 	ReadWriteMu.Unlock()
-	return result, err
-}
-
-func ImdbUpsert(table string, update map[string]interface{}, qu Query) (sql.Result, error) {
-	var counter int
-	counter, _ = ImdbCountRows(table, qu)
-	if counter == 0 {
-		result, err := ImdbInsertRowMap(table, update)
-		if err != nil {
-			logger.Log.Error("Upsert-insert: ", table, " values: ", update, " where: ", qu.Where, " whereargs: ", qu.WhereArgs, " error: ", err)
-		}
-		return result, err
-	}
-	result, err := ImdbUpdateRowMap(table, update, qu)
-	if err != nil {
-		logger.Log.Error("Upsert-update: ", table, " values: ", update, " where: ", qu.Where, " whereargs: ", qu.WhereArgs, " error: ", err)
-	}
 	return result, err
 }
 

@@ -221,16 +221,20 @@ func NewVideoFile(ffprobePath string, videoPath string, stripExt bool) (VideoFil
 	args := []string{"-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", "-show_error", videoPath}
 	out, err := exec.Command(ffprobePath, args...).Output()
 	if err != nil {
+		out = nil
 		return VideoFile{}, fmt.Errorf("FFProbe encountered an error with <%s>.\nError JSON:\n%s\nError: %s", videoPath, string(out), err.Error())
 	}
 
 	probeJSON := FFProbeJSON{}
 	if err := json.Unmarshal(out, &probeJSON); err != nil {
+		out = nil
 		return VideoFile{}, fmt.Errorf("error unmarshalling video data for <%s>: %s", videoPath, err.Error())
 	}
 	if len(probeJSON.Streams) == 0 {
+		out = nil
 		return VideoFile{}, fmt.Errorf("failed to get ffprobe json for <%s>", videoPath)
 	}
+	out = nil
 
 	result := VideoFile{JSON: probeJSON}
 

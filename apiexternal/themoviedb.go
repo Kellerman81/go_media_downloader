@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/RussellLuo/slidingwindow"
+	"github.com/Kellerman81/go_media_downloader/slidingwindow"
 	"golang.org/x/time/rate"
 )
 
@@ -133,7 +133,7 @@ type tmdbClient struct {
 
 var TmdbApi *tmdbClient
 
-func NewTmdbClient(apikey string, seconds int, calls int) {
+func NewTmdbClient(apikey string, seconds int, calls int, disabletls bool) {
 	if seconds == 0 {
 		seconds = 1
 	}
@@ -142,7 +142,7 @@ func NewTmdbClient(apikey string, seconds int, calls int) {
 	}
 	rl := rate.NewLimiter(rate.Every(time.Duration(seconds)*time.Second), calls) // 50 request every 10 seconds
 	limiter, _ := slidingwindow.NewLimiter(time.Duration(seconds)*time.Second, int64(calls), func() (slidingwindow.Window, slidingwindow.StopFunc) { return slidingwindow.NewLocalWindow() })
-	TmdbApi = &tmdbClient{ApiKey: apikey, Client: NewClient(rl, limiter)}
+	TmdbApi = &tmdbClient{ApiKey: apikey, Client: NewClient(disabletls, rl, limiter)}
 }
 
 func (t *tmdbClient) SearchMovie(name string) (theMovieDBSearch, error) {

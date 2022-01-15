@@ -16,8 +16,8 @@ import (
 	"github.com/Kellerman81/go_media_downloader/parser"
 	"github.com/Kellerman81/go_media_downloader/scanner"
 	"github.com/Kellerman81/go_media_downloader/searcher"
+	"github.com/Kellerman81/go_media_downloader/sizedwaitgroup"
 	"github.com/Kellerman81/go_media_downloader/structure"
-	"github.com/remeh/sizedwaitgroup"
 )
 
 func jobImportSeriesParseV2(file string, updatemissing bool, configTemplate string, listConfig string, minPrio parser.ParseInfo, wg *sizedwaitgroup.SizedWaitGroup) {
@@ -172,7 +172,7 @@ func jobImportSeriesParseV2(file string, updatemissing bool, configTemplate stri
 			[]string{"listname", "filepath", "last_checked", "parsed_data"},
 			[]interface{}{listConfig, file, time.Now(), string(mjson)},
 			database.Query{Where: "filepath = ? and listname = ?", WhereArgs: []interface{}{file, listConfig}})
-
+		mjson = nil
 	}
 }
 
@@ -287,13 +287,6 @@ func Series_single_jobs(job string, configTemplate string, listname string, forc
 			cfg_serie.Searchupgrade_incremental = 20
 		}
 
-		if job == "rss" || job == "searchmissingfull" || job == "searchmissinginc" ||
-			job == "searchupgradefull" || job == "searchupgradeinc" || job == "searchmissingfulltitle" ||
-			job == "searchmissinginctitle" || job == "searchupgradefulltitle" || job == "searchupgradeinctitle" {
-			for _, val := range apiexternal.NewznabClients {
-				val.Client.Client.CloseIdleConnections()
-			}
-		}
 		switch job {
 		case "datafull":
 			Getnewepisodes(configTemplate)
@@ -328,10 +321,11 @@ func Series_single_jobs(job string, configTemplate string, listname string, forc
 			logger.Log.Debug("Listname: found: ", templists)
 			cfg_serie.Lists = templists
 		}
-		qualis := make(map[string]bool, 10)
+		qualis := []string{}
+
 		for idxlist := range cfg_serie.Lists {
-			if _, ok := qualis[cfg_serie.Lists[idxlist].Template_quality]; !ok {
-				qualis[cfg_serie.Lists[idxlist].Template_quality] = true
+			if !logger.CheckStringArray(qualis, cfg_serie.Lists[idxlist].Template_quality) {
+				qualis = append(qualis, cfg_serie.Lists[idxlist].Template_quality)
 			}
 			switch job {
 			case "data":
@@ -350,14 +344,11 @@ func Series_single_jobs(job string, configTemplate string, listname string, forc
 				// other stuff
 			}
 		}
-		for qual := range qualis {
+		for idx := range qualis {
 			switch job {
 			case "rss":
-				searcher.SearchSerieRSS(configTemplate, qual)
+				searcher.SearchSerieRSS(configTemplate, qualis[idx])
 			}
-		}
-		for key := range qualis {
-			delete(qualis, key)
 		}
 	} else {
 		logger.Log.Info("Skipped Job Type not matched: ", job, " for ", configTemplate)
@@ -378,17 +369,15 @@ func Importnewseriessingle(configTemplate string, listConfig string) {
 		cfg_general.WorkerMetadata = 1
 	}
 
-	results := feeds(configTemplate, listConfig)
-
 	logger.Log.Info("Get Serie Config", listConfig)
 	logger.Log.Info("Workers: ", cfg_general.WorkerMetadata)
 	swg := sizedwaitgroup.New(cfg_general.WorkerMetadata)
-	for idxserie := range results.Series.Serie {
-		logger.Log.Info("Import Serie ", idxserie, " of ", len(results.Series.Serie), " name: ", results.Series.Serie[idxserie].Name)
+	for idxserie, serie := range feeds(configTemplate, listConfig).Series.Serie {
+		logger.Log.Info("Import Serie ", idxserie, " name: ", serie.Name)
 		swg.Add()
 		go func(serie config.SerieConfig) {
 			importfeed.JobImportDbSeries(serie, configTemplate, listConfig, false, &swg)
-		}(results.Series.Serie[idxserie])
+		}(serie)
 	}
 	swg.Wait()
 }
@@ -404,25 +393,24 @@ func Getnewepisodes(configTemplate string) {
 	}
 
 	logger.Log.Info("Scan SerieEpisodeFile")
-	row := config.ConfigGet(configTemplate).Data.(config.MediaTypeConfig)
 	filesfound := findFiles(configTemplate)
 
 	logger.Log.Info("Workers: ", cfg_general.WorkerParse)
 	swf := sizedwaitgroup.New(cfg_general.WorkerParse)
-	for _, list := range row.Lists {
+	for _, list := range config.ConfigGet(configTemplate).Data.(config.MediaTypeConfig).Lists {
 		if !config.ConfigCheck("quality_" + list.Template_quality) {
 			continue
 		}
-		filesadded := scanner.GetFilesSeriesAdded(filesfound, configTemplate, list.Name, list.Name)
-		for idxfile := range filesadded {
-			logger.Log.Info("Parse Serie ", idxfile, " path: ", filesadded[idxfile])
+		for idxfile, file := range scanner.GetFilesSeriesAdded(filesfound, configTemplate, list.Name, list.Name) {
+			logger.Log.Info("Parse Serie ", idxfile, " path: ", file)
 			swf.Add()
 			go func(file string) {
 				jobImportSeriesParseV2(file, true, configTemplate, list.Name, parser.NewDefaultPrio(configTemplate, list.Template_quality), &swf)
-			}(filesadded[idxfile])
+			}(file)
 		}
 	}
 	swf.Wait()
+	filesfound = nil
 }
 func getnewepisodessingle(configTemplate string, listConfig string) {
 	if !config.ConfigCheck("general") {
@@ -439,16 +427,14 @@ func getnewepisodessingle(configTemplate string, listConfig string) {
 		return
 	}
 	logger.Log.Info("Scan SerieEpisodeFile")
-	filesadded := scanner.GetFilesSeriesAdded(findFiles(configTemplate), configTemplate, listConfig, listConfig)
-	logger.Log.Info("Find SerieEpisodeFile")
 	logger.Log.Info("Workers: ", cfg_general.WorkerParse)
 	swf := sizedwaitgroup.New(cfg_general.WorkerParse)
-	for idxfile := range filesadded {
-		logger.Log.Info("Parse Serie ", idxfile, " of ", len(filesadded), " path: ", filesadded[idxfile])
+	for idxfile, file := range scanner.GetFilesSeriesAdded(findFiles(configTemplate), configTemplate, listConfig, listConfig) {
+		logger.Log.Info("Parse Serie ", idxfile, " path: ", file)
 		swf.Add()
 		go func(file string) {
 			jobImportSeriesParseV2(file, true, configTemplate, listConfig, parser.NewDefaultPrio(configTemplate, list.Template_quality), &swf)
-		}(filesadded[idxfile])
+		}(file)
 	}
 	swf.Wait()
 }
@@ -581,10 +567,8 @@ func seriesStructureSingle(configTemplate string) {
 		lastSeriesStructure = cfg_path_import.Path
 		//swfile.Add()
 
-		go func(source config.PathsConfig, target config.PathsConfig) {
-			structure.StructureFolders("series", source, target, configTemplate)
-			//swfile.Done()
-		}(cfg_path_import, cfg_path)
+		structure.StructureFolders("series", cfg_path_import, cfg_path, configTemplate)
+		//swfile.Done()
 
 	}
 	//swfile.Wait()
