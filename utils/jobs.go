@@ -53,12 +53,8 @@ func jobImportFileCheck(file string, dbtype string, wg *sizedwaitgroup.SizedWait
 }
 
 func InitRegex() {
-
-	ident, _ := regexp.Compile(`(?i)s?[0-9]{1,4}((?:(?:(?: )?-?(?: )?[ex][0-9]{1,3})+))|(\d{2,4}(?:\.|-| |_)\d{1,2}(?:\.|-| |_)\d{1,2})(?:\b|_)`)
-	title, _ := regexp.Compile(`^(.*)(?i)(?:(?:\.| - |-)S(?:[0-9]+)(?: )?[ex](?:[0-9]{1,3})(?:[^0-9]|$))`)
-
-	config.RegexSeriesIdentifier = *ident
-	config.RegexSeriesTitle = *title
+	config.RegexAdd("RegexSeriesIdentifier", *regexp.MustCompile(`(?i)s?[0-9]{1,4}((?:(?:(?: )?-?(?: )?[ex][0-9]{1,3})+))|(\d{2,4}(?:\.|-| |_)\d{1,2}(?:\.|-| |_)\d{1,2})(?:\b|_)`))
+	config.RegexAdd("RegexSeriesTitle", *regexp.MustCompile(`^(.*)(?i)(?:(?:\.| - |-)S(?:[0-9]+)(?: )?[ex](?:[0-9]{1,3})(?:[^0-9]|$))`))
 }
 
 func InitialFillSeries() {

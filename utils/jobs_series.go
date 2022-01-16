@@ -53,7 +53,7 @@ func jobImportSeriesParseV2(file string, updatemissing bool, configTemplate stri
 		titlebuilder.WriteString(")")
 	}
 	seriestitle := ""
-	matched := config.RegexSeriesTitle.FindStringSubmatch(filepath.Base(file))
+	matched := config.RegexGet("RegexSeriesTitle").FindStringSubmatch(filepath.Base(file))
 	if len(matched) >= 2 {
 		seriestitle = matched[1]
 	}
@@ -75,7 +75,7 @@ func jobImportSeriesParseV2(file string, updatemissing bool, configTemplate stri
 		if errparsev != nil {
 			return
 		}
-		teststr := config.RegexSeriesIdentifier.FindStringSubmatch(m.Identifier)
+		teststr := config.RegexGet("RegexSeriesIdentifier").FindStringSubmatch(m.Identifier)
 		if len(teststr) == 0 {
 			logger.Log.Warn("Failed parse identifier: ", file, " as ", m.Title, m.Identifier)
 			return

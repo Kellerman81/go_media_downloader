@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Kellerman81/go_media_downloader/config"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/sqlite3"
@@ -33,7 +34,7 @@ var Getcodecs []QualitiesRegex
 var Getaudios []QualitiesRegex
 
 type QualitiesRegex struct {
-	Regexp regexp.Regexp
+	Regex string
 	Qualities
 }
 
@@ -81,22 +82,30 @@ func GetVars() {
 	quali, _ := QueryQualities(Query{Where: "Type=1", OrderBy: "priority desc"})
 	Getresolutions = make([]QualitiesRegex, 0, len(quali))
 	for _, qu := range quali {
-		Getresolutions = append(Getresolutions, QualitiesRegex{Regexp: *regexp.MustCompile(qu.Regex), Qualities: qu})
+		config.RegexDelete(qu.Regex)
+		config.RegexAdd(qu.Regex, *regexp.MustCompile(qu.Regex))
+		Getresolutions = append(Getresolutions, QualitiesRegex{Regex: qu.Regex, Qualities: qu})
 	}
 	quali, _ = QueryQualities(Query{Where: "Type=2", OrderBy: "priority desc"})
 	Getqualities = make([]QualitiesRegex, 0, len(quali))
 	for _, qu := range quali {
-		Getqualities = append(Getqualities, QualitiesRegex{Regexp: *regexp.MustCompile(qu.Regex), Qualities: qu})
+		config.RegexDelete(qu.Regex)
+		config.RegexAdd(qu.Regex, *regexp.MustCompile(qu.Regex))
+		Getqualities = append(Getqualities, QualitiesRegex{Regex: qu.Regex, Qualities: qu})
 	}
 	quali, _ = QueryQualities(Query{Where: "Type=3", OrderBy: "priority desc"})
 	Getcodecs = make([]QualitiesRegex, 0, len(quali))
 	for _, qu := range quali {
-		Getcodecs = append(Getcodecs, QualitiesRegex{Regexp: *regexp.MustCompile(qu.Regex), Qualities: qu})
+		config.RegexDelete(qu.Regex)
+		config.RegexAdd(qu.Regex, *regexp.MustCompile(qu.Regex))
+		Getcodecs = append(Getcodecs, QualitiesRegex{Regex: qu.Regex, Qualities: qu})
 	}
 	quali, _ = QueryQualities(Query{Where: "Type=4", OrderBy: "priority desc"})
 	Getaudios = make([]QualitiesRegex, 0, len(quali))
 	for _, qu := range quali {
-		Getaudios = append(Getaudios, QualitiesRegex{Regexp: *regexp.MustCompile(qu.Regex), Qualities: qu})
+		config.RegexDelete(qu.Regex)
+		config.RegexAdd(qu.Regex, *regexp.MustCompile(qu.Regex))
+		Getaudios = append(Getaudios, QualitiesRegex{Regex: qu.Regex, Qualities: qu})
 	}
 }
 func Upgrade(c *gin.Context) {

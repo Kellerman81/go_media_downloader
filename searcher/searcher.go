@@ -1190,7 +1190,7 @@ func (n *nzbFilter) setDataField(lists []string, addifnotfound bool) {
 						titleyear += " (" + strconv.Itoa(tempparse.Year) + ")"
 					}
 					seriestitle := ""
-					matched := config.RegexSeriesTitle.FindStringSubmatch(n.ToFilter[idx].NZB.Title)
+					matched := config.RegexGet("RegexSeriesTitle").FindStringSubmatch(n.ToFilter[idx].NZB.Title)
 					if len(matched) >= 2 {
 						seriestitle = matched[1]
 					}

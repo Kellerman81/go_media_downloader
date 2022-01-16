@@ -96,7 +96,10 @@ func findregex(array []config.RegexGroup, find string) regexp.Regexp {
 }
 func filter_regex_nzbs(regexconfig config.RegexConfig, title string, wantedtitle string, wantedalternates []string) (bool, string) {
 	for _, rowtitle := range regexconfig.Rejected {
-		rowrejected := findregex(regexconfig.RejectedRegex, rowtitle)
+		if !config.RegexCheck(rowtitle) {
+			continue
+		}
+		rowrejected := config.RegexGet(rowtitle)
 		teststrwanted := rowrejected.FindStringSubmatch(wantedtitle)
 		if len(teststrwanted) >= 1 {
 			//Regex is in title - skip test
@@ -122,7 +125,10 @@ func filter_regex_nzbs(regexconfig config.RegexConfig, title string, wantedtitle
 	}
 	requiredmatched := false
 	for _, rowtitle := range regexconfig.Required {
-		rowrequired := findregex(regexconfig.RequiredRegex, rowtitle)
+		if !config.RegexCheck(rowtitle) {
+			continue
+		}
+		rowrequired := config.RegexGet(rowtitle)
 
 		teststr := rowrequired.FindStringSubmatch(title)
 		if len(teststr) >= 1 {

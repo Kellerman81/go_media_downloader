@@ -1,6 +1,7 @@
 package config
 
 import (
+	"regexp"
 	"strings"
 
 	"github.com/Kellerman81/go_media_downloader/logger"
@@ -54,25 +55,51 @@ type Conf struct {
 	Data interface{}
 }
 
+type RegexSafe struct {
+	Name string
+	Re   regexp.Regexp
+}
+
+var regexEntries []RegexSafe
+
+func RegexCheck(key string) bool {
+	for idx := range regexEntries {
+		if regexEntries[idx].Name == key {
+			return true
+		}
+	}
+	return false
+}
+
+func RegexGet(key string) *regexp.Regexp {
+	for idx := range regexEntries {
+		if regexEntries[idx].Name == key {
+			return &regexEntries[idx].Re
+		}
+	}
+	logger.Log.Errorln("Regex not found: ", key)
+	return nil
+}
+
+func RegexAdd(key string, re regexp.Regexp) {
+	if !RegexCheck(key) {
+		regexEntries = append(regexEntries, RegexSafe{Name: key, Re: re})
+	}
+}
+
+func RegexDelete(key string) {
+	new := regexEntries[:0]
+	for idx := range regexEntries {
+		if regexEntries[idx].Name != key {
+			new = append(new, regexEntries[idx])
+		}
+	}
+	regexEntries = new
+}
+
 var configEntries []Conf
 
 func ConfigGet(key string) *Conf {
-	key = strings.Replace(key, "list_list_", "list_", 1)
-	key = strings.Replace(key, "path_path_", "path_", 1)
-	key = strings.Replace(key, "indexer_indexer_", "indexer_", 1)
-	key = strings.Replace(key, "downloader_downloader_", "downloader_", 1)
-	key = strings.Replace(key, "regex_regex_", "regex_", 1)
-	key = strings.Replace(key, "notification_notification_", "notification_", 1)
-	key = strings.Replace(key, "scheduler_scheduler_", "scheduler_", 1)
-	key = strings.Replace(key, "movie_movie_", "movie_", 1)
-	key = strings.Replace(key, "serie_serie_", "serie_", 1)
-	key = strings.Replace(key, "quality_quality_", "quality_", 1)
-	if key != "general" && key != "imdb" && key != "trakt_token" {
-		if !strings.Contains(key, "_") {
-			logger.Log.Errorln("Config not found: ", key)
-			return nil
-		}
-	}
 	for idx := range configEntries {
 		if configEntries[idx].Name == key {
 			return &configEntries[idx]
