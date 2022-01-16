@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
@@ -637,11 +638,13 @@ func InitScheduler() {
 			QueueFeeds.DispatchCron("Refresh IMDB", func() {
 				//utils.InitFillImdb()
 				utils.FillImdb()
+				debug.FreeOSMemory()
 			}, convertcron(defaultschedule.Interval_imdb))
 		} else {
 			QueueFeeds.DispatchEvery("Refresh IMDB", func() {
 				//utils.InitFillImdb()
 				utils.FillImdb()
+				debug.FreeOSMemory()
 			}, converttime(defaultschedule.Interval_imdb))
 		}
 	}
@@ -649,6 +652,7 @@ func InitScheduler() {
 		QueueFeeds.DispatchCron("Refresh IMDB", func() {
 			//utils.InitFillImdb()
 			utils.FillImdb()
+			debug.FreeOSMemory()
 		}, defaultschedule.Cron_imdb)
 	}
 

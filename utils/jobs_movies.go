@@ -65,7 +65,7 @@ func jobImportMovieParseV2(file string, configTemplate string, listConfig string
 
 		entriesfound := 0
 		if entriesfound == 0 && len(m.Imdb) >= 1 {
-			movies, _ := database.QueryMovies(database.Query{Select: "id, dbmovie_id, rootpath", Where: "dbmovie_id in (Select id from dbmovies where imdb_id = ? COLLATE NOCASE) and listname = ?", WhereArgs: []interface{}{m.Imdb, listConfig}})
+			movies, _ := database.QueryMovies(database.Query{Select: "id, dbmovie_id, rootpath", Where: "dbmovie_id in (Select id from dbmovies where imdb_id = ?) and listname = ?", WhereArgs: []interface{}{m.Imdb, listConfig}})
 			entriesfound = len(movies)
 			if len(movies) == 1 {
 				movie = movies[0]
@@ -73,7 +73,7 @@ func jobImportMovieParseV2(file string, configTemplate string, listConfig string
 
 		}
 		if entriesfound == 0 && len(m.Imdb) >= 1 {
-			movies, _ := database.QueryMovies(database.Query{Select: "id, dbmovie_id, rootpath", Where: "dbmovie_id in (Select id from dbmovies where imdb_id = ? COLLATE NOCASE)", WhereArgs: []interface{}{m.Imdb}})
+			movies, _ := database.QueryMovies(database.Query{Select: "id, dbmovie_id, rootpath", Where: "dbmovie_id in (Select id from dbmovies where imdb_id = ?)", WhereArgs: []interface{}{m.Imdb}})
 			if len(movies) >= 1 {
 
 				return
@@ -97,7 +97,7 @@ func jobImportMovieParseV2(file string, configTemplate string, listConfig string
 					sww.Add()
 					importfeed.JobImportMovies(dbmovie, configTemplate, listConfig, &sww)
 					sww.Wait()
-					movies, _ := database.QueryMovies(database.Query{Select: "id, dbmovie_id, rootpath", Where: "dbmovie_id in (Select id from dbmovies where imdb_id = ? COLLATE NOCASE) and listname = ?", WhereArgs: []interface{}{m.Imdb, listConfig}})
+					movies, _ := database.QueryMovies(database.Query{Select: "id, dbmovie_id, rootpath", Where: "dbmovie_id in (Select id from dbmovies where imdb_id = ?) and listname = ?", WhereArgs: []interface{}{m.Imdb, listConfig}})
 					if len(movies) == 1 {
 						movie = movies[0]
 					}
@@ -124,7 +124,7 @@ func jobImportMovieParseV2(file string, configTemplate string, listConfig string
 							sww.Add()
 							importfeed.JobImportMovies(dbmovie, configTemplate, listConfig, &sww)
 							sww.Wait()
-							movies, _ := database.QueryMovies(database.Query{Select: "id, dbmovie_id, rootpath", Where: "dbmovie_id in (Select id from dbmovies where imdb_id = ? COLLATE NOCASE) and listname = ?", WhereArgs: []interface{}{imdbget, listConfig}})
+							movies, _ := database.QueryMovies(database.Query{Select: "id, dbmovie_id, rootpath", Where: "dbmovie_id in (Select id from dbmovies where imdb_id = ?) and listname = ?", WhereArgs: []interface{}{imdbget, listConfig}})
 							if len(movies) == 1 {
 								movie = movies[0]
 							}

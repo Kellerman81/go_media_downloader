@@ -1,10 +1,13 @@
 package api
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"path/filepath"
+	"runtime"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
@@ -24,6 +27,7 @@ func AddGeneralRoutes(routerapi *gin.RouterGroup) {
 	routerapi.GET("/trakt/authorize", apiTraktGetAuthUrl)
 	routerapi.GET("/trakt/token/:code", apiTraktGetStoreToken)
 	routerapi.GET("/trakt/user/:user/:list", apiTraktGetUserList)
+	routerapi.GET("/debugstats", apiDebugStats)
 	routerapi.GET("/queue", apiQueueList)
 	routerapi.GET("/queue/history", apiQueueListStarted)
 	routerapi.GET("/fillimdb", apiFillImdb)
@@ -64,6 +68,29 @@ type apiparse struct {
 	Path    string
 	Config  string
 	Quality string
+}
+
+// @Summary Debug information
+// @Description Shows some stats
+// @Tags general
+// @Accept  json
+// @Produce  json
+// @Param apikey query string true "apikey"
+// @Success 200
+// @Failure 401 {object} string
+// @Router /api/debugstats [get]
+func apiDebugStats(ctx *gin.Context) {
+	if ApiAuth(ctx) == http.StatusUnauthorized {
+		return
+	}
+	var gc debug.GCStats
+	debug.ReadGCStats(&gc)
+	var mem runtime.MemStats
+	runtime.ReadMemStats(&mem)
+
+	gcjson, _ := json.Marshal(gc)
+	memjson, _ := json.Marshal(mem)
+	ctx.JSON(http.StatusOK, gin.H{"GC Stats": string(gcjson), "Mem Stats": string(memjson)})
 }
 
 // @Summary Queue

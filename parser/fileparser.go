@@ -11,35 +11,32 @@ import (
 	"github.com/Kellerman81/go_media_downloader/database"
 	"github.com/Kellerman81/go_media_downloader/importfeed"
 	"github.com/Kellerman81/go_media_downloader/logger"
-	"github.com/goccy/go-reflect"
 )
 
 type regexpattern struct {
 	name string
 	// Use the last matching pattern. E.g. Year.
 	last bool
-	kind reflect.Kind
 	// REs need to have 2 sub expressions (groups), the first one is "raw", and
 	// the second one for the "clean" value.
 	// E.g. Epiode matching on "S01E18" will result in: raw = "E18", clean = "18".
-	rename   string
 	re       string
 	getgroup int
 }
 
 var patterns = []regexpattern{
-	{"season", false, reflect.Int, "parseseason", `(?i)(s?(\d{1,4}))(?: )?[ex]`, 2},
-	{"episode", false, reflect.Int, "parseepisode", `(?i)((?:\d{1,4})(?: )?[ex](?: )?(\d{1,3})(?:\b|_|e|$))`, 2},
+	{"season", false, `(?i)(s?(\d{1,4}))(?: )?[ex]`, 2},
+	{"episode", false, `(?i)((?:\d{1,4})(?: )?[ex](?: )?(\d{1,3})(?:\b|_|e|$))`, 2},
 	//{"episode", false, reflect.Int, regexp.MustCompile(`(-\s+([0-9]{1,})(?:[^0-9]|$))`)},
-	{"identifier", false, reflect.String, "parseidentifier", `(?i)((s?\d{1,4}(?:(?:(?: )?-?(?: )?[ex]\d{2,3})+)|\d{2,4}(?:\.|-| |_)\d{1,2}(?:\.|-| |_)\d{1,2}))(?:\b|_)`, 2},
-	{"date", false, reflect.String, "parsedate", `(?i)(?:\b|_)((\d{2,4}(?:\.|-| |_)\d{1,2}(?:\.|-| |_)\d{1,2}))(?:\b|_)`, 2},
-	{"year", true, reflect.Int, "parseyear", `(?:\b|_)(((?:19\d|20\d)\d))(?:\b|_)`, 2},
+	{"identifier", false, `(?i)((s?\d{1,4}(?:(?:(?: )?-?(?: )?[ex]\d{2,3})+)|\d{2,4}(?:\.|-| |_)\d{1,2}(?:\.|-| |_)\d{1,2}))(?:\b|_)`, 2},
+	{"date", false, `(?i)(?:\b|_)((\d{2,4}(?:\.|-| |_)\d{1,2}(?:\.|-| |_)\d{1,2}))(?:\b|_)`, 2},
+	{"year", true, `(?:\b|_)(((?:19\d|20\d)\d))(?:\b|_)`, 2},
 
 	//{"resolution", false, reflect.String, regexp.MustCompile(`(?i)(?:\b|_)((\d{3,4}[pi]))(?:\b|_)`, 0)},
 	//{"quality", false, reflect.String, regexp.MustCompile(`(?i)(?:\b|_)((workprint|cam|webcam|hdts|ts|telesync|tc|telecine|r[2-8]|preair|sdtv|hdtv|pdtv|(?:(?:dvd|web|bd)\W?)?scr(?:eener)?|(?:web|dvd|hdtv|bd|br|dvb|dsr|ds|tv|ppv|hd)\W?rip|web\W?(?:dl|hd)?|hddvd|remux|(?:blu\W?ray)))(?:\b|_)`, 0)},
 	//{"codec", false, reflect.String, regexp.MustCompile(`(?i)(?:\b|_)((xvid|divx|hevc|vp9|10bit|hi10p|h\.?264|h\.?265|x\.?264|x\.?265))(?:\b|_)`, 0)},
 	//{"audio", false, reflect.String, regexp.MustCompile(`(?i)(?:\b|_)((mp3|aac|dd[0-9\\.]+|ac3|ac3d|ac3md|dd[p+][0-9\\.]+|flac|dts\W?hd(?:\W?ma)?|dts|truehd|mic|micdubbed))(?:\b|_)`, 0)},
-	{"audio", false, reflect.String, "parseaudio", `(?i)(?:\b|_)((dd[0-9\\.]+|dd[p+][0-9\\.]+|dts\W?hd(?:\W?ma)?))(?:\b|_)`, 2},
+	{"audio", false, `(?i)(?:\b|_)((dd[0-9\\.]+|dd[p+][0-9\\.]+|dts\W?hd(?:\W?ma)?))(?:\b|_)`, 2},
 	//{"region", false, reflect.String, regexp.MustCompile(`(?i)\b(R([0-9]))\b`)},
 	//{"size", false, reflect.String, regexp.MustCompile(`(?i)\b((\d+(?:\.\d+)?(?:GB|MB)))\b`)},
 	//{"website", false, reflect.String, regexp.MustCompile(`^(\[ ?([^\]]+?) ?\])`)},
@@ -53,8 +50,8 @@ var patterns = []regexpattern{
 	//{"extended", false, reflect.Bool, regexp.MustCompile(`(?i)(?:\b|_)(EXTENDED(:?.CUT)?)(?:\b|_)`, 0)},
 	//{"hardcoded", false, reflect.Bool, regexp.MustCompile(`(?i)\b((HC))\b`)},
 	//{"proper", false, reflect.Bool, regexp.MustCompile(`(?i)(?:\b|_)((PROPER))(?:\b|_)`, 0)},
-	{"imdb", false, reflect.String, "parseimdb", `(?i)(?:\b|_)((tt[0-9]{4,9}))(?:\b|_)`, 2},
-	{"tvdb", false, reflect.String, "parsetvdb", `(?i)(?:\b|_)((tvdb[0-9]{2,9}))(?:\b|_)`, 2},
+	{"imdb", false, `(?i)(?:\b|_)((tt[0-9]{4,9}))(?:\b|_)`, 2},
+	{"tvdb", false, `(?i)(?:\b|_)((tvdb[0-9]{2,9}))(?:\b|_)`, 2},
 	//{"repack", false, reflect.Bool, regexp.MustCompile(`(?i)(?:\b|_)((REPACK))(?:\b|_)`, 0)},
 	//{"widescreen", false, reflect.Bool, regexp.MustCompile(`(?i)\b((WS))\b`)},
 	//{"unrated", false, reflect.Bool, regexp.MustCompile(`(?i)\b((UNRATED))\b`)},
@@ -72,28 +69,28 @@ func LoadDBPatterns() {
 	scanpatterns = patterns
 	for idx := range database.Getaudios {
 		if database.Getaudios[idx].UseRegex {
-			scanpatterns = append(scanpatterns, regexpattern{name: "audio", last: false, kind: reflect.String, rename: database.Getaudios[idx].Regex, re: database.Getaudios[idx].Regex, getgroup: 0})
+			scanpatterns = append(scanpatterns, regexpattern{name: "audio", last: false, re: database.Getaudios[idx].Regex, getgroup: 0})
 			config.RegexDelete(database.Getaudios[idx].Regex)
 			config.RegexAdd(database.Getaudios[idx].Regex, *regexp.MustCompile(database.Getaudios[idx].Regex))
 		}
 	}
 	for idx := range database.Getresolutions {
 		if database.Getresolutions[idx].UseRegex {
-			scanpatterns = append(scanpatterns, regexpattern{name: "resolution", last: false, kind: reflect.String, rename: database.Getresolutions[idx].Regex, re: database.Getresolutions[idx].Regex, getgroup: 0})
+			scanpatterns = append(scanpatterns, regexpattern{name: "resolution", last: false, re: database.Getresolutions[idx].Regex, getgroup: 0})
 			config.RegexDelete(database.Getresolutions[idx].Regex)
 			config.RegexAdd(database.Getresolutions[idx].Regex, *regexp.MustCompile(database.Getresolutions[idx].Regex))
 		}
 	}
 	for idx := range database.Getqualities {
 		if database.Getqualities[idx].UseRegex {
-			scanpatterns = append(scanpatterns, regexpattern{name: "quality", last: false, kind: reflect.String, rename: database.Getqualities[idx].Regex, re: database.Getqualities[idx].Regex, getgroup: 0})
+			scanpatterns = append(scanpatterns, regexpattern{name: "quality", last: false, re: database.Getqualities[idx].Regex, getgroup: 0})
 			config.RegexDelete(database.Getqualities[idx].Regex)
 			config.RegexAdd(database.Getqualities[idx].Regex, *regexp.MustCompile(database.Getqualities[idx].Regex))
 		}
 	}
 	for idx := range database.Getcodecs {
 		if database.Getcodecs[idx].UseRegex {
-			scanpatterns = append(scanpatterns, regexpattern{name: "codec", last: false, kind: reflect.String, rename: database.Getcodecs[idx].Regex, re: database.Getcodecs[idx].Regex, getgroup: 0})
+			scanpatterns = append(scanpatterns, regexpattern{name: "codec", last: false, re: database.Getcodecs[idx].Regex, getgroup: 0})
 			config.RegexDelete(database.Getcodecs[idx].Regex)
 			config.RegexAdd(database.Getcodecs[idx].Regex, *regexp.MustCompile(database.Getcodecs[idx].Regex))
 		}
@@ -249,9 +246,6 @@ func (m *ParseInfo) parsegroup(cleanName string, name string, group []string, st
 func (m *ParseInfo) ParseFile(includeYearInTitle bool, typegroup string) error {
 	var startIndex, endIndex = 0, len(m.File)
 	cleanName := strings.Replace(m.File, "_", " ", -1)
-	//if strings.HasPrefix(cleanName, "[") && strings.HasSuffix(cleanName, "]") {
-	//		cleanName = config.RegexParseFile.ReplaceAllString(cleanName, `$2`)
-	//	}
 
 	cleanName = strings.TrimLeft(cleanName, "[")
 	cleanName = strings.TrimRight(cleanName, "]")
@@ -266,40 +260,24 @@ func (m *ParseInfo) ParseFile(includeYearInTitle bool, typegroup string) error {
 		for idx := range database.Getaudios {
 			audio = append(audio, strings.Split(database.Getaudios[idx].Strings, ",")...)
 		}
-		//audio := []string{"mp3", "aac", "ac3", "ac3d", "ac3md", "flac", "dts", "truehd", "mic", "micdubbed"}
 		startIndex, endIndex = m.parsegroup(cleanName, "audio", audio, startIndex, endIndex)
 
 		codec := []string{}
 		for idx := range database.Getcodecs {
 			codec = append(codec, strings.Split(database.Getcodecs[idx].Strings, ",")...)
 		}
-		//codec := []string{"xvid", "divx", "hevc", "vp9", "10bit", "hi10p", "h264", "h.264", "h265", "h.265",
-		//	"x264", "x.264", "x265", "x.265"}
 		startIndex, endIndex = m.parsegroup(cleanName, "codec", codec, startIndex, endIndex)
 
 		quality := []string{}
 		for idx := range database.Getqualities {
 			quality = append(quality, strings.Split(database.Getqualities[idx].Strings, ",")...)
 		}
-		// quality := []string{"workprint", "cam", "webcam", "hdts", "telesync", "telecine", "r5", "r6",
-		// 	"preair", "sdtv", "hdtv", "pdtv", "web", "dvd", "hdtv", "dvb", "dsr", "ppv", "webrip", "dvdrip",
-		// 	"hdtvrip", "bdrip", "brrip", "dvbrip", "dsrrip", "dsrip", "tvrip", "ppvrip", "hdrip", "web rip",
-		// 	"dvd rip", "hdtv rip", "bd rip", "br rip", "dvb rip", "dsr rip", "ds rip", "tv rip", "ppv rip",
-		// 	"hd rip", "web.rip", "dvd.rip", "hdtv.rip", "bd.rip", "br.rip", "dvb.rip", "dsr.rip", "ds.rip",
-		// 	"tv.rip", "ppv.rip", "hd.rip", "web-rip", "dvd-rip", "hdtv-rip", "bd-rip", "br-rip", "dvb-rip", "dsr-rip",
-		// 	"ds-rip", "tv-rip", "ppv-rip", "hd-rip", "webdl", "webhd", "hddvd", "remux", "bluray", "blu.ray", "blu ray",
-		// 	"blu_ray", "dvdscr", "dvd.scr", "dvd-scr", "dvd scr", "dvdscreener", "dvd.screener", "dvd screener",
-		// 	"dvd-screener", "webscr", "web.scr", "web-scr", "web scr", "webscreener", "web.screener", "web screener",
-		// 	"web-screener", "bdscr", "bd.scr", "bd-scr", "bd scr", "bdscreener", "bd.screener", "bd screener",
-		// 	"bd-screener", "bd", "br", "ds", "hd", "tv", "ts", "tc"}
 		startIndex, endIndex = m.parsegroup(cleanName, "quality", quality, startIndex, endIndex)
 
 		resolution := []string{}
 		for idx := range database.Getresolutions {
 			resolution = append(resolution, strings.Split(database.Getresolutions[idx].Strings, ",")...)
 		}
-		//resolution := []string{"360p", "368p", "480p", "576p", "720p", "1080p", "2160p", "360i", "368i", "480i",
-		//	"576i", "720i", "1080i", "2160i"}
 		startIndex, endIndex = m.parsegroup(cleanName, "resolution", resolution, startIndex, endIndex)
 	}
 	extended := []string{"extended", "extended cut", "extended.cut", "extended-cut", "extended_cut"}
@@ -314,11 +292,6 @@ func (m *ParseInfo) ParseFile(includeYearInTitle bool, typegroup string) error {
 	tolower := strings.ToLower(cleanName)
 	// fmt.Println(scanpatterns)
 	for idxpattern := range scanpatterns {
-		// if scanpatterns[idxpattern].re.String() == "0" {
-		// 	fmt.Println("Skip Pattern: ", scanpatterns[idxpattern].re.String(), scanpatterns[idxpattern].name)
-		// 	continue
-		// }
-		// fmt.Println("Pattern: ", scanpatterns[idxpattern].re.String())
 		switch scanpatterns[idxpattern].name {
 		case "imdb":
 			if typegroup != "movie" {
@@ -334,10 +307,6 @@ func (m *ParseInfo) ParseFile(includeYearInTitle bool, typegroup string) error {
 			if !strings.Contains(tolower, "tvdb") {
 				continue
 			}
-		case "year":
-			// if typegroup != "movie" {
-			// 	continue
-			// }
 		case "season":
 			if typegroup != "series" {
 				continue
@@ -459,13 +428,14 @@ func (m *ParseInfo) ParseFile(includeYearInTitle bool, typegroup string) error {
 		}
 	}
 
-	cleanName = raw
-	cleanName = strings.TrimPrefix(cleanName, "- ")
+	cleanName = strings.TrimPrefix(raw, "- ")
 	if strings.ContainsRune(cleanName, '.') && !strings.ContainsRune(cleanName, ' ') {
 		cleanName = strings.Replace(cleanName, ".", " ", -1)
 	}
-	cleanName = strings.Replace(cleanName, "_", " ", -1)
-	cleanName = strings.Trim(cleanName, " -")
+	if strings.ContainsRune(cleanName, '.') {
+		cleanName = strings.Replace(cleanName, "_", " ", -1)
+	}
+	cleanName = strings.TrimSuffix(cleanName, " -")
 	m.Title = strings.TrimSpace(cleanName)
 
 	return nil
@@ -965,32 +935,6 @@ func GetMovieDBPriority(moviefile database.MovieFile, configTemplate string, qua
 // removing accents and replacing separators with -.
 // The path may still start at / and is not intended
 // for use as a file system path without prefix.
-
-func replaceStringObjectFields(s string, obj interface{}) string {
-	fields := reflect.TypeOf(obj)
-	values := reflect.ValueOf(obj)
-	num := fields.NumField()
-	for i := 0; i < num; i++ {
-		field := fields.Field(i)
-		value := values.Field(i)
-
-		replacewith := ""
-		switch value.Kind() {
-		case reflect.String:
-			replacewith = value.String()
-		case reflect.Int:
-			replacewith = strconv.Itoa(int(value.Int()))
-		case reflect.Int32:
-			replacewith = strconv.Itoa(int(value.Int()))
-		case reflect.Int64:
-			replacewith = strconv.Itoa(int(value.Int()))
-		default:
-
-		}
-		s = strings.Replace(s, "{"+field.Name+"}", replacewith, -1)
-	}
-	return s
-}
 
 func (m *ParseInfo) FindSerieByParser(titleyear string, seriestitle string, listname string) (database.Serie, int) {
 	var entriesfound int

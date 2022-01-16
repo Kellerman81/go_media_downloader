@@ -1,10 +1,13 @@
 package utils
 
 import (
+	"bytes"
+	"io"
 	"os"
 	"os/exec"
 	"regexp"
 	"runtime"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -96,7 +99,7 @@ func InitialFillMovies() {
 	logger.Log.Infoln("Starting initial DB fill for movies")
 
 	FillImdb()
-
+	debug.FreeOSMemory()
 	for _, idxmovie := range config.ConfigGetPrefix("movie_") {
 		if !config.ConfigCheck(idxmovie.Name) {
 			continue
@@ -137,16 +140,20 @@ func FillImdb() {
 		file = "init_imdb.exe"
 	}
 	cmd := exec.Command(file)
-	out, errexec := cmd.Output()
-	logger.Log.Infoln(string(out))
+
+	var stdoutBuf bytes.Buffer
+	cmd.Stdout = io.MultiWriter(os.Stdout, &stdoutBuf)
+
+	errexec := cmd.Run()
 	if scanner.CheckFileExist(file) && errexec == nil {
+		logger.Log.Infoln(stdoutBuf.String())
 		database.DBImdb.Close()
 		os.Remove("./imdb.db")
 		os.Rename("./imdbtemp.db", "./imdb.db")
 		database.DBImdb = database.InitImdbdb("info", "imdb")
 	}
+	cmd.Stdout = nil
 	cmd = nil
-	out = nil
 }
 
 type feedResults struct {
@@ -184,11 +191,15 @@ func feeds(configTemplate string, listConfig string) feedResults {
 		for idxres := range searchresults.Nzbs {
 			logger.Log.Debug("nzb found - start downloading: ", searchresults.Nzbs[idxres].NZB.Title)
 			downloadnow := downloader.NewDownloader(configTemplate, "rss")
-			if searchresults.Nzbs[idxres].Nzbmovie.ID != 0 {
-				downloadnow.SetMovie(searchresults.Nzbs[idxres].Nzbmovie)
+			if searchresults.Nzbs[idxres].NzbmovieID != 0 {
+				nzbmovie, _ := database.GetMovies(database.Query{Where: "id=?", WhereArgs: []interface{}{searchresults.Nzbs[idxres].NzbmovieID}})
+
+				downloadnow.SetMovie(nzbmovie)
 				downloadnow.DownloadNzb(searchresults.Nzbs[idxres])
-			} else if searchresults.Nzbs[idxres].Nzbepisode.ID != 0 {
-				downloadnow.SetSeriesEpisode(searchresults.Nzbs[idxres].Nzbepisode)
+			} else if searchresults.Nzbs[idxres].NzbepisodeID != 0 {
+				nzbepisode, _ := database.GetSerieEpisodes(database.Query{Where: "id=?", WhereArgs: []interface{}{searchresults.Nzbs[idxres].NzbepisodeID}})
+
+				downloadnow.SetSeriesEpisode(nzbepisode)
 				downloadnow.DownloadNzb(searchresults.Nzbs[idxres])
 			}
 		}
