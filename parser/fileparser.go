@@ -2,11 +2,10 @@
 package parser
 
 import (
+	"regexp"
 	"strconv"
 	"strings"
 	"unicode"
-
-	"regexp"
 
 	"github.com/Kellerman81/go_media_downloader/config"
 	"github.com/Kellerman81/go_media_downloader/database"
@@ -23,23 +22,24 @@ type regexpattern struct {
 	// REs need to have 2 sub expressions (groups), the first one is "raw", and
 	// the second one for the "clean" value.
 	// E.g. Epiode matching on "S01E18" will result in: raw = "E18", clean = "18".
-	re       regexp.Regexp
+	rename   string
+	re       string
 	getgroup int
 }
 
 var patterns = []regexpattern{
-	{"season", false, reflect.Int, *regexp.MustCompile(`(?i)(s?(\d{1,4}))(?: )?[ex]`), 2},
-	{"episode", false, reflect.Int, *regexp.MustCompile(`(?i)((?:\d{1,4})(?: )?[ex](?: )?(\d{1,3})(?:\b|_|e|$))`), 2},
+	{"season", false, reflect.Int, "parseseason", `(?i)(s?(\d{1,4}))(?: )?[ex]`, 2},
+	{"episode", false, reflect.Int, "parseepisode", `(?i)((?:\d{1,4})(?: )?[ex](?: )?(\d{1,3})(?:\b|_|e|$))`, 2},
 	//{"episode", false, reflect.Int, regexp.MustCompile(`(-\s+([0-9]{1,})(?:[^0-9]|$))`)},
-	{"identifier", false, reflect.String, *regexp.MustCompile(`(?i)((s?\d{1,4}(?:(?:(?: )?-?(?: )?[ex]\d{2,3})+)|\d{2,4}(?:\.|-| |_)\d{1,2}(?:\.|-| |_)\d{1,2}))(?:\b|_)`), 2},
-	{"date", false, reflect.String, *regexp.MustCompile(`(?i)(?:\b|_)((\d{2,4}(?:\.|-| |_)\d{1,2}(?:\.|-| |_)\d{1,2}))(?:\b|_)`), 2},
-	{"year", true, reflect.Int, *regexp.MustCompile(`(?:\b|_)(((?:19\d|20\d)\d))(?:\b|_)`), 2},
+	{"identifier", false, reflect.String, "parseidentifier", `(?i)((s?\d{1,4}(?:(?:(?: )?-?(?: )?[ex]\d{2,3})+)|\d{2,4}(?:\.|-| |_)\d{1,2}(?:\.|-| |_)\d{1,2}))(?:\b|_)`, 2},
+	{"date", false, reflect.String, "parsedate", `(?i)(?:\b|_)((\d{2,4}(?:\.|-| |_)\d{1,2}(?:\.|-| |_)\d{1,2}))(?:\b|_)`, 2},
+	{"year", true, reflect.Int, "parseyear", `(?:\b|_)(((?:19\d|20\d)\d))(?:\b|_)`, 2},
 
 	//{"resolution", false, reflect.String, regexp.MustCompile(`(?i)(?:\b|_)((\d{3,4}[pi]))(?:\b|_)`, 0)},
 	//{"quality", false, reflect.String, regexp.MustCompile(`(?i)(?:\b|_)((workprint|cam|webcam|hdts|ts|telesync|tc|telecine|r[2-8]|preair|sdtv|hdtv|pdtv|(?:(?:dvd|web|bd)\W?)?scr(?:eener)?|(?:web|dvd|hdtv|bd|br|dvb|dsr|ds|tv|ppv|hd)\W?rip|web\W?(?:dl|hd)?|hddvd|remux|(?:blu\W?ray)))(?:\b|_)`, 0)},
 	//{"codec", false, reflect.String, regexp.MustCompile(`(?i)(?:\b|_)((xvid|divx|hevc|vp9|10bit|hi10p|h\.?264|h\.?265|x\.?264|x\.?265))(?:\b|_)`, 0)},
 	//{"audio", false, reflect.String, regexp.MustCompile(`(?i)(?:\b|_)((mp3|aac|dd[0-9\\.]+|ac3|ac3d|ac3md|dd[p+][0-9\\.]+|flac|dts\W?hd(?:\W?ma)?|dts|truehd|mic|micdubbed))(?:\b|_)`, 0)},
-	{"audio", false, reflect.String, *regexp.MustCompile(`(?i)(?:\b|_)((dd[0-9\\.]+|dd[p+][0-9\\.]+|dts\W?hd(?:\W?ma)?))(?:\b|_)`), 2},
+	{"audio", false, reflect.String, "parseaudio", `(?i)(?:\b|_)((dd[0-9\\.]+|dd[p+][0-9\\.]+|dts\W?hd(?:\W?ma)?))(?:\b|_)`, 2},
 	//{"region", false, reflect.String, regexp.MustCompile(`(?i)\b(R([0-9]))\b`)},
 	//{"size", false, reflect.String, regexp.MustCompile(`(?i)\b((\d+(?:\.\d+)?(?:GB|MB)))\b`)},
 	//{"website", false, reflect.String, regexp.MustCompile(`^(\[ ?([^\]]+?) ?\])`)},
@@ -53,8 +53,8 @@ var patterns = []regexpattern{
 	//{"extended", false, reflect.Bool, regexp.MustCompile(`(?i)(?:\b|_)(EXTENDED(:?.CUT)?)(?:\b|_)`, 0)},
 	//{"hardcoded", false, reflect.Bool, regexp.MustCompile(`(?i)\b((HC))\b`)},
 	//{"proper", false, reflect.Bool, regexp.MustCompile(`(?i)(?:\b|_)((PROPER))(?:\b|_)`, 0)},
-	{"imdb", false, reflect.String, *regexp.MustCompile(`(?i)(?:\b|_)((tt[0-9]{4,9}))(?:\b|_)`), 2},
-	{"tvdb", false, reflect.String, *regexp.MustCompile(`(?i)(?:\b|_)((tvdb[0-9]{2,9}))(?:\b|_)`), 2},
+	{"imdb", false, reflect.String, "parseimdb", `(?i)(?:\b|_)((tt[0-9]{4,9}))(?:\b|_)`, 2},
+	{"tvdb", false, reflect.String, "parsetvdb", `(?i)(?:\b|_)((tvdb[0-9]{2,9}))(?:\b|_)`, 2},
 	//{"repack", false, reflect.Bool, regexp.MustCompile(`(?i)(?:\b|_)((REPACK))(?:\b|_)`, 0)},
 	//{"widescreen", false, reflect.Bool, regexp.MustCompile(`(?i)\b((WS))\b`)},
 	//{"unrated", false, reflect.Bool, regexp.MustCompile(`(?i)\b((UNRATED))\b`)},
@@ -64,25 +64,38 @@ var patterns = []regexpattern{
 var scanpatterns []regexpattern
 
 func LoadDBPatterns() {
+	for idx := range patterns {
+		if !config.ConfigCheck(patterns[idx].re) {
+			config.RegexAdd(patterns[idx].re, *regexp.MustCompile(patterns[idx].re))
+		}
+	}
 	scanpatterns = patterns
 	for idx := range database.Getaudios {
 		if database.Getaudios[idx].UseRegex {
-			scanpatterns = append(scanpatterns, regexpattern{name: "audio", last: false, kind: reflect.String, re: database.Getaudios[idx].Regexp, getgroup: 0})
+			scanpatterns = append(scanpatterns, regexpattern{name: "audio", last: false, kind: reflect.String, rename: database.Getaudios[idx].Regex, re: database.Getaudios[idx].Regex, getgroup: 0})
+			config.RegexDelete(database.Getaudios[idx].Regex)
+			config.RegexAdd(database.Getaudios[idx].Regex, *regexp.MustCompile(database.Getaudios[idx].Regex))
 		}
 	}
 	for idx := range database.Getresolutions {
 		if database.Getresolutions[idx].UseRegex {
-			scanpatterns = append(scanpatterns, regexpattern{name: "resolution", last: false, kind: reflect.String, re: database.Getresolutions[idx].Regexp, getgroup: 0})
+			scanpatterns = append(scanpatterns, regexpattern{name: "resolution", last: false, kind: reflect.String, rename: database.Getresolutions[idx].Regex, re: database.Getresolutions[idx].Regex, getgroup: 0})
+			config.RegexDelete(database.Getresolutions[idx].Regex)
+			config.RegexAdd(database.Getresolutions[idx].Regex, *regexp.MustCompile(database.Getresolutions[idx].Regex))
 		}
 	}
 	for idx := range database.Getqualities {
 		if database.Getqualities[idx].UseRegex {
-			scanpatterns = append(scanpatterns, regexpattern{name: "quality", last: false, kind: reflect.String, re: database.Getqualities[idx].Regexp, getgroup: 0})
+			scanpatterns = append(scanpatterns, regexpattern{name: "quality", last: false, kind: reflect.String, rename: database.Getqualities[idx].Regex, re: database.Getqualities[idx].Regex, getgroup: 0})
+			config.RegexDelete(database.Getqualities[idx].Regex)
+			config.RegexAdd(database.Getqualities[idx].Regex, *regexp.MustCompile(database.Getqualities[idx].Regex))
 		}
 	}
 	for idx := range database.Getcodecs {
 		if database.Getcodecs[idx].UseRegex {
-			scanpatterns = append(scanpatterns, regexpattern{name: "codec", last: false, kind: reflect.String, re: database.Getcodecs[idx].Regexp, getgroup: 0})
+			scanpatterns = append(scanpatterns, regexpattern{name: "codec", last: false, kind: reflect.String, rename: database.Getcodecs[idx].Regex, re: database.Getcodecs[idx].Regex, getgroup: 0})
+			config.RegexDelete(database.Getcodecs[idx].Regex)
+			config.RegexAdd(database.Getcodecs[idx].Regex, *regexp.MustCompile(database.Getcodecs[idx].Regex))
 		}
 	}
 }
@@ -358,7 +371,8 @@ func (m *ParseInfo) ParseFile(includeYearInTitle bool, typegroup string) error {
 				continue
 			}
 		}
-		matches := scanpatterns[idxpattern].re.FindAllStringSubmatch(cleanName, -1)
+
+		matches := config.RegexGet(scanpatterns[idxpattern].re).FindAllStringSubmatch(cleanName, -1)
 
 		if len(matches) == 0 {
 			continue
@@ -729,22 +743,24 @@ func gettypepriority(inval string, qualitystringtype string, qualityTemplate str
 				}
 			}
 		} else {
-			teststr := qualitytype[idxqual].Regexp.FindStringSubmatch(tolower)
-			if len(teststr) >= 2 {
-				id = qualitytype[idxqual].ID
-				name = qualitytype[idxqual].Name
-				priority = qualitytype[idxqual].Priority
-				if len(qualityconfig.QualityReorder) >= 1 {
-					for idxreorder := range qualityconfig.QualityReorder {
-						if strings.EqualFold(qualityconfig.QualityReorder[idxreorder].Type, qualitystringtype) && strings.EqualFold(qualityconfig.QualityReorder[idxreorder].Name, qualitytype[idxqual].Name) {
-							priority = qualityconfig.QualityReorder[idxreorder].Newpriority
-						}
-						if strings.EqualFold(qualityconfig.QualityReorder[idxreorder].Type, "position") && strings.EqualFold(qualityconfig.QualityReorder[idxreorder].Name, qualitystringtype) {
-							priority = priority * qualityconfig.QualityReorder[idxreorder].Newpriority
+			if config.RegexCheck(qualitytype[idxqual].Regex) {
+				teststr := config.RegexGet(qualitytype[idxqual].Regex).FindStringSubmatch(tolower)
+				if len(teststr) >= 2 {
+					id = qualitytype[idxqual].ID
+					name = qualitytype[idxqual].Name
+					priority = qualitytype[idxqual].Priority
+					if len(qualityconfig.QualityReorder) >= 1 {
+						for idxreorder := range qualityconfig.QualityReorder {
+							if strings.EqualFold(qualityconfig.QualityReorder[idxreorder].Type, qualitystringtype) && strings.EqualFold(qualityconfig.QualityReorder[idxreorder].Name, qualitytype[idxqual].Name) {
+								priority = qualityconfig.QualityReorder[idxreorder].Newpriority
+							}
+							if strings.EqualFold(qualityconfig.QualityReorder[idxreorder].Type, "position") && strings.EqualFold(qualityconfig.QualityReorder[idxreorder].Name, qualitystringtype) {
+								priority = priority * qualityconfig.QualityReorder[idxreorder].Newpriority
+							}
 						}
 					}
+					break
 				}
-				break
 			}
 		}
 

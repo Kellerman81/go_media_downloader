@@ -1036,7 +1036,7 @@ func StructureSingleFolder(folder string, disableruntimecheck bool, disabledisal
 			if entriesfound == 0 {
 				yearstr := strconv.Itoa(n.Year)
 				seriestitle := ""
-				matched := config.RegexSeriesTitle.FindStringSubmatch(filepath.Base(videofiles[fileidx]))
+				matched := config.RegexGet("RegexSeriesTitle").FindStringSubmatch(filepath.Base(videofiles[fileidx]))
 				if len(matched) >= 2 {
 					seriestitle = matched[1]
 				}
@@ -1271,7 +1271,7 @@ func (s *structure) notify(videotarget string, filename string, videofile string
 
 func (s *structure) GetSeriesEpisodes(series database.Serie, videofile string, m parser.ParseInfo, folder string) (oldfiles []string, episodes []int, allowimport bool, serietitle string, episodetitle string, SeriesEpisode database.SerieEpisode, SeriesEpisodes []database.SerieEpisode, runtime int) {
 	dbserie, _ := database.GetDbserie(database.Query{Select: "identifiedby", Where: "id=?", WhereArgs: []interface{}{series.DbserieID}})
-	teststr := config.RegexSeriesIdentifier.FindStringSubmatch(m.Identifier)
+	teststr := config.RegexGet("RegexSeriesIdentifier").FindStringSubmatch(m.Identifier)
 	if len(teststr) == 0 {
 		logger.Log.Debug("In Identifier not found: ", videofile, " Identifier: ", m.Identifier)
 		return

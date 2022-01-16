@@ -293,8 +293,6 @@ type RegexGroup struct {
 }
 type RegexConfig struct {
 	RegexConfigIn
-	RequiredRegex []RegexGroup
-	RejectedRegex []RegexGroup
 }
 
 type QualityConfig struct {
@@ -608,19 +606,19 @@ func LoadCfgDataDB(f file.File, parser string) {
 			generalCache.Rejected = outrgx[idx].Rejected
 			generalCache.Required = outrgx[idx].Required
 			for _, rowtitle := range outrgx[idx].Rejected {
-				reg, errreg := regexp.Compile(rowtitle)
-				if errreg == nil {
-					regn := *reg
-					generalCache.RejectedRegex = append(generalCache.RejectedRegex, RegexGroup{Name: rowtitle, Re: regn})
-					reg = nil
+				if !RegexCheck(rowtitle) {
+					reg, errreg := regexp.Compile(rowtitle)
+					if errreg == nil {
+						RegexAdd(rowtitle, *reg)
+					}
 				}
 			}
 			for _, rowtitle := range outrgx[idx].Required {
-				reg, errreg := regexp.Compile(rowtitle)
-				if errreg == nil {
-					regn := *reg
-					generalCache.RequiredRegex = append(generalCache.RequiredRegex, RegexGroup{Name: rowtitle, Re: regn})
-					reg = nil
+				if !RegexCheck(rowtitle) {
+					reg, errreg := regexp.Compile(rowtitle)
+					if errreg == nil {
+						RegexAdd(rowtitle, *reg)
+					}
 				}
 			}
 			configEntries = append(configEntries, Conf{Name: "regex_" + outrgx[idx].Name, Data: generalCache})
@@ -679,9 +677,6 @@ func LoadCfgDataDB(f file.File, parser string) {
 	configDB = nil
 	k = nil
 }
-
-var RegexSeriesTitle regexp.Regexp
-var RegexSeriesIdentifier regexp.Regexp
 
 func UpdateCfg(configIn []*Conf) {
 	configEntries = nil
