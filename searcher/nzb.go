@@ -99,15 +99,14 @@ func filter_regex_nzbs(regexconfig config.RegexConfig, title string, wantedtitle
 		if !config.RegexCheck(rowtitle) {
 			continue
 		}
-		rowrejected := config.RegexGet(rowtitle)
-		teststrwanted := rowrejected.FindStringSubmatch(wantedtitle)
+		teststrwanted := config.RegexGet(rowtitle).FindStringSubmatch(wantedtitle)
 		if len(teststrwanted) >= 1 {
 			//Regex is in title - skip test
 			continue
 		}
 		breakfor := false
 		for idx := range wantedalternates {
-			teststrwanted := rowrejected.FindStringSubmatch(wantedalternates[idx])
+			teststrwanted := config.RegexGet(rowtitle).FindStringSubmatch(wantedalternates[idx])
 			if len(teststrwanted) >= 1 {
 				breakfor = true
 				break
@@ -117,7 +116,7 @@ func filter_regex_nzbs(regexconfig config.RegexConfig, title string, wantedtitle
 			//Regex is in alternate title - skip test
 			continue
 		}
-		teststr := rowrejected.FindStringSubmatch(title)
+		teststr := config.RegexGet(rowtitle).FindStringSubmatch(title)
 		if len(teststr) >= 1 {
 			logger.Log.Debug("Skipped - Regex rejected: ", title, " Regex ", rowtitle)
 			return true, rowtitle
@@ -128,9 +127,8 @@ func filter_regex_nzbs(regexconfig config.RegexConfig, title string, wantedtitle
 		if !config.RegexCheck(rowtitle) {
 			continue
 		}
-		rowrequired := config.RegexGet(rowtitle)
 
-		teststr := rowrequired.FindStringSubmatch(title)
+		teststr := config.RegexGet(rowtitle).FindStringSubmatch(title)
 		if len(teststr) >= 1 {
 			logger.Log.Debug("Regex required matched: ", title, " Regex ", rowtitle)
 			requiredmatched = true

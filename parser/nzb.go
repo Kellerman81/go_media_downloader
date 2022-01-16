@@ -4,18 +4,19 @@ import (
 	"strings"
 
 	"github.com/Kellerman81/go_media_downloader/config"
-	"github.com/Kellerman81/go_media_downloader/database"
 	"github.com/Kellerman81/go_media_downloader/logger"
 	"github.com/Kellerman81/go_media_downloader/newznab"
 )
 
 type Nzbwithprio struct {
-	Prio             int
-	Indexer          string
-	ParseInfo        ParseInfo
-	NZB              newznab.NZB
-	Nzbmovie         database.Movie
-	Nzbepisode       database.SerieEpisode
+	Prio         int
+	Indexer      string
+	ParseInfo    ParseInfo
+	NZB          newznab.NZB
+	NzbmovieID   uint
+	NzbepisodeID uint
+	//Nzbmovie         database.Movie
+	//Nzbepisode       database.SerieEpisode
 	WantedTitle      string
 	WantedAlternates []string
 	QualityTemplate  string
@@ -28,11 +29,12 @@ type NzbwithprioJson struct {
 	Indexer          string
 	ParseInfo        ParseInfo
 	NZB              newznab.NZB
-	Nzbmovie         database.MovieJson
-	Nzbepisode       database.SerieEpisodeJson
+	NzbmovieID       uint
+	NzbepisodeID     uint
 	WantedTitle      string
 	WantedAlternates []string
-	Quality          config.QualityConfig
+	QualityTemplate  string
+	MinimumPriority  int
 	Denied           bool
 	Reason           string
 }

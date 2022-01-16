@@ -296,38 +296,42 @@ func (d *downloadertype) notify() {
 
 func (d *downloadertype) history() {
 	if strings.EqualFold(d.SearchGroupType, "movie") {
+		nzbmovie, _ := database.GetMovies(database.Query{Where: "id=?", WhereArgs: []interface{}{d.Nzb.NzbmovieID}})
+
 		movieID := d.Movie.ID
 		moviequality := d.Movie.QualityProfile
 		if movieID == 0 {
-			movieID = d.Nzb.Nzbmovie.ID
-			moviequality = d.Nzb.Nzbmovie.QualityProfile
+			movieID = d.Nzb.NzbmovieID
+			moviequality = nzbmovie.QualityProfile
 		}
 		dbmovieID := d.Movie.DbmovieID
 		if dbmovieID == 0 {
-			dbmovieID = d.Nzb.Nzbmovie.DbmovieID
+			dbmovieID = nzbmovie.DbmovieID
 		}
 
 		database.InsertArray("movie_histories",
 			[]string{"title", "url", "target", "indexer", "downloaded_at", "movie_id", "dbmovie_id", "resolution_id", "quality_id", "codec_id", "audio_id", "quality_profile"},
 			[]interface{}{d.Nzb.NZB.Title, d.Nzb.NZB.DownloadURL, d.Target.Path, d.Nzb.Indexer, time.Now(), movieID, dbmovieID, d.Nzb.ParseInfo.ResolutionID, d.Nzb.ParseInfo.QualityID, d.Nzb.ParseInfo.CodecID, d.Nzb.ParseInfo.AudioID, moviequality})
 	} else {
+		nzbepisode, _ := database.GetSerieEpisodes(database.Query{Where: "id=?", WhereArgs: []interface{}{d.Nzb.NzbepisodeID}})
+
 		serieid := d.Serie.ID
 		if serieid == 0 {
-			serieid = d.Nzb.Nzbepisode.SerieID
+			serieid = nzbepisode.SerieID
 		}
 		dbserieid := d.Dbserie.ID
 		if dbserieid == 0 {
-			dbserieid = d.Nzb.Nzbepisode.DbserieID
+			dbserieid = nzbepisode.DbserieID
 		}
 		serieepisodeid := d.Serieepisode.ID
 		serieepisodequality := d.Serieepisode.QualityProfile
 		if serieepisodeid == 0 {
-			serieepisodeid = d.Nzb.Nzbepisode.ID
-			serieepisodequality = d.Nzb.Nzbepisode.QualityProfile
+			serieepisodeid = nzbepisode.ID
+			serieepisodequality = nzbepisode.QualityProfile
 		}
 		dbserieepisodeid := d.Dbserieepisode.ID
 		if dbserieepisodeid == 0 {
-			dbserieepisodeid = d.Nzb.Nzbepisode.DbserieEpisodeID
+			dbserieepisodeid = nzbepisode.DbserieEpisodeID
 		}
 
 		database.InsertArray("serie_episode_histories",
