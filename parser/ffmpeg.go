@@ -1,12 +1,9 @@
 package parser
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"math"
-	"os"
 	"os/exec"
 	"path"
 	"path/filepath"
@@ -223,20 +220,17 @@ func getFFProbeFilename() string {
 func NewVideoFile(ffprobePath string, videoPath string, stripExt bool) (VideoFile, error) {
 	args := []string{"-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", "-show_error", videoPath}
 
-	cmd := exec.Command(ffprobePath, args...)
-	var stdoutBuf bytes.Buffer
-	cmd.Stdout = io.MultiWriter(os.Stdout, &stdoutBuf)
-
-	err := cmd.Run()
+	out, err := exec.Command(ffprobePath, args...).Output()
 	if err != nil {
-		cmd = nil
-		return VideoFile{}, fmt.Errorf("FFProbe encountered an error with <%s>.\nError JSON:\n%s\nError: %s", videoPath, stdoutBuf.Bytes(), err.Error())
+		out = nil
+		return VideoFile{}, fmt.Errorf("FFProbe encountered an error with <%s>.\nError JSON:\n%s\nError: %s", videoPath, string(out), err.Error())
 	}
-	cmd = nil
 	probeJSON := FFProbeJSON{}
-	if err := json.Unmarshal(stdoutBuf.Bytes(), &probeJSON); err != nil {
+	if err := json.Unmarshal(out, &probeJSON); err != nil {
+		out = nil
 		return VideoFile{}, fmt.Errorf("error unmarshalling video data for <%s>: %s", videoPath, err.Error())
 	}
+	out = nil
 	if len(probeJSON.Streams) == 0 {
 		return VideoFile{}, fmt.Errorf("failed to get ffprobe json for <%s>", videoPath)
 	}

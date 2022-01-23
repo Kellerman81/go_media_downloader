@@ -1,0 +1,43 @@
+package models
+
+import (
+	"github.com/GoAdminGroup/go-admin/context"
+	"github.com/GoAdminGroup/go-admin/modules/db"
+	"github.com/GoAdminGroup/go-admin/plugins/admin/modules/parameter"
+	"github.com/GoAdminGroup/go-admin/plugins/admin/modules/table"
+	"github.com/Kellerman81/go_media_downloader/tasks"
+)
+
+func GetQueueTable(ctx *context.Context) (userTable table.Table) {
+
+	userTable = table.NewDefaultTable(table.Config{})
+	userTable.GetOnlyInfo()
+	var queue []map[string]interface{}
+	i := 0
+	for _, value := range tasks.GlobalQueue {
+		queue = append(queue, map[string]interface{}{
+			"id":      i,
+			"queue":   value.Queue.Queue,
+			"added":   value.Queue.Added.Format("2006-01-02 15:04:05"),
+			"started": value.Queue.Started.Format("2006-01-02 15:04:05"),
+		})
+		i += 1
+	}
+
+	info := userTable.GetInfo().SetDefaultPageSize(100)
+	info.HideDeleteButton().HideDetailButton().HideEditButton().HideExportButton().HideFilterArea().HideFilterButton().HideNewButton().HidePagination()
+	info.AddField("ID", "id", db.Numeric)
+	info.AddField("Queue", "queue", db.Varchar)
+	info.AddField("Added", "added", db.Datetime)
+	info.AddField("Started", "started", db.Datetime)
+
+	info.SetTable("Queue").
+		SetTitle("Queue").
+		SetDescription("Queue").
+		SetGetDataFn(func(param parameter.Parameters) (data []map[string]interface{}, size int) {
+			param.PK()
+
+			return queue, len(queue)
+		})
+	return userTable
+}

@@ -1,0 +1,4 @@
+CREATE TABLE "stat" (
+	"id"	INTEGER,
+	PRIMARY KEY("id" AUTOINCREMENT)
+);

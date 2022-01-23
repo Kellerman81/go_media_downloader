@@ -11,10 +11,18 @@ import (
 
 	"os"
 
+	"github.com/GoAdminGroup/go-admin/engine"
+	goadmincfg "github.com/GoAdminGroup/go-admin/modules/config"
+	"github.com/GoAdminGroup/go-admin/modules/db"
+	"github.com/GoAdminGroup/go-admin/modules/language"
+	"github.com/GoAdminGroup/go-admin/template"
+	"github.com/GoAdminGroup/go-admin/template/chartjs"
 	"github.com/Kellerman81/go_media_downloader/api"
 	"github.com/Kellerman81/go_media_downloader/apiexternal"
 	"github.com/Kellerman81/go_media_downloader/config"
 	"github.com/Kellerman81/go_media_downloader/database"
+	"github.com/Kellerman81/go_media_downloader/goadmin/pages"
+	"github.com/Kellerman81/go_media_downloader/goadmin/tables"
 	"github.com/Kellerman81/go_media_downloader/logger"
 	"github.com/Kellerman81/go_media_downloader/parser"
 	"github.com/Kellerman81/go_media_downloader/scheduler"
@@ -23,8 +31,9 @@ import (
 
 	"github.com/DeanThompson/ginpprof"
 
-	"github.com/foolin/goview"
-	"github.com/foolin/goview/supports/ginview"
+	_ "github.com/GoAdminGroup/go-admin/adapter/gin"
+	_ "github.com/GoAdminGroup/go-admin/modules/db/drivers/sqlite" // sql driver
+	"github.com/GoAdminGroup/themes/adminlte"
 	"github.com/gin-gonic/gin"
 	ginlog "github.com/toorop/gin-logrus"
 )
@@ -103,45 +112,6 @@ func main() {
 	logger.Log.Infoln("Starting API Logger")
 	router.Use(ginlog.Logger(logger.Log), gin.Recovery())
 
-	if _, err := os.Stat("./views"); !os.IsNotExist(err) {
-		logger.Log.Infoln("Starting API Websites")
-		router.HTMLRender = ginview.New(goview.Config{
-			Root:      "views",
-			Extension: ".html",
-			Master:    "layouts/master",
-			//Partials:  []string{"partials/ad"},
-			//Funcs: template.FuncMap{"copy": func() string {
-			//	return time.Now().Format("2006")
-			//}},
-			DisableCache: false,
-			Delims:       goview.Delims{},
-		})
-		//router.HTMLRender = ginview.Default()
-		router.Static("/dist", "./views/dist")
-		router.Static("/pages", "./views/pages")
-		router.Static("/plugins", "./views/plugins")
-		router.Static("/build", "./views/build")
-		router.GET("/", func(ctx *gin.Context) {
-			//render with master-
-			ctx.HTML(http.StatusOK, "index", gin.H{
-				"title": "Index title!",
-				"add": func(a int, b int) int {
-					return a + b
-				},
-			})
-		})
-		router.GET("/dbmovies", func(ctx *gin.Context) {
-			//render with master-
-			ctx.HTML(http.StatusOK, "dbmovies", gin.H{
-				"title": "DB Movies",
-			})
-		})
-
-		router.GET("/page", func(ctx *gin.Context) {
-			//render only file, must full name with extension
-			ctx.HTML(http.StatusOK, "page.html", gin.H{"title": "Page file title!!"})
-		})
-	}
 	logger.Log.Infoln("Starting API Endpoints")
 	routerapi := router.Group("/api")
 	api.AddGeneralRoutes(routerapi)
@@ -162,6 +132,68 @@ func main() {
 	// 	docs.SwaggerInfo.BasePath = "/"
 	// 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 	// }
+
+	var goadmin bool = true
+
+	if goadmin {
+		template.AddComp(chartjs.NewChart())
+		eng := engine.Default()
+		acfg := &goadmincfg.Config{
+			Databases: goadmincfg.DatabaseList{
+				"default": {Driver: "sqlite", File: "./databases/admin.db"},
+			},
+			AppID:                    "PPbLwfSG2Cwa",
+			Theme:                    "adminlte",
+			UrlPrefix:                "/admin",
+			Env:                      goadmincfg.EnvLocal,
+			Debug:                    true,
+			Language:                 language.EN,
+			Title:                    "Go Media Downloader",
+			LoginTitle:               "Go Media Downloader",
+			Logo:                     "<b>Go</b> Media Downloader",
+			FooterInfo:               "Go Media Downloader by Kellerman81",
+			IndexUrl:                 "/",
+			GoModFilePath:            "",
+			BootstrapFilePath:        "",
+			LoginUrl:                 "/login",
+			AssetRootPath:            "",
+			AssetUrl:                 "",
+			ColorScheme:              adminlte.ColorschemeSkinBlack,
+			AccessLogPath:            "./logs/access.log",
+			ErrorLogPath:             "./logs/error.log",
+			InfoLogPath:              "./logs/info.log",
+			HideConfigCenterEntrance: true,
+			HideAppInfoEntrance:      true,
+			HideToolEntrance:         true,
+			HidePluginEntrance:       true,
+			NoLimitLoginIP:           true,
+		}
+		if err := eng.AddConfig(acfg).AddPlugins(eng.AdminPlugin()).AddGenerators(tables.Generators).
+			Use(router); err != nil {
+			panic(err)
+		}
+		// if err := eng.AddConfigFromYAML("./admin.yml").
+		// 	AddGenerators(tables.Generators).
+		// 	Use(router); err != nil {
+		// 	panic(err)
+		// }
+		eng.HTML("GET", "/admin", pages.GetDashBoardO)
+		eng.HTML("GET", "/", pages.GetDashBoardO)
+		eng.Services["sqlite"] = database.GetSqliteDB().InitDB(map[string]goadmincfg.Database{
+			"default": {Driver: "sqlite", File: "./databases/admin.db"},
+			"media":   {Driver: "sqlite"}})
+		defaultConnection := db.GetConnection(eng.Services)
+		eng.Adapter.SetConnection(defaultConnection)
+		router.Static("/admin/uploads", "./temp")
+		//router.GET("/admin", pages.GetDashBoard2)
+
+		//eng.HTML("GET", "/admin", pages.GetDashBoard2)
+		//eng.HTML("GET", "/admin/", pages.GetDashBoard2)
+		//eng.HTML("GET", "/", pages.GetDashBoard2)
+		//eng.HTMLFile("GET", "/admin/hello", "./html/hello.tmpl", map[string]interface{}{
+		//	"msg": "Hello world",
+		//})
+	}
 
 	if strings.EqualFold(cfg_general.LogLevel, "Debug") {
 		ginpprof.Wrap(router)

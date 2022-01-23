@@ -422,7 +422,7 @@ func Slepping(random bool, seconds int) {
 	}
 }
 
-const Configfile string = "config.toml"
+const Configfile string = "./config/config.toml"
 
 func LoadCfgDB(configfile string) error {
 	var k = koanf.New(".")
@@ -502,7 +502,7 @@ func LoadCfgDataDB(f file.File, parser string) {
 
 	cfg := &pudge.Config{
 		SyncInterval: 1} // every second fsync
-	configDB, _ := pudge.Open("config.db", cfg)
+	configDB, _ := pudge.Open("./databases/config.db", cfg)
 	//config.CacheConfig()
 	//scanner.CleanUpFolder("./backup", 10)
 	pudge.BackupAll("")
@@ -691,7 +691,7 @@ func UpdateCfgEntry(configIn Conf) {
 
 	cfg := &pudge.Config{
 		SyncInterval: 1} // every second fsync
-	configDB, _ := pudge.Open("config.db", cfg)
+	configDB, _ := pudge.Open("./databases/config.db", cfg)
 	for idx := range configEntries {
 		if configEntries[idx].Name == configIn.Name {
 			configEntries[idx].Data = configIn.Data
@@ -721,7 +721,7 @@ func DeleteCfgEntry(name string) {
 
 	cfg := &pudge.Config{
 		SyncInterval: 1} // every second fsync
-	configDB, _ := pudge.Open("config.db", cfg)
+	configDB, _ := pudge.Open("./databases/config.db", cfg)
 	configDB.Delete(name)
 	configDB.Close()
 	configDB = nil
@@ -731,7 +731,7 @@ func ClearCfg() {
 
 	cfg := &pudge.Config{
 		SyncInterval: 1} // every second fsync
-	configDB, _ := pudge.Open("config.db", cfg)
+	configDB, _ := pudge.Open("./databases/config.db", cfg)
 	configDB.DeleteFile()
 	configEntries = []Conf{}
 	configEntries = append(configEntries, Conf{Name: "general", Data: GeneralConfig{
@@ -799,7 +799,7 @@ func WriteCfg() {
 
 	cfg := &pudge.Config{
 		SyncInterval: 1} // every second fsync
-	configDB, _ := pudge.Open("config.db", cfg)
+	configDB, _ := pudge.Open("./databases/config.db", cfg)
 	var bla MainConfigOut
 	for _, value := range configEntries {
 		if strings.HasPrefix(value.Name, "general") {
@@ -859,7 +859,7 @@ func WriteCfg() {
 	k.Load(structs.Provider(bla, "koanf"), nil)
 
 	byteArray, _ := k.Marshal(toml.Parser())
-	ioutil.WriteFile("config.toml", byteArray, 0777)
+	ioutil.WriteFile("./config/config.toml", byteArray, 0777)
 
 	configDB.Close()
 	configDB = nil

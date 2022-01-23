@@ -1003,7 +1003,6 @@ func (n *nzbFilter) setDataField(lists []string, addifnotfound bool) {
 						continue
 					}
 					loopdbmovie = founddbmovie
-
 				} else {
 					m, errparse := parser.NewFileParser(n.ToFilter[idx].NZB.Title, false, "movie")
 					if errparse != nil {
