@@ -148,8 +148,8 @@ func FillImdb() {
 	if scanner.CheckFileExist(file) && errexec == nil {
 		logger.Log.Infoln(stdoutBuf.String())
 		database.DBImdb.Close()
-		os.Remove("./imdb.db")
-		os.Rename("./imdbtemp.db", "./imdb.db")
+		os.Remove("./databases/imdb.db")
+		os.Rename("./databases/imdbtemp.db", "./databases/imdb.db")
 		database.DBImdb = database.InitImdbdb("info", "imdb")
 	}
 	cmd.Stdout = nil

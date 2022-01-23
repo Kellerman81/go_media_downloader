@@ -51,7 +51,7 @@ func csvgetbool(instr string) bool {
 	return bo
 }
 
-const configfile string = "config.toml"
+const configfile string = "./config/config.toml"
 
 type imdbConfig struct {
 	Indexedtypes     []string `koanf:"indexed_types"`
@@ -141,8 +141,8 @@ func LoadCfgDataDB() imdbConfig {
 var dbimdb *sqlx.DB
 
 func initImdbdb(dbloglevel string, dbfile string) *sqlx.DB {
-	if _, err := os.Stat("./" + dbfile + ".db"); os.IsNotExist(err) {
-		_, err := os.Create("./" + dbfile + ".db") // Create SQLite file
+	if _, err := os.Stat("./databases/" + dbfile + ".db"); os.IsNotExist(err) {
+		_, err := os.Create("./databases/" + dbfile + ".db") // Create SQLite file
 		if err != nil {
 			log.Fatal(err.Error())
 		}
@@ -176,14 +176,14 @@ func main() {
 	for _, row := range cfg_imdb.Indexedlanguages {
 		akamap[row] = true
 	}
-	os.Remove("./imdbtemp.db")
+	os.Remove("./databases/imdbtemp.db")
 	dbget := initImdbdb("info", "imdbtemp")
 	dbimdb = dbget
 
 	readWriteMu := &sync.Mutex{}
 	m, err := migrate.New(
 		"file://./schema/imdbdb",
-		"sqlite3://imdbtemp.db?cache=shared&_fk=1&_mutex=no&_cslike=0",
+		"sqlite3://./databases/imdbtemp.db?cache=shared&_fk=1&_mutex=no&_cslike=0",
 	)
 	if err != nil {
 		fmt.Println(fmt.Errorf("migration failed... %v", err))
@@ -199,7 +199,7 @@ func main() {
 	cacherowlimit := 1999
 
 	fmt.Println("Opening titles..")
-	filetitle, err := os.Open("./title.basics.tsv")
+	filetitle, err := os.Open("./temp/title.basics.tsv")
 	cachetconst := make(map[uint32]interface{}, 1000000)
 	if err != nil {
 		fmt.Println(fmt.Errorf("an error occurred while opening titles.. %v", err))
@@ -307,7 +307,7 @@ func main() {
 	filetitle.Close()
 
 	fmt.Println("Opening akas..")
-	fileaka, err := os.Open("./title.akas.tsv")
+	fileaka, err := os.Open("./temp/title.akas.tsv")
 	if err != nil {
 		fmt.Println(fmt.Errorf("an error occurred while opening akas.. %v", err))
 	} else {
@@ -381,7 +381,7 @@ func main() {
 	fileaka.Close()
 
 	fmt.Println("Opening ratings..")
-	filerating, err := os.Open("./title.ratings.tsv")
+	filerating, err := os.Open("./temp/title.ratings.tsv")
 	if err != nil {
 		fmt.Println(fmt.Errorf("an error occurred while opening ratings.. %v", err))
 	} else {
@@ -443,7 +443,7 @@ func main() {
 	rows, err := dbimdb.Query("Select count(*) from imdb_titles")
 	if err != nil {
 		dbimdb.Close()
-		os.Remove("./imdbtemp.db")
+		os.Remove("./databases/imdbtemp.db")
 		return
 	}
 	rows.Next()
@@ -452,7 +452,7 @@ func main() {
 	rows.Close()
 	if counter == 0 {
 		dbimdb.Close()
-		os.Remove("./imdbtemp.db")
+		os.Remove("./databases/imdbtemp.db")
 		return
 	}
 	dbimdb.Close()
@@ -507,17 +507,17 @@ func RemoveFile(file string) error {
 }
 
 func downloadimdbfiles() {
-	downloadFile("./", "", "title.basics.tsv.gz", "https://datasets.imdbws.com/title.basics.tsv.gz")
-	gunzip("./title.basics.tsv.gz", "./title.basics.tsv")
-	RemoveFile("./title.basics.tsv.gz")
+	downloadFile("./temp", "", "title.basics.tsv.gz", "https://datasets.imdbws.com/title.basics.tsv.gz")
+	gunzip("./temp/title.basics.tsv.gz", "./temp/title.basics.tsv")
+	RemoveFile("./temp/title.basics.tsv.gz")
 
-	downloadFile("./", "", "title.akas.tsv.gz", "https://datasets.imdbws.com/title.akas.tsv.gz")
-	gunzip("./title.akas.tsv.gz", "./title.akas.tsv")
-	RemoveFile("./title.akas.tsv.gz")
+	downloadFile("./temp", "", "title.akas.tsv.gz", "https://datasets.imdbws.com/title.akas.tsv.gz")
+	gunzip("./temp/title.akas.tsv.gz", "./temp/title.akas.tsv")
+	RemoveFile("./temp/title.akas.tsv.gz")
 
-	downloadFile("./", "", "title.ratings.tsv.gz", "https://datasets.imdbws.com/title.ratings.tsv.gz")
-	gunzip("./title.ratings.tsv.gz", "./title.ratings.tsv")
-	RemoveFile("./title.ratings.tsv.gz")
+	downloadFile("./temp", "", "title.ratings.tsv.gz", "https://datasets.imdbws.com/title.ratings.tsv.gz")
+	gunzip("./temp/title.ratings.tsv.gz", "./temp/title.ratings.tsv")
+	RemoveFile("./temp/title.ratings.tsv.gz")
 }
 
 func gunzip(source string, target string) error {

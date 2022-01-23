@@ -25,6 +25,7 @@ import (
 )
 
 var DB *sqlx.DB
+var SQLDB *sql.DB
 var DBImdb *sqlx.DB
 var ReadWriteMu *sync.RWMutex
 var WriteMu *sync.Mutex
@@ -44,13 +45,13 @@ type Dbfiles struct {
 }
 
 func InitDb(dbloglevel string) {
-	if _, err := os.Stat("./data.db"); os.IsNotExist(err) {
-		_, err := os.Create("./data.db") // Create SQLite file
+	if _, err := os.Stat("./databases/data.db"); os.IsNotExist(err) {
+		_, err := os.Create("./databases/data.db") // Create SQLite file
 		if err != nil {
 			log.Fatal(err.Error())
 		}
 	}
-	db, err := sqlx.Connect("sqlite3", "file:data.db?_fk=1&_mutex=no&_cslike=0")
+	db, err := sqlx.Connect("sqlite3", "file:./databases/data.db?_fk=1&_mutex=no&_cslike=0")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -59,16 +60,17 @@ func InitDb(dbloglevel string) {
 	WriteMu = &sync.Mutex{}
 	ReadWriteMu = &sync.RWMutex{}
 	DB = db
+	SQLDB = db.DB
 }
 
 func InitImdbdb(dbloglevel string, dbfile string) *sqlx.DB {
-	if _, err := os.Stat("./" + dbfile + ".db"); os.IsNotExist(err) {
-		_, err := os.Create("./" + dbfile + ".db") // Create SQLite file
+	if _, err := os.Stat("./databases/" + dbfile + ".db"); os.IsNotExist(err) {
+		_, err := os.Create("./databases/" + dbfile + ".db") // Create SQLite file
 		if err != nil {
 			log.Fatal(err.Error())
 		}
 	}
-	db, err := sqlx.Connect("sqlite3", "file:"+dbfile+".db?_fk=1&_mutex=no&_cslike=0")
+	db, err := sqlx.Connect("sqlite3", "file:./databases/"+dbfile+".db?_fk=1&_mutex=no&_cslike=0")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -117,7 +119,7 @@ func Upgrade(c *gin.Context) {
 func Backup(db *sqlx.DB, backupPath string, maxbackups int) error {
 	if db == nil {
 		var err error
-		db, err = sqlx.Connect("sqlite3", "file:data.db?_fk=true")
+		db, err = sqlx.Connect("sqlite3", "file:./databases/data.db?_fk=true")
 		if err != nil {
 			return fmt.Errorf("open database data.db failed:%s", err)
 		}
@@ -138,7 +140,7 @@ var DBVersion string
 func UpgradeDB() {
 	m, err := migrate.New(
 		"file://./schema/db",
-		"sqlite3://data.db?cache=shared&_fk=1&_mutex=no&_cslike=0",
+		"sqlite3://./databases/data.db?cache=shared&_fk=1&_mutex=no&_cslike=0",
 	)
 	vers, _, _ := m.Version()
 	DBVersion = strconv.Itoa(int(vers))

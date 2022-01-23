@@ -7,6 +7,7 @@ Main goal of project: Support multiple configurations for Series/Movies in one. 
 Inspirations: Radarr/Sonarr and Flexget
 
 ## Table of Contents
+* [Breaking Change](#breaking-change)
 * [Features](#features)
   * [Supported](#supported)
     * [Feed Sources](#feed-sources)
@@ -23,6 +24,13 @@ Inspirations: Radarr/Sonarr and Flexget
 * [Donate](#donate)
 * [Examples](#examples)
 
+## Breaking Change
+
+- Moved Databases to databases subfolder!
+- Moved config.toml to config subfolder
+- Moved logs to logs subfolder
+- added first webinterface (admin only - crashes sometimes - not many data validity checks)
+- Webinterface Login: User: admin  -  Password: admin
 ## Features
 
 - Get Feeds of wanted media (Movies: Imdb Public Lists, Series: Local Wanted file --series.toml--)

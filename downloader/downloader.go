@@ -283,11 +283,7 @@ func (d *downloadertype) sendNotify(event string, noticonfig config.MediaNotific
 	}
 }
 func (d *downloadertype) notify() {
-	prefix := "serie_"
-	if d.SearchGroupType == "movie" {
-		prefix = "movie_"
-	}
-	configEntry := config.ConfigGet(prefix + d.ConfigTemplate).Data.(config.MediaTypeConfig)
+	configEntry := config.ConfigGet(d.ConfigTemplate).Data.(config.MediaTypeConfig)
 	d.Time = time.Now().Format(time.RFC3339)
 	for idxnoti := range configEntry.Notification {
 		d.sendNotify("added_download", configEntry.Notification[idxnoti])

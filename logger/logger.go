@@ -39,7 +39,7 @@ func InitLogger(config LoggerConfig) {
 	}
 
 	mw := io.MultiWriter(os.Stdout, &lumberjack.Logger{
-		Filename:   "downloader.log",
+		Filename:   "./logs/downloader.log",
 		MaxSize:    config.LogFileSize, // megabytes
 		MaxBackups: config.LogFileCount,
 		MaxAge:     28,                 //days
