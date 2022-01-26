@@ -50,21 +50,21 @@ func GetDbserieEpisodesTable(ctx *context.Context) table.Table {
 	info := dbserieEpisodes.GetInfo().HideFilterArea()
 
 	info.AddField("Id", "id", db.Integer).
-		FieldFilterable().FieldSortable()
-	//info.AddField("Created_at", "created_at", db.Datetime)
-	//info.AddField("Updated_at", "updated_at", db.Datetime)
-	info.AddField("Episode", "episode", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
-	info.AddField("Season", "season", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
-	//info.AddField("Identifier", "identifier", db.Text)
-	info.AddField("Title", "title", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
-	//info.AddField("Overview", "overview", db.Text)
-	//info.AddField("Poster", "poster", db.Text)
+		FieldSortable()
 	info.AddField("Seriename", "seriename", db.Text).FieldJoin(types.Join{
 		BaseTable: "dbserie_episodes",
 		Field:     "dbserie_id",
 		JoinField: "id",
 		Table:     "dbseries",
 	}).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
+	//info.AddField("Created_at", "created_at", db.Datetime)
+	//info.AddField("Updated_at", "updated_at", db.Datetime)
+	//info.AddField("Episode", "episode", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
+	//info.AddField("Season", "season", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
+	info.AddField("Identifier", "identifier", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
+	info.AddField("Title", "title", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
+	//info.AddField("Overview", "overview", db.Text)
+	//info.AddField("Poster", "poster", db.Text)
 	info.AddField("Dbserie_id", "dbserie_id", db.Integer).FieldDisplay(func(value types.FieldModel) interface{} {
 		return template.Default().
 			Link().

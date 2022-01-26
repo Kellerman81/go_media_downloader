@@ -15,7 +15,7 @@ func GetMovieFileUnmatchedsTable(ctx *context.Context) table.Table {
 	info := movieFileUnmatcheds.GetInfo().HideFilterArea()
 	info.HideDeleteButton().HideEditButton().HideNewButton()
 
-	info.AddField("Id", "id", db.Integer).FieldFilterable().FieldSortable()
+	info.AddField("Id", "id", db.Integer).FieldSortable()
 	//info.AddField("Created_at", "created_at", db.Datetime)
 	//info.AddField("Updated_at", "updated_at", db.Datetime)
 	info.AddField("Listname", "listname", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()

@@ -86,12 +86,13 @@ func GetMovieFilesTable(ctx *context.Context) table.Table {
 	info.HideNewButton()
 
 	info.AddField("Id", "id", db.Integer).
-		FieldFilterable().FieldSortable()
+		FieldSortable()
 	//info.AddField("Created_at", "created_at", db.Datetime)
 	//info.AddField("Updated_at", "updated_at", db.Datetime)
 	info.AddField("Location", "location", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
 	// info.AddField("Filename", "filename", db.Text)
 	// info.AddField("Extension", "extension", db.Text)
+	info.AddField("Quality_profile", "quality_profile", db.Text).FieldFilterable(types.FilterType{FormType: form.SelectSingle}).FieldFilterOptionsFromTable("movies", "quality_profile", "quality_profile", func(sql *db.SQL) *db.SQL { return sql.GroupBy("quality_profile") }).FieldFilterOptionExt(map[string]interface{}{"allowClear": true}).FieldSortable()
 	// info.AddField("Quality_profile", "quality_profile", db.Text)
 	// info.AddField("Proper", "proper", db.Numeric)
 	// info.AddField("Extended", "extended", db.Numeric)
@@ -130,7 +131,7 @@ func GetMovieFilesTable(ctx *context.Context) table.Table {
 		Field:     "movie_id",
 		JoinField: "id",
 		Table:     "movies",
-	}).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
+	}).FieldFilterable(types.FilterType{FormType: form.SelectSingle}).FieldFilterOptionsFromTable("movies", "listname", "listname", func(sql *db.SQL) *db.SQL { return sql.GroupBy("listname") }).FieldFilterOptionExt(map[string]interface{}{"allowClear": true}).FieldSortable()
 	info.AddField("Title", "title", db.Text).FieldJoin(types.Join{
 		BaseTable: "movie_files",
 		Field:     "dbmovie_id",

@@ -53,7 +53,7 @@ func GetDbseriesTable(ctx *context.Context) table.Table {
 
 	info := dbseries.GetInfo().HideFilterArea()
 
-	info.AddField("Id", "id", db.Integer).FieldFilterable().FieldSortable()
+	info.AddField("Id", "id", db.Integer).FieldSortable()
 	//info.AddField("Created_at", "created_at", db.Datetime)
 	//info.AddField("Updated_at", "updated_at", db.Datetime)
 	info.AddField("Seriename", "seriename", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
@@ -70,8 +70,8 @@ func GetDbseriesTable(ctx *context.Context) table.Table {
 	// info.AddField("Siterating", "siterating", db.Text)
 	// info.AddField("Siterating_count", "siterating_count", db.Text)
 	// info.AddField("Slug", "slug", db.Text)
-	// info.AddField("Imdb_id", "imdb_id", db.Text)
-	// info.AddField("Thetvdb_id", "thetvdb_id", db.Integer)
+	info.AddField("Imdb_id", "imdb_id", db.Text)
+	info.AddField("Thetvdb_id", "thetvdb_id", db.Integer)
 	// info.AddField("Freebase_m_id", "freebase_m_id", db.Text)
 	// info.AddField("Freebase_id", "freebase_id", db.Text)
 	// info.AddField("Tvrage_id", "tvrage_id", db.Integer)
@@ -94,7 +94,7 @@ func GetDbseriesTable(ctx *context.Context) table.Table {
 		action.PopUpWithIframe("/admin/info/series", "see more", action.IframeData{Src: "/admin/info/series", AddParameterFn: func(ctx *context.Context) string {
 			return "&dbserie_id=" + ctx.FormValue("id")
 		}}, "900px", "560px")), types.GetColumnButton("Refresh", icon.Refresh,
-		action.PopUpWithIframe("/admin/info/refresh", "see more", action.IframeData{Src: "/api/series/refresh/{{.Id}}?apikey=" + cfg_general.WebApiKey}, "900px", "560px")))
+		MyPopUpWithIframe("/admin/info/refresh", "see more", action.IframeData{Src: "/api/series/refresh/{{.Id}}?apikey=" + cfg_general.WebApiKey}, "900px", "560px")))
 	info.SetTable("dbseries").SetTitle("Dbseries").SetDescription("Dbseries")
 
 	formList := dbseries.GetForm()

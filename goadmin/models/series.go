@@ -21,7 +21,7 @@ func GetSeriesTable(ctx *context.Context) table.Table {
 	info := series.GetInfo().HideFilterArea()
 
 	info.AddField("Id", "id", db.Integer).
-		FieldFilterable().FieldSortable()
+		FieldSortable()
 	//info.AddField("Created_at", "created_at", db.Datetime)
 	//info.AddField("Updated_at", "updated_at", db.Datetime)
 	info.AddField("Title", "Seriename", db.Text).FieldJoin(types.Join{
@@ -30,7 +30,7 @@ func GetSeriesTable(ctx *context.Context) table.Table {
 		JoinField: "id",
 		Table:     "dbseries",
 	}).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
-	info.AddField("Listname", "listname", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
+	info.AddField("Listname", "listname", db.Text).FieldFilterable(types.FilterType{FormType: form.SelectSingle}).FieldFilterOptionsFromTable("series", "listname", "listname", func(sql *db.SQL) *db.SQL { return sql.GroupBy("listname") }).FieldFilterOptionExt(map[string]interface{}{"allowClear": true}).FieldSortable()
 	info.AddField("Rootpath", "rootpath", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike})
 
 	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
@@ -44,7 +44,7 @@ func GetSeriesTable(ctx *context.Context) table.Table {
 		action.PopUpWithIframe("/admin/info/serie_episode_histories", "see more", action.IframeData{Src: "/admin/info/serie_episode_histories", AddParameterFn: func(ctx *context.Context) string {
 			return "&serie_id=" + ctx.FormValue("id")
 		}}, "900px", "560px")), types.GetActionIconButton(icon.Search,
-		action.PopUpWithIframe("/search", "see more", action.IframeData{Src: "/api/series/search/id/{{.Id}}?apikey=" + cfg_general.WebApiKey}, "200px", "20px")))
+		MyPopUpWithIframe("/search", "see more", action.IframeData{Src: "/api/series/search/id/{{.Id}}?apikey=" + cfg_general.WebApiKey}, "900px", "560px")))
 
 	info.AddField("Dbserie_id", "dbserie_id", db.Integer).FieldDisplay(func(value types.FieldModel) interface{} {
 		return template.Default().
@@ -55,8 +55,14 @@ func GetSeriesTable(ctx *context.Context) table.Table {
 			SetTabTitle(template.HTML("Serie Detail(" + value.Value + ")")).
 			GetContent()
 	})
-	info.AddField("Dont_upgrade", "dont_upgrade", db.Numeric).FieldBool("1", "0").FieldFilterable().FieldSortable()
-	info.AddField("Dont_search", "dont_search", db.Numeric).FieldBool("1", "0").FieldFilterable().FieldSortable()
+	info.AddField("Dont_upgrade", "dont_upgrade", db.Numeric).FieldBool("1", "0").FieldFilterable(types.FilterType{FormType: form.SelectSingle}).FieldFilterOptions(types.FieldOptions{
+		{Value: "0", Text: "No"},
+		{Value: "1", Text: "Yes"},
+	}).FieldFilterOptionExt(map[string]interface{}{"allowClear": true}).FieldSortable()
+	info.AddField("Dont_search", "dont_search", db.Numeric).FieldBool("1", "0").FieldFilterable(types.FilterType{FormType: form.SelectSingle}).FieldFilterOptions(types.FieldOptions{
+		{Value: "0", Text: "No"},
+		{Value: "1", Text: "Yes"},
+	}).FieldFilterOptionExt(map[string]interface{}{"allowClear": true}).FieldSortable()
 
 	info.SetTable("series").SetTitle("Series").SetDescription("Series")
 

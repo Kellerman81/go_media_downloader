@@ -23,6 +23,7 @@ func GetDbmoviesTable(ctx *context.Context) table.Table {
 	detail.AddField("Updated_at", "updated_at", db.Datetime)
 	detail.AddField("Title", "title", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
 	detail.AddField("Year", "year", db.Integer).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
+	detail.AddField("Imdb_id", "imdb_id", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
 	detail.AddField("Adult", "adult", db.Numeric)
 	detail.AddField("Budget", "budget", db.Integer)
 	detail.AddField("Genres", "genres", db.Text)
@@ -38,7 +39,6 @@ func GetDbmoviesTable(ctx *context.Context) table.Table {
 	detail.AddField("Vote_average", "vote_average", db.Real).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
 	detail.AddField("Vote_count", "vote_count", db.Integer).FieldSortable()
 	detail.AddField("Moviedb_id", "moviedb_id", db.Integer)
-	detail.AddField("Imdb_id", "imdb_id", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
 	detail.AddField("Freebase_m_id", "freebase_m_id", db.Text)
 	detail.AddField("Freebase_id", "freebase_id", db.Text)
 	detail.AddField("Facebook_id", "facebook_id", db.Text)
@@ -60,11 +60,12 @@ func GetDbmoviesTable(ctx *context.Context) table.Table {
 	detail.SetTable("dbmovies").SetTitle("Dbmovies").SetDescription("Dbmovies")
 
 	info := dbmovies.GetInfo().HideFilterArea()
-	info.AddField("Id", "id", db.Integer).FieldFilterable().FieldSortable()
+	info.AddField("Id", "id", db.Integer).FieldSortable()
 	// info.AddField("Created_at", "created_at", db.Datetime)
 	// info.AddField("Updated_at", "updated_at", db.Datetime)
 	info.AddField("Title", "title", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
 	info.AddField("Year", "year", db.Integer).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
+	info.AddField("Imdb_id", "imdb_id", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
 	// info.AddField("Adult", "adult", db.Numeric)
 	// info.AddField("Budget", "budget", db.Integer)
 	info.AddField("Genres", "genres", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
@@ -80,7 +81,6 @@ func GetDbmoviesTable(ctx *context.Context) table.Table {
 	info.AddField("Vote_average", "vote_average", db.Real).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
 	info.AddField("Vote_count", "vote_count", db.Integer).FieldSortable()
 	//info.AddField("Moviedb_id", "moviedb_id", db.Integer)
-	info.AddField("Imdb_id", "imdb_id", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
 	// info.AddField("Freebase_m_id", "freebase_m_id", db.Text)
 	// info.AddField("Freebase_id", "freebase_id", db.Text)
 	// info.AddField("Facebook_id", "facebook_id", db.Text)
@@ -100,7 +100,7 @@ func GetDbmoviesTable(ctx *context.Context) table.Table {
 		action.PopUpWithIframe("/admin/info/movies", "see more", action.IframeData{Src: "/admin/info/movies", AddParameterFn: func(ctx *context.Context) string {
 			return "&dbmovie_id=" + ctx.FormValue("id")
 		}}, "900px", "560px")), types.GetColumnButton("Refresh", icon.Refresh,
-		action.PopUpWithIframe("/admin/info/refresh", "see more", action.IframeData{Src: "/api/movies/refresh/{{.Id}}?apikey=" + cfg_general.WebApiKey}, "900px", "560px")))
+		MyPopUpWithIframe("/admin/info/refresh", "see more", action.IframeData{Src: "/api/movies/refresh/{{.Id}}?apikey=" + cfg_general.WebApiKey}, "900px", "560px")))
 	info.SetTable("dbmovies").SetTitle("Dbmovies").SetDescription("Dbmovies")
 
 	formList := dbmovies.GetForm()

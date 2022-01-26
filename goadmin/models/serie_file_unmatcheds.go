@@ -15,9 +15,9 @@ func GetSerieFileUnmatchedsTable(ctx *context.Context) table.Table {
 	info := serieFileUnmatcheds.GetInfo().HideFilterArea()
 	info.HideDeleteButton().HideEditButton().HideNewButton()
 
-	info.AddField("Id", "id", db.Integer).FieldFilterable().FieldSortable()
+	info.AddField("Id", "id", db.Integer).FieldSortable()
 	//info.AddField("Created_at", "created_at", db.Datetime)
-	//info.AddField("Updated_at", "updated_at", db.Datetime)
+	//info.AddField("Updated_at", "updated_at", db.Datetime).FieldDate("2006-01-02 15:04")
 	info.AddField("Listname", "listname", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
 	info.AddField("Filepath", "filepath", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
 	info.AddField("Last_checked", "last_checked", db.Datetime).FieldFilterable().FieldSortable()

@@ -17,7 +17,7 @@ func GetDbmovieTitlesTable(ctx *context.Context) table.Table {
 
 	info := dbmovieTitles.GetInfo().HideFilterArea()
 
-	info.AddField("Id", "id", db.Integer).FieldFilterable().FieldSortable()
+	info.AddField("Id", "id", db.Integer).FieldSortable()
 	//info.AddField("Created_at", "created_at", db.Datetime)
 	//info.AddField("Updated_at", "updated_at", db.Datetime)
 	info.AddField("Dbmovie_id", "dbmovie_id", db.Integer).FieldDisplay(func(value types.FieldModel) interface{} {

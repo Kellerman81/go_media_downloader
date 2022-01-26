@@ -51,14 +51,9 @@ func GetMoviesTable(ctx *context.Context) table.Table {
 
 	info := movies.GetInfo().HideFilterArea()
 
-	info.AddField("Id", "id", db.Integer).FieldFilterable()
+	info.AddField("Id", "id", db.Integer).FieldSortable()
 	//info.AddField("Created_at", "created_at", db.Datetime)
 	//info.AddField("Updated_at", "updated_at", db.Datetime)
-	info.AddField("Quality_reached", "quality_reached", db.Numeric).FieldBool("1", "0").FieldFilterable().FieldSortable()
-	info.AddField("Quality_profile", "quality_profile", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
-	info.AddField("Missing", "missing", db.Numeric).FieldBool("1", "0").FieldFilterable().FieldSortable()
-	info.AddField("Listname", "listname", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
-	info.AddField("Rootpath", "rootpath", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
 	info.AddField("Title", "Title", db.Text).FieldJoin(types.Join{
 		BaseTable: "movies",
 		Field:     "dbmovie_id",
@@ -77,6 +72,17 @@ func GetMoviesTable(ctx *context.Context) table.Table {
 		JoinField: "id",
 		Table:     "dbmovies",
 	}).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
+	info.AddField("Listname", "listname", db.Text).FieldFilterable(types.FilterType{FormType: form.SelectSingle}).FieldFilterOptionsFromTable("movies", "listname", "listname", func(sql *db.SQL) *db.SQL { return sql.GroupBy("listname") }).FieldFilterOptionExt(map[string]interface{}{"allowClear": true}).FieldSortable()
+	info.AddField("Quality_reached", "quality_reached", db.Numeric).FieldBool("1", "0").FieldFilterable(types.FilterType{FormType: form.SelectSingle}).FieldFilterOptions(types.FieldOptions{
+		{Value: "0", Text: "No"},
+		{Value: "1", Text: "Yes"},
+	}).FieldFilterOptionExt(map[string]interface{}{"allowClear": true}).FieldSortable()
+	info.AddField("Quality_profile", "quality_profile", db.Text).FieldFilterable(types.FilterType{FormType: form.SelectSingle}).FieldFilterOptionsFromTable("movies", "quality_profile", "quality_profile", func(sql *db.SQL) *db.SQL { return sql.GroupBy("quality_profile") }).FieldFilterOptionExt(map[string]interface{}{"allowClear": true}).FieldSortable()
+	info.AddField("Missing", "missing", db.Numeric).FieldBool("1", "0").FieldFilterable(types.FilterType{FormType: form.SelectSingle}).FieldFilterOptions(types.FieldOptions{
+		{Value: "0", Text: "No"},
+		{Value: "1", Text: "Yes"},
+	}).FieldFilterOptionExt(map[string]interface{}{"allowClear": true}).FieldSortable()
+	info.AddField("Rootpath", "rootpath", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
 	// info.AddField("Dbmovie_id", "dbmovie_id", db.Integer).FieldDisplay(func(value types.FieldModel) interface{} {
 	// 	return template.Default().
 	// 		Link().
@@ -95,7 +101,7 @@ func GetMoviesTable(ctx *context.Context) table.Table {
 		action.PopUpWithIframe("/admin/info/movie_histories", "see more", action.IframeData{Src: "/admin/info/movie_histories", AddParameterFn: func(ctx *context.Context) string {
 			return "&movie_id=" + ctx.FormValue("id")
 		}}, "900px", "560px")), types.GetActionIconButton(icon.Search,
-		action.PopUpWithIframe("/search", "see more", action.IframeData{Src: "/api/movies/search/id/{{.Id}}?apikey=" + cfg_general.WebApiKey}, "200px", "20px")))
+		MyPopUpWithIframe("/search", "see more", action.IframeData{Src: "/api/movies/search/id/{{.Id}}?apikey=" + cfg_general.WebApiKey}, "900px", "560px")))
 	info.SetTable("movies").SetTitle("Movies").SetDescription("Movies")
 
 	formList := movies.GetForm()
