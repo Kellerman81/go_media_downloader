@@ -179,6 +179,7 @@ func main() {
 		// }
 		eng.HTML("GET", "/admin", pages.GetDashBoardO)
 		eng.HTML("GET", "/", pages.GetDashBoardO)
+		eng.HTML("GET", "/actions", pages.GetActionsPage)
 		eng.Services["sqlite"] = database.GetSqliteDB().InitDB(map[string]goadmincfg.Database{
 			"default": {Driver: "sqlite", File: "./databases/admin.db"},
 			"media":   {Driver: "sqlite"}})

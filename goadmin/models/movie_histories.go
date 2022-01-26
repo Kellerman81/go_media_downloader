@@ -84,7 +84,7 @@ func GetMovieHistoriesTable(ctx *context.Context) table.Table {
 	info.HideNewButton()
 
 	info.AddField("Id", "id", db.Integer).
-		FieldFilterable().FieldSortable()
+		FieldSortable()
 	//info.AddField("Created_at", "created_at", db.Datetime)
 	//info.AddField("Updated_at", "updated_at", db.Datetime)
 	info.AddField("Title", "title", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
@@ -94,7 +94,7 @@ func GetMovieHistoriesTable(ctx *context.Context) table.Table {
 	// info.AddField("Target", "target", db.Text)
 	info.AddField("Downloaded_at", "downloaded_at", db.Datetime).FieldSortable().FieldFilterable(types.FilterType{FormType: form.DatetimeRange})
 	// info.AddField("Blacklisted", "blacklisted", db.Numeric)
-	info.AddField("Quality_profile", "quality_profile", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
+	info.AddField("Quality_profile", "quality_profile", db.Text).FieldFilterable(types.FilterType{FormType: form.SelectSingle}).FieldFilterOptionsFromTable("movies", "quality_profile", "quality_profile", func(sql *db.SQL) *db.SQL { return sql.GroupBy("quality_profile") }).FieldFilterOptionExt(map[string]interface{}{"allowClear": true}).FieldSortable()
 	// info.AddField("Resolution_id", "resolution_id", db.Integer)
 	// info.AddField("Quality_id", "quality_id", db.Integer)
 	// info.AddField("Codec_id", "codec_id", db.Integer)
@@ -104,7 +104,7 @@ func GetMovieHistoriesTable(ctx *context.Context) table.Table {
 		Field:     "movie_id",
 		JoinField: "id",
 		Table:     "movies",
-	}).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
+	}).FieldFilterable(types.FilterType{FormType: form.SelectSingle}).FieldFilterOptionsFromTable("movies", "listname", "listname", func(sql *db.SQL) *db.SQL { return sql.GroupBy("listname") }).FieldFilterOptionExt(map[string]interface{}{"allowClear": true}).FieldSortable()
 	info.AddField("Movie Title", "title", db.Text).FieldJoin(types.Join{
 		BaseTable: "movie_histories",
 		Field:     "dbmovie_id",

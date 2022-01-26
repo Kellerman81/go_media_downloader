@@ -566,8 +566,10 @@ like Aldus PageMaker including versions of Lorem Ipsum.
 			{Head: "Is Running", Field: "isrunning", Sortable: false},
 		})
 	return types.Panel{
-		Content:     template.HTML("<h2>WARNING: Write-Actions might break database - Interface still in development</h2>") + template.HTML("<h2>Stats</h2>") + pnl.GetContent() + template.HTML("<h2>Queued</h2>") + queueitm.GetContent() + template.HTML("<h2>Scheduler</h2>") + schedule.GetContent(),
-		Title:       "Dashboard",
-		Description: "Go Media Downloader - Dashboard",
+		Content:         template.HTML("<h2>WARNING: Write-Actions might break database - Interface still in development</h2>") + template.HTML("<h2>Stats</h2>") + pnl.GetContent() + template.HTML("<h2>Queued</h2>") + queueitm.GetContent() + template.HTML("<h2>Scheduler</h2>") + schedule.GetContent(),
+		Title:           "Dashboard",
+		Description:     "Go Media Downloader - Dashboard",
+		AutoRefresh:     true,
+		RefreshInterval: []int{60},
 	}, nil
 }

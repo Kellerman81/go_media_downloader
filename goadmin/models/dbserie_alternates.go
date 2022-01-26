@@ -18,7 +18,7 @@ func GetDbserieAlternatesTable(ctx *context.Context) table.Table {
 	info := dbserieAlternates.GetInfo().HideFilterArea()
 
 	info.AddField("Id", "id", db.Integer).
-		FieldFilterable().FieldSortable()
+		FieldSortable()
 	//info.AddField("Created_at", "created_at", db.Datetime)
 	//info.AddField("Updated_at", "updated_at", db.Datetime)
 	info.AddField("Title", "title", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()

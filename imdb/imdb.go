@@ -147,7 +147,7 @@ func initImdbdb(dbloglevel string, dbfile string) *sqlx.DB {
 			log.Fatal(err.Error())
 		}
 	}
-	db, err := sqlx.Connect("sqlite3", "file:"+dbfile+".db?_fk=1&_mutex=no&_cslike=0")
+	db, err := sqlx.Connect("sqlite3", "file:./databases/"+dbfile+".db?_fk=1&_mutex=no&_cslike=0")
 	if err != nil {
 		log.Fatal(err)
 	}

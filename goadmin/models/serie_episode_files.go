@@ -53,13 +53,13 @@ func GetSerieEpisodeFilesTable(ctx *context.Context) table.Table {
 	info.HideNewButton()
 
 	info.AddField("Id", "id", db.Integer).
-		FieldFilterable().FieldSortable()
+		FieldSortable()
 	//info.AddField("Created_at", "created_at", db.Datetime)
 	//info.AddField("Updated_at", "updated_at", db.Datetime)
 	info.AddField("Location", "location", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
 	// info.AddField("Filename", "filename", db.Text)
 	// info.AddField("Extension", "extension", db.Text)
-	info.AddField("Quality_profile", "quality_profile", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
+	info.AddField("Quality_profile", "quality_profile", db.Text).FieldFilterable(types.FilterType{FormType: form.SelectSingle}).FieldFilterOptionsFromTable("serie_episodes", "quality_profile", "quality_profile", func(sql *db.SQL) *db.SQL { return sql.GroupBy("quality_profile") }).FieldFilterOptionExt(map[string]interface{}{"allowClear": true}).FieldSortable()
 	// info.AddField("Proper", "proper", db.Numeric)
 	// info.AddField("Extended", "extended", db.Numeric)
 	// info.AddField("Repack", "repack", db.Numeric)
@@ -75,7 +75,7 @@ func GetSerieEpisodeFilesTable(ctx *context.Context) table.Table {
 		Field:     "serie_id",
 		JoinField: "id",
 		Table:     "series",
-	}).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
+	}).FieldFilterable(types.FilterType{FormType: form.SelectSingle}).FieldFilterOptionsFromTable("series", "listname", "listname", func(sql *db.SQL) *db.SQL { return sql.GroupBy("listname") }).FieldFilterOptionExt(map[string]interface{}{"allowClear": true}).FieldSortable()
 	// info.AddField("Serie_episode_id", "serie_episode_id", db.Integer)
 	//info.AddField("Dbserie_episode_id", "dbserie_episode_id", db.Integer)
 	info.AddField("Identifier", "Identifier", db.Text).FieldJoin(types.Join{

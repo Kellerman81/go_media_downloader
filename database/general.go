@@ -51,7 +51,7 @@ func InitDb(dbloglevel string) {
 			log.Fatal(err.Error())
 		}
 	}
-	db, err := sqlx.Connect("sqlite3", "file:./databases/data.db?_fk=1&_mutex=no&_cslike=0")
+	db, err := sqlx.Connect("sqlite3", "file:./databases/data.db?_fk=1&_mutex=full&rt=1&_cslike=0")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -70,7 +70,7 @@ func InitImdbdb(dbloglevel string, dbfile string) *sqlx.DB {
 			log.Fatal(err.Error())
 		}
 	}
-	db, err := sqlx.Connect("sqlite3", "file:./databases/"+dbfile+".db?_fk=1&_mutex=no&_cslike=0")
+	db, err := sqlx.Connect("sqlite3", "file:./databases/"+dbfile+".db?_fk=1&_cslike=0")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -140,7 +140,7 @@ var DBVersion string
 func UpgradeDB() {
 	m, err := migrate.New(
 		"file://./schema/db",
-		"sqlite3://./databases/data.db?cache=shared&_fk=1&_mutex=no&_cslike=0",
+		"sqlite3://./databases/data.db?cache=shared&_fk=1&_cslike=0",
 	)
 	vers, _, _ := m.Version()
 	DBVersion = strconv.Itoa(int(vers))

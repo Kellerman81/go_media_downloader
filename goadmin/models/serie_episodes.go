@@ -39,7 +39,7 @@ func GetSerieEpisodesTable(ctx *context.Context) table.Table {
 	info := serieEpisodes.GetInfo().HideFilterArea()
 
 	info.AddField("Id", "id", db.Integer).
-		FieldFilterable().FieldSortable()
+		FieldSortable()
 	info.AddField("Title", "Seriename", db.Text).FieldJoin(types.Join{
 		BaseTable: "serie_episodes",
 		Field:     "dbserie_id",
@@ -51,7 +51,7 @@ func GetSerieEpisodesTable(ctx *context.Context) table.Table {
 		Field:     "serie_id",
 		JoinField: "id",
 		Table:     "series",
-	}).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
+	}).FieldFilterable(types.FilterType{FormType: form.SelectSingle}).FieldFilterOptionsFromTable("series", "listname", "listname", func(sql *db.SQL) *db.SQL { return sql.GroupBy("listname") }).FieldFilterOptionExt(map[string]interface{}{"allowClear": true}).FieldSortable() //.FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
 	info.AddField("Identifier", "Identifier", db.Text).FieldJoin(types.Join{
 		BaseTable: "serie_episodes",
 		Field:     "dbserie_episode_id",
@@ -62,9 +62,15 @@ func GetSerieEpisodesTable(ctx *context.Context) table.Table {
 	//info.AddField("Updated_at", "updated_at", db.Datetime)
 	//info.AddField("Lastscan", "lastscan", db.Datetime)
 	//info.AddField("Blacklisted", "blacklisted", db.Numeric)
-	info.AddField("Quality_reached", "quality_reached", db.Numeric).FieldBool("1", "0").FieldFilterable().FieldSortable()
-	info.AddField("Quality_profile", "quality_profile", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
-	info.AddField("Missing", "missing", db.Numeric).FieldBool("1", "0").FieldFilterable().FieldSortable()
+	info.AddField("Quality_reached", "quality_reached", db.Numeric).FieldBool("1", "0").FieldFilterable(types.FilterType{FormType: form.SelectSingle}).FieldFilterOptions(types.FieldOptions{
+		{Value: "0", Text: "No"},
+		{Value: "1", Text: "Yes"},
+	}).FieldFilterOptionExt(map[string]interface{}{"allowClear": true}).FieldSortable()
+	info.AddField("Quality_profile", "quality_profile", db.Text).FieldFilterable(types.FilterType{FormType: form.SelectSingle}).FieldFilterOptionsFromTable("serie_episodes", "quality_profile", "quality_profile", func(sql *db.SQL) *db.SQL { return sql.GroupBy("quality_profile") }).FieldFilterOptionExt(map[string]interface{}{"allowClear": true}).FieldSortable()
+	info.AddField("Missing", "missing", db.Numeric).FieldBool("1", "0").FieldFilterable(types.FilterType{FormType: form.SelectSingle}).FieldFilterOptions(types.FieldOptions{
+		{Value: "0", Text: "No"},
+		{Value: "1", Text: "Yes"},
+	}).FieldFilterOptionExt(map[string]interface{}{"allowClear": true}).FieldSortable()
 	//info.AddField("Dont_upgrade", "dont_upgrade", db.Numeric)
 	//info.AddField("Dont_search", "dont_search", db.Numeric)
 	//info.AddField("Dbserie_episode_id", "dbserie_episode_id", db.Integer)
@@ -86,8 +92,8 @@ func GetSerieEpisodesTable(ctx *context.Context) table.Table {
 		}}, "900px", "560px")), types.GetActionIconButton(icon.History,
 		action.PopUpWithIframe("/admin/info/serie_episode_histories", "see more", action.IframeData{Src: "/admin/info/serie_episode_histories", AddParameterFn: func(ctx *context.Context) string {
 			return "&serie_episode_id=" + ctx.FormValue("id")
-		}}, "900px", "560px")), types.GetActionIconButton(icon.Search,
-		action.PopUpWithIframe("/search", "see more", action.IframeData{Src: "/api/series/episodes/search/id/{{.Id}}?apikey=" + cfg_general.WebApiKey}, "200px", "20px")))
+		}}, "900px", "560px")), types.GetActionIconButton(icon.Search, //action.JumpInNewTab("/api/series/episodes/search/id/{{.Id}}?apikey="+cfg_general.WebApiKey, "Search")))
+		MyPopUpWithIframe("/search", "see more", action.IframeData{Src: "/api/series/episodes/search/id/{{.Id}}?apikey=" + cfg_general.WebApiKey}, "900px", "560px")))
 
 	info.AddField("Dbserie_id", "dbserie_id", db.Integer).FieldDisplay(func(value types.FieldModel) interface{} {
 		return template.Default().

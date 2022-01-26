@@ -1,9 +1,10 @@
 **/*.exe
 **/config.db
-**/config.idx
+**/config.db.idx
 **/data.db
 **/imdb.db
 **/imdbtemp.db
 **/*.pprof
 **/*.log
 backup/**
+temp/**

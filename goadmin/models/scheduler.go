@@ -26,6 +26,7 @@ func GetSchedulerTable(ctx *context.Context) (userTable table.Table) {
 	}
 
 	info := userTable.GetInfo().SetDefaultPageSize(100)
+	info.SetAutoRefresh(60)
 	info.HideDeleteButton().
 		HideDetailButton().
 		HideEditButton().
@@ -38,7 +39,7 @@ func GetSchedulerTable(ctx *context.Context) (userTable table.Table) {
 	info.AddField("Job", "job", db.Varchar)
 	info.AddField("Last Run", "lastrun", db.Datetime)
 	info.AddField("Next Run", "nextrun", db.Datetime)
-	info.AddField("Is Running", "isrunning", db.Bool)
+	info.AddField("Is Running", "isrunning", db.Bool).FieldBool("true", "false")
 
 	info.SetTable("Scheduler").
 		SetTitle("Scheduler").

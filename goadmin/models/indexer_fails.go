@@ -15,11 +15,11 @@ func GetIndexerFailsTable(ctx *context.Context) table.Table {
 	info.HideDeleteButton().HideEditButton().HideNewButton()
 
 	info.AddField("Id", "id", db.Integer).
-		FieldFilterable()
+		FieldSortable()
 	//info.AddField("Created_at", "created_at", db.Datetime)
 	//info.AddField("Updated_at", "updated_at", db.Datetime)
 	info.AddField("Indexer", "indexer", db.Text)
-	info.AddField("Last_fail", "last_fail", db.Datetime)
+	info.AddField("Last_fail", "last_fail", db.Datetime).FieldSortable()
 
 	info.SetTable("indexer_fails").SetTitle("IndexerFails").SetDescription("IndexerFails")
 
