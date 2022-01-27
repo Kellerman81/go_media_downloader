@@ -1610,6 +1610,7 @@ func (s *searcher) SeriesSearch(serieEpisode database.SerieEpisode, forceDownloa
 	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
 
 	if !config.ConfigCheck("quality_" + s.SerieEpisode.QualityProfile) {
+		logger.Log.Errorln("Check quality for ", s.SerieEpisode.ID)
 		return searchResults{}
 	}
 	cfg_quality := config.ConfigGet("quality_" + s.SerieEpisode.QualityProfile).Data.(config.QualityConfig)
@@ -1677,7 +1678,8 @@ func (t searcher) seriessearchindexer(index config.QualityIndexerConfig, series 
 	}
 	t.Indexer = index
 
-	if !config.ConfigCheck("quality_" + t.Movie.QualityProfile) {
+	if !config.ConfigCheck("quality_" + t.SerieEpisode.QualityProfile) {
+		logger.Log.Errorln("Check quality for ", t.SerieEpisode.ID)
 		return searchResults{}, false
 	}
 	cfg_quality := config.ConfigGet("quality_" + t.SerieEpisode.QualityProfile).Data.(config.QualityConfig)
@@ -1686,7 +1688,7 @@ func (t searcher) seriessearchindexer(index config.QualityIndexerConfig, series 
 	var dl searchResults
 	if t.Tvdb != 0 {
 		logger.Log.Info("Search serie by tvdbid ", t.Tvdb, " with indexer ", index.Template_indexer)
-		dl_add := t.seriesSearchTvdb([]string{series.Listname}, cats)
+		dl_add := t.seriesSearchTvdb(t.SerieEpisode, []string{series.Listname}, cats)
 		dl.Rejected = dl_add.Rejected
 		if len(dl_add.Nzbs) >= 1 {
 			releasefound = true
@@ -1704,7 +1706,7 @@ func (t searcher) seriessearchindexer(index config.QualityIndexerConfig, series 
 			return dl, true
 		}
 		logger.Log.Info("Search serie by title ", t.Name, " with indexer ", index.Template_indexer)
-		dl_add := t.seriesSearchTitle(t.Name, []string{series.Listname}, cats)
+		dl_add := t.seriesSearchTitle(t.SerieEpisode, t.Name, []string{series.Listname}, cats)
 		if len(dl.Rejected) == 0 {
 			dl.Rejected = dl_add.Rejected
 		} else {
@@ -1732,7 +1734,7 @@ func (t searcher) seriessearchindexer(index config.QualityIndexerConfig, series 
 			}
 			if !logger.CheckStringArray(titleschecked, foundalternate[idxalt].Str) {
 				logger.Log.Info("Search serie by title ", foundalternate[idxalt].Str, " with indexer ", index.Template_indexer)
-				dl_add := t.seriesSearchTitle(foundalternate[idxalt].Str, []string{series.Listname}, cats)
+				dl_add := t.seriesSearchTitle(t.SerieEpisode, foundalternate[idxalt].Str, []string{series.Listname}, cats)
 				if len(dl.Rejected) == 0 {
 					dl.Rejected = dl_add.Rejected
 				} else {
@@ -1883,10 +1885,11 @@ func (s *searcher) moviesSearchTitle(movie database.Movie, title string, lists [
 	if len(title) == 0 {
 		return searchResults{Nzbs: []parser.Nzbwithprio{}}
 	}
-	if !config.ConfigCheck("quality_" + s.Quality) {
+	if !config.ConfigCheck("quality_" + movie.QualityProfile) {
+		logger.Log.Errorln("Check quality for ", movie.ID)
 		return searchResults{}
 	}
-	cfg_quality := config.ConfigGet("quality_" + s.Quality).Data.(config.QualityConfig)
+	cfg_quality := config.ConfigGet("quality_" + movie.QualityProfile).Data.(config.QualityConfig)
 
 	searchfor := title + " (" + strconv.Itoa(s.Year) + ")"
 	if cfg_quality.ExcludeYearFromTitleSearch {
@@ -1927,7 +1930,7 @@ func failedindexer(failed []string) {
 	}
 }
 
-func (s *searcher) seriesSearchTvdb(lists []string, cats []int) searchResults {
+func (s *searcher) seriesSearchTvdb(serieEpisode database.SerieEpisode, lists []string, cats []int) searchResults {
 	_, nzbindexer, _, _ := s.initIndexer(s.Indexer, "api")
 	logger.Log.Info("Search Series by tvdbid: ", s.Tvdb, " S", s.Season, "E", s.Episode)
 	seasonint, _ := strconv.Atoi(s.Season)
@@ -1959,11 +1962,12 @@ func (s *searcher) seriesSearchTvdb(lists []string, cats []int) searchResults {
 	return searchResults{}
 }
 
-func (s *searcher) seriesSearchTitle(title string, lists []string, cats []int) searchResults {
-	if !config.ConfigCheck("quality_" + s.Quality) {
+func (s *searcher) seriesSearchTitle(serieEpisode database.SerieEpisode, title string, lists []string, cats []int) searchResults {
+	if !config.ConfigCheck("quality_" + serieEpisode.QualityProfile) {
+		logger.Log.Errorln("Check quality for ", serieEpisode.ID)
 		return searchResults{}
 	}
-	cfg_quality := config.ConfigGet("quality_" + s.Quality).Data.(config.QualityConfig)
+	cfg_quality := config.ConfigGet("quality_" + serieEpisode.QualityProfile).Data.(config.QualityConfig)
 
 	_, nzbindexer, _, _ := s.initIndexer(s.Indexer, "api")
 	if title != "" && s.Identifier != "" && cfg_quality.BackupSearchForTitle {
