@@ -1,7 +1,6 @@
 package searcher
 
 import (
-	"regexp"
 	"strings"
 
 	"github.com/Kellerman81/go_media_downloader/config"
@@ -85,14 +84,6 @@ func filter_test_quality_wanted(qualityTemplate string, m parser.ParseInfo, titl
 		return false
 	}
 	return true
-}
-func findregex(array []config.RegexGroup, find string) regexp.Regexp {
-	for idx := range array {
-		if array[idx].Name == find {
-			return array[idx].Re
-		}
-	}
-	return regexp.Regexp{}
 }
 func filter_regex_nzbs(regexconfig config.RegexConfig, title string, wantedtitle string, wantedalternates []string) (bool, string) {
 	for _, rowtitle := range regexconfig.Rejected {

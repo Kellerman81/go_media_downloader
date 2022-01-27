@@ -30,7 +30,12 @@ func GetQualitiesTable(ctx *context.Context) table.Table {
 			stringvar = "Audio"
 		}
 		return stringvar
-	}).FieldFilterable().FieldSortable()
+	}).FieldFilterable(types.FilterType{FormType: form.SelectSingle}).FieldFilterOptions(types.FieldOptions{
+		{Value: "1", Text: "Resolution"},
+		{Value: "2", Text: "Quality"},
+		{Value: "3", Text: "Codec"},
+		{Value: "4", Text: "Audio"},
+	}).FieldFilterOptionExt(map[string]interface{}{"allowClear": true}).FieldSortable()
 	info.AddField("Name", "name", db.Text).FieldFilterable().FieldSortable()
 	info.AddField("Regex", "regex", db.Text).FieldFilterable().FieldSortable()
 	info.AddField("Strings", "strings", db.Text).FieldFilterable().FieldSortable()
