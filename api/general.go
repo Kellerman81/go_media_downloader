@@ -1004,8 +1004,8 @@ func apiStructure(ctx *gin.Context) {
 		return
 	}
 	if cfg.Forceid != 0 {
-		structure.StructureSingleFolderAs(cfg.Folder, cfg.Forceid, cfg.Disableruntimecheck, cfg.Disabledisallowed, cfg.Disabledeletewronglanguage, cfg.Grouptype, cfg_source, cfg_target, cfg.Configentry)
+		structure.StructureSingleFolderAs(cfg.Folder, cfg.Forceid, cfg.Disableruntimecheck, cfg.Disabledisallowed, cfg.Disabledeletewronglanguage, cfg.Grouptype, cfg_source, cfg_target, getconfig)
 	} else {
-		structure.StructureSingleFolder(cfg.Folder, cfg.Disableruntimecheck, cfg.Disabledisallowed, cfg.Disabledeletewronglanguage, cfg.Grouptype, cfg_source, cfg_target, cfg.Configentry)
+		structure.StructureSingleFolder(cfg.Folder, cfg.Disableruntimecheck, cfg.Disabledisallowed, cfg.Disabledeletewronglanguage, cfg.Grouptype, cfg_source, cfg_target, getconfig)
 	}
 }

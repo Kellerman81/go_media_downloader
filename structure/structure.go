@@ -643,7 +643,7 @@ func (structurevar *structure) structureSeries(folder string, m parser.ParseInfo
 			scanner.CleanUpFolder(folder, structurevar.sourcepath.CleanupsizeMB)
 
 			//updateserie
-			targetfile := filepath.Join(videotarget, filename)
+			targetfile := filepath.Join(videotarget, filename+filepath.Ext(videofile))
 
 			reached := false
 			list := config.ConfigGetMediaListConfig(structurevar.configTemplate, structurevar.listConfig)
