@@ -54,7 +54,7 @@ func QueryNewznabMovieImdb(row NzbIndexer, imdbid string, categories []int) (*[]
 }
 
 // QueryNewznabTvTvdb searches Indexers for tvdbid using season and episodes
-func QueryNewznabTvTvdb(row NzbIndexer, tvdbid int, categories []int, season int, episode int) (*[]newznab.NZB, []string, error) {
+func QueryNewznabTvTvdb(row NzbIndexer, tvdbid int, categories []int, season int, episode int, useseason bool, useepisode bool) (*[]newznab.NZB, []string, error) {
 	results := []newznab.NZB{}
 	failedindexers := []string{}
 	var err error
@@ -68,7 +68,7 @@ func QueryNewznabTvTvdb(row NzbIndexer, tvdbid int, categories []int, season int
 		client = newznab.New(row.URL, row.Apikey, row.UserID, row.SkipSslCheck, true, row.Limitercalls, row.Limiterseconds)
 		NewznabClients = append(NewznabClients, Clients{Name: row.URL, Client: *client})
 	}
-	resultsadd, erradd := client.SearchWithTVDB(categories, tvdbid, season, episode, row.Additional_query_params, row.Customurl, row.MaxAge, row.OutputAsJson)
+	resultsadd, erradd := client.SearchWithTVDB(categories, tvdbid, season, episode, row.Additional_query_params, row.Customurl, row.MaxAge, row.OutputAsJson, useepisode, useseason)
 	if erradd != nil {
 		err = erradd
 		failedindexers = append(failedindexers, row.URL)

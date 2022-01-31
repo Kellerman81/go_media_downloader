@@ -358,6 +358,8 @@ type SchedulerConfig struct {
 	Interval_scan_dataimport            string `koanf:"interval_scan_data_import"`
 	Interval_database_backup            string `koanf:"interval_database_backup"`
 	Interval_database_check             string `koanf:"interval_database_check"`
+	Interval_indexer_rss_seasons        string `koanf:"interval_indexer_rss_seasons"`
+	Cron_indexer_rss_seasons            string `koanf:"cron_indexer_rss_seasons"`
 	Cron_imdb                           string `koanf:"cron_imdb"`
 	Cron_feeds                          string `koanf:"cron_feeds"`
 	Cron_feeds_refresh_series           string `koanf:"cron_feeds_refresh_series"`

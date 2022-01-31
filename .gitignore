@@ -4,6 +4,7 @@
 **/data.db
 **/imdb.db
 **/imdbtemp.db
+**/config.toml
 **/*.pprof
 **/*.log
 backup/**

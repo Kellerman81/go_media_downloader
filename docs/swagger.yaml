@@ -48,95 +48,6 @@ definitions:
       year:
         type: boolean
     type: object
-  config.QualityConfig:
-    properties:
-      backupSearchForAlternateTitle:
-        type: boolean
-      backupSearchForTitle:
-        type: boolean
-      checkTitle:
-        type: boolean
-      checkUntilFirstFound:
-        type: boolean
-      checkYear:
-        type: boolean
-      checkYear1:
-        type: boolean
-      cutoff_priority:
-        type: integer
-      cutoff_quality:
-        type: string
-      cutoff_resolution:
-        type: string
-      excludeYearFromTitleSearch:
-        type: boolean
-      indexer:
-        items:
-          $ref: '#/definitions/config.QualityIndexerConfig'
-        type: array
-      name:
-        type: string
-      qualityReorder:
-        items:
-          $ref: '#/definitions/config.QualityReorderConfig'
-        type: array
-      titleStripPrefixForSearch:
-        items:
-          type: string
-        type: array
-      titleStripSuffixForSearch:
-        items:
-          type: string
-        type: array
-      wanted_audio:
-        items:
-          type: string
-        type: array
-      wanted_codec:
-        items:
-          type: string
-        type: array
-      wanted_quality:
-        items:
-          type: string
-        type: array
-      wanted_resolution:
-        items:
-          type: string
-        type: array
-    type: object
-  config.QualityIndexerConfig:
-    properties:
-      additional_query_params:
-        type: string
-      categories_indexer:
-        type: string
-      category_dowloader:
-        type: string
-      customQueryString:
-        type: string
-      history_check_title:
-        type: boolean
-      skip_empty_size:
-        type: boolean
-      template_downloader:
-        type: string
-      template_indexer:
-        type: string
-      template_path_nzb:
-        type: string
-      template_regex:
-        type: string
-    type: object
-  config.QualityReorderConfig:
-    properties:
-      name:
-        type: string
-      newpriority:
-        type: integer
-      type:
-        type: string
-    type: object
   database.DbmovieJson:
     properties:
       adult:
@@ -673,18 +584,20 @@ definitions:
         type: boolean
       indexer:
         type: string
+      minimumPriority:
+        type: integer
       nzb:
         $ref: '#/definitions/newznab.NZB'
-      nzbepisode:
-        $ref: '#/definitions/database.SerieEpisodeJson'
-      nzbmovie:
-        $ref: '#/definitions/database.MovieJson'
+      nzbepisodeID:
+        type: integer
+      nzbmovieID:
+        type: integer
       parseInfo:
         $ref: '#/definitions/parser.ParseInfo'
       prio:
         type: integer
-      quality:
-        $ref: '#/definitions/config.QualityConfig'
+      qualityTemplate:
+        type: string
       reason:
         type: string
       wantedAlternates:
@@ -1345,6 +1258,29 @@ paths:
       summary: Vacuum DB
       tags:
       - database
+  /api/debugstats:
+    get:
+      consumes:
+      - application/json
+      description: Shows some stats
+      parameters:
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: ""
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Debug information
+      tags:
+      - general
   /api/fillimdb:
     get:
       consumes:
@@ -3196,6 +3132,71 @@ paths:
       tags:
       - series
   /api/series/search/id/{id}/{season}:
+    get:
+      consumes:
+      - application/json
+      description: Searches for upgrades and missing
+      parameters:
+      - description: Series ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Season
+        in: path
+        name: season
+        required: true
+        type: string
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Search a series
+      tags:
+      - series
+  /api/series/searchrss/id/{id}:
+    get:
+      consumes:
+      - application/json
+      description: Searches for upgrades and missing
+      parameters:
+      - description: Series ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Search a series
+      tags:
+      - series
+  /api/series/searchrss/id/{id}/{season}:
     get:
       consumes:
       - application/json

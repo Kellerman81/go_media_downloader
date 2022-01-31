@@ -179,7 +179,7 @@ func New(baseURL string, apikey string, userID int, insecure bool, debug bool, l
 }
 
 // SearchWithTVDB returns NZBs for the given parameters
-func (c *Client) SearchWithTVDB(categories []int, tvDBID int, season int, episode int, additional_query_params string, customurl string, maxage int, outputasjson bool) (*[]NZB, error) {
+func (c *Client) SearchWithTVDB(categories []int, tvDBID int, season int, episode int, additional_query_params string, customurl string, maxage int, outputasjson bool, useepisode bool, useseason bool) (*[]NZB, error) {
 	var buildurl strings.Builder
 	buildurl.Grow(150 + len(additional_query_params))
 	if len(customurl) >= 1 {
@@ -192,10 +192,18 @@ func (c *Client) SearchWithTVDB(categories []int, tvDBID int, season int, episod
 	}
 	buildurl.WriteString("&tvdbid=")
 	buildurl.WriteString(strconv.Itoa(tvDBID))
-	buildurl.WriteString("&season=")
-	buildurl.WriteString(strconv.Itoa(season))
-	buildurl.WriteString("&ep=")
-	buildurl.WriteString(strconv.Itoa(episode))
+	if useseason {
+		buildurl.WriteString("&season=")
+		buildurl.WriteString(strconv.Itoa(season))
+	}
+	if useepisode {
+		buildurl.WriteString("&ep=")
+		buildurl.WriteString(strconv.Itoa(episode))
+	}
+	if !useepisode || !useseason {
+		buildurl.WriteString("&limit=")
+		buildurl.WriteString("100")
+	}
 	buildurl.WriteString("&cat=")
 	buildurl.WriteString(c.joinCats(categories))
 	buildurl.WriteString("&dl=1&t=tvsearch")
