@@ -214,6 +214,50 @@ func SearchSerieSeasonSingle(serie database.Serie, season string, configTemplate
 	swg.Wait()
 }
 
+func SearchSerieRSSSeasonSingle(serie database.Serie, season int, useseason bool, configTemplate string) {
+	if !config.ConfigCheck("general") {
+		return
+	}
+	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
+
+	if cfg_general.WorkerSearch == 0 {
+		cfg_general.WorkerSearch = 1
+	}
+
+	quals, _ := database.QueryStaticColumnsOneString("Select distinct quality_profile from serie_episodes where serie_id=?", "Select count(distinct quality_profile) from serie_episodes where serie_id=?", serie.ID)
+	dbserie, _ := database.GetDbserie(database.Query{Where: "id=?", WhereArgs: []interface{}{serie.DbserieID}})
+	SearchSerieRSSSeason(configTemplate, quals[0].Str, dbserie.ThetvdbID, season, useseason)
+}
+func SearchSeriesRSSSeasons(configTemplate string) {
+	var series []database.Serie
+	configEntry := config.ConfigGet(configTemplate).Data.(config.MediaTypeConfig)
+	argslist := []interface{}{}
+	for idxlisttest := range configEntry.Lists {
+		argslist = append(argslist, configEntry.Lists[idxlisttest].Name)
+	}
+	series, _ = database.QuerySeries(database.Query{Where: "(Select Count(id) from serie_episodes where (missing=1 or quality_reached=0) and serie_id=series.ID) >= 1 AND series.listname in (?" + strings.Repeat(",?", len(configEntry.Lists)-1) + ")", WhereArgs: argslist})
+	if !config.ConfigCheck("general") {
+		return
+	}
+	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
+
+	if cfg_general.WorkerSearch == 0 {
+		cfg_general.WorkerSearch = 1
+	}
+	swg := sizedwaitgroup.New(cfg_general.WorkerSearch)
+	for idx := range series {
+		seasons, _ := database.QueryStaticColumnsOneString("Select distinct season from dbserie_episodes where dbserie_id=?", "Select count(distinct season) from dbserie_episodes where dbserie_id=?", series[idx].DbserieID)
+		for idxs := range seasons {
+			swg.Add()
+			go func(season string) {
+				seasonint, _ := strconv.Atoi(season)
+				SearchSerieRSSSeasonSingle(series[idx], seasonint, true, configTemplate)
+				swg.Done()
+			}(seasons[idxs].Str)
+		}
+	}
+	swg.Wait()
+}
 func SearchSerieEpisodeSingle(row database.SerieEpisode, configTemplate string, titlesearch bool) {
 	searchtype := "missing"
 	if !row.Missing {
@@ -379,6 +423,34 @@ func SearchSerieRSS(configTemplate string, quality string) {
 
 	searchnow := NewSearcher(configTemplate, quality)
 	searchresults := searchnow.SearchRSS("series", false)
+	downloaded := []uint{}
+	for idx := range searchresults.Nzbs {
+		breakfor := false
+		for idxs := range downloaded {
+			if downloaded[idxs] == searchresults.Nzbs[idx].NzbepisodeID {
+				breakfor = true
+				break
+			}
+		}
+		if breakfor {
+			continue
+		}
+		logger.Log.Debug("nzb found - start downloading: ", searchresults.Nzbs[idx].NZB.Title)
+		downloaded = append(downloaded, searchresults.Nzbs[idx].NzbepisodeID)
+
+		nzbepisode, _ := database.GetSerieEpisodes(database.Query{Where: "id=?", WhereArgs: []interface{}{searchresults.Nzbs[idx].NzbepisodeID}})
+
+		downloadnow := downloader.NewDownloader(configTemplate, "rss")
+		downloadnow.SetSeriesEpisode(nzbepisode)
+		downloadnow.DownloadNzb(searchresults.Nzbs[idx])
+	}
+}
+
+func SearchSerieRSSSeason(configTemplate string, quality string, thetvdb_id int, season int, useseason bool) {
+	logger.Log.Debug("Get Rss Series List")
+
+	searchnow := NewSearcher(configTemplate, quality)
+	searchresults := searchnow.SearchSeriesRSSSeason("series", thetvdb_id, season, useseason)
 	downloaded := []uint{}
 	for idx := range searchresults.Nzbs {
 		breakfor := false
@@ -569,7 +641,104 @@ func (t searcher) rsssearchindexer(index config.QualityIndexerConfig, fetchall b
 		if len((*nzbs)) >= 1 {
 			tofilter := t.convertnzbs(nzbs)
 			tofilter.nzbsFilterStart()
-			tofilter.setDataField(lists, false)
+			tofilter.setDataField(lists, "", false)
+			tofilter.nzbsFilterBlock2()
+			if len(tofilter.NzbsDenied) >= 1 {
+				dl.Rejected = tofilter.NzbsDenied
+			}
+			if len(tofilter.Nzbs) >= 1 {
+				dl.Nzbs = tofilter.Nzbs
+			}
+			defer func() {
+				tofilter.Nzbs = nil
+				tofilter.NzbsDenied = nil
+				tofilter = nil
+			}()
+		}
+	}
+	return dl, true
+}
+
+//searchGroupType == movie || series
+func (s *searcher) SearchSeriesRSSSeason(searchGroupType string, thetvdb_id int, season int, useseason bool) searchResults {
+	if !config.ConfigCheck("quality_" + s.Quality) {
+		return searchResults{}
+	}
+	configEntry := config.ConfigGet(s.ConfigTemplate).Data.(config.MediaTypeConfig)
+
+	cfg_quality := config.ConfigGet("quality_" + s.Quality).Data.(config.QualityConfig)
+
+	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
+
+	s.SearchGroupType = searchGroupType
+	s.SearchActionType = "rss"
+	lists := make([]string, 0, len(configEntry.Lists))
+	for idxlisttest := range configEntry.Lists {
+		lists = append(lists, configEntry.Lists[idxlisttest].Name)
+	}
+	if len(lists) == 0 {
+		logger.Log.Error("lists empty for config ", searchGroupType, " ", configEntry.Name)
+		return searchResults{}
+	}
+	var dl searchResults
+	if cfg_general.WorkerIndexer == 0 {
+		cfg_general.WorkerIndexer = 1
+	}
+	swi := sizedwaitgroup.New(cfg_general.WorkerIndexer)
+	for idx := range cfg_quality.Indexer {
+		swi.Add()
+		go func(index config.QualityIndexerConfig) {
+			dladd, ok := s.rssqueryseriesindexer(index, thetvdb_id, season, useseason, lists, &swi)
+			if ok {
+				if len(dl.Rejected) == 0 {
+					dl.Rejected = dladd.Rejected
+				} else {
+					dl.Rejected = append(dl.Rejected, dladd.Rejected...)
+				}
+				if len(dl.Nzbs) == 0 {
+					dl.Nzbs = dladd.Nzbs
+				} else {
+					dl.Nzbs = append(dl.Nzbs, dladd.Nzbs...)
+				}
+			}
+		}(cfg_quality.Indexer[idx])
+	}
+	swi.Wait()
+	if len(dl.Nzbs) > 1 {
+		sort.Slice(dl.Nzbs, func(i, j int) bool {
+			return dl.Nzbs[i].Prio > dl.Nzbs[j].Prio
+		})
+	}
+	if len(dl.Nzbs) == 0 {
+		logger.Log.Info("No new entries found")
+	}
+	return searchResults{Nzbs: dl.Nzbs, Rejected: dl.Rejected}
+}
+
+func (t searcher) rssqueryseriesindexer(index config.QualityIndexerConfig, thetvdb_id int, season int, useseason bool, lists []string, swi *sizedwaitgroup.SizedWaitGroup) (searchResults, bool) {
+	defer swi.Done()
+	_, nzbindexer, cats, erri := t.initIndexer(index, "api")
+	if erri != nil {
+		logger.Log.Debug("Skipped Indexer: ", index.Template_indexer, " ", erri)
+		return searchResults{}, false
+	}
+	t.Indexer = index
+	var dl searchResults
+	nzbs, failed, nzberr := apiexternal.QueryNewznabTvTvdb(nzbindexer, thetvdb_id, cats, season, 0, useseason, false)
+	defer func() {
+		nzbs = nil
+	}()
+	if nzberr != nil {
+
+		logger.Log.Error("Newznab RSS Search failed ", index.Template_indexer)
+		failedindexer(failed)
+		return searchResults{}, false
+	} else {
+		logger.Log.Debug("Search RSS ended - found entries: ", len((*nzbs)))
+		if len((*nzbs)) >= 1 {
+			tofilter := t.convertnzbs(nzbs)
+			tofilter.nzbsFilterStart()
+			tofilter.setDataField(lists, "", false)
 			tofilter.nzbsFilterBlock2()
 			if len(tofilter.NzbsDenied) >= 1 {
 				dl.Rejected = tofilter.NzbsDenied
@@ -927,7 +1096,7 @@ func (n *nzbFilter) nzbsFilterBlock2() {
 }
 
 //Needs s.Movie or s.SerieEpisode (for non RSS)
-func (n *nzbFilter) setDataField(lists []string, addifnotfound bool) {
+func (n *nzbFilter) setDataField(lists []string, addinlist string, addifnotfound bool) {
 	nextup := make([]parser.Nzbwithprio, 0, int(len(n.ToFilter)/50))
 	for idx := range n.ToFilter {
 		if strings.ToLower(n.T.SearchGroupType) == "movie" {
@@ -976,7 +1145,7 @@ func (n *nzbFilter) setDataField(lists []string, addifnotfound bool) {
 						loopmovie = getmovie
 					} else {
 						if addifnotfound && strings.HasPrefix(n.ToFilter[idx].NZB.IMDBID, "tt") {
-							if !allowMovieImport(n.ToFilter[idx].NZB.IMDBID, lists[0]) {
+							if !allowMovieImport(n.ToFilter[idx].NZB.IMDBID, addinlist) {
 								continue
 							}
 
@@ -984,7 +1153,7 @@ func (n *nzbFilter) setDataField(lists []string, addifnotfound bool) {
 							var dbmovie database.Dbmovie
 							dbmovie.ImdbID = n.ToFilter[idx].NZB.IMDBID
 							sww.Add()
-							importfeed.JobImportMovies(dbmovie, n.T.ConfigTemplate, lists[0], &sww)
+							importfeed.JobImportMovies(dbmovie, n.T.ConfigTemplate, addinlist, &sww)
 							sww.Wait()
 							founddbmovie, founddbmovieerr = database.GetDbmovie(database.Query{Select: "id, title", Where: "imdb_id = ?", WhereArgs: []interface{}{dbmovie.ImdbID}})
 						} else {
@@ -1024,9 +1193,9 @@ func (n *nzbFilter) setDataField(lists []string, addifnotfound bool) {
 						//s.Listname =
 						if addifnotfound {
 							//Search imdb!
-							_, imdbget, imdbfound := importfeed.MovieFindDbByTitle(n.ToFilter[idx].ParseInfo.Title, strconv.Itoa(n.ToFilter[idx].ParseInfo.Year), lists[0], true, "rss")
+							_, imdbget, imdbfound := importfeed.MovieFindDbByTitle(n.ToFilter[idx].ParseInfo.Title, strconv.Itoa(n.ToFilter[idx].ParseInfo.Year), addinlist, true, "rss")
 							if imdbfound == 0 {
-								if !allowMovieImport(n.ToFilter[idx].NZB.IMDBID, lists[0]) {
+								if !allowMovieImport(n.ToFilter[idx].NZB.IMDBID, addinlist) {
 									continue
 								}
 
@@ -1034,11 +1203,11 @@ func (n *nzbFilter) setDataField(lists []string, addifnotfound bool) {
 								var dbmovie database.Dbmovie
 								dbmovie.ImdbID = imdbget
 								sww.Add()
-								importfeed.JobImportMovies(dbmovie, n.T.ConfigTemplate, lists[0], &sww)
+								importfeed.JobImportMovies(dbmovie, n.T.ConfigTemplate, addinlist, &sww)
 								sww.Wait()
 								founddbmovie, _ := database.GetDbmovie(database.Query{Select: "id, title", Where: "imdb_id = ?", WhereArgs: []interface{}{dbmovie.ImdbID}})
 								loopdbmovie = founddbmovie
-								getmovie, _ := database.GetMovies(database.Query{Where: "dbmovie_id=? and listname=?", WhereArgs: []interface{}{loopdbmovie.ID, lists[0]}})
+								getmovie, _ := database.GetMovies(database.Query{Where: "dbmovie_id=? and listname=?", WhereArgs: []interface{}{loopdbmovie.ID, addinlist}})
 								loopmovie = getmovie
 							}
 						} else {
@@ -1150,7 +1319,7 @@ func (n *nzbFilter) setDataField(lists []string, addifnotfound bool) {
 							continue
 						}
 					} else {
-						founddbepisode, founddbepisodeerr = database.GetDbserieEpisodes(database.Query{Select: "id", Where: "dbserie_id = ? and Season = ? and Episode = ?", WhereArgs: []interface{}{founddbserie.ID, n.ToFilter[idx].NZB.Season, n.ToFilter[idx].NZB.Episode}})
+						founddbepisode, founddbepisodeerr = database.GetDbserieEpisodes(database.Query{Select: "id", Where: "dbserie_id = ? and Season = ? and Episode = ?", WhereArgs: []interface{}{founddbserie.ID, strings.TrimPrefix(strings.TrimPrefix(n.ToFilter[idx].NZB.Season, "S"), "0"), strings.TrimPrefix(strings.TrimPrefix(n.ToFilter[idx].NZB.Episode, "E"), "0")}})
 						if founddbepisodeerr != nil {
 							logger.Log.Debug("Skipped - Not Wanted DB Episode: ", n.ToFilter[idx].NZB.Title)
 							n.ToFilter[idx].Denied = true
@@ -1232,7 +1401,7 @@ func (n *nzbFilter) setDataField(lists []string, addifnotfound bool) {
 								continue
 							}
 						} else {
-							founddbepisode, founddbepisodeerr = database.GetDbserieEpisodes(database.Query{Select: "id", Where: "dbserie_id = ? and Season = ? and Episode = ?", WhereArgs: []interface{}{founddbserie.ID, n.ToFilter[idx].NZB.Season, n.ToFilter[idx].NZB.Episode}})
+							founddbepisode, founddbepisodeerr = database.GetDbserieEpisodes(database.Query{Select: "id", Where: "dbserie_id = ? and Season = ? and Episode = ?", WhereArgs: []interface{}{founddbserie.ID, strings.TrimPrefix(strings.TrimPrefix(n.ToFilter[idx].NZB.Season, "S"), "0"), strings.TrimPrefix(strings.TrimPrefix(n.ToFilter[idx].NZB.Episode, "E"), "0")}})
 							if founddbepisodeerr != nil {
 								logger.Log.Debug("Skipped - Not Wanted DB Episode: ", n.ToFilter[idx].NZB.Title)
 								n.ToFilter[idx].Denied = true
@@ -1334,7 +1503,6 @@ func (s searcher) GetRSSFeed(searchGroupType string, listConfig string) searchRe
 	if !config.ConfigCheck("list_" + list.Template_list) {
 		return searchResults{}
 	}
-
 	if !config.ConfigCheck("quality_" + s.Quality) {
 		return searchResults{}
 	}
@@ -1351,6 +1519,12 @@ func (s searcher) GetRSSFeed(searchGroupType string, listConfig string) searchRe
 	}
 	if cfg_indexer.Template_regex == "" {
 		return searchResults{}
+	}
+
+	configEntry := config.ConfigGet(s.ConfigTemplate).Data.(config.MediaTypeConfig)
+	lists := make([]string, 0, len(configEntry.Lists))
+	for idxlisttest := range configEntry.Lists {
+		lists = append(lists, configEntry.Lists[idxlisttest].Name)
 	}
 
 	var lastindexerid string
@@ -1375,7 +1549,7 @@ func (s searcher) GetRSSFeed(searchGroupType string, listConfig string) searchRe
 		}
 		tofilter := s.convertnzbs(nzbs)
 		tofilter.nzbsFilterStart()
-		tofilter.setDataField([]string{listConfig}, list.Addfound)
+		tofilter.setDataField(lists, listConfig, list.Addfound)
 		tofilter.nzbsFilterBlock2()
 
 		defer func() {
@@ -1867,7 +2041,7 @@ func (s *searcher) moviesSearchImdb(movie database.Movie, lists []string, cats [
 	if len((*nzbs)) >= 1 {
 		tofilter := s.convertnzbs(nzbs)
 		tofilter.nzbsFilterStart()
-		tofilter.setDataField(lists, false)
+		tofilter.setDataField(lists, "", false)
 		tofilter.nzbsFilterBlock2()
 
 		defer func() {
@@ -1911,7 +2085,7 @@ func (s *searcher) moviesSearchTitle(movie database.Movie, title string, lists [
 	if len((*nzbs)) >= 1 {
 		tofilter := s.convertnzbs(nzbs)
 		tofilter.nzbsFilterStart()
-		tofilter.setDataField(lists, false)
+		tofilter.setDataField(lists, "", false)
 		tofilter.nzbsFilterBlock2()
 
 		defer func() {
@@ -1935,7 +2109,7 @@ func (s *searcher) seriesSearchTvdb(serieEpisode database.SerieEpisode, lists []
 	logger.Log.Info("Search Series by tvdbid: ", s.Tvdb, " S", s.Season, "E", s.Episode)
 	seasonint, _ := strconv.Atoi(s.Season)
 	episodeint, _ := strconv.Atoi(s.Episode)
-	nzbs, failed, nzberr := apiexternal.QueryNewznabTvTvdb(nzbindexer, s.Tvdb, cats, seasonint, episodeint)
+	nzbs, failed, nzberr := apiexternal.QueryNewznabTvTvdb(nzbindexer, s.Tvdb, cats, seasonint, episodeint, true, true)
 	defer func() {
 		nzbs = nil
 	}()
@@ -1949,7 +2123,7 @@ func (s *searcher) seriesSearchTvdb(serieEpisode database.SerieEpisode, lists []
 	if len((*nzbs)) >= 1 {
 		tofilter := s.convertnzbs(nzbs)
 		tofilter.nzbsFilterStart()
-		tofilter.setDataField(lists, false)
+		tofilter.setDataField(lists, "", false)
 		tofilter.nzbsFilterBlock2()
 
 		defer func() {
@@ -1987,7 +2161,7 @@ func (s *searcher) seriesSearchTitle(serieEpisode database.SerieEpisode, title s
 		if len((*nzbs)) >= 1 {
 			tofilter := s.convertnzbs(nzbs)
 			tofilter.nzbsFilterStart()
-			tofilter.setDataField(lists, false)
+			tofilter.setDataField(lists, "", false)
 			tofilter.nzbsFilterBlock2()
 
 			defer func() {

@@ -290,6 +290,8 @@ func Series_single_jobs(job string, configTemplate string, listname string, forc
 		switch job {
 		case "datafull":
 			Getnewepisodes(configTemplate)
+		case "rssseasons":
+			searcher.SearchSeriesRSSSeasons(configTemplate)
 		case "searchmissingfull":
 			searcher.SearchSerieMissing(configTemplate, 0, false)
 		case "searchmissinginc":

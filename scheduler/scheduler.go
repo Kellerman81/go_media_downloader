@@ -11,6 +11,7 @@ import (
 
 	"github.com/Kellerman81/go_media_downloader/config"
 	"github.com/Kellerman81/go_media_downloader/database"
+	"github.com/Kellerman81/go_media_downloader/searcher"
 	"github.com/Kellerman81/go_media_downloader/tasks"
 	"github.com/Kellerman81/go_media_downloader/utils"
 )
@@ -445,6 +446,24 @@ func InitScheduler() {
 				utils.Series_single_jobs("searchupgradefulltitle", configTemplate.Name, "", false)
 			}, schedule.Cron_indexer_upgrade_full_title)
 		}
+
+		if schedule.Interval_indexer_rss_seasons != "" {
+			if cfg_general.UseCronInsteadOfInterval {
+				QueueSearch.DispatchCron("rssseasons_series_"+cfg_serie.Name, func() {
+					searcher.SearchSeriesRSSSeasons(configTemplate.Name)
+				}, convertcron(schedule.Interval_indexer_rss_seasons))
+			} else {
+				QueueSearch.DispatchEvery("rssseasons_series_"+cfg_serie.Name, func() {
+					searcher.SearchSeriesRSSSeasons(configTemplate.Name)
+				}, converttime(schedule.Interval_indexer_rss_seasons))
+			}
+		}
+		if schedule.Cron_indexer_rss_seasons != "" {
+			QueueSearch.DispatchCron("rssseasons_series_"+cfg_serie.Name, func() {
+				searcher.SearchSeriesRSSSeasons(configTemplate.Name)
+			}, schedule.Cron_indexer_rss_seasons)
+		}
+
 		if schedule.Interval_indexer_rss != "" {
 			if cfg_general.UseCronInsteadOfInterval {
 				QueueSearch.DispatchCron("rss_series_"+cfg_serie.Name, func() {

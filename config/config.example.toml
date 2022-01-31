@@ -469,6 +469,7 @@ interval_feeds_refresh_movies="1d" # refreshes 100 movies only (only Default Sch
 interval_feeds_refresh_movies_full="10d" # (only Default Scheduler)
 interval_feeds_refresh_series="1d" # refreshes 20 series only (only Default Scheduler)
 interval_feeds_refresh_series_full="7d" # (only Default Scheduler)
+interval_indexer_rss_seasons="30m" #search for missing or upgradable episodes of a season (1 api call per season - you might not get all available downloads) (only for series with thetvdb_id) - alternative to interval_indexer_missing_full
 interval_indexer_missing="30m" #this only scans for ids - no name scanning!
 interval_indexer_upgrade="45m"
 interval_indexer_missing_full="14d" # the normal scan only scans the configured amount - this scans all

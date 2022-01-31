@@ -53,6 +53,12 @@ func AddSeriesRoutes(routerseries *gin.RouterGroup) {
 		routerseriessearch.GET("/history/clearid/:id", apiSeriesClearHistoryID)
 	}
 
+	routerseriessearchrss := routerseries.Group("/searchrss")
+	{
+		routerseriessearchrss.GET("/id/:id", apiSeriesSearchRSS)
+		routerseriessearchrss.GET("/id/:id/:season", apiSeriesSearchRSSSeason)
+	}
+
 	routerseriesepisodessearch := routerseries.Group("/episodes/search")
 	{
 		routerseriesepisodessearch.GET("/id/:id", apiSeriesEpisodeSearch)
@@ -61,7 +67,7 @@ func AddSeriesRoutes(routerseries *gin.RouterGroup) {
 	}
 }
 
-var allowedjobsseries []string = []string{"rss", "data", "datafull", "checkmissing", "checkmissingflag", "checkreachedflag", "structure", "searchmissingfull",
+var allowedjobsseries []string = []string{"rss", "rssseasons", "data", "datafull", "checkmissing", "checkmissingflag", "checkreachedflag", "structure", "searchmissingfull",
 	"searchmissinginc", "searchupgradefull", "searchupgradeinc", "searchmissingfulltitle",
 	"searchmissinginctitle", "searchupgradefulltitle", "searchupgradeinctitle", "clearhistory", "feeds", "refresh", "refreshinc"}
 
@@ -487,7 +493,7 @@ func apiseriesAllJobs(c *gin.Context) {
 				scheduler.QueueData.Dispatch(c.Param("job")+"_series_"+cfg_serie.Name, func() {
 					utils.Series_single_jobs(c.Param("job"), configTemplate.Name, "", true)
 				})
-			case "rss", "searchmissingfull", "searchmissinginc", "searchupgradefull", "searchupgradeinc", "searchmissingfulltitle", "searchmissinginctitle", "searchupgradefulltitle", "searchupgradeinctitle":
+			case "rss", "rssseasons", "searchmissingfull", "searchmissinginc", "searchupgradefull", "searchupgradeinc", "searchmissingfulltitle", "searchmissinginctitle", "searchupgradefulltitle", "searchupgradeinctitle":
 				scheduler.QueueSearch.Dispatch(c.Param("job")+"_series_"+cfg_serie.Name, func() {
 					utils.Series_single_jobs(c.Param("job"), configTemplate.Name, "", true)
 				})
@@ -566,7 +572,7 @@ func apiseriesJobs(c *gin.Context) {
 			scheduler.QueueData.Dispatch(c.Param("job")+"_series_"+c.Param("name"), func() {
 				utils.Series_single_jobs(c.Param("job"), "serie_"+c.Param("name"), "", true)
 			})
-		case "rss", "searchmissingfull", "searchmissinginc", "searchupgradefull", "searchupgradeinc", "searchmissingfulltitle", "searchmissinginctitle", "searchupgradefulltitle", "searchupgradeinctitle":
+		case "rss", "rssseasons", "searchmissingfull", "searchmissinginc", "searchupgradefull", "searchupgradeinc", "searchmissingfulltitle", "searchmissinginctitle", "searchupgradefulltitle", "searchupgradeinctitle":
 			scheduler.QueueSearch.Dispatch(c.Param("job")+"_series_"+c.Param("name"), func() {
 				utils.Series_single_jobs(c.Param("job"), "serie_"+c.Param("name"), "", true)
 			})
@@ -900,6 +906,78 @@ func apiSeriesSearchSeason(c *gin.Context) {
 			if strings.EqualFold(cfg_serie.Lists[idxlist].Name, serie.Listname) {
 				scheduler.QueueSearch.Dispatch("searchseriesseason_series_"+cfg_serie.Name+"_"+strconv.Itoa(int(serie.ID))+"_"+c.Param("season"), func() {
 					searcher.SearchSerieSeasonSingle(serie, c.Param("season"), configTemplate.Name, true)
+				})
+				c.JSON(http.StatusOK, "started")
+				return
+			}
+		}
+	}
+	c.JSON(http.StatusNoContent, "Nothing Done")
+}
+
+// @Summary Search a series
+// @Description Searches for upgrades and missing
+// @Tags series
+// @Accept  json
+// @Produce  json
+// @Param id path int true "Series ID"
+// @Param apikey query string true "apikey"
+// @Success 200 {string} string
+// @Failure 401 {object} string
+// @Router /api/series/searchrss/id/{id} [get]
+func apiSeriesSearchRSS(c *gin.Context) {
+	if ApiAuth(c) == http.StatusUnauthorized {
+		return
+	}
+	serie, _ := database.GetSeries(database.Query{Where: "id=?", WhereArgs: []interface{}{c.Param("id")}})
+
+	for _, idxserie := range config.ConfigGetPrefix("serie_") {
+		configTemplate := *idxserie
+		if !config.ConfigCheck(configTemplate.Name) {
+			continue
+		}
+		cfg_serie := config.ConfigGet(configTemplate.Name).Data.(config.MediaTypeConfig)
+		for idxlist := range cfg_serie.Lists {
+			if strings.EqualFold(cfg_serie.Lists[idxlist].Name, serie.Listname) {
+				scheduler.QueueSearch.Dispatch("searchseriesseason_series_"+cfg_serie.Name+"_"+strconv.Itoa(int(serie.ID))+"_"+c.Param("season"), func() {
+					searcher.SearchSerieRSSSeasonSingle(serie, 0, false, configTemplate.Name)
+				})
+				c.JSON(http.StatusOK, "started")
+				return
+			}
+		}
+	}
+	c.JSON(http.StatusNoContent, "Nothing Done")
+}
+
+// @Summary Search a series
+// @Description Searches for upgrades and missing
+// @Tags series
+// @Accept  json
+// @Produce  json
+// @Param id path int true "Series ID"
+// @Param season path string true "Season"
+// @Param apikey query string true "apikey"
+// @Success 200 {string} string
+// @Failure 401 {object} string
+// @Router /api/series/searchrss/id/{id}/{season} [get]
+func apiSeriesSearchRSSSeason(c *gin.Context) {
+	if ApiAuth(c) == http.StatusUnauthorized {
+		return
+	}
+	serie, _ := database.GetSeries(database.Query{Where: "id=?", WhereArgs: []interface{}{c.Param("id")}})
+
+	seasonint, _ := strconv.Atoi(c.Param("season"))
+	for _, idxserie := range config.ConfigGetPrefix("serie_") {
+		configTemplate := *idxserie
+		if !config.ConfigCheck(configTemplate.Name) {
+			continue
+		}
+		cfg_serie := config.ConfigGet(configTemplate.Name).Data.(config.MediaTypeConfig)
+		for idxlist := range cfg_serie.Lists {
+			if strings.EqualFold(cfg_serie.Lists[idxlist].Name, serie.Listname) {
+				scheduler.QueueSearch.Dispatch("searchseriesseason_series_"+cfg_serie.Name+"_"+strconv.Itoa(int(serie.ID))+"_"+c.Param("season"), func() {
+					searcher.SearchSerieRSSSeasonSingle(serie, seasonint, true, configTemplate.Name)
 				})
 				c.JSON(http.StatusOK, "started")
 				return
