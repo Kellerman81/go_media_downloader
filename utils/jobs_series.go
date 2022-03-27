@@ -67,12 +67,14 @@ func jobImportSeriesParseV2(file string, updatemissing bool, configTemplate stri
 
 		list := config.ConfigGetMediaListConfig(configTemplate, listConfig)
 		if !config.ConfigCheck("quality_" + list.Template_quality) {
+			logger.Log.Error("Quality not found: ", list.Template_quality)
 			return
 		}
 
 		m.GetPriority(configTemplate, list.Template_quality)
 		errparsev := m.ParseVideoFile(file, configTemplate, list.Template_quality)
 		if errparsev != nil {
+			logger.Log.Error("Parse failed: ", errparsev)
 			return
 		}
 		teststr := config.RegexGet("RegexSeriesIdentifier").FindStringSubmatch(m.Identifier)
@@ -84,6 +86,7 @@ func jobImportSeriesParseV2(file string, updatemissing bool, configTemplate stri
 		testDbSeries, _ := database.GetDbserie(database.Query{Select: "identifiedby", Where: "id=?", WhereArgs: []interface{}{series.DbserieID}})
 
 		identifiedby := strings.ToLower(testDbSeries.Identifiedby)
+
 		for _, epi := range importfeed.GetEpisodeArray(testDbSeries.Identifiedby, teststr[1], teststr[2]) {
 			epi = strings.Trim(epi, "-EX")
 			if identifiedby != "date" {

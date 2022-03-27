@@ -708,9 +708,11 @@ definitions:
       started:
         type: string
     type: object
+host: localhost:9090
 info:
   contact: {}
   title: go_media_downloader API
+  version: "1.0"
 paths:
   /api/all/data:
     get:
@@ -1543,6 +1545,7 @@ paths:
       - description: 'List Name: ex. list'
         in: path
         name: name
+        required: true
         type: string
       - description: apikey
         in: query
@@ -2922,6 +2925,7 @@ paths:
       - description: 'List Name: ex. list'
         in: path
         name: name
+        required: true
         type: string
       - description: apikey
         in: query
@@ -3341,6 +3345,11 @@ paths:
         name: apikey
         required: true
         type: string
+      - description: code
+        in: path
+        name: code
+        required: true
+        type: string
       produces:
       - application/json
       responses:
@@ -3390,4 +3399,6 @@ paths:
       summary: Trakt Get List (Auth Test)
       tags:
       - general
+schemes:
+- http
 swagger: "2.0"

@@ -23,15 +23,15 @@ func AddAllRoutes(rg *gin.RouterGroup) {
 	}
 }
 
-// @Summary Search all feeds
-// @Description Search all feeds of movies and series for new entries
-// @Tags feeds
-// @Accept  json
-// @Produce  json
-// @Param apikey query string true "apikey"
-// @Success 200 {object} string
-// @Failure 401 {object} string
-// @Router /api/all/feeds [get]
+// @Summary      Search all feeds
+// @Description  Search all feeds of movies and series for new entries
+// @Tags         feeds
+// @Accept       json
+// @Produce      json
+// @Param        apikey  query     string  true  "apikey"
+// @Success      200     {object}  string
+// @Failure      401     {object}  string
+// @Router       /api/all/feeds [get]
 func apiAllGetFeeds(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
 		return
@@ -41,15 +41,15 @@ func apiAllGetFeeds(c *gin.Context) {
 	c.JSON(http.StatusOK, "ok")
 }
 
-// @Summary Search all folders
-// @Description Search all folders of movies and series for new entries
-// @Tags data
-// @Accept  json
-// @Produce  json
-// @Param apikey query string true "apikey"
-// @Success 200 {object} string
-// @Failure 401 {object} string
-// @Router /api/all/data [get]
+// @Summary      Search all folders
+// @Description  Search all folders of movies and series for new entries
+// @Tags         data
+// @Accept       json
+// @Produce      json
+// @Param        apikey  query     string  true  "apikey"
+// @Success      200     {object}  string
+// @Failure      401     {object}  string
+// @Router       /api/all/data [get]
 func apiAllGetData(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
 		return
@@ -59,15 +59,15 @@ func apiAllGetData(c *gin.Context) {
 	c.JSON(http.StatusOK, "ok")
 }
 
-// @Summary Search all rss feeds
-// @Description Search all rss feeds of movies and series for new releases
-// @Tags search
-// @Accept  json
-// @Produce  json
-// @Param apikey query string true "apikey"
-// @Success 200 {object} string
-// @Failure 401 {object} string
-// @Router /api/all/search/rss [get]
+// @Summary      Search all rss feeds
+// @Description  Search all rss feeds of movies and series for new releases
+// @Tags         search
+// @Accept       json
+// @Produce      json
+// @Param        apikey  query     string  true  "apikey"
+// @Success      200     {object}  string
+// @Failure      401     {object}  string
+// @Router       /api/all/search/rss [get]
 func apiAllGetRss(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
 		return
@@ -77,15 +77,15 @@ func apiAllGetRss(c *gin.Context) {
 	c.JSON(http.StatusOK, "ok")
 }
 
-// @Summary Search all Missing
-// @Description Search all media of movies and series for missing releases
-// @Tags search
-// @Accept  json
-// @Produce  json
-// @Param apikey query string true "apikey"
-// @Success 200 {object} string
-// @Failure 401 {object} string
-// @Router /api/all/search/missing/full [get]
+// @Summary      Search all Missing
+// @Description  Search all media of movies and series for missing releases
+// @Tags         search
+// @Accept       json
+// @Produce      json
+// @Param        apikey  query     string  true  "apikey"
+// @Success      200     {object}  string
+// @Failure      401     {object}  string
+// @Router       /api/all/search/missing/full [get]
 func apiAllGetMissingFull(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
 		return
@@ -95,15 +95,15 @@ func apiAllGetMissingFull(c *gin.Context) {
 	c.JSON(http.StatusOK, "ok")
 }
 
-// @Summary Search all Missing Incremental
-// @Description Search all media of movies and series for missing releases (incremental)
-// @Tags search
-// @Accept  json
-// @Produce  json
-// @Param apikey query string true "apikey"
-// @Success 200 {object} string
-// @Failure 401 {object} string
-// @Router /api/all/search/missing/inc [get]
+// @Summary      Search all Missing Incremental
+// @Description  Search all media of movies and series for missing releases (incremental)
+// @Tags         search
+// @Accept       json
+// @Produce      json
+// @Param        apikey  query     string  true  "apikey"
+// @Success      200     {object}  string
+// @Failure      401     {object}  string
+// @Router       /api/all/search/missing/inc [get]
 func apiAllGetMissingInc(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
 		return
@@ -113,15 +113,15 @@ func apiAllGetMissingInc(c *gin.Context) {
 	c.JSON(http.StatusOK, "ok")
 }
 
-// @Summary Search all Upgrades
-// @Description Search all media of movies and series for upgrades
-// @Tags search
-// @Accept  json
-// @Produce  json
-// @Param apikey query string true "apikey"
-// @Success 200 {object} string
-// @Failure 401 {object} string
-// @Router /api/all/search/upgrade/full [get]
+// @Summary      Search all Upgrades
+// @Description  Search all media of movies and series for upgrades
+// @Tags         search
+// @Accept       json
+// @Produce      json
+// @Param        apikey  query     string  true  "apikey"
+// @Success      200     {object}  string
+// @Failure      401     {object}  string
+// @Router       /api/all/search/upgrade/full [get]
 func apiAllGetUpgradeFull(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
 		return
@@ -131,15 +131,15 @@ func apiAllGetUpgradeFull(c *gin.Context) {
 	c.JSON(http.StatusOK, "ok")
 }
 
-// @Summary Search all Upgrades Incremental
-// @Description Search all media of movies and series for upgrades (incremental)
-// @Tags search
-// @Accept  json
-// @Produce  json
-// @Param apikey query string true "apikey"
-// @Success 200 {object} string
-// @Failure 401 {object} string
-// @Router /api/all/search/upgrade/inc [get]
+// @Summary      Search all Upgrades Incremental
+// @Description  Search all media of movies and series for upgrades (incremental)
+// @Tags         search
+// @Accept       json
+// @Produce      json
+// @Param        apikey  query     string  true  "apikey"
+// @Success      200     {object}  string
+// @Failure      401     {object}  string
+// @Router       /api/all/search/upgrade/inc [get]
 func apiAllGetUpgradeInc(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
 		return
