@@ -38,7 +38,10 @@ import (
 	ginlog "github.com/toorop/gin-logrus"
 )
 
-// @title go_media_downloader API
+// @title    go_media_downloader API
+// @version  1.0
+// @Schemes  http
+// @host     localhost:9090
 
 func main() {
 	//debug.SetGCPercent(30)

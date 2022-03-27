@@ -1,9 +1,14 @@
 {
+    "schemes": [
+        "http"
+    ],
     "swagger": "2.0",
     "info": {
         "title": "go_media_downloader API",
-        "contact": {}
+        "contact": {},
+        "version": "1.0"
     },
+    "host": "localhost:9090",
     "paths": {
         "/api/all/data": {
             "get": {
@@ -1208,7 +1213,8 @@
                         "type": "string",
                         "description": "List Name: ex. list",
                         "name": "name",
-                        "in": "path"
+                        "in": "path",
+                        "required": true
                     },
                     {
                         "type": "string",
@@ -3208,7 +3214,8 @@
                         "type": "string",
                         "description": "List Name: ex. list",
                         "name": "name",
-                        "in": "path"
+                        "in": "path",
+                        "required": true
                     },
                     {
                         "type": "string",
@@ -3947,6 +3954,13 @@
                         "description": "apikey",
                         "name": "apikey",
                         "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "code",
+                        "name": "code",
+                        "in": "path",
                         "required": true
                     }
                 ],

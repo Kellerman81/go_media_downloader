@@ -121,3 +121,6 @@ func (t *tvdbClient) GetSeriesEpisodes(id int, language string) (theTVDBEpisodes
 	}
 	return result, nil
 }
+
+var v4api string = "d88a00a6-799b-4914-b118-5e1969abf60e"
+var V4apiPin string

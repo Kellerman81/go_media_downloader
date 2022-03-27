@@ -117,7 +117,7 @@ Inspirations: Radarr/Sonarr and Flexget
 ## Ram Usage
 
 Currently seen: 
-Constanly in use - between 30MB-150MB
+Constanly in use - between 30MB-150MB-peek:1-1.5GB
 Swap Memory: Default ~300-600MB - on a file move action the swap memory will grow to at least the complete file size - so for a 8GB file expect also this much!
 
 ## Get started
@@ -136,6 +136,8 @@ Swap Memory: Default ~300-600MB - on a file move action the swap memory will gro
 
 Find the API Documentation after start at:
 http://{server}:{port}/swagger/index.html
+or with more features but maybe not as current:
+https://go-media-downloader.readme.io/
 
 
 ## After first Start - Trakt Authorize
@@ -145,7 +147,7 @@ http://{server}:{port}/swagger/index.html
 - Write down ClientID and Secret
 - Put ClientID and Secret into the config.toml
 - Start app
-- Open : http://{server}:{port}/api/trakt/auhorize?apikey={apikey}  to get a url to open
+- Open : http://{server}:{port}/api/trakt/authorize?apikey={apikey}  to get a url to open
 - Open Url in Browser
 - Open : http://{server}:{port}/api/trakt/token/{code}?apikey={apikey}  to get the token and save it - the code is in the url from the step above
 - Best Practice restart App - You need to do this only once every 3 month if the expiry is reached
@@ -159,3 +161,9 @@ http://{server}:{port}/swagger/index.html
 - Look into [Wiki](https://github.com/Kellerman81/go_media_downloader/wiki)
 - config: Movies FR and EN as Groups with the same or different feeds - Folders have to be different for the group (don't mix for example english and French Movies) - Use Different Qualities for each group! in the qualities are the Downloader/Indexer Definitions thats why - also please let the downloader place them in different directories otherwise they might mix
 - exceptions: if a movie/show is in multiple lists i try to exclude them from the others (can be done in the config) so that i have the movie/show only in the list with the highest quality - if a movie/show is in 2 lists with different qualities the release would be constantly redownloaded
+- if you want more help start a discussion - the system is running stable for some time now
+
+## Bugs
+
+- Currently it may happen that new series won't be searched - use /api/series/search/id/123 endpoint in that case once  after that it will update
+- currently movies/series in different languages need to be in diffent root folders - ex. /share/Movies_EN and ..Movies_FR
