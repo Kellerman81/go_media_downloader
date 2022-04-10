@@ -63,6 +63,14 @@ func GetSeriesTable(ctx *context.Context) table.Table {
 		{Value: "0", Text: "No"},
 		{Value: "1", Text: "Yes"},
 	}).FieldFilterOptionExt(map[string]interface{}{"allowClear": true}).FieldSortable()
+	info.AddField("Search_Specials", "search_specials", db.Numeric).FieldBool("1", "0").FieldFilterable(types.FilterType{FormType: form.SelectSingle}).FieldFilterOptions(types.FieldOptions{
+		{Value: "0", Text: "No"},
+		{Value: "1", Text: "Yes"},
+	}).FieldFilterOptionExt(map[string]interface{}{"allowClear": true}).FieldSortable()
+	info.AddField("Ignore_runtime", "ignore_runtime", db.Numeric).FieldBool("1", "0").FieldFilterable(types.FilterType{FormType: form.SelectSingle}).FieldFilterOptions(types.FieldOptions{
+		{Value: "0", Text: "No"},
+		{Value: "1", Text: "Yes"},
+	}).FieldFilterOptionExt(map[string]interface{}{"allowClear": true}).FieldSortable()
 
 	info.SetTable("series").SetTitle("Series").SetDescription("Series")
 
@@ -79,6 +87,14 @@ func GetSeriesTable(ctx *context.Context) table.Table {
 		{Text: "No", Value: "0"},
 	})
 	formList.AddField("Dont_search", "dont_search", db.Numeric, form.Switch).FieldOptions(types.FieldOptions{
+		{Text: "Yes", Value: "1"},
+		{Text: "No", Value: "0"},
+	})
+	formList.AddField("Search_specials", "search_specials", db.Numeric, form.Switch).FieldOptions(types.FieldOptions{
+		{Text: "Yes", Value: "1"},
+		{Text: "No", Value: "0"},
+	})
+	formList.AddField("Ignore_runtime", "ignore_runtime", db.Numeric, form.Switch).FieldOptions(types.FieldOptions{
 		{Text: "Yes", Value: "1"},
 		{Text: "No", Value: "0"},
 	})

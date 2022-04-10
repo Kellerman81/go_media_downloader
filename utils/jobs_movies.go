@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"encoding/csv"
 	"encoding/json"
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -49,6 +48,7 @@ func jobImportMovieParseV2(file string, configTemplate string, listConfig string
 
 	m, err := parser.NewFileParser(filepath.Base(file), false, "movie")
 	if !config.ConfigCheck("quality_" + list.Template_quality) {
+		logger.Log.Error("Quality for List: " + list.Name + " not found")
 		return
 	}
 	cfg_quality := config.ConfigGet("quality_" + list.Template_quality).Data.(config.QualityConfig)
@@ -242,7 +242,7 @@ func getMissingIMDBMoviesV2(configTemplate string, listConfig string) []database
 				break
 			}
 			if err != nil {
-				logger.Log.Error(fmt.Errorf("an error occurred while parsing csv.. %v", err))
+				logger.Log.Errorln("an error occurred while parsing csv.. ", err)
 				continue
 			}
 			if !importfeed.AllowMovieImport(record[1], list.Template_list) {
@@ -364,6 +364,7 @@ func Getnewmovies(configTemplate string) {
 	swf := sizedwaitgroup.New(cfg_general.WorkerParse)
 	for _, list := range config.ConfigGet(configTemplate).Data.(config.MediaTypeConfig).Lists {
 		if !config.ConfigCheck("quality_" + list.Template_quality) {
+			logger.Log.Error("Quality for List: " + list.Name + " not found")
 			continue
 		}
 		logger.Log.Info("Find Movie File")
@@ -391,6 +392,7 @@ func getnewmoviessingle(configTemplate string, listConfig string) {
 	}
 
 	if !config.ConfigCheck("quality_" + list.Template_quality) {
+		logger.Log.Error("Quality for List: " + list.Name + " not found")
 		return
 	}
 
@@ -451,6 +453,7 @@ func checkreachedmoviesflag(configTemplate string, listConfig string) {
 	movies, _ := database.QueryMovies(database.Query{Select: "id, quality_reached, quality_profile", Where: "listname=?", WhereArgs: []interface{}{listConfig}})
 	for idxepi := range movies {
 		if !config.ConfigCheck("quality_" + movies[idxepi].QualityProfile) {
+			logger.Log.Error("Quality for Movie: " + strconv.Itoa(int(movies[idxepi].ID)) + " not found")
 			continue
 		}
 

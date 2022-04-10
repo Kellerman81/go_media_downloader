@@ -235,7 +235,10 @@ func SearchSeriesRSSSeasons(configTemplate string) {
 	for idxlisttest := range configEntry.Lists {
 		argslist = append(argslist, configEntry.Lists[idxlisttest].Name)
 	}
-	series, _ = database.QuerySeries(database.Query{Where: "(Select Count(id) from serie_episodes where (missing=1 or quality_reached=0) and serie_id=series.ID) >= 1 AND series.listname in (?" + strings.Repeat(",?", len(configEntry.Lists)-1) + ")", WhereArgs: argslist})
+	series, _ = database.QuerySeries(database.Query{
+		Where:     "(Select Count(id) from serie_episodes where (missing=1 or quality_reached=0) AND ((dbserie_episodes.Season != '0' and series.search_specials=0) or (series.search_specials=1)) and serie_id=series.ID) >= 1 AND series.listname in (?" + strings.Repeat(",?", len(configEntry.Lists)-1) + ")",
+		WhereArgs: argslist,
+		InnerJoin: "series on series.id=serie_episodes.serie_id inner join dbserie_episodes on dbserie_episodes.id=serie_episodes.dbserie_episode_id"})
 	if !config.ConfigCheck("general") {
 		return
 	}
@@ -309,16 +312,19 @@ func SearchSerieMissing(configTemplate string, jobcount int, titlesearch bool) {
 	}
 	argsscan := append(argslist, scantime)
 
-	qu := database.Query{Select: "Serie_episodes.*", OrderBy: "Lastscan asc", InnerJoin: "dbserie_episodes on dbserie_episodes.id=serie_episodes.Dbserie_episode_id inner join series on series.id=serie_episodes.serie_id"}
+	qu := database.Query{
+		Select:    "Serie_episodes.*",
+		OrderBy:   "Lastscan asc",
+		InnerJoin: "dbserie_episodes on dbserie_episodes.id=serie_episodes.Dbserie_episode_id inner join series on series.id=serie_episodes.serie_id"}
 	if scaninterval != 0 {
-		qu.Where = "serie_episodes.missing = 1 AND dbserie_episodes.Season != '0' and series.listname in (?" + strings.Repeat(",?", len(lists)-1) + ") AND (serie_episodes.lastscan is null or serie_episodes.Lastscan < ?)"
+		qu.Where = "serie_episodes.missing = 1 AND ((dbserie_episodes.Season != '0' and series.search_specials=0) or (series.search_specials=1)) and series.listname in (?" + strings.Repeat(",?", len(lists)-1) + ") AND (serie_episodes.lastscan is null or serie_episodes.Lastscan < ?)"
 		qu.WhereArgs = argsscan
 		if scandatepre != 0 {
 			qu.Where += " and (dbserie_episodes.first_aired < ? or dbserie_episodes.first_aired is null)"
 			qu.WhereArgs = append(argsscan, time.Now().AddDate(0, 0, 0+scandatepre))
 		}
 	} else {
-		qu.Where = "serie_episodes.missing = 1 AND dbserie_episodes.Season != '0' and series.listname in (?" + strings.Repeat(",?", len(lists)-1) + ")"
+		qu.Where = "serie_episodes.missing = 1 AND ((dbserie_episodes.Season != '0' and series.search_specials=0) or (series.search_specials=1)) and series.listname in (?" + strings.Repeat(",?", len(lists)-1) + ")"
 		qu.WhereArgs = argslist
 		if scandatepre != 0 {
 			qu.Where += " and (dbserie_episodes.first_aired < ? or dbserie_episodes.first_aired is null)"
@@ -386,10 +392,10 @@ func SearchSerieUpgrade(configTemplate string, jobcount int, titlesearch bool) {
 
 	qu := database.Query{Select: "Serie_episodes.*", OrderBy: "Lastscan asc", InnerJoin: "dbserie_episodes on dbserie_episodes.id=serie_episodes.Dbserie_episode_id inner join series on series.id=serie_episodes.serie_id"}
 	if scaninterval != 0 {
-		qu.Where = "serie_episodes.missing = 0 AND serie_episodes.quality_reached = 0 AND dbserie_episodes.Season != '0' and series.listname in (?" + strings.Repeat(",?", len(lists)-1) + ") AND (serie_episodes.lastscan is null or serie_episodes.Lastscan < ?)"
+		qu.Where = "serie_episodes.missing = 0 AND serie_episodes.quality_reached = 0 AND ((dbserie_episodes.Season != '0' and series.search_specials=0) or (series.search_specials=1)) and series.listname in (?" + strings.Repeat(",?", len(lists)-1) + ") AND (serie_episodes.lastscan is null or serie_episodes.Lastscan < ?)"
 		qu.WhereArgs = argsscan
 	} else {
-		qu.Where = "serie_episodes.missing = 0 AND serie_episodes.quality_reached = 0 AND dbserie_episodes.Season != '0' and series.listname in (?" + strings.Repeat(",?", len(lists)-1) + ")"
+		qu.Where = "serie_episodes.missing = 0 AND serie_episodes.quality_reached = 0 AND ((dbserie_episodes.Season != '0' and series.search_specials=0) or (series.search_specials=1)) and series.listname in (?" + strings.Repeat(",?", len(lists)-1) + ")"
 		qu.WhereArgs = args
 	}
 	if jobcount >= 1 {
@@ -551,6 +557,7 @@ func NewSearcher(template string, quality string) searcher {
 //searchGroupType == movie || series
 func (s *searcher) SearchRSS(searchGroupType string, fetchall bool) searchResults {
 	if !config.ConfigCheck("quality_" + s.Quality) {
+		logger.Log.Error("Quality for RSS not found")
 		return searchResults{}
 	}
 	configEntry := config.ConfigGet(s.ConfigTemplate).Data.(config.MediaTypeConfig)
@@ -662,6 +669,7 @@ func (t searcher) rsssearchindexer(index config.QualityIndexerConfig, fetchall b
 //searchGroupType == movie || series
 func (s *searcher) SearchSeriesRSSSeason(searchGroupType string, thetvdb_id int, season int, useseason bool) searchResults {
 	if !config.ConfigCheck("quality_" + s.Quality) {
+		logger.Log.Error("Quality for RSS not found")
 		return searchResults{}
 	}
 	configEntry := config.ConfigGet(s.ConfigTemplate).Data.(config.MediaTypeConfig)
@@ -1156,6 +1164,8 @@ func (n *nzbFilter) setDataField(lists []string, addinlist string, addifnotfound
 							importfeed.JobImportMovies(dbmovie, n.T.ConfigTemplate, addinlist, &sww)
 							sww.Wait()
 							founddbmovie, founddbmovieerr = database.GetDbmovie(database.Query{Select: "id, title", Where: "imdb_id = ?", WhereArgs: []interface{}{dbmovie.ImdbID}})
+							getmovie, _ := database.GetMovies(database.Query{Where: "dbmovie_id=? and listname=?", WhereArgs: []interface{}{founddbmovie.ID, addinlist}})
+							loopmovie = getmovie
 						} else {
 							logger.Log.Debug("Skipped - Not Wanted Movie: ", n.ToFilter[idx].NZB.Title)
 							n.ToFilter[idx].Denied = true
@@ -1226,6 +1236,7 @@ func (n *nzbFilter) setDataField(lists []string, addinlist string, addifnotfound
 			}
 			n.ToFilter[idx].NzbmovieID = loopmovie.ID
 			if !config.ConfigCheck("quality_" + loopmovie.QualityProfile) {
+				logger.Log.Error("Quality for Movie: " + strconv.Itoa(int(loopmovie.ID)) + " not found")
 				continue
 			}
 			n.ToFilter[idx].QualityTemplate = loopmovie.QualityProfile
@@ -1345,6 +1356,7 @@ func (n *nzbFilter) setDataField(lists []string, addinlist string, addifnotfound
 						continue
 					}
 					if !config.ConfigCheck("quality_" + foundepisode.QualityProfile) {
+						logger.Log.Error("Quality for Episode: " + strconv.Itoa(int(loopepisode.ID)) + " not found")
 						n.ToFilter[idx].Denied = true
 						n.ToFilter[idx].Reason = "Quality profile not found"
 						n.NzbsDenied = append(n.NzbsDenied, n.ToFilter[idx])
@@ -1421,6 +1433,7 @@ func (n *nzbFilter) setDataField(lists []string, addinlist string, addifnotfound
 						}
 						loopepisode = foundepisode
 						if !config.ConfigCheck("quality_" + foundepisode.QualityProfile) {
+							logger.Log.Error("Quality for Episode: " + strconv.Itoa(int(loopepisode.ID)) + " not found")
 							n.ToFilter[idx].Denied = true
 							n.ToFilter[idx].Reason = "Quality Profile unknown"
 							n.NzbsDenied = append(n.NzbsDenied, n.ToFilter[idx])
@@ -1458,6 +1471,7 @@ func (n *nzbFilter) setDataField(lists []string, addinlist string, addifnotfound
 			}
 			n.ToFilter[idx].NzbepisodeID = loopepisode.ID
 			if !config.ConfigCheck("quality_" + loopepisode.QualityProfile) {
+				logger.Log.Error("Quality for Episode: " + strconv.Itoa(int(loopepisode.ID)) + " not found")
 				n.ToFilter[idx].Denied = true
 				n.ToFilter[idx].Reason = "Quality Profile unknown"
 				n.NzbsDenied = append(n.NzbsDenied, n.ToFilter[idx])
@@ -1504,6 +1518,7 @@ func (s searcher) GetRSSFeed(searchGroupType string, listConfig string) searchRe
 		return searchResults{}
 	}
 	if !config.ConfigCheck("quality_" + s.Quality) {
+		logger.Log.Error("Quality for RSS not found")
 		return searchResults{}
 	}
 	cfg_quality := config.ConfigGet("quality_" + s.Quality).Data.(config.QualityConfig)
@@ -1601,6 +1616,7 @@ func (s *searcher) MovieSearch(movie database.Movie, forceDownload bool, titlese
 	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
 
 	if !config.ConfigCheck("quality_" + s.Movie.QualityProfile) {
+		logger.Log.Error("Quality for Movie: " + strconv.Itoa(int(s.Movie.ID)) + " not found")
 		return searchResults{}
 	}
 	cfg_quality := config.ConfigGet("quality_" + s.Movie.QualityProfile).Data.(config.QualityConfig)
@@ -1672,6 +1688,7 @@ func (t searcher) moviesearchindexer(index config.QualityIndexerConfig, movie da
 	var dl searchResults
 	releasefound := false
 	if !config.ConfigCheck("quality_" + t.Movie.QualityProfile) {
+		logger.Log.Error("Quality for Movie: " + strconv.Itoa(int(t.Movie.ID)) + " not found")
 		return searchResults{}, false
 	}
 	cfg_quality := config.ConfigGet("quality_" + t.Movie.QualityProfile).Data.(config.QualityConfig)
@@ -1784,7 +1801,7 @@ func (s *searcher) SeriesSearch(serieEpisode database.SerieEpisode, forceDownloa
 	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
 
 	if !config.ConfigCheck("quality_" + s.SerieEpisode.QualityProfile) {
-		logger.Log.Errorln("Check quality for ", s.SerieEpisode.ID)
+		logger.Log.Error("Quality for Episode: " + strconv.Itoa(int(s.SerieEpisode.ID)) + " not found")
 		return searchResults{}
 	}
 	cfg_quality := config.ConfigGet("quality_" + s.SerieEpisode.QualityProfile).Data.(config.QualityConfig)
@@ -1853,7 +1870,7 @@ func (t searcher) seriessearchindexer(index config.QualityIndexerConfig, series 
 	t.Indexer = index
 
 	if !config.ConfigCheck("quality_" + t.SerieEpisode.QualityProfile) {
-		logger.Log.Errorln("Check quality for ", t.SerieEpisode.ID)
+		logger.Log.Error("Quality for Episode: " + strconv.Itoa(int(t.SerieEpisode.ID)) + " not found")
 		return searchResults{}, false
 	}
 	cfg_quality := config.ConfigGet("quality_" + t.SerieEpisode.QualityProfile).Data.(config.QualityConfig)
@@ -2060,7 +2077,7 @@ func (s *searcher) moviesSearchTitle(movie database.Movie, title string, lists [
 		return searchResults{Nzbs: []parser.Nzbwithprio{}}
 	}
 	if !config.ConfigCheck("quality_" + movie.QualityProfile) {
-		logger.Log.Errorln("Check quality for ", movie.ID)
+		logger.Log.Error("Quality for Movie: " + strconv.Itoa(int(movie.ID)) + " not found")
 		return searchResults{}
 	}
 	cfg_quality := config.ConfigGet("quality_" + movie.QualityProfile).Data.(config.QualityConfig)
@@ -2138,7 +2155,7 @@ func (s *searcher) seriesSearchTvdb(serieEpisode database.SerieEpisode, lists []
 
 func (s *searcher) seriesSearchTitle(serieEpisode database.SerieEpisode, title string, lists []string, cats []int) searchResults {
 	if !config.ConfigCheck("quality_" + serieEpisode.QualityProfile) {
-		logger.Log.Errorln("Check quality for ", serieEpisode.ID)
+		logger.Log.Error("Quality for Episode: " + strconv.Itoa(int(serieEpisode.ID)) + " not found")
 		return searchResults{}
 	}
 	cfg_quality := config.ConfigGet("quality_" + serieEpisode.QualityProfile).Data.(config.QualityConfig)

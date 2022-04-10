@@ -73,9 +73,6 @@ type apiparse struct {
 // @Summary      Debug information
 // @Description  Shows some stats
 // @Tags         general
-// @Accept       json
-// @Produce      json
-// @Param        apikey  query  string  true  "apikey"
 // @Success      200
 // @Failure      401  {object}  string
 // @Router       /api/debugstats [get]
@@ -96,11 +93,8 @@ func apiDebugStats(ctx *gin.Context) {
 // @Summary      Queue
 // @Description  Lists Queued and Started Jobs (but not finished)
 // @Tags         general
-// @Accept       json
-// @Produce      json
-// @Param        apikey  query     string  true  "apikey"
-// @Success      200     {object}  map[string]tasks.Job
-// @Failure      401     {object}  string
+// @Success      200  {object}  map[string]tasks.Job
+// @Failure      401  {object}  string
 // @Router       /api/queue [get]
 func apiQueueList(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
@@ -117,14 +111,11 @@ func apiQueueList(ctx *gin.Context) {
 // @Summary      Queue History
 // @Description  Lists Started Jobs and finished but not queued jobs
 // @Tags         general
-// @Accept       json
-// @Produce      json
-// @Param        limit   query     int     false  "Limit"
-// @Param        page    query     int     false  "Page"
-// @Param        order   query     string  false  "Order By"
-// @Param        apikey  query     string  true   "apikey"
-// @Success      200     {array}   database.JobHistoryJson
-// @Failure      401     {object}  string
+// @Param        limit  query     int     false  "Limit"
+// @Param        page   query     int     false  "Page"
+// @Param        order  query     string  false  "Order By"
+// @Success      200    {object}   database.JobHistoryJson
+// @Failure      401    {object}  string
 // @Router       /api/queue/history [get]
 func apiQueueListStarted(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
@@ -160,14 +151,11 @@ func apiQueueListStarted(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, jobs)
 }
 
-// @Summary      Trakt Auhtorize
-// @Description  List Qualities with regex filters
+// @Summary      Trakt Authorize
+// @Description  Get trakt auth url
 // @Tags         general
-// @Accept       json
-// @Produce      json
-// @Param        apikey  query     string  true  "apikey"
-// @Success      200     {string}  string
-// @Failure      401     {object}  string
+// @Success      200  {object}  string
+// @Failure      401  {object}  string
 // @Router       /api/trakt/authorize [get]
 func apiTraktGetAuthUrl(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
@@ -179,12 +167,9 @@ func apiTraktGetAuthUrl(ctx *gin.Context) {
 // @Summary      Trakt Save Token
 // @Description  Saves Trakt token after Authorization
 // @Tags         general
-// @Accept       json
-// @Produce      json
-// @Param        apikey  query     string  true  "apikey"
-// @Param        code    path      string  true  "code"
-// @Success      200     {string}  string
-// @Failure      401     {object}  string
+// @Param        code  path      string  true  "code"
+// @Success      200   {object}  string
+// @Failure      401   {object}  string
 // @Router       /api/trakt/token/{code} [get]
 func apiTraktGetStoreToken(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
@@ -202,13 +187,10 @@ func apiTraktGetStoreToken(ctx *gin.Context) {
 // @Summary      Trakt Get List (Auth Test)
 // @Description  Get User List
 // @Tags         general
-// @Accept       json
-// @Produce      json
-// @Param        user    path      string  true  "Trakt Username"
-// @Param        list    path      string  true  "List Name"
-// @Param        apikey  query     string  true  "apikey"
-// @Success      200     {string}  string
-// @Failure      401     {object}  string
+// @Param        user  path      string  true  "Trakt Username"
+// @Param        list  path      string  true  "List Name"
+// @Success      200   {object}  string
+// @Failure      401   {object}  string
 // @Router       /api/trakt/user/{user}/{list} [get]
 func apiTraktGetUserList(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
@@ -221,10 +203,7 @@ func apiTraktGetUserList(ctx *gin.Context) {
 // @Summary      Parse a string
 // @Description  Parses a string for testing
 // @Tags         parse
-// @Accept       json
-// @Produce      json
 // @Param        toparse  body      apiparse  true  "To Parse"
-// @Param        apikey   query     string    true  "apikey"
 // @Success      200      {object}  parser.ParseInfo
 // @Failure      400      {object}  string
 // @Failure      401      {object}  string
@@ -255,10 +234,7 @@ func apiParseString(ctx *gin.Context) {
 // @Summary      Parse a file
 // @Description  Parses a file for testing
 // @Tags         parse
-// @Accept       json
-// @Produce      json
 // @Param        toparse  body      apiparse  true  "To Parse"
-// @Param        apikey   query     string    true  "apikey"
 // @Success      200      {object}  parser.ParseInfo
 // @Failure      400      {object}  string
 // @Failure      401      {object}  string
@@ -291,11 +267,8 @@ func apiParseFile(ctx *gin.Context) {
 // @Summary      Generate IMDB Cache
 // @Description  Downloads IMDB Dataset and creates a new database from it
 // @Tags         general
-// @Accept       json
-// @Produce      json
-// @Param        apikey  query     string  true  "apikey"
-// @Success      200     {string}  string
-// @Failure      401     {object}  string
+// @Success      200  {object}  string
+// @Failure      401  {object}  string
 // @Router       /api/fillimdb [get]
 func apiFillImdb(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
@@ -311,11 +284,8 @@ func apiFillImdb(ctx *gin.Context) {
 // @Summary      Stop Scheduler
 // @Description  Stops all Schedulers
 // @Tags         scheduler
-// @Accept       json
-// @Produce      json
-// @Param        apikey  query     string  true  "apikey"
-// @Success      200     {string}  string
-// @Failure      401     {object}  string
+// @Success      200  {object}  string
+// @Failure      401  {object}  string
 // @Router       /api/scheduler/stop [get]
 func apiSchedulerStop(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
@@ -330,11 +300,8 @@ func apiSchedulerStop(c *gin.Context) {
 // @Summary      Start Scheduler
 // @Description  Start all Schedulers
 // @Tags         scheduler
-// @Accept       json
-// @Produce      json
-// @Param        apikey  query     string  true  "apikey"
-// @Success      200     {string}  string
-// @Failure      401     {object}  string
+// @Success      200  {object}  string
+// @Failure      401  {object}  string
 // @Router       /api/scheduler/start [get]
 func apiSchedulerStart(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
@@ -349,11 +316,8 @@ func apiSchedulerStart(c *gin.Context) {
 // @Summary      Scheduler Jobs
 // @Description  Lists Planned Jobs
 // @Tags         scheduler
-// @Accept       json
-// @Produce      json
-// @Param        apikey  query     string  true  "apikey"
-// @Success      200     {object}  string
-// @Failure      401     {object}  string
+// @Success      200  {object}  string
+// @Failure      401  {object}  string
 // @Router       /api/scheduler/list [get]
 func apiSchedulerList(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
@@ -369,11 +333,8 @@ func apiSchedulerList(ctx *gin.Context) {
 // @Summary      Close DB
 // @Description  Closes all database connections
 // @Tags         database
-// @Accept       json
-// @Produce      json
-// @Param        apikey  query     string  true  "apikey"
-// @Success      200     {string}  string
-// @Failure      401     {object}  string
+// @Success      200  {object}  string
+// @Failure      401  {object}  string
 // @Router       /api/db/close [get]
 func apiDbClose(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
@@ -387,11 +348,8 @@ func apiDbClose(ctx *gin.Context) {
 // @Summary      Backup DB
 // @Description  Saves DB
 // @Tags         database
-// @Accept       json
-// @Produce      json
-// @Param        apikey  query     string  true  "apikey"
-// @Success      200     {string}  string
-// @Failure      401     {object}  string
+// @Success      200  {object}  string
+// @Failure      401  {object}  string
 // @Router       /api/db/backup [get]
 func apiDbBackup(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
@@ -405,11 +363,8 @@ func apiDbBackup(ctx *gin.Context) {
 // @Summary      Integrity DB
 // @Description  Integrity Check DB
 // @Tags         database
-// @Accept       json
-// @Produce      json
-// @Param        apikey  query     string  true  "apikey"
-// @Success      200     {string}  string
-// @Failure      401     {object}  string
+// @Success      200  {object}  string
+// @Failure      401  {object}  string
 // @Router       /api/db/integrity [get]
 func apiDbIntegrity(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
@@ -421,12 +376,9 @@ func apiDbIntegrity(ctx *gin.Context) {
 // @Summary      Clear DB Table
 // @Description  Clears a DB Table
 // @Tags         database
-// @Accept       json
-// @Produce      json
-// @Param        name    path      string  true  "Table Name"
-// @Param        apikey  query     string  true  "apikey"
-// @Success      200     {string}  string
-// @Failure      401     {object}  string
+// @Param        name  path      string  true  "Table Name"
+// @Success      200   {object}  string
+// @Failure      401   {object}  string
 // @Router       /api/db/clear/{name} [delete]
 func apiDbClear(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
@@ -445,11 +397,8 @@ func apiDbClear(ctx *gin.Context) {
 // @Summary      Vacuum DB
 // @Description  Vacuum database
 // @Tags         database
-// @Accept       json
-// @Produce      json
-// @Param        apikey  query     string  true  "apikey"
-// @Success      200     {string}  string
-// @Failure      401     {object}  string
+// @Success      200  {object}  string
+// @Failure      401  {object}  string
 // @Router       /api/db/vacuum [get]
 func apiDbVacuum(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
@@ -468,12 +417,9 @@ func apiDbVacuum(ctx *gin.Context) {
 // @Summary      Clean Old Jobs
 // @Description  Removes Jobs started over x days ago from db
 // @Tags         database
-// @Accept       json
-// @Produce      json
-// @Param        apikey  query     string  true  "apikey"
-// @Param        days    query     int     true  "Days ago"
-// @Success      200     {string}  string
-// @Failure      401     {object}  string
+// @Param        days  query     int  true  "Days ago"
+// @Success      200   {object}  string
+// @Failure      401   {object}  string
 // @Router       /api/db/oldjobs [delete]
 func apiDbRemoveOldJobs(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
@@ -504,11 +450,8 @@ func apiDbRemoveOldJobs(ctx *gin.Context) {
 // @Summary      List Qualities
 // @Description  List Qualities with regex filters
 // @Tags         quality
-// @Accept       json
-// @Produce      json
-// @Param        apikey  query     string  true  "apikey"
-// @Success      200     {array}   database.Qualities
-// @Failure      401     {object}  string
+// @Success      200  {object}   database.Qualities
+// @Failure      401  {object}  string
 // @Router       /api/quality [get]
 func apiGetQualities(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
@@ -521,12 +464,9 @@ func apiGetQualities(ctx *gin.Context) {
 // @Summary      Delete Quality
 // @Description  Deletes a quality
 // @Tags         quality
-// @Accept       json
-// @Produce      json
-// @Param        id      path      string  true  "Id of Quality to delete"
-// @Param        apikey  query     string  true  "apikey"
-// @Success      200     {array}   database.Qualities
-// @Failure      401     {object}  string
+// @Param        id   path      string  true  "Id of Quality to delete"
+// @Success      200  {object}   database.Qualities
+// @Failure      401  {object}  string
 // @Router       /api/quality/{id} [delete]
 func apiQualityDelete(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
@@ -542,11 +482,8 @@ func apiQualityDelete(ctx *gin.Context) {
 // @Summary      Update Quality
 // @Description  Updates or adds a quality
 // @Tags         quality
-// @Accept       json
-// @Produce      json
 // @Param        quality  body      database.Qualities  true  "Quality"
-// @Param        apikey   query     string              true  "apikey"
-// @Success      200      {array}   database.Qualities
+// @Success      200      {object}   database.Qualities
 // @Failure      400      {object}  string
 // @Failure      401      {object}  string
 // @Router       /api/quality [post]
@@ -578,13 +515,10 @@ func apiQualityUpdate(ctx *gin.Context) {
 // @Summary      List Quality Priorities
 // @Description  List allowed qualities and their priorities
 // @Tags         quality
-// @Accept       json
-// @Produce      json
 // @Param        name    path      string  true  "Quality Name: ex. quality_SD"
 // @Param        config  path      string  true  "Config Name: ex. movie_EN or serie_EN"
-// @Param        apikey  query     string  true  "apikey"
-// @Success      200     {array}   parser.ParseInfo
-// @Failure      401     {object}  string
+// @Success      200     {object}   parser.ParseInfo
+// @Failure      401  {object}  string
 // @Failure      404     {object}  string
 // @Router       /api/quality/{name}/{config} [get]
 func apiListQualityPriorities(ctx *gin.Context) {
@@ -648,11 +582,8 @@ func apiListQualityPriorities(ctx *gin.Context) {
 // @Summary      Get Complete Config
 // @Description  Get All Config Parameters
 // @Tags         config
-// @Accept       json
-// @Produce      json
-// @Param        apikey  query     string  true  "apikey"
-// @Success      200     {object}  map[string]interface{}
-// @Failure      401     {object}  string
+// @Success      200  {array}  map[string]interface{}
+// @Failure      401  {object}  string
 // @Router       /api/config/all [get]
 func apiConfigAll(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
@@ -664,11 +595,8 @@ func apiConfigAll(ctx *gin.Context) {
 // @Summary      Clear Config
 // @Description  Clears the configuration and sets some examples
 // @Tags         config
-// @Accept       json
-// @Produce      json
-// @Param        apikey  query     string  true  "apikey"
-// @Success      200     {object}  map[string]interface{}
-// @Failure      401     {object}  string
+// @Success      200  {array}  map[string]interface{}
+// @Failure      401   {object}  string
 // @Router       /api/config/clear [delete]
 func apiConfigClear(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
@@ -682,12 +610,9 @@ func apiConfigClear(ctx *gin.Context) {
 // @Summary      Get Config
 // @Description  Gets a configuration
 // @Tags         config
-// @Accept       json
-// @Produce      json
-// @Param        name    path      string  true  "Type Name: ex. quality_SD"
-// @Param        apikey  query     string  true  "apikey"
-// @Success      200     {object}  interface{}
-// @Failure      401     {object}  string
+// @Param        name  path      string  true  "Type Name: ex. quality_SD"
+// @Success      200   {object}  interface{}
+// @Failure      401   {object}  string
 // @Router       /api/config/get/{name} [get]
 func apiConfigGet(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
@@ -699,12 +624,9 @@ func apiConfigGet(ctx *gin.Context) {
 // @Summary      Delete Config
 // @Description  Deletes a configuration
 // @Tags         config
-// @Accept       json
-// @Produce      json
-// @Param        name    path      string  true  "Type Name: ex. quality_SD"
-// @Param        apikey  query     string  true  "apikey"
-// @Success      200     {object}  map[string]interface{}
-// @Failure      401     {object}  string
+// @Param        name  path      string  true  "Type Name: ex. quality_SD"
+// @Success      200   {array}  map[string]interface{}
+// @Failure      401  {object}  string
 // @Router       /api/config/delete/{name} [delete]
 func apiConfigDelete(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
@@ -718,11 +640,8 @@ func apiConfigDelete(ctx *gin.Context) {
 // @Summary      Reload ConfigFile
 // @Description  Refreshes the config from the file
 // @Tags         config
-// @Accept       json
-// @Produce      json
-// @Param        apikey  query     string  true  "apikey"
-// @Success      200     {object}  map[string]interface{}
-// @Failure      401     {object}  string
+// @Success      200  {array}  map[string]interface{}
+// @Failure      401   {object}  string
 // @Router       /api/config/refresh [get]
 func apiConfigRefreshFile(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
@@ -735,12 +654,9 @@ func apiConfigRefreshFile(ctx *gin.Context) {
 // @Summary      Update Config
 // @Description  Updates a configuration
 // @Tags         config
-// @Accept       json
-// @Produce      json
 // @Param        config  body      interface{}  true  "Config"
 // @Param        name    path      string       true  "Type Name: ex. quality_SD"
-// @Param        apikey  query     string       true  "apikey"
-// @Success      200     {object}  map[string]interface{}
+// @Success      200   {array}  map[string]interface{}
 // @Failure      400     {object}  string
 // @Failure      401     {object}  string
 // @Router       /api/config/update/{name} [post]
@@ -852,10 +768,7 @@ func apiConfigUpdate(ctx *gin.Context) {
 // @Summary      List Config Type
 // @Description  List configurations of type
 // @Tags         config
-// @Accept       json
-// @Produce      json
-// @Param        type    path      string  true  "Type Name: ex. quality"
-// @Param        apikey  query     string  true  "apikey"
+// @Param        type  path      string  true  "Type Name: ex. quality"
 // @Success      200     {object}  map[string]interface{}
 // @Failure      401     {object}  string
 // @Router       /api/config/type/{type} [get]
@@ -891,10 +804,7 @@ type apiNameInputJson struct {
 // @Summary      Name Generation Test
 // @Description  Test your Naming Convention
 // @Tags         general
-// @Accept       json
-// @Produce      json
 // @Param        config  body      apiNameInputJson  true  "Config"
-// @Param        apikey  query     string            true  "apikey"
 // @Success      200     {object}  string
 // @Failure      400     {object}  string
 // @Failure      401     {object}  string
@@ -961,10 +871,7 @@ type apiStructureJson struct {
 // @Summary      Structure Single Item
 // @Description  Structure a single folder
 // @Tags         general
-// @Accept       json
-// @Produce      json
 // @Param        config  body      apiStructureJson  true  "Config"
-// @Param        apikey  query     string            true  "apikey"
 // @Success      200     {object}  string
 // @Failure      400     {object}  string
 // @Failure      401     {object}  string

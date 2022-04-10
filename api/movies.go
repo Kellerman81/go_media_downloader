@@ -52,14 +52,11 @@ func AddMoviesRoutes(routermovies *gin.RouterGroup) {
 // @Summary      List Movies
 // @Description  List Movies
 // @Tags         movie
-// @Accept       json
-// @Produce      json
-// @Param        apikey  query     string  true  "apikey"
-// @Param        limit   query     int     false  "Limit"
-// @Param        page    query     int     false  "Page"
-// @Param        order   query     string  false  "Order By"
-// @Success      200     {array}   database.DbmovieJson
-// @Failure      401     {object}  string
+// @Param        limit  query     int     false  "Limit"
+// @Param        page   query     int     false  "Page"
+// @Param        order  query     string  false  "Order By"
+// @Success      200    {object}   database.DbmovieJson
+// @Failure      401    {object}  string
 // @Router       /api/movies [get]
 func apiMovieList(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
@@ -98,14 +95,11 @@ func apiMovieList(ctx *gin.Context) {
 // @Summary      List Unmatched Movies
 // @Description  List Unmatched Movies
 // @Tags         movie
-// @Accept       json
-// @Produce      json
-// @Param        apikey  query     string  true   "apikey"
-// @Param        limit   query     int     false  "Limit"
-// @Param        page    query     int     false  "Page"
-// @Param        order   query     string  false  "Order By"
-// @Success      200     {array}   database.MovieFileUnmatchedJson
-// @Failure      401     {object}  string
+// @Param        limit  query     int     false  "Limit"
+// @Param        page   query     int     false  "Page"
+// @Param        order  query     string  false  "Order By"
+// @Success      200    {object}   database.MovieFileUnmatchedJson
+// @Failure      401    {object}  string
 // @Router       /api/movies/unmatched [get]
 func apiMovieListUnmatched(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
@@ -143,12 +137,9 @@ func apiMovieListUnmatched(ctx *gin.Context) {
 // @Summary      Delete Movies
 // @Description  Deletes Movies from all lists
 // @Tags         movie
-// @Accept       json
-// @Produce      json
-// @Param        id      path      int     true  "Movie ID: ex. 1"
-// @Param        apikey  query     string  true  "apikey"
-// @Success      200     {string}  string
-// @Failure      401     {object}  string
+// @Param        id   path      int  true  "Movie ID: ex. 1"
+// @Success      200  {object}  string
+// @Failure      401  {object}  string
 // @Router       /api/movies/{id} [delete]
 func apiMovieDelete(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
@@ -167,15 +158,12 @@ func apiMovieDelete(ctx *gin.Context) {
 // @Summary      List Movies (List)
 // @Description  Lists Movies from a list
 // @Tags         movie
-// @Accept       json
-// @Produce      json
-// @Param        name    path      string  true   "List Name: ex. EN"
-// @Param        limit   query     int     false  "Limit"
-// @Param        page    query     int     false  "Page"
-// @Param        order   query     string  false  "Order By"
-// @Param        apikey  query     string  true   "apikey"
-// @Success      200     {array}   database.ResultMoviesJson
-// @Failure      401     {object}  string
+// @Param        name   path      string  true   "List Name: ex. EN"
+// @Param        limit  query     int     false  "Limit"
+// @Param        page   query     int     false  "Page"
+// @Param        order  query     string  false  "Order By"
+// @Success      200    {object}   database.ResultMoviesJson
+// @Failure      401    {object}  string
 // @Router       /api/movies/list/{name} [get]
 func apiMovieListGet(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
@@ -217,12 +205,9 @@ func apiMovieListGet(ctx *gin.Context) {
 // @Summary      Delete a Movie (List)
 // @Description  Deletes a Movie from a list
 // @Tags         movie
-// @Accept       json
-// @Produce      json
-// @Param        id      path      int     true  "Movie ID: ex. 1"
-// @Param        apikey  query     string  true  "apikey"
-// @Success      200     {string}  string
-// @Failure      401     {object}  string
+// @Param        id   path      int  true  "Movie ID: ex. 1"
+// @Success      200  {object}  string
+// @Failure      401  {object}  string
 // @Router       /api/movies/list/{id} [delete]
 func ApiMovieDeleteList(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
@@ -244,13 +229,10 @@ var allowedjobsmovies []string = []string{"rss", "data", "datafull", "checkmissi
 // @Summary      Start Jobs (All Lists)
 // @Description  Starts a Job
 // @Tags         movie
-// @Accept       json
-// @Produce      json
-// @Param        job     path      string  true  "Job Name one of: rss, data, datafull, checkmissing, checkmissingflag, structure, searchmissingfull, searchmissinginc, searchupgradefull, searchupgradeinc, searchmissingfulltitle, searchmissinginctitle, searchupgradefulltitle, searchupgradeinctitle, clearhistory, feeds, refresh, refreshinc"
-// @Param        apikey  query     string  true  "apikey"
-// @Success      200     {string}  string
-// @Failure      204     {object}  string
-// @Failure      401     {object}  string
+// @Param        job  path      string  true  "Job Name one of: rss, data, datafull, checkmissing, checkmissingflag, structure, searchmissingfull, searchmissinginc, searchupgradefull, searchupgradeinc, searchmissingfulltitle, searchmissinginctitle, searchupgradefulltitle, searchupgradeinctitle, clearhistory, feeds, refresh, refreshinc"
+// @Success      200  {object}  string
+// @Failure      204  {object}  string
+// @Failure      401  {object}  string
 // @Router       /api/movies/job/{job} [get]
 func apimoviesAllJobs(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
@@ -327,14 +309,11 @@ func apimoviesAllJobs(c *gin.Context) {
 // @Summary      Start Jobs
 // @Description  Starts a Job
 // @Tags         movie
-// @Accept       json
-// @Produce      json
-// @Param        job     path      string  true  "Job Name one of: rss, data, datafull, checkmissing, checkmissingflag, structure, searchmissingfull, searchmissinginc, searchupgradefull, searchupgradeinc, searchmissingfulltitle, searchmissinginctitle, searchupgradefulltitle, searchupgradeinctitle, clearhistory, feeds, refresh, refreshinc"
-// @Param        name    path      string  true  "List Name: ex. list"
-// @Param        apikey  query     string  true   "apikey"
-// @Success      200     {string}  string
-// @Failure      204     {object}  string
-// @Failure      401     {object}  string
+// @Param        job   path      string  true  "Job Name one of: rss, data, datafull, checkmissing, checkmissingflag, structure, searchmissingfull, searchmissinginc, searchupgradefull, searchupgradeinc, searchmissingfulltitle, searchmissinginctitle, searchupgradefulltitle, searchupgradeinctitle, clearhistory, feeds, refresh, refreshinc"
+// @Param        name  path      string  true  "List Name: ex. list"
+// @Success      200   {object}  string
+// @Failure      204   {object}  string
+// @Failure      401   {object}  string
 // @Router       /api/movies/job/{job}/{name} [get]
 func apimoviesJobs(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
@@ -415,13 +394,10 @@ func apimoviesJobs(c *gin.Context) {
 // @Summary      Update Movie (Global)
 // @Description  Updates or creates a movie
 // @Tags         movie
-// @Accept       json
-// @Produce      json
-// @Param        movie   body      database.DbmovieJson  true  "Movie"
-// @Param        apikey  query     string                true  "apikey"
-// @Success      200     {string}  string
-// @Failure      400     {object}  string
-// @Failure      401     {object}  string
+// @Param        movie  body      database.DbmovieJson  true  "Movie"
+// @Success      200    {object}  string
+// @Failure      400    {object}  string
+// @Failure      401    {object}  string
 // @Router       /api/movies [post]
 func updateDBMovie(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
@@ -453,13 +429,10 @@ func updateDBMovie(c *gin.Context) {
 // @Summary      Update Movie (List)
 // @Description  Updates or creates a movie in a list
 // @Tags         movie
-// @Accept       json
-// @Produce      json
-// @Param        movie   body      database.MovieJson  true  "Movie"
-// @Param        apikey  query     string              true  "apikey"
-// @Success      200     {string}  string
-// @Failure      400     {object}  string
-// @Failure      401     {object}  string
+// @Param        movie  body      database.MovieJson  true  "Movie"
+// @Success      200    {object}  string
+// @Failure      400    {object}  string
+// @Failure      401    {object}  string
 // @Router       /api/movies/list [post]
 func updateMovie(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
@@ -491,12 +464,9 @@ func updateMovie(c *gin.Context) {
 // @Summary      Search a movie
 // @Description  Searches for upgrades and missing
 // @Tags         movie
-// @Accept       json
-// @Produce      json
-// @Param        id      path      int     true  "Movie ID"
-// @Param        apikey  query     string  true  "apikey"
-// @Success      200     {string}  string
-// @Failure      401     {object}  string
+// @Param        id   path      int  true  "Movie ID"
+// @Success      200  {object}  string
+// @Failure      401  {object}  string
 // @Router       /api/movies/search/id/{id} [get]
 func apimoviesSearch(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
@@ -526,12 +496,8 @@ func apimoviesSearch(c *gin.Context) {
 // @Summary      Search a movie (List ok, nok)
 // @Description  Searches for upgrades and missing
 // @Tags         movie
-// @Accept       json
-// @Produce      json
 // @Param        id             path      int     true   "Movie ID"
-// @Param        apikey         query     string  true   "apikey"
-// @Param        searchByTitle  query     string  false  "apikey"
-// @Success      200            {string}  string
+// @Success      200            {object}  string
 // @Failure      401            {object}  string
 // @Router       /api/movies/search/list/{id} [get]
 func apimoviesSearchList(c *gin.Context) {
@@ -567,12 +533,9 @@ func apimoviesSearchList(c *gin.Context) {
 // @Summary      Movie RSS (list ok, nok)
 // @Description  Movie RSS
 // @Tags         movie
-// @Accept       json
-// @Produce      json
-// @Param        group   path      string  true  "Group Name"
-// @Param        apikey  query     string  true  "apikey"
-// @Success      200     {string}  string
-// @Failure      401     {object}  string
+// @Param        group  path      string  true  "Group Name"
+// @Success      200    {object}  string
+// @Failure      401    {object}  string
 // @Router       /api/movies/rss/search/list/{group} [get]
 func apiMoviesRssSearchList(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
@@ -598,13 +561,10 @@ func apiMoviesRssSearchList(c *gin.Context) {
 // @Summary      Download a movie (manual)
 // @Description  Downloads a release after select
 // @Tags         movie
-// @Accept       json
-// @Produce      json
-// @Param        nzb     body      parser.NzbwithprioJson  true  "Nzb: Req. Title, Indexer, imdbid, downloadurl, parseinfo"
-// @Param        id      path      int                     true  "Movie ID"
-// @Param        apikey  query     string                  true  "apikey"
-// @Success      200     {string}  string
-// @Failure      401     {object}  string
+// @Param        nzb  body      parser.NzbwithprioJson  true  "Nzb: Req. Title, Indexer, imdbid, downloadurl, parseinfo"
+// @Param        id   path      int                     true  "Movie ID"
+// @Success      200  {object}  string
+// @Failure      401  {object}  string
 // @Router       /api/movies/search/download/{id} [post]
 func apimoviesSearchDownload(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
@@ -644,11 +604,8 @@ func apimoviesSearchDownload(c *gin.Context) {
 // @Summary      Refresh Movies
 // @Description  Refreshes Movie Metadata
 // @Tags         movie
-// @Accept       json
-// @Produce      json
-// @Param        apikey  query     string  true  "apikey"
-// @Success      200     {string}  string
-// @Failure      401     {object}  string
+// @Success      200  {object}  string
+// @Failure      401  {object}  string
 // @Router       /api/movies/all/refreshall [get]
 func apirefreshMovies(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
@@ -663,12 +620,9 @@ func apirefreshMovies(c *gin.Context) {
 // @Summary      Refresh a Movie
 // @Description  Refreshes specific Movie Metadata
 // @Tags         movie
-// @Accept       json
-// @Produce      json
-// @Param        id      path      int     true  "Movie ID"
-// @Param        apikey  query     string  true  "apikey"
-// @Success      200     {string}  string
-// @Failure      401     {object}  string
+// @Param        id   path      int  true  "Movie ID"
+// @Success      200  {object}  string
+// @Failure      401  {object}  string
 // @Router       /api/movies/all/refresh/{id} [get]
 func apirefreshMovie(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
@@ -683,11 +637,8 @@ func apirefreshMovie(c *gin.Context) {
 // @Summary      Refresh Movies (Incremental)
 // @Description  Refreshes Movie Metadata
 // @Tags         movie
-// @Accept       json
-// @Produce      json
-// @Param        apikey  query     string  true  "apikey"
-// @Success      200     {string}  string
-// @Failure      401     {object}  string
+// @Success      200  {object}  string
+// @Failure      401  {object}  string
 // @Router       /api/movies/all/refresh [get]
 func apirefreshMoviesInc(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
@@ -702,12 +653,9 @@ func apirefreshMoviesInc(c *gin.Context) {
 // @Summary      Clear History (Full List)
 // @Description  Clear Movies Download History
 // @Tags         movie
-// @Accept       json
-// @Produce      json
-// @Param        name    path      string  true  "List Name"
-// @Param        apikey  query     string  true  "apikey"
-// @Success      200     {string}  string
-// @Failure      401     {object}  string
+// @Param        name  path      string  true  "List Name"
+// @Success      200   {object}  string
+// @Failure      401   {object}  string
 // @Router       /api/movies/search/history/clear/{name} [get]
 func apimoviesClearHistoryName(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
@@ -720,12 +668,9 @@ func apimoviesClearHistoryName(c *gin.Context) {
 // @Summary      Clear History (Single Item)
 // @Description  Clear Episode Download History
 // @Tags         movie
-// @Accept       json
-// @Produce      json
-// @Param        id      path      string  true  "Movie ID"
-// @Param        apikey  query     string  true  "apikey"
-// @Success      200     {string}  string
-// @Failure      401     {object}  string
+// @Param        id   path      string  true  "Movie ID"
+// @Success      200  {object}  string
+// @Failure      401  {object}  string
 // @Router       /api/movies/search/history/clearid/{id} [get]
 func apiMoviesClearHistoryID(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {

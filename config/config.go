@@ -31,14 +31,16 @@ type GlobalSerieConfig struct {
 	SearchProvider string `koanf:"search_provider"`
 }
 type SerieConfig struct {
-	Name          string   `koanf:"name"`
-	TvdbID        int      `koanf:"tvdb_id"`
-	AlternateName []string `koanf:"alternatename"`
-	Identifiedby  string   `koanf:"identifiedby"`
-	Upgrade       bool     `koanf:"upgrade"`
-	Search        bool     `koanf:"search"`
-	Source        string   `koanf:"source"`
-	Target        string   `koanf:"target"`
+	Name           string   `koanf:"name"`
+	TvdbID         int      `koanf:"tvdb_id"`
+	AlternateName  []string `koanf:"alternatename"`
+	Identifiedby   string   `koanf:"identifiedby"`
+	DontUpgrade    bool     `koanf:"dont_upgrade"`
+	DontSearch     bool     `koanf:"dont_search"`
+	SearchSpecials bool     `koanf:"search_specials"`
+	IgnoreRuntime  bool     `koanf:"ignore_runtime"`
+	Source         string   `koanf:"source"`
+	Target         string   `koanf:"target"`
 }
 
 //Main Config
@@ -138,24 +140,23 @@ type MediaConfig struct {
 }
 
 type MediaTypeConfig struct {
-	Name                      string   `koanf:"name"`
-	DefaultQuality            string   `koanf:"default_quality"`
-	DefaultResolution         string   `koanf:"default_resolution"`
-	Naming                    string   `koanf:"naming"`
-	NamingIdentifier          string   `koanf:"naming_identifier"`
-	Template_quality          string   `koanf:"template_quality"`
-	Template_scheduler        string   `koanf:"template_scheduler"`
-	Metadata_language         string   `koanf:"metadata_language"`
-	Metadata_title_languages  []string `koanf:"metadata_title_languages"`
-	Metadata_source           string   `koanf:"metadata_source"`
-	Structure                 bool     `koanf:"structure"`
-	Searchmissing_incremental int      `koanf:"search_missing_incremental"`
-	Searchupgrade_incremental int      `koanf:"search_upgrade_incremental"`
-
-	Data         []MediaDataConfig         `koanf:"data"`
-	DataImport   []MediaDataImportConfig   `koanf:"data_import"`
-	Lists        []MediaListsConfig        `koanf:"lists"`
-	Notification []MediaNotificationConfig `koanf:"notification"`
+	Name                      string                    `koanf:"name"`
+	DefaultQuality            string                    `koanf:"default_quality"`
+	DefaultResolution         string                    `koanf:"default_resolution"`
+	Naming                    string                    `koanf:"naming"`
+	NamingIdentifier          string                    `koanf:"naming_identifier"`
+	Template_quality          string                    `koanf:"template_quality"`
+	Template_scheduler        string                    `koanf:"template_scheduler"`
+	Metadata_language         string                    `koanf:"metadata_language"`
+	Metadata_title_languages  []string                  `koanf:"metadata_title_languages"`
+	Metadata_source           string                    `koanf:"metadata_source"`
+	Structure                 bool                      `koanf:"structure"`
+	Searchmissing_incremental int                       `koanf:"search_missing_incremental"`
+	Searchupgrade_incremental int                       `koanf:"search_upgrade_incremental"`
+	Data                      []MediaDataConfig         `koanf:"data"`
+	DataImport                []MediaDataImportConfig   `koanf:"data_import"`
+	Lists                     []MediaListsConfig        `koanf:"lists"`
+	Notification              []MediaNotificationConfig `koanf:"notification"`
 }
 
 type MediaDataConfig struct {
@@ -175,9 +176,8 @@ type MediaListsConfig struct {
 	Template_scheduler string   `koanf:"template_scheduler"`
 	Ignore_map_lists   []string `koanf:"ignore_template_lists"`
 	Replace_map_lists  []string `koanf:"replace_template_lists"`
-	// Indexer                       []MediaListsIndexerConfig `koanf:"indexers"`
-	Enabled  bool `koanf:"enabled"`
-	Addfound bool `koanf:"add_found"`
+	Enabled            bool     `koanf:"enabled"`
+	Addfound           bool     `koanf:"add_found"`
 }
 
 type MediaNotificationConfig struct {

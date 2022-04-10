@@ -74,14 +74,11 @@ var allowedjobsseries []string = []string{"rss", "rssseasons", "data", "datafull
 // @Summary      List Series
 // @Description  List Series
 // @Tags         series
-// @Accept       json
-// @Produce      json
-// @Param        limit   query     int     false  "Limit"
-// @Param        page    query     int     false  "Page"
-// @Param        order   query     string  false  "Order By"
-// @Param        apikey  query     string  true  "apikey"
-// @Success      200     {array}   database.Dbserie
-// @Failure      401     {object}  string
+// @Param        limit  query     int     false  "Limit"
+// @Param        page   query     int     false  "Page"
+// @Param        order  query     string  false  "Order By"
+// @Success      200    {object}   database.Dbserie
+// @Failure      401    {object}  string
 // @Router       /api/series [get]
 func apiSeriesGet(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
@@ -119,12 +116,9 @@ func apiSeriesGet(ctx *gin.Context) {
 // @Summary      Delete Series
 // @Description  Delete Series
 // @Tags         series
-// @Accept       json
-// @Produce      json
-// @Param        id      path      int     true  "Series ID"
-// @Param        apikey  query     string  true  "apikey"
-// @Success      200     {string}  string
-// @Failure      401     {object}  string
+// @Param        id   path      int  true  "Series ID"
+// @Success      200  {object}  string
+// @Failure      401  {object}  string
 // @Router       /api/series/{id} [delete]
 func apiSeriesDelete(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
@@ -147,16 +141,13 @@ func apiSeriesDelete(ctx *gin.Context) {
 // @Summary      List Series (List)
 // @Description  List Series
 // @Tags         series
-// @Accept       json
-// @Produce      json
-// @Param        name    path      string  true   "List Name"
-// @Param        limit   query     int     false  "Limit"
-// @Param        page    query     int     false  "Page"
-// @Param        order   query     string  false  "Order By"
-// @Param        apikey  query     string  true   "apikey"
-// @Success      200     {array}   database.ResultSeries
-// @Failure      401     {object}  string
-// @Router       /api/series/{name} [get]
+// @Param        name   path      string  true   "List Name"
+// @Param        limit  query     int     false  "Limit"
+// @Param        page   query     int     false  "Page"
+// @Param        order  query     string  false  "Order By"
+// @Success      200    {object}   database.ResultSeries
+// @Failure      401    {object}  string
+// @Router       /api/series/list/{name} [get]
 func apiSeriesListGet(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
@@ -196,12 +187,9 @@ func apiSeriesListGet(ctx *gin.Context) {
 // @Summary      Delete Series (List)
 // @Description  Delete Series
 // @Tags         series
-// @Accept       json
-// @Produce      json
-// @Param        id      path      int     true  "Series ID"
-// @Param        apikey  query     string  true  "apikey"
-// @Success      200     {string}  string
-// @Failure      401     {object}  string
+// @Param        id   path      int  true  "Series ID"
+// @Success      200  {object}  string
+// @Failure      401  {object}  string
 // @Router       /api/series/list/{id} [delete]
 func apiSeriesListDelete(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
@@ -222,14 +210,11 @@ func apiSeriesListDelete(ctx *gin.Context) {
 // @Summary      List Series Unmatched
 // @Description  List Unmatched episodes
 // @Tags         series
-// @Accept       json
-// @Produce      json
-// @Param        limit   query     int     false  "Limit"
-// @Param        page    query     int     false  "Page"
-// @Param        order   query     string  false  "Order By"
-// @Param        apikey  query     string  true   "apikey"
-// @Success      200     {array}   database.SerieFileUnmatchedJson
-// @Failure      401     {object}  string
+// @Param        limit  query     int     false  "Limit"
+// @Param        page   query     int     false  "Page"
+// @Param        order  query     string  false  "Order By"
+// @Success      200    {object}   database.SerieFileUnmatchedJson
+// @Failure      401    {object}  string
 // @Router       /api/series/unmatched [get]
 func apiSeriesUnmatched(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
@@ -267,14 +252,11 @@ func apiSeriesUnmatched(ctx *gin.Context) {
 // @Summary      List Series Episodes
 // @Description  List episodes
 // @Tags         series
-// @Accept       json
-// @Produce      json
-// @Param        limit   query     int     false  "Limit"
-// @Param        page    query     int     false  "Page"
-// @Param        order   query     string  false  "Order By"
-// @Param        apikey  query     string  true   "apikey"
-// @Success      200     {array}   database.DbserieEpisodeJson
-// @Failure      401     {object}  string
+// @Param        limit  query     int     false  "Limit"
+// @Param        page   query     int     false  "Page"
+// @Param        order  query     string  false  "Order By"
+// @Success      200    {object}   database.DbserieEpisodeJson
+// @Failure      401    {object}  string
 // @Router       /api/series/episodes [get]
 func apiSeriesEpisodesGet(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
@@ -312,15 +294,12 @@ func apiSeriesEpisodesGet(ctx *gin.Context) {
 // @Summary      List Series Episodes (Single)
 // @Description  List episodes
 // @Tags         series
-// @Accept       json
-// @Produce      json
-// @Param        id      path      int     true   "Series ID"
-// @Param        limit   query     int     false  "Limit"
-// @Param        page    query     int     false  "Page"
-// @Param        order   query     string  false  "Order By"
-// @Param        apikey  query     string  true   "apikey"
-// @Success      200     {array}   database.DbserieEpisodeJson
-// @Failure      401     {object}  string
+// @Param        id     path      int     true   "Series ID"
+// @Param        limit  query     int     false  "Limit"
+// @Param        page   query     int     false  "Page"
+// @Param        order  query     string  false  "Order By"
+// @Success      200    {object}   database.DbserieEpisodeJson
+// @Failure      401    {object}  string
 // @Router       /api/series/episodes/{id} [get]
 func apiSeriesEpisodesGetSingle(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
@@ -360,12 +339,9 @@ func apiSeriesEpisodesGetSingle(ctx *gin.Context) {
 // @Summary      Delete Episode
 // @Description  Delete Series Episode
 // @Tags         series
-// @Accept       json
-// @Produce      json
-// @Param        id      path      int     true  "Episode ID"
-// @Param        apikey  query     string  true  "apikey"
-// @Success      200     {string}  string
-// @Failure      401     {object}  string
+// @Param        id   path      int  true  "Episode ID"
+// @Success      200  {object}  string
+// @Failure      401  {object}  string
 // @Router       /api/series/episodes/{id} [delete]
 func apiSeriesEpisodesDelete(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
@@ -386,15 +362,12 @@ func apiSeriesEpisodesDelete(ctx *gin.Context) {
 // @Summary      List Series Episodes (List)
 // @Description  List episodes
 // @Tags         series
-// @Accept       json
-// @Produce      json
-// @Param        id      path      int     true   "Series ID"
-// @Param        limit   query     int     false  "Limit"
-// @Param        page    query     int     false  "Page"
-// @Param        order   query     string  false  "Order By"
-// @Param        apikey  query     string  true   "apikey"
-// @Success      200     {array}   database.ResultSerieEpisodesJson
-// @Failure      401     {object}  string
+// @Param        id     path      int     true   "Series ID"
+// @Param        limit  query     int     false  "Limit"
+// @Param        page   query     int     false  "Page"
+// @Param        order  query     string  false  "Order By"
+// @Success      200    {object}   database.ResultSerieEpisodesJson
+// @Failure      401    {object}  string
 // @Router       /api/series/episodes/list/{id} [get]
 func apiSeriesEpisodesListGet(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
@@ -435,12 +408,9 @@ func apiSeriesEpisodesListGet(ctx *gin.Context) {
 // @Summary      Delete Episode (List)
 // @Description  Delete Series Episode
 // @Tags         series
-// @Accept       json
-// @Produce      json
-// @Param        id      path      int     true  "Episode ID"
-// @Param        apikey  query     string  true  "apikey"
-// @Success      200     {string}  string
-// @Failure      401     {object}  string
+// @Param        id   path      int  true  "Episode ID"
+// @Success      200  {object}  string
+// @Failure      401  {object}  string
 // @Router       /api/series/episodes/list/{id} [delete]
 func apiSeriesEpisodesListDelete(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
@@ -460,13 +430,10 @@ func apiSeriesEpisodesListDelete(ctx *gin.Context) {
 // @Summary      Start Jobs (All Lists)
 // @Description  Starts a Job
 // @Tags         series
-// @Accept       json
-// @Produce      json
-// @Param        job     path      string  true  "Job Name one of: rss, data, datafull, checkmissing, checkmissingflag, structure, searchmissingfull, searchmissinginc, searchupgradefull, searchupgradeinc, searchmissingfulltitle, searchmissinginctitle, searchupgradefulltitle, searchupgradeinctitle, clearhistory, feeds, refresh, refreshinc"
-// @Param        apikey  query     string  true  "apikey"
-// @Success      200     {string}  string
-// @Failure      204     {object}  string
-// @Failure      401     {object}  string
+// @Param        job  path      string  true  "Job Name one of: rss, data, datafull, checkmissing, checkmissingflag, structure, searchmissingfull, searchmissinginc, searchupgradefull, searchupgradeinc, searchmissingfulltitle, searchmissinginctitle, searchupgradefulltitle, searchupgradeinctitle, clearhistory, feeds, refresh, refreshinc"
+// @Success      200  {object}  string
+// @Failure      204  {object}  string
+// @Failure      401  {object}  string
 // @Router       /api/series/job/{job} [get]
 func apiseriesAllJobs(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
@@ -545,14 +512,11 @@ func apiseriesAllJobs(c *gin.Context) {
 // @Summary      Start Jobs
 // @Description  Starts a Job
 // @Tags         series
-// @Accept       json
-// @Produce      json
-// @Param        job     path      string  true  "Job Name one of: rss, data, datafull, checkmissing, checkmissingflag, structure, searchmissingfull, searchmissinginc, searchupgradefull, searchupgradeinc, searchmissingfulltitle, searchmissinginctitle, searchupgradefulltitle, searchupgradeinctitle, clearhistory, feeds, refresh, refreshinc"
-// @Param        name    path      string  true  "List Name: ex. list"
-// @Param        apikey  query     string  true   "apikey"
-// @Success      200     {string}  string
-// @Failure      204     {object}  string
-// @Failure      401     {object}  string
+// @Param        job   path      string  true  "Job Name one of: rss, data, datafull, checkmissing, checkmissingflag, structure, searchmissingfull, searchmissinginc, searchupgradefull, searchupgradeinc, searchmissingfulltitle, searchmissinginctitle, searchupgradefulltitle, searchupgradeinctitle, clearhistory, feeds, refresh, refreshinc"
+// @Param        name  path      string  true  "List Name: ex. list"
+// @Success      200   {object}  string
+// @Failure      204   {object}  string
+// @Failure      401   {object}  string
 // @Router       /api/series/job/{job}/{name} [get]
 func apiseriesJobs(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
@@ -633,13 +597,10 @@ func apiseriesJobs(c *gin.Context) {
 // @Summary      Update Series (Global)
 // @Description  Updates or creates a series
 // @Tags         series
-// @Accept       json
-// @Produce      json
 // @Param        series  body      database.Dbserie  true  "Series"
-// @Param        apikey  query     string            true  "apikey"
-// @Success      200     {string}  string
+// @Success      200  {object}  string
 // @Failure      400     {object}  string
-// @Failure      401     {object}  string
+// @Failure      401  {object}  string
 // @Router       /api/series [post]
 func updateDBSeries(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
@@ -672,11 +633,8 @@ func updateDBSeries(c *gin.Context) {
 // @Summary      Update Series Episodes (Global)
 // @Description  Updates or creates a episode
 // @Tags         series
-// @Accept       json
-// @Produce      json
 // @Param        episode  body      database.DbserieEpisodeJson  true  "Episode"
-// @Param        apikey   query     string                       true  "apikey"
-// @Success      200      {string}  string
+// @Success      200      {object}  string
 // @Failure      400      {object}  string
 // @Failure      401      {object}  string
 // @Router       /api/series/episodes [post]
@@ -711,13 +669,10 @@ func updateDBEpisode(c *gin.Context) {
 // @Summary      Update Series (List)
 // @Description  Updates or creates a series
 // @Tags         series
-// @Accept       json
-// @Produce      json
 // @Param        series  body      database.SerieJson  true  "Series"
-// @Param        apikey  query     string              true  "apikey"
-// @Success      200     {string}  string
+// @Success      200  {object}  string
 // @Failure      400     {object}  string
-// @Failure      401     {object}  string
+// @Failure      401  {object}  string
 // @Router       /api/series/list [post]
 func updateSeries(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
@@ -750,11 +705,8 @@ func updateSeries(c *gin.Context) {
 // @Summary      Update Series Episodes (List)
 // @Description  Updates or creates a episode
 // @Tags         series
-// @Accept       json
-// @Produce      json
 // @Param        episode  body      database.SerieEpisodeJson  true  "Episode"
-// @Param        apikey   query     string                     true  "apikey"
-// @Success      200      {string}  string
+// @Success      200      {object}  string
 // @Failure      400      {object}  string
 // @Failure      401      {object}  string
 // @Router       /api/series/episodes/list [post]
@@ -789,12 +741,9 @@ func updateEpisode(c *gin.Context) {
 // @Summary      Refresh Single Series
 // @Description  Refreshes Series Metadata
 // @Tags         series
-// @Accept       json
-// @Produce      json
-// @Param        id      path      int     true  "Serie ID"
-// @Param        apikey  query     string  true  "apikey"
-// @Success      200     {string}  string
-// @Failure      401     {object}  string
+// @Param        id   path      int  true  "Serie ID"
+// @Success      200  {object}  string
+// @Failure      401  {object}  string
 // @Router       /api/series/all/refresh/{id} [get]
 func apirefreshSerie(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
@@ -809,11 +758,8 @@ func apirefreshSerie(c *gin.Context) {
 // @Summary      Refresh Series
 // @Description  Refreshes Series Metadata
 // @Tags         series
-// @Accept       json
-// @Produce      json
-// @Param        apikey  query     string  true  "apikey"
-// @Success      200     {string}  string
-// @Failure      401     {object}  string
+// @Success      200  {object}  string
+// @Failure      401  {object}  string
 // @Router       /api/series/all/refreshall [get]
 func apirefreshSeries(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
@@ -828,11 +774,8 @@ func apirefreshSeries(c *gin.Context) {
 // @Summary      Refresh Series Incremental
 // @Description  Refreshes Series Metadata
 // @Tags         series
-// @Accept       json
-// @Produce      json
-// @Param        apikey  query     string  true  "apikey"
-// @Success      200     {string}  string
-// @Failure      401     {object}  string
+// @Success      200  {object}  string
+// @Failure      401  {object}  string
 // @Router       /api/series/all/refresh [get]
 func apirefreshSeriesInc(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
@@ -844,15 +787,12 @@ func apirefreshSeriesInc(c *gin.Context) {
 	c.JSON(http.StatusOK, "started")
 }
 
-// @Summary      Search a series
+// @Summary      Search a series (all seasons)
 // @Description  Searches for upgrades and missing
 // @Tags         series
-// @Accept       json
-// @Produce      json
-// @Param        id      path      int     true  "Series ID"
-// @Param        apikey  query     string  true  "apikey"
-// @Success      200     {string}  string
-// @Failure      401     {object}  string
+// @Param        id   path      int  true  "Series ID"
+// @Success      200  {object}  string
+// @Failure      401  {object}  string
 // @Router       /api/series/search/id/{id} [get]
 func apiSeriesSearch(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
@@ -879,16 +819,13 @@ func apiSeriesSearch(c *gin.Context) {
 	c.JSON(http.StatusNoContent, "Nothing Done")
 }
 
-// @Summary      Search a series
+// @Summary      Search a series (one season)
 // @Description  Searches for upgrades and missing
 // @Tags         series
-// @Accept       json
-// @Produce      json
-// @Param        id      path      int     true  "Series ID"
+// @Param        id   path      int  true  "Series ID"
 // @Param        season  path      string  true  "Season"
-// @Param        apikey  query     string  true  "apikey"
-// @Success      200     {string}  string
-// @Failure      401     {object}  string
+// @Success      200    {object}  string
+// @Failure      401    {object}  string
 // @Router       /api/series/search/id/{id}/{season} [get]
 func apiSeriesSearchSeason(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
@@ -915,15 +852,12 @@ func apiSeriesSearchSeason(c *gin.Context) {
 	c.JSON(http.StatusNoContent, "Nothing Done")
 }
 
-// @Summary      Search a series
+// @Summary      Search a series (any season - one search call)
 // @Description  Searches for upgrades and missing
 // @Tags         series
-// @Accept       json
-// @Produce      json
 // @Param        id      path      int     true  "Series ID"
-// @Param        apikey  query     string  true  "apikey"
-// @Success      200     {string}  string
-// @Failure      401     {object}  string
+// @Success      200  {object}  string
+// @Failure      401  {object}  string
 // @Router       /api/series/searchrss/id/{id} [get]
 func apiSeriesSearchRSS(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
@@ -950,16 +884,13 @@ func apiSeriesSearchRSS(c *gin.Context) {
 	c.JSON(http.StatusNoContent, "Nothing Done")
 }
 
-// @Summary      Search a series
+// @Summary      Search a series (one season - one search call)
 // @Description  Searches for upgrades and missing
 // @Tags         series
-// @Accept       json
-// @Produce      json
 // @Param        id      path      int     true  "Series ID"
 // @Param        season  path      string  true  "Season"
-// @Param        apikey  query     string  true  "apikey"
-// @Success      200     {string}  string
-// @Failure      401     {object}  string
+// @Success      200   {object}  string
+// @Failure      401   {object}  string
 // @Router       /api/series/searchrss/id/{id}/{season} [get]
 func apiSeriesSearchRSSSeason(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
@@ -990,12 +921,9 @@ func apiSeriesSearchRSSSeason(c *gin.Context) {
 // @Summary      Search a episode
 // @Description  Searches for upgrades and missing
 // @Tags         series
-// @Accept       json
-// @Produce      json
-// @Param        id      path      int     true  "Episode ID"
-// @Param        apikey  query     string  true  "apikey"
-// @Success      200     {string}  string
-// @Failure      401     {object}  string
+// @Param        id   path      int  true  "Episode ID"
+// @Success      200  {object}  string
+// @Failure      401  {object}  string
 // @Router       /api/series/episodes/search/id/{id} [get]
 func apiSeriesEpisodeSearch(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
@@ -1027,12 +955,9 @@ func apiSeriesEpisodeSearch(c *gin.Context) {
 // @Summary      Search a episode (list ok, nok)
 // @Description  Searches for upgrades and missing
 // @Tags         series
-// @Accept       json
-// @Produce      json
 // @Param        id             path      int     true   "Episode ID"
-// @Param        apikey         query     string  true   "apikey"
-// @Param        searchByTitle  query     string  false  "apikey"
-// @Success      200            {string}  string
+// @Param        searchByTitle  query     string  false  "searchByTitle"
+// @Success      200            {object}  string
 // @Failure      401            {object}  string
 // @Router       /api/series/episodes/search/list/{id} [get]
 func apiSeriesEpisodeSearchList(c *gin.Context) {
@@ -1070,11 +995,8 @@ func apiSeriesEpisodeSearchList(c *gin.Context) {
 // @Summary      Series RSS (list ok, nok)
 // @Description  Series RSS
 // @Tags         series
-// @Accept       json
-// @Produce      json
-// @Param        group   path      string  true  "Group Name"
-// @Param        apikey  query     string  true  "apikey"
-// @Success      200     {string}  string
+// @Param        group  path      string  true  "Group Name"
+// @Success      200     {object}  string
 // @Failure      401     {object}  string
 // @Router       /api/series/rss/search/list/{group} [get]
 func apiSeriesRssSearchList(c *gin.Context) {
@@ -1101,12 +1023,9 @@ func apiSeriesRssSearchList(c *gin.Context) {
 // @Summary      Download a episode (manual)
 // @Description  Downloads a release after select
 // @Tags         series
-// @Accept       json
-// @Produce      json
-// @Param        nzb     body      parser.NzbwithprioJson  true  "Nzb: Req. Title, Indexer, tvdbid, downloadurl, parseinfo"
-// @Param        id      path      int                     true  "Episode ID"
-// @Param        apikey  query     string                  true  "apikey"
-// @Success      200     {string}  string
+// @Param        nzb  body      parser.NzbwithprioJson  true  "Nzb: Req. Title, Indexer, tvdbid, downloadurl, parseinfo"
+// @Param        id   path      int                     true  "Episode ID"
+// @Success      200     {object}  string
 // @Failure      401     {object}  string
 // @Router       /api/series/episodes/search/download/{id} [post]
 func apiSeriesEpisodeSearchDownload(c *gin.Context) {
@@ -1150,11 +1069,8 @@ func apiSeriesEpisodeSearchDownload(c *gin.Context) {
 // @Summary      Clear History (Full List)
 // @Description  Clear Episode Download History
 // @Tags         series
-// @Accept       json
-// @Produce      json
-// @Param        name    path      string  true  "List Name"
-// @Param        apikey  query     string  true  "apikey"
-// @Success      200     {string}  string
+// @Param        name  path      string  true  "List Name"
+// @Success      200     {object}  string
 // @Failure      401     {object}  string
 // @Router       /api/series/search/history/clear/{name} [get]
 func apiSeriesClearHistoryName(c *gin.Context) {
@@ -1168,11 +1084,8 @@ func apiSeriesClearHistoryName(c *gin.Context) {
 // @Summary      Clear History (Single Item)
 // @Description  Clear Episode Download History
 // @Tags         series
-// @Accept       json
-// @Produce      json
-// @Param        id      path      string  true  "Episode ID"
-// @Param        apikey  query     string  true  "apikey"
-// @Success      200     {string}  string
+// @Param        id   path      string  true  "Episode ID"
+// @Success      200     {object}  string
 // @Failure      401     {object}  string
 // @Router       /api/series/search/history/clearid/{id} [get]
 func apiSeriesClearHistoryID(c *gin.Context) {

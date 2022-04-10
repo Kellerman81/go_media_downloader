@@ -12,24 +12,28 @@ import (
 )
 
 type Serie struct {
-	ID          uint
-	CreatedAt   time.Time `db:"created_at"`
-	UpdatedAt   time.Time `db:"updated_at"`
-	Listname    string
-	Rootpath    string
-	DbserieID   uint `db:"dbserie_id"`
-	DontUpgrade bool `db:"dont_upgrade"`
-	DontSearch  bool `db:"dont_search"`
+	ID             uint
+	CreatedAt      time.Time `db:"created_at"`
+	UpdatedAt      time.Time `db:"updated_at"`
+	Listname       string
+	Rootpath       string
+	DbserieID      uint `db:"dbserie_id"`
+	DontUpgrade    bool `db:"dont_upgrade"`
+	DontSearch     bool `db:"dont_search"`
+	SearchSpecials bool `db:"search_specials"`
+	IgnoreRuntime  bool `db:"ignore_runtime"`
 }
 type SerieJson struct {
-	ID          uint
-	CreatedAt   time.Time `db:"created_at"`
-	UpdatedAt   time.Time `db:"updated_at"`
-	Listname    string
-	Rootpath    string
-	DbserieID   uint `db:"dbserie_id"`
-	DontUpgrade bool `db:"dont_upgrade"`
-	DontSearch  bool `db:"dont_search"`
+	ID             uint
+	CreatedAt      time.Time `db:"created_at"`
+	UpdatedAt      time.Time `db:"updated_at"`
+	Listname       string
+	Rootpath       string
+	DbserieID      uint `db:"dbserie_id"`
+	DontUpgrade    bool `db:"dont_upgrade"`
+	DontSearch     bool `db:"dont_search"`
+	SearchSpecials bool `db:"search_specials"`
+	IgnoreRuntime  bool `db:"ignore_runtime"`
 }
 type SerieEpisode struct {
 	ID               uint
@@ -42,6 +46,7 @@ type SerieEpisode struct {
 	Missing          bool
 	DontUpgrade      bool `db:"dont_upgrade"`
 	DontSearch       bool `db:"dont_search"`
+	IgnoreRuntime    bool `db:"ignore_runtime"`
 	DbserieEpisodeID uint `db:"dbserie_episode_id"`
 	SerieID          uint `db:"serie_id"`
 	DbserieID        uint `db:"dbserie_id"`
