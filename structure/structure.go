@@ -151,6 +151,7 @@ func (s *structure) fileCleanup(folder string, videofile string) {
 func (s *structure) ParseFileAdditional(videofile string, m *parser.ParseInfo, folder string, deletewronglanguage bool, wantedruntime int) error {
 	list := config.ConfigGetMediaListConfig(s.configTemplate, s.listConfig)
 	if !config.ConfigCheck("quality_" + list.Template_quality) {
+		logger.Log.Error("Quality for List: " + list.Name + " not found")
 		return errors.New("no quality")
 	}
 
@@ -217,6 +218,7 @@ func (s *structure) checkLowerQualTarget(folder string, videofile string, m pars
 	logger.Log.Debug("Found existing files: ", len(moviefiles))
 
 	if !config.ConfigCheck("quality_" + list.Template_quality) {
+		logger.Log.Error("Quality for List: " + list.Name + " not found")
 		return []string{}, 0, errors.New("config not found")
 	}
 
@@ -610,7 +612,18 @@ func (structurevar *structure) structureSeries(folder string, m parser.ParseInfo
 		runtime = epiruntime
 	}
 	if allowimport {
-		errpars := structurevar.ParseFileAdditional(videofile, &m, folder, deletewronglanguage, runtime*len(episodes))
+		dbserieepisode, _ := database.GetDbserieEpisodes(database.Query{Select: "season", Where: "id=?", WhereArgs: []interface{}{seriesEpisode.DbserieEpisodeID}})
+		if epiruntime == 0 && dbserieepisode.Season == "0" {
+			seriesEpisode.IgnoreRuntime = true
+		}
+		totalruntime := runtime * len(episodes)
+		if seriesEpisode.IgnoreRuntime {
+			totalruntime = 0
+		}
+		if series.IgnoreRuntime {
+			totalruntime = 0
+		}
+		errpars := structurevar.ParseFileAdditional(videofile, &m, folder, deletewronglanguage, totalruntime)
 		if errpars != nil {
 			logger.Log.Error("Error fprobe video: ", videofile, " error: ", errpars)
 			return
@@ -648,7 +661,7 @@ func (structurevar *structure) structureSeries(folder string, m parser.ParseInfo
 			reached := false
 			list := config.ConfigGetMediaListConfig(structurevar.configTemplate, structurevar.listConfig)
 			if !config.ConfigCheck("quality_" + list.Template_quality) {
-				logger.Log.Error("Template Quality not found: ", list.Template_quality)
+				logger.Log.Error("Quality for List: " + list.Name + " not found")
 				return
 			}
 			if m.Priority >= parser.NewCutoffPrio(structurevar.configTemplate, list.Template_quality).Priority {
@@ -708,7 +721,7 @@ func (structurevar *structure) structureMovie(folder string, m parser.ParseInfo,
 
 		list := config.ConfigGetMediaListConfig(structurevar.configTemplate, structurevar.listConfig)
 		if !config.ConfigCheck("quality_" + list.Template_quality) {
-			logger.Log.Error("Template Quality not found: ", list.Template_quality)
+			logger.Log.Error("Quality for List: " + list.Name + " not found")
 			return
 		}
 		//updatemovie
@@ -932,8 +945,12 @@ func StructureSingleFolder(folder string, disableruntimecheck bool, disabledisal
 				lists = nil
 			}
 
+			if list.Name == "" {
+				logger.Log.Warnln("Quality for List: " + list.Name + " not found (Movie not wanted?) - for: " + videofiles[fileidx])
+				continue
+			}
 			if !config.ConfigCheck("quality_" + list.Template_quality) {
-				logger.Log.Error("Template Quality not found: ", list.Template_quality)
+				logger.Log.Error("Quality for List: " + list.Name + " not found - for: " + videofiles[fileidx])
 				return
 			}
 			cfg_quality := config.ConfigGet("quality_" + list.Template_quality).Data.(config.QualityConfig)
@@ -1063,6 +1080,7 @@ func StructureSingleFolder(folder string, disableruntimecheck bool, disabledisal
 				return
 			}
 			if !config.ConfigCheck("quality_" + list.Template_quality) {
+				logger.Log.Error("Quality for List: " + list.Name + " not found - for: " + videofiles[fileidx])
 				return
 			}
 			cfg_quality := config.ConfigGet("quality_" + list.Template_quality).Data.(config.QualityConfig)
@@ -1335,6 +1353,7 @@ func (s *structure) GetSeriesEpisodes(series database.Serie, videofile string, m
 
 			list := config.ConfigGetMediaListConfig(s.configTemplate, s.listConfig)
 			if !config.ConfigCheck("quality_" + list.Template_quality) {
+				logger.Log.Error("Quality for List: " + list.Name + " not found")
 				return
 			}
 

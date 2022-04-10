@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"os/signal"
 	"strings"
@@ -38,10 +37,15 @@ import (
 	ginlog "github.com/toorop/gin-logrus"
 )
 
-// @title    go_media_downloader API
-// @version  1.0
-// @Schemes  http
-// @host     localhost:9090
+// @title                       Go Media Downloader API
+// @version                     1.0
+// @Schemes                     http https
+// @host                        localhost:9090
+// @securitydefinitions.apikey  ApiKeyAuth
+// @in                          query
+// @name                        apikey
+// @Accept                      json
+// @Produce                     json
 
 func main() {
 	//debug.SetGCPercent(30)
@@ -51,8 +55,11 @@ func main() {
 	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
 
 	if cfg_general.WebPort == "" {
-		fmt.Println("Checked for general - config is missing", cfg_general)
-		os.Exit(0)
+		//fmt.Println("Checked for general - config is missing", cfg_general)
+		//os.Exit(0)
+		config.ClearCfg()
+		config.WriteCfg()
+		config.LoadCfgDB(config.Configfile)
 	}
 
 	logger.InitLogger(logger.LoggerConfig{
@@ -221,16 +228,18 @@ func main() {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
-	logger.Log.Println("receive interrupt signal")
+	logger.Log.Infoln("Server shutting down")
 
 	scheduler.QueueData.Stop()
 	scheduler.QueueFeeds.Stop()
 	scheduler.QueueSearch.Stop()
+	logger.Log.Infoln("Queues stopped")
 
 	config.Slepping(true, 5)
 
 	database.DBImdb.Close()
 	database.DB.Close()
+	logger.Log.Infoln("Databases stopped")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

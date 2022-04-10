@@ -31,6 +31,7 @@ func GetSerieEpisodesTable(ctx *context.Context) table.Table {
 	detail.AddField("Missing", "missing", db.Numeric)
 	detail.AddField("Dont_upgrade", "dont_upgrade", db.Numeric)
 	detail.AddField("Dont_search", "dont_search", db.Numeric)
+	detail.AddField("Ignore_runtime", "ignore_runtime", db.Numeric)
 	detail.AddField("Dbserie_episode_id", "dbserie_episode_id", db.Integer)
 	detail.AddField("Serie_id", "serie_id", db.Integer)
 	detail.AddField("Dbserie_id", "dbserie_id", db.Integer)
@@ -68,6 +69,10 @@ func GetSerieEpisodesTable(ctx *context.Context) table.Table {
 	}).FieldFilterOptionExt(map[string]interface{}{"allowClear": true}).FieldSortable()
 	info.AddField("Quality_profile", "quality_profile", db.Text).FieldFilterable(types.FilterType{FormType: form.SelectSingle}).FieldFilterOptionsFromTable("serie_episodes", "quality_profile", "quality_profile", func(sql *db.SQL) *db.SQL { return sql.GroupBy("quality_profile") }).FieldFilterOptionExt(map[string]interface{}{"allowClear": true}).FieldSortable()
 	info.AddField("Missing", "missing", db.Numeric).FieldBool("1", "0").FieldFilterable(types.FilterType{FormType: form.SelectSingle}).FieldFilterOptions(types.FieldOptions{
+		{Value: "0", Text: "No"},
+		{Value: "1", Text: "Yes"},
+	}).FieldFilterOptionExt(map[string]interface{}{"allowClear": true}).FieldSortable()
+	info.AddField("Ignore_runtime", "ignore_runtime", db.Numeric).FieldBool("1", "0").FieldFilterable(types.FilterType{FormType: form.SelectSingle}).FieldFilterOptions(types.FieldOptions{
 		{Value: "0", Text: "No"},
 		{Value: "1", Text: "Yes"},
 	}).FieldFilterOptionExt(map[string]interface{}{"allowClear": true}).FieldSortable()
@@ -130,6 +135,10 @@ func GetSerieEpisodesTable(ctx *context.Context) table.Table {
 		{Text: "No", Value: "0"},
 	})
 	formList.AddField("Dont_search", "dont_search", db.Numeric, form.Switch).FieldOptions(types.FieldOptions{
+		{Text: "Yes", Value: "1"},
+		{Text: "No", Value: "0"},
+	})
+	formList.AddField("Ignore_runtime", "ignore_runtime", db.Numeric, form.Switch).FieldOptions(types.FieldOptions{
 		{Text: "Yes", Value: "1"},
 		{Text: "No", Value: "0"},
 	})

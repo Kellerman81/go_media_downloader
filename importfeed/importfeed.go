@@ -1224,7 +1224,7 @@ func JobImportDbSeries(serieconfig config.SerieConfig, configTemplate string, li
 	//cserie, _ := database.CountRows("series", database.Query{Where: "Dbserie_id = ? and listname = ?", WhereArgs: []interface{}{dbserie.ID, list.Name}})
 	if cserie == 0 {
 		logger.Log.Debug("Series add for: ", serieconfig.TvdbID)
-		inres, inreserr := database.InsertArray("series", []string{"dbserie_id", "listname", "rootpath"}, []interface{}{dbserie.ID, listConfig, serieconfig.Target})
+		inres, inreserr := database.InsertArray("series", []string{"dbserie_id", "listname", "rootpath", "search_specials", "dont_search", "dont_upgrade"}, []interface{}{dbserie.ID, listConfig, serieconfig.Target, serieconfig.SearchSpecials, serieconfig.DontSearch, serieconfig.DontUpgrade})
 		if inreserr != nil {
 			logger.Log.Error(inreserr)
 			return
@@ -1238,7 +1238,7 @@ func JobImportDbSeries(serieconfig config.SerieConfig, configTemplate string, li
 	} else {
 		id, err := database.QueryColumnStatic("Select id from series where Dbserie_id = ? and listname = ?", dbserie.ID, listConfig)
 		if err == nil {
-			serie = database.Serie{ID: uint(id.(int64))}
+			serie = database.Serie{ID: uint(id.(int64)), SearchSpecials: serieconfig.SearchSpecials, DontSearch: serieconfig.DontSearch, DontUpgrade: serieconfig.DontUpgrade}
 		}
 		id = nil
 	}

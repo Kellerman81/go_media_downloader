@@ -67,7 +67,7 @@ func jobImportSeriesParseV2(file string, updatemissing bool, configTemplate stri
 
 		list := config.ConfigGetMediaListConfig(configTemplate, listConfig)
 		if !config.ConfigCheck("quality_" + list.Template_quality) {
-			logger.Log.Error("Quality not found: ", list.Template_quality)
+			logger.Log.Error("Quality not found for List - "+list.Name+" : ", list.Template_quality)
 			return
 		}
 
@@ -404,6 +404,7 @@ func Getnewepisodes(configTemplate string) {
 	swf := sizedwaitgroup.New(cfg_general.WorkerParse)
 	for _, list := range config.ConfigGet(configTemplate).Data.(config.MediaTypeConfig).Lists {
 		if !config.ConfigCheck("quality_" + list.Template_quality) {
+			logger.Log.Error("Quality for List: " + list.Name + " not found")
 			continue
 		}
 		for idxfile, file := range scanner.GetFilesSeriesAdded(filesfound, configTemplate, list.Name, list.Name) {
@@ -429,6 +430,7 @@ func getnewepisodessingle(configTemplate string, listConfig string) {
 
 	list := config.ConfigGetMediaListConfig(configTemplate, listConfig)
 	if !config.ConfigCheck("quality_" + list.Template_quality) {
+		logger.Log.Error("Quality for List: " + list.Name + " not found")
 		return
 	}
 	logger.Log.Info("Scan SerieEpisodeFile")
@@ -465,6 +467,7 @@ func checkreachedepisodesflag(configTemplate string, listConfig string) {
 	episodes, _ := database.QuerySerieEpisodes(database.Query{Select: "id, quality_reached, quality_profile", Where: "serie_id in (Select id from series where listname = ?)", WhereArgs: []interface{}{listConfig}})
 	for idxepi := range episodes {
 		if !config.ConfigCheck("quality_" + episodes[idxepi].QualityProfile) {
+			logger.Log.Error("Quality for Episode: " + strconv.Itoa(int(episodes[idxepi].ID)) + " not found")
 			continue
 		}
 		reached := false

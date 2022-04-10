@@ -1,3 +1,5 @@
+consumes:
+- application/json
 definitions:
   api.apiNameInputJson:
     properties:
@@ -711,22 +713,12 @@ definitions:
 host: localhost:9090
 info:
   contact: {}
-  title: go_media_downloader API
+  title: Go Media Downloader API
   version: "1.0"
 paths:
   /api/all/data:
     get:
-      consumes:
-      - application/json
       description: Search all folders of movies and series for new entries
-      parameters:
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -741,17 +733,7 @@ paths:
       - data
   /api/all/feeds:
     get:
-      consumes:
-      - application/json
       description: Search all feeds of movies and series for new entries
-      parameters:
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -766,17 +748,7 @@ paths:
       - feeds
   /api/all/search/missing/full:
     get:
-      consumes:
-      - application/json
       description: Search all media of movies and series for missing releases
-      parameters:
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -791,17 +763,7 @@ paths:
       - search
   /api/all/search/missing/inc:
     get:
-      consumes:
-      - application/json
       description: Search all media of movies and series for missing releases (incremental)
-      parameters:
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -816,17 +778,7 @@ paths:
       - search
   /api/all/search/rss:
     get:
-      consumes:
-      - application/json
       description: Search all rss feeds of movies and series for new releases
-      parameters:
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -841,17 +793,7 @@ paths:
       - search
   /api/all/search/upgrade/full:
     get:
-      consumes:
-      - application/json
       description: Search all media of movies and series for upgrades
-      parameters:
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -866,17 +808,7 @@ paths:
       - search
   /api/all/search/upgrade/inc:
     get:
-      consumes:
-      - application/json
       description: Search all media of movies and series for upgrades (incremental)
-      parameters:
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -891,17 +823,7 @@ paths:
       - search
   /api/config/all:
     get:
-      consumes:
-      - application/json
       description: Get All Config Parameters
-      parameters:
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -917,17 +839,7 @@ paths:
       - config
   /api/config/clear:
     delete:
-      consumes:
-      - application/json
       description: Clears the configuration and sets some examples
-      parameters:
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -943,8 +855,6 @@ paths:
       - config
   /api/config/delete/{name}:
     delete:
-      consumes:
-      - application/json
       description: Deletes a configuration
       parameters:
       - description: 'Type Name: ex. quality_SD'
@@ -952,13 +862,6 @@ paths:
         name: name
         required: true
         type: string
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -974,8 +877,6 @@ paths:
       - config
   /api/config/get/{name}:
     get:
-      consumes:
-      - application/json
       description: Gets a configuration
       parameters:
       - description: 'Type Name: ex. quality_SD'
@@ -983,13 +884,6 @@ paths:
         name: name
         required: true
         type: string
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -1004,17 +898,7 @@ paths:
       - config
   /api/config/refresh:
     get:
-      consumes:
-      - application/json
       description: Refreshes the config from the file
-      parameters:
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -1030,8 +914,6 @@ paths:
       - config
   /api/config/type/{type}:
     get:
-      consumes:
-      - application/json
       description: List configurations of type
       parameters:
       - description: 'Type Name: ex. quality'
@@ -1039,13 +921,6 @@ paths:
         name: type
         required: true
         type: string
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -1061,8 +936,6 @@ paths:
       - config
   /api/config/update/{name}:
     post:
-      consumes:
-      - application/json
       description: Updates a configuration
       parameters:
       - description: Config
@@ -1076,13 +949,6 @@ paths:
         name: name
         required: true
         type: string
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -1102,17 +968,7 @@ paths:
       - config
   /api/db/backup:
     get:
-      consumes:
-      - application/json
       description: Saves DB
-      parameters:
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -1127,8 +983,6 @@ paths:
       - database
   /api/db/clear/{name}:
     delete:
-      consumes:
-      - application/json
       description: Clears a DB Table
       parameters:
       - description: Table Name
@@ -1136,13 +990,6 @@ paths:
         name: name
         required: true
         type: string
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -1157,17 +1004,7 @@ paths:
       - database
   /api/db/close:
     get:
-      consumes:
-      - application/json
       description: Closes all database connections
-      parameters:
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -1182,17 +1019,7 @@ paths:
       - database
   /api/db/integrity:
     get:
-      consumes:
-      - application/json
       description: Integrity Check DB
-      parameters:
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -1207,22 +1034,13 @@ paths:
       - database
   /api/db/oldjobs:
     delete:
-      consumes:
-      - application/json
       description: Removes Jobs started over x days ago from db
       parameters:
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
       - description: Days ago
         in: query
         name: days
         required: true
         type: integer
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -1237,17 +1055,7 @@ paths:
       - database
   /api/db/vacuum:
     get:
-      consumes:
-      - application/json
       description: Vacuum database
-      parameters:
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -1262,17 +1070,7 @@ paths:
       - database
   /api/debugstats:
     get:
-      consumes:
-      - application/json
       description: Shows some stats
-      parameters:
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: ""
@@ -1285,17 +1083,7 @@ paths:
       - general
   /api/fillimdb:
     get:
-      consumes:
-      - application/json
       description: Downloads IMDB Dataset and creates a new database from it
-      parameters:
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -1310,15 +1098,8 @@ paths:
       - general
   /api/movies:
     get:
-      consumes:
-      - application/json
       description: List Movies
       parameters:
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
       - description: Limit
         in: query
         name: limit
@@ -1331,8 +1112,6 @@ paths:
         in: query
         name: order
         type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -1348,8 +1127,6 @@ paths:
       tags:
       - movie
     post:
-      consumes:
-      - application/json
       description: Updates or creates a movie
       parameters:
       - description: Movie
@@ -1358,13 +1135,6 @@ paths:
         required: true
         schema:
           $ref: '#/definitions/database.DbmovieJson'
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -1383,8 +1153,6 @@ paths:
       - movie
   /api/movies/{id}:
     delete:
-      consumes:
-      - application/json
       description: Deletes Movies from all lists
       parameters:
       - description: 'Movie ID: ex. 1'
@@ -1392,13 +1160,6 @@ paths:
         name: id
         required: true
         type: integer
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -1413,17 +1174,7 @@ paths:
       - movie
   /api/movies/all/refresh:
     get:
-      consumes:
-      - application/json
       description: Refreshes Movie Metadata
-      parameters:
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -1438,8 +1189,6 @@ paths:
       - movie
   /api/movies/all/refresh/{id}:
     get:
-      consumes:
-      - application/json
       description: Refreshes specific Movie Metadata
       parameters:
       - description: Movie ID
@@ -1447,13 +1196,6 @@ paths:
         name: id
         required: true
         type: integer
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -1468,17 +1210,7 @@ paths:
       - movie
   /api/movies/all/refreshall:
     get:
-      consumes:
-      - application/json
       description: Refreshes Movie Metadata
-      parameters:
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -1493,8 +1225,6 @@ paths:
       - movie
   /api/movies/job/{job}:
     get:
-      consumes:
-      - application/json
       description: Starts a Job
       parameters:
       - description: 'Job Name one of: rss, data, datafull, checkmissing, checkmissingflag,
@@ -1505,13 +1235,6 @@ paths:
         name: job
         required: true
         type: string
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -1530,8 +1253,6 @@ paths:
       - movie
   /api/movies/job/{job}/{name}:
     get:
-      consumes:
-      - application/json
       description: Starts a Job
       parameters:
       - description: 'Job Name one of: rss, data, datafull, checkmissing, checkmissingflag,
@@ -1547,13 +1268,6 @@ paths:
         name: name
         required: true
         type: string
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -1572,8 +1286,6 @@ paths:
       - movie
   /api/movies/list:
     post:
-      consumes:
-      - application/json
       description: Updates or creates a movie in a list
       parameters:
       - description: Movie
@@ -1582,13 +1294,6 @@ paths:
         required: true
         schema:
           $ref: '#/definitions/database.MovieJson'
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -1607,8 +1312,6 @@ paths:
       - movie
   /api/movies/list/{id}:
     delete:
-      consumes:
-      - application/json
       description: Deletes a Movie from a list
       parameters:
       - description: 'Movie ID: ex. 1'
@@ -1616,13 +1319,6 @@ paths:
         name: id
         required: true
         type: integer
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -1637,8 +1333,6 @@ paths:
       - movie
   /api/movies/list/{name}:
     get:
-      consumes:
-      - application/json
       description: Lists Movies from a list
       parameters:
       - description: 'List Name: ex. EN'
@@ -1658,13 +1352,6 @@ paths:
         in: query
         name: order
         type: string
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -1681,8 +1368,6 @@ paths:
       - movie
   /api/movies/rss/search/list/{group}:
     get:
-      consumes:
-      - application/json
       description: Movie RSS
       parameters:
       - description: Group Name
@@ -1690,13 +1375,6 @@ paths:
         name: group
         required: true
         type: string
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -1711,8 +1389,6 @@ paths:
       - movie
   /api/movies/search/download/{id}:
     post:
-      consumes:
-      - application/json
       description: Downloads a release after select
       parameters:
       - description: 'Nzb: Req. Title, Indexer, imdbid, downloadurl, parseinfo'
@@ -1726,13 +1402,6 @@ paths:
         name: id
         required: true
         type: integer
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -1747,8 +1416,6 @@ paths:
       - movie
   /api/movies/search/history/clear/{name}:
     get:
-      consumes:
-      - application/json
       description: Clear Movies Download History
       parameters:
       - description: List Name
@@ -1756,13 +1423,6 @@ paths:
         name: name
         required: true
         type: string
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -1777,8 +1437,6 @@ paths:
       - movie
   /api/movies/search/history/clearid/{id}:
     get:
-      consumes:
-      - application/json
       description: Clear Episode Download History
       parameters:
       - description: Movie ID
@@ -1786,13 +1444,6 @@ paths:
         name: id
         required: true
         type: string
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -1807,8 +1458,6 @@ paths:
       - movie
   /api/movies/search/id/{id}:
     get:
-      consumes:
-      - application/json
       description: Searches for upgrades and missing
       parameters:
       - description: Movie ID
@@ -1816,13 +1465,6 @@ paths:
         name: id
         required: true
         type: integer
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -1837,8 +1479,6 @@ paths:
       - movie
   /api/movies/search/list/{id}:
     get:
-      consumes:
-      - application/json
       description: Searches for upgrades and missing
       parameters:
       - description: Movie ID
@@ -1855,8 +1495,6 @@ paths:
         in: query
         name: searchByTitle
         type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -1871,15 +1509,8 @@ paths:
       - movie
   /api/movies/unmatched:
     get:
-      consumes:
-      - application/json
       description: List Unmatched Movies
       parameters:
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
       - description: Limit
         in: query
         name: limit
@@ -1892,8 +1523,6 @@ paths:
         in: query
         name: order
         type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -1910,8 +1539,6 @@ paths:
       - movie
   /api/naming:
     post:
-      consumes:
-      - application/json
       description: Test your Naming Convention
       parameters:
       - description: Config
@@ -1920,13 +1547,6 @@ paths:
         required: true
         schema:
           $ref: '#/definitions/api.apiNameInputJson'
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -1945,8 +1565,6 @@ paths:
       - general
   /api/parse/file:
     post:
-      consumes:
-      - application/json
       description: Parses a file for testing
       parameters:
       - description: To Parse
@@ -1955,13 +1573,6 @@ paths:
         required: true
         schema:
           $ref: '#/definitions/api.apiparse'
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -1980,8 +1591,6 @@ paths:
       - parse
   /api/parse/string:
     post:
-      consumes:
-      - application/json
       description: Parses a string for testing
       parameters:
       - description: To Parse
@@ -1990,13 +1599,6 @@ paths:
         required: true
         schema:
           $ref: '#/definitions/api.apiparse'
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -2015,17 +1617,7 @@ paths:
       - parse
   /api/quality:
     get:
-      consumes:
-      - application/json
       description: List Qualities with regex filters
-      parameters:
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -2041,8 +1633,6 @@ paths:
       tags:
       - quality
     post:
-      consumes:
-      - application/json
       description: Updates or adds a quality
       parameters:
       - description: Quality
@@ -2051,13 +1641,6 @@ paths:
         required: true
         schema:
           $ref: '#/definitions/database.Qualities'
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -2078,8 +1661,6 @@ paths:
       - quality
   /api/quality/{id}:
     delete:
-      consumes:
-      - application/json
       description: Deletes a quality
       parameters:
       - description: Id of Quality to delete
@@ -2087,13 +1668,6 @@ paths:
         name: id
         required: true
         type: string
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -2110,8 +1684,6 @@ paths:
       - quality
   /api/quality/{name}/{config}:
     get:
-      consumes:
-      - application/json
       description: List allowed qualities and their priorities
       parameters:
       - description: 'Quality Name: ex. quality_SD'
@@ -2124,13 +1696,6 @@ paths:
         name: config
         required: true
         type: string
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -2151,17 +1716,7 @@ paths:
       - quality
   /api/queue:
     get:
-      consumes:
-      - application/json
       description: Lists Queued and Started Jobs (but not finished)
-      parameters:
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -2178,8 +1733,6 @@ paths:
       - general
   /api/queue/history:
     get:
-      consumes:
-      - application/json
       description: Lists Started Jobs and finished but not queued jobs
       parameters:
       - description: Limit
@@ -2194,13 +1747,6 @@ paths:
         in: query
         name: order
         type: string
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -2217,17 +1763,7 @@ paths:
       - general
   /api/scheduler/list:
     get:
-      consumes:
-      - application/json
       description: Lists Planned Jobs
-      parameters:
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -2242,17 +1778,7 @@ paths:
       - scheduler
   /api/scheduler/start:
     get:
-      consumes:
-      - application/json
       description: Start all Schedulers
-      parameters:
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -2267,17 +1793,7 @@ paths:
       - scheduler
   /api/scheduler/stop:
     get:
-      consumes:
-      - application/json
       description: Stops all Schedulers
-      parameters:
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -2292,8 +1808,6 @@ paths:
       - scheduler
   /api/series:
     get:
-      consumes:
-      - application/json
       description: List Series
       parameters:
       - description: Limit
@@ -2308,13 +1822,6 @@ paths:
         in: query
         name: order
         type: string
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -2330,8 +1837,6 @@ paths:
       tags:
       - series
     post:
-      consumes:
-      - application/json
       description: Updates or creates a series
       parameters:
       - description: Series
@@ -2340,13 +1845,6 @@ paths:
         required: true
         schema:
           $ref: '#/definitions/database.Dbserie'
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -2365,8 +1863,6 @@ paths:
       - series
   /api/series/{id}:
     delete:
-      consumes:
-      - application/json
       description: Delete Series
       parameters:
       - description: Series ID
@@ -2374,13 +1870,6 @@ paths:
         name: id
         required: true
         type: integer
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -2395,8 +1884,6 @@ paths:
       - series
   /api/series/{name}:
     get:
-      consumes:
-      - application/json
       description: List Series
       parameters:
       - description: List Name
@@ -2416,13 +1903,6 @@ paths:
         in: query
         name: order
         type: string
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -2439,17 +1919,7 @@ paths:
       - series
   /api/series/all/refresh:
     get:
-      consumes:
-      - application/json
       description: Refreshes Series Metadata
-      parameters:
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -2464,8 +1934,6 @@ paths:
       - series
   /api/series/all/refresh/{id}:
     get:
-      consumes:
-      - application/json
       description: Refreshes Series Metadata
       parameters:
       - description: Serie ID
@@ -2473,13 +1941,6 @@ paths:
         name: id
         required: true
         type: integer
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -2494,17 +1955,7 @@ paths:
       - series
   /api/series/all/refreshall:
     get:
-      consumes:
-      - application/json
       description: Refreshes Series Metadata
-      parameters:
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -2519,8 +1970,6 @@ paths:
       - series
   /api/series/episodes:
     get:
-      consumes:
-      - application/json
       description: List episodes
       parameters:
       - description: Limit
@@ -2535,13 +1984,6 @@ paths:
         in: query
         name: order
         type: string
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -2557,8 +1999,6 @@ paths:
       tags:
       - series
     post:
-      consumes:
-      - application/json
       description: Updates or creates a episode
       parameters:
       - description: Episode
@@ -2572,8 +2012,6 @@ paths:
         name: apikey
         required: true
         type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -2592,8 +2030,6 @@ paths:
       - series
   /api/series/episodes/{id}:
     delete:
-      consumes:
-      - application/json
       description: Delete Series Episode
       parameters:
       - description: Episode ID
@@ -2601,13 +2037,6 @@ paths:
         name: id
         required: true
         type: integer
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -2621,8 +2050,6 @@ paths:
       tags:
       - series
     get:
-      consumes:
-      - application/json
       description: List episodes
       parameters:
       - description: Series ID
@@ -2642,13 +2069,6 @@ paths:
         in: query
         name: order
         type: string
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -2665,8 +2085,6 @@ paths:
       - series
   /api/series/episodes/list:
     post:
-      consumes:
-      - application/json
       description: Updates or creates a episode
       parameters:
       - description: Episode
@@ -2680,8 +2098,6 @@ paths:
         name: apikey
         required: true
         type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -2700,8 +2116,6 @@ paths:
       - series
   /api/series/episodes/list/{id}:
     delete:
-      consumes:
-      - application/json
       description: Delete Series Episode
       parameters:
       - description: Episode ID
@@ -2709,13 +2123,6 @@ paths:
         name: id
         required: true
         type: integer
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -2729,8 +2136,6 @@ paths:
       tags:
       - series
     get:
-      consumes:
-      - application/json
       description: List episodes
       parameters:
       - description: Series ID
@@ -2750,13 +2155,6 @@ paths:
         in: query
         name: order
         type: string
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -2773,8 +2171,6 @@ paths:
       - series
   /api/series/episodes/search/download/{id}:
     post:
-      consumes:
-      - application/json
       description: Downloads a release after select
       parameters:
       - description: 'Nzb: Req. Title, Indexer, tvdbid, downloadurl, parseinfo'
@@ -2788,13 +2184,6 @@ paths:
         name: id
         required: true
         type: integer
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -2809,8 +2198,6 @@ paths:
       - series
   /api/series/episodes/search/id/{id}:
     get:
-      consumes:
-      - application/json
       description: Searches for upgrades and missing
       parameters:
       - description: Episode ID
@@ -2818,13 +2205,6 @@ paths:
         name: id
         required: true
         type: integer
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -2839,8 +2219,6 @@ paths:
       - series
   /api/series/episodes/search/list/{id}:
     get:
-      consumes:
-      - application/json
       description: Searches for upgrades and missing
       parameters:
       - description: Episode ID
@@ -2857,8 +2235,6 @@ paths:
         in: query
         name: searchByTitle
         type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -2873,8 +2249,6 @@ paths:
       - series
   /api/series/job/{job}:
     get:
-      consumes:
-      - application/json
       description: Starts a Job
       parameters:
       - description: 'Job Name one of: rss, data, datafull, checkmissing, checkmissingflag,
@@ -2885,13 +2259,6 @@ paths:
         name: job
         required: true
         type: string
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -2910,8 +2277,6 @@ paths:
       - series
   /api/series/job/{job}/{name}:
     get:
-      consumes:
-      - application/json
       description: Starts a Job
       parameters:
       - description: 'Job Name one of: rss, data, datafull, checkmissing, checkmissingflag,
@@ -2927,13 +2292,6 @@ paths:
         name: name
         required: true
         type: string
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -2952,8 +2310,6 @@ paths:
       - series
   /api/series/list:
     post:
-      consumes:
-      - application/json
       description: Updates or creates a series
       parameters:
       - description: Series
@@ -2962,13 +2318,6 @@ paths:
         required: true
         schema:
           $ref: '#/definitions/database.SerieJson'
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -2987,8 +2336,6 @@ paths:
       - series
   /api/series/list/{id}:
     delete:
-      consumes:
-      - application/json
       description: Delete Series
       parameters:
       - description: Series ID
@@ -2996,13 +2343,6 @@ paths:
         name: id
         required: true
         type: integer
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -3017,8 +2357,6 @@ paths:
       - series
   /api/series/rss/search/list/{group}:
     get:
-      consumes:
-      - application/json
       description: Series RSS
       parameters:
       - description: Group Name
@@ -3026,13 +2364,6 @@ paths:
         name: group
         required: true
         type: string
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -3047,8 +2378,6 @@ paths:
       - series
   /api/series/search/history/clear/{name}:
     get:
-      consumes:
-      - application/json
       description: Clear Episode Download History
       parameters:
       - description: List Name
@@ -3056,13 +2385,6 @@ paths:
         name: name
         required: true
         type: string
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -3077,8 +2399,6 @@ paths:
       - series
   /api/series/search/history/clearid/{id}:
     get:
-      consumes:
-      - application/json
       description: Clear Episode Download History
       parameters:
       - description: Episode ID
@@ -3086,13 +2406,6 @@ paths:
         name: id
         required: true
         type: string
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -3107,8 +2420,6 @@ paths:
       - series
   /api/series/search/id/{id}:
     get:
-      consumes:
-      - application/json
       description: Searches for upgrades and missing
       parameters:
       - description: Series ID
@@ -3116,13 +2427,6 @@ paths:
         name: id
         required: true
         type: integer
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -3132,13 +2436,11 @@ paths:
           description: Unauthorized
           schema:
             type: string
-      summary: Search a series
+      summary: Search a series (all seasons)
       tags:
       - series
   /api/series/search/id/{id}/{season}:
     get:
-      consumes:
-      - application/json
       description: Searches for upgrades and missing
       parameters:
       - description: Series ID
@@ -3151,13 +2453,6 @@ paths:
         name: season
         required: true
         type: string
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -3167,13 +2462,11 @@ paths:
           description: Unauthorized
           schema:
             type: string
-      summary: Search a series
+      summary: Search a series (one season)
       tags:
       - series
   /api/series/searchrss/id/{id}:
     get:
-      consumes:
-      - application/json
       description: Searches for upgrades and missing
       parameters:
       - description: Series ID
@@ -3181,13 +2474,6 @@ paths:
         name: id
         required: true
         type: integer
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -3197,13 +2483,11 @@ paths:
           description: Unauthorized
           schema:
             type: string
-      summary: Search a series
+      summary: Search a series (any season - one search call)
       tags:
       - series
   /api/series/searchrss/id/{id}/{season}:
     get:
-      consumes:
-      - application/json
       description: Searches for upgrades and missing
       parameters:
       - description: Series ID
@@ -3216,13 +2500,6 @@ paths:
         name: season
         required: true
         type: string
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -3232,13 +2509,11 @@ paths:
           description: Unauthorized
           schema:
             type: string
-      summary: Search a series
+      summary: Search a series (one season - one search call)
       tags:
       - series
   /api/series/unmatched:
     get:
-      consumes:
-      - application/json
       description: List Unmatched episodes
       parameters:
       - description: Limit
@@ -3253,13 +2528,6 @@ paths:
         in: query
         name: order
         type: string
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -3276,8 +2544,6 @@ paths:
       - series
   /api/structure:
     post:
-      consumes:
-      - application/json
       description: Structure a single folder
       parameters:
       - description: Config
@@ -3286,13 +2552,6 @@ paths:
         required: true
         schema:
           $ref: '#/definitions/api.apiStructureJson'
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -3311,17 +2570,7 @@ paths:
       - general
   /api/trakt/authorize:
     get:
-      consumes:
-      - application/json
-      description: List Qualities with regex filters
-      parameters:
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
+      description: Get trakt auth url
       responses:
         "200":
           description: OK
@@ -3331,27 +2580,18 @@ paths:
           description: Unauthorized
           schema:
             type: string
-      summary: Trakt Auhtorize
+      summary: Trakt Authorize
       tags:
       - general
   /api/trakt/token/{code}:
     get:
-      consumes:
-      - application/json
       description: Saves Trakt token after Authorization
       parameters:
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
       - description: code
         in: path
         name: code
         required: true
         type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -3366,8 +2606,6 @@ paths:
       - general
   /api/trakt/user/{user}/{list}:
     get:
-      consumes:
-      - application/json
       description: Get User List
       parameters:
       - description: Trakt Username
@@ -3380,13 +2618,6 @@ paths:
         name: list
         required: true
         type: string
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      produces:
-      - application/json
       responses:
         "200":
           description: OK
@@ -3399,6 +2630,14 @@ paths:
       summary: Trakt Get List (Auth Test)
       tags:
       - general
+produces:
+- application/json
 schemes:
 - http
+- https
+securityDefinitions:
+  ApiKeyAuth:
+    in: query
+    name: apikey
+    type: apiKey
 swagger: "2.0"
