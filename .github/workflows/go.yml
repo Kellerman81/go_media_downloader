@@ -17,9 +17,12 @@ jobs:
       uses: actions/setup-go@v2
       with:
         go-version: 1.17
+    
+    - id: commit
+      uses: pr-mpt/actions-commit-hash@v1
 
     - name: Build with xgo
-      uses: crazy-max/ghaction-xgo@v1
+      uses: crazy-max/ghaction-xgo@v1.6.1
       with:
           dest: .
           prefix: go_media_downloader
@@ -27,11 +30,11 @@ jobs:
           v: true
           x: false
           race: false
-          ldflags: -s -w
+          ldflags: -s -w -X 'main.version=0.1' -X 'main.githash=${{ steps.commit.outputs.short }}' -X 'main.buildstamp=`$(date)`'
           buildmode: default
     
     - name: Build with xgo imdb
-      uses: crazy-max/ghaction-xgo@v1
+      uses: crazy-max/ghaction-xgo@v1.6.1
       with:
           dest: .
           prefix: imdb
