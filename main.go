@@ -46,6 +46,9 @@ import (
 // @name                        apikey
 // @Accept                      json
 // @Produce                     json
+var version string
+var buildstamp string
+var githash string
 
 func main() {
 	//debug.SetGCPercent(30)
@@ -69,6 +72,8 @@ func main() {
 		LogCompress:  cfg_general.LogCompress,
 	})
 	logger.Log.Infoln("Starting go_media_downloader")
+	logger.Log.Infoln("Version: " + version + " " + githash)
+	logger.Log.Infoln("Build Date: " + buildstamp)
 	logger.Log.Infoln("Programmer: kellerman81")
 	logger.Log.Infoln("Hint: Set Loglevel to Debug to see possible API Paths")
 	logger.Log.Infoln("------------------------------")
