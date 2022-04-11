@@ -30,7 +30,7 @@ jobs:
           v: true
           x: false
           race: false
-          ldflags: -s -w -X 'main.version=0.1' -X 'main.githash=${{ steps.commit.outputs.short }}' -X 'main.buildstamp=`$(date)`'
+          ldflags: -s -w -X 'main.version=0.1' -X 'main.githash=${{ steps.commit.outputs.short }}' -X 'main.buildstamp=$(date)'
           buildmode: default
     
     - name: Build with xgo imdb
