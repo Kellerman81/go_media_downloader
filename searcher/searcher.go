@@ -317,14 +317,14 @@ func SearchSerieMissing(configTemplate string, jobcount int, titlesearch bool) {
 		OrderBy:   "Lastscan asc",
 		InnerJoin: "dbserie_episodes on dbserie_episodes.id=serie_episodes.Dbserie_episode_id inner join series on series.id=serie_episodes.serie_id"}
 	if scaninterval != 0 {
-		qu.Where = "serie_episodes.missing = 1 AND ((dbserie_episodes.Season != '0' and series.search_specials=0) or (series.search_specials=1)) and series.listname in (?" + strings.Repeat(",?", len(lists)-1) + ") AND (serie_episodes.lastscan is null or serie_episodes.Lastscan < ?)"
+		qu.Where = "serie_episodes.missing = 1 AND ((dbserie_episodes.Season != '0' and series.search_specials=0) or (series.search_specials=1)) and series.listname in (?" + strings.Repeat(",?", len(lists)-1) + ") AND (serie_episodes.lastscan is null or serie_episodes.Lastscan < ?) and serie_episodes.dbserie_episode_id in (SELECT id FROM dbserie_episodes GROUP BY dbserie_id, identifier HAVING COUNT(*) = 1)"
 		qu.WhereArgs = argsscan
 		if scandatepre != 0 {
 			qu.Where += " and (dbserie_episodes.first_aired < ? or dbserie_episodes.first_aired is null)"
 			qu.WhereArgs = append(argsscan, time.Now().AddDate(0, 0, 0+scandatepre))
 		}
 	} else {
-		qu.Where = "serie_episodes.missing = 1 AND ((dbserie_episodes.Season != '0' and series.search_specials=0) or (series.search_specials=1)) and series.listname in (?" + strings.Repeat(",?", len(lists)-1) + ")"
+		qu.Where = "serie_episodes.missing = 1 AND ((dbserie_episodes.Season != '0' and series.search_specials=0) or (series.search_specials=1)) and series.listname in (?" + strings.Repeat(",?", len(lists)-1) + ") and serie_episodes.dbserie_episode_id in (SELECT id FROM dbserie_episodes GROUP BY dbserie_id, identifier HAVING COUNT(*) = 1)"
 		qu.WhereArgs = argslist
 		if scandatepre != 0 {
 			qu.Where += " and (dbserie_episodes.first_aired < ? or dbserie_episodes.first_aired is null)"
@@ -340,14 +340,14 @@ func SearchSerieMissing(configTemplate string, jobcount int, titlesearch bool) {
 	argsscan = nil
 	swg := sizedwaitgroup.New(cfg_general.WorkerSearch)
 	for idx := range missingepisode {
-		dbepi, dbepierr := database.GetDbserieEpisodes(database.Query{Select: "identifier, dbserie_id", Where: "id=?", WhereArgs: []interface{}{missingepisode[idx].DbserieEpisodeID}})
-		if dbepierr != nil {
-			continue
-		}
-		epicount, _ := database.CountRowsStatic("Select count(id) from dbserie_episodes where identifier=? COLLATE NOCASE and dbserie_id=?", dbepi.Identifier, dbepi.DbserieID)
-		if epicount >= 2 {
-			continue
-		}
+		// dbepi, dbepierr := database.GetDbserieEpisodes(database.Query{Select: "identifier, dbserie_id", Where: "id=?", WhereArgs: []interface{}{missingepisode[idx].DbserieEpisodeID}})
+		// if dbepierr != nil {
+		// 	continue
+		// }
+		// epicount, _ := database.CountRowsStatic("Select count(id) from dbserie_episodes where identifier=? COLLATE NOCASE and dbserie_id=?", dbepi.Identifier, dbepi.DbserieID)
+		// if epicount >= 2 {
+		// 	continue
+		// }
 		swg.Add()
 		go func(missing database.SerieEpisode) {
 			SearchSerieEpisodeSingle(missing, configTemplate, titlesearch)
@@ -392,10 +392,10 @@ func SearchSerieUpgrade(configTemplate string, jobcount int, titlesearch bool) {
 
 	qu := database.Query{Select: "Serie_episodes.*", OrderBy: "Lastscan asc", InnerJoin: "dbserie_episodes on dbserie_episodes.id=serie_episodes.Dbserie_episode_id inner join series on series.id=serie_episodes.serie_id"}
 	if scaninterval != 0 {
-		qu.Where = "serie_episodes.missing = 0 AND serie_episodes.quality_reached = 0 AND ((dbserie_episodes.Season != '0' and series.search_specials=0) or (series.search_specials=1)) and series.listname in (?" + strings.Repeat(",?", len(lists)-1) + ") AND (serie_episodes.lastscan is null or serie_episodes.Lastscan < ?)"
+		qu.Where = "serie_episodes.missing = 0 AND serie_episodes.quality_reached = 0 AND ((dbserie_episodes.Season != '0' and series.search_specials=0) or (series.search_specials=1)) and series.listname in (?" + strings.Repeat(",?", len(lists)-1) + ") AND (serie_episodes.lastscan is null or serie_episodes.Lastscan < ?) and serie_episodes.dbserie_episode_id in (SELECT id FROM dbserie_episodes GROUP BY dbserie_id, identifier HAVING COUNT(*) = 1)"
 		qu.WhereArgs = argsscan
 	} else {
-		qu.Where = "serie_episodes.missing = 0 AND serie_episodes.quality_reached = 0 AND ((dbserie_episodes.Season != '0' and series.search_specials=0) or (series.search_specials=1)) and series.listname in (?" + strings.Repeat(",?", len(lists)-1) + ")"
+		qu.Where = "serie_episodes.missing = 0 AND serie_episodes.quality_reached = 0 AND ((dbserie_episodes.Season != '0' and series.search_specials=0) or (series.search_specials=1)) and series.listname in (?" + strings.Repeat(",?", len(lists)-1) + ") and serie_episodes.dbserie_episode_id in (SELECT id FROM dbserie_episodes GROUP BY dbserie_id, identifier HAVING COUNT(*) = 1)"
 		qu.WhereArgs = args
 	}
 	if jobcount >= 1 {
@@ -407,14 +407,14 @@ func SearchSerieUpgrade(configTemplate string, jobcount int, titlesearch bool) {
 	argsscan = nil
 	swg := sizedwaitgroup.New(cfg_general.WorkerSearch)
 	for idx := range missingepisode {
-		dbepi, dbepierr := database.GetDbserieEpisodes(database.Query{Select: "identifier, dbserie_id", Where: "id=?", WhereArgs: []interface{}{missingepisode[idx].DbserieEpisodeID}})
-		if dbepierr != nil {
-			continue
-		}
-		epicount, _ := database.CountRowsStatic("Select count(id) from dbserie_episodes where identifier=? COLLATE NOCASE and dbserie_id=?", dbepi.Identifier, dbepi.DbserieID)
-		if epicount >= 2 {
-			continue
-		}
+		// dbepi, dbepierr := database.GetDbserieEpisodes(database.Query{Select: "identifier, dbserie_id", Where: "id=?", WhereArgs: []interface{}{missingepisode[idx].DbserieEpisodeID}})
+		// if dbepierr != nil {
+		// 	continue
+		// }
+		// epicount, _ := database.CountRowsStatic("Select count(id) from dbserie_episodes where identifier=? COLLATE NOCASE and dbserie_id=?", dbepi.Identifier, dbepi.DbserieID)
+		// if epicount >= 2 {
+		// 	continue
+		// }
 		swg.Add()
 		go func(missing database.SerieEpisode) {
 			SearchSerieEpisodeSingle(missing, configTemplate, titlesearch)
