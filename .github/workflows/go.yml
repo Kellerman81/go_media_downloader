@@ -20,7 +20,15 @@ jobs:
     
     - id: commit
       uses: pr-mpt/actions-commit-hash@v1
+    
+    - name: Get current version
+      id: version
+      run: echo "::set-output name=version::0.1"
 
+    - name: Get current date
+      id: date
+      run: echo "::set-output name=date::$(date +'%Y-%m-%d')"
+    
     - name: Build with xgo
       uses: crazy-max/ghaction-xgo@v1.6.1
       with:
@@ -30,7 +38,7 @@ jobs:
           v: true
           x: false
           race: false
-          ldflags: -s -w -X 'main.version=0.1' -X 'main.githash=${{ steps.commit.outputs.short }}' -X 'main.buildstamp=$(date)'
+          ldflags: -s -w -X 'main.version=${{ steps.version.outputs.version }}' -X 'main.githash=${{ steps.commit.outputs.short }}' -X 'main.buildstamp=${{ steps.date.outputs.date }}'
           buildmode: default
     
     - name: Build with xgo imdb
@@ -42,7 +50,7 @@ jobs:
           v: true
           x: false
           race: false
-          ldflags: -s -w
+          ldflags: -s -w -X 'main.version=${{ steps.version.outputs.version }}' -X 'main.githash=${{ steps.commit.outputs.short }}' -X 'main.buildstamp=${{ steps.date.outputs.date }}
           buildmode: default
           working_dir: imdb
     

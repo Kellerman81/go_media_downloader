@@ -30,6 +30,10 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
+var version string
+var buildstamp string
+var githash string
+
 func csvsetdefault(instr string, def string) string {
 	if instr == `\N` {
 		instr = def
@@ -166,6 +170,7 @@ func initImdbdb(dbloglevel string, dbfile string) *sqlx.DB {
 // }
 
 func main() {
+	fmt.Println("Imdb Importer by kellerman81 - version " + version + " " + githash + " from " + buildstamp)
 	var cfg_imdb imdbConfig = LoadCfgDataDB()
 	fmt.Println("Started Imdb Import")
 	titlemap := make(map[string]bool, 10)
