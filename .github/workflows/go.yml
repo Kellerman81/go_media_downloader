@@ -66,7 +66,7 @@ jobs:
       with:
         type: 'zip'
         filename: 'develop-windows-x86.zip'
-        exclusions: '*.git* /.github/* /api/* /apiexternal/* /config/*.go /database/* /downloader/* /goadmin/* /imdb/* /importfeed/* /logger/* /newznab/* /nzbget/* /parser/* /sabnzbd/* /scanner/* /scheduler/* /searcher/* /sizedwaitgroup/* /slidingwindow/* /structure/* /tasks/* /utils/* /views/* Dockerfile go.* *.zip *.go go_media_downloader-*'
+        exclusions: '*.git* /.github/* /pkg/* Dockerfile go.* *.zip *.go go_media_downloader-*'
 
     - name: Rename Win64 binary
       run: mv ./pkg/imdb/imdb-windows-4.0-amd64.exe init_imdb.exe
@@ -79,7 +79,7 @@ jobs:
       with:
         type: 'zip'
         filename: 'develop-windows-x64.zip'
-        exclusions: '*.git* /.github/* /api/* /apiexternal/* /config/*.go /database/* /downloader/* /goadmin/* /imdb/* /importfeed/* /logger/* /newznab/* /nzbget/* /parser/* /sabnzbd/* /scanner/* /scheduler/* /searcher/* /sizedwaitgroup/* /slidingwindow/* /structure/* /tasks/* /utils/* /views/* Dockerfile go.* *.zip *.go go_media_downloader-*'
+        exclusions: '*.git* /.github/* /pkg/* Dockerfile go.* *.zip *.go go_media_downloader-*'
 
     - name: Remove Win binary
       run: rm init_imdb.exe
@@ -98,7 +98,7 @@ jobs:
       with:
         type: 'zip'
         filename: 'develop-linux-x86.zip'
-        exclusions: '*.git* /.github/* /api/* /apiexternal/* /config/*.go /database/* /downloader/* /goadmin/* /imdb/* /importfeed/* /logger/* /newznab/* /nzbget/* /parser/* /sabnzbd/* /scanner/* /scheduler/* /searcher/* /sizedwaitgroup/* /slidingwindow/* /structure/* /tasks/* /utils/* /views/* Dockerfile go.* *.zip *.go go_media_downloader-*'
+        exclusions: '*.git* /.github/* /pkg/* Dockerfile go.* *.zip *.go go_media_downloader-*'
 
     - name: Rename Linux64 binary
       run: mv ./pkg/imdb/imdb-linux-amd64 init_imdb
@@ -111,7 +111,7 @@ jobs:
       with:
         type: 'zip'
         filename: 'develop-linux-x64.zip'
-        exclusions: '*.git* /.github/* /api/* /apiexternal/* /config/*.go /database/* /downloader/* /goadmin/* /imdb/* /importfeed/* /logger/* /newznab/* /nzbget/* /parser/* /sabnzbd/* /scanner/* /scheduler/* /searcher/* /sizedwaitgroup/* /slidingwindow/* /structure/* /tasks/* /utils/* /views/* Dockerfile go.* *.zip *.go go_media_downloader-*'
+        exclusions: '*.git* /.github/* /pkg/* Dockerfile go.* *.zip *.go go_media_downloader-*'
     
     - name: Rename Mac64 binary
       run: mv ./pkg/imdb/imdb-darwin-10.16-amd64 init_imdb
@@ -124,7 +124,7 @@ jobs:
       with:
         type: 'zip'
         filename: 'develop-macos-x64.zip'
-        exclusions: '*.git* /.github/* /api/* /apiexternal/* /config/*.go /database/* /downloader/* /goadmin/* /imdb/* /importfeed/* /logger/* /newznab/* /nzbget/* /parser/* /sabnzbd/* /scanner/* /scheduler/* /searcher/* /sizedwaitgroup/* /slidingwindow/* /structure/* /tasks/* /utils/* /views/* Dockerfile go.* *.zip *.go go_media_downloader-*'
+        exclusions: '*.git* /.github/* /pkg/* Dockerfile go.* *.zip *.go go_media_downloader-*'
 
     - name: Development Release
       if: ${{ github.event_name == 'push' }}
