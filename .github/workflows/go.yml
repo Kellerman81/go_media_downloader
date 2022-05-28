@@ -23,7 +23,7 @@ jobs:
     
     - name: Get current version
       id: version
-      run: echo "::set-output name=version::0.1"
+      run: echo "::set-output name=version::0.1.1"
 
     - name: Get current date
       id: date
@@ -40,6 +40,7 @@ jobs:
           race: false
           ldflags: -s -w -X 'main.version=${{ steps.version.outputs.version }}' -X 'main.githash=${{ steps.commit.outputs.short }}' -X 'main.buildstamp=${{ steps.date.outputs.date }}'
           buildmode: default
+          working_dir: pkg/main
     
     - name: Build with xgo imdb
       uses: crazy-max/ghaction-xgo@v1.6.1
@@ -52,13 +53,13 @@ jobs:
           race: false
           ldflags: -s -w -X 'main.version=${{ steps.version.outputs.version }}' -X 'main.githash=${{ steps.commit.outputs.short }}' -X 'main.buildstamp=${{ steps.date.outputs.date }}'
           buildmode: default
-          working_dir: imdb
+          working_dir: pkg/imdb
     
     - name: Rename Win32 binary
-      run: mv ./imdb/imdb-windows-4.0-386.exe init_imdb.exe
+      run: mv ./pkg/imdb/imdb-windows-4.0-386.exe init_imdb.exe
 
     - name: Rename Win32 binary dl
-      run: mv ./go_media_downloader-windows-4.0-386.exe go_media_downloader.exe
+      run: mv ./pkg/main/go_media_downloader-windows-4.0-386.exe go_media_downloader.exe
 
     - name: Zip Win32 binary
       uses: thedoctor0/zip-release@master
@@ -68,10 +69,10 @@ jobs:
         exclusions: '*.git* /.github/* /api/* /apiexternal/* /config/*.go /database/* /downloader/* /goadmin/* /imdb/* /importfeed/* /logger/* /newznab/* /nzbget/* /parser/* /sabnzbd/* /scanner/* /scheduler/* /searcher/* /sizedwaitgroup/* /slidingwindow/* /structure/* /tasks/* /utils/* /views/* Dockerfile go.* *.zip *.go go_media_downloader-*'
 
     - name: Rename Win64 binary
-      run: mv ./imdb/imdb-windows-4.0-amd64.exe init_imdb.exe
+      run: mv ./pkg/imdb/imdb-windows-4.0-amd64.exe init_imdb.exe
 
     - name: Rename Win64 binary dl
-      run: mv ./go_media_downloader-windows-4.0-amd64.exe go_media_downloader.exe
+      run: mv ./pkg/main/go_media_downloader-windows-4.0-amd64.exe go_media_downloader.exe
 
     - name: Zip Win64 binary
       uses: thedoctor0/zip-release@master
@@ -87,10 +88,10 @@ jobs:
       run: rm ./go_media_downloader.exe
 
     - name: Rename Linux32 binary
-      run: mv ./imdb/imdb-linux-386 init_imdb
+      run: mv ./pkg/imdb/imdb-linux-386 init_imdb
 
     - name: Rename Linux32 binary dl
-      run: mv ./go_media_downloader-linux-386 go_media_downloader
+      run: mv ./pkg/main/go_media_downloader-linux-386 go_media_downloader
 
     - name: Zip Linux32 binary
       uses: thedoctor0/zip-release@master
@@ -100,10 +101,10 @@ jobs:
         exclusions: '*.git* /.github/* /api/* /apiexternal/* /config/*.go /database/* /downloader/* /goadmin/* /imdb/* /importfeed/* /logger/* /newznab/* /nzbget/* /parser/* /sabnzbd/* /scanner/* /scheduler/* /searcher/* /sizedwaitgroup/* /slidingwindow/* /structure/* /tasks/* /utils/* /views/* Dockerfile go.* *.zip *.go go_media_downloader-*'
 
     - name: Rename Linux64 binary
-      run: mv ./imdb/imdb-linux-amd64 init_imdb
+      run: mv ./pkg/imdb/imdb-linux-amd64 init_imdb
 
     - name: Rename Linux64 binary dl
-      run: mv ./go_media_downloader-linux-amd64 go_media_downloader
+      run: mv ./pkg/main/go_media_downloader-linux-amd64 go_media_downloader
 
     - name: Zip Linux64 binary
       uses: thedoctor0/zip-release@master
@@ -113,10 +114,10 @@ jobs:
         exclusions: '*.git* /.github/* /api/* /apiexternal/* /config/*.go /database/* /downloader/* /goadmin/* /imdb/* /importfeed/* /logger/* /newznab/* /nzbget/* /parser/* /sabnzbd/* /scanner/* /scheduler/* /searcher/* /sizedwaitgroup/* /slidingwindow/* /structure/* /tasks/* /utils/* /views/* Dockerfile go.* *.zip *.go go_media_downloader-*'
     
     - name: Rename Mac64 binary
-      run: mv ./imdb/imdb-darwin-10.16-amd64 init_imdb
+      run: mv ./pkg/imdb/imdb-darwin-10.16-amd64 init_imdb
 
     - name: Rename Mac64 binary dl
-      run: mv ./go_media_downloader-darwin-10.16-amd64 go_media_downloader
+      run: mv ./pkg/main/go_media_downloader-darwin-10.16-amd64 go_media_downloader
 
     - name: Zip Mac64 binary
       uses: thedoctor0/zip-release@master
