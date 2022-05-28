@@ -219,21 +219,16 @@ func (su *sabnzbdURL) CallJSON(r interface{}) error {
 
 func (su *sabnzbdURL) CallJSONMultipart(reader io.Reader, contentType string, r interface{}) error {
 	httpClient := &http.Client{Transport: su.rt}
-	//fmt.Printf("POST URL: %s", su.String())
 	resp, err := httpClient.Post(su.String(), contentType, reader)
 	if err != nil {
 		return fmt.Errorf("sabnzbdURL:CallJSONMultipart: failed to post: %s: %v", su.String(), err)
 	}
 	defer resp.Body.Close()
 
-	//fmt.Printf("Status: %v\n", resp.Status)
 	respStr, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		return fmt.Errorf("sabnzbdURL:CallJSONMultipart: failed to read response: %v", err)
 	}
-	//fmt.Printf("Resp: %s\n", respStr)
-
-	//decoder := json.NewDecoder(resp.Body)
 	if err = json.Unmarshal(respStr, r); err != nil {
 		return fmt.Errorf("sabnzbdURL:CallJSONMultipart: failed to decode json: %v: %s", err, string(respStr))
 	}

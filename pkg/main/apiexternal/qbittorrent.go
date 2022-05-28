@@ -24,7 +24,6 @@ func SendToQBittorrent(host string, port string, username string, password strin
 			"savepath": dlpath,
 			"paused":   addpaused,
 		}
-		// perform connection to Deluge server
 		_, err = cl.DownloadFromLink(url, options)
 		if err != nil {
 			fmt.Println(err)
@@ -112,6 +111,7 @@ func (client *qbtClient) postMultipart(endpoint string, buffer bytes.Buffer, con
 
 	resp, err := client.http.Do(req)
 	if err != nil {
+
 		return nil, wrapper.Wrap(err, "failed to perform request")
 	}
 

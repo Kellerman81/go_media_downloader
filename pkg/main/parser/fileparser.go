@@ -2,6 +2,7 @@
 package parser
 
 import (
+	"errors"
 	"regexp"
 	"strconv"
 	"strings"
@@ -64,6 +65,7 @@ func LoadDBPatterns() {
 	for idx := range patterns {
 		if !config.ConfigCheck(patterns[idx].re) {
 			config.RegexAdd(patterns[idx].re, *regexp.MustCompile(patterns[idx].re))
+			logger.Log.Infoln("Config added for: ", patterns[idx].re)
 		}
 	}
 	scanpatterns = patterns
@@ -165,6 +167,105 @@ func NewFileParser(filename string, includeYearInTitle bool, typegroup string) (
 	return m, err
 }
 
+func (s *ParseInfo) Close() {
+	if s == nil {
+		return
+	}
+	if len(s.Languages) >= 1 {
+		s.Languages = nil
+	}
+	s = nil
+}
+
+func (m *ParseInfo) AddMovieIfNotFound(listname string, configTemplate string) (movie uint, err error) {
+	configEntry := config.ConfigGet(configTemplate).Data.(config.MediaTypeConfig)
+	if len(m.Imdb) >= 1 {
+		importfeed.JobImportMovies(database.Dbmovie{ImdbID: m.Imdb}, configTemplate, listname)
+		movie, err = database.QueryColumnUint("Select id from movies where dbmovie_id in (Select id from dbmovies where imdb_id = ?) and  listname = ? COLLATE NOCASE", m.Imdb, listname)
+		if err == nil {
+			return
+		}
+	}
+
+	dbmovie, found, found1 := importfeed.MovieFindDbIdByTitle(m.Title, strconv.Itoa(m.Year), "rss", configEntry.Data[0].AddFound)
+	//getlist, _, entriesfound, dbmovie := importfeed.MovieFindListByTitle(configTemplate, m.Title, strconv.Itoa(m.Year), "rss")
+	if found || found1 {
+		movie, err = database.QueryColumnUint("Select id from movies where dbmovie_id = ? and  listname = ? COLLATE NOCASE", dbmovie, listname)
+		if err != nil {
+			if listname == configEntry.Data[0].AddFoundList && configEntry.Data[0].AddFound {
+				var dbmovieadd database.Dbmovie
+				dbmovieadd.ImdbID, err = database.QueryColumnString("Select imdb_id from dbmovies where id = ?", dbmovie)
+				importfeed.JobImportMovies(dbmovieadd, configTemplate, listname)
+				movie, err = database.QueryColumnUint("Select id from movies where dbmovie_id = ? and  listname = ? COLLATE NOCASE", dbmovie, listname)
+				if err == nil {
+					return
+				}
+				return 0, errors.New("not added")
+			}
+		}
+	} else if listname == configEntry.Data[0].AddFoundList && configEntry.Data[0].AddFound {
+		var dbmovieadd database.Dbmovie
+		dbmovieadd.ImdbID, found, found1 = importfeed.MovieFindImdbIDByTitle(m.Title, strconv.Itoa(m.Year), "rss", configEntry.Data[0].AddFound)
+		importfeed.JobImportMovies(dbmovieadd, configTemplate, listname)
+		movie, err = database.QueryColumnUint("Select id from movies where dbmovie_id = ? and  listname = ? COLLATE NOCASE", dbmovie, listname)
+		if err == nil {
+			return
+		}
+		return 0, errors.New("not added")
+	}
+	return 0, errors.New("no match")
+}
+
+func (m *ParseInfo) Filter_test_quality_wanted(qualityTemplate string, title string) bool {
+	qualityconfig := config.ConfigGet("quality_" + qualityTemplate).Data.(config.QualityConfig)
+	wanted_release_resolution := false
+	for idxqual := range qualityconfig.Wanted_resolution {
+		if strings.EqualFold(qualityconfig.Wanted_resolution[idxqual], m.Resolution) {
+			wanted_release_resolution = true
+			break
+		}
+	}
+
+	if len(qualityconfig.Wanted_resolution) >= 1 && !wanted_release_resolution {
+		logger.Log.Debug("Skipped - unwanted resolution: ", title)
+		return false
+	}
+	wanted_release_quality := false
+	for idxqual := range qualityconfig.Wanted_quality {
+		if strings.EqualFold(qualityconfig.Wanted_quality[idxqual], m.Quality) {
+			wanted_release_quality = true
+			break
+		}
+	}
+	if len(qualityconfig.Wanted_quality) >= 1 && !wanted_release_quality {
+		logger.Log.Debug("Skipped - unwanted quality: ", title)
+		return false
+	}
+	wanted_release_audio := false
+	for idxqual := range qualityconfig.Wanted_audio {
+		if strings.EqualFold(qualityconfig.Wanted_audio[idxqual], m.Audio) {
+			wanted_release_audio = true
+			break
+		}
+	}
+	if len(qualityconfig.Wanted_audio) >= 1 && !wanted_release_audio {
+		logger.Log.Debug("Skipped - unwanted audio: ", title)
+		return false
+	}
+	wanted_release_codec := false
+	for idxqual := range qualityconfig.Wanted_codec {
+		if strings.EqualFold(qualityconfig.Wanted_codec[idxqual], m.Codec) {
+			wanted_release_codec = true
+			break
+		}
+	}
+	if len(qualityconfig.Wanted_codec) >= 1 && !wanted_release_codec {
+		logger.Log.Debug("Skipped - unwanted codec: ", title)
+		return false
+	}
+	return true
+}
+
 func (n *ParseInfo) StripTitlePrefixPostfix(qualityTemplate string) {
 	quality := config.ConfigGet("quality_" + qualityTemplate).Data.(config.QualityConfig)
 
@@ -187,24 +288,45 @@ func before(value string, index int) string {
 	if index <= 0 {
 		return ""
 	}
-	return value[index-1 : index]
+	return strings.Repeat(value[index-1:index], 1)
 }
 
 func after(value string, index int) string {
 	if index >= len(value) {
 		return ""
 	}
-	return value[index : index+1]
+	return strings.Repeat(value[index:index+1], 1)
 }
 
-func (m *ParseInfo) parsegroup(cleanName string, name string, group []string, startIndex int, endIndex int) (int, int) {
+func (m *ParseInfo) parsegroup(cleanName string, name string, startIndex int, endIndex int) (int, int) {
+	var group []string
+	switch name {
+	case "audio":
+		group = database.AudioStr
+	case "codec":
+		group = database.CodecStr
+	case "quality":
+		group = database.QualityStr
+	case "resolution":
+		group = database.ResolutionStr
+	case "extended":
+		group = []string{"extended", "extended cut", "extended.cut", "extended-cut", "extended_cut"}
+	case "proper":
+		group = []string{"proper"}
+	case "repack":
+		group = []string{"repack"}
+	}
+
+	defer logger.ClearVar(&group)
 	tolower := strings.ToLower(cleanName)
+	var index int
+	var substr, substrpre, substrpost string
 	for idx := range group {
 		if strings.Contains(tolower, group[idx]) {
-			index := strings.Index(tolower, group[idx])
-			substr := cleanName[index : index+len(group[idx])]
-			substrpre := before(cleanName, index)
-			substrpost := after(cleanName, index+len(group[idx]))
+			index = strings.Index(tolower, group[idx])
+			substr = strings.Repeat(cleanName[index:index+len(group[idx])], 1)
+			substrpre = before(cleanName, index)
+			substrpost = after(cleanName, index+len(group[idx]))
 			if len(substrpost) >= 1 {
 				if unicode.IsDigit([]rune(substrpost)[0]) || unicode.IsLetter([]rune(substrpost)[0]) {
 					continue
@@ -251,43 +373,19 @@ func (m *ParseInfo) ParseFile(includeYearInTitle bool, typegroup string) error {
 	cleanName = strings.TrimRight(cleanName, "]")
 
 	if !config.ConfigCheck("general") {
-		return nil
+		return errors.New("no general")
 	}
 	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
 
 	if !cfg_general.DisableParserStringMatch {
-		audio := []string{}
-		for idx := range database.Getaudios {
-			audio = append(audio, strings.Split(database.Getaudios[idx].Strings, ",")...)
-		}
-		startIndex, endIndex = m.parsegroup(cleanName, "audio", audio, startIndex, endIndex)
 
-		codec := []string{}
-		for idx := range database.Getcodecs {
-			codec = append(codec, strings.Split(database.Getcodecs[idx].Strings, ",")...)
+		for _, val := range []string{"audio", "codec", "quality", "resolution"} {
+			startIndex, endIndex = m.parsegroup(cleanName, val, startIndex, endIndex)
 		}
-		startIndex, endIndex = m.parsegroup(cleanName, "codec", codec, startIndex, endIndex)
-
-		quality := []string{}
-		for idx := range database.Getqualities {
-			quality = append(quality, strings.Split(database.Getqualities[idx].Strings, ",")...)
-		}
-		startIndex, endIndex = m.parsegroup(cleanName, "quality", quality, startIndex, endIndex)
-
-		resolution := []string{}
-		for idx := range database.Getresolutions {
-			resolution = append(resolution, strings.Split(database.Getresolutions[idx].Strings, ",")...)
-		}
-		startIndex, endIndex = m.parsegroup(cleanName, "resolution", resolution, startIndex, endIndex)
 	}
-	extended := []string{"extended", "extended cut", "extended.cut", "extended-cut", "extended_cut"}
-	startIndex, endIndex = m.parsegroup(cleanName, "extended", extended, startIndex, endIndex)
-
-	proper := []string{"proper"}
-	startIndex, endIndex = m.parsegroup(cleanName, "proper", proper, startIndex, endIndex)
-
-	repack := []string{"repack"}
-	startIndex, endIndex = m.parsegroup(cleanName, "repack", repack, startIndex, endIndex)
+	for _, val := range []string{"extended", "proper", "repack"} {
+		startIndex, endIndex = m.parsegroup(cleanName, val, startIndex, endIndex)
+	}
 
 	tolower := strings.ToLower(cleanName)
 	// fmt.Println(scanpatterns)
@@ -369,14 +467,23 @@ func (m *ParseInfo) ParseFile(includeYearInTitle bool, typegroup string) error {
 			m.Tvdb = matches[matchIdx][scanpatterns[idxpattern].getgroup]
 			m.Tvdb = strings.TrimPrefix(m.Tvdb, "tvdb")
 		case "year":
-			mint, _ := strconv.Atoi(matches[matchIdx][scanpatterns[idxpattern].getgroup])
+			mint, err := strconv.Atoi(matches[matchIdx][scanpatterns[idxpattern].getgroup])
+			if err != nil {
+				continue
+			}
 			m.Year = mint
 		case "season":
-			mint, _ := strconv.Atoi(matches[matchIdx][scanpatterns[idxpattern].getgroup])
+			mint, err := strconv.Atoi(matches[matchIdx][scanpatterns[idxpattern].getgroup])
+			if err != nil {
+				continue
+			}
 			m.Season = mint
 			m.SeasonStr = matches[matchIdx][scanpatterns[idxpattern].getgroup]
 		case "episode":
-			mint, _ := strconv.Atoi(matches[matchIdx][scanpatterns[idxpattern].getgroup])
+			mint, err := strconv.Atoi(matches[matchIdx][scanpatterns[idxpattern].getgroup])
+			if err != nil {
+				continue
+			}
 			m.Episode = mint
 			m.EpisodeStr = matches[matchIdx][scanpatterns[idxpattern].getgroup]
 		case "identifier":
@@ -412,17 +519,19 @@ func (m *ParseInfo) ParseFile(includeYearInTitle bool, typegroup string) error {
 			} else {
 				raw = strstart
 			}
+			rawarr = nil
 		} else {
 			raw = strstart
 		}
 	} else {
-		if strings.Contains(m.File[startIndex:endIndex], "(") {
-			rawarr := strings.Split(m.File[startIndex:endIndex], "(")
+		if strings.Contains(strings.Repeat(m.File[startIndex:endIndex], 1), "(") {
+			rawarr := strings.Split(strings.Repeat(m.File[startIndex:endIndex], 1), "(")
 			if len(rawarr) >= 1 {
 				raw = rawarr[0]
 			} else {
 				raw = strings.Repeat(m.File[startIndex:endIndex], 1)
 			}
+			rawarr = nil
 		} else {
 			raw = strings.Repeat(m.File[startIndex:endIndex], 1)
 		}
@@ -435,7 +544,8 @@ func (m *ParseInfo) ParseFile(includeYearInTitle bool, typegroup string) error {
 	if strings.ContainsRune(cleanName, '.') {
 		cleanName = strings.Replace(cleanName, "_", " ", -1)
 	}
-	cleanName = strings.TrimSuffix(cleanName, " -")
+	cleanName = strings.TrimSpace(cleanName)
+	cleanName = strings.TrimSuffix(cleanName, "-")
 	m.Title = strings.TrimSpace(cleanName)
 
 	return nil
@@ -447,63 +557,18 @@ func (m *ParseInfo) GetPriority(configTemplate string, qualityTemplate string) {
 	}
 	m.QualitySet = qualityTemplate
 
-	resolution_priority := 0
-	quality_priority := 0
-	codec_priority := 0
-	audio_priority := 0
+	m.gettypepriority(m.Resolution, "resolution", qualityTemplate, true)
 
-	typeid, resolution_priority, newname := gettypepriority(m.Resolution, "resolution", qualityTemplate)
-	if typeid != 0 {
-		m.Resolution = newname
-		m.ResolutionID = typeid
-		m.Prio_resolution = resolution_priority
-	} else {
-		m.Resolution = ""
-	}
+	m.gettypepriority(m.Quality, "quality", qualityTemplate, true)
 
-	typeid, quality_priority, newname = gettypepriority(m.Quality, "quality", qualityTemplate)
-	if typeid != 0 {
-		m.Quality = newname
-		m.QualityID = typeid
-		m.Prio_quality = quality_priority
-	} else {
-		m.Quality = ""
-	}
+	m.gettypepriority(m.Codec, "codec", qualityTemplate, true)
 
-	typeid, codec_priority, newname = gettypepriority(m.Codec, "codec", qualityTemplate)
-	if typeid != 0 {
-		m.Codec = newname
-		m.CodecID = typeid
-		m.Prio_codec = codec_priority
-	} else {
-		m.Codec = ""
-	}
-
-	typeid, audio_priority, newname = gettypepriority(m.Audio, "audio", qualityTemplate)
-	if typeid != 0 {
-		m.Audio = newname
-		m.AudioID = typeid
-		m.Prio_audio = audio_priority
-	} else {
-		m.Audio = ""
-	}
+	m.gettypepriority(m.Audio, "audio", qualityTemplate, true)
 
 	configEntry := config.ConfigGet(configTemplate).Data.(config.MediaTypeConfig)
-	typeid, type_priority, newname := getdefaulttypepriority(configEntry.DefaultQuality, "quality", m.QualityID, qualityTemplate)
-	if typeid != 0 {
-		m.Quality = newname
-		m.QualityID = typeid
-		quality_priority = type_priority
-		m.Prio_quality = type_priority
-	}
+	m.getdefaulttypepriority(configEntry.DefaultQuality, "quality", m.QualityID, qualityTemplate, false)
 
-	typeid, type_priority, newname = getdefaulttypepriority(configEntry.DefaultResolution, "resolution", m.ResolutionID, qualityTemplate)
-	if typeid != 0 {
-		m.Resolution = newname
-		m.ResolutionID = typeid
-		resolution_priority = type_priority
-		m.Prio_resolution = type_priority
-	}
+	m.getdefaulttypepriority(configEntry.DefaultResolution, "resolution", m.ResolutionID, qualityTemplate, false)
 
 	m.getcombinedpriority(qualityTemplate)
 
@@ -524,32 +589,20 @@ func (m *ParseInfo) ParseVideoFile(file string, configTemplate string, qualityTe
 		m.QualitySet = qualityTemplate
 	}
 	video, err := NewVideoFile(getFFProbeFilename(), file, false)
-
 	if err == nil {
+		defer logger.ClearVar(&video)
 		logger.Log.Debug("Parsed Video as Audio: ", video.AudioCodec)
 		logger.Log.Debug("Parsed Video as Codec: ", video.VideoCodec)
 		logger.Log.Debug("Parsed Video as Height: ", video.Height)
 		m.Runtime = int(video.Duration)
 		if m.Audio == "" || (!strings.EqualFold(video.AudioCodec, m.Audio) && video.AudioCodec != "") {
-			typeid, audio_priority, newname := gettypepriority(video.AudioCodec, "audio", qualityTemplate)
-			if typeid != 0 {
-				logger.Log.Debug("Changed Audio from ", m.Audio, " to ", video.AudioCodec)
-				m.Audio = newname
-				m.AudioID = typeid
-				m.Prio_audio = audio_priority
-			}
+			m.gettypepriority(video.AudioCodec, "audio", qualityTemplate, false)
 		}
 		if strings.EqualFold(video.VideoCodec, "mpeg4") && strings.EqualFold(video.VideoCodecTagString, "XVID") {
 			video.VideoCodec = video.VideoCodecTagString
 		}
 		if m.Codec == "" || (!strings.EqualFold(video.VideoCodec, m.Codec) && video.VideoCodec != "") {
-			typeid, codec_priority, newname := gettypepriority(video.VideoCodec, "codec", qualityTemplate)
-			if typeid != 0 {
-				logger.Log.Debug("Changed Codec from ", m.Codec, " to ", video.VideoCodec)
-				m.Codec = newname
-				m.CodecID = typeid
-				m.Prio_codec = codec_priority
-			}
+			m.gettypepriority(video.VideoCodec, "codec", qualityTemplate, false)
 		}
 		getreso := ""
 		if video.Height == 360 {
@@ -576,13 +629,7 @@ func (m *ParseInfo) ParseVideoFile(file string, configTemplate string, qualityTe
 		m.Height = video.Height
 		m.Width = video.Width
 		if m.Resolution == "" || !strings.EqualFold(getreso, m.Resolution) {
-			typeid, resolution_priority, newname := gettypepriority(getreso, "resolution", qualityTemplate)
-			if typeid != 0 {
-				logger.Log.Debug("Changed Resolution from ", m.Resolution, " to ", getreso)
-				m.Resolution = newname
-				m.ResolutionID = typeid
-				m.Prio_resolution = resolution_priority
-			}
+			m.gettypepriority(getreso, "resolution", qualityTemplate, false)
 		}
 		m.Languages = video.AudioLanguages
 
@@ -596,7 +643,6 @@ func (m *ParseInfo) ParseVideoFile(file string, configTemplate string, qualityTe
 		if m.Repack {
 			m.Priority = m.Priority + 1
 		}
-
 		return nil
 	} else {
 
@@ -605,60 +651,58 @@ func (m *ParseInfo) ParseVideoFile(file string, configTemplate string, qualityTe
 }
 
 func (m *ParseInfo) GetIDPriority(configTemplate string, qualityTemplate string) {
-	resolution_priority := 0
-	quality_priority := 0
-	codec_priority := 0
-	audio_priority := 0
-
 	configEntry := config.ConfigGet(configTemplate).Data.(config.MediaTypeConfig)
 	if m.ResolutionID != 0 {
-		resolution_priority, _ = gettypeidpriority(m.ResolutionID, "resolution", qualityTemplate)
-		m.Prio_resolution = resolution_priority
+		m.gettypeidpriority(m.ResolutionID, "resolution", qualityTemplate, true)
 	} else {
-		typeid, type_priority, _ := getdefaulttypepriority(configEntry.DefaultResolution, "resolution", m.ResolutionID, qualityTemplate)
-		if typeid != 0 {
-			resolution_priority = type_priority
-			m.Prio_resolution = type_priority
-		}
+		m.getdefaulttypepriority(configEntry.DefaultResolution, "resolution", m.ResolutionID, qualityTemplate, true)
 	}
 	if m.QualityID != 0 {
-		quality_priority, _ = gettypeidpriority(m.QualityID, "quality", qualityTemplate)
-		m.Prio_quality = quality_priority
+		m.gettypeidpriority(m.QualityID, "quality", qualityTemplate, true)
 	} else {
-		typeid, type_priority, _ := getdefaulttypepriority(configEntry.DefaultQuality, "quality", m.QualityID, qualityTemplate)
-		if typeid != 0 {
-			quality_priority = type_priority
-			m.Prio_quality = type_priority
-		}
+		m.getdefaulttypepriority(configEntry.DefaultQuality, "quality", m.QualityID, qualityTemplate, true)
 	}
 	if m.CodecID != 0 {
-		codec_priority, _ = gettypeidpriority(m.CodecID, "codec", qualityTemplate)
-		m.Prio_codec = codec_priority
+		m.gettypeidpriority(m.CodecID, "codec", qualityTemplate, true)
 	}
 	if m.AudioID != 0 {
-		audio_priority, _ = gettypeidpriority(m.AudioID, "audio", qualityTemplate)
-		m.Prio_audio = audio_priority
+		m.gettypeidpriority(m.AudioID, "audio", qualityTemplate, true)
 	}
 
 	m.getcombinedpriority(qualityTemplate)
 
-	Priority := m.Prio_resolution + m.Prio_quality + m.Prio_codec + m.Prio_audio
+	m.Priority = m.Prio_resolution + m.Prio_quality + m.Prio_codec + m.Prio_audio
 	if m.Proper {
-		Priority = Priority + 5
+		m.Priority = m.Priority + 5
 	}
 	if m.Extended {
-		Priority = Priority + 2
+		m.Priority = m.Priority + 2
 	}
 	if m.Repack {
-		Priority = Priority + 1
+		m.Priority = m.Priority + 1
 	}
-
-	m.Priority = Priority
 }
-func gettypepriority(inval string, qualitystringtype string, qualityTemplate string) (id uint, priority int, name string) {
-	qualityconfig := config.ConfigGet("quality_" + qualityTemplate).Data.(config.QualityConfig)
 
+func qualityreorder(qualityReorder []config.QualityReorderConfig, priority int, qualitystringtype string, qualitytypename string) (bool, int) {
+	defer logger.ClearVar(&qualityReorder)
+	found := false
+	for idx := range qualityReorder {
+		if strings.EqualFold(qualityReorder[idx].ReorderType, qualitystringtype) && strings.EqualFold(qualityReorder[idx].Name, qualitytypename) {
+			found = true
+			priority = qualityReorder[idx].Newpriority
+		}
+		if strings.EqualFold(qualityReorder[idx].ReorderType, "position") && strings.EqualFold(qualityReorder[idx].Name, qualitystringtype) {
+			found = true
+			priority = priority * qualityReorder[idx].Newpriority
+		}
+	}
+	return found, priority
+}
+
+func (m *ParseInfo) gettypepriority(inval string, qualitystringtype string, qualityTemplate string, clearname bool) {
+	qualityconfig := config.ConfigGet("quality_" + qualityTemplate).Data.(config.QualityConfig)
 	var qualitytype []database.QualitiesRegex
+	defer logger.ClearVar(&qualitytype)
 	switch qualitystringtype {
 	case "resolution":
 		qualitytype = database.Getresolutions
@@ -670,21 +714,27 @@ func gettypepriority(inval string, qualitystringtype string, qualityTemplate str
 		qualitytype = database.Getaudios
 	}
 	tolower := strings.ToLower(inval)
+	var id uint
+	var priority, index, substrpost_len int
+	var name, substrpre, substrpost string
+	var isokpost, isokpre bool
+	var teststr []string
+	defer logger.ClearVar(&teststr)
 	for idxqual := range qualitytype {
 		if len(qualitytype[idxqual].Strings) >= 1 {
 			if strings.Contains(qualitytype[idxqual].Strings, tolower) {
-				index := strings.Index(qualitytype[idxqual].Strings, tolower)
-				substrpre := ""
+				index = strings.Index(qualitytype[idxqual].Strings, tolower)
+				substrpre = ""
 				if index >= 1 {
-					substrpre = qualitytype[idxqual].Strings[index-1 : index]
+					substrpre = strings.Repeat(qualitytype[idxqual].Strings[index-1:index], 1)
 				}
-				substrpost_len := index + len(inval) + 1
+				substrpost_len = index + len(inval) + 1
 				if len(qualitytype[idxqual].Strings) < substrpost_len {
 					substrpost_len = index + len(inval)
 				}
-				substrpost := qualitytype[idxqual].Strings[index+len(inval) : substrpost_len]
-				isokpost := true
-				isokpre := true
+				substrpost = strings.Repeat(qualitytype[idxqual].Strings[index+len(inval):substrpost_len], 1)
+				isokpost = true
+				isokpre = true
 				if len(substrpost) >= 1 {
 					if unicode.IsDigit([]rune(substrpost)[0]) || unicode.IsLetter([]rune(substrpost)[0]) {
 						isokpost = false
@@ -700,12 +750,12 @@ func gettypepriority(inval string, qualitystringtype string, qualityTemplate str
 					name = qualitytype[idxqual].Name
 					priority = qualitytype[idxqual].Priority
 					if len(qualityconfig.QualityReorder) >= 1 {
-						for idxreorder := range qualityconfig.QualityReorder {
-							if strings.EqualFold(qualityconfig.QualityReorder[idxreorder].Type, qualitystringtype) && strings.EqualFold(qualityconfig.QualityReorder[idxreorder].Name, qualitytype[idxqual].Name) {
-								priority = qualityconfig.QualityReorder[idxreorder].Newpriority
+						for idx := range qualityconfig.QualityReorder {
+							if strings.EqualFold(qualityconfig.QualityReorder[idx].ReorderType, qualitystringtype) && strings.EqualFold(qualityconfig.QualityReorder[idx].Name, qualitytype[idxqual].Name) {
+								priority = qualityconfig.QualityReorder[idx].Newpriority
 							}
-							if strings.EqualFold(qualityconfig.QualityReorder[idxreorder].Type, "position") && strings.EqualFold(qualityconfig.QualityReorder[idxreorder].Name, qualitystringtype) {
-								priority = priority * qualityconfig.QualityReorder[idxreorder].Newpriority
+							if strings.EqualFold(qualityconfig.QualityReorder[idx].ReorderType, "position") && strings.EqualFold(qualityconfig.QualityReorder[idx].Name, qualitystringtype) {
+								priority = priority * qualityconfig.QualityReorder[idx].Newpriority
 							}
 						}
 					}
@@ -714,18 +764,18 @@ func gettypepriority(inval string, qualitystringtype string, qualityTemplate str
 			}
 		} else {
 			if config.RegexCheck(qualitytype[idxqual].Regex) {
-				teststr := config.RegexGet(qualitytype[idxqual].Regex).FindStringSubmatch(tolower)
+				teststr = config.RegexGet(qualitytype[idxqual].Regex).FindStringSubmatch(tolower)
 				if len(teststr) >= 2 {
 					id = qualitytype[idxqual].ID
 					name = qualitytype[idxqual].Name
 					priority = qualitytype[idxqual].Priority
 					if len(qualityconfig.QualityReorder) >= 1 {
-						for idxreorder := range qualityconfig.QualityReorder {
-							if strings.EqualFold(qualityconfig.QualityReorder[idxreorder].Type, qualitystringtype) && strings.EqualFold(qualityconfig.QualityReorder[idxreorder].Name, qualitytype[idxqual].Name) {
-								priority = qualityconfig.QualityReorder[idxreorder].Newpriority
+						for idx := range qualityconfig.QualityReorder {
+							if strings.EqualFold(qualityconfig.QualityReorder[idx].ReorderType, qualitystringtype) && strings.EqualFold(qualityconfig.QualityReorder[idx].Name, qualitytype[idxqual].Name) {
+								priority = qualityconfig.QualityReorder[idx].Newpriority
 							}
-							if strings.EqualFold(qualityconfig.QualityReorder[idxreorder].Type, "position") && strings.EqualFold(qualityconfig.QualityReorder[idxreorder].Name, qualitystringtype) {
-								priority = priority * qualityconfig.QualityReorder[idxreorder].Newpriority
+							if strings.EqualFold(qualityconfig.QualityReorder[idx].ReorderType, "position") && strings.EqualFold(qualityconfig.QualityReorder[idx].Name, qualitystringtype) {
+								priority = priority * qualityconfig.QualityReorder[idx].Newpriority
 							}
 						}
 					}
@@ -735,11 +785,48 @@ func gettypepriority(inval string, qualitystringtype string, qualityTemplate str
 		}
 
 	}
+	if id != 0 {
+		switch qualitystringtype {
+		case "resolution":
+			m.Resolution = name
+			m.ResolutionID = id
+			m.Prio_resolution = priority
+		case "quality":
+
+			m.Quality = name
+			m.QualityID = id
+			m.Prio_quality = priority
+		case "codec":
+
+			m.Codec = name
+			m.CodecID = id
+			m.Prio_codec = priority
+		case "audio":
+
+			m.Audio = name
+			m.AudioID = id
+			m.Prio_audio = priority
+		}
+	} else {
+		if clearname {
+			switch qualitystringtype {
+			case "resolution":
+				m.Resolution = ""
+			case "quality":
+				m.Quality = ""
+			case "codec":
+				m.Codec = ""
+			case "audio":
+				m.Audio = ""
+			}
+		}
+	}
 	return
 }
-func gettypeidpriority(id uint, qualitystringtype string, qualityTemplate string) (priority int, name string) {
+func (m *ParseInfo) gettypeidpriority(id uint, qualitystringtype string, qualityTemplate string, setprioonly bool) {
 	qualityconfig := config.ConfigGet("quality_" + qualityTemplate).Data.(config.QualityConfig)
 	var qualitytype []database.QualitiesRegex
+	defer logger.ClearVar(&qualitytype)
 	switch qualitystringtype {
 	case "resolution":
 		qualitytype = database.Getresolutions
@@ -752,27 +839,51 @@ func gettypeidpriority(id uint, qualitystringtype string, qualityTemplate string
 	}
 	for idxqual := range qualitytype {
 		if qualitytype[idxqual].ID == id {
-			name = qualitytype[idxqual].Name
-			priority = qualitytype[idxqual].Priority
+			name := qualitytype[idxqual].Name
+			priority := qualitytype[idxqual].Priority
 			if len(qualityconfig.QualityReorder) >= 1 {
-				for idxreorder := range qualityconfig.QualityReorder {
-					if strings.EqualFold(qualityconfig.QualityReorder[idxreorder].Type, qualitystringtype) && strings.EqualFold(qualityconfig.QualityReorder[idxreorder].Name, qualitytype[idxqual].Name) {
-						priority = qualityconfig.QualityReorder[idxreorder].Newpriority
+				for idx := range qualityconfig.QualityReorder {
+					if strings.EqualFold(qualityconfig.QualityReorder[idx].ReorderType, qualitystringtype) && strings.EqualFold(qualityconfig.QualityReorder[idx].Name, qualitytype[idxqual].Name) {
+						priority = qualityconfig.QualityReorder[idx].Newpriority
 					}
-					if strings.EqualFold(qualityconfig.QualityReorder[idxreorder].Type, "position") && strings.EqualFold(qualityconfig.QualityReorder[idxreorder].Name, qualitystringtype) {
-						priority = priority * qualityconfig.QualityReorder[idxreorder].Newpriority
+					if strings.EqualFold(qualityconfig.QualityReorder[idx].ReorderType, "position") && strings.EqualFold(qualityconfig.QualityReorder[idx].Name, qualitystringtype) {
+						priority = priority * qualityconfig.QualityReorder[idx].Newpriority
 					}
 				}
 			}
+			switch qualitystringtype {
+			case "resolution":
+				if !setprioonly {
+					m.Resolution = name
+				}
+				m.Prio_resolution = priority
+			case "quality":
+				if !setprioonly {
+					m.Quality = name
+				}
+				m.Prio_quality = priority
+			case "codec":
+				if !setprioonly {
+					m.Codec = name
+				}
+				m.Prio_codec = priority
+			case "audio":
+				if !setprioonly {
+					m.Audio = name
+				}
+				m.Prio_audio = priority
+			}
+
 			break
 		}
 	}
 	return
 }
 
-func getdefaulttypepriority(qualitystring string, qualitystringtype string, qualityid uint, qualityTemplate string) (id uint, priority int, name string) {
+func (m *ParseInfo) getdefaulttypepriority(qualitystring string, qualitystringtype string, qualityid uint, qualityTemplate string, setprioonly bool) (id uint, priority int, name string) {
 	qualityconfig := config.ConfigGet("quality_" + qualityTemplate).Data.(config.QualityConfig)
 	var qualitytype []database.QualitiesRegex
+	defer logger.ClearVar(&qualitytype)
 	switch qualitystringtype {
 	case "resolution":
 		qualitytype = database.Getresolutions
@@ -792,16 +903,33 @@ func getdefaulttypepriority(qualitystring string, qualitystringtype string, qual
 
 				priority = qualitytype[idxqual].Priority
 				if len(qualityconfig.QualityReorder) >= 1 {
-					for idxreorder := range qualityconfig.QualityReorder {
-						if strings.EqualFold(qualityconfig.QualityReorder[idxreorder].Type, qualitystringtype) && strings.EqualFold(qualityconfig.QualityReorder[idxreorder].Name, qualitytype[idxqual].Name) {
-							priority = qualityconfig.QualityReorder[idxreorder].Newpriority
+					for idx := range qualityconfig.QualityReorder {
+						if strings.EqualFold(qualityconfig.QualityReorder[idx].ReorderType, qualitystringtype) && strings.EqualFold(qualityconfig.QualityReorder[idx].Name, qualitytype[idxqual].Name) {
+							priority = qualityconfig.QualityReorder[idx].Newpriority
 						}
-						if strings.EqualFold(qualityconfig.QualityReorder[idxreorder].Type, "position") && strings.EqualFold(qualityconfig.QualityReorder[idxreorder].Name, qualitystringtype) {
-							priority = priority * qualityconfig.QualityReorder[idxreorder].Newpriority
+						if strings.EqualFold(qualityconfig.QualityReorder[idx].ReorderType, "position") && strings.EqualFold(qualityconfig.QualityReorder[idx].Name, qualitystringtype) {
+							priority = priority * qualityconfig.QualityReorder[idx].Newpriority
 						}
 					}
 				}
 			}
+		}
+	}
+	if id != 0 {
+		switch qualitystringtype {
+		case "resolution":
+			if !setprioonly {
+				m.Resolution = name
+				m.ResolutionID = id
+			}
+			m.Prio_resolution = priority
+		case "quality":
+			if !setprioonly {
+
+				m.Quality = name
+				m.QualityID = id
+			}
+			m.Prio_quality = priority
 		}
 	}
 	return
@@ -811,10 +939,11 @@ func (m *ParseInfo) getcombinedpriority(qualityTemplate string) {
 	qualityconfig := config.ConfigGet("quality_" + qualityTemplate).Data.(config.QualityConfig)
 	if len(qualityconfig.QualityReorder) >= 1 {
 		for idxreorder := range qualityconfig.QualityReorder {
-			if strings.EqualFold(qualityconfig.QualityReorder[idxreorder].Type, "combined_res_qual") {
+			if strings.EqualFold(qualityconfig.QualityReorder[idxreorder].ReorderType, "combined_res_qual") {
 				namearr := strings.Split(qualityconfig.QualityReorder[idxreorder].Name, ",")
 
 				if len(namearr) != 2 {
+					namearr = nil
 					continue
 				}
 
@@ -822,113 +951,82 @@ func (m *ParseInfo) getcombinedpriority(qualityTemplate string) {
 					m.Prio_resolution = qualityconfig.QualityReorder[idxreorder].Newpriority
 					m.Prio_quality = 0
 				}
+				namearr = nil
 			}
 		}
 	}
 }
 
 func GetSerieDBPriority(serieepisodefile database.SerieEpisodeFile, configTemplate string, qualityTemplate string) int {
-	resolution_priority := 0
-	quality_priority := 0
-	codec_priority := 0
-	audio_priority := 0
-	resolution_name := ""
-	quality_name := ""
-	audio_name := ""
-	codec_name := ""
-
+	m := ParseInfo{}
+	defer logger.ClearVar(&m)
 	configEntry := config.ConfigGet(configTemplate).Data.(config.MediaTypeConfig)
 	if serieepisodefile.ResolutionID != 0 {
-		resolution_priority, resolution_name = gettypeidpriority(serieepisodefile.ResolutionID, "resolution", qualityTemplate)
+		m.gettypeidpriority(serieepisodefile.ResolutionID, "resolution", qualityTemplate, false)
 	} else {
-		typeid, type_priority, type_name := getdefaulttypepriority(configEntry.DefaultResolution, "resolution", serieepisodefile.ResolutionID, qualityTemplate)
-		if typeid != 0 {
-			resolution_priority = type_priority
-			resolution_name = type_name
-		}
+		m.getdefaulttypepriority(configEntry.DefaultResolution, "resolution", serieepisodefile.ResolutionID, qualityTemplate, false)
 	}
 	if serieepisodefile.QualityID != 0 {
-		quality_priority, quality_name = gettypeidpriority(serieepisodefile.QualityID, "quality", qualityTemplate)
+		m.gettypeidpriority(serieepisodefile.QualityID, "quality", qualityTemplate, false)
 	} else {
-		typeid, type_priority, type_name := getdefaulttypepriority(configEntry.DefaultQuality, "quality", serieepisodefile.QualityID, qualityTemplate)
-		if typeid != 0 {
-			quality_priority = type_priority
-			quality_name = type_name
-		}
+		m.getdefaulttypepriority(configEntry.DefaultQuality, "quality", serieepisodefile.QualityID, qualityTemplate, false)
 	}
 	if serieepisodefile.CodecID != 0 {
-		codec_priority, codec_name = gettypeidpriority(serieepisodefile.CodecID, "codec", qualityTemplate)
+		m.gettypeidpriority(serieepisodefile.CodecID, "codec", qualityTemplate, false)
 	}
 	if serieepisodefile.AudioID != 0 {
-		audio_priority, audio_name = gettypeidpriority(serieepisodefile.AudioID, "audio", qualityTemplate)
+		m.gettypeidpriority(serieepisodefile.AudioID, "audio", qualityTemplate, false)
 	}
-
-	m := ParseInfo{Resolution: resolution_name, Prio_resolution: resolution_priority, Quality: quality_name, Prio_quality: quality_priority, Codec: codec_name, Prio_codec: codec_priority, Audio: audio_name, Prio_audio: audio_priority}
 
 	m.getcombinedpriority(qualityTemplate)
-	Priority := m.Prio_resolution + m.Prio_quality + m.Prio_codec + m.Prio_audio
+	m.Priority = m.Prio_resolution + m.Prio_quality + m.Prio_codec + m.Prio_audio
 	if serieepisodefile.Proper {
-		Priority = Priority + 5
+		m.Priority = m.Priority + 5
 	}
 	if serieepisodefile.Extended {
-		Priority = Priority + 2
+		m.Priority = m.Priority + 2
 	}
 	if serieepisodefile.Repack {
-		Priority = Priority + 1
+		m.Priority = m.Priority + 1
 	}
-	return Priority
+	prio := m.Priority
+	return prio
 }
 
 func GetMovieDBPriority(moviefile database.MovieFile, configTemplate string, qualityTemplate string) int {
-	resolution_priority := 0
-	quality_priority := 0
-	codec_priority := 0
-	audio_priority := 0
-	resolution_name := ""
-	quality_name := ""
-	audio_name := ""
-	codec_name := ""
-
+	m := ParseInfo{}
+	defer logger.ClearVar(&m)
 	configEntry := config.ConfigGet(configTemplate).Data.(config.MediaTypeConfig)
 	if moviefile.ResolutionID != 0 {
-		resolution_priority, resolution_name = gettypeidpriority(moviefile.ResolutionID, "resolution", qualityTemplate)
+		m.gettypeidpriority(moviefile.ResolutionID, "resolution", qualityTemplate, false)
 	} else {
-		typeid, type_priority, type_name := getdefaulttypepriority(configEntry.DefaultResolution, "resolution", moviefile.ResolutionID, qualityTemplate)
-		if typeid != 0 {
-			resolution_priority = type_priority
-			resolution_name = type_name
-		}
+		m.getdefaulttypepriority(configEntry.DefaultResolution, "resolution", moviefile.ResolutionID, qualityTemplate, false)
 	}
 	if moviefile.QualityID != 0 {
-		quality_priority, quality_name = gettypeidpriority(moviefile.QualityID, "quality", qualityTemplate)
+		m.gettypeidpriority(moviefile.QualityID, "quality", qualityTemplate, false)
 	} else {
-		typeid, type_priority, type_name := getdefaulttypepriority(configEntry.DefaultQuality, "quality", moviefile.QualityID, qualityTemplate)
-		if typeid != 0 {
-			quality_priority = type_priority
-			quality_name = type_name
-		}
+		m.getdefaulttypepriority(configEntry.DefaultQuality, "quality", moviefile.QualityID, qualityTemplate, false)
 	}
 	if moviefile.CodecID != 0 {
-		codec_priority, codec_name = gettypeidpriority(moviefile.CodecID, "codec", qualityTemplate)
+		m.gettypeidpriority(moviefile.CodecID, "codec", qualityTemplate, false)
 	}
 	if moviefile.AudioID != 0 {
-		audio_priority, audio_name = gettypeidpriority(moviefile.AudioID, "audio", qualityTemplate)
+		m.gettypeidpriority(moviefile.AudioID, "audio", qualityTemplate, false)
 	}
-
-	m := ParseInfo{Resolution: resolution_name, Prio_resolution: resolution_priority, Quality: quality_name, Prio_quality: quality_priority, Codec: codec_name, Prio_codec: codec_priority, Audio: audio_name, Prio_audio: audio_priority}
 
 	m.getcombinedpriority(qualityTemplate)
-	Priority := m.Prio_resolution + m.Prio_quality + m.Prio_codec + m.Prio_audio
+	m.Priority = m.Prio_resolution + m.Prio_quality + m.Prio_codec + m.Prio_audio
 	if moviefile.Proper {
-		Priority = Priority + 5
+		m.Priority = m.Priority + 5
 	}
 	if moviefile.Extended {
-		Priority = Priority + 2
+		m.Priority = m.Priority + 2
 	}
 	if moviefile.Repack {
-		Priority = Priority + 1
+		m.Priority = m.Priority + 1
 	}
-	return Priority
+	prio := m.Priority
+	return prio
 }
 
 // Path makes a string safe to use as a URL path,
@@ -936,63 +1034,131 @@ func GetMovieDBPriority(moviefile database.MovieFile, configTemplate string, qua
 // The path may still start at / and is not intended
 // for use as a file system path without prefix.
 
-func (m *ParseInfo) FindSerieByParser(titleyear string, seriestitle string, listname string) (database.Serie, int) {
-	var entriesfound int
-
-	if m.Tvdb != "" {
-		counter, _ := database.CountRowsStatic("Select count(id) from dbseries where thetvdb_id = ?", strings.Replace(m.Tvdb, "tvdb", "", -1))
-		if counter == 1 {
-			id, _ := database.QueryColumnStatic("Select id from dbseries where thetvdb_id = ?", strings.Replace(m.Tvdb, "tvdb", "", -1))
-			findseries, _ := database.QuerySeries(database.Query{Where: "dbserie_id = ? AND listname = ?", WhereArgs: []interface{}{id, listname}})
-
-			id = nil
-			if len(findseries) == 1 {
-				entriesfound = len(findseries)
-				return findseries[0], entriesfound
+func filteronestringoneint(rows []database.Dbstatic_OneStringOneInt, search string, casesensitive bool) int {
+	defer logger.ClearVar(&rows)
+	for idx := range rows {
+		if casesensitive {
+			if rows[idx].Str == search {
+				return rows[idx].Num
+			}
+		} else {
+			if strings.EqualFold(rows[idx].Str, search) {
+				return rows[idx].Num
 			}
 		}
 	}
-	if entriesfound == 0 && titleyear != "" {
-		foundserie, foundentries := importfeed.Findseriebyname(titleyear, listname)
-		if foundentries == 1 {
-			entriesfound = foundentries
-			return foundserie, entriesfound
+	return 0
+}
+
+func findparsefilteron(title string, listname string, alternate bool) (uint, error) {
+	var dbserietitles []database.Dbstatic_OneStringOneInt
+	var dbserietitlesslug []database.Dbstatic_OneStringOneInt
+
+	if !alternate {
+		dbserietitles, _ = database.QueryStaticColumnsOneStringOneInt("Select seriename, id from dbseries where seriename = ? COLLATE NOCASE or slug = ? COLLATE NOCASE", "Select count(id) from dbseries where seriename = ? COLLATE NOCASE or slug = ? COLLATE NOCASE", title, title)
+		dbserietitlesslug, _ = database.QueryStaticColumnsOneStringOneInt("Select slug, id from dbseries where seriename = ? COLLATE NOCASE or slug = ? COLLATE NOCASE", "Select count(id) from dbseries where seriename = ? COLLATE NOCASE or slug = ? COLLATE NOCASE", title, title)
+	} else {
+		dbserietitles, _ = database.QueryStaticColumnsOneStringOneInt("Select title, dbserie_id from dbserie_alternates where title = ? COLLATE NOCASE or slug = ? COLLATE NOCASE", "Select count(id) from dbserie_alternates where title = ? COLLATE NOCASE or slug = ? COLLATE NOCASE", title, title)
+		dbserietitlesslug, _ = database.QueryStaticColumnsOneStringOneInt("Select slug, dbserie_id from dbserie_alternates where title = ? COLLATE NOCASE or slug = ? COLLATE NOCASE", "Select count(id) from dbserie_alternates where title = ? COLLATE NOCASE or slug = ? COLLATE NOCASE", title, title)
+	}
+	defer logger.ClearVar(&dbserietitles)
+	defer logger.ClearVar(&dbserietitlesslug)
+	var dbmovieid int
+
+	for idx := range dbserietitles {
+		if strings.EqualFold(dbserietitles[idx].Str, title) {
+			dbmovieid = dbserietitles[idx].Num
+			break
 		}
 	}
-	if entriesfound == 0 && seriestitle != "" {
-		foundserie, foundentries := importfeed.Findseriebyname(seriestitle, listname)
-		if foundentries == 1 {
-			entriesfound = foundentries
-			return foundserie, entriesfound
+	if dbmovieid == 0 {
+		for idx := range dbserietitlesslug {
+			if strings.EqualFold(dbserietitlesslug[idx].Str, title) {
+				dbmovieid = dbserietitlesslug[idx].Num
+				break
+			}
 		}
 	}
-	if entriesfound == 0 && m.Title != "" {
-		foundserie, foundentries := importfeed.Findseriebyname(m.Title, listname)
-		if foundentries == 1 {
-			entriesfound = foundentries
-			return foundserie, entriesfound
+	if dbmovieid != 0 {
+		findseries, _ := database.QueryStaticColumnsOneInt("Select id from series where dbserie_id = ? AND listname = ? COLLATE NOCASE", "Select count(id) from series where dbserie_id = ? AND listname = ? COLLATE NOCASE", dbmovieid, listname)
+		defer logger.ClearVar(&findseries)
+		if len(findseries) == 1 {
+			return uint(findseries[0].Num), nil
 		}
 	}
-	if entriesfound == 0 && titleyear != "" {
-		foundserie, foundentries := importfeed.Findseriebyalternatename(titleyear, listname)
-		if foundentries == 1 {
-			entriesfound = foundentries
-			return foundserie, entriesfound
+	return 0, errors.New("no serie")
+}
+func (m *ParseInfo) FindSerieByParser(titleyear string, seriestitle string, listname string) (uint, int, error) {
+	var dbserie_id uint
+	if m.Tvdb != "" {
+		counter, _ := database.CountRowsStatic("Select count(id) from dbseries where thetvdb_id = ?", strings.Replace(m.Tvdb, "tvdb", "", -1))
+		if counter == 1 {
+			dbserie_id, _ = database.QueryColumnUint("Select id from dbseries where thetvdb_id = ?", strings.Replace(m.Tvdb, "tvdb", "", -1))
 		}
 	}
-	if entriesfound == 0 && seriestitle != "" {
-		foundserie, foundentries := importfeed.Findseriebyalternatename(seriestitle, listname)
-		if foundentries == 1 {
-			entriesfound = foundentries
-			return foundserie, entriesfound
+	if dbserie_id == 0 {
+		dbserie_id, _ = importfeed.FindDbserieByName(titleyear)
+	}
+	if dbserie_id == 0 {
+		dbserie_id, _ = importfeed.FindDbserieByName(seriestitle)
+	}
+	if dbserie_id == 0 {
+		dbserie_id, _ = importfeed.FindDbserieByName(m.Title)
+	}
+	if dbserie_id != 0 {
+		counter, _ := database.CountRowsStatic("Select count(id) from series where dbserie_id = ? AND  listname = ? COLLATE NOCASE", dbserie_id, listname)
+		if counter == 1 {
+			serieid, _ := database.QueryColumnUint("Select id from series where dbserie_id = ? AND  listname = ? COLLATE NOCASE", dbserie_id, listname)
+			return serieid, 1, nil
 		}
 	}
-	if entriesfound == 0 && m.Title != "" {
-		foundserie, foundentries := importfeed.Findseriebyalternatename(m.Title, listname)
-		if foundentries == 1 {
-			entriesfound = foundentries
-			return foundserie, entriesfound
+	return 0, 0, errors.New("not found")
+}
+
+func (m *ParseInfo) FindMovieByFile(listnames []string) (uint, string, string, error) {
+	defer logger.ClearVar(&listnames)
+	entriesfound := 0
+	argslist := config.StringArrayToInterfaceArray(listnames)
+	defer logger.ClearVar(&argslist)
+	if entriesfound == 0 && len(m.Imdb) >= 1 {
+		movies, _ := database.QueryMovies(database.Query{Select: "id, listname", Where: "dbmovie_id in (Select id from dbmovies where imdb_id = ?) and listname in (?" + strings.Repeat(",?", len(argslist)-1) + ")", WhereArgs: []interface{}{m.Imdb, argslist}})
+		defer logger.ClearVar(&movies)
+		entriesfound = len(movies)
+		if entriesfound == 1 {
+			return movies[0].ID, "", movies[0].Listname, nil
 		}
 	}
-	return database.Serie{}, 0
+
+	if entriesfound == 0 {
+		dbmovieid, found, found1 := importfeed.MovieFindDbIdByTitle(m.Title, strconv.Itoa(m.Year), "parse", false)
+		if found || found1 {
+			movies, _ := database.QueryMovies(database.Query{Select: "id, listname", Where: "dbmovie_id = ? and listname in (?" + strings.Repeat(",?", len(argslist)-1) + ")", WhereArgs: []interface{}{dbmovieid, argslist}})
+			defer logger.ClearVar(&movies)
+			entriesfound = len(movies)
+			if entriesfound == 1 {
+				return movies[0].ID, "", movies[0].Listname, nil
+			}
+		}
+	}
+
+	return 0, "", "", errors.New("no movie found")
+}
+func (m *ParseInfo) FindDbmovieByFile() (uint, error) {
+	var dbmovieid uint
+	var err error
+	if len(m.Imdb) >= 1 {
+		dbmovieid, err = database.QueryColumnUint("Select id from dbmovies where imdb_id = ?", m.Imdb)
+		if err == nil {
+			if dbmovieid != 0 {
+				return dbmovieid, nil
+			}
+		}
+	}
+
+	dbmovieid, found, found1 := importfeed.MovieFindDbIdByTitle(m.Title, strconv.Itoa(m.Year), "parse", false)
+	if found || found1 {
+		return dbmovieid, nil
+	}
+
+	return 0, errors.New("no movie found")
 }

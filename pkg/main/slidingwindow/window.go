@@ -66,6 +66,29 @@ func NewLimiter(size time.Duration, limit int64, newWindow NewWindow) (*Limiter,
 	return lim, currStop
 }
 
+// NewLimiter creates a new limiter, and returns a function to stop
+// the possible sync behaviour within the current window.
+func NewLimiterNoStop(size time.Duration, limit int64, newWindow NewWindow) *Limiter {
+	currWin, _ := newWindow()
+
+	// The previous window is static (i.e. no add changes will happen within it),
+	// so we always create it as an instance of LocalWindow.
+	//
+	// In this way, the whole limiter, despite containing two windows, now only
+	// consumes at most one goroutine for the possible sync behaviour within
+	// the current window.
+	prevWin, _ := NewLocalWindow()
+
+	lim := &Limiter{
+		size:  size,
+		limit: limit,
+		curr:  currWin,
+		prev:  prevWin,
+	}
+
+	return lim
+}
+
 // Size returns the time duration of one window size. Note that the size
 // is defined to be read-only, if you need to change the size,
 // create a new limiter with a new size instead.

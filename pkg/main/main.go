@@ -33,6 +33,7 @@ import (
 	_ "github.com/GoAdminGroup/go-admin/adapter/gin"
 	_ "github.com/GoAdminGroup/go-admin/modules/db/drivers/sqlite" // sql driver
 	"github.com/GoAdminGroup/themes/adminlte"
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	ginlog "github.com/toorop/gin-logrus"
 )
@@ -58,8 +59,6 @@ func main() {
 	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
 
 	if cfg_general.WebPort == "" {
-		//fmt.Println("Checked for general - config is missing", cfg_general)
-		//os.Exit(0)
 		config.ClearCfg()
 		config.WriteCfg()
 		config.LoadCfgDB(config.Configfile)
@@ -75,7 +74,9 @@ func main() {
 	logger.Log.Infoln("Version: " + version + " " + githash)
 	logger.Log.Infoln("Build Date: " + buildstamp)
 	logger.Log.Infoln("Programmer: kellerman81")
-	logger.Log.Infoln("Hint: Set Loglevel to Debug to see possible API Paths")
+	if cfg_general.LogLevel != "Debug" {
+		logger.Log.Infoln("Hint: Set Loglevel to Debug to see possible API Paths")
+	}
 	logger.Log.Infoln("------------------------------")
 	logger.Log.Infoln("")
 
@@ -95,7 +96,9 @@ func main() {
 
 	logger.Log.Infoln("Check Database for Upgrades")
 	database.UpgradeDB()
+	logger.Log.Infoln("Database Get Variables")
 	database.GetVars()
+	logger.Log.Infoln("Database Get Patterns")
 	parser.LoadDBPatterns()
 
 	logger.Log.Infoln("Check Database for Errors")
@@ -121,11 +124,17 @@ func main() {
 
 	logger.Log.Infoln("Starting API")
 	router := gin.New()
+
+	corsconfig := cors.DefaultConfig()
+	corsconfig.AllowHeaders = []string{"*"}
+	corsconfig.AllowOrigins = []string{"*"}
+	corsconfig.AllowMethods = []string{"*"}
+
 	if !strings.EqualFold(cfg_general.LogLevel, "debug") {
 		gin.SetMode(gin.ReleaseMode)
 	}
 	logger.Log.Infoln("Starting API Logger")
-	router.Use(ginlog.Logger(logger.Log), gin.Recovery())
+	router.Use(ginlog.Logger(logger.Log), cors.New(corsconfig), gin.Recovery())
 
 	logger.Log.Infoln("Starting API Endpoints")
 	routerapi := router.Group("/api")
@@ -187,11 +196,6 @@ func main() {
 			Use(router); err != nil {
 			panic(err)
 		}
-		// if err := eng.AddConfigFromYAML("./admin.yml").
-		// 	AddGenerators(tables.Generators).
-		// 	Use(router); err != nil {
-		// 	panic(err)
-		// }
 		eng.HTML("GET", "/admin", pages.GetDashBoardO)
 		eng.HTML("GET", "/", pages.GetDashBoardO)
 		eng.HTML("GET", "/actions", pages.GetActionsPage)
@@ -201,14 +205,6 @@ func main() {
 		defaultConnection := db.GetConnection(eng.Services)
 		eng.Adapter.SetConnection(defaultConnection)
 		router.Static("/admin/uploads", "./temp")
-		//router.GET("/admin", pages.GetDashBoard2)
-
-		//eng.HTML("GET", "/admin", pages.GetDashBoard2)
-		//eng.HTML("GET", "/admin/", pages.GetDashBoard2)
-		//eng.HTML("GET", "/", pages.GetDashBoard2)
-		//eng.HTMLFile("GET", "/admin/hello", "./html/hello.tmpl", map[string]interface{}{
-		//	"msg": "Hello world",
-		//})
 	}
 
 	if strings.EqualFold(cfg_general.LogLevel, "Debug") {

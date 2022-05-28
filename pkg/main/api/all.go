@@ -7,6 +7,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/config"
 	"github.com/Kellerman81/go_media_downloader/utils"
 	gin "github.com/gin-gonic/gin"
+	"github.com/shomali11/parallelizer"
 )
 
 func AddAllRoutes(rg *gin.RouterGroup) {
@@ -33,8 +34,10 @@ func apiAllGetFeeds(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
 		return
 	}
-	go utils.Movies_all_jobs("feeds", true)
-	go utils.Series_all_jobs("feeds", true)
+
+	swg := parallelizer.NewGroup(parallelizer.WithPoolSize(2))
+	swg.Add(func() { utils.Movies_all_jobs("feeds", true) })
+	swg.Add(func() { utils.Series_all_jobs("feeds", true) })
 	c.JSON(http.StatusOK, "ok")
 }
 
@@ -48,8 +51,9 @@ func apiAllGetData(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
 		return
 	}
-	go utils.Movies_all_jobs("data", true)
-	go utils.Series_all_jobs("data", true)
+	swg := parallelizer.NewGroup(parallelizer.WithPoolSize(2))
+	swg.Add(func() { utils.Movies_all_jobs("data", true) })
+	swg.Add(func() { utils.Series_all_jobs("data", true) })
 	c.JSON(http.StatusOK, "ok")
 }
 
@@ -63,8 +67,9 @@ func apiAllGetRss(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
 		return
 	}
-	go utils.Movies_all_jobs("rss", true)
-	go utils.Series_all_jobs("rss", true)
+	swg := parallelizer.NewGroup(parallelizer.WithPoolSize(2))
+	swg.Add(func() { utils.Movies_all_jobs("rss", true) })
+	swg.Add(func() { utils.Series_all_jobs("rss", true) })
 	c.JSON(http.StatusOK, "ok")
 }
 
@@ -78,8 +83,13 @@ func apiAllGetMissingFull(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
 		return
 	}
-	go utils.Movies_all_jobs("searchmissingfull", true)
-	go utils.Series_all_jobs("searchmissingfull", true)
+	swg := parallelizer.NewGroup(parallelizer.WithPoolSize(2))
+	swg.Add(func() {
+		utils.Movies_all_jobs("searchmissingfull", true)
+	})
+	swg.Add(func() {
+		utils.Series_all_jobs("searchmissingfull", true)
+	})
 	c.JSON(http.StatusOK, "ok")
 }
 
@@ -93,8 +103,9 @@ func apiAllGetMissingInc(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
 		return
 	}
-	go utils.Movies_all_jobs("searchmissinginc", true)
-	go utils.Series_all_jobs("searchmissinginc", true)
+	swg := parallelizer.NewGroup(parallelizer.WithPoolSize(2))
+	swg.Add(func() { utils.Movies_all_jobs("searchmissinginc", true) })
+	swg.Add(func() { utils.Series_all_jobs("searchmissinginc", true) })
 	c.JSON(http.StatusOK, "ok")
 }
 
@@ -108,8 +119,11 @@ func apiAllGetUpgradeFull(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
 		return
 	}
-	go utils.Movies_all_jobs("searchupgradefull", true)
-	go utils.Series_all_jobs("searchupgradefull", true)
+	swg := parallelizer.NewGroup(parallelizer.WithPoolSize(2))
+	swg.Add(func() {
+		utils.Movies_all_jobs("searchupgradefull", true)
+	})
+	swg.Add(func() { utils.Series_all_jobs("searchupgradefull", true) })
 	c.JSON(http.StatusOK, "ok")
 }
 
@@ -123,13 +137,15 @@ func apiAllGetUpgradeInc(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
 		return
 	}
-	go utils.Movies_all_jobs("searchupgradeinc", true)
-	go utils.Series_all_jobs("searchupgradeinc", true)
+	swg := parallelizer.NewGroup(parallelizer.WithPoolSize(2))
+	swg.Add(func() {
+		utils.Movies_all_jobs("searchupgradeinc", true)
+	})
+	swg.Add(func() { utils.Series_all_jobs("searchupgradeinc", true) })
 	c.JSON(http.StatusOK, "ok")
 }
 
 func ApiAuth(c *gin.Context) int {
-	// check for query params
 	if queryParam, ok := c.GetQuery("apikey"); ok {
 		if queryParam == "" {
 			c.Header("Content-Type", "application/json")

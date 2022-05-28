@@ -45,11 +45,6 @@ func (p *pushOverClient) SendMessage(messagetext string, title string, recipient
 	// Create the message to send
 	message := pushover.NewMessageWithTitle(messagetext, title)
 
-	defer func() {
-		message = nil
-		recipient = nil
-		app = nil
-	}()
 	// Send the message to the recipient
 	_, errp := app.SendMessage(message, recipient)
 	if errp != nil {

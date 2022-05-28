@@ -76,51 +76,66 @@ func NewTvdbClient(seconds int, calls int, disabletls bool) {
 	if calls == 0 {
 		calls = 1
 	}
-	rl := rate.NewLimiter(rate.Every(time.Duration(seconds)*time.Second), calls) // 50 request every 10 seconds
-	limiter, _ := slidingwindow.NewLimiter(time.Duration(seconds)*time.Second, int64(calls), func() (slidingwindow.Window, slidingwindow.StopFunc) { return slidingwindow.NewLocalWindow() })
-	TvdbApi = &tvdbClient{Client: NewClient(disabletls, rl, limiter)}
+	TvdbApi = &tvdbClient{
+		Client: NewClient(
+			disabletls,
+			rate.NewLimiter(rate.Every(time.Duration(seconds)*time.Second), calls),
+			slidingwindow.NewLimiterNoStop(time.Duration(seconds)*time.Second, int64(calls), func() (slidingwindow.Window, slidingwindow.StopFunc) { return slidingwindow.NewLocalWindow() }))}
+
 }
 
 func (t *tvdbClient) GetSeries(id int, language string) (theTVDBSeries, error) {
-	req, _ := http.NewRequest("GET", "https://api.thetvdb.com/series/"+strconv.Itoa(id), nil)
+	req, err := http.NewRequest("GET", "https://api.thetvdb.com/series/"+strconv.Itoa(id), nil)
+	if err != nil {
+		return theTVDBSeries{}, err
+	}
+
 	if len(language) >= 1 {
 		req.Header.Add("Accept-Language", language)
 	}
 
 	var result theTVDBSeries
-	err := t.Client.DoJson(req, &result)
+	err = t.Client.DoJson(req, &result)
+
 	if err != nil {
 		return theTVDBSeries{}, err
 	}
-	//json.Unmarshal(responseData, &result)
+
 	return result, nil
 }
 func (t *tvdbClient) GetSeriesEpisodes(id int, language string) (theTVDBEpisodes, error) {
-	req, _ := http.NewRequest("GET", "https://api.thetvdb.com/series/"+strconv.Itoa(id)+"/episodes", nil)
+	req, err := http.NewRequest("GET", "https://api.thetvdb.com/series/"+strconv.Itoa(id)+"/episodes", nil)
+	if err != nil {
+		return theTVDBEpisodes{}, err
+	}
+
 	if len(language) >= 1 {
 		req.Header.Add("Accept-Language", language)
 	}
 	var result theTVDBEpisodes
-	err := t.Client.DoJson(req, &result)
+	err = t.Client.DoJson(req, &result)
+
 	if err != nil {
 		return theTVDBEpisodes{}, err
 	}
-	//json.Unmarshal(responseData, &result)
+
 	if result.Links.Last >= 2 {
 		k := 2
+
 		for ; k <= result.Links.Last; k++ {
-			req, _ := http.NewRequest("GET", "https://api.thetvdb.com/series/"+strconv.Itoa(id)+"/episodes?page="+strconv.Itoa(k), nil)
+			req, err := http.NewRequest("GET", "https://api.thetvdb.com/series/"+strconv.Itoa(id)+"/episodes?page="+strconv.Itoa(k), nil)
+			if err != nil {
+				continue
+			}
 			if len(language) >= 1 {
 				req.Header.Add("Accept-Language", language)
 			}
 
 			var resultadd theTVDBEpisodes
 			t.Client.DoJson(req, &resultadd)
+
 			result.Data = append(result.Data, resultadd.Data...)
 		}
 	}
 	return result, nil
 }
-
-var v4api string = "d88a00a6-799b-4914-b118-5e1969abf60e"
-var V4apiPin string

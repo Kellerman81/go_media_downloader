@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/Kellerman81/go_media_downloader/logger"
 	"github.com/Kellerman81/go_media_downloader/slidingwindow"
 	"golang.org/x/oauth2"
 	"golang.org/x/time/rate"
@@ -15,24 +16,24 @@ import (
 
 type traktMovieAnticipated struct {
 	ListCount int        `json:"list_count"`
-	Movie     traktMovie `json:"movie"`
+	Movie     TraktMovie `json:"movie"`
 }
 
 type traktMovieTrending struct {
 	Watchers int        `json:"watchers"`
-	Movie    traktMovie `json:"movie"`
+	Movie    TraktMovie `json:"movie"`
 }
 
 type traktUserList struct {
-	Rank  int        `json:"rank"`
-	Id    int        `json:"id"`
-	Notes string     `json:"notes"`
-	Type  string     `json:"type"`
-	Movie traktMovie `json:"movie"`
-	Serie traktSerie `json:"show"`
+	Rank      int        `json:"rank"`
+	Id        int        `json:"id"`
+	Notes     string     `json:"notes"`
+	TraktType string     `json:"type"`
+	Movie     TraktMovie `json:"movie"`
+	Serie     TraktSerie `json:"show"`
 }
 
-type traktMovie struct {
+type TraktMovie struct {
 	Title string `json:"title"`
 	Year  int    `json:"year"`
 	Ids   struct {
@@ -44,11 +45,11 @@ type traktMovie struct {
 }
 type traktSerieTrending struct {
 	Watchers int        `json:"watchers"`
-	Serie    traktSerie `json:"show"`
+	Serie    TraktSerie `json:"show"`
 }
 type traktSerieAnticipated struct {
 	ListCount int        `json:"list_count"`
-	Serie     traktSerie `json:"show"`
+	Serie     TraktSerie `json:"show"`
 }
 type traktSerieSeason struct {
 	Number int `json:"number"`
@@ -60,7 +61,7 @@ type traktSerieSeason struct {
 		Tmdb   int    `json:"tmdb"`
 	} `json:"ids"`
 }
-type traktSerieSeasonEpisodes struct {
+type TraktSerieSeasonEpisodes struct {
 	Season  int    `json:"season"`
 	Episode int    `json:"number"`
 	Title   string `json:"title"`
@@ -81,7 +82,7 @@ type traktSerieSeasonEpisodes struct {
 	FirstAired            time.Time `json:"first_aired"`
 }
 
-type traktSerie struct {
+type TraktSerie struct {
 	Title string `json:"title"`
 	Year  int    `json:"year"`
 	Ids   struct {
@@ -176,27 +177,27 @@ func NewTraktClient(clientid string, clientsecret string, token oauth2.Token, se
 	if calls == 0 {
 		calls = 1
 	}
-	rl := rate.NewLimiter(rate.Every(time.Duration(seconds)*time.Second), calls) // 50 request every 10 seconds
-	limiter, _ := slidingwindow.NewLimiter(time.Duration(seconds)*time.Second, int64(calls), func() (slidingwindow.Window, slidingwindow.StopFunc) { return slidingwindow.NewLocalWindow() })
-	conf := &oauth2.Config{
-		ClientID:     clientid,
-		ClientSecret: clientsecret,
-		RedirectURL:  "http://localhost:9090",
-		Endpoint: oauth2.Endpoint{
-			AuthURL:  "https://api.trakt.tv/oauth/authorize",
-			TokenURL: "https://api.trakt.tv/oauth/token",
-		},
-	}
 	TraktApi = &traktClient{
 		ApiKey:       clientid,
 		ClientID:     clientid,
 		ClientSecret: clientsecret,
-		Client:       NewClient(disabletls, rl, limiter),
-		Auth:         conf,
-		Token:        &token}
+		Client: NewClient(
+			disabletls,
+			rate.NewLimiter(rate.Every(time.Duration(seconds)*time.Second), calls),
+			slidingwindow.NewLimiterNoStop(time.Duration(seconds)*time.Second, int64(calls), func() (slidingwindow.Window, slidingwindow.StopFunc) { return slidingwindow.NewLocalWindow() })),
+		Auth: &oauth2.Config{
+			ClientID:     clientid,
+			ClientSecret: clientsecret,
+			RedirectURL:  "http://localhost:9090",
+			Endpoint: oauth2.Endpoint{
+				AuthURL:  "https://api.trakt.tv/oauth/authorize",
+				TokenURL: "https://api.trakt.tv/oauth/token",
+			},
+		},
+		Token: &token}
 }
 
-func (t *traktClient) GetMoviePopular(limit int) ([]traktMovie, error) {
+func (t *traktClient) GetMoviePopular(limit int) ([]TraktMovie, error) {
 	url := "https://api.trakt.tv/movies/popular"
 	if limit >= 1 {
 		url = url + "?limit=" + strconv.Itoa(limit)
@@ -204,21 +205,26 @@ func (t *traktClient) GetMoviePopular(limit int) ([]traktMovie, error) {
 		limit = 10
 	}
 
-	req, _ := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return []TraktMovie{}, err
+	}
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("trakt-api-version", "2")
 	req.Header.Add("trakt-api-key", t.ApiKey)
 
-	var result []traktMovie
-	err := t.Client.DoJson(req, &result)
+	var result []TraktMovie
+	defer logger.ClearVar(&result)
+	err = t.Client.DoJson(req, &result)
+
 	if err != nil {
-		return []traktMovie{}, err
+		return []TraktMovie{}, err
 	}
-	//json.Unmarshal(responseData, &result)
+
 	return result, nil
 }
 
-func (t *traktClient) GetMovieTrending(limit int) ([]traktMovieTrending, error) {
+func (t *traktClient) GetMovieTrending(limit int) ([]TraktMovie, error) {
 	url := "https://api.trakt.tv/movies/trending"
 	if limit >= 1 {
 		url = url + "?limit=" + strconv.Itoa(limit)
@@ -226,22 +232,30 @@ func (t *traktClient) GetMovieTrending(limit int) ([]traktMovieTrending, error) 
 		limit = 10
 	}
 
-	req, _ := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return []TraktMovie{}, err
+	}
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("trakt-api-version", "2")
 	req.Header.Add("trakt-api-key", t.ApiKey)
 
 	var result []traktMovieTrending
+	defer logger.ClearVar(&result)
 
-	err := t.Client.DoJson(req, &result)
+	err = t.Client.DoJson(req, &result)
+
 	if err != nil {
-		return []traktMovieTrending{}, err
+		return []TraktMovie{}, err
 	}
-	//json.Unmarshal(responseData, &result)
-	return result, nil
+	res := make([]TraktMovie, 0, len(result))
+	for idx := range result {
+		res = append(res, result[idx].Movie)
+	}
+	return res, nil
 }
 
-func (t *traktClient) GetMovieAnticipated(limit int) ([]traktMovieAnticipated, error) {
+func (t *traktClient) GetMovieAnticipated(limit int) ([]TraktMovie, error) {
 	url := "https://api.trakt.tv/movies/anticipated"
 	if limit >= 1 {
 		url = url + "?limit=" + strconv.Itoa(limit)
@@ -249,122 +263,158 @@ func (t *traktClient) GetMovieAnticipated(limit int) ([]traktMovieAnticipated, e
 		limit = 10
 	}
 
-	req, _ := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return []TraktMovie{}, err
+	}
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("trakt-api-version", "2")
 	req.Header.Add("trakt-api-key", t.ApiKey)
 
 	var result []traktMovieAnticipated
+	defer logger.ClearVar(&result)
 
-	err := t.Client.DoJson(req, &result)
+	err = t.Client.DoJson(req, &result)
+
 	if err != nil {
-		return []traktMovieAnticipated{}, err
+		return []TraktMovie{}, err
 	}
-	//json.Unmarshal(responseData, &result)
-	return result, nil
+	res := make([]TraktMovie, 0, len(result))
+	for idx := range result {
+		res = append(res, result[idx].Movie)
+	}
+	return res, nil
 }
 
 func (t *traktClient) GetMovieAliases(movieid string) ([]traktMovieAliases, error) {
 	url := "https://api.trakt.tv/movies/" + movieid + "/aliases"
 
-	req, _ := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return []traktMovieAliases{}, err
+	}
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("trakt-api-version", "2")
 	req.Header.Add("trakt-api-key", t.ApiKey)
 
 	var result []traktMovieAliases
+	defer logger.ClearVar(&result)
 
-	err := t.Client.DoJson(req, &result)
+	err = t.Client.DoJson(req, &result)
+
 	if err != nil {
 		return []traktMovieAliases{}, err
 	}
-	//json.Unmarshal(responseData, &result)
+
 	return result, nil
 }
 func (t *traktClient) GetMovie(movieid string) (traktMovieExtend, error) {
 	url := "https://api.trakt.tv/movies/" + movieid + "?extended=full"
 
-	req, _ := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return traktMovieExtend{}, err
+	}
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("trakt-api-version", "2")
 	req.Header.Add("trakt-api-key", t.ApiKey)
 
 	var result traktMovieExtend
 
-	err := t.Client.DoJson(req, &result)
+	err = t.Client.DoJson(req, &result)
+
 	if err != nil {
 		return traktMovieExtend{}, err
 	}
-	//json.Unmarshal(responseData, &result)
+
 	return result, nil
 }
 func (t *traktClient) GetSerie(movieid string) (traktSerieData, error) {
 	url := "https://api.trakt.tv/shows/" + movieid + "?extended=full"
 
-	req, _ := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return traktSerieData{}, err
+	}
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("trakt-api-version", "2")
 	req.Header.Add("trakt-api-key", t.ApiKey)
 
 	var result traktSerieData
 
-	err := t.Client.DoJson(req, &result)
+	err = t.Client.DoJson(req, &result)
+
 	if err != nil {
 		return traktSerieData{}, err
 	}
-	//json.Unmarshal(responseData, &result)
+
 	return result, nil
 }
 
 func (t *traktClient) GetSerieAliases(movieid string) ([]traktShowAliases, error) {
 	url := "https://api.trakt.tv/shows/" + movieid + "/aliases"
 
-	req, _ := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return []traktShowAliases{}, err
+	}
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("trakt-api-version", "2")
 	req.Header.Add("trakt-api-key", t.ApiKey)
 
 	var result []traktShowAliases
+	defer logger.ClearVar(&result)
 
-	err := t.Client.DoJson(req, &result)
+	err = t.Client.DoJson(req, &result)
+
 	if err != nil {
 		return []traktShowAliases{}, err
 	}
-	//json.Unmarshal(responseData, &result)
+
 	return result, nil
 }
 func (t *traktClient) GetSerieSeasons(movieid string) ([]traktSerieSeason, error) {
 	url := "https://api.trakt.tv/shows/" + movieid + "/seasons"
 
-	req, _ := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return []traktSerieSeason{}, err
+	}
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("trakt-api-version", "2")
 	req.Header.Add("trakt-api-key", t.ApiKey)
 
 	var result []traktSerieSeason
+	defer logger.ClearVar(&result)
 
-	err := t.Client.DoJson(req, &result)
+	err = t.Client.DoJson(req, &result)
+
 	if err != nil {
 		return []traktSerieSeason{}, err
 	}
-	//json.Unmarshal(responseData, &result)
+
 	return result, nil
 }
-func (t *traktClient) GetSerieSeasonEpisodes(movieid string, season int) ([]traktSerieSeasonEpisodes, error) {
+func (t *traktClient) GetSerieSeasonEpisodes(movieid string, season int) ([]TraktSerieSeasonEpisodes, error) {
 	url := "https://api.trakt.tv/shows/" + movieid + "/seasons/" + strconv.Itoa(season) + "?extended=full"
 
-	req, _ := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return []TraktSerieSeasonEpisodes{}, err
+	}
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("trakt-api-version", "2")
 	req.Header.Add("trakt-api-key", t.ApiKey)
 
-	var result []traktSerieSeasonEpisodes
+	var result []TraktSerieSeasonEpisodes
+	defer logger.ClearVar(&result)
 
-	err := t.Client.DoJson(req, &result)
+	err = t.Client.DoJson(req, &result)
+
 	if err != nil {
-		return []traktSerieSeasonEpisodes{}, err
+		return []TraktSerieSeasonEpisodes{}, err
 	}
-	//json.Unmarshal(responseData, &result)
+
 	return result, nil
 }
 
@@ -374,7 +424,10 @@ func (t *traktClient) GetUserList(username string, listname string, listtype str
 		url = url + "?limit=" + strconv.Itoa(limit)
 	}
 
-	req, _ := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return []traktUserList{}, err
+	}
 	req.Header.Add("Content-Type", "application/json")
 	if t.Token.AccessToken != "" {
 		req.Header.Add("Authorization", "Bearer "+t.Token.AccessToken)
@@ -383,16 +436,18 @@ func (t *traktClient) GetUserList(username string, listname string, listtype str
 	req.Header.Add("trakt-api-key", t.ApiKey)
 
 	var result []traktUserList
+	defer logger.ClearVar(&result)
 
-	err := t.Client.DoJson(req, &result)
+	err = t.Client.DoJson(req, &result)
+
 	if err != nil {
 		return []traktUserList{}, err
 	}
-	//json.Unmarshal(responseData, &result)
+
 	return result, nil
 }
 
-func (t *traktClient) GetSeriePopular(limit int) ([]traktSerie, error) {
+func (t *traktClient) GetSeriePopular(limit int) ([]TraktSerie, error) {
 	url := "https://api.trakt.tv/shows/popular"
 	if limit >= 1 {
 		url = url + "?limit=" + strconv.Itoa(limit)
@@ -400,22 +455,27 @@ func (t *traktClient) GetSeriePopular(limit int) ([]traktSerie, error) {
 		limit = 10
 	}
 
-	req, _ := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return []TraktSerie{}, err
+	}
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("trakt-api-version", "2")
 	req.Header.Add("trakt-api-key", t.ApiKey)
 
-	var result []traktSerie
+	var result []TraktSerie
+	defer logger.ClearVar(&result)
 
-	err := t.Client.DoJson(req, &result)
+	err = t.Client.DoJson(req, &result)
+
 	if err != nil {
-		return []traktSerie{}, err
+		return []TraktSerie{}, err
 	}
-	//json.Unmarshal(responseData, &result)
+
 	return result, nil
 }
 
-func (t *traktClient) GetSerieTrending(limit int) ([]traktSerieTrending, error) {
+func (t *traktClient) GetSerieTrending(limit int) ([]TraktSerie, error) {
 	url := "https://api.trakt.tv/shows/trending"
 	if limit >= 1 {
 		url = url + "?limit=" + strconv.Itoa(limit)
@@ -423,22 +483,30 @@ func (t *traktClient) GetSerieTrending(limit int) ([]traktSerieTrending, error) 
 		limit = 10
 	}
 
-	req, _ := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return []TraktSerie{}, err
+	}
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("trakt-api-version", "2")
 	req.Header.Add("trakt-api-key", t.ApiKey)
 
 	var result []traktSerieTrending
+	defer logger.ClearVar(&result)
 
-	err := t.Client.DoJson(req, &result)
+	err = t.Client.DoJson(req, &result)
+
 	if err != nil {
-		return []traktSerieTrending{}, err
+		return []TraktSerie{}, err
 	}
-	//json.Unmarshal(responseData, &result)
-	return result, nil
+	res := make([]TraktSerie, 0, len(result))
+	for idx := range result {
+		res = append(res, result[idx].Serie)
+	}
+	return res, nil
 }
 
-func (t *traktClient) GetSerieAnticipated(limit int) ([]traktSerieAnticipated, error) {
+func (t *traktClient) GetSerieAnticipated(limit int) ([]TraktSerie, error) {
 	url := "https://api.trakt.tv/shows/anticipated"
 	if limit >= 1 {
 		url = url + "?limit=" + strconv.Itoa(limit)
@@ -446,19 +514,27 @@ func (t *traktClient) GetSerieAnticipated(limit int) ([]traktSerieAnticipated, e
 		limit = 10
 	}
 
-	req, _ := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return []TraktSerie{}, err
+	}
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("trakt-api-version", "2")
 	req.Header.Add("trakt-api-key", t.ApiKey)
 
 	var result []traktSerieAnticipated
+	defer logger.ClearVar(&result)
 
-	err := t.Client.DoJson(req, &result)
+	err = t.Client.DoJson(req, &result)
+
 	if err != nil {
-		return []traktSerieAnticipated{}, err
+		return []TraktSerie{}, err
 	}
-	//json.Unmarshal(responseData, &result)
-	return result, nil
+	res := make([]TraktSerie, 0, len(result))
+	for idx := range result {
+		res = append(res, result[idx].Serie)
+	}
+	return res, nil
 }
 
 func (t *traktClient) GetAuthUrl() string {
@@ -486,7 +562,10 @@ func (t *traktClient) GetUserListAuth(username string, listname string, listtype
 		url = url + "?limit=" + strconv.Itoa(limit)
 	}
 
-	req, _ := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return []traktUserList{}, err
+	}
 	req.Header.Add("Content-Type", "application/json")
 	if t.Token.AccessToken != "" {
 		req.Header.Add("Authorization", "Bearer "+t.Token.AccessToken)
@@ -495,11 +574,13 @@ func (t *traktClient) GetUserListAuth(username string, listname string, listtype
 	req.Header.Add("trakt-api-key", t.ApiKey)
 
 	var result []traktUserList
+	defer logger.ClearVar(&result)
 
-	err := t.Client.DoJson(req, &result)
+	err = t.Client.DoJson(req, &result)
+
 	if err != nil {
 		return []traktUserList{}, err
 	}
-	//json.Unmarshal(responseData, &result)
+
 	return result, nil
 }

@@ -49,17 +49,17 @@ func InitScheduler() {
 	}
 	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
 
-	QueueFeeds = tasks.NewDispatcher("Feed", 1, 100)
+	QueueFeeds = tasks.NewDispatcher("Feed", 1, 40)
 	QueueFeeds.Start()
 
-	QueueData = tasks.NewDispatcher("Data", 1, 100)
+	QueueData = tasks.NewDispatcher("Data", 1, 40)
 	QueueData.Start()
 
-	QueueSearch = tasks.NewDispatcher("Search", cfg_general.ConcurrentScheduler, 100)
+	QueueSearch = tasks.NewDispatcher("Search", cfg_general.ConcurrentScheduler, 40)
 	QueueSearch.Start()
 
 	for _, idxmovie := range config.ConfigGetPrefix("movie_") {
-		configTemplate := *idxmovie
+		configTemplate := idxmovie
 		if !config.ConfigCheck(configTemplate.Name) {
 			continue
 		}
@@ -303,7 +303,7 @@ func InitScheduler() {
 	}
 
 	for _, idxserie := range config.ConfigGetPrefix("serie_") {
-		configTemplate := *idxserie
+		configTemplate := idxserie
 		if !config.ConfigCheck(configTemplate.Name) {
 			continue
 		}
@@ -655,13 +655,11 @@ func InitScheduler() {
 	if defaultschedule.Interval_imdb != "" {
 		if cfg_general.UseCronInsteadOfInterval {
 			QueueFeeds.DispatchCron("Refresh IMDB", func() {
-				//utils.InitFillImdb()
 				utils.FillImdb()
 				debug.FreeOSMemory()
 			}, convertcron(defaultschedule.Interval_imdb))
 		} else {
 			QueueFeeds.DispatchEvery("Refresh IMDB", func() {
-				//utils.InitFillImdb()
 				utils.FillImdb()
 				debug.FreeOSMemory()
 			}, converttime(defaultschedule.Interval_imdb))
@@ -669,7 +667,6 @@ func InitScheduler() {
 	}
 	if defaultschedule.Cron_imdb != "" {
 		QueueFeeds.DispatchCron("Refresh IMDB", func() {
-			//utils.InitFillImdb()
 			utils.FillImdb()
 			debug.FreeOSMemory()
 		}, defaultschedule.Cron_imdb)

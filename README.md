@@ -23,6 +23,7 @@ Inspirations: Radarr/Sonarr and Flexget
 * [After first Start - Trakt Authorize](#after-first-start---trakt-authorize)
 * [Donate](#donate)
 * [Examples](#examples)
+* [History](#history)
 
 ## Breaking Change
 
@@ -117,21 +118,27 @@ Inspirations: Radarr/Sonarr and Flexget
 ## Ram Usage
 
 Currently seen: 
-Constanly in use - between 30MB-150MB-peek:1-1.5GB
+Constanly in use - between 30MB-200MB-peek:1-1.5GB
 Swap Memory: Default ~300-600MB - on a file move action the swap memory will grow to at least the complete file size - so for a 8GB file expect also this much!
 
 ## Get started
 
-- for Docker: Download Repository - and create docker container for build/run using compose files/nzbs
-- for Windows/Linux/Mac: Download latest [prebuild zip](https://github.com/Kellerman81/go_media_downloader/releases/tag/latest_develop) for your OS
-- for all: setup your config and name it config.toml ! - this will initialize the config.db and also update it on change
-- for all: setup your series.toml if wanted
-- for Docker: Start the build container to build the executable
-- for Docker: Start the run container to run the executable
-- for Windows/Linux/Mac: Run the go_media_downloader executable
+- Guide for Docker:
+	- Download Repository - and create docker container for build/run using compose files/nzbs
+	- setup your config and name it config.toml ! - this will initialize the config.db and also update it on change
+	- setup your series.toml if wanted
+	- Start the build container to build the executable (use compose-build.yml to create the container)
+	- Start the run container to run the executable (use compose-run.yml to create the container)
+  
+- Guide for Windows/Linux/Mac:
+	- Download latest [prebuild zip](https://github.com/Kellerman81/go_media_downloader/releases/tag/latest_develop) for your OS or the latest release
+	- setup your config and name it config.toml ! - this will initialize the config.db and also update it on change
+	- setup your series.toml if wanted
+	- Run the go_media_downloader executable
+
 - it will first build the imdb cache and then start importing your feeds, get metadata and scan/match the data - depending on your media repository size it might take several hours
 - after the initial scan is finished the API and the scheduler will be started
-- the scheduler will the scan for new releases and new/missing data in your folders and refresh your feeds
+- the scheduler will then scan for new releases and new/missing data in your folders and refresh your feeds
 - You have to configure the templates and Media Groups - also if you want to use trakt, tmdb or omdb you have to get API Keys from them and enter them in the config
 
 Find the API Documentation after start at:
@@ -163,7 +170,13 @@ https://go-media-downloader.readme.io/
 - exceptions: if a movie/show is in multiple lists i try to exclude them from the others (can be done in the config) so that i have the movie/show only in the list with the highest quality - if a movie/show is in 2 lists with different qualities the release would be constantly redownloaded
 - if you want more help start a discussion - the system is running stable for some time now
 
+## History
+
+- V0.1: initial Release
+- V0.1.1: Performance and Ram Usage Changes - rewrite a lot of functions
+
 ## Bugs
 
 - Currently it may happen that new series won't be searched - use /api/series/search/id/123 endpoint in that case once  after that it will update
 - currently movies/series in different languages need to be in diffent root folders - ex. /share/Movies_EN and ..Movies_FR
+- If a movie or episode isn't imported after download you might need to disable the runtime check

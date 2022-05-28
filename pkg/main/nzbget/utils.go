@@ -5,8 +5,8 @@ import (
 	"encoding/xml"
 	"io"
 	"io/ioutil"
-	"net/http"
 
+	"github.com/Kellerman81/go_media_downloader/logger"
 	nzb "github.com/andrewstuart/go-nzb"
 	"github.com/pkg/errors"
 )
@@ -25,6 +25,7 @@ func readFile(path string) (string, error) {
 func base64encode(s string) string {
 	data := []byte(s)
 	str := base64.StdEncoding.EncodeToString(data)
+	data = nil
 	return str
 }
 
@@ -38,11 +39,12 @@ func base64decode(s string) string {
 
 func downloadURL(URL string) (string, error) {
 	// Get the data
-	resp, err := http.Get(URL)
+	resp, err := logger.GetUrlResponse(URL)
 	if err != nil {
 		return "", errors.Wrap(err, "could not http get url")
 	}
 	defer resp.Body.Close()
+	defer logger.ClearVar(&resp)
 
 	file, err := ioutil.TempFile("./temp", "flame-download-*")
 	if err != nil {

@@ -1,24 +1,31 @@
 package logger
 
 import (
+	"bytes"
+	"crypto/tls"
 	"fmt"
 	"html"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path"
+	"reflect"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 
+	"github.com/rainycape/unidecode"
 	"golang.org/x/text/runes"
 	"golang.org/x/text/transform"
 	"golang.org/x/text/unicode/norm"
 )
 
 func StringReplaceArray(instr string, what []string, with string) string {
-	for _, line := range what {
-		instr = strings.Replace(instr, line, with, -1)
+	defer ClearVar(&what)
+	for idx := range what {
+		instr = strings.Replace(instr, what[idx], with, -1)
 	}
 	return instr
 }
@@ -205,8 +212,137 @@ func mapDecomposeUnavailable(r rune) rune {
 	return r
 }
 
-//var Transformer transform.Transformer = transform.Chain(norm.NFD, runes.Remove(runes.In(unicode.Mn)), norm.NFC)
 var transformer transform.Transformer = transform.Chain(runes.Map(mapDecomposeUnavailable), norm.NFD, runes.Remove(runes.In(unicode.Mn)), norm.NFC)
+
+var subRune = map[rune]string{
+	'&':  "and",
+	'@':  "at",
+	'"':  "",
+	'\'': "",
+	'’':  "",
+	'_':  "",
+	'‒':  "-", // figure dash
+	'–':  "-", // en dash
+	'—':  "-", // em dash
+	'―':  "-", // horizontal bar
+	'ä':  "ae",
+	'Ä':  "Ae",
+	'ö':  "oe",
+	'Ö':  "Oe",
+	'ü':  "ue",
+	'Ü':  "Ue",
+	'ß':  "ss",
+}
+
+func makeSlug(s string) (slug string) {
+	slug = strings.TrimSpace(s)
+	slug = substituteRune(slug)
+	slug = unidecode.Unidecode(slug)
+
+	defer func() { // recovers panic
+		if e := recover(); e != nil {
+			fmt.Println("Recovered from panic (makeslug) ", e)
+		}
+	}()
+	slug = strings.ToLower(slug)
+	slug = replaceUnwantedChars(slug)
+	slug = strings.Replace(slug, "--", "-", -1)
+	slug = strings.Replace(slug, "--", "-", -1)
+	slug = strings.Replace(slug, "--", "-", -1)
+	return
+}
+
+// SubstituteRune substitutes string chars with provided rune
+// substitution map. One pass.
+func substituteRune(s string) string {
+	var buf bytes.Buffer
+	for _, c := range s {
+		if d, ok := subRune[c]; ok {
+			buf.WriteString(d)
+		} else {
+			buf.WriteRune(c)
+		}
+	}
+	return buf.String()
+}
+
+var wantedChars = map[rune]bool{
+	'a': true,
+	'b': true,
+	'c': true,
+	'd': true,
+	'e': true,
+	'f': true,
+	'g': true,
+	'h': true,
+	'i': true,
+	'j': true,
+	'k': true,
+	'l': true,
+	'm': true,
+	'n': true,
+	'o': true,
+	'p': true,
+	'q': true,
+	'r': true,
+	's': true,
+	't': true,
+	'u': true,
+	'v': true,
+	'w': true,
+	'x': true,
+	'y': true,
+	'z': true,
+	'A': true,
+	'B': true,
+	'C': true,
+	'D': true,
+	'E': true,
+	'F': true,
+	'G': true,
+	'H': true,
+	'I': true,
+	'J': true,
+	'K': true,
+	'L': true,
+	'M': true,
+	'N': true,
+	'O': true,
+	'P': true,
+	'Q': true,
+	'R': true,
+	'S': true,
+	'T': true,
+	'U': true,
+	'V': true,
+	'W': true,
+	'X': true,
+	'Y': true,
+	'Z': true,
+	'0': true,
+	'1': true,
+	'2': true,
+	'3': true,
+	'4': true,
+	'5': true,
+	'6': true,
+	'7': true,
+	'8': true,
+	'9': true,
+	'-': true,
+}
+
+func replaceUnwantedChars(s string) string {
+	var buf bytes.Buffer
+	for _, c := range s {
+		if _, ok := wantedChars[c]; ok {
+			buf.WriteString(string(c))
+		} else {
+			buf.WriteRune('-')
+		}
+	}
+	return buf.String()
+}
 
 //no chinese or cyrilic supported
 func StringToSlug(instr string) string {
@@ -222,52 +358,16 @@ func StringToSlug(instr string) string {
 			instr = instr2
 		}
 	}
-	instr = strings.Replace(instr, "ä", "ae", -1)
-	instr = strings.Replace(instr, "ö", "oe", -1)
-	instr = strings.Replace(instr, "ü", "ue", -1)
-	instr = strings.Replace(instr, "ß", "ss", -1)
-	instr = strings.Replace(instr, "&", "and", -1)
-	instr = strings.Replace(instr, "@", "at", -1)
-	instr = strings.Replace(instr, "½", ",5", -1)
-	instr = strings.Replace(instr, "'", "", -1)
-	instr = StringReplaceArray(instr, []string{" ", "§", "$", "%", "/", "(", ")", "=", "!", "?", "`", "\\", "}", "]", "[", "{", "|", ",", ".", ";", ":", "_", "+", "#", "<", ">", "*"}, "-")
-	instr = strings.Replace(instr, "--", "-", -1)
-	instr = strings.Replace(instr, "--", "-", -1)
-	instr = strings.Replace(instr, "--", "-", -1)
-	instr = strings.Replace(instr+"-", "-i-", "-1-", -1)
-	instr = strings.Replace(instr, "-ii-", "-2-", -1)
-	instr = strings.Replace(instr, "-iii-", "-3-", -1)
-	instr = strings.Replace(instr, "-iv-", "-4-", -1)
-	instr = strings.Replace(instr, "-v-", "-5-", -1)
-	instr = strings.Replace(instr, "-vi-", "-6-", -1)
-	instr = strings.Replace(instr, "-vii-", "-7-", -1)
-	instr = strings.Replace(instr, "-viii-", "-8-", -1)
-	instr = strings.Replace(instr, "-ix-", "-9-", -1)
-	instr = strings.Replace(instr, "-x-", "-10-", -1)
-	instr = strings.Replace(instr, "-xi-", "-11-", -1)
-	instr = strings.Replace(instr, "-xii-", "-12-", -1)
-	instr = strings.Replace(instr, "-xiii-", "-13-", -1)
-	instr = strings.Replace(instr, "-xiv-", "-14-", -1)
-	instr = strings.Replace(instr, "-xv-", "-15-", -1)
-	instr = strings.Replace(instr, "-xvi-", "-16-", -1)
-	instr = strings.Replace(instr, "-xvii-", "-17-", -1)
-	instr = strings.Replace(instr, "-xviii-", "-18-", -1)
-	instr = strings.Replace(instr, "-xix-", "-19-", -1)
-	instr = strings.Replace(instr, "-xx-", "-20-", -1)
+	instr = makeSlug(instr)
+	instr = strings.TrimSuffix(instr, "-")
 
 	defer func() { // recovers panic
 		if e := recover(); e != nil {
-			fmt.Println("Recovered from panic")
+			fmt.Println("Recovered from panic (slugger) ", e)
 		}
 	}()
 
-	result, _, err := transform.String(transformer, instr)
-	if err != nil {
-		result = instr
-	} else {
-		result = strings.Trim(result, "-")
-	}
-	return result
+	return instr
 }
 
 func Path(s string, allowslash bool) string {
@@ -288,11 +388,13 @@ func Path(s string, allowslash bool) string {
 	filePath = strings.Replace(filePath, "..", "", -1)
 	filePath = path.Clean(filePath)
 	if allowslash {
-		filePath = StringReplaceArray(filePath, []string{":", "*", "?", "\"", "<", ">", "|"}, "")
-		//filePath = regexPathAllowSlash.ReplaceAllString(filePath, "")
+		for _, line := range []string{":", "*", "?", "\"", "<", ">", "|"} {
+			filePath = strings.Replace(filePath, line, "", -1)
+		}
 	} else {
-		filePath = StringReplaceArray(filePath, []string{"\\", "/", ":", "*", "?", "\"", "<", ">", "|"}, "")
-		//filePath = regexPathDisallowSlash.ReplaceAllString(filePath, "")
+		for _, line := range []string{"\\", "/", ":", "*", "?", "\"", "<", ">", "|"} {
+			filePath = strings.Replace(filePath, line, "", -1)
+		}
 	}
 	filePath = strings.Trim(filePath, " ")
 
@@ -300,16 +402,35 @@ func Path(s string, allowslash bool) string {
 	return filePath
 }
 
+func GetUrlResponse(url string) (*http.Response, error) {
+	webClient := &http.Client{Timeout: 120 * time.Second,
+		Transport: &http.Transport{
+			Dial: (&net.Dialer{
+				Timeout:   30 * time.Second,
+				KeepAlive: 30 * time.Second,
+			}).Dial,
+			TLSHandshakeTimeout:   20 * time.Second,
+			ResponseHeaderTimeout: 20 * time.Second,
+			TLSClientConfig:       &tls.Config{InsecureSkipVerify: true},
+			MaxIdleConns:          20,
+			MaxConnsPerHost:       10,
+			DisableCompression:    false,
+			DisableKeepAlives:     true,
+			IdleConnTimeout:       120 * time.Second}}
+	req, _ := http.NewRequest("GET", url, nil)
+	// Get the data
+	return webClient.Do(req)
+}
+
 // DownloadFile will download a url to a local file. It's efficient because it will
 // write as it downloads and not load the whole file into memory.
 func DownloadFile(saveIn string, fileprefix string, filename string, url string) error {
-
-	// Get the data
-	resp, err := http.Get(url)
+	resp, err := GetUrlResponse(url)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
+	defer ClearVar(&resp)
 
 	// Create the file
 	if len(filename) == 0 {
@@ -333,6 +454,7 @@ func DownloadFile(saveIn string, fileprefix string, filename string, url string)
 }
 
 func CheckStringArray(array []string, find string) bool {
+	defer ClearVar(&array)
 	for idx := range array {
 		if array[idx] == find {
 			return true
@@ -342,13 +464,22 @@ func CheckStringArray(array []string, find string) bool {
 }
 
 func FindAndDeleteStringArray(array []string, item string) []string {
+	defer ClearVar(&array)
 	new := array[:0]
-	for _, i := range array {
-		if i != item {
-			new = append(new, i)
+	defer ClearVar(&new)
+	for idx := range array {
+		if array[idx] != item {
+			new = append(new, array[idx])
 		}
 	}
 	return new
+}
+
+func ClearVar(i interface{}) {
+	v := reflect.ValueOf(i)
+	if !v.IsZero() && v.Kind() == reflect.Pointer {
+		v.Elem().Set(reflect.Zero(v.Elem().Type()))
+	}
 }
 
 func TrimStringInclAfterString(s string, search string) string {
@@ -402,13 +533,13 @@ func StringReplaceDiacritics(instr string) string {
 	instr = strings.Replace(instr, "Ä", "Ae", -1)
 	instr = strings.Replace(instr, "Ö", "Oe", -1)
 	instr = strings.Replace(instr, "Ü", "Ue", -1)
-	//Transformer := transform.Chain(norm.NFD, runes.Remove(runes.In(unicode.Mn)), norm.NFC)
 	result, _, _ := transform.String(transformer, instr)
 	return result
 }
 
 func Getrootpath(foldername string) (string, string) {
-	folders := []string{}
+	var folders []string
+	defer ClearVar(&folders)
 
 	if strings.Contains(foldername, "/") {
 		folders = strings.Split(foldername, "/")

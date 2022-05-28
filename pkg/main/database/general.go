@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/config"
+	"github.com/Kellerman81/go_media_downloader/logger"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/sqlite3"
@@ -27,11 +28,11 @@ var DB *sqlx.DB
 var SQLDB *sql.DB
 var DBImdb *sqlx.DB
 var ReadWriteMu *sync.RWMutex
-var WriteMu *sync.Mutex
 var Getqualities []QualitiesRegex
 var Getresolutions []QualitiesRegex
 var Getcodecs []QualitiesRegex
 var Getaudios []QualitiesRegex
+var AudioStr, CodecStr, QualityStr, ResolutionStr []string
 
 type QualitiesRegex struct {
 	Regex string
@@ -56,7 +57,6 @@ func InitDb(dbloglevel string) {
 	}
 	db.SetMaxIdleConns(15)
 	db.SetMaxOpenConns(5)
-	WriteMu = &sync.Mutex{}
 	ReadWriteMu = &sync.RWMutex{}
 	DB = db
 	SQLDB = db.DB
@@ -80,33 +80,79 @@ func InitImdbdb(dbloglevel string, dbfile string) *sqlx.DB {
 
 func GetVars() {
 
+	logger.Log.Infoln("Database Get Variables 1")
 	quali, _ := QueryQualities(Query{Where: "Type=1", OrderBy: "priority desc"})
+	logger.Log.Infoln("Database Get Variables 1-1")
 	Getresolutions = make([]QualitiesRegex, 0, len(quali))
-	for _, qu := range quali {
-		config.RegexDelete(qu.Regex)
-		config.RegexAdd(qu.Regex, *regexp.MustCompile(qu.Regex))
-		Getresolutions = append(Getresolutions, QualitiesRegex{Regex: qu.Regex, Qualities: qu})
+	for idx := range quali {
+		logger.Log.Infoln("Database Get Variables 1-", quali[idx])
+		config.RegexDelete(quali[idx].Regex)
+		config.RegexAdd(quali[idx].Regex, *regexp.MustCompile(quali[idx].Regex))
+		Getresolutions = append(Getresolutions, QualitiesRegex{Regex: quali[idx].Regex, Qualities: quali[idx]})
 	}
+
+	logger.Log.Infoln("Database Get Variables 2")
 	quali, _ = QueryQualities(Query{Where: "Type=2", OrderBy: "priority desc"})
 	Getqualities = make([]QualitiesRegex, 0, len(quali))
-	for _, qu := range quali {
-		config.RegexDelete(qu.Regex)
-		config.RegexAdd(qu.Regex, *regexp.MustCompile(qu.Regex))
-		Getqualities = append(Getqualities, QualitiesRegex{Regex: qu.Regex, Qualities: qu})
+	for idx := range quali {
+		config.RegexDelete(quali[idx].Regex)
+		config.RegexAdd(quali[idx].Regex, *regexp.MustCompile(quali[idx].Regex))
+		Getqualities = append(Getqualities, QualitiesRegex{Regex: quali[idx].Regex, Qualities: quali[idx]})
 	}
+
+	logger.Log.Infoln("Database Get Variables 3")
 	quali, _ = QueryQualities(Query{Where: "Type=3", OrderBy: "priority desc"})
 	Getcodecs = make([]QualitiesRegex, 0, len(quali))
-	for _, qu := range quali {
-		config.RegexDelete(qu.Regex)
-		config.RegexAdd(qu.Regex, *regexp.MustCompile(qu.Regex))
-		Getcodecs = append(Getcodecs, QualitiesRegex{Regex: qu.Regex, Qualities: qu})
+	for idx := range quali {
+		config.RegexDelete(quali[idx].Regex)
+		config.RegexAdd(quali[idx].Regex, *regexp.MustCompile(quali[idx].Regex))
+		Getcodecs = append(Getcodecs, QualitiesRegex{Regex: quali[idx].Regex, Qualities: quali[idx]})
 	}
+
+	logger.Log.Infoln("Database Get Variables 4")
 	quali, _ = QueryQualities(Query{Where: "Type=4", OrderBy: "priority desc"})
 	Getaudios = make([]QualitiesRegex, 0, len(quali))
-	for _, qu := range quali {
-		config.RegexDelete(qu.Regex)
-		config.RegexAdd(qu.Regex, *regexp.MustCompile(qu.Regex))
-		Getaudios = append(Getaudios, QualitiesRegex{Regex: qu.Regex, Qualities: qu})
+	for idx := range quali {
+		config.RegexDelete(quali[idx].Regex)
+		config.RegexAdd(quali[idx].Regex, *regexp.MustCompile(quali[idx].Regex))
+		Getaudios = append(Getaudios, QualitiesRegex{Regex: quali[idx].Regex, Qualities: quali[idx]})
+	}
+
+	logger.Log.Infoln("Database Get Variables 5")
+	AudioStr = make([]string, 0, len(Getaudios)*2)
+	for idx := range Getaudios {
+		splitted := strings.Split(Getaudios[idx].Strings, ",")
+		for idxsplit := range splitted {
+			AudioStr = append(AudioStr, splitted[idxsplit])
+		}
+		splitted = nil
+	}
+	logger.Log.Infoln("Database Get Variables 6")
+	CodecStr = make([]string, 0, len(Getcodecs)*2)
+	for idx := range Getcodecs {
+		splitted := strings.Split(Getcodecs[idx].Strings, ",")
+		for idxsplit := range splitted {
+			CodecStr = append(CodecStr, splitted[idxsplit])
+		}
+		splitted = nil
+	}
+	logger.Log.Infoln("Database Get Variables 7")
+	QualityStr = make([]string, 0, len(Getqualities)*7)
+	for idx := range Getqualities {
+		splitted := strings.Split(Getqualities[idx].Strings, ",")
+		for idxsplit := range splitted {
+			QualityStr = append(QualityStr, splitted[idxsplit])
+		}
+		splitted = nil
+	}
+	logger.Log.Infoln("Database Get Variables 8")
+	ResolutionStr = make([]string, 0, len(Getresolutions)*4)
+	for idx := range Getresolutions {
+		splitted := strings.Split(Getresolutions[idx].Strings, ",")
+		for idxsplit := range splitted {
+			ResolutionStr = append(ResolutionStr, splitted[idxsplit])
+		}
+		splitted = nil
 	}
 }
 func Upgrade(c *gin.Context) {
@@ -141,6 +187,7 @@ func UpgradeDB() {
 		"file://./schema/db",
 		"sqlite3://./databases/data.db?cache=shared&_fk=1&_cslike=0",
 	)
+	defer logger.ClearVar(&m)
 	vers, _, _ := m.Version()
 	DBVersion = strconv.Itoa(int(vers))
 	if err != nil {
@@ -150,7 +197,6 @@ func UpgradeDB() {
 	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
 		log.Fatalf("An error occurred while syncing the database.. %v", err)
 	}
-	m = nil
 }
 
 type JobHistory struct {
@@ -197,18 +243,22 @@ func RemoveOldDbBackups(max int) error {
 
 	prefix := "data.db."
 	files, err := oldDatabaseFiles(prefix)
+	defer logger.ClearVar(&files)
 	if err != nil {
 		return err
 	}
 
 	var remove []backupInfo
+	defer logger.ClearVar(&remove)
 
 	if max > 0 && max < len(files) {
-		preserved := []string{}
-		for _, f := range files {
+		preserved := make([]string, 0, len(files))
+		defer logger.ClearVar(&preserved)
+
+		for idx := range files {
 			// Only count the uncompressed log file or the
 			// compressed log file, not both.
-			fn := f.Name()
+			fn := files[idx].Name()
 			if !strings.HasPrefix(fn, prefix) {
 				continue
 			}
@@ -216,13 +266,13 @@ func RemoveOldDbBackups(max int) error {
 			preserved = append(preserved, fn)
 
 			if len(preserved) > max {
-				remove = append(remove, f)
+				remove = append(remove, files[idx])
 			}
 		}
 	}
 
-	for _, f := range remove {
-		errRemove := os.Remove(filepath.Join("./backup", f.Name()))
+	for idx := range remove {
+		errRemove := os.Remove(filepath.Join("./backup", remove[idx].Name()))
 		if err == nil && errRemove != nil {
 			err = errRemove
 		}
@@ -236,15 +286,15 @@ func oldDatabaseFiles(prefix string) ([]backupInfo, error) {
 	if err != nil {
 		return nil, fmt.Errorf("can't read log file directory: %s", err)
 	}
-	backupFiles := []backupInfo{}
+	backupFiles := make([]backupInfo, 0, len(files))
 
-	for _, f := range files {
-		if f.IsDir() {
+	for idx := range files {
+		if files[idx].IsDir() {
 			continue
 		}
-		if strings.HasPrefix(f.Name(), prefix) {
-			if t, err := timeFromName(f.Name(), prefix, ""); err == nil {
-				backupFiles = append(backupFiles, backupInfo{t, f})
+		if strings.HasPrefix(files[idx].Name(), prefix) {
+			if t, err := timeFromName(files[idx].Name(), prefix, ""); err == nil {
+				backupFiles = append(backupFiles, backupInfo{t, files[idx]})
 				continue
 			}
 		}
@@ -262,10 +312,10 @@ func timeFromName(filename, prefix, ext string) (time.Time, error) {
 	if !strings.HasSuffix(filename, ext) {
 		return time.Time{}, errors.New("mismatched extension")
 	}
-	ts := filename[len(prefix) : len(filename)-len(ext)]
+	ts := strings.Repeat(filename[len(prefix):len(filename)-len(ext)], 1)
 	if idx := strings.Index(ts, "."); idx != -1 {
 		idn := idx + 1
-		ts = ts[idn:]
+		ts = strings.Repeat(ts[idn:], 1)
 	}
 	return time.Parse("20060102_150405", ts)
 }

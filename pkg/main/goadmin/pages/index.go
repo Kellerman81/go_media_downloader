@@ -503,19 +503,19 @@ like Aldus PageMaker including versions of Lorem Ipsum.
 	id := 0
 	lists, _ := database.QueryStaticColumnsOneString("Select distinct listname from movies where length(listname) >= 1", "Select count(distinct listname) from movies where length(listname) >= 1")
 	for idx := range lists {
-		all, _ := database.CountRowsStatic("select count(*) from movies where listname=?", lists[idx].Str)
-		missing, _ := database.CountRowsStatic("select count(*) from movies where listname=? and missing=1", lists[idx].Str)
-		reached, _ := database.CountRowsStatic("select count(*) from movies where listname=? and quality_reached=1", lists[idx].Str)
-		upgrade, _ := database.CountRowsStatic("select count(*) from movies where listname=? and quality_reached=0 and missing=0", lists[idx].Str)
+		all, _ := database.CountRowsStatic("select count(*) from movies where listname = ?", lists[idx].Str)
+		missing, _ := database.CountRowsStatic("select count(*) from movies where listname = ? and missing=1", lists[idx].Str)
+		reached, _ := database.CountRowsStatic("select count(*) from movies where listname = ? and quality_reached=1", lists[idx].Str)
+		upgrade, _ := database.CountRowsStatic("select count(*) from movies where listname = ? and quality_reached=0 and missing=0", lists[idx].Str)
 		stats = append(stats, map[string]types.InfoItem{"id": {Content: template.HTML(strconv.Itoa(id))}, "typ": {Content: "movies"}, "list": {Content: template.HTML(lists[idx].Str)}, "total": {Content: template.HTML(strconv.Itoa(all))}, "missing": {Content: template.HTML(strconv.Itoa(missing))}, "finished": {Content: template.HTML(strconv.Itoa(reached))}, "upgrade": {Content: template.HTML(strconv.Itoa(upgrade))}})
 		id += 1
 	}
 	lists, _ = database.QueryStaticColumnsOneString("Select distinct Listname from series where length(listname) >= 1", "Select count(distinct listname) from series where length(listname) >= 1")
 	for idx := range lists {
-		all, _ := database.CountRowsStatic("select count(*) from serie_episodes where serie_id in (Select id from series where listname=?)", lists[idx].Str)
-		missing, _ := database.CountRowsStatic("select count(*) from serie_episodes where serie_id in (Select id from series where listname=?) and missing=1", lists[idx].Str)
-		reached, _ := database.CountRowsStatic("select count(*) from serie_episodes where serie_id in (Select id from series where listname=?) and quality_reached=1", lists[idx].Str)
-		upgrade, _ := database.CountRowsStatic("select count(*) from serie_episodes where serie_id in (Select id from series where listname=?) and quality_reached=0 and missing=0", lists[idx].Str)
+		all, _ := database.CountRowsStatic("select count(*) from serie_episodes where serie_id in (Select id from series where listname = ?)", lists[idx].Str)
+		missing, _ := database.CountRowsStatic("select count(*) from serie_episodes where serie_id in (Select id from series where listname = ?) and missing=1", lists[idx].Str)
+		reached, _ := database.CountRowsStatic("select count(*) from serie_episodes where serie_id in (Select id from series where listname = ?) and quality_reached=1", lists[idx].Str)
+		upgrade, _ := database.CountRowsStatic("select count(*) from serie_episodes where serie_id in (Select id from series where listname = ?) and quality_reached=0 and missing=0", lists[idx].Str)
 		stats = append(stats, map[string]types.InfoItem{"id": {Content: template.HTML(strconv.Itoa(id))}, "typ": {Content: "episodes"}, "list": {Content: template.HTML(lists[idx].Str)}, "total": {Content: template.HTML(strconv.Itoa(all))}, "missing": {Content: template.HTML(strconv.Itoa(missing))}, "finished": {Content: template.HTML(strconv.Itoa(reached))}, "upgrade": {Content: template.HTML(strconv.Itoa(upgrade))}})
 		id += 1
 	}
@@ -534,7 +534,7 @@ like Aldus PageMaker including versions of Lorem Ipsum.
 		})
 
 	var queue []map[string]types.InfoItem
-	for _, value := range tasks.GlobalQueue {
+	for _, value := range tasks.GetQueues() {
 		queue = append(queue, map[string]types.InfoItem{
 			"queue":   {Content: template.HTML(value.Queue.Queue)},
 			"added":   {Content: template.HTML(value.Queue.Added.Format("2006-01-02 15:04:05"))},
@@ -550,12 +550,12 @@ like Aldus PageMaker including versions of Lorem Ipsum.
 			{Head: "Started", Field: "started", Sortable: false},
 		})
 	var sched []map[string]types.InfoItem
-	for _, value := range tasks.GlobalSchedules {
+	for _, value := range tasks.GetSchedules() {
 		sched = append(sched, map[string]types.InfoItem{
-			"job":       {Content: template.HTML(value.Schedule.JobName)},
-			"lastrun":   {Content: template.HTML(value.Schedule.LastRun.Format("2006-01-02 15:04:05"))},
-			"nextrun":   {Content: template.HTML(value.Schedule.NextRun.Format("2006-01-02 15:04:05"))},
-			"isrunning": {Content: template.HTML(strconv.FormatBool(value.Schedule.IsRunning))},
+			"job":       {Content: template.HTML(value.JobName)},
+			"lastrun":   {Content: template.HTML(value.LastRun.Format("2006-01-02 15:04:05"))},
+			"nextrun":   {Content: template.HTML(value.NextRun.Format("2006-01-02 15:04:05"))},
+			"isrunning": {Content: template.HTML(strconv.FormatBool(value.IsRunning))},
 		})
 	}
 	schedule := components.DataTable().SetInfoList(sched).

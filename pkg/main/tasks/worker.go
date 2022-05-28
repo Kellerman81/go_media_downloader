@@ -1,7 +1,6 @@
 package tasks
 
 import (
-	"runtime/debug"
 	"time"
 )
 
@@ -29,20 +28,34 @@ func NewWorker(workerPool chan chan Job) *Worker {
 // Start initializes a select loop to listen for jobs to execute
 func (w *Worker) start() {
 	go func() {
+		// defer func() { // recovers panic
+		// 	if e := recover(); e != nil {
+		// 		fmt.Println("Recovered from panic (worker) ", e)
+		// 	}
+		// }()
 		for {
 			w.workerPool <- w.jobChannel
+			ret := func() bool {
+				select {
+				case job := <-w.jobChannel:
+					func(job Job) {
+						updateStartedQueue(job.ID)
+						updateIsRunningSchedule(job.SchedulerId, true)
+						job.Run()
+						updateIsRunningSchedule(job.SchedulerId, false)
+						time.Sleep(time.Duration(2) * time.Second)
 
-			select {
-			case job := <-w.jobChannel:
-				updateStartedQueue(job)
-				updateIsRunningSchedule(job, true)
-				job.Run()
-				updateIsRunningSchedule(job, false)
-				time.Sleep(time.Duration(2) * time.Second)
-				findAndDeleteQueue(job.Name)
-				debug.FreeOSMemory()
-			case <-w.quit:
-				return
+						taskmu.Lock()
+						delete(globalQueue, job.Name)
+						taskmu.Unlock()
+					}(job)
+					return false
+				case <-w.quit:
+					return true
+				}
+			}()
+			if ret {
+				break
 			}
 		}
 	}()
