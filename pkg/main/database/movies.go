@@ -2,6 +2,7 @@
 package database
 
 import (
+	"bytes"
 	"database/sql"
 	"html"
 	"strconv"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/apiexternal"
+	"github.com/Kellerman81/go_media_downloader/config"
 	"github.com/Kellerman81/go_media_downloader/logger"
 )
 
@@ -114,7 +116,7 @@ type MovieHistory struct {
 	Title          string
 	URL            string
 	Indexer        string
-	Type           string
+	HistoryType    string `db:"type"`
 	Target         string
 	DownloadedAt   time.Time `db:"downloaded_at"`
 	Blacklisted    bool
@@ -207,51 +209,65 @@ type DbmovieTitle struct {
 	Region    string
 }
 
-func (movie *Dbmovie) GetTitles(allowed []string, queryimdb bool, querytmdb bool, querytrakt bool) []DbmovieTitle {
-	c := []DbmovieTitle{}
+func (movie *Dbmovie) GetTitles(configTemplate string, queryimdb bool, querytmdb bool, querytrakt bool) []DbmovieTitle {
+	configEntry := config.ConfigGet(configTemplate).Data.(config.MediaTypeConfig)
 
-	processed := []string{}
+	var c []DbmovieTitle
+	defer logger.ClearVar(&c)
+
+	var processed []string
+	defer logger.ClearVar(&processed)
 	if queryimdb {
 		queryimdbid := movie.ImdbID
 		if !strings.HasPrefix(movie.ImdbID, "tt") {
 			queryimdbid = "tt" + movie.ImdbID
 		}
-		imdbakadata, _ := QueryImdbAka(Query{Where: "tconst=? COLLATE NOCASE", WhereArgs: []interface{}{queryimdbid}})
-		for _, akarow := range imdbakadata {
+		imdbakadata, _ := QueryImdbAka(Query{Where: "tconst = ? COLLATE NOCASE", WhereArgs: []interface{}{queryimdbid}})
+		defer logger.ClearVar(&imdbakadata)
+		for idxaka := range imdbakadata {
 			regionok := false
-			for idxallow := range allowed {
-				if strings.EqualFold(allowed[idxallow], akarow.Region) {
+			for idxlang := range configEntry.Metadata_title_languages {
+				if strings.EqualFold(configEntry.Metadata_title_languages[idxlang], imdbakadata[idxaka].Region) {
 					regionok = true
 					break
 				}
 			}
-			logger.Log.Debug("Title: ", akarow.Title, " Region: ", akarow.Region, " ok: ", regionok)
-			if !regionok && len(allowed) >= 1 {
+			logger.Log.Debug("Title: ", imdbakadata[idxaka].Title, " Region: ", imdbakadata[idxaka].Region, " ok: ", regionok)
+			if !regionok && len(configEntry.Metadata_title_languages) >= 1 {
 				continue
 			}
-			c = append(c, DbmovieTitle{DbmovieID: movie.ID, Title: akarow.Title, Slug: akarow.Slug, Region: akarow.Region})
-			processed = append(processed, akarow.Title)
+			c = append(c, DbmovieTitle{DbmovieID: movie.ID, Title: imdbakadata[idxaka].Title, Slug: imdbakadata[idxaka].Slug, Region: imdbakadata[idxaka].Region})
+			processed = append(processed, imdbakadata[idxaka].Title)
 		}
 	}
 	if querytmdb {
 		moviedbtitles, foundtitles := apiexternal.TmdbApi.GetMovieTitles(movie.MoviedbID)
+		defer logger.ClearVar(&moviedbtitles)
 		if foundtitles == nil {
-			for _, row := range moviedbtitles.Titles {
+			for idx := range moviedbtitles.Titles {
 				regionok := false
-				for idxallow := range allowed {
-					if strings.EqualFold(allowed[idxallow], row.Iso31661) {
+				for idxlang := range configEntry.Metadata_title_languages {
+					if strings.EqualFold(configEntry.Metadata_title_languages[idxlang], moviedbtitles.Titles[idx].Iso31661) {
 						regionok = true
 						break
 					}
 				}
-				logger.Log.Debug("Title: ", row.Title, " Region: ", row.Iso31661, " ok: ", regionok)
-				if !regionok && len(allowed) >= 1 {
+				logger.Log.Debug("Title: ", moviedbtitles.Titles[idx].Title, " Region: ", moviedbtitles.Titles[idx].Iso31661, " ok: ", regionok)
+				if !regionok && len(configEntry.Metadata_title_languages) >= 1 {
 					continue
 				}
-				if !logger.CheckStringArray(processed, row.Title) {
-					c = append(c, DbmovieTitle{DbmovieID: movie.ID, Title: row.Title, Slug: logger.StringToSlug(row.Title), Region: row.Iso31661})
 
-					processed = append(processed, row.Title)
+				foundentry := false
+				for idxproc := range processed {
+					if processed[idxproc] == moviedbtitles.Titles[idx].Title {
+						foundentry = true
+						break
+					}
+				}
+				if !foundentry {
+					c = append(c, DbmovieTitle{DbmovieID: movie.ID, Title: moviedbtitles.Titles[idx].Title, Slug: logger.StringToSlug(moviedbtitles.Titles[idx].Title), Region: moviedbtitles.Titles[idx].Iso31661})
+
+					processed = append(processed, moviedbtitles.Titles[idx].Title)
 				}
 			}
 		} else {
@@ -261,23 +277,32 @@ func (movie *Dbmovie) GetTitles(allowed []string, queryimdb bool, querytmdb bool
 
 	if querytrakt {
 		traktaliases, err := apiexternal.TraktApi.GetMovieAliases(movie.ImdbID)
+		defer logger.ClearVar(&traktaliases)
 		if err == nil {
-			for _, row := range traktaliases {
+			for idxalias := range traktaliases {
 				regionok := false
-				for idxallow := range allowed {
-					if strings.EqualFold(allowed[idxallow], row.Country) {
+				for idxlang := range configEntry.Metadata_title_languages {
+					if strings.EqualFold(configEntry.Metadata_title_languages[idxlang], traktaliases[idxalias].Country) {
 						regionok = true
 						break
 					}
 				}
-				logger.Log.Debug("Title: ", row.Title, " Region: ", row.Country, " ok: ", regionok)
-				if !regionok && len(allowed) >= 1 {
+				logger.Log.Debug("Title: ", traktaliases[idxalias].Title, " Region: ", traktaliases[idxalias].Country, " ok: ", regionok)
+				if !regionok && len(configEntry.Metadata_title_languages) >= 1 {
 					continue
 				}
-				if !logger.CheckStringArray(processed, row.Title) {
-					c = append(c, DbmovieTitle{DbmovieID: movie.ID, Title: row.Title, Slug: logger.StringToSlug(row.Title), Region: row.Country})
 
-					processed = append(processed, row.Title)
+				foundentry := false
+				for idxproc := range processed {
+					if processed[idxproc] == traktaliases[idxalias].Title {
+						foundentry = true
+						break
+					}
+				}
+				if !foundentry {
+					c = append(c, DbmovieTitle{DbmovieID: movie.ID, Title: traktaliases[idxalias].Title, Slug: logger.StringToSlug(traktaliases[idxalias].Title), Region: traktaliases[idxalias].Country})
+
+					processed = append(processed, traktaliases[idxalias].Title)
 				}
 			}
 		}
@@ -285,17 +310,18 @@ func (movie *Dbmovie) GetTitles(allowed []string, queryimdb bool, querytmdb bool
 	return c
 }
 
-func (movie *Dbmovie) ClearAndGetTitles(allowed []string, queryimdb bool, querytmdb bool, querytrakt bool) []DbmovieTitle {
-	DeleteRow("dbmovie_titles", Query{Where: "dbmovie_id=?", WhereArgs: []interface{}{movie.ID}})
-	return movie.GetTitles(allowed, queryimdb, querytmdb, querytrakt)
+func (movie *Dbmovie) ClearAndGetTitles(configTemplate string, queryimdb bool, querytmdb bool, querytrakt bool) []DbmovieTitle {
+	DeleteRow("dbmovie_titles", Query{Where: "dbmovie_id = ?", WhereArgs: []interface{}{movie.ID}})
+	return movie.GetTitles(configTemplate, queryimdb, querytmdb, querytrakt)
 }
 
 func (movie *Dbmovie) GetImdbMetadata(overwrite bool) {
+	logger.Log.Infoln("Get Metadata by IMDB for ", movie.ImdbID)
 	queryimdbid := movie.ImdbID
 	if !strings.HasPrefix(movie.ImdbID, "tt") {
 		queryimdbid = "tt" + movie.ImdbID
 	}
-	imdbdata, imdbdataerr := GetImdbTitle(Query{Where: "tconst=? COLLATE NOCASE", WhereArgs: []interface{}{queryimdbid}})
+	imdbdata, imdbdataerr := GetImdbTitle(Query{Where: "tconst = ? COLLATE NOCASE", WhereArgs: []interface{}{queryimdbid}})
 	if imdbdataerr == nil {
 		if movie.Title == "" || overwrite {
 			movie.Title = imdbdata.PrimaryTitle
@@ -322,7 +348,7 @@ func (movie *Dbmovie) GetImdbMetadata(overwrite bool) {
 			movie.URL = "https://www.imdb.com/title/" + queryimdbid
 		}
 	}
-	imdbratedata, imdbratedataerr := GetImdbRating(Query{Where: "tconst=? COLLATE NOCASE", WhereArgs: []interface{}{queryimdbid}})
+	imdbratedata, imdbratedataerr := GetImdbRating(Query{Where: "tconst = ? COLLATE NOCASE", WhereArgs: []interface{}{queryimdbid}})
 
 	if imdbratedataerr == nil {
 		if movie.VoteAverage == 0 || movie.VoteAverage == 0.0 || overwrite {
@@ -332,14 +358,18 @@ func (movie *Dbmovie) GetImdbMetadata(overwrite bool) {
 			movie.VoteCount = imdbratedata.NumVotes
 		}
 	}
+	logger.Log.Infoln("ENDED Get Metadata by IMDB for ", movie.ImdbID)
 }
 
 func (movie *Dbmovie) GetTmdbMetadata(overwrite bool) {
+	logger.Log.Infoln("Get Metadata by TMDB for ", movie.ImdbID)
 	moviedb, found := apiexternal.TmdbApi.FindImdb(movie.ImdbID)
+	defer logger.ClearVar(&moviedb)
 	if found == nil {
 		if len(moviedb.MovieResults) >= 1 {
 			logger.Log.Debug("Get the moviedb: ", movie.ImdbID)
 			moviedbdetails, founddetail := apiexternal.TmdbApi.GetMovie(moviedb.MovieResults[0].ID)
+			defer logger.ClearVar(&moviedbdetails)
 			if founddetail == nil {
 				if (!movie.Adult && moviedbdetails.Adult) || overwrite {
 					movie.Adult = moviedbdetails.Adult
@@ -363,12 +393,12 @@ func (movie *Dbmovie) GetTmdbMetadata(overwrite bool) {
 					}
 				}
 				if movie.Genres == "" || overwrite {
-					var genrebuilder strings.Builder
-					for _, v := range moviedbdetails.Genres {
+					var genrebuilder bytes.Buffer
+					for idxgenre := range moviedbdetails.Genres {
 						if genrebuilder.Len() >= 1 {
 							genrebuilder.WriteString(",")
 						}
-						genrebuilder.WriteString(v.Name)
+						genrebuilder.WriteString(moviedbdetails.Genres[idxgenre].Name)
 					}
 					movie.Genres = genrebuilder.String()
 					genrebuilder.Reset()
@@ -383,12 +413,12 @@ func (movie *Dbmovie) GetTmdbMetadata(overwrite bool) {
 				if movie.Runtime == 0 {
 					movie.Runtime = moviedbdetails.Runtime
 				}
-				var languagebuilder strings.Builder
-				for _, v := range moviedbdetails.SpokenLanguages {
+				var languagebuilder bytes.Buffer
+				for idxlang := range moviedbdetails.SpokenLanguages {
 					if languagebuilder.Len() >= 1 {
 						languagebuilder.WriteString(",")
 					}
-					languagebuilder.WriteString(v.EnglishName)
+					languagebuilder.WriteString(moviedbdetails.SpokenLanguages[idxlang].EnglishName)
 				}
 				movie.SpokenLanguages = languagebuilder.String()
 				languagebuilder.Reset()
@@ -419,11 +449,15 @@ func (movie *Dbmovie) GetTmdbMetadata(overwrite bool) {
 				logger.Log.Warning("MovieDB Movie not found for: ", movie.ImdbID)
 			}
 		}
+		logger.Log.Info("ENDED Get the moviedb data for: ", movie.ImdbID)
 	}
+	logger.Log.Infoln("ENDED Get Metadata by TMDB for ", movie.ImdbID)
 }
 
 func (movie *Dbmovie) GetOmdbMetadata(overwrite bool) {
+	logger.Log.Infoln("Get Metadata by OMDB for ", movie.ImdbID)
 	omdbdetails, founddetail := apiexternal.OmdbApi.GetMovie(movie.ImdbID)
+	defer logger.ClearVar(&omdbdetails)
 	if founddetail == nil {
 		if movie.Title == "" || overwrite {
 			if strings.Contains(omdbdetails.Title, "&") || strings.Contains(omdbdetails.Title, "%") {
@@ -455,10 +489,13 @@ func (movie *Dbmovie) GetOmdbMetadata(overwrite bool) {
 			movie.Overview = omdbdetails.Plot
 		}
 	}
+	logger.Log.Infoln("ENDED Get Metadata by OMDB for ", movie.ImdbID)
 }
 
 func (movie *Dbmovie) GetTraktMetadata(overwrite bool) {
+	logger.Log.Infoln("Get Metadata by Trakt for ", movie.ImdbID)
 	traktdetails, err := apiexternal.TraktApi.GetMovie(movie.ImdbID)
+	defer logger.ClearVar(&traktdetails)
 	if err == nil {
 		if movie.Title == "" || overwrite {
 			if strings.Contains(traktdetails.Title, "&") || strings.Contains(traktdetails.Title, "%") {
@@ -471,12 +508,12 @@ func (movie *Dbmovie) GetTraktMetadata(overwrite bool) {
 			movie.Slug = traktdetails.Ids.Slug
 		}
 		if movie.Genres == "" || overwrite {
-			var genrebuilder strings.Builder
-			for _, v := range traktdetails.Genres {
+			var genrebuilder bytes.Buffer
+			for idxgenre := range traktdetails.Genres {
 				if genrebuilder.Len() >= 1 {
 					genrebuilder.WriteString(",")
 				}
-				genrebuilder.WriteString(v)
+				genrebuilder.WriteString(traktdetails.Genres[idxgenre])
 			}
 			movie.Genres = genrebuilder.String()
 			genrebuilder.Reset()
@@ -521,9 +558,10 @@ func (movie *Dbmovie) GetTraktMetadata(overwrite bool) {
 			movie.Tagline = traktdetails.Tagline
 		}
 	}
+	logger.Log.Infoln("ENDED Get Metadata by Trakt for ", movie.ImdbID)
 }
 func (movie *Dbmovie) GetMetadata(queryimdb bool, querytmdb bool, queryomdb bool, querytrakt bool) {
-	logger.Log.Debug("Find the moviedb: ", movie.ImdbID)
+	logger.Log.Info("Get Metadata for: ", movie.ImdbID)
 
 	if queryimdb {
 		queryimdbid := movie.ImdbID
@@ -531,7 +569,7 @@ func (movie *Dbmovie) GetMetadata(queryimdb bool, querytmdb bool, queryomdb bool
 			queryimdbid = "tt" + movie.ImdbID
 		}
 
-		imdbdata, imdbdataerr := GetImdbTitle(Query{Where: "tconst=? COLLATE NOCASE", WhereArgs: []interface{}{queryimdbid}})
+		imdbdata, imdbdataerr := GetImdbTitle(Query{Where: "tconst = ? COLLATE NOCASE", WhereArgs: []interface{}{queryimdbid}})
 		if imdbdataerr == nil {
 			if movie.Title == "" {
 				movie.Title = imdbdata.PrimaryTitle
@@ -558,7 +596,7 @@ func (movie *Dbmovie) GetMetadata(queryimdb bool, querytmdb bool, queryomdb bool
 				movie.URL = "https://www.imdb.com/title/" + queryimdbid
 			}
 		}
-		imdbratedata, imdbratedataerr := GetImdbRating(Query{Where: "tconst=? COLLATE NOCASE", WhereArgs: []interface{}{queryimdbid}})
+		imdbratedata, imdbratedataerr := GetImdbRating(Query{Where: "tconst = ? COLLATE NOCASE", WhereArgs: []interface{}{queryimdbid}})
 		if imdbratedataerr == nil {
 			if movie.VoteAverage == 0 || movie.VoteAverage == 0.0 {
 				movie.VoteAverage = imdbratedata.AverageRating
@@ -570,10 +608,12 @@ func (movie *Dbmovie) GetMetadata(queryimdb bool, querytmdb bool, queryomdb bool
 	}
 	if querytmdb {
 		moviedb, found := apiexternal.TmdbApi.FindImdb(movie.ImdbID)
+		defer logger.ClearVar(&moviedb)
 		if found == nil {
 			if len(moviedb.MovieResults) >= 1 {
 				logger.Log.Debug("Get the moviedb: ", movie.ImdbID)
 				moviedbdetails, founddetail := apiexternal.TmdbApi.GetMovie(moviedb.MovieResults[0].ID)
+				defer logger.ClearVar(&moviedbdetails)
 				if founddetail == nil {
 					if !movie.Adult && moviedbdetails.Adult {
 						movie.Adult = moviedbdetails.Adult
@@ -597,12 +637,12 @@ func (movie *Dbmovie) GetMetadata(queryimdb bool, querytmdb bool, queryomdb bool
 						}
 					}
 					if movie.Genres == "" {
-						var genrebuilder strings.Builder
-						for _, v := range moviedbdetails.Genres {
+						var genrebuilder bytes.Buffer
+						for idxgenre := range moviedbdetails.Genres {
 							if genrebuilder.Len() >= 1 {
 								genrebuilder.WriteString(",")
 							}
-							genrebuilder.WriteString(v.Name)
+							genrebuilder.WriteString(moviedbdetails.Genres[idxgenre].Name)
 						}
 						movie.Genres = genrebuilder.String()
 						genrebuilder.Reset()
@@ -617,12 +657,12 @@ func (movie *Dbmovie) GetMetadata(queryimdb bool, querytmdb bool, queryomdb bool
 					if movie.Runtime == 0 {
 						movie.Runtime = moviedbdetails.Runtime
 					}
-					var languagebuilder strings.Builder
-					for _, v := range moviedbdetails.SpokenLanguages {
+					var languagebuilder bytes.Buffer
+					for idxlang := range moviedbdetails.SpokenLanguages {
 						if languagebuilder.Len() >= 1 {
 							languagebuilder.WriteString(",")
 						}
-						languagebuilder.WriteString(v.EnglishName)
+						languagebuilder.WriteString(moviedbdetails.SpokenLanguages[idxlang].EnglishName)
 					}
 					movie.SpokenLanguages = languagebuilder.String()
 					languagebuilder.Reset()
@@ -658,6 +698,7 @@ func (movie *Dbmovie) GetMetadata(queryimdb bool, querytmdb bool, queryomdb bool
 	if queryomdb {
 		if movie.Title == "" || movie.Year == 0 {
 			omdbdetails, founddetail := apiexternal.OmdbApi.GetMovie(movie.ImdbID)
+			defer logger.ClearVar(&omdbdetails)
 			if founddetail == nil {
 				if movie.Title == "" {
 					if strings.Contains(omdbdetails.Title, "&") || strings.Contains(omdbdetails.Title, "%") {
@@ -693,6 +734,7 @@ func (movie *Dbmovie) GetMetadata(queryimdb bool, querytmdb bool, queryomdb bool
 	}
 	if querytrakt {
 		traktdetails, err := apiexternal.TraktApi.GetMovie(movie.ImdbID)
+		defer logger.ClearVar(&traktdetails)
 		if err == nil {
 			if movie.Title == "" {
 				if strings.Contains(traktdetails.Title, "&") || strings.Contains(traktdetails.Title, "%") {
@@ -705,12 +747,12 @@ func (movie *Dbmovie) GetMetadata(queryimdb bool, querytmdb bool, queryomdb bool
 				movie.Slug = traktdetails.Ids.Slug
 			}
 			if movie.Genres == "" {
-				var genrebuilder strings.Builder
-				for _, v := range traktdetails.Genres {
+				var genrebuilder bytes.Buffer
+				for idxgenre := range traktdetails.Genres {
 					if genrebuilder.Len() >= 1 {
 						genrebuilder.WriteString(",")
 					}
-					genrebuilder.WriteString(v)
+					genrebuilder.WriteString(traktdetails.Genres[idxgenre])
 				}
 				movie.Genres = genrebuilder.String()
 				genrebuilder.Reset()
@@ -756,6 +798,7 @@ func (movie *Dbmovie) GetMetadata(queryimdb bool, querytmdb bool, queryomdb bool
 			}
 		}
 	}
+	logger.Log.Info("ENDED Get Metadata for: ", movie.ImdbID)
 }
 
 func (dbmovie *Dbmovie) AddMissingMoviesMapping(listname string, quality string) []Movie {
@@ -767,5 +810,5 @@ func (dbmovie *Dbmovie) AddMissingMoviesMapping(listname string, quality string)
 }
 
 func (movie *Movie) UpdateMoviesMapping(listname string, quality string) {
-	UpdateArray("movies", []string{"listname", "quality_profile"}, []interface{}{listname, quality}, Query{Where: "id=?", WhereArgs: []interface{}{movie.ID}})
+	UpdateArray("movies", []string{"listname", "quality_profile"}, []interface{}{listname, quality}, Query{Where: "id = ?", WhereArgs: []interface{}{movie.ID}})
 }

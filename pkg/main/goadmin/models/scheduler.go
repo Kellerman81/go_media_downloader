@@ -14,13 +14,13 @@ func GetSchedulerTable(ctx *context.Context) (userTable table.Table) {
 	userTable.GetOnlyInfo()
 	var queue []map[string]interface{}
 	i := 0
-	for _, value := range tasks.GlobalSchedules {
+	for _, value := range tasks.GetSchedules() {
 		queue = append(queue, map[string]interface{}{
 			"id":        i,
-			"job":       value.Schedule.JobName,
-			"lastrun":   value.Schedule.LastRun.Format("2006-01-02 15:04:05"),
-			"nextrun":   value.Schedule.NextRun.Format("2006-01-02 15:04:05"),
-			"isrunning": value.Schedule.IsRunning,
+			"job":       value.JobName,
+			"lastrun":   value.LastRun.Format("2006-01-02 15:04:05"),
+			"nextrun":   value.NextRun.Format("2006-01-02 15:04:05"),
+			"isrunning": value.IsRunning,
 		})
 		i += 1
 	}

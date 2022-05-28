@@ -15,12 +15,14 @@ import (
 	"github.com/Kellerman81/go_media_downloader/apiexternal"
 	"github.com/Kellerman81/go_media_downloader/config"
 	"github.com/Kellerman81/go_media_downloader/database"
+	"github.com/Kellerman81/go_media_downloader/logger"
 	"github.com/Kellerman81/go_media_downloader/parser"
 	"github.com/Kellerman81/go_media_downloader/scheduler"
 	"github.com/Kellerman81/go_media_downloader/structure"
 	"github.com/Kellerman81/go_media_downloader/tasks"
 	"github.com/Kellerman81/go_media_downloader/utils"
 	gin "github.com/gin-gonic/gin"
+	"github.com/shomali11/parallelizer"
 )
 
 func AddGeneralRoutes(routerapi *gin.RouterGroup) {
@@ -48,6 +50,7 @@ func AddGeneralRoutes(routerapi *gin.RouterGroup) {
 	routerapi.DELETE("/quality/:id", apiQualityDelete)
 	routerapi.POST("/quality", apiQualityUpdate)
 	routerapi.GET("/quality/:name/:config", apiListQualityPriorities)
+	routerapi.GET("/slug", apiDBRefreshSlugs)
 
 	routerapi.GET("/config/all", apiConfigAll)
 	routerapi.DELETE("/config/clear", apiConfigClear)
@@ -84,7 +87,6 @@ func apiDebugStats(ctx *gin.Context) {
 	debug.ReadGCStats(&gc)
 	var mem runtime.MemStats
 	runtime.ReadMemStats(&mem)
-
 	gcjson, _ := json.Marshal(gc)
 	memjson, _ := json.Marshal(mem)
 	ctx.JSON(http.StatusOK, gin.H{"GC Stats": string(gcjson), "Mem Stats": string(memjson)})
@@ -102,7 +104,7 @@ func apiQueueList(ctx *gin.Context) {
 	}
 
 	var r []tasks.Job
-	for _, value := range tasks.GlobalQueue {
+	for _, value := range tasks.GetQueues() {
 		r = append(r, value.Queue)
 	}
 	ctx.JSON(http.StatusOK, r)
@@ -200,6 +202,42 @@ func apiTraktGetUserList(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{"list": list, "error": err})
 }
 
+// @Summary      Refresh Slugs
+// @Description  Regenerates Slugs
+// @Tags         general
+// @Success      200   {object}  string
+// @Failure      401   {object}  string
+// @Router       /api/slug [get]
+func apiDBRefreshSlugs(ctx *gin.Context) {
+	if ApiAuth(ctx) == http.StatusUnauthorized {
+		return
+	}
+	dbmovies, _ := database.QueryDbmovie(database.Query{})
+	for _, movie := range dbmovies {
+		slug := logger.StringToSlug(movie.Title)
+		database.UpdateColumn("dbmovies", "slug", slug, database.Query{Where: "id = ?", WhereArgs: []interface{}{movie.ID}})
+	}
+
+	dbmoviestitles, _ := database.QueryDbmovieTitle(database.Query{})
+	for _, movie := range dbmoviestitles {
+		slug := logger.StringToSlug(movie.Title)
+		database.UpdateColumn("dbmovie_titles", "slug", slug, database.Query{Where: "id = ?", WhereArgs: []interface{}{movie.ID}})
+	}
+
+	dbserie, _ := database.QueryDbserie(database.Query{})
+	for _, movie := range dbserie {
+		slug := logger.StringToSlug(movie.Seriename)
+		database.UpdateColumn("dbseries", "slug", slug, database.Query{Where: "id = ?", WhereArgs: []interface{}{movie.ID}})
+	}
+
+	dbserietitles, _ := database.QueryDbserieAlternates(database.Query{})
+	for _, movie := range dbserietitles {
+		slug := logger.StringToSlug(movie.Title)
+		database.UpdateColumn("dbserie_alternates", "slug", slug, database.Query{Where: "id = ?", WhereArgs: []interface{}{movie.ID}})
+	}
+	ctx.JSON(http.StatusOK, "ok")
+}
+
 // @Summary      Parse a string
 // @Description  Parses a string for testing
 // @Tags         parse
@@ -218,6 +256,7 @@ func apiParseString(ctx *gin.Context) {
 		return
 	}
 	parse, _ := parser.NewFileParser(getcfg.Name, getcfg.Year, getcfg.Typ)
+	defer parse.Close()
 	if getcfg.Typ == "movie" {
 		parse.GetPriority("movie_"+getcfg.Config, getcfg.Quality)
 		ctx.JSON(http.StatusOK, parse)
@@ -249,6 +288,7 @@ func apiParseFile(ctx *gin.Context) {
 		return
 	}
 	parse, _ := parser.NewFileParser(filepath.Base(getcfg.Path), getcfg.Year, getcfg.Typ)
+	defer parse.Close()
 	if getcfg.Typ == "movie" {
 		parse.ParseVideoFile(getcfg.Path, "movie_"+getcfg.Config, getcfg.Quality)
 		parse.GetPriority("movie_"+getcfg.Config, getcfg.Quality)
@@ -274,9 +314,8 @@ func apiFillImdb(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
-	//go utils.InitFillImdb()
-
-	go utils.FillImdb()
+	swg := parallelizer.NewGroup(parallelizer.WithPoolSize(1))
+	swg.Add(func() { utils.FillImdb() })
 
 	ctx.JSON(http.StatusOK, "ok")
 }
@@ -324,8 +363,8 @@ func apiSchedulerList(ctx *gin.Context) {
 		return
 	}
 	var r []tasks.JobSchedule
-	for _, value := range tasks.GlobalSchedules {
-		r = append(r, value.Schedule)
+	for _, value := range tasks.GetSchedules() {
+		r = append(r, value)
 	}
 	ctx.JSON(http.StatusOK, r)
 }
@@ -472,7 +511,7 @@ func apiQualityDelete(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
-	database.DeleteRow("qualities", database.Query{Where: "id=?", WhereArgs: []interface{}{ctx.Param("id")}})
+	database.DeleteRow("qualities", database.Query{Where: "id = ?", WhereArgs: []interface{}{ctx.Param("id")}})
 	database.GetVars()
 	parser.LoadDBPatterns()
 	qualities, _ := database.QueryQualities(database.Query{})
@@ -496,15 +535,15 @@ func apiQualityUpdate(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	counter, _ := database.CountRows("qualities", database.Query{Where: "id != 0 and id=?", WhereArgs: []interface{}{quality.ID}})
+	counter, _ := database.CountRows("qualities", database.Query{Where: "id != 0 and id = ?", WhereArgs: []interface{}{quality.ID}})
 
 	if counter == 0 {
 		database.InsertArray("qualities", []string{"Type", "Name", "Regex", "Strings", "Priority", "Use_Regex"},
-			[]interface{}{quality.Type, quality.Name, quality.Regex, quality.Strings, quality.Priority, quality.UseRegex})
+			[]interface{}{quality.QualityType, quality.Name, quality.Regex, quality.Strings, quality.Priority, quality.UseRegex})
 	} else {
 		database.UpdateArray("qualities", []string{"Type", "Name", "Regex", "Strings", "Priority", "Use_Regex"},
-			[]interface{}{quality.Type, quality.Name, quality.Regex, quality.Strings, quality.Priority, quality.UseRegex},
-			database.Query{Where: "id != 0 and id=?", WhereArgs: []interface{}{quality.ID}})
+			[]interface{}{quality.QualityType, quality.Name, quality.Regex, quality.Strings, quality.Priority, quality.UseRegex},
+			database.Query{Where: "id != 0 and id = ?", WhereArgs: []interface{}{quality.ID}})
 	}
 	database.GetVars()
 	parser.LoadDBPatterns()
@@ -820,38 +859,42 @@ func apiNamingGenerate(ctx *gin.Context) {
 	}
 
 	if cfg.GroupType == "movie" {
-		movie, _ := database.GetMovies(database.Query{Where: "id=?", WhereArgs: []interface{}{cfg.MovieID}})
+		movie, _ := database.GetMovies(database.Query{Where: "id = ?", WhereArgs: []interface{}{cfg.MovieID}})
 
 		s, _ := structure.NewStructure(
 			cfg.Cfg_Media,
 			movie.Listname,
 			cfg.GroupType,
 			movie.Rootpath,
-			config.PathsConfig{},
-			config.PathsConfig{},
+			"",
+			"",
 		)
-		m, _ := s.ParseFile(cfg.FilePath, true, filepath.Dir(cfg.FilePath), false)
-		s.ParseFileAdditional(cfg.FilePath, &m, filepath.Dir(cfg.FilePath), false, 0)
+		defer s.Close()
+		s.ParseFile(cfg.FilePath, true, filepath.Dir(cfg.FilePath), false)
 
-		foldername, filename := s.GenerateNamingTemplate(cfg.FilePath, m, movie, database.Serie{}, "", database.SerieEpisode{}, "", []int{})
+		s.ParseFileAdditional(cfg.FilePath, filepath.Dir(cfg.FilePath), false, 0)
+
+		foldername, filename := s.GenerateNamingTemplate(cfg.FilePath, movie.Rootpath, movie.DbmovieID, "", "", []int{})
 		ctx.JSON(http.StatusOK, gin.H{"foldername": foldername, "filename": filename})
 	} else {
-		series, _ := database.GetSeries(database.Query{Where: "id=?", WhereArgs: []interface{}{cfg.SerieID}})
+		series, _ := database.GetSeries(database.Query{Where: "id = ?", WhereArgs: []interface{}{cfg.SerieID}})
 
 		s, _ := structure.NewStructure(
 			cfg.Cfg_Media,
 			series.Listname,
 			cfg.GroupType,
 			series.Rootpath,
-			config.PathsConfig{},
-			config.PathsConfig{},
+			"",
+			"",
 		)
-		m, _ := s.ParseFile(cfg.FilePath, true, filepath.Dir(cfg.FilePath), false)
-		s.ParseFileAdditional(cfg.FilePath, &m, filepath.Dir(cfg.FilePath), false, 0)
+		defer s.Close()
+		s.ParseFile(cfg.FilePath, true, filepath.Dir(cfg.FilePath), false)
+		s.ParseFileAdditional(cfg.FilePath, filepath.Dir(cfg.FilePath), false, 0)
 
-		_, episodes, _, serietitle, episodetitle, seriesEpisode, _, _ := s.GetSeriesEpisodes(series, cfg.FilePath, m, filepath.Dir(cfg.FilePath))
+		_, episodes, _, serietitle, episodetitle, seriesEpisode, _, _ := s.GetSeriesEpisodes(series.ID, series.DbserieID, cfg.FilePath, filepath.Dir(cfg.FilePath))
 
-		foldername, filename := s.GenerateNamingTemplate(cfg.FilePath, m, database.Movie{}, series, serietitle, seriesEpisode, episodetitle, episodes)
+		foldername, filename := s.GenerateNamingTemplate(cfg.FilePath, series.Rootpath, seriesEpisode.ID, serietitle, episodetitle, episodes)
+		defer logger.ClearVar(&episodes)
 		ctx.JSON(http.StatusOK, gin.H{"foldername": foldername, "filename": filename})
 	}
 }
@@ -899,21 +942,18 @@ func apiStructure(ctx *gin.Context) {
 		return
 	}
 
-	cfg_source := config.ConfigGet("path_" + cfg.Sourcepathtemplate).Data.(config.PathsConfig)
 	if !config.ConfigCheck("path_" + cfg.Sourcepathtemplate) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "source config not found"})
 		return
 	}
-
-	cfg_target := config.ConfigGet("path_" + cfg.Targetpathtemplate).Data.(config.PathsConfig)
 
 	if !config.ConfigCheck("path_" + cfg.Targetpathtemplate) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "target config not found"})
 		return
 	}
 	if cfg.Forceid != 0 {
-		structure.StructureSingleFolderAs(cfg.Folder, cfg.Forceid, cfg.Disableruntimecheck, cfg.Disabledisallowed, cfg.Disabledeletewronglanguage, cfg.Grouptype, cfg_source, cfg_target, getconfig)
+		structure.StructureSingleFolderAs(cfg.Folder, cfg.Forceid, cfg.Disableruntimecheck, cfg.Disabledisallowed, cfg.Disabledeletewronglanguage, cfg.Grouptype, "path_"+cfg.Sourcepathtemplate, "path_"+cfg.Targetpathtemplate, getconfig)
 	} else {
-		structure.StructureSingleFolder(cfg.Folder, cfg.Disableruntimecheck, cfg.Disabledisallowed, cfg.Disabledeletewronglanguage, cfg.Grouptype, cfg_source, cfg_target, getconfig)
+		structure.StructureSingleFolder(cfg.Folder, cfg.Disableruntimecheck, cfg.Disabledisallowed, cfg.Disabledeletewronglanguage, cfg.Grouptype, "path_"+cfg.Sourcepathtemplate, "path_"+cfg.Targetpathtemplate, getconfig)
 	}
 }

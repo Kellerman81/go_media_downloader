@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/Kellerman81/go_media_downloader/config"
+	"github.com/Kellerman81/go_media_downloader/logger"
 )
 
 //Original Source: https://github.com/stashapp/stash/blob/develop/pkg/ffmpeg/ffprobe.go
@@ -216,21 +217,28 @@ func getFFProbeFilename() string {
 	return path.Join(ffprobepath, "ffprobe")
 }
 
+func (s *VideoFile) Close() {
+	s = nil
+}
+
 // Execute exec command and bind result to struct.
 func NewVideoFile(ffprobePath string, videoPath string, stripExt bool) (VideoFile, error) {
 	args := []string{"-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", "-show_error", videoPath}
 
-	out, err := exec.Command(ffprobePath, args...).Output()
+	cmd := exec.Command(ffprobePath, args...)
+	defer logger.ClearVar(&cmd)
+	out, err := cmd.Output()
+	defer logger.ClearVar(&args)
+	defer logger.ClearVar(&out)
+
 	if err != nil {
-		out = nil
 		return VideoFile{}, fmt.Errorf("FFProbe encountered an error with <%s>.\nError JSON:\n%s\nError: %s", videoPath, string(out), err.Error())
 	}
 	probeJSON := FFProbeJSON{}
 	if err := json.Unmarshal(out, &probeJSON); err != nil {
-		out = nil
 		return VideoFile{}, fmt.Errorf("error unmarshalling video data for <%s>: %s", videoPath, err.Error())
 	}
-	out = nil
+	defer logger.ClearVar(&probeJSON)
 	if len(probeJSON.Streams) == 0 {
 		return VideoFile{}, fmt.Errorf("failed to get ffprobe json for <%s>", videoPath)
 	}
@@ -253,8 +261,10 @@ func NewVideoFile(ffprobePath string, videoPath string, stripExt bool) (VideoFil
 
 	//result.Bitrate, _ = strconv.ParseInt(probeJSON.Format.BitRate, 10, 64)
 	//result.Container = probeJSON.Format.FormatName
-	duration, _ := strconv.ParseFloat(probeJSON.Format.Duration, 64)
-	result.Duration = math.Round(duration*100) / 100
+	duration, durerr := strconv.ParseFloat(probeJSON.Format.Duration, 64)
+	if durerr == nil {
+		result.Duration = math.Round(duration*100) / 100
+	}
 	// fileStat, err := os.Stat(videoPath)
 	// if err != nil {
 	// 	logger.Log.Errorf("Error statting file <%s>: %s", videoPath, err.Error())
@@ -266,6 +276,7 @@ func NewVideoFile(ffprobePath string, videoPath string, stripExt bool) (VideoFil
 	//result.CreationTime = probeJSON.Format.Tags.CreationTime.Time
 
 	audioStream, audioStreamindex := result.getAudioStream()
+	defer logger.ClearVar(&audioStream)
 	if audioStreamindex != -1 {
 		result.AudioCodec = audioStream.CodecName
 	}
@@ -278,6 +289,7 @@ func NewVideoFile(ffprobePath string, videoPath string, stripExt bool) (VideoFil
 	}
 
 	videoStream, videoStreamindex := result.getVideoStream()
+	defer logger.ClearVar(&videoStream)
 	if videoStreamindex != -1 {
 		result.VideoCodec = videoStream.CodecName
 		result.VideoCodecTagString = videoStream.CodecTagString
@@ -332,8 +344,7 @@ func (v *VideoFile) getStreamIndex(fileType string, probeJSON FFProbeJSON) int {
 func (v *VideoFile) setTitleFromPath(stripExtension bool) string {
 	v.Title = filepath.Base(v.Path)
 	if stripExtension {
-		ext := filepath.Ext(v.Title)
-		v.Title = strings.TrimSuffix(v.Title, ext)
+		v.Title = strings.TrimSuffix(v.Title, filepath.Ext(v.Title))
 	}
 	return v.Title
 }

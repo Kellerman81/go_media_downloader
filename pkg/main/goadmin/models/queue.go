@@ -14,7 +14,7 @@ func GetQueueTable(ctx *context.Context) (userTable table.Table) {
 	userTable.GetOnlyInfo()
 	var queue []map[string]interface{}
 	i := 0
-	for _, value := range tasks.GlobalQueue {
+	for _, value := range tasks.GetQueues() {
 		queue = append(queue, map[string]interface{}{
 			"id":      i,
 			"queue":   value.Queue.Queue,

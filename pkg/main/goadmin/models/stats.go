@@ -18,19 +18,19 @@ func GetStatsTable(ctx *context.Context) (userTable table.Table) {
 	id := 0
 	lists, _ := database.QueryStaticColumnsOneString("Select distinct listname from movies where length(listname) >= 1", "Select count(distinct listname) from movies where length(listname) >= 1")
 	for idx := range lists {
-		all, _ := database.CountRowsStatic("select count(*) from movies where listname=?", lists[idx].Str)
-		missing, _ := database.CountRowsStatic("select count(*) from movies where listname=? and missing=1", lists[idx].Str)
-		reached, _ := database.CountRowsStatic("select count(*) from movies where listname=? and quality_reached=1", lists[idx].Str)
-		upgrade, _ := database.CountRowsStatic("select count(*) from movies where listname=? and quality_reached=0 and missing=0", lists[idx].Str)
+		all, _ := database.CountRowsStatic("select count(*) from movies where listname = ?", lists[idx].Str)
+		missing, _ := database.CountRowsStatic("select count(*) from movies where listname = ? and missing=1", lists[idx].Str)
+		reached, _ := database.CountRowsStatic("select count(*) from movies where listname = ? and quality_reached=1", lists[idx].Str)
+		upgrade, _ := database.CountRowsStatic("select count(*) from movies where listname = ? and quality_reached=0 and missing=0", lists[idx].Str)
 		stats = append(stats, map[string]interface{}{"id": id, "typ": "movies", "list": lists[idx].Str, "total": all, "missing": missing, "finished": reached, "upgrade": upgrade})
 		id += 1
 	}
 	lists, _ = database.QueryStaticColumnsOneString("Select distinct listname from series where length(listname) >= 1", "Select count(distinct listname) from series where length(listname) >= 1")
 	for idx := range lists {
-		all, _ := database.CountRowsStatic("select count(*) from serie_episodes where serie_id in (Select id from series where listname=?)", lists[idx].Str)
-		missing, _ := database.CountRowsStatic("select count(*) from serie_episodes where serie_id in (Select id from series where listname=?) and missing=1", lists[idx].Str)
-		reached, _ := database.CountRowsStatic("select count(*) from serie_episodes where serie_id in (Select id from series where listname=?) and quality_reached=1", lists[idx].Str)
-		upgrade, _ := database.CountRowsStatic("select count(*) from serie_episodes where serie_id in (Select id from series where listname=?) and quality_reached=0 and missing=0", lists[idx].Str)
+		all, _ := database.CountRowsStatic("select count(*) from serie_episodes where serie_id in (Select id from series where listname = ?)", lists[idx].Str)
+		missing, _ := database.CountRowsStatic("select count(*) from serie_episodes where serie_id in (Select id from series where listname = ?) and missing=1", lists[idx].Str)
+		reached, _ := database.CountRowsStatic("select count(*) from serie_episodes where serie_id in (Select id from series where listname = ?) and quality_reached=1", lists[idx].Str)
+		upgrade, _ := database.CountRowsStatic("select count(*) from serie_episodes where serie_id in (Select id from series where listname = ?) and quality_reached=0 and missing=0", lists[idx].Str)
 		stats = append(stats, map[string]interface{}{"id": id, "typ": "episodes", "list": lists[idx].Str, "total": all, "missing": missing, "finished": reached, "upgrade": upgrade})
 		id += 1
 	}

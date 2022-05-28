@@ -88,9 +88,12 @@ func (d *Mysqlite) ExecWith(tx *sql.Tx, conn, query string, args ...interface{})
 func (d *Mysqlite) InitDB(cfgList map[string]config.Database) db.Connection {
 	d.Configs = cfgList
 	d.Once.Do(func() {
+		var sqlDB *sql.DB
+		var err error
+
 		for conn, cfg := range cfgList {
 			if conn == "default" {
-				sqlDB, err := sql.Open("sqlite3", cfg.GetDSN())
+				sqlDB, err = sql.Open("sqlite3", cfg.GetDSN())
 
 				if err != nil {
 					panic(err)

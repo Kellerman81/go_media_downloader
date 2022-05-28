@@ -16,6 +16,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/searcher"
 	"github.com/Kellerman81/go_media_downloader/utils"
 	gin "github.com/gin-gonic/gin"
+	"github.com/shomali11/parallelizer"
 )
 
 func AddMoviesRoutes(routermovies *gin.RouterGroup) {
@@ -171,7 +172,7 @@ func apiMovieListGet(ctx *gin.Context) {
 	}
 	query := database.Query{}
 	query.InnerJoin = "dbmovies on movies.dbmovie_id=dbmovies.id"
-	query.Where = "movies.listname=?"
+	query.Where = "movies.listname = ?"
 	query.WhereArgs = []interface{}{ctx.Param("name")}
 
 	rows, _ := database.CountRows("movies", query)
@@ -249,7 +250,7 @@ func apimoviesAllJobs(c *gin.Context) {
 		returnval := "Job " + c.Param("job") + " started"
 
 		for _, idxmovie := range config.ConfigGetPrefix("movie_") {
-			configTemplate := *idxmovie
+			configTemplate := idxmovie
 			cfg_movie := config.ConfigGet(configTemplate.Name).Data.(config.MediaTypeConfig)
 
 			switch c.Param("job") {
@@ -338,8 +339,9 @@ func apimoviesJobs(c *gin.Context) {
 				utils.Movies_single_jobs(c.Param("job"), "movie_"+c.Param("name"), "", true)
 			})
 		case "feeds", "checkmissing", "checkmissingflag", "checkreachedflag":
+
 			for _, idxmovie := range config.ConfigGetPrefix("movie_") {
-				configTemplate := *idxmovie
+				configTemplate := idxmovie
 				if !config.ConfigCheck(configTemplate.Name) {
 					continue
 				}
@@ -408,7 +410,7 @@ func updateDBMovie(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	counter, _ := database.CountRows("dbmovies", database.Query{Where: "id != 0 and id=?", WhereArgs: []interface{}{dbmovie.ID}})
+	counter, _ := database.CountRows("dbmovies", database.Query{Where: "id != 0 and id = ?", WhereArgs: []interface{}{dbmovie.ID}})
 	var inres sql.Result
 	var err error
 	if counter == 0 {
@@ -417,7 +419,7 @@ func updateDBMovie(c *gin.Context) {
 	} else {
 		inres, err = database.UpdateArray("dbmovies", []string{"Title", "Release_Date", "Year", "Adult", "Budget", "Genres", "Original_Language", "Original_Title", "Overview", "Popularity", "Revenue", "Runtime", "Spoken_Languages", "Status", "Tagline", "Vote_Average", "Vote_Count", "Trakt_ID", "Moviedb_ID", "Imdb_ID", "Freebase_M_ID", "Freebase_ID", "Facebook_ID", "Instagram_ID", "Twitter_ID", "URL", "Backdrop", "Poster", "Slug"},
 			[]interface{}{dbmovie.Title, dbmovie.ReleaseDate, dbmovie.Year, dbmovie.Adult, dbmovie.Budget, dbmovie.Genres, dbmovie.OriginalLanguage, dbmovie.OriginalTitle, dbmovie.Overview, dbmovie.Popularity, dbmovie.Revenue, dbmovie.Runtime, dbmovie.SpokenLanguages, dbmovie.Status, dbmovie.Tagline, dbmovie.VoteAverage, dbmovie.VoteCount, dbmovie.TraktID, dbmovie.MoviedbID, dbmovie.ImdbID, dbmovie.FreebaseMID, dbmovie.FreebaseID, dbmovie.FacebookID, dbmovie.InstagramID, dbmovie.TwitterID, dbmovie.URL, dbmovie.Backdrop, dbmovie.Poster, dbmovie.Slug},
-			database.Query{Where: "id != 0 and id=?", WhereArgs: []interface{}{dbmovie.ID}})
+			database.Query{Where: "id != 0 and id = ?", WhereArgs: []interface{}{dbmovie.ID}})
 	}
 	if err == nil {
 		c.JSON(http.StatusOK, inres)
@@ -443,7 +445,7 @@ func updateMovie(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	counter, _ := database.CountRows("dbmovies", database.Query{Where: "id != 0 and id=?", WhereArgs: []interface{}{movie.ID}})
+	counter, _ := database.CountRows("dbmovies", database.Query{Where: "id != 0 and id = ?", WhereArgs: []interface{}{movie.ID}})
 	var inres sql.Result
 	var err error
 	if counter == 0 {
@@ -452,7 +454,7 @@ func updateMovie(c *gin.Context) {
 	} else {
 		inres, err = database.UpdateArray("dbmovies", []string{"missing", "listname", "dbmovie_id", "quality_profile", "blacklisted", "quality_reached", "dont_upgrade", "dont_search", "rootpath"},
 			[]interface{}{movie.Missing, movie.Listname, movie.DbmovieID, movie.QualityProfile, movie.Blacklisted, movie.QualityReached, movie.DontUpgrade, movie.DontSearch, movie.Rootpath},
-			database.Query{Where: "id != 0 and id=?", WhereArgs: []interface{}{movie.ID}})
+			database.Query{Where: "id != 0 and id = ?", WhereArgs: []interface{}{movie.ID}})
 	}
 	if err == nil {
 		c.JSON(http.StatusOK, inres)
@@ -472,10 +474,10 @@ func apimoviesSearch(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
 		return
 	}
-	movie, _ := database.GetMovies(database.Query{Where: "id=?", WhereArgs: []interface{}{c.Param("id")}})
+	movie, _ := database.GetMovies(database.Query{Where: "id = ?", WhereArgs: []interface{}{c.Param("id")}})
 
 	for _, idxmovie := range config.ConfigGetPrefix("movie_") {
-		configTemplate := *idxmovie
+		configTemplate := idxmovie
 		if !config.ConfigCheck(configTemplate.Name) {
 			continue
 		}
@@ -483,7 +485,7 @@ func apimoviesSearch(c *gin.Context) {
 		for idxlist := range cfg_movie.Lists {
 			if strings.EqualFold(cfg_movie.Lists[idxlist].Name, movie.Listname) {
 				scheduler.QueueSearch.Dispatch("searchmovie_movies_"+cfg_movie.Name+"_"+strconv.Itoa(int(movie.ID)), func() {
-					searcher.SearchMovieSingle(movie, configTemplate.Name, true)
+					searcher.SearchMovieSingle(movie.ID, configTemplate.Name, true)
 				})
 				c.JSON(http.StatusOK, "started")
 				return
@@ -504,7 +506,7 @@ func apimoviesSearchList(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
 		return
 	}
-	movie, _ := database.GetMovies(database.Query{Where: "id=?", WhereArgs: []interface{}{c.Param("id")}})
+	movie, _ := database.GetMovies(database.Query{Where: "id = ?", WhereArgs: []interface{}{c.Param("id")}})
 
 	titlesearch := false
 	if queryParam, ok := c.GetQuery("searchByTitle"); ok {
@@ -512,8 +514,9 @@ func apimoviesSearchList(c *gin.Context) {
 			titlesearch = true
 		}
 	}
+
 	for _, idxmovie := range config.ConfigGetPrefix("movie_") {
-		configTemplate := *idxmovie
+		configTemplate := idxmovie
 		if !config.ConfigCheck(configTemplate.Name) {
 			continue
 		}
@@ -521,8 +524,14 @@ func apimoviesSearchList(c *gin.Context) {
 		for idxlist := range cfg_movie.Lists {
 			if strings.EqualFold(cfg_movie.Lists[idxlist].Name, movie.Listname) {
 				searchnow := searcher.NewSearcher(configTemplate.Name, movie.QualityProfile)
-				searchresults := searchnow.MovieSearch(movie, false, titlesearch)
+				searchresults, err := searchnow.MovieSearch(movie.ID, false, titlesearch)
+				if err != nil {
+					c.JSON(http.StatusNotFound, "failed")
+					searchnow.Close()
+					return
+				}
 				c.JSON(http.StatusOK, gin.H{"accepted": searchresults.Nzbs, "rejected": searchresults.Rejected})
+				searchnow.Close()
 				return
 			}
 		}
@@ -541,16 +550,23 @@ func apiMoviesRssSearchList(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
 		return
 	}
+	var configTemplate config.Conf
 
 	for _, idxmovie := range config.ConfigGetPrefix("movie_") {
-		configTemplate := *idxmovie
+		configTemplate = idxmovie
 		if !config.ConfigCheck(configTemplate.Name) {
 			continue
 		}
 		cfg_movie := config.ConfigGet(configTemplate.Name).Data.(config.MediaTypeConfig)
 		if strings.EqualFold(cfg_movie.Name, c.Param("group")) {
 			searchnow := searcher.NewSearcher(configTemplate.Name, cfg_movie.Template_quality)
-			searchresults := searchnow.SearchRSS("movie", true)
+			searchresults, err := searchnow.SearchRSS("movie", true)
+			if err != nil {
+				c.JSON(http.StatusNotFound, "failed")
+				searchnow.Close()
+				return
+			}
+			searchnow.Close()
 			c.JSON(http.StatusOK, gin.H{"accepted": searchresults.Nzbs, "rejected": searchresults.Rejected})
 			return
 		}
@@ -570,7 +586,7 @@ func apimoviesSearchDownload(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
 		return
 	}
-	movie, _ := database.GetMovies(database.Query{Where: "id=?", WhereArgs: []interface{}{c.Param("id")}})
+	movie, _ := database.GetMovies(database.Query{Where: "id = ?", WhereArgs: []interface{}{c.Param("id")}})
 	searchtype := "missing"
 	if !movie.Missing {
 		searchtype = "upgrade"
@@ -583,7 +599,7 @@ func apimoviesSearchDownload(c *gin.Context) {
 	}
 
 	for _, idxmovie := range config.ConfigGetPrefix("movie_") {
-		configTemplate := *idxmovie
+		configTemplate := idxmovie
 		if !config.ConfigCheck(configTemplate.Name) {
 			continue
 		}
@@ -591,8 +607,9 @@ func apimoviesSearchDownload(c *gin.Context) {
 		for idxlist := range cfg_movie.Lists {
 			if strings.EqualFold(cfg_movie.Lists[idxlist].Name, movie.Listname) {
 				downloadnow := downloader.NewDownloader(configTemplate.Name, searchtype)
-				downloadnow.SetMovie(movie)
+				downloadnow.SetMovie(movie.ID)
 				downloadnow.DownloadNzb(nzb)
+				downloadnow.Close()
 				c.JSON(http.StatusOK, "started")
 				return
 			}
@@ -661,7 +678,9 @@ func apimoviesClearHistoryName(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
 		return
 	}
-	go utils.Movies_single_jobs("clearhistory", "movie_"+c.Param("name"), "", true)
+	name := "movie_" + c.Param("name")
+	swg := parallelizer.NewGroup(parallelizer.WithPoolSize(1))
+	swg.Add(func() { utils.Movies_single_jobs("clearhistory", name, "", true) })
 	c.JSON(http.StatusOK, "started")
 }
 

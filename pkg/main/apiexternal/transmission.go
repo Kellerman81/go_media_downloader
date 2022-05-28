@@ -1,6 +1,7 @@
 package apiexternal
 
 import (
+	"github.com/Kellerman81/go_media_downloader/logger"
 	"github.com/odwrtw/transmission"
 )
 
@@ -14,6 +15,7 @@ func SendToTransmission(server string, username string, password string, url str
 	if err != nil {
 		return err
 	}
+	defer logger.ClearVar(t)
 
 	var torrentadd transmission.AddTorrentArg
 	torrentadd.DownloadDir = dlpath
@@ -24,7 +26,6 @@ func SendToTransmission(server string, username string, password string, url str
 	if erradd != nil {
 		return erradd
 	}
-	t = nil
 
 	return nil
 }

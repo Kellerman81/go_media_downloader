@@ -19,12 +19,11 @@ type LoggerConfig struct {
 }
 
 func InitLogger(config LoggerConfig) {
+
 	src, _ := os.OpenFile(os.DevNull, os.O_APPEND|os.O_WRONLY, os.ModeAppend)
 	Log.Out = src
-	// logPath := "downloader.log"
 	Log.SetFormatter(&logrus.TextFormatter{})
 	if strings.EqualFold(config.LogLevel, "Debug") {
-		// Memprofiler = profile.Start(profile.ProfilePath("."), profile.MemProfile, profile.MemProfileHeap)
 		Log.SetLevel(logrus.DebugLevel)
 		Log.SetReportCaller(true)
 	}

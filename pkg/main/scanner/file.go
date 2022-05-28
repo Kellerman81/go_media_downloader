@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/Kellerman81/go_media_downloader/config"
 	"github.com/Kellerman81/go_media_downloader/database"
@@ -17,15 +16,19 @@ import (
 	"github.com/karrick/godirwalk"
 )
 
-func GetFilesDir(rootpath string, filetypes []string, filetypesNoRename []string, ignoredpaths []string) []string {
+func GetFilesDirCounter(rootpath string, pathcfgstr string) ([]string, error) {
+	pathcfg := config.PathsConfig{}
+	if len(pathcfgstr) > 1 {
+		pathcfg = config.ConfigGet(pathcfgstr).Data.(config.PathsConfig)
+	}
 
 	if !config.ConfigCheck("general") {
-		return []string{}
+		return nil, errors.New("no general")
 	}
 	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
 
 	if cfg_general.UseGoDir {
-		return GetFilesGoDir(rootpath, filetypes, filetypesNoRename, ignoredpaths)
+		return GetFilesGoDir(rootpath, pathcfgstr)
 	}
 
 	if CheckFileExist(rootpath) {
@@ -39,6 +42,8 @@ func GetFilesDir(rootpath string, filetypes []string, filetypesNoRename []string
 			return nil
 		})
 		list := make([]string, 0, counter)
+		defer logger.ClearVar(&list)
+
 		err := filepath.WalkDir(rootpath, func(path string, info fs.DirEntry, err error) error {
 			if info.IsDir() {
 				return nil
@@ -46,35 +51,39 @@ func GetFilesDir(rootpath string, filetypes []string, filetypesNoRename []string
 
 			//Check Extension
 			ok := false
-			if len(filetypes) >= 1 {
-				for idx := range filetypes {
-					if strings.EqualFold(filetypes[idx], filepath.Ext(path)) {
-						ok = true
-						break
+			for idx := range pathcfg.AllowedVideoExtensions {
+				if strings.EqualFold(pathcfg.AllowedVideoExtensions[idx], filepath.Ext(path)) {
+					ok = true
+					break
+				}
+			}
+
+			if pathcfg.AllowedVideoExtensionsNoRename != nil {
+				if len(pathcfg.AllowedVideoExtensionsNoRename) >= 1 && !ok {
+					for idx := range pathcfg.AllowedVideoExtensionsNoRename {
+						if strings.EqualFold(pathcfg.AllowedVideoExtensionsNoRename[idx], filepath.Ext(path)) {
+							ok = true
+							break
+						}
 					}
 				}
 			}
 
-			if len(filetypesNoRename) >= 1 && !ok {
-				for idx := range filetypesNoRename {
-					if strings.EqualFold(filetypesNoRename[idx], filepath.Ext(path)) {
-						ok = true
-						break
-					}
+			if pathcfg.AllowedVideoExtensionsNoRename != nil && pathcfg.AllowedVideoExtensions != nil {
+				if len(pathcfg.AllowedVideoExtensionsNoRename) == 0 && len(pathcfg.AllowedVideoExtensions) == 0 {
+					ok = true
 				}
-			}
-
-			if len(filetypesNoRename) == 0 && len(filetypes) == 0 {
-				ok = true
 			}
 
 			//Check IgnoredPaths
-			if len(ignoredpaths) >= 1 && ok {
-				pathdir, _ := filepath.Split(path)
-				for idxignore := range ignoredpaths {
-					if strings.Contains(strings.ToLower(pathdir), strings.ToLower(ignoredpaths[idxignore])) {
-						ok = false
-						break
+			if pathcfg.Blocked != nil {
+				if len(pathcfg.Blocked) >= 1 && ok {
+					pathdir, _ := filepath.Split(path)
+					for idx := range pathcfg.Blocked {
+						if strings.Contains(strings.ToLower(pathdir), strings.ToLower(pathcfg.Blocked[idx])) {
+							ok = false
+							break
+						}
 					}
 				}
 			}
@@ -87,33 +96,217 @@ func GetFilesDir(rootpath string, filetypes []string, filetypesNoRename []string
 
 		})
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "%s\n", err)
+			logger.Log.Error(err)
 		}
-		return list
+		return list, nil
 	} else {
 		logger.Log.Error("Path not found: ", rootpath)
 	}
-	return []string{}
+	return nil, errors.New("no files")
 }
 
-func GetFilesDirAll(rootpath string) []string {
-
+func GetFilesDir(rootpath string, pathcfgstr string) ([]string, error) {
+	pathcfg := config.PathsConfig{}
+	if len(pathcfgstr) > 1 {
+		pathcfg = config.ConfigGet(pathcfgstr).Data.(config.PathsConfig)
+	}
 	if !config.ConfigCheck("general") {
-		return []string{}
+		return nil, errors.New("no general")
+	}
+	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
+
+	if cfg_general.UseGoDir {
+		return GetFilesGoDir(rootpath, pathcfgstr)
 	}
 
 	if CheckFileExist(rootpath) {
-		counter := 0
-		filepath.WalkDir(rootpath, func(path string, info fs.DirEntry, err error) error {
+		var list []string
+		defer logger.ClearVar(&list)
+		err := filepath.WalkDir(rootpath, func(path string, info fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
 			if info.IsDir() {
 				return nil
 			}
-			counter += 1
+
+			//Check Extension
+			ok := false
+			for idx := range pathcfg.AllowedVideoExtensions {
+				if strings.EqualFold(pathcfg.AllowedVideoExtensions[idx], filepath.Ext(path)) {
+					ok = true
+					break
+				}
+			}
+
+			if pathcfg.AllowedVideoExtensionsNoRename != nil && !ok {
+				if len(pathcfg.AllowedVideoExtensionsNoRename) >= 1 && !ok {
+					for idx := range pathcfg.AllowedVideoExtensionsNoRename {
+						if strings.EqualFold(pathcfg.AllowedVideoExtensionsNoRename[idx], filepath.Ext(path)) {
+							ok = true
+							break
+						}
+					}
+				}
+			}
+
+			if pathcfg.AllowedVideoExtensionsNoRename != nil && pathcfg.AllowedVideoExtensions != nil && !ok {
+				if len(pathcfg.AllowedVideoExtensionsNoRename) == 0 && len(pathcfg.AllowedVideoExtensions) == 0 && !ok {
+					ok = true
+				}
+			}
+
+			//Check IgnoredPaths
+			if pathcfg.Blocked != nil && ok {
+				if len(pathcfg.Blocked) >= 1 {
+					pathdir, _ := filepath.Split(path)
+					for idx := range pathcfg.Blocked {
+						if strings.Contains(strings.ToLower(pathdir), strings.ToLower(pathcfg.Blocked[idx])) {
+							ok = false
+							break
+						}
+					}
+				}
+			}
+
+			if ok {
+				list = append(list, path)
+			}
 
 			return nil
+
 		})
-		list := make([]string, 0, counter)
+		if err != nil {
+			logger.Log.Error(err)
+		}
+		return list, nil
+	} else {
+		logger.Log.Error("Path not found: ", rootpath)
+	}
+	return nil, errors.New("no files")
+}
+
+func GetFilesDirNewOld(rootpath string, pathcfgstr string) (filesWanted logger.StringSet, filesFound logger.StringSet, err error) {
+	pathcfg := config.PathsConfig{}
+	if len(pathcfgstr) > 1 {
+		pathcfg = config.ConfigGet(pathcfgstr).Data.(config.PathsConfig)
+	}
+	if !config.ConfigCheck("general") {
+		return logger.StringSet{}, logger.StringSet{}, errors.New("no general")
+	}
+
+	filesHave := logger.NewStringSetExactSize(database.CountRowsStaticNoError("Select (Select count(DISTINCT location) FROM movie_files)+(Select Count(DISTINCT location) FROM serie_episode_files)"))
+	defer filesHave.Clear()
+	for _, file := range database.QueryStaticStringArray("Select DISTINCT location FROM movie_files union Select DISTINCT location FROM serie_episode_files", "Select (Select count(DISTINCT location) FROM movie_files)+(Select Count(DISTINCT location) FROM serie_episode_files)") {
+		if file == "" {
+			continue
+		}
+		filesHave.Add(file)
+	}
+
+	mapfiletypes := logger.NewStringSetExactSize(len(pathcfg.AllowedVideoExtensions))
+	defer mapfiletypes.Clear()
+	for idx := range pathcfg.AllowedVideoExtensions {
+		mapfiletypes.Add(strings.ToLower(pathcfg.AllowedVideoExtensions[idx]))
+	}
+
+	mapfiletypesNoRename := logger.NewStringSetExactSize(len(pathcfg.AllowedVideoExtensionsNoRename))
+	defer mapfiletypesNoRename.Clear()
+	for idx := range pathcfg.AllowedVideoExtensionsNoRename {
+		mapfiletypesNoRename.Add(strings.ToLower(pathcfg.AllowedVideoExtensionsNoRename[idx]))
+	}
+
+	filesWanted = logger.NewStringSet()
+	defer filesWanted.Clear()
+
+	filesFound = logger.NewStringSet()
+	defer filesFound.Clear()
+
+	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
+
+	if cfg_general.UseGoDir {
+		//return GetFilesGoDir(rootpath, filetypes, filetypesNoRename, ignoredpaths)
+	}
+
+	if CheckFileExist(rootpath) {
 		err := filepath.WalkDir(rootpath, func(path string, info fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if info.IsDir() {
+				return nil
+			}
+
+			//Check Extension
+			ok := false
+			if len(pathcfg.AllowedVideoExtensions) >= 1 {
+				if mapfiletypes.Contains(strings.ToLower(filepath.Ext(path))) {
+					ok = true
+				}
+			}
+
+			if pathcfg.AllowedVideoExtensionsNoRename != nil && !ok {
+				if len(pathcfg.AllowedVideoExtensionsNoRename) >= 1 && !ok {
+					if mapfiletypesNoRename.Contains(strings.ToLower(filepath.Ext(path))) {
+						ok = true
+					}
+				}
+			}
+
+			if pathcfg.AllowedVideoExtensionsNoRename != nil && pathcfg.AllowedVideoExtensions != nil && !ok {
+				if len(pathcfg.AllowedVideoExtensionsNoRename) == 0 && len(pathcfg.AllowedVideoExtensions) == 0 && !ok {
+					ok = true
+				}
+			}
+
+			//Check IgnoredPaths
+			if pathcfg.Blocked != nil && ok {
+				if len(pathcfg.Blocked) >= 1 {
+					pathdir, _ := filepath.Split(path)
+					for idx := range pathcfg.Blocked {
+						if strings.Contains(strings.ToLower(pathdir), strings.ToLower(pathcfg.Blocked[idx])) {
+							ok = false
+							break
+						}
+					}
+				}
+			}
+
+			if ok {
+				if filesHave.Contains(path) {
+					filesFound.Add(path)
+				} else {
+					filesWanted.Add(path)
+				}
+			}
+
+			return nil
+
+		})
+		if err != nil {
+			logger.Log.Error(err)
+		}
+
+		return filesFound, filesWanted, nil
+	} else {
+		logger.Log.Error("Path not found: ", rootpath)
+	}
+	return logger.StringSet{}, logger.StringSet{}, errors.New("no files")
+}
+
+func GetFilesDirAll(rootpath string) ([]string, error) {
+
+	if !config.ConfigCheck("general") {
+		return nil, errors.New("no general")
+	}
+
+	if CheckFileExist(rootpath) {
+		var list []string
+		defer logger.ClearVar(&list)
+		err := filepath.WalkDir(rootpath, func(path string, info fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
 			if info.IsDir() {
 				return nil
 			}
@@ -121,51 +314,22 @@ func GetFilesDirAll(rootpath string) []string {
 			return nil
 		})
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "%s\n", err)
+			logger.Log.Error(err)
 		}
-		return list
+		return list, nil
 	} else {
 		logger.Log.Error("Path not found: ", rootpath)
 	}
-	return []string{}
+	return nil, errors.New("no files")
 }
 
-func CheckDisallowed(rootpath string, notwanted []string, removefolder bool) bool {
-
-	if !config.ConfigCheck("general") {
-		return true
+func GetFilesGoDir(rootpath string, pathcfgstr string) ([]string, error) {
+	pathcfg := config.PathsConfig{}
+	if len(pathcfgstr) > 1 {
+		pathcfg = config.ConfigGet(pathcfgstr).Data.(config.PathsConfig)
 	}
-
-	if CheckFileExist(rootpath) {
-		isok := true
-		filepath.WalkDir(rootpath, func(path string, info fs.DirEntry, err error) error {
-			if info.IsDir() {
-				return nil
-			}
-			for _, disallowedstr := range notwanted {
-				if disallowedstr == "" {
-					continue
-				}
-				if strings.Contains(strings.ToLower(path), strings.ToLower(disallowedstr)) {
-					logger.Log.Warning(path, " is not allowd in the path!")
-					isok = false
-					return io.EOF
-				}
-			}
-			return nil
-		})
-		if removefolder && !isok {
-			CleanUpFolder(rootpath, 80000)
-		}
-		return isok
-	} else {
-		logger.Log.Error("Path not found: ", rootpath)
-	}
-	return true
-}
-
-func GetFilesGoDir(rootpath string, filetypes []string, filetypesNoRename []string, ignoredpaths []string) []string {
 	var list []string
+	defer logger.ClearVar(&list)
 
 	if CheckFileExist(rootpath) {
 		err := godirwalk.Walk(rootpath, &godirwalk.Options{
@@ -176,35 +340,39 @@ func GetFilesGoDir(rootpath string, filetypes []string, filetypesNoRename []stri
 
 				//Check Extension
 				ok := false
-				if len(filetypes) >= 1 {
-					for idx := range filetypes {
-						if strings.EqualFold(filetypes[idx], filepath.Ext(osPathname)) {
-							ok = true
-							break
+				for idx2 := range pathcfg.AllowedVideoExtensions {
+					if strings.EqualFold(pathcfg.AllowedVideoExtensions[idx2], filepath.Ext(osPathname)) {
+						ok = true
+						break
+					}
+				}
+
+				if pathcfg.AllowedVideoExtensionsNoRename != nil && !ok {
+					if len(pathcfg.AllowedVideoExtensionsNoRename) >= 1 && !ok {
+						for idx2 := range pathcfg.AllowedVideoExtensionsNoRename {
+							if strings.EqualFold(pathcfg.AllowedVideoExtensionsNoRename[idx2], filepath.Ext(osPathname)) {
+								ok = true
+								break
+							}
 						}
 					}
 				}
 
-				if len(filetypesNoRename) >= 1 && !ok {
-					for idx := range filetypesNoRename {
-						if strings.EqualFold(filetypesNoRename[idx], filepath.Ext(osPathname)) {
-							ok = true
-							break
-						}
+				if pathcfg.AllowedVideoExtensionsNoRename != nil && pathcfg.AllowedVideoExtensions != nil && !ok {
+					if len(pathcfg.AllowedVideoExtensionsNoRename) == 0 && len(pathcfg.AllowedVideoExtensions) == 0 && !ok {
+						ok = true
 					}
-				}
-
-				if len(filetypesNoRename) == 0 && len(filetypes) == 0 {
-					ok = true
 				}
 
 				//Check IgnoredPaths
-				if len(ignoredpaths) >= 1 && ok {
-					path, _ := filepath.Split(osPathname)
-					for idxignore := range ignoredpaths {
-						if strings.Contains(strings.ToLower(path), strings.ToLower(ignoredpaths[idxignore])) {
-							ok = false
-							break
+				if pathcfg.Blocked != nil && ok {
+					if len(pathcfg.Blocked) >= 1 && ok {
+						pathdir, _ := filepath.Split(osPathname)
+						for idx2 := range pathcfg.Blocked {
+							if strings.Contains(strings.ToLower(pathdir), strings.ToLower(pathcfg.Blocked[idx2])) {
+								ok = false
+								break
+							}
 						}
 					}
 				}
@@ -216,18 +384,18 @@ func GetFilesGoDir(rootpath string, filetypes []string, filetypesNoRename []stri
 				return nil
 			},
 			ErrorCallback: func(osPathname string, err error) godirwalk.ErrorAction {
-				//fmt.Fprintf(os.Stderr, "%s: %s\n", progname, err)
 				return godirwalk.SkipNode
 			},
 			Unsorted: true, // set true for faster yet non-deterministic enumeration (see godoc)
 		})
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "%s\n", err)
+			logger.Log.Error(err)
 		}
 	} else {
 		logger.Log.Error("Path not found: ", rootpath)
+		return nil, errors.New("no path")
 	}
-	return list
+	return list, nil
 }
 
 func getFolderSize(rootpath string) int64 {
@@ -240,40 +408,44 @@ func getFolderSize(rootpath string) int64 {
 
 	if CheckFileExist(rootpath) {
 		if cfg_general.UseGoDir {
+			var info fs.FileInfo
+			defer logger.ClearVar(&info)
+			var errinfo error
 			err := godirwalk.Walk(rootpath, &godirwalk.Options{
 				Callback: func(osPathname string, de *godirwalk.Dirent) error {
 					if de.IsDir() {
 						return nil
 					}
-					info, errinfo := os.Stat(osPathname)
+					info, errinfo = os.Stat(osPathname)
 					if errinfo == nil {
 						size += info.Size()
 					}
-					info = nil
 					return nil
 				},
 				ErrorCallback: func(osPathname string, err error) godirwalk.ErrorAction {
-					//fmt.Fprintf(os.Stderr, "%s: %s\n", progname, err)
 					return godirwalk.SkipNode
 				},
 				Unsorted: true, // set true for faster yet non-deterministic enumeration (see godoc)
 			})
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "%s\n", err)
+				logger.Log.Error(err)
 			}
 		} else {
+			var fsinfo fs.FileInfo
+			defer logger.ClearVar(&fsinfo)
+			var errinfo error
 			err := filepath.WalkDir(rootpath, func(path string, info fs.DirEntry, err error) error {
 				if info.IsDir() {
 					return nil
 				}
-				fsinfo, errinfo := info.Info()
+				fsinfo, errinfo = info.Info()
 				if errinfo == nil {
 					size += fsinfo.Size()
 				}
 				return nil
 			})
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "%s\n", err)
+				logger.Log.Error(err)
 			}
 		}
 	} else {
@@ -286,10 +458,10 @@ func getFileSize(file string) int64 {
 	var size int64
 	if CheckFileExist(file) {
 		info, err := os.Stat(file)
+		defer logger.ClearVar(&info)
 		if err == nil {
 			size += info.Size()
 		}
-		info = nil
 	} else {
 		logger.Log.Error("File not found: ", file)
 	}
@@ -305,69 +477,83 @@ func createFolderWithSubfolders(path string, security uint32) error {
 }
 
 func MoveFiles(files []string, target string, newname string, filetypes []string, filetypesNoRename []string, usebuffercopy bool) (bool, int) {
+	defer logger.ClearVar(&files)
+	defer logger.ClearVar(&filetypes)
+	defer logger.ClearVar(&filetypesNoRename)
 	moved := 0
 	moveok := false
-
-	for idxfile := range files {
-		if CheckFileExist(files[idxfile]) {
-			var ok bool
-			var oknorename bool
-			if len(filetypes) == 0 {
+	if files == nil {
+		return moveok, moved
+	}
+	for idx := range files {
+		if CheckFileExist(files[idx]) {
+			ok := false
+			oknorename := false
+			if filetypes == nil {
 				ok = true
 				oknorename = true
 			} else {
-				if len(filetypes) >= 1 {
-					for idx := range filetypes {
-						if strings.EqualFold(filetypes[idx], filepath.Ext(files[idxfile])) {
-							ok = true
-							break
+				if len(filetypes) == 0 {
+					ok = true
+					oknorename = true
+				} else {
+					if len(filetypes) >= 1 {
+						for idx2 := range filetypes {
+							if strings.EqualFold(filetypes[idx2], filepath.Ext(files[idx])) {
+								ok = true
+								break
+							}
 						}
 					}
 				}
-
-				if len(filetypesNoRename) >= 1 && !ok {
-					for idx := range filetypesNoRename {
-						if strings.EqualFold(filetypesNoRename[idx], filepath.Ext(files[idxfile])) {
-							ok = true
+			}
+			if !ok {
+				if filetypesNoRename != nil {
+					if len(filetypesNoRename) >= 1 {
+						for idx2 := range filetypesNoRename {
+							if strings.EqualFold(filetypesNoRename[idx2], filepath.Ext(files[idx])) {
+								ok = true
+								break
+							}
+						}
+						if ok {
 							oknorename = true
-							break
 						}
 					}
 				}
 			}
 			if ok {
 				if newname == "" || oknorename {
-					newname = filepath.Base(files[idxfile])
+					newname = filepath.Base(files[idx])
 				}
-				newpath := filepath.Join(target, newname+filepath.Ext(files[idxfile]))
+				newpath := filepath.Join(target, newname+filepath.Ext(files[idx]))
 				if CheckFileExist(newpath) {
 					if target != newpath {
 						//Remove Target to supress error
 						RemoveFile(newpath)
 					}
 				}
-				err1 := os.Rename(files[idxfile], newpath)
-				if err1 != nil {
-					var err error
+				err := os.Rename(files[idx], newpath)
+				if err != nil {
 					if usebuffercopy {
-						err = moveFileDriveBuffer(files[idxfile], newpath)
+						err = moveFileDriveBuffer(files[idx], newpath)
 					} else {
-						err = moveFileDrive(files[idxfile], newpath)
+						err = moveFileDrive(files[idx], newpath)
 					}
 					if err != nil {
-						logger.Log.Error("File could not be moved: ", files[idxfile], " Error: ", err)
+						logger.Log.Error("File could not be moved: ", files[idx], " Error: ", err)
 					} else {
-						logger.Log.Debug("File moved from ", files[idxfile], " to ", newpath)
+						logger.Log.Debug("File moved from ", files[idx], " to ", newpath)
 						moved = moved + 1
 					}
 				} else {
-					logger.Log.Debug("File moved from ", files[idxfile], " to ", newpath)
+					logger.Log.Debug("File moved from ", files[idx], " to ", newpath)
 					moved = moved + 1
 				}
 
 			}
 		} else {
-			logger.Log.Error("File not found: ", files[idxfile])
+			logger.Log.Error("File not found: ", files[idx])
 		}
 	}
 	if len(files) == moved {
@@ -376,40 +562,46 @@ func MoveFiles(files []string, target string, newname string, filetypes []string
 	return moveok, moved
 }
 
-func RemoveFiles(files []string, filetypes []string, filetypesNoRename []string) {
-
-	for idxfile := range files {
-		var ok bool
-		var oknorename bool
-		if len(filetypes) >= 1 {
-			for idx := range filetypes {
-				if strings.EqualFold(filetypes[idx], filepath.Ext(files[idxfile])) {
+func RemoveFiles(val string, pathcfgstr string) {
+	pathcfg := config.PathsConfig{}
+	if len(pathcfgstr) > 1 {
+		pathcfg = config.ConfigGet(pathcfgstr).Data.(config.PathsConfig)
+	}
+	ok := false
+	oknorename := false
+	if pathcfg.AllowedVideoExtensions != nil {
+		if len(pathcfg.AllowedVideoExtensions) >= 1 {
+			for idxpath := range pathcfg.AllowedVideoExtensions {
+				if strings.EqualFold(pathcfg.AllowedVideoExtensions[idxpath], filepath.Ext(val)) {
+					ok = true
+					return
+				}
+			}
+		}
+	}
+	if pathcfg.AllowedVideoExtensionsNoRename != nil {
+		if len(pathcfg.AllowedVideoExtensionsNoRename) >= 1 && !ok {
+			for idxpath := range pathcfg.AllowedVideoExtensionsNoRename {
+				if strings.EqualFold(pathcfg.AllowedVideoExtensionsNoRename[idxpath], filepath.Ext(val)) {
 					ok = true
 					break
 				}
 			}
-		}
-
-		if len(filetypesNoRename) >= 1 && !ok {
-			for idx := range filetypesNoRename {
-				if strings.EqualFold(filetypesNoRename[idx], filepath.Ext(files[idxfile])) {
-					ok = true
-					oknorename = true
-					break
-				}
+			if ok {
+				oknorename = true
 			}
 		}
-		if ok || oknorename || len(filetypes) == 0 {
-			if CheckFileExist(files[idxfile]) {
-				err := os.Remove(files[idxfile])
-				if err != nil {
-					logger.Log.Error("File could not be removed: ", files[idxfile], " Error: ", err)
-				} else {
-					logger.Log.Debug("File removed: ", files[idxfile])
-				}
+	}
+	if ok || oknorename || len(pathcfg.AllowedVideoExtensions) == 0 {
+		if CheckFileExist(val) {
+			err := os.Remove(val)
+			if err != nil {
+				logger.Log.Error("File could not be removed: ", val, " Error: ", err)
 			} else {
-				logger.Log.Error("File not found: ", files[idxfile])
+				logger.Log.Debug("File removed: ", val)
 			}
+		} else {
+			logger.Log.Error("File not found: ", val)
 		}
 	}
 }
@@ -430,137 +622,25 @@ func RemoveFile(file string) error {
 }
 
 func CleanUpFolder(folder string, CleanupsizeMB int) {
-	emptyarr := []string{}
 	if CheckFileExist(folder) {
-		filesleft := GetFilesDir(folder, emptyarr, emptyarr, emptyarr)
-		logger.Log.Debug("Left files: ", filesleft)
-		if CleanupsizeMB >= 1 {
-			leftsize := getFolderSize(folder)
-			logger.Log.Debug("Left size: ", int(leftsize/1024/1024))
-			if CleanupsizeMB >= int(leftsize/1024/1024) {
-				err := os.RemoveAll(folder)
-				if err == nil {
-					logger.Log.Debug("Folder removed: ", folder)
-				} else {
-					logger.Log.Error("Folder could not be removed: ", folder, " Error: ", err)
-				}
-			}
-		}
-	}
-}
-
-func checkfilespathlist(array []database.Dbfiles, typeof string, find string, configTemplate string, listname string, listConfig string) bool {
-	for idx := range array {
-		if array[idx].Location == find {
-			var getlist interface{}
-			var errget error
-			if typeof != "movies" {
-				counter, err := database.CountRowsStatic("select count(id) FROM serie_file_unmatcheds WHERE filepath = ? and listname = ? and (last_checked > ? or last_checked is null)", find, listname, time.Now().Add(time.Hour*-12))
-				if err == nil {
-					if counter >= 1 {
-						getlist = nil
-						return true
+		filesleft, err := GetFilesDir(folder, "")
+		if err == nil {
+			defer logger.ClearVar(&filesleft)
+			logger.Log.Debug("Left files: ", filesleft)
+			if CleanupsizeMB >= 1 {
+				leftsize := getFolderSize(folder)
+				logger.Log.Debug("Left size: ", int(leftsize/1024/1024))
+				if CleanupsizeMB >= int(leftsize/1024/1024) {
+					err := os.RemoveAll(folder)
+					if err == nil {
+						logger.Log.Debug("Folder removed: ", folder)
+					} else {
+						logger.Log.Error("Folder could not be removed: ", folder, " Error: ", err)
 					}
 				}
-				getlist, errget = database.QueryColumnStatic("select listname FROM series WHERE id = ?", array[idx].ID)
-				if errget != nil {
-					getlist = nil
-					continue
-				}
-			} else {
-				counter, err := database.CountRowsStatic("select count(id) FROM movie_file_unmatcheds WHERE filepath = ? and listname = ? and (last_checked > ? or last_checked is null)", find, listname, time.Now().Add(time.Hour*-12))
-				if err == nil {
-					if counter >= 1 {
-						getlist = nil
-						return true
-					}
-				}
-				getlist, errget = database.QueryColumnStatic("select listname FROM movies WHERE id = ?", array[idx].ID)
-				if errget != nil {
-					getlist = nil
-					continue
-				}
-			}
-			if getlist == nil {
-				continue
-			}
-			var getlistname string = getlist.(string)
-			getlist = nil
-			if getlistname == "" {
-				continue
-			}
-			if strings.EqualFold(getlistname, listname) {
-				return true
-			}
-			list := config.ConfigGetMediaListConfig(configTemplate, listConfig)
-			for idxignore := range list.Replace_map_lists {
-				if strings.EqualFold(getlistname, list.Replace_map_lists[idxignore]) {
-					return true
-				}
-			}
-			for idxignore := range list.Ignore_map_lists {
-				if strings.EqualFold(getlistname, list.Ignore_map_lists[idxignore]) {
-					return true
-				}
 			}
 		}
 	}
-	return false
-}
-
-func GetFilesAdded(files []string, listname string, configTemplate string, listConfig string) []string {
-	listentries := files[:0]
-
-	filesdb, fileerr := database.QueryDbfiles("Select location, movie_id as id from movie_files", "Select count(id) from movie_files")
-	if len(filesdb) == 0 {
-		logger.Log.Error("File Struct error", fileerr)
-		return listentries
-	}
-	for idxfile := range files {
-		if !checkfilespathlist(filesdb, "movies", files[idxfile], configTemplate, listname, listConfig) {
-			logger.Log.Debug("File added to list - not found", files[idxfile], " ", listname)
-			listentries = append(listentries, files[idxfile])
-		}
-	}
-	return listentries
-}
-func GetFilesSeriesAdded(files []string, configTemplate string, listname string, listConfig string) []string {
-	listentries := files[:0]
-
-	filesdb, fileerr := database.QueryDbfiles("Select location, serie_id as id from serie_episode_files", "Select count(id) from serie_episode_files")
-	if len(filesdb) == 0 {
-		logger.Log.Error("File Struct error", fileerr)
-		return listentries
-	}
-	for idxfile := range files {
-		if !checkfilespathlist(filesdb, "series", files[idxfile], configTemplate, listname, listConfig) {
-			logger.Log.Debug("File added to list - not found", files[idxfile], " ", listname)
-			listentries = append(listentries, files[idxfile])
-		}
-	}
-	return listentries
-}
-
-func GetFilesRemoved(listname string) []string {
-	moviefile, _ := database.QueryStaticColumnsOneString("Select location from movie_files where movie_id in (Select id from movies where listname=?)", "Select count(id) from movie_files where movie_id in (Select id from movies where listname=?)", listname)
-	var listentries []string
-	for idxmovie := range moviefile {
-		if !CheckFileExist(moviefile[idxmovie].Str) {
-			listentries = append(listentries, moviefile[idxmovie].Str)
-		}
-	}
-	return listentries
-}
-
-func GetFilesSeriesRemoved(listname string) []string {
-	seriefile, _ := database.QueryStaticColumnsOneString("Select location from serie_episode_files where serie_id in (Select id from series where listname=?)", "Select count(id) from serie_episode_files where serie_id in (Select id from series where listname=?)", listname)
-	var listentries []string
-	for idxserie := range seriefile {
-		if !CheckFileExist(seriefile[idxserie].Str) {
-			listentries = append(listentries, seriefile[idxserie].Str)
-		}
-	}
-	return listentries
 }
 
 func moveFileDriveReadWrite(sourcePath, destPath string) error {
@@ -568,21 +648,21 @@ func moveFileDriveReadWrite(sourcePath, destPath string) error {
 	//High Ram Usage !!!
 	input, err := ioutil.ReadFile(sourcePath)
 	if err != nil {
-		fmt.Println(err)
+		logger.Log.Error(err)
 		return err
 	}
+	defer logger.ClearVar(&input)
 
 	err = ioutil.WriteFile(destPath, input, 0644)
-	input = nil
 	if err != nil {
-		fmt.Println("Error creating", destPath)
-		fmt.Println(err)
+		logger.Log.Error("Error creating", destPath)
+		logger.Log.Error(err)
 		return err
 	}
 	// The copy was successful, so now delete the original file
 	err = os.Remove(sourcePath)
 	if err != nil {
-		fmt.Println("Error removing source", sourcePath)
+		logger.Log.Error("Error removing source", sourcePath)
 		return err
 	}
 	return nil
@@ -603,11 +683,11 @@ func moveFileDriveBuffer(sourcePath, destPath string) error {
 	if err != nil {
 		return err
 	}
+	defer logger.ClearVar(&sourceFileStat)
 
 	if !sourceFileStat.Mode().IsRegular() {
 		return fmt.Errorf("%s is not a regular file", sourcePath)
 	}
-	sourceFileStat = nil
 
 	source, err := os.Open(sourcePath)
 	if err != nil {
@@ -626,13 +706,11 @@ func moveFileDriveBuffer(sourcePath, destPath string) error {
 	}
 	defer destination.Close()
 
-	if err != nil {
-		return err
-	}
-
 	buf := make([]byte, int64(bufferkb)*1024)
+	defer logger.ClearVar(&buf)
+	var n int
 	for {
-		n, err := source.Read(buf)
+		n, err = source.Read(buf)
 		if err != nil && err != io.EOF {
 			return err
 		}
@@ -640,11 +718,71 @@ func moveFileDriveBuffer(sourcePath, destPath string) error {
 			break
 		}
 
-		if _, err := destination.Write(buf[:n]); err != nil {
+		if _, err = destination.Write(buf[:n]); err != nil {
 			return err
 		}
-		buf = nil
-		buf = make([]byte, int64(bufferkb)*1024)
+	}
+	// The copy was successful, so now delete the original file
+	err = os.Remove(sourcePath)
+	if err != nil {
+		return fmt.Errorf("failed removing original file: %s", err)
+	}
+	return nil
+}
+
+func MoveFileDriveBuffer(sourcePath, destPath string) error {
+	if !config.ConfigCheck("general") {
+		return errors.New("missing config")
+	}
+	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
+
+	bufferkb := 1024
+	if cfg_general.MoveBufferSizeKB != 0 {
+		bufferkb = cfg_general.MoveBufferSizeKB
+	}
+
+	sourceFileStat, err := os.Stat(sourcePath)
+	if err != nil {
+		return err
+	}
+	defer logger.ClearVar(&sourceFileStat)
+
+	if !sourceFileStat.Mode().IsRegular() {
+		return fmt.Errorf("%s is not a regular file", sourcePath)
+	}
+
+	source, err := os.Open(sourcePath)
+	if err != nil {
+		return err
+	}
+	defer source.Close()
+
+	_, err = os.Stat(destPath)
+	if err == nil {
+		return fmt.Errorf("file %s already exists", destPath)
+	}
+
+	destination, err := os.Create(destPath)
+	if err != nil {
+		return err
+	}
+	defer destination.Close()
+
+	buf := make([]byte, int64(bufferkb)*1024)
+	defer logger.ClearVar(&buf)
+	var n int
+	for {
+		n, err = source.Read(buf)
+		if err != nil && err != io.EOF {
+			return err
+		}
+		if n == 0 {
+			break
+		}
+
+		if _, err = destination.Write(buf[:n]); err != nil {
+			return err
+		}
 	}
 	// The copy was successful, so now delete the original file
 	err = os.Remove(sourcePath)
@@ -658,7 +796,7 @@ func moveFileDrive(sourcePath, destPath string) error {
 	if CheckFileExist(sourcePath) {
 		err := copyFile(sourcePath, destPath, false)
 		if err != nil {
-			fmt.Println("Error copiing source", sourcePath, destPath, err)
+			logger.Log.Error("Error copiing source", sourcePath, destPath, err)
 			return err
 		}
 	} else {
@@ -668,7 +806,28 @@ func moveFileDrive(sourcePath, destPath string) error {
 		// The copy was successful, so now delete the original file
 		err := os.Remove(sourcePath)
 		if err != nil {
-			fmt.Println("Error removing source", sourcePath, err)
+			logger.Log.Error("Error removing source", sourcePath, err)
+			return err
+		}
+	}
+	return nil
+}
+
+func MoveFileDrive(sourcePath, destPath string) error {
+	if CheckFileExist(sourcePath) {
+		err := copyFile(sourcePath, destPath, false)
+		if err != nil {
+			logger.Log.Error("Error copiing source", sourcePath, destPath, err)
+			return err
+		}
+	} else {
+		return errors.New("source doesnt exist")
+	}
+	if CheckFileExist(sourcePath) {
+		// The copy was successful, so now delete the original file
+		err := os.Remove(sourcePath)
+		if err != nil {
+			logger.Log.Error("Error removing source", sourcePath, err)
 			return err
 		}
 	}
@@ -705,9 +864,8 @@ func copyFile(src, dst string, allowFileLink bool) (err error) {
 
 	// open source file
 	sfi, err := os.Stat(srcAbs)
-	defer func() {
-		sfi = nil
-	}()
+	defer logger.ClearVar(&sfi)
+
 	if err != nil {
 		return
 	}
@@ -719,9 +877,8 @@ func copyFile(src, dst string, allowFileLink bool) (err error) {
 
 	// open dest file
 	dfi, err := os.Stat(dstAbs)
-	defer func() {
-		dfi = nil
-	}()
+	defer logger.ClearVar(&dfi)
+
 	if err != nil {
 		if !os.IsNotExist(err) {
 			return
@@ -757,48 +914,46 @@ func copyFile(src, dst string, allowFileLink bool) (err error) {
 	if err != nil {
 		return
 	}
+	defer dstFile.Close()
 	// Return any errors that result from closing the destination file
 	// Will return nil if no errors occurred
 
 	// Copy the contents of the source file into the destination files
 	if _, err = io.Copy(dstFile, srcFile); err != nil {
-		dstFile.Close()
 		return
 	}
 	dstFile.Sync()
-	cerr := dstFile.Close()
-	if err == nil {
-		err = cerr
-	}
 	return
 }
 
-func GetSubFolders(sourcepath string) []string {
+func GetSubFolders(sourcepath string) ([]string, error) {
 	files, err := os.ReadDir(sourcepath)
+	defer logger.ClearVar(&files)
 	if err == nil {
-		folders := make([]string, 0, len(files))
+		var folders []string
+		defer logger.ClearVar(&folders)
 		for idxfile := range files {
 			if files[idxfile].IsDir() {
 				folders = append(folders, filepath.Join(sourcepath, files[idxfile].Name()))
 			}
 		}
-		files = nil
-		return folders
+		return folders, nil
 	}
-	files = nil
-	return []string{}
+	return nil, errors.New("empty")
 }
 
-func getSubFiles(sourcepath string) []string {
+func getSubFiles(sourcepath string) ([]string, error) {
 	files, err := os.ReadDir(sourcepath)
+	defer logger.ClearVar(&files)
 	if err == nil {
 		folders := make([]string, 0, len(files))
+		defer logger.ClearVar(&folders)
 		for idxfile := range files {
 			if !files[idxfile].IsDir() {
 				folders = append(folders, filepath.Join(sourcepath, files[idxfile].Name()))
 			}
 		}
-		return folders
+		return folders, nil
 	}
-	return []string{}
+	return nil, errors.New("empty")
 }

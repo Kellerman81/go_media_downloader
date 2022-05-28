@@ -14,39 +14,20 @@ func checkduplicateprefix(key string, prefix string) string {
 	return key
 }
 func ConfigCheck(key string) bool {
-	// key = checkduplicateprefix(key, "list_")
-	// key = checkduplicateprefix(key, "path_")
-	// key = checkduplicateprefix(key, "indexer_")
-	// key = checkduplicateprefix(key, "downloader_")
-	// key = checkduplicateprefix(key, "regex_")
-	// key = checkduplicateprefix(key, "notification_")
-	// key = checkduplicateprefix(key, "scheduler_")
-	// key = checkduplicateprefix(key, "movie_")
-	// key = checkduplicateprefix(key, "serie_")
-	// key = checkduplicateprefix(key, "quality_")
-	for idx := range configEntries {
-		if configEntries[idx].Name == key {
-			return true
-		}
+	if _, ok := MapConfigEntries[key]; ok {
+		return true
 	}
 	logger.Log.Errorln("Config not found: ", key)
 	return false
 }
 
-// func ConfigCheckold(name string) bool {
-// 	success := true
-// 	if _, ok := configEntries[name]; !ok {
-// 		logger.Log.Errorln("Config not found: ", name)
-// 		success = false
-// 	}
-// 	return success
-// }
-
-func ConfigGetAll() []*Conf {
-	var b []*Conf
-	for idx := range configEntries {
-		b = append(b, &configEntries[idx])
+func ConfigGetAll() []Conf {
+	var b []Conf
+	defer logger.ClearVar(&b)
+	for idx := range ConfigEntries {
+		b = append(b, ConfigEntries[idx])
 	}
+
 	return b
 }
 
@@ -60,11 +41,11 @@ type RegexSafe struct {
 	Re   regexp.Regexp
 }
 
-var regexEntries []RegexSafe
+var RegexEntries []RegexSafe
 
 func RegexCheck(key string) bool {
-	for idx := range regexEntries {
-		if regexEntries[idx].Name == key {
+	for idx := range RegexEntries {
+		if RegexEntries[idx].Name == key {
 			return true
 		}
 	}
@@ -72,9 +53,9 @@ func RegexCheck(key string) bool {
 }
 
 func RegexGet(key string) *regexp.Regexp {
-	for idx := range regexEntries {
-		if regexEntries[idx].Name == key {
-			return &regexEntries[idx].Re
+	for idx := range RegexEntries {
+		if RegexEntries[idx].Name == key {
+			return &RegexEntries[idx].Re
 		}
 	}
 	logger.Log.Errorln("Regex not found: ", key)
@@ -83,50 +64,53 @@ func RegexGet(key string) *regexp.Regexp {
 
 func RegexAdd(key string, re regexp.Regexp) {
 	if !RegexCheck(key) {
-		regexEntries = append(regexEntries, RegexSafe{Name: key, Re: re})
+		RegexEntries = append(RegexEntries, RegexSafe{Name: key, Re: re})
 	}
 }
 
 func RegexDelete(key string) {
-	new := regexEntries[:0]
-	for idx := range regexEntries {
-		if regexEntries[idx].Name != key {
-			new = append(new, regexEntries[idx])
+	new := RegexEntries[:0]
+	defer logger.ClearVar(&new)
+	for idx := range RegexEntries {
+		if RegexEntries[idx].Name != key {
+			new = append(new, RegexEntries[idx])
 		}
 	}
-	regexEntries = new
+	RegexEntries = new
 }
 
-var configEntries []Conf
+var ConfigEntries []Conf
+var MapConfigEntries map[string]*Conf
 
 func ConfigGet(key string) *Conf {
-	for idx := range configEntries {
-		if configEntries[idx].Name == key {
-			return &configEntries[idx]
-		}
+	if val, ok := MapConfigEntries[key]; ok {
+		return val
 	}
 	logger.Log.Errorln("Config not found: ", key)
 	return nil
 }
 
-func ConfigGetPrefix(key string) []*Conf {
-	var b []*Conf
-	for idx := range configEntries {
-		if strings.HasPrefix(configEntries[idx].Name, key) {
-			b = append(b, &configEntries[idx])
+func ConfigGetPrefix(key string) []Conf {
+	var b []Conf
+	defer logger.ClearVar(&b)
+	for idx := range ConfigEntries {
+		if strings.HasPrefix(ConfigEntries[idx].Name, key) {
+			b = append(b, ConfigEntries[idx])
 		}
 	}
+
 	return b
 }
 
 func ConfigGetMediaListConfig(config string, name string) MediaListsConfig {
-	cfg := ConfigGet(config).Data.(MediaTypeConfig)
-
-	var cfg_list MediaListsConfig
+	cfgnotp := ConfigGet(config).Data
+	if cfgnotp == nil {
+		return MediaListsConfig{}
+	}
+	cfg := cfgnotp.(MediaTypeConfig)
 	for idxlist := range cfg.Lists {
 		if cfg.Lists[idxlist].Name == name {
-			cfg_list = cfg.Lists[idxlist]
-			return cfg_list
+			return cfg.Lists[idxlist]
 		}
 	}
 	return MediaListsConfig{}
