@@ -22,6 +22,8 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
+var DisableVariableCleanup bool
+
 func StringReplaceArray(instr string, what []string, with string) string {
 	defer ClearVar(&what)
 	for idx := range what {
@@ -418,6 +420,7 @@ func GetUrlResponse(url string) (*http.Response, error) {
 			DisableKeepAlives:     true,
 			IdleConnTimeout:       120 * time.Second}}
 	req, _ := http.NewRequest("GET", url, nil)
+	defer ClearVar(req)
 	// Get the data
 	return webClient.Do(req)
 }
@@ -430,7 +433,7 @@ func DownloadFile(saveIn string, fileprefix string, filename string, url string)
 		return err
 	}
 	defer resp.Body.Close()
-	defer ClearVar(&resp)
+	defer ClearVar(resp)
 
 	// Create the file
 	if len(filename) == 0 {
@@ -476,6 +479,9 @@ func FindAndDeleteStringArray(array []string, item string) []string {
 }
 
 func ClearVar(i interface{}) {
+	if DisableVariableCleanup {
+		return
+	}
 	v := reflect.ValueOf(i)
 	if !v.IsZero() && v.Kind() == reflect.Pointer {
 		v.Elem().Set(reflect.Zero(v.Elem().Type()))

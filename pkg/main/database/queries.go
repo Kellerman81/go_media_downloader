@@ -173,9 +173,13 @@ func QueryDbmovie(qu Query) ([]Dbmovie, error) {
 	if qu.Select != "" {
 		columns = qu.Select
 	}
-	counter, counterr := CountRows(table, qu)
-	if counter == 0 || counterr != nil {
-		return []Dbmovie{}, nil
+	counter := int(qu.Limit)
+	var counterr error
+	if qu.Limit == 0 {
+		counter, counterr = CountRows(table, qu)
+		if counter == 0 || counterr != nil {
+			return []Dbmovie{}, nil
+		}
 	}
 
 	if qu.Limit >= 1 && qu.Limit < uint64(counter) {
@@ -196,9 +200,13 @@ func QueryDbmovieJson(qu Query) ([]DbmovieJson, error) {
 	if qu.Select != "" {
 		columns = qu.Select
 	}
-	counter, counterr := CountRows(table, qu)
-	if counter == 0 || counterr != nil {
-		return []DbmovieJson{}, nil
+	counter := int(qu.Limit)
+	var counterr error
+	if qu.Limit == 0 {
+		counter, counterr = CountRows(table, qu)
+		if counter == 0 || counterr != nil {
+			return []DbmovieJson{}, nil
+		}
 	}
 
 	if qu.Limit >= 1 && qu.Limit < uint64(counter) {
@@ -230,9 +238,13 @@ func QueryDbmovieTitle(qu Query) ([]DbmovieTitle, error) {
 	if qu.Select != "" {
 		columns = qu.Select
 	}
-	counter, counterr := CountRows(table, qu)
-	if counter == 0 || counterr != nil {
-		return []DbmovieTitle{}, nil
+	counter := int(qu.Limit)
+	var counterr error
+	if qu.Limit == 0 {
+		counter, counterr = CountRows(table, qu)
+		if counter == 0 || counterr != nil {
+			return []DbmovieTitle{}, nil
+		}
 	}
 
 	if qu.Limit >= 1 && qu.Limit < uint64(counter) {
@@ -265,9 +277,13 @@ func QueryDbserie(qu Query) ([]Dbserie, error) {
 	if qu.Select != "" {
 		columns = qu.Select
 	}
-	counter, counterr := CountRows("dbseries", qu)
-	if counter == 0 || counterr != nil {
-		return []Dbserie{}, nil
+	counter := int(qu.Limit)
+	var counterr error
+	if qu.Limit == 0 {
+		counter, counterr = CountRows("dbseries", qu)
+		if counter == 0 || counterr != nil {
+			return []Dbserie{}, nil
+		}
 	}
 
 	if qu.Limit >= 1 && qu.Limit < uint64(counter) {
@@ -299,9 +315,13 @@ func QueryDbserieEpisodes(qu Query) ([]DbserieEpisode, error) {
 	if qu.Select != "" {
 		columns = qu.Select
 	}
-	counter, counterr := CountRows("dbserie_episodes", qu)
-	if counter == 0 || counterr != nil {
-		return []DbserieEpisode{}, nil
+	counter := int(qu.Limit)
+	var counterr error
+	if qu.Limit == 0 {
+		counter, counterr = CountRows("dbserie_episodes", qu)
+		if counter == 0 || counterr != nil {
+			return []DbserieEpisode{}, nil
+		}
 	}
 
 	if qu.Limit >= 1 && qu.Limit < uint64(counter) {
@@ -332,9 +352,13 @@ func QueryDbserieAlternates(qu Query) ([]DbserieAlternate, error) {
 	if qu.Select != "" {
 		columns = qu.Select
 	}
-	counter, counterr := CountRows("dbserie_alternates", qu)
-	if counter == 0 || counterr != nil {
-		return []DbserieAlternate{}, nil
+	counter := int(qu.Limit)
+	var counterr error
+	if qu.Limit == 0 {
+		counter, counterr = CountRows("dbserie_alternates", qu)
+		if counter == 0 || counterr != nil {
+			return []DbserieAlternate{}, nil
+		}
 	}
 
 	if qu.Limit >= 1 && qu.Limit < uint64(counter) {
@@ -366,9 +390,13 @@ func QuerySeries(qu Query) ([]Serie, error) {
 	if qu.Select != "" {
 		columns = qu.Select
 	}
-	counter, counterr := CountRows("series", qu)
-	if counter == 0 || counterr != nil {
-		return []Serie{}, nil
+	counter := int(qu.Limit)
+	var counterr error
+	if qu.Limit == 0 {
+		counter, counterr = CountRows("series", qu)
+		if counter == 0 || counterr != nil {
+			return []Serie{}, nil
+		}
 	}
 
 	if qu.Limit >= 1 && qu.Limit < uint64(counter) {
@@ -400,9 +428,13 @@ func QuerySerieEpisodes(qu Query) ([]SerieEpisode, error) {
 	if qu.Select != "" {
 		columns = qu.Select
 	}
-	counter, counterr := CountRows("serie_episodes", qu)
-	if counter == 0 || counterr != nil {
-		return []SerieEpisode{}, nil
+	counter := int(qu.Limit)
+	var counterr error
+	if qu.Limit == 0 {
+		counter, counterr = CountRows("serie_episodes", qu)
+		if counter == 0 || counterr != nil {
+			return []SerieEpisode{}, nil
+		}
 	}
 
 	if qu.Limit >= 1 && qu.Limit < uint64(counter) {
@@ -434,9 +466,13 @@ func QuerySerieEpisodeHistory(qu Query) ([]SerieEpisodeHistory, error) {
 	if qu.Select != "" {
 		columns = qu.Select
 	}
-	counter, counterr := CountRows("serie_episode_histories", qu)
-	if counter == 0 || counterr != nil {
-		return []SerieEpisodeHistory{}, nil
+	counter := int(qu.Limit)
+	var counterr error
+	if qu.Limit == 0 {
+		counter, counterr = CountRows("serie_episode_histories", qu)
+		if counter == 0 || counterr != nil {
+			return []SerieEpisodeHistory{}, nil
+		}
 	}
 
 	if qu.Limit >= 1 && qu.Limit < uint64(counter) {
@@ -468,9 +504,13 @@ func QuerySerieEpisodeFiles(qu Query) ([]SerieEpisodeFile, error) {
 	if qu.Select != "" {
 		columns = qu.Select
 	}
-	counter, counterr := CountRows("serie_episode_files", qu)
-	if counter == 0 || counterr != nil {
-		return []SerieEpisodeFile{}, nil
+	counter := int(qu.Limit)
+	var counterr error
+	if qu.Limit == 0 {
+		counter, counterr = CountRows("serie_episode_files", qu)
+		if counter == 0 || counterr != nil {
+			return []SerieEpisodeFile{}, nil
+		}
 	}
 
 	if qu.Limit >= 1 && qu.Limit < uint64(counter) {
@@ -502,12 +542,16 @@ func QueryMovies(qu Query) ([]Movie, error) {
 	if qu.Select != "" {
 		columns = qu.Select
 	}
-	counter, counterr := CountRows("movies", qu)
-	if counter == 0 || counterr != nil {
-		if counterr != nil {
-			return []Movie{}, counterr
-		} else {
-			return []Movie{}, nil
+	counter := int(qu.Limit)
+	var counterr error
+	if qu.Limit == 0 {
+		counter, counterr = CountRows("movies", qu)
+		if counter == 0 || counterr != nil {
+			if counterr != nil {
+				return []Movie{}, counterr
+			} else {
+				return []Movie{}, nil
+			}
 		}
 	}
 
@@ -540,9 +584,13 @@ func QueryMovieFiles(qu Query) ([]MovieFile, error) {
 	if qu.Select != "" {
 		columns = qu.Select
 	}
-	counter, counterr := CountRows("movie_files", qu)
-	if counter == 0 || counterr != nil {
-		return []MovieFile{}, nil
+	counter := int(qu.Limit)
+	var counterr error
+	if qu.Limit == 0 {
+		counter, counterr = CountRows("movie_files", qu)
+		if counter == 0 || counterr != nil {
+			return []MovieFile{}, nil
+		}
 	}
 
 	if qu.Limit >= 1 && qu.Limit < uint64(counter) {
@@ -574,9 +622,13 @@ func QueryMovieHistory(qu Query) ([]MovieHistory, error) {
 	if qu.Select != "" {
 		columns = qu.Select
 	}
-	counter, counterr := CountRows("movie_histories", qu)
-	if counter == 0 || counterr != nil {
-		return []MovieHistory{}, nil
+	counter := int(qu.Limit)
+	var counterr error
+	if qu.Limit == 0 {
+		counter, counterr = CountRows("movie_histories", qu)
+		if counter == 0 || counterr != nil {
+			return []MovieHistory{}, nil
+		}
 	}
 
 	if qu.Limit >= 1 && qu.Limit < uint64(counter) {
@@ -608,9 +660,13 @@ func QueryRssHistory(qu Query) ([]RSSHistory, error) {
 	if qu.Select != "" {
 		columns = qu.Select
 	}
-	counter, counterr := CountRows("r_sshistories", qu)
-	if counter == 0 || counterr != nil {
-		return []RSSHistory{}, nil
+	counter := int(qu.Limit)
+	var counterr error
+	if qu.Limit == 0 {
+		counter, counterr = CountRows("r_sshistories", qu)
+		if counter == 0 || counterr != nil {
+			return []RSSHistory{}, nil
+		}
 	}
 
 	if qu.Limit >= 1 && qu.Limit < uint64(counter) {
@@ -641,16 +697,20 @@ func QueryQualities(qu Query) ([]Qualities, error) {
 	if qu.Select != "" {
 		columns = qu.Select
 	}
-	counter, counterr := CountRows("qualities", qu)
-	if counter == 0 || counterr != nil {
-		return []Qualities{}, nil
+	counter := int(qu.Limit)
+	var counterr error
+	if qu.Limit == 0 {
+		counter, counterr = CountRows("qualities", qu)
+		if counter == 0 || counterr != nil {
+			return []Qualities{}, nil
+		}
 	}
 
 	if qu.Limit >= 1 && qu.Limit < uint64(counter) {
 		counter = int(qu.Limit)
 	}
 	result := make([]Qualities, 0, counter)
-	defer logger.ClearVar(&result)
+	//defer logger.ClearVar(&result)
 	failed, err := queryStructScan(table, columns, qu, counter, &result)
 	if failed {
 		return []Qualities{}, err
@@ -674,9 +734,13 @@ func QueryJobHistory(qu Query) ([]JobHistory, error) {
 	if qu.Select != "" {
 		columns = qu.Select
 	}
-	counter, counterr := CountRows("job_histories", qu)
-	if counter == 0 || counterr != nil {
-		return []JobHistory{}, nil
+	counter := int(qu.Limit)
+	var counterr error
+	if qu.Limit == 0 {
+		counter, counterr = CountRows("job_histories", qu)
+		if counter == 0 || counterr != nil {
+			return []JobHistory{}, nil
+		}
 	}
 
 	if qu.Limit >= 1 && qu.Limit < uint64(counter) {
@@ -707,9 +771,13 @@ func QueryIndexerFails(qu Query) ([]IndexerFail, error) {
 	if qu.Select != "" {
 		columns = qu.Select
 	}
-	counter, counterr := CountRows("indexer_fails", qu)
-	if counter == 0 || counterr != nil {
-		return []IndexerFail{}, nil
+	counter := int(qu.Limit)
+	var counterr error
+	if qu.Limit == 0 {
+		counter, counterr = CountRows("indexer_fails", qu)
+		if counter == 0 || counterr != nil {
+			return []IndexerFail{}, nil
+		}
 	}
 
 	if qu.Limit >= 1 && qu.Limit < uint64(counter) {
@@ -741,9 +809,13 @@ func QuerySerieFileUnmatched(qu Query) ([]SerieFileUnmatched, error) {
 	if qu.Select != "" {
 		columns = qu.Select
 	}
-	counter, counterr := CountRows("serie_file_unmatcheds", qu)
-	if counter == 0 || counterr != nil {
-		return []SerieFileUnmatched{}, nil
+	counter := int(qu.Limit)
+	var counterr error
+	if qu.Limit == 0 {
+		counter, counterr = CountRows("serie_file_unmatcheds", qu)
+		if counter == 0 || counterr != nil {
+			return []SerieFileUnmatched{}, nil
+		}
 	}
 
 	if qu.Limit >= 1 && qu.Limit < uint64(counter) {
@@ -775,9 +847,13 @@ func QueryMovieFileUnmatched(qu Query) ([]MovieFileUnmatched, error) {
 	if qu.Select != "" {
 		columns = qu.Select
 	}
-	counter, counterr := CountRows("movie_file_unmatcheds", qu)
-	if counter == 0 || counterr != nil {
-		return []MovieFileUnmatched{}, nil
+	counter := int(qu.Limit)
+	var counterr error
+	if qu.Limit == 0 {
+		counter, counterr = CountRows("movie_file_unmatcheds", qu)
+		if counter == 0 || counterr != nil {
+			return []MovieFileUnmatched{}, nil
+		}
 	}
 
 	if qu.Limit >= 1 && qu.Limit < uint64(counter) {
@@ -808,9 +884,13 @@ func QueryResultMovies(qu Query) ([]ResultMovies, error) {
 	if qu.Select != "" {
 		columns = qu.Select
 	}
-	counter, counterr := CountRows("movies", qu)
-	if counter == 0 || counterr != nil {
-		return []ResultMovies{}, nil
+	counter := int(qu.Limit)
+	var counterr error
+	if qu.Limit == 0 {
+		counter, counterr = CountRows("movies", qu)
+		if counter == 0 || counterr != nil {
+			return []ResultMovies{}, nil
+		}
 	}
 
 	if qu.Limit >= 1 && qu.Limit < uint64(counter) {
@@ -842,9 +922,13 @@ func QueryResultSeries(qu Query) ([]ResultSeries, error) {
 	if qu.Select != "" {
 		columns = qu.Select
 	}
-	counter, counterr := CountRows("series", qu)
-	if counter == 0 || counterr != nil {
-		return []ResultSeries{}, nil
+	counter := int(qu.Limit)
+	var counterr error
+	if qu.Limit == 0 {
+		counter, counterr = CountRows("series", qu)
+		if counter == 0 || counterr != nil {
+			return []ResultSeries{}, nil
+		}
 	}
 
 	if qu.Limit >= 1 && qu.Limit < uint64(counter) {
@@ -876,9 +960,13 @@ func QueryResultSerieEpisodes(qu Query) ([]ResultSerieEpisodes, error) {
 	if qu.Select != "" {
 		columns = qu.Select
 	}
-	counter, counterr := CountRows("serie_episodes", qu)
-	if counter == 0 || counterr != nil {
-		return []ResultSerieEpisodes{}, nil
+	counter := int(qu.Limit)
+	var counterr error
+	if qu.Limit == 0 {
+		counter, counterr = CountRows("serie_episodes", qu)
+		if counter == 0 || counterr != nil {
+			return []ResultSerieEpisodes{}, nil
+		}
 	}
 
 	if qu.Limit >= 1 && qu.Limit < uint64(counter) {
@@ -910,9 +998,13 @@ func QueryImdbGenre(qu Query) ([]ImdbGenres, error) {
 	if qu.Select != "" {
 		columns = qu.Select
 	}
-	counter, counterr := ImdbCountRows("imdb_genres", qu)
-	if counter == 0 || counterr != nil {
-		return []ImdbGenres{}, nil
+	counter := int(qu.Limit)
+	var counterr error
+	if qu.Limit == 0 {
+		counter, counterr = ImdbCountRows("imdb_genres", qu)
+		if counter == 0 || counterr != nil {
+			return []ImdbGenres{}, nil
+		}
 	}
 
 	if qu.Limit >= 1 && qu.Limit < uint64(counter) {
@@ -944,9 +1036,13 @@ func QueryImdbRating(qu Query) ([]ImdbRatings, error) {
 	if qu.Select != "" {
 		columns = qu.Select
 	}
-	counter, counterr := ImdbCountRows("imdb_ratings", qu)
-	if counter == 0 || counterr != nil {
-		return []ImdbRatings{}, nil
+	counter := int(qu.Limit)
+	var counterr error
+	if qu.Limit == 0 {
+		counter, counterr = ImdbCountRows("imdb_ratings", qu)
+		if counter == 0 || counterr != nil {
+			return []ImdbRatings{}, nil
+		}
 	}
 
 	if qu.Limit >= 1 && qu.Limit < uint64(counter) {
@@ -978,9 +1074,13 @@ func QueryImdbAka(qu Query) ([]ImdbAka, error) {
 	if qu.Select != "" {
 		columns = qu.Select
 	}
-	counter, counterr := ImdbCountRows("imdb_akas", qu)
-	if counter == 0 || counterr != nil {
-		return []ImdbAka{}, nil
+	counter := int(qu.Limit)
+	var counterr error
+	if qu.Limit == 0 {
+		counter, counterr = ImdbCountRows("imdb_akas", qu)
+		if counter == 0 || counterr != nil {
+			return []ImdbAka{}, nil
+		}
 	}
 
 	if qu.Limit >= 1 && qu.Limit < uint64(counter) {
@@ -1013,9 +1113,13 @@ func QueryImdbTitle(qu Query) ([]ImdbTitle, error) {
 		columns = qu.Select
 	}
 
-	counter, counterr := ImdbCountRows("imdb_titles", qu)
-	if counter == 0 || counterr != nil {
-		return []ImdbTitle{}, nil
+	counter := int(qu.Limit)
+	var counterr error
+	if qu.Limit == 0 {
+		counter, counterr = ImdbCountRows("imdb_titles", qu)
+		if counter == 0 || counterr != nil {
+			return []ImdbTitle{}, nil
+		}
 	}
 
 	if qu.Limit >= 1 && qu.Limit < uint64(counter) {
@@ -1036,7 +1140,7 @@ func buildquery(columns string, table string, qu Query, count bool) string {
 	query.WriteString("select ")
 
 	if qu.InnerJoin != "" {
-		if strings.Contains(columns, table+".") {
+		if strings.Contains(strings.ToLower(columns), strings.ToLower(table)+".") {
 			query.WriteString(columns)
 		} else {
 			if count {
@@ -1177,6 +1281,43 @@ func QueryStaticColumnsOneInt(query string, querycount string, args ...interface
 		}
 	}
 	return returnarray, nil
+}
+
+//Select has to be in it
+func QueryStaticColumnsOneIntQueryObject(table string, qu Query) ([]Dbstatic_OneInt, error) {
+	counter := int(qu.Limit)
+	var counterr error
+	if qu.Limit == 0 {
+		counter, counterr = CountRows(table, qu)
+		if counter == 0 || counterr != nil {
+			return []Dbstatic_OneInt{}, nil
+		}
+	}
+
+	if qu.Limit >= 1 && qu.Limit < uint64(counter) {
+		counter = int(qu.Limit)
+	}
+	result := make([]Dbstatic_OneInt, 0, counter)
+	defer logger.ClearVar(&result)
+
+	var num int
+	query := buildquery(qu.Select, table, qu, false)
+	rows, err := getstatement(query, false).Query(qu.WhereArgs...)
+	if err != nil {
+		return []Dbstatic_OneInt{}, err
+	}
+
+	defer rows.Close()
+	var err2 error
+	for rows.Next() {
+		err2 = rows.Scan(&num)
+		if err2 != nil {
+			logger.Log.Error("Query2: ", query, " error: ", err2)
+			return []Dbstatic_OneInt{}, err2
+		}
+		result = append(result, Dbstatic_OneInt{Num: num})
+	}
+	return result, nil
 }
 
 type Dbstatic_OneString struct {
@@ -1431,7 +1572,7 @@ func QueryStaticColumnsOneStringOneInt(query string, querycount string, args ...
 			logger.Log.Error("Query2: ", query, " error")
 			return []Dbstatic_OneStringOneInt{}, nil
 		}
-		returnarray = append(returnarray, Dbstatic_OneStringOneInt{Num: num})
+		returnarray = append(returnarray, Dbstatic_OneStringOneInt{Str: str, Num: num})
 	} else {
 		rows, err := getstatement(query, false).Query(args...)
 		if err != nil {

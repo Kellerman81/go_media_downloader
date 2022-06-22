@@ -226,7 +226,7 @@ func NewVideoFile(ffprobePath string, videoPath string, stripExt bool) (VideoFil
 	args := []string{"-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", "-show_error", videoPath}
 
 	cmd := exec.Command(ffprobePath, args...)
-	defer logger.ClearVar(&cmd)
+	defer logger.ClearVar(cmd)
 	out, err := cmd.Output()
 	defer logger.ClearVar(&args)
 	defer logger.ClearVar(&out)

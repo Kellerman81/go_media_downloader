@@ -22,7 +22,6 @@ import (
 	"github.com/Kellerman81/go_media_downloader/tasks"
 	"github.com/Kellerman81/go_media_downloader/utils"
 	gin "github.com/gin-gonic/gin"
-	"github.com/shomali11/parallelizer"
 )
 
 func AddGeneralRoutes(routerapi *gin.RouterGroup) {
@@ -314,8 +313,7 @@ func apiFillImdb(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
-	swg := parallelizer.NewGroup(parallelizer.WithPoolSize(1))
-	swg.Add(func() { utils.FillImdb() })
+	utils.FillImdb()
 
 	ctx.JSON(http.StatusOK, "ok")
 }
@@ -554,7 +552,7 @@ func apiQualityUpdate(ctx *gin.Context) {
 // @Summary      List Quality Priorities
 // @Description  List allowed qualities and their priorities
 // @Tags         quality
-// @Param        name    path      string  true  "Quality Name: ex. quality_SD"
+// @Param        name    path      string  true  "Quality Name: ex. SD"
 // @Param        config  path      string  true  "Config Name: ex. movie_EN or serie_EN"
 // @Success      200     {object}   parser.ParseInfo
 // @Failure      401  {object}  string
@@ -577,6 +575,7 @@ func apiListQualityPriorities(ctx *gin.Context) {
 	var parserreturn []parser.ParseInfo
 	for idxreso := range database.Getresolutions {
 		wantedreso := false
+
 		for idxwantreso := range qual.Wanted_resolution {
 			if strings.EqualFold(qual.Wanted_resolution[idxwantreso], database.Getresolutions[idxreso].Name) {
 				wantedreso = true

@@ -51,7 +51,10 @@ func SearchMovieMissing(configTemplate string, jobcount int, titlesearch bool) {
 
 	argsscan := append(argslist, scantime)
 	defer logger.ClearVar(&argsscan)
-	qu := database.Query{Select: "movies.id", InnerJoin: "dbmovies on dbmovies.id=movies.dbmovie_id", OrderBy: "movies.Lastscan asc"}
+	var qu database.Query
+	qu.Select = "movies.id"
+	qu.InnerJoin = "dbmovies on dbmovies.id=movies.dbmovie_id"
+	qu.OrderBy = "movies.Lastscan asc"
 	if scaninterval != 0 {
 		qu.Where = "movies.missing = 1 AND movies.listname in (?" + strings.Repeat(",?", len(argslist)-1) + ") AND (movies.lastscan is null or movies.Lastscan < ?)"
 		qu.WhereArgs = argsscan
@@ -70,7 +73,7 @@ func SearchMovieMissing(configTemplate string, jobcount int, titlesearch bool) {
 	if jobcount >= 1 {
 		qu.Limit = uint64(jobcount)
 	}
-	missingmovies, _ := database.QueryMovies(qu)
+	missingmovies, _ := database.QueryStaticColumnsOneIntQueryObject("movies", qu)
 	defer logger.ClearVar(&missingmovies)
 
 	// searchnow := NewSearcher(configEntry, list)
@@ -78,7 +81,7 @@ func SearchMovieMissing(configTemplate string, jobcount int, titlesearch bool) {
 	for idx := range missingmovies {
 		missing := missingmovies[idx]
 		swg.Add(func() {
-			SearchMovieSingle(missing.ID, configTemplate, titlesearch)
+			SearchMovieSingle(uint(missing.Num), configTemplate, titlesearch)
 		})
 	}
 	swg.Wait()
@@ -88,7 +91,7 @@ func SearchMovieMissing(configTemplate string, jobcount int, titlesearch bool) {
 func downloadMovieSearchResults(first bool, movieid uint, configTemplate string, searchtype string, searchresults SearchResults) {
 	if len(searchresults.Nzbs) >= 1 {
 		logger.Log.Debug("nzb found - start downloading: ", searchresults.Nzbs[0].NZB.Title)
-		downloadnow := downloader.NewDownloader(configTemplate, searchtype)
+		downloadnow := downloader.NewDownloader(configTemplate)
 		defer downloadnow.Close()
 		downloadnow.SetMovie(movieid)
 		downloadnow.DownloadNzb(searchresults.Nzbs[0])
@@ -153,13 +156,13 @@ func SearchMovieUpgrade(configTemplate string, jobcount int, titlesearch bool) {
 	}
 	qu.Select = "id"
 	qu.OrderBy = "Lastscan asc"
-	missingmovies, _ := database.QueryMovies(qu)
+	missingmovies, _ := database.QueryStaticColumnsOneIntQueryObject("movies", qu)
 	defer logger.ClearVar(&missingmovies)
 	swg := parallelizer.NewGroup(parallelizer.WithPoolSize(cfg_general.WorkerSearch))
 	for idx := range missingmovies {
 		missing := missingmovies[idx]
 		swg.Add(func() {
-			SearchMovieSingle(missing.ID, configTemplate, titlesearch)
+			SearchMovieSingle(uint(missing.Num), configTemplate, titlesearch)
 		})
 	}
 	swg.Wait()
@@ -177,13 +180,13 @@ func SearchSerieSingle(serieid uint, configTemplate string, titlesearch bool) {
 		cfg_general.WorkerSearch = 1
 	}
 
-	episodes, _ := database.QuerySerieEpisodes(database.Query{Select: "id", Where: "serie_id = ?", WhereArgs: []interface{}{serieid}})
+	episodes, _ := database.QueryStaticColumnsOneInt("Select id from serie_episodes where serie_id = ?", "Select count(id) from serie_episodes where serie_id = ?", serieid)
 	defer logger.ClearVar(&episodes)
 	swg := parallelizer.NewGroup(parallelizer.WithPoolSize(cfg_general.WorkerSearch))
 	for idx := range episodes {
 		missing := episodes[idx]
 		swg.Add(func() {
-			SearchSerieEpisodeSingle(missing.ID, configTemplate, titlesearch)
+			SearchSerieEpisodeSingle(uint(missing.Num), configTemplate, titlesearch)
 		})
 	}
 	swg.Wait()
@@ -201,13 +204,13 @@ func SearchSerieSeasonSingle(serieid uint, season string, configTemplate string,
 		cfg_general.WorkerSearch = 1
 	}
 
-	episodes, _ := database.QuerySerieEpisodes(database.Query{Select: "id", Where: "serie_id = ? and dbserie_episode_id IN (Select id from dbserie_episodes where Season = ?)", WhereArgs: []interface{}{serieid, season}})
+	episodes, _ := database.QueryStaticColumnsOneInt("Select id from serie_episodes where serie_id = ? and dbserie_episode_id IN (Select id from dbserie_episodes where Season = ?)", "Select count(id) from serie_episodes where serie_id = ? and dbserie_episode_id IN (Select id from dbserie_episodes where Season = ?)", serieid, season)
 	defer logger.ClearVar(&episodes)
 	swg := parallelizer.NewGroup(parallelizer.WithPoolSize(cfg_general.WorkerSearch))
 	for idx := range episodes {
 		missing := episodes[idx]
 		swg.Add(func() {
-			SearchSerieEpisodeSingle(missing.ID, configTemplate, titlesearch)
+			SearchSerieEpisodeSingle(uint(missing.Num), configTemplate, titlesearch)
 		})
 	}
 	swg.Wait()
@@ -224,12 +227,10 @@ func SearchSerieRSSSeasonSingle(serieid uint, season int, useseason bool, config
 		cfg_general.WorkerSearch = 1
 	}
 
-	quals, _ := database.QueryStaticColumnsOneString("Select distinct quality_profile from serie_episodes where serie_id = ?", "Select count(distinct quality_profile) from serie_episodes where serie_id = ?", serieid)
-	if len(quals) == 0 {
+	qualstr, _ := database.QueryColumnString("Select quality_profile from serie_episodes where serie_id = ? limit 1", serieid)
+	if qualstr == "" {
 		return
 	}
-	qualstr := quals[0].Str
-	quals = nil
 	dbserieid, err := database.QueryColumnUint("Select dbserie_id from series where id = ?", serieid)
 	tvdb, err := database.QueryColumnUint("Select thetvdb_id from dbseries where id = ?", dbserieid)
 	if err != nil {
@@ -255,9 +256,11 @@ func SearchSeriesRSSSeasons(configTemplate string) {
 		cfg_general.WorkerSearch = 1
 	}
 	swg := parallelizer.NewGroup(parallelizer.WithPoolSize(cfg_general.WorkerSearch))
+	var seasons []string
+	defer logger.ClearVar(&seasons)
 	for idx := range series {
 		missing := series[idx]
-		seasons := database.QueryStaticStringArray("Select distinct season from dbserie_episodes where dbserie_id = ?", "Select count(distinct season) from dbserie_episodes where dbserie_id = ?", missing.DbserieID)
+		seasons = database.QueryStaticStringArray("Select distinct season from dbserie_episodes where dbserie_id = ?", "Select count(distinct season) from dbserie_episodes where dbserie_id = ?", missing.DbserieID)
 		for idx := range seasons {
 			season := seasons[idx]
 			if season == "" {
@@ -270,17 +273,11 @@ func SearchSeriesRSSSeasons(configTemplate string) {
 				}
 			})
 		}
-		seasons = nil
 	}
 	swg.Wait()
 	swg.Close()
 }
 func SearchSerieEpisodeSingle(episodeid uint, configTemplate string, titlesearch bool) {
-	searchtype := "missing"
-	missing, _ := database.QueryColumnBool("Select missing from serie_episodes where id = ?", episodeid)
-	if !missing {
-		searchtype = "upgrade"
-	}
 	quality, _ := database.QueryColumnString("Select quality_profile from serie_episodes where id = ?", episodeid)
 
 	searchnow := NewSearcher(configTemplate, quality)
@@ -292,7 +289,7 @@ func SearchSerieEpisodeSingle(episodeid uint, configTemplate string, titlesearch
 	defer logger.ClearVar(&searchresults)
 	if len(searchresults.Nzbs) >= 1 {
 		logger.Log.Debug("nzb found - start downloading: ", searchresults.Nzbs[0].NZB.Title)
-		downloadnow := downloader.NewDownloader(configTemplate, searchtype)
+		downloadnow := downloader.NewDownloader(configTemplate)
 		defer downloadnow.Close()
 		downloadnow.SetSeriesEpisode(episodeid)
 		downloadnow.DownloadNzb(searchresults.Nzbs[0])
@@ -330,10 +327,10 @@ func SearchSerieMissing(configTemplate string, jobcount int, titlesearch bool) {
 	argsscan := append(argslist, scantime)
 	defer logger.ClearVar(&argsscan)
 
-	qu := database.Query{
-		Select:    "Serie_episodes.id",
-		OrderBy:   "Lastscan asc",
-		InnerJoin: "dbserie_episodes on dbserie_episodes.id=serie_episodes.Dbserie_episode_id inner join series on series.id=serie_episodes.serie_id"}
+	var qu database.Query
+	qu.Select = "serie_episodes.id"
+	qu.OrderBy = "Lastscan asc"
+	qu.InnerJoin = "dbserie_episodes on dbserie_episodes.id=serie_episodes.Dbserie_episode_id inner join series on series.id=serie_episodes.serie_id"
 	if scaninterval != 0 {
 		qu.Where = "serie_episodes.missing = 1 AND ((dbserie_episodes.Season != '0' and series.search_specials=0) or (series.search_specials=1)) and series.listname in (?" + strings.Repeat(",?", len(argslist)-1) + ") AND (serie_episodes.lastscan is null or serie_episodes.Lastscan < ?) and serie_episodes.dbserie_episode_id in (SELECT id FROM dbserie_episodes GROUP BY dbserie_id, identifier HAVING COUNT(*) = 1)"
 		qu.WhereArgs = argsscan
@@ -352,13 +349,13 @@ func SearchSerieMissing(configTemplate string, jobcount int, titlesearch bool) {
 	if jobcount >= 1 {
 		qu.Limit = uint64(jobcount)
 	}
-	missingepisode, _ := database.QuerySerieEpisodes(qu)
+	missingepisode, _ := database.QueryStaticColumnsOneIntQueryObject("serie_episodes", qu)
 	defer logger.ClearVar(&missingepisode)
 	swg := parallelizer.NewGroup(parallelizer.WithPoolSize(cfg_general.WorkerSearch))
 	for idx := range missingepisode {
 		missing := missingepisode[idx]
 		swg.Add(func() {
-			SearchSerieEpisodeSingle(missing.ID, configTemplate, titlesearch)
+			SearchSerieEpisodeSingle(uint(missing.Num), configTemplate, titlesearch)
 		})
 	}
 	swg.Wait()
@@ -392,11 +389,13 @@ func SearchSerieUpgrade(configTemplate string, jobcount int, titlesearch bool) {
 	args := config.MedialistConfigToInterfaceArray(configEntry.Lists)
 	defer logger.ClearVar(&args)
 
-	argsscan := append(args, scantime)
-	defer logger.ClearVar(&argsscan)
-
-	qu := database.Query{Select: "Serie_episodes.id", OrderBy: "Lastscan asc", InnerJoin: "dbserie_episodes on dbserie_episodes.id=serie_episodes.Dbserie_episode_id inner join series on series.id=serie_episodes.serie_id"}
+	var qu database.Query
+	qu.Select = "serie_episodes.ID"
+	qu.OrderBy = "Lastscan asc"
+	qu.InnerJoin = "dbserie_episodes on dbserie_episodes.ID=serie_episodes.Dbserie_episode_id inner join series on series.id=serie_episodes.serie_id"
 	if scaninterval != 0 {
+		argsscan := append(args, scantime)
+		defer logger.ClearVar(&argsscan)
 		qu.Where = "serie_episodes.missing = 0 AND serie_episodes.quality_reached = 0 AND ((dbserie_episodes.Season != '0' and series.search_specials=0) or (series.search_specials=1)) and series.listname in (?" + strings.Repeat(",?", len(args)-1) + ") AND (serie_episodes.lastscan is null or serie_episodes.Lastscan < ?) and serie_episodes.dbserie_episode_id in (SELECT id FROM dbserie_episodes GROUP BY dbserie_id, identifier HAVING COUNT(*) = 1)"
 		qu.WhereArgs = argsscan
 	} else {
@@ -406,13 +405,14 @@ func SearchSerieUpgrade(configTemplate string, jobcount int, titlesearch bool) {
 	if jobcount >= 1 {
 		qu.Limit = uint64(jobcount)
 	}
-	missingepisode, _ := database.QuerySerieEpisodes(qu)
+	//missingepisode, _ := database.QuerySerieEpisodes(qu)
+	missingepisode, _ := database.QueryStaticColumnsOneIntQueryObject("serie_episodes", qu)
 	defer logger.ClearVar(&missingepisode)
 	swg := parallelizer.NewGroup(parallelizer.WithPoolSize(cfg_general.WorkerSearch))
 	for idx := range missingepisode {
 		missing := missingepisode[idx]
 		swg.Add(func() {
-			SearchSerieEpisodeSingle(missing.ID, configTemplate, titlesearch)
+			SearchSerieEpisodeSingle(uint(missing.Num), configTemplate, titlesearch)
 		})
 	}
 	swg.Wait()
@@ -437,7 +437,7 @@ func downloadSerieNzb(searchresults SearchResults, configTemplate string) {
 		logger.Log.Debug("nzb found - start downloading: ", searchresults.Nzbs[idx].NZB.Title)
 		downloaded = append(downloaded, searchresults.Nzbs[idx].NzbepisodeID)
 
-		downloadnow := downloader.NewDownloader(configTemplate, "rss")
+		downloadnow := downloader.NewDownloader(configTemplate)
 		downloadnow.SetSeriesEpisode(searchresults.Nzbs[idx].NzbepisodeID)
 		downloadnow.DownloadNzb(searchresults.Nzbs[idx])
 		downloadnow.Close()
@@ -484,7 +484,7 @@ func downloadMovieNzb(searchresults SearchResults, configTemplate string) {
 		}
 		logger.Log.Debug("nzb found - start downloading: ", searchresults.Nzbs[idx].NZB.Title)
 		downloaded = append(downloaded, searchresults.Nzbs[idx].NzbmovieID)
-		downloadnow := downloader.NewDownloader(configTemplate, "rss")
+		downloadnow := downloader.NewDownloader(configTemplate)
 		downloadnow.SetMovie(searchresults.Nzbs[idx].NzbmovieID)
 		downloadnow.DownloadNzb(searchresults.Nzbs[idx])
 		downloadnow.Close()
@@ -557,7 +557,7 @@ func (s *Searcher) SearchRSS(searchGroupType string, fetchall bool) (SearchResul
 	for idx := range cfg_quality.Indexer {
 		index := cfg_quality.Indexer[idx]
 		swi.Add(func() {
-			s.rsssearchindexer(index, fetchall, &dl)
+			s.rsssearchindexer(cfg_quality.Name, index.Template_indexer, fetchall, &dl)
 		})
 	}
 	swi.Wait()
@@ -573,10 +573,10 @@ func (s *Searcher) SearchRSS(searchGroupType string, fetchall bool) (SearchResul
 	return dl, nil
 }
 
-func (t *Searcher) rsssearchindexer(index config.QualityIndexerConfig, fetchall bool, dl *SearchResults) bool {
-	cfgindex, nzbindexer, cats, erri := t.initIndexer(index, "rss")
+func (t *Searcher) rsssearchindexer(quality string, indexer string, fetchall bool, dl *SearchResults) bool {
+	cfgindex, nzbindexer, cats, erri := t.initIndexer(quality, indexer, "rss")
 	if erri != nil {
-		logger.Log.Debug("Skipped Indexer: ", index.Template_indexer, " ", erri)
+		logger.Log.Debug("Skipped Indexer: ", indexer, " ", erri)
 		return false
 	}
 	defer logger.ClearVar(&cfgindex)
@@ -595,7 +595,7 @@ func (t *Searcher) rsssearchindexer(index config.QualityIndexerConfig, fetchall 
 
 	if nzberr != nil {
 
-		logger.Log.Error("Newznab RSS Search failed ", index.Template_indexer)
+		logger.Log.Error("Newznab RSS Search failed ", indexer)
 		failedindexer(failed)
 		return false
 	} else {
@@ -606,17 +606,18 @@ func (t *Searcher) rsssearchindexer(index config.QualityIndexerConfig, fetchall 
 		}
 		logger.Log.Debug("Search RSS ended - found entries: ", len((nzbs)))
 		if len((nzbs)) >= 1 {
-			if !config.ConfigCheck("regex_" + index.Template_regex) {
+
+			if !config.ConfigCheck("regex_" + config.QualityIndexerByQualityAndTemplate(quality, indexer).Template_regex) {
 				for idx := range nzbs {
 					dl.Rejected = append(dl.Rejected, parser.Nzbwithprio{
 						NZB:     nzbs[idx],
-						Indexer: index.Template_indexer,
+						Indexer: indexer,
 						Denied:  true,
 						Reason:  "Denied by Regex"})
 				}
 			} else {
 				for idx := range nzbs {
-					t.convertnzbs(index, nzbs[idx], "", false, dl)
+					t.convertnzbs(quality, indexer, nzbs[idx], "", false, dl)
 				}
 			}
 		}
@@ -646,7 +647,7 @@ func (s *Searcher) SearchSeriesRSSSeason(searchGroupType string, thetvdb_id int,
 	for idx := range cfg_quality.Indexer {
 		index := cfg_quality.Indexer[idx]
 		swi.Add(func() {
-			s.rssqueryseriesindexer(index, thetvdb_id, season, useseason, &dl)
+			s.rssqueryseriesindexer(cfg_quality.Name, index.Template_indexer, thetvdb_id, season, useseason, &dl)
 		})
 	}
 	swi.Wait()
@@ -662,10 +663,10 @@ func (s *Searcher) SearchSeriesRSSSeason(searchGroupType string, thetvdb_id int,
 	return dl, nil
 }
 
-func (t *Searcher) rssqueryseriesindexer(index config.QualityIndexerConfig, thetvdb_id int, season int, useseason bool, dl *SearchResults) bool {
-	_, nzbindexer, cats, erri := t.initIndexer(index, "api")
+func (t *Searcher) rssqueryseriesindexer(quality string, indexer string, thetvdb_id int, season int, useseason bool, dl *SearchResults) bool {
+	_, nzbindexer, cats, erri := t.initIndexer(quality, indexer, "api")
 	if erri != nil {
-		logger.Log.Debug("Skipped Indexer: ", index.Template_indexer, " ", erri)
+		logger.Log.Debug("Skipped Indexer: ", indexer, " ", erri)
 		return false
 	}
 	defer logger.ClearVar(&nzbindexer)
@@ -674,23 +675,23 @@ func (t *Searcher) rssqueryseriesindexer(index config.QualityIndexerConfig, thet
 
 	if nzberr != nil {
 
-		logger.Log.Error("Newznab RSS Search failed ", index.Template_indexer)
+		logger.Log.Error("Newznab RSS Search failed ", indexer)
 		failedindexer(failed)
 		return false
 	} else {
 		logger.Log.Debug("Search RSS ended - found entries: ", len((nzbs)))
 		if len((nzbs)) >= 1 {
-			if !config.ConfigCheck("regex_" + index.Template_regex) {
+			if !config.ConfigCheck("regex_" + config.QualityIndexerByQualityAndTemplate(quality, indexer).Template_regex) {
 				for idx := range nzbs {
 					dl.Rejected = append(dl.Rejected, parser.Nzbwithprio{
 						NZB:     nzbs[idx],
-						Indexer: index.Template_indexer,
+						Indexer: indexer,
 						Denied:  true,
 						Reason:  "Denied by Regex"})
 				}
 			} else {
 				for idx := range nzbs {
-					t.convertnzbs(index, nzbs[idx], "", false, dl)
+					t.convertnzbs(quality, indexer, nzbs[idx], "", false, dl)
 				}
 			}
 		}
@@ -720,12 +721,12 @@ func (n *nzbFilter) Close() {
 	}
 	n = nil
 }
-func (s *Searcher) convertnzbs(index config.QualityIndexerConfig, nzb apiexternal.NZB, addinlist string, addifnotfound bool, dl *SearchResults) {
+func (s *Searcher) convertnzbs(quality string, indexer string, nzb apiexternal.NZB, addinlist string, addifnotfound bool, dl *SearchResults) {
 	var err error
 	var entry parser.Nzbwithprio
 	var counter int
 	entry.NZB = nzb
-	entry.Indexer = index.Template_indexer
+	entry.Indexer = indexer
 	defer logger.ClearVar(&entry)
 	//Check Title Length
 	if len(nzb.DownloadURL) == 0 {
@@ -742,6 +743,11 @@ func (s *Searcher) convertnzbs(index config.QualityIndexerConfig, nzb apiexterna
 	}
 
 	//Check Size
+	index := config.QualityIndexerByQualityAndTemplate(quality, indexer)
+	if index == nil {
+		denynzb("No Indexer", entry, dl)
+		return
+	}
 	if index.Filter_size_nzbs(s.ConfigTemplate, nzb.Title, nzb.Size) {
 		denynzb("Wrong size", entry, dl)
 		return
@@ -854,11 +860,6 @@ func (s *Searcher) convertnzbs(index config.QualityIndexerConfig, nzb apiexterna
 			entry.NzbepisodeID = s.SerieEpisode.ID
 			entry.QualityTemplate = s.SerieEpisode.QualityProfile
 			entry.WantedTitle, err = database.QueryColumnString("Select seriename from dbseries where id = ?", s.SerieEpisode.DbserieID)
-
-			if err != nil {
-				denynzb("Unwanted DB Series", entry, dl)
-				return
-			}
 		}
 
 		//Check Quality Profile
@@ -896,7 +897,7 @@ func (s *Searcher) convertnzbs(index config.QualityIndexerConfig, nzb apiexterna
 	}
 
 	//Parse
-	if entry.ParseInfo.Title == "" {
+	if entry.ParseInfo.Title == "" || entry.ParseInfo.Resolution == "" || entry.ParseInfo.Quality == "" {
 		if s.SearchGroupType == "series" {
 			entry.ParseInfo, err = parser.NewFileParser(nzb.Title, true, "series")
 		} else {
@@ -909,10 +910,10 @@ func (s *Searcher) convertnzbs(index config.QualityIndexerConfig, nzb apiexterna
 	}
 	if entry.ParseInfo.Priority == 0 {
 		entry.ParseInfo.GetPriority(s.ConfigTemplate, entry.QualityTemplate)
+		entry.Prio = entry.ParseInfo.Priority
 	}
 
-	entry.ParseInfo.StripTitlePrefixPostfix(entry.QualityTemplate)
-	entry.Prio = entry.ParseInfo.Priority
+	parser.StripTitlePrefixPostfix(&entry.ParseInfo, entry.QualityTemplate)
 	//Parse end
 
 	qualityconfig := config.ConfigGet("quality_" + entry.QualityTemplate).Data.(config.QualityConfig)
@@ -998,27 +999,30 @@ func (s *Searcher) convertnzbs(index config.QualityIndexerConfig, nzb apiexterna
 	if strings.ToLower(s.SearchGroupType) != "movie" {
 		foundepi, err := database.QueryColumnUint("Select dbserie_episode_id from serie_episodes where id = ?", entry.NzbepisodeID)
 		if err == nil {
-			founddbepi, err := database.GetDbserieEpisodes(database.Query{Select: "identifier, season, episode", Where: "id = ?", WhereArgs: []interface{}{foundepi}})
+			identifier, err := database.QueryColumnString("Select identifier from dbserie_episodes where id = ?", foundepi)
 			if err == nil {
 				// Check For S01E01 S01 E01 1x01 1 x 01 S01E02E03
 				matchfound := false
 
-				alt_identifier := strings.TrimLeft(founddbepi.Identifier, "S0")
+				alt_identifier := strings.TrimLeft(identifier, "S0")
 				alt_identifier = strings.Replace(alt_identifier, "E", "x", -1)
 				tolower := strings.ToLower(nzb.Title)
-				if strings.Contains(tolower, strings.ToLower(founddbepi.Identifier)) ||
-					strings.Contains(tolower, strings.ToLower(strings.Replace(founddbepi.Identifier, "-", ".", -1))) ||
-					strings.Contains(tolower, strings.ToLower(strings.Replace(founddbepi.Identifier, "-", " ", -1))) ||
+				if strings.Contains(tolower, strings.ToLower(identifier)) ||
+					strings.Contains(tolower, strings.ToLower(strings.Replace(identifier, "-", ".", -1))) ||
+					strings.Contains(tolower, strings.ToLower(strings.Replace(identifier, "-", " ", -1))) ||
 					strings.Contains(tolower, strings.ToLower(alt_identifier)) ||
 					strings.Contains(tolower, strings.ToLower(strings.Replace(alt_identifier, "-", ".", -1))) ||
 					strings.Contains(tolower, strings.ToLower(strings.Replace(alt_identifier, "-", " ", -1))) {
 
 					matchfound = true
 				} else {
+					season, _ := database.QueryColumnString("Select season from dbserie_episodes where id = ?", foundepi)
+					episode, _ := database.QueryColumnString("Select episode from dbserie_episodes where id = ?", foundepi)
+
 					identifierlower := strings.ToLower(entry.ParseInfo.Identifier)
-					for _, seasonvar := range []string{"s" + founddbepi.Season + "e", "s0" + founddbepi.Season + "e", "s" + founddbepi.Season + " e", "s0" + founddbepi.Season + " e", founddbepi.Season + "x", founddbepi.Season + " x"} {
+					for _, seasonvar := range []string{"s" + season + "e", "s0" + season + "e", "s" + season + " e", "s0" + season + " e", season + "x", season + " x"} {
 						if strings.HasPrefix(identifierlower, seasonvar) {
-							for _, episodevar := range []string{"e" + founddbepi.Episode, "e0" + founddbepi.Episode, "x" + founddbepi.Episode, "x0" + founddbepi.Episode} {
+							for _, episodevar := range []string{"e" + episode, "e0" + episode, "x" + episode, "x0" + episode} {
 								if strings.HasSuffix(identifierlower, episodevar) {
 									matchfound = true
 									break
@@ -1045,8 +1049,7 @@ func (s *Searcher) convertnzbs(index config.QualityIndexerConfig, nzb apiexterna
 					}
 				}
 				if !matchfound {
-					denynzb("seriename provided dbepi found but identifier not match "+founddbepi.Identifier, entry, dl)
-					logger.ClearVar(&founddbepi)
+					denynzb("seriename provided dbepi found but identifier not match "+identifier, entry, dl)
 					logger.ClearVar(&foundepi)
 					return
 				}
@@ -1062,7 +1065,7 @@ func (s *Searcher) convertnzbs(index config.QualityIndexerConfig, nzb apiexterna
 	}
 
 	//check quality
-	if !entry.ParseInfo.Filter_test_quality_wanted(entry.QualityTemplate, nzb.Title) {
+	if !Filter_test_quality_wanted(entry.ParseInfo, entry.QualityTemplate, nzb.Title) {
 		denynzb("Unwanted Quality", entry, dl)
 		return
 	}
@@ -1085,6 +1088,55 @@ func (s *Searcher) convertnzbs(index config.QualityIndexerConfig, nzb apiexterna
 	return
 }
 
+func Filter_test_quality_wanted(m parser.ParseInfo, qualityTemplate string, title string) bool {
+	qualityconfig := config.ConfigGet("quality_" + qualityTemplate).Data.(config.QualityConfig)
+	wanted_release_resolution := false
+	for idxqual := range qualityconfig.Wanted_resolution {
+		if strings.EqualFold(qualityconfig.Wanted_resolution[idxqual], m.Resolution) {
+			wanted_release_resolution = true
+			break
+		}
+	}
+
+	if len(qualityconfig.Wanted_resolution) >= 1 && !wanted_release_resolution {
+		logger.Log.Debug("Skipped - unwanted resolution: ", title, " ", qualityTemplate, " ", m.Resolution)
+		return false
+	}
+	wanted_release_quality := false
+	for idxqual := range qualityconfig.Wanted_quality {
+		if strings.EqualFold(qualityconfig.Wanted_quality[idxqual], m.Quality) {
+			wanted_release_quality = true
+			break
+		}
+	}
+	if len(qualityconfig.Wanted_quality) >= 1 && !wanted_release_quality {
+		logger.Log.Debug("Skipped - unwanted quality: ", title, " ", qualityTemplate, " ", m.Quality)
+		return false
+	}
+	wanted_release_audio := false
+	for idxqual := range qualityconfig.Wanted_audio {
+		if strings.EqualFold(qualityconfig.Wanted_audio[idxqual], m.Audio) {
+			wanted_release_audio = true
+			break
+		}
+	}
+	if len(qualityconfig.Wanted_audio) >= 1 && !wanted_release_audio {
+		logger.Log.Debug("Skipped - unwanted audio: ", title, " ", qualityTemplate)
+		return false
+	}
+	wanted_release_codec := false
+	for idxqual := range qualityconfig.Wanted_codec {
+		if strings.EqualFold(qualityconfig.Wanted_codec[idxqual], m.Codec) {
+			wanted_release_codec = true
+			break
+		}
+	}
+	if len(qualityconfig.Wanted_codec) >= 1 && !wanted_release_codec {
+		logger.Log.Debug("Skipped - unwanted codec: ", title, " ", qualityTemplate)
+		return false
+	}
+	return true
+}
 func getSubImdb(imdb string) (uint, error) {
 	searchimdb := "tt" + imdb
 	founddbmovie, founddbmovieerr := database.QueryColumnUint("Select id from dbmovies where imdb_id = ?", searchimdb)
@@ -1108,10 +1160,8 @@ func getSubImdb(imdb string) (uint, error) {
 }
 
 func insertmovie(imdb string, configTemplate string, addinlist string) (uint, error) {
-	adddbmovie := database.Dbmovie{}
-	adddbmovie.ImdbID = imdb
-	importfeed.JobImportMovies(adddbmovie, configTemplate, addinlist)
-	founddbmovie, founddbmovieerr := database.QueryColumnUint("Select id from dbmovies where imdb_id = ?", adddbmovie.ImdbID)
+	importfeed.JobImportMovies(imdb, configTemplate, addinlist)
+	founddbmovie, founddbmovieerr := database.QueryColumnUint("Select id from dbmovies where imdb_id = ?", imdb)
 	return founddbmovie, founddbmovieerr
 }
 
@@ -1172,7 +1222,7 @@ func getmovierss(entry *parser.Nzbwithprio, addinlist string, addifnotfound bool
 	if loopdbmovie != 0 {
 
 		//Get List of movie by dbmovieid, year and possible lists
-		entry.ParseInfo.StripTitlePrefixPostfix(qualityTemplate)
+		parser.StripTitlePrefixPostfix(&entry.ParseInfo, qualityTemplate)
 		list, imdb := importfeed.MovieGetListFilter(configTemplate, int(loopdbmovie), entry.ParseInfo.Year)
 		if list != "" {
 			entry.NZB.IMDBID = imdb
@@ -1305,24 +1355,18 @@ func getserierss(entry *parser.Nzbwithprio, configTemplate string, qualityTempla
 			return true, 0, 0
 		}
 	}
-	foundepisode, err := database.GetSerieEpisodes(database.Query{Select: "id, quality_profile", Where: "dbserie_episode_id = ? and serie_id = ?", WhereArgs: []interface{}{founddbepisode, foundserie}})
+	foundepisodeid, err := database.QueryColumnUint("Select id from serie_episodes where dbserie_episode_id = ? and serie_id = ?", founddbepisode, foundserie)
 	if err != nil {
 		denynzb("Unwanted Episode", *entry, dl)
 		entry = nil
 		return true, 0, 0
 	}
-	defer logger.ClearVar(&foundepisode)
-	if !config.ConfigCheck("quality_" + foundepisode.QualityProfile) {
-		denynzb("Unknown Quality Profile", *entry, dl)
-		entry = nil
-		return true, 0, 0
-	}
 	//cfg_quality := config.ConfigGet("quality_" + foundepisode.QualityProfile).Data.(config.QualityConfig)
 	//if cfg_quality.BackupSearchForTitle {
-	entry.NzbepisodeID = foundepisode.ID
+	entry.NzbepisodeID = foundepisodeid
 	entry.WantedAlternates = database.QueryStaticStringArray("Select title from dbserie_alternates where dbserie_id = ?", "Select count(id) from dbserie_alternates where dbserie_id = ?", loopdbseries)
 	//}
-	return false, loopdbseries, foundepisode.ID
+	return false, loopdbseries, foundepisodeid
 }
 
 func (s *Searcher) GetRSSFeed(searchGroupType string, listConfig string) (SearchResults, error) {
@@ -1352,11 +1396,8 @@ func (s *Searcher) GetRSSFeed(searchGroupType string, listConfig string) (Search
 		return SearchResults{}, errors.New("regex not found")
 	}
 
-	var lastindexerid string
-	indexrssid, indexrssiderr := database.GetRssHistory(database.Query{Select: "last_id", Where: "config = ? and list = ? and indexer = ?", WhereArgs: []interface{}{"list_" + list.Template_list, s.Quality, ""}})
-	if indexrssiderr == nil {
-		lastindexerid = indexrssid.LastID
-	}
+	lastindexerid, _ := database.QueryColumnString("Select last_id from r_sshistories where config = ? and list = ? and indexer = ?", "list_"+list.Template_list, s.Quality, "")
+
 	cfg_list := config.ConfigGet("list_" + list.Template_list).Data.(config.ListsConfig)
 	indexer := apiexternal.NzbIndexer{Name: "list_" + list.Template_list, Customrssurl: cfg_list.Url, LastRssId: lastindexerid}
 
@@ -1391,7 +1432,7 @@ func (s *Searcher) GetRSSFeed(searchGroupType string, listConfig string) (Search
 			}
 		} else {
 			for idx := range nzbs {
-				s.convertnzbs(cfg_indexer, nzbs[idx], listConfig, list.Addfound, &dl)
+				s.convertnzbs(s.Quality, list.Template_list, nzbs[idx], listConfig, list.Addfound, &dl)
 			}
 		}
 
@@ -1451,7 +1492,6 @@ func (s *Searcher) MovieSearch(movieid uint, forceDownload bool, titlesearch boo
 	}
 	cfg_quality := config.ConfigGet("quality_" + s.Movie.QualityProfile).Data.(config.QualityConfig)
 	s.Quality = s.Movie.QualityProfile
-
 	s.MinimumPriority = parser.GetHighestMoviePriorityByFiles(s.Movie.ID, s.ConfigTemplate, s.Movie.QualityProfile)
 
 	if s.MinimumPriority == 0 {
@@ -1476,7 +1516,7 @@ func (s *Searcher) MovieSearch(movieid uint, forceDownload bool, titlesearch boo
 	for idx := range cfg_quality.Indexer {
 		index := cfg_quality.Indexer[idx]
 		swi.Add(func() {
-			ok := s.moviesearchindexer(index, titlesearch, &dl)
+			ok := s.moviesearchindexer(cfg_quality.Name, index.Template_indexer, titlesearch, &dl)
 			if ok {
 				processedindexer += 1
 			}
@@ -1497,15 +1537,14 @@ func (s *Searcher) MovieSearch(movieid uint, forceDownload bool, titlesearch boo
 	return dl, nil
 }
 
-func (t *Searcher) moviesearchindexer(index config.QualityIndexerConfig, titlesearch bool, dl *SearchResults) bool {
-	logger.Log.Info("Indexer search for Movie: "+strconv.Itoa(int(t.Movie.ID))+" indexer: ", index.Template_indexer)
-	_, nzbindexer, cats, erri := t.initIndexer(index, "api")
+func (t *Searcher) moviesearchindexer(quality string, indexer string, titlesearch bool, dl *SearchResults) bool {
+	logger.Log.Info("Indexer search for Movie: "+strconv.Itoa(int(t.Movie.ID))+" indexer: ", indexer)
+	indexerurl, cats, erri := t.initIndexerUrlCat(quality, indexer, "api")
 	if erri != nil {
-		logger.Log.Debug("Skipped Indexer: ", index.Template_indexer, " ", erri)
+		logger.Log.Debug("Skipped Indexer: ", indexer, " ", erri)
 
 		return false
 	}
-	defer logger.ClearVar(&nzbindexer)
 	defer logger.ClearVar(&cats)
 
 	// dl.Nzbs = make([]parser.Nzbwithprio, 0, 10)
@@ -1517,8 +1556,8 @@ func (t *Searcher) moviesearchindexer(index config.QualityIndexerConfig, titlese
 	}
 	cfg_quality := config.ConfigGet("quality_" + t.Movie.QualityProfile).Data.(config.QualityConfig)
 	if t.Imdb != "" {
-		logger.Log.Info("Search movie by imdb ", t.Imdb, " with indexer ", index.Template_indexer)
-		t.moviesSearchImdb(index, cats, dl)
+		logger.Log.Info("Search movie by imdb ", t.Imdb, " with indexer ", indexer)
+		t.moviesSearchImdb(quality, indexer, cats, dl)
 
 		if len(dl.Nzbs) >= 1 {
 			logger.Log.Debug("Indexer loop - entries found: ", len(dl.Nzbs))
@@ -1532,11 +1571,11 @@ func (t *Searcher) moviesearchindexer(index config.QualityIndexerConfig, titlese
 	}
 	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
 	if !releasefound && cfg_quality.BackupSearchForTitle && titlesearch {
-		if checkindexerblock(cfg_general.FailedIndexerBlockTime, nzbindexer.URL) {
+		if checkindexerblock(cfg_general.FailedIndexerBlockTime, indexerurl) {
 			return false
 		}
-		logger.Log.Info("Search movie by title ", t.Name, " with indexer ", index.Template_indexer)
-		t.moviesSearchTitle(index, t.Name, cats, dl)
+		logger.Log.Info("Search movie by title ", t.Name, " with indexer ", indexer)
+		t.moviesSearchTitle(quality, indexer, t.Name, cats, dl)
 		if len(dl.Nzbs) >= 1 {
 			logger.Log.Debug("Indexer loop - entries found: ", len(dl.Nzbs))
 			releasefound = true
@@ -1552,11 +1591,11 @@ func (t *Searcher) moviesearchindexer(index config.QualityIndexerConfig, titlese
 			if altitle == "" {
 				continue
 			}
-			if checkindexerblock(cfg_general.FailedIndexerBlockTime, nzbindexer.URL) {
+			if checkindexerblock(cfg_general.FailedIndexerBlockTime, indexerurl) {
 				continue
 			}
-			logger.Log.Info("Search movie by title ", altitle, " with indexer ", index.Template_indexer)
-			t.moviesSearchTitle(index, altitle, cats, dl)
+			logger.Log.Info("Search movie by title ", altitle, " with indexer ", indexer)
+			t.moviesSearchTitle(quality, indexer, altitle, cats, dl)
 
 			if len(dl.Nzbs) >= 1 {
 				logger.Log.Debug("Indexer loop - entries found: ", len(dl.Nzbs))
@@ -1644,7 +1683,7 @@ func (s *Searcher) SeriesSearch(episodeid uint, forceDownload bool, titlesearch 
 	for idx := range cfg_quality.Indexer {
 		index := cfg_quality.Indexer[idx]
 		swi.Add(func() {
-			ok := s.seriessearchindexer(index, titlesearch, &dl)
+			ok := s.seriessearchindexer(s.Quality, index.Template_indexer, titlesearch, &dl)
 			if ok {
 				processedindexer += 1
 			}
@@ -1665,13 +1704,12 @@ func (s *Searcher) SeriesSearch(episodeid uint, forceDownload bool, titlesearch 
 	return dl, nil
 }
 
-func (t *Searcher) seriessearchindexer(index config.QualityIndexerConfig, titlesearch bool, dl *SearchResults) bool {
-	_, nzbindexer, cats, erri := t.initIndexer(index, "api")
+func (t *Searcher) seriessearchindexer(quality string, indexer string, titlesearch bool, dl *SearchResults) bool {
+	indexerurl, cats, erri := t.initIndexerUrlCat(quality, indexer, "api")
 	if erri != nil {
-		logger.Log.Debug("Skipped Indexer: ", index.Template_indexer, " ", erri)
+		logger.Log.Debug("Skipped Indexer: ", indexer, " ", erri)
 		return false
 	}
-	defer logger.ClearVar(&nzbindexer)
 	defer logger.ClearVar(&cats)
 
 	if !config.ConfigCheck("quality_" + t.SerieEpisode.QualityProfile) {
@@ -1684,8 +1722,8 @@ func (t *Searcher) seriessearchindexer(index config.QualityIndexerConfig, titles
 	// dl.Nzbs = make([]parser.Nzbwithprio, 0, 10)
 	// dl.Rejected = make([]parser.Nzbwithprio, 0, 100)
 	if t.Tvdb != 0 {
-		logger.Log.Info("Search serie by tvdbid ", t.Tvdb, " with indexer ", index.Template_indexer)
-		t.seriesSearchTvdb(index, cats, dl)
+		logger.Log.Info("Search serie by tvdbid ", t.Tvdb, " with indexer ", indexer)
+		t.seriesSearchTvdb(quality, indexer, cats, dl)
 		if len(dl.Nzbs) >= 1 {
 			releasefound = true
 
@@ -1697,11 +1735,11 @@ func (t *Searcher) seriessearchindexer(index config.QualityIndexerConfig, titles
 	}
 	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
 	if !releasefound && cfg_quality.BackupSearchForTitle && titlesearch {
-		if checkindexerblock(cfg_general.FailedIndexerBlockTime, nzbindexer.URL) {
+		if checkindexerblock(cfg_general.FailedIndexerBlockTime, indexerurl) {
 			return false
 		}
-		logger.Log.Info("Search serie by title ", t.Name, " with indexer ", index.Template_indexer)
-		t.seriesSearchTitle(index, t.Name, cats, dl)
+		logger.Log.Info("Search serie by title ", t.Name, " with indexer ", indexer)
+		t.seriesSearchTitle(quality, indexer, t.Name, cats, dl)
 
 		if len(dl.Nzbs) >= 1 {
 			releasefound = true
@@ -1717,11 +1755,11 @@ func (t *Searcher) seriessearchindexer(index config.QualityIndexerConfig, titles
 			if alttitle == "" {
 				continue
 			}
-			if checkindexerblock(cfg_general.FailedIndexerBlockTime, nzbindexer.URL) {
+			if checkindexerblock(cfg_general.FailedIndexerBlockTime, indexerurl) {
 				continue
 			}
-			logger.Log.Info("Search serie by title ", alttitle, " with indexer ", index.Template_indexer)
-			t.seriesSearchTitle(index, alttitle, cats, dl)
+			logger.Log.Info("Search serie by title ", alttitle, " with indexer ", indexer)
+			t.seriesSearchTitle(quality, indexer, alttitle, cats, dl)
 
 			if len(dl.Nzbs) >= 1 {
 				releasefound = true
@@ -1753,13 +1791,13 @@ func checkindexerblock(FailedIndexerBlockTime int, url string) bool {
 	}
 }
 
-func (s *Searcher) initIndexer(indexer config.QualityIndexerConfig, rssapi string) (config.IndexersConfig, apiexternal.NzbIndexer, string, error) {
-	logger.Log.Debug("Indexer search: ", indexer.Template_indexer)
+func (s *Searcher) initIndexer(quality string, indexer string, rssapi string) (config.IndexersConfig, apiexternal.NzbIndexer, string, error) {
+	logger.Log.Debug("Indexer search: ", indexer)
 
-	if !config.ConfigCheck("indexer_" + indexer.Template_indexer) {
+	if !config.ConfigCheck("indexer_" + indexer) {
 		return config.IndexersConfig{}, apiexternal.NzbIndexer{}, "", errors.New("indexer config missing")
 	}
-	cfg_indexer := config.ConfigGet("indexer_" + indexer.Template_indexer).Data.(config.IndexersConfig)
+	cfg_indexer := config.ConfigGet("indexer_" + indexer).Data.(config.IndexersConfig)
 
 	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
 
@@ -1788,19 +1826,17 @@ func (s *Searcher) initIndexer(indexer config.QualityIndexerConfig, rssapi strin
 
 	var lastindexerid string
 	if s.SearchActionType == "rss" {
-		indexrssid, indexrssiderr := database.GetRssHistory(database.Query{Select: "last_id", Where: "config = ? and list = ? and indexer = ?", WhereArgs: []interface{}{s.ConfigTemplate, s.Quality, cfg_indexer.Url}})
-		if indexrssiderr == nil {
-			lastindexerid = indexrssid.LastID
-		}
+		lastindexerid, _ = database.QueryColumnString("Select last_id from r_sshistories where config = ? and list = ? and indexer = ?", s.ConfigTemplate, s.Quality, cfg_indexer.Url)
 	}
 
+	confindexer := config.QualityIndexerByQualityAndTemplate(quality, indexer)
 	nzbindexer := apiexternal.NzbIndexer{
 		URL:                     cfg_indexer.Url,
 		Apikey:                  cfg_indexer.Apikey,
 		UserID:                  userid,
 		SkipSslCheck:            cfg_indexer.DisableTLSVerify,
 		Addquotesfortitlequery:  cfg_indexer.Addquotesfortitlequery,
-		Additional_query_params: indexer.Additional_query_params,
+		Additional_query_params: confindexer.Additional_query_params,
 		LastRssId:               lastindexerid,
 		RssDownloadAll:          cfg_indexer.RssDownloadAll,
 		Customapi:               cfg_indexer.Customapi,
@@ -1811,15 +1847,52 @@ func (s *Searcher) initIndexer(indexer config.QualityIndexerConfig, rssapi strin
 		Limiterseconds:          cfg_indexer.Limiterseconds,
 		MaxAge:                  cfg_indexer.MaxAge,
 		OutputAsJson:            cfg_indexer.OutputAsJson}
-	return cfg_indexer, nzbindexer, indexer.Categories_indexer, nil
+	return cfg_indexer, nzbindexer, confindexer.Categories_indexer, nil
 }
-func (s *Searcher) initNzbIndexer(indexer config.QualityIndexerConfig, rssapi string) (apiexternal.NzbIndexer, error) {
-	logger.Log.Debug("Indexer search: ", indexer.Template_indexer)
 
-	if !config.ConfigCheck("indexer_" + indexer.Template_indexer) {
+func (s *Searcher) initIndexerUrlCat(quality string, indexer string, rssapi string) (string, string, error) {
+	logger.Log.Debug("Indexer search: ", indexer)
+
+	if !config.ConfigCheck("indexer_" + indexer) {
+		return "", "", errors.New("indexer config missing")
+	}
+	cfg_indexer := config.ConfigGet("indexer_" + indexer).Data.(config.IndexersConfig)
+
+	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
+
+	if !(strings.ToLower(cfg_indexer.IndexerType) == "newznab") {
+		return "", "", errors.New("indexer Type Wrong")
+	}
+	if !cfg_indexer.Rssenabled && strings.ToLower(rssapi) == "rss" {
+		logger.Log.Debug("Indexer disabled: ", cfg_indexer.Name)
+		return "", "", errors.New("indexer disabled")
+	} else if !cfg_indexer.Enabled {
+		logger.Log.Debug("Indexer disabled: ", cfg_indexer.Name)
+		return "", "", errors.New("indexer disabled")
+	}
+
+	blockinterval := -5
+	if cfg_general.FailedIndexerBlockTime != 0 {
+		blockinterval = -1 * cfg_general.FailedIndexerBlockTime
+	}
+	counter, _ := database.CountRowsStatic("Select count(id) from indexer_fails where indexer = ? and last_fail > ?", cfg_indexer.Url, sql.NullTime{Time: time.Now().Add(time.Minute * time.Duration(blockinterval)), Valid: true})
+	if counter >= 1 {
+		logger.Log.Debug("Indexer temporarily disabled due to fail in the last ", blockinterval, " Minute(s): ", cfg_indexer.Name)
+		return "", "", errors.New("indexer disabled")
+	}
+
+	return cfg_indexer.Url, config.QualityIndexerByQualityAndTemplate(quality, indexer).Categories_indexer, nil
+}
+
+func (s *Searcher) initNzbIndexer(quality string, indexer string, rssapi string) (apiexternal.NzbIndexer, error) {
+	logger.Log.Debug("Indexer search: ", indexer)
+
+	if !config.ConfigCheck("indexer_" + indexer) {
 		return apiexternal.NzbIndexer{}, errors.New("template not found")
 	}
-	cfg_indexer := config.ConfigGet("indexer_" + indexer.Template_indexer).Data.(config.IndexersConfig)
+
+	qualindexer := config.QualityIndexerByQualityAndTemplate(quality, indexer)
+	cfg_indexer := config.ConfigGet("indexer_" + indexer).Data.(config.IndexersConfig)
 
 	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
 
@@ -1848,10 +1921,7 @@ func (s *Searcher) initNzbIndexer(indexer config.QualityIndexerConfig, rssapi st
 
 	var lastindexerid string
 	if s.SearchActionType == "rss" {
-		indexrssid, indexrssiderr := database.GetRssHistory(database.Query{Select: "last_id", Where: "config = ? and list = ? and indexer = ?", WhereArgs: []interface{}{s.ConfigTemplate, s.Quality, cfg_indexer.Url}})
-		if indexrssiderr == nil {
-			lastindexerid = indexrssid.LastID
-		}
+		lastindexerid, _ = database.QueryColumnString("Select last_id from r_sshistories where config = ? and list = ? and indexer = ?", s.ConfigTemplate, s.Quality, cfg_indexer.Url)
 	}
 
 	nzbindexer := apiexternal.NzbIndexer{
@@ -1860,7 +1930,7 @@ func (s *Searcher) initNzbIndexer(indexer config.QualityIndexerConfig, rssapi st
 		UserID:                  userid,
 		SkipSslCheck:            cfg_indexer.DisableTLSVerify,
 		Addquotesfortitlequery:  cfg_indexer.Addquotesfortitlequery,
-		Additional_query_params: indexer.Additional_query_params,
+		Additional_query_params: qualindexer.Additional_query_params,
 		LastRssId:               lastindexerid,
 		RssDownloadAll:          cfg_indexer.RssDownloadAll,
 		Customapi:               cfg_indexer.Customapi,
@@ -1874,9 +1944,9 @@ func (s *Searcher) initNzbIndexer(indexer config.QualityIndexerConfig, rssapi st
 	return nzbindexer, nil
 }
 
-func (s *Searcher) moviesSearchImdb(indexer config.QualityIndexerConfig, cats string, dl *SearchResults) {
+func (s *Searcher) moviesSearchImdb(quality string, indexer string, cats string, dl *SearchResults) {
 	logger.Log.Info("Search Movie by imdb: ", s.Imdb)
-	nzbindexer, erri := s.initNzbIndexer(indexer, "api")
+	nzbindexer, erri := s.initNzbIndexer(quality, indexer, "api")
 	if erri != nil {
 		return
 	}
@@ -1890,17 +1960,17 @@ func (s *Searcher) moviesSearchImdb(indexer config.QualityIndexerConfig, cats st
 
 	} else {
 		if len((nzbs)) >= 1 {
-			if !config.ConfigCheck("regex_" + indexer.Template_regex) {
+			if !config.ConfigCheck("regex_" + config.QualityIndexerByQualityAndTemplate(quality, indexer).Template_regex) {
 				for idx := range nzbs {
 					dl.Rejected = append(dl.Rejected, parser.Nzbwithprio{
 						NZB:     nzbs[idx],
-						Indexer: indexer.Template_indexer,
+						Indexer: indexer,
 						Denied:  true,
 						Reason:  "Denied by Regex"})
 				}
 			} else {
 				for idx := range nzbs {
-					s.convertnzbs(indexer, nzbs[idx], "", false, dl)
+					s.convertnzbs(quality, indexer, nzbs[idx], "", false, dl)
 				}
 			}
 		}
@@ -1909,7 +1979,7 @@ func (s *Searcher) moviesSearchImdb(indexer config.QualityIndexerConfig, cats st
 	return
 }
 
-func (s *Searcher) moviesSearchTitle(indexer config.QualityIndexerConfig, title string, cats string, dl *SearchResults) {
+func (s *Searcher) moviesSearchTitle(quality string, indexer string, title string, cats string, dl *SearchResults) {
 	if len(title) == 0 {
 		return
 	}
@@ -1926,7 +1996,7 @@ func (s *Searcher) moviesSearchTitle(indexer config.QualityIndexerConfig, title 
 	if searchfor != "" && cfg_quality.BackupSearchForTitle {
 
 		logger.Log.Info("Search Movie by name: ", title)
-		nzbindexer, erri := s.initNzbIndexer(indexer, "api")
+		nzbindexer, erri := s.initNzbIndexer(quality, indexer, "api")
 		if erri != nil {
 			return
 		}
@@ -1939,17 +2009,17 @@ func (s *Searcher) moviesSearchTitle(indexer config.QualityIndexerConfig, title 
 			failedindexer(failed)
 		} else {
 			if len((nzbs)) >= 1 {
-				if !config.ConfigCheck("regex_" + indexer.Template_regex) {
+				if !config.ConfigCheck("regex_" + config.QualityIndexerByQualityAndTemplate(quality, indexer).Template_regex) {
 					for idx := range nzbs {
 						dl.Rejected = append(dl.Rejected, parser.Nzbwithprio{
 							NZB:     nzbs[idx],
-							Indexer: indexer.Template_indexer,
+							Indexer: indexer,
 							Denied:  true,
 							Reason:  "Denied by Regex"})
 					}
 				} else {
 					for idx := range nzbs {
-						s.convertnzbs(indexer, nzbs[idx], "", false, dl)
+						s.convertnzbs(quality, indexer, nzbs[idx], "", false, dl)
 					}
 				}
 			}
@@ -1966,8 +2036,8 @@ func failedindexer(failed string) {
 		database.Query{Where: "indexer = ?", WhereArgs: []interface{}{failed}})
 }
 
-func (s *Searcher) seriesSearchTvdb(indexer config.QualityIndexerConfig, cats string, dl *SearchResults) {
-	nzbindexer, erri := s.initNzbIndexer(indexer, "api")
+func (s *Searcher) seriesSearchTvdb(quality string, indexer string, cats string, dl *SearchResults) {
+	nzbindexer, erri := s.initNzbIndexer(quality, indexer, "api")
 	if erri != nil {
 		return
 	}
@@ -1988,17 +2058,17 @@ func (s *Searcher) seriesSearchTvdb(indexer config.QualityIndexerConfig, cats st
 		failedindexer(failed)
 	} else {
 		if len((nzbs)) >= 1 {
-			if !config.ConfigCheck("regex_" + indexer.Template_regex) {
+			if !config.ConfigCheck("regex_" + config.QualityIndexerByQualityAndTemplate(quality, indexer).Template_regex) {
 				for idx := range nzbs {
 					dl.Rejected = append(dl.Rejected, parser.Nzbwithprio{
 						NZB:     nzbs[idx],
-						Indexer: indexer.Template_indexer,
+						Indexer: indexer,
 						Denied:  true,
 						Reason:  "Denied by Regex"})
 				}
 			} else {
 				for idx := range nzbs {
-					s.convertnzbs(indexer, nzbs[idx], "", false, dl)
+					s.convertnzbs(quality, indexer, nzbs[idx], "", false, dl)
 				}
 			}
 		}
@@ -2007,7 +2077,7 @@ func (s *Searcher) seriesSearchTvdb(indexer config.QualityIndexerConfig, cats st
 	return
 }
 
-func (s *Searcher) seriesSearchTitle(indexer config.QualityIndexerConfig, title string, cats string, dl *SearchResults) {
+func (s *Searcher) seriesSearchTitle(quality string, indexer string, title string, cats string, dl *SearchResults) {
 	if !config.ConfigCheck("quality_" + s.SerieEpisode.QualityProfile) {
 		logger.Log.Error("Quality for Episode: " + strconv.Itoa(int(s.SerieEpisode.ID)) + " not found")
 		return
@@ -2017,7 +2087,7 @@ func (s *Searcher) seriesSearchTitle(indexer config.QualityIndexerConfig, title 
 	if title != "" && s.Identifier != "" && cfg_quality.BackupSearchForTitle {
 		logger.Log.Info("Search Series by title: ", title, " ", s.Identifier)
 		searchfor := title + " " + s.Identifier
-		nzbindexer, erri := s.initNzbIndexer(indexer, "api")
+		nzbindexer, erri := s.initNzbIndexer(quality, indexer, "api")
 		if erri != nil {
 			return
 		}
@@ -2030,17 +2100,17 @@ func (s *Searcher) seriesSearchTitle(indexer config.QualityIndexerConfig, title 
 			failedindexer(failed)
 		} else {
 			if len((nzbs)) >= 1 {
-				if !config.ConfigCheck("regex_" + indexer.Template_regex) {
+				if !config.ConfigCheck("regex_" + config.QualityIndexerByQualityAndTemplate(quality, indexer).Template_regex) {
 					for idx := range nzbs {
 						dl.Rejected = append(dl.Rejected, parser.Nzbwithprio{
 							NZB:     nzbs[idx],
-							Indexer: indexer.Template_indexer,
+							Indexer: indexer,
 							Denied:  true,
 							Reason:  "Denied by Regex"})
 					}
 				} else {
 					for idx := range nzbs {
-						s.convertnzbs(indexer, nzbs[idx], "", false, dl)
+						s.convertnzbs(quality, indexer, nzbs[idx], "", false, dl)
 					}
 				}
 			}

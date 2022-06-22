@@ -16,7 +16,6 @@ import (
 	"github.com/Kellerman81/go_media_downloader/searcher"
 	"github.com/Kellerman81/go_media_downloader/utils"
 	gin "github.com/gin-gonic/gin"
-	"github.com/shomali11/parallelizer"
 )
 
 func AddMoviesRoutes(routermovies *gin.RouterGroup) {
@@ -587,10 +586,6 @@ func apimoviesSearchDownload(c *gin.Context) {
 		return
 	}
 	movie, _ := database.GetMovies(database.Query{Where: "id = ?", WhereArgs: []interface{}{c.Param("id")}})
-	searchtype := "missing"
-	if !movie.Missing {
-		searchtype = "upgrade"
-	}
 
 	var nzb parser.Nzbwithprio
 	if err := c.ShouldBindJSON(&nzb); err != nil {
@@ -606,7 +601,7 @@ func apimoviesSearchDownload(c *gin.Context) {
 		cfg_movie := config.ConfigGet(configTemplate.Name).Data.(config.MediaTypeConfig)
 		for idxlist := range cfg_movie.Lists {
 			if strings.EqualFold(cfg_movie.Lists[idxlist].Name, movie.Listname) {
-				downloadnow := downloader.NewDownloader(configTemplate.Name, searchtype)
+				downloadnow := downloader.NewDownloader(configTemplate.Name)
 				downloadnow.SetMovie(movie.ID)
 				downloadnow.DownloadNzb(nzb)
 				downloadnow.Close()
@@ -679,8 +674,7 @@ func apimoviesClearHistoryName(c *gin.Context) {
 		return
 	}
 	name := "movie_" + c.Param("name")
-	swg := parallelizer.NewGroup(parallelizer.WithPoolSize(1))
-	swg.Add(func() { utils.Movies_single_jobs("clearhistory", name, "", true) })
+	utils.Movies_single_jobs("clearhistory", name, "", true)
 	c.JSON(http.StatusOK, "started")
 }
 

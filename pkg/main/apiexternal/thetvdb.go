@@ -100,7 +100,7 @@ func (t *tvdbClient) GetSeries(id int, language string) (theTVDBSeries, error) {
 	if err != nil {
 		return theTVDBSeries{}, err
 	}
-
+	req = nil
 	return result, nil
 }
 func (t *tvdbClient) GetSeriesEpisodes(id int, language string) (theTVDBEpisodes, error) {
@@ -122,8 +122,9 @@ func (t *tvdbClient) GetSeriesEpisodes(id int, language string) (theTVDBEpisodes
 	if result.Links.Last >= 2 {
 		k := 2
 
+		var resultadd theTVDBEpisodes
 		for ; k <= result.Links.Last; k++ {
-			req, err := http.NewRequest("GET", "https://api.thetvdb.com/series/"+strconv.Itoa(id)+"/episodes?page="+strconv.Itoa(k), nil)
+			req, err = http.NewRequest("GET", "https://api.thetvdb.com/series/"+strconv.Itoa(id)+"/episodes?page="+strconv.Itoa(k), nil)
 			if err != nil {
 				continue
 			}
@@ -131,11 +132,10 @@ func (t *tvdbClient) GetSeriesEpisodes(id int, language string) (theTVDBEpisodes
 				req.Header.Add("Accept-Language", language)
 			}
 
-			var resultadd theTVDBEpisodes
 			t.Client.DoJson(req, &resultadd)
-
 			result.Data = append(result.Data, resultadd.Data...)
 		}
 	}
+	req = nil
 	return result, nil
 }

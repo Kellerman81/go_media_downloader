@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/Kellerman81/go_media_downloader/logger"
 	"github.com/Kellerman81/go_media_downloader/slidingwindow"
 	"golang.org/x/time/rate"
 )
@@ -154,6 +155,7 @@ func (t *tmdbClient) SearchMovie(name string) (TheMovieDBSearch, error) {
 	if err != nil {
 		return TheMovieDBSearch{}, err
 	}
+	defer logger.ClearVar(req)
 
 	var result TheMovieDBSearch
 
@@ -171,6 +173,7 @@ func (t *tmdbClient) SearchTV(name string) (theMovieDBSearchTV, error) {
 	if err != nil {
 		return theMovieDBSearchTV{}, err
 	}
+	defer logger.ClearVar(req)
 
 	var result theMovieDBSearchTV
 
@@ -188,6 +191,7 @@ func (t *tmdbClient) FindImdb(imdbid string) (theMovieDBFind, error) {
 	if err != nil {
 		return theMovieDBFind{}, err
 	}
+	defer logger.ClearVar(req)
 
 	var result theMovieDBFind
 
@@ -204,6 +208,7 @@ func (t *tmdbClient) FindTvdb(thetvdbid int) (theMovieDBFind, error) {
 	if err != nil {
 		return theMovieDBFind{}, err
 	}
+	defer logger.ClearVar(req)
 
 	var result theMovieDBFind
 
@@ -220,6 +225,7 @@ func (t *tmdbClient) GetMovie(id int) (theMovieDBMovie, error) {
 	if err != nil {
 		return theMovieDBMovie{}, err
 	}
+	defer logger.ClearVar(req)
 
 	var result theMovieDBMovie
 
@@ -236,6 +242,7 @@ func (t *tmdbClient) GetMovieTitles(id int) (theMovieDBMovieTitles, error) {
 	if err != nil {
 		return theMovieDBMovieTitles{}, err
 	}
+	defer logger.ClearVar(req)
 
 	var result theMovieDBMovieTitles
 
@@ -252,6 +259,7 @@ func (t *tmdbClient) GetMovieExternal(id int) (TheMovieDBTVExternal, error) {
 	if err != nil {
 		return TheMovieDBTVExternal{}, err
 	}
+	defer logger.ClearVar(req)
 
 	var result TheMovieDBTVExternal
 	err = t.Client.DoJson(req, &result)
@@ -267,6 +275,7 @@ func (t *tmdbClient) GetTVExternal(id int) (TheMovieDBTVExternal, error) {
 	if err != nil {
 		return TheMovieDBTVExternal{}, err
 	}
+	defer logger.ClearVar(req)
 
 	var result TheMovieDBTVExternal
 	err = t.Client.DoJson(req, &result)

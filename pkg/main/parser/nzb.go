@@ -39,13 +39,14 @@ type NzbwithprioJson struct {
 
 func (entry *Nzbwithprio) Filter_regex_nzbs(template_regex string, title string) (bool, string) {
 	regexconfig := config.ConfigGet("regex_" + template_regex).Data.(config.RegexConfig)
+	var teststrwanted []string
+	defer logger.ClearVar(&teststrwanted)
 	for idxregex := range regexconfig.Rejected {
 		if !config.RegexCheck(regexconfig.Rejected[idxregex]) {
 			continue
 		}
-		teststrwanted := config.RegexGet(regexconfig.Rejected[idxregex]).FindStringSubmatch(entry.WantedTitle)
+		teststrwanted = config.RegexGet(regexconfig.Rejected[idxregex]).FindStringSubmatch(entry.WantedTitle)
 		if len(teststrwanted) >= 1 {
-			teststrwanted = nil
 			//Regex is in title - skip test
 			continue
 		}
@@ -54,7 +55,6 @@ func (entry *Nzbwithprio) Filter_regex_nzbs(template_regex string, title string)
 			teststrwanted = config.RegexGet(regexconfig.Rejected[idxregex]).FindStringSubmatch(entry.WantedAlternates[idxwanted])
 			if len(teststrwanted) >= 1 {
 				breakfor = true
-				teststrwanted = nil
 				break
 			}
 		}
@@ -64,26 +64,24 @@ func (entry *Nzbwithprio) Filter_regex_nzbs(template_regex string, title string)
 		}
 		teststrwanted = config.RegexGet(regexconfig.Rejected[idxregex]).FindStringSubmatch(title)
 		if len(teststrwanted) >= 1 {
-			teststrwanted = nil
 			logger.Log.Debug("Skipped - Regex rejected: ", title, " Regex ", regexconfig.Rejected[idxregex])
 			return true, regexconfig.Rejected[idxregex]
 		}
-		teststrwanted = nil
 	}
 	requiredmatched := false
+	var teststr []string
+	defer logger.ClearVar(&teststr)
 	for idxregex := range regexconfig.Required {
 		if !config.RegexCheck(regexconfig.Required[idxregex]) {
 			continue
 		}
 
-		teststr := config.RegexGet(regexconfig.Required[idxregex]).FindStringSubmatch(title)
+		teststr = config.RegexGet(regexconfig.Required[idxregex]).FindStringSubmatch(title)
 		if len(teststr) >= 1 {
-			logger.Log.Debug("Regex required matched: ", title, " Regex ", regexconfig.Required[idxregex])
+			//logger.Log.Debug("Regex required matched: ", title, " Regex ", regexconfig.Required[idxregex])
 			requiredmatched = true
-			teststr = nil
 			break
 		}
-		teststr = nil
 	}
 	if len(regexconfig.Required) >= 1 && !requiredmatched {
 		logger.Log.Debug("Skipped - required not matched: ", title)

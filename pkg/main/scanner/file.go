@@ -186,7 +186,7 @@ func GetFilesDir(rootpath string, pathcfgstr string) ([]string, error) {
 	return nil, errors.New("no files")
 }
 
-func GetFilesDirNewOld(rootpath string, pathcfgstr string) (filesWanted logger.StringSet, filesFound logger.StringSet, err error) {
+func GetFilesDirNewOld(configTemplate string, rootpath string, pathcfgstr string) (filesWanted logger.StringSet, filesFound logger.StringSet, err error) {
 	pathcfg := config.PathsConfig{}
 	if len(pathcfgstr) > 1 {
 		pathcfg = config.ConfigGet(pathcfgstr).Data.(config.PathsConfig)
@@ -195,13 +195,25 @@ func GetFilesDirNewOld(rootpath string, pathcfgstr string) (filesWanted logger.S
 		return logger.StringSet{}, logger.StringSet{}, errors.New("no general")
 	}
 
-	filesHave := logger.NewStringSetExactSize(database.CountRowsStaticNoError("Select (Select count(DISTINCT location) FROM movie_files)+(Select Count(DISTINCT location) FROM serie_episode_files)"))
+	rootpathlike := rootpath + "%"
+	var filesHave logger.StringSet
 	defer filesHave.Clear()
-	for _, file := range database.QueryStaticStringArray("Select DISTINCT location FROM movie_files union Select DISTINCT location FROM serie_episode_files", "Select (Select count(DISTINCT location) FROM movie_files)+(Select Count(DISTINCT location) FROM serie_episode_files)") {
-		if file == "" {
-			continue
+	if strings.HasPrefix(configTemplate, "movie") {
+		filesHave = logger.NewStringSetExactSize(database.CountRowsStaticNoError("Select count(id) FROM movie_files where location like ?", rootpathlike))
+		for _, file := range database.QueryStaticStringArray("Select DISTINCT location FROM movie_files where location like ?", "Select count(id) FROM movie_files where location like ?", rootpathlike) {
+			if file == "" {
+				continue
+			}
+			filesHave.Add(file)
 		}
-		filesHave.Add(file)
+	} else {
+		filesHave = logger.NewStringSetExactSize(database.CountRowsStaticNoError("Select count(id) FROM serie_episode_files where location like ?", rootpathlike))
+		for _, file := range database.QueryStaticStringArray("Select DISTINCT location FROM serie_episode_files where location like ?", "Select count(id) FROM serie_episode_files where location like ?", rootpathlike) {
+			if file == "" {
+				continue
+			}
+			filesHave.Add(file)
+		}
 	}
 
 	mapfiletypes := logger.NewStringSetExactSize(len(pathcfg.AllowedVideoExtensions))

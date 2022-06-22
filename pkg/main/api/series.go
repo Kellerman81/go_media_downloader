@@ -15,7 +15,6 @@ import (
 	"github.com/Kellerman81/go_media_downloader/searcher"
 	"github.com/Kellerman81/go_media_downloader/utils"
 	"github.com/gin-gonic/gin"
-	"github.com/shomali11/parallelizer"
 )
 
 func AddSeriesRoutes(routerseries *gin.RouterGroup) {
@@ -1050,11 +1049,6 @@ func apiSeriesEpisodeSearchDownload(c *gin.Context) {
 
 	serie, _ := database.GetSeries(database.Query{Where: "id = ?", WhereArgs: []interface{}{serieepi.SerieID}})
 
-	searchtype := "missing"
-	if !serieepi.Missing {
-		searchtype = "upgrade"
-	}
-
 	var nzb parser.Nzbwithprio
 	if err := c.ShouldBindJSON(&nzb); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -1069,7 +1063,7 @@ func apiSeriesEpisodeSearchDownload(c *gin.Context) {
 		cfg_serie := config.ConfigGet(configTemplate.Name).Data.(config.MediaTypeConfig)
 		for idxlist := range cfg_serie.Lists {
 			if strings.EqualFold(cfg_serie.Lists[idxlist].Name, serie.Listname) {
-				downloadnow := downloader.NewDownloader(configTemplate.Name, searchtype)
+				downloadnow := downloader.NewDownloader(configTemplate.Name)
 				downloadnow.SetSeriesEpisode(serieepi.ID)
 				downloadnow.DownloadNzb(nzb)
 				downloadnow.Close()
@@ -1093,8 +1087,7 @@ func apiSeriesClearHistoryName(c *gin.Context) {
 		return
 	}
 	name := "serie_" + c.Param("name")
-	swg := parallelizer.NewGroup(parallelizer.WithPoolSize(1))
-	swg.Add(func() { utils.Series_single_jobs("clearhistory", name, "", true) })
+	utils.Series_single_jobs("clearhistory", name, "", true)
 	c.JSON(http.StatusOK, "started")
 }
 
