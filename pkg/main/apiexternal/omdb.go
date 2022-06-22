@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/Kellerman81/go_media_downloader/logger"
 	"github.com/Kellerman81/go_media_downloader/slidingwindow"
 	"golang.org/x/time/rate"
 )
@@ -70,6 +71,7 @@ func (o *omdbClient) GetMovie(imdbid string) (omDBMovie, error) {
 	if err != nil {
 		return omDBMovie{}, err
 	}
+	defer logger.ClearVar(req)
 	var result omDBMovie
 	err = o.Client.DoJson(req, &result)
 
@@ -90,6 +92,7 @@ func (o *omdbClient) SearchMovie(title string, year string) (OmDBMovieSearchGlob
 	if err != nil {
 		return OmDBMovieSearchGlobal{}, err
 	}
+	defer logger.ClearVar(req)
 	var result OmDBMovieSearchGlobal
 
 	err = o.Client.DoJson(req, &result)

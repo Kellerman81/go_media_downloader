@@ -83,7 +83,7 @@ func (c *RLHTTPClient) DoXml(req *http.Request, xmlobj interface{}) error {
 	}
 
 	d := xml.NewDecoder(resp.Body)
-	defer logger.ClearVar(&d)
+	defer logger.ClearVar(d)
 	d.CharsetReader = charset.NewReaderLabel
 	d.Strict = false
 	errd := d.Decode(&xmlobj)

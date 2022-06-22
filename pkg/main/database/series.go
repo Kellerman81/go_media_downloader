@@ -355,6 +355,7 @@ func (serie *Dbserie) GetTitles(configTemplate string, queryimdb bool, querytrak
 	var processed []string
 	defer logger.ClearVar(&processed)
 	configEntry := config.ConfigGet(configTemplate).Data.(config.MediaTypeConfig)
+	var regionok, foundentry bool
 	if queryimdb {
 		queryimdbid := serie.ImdbID
 		if !strings.HasPrefix(serie.ImdbID, "tt") {
@@ -363,14 +364,14 @@ func (serie *Dbserie) GetTitles(configTemplate string, queryimdb bool, querytrak
 		imdbakadata, _ := QueryImdbAka(Query{Where: "tconst = ? COLLATE NOCASE", WhereArgs: []interface{}{queryimdbid}})
 		defer logger.ClearVar(&imdbakadata)
 		for idxaka := range imdbakadata {
-			regionok := false
+			regionok = false
 			for idxlang := range configEntry.Metadata_title_languages {
 				if strings.EqualFold(configEntry.Metadata_title_languages[idxlang], imdbakadata[idxaka].Region) {
 					regionok = true
 					break
 				}
 			}
-			logger.Log.Debug("Title: ", imdbakadata[idxaka].Title, " Region: ", imdbakadata[idxaka].Region, " ok: ", regionok)
+			//logger.Log.Debug("Title: ", imdbakadata[idxaka].Title, " Region: ", imdbakadata[idxaka].Region, " ok: ", regionok)
 			if !regionok && len(configEntry.Metadata_title_languages) >= 1 {
 				continue
 			}
@@ -387,18 +388,18 @@ func (serie *Dbserie) GetTitles(configTemplate string, queryimdb bool, querytrak
 		defer logger.ClearVar(&traktaliases)
 		if err == nil {
 			for idxalias := range traktaliases {
-				regionok := false
+				regionok = false
 				for idxlang := range configEntry.Metadata_title_languages {
 					if strings.EqualFold(configEntry.Metadata_title_languages[idxlang], traktaliases[idxalias].Country) {
 						regionok = true
 						break
 					}
 				}
-				logger.Log.Debug("Title: ", traktaliases[idxalias].Title, " Region: ", traktaliases[idxalias].Country, " ok: ", regionok)
+				//logger.Log.Debug("Title: ", traktaliases[idxalias].Title, " Region: ", traktaliases[idxalias].Country, " ok: ", regionok)
 				if !regionok && len(configEntry.Metadata_title_languages) >= 1 {
 					continue
 				}
-				foundentry := false
+				foundentry = false
 				for idxproc := range processed {
 					if processed[idxproc] == traktaliases[idxalias].Title {
 						foundentry = true

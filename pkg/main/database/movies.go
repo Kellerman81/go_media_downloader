@@ -217,6 +217,7 @@ func (movie *Dbmovie) GetTitles(configTemplate string, queryimdb bool, querytmdb
 
 	var processed []string
 	defer logger.ClearVar(&processed)
+	var regionok, foundentry bool
 	if queryimdb {
 		queryimdbid := movie.ImdbID
 		if !strings.HasPrefix(movie.ImdbID, "tt") {
@@ -225,14 +226,14 @@ func (movie *Dbmovie) GetTitles(configTemplate string, queryimdb bool, querytmdb
 		imdbakadata, _ := QueryImdbAka(Query{Where: "tconst = ? COLLATE NOCASE", WhereArgs: []interface{}{queryimdbid}})
 		defer logger.ClearVar(&imdbakadata)
 		for idxaka := range imdbakadata {
-			regionok := false
+			regionok = false
 			for idxlang := range configEntry.Metadata_title_languages {
 				if strings.EqualFold(configEntry.Metadata_title_languages[idxlang], imdbakadata[idxaka].Region) {
 					regionok = true
 					break
 				}
 			}
-			logger.Log.Debug("Title: ", imdbakadata[idxaka].Title, " Region: ", imdbakadata[idxaka].Region, " ok: ", regionok)
+			//logger.Log.Debug("Title: ", imdbakadata[idxaka].Title, " Region: ", imdbakadata[idxaka].Region, " ok: ", regionok)
 			if !regionok && len(configEntry.Metadata_title_languages) >= 1 {
 				continue
 			}
@@ -240,24 +241,24 @@ func (movie *Dbmovie) GetTitles(configTemplate string, queryimdb bool, querytmdb
 			processed = append(processed, imdbakadata[idxaka].Title)
 		}
 	}
-	if querytmdb {
+	if querytmdb && movie.MoviedbID != 0 {
 		moviedbtitles, foundtitles := apiexternal.TmdbApi.GetMovieTitles(movie.MoviedbID)
 		defer logger.ClearVar(&moviedbtitles)
 		if foundtitles == nil {
 			for idx := range moviedbtitles.Titles {
-				regionok := false
+				regionok = false
 				for idxlang := range configEntry.Metadata_title_languages {
 					if strings.EqualFold(configEntry.Metadata_title_languages[idxlang], moviedbtitles.Titles[idx].Iso31661) {
 						regionok = true
 						break
 					}
 				}
-				logger.Log.Debug("Title: ", moviedbtitles.Titles[idx].Title, " Region: ", moviedbtitles.Titles[idx].Iso31661, " ok: ", regionok)
+				//logger.Log.Debug("Title: ", moviedbtitles.Titles[idx].Title, " Region: ", moviedbtitles.Titles[idx].Iso31661, " ok: ", regionok)
 				if !regionok && len(configEntry.Metadata_title_languages) >= 1 {
 					continue
 				}
 
-				foundentry := false
+				foundentry = false
 				for idxproc := range processed {
 					if processed[idxproc] == moviedbtitles.Titles[idx].Title {
 						foundentry = true
@@ -280,19 +281,19 @@ func (movie *Dbmovie) GetTitles(configTemplate string, queryimdb bool, querytmdb
 		defer logger.ClearVar(&traktaliases)
 		if err == nil {
 			for idxalias := range traktaliases {
-				regionok := false
+				regionok = false
 				for idxlang := range configEntry.Metadata_title_languages {
 					if strings.EqualFold(configEntry.Metadata_title_languages[idxlang], traktaliases[idxalias].Country) {
 						regionok = true
 						break
 					}
 				}
-				logger.Log.Debug("Title: ", traktaliases[idxalias].Title, " Region: ", traktaliases[idxalias].Country, " ok: ", regionok)
+				//logger.Log.Debug("Title: ", traktaliases[idxalias].Title, " Region: ", traktaliases[idxalias].Country, " ok: ", regionok)
 				if !regionok && len(configEntry.Metadata_title_languages) >= 1 {
 					continue
 				}
 
-				foundentry := false
+				foundentry = false
 				for idxproc := range processed {
 					if processed[idxproc] == traktaliases[idxalias].Title {
 						foundentry = true
@@ -322,6 +323,7 @@ func (movie *Dbmovie) GetImdbMetadata(overwrite bool) {
 		queryimdbid = "tt" + movie.ImdbID
 	}
 	imdbdata, imdbdataerr := GetImdbTitle(Query{Where: "tconst = ? COLLATE NOCASE", WhereArgs: []interface{}{queryimdbid}})
+	defer logger.ClearVar(&imdbdata)
 	if imdbdataerr == nil {
 		if movie.Title == "" || overwrite {
 			movie.Title = imdbdata.PrimaryTitle
@@ -349,7 +351,7 @@ func (movie *Dbmovie) GetImdbMetadata(overwrite bool) {
 		}
 	}
 	imdbratedata, imdbratedataerr := GetImdbRating(Query{Where: "tconst = ? COLLATE NOCASE", WhereArgs: []interface{}{queryimdbid}})
-
+	defer logger.ClearVar(&imdbratedata)
 	if imdbratedataerr == nil {
 		if movie.VoteAverage == 0 || movie.VoteAverage == 0.0 || overwrite {
 			movie.VoteAverage = imdbratedata.AverageRating
@@ -402,6 +404,7 @@ func (movie *Dbmovie) GetTmdbMetadata(overwrite bool) {
 					}
 					movie.Genres = genrebuilder.String()
 					genrebuilder.Reset()
+					logger.ClearVar(&genrebuilder)
 				}
 				movie.OriginalLanguage = moviedbdetails.OriginalLanguage
 				if movie.OriginalTitle == "" || overwrite {
@@ -422,6 +425,7 @@ func (movie *Dbmovie) GetTmdbMetadata(overwrite bool) {
 				}
 				movie.SpokenLanguages = languagebuilder.String()
 				languagebuilder.Reset()
+				logger.ClearVar(&languagebuilder)
 				movie.Status = moviedbdetails.Status
 				movie.Tagline = moviedbdetails.Tagline
 				if movie.VoteAverage == 0 || movie.VoteAverage == 0.0 || overwrite {
@@ -442,6 +446,7 @@ func (movie *Dbmovie) GetTmdbMetadata(overwrite bool) {
 					movie.FacebookID = moviedbexternal.FacebookID
 					movie.InstagramID = moviedbexternal.InstagramID
 					movie.TwitterID = moviedbexternal.TwitterID
+					logger.ClearVar(&moviedbexternal)
 				} else {
 					logger.Log.Warning("Externals for Movie not found for: ", movie.ImdbID)
 				}
@@ -517,6 +522,7 @@ func (movie *Dbmovie) GetTraktMetadata(overwrite bool) {
 			}
 			movie.Genres = genrebuilder.String()
 			genrebuilder.Reset()
+			logger.ClearVar(&genrebuilder)
 		}
 		if movie.VoteCount == 0 || overwrite {
 			movie.VoteCount = traktdetails.Votes
@@ -570,6 +576,8 @@ func (movie *Dbmovie) GetMetadata(queryimdb bool, querytmdb bool, queryomdb bool
 		}
 
 		imdbdata, imdbdataerr := GetImdbTitle(Query{Where: "tconst = ? COLLATE NOCASE", WhereArgs: []interface{}{queryimdbid}})
+
+		defer logger.ClearVar(&imdbdata)
 		if imdbdataerr == nil {
 			if movie.Title == "" {
 				movie.Title = imdbdata.PrimaryTitle
@@ -597,6 +605,8 @@ func (movie *Dbmovie) GetMetadata(queryimdb bool, querytmdb bool, queryomdb bool
 			}
 		}
 		imdbratedata, imdbratedataerr := GetImdbRating(Query{Where: "tconst = ? COLLATE NOCASE", WhereArgs: []interface{}{queryimdbid}})
+
+		defer logger.ClearVar(&imdbratedata)
 		if imdbratedataerr == nil {
 			if movie.VoteAverage == 0 || movie.VoteAverage == 0.0 {
 				movie.VoteAverage = imdbratedata.AverageRating
@@ -646,6 +656,8 @@ func (movie *Dbmovie) GetMetadata(queryimdb bool, querytmdb bool, queryomdb bool
 						}
 						movie.Genres = genrebuilder.String()
 						genrebuilder.Reset()
+
+						logger.ClearVar(&genrebuilder)
 					}
 					movie.OriginalLanguage = moviedbdetails.OriginalLanguage
 					if movie.OriginalTitle == "" {
@@ -666,6 +678,7 @@ func (movie *Dbmovie) GetMetadata(queryimdb bool, querytmdb bool, queryomdb bool
 					}
 					movie.SpokenLanguages = languagebuilder.String()
 					languagebuilder.Reset()
+					logger.ClearVar(&languagebuilder)
 					movie.Status = moviedbdetails.Status
 					movie.Tagline = moviedbdetails.Tagline
 					if movie.VoteAverage == 0 || movie.VoteAverage == 0.0 {
@@ -686,6 +699,7 @@ func (movie *Dbmovie) GetMetadata(queryimdb bool, querytmdb bool, queryomdb bool
 						movie.FacebookID = moviedbexternal.FacebookID
 						movie.InstagramID = moviedbexternal.InstagramID
 						movie.TwitterID = moviedbexternal.TwitterID
+						logger.ClearVar(&moviedbexternal)
 					} else {
 						logger.Log.Warning("Externals for Movie not found for: ", movie.ImdbID)
 					}
@@ -756,6 +770,7 @@ func (movie *Dbmovie) GetMetadata(queryimdb bool, querytmdb bool, queryomdb bool
 				}
 				movie.Genres = genrebuilder.String()
 				genrebuilder.Reset()
+				logger.ClearVar(&genrebuilder)
 			}
 			if movie.VoteCount == 0 {
 				movie.VoteCount = traktdetails.Votes

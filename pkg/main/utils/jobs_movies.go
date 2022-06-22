@@ -50,7 +50,7 @@ func jobImportMovieParseV2(file string, configTemplate string, listConfig string
 			return
 		}
 		m.Title = strings.Trim(m.Title, " ")
-		m.StripTitlePrefixPostfix(list.Template_quality)
+		parser.StripTitlePrefixPostfix(&m, list.Template_quality)
 		m.Resolution = strings.ToLower(m.Resolution)
 		m.Audio = strings.ToLower(m.Audio)
 		m.Codec = strings.ToLower(m.Codec)
@@ -140,7 +140,7 @@ func getMissingIMDBMoviesV2(configTemplate string, listConfig string) ([]databas
 		}
 
 		defer resp.Body.Close()
-		defer logger.ClearVar(&resp)
+		defer logger.ClearVar(resp)
 
 		dbmovies, _ := database.QueryStaticColumnsOneStringOneInt("Select imdb_id, id from dbmovies", "Select count(id) from dbmovies")
 		movies, _ := database.QueryStaticColumnsOneInt("Select dbmovie_id from movies where listname = ?", "Select count(id) from movies where listname = ?", listConfig)
@@ -148,7 +148,7 @@ func getMissingIMDBMoviesV2(configTemplate string, listConfig string) ([]databas
 		defer logger.ClearVar(&dbmovies)
 
 		parserimdb := csv.NewReader(bufio.NewReader(resp.Body))
-		defer logger.ClearVar(&parserimdb)
+		defer logger.ClearVar(parserimdb)
 		parserimdb.ReuseRecord = true
 		var d []database.Dbmovie
 		defer logger.ClearVar(&d)
@@ -270,16 +270,16 @@ func Importnewmoviessingle(configTemplate string, listConfig string) {
 	defer logger.ClearVar(&dbmovies)
 	defer logger.ClearVar(&movies)
 	swg := parallelizer.NewGroup(parallelizer.WithPoolSize(cfg_general.WorkerMetadata))
-	var movie database.Dbmovie
 	var foundmovie, founddbmovie bool
 	var id int
+	var imdbID string
 	for idxmovie := range feed.Movies {
-		movie = feed.Movies[idxmovie]
+		imdbID = feed.Movies[idxmovie].ImdbID
 		founddbmovie = false
 		foundmovie = false
 		id = 0
 		for idxdbmovie := range dbmovies {
-			if dbmovies[idxdbmovie].Str == movie.ImdbID {
+			if dbmovies[idxdbmovie].Str == imdbID {
 				id = dbmovies[idxdbmovie].Num
 				founddbmovie = true
 				break
@@ -307,9 +307,9 @@ func Importnewmoviessingle(configTemplate string, listConfig string) {
 			}
 		}
 		if !founddbmovie || !foundmovie {
-			logger.Log.Info("Import Movie ", idxmovie, " imdb: ", movie.ImdbID)
+			logger.Log.Info("Import Movie ", idxmovie, " imdb: ", imdbID)
 			swg.Add(func() {
-				importfeed.JobImportMovies(movie, configTemplate, listConfig)
+				importfeed.JobImportMovies(imdbID, configTemplate, listConfig)
 			})
 		}
 	}
@@ -435,7 +435,7 @@ func RefreshMovies() {
 }
 
 func RefreshMovie(id string) {
-	dbmovies, _ := database.QueryStaticColumnsOneString("Select imdb_id from dbmovies where id = ?", "Select count(id) from dbmovies where id = ?", id)
+	dbmovies, _ := database.QueryStaticColumnsOneString("Select imdb_id from dbmovies where id = ?", "", id)
 	defer logger.ClearVar(&dbmovies)
 	for idxmovie, val := range dbmovies {
 		logger.Log.Info("Refresh Movie ", idxmovie, " of ", len(dbmovies), " imdb: ", val.Str)

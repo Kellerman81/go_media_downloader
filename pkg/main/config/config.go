@@ -127,6 +127,7 @@ type GeneralConfig struct {
 	FfprobePath                        string   `koanf:"ffprobe_path"`
 	FailedIndexerBlockTime             int      `koanf:"failed_indexer_block_time"`
 	MaxDatabaseBackups                 int      `koanf:"max_database_backups"`
+	DisableVariableCleanup             bool     `koanf:"disable_variable_cleanup"`
 }
 
 type ImdbConfig struct {
@@ -385,9 +386,9 @@ type SchedulerConfig struct {
 
 func LoadSerie(filepath string) MainSerieConfig {
 	var k = koanf.New(".")
-	defer logger.ClearVar(&k)
+	defer logger.ClearVar(k)
 	f := file.Provider(filepath)
-	defer logger.ClearVar(&f)
+	defer logger.ClearVar(f)
 	// if strings.Contains(filepath, ".json") {
 	// 	err := k.Load(f, json.Parser())
 	// 	if err != nil {
@@ -428,10 +429,10 @@ const Configfile string = "./config/config.toml"
 
 func LoadCfgDB(configfile string) error {
 	var k = koanf.New(".")
-	defer logger.ClearVar(&k)
+	defer logger.ClearVar(k)
 
 	f := file.Provider(configfile)
-	defer logger.ClearVar(&f)
+	defer logger.ClearVar(f)
 
 	// if strings.Contains(configfile, "json") {
 	// 	err := k.Load(f, json.Parser())
@@ -478,7 +479,7 @@ func LoadCfgDB(configfile string) error {
 
 func LoadCfgDataDB(f file.File, parser string) {
 	var k = koanf.New(".")
-	defer logger.ClearVar(&k)
+	defer logger.ClearVar(k)
 
 	// if strings.Contains(parser, "json") {
 	// 	err := k.Load(f, json.Parser())
@@ -504,11 +505,8 @@ func LoadCfgDataDB(f file.File, parser string) {
 	if k.Sprint() == "" {
 		fmt.Println("Error loading config. Config Empty")
 	}
-
-	cfg := &pudge.Config{
-		SyncInterval: 0} // every second fsync
-
-	configDB, _ := pudge.Open("./databases/config.db", cfg)
+	configDB, _ := pudge.Open("./databases/config.db", &pudge.Config{
+		SyncInterval: 0})
 	defer configDB.Close()
 	//config.CacheConfig()
 	//scanner.CleanUpFolder("./backup", 10)
@@ -616,24 +614,25 @@ func LoadCfgDataDB(f file.File, parser string) {
 			generalCache.Name = outrgx[idx].Name
 			generalCache.Rejected = outrgx[idx].Rejected
 			generalCache.Required = outrgx[idx].Required
+			var reg *regexp.Regexp
+			var errreg error
 			for _, rowtitle := range outrgx[idx].Rejected {
 				if !RegexCheck(rowtitle) {
-					reg, errreg := regexp.Compile(rowtitle)
+					reg, errreg = regexp.Compile(rowtitle)
 					if errreg == nil {
 						RegexAdd(rowtitle, *reg)
 					}
-					reg = nil
 				}
 			}
 			for _, rowtitle := range outrgx[idx].Required {
 				if !RegexCheck(rowtitle) {
-					reg, errreg := regexp.Compile(rowtitle)
+					reg, errreg = regexp.Compile(rowtitle)
 					if errreg == nil {
 						RegexAdd(rowtitle, *reg)
 					}
-					reg = nil
 				}
 			}
+			reg = nil
 			ConfigEntries = append(ConfigEntries, Conf{Name: "regex_" + outrgx[idx].Name, Data: generalCache})
 			if errrgxset != nil {
 				logger.Log.Errorln("Error regex setting db:", errrgxset)
@@ -708,10 +707,8 @@ func UpdateCfg(configIn []Conf) {
 func UpdateCfgEntry(configIn Conf) {
 	configfound := false
 
-	cfg := &pudge.Config{
-		SyncInterval: 0} // every second fsync
-
-	configDB, _ := pudge.Open("./databases/config.db", cfg)
+	configDB, _ := pudge.Open("./databases/config.db", &pudge.Config{
+		SyncInterval: 0})
 	defer configDB.Close()
 	for idx := range ConfigEntries {
 		if ConfigEntries[idx].Name == configIn.Name {
@@ -746,11 +743,8 @@ func DeleteCfgEntry(name string) {
 		}
 	}
 	ConfigEntries = new
-
-	cfg := &pudge.Config{
-		SyncInterval: 0} // every second fsync
-
-	configDB, _ := pudge.Open("./databases/config.db", cfg)
+	configDB, _ := pudge.Open("./databases/config.db", &pudge.Config{
+		SyncInterval: 0})
 	defer configDB.Close()
 
 	configDB.Delete(name)
@@ -759,11 +753,8 @@ func DeleteCfgEntry(name string) {
 }
 
 func ClearCfg() {
-
-	cfg := &pudge.Config{
-		SyncInterval: 0} // every second fsync
-
-	configDB, _ := pudge.Open("./databases/config.db", cfg)
+	configDB, _ := pudge.Open("./databases/config.db", &pudge.Config{
+		SyncInterval: 0})
 	defer configDB.Close()
 
 	configDB.DeleteFile()
@@ -832,12 +823,10 @@ func ClearCfg() {
 }
 func WriteCfg() {
 	var k = koanf.New(".")
-	defer logger.ClearVar(&k)
+	defer logger.ClearVar(k)
 
-	cfg := &pudge.Config{
-		SyncInterval: 0} // every second fsync
-
-	configDB, _ := pudge.Open("./databases/config.db", cfg)
+	configDB, _ := pudge.Open("./databases/config.db", &pudge.Config{
+		SyncInterval: 0})
 	defer configDB.Close()
 
 	var bla MainConfigOut
@@ -914,6 +903,17 @@ func MedialistConfigFilterByListName(list interface{}, listname string) []MediaL
 		}
 	}
 	return templists
+}
+
+func QualityIndexerByQualityAndTemplate(quality string, indexerTemplate string) *QualityIndexerConfig {
+	if ConfigCheck("quality_" + quality) {
+		for _, indexer := range ConfigGet("quality_" + quality).Data.(QualityConfig).Indexer {
+			if indexer.Template_indexer == indexerTemplate {
+				return &indexer
+			}
+		}
+	}
+	return nil
 }
 
 func MedialistConfigToInterfaceArray(list interface{}) []interface{} {

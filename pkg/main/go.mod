@@ -8,7 +8,7 @@ require (
 	github.com/GoAdminGroup/themes v0.0.43
 	github.com/andrewstuart/go-nzb v0.0.0-20151130213409-4af25f1cccf1 //access nzbget
 	github.com/gdm85/go-libdeluge v0.5.6 //access deluge
-	github.com/gin-gonic/gin v1.7.7 //webapi
+	github.com/gin-gonic/gin v1.8.0 //webapi
 	github.com/golang-migrate/migrate/v4 v4.15.2 //initialize db
 	github.com/google/uuid v1.3.0 //scheduler
 	github.com/gregdel/pushover v1.1.0 //notification
@@ -25,7 +25,7 @@ require (
 	github.com/shomali11/parallelizer v0.0.0-20210506023428-ed2dd4732c78
 	github.com/sirupsen/logrus v1.8.1 //logger
 	github.com/toorop/gin-logrus v0.0.0-20210225092905-2c785434f26f //log gin stuff to logfile also
-	golang.org/x/net v0.0.0-20220526153639-5463443f8c37 //newznab uses that
+	golang.org/x/net v0.0.0-20220531201128-c960675eff93 //newznab uses that
 	golang.org/x/oauth2 v0.0.0-20220524215830-622c5d57e401 //used for trakt api
 	golang.org/x/text v0.3.7 //used for sluggify
 	golang.org/x/time v0.0.0-20220411224347-583f2d630306 //Needed for rate limiting for api calls
@@ -83,8 +83,10 @@ require (
 	golang.org/x/tools v0.1.10 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/protobuf v1.28.0 // indirect
-	gopkg.in/ini.v1 v1.66.4 // indirect
+	gopkg.in/ini.v1 v1.66.6 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	xorm.io/builder v0.3.10 // indirect
 	xorm.io/xorm v1.3.0 // indirect
 )
+
+require github.com/pelletier/go-toml/v2 v2.0.1 // indirect

@@ -189,7 +189,7 @@ func jobImportSeriesParseV2(file string, updatemissing bool, configTemplate stri
 }
 
 func RefreshSerie(id string) {
-	dbseries, _ := database.QueryStaticColumnsOneInt("Select id from dbseries where id = ?", "Select count(id) from dbseries where id = ?", id)
+	dbseries, _ := database.QueryStaticColumnsOneInt("Select id from dbseries where id = ?", "", id)
 	defer logger.ClearVar(&dbseries)
 	for idxserie, serie := range dbseries {
 		logger.Log.Info("Refresh Serie ", idxserie, " of ", len(dbseries), " num: ", serie.Num)
@@ -355,8 +355,10 @@ func Series_single_jobs(job string, configTemplate string, listname string, forc
 	} else {
 		logger.Log.Info("Skipped Job Type not matched: ", job, " for ", configTemplate)
 	}
-	dbid, _ := dbresult.LastInsertId()
-	database.UpdateColumn("job_histories", "ended", time.Now(), database.Query{Where: "id = ?", WhereArgs: []interface{}{dbid}})
+	if dbresult != nil {
+		dbid, _ := dbresult.LastInsertId()
+		database.UpdateColumn("job_histories", "ended", time.Now(), database.Query{Where: "id = ?", WhereArgs: []interface{}{dbid}})
+	}
 	logger.Log.Info("Ended Job: ", job, " for ", configTemplate)
 	debug.FreeOSMemory()
 }

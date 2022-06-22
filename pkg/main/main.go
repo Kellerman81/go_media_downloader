@@ -70,6 +70,7 @@ func main() {
 		LogFileCount: cfg_general.LogFileCount,
 		LogCompress:  cfg_general.LogCompress,
 	})
+	logger.DisableVariableCleanup = cfg_general.DisableVariableCleanup
 	logger.Log.Infoln("Starting go_media_downloader")
 	logger.Log.Infoln("Version: " + version + " " + githash)
 	logger.Log.Infoln("Build Date: " + buildstamp)

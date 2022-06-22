@@ -11,48 +11,49 @@ import (
 	"github.com/Kellerman81/go_media_downloader/logger"
 )
 
-func JobImportMovies(dbmovie database.Dbmovie, configTemplate string, listConfig string) {
-	jobName := dbmovie.ImdbID
+func JobImportMovies(imdbid string, configTemplate string, listConfig string) {
+	jobName := imdbid
 	if jobName == "" {
 		jobName = listConfig
 	}
-	defer importJobRunning.Remove(jobName)
 	if importJobRunning.Contains(jobName) {
 		logger.Log.Debug("Job already running: ", jobName)
 		return
 	} else {
 		importJobRunning.Add(jobName)
+		defer importJobRunning.Remove(jobName)
 	}
 
-	cdbmovie, errdbmovie := database.CountRowsStatic("Select count(id) from dbmovies where imdb_id = ?", dbmovie.ImdbID)
+	cdbmovie, errdbmovie := database.CountRowsStatic("Select count(id) from dbmovies where imdb_id = ?", imdbid)
 	if errdbmovie != nil {
 		return
 	}
+	var dbmovie database.Dbmovie
+	dbmovie.ImdbID = imdbid
 	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
 	list := config.ConfigGetMediaListConfig(configTemplate, listConfig)
 	if cdbmovie == 0 {
-		logger.Log.Debug("Get Movie Metadata: ", dbmovie.ImdbID)
+		logger.Log.Debug("Get Movie Metadata: ", imdbid)
 
 		if !config.ConfigCheck("general") {
 			return
 		}
-
 		if len(cfg_general.MovieMetaSourcePriority) >= 1 {
 			for idxmeta := range cfg_general.MovieMetaSourcePriority {
 				if strings.EqualFold(cfg_general.MovieMetaSourcePriority[idxmeta], "imdb") {
-					logger.Log.Debug("Get Movie Metadata - imdb: ", dbmovie.ImdbID)
+					logger.Log.Debug("Get Movie Metadata - imdb: ", imdbid)
 					dbmovie.GetImdbMetadata(false)
 				}
 				if strings.EqualFold(cfg_general.MovieMetaSourcePriority[idxmeta], "tmdb") {
-					logger.Log.Debug("Get Movie Metadata - tmdb: ", dbmovie.ImdbID)
+					logger.Log.Debug("Get Movie Metadata - tmdb: ", imdbid)
 					dbmovie.GetTmdbMetadata(false)
 				}
 				if strings.EqualFold(cfg_general.MovieMetaSourcePriority[idxmeta], "omdb") {
-					logger.Log.Debug("Get Movie Metadata - omdb: ", dbmovie.ImdbID)
+					logger.Log.Debug("Get Movie Metadata - omdb: ", imdbid)
 					dbmovie.GetOmdbMetadata(false)
 				}
 				if strings.EqualFold(cfg_general.MovieMetaSourcePriority[idxmeta], "trakt") {
-					logger.Log.Debug("Get Movie Metadata - trakt: ", dbmovie.ImdbID)
+					logger.Log.Debug("Get Movie Metadata - trakt: ", imdbid)
 					dbmovie.GetTraktMetadata(false)
 				}
 			}
@@ -248,18 +249,16 @@ func AllowMovieImport(imdb string, listTemplate string) bool {
 	return true
 }
 func JobReloadMovies(imdb string, configTemplate string, listConfig string) {
-	dbmovie, _ := database.GetDbmovie(database.Query{Where: "imdb_id = ?", WhereArgs: []interface{}{imdb}})
-	defer logger.ClearVar(&dbmovie)
-	jobName := dbmovie.ImdbID
+	jobName := imdb
 	if jobName == "" {
 		jobName = listConfig
 	}
-	defer importJobRunning.Remove(jobName)
 	if importJobRunning.Contains(jobName) {
 		logger.Log.Debug("Job already running: ", jobName)
 		return
 	} else {
 		importJobRunning.Add(jobName)
+		defer importJobRunning.Remove(jobName)
 	}
 	if !config.ConfigCheck("general") {
 		return
@@ -270,12 +269,10 @@ func JobReloadMovies(imdb string, configTemplate string, listConfig string) {
 		return
 	}
 
-	var err error
-	dbmovie, err = database.GetDbmovie(database.Query{Where: "imdb_id = ?", WhereArgs: []interface{}{dbmovie.ImdbID}})
-	if err != nil {
-		return
-	}
-	logger.Log.Debug("Get Movie Metadata: ", dbmovie.ImdbID)
+	logger.Log.Debug("Get Movie Metadata: ", imdb)
+	dbmovie, _ := database.GetDbmovie(database.Query{Where: "imdb_id = ?", WhereArgs: []interface{}{imdb}})
+	defer logger.ClearVar(&dbmovie)
+
 	if len(cfg_general.MovieMetaSourcePriority) >= 1 {
 		for idxmeta := range cfg_general.MovieMetaSourcePriority {
 			if strings.EqualFold(cfg_general.MovieMetaSourcePriority[idxmeta], "imdb") {
@@ -307,9 +304,12 @@ func JobReloadMovies(imdb string, configTemplate string, listConfig string) {
 	defer logger.ClearVar(&movies)
 
 	var getconfigentry config.MediaTypeConfig //:= config.ConfigGet(configTemplate).Data.(config.MediaTypeConfig)
+	defer logger.ClearVar(&getconfigentry)
+
 	if len(movies) >= 1 {
 		var listfound bool
 		var cfg_movie config.MediaTypeConfig
+		defer logger.ClearVar(&cfg_movie)
 		for _, idx := range config.ConfigGetPrefix("movie_") {
 			cfg_movie = config.ConfigGet(idx.Name).Data.(config.MediaTypeConfig)
 
@@ -560,22 +560,18 @@ func MovieGetListFilter(configTemplate string, dbid int, yearint int) (imdb stri
 	configEntry := config.ConfigGet(configTemplate).Data.(config.MediaTypeConfig)
 	var movies []database.Dbstatic_OneInt
 	defer logger.ClearVar(&movies)
-	var movieserr error
 
 	var found, found1 bool
 
-	for idxlist := range configEntry.Lists {
-		movies, movieserr = database.QueryStaticColumnsOneInt("Select id from movies where dbmovie_id = ? and listname = ? COLLATE NOCASE", "Select count(id) from movies where dbmovie_id = ? and listname = ? COLLATE NOCASE", dbid, configEntry.Lists[idxlist].Name)
-		if movieserr != nil {
-			continue
-		}
-		if len(movies) >= 1 {
-			logger.Log.Debug("Movie found with dbid: ", dbid, " and list: ", configEntry.Lists[idxlist].Name)
-			for idxmovie := range movies {
-				found, found1 = checkifdbmovieyearmatches(movies[idxmovie].Num, yearint)
+	foundmovies, _ := database.QueryStaticColumnsOneStringOneInt("Select listname, id from movies where dbmovie_id = ?", "Select count(id) from movies where dbmovie_id = ?", dbid)
+	defer logger.ClearVar(&foundmovies)
+	for listtestidx := range configEntry.Lists {
+		for listfoundidx := range foundmovies {
+			if configEntry.Lists[listtestidx].Name == foundmovies[listfoundidx].Str {
+				found, found1 = checkifdbmovieyearmatches(foundmovies[listfoundidx].Num, yearint)
 				if found || found1 {
 					imdb, _ = database.QueryColumnString("Select imdb_id from dbmovies where id = ?", dbid)
-					list = configEntry.Lists[idxlist].Name
+					list = foundmovies[listfoundidx].Str
 					return
 				}
 			}
@@ -660,12 +656,12 @@ func JobImportDbSeries(serieconfig config.SerieConfig, configTemplate string, li
 		jobName = listConfig
 	}
 
-	defer importJobRunning.Remove(jobName)
 	if importJobRunning.Contains(jobName) {
 		logger.Log.Debug("Job already running: ", jobName)
 		return
 	} else {
 		importJobRunning.Add(jobName)
+		defer importJobRunning.Remove(jobName)
 	}
 
 	var dbserie database.Dbserie
@@ -925,12 +921,12 @@ func JobReloadDbSeries(id uint, configTemplate string, listConfig string, checka
 	if jobName == "" {
 		jobName = listConfig
 	}
-	defer importJobRunning.Remove(jobName)
 	if importJobRunning.Contains(jobName) {
 		logger.Log.Debug("Job already running: ", jobName)
 		return
 	} else {
 		importJobRunning.Add(jobName)
+		defer importJobRunning.Remove(jobName)
 	}
 
 	logger.Log.Debug("DbSeries Add for: ", dbserie.ThetvdbID)

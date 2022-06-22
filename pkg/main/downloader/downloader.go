@@ -18,10 +18,10 @@ import (
 )
 
 type Downloadertype struct {
-	ConfigTemplate   string
-	Quality          string
-	SearchGroupType  string //series, movies
-	SearchActionType string //missing,upgrade,rss
+	ConfigTemplate  string
+	Quality         string
+	SearchGroupType string //series, movies
+	//SearchActionType string //missing,upgrade,rss
 
 	Nzb            parser.Nzbwithprio
 	Movie          database.Movie
@@ -42,10 +42,10 @@ type Downloadertype struct {
 func (d *Downloadertype) Close() {
 	d = nil
 }
-func NewDownloader(configTemplate string, searchActionType string) Downloadertype {
+func NewDownloader(configTemplate string) Downloadertype {
 	return Downloadertype{
-		ConfigTemplate:   configTemplate,
-		SearchActionType: searchActionType,
+		ConfigTemplate: configTemplate,
+		//SearchActionType: searchActionType,
 	}
 }
 func (d *Downloadertype) SetMovie(movieid uint) {

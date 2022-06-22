@@ -209,6 +209,7 @@ func (t *traktClient) GetMoviePopular(limit int) ([]TraktMovie, error) {
 	if err != nil {
 		return []TraktMovie{}, err
 	}
+	defer logger.ClearVar(req)
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("trakt-api-version", "2")
 	req.Header.Add("trakt-api-key", t.ApiKey)
@@ -236,6 +237,7 @@ func (t *traktClient) GetMovieTrending(limit int) ([]TraktMovie, error) {
 	if err != nil {
 		return []TraktMovie{}, err
 	}
+	defer logger.ClearVar(req)
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("trakt-api-version", "2")
 	req.Header.Add("trakt-api-key", t.ApiKey)
@@ -267,6 +269,7 @@ func (t *traktClient) GetMovieAnticipated(limit int) ([]TraktMovie, error) {
 	if err != nil {
 		return []TraktMovie{}, err
 	}
+	defer logger.ClearVar(req)
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("trakt-api-version", "2")
 	req.Header.Add("trakt-api-key", t.ApiKey)
@@ -293,6 +296,7 @@ func (t *traktClient) GetMovieAliases(movieid string) ([]traktMovieAliases, erro
 	if err != nil {
 		return []traktMovieAliases{}, err
 	}
+	defer logger.ClearVar(req)
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("trakt-api-version", "2")
 	req.Header.Add("trakt-api-key", t.ApiKey)
@@ -315,6 +319,7 @@ func (t *traktClient) GetMovie(movieid string) (traktMovieExtend, error) {
 	if err != nil {
 		return traktMovieExtend{}, err
 	}
+	defer logger.ClearVar(req)
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("trakt-api-version", "2")
 	req.Header.Add("trakt-api-key", t.ApiKey)
@@ -336,6 +341,7 @@ func (t *traktClient) GetSerie(movieid string) (traktSerieData, error) {
 	if err != nil {
 		return traktSerieData{}, err
 	}
+	defer logger.ClearVar(req)
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("trakt-api-version", "2")
 	req.Header.Add("trakt-api-key", t.ApiKey)
@@ -358,6 +364,7 @@ func (t *traktClient) GetSerieAliases(movieid string) ([]traktShowAliases, error
 	if err != nil {
 		return []traktShowAliases{}, err
 	}
+	defer logger.ClearVar(req)
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("trakt-api-version", "2")
 	req.Header.Add("trakt-api-key", t.ApiKey)
@@ -380,6 +387,7 @@ func (t *traktClient) GetSerieSeasons(movieid string) ([]traktSerieSeason, error
 	if err != nil {
 		return []traktSerieSeason{}, err
 	}
+	defer logger.ClearVar(req)
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("trakt-api-version", "2")
 	req.Header.Add("trakt-api-key", t.ApiKey)
@@ -402,6 +410,7 @@ func (t *traktClient) GetSerieSeasonEpisodes(movieid string, season int) ([]Trak
 	if err != nil {
 		return []TraktSerieSeasonEpisodes{}, err
 	}
+	defer logger.ClearVar(req)
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("trakt-api-version", "2")
 	req.Header.Add("trakt-api-key", t.ApiKey)
@@ -428,6 +437,7 @@ func (t *traktClient) GetUserList(username string, listname string, listtype str
 	if err != nil {
 		return []traktUserList{}, err
 	}
+	defer logger.ClearVar(req)
 	req.Header.Add("Content-Type", "application/json")
 	if t.Token.AccessToken != "" {
 		req.Header.Add("Authorization", "Bearer "+t.Token.AccessToken)
@@ -459,6 +469,7 @@ func (t *traktClient) GetSeriePopular(limit int) ([]TraktSerie, error) {
 	if err != nil {
 		return []TraktSerie{}, err
 	}
+	defer logger.ClearVar(req)
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("trakt-api-version", "2")
 	req.Header.Add("trakt-api-key", t.ApiKey)
@@ -487,6 +498,7 @@ func (t *traktClient) GetSerieTrending(limit int) ([]TraktSerie, error) {
 	if err != nil {
 		return []TraktSerie{}, err
 	}
+	defer logger.ClearVar(req)
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("trakt-api-version", "2")
 	req.Header.Add("trakt-api-key", t.ApiKey)
@@ -518,6 +530,7 @@ func (t *traktClient) GetSerieAnticipated(limit int) ([]TraktSerie, error) {
 	if err != nil {
 		return []TraktSerie{}, err
 	}
+	defer logger.ClearVar(req)
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("trakt-api-version", "2")
 	req.Header.Add("trakt-api-key", t.ApiKey)
@@ -566,6 +579,7 @@ func (t *traktClient) GetUserListAuth(username string, listname string, listtype
 	if err != nil {
 		return []traktUserList{}, err
 	}
+	defer logger.ClearVar(req)
 	req.Header.Add("Content-Type", "application/json")
 	if t.Token.AccessToken != "" {
 		req.Header.Add("Authorization", "Bearer "+t.Token.AccessToken)

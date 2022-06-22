@@ -27,6 +27,7 @@ func converttime(interval string) time.Duration {
 	}
 }
 func convertcron(interval string) string {
+	rand.Seed(time.Now().UnixNano())
 	if strings.Contains(interval, "d") {
 		h := strconv.Itoa(rand.Intn(24))
 		m := strconv.Itoa(rand.Intn(60))

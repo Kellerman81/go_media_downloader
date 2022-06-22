@@ -82,6 +82,7 @@ func GetVars() {
 
 	logger.Log.Infoln("Database Get Variables 1")
 	quali, _ := QueryQualities(Query{Where: "Type=1", OrderBy: "priority desc"})
+	defer logger.ClearVar(&quali)
 	logger.Log.Infoln("Database Get Variables 1-1")
 	Getresolutions = make([]QualitiesRegex, 0, len(quali))
 	for idx := range quali {
@@ -120,39 +121,37 @@ func GetVars() {
 
 	logger.Log.Infoln("Database Get Variables 5")
 	AudioStr = make([]string, 0, len(Getaudios)*2)
+	var splitted []string
+	defer logger.ClearVar(&splitted)
 	for idx := range Getaudios {
-		splitted := strings.Split(Getaudios[idx].Strings, ",")
+		splitted = strings.Split(Getaudios[idx].Strings, ",")
 		for idxsplit := range splitted {
 			AudioStr = append(AudioStr, splitted[idxsplit])
 		}
-		splitted = nil
 	}
 	logger.Log.Infoln("Database Get Variables 6")
 	CodecStr = make([]string, 0, len(Getcodecs)*2)
 	for idx := range Getcodecs {
-		splitted := strings.Split(Getcodecs[idx].Strings, ",")
+		splitted = strings.Split(Getcodecs[idx].Strings, ",")
 		for idxsplit := range splitted {
 			CodecStr = append(CodecStr, splitted[idxsplit])
 		}
-		splitted = nil
 	}
 	logger.Log.Infoln("Database Get Variables 7")
 	QualityStr = make([]string, 0, len(Getqualities)*7)
 	for idx := range Getqualities {
-		splitted := strings.Split(Getqualities[idx].Strings, ",")
+		splitted = strings.Split(Getqualities[idx].Strings, ",")
 		for idxsplit := range splitted {
 			QualityStr = append(QualityStr, splitted[idxsplit])
 		}
-		splitted = nil
 	}
 	logger.Log.Infoln("Database Get Variables 8")
 	ResolutionStr = make([]string, 0, len(Getresolutions)*4)
 	for idx := range Getresolutions {
-		splitted := strings.Split(Getresolutions[idx].Strings, ",")
+		splitted = strings.Split(Getresolutions[idx].Strings, ",")
 		for idxsplit := range splitted {
 			ResolutionStr = append(ResolutionStr, splitted[idxsplit])
 		}
-		splitted = nil
 	}
 }
 func Upgrade(c *gin.Context) {
@@ -187,7 +186,7 @@ func UpgradeDB() {
 		"file://./schema/db",
 		"sqlite3://./databases/data.db?cache=shared&_fk=1&_cslike=0",
 	)
-	defer logger.ClearVar(&m)
+	defer logger.ClearVar(m)
 	vers, _, _ := m.Version()
 	DBVersion = strconv.Itoa(int(vers))
 	if err != nil {
@@ -283,6 +282,7 @@ func RemoveOldDbBackups(max int) error {
 
 func oldDatabaseFiles(prefix string) ([]backupInfo, error) {
 	files, err := ioutil.ReadDir("./backup")
+	defer logger.ClearVar(&files)
 	if err != nil {
 		return nil, fmt.Errorf("can't read log file directory: %s", err)
 	}

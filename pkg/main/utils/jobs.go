@@ -147,7 +147,7 @@ func FillImdb() {
 		file = "init_imdb.exe"
 	}
 	cmd := exec.Command(file)
-	defer logger.ClearVar(&cmd)
+	defer logger.ClearVar(cmd)
 
 	var stdoutBuf bytes.Buffer
 	cmd.Stdout = io.MultiWriter(os.Stdout, &stdoutBuf)
@@ -259,7 +259,7 @@ func feeds(configTemplate string, listConfig string) (feedResults, error) {
 		defer logger.ClearVar(&searchresults)
 		for idxres := range searchresults.Nzbs {
 			logger.Log.Debug("nzb found - start downloading: ", searchresults.Nzbs[idxres].NZB.Title)
-			downloadnow := downloader.NewDownloader(configTemplate, "rss")
+			downloadnow := downloader.NewDownloader(configTemplate)
 			if searchresults.Nzbs[idxres].NzbmovieID != 0 {
 				downloadnow.SetMovie(searchresults.Nzbs[idxres].NzbmovieID)
 				downloadnow.DownloadNzb(searchresults.Nzbs[idxres])
@@ -359,7 +359,7 @@ func findFilesMap(configTemplate string) (logger.StringSet, logger.StringSet, er
 		if config.ConfigCheck("path_" + row.Data[0].Template_path) {
 			cfg_path := config.ConfigGet("path_" + row.Data[0].Template_path).Data.(config.PathsConfig)
 
-			return scanner.GetFilesDirNewOld(cfg_path.Path, "path_"+row.Data[0].Template_path)
+			return scanner.GetFilesDirNewOld(configTemplate, cfg_path.Path, "path_"+row.Data[0].Template_path)
 		}
 	} else {
 		var filesfound_add logger.StringSet
@@ -372,7 +372,7 @@ func findFilesMap(configTemplate string) (logger.StringSet, logger.StringSet, er
 				continue
 			}
 			cfg_path := config.ConfigGet("path_" + row.Data[idxpath].Template_path).Data.(config.PathsConfig)
-			filesfound_add, fileswanted_add, err = scanner.GetFilesDirNewOld(cfg_path.Path, "path_"+row.Data[idxpath].Template_path)
+			filesfound_add, fileswanted_add, err = scanner.GetFilesDirNewOld(configTemplate, cfg_path.Path, "path_"+row.Data[idxpath].Template_path)
 			if err == nil {
 				if idxpath == 0 {
 					filesfound = filesfound_add
@@ -452,6 +452,21 @@ func GetNewFilesMap(configTemplate string, mediatype string, checklist string) {
 		defer logger.ClearVar(&fileswanted)
 
 		logger.Log.Info("Workers: ", cfg_general.WorkerParse)
+		var fileshavedb, listunmatched []database.Dbstatic_OneString
+		defer logger.ClearVar(&fileshavedb)
+		defer logger.ClearVar(&listunmatched)
+		var mapfilesUnmatched, filesaddedwanted, filesadded, mapfilesHaveSub logger.StringSet
+		defer mapfilesUnmatched.Clear()
+		defer filesaddedwanted.Clear()
+		defer filesadded.Clear()
+		defer mapfilesHaveSub.Clear()
+
+		var tablename string
+		if strings.HasPrefix(configTemplate, "movie_") {
+			tablename = "movie_file_unmatcheds"
+		} else {
+			tablename = "serie_file_unmatcheds"
+		}
 		for _, list := range config.ConfigGet(configTemplate).Data.(config.MediaTypeConfig).Lists {
 			if checklist != list.Name && checklist != "" {
 				continue
@@ -460,14 +475,8 @@ func GetNewFilesMap(configTemplate string, mediatype string, checklist string) {
 				logger.Log.Error("Quality for List: " + list.Name + " not found")
 				continue
 			}
-			var tablename string
-			if strings.HasPrefix(configTemplate, "movie_") {
-				tablename = "movie_file_unmatcheds"
-			} else {
-				tablename = "serie_file_unmatcheds"
-			}
-			listunmatched, _ := database.QueryStaticColumnsOneString("select filepath FROM "+tablename+" WHERE listname = ? and (last_checked > ? or last_checked is null)", "select count(id) FROM "+tablename+" WHERE listname = ? and (last_checked > ? or last_checked is null)", list.Name, time.Now().Add(time.Hour*-12))
-			mapfilesUnmatched := logger.NewStringSetExactSize(len(listunmatched))
+			listunmatched, _ = database.QueryStaticColumnsOneString("select filepath FROM "+tablename+" WHERE listname = ? and (last_checked > ? or last_checked is null)", "select count(id) FROM "+tablename+" WHERE listname = ? and (last_checked > ? or last_checked is null)", list.Name, time.Now().Add(time.Hour*-12))
+			mapfilesUnmatched = logger.NewStringSetExactSize(len(listunmatched))
 			if len(listunmatched) >= 1 {
 				for idx2 := range listunmatched {
 					mapfilesUnmatched.Add(listunmatched[idx2].Str)
@@ -475,7 +484,7 @@ func GetNewFilesMap(configTemplate string, mediatype string, checklist string) {
 			}
 			listunmatched = nil
 			if len(fileswanted.Values) >= 1 {
-				filesaddedwanted := fileswanted
+				filesaddedwanted = fileswanted
 				if mapfilesUnmatched.Length() >= 1 {
 					filesaddedwanted.Difference(mapfilesUnmatched)
 				}
@@ -504,20 +513,18 @@ func GetNewFilesMap(configTemplate string, mediatype string, checklist string) {
 				}
 			}
 
-			var fileshavedb []database.Dbstatic_OneString
-			if strings.HasPrefix(configTemplate, "movie_") {
-				fileshavedb, err = database.QueryStaticColumnsOneString("Select movie_files.location from movie_files inner join movies on movies.id=movie_files.movie_id where movies.listname = ?", "Select count(movie_files.id) from movie_files inner join movies on movies.id=movie_files.movie_id where movies.listname = ?", list.Name)
-			} else {
-				fileshavedb, err = database.QueryStaticColumnsOneString("Select serie_episode_files.location from serie_episode_files inner join series on series.id=serie_episode_files.serie_id where series.listname = ?", "Select count(serie_episode_files.id) from serie_episode_files inner join series on series.id=serie_episode_files.serie_id where series.listname = ?", list.Name)
-			}
-
-			if err != nil {
-				logger.Log.Error("File Struct error", err)
-				continue
-			}
 			if len(filesfound.Values) >= 1 {
+				if strings.HasPrefix(configTemplate, "movie_") {
+					fileshavedb, err = database.QueryStaticColumnsOneString("Select movie_files.location from movie_files inner join movies on movies.id=movie_files.movie_id where movies.listname = ?", "Select count(movie_files.id) from movie_files inner join movies on movies.id=movie_files.movie_id where movies.listname = ?", list.Name)
+				} else {
+					fileshavedb, err = database.QueryStaticColumnsOneString("Select serie_episode_files.location from serie_episode_files inner join series on series.id=serie_episode_files.serie_id where series.listname = ?", "Select count(serie_episode_files.id) from serie_episode_files inner join series on series.id=serie_episode_files.serie_id where series.listname = ?", list.Name)
+				}
 
-				filesadded := filesfound
+				if err != nil {
+					logger.Log.Error("File Struct error", err)
+					continue
+				}
+				filesadded = filesfound
 				if len(fileshavedb) >= 1 {
 					mapfilesHave := logger.NewStringSetExactSize(len(fileshavedb))
 					for idx3 := range fileshavedb {
@@ -526,12 +533,12 @@ func GetNewFilesMap(configTemplate string, mediatype string, checklist string) {
 					fileshavedb = nil
 
 					filesadded.Difference(mapfilesHave)
-					mapfilesHave.Clear()
+					mapfilesHaveSub.Clear()
 				}
 				if mapfilesUnmatched.Length() >= 1 {
 					filesadded.Difference(mapfilesUnmatched)
-					mapfilesUnmatched.Clear()
 				}
+				mapfilesUnmatched.Clear()
 
 				for idx2 := range list.Ignore_map_lists {
 					if strings.HasPrefix(configTemplate, "movie_") {
@@ -540,7 +547,7 @@ func GetNewFilesMap(configTemplate string, mediatype string, checklist string) {
 						fileshavedb, err = database.QueryStaticColumnsOneString("Select serie_episode_files.location from serie_episode_files inner join series on series.id=serie_episode_files.serie_id where series.listname = ?", "Select count(serie_episode_files.id) from serie_episode_files inner join series on series.id=serie_episode_files.serie_id where series.listname = ?", list.Ignore_map_lists[idx2])
 					}
 
-					mapfilesHaveSub := logger.NewStringSetExactSize(len(fileshavedb))
+					mapfilesHaveSub = logger.NewStringSetExactSize(len(fileshavedb))
 					for idx3 := range fileshavedb {
 						mapfilesHaveSub.Add(fileshavedb[idx3].Str)
 					}
@@ -556,7 +563,7 @@ func GetNewFilesMap(configTemplate string, mediatype string, checklist string) {
 						fileshavedb, err = database.QueryStaticColumnsOneString("Select serie_episode_files.location from serie_episode_files inner join series on series.id=serie_episode_files.serie_id where series.listname = ?", "Select count(serie_episode_files.id) from serie_episode_files inner join series on series.id=serie_episode_files.serie_id where series.listname = ?", list.Replace_map_lists[idx2])
 					}
 
-					mapfilesHaveSub := logger.NewStringSetExactSize(len(fileshavedb))
+					mapfilesHaveSub = logger.NewStringSetExactSize(len(fileshavedb))
 					for idx3 := range fileshavedb {
 						mapfilesHaveSub.Add(fileshavedb[idx3].Str)
 					}
@@ -590,7 +597,6 @@ func GetNewFilesMap(configTemplate string, mediatype string, checklist string) {
 					filesadded.Clear()
 				}
 			}
-			fileshavedb = nil
 		}
 	}
 }

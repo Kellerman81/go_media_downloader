@@ -44,7 +44,7 @@ func downloadURL(URL string) (string, error) {
 		return "", errors.Wrap(err, "could not http get url")
 	}
 	defer resp.Body.Close()
-	defer logger.ClearVar(&resp)
+	defer logger.ClearVar(resp)
 
 	file, err := ioutil.TempFile("./temp", "flame-download-*")
 	if err != nil {

@@ -213,7 +213,7 @@ func loadakas(lang []string, full bool) {
 	defer gzreader.Close()
 
 	parseraka := csv.NewReader(gzreader)
-	defer ClearVar(&parseraka)
+	defer ClearVar(parseraka)
 	parseraka.Comma = '\t'
 	parseraka.LazyQuotes = true
 	_, _ = parseraka.Read() //skip header
@@ -295,7 +295,7 @@ func loadratings() {
 	defer gzreader.Close()
 
 	parserrating := csv.NewReader(gzreader)
-	defer ClearVar(&parserrating)
+	defer ClearVar(parserrating)
 	parserrating.Comma = '\t'
 	parserrating.LazyQuotes = true
 	_, _ = parserrating.Read() //skip header
@@ -361,7 +361,7 @@ func loadtitles(types []string, full bool) {
 	defer gzreader.Close()
 
 	parsertitle := csv.NewReader(gzreader)
-	defer ClearVar(&parsertitle)
+	defer ClearVar(parsertitle)
 	parsertitle.Comma = '\t'
 	parsertitle.LazyQuotes = true
 	_, _ = parsertitle.Read() //skip header

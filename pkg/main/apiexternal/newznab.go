@@ -234,9 +234,9 @@ func QueryNewznabRSSLast(row NzbIndexer, maxitems int, categories string, maxreq
 	defer logger.ClearVar(&nzbs_temp)
 
 	for {
-		nzbs_temp = nil
 		nzbs_temp, broke, err = client.processurl(client.buildRssUrl(row.Customrssurl, row.Customrsscategory, row.Customapi, row.Additional_query_params, maxitems, categories, (maxitems*maxrequests), false), row.LastRssId, 0, false)
 		if err != nil {
+			nzbs_temp = nil
 			break
 		}
 		if count == 0 {
@@ -382,6 +382,7 @@ func (c *Client) processurl(url string, tillid string, maxage int, outputasjson 
 		if err != nil {
 			return nil, false, err
 		}
+		defer logger.ClearVar(req)
 		var result SearchResponseJson1
 		defer logger.ClearVar(&result)
 		err = c.Client.DoJson(req, &result)
@@ -534,6 +535,7 @@ func (c *Client) processurl(url string, tillid string, maxage int, outputasjson 
 		if err != nil {
 			return nil, false, err
 		}
+		defer logger.ClearVar(req)
 		var feed SearchResponse
 		defer logger.ClearVar(&feed)
 		err = c.Client.DoXml(req, &feed)
