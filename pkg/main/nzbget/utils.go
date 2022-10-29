@@ -5,6 +5,8 @@ import (
 	"encoding/xml"
 	"io"
 	"io/ioutil"
+	"net/http"
+	"os"
 
 	"github.com/Kellerman81/go_media_downloader/logger"
 	nzb "github.com/andrewstuart/go-nzb"
@@ -14,7 +16,7 @@ import (
 //Source: https://github.com/dashotv/flame
 
 func readFile(path string) (string, error) {
-	b, err := ioutil.ReadFile(path)
+	b, err := os.ReadFile(path)
 	if err != nil {
 		return "", errors.Wrap(err, "could not read file")
 	}
@@ -23,28 +25,17 @@ func readFile(path string) (string, error) {
 }
 
 func base64encode(s string) string {
-	data := []byte(s)
-	str := base64.StdEncoding.EncodeToString(data)
-	data = nil
-	return str
+	return base64.StdEncoding.EncodeToString([]byte(s))
 }
 
-func base64decode(s string) string {
-	b, err := base64.StdEncoding.DecodeString(s)
-	if err != nil {
-		return ""
-	}
-	return string(b)
-}
-
-func downloadURL(URL string) (string, error) {
+func downloadURL(url string) (string, error) {
 	// Get the data
-	resp, err := logger.GetUrlResponse(URL)
+	req, _ := http.NewRequest("GET", url, nil)
+	resp, err := logger.WebClient.Do(req)
 	if err != nil {
 		return "", errors.Wrap(err, "could not http get url")
 	}
 	defer resp.Body.Close()
-	defer logger.ClearVar(resp)
 
 	file, err := ioutil.TempFile("./temp", "flame-download-*")
 	if err != nil {
@@ -57,12 +48,11 @@ func downloadURL(URL string) (string, error) {
 	if err != nil {
 		return "", errors.Wrap(err, "could not copy file")
 	}
-
 	return file.Name(), nil
 }
 
 func nzbName(data string) (string, error) {
-	n := nzb.NZB{}
+	var n nzb.NZB
 	err := xml.Unmarshal([]byte(data), &n)
 	if err != nil {
 		return "", errors.Wrap(err, "could not unmarshal")

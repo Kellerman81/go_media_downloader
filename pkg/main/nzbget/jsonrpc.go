@@ -136,22 +136,25 @@ type RPCClient interface {
 // Params() is a helper function that uses the same parameter syntax as Call().
 //
 // e.g. to manually create an RPCRequest object:
-// request := &RPCRequest{
-//   Method: "myMethod",
-//   Params: Params("Alex", 35, true),
-// }
+//
+//	request := &RPCRequest{
+//	  Method: "myMethod",
+//	  Params: Params("Alex", 35, true),
+//	}
 //
 // If you know what you are doing you can omit the Params() call to avoid some reflection but potentially create incorrect rpc requests:
-//request := &RPCRequest{
-//   Method: "myMethod",
-//   Params: 2, <-- invalid since a single primitive value must be wrapped in an array --> no magic without Params()
-// }
+//
+//	request := &RPCRequest{
+//	  Method: "myMethod",
+//	  Params: 2, <-- invalid since a single primitive value must be wrapped in an array --> no magic without Params()
+//	}
 //
 // correct:
-// request := &RPCRequest{
-//   Method: "myMethod",
-//   Params: []int{2}, <-- invalid since a single primitive value must be wrapped in an array
-// }
+//
+//	request := &RPCRequest{
+//	  Method: "myMethod",
+//	  Params: []int{2}, <-- invalid since a single primitive value must be wrapped in an array
+//	}
 type RPCRequest struct {
 	Method  string      `json:"method"`
 	Params  interface{} `json:"params,omitempty"`
@@ -404,6 +407,7 @@ func (client *rpcClient) doCall(RPCRequest *RPCRequest) (*RPCResponse, error) {
 
 	var rpcResponse *RPCResponse
 	decoder := json.NewDecoder(httpResponse.Body)
+
 	//decoder.DisallowUnknownFields()
 	decoder.UseNumber()
 	err = decoder.Decode(&rpcResponse)
@@ -448,6 +452,7 @@ func (client *rpcClient) doBatchCall(rpcRequest []*RPCRequest) ([]*RPCResponse, 
 
 	var rpcResponse RPCResponses
 	decoder := json.NewDecoder(httpResponse.Body)
+
 	decoder.DisallowUnknownFields()
 	decoder.UseNumber()
 	err = decoder.Decode(&rpcResponse)
@@ -465,7 +470,7 @@ func (client *rpcClient) doBatchCall(rpcRequest []*RPCRequest) ([]*RPCResponse, 
 	}
 
 	// response body empty
-	if rpcResponse == nil || len(rpcResponse) == 0 {
+	if len(rpcResponse) == 0 {
 		// if we have some http error, return it
 		if httpResponse.StatusCode >= 400 {
 			return nil, &HTTPError{
@@ -483,25 +488,28 @@ func (client *rpcClient) doBatchCall(rpcRequest []*RPCRequest) ([]*RPCResponse, 
 // But you should consider to always use NewRequest() instead.
 //
 // e.g. to manually create an RPCRequest object:
-// request := &RPCRequest{
-//   Method: "myMethod",
-//   Params: Params("Alex", 35, true),
-// }
+//
+//	request := &RPCRequest{
+//	  Method: "myMethod",
+//	  Params: Params("Alex", 35, true),
+//	}
 //
 // same with new request:
 // request := NewRequest("myMethod", "Alex", 35, true)
 //
 // If you know what you are doing you can omit the Params() call but potentially create incorrect rpc requests:
-//request := &RPCRequest{
-//   Method: "myMethod",
-//   Params: 2, <-- invalid since a single primitive value must be wrapped in an array --> no magic without Params()
-// }
+//
+//	request := &RPCRequest{
+//	  Method: "myMethod",
+//	  Params: 2, <-- invalid since a single primitive value must be wrapped in an array --> no magic without Params()
+//	}
 //
 // correct:
-// request := &RPCRequest{
-//   Method: "myMethod",
-//   Params: []int{2}, <-- invalid since a single primitive value must be wrapped in an array
-// }
+//
+//	request := &RPCRequest{
+//	  Method: "myMethod",
+//	  Params: []int{2}, <-- invalid since a single primitive value must be wrapped in an array
+//	}
 func Params(params ...interface{}) interface{} {
 	var finalParams interface{}
 

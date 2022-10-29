@@ -33,14 +33,14 @@ movie_rss_meta_source_priority = ["imdb"] #first to last - either remove entry h
 serie_meta_source_tmdb = true #add additional fields - default not to disable: tvdb
 serie_meta_source_trakt = true #add additional fields - default not to disable: tvdb
 scheduler_disabled = 'true' #on your very first run change to true - after your media is indexed set to false
-enable_file_watcher = false # causes load during imdb import - watches full directory
+enable_file_watcher = false # not working any more - causes load during imdb import - watches full directory
 omdb_apikey =  "insert" # insert your omdb apikey
 themoviedb_apikey="insert" # insert your themoviedb apikey
 trakt_client_id="insert" # insert your trakt clientid
 trakt_client_secret="insert" # insert your trakt clientsecret
 failed_indexer_block_time = 1 # Number of minutes to skip indexer after a failed query - default 5
 disable_parser_string_match = true #Disables String Matcher (Only Regex is used for matching) - UseRegex for qualities must be enabled - Regex has a higher CPU load
-use_godir = true #if true use godirwalk - scans files slightly faster and might handle syms but uses more ram
+use_godir = true # not working any more - if true use godirwalk - scans files slightly faster and might handle syms but uses more ram
 move_buffer_size_kb = 10 # Buffer Size for File Move Jobs (in KB)
 use_cron_instead_of_interval = true #Converts the intervals to cron strings for better scheduling
 max_database_backups = 5 # Max Number of database Backups
@@ -59,6 +59,11 @@ tmdb_disable_tls_verify = true  # disables ssl checks
 omdb_disable_tls_verify = true  # disables ssl checks
 tvdb_disable_tls_verify = true  # disables ssl checks
 trakt_disable_tls_verify = true  # disables ssl checks
+
+disable_swagger = true # disables swagger website
+disable_variable_cleanup = false # some variables dont get cleared
+time_format = "rfc3339" #format of time strings
+time_zone = "Europe/Berlin" #time zone
 
 ffprobe_path="" #Path where the ffprobe file is located in (without the actual file) - Linux Users should install with package manager (ex. apt-get -y install ffmpeg) - Windows Users please download https://www.gyan.dev/ffmpeg/builds/ffmpeg-git-github
 
@@ -434,6 +439,12 @@ check_year1=true #checks if the year is correct allow+-1 (also for imdb search)
 check_until_first_found=false #true = on use first available release and dont try the other indexers
 title_strip_suffix_for_search=[" dc", "repack", "unrated", "directors cut", "THEATRICAL"] #removes strings from title-end for title searches
 title_strip_prefix_for_search=["Uploader.presents", "Uploader presents"] #removes strings from title-start for title searches
+use_for_priority_resolution = true #if true uses this for searches of higher quality releases
+use_for_priority_quality = true
+use_for_priority_audio = false
+use_for_priority_codec = false
+use_for_priority_other = false
+use_for_priority_min_difference = 20 # minimum difference for searches of higher quality releases
 		
 	[[quality.reorder]] # Look into schema/db/000001_initialize.up.sql at the end for qualities their names and default priorities
 	type="resolution"
@@ -457,6 +468,7 @@ title_strip_prefix_for_search=["Uploader.presents", "Uploader presents"] #remove
 	skip_empty_size=true # remove results without a size attribute
 	history_check_title=true # if title is already in history skip release - default: only check url (same release will be downloaded from different indexers)
 	categories_indexer="2030,2035,2040,2045" #, separated - no array
+    custom_query_string = "" #not used
 
 ### scheduler ###
 ## A Scheduler with the Name "Default" is required - additional schedulers are possible

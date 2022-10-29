@@ -1,141 +1,126 @@
 package apiexternal
 
 import (
-	"net/http"
 	"strconv"
 	"time"
 
-	"github.com/Kellerman81/go_media_downloader/slidingwindow"
-	"golang.org/x/time/rate"
+	"github.com/Kellerman81/go_media_downloader/logger"
+	"github.com/Kellerman81/go_media_downloader/rate"
+	"go.uber.org/zap"
 )
 
-type theTVDBSeries struct {
+type TheTVDBSeries struct {
 	Data struct {
-		ID              int      `json:"id"`
-		SeriesID        int      `json:"seriesId"`
-		SeriesName      string   `json:"seriesName"`
-		Aliases         []string `json:"aliases"`
-		Season          string   `json:"season"`
-		Status          string   `json:"status"`
-		FirstAired      string   `json:"firstAired"`
-		Network         string   `json:"network"`
-		NetworkID       string   `json:"networkId"`
-		Runtime         string   `json:"runtime"`
-		Language        string   `json:"language"`
-		Genre           []string `json:"genre"`
-		Overview        string   `json:"overview"`
-		Rating          string   `json:"rating"`
-		ImdbID          string   `json:"imdbId"`
-		SiteRating      float32  `json:"siteRating"`
-		SiteRatingCount int      `json:"siteRatingCount"`
-		Slug            string   `json:"slug"`
-		Banner          string   `json:"banner"`
-		Poster          string   `json:"poster"`
-		Fanart          string   `json:"fanart"`
+		ID              int         `json:"id"`
+		SeriesID        interface{} `json:"seriesId"`
+		SeriesName      string      `json:"seriesName"`
+		Aliases         []string    `json:"aliases"`
+		Season          string      `json:"season"`
+		Status          string      `json:"status"`
+		FirstAired      string      `json:"firstAired"`
+		Network         string      `json:"network"`
+		NetworkID       string      `json:"networkId"`
+		Runtime         string      `json:"runtime"`
+		Language        string      `json:"language"`
+		Genre           []string    `json:"genre"`
+		Overview        string      `json:"overview"`
+		Rating          string      `json:"rating"`
+		ImdbID          string      `json:"imdbId"`
+		SiteRating      float32     `json:"siteRating"`
+		SiteRatingCount int         `json:"siteRatingCount"`
+		Slug            string      `json:"slug"`
+		Banner          string      `json:"banner"`
+		Poster          string      `json:"poster"`
+		Fanart          string      `json:"fanart"`
 	} `json:"data"`
 }
 
-type theTVDBEpisodes struct {
+type TheTVDBEpisodes struct {
 	Links struct {
 		First int `json:"first"`
 		Last  int `json:"last"`
 	} `json:"links"`
-	Data []struct {
-		ID                 int    `json:"id"`
-		AiredSeason        int    `json:"airedSeason"`
-		AiredEpisodeNumber int    `json:"airedEpisodeNumber"`
-		EpisodeName        string `json:"episodeName"`
-		FirstAired         string `json:"firstAired"`
-		Overview           string `json:"overview"`
-		Language           struct {
-			EpisodeName string `json:"episodeName"`
-			Overview    string `json:"overview"`
-		} `json:"language"`
-		ProductionCode  string  `json:"productionCode"`
-		ShowURL         string  `json:"showUrl"`
-		SeriesID        int     `json:"seriesId"`
-		ImdbID          string  `json:"imdbId"`
-		ContentRating   string  `json:"contentRating"`
-		SiteRating      float32 `json:"siteRating"`
-		SiteRatingCount int     `json:"siteRatingCount"`
-		IsMovie         int     `json:"isMovie"`
-		Poster          string  `json:"filename"`
-	} `json:"data"`
+	Data []TheTVDBEpisode `json:"data"`
+}
+
+type TheTVDBEpisode struct {
+	ID                 int    `json:"id"`
+	AiredSeason        int    `json:"airedSeason"`
+	AiredEpisodeNumber int    `json:"airedEpisodeNumber"`
+	EpisodeName        string `json:"episodeName"`
+	FirstAired         string `json:"firstAired"`
+	Overview           string `json:"overview"`
+	Language           struct {
+		EpisodeName string `json:"episodeName"`
+		Overview    string `json:"overview"`
+	} `json:"language"`
+	ProductionCode  string  `json:"productionCode"`
+	ShowURL         string  `json:"showUrl"`
+	SeriesID        int     `json:"seriesId"`
+	ImdbID          string  `json:"imdbId"`
+	ContentRating   string  `json:"contentRating"`
+	SiteRating      float32 `json:"siteRating"`
+	SiteRatingCount int     `json:"siteRatingCount"`
+	IsMovie         int     `json:"isMovie"`
+	Poster          string  `json:"filename"`
 }
 
 type tvdbClient struct {
 	Client *RLHTTPClient
 }
 
-var TvdbApi *tvdbClient
+var TvdbApi tvdbClient
 
-func NewTvdbClient(seconds int, calls int, disabletls bool) {
+func NewTvdbClient(seconds int, calls int, disabletls bool, timeoutseconds int) {
 	if seconds == 0 {
 		seconds = 1
 	}
 	if calls == 0 {
 		calls = 1
 	}
-	TvdbApi = &tvdbClient{
+	TvdbApi = tvdbClient{
 		Client: NewClient(
 			disabletls,
-			rate.NewLimiter(rate.Every(time.Duration(seconds)*time.Second), calls),
-			slidingwindow.NewLimiterNoStop(time.Duration(seconds)*time.Second, int64(calls), func() (slidingwindow.Window, slidingwindow.StopFunc) { return slidingwindow.NewLocalWindow() }))}
+			rate.New(calls, 0, time.Duration(seconds)*time.Second), timeoutseconds)}
 
 }
 
-func (t *tvdbClient) GetSeries(id int, language string) (theTVDBSeries, error) {
-	req, err := http.NewRequest("GET", "https://api.thetvdb.com/series/"+strconv.Itoa(id), nil)
-	if err != nil {
-		return theTVDBSeries{}, err
-	}
-
-	if len(language) >= 1 {
-		req.Header.Add("Accept-Language", language)
-	}
-
-	var result theTVDBSeries
-	err = t.Client.DoJson(req, &result)
+func (t *tvdbClient) GetSeries(id int, language string) (TheTVDBSeries, error) {
+	url := "https://api.thetvdb.com/series/" + strconv.FormatInt(int64(id), 10)
+	var result TheTVDBSeries
+	_, err := t.Client.DoJson(url, &result, []AddHeader{{Key: "Accept-Language", Val: language}})
 
 	if err != nil {
-		return theTVDBSeries{}, err
+		logger.Log.GlobalLogger.Error("Error calling", zap.String("url", url), zap.Error(err))
+		return TheTVDBSeries{}, err
 	}
-	req = nil
 	return result, nil
 }
-func (t *tvdbClient) GetSeriesEpisodes(id int, language string) (theTVDBEpisodes, error) {
-	req, err := http.NewRequest("GET", "https://api.thetvdb.com/series/"+strconv.Itoa(id)+"/episodes", nil)
-	if err != nil {
-		return theTVDBEpisodes{}, err
-	}
-
-	if len(language) >= 1 {
-		req.Header.Add("Accept-Language", language)
-	}
-	var result theTVDBEpisodes
-	err = t.Client.DoJson(req, &result)
+func (t *tvdbClient) GetSeriesEpisodes(id int, language string) (*TheTVDBEpisodes, error) {
+	url := "https://api.thetvdb.com/series/" + strconv.FormatInt(int64(id), 10) + "/episodes"
+	var result TheTVDBEpisodes
+	_, err := t.Client.DoJson(url, &result, []AddHeader{{Key: "Accept-Language", Val: language}})
 
 	if err != nil {
-		return theTVDBEpisodes{}, err
+		logger.Log.GlobalLogger.Error("Error calling", zap.String("url", url), zap.Error(err))
+		return nil, err
 	}
 
 	if result.Links.Last >= 2 {
-		k := 2
-
-		var resultadd theTVDBEpisodes
-		for ; k <= result.Links.Last; k++ {
-			req, err = http.NewRequest("GET", "https://api.thetvdb.com/series/"+strconv.Itoa(id)+"/episodes?page="+strconv.Itoa(k), nil)
+		var resultadd TheTVDBEpisodes
+		for k := 2; k <= result.Links.Last; k++ {
+			resultadd = TheTVDBEpisodes{}
+			_, err = t.Client.DoJson(url+"?page="+strconv.Itoa(k), &resultadd, []AddHeader{{Key: "Accept-Language", Val: language}})
 			if err != nil {
-				continue
-			}
-			if len(language) >= 1 {
-				req.Header.Add("Accept-Language", language)
+				logger.Log.GlobalLogger.Error("Error calling: " + url + "?page=" + strconv.Itoa(k) + " error: " + err.Error())
+				break
 			}
 
-			t.Client.DoJson(req, &resultadd)
+			if len(result.Data) >= 1 {
+				result.Data = logger.GrowSliceBy(result.Data, len(resultadd.Data))
+			}
 			result.Data = append(result.Data, resultadd.Data...)
 		}
 	}
-	req = nil
-	return result, nil
+	return &result, nil
 }

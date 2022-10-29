@@ -92,7 +92,6 @@ func GetMoviesTable(ctx *context.Context) table.Table {
 	// 		SetTabTitle(template.HTML("Movie Detail(" + value.Value + ")")).
 	// 		GetContent()
 	// }).FieldFilterable().FieldSortable()
-	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
 
 	info.AddColumnButtons("Details", types.GetActionIconButton(icon.File,
 		action.PopUpWithIframe("/admin/info/movie_files", "see more", action.IframeData{Src: "/admin/info/movie_files", AddParameterFn: func(ctx *context.Context) string {
@@ -101,7 +100,7 @@ func GetMoviesTable(ctx *context.Context) table.Table {
 		action.PopUpWithIframe("/admin/info/movie_histories", "see more", action.IframeData{Src: "/admin/info/movie_histories", AddParameterFn: func(ctx *context.Context) string {
 			return "&movie_id=" + ctx.FormValue("id")
 		}}, "900px", "560px")), types.GetActionIconButton(icon.Search,
-		MyPopUpWithIframe("/search", "see more", action.IframeData{Src: "/api/movies/search/id/{{.Id}}?apikey=" + cfg_general.WebApiKey}, "900px", "560px")))
+		MyPopUpWithIframe("/search", "see more", action.IframeData{Src: "/api/movies/search/id/{{.Id}}?apikey=" + config.Cfg.General.WebApiKey}, "900px", "560px")))
 	info.SetTable("movies").SetTitle("Movies").SetDescription("Movies")
 
 	formList := movies.GetForm()

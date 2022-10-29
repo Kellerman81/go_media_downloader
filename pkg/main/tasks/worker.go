@@ -1,9 +1,5 @@
 package tasks
 
-import (
-	"time"
-)
-
 //Source: https://github.com/mborders/artifex
 
 // Worker attaches to a provided worker pool, and
@@ -38,17 +34,11 @@ func (w *Worker) start() {
 			ret := func() bool {
 				select {
 				case job := <-w.jobChannel:
-					func(job Job) {
-						updateStartedQueue(job.ID)
-						updateIsRunningSchedule(job.SchedulerId, true)
-						job.Run()
-						updateIsRunningSchedule(job.SchedulerId, false)
-						time.Sleep(time.Duration(2) * time.Second)
-
-						taskmu.Lock()
-						delete(globalQueue, job.Name)
-						taskmu.Unlock()
-					}(job)
+					updateStartedQueue(job.ID)
+					updateIsRunningSchedule(job.SchedulerId, true)
+					job.Run()
+					updateIsRunningSchedule(job.SchedulerId, false)
+					globalQueueSet.RemoveId(job.ID)
 					return false
 				case <-w.quit:
 					return true

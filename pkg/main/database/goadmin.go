@@ -43,33 +43,34 @@ func (d *Mysqlite) GetDelimiters() []string {
 
 // QueryWithConnection implements the method Connection.QueryWithConnection.
 func (d *Mysqlite) QueryWithConnection(con string, query string, args ...interface{}) ([]map[string]interface{}, error) {
-	ReadWriteMu.RLock()
-	defer ReadWriteMu.RUnlock()
+	readWriteMu.RLock()
+	defer readWriteMu.RUnlock()
 	return db.CommonQuery(d.DbList[con], query, args...)
 }
 
 // ExecWithConnection implements the method Connection.ExecWithConnection.
 func (d *Mysqlite) ExecWithConnection(con string, query string, args ...interface{}) (sql.Result, error) {
+	readWriteMu.Lock()
+	defer readWriteMu.Unlock()
 
 	return db.CommonExec(d.DbList[con], query, args...)
 }
 
 // Query implements the method Connection.Query.
 func (d *Mysqlite) Query(query string, args ...interface{}) ([]map[string]interface{}, error) {
-	ReadWriteMu.RLock()
-	defer ReadWriteMu.RUnlock()
+	readWriteMu.RLock()
+	defer readWriteMu.RUnlock()
 	return db.CommonQuery(d.DbList["default"], query, args...)
 }
 
 // Exec implements the method Connection.Exec.
 func (d *Mysqlite) Exec(query string, args ...interface{}) (sql.Result, error) {
-
+	readWriteMu.Lock()
+	defer readWriteMu.Unlock()
 	return db.CommonExec(d.DbList["default"], query, args...)
 }
 
 func (d *Mysqlite) QueryWith(tx *sql.Tx, conn, query string, args ...interface{}) ([]map[string]interface{}, error) {
-	ReadWriteMu.RLock()
-	defer ReadWriteMu.RUnlock()
 	if tx != nil {
 		return d.QueryWithTx(tx, query, args...)
 	}
@@ -109,7 +110,7 @@ func (d *Mysqlite) InitDB(cfgList map[string]config.Database) db.Connection {
 				}
 			}
 			if conn == "media" {
-				d.DbList[conn] = DB.DB
+				d.DbList[conn] = getdb(false).DB
 			}
 		}
 	})
@@ -168,13 +169,14 @@ func (d *Mysqlite) BeginTxWithLevelAndConnection(conn string, level sql.Isolatio
 
 // QueryWithTx is query method within the transaction.
 func (d *Mysqlite) QueryWithTx(tx *sql.Tx, query string, args ...interface{}) ([]map[string]interface{}, error) {
-	ReadWriteMu.RLock()
-	defer ReadWriteMu.RUnlock()
+	readWriteMu.RLock()
+	defer readWriteMu.RUnlock()
 	return db.CommonQueryWithTx(tx, query, args...)
 }
 
 // ExecWithTx is exec method within the transaction.
 func (d *Mysqlite) ExecWithTx(tx *sql.Tx, query string, args ...interface{}) (sql.Result, error) {
-
+	readWriteMu.Lock()
+	defer readWriteMu.Unlock()
 	return db.CommonExecWithTx(tx, query, args...)
 }

@@ -1,10 +1,11 @@
 package apiexternal
 
 import (
-	"fmt"
 	"strings"
 
+	"github.com/Kellerman81/go_media_downloader/logger"
 	delugeclient "github.com/gdm85/go-libdeluge"
+	"go.uber.org/zap"
 )
 
 func SendToDeluge(host string, port int, username string, password string, url string, dlpath string, moveafter bool, moveafterpath string, addpaused bool) error {
@@ -29,7 +30,7 @@ func SendToDeluge(host string, port int, username string, password string, url s
 				AddPaused:         &addpaused,
 			})
 			if err != nil {
-				fmt.Println(err)
+				logger.Log.GlobalLogger.Error("", zap.Error(err))
 			}
 		} else {
 			_, err = cl.AddTorrentURL(url, &delugeclient.Options{
@@ -40,11 +41,11 @@ func SendToDeluge(host string, port int, username string, password string, url s
 				AddPaused:         &addpaused,
 			})
 			if err != nil {
-				fmt.Println(err)
+				logger.Log.GlobalLogger.Error("", zap.Error(err))
 			}
 		}
 	} else {
-		fmt.Println(err)
+		logger.Log.GlobalLogger.Error("", zap.Error(err))
 	}
 	return err
 }

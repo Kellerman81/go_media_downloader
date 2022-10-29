@@ -83,7 +83,7 @@ func GetDbseriesTable(ctx *context.Context) table.Table {
 	// info.AddField("Fanart", "fanart", db.Text)
 	// info.AddField("Identifiedby", "identifiedby", db.Text)
 	// info.AddField("Trakt_id", "trakt_id", db.Integer)
-	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
+
 	info.AddColumnButtons("Details", types.GetColumnButton("Titles", icon.Info,
 		action.PopUpWithIframe("/admin/info/dbserie_alternates", "see more", action.IframeData{Src: "/admin/info/dbserie_alternates", AddParameterFn: func(ctx *context.Context) string {
 			return "&dbserie_id=" + ctx.FormValue("id")
@@ -94,7 +94,7 @@ func GetDbseriesTable(ctx *context.Context) table.Table {
 		action.PopUpWithIframe("/admin/info/series", "see more", action.IframeData{Src: "/admin/info/series", AddParameterFn: func(ctx *context.Context) string {
 			return "&dbserie_id=" + ctx.FormValue("id")
 		}}, "900px", "560px")), types.GetColumnButton("Refresh", icon.Refresh,
-		MyPopUpWithIframe("/admin/info/refresh", "see more", action.IframeData{Src: "/api/series/refresh/{{.Id}}?apikey=" + cfg_general.WebApiKey}, "900px", "560px")))
+		MyPopUpWithIframe("/admin/info/refresh", "see more", action.IframeData{Src: "/api/series/refresh/{{.Id}}?apikey=" + config.Cfg.General.WebApiKey}, "900px", "560px")))
 	info.SetTable("dbseries").SetTitle("Dbseries").SetDescription("Dbseries")
 
 	formList := dbseries.GetForm()

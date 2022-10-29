@@ -7,15 +7,16 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Kellerman81/go_media_downloader/apiexternal"
 	"github.com/Kellerman81/go_media_downloader/config"
 	"github.com/Kellerman81/go_media_downloader/database"
 	"github.com/Kellerman81/go_media_downloader/downloader"
 	"github.com/Kellerman81/go_media_downloader/logger"
-	"github.com/Kellerman81/go_media_downloader/parser"
 	"github.com/Kellerman81/go_media_downloader/scheduler"
 	"github.com/Kellerman81/go_media_downloader/searcher"
 	"github.com/Kellerman81/go_media_downloader/utils"
 	gin "github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
 func AddMoviesRoutes(routermovies *gin.RouterGroup) {
@@ -62,9 +63,9 @@ func apiMovieList(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
-	query := database.Query{}
+	var query database.Query
 
-	rows, _ := database.CountRows("dbmovies", query)
+	rows, _ := database.CountRows("dbmovies", &query)
 	limit := 0
 	page := 0
 	if queryParam, ok := ctx.GetQuery("limit"); ok {
@@ -88,7 +89,7 @@ func apiMovieList(ctx *gin.Context) {
 			query.OrderBy = queryParam
 		}
 	}
-	movies, _ := database.QueryDbmovie(query)
+	movies, _ := database.QueryDbmovie(&query)
 	ctx.JSON(http.StatusOK, gin.H{"data": movies, "total": rows})
 }
 
@@ -105,8 +106,8 @@ func apiMovieListUnmatched(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
-	query := database.Query{}
-	rows, _ := database.CountRows("movie_file_unmatcheds", query)
+	var query database.Query
+	rows, _ := database.CountRows("movie_file_unmatcheds", &query)
 	limit := 0
 	page := 0
 	if queryParam, ok := ctx.GetQuery("limit"); ok {
@@ -130,7 +131,7 @@ func apiMovieListUnmatched(ctx *gin.Context) {
 			query.OrderBy = queryParam
 		}
 	}
-	movies, _ := database.QueryMovieFileUnmatched(query)
+	movies, _ := database.QueryMovieFileUnmatched(&query)
 	ctx.JSON(http.StatusOK, gin.H{"data": movies, "total": rows})
 }
 
@@ -145,8 +146,8 @@ func apiMovieDelete(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
-	database.DeleteRow("movies", database.Query{Where: "dbmovie_id=" + ctx.Param("id")})
-	_, err := database.DeleteRow("dbmovies", database.Query{Where: "id=" + ctx.Param("id")})
+	database.DeleteRow("movies", &database.Query{Where: "dbmovie_id=" + ctx.Param("id")})
+	_, err := database.DeleteRow("dbmovies", &database.Query{Where: "id=" + ctx.Param("id")})
 
 	if err == nil {
 		ctx.JSON(http.StatusOK, "ok")
@@ -169,12 +170,11 @@ func apiMovieListGet(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
-	query := database.Query{}
+	var query database.Query
 	query.InnerJoin = "dbmovies on movies.dbmovie_id=dbmovies.id"
-	query.Where = "movies.listname = ?"
-	query.WhereArgs = []interface{}{ctx.Param("name")}
+	query.Where = "movies.listname = ? COLLATE NOCASE"
 
-	rows, _ := database.CountRows("movies", query)
+	rows, _ := database.CountRows("movies", &query)
 	limit := 0
 	page := 0
 	if queryParam, ok := ctx.GetQuery("limit"); ok {
@@ -198,7 +198,7 @@ func apiMovieListGet(ctx *gin.Context) {
 			query.OrderBy = queryParam
 		}
 	}
-	movies, _ := database.QueryResultMovies(query)
+	movies, _ := database.QueryResultMovies(&query, ctx.Param("name"))
 	ctx.JSON(http.StatusOK, gin.H{"data": movies, "total": rows})
 }
 
@@ -213,7 +213,7 @@ func ApiMovieDeleteList(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
-	_, err := database.DeleteRow("movies", database.Query{Where: "id=" + ctx.Param("id")})
+	_, err := database.DeleteRow("movies", &database.Query{Where: "id=" + ctx.Param("id")})
 
 	if err == nil {
 		ctx.JSON(http.StatusOK, "ok")
@@ -222,9 +222,7 @@ func ApiMovieDeleteList(ctx *gin.Context) {
 	}
 }
 
-var allowedjobsmovies []string = []string{"rss", "data", "datafull", "checkmissing", "checkmissingflag", "checkreachedflag", "structure", "searchmissingfull",
-	"searchmissinginc", "searchupgradefull", "searchupgradeinc", "searchmissingfulltitle",
-	"searchmissinginctitle", "searchupgradefulltitle", "searchupgradeinctitle", "clearhistory", "feeds", "refresh", "refreshinc"}
+const allowedjobsmoviesstr string = "rss,data,datafull,checkmissing,checkmissingflag,checkreachedflag,structure,searchmissingfull,searchmissinginc,searchupgradefull,searchupgradeinc,searchmissingfulltitle,searchmissinginctitle,searchupgradefulltitle,searchupgradeinctitle,clearhistory,feeds,refresh,refreshinc"
 
 // @Summary      Start Jobs (All Lists)
 // @Description  Starts a Job
@@ -239,8 +237,8 @@ func apimoviesAllJobs(c *gin.Context) {
 		return
 	}
 	allowed := false
-	for idxallow := range allowedjobsmovies {
-		if strings.EqualFold(allowedjobsmovies[idxallow], c.Param("job")) {
+	for _, allow := range strings.Split(allowedjobsmoviesstr, ",") {
+		if strings.EqualFold(allow, c.Param("job")) {
 			allowed = true
 			break
 		}
@@ -248,42 +246,44 @@ func apimoviesAllJobs(c *gin.Context) {
 	if allowed {
 		returnval := "Job " + c.Param("job") + " started"
 
-		for _, idxmovie := range config.ConfigGetPrefix("movie_") {
-			configTemplate := idxmovie
-			cfg_movie := config.ConfigGet(configTemplate.Name).Data.(config.MediaTypeConfig)
+		//defer cfg_movie.Close()
+		//defer cfg_list.Close()
+		for idx := range config.Cfg.Movies {
+			cfg_movie := "movie_" + config.Cfg.Movies[idx].Name
 
 			switch c.Param("job") {
 			case "data", "datafull", "structure", "clearhistory":
-				scheduler.QueueData.Dispatch(c.Param("job")+"_movies_"+cfg_movie.Name, func() {
-					utils.Movies_single_jobs(c.Param("job"), configTemplate.Name, "", true)
+				scheduler.QueueData.Dispatch(c.Param("job")+"_"+cfg_movie, func() {
+					utils.Movies_single_jobs(c.Param("job"), cfg_movie, "", true)
 				})
 			case "rss", "searchmissingfull", "searchmissinginc", "searchupgradefull", "searchupgradeinc", "searchmissingfulltitle", "searchmissinginctitle", "searchupgradefulltitle", "searchupgradeinctitle":
-				scheduler.QueueSearch.Dispatch(c.Param("job")+"_movies_"+cfg_movie.Name, func() {
-					utils.Movies_single_jobs(c.Param("job"), configTemplate.Name, "", true)
+				scheduler.QueueSearch.Dispatch(c.Param("job")+"_"+cfg_movie, func() {
+					utils.Movies_single_jobs(c.Param("job"), cfg_movie, "", true)
 				})
 			case "feeds", "checkmissing", "checkmissingflag", "checkreachedflag":
-				for idxlist := range cfg_movie.Lists {
-					if !cfg_movie.Lists[idxlist].Enabled {
+				for idxlist := range config.Cfg.Movies[idx].Lists {
+					if !config.Cfg.Movies[idx].Lists[idxlist].Enabled {
 						continue
 					}
-					if !config.ConfigCheck("list_" + cfg_movie.Lists[idxlist].Template_list) {
+					if !config.ConfigCheck("list_" + config.Cfg.Movies[idx].Lists[idxlist].Template_list) {
 						continue
 					}
-					cfg_list := config.ConfigGet("list_" + cfg_movie.Lists[idxlist].Template_list).Data.(config.ListsConfig)
-					if !cfg_list.Enabled {
+
+					if !config.Cfg.Lists[config.Cfg.Movies[idx].Lists[idxlist].Template_list].Enabled {
 						continue
 					}
-					listname := cfg_movie.Lists[idxlist].Name
+					listname := config.Cfg.Movies[idx].Lists[idxlist].Name
 					if c.Param("job") == "feeds" {
-						scheduler.QueueFeeds.Dispatch(c.Param("job")+"_movies_"+cfg_movie.Name+"_"+listname, func() {
-							utils.Movies_single_jobs(c.Param("job"), configTemplate.Name, listname, true)
+						scheduler.QueueFeeds.Dispatch(c.Param("job")+"_"+cfg_movie+"_"+listname, func() {
+							utils.Movies_single_jobs(c.Param("job"), cfg_movie, listname, true)
 						})
 					}
 					if c.Param("job") == "checkmissing" || c.Param("job") == "checkmissingflag" || c.Param("job") == "checkreachedflag" {
-						scheduler.QueueData.Dispatch(c.Param("job")+"_movies_"+cfg_movie.Name+"_"+listname, func() {
-							utils.Movies_single_jobs(c.Param("job"), configTemplate.Name, listname, true)
+						scheduler.QueueData.Dispatch(c.Param("job")+"_"+cfg_movie+"_"+listname, func() {
+							utils.Movies_single_jobs(c.Param("job"), cfg_movie, listname, true)
 						})
 					}
+					//cfg_list.Close()
 				}
 			case "refresh":
 				scheduler.QueueFeeds.Dispatch("Refresh Movies", func() {
@@ -294,10 +294,11 @@ func apimoviesAllJobs(c *gin.Context) {
 					utils.RefreshMoviesInc()
 				})
 			default:
-				scheduler.QueueData.Dispatch(c.Param("job")+"_movies_"+cfg_movie.Name, func() {
-					utils.Movies_single_jobs(c.Param("job"), configTemplate.Name, "", true)
+				scheduler.QueueData.Dispatch(c.Param("job")+"_"+cfg_movie, func() {
+					utils.Movies_single_jobs(c.Param("job"), cfg_movie, "", true)
 				})
 			}
+			//cfg_movie.Close()
 		}
 		c.JSON(http.StatusOK, returnval)
 	} else {
@@ -320,8 +321,8 @@ func apimoviesJobs(c *gin.Context) {
 		return
 	}
 	allowed := false
-	for idxallow := range allowedjobsmovies {
-		if strings.EqualFold(allowedjobsmovies[idxallow], c.Param("job")) {
+	for _, allow := range strings.Split(allowedjobsmoviesstr, ",") {
+		if strings.EqualFold(allow, c.Param("job")) {
 			allowed = true
 			break
 		}
@@ -339,38 +340,37 @@ func apimoviesJobs(c *gin.Context) {
 			})
 		case "feeds", "checkmissing", "checkmissingflag", "checkreachedflag":
 
-			for _, idxmovie := range config.ConfigGetPrefix("movie_") {
-				configTemplate := idxmovie
-				if !config.ConfigCheck(configTemplate.Name) {
-					continue
-				}
-				cfg_movie := config.ConfigGet(configTemplate.Name).Data.(config.MediaTypeConfig)
-				if strings.EqualFold(cfg_movie.Name, c.Param("name")) {
-					for idxlist := range cfg_movie.Lists {
-						if !cfg_movie.Lists[idxlist].Enabled {
+			//defer cfg_movie.Close()
+			//defer cfg_list.Close()
+			for idx := range config.Cfg.Movies {
+				if strings.EqualFold(config.Cfg.Movies[idx].Name, c.Param("name")) {
+					for idxlist := range config.Cfg.Movies[idx].Lists {
+						if !config.Cfg.Movies[idx].Lists[idxlist].Enabled {
 							continue
 						}
-						if !config.ConfigCheck("list_" + cfg_movie.Lists[idxlist].Template_list) {
+						if !config.ConfigCheck("list_" + config.Cfg.Movies[idx].Lists[idxlist].Template_list) {
 							continue
 						}
-						cfg_list := config.ConfigGet("list_" + cfg_movie.Lists[idxlist].Template_list).Data.(config.ListsConfig)
-						if !cfg_list.Enabled {
+
+						if !config.Cfg.Lists[config.Cfg.Movies[idx].Lists[idxlist].Template_list].Enabled {
 							continue
 						}
-						listname := cfg_movie.Lists[idxlist].Name
+						listname := config.Cfg.Movies[idx].Lists[idxlist].Name
 						if c.Param("job") == "feeds" {
-							logger.Log.Debug("add job ", cfg_movie.Name, " ", cfg_movie.Lists[idxlist].Name)
-							scheduler.QueueFeeds.Dispatch(c.Param("job")+"_movies_"+cfg_movie.Name+"_"+cfg_movie.Lists[idxlist].Name, func() {
-								utils.Movies_single_jobs(c.Param("job"), configTemplate.Name, listname, true)
+							logger.Log.GlobalLogger.Debug("add job ", zap.String("Title", config.Cfg.Movies[idx].Name), zap.String("List", config.Cfg.Movies[idx].Lists[idxlist].Name))
+							scheduler.QueueFeeds.Dispatch(c.Param("job")+"_movies_"+config.Cfg.Movies[idx].Name+"_"+config.Cfg.Movies[idx].Lists[idxlist].Name, func() {
+								utils.Movies_single_jobs(c.Param("job"), "movie_"+c.Param("name"), listname, true)
 							})
 						}
 						if c.Param("job") == "checkmissing" || c.Param("job") == "checkmissingflag" || c.Param("job") == "checkreachedflag" {
-							scheduler.QueueData.Dispatch(c.Param("job")+"_movies_"+cfg_movie.Name+"_"+cfg_movie.Lists[idxlist].Name, func() {
-								utils.Movies_single_jobs(c.Param("job"), configTemplate.Name, listname, true)
+							scheduler.QueueData.Dispatch(c.Param("job")+"_movies_"+config.Cfg.Movies[idx].Name+"_"+config.Cfg.Movies[idx].Lists[idxlist].Name, func() {
+								utils.Movies_single_jobs(c.Param("job"), "movie_"+c.Param("name"), listname, true)
 							})
 						}
+						//cfg_list.Close()
 					}
 				}
+				//cfg_movie.Close()
 			}
 		case "refresh":
 			scheduler.QueueFeeds.Dispatch("Refresh Movies", func() {
@@ -409,16 +409,16 @@ func updateDBMovie(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	counter, _ := database.CountRows("dbmovies", database.Query{Where: "id != 0 and id = ?", WhereArgs: []interface{}{dbmovie.ID}})
+	counter, _ := database.CountRows("dbmovies", &database.Query{Where: "id != 0 and id = ?"}, dbmovie.ID)
 	var inres sql.Result
 	var err error
 	if counter == 0 {
-		inres, err = database.InsertArray("dbmovies", []string{"Title", "Release_Date", "Year", "Adult", "Budget", "Genres", "Original_Language", "Original_Title", "Overview", "Popularity", "Revenue", "Runtime", "Spoken_Languages", "Status", "Tagline", "Vote_Average", "Vote_Count", "Trakt_ID", "Moviedb_ID", "Imdb_ID", "Freebase_M_ID", "Freebase_ID", "Facebook_ID", "Instagram_ID", "Twitter_ID", "URL", "Backdrop", "Poster", "Slug"},
+		inres, err = database.InsertArray("dbmovies", &logger.InStringArrayStruct{Arr: []string{"Title", "Release_Date", "Year", "Adult", "Budget", "Genres", "Original_Language", "Original_Title", "Overview", "Popularity", "Revenue", "Runtime", "Spoken_Languages", "Status", "Tagline", "Vote_Average", "Vote_Count", "Trakt_ID", "Moviedb_ID", "Imdb_ID", "Freebase_M_ID", "Freebase_ID", "Facebook_ID", "Instagram_ID", "Twitter_ID", "URL", "Backdrop", "Poster", "Slug"}},
 			[]interface{}{dbmovie.Title, dbmovie.ReleaseDate, dbmovie.Year, dbmovie.Adult, dbmovie.Budget, dbmovie.Genres, dbmovie.OriginalLanguage, dbmovie.OriginalTitle, dbmovie.Overview, dbmovie.Popularity, dbmovie.Revenue, dbmovie.Runtime, dbmovie.SpokenLanguages, dbmovie.Status, dbmovie.Tagline, dbmovie.VoteAverage, dbmovie.VoteCount, dbmovie.TraktID, dbmovie.MoviedbID, dbmovie.ImdbID, dbmovie.FreebaseMID, dbmovie.FreebaseID, dbmovie.FacebookID, dbmovie.InstagramID, dbmovie.TwitterID, dbmovie.URL, dbmovie.Backdrop, dbmovie.Poster, dbmovie.Slug})
 	} else {
-		inres, err = database.UpdateArray("dbmovies", []string{"Title", "Release_Date", "Year", "Adult", "Budget", "Genres", "Original_Language", "Original_Title", "Overview", "Popularity", "Revenue", "Runtime", "Spoken_Languages", "Status", "Tagline", "Vote_Average", "Vote_Count", "Trakt_ID", "Moviedb_ID", "Imdb_ID", "Freebase_M_ID", "Freebase_ID", "Facebook_ID", "Instagram_ID", "Twitter_ID", "URL", "Backdrop", "Poster", "Slug"},
+		inres, err = database.UpdateArray("dbmovies", &logger.InStringArrayStruct{Arr: []string{"Title", "Release_Date", "Year", "Adult", "Budget", "Genres", "Original_Language", "Original_Title", "Overview", "Popularity", "Revenue", "Runtime", "Spoken_Languages", "Status", "Tagline", "Vote_Average", "Vote_Count", "Trakt_ID", "Moviedb_ID", "Imdb_ID", "Freebase_M_ID", "Freebase_ID", "Facebook_ID", "Instagram_ID", "Twitter_ID", "URL", "Backdrop", "Poster", "Slug"}},
 			[]interface{}{dbmovie.Title, dbmovie.ReleaseDate, dbmovie.Year, dbmovie.Adult, dbmovie.Budget, dbmovie.Genres, dbmovie.OriginalLanguage, dbmovie.OriginalTitle, dbmovie.Overview, dbmovie.Popularity, dbmovie.Revenue, dbmovie.Runtime, dbmovie.SpokenLanguages, dbmovie.Status, dbmovie.Tagline, dbmovie.VoteAverage, dbmovie.VoteCount, dbmovie.TraktID, dbmovie.MoviedbID, dbmovie.ImdbID, dbmovie.FreebaseMID, dbmovie.FreebaseID, dbmovie.FacebookID, dbmovie.InstagramID, dbmovie.TwitterID, dbmovie.URL, dbmovie.Backdrop, dbmovie.Poster, dbmovie.Slug},
-			database.Query{Where: "id != 0 and id = ?", WhereArgs: []interface{}{dbmovie.ID}})
+			&database.Query{Where: "id != 0 and id = ?"}, dbmovie.ID)
 	}
 	if err == nil {
 		c.JSON(http.StatusOK, inres)
@@ -444,16 +444,16 @@ func updateMovie(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	counter, _ := database.CountRows("dbmovies", database.Query{Where: "id != 0 and id = ?", WhereArgs: []interface{}{movie.ID}})
+	counter, _ := database.CountRows("dbmovies", &database.Query{Where: "id != 0 and id = ?"}, movie.ID)
 	var inres sql.Result
 	var err error
 	if counter == 0 {
-		inres, err = database.InsertArray("movies", []string{"missing", "listname", "dbmovie_id", "quality_profile", "blacklisted", "quality_reached", "dont_upgrade", "dont_search", "rootpath"},
+		inres, err = database.InsertArray("movies", &logger.InStringArrayStruct{Arr: []string{"missing", "listname", "dbmovie_id", "quality_profile", "blacklisted", "quality_reached", "dont_upgrade", "dont_search", "rootpath"}},
 			[]interface{}{movie.Missing, movie.Listname, movie.DbmovieID, movie.QualityProfile, movie.Blacklisted, movie.QualityReached, movie.DontUpgrade, movie.DontSearch, movie.Rootpath})
 	} else {
-		inres, err = database.UpdateArray("dbmovies", []string{"missing", "listname", "dbmovie_id", "quality_profile", "blacklisted", "quality_reached", "dont_upgrade", "dont_search", "rootpath"},
+		inres, err = database.UpdateArray("dbmovies", &logger.InStringArrayStruct{Arr: []string{"missing", "listname", "dbmovie_id", "quality_profile", "blacklisted", "quality_reached", "dont_upgrade", "dont_search", "rootpath"}},
 			[]interface{}{movie.Missing, movie.Listname, movie.DbmovieID, movie.QualityProfile, movie.Blacklisted, movie.QualityReached, movie.DontUpgrade, movie.DontSearch, movie.Rootpath},
-			database.Query{Where: "id != 0 and id = ?", WhereArgs: []interface{}{movie.ID}})
+			&database.Query{Where: "id != 0 and id = ?"}, movie.ID)
 	}
 	if err == nil {
 		c.JSON(http.StatusOK, inres)
@@ -473,18 +473,15 @@ func apimoviesSearch(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
 		return
 	}
-	movie, _ := database.GetMovies(database.Query{Where: "id = ?", WhereArgs: []interface{}{c.Param("id")}})
+	movie, _ := database.GetMovies(&database.Query{Where: "id = ?"}, c.Param("id"))
+	//defer logger.ClearVar(&movie)
 
-	for _, idxmovie := range config.ConfigGetPrefix("movie_") {
-		configTemplate := idxmovie
-		if !config.ConfigCheck(configTemplate.Name) {
-			continue
-		}
-		cfg_movie := config.ConfigGet(configTemplate.Name).Data.(config.MediaTypeConfig)
-		for idxlist := range cfg_movie.Lists {
-			if strings.EqualFold(cfg_movie.Lists[idxlist].Name, movie.Listname) {
-				scheduler.QueueSearch.Dispatch("searchmovie_movies_"+cfg_movie.Name+"_"+strconv.Itoa(int(movie.ID)), func() {
-					searcher.SearchMovieSingle(movie.ID, configTemplate.Name, true)
+	for idx := range config.Cfg.Movies {
+		configTemplate := "movie_" + config.Cfg.Movies[idx].Name
+		for idxlist := range config.Cfg.Movies[idx].Lists {
+			if strings.EqualFold(config.Cfg.Movies[idx].Lists[idxlist].Name, movie.Listname) {
+				scheduler.QueueSearch.Dispatch("searchmovie_movies_"+config.Cfg.Movies[idx].Name+"_"+strconv.Itoa(int(movie.ID)), func() {
+					searcher.SearchMovieSingle(movie.ID, configTemplate, true)
 				})
 				c.JSON(http.StatusOK, "started")
 				return
@@ -505,7 +502,8 @@ func apimoviesSearchList(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
 		return
 	}
-	movie, _ := database.GetMovies(database.Query{Where: "id = ?", WhereArgs: []interface{}{c.Param("id")}})
+	movie, _ := database.GetMovies(&database.Query{Where: "id = ?"}, c.Param("id"))
+	//defer logger.ClearVar(&movie)
 
 	titlesearch := false
 	if queryParam, ok := c.GetQuery("searchByTitle"); ok {
@@ -514,23 +512,22 @@ func apimoviesSearchList(c *gin.Context) {
 		}
 	}
 
-	for _, idxmovie := range config.ConfigGetPrefix("movie_") {
-		configTemplate := idxmovie
-		if !config.ConfigCheck(configTemplate.Name) {
-			continue
-		}
-		cfg_movie := config.ConfigGet(configTemplate.Name).Data.(config.MediaTypeConfig)
-		for idxlist := range cfg_movie.Lists {
-			if strings.EqualFold(cfg_movie.Lists[idxlist].Name, movie.Listname) {
-				searchnow := searcher.NewSearcher(configTemplate.Name, movie.QualityProfile)
+	for idx := range config.Cfg.Movies {
+		configTemplate := "movie_" + config.Cfg.Movies[idx].Name
+		for idxlist := range config.Cfg.Movies[idx].Lists {
+			if strings.EqualFold(config.Cfg.Movies[idx].Lists[idxlist].Name, movie.Listname) {
+				searchnow := searcher.NewSearcher(configTemplate, movie.QualityProfile)
+				defer searchnow.Close()
 				searchresults, err := searchnow.MovieSearch(movie.ID, false, titlesearch)
 				if err != nil {
-					c.JSON(http.StatusNotFound, "failed")
-					searchnow.Close()
+					str := "failed with " + err.Error()
+					c.JSON(http.StatusNotFound, str)
+					//searchnow.Close()
 					return
 				}
 				c.JSON(http.StatusOK, gin.H{"accepted": searchresults.Nzbs, "rejected": searchresults.Rejected})
-				searchnow.Close()
+				//searchnow.Close()
+				defer searchresults.Close()
 				return
 			}
 		}
@@ -549,23 +546,19 @@ func apiMoviesRssSearchList(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
 		return
 	}
-	var configTemplate config.Conf
 
-	for _, idxmovie := range config.ConfigGetPrefix("movie_") {
-		configTemplate = idxmovie
-		if !config.ConfigCheck(configTemplate.Name) {
-			continue
-		}
-		cfg_movie := config.ConfigGet(configTemplate.Name).Data.(config.MediaTypeConfig)
-		if strings.EqualFold(cfg_movie.Name, c.Param("group")) {
-			searchnow := searcher.NewSearcher(configTemplate.Name, cfg_movie.Template_quality)
+	for idx := range config.Cfg.Movies {
+		configTemplate := "movie_" + config.Cfg.Movies[idx].Name
+		if strings.EqualFold(config.Cfg.Movies[idx].Name, c.Param("group")) {
+			searchnow := searcher.NewSearcher(configTemplate, config.Cfg.Movies[idx].Template_quality)
+			defer searchnow.Close()
 			searchresults, err := searchnow.SearchRSS("movie", true)
 			if err != nil {
-				c.JSON(http.StatusNotFound, "failed")
-				searchnow.Close()
+				str := "failed with " + err.Error()
+				c.JSON(http.StatusNotFound, str)
 				return
 			}
-			searchnow.Close()
+			defer searchresults.Close()
 			c.JSON(http.StatusOK, gin.H{"accepted": searchresults.Nzbs, "rejected": searchresults.Rejected})
 			return
 		}
@@ -576,7 +569,7 @@ func apiMoviesRssSearchList(c *gin.Context) {
 // @Summary      Download a movie (manual)
 // @Description  Downloads a release after select
 // @Tags         movie
-// @Param        nzb  body      parser.NzbwithprioJson  true  "Nzb: Req. Title, Indexer, imdbid, downloadurl, parseinfo"
+// @Param        nzb  body      nzb.NzbwithprioJson  true  "Nzb: Req. Title, Indexer, imdbid, downloadurl, parseinfo"
 // @Param        id   path      int                     true  "Movie ID"
 // @Success      200  {object}  string
 // @Failure      401  {object}  string
@@ -585,25 +578,24 @@ func apimoviesSearchDownload(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
 		return
 	}
-	movie, _ := database.GetMovies(database.Query{Where: "id = ?", WhereArgs: []interface{}{c.Param("id")}})
+	movie, _ := database.GetMovies(&database.Query{Where: "id = ?"}, c.Param("id"))
+	//defer logger.ClearVar(&movie)
 
-	var nzb parser.Nzbwithprio
+	var nzb apiexternal.Nzbwithprio
 	if err := c.ShouldBindJSON(&nzb); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	//defer logger.ClearVar(&nzb)
 
-	for _, idxmovie := range config.ConfigGetPrefix("movie_") {
-		configTemplate := idxmovie
-		if !config.ConfigCheck(configTemplate.Name) {
-			continue
-		}
-		cfg_movie := config.ConfigGet(configTemplate.Name).Data.(config.MediaTypeConfig)
-		for idxlist := range cfg_movie.Lists {
-			if strings.EqualFold(cfg_movie.Lists[idxlist].Name, movie.Listname) {
-				downloadnow := downloader.NewDownloader(configTemplate.Name)
+	for idx := range config.Cfg.Movies {
+		configTemplate := "movie_" + config.Cfg.Movies[idx].Name
+		for idxlist := range config.Cfg.Movies[idx].Lists {
+			if strings.EqualFold(config.Cfg.Movies[idx].Lists[idxlist].Name, movie.Listname) {
+				downloadnow := downloader.NewDownloader(configTemplate)
 				downloadnow.SetMovie(movie.ID)
-				downloadnow.DownloadNzb(nzb)
+				downloadnow.Nzb = nzb
+				downloadnow.DownloadNzb()
 				downloadnow.Close()
 				c.JSON(http.StatusOK, "started")
 				return
@@ -689,7 +681,7 @@ func apiMoviesClearHistoryID(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
 		return
 	}
-	inres, inerr := database.DeleteRow("movie_histories", database.Query{Where: "movie_id = ?", WhereArgs: []interface{}{c.Param("id")}})
+	inres, inerr := database.DeleteRow("movie_histories", &database.Query{Where: "movie_id = ?"}, c.Param("id"))
 
 	if inerr == nil {
 		c.JSON(http.StatusOK, inres)

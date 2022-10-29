@@ -301,7 +301,7 @@ func (s *Sabnzbd) AddReader(reader io.Reader, filename string, options ...AddNzb
 		u.v.Set(k, v)
 	}
 
-	wg := sync.WaitGroup{}
+	var wg sync.WaitGroup
 	wg.Add(1)
 
 	pr, pw := io.Pipe()

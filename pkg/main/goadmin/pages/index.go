@@ -501,27 +501,25 @@ like Aldus PageMaker including versions of Lorem Ipsum.
 	var stats []map[string]types.InfoItem
 
 	id := 0
-	lists, _ := database.QueryStaticColumnsOneString("Select distinct listname from movies where length(listname) >= 1", "Select count(distinct listname) from movies where length(listname) >= 1")
+	lists := database.QueryStaticStringArray("select distinct listname as str from movies where length(listname) >= 1", false, 0)
 	for idx := range lists {
-		all, _ := database.CountRowsStatic("select count(*) from movies where listname = ?", lists[idx].Str)
-		missing, _ := database.CountRowsStatic("select count(*) from movies where listname = ? and missing=1", lists[idx].Str)
-		reached, _ := database.CountRowsStatic("select count(*) from movies where listname = ? and quality_reached=1", lists[idx].Str)
-		upgrade, _ := database.CountRowsStatic("select count(*) from movies where listname = ? and quality_reached=0 and missing=0", lists[idx].Str)
-		stats = append(stats, map[string]types.InfoItem{"id": {Content: template.HTML(strconv.Itoa(id))}, "typ": {Content: "movies"}, "list": {Content: template.HTML(lists[idx].Str)}, "total": {Content: template.HTML(strconv.Itoa(all))}, "missing": {Content: template.HTML(strconv.Itoa(missing))}, "finished": {Content: template.HTML(strconv.Itoa(reached))}, "upgrade": {Content: template.HTML(strconv.Itoa(upgrade))}})
+		all, _ := database.CountRowsStatic("select count(*) from movies where listname = ? COLLATE NOCASE", lists[idx])
+		missing, _ := database.CountRowsStatic("select count(*) from movies where listname = ? COLLATE NOCASE and missing=1", lists[idx])
+		reached, _ := database.CountRowsStatic("select count(*) from movies where listname = ? COLLATE NOCASE and quality_reached=1", lists[idx])
+		upgrade, _ := database.CountRowsStatic("select count(*) from movies where listname = ? COLLATE NOCASE and quality_reached=0 and missing=0", lists[idx])
+		stats = append(stats, map[string]types.InfoItem{"id": {Content: template.HTML(strconv.Itoa(id))}, "typ": {Content: "movies"}, "list": {Content: template.HTML(lists[idx])}, "total": {Content: template.HTML(strconv.Itoa(all))}, "missing": {Content: template.HTML(strconv.Itoa(missing))}, "finished": {Content: template.HTML(strconv.Itoa(reached))}, "upgrade": {Content: template.HTML(strconv.Itoa(upgrade))}})
 		id += 1
 	}
-	lists, _ = database.QueryStaticColumnsOneString("Select distinct Listname from series where length(listname) >= 1", "Select count(distinct listname) from series where length(listname) >= 1")
+	lists = database.QueryStaticStringArray("select distinct Listname as str from series where length(listname) >= 1", false, 0)
 	for idx := range lists {
-		all, _ := database.CountRowsStatic("select count(*) from serie_episodes where serie_id in (Select id from series where listname = ?)", lists[idx].Str)
-		missing, _ := database.CountRowsStatic("select count(*) from serie_episodes where serie_id in (Select id from series where listname = ?) and missing=1", lists[idx].Str)
-		reached, _ := database.CountRowsStatic("select count(*) from serie_episodes where serie_id in (Select id from series where listname = ?) and quality_reached=1", lists[idx].Str)
-		upgrade, _ := database.CountRowsStatic("select count(*) from serie_episodes where serie_id in (Select id from series where listname = ?) and quality_reached=0 and missing=0", lists[idx].Str)
-		stats = append(stats, map[string]types.InfoItem{"id": {Content: template.HTML(strconv.Itoa(id))}, "typ": {Content: "episodes"}, "list": {Content: template.HTML(lists[idx].Str)}, "total": {Content: template.HTML(strconv.Itoa(all))}, "missing": {Content: template.HTML(strconv.Itoa(missing))}, "finished": {Content: template.HTML(strconv.Itoa(reached))}, "upgrade": {Content: template.HTML(strconv.Itoa(upgrade))}})
+		all, _ := database.CountRowsStatic("select count(*) from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE)", lists[idx])
+		missing, _ := database.CountRowsStatic("select count(*) from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE) and missing=1", lists[idx])
+		reached, _ := database.CountRowsStatic("select count(*) from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE) and quality_reached=1", lists[idx])
+		upgrade, _ := database.CountRowsStatic("select count(*) from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE) and quality_reached=0 and missing=0", lists[idx])
+		stats = append(stats, map[string]types.InfoItem{"id": {Content: template.HTML(strconv.Itoa(id))}, "typ": {Content: "episodes"}, "list": {Content: template.HTML(lists[idx])}, "total": {Content: template.HTML(strconv.Itoa(all))}, "missing": {Content: template.HTML(strconv.Itoa(missing))}, "finished": {Content: template.HTML(strconv.Itoa(reached))}, "upgrade": {Content: template.HTML(strconv.Itoa(upgrade))}})
 		id += 1
 	}
 
-	// 	pnl := models.GetStatsTable(ctx).GetInfo()
-	// pnl.
 	pnl := components.DataTable().SetInfoList(stats).
 		SetPrimaryKey("id").
 		SetThead(types.Thead{

@@ -1,7 +1,6 @@
 package api
 
 import (
-	"fmt"
 	"net/http"
 
 	"github.com/Kellerman81/go_media_downloader/config"
@@ -137,9 +136,8 @@ func ApiAuth(c *gin.Context) int {
 			c.AbortWithStatus(http.StatusUnauthorized)
 			return http.StatusUnauthorized
 		} else {
-			cfg := config.ConfigGet("general").Data.(config.GeneralConfig)
-			fmt.Println(cfg)
-			if queryParam != cfg.WebApiKey {
+			apikey := config.Cfg.General.WebApiKey
+			if queryParam != apikey {
 				c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 				c.AbortWithStatus(http.StatusUnauthorized)
 				return http.StatusUnauthorized

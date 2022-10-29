@@ -3,8 +3,7 @@ package database
 import (
 	"database/sql"
 	"errors"
-	"fmt"
-	"io/ioutil"
+	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
@@ -15,28 +14,62 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Kellerman81/go_media_downloader/config"
 	"github.com/Kellerman81/go_media_downloader/logger"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/sqlite3"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/jmoiron/sqlx"
+	_ "github.com/mattn/go-sqlite3"
 )
 
+type DBGlobal struct {
+	Getqualities   []QualitiesRegex
+	Getresolutions []QualitiesRegex
+	Getcodecs      []QualitiesRegex
+	Getaudios      []QualitiesRegex
+	AudioStr       []string
+	CodecStr       []string
+	QualityStr     []string
+	ResolutionStr  []string
+}
+
+type dblocal struct {
+	DB *sqlx.DB
+	TX *sql.Tx
+}
+
+var readWriteMu *sync.RWMutex = &sync.RWMutex{}
+
+var DBVersion string = "1"
+var DBLogLevel string = "Info"
+
+func DBClose() {
+	if DB != nil {
+		DB.Close()
+	}
+	if DBImdb != nil {
+		DBImdb.Close()
+	}
+}
+
+var DBConnect DBGlobal
 var DB *sqlx.DB
-var SQLDB *sql.DB
 var DBImdb *sqlx.DB
-var ReadWriteMu *sync.RWMutex
-var Getqualities []QualitiesRegex
-var Getresolutions []QualitiesRegex
-var Getcodecs []QualitiesRegex
-var Getaudios []QualitiesRegex
-var AudioStr, CodecStr, QualityStr, ResolutionStr []string
 
 type QualitiesRegex struct {
 	Regex string
 	Qualities
+}
+type QualitiesRegexGroup struct {
+	Arr []QualitiesRegex
+}
+
+func (s *QualitiesRegexGroup) Close() {
+	if s != nil {
+		s.Arr = nil
+		s = nil
+	}
 }
 
 type Dbfiles struct {
@@ -51,107 +84,109 @@ func InitDb(dbloglevel string) {
 			log.Fatal(err.Error())
 		}
 	}
-	db, err := sqlx.Connect("sqlite3", "file:./databases/data.db?_fk=1&_mutex=full&rt=1&_cslike=0")
+	var err error
+	DB, err = sqlx.Connect("sqlite3", "file:./databases/data.db?_fk=1&_mutex=full&rt=1&_cslike=0")
 	if err != nil {
 		log.Fatal(err)
 	}
-	db.SetMaxIdleConns(15)
-	db.SetMaxOpenConns(5)
-	ReadWriteMu = &sync.RWMutex{}
-	DB = db
-	SQLDB = db.DB
+	DB.SetMaxIdleConns(15)
+	DB.SetMaxOpenConns(5)
+	DBLogLevel = strings.ToLower(dbloglevel)
 }
 
-func InitImdbdb(dbloglevel string, dbfile string) *sqlx.DB {
-	if _, err := os.Stat("./databases/" + dbfile + ".db"); os.IsNotExist(err) {
-		_, err := os.Create("./databases/" + dbfile + ".db") // Create SQLite file
+func LockDb(db *dblocal) {
+	readWriteMu.Lock()
+}
+func UnlockDb(db *dblocal) {
+	readWriteMu.Unlock()
+}
+func RLockDb(db *dblocal) {
+	readWriteMu.RLock()
+}
+func RUnlockDb(db *dblocal) {
+	readWriteMu.RUnlock()
+}
+func CloseImdb() {
+	if DBImdb != nil {
+		DBImdb.Close()
+	}
+}
+func GetVersion() string {
+	return DBVersion
+}
+func SetVersion(str string) {
+	DBVersion = str
+}
+
+func InitImdbdb(dbloglevel string) {
+	if _, err := os.Stat("./databases/imdb.db"); os.IsNotExist(err) {
+		_, err := os.Create("./databases/imdb.db") // Create SQLite file
 		if err != nil {
 			log.Fatal(err.Error())
 		}
 	}
-	db, err := sqlx.Connect("sqlite3", "file:./databases/"+dbfile+".db?_fk=1&_cslike=0")
+	var err error
+	DBImdb, err = sqlx.Connect("sqlite3", "file:./databases/imdb.db?_fk=1&_cslike=0")
 	if err != nil {
 		log.Fatal(err)
 	}
-	db.SetMaxIdleConns(15)
-	db.SetMaxOpenConns(5)
-	return db
+	DBImdb.SetMaxIdleConns(15)
+	DBImdb.SetMaxOpenConns(5)
+	//logger.GlobalCache.Set("DBImdb", dblocal{DB: db, readWriteMu: &sync.RWMutex{}}, 0)
 }
 
 func GetVars() {
-
-	logger.Log.Infoln("Database Get Variables 1")
-	quali, _ := QueryQualities(Query{Where: "Type=1", OrderBy: "priority desc"})
-	defer logger.ClearVar(&quali)
-	logger.Log.Infoln("Database Get Variables 1-1")
-	Getresolutions = make([]QualitiesRegex, 0, len(quali))
+	quali, _ := QueryQualities(&Query{Where: "Type=1", OrderBy: "priority desc"})
+	logger.Log.GlobalLogger.Info("Database Get Variables 1")
+	DBConnect.Getresolutions = make([]QualitiesRegex, len(quali))
 	for idx := range quali {
-		logger.Log.Infoln("Database Get Variables 1-", quali[idx])
-		config.RegexDelete(quali[idx].Regex)
-		config.RegexAdd(quali[idx].Regex, *regexp.MustCompile(quali[idx].Regex))
-		Getresolutions = append(Getresolutions, QualitiesRegex{Regex: quali[idx].Regex, Qualities: quali[idx]})
+		logger.GlobalRegexCache.SetRegexp(quali[idx].Regex, regexp.MustCompile(quali[idx].Regex), 0)
+		quali[idx].StringsLower = strings.ToLower(quali[idx].Strings)
+		DBConnect.Getresolutions[idx] = QualitiesRegex{Regex: quali[idx].Regex, Qualities: quali[idx]}
 	}
 
-	logger.Log.Infoln("Database Get Variables 2")
-	quali, _ = QueryQualities(Query{Where: "Type=2", OrderBy: "priority desc"})
-	Getqualities = make([]QualitiesRegex, 0, len(quali))
+	quali, _ = QueryQualities(&Query{Where: "Type=2", OrderBy: "priority desc"})
+	logger.Log.GlobalLogger.Info("Database Get Variables 2")
+	DBConnect.Getqualities = make([]QualitiesRegex, len(quali))
 	for idx := range quali {
-		config.RegexDelete(quali[idx].Regex)
-		config.RegexAdd(quali[idx].Regex, *regexp.MustCompile(quali[idx].Regex))
-		Getqualities = append(Getqualities, QualitiesRegex{Regex: quali[idx].Regex, Qualities: quali[idx]})
+		logger.GlobalRegexCache.SetRegexp(quali[idx].Regex, regexp.MustCompile(quali[idx].Regex), 0)
+		quali[idx].StringsLower = strings.ToLower(quali[idx].Strings)
+		DBConnect.Getqualities[idx] = QualitiesRegex{Regex: quali[idx].Regex, Qualities: quali[idx]}
 	}
 
-	logger.Log.Infoln("Database Get Variables 3")
-	quali, _ = QueryQualities(Query{Where: "Type=3", OrderBy: "priority desc"})
-	Getcodecs = make([]QualitiesRegex, 0, len(quali))
+	quali, _ = QueryQualities(&Query{Where: "Type=3", OrderBy: "priority desc"})
+	logger.Log.GlobalLogger.Info("Database Get Variables 3")
+	DBConnect.Getcodecs = make([]QualitiesRegex, len(quali))
 	for idx := range quali {
-		config.RegexDelete(quali[idx].Regex)
-		config.RegexAdd(quali[idx].Regex, *regexp.MustCompile(quali[idx].Regex))
-		Getcodecs = append(Getcodecs, QualitiesRegex{Regex: quali[idx].Regex, Qualities: quali[idx]})
+		logger.GlobalRegexCache.SetRegexp(quali[idx].Regex, regexp.MustCompile(quali[idx].Regex), 0)
+		quali[idx].StringsLower = strings.ToLower(quali[idx].Strings)
+		DBConnect.Getcodecs[idx] = QualitiesRegex{Regex: quali[idx].Regex, Qualities: quali[idx]}
 	}
 
-	logger.Log.Infoln("Database Get Variables 4")
-	quali, _ = QueryQualities(Query{Where: "Type=4", OrderBy: "priority desc"})
-	Getaudios = make([]QualitiesRegex, 0, len(quali))
+	quali, _ = QueryQualities(&Query{Where: "Type=4", OrderBy: "priority desc"})
+	logger.Log.GlobalLogger.Info("Database Get Variables 4")
+	DBConnect.Getaudios = make([]QualitiesRegex, len(quali))
 	for idx := range quali {
-		config.RegexDelete(quali[idx].Regex)
-		config.RegexAdd(quali[idx].Regex, *regexp.MustCompile(quali[idx].Regex))
-		Getaudios = append(Getaudios, QualitiesRegex{Regex: quali[idx].Regex, Qualities: quali[idx]})
+		logger.GlobalRegexCache.SetRegexp(quali[idx].Regex, regexp.MustCompile(quali[idx].Regex), 0)
+		quali[idx].StringsLower = strings.ToLower(quali[idx].Strings)
+		DBConnect.Getaudios[idx] = QualitiesRegex{Regex: quali[idx].Regex, Qualities: quali[idx]}
 	}
 
-	logger.Log.Infoln("Database Get Variables 5")
-	AudioStr = make([]string, 0, len(Getaudios)*2)
-	var splitted []string
-	defer logger.ClearVar(&splitted)
-	for idx := range Getaudios {
-		splitted = strings.Split(Getaudios[idx].Strings, ",")
-		for idxsplit := range splitted {
-			AudioStr = append(AudioStr, splitted[idxsplit])
-		}
+	DBConnect.AudioStr = make([]string, 0, len(DBConnect.Getaudios)*2)
+	for idx := range DBConnect.Getaudios {
+		DBConnect.AudioStr = append(DBConnect.AudioStr, strings.Split(DBConnect.Getaudios[idx].StringsLower, ",")...)
 	}
-	logger.Log.Infoln("Database Get Variables 6")
-	CodecStr = make([]string, 0, len(Getcodecs)*2)
-	for idx := range Getcodecs {
-		splitted = strings.Split(Getcodecs[idx].Strings, ",")
-		for idxsplit := range splitted {
-			CodecStr = append(CodecStr, splitted[idxsplit])
-		}
+	DBConnect.CodecStr = make([]string, 0, len(DBConnect.Getcodecs)*2)
+	for idx := range DBConnect.Getcodecs {
+		DBConnect.CodecStr = append(DBConnect.CodecStr, strings.Split(DBConnect.Getcodecs[idx].StringsLower, ",")...)
 	}
-	logger.Log.Infoln("Database Get Variables 7")
-	QualityStr = make([]string, 0, len(Getqualities)*7)
-	for idx := range Getqualities {
-		splitted = strings.Split(Getqualities[idx].Strings, ",")
-		for idxsplit := range splitted {
-			QualityStr = append(QualityStr, splitted[idxsplit])
-		}
+	DBConnect.QualityStr = make([]string, 0, len(DBConnect.Getqualities)*7)
+	for idx := range DBConnect.Getqualities {
+		DBConnect.QualityStr = append(DBConnect.QualityStr, strings.Split(DBConnect.Getqualities[idx].StringsLower, ",")...)
 	}
-	logger.Log.Infoln("Database Get Variables 8")
-	ResolutionStr = make([]string, 0, len(Getresolutions)*4)
-	for idx := range Getresolutions {
-		splitted = strings.Split(Getresolutions[idx].Strings, ",")
-		for idxsplit := range splitted {
-			ResolutionStr = append(ResolutionStr, splitted[idxsplit])
-		}
+	DBConnect.ResolutionStr = make([]string, 0, len(DBConnect.Getresolutions)*4)
+	for idx := range DBConnect.Getresolutions {
+		DBConnect.ResolutionStr = append(DBConnect.ResolutionStr, strings.Split(DBConnect.Getresolutions[idx].StringsLower, ",")...)
 	}
 }
 func Upgrade(c *gin.Context) {
@@ -160,33 +195,22 @@ func Upgrade(c *gin.Context) {
 
 // Backup the database. If db is nil, then uses the existing database
 // connection.
-func Backup(db *sqlx.DB, backupPath string, maxbackups int) error {
-	if db == nil {
-		var err error
-		db, err = sqlx.Connect("sqlite3", "file:./databases/data.db?_fk=true")
-		if err != nil {
-			return fmt.Errorf("open database data.db failed:%s", err)
-		}
-		defer db.Close()
-	}
-
-	_, err := db.Exec(`VACUUM INTO "` + backupPath + `"`)
+func Backup(backupPath string, maxbackups int) error {
+	_, err := dbexec("main", "VACUUM INTO ?", []interface{}{backupPath})
 	if err != nil {
-		return fmt.Errorf("vacuum failed: %s", err)
+		return errors.New("vacuum failed: " + err.Error())
 	}
 	RemoveOldDbBackups(maxbackups)
 
 	return nil
 }
 
-var DBVersion string
-
 func UpgradeDB() {
 	m, err := migrate.New(
 		"file://./schema/db",
 		"sqlite3://./databases/data.db?cache=shared&_fk=1&_cslike=0",
 	)
-	defer logger.ClearVar(m)
+
 	vers, _, _ := m.Version()
 	DBVersion = strconv.Itoa(int(vers))
 	if err != nil {
@@ -242,17 +266,14 @@ func RemoveOldDbBackups(max int) error {
 
 	prefix := "data.db."
 	files, err := oldDatabaseFiles(prefix)
-	defer logger.ClearVar(&files)
 	if err != nil {
 		return err
 	}
 
-	var remove []backupInfo
-	defer logger.ClearVar(&remove)
+	var remove []backupInfo = make([]backupInfo, 0, max)
 
 	if max > 0 && max < len(files) {
-		preserved := make([]string, 0, len(files))
-		defer logger.ClearVar(&preserved)
+		var preserved []string = make([]string, 0, max)
 
 		for idx := range files {
 			// Only count the uncompressed log file or the
@@ -281,12 +302,11 @@ func RemoveOldDbBackups(max int) error {
 }
 
 func oldDatabaseFiles(prefix string) ([]backupInfo, error) {
-	files, err := ioutil.ReadDir("./backup")
-	defer logger.ClearVar(&files)
+	files, err := os.ReadDir("./backup")
 	if err != nil {
-		return nil, fmt.Errorf("can't read log file directory: %s", err)
+		return nil, errors.New("can't read log file directory: " + err.Error())
 	}
-	backupFiles := make([]backupInfo, 0, len(files))
+	var backupFiles []backupInfo = make([]backupInfo, 0, len(files))
 
 	for idx := range files {
 		if files[idx].IsDir() {
@@ -312,17 +332,17 @@ func timeFromName(filename, prefix, ext string) (time.Time, error) {
 	if !strings.HasSuffix(filename, ext) {
 		return time.Time{}, errors.New("mismatched extension")
 	}
-	ts := strings.Repeat(filename[len(prefix):len(filename)-len(ext)], 1)
+	ts := filename[len(prefix) : len(filename)-len(ext)]
 	if idx := strings.Index(ts, "."); idx != -1 {
 		idn := idx + 1
-		ts = strings.Repeat(ts[idn:], 1)
+		ts = ts[idn:]
 	}
 	return time.Parse("20060102_150405", ts)
 }
 
 type backupInfo struct {
 	timestamp time.Time
-	os.FileInfo
+	fs.DirEntry
 }
 
 // byFormatTime sorts by newest time formatted in the name.
