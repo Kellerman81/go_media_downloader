@@ -10,6 +10,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/apiexternal"
 	"github.com/Kellerman81/go_media_downloader/config"
 	"github.com/Kellerman81/go_media_downloader/logger"
+	"go.uber.org/zap"
 )
 
 type Serie struct {
@@ -228,279 +229,293 @@ type DbserieEpisodeJson struct {
 	DbserieID  uint `db:"dbserie_id"`
 }
 
-func (serie *Dbserie) GetMetadata(language string, querytmdb bool, querytrakt bool, overwrite bool) []string {
-	var aliases []string
-	defer logger.ClearVar(&aliases)
-
-	if querytmdb {
-		moviedb, found := apiexternal.TmdbApi.FindTvdb(serie.ThetvdbID)
-		defer logger.ClearVar(&moviedb)
-		if found == nil {
-			if len(moviedb.TvResults) >= 1 {
-				moviedbexternal, foundexternal := apiexternal.TmdbApi.GetTVExternal(moviedb.TvResults[0].ID)
-				defer logger.ClearVar(&moviedbexternal)
-				if foundexternal == nil {
-					serie.FreebaseMID = moviedbexternal.FreebaseMID
-					serie.FreebaseID = moviedbexternal.FreebaseID
-					serie.Facebook = moviedbexternal.FacebookID
-					serie.Instagram = moviedbexternal.InstagramID
-					serie.Twitter = moviedbexternal.TwitterID
-				} else {
-					logger.Log.Warning("Serie externals not found for: ", serie.ThetvdbID)
-				}
-			} else {
-				logger.Log.Warning("Serie data not found for: ", serie.ThetvdbID)
+func (serie *Dbserie) GetMetadataTmdb(overwrite bool) {
+	if serie.ThetvdbID == 0 || (serie.Seriename != "" && !overwrite) {
+		return
+	}
+	moviedb, err := apiexternal.TmdbApi.FindTvdb(strconv.Itoa(serie.ThetvdbID))
+	if err == nil {
+		if len(moviedb.TvResults) >= 1 {
+			if (serie.Seriename == "" || overwrite) && moviedb.TvResults[0].Name != "" {
+				serie.Seriename = moviedb.TvResults[0].Name
 			}
+			// var moviedbexternal apiexternal.TheMovieDBTVExternal
+			// err := apiexternal.TmdbApi.GetTVExternal(moviedb.TvResults[0].ID, moviedbexternal)
+			// if err == nil {
+			// 	serie.FreebaseMID = moviedbexternal.FreebaseMID
+			// 	serie.FreebaseID = moviedbexternal.FreebaseID
+			// 	serie.Facebook = moviedbexternal.FacebookID
+			// 	serie.Instagram = moviedbexternal.InstagramID
+			// 	serie.Twitter = moviedbexternal.TwitterID
+			// } else {
+			// 	logger.Log.GlobalLogger.Warn("Serie tmdb externals not found for: ", serie.ThetvdbID)
+			// }
+		} else {
+			logger.Log.GlobalLogger.Warn("Serie tmdb data not found for", zap.Int("tvdb", serie.ThetvdbID))
 		}
 	}
-	tvdbdetails, founddetail := apiexternal.TvdbApi.GetSeries(serie.ThetvdbID, language)
-	defer logger.ClearVar(&tvdbdetails)
-
-	if founddetail == nil {
-
-		serie.Seriename = tvdbdetails.Data.SeriesName
-		serie.Aliases = strings.Join(tvdbdetails.Data.Aliases, ",")
-		serie.Season = tvdbdetails.Data.Season
-		serie.Status = tvdbdetails.Data.Status
-		serie.Firstaired = tvdbdetails.Data.FirstAired
-		serie.Network = tvdbdetails.Data.Network
-		serie.Runtime = tvdbdetails.Data.Runtime
-		serie.Language = tvdbdetails.Data.Language
-		serie.Genre = strings.Join(tvdbdetails.Data.Genre, ",")
-		serie.Overview = tvdbdetails.Data.Overview
-		serie.Rating = tvdbdetails.Data.Rating
-		serie.Siterating = strconv.FormatFloat(float64(tvdbdetails.Data.SiteRating), 'f', 1, 32)
-		serie.SiteratingCount = strconv.Itoa(tvdbdetails.Data.SiteRatingCount)
-		serie.Slug = tvdbdetails.Data.Slug
-		serie.Banner = tvdbdetails.Data.Banner
-		serie.Poster = tvdbdetails.Data.Poster
-		serie.Fanart = tvdbdetails.Data.Fanart
-		serie.ImdbID = tvdbdetails.Data.ImdbID
-		aliases = append(aliases, tvdbdetails.Data.Aliases...)
+}
+func (serie *Dbserie) GetMetadataTrakt(overwrite bool) {
+	if serie.ImdbID == "" {
+		return
+	}
+	traktdetails, err := apiexternal.TraktApi.GetSerie(serie.ImdbID)
+	if err == nil {
+		if (serie.Genre == "" || overwrite) && len(traktdetails.Genres) >= 1 {
+			serie.Genre = strings.Join(traktdetails.Genres, ",")
+		}
+		if (serie.Language == "" || overwrite) && traktdetails.Language != "" {
+			serie.Language = traktdetails.Language
+		}
+		if (serie.Network == "" || overwrite) && traktdetails.Network != "" {
+			serie.Network = traktdetails.Network
+		}
+		if (serie.Overview == "" || overwrite) && traktdetails.Overview != "" {
+			serie.Overview = traktdetails.Overview
+		}
+		if (serie.Rating == "" || overwrite) && traktdetails.Rating != 0 {
+			serie.Rating = strconv.FormatFloat(float64(traktdetails.Rating), 'f', 4, 64) //fmt.Sprintf("%f", traktdetails.Rating)
+		}
+		if (serie.Runtime == "" || overwrite) && traktdetails.Runtime != 0 {
+			serie.Runtime = strconv.Itoa(traktdetails.Runtime)
+		}
+		if (serie.Seriename == "" || overwrite) && traktdetails.Title != "" {
+			serie.Seriename = traktdetails.Title
+		}
+		if (serie.Slug == "" || overwrite) && traktdetails.Ids.Slug != "" {
+			serie.Slug = traktdetails.Ids.Slug
+		}
+		if (serie.Status == "" || overwrite) && traktdetails.Status != "" {
+			serie.Status = traktdetails.Status
+		}
+		if (serie.ThetvdbID == 0 || overwrite) && traktdetails.Ids.Tvdb != 0 {
+			serie.ThetvdbID = traktdetails.Ids.Tvdb
+		}
+		if (serie.TraktID == 0 || overwrite) && traktdetails.Ids.Trakt != 0 {
+			serie.TraktID = traktdetails.Ids.Trakt
+		}
+		if (serie.TvrageID == 0 || overwrite) && traktdetails.Ids.Tvrage != 0 {
+			serie.TvrageID = traktdetails.Ids.Tvrage
+		}
+		if (serie.Firstaired == "" || overwrite) && traktdetails.FirstAired.String() != "" {
+			serie.Firstaired = traktdetails.FirstAired.String()
+		}
 	} else {
-		logger.Log.Warning("Serie tvdb data not found for: ", serie.ThetvdbID)
+		logger.Log.GlobalLogger.Warn("Serie trakt data not found for", zap.Int("tvdb", serie.ThetvdbID))
+	}
+}
+func (serie *Dbserie) GetMetadataTvdb(language string, overwrite bool) []string {
+	if serie.ThetvdbID == 0 {
 		return []string{}
 	}
-	if querytrakt && serie.ImdbID != "" {
-		traktdetails, trakterr := apiexternal.TraktApi.GetSerie(serie.ImdbID)
-		defer logger.ClearVar(&traktdetails)
-		if trakterr == nil {
-			if serie.Genre == "" || overwrite {
-				serie.Genre = strings.Join(traktdetails.Genres, ",")
-			}
-			if serie.Language == "" || overwrite {
-				serie.Language = traktdetails.Language
-			}
-			if serie.Network == "" || overwrite {
-				serie.Network = traktdetails.Network
-			}
-			if serie.Overview == "" || overwrite {
-				serie.Overview = traktdetails.Overview
-			}
-			if serie.Rating == "" || overwrite {
-				serie.Rating = fmt.Sprintf("%f", traktdetails.Rating)
-			}
-			if serie.Runtime == "" || overwrite {
-				serie.Runtime = strconv.Itoa(traktdetails.Runtime)
-			}
-			if serie.Seriename == "" || overwrite {
-				serie.Seriename = traktdetails.Title
-			}
-			if serie.Slug == "" || overwrite {
-				serie.Slug = traktdetails.Ids.Slug
-			}
-			if serie.Status == "" || overwrite {
-				serie.Status = traktdetails.Status
-			}
-			if serie.ThetvdbID == 0 || overwrite {
-				serie.ThetvdbID = traktdetails.Ids.Tvdb
-			}
-			if serie.TraktID == 0 || overwrite {
-				serie.TraktID = traktdetails.Ids.Trakt
-			}
-			if serie.TvrageID == 0 || overwrite {
-				serie.TvrageID = traktdetails.Ids.Tvrage
-			}
-			if serie.Firstaired == "" || overwrite {
-				serie.Firstaired = traktdetails.FirstAired.String()
-			}
+	tvdbdetails, err := apiexternal.TvdbApi.GetSeries(serie.ThetvdbID, language)
+	if err == nil {
+		if (serie.Seriename == "" || overwrite) && tvdbdetails.Data.SeriesName != "" {
+			serie.Seriename = tvdbdetails.Data.SeriesName
 		}
-		traktaliases, trakterr := apiexternal.TraktApi.GetSerieAliases(serie.ImdbID)
-		defer logger.ClearVar(&traktaliases)
+		if (serie.Aliases == "" || overwrite) && len(tvdbdetails.Data.Aliases) >= 1 {
+			serie.Aliases = strings.Join(tvdbdetails.Data.Aliases, ",")
+		}
+		if (serie.Season == "" || overwrite) && tvdbdetails.Data.Season != "" {
+			serie.Season = tvdbdetails.Data.Season
+		}
+		if (serie.Status == "" || overwrite) && tvdbdetails.Data.Status != "" {
+			serie.Status = tvdbdetails.Data.Status
+		}
+		if (serie.Firstaired == "" || overwrite) && tvdbdetails.Data.FirstAired != "" {
+			serie.Firstaired = tvdbdetails.Data.FirstAired
+		}
+		if (serie.Network == "" || overwrite) && tvdbdetails.Data.Network != "" {
+			serie.Network = tvdbdetails.Data.Network
+		}
+		if (serie.Runtime == "" || overwrite) && tvdbdetails.Data.Runtime != "" {
+			serie.Runtime = tvdbdetails.Data.Runtime
+		}
+		if (serie.Language == "" || overwrite) && tvdbdetails.Data.Language != "" {
+			serie.Language = tvdbdetails.Data.Language
+		}
+		if (serie.Genre == "" || overwrite) && len(tvdbdetails.Data.Genre) >= 1 {
+			serie.Genre = strings.Join(tvdbdetails.Data.Genre, ",")
+		}
+		if (serie.Overview == "" || overwrite) && tvdbdetails.Data.Overview != "" {
+			serie.Overview = tvdbdetails.Data.Overview
+		}
+		if (serie.Rating == "" || overwrite) && tvdbdetails.Data.Rating != "" {
+			serie.Rating = tvdbdetails.Data.Rating
+		}
+		if (serie.Siterating == "" || overwrite) && tvdbdetails.Data.SiteRating != 0 {
+			serie.Siterating = strconv.FormatFloat(float64(tvdbdetails.Data.SiteRating), 'f', 1, 32)
+		}
+		if (serie.SiteratingCount == "" || overwrite) && tvdbdetails.Data.SiteRatingCount != 0 {
+			serie.SiteratingCount = strconv.Itoa(tvdbdetails.Data.SiteRatingCount)
+		}
+		if (serie.Slug == "" || overwrite) && tvdbdetails.Data.Slug != "" {
+			serie.Slug = tvdbdetails.Data.Slug
+		}
+		if (serie.Banner == "" || overwrite) && tvdbdetails.Data.Banner != "" {
+			serie.Banner = tvdbdetails.Data.Banner
+		}
+		if (serie.Poster == "" || overwrite) && tvdbdetails.Data.Poster != "" {
+			serie.Poster = tvdbdetails.Data.Poster
+		}
+		if (serie.Fanart == "" || overwrite) && tvdbdetails.Data.Fanart != "" {
+			serie.Fanart = tvdbdetails.Data.Fanart
+		}
+		if (serie.ImdbID == "" || overwrite) && tvdbdetails.Data.ImdbID != "" {
+			serie.ImdbID = tvdbdetails.Data.ImdbID
+		}
+		return tvdbdetails.Data.Aliases
+	} else {
+		logger.Log.GlobalLogger.Warn("Serie tvdb data not found for", zap.Int("tvdb", serie.ThetvdbID), zap.Error(err))
+	}
 
-		cfg_imdb := config.ConfigGet("imdb").Data.(config.ImdbConfig)
-		if trakterr == nil {
-			for idxalias := range traktaliases {
-				regionok := false
-				for idxlang := range cfg_imdb.Indexedlanguages {
-					if strings.EqualFold(cfg_imdb.Indexedlanguages[idxlang], traktaliases[idxalias].Country) {
-						regionok = true
-						break
+	return []string{}
+}
+func (serie *Dbserie) GetMetadata(language string, querytmdb bool, querytrakt bool, overwrite bool, returnaliases bool) []string {
+	aliases := serie.GetMetadataTvdb(language, overwrite)
+	if querytmdb {
+		serie.GetMetadataTmdb(false)
+	}
+	if querytrakt && serie.ImdbID != "" {
+		serie.GetMetadataTrakt(false)
+		if returnaliases {
+			traktaliases, err := apiexternal.TraktApi.GetSerieAliases(serie.ImdbID)
+
+			if err == nil {
+				arrcfglang := &logger.InStringArrayStruct{Arr: config.Cfg.Imdbindexer.Indexedlanguages}
+				defer arrcfglang.Close()
+				for idxalias := range traktaliases.Aliases {
+					if logger.InStringArray(traktaliases.Aliases[idxalias].Country, arrcfglang) && len(arrcfglang.Arr) >= 1 {
+						aliases = append(aliases, traktaliases.Aliases[idxalias].Title)
 					}
 				}
-				if !regionok && len(cfg_imdb.Indexedlanguages) >= 1 {
-					continue
-				}
-				aliases = append(aliases, traktaliases[idxalias].Title)
+				traktaliases = nil
 			}
 		}
 	}
 	return aliases
 }
 
-func (serie *Dbserie) GetTitles(configTemplate string, queryimdb bool, querytrakt bool) []DbserieAlternate {
+func (serie *Dbserie) GetTitles(cfg string, queryimdb bool, querytrakt bool) []DbserieAlternate {
 
-	var c []DbserieAlternate
-	defer logger.ClearVar(&c)
-	var processed []string
-	defer logger.ClearVar(&processed)
-	configEntry := config.ConfigGet(configTemplate).Data.(config.MediaTypeConfig)
-	var regionok, foundentry bool
-	if queryimdb {
+	processed := &logger.InStringArrayStruct{Arr: []string{}}
+	defer processed.Close()
+
+	arrmetalang := &logger.InStringArrayStruct{Arr: config.Cfg.Media[cfg].Metadata_title_languages}
+	defer arrmetalang.Close()
+	var c []DbserieAlternate = make([]DbserieAlternate, 0, 10)
+	//var regionok bool
+	if queryimdb && serie.ImdbID != "" {
 		queryimdbid := serie.ImdbID
 		if !strings.HasPrefix(serie.ImdbID, "tt") {
 			queryimdbid = "tt" + serie.ImdbID
 		}
-		imdbakadata, _ := QueryImdbAka(Query{Where: "tconst = ? COLLATE NOCASE", WhereArgs: []interface{}{queryimdbid}})
-		defer logger.ClearVar(&imdbakadata)
-		for idxaka := range imdbakadata {
-			regionok = false
-			for idxlang := range configEntry.Metadata_title_languages {
-				if strings.EqualFold(configEntry.Metadata_title_languages[idxlang], imdbakadata[idxaka].Region) {
-					regionok = true
-					break
-				}
+		imdbakadata, _ := QueryImdbAka(&Query{Where: "tconst = ?"}, queryimdbid)
+
+		for idximdb := range imdbakadata {
+			if logger.InStringArray(imdbakadata[idximdb].Region, arrmetalang) || len(arrmetalang.Arr) == 0 {
+				c = append(c, DbserieAlternate{DbserieID: serie.ID, Title: imdbakadata[idximdb].Title, Slug: imdbakadata[idximdb].Slug, Region: imdbakadata[idximdb].Region})
+				processed.Arr = append(processed.Arr, imdbakadata[idximdb].Title)
 			}
-			//logger.Log.Debug("Title: ", imdbakadata[idxaka].Title, " Region: ", imdbakadata[idxaka].Region, " ok: ", regionok)
-			if !regionok && len(configEntry.Metadata_title_languages) >= 1 {
-				continue
-			}
-			c = append(c, DbserieAlternate{DbserieID: serie.ID, Title: imdbakadata[idxaka].Title, Slug: imdbakadata[idxaka].Slug, Region: imdbakadata[idxaka].Region})
-			processed = append(processed, imdbakadata[idxaka].Title)
 		}
 	}
-	if querytrakt {
-		queryid := serie.ImdbID
-		if queryid == "" {
+	if querytrakt && (serie.TraktID != 0 || serie.ImdbID != "") {
+		queryid := ""
+		if serie.TraktID != 0 {
 			queryid = strconv.Itoa(serie.TraktID)
 		}
+		if queryid == "" {
+			queryid = serie.ImdbID
+		}
 		traktaliases, err := apiexternal.TraktApi.GetSerieAliases(queryid)
-		defer logger.ClearVar(&traktaliases)
 		if err == nil {
-			for idxalias := range traktaliases {
-				regionok = false
-				for idxlang := range configEntry.Metadata_title_languages {
-					if strings.EqualFold(configEntry.Metadata_title_languages[idxlang], traktaliases[idxalias].Country) {
-						regionok = true
-						break
-					}
-				}
-				//logger.Log.Debug("Title: ", traktaliases[idxalias].Title, " Region: ", traktaliases[idxalias].Country, " ok: ", regionok)
-				if !regionok && len(configEntry.Metadata_title_languages) >= 1 {
-					continue
-				}
-				foundentry = false
-				for idxproc := range processed {
-					if processed[idxproc] == traktaliases[idxalias].Title {
-						foundentry = true
-						break
-					}
-				}
-				if !foundentry {
-					c = append(c, DbserieAlternate{DbserieID: serie.ID, Title: traktaliases[idxalias].Title, Slug: logger.StringToSlug(traktaliases[idxalias].Title), Region: traktaliases[idxalias].Country})
-					processed = append(processed, traktaliases[idxalias].Title)
+			for idxalias := range traktaliases.Aliases {
+				if logger.InStringArray(traktaliases.Aliases[idxalias].Country, arrmetalang) || len(arrmetalang.Arr) == 0 {
+					c = append(c, DbserieAlternate{DbserieID: serie.ID, Title: traktaliases.Aliases[idxalias].Title, Slug: logger.StringToSlug(traktaliases.Aliases[idxalias].Title), Region: traktaliases.Aliases[idxalias].Country})
+					processed.Arr = append(processed.Arr, traktaliases.Aliases[idxalias].Title)
 				}
 			}
+			traktaliases = nil
+		} else {
+			logger.Log.GlobalLogger.Warn("Serie trakt aliases not found for", zap.Int("tvdb", serie.ThetvdbID))
 		}
 	}
 	return c
 }
 
-func (serie *Dbserie) GetEpisodes(language string, querytrakt bool) []DbserieEpisode {
-	var epi []DbserieEpisode
-	defer logger.ClearVar(&epi)
+func (serie *Dbserie) InsertEpisodes(language string, querytrakt bool) {
 
 	if serie.ThetvdbID != 0 {
-		tvdbdetails, founddetail := apiexternal.TvdbApi.GetSeriesEpisodes(serie.ThetvdbID, language)
-		defer logger.ClearVar(&tvdbdetails)
+		tvdbdetails, err := apiexternal.TvdbApi.GetSeriesEpisodes(serie.ThetvdbID, language)
 
-		if founddetail == nil {
-			var episode DbserieEpisode
-			var layout string
-			var t time.Time
-			var terr error
+		if err == nil {
 			for idx := range tvdbdetails.Data {
-				episode = DbserieEpisode{}
-				episode.Episode = strconv.Itoa(tvdbdetails.Data[idx].AiredEpisodeNumber)
-				episode.Season = strconv.Itoa(tvdbdetails.Data[idx].AiredSeason)
-				episode.Identifier = "S" + padNumberWithZero(tvdbdetails.Data[idx].AiredSeason) + "E" + padNumberWithZero(tvdbdetails.Data[idx].AiredEpisodeNumber)
-				episode.Title = tvdbdetails.Data[idx].EpisodeName
-				if tvdbdetails.Data[idx].FirstAired != "" {
-					layout = "2006-01-02" //year-month-day
-					t, terr = time.Parse(layout, tvdbdetails.Data[idx].FirstAired)
-					if terr == nil {
-						episode.FirstAired = sql.NullTime{Time: t, Valid: true}
-					}
+				if CountRowsStaticNoError("select count() from dbserie_episodes where dbserie_id = ? and season = ? and episode = ?", serie.ID, strconv.Itoa(tvdbdetails.Data[idx].AiredSeason), strconv.Itoa(tvdbdetails.Data[idx].AiredEpisodeNumber)) == 0 {
+					InsertNamed("insert into dbserie_episodes (episode, season, identifier, title, first_aired, overview, poster, dbserie_id) VALUES (:episode, :season, :identifier, :title, :first_aired, :overview, :poster, :dbserie_id)", DbserieEpisode{
+						Episode:    strconv.Itoa(tvdbdetails.Data[idx].AiredEpisodeNumber),
+						Season:     strconv.Itoa(tvdbdetails.Data[idx].AiredSeason),
+						Identifier: "S" + padNumberWithZero(tvdbdetails.Data[idx].AiredSeason) + "E" + padNumberWithZero(tvdbdetails.Data[idx].AiredEpisodeNumber),
+						Title:      tvdbdetails.Data[idx].EpisodeName,
+						Overview:   tvdbdetails.Data[idx].Overview,
+						Poster:     tvdbdetails.Data[idx].Poster,
+						DbserieID:  serie.ID,
+						FirstAired: logger.ParseDate(tvdbdetails.Data[idx].FirstAired, "2006-01-02")})
 				}
-				episode.Overview = tvdbdetails.Data[idx].Overview
-				episode.Poster = tvdbdetails.Data[idx].Poster
-				episode.DbserieID = serie.ID
-				epi = append(epi, episode)
 			}
+			tvdbdetails = nil
 		} else {
-			logger.Log.Warning("Serie episode not found for: ", serie.ThetvdbID, founddetail)
+			logger.Log.GlobalLogger.Warn("Serie tvdb episodes not found for", zap.Int("tvdb", serie.ThetvdbID))
 		}
 	}
 	if querytrakt && serie.ImdbID != "" {
-		seasons, err := apiexternal.TraktApi.GetSerieSeasons(serie.ImdbID)
-		defer logger.ClearVar(&seasons)
-		if err == nil {
-			var episodes []apiexternal.TraktSerieSeasonEpisodes
-			defer logger.ClearVar(&episodes)
-			var breakloop bool
-			var episode DbserieEpisode
-			for idxseason := range seasons {
-				episodes, err = apiexternal.TraktApi.GetSerieSeasonEpisodes(serie.ImdbID, seasons[idxseason].Number)
-				if err == nil {
-					for idxepi := range episodes {
-						breakloop = false
-						for idxadded, added := range epi {
-							if added.Season == strconv.Itoa(episodes[idxepi].Season) && added.Episode == strconv.Itoa(episodes[idxepi].Episode) {
-								breakloop = true
-								if added.Title == "" {
-									epi[idxadded].Title = episodes[idxepi].Title
-								}
-								if added.FirstAired.Time.IsZero() {
-									epi[idxadded].FirstAired = sql.NullTime{Time: episodes[idxepi].FirstAired, Valid: true}
-								}
-								if added.Overview == "" {
-									epi[idxadded].Overview = episodes[idxepi].Overview
-								}
-								if added.Runtime == 0 {
-									epi[idxadded].Runtime = episodes[idxepi].Runtime
-								}
-								break
-							}
-						}
-						if breakloop {
-							continue
-						}
-						episode = DbserieEpisode{}
-						episode.Episode = strconv.Itoa(episodes[idxepi].Episode)
-						episode.Season = strconv.Itoa(episodes[idxepi].Season)
-						episode.Identifier = "S" + padNumberWithZero(episodes[idxepi].Season) + "E" + padNumberWithZero(episodes[idxepi].Episode)
-						episode.Title = episodes[idxepi].Title
-						episode.FirstAired = sql.NullTime{Time: episodes[idxepi].FirstAired, Valid: true}
-						episode.Overview = episodes[idxepi].Overview
-						episode.DbserieID = serie.ID
-						episode.Runtime = episodes[idxepi].Runtime
-						epi = append(epi, episode)
-					}
+		gettraktepisodes(serie.ImdbID, serie.ID)
+	}
+}
+func gettraktepisodes(imdb string, serieid uint) {
+	seasons, err := apiexternal.TraktApi.GetSerieSeasons(imdb)
+	if err == nil {
+		var episodes *apiexternal.TraktSerieSeasonEpisodeGroup
+		//var identifier string
+		var counter uint
+		for idxseason := range seasons.Seasons {
+			episodes, err = apiexternal.TraktApi.GetSerieSeasonEpisodes(imdb, seasons.Seasons[idxseason].Number)
+			if err == nil {
+				for idxepi := range episodes.Episodes {
+					counter, _ = QueryColumnUint("select id from dbserie_episodes where dbserie_id = ? and season = ? and episode = ?", serieid, strconv.Itoa(episodes.Episodes[idxepi].Season), strconv.Itoa(episodes.Episodes[idxepi].Episode))
+					if counter == 0 {
+						InsertNamed("insert into dbserie_episodes (episode, season, identifier, title, first_aired, overview, poster, dbserie_id) VALUES (:episode, :season, :identifier, :title, :first_aired, :overview, :poster, :dbserie_id)", DbserieEpisode{
+							Episode:    strconv.Itoa(episodes.Episodes[idxepi].Episode),
+							Season:     strconv.Itoa(episodes.Episodes[idxepi].Season),
+							Identifier: "S" + padNumberWithZero(episodes.Episodes[idxepi].Season) + "E" + padNumberWithZero(episodes.Episodes[idxepi].Episode),
+							Title:      episodes.Episodes[idxepi].Title,
+							FirstAired: sql.NullTime{Time: episodes.Episodes[idxepi].FirstAired, Valid: true},
+							Overview:   episodes.Episodes[idxepi].Overview,
+							DbserieID:  serieid,
+							Runtime:    episodes.Episodes[idxepi].Runtime})
+					} //else {
+					// 	if episodes.Episodes[idxepi].Title != "" {
+					// 		UpdateColumnStatic("update dbserie_episodes set title = ? where id = ? and title = ''", episodes.Episodes[idxepi].Title, counter)
+					// 	}
+					// 	if !episodes.Episodes[idxepi].FirstAired.IsZero() {
+					// 		UpdateColumnStatic("update dbserie_episodes set first_aired = ? where id = ? and first_aired is null", sql.NullTime{Time: episodes.Episodes[idxepi].FirstAired, Valid: true}, counter)
+					// 	}
+					// 	if episodes.Episodes[idxepi].Overview != "" {
+					// 		UpdateColumnStatic("update dbserie_episodes set overview = ? where id = ? and overview = ''", episodes.Episodes[idxepi].Overview, counter)
+					// 	}
+					// 	if episodes.Episodes[idxepi].Runtime != 0 {
+					// 		UpdateColumnStatic("update dbserie_episodes set runtime = ? where id = ? and Runtime = 0", episodes.Episodes[idxepi].Runtime, counter)
+					// 	}
+					// }
 				}
+			} else {
+				logger.Log.GlobalLogger.Warn("Serie trakt episodes not found for", zap.String("imdb", imdb), zap.Int("season", seasons.Seasons[idxseason].Number))
 			}
 		}
+		episodes = nil
+		seasons = nil
+	} else {
+		logger.Log.GlobalLogger.Warn("Serie trakt seasons not found for", zap.String("imdb", imdb))
 	}
-	return epi
 }
 func padNumberWithZero(value int) string {
 	return fmt.Sprintf("%02d", value)

@@ -1,93 +1,25 @@
 package parser
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
-	"fmt"
+	"errors"
 	"math"
 	"os/exec"
 	"path"
-	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/Kellerman81/go_media_downloader/apiexternal"
 	"github.com/Kellerman81/go_media_downloader/config"
+	"github.com/Kellerman81/go_media_downloader/database"
 	"github.com/Kellerman81/go_media_downloader/logger"
 )
 
 //Original Source: https://github.com/stashapp/stash/blob/develop/pkg/ffmpeg/ffprobe.go
-
-// var currentLocation = time.Now().Location()
-
-// type JSONTime struct {
-// 	time.Time
-// }
-
-// func (jt *JSONTime) UnmarshalJSON(b []byte) error {
-// 	s := strings.Trim(string(b), "\"")
-// 	if s == "null" {
-// 		jt.Time = time.Time{}
-// 		return nil
-// 	}
-
-// 	var err error
-// 	jt.Time, err = parseDateStringAsTime(s)
-// 	if err != nil {
-// 		logger.Log.Errorf("error unmarshalling JSONTime: %s", err.Error())
-// 	}
-// 	return nil
-// }
-
-// func (jt *JSONTime) MarshalJSON() ([]byte, error) {
-// 	if jt.Time.IsZero() {
-// 		return []byte("null"), nil
-// 	}
-// 	return []byte(fmt.Sprintf("\"%s\"", jt.Time.Format(time.RFC3339))), nil
-// }
-
-// func (jt *JSONTime) GetTime() time.Time {
-// 	if currentLocation != nil {
-// 		if jt.IsZero() {
-// 			return time.Now().In(currentLocation)
-// 		} else {
-// 			return jt.Time.In(currentLocation)
-// 		}
-// 	} else {
-// 		if jt.IsZero() {
-// 			return time.Now()
-// 		} else {
-// 			return jt.Time
-// 		}
-// 	}
-// }
-
-// const railsTimeLayout = "2006-01-02 15:04:05 MST"
-
-// func parseDateStringAsTime(dateString string) (time.Time, error) {
-// 	// https://stackoverflow.com/a/20234207 WTF?
-
-// 	t, e := time.Parse(time.RFC3339, dateString)
-// 	if e == nil {
-// 		return t, nil
-// 	}
-
-// 	t, e = time.Parse("2006-01-02", dateString)
-// 	if e == nil {
-// 		return t, nil
-// 	}
-
-// 	t, e = time.Parse("2006-01-02 15:04:05", dateString)
-// 	if e == nil {
-// 		return t, nil
-// 	}
-
-// 	t, e = time.Parse(railsTimeLayout, dateString)
-// 	if e == nil {
-// 		return t, nil
-// 	}
-
-// 	return time.Time{}, fmt.Errorf("ParseDateStringAsTime failed: dateString <%s>", dateString)
-// }
 
 type FFProbeJSON struct {
 	Format struct {
@@ -101,15 +33,15 @@ type FFProbeJSON struct {
 		//ProbeScore     int    `json:"probe_score"`
 		//Size           string `json:"size"`
 		//StartTime      string `json:"start_time"`
-		Tags struct {
-			//CompatibleBrands string   `json:"compatible_brands"`
-			//CreationTime     JSONTime `json:"creation_time"`
-			//Encoder      string `json:"encoder"`
-			//MajorBrand   string `json:"major_brand"`
-			//MinorVersion string `json:"minor_version"`
-			Title string `json:"title"`
-			//Comment string `json:"comment"`
-		} `json:"tags"`
+		//Tags struct {
+		//CompatibleBrands string   `json:"compatible_brands"`
+		//CreationTime     JSONTime `json:"creation_time"`
+		//Encoder      string `json:"encoder"`
+		//MajorBrand   string `json:"major_brand"`
+		//MinorVersion string `json:"minor_version"`
+		//Title string `json:"title"`
+		//Comment string `json:"comment"`
+		//} `json:"tags"`
 	} `json:"format"`
 	Streams []FFProbeStream `json:"streams"`
 	Error   struct {
@@ -118,9 +50,16 @@ type FFProbeJSON struct {
 	} `json:"error"`
 }
 
+func (s *FFProbeJSON) Close() {
+	if s != nil {
+		s.Streams = nil
+		s = nil
+	}
+}
+
 type FFProbeStream struct {
 	//AvgFrameRate string `json:"avg_frame_rate"`
-	BitRate string `json:"bit_rate"`
+	//BitRate string `json:"bit_rate"`
 	//BitsPerRawSample   string `json:"bits_per_raw_sample,omitempty"`
 	//ChromaLocation     string `json:"chroma_location,omitempty"`
 	//CodecLongName      string `json:"codec_long_name"`
@@ -166,7 +105,8 @@ type FFProbeStream struct {
 		//CreationTime JSONTime `json:"creation_time"`
 		//HandlerName  string   `json:"handler_name"`
 		Language string `json:"language"`
-		Rotate   string `json:"rotate"`
+		//Rotate   int    `json:"rotate"`
+		//Rotate   string `json:"rotate"`
 	} `json:"tags"`
 	//TimeBase      string `json:"time_base"`
 	Width int `json:"width,omitempty"`
@@ -178,173 +118,161 @@ type FFProbeStream struct {
 	//SampleRate    string `json:"sample_rate,omitempty"`
 }
 
-type VideoFile struct {
-	JSON FFProbeJSON
-
-	Path  string
-	Title string
-	//Comment   string
-	//Container string
-	Duration float64
-	//StartTime float64
-	//Bitrate   int64
-	//Size      int64
-	//CreationTime time.Time
-
-	VideoCodec          string
-	VideoCodecTagString string
-	//VideoBitrate        int64
-	Width  int
-	Height int
-	//FrameRate           float64
-	//Rotation            int64
-
-	AudioCodec     string
-	AudioLanguages []string
-}
-
 func getFFProbeFilename() string {
-	ffprobepath := ""
-	if config.ConfigCheck("general") {
-		cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
+	value, found := logger.GlobalCache.Get("ffprobepath")
+	if !found {
+		ffprobepath := config.Cfg.General.FfprobePath
 
-		ffprobepath = cfg_general.FfprobePath
+		if runtime.GOOS == "windows" {
+			ffprobepath = path.Join(ffprobepath, "ffprobe.exe")
+		} else {
+			ffprobepath = path.Join(ffprobepath, "ffprobe")
+		}
+		logger.GlobalCache.Set("ffprobepath", ffprobepath, 0)
+		return ffprobepath
+	} else {
+		return value.Value.(string)
 	}
-
-	if runtime.GOOS == "windows" {
-		return path.Join(ffprobepath, "ffprobe.exe")
-	}
-	return path.Join(ffprobepath, "ffprobe")
 }
 
-func (s *VideoFile) Close() {
-	s = nil
+// runProbe takes the fully configured ffprobe command and executes it, returning the ffprobe data if everything went fine.
+func runProbe(cmd *exec.Cmd) (*FFProbeJSON, error) {
+	var outputBuf bytes.Buffer
+	var stdErr bytes.Buffer
+
+	cmd.Stdout = &outputBuf
+	cmd.Stderr = &stdErr
+
+	err := cmd.Run()
+	if err != nil {
+		cmd = nil
+		return nil, errors.New("error running FFProbe [" + stdErr.String() + "] " + err.Error() + " [" + outputBuf.String() + "]")
+	}
+
+	if stdErr.Len() > 0 {
+		cmd = nil
+		return nil, errors.New("ffprobe error: " + stdErr.String())
+	}
+
+	var data FFProbeJSON
+	err = json.Unmarshal(outputBuf.Bytes(), &data)
+	if err != nil {
+		cmd = nil
+		return nil, errors.New("error parsing ffprobe output: " + err.Error())
+	}
+	cmd = nil
+	return &data, nil
+}
+
+func getffprobeargs() interface{} {
+	value, found := logger.GlobalCache.Get("ffprobeargs")
+	if !found {
+		var ffprobeargs []string = []string{
+			"-loglevel", "fatal",
+			"-print_format", "json",
+			"-show_entries",
+			"format=duration : stream=codec_name,codec_tag_string,codec_type,height,width : stream_tags=Language : error",
+		}
+		logger.GlobalCache.Set("ffprobeargs", ffprobeargs, 0)
+		return ffprobeargs
+	} else {
+		return value.Value
+	}
+}
+
+func probeURL(ctx context.Context, fileURL string) (data *FFProbeJSON, err error) {
+	// Add the file argument
+	return runProbe(exec.CommandContext(ctx, getFFProbeFilename(), append(getffprobeargs().([]string), fileURL)...))
 }
 
 // Execute exec command and bind result to struct.
-func NewVideoFile(ffprobePath string, videoPath string, stripExt bool) (VideoFile, error) {
-	args := []string{"-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", "-show_error", videoPath}
-
-	cmd := exec.Command(ffprobePath, args...)
-	defer logger.ClearVar(cmd)
-	out, err := cmd.Output()
-	defer logger.ClearVar(&args)
-	defer logger.ClearVar(&out)
-
+func newVideoFile(m *apiexternal.ParseInfo, ffprobePath string, videoPath string, stripExt bool, qualityTemplate string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	result, err := probeURL(ctx, videoPath)
+	ctx.Done()
 	if err != nil {
-		return VideoFile{}, fmt.Errorf("FFProbe encountered an error with <%s>.\nError JSON:\n%s\nError: %s", videoPath, string(out), err.Error())
+		return err
 	}
-	probeJSON := FFProbeJSON{}
-	if err := json.Unmarshal(out, &probeJSON); err != nil {
-		return VideoFile{}, fmt.Errorf("error unmarshalling video data for <%s>: %s", videoPath, err.Error())
-	}
-	defer logger.ClearVar(&probeJSON)
-	if len(probeJSON.Streams) == 0 {
-		return VideoFile{}, fmt.Errorf("failed to get ffprobe json for <%s>", videoPath)
+	defer result.Close()
+
+	if len(result.Streams) == 0 {
+		return errors.New("failed to get ffprobe json for <" + videoPath + "> " + err.Error())
 	}
 
-	result := VideoFile{JSON: probeJSON}
-
-	if result.JSON.Error.Code != 0 {
-		return VideoFile{}, fmt.Errorf("ffprobe error code %d: %s", result.JSON.Error.Code, result.JSON.Error.String)
+	if result.Error.Code != 0 {
+		return errors.New("ffprobe error code " + strconv.FormatInt(int64(result.Error.Code), 10) + ": " + result.Error.String)
+	}
+	duration, err := strconv.ParseFloat(result.Format.Duration, 64)
+	if err == nil {
+		m.Runtime = int(math.Round(duration*100) / 100)
 	}
 
-	result.Path = videoPath
-	result.Title = probeJSON.Format.Tags.Title
+	m.Languages = []string{}
+	var getreso string
+	redetermineprio := false
+	for idxstream := range result.Streams {
+		if result.Streams[idxstream].CodecType == "audio" {
+			if result.Streams[idxstream].Tags.Language != "" {
+				m.Languages = append(m.Languages, result.Streams[idxstream].Tags.Language)
+			}
+			if m.Audio == "" || (!strings.EqualFold(result.Streams[idxstream].CodecName, m.Audio) && result.Streams[idxstream].CodecName != "") {
+				m.Audio = result.Streams[idxstream].CodecName
+				m.AudioID = gettypeids(m, logger.DisableParserStringMatch, m.Audio, &database.QualitiesRegexGroup{Arr: database.DBConnect.Getaudios})
+				redetermineprio = true
+			}
+		}
+		if result.Streams[idxstream].CodecType == "video" {
+			if result.Streams[idxstream].Height > result.Streams[idxstream].Width {
+				result.Streams[idxstream].Height, result.Streams[idxstream].Width = result.Streams[idxstream].Width, result.Streams[idxstream].Height
+			}
 
-	if result.Title == "" {
-		// default title to filename
-		result.Title = result.setTitleFromPath(stripExt)
-	}
-
-	//result.Comment = probeJSON.Format.Tags.Comment
-
-	//result.Bitrate, _ = strconv.ParseInt(probeJSON.Format.BitRate, 10, 64)
-	//result.Container = probeJSON.Format.FormatName
-	duration, durerr := strconv.ParseFloat(probeJSON.Format.Duration, 64)
-	if durerr == nil {
-		result.Duration = math.Round(duration*100) / 100
-	}
-	// fileStat, err := os.Stat(videoPath)
-	// if err != nil {
-	// 	logger.Log.Errorf("Error statting file <%s>: %s", videoPath, err.Error())
-	// 	return VideoFile{}, err
-	// }
-	//result.Size = fileStat.Size()
-	//fileStat = nil
-	//result.StartTime, _ = strconv.ParseFloat(probeJSON.Format.StartTime, 64)
-	//result.CreationTime = probeJSON.Format.Tags.CreationTime.Time
-
-	audioStream, audioStreamindex := result.getAudioStream()
-	defer logger.ClearVar(&audioStream)
-	if audioStreamindex != -1 {
-		result.AudioCodec = audioStream.CodecName
-	}
-	for idxstream := range result.JSON.Streams {
-		if result.JSON.Streams[idxstream].CodecType == "audio" {
-			if result.JSON.Streams[idxstream].Tags.Language != "" {
-				result.AudioLanguages = append(result.AudioLanguages, result.JSON.Streams[idxstream].Tags.Language)
+			if strings.EqualFold(result.Streams[idxstream].CodecName, "mpeg4") && strings.EqualFold(result.Streams[idxstream].CodecTagString, "xvid") {
+				result.Streams[idxstream].CodecName = result.Streams[idxstream].CodecTagString
+			}
+			if m.Codec == "" || (!strings.EqualFold(result.Streams[idxstream].CodecName, m.Codec) && result.Streams[idxstream].CodecName != "") {
+				m.Codec = result.Streams[idxstream].CodecName
+				m.CodecID = gettypeids(m, logger.DisableParserStringMatch, m.Codec, &database.QualitiesRegexGroup{Arr: database.DBConnect.Getcodecs})
+				redetermineprio = true
+			}
+			getreso = ""
+			if result.Streams[idxstream].Height == 360 {
+				getreso = "360p"
+			}
+			if result.Streams[idxstream].Height > 360 {
+				getreso = "368p"
+			}
+			if result.Streams[idxstream].Height > 368 || result.Streams[idxstream].Width == 720 {
+				getreso = "480p"
+			}
+			if result.Streams[idxstream].Height > 480 {
+				getreso = "576p"
+			}
+			if result.Streams[idxstream].Height > 576 || result.Streams[idxstream].Width == 1280 {
+				getreso = "720p"
+			}
+			if result.Streams[idxstream].Height > 720 || result.Streams[idxstream].Width == 1920 {
+				getreso = "1080p"
+			}
+			if result.Streams[idxstream].Height > 1080 || result.Streams[idxstream].Width == 3840 {
+				getreso = "2160p"
+			}
+			m.Height = result.Streams[idxstream].Height
+			m.Width = result.Streams[idxstream].Width
+			if m.Resolution == "" || !strings.EqualFold(getreso, m.Resolution) {
+				m.Resolution = getreso
+				m.ResolutionID = gettypeids(m, logger.DisableParserStringMatch, m.Resolution, &database.QualitiesRegexGroup{Arr: database.DBConnect.Getresolutions})
+				redetermineprio = true
 			}
 		}
 	}
-
-	videoStream, videoStreamindex := result.getVideoStream()
-	defer logger.ClearVar(&videoStream)
-	if videoStreamindex != -1 {
-		result.VideoCodec = videoStream.CodecName
-		result.VideoCodecTagString = videoStream.CodecTagString
-		//result.VideoBitrate, _ = strconv.ParseInt(videoStream.BitRate, 10, 64)
-		//var framerate float64
-		//if strings.Contains(videoStream.AvgFrameRate, "/") {
-		//frameRateSplit := strings.Split(videoStream.AvgFrameRate, "/")
-		//numerator, _ := strconv.ParseFloat(frameRateSplit[0], 64)
-		//denominator, _ := strconv.ParseFloat(frameRateSplit[1], 64)
-		//framerate = numerator / denominator
-		//} else {
-		//framerate, _ = strconv.ParseFloat(videoStream.AvgFrameRate, 64)
-		//}
-		//result.FrameRate = math.Round(framerate*100) / 100
-		if rotate, err := strconv.ParseInt(videoStream.Tags.Rotate, 10, 64); err == nil && rotate != 180 {
-			result.Width = videoStream.Height
-			result.Height = videoStream.Width
-		} else {
-			result.Width = videoStream.Width
-			result.Height = videoStream.Height
+	if redetermineprio {
+		allQualityPrioritiesMu.RLock()
+		defer allQualityPrioritiesMu.RUnlock()
+		prio, ok := allQualityPriorities[qualityTemplate][strconv.Itoa(int(m.ResolutionID))+"_"+strconv.Itoa(int(m.QualityID))+"_"+strconv.Itoa(int(m.CodecID))+"_"+strconv.Itoa(int(m.AudioID))]
+		if ok {
+			m.Priority = prio
 		}
 	}
-	result.JSON.Streams = nil
-	return result, nil
-}
-
-func (v *VideoFile) getAudioStream() (FFProbeStream, int) {
-	index := v.getStreamIndex("audio", v.JSON)
-	if index != -1 {
-		return v.JSON.Streams[index], index
-	}
-	return FFProbeStream{}, index
-}
-
-func (v *VideoFile) getVideoStream() (FFProbeStream, int) {
-	index := v.getStreamIndex("video", v.JSON)
-	if index != -1 {
-		return v.JSON.Streams[index], index
-	}
-	return FFProbeStream{}, index
-}
-
-func (v *VideoFile) getStreamIndex(fileType string, probeJSON FFProbeJSON) int {
-	for i, stream := range probeJSON.Streams {
-		if stream.CodecType == fileType {
-			return i
-		}
-	}
-	return -1
-}
-
-func (v *VideoFile) setTitleFromPath(stripExtension bool) string {
-	v.Title = filepath.Base(v.Path)
-	if stripExtension {
-		v.Title = strings.TrimSuffix(v.Title, filepath.Ext(v.Title))
-	}
-	return v.Title
+	return nil
 }

@@ -33,7 +33,6 @@ func GetSeriesTable(ctx *context.Context) table.Table {
 	info.AddField("Listname", "listname", db.Text).FieldFilterable(types.FilterType{FormType: form.SelectSingle}).FieldFilterOptionsFromTable("series", "listname", "listname", func(sql *db.SQL) *db.SQL { return sql.GroupBy("listname") }).FieldFilterOptionExt(map[string]interface{}{"allowClear": true}).FieldSortable()
 	info.AddField("Rootpath", "rootpath", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike})
 
-	cfg_general := config.ConfigGet("general").Data.(config.GeneralConfig)
 	info.AddColumnButtons("Details", types.GetActionIconButton(icon.List,
 		action.PopUpWithIframe("/admin/info/serie_episodes", "see more", action.IframeData{Src: "/admin/info/serie_episodes", AddParameterFn: func(ctx *context.Context) string {
 			return "&serie_id=" + ctx.FormValue("id")
@@ -44,7 +43,7 @@ func GetSeriesTable(ctx *context.Context) table.Table {
 		action.PopUpWithIframe("/admin/info/serie_episode_histories", "see more", action.IframeData{Src: "/admin/info/serie_episode_histories", AddParameterFn: func(ctx *context.Context) string {
 			return "&serie_id=" + ctx.FormValue("id")
 		}}, "900px", "560px")), types.GetActionIconButton(icon.Search,
-		MyPopUpWithIframe("/search", "see more", action.IframeData{Src: "/api/series/search/id/{{.Id}}?apikey=" + cfg_general.WebApiKey}, "900px", "560px")))
+		MyPopUpWithIframe("/search", "see more", action.IframeData{Src: "/api/series/search/id/{{.Id}}?apikey=" + config.Cfg.General.WebApiKey}, "900px", "560px")))
 
 	info.AddField("Dbserie_id", "dbserie_id", db.Integer).FieldDisplay(func(value types.FieldModel) interface{} {
 		return template.Default().

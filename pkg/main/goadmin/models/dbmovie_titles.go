@@ -18,8 +18,6 @@ func GetDbmovieTitlesTable(ctx *context.Context) table.Table {
 	info := dbmovieTitles.GetInfo().HideFilterArea()
 
 	info.AddField("Id", "id", db.Integer).FieldSortable()
-	//info.AddField("Created_at", "created_at", db.Datetime)
-	//info.AddField("Updated_at", "updated_at", db.Datetime)
 	info.AddField("Dbmovie_id", "dbmovie_id", db.Integer).FieldDisplay(func(value types.FieldModel) interface{} {
 		return template.Default().
 			Link().
@@ -37,8 +35,6 @@ func GetDbmovieTitlesTable(ctx *context.Context) table.Table {
 
 	formList := dbmovieTitles.GetForm()
 	formList.AddField("Id", "id", db.Integer, form.Default).FieldDisplayButCanNotEditWhenCreate().FieldDisableWhenUpdate()
-	//formList.AddField("Created_at", "created_at", db.Datetime, form.Datetime)
-	//formList.AddField("Updated_at", "updated_at", db.Datetime, form.Datetime)
 	formList.AddField("Dbmovie_id", "dbmovie_id", db.Integer, form.SelectSingle).FieldOptionsFromTable("dbmovies", "title", "id")
 	formList.AddField("Title", "title", db.Text, form.Text)
 	formList.AddField("Slug", "slug", db.Text, form.Text)

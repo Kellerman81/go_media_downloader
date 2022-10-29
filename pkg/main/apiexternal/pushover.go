@@ -2,53 +2,163 @@ package apiexternal
 
 import (
 	"errors"
+	"net/http"
+	"net/url"
+	"strconv"
 	"time"
 
-	"github.com/Kellerman81/go_media_downloader/slidingwindow"
-	"github.com/gregdel/pushover"
-	"golang.org/x/time/rate"
+	"github.com/Kellerman81/go_media_downloader/rate"
 )
 
 type pushOverClient struct {
-	ApiKey        string
-	Limiter       *rate.Limiter
-	LimiterWindow *slidingwindow.Limiter
+	ApiKey  string
+	Limiter *rate.RateLimiter
 }
 
 var PushoverApi *pushOverClient
 
 func NewPushOverClient(apikey string) {
-	limiter, _ := slidingwindow.NewLimiter(10*time.Second, 3, func() (slidingwindow.Window, slidingwindow.StopFunc) { return slidingwindow.NewLocalWindow() })
-	rl := rate.NewLimiter(rate.Every(10*time.Second), 3) // 3 request every 10 seconds
-	PushoverApi = &pushOverClient{ApiKey: apikey, Limiter: rl, LimiterWindow: limiter}
+	rl := rate.New(3, 0, 10*time.Second) // 3 request every 10 seconds
+	PushoverApi = &pushOverClient{ApiKey: apikey, Limiter: rl}
+}
+
+const pushover_message_max = 512
+const pushover_url_max = 500
+const pushover_url_title_max = 50
+const pushover_api_url = "https://api.pushover.net/1/messages.json"
+
+type Pushover_Identity struct {
+	Token string
+	User  string
+}
+
+type Pushover_Message struct {
+	token     string
+	user      string
+	text      string
+	device    string
+	title     string
+	url       string
+	url_title string
+	priority  string
+	timestamp string
+}
+
+// returns a boolean indicating whether the message was valid. if the
+// message was invalid, the offending struct member(s) was/were
+// truncated.
+func validate_message(message Pushover_Message) error {
+	if len(message.token) == 0 {
+		return errors.New("missing authentication token")
+	}
+
+	if len(message.user) == 0 {
+		return errors.New("missing user key")
+	}
+
+	if len(message.text) == 0 {
+		return errors.New("missing message")
+	}
+
+	message_len := len(message.text) + len(message.title)
+	if message_len > pushover_message_max {
+		return errors.New("message length longer than " + strconv.Itoa(pushover_message_max) + " currently " + strconv.Itoa(message_len))
+	}
+
+	if len(message.url) > pushover_url_max {
+		return errors.New("url length longer than " + strconv.Itoa(pushover_url_max) + " currently " + strconv.Itoa(len(message.url)))
+	}
+
+	if len(message.url_title) > pushover_url_title_max {
+		return errors.New("url title length longer than " + strconv.Itoa(pushover_url_title_max) + " currently " + strconv.Itoa(len(message.url_title)))
+	}
+
+	return nil
+}
+
+func get_body(message Pushover_Message) url.Values {
+	body := url.Values{}
+
+	body.Add("token", message.token)
+	body.Add("user", message.user)
+	body.Add("message", message.text)
+
+	if len(message.device) > 0 {
+		body.Add("device", message.device)
+	}
+
+	if len(message.title) > 0 {
+		body.Add("title", message.title)
+	}
+
+	if len(message.url) > 0 {
+		body.Add("url", message.url)
+	}
+
+	if len(message.url_title) > 0 {
+		body.Add("url_title", message.url_title)
+	}
+
+	if len(message.priority) > 0 {
+		body.Add("priority", message.priority)
+	}
+
+	if len(message.timestamp) > 0 {
+		body.Add("timestamp", message.timestamp)
+	}
+
+	return body
+}
+
+func notify(message Pushover_Message) error {
+	err := validate_message(message)
+	if err != nil {
+		return err
+	}
+
+	resp, err := http.PostForm(pushover_api_url, get_body(message))
+	if err != nil {
+		return errors.New("POST request failed")
+	} else {
+		defer resp.Body.Close()
+	}
+
+	if resp.StatusCode != 200 {
+		return errors.New("server returned " + resp.Status)
+	}
+	return nil
+}
+
+func Authenticate(token string, user string) Pushover_Identity {
+	return Pushover_Identity{token, user}
 }
 
 func (p *pushOverClient) SendMessage(messagetext string, title string, recipientkey string) error {
-	if !p.LimiterWindow.Allow() {
-		isok := false
+	if isok, waitfor := p.Limiter.Allow(); !isok {
 		for i := 0; i < 10; i++ {
-			time.Sleep(1 * time.Second)
-			if p.LimiterWindow.Allow() {
-				isok = true
+			if waitfor == 0 {
+				waitfor = time.Duration(5) * time.Second
+			}
+			if waitfor > time.Duration(5) {
+				break
+			}
+			time.Sleep(waitfor)
+			if isok, waitfor = p.Limiter.Allow(); isok {
 				break
 			}
 		}
 		if !isok {
-			return errors.New("please wait")
+			if waitfor < time.Duration(5) {
+				p.Limiter.WaitTill(time.Now().Add(5 * time.Second))
+			}
+			return errPleaseWait
 		}
 	}
-	app := pushover.New(p.ApiKey)
 
-	// Create a new recipient
-	recipient := pushover.NewRecipient(recipientkey)
-
-	// Create the message to send
-	message := pushover.NewMessageWithTitle(messagetext, title)
-
-	// Send the message to the recipient
-	_, errp := app.SendMessage(message, recipient)
-	if errp != nil {
-		return errp
-	}
-	return nil
+	msg := Pushover_Message{
+		token: p.ApiKey,
+		user:  recipientkey,
+		text:  messagetext,
+		title: title}
+	return notify(msg)
 }

@@ -1,34 +1,15 @@
 package config
 
 import (
-	"regexp"
+	"reflect"
 	"strings"
 
 	"github.com/Kellerman81/go_media_downloader/logger"
+	"golang.org/x/oauth2"
 )
 
-func checkduplicateprefix(key string, prefix string) string {
-	if strings.HasPrefix(key, prefix+prefix) {
-		return strings.TrimPrefix(key, prefix)
-	}
-	return key
-}
 func ConfigCheck(key string) bool {
-	if _, ok := MapConfigEntries[key]; ok {
-		return true
-	}
-	logger.Log.Errorln("Config not found: ", key)
-	return false
-}
-
-func ConfigGetAll() []Conf {
-	var b []Conf
-	defer logger.ClearVar(&b)
-	for idx := range ConfigEntries {
-		b = append(b, ConfigEntries[idx])
-	}
-
-	return b
+	return Cfg.Keys[key]
 }
 
 type Conf struct {
@@ -36,82 +17,81 @@ type Conf struct {
 	Data interface{}
 }
 
-type RegexSafe struct {
-	Name string
-	Re   regexp.Regexp
-}
-
-var RegexEntries []RegexSafe
-
 func RegexCheck(key string) bool {
-	for idx := range RegexEntries {
-		if RegexEntries[idx].Name == key {
-			return true
+	return logger.GlobalRegexCache.CheckRegexp(key)
+}
+
+func RegexGetMatches(key string, matchfor string) []string {
+	rgx := logger.GlobalRegexCache.GetRegexpDirect(key)
+	defer func() {
+		rgx = nil
+	}()
+	return rgx.FindStringSubmatch(matchfor)
+}
+
+func RegexGetMatchesStr1Str2(key string, matchfor string) (string, string) {
+	rgx := logger.GlobalRegexCache.GetRegexpDirect(key)
+	defer func() {
+		rgx = nil
+	}()
+	matches := rgx.FindStringSubmatch(matchfor)
+	defer logger.ClearVar(&matches)
+	if len(matches) >= 2 {
+		if len(matches) >= 3 {
+			return matches[1], matches[2]
+		} else {
+			return matches[1], ""
+		}
+	} else {
+		return "", ""
+	}
+}
+
+func RegexGetMatchesFind(key string, matchfor string, mincount int) bool {
+	rgx := logger.GlobalRegexCache.GetRegexpDirect(key)
+	defer func() {
+		rgx = nil
+	}()
+	return len(rgx.FindStringSubmatchIndex(matchfor)) >= mincount
+}
+func RegexGetAllMatches(key string, matchfor string, maxcount int) [][]string {
+	rgx := logger.GlobalRegexCache.GetRegexpDirect(key)
+	defer func() {
+		rgx = nil
+	}()
+	return rgx.FindAllStringSubmatch(matchfor, maxcount)
+}
+func RegexGetLastMatches(key string, matchfor string, maxcount int) []string {
+	rgx := logger.GlobalRegexCache.GetRegexpDirect(key)
+	defer func() {
+		rgx = nil
+	}()
+	matchest := rgx.FindAllStringSubmatch(matchfor, maxcount)
+	defer logger.ClearVar(&matchest)
+	if len(matchest) == 0 {
+		return []string{}
+	}
+	return matchest[len(matchest)-1]
+}
+
+func ConfigGetTrakt(key string) *oauth2.Token {
+	if logger.GlobalConfigCache.Check(key, reflect.TypeOf(oauth2.Token{})) {
+		value := logger.GlobalConfigCache.GetData(key).Value.(oauth2.Token)
+		return &value
+	}
+	return &oauth2.Token{}
+}
+
+func FindconfigTemplateOnList(typeprefix string, listname string) string {
+	for idx := range Cfg.Media {
+		if !strings.HasPrefix(idx, typeprefix) {
+			continue
+		}
+		for idxlist := range Cfg.Media[idx].Lists {
+			if Cfg.Media[idx].Lists[idxlist].Name == listname {
+				return idx
+			}
 		}
 	}
-	return false
-}
-
-func RegexGet(key string) *regexp.Regexp {
-	for idx := range RegexEntries {
-		if RegexEntries[idx].Name == key {
-			return &RegexEntries[idx].Re
-		}
-	}
-	logger.Log.Errorln("Regex not found: ", key)
-	return nil
-}
-
-func RegexAdd(key string, re regexp.Regexp) {
-	if !RegexCheck(key) {
-		RegexEntries = append(RegexEntries, RegexSafe{Name: key, Re: re})
-	}
-}
-
-func RegexDelete(key string) {
-	new := RegexEntries[:0]
-	defer logger.ClearVar(&new)
-	for idx := range RegexEntries {
-		if RegexEntries[idx].Name != key {
-			new = append(new, RegexEntries[idx])
-		}
-	}
-	RegexEntries = new
-}
-
-var ConfigEntries []Conf
-var MapConfigEntries map[string]*Conf
-
-func ConfigGet(key string) *Conf {
-	if val, ok := MapConfigEntries[key]; ok {
-		return val
-	}
-	logger.Log.Errorln("Config not found: ", key)
-	return nil
-}
-
-func ConfigGetPrefix(key string) []Conf {
-	var b []Conf
-	defer logger.ClearVar(&b)
-	for idx := range ConfigEntries {
-		if strings.HasPrefix(ConfigEntries[idx].Name, key) {
-			b = append(b, ConfigEntries[idx])
-		}
-	}
-
-	return b
-}
-
-func ConfigGetMediaListConfig(config string, name string) MediaListsConfig {
-	cfgnotp := ConfigGet(config).Data
-	if cfgnotp == nil {
-		return MediaListsConfig{}
-	}
-	cfg := cfgnotp.(MediaTypeConfig)
-	for idxlist := range cfg.Lists {
-		if cfg.Lists[idxlist].Name == name {
-			return cfg.Lists[idxlist]
-		}
-	}
-	return MediaListsConfig{}
+	return ""
 }

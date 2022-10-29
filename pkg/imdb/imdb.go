@@ -21,23 +21,14 @@ import (
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/sqlite3"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
-	"github.com/knadh/koanf"
-	"github.com/knadh/koanf/parsers/toml"
-	"github.com/knadh/koanf/providers/file"
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/pelletier/go-toml/v2"
 	"github.com/rainycape/unidecode"
 )
 
 var version string
 var buildstamp string
 var githash string
-
-func csvsetdefault(instr string, def string) string {
-	if instr == `\N` {
-		return def
-	}
-	return instr
-}
 
 func csvgetint(instr string) int {
 	getint, err := strconv.Atoi(instr)
@@ -64,87 +55,25 @@ func csvgetbool(instr string) bool {
 
 const configfile string = "./config/config.toml"
 
+type MainConfig struct {
+	Imdbindexer imdbConfig `koanf:"imdbindexer" toml:"imdbindexer"`
+}
 type imdbConfig struct {
-	Indexedtypes     []string `koanf:"indexed_types"`
-	Indexedlanguages []string `koanf:"indexed_languages"`
-	Indexfull        bool     `koanf:"index_full"`
-}
-type imdbTitle struct {
-	Tconst         string
-	TitleType      string `db:"title_type"`
-	PrimaryTitle   string `db:"primary_title"`
-	Slug           string
-	OriginalTitle  string `db:"original_title"`
-	IsAdult        bool   `db:"is_adult"`
-	StartYear      int    `db:"start_year"`
-	EndYear        int    `db:"end_year"`
-	RuntimeMinutes int    `db:"runtime_minutes"`
-	Genres         string
-}
-type imdbAka struct {
-	ID              uint
-	CreatedAt       time.Time `db:"created_at"`
-	UpdatedAt       time.Time `db:"updated_at"`
-	Tconst          string
-	Ordering        int
-	Title           string
-	Slug            string
-	Region          string
-	Language        string
-	Types           string
-	Attributes      string
-	IsOriginalTitle bool `db:"is_original_title"`
-}
-
-type imdbRatings struct {
-	ID            uint
-	CreatedAt     time.Time `db:"created_at"`
-	UpdatedAt     time.Time `db:"updated_at"`
-	Tconst        string
-	NumVotes      int     `db:"num_votes"`
-	AverageRating float32 `db:"average_rating"`
-}
-type imdbGenres struct {
-	ID        uint
-	CreatedAt time.Time `db:"created_at"`
-	UpdatedAt time.Time `db:"updated_at"`
-	Tconst    string
-	Genre     string
+	Indexedtypes     []string `toml:"indexed_types"`
+	Indexedlanguages []string `toml:"indexed_languages"`
+	Indexfull        bool     `toml:"index_full"`
 }
 
 func LoadCfgDataDB() imdbConfig {
-	var k = koanf.New(".")
-	f := file.Provider(configfile)
-	// if strings.Contains(parser, "json") {
-	// 	err := k.Load(f, json.Parser())
-	// 	if err != nil {
-	// 		fmt.Println("Error loading config. ", err)
-	// 		return Cfg{}
-	// 	}
-	// }
-	if strings.Contains(configfile, "toml") {
-		err := k.Load(f, toml.Parser())
-		if err != nil {
-			fmt.Println("Error loading config. ", err)
-		}
+	content, err := os.ReadFile(configfile)
+	if err != nil {
+		fmt.Println("Error loading config. ", err)
 	}
-	// if strings.Contains(parser, "yaml") {
-	// 	err := k.Load(f, yaml.Parser())
-	// 	if err != nil {
-	// 		fmt.Println("Error loading config. ", err)
-	// 		return Cfg{}
-	// 	}
-	// }
+	var outim MainConfig
+	errimdb := toml.Unmarshal(content, &outim)
 
-	if k.Sprint() == "" {
-		fmt.Println("Error loading config. Config Empty")
-	}
-	var outim imdbConfig
-	errimdb := k.Unmarshal("imdbindexer", &outim)
-	k = nil
-	f = nil
 	if errimdb == nil {
-		return outim
+		return outim.Imdbindexer
 	}
 	return imdbConfig{}
 }
@@ -182,13 +111,16 @@ func upgradeimdb() {
 	m = nil
 }
 func loadakas(lang []string, full bool) {
-	akamap := NewStringSetMaxSize(len(lang))
-	for _, row := range lang {
-		akamap.Add(row)
+	allowemptylang := false
+	akamap := make(map[string]struct{}, len(lang))
+	for idx := range lang {
+		if lang[idx] == "" {
+			allowemptylang = true
+		} else {
+			akamap[lang[idx]] = struct{}{}
+		}
 	}
-	defer akamap.Clear()
-
-	readWriteMu := &sync.Mutex{}
+	lang = nil
 
 	fmt.Println("Opening akas..")
 	client := &http.Client{Transport: &http.Transport{
@@ -200,20 +132,19 @@ func loadakas(lang []string, full bool) {
 	req, _ := http.NewRequest("GET", "https://datasets.imdbws.com/title.akas.tsv.gz", nil)
 	// Get the data
 
-	resp, errh := client.Do(req)
-	if errh != nil {
+	resp, err := client.Do(req)
+	if err != nil {
 		return
 	}
 	defer resp.Body.Close()
 
-	gzreader, errg := gzip.NewReader(resp.Body)
-	if errg != nil {
+	gzreader, err := gzip.NewReader(resp.Body)
+	if err != nil {
 		return
 	}
 	defer gzreader.Close()
 
 	parseraka := csv.NewReader(gzreader)
-	defer ClearVar(parseraka)
 	parseraka.Comma = '\t'
 	parseraka.LazyQuotes = true
 	_, _ = parseraka.Read() //skip header
@@ -227,6 +158,8 @@ func loadakas(lang []string, full bool) {
 		}
 		err = tx.Commit()
 		tx = nil
+		readWriteMu := &sync.Mutex{}
+
 		readWriteMu.Lock()
 		dbimdb.Exec("Update imdb_akas SET region = '' WHERE region = ?", "\\N")
 		readWriteMu.Unlock()
@@ -239,35 +172,95 @@ func loadakas(lang []string, full bool) {
 		readWriteMu.Lock()
 		dbimdb.Exec("Update imdb_akas SET attributes = '' WHERE attributes = ?", "\\N")
 		readWriteMu.Unlock()
+		readWriteMu = nil
 	}()
-	addakasqlshort, err := tx.Prepare("insert into imdb_akas (tconst, title, slug, region) VALUES (?, ?, ?, ?)")
-	addakasql, err := tx.Prepare("insert into imdb_akas (tconst, ordering, title, slug, region, language, types, attributes, is_original_title) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
 
+	sqlstmtbyteshort := []byte("insert into imdb_akas (tconst, title, slug, region) VALUES ")
+	sqlstmtbytelong := []byte("insert into imdb_akas (tconst, ordering, title, slug, region, language, types, attributes, is_original_title) VALUES ")
+
+	sqlparam4byte := []byte("(?, ?, ?, ?)")
+	sqlparam9byte := []byte("(?, ?, ?, ?, ?, ?, ?, ?, ?)")
+
+	sqlcommabyte := []byte(",")
+
+	var sqlbuild strings.Builder //bytes.Buffer
+	valueArgs := make([]interface{}, 0, 999)
+	//addakasqlshort, err := tx.Prepare("insert into imdb_akas (tconst, title, slug, region) VALUES (?, ?, ?, ?)")
+	//addakasql, err := tx.Prepare("insert into imdb_akas (tconst, ordering, title, slug, region, language, types, attributes, is_original_title) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+	var ok bool
 	for {
-		record, errcsv := parseraka.Read()
-		if errcsv == io.EOF {
+		record, err := parseraka.Read()
+		if err == io.EOF {
 			break
 		}
-		if errcsv != nil {
-			fmt.Println(fmt.Errorf("an error occurred while parsing aka.. %v", errcsv))
+		if err != nil {
+			fmt.Println(fmt.Errorf("an error occurred while parsing aka.. %v", err))
 			continue
 		}
+		if imdbcache.Check(uint32(csvgetint(strings.TrimPrefix(record[0], "t")))) {
+			if _, ok = akamap[record[3]]; ok || (len(record[3]) == 0 && allowemptylang) {
+				//titlecount, _ := database.ImdbCountRows("imdb_titles", database.Query{Where: "tconst = ?", WhereArgs: []interface{}{record[0]}})
 
-		if akamap.Contains(record[3]) || len(record[3]) == 0 {
-			//titlecount, _ := database.ImdbCountRows("imdb_titles", database.Query{Where: "tconst = ?", WhereArgs: []interface{}{record[0]}})
-			if cachetconst.Contains(csvgetint(strings.TrimPrefix(record[0], "t"))) {
-
-				if !full {
-					addakasqlshort.Exec(record[0], UnescapeString(record[2]), StringToSlug(record[2]), record[3])
+				if len(valueArgs) == 0 {
+					if full {
+						sqlbuild.Write(sqlstmtbytelong)
+					} else {
+						sqlbuild.Write(sqlstmtbyteshort)
+					}
 				} else {
-					addakasql.Exec(record[0], csvgetint(record[1]), UnescapeString(record[2]), StringToSlug(record[2]), record[3], record[4], record[5], record[6], csvgetbool(record[7]))
+					sqlbuild.Write(sqlcommabyte)
 				}
+				if full {
+					sqlbuild.Write(sqlparam9byte)
+					valueArgs = append(valueArgs, record[0])
+					valueArgs = append(valueArgs, csvgetint(record[1]))
+					valueArgs = append(valueArgs, UnescapeString(record[2]))
+					valueArgs = append(valueArgs, StringToSlug(record[2]))
+					valueArgs = append(valueArgs, record[3])
+					valueArgs = append(valueArgs, record[4])
+					valueArgs = append(valueArgs, record[5])
+					valueArgs = append(valueArgs, record[6])
+					valueArgs = append(valueArgs, csvgetbool(record[7]))
+				} else {
+					sqlbuild.Write(sqlparam4byte)
+					valueArgs = append(valueArgs, record[0])
+					valueArgs = append(valueArgs, UnescapeString(record[2]))
+					valueArgs = append(valueArgs, StringToSlug(record[2]))
+					valueArgs = append(valueArgs, record[3])
+				}
+				if len(valueArgs) > 900 {
+					_, err = tx.Exec(sqlbuild.String(), valueArgs...)
+					if err != nil {
+						return
+					}
+					sqlbuild.Reset()
+					valueArgs = nil
+				}
+				// if !full {
+				// 	addakasqlshort.Exec(record[0], UnescapeString(record[2]), StringToSlug(record[2]), record[3])
+				// } else {
+				// 	addakasql.Exec(record[0], csvgetint(record[1]), UnescapeString(record[2]), StringToSlug(record[2]), record[3], record[4], record[5], record[6], csvgetbool(record[7]))
+				// }
 			}
 		}
 		record = nil
 	}
-	addakasqlshort.Close()
-	addakasql.Close()
+
+	if len(valueArgs) > 1 {
+		_, err = tx.Exec(sqlbuild.String(), valueArgs...)
+		if err != nil {
+			return
+		}
+		sqlbuild.Reset()
+		valueArgs = nil
+	}
+	//addakasqlshort.Close()
+	//addakasql.Close()
+	gzreader = nil
+	parseraka = nil
+	req = nil
+	client = nil
+	akamap = nil
 }
 func loadratings() {
 	fmt.Println("Opening ratings..")
@@ -295,7 +288,6 @@ func loadratings() {
 	defer gzreader.Close()
 
 	parserrating := csv.NewReader(gzreader)
-	defer ClearVar(parserrating)
 	parserrating.Comma = '\t'
 	parserrating.LazyQuotes = true
 	_, _ = parserrating.Read() //skip header
@@ -308,8 +300,16 @@ func loadratings() {
 		}
 		err = tx.Commit()
 	}()
-	addratingssql, err := tx.Prepare("insert into imdb_ratings (tconst, num_votes, average_rating) VALUES (?, ?, ?)")
+	//addratingssql, err := tx.Prepare("insert into imdb_ratings (tconst, num_votes, average_rating) VALUES (?, ?, ?)")
 
+	sqlstmtbyteshort := []byte("insert into imdb_ratings (tconst, num_votes, average_rating) VALUES ")
+
+	sqlparam4byte := []byte("(?, ?, ?)")
+
+	sqlcommabyte := []byte(",")
+
+	var sqlbuild strings.Builder //bytes.Buffer
+	valueArgs := make([]interface{}, 0, 999)
 	for {
 		record, errcsv := parserrating.Read()
 		if errcsv == io.EOF {
@@ -319,23 +319,51 @@ func loadratings() {
 			fmt.Println(fmt.Errorf("an error occurred while parsing rating.. %v", errcsv))
 			continue
 		}
-		if cachetconst.Contains(csvgetint(strings.TrimPrefix(record[0], "t"))) {
-
-			addratingssql.Exec(record[0], csvgetint(record[2]), csvgetfloat(record[1]))
+		if imdbcache.Check(uint32(csvgetint(strings.TrimPrefix(record[0], "t")))) {
+			if len(valueArgs) == 0 {
+				sqlbuild.Write(sqlstmtbyteshort)
+			} else {
+				sqlbuild.Write(sqlcommabyte)
+			}
+			sqlbuild.Write(sqlparam4byte)
+			valueArgs = append(valueArgs, record[0])
+			valueArgs = append(valueArgs, csvgetint(record[2]))
+			valueArgs = append(valueArgs, csvgetfloat(record[1]))
+			if len(valueArgs) > 900 {
+				_, err = tx.Exec(sqlbuild.String(), valueArgs...)
+				if err != nil {
+					return
+				}
+				sqlbuild.Reset()
+				valueArgs = nil
+			}
+			//addratingssql.Exec(record[0], csvgetint(record[2]), csvgetfloat(record[1]))
 		}
 		record = nil
 	}
-	addratingssql.Close()
+	if len(valueArgs) > 1 {
+		_, err = tx.Exec(sqlbuild.String(), valueArgs...)
+		if err != nil {
+			return
+		}
+		sqlbuild.Reset()
+		valueArgs = nil
+	}
+	//addratingssql.Close()
+	gzreader = nil
+	parserrating = nil
+	req = nil
+	client = nil
 }
 func loadtitles(types []string, full bool) {
-	titlemap := NewStringSetMaxSize(len(types))
-	for _, row := range types {
-		titlemap.Add(row)
+
+	titlemap := make(map[string]struct{}, len(types))
+	for idx := range types {
+		titlemap[types[idx]] = struct{}{}
 	}
-	defer titlemap.Clear()
+	types = nil
 
 	// cacherowlimit := 1999
-	readWriteMu := &sync.Mutex{}
 	fmt.Println("Opening titles..")
 
 	client := &http.Client{Timeout: 3600 * time.Second,
@@ -348,20 +376,19 @@ func loadtitles(types []string, full bool) {
 	req, _ := http.NewRequest("GET", "https://datasets.imdbws.com/title.basics.tsv.gz", nil)
 	// Get the data
 
-	resp, errh := client.Do(req)
-	if errh != nil {
+	resp, err := client.Do(req)
+	if err != nil {
 		return
 	}
 	defer resp.Body.Close()
 
-	gzreader, errg := gzip.NewReader(resp.Body)
-	if errg != nil {
+	gzreader, err := gzip.NewReader(resp.Body)
+	if err != nil {
 		return
 	}
 	defer gzreader.Close()
 
 	parsertitle := csv.NewReader(gzreader)
-	defer ClearVar(parsertitle)
 	parsertitle.Comma = '\t'
 	parsertitle.LazyQuotes = true
 	_, _ = parsertitle.Read() //skip header
@@ -375,50 +402,168 @@ func loadtitles(types []string, full bool) {
 		}
 		err = tx.Commit()
 
+		readWriteMu := &sync.Mutex{}
 		readWriteMu.Lock()
 		dbimdb.Exec("Update imdb_titles SET genres = '' WHERE genres = ?", "\\N")
 		readWriteMu.Unlock()
 		readWriteMu.Lock()
 		dbimdb.Exec("Update imdb_genres SET genre = '' WHERE genre = ?", "\\N")
 		readWriteMu.Unlock()
+		readWriteMu = nil
 	}()
-	addtitlesqlshort, err := tx.Prepare("insert into imdb_titles (tconst, title_type, primary_title, slug, start_year, runtime_minutes) VALUES (?, ?, ?, ?, ?, ?)")
-	addtitlesql, err := tx.Prepare("insert into imdb_titles (tconst, title_type, primary_title, slug, original_title, is_adult, start_year, end_year, runtime_minutes, genres) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-	addgenresql, err := tx.Prepare("insert into imdb_genres (tconst, genre) VALUES (?, ?)")
+	//addtitlesqlshort, err := tx.Prepare("insert into imdb_titles (tconst, title_type, primary_title, slug, start_year, runtime_minutes) VALUES (?, ?, ?, ?, ?, ?)")
+	//addtitlesql, err := tx.Prepare("insert into imdb_titles (tconst, title_type, primary_title, slug, original_title, is_adult, start_year, end_year, runtime_minutes, genres) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+	//addgenresql, err := tx.Prepare("insert into imdb_genres (tconst, genre) VALUES (?, ?)")
 
+	sqlstmtbyteshort := []byte("insert into imdb_titles (tconst, title_type, primary_title, slug, start_year, runtime_minutes) VALUES ")
+	sqlstmtbytelong := []byte("insert into imdb_titles (tconst, title_type, primary_title, slug, original_title, is_adult, start_year, end_year, runtime_minutes, genres) VALUES ")
+	sqlstmtbytegenre := []byte("insert into imdb_genres (tconst, genre) VALUES ")
+
+	sqlparam2byte := []byte("(?, ?)")
+	sqlparam6byte := []byte("(?, ?, ?, ?, ?, ?)")
+	sqlparam10byte := []byte("(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+
+	sqlcommabyte := []byte(",")
+
+	var sqlbuild strings.Builder //bytes.Buffer
+	valueArgs := make([]interface{}, 0, 999)
+	var sqlbuildgenre strings.Builder //bytes.Buffer
+	valueArgsGenre := make([]interface{}, 0, 999)
+	var ok bool
 	for {
-		record, errcsv := parsertitle.Read()
-		if errcsv == io.EOF {
+		record, err := parsertitle.Read()
+		if err == io.EOF {
 			break
 		}
-		if errcsv != nil {
-			fmt.Println(fmt.Errorf("an error occurred while parsing title.. %v", errcsv))
+		if err != nil {
+			fmt.Println(fmt.Errorf("an error occurred while parsing title.. %v", err))
 			continue
 		}
-		if titlemap.Contains(record[1]) && record[1] != "" {
+		if _, ok = titlemap[record[1]]; ok && record[1] != "" {
+			imdbcache.Set(uint32(csvgetint(strings.TrimPrefix(record[0], "t"))))
 
-			cachetconst.Add(csvgetint(strings.TrimPrefix(record[0], "t")))
-			if !full {
-				addtitlesqlshort.Exec(record[0], record[1], UnescapeString(record[2]), StringToSlug(record[2]), csvgetint(record[5]), csvgetint(record[7]))
+			if len(valueArgs) == 0 {
+				if full {
+					sqlbuild.Write(sqlstmtbytelong)
+				} else {
+					sqlbuild.Write(sqlstmtbyteshort)
+				}
 			} else {
-				addtitlesql.Exec(record[0], record[1], UnescapeString(record[2]), StringToSlug(record[2]), UnescapeString(record[3]), csvgetbool(record[4]), csvgetint(record[5]), csvgetint(record[7]), csvgetint(record[6]), record[8])
+				sqlbuild.Write(sqlcommabyte)
+			}
+			if full {
+				sqlbuild.Write(sqlparam10byte)
+				valueArgs = append(valueArgs, record[0])
+				valueArgs = append(valueArgs, record[1])
+				valueArgs = append(valueArgs, UnescapeString(record[2]))
+				valueArgs = append(valueArgs, StringToSlug(record[2]))
+				valueArgs = append(valueArgs, UnescapeString(record[3]))
+				valueArgs = append(valueArgs, csvgetbool(record[4]))
+				valueArgs = append(valueArgs, csvgetint(record[5]))
+				valueArgs = append(valueArgs, csvgetint(record[7]))
+				valueArgs = append(valueArgs, csvgetint(record[6]))
+				valueArgs = append(valueArgs, record[8])
 				if strings.Contains(record[8], ",") {
 					for _, genre := range strings.Split(record[8], ",") {
-						addgenresql.Exec(record[0], genre)
+						if genre != "" {
+							if len(valueArgsGenre) == 0 {
+								sqlbuildgenre.Write(sqlstmtbytegenre)
+							} else {
+								sqlbuildgenre.Write(sqlcommabyte)
+							}
+							sqlbuildgenre.Write(sqlparam2byte)
+							valueArgsGenre = append(valueArgsGenre, record[0])
+							valueArgsGenre = append(valueArgsGenre, genre)
+							if len(valueArgsGenre) > 900 {
+								_, err = tx.Exec(sqlbuildgenre.String(), valueArgsGenre...)
+								if err != nil {
+									fmt.Println(err, sqlbuildgenre.String())
+									return
+								}
+								sqlbuildgenre.Reset()
+								valueArgsGenre = nil
+							}
+							//addgenresql.Exec(record[0], genre)
+						}
 					}
 				} else if len(record[8]) >= 1 {
-					addgenresql.Exec(record[0], record[8])
+					if len(valueArgsGenre) == 0 {
+						sqlbuildgenre.Write(sqlstmtbytegenre)
+					} else {
+						sqlbuildgenre.Write(sqlcommabyte)
+					}
+					sqlbuildgenre.Write(sqlparam2byte)
+					valueArgsGenre = append(valueArgsGenre, record[0])
+					valueArgsGenre = append(valueArgsGenre, record[8])
+					if len(valueArgsGenre) > 900 {
+						_, err = tx.Exec(sqlbuildgenre.String(), valueArgsGenre...)
+						if err != nil {
+							fmt.Println(err, sqlbuildgenre.String())
+							return
+						}
+						sqlbuildgenre.Reset()
+						valueArgsGenre = nil
+					}
+					//addgenresql.Exec(record[0], record[8])
 				}
+			} else {
+				sqlbuild.Write(sqlparam6byte)
+				valueArgs = append(valueArgs, record[0])
+				valueArgs = append(valueArgs, record[1])
+				valueArgs = append(valueArgs, UnescapeString(record[2]))
+				valueArgs = append(valueArgs, StringToSlug(record[2]))
+				valueArgs = append(valueArgs, csvgetint(record[5]))
+				valueArgs = append(valueArgs, csvgetint(record[7]))
 			}
+			if len(valueArgs) > 900 {
+				_, err = tx.Exec(sqlbuild.String(), valueArgs...)
+				if err != nil {
+					fmt.Println(err, sqlbuild.String())
+					return
+				}
+				sqlbuild.Reset()
+				valueArgs = nil
+			}
+			// if !full {
+			// 	//addtitlesqlshort.Exec(record[0], record[1], UnescapeString(record[2]), StringToSlug(record[2]), csvgetint(record[5]), csvgetint(record[7]))
+			// } else {
+			// 	//addtitlesql.Exec(record[0], record[1], UnescapeString(record[2]), StringToSlug(record[2]), UnescapeString(record[3]), csvgetbool(record[4]), csvgetint(record[5]), csvgetint(record[7]), csvgetint(record[6]), record[8])
+			// 	if strings.Contains(record[8], ",") {
+			// 		for _, genre := range strings.Split(record[8], ",") {
+			// 			addgenresql.Exec(record[0], genre)
+			// 		}
+			// 	} else if len(record[8]) >= 1 {
+			// 		addgenresql.Exec(record[0], record[8])
+			// 	}
+			// }
 		}
 		record = nil
 	}
-	addgenresql.Close()
-	addtitlesql.Close()
-	addtitlesqlshort.Close()
+	if len(valueArgs) > 1 {
+		_, err = tx.Exec(sqlbuild.String(), valueArgs...)
+		if err != nil {
+			return
+		}
+		sqlbuild.Reset()
+		valueArgs = nil
+	}
+	if len(valueArgsGenre) > 1 {
+		_, err = tx.Exec(sqlbuildgenre.String(), valueArgsGenre...)
+		if err != nil {
+			return
+		}
+		sqlbuildgenre.Reset()
+		valueArgsGenre = nil
+	}
+	//addgenresql.Close()
+	//addtitlesql.Close()
+	//addtitlesqlshort.Close()
+	gzreader = nil
+	parsertitle = nil
+	req = nil
+	client = nil
+	titlemap = nil
 }
-
-var cachetconst IntSet
 
 func main() {
 	fmt.Println("Imdb Importer by kellerman81 - version " + version + " " + githash + " from " + buildstamp)
@@ -429,13 +574,13 @@ func main() {
 
 	upgradeimdb()
 
-	cachetconst = NewIntSetMaxSize(1200000)
+	imdbcache = NewCache(1200000)
 
 	loadtitles(cfg_imdb.Indexedtypes, cfg_imdb.Indexfull)
 	loadakas(cfg_imdb.Indexedlanguages, cfg_imdb.Indexfull)
 	loadratings()
 
-	cachetconst.Clear()
+	imdbcache.Items = nil
 
 	rows, err := dbimdb.Query("Select count(*) from imdb_titles")
 	if err != nil {
@@ -486,15 +631,17 @@ var subRune = map[rune]string{
 }
 
 func makeSlug(s string) string {
-	s = strings.TrimSpace(s)
-	s = substituteRune(s)
-	s = unidecode.Unidecode(s)
-	s = strings.ToLower(s)
-	s = replaceUnwantedChars(s)
-	s = strings.Replace(s, "--", "-", -1)
-	s = strings.Replace(s, "--", "-", -1)
-	s = strings.Replace(s, "--", "-", -1)
-	return s
+	s = replaceUnwantedChars(strings.ToLower(unidecode.Unidecode(substituteRune(strings.TrimSpace(s)))))
+	if strings.Contains(s, "--") {
+		s = strings.Replace(s, "--", "-", -1)
+		if strings.Contains(s, "--") {
+			s = strings.Replace(s, "--", "-", -1)
+			if strings.Contains(s, "--") {
+				s = strings.Replace(s, "--", "-", -1)
+			}
+		}
+	}
+	return strings.TrimSuffix(s, "-")
 }
 
 // SubstituteRune substitutes string chars with provided rune
@@ -589,7 +736,7 @@ func replaceUnwantedChars(s string) string {
 	return buf.String()
 }
 
-//no chinese or cyrilic supported
+// no chinese or cyrilic supported
 func StringToSlug(instr string) string {
 	instr = strings.Replace(instr, "\u00df", "ss", -1) // ß to ss handling
 	instr = UnescapeString(instr)
@@ -599,83 +746,6 @@ func StringToSlug(instr string) string {
 	return makeSlug(instr)
 }
 
-type StringSet struct {
-	Values []string
-}
-
-func NewStringSet() StringSet {
-	return StringSet{}
-}
-
-func NewStringSetMaxSize(size int) StringSet {
-	return StringSet{Values: make([]string, 0, size)}
-}
-func NewStringSetExactSize(size int) StringSet {
-	return StringSet{Values: make([]string, size)}
-}
-
-func (s *StringSet) Add(str string) {
-	s.Values = append(s.Values, str)
-}
-
-func (s *StringSet) Length() int {
-	return len(s.Values)
-}
-
-func (s *StringSet) Remove(str string) {
-	new := s.Values[:0]
-	for _, val := range s.Values {
-		if val != str {
-			new = append(new, val)
-		}
-	}
-	s.Values = new
-	new = nil
-}
-
-func (s *StringSet) Contains(str string) bool {
-	for _, val := range s.Values {
-		if val == str {
-			return true
-		}
-	}
-	return false
-}
-
-func (s *StringSet) Clear() {
-	s.Values = nil
-	s = nil
-}
-
-func (s *StringSet) Difference(dif StringSet) {
-	new := s.Values[:0]
-	for _, val := range s.Values {
-		insub := false
-		for _, difval := range dif.Values {
-			if val == difval {
-				insub = true
-				break
-			}
-		}
-		if !insub {
-			new = append(new, val)
-		}
-	}
-	s.Values = new
-	new = nil
-}
-
-func (s *StringSet) Union(add StringSet) {
-	new := s.Values
-	for _, val := range add.Values {
-		if !s.Contains(val) {
-			new = append(new, val)
-		}
-	}
-	s.Values = new
-	new = nil
-}
-
 func ClearVar(i interface{}) {
 	v := reflect.ValueOf(i)
 	if !v.IsZero() && v.Kind() == reflect.Pointer {
@@ -683,50 +753,29 @@ func ClearVar(i interface{}) {
 	}
 }
 
-type IntSet struct {
-	Values []int
+var imdbcache *Cache
+
+type Cache struct {
+	Items map[uint32]struct{}
+	//mu    *sync.Mutex
 }
 
-func NewIntSet() IntSet {
-	return IntSet{}
-}
-
-func NewIntSetMaxSize(size int) IntSet {
-	return IntSet{Values: make([]int, 0, size)}
-}
-func NewIntSetExactSize(size int) IntSet {
-	return IntSet{Values: make([]int, size)}
-}
-
-func (s *IntSet) Add(val int) {
-	s.Values = append(s.Values, val)
-}
-
-func (s *IntSet) Length() int {
-	return len(s.Values)
-}
-
-func (s *IntSet) Remove(valchk int) {
-	new := s.Values[:0]
-	for _, val := range s.Values {
-		if val != valchk {
-			new = append(new, val)
-		}
+func NewCache(maxsize int) *Cache {
+	cache := &Cache{
+		Items: make(map[uint32]struct{}, maxsize),
+		//mu:    &sync.Mutex{},
 	}
-	s.Values = new
-	new = nil
-}
 
-func (s *IntSet) Contains(valchk int) bool {
-	for _, val := range s.Values {
-		if val == valchk {
-			return true
-		}
-	}
-	return false
+	return cache
 }
-
-func (s *IntSet) Clear() {
-	s.Values = nil
-	s = nil
+func (cache *Cache) Check(key uint32) bool {
+	//cache.mu.Lock()
+	//defer cache.mu.Unlock()
+	_, exists := cache.Items[key]
+	return exists
+}
+func (cache *Cache) Set(key uint32) {
+	//cache.mu.Lock()
+	//defer cache.mu.Unlock()
+	cache.Items[key] = struct{}{}
 }

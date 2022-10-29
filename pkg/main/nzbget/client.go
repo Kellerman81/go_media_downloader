@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
 )
 
 //Source: https://github.com/dashotv/flame
@@ -187,10 +186,7 @@ func (c *client) Version() (string, error) {
 
 func (c *client) request(path string, params url.Values, target interface{}) (err error) {
 	var url string
-	var client *http.Client
 	var request *http.Request
-	var response *http.Response
-	var body []byte
 
 	url = fmt.Sprintf("%s/%s", c.URL, path)
 
@@ -199,19 +195,21 @@ func (c *client) request(path string, params url.Values, target interface{}) (er
 	}
 	request.URL.RawQuery = params.Encode()
 
-	client = &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: 10 * time.Second}
+	var response *http.Response
 	if response, err = client.Do(request); err != nil {
 		//log.Fatal(err)
 		return errors.Wrap(err, "error making http request")
 	}
 	defer response.Body.Close()
 
+	var body []byte
 	if body, err = ioutil.ReadAll(response.Body); err != nil {
 		//log.Fatal(err)
 		return errors.Wrap(err, "reading request body")
 	}
 
-	logrus.Debugf("body: %s", string(body))
+	//logrus.Debugf("body: %s", string(body))
 
 	if target == nil {
 		return nil
