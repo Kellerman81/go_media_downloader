@@ -30,12 +30,12 @@ jobs:
       run: echo "::set-output name=date::$(date +'%Y-%m-%d')"
     
     - name: Build with xgo
-      uses: crazy-max/ghaction-xgo@v1.6.1
+      uses: crazy-max/ghaction-xgo@v2.2.0
       with:
-          dest: .
+          dest: ./pkg/main
           prefix: go_media_downloader
           targets: windows/386,windows/amd64,linux/386,linux/amd64,darwin/amd64
-          v: true
+          v: truec:\Program Files\Microsoft VS Code\resources\app\out\vs\code\electron-sandbox\workbench\workbench.html
           x: false
           race: false
           ldflags: -s -w -X 'main.version=${{ steps.version.outputs.version }}' -X 'main.githash=${{ steps.commit.outputs.short }}' -X 'main.buildstamp=${{ steps.date.outputs.date }}'
@@ -43,9 +43,9 @@ jobs:
           working_dir: pkg/main
     
     - name: Build with xgo imdb
-      uses: crazy-max/ghaction-xgo@v1.6.1
+      uses: crazy-max/ghaction-xgo@v2.2.0
       with:
-          dest: .
+          dest: ./pkg/imdb
           prefix: imdb
           targets: windows/386,windows/amd64,linux/386,linux/amd64,darwin/amd64
           v: true
