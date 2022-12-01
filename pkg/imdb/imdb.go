@@ -147,7 +147,7 @@ func loadakas(lang []string, full bool) {
 	parseraka := csv.NewReader(gzreader)
 	parseraka.Comma = '\t'
 	parseraka.LazyQuotes = true
-	_, _ = parseraka.Read() //skip header
+	_, _ = parseraka.Read() // skip header
 
 	tx, err := dbimdb.Begin()
 
@@ -185,8 +185,8 @@ func loadakas(lang []string, full bool) {
 
 	var sqlbuild strings.Builder //bytes.Buffer
 	valueArgs := make([]interface{}, 0, 999)
-	//addakasqlshort, err := tx.Prepare("insert into imdb_akas (tconst, title, slug, region) VALUES (?, ?, ?, ?)")
-	//addakasql, err := tx.Prepare("insert into imdb_akas (tconst, ordering, title, slug, region, language, types, attributes, is_original_title) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+	// addakasqlshort, err := tx.Prepare("insert into imdb_akas (tconst, title, slug, region) VALUES (?, ?, ?, ?)")
+	// addakasql, err := tx.Prepare("insert into imdb_akas (tconst, ordering, title, slug, region, language, types, attributes, is_original_title) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
 	var ok bool
 	for {
 		record, err := parseraka.Read()
@@ -199,7 +199,7 @@ func loadakas(lang []string, full bool) {
 		}
 		if imdbcache.Check(uint32(csvgetint(strings.TrimPrefix(record[0], "t")))) {
 			if _, ok = akamap[record[3]]; ok || (len(record[3]) == 0 && allowemptylang) {
-				//titlecount, _ := database.ImdbCountRows("imdb_titles", database.Query{Where: "tconst = ?", WhereArgs: []interface{}{record[0]}})
+				// titlecount, _ := database.ImdbCountRows("imdb_titles", database.Query{Where: "tconst = ?", WhereArgs: []interface{}{record[0]}})
 
 				if len(valueArgs) == 0 {
 					if full {
@@ -254,8 +254,8 @@ func loadakas(lang []string, full bool) {
 		sqlbuild.Reset()
 		valueArgs = nil
 	}
-	//addakasqlshort.Close()
-	//addakasql.Close()
+	// addakasqlshort.Close()
+	// addakasql.Close()
 	gzreader = nil
 	parseraka = nil
 	req = nil
@@ -290,7 +290,7 @@ func loadratings() {
 	parserrating := csv.NewReader(gzreader)
 	parserrating.Comma = '\t'
 	parserrating.LazyQuotes = true
-	_, _ = parserrating.Read() //skip header
+	_, _ = parserrating.Read() // skip header
 
 	tx, err := dbimdb.Begin()
 	defer func() {
@@ -300,7 +300,7 @@ func loadratings() {
 		}
 		err = tx.Commit()
 	}()
-	//addratingssql, err := tx.Prepare("insert into imdb_ratings (tconst, num_votes, average_rating) VALUES (?, ?, ?)")
+	// addratingssql, err := tx.Prepare("insert into imdb_ratings (tconst, num_votes, average_rating) VALUES (?, ?, ?)")
 
 	sqlstmtbyteshort := []byte("insert into imdb_ratings (tconst, num_votes, average_rating) VALUES ")
 
@@ -308,7 +308,7 @@ func loadratings() {
 
 	sqlcommabyte := []byte(",")
 
-	var sqlbuild strings.Builder //bytes.Buffer
+	var sqlbuild strings.Builder // bytes.Buffer
 	valueArgs := make([]interface{}, 0, 999)
 	for {
 		record, errcsv := parserrating.Read()
@@ -337,7 +337,7 @@ func loadratings() {
 				sqlbuild.Reset()
 				valueArgs = nil
 			}
-			//addratingssql.Exec(record[0], csvgetint(record[2]), csvgetfloat(record[1]))
+			// addratingssql.Exec(record[0], csvgetint(record[2]), csvgetfloat(record[1]))
 		}
 		record = nil
 	}
@@ -349,7 +349,7 @@ func loadratings() {
 		sqlbuild.Reset()
 		valueArgs = nil
 	}
-	//addratingssql.Close()
+	// addratingssql.Close()
 	gzreader = nil
 	parserrating = nil
 	req = nil
@@ -411,9 +411,9 @@ func loadtitles(types []string, full bool) {
 		readWriteMu.Unlock()
 		readWriteMu = nil
 	}()
-	//addtitlesqlshort, err := tx.Prepare("insert into imdb_titles (tconst, title_type, primary_title, slug, start_year, runtime_minutes) VALUES (?, ?, ?, ?, ?, ?)")
-	//addtitlesql, err := tx.Prepare("insert into imdb_titles (tconst, title_type, primary_title, slug, original_title, is_adult, start_year, end_year, runtime_minutes, genres) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-	//addgenresql, err := tx.Prepare("insert into imdb_genres (tconst, genre) VALUES (?, ?)")
+	// addtitlesqlshort, err := tx.Prepare("insert into imdb_titles (tconst, title_type, primary_title, slug, start_year, runtime_minutes) VALUES (?, ?, ?, ?, ?, ?)")
+	// addtitlesql, err := tx.Prepare("insert into imdb_titles (tconst, title_type, primary_title, slug, original_title, is_adult, start_year, end_year, runtime_minutes, genres) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+	// addgenresql, err := tx.Prepare("insert into imdb_genres (tconst, genre) VALUES (?, ?)")
 
 	sqlstmtbyteshort := []byte("insert into imdb_titles (tconst, title_type, primary_title, slug, start_year, runtime_minutes) VALUES ")
 	sqlstmtbytelong := []byte("insert into imdb_titles (tconst, title_type, primary_title, slug, original_title, is_adult, start_year, end_year, runtime_minutes, genres) VALUES ")
@@ -483,7 +483,7 @@ func loadtitles(types []string, full bool) {
 								sqlbuildgenre.Reset()
 								valueArgsGenre = nil
 							}
-							//addgenresql.Exec(record[0], genre)
+							// addgenresql.Exec(record[0], genre)
 						}
 					}
 				} else if len(record[8]) >= 1 {
@@ -504,7 +504,7 @@ func loadtitles(types []string, full bool) {
 						sqlbuildgenre.Reset()
 						valueArgsGenre = nil
 					}
-					//addgenresql.Exec(record[0], record[8])
+					// addgenresql.Exec(record[0], record[8])
 				}
 			} else {
 				sqlbuild.Write(sqlparam6byte)
@@ -555,9 +555,9 @@ func loadtitles(types []string, full bool) {
 		sqlbuildgenre.Reset()
 		valueArgsGenre = nil
 	}
-	//addgenresql.Close()
-	//addtitlesql.Close()
-	//addtitlesqlshort.Close()
+	// addgenresql.Close()
+	// addtitlesql.Close()
+	// addtitlesqlshort.Close()
 	gzreader = nil
 	parsertitle = nil
 	req = nil
@@ -648,6 +648,7 @@ func makeSlug(s string) string {
 // substitution map. One pass.
 func substituteRune(s string) string {
 	var buf bytes.Buffer
+	buf.Grow(len(s))
 	for _, c := range s {
 		if d, ok := subRune[c]; ok {
 			buf.WriteString(d)
@@ -726,6 +727,7 @@ var wantedChars = map[rune]bool{
 
 func replaceUnwantedChars(s string) string {
 	var buf bytes.Buffer
+	buf.Grow(len(s))
 	for _, c := range s {
 		if _, ok := wantedChars[c]; ok {
 			buf.WriteString(string(c))
@@ -757,25 +759,25 @@ var imdbcache *Cache
 
 type Cache struct {
 	Items map[uint32]struct{}
-	//mu    *sync.Mutex
+	// mu    *sync.Mutex
 }
 
 func NewCache(maxsize int) *Cache {
 	cache := &Cache{
 		Items: make(map[uint32]struct{}, maxsize),
-		//mu:    &sync.Mutex{},
+		// mu:    &sync.Mutex{},
 	}
 
 	return cache
 }
 func (cache *Cache) Check(key uint32) bool {
-	//cache.mu.Lock()
-	//defer cache.mu.Unlock()
+	// cache.mu.Lock()
+	// defer cache.mu.Unlock()
 	_, exists := cache.Items[key]
 	return exists
 }
 func (cache *Cache) Set(key uint32) {
-	//cache.mu.Lock()
-	//defer cache.mu.Unlock()
+	// cache.mu.Lock()
+	// defer cache.mu.Unlock()
 	cache.Items[key] = struct{}{}
 }

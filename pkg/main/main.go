@@ -113,11 +113,11 @@ func main() {
 	parser.GetAllQualityPriorities()
 
 	logger.Log.GlobalLogger.Info("Check Fill DB")
-	counter, _ := database.CountRows("dbmovies", &database.Query{})
+	counter, _ := database.CountRows("dbmovies", database.Querywithargs{})
 	if counter == 0 {
 		utils.InitialFillMovies()
 	}
-	counter, _ = database.CountRows("dbseries", &database.Query{})
+	counter, _ = database.CountRows("dbseries", database.Querywithargs{})
 	if counter == 0 {
 		utils.InitialFillSeries()
 	}

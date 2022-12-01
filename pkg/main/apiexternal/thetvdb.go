@@ -1,6 +1,7 @@
 package apiexternal
 
 import (
+	"errors"
 	"strconv"
 	"time"
 
@@ -85,34 +86,43 @@ func NewTvdbClient(seconds int, calls int, disabletls bool, timeoutseconds int) 
 
 }
 
-func (t *tvdbClient) GetSeries(id int, language string) (TheTVDBSeries, error) {
+func (t *tvdbClient) GetSeries(id int, language string) (*TheTVDBSeries, error) {
 	url := "https://api.thetvdb.com/series/" + strconv.FormatInt(int64(id), 10)
-	var result TheTVDBSeries
-	_, err := t.Client.DoJson(url, &result, []AddHeader{{Key: "Accept-Language", Val: language}})
+	result := new(TheTVDBSeries)
+	_, err := t.Client.DoJson(url, result, []AddHeader{{Key: "Accept-Language", Val: language}})
 
 	if err != nil {
-		logger.Log.GlobalLogger.Error("Error calling", zap.String("url", url), zap.Error(err))
-		return TheTVDBSeries{}, err
+		if err != errors.New(pleaseWait) {
+			logerror(url, err)
+		}
+		result = nil
+		return nil, err
 	}
 	return result, nil
 }
 func (t *tvdbClient) GetSeriesEpisodes(id int, language string) (*TheTVDBEpisodes, error) {
 	url := "https://api.thetvdb.com/series/" + strconv.FormatInt(int64(id), 10) + "/episodes"
-	var result TheTVDBEpisodes
-	_, err := t.Client.DoJson(url, &result, []AddHeader{{Key: "Accept-Language", Val: language}})
+	result := new(TheTVDBEpisodes)
+	_, err := t.Client.DoJson(url, result, []AddHeader{{Key: "Accept-Language", Val: language}})
 
 	if err != nil {
-		logger.Log.GlobalLogger.Error("Error calling", zap.String("url", url), zap.Error(err))
+		if err != errors.New(pleaseWait) {
+			logerror(url, err)
+		}
+		result = nil
 		return nil, err
 	}
 
 	if result.Links.Last >= 2 {
-		var resultadd TheTVDBEpisodes
+		var resultadd *TheTVDBEpisodes
+		urlbase := url + "?page="
+		geturl := ""
 		for k := 2; k <= result.Links.Last; k++ {
-			resultadd = TheTVDBEpisodes{}
-			_, err = t.Client.DoJson(url+"?page="+strconv.Itoa(k), &resultadd, []AddHeader{{Key: "Accept-Language", Val: language}})
+			resultadd = new(TheTVDBEpisodes)
+			geturl = urlbase + strconv.Itoa(k)
+			_, err = t.Client.DoJson(geturl, resultadd, []AddHeader{{Key: "Accept-Language", Val: language}})
 			if err != nil {
-				logger.Log.GlobalLogger.Error("Error calling: " + url + "?page=" + strconv.Itoa(k) + " error: " + err.Error())
+				logger.Log.GlobalLogger.Error(errorCalling, zap.String("Url", urlbase+strconv.Itoa(k)), zap.Error(err))
 				break
 			}
 
@@ -120,7 +130,8 @@ func (t *tvdbClient) GetSeriesEpisodes(id int, language string) (*TheTVDBEpisode
 				result.Data = logger.GrowSliceBy(result.Data, len(resultadd.Data))
 			}
 			result.Data = append(result.Data, resultadd.Data...)
+			resultadd = nil
 		}
 	}
-	return &result, nil
+	return result, nil
 }

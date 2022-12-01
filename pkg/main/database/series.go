@@ -253,6 +253,7 @@ func (serie *Dbserie) GetMetadataTmdb(overwrite bool) {
 		} else {
 			logger.Log.GlobalLogger.Warn("Serie tmdb data not found for", zap.Int("tvdb", serie.ThetvdbID))
 		}
+		moviedb = nil
 	}
 }
 func (serie *Dbserie) GetMetadataTrakt(overwrite bool) {
@@ -300,6 +301,7 @@ func (serie *Dbserie) GetMetadataTrakt(overwrite bool) {
 		if (serie.Firstaired == "" || overwrite) && traktdetails.FirstAired.String() != "" {
 			serie.Firstaired = traktdetails.FirstAired.String()
 		}
+		traktdetails = nil
 	} else {
 		logger.Log.GlobalLogger.Warn("Serie trakt data not found for", zap.Int("tvdb", serie.ThetvdbID))
 	}
@@ -310,6 +312,7 @@ func (serie *Dbserie) GetMetadataTvdb(language string, overwrite bool) []string 
 	}
 	tvdbdetails, err := apiexternal.TvdbApi.GetSeries(serie.ThetvdbID, language)
 	if err == nil {
+		defer logger.ClearVar(&tvdbdetails)
 		if (serie.Seriename == "" || overwrite) && tvdbdetails.Data.SeriesName != "" {
 			serie.Seriename = tvdbdetails.Data.SeriesName
 		}
@@ -384,8 +387,9 @@ func (serie *Dbserie) GetMetadata(language string, querytmdb bool, querytrakt bo
 			if err == nil {
 				arrcfglang := &logger.InStringArrayStruct{Arr: config.Cfg.Imdbindexer.Indexedlanguages}
 				defer arrcfglang.Close()
+				lenarr := len(arrcfglang.Arr)
 				for idxalias := range traktaliases.Aliases {
-					if logger.InStringArray(traktaliases.Aliases[idxalias].Country, arrcfglang) && len(arrcfglang.Arr) >= 1 {
+					if logger.InStringArray(traktaliases.Aliases[idxalias].Country, arrcfglang) && lenarr >= 1 {
 						aliases = append(aliases, traktaliases.Aliases[idxalias].Title)
 					}
 				}
@@ -396,28 +400,31 @@ func (serie *Dbserie) GetMetadata(language string, querytmdb bool, querytrakt bo
 	return aliases
 }
 
-func (serie *Dbserie) GetTitles(cfg string, queryimdb bool, querytrakt bool) []DbserieAlternate {
+func (serie *Dbserie) GetTitles(cfgp *config.MediaTypeConfig, queryimdb bool, querytrakt bool) []DbserieAlternate {
 
-	processed := &logger.InStringArrayStruct{Arr: []string{}}
+	processed := new(logger.InStringArrayStruct)
 	defer processed.Close()
 
-	arrmetalang := &logger.InStringArrayStruct{Arr: config.Cfg.Media[cfg].Metadata_title_languages}
+	arrmetalang := &logger.InStringArrayStruct{Arr: cfgp.MetadataTitleLanguages}
 	defer arrmetalang.Close()
-	var c []DbserieAlternate = make([]DbserieAlternate, 0, 10)
+	var c []DbserieAlternate
 	//var regionok bool
 	if queryimdb && serie.ImdbID != "" {
 		queryimdbid := serie.ImdbID
 		if !strings.HasPrefix(serie.ImdbID, "tt") {
 			queryimdbid = "tt" + serie.ImdbID
 		}
-		imdbakadata, _ := QueryImdbAka(&Query{Where: "tconst = ?"}, queryimdbid)
+		imdbakadata, _ := QueryImdbAka(Querywithargs{Query: Query{Where: "tconst = ?"}, Args: []interface{}{queryimdbid}})
 
+		c = logger.GrowSliceBy(c, len(imdbakadata))
+		lenarr := len(arrmetalang.Arr)
 		for idximdb := range imdbakadata {
-			if logger.InStringArray(imdbakadata[idximdb].Region, arrmetalang) || len(arrmetalang.Arr) == 0 {
+			if logger.InStringArray(imdbakadata[idximdb].Region, arrmetalang) || lenarr == 0 {
 				c = append(c, DbserieAlternate{DbserieID: serie.ID, Title: imdbakadata[idximdb].Title, Slug: imdbakadata[idximdb].Slug, Region: imdbakadata[idximdb].Region})
 				processed.Arr = append(processed.Arr, imdbakadata[idximdb].Title)
 			}
 		}
+		imdbakadata = nil
 	}
 	if querytrakt && (serie.TraktID != 0 || serie.ImdbID != "") {
 		queryid := ""
@@ -429,8 +436,10 @@ func (serie *Dbserie) GetTitles(cfg string, queryimdb bool, querytrakt bool) []D
 		}
 		traktaliases, err := apiexternal.TraktApi.GetSerieAliases(queryid)
 		if err == nil {
+			c = logger.GrowSliceBy(c, len(traktaliases.Aliases))
+			lenarr := len(arrmetalang.Arr)
 			for idxalias := range traktaliases.Aliases {
-				if logger.InStringArray(traktaliases.Aliases[idxalias].Country, arrmetalang) || len(arrmetalang.Arr) == 0 {
+				if logger.InStringArray(traktaliases.Aliases[idxalias].Country, arrmetalang) || lenarr == 0 {
 					c = append(c, DbserieAlternate{DbserieID: serie.ID, Title: traktaliases.Aliases[idxalias].Title, Slug: logger.StringToSlug(traktaliases.Aliases[idxalias].Title), Region: traktaliases.Aliases[idxalias].Country})
 					processed.Arr = append(processed.Arr, traktaliases.Aliases[idxalias].Title)
 				}
@@ -449,12 +458,21 @@ func (serie *Dbserie) InsertEpisodes(language string, querytrakt bool) {
 		tvdbdetails, err := apiexternal.TvdbApi.GetSeriesEpisodes(serie.ThetvdbID, language)
 
 		if err == nil {
+			tbl, _ := QueryStaticColumnsThreeString(false, Querywithargs{QueryString: "select season, episode, '' AS t from dbserie_episodes where dbserie_id = ?", Args: []interface{}{serie.ID}})
+			ok := false
 			for idx := range tvdbdetails.Data {
-				if CountRowsStaticNoError("select count() from dbserie_episodes where dbserie_id = ? and season = ? and episode = ?", serie.ID, strconv.Itoa(tvdbdetails.Data[idx].AiredSeason), strconv.Itoa(tvdbdetails.Data[idx].AiredEpisodeNumber)) == 0 {
+				ok = true
+				for idxtbl := range tbl {
+					if tbl[idxtbl].Str1 == strconv.Itoa(tvdbdetails.Data[idx].AiredSeason) && tbl[idxtbl].Str2 == strconv.Itoa(tvdbdetails.Data[idx].AiredEpisodeNumber) {
+						ok = false
+						break
+					}
+				}
+				if ok {
 					InsertNamed("insert into dbserie_episodes (episode, season, identifier, title, first_aired, overview, poster, dbserie_id) VALUES (:episode, :season, :identifier, :title, :first_aired, :overview, :poster, :dbserie_id)", DbserieEpisode{
 						Episode:    strconv.Itoa(tvdbdetails.Data[idx].AiredEpisodeNumber),
 						Season:     strconv.Itoa(tvdbdetails.Data[idx].AiredSeason),
-						Identifier: "S" + padNumberWithZero(tvdbdetails.Data[idx].AiredSeason) + "E" + padNumberWithZero(tvdbdetails.Data[idx].AiredEpisodeNumber),
+						Identifier: logger.StringBuild("S", padNumberWithZero(tvdbdetails.Data[idx].AiredSeason), "E", padNumberWithZero(tvdbdetails.Data[idx].AiredEpisodeNumber)),
 						Title:      tvdbdetails.Data[idx].EpisodeName,
 						Overview:   tvdbdetails.Data[idx].Overview,
 						Poster:     tvdbdetails.Data[idx].Poster,
@@ -462,6 +480,7 @@ func (serie *Dbserie) InsertEpisodes(language string, querytrakt bool) {
 						FirstAired: logger.ParseDate(tvdbdetails.Data[idx].FirstAired, "2006-01-02")})
 				}
 			}
+			tbl = nil
 			tvdbdetails = nil
 		} else {
 			logger.Log.GlobalLogger.Warn("Serie tvdb episodes not found for", zap.Int("tvdb", serie.ThetvdbID))
@@ -476,17 +495,26 @@ func gettraktepisodes(imdb string, serieid uint) {
 	if err == nil {
 		var episodes *apiexternal.TraktSerieSeasonEpisodeGroup
 		//var identifier string
-		var counter uint
+
+		tbl, _ := QueryStaticColumnsThreeString(false, Querywithargs{QueryString: "select season, episode, '' AS t from dbserie_episodes where dbserie_id = ?", Args: []interface{}{serieid}})
+		ok := false
+
 		for idxseason := range seasons.Seasons {
 			episodes, err = apiexternal.TraktApi.GetSerieSeasonEpisodes(imdb, seasons.Seasons[idxseason].Number)
 			if err == nil {
 				for idxepi := range episodes.Episodes {
-					counter, _ = QueryColumnUint("select id from dbserie_episodes where dbserie_id = ? and season = ? and episode = ?", serieid, strconv.Itoa(episodes.Episodes[idxepi].Season), strconv.Itoa(episodes.Episodes[idxepi].Episode))
-					if counter == 0 {
+					ok = true
+					for idxtbl := range tbl {
+						if tbl[idxtbl].Str1 == strconv.Itoa(episodes.Episodes[idxepi].Season) && tbl[idxtbl].Str2 == strconv.Itoa(episodes.Episodes[idxepi].Episode) {
+							ok = false
+							break
+						}
+					}
+					if ok {
 						InsertNamed("insert into dbserie_episodes (episode, season, identifier, title, first_aired, overview, poster, dbserie_id) VALUES (:episode, :season, :identifier, :title, :first_aired, :overview, :poster, :dbserie_id)", DbserieEpisode{
 							Episode:    strconv.Itoa(episodes.Episodes[idxepi].Episode),
 							Season:     strconv.Itoa(episodes.Episodes[idxepi].Season),
-							Identifier: "S" + padNumberWithZero(episodes.Episodes[idxepi].Season) + "E" + padNumberWithZero(episodes.Episodes[idxepi].Episode),
+							Identifier: logger.StringBuild("S", padNumberWithZero(episodes.Episodes[idxepi].Season), "E", padNumberWithZero(episodes.Episodes[idxepi].Episode)),
 							Title:      episodes.Episodes[idxepi].Title,
 							FirstAired: sql.NullTime{Time: episodes.Episodes[idxepi].FirstAired, Valid: true},
 							Overview:   episodes.Episodes[idxepi].Overview,
@@ -507,11 +535,12 @@ func gettraktepisodes(imdb string, serieid uint) {
 					// 	}
 					// }
 				}
+				episodes = nil
 			} else {
 				logger.Log.GlobalLogger.Warn("Serie trakt episodes not found for", zap.String("imdb", imdb), zap.Int("season", seasons.Seasons[idxseason].Number))
 			}
 		}
-		episodes = nil
+		tbl = nil
 		seasons = nil
 	} else {
 		logger.Log.GlobalLogger.Warn("Serie trakt seasons not found for", zap.String("imdb", imdb))

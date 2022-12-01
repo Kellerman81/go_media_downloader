@@ -86,10 +86,7 @@ func InitLogger(config LoggerConfig) {
 		} else if strings.EqualFold(config.TimeZone, "utc") {
 			TimeZone = time.UTC
 		} else {
-			location, err := time.LoadLocation(config.TimeZone)
-			if err == nil {
-				TimeZone = location
-			}
+			TimeZone, _ = time.LoadLocation(config.TimeZone)
 		}
 	}
 
@@ -119,14 +116,14 @@ func InitLogger(config LoggerConfig) {
 		})),
 		zap.NewAtomicLevelAt(level),
 	)
-	var _globalLogger *zap.Logger
+	var globalLogger *zap.Logger
 	if strings.EqualFold(config.LogLevel, "debug") {
-		_globalLogger = zap.New(core, zap.WithClock(zoneClock{}), zap.AddCaller(), zap.AddStacktrace(zapcore.DebugLevel), zap.Development())
+		globalLogger = zap.New(core, zap.WithClock(zoneClock{}), zap.AddCaller(), zap.AddStacktrace(zapcore.DebugLevel), zap.Development())
 	} else {
-		_globalLogger = zap.New(core, zap.WithClock(zoneClock{}))
+		globalLogger = zap.New(core, zap.WithClock(zoneClock{}))
 	}
-	zap.ReplaceGlobals(_globalLogger)
-	Log.GlobalLogger = _globalLogger
+	zap.ReplaceGlobals(globalLogger)
+	Log.GlobalLogger = globalLogger
 }
 
 type zapLogger struct {

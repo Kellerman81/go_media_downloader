@@ -33,8 +33,8 @@ func apiAllGetFeeds(c *gin.Context) {
 		return
 	}
 
-	utils.Movies_all_jobs("feeds", true)
-	utils.Series_all_jobs("feeds", true)
+	utils.MoviesAllJobs("feeds", true)
+	utils.SeriesAllJobs("feeds", true)
 	c.JSON(http.StatusOK, "ok")
 }
 
@@ -48,8 +48,8 @@ func apiAllGetData(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
 		return
 	}
-	utils.Movies_all_jobs("data", true)
-	utils.Series_all_jobs("data", true)
+	utils.MoviesAllJobs("data", true)
+	utils.SeriesAllJobs("data", true)
 	c.JSON(http.StatusOK, "ok")
 }
 
@@ -63,8 +63,8 @@ func apiAllGetRss(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
 		return
 	}
-	utils.Movies_all_jobs("rss", true)
-	utils.Series_all_jobs("rss", true)
+	utils.MoviesAllJobs("rss", true)
+	utils.SeriesAllJobs("rss", true)
 	c.JSON(http.StatusOK, "ok")
 }
 
@@ -78,8 +78,8 @@ func apiAllGetMissingFull(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
 		return
 	}
-	utils.Movies_all_jobs("searchmissingfull", true)
-	utils.Series_all_jobs("searchmissingfull", true)
+	utils.MoviesAllJobs("searchmissingfull", true)
+	utils.SeriesAllJobs("searchmissingfull", true)
 	c.JSON(http.StatusOK, "ok")
 }
 
@@ -93,8 +93,8 @@ func apiAllGetMissingInc(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
 		return
 	}
-	utils.Movies_all_jobs("searchmissinginc", true)
-	utils.Series_all_jobs("searchmissinginc", true)
+	utils.MoviesAllJobs("searchmissinginc", true)
+	utils.SeriesAllJobs("searchmissinginc", true)
 	c.JSON(http.StatusOK, "ok")
 }
 
@@ -108,8 +108,8 @@ func apiAllGetUpgradeFull(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
 		return
 	}
-	utils.Movies_all_jobs("searchupgradefull", true)
-	utils.Series_all_jobs("searchupgradefull", true)
+	utils.MoviesAllJobs("searchupgradefull", true)
+	utils.SeriesAllJobs("searchupgradefull", true)
 	c.JSON(http.StatusOK, "ok")
 }
 
@@ -123,8 +123,8 @@ func apiAllGetUpgradeInc(c *gin.Context) {
 	if ApiAuth(c) == http.StatusUnauthorized {
 		return
 	}
-	utils.Movies_all_jobs("searchupgradeinc", true)
-	utils.Series_all_jobs("searchupgradeinc", true)
+	utils.MoviesAllJobs("searchupgradeinc", true)
+	utils.SeriesAllJobs("searchupgradeinc", true)
 	c.JSON(http.StatusOK, "ok")
 }
 

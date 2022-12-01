@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"os"
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
@@ -89,8 +90,20 @@ func apiDebugStats(ctx *gin.Context) {
 	gcjson, _ := json.Marshal(gc)
 	memjson, _ := json.Marshal(mem)
 
-	runtime.GC()
-	ctx.JSON(http.StatusOK, gin.H{"GC Stats": string(gcjson), "Mem Stats": string(memjson)})
+	f, err := os.Create("./temp/heapdump")
+	if err != nil {
+		panic(err)
+	}
+
+	debug.WriteHeapDump(f.Fd())
+
+	debug.FreeOSMemory()
+	ctx.JSON(http.StatusOK, gin.H{"GC Stats": string(gcjson),
+		"Mem Stats":    string(memjson),
+		"GOOS":         runtime.GOOS,
+		"NumCPU":       runtime.NumCPU(),
+		"NumGoroutine": runtime.NumGoroutine(),
+		"GOARCH":       runtime.GOARCH})
 }
 
 // @Summary      Queue
@@ -150,7 +163,7 @@ func apiQueueListStarted(ctx *gin.Context) {
 			query.OrderBy = queryParam
 		}
 	}
-	jobs, _ := database.QueryJobHistory(&query)
+	jobs, _ := database.QueryJobHistory(database.Querywithargs{Query: query})
 	ctx.JSON(http.StatusOK, gin.H{"data": jobs})
 }
 
@@ -213,24 +226,24 @@ func apiDBRefreshSlugs(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
-	dbmovies, _ := database.QueryDbmovie(&database.Query{})
+	dbmovies, _ := database.QueryDbmovie(database.Querywithargs{})
 	for idx := range dbmovies {
-		database.UpdateColumn("dbmovies", "slug", logger.StringToSlug(dbmovies[idx].Title), &database.Query{Where: "id = ?"}, dbmovies[idx].ID)
+		database.UpdateColumn("dbmovies", "slug", logger.StringToSlug(dbmovies[idx].Title), database.Querywithargs{Query: database.QueryFilterByID, Args: []interface{}{dbmovies[idx].ID}})
 	}
 
-	dbmoviestitles, _ := database.QueryDbmovieTitle(&database.Query{})
+	dbmoviestitles, _ := database.QueryDbmovieTitle(database.Querywithargs{})
 	for idx := range dbmoviestitles {
-		database.UpdateColumn("dbmovie_titles", "slug", logger.StringToSlug(dbmoviestitles[idx].Title), &database.Query{Where: "id = ?"}, dbmoviestitles[idx].ID)
+		database.UpdateColumn("dbmovie_titles", "slug", logger.StringToSlug(dbmoviestitles[idx].Title), database.Querywithargs{Query: database.QueryFilterByID, Args: []interface{}{dbmoviestitles[idx].ID}})
 	}
 
-	dbserie, _ := database.QueryDbserie(&database.Query{})
+	dbserie, _ := database.QueryDbserie(database.Querywithargs{})
 	for idx := range dbserie {
-		database.UpdateColumn("dbseries", "slug", logger.StringToSlug(dbserie[idx].Seriename), &database.Query{Where: "id = ?"}, dbserie[idx].ID)
+		database.UpdateColumn("dbseries", "slug", logger.StringToSlug(dbserie[idx].Seriename), database.Querywithargs{Query: database.QueryFilterByID, Args: []interface{}{dbserie[idx].ID}})
 	}
 
-	dbserietitles, _ := database.QueryDbserieAlternates(&database.Query{})
+	dbserietitles, _ := database.QueryDbserieAlternates(database.Querywithargs{})
 	for idx := range dbserietitles {
-		database.UpdateColumn("dbserie_alternates", "slug", logger.StringToSlug(dbserietitles[idx].Title), &database.Query{Where: "id = ?"}, dbserietitles[idx].ID)
+		database.UpdateColumn("dbserie_alternates", "slug", logger.StringToSlug(dbserietitles[idx].Title), database.Querywithargs{Query: database.QueryFilterByID, Args: []interface{}{dbserietitles[idx].ID}})
 	}
 	ctx.JSON(http.StatusOK, "ok")
 }
@@ -255,14 +268,16 @@ func apiParseString(ctx *gin.Context) {
 	parse, _ := parser.NewFileParser(getcfg.Name, getcfg.Year, getcfg.Typ)
 	//defer parse.Close()
 	if getcfg.Typ == "movie" {
-		parser.GetPriorityMap(parse, "movie_"+getcfg.Config, getcfg.Quality, true)
-		parser.GetDbIDs("movie", parse, "movie_"+getcfg.Config, "", true)
+		cfgp := config.Cfg.Media["movie_"+getcfg.Config]
+		parser.GetPriorityMap(parse, &cfgp, getcfg.Quality, true, true)
+		parser.GetDbIDs("movie", parse, &cfgp, "", true)
 		ctx.JSON(http.StatusOK, gin.H{"data": parse})
 		return
 	}
 	if getcfg.Typ == "series" {
-		parser.GetPriorityMap(parse, "serie_"+getcfg.Config, getcfg.Quality, true)
-		parser.GetDbIDs("series", parse, "serie_"+getcfg.Config, "", true)
+		cfgp := config.Cfg.Media["serie_"+getcfg.Config]
+		parser.GetPriorityMap(parse, &cfgp, getcfg.Quality, true, true)
+		parser.GetDbIDs("series", parse, &cfgp, "", true)
 		ctx.JSON(http.StatusOK, gin.H{"data": parse})
 		return
 	}
@@ -289,16 +304,18 @@ func apiParseFile(ctx *gin.Context) {
 	parse, _ := parser.NewFileParser(filepath.Base(getcfg.Path), getcfg.Year, getcfg.Typ)
 	//defer parse.Close()
 	if getcfg.Typ == "movie" {
-		parser.ParseVideoFile(parse, getcfg.Path, "movie_"+getcfg.Config, getcfg.Quality)
-		parser.GetPriorityMap(parse, "movie_"+getcfg.Config, getcfg.Quality, true)
-		parser.GetDbIDs("movie", parse, "movie_"+getcfg.Config, "", true)
+		cfgp := config.Cfg.Media["movie_"+getcfg.Config]
+		parser.ParseVideoFile(parse, getcfg.Path, &cfgp, getcfg.Quality)
+		parser.GetPriorityMap(parse, &cfgp, getcfg.Quality, true, true)
+		parser.GetDbIDs("movie", parse, &cfgp, "", true)
 		ctx.JSON(http.StatusOK, gin.H{"data": parse})
 		return
 	}
 	if getcfg.Typ == "series" {
-		parser.ParseVideoFile(parse, getcfg.Path, "serie_"+getcfg.Config, getcfg.Quality)
-		parser.GetPriorityMap(parse, "serie_"+getcfg.Config, getcfg.Quality, true)
-		parser.GetDbIDs("series", parse, "serie_"+getcfg.Config, "", true)
+		cfgp := config.Cfg.Media["serie_"+getcfg.Config]
+		parser.ParseVideoFile(parse, getcfg.Path, &cfgp, getcfg.Quality)
+		parser.GetPriorityMap(parse, &cfgp, getcfg.Quality, true, true)
+		parser.GetDbIDs("series", parse, &cfgp, "", true)
 		ctx.JSON(http.StatusOK, gin.H{"data": parse})
 		return
 	}
@@ -421,8 +438,8 @@ func apiDbClear(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
-	_, err := database.Dbexec("main", "DELETE from "+ctx.Param("name"), []interface{}{})
-	database.Dbexec("main", "VACUUM", []interface{}{})
+	_, err := database.Dbexec("main", database.Querywithargs{QueryString: "DELETE from " + ctx.Param("name")})
+	database.Dbexec("main", database.Querywithargs{QueryString: "VACUUM"})
 	if err == nil {
 		ctx.JSON(http.StatusOK, "ok")
 	} else {
@@ -440,7 +457,7 @@ func apiDbVacuum(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
-	_, err := database.Dbexec("main", "VACUUM", []interface{}{})
+	_, err := database.Dbexec("main", database.Querywithargs{QueryString: "VACUUM"})
 	if err == nil {
 		ctx.JSON(http.StatusOK, "ok")
 	} else {
@@ -466,7 +483,7 @@ func apiDbRemoveOldJobs(ctx *gin.Context) {
 			scantime := time.Now()
 			if days != 0 {
 				scantime = scantime.AddDate(0, 0, 0-days)
-				_, err := database.DeleteRow("job_histories", &database.Query{Where: "created_at < ?"}, scantime)
+				_, err := database.DeleteRow("job_histories", database.Querywithargs{Query: database.Query{Where: "created_at < ?"}, Args: []interface{}{scantime}})
 				if err == nil {
 					ctx.JSON(http.StatusOK, "ok")
 				} else {
@@ -491,7 +508,7 @@ func apiGetQualities(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
-	qualities, _ := database.QueryQualities(&database.Query{})
+	qualities, _ := database.QueryQualities(database.Querywithargs{})
 	ctx.JSON(http.StatusOK, gin.H{"data": qualities})
 }
 
@@ -506,9 +523,9 @@ func apiQualityDelete(ctx *gin.Context) {
 	if ApiAuth(ctx) == http.StatusUnauthorized {
 		return
 	}
-	database.DeleteRow("qualities", &database.Query{Where: "id = ?"}, ctx.Param("id"))
+	database.DeleteRow("qualities", database.Querywithargs{Query: database.QueryFilterByID, Args: []interface{}{ctx.Param("id")}})
 	database.GetVars()
-	qualities, _ := database.QueryQualities(&database.Query{})
+	qualities, _ := database.QueryQualities(database.Querywithargs{})
 	ctx.JSON(http.StatusOK, gin.H{"data": qualities})
 }
 
@@ -529,7 +546,7 @@ func apiQualityUpdate(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	counter, _ := database.CountRows("qualities", &database.Query{Where: "id != 0 and id = ?"}, quality.ID)
+	counter, _ := database.CountRows("qualities", database.Querywithargs{Query: database.Query{Where: "id != 0 and id = ?"}, Args: []interface{}{quality.ID}})
 
 	if counter == 0 {
 		database.InsertArray("qualities", &logger.InStringArrayStruct{Arr: []string{"Type", "Name", "Regex", "Strings", "Priority", "Use_Regex"}},
@@ -537,10 +554,10 @@ func apiQualityUpdate(ctx *gin.Context) {
 	} else {
 		database.UpdateArray("qualities", &logger.InStringArrayStruct{Arr: []string{"Type", "Name", "Regex", "Strings", "Priority", "Use_Regex"}},
 			[]interface{}{quality.QualityType, quality.Name, quality.Regex, quality.Strings, quality.Priority, quality.UseRegex},
-			&database.Query{Where: "id != 0 and id = ?"}, quality.ID)
+			database.Querywithargs{Query: database.Query{Where: "id != 0 and id = ?"}, Args: []interface{}{quality.ID}})
 	}
 	database.GetVars()
-	qualities, _ := database.QueryQualities(&database.Query{})
+	qualities, _ := database.QueryQualities(database.Querywithargs{})
 	ctx.JSON(http.StatusOK, gin.H{"data": qualities})
 }
 
@@ -571,8 +588,8 @@ func apiListQualityPriorities(ctx *gin.Context) {
 	for idxreso := range database.DBConnect.Getresolutions {
 		wantedreso := false
 
-		for idxwantreso := range config.Cfg.Quality[ctx.Param("name")].Wanted_resolution {
-			if strings.EqualFold(config.Cfg.Quality[ctx.Param("name")].Wanted_resolution[idxwantreso], database.DBConnect.Getresolutions[idxreso].Name) {
+		for idxwantreso := range config.Cfg.Quality[ctx.Param("name")].WantedResolution {
+			if strings.EqualFold(config.Cfg.Quality[ctx.Param("name")].WantedResolution[idxwantreso], database.DBConnect.Getresolutions[idxreso].Name) {
 				wantedreso = true
 				break
 			}
@@ -582,8 +599,8 @@ func apiListQualityPriorities(ctx *gin.Context) {
 		}
 		for idxqual := range database.DBConnect.Getqualities {
 			wantedqual := false
-			for idxwantqual := range config.Cfg.Quality[ctx.Param("name")].Wanted_quality {
-				if strings.EqualFold(config.Cfg.Quality[ctx.Param("name")].Wanted_quality[idxwantqual], database.DBConnect.Getqualities[idxqual].Name) {
+			for idxwantqual := range config.Cfg.Quality[ctx.Param("name")].WantedQuality {
+				if strings.EqualFold(config.Cfg.Quality[ctx.Param("name")].WantedQuality[idxwantqual], database.DBConnect.Getqualities[idxqual].Name) {
 					wantedqual = true
 					break
 				}
@@ -603,7 +620,9 @@ func apiListQualityPriorities(ctx *gin.Context) {
 						CodecID:      database.DBConnect.Getcodecs[idxcodec].ID,
 						AudioID:      database.DBConnect.Getaudios[idxaudio].ID,
 					}
-					parser.GetIDPriorityMap(&parse, ctx.Param("config"), ctx.Param("name"), true)
+					cfgp := config.Cfg.Media[ctx.Param("config")]
+
+					parser.GetIDPriorityMap(&parse, &cfgp, ctx.Param("name"), true, true)
 					parserreturn = append(parserreturn, parse)
 				}
 			}
@@ -980,16 +999,17 @@ func apiNamingGenerate(ctx *gin.Context) {
 
 	//defer mediacfg.Close()
 	if cfg.GroupType == "movie" {
-		movie, _ := database.GetMovies(&database.Query{Where: "id = ?"}, cfg.MovieID)
+		movie, _ := database.GetMovies(database.Querywithargs{Query: database.QueryFilterByID, Args: []interface{}{cfg.MovieID}})
 		//defer logger.ClearVar(&movie)
+		cfgp := config.Cfg.Media[cfg.Cfg_Media]
 
 		s, _ := structure.NewStructure(
-			cfg.Cfg_Media,
+			&cfgp,
 			movie.Listname,
 			cfg.GroupType,
 			movie.Rootpath,
-			config.Cfg.Media[cfg.Cfg_Media].DataImport[0].Template_path,
-			config.Cfg.Media[cfg.Cfg_Media].Data[0].Template_path,
+			config.Cfg.Media[cfg.Cfg_Media].DataImport[0].TemplatePath,
+			config.Cfg.Media[cfg.Cfg_Media].Data[0].TemplatePath,
 		)
 		//defer s.Close()
 		s.ParseFile(cfg.FilePath, true, filepath.Dir(cfg.FilePath), false)
@@ -999,16 +1019,17 @@ func apiNamingGenerate(ctx *gin.Context) {
 		foldername, filename := s.GenerateNamingTemplate(cfg.FilePath, movie.Rootpath, movie.DbmovieID, "", "", []database.Dbstatic_TwoInt{})
 		ctx.JSON(http.StatusOK, gin.H{"foldername": foldername, "filename": filename})
 	} else {
-		series, _ := database.GetSeries(&database.Query{Where: "id = ?"}, cfg.SerieID)
+		series, _ := database.GetSeries(database.Querywithargs{Query: database.QueryFilterByID, Args: []interface{}{cfg.SerieID}})
 		//defer logger.ClearVar(&series)
+		cfgp := config.Cfg.Media[cfg.Cfg_Media]
 
 		s, _ := structure.NewStructure(
-			cfg.Cfg_Media,
+			&cfgp,
 			series.Listname,
 			cfg.GroupType,
 			series.Rootpath,
-			config.Cfg.Media[cfg.Cfg_Media].DataImport[0].Template_path,
-			config.Cfg.Media[cfg.Cfg_Media].Data[0].Template_path,
+			config.Cfg.Media[cfg.Cfg_Media].DataImport[0].TemplatePath,
+			config.Cfg.Media[cfg.Cfg_Media].Data[0].TemplatePath,
 		)
 		//defer s.Close()
 		s.ParseFile(cfg.FilePath, true, filepath.Dir(cfg.FilePath), false)
@@ -1082,9 +1103,11 @@ func apiStructure(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "target config not found"})
 		return
 	}
+	cfgp := config.Cfg.Media[getconfig]
+
 	if cfg.Forceid != 0 {
-		structure.StructureSingleFolderAs(cfg.Folder, cfg.Forceid, cfg.Disableruntimecheck, cfg.Disabledisallowed, cfg.Disabledeletewronglanguage, cfg.Grouptype, cfg.Sourcepathtemplate, cfg.Targetpathtemplate, getconfig)
+		structure.StructureSingleFolderAs(cfg.Folder, cfg.Forceid, &cfgp, structure.StructureConfig{Disableruntimecheck: cfg.Disableruntimecheck, Disabledisallowed: cfg.Disabledisallowed, Disabledeletewronglanguage: cfg.Disabledeletewronglanguage, Grouptype: cfg.Grouptype, Sourcepathstr: cfg.Sourcepathtemplate, Targetpathstr: cfg.Targetpathtemplate})
 	} else {
-		structure.StructureSingleFolder(cfg.Folder, cfg.Disableruntimecheck, cfg.Disabledisallowed, cfg.Disabledeletewronglanguage, cfg.Grouptype, cfg.Sourcepathtemplate, cfg.Targetpathtemplate, getconfig)
+		structure.StructureSingleFolder(cfg.Folder, &cfgp, structure.StructureConfig{Disableruntimecheck: cfg.Disableruntimecheck, Disabledisallowed: cfg.Disabledisallowed, Disabledeletewronglanguage: cfg.Disabledeletewronglanguage, Grouptype: cfg.Grouptype, Sourcepathstr: cfg.Sourcepathtemplate, Targetpathstr: cfg.Targetpathtemplate})
 	}
 }

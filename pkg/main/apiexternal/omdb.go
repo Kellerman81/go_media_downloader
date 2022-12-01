@@ -1,12 +1,12 @@
 package apiexternal
 
 import (
+	"errors"
 	"net/url"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/logger"
 	"github.com/Kellerman81/go_media_downloader/rate"
-	"go.uber.org/zap"
 )
 
 type OmDBMovie struct {
@@ -66,11 +66,13 @@ func NewOmdbClient(apikey string, seconds int, calls int, disabletls bool, timeo
 }
 
 func (o *omdbClient) GetMovie(imdbid string, result *OmDBMovie) error {
-	url := "http://www.omdbapi.com/?i=" + imdbid + "&apikey=" + o.OmdbApiKey
+	url := logger.StringBuild("http://www.omdbapi.com/?i=", imdbid, "&apikey=", o.OmdbApiKey)
 	_, err := o.Client.DoJson(url, result, nil)
 
 	if err != nil {
-		logger.Log.GlobalLogger.Error("Error calling", zap.String("url", url), zap.Error(err))
+		if err != errors.New(pleaseWait) {
+			logerror(url, err)
+		}
 		return err
 	}
 
@@ -82,12 +84,14 @@ func (o *omdbClient) SearchMovie(title string, year string, result *OmDBMovieSea
 	if year != "" && year != "0" {
 		yearstr = "&y=" + year
 	}
-	url := "http://www.omdbapi.com/?s=" + url.PathEscape(title) + yearstr + "&apikey=" + o.OmdbApiKey
+	url := logger.StringBuild("http://www.omdbapi.com/?s=", url.PathEscape(title), yearstr, "&apikey=", o.OmdbApiKey)
 
 	_, err := o.Client.DoJson(url, result, nil)
 
 	if err != nil {
-		logger.Log.GlobalLogger.Error("Error calling", zap.String("url", url), zap.Error(err))
+		if err != errors.New(pleaseWait) {
+			logerror(url, err)
+		}
 		return err
 	}
 

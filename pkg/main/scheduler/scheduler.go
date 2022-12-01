@@ -3,6 +3,7 @@ package scheduler
 import (
 	"math/rand"
 	"os"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
@@ -54,516 +55,516 @@ func InitScheduler() {
 	QueueSearch.Start()
 
 	for idxconfig := range config.Cfg.Movies {
-		configData := "movie_" + config.Cfg.Movies[idxconfig].Name
-		if !config.ConfigCheck("scheduler_" + config.Cfg.Movies[idxconfig].Template_scheduler) {
+		cfgp := config.Cfg.Media["movie_"+config.Cfg.Movies[idxconfig].Name]
+		if !config.ConfigCheck("scheduler_" + config.Cfg.Movies[idxconfig].TemplateScheduler) {
 			continue
 		}
-		schedule := config.Cfg.Scheduler[config.Cfg.Movies[idxconfig].Template_scheduler]
+		schedule := config.Cfg.Scheduler[config.Cfg.Movies[idxconfig].TemplateScheduler]
 
-		if schedule.Interval_indexer_missing != "" {
+		if schedule.IntervalIndexerMissing != "" {
 			if config.Cfg.General.UseCronInsteadOfInterval {
 				QueueSearch.DispatchCron("searchmissinginc_movies_"+config.Cfg.Movies[idxconfig].Name, func() {
-					utils.Movies_single_jobs("searchmissinginc", configData, "", false)
-				}, convertcron(schedule.Interval_indexer_missing))
+					utils.MoviesSingleJobs("searchmissinginc", &cfgp, "", false)
+				}, convertcron(schedule.IntervalIndexerMissing))
 			} else {
 				QueueSearch.DispatchEvery("searchmissinginc_movies_"+config.Cfg.Movies[idxconfig].Name, func() {
-					utils.Movies_single_jobs("searchmissinginc", configData, "", false)
-				}, converttime(schedule.Interval_indexer_missing))
+					utils.MoviesSingleJobs("searchmissinginc", &cfgp, "", false)
+				}, converttime(schedule.IntervalIndexerMissing))
 			}
 		}
-		if schedule.Cron_indexer_missing != "" {
+		if schedule.CronIndexerMissing != "" {
 			QueueSearch.DispatchCron("searchmissinginc_movies_"+config.Cfg.Movies[idxconfig].Name, func() {
-				utils.Movies_single_jobs("searchmissinginc", configData, "", false)
-			}, schedule.Cron_indexer_missing)
+				utils.MoviesSingleJobs("searchmissinginc", &cfgp, "", false)
+			}, schedule.CronIndexerMissing)
 		}
-		if schedule.Interval_indexer_missing_full != "" {
+		if schedule.IntervalIndexerMissingFull != "" {
 			if config.Cfg.General.UseCronInsteadOfInterval {
 				QueueSearch.DispatchCron("searchmissingfull_movies_"+config.Cfg.Movies[idxconfig].Name, func() {
-					utils.Movies_single_jobs("searchmissingfull", configData, "", false)
-				}, convertcron(schedule.Interval_indexer_missing_full))
+					utils.MoviesSingleJobs("searchmissingfull", &cfgp, "", false)
+				}, convertcron(schedule.IntervalIndexerMissingFull))
 			} else {
 				QueueSearch.DispatchEvery("searchmissingfull_movies_"+config.Cfg.Movies[idxconfig].Name, func() {
-					utils.Movies_single_jobs("searchmissingfull", configData, "", false)
-				}, converttime(schedule.Interval_indexer_missing_full))
+					utils.MoviesSingleJobs("searchmissingfull", &cfgp, "", false)
+				}, converttime(schedule.IntervalIndexerMissingFull))
 			}
 		}
-		if schedule.Cron_indexer_missing_full != "" {
+		if schedule.CronIndexerMissingFull != "" {
 			QueueSearch.DispatchCron("searchmissingfull_movies_"+config.Cfg.Movies[idxconfig].Name, func() {
-				utils.Movies_single_jobs("searchmissingfull", configData, "", false)
-			}, schedule.Cron_indexer_missing_full)
+				utils.MoviesSingleJobs("searchmissingfull", &cfgp, "", false)
+			}, schedule.CronIndexerMissingFull)
 		}
-		if schedule.Interval_indexer_upgrade != "" {
+		if schedule.IntervalIndexerUpgrade != "" {
 			if config.Cfg.General.UseCronInsteadOfInterval {
 				QueueSearch.DispatchCron("searchupgradeinc_movies_"+config.Cfg.Movies[idxconfig].Name, func() {
-					utils.Movies_single_jobs("searchupgradeinc", configData, "", false)
-				}, convertcron(schedule.Interval_indexer_upgrade))
+					utils.MoviesSingleJobs("searchupgradeinc", &cfgp, "", false)
+				}, convertcron(schedule.IntervalIndexerUpgrade))
 			} else {
 				QueueSearch.DispatchEvery("searchupgradeinc_movies_"+config.Cfg.Movies[idxconfig].Name, func() {
-					utils.Movies_single_jobs("searchupgradeinc", configData, "", false)
-				}, converttime(schedule.Interval_indexer_upgrade))
+					utils.MoviesSingleJobs("searchupgradeinc", &cfgp, "", false)
+				}, converttime(schedule.IntervalIndexerUpgrade))
 			}
 		}
-		if schedule.Cron_indexer_upgrade != "" {
+		if schedule.CronIndexerUpgrade != "" {
 			QueueSearch.DispatchCron("searchupgradeinc_movies_"+config.Cfg.Movies[idxconfig].Name, func() {
-				utils.Movies_single_jobs("searchupgradeinc", configData, "", false)
-			}, schedule.Cron_indexer_upgrade)
+				utils.MoviesSingleJobs("searchupgradeinc", &cfgp, "", false)
+			}, schedule.CronIndexerUpgrade)
 		}
-		if schedule.Interval_indexer_upgrade_full != "" {
+		if schedule.IntervalIndexerUpgradeFull != "" {
 			if config.Cfg.General.UseCronInsteadOfInterval {
 				QueueSearch.DispatchCron("searchupgradefull_movies_"+config.Cfg.Movies[idxconfig].Name, func() {
-					utils.Movies_single_jobs("searchupgradefull", configData, "", false)
-				}, convertcron(schedule.Interval_indexer_upgrade_full))
+					utils.MoviesSingleJobs("searchupgradefull", &cfgp, "", false)
+				}, convertcron(schedule.IntervalIndexerUpgradeFull))
 			} else {
 				QueueSearch.DispatchEvery("searchupgradefull_movies_"+config.Cfg.Movies[idxconfig].Name, func() {
-					utils.Movies_single_jobs("searchupgradefull", configData, "", false)
-				}, converttime(schedule.Interval_indexer_upgrade_full))
+					utils.MoviesSingleJobs("searchupgradefull", &cfgp, "", false)
+				}, converttime(schedule.IntervalIndexerUpgradeFull))
 			}
 		}
-		if schedule.Cron_indexer_upgrade_full != "" {
+		if schedule.CronIndexerUpgradeFull != "" {
 			QueueSearch.DispatchCron("searchupgradefull_movies_"+config.Cfg.Movies[idxconfig].Name, func() {
-				utils.Movies_single_jobs("searchupgradefull", configData, "", false)
-			}, schedule.Cron_indexer_upgrade_full)
+				utils.MoviesSingleJobs("searchupgradefull", &cfgp, "", false)
+			}, schedule.CronIndexerUpgradeFull)
 		}
 
-		if schedule.Interval_indexer_missing_title != "" {
+		if schedule.IntervalIndexerMissingTitle != "" {
 			if config.Cfg.General.UseCronInsteadOfInterval {
 				QueueSearch.DispatchCron("searchmissinginctitle_movies_"+config.Cfg.Movies[idxconfig].Name, func() {
-					utils.Movies_single_jobs("searchmissinginctitle", configData, "", false)
-				}, convertcron(schedule.Interval_indexer_missing_title))
+					utils.MoviesSingleJobs("searchmissinginctitle", &cfgp, "", false)
+				}, convertcron(schedule.IntervalIndexerMissingTitle))
 			} else {
 				QueueSearch.DispatchEvery("searchmissinginctitle_movies_"+config.Cfg.Movies[idxconfig].Name, func() {
-					utils.Movies_single_jobs("searchmissinginctitle", configData, "", false)
-				}, converttime(schedule.Interval_indexer_missing_title))
+					utils.MoviesSingleJobs("searchmissinginctitle", &cfgp, "", false)
+				}, converttime(schedule.IntervalIndexerMissingTitle))
 			}
 		}
-		if schedule.Cron_indexer_missing_title != "" {
+		if schedule.CronIndexerMissingTitle != "" {
 			QueueSearch.DispatchCron("searchmissinginctitle_movies_"+config.Cfg.Movies[idxconfig].Name, func() {
-				utils.Movies_single_jobs("searchmissinginctitle", configData, "", false)
-			}, schedule.Cron_indexer_missing_title)
+				utils.MoviesSingleJobs("searchmissinginctitle", &cfgp, "", false)
+			}, schedule.CronIndexerMissingTitle)
 		}
-		if schedule.Interval_indexer_missing_full_title != "" {
+		if schedule.IntervalIndexerMissingFullTitle != "" {
 			if config.Cfg.General.UseCronInsteadOfInterval {
 				QueueSearch.DispatchCron("searchmissingfulltitle_movies_"+config.Cfg.Movies[idxconfig].Name, func() {
-					utils.Movies_single_jobs("searchmissingfulltitle", configData, "", false)
-				}, convertcron(schedule.Interval_indexer_missing_full_title))
+					utils.MoviesSingleJobs("searchmissingfulltitle", &cfgp, "", false)
+				}, convertcron(schedule.IntervalIndexerMissingFullTitle))
 			} else {
 				QueueSearch.DispatchEvery("searchmissingfulltitle_movies_"+config.Cfg.Movies[idxconfig].Name, func() {
-					utils.Movies_single_jobs("searchmissingfulltitle", configData, "", false)
-				}, converttime(schedule.Interval_indexer_missing_full_title))
+					utils.MoviesSingleJobs("searchmissingfulltitle", &cfgp, "", false)
+				}, converttime(schedule.IntervalIndexerMissingFullTitle))
 			}
 		}
-		if schedule.Cron_indexer_missing_full_title != "" {
+		if schedule.CronIndexerMissingFullTitle != "" {
 			QueueSearch.DispatchCron("searchmissingfulltitle_movies_"+config.Cfg.Movies[idxconfig].Name, func() {
-				utils.Movies_single_jobs("searchmissingfulltitle", configData, "", false)
-			}, schedule.Cron_indexer_missing_full_title)
+				utils.MoviesSingleJobs("searchmissingfulltitle", &cfgp, "", false)
+			}, schedule.CronIndexerMissingFullTitle)
 		}
-		if schedule.Interval_indexer_upgrade_title != "" {
+		if schedule.IntervalIndexerUpgradeTitle != "" {
 			if config.Cfg.General.UseCronInsteadOfInterval {
 				QueueSearch.DispatchCron("searchupgradeinctitle_movies_"+config.Cfg.Movies[idxconfig].Name, func() {
-					utils.Movies_single_jobs("searchupgradeinctitle", configData, "", false)
-				}, convertcron(schedule.Interval_indexer_upgrade_title))
+					utils.MoviesSingleJobs("searchupgradeinctitle", &cfgp, "", false)
+				}, convertcron(schedule.IntervalIndexerUpgradeTitle))
 			} else {
 				QueueSearch.DispatchEvery("searchupgradeinctitle_movies_"+config.Cfg.Movies[idxconfig].Name, func() {
-					utils.Movies_single_jobs("searchupgradeinctitle", configData, "", false)
-				}, converttime(schedule.Interval_indexer_upgrade_title))
+					utils.MoviesSingleJobs("searchupgradeinctitle", &cfgp, "", false)
+				}, converttime(schedule.IntervalIndexerUpgradeTitle))
 			}
 		}
-		if schedule.Cron_indexer_upgrade_title != "" {
+		if schedule.CronIndexerUpgradeTitle != "" {
 			QueueSearch.DispatchCron("searchupgradeinctitle_movies_"+config.Cfg.Movies[idxconfig].Name, func() {
-				utils.Movies_single_jobs("searchupgradeinctitle", configData, "", false)
-			}, schedule.Cron_indexer_upgrade_title)
+				utils.MoviesSingleJobs("searchupgradeinctitle", &cfgp, "", false)
+			}, schedule.CronIndexerUpgradeTitle)
 		}
-		if schedule.Interval_indexer_upgrade_full_title != "" {
+		if schedule.IntervalIndexerUpgradeFullTitle != "" {
 			if config.Cfg.General.UseCronInsteadOfInterval {
 				QueueSearch.DispatchCron("searchupgradefulltitle_movies_"+config.Cfg.Movies[idxconfig].Name, func() {
-					utils.Movies_single_jobs("searchupgradefulltitle", configData, "", false)
-				}, convertcron(schedule.Interval_indexer_upgrade_full_title))
+					utils.MoviesSingleJobs("searchupgradefulltitle", &cfgp, "", false)
+				}, convertcron(schedule.IntervalIndexerUpgradeFullTitle))
 			} else {
 				QueueSearch.DispatchEvery("searchupgradefulltitle_movies_"+config.Cfg.Movies[idxconfig].Name, func() {
-					utils.Movies_single_jobs("searchupgradefulltitle", configData, "", false)
-				}, converttime(schedule.Interval_indexer_upgrade_full_title))
+					utils.MoviesSingleJobs("searchupgradefulltitle", &cfgp, "", false)
+				}, converttime(schedule.IntervalIndexerUpgradeFullTitle))
 			}
 		}
-		if schedule.Cron_indexer_upgrade_full_title != "" {
+		if schedule.CronIndexerUpgradeFullTitle != "" {
 			QueueSearch.DispatchCron("searchupgradefulltitle_movies_"+config.Cfg.Movies[idxconfig].Name, func() {
-				utils.Movies_single_jobs("searchupgradefulltitle", configData, "", false)
-			}, schedule.Cron_indexer_upgrade_full_title)
+				utils.MoviesSingleJobs("searchupgradefulltitle", &cfgp, "", false)
+			}, schedule.CronIndexerUpgradeFullTitle)
 		}
-		if schedule.Interval_indexer_rss != "" {
+		if schedule.IntervalIndexerRss != "" {
 			if config.Cfg.General.UseCronInsteadOfInterval {
 				QueueSearch.DispatchCron("rss_movies_"+config.Cfg.Movies[idxconfig].Name, func() {
-					utils.Movies_single_jobs("rss", configData, "", false)
-				}, convertcron(schedule.Interval_indexer_rss))
+					utils.MoviesSingleJobs("rss", &cfgp, "", false)
+				}, convertcron(schedule.IntervalIndexerRss))
 			} else {
 				QueueSearch.DispatchEvery("rss_movies_"+config.Cfg.Movies[idxconfig].Name, func() {
-					utils.Movies_single_jobs("rss", configData, "", false)
-				}, converttime(schedule.Interval_indexer_rss))
+					utils.MoviesSingleJobs("rss", &cfgp, "", false)
+				}, converttime(schedule.IntervalIndexerRss))
 			}
 		}
-		if schedule.Cron_indexer_rss != "" {
+		if schedule.CronIndexerRss != "" {
 			QueueSearch.DispatchCron("rss_movies_"+config.Cfg.Movies[idxconfig].Name, func() {
-				utils.Movies_single_jobs("rss", configData, "", false)
-			}, schedule.Cron_indexer_rss)
+				utils.MoviesSingleJobs("rss", &cfgp, "", false)
+			}, schedule.CronIndexerRss)
 		}
 
-		if schedule.Interval_scan_data != "" {
+		if schedule.IntervalScanData != "" {
 			if config.Cfg.General.UseCronInsteadOfInterval {
 				QueueData.DispatchCron("datafull_movies_"+config.Cfg.Movies[idxconfig].Name, func() {
-					utils.Movies_single_jobs("datafull", configData, "", false)
-				}, convertcron(schedule.Interval_scan_data))
+					utils.MoviesSingleJobs("datafull", &cfgp, "", false)
+				}, convertcron(schedule.IntervalScanData))
 			} else {
 				QueueData.DispatchEvery("datafull_movies_"+config.Cfg.Movies[idxconfig].Name, func() {
-					utils.Movies_single_jobs("datafull", configData, "", false)
-				}, converttime(schedule.Interval_scan_data))
+					utils.MoviesSingleJobs("datafull", &cfgp, "", false)
+				}, converttime(schedule.IntervalScanData))
 			}
 		}
-		if schedule.Cron_scan_data != "" {
+		if schedule.CronScanData != "" {
 			QueueData.DispatchCron("datafull_movies_"+config.Cfg.Movies[idxconfig].Name, func() {
-				utils.Movies_single_jobs("datafull", configData, "", false)
-			}, schedule.Cron_scan_data)
+				utils.MoviesSingleJobs("datafull", &cfgp, "", false)
+			}, schedule.CronScanData)
 		}
-		if schedule.Interval_scan_dataimport != "" {
+		if schedule.IntervalScanDataimport != "" {
 			if config.Cfg.General.UseCronInsteadOfInterval {
 				QueueData.DispatchCron("structure_movies_"+config.Cfg.Movies[idxconfig].Name, func() {
-					utils.Movies_single_jobs("structure", configData, "", false)
-				}, convertcron(schedule.Interval_scan_dataimport))
+					utils.MoviesSingleJobs("structure", &cfgp, "", false)
+				}, convertcron(schedule.IntervalScanDataimport))
 			} else {
 				QueueData.DispatchEvery("structure_movies_"+config.Cfg.Movies[idxconfig].Name, func() {
-					utils.Movies_single_jobs("structure", configData, "", false)
-				}, converttime(schedule.Interval_scan_dataimport))
+					utils.MoviesSingleJobs("structure", &cfgp, "", false)
+				}, converttime(schedule.IntervalScanDataimport))
 			}
 		}
-		if schedule.Cron_scan_dataimport != "" {
+		if schedule.CronScanDataimport != "" {
 			QueueData.DispatchCron("structure_movies_"+config.Cfg.Movies[idxconfig].Name, func() {
-				utils.Movies_single_jobs("structure", configData, "", false)
-			}, schedule.Cron_scan_dataimport)
+				utils.MoviesSingleJobs("structure", &cfgp, "", false)
+			}, schedule.CronScanDataimport)
 		}
-		if schedule.Interval_feeds != "" {
+		if schedule.IntervalFeeds != "" {
 			if config.Cfg.General.UseCronInsteadOfInterval {
 				QueueFeeds.DispatchCron("feeds_movies_"+config.Cfg.Movies[idxconfig].Name, func() {
-					utils.Movies_single_jobs("feeds", configData, "", false)
-				}, convertcron(schedule.Interval_feeds))
+					utils.MoviesSingleJobs("feeds", &cfgp, "", false)
+				}, convertcron(schedule.IntervalFeeds))
 			} else {
 				QueueFeeds.DispatchEvery("feeds_movies_"+config.Cfg.Movies[idxconfig].Name, func() {
-					utils.Movies_single_jobs("feeds", configData, "", false)
-				}, converttime(schedule.Interval_feeds))
+					utils.MoviesSingleJobs("feeds", &cfgp, "", false)
+				}, converttime(schedule.IntervalFeeds))
 			}
 		}
-		if schedule.Cron_feeds != "" {
+		if schedule.CronFeeds != "" {
 			QueueFeeds.DispatchCron("feeds_movies_"+config.Cfg.Movies[idxconfig].Name, func() {
-				utils.Movies_single_jobs("feeds", configData, "", false)
-			}, schedule.Cron_feeds)
+				utils.MoviesSingleJobs("feeds", &cfgp, "", false)
+			}, schedule.CronFeeds)
 		}
 
-		if schedule.Interval_scan_data_missing != "" {
+		if schedule.IntervalScanDataMissing != "" {
 			if config.Cfg.General.UseCronInsteadOfInterval {
 				QueueData.DispatchCron("checkmissing_movies_"+config.Cfg.Movies[idxconfig].Name, func() {
-					utils.Movies_single_jobs("checkmissing", configData, "", false)
-				}, convertcron(schedule.Interval_scan_data_missing))
+					utils.MoviesSingleJobs("checkmissing", &cfgp, "", false)
+				}, convertcron(schedule.IntervalScanDataMissing))
 			} else {
 				QueueData.DispatchEvery("checkmissing_movies_"+config.Cfg.Movies[idxconfig].Name, func() {
-					utils.Movies_single_jobs("checkmissing", configData, "", false)
-				}, converttime(schedule.Interval_scan_data_missing))
+					utils.MoviesSingleJobs("checkmissing", &cfgp, "", false)
+				}, converttime(schedule.IntervalScanDataMissing))
 			}
 		}
-		if schedule.Cron_scan_data_missing != "" {
+		if schedule.CronScanDataMissing != "" {
 			QueueData.DispatchCron("checkmissing_movies_"+config.Cfg.Movies[idxconfig].Name, func() {
-				utils.Movies_single_jobs("checkmissing", configData, "", false)
-			}, schedule.Cron_scan_data_missing)
+				utils.MoviesSingleJobs("checkmissing", &cfgp, "", false)
+			}, schedule.CronScanDataMissing)
 		}
-		if schedule.Interval_scan_data_flags != "" {
+		if schedule.IntervalScanDataFlags != "" {
 			if config.Cfg.General.UseCronInsteadOfInterval {
 				QueueData.DispatchCron("checkmissingflag_movies_"+config.Cfg.Movies[idxconfig].Name, func() {
-					utils.Movies_single_jobs("checkupgradeflag", configData, "", false)
-					utils.Movies_single_jobs("checkmissingflag", configData, "", false)
-				}, convertcron(schedule.Interval_scan_data_flags))
+					utils.MoviesSingleJobs("checkupgradeflag", &cfgp, "", false)
+					utils.MoviesSingleJobs("checkmissingflag", &cfgp, "", false)
+				}, convertcron(schedule.IntervalScanDataFlags))
 			} else {
 				QueueData.DispatchEvery("checkmissingflag_movies_"+config.Cfg.Movies[idxconfig].Name, func() {
-					utils.Movies_single_jobs("checkupgradeflag", configData, "", false)
-					utils.Movies_single_jobs("checkmissingflag", configData, "", false)
-				}, converttime(schedule.Interval_scan_data_flags))
+					utils.MoviesSingleJobs("checkupgradeflag", &cfgp, "", false)
+					utils.MoviesSingleJobs("checkmissingflag", &cfgp, "", false)
+				}, converttime(schedule.IntervalScanDataFlags))
 			}
 		}
-		if schedule.Cron_scan_data_flags != "" {
+		if schedule.CronScanDataFlags != "" {
 			QueueData.DispatchCron("checkmissingflag_movies_"+config.Cfg.Movies[idxconfig].Name, func() {
-				utils.Movies_single_jobs("checkupgradeflag", configData, "", false)
-				utils.Movies_single_jobs("checkmissingflag", configData, "", false)
-			}, schedule.Cron_scan_data_flags)
+				utils.MoviesSingleJobs("checkupgradeflag", &cfgp, "", false)
+				utils.MoviesSingleJobs("checkmissingflag", &cfgp, "", false)
+			}, schedule.CronScanDataFlags)
 		}
 	}
 
 	for idxconfig := range config.Cfg.Series {
-		configData := "serie_" + config.Cfg.Series[idxconfig].Name
+		cfgp := config.Cfg.Media["serie_"+config.Cfg.Series[idxconfig].Name]
 
-		if !config.ConfigCheck("scheduler_" + config.Cfg.Series[idxconfig].Template_scheduler) {
+		if !config.ConfigCheck("scheduler_" + config.Cfg.Series[idxconfig].TemplateScheduler) {
 			continue
 		}
-		schedule := config.Cfg.Scheduler[config.Cfg.Series[idxconfig].Template_scheduler]
+		schedule := config.Cfg.Scheduler[config.Cfg.Series[idxconfig].TemplateScheduler]
 
-		if schedule.Interval_indexer_missing != "" {
+		if schedule.IntervalIndexerMissing != "" {
 			if config.Cfg.General.UseCronInsteadOfInterval {
 				QueueSearch.DispatchCron("searchmissinginc_series_"+config.Cfg.Series[idxconfig].Name, func() {
-					utils.Series_single_jobs("searchmissinginc", configData, "", false)
-				}, convertcron(schedule.Interval_indexer_missing))
+					utils.SeriesSingleJobs("searchmissinginc", &cfgp, "", false)
+				}, convertcron(schedule.IntervalIndexerMissing))
 			} else {
 				QueueSearch.DispatchEvery("searchmissinginc_series_"+config.Cfg.Series[idxconfig].Name, func() {
-					utils.Series_single_jobs("searchmissinginc", configData, "", false)
-				}, converttime(schedule.Interval_indexer_missing))
+					utils.SeriesSingleJobs("searchmissinginc", &cfgp, "", false)
+				}, converttime(schedule.IntervalIndexerMissing))
 			}
 		}
-		if schedule.Cron_indexer_missing != "" {
+		if schedule.CronIndexerMissing != "" {
 			QueueSearch.DispatchCron("searchmissinginc_series_"+config.Cfg.Series[idxconfig].Name, func() {
-				utils.Series_single_jobs("searchmissinginc", configData, "", false)
-			}, schedule.Cron_indexer_missing)
+				utils.SeriesSingleJobs("searchmissinginc", &cfgp, "", false)
+			}, schedule.CronIndexerMissing)
 		}
-		if schedule.Interval_indexer_missing_full != "" {
+		if schedule.IntervalIndexerMissingFull != "" {
 			if config.Cfg.General.UseCronInsteadOfInterval {
 				QueueSearch.DispatchCron("searchmissingfull_series_"+config.Cfg.Series[idxconfig].Name, func() {
-					utils.Series_single_jobs("searchmissingfull", configData, "", false)
-				}, convertcron(schedule.Interval_indexer_missing_full))
+					utils.SeriesSingleJobs("searchmissingfull", &cfgp, "", false)
+				}, convertcron(schedule.IntervalIndexerMissingFull))
 			} else {
 				QueueSearch.DispatchEvery("searchmissingfull_series_"+config.Cfg.Series[idxconfig].Name, func() {
-					utils.Series_single_jobs("searchmissingfull", configData, "", false)
-				}, converttime(schedule.Interval_indexer_missing_full))
+					utils.SeriesSingleJobs("searchmissingfull", &cfgp, "", false)
+				}, converttime(schedule.IntervalIndexerMissingFull))
 			}
 		}
-		if schedule.Cron_indexer_missing_full != "" {
+		if schedule.CronIndexerMissingFull != "" {
 			QueueSearch.DispatchCron("searchmissingfull_series_"+config.Cfg.Series[idxconfig].Name, func() {
-				utils.Series_single_jobs("searchmissingfull", configData, "", false)
-			}, schedule.Cron_indexer_missing_full)
+				utils.SeriesSingleJobs("searchmissingfull", &cfgp, "", false)
+			}, schedule.CronIndexerMissingFull)
 		}
-		if schedule.Interval_indexer_upgrade != "" {
+		if schedule.IntervalIndexerUpgrade != "" {
 			if config.Cfg.General.UseCronInsteadOfInterval {
 				QueueSearch.DispatchCron("searchupgradeinc_series_"+config.Cfg.Series[idxconfig].Name, func() {
-					utils.Series_single_jobs("searchupgradeinc", configData, "", false)
-				}, convertcron(schedule.Interval_indexer_upgrade))
+					utils.SeriesSingleJobs("searchupgradeinc", &cfgp, "", false)
+				}, convertcron(schedule.IntervalIndexerUpgrade))
 			} else {
 				QueueSearch.DispatchEvery("searchupgradeinc_series_"+config.Cfg.Series[idxconfig].Name, func() {
-					utils.Series_single_jobs("searchupgradeinc", configData, "", false)
-				}, converttime(schedule.Interval_indexer_upgrade))
+					utils.SeriesSingleJobs("searchupgradeinc", &cfgp, "", false)
+				}, converttime(schedule.IntervalIndexerUpgrade))
 			}
 		}
-		if schedule.Cron_indexer_upgrade != "" {
+		if schedule.CronIndexerUpgrade != "" {
 			QueueSearch.DispatchCron("searchupgradeinc_series_"+config.Cfg.Series[idxconfig].Name, func() {
-				utils.Series_single_jobs("searchupgradeinc", configData, "", false)
-			}, schedule.Cron_indexer_upgrade)
+				utils.SeriesSingleJobs("searchupgradeinc", &cfgp, "", false)
+			}, schedule.CronIndexerUpgrade)
 		}
-		if schedule.Interval_indexer_upgrade_full != "" {
+		if schedule.IntervalIndexerUpgradeFull != "" {
 			if config.Cfg.General.UseCronInsteadOfInterval {
 				QueueSearch.DispatchCron("searchupgradefull_series_"+config.Cfg.Series[idxconfig].Name, func() {
-					utils.Series_single_jobs("searchupgradefull", configData, "", false)
-				}, convertcron(schedule.Interval_indexer_upgrade_full))
+					utils.SeriesSingleJobs("searchupgradefull", &cfgp, "", false)
+				}, convertcron(schedule.IntervalIndexerUpgradeFull))
 			} else {
 				QueueSearch.DispatchEvery("searchupgradefull_series_"+config.Cfg.Series[idxconfig].Name, func() {
-					utils.Series_single_jobs("searchupgradefull", configData, "", false)
-				}, converttime(schedule.Interval_indexer_upgrade_full))
+					utils.SeriesSingleJobs("searchupgradefull", &cfgp, "", false)
+				}, converttime(schedule.IntervalIndexerUpgradeFull))
 			}
 		}
-		if schedule.Cron_indexer_upgrade_full != "" {
+		if schedule.CronIndexerUpgradeFull != "" {
 			QueueSearch.DispatchCron("searchupgradefull_series_"+config.Cfg.Series[idxconfig].Name, func() {
-				utils.Series_single_jobs("searchupgradefull", configData, "", false)
-			}, schedule.Cron_indexer_upgrade_full)
+				utils.SeriesSingleJobs("searchupgradefull", &cfgp, "", false)
+			}, schedule.CronIndexerUpgradeFull)
 		}
 
-		if schedule.Interval_indexer_missing_title != "" {
+		if schedule.IntervalIndexerMissingTitle != "" {
 			if config.Cfg.General.UseCronInsteadOfInterval {
 				QueueSearch.DispatchCron("searchmissinginctitle_series_"+config.Cfg.Series[idxconfig].Name, func() {
-					utils.Series_single_jobs("searchmissinginctitle", configData, "", false)
-				}, convertcron(schedule.Interval_indexer_missing_title))
+					utils.SeriesSingleJobs("searchmissinginctitle", &cfgp, "", false)
+				}, convertcron(schedule.IntervalIndexerMissingTitle))
 			} else {
 				QueueSearch.DispatchEvery("searchmissinginctitle_series_"+config.Cfg.Series[idxconfig].Name, func() {
-					utils.Series_single_jobs("searchmissinginctitle", configData, "", false)
-				}, converttime(schedule.Interval_indexer_missing_title))
+					utils.SeriesSingleJobs("searchmissinginctitle", &cfgp, "", false)
+				}, converttime(schedule.IntervalIndexerMissingTitle))
 			}
 		}
-		if schedule.Cron_indexer_missing_title != "" {
+		if schedule.CronIndexerMissingTitle != "" {
 			QueueSearch.DispatchCron("searchmissinginctitle_series_"+config.Cfg.Series[idxconfig].Name, func() {
-				utils.Series_single_jobs("searchmissinginctitle", configData, "", false)
-			}, schedule.Cron_indexer_missing_title)
+				utils.SeriesSingleJobs("searchmissinginctitle", &cfgp, "", false)
+			}, schedule.CronIndexerMissingTitle)
 		}
-		if schedule.Interval_indexer_missing_full_title != "" {
+		if schedule.IntervalIndexerMissingFullTitle != "" {
 			if config.Cfg.General.UseCronInsteadOfInterval {
 				QueueSearch.DispatchCron("searchmissingfulltitle_series_"+config.Cfg.Series[idxconfig].Name, func() {
-					utils.Series_single_jobs("searchmissingfulltitle", configData, "", false)
-				}, convertcron(schedule.Interval_indexer_missing_full_title))
+					utils.SeriesSingleJobs("searchmissingfulltitle", &cfgp, "", false)
+				}, convertcron(schedule.IntervalIndexerMissingFullTitle))
 			} else {
 				QueueSearch.DispatchEvery("searchmissingfulltitle_series_"+config.Cfg.Series[idxconfig].Name, func() {
-					utils.Series_single_jobs("searchmissingfulltitle", configData, "", false)
-				}, converttime(schedule.Interval_indexer_missing_full_title))
+					utils.SeriesSingleJobs("searchmissingfulltitle", &cfgp, "", false)
+				}, converttime(schedule.IntervalIndexerMissingFullTitle))
 			}
 		}
-		if schedule.Cron_indexer_missing_full_title != "" {
+		if schedule.CronIndexerMissingFullTitle != "" {
 			QueueSearch.DispatchCron("searchmissingfulltitle_series_"+config.Cfg.Series[idxconfig].Name, func() {
-				utils.Series_single_jobs("searchmissingfulltitle", configData, "", false)
-			}, schedule.Cron_indexer_missing_full_title)
+				utils.SeriesSingleJobs("searchmissingfulltitle", &cfgp, "", false)
+			}, schedule.CronIndexerMissingFullTitle)
 		}
-		if schedule.Interval_indexer_upgrade_title != "" {
+		if schedule.IntervalIndexerUpgradeTitle != "" {
 			if config.Cfg.General.UseCronInsteadOfInterval {
 				QueueSearch.DispatchCron("searchupgradeinctitle_series_"+config.Cfg.Series[idxconfig].Name, func() {
-					utils.Series_single_jobs("searchupgradeinctitle", configData, "", false)
-				}, convertcron(schedule.Interval_indexer_upgrade_title))
+					utils.SeriesSingleJobs("searchupgradeinctitle", &cfgp, "", false)
+				}, convertcron(schedule.IntervalIndexerUpgradeTitle))
 			} else {
 				QueueSearch.DispatchEvery("searchupgradeinctitle_series_"+config.Cfg.Series[idxconfig].Name, func() {
-					utils.Series_single_jobs("searchupgradeinctitle", configData, "", false)
-				}, converttime(schedule.Interval_indexer_upgrade_title))
+					utils.SeriesSingleJobs("searchupgradeinctitle", &cfgp, "", false)
+				}, converttime(schedule.IntervalIndexerUpgradeTitle))
 			}
 		}
-		if schedule.Cron_indexer_upgrade_title != "" {
+		if schedule.CronIndexerUpgradeTitle != "" {
 			QueueSearch.DispatchCron("searchupgradeinctitle_series_"+config.Cfg.Series[idxconfig].Name, func() {
-				utils.Series_single_jobs("searchupgradeinctitle", configData, "", false)
-			}, schedule.Cron_indexer_upgrade_title)
+				utils.SeriesSingleJobs("searchupgradeinctitle", &cfgp, "", false)
+			}, schedule.CronIndexerUpgradeTitle)
 		}
-		if schedule.Interval_indexer_upgrade_full_title != "" {
+		if schedule.IntervalIndexerUpgradeFullTitle != "" {
 			if config.Cfg.General.UseCronInsteadOfInterval {
 				QueueSearch.DispatchCron("searchupgradefulltitle_series_"+config.Cfg.Series[idxconfig].Name, func() {
-					utils.Series_single_jobs("searchupgradefulltitle", configData, "", false)
-				}, convertcron(schedule.Interval_indexer_upgrade_full_title))
+					utils.SeriesSingleJobs("searchupgradefulltitle", &cfgp, "", false)
+				}, convertcron(schedule.IntervalIndexerUpgradeFullTitle))
 			} else {
 				QueueSearch.DispatchEvery("searchupgradefulltitle_series_"+config.Cfg.Series[idxconfig].Name, func() {
-					utils.Series_single_jobs("searchupgradefulltitle", configData, "", false)
-				}, converttime(schedule.Interval_indexer_upgrade_full_title))
+					utils.SeriesSingleJobs("searchupgradefulltitle", &cfgp, "", false)
+				}, converttime(schedule.IntervalIndexerUpgradeFullTitle))
 			}
 		}
-		if schedule.Cron_indexer_upgrade_full_title != "" {
+		if schedule.CronIndexerUpgradeFullTitle != "" {
 			QueueSearch.DispatchCron("searchupgradefulltitle_series_"+config.Cfg.Series[idxconfig].Name, func() {
-				utils.Series_single_jobs("searchupgradefulltitle", configData, "", false)
-			}, schedule.Cron_indexer_upgrade_full_title)
+				utils.SeriesSingleJobs("searchupgradefulltitle", &cfgp, "", false)
+			}, schedule.CronIndexerUpgradeFullTitle)
 		}
 
-		if schedule.Interval_indexer_rss_seasons != "" {
+		if schedule.IntervalIndexerRssSeasons != "" {
 			if config.Cfg.General.UseCronInsteadOfInterval {
 				QueueSearch.DispatchCron("rssseasons_series_"+config.Cfg.Series[idxconfig].Name, func() {
-					searcher.SearchSeriesRSSSeasons(configData)
-				}, convertcron(schedule.Interval_indexer_rss_seasons))
+					searcher.SearchSeriesRSSSeasons(&cfgp)
+				}, convertcron(schedule.IntervalIndexerRssSeasons))
 			} else {
 				QueueSearch.DispatchEvery("rssseasons_series_"+config.Cfg.Series[idxconfig].Name, func() {
-					searcher.SearchSeriesRSSSeasons(configData)
-				}, converttime(schedule.Interval_indexer_rss_seasons))
+					searcher.SearchSeriesRSSSeasons(&cfgp)
+				}, converttime(schedule.IntervalIndexerRssSeasons))
 			}
 		}
-		if schedule.Cron_indexer_rss_seasons != "" {
+		if schedule.CronIndexerRssSeasons != "" {
 			QueueSearch.DispatchCron("rssseasons_series_"+config.Cfg.Series[idxconfig].Name, func() {
-				searcher.SearchSeriesRSSSeasons(configData)
-			}, schedule.Cron_indexer_rss_seasons)
+				searcher.SearchSeriesRSSSeasons(&cfgp)
+			}, schedule.CronIndexerRssSeasons)
 		}
 
-		if schedule.Interval_indexer_rss != "" {
+		if schedule.IntervalIndexerRss != "" {
 			if config.Cfg.General.UseCronInsteadOfInterval {
 				QueueSearch.DispatchCron("rss_series_"+config.Cfg.Series[idxconfig].Name, func() {
-					utils.Series_single_jobs("rss", configData, "", false)
-				}, convertcron(schedule.Interval_indexer_rss))
+					utils.SeriesSingleJobs("rss", &cfgp, "", false)
+				}, convertcron(schedule.IntervalIndexerRss))
 			} else {
 				QueueSearch.DispatchEvery("rss_series_"+config.Cfg.Series[idxconfig].Name, func() {
-					utils.Series_single_jobs("rss", configData, "", false)
-				}, converttime(schedule.Interval_indexer_rss))
+					utils.SeriesSingleJobs("rss", &cfgp, "", false)
+				}, converttime(schedule.IntervalIndexerRss))
 			}
 		}
-		if schedule.Cron_indexer_rss != "" {
+		if schedule.CronIndexerRss != "" {
 			QueueSearch.DispatchCron("rss_series_"+config.Cfg.Series[idxconfig].Name, func() {
-				utils.Series_single_jobs("rss", configData, "", false)
-			}, schedule.Cron_indexer_rss)
+				utils.SeriesSingleJobs("rss", &cfgp, "", false)
+			}, schedule.CronIndexerRss)
 		}
 
-		if schedule.Interval_scan_data != "" {
+		if schedule.IntervalScanData != "" {
 			if config.Cfg.General.UseCronInsteadOfInterval {
 				QueueData.DispatchCron("datafull_series_"+config.Cfg.Series[idxconfig].Name, func() {
-					utils.Series_single_jobs("datafull", configData, "", false)
-				}, convertcron(schedule.Interval_scan_data))
+					utils.SeriesSingleJobs("datafull", &cfgp, "", false)
+				}, convertcron(schedule.IntervalScanData))
 			} else {
 				QueueData.DispatchEvery("datafull_series_"+config.Cfg.Series[idxconfig].Name, func() {
-					utils.Series_single_jobs("datafull", configData, "", false)
-				}, converttime(schedule.Interval_scan_data))
+					utils.SeriesSingleJobs("datafull", &cfgp, "", false)
+				}, converttime(schedule.IntervalScanData))
 			}
 		}
-		if schedule.Cron_scan_data != "" {
+		if schedule.CronScanData != "" {
 			QueueData.DispatchCron("datafull_series_"+config.Cfg.Series[idxconfig].Name, func() {
-				utils.Series_single_jobs("datafull", configData, "", false)
-			}, schedule.Cron_scan_data)
+				utils.SeriesSingleJobs("datafull", &cfgp, "", false)
+			}, schedule.CronScanData)
 		}
-		if schedule.Interval_scan_dataimport != "" {
+		if schedule.IntervalScanDataimport != "" {
 			if config.Cfg.General.UseCronInsteadOfInterval {
 				QueueData.DispatchCron("structure_series_"+config.Cfg.Series[idxconfig].Name, func() {
-					utils.Series_single_jobs("structure", configData, "", false)
-				}, convertcron(schedule.Interval_scan_dataimport))
+					utils.SeriesSingleJobs("structure", &cfgp, "", false)
+				}, convertcron(schedule.IntervalScanDataimport))
 			} else {
 				QueueData.DispatchEvery("structure_series_"+config.Cfg.Series[idxconfig].Name, func() {
-					utils.Series_single_jobs("structure", configData, "", false)
-				}, converttime(schedule.Interval_scan_dataimport))
+					utils.SeriesSingleJobs("structure", &cfgp, "", false)
+				}, converttime(schedule.IntervalScanDataimport))
 			}
 		}
-		if schedule.Cron_scan_dataimport != "" {
+		if schedule.CronScanDataimport != "" {
 			QueueData.DispatchCron("structure_series_"+config.Cfg.Series[idxconfig].Name, func() {
-				utils.Series_single_jobs("structure", configData, "", false)
-			}, schedule.Cron_scan_dataimport)
+				utils.SeriesSingleJobs("structure", &cfgp, "", false)
+			}, schedule.CronScanDataimport)
 		}
-		if schedule.Interval_feeds != "" {
+		if schedule.IntervalFeeds != "" {
 			if config.Cfg.General.UseCronInsteadOfInterval {
 				QueueFeeds.DispatchCron("feeds_series_"+config.Cfg.Series[idxconfig].Name, func() {
-					utils.Series_single_jobs("feeds", configData, "", false)
-				}, convertcron(schedule.Interval_feeds))
+					utils.SeriesSingleJobs("feeds", &cfgp, "", false)
+				}, convertcron(schedule.IntervalFeeds))
 			} else {
 				QueueFeeds.DispatchEvery("feeds_series_"+config.Cfg.Series[idxconfig].Name, func() {
-					utils.Series_single_jobs("feeds", configData, "", false)
-				}, converttime(schedule.Interval_feeds))
+					utils.SeriesSingleJobs("feeds", &cfgp, "", false)
+				}, converttime(schedule.IntervalFeeds))
 			}
 		}
-		if schedule.Cron_feeds != "" {
+		if schedule.CronFeeds != "" {
 			QueueFeeds.DispatchCron("feeds_series_"+config.Cfg.Series[idxconfig].Name, func() {
-				utils.Series_single_jobs("feeds", configData, "", false)
-			}, schedule.Cron_feeds)
+				utils.SeriesSingleJobs("feeds", &cfgp, "", false)
+			}, schedule.CronFeeds)
 		}
 
-		if schedule.Interval_scan_data_missing != "" {
+		if schedule.IntervalScanDataMissing != "" {
 			if config.Cfg.General.UseCronInsteadOfInterval {
 				QueueData.DispatchCron("checkmissing_series_"+config.Cfg.Series[idxconfig].Name, func() {
-					utils.Series_single_jobs("checkmissing", configData, "", false)
-				}, convertcron(schedule.Interval_scan_data_missing))
+					utils.SeriesSingleJobs("checkmissing", &cfgp, "", false)
+				}, convertcron(schedule.IntervalScanDataMissing))
 			} else {
 				QueueData.DispatchEvery("checkmissing_series_"+config.Cfg.Series[idxconfig].Name, func() {
-					utils.Series_single_jobs("checkmissing", configData, "", false)
-				}, converttime(schedule.Interval_scan_data_missing))
+					utils.SeriesSingleJobs("checkmissing", &cfgp, "", false)
+				}, converttime(schedule.IntervalScanDataMissing))
 			}
 		}
-		if schedule.Cron_scan_data_missing != "" {
+		if schedule.CronScanDataMissing != "" {
 			QueueData.DispatchCron("checkmissing_series_"+config.Cfg.Series[idxconfig].Name, func() {
-				utils.Series_single_jobs("checkmissing", configData, "", false)
-			}, schedule.Cron_scan_data_missing)
+				utils.SeriesSingleJobs("checkmissing", &cfgp, "", false)
+			}, schedule.CronScanDataMissing)
 		}
-		if schedule.Interval_scan_data_flags != "" {
+		if schedule.IntervalScanDataFlags != "" {
 			if config.Cfg.General.UseCronInsteadOfInterval {
 				QueueData.DispatchCron("checkmissingflag_series_"+config.Cfg.Series[idxconfig].Name, func() {
-					utils.Series_single_jobs("checkupgradeflag", configData, "", false)
-					utils.Series_single_jobs("checkmissingflag", configData, "", false)
-				}, convertcron(schedule.Interval_scan_data_flags))
+					utils.SeriesSingleJobs("checkupgradeflag", &cfgp, "", false)
+					utils.SeriesSingleJobs("checkmissingflag", &cfgp, "", false)
+				}, convertcron(schedule.IntervalScanDataFlags))
 			} else {
 				QueueData.DispatchEvery("checkmissingflag_series_"+config.Cfg.Series[idxconfig].Name, func() {
-					utils.Series_single_jobs("checkupgradeflag", configData, "", false)
-					utils.Series_single_jobs("checkmissingflag", configData, "", false)
-				}, converttime(schedule.Interval_scan_data_flags))
+					utils.SeriesSingleJobs("checkupgradeflag", &cfgp, "", false)
+					utils.SeriesSingleJobs("checkmissingflag", &cfgp, "", false)
+				}, converttime(schedule.IntervalScanDataFlags))
 			}
 		}
-		if schedule.Cron_scan_data_flags != "" {
+		if schedule.CronScanDataFlags != "" {
 			QueueData.DispatchCron("checkmissingflag_series_"+config.Cfg.Series[idxconfig].Name, func() {
-				utils.Series_single_jobs("checkupgradeflag", configData, "", false)
-				utils.Series_single_jobs("checkmissingflag", configData, "", false)
-			}, schedule.Cron_scan_data_flags)
+				utils.SeriesSingleJobs("checkupgradeflag", &cfgp, "", false)
+				utils.SeriesSingleJobs("checkmissingflag", &cfgp, "", false)
+			}, schedule.CronScanDataFlags)
 		}
 	}
 
 	var defaultschedule config.SchedulerConfig
 	if !config.ConfigCheck("scheduler_Default") {
 		defaultschedule = config.SchedulerConfig{
-			Name:                          "Default",
-			Interval_imdb:                 "3d",
-			Interval_feeds:                "1d",
-			Interval_feeds_refresh_series: "1d",
-			Interval_feeds_refresh_movies: "1d",
-			Interval_indexer_missing:      "40m",
-			Interval_indexer_upgrade:      "60m",
-			Interval_indexer_rss:          "15m",
-			Interval_scan_data:            "1h",
-			Interval_scan_data_missing:    "1d",
-			Interval_scan_dataimport:      "60m",
+			Name:                       "Default",
+			IntervalImdb:               "3d",
+			IntervalFeeds:              "1d",
+			IntervalFeedsRefreshSeries: "1d",
+			IntervalFeedsRefreshMovies: "1d",
+			IntervalIndexerMissing:     "40m",
+			IntervalIndexerUpgrade:     "60m",
+			IntervalIndexerRss:         "15m",
+			IntervalScanData:           "1h",
+			IntervalScanDataMissing:    "1d",
+			IntervalScanDataimport:     "60m",
 		}
 		config.UpdateCfgEntry(config.Conf{Name: "scheduler_Default", Data: defaultschedule})
 		config.WriteCfg()
@@ -571,127 +572,128 @@ func InitScheduler() {
 		defaultschedule = config.Cfg.Scheduler["Default"]
 
 	}
-	if defaultschedule.Interval_feeds_refresh_series_full != "" {
+	if defaultschedule.IntervalFeedsRefreshSeriesFull != "" {
 		if config.Cfg.General.UseCronInsteadOfInterval {
-			QueueFeeds.DispatchCron("Refresh Series", func() {
+			QueueFeeds.DispatchCron(logger.StrRefreshSeries, func() {
 				utils.RefreshSeries()
-			}, convertcron(defaultschedule.Interval_feeds_refresh_series_full))
+			}, convertcron(defaultschedule.IntervalFeedsRefreshSeriesFull))
 		} else {
-			QueueFeeds.DispatchEvery("Refresh Series", func() {
+			QueueFeeds.DispatchEvery(logger.StrRefreshSeries, func() {
 				utils.RefreshSeries()
-			}, converttime(defaultschedule.Interval_feeds_refresh_series_full))
+			}, converttime(defaultschedule.IntervalFeedsRefreshSeriesFull))
 		}
 	}
-	if defaultschedule.Cron_feeds_refresh_series_full != "" {
-		QueueFeeds.DispatchCron("Refresh Series", func() {
+	QueueData.DispatchCron("freemem", func() { debug.FreeOSMemory() }, "0 0 */2 * * *")
+	if defaultschedule.CronFeedsRefreshSeriesFull != "" {
+		QueueFeeds.DispatchCron(logger.StrRefreshSeries, func() {
 			utils.RefreshSeries()
-		}, defaultschedule.Cron_feeds_refresh_series_full)
+		}, defaultschedule.CronFeedsRefreshSeriesFull)
 	}
-	if defaultschedule.Interval_feeds_refresh_movies_full != "" {
+	if defaultschedule.IntervalFeedsRefreshMoviesFull != "" {
 		if config.Cfg.General.UseCronInsteadOfInterval {
-			QueueFeeds.DispatchCron("Refresh Movies", func() {
+			QueueFeeds.DispatchCron(logger.StrRefreshMovies, func() {
 				utils.RefreshMovies()
-			}, convertcron(defaultschedule.Interval_feeds_refresh_movies_full))
+			}, convertcron(defaultschedule.IntervalFeedsRefreshMoviesFull))
 		} else {
-			QueueFeeds.DispatchEvery("Refresh Movies", func() {
+			QueueFeeds.DispatchEvery(logger.StrRefreshMovies, func() {
 				utils.RefreshMovies()
-			}, converttime(defaultschedule.Interval_feeds_refresh_movies_full))
+			}, converttime(defaultschedule.IntervalFeedsRefreshMoviesFull))
 		}
 	}
-	if defaultschedule.Cron_feeds_refresh_movies_full != "" {
-		QueueFeeds.DispatchCron("Refresh Movies", func() {
+	if defaultschedule.CronFeedsRefreshMoviesFull != "" {
+		QueueFeeds.DispatchCron(logger.StrRefreshMovies, func() {
 			utils.RefreshMovies()
-		}, defaultschedule.Cron_feeds_refresh_movies_full)
+		}, defaultschedule.CronFeedsRefreshMoviesFull)
 	}
-	if defaultschedule.Interval_feeds_refresh_series != "" {
+	if defaultschedule.IntervalFeedsRefreshSeries != "" {
 		if config.Cfg.General.UseCronInsteadOfInterval {
-			QueueFeeds.DispatchCron("Refresh Series Incremental", func() {
+			QueueFeeds.DispatchCron(logger.StrRefreshSeriesInc, func() {
 				utils.RefreshSeriesInc()
-			}, convertcron(defaultschedule.Interval_feeds_refresh_series))
+			}, convertcron(defaultschedule.IntervalFeedsRefreshSeries))
 		} else {
-			QueueFeeds.DispatchEvery("Refresh Series Incremental", func() {
+			QueueFeeds.DispatchEvery(logger.StrRefreshSeriesInc, func() {
 				utils.RefreshSeriesInc()
-			}, converttime(defaultschedule.Interval_feeds_refresh_series))
+			}, converttime(defaultschedule.IntervalFeedsRefreshSeries))
 		}
 	}
-	if defaultschedule.Cron_feeds_refresh_series != "" {
-		QueueFeeds.DispatchCron("Refresh Series Incremental", func() {
+	if defaultschedule.CronFeedsRefreshSeries != "" {
+		QueueFeeds.DispatchCron(logger.StrRefreshSeriesInc, func() {
 			utils.RefreshSeriesInc()
-		}, defaultschedule.Cron_feeds_refresh_series)
+		}, defaultschedule.CronFeedsRefreshSeries)
 	}
-	if defaultschedule.Interval_feeds_refresh_movies != "" {
+	if defaultschedule.IntervalFeedsRefreshMovies != "" {
 		if config.Cfg.General.UseCronInsteadOfInterval {
-			QueueFeeds.DispatchCron("Refresh Movies Incremental", func() {
+			QueueFeeds.DispatchCron(logger.StrRefreshMoviesInc, func() {
 				utils.RefreshMoviesInc()
-			}, convertcron(defaultschedule.Interval_feeds_refresh_movies))
+			}, convertcron(defaultschedule.IntervalFeedsRefreshMovies))
 		} else {
-			QueueFeeds.DispatchEvery("Refresh Movies Incremental", func() {
+			QueueFeeds.DispatchEvery(logger.StrRefreshMoviesInc, func() {
 				utils.RefreshMoviesInc()
-			}, converttime(defaultschedule.Interval_feeds_refresh_movies))
+			}, converttime(defaultschedule.IntervalFeedsRefreshMovies))
 		}
 	}
-	if defaultschedule.Cron_feeds_refresh_movies != "" {
-		QueueFeeds.DispatchCron("Refresh Movies Incremental", func() {
+	if defaultschedule.CronFeedsRefreshMovies != "" {
+		QueueFeeds.DispatchCron(logger.StrRefreshMoviesInc, func() {
 			utils.RefreshMoviesInc()
-		}, defaultschedule.Cron_feeds_refresh_movies)
+		}, defaultschedule.CronFeedsRefreshMovies)
 	}
-	if defaultschedule.Interval_imdb != "" {
+	if defaultschedule.IntervalImdb != "" {
 		if config.Cfg.General.UseCronInsteadOfInterval {
 			QueueFeeds.DispatchCron("Refresh IMDB", func() {
 				utils.FillImdb()
-			}, convertcron(defaultschedule.Interval_imdb))
+			}, convertcron(defaultschedule.IntervalImdb))
 		} else {
 			QueueFeeds.DispatchEvery("Refresh IMDB", func() {
 				utils.FillImdb()
-			}, converttime(defaultschedule.Interval_imdb))
+			}, converttime(defaultschedule.IntervalImdb))
 		}
 	}
-	if defaultschedule.Cron_imdb != "" {
+	if defaultschedule.CronImdb != "" {
 		QueueFeeds.DispatchCron("Refresh IMDB", func() {
 			utils.FillImdb()
 
-		}, defaultschedule.Cron_imdb)
+		}, defaultschedule.CronImdb)
 	}
 
-	if defaultschedule.Interval_database_check != "" {
+	if defaultschedule.IntervalDatabaseCheck != "" {
 		if config.Cfg.General.UseCronInsteadOfInterval {
 			QueueData.DispatchCron("Check Database", func() {
 				str := database.DbIntegrityCheck()
 				if str != "ok" {
 					os.Exit(100)
 				}
-			}, convertcron(defaultschedule.Interval_database_check))
+			}, convertcron(defaultschedule.IntervalDatabaseCheck))
 		} else {
 			QueueData.DispatchEvery("Check Database", func() {
 				str := database.DbIntegrityCheck()
 				if str != "ok" {
 					os.Exit(100)
 				}
-			}, converttime(defaultschedule.Interval_database_check))
+			}, converttime(defaultschedule.IntervalDatabaseCheck))
 		}
 	}
-	if defaultschedule.Cron_database_check != "" {
+	if defaultschedule.CronDatabaseCheck != "" {
 		QueueData.DispatchCron("Check Database", func() {
 			str := database.DbIntegrityCheck()
 			if str != "ok" {
 				os.Exit(100)
 			}
-		}, defaultschedule.Cron_database_check)
+		}, defaultschedule.CronDatabaseCheck)
 	}
-	if defaultschedule.Interval_database_backup != "" {
+	if defaultschedule.IntervalDatabaseBackup != "" {
 		if config.Cfg.General.UseCronInsteadOfInterval {
 			QueueData.DispatchCron("Backup Database", func() {
 				database.Backup("./backup/data.db."+database.GetVersion()+"."+time.Now().Format("20060102_150405"), config.Cfg.General.MaxDatabaseBackups)
-			}, convertcron(defaultschedule.Interval_database_backup))
+			}, convertcron(defaultschedule.IntervalDatabaseBackup))
 		} else {
 			QueueData.DispatchEvery("Backup Database", func() {
 				database.Backup("./backup/data.db."+database.GetVersion()+"."+time.Now().Format("20060102_150405"), config.Cfg.General.MaxDatabaseBackups)
-			}, converttime(defaultschedule.Interval_database_backup))
+			}, converttime(defaultschedule.IntervalDatabaseBackup))
 		}
 	}
-	if defaultschedule.Cron_database_backup != "" {
+	if defaultschedule.CronDatabaseBackup != "" {
 		QueueData.DispatchCron("Backup Database", func() {
 			database.Backup("./backup/data.db."+database.GetVersion()+"."+time.Now().Format("20060102_150405"), config.Cfg.General.MaxDatabaseBackups)
-		}, defaultschedule.Cron_database_backup)
+		}, defaultschedule.CronDatabaseBackup)
 	}
 }

@@ -118,20 +118,20 @@ type FFProbeStream struct {
 	//SampleRate    string `json:"sample_rate,omitempty"`
 }
 
+var ffprobepath string
+
 func getFFProbeFilename() string {
-	value, found := logger.GlobalCache.Get("ffprobepath")
-	if !found {
-		ffprobepath := config.Cfg.General.FfprobePath
+	if ffprobepath == "" {
+		ffprobepath = config.Cfg.General.FfprobePath
 
 		if runtime.GOOS == "windows" {
 			ffprobepath = path.Join(ffprobepath, "ffprobe.exe")
 		} else {
 			ffprobepath = path.Join(ffprobepath, "ffprobe")
 		}
-		logger.GlobalCache.Set("ffprobepath", ffprobepath, 0)
 		return ffprobepath
 	} else {
-		return value.Value.(string)
+		return ffprobepath
 	}
 }
 
@@ -139,6 +139,8 @@ func getFFProbeFilename() string {
 func runProbe(cmd *exec.Cmd) (*FFProbeJSON, error) {
 	var outputBuf bytes.Buffer
 	var stdErr bytes.Buffer
+	defer outputBuf.Reset()
+	defer stdErr.Reset()
 
 	cmd.Stdout = &outputBuf
 	cmd.Stderr = &stdErr
@@ -146,7 +148,7 @@ func runProbe(cmd *exec.Cmd) (*FFProbeJSON, error) {
 	err := cmd.Run()
 	if err != nil {
 		cmd = nil
-		return nil, errors.New("error running FFProbe [" + stdErr.String() + "] " + err.Error() + " [" + outputBuf.String() + "]")
+		return nil, errors.New(logger.StringBuild("error running FFProbe [", stdErr.String(), "] ", err.Error(), " [", outputBuf.String(), "]"))
 	}
 
 	if stdErr.Len() > 0 {
@@ -154,40 +156,41 @@ func runProbe(cmd *exec.Cmd) (*FFProbeJSON, error) {
 		return nil, errors.New("ffprobe error: " + stdErr.String())
 	}
 
-	var data FFProbeJSON
-	err = json.Unmarshal(outputBuf.Bytes(), &data)
+	data := new(FFProbeJSON)
+	err = json.Unmarshal(outputBuf.Bytes(), data)
 	if err != nil {
 		cmd = nil
+		data = nil
 		return nil, errors.New("error parsing ffprobe output: " + err.Error())
 	}
 	cmd = nil
-	return &data, nil
+	return data, nil
 }
 
+var ffprobeargs []string
+
 func getffprobeargs() interface{} {
-	value, found := logger.GlobalCache.Get("ffprobeargs")
-	if !found {
-		var ffprobeargs []string = []string{
+	if len(ffprobeargs) == 0 {
+		ffprobeargs = []string{
 			"-loglevel", "fatal",
 			"-print_format", "json",
 			"-show_entries",
 			"format=duration : stream=codec_name,codec_tag_string,codec_type,height,width : stream_tags=Language : error",
 		}
-		logger.GlobalCache.Set("ffprobeargs", ffprobeargs, 0)
 		return ffprobeargs
 	} else {
-		return value.Value
+		return ffprobeargs
 	}
 }
 
-func probeURL(ctx context.Context, fileURL string) (data *FFProbeJSON, err error) {
+func probeURL(ctx context.Context, fileURL string) (*FFProbeJSON, error) {
 	// Add the file argument
 	return runProbe(exec.CommandContext(ctx, getFFProbeFilename(), append(getffprobeargs().([]string), fileURL)...))
 }
 
 // Execute exec command and bind result to struct.
 func newVideoFile(m *apiexternal.ParseInfo, ffprobePath string, videoPath string, stripExt bool, qualityTemplate string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	result, err := probeURL(ctx, videoPath)
 	ctx.Done()
@@ -197,11 +200,11 @@ func newVideoFile(m *apiexternal.ParseInfo, ffprobePath string, videoPath string
 	defer result.Close()
 
 	if len(result.Streams) == 0 {
-		return errors.New("failed to get ffprobe json for <" + videoPath + "> " + err.Error())
+		return errors.New(logger.StringBuild("failed to get ffprobe json for <", videoPath, "> ", err.Error()))
 	}
 
 	if result.Error.Code != 0 {
-		return errors.New("ffprobe error code " + strconv.FormatInt(int64(result.Error.Code), 10) + ": " + result.Error.String)
+		return errors.New(logger.StringBuild("ffprobe error code ", strconv.FormatInt(int64(result.Error.Code), 10), ": ", result.Error.String))
 	}
 	duration, err := strconv.ParseFloat(result.Format.Duration, 64)
 	if err == nil {
@@ -218,7 +221,7 @@ func newVideoFile(m *apiexternal.ParseInfo, ffprobePath string, videoPath string
 			}
 			if m.Audio == "" || (!strings.EqualFold(result.Streams[idxstream].CodecName, m.Audio) && result.Streams[idxstream].CodecName != "") {
 				m.Audio = result.Streams[idxstream].CodecName
-				m.AudioID = gettypeids(m, logger.DisableParserStringMatch, m.Audio, &database.QualitiesRegexGroup{Arr: database.DBConnect.Getaudios})
+				m.AudioID = gettypeids(m, logger.DisableParserStringMatch, m.Audio, &database.DBConnect.GetaudiosIn)
 				redetermineprio = true
 			}
 		}
@@ -232,7 +235,7 @@ func newVideoFile(m *apiexternal.ParseInfo, ffprobePath string, videoPath string
 			}
 			if m.Codec == "" || (!strings.EqualFold(result.Streams[idxstream].CodecName, m.Codec) && result.Streams[idxstream].CodecName != "") {
 				m.Codec = result.Streams[idxstream].CodecName
-				m.CodecID = gettypeids(m, logger.DisableParserStringMatch, m.Codec, &database.QualitiesRegexGroup{Arr: database.DBConnect.Getcodecs})
+				m.CodecID = gettypeids(m, logger.DisableParserStringMatch, m.Codec, &database.DBConnect.GetcodecsIn)
 				redetermineprio = true
 			}
 			getreso = ""
@@ -261,7 +264,7 @@ func newVideoFile(m *apiexternal.ParseInfo, ffprobePath string, videoPath string
 			m.Width = result.Streams[idxstream].Width
 			if m.Resolution == "" || !strings.EqualFold(getreso, m.Resolution) {
 				m.Resolution = getreso
-				m.ResolutionID = gettypeids(m, logger.DisableParserStringMatch, m.Resolution, &database.QualitiesRegexGroup{Arr: database.DBConnect.Getresolutions})
+				m.ResolutionID = gettypeids(m, logger.DisableParserStringMatch, m.Resolution, &database.DBConnect.GetresolutionsIn)
 				redetermineprio = true
 			}
 		}

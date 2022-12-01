@@ -47,22 +47,22 @@ type Pushover_Message struct {
 // returns a boolean indicating whether the message was valid. if the
 // message was invalid, the offending struct member(s) was/were
 // truncated.
-func validate_message(message Pushover_Message) error {
-	if len(message.token) == 0 {
+func validatemessage(message Pushover_Message) error {
+	if message.token == "" {
 		return errors.New("missing authentication token")
 	}
 
-	if len(message.user) == 0 {
+	if message.user == "" {
 		return errors.New("missing user key")
 	}
 
-	if len(message.text) == 0 {
+	if message.text == "" {
 		return errors.New("missing message")
 	}
 
-	message_len := len(message.text) + len(message.title)
-	if message_len > pushover_message_max {
-		return errors.New("message length longer than " + strconv.Itoa(pushover_message_max) + " currently " + strconv.Itoa(message_len))
+	messagelen := len(message.text) + len(message.title)
+	if messagelen > pushover_message_max {
+		return errors.New("message length longer than " + strconv.Itoa(pushover_message_max) + " currently " + strconv.Itoa(messagelen))
 	}
 
 	if len(message.url) > pushover_url_max {
@@ -76,7 +76,7 @@ func validate_message(message Pushover_Message) error {
 	return nil
 }
 
-func get_body(message Pushover_Message) url.Values {
+func getbody(message Pushover_Message) url.Values {
 	body := url.Values{}
 
 	body.Add("token", message.token)
@@ -111,12 +111,12 @@ func get_body(message Pushover_Message) url.Values {
 }
 
 func notify(message Pushover_Message) error {
-	err := validate_message(message)
+	err := validatemessage(message)
 	if err != nil {
 		return err
 	}
 
-	resp, err := http.PostForm(pushover_api_url, get_body(message))
+	resp, err := http.PostForm(pushover_api_url, getbody(message))
 	if err != nil {
 		return errors.New("POST request failed")
 	} else {
@@ -134,7 +134,7 @@ func Authenticate(token string, user string) Pushover_Identity {
 }
 
 func (p *pushOverClient) SendMessage(messagetext string, title string, recipientkey string) error {
-	if isok, waitfor := p.Limiter.Allow(); !isok {
+	if isok, waitfor := p.Limiter.Check(); !isok {
 		for i := 0; i < 10; i++ {
 			if waitfor == 0 {
 				waitfor = time.Duration(5) * time.Second
@@ -143,7 +143,8 @@ func (p *pushOverClient) SendMessage(messagetext string, title string, recipient
 				break
 			}
 			time.Sleep(waitfor)
-			if isok, waitfor = p.Limiter.Allow(); isok {
+			if isok, waitfor = p.Limiter.Check(); isok {
+				p.Limiter.AllowForce()
 				break
 			}
 		}
@@ -152,6 +153,8 @@ func (p *pushOverClient) SendMessage(messagetext string, title string, recipient
 				p.Limiter.WaitTill(time.Now().Add(5 * time.Second))
 			}
 			return errPleaseWait
+		} else {
+			p.Limiter.AllowForce()
 		}
 	}
 
