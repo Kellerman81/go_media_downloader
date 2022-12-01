@@ -17,14 +17,21 @@ import (
 
 	"github.com/Kellerman81/go_media_downloader/cache"
 	"github.com/alitto/pond"
-	"github.com/rainycape/unidecode"
+	"github.com/mozillazg/go-unidecode"
+	//"github.com/rainycape/unidecode"
 )
+
+const FilterByID string = "id = ?"
+const StrRefreshMovies string = "Refresh Movies"
+const StrRefreshMoviesInc string = "Refresh Movies Incremental"
+const StrRefreshSeries string = "Refresh Series"
+const StrRefreshSeriesInc string = "Refresh Series Incremental"
 
 var DisableVariableCleanup bool
 var DisableParserStringMatch bool
 
+// var GlobalConfigCache *cache.Cache = cache.New(0)
 var GlobalCache *cache.Cache = cache.New(0)
-var GlobalConfigCache *cache.Cache = cache.New(0)
 var GlobalRegexCache *cache.CacheRegex = cache.NewRegex(20 * time.Minute)
 var GlobalStmtCache *cache.CacheStmt = cache.NewStmt(20 * time.Minute)
 var GlobalStmtNamedCache *cache.CacheStmtNamed = cache.NewStmtNamed(20 * time.Minute)
@@ -38,15 +45,19 @@ func ParseStringTemplate(message string, messagedata interface{}) (string, error
 		return "", err
 	}
 	var doc bytes.Buffer
+	defer doc.Reset()
 	err = tmplmessage.Execute(&doc, messagedata)
 	if err != nil {
 		Log.Error(err)
+		tmplmessage = nil
 		return "", err
 	}
+	tmplmessage = nil
 	return doc.String(), err
 }
 func StringBuild(str ...string) string {
 	var bld strings.Builder
+	defer bld.Reset()
 	for idx := range str {
 		bld.WriteString(str[idx])
 	}
@@ -84,6 +95,15 @@ func InStringArray(target string, arr *InStringArrayStruct) bool {
 	}
 	return false
 }
+
+func InStringArrayN(target string, arr InStringArrayStruct) bool {
+	for idx := range arr.Arr {
+		if strings.EqualFold(target, arr.Arr[idx]) {
+			return true
+		}
+	}
+	return false
+}
 func InStringArrayCaseSensitive(target string, arr *InStringArrayStruct) bool {
 	for idx := range arr.Arr {
 		if target == arr.Arr[idx] {
@@ -110,8 +130,9 @@ func InStringArrayContainsCaseSensitive(target string, arr *InStringArrayStruct)
 	return false
 }
 func InStringArrayContainsCaseInSensitive(target string, arr *InStringArrayStruct) bool {
+	target = strings.ToLower(target)
 	for idx := range arr.Arr {
-		if ContainsIa(target, arr.Arr[idx]) {
+		if strings.Contains(target, arr.Arr[idx]) {
 			return true
 		}
 	}
@@ -165,18 +186,18 @@ func CloseWorkerPools() {
 	WorkerPools["Metadata"].Stop()
 }
 
-func makeSlug(s string) (slug string) {
+func makeSlug(s string) string {
 	defer func() { // recovers panic
 		if e := recover(); e != nil {
 			Log.GlobalLogger.Error("Recovered from panic (makeslug) ")
 		}
 	}()
-	slug = replaceUnwantedChars(strings.ToLower(unidecode.Unidecode(substituteRuneF(s))))
-	slug = strings.Replace(slug, "--", "-", -1)
-	slug = strings.Replace(slug, "--", "-", -1)
-	slug = strings.Replace(slug, "--", "-", -1)
-	slug = strings.Trim(slug, "- ")
-	return
+	s = replaceUnwantedChars(unidecode.Unidecode(substituteRuneF(strings.ToLower(s))))
+	s = strings.Replace(s, "--", "-", -1)
+	s = strings.Replace(s, "--", "-", -1)
+	s = strings.Replace(s, "--", "-", -1)
+	s = strings.Trim(s, "- ")
+	return s
 }
 
 var substituteRune = map[rune]string{
@@ -204,6 +225,7 @@ var substituteRune = map[rune]string{
 func substituteRuneF(s string) string {
 	var buf bytes.Buffer
 	buf.Grow(len(s))
+	defer buf.Reset()
 
 	for _, c := range s {
 		if repl, ok := substituteRune[c]; ok {
@@ -259,6 +281,7 @@ var subRune = map[rune]bool{
 func replaceUnwantedChars(s string) string {
 	var buf bytes.Buffer
 	buf.Grow(len(s))
+	defer buf.Reset()
 
 	for _, c := range s {
 		if _, ok := subRune[c]; ok {
@@ -272,15 +295,7 @@ func replaceUnwantedChars(s string) string {
 
 // no chinese or cyrilic supported
 func StringToSlug(instr string) string {
-	if strings.Contains(instr, "&") || strings.Contains(instr, "%") {
-		instr = html.UnescapeString(instr)
-	}
-	if strings.Contains(instr, "\\u") {
-		instr2, err := strconv.Unquote("\"" + instr + "\"")
-		if err == nil {
-			instr = instr2
-		}
-	}
+	instr = HtmlUnescape(instr)
 	instr = makeSlug(instr)
 	instr = strings.TrimSuffix(instr, "-")
 
@@ -289,18 +304,7 @@ func StringToSlug(instr string) string {
 
 func Path(s string, allowslash bool) string {
 	// Start with lowercase string
-	filePath := ""
-	if strings.Contains(s, "&") || strings.Contains(s, "%") {
-		filePath = html.UnescapeString(s)
-	} else {
-		filePath = s
-	}
-	if strings.Contains(filePath, "\\u") {
-		filePath2, err := strconv.Unquote("\"" + filePath + "\"")
-		if err == nil {
-			filePath = filePath2
-		}
-	}
+	filePath := HtmlUnescape(s)
 
 	filePath = strings.Replace(filePath, "..", "", -1)
 	filePath = path.Clean(filePath)
@@ -341,11 +345,11 @@ func DownloadFile(saveIn string, fileprefix string, filename string, url string)
 	defer resp.Body.Close()
 
 	// Create the file
-	if len(filename) == 0 {
+	if filename == "" {
 		filename = path.Base(resp.Request.URL.String())
 	}
 	var filepath string
-	if len(fileprefix) >= 1 {
+	if fileprefix != "" {
 		filename = fileprefix + filename
 	}
 	filepath = path.Join(saveIn, filename)
@@ -430,6 +434,7 @@ var substituteDiacritics = map[rune]string{
 func StringReplaceDiacritics(instr string) string {
 	var buf bytes.Buffer
 	buf.Grow(len(instr))
+	defer buf.Reset()
 
 	for _, c := range instr {
 		if repl, ok := substituteDiacritics[c]; ok {
@@ -442,7 +447,7 @@ func StringReplaceDiacritics(instr string) string {
 }
 
 func Getrootpath(foldername string) (string, string) {
-	var folders []string = make([]string, 0, 10)
+	var folders []string
 
 	if strings.Contains(foldername, "/") {
 		folders = strings.Split(foldername, "/")
@@ -493,9 +498,33 @@ func CopyFunc[T any, U any](src []T, copyFunc func(elem T) U) []U {
 }
 
 func GrowSliceBy[T any](src []T, i int) []T {
-	t := make([]T, len(src), len(src)+i)
-	copy(t, src)
-	return t
+	if i == 0 {
+		return src
+	} else {
+		t := make([]T, len(src), len(src)+i)
+		copy(t, src)
+		return t
+	}
+}
+func GrowSliceByP[T any](src *[]T, i int) {
+	if i != 0 && src != nil {
+		t := make([]T, len(*src), len(*src)+i)
+		copy(t, *src)
+		*src = t
+	}
+}
+
+func HtmlUnescape(instr string) string {
+	if strings.Contains(instr, "&") || strings.Contains(instr, "%") {
+		instr = html.UnescapeString(instr)
+	}
+	if strings.Contains(instr, "\\u") {
+		unquote, err := strconv.Unquote("\"" + instr + "\"")
+		if err == nil {
+			instr = unquote
+		}
+	}
+	return instr
 }
 
 func StringArrayToLower(src []string) []string {
@@ -533,7 +562,7 @@ func StringTrimAfterCaseInsensitive(str string, search string) string {
 	return str
 }
 
-func cCheckFunc[T any](src []T, checkFunc func(elem T) bool) bool {
+func CheckFunc[T any](src []T, checkFunc func(elem T) bool) bool {
 	for i := range src {
 		if checkFunc(src[i]) {
 			return true

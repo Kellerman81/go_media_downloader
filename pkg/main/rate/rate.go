@@ -37,32 +37,82 @@ func New(limit int, dailylimt int, interval time.Duration) *RateLimiter {
 // Try returns true if under the rate limit, or false if over and the
 // remaining time before the rate limit expires.
 func (r *RateLimiter) Allow() (ok bool, remaining time.Duration) {
-	r.mtx.Lock()
-	defer r.mtx.Unlock()
+	ok, left := r.Check()
+	if ok {
+		now := time.Now()
+		if r.times.Len() < r.limit && (r.timesdaily.Len() < r.dailylimit || r.dailylimit == 0) {
+			r.times.PushBack(now)
+			if r.dailylimit != 0 {
+				r.timesdaily.PushBack(now)
+			}
+			return ok, left
+		}
+
+		frnt := r.times.Front()
+		frnt.Value = now
+		r.times.MoveToBack(frnt)
+
+		if r.dailylimit != 0 {
+			frntdaily := r.timesdaily.Front()
+			frntdaily.Value = now
+			r.timesdaily.MoveToBack(frntdaily)
+		}
+	}
+	return ok, left
+	// r.mtx.Lock()
+	// defer r.mtx.Unlock()
+	// now := time.Now()
+	// if r.times.Len() < r.limit && (r.timesdaily.Len() < r.dailylimit || r.dailylimit == 0) {
+	// 	r.times.PushBack(now)
+	// 	if r.dailylimit != 0 {
+	// 		r.timesdaily.PushBack(now)
+	// 	}
+	// 	return true, 0
+	// }
+	// frnt := r.times.Front()
+
+	// if diff := now.Sub(frnt.Value.(time.Time)); diff < r.interval {
+	// 	return false, r.interval - diff
+	// }
+	// if r.dailylimit != 0 {
+	// 	frntdaily := r.timesdaily.Front()
+	// 	if diff := now.Sub(frntdaily.Value.(time.Time)); diff < (24 * time.Hour) {
+	// 		return false, (24 * time.Hour) - diff
+	// 	}
+	// 	frntdaily.Value = now
+	// 	r.timesdaily.MoveToBack(frntdaily)
+	// }
+	// frnt.Value = now
+	// r.times.MoveToBack(frnt)
+	// return true, 0
+}
+func (r *RateLimiter) AllowForce() {
 	now := time.Now()
 	if r.times.Len() < r.limit && (r.timesdaily.Len() < r.dailylimit || r.dailylimit == 0) {
 		r.times.PushBack(now)
 		if r.dailylimit != 0 {
 			r.timesdaily.PushBack(now)
 		}
-		return true, 0
+		return
 	}
-	frnt := r.times.Front()
 
-	if diff := now.Sub(frnt.Value.(time.Time)); diff < r.interval {
-		return false, r.interval - diff
+	frnt := r.times.Front()
+	if frnt == nil {
+		r.times.PushBack(now)
+	} else {
+		frnt.Value = now
+		r.times.MoveToBack(frnt)
 	}
+
 	if r.dailylimit != 0 {
 		frntdaily := r.timesdaily.Front()
-		if diff := now.Sub(frntdaily.Value.(time.Time)); diff < (24 * time.Hour) {
-			return false, (24 * time.Hour) - diff
+		if frntdaily == nil {
+			r.timesdaily.PushBack(now)
+		} else {
+			frntdaily.Value = now
+			r.timesdaily.MoveToBack(frntdaily)
 		}
-		frntdaily.Value = now
-		r.timesdaily.MoveToBack(frntdaily)
 	}
-	frnt.Value = now
-	r.times.MoveToBack(frnt)
-	return true, 0
 }
 
 func (r *RateLimiter) Check() (ok bool, remaining time.Duration) {

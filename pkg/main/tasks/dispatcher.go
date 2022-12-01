@@ -64,7 +64,7 @@ type ScheduleSet struct {
 }
 
 func NewScheduleSet() *ScheduleSet {
-	return &ScheduleSet{}
+	return &ScheduleSet{Values: make([]JobSchedule, 0, 200)}
 }
 
 func (s *ScheduleSet) Add(str JobSchedule) {
@@ -136,7 +136,7 @@ type QueueSet struct {
 }
 
 func NewQueueSet() *QueueSet {
-	return &QueueSet{}
+	return &QueueSet{Values: make([]DispatcherQueue, 0, 200)}
 }
 
 func (s *QueueSet) Add(str DispatcherQueue) {
@@ -390,6 +390,15 @@ func (d *Dispatcher) Dispatch(name string, run func()) error {
 	return nil
 }
 
+func (d *Dispatcher) TryEnqueue(job Job) bool {
+	select {
+	case d.jobQueue <- job:
+		return true
+	default:
+		return false
+	}
+}
+
 // DispatchIn pushes the given job into the job queue
 // after the given duration has elapsed
 func (d *Dispatcher) DispatchIn(name string, run func(), duration time.Duration) error {
@@ -405,9 +414,11 @@ func (d *Dispatcher) DispatchIn(name string, run func(), duration time.Duration)
 		}()
 		time.Sleep(duration)
 		job := Job{Queue: d.name, ID: uuid.New().String(), Added: time.Now().In(logger.TimeZone), Name: name, Run: run}
-		d.jobQueue <- job
 
-		globalQueueSet.Add(DispatcherQueue{Name: job.Name, Queue: job})
+		if d.TryEnqueue(job) {
+			globalQueueSet.Add(DispatcherQueue{Name: job.Name, Queue: job})
+		}
+
 	}()
 
 	return nil
@@ -446,9 +457,11 @@ func (d *Dispatcher) DispatchEvery(name string, run func(), interval time.Durati
 			select {
 			case <-t.C:
 				job := Job{Queue: d.name, ID: jobid, Added: time.Now().In(logger.TimeZone), Name: name, Run: run, SchedulerId: schedulerid}
-				d.jobQueue <- job
 
-				globalQueueSet.Add(DispatcherQueue{Name: job.Name, Queue: job})
+				if d.TryEnqueue(job) {
+					globalQueueSet.Add(DispatcherQueue{Name: job.Name, Queue: job})
+				}
+
 			case <-dt.quit:
 				return
 			}
@@ -472,8 +485,10 @@ func (d *Dispatcher) DispatchCron(name string, run func(), cronStr string) error
 	jobid := uuid.New().String()
 	cjob, err := dc.cron.AddFunc(cronStr, func() {
 		job := Job{Queue: d.name, ID: jobid, Added: time.Now().In(logger.TimeZone), Name: name, Run: run, SchedulerId: schedulerid}
-		d.jobQueue <- job
-		globalQueueSet.Add(DispatcherQueue{Name: job.Name, Queue: job})
+
+		if d.TryEnqueue(job) {
+			globalQueueSet.Add(DispatcherQueue{Name: job.Name, Queue: job})
+		}
 	})
 	if err != nil {
 		return errInvalidCron

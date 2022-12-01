@@ -2,6 +2,7 @@ package apiexternal
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strconv"
@@ -9,7 +10,6 @@ import (
 
 	"github.com/Kellerman81/go_media_downloader/logger"
 	"github.com/Kellerman81/go_media_downloader/rate"
-	"go.uber.org/zap"
 	"golang.org/x/oauth2"
 )
 
@@ -176,6 +176,11 @@ type traktClient struct {
 
 var TraktApi traktClient
 
+const apiurlshows string = "https://api.trakt.tv/shows/"
+const apiurlmovies string = "https://api.trakt.tv/movies/"
+const limitquery string = "?limit="
+const extendedfull string = "?extended=full"
+
 func NewTraktClient(clientid string, clientsecret string, token oauth2.Token, seconds int, calls int, disabletls bool, timeoutseconds int) {
 	if seconds == 0 {
 		seconds = 1
@@ -208,226 +213,261 @@ func NewTraktClient(clientid string, clientsecret string, token oauth2.Token, se
 
 func (t *traktClient) GetMoviePopular(limit int) (*TraktMovieGroup, error) {
 	url := "https://api.trakt.tv/movies/popular"
-	var movies TraktMovieGroup
+	movies := new(TraktMovieGroup)
 	if limit >= 1 {
-		url = url + "?limit=" + strconv.Itoa(limit)
-		movies.Movies = make([]TraktMovie, 0, limit)
+		url = url + limitquery + strconv.Itoa(limit)
+		movies.Movies = logger.GrowSliceBy(movies.Movies, limit)
 	}
 
 	_, err := t.Client.DoJson(url, &movies.Movies, t.DefaultHeaders)
 
 	if err != nil {
-		logger.Log.GlobalLogger.Error("Error calling", zap.String("url", url), zap.Error(err))
+		if err != errors.New(pleaseWait) {
+			logerror(url, err)
+		}
+		movies = nil
 		return nil, err
 	}
 
-	return &movies, nil
+	return movies, nil
 }
 
 func (t *traktClient) GetMovieTrending(limit int) (*TraktMovieGroup, error) {
 	url := "https://api.trakt.tv/movies/trending"
-	var result []TraktMovieTrending //= make([]TraktMovieTrending, 0, 20)
-	var movies TraktMovieGroup
+	var result []TraktMovieTrending
 	if limit >= 1 {
-		url = url + "?limit=" + strconv.Itoa(limit)
-		result = make([]TraktMovieTrending, 0, limit)
+		url = url + limitquery + strconv.Itoa(limit)
+		result = logger.GrowSliceBy(result, limit)
 	}
 
 	_, err := t.Client.DoJson(url, &result, t.DefaultHeaders)
 
 	if err != nil {
-		logger.Log.GlobalLogger.Error("Error calling", zap.String("url", url), zap.Error(err))
+		if err != errors.New(pleaseWait) {
+			logerror(url, err)
+		}
 		return nil, err
 	}
+	movies := new(TraktMovieGroup)
 	movies.Movies = make([]TraktMovie, len(result))
 	for idx := range result {
 		movies.Movies[idx] = result[idx].Movie
 	}
 
-	return &movies, nil
+	return movies, nil
 }
 
 func (t *traktClient) GetMovieAnticipated(limit int) (*TraktMovieGroup, error) {
 	url := "https://api.trakt.tv/movies/anticipated"
-	var result []TraktMovieAnticipated //= make([]TraktMovieAnticipated, 0, 20)
-	var movies TraktMovieGroup
+	var result []TraktMovieAnticipated
 	if limit >= 1 {
-		url = url + "?limit=" + strconv.Itoa(limit)
-		result = make([]TraktMovieAnticipated, 0, limit)
+		url = url + limitquery + strconv.Itoa(limit)
+		result = logger.GrowSliceBy(result, limit)
 	}
 
 	_, err := t.Client.DoJson(url, &result, t.DefaultHeaders)
 
 	if err != nil {
-		logger.Log.GlobalLogger.Error("Error calling", zap.String("url", url), zap.Error(err))
+		if err != errors.New(pleaseWait) {
+			logerror(url, err)
+		}
 		return nil, err
 	}
+	movies := new(TraktMovieGroup)
 	movies.Movies = make([]TraktMovie, len(result))
 	for idx := range result {
 		movies.Movies[idx] = result[idx].Movie
 	}
 
-	return &movies, nil
+	return movies, nil
 }
 
 func (t *traktClient) GetMovieAliases(movieid string) (*TraktAliases, error) {
-	url := "https://api.trakt.tv/movies/" + movieid + "/aliases"
+	url := apiurlmovies + movieid + "/aliases"
 
-	var aliases TraktAliases
+	aliases := new(TraktAliases)
 	_, err := t.Client.DoJson(url, &aliases.Aliases, t.DefaultHeaders)
 
 	if err != nil {
-		logger.Log.GlobalLogger.Error("Error calling", zap.String("url", url), zap.Error(err))
+		if err != errors.New(pleaseWait) {
+			logerror(url, err)
+		}
+		aliases = nil
 		return nil, err
 	}
-	return &aliases, nil
+	return aliases, nil
 }
-func (t *traktClient) GetMovie(movieid string) (TraktMovieExtend, error) {
-	url := "https://api.trakt.tv/movies/" + movieid + "?extended=full"
+func (t *traktClient) GetMovie(movieid string) (*TraktMovieExtend, error) {
+	url := apiurlmovies + movieid + extendedfull
 
-	var result TraktMovieExtend
-	_, err := t.Client.DoJson(url, &result, t.DefaultHeaders)
+	result := new(TraktMovieExtend)
+	_, err := t.Client.DoJson(url, result, t.DefaultHeaders)
 
 	if err != nil {
-		logger.Log.GlobalLogger.Error("Error calling", zap.String("url", url), zap.Error(err))
-		return TraktMovieExtend{}, err
+		if err != errors.New(pleaseWait) {
+			logerror(url, err)
+		}
+		result = nil
+		return nil, err
 	}
 	return result, nil
 }
-func (t *traktClient) GetSerie(showid string) (TraktSerieData, error) {
-	url := "https://api.trakt.tv/shows/" + showid + "?extended=full"
+func (t *traktClient) GetSerie(showid string) (*TraktSerieData, error) {
+	url := apiurlshows + showid + extendedfull
 
-	var result TraktSerieData
-	_, err := t.Client.DoJson(url, &result, t.DefaultHeaders)
+	result := new(TraktSerieData)
+	_, err := t.Client.DoJson(url, result, t.DefaultHeaders)
 
 	if err != nil {
-		logger.Log.GlobalLogger.Error("Error calling", zap.String("url", url), zap.Error(err))
-		return TraktSerieData{}, err
+		if err != errors.New(pleaseWait) {
+			logerror(url, err)
+		}
+		result = nil
+		return nil, err
 	}
 
 	return result, nil
 }
 
 func (t *traktClient) GetSerieAliases(showid string) (*TraktAliases, error) {
-	url := "https://api.trakt.tv/shows/" + showid + "/aliases"
+	url := apiurlshows + showid + "/aliases"
 
-	var aliases TraktAliases
+	aliases := new(TraktAliases)
 	_, err := t.Client.DoJson(url, &aliases.Aliases, t.DefaultHeaders)
 
 	if err != nil {
-		logger.Log.GlobalLogger.Error("Error calling", zap.String("url", url), zap.Error(err))
+		if err != errors.New(pleaseWait) {
+			logerror(url, err)
+		}
+		aliases = nil
 		return nil, err
 	}
 
-	return &aliases, nil
+	return aliases, nil
 }
 func (t *traktClient) GetSerieSeasons(showid string) (*TraktSerieSeasonGroup, error) {
-	url := "https://api.trakt.tv/shows/" + showid + "/seasons"
+	url := apiurlshows + showid + "/seasons"
 
-	var seasons TraktSerieSeasonGroup
+	seasons := new(TraktSerieSeasonGroup)
 	_, err := t.Client.DoJson(url, &seasons.Seasons, t.DefaultHeaders)
 
 	if err != nil {
-		logger.Log.GlobalLogger.Error("Error calling", zap.String("url", url), zap.Error(err))
+		if err != errors.New(pleaseWait) {
+			logerror(url, err)
+		}
+		seasons = nil
 		return nil, err
 	}
 
-	return &seasons, nil
+	return seasons, nil
 }
 func (t *traktClient) GetSerieSeasonEpisodes(showid string, season int) (*TraktSerieSeasonEpisodeGroup, error) {
-	url := "https://api.trakt.tv/shows/" + showid + "/seasons/" + strconv.FormatInt(int64(season), 10) + "?extended=full"
+	url := apiurlshows + showid + "/seasons/" + strconv.FormatInt(int64(season), 10) + extendedfull
 
-	var episodes TraktSerieSeasonEpisodeGroup
+	episodes := new(TraktSerieSeasonEpisodeGroup)
 	_, err := t.Client.DoJson(url, &episodes.Episodes, t.DefaultHeaders)
 
 	if err != nil {
-		logger.Log.GlobalLogger.Error("Error calling", zap.String("url", url), zap.Error(err))
+		if err != errors.New(pleaseWait) {
+			logerror(url, err)
+		}
+		episodes = nil
 		return nil, err
 	}
 
-	return &episodes, nil
+	return episodes, nil
 }
 
 func (t *traktClient) GetUserList(username string, listname string, listtype string, limit int) (*TraktUserListGroup, error) {
 	url := "https://api.trakt.tv/users/" + username + "/lists/" + listname + "/items/" + listtype
-	var entries TraktUserListGroup
+	entries := new(TraktUserListGroup)
 	if limit >= 1 {
-		url = url + "?limit=" + strconv.Itoa(limit)
-		entries.Entries = make([]TraktUserList, 0, limit)
+		url = url + limitquery + strconv.Itoa(limit)
+		entries.Entries = logger.GrowSliceBy(entries.Entries, limit)
 	}
 
 	_, err := t.Client.DoJson(url, &entries.Entries, t.DefaultHeaders)
 
 	if err != nil {
-		logger.Log.GlobalLogger.Error("Error calling", zap.String("url", url), zap.Error(err))
+		if err != errors.New(pleaseWait) {
+			logerror(url, err)
+		}
+		entries = nil
 		return nil, err
 	}
 
-	return &entries, nil
+	return entries, nil
 }
 
 func (t *traktClient) GetSeriePopular(limit int) (*TraktSerieGroup, error) {
 	url := "https://api.trakt.tv/shows/popular"
-	var series TraktSerieGroup
+	series := new(TraktSerieGroup)
 	if limit >= 1 {
-		url = url + "?limit=" + strconv.Itoa(limit)
-		series.Series = make([]TraktSerie, 0, limit)
+		url = url + limitquery + strconv.Itoa(limit)
+		series.Series = logger.GrowSliceBy(series.Series, limit)
 	}
 
 	_, err := t.Client.DoJson(url, &series.Series, t.DefaultHeaders)
 
 	if err != nil {
-		logger.Log.GlobalLogger.Error("Error calling", zap.String("url", url), zap.Error(err))
+		if err != errors.New(pleaseWait) {
+			logerror(url, err)
+		}
+		series = nil
 		return nil, err
 	}
 
-	return &series, nil
+	return series, nil
 }
 
 func (t *traktClient) GetSerieTrending(limit int) (*TraktSerieGroup, error) {
 	url := "https://api.trakt.tv/shows/trending"
-	var result []TraktSerieTrending //= make([]TraktSerieTrending, 0, 20)
-	var series TraktSerieGroup
+	var result []TraktSerieTrending
 	if limit >= 1 {
-		url = url + "?limit=" + strconv.Itoa(limit)
-		result = make([]TraktSerieTrending, 0, limit)
+		url = url + limitquery + strconv.Itoa(limit)
+		result = logger.GrowSliceBy(result, limit)
 	}
 
 	_, err := t.Client.DoJson(url, &result, t.DefaultHeaders)
 
 	if err != nil {
-		logger.Log.GlobalLogger.Error("Error calling", zap.String("url", url), zap.Error(err))
+		if err != errors.New(pleaseWait) {
+			logerror(url, err)
+		}
 		return nil, err
 	}
+	series := new(TraktSerieGroup)
 	series.Series = make([]TraktSerie, len(result))
 	for idx := range result {
 		series.Series[idx] = result[idx].Serie
 	}
 
-	return &series, nil
+	return series, nil
 }
 
 func (t *traktClient) GetSerieAnticipated(limit int) (*TraktSerieGroup, error) {
 	url := "https://api.trakt.tv/shows/anticipated"
-	var result []TraktSerieAnticipated //= make([]TraktSerieAnticipated, 0, 20)
-	var series TraktSerieGroup
+	var result []TraktSerieAnticipated
 	if limit >= 1 {
-		url = url + "?limit=" + strconv.Itoa(limit)
-		result = make([]TraktSerieAnticipated, 0, limit)
+		url = url + limitquery + strconv.Itoa(limit)
+		result = logger.GrowSliceBy(result, limit)
 	}
 
 	_, err := t.Client.DoJson(url, &result, t.DefaultHeaders)
 
 	if err != nil {
-		logger.Log.GlobalLogger.Error("Error calling", zap.String("url", url), zap.Error(err))
+		if err != errors.New(pleaseWait) {
+			logerror(url, err)
+		}
 		return nil, err
 	}
+	series := new(TraktSerieGroup)
 	series.Series = make([]TraktSerie, len(result))
 	for idx := range result {
 		series.Series[idx] = result[idx].Serie
 	}
 
-	return &series, nil
+	return series, nil
 }
 
 func (t *traktClient) GetAuthUrl() string {
@@ -454,14 +494,16 @@ func (t *traktClient) GetUserListAuth(username string, listname string, listtype
 	url := "https://api.trakt.tv/users/" + username + "/lists/" + listname + "/items/" + listtype
 	var entries TraktUserListGroup
 	if limit >= 1 {
-		url = url + "?limit=" + strconv.Itoa(limit)
-		entries.Entries = make([]TraktUserList, 0, limit)
+		url = url + limitquery + strconv.Itoa(limit)
+		entries.Entries = logger.GrowSliceBy(entries.Entries, limit)
 	}
 
 	_, err := t.Client.DoJson(url, &entries.Entries, t.DefaultHeaders)
 
 	if err != nil {
-		logger.Log.GlobalLogger.Error("Error calling", zap.String("url", url), zap.Error(err))
+		if err != errors.New(pleaseWait) {
+			logerror(url, err)
+		}
 		return TraktUserListGroup{}, err
 	}
 

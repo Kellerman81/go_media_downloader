@@ -22,19 +22,11 @@ func RegexCheck(key string) bool {
 }
 
 func RegexGetMatches(key string, matchfor string) []string {
-	rgx := logger.GlobalRegexCache.GetRegexpDirect(key)
-	defer func() {
-		rgx = nil
-	}()
-	return rgx.FindStringSubmatch(matchfor)
+	return logger.GlobalRegexCache.GetRegexpDirect(key).FindStringSubmatch(matchfor)
 }
 
 func RegexGetMatchesStr1Str2(key string, matchfor string) (string, string) {
-	rgx := logger.GlobalRegexCache.GetRegexpDirect(key)
-	defer func() {
-		rgx = nil
-	}()
-	matches := rgx.FindStringSubmatch(matchfor)
+	matches := logger.GlobalRegexCache.GetRegexpDirect(key).FindStringSubmatch(matchfor)
 	defer logger.ClearVar(&matches)
 	if len(matches) >= 2 {
 		if len(matches) >= 3 {
@@ -48,25 +40,13 @@ func RegexGetMatchesStr1Str2(key string, matchfor string) (string, string) {
 }
 
 func RegexGetMatchesFind(key string, matchfor string, mincount int) bool {
-	rgx := logger.GlobalRegexCache.GetRegexpDirect(key)
-	defer func() {
-		rgx = nil
-	}()
-	return len(rgx.FindStringSubmatchIndex(matchfor)) >= mincount
+	return len(logger.GlobalRegexCache.GetRegexpDirect(key).FindStringSubmatchIndex(matchfor)) >= mincount
 }
 func RegexGetAllMatches(key string, matchfor string, maxcount int) [][]string {
-	rgx := logger.GlobalRegexCache.GetRegexpDirect(key)
-	defer func() {
-		rgx = nil
-	}()
-	return rgx.FindAllStringSubmatch(matchfor, maxcount)
+	return logger.GlobalRegexCache.GetRegexpDirect(key).FindAllStringSubmatch(matchfor, maxcount)
 }
 func RegexGetLastMatches(key string, matchfor string, maxcount int) []string {
-	rgx := logger.GlobalRegexCache.GetRegexpDirect(key)
-	defer func() {
-		rgx = nil
-	}()
-	matchest := rgx.FindAllStringSubmatch(matchfor, maxcount)
+	matchest := logger.GlobalRegexCache.GetRegexpDirect(key).FindAllStringSubmatch(matchfor, maxcount)
 	defer logger.ClearVar(&matchest)
 	if len(matchest) == 0 {
 		return []string{}
@@ -75,8 +55,8 @@ func RegexGetLastMatches(key string, matchfor string, maxcount int) []string {
 }
 
 func ConfigGetTrakt(key string) *oauth2.Token {
-	if logger.GlobalConfigCache.Check(key, reflect.TypeOf(oauth2.Token{})) {
-		value := logger.GlobalConfigCache.GetData(key).Value.(oauth2.Token)
+	if logger.GlobalCache.Check(key, reflect.TypeOf(oauth2.Token{})) {
+		value := logger.GlobalCache.GetData(key).Value.(oauth2.Token)
 		return &value
 	}
 	return &oauth2.Token{}

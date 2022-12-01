@@ -176,56 +176,56 @@ type MediaConfig struct {
 }
 
 type MediaTypeConfig struct {
-	Name                      string                      `koanf:"name" toml:"name"`
-	NamePrefix                string                      `koanf:"name" toml:"nameprefix"`
-	DefaultQuality            string                      `koanf:"default_quality" toml:"default_quality"`
-	DefaultResolution         string                      `koanf:"default_resolution" toml:"default_resolution"`
-	Naming                    string                      `koanf:"naming" toml:"naming"`
-	NamingIdentifier          string                      `koanf:"naming_identifier" toml:"naming_identifier"`
-	Template_quality          string                      `koanf:"template_quality" toml:"template_quality"`
-	Template_scheduler        string                      `koanf:"template_scheduler" toml:"template_scheduler"`
-	Metadata_language         string                      `koanf:"metadata_language" toml:"metadata_language"`
-	Metadata_title_languages  []string                    `koanf:"metadata_title_languages" toml:"metadata_title_languages"`
-	Metadata_source           string                      `koanf:"metadata_source" toml:"metadata_source"`
-	Structure                 bool                        `koanf:"structure" toml:"structure"`
-	Searchmissing_incremental int                         `koanf:"search_missing_incremental" toml:"search_missing_incremental"`
-	Searchupgrade_incremental int                         `koanf:"search_upgrade_incremental" toml:"search_upgrade_incremental"`
-	Data                      []MediaDataConfig           `koanf:"data" toml:"data"`
-	DataImport                []MediaDataImportConfig     `koanf:"data_import" toml:"data_import"`
-	Lists                     []MediaListsConfig          `koanf:"lists" toml:"lists"`
-	Notification              []MediaNotificationConfig   `koanf:"notification" toml:"notification"`
-	ListsInterface            []interface{}               `koanf:"-" toml:"-"`
-	QualatiesInterface        []interface{}               `koanf:"-" toml:"-"`
-	ListsMap                  map[string]MediaListsConfig `koanf:"-" toml:"-"`
+	Name                     string                      `koanf:"name" toml:"name"`
+	NamePrefix               string                      `koanf:"name" toml:"nameprefix"`
+	DefaultQuality           string                      `koanf:"default_quality" toml:"default_quality"`
+	DefaultResolution        string                      `koanf:"default_resolution" toml:"default_resolution"`
+	Naming                   string                      `koanf:"naming" toml:"naming"`
+	NamingIdentifier         string                      `koanf:"naming_identifier" toml:"naming_identifier"`
+	TemplateQuality          string                      `koanf:"template_quality" toml:"template_quality"`
+	TemplateScheduler        string                      `koanf:"template_scheduler" toml:"template_scheduler"`
+	MetadataLanguage         string                      `koanf:"metadata_language" toml:"metadata_language"`
+	MetadataTitleLanguages   []string                    `koanf:"metadata_title_languages" toml:"metadata_title_languages"`
+	MetadataSource           string                      `koanf:"metadata_source" toml:"metadata_source"`
+	Structure                bool                        `koanf:"structure" toml:"structure"`
+	SearchmissingIncremental int                         `koanf:"search_missing_incremental" toml:"search_missing_incremental"`
+	SearchupgradeIncremental int                         `koanf:"search_upgrade_incremental" toml:"search_upgrade_incremental"`
+	Data                     []MediaDataConfig           `koanf:"data" toml:"data"`
+	DataImport               []MediaDataImportConfig     `koanf:"data_import" toml:"data_import"`
+	Lists                    []MediaListsConfig          `koanf:"lists" toml:"lists"`
+	Notification             []MediaNotificationConfig   `koanf:"notification" toml:"notification"`
+	ListsInterface           []interface{}               `koanf:"-" toml:"-"`
+	QualatiesInterface       []interface{}               `koanf:"-" toml:"-"`
+	ListsMap                 map[string]MediaListsConfig `koanf:"-" toml:"-"`
 }
 
 type MediaDataConfig struct {
-	Template_path string `koanf:"template_path" toml:"template_path"`
-	AddFound      bool   `koanf:"add_found" toml:"add_found"`
-	AddFoundList  string `koanf:"add_found_list" toml:"add_found_list"`
+	TemplatePath string `koanf:"template_path" toml:"template_path"`
+	AddFound     bool   `koanf:"add_found" toml:"add_found"`
+	AddFoundList string `koanf:"add_found_list" toml:"add_found_list"`
 }
 
 type MediaDataImportConfig struct {
-	Template_path string `koanf:"template_path" toml:"template_path"`
+	TemplatePath string `koanf:"template_path" toml:"template_path"`
 }
 
 type MediaListsConfig struct {
-	Name               string   `koanf:"name" toml:"name"`
-	Template_list      string   `koanf:"template_list" toml:"template_list"`
-	Template_quality   string   `koanf:"template_quality" toml:"template_quality"`
-	Template_scheduler string   `koanf:"template_scheduler" toml:"template_scheduler"`
-	Ignore_map_lists   []string `koanf:"ignore_template_lists" toml:"ignore_template_lists"`
-	Replace_map_lists  []string `koanf:"replace_template_lists" toml:"replace_template_lists"`
-	Enabled            bool     `koanf:"enabled" toml:"enabled"`
-	Addfound           bool     `koanf:"add_found" toml:"add_found"`
+	Name              string   `koanf:"name" toml:"name"`
+	TemplateList      string   `koanf:"template_list" toml:"template_list"`
+	TemplateQuality   string   `koanf:"template_quality" toml:"template_quality"`
+	TemplateScheduler string   `koanf:"template_scheduler" toml:"template_scheduler"`
+	IgnoreMapLists    []string `koanf:"ignore_template_lists" toml:"ignore_template_lists"`
+	ReplaceMapLists   []string `koanf:"replace_template_lists" toml:"replace_template_lists"`
+	Enabled           bool     `koanf:"enabled" toml:"enabled"`
+	Addfound          bool     `koanf:"add_found" toml:"add_found"`
 }
 
 type MediaNotificationConfig struct {
-	Map_notification string `koanf:"template_notification" toml:"template_notification"`
-	Event            string `koanf:"event" toml:"event"`
-	Title            string `koanf:"title" toml:"title"`
-	Message          string `koanf:"message" toml:"message"`
-	ReplacedPrefix   string `koanf:"replaced_prefix" toml:"replaced_prefix"`
+	MapNotification string `koanf:"template_notification" toml:"template_notification"`
+	Event           string `koanf:"event" toml:"event"`
+	Title           string `koanf:"title" toml:"title"`
+	Message         string `koanf:"message" toml:"message"`
+	ReplacedPrefix  string `koanf:"replaced_prefix" toml:"replaced_prefix"`
 }
 
 type DownloaderConfig struct {
@@ -246,19 +246,19 @@ type DownloaderConfig struct {
 }
 
 type ListsConfig struct {
-	Name               string   `koanf:"name" toml:"name"`
-	ListType           string   `koanf:"type" toml:"type"`
-	Url                string   `koanf:"url" toml:"url"`
-	Enabled            bool     `koanf:"enabled" toml:"enabled"`
-	Series_config_file string   `koanf:"series_config_file" toml:"series_config_file"`
-	TraktUsername      string   `koanf:"trakt_username" toml:"trakt_username"`
-	TraktListName      string   `koanf:"trakt_listname" toml:"trakt_listname"`
-	TraktListType      string   `koanf:"trakt_listtype" toml:"trakt_listtype"`
-	Limit              int      `koanf:"limit" toml:"limit"`
-	MinVotes           int      `koanf:"min_votes" toml:"min_votes"`
-	MinRating          float32  `koanf:"min_rating" toml:"min_rating"`
-	Excludegenre       []string `koanf:"exclude_genre" toml:"exclude_genre"`
-	Includegenre       []string `koanf:"include_genre" toml:"include_genre"`
+	Name             string   `koanf:"name" toml:"name"`
+	ListType         string   `koanf:"type" toml:"type"`
+	Url              string   `koanf:"url" toml:"url"`
+	Enabled          bool     `koanf:"enabled" toml:"enabled"`
+	SeriesConfigFile string   `koanf:"series_config_file" toml:"series_config_file"`
+	TraktUsername    string   `koanf:"trakt_username" toml:"trakt_username"`
+	TraktListName    string   `koanf:"trakt_listname" toml:"trakt_listname"`
+	TraktListType    string   `koanf:"trakt_listtype" toml:"trakt_listtype"`
+	Limit            int      `koanf:"limit" toml:"limit"`
+	MinVotes         int      `koanf:"min_votes" toml:"min_votes"`
+	MinRating        float32  `koanf:"min_rating" toml:"min_rating"`
+	Excludegenre     []string `koanf:"exclude_genre" toml:"exclude_genre"`
+	Includegenre     []string `koanf:"include_genre" toml:"include_genre"`
 }
 
 type IndexersConfig struct {
@@ -302,7 +302,7 @@ type PathsConfig struct {
 	MaxSize                             int      `koanf:"max_size" toml:"max_size"`
 	MinVideoSize                        int      `koanf:"min_video_size" toml:"min_video_size"`
 	CleanupsizeMB                       int      `koanf:"cleanup_size_mb" toml:"cleanup_size_mb"`
-	Allowed_languages                   []string `koanf:"allowed_languages" toml:"allowed_languages"`
+	AllowedLanguages                    []string `koanf:"allowed_languages" toml:"allowed_languages"`
 	Replacelower                        bool     `koanf:"replace_lower" toml:"replace_lower"`
 	Usepresort                          bool     `koanf:"use_presort" toml:"use_presort"`
 	PresortFolderPath                   string   `koanf:"presort_folder_path" toml:"presort_folder_path"`
@@ -344,12 +344,12 @@ type RegexConfig struct {
 
 type QualityConfig struct {
 	Name                          string                 `koanf:"name" toml:"name"`
-	Wanted_resolution             []string               `koanf:"wanted_resolution" toml:"wanted_resolution"`
-	Wanted_quality                []string               `koanf:"wanted_quality" toml:"wanted_quality"`
-	Wanted_audio                  []string               `koanf:"wanted_audio" toml:"wanted_audio"`
-	Wanted_codec                  []string               `koanf:"wanted_codec" toml:"wanted_codec"`
-	Cutoff_resolution             string                 `koanf:"cutoff_resolution" toml:"cutoff_resolution"`
-	Cutoff_quality                string                 `koanf:"cutoff_quality" toml:"cutoff_quality"`
+	WantedResolution              []string               `koanf:"wanted_resolution" toml:"wanted_resolution"`
+	WantedQuality                 []string               `koanf:"wanted_quality" toml:"wanted_quality"`
+	WantedAudio                   []string               `koanf:"wanted_audio" toml:"wanted_audio"`
+	WantedCodec                   []string               `koanf:"wanted_codec" toml:"wanted_codec"`
+	CutoffResolution              string                 `koanf:"cutoff_resolution" toml:"cutoff_resolution"`
+	CutoffQuality                 string                 `koanf:"cutoff_quality" toml:"cutoff_quality"`
 	BackupSearchForTitle          bool                   `koanf:"backup_search_for_title" toml:"backup_search_for_title"`
 	BackupSearchForAlternateTitle bool                   `koanf:"backup_search_for_alternate_title" toml:"backup_search_for_alternate_title"`
 	ExcludeYearFromTitleSearch    bool                   `koanf:"exclude_year_from_title_search" toml:"exclude_year_from_title_search"`
@@ -362,12 +362,16 @@ type QualityConfig struct {
 	QualityReorder                []QualityReorderConfig `koanf:"reorder" toml:"reorder"`
 	Indexer                       []QualityIndexerConfig `koanf:"indexers" toml:"indexers"`
 	Cutoff_priority               int
-	UseForPriorityResolution      bool `koanf:"use_for_priority_resolution" toml:"use_for_priority_resolution"`
-	UseForPriorityQuality         bool `koanf:"use_for_priority_quality" toml:"use_for_priority_quality"`
-	UseForPriorityAudio           bool `koanf:"use_for_priority_audio" toml:"use_for_priority_audio"`
-	UseForPriorityCodec           bool `koanf:"use_for_priority_codec" toml:"use_for_priority_codec"`
-	UseForPriorityOther           bool `koanf:"use_for_priority_other" toml:"use_for_priority_other"`
-	UseForPriorityMinDifference   int  `koanf:"use_for_priority_min_difference" toml:"use_for_priority_min_difference"`
+	UseForPriorityResolution      bool                       `koanf:"use_for_priority_resolution" toml:"use_for_priority_resolution"`
+	UseForPriorityQuality         bool                       `koanf:"use_for_priority_quality" toml:"use_for_priority_quality"`
+	UseForPriorityAudio           bool                       `koanf:"use_for_priority_audio" toml:"use_for_priority_audio"`
+	UseForPriorityCodec           bool                       `koanf:"use_for_priority_codec" toml:"use_for_priority_codec"`
+	UseForPriorityOther           bool                       `koanf:"use_for_priority_other" toml:"use_for_priority_other"`
+	UseForPriorityMinDifference   int                        `koanf:"use_for_priority_min_difference" toml:"use_for_priority_min_difference"`
+	WantedResolutionIn            logger.InStringArrayStruct `koanf:"-" toml:"-"`
+	WantedQualityIn               logger.InStringArrayStruct `koanf:"-" toml:"-"`
+	WantedAudioIn                 logger.InStringArrayStruct `koanf:"-" toml:"-"`
+	WantedCodecIn                 logger.InStringArrayStruct `koanf:"-" toml:"-"`
 }
 
 type QualityReorderConfig struct {
@@ -379,16 +383,16 @@ type QualityReorderConfigGroup struct {
 	Arr []QualityReorderConfig
 }
 type QualityIndexerConfig struct {
-	Template_indexer        string `koanf:"template_indexer" toml:"template_indexer"`
-	Template_downloader     string `koanf:"template_downloader" toml:"template_downloader"`
-	Template_regex          string `koanf:"template_regex" toml:"template_regex"`
-	Template_path_nzb       string `koanf:"template_path_nzb" toml:"template_path_nzb"`
-	Category_dowloader      string `koanf:"category_dowloader" toml:"category_dowloader"`
-	Additional_query_params string `koanf:"additional_query_params" toml:"additional_query_params"`
-	CustomQueryString       string `koanf:"custom_query_string" toml:"custom_query_string"`
-	Skip_empty_size         bool   `koanf:"skip_empty_size" toml:"skip_empty_size"`
-	History_check_title     bool   `koanf:"history_check_title" toml:"history_check_title"`
-	Categories_indexer      string `koanf:"categories_indexer" toml:"categories_indexer"`
+	TemplateIndexer       string `koanf:"template_indexer" toml:"template_indexer"`
+	TemplateDownloader    string `koanf:"template_downloader" toml:"template_downloader"`
+	TemplateRegex         string `koanf:"template_regex" toml:"template_regex"`
+	TemplatePathNzb       string `koanf:"template_path_nzb" toml:"template_path_nzb"`
+	CategoryDowloader     string `koanf:"category_dowloader" toml:"category_dowloader"`
+	AdditionalQueryParams string `koanf:"additional_query_params" toml:"additional_query_params"`
+	CustomQueryString     string `koanf:"custom_query_string" toml:"custom_query_string"`
+	SkipEmptySize         bool   `koanf:"skip_empty_size" toml:"skip_empty_size"`
+	HistoryCheckTitle     bool   `koanf:"history_check_title" toml:"history_check_title"`
+	CategoriesIndexer     string `koanf:"categories_indexer" toml:"categories_indexer"`
 }
 
 func (s *QualityIndexerConfig) Close() {
@@ -401,51 +405,51 @@ func (s *QualityIndexerConfig) Close() {
 }
 
 type SchedulerConfig struct {
-	Name                                string `koanf:"name" toml:"name"`
-	Interval_imdb                       string `koanf:"interval_imdb" toml:"interval_imdb"`
-	Interval_feeds                      string `koanf:"interval_feeds" toml:"interval_feeds"`
-	Interval_feeds_refresh_series       string `koanf:"interval_feeds_refresh_series" toml:"interval_feeds_refresh_series"`
-	Interval_feeds_refresh_movies       string `koanf:"interval_feeds_refresh_movies" toml:"interval_feeds_refresh_movies"`
-	Interval_feeds_refresh_series_full  string `koanf:"interval_feeds_refresh_series_full" toml:"interval_feeds_refresh_series_full"`
-	Interval_feeds_refresh_movies_full  string `koanf:"interval_feeds_refresh_movies_full" toml:"interval_feeds_refresh_movies_full"`
-	Interval_indexer_missing            string `koanf:"interval_indexer_missing" toml:"interval_indexer_missing"`
-	Interval_indexer_upgrade            string `koanf:"interval_indexer_upgrade" toml:"interval_indexer_upgrade"`
-	Interval_indexer_missing_full       string `koanf:"interval_indexer_missing_full" toml:"interval_indexer_missing_full"`
-	Interval_indexer_upgrade_full       string `koanf:"interval_indexer_upgrade_full" toml:"interval_indexer_upgrade_full"`
-	Interval_indexer_missing_title      string `koanf:"interval_indexer_missing_title" toml:"interval_indexer_missing_title"`
-	Interval_indexer_upgrade_title      string `koanf:"interval_indexer_upgrade_title" toml:"interval_indexer_upgrade_title"`
-	Interval_indexer_missing_full_title string `koanf:"interval_indexer_missing_full_title" toml:"interval_indexer_missing_full_title"`
-	Interval_indexer_upgrade_full_title string `koanf:"interval_indexer_upgrade_full_title" toml:"interval_indexer_upgrade_full_title"`
-	Interval_indexer_rss                string `koanf:"interval_indexer_rss" toml:"interval_indexer_rss"`
-	Interval_scan_data                  string `koanf:"interval_scan_data" toml:"interval_scan_data"`
-	Interval_scan_data_missing          string `koanf:"interval_scan_data_missing" toml:"interval_scan_data_missing"`
-	Interval_scan_data_flags            string `koanf:"interval_scan_data_flags" toml:"interval_scan_data_flags"`
-	Interval_scan_dataimport            string `koanf:"interval_scan_data_import" toml:"interval_scan_data_import"`
-	Interval_database_backup            string `koanf:"interval_database_backup" toml:"interval_database_backup"`
-	Interval_database_check             string `koanf:"interval_database_check" toml:"interval_database_check"`
-	Interval_indexer_rss_seasons        string `koanf:"interval_indexer_rss_seasons" toml:"interval_indexer_rss_seasons"`
-	Cron_indexer_rss_seasons            string `koanf:"cron_indexer_rss_seasons" toml:"cron_indexer_rss_seasons"`
-	Cron_imdb                           string `koanf:"cron_imdb" toml:"cron_imdb"`
-	Cron_feeds                          string `koanf:"cron_feeds" toml:"cron_feeds"`
-	Cron_feeds_refresh_series           string `koanf:"cron_feeds_refresh_series" toml:"cron_feeds_refresh_series"`
-	Cron_feeds_refresh_movies           string `koanf:"cron_feeds_refresh_movies" toml:"cron_feeds_refresh_movies"`
-	Cron_feeds_refresh_series_full      string `koanf:"cron_feeds_refresh_series_full" toml:"cron_feeds_refresh_series_full"`
-	Cron_feeds_refresh_movies_full      string `koanf:"cron_feeds_refresh_movies_full" toml:"cron_feeds_refresh_movies_full"`
-	Cron_indexer_missing                string `koanf:"cron_indexer_missing" toml:"cron_indexer_missing"`
-	Cron_indexer_upgrade                string `koanf:"cron_indexer_upgrade" toml:"cron_indexer_upgrade"`
-	Cron_indexer_missing_full           string `koanf:"cron_indexer_missing_full" toml:"cron_indexer_missing_full"`
-	Cron_indexer_upgrade_full           string `koanf:"cron_indexer_upgrade_full" toml:"cron_indexer_upgrade_full"`
-	Cron_indexer_missing_title          string `koanf:"cron_indexer_missing_title" toml:"cron_indexer_missing_title"`
-	Cron_indexer_upgrade_title          string `koanf:"cron_indexer_upgrade_title" toml:"cron_indexer_upgrade_title"`
-	Cron_indexer_missing_full_title     string `koanf:"cron_indexer_missing_full_title" toml:"cron_indexer_missing_full_title"`
-	Cron_indexer_upgrade_full_title     string `koanf:"cron_indexer_upgrade_full_title" toml:"cron_indexer_upgrade_full_title"`
-	Cron_indexer_rss                    string `koanf:"cron_indexer_rss" toml:"cron_indexer_rss"`
-	Cron_scan_data                      string `koanf:"cron_scan_data" toml:"cron_scan_data"`
-	Cron_scan_data_missing              string `koanf:"cron_scan_data_missing" toml:"cron_scan_data_missing"`
-	Cron_scan_data_flags                string `koanf:"cron_scan_data_flags" toml:"cron_scan_data_flags"`
-	Cron_scan_dataimport                string `koanf:"cron_scan_data_import" toml:"cron_scan_data_import"`
-	Cron_database_backup                string `koanf:"cron_database_backup" toml:"cron_database_backup"`
-	Cron_database_check                 string `koanf:"cron_database_check" toml:"cron_database_check"`
+	Name                            string `koanf:"name" toml:"name"`
+	IntervalImdb                    string `koanf:"interval_imdb" toml:"interval_imdb"`
+	IntervalFeeds                   string `koanf:"interval_feeds" toml:"interval_feeds"`
+	IntervalFeedsRefreshSeries      string `koanf:"interval_feeds_refresh_series" toml:"interval_feeds_refresh_series"`
+	IntervalFeedsRefreshMovies      string `koanf:"interval_feeds_refresh_movies" toml:"interval_feeds_refresh_movies"`
+	IntervalFeedsRefreshSeriesFull  string `koanf:"interval_feeds_refresh_series_full" toml:"interval_feeds_refresh_series_full"`
+	IntervalFeedsRefreshMoviesFull  string `koanf:"interval_feeds_refresh_movies_full" toml:"interval_feeds_refresh_movies_full"`
+	IntervalIndexerMissing          string `koanf:"interval_indexer_missing" toml:"interval_indexer_missing"`
+	IntervalIndexerUpgrade          string `koanf:"interval_indexer_upgrade" toml:"interval_indexer_upgrade"`
+	IntervalIndexerMissingFull      string `koanf:"interval_indexer_missing_full" toml:"interval_indexer_missing_full"`
+	IntervalIndexerUpgradeFull      string `koanf:"interval_indexer_upgrade_full" toml:"interval_indexer_upgrade_full"`
+	IntervalIndexerMissingTitle     string `koanf:"interval_indexer_missing_title" toml:"interval_indexer_missing_title"`
+	IntervalIndexerUpgradeTitle     string `koanf:"interval_indexer_upgrade_title" toml:"interval_indexer_upgrade_title"`
+	IntervalIndexerMissingFullTitle string `koanf:"interval_indexer_missing_full_title" toml:"interval_indexer_missing_full_title"`
+	IntervalIndexerUpgradeFullTitle string `koanf:"interval_indexer_upgrade_full_title" toml:"interval_indexer_upgrade_full_title"`
+	IntervalIndexerRss              string `koanf:"interval_indexer_rss" toml:"interval_indexer_rss"`
+	IntervalScanData                string `koanf:"interval_scan_data" toml:"interval_scan_data"`
+	IntervalScanDataMissing         string `koanf:"interval_scan_data_missing" toml:"interval_scan_data_missing"`
+	IntervalScanDataFlags           string `koanf:"interval_scan_data_flags" toml:"interval_scan_data_flags"`
+	IntervalScanDataimport          string `koanf:"interval_scan_data_import" toml:"interval_scan_data_import"`
+	IntervalDatabaseBackup          string `koanf:"interval_database_backup" toml:"interval_database_backup"`
+	IntervalDatabaseCheck           string `koanf:"interval_database_check" toml:"interval_database_check"`
+	IntervalIndexerRssSeasons       string `koanf:"interval_indexer_rss_seasons" toml:"interval_indexer_rss_seasons"`
+	CronIndexerRssSeasons           string `koanf:"cron_indexer_rss_seasons" toml:"cron_indexer_rss_seasons"`
+	CronImdb                        string `koanf:"cron_imdb" toml:"cron_imdb"`
+	CronFeeds                       string `koanf:"cron_feeds" toml:"cron_feeds"`
+	CronFeedsRefreshSeries          string `koanf:"cron_feeds_refresh_series" toml:"cron_feeds_refresh_series"`
+	CronFeedsRefreshMovies          string `koanf:"cron_feeds_refresh_movies" toml:"cron_feeds_refresh_movies"`
+	CronFeedsRefreshSeriesFull      string `koanf:"cron_feeds_refresh_series_full" toml:"cron_feeds_refresh_series_full"`
+	CronFeedsRefreshMoviesFull      string `koanf:"cron_feeds_refresh_movies_full" toml:"cron_feeds_refresh_movies_full"`
+	CronIndexerMissing              string `koanf:"cron_indexer_missing" toml:"cron_indexer_missing"`
+	CronIndexerUpgrade              string `koanf:"cron_indexer_upgrade" toml:"cron_indexer_upgrade"`
+	CronIndexerMissingFull          string `koanf:"cron_indexer_missing_full" toml:"cron_indexer_missing_full"`
+	CronIndexerUpgradeFull          string `koanf:"cron_indexer_upgrade_full" toml:"cron_indexer_upgrade_full"`
+	CronIndexerMissingTitle         string `koanf:"cron_indexer_missing_title" toml:"cron_indexer_missing_title"`
+	CronIndexerUpgradeTitle         string `koanf:"cron_indexer_upgrade_title" toml:"cron_indexer_upgrade_title"`
+	CronIndexerMissingFullTitle     string `koanf:"cron_indexer_missing_full_title" toml:"cron_indexer_missing_full_title"`
+	CronIndexerUpgradeFullTitle     string `koanf:"cron_indexer_upgrade_full_title" toml:"cron_indexer_upgrade_full_title"`
+	CronIndexerRss                  string `koanf:"cron_indexer_rss" toml:"cron_indexer_rss"`
+	CronScanData                    string `koanf:"cron_scan_data" toml:"cron_scan_data"`
+	CronScanDataMissing             string `koanf:"cron_scan_data_missing" toml:"cron_scan_data_missing"`
+	CronScanDataFlags               string `koanf:"cron_scan_data_flags" toml:"cron_scan_data_flags"`
+	CronScanDataimport              string `koanf:"cron_scan_data_import" toml:"cron_scan_data_import"`
+	CronDatabaseBackup              string `koanf:"cron_database_backup" toml:"cron_database_backup"`
+	CronDatabaseCheck               string `koanf:"cron_database_check" toml:"cron_database_check"`
 }
 
 func Slepping(random bool, seconds int) {
@@ -478,9 +482,16 @@ func LoadCfgDataDB(parser string) {
 	content, err := os.ReadFile(configfile)
 	if err != nil {
 		logger.Log.GlobalLogger.Error("Error loading config. ", zap.Error(err))
+		content = nil
+		return
 	}
-	var results MainConfig
-	toml.Unmarshal(content, &results)
+	results := new(MainConfig)
+	err = toml.Unmarshal(content, results)
+	if err != nil {
+		logger.Log.GlobalLogger.Error("Error loading config. ", zap.Error(err))
+		content = nil
+		return
+	}
 	content = nil
 	configDB, _ := pudge.Open("./databases/config.db", &pudge.Config{
 		SyncInterval: 0})
@@ -534,6 +545,10 @@ func LoadCfgDataDB(parser string) {
 		Cfg.Keys["path_"+results.Paths[idx].Name] = true
 	}
 	for idx := range results.Quality {
+		results.Quality[idx].WantedAudioIn = logger.InStringArrayStruct{Arr: results.Quality[idx].WantedAudio}
+		results.Quality[idx].WantedCodecIn = logger.InStringArrayStruct{Arr: results.Quality[idx].WantedCodec}
+		results.Quality[idx].WantedQualityIn = logger.InStringArrayStruct{Arr: results.Quality[idx].WantedQuality}
+		results.Quality[idx].WantedResolutionIn = logger.InStringArrayStruct{Arr: results.Quality[idx].WantedResolution}
 		Cfg.Quality[results.Quality[idx].Name] = results.Quality[idx]
 		Cfg.Keys["quality_"+results.Quality[idx].Name] = true
 	}
@@ -546,18 +561,12 @@ func LoadCfgDataDB(parser string) {
 		generalCache.Required = results.Regex[idx].Required
 		for idxreg := range results.Regex[idx].Rejected {
 			if !RegexCheck(results.Regex[idx].Rejected[idxreg]) {
-				reg, err := regexp.Compile(results.Regex[idx].Rejected[idxreg])
-				if err == nil {
-					logger.GlobalRegexCache.SetRegexp(results.Regex[idx].Rejected[idxreg], reg, 0)
-				}
+				logger.GlobalRegexCache.SetRegexp(results.Regex[idx].Rejected[idxreg], results.Regex[idx].Rejected[idxreg], 0)
 			}
 		}
 		for idxreg := range results.Regex[idx].Required {
 			if !RegexCheck(results.Regex[idx].Required[idxreg]) {
-				reg, err := regexp.Compile(results.Regex[idx].Required[idxreg])
-				if err == nil {
-					logger.GlobalRegexCache.SetRegexp(results.Regex[idx].Required[idxreg], reg, 0)
-				}
+				logger.GlobalRegexCache.SetRegexp(results.Regex[idx].Required[idxreg], results.Regex[idx].Required[idxreg], 0)
 			}
 		}
 	}
@@ -567,7 +576,7 @@ func LoadCfgDataDB(parser string) {
 	}
 	for idx := range results.Media.Movies {
 		results.Media.Movies[idx].NamePrefix = "movie_" + results.Media.Movies[idx].Name
-		results.Media.Movies[idx].ListsMap = make(map[string]MediaListsConfig)
+		results.Media.Movies[idx].ListsMap = make(map[string]MediaListsConfig, len(results.Media.Movies[idx].Lists))
 		results.Media.Movies[idx].ListsInterface = make([]interface{}, len(results.Media.Movies[idx].Lists))
 		for idx2 := range results.Media.Movies[idx].Lists {
 			results.Media.Movies[idx].ListsInterface[idx2] = results.Media.Movies[idx].Lists[idx2].Name
@@ -575,7 +584,7 @@ func LoadCfgDataDB(parser string) {
 		}
 		results.Media.Movies[idx].QualatiesInterface = make([]interface{}, len(results.Media.Movies[idx].Lists))
 		for idx2 := range results.Media.Movies[idx].Lists {
-			results.Media.Movies[idx].QualatiesInterface[idx2] = results.Media.Movies[idx].Lists[idx2].Template_quality
+			results.Media.Movies[idx].QualatiesInterface[idx2] = results.Media.Movies[idx].Lists[idx2].TemplateQuality
 		}
 
 		Cfg.Movies[results.Media.Movies[idx].Name] = results.Media.Movies[idx]
@@ -584,7 +593,7 @@ func LoadCfgDataDB(parser string) {
 	}
 	for idx := range results.Media.Series {
 		results.Media.Series[idx].NamePrefix = "serie_" + results.Media.Series[idx].Name
-		results.Media.Series[idx].ListsMap = make(map[string]MediaListsConfig)
+		results.Media.Series[idx].ListsMap = make(map[string]MediaListsConfig, len(results.Media.Series[idx].Lists))
 		results.Media.Series[idx].ListsInterface = make([]interface{}, len(results.Media.Series[idx].Lists))
 		for idx2 := range results.Media.Series[idx].Lists {
 			results.Media.Series[idx].ListsInterface[idx2] = results.Media.Series[idx].Lists[idx2].Name
@@ -592,7 +601,7 @@ func LoadCfgDataDB(parser string) {
 		}
 		results.Media.Series[idx].QualatiesInterface = make([]interface{}, len(results.Media.Series[idx].Lists))
 		for idx2 := range results.Media.Series[idx].Lists {
-			results.Media.Series[idx].QualatiesInterface[idx2] = results.Media.Series[idx].Lists[idx2].Template_quality
+			results.Media.Series[idx].QualatiesInterface[idx2] = results.Media.Series[idx].Lists[idx2].TemplateQuality
 		}
 		Cfg.Series[results.Media.Series[idx].Name] = results.Media.Series[idx]
 		Cfg.Media["serie_"+results.Media.Series[idx].Name] = results.Media.Series[idx]
@@ -604,10 +613,10 @@ func LoadCfgDataDB(parser string) {
 		var token oauth2.Token
 		err = configDB.Get("trakt_token", &token)
 		if err == nil {
-			logger.GlobalConfigCache.Set("trakt_token", token, 0)
+			logger.GlobalCache.Set("trakt_token", token, 0)
 		}
 	}
-	results = MainConfig{}
+	results = nil
 }
 
 func UpdateCfg(configIn []Conf) {
@@ -718,12 +727,12 @@ func UpdateCfgEntry(configIn Conf) {
 		Cfg.Scheduler[configIn.Data.(SchedulerConfig).Name] = configIn.Data.(SchedulerConfig)
 	}
 	if strings.HasPrefix(key, "trakt_token") {
-		logger.GlobalConfigCache.Set(key, configIn.Data.(oauth2.Token), 0)
+		logger.GlobalCache.Set(key, configIn.Data.(oauth2.Token), 0)
 		configDB.Set(key, configIn.Data)
 	}
 }
 func DeleteCfgEntry(name string) {
-	logger.GlobalConfigCache.Delete(name)
+	logger.GlobalCache.Delete(name)
 	configDB, _ := pudge.Open("./databases/config.db", &pudge.Config{
 		SyncInterval: 0})
 	defer configDB.Close()
@@ -780,16 +789,16 @@ func ClearCfg() {
 	configDB.DeleteFile()
 
 	var dataconfig []MediaDataConfig
-	dataconfig = append(dataconfig, MediaDataConfig{Template_path: "initial"})
+	dataconfig = append(dataconfig, MediaDataConfig{TemplatePath: "initial"})
 	var dataimportconfig []MediaDataImportConfig
-	dataimportconfig = append(dataimportconfig, MediaDataImportConfig{Template_path: "initial"})
+	dataimportconfig = append(dataimportconfig, MediaDataImportConfig{TemplatePath: "initial"})
 	var noticonfig []MediaNotificationConfig
-	noticonfig = append(noticonfig, MediaNotificationConfig{Map_notification: "initial"})
+	noticonfig = append(noticonfig, MediaNotificationConfig{MapNotification: "initial"})
 	var listsconfig []MediaListsConfig
-	listsconfig = append(listsconfig, MediaListsConfig{Template_list: "initial", Template_quality: "initial", Template_scheduler: "Default"})
+	listsconfig = append(listsconfig, MediaListsConfig{TemplateList: "initial", TemplateQuality: "initial", TemplateScheduler: "Default"})
 
 	var quindconfig []QualityIndexerConfig
-	quindconfig = append(quindconfig, QualityIndexerConfig{Template_indexer: "initial", Template_downloader: "initial", Template_regex: "initial", Template_path_nzb: "initial"})
+	quindconfig = append(quindconfig, QualityIndexerConfig{TemplateIndexer: "initial", TemplateDownloader: "initial", TemplateRegex: "initial", TemplatePathNzb: "initial"})
 	var qureoconfig []QualityReorderConfig
 	qureoconfig = append(qureoconfig, QualityReorderConfig{})
 
@@ -820,26 +829,26 @@ func ClearCfg() {
 			Tvdblimitercalls:    1,
 		},
 		Scheduler: map[string]SchedulerConfig{"scheduler_Default": {
-			Name:                          "Default",
-			Interval_imdb:                 "3d",
-			Interval_feeds:                "1d",
-			Interval_feeds_refresh_series: "1d",
-			Interval_feeds_refresh_movies: "1d",
-			Interval_indexer_missing:      "40m",
-			Interval_indexer_upgrade:      "60m",
-			Interval_indexer_rss:          "15m",
-			Interval_scan_data:            "1h",
-			Interval_scan_data_missing:    "1d",
-			Interval_scan_dataimport:      "60m",
+			Name:                       "Default",
+			IntervalImdb:               "3d",
+			IntervalFeeds:              "1d",
+			IntervalFeedsRefreshSeries: "1d",
+			IntervalFeedsRefreshMovies: "1d",
+			IntervalIndexerMissing:     "40m",
+			IntervalIndexerUpgrade:     "60m",
+			IntervalIndexerRss:         "15m",
+			IntervalScanData:           "1h",
+			IntervalScanDataMissing:    "1d",
+			IntervalScanDataimport:     "60m",
 		}},
 		Downloader:  map[string]DownloaderConfig{"downloader_initial": {Name: "initial", DlType: "drone"}},
 		Imdbindexer: ImdbConfig{Indexedtypes: []string{"movie"}, Indexedlanguages: []string{"US", "UK", "\\N"}},
 		Indexers:    map[string]IndexersConfig{"indexer_initial": {Name: "initial", IndexerType: "newznab", Limitercalls: 1, Limiterseconds: 1, MaxRssEntries: 100, RssEntriesloop: 2}},
 		Lists:       map[string]ListsConfig{"list_initial": {Name: "initial", ListType: "traktmovieanticipated", Limit: 20}},
-		Movies:      map[string]MediaTypeConfig{"initial": {Name: "initial", Template_quality: "initial", Template_scheduler: "Default", Data: dataconfig, DataImport: dataimportconfig, Lists: listsconfig, Notification: noticonfig}},
-		Series:      map[string]MediaTypeConfig{"initial": {Name: "initial", Template_quality: "initial", Template_scheduler: "Default", Data: dataconfig, DataImport: dataimportconfig, Lists: listsconfig, Notification: noticonfig}},
-		Media: map[string]MediaTypeConfig{"movie_initial": {Name: "initial", Template_quality: "initial", Template_scheduler: "Default", Data: dataconfig, DataImport: dataimportconfig, Lists: listsconfig, Notification: noticonfig},
-			"serie_initial": {Name: "initial", Template_quality: "initial", Template_scheduler: "Default", Data: dataconfig, DataImport: dataimportconfig, Lists: listsconfig, Notification: noticonfig}},
+		Movies:      map[string]MediaTypeConfig{"initial": {Name: "initial", TemplateQuality: "initial", TemplateScheduler: "Default", Data: dataconfig, DataImport: dataimportconfig, Lists: listsconfig, Notification: noticonfig}},
+		Series:      map[string]MediaTypeConfig{"initial": {Name: "initial", TemplateQuality: "initial", TemplateScheduler: "Default", Data: dataconfig, DataImport: dataimportconfig, Lists: listsconfig, Notification: noticonfig}},
+		Media: map[string]MediaTypeConfig{"movie_initial": {Name: "initial", TemplateQuality: "initial", TemplateScheduler: "Default", Data: dataconfig, DataImport: dataimportconfig, Lists: listsconfig, Notification: noticonfig},
+			"serie_initial": {Name: "initial", TemplateQuality: "initial", TemplateScheduler: "Default", Data: dataconfig, DataImport: dataimportconfig, Lists: listsconfig, Notification: noticonfig}},
 		Notification: map[string]NotificationConfig{"notification_initial": {Name: "initial", NotificationType: "csv"}},
 		Paths:        map[string]PathsConfig{"path_initial": {Name: "initial", AllowedVideoExtensions: []string{".avi", ".mkv", ".mp4"}, AllowedOtherExtensions: []string{".idx", ".sub", ".srt"}}},
 		Quality:      map[string]QualityConfig{"quality_initial": {Name: "initial", QualityReorder: qureoconfig, Indexer: quindconfig}},
@@ -896,7 +905,7 @@ func WriteCfg() {
 func QualityIndexerByQualityAndTemplate(quality string, indexerTemplate string) *QualityIndexerConfig {
 	if _, test := Cfg.Quality[quality]; test {
 		for idx := range Cfg.Quality[quality].Indexer {
-			if Cfg.Quality[quality].Indexer[idx].Template_indexer == indexerTemplate {
+			if Cfg.Quality[quality].Indexer[idx].TemplateIndexer == indexerTemplate {
 				return &Cfg.Quality[quality].Indexer[idx]
 			}
 		}
@@ -907,10 +916,10 @@ func QualityIndexerByQualityAndTemplate(quality string, indexerTemplate string) 
 func QualityIndexerByQualityAndTemplateGetFieldBool(quality string, indexerTemplate string, field string) bool {
 	if _, test := Cfg.Quality[quality]; test {
 		for idx := range Cfg.Quality[quality].Indexer {
-			if Cfg.Quality[quality].Indexer[idx].Template_indexer == indexerTemplate {
+			if Cfg.Quality[quality].Indexer[idx].TemplateIndexer == indexerTemplate {
 				switch field {
-				case "History_check_title":
-					return Cfg.Quality[quality].Indexer[idx].History_check_title
+				case "HistoryCheckTitle":
+					return Cfg.Quality[quality].Indexer[idx].HistoryCheckTitle
 				default:
 					return reflect.ValueOf(Cfg.Quality[quality].Indexer[idx]).FieldByName(field).Bool()
 				}
@@ -922,14 +931,14 @@ func QualityIndexerByQualityAndTemplateGetFieldBool(quality string, indexerTempl
 func QualityIndexerByQualityAndTemplateGetFieldString(quality string, indexerTemplate string, field string) string {
 	if _, test := Cfg.Quality[quality]; test {
 		for idx := range Cfg.Quality[quality].Indexer {
-			if Cfg.Quality[quality].Indexer[idx].Template_indexer == indexerTemplate {
+			if Cfg.Quality[quality].Indexer[idx].TemplateIndexer == indexerTemplate {
 				switch field {
-				case "Template_regex":
-					return Cfg.Quality[quality].Indexer[idx].Template_regex
-				case "Additional_query_params":
-					return Cfg.Quality[quality].Indexer[idx].Additional_query_params
-				case "Categories_indexer":
-					return Cfg.Quality[quality].Indexer[idx].Categories_indexer
+				case "TemplateRegex":
+					return Cfg.Quality[quality].Indexer[idx].TemplateRegex
+				case "AdditionalQueryParams":
+					return Cfg.Quality[quality].Indexer[idx].AdditionalQueryParams
+				case "CategoriesIndexer":
+					return Cfg.Quality[quality].Indexer[idx].CategoriesIndexer
 				default:
 					return reflect.ValueOf(Cfg.Quality[quality].Indexer[idx]).FieldByName(field).String()
 				}
@@ -939,26 +948,26 @@ func QualityIndexerByQualityAndTemplateGetFieldString(quality string, indexerTem
 	return ""
 }
 
-func (indexer *QualityIndexerConfig) Filter_size_nzbs(cfg string, title string, size int64) bool {
-	for idx := range Cfg.Media[cfg].DataImport {
+func (indexer *QualityIndexerConfig) FilterSizeNzbs(cfgp *MediaTypeConfig, title string, size int64) bool {
+	for idx := range cfgp.DataImport {
 
-		if indexer.Skip_empty_size && size == 0 {
+		if indexer.SkipEmptySize && size == 0 {
 			logger.Log.GlobalLogger.Debug("Skipped - Size missing", zap.String("title", title))
 			return true
 		}
-		if !ConfigCheck("path_" + Cfg.Media[cfg].DataImport[idx].Template_path) {
+		if !ConfigCheck("path_" + cfgp.DataImport[idx].TemplatePath) {
 			return false
 		}
 
-		if Cfg.Paths[Cfg.Media[cfg].DataImport[idx].Template_path].MinSize != 0 {
-			if size < (int64(Cfg.Paths[Cfg.Media[cfg].DataImport[idx].Template_path].MinSize)*1024*1024) && size != 0 {
+		if Cfg.Paths[cfgp.DataImport[idx].TemplatePath].MinSize != 0 {
+			if size < (int64(Cfg.Paths[cfgp.DataImport[idx].TemplatePath].MinSize)*1024*1024) && size != 0 {
 				//logger.Log.GlobalLogger.Debug("Skipped - MinSize not matched", zap.String("title", title))
 				return true
 			}
 		}
 
-		if Cfg.Paths[Cfg.Media[cfg].DataImport[idx].Template_path].MaxSize != 0 {
-			if size > (int64(Cfg.Paths[Cfg.Media[cfg].DataImport[idx].Template_path].MaxSize) * 1024 * 1024) {
+		if Cfg.Paths[cfgp.DataImport[idx].TemplatePath].MaxSize != 0 {
+			if size > (int64(Cfg.Paths[cfgp.DataImport[idx].TemplatePath].MaxSize) * 1024 * 1024) {
 				//logger.Log.GlobalLogger.Debug("Skipped - MaxSize not matched", zap.String("title", title))
 				return true
 			}

@@ -18,6 +18,8 @@ var errNoFiles error = errors.New("no files")
 var errNoPath error = errors.New("no path")
 var errNotFound error = errors.New("not found")
 
+const pathnotfound string = "Path not found"
+
 func GetFilesDir(rootpath string, pathcfgstr string, useother bool) (*logger.InStringArrayStruct, error) {
 
 	if pathcfgstr == "" {
@@ -29,14 +31,14 @@ func GetFilesDir(rootpath string, pathcfgstr string, useother bool) (*logger.InS
 	// }
 
 	if CheckFileExist(rootpath) {
-		files, err := GetFilesDirAll(rootpath)
+		files, err := GetFilesDirAll(rootpath, false)
 		if err != nil {
 			return nil, errNoFiles
 		}
 		defer files.Close()
 		return FilterFilesDir(files, pathcfgstr, useother, false)
 	} else {
-		logger.Log.GlobalLogger.Error("Path not found", zap.String("path", rootpath))
+		logger.Log.GlobalLogger.Error(pathnotfound, zap.String("path", rootpath))
 	}
 	return nil, errNoFiles
 }
@@ -62,25 +64,31 @@ func FilterFilesDir(allfiles *logger.InStringArrayStruct, pathcfgstr string, use
 	defer blocked.Close()
 
 	filterfiles := &logger.InStringArrayStruct{Arr: allfiles.Arr[:0]}
+	var ok bool
+	var extlower string
+	lennorename := len(allowedVideoExtensionsNoRename.Arr)
+	lenfiles := len(allowedVideoExtensions.Arr)
+	lenblock := len(blocked.Arr)
+	var pathdir string
 	for idx := range allfiles.Arr {
 		if checkisdir {
 			if GetFileInfo(allfiles.Arr[idx]).IsDir() {
 				continue
 			}
 		}
-		extlower := filepath.Ext(allfiles.Arr[idx])
-		ok := logger.InStringArray(extlower, allowedVideoExtensions)
-		if len(allowedVideoExtensionsNoRename.Arr) >= 1 && !ok {
+		extlower = filepath.Ext(allfiles.Arr[idx])
+		ok = logger.InStringArray(extlower, allowedVideoExtensions)
+		if lennorename >= 1 && !ok {
 			ok = logger.InStringArray(extlower, allowedVideoExtensionsNoRename)
 		}
 
-		if len(allowedVideoExtensionsNoRename.Arr) == 0 && len(allowedVideoExtensions.Arr) == 0 && !ok {
+		if lennorename == 0 && lenfiles == 0 && !ok {
 			ok = true
 		}
 
 		//Check IgnoredPaths
-		if len(blocked.Arr) >= 1 && ok {
-			pathdir, _ := filepath.Split(allfiles.Arr[idx])
+		if lenblock >= 1 && ok {
+			pathdir, _ = filepath.Split(allfiles.Arr[idx])
 			if logger.InStringArrayContainsCaseInSensitive(pathdir, blocked) {
 				ok = false
 			}
@@ -93,13 +101,13 @@ func FilterFilesDir(allfiles *logger.InStringArrayStruct, pathcfgstr string, use
 	return filterfiles, nil
 }
 
-func GetFilesDirAll(rootpath string) (*logger.InStringArrayStruct, error) {
+func GetFilesDirAll(rootpath string, cachecount bool) (*logger.InStringArrayStruct, error) {
 	if CheckFileExist(rootpath) {
 		cnt, ok := logger.GlobalCounter[rootpath]
 
-		list := &logger.InStringArrayStruct{} // = make([]string, 0, 20)
+		list := new(logger.InStringArrayStruct)
 		if ok {
-			list.Arr = make([]string, 0, cnt)
+			list.Arr = logger.GrowSliceBy(list.Arr, cnt)
 		}
 		err := filepath.WalkDir(rootpath, func(path string, info fs.DirEntry, err error) error {
 			if err != nil {
@@ -114,17 +122,19 @@ func GetFilesDirAll(rootpath string) (*logger.InStringArrayStruct, error) {
 		if err != nil {
 			logger.Log.GlobalLogger.Error("", zap.Error(err))
 		}
-		logger.GlobalCounter[rootpath] = len(list.Arr)
+		if cachecount {
+			logger.GlobalCounter[rootpath] = len(list.Arr)
+		}
 		return list, nil
 	} else {
-		logger.Log.GlobalLogger.Error("Path not found", zap.String("path", rootpath))
+		logger.Log.GlobalLogger.Error(pathnotfound, zap.String("path", rootpath))
 	}
 	return nil, errNoFiles
 }
 
 func GetFilesWithDirAll(rootpath string) (*logger.InStringArrayStruct, error) {
 	if CheckFileExist(rootpath) {
-		list := &logger.InStringArrayStruct{} // = make([]string, 0, 20)
+		list := new(logger.InStringArrayStruct)
 		err := filepath.WalkDir(rootpath, func(path string, info fs.DirEntry, err error) error {
 			if err != nil {
 				return err
@@ -137,7 +147,7 @@ func GetFilesWithDirAll(rootpath string) (*logger.InStringArrayStruct, error) {
 		}
 		return list, nil
 	} else {
-		logger.Log.GlobalLogger.Error("Path not found", zap.String("path", rootpath))
+		logger.Log.GlobalLogger.Error(pathnotfound, zap.String("path", rootpath))
 	}
 	return nil, errNoFiles
 }
@@ -158,7 +168,7 @@ func GetFilesGoDir(rootpath string, pathcfgstr string) ([]string, error) {
 		blocked := &logger.InStringArrayStruct{Arr: config.Cfg.Paths[pathcfgstr].BlockedLower}
 		defer blocked.Close()
 
-		var list []string //= make([]string, 0, 20)
+		var list []string
 		err := godirwalk.Walk(rootpath, &godirwalk.Options{
 			Callback: func(osPathname string, de *godirwalk.Dirent) error {
 				if de.IsDir() {
@@ -201,7 +211,7 @@ func GetFilesGoDir(rootpath string, pathcfgstr string) ([]string, error) {
 		}
 		return list, nil
 	} else {
-		logger.Log.GlobalLogger.Error("Path not found", zap.String("path", rootpath))
+		logger.Log.GlobalLogger.Error(pathnotfound, zap.String("path", rootpath))
 		return []string{}, errNoPath
 	}
 }
@@ -246,7 +256,7 @@ func getFolderSize(rootpath string) int64 {
 			}
 		}
 	} else {
-		logger.Log.GlobalLogger.Error("Path not found", zap.String("path", rootpath))
+		logger.Log.GlobalLogger.Error(pathnotfound, zap.String("path", rootpath))
 	}
 	return size
 }
@@ -361,7 +371,7 @@ func RemoveFile(file string) error {
 
 func CleanUpFolder(folder string, CleanupsizeMB int) {
 	if CheckFileExist(folder) {
-		filesleft, err := GetFilesDirAll(folder)
+		filesleft, err := GetFilesDirAll(folder, false)
 		if err == nil {
 			defer filesleft.Close()
 			logger.Log.GlobalLogger.Debug("Left files", zap.Strings("files", filesleft.Arr))
@@ -610,17 +620,17 @@ func copyFile(src, dst string, allowFileLink bool) (err error) {
 func GetSubFolders(sourcepath string) ([]string, error) {
 	files, err := os.ReadDir(sourcepath)
 	if err == nil {
-		var folders []string //= make([]string, 0, 20)
-		cnt, ok := logger.GlobalCounter[sourcepath]
-		if ok {
-			folders = make([]string, 0, cnt)
-		}
+		var folders []string
+		// cnt, ok := logger.GlobalCounter[sourcepath]
+		// if ok {
+		// 	folders = logger.GrowSliceBy(folders, cnt)
+		// }
 		for idxfile := range files {
 			if files[idxfile].IsDir() {
 				folders = append(folders, filepath.Join(sourcepath, files[idxfile].Name()))
 			}
 		}
-		logger.GlobalCounter[sourcepath] = len(folders)
+		//logger.GlobalCounter[sourcepath] = len(folders)
 		return folders, nil
 	}
 	return []string{}, errNotFound

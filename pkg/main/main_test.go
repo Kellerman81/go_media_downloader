@@ -12,7 +12,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -70,13 +69,13 @@ func Init() {
 	utils.InitRegex()
 }
 
-func Test_structure(t *testing.T) {
+func TestStructure(t *testing.T) {
 	Init()
 	//configTemplate := "movie_EN"
 	//structure.StructureSingleFolder("Y:\\completed\\MoviesDE\\Rot.2022.German.AC3.BDRiP.x264-SAVASTANOS", false, false, false, "movie", "path_en movies import", "path_en movies", configTemplate)
 }
 
-func Test_main(t *testing.T) {
+func TestMain(t *testing.T) {
 	tests := []struct {
 		name string
 	}{
@@ -98,7 +97,7 @@ func Test_main(t *testing.T) {
 	}
 }
 
-func Test_GetAdded(t *testing.T) {
+func TestGetAdded(t *testing.T) {
 	Init()
 	t.Run("test", func(t *testing.T) {
 		imdb, f1, f2 := importfeed.MovieFindImdbIDByTitle("Firestarter", "1986", "rss", false)
@@ -109,7 +108,7 @@ func Test_GetAdded(t *testing.T) {
 	})
 }
 
-func Test_ParseXML(t *testing.T) {
+func TestParseXML(t *testing.T) {
 	url := "https://api.nzbgeek.info/api?apikey=rEUDNavst5HxWG2SlhkuYg1WXC6qNSt7&tvdbid=82701&season=1&ep=8&cat=5030&dl=1&t=tvsearch&extended=1"
 
 	req, _ := http.NewRequest("GET", url, nil)
@@ -130,7 +129,7 @@ func Test_ParseXML(t *testing.T) {
 	d.DecodeElement(d, &xml.StartElement{})
 }
 
-func Test_GetTmdb(t *testing.T) {
+func TestGetTmdb(t *testing.T) {
 	Init()
 	t.Run("test", func(t *testing.T) {
 		//var serie database.Dbmovie
@@ -150,7 +149,7 @@ func Test_GetTmdb(t *testing.T) {
 		//GetNewFilesTest("serie_EN", "series")
 	})
 }
-func Test_GetTvdb(t *testing.T) {
+func TestGetTvdb(t *testing.T) {
 	Init()
 	t.Run("test", func(t *testing.T) {
 		var serie database.Dbserie
@@ -169,27 +168,27 @@ func Test_GetTvdb(t *testing.T) {
 		//GetNewFilesTest("serie_EN", "series")
 	})
 }
-func Test_GetDB(t *testing.T) {
+func TestGetDB(t *testing.T) {
 	Init()
 	t.Run("test", func(t *testing.T) {
-		out, _ := database.QueryDbmovie(&database.Query{Limit: 10})
+		out, _ := database.QueryDbmovie(database.Querywithargs{Query: database.Query{Limit: 10}})
 		t.Log(out)
-		dbm, _ := database.GetDbmovie(&database.Query{Where: "id = ?"}, 1)
+		dbm, _ := database.GetDbmovie(database.Querywithargs{Query: database.QueryFilterByID, Args: []interface{}{1}})
 		t.Log(dbm)
 		mm := make(map[string]int)
-		database.QueryStaticColumnsMapStringInt("Select imdb_id, id from dbmovies limit 10", &mm)
+		database.QueryStaticColumnsMapStringInt(&mm, database.Querywithargs{QueryString: "Select imdb_id, id from dbmovies limit 10"})
 		t.Log(mm)
 		//GetNewFilesTest("serie_EN", "series")
 	})
 }
 
-func Test_Lst(t *testing.T) {
+func TestLst(t *testing.T) {
 	Init()
 	t.Run("test", func(t *testing.T) {
 		var query database.Query
 		query.InnerJoin = "Dbseries on series.dbserie_id=dbseries.id"
 		query.Where = "series.listname = ? COLLATE NOCASE"
-		rows, _ := database.CountRows("series", &query)
+		rows, _ := database.CountRows("series", database.Querywithargs{Query: query})
 		t.Log(rows)
 		// limit := 0
 		// page := 0
@@ -198,7 +197,7 @@ func Test_Lst(t *testing.T) {
 	})
 }
 
-func Test_Mime(t *testing.T) {
+func TestMime(t *testing.T) {
 	Init()
 	t.Run("test", func(t *testing.T) {
 		file := "Y:\\completed\\MoviesDE\\Paws.of.Fury.The.Legend.of.Hank.2022.German.AAC.WEBRip.x264-ZeroTwo\\Paws.of.Fury.The.Legend.of.Hank.2022.German.AAC.WEBRip.x264-ZeroTwo.mkv"
@@ -217,11 +216,10 @@ func Test_Mime(t *testing.T) {
 	})
 }
 
-func Test_Cache(t *testing.T) {
+func TestCache(t *testing.T) {
 	Init()
 	t.Run("test", func(t *testing.T) {
-		v := regexp.MustCompile("[a-z]")
-		logger.GlobalRegexCache.SetRegexp("ff", v, 0)
+		logger.GlobalRegexCache.SetRegexp("ff", "[a-z]", 0)
 
 		a := logger.GlobalRegexCache.GetRegexpDirect("ff")
 		t.Log(a)
@@ -251,7 +249,7 @@ func BenchmarkQuerySQL1(b *testing.B) {
 	Init()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		database.QueryStaticColumnsOneStringOneInt("select imdb_id, id from dbmovies", false, database.CountRowsStaticNoError("select count() from dbmovies"))
+		database.QueryStaticColumnsOneStringOneInt(false, database.CountRowsStaticNoError(database.Querywithargs{QueryString: "select count() from dbmovies"}), database.Querywithargs{QueryString: "select imdb_id, id from dbmovies"})
 	}
 }
 func BenchmarkQueryString1(b *testing.B) {
@@ -266,7 +264,7 @@ func BenchmarkQueryString1(b *testing.B) {
 	}
 }
 func BenchmarkQuery1(b *testing.B) {
-	additional_query_params := "&extended=1&maxsize=6291456000"
+	additionalQueryParams := "&extended=1&maxsize=6291456000"
 	categories := "2030, 2035, 2040, 2045"
 	episode := 1
 	season := 10
@@ -314,7 +312,7 @@ func BenchmarkQuery1(b *testing.B) {
 		buildurl.WriteString(categories)
 		buildurl.WriteString("&dl=1&t=tvsearch")
 		buildurl.WriteString("&o=json")
-		buildurl.WriteString(additional_query_params)
+		buildurl.WriteString(additionalQueryParams)
 		_ = buildurl.String()
 		//database.CountRowsTest1("dbseries", &database.Query{Where: "status = 'Continuing'", OrderBy: "updated_at asc", Limit: 20})
 		//database.QueryDbserieTest1(&database.Query{Where: "status = 'Continuing'", OrderBy: "updated_at asc", Limit: 20})
@@ -326,8 +324,8 @@ func BenchmarkQuery1(b *testing.B) {
 	}
 }
 
-func BenchmarkQuery1_1(b *testing.B) {
-	additional_query_params := "&extended=1&maxsize=6291456000"
+func BenchmarkQuery121(b *testing.B) {
+	additionalQueryParams := "&extended=1&maxsize=6291456000"
 	categories := []int{2030, 2035, 2040, 2045}
 	episode := 1
 	season := 10
@@ -353,7 +351,7 @@ func BenchmarkQuery1_1(b *testing.B) {
 		buildurl += joinCats(categories)
 		buildurl += "&dl=1&t=tvsearch"
 		buildurl += "&o=json"
-		buildurl += additional_query_params
+		buildurl += additionalQueryParams
 		//database.CountRowsTest1("dbseries", &database.Query{Where: "status = 'Continuing'", OrderBy: "updated_at asc", Limit: 20})
 		//database.QueryDbserieTest1(&database.Query{Where: "status = 'Continuing'", OrderBy: "updated_at asc", Limit: 20})
 		//database.QueryDbserie(&database.Query{Where: "status = 'Continuing'", OrderBy: "updated_at asc", Limit: 20})
@@ -367,7 +365,7 @@ func BenchmarkQuery1_1(b *testing.B) {
 func BenchmarkQuery2(b *testing.B) {
 	//Init()
 	//b.ResetTimer()
-	additional_query_params := "&extended=1&maxsize=6291456000"
+	additionalQueryParams := "&extended=1&maxsize=6291456000"
 	categories := []int{2030, 2035, 2040, 2045}
 	episode := 1
 	season := 10
@@ -393,7 +391,7 @@ func BenchmarkQuery2(b *testing.B) {
 		buildurl.WriteString(joinCats(categories))
 		buildurl.WriteString("&dl=1&t=tvsearch")
 		buildurl.WriteString("&o=json")
-		buildurl.WriteString(additional_query_params)
+		buildurl.WriteString(additionalQueryParams)
 		fmt.Println(buildurl.String())
 		//database.CountRowsTest2("dbseries", &database.Query{Where: "status = 'Continuing'", OrderBy: "updated_at asc", Limit: 20})
 		//database.QueryDbserieTest2(&database.Query{Where: "status = 'Continuing'", OrderBy: "updated_at asc", Limit: 20})
@@ -407,7 +405,7 @@ func BenchmarkQuery2(b *testing.B) {
 func BenchmarkQuery3(b *testing.B) {
 	//Init()
 	//b.ResetTimer()
-	additional_query_params := "&extended=1&maxsize=6291456000"
+	additionalQueryParams := "&extended=1&maxsize=6291456000"
 	categories := []int{2030, 2035, 2040, 2045}
 	episode := 1
 	season := 10
@@ -433,7 +431,7 @@ func BenchmarkQuery3(b *testing.B) {
 		buildurl.WriteString(joinCats(categories))
 		buildurl.WriteString("&dl=1&t=tvsearch")
 		buildurl.WriteString("&o=json")
-		buildurl.WriteString(additional_query_params)
+		buildurl.WriteString(additionalQueryParams)
 		fmt.Println(buildurl.String())
 
 		//database.CountRows("dbseries", &database.Query{Where: "status = 'Continuing'", OrderBy: "updated_at asc", Limit: 20})
@@ -448,17 +446,17 @@ func BenchmarkQuery3(b *testing.B) {
 
 func BenchmarkQuery4(b *testing.B) {
 	Init()
-	// additional_query_params := "&extended=1&maxsize=6291456000"
+	// additionalQueryParams := "&extended=1&maxsize=6291456000"
 	// categories := "2030,2035,2040,2045"
 	// apikey := "rEUDNavst5HxWG2SlhkuYg1WXC6qNSt7"
 	// apiBaseURL := "https://api.nzbgeek.info"
-	s := searcher.NewSearcher("", "SD")
+	s := searcher.NewSearcher(&config.MediaTypeConfig{}, "SD")
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		s.SearchRSS("movie", true)
 		//clie.SearchWithIMDB(categories, "tt0120655", additional_query_params, "", 0, false)
 		//clie.LoadRSSFeed(categories, 100, additional_query_params, "", "", "", 0, false)
-		//apiexternal.QueryNewznabRSSLast(apiexternal.NzbIndexer{URL: apiBaseURL, Apikey: apikey, UserID: 0, Additional_query_params: additional_query_params, LastRssId: "", Limitercalls: 10, Limiterseconds: 5}, 100, categories, 2)
+		//apiexternal.QueryNewznabRSSLast(apiexternal.NzbIndexer{URL: apiBaseURL, Apikey: apikey, UserID: 0, AdditionalQueryParams: additional_query_params, LastRssId: "", Limitercalls: 10, Limiterseconds: 5}, 100, categories, 2)
 		//parser.NewVideoFile("", "Y:\\completed\\MoviesDE\\Uncharted.2022.German.AC3LD.5.1.BDRip.x264-PS\\Uncharted.2022.German.AC3LD.5.1.BDRip.x264-PS (tt1464335).mkv", false)
 		//searcher2 := searcher.NewSearcher("movie_EN", "SD")
 		//movie, _ := database.GetMovies(database.Query{Limit: 1})
@@ -682,7 +680,7 @@ func BenchmarkQuery14(b *testing.B) {
 	cfgGrouptype := "movie"
 	//getconfig := "movie_EN"
 	for i := 0; i < b.N; i++ {
-		structure.StructureSingleFolder(cfgFolder, cfgDisableruntimecheck, cfgDisabledisallowed, cfgDisabledeletewronglanguage, cfgGrouptype, "path_"+"en movies", "path_"+"en movies import", "")
+		structure.StructureSingleFolder(cfgFolder, &config.MediaTypeConfig{}, structure.StructureConfig{Disableruntimecheck: cfgDisableruntimecheck, Disabledisallowed: cfgDisabledisallowed, Disabledeletewronglanguage: cfgDisabledeletewronglanguage, Grouptype: cfgGrouptype, Sourcepathstr: "path_" + "en movies", Targetpathstr: "path_" + "en movies import"})
 	}
 }
 func BenchmarkQuery15(b *testing.B) {
@@ -690,7 +688,7 @@ func BenchmarkQuery15(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		importfeed.JobImportMovies("tt0120655", "", "", false)
+		importfeed.JobImportMovies("tt0120655", &config.MediaTypeConfig{}, "", false)
 	}
 }
 

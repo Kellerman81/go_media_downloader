@@ -16,21 +16,21 @@ func GetStatsTable(ctx *context.Context) (userTable table.Table) {
 
 	var stats []map[string]interface{}
 	id := 0
-	lists := database.QueryStaticStringArray("select distinct listname as str from movies where length(listname) >= 1", false, 0)
+	lists := database.QueryStaticStringArray(false, 0, database.Querywithargs{QueryString: "select distinct listname as str from movies where length(listname) >= 1"})
 	for idx := range lists {
-		all, _ := database.CountRowsStatic("select count(*) from movies where listname = ? COLLATE NOCASE", lists[idx])
-		missing, _ := database.CountRowsStatic("select count(*) from movies where listname = ? COLLATE NOCASE and missing=1", lists[idx])
-		reached, _ := database.CountRowsStatic("select count(*) from movies where listname = ? COLLATE NOCASE and quality_reached=1", lists[idx])
-		upgrade, _ := database.CountRowsStatic("select count(*) from movies where listname = ? COLLATE NOCASE and quality_reached=0 and missing=0", lists[idx])
+		all, _ := database.CountRowsStatic(database.Querywithargs{QueryString: "select count(*) from movies where listname = ? COLLATE NOCASE", Args: []interface{}{lists[idx]}})
+		missing, _ := database.CountRowsStatic(database.Querywithargs{QueryString: "select count(*) from movies where listname = ? COLLATE NOCASE and missing=1", Args: []interface{}{lists[idx]}})
+		reached, _ := database.CountRowsStatic(database.Querywithargs{QueryString: "select count(*) from movies where listname = ? COLLATE NOCASE and quality_reached=1", Args: []interface{}{lists[idx]}})
+		upgrade, _ := database.CountRowsStatic(database.Querywithargs{QueryString: "select count(*) from movies where listname = ? COLLATE NOCASE and quality_reached=0 and missing=0", Args: []interface{}{lists[idx]}})
 		stats = append(stats, map[string]interface{}{"id": id, "typ": "movies", "list": lists[idx], "total": all, "missing": missing, "finished": reached, "upgrade": upgrade})
 		id += 1
 	}
-	lists = database.QueryStaticStringArray("select distinct listname as str from series where length(listname) >= 1", false, 0)
+	lists = database.QueryStaticStringArray(false, 0, database.Querywithargs{QueryString: "select distinct listname as str from series where length(listname) >= 1"})
 	for idx := range lists {
-		all, _ := database.CountRowsStatic("select count(*) from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE)", lists[idx])
-		missing, _ := database.CountRowsStatic("select count(*) from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE) and missing=1", lists[idx])
-		reached, _ := database.CountRowsStatic("select count(*) from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE) and quality_reached=1", lists[idx])
-		upgrade, _ := database.CountRowsStatic("select count(*) from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE) and quality_reached=0 and missing=0", lists[idx])
+		all, _ := database.CountRowsStatic(database.Querywithargs{QueryString: "select count(*) from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE)", Args: []interface{}{lists[idx]}})
+		missing, _ := database.CountRowsStatic(database.Querywithargs{QueryString: "select count(*) from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE) and missing=1", Args: []interface{}{lists[idx]}})
+		reached, _ := database.CountRowsStatic(database.Querywithargs{QueryString: "select count(*) from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE) and quality_reached=1", Args: []interface{}{lists[idx]}})
+		upgrade, _ := database.CountRowsStatic(database.Querywithargs{QueryString: "select count(*) from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE) and quality_reached=0 and missing=0", Args: []interface{}{lists[idx]}})
 		stats = append(stats, map[string]interface{}{"id": id, "typ": "episodes", "list": lists[idx], "total": all, "missing": missing, "finished": reached, "upgrade": upgrade})
 		id += 1
 	}

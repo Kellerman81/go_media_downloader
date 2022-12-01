@@ -69,42 +69,6 @@ func (s *ParseInfo) Close() {
 	}
 }
 
-func (m *ParseInfo) Filter_test_quality_wanted(qualityTemplate string, title string) bool {
-
-	wanted := Determinewanted(qualityTemplate, &logger.InStringArrayStruct{Arr: config.Cfg.Quality[qualityTemplate].Wanted_resolution}, m.Resolution)
-	if !wanted {
-		logger.Log.GlobalLogger.Debug("Skipped - unwanted resolution", zap.String("title", title), zap.String("wanted quality", qualityTemplate), zap.String("Resolution", m.Resolution))
-		return false
-	}
-
-	wanted = Determinewanted(qualityTemplate, &logger.InStringArrayStruct{Arr: config.Cfg.Quality[qualityTemplate].Wanted_quality}, m.Quality)
-	if !wanted {
-		logger.Log.GlobalLogger.Debug("Skipped - unwanted quality", zap.String("title", title), zap.String("wanted quality", qualityTemplate), zap.String("Quality", m.Quality))
-		return false
-	}
-
-	wanted = Determinewanted(qualityTemplate, &logger.InStringArrayStruct{Arr: config.Cfg.Quality[qualityTemplate].Wanted_audio}, m.Audio)
-	if !wanted {
-		logger.Log.GlobalLogger.Debug("Skipped - unwanted audio", zap.String("title", title), zap.String("wanted quality", qualityTemplate), zap.String("Audio", m.Audio))
-		return false
-	}
-
-	wanted = Determinewanted(qualityTemplate, &logger.InStringArrayStruct{Arr: config.Cfg.Quality[qualityTemplate].Wanted_codec}, m.Codec)
-	if !wanted {
-		logger.Log.GlobalLogger.Debug("Skipped - unwanted codec", zap.String("title", title), zap.String("wanted quality", qualityTemplate), zap.String("Codec", m.Codec))
-		return false
-	}
-	return true
-}
-
-func Determinewanted(qualityTemplate string, arr *logger.InStringArrayStruct, findvalue string) bool {
-	defer arr.Close()
-	if logger.InStringArray(findvalue, arr) {
-		return true
-	}
-	return len(arr.Arr) == 0
-}
-
 func before(value string, index int) string {
 	if index <= 0 {
 		return ""
@@ -120,23 +84,24 @@ func after(value string, index int) string {
 }
 
 func (m *ParseInfo) Parsegroup(tolower string, name string, group []string) {
-	var index int
+	var index, lengroup int
 	var substr, substrpre, substrpost string
 
 	for idx := range group {
 		substr = ""
 		if strings.Contains(tolower, group[idx]) {
+			lengroup = len(group[idx])
 			index = strings.Index(tolower, group[idx])
 			//substr = strings.Repeat(tolower[index:index+len(group[idx])], 1)
-			substr = tolower[index : index+len(group[idx])]
+			substr = tolower[index : index+lengroup]
 			substrpre = before(tolower, index)
-			substrpost = after(tolower, index+len(group[idx]))
-			if len(substrpost) >= 1 {
+			substrpost = after(tolower, index+lengroup)
+			if substrpost != "" {
 				if unicode.IsDigit([]rune(substrpost)[0]) || unicode.IsLetter([]rune(substrpost)[0]) {
 					continue
 				}
 			}
-			if len(substrpre) >= 1 {
+			if substrpre != "" {
 				if unicode.IsDigit([]rune(substrpre)[0]) || unicode.IsLetter([]rune(substrpre)[0]) {
 					continue
 				}
@@ -151,15 +116,15 @@ func (m *ParseInfo) Parsegroup(tolower string, name string, group []string) {
 			case "resolution":
 				m.Resolution = substr
 			case "extended":
-				if len(substr) >= 1 {
+				if substr != "" {
 					m.Extended = true
 				}
 			case "proper":
-				if len(substr) >= 1 {
+				if substr != "" {
 					m.Proper = true
 				}
 			case "repack":
-				if len(substr) >= 1 {
+				if substr != "" {
 					m.Repack = true
 				}
 			}
@@ -270,32 +235,35 @@ func (s *NZBArr) Close() {
 	}
 }
 
-func (entry *Nzbwithprio) Filter_regex_nzbs(template_regex string, title string) (bool, string) {
-	if template_regex == "" {
+//const requirednotmatched string = "Skipped - required not matched"
+//const regexrejected string = "Skipped - Regex rejected"
+
+func (entry *Nzbwithprio) FilterRegexNzbs(templateregex string, title string) (bool, string) {
+	if templateregex == "" {
 		logger.Log.GlobalLogger.Debug("Skipped - regex_template empty", zap.String("regex", title))
 		return true, ""
 	}
 	var breakfor bool
 
 	requiredmatched := false
-	for idx := range config.Cfg.Regex[template_regex].Required {
-		if config.RegexGetMatchesFind(config.Cfg.Regex[template_regex].Required[idx], title, 1) {
+	for idx := range config.Cfg.Regex[templateregex].Required {
+		if config.RegexGetMatchesFind(config.Cfg.Regex[templateregex].Required[idx], title, 1) {
 			requiredmatched = true
 			break
 		}
 	}
-	if len(config.Cfg.Regex[template_regex].Required) >= 1 && !requiredmatched {
-		logger.Log.GlobalLogger.Debug("Skipped - required not matched", zap.String("regex", title))
+	if len(config.Cfg.Regex[templateregex].Required) >= 1 && !requiredmatched {
+		//logger.Log.GlobalLogger.Debug(requirednotmatched, zap.String("regex", title))
 		return true, "required not matched"
 	}
-	for idx := range config.Cfg.Regex[template_regex].Rejected {
-		if config.RegexGetMatchesFind(config.Cfg.Regex[template_regex].Rejected[idx], entry.WantedTitle, 1) {
+	for idx := range config.Cfg.Regex[templateregex].Rejected {
+		if config.RegexGetMatchesFind(config.Cfg.Regex[templateregex].Rejected[idx], entry.WantedTitle, 1) {
 			//Regex is in title - skip test
 			continue
 		}
 		breakfor = false
 		for idxwanted := range entry.WantedAlternates {
-			if config.RegexGetMatchesFind(config.Cfg.Regex[template_regex].Rejected[idx], entry.WantedAlternates[idxwanted], 1) {
+			if config.RegexGetMatchesFind(config.Cfg.Regex[templateregex].Rejected[idx], entry.WantedAlternates[idxwanted], 1) {
 				breakfor = true
 				break
 			}
@@ -304,9 +272,9 @@ func (entry *Nzbwithprio) Filter_regex_nzbs(template_regex string, title string)
 			//Regex is in alternate title - skip test
 			continue
 		}
-		if config.RegexGetMatchesFind(config.Cfg.Regex[template_regex].Rejected[idx], title, 1) {
-			logger.Log.GlobalLogger.Debug("Skipped - Regex rejected", zap.String("title", title), zap.String("regex", config.Cfg.Regex[template_regex].Rejected[idx]))
-			return true, config.Cfg.Regex[template_regex].Rejected[idx]
+		if config.RegexGetMatchesFind(config.Cfg.Regex[templateregex].Rejected[idx], title, 1) {
+			//logger.Log.GlobalLogger.Debug(regexrejected, zap.String("title", title), zap.String("regex", config.Cfg.Regex[templateregex].Rejected[idx]))
+			return true, config.Cfg.Regex[templateregex].Rejected[idx]
 		}
 	}
 	return false, ""
@@ -317,42 +285,45 @@ func (nzb *Nzbwithprio) Getnzbconfig(quality string) (string, string, string) {
 	}
 
 	for idx := range config.Cfg.Quality[quality].Indexer {
-		if strings.EqualFold(config.Cfg.Quality[quality].Indexer[idx].Template_indexer, nzb.Indexer) {
-			if !config.ConfigCheck("path_" + config.Cfg.Quality[quality].Indexer[idx].Template_path_nzb) {
+		if strings.EqualFold(config.Cfg.Quality[quality].Indexer[idx].TemplateIndexer, nzb.Indexer) {
+			if !config.ConfigCheck("path_" + config.Cfg.Quality[quality].Indexer[idx].TemplatePathNzb) {
 				continue
 			}
 
-			if !config.ConfigCheck("downloader_" + config.Cfg.Quality[quality].Indexer[idx].Template_downloader) {
+			if !config.ConfigCheck("downloader_" + config.Cfg.Quality[quality].Indexer[idx].TemplateDownloader) {
 				continue
 			}
-			if config.Cfg.Quality[quality].Indexer[idx].Category_dowloader != "" {
-				logger.Log.GlobalLogger.Debug("Downloader nzb config found - category", zap.String("category", config.Cfg.Quality[quality].Indexer[idx].Category_dowloader))
-				logger.Log.GlobalLogger.Debug("Downloader nzb config found - pathconfig", zap.String("path template", config.Cfg.Quality[quality].Indexer[idx].Template_path_nzb))
-				logger.Log.GlobalLogger.Debug("Downloader nzb config found - dlconfig", zap.String("downloader template", config.Cfg.Quality[quality].Indexer[idx].Template_downloader))
-				logger.Log.GlobalLogger.Debug("Downloader nzb config found - target", zap.String("path", config.Cfg.Paths[config.Cfg.Quality[quality].Indexer[idx].Template_path_nzb].Path))
-				logger.Log.GlobalLogger.Debug("Downloader nzb config found - downloader", zap.String("downloader type", config.Cfg.Downloader[config.Cfg.Quality[quality].Indexer[idx].Template_downloader].DlType))
-				logger.Log.GlobalLogger.Debug("Downloader nzb config found - downloader", zap.String("downloader", config.Cfg.Downloader[config.Cfg.Quality[quality].Indexer[idx].Template_downloader].Name))
-				return config.Cfg.Quality[quality].Indexer[idx].Category_dowloader, config.Cfg.Quality[quality].Indexer[idx].Template_path_nzb, config.Cfg.Quality[quality].Indexer[idx].Template_downloader
+			if config.Cfg.Quality[quality].Indexer[idx].CategoryDowloader != "" {
+				logger.Log.GlobalLogger.Debug("Downloader nzb config found - category", zap.String("category", config.Cfg.Quality[quality].Indexer[idx].CategoryDowloader))
+				logger.Log.GlobalLogger.Debug("Downloader nzb config found - pathconfig", zap.String("path template", config.Cfg.Quality[quality].Indexer[idx].TemplatePathNzb))
+				logger.Log.GlobalLogger.Debug("Downloader nzb config found - dlconfig", zap.String("downloader template", config.Cfg.Quality[quality].Indexer[idx].TemplateDownloader))
+				logger.Log.GlobalLogger.Debug("Downloader nzb config found - target", zap.String("path", config.Cfg.Paths[config.Cfg.Quality[quality].Indexer[idx].TemplatePathNzb].Path))
+				logger.Log.GlobalLogger.Debug("Downloader nzb config found - downloader", zap.String("downloader type", config.Cfg.Downloader[config.Cfg.Quality[quality].Indexer[idx].TemplateDownloader].DlType))
+				logger.Log.GlobalLogger.Debug("Downloader nzb config found - downloader", zap.String("downloader", config.Cfg.Downloader[config.Cfg.Quality[quality].Indexer[idx].TemplateDownloader].Name))
+				return config.Cfg.Quality[quality].Indexer[idx].CategoryDowloader, config.Cfg.Quality[quality].Indexer[idx].TemplatePathNzb, config.Cfg.Quality[quality].Indexer[idx].TemplateDownloader
 			}
 		}
 	}
 	indexer := config.Cfg.Quality[quality].Indexer[0]
 	logger.Log.GlobalLogger.Debug("Downloader nzb config NOT found - quality", zap.String("Quality", quality))
-	if !config.ConfigCheck("path_" + indexer.Template_path_nzb) {
+	if !config.ConfigCheck("path_" + indexer.TemplatePathNzb) {
 		return "", "", ""
 	}
 
-	if !config.ConfigCheck("downloader_" + indexer.Template_downloader) {
+	if !config.ConfigCheck("downloader_" + indexer.TemplateDownloader) {
 		return "", "", ""
 	}
-	logger.Log.GlobalLogger.Debug("Downloader nzb config NOT found - use first", zap.String("categories", indexer.Category_dowloader))
+	logger.Log.GlobalLogger.Debug("Downloader nzb config NOT found - use first", zap.String("categories", indexer.CategoryDowloader))
 
-	return indexer.Category_dowloader, indexer.Template_path_nzb, indexer.Template_downloader
+	return indexer.CategoryDowloader, indexer.TemplatePathNzb, indexer.TemplateDownloader
 }
 
 func Checknzbtitle(movietitle string, nzbtitle string) bool {
-	if strings.EqualFold(movietitle, nzbtitle) {
+	if movietitle == nzbtitle {
 		return true
+	} else if strings.EqualFold(movietitle, nzbtitle) {
+		return true
+	} else {
+		return strings.EqualFold(logger.StringToSlug(movietitle), logger.StringToSlug(nzbtitle))
 	}
-	return strings.EqualFold(logger.StringToSlug(movietitle), logger.StringToSlug(nzbtitle))
 }

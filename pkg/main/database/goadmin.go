@@ -100,8 +100,8 @@ func (d *Mysqlite) InitDB(cfgList map[string]config.Database) db.Connection {
 					panic(err)
 				}
 
-				sqlDB.SetMaxIdleConns(cfg.MaxIdleCon)
-				sqlDB.SetMaxOpenConns(cfg.MaxOpenCon)
+				//sqlDB.SetMaxIdleConns(cfg.MaxIdleCon)
+				//sqlDB.SetMaxOpenConns(cfg.MaxOpenCon)
 
 				d.DbList[conn] = sqlDB
 

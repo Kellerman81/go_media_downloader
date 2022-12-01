@@ -3,7 +3,6 @@ package database
 
 import (
 	"database/sql"
-	"html"
 	"strconv"
 	"strings"
 	"time"
@@ -208,49 +207,56 @@ type DbmovieTitle struct {
 	Region    string
 }
 
-func (movie *Dbmovie) GetTitles(cfg string, queryimdb bool, querytmdb bool, querytrakt bool) []DbmovieTitle {
-	arrcfglang := &logger.InStringArrayStruct{Arr: config.Cfg.Media[cfg].Metadata_title_languages}
+func (movie *Dbmovie) GetTitles(cfgp *config.MediaTypeConfig, queryimdb bool, querytmdb bool, querytrakt bool) []DbmovieTitle {
+	arrcfglang := &logger.InStringArrayStruct{Arr: cfgp.MetadataTitleLanguages}
 	defer arrcfglang.Close()
 
-	var result []DbmovieTitle = make([]DbmovieTitle, 0, 10)
+	var result []DbmovieTitle
 	if queryimdb && movie.ImdbID != "" {
 		if !strings.HasPrefix(movie.ImdbID, "tt") {
 			movie.ImdbID = "tt" + movie.ImdbID
 		}
-		imdbakadata, _ := QueryStaticColumnsThreeString("select region, title, slug from imdb_akas where tconst = ?", true, movie.ImdbID)
+		imdbakadata, _ := QueryStaticColumnsThreeString(true, Querywithargs{QueryString: "select region, title, slug from imdb_akas where tconst = ?", Args: []interface{}{movie.ImdbID}})
 
+		result = logger.GrowSliceBy(result, len(imdbakadata))
+		lenarr := len(arrcfglang.Arr)
 		for idxaka := range imdbakadata {
-			if logger.InStringArray(imdbakadata[idxaka].Str1, arrcfglang) || len(arrcfglang.Arr) == 0 {
+			if logger.InStringArray(imdbakadata[idxaka].Str1, arrcfglang) || lenarr == 0 {
 				result = append(result, DbmovieTitle{DbmovieID: movie.ID, Title: imdbakadata[idxaka].Str2, Slug: imdbakadata[idxaka].Str3, Region: imdbakadata[idxaka].Str1})
 			}
 		}
+		imdbakadata = nil
 	}
 	if querytmdb && movie.MoviedbID != 0 {
 		moviedbtitles, err := apiexternal.TmdbApi.GetMovieTitles(strconv.Itoa(movie.MoviedbID))
 		if err == nil {
+			result = logger.GrowSliceBy(result, len(moviedbtitles.Titles))
+			lenarr := len(arrcfglang.Arr)
 			for idx := range moviedbtitles.Titles {
-				if ok := logger.InStringArray(moviedbtitles.Titles[idx].Iso31661, arrcfglang); !ok && len(arrcfglang.Arr) >= 1 {
+				if ok := logger.InStringArray(moviedbtitles.Titles[idx].Iso31661, arrcfglang); !ok && lenarr >= 1 {
 					continue
 				}
 				result = append(result, DbmovieTitle{DbmovieID: movie.ID, Title: moviedbtitles.Titles[idx].Title, Slug: logger.StringToSlug(moviedbtitles.Titles[idx].Title), Region: moviedbtitles.Titles[idx].Iso31661})
 			}
 			moviedbtitles = nil
-		} else {
-			logger.Log.GlobalLogger.Warn("Movie tmdb titles not found for", zap.String("imdb", movie.ImdbID))
-		}
+		} //else {
+		//	logger.Log.GlobalLogger.Warn("Movie tmdb titles not found for", zap.String("imdb", movie.ImdbID))
+		//}
 	}
 	if querytrakt && movie.ImdbID != "" {
 		traktaliases, err := apiexternal.TraktApi.GetMovieAliases(movie.ImdbID)
 		if err == nil {
+			result = logger.GrowSliceBy(result, len(traktaliases.Aliases))
+			lenarr := len(arrcfglang.Arr)
 			for idxalias := range traktaliases.Aliases {
-				if logger.InStringArray(traktaliases.Aliases[idxalias].Country, arrcfglang) || len(arrcfglang.Arr) == 0 {
+				if logger.InStringArray(traktaliases.Aliases[idxalias].Country, arrcfglang) || lenarr == 0 {
 					result = append(result, DbmovieTitle{DbmovieID: movie.ID, Title: traktaliases.Aliases[idxalias].Title, Slug: logger.StringToSlug(traktaliases.Aliases[idxalias].Title), Region: traktaliases.Aliases[idxalias].Country})
 				}
 			}
 			traktaliases = nil
-		} else {
-			logger.Log.GlobalLogger.Warn("Movie trakt titles not found for", zap.String("imdb", movie.ImdbID))
-		}
+		} //else {
+		//	logger.Log.GlobalLogger.Warn("Movie trakt titles not found for", zap.String("imdb", movie.ImdbID))
+		//}
 	}
 	return result
 }
@@ -263,47 +269,47 @@ func (movie *Dbmovie) GetImdbMetadata(overwrite bool) {
 	if !strings.HasPrefix(movie.ImdbID, "tt") {
 		queryimdbid = "tt" + movie.ImdbID
 	}
-	imdbdata, err := GetImdbTitle(&Query{Where: "tconst = ?"}, queryimdbid)
+	imdbdata, err := GetImdbTitle(Querywithargs{Query: Query{Where: "tconst = ?"}, Args: []interface{}{queryimdbid}})
 	if err == nil {
-		if movie.Title == "" || overwrite {
+		if (movie.Title == "" || overwrite) && imdbdata.PrimaryTitle != "" {
 			movie.Title = imdbdata.PrimaryTitle
 		}
-		if movie.Year == 0 || overwrite {
+		if (movie.Year == 0 || overwrite) && imdbdata.StartYear != 0 {
 			movie.Year = imdbdata.StartYear
 		}
 		if (!movie.Adult && imdbdata.IsAdult) || overwrite {
 			movie.Adult = imdbdata.IsAdult
 		}
-		if movie.Genres == "" || overwrite {
+		if (movie.Genres == "" || overwrite) && imdbdata.Genres != "" {
 			movie.Genres = imdbdata.Genres
 		}
-		if movie.OriginalTitle == "" || overwrite {
+		if (movie.OriginalTitle == "" || overwrite) && imdbdata.OriginalTitle != "" {
 			movie.OriginalTitle = imdbdata.OriginalTitle
 		}
-		if movie.Runtime == 0 || overwrite {
+		if (movie.Runtime == 0 || overwrite) && imdbdata.RuntimeMinutes != 0 {
 			movie.Runtime = imdbdata.RuntimeMinutes
 		}
-		if movie.Slug == "" || overwrite {
+		if (movie.Slug == "" || overwrite) && imdbdata.Slug != "" {
 			movie.Slug = imdbdata.Slug
 		}
-		if movie.URL == "" || overwrite {
+		if (movie.URL == "" || overwrite) && queryimdbid != "" {
 			movie.URL = "https://www.imdb.com/title/" + queryimdbid
 		}
 
-		imdbratedata, err := GetImdbRating(&Query{Where: "tconst = ?"}, queryimdbid)
+		imdbratedata, err := GetImdbRating(Querywithargs{Query: Query{Where: "tconst = ?"}, Args: []interface{}{queryimdbid}})
 		if err == nil {
-			if movie.VoteAverage == 0 || movie.VoteAverage == 0.0 || overwrite {
+			if (movie.VoteAverage == 0 || movie.VoteAverage == 0.0 || overwrite) && imdbratedata.AverageRating != 0 {
 				movie.VoteAverage = imdbratedata.AverageRating
 			}
-			if movie.VoteCount == 0 || overwrite {
+			if (movie.VoteCount == 0 || overwrite) && imdbratedata.NumVotes != 0 {
 				movie.VoteCount = imdbratedata.NumVotes
 			}
-		} else {
-			logger.Log.GlobalLogger.Warn("Movie imdb rating not found for", zap.String("Title", movie.ImdbID))
-		}
-	} else {
-		logger.Log.GlobalLogger.Warn("Movie imdb data not found for", zap.String("Title", movie.ImdbID))
-	}
+		} //else {
+		//	logger.Log.GlobalLogger.Warn("Movie imdb rating not found for", zap.String("Title", movie.ImdbID))
+		//}
+	} //else {
+	//	logger.Log.GlobalLogger.Warn("Movie imdb data not found for", zap.String("Title", movie.ImdbID))
+	//}
 }
 
 func (movie *Dbmovie) GetTmdbMetadata(overwrite bool) {
@@ -317,6 +323,7 @@ func (movie *Dbmovie) GetTmdbMetadata(overwrite bool) {
 		}
 		if len(moviedb.MovieResults) >= 1 {
 			movie.MoviedbID = moviedb.MovieResults[0].ID
+			moviedb = nil
 		} else {
 			return
 		}
@@ -326,101 +333,120 @@ func (movie *Dbmovie) GetTmdbMetadata(overwrite bool) {
 		if (!movie.Adult && moviedbdetails.Adult) || overwrite {
 			movie.Adult = moviedbdetails.Adult
 		}
-		if movie.Title == "" || overwrite {
-			if strings.Contains(moviedbdetails.Title, "&") || strings.Contains(moviedbdetails.Title, "%") {
-				movie.Title = html.UnescapeString(moviedbdetails.Title)
-			} else {
-				movie.Title = moviedbdetails.Title
-			}
+		if (movie.Title == "" || overwrite) && moviedbdetails.Title != "" {
+			movie.Title = logger.HtmlUnescape(moviedbdetails.Title)
 		}
-		if movie.Slug == "" || overwrite {
+		if (movie.Slug == "" || overwrite) && movie.Title != "" {
 			movie.Slug = logger.StringToSlug(movie.Title)
 		}
-		movie.Budget = moviedbdetails.Budget
+		if (movie.Budget == 0 || overwrite) && moviedbdetails.Budget != 0 {
+			movie.Budget = moviedbdetails.Budget
+		}
 		if moviedbdetails.ReleaseDate != "" && !movie.ReleaseDate.Valid {
 			movie.ReleaseDate = logger.ParseDate(moviedbdetails.ReleaseDate, "2006-01-02")
+			if (movie.Year == 0 || overwrite) && movie.ReleaseDate.Time.Year() != 0 {
+				movie.Year = movie.ReleaseDate.Time.Year()
+			}
 		}
-		if movie.Genres == "" || overwrite {
+		if (movie.Genres == "" || overwrite) && len(moviedbdetails.Genres) != 0 {
 			movie.Genres = ""
 			for idxgenre := range moviedbdetails.Genres {
-				if len(movie.Genres) >= 1 {
+				if movie.Genres != "" {
 					movie.Genres += ","
 				}
 				movie.Genres += moviedbdetails.Genres[idxgenre].Name
 			}
 		}
-		movie.OriginalLanguage = moviedbdetails.OriginalLanguage
-		if movie.OriginalTitle == "" || overwrite {
+		if (movie.OriginalLanguage == "" || overwrite) && moviedbdetails.OriginalLanguage != "" {
+			movie.OriginalLanguage = moviedbdetails.OriginalLanguage
+		}
+		if (movie.OriginalTitle == "" || overwrite) && moviedbdetails.OriginalTitle != "" {
 			movie.OriginalTitle = moviedbdetails.OriginalTitle
 		}
-		movie.Overview = moviedbdetails.Overview
-		movie.Popularity = moviedbdetails.Popularity
-		movie.Revenue = moviedbdetails.Revenue
-		if movie.Runtime == 0 {
+		if (movie.Overview == "" || overwrite) && moviedbdetails.Overview != "" {
+			movie.Overview = moviedbdetails.Overview
+		}
+		if (movie.Popularity == 0 || overwrite) && moviedbdetails.Popularity != 0 {
+			movie.Popularity = moviedbdetails.Popularity
+		}
+		if (movie.Revenue == 0 || overwrite) && moviedbdetails.Revenue != 0 {
+			movie.Revenue = moviedbdetails.Revenue
+		}
+		if (movie.Runtime == 0) && moviedbdetails.Runtime != 0 {
 			movie.Runtime = moviedbdetails.Runtime
 		}
-		movie.SpokenLanguages = ""
-		for idxlang := range moviedbdetails.SpokenLanguages {
-			if len(movie.SpokenLanguages) >= 1 {
-				movie.SpokenLanguages += ","
+		if (movie.SpokenLanguages == "" || overwrite) && len(moviedbdetails.SpokenLanguages) != 0 {
+			movie.SpokenLanguages = ""
+			for idxlang := range moviedbdetails.SpokenLanguages {
+				if movie.SpokenLanguages != "" {
+					movie.SpokenLanguages += ","
+				}
+				movie.SpokenLanguages += moviedbdetails.SpokenLanguages[idxlang].EnglishName
 			}
-			movie.SpokenLanguages += moviedbdetails.SpokenLanguages[idxlang].EnglishName
 		}
-		movie.Status = moviedbdetails.Status
-		movie.Tagline = moviedbdetails.Tagline
-		if movie.VoteAverage == 0 || movie.VoteAverage == 0.0 || overwrite {
+		if (movie.Status == "" || overwrite) && moviedbdetails.Status != "" {
+			movie.Status = moviedbdetails.Status
+		}
+		if (movie.Tagline == "" || overwrite) && moviedbdetails.Tagline != "" {
+			movie.Tagline = moviedbdetails.Tagline
+		}
+		if (movie.VoteAverage == 0 || movie.VoteAverage == 0.0 || overwrite) && moviedbdetails.VoteAverage != 0 {
 			movie.VoteAverage = moviedbdetails.VoteAverage
 		}
-		if movie.VoteCount == 0 || overwrite {
+		if (movie.VoteCount == 0 || overwrite) && moviedbdetails.VoteCount != 0 {
 			movie.VoteCount = moviedbdetails.VoteCount
 		}
-		movie.Poster = moviedbdetails.Poster
-		movie.Backdrop = moviedbdetails.Backdrop
-		movie.MoviedbID = moviedbdetails.ID
-	} else {
-		logger.Log.GlobalLogger.Warn("Movie tmdb movie entry not found for", zap.String("Title", movie.ImdbID))
-	}
+		if (movie.Poster == "" || overwrite) && moviedbdetails.Poster != "" {
+			movie.Poster = moviedbdetails.Poster
+		}
+		if (movie.Backdrop == "" || overwrite) && moviedbdetails.Backdrop != "" {
+			movie.Backdrop = moviedbdetails.Backdrop
+		}
+		if (movie.MoviedbID == 0 || overwrite) && moviedbdetails.ID != 0 {
+			movie.MoviedbID = moviedbdetails.ID
+		}
+		moviedbdetails = nil
+	} //else {
+	//	logger.Log.GlobalLogger.Warn("Movie tmdb movie entry not found for", zap.String("Title", movie.ImdbID))
+	//}
 }
 
 func (movie *Dbmovie) GetOmdbMetadata(overwrite bool) {
 	if movie.ImdbID == "" {
 		return
 	}
-	var omdbdetails apiexternal.OmDBMovie
-	err := apiexternal.OmdbApi.GetMovie(movie.ImdbID, &omdbdetails)
+	omdbdetails := new(apiexternal.OmDBMovie)
+	err := apiexternal.OmdbApi.GetMovie(movie.ImdbID, omdbdetails)
 	if err == nil {
-		if movie.Title == "" || overwrite {
-			if strings.Contains(omdbdetails.Title, "&") || strings.Contains(omdbdetails.Title, "%") {
-				movie.Title = html.UnescapeString(omdbdetails.Title)
-			} else {
-				movie.Title = omdbdetails.Title
-			}
+		defer logger.ClearVar(&omdbdetails)
+		if (movie.Title == "" || overwrite) && omdbdetails.Title != "" {
+			movie.Title = logger.HtmlUnescape(omdbdetails.Title)
 		}
-		if movie.Slug == "" || overwrite {
+		if (movie.Slug == "" || overwrite) && movie.Title != "" {
 			movie.Slug = logger.StringToSlug(movie.Title)
 		}
-		if movie.Genres == "" || overwrite {
+		if (movie.Genres == "" || overwrite) && omdbdetails.Genre != "" {
 			movie.Genres = omdbdetails.Genre
 		}
-		if movie.VoteCount == 0 || overwrite {
+		if (movie.VoteCount == 0 || overwrite) && omdbdetails.ImdbVotes != "" {
 			movie.VoteCount, _ = strconv.Atoi(omdbdetails.ImdbVotes)
 		}
-		if (movie.VoteAverage == 0 || movie.VoteAverage == 0.0) || overwrite {
+		if ((movie.VoteAverage == 0 || movie.VoteAverage == 0.0) || overwrite) && omdbdetails.ImdbRating != "" {
 			rating, _ := strconv.Atoi(omdbdetails.ImdbRating)
 			movie.VoteAverage = float32(rating)
 		}
-		if movie.Year == 0 || overwrite {
+		if (movie.Year == 0 || overwrite) && omdbdetails.Year != "" {
 			movie.Year, _ = strconv.Atoi(omdbdetails.Year)
 		}
-		if movie.URL == "" || overwrite {
+		if (movie.URL == "" || overwrite) && omdbdetails.Website != "" {
 			movie.URL = omdbdetails.Website
 		}
-		if movie.Overview == "" || overwrite {
+		if (movie.Overview == "" || overwrite) && omdbdetails.Plot != "" {
 			movie.Overview = omdbdetails.Plot
 		}
-	} else {
-		logger.Log.GlobalLogger.Warn("Movie omdb data not found for", zap.String("Title", movie.ImdbID))
-	}
+	} //else {
+	//	logger.Log.GlobalLogger.Warn("Movie omdb data not found for", zap.String("Title", movie.ImdbID))
+	//}
 }
 
 func (movie *Dbmovie) GetTraktMetadata(overwrite bool) {
@@ -429,57 +455,54 @@ func (movie *Dbmovie) GetTraktMetadata(overwrite bool) {
 	}
 	traktdetails, err := apiexternal.TraktApi.GetMovie(movie.ImdbID)
 	if err == nil {
-		if movie.Title == "" || overwrite {
-			if strings.Contains(traktdetails.Title, "&") || strings.Contains(traktdetails.Title, "%") {
-				movie.Title = html.UnescapeString(traktdetails.Title)
-			} else {
-				movie.Title = traktdetails.Title
-			}
+		if (movie.Title == "" || overwrite) && traktdetails.Title != "" {
+			movie.Title = logger.HtmlUnescape(traktdetails.Title)
 		}
-		if movie.Slug == "" || overwrite {
+		if (movie.Slug == "" || overwrite) && traktdetails.Ids.Slug != "" {
 			movie.Slug = traktdetails.Ids.Slug
 		}
-		if movie.Genres == "" || overwrite {
+		if (movie.Genres == "" || overwrite) && len(traktdetails.Genres) != 0 {
 			movie.Genres = strings.Join(traktdetails.Genres, ",")
 		}
-		if movie.VoteCount == 0 || overwrite {
+		if (movie.VoteCount == 0 || overwrite) && traktdetails.Votes != 0 {
 			movie.VoteCount = traktdetails.Votes
 		}
-		if (movie.VoteAverage == 0 || movie.VoteAverage == 0.0) || overwrite {
+		if ((movie.VoteAverage == 0 || movie.VoteAverage == 0.0) || overwrite) && traktdetails.Rating != 0 {
 			movie.VoteAverage = traktdetails.Rating
 		}
-		if movie.Year == 0 || overwrite {
+		if (movie.Year == 0 || overwrite) && traktdetails.Year != 0 {
 			movie.Year = traktdetails.Year
 		}
-		if movie.Overview == "" || overwrite {
+		if (movie.Overview == "" || overwrite) && traktdetails.Overview != "" {
 			movie.Overview = traktdetails.Overview
 		}
-		if movie.Runtime == 0 || overwrite {
+		if (movie.Runtime == 0 || overwrite) && traktdetails.Runtime != 0 {
 			movie.Runtime = traktdetails.Runtime
 		}
-		if movie.Status == "" || overwrite {
+		if (movie.Status == "" || overwrite) && traktdetails.Status != "" {
 			movie.Status = traktdetails.Status
 		}
-		if movie.MoviedbID == 0 || overwrite {
+		if (movie.MoviedbID == 0 || overwrite) && traktdetails.Ids.Tmdb != 0 {
 			movie.MoviedbID = traktdetails.Ids.Tmdb
 		}
-		if movie.TraktID == 0 || overwrite {
+		if (movie.TraktID == 0 || overwrite) && traktdetails.Ids.Trakt != 0 {
 			movie.TraktID = traktdetails.Ids.Trakt
 		}
-		if !movie.ReleaseDate.Valid || overwrite {
+		if (!movie.ReleaseDate.Valid || overwrite) && traktdetails.Released != "" {
 			if traktdetails.Released != "" {
 				movie.ReleaseDate = logger.ParseDate(traktdetails.Released, "2006-01-02")
 			}
 		}
-		if movie.OriginalLanguage == "" || overwrite {
+		if (movie.OriginalLanguage == "" || overwrite) && traktdetails.Language != "" {
 			movie.OriginalLanguage = traktdetails.Language
 		}
-		if movie.Tagline == "" || overwrite {
+		if (movie.Tagline == "" || overwrite) && traktdetails.Tagline != "" {
 			movie.Tagline = traktdetails.Tagline
 		}
-	} else {
-		logger.Log.GlobalLogger.Warn("Movie trakt data not found for", zap.String("Title", movie.ImdbID))
-	}
+		traktdetails = nil
+	} //else {
+	//	logger.Log.GlobalLogger.Warn("Movie trakt data not found for", zap.String("Title", movie.ImdbID))
+	//dg}
 }
 func (movie *Dbmovie) GetMetadata(queryimdb bool, querytmdb bool, queryomdb bool, querytrakt bool) {
 	logger.Log.GlobalLogger.Info("Get Metadata for", zap.String("Title", movie.ImdbID))
@@ -520,20 +543,20 @@ func (dbmovie *Dbmovie) Getmoviemetadata(refresh bool) {
 	prios = nil
 }
 
-func (dbmovie *Dbmovie) Getmoviemetatitles(cfg string) {
-	if cfg == "" {
-		tmpl, _ := QueryColumnString("select listname from movies where dbmovie_id = ?", dbmovie.ID)
+func (dbmovie *Dbmovie) Getmoviemetatitles(cfgp *config.MediaTypeConfig) {
+	if cfgp.Name == "" {
+		tmpl, _ := QueryColumnString(Querywithargs{QueryString: "select listname from movies where dbmovie_id = ?", Args: []interface{}{dbmovie.ID}})
 		if tmpl != "" {
-			cfg = config.FindconfigTemplateOnList("movie_", tmpl)
+			*cfgp = config.Cfg.Media[config.FindconfigTemplateOnList("movie_", tmpl)]
 		}
 	}
-	if cfg == "" {
+	if cfgp.Name == "" {
 		return
 	}
 
-	titles := &logger.InStringArrayStruct{Arr: QueryStaticStringArray("select title from dbmovie_titles where dbmovie_id = ?", false, 0, dbmovie.ID)}
+	titles := &logger.InStringArrayStruct{Arr: QueryStaticStringArray(false, 0, Querywithargs{QueryString: "select title from dbmovie_titles where dbmovie_id = ?", Args: []interface{}{dbmovie.ID}})}
 	defer titles.Close()
-	titlegroup := dbmovie.GetTitles(cfg, config.Cfg.General.MovieAlternateTitleMetaSourceImdb, config.Cfg.General.MovieAlternateTitleMetaSourceTmdb, config.Cfg.General.MovieAlternateTitleMetaSourceTrakt)
+	titlegroup := dbmovie.GetTitles(cfgp, config.Cfg.General.MovieAlternateTitleMetaSourceImdb, config.Cfg.General.MovieAlternateTitleMetaSourceTmdb, config.Cfg.General.MovieAlternateTitleMetaSourceTrakt)
 	for idx := range titlegroup {
 		if titlegroup[idx].Title == "" {
 			continue

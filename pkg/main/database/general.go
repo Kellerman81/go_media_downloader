@@ -7,7 +7,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -24,14 +23,18 @@ import (
 )
 
 type DBGlobal struct {
-	Getqualities   []QualitiesRegex
-	Getresolutions []QualitiesRegex
-	Getcodecs      []QualitiesRegex
-	Getaudios      []QualitiesRegex
-	AudioStr       []string
-	CodecStr       []string
-	QualityStr     []string
-	ResolutionStr  []string
+	Getqualities     []QualitiesRegex
+	Getresolutions   []QualitiesRegex
+	Getcodecs        []QualitiesRegex
+	Getaudios        []QualitiesRegex
+	AudioStr         []string
+	CodecStr         []string
+	QualityStr       []string
+	ResolutionStr    []string
+	GetqualitiesIn   InQualitiesArray
+	GetresolutionsIn InQualitiesArray
+	GetcodecsIn      InQualitiesArray
+	GetaudiosIn      InQualitiesArray
 }
 
 type dblocal struct {
@@ -61,15 +64,19 @@ type QualitiesRegex struct {
 	Regex string
 	Qualities
 }
-type QualitiesRegexGroup struct {
+
+type InQualitiesArray struct {
 	Arr []QualitiesRegex
 }
 
-func (s *QualitiesRegexGroup) Close() {
-	if s != nil {
-		s.Arr = nil
-		s = nil
+func InQualitiesRegexArray(target string, strArray *InQualitiesArray) uint {
+	for idx := range strArray.Arr {
+		if strings.EqualFold(strArray.Arr[idx].Name, target) {
+			return strArray.Arr[idx].ID
+		}
 	}
+	strArray = nil
+	return 0
 }
 
 type Dbfiles struct {
@@ -136,41 +143,43 @@ func InitImdbdb(dbloglevel string) {
 }
 
 func GetVars() {
-	quali, _ := QueryQualities(&Query{Where: "Type=1", OrderBy: "priority desc"})
+	priodesc := "priority desc"
+	quali, _ := QueryQualities(Querywithargs{Query: Query{Where: "Type=1", OrderBy: priodesc}})
 	logger.Log.GlobalLogger.Info("Database Get Variables 1")
 	DBConnect.Getresolutions = make([]QualitiesRegex, len(quali))
 	for idx := range quali {
-		logger.GlobalRegexCache.SetRegexp(quali[idx].Regex, regexp.MustCompile(quali[idx].Regex), 0)
+		logger.GlobalRegexCache.SetRegexp(quali[idx].Regex, quali[idx].Regex, 0)
 		quali[idx].StringsLower = strings.ToLower(quali[idx].Strings)
 		DBConnect.Getresolutions[idx] = QualitiesRegex{Regex: quali[idx].Regex, Qualities: quali[idx]}
 	}
 
-	quali, _ = QueryQualities(&Query{Where: "Type=2", OrderBy: "priority desc"})
+	quali, _ = QueryQualities(Querywithargs{Query: Query{Where: "Type=2", OrderBy: priodesc}})
 	logger.Log.GlobalLogger.Info("Database Get Variables 2")
 	DBConnect.Getqualities = make([]QualitiesRegex, len(quali))
 	for idx := range quali {
-		logger.GlobalRegexCache.SetRegexp(quali[idx].Regex, regexp.MustCompile(quali[idx].Regex), 0)
+		logger.GlobalRegexCache.SetRegexp(quali[idx].Regex, quali[idx].Regex, 0)
 		quali[idx].StringsLower = strings.ToLower(quali[idx].Strings)
 		DBConnect.Getqualities[idx] = QualitiesRegex{Regex: quali[idx].Regex, Qualities: quali[idx]}
 	}
 
-	quali, _ = QueryQualities(&Query{Where: "Type=3", OrderBy: "priority desc"})
+	quali, _ = QueryQualities(Querywithargs{Query: Query{Where: "Type=3", OrderBy: priodesc}})
 	logger.Log.GlobalLogger.Info("Database Get Variables 3")
 	DBConnect.Getcodecs = make([]QualitiesRegex, len(quali))
 	for idx := range quali {
-		logger.GlobalRegexCache.SetRegexp(quali[idx].Regex, regexp.MustCompile(quali[idx].Regex), 0)
+		logger.GlobalRegexCache.SetRegexp(quali[idx].Regex, quali[idx].Regex, 0)
 		quali[idx].StringsLower = strings.ToLower(quali[idx].Strings)
 		DBConnect.Getcodecs[idx] = QualitiesRegex{Regex: quali[idx].Regex, Qualities: quali[idx]}
 	}
 
-	quali, _ = QueryQualities(&Query{Where: "Type=4", OrderBy: "priority desc"})
+	quali, _ = QueryQualities(Querywithargs{Query: Query{Where: "Type=4", OrderBy: priodesc}})
 	logger.Log.GlobalLogger.Info("Database Get Variables 4")
 	DBConnect.Getaudios = make([]QualitiesRegex, len(quali))
 	for idx := range quali {
-		logger.GlobalRegexCache.SetRegexp(quali[idx].Regex, regexp.MustCompile(quali[idx].Regex), 0)
+		logger.GlobalRegexCache.SetRegexp(quali[idx].Regex, quali[idx].Regex, 0)
 		quali[idx].StringsLower = strings.ToLower(quali[idx].Strings)
 		DBConnect.Getaudios[idx] = QualitiesRegex{Regex: quali[idx].Regex, Qualities: quali[idx]}
 	}
+	quali = nil
 
 	DBConnect.AudioStr = make([]string, 0, len(DBConnect.Getaudios)*2)
 	for idx := range DBConnect.Getaudios {
@@ -188,6 +197,11 @@ func GetVars() {
 	for idx := range DBConnect.Getresolutions {
 		DBConnect.ResolutionStr = append(DBConnect.ResolutionStr, strings.Split(DBConnect.Getresolutions[idx].StringsLower, ",")...)
 	}
+
+	DBConnect.GetaudiosIn = InQualitiesArray{Arr: DBConnect.Getaudios}
+	DBConnect.GetcodecsIn = InQualitiesArray{Arr: DBConnect.Getcodecs}
+	DBConnect.GetqualitiesIn = InQualitiesArray{Arr: DBConnect.Getqualities}
+	DBConnect.GetresolutionsIn = InQualitiesArray{Arr: DBConnect.Getresolutions}
 }
 func Upgrade(c *gin.Context) {
 	UpgradeDB()
@@ -196,7 +210,7 @@ func Upgrade(c *gin.Context) {
 // Backup the database. If db is nil, then uses the existing database
 // connection.
 func Backup(backupPath string, maxbackups int) error {
-	_, err := dbexec("main", "VACUUM INTO ?", []interface{}{backupPath})
+	_, err := dbexec("main", &Querywithargs{QueryString: "VACUUM INTO ?", Args: []interface{}{backupPath}})
 	if err != nil {
 		return errors.New("vacuum failed: " + err.Error())
 	}
