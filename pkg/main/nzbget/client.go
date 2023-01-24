@@ -3,7 +3,7 @@ package nzbget
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -204,7 +204,7 @@ func (c *client) request(path string, params url.Values, target interface{}) (er
 	defer response.Body.Close()
 
 	var body []byte
-	if body, err = ioutil.ReadAll(response.Body); err != nil {
+	if body, err = io.ReadAll(response.Body); err != nil {
 		//log.Fatal(err)
 		return errors.Wrap(err, "reading request body")
 	}

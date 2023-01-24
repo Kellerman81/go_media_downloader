@@ -2,26 +2,19 @@ package parser
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
-	"errors"
-	"math"
+	"fmt"
 	"os/exec"
 	"path"
 	"runtime"
-	"strconv"
-	"strings"
-	"time"
 
-	"github.com/Kellerman81/go_media_downloader/apiexternal"
 	"github.com/Kellerman81/go_media_downloader/config"
-	"github.com/Kellerman81/go_media_downloader/database"
 	"github.com/Kellerman81/go_media_downloader/logger"
 )
 
 //Original Source: https://github.com/stashapp/stash/blob/develop/pkg/ffmpeg/ffprobe.go
 
-type FFProbeJSON struct {
+type ffProbeJSON struct {
 	Format struct {
 		//BitRate        string `json:"bit_rate"`
 		Duration string `json:"duration"`
@@ -43,21 +36,13 @@ type FFProbeJSON struct {
 		//Comment string `json:"comment"`
 		//} `json:"tags"`
 	} `json:"format"`
-	Streams []FFProbeStream `json:"streams"`
+	Streams []ffProbeStream `json:"streams"`
 	Error   struct {
 		Code   int    `json:"code"`
 		String string `json:"string"`
 	} `json:"error"`
 }
-
-func (s *FFProbeJSON) Close() {
-	if s != nil {
-		s.Streams = nil
-		s = nil
-	}
-}
-
-type FFProbeStream struct {
+type ffProbeStream struct {
 	//AvgFrameRate string `json:"avg_frame_rate"`
 	//BitRate string `json:"bit_rate"`
 	//BitsPerRawSample   string `json:"bits_per_raw_sample,omitempty"`
@@ -119,163 +104,65 @@ type FFProbeStream struct {
 }
 
 var ffprobepath string
-
-func getFFProbeFilename() string {
-	if ffprobepath == "" {
-		ffprobepath = config.Cfg.General.FfprobePath
-
-		if runtime.GOOS == "windows" {
-			ffprobepath = path.Join(ffprobepath, "ffprobe.exe")
-		} else {
-			ffprobepath = path.Join(ffprobepath, "ffprobe")
-		}
-		return ffprobepath
-	} else {
-		return ffprobepath
-	}
+var ffprobeargs = []string{
+	"-loglevel", "fatal",
+	"-print_format", "json",
+	"-show_entries",
+	"format=duration : stream=codec_name,codec_tag_string,codec_type,height,width : stream_tags=Language : error",
 }
 
-// runProbe takes the fully configured ffprobe command and executes it, returning the ffprobe data if everything went fine.
-func runProbe(cmd *exec.Cmd) (*FFProbeJSON, error) {
-	var outputBuf bytes.Buffer
-	var stdErr bytes.Buffer
-	defer outputBuf.Reset()
-	defer stdErr.Reset()
+func (s *ffProbeJSON) Close() {
+	if logger.DisableVariableCleanup {
+		return
+	}
+	if s == nil {
+		return
+	}
+	s.Streams = nil
+	s = nil
+}
+
+func getFFProbeFilename() string {
+	if ffprobepath != "" {
+		return ffprobepath
+	}
+	ffprobepath = config.Cfg.General.FfprobePath
+
+	if runtime.GOOS == "windows" {
+		ffprobepath = path.Join(ffprobepath, "ffprobe.exe")
+	} else {
+		ffprobepath = path.Join(ffprobepath, "ffprobe")
+	}
+	return ffprobepath
+}
+
+func probeURL(fileURL string) (*ffProbeJSON, error) {
+	// Add the file argument
+	cmd := exec.Command(getFFProbeFilename(), append(ffprobeargs, fileURL)...)
+	var outputBuf, stdErr bytes.Buffer
 
 	cmd.Stdout = &outputBuf
 	cmd.Stderr = &stdErr
-
 	err := cmd.Run()
+	defer outputBuf.Reset()
+	defer stdErr.Reset()
 	if err != nil {
 		cmd = nil
-		return nil, errors.New(logger.StringBuild("error running FFProbe [", stdErr.String(), "] ", err.Error(), " [", outputBuf.String(), "]"))
+		return nil, fmt.Errorf("error running FFProbe [%s] %s [%s]", stdErr.String(), err.Error(), outputBuf.String())
 	}
 
 	if stdErr.Len() > 0 {
 		cmd = nil
-		return nil, errors.New("ffprobe error: " + stdErr.String())
+		return nil, fmt.Errorf("ffprobe error: %s", stdErr.String())
 	}
 
-	data := new(FFProbeJSON)
-	err = json.Unmarshal(outputBuf.Bytes(), data)
+	var data ffProbeJSON
+	err = json.Unmarshal(outputBuf.Bytes(), &data)
 	if err != nil {
 		cmd = nil
-		data = nil
-		return nil, errors.New("error parsing ffprobe output: " + err.Error())
+		data.Close()
+		return nil, fmt.Errorf("error parsing ffprobe output: %s", err.Error())
 	}
 	cmd = nil
-	return data, nil
-}
-
-var ffprobeargs []string
-
-func getffprobeargs() interface{} {
-	if len(ffprobeargs) == 0 {
-		ffprobeargs = []string{
-			"-loglevel", "fatal",
-			"-print_format", "json",
-			"-show_entries",
-			"format=duration : stream=codec_name,codec_tag_string,codec_type,height,width : stream_tags=Language : error",
-		}
-		return ffprobeargs
-	} else {
-		return ffprobeargs
-	}
-}
-
-func probeURL(ctx context.Context, fileURL string) (*FFProbeJSON, error) {
-	// Add the file argument
-	return runProbe(exec.CommandContext(ctx, getFFProbeFilename(), append(getffprobeargs().([]string), fileURL)...))
-}
-
-// Execute exec command and bind result to struct.
-func newVideoFile(m *apiexternal.ParseInfo, ffprobePath string, videoPath string, stripExt bool, qualityTemplate string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	result, err := probeURL(ctx, videoPath)
-	ctx.Done()
-	if err != nil {
-		return err
-	}
-	defer result.Close()
-
-	if len(result.Streams) == 0 {
-		return errors.New(logger.StringBuild("failed to get ffprobe json for <", videoPath, "> ", err.Error()))
-	}
-
-	if result.Error.Code != 0 {
-		return errors.New(logger.StringBuild("ffprobe error code ", strconv.FormatInt(int64(result.Error.Code), 10), ": ", result.Error.String))
-	}
-	duration, err := strconv.ParseFloat(result.Format.Duration, 64)
-	if err == nil {
-		m.Runtime = int(math.Round(duration*100) / 100)
-	}
-
-	m.Languages = []string{}
-	var getreso string
-	redetermineprio := false
-	for idxstream := range result.Streams {
-		if result.Streams[idxstream].CodecType == "audio" {
-			if result.Streams[idxstream].Tags.Language != "" {
-				m.Languages = append(m.Languages, result.Streams[idxstream].Tags.Language)
-			}
-			if m.Audio == "" || (!strings.EqualFold(result.Streams[idxstream].CodecName, m.Audio) && result.Streams[idxstream].CodecName != "") {
-				m.Audio = result.Streams[idxstream].CodecName
-				m.AudioID = gettypeids(m, logger.DisableParserStringMatch, m.Audio, &database.DBConnect.GetaudiosIn)
-				redetermineprio = true
-			}
-		}
-		if result.Streams[idxstream].CodecType == "video" {
-			if result.Streams[idxstream].Height > result.Streams[idxstream].Width {
-				result.Streams[idxstream].Height, result.Streams[idxstream].Width = result.Streams[idxstream].Width, result.Streams[idxstream].Height
-			}
-
-			if strings.EqualFold(result.Streams[idxstream].CodecName, "mpeg4") && strings.EqualFold(result.Streams[idxstream].CodecTagString, "xvid") {
-				result.Streams[idxstream].CodecName = result.Streams[idxstream].CodecTagString
-			}
-			if m.Codec == "" || (!strings.EqualFold(result.Streams[idxstream].CodecName, m.Codec) && result.Streams[idxstream].CodecName != "") {
-				m.Codec = result.Streams[idxstream].CodecName
-				m.CodecID = gettypeids(m, logger.DisableParserStringMatch, m.Codec, &database.DBConnect.GetcodecsIn)
-				redetermineprio = true
-			}
-			getreso = ""
-			if result.Streams[idxstream].Height == 360 {
-				getreso = "360p"
-			}
-			if result.Streams[idxstream].Height > 360 {
-				getreso = "368p"
-			}
-			if result.Streams[idxstream].Height > 368 || result.Streams[idxstream].Width == 720 {
-				getreso = "480p"
-			}
-			if result.Streams[idxstream].Height > 480 {
-				getreso = "576p"
-			}
-			if result.Streams[idxstream].Height > 576 || result.Streams[idxstream].Width == 1280 {
-				getreso = "720p"
-			}
-			if result.Streams[idxstream].Height > 720 || result.Streams[idxstream].Width == 1920 {
-				getreso = "1080p"
-			}
-			if result.Streams[idxstream].Height > 1080 || result.Streams[idxstream].Width == 3840 {
-				getreso = "2160p"
-			}
-			m.Height = result.Streams[idxstream].Height
-			m.Width = result.Streams[idxstream].Width
-			if m.Resolution == "" || !strings.EqualFold(getreso, m.Resolution) {
-				m.Resolution = getreso
-				m.ResolutionID = gettypeids(m, logger.DisableParserStringMatch, m.Resolution, &database.DBConnect.GetresolutionsIn)
-				redetermineprio = true
-			}
-		}
-	}
-	if redetermineprio {
-		allQualityPrioritiesMu.RLock()
-		defer allQualityPrioritiesMu.RUnlock()
-		prio, ok := allQualityPriorities[qualityTemplate][strconv.Itoa(int(m.ResolutionID))+"_"+strconv.Itoa(int(m.QualityID))+"_"+strconv.Itoa(int(m.CodecID))+"_"+strconv.Itoa(int(m.AudioID))]
-		if ok {
-			m.Priority = prio
-		}
-	}
-	return nil
+	return &data, nil
 }

@@ -75,10 +75,10 @@ func (client *qbtClient) post(endpoint string, opts map[string]string) (*http.Re
 		for k, v := range opts {
 			form.Add(k, v)
 		}
-		req, err = http.NewRequest("POST", client.URL+endpoint, strings.NewReader(form.Encode()))
+		req, err = http.NewRequest(http.MethodPost, client.URL+endpoint, strings.NewReader(form.Encode()))
 
 	} else {
-		req, err = http.NewRequest("POST", client.URL+endpoint, nil)
+		req, err = http.NewRequest(http.MethodPost, client.URL+endpoint, nil)
 	}
 	if err != nil {
 		return nil, wrapper.Wrap(err, "failed to build request")
@@ -103,7 +103,7 @@ func (client *qbtClient) post(endpoint string, opts map[string]string) (*http.Re
 
 // postMultipart will perform a multiple part POST request
 func (client *qbtClient) postMultipart(endpoint string, buffer bytes.Buffer, contentType string) (*http.Response, error) {
-	req, err := http.NewRequest("POST", client.URL+endpoint, &buffer)
+	req, err := http.NewRequest(http.MethodPost, client.URL+endpoint, &buffer)
 	if err != nil {
 		return nil, wrapper.Wrap(err, "error creating request")
 	}

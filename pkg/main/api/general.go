@@ -25,7 +25,7 @@ import (
 )
 
 func AddGeneralRoutes(routerapi *gin.RouterGroup) {
-	routerapi.GET("/trakt/authorize", apiTraktGetAuthUrl)
+	routerapi.GET("/trakt/authorize", apiTraktGetAuthURL)
 	routerapi.GET("/trakt/token/:code", apiTraktGetStoreToken)
 	routerapi.GET("/trakt/user/:user/:list", apiTraktGetUserList)
 	routerapi.GET("/debugstats", apiDebugStats)
@@ -48,8 +48,9 @@ func AddGeneralRoutes(routerapi *gin.RouterGroup) {
 	routerapi.GET("/quality", apiGetQualities)
 	routerapi.DELETE("/quality/:id", apiQualityDelete)
 	routerapi.POST("/quality", apiQualityUpdate)
-	routerapi.GET("/quality/:name/:config", apiListQualityPriorities)
 	routerapi.GET("/quality/all", apiListAllQualityPriorities)
+	routerapi.GET("/quality/complete", apiListCompleteAllQualityPriorities)
+	routerapi.GET("/quality/:name", apiListQualityPriorities)
 	routerapi.GET("/slug", apiDBRefreshSlugs)
 
 	routerapi.GET("/config/all", apiConfigAll)
@@ -80,7 +81,7 @@ type apiparse struct {
 // @Failure      401  {object}  string
 // @Router       /api/debugstats [get]
 func apiDebugStats(ctx *gin.Context) {
-	if ApiAuth(ctx) == http.StatusUnauthorized {
+	if auth(ctx) == http.StatusUnauthorized {
 		return
 	}
 	var gc debug.GCStats
@@ -113,7 +114,7 @@ func apiDebugStats(ctx *gin.Context) {
 // @Failure      401  {object}  string
 // @Router       /api/queue [get]
 func apiQueueList(ctx *gin.Context) {
-	if ApiAuth(ctx) == http.StatusUnauthorized {
+	if auth(ctx) == http.StatusUnauthorized {
 		return
 	}
 
@@ -130,11 +131,11 @@ func apiQueueList(ctx *gin.Context) {
 // @Param        limit  query     int     false  "Limit"
 // @Param        page   query     int     false  "Page"
 // @Param        order  query     string  false  "Order By"
-// @Success      200    {object}   database.JobHistoryJson
+// @Success      200    {object}   database.JobHistoryJSON
 // @Failure      401    {object}  string
 // @Router       /api/queue/history [get]
 func apiQueueListStarted(ctx *gin.Context) {
-	if ApiAuth(ctx) == http.StatusUnauthorized {
+	if auth(ctx) == http.StatusUnauthorized {
 		return
 	}
 	var query database.Query
@@ -145,7 +146,7 @@ func apiQueueListStarted(ctx *gin.Context) {
 	if queryParam, ok := ctx.GetQuery("limit"); ok {
 		if queryParam != "" {
 			limit, _ = strconv.Atoi(queryParam)
-			query.Limit = uint64(limit)
+			query.Limit = limit
 		}
 	}
 	if limit != 0 {
@@ -153,7 +154,7 @@ func apiQueueListStarted(ctx *gin.Context) {
 			if queryParam != "" {
 				page, _ = strconv.Atoi(queryParam)
 				if page >= 2 {
-					query.Offset = uint64((page - 1) * limit)
+					query.Offset = (page - 1) * limit
 				}
 			}
 		}
@@ -163,7 +164,7 @@ func apiQueueListStarted(ctx *gin.Context) {
 			query.OrderBy = queryParam
 		}
 	}
-	jobs, _ := database.QueryJobHistory(database.Querywithargs{Query: query})
+	jobs, _ := database.QueryJobHistory(&database.Querywithargs{Query: query})
 	ctx.JSON(http.StatusOK, gin.H{"data": jobs})
 }
 
@@ -173,11 +174,11 @@ func apiQueueListStarted(ctx *gin.Context) {
 // @Success      200  {object}  string
 // @Failure      401  {object}  string
 // @Router       /api/trakt/authorize [get]
-func apiTraktGetAuthUrl(ctx *gin.Context) {
-	if ApiAuth(ctx) == http.StatusUnauthorized {
+func apiTraktGetAuthURL(ctx *gin.Context) {
+	if auth(ctx) == http.StatusUnauthorized {
 		return
 	}
-	ctx.JSON(http.StatusOK, apiexternal.TraktApi.GetAuthUrl())
+	ctx.JSON(http.StatusOK, apiexternal.TraktAPI.GetAuthURL())
 }
 
 // @Summary      Trakt Save Token
@@ -188,12 +189,12 @@ func apiTraktGetAuthUrl(ctx *gin.Context) {
 // @Failure      401   {object}  string
 // @Router       /api/trakt/token/{code} [get]
 func apiTraktGetStoreToken(ctx *gin.Context) {
-	if ApiAuth(ctx) == http.StatusUnauthorized {
+	if auth(ctx) == http.StatusUnauthorized {
 		return
 	}
 
-	token := apiexternal.TraktApi.GetAuthToken(ctx.Param("code"))
-	apiexternal.TraktApi.Token = token
+	token := apiexternal.TraktAPI.GetAuthToken(ctx.Param("code"))
+	apiexternal.TraktAPI.Token = token
 
 	config.UpdateCfgEntry(config.Conf{Name: "trakt_token", Data: *token})
 	ctx.JSON(http.StatusOK, gin.H{"data": *token})
@@ -209,10 +210,10 @@ func apiTraktGetStoreToken(ctx *gin.Context) {
 // @Failure      401   {object}  string
 // @Router       /api/trakt/user/{user}/{list} [get]
 func apiTraktGetUserList(ctx *gin.Context) {
-	if ApiAuth(ctx) == http.StatusUnauthorized {
+	if auth(ctx) == http.StatusUnauthorized {
 		return
 	}
-	list, err := apiexternal.TraktApi.GetUserList(ctx.Param("user"), ctx.Param("list"), "movie,show", 10)
+	list, err := apiexternal.TraktAPI.GetUserList(ctx.Param("user"), ctx.Param("list"), "movie,show", 10)
 	ctx.JSON(http.StatusOK, gin.H{"list": list, "error": err})
 }
 
@@ -223,27 +224,31 @@ func apiTraktGetUserList(ctx *gin.Context) {
 // @Failure      401   {object}  string
 // @Router       /api/slug [get]
 func apiDBRefreshSlugs(ctx *gin.Context) {
-	if ApiAuth(ctx) == http.StatusUnauthorized {
+	if auth(ctx) == http.StatusUnauthorized {
 		return
 	}
-	dbmovies, _ := database.QueryDbmovie(database.Querywithargs{})
+	var dbmovies []database.Dbmovie
+	database.QueryDbmovie(&database.Querywithargs{}, &dbmovies)
 	for idx := range dbmovies {
-		database.UpdateColumn("dbmovies", "slug", logger.StringToSlug(dbmovies[idx].Title), database.Querywithargs{Query: database.QueryFilterByID, Args: []interface{}{dbmovies[idx].ID}})
+		database.UpdateColumn("dbmovies", "slug", logger.StringToSlug(dbmovies[idx].Title), &database.Querywithargs{Query: database.QueryFilterByID, Args: []interface{}{dbmovies[idx].ID}})
 	}
 
-	dbmoviestitles, _ := database.QueryDbmovieTitle(database.Querywithargs{})
+	var dbmoviestitles []database.DbmovieTitle
+	database.QueryDbmovieTitle(&database.Querywithargs{}, &dbmoviestitles)
 	for idx := range dbmoviestitles {
-		database.UpdateColumn("dbmovie_titles", "slug", logger.StringToSlug(dbmoviestitles[idx].Title), database.Querywithargs{Query: database.QueryFilterByID, Args: []interface{}{dbmoviestitles[idx].ID}})
+		database.UpdateColumn("dbmovie_titles", "slug", logger.StringToSlug(dbmoviestitles[idx].Title), &database.Querywithargs{Query: database.QueryFilterByID, Args: []interface{}{dbmoviestitles[idx].ID}})
 	}
 
-	dbserie, _ := database.QueryDbserie(database.Querywithargs{})
+	var dbserie []database.Dbserie
+	database.QueryDbserie(&database.Querywithargs{}, &dbserie)
 	for idx := range dbserie {
-		database.UpdateColumn("dbseries", "slug", logger.StringToSlug(dbserie[idx].Seriename), database.Querywithargs{Query: database.QueryFilterByID, Args: []interface{}{dbserie[idx].ID}})
+		database.UpdateColumn("dbseries", "slug", logger.StringToSlug(dbserie[idx].Seriename), &database.Querywithargs{Query: database.QueryFilterByID, Args: []interface{}{dbserie[idx].ID}})
 	}
 
-	dbserietitles, _ := database.QueryDbserieAlternates(database.Querywithargs{})
+	var dbserietitles []database.DbserieAlternate
+	database.QueryDbserieAlternates(&database.Querywithargs{}, &dbserietitles)
 	for idx := range dbserietitles {
-		database.UpdateColumn("dbserie_alternates", "slug", logger.StringToSlug(dbserietitles[idx].Title), database.Querywithargs{Query: database.QueryFilterByID, Args: []interface{}{dbserietitles[idx].ID}})
+		database.UpdateColumn("dbserie_alternates", "slug", logger.StringToSlug(dbserietitles[idx].Title), &database.Querywithargs{Query: database.QueryFilterByID, Args: []interface{}{dbserietitles[idx].ID}})
 	}
 	ctx.JSON(http.StatusOK, "ok")
 }
@@ -257,7 +262,7 @@ func apiDBRefreshSlugs(ctx *gin.Context) {
 // @Failure      401      {object}  string
 // @Router       /api/parse/string [post]
 func apiParseString(ctx *gin.Context) {
-	if ApiAuth(ctx) == http.StatusUnauthorized {
+	if auth(ctx) == http.StatusUnauthorized {
 		return
 	}
 	var getcfg apiparse
@@ -293,7 +298,7 @@ func apiParseString(ctx *gin.Context) {
 // @Failure      401      {object}  string
 // @Router       /api/parse/file [post]
 func apiParseFile(ctx *gin.Context) {
-	if ApiAuth(ctx) == http.StatusUnauthorized {
+	if auth(ctx) == http.StatusUnauthorized {
 		return
 	}
 	var getcfg apiparse
@@ -329,7 +334,7 @@ func apiParseFile(ctx *gin.Context) {
 // @Failure      401  {object}  string
 // @Router       /api/fillimdb [get]
 func apiFillImdb(ctx *gin.Context) {
-	if ApiAuth(ctx) == http.StatusUnauthorized {
+	if auth(ctx) == http.StatusUnauthorized {
 		return
 	}
 	utils.FillImdb()
@@ -344,7 +349,7 @@ func apiFillImdb(ctx *gin.Context) {
 // @Failure      401  {object}  string
 // @Router       /api/scheduler/stop [get]
 func apiSchedulerStop(c *gin.Context) {
-	if ApiAuth(c) == http.StatusUnauthorized {
+	if auth(c) == http.StatusUnauthorized {
 		return
 	}
 	scheduler.QueueData.Stop()
@@ -360,7 +365,7 @@ func apiSchedulerStop(c *gin.Context) {
 // @Failure      401  {object}  string
 // @Router       /api/scheduler/start [get]
 func apiSchedulerStart(c *gin.Context) {
-	if ApiAuth(c) == http.StatusUnauthorized {
+	if auth(c) == http.StatusUnauthorized {
 		return
 	}
 	scheduler.QueueData.Start()
@@ -376,7 +381,7 @@ func apiSchedulerStart(c *gin.Context) {
 // @Failure      401  {object}  string
 // @Router       /api/scheduler/list [get]
 func apiSchedulerList(ctx *gin.Context) {
-	if ApiAuth(ctx) == http.StatusUnauthorized {
+	if auth(ctx) == http.StatusUnauthorized {
 		return
 	}
 	var r []tasks.JobSchedule
@@ -393,7 +398,7 @@ func apiSchedulerList(ctx *gin.Context) {
 // @Failure      401  {object}  string
 // @Router       /api/db/close [get]
 func apiDbClose(ctx *gin.Context) {
-	if ApiAuth(ctx) == http.StatusUnauthorized {
+	if auth(ctx) == http.StatusUnauthorized {
 		return
 	}
 	database.DBClose()
@@ -407,7 +412,7 @@ func apiDbClose(ctx *gin.Context) {
 // @Failure      401  {object}  string
 // @Router       /api/db/backup [get]
 func apiDbBackup(ctx *gin.Context) {
-	if ApiAuth(ctx) == http.StatusUnauthorized {
+	if auth(ctx) == http.StatusUnauthorized {
 		return
 	}
 	database.Backup("./backup/data.db."+database.GetVersion()+"."+time.Now().Format("20060102_150405"), config.Cfg.General.MaxDatabaseBackups)
@@ -421,7 +426,7 @@ func apiDbBackup(ctx *gin.Context) {
 // @Failure      401  {object}  string
 // @Router       /api/db/integrity [get]
 func apiDbIntegrity(ctx *gin.Context) {
-	if ApiAuth(ctx) == http.StatusUnauthorized {
+	if auth(ctx) == http.StatusUnauthorized {
 		return
 	}
 	ctx.JSON(http.StatusOK, database.DbIntegrityCheck())
@@ -435,11 +440,11 @@ func apiDbIntegrity(ctx *gin.Context) {
 // @Failure      401   {object}  string
 // @Router       /api/db/clear/{name} [delete]
 func apiDbClear(ctx *gin.Context) {
-	if ApiAuth(ctx) == http.StatusUnauthorized {
+	if auth(ctx) == http.StatusUnauthorized {
 		return
 	}
-	_, err := database.Dbexec("main", database.Querywithargs{QueryString: "DELETE from " + ctx.Param("name")})
-	database.Dbexec("main", database.Querywithargs{QueryString: "VACUUM"})
+	_, err := database.Dbexec("main", &database.Querywithargs{QueryString: "DELETE from " + ctx.Param("name")})
+	database.Dbexec("main", &database.Querywithargs{QueryString: "VACUUM"})
 	if err == nil {
 		ctx.JSON(http.StatusOK, "ok")
 	} else {
@@ -454,10 +459,10 @@ func apiDbClear(ctx *gin.Context) {
 // @Failure      401  {object}  string
 // @Router       /api/db/vacuum [get]
 func apiDbVacuum(ctx *gin.Context) {
-	if ApiAuth(ctx) == http.StatusUnauthorized {
+	if auth(ctx) == http.StatusUnauthorized {
 		return
 	}
-	_, err := database.Dbexec("main", database.Querywithargs{QueryString: "VACUUM"})
+	_, err := database.Dbexec("main", &database.Querywithargs{QueryString: "VACUUM"})
 	if err == nil {
 		ctx.JSON(http.StatusOK, "ok")
 	} else {
@@ -473,7 +478,7 @@ func apiDbVacuum(ctx *gin.Context) {
 // @Failure      401   {object}  string
 // @Router       /api/db/oldjobs [delete]
 func apiDbRemoveOldJobs(ctx *gin.Context) {
-	if ApiAuth(ctx) == http.StatusUnauthorized {
+	if auth(ctx) == http.StatusUnauthorized {
 		return
 	}
 	if queryParam, ok := ctx.GetQuery("days"); ok {
@@ -483,7 +488,7 @@ func apiDbRemoveOldJobs(ctx *gin.Context) {
 			scantime := time.Now()
 			if days != 0 {
 				scantime = scantime.AddDate(0, 0, 0-days)
-				_, err := database.DeleteRow("job_histories", database.Querywithargs{Query: database.Query{Where: "created_at < ?"}, Args: []interface{}{scantime}})
+				_, err := database.DeleteRow("job_histories", &database.Querywithargs{Query: database.Query{Where: "created_at < ?"}, Args: []interface{}{scantime}})
 				if err == nil {
 					ctx.JSON(http.StatusOK, "ok")
 				} else {
@@ -505,10 +510,11 @@ func apiDbRemoveOldJobs(ctx *gin.Context) {
 // @Failure      401  {object}  string
 // @Router       /api/quality [get]
 func apiGetQualities(ctx *gin.Context) {
-	if ApiAuth(ctx) == http.StatusUnauthorized {
+	if auth(ctx) == http.StatusUnauthorized {
 		return
 	}
-	qualities, _ := database.QueryQualities(database.Querywithargs{})
+	var qualities []database.Qualities
+	database.QueryQualities(&database.Querywithargs{}, &qualities)
 	ctx.JSON(http.StatusOK, gin.H{"data": qualities})
 }
 
@@ -520,12 +526,13 @@ func apiGetQualities(ctx *gin.Context) {
 // @Failure      401  {object}  string
 // @Router       /api/quality/{id} [delete]
 func apiQualityDelete(ctx *gin.Context) {
-	if ApiAuth(ctx) == http.StatusUnauthorized {
+	if auth(ctx) == http.StatusUnauthorized {
 		return
 	}
-	database.DeleteRow("qualities", database.Querywithargs{Query: database.QueryFilterByID, Args: []interface{}{ctx.Param("id")}})
+	database.DeleteRow("qualities", &database.Querywithargs{Query: database.QueryFilterByID, Args: []interface{}{ctx.Param("id")}})
 	database.GetVars()
-	qualities, _ := database.QueryQualities(database.Querywithargs{})
+	var qualities []database.Qualities
+	database.QueryQualities(&database.Querywithargs{}, &qualities)
 	ctx.JSON(http.StatusOK, gin.H{"data": qualities})
 }
 
@@ -538,7 +545,7 @@ func apiQualityDelete(ctx *gin.Context) {
 // @Failure      401      {object}  string
 // @Router       /api/quality [post]
 func apiQualityUpdate(ctx *gin.Context) {
-	if ApiAuth(ctx) == http.StatusUnauthorized {
+	if auth(ctx) == http.StatusUnauthorized {
 		return
 	}
 	var quality database.Qualities
@@ -546,7 +553,7 @@ func apiQualityUpdate(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	counter, _ := database.CountRows("qualities", database.Querywithargs{Query: database.Query{Where: "id != 0 and id = ?"}, Args: []interface{}{quality.ID}})
+	counter, _ := database.CountRows("qualities", &database.Querywithargs{Query: database.Query{Where: "id != 0 and id = ?"}, Args: []interface{}{quality.ID}})
 
 	if counter == 0 {
 		database.InsertArray("qualities", &logger.InStringArrayStruct{Arr: []string{"Type", "Name", "Regex", "Strings", "Priority", "Use_Regex"}},
@@ -554,10 +561,11 @@ func apiQualityUpdate(ctx *gin.Context) {
 	} else {
 		database.UpdateArray("qualities", &logger.InStringArrayStruct{Arr: []string{"Type", "Name", "Regex", "Strings", "Priority", "Use_Regex"}},
 			[]interface{}{quality.QualityType, quality.Name, quality.Regex, quality.Strings, quality.Priority, quality.UseRegex},
-			database.Querywithargs{Query: database.Query{Where: "id != 0 and id = ?"}, Args: []interface{}{quality.ID}})
+			&database.Querywithargs{Query: database.Query{Where: "id != 0 and id = ?"}, Args: []interface{}{quality.ID}})
 	}
 	database.GetVars()
-	qualities, _ := database.QueryQualities(database.Querywithargs{})
+	var qualities []database.Qualities
+	database.QueryQualities(&database.Querywithargs{}, &qualities)
 	ctx.JSON(http.StatusOK, gin.H{"data": qualities})
 }
 
@@ -565,70 +573,21 @@ func apiQualityUpdate(ctx *gin.Context) {
 // @Description  List allowed qualities and their priorities
 // @Tags         quality
 // @Param        name    path      string  true  "Quality Name: ex. SD"
-// @Param        config  path      string  true  "Config Name: ex. movie_EN or serie_EN"
 // @Success      200     {object}   parser.ParseInfo
 // @Failure      401  {object}  string
 // @Failure      404     {object}  string
-// @Router       /api/quality/{name}/{config} [get]
+// @Router       /api/quality/{name} [get]
 func apiListQualityPriorities(ctx *gin.Context) {
-	if ApiAuth(ctx) == http.StatusUnauthorized {
+	if auth(ctx) == http.StatusUnauthorized {
 		return
 	}
-	if !config.ConfigCheck("quality_" + ctx.Param("name")) {
+	if !config.Check("quality_" + ctx.Param("name")) {
 		ctx.JSON(http.StatusNotFound, "quality not found")
 		return
 	}
-	if !config.ConfigCheck(ctx.Param("config")) {
-		ctx.JSON(http.StatusNotFound, "config not found")
-		return
-	}
-	//defer qual.Close()
 
-	var parserreturn []apiexternal.ParseInfo
-	for idxreso := range database.DBConnect.Getresolutions {
-		wantedreso := false
-
-		for idxwantreso := range config.Cfg.Quality[ctx.Param("name")].WantedResolution {
-			if strings.EqualFold(config.Cfg.Quality[ctx.Param("name")].WantedResolution[idxwantreso], database.DBConnect.Getresolutions[idxreso].Name) {
-				wantedreso = true
-				break
-			}
-		}
-		if !wantedreso {
-			continue
-		}
-		for idxqual := range database.DBConnect.Getqualities {
-			wantedqual := false
-			for idxwantqual := range config.Cfg.Quality[ctx.Param("name")].WantedQuality {
-				if strings.EqualFold(config.Cfg.Quality[ctx.Param("name")].WantedQuality[idxwantqual], database.DBConnect.Getqualities[idxqual].Name) {
-					wantedqual = true
-					break
-				}
-			}
-			if !wantedqual {
-				continue
-			}
-			for idxcodec := range database.DBConnect.Getcodecs {
-				for idxaudio := range database.DBConnect.Getaudios {
-					parse := apiexternal.ParseInfo{
-						Resolution:   database.DBConnect.Getresolutions[idxreso].Name,
-						Quality:      database.DBConnect.Getqualities[idxqual].Name,
-						Codec:        database.DBConnect.Getcodecs[idxcodec].Name,
-						Audio:        database.DBConnect.Getaudios[idxaudio].Name,
-						ResolutionID: database.DBConnect.Getresolutions[idxreso].ID,
-						QualityID:    database.DBConnect.Getqualities[idxqual].ID,
-						CodecID:      database.DBConnect.Getcodecs[idxcodec].ID,
-						AudioID:      database.DBConnect.Getaudios[idxaudio].ID,
-					}
-					cfgp := config.Cfg.Media[ctx.Param("config")]
-
-					parser.GetIDPriorityMap(&parse, &cfgp, ctx.Param("name"), true, true)
-					parserreturn = append(parserreturn, parse)
-				}
-			}
-		}
-	}
-	ctx.JSON(http.StatusOK, gin.H{"data": parserreturn})
+	ctx.JSON(http.StatusOK, gin.H{"data": parser.Getallprios()[ctx.Param("name")]})
+	return
 }
 
 // @Summary      List Quality Priorities
@@ -641,10 +600,26 @@ func apiListQualityPriorities(ctx *gin.Context) {
 // @Failure      404     {object}  string
 // @Router       /api/quality/all [get]
 func apiListAllQualityPriorities(ctx *gin.Context) {
-	if ApiAuth(ctx) == http.StatusUnauthorized {
+	if auth(ctx) == http.StatusUnauthorized {
 		return
 	}
 	ctx.JSON(http.StatusOK, gin.H{"data": parser.Getallprios()})
+}
+
+// @Summary      List Quality Priorities
+// @Description  List all qualities and their priorities
+// @Tags         quality
+// @Param        name    path      string  true  "Quality Name: ex. SD"
+// @Param        config  path      string  true  "Config Name: ex. movie_EN or serie_EN"
+// @Success      200     {object}   parser.ParseInfo
+// @Failure      401  {object}  string
+// @Failure      404     {object}  string
+// @Router       /api/quality/complete [get]
+func apiListCompleteAllQualityPriorities(ctx *gin.Context) {
+	if auth(ctx) == http.StatusUnauthorized {
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{"data": parser.Getcompleteallprios()})
 }
 
 // @Summary      Get Complete Config
@@ -654,7 +629,7 @@ func apiListAllQualityPriorities(ctx *gin.Context) {
 // @Failure      401  {object}  string
 // @Router       /api/config/all [get]
 func apiConfigAll(ctx *gin.Context) {
-	if ApiAuth(ctx) == http.StatusUnauthorized {
+	if auth(ctx) == http.StatusUnauthorized {
 		return
 	}
 	ctx.JSON(http.StatusOK, gin.H{"data": config.Cfg})
@@ -667,7 +642,7 @@ func apiConfigAll(ctx *gin.Context) {
 // @Failure      401   {object}  string
 // @Router       /api/config/clear [delete]
 func apiConfigClear(ctx *gin.Context) {
-	if ApiAuth(ctx) == http.StatusUnauthorized {
+	if auth(ctx) == http.StatusUnauthorized {
 		return
 	}
 	config.ClearCfg()
@@ -683,7 +658,7 @@ func apiConfigClear(ctx *gin.Context) {
 // @Failure      401   {object}  string
 // @Router       /api/config/get/{name} [get]
 func apiConfigGet(ctx *gin.Context) {
-	if ApiAuth(ctx) == http.StatusUnauthorized {
+	if auth(ctx) == http.StatusUnauthorized {
 		return
 	}
 	var data interface{}
@@ -736,7 +711,7 @@ func apiConfigGet(ctx *gin.Context) {
 // @Failure      401  {object}  string
 // @Router       /api/config/delete/{name} [delete]
 func apiConfigDelete(ctx *gin.Context) {
-	if ApiAuth(ctx) == http.StatusUnauthorized {
+	if auth(ctx) == http.StatusUnauthorized {
 		return
 	}
 	config.DeleteCfgEntry(ctx.Param("name"))
@@ -751,7 +726,7 @@ func apiConfigDelete(ctx *gin.Context) {
 // @Failure      401   {object}  string
 // @Router       /api/config/refresh [get]
 func apiConfigRefreshFile(ctx *gin.Context) {
-	if ApiAuth(ctx) == http.StatusUnauthorized {
+	if auth(ctx) == http.StatusUnauthorized {
 		return
 	}
 	config.LoadCfgDB(config.GetCfgFile())
@@ -768,7 +743,7 @@ func apiConfigRefreshFile(ctx *gin.Context) {
 // @Failure      401     {object}  string
 // @Router       /api/config/update/{name} [post]
 func apiConfigUpdate(ctx *gin.Context) {
-	if ApiAuth(ctx) == http.StatusUnauthorized {
+	if auth(ctx) == http.StatusUnauthorized {
 		return
 	}
 	name := ctx.Param("name")
@@ -880,7 +855,7 @@ func apiConfigUpdate(ctx *gin.Context) {
 // @Failure      401     {object}  string
 // @Router       /api/config/type/{type} [get]
 func apiListConfigType(ctx *gin.Context) {
-	if ApiAuth(ctx) == http.StatusUnauthorized {
+	if auth(ctx) == http.StatusUnauthorized {
 		return
 	}
 	list := make(map[string]interface{})
@@ -965,14 +940,14 @@ func apiListConfigType(ctx *gin.Context) {
 }
 
 type apiNameInput struct {
-	Cfg_Media string `json:"cfg_media"`
+	CfgMedia  string `json:"cfg_media"`
 	GroupType string `json:"grouptype"`
 	FilePath  string `json:"filepath"`
 	MovieID   int    `json:"movieid"`
 	SerieID   int    `json:"serieid"`
 }
-type apiNameInputJson struct {
-	Cfg_Media string `json:"cfg_media"`
+type apiNameInputJSON struct {
+	CfgMedia  string `json:"cfg_media"`
 	GroupType string `json:"grouptype"`
 	FilePath  string `json:"filepath"`
 	MovieID   int    `json:"movieid"`
@@ -982,13 +957,13 @@ type apiNameInputJson struct {
 // @Summary      Name Generation Test
 // @Description  Test your Naming Convention
 // @Tags         general
-// @Param        config  body      apiNameInputJson  true  "Config"
+// @Param        config  body      apiNameInputJSON  true  "Config"
 // @Success      200     {object}  string
 // @Failure      400     {object}  string
 // @Failure      401     {object}  string
 // @Router       /api/naming [post]
 func apiNamingGenerate(ctx *gin.Context) {
-	if ApiAuth(ctx) == http.StatusUnauthorized {
+	if auth(ctx) == http.StatusUnauthorized {
 		return
 	}
 	var cfg apiNameInput
@@ -999,37 +974,39 @@ func apiNamingGenerate(ctx *gin.Context) {
 
 	//defer mediacfg.Close()
 	if cfg.GroupType == "movie" {
-		movie, _ := database.GetMovies(database.Querywithargs{Query: database.QueryFilterByID, Args: []interface{}{cfg.MovieID}})
+		var movie database.Movie
+		database.GetMovies(&database.Querywithargs{Query: database.QueryFilterByID, Args: []interface{}{cfg.MovieID}}, &movie)
 		//defer logger.ClearVar(&movie)
-		cfgp := config.Cfg.Media[cfg.Cfg_Media]
+		cfgp := config.Cfg.Media[cfg.CfgMedia]
 
 		s, _ := structure.NewStructure(
 			&cfgp,
 			movie.Listname,
 			cfg.GroupType,
 			movie.Rootpath,
-			config.Cfg.Media[cfg.Cfg_Media].DataImport[0].TemplatePath,
-			config.Cfg.Media[cfg.Cfg_Media].Data[0].TemplatePath,
+			config.Cfg.Media[cfg.CfgMedia].DataImport[0].TemplatePath,
+			config.Cfg.Media[cfg.CfgMedia].Data[0].TemplatePath,
 		)
 		//defer s.Close()
 		s.ParseFile(cfg.FilePath, true, filepath.Dir(cfg.FilePath), false)
 
 		s.ParseFileAdditional(cfg.FilePath, filepath.Dir(cfg.FilePath), false, 0, true)
 
-		foldername, filename := s.GenerateNamingTemplate(cfg.FilePath, movie.Rootpath, movie.DbmovieID, "", "", []database.Dbstatic_TwoInt{})
+		foldername, filename := s.GenerateNamingTemplate(cfg.FilePath, movie.Rootpath, movie.DbmovieID, "", "", &[]database.DbstaticTwoUint{})
 		ctx.JSON(http.StatusOK, gin.H{"foldername": foldername, "filename": filename})
 	} else {
-		series, _ := database.GetSeries(database.Querywithargs{Query: database.QueryFilterByID, Args: []interface{}{cfg.SerieID}})
+		var series database.Serie
+		database.GetSeries(&database.Querywithargs{Query: database.QueryFilterByID, Args: []interface{}{cfg.SerieID}}, &series)
 		//defer logger.ClearVar(&series)
-		cfgp := config.Cfg.Media[cfg.Cfg_Media]
+		cfgp := config.Cfg.Media[cfg.CfgMedia]
 
 		s, _ := structure.NewStructure(
 			&cfgp,
 			series.Listname,
 			cfg.GroupType,
 			series.Rootpath,
-			config.Cfg.Media[cfg.Cfg_Media].DataImport[0].TemplatePath,
-			config.Cfg.Media[cfg.Cfg_Media].Data[0].TemplatePath,
+			config.Cfg.Media[cfg.CfgMedia].DataImport[0].TemplatePath,
+			config.Cfg.Media[cfg.CfgMedia].Data[0].TemplatePath,
 		)
 		//defer s.Close()
 		s.ParseFile(cfg.FilePath, true, filepath.Dir(cfg.FilePath), false)
@@ -1039,19 +1016,19 @@ func apiNamingGenerate(ctx *gin.Context) {
 
 		var firstdbepiid, firstepiid uint
 		for key := range mapepi {
-			firstdbepiid = uint(mapepi[key].Num2)
-			firstepiid = uint(mapepi[key].Num1)
+			firstdbepiid = mapepi[key].Num2
+			firstepiid = mapepi[key].Num1
 			break
 		}
 
 		serietitle, episodetitle := s.GetEpisodeTitle(firstdbepiid, cfg.FilePath)
 
-		foldername, filename := s.GenerateNamingTemplate(cfg.FilePath, series.Rootpath, firstepiid, serietitle, episodetitle, mapepi)
+		foldername, filename := s.GenerateNamingTemplate(cfg.FilePath, series.Rootpath, firstepiid, serietitle, episodetitle, &mapepi)
 		ctx.JSON(http.StatusOK, gin.H{"foldername": foldername, "filename": filename})
 	}
 }
 
-type apiStructureJson struct {
+type apiStructureJSON struct {
 	Folder                     string
 	Disableruntimecheck        bool
 	Disabledisallowed          bool
@@ -1060,28 +1037,28 @@ type apiStructureJson struct {
 	Sourcepathtemplate         string
 	Targetpathtemplate         string
 	Configentry                string
-	Forceid                    int
+	Forceid                    uint
 }
 
 // @Summary      Structure Single Item
 // @Description  Structure a single folder
 // @Tags         general
-// @Param        config  body      apiStructureJson  true  "Config"
+// @Param        config  body      apiStructureJSON  true  "Config"
 // @Success      200     {object}  string
 // @Failure      400     {object}  string
 // @Failure      401     {object}  string
 // @Router       /api/structure [post]
 func apiStructure(ctx *gin.Context) {
-	if ApiAuth(ctx) == http.StatusUnauthorized {
+	if auth(ctx) == http.StatusUnauthorized {
 		return
 	}
-	var cfg apiStructureJson
+	var cfg apiStructureJSON
 	if err := ctx.BindJSON(&cfg); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	getconfig := ""
+	var getconfig string
 	if strings.EqualFold(cfg.Grouptype, "movie") {
 		getconfig = "movie_" + cfg.Configentry
 	}
@@ -1094,20 +1071,20 @@ func apiStructure(ctx *gin.Context) {
 		return
 	}
 
-	if !config.ConfigCheck("path_" + cfg.Sourcepathtemplate) {
+	if !config.Check("path_" + cfg.Sourcepathtemplate) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "source config not found"})
 		return
 	}
 
-	if !config.ConfigCheck("path_" + cfg.Targetpathtemplate) {
+	if !config.Check("path_" + cfg.Targetpathtemplate) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "target config not found"})
 		return
 	}
 	cfgp := config.Cfg.Media[getconfig]
 
 	if cfg.Forceid != 0 {
-		structure.StructureSingleFolderAs(cfg.Folder, cfg.Forceid, &cfgp, structure.StructureConfig{Disableruntimecheck: cfg.Disableruntimecheck, Disabledisallowed: cfg.Disabledisallowed, Disabledeletewronglanguage: cfg.Disabledeletewronglanguage, Grouptype: cfg.Grouptype, Sourcepathstr: cfg.Sourcepathtemplate, Targetpathstr: cfg.Targetpathtemplate})
+		structure.OrganizeSingleFolderAs(cfg.Folder, cfg.Forceid, &cfgp, &structure.Config{Disableruntimecheck: cfg.Disableruntimecheck, Disabledisallowed: cfg.Disabledisallowed, Disabledeletewronglanguage: cfg.Disabledeletewronglanguage, Grouptype: cfg.Grouptype, Sourcepathstr: cfg.Sourcepathtemplate, Targetpathstr: cfg.Targetpathtemplate})
 	} else {
-		structure.StructureSingleFolder(cfg.Folder, &cfgp, structure.StructureConfig{Disableruntimecheck: cfg.Disableruntimecheck, Disabledisallowed: cfg.Disabledisallowed, Disabledeletewronglanguage: cfg.Disabledeletewronglanguage, Grouptype: cfg.Grouptype, Sourcepathstr: cfg.Sourcepathtemplate, Targetpathstr: cfg.Targetpathtemplate})
+		structure.OrganizeSingleFolder(cfg.Folder, &cfgp, &structure.Config{Disableruntimecheck: cfg.Disableruntimecheck, Disabledisallowed: cfg.Disabledisallowed, Disabledeletewronglanguage: cfg.Disabledeletewronglanguage, Grouptype: cfg.Grouptype, Sourcepathstr: cfg.Sourcepathtemplate, Targetpathstr: cfg.Targetpathtemplate})
 	}
 }

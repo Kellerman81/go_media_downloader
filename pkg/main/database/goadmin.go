@@ -110,7 +110,7 @@ func (d *Mysqlite) InitDB(cfgList map[string]config.Database) db.Connection {
 				}
 			}
 			if conn == "media" {
-				d.DbList[conn] = getdb(false).DB
+				d.DbList[conn] = dbData.DB
 			}
 		}
 	})

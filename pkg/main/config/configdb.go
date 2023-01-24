@@ -8,53 +8,48 @@ import (
 	"golang.org/x/oauth2"
 )
 
-func ConfigCheck(key string) bool {
-	return Cfg.Keys[key]
-}
-
 type Conf struct {
 	Name string
 	Data interface{}
 }
 
-func RegexCheck(key string) bool {
-	return logger.GlobalRegexCache.CheckRegexp(key)
-}
-
-func RegexGetMatches(key string, matchfor string) []string {
-	return logger.GlobalRegexCache.GetRegexpDirect(key).FindStringSubmatch(matchfor)
+func Check(key string) bool {
+	return Cfg.Keys[key]
 }
 
 func RegexGetMatchesStr1Str2(key string, matchfor string) (string, string) {
 	matches := logger.GlobalRegexCache.GetRegexpDirect(key).FindStringSubmatch(matchfor)
-	defer logger.ClearVar(&matches)
-	if len(matches) >= 2 {
-		if len(matches) >= 3 {
-			return matches[1], matches[2]
-		} else {
-			return matches[1], ""
-		}
-	} else {
-		return "", ""
+	if len(matches) >= 3 {
+		return matches[1], matches[2]
 	}
+	if len(matches) >= 2 {
+		return matches[1], ""
+	}
+	matches = nil
+	return "", ""
 }
 
 func RegexGetMatchesFind(key string, matchfor string, mincount int) bool {
-	return len(logger.GlobalRegexCache.GetRegexpDirect(key).FindStringSubmatchIndex(matchfor)) >= mincount
-}
-func RegexGetAllMatches(key string, matchfor string, maxcount int) [][]string {
-	return logger.GlobalRegexCache.GetRegexpDirect(key).FindAllStringSubmatch(matchfor, maxcount)
-}
-func RegexGetLastMatches(key string, matchfor string, maxcount int) []string {
-	matchest := logger.GlobalRegexCache.GetRegexpDirect(key).FindAllStringSubmatch(matchfor, maxcount)
-	defer logger.ClearVar(&matchest)
-	if len(matchest) == 0 {
-		return []string{}
+	if mincount == 1 {
+		return logger.GlobalRegexCache.GetRegexpDirect(key).MatchString(matchfor)
 	}
-	return matchest[len(matchest)-1]
+	matches := logger.GlobalRegexCache.GetRegexpDirect(key).FindStringSubmatchIndex(matchfor)
+	if matches == nil {
+		return false
+	}
+	if len(matches) == 0 {
+		matches = nil
+		return false
+	}
+	if matches[1] >= mincount {
+		matches = nil
+		return true
+	}
+	matches = nil
+	return false
 }
 
-func ConfigGetTrakt(key string) *oauth2.Token {
+func GetTrakt(key string) *oauth2.Token {
 	if logger.GlobalCache.Check(key, reflect.TypeOf(oauth2.Token{})) {
 		value := logger.GlobalCache.GetData(key).Value.(oauth2.Token)
 		return &value

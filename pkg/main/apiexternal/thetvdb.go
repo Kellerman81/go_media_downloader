@@ -1,7 +1,7 @@
 package apiexternal
 
 import (
-	"errors"
+	"fmt"
 	"strconv"
 	"time"
 
@@ -70,8 +70,29 @@ type tvdbClient struct {
 	Client *RLHTTPClient
 }
 
-var TvdbApi tvdbClient
+var TvdbAPI tvdbClient
 
+func (t *TheTVDBSeries) Close() {
+	if logger.DisableVariableCleanup {
+		return
+	}
+	if t == nil {
+		return
+	}
+	t.Data.Aliases = nil
+	t.Data.Genre = nil
+	t = nil
+}
+func (t *TheTVDBEpisodes) Close() {
+	if logger.DisableVariableCleanup {
+		return
+	}
+	if t == nil {
+		return
+	}
+	t.Data = nil
+	t = nil
+}
 func NewTvdbClient(seconds int, calls int, disabletls bool, timeoutseconds int) {
 	if seconds == 0 {
 		seconds = 1
@@ -79,59 +100,56 @@ func NewTvdbClient(seconds int, calls int, disabletls bool, timeoutseconds int) 
 	if calls == 0 {
 		calls = 1
 	}
-	TvdbApi = tvdbClient{
+	TvdbAPI = tvdbClient{
 		Client: NewClient(
 			disabletls,
+			true,
 			rate.New(calls, 0, time.Duration(seconds)*time.Second), timeoutseconds)}
 
 }
 
 func (t *tvdbClient) GetSeries(id int, language string) (*TheTVDBSeries, error) {
-	url := "https://api.thetvdb.com/series/" + strconv.FormatInt(int64(id), 10)
-	result := new(TheTVDBSeries)
-	_, err := t.Client.DoJson(url, result, []AddHeader{{Key: "Accept-Language", Val: language}})
+	url := fmt.Sprintf("https://api.thetvdb.com/series/%d", id)
+	var result TheTVDBSeries
+	_, err := t.Client.DoJSON(url, &result, []addHeader{{key: "Accept-Language", val: language}})
 
 	if err != nil {
-		if err != errors.New(pleaseWait) {
-			logerror(url, err)
+		if err != errPleaseWait {
+			logger.Log.GlobalLogger.Error(errorCalling, zap.Stringp("url", &url), zap.Error(err))
 		}
-		result = nil
+		result.Close()
 		return nil, err
 	}
-	return result, nil
+	return &result, nil
 }
 func (t *tvdbClient) GetSeriesEpisodes(id int, language string) (*TheTVDBEpisodes, error) {
-	url := "https://api.thetvdb.com/series/" + strconv.FormatInt(int64(id), 10) + "/episodes"
-	result := new(TheTVDBEpisodes)
-	_, err := t.Client.DoJson(url, result, []AddHeader{{Key: "Accept-Language", Val: language}})
+	url := fmt.Sprintf("https://api.thetvdb.com/series/%d/episodes", id)
+	var result TheTVDBEpisodes
+	_, err := t.Client.DoJSON(url, &result, []addHeader{{key: "Accept-Language", val: language}})
 
 	if err != nil {
-		if err != errors.New(pleaseWait) {
-			logerror(url, err)
+		if err != errPleaseWait {
+			logger.Log.GlobalLogger.Error(errorCalling, zap.Stringp("url", &url), zap.Error(err))
 		}
-		result = nil
+		result.Close()
 		return nil, err
 	}
 
 	if result.Links.Last >= 2 {
-		var resultadd *TheTVDBEpisodes
+		var resultadd TheTVDBEpisodes
 		urlbase := url + "?page="
-		geturl := ""
 		for k := 2; k <= result.Links.Last; k++ {
-			resultadd = new(TheTVDBEpisodes)
-			geturl = urlbase + strconv.Itoa(k)
-			_, err = t.Client.DoJson(geturl, resultadd, []AddHeader{{Key: "Accept-Language", Val: language}})
+			resultadd.Data = []TheTVDBEpisode{}
+			_, err = t.Client.DoJSON(urlbase+strconv.Itoa(k), &resultadd, []addHeader{{key: "Accept-Language", val: language}})
 			if err != nil {
 				logger.Log.GlobalLogger.Error(errorCalling, zap.String("Url", urlbase+strconv.Itoa(k)), zap.Error(err))
 				break
-			}
-
-			if len(result.Data) >= 1 {
+			} else if len(resultadd.Data) >= 1 {
 				result.Data = logger.GrowSliceBy(result.Data, len(resultadd.Data))
+				result.Data = append(result.Data, resultadd.Data...)
 			}
-			result.Data = append(result.Data, resultadd.Data...)
-			resultadd = nil
 		}
+		resultadd.Close()
 	}
-	return result, nil
+	return &result, nil
 }

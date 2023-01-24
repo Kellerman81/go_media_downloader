@@ -29,7 +29,7 @@ func AddAllRoutes(rg *gin.RouterGroup) {
 // @Failure      401  {object}  string
 // @Router       /api/all/feeds [get]
 func apiAllGetFeeds(c *gin.Context) {
-	if ApiAuth(c) == http.StatusUnauthorized {
+	if auth(c) == http.StatusUnauthorized {
 		return
 	}
 
@@ -45,7 +45,7 @@ func apiAllGetFeeds(c *gin.Context) {
 // @Failure      401  {object}  string
 // @Router       /api/all/data [get]
 func apiAllGetData(c *gin.Context) {
-	if ApiAuth(c) == http.StatusUnauthorized {
+	if auth(c) == http.StatusUnauthorized {
 		return
 	}
 	utils.MoviesAllJobs("data", true)
@@ -60,7 +60,7 @@ func apiAllGetData(c *gin.Context) {
 // @Failure      401  {object}  string
 // @Router       /api/all/search/rss [get]
 func apiAllGetRss(c *gin.Context) {
-	if ApiAuth(c) == http.StatusUnauthorized {
+	if auth(c) == http.StatusUnauthorized {
 		return
 	}
 	utils.MoviesAllJobs("rss", true)
@@ -75,7 +75,7 @@ func apiAllGetRss(c *gin.Context) {
 // @Failure      401  {object}  string
 // @Router       /api/all/search/missing/full [get]
 func apiAllGetMissingFull(c *gin.Context) {
-	if ApiAuth(c) == http.StatusUnauthorized {
+	if auth(c) == http.StatusUnauthorized {
 		return
 	}
 	utils.MoviesAllJobs("searchmissingfull", true)
@@ -90,7 +90,7 @@ func apiAllGetMissingFull(c *gin.Context) {
 // @Failure      401  {object}  string
 // @Router       /api/all/search/missing/inc [get]
 func apiAllGetMissingInc(c *gin.Context) {
-	if ApiAuth(c) == http.StatusUnauthorized {
+	if auth(c) == http.StatusUnauthorized {
 		return
 	}
 	utils.MoviesAllJobs("searchmissinginc", true)
@@ -105,7 +105,7 @@ func apiAllGetMissingInc(c *gin.Context) {
 // @Failure      401  {object}  string
 // @Router       /api/all/search/upgrade/full [get]
 func apiAllGetUpgradeFull(c *gin.Context) {
-	if ApiAuth(c) == http.StatusUnauthorized {
+	if auth(c) == http.StatusUnauthorized {
 		return
 	}
 	utils.MoviesAllJobs("searchupgradefull", true)
@@ -120,7 +120,7 @@ func apiAllGetUpgradeFull(c *gin.Context) {
 // @Failure      401  {object}  string
 // @Router       /api/all/search/upgrade/inc [get]
 func apiAllGetUpgradeInc(c *gin.Context) {
-	if ApiAuth(c) == http.StatusUnauthorized {
+	if auth(c) == http.StatusUnauthorized {
 		return
 	}
 	utils.MoviesAllJobs("searchupgradeinc", true)
@@ -128,26 +128,24 @@ func apiAllGetUpgradeInc(c *gin.Context) {
 	c.JSON(http.StatusOK, "ok")
 }
 
-func ApiAuth(c *gin.Context) int {
+func auth(c *gin.Context) int {
 	if queryParam, ok := c.GetQuery("apikey"); ok {
 		if queryParam == "" {
 			c.Header("Content-Type", "application/json")
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 			c.AbortWithStatus(http.StatusUnauthorized)
 			return http.StatusUnauthorized
-		} else {
-			apikey := config.Cfg.General.WebApiKey
-			if queryParam != apikey {
-				c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
-				c.AbortWithStatus(http.StatusUnauthorized)
-				return http.StatusUnauthorized
-			}
-			c.Next()
-			return http.StatusOK
 		}
-	} else {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
-		c.AbortWithStatus(http.StatusUnauthorized)
-		return http.StatusUnauthorized
+		apikey := config.Cfg.General.WebAPIKey
+		if queryParam != apikey {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+			c.AbortWithStatus(http.StatusUnauthorized)
+			return http.StatusUnauthorized
+		}
+		c.Next()
+		return http.StatusOK
 	}
+	c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+	c.AbortWithStatus(http.StatusUnauthorized)
+	return http.StatusUnauthorized
 }

@@ -14,6 +14,7 @@ type ImdbTitle struct {
 	RuntimeMinutes int    `db:"runtime_minutes"`
 	Genres         string
 }
+
 type ImdbAka struct {
 	ID              uint
 	CreatedAt       time.Time `db:"created_at"`

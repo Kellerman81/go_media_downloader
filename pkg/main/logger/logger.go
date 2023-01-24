@@ -11,9 +11,7 @@ import (
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
-var Log zapLogger
-
-type LoggerConfig struct {
+type Config struct {
 	LogLevel     string
 	LogFileSize  int
 	LogFileCount int
@@ -21,9 +19,16 @@ type LoggerConfig struct {
 	TimeFormat   string
 	TimeZone     string
 }
+type zoneClock time.Time
+type zapLogger struct {
+	GlobalLogger *zap.Logger
+}
 
-var TimeZone *time.Location = time.UTC
-var TimeFormat string = time.RFC3339Nano
+type fnlog func(msg string, fields ...zapcore.Field)
+
+var Log zapLogger
+var TimeZone = time.UTC
+var TimeFormat = time.RFC3339Nano
 
 func MyTimeEncoder(t time.Time, enc zapcore.PrimitiveArrayEncoder) {
 	encodeTimeLayout(t, TimeFormat, enc)
@@ -42,15 +47,13 @@ func encodeTimeLayout(t time.Time, layout string, enc zapcore.PrimitiveArrayEnco
 	enc.AppendString(t.Format(layout))
 }
 
-type zoneClock time.Time
-
 func (c zoneClock) Now() time.Time {
 	return time.Now().In(TimeZone)
 }
 func (c zoneClock) NewTicker(d time.Duration) *time.Ticker {
 	return &time.Ticker{}
 }
-func InitLogger(config LoggerConfig) {
+func InitLogger(config Config) {
 	if config.LogFileSize == 0 {
 		config.LogFileSize = 10
 	}
@@ -125,12 +128,6 @@ func InitLogger(config LoggerConfig) {
 	zap.ReplaceGlobals(globalLogger)
 	Log.GlobalLogger = globalLogger
 }
-
-type zapLogger struct {
-	GlobalLogger *zap.Logger
-}
-
-type fnlog func(msg string, fields ...zapcore.Field)
 
 func printlog(fun fnlog, args ...interface{}) {
 	fun(fmt.Sprint(args...))

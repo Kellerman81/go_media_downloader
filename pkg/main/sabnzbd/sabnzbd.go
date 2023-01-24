@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"net/url"
@@ -202,7 +201,7 @@ func (su *sabnzbdURL) CallJSON(r interface{}) error {
 	//fmt.Printf("Status: %v\n", resp.Status)
 
 	//decoder := json.NewDecoder(resp.Body)
-	respStr, err := ioutil.ReadAll(resp.Body)
+	respStr, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return fmt.Errorf("sabnzbdURL:CallJSON: failed to read response: %v", err)
 	}
@@ -225,7 +224,7 @@ func (su *sabnzbdURL) CallJSONMultipart(reader io.Reader, contentType string, r 
 	}
 	defer resp.Body.Close()
 
-	respStr, err := ioutil.ReadAll(resp.Body)
+	respStr, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return fmt.Errorf("sabnzbdURL:CallJSONMultipart: failed to read response: %v", err)
 	}

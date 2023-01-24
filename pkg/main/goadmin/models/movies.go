@@ -100,7 +100,7 @@ func GetMoviesTable(ctx *context.Context) table.Table {
 		action.PopUpWithIframe("/admin/info/movie_histories", "see more", action.IframeData{Src: "/admin/info/movie_histories", AddParameterFn: func(ctx *context.Context) string {
 			return "&movie_id=" + ctx.FormValue("id")
 		}}, "900px", "560px")), types.GetActionIconButton(icon.Search,
-		MyPopUpWithIframe("/search", "see more", action.IframeData{Src: "/api/movies/search/id/{{.Id}}?apikey=" + config.Cfg.General.WebApiKey}, "900px", "560px")))
+		MyPopUpWithIframe("/search", "see more", action.IframeData{Src: "/api/movies/search/id/{{.Id}}?apikey=" + config.Cfg.General.WebAPIKey}, "900px", "560px")))
 	info.SetTable("movies").SetTitle("Movies").SetDescription("Movies")
 
 	formList := movies.GetForm()

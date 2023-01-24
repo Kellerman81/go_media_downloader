@@ -12,6 +12,6 @@ type Job struct {
 	Added       time.Time
 	Started     time.Time
 	Name        string
-	SchedulerId string
+	SchedulerID string
 	Run         func() `json:"-"`
 }

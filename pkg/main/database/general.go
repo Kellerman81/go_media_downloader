@@ -16,226 +16,23 @@ import (
 	"github.com/Kellerman81/go_media_downloader/logger"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-migrate/migrate/v4"
-	_ "github.com/golang-migrate/migrate/v4/database/sqlite3"
-	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/jmoiron/sqlx"
-	_ "github.com/mattn/go-sqlite3"
+
+	_ "github.com/golang-migrate/migrate/v4/database/sqlite3" //Needed for Migrate
+	_ "github.com/golang-migrate/migrate/v4/source/file"      //Needed for Migrate
+	_ "github.com/mattn/go-sqlite3"                           //Needed for DB
 )
 
 type DBGlobal struct {
-	Getqualities     []QualitiesRegex
-	Getresolutions   []QualitiesRegex
-	Getcodecs        []QualitiesRegex
-	Getaudios        []QualitiesRegex
-	AudioStr         []string
-	CodecStr         []string
-	QualityStr       []string
-	ResolutionStr    []string
+	AudioStrIn       logger.InStringArrayStruct
+	CodecStrIn       logger.InStringArrayStruct
+	QualityStrIn     logger.InStringArrayStruct
+	ResolutionStrIn  logger.InStringArrayStruct
 	GetqualitiesIn   InQualitiesArray
 	GetresolutionsIn InQualitiesArray
 	GetcodecsIn      InQualitiesArray
 	GetaudiosIn      InQualitiesArray
 }
-
-type dblocal struct {
-	DB *sqlx.DB
-	TX *sql.Tx
-}
-
-var readWriteMu *sync.RWMutex = &sync.RWMutex{}
-
-var DBVersion string = "1"
-var DBLogLevel string = "Info"
-
-func DBClose() {
-	if DB != nil {
-		DB.Close()
-	}
-	if DBImdb != nil {
-		DBImdb.Close()
-	}
-}
-
-var DBConnect DBGlobal
-var DB *sqlx.DB
-var DBImdb *sqlx.DB
-
-type QualitiesRegex struct {
-	Regex string
-	Qualities
-}
-
-type InQualitiesArray struct {
-	Arr []QualitiesRegex
-}
-
-func InQualitiesRegexArray(target string, strArray *InQualitiesArray) uint {
-	for idx := range strArray.Arr {
-		if strings.EqualFold(strArray.Arr[idx].Name, target) {
-			return strArray.Arr[idx].ID
-		}
-	}
-	strArray = nil
-	return 0
-}
-
-type Dbfiles struct {
-	Location string
-	ID       uint
-}
-
-func InitDb(dbloglevel string) {
-	if _, err := os.Stat("./databases/data.db"); os.IsNotExist(err) {
-		_, err := os.Create("./databases/data.db") // Create SQLite file
-		if err != nil {
-			log.Fatal(err.Error())
-		}
-	}
-	var err error
-	DB, err = sqlx.Connect("sqlite3", "file:./databases/data.db?_fk=1&_mutex=full&rt=1&_cslike=0")
-	if err != nil {
-		log.Fatal(err)
-	}
-	DB.SetMaxIdleConns(15)
-	DB.SetMaxOpenConns(5)
-	DBLogLevel = strings.ToLower(dbloglevel)
-}
-
-func LockDb(db *dblocal) {
-	readWriteMu.Lock()
-}
-func UnlockDb(db *dblocal) {
-	readWriteMu.Unlock()
-}
-func RLockDb(db *dblocal) {
-	readWriteMu.RLock()
-}
-func RUnlockDb(db *dblocal) {
-	readWriteMu.RUnlock()
-}
-func CloseImdb() {
-	if DBImdb != nil {
-		DBImdb.Close()
-	}
-}
-func GetVersion() string {
-	return DBVersion
-}
-func SetVersion(str string) {
-	DBVersion = str
-}
-
-func InitImdbdb(dbloglevel string) {
-	if _, err := os.Stat("./databases/imdb.db"); os.IsNotExist(err) {
-		_, err := os.Create("./databases/imdb.db") // Create SQLite file
-		if err != nil {
-			log.Fatal(err.Error())
-		}
-	}
-	var err error
-	DBImdb, err = sqlx.Connect("sqlite3", "file:./databases/imdb.db?_fk=1&_cslike=0")
-	if err != nil {
-		log.Fatal(err)
-	}
-	DBImdb.SetMaxIdleConns(15)
-	DBImdb.SetMaxOpenConns(5)
-	//logger.GlobalCache.Set("DBImdb", dblocal{DB: db, readWriteMu: &sync.RWMutex{}}, 0)
-}
-
-func GetVars() {
-	priodesc := "priority desc"
-	quali, _ := QueryQualities(Querywithargs{Query: Query{Where: "Type=1", OrderBy: priodesc}})
-	logger.Log.GlobalLogger.Info("Database Get Variables 1")
-	DBConnect.Getresolutions = make([]QualitiesRegex, len(quali))
-	for idx := range quali {
-		logger.GlobalRegexCache.SetRegexp(quali[idx].Regex, quali[idx].Regex, 0)
-		quali[idx].StringsLower = strings.ToLower(quali[idx].Strings)
-		DBConnect.Getresolutions[idx] = QualitiesRegex{Regex: quali[idx].Regex, Qualities: quali[idx]}
-	}
-
-	quali, _ = QueryQualities(Querywithargs{Query: Query{Where: "Type=2", OrderBy: priodesc}})
-	logger.Log.GlobalLogger.Info("Database Get Variables 2")
-	DBConnect.Getqualities = make([]QualitiesRegex, len(quali))
-	for idx := range quali {
-		logger.GlobalRegexCache.SetRegexp(quali[idx].Regex, quali[idx].Regex, 0)
-		quali[idx].StringsLower = strings.ToLower(quali[idx].Strings)
-		DBConnect.Getqualities[idx] = QualitiesRegex{Regex: quali[idx].Regex, Qualities: quali[idx]}
-	}
-
-	quali, _ = QueryQualities(Querywithargs{Query: Query{Where: "Type=3", OrderBy: priodesc}})
-	logger.Log.GlobalLogger.Info("Database Get Variables 3")
-	DBConnect.Getcodecs = make([]QualitiesRegex, len(quali))
-	for idx := range quali {
-		logger.GlobalRegexCache.SetRegexp(quali[idx].Regex, quali[idx].Regex, 0)
-		quali[idx].StringsLower = strings.ToLower(quali[idx].Strings)
-		DBConnect.Getcodecs[idx] = QualitiesRegex{Regex: quali[idx].Regex, Qualities: quali[idx]}
-	}
-
-	quali, _ = QueryQualities(Querywithargs{Query: Query{Where: "Type=4", OrderBy: priodesc}})
-	logger.Log.GlobalLogger.Info("Database Get Variables 4")
-	DBConnect.Getaudios = make([]QualitiesRegex, len(quali))
-	for idx := range quali {
-		logger.GlobalRegexCache.SetRegexp(quali[idx].Regex, quali[idx].Regex, 0)
-		quali[idx].StringsLower = strings.ToLower(quali[idx].Strings)
-		DBConnect.Getaudios[idx] = QualitiesRegex{Regex: quali[idx].Regex, Qualities: quali[idx]}
-	}
-	quali = nil
-
-	DBConnect.AudioStr = make([]string, 0, len(DBConnect.Getaudios)*2)
-	for idx := range DBConnect.Getaudios {
-		DBConnect.AudioStr = append(DBConnect.AudioStr, strings.Split(DBConnect.Getaudios[idx].StringsLower, ",")...)
-	}
-	DBConnect.CodecStr = make([]string, 0, len(DBConnect.Getcodecs)*2)
-	for idx := range DBConnect.Getcodecs {
-		DBConnect.CodecStr = append(DBConnect.CodecStr, strings.Split(DBConnect.Getcodecs[idx].StringsLower, ",")...)
-	}
-	DBConnect.QualityStr = make([]string, 0, len(DBConnect.Getqualities)*7)
-	for idx := range DBConnect.Getqualities {
-		DBConnect.QualityStr = append(DBConnect.QualityStr, strings.Split(DBConnect.Getqualities[idx].StringsLower, ",")...)
-	}
-	DBConnect.ResolutionStr = make([]string, 0, len(DBConnect.Getresolutions)*4)
-	for idx := range DBConnect.Getresolutions {
-		DBConnect.ResolutionStr = append(DBConnect.ResolutionStr, strings.Split(DBConnect.Getresolutions[idx].StringsLower, ",")...)
-	}
-
-	DBConnect.GetaudiosIn = InQualitiesArray{Arr: DBConnect.Getaudios}
-	DBConnect.GetcodecsIn = InQualitiesArray{Arr: DBConnect.Getcodecs}
-	DBConnect.GetqualitiesIn = InQualitiesArray{Arr: DBConnect.Getqualities}
-	DBConnect.GetresolutionsIn = InQualitiesArray{Arr: DBConnect.Getresolutions}
-}
-func Upgrade(c *gin.Context) {
-	UpgradeDB()
-}
-
-// Backup the database. If db is nil, then uses the existing database
-// connection.
-func Backup(backupPath string, maxbackups int) error {
-	_, err := dbexec("main", &Querywithargs{QueryString: "VACUUM INTO ?", Args: []interface{}{backupPath}})
-	if err != nil {
-		return errors.New("vacuum failed: " + err.Error())
-	}
-	RemoveOldDbBackups(maxbackups)
-
-	return nil
-}
-
-func UpgradeDB() {
-	m, err := migrate.New(
-		"file://./schema/db",
-		"sqlite3://./databases/data.db?cache=shared&_fk=1&_cslike=0",
-	)
-
-	vers, _, _ := m.Version()
-	DBVersion = strconv.Itoa(int(vers))
-	if err != nil {
-		log.Fatalf("migration failed... %v", err)
-	}
-
-	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-		log.Fatalf("An error occurred while syncing the database.. %v", err)
-	}
-}
-
 type JobHistory struct {
 	ID          uint
 	CreatedAt   time.Time `db:"created_at"`
@@ -246,7 +43,8 @@ type JobHistory struct {
 	Started     sql.NullTime
 	Ended       sql.NullTime
 }
-type JobHistoryJson struct {
+
+type JobHistoryJSON struct {
 	ID          uint
 	CreatedAt   time.Time `db:"created_at"`
 	UpdatedAt   time.Time `db:"updated_at"`
@@ -273,6 +71,192 @@ type IndexerFail struct {
 	LastFail  sql.NullTime `db:"last_fail"`
 }
 
+type QualitiesRegex struct {
+	Regex string
+	Qualities
+}
+
+type InQualitiesArray struct {
+	Arr []QualitiesRegex
+}
+
+type backupInfo struct {
+	timestamp time.Time
+	fs.DirEntry
+}
+
+// byFormatTime sorts by newest time formatted in the name.
+type byFormatTime []backupInfo
+
+var readWriteMu = &sync.RWMutex{}
+
+var DBConnect DBGlobal
+var dbData *sqlx.DB
+var dbImdb *sqlx.DB
+var DBVersion = "1"
+var DBLogLevel = "Info"
+
+func DBClose() {
+	if dbData != nil {
+		dbData.Close()
+	}
+	if dbImdb != nil {
+		dbImdb.Close()
+	}
+}
+
+func InQualitiesRegexArray(target string, strArray *InQualitiesArray) uint {
+	for idx := range strArray.Arr {
+		if strings.EqualFold(strArray.Arr[idx].Name, target) {
+			return strArray.Arr[idx].ID
+		}
+	}
+	strArray = nil
+	return 0
+}
+
+func InitDb(dbloglevel string) {
+	if _, err := os.Stat("./databases/data.db"); os.IsNotExist(err) {
+		_, err := os.Create("./databases/data.db") // Create SQLite file
+		if err != nil {
+			log.Fatal(err.Error())
+		}
+	}
+	var err error
+	dbData, err = sqlx.Connect("sqlite3", "file:./databases/data.db?_fk=1&_mutex=full&rt=1&_cslike=0")
+	if err != nil {
+		log.Fatal(err)
+	}
+	dbData.SetMaxIdleConns(15)
+	dbData.SetMaxOpenConns(5)
+	DBLogLevel = strings.ToLower(dbloglevel)
+}
+
+func CloseImdb() {
+	if dbImdb != nil {
+		dbImdb.Close()
+	}
+}
+func GetVersion() string {
+	return DBVersion
+}
+func SetVersion(str string) {
+	DBVersion = str
+}
+
+func InitImdbdb(dbloglevel string) {
+	if _, err := os.Stat("./databases/imdb.db"); os.IsNotExist(err) {
+		_, err := os.Create("./databases/imdb.db") // Create SQLite file
+		if err != nil {
+			log.Fatal(err.Error())
+		}
+	}
+	var err error
+	dbImdb, err = sqlx.Connect("sqlite3", "file:./databases/imdb.db?_fk=1&_cslike=0")
+	if err != nil {
+		log.Fatal(err)
+	}
+	dbImdb.SetMaxIdleConns(15)
+	dbImdb.SetMaxOpenConns(5)
+}
+
+func GetVars() {
+	priodesc := "priority desc"
+	var quali []Qualities
+	QueryQualities(&Querywithargs{Query: Query{Where: "Type=1", OrderBy: priodesc}}, &quali)
+	logger.Log.GlobalLogger.Info("Database Get Variables 1")
+	DBConnect.GetresolutionsIn = InQualitiesArray{}
+	DBConnect.GetresolutionsIn.Arr = make([]QualitiesRegex, len(quali))
+	for idx := range quali {
+		logger.GlobalRegexCache.SetRegexp(quali[idx].Regex, 0)
+		quali[idx].StringsLower = strings.ToLower(quali[idx].Strings)
+		DBConnect.GetresolutionsIn.Arr[idx] = QualitiesRegex{Regex: quali[idx].Regex, Qualities: quali[idx]}
+	}
+
+	quali = []Qualities{}
+	QueryQualities(&Querywithargs{Query: Query{Where: "Type=2", OrderBy: priodesc}}, &quali)
+	logger.Log.GlobalLogger.Info("Database Get Variables 2")
+	DBConnect.GetqualitiesIn = InQualitiesArray{}
+	DBConnect.GetqualitiesIn.Arr = make([]QualitiesRegex, len(quali))
+	for idx := range quali {
+		logger.GlobalRegexCache.SetRegexp(quali[idx].Regex, 0)
+		quali[idx].StringsLower = strings.ToLower(quali[idx].Strings)
+		DBConnect.GetqualitiesIn.Arr[idx] = QualitiesRegex{Regex: quali[idx].Regex, Qualities: quali[idx]}
+	}
+
+	quali = []Qualities{}
+	QueryQualities(&Querywithargs{Query: Query{Where: "Type=3", OrderBy: priodesc}}, &quali)
+	logger.Log.GlobalLogger.Info("Database Get Variables 3")
+	DBConnect.GetcodecsIn = InQualitiesArray{}
+	DBConnect.GetcodecsIn.Arr = make([]QualitiesRegex, len(quali))
+	for idx := range quali {
+		logger.GlobalRegexCache.SetRegexp(quali[idx].Regex, 0)
+		quali[idx].StringsLower = strings.ToLower(quali[idx].Strings)
+		DBConnect.GetcodecsIn.Arr[idx] = QualitiesRegex{Regex: quali[idx].Regex, Qualities: quali[idx]}
+	}
+
+	quali = []Qualities{}
+	QueryQualities(&Querywithargs{Query: Query{Where: "Type=4", OrderBy: priodesc}}, &quali)
+	logger.Log.GlobalLogger.Info("Database Get Variables 4")
+	DBConnect.GetaudiosIn = InQualitiesArray{}
+	DBConnect.GetaudiosIn.Arr = make([]QualitiesRegex, len(quali))
+	for idx := range quali {
+		logger.GlobalRegexCache.SetRegexp(quali[idx].Regex, 0)
+		quali[idx].StringsLower = strings.ToLower(quali[idx].Strings)
+		DBConnect.GetaudiosIn.Arr[idx] = QualitiesRegex{Regex: quali[idx].Regex, Qualities: quali[idx]}
+	}
+	quali = nil
+
+	DBConnect.AudioStrIn.Arr = make([]string, 0, len(DBConnect.GetaudiosIn.Arr)*2)
+	for idx := range DBConnect.GetaudiosIn.Arr {
+		DBConnect.AudioStrIn.Arr = append(DBConnect.AudioStrIn.Arr, strings.Split(DBConnect.GetaudiosIn.Arr[idx].StringsLower, ",")...)
+	}
+	DBConnect.CodecStrIn.Arr = make([]string, 0, len(DBConnect.GetcodecsIn.Arr)*2)
+	for idx := range DBConnect.GetcodecsIn.Arr {
+		DBConnect.CodecStrIn.Arr = append(DBConnect.CodecStrIn.Arr, strings.Split(DBConnect.GetcodecsIn.Arr[idx].StringsLower, ",")...)
+	}
+	DBConnect.QualityStrIn.Arr = make([]string, 0, len(DBConnect.GetqualitiesIn.Arr)*7)
+	for idx := range DBConnect.GetqualitiesIn.Arr {
+		DBConnect.QualityStrIn.Arr = append(DBConnect.QualityStrIn.Arr, strings.Split(DBConnect.GetqualitiesIn.Arr[idx].StringsLower, ",")...)
+	}
+	DBConnect.ResolutionStrIn.Arr = make([]string, 0, len(DBConnect.GetresolutionsIn.Arr)*4)
+	for idx := range DBConnect.GetresolutionsIn.Arr {
+		DBConnect.ResolutionStrIn.Arr = append(DBConnect.ResolutionStrIn.Arr, strings.Split(DBConnect.GetresolutionsIn.Arr[idx].StringsLower, ",")...)
+	}
+}
+func Upgrade(c *gin.Context) {
+	UpgradeDB()
+}
+
+// Backup the database. If db is nil, then uses the existing database
+// connection.
+func Backup(backupPath string, maxbackups int) error {
+	_, err := dbexec(&Querywithargs{QueryString: "VACUUM INTO ?", Args: []interface{}{backupPath}})
+	if err != nil {
+		return errors.New("vacuum failed: " + err.Error())
+	}
+	RemoveOldDbBackups(maxbackups)
+
+	return nil
+}
+
+func UpgradeDB() {
+	m, err := migrate.New(
+		"file://./schema/db",
+		"sqlite3://./databases/data.db?cache=shared&_fk=1&_cslike=0",
+	)
+
+	vers, _, _ := m.Version()
+	DBVersion = strconv.Itoa(int(vers))
+	if err != nil {
+		log.Fatalf("migration failed... %v", err)
+	}
+
+	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
+		log.Fatalf("An error occurred while syncing the database.. %v", err)
+	}
+}
+
 func RemoveOldDbBackups(max int) error {
 	if max == 0 {
 		return nil
@@ -284,24 +268,26 @@ func RemoveOldDbBackups(max int) error {
 		return err
 	}
 
-	var remove []backupInfo = make([]backupInfo, 0, max)
+	var remove = make([]backupInfo, 0, max)
 
-	if max > 0 && max < len(files) {
-		var preserved []string = make([]string, 0, max)
+	if max == 0 || max >= len(files) {
+		return err
+	}
 
-		for idx := range files {
-			// Only count the uncompressed log file or the
-			// compressed log file, not both.
-			fn := files[idx].Name()
-			if !strings.HasPrefix(fn, prefix) {
-				continue
-			}
+	var preserved = make([]string, 0, max)
 
-			preserved = append(preserved, fn)
+	for idx := range files {
+		// Only count the uncompressed log file or the
+		// compressed log file, not both.
+		fn := files[idx].Name()
+		if !strings.HasPrefix(fn, prefix) {
+			continue
+		}
 
-			if len(preserved) > max {
-				remove = append(remove, files[idx])
-			}
+		preserved = append(preserved, fn)
+
+		if len(preserved) > max {
+			remove = append(remove, files[idx])
 		}
 	}
 
@@ -320,17 +306,18 @@ func oldDatabaseFiles(prefix string) ([]backupInfo, error) {
 	if err != nil {
 		return nil, errors.New("can't read log file directory: " + err.Error())
 	}
-	var backupFiles []backupInfo = make([]backupInfo, 0, len(files))
+	var backupFiles = make([]backupInfo, 0, len(files))
 
 	for idx := range files {
 		if files[idx].IsDir() {
 			continue
 		}
-		if strings.HasPrefix(files[idx].Name(), prefix) {
-			if t, err := timeFromName(files[idx].Name(), prefix, ""); err == nil {
-				backupFiles = append(backupFiles, backupInfo{t, files[idx]})
-				continue
-			}
+		if !strings.HasPrefix(files[idx].Name(), prefix) {
+			continue
+		}
+		if t, err := timeFromName(files[idx].Name(), prefix, ""); err == nil {
+			backupFiles = append(backupFiles, backupInfo{t, files[idx]})
+			continue
 		}
 	}
 
@@ -353,14 +340,6 @@ func timeFromName(filename, prefix, ext string) (time.Time, error) {
 	}
 	return time.Parse("20060102_150405", ts)
 }
-
-type backupInfo struct {
-	timestamp time.Time
-	fs.DirEntry
-}
-
-// byFormatTime sorts by newest time formatted in the name.
-type byFormatTime []backupInfo
 
 func (b byFormatTime) Less(i, j int) bool {
 	return b[i].timestamp.After(b[j].timestamp)

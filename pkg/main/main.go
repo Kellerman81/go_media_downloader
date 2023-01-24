@@ -33,7 +33,6 @@ import (
 	_ "github.com/GoAdminGroup/go-admin/adapter/gin"
 	_ "github.com/GoAdminGroup/go-admin/modules/db/drivers/sqlite" // sql driver
 	"github.com/GoAdminGroup/themes/adminlte"
-	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 
 	//webapp "github.com/maxence-charriere/go-app/v9/pkg/app"
@@ -65,8 +64,8 @@ func main() {
 		config.WriteCfg()
 		config.LoadCfgDB(config.GetCfgFile())
 	}
-	logger.InitWorkerPools(config.Cfg.General.WorkerIndexer, config.Cfg.General.WorkerParse, config.Cfg.General.WorkerSearch, config.Cfg.General.WorkerFiles, config.Cfg.General.WorkerMetadata, config.Cfg.General.WorkerDefault)
-	logger.InitLogger(logger.LoggerConfig{
+	logger.InitWorkerPools(config.Cfg.General.WorkerIndexer, config.Cfg.General.WorkerParse, config.Cfg.General.WorkerSearch, config.Cfg.General.WorkerFiles, config.Cfg.General.WorkerMetadata)
+	logger.InitLogger(logger.Config{
 		LogLevel:     config.Cfg.General.LogLevel,
 		LogFileSize:  config.Cfg.General.LogFileSize,
 		LogFileCount: config.Cfg.General.LogFileCount,
@@ -86,10 +85,10 @@ func main() {
 	logger.Log.GlobalLogger.Info("------------------------------")
 	logger.Log.GlobalLogger.Info("")
 
-	apiexternal.NewOmdbClient(config.Cfg.General.OmdbApiKey, config.Cfg.General.Omdblimiterseconds, config.Cfg.General.Omdblimitercalls, config.Cfg.General.OmdbDisableTLSVerify, config.Cfg.General.OmdbTimeoutSeconds)
+	apiexternal.NewOmdbClient(config.Cfg.General.OmdbAPIKey, config.Cfg.General.Omdblimiterseconds, config.Cfg.General.Omdblimitercalls, config.Cfg.General.OmdbDisableTLSVerify, config.Cfg.General.OmdbTimeoutSeconds)
 	apiexternal.NewTmdbClient(config.Cfg.General.TheMovieDBApiKey, config.Cfg.General.Tmdblimiterseconds, config.Cfg.General.Tmdblimitercalls, config.Cfg.General.TheMovieDBDisableTLSVerify, config.Cfg.General.TmdbTimeoutSeconds)
 	apiexternal.NewTvdbClient(config.Cfg.General.Tvdblimiterseconds, config.Cfg.General.Tvdblimitercalls, config.Cfg.General.TvdbDisableTLSVerify, config.Cfg.General.TvdbTimeoutSeconds)
-	apiexternal.NewTraktClient(config.Cfg.General.TraktClientId, config.Cfg.General.TraktClientSecret, *config.ConfigGetTrakt("trakt_token"), config.Cfg.General.Traktlimiterseconds, config.Cfg.General.Traktlimitercalls, config.Cfg.General.TraktDisableTLSVerify, config.Cfg.General.TraktTimeoutSeconds)
+	apiexternal.NewTraktClient(config.Cfg.General.TraktClientID, config.Cfg.General.TraktClientSecret, *config.GetTrakt("trakt_token"), config.Cfg.General.Traktlimiterseconds, config.Cfg.General.Traktlimitercalls, config.Cfg.General.TraktDisableTLSVerify, config.Cfg.General.TraktTimeoutSeconds)
 
 	logger.Log.GlobalLogger.Info("Initialize Database")
 
@@ -106,18 +105,17 @@ func main() {
 	}
 
 	logger.Log.GlobalLogger.Info("Init Regex")
-	utils.InitRegex()
 	database.GetVars()
 
 	logger.Log.GlobalLogger.Info("Init Priorities")
 	parser.GetAllQualityPriorities()
 
 	logger.Log.GlobalLogger.Info("Check Fill DB")
-	counter, _ := database.CountRows("dbmovies", database.Querywithargs{})
+	counter, _ := database.CountRows("dbmovies", &database.Querywithargs{})
 	if counter == 0 {
 		utils.InitialFillMovies()
 	}
-	counter, _ = database.CountRows("dbseries", database.Querywithargs{})
+	counter, _ = database.CountRows("dbseries", &database.Querywithargs{})
 	if counter == 0 {
 		utils.InitialFillSeries()
 	}
@@ -128,10 +126,10 @@ func main() {
 	logger.Log.GlobalLogger.Info("Starting API")
 	router := gin.New()
 
-	corsconfig := cors.DefaultConfig()
-	corsconfig.AllowHeaders = []string{"*"}
-	corsconfig.AllowOrigins = []string{"*"}
-	corsconfig.AllowMethods = []string{"*"}
+	//corsconfig := cors.DefaultConfig()
+	//corsconfig.AllowHeaders = []string{"*"}
+	//corsconfig.AllowOrigins = []string{"*"}
+	//corsconfig.AllowMethods = []string{"*"}
 
 	if !strings.EqualFold(config.Cfg.General.LogLevel, "debug") {
 		gin.SetMode(gin.ReleaseMode)
@@ -165,9 +163,7 @@ func main() {
 	// 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 	// }
 
-	var goadmin bool = true
-
-	if goadmin {
+	if true {
 		template.AddComp(chartjs.NewChart())
 		eng := engine.Default()
 		acfg := &goadmincfg.Config{
@@ -210,8 +206,7 @@ func main() {
 		eng.Services["sqlite"] = database.GetSqliteDB().InitDB(map[string]goadmincfg.Database{
 			"default": {Driver: "sqlite", File: "./databases/admin.db"},
 			"media":   {Driver: "sqlite"}})
-		defaultConnection := db.GetConnection(eng.Services)
-		eng.Adapter.SetConnection(defaultConnection)
+		eng.Adapter.SetConnection(db.GetConnection(eng.Services))
 		router.Static("/admin/uploads", "./temp")
 	}
 

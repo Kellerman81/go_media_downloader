@@ -4,7 +4,7 @@ package tasks
 
 // Worker attaches to a provided worker pool, and
 // looks for jobs on its job channel
-type Worker struct {
+type worker struct {
 	workerPool chan chan Job
 	jobChannel chan Job
 	quit       chan bool
@@ -13,8 +13,8 @@ type Worker struct {
 // NewWorker creates a new worker using the given id and
 // attaches to the provided worker pool. It also initializes
 // the job/quit channels
-func NewWorker(workerPool chan chan Job) *Worker {
-	return &Worker{
+func NewWorker(workerPool chan chan Job) *worker {
+	return &worker{
 		workerPool: workerPool,
 		jobChannel: make(chan Job),
 		quit:       make(chan bool),
@@ -22,7 +22,7 @@ func NewWorker(workerPool chan chan Job) *Worker {
 }
 
 // Start initializes a select loop to listen for jobs to execute
-func (w *Worker) start() {
+func (w *worker) start() {
 	go func() {
 		// defer func() { // recovers panic
 		// 	if e := recover(); e != nil {
@@ -35,10 +35,10 @@ func (w *Worker) start() {
 				select {
 				case job := <-w.jobChannel:
 					updateStartedQueue(job.ID)
-					updateIsRunningSchedule(job.SchedulerId, true)
+					updateIsRunningSchedule(job.SchedulerID, true)
 					job.Run()
-					updateIsRunningSchedule(job.SchedulerId, false)
-					globalQueueSet.RemoveId(job.ID)
+					updateIsRunningSchedule(job.SchedulerID, false)
+					globalQueueSet.RemoveID(job.ID)
 					return false
 				case <-w.quit:
 					return true
@@ -52,7 +52,7 @@ func (w *Worker) start() {
 }
 
 // Stop will end the job select loop for the worker
-func (w *Worker) stop() {
+func (w *worker) stop() {
 	go func() {
 		w.quit <- true
 	}()

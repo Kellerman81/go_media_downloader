@@ -22,171 +22,151 @@ import (
 // RLHTTPClient Rate Limited HTTP Client
 type RLHTTPClient struct {
 	client              *http.Client
-	Ratelimiter         *rate.RateLimiter
-	DailyRatelimiter    *rate.RateLimiter
+	Ratelimiter         *rate.Limiter
+	DailyRatelimiter    *rate.Limiter
 	DailyLimiterEnabled bool
 }
 
-const errorCalling string = "Error calling"
-const pleaseWait string = "please wait"
-
-var errPleaseWait = errors.New(pleaseWait)
-
-func logerror(url string, err error) {
-	logger.Log.GlobalLogger.Error(errorCalling, zap.String("url", url), zap.Error(err))
-}
-func (c *RLHTTPClient) CheckLimiter(retrycount int, retryafterseconds int64, url string) error {
-	var ok bool
-	var waitfor time.Duration
-	waituntil := (time.Duration(retryafterseconds) * time.Second)
-	waituntilmax := (time.Duration(retryafterseconds*int64(retrycount)) * time.Second)
-	rand.Seed(time.Now().UnixNano())
-	waitincrease := (time.Duration(rand.Intn(500)+10) * time.Millisecond)
-	for i := 0; i < retrycount; i++ {
-		ok, waitfor = c.Ratelimiter.Check()
-		if ok {
-			c.Ratelimiter.AllowForce()
-			return nil
-		}
-		if waitfor > waituntilmax {
-			//logger.Log.GlobalLogger.Warn("Hit rate limit - Should wait for (dont retry)", zap.Duration("waitfor", waitfor), zap.String("Url", url))
-			return errPleaseWait
-		}
-		if waitfor == 0 {
-			waitfor = waituntil
-		} else {
-			waitfor = waitfor + waitincrease
-		}
-		time.Sleep(waitfor)
-	}
-
-	if waitfor < (5 * time.Minute) {
-		//logger.Log.GlobalLogger.Warn("Hit rate limit - retrys failed for (add 5 minutes to wait) ", zap.String("Url", url))
-		c.Ratelimiter.WaitTill(time.Now().Add(5 * time.Minute))
-	}
-	return errPleaseWait
+type addHeader struct {
+	key string
+	val string
 }
 
-func (c *RLHTTPClient) PreCheck(retrycount int, retryafterseconds int64, url string) error {
-	var ok bool
-	var waitfor time.Duration
-	waituntil := (time.Duration(retryafterseconds) * time.Second)
-	waituntilmax := (time.Duration(retryafterseconds*int64(retrycount)) * time.Second)
-	rand.Seed(time.Now().UnixNano())
-	waitincrease := (time.Duration(rand.Intn(500)+10) * time.Millisecond)
-	for i := 0; i < retrycount; i++ {
-		ok, waitfor = c.Ratelimiter.Check()
-		if ok {
-			return nil
-		}
-		if waitfor > waituntilmax {
-			//logger.Log.GlobalLogger.Warn("Hit rate limit - Should wait for (dont retry)", zap.Duration("waitfor", waitfor), zap.String("Url", url))
-			return errPleaseWait
-		}
-		if waitfor == 0 {
-			waitfor = waituntil
-		} else {
-			waitfor = waitfor + waitincrease
-		}
-		time.Sleep(waitfor)
-	}
+const errorCalling = "Error calling"
 
-	if waitfor < (5 * time.Minute) {
-		//logger.Log.GlobalLogger.Warn("Hit rate limit - retrys failed for (add 5 minutes to wait) ", zap.String("Url", url))
-		c.Ratelimiter.WaitTill(time.Now().Add(5 * time.Minute))
-	}
-	return errPleaseWait
-}
-
+var errPleaseWait = errors.New("please wait")
 var errDailyLimit = errors.New("daily limit reached")
 
+func (c *RLHTTPClient) checkLimiter(retrycount int, retryafterseconds int64, url string) (bool, error) {
+	waituntil := (time.Duration(retryafterseconds) * time.Second)
+	waituntilmax := (time.Duration(retryafterseconds*int64(retrycount)) * time.Second)
+	rand.Seed(time.Now().UnixNano())
+	waitincrease := (time.Duration(rand.Intn(500)+10) * time.Millisecond)
+	_, dailyok, waitfor := c.Ratelimiter.Check(false, true)
+	if !dailyok {
+		return false, errDailyLimit
+	}
+	var ok bool
+	for i := 0; i < retrycount; i++ {
+		ok, _, waitfor = c.Ratelimiter.Check(true, false)
+		if ok {
+			c.Ratelimiter.AllowForce()
+			return true, nil
+		}
+		if waitfor > waituntilmax {
+			time.Sleep(waituntilmax)
+			//logger.Log.GlobalLogger.Warn("Hit rate limit - Should wait for (dont retry)", zap.Duration("waitfor", waitfor), zap.String("Url", url))
+			return false, errPleaseWait
+		}
+		if waitfor == 0 {
+			waitfor = waituntil
+		} else {
+			waitfor += waitincrease
+		}
+		time.Sleep(waitfor)
+	}
+
+	if waitfor < (5 * time.Minute) {
+		//logger.Log.GlobalLogger.Warn("Hit rate limit - retrys failed for (add 5 minutes to wait) ", zap.String("Url", url))
+		c.Ratelimiter.WaitTill(time.Now().Add(5 * time.Minute))
+	}
+	return false, errPleaseWait
+}
+
 // Do dispatches the HTTP request to the network
-func (c *RLHTTPClient) DoJson(url string, jsonobj interface{}, headers []AddHeader) (int, error) {
+func (c *RLHTTPClient) DoJSON(url string, jsonobj interface{}, headers []addHeader) (int, error) {
 	// Comment out the below 5 lines to turn off ratelimiting
-	err := c.CheckLimiter(10, 1, url)
-	if err != nil {
+	ok, err := c.checkLimiter(10, 1, url)
+	if !ok {
+		if err == nil {
+			err = errPleaseWait
+		}
 		if err == errDailyLimit {
+			// headers = nil
 			return 0, nil
 		}
+		// headers = nil
 		return 0, err
 	}
 	var resp *http.Response
 	if len(headers) >= 1 {
 		var req *http.Request
-		req, err = http.NewRequest("GET", url, nil)
+		req, err = http.NewRequest(http.MethodGet, url, nil)
 		if err != nil {
-			return 0, errors.New("error get url: " + url + " error: " + err.Error())
+			// headers = nil
+			return 0, err
 		}
 		for idx := range headers {
-			req.Header.Add((headers)[idx].Key, (headers)[idx].Val)
+			req.Header.Add((headers)[idx].key, (headers)[idx].val)
 		}
-		headers = nil
+		// headers = nil
 		resp, err = c.client.Do(req)
 	} else {
+		// headers = nil
 		resp, err = c.client.Get(url)
 	}
-	headers = nil
 	if err != nil {
 		if resp == nil {
 			return 404, err
 		}
 		c.addwait(url, resp)
-		defer resp.Body.Close()
-		return resp.StatusCode, err
+		status := resp.StatusCode
+		resp.Body.Close()
+		resp = nil
+		return status, err
 	}
 	defer resp.Body.Close()
 	if c.addwait(url, resp) {
+		resp.Body.Close()
+		resp = nil
 		return 429, errPleaseWait
 	}
-	return resp.StatusCode, json.NewDecoder(resp.Body).Decode(jsonobj)
-}
-
-type AddHeader struct {
-	Key string
-	Val string
+	err = json.NewDecoder(resp.Body).Decode(jsonobj)
+	status := resp.StatusCode
+	resp.Body.Close()
+	resp = nil
+	return status, err
 }
 
 // Do dispatches the HTTP request to the network
-func (c *RLHTTPClient) DoXml(url string, xmlobj interface{}, headers []AddHeader) (int, error) {
-	err := c.CheckLimiter(10, 1, url)
-	if err != nil {
-		if err == errDailyLimit {
-			return 0, nil
+func (c *RLHTTPClient) DoXML(url string, headers []addHeader, feed *searchResponse) error {
+	ok, err := c.checkLimiter(10, 1, url)
+	if !ok {
+		if err == nil {
+			err = errPleaseWait
 		}
-		return 0, err
+		return err
 	}
 
 	var resp *http.Response
 	if len(headers) >= 1 {
-		var req *http.Request
-		req, err = http.NewRequest("GET", url, nil)
-		if err != nil {
-			return 0, errors.New("error get url: " + url + " error: " + err.Error())
+		req, err2 := http.NewRequest(http.MethodGet, url, nil)
+		if err2 != nil {
+			return err2
 		}
 		for idx := range headers {
-			req.Header.Add((headers)[idx].Key, (headers)[idx].Val)
+			req.Header.Add((headers)[idx].key, (headers)[idx].val)
 		}
-		headers = nil
 		resp, err = c.client.Do(req)
 	} else {
 		resp, err = c.client.Get(url)
 	}
 	if err != nil {
 		if resp == nil {
-			return 404, err
+			return err
 		}
 		c.addwait(url, resp)
-		defer resp.Body.Close()
-		return resp.StatusCode, err
+		resp.Body.Close()
+		resp = nil
+		return err
 	}
 	defer resp.Body.Close()
 	if c.addwait(url, resp) {
-		return 429, errPleaseWait
+		resp.Body.Close()
+		resp = nil
+		return errPleaseWait
 	}
-	d := xml.NewDecoder(resp.Body)
-	d.CharsetReader = charset.NewReaderLabel
-	d.Strict = false
-	err = d.Decode(xmlobj)
+	err = getxmldecoder(resp).Decode(feed)
 	if err != nil {
 		blockinterval := 5
 		if config.Cfg.General.FailedIndexerBlockTime != 0 {
@@ -194,33 +174,27 @@ func (c *RLHTTPClient) DoXml(url string, xmlobj interface{}, headers []AddHeader
 		}
 		c.Ratelimiter.WaitTill(time.Now().Add(time.Minute * time.Duration(blockinterval)))
 
-		logger.Log.GlobalLogger.Error("Err Decode ", zap.String("Url", url), zap.Error(err))
-		d = nil
-		return resp.StatusCode, err
+		logger.Log.GlobalLogger.Error("Err Decode ", zap.Stringp("Url", &url), zap.Error(err))
+		feed = nil
+		resp.Body.Close()
+		resp = nil
+		return err
 	}
-	d = nil
-	return resp.StatusCode, nil
+	resp.Body.Close()
+	resp = nil
+	return nil
 }
 
-// func (c *RLHTTPClient) getrespbody(url string, headers []AddHeader) (*http.Response, error) {
-// 	if len(headers) >= 1 {
-// 		req, err := http.NewRequest("GET", url, nil)
-// 		if err != nil {
-// 			return nil, errors.New("error get url: " + url + " error: " + err.Error())
-// 		}
-// 		for idx := range headers {
-// 			req.Header.Add((headers)[idx].Key, (headers)[idx].Val)
-// 		}
-// 		headers = nil
-// 		return c.client.Do(req)
-// 	} else {
-// 		return c.client.Get(url)
-// 	}
-// }
+func getxmldecoder(resp *http.Response) *xml.Decoder {
+	d := xml.NewDecoder(resp.Body)
+	d.CharsetReader = charset.NewReaderLabel
+	d.Strict = false
+	return d
+}
 
 func (c *RLHTTPClient) testsleep(s string) (bool, string) {
-	limitincreased := false
-	errstr := ""
+	var limitincreased bool
+	var errstr string
 	if sleep, err := strconv.ParseInt(s, 10, 64); err == nil {
 		c.Ratelimiter.WaitTill(time.Now().Add(time.Second * time.Duration(sleep)))
 		limitincreased = true
@@ -240,30 +214,43 @@ func (c *RLHTTPClient) addwait(url string, resp *http.Response) bool {
 	if config.Cfg.General.FailedIndexerBlockTime != 0 {
 		blockinterval = 1 * config.Cfg.General.FailedIndexerBlockTime
 	}
-	if resp.StatusCode == 401 || resp.StatusCode == 403 || resp.StatusCode == 404 || resp.StatusCode == 408 {
-		c.Ratelimiter.WaitTill(time.Now().Add(time.Minute * time.Duration(blockinterval)))
+	if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusRequestTimeout || resp.StatusCode == http.StatusInternalServerError || resp.StatusCode == http.StatusServiceUnavailable || resp.StatusCode == 521 || resp.StatusCode == 522 || resp.StatusCode == 524 || resp.StatusCode == 204 {
+		//408 Timeout
+		//404 not found
+		//500 Internal Server Error
+		//503 Service Unavailable
+		//522 Connection Timed Out
+		//521 Web Server Is Down
+		//524 A Timeout Occurred
+		//204 No Content
+
+		//Trakt responds with 404 if media not found
+		if resp.StatusCode != http.StatusNotFound {
+			c.Ratelimiter.WaitTill(time.Now().Add(time.Minute * time.Duration(blockinterval)))
+		}
 		logger.Log.GlobalLogger.Error("error get response url: " + url + " status: " + resp.Status)
 
 		resp.Body.Close()
 		return true
-	} else if resp.StatusCode == 429 || resp.StatusCode == 400 || resp.StatusCode == 401 || resp.StatusCode == 403 || resp.StatusCode == 404 || resp.StatusCode == 408 || resp.StatusCode == 500 || resp.StatusCode == 503 || resp.StatusCode == 204 || resp.StatusCode == 522 {
-		hdr := ""
-		errstr := ""
+	} else if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusBadRequest {
+		//403 Forbidden
+		//401 unauthorized
+		//429 too many requests
+		//400 bad request
+		var hdr, errstr string
 		for key := range resp.Header {
 			hdr += "Header Key: " + key + " values: " + strings.Join(resp.Header[key], ",")
 		}
-		limitincreased := false
+		var limitincreased bool
 		if s, ok := resp.Header["Retry-After"]; ok {
 			limitincreased, errstr = c.testsleep(s[0])
 		} else if s, ok := resp.Header["X-Retry-After"]; ok {
 			limitincreased, errstr = c.testsleep(s[0])
-		} else {
-			if resp.StatusCode == 400 && resp.Body != nil {
-				b, _ := io.ReadAll(resp.Body)
-				if strings.Contains(string(b), "Request limit reached") {
-					c.Ratelimiter.WaitTill(time.Now().Add(3 * time.Hour))
-					limitincreased = true
-				}
+		} else if resp.StatusCode == 400 && resp.Body != nil {
+			b, _ := io.ReadAll(resp.Body)
+			if strings.Contains(string(b), "Request limit reached") {
+				c.Ratelimiter.WaitTill(time.Now().Add(3 * time.Hour))
+				limitincreased = true
 			}
 		}
 		if !limitincreased {
@@ -277,11 +264,11 @@ func (c *RLHTTPClient) addwait(url string, resp *http.Response) bool {
 }
 
 // NewClient return http client with a ratelimiter
-func NewClient(skiptlsverify bool, rl *rate.RateLimiter, timeoutseconds int) *RLHTTPClient {
+func NewClient(skiptlsverify bool, disablecompression bool, rl *rate.Limiter, timeoutseconds int) *RLHTTPClient {
 	if timeoutseconds == 0 {
 		timeoutseconds = 10
 	}
-	c := &RLHTTPClient{
+	return &RLHTTPClient{
 		client: &http.Client{Timeout: time.Duration(timeoutseconds) * time.Second,
 			Transport: &http.Transport{
 				TLSHandshakeTimeout:   time.Duration(timeoutseconds) * time.Second,
@@ -289,10 +276,9 @@ func NewClient(skiptlsverify bool, rl *rate.RateLimiter, timeoutseconds int) *RL
 				TLSClientConfig:       &tls.Config{InsecureSkipVerify: skiptlsverify},
 				MaxIdleConns:          20,
 				MaxConnsPerHost:       10,
-				DisableCompression:    false,
+				DisableCompression:    disablecompression,
 				DisableKeepAlives:     true,
 				IdleConnTimeout:       120 * time.Second}},
 		Ratelimiter: rl,
 	}
-	return c
 }

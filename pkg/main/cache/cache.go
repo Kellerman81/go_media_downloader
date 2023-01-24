@@ -11,35 +11,38 @@ import (
 )
 
 // Cache stores arbitrary data with expiration time.
-type Cache struct {
+type globalcache struct {
 	items       map[string]int64
 	itemsstatic map[string]interface{}
 	mu          *sync.Mutex
 	close       chan struct{}
 }
-type CacheRegex struct {
+type regex struct {
 	items       map[string]int64
-	itemsstatic map[string]regexp.Regexp
+	itemsstatic map[string]*regexp.Regexp
 	mu          *sync.Mutex
 	close       chan struct{}
 }
-type CacheStmt struct {
+type stmt struct {
 	items       map[string]int64
-	itemsstatic map[string]sqlx.Stmt
+	itemsstatic map[string]*sqlx.Stmt
 	mu          *sync.Mutex
 	close       chan struct{}
 }
-type CacheStmtNamed struct {
+type stmtNamed struct {
 	items       map[string]int64
-	itemsstatic map[string]sqlx.NamedStmt
+	itemsstatic map[string]*sqlx.NamedStmt
 	mu          *sync.Mutex
 	close       chan struct{}
+}
+type Return struct {
+	Value interface{}
 }
 
-// New creates a new cache that asynchronously cleans
+// New creates a new c that asynchronously cleans
 // expired entries after the given time passes.
-func New(cleaningInterval time.Duration) *Cache {
-	cache := &Cache{
+func New(cleaningInterval time.Duration) *globalcache {
+	c := globalcache{
 		items:       make(map[string]int64, 100),
 		itemsstatic: make(map[string]interface{}, 100),
 		mu:          &sync.Mutex{},
@@ -56,170 +59,162 @@ func New(cleaningInterval time.Duration) *Cache {
 				case <-ticker.C:
 					now := time.Now().UnixNano()
 
-					for key := range cache.items {
-						if cache.items[key] != 0 && now > cache.items[key] {
-							delete(cache.items, key)
-							delete(cache.itemsstatic, key)
+					for key := range c.items {
+						c.mu.Lock()
+						if c.items[key] != 0 && now > c.items[key] {
+							delete(c.items, key)
+							delete(c.itemsstatic, key)
 						}
+						c.mu.Unlock()
 					}
 
-				case <-cache.close:
+				case <-c.close:
 					return
 				}
 			}
 		}()
 	}
 
-	return cache
-}
-
-type CacheReturn struct {
-	Value interface{}
-}
-
-func (cache *CacheReturn) Close() {
-	if cache != nil {
-		cache = nil
-	}
+	return &c
 }
 
 // Get gets the value for the given key.
-func (cache *Cache) Get(key string) (*CacheReturn, bool) {
-	cache.mu.Lock()
-	defer cache.mu.Unlock()
-	item, exists := cache.items[key]
-	if exists {
-		if item != 0 && time.Now().UnixNano() > item {
-			delete(cache.items, key)
-			delete(cache.itemsstatic, key)
-		}
+func (c *globalcache) Get(key string) (*Return, bool) {
+	c.mu.Lock()
+	item, exists := c.items[key]
+	if exists && item != 0 && time.Now().UnixNano() > item {
+		delete(c.items, key)
+		delete(c.itemsstatic, key)
+		return nil, false
 	}
 
-	data, exists := cache.itemsstatic[key]
+	data, exists := c.itemsstatic[key]
+	c.mu.Unlock()
 	if exists {
-		return &CacheReturn{Value: data}, true
+		return &Return{Value: data}, true
 	}
 	return nil, false
 }
 
 // Get gets the value for the given key.
-func (cache *Cache) Check(key string, kind reflect.Type) bool {
-	cache.mu.Lock()
-	defer cache.mu.Unlock()
-	item, exists := cache.items[key]
-	if exists {
-		if item != 0 && time.Now().UnixNano() > item {
-			delete(cache.items, key)
-			delete(cache.itemsstatic, key)
-		}
-
-		data, exists := cache.itemsstatic[key]
-
-		if exists {
-			if reflect.TypeOf(data) != kind {
-				exists = false
-			}
-		}
-		return exists
-	} else {
-		_, exists = cache.itemsstatic[key]
+func (c *globalcache) Check(key string, kind reflect.Type) bool {
+	c.mu.Lock()
+	item, exists := c.items[key]
+	if !exists {
+		_, exists = c.itemsstatic[key]
+		c.mu.Unlock()
 		return exists
 	}
+	if item != 0 && time.Now().UnixNano() > item {
+		delete(c.items, key)
+		delete(c.itemsstatic, key)
+	}
+
+	data, exists := c.itemsstatic[key]
+	c.mu.Unlock()
+
+	if !exists {
+		return false
+	}
+	if reflect.TypeOf(data) != kind {
+		exists = false
+	}
+	return exists
 }
 
 // Get gets the value for the given key.
-func (cache *Cache) CheckNoType(key string) bool {
-	cache.mu.Lock()
-	defer cache.mu.Unlock()
-	item, exists := cache.items[key]
-	if exists {
-		if item != 0 && time.Now().UnixNano() > item {
-			delete(cache.items, key)
-			delete(cache.itemsstatic, key)
-		}
-
-		_, exists := cache.itemsstatic[key]
-		return exists
-	} else {
-		_, exists = cache.itemsstatic[key]
+func (c *globalcache) CheckNoType(key string) bool {
+	c.mu.Lock()
+	item, exists := c.items[key]
+	if !exists {
+		_, exists = c.itemsstatic[key]
+		c.mu.Unlock()
 		return exists
 	}
+	if item != 0 && time.Now().UnixNano() > item {
+		delete(c.items, key)
+		delete(c.itemsstatic, key)
+	}
+
+	_, exists = c.itemsstatic[key]
+	c.mu.Unlock()
+	return exists
 }
-func (cache *Cache) GetData(key string) *CacheReturn {
-	cache.mu.Lock()
-	defer cache.mu.Unlock()
-	return &CacheReturn{Value: cache.itemsstatic[key]}
+func (c *globalcache) GetData(key string) *Return {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return &Return{Value: c.itemsstatic[key]}
 }
 
-func (cache *Cache) GetAll() map[string]interface{} {
-	cache.mu.Lock()
-	defer cache.mu.Unlock()
+func (c *globalcache) GetAll() map[string]interface{} {
+	c.mu.Lock()
 
 	ret := make(map[string]interface{})
-	for key := range cache.items {
-		if cache.items[key] != 0 && time.Now().UnixNano() > cache.items[key] {
-			delete(cache.items, key)
-			delete(cache.itemsstatic, key)
+	for key := range c.items {
+		if c.items[key] != 0 && time.Now().UnixNano() > c.items[key] {
+			delete(c.items, key)
+			delete(c.itemsstatic, key)
 		}
 	}
-	for key := range cache.itemsstatic {
-		ret[key] = cache.itemsstatic[key]
+	for key := range c.itemsstatic {
+		ret[key] = c.itemsstatic[key]
 	}
+	c.mu.Unlock()
 	return ret
 }
-func (cache *Cache) GetPrefix(prefix string) map[string]interface{} {
-	cache.mu.Lock()
-	defer cache.mu.Unlock()
+func (c *globalcache) GetPrefix(prefix string) map[string]interface{} {
+	c.mu.Lock()
 
 	ret := make(map[string]interface{})
-	for key := range cache.items {
+	for key := range c.items {
 		if strings.HasPrefix(key, prefix) {
-			if cache.items[key] != 0 && time.Now().UnixNano() > cache.items[key] {
-				delete(cache.items, key)
-				delete(cache.itemsstatic, key)
+			if c.items[key] != 0 && time.Now().UnixNano() > c.items[key] {
+				delete(c.items, key)
+				delete(c.itemsstatic, key)
 			}
 		}
 	}
-	for key := range cache.itemsstatic {
+	for key := range c.itemsstatic {
 		if strings.HasPrefix(key, prefix) {
-			ret[key] = cache.itemsstatic[key]
+			ret[key] = c.itemsstatic[key]
 		}
 	}
+	c.mu.Unlock()
 	return ret
 }
 
 // Set sets a value for the given key with an expiration duration.
 // If the duration is 0 or less, it will be stored forever.
-func (cache *Cache) Set(key string, value interface{}, duration time.Duration) {
-	cache.mu.Lock()
-	defer cache.mu.Unlock()
+func (c *globalcache) Set(key string, value interface{}, duration time.Duration) {
+	c.mu.Lock()
 	if duration > 0 {
-		cache.items[key] = time.Now().Add(duration).UnixNano()
+		c.items[key] = time.Now().Add(duration).UnixNano()
 	} else {
-		delete(cache.items, key)
+		delete(c.items, key)
 	}
-	cache.itemsstatic[key] = value
+	c.itemsstatic[key] = value
+	c.mu.Unlock()
 }
 
-// Delete deletes the key and its value from the cache.
-func (cache *Cache) Delete(key string) {
-	cache.mu.Lock()
-	defer cache.mu.Unlock()
-	delete(cache.items, key)
-	delete(cache.itemsstatic, key)
+// Delete deletes the key and its value from the c.
+func (c *globalcache) Delete(key string) {
+	c.mu.Lock()
+	delete(c.items, key)
+	delete(c.itemsstatic, key)
+	c.mu.Unlock()
 }
 
-// Close closes the cache and frees up resources.
-func (cache *Cache) Close() {
-	cache.items = map[string]int64{}
-	cache.itemsstatic = map[string]interface{}{}
+// Close closes the c and frees up resources.
+func (c *globalcache) Close() {
+	c.items = map[string]int64{}
+	c.itemsstatic = map[string]interface{}{}
 }
 
 // New Regex Cache
-func NewRegex(cleaningInterval time.Duration) *CacheRegex {
-	cache := &CacheRegex{
+func NewRegex(cleaningInterval time.Duration) *regex {
+	c := regex{
 		items:       make(map[string]int64, 100),
-		itemsstatic: make(map[string]regexp.Regexp, 100),
+		itemsstatic: make(map[string]*regexp.Regexp, 100),
 		mu:          &sync.Mutex{},
 		close:       make(chan struct{}),
 	}
@@ -232,82 +227,69 @@ func NewRegex(cleaningInterval time.Duration) *CacheRegex {
 			for {
 				select {
 				case <-ticker.C:
-					for key := range cache.items {
-						cache.clearexpired(key)
+					for key := range c.items {
+						c.mu.Lock()
+						c.clearexpired(key)
+						c.mu.Unlock()
 					}
 
-				case <-cache.close:
+				case <-c.close:
 					return
 				}
 			}
 		}()
 	}
-	return cache
+	return &c
 }
-func (cache *CacheRegex) clearexpired(key string) {
-	item, exists := cache.items[key]
-	if exists {
-		if item != 0 && time.Now().UnixNano() > item {
-			delete(cache.items, key)
-			delete(cache.itemsstatic, key)
-			return
-		}
+func (c *regex) clearexpired(key string) {
+	item, exists := c.items[key]
+	if !exists {
+		return
 	}
-	item2, exists2 := cache.itemsstatic[key]
-	if exists2 {
-		if item2.String() == "" {
-			delete(cache.items, key)
-			delete(cache.itemsstatic, key)
-		}
+	if item != 0 && time.Now().UnixNano() > item {
+		delete(c.items, key)
+		delete(c.itemsstatic, key)
+		return
 	}
 }
-func (cache *CacheStmt) clearexpired(key string) {
-	item, exists := cache.items[key]
-	if exists {
-		if item != 0 && time.Now().UnixNano() > item {
-			delete(cache.items, key)
-			delete(cache.itemsstatic, key)
-			return
-		}
+func (c *stmt) clearexpired(key string) {
+	item, exists := c.items[key]
+	if !exists {
+		return
 	}
-	item2, exists2 := cache.itemsstatic[key]
-	if exists2 {
-		if item2.Stmt == nil {
-			delete(cache.items, key)
-			delete(cache.itemsstatic, key)
-		}
+	if item != 0 && time.Now().UnixNano() > item {
+		delete(c.items, key)
+		delete(c.itemsstatic, key)
+		return
 	}
 }
-func (cache *CacheStmtNamed) clearexpired(key string) {
-	item, exists := cache.items[key]
-	if exists {
-		if item != 0 && time.Now().UnixNano() > item {
-			delete(cache.items, key)
-			delete(cache.itemsstatic, key)
-			return
-		}
+func (c *stmtNamed) clearexpired(key string) {
+	item, exists := c.items[key]
+	if !exists {
+		return
 	}
-	item2, exists2 := cache.itemsstatic[key]
-	if exists2 {
-		if item2.Stmt == nil {
-			delete(cache.items, key)
-			delete(cache.itemsstatic, key)
-		}
+	if item != 0 && time.Now().UnixNano() > item {
+		delete(c.items, key)
+		delete(c.itemsstatic, key)
+		return
 	}
 }
-func (cache *CacheRegex) CheckRegexp(key string) bool {
-	cache.mu.Lock()
-	defer cache.mu.Unlock()
+func (c *regex) CheckRegexp(key string) bool {
+	c.mu.Lock()
 
-	cache.clearexpired(key)
+	c.clearexpired(key)
 
-	_, exists := cache.itemsstatic[key]
+	val, exists := c.itemsstatic[key]
+	if val == nil {
+		exists = false
+	}
+	c.mu.Unlock()
 	return exists
 }
 
-func (cache *CacheRegex) getregex(key string) *regexp.Regexp {
+func (c *regex) getregex(key string) *regexp.Regexp {
 
-	regexstr := ""
+	var regexstr string
 	var expires int64
 	switch key {
 	case "RegexSeriesTitle":
@@ -320,61 +302,58 @@ func (cache *CacheRegex) getregex(key string) *regexp.Regexp {
 	}
 	setdata, err := regexp.Compile(regexstr)
 	if err == nil {
+		c.mu.Lock()
 		if expires != 0 {
-			cache.items[key] = expires
+			c.items[key] = expires
 		}
-		cache.itemsstatic[key] = *setdata
+		c.itemsstatic[key] = setdata
+		c.mu.Unlock()
+		//defer clearVar(&setdata)
 		return setdata
 	}
 	return nil
 }
-func (cache *CacheRegex) GetRegexpDirect(key string) *regexp.Regexp {
-	cache.mu.Lock()
-	defer cache.mu.Unlock()
+func (c *regex) GetRegexpDirect(key string) *regexp.Regexp {
 
-	cache.clearexpired(key)
-
-	val, exists := cache.itemsstatic[key]
-	if exists {
-		return &val
+	if c.CheckRegexp(key) {
+		return c.itemsstatic[key]
 	}
-	return cache.getregex(key)
+	return c.getregex(key)
 }
-func (cache *CacheRegex) SetRegexp(key string, value string, duration time.Duration) {
-	reg, err := regexp.Compile(value)
+func (c *regex) SetRegexp(key string, duration time.Duration) {
+	reg, err := regexp.Compile(key)
 	if err != nil {
 		return
 	}
-	cache.mu.Lock()
-	defer cache.mu.Unlock()
+	c.mu.Lock()
 	if duration > 0 {
-		cache.items[key] = time.Now().Add(duration).UnixNano()
+		c.items[key] = time.Now().Add(duration).UnixNano()
 	} else {
-		delete(cache.items, key)
+		delete(c.items, key)
 	}
-	cache.itemsstatic[key] = *reg
-	reg = nil
+	c.itemsstatic[key] = reg
+	c.mu.Unlock()
 }
 
-// Delete deletes the key and its value from the cache.
-func (cache *CacheRegex) Delete(key string) {
-	cache.mu.Lock()
-	defer cache.mu.Unlock()
-	delete(cache.items, key)
-	delete(cache.itemsstatic, key)
+// Delete deletes the key and its value from the c.
+func (c *regex) Delete(key string) {
+	c.mu.Lock()
+	delete(c.items, key)
+	delete(c.itemsstatic, key)
+	c.mu.Unlock()
 }
 
-// Close closes the cache and frees up resources.
-func (cache *CacheRegex) Close() {
-	cache.items = map[string]int64{}
-	cache.itemsstatic = map[string]regexp.Regexp{}
+// Close closes the c and frees up resources.
+func (c *regex) Close() {
+	c.items = map[string]int64{}
+	c.itemsstatic = map[string]*regexp.Regexp{}
 }
 
 // New SQLx Stmt Cache
-func NewStmt(cleaningInterval time.Duration) *CacheStmt {
-	cache := &CacheStmt{
+func NewStmt(cleaningInterval time.Duration) *stmt {
+	c := stmt{
 		items:       make(map[string]int64, 100),
-		itemsstatic: make(map[string]sqlx.Stmt, 100),
+		itemsstatic: make(map[string]*sqlx.Stmt, 100),
 		mu:          &sync.Mutex{},
 		close:       make(chan struct{}),
 	}
@@ -387,80 +366,77 @@ func NewStmt(cleaningInterval time.Duration) *CacheStmt {
 			for {
 				select {
 				case <-ticker.C:
-					for key := range cache.items {
-						cache.clearexpired(key)
+					for key := range c.items {
+						c.mu.Lock()
+						c.clearexpired(key)
+						c.mu.Unlock()
 					}
 
-				case <-cache.close:
+				case <-c.close:
 					return
 				}
 			}
 		}()
 	}
-	return cache
+	return &c
 }
 
 // Get gets the value for the given key.
-func (cache *CacheStmt) Check(key string) bool {
-	cache.mu.Lock()
-	defer cache.mu.Unlock()
-	cache.clearexpired(key)
-	_, exists := cache.items[key]
+func (c *stmt) Check(key string) bool {
+	c.mu.Lock()
+	c.clearexpired(key)
+	_, exists := c.items[key]
 	if exists {
-		_, exists = cache.itemsstatic[key]
+		var val *sqlx.Stmt
+		val, exists = c.itemsstatic[key]
+		if val == nil {
+			exists = false
+		}
+		c.mu.Unlock()
 
 		return exists
-	} else {
-		return false
 	}
+	c.mu.Unlock()
+	return false
 }
 
-func ClearVar(i interface{}) {
-	v := reflect.ValueOf(i)
-	if !v.IsZero() && v.Kind() == reflect.Pointer {
-		v.Elem().Set(reflect.Zero(v.Elem().Type()))
-	}
-}
-func (cache *CacheStmt) GetData(key string) *sqlx.Stmt {
-	cache.mu.Lock()
-	defer cache.mu.Unlock()
+func (c *stmt) GetData(key string) *sqlx.Stmt {
 
-	val, exists := cache.itemsstatic[key]
-	if exists {
-		return &val
+	if c.Check(key) {
+		return c.itemsstatic[key]
 	}
 	return nil
 }
-func (cache *CacheStmt) SetStmt(key string, value *sqlx.Stmt, duration time.Duration) {
-	cache.mu.Lock()
-	defer cache.mu.Unlock()
+func (c *stmt) SetStmt(key string, value *sqlx.Stmt, duration time.Duration) {
+	c.mu.Lock()
 	if duration > 0 {
-		cache.items[key] = time.Now().Add(duration).UnixNano()
+		c.items[key] = time.Now().Add(duration).UnixNano()
 	} else {
-		delete(cache.items, key)
+		delete(c.items, key)
 	}
-	cache.itemsstatic[key] = *value
+	c.itemsstatic[key] = value
+	c.mu.Unlock()
 }
 
-// Delete deletes the key and its value from the cache.
-func (cache *CacheStmt) Delete(key string) {
-	cache.mu.Lock()
-	defer cache.mu.Unlock()
-	delete(cache.items, key)
-	delete(cache.itemsstatic, key)
+// Delete deletes the key and its value from the c.
+func (c *stmt) Delete(key string) {
+	c.mu.Lock()
+	delete(c.items, key)
+	delete(c.itemsstatic, key)
+	c.mu.Unlock()
 }
 
-// Close closes the cache and frees up resources.
-func (cache *CacheStmt) Close() {
-	cache.items = map[string]int64{}
-	cache.itemsstatic = map[string]sqlx.Stmt{}
+// Close closes the c and frees up resources.
+func (c *stmt) Close() {
+	c.items = map[string]int64{}
+	c.itemsstatic = map[string]*sqlx.Stmt{}
 }
 
 // New SQLx NamedStmt Cache
-func NewStmtNamed(cleaningInterval time.Duration) *CacheStmtNamed {
-	cache := &CacheStmtNamed{
+func NewStmtNamed(cleaningInterval time.Duration) *stmtNamed {
+	c := stmtNamed{
 		items:       make(map[string]int64, 100),
-		itemsstatic: make(map[string]sqlx.NamedStmt, 100),
+		itemsstatic: make(map[string]*sqlx.NamedStmt, 100),
 		mu:          &sync.Mutex{},
 		close:       make(chan struct{}),
 	}
@@ -473,65 +449,68 @@ func NewStmtNamed(cleaningInterval time.Duration) *CacheStmtNamed {
 			for {
 				select {
 				case <-ticker.C:
-					for key := range cache.items {
-						cache.clearexpired(key)
+					for key := range c.items {
+						c.mu.Lock()
+						c.clearexpired(key)
+						c.mu.Unlock()
 					}
 
-				case <-cache.close:
+				case <-c.close:
 					return
 				}
 			}
 		}()
 	}
-	return cache
+	return &c
 }
 
 // Get gets the value for the given key.
-func (cache *CacheStmtNamed) Check(key string) bool {
-	cache.mu.Lock()
-	defer cache.mu.Unlock()
-	cache.clearexpired(key)
-	_, exists := cache.items[key]
+func (c *stmtNamed) Check(key string) bool {
+	c.mu.Lock()
+	c.clearexpired(key)
+	_, exists := c.items[key]
 	if exists {
-		_, exists = cache.itemsstatic[key]
-
+		var val *sqlx.NamedStmt
+		val, exists = c.itemsstatic[key]
+		if val == nil {
+			exists = false
+		}
+		c.mu.Unlock()
 		return exists
-	} else {
-		return false
 	}
+	c.mu.Unlock()
+	return false
 }
 
-func (cache *CacheStmtNamed) GetData(key string) *sqlx.NamedStmt {
-	cache.mu.Lock()
-	defer cache.mu.Unlock()
-	val, exists := cache.itemsstatic[key]
-	if exists {
-		return &val
+func (c *stmtNamed) GetData(key string) *sqlx.NamedStmt {
+
+	if c.Check(key) {
+		return c.itemsstatic[key]
 	}
 	return nil
 }
-func (cache *CacheStmtNamed) SetNamedStmt(key string, value *sqlx.NamedStmt, duration time.Duration) {
-	cache.mu.Lock()
-	defer cache.mu.Unlock()
+func (c *stmtNamed) SetNamedStmt(key string, value *sqlx.NamedStmt, duration time.Duration) {
+	c.mu.Lock()
 	if duration > 0 {
-		cache.items[key] = time.Now().Add(duration).UnixNano()
+		c.items[key] = time.Now().Add(duration).UnixNano()
 	} else {
-		delete(cache.items, key)
+		delete(c.items, key)
 	}
 
-	cache.itemsstatic[key] = *value
+	c.itemsstatic[key] = value
+	c.mu.Unlock()
 }
 
-// Delete deletes the key and its value from the cache.
-func (cache *CacheStmtNamed) Delete(key string) {
-	cache.mu.Lock()
-	defer cache.mu.Unlock()
-	delete(cache.items, key)
-	delete(cache.itemsstatic, key)
+// Delete deletes the key and its value from the c.
+func (c *stmtNamed) Delete(key string) {
+	c.mu.Lock()
+	delete(c.items, key)
+	delete(c.itemsstatic, key)
+	c.mu.Unlock()
 }
 
-// Close closes the cache and frees up resources.
-func (cache *CacheStmtNamed) Close() {
-	cache.items = map[string]int64{}
-	cache.itemsstatic = map[string]sqlx.NamedStmt{}
+// Close closes the c and frees up resources.
+func (c *stmtNamed) Close() {
+	c.items = map[string]int64{}
+	c.itemsstatic = map[string]*sqlx.NamedStmt{}
 }
