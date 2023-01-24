@@ -1,12 +1,13 @@
 package apiexternal
 
 import (
-	"errors"
+	"fmt"
 	"net/url"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/logger"
 	"github.com/Kellerman81/go_media_downloader/rate"
+	"go.uber.org/zap"
 )
 
 type OmDBMovie struct {
@@ -44,12 +45,22 @@ type OmDBMovieSearchGlobal struct {
 }
 
 type omdbClient struct {
-	OmdbApiKey string
+	OmdbAPIKey string
 	Client     *RLHTTPClient
 }
 
-var OmdbApi omdbClient
+var OmdbAPI omdbClient
 
+func (t *OmDBMovieSearchGlobal) Close() {
+	if logger.DisableVariableCleanup {
+		return
+	}
+	if t == nil {
+		return
+	}
+	t.Search = nil
+	t = nil
+}
 func NewOmdbClient(apikey string, seconds int, calls int, disabletls bool, timeoutseconds int) {
 	if seconds == 0 {
 		seconds = 1
@@ -57,21 +68,22 @@ func NewOmdbClient(apikey string, seconds int, calls int, disabletls bool, timeo
 	if calls == 0 {
 		calls = 1
 	}
-	OmdbApi = omdbClient{
-		OmdbApiKey: apikey,
+	OmdbAPI = omdbClient{
+		OmdbAPIKey: apikey,
 		Client: NewClient(
 			disabletls,
+			true,
 			rate.New(calls, 0, time.Duration(seconds)*time.Second),
 			timeoutseconds)}
 }
 
 func (o *omdbClient) GetMovie(imdbid string, result *OmDBMovie) error {
-	url := logger.StringBuild("http://www.omdbapi.com/?i=", imdbid, "&apikey=", o.OmdbApiKey)
-	_, err := o.Client.DoJson(url, result, nil)
+	url := fmt.Sprintf("http://www.omdbapi.com/?i=%s&apikey=%s", imdbid, o.OmdbAPIKey)
+	_, err := o.Client.DoJSON(url, result, nil)
 
 	if err != nil {
-		if err != errors.New(pleaseWait) {
-			logerror(url, err)
+		if err != errPleaseWait {
+			logger.Log.GlobalLogger.Error(errorCalling, zap.Stringp("url", &url), zap.Error(err))
 		}
 		return err
 	}
@@ -80,18 +92,19 @@ func (o *omdbClient) GetMovie(imdbid string, result *OmDBMovie) error {
 }
 
 func (o *omdbClient) SearchMovie(title string, year string, result *OmDBMovieSearchGlobal) error {
-	yearstr := ""
+	var yearstr string
 	if year != "" && year != "0" {
 		yearstr = "&y=" + year
 	}
-	url := logger.StringBuild("http://www.omdbapi.com/?s=", url.PathEscape(title), yearstr, "&apikey=", o.OmdbApiKey)
+	url := fmt.Sprintf("http://www.omdbapi.com/?s=%s%s&apikey=%s", url.QueryEscape(title), yearstr, o.OmdbAPIKey)
 
-	_, err := o.Client.DoJson(url, result, nil)
+	_, err := o.Client.DoJSON(url, result, nil)
 
 	if err != nil {
-		if err != errors.New(pleaseWait) {
-			logerror(url, err)
+		if err != errPleaseWait {
+			logger.Log.GlobalLogger.Error(errorCalling, zap.Stringp("url", &url), zap.Error(err))
 		}
+		result.Close()
 		return err
 	}
 

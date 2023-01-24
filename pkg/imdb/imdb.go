@@ -12,7 +12,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -26,9 +25,27 @@ import (
 	"github.com/rainycape/unidecode"
 )
 
+type mainConfig struct {
+	Imdbindexer imdbConfig `koanf:"imdbindexer" toml:"imdbindexer"`
+}
+type imdbConfig struct {
+	Indexedtypes     []string `toml:"indexed_types"`
+	Indexedlanguages []string `toml:"indexed_languages"`
+	Indexfull        bool     `toml:"index_full"`
+}
+
+const configfile = "./config/config.toml"
+
 var version string
 var buildstamp string
 var githash string
+var dbimdb *sql.DB
+
+var client = &http.Client{Transport: &http.Transport{
+	TLSClientConfig:    &tls.Config{InsecureSkipVerify: true},
+	DisableCompression: false,
+	DisableKeepAlives:  true,
+	IdleConnTimeout:    20 * time.Second}}
 
 func csvgetint(instr string) int {
 	getint, err := strconv.Atoi(instr)
@@ -36,6 +53,13 @@ func csvgetint(instr string) int {
 		return 0
 	}
 	return getint
+}
+func csvgetuint32(instr string) uint32 {
+	getint, err := strconv.Atoi(instr)
+	if err != nil {
+		return 0
+	}
+	return uint32(getint)
 }
 func csvgetfloat(instr string) float32 {
 	flo, err := strconv.ParseFloat(instr, 32)
@@ -53,23 +77,12 @@ func csvgetbool(instr string) bool {
 	return bo
 }
 
-const configfile string = "./config/config.toml"
-
-type MainConfig struct {
-	Imdbindexer imdbConfig `koanf:"imdbindexer" toml:"imdbindexer"`
-}
-type imdbConfig struct {
-	Indexedtypes     []string `toml:"indexed_types"`
-	Indexedlanguages []string `toml:"indexed_languages"`
-	Indexfull        bool     `toml:"index_full"`
-}
-
-func LoadCfgDataDB() imdbConfig {
+func loadCfgDataDB() imdbConfig {
 	content, err := os.ReadFile(configfile)
 	if err != nil {
 		fmt.Println("Error loading config. ", err)
 	}
-	var outim MainConfig
+	var outim mainConfig
 	errimdb := toml.Unmarshal(content, &outim)
 
 	if errimdb == nil {
@@ -77,8 +90,6 @@ func LoadCfgDataDB() imdbConfig {
 	}
 	return imdbConfig{}
 }
-
-var dbimdb *sql.DB
 
 func initImdbdb(dbloglevel string, dbfile string) *sql.DB {
 	if _, err := os.Stat("./databases/" + dbfile + ".db"); os.IsNotExist(err) {
@@ -123,11 +134,6 @@ func loadakas(lang []string, full bool) {
 	lang = nil
 
 	fmt.Println("Opening akas..")
-	client := &http.Client{Transport: &http.Transport{
-		TLSClientConfig:    &tls.Config{InsecureSkipVerify: true},
-		DisableCompression: false,
-		DisableKeepAlives:  true,
-		IdleConnTimeout:    20 * time.Second}}
 
 	req, _ := http.NewRequest("GET", "https://datasets.imdbws.com/title.akas.tsv.gz", nil)
 	// Get the data
@@ -146,6 +152,7 @@ func loadakas(lang []string, full bool) {
 
 	parseraka := csv.NewReader(gzreader)
 	parseraka.Comma = '\t'
+	parseraka.ReuseRecord = true
 	parseraka.LazyQuotes = true
 	_, _ = parseraka.Read() // skip header
 
@@ -188,16 +195,18 @@ func loadakas(lang []string, full bool) {
 	// addakasqlshort, err := tx.Prepare("insert into imdb_akas (tconst, title, slug, region) VALUES (?, ?, ?, ?)")
 	// addakasql, err := tx.Prepare("insert into imdb_akas (tconst, ordering, title, slug, region, language, types, attributes, is_original_title) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
 	var ok bool
+	var record []string
+	var csverr error
 	for {
-		record, err := parseraka.Read()
-		if err == io.EOF {
+		record, csverr = parseraka.Read()
+		if csverr == io.EOF {
 			break
 		}
-		if err != nil {
-			fmt.Println(fmt.Errorf("an error occurred while parsing aka.. %v", err))
+		if csverr != nil {
+			fmt.Println(fmt.Errorf("an error occurred while parsing aka.. %v", csverr))
 			continue
 		}
-		if imdbcache.Check(uint32(csvgetint(strings.TrimPrefix(record[0], "t")))) {
+		if imdbcache.Check(csvgetuint32(strings.TrimPrefix(record[0], "t"))) {
 			if _, ok = akamap[record[3]]; ok || (len(record[3]) == 0 && allowemptylang) {
 				// titlecount, _ := database.ImdbCountRows("imdb_titles", database.Query{Where: "tconst = ?", WhereArgs: []interface{}{record[0]}})
 
@@ -214,8 +223,8 @@ func loadakas(lang []string, full bool) {
 					sqlbuild.Write(sqlparam9byte)
 					valueArgs = append(valueArgs, record[0])
 					valueArgs = append(valueArgs, csvgetint(record[1]))
-					valueArgs = append(valueArgs, UnescapeString(record[2]))
-					valueArgs = append(valueArgs, StringToSlug(record[2]))
+					valueArgs = append(valueArgs, unescapeString(record[2]))
+					valueArgs = append(valueArgs, stringToSlug(record[2]))
 					valueArgs = append(valueArgs, record[3])
 					valueArgs = append(valueArgs, record[4])
 					valueArgs = append(valueArgs, record[5])
@@ -224,8 +233,8 @@ func loadakas(lang []string, full bool) {
 				} else {
 					sqlbuild.Write(sqlparam4byte)
 					valueArgs = append(valueArgs, record[0])
-					valueArgs = append(valueArgs, UnescapeString(record[2]))
-					valueArgs = append(valueArgs, StringToSlug(record[2]))
+					valueArgs = append(valueArgs, unescapeString(record[2]))
+					valueArgs = append(valueArgs, stringToSlug(record[2]))
 					valueArgs = append(valueArgs, record[3])
 				}
 				if len(valueArgs) > 900 {
@@ -234,7 +243,7 @@ func loadakas(lang []string, full bool) {
 						return
 					}
 					sqlbuild.Reset()
-					valueArgs = nil
+					valueArgs = make([]interface{}, 0, 999)
 				}
 				// if !full {
 				// 	addakasqlshort.Exec(record[0], UnescapeString(record[2]), StringToSlug(record[2]), record[3])
@@ -243,7 +252,6 @@ func loadakas(lang []string, full bool) {
 				// }
 			}
 		}
-		record = nil
 	}
 
 	if len(valueArgs) > 1 {
@@ -259,18 +267,10 @@ func loadakas(lang []string, full bool) {
 	gzreader = nil
 	parseraka = nil
 	req = nil
-	client = nil
 	akamap = nil
 }
 func loadratings() {
 	fmt.Println("Opening ratings..")
-
-	client := &http.Client{Timeout: 3600 * time.Second,
-		Transport: &http.Transport{
-			TLSClientConfig:    &tls.Config{InsecureSkipVerify: true},
-			DisableCompression: false,
-			DisableKeepAlives:  true,
-			IdleConnTimeout:    20 * time.Second}}
 
 	req, _ := http.NewRequest("GET", "https://datasets.imdbws.com/title.ratings.tsv.gz", nil)
 	// Get the data
@@ -289,6 +289,7 @@ func loadratings() {
 
 	parserrating := csv.NewReader(gzreader)
 	parserrating.Comma = '\t'
+	parserrating.ReuseRecord = true
 	parserrating.LazyQuotes = true
 	_, _ = parserrating.Read() // skip header
 
@@ -310,16 +311,18 @@ func loadratings() {
 
 	var sqlbuild strings.Builder // bytes.Buffer
 	valueArgs := make([]interface{}, 0, 999)
+	var record []string
+	var csverr error
 	for {
-		record, errcsv := parserrating.Read()
-		if errcsv == io.EOF {
+		record, csverr = parserrating.Read()
+		if csverr == io.EOF {
 			break
 		}
-		if errcsv != nil {
-			fmt.Println(fmt.Errorf("an error occurred while parsing rating.. %v", errcsv))
+		if csverr != nil {
+			fmt.Println(fmt.Errorf("an error occurred while parsing rating.. %v", csverr))
 			continue
 		}
-		if imdbcache.Check(uint32(csvgetint(strings.TrimPrefix(record[0], "t")))) {
+		if imdbcache.Check(csvgetuint32(strings.TrimPrefix(record[0], "t"))) {
 			if len(valueArgs) == 0 {
 				sqlbuild.Write(sqlstmtbyteshort)
 			} else {
@@ -335,11 +338,10 @@ func loadratings() {
 					return
 				}
 				sqlbuild.Reset()
-				valueArgs = nil
+				valueArgs = make([]interface{}, 0, 999)
 			}
 			// addratingssql.Exec(record[0], csvgetint(record[2]), csvgetfloat(record[1]))
 		}
-		record = nil
 	}
 	if len(valueArgs) > 1 {
 		_, err = tx.Exec(sqlbuild.String(), valueArgs...)
@@ -353,7 +355,6 @@ func loadratings() {
 	gzreader = nil
 	parserrating = nil
 	req = nil
-	client = nil
 }
 func loadtitles(types []string, full bool) {
 
@@ -365,13 +366,6 @@ func loadtitles(types []string, full bool) {
 
 	// cacherowlimit := 1999
 	fmt.Println("Opening titles..")
-
-	client := &http.Client{Timeout: 3600 * time.Second,
-		Transport: &http.Transport{
-			TLSClientConfig:    &tls.Config{InsecureSkipVerify: true},
-			DisableCompression: false,
-			DisableKeepAlives:  true,
-			IdleConnTimeout:    20 * time.Second}}
 
 	req, _ := http.NewRequest("GET", "https://datasets.imdbws.com/title.basics.tsv.gz", nil)
 	// Get the data
@@ -390,6 +384,7 @@ func loadtitles(types []string, full bool) {
 
 	parsertitle := csv.NewReader(gzreader)
 	parsertitle.Comma = '\t'
+	parsertitle.ReuseRecord = true
 	parsertitle.LazyQuotes = true
 	_, _ = parsertitle.Read() //skip header
 
@@ -430,17 +425,19 @@ func loadtitles(types []string, full bool) {
 	var sqlbuildgenre strings.Builder //bytes.Buffer
 	valueArgsGenre := make([]interface{}, 0, 999)
 	var ok bool
+	var record []string
+	var csverr error
 	for {
-		record, err := parsertitle.Read()
-		if err == io.EOF {
+		record, csverr = parsertitle.Read()
+		if csverr == io.EOF {
 			break
 		}
-		if err != nil {
-			fmt.Println(fmt.Errorf("an error occurred while parsing title.. %v", err))
+		if csverr != nil {
+			fmt.Println(fmt.Errorf("an error occurred while parsing title.. %v", csverr))
 			continue
 		}
 		if _, ok = titlemap[record[1]]; ok && record[1] != "" {
-			imdbcache.Set(uint32(csvgetint(strings.TrimPrefix(record[0], "t"))))
+			imdbcache.Set(csvgetuint32(strings.TrimPrefix(record[0], "t")))
 
 			if len(valueArgs) == 0 {
 				if full {
@@ -455,9 +452,9 @@ func loadtitles(types []string, full bool) {
 				sqlbuild.Write(sqlparam10byte)
 				valueArgs = append(valueArgs, record[0])
 				valueArgs = append(valueArgs, record[1])
-				valueArgs = append(valueArgs, UnescapeString(record[2]))
-				valueArgs = append(valueArgs, StringToSlug(record[2]))
-				valueArgs = append(valueArgs, UnescapeString(record[3]))
+				valueArgs = append(valueArgs, unescapeString(record[2]))
+				valueArgs = append(valueArgs, stringToSlug(record[2]))
+				valueArgs = append(valueArgs, unescapeString(record[3]))
 				valueArgs = append(valueArgs, csvgetbool(record[4]))
 				valueArgs = append(valueArgs, csvgetint(record[5]))
 				valueArgs = append(valueArgs, csvgetint(record[7]))
@@ -481,7 +478,7 @@ func loadtitles(types []string, full bool) {
 									return
 								}
 								sqlbuildgenre.Reset()
-								valueArgsGenre = nil
+								valueArgsGenre = make([]interface{}, 0, 999)
 							}
 							// addgenresql.Exec(record[0], genre)
 						}
@@ -502,7 +499,7 @@ func loadtitles(types []string, full bool) {
 							return
 						}
 						sqlbuildgenre.Reset()
-						valueArgsGenre = nil
+						valueArgsGenre = make([]interface{}, 0, 999)
 					}
 					// addgenresql.Exec(record[0], record[8])
 				}
@@ -510,8 +507,8 @@ func loadtitles(types []string, full bool) {
 				sqlbuild.Write(sqlparam6byte)
 				valueArgs = append(valueArgs, record[0])
 				valueArgs = append(valueArgs, record[1])
-				valueArgs = append(valueArgs, UnescapeString(record[2]))
-				valueArgs = append(valueArgs, StringToSlug(record[2]))
+				valueArgs = append(valueArgs, unescapeString(record[2]))
+				valueArgs = append(valueArgs, stringToSlug(record[2]))
 				valueArgs = append(valueArgs, csvgetint(record[5]))
 				valueArgs = append(valueArgs, csvgetint(record[7]))
 			}
@@ -522,7 +519,7 @@ func loadtitles(types []string, full bool) {
 					return
 				}
 				sqlbuild.Reset()
-				valueArgs = nil
+				valueArgs = make([]interface{}, 0, 999)
 			}
 			// if !full {
 			// 	//addtitlesqlshort.Exec(record[0], record[1], UnescapeString(record[2]), StringToSlug(record[2]), csvgetint(record[5]), csvgetint(record[7]))
@@ -537,7 +534,6 @@ func loadtitles(types []string, full bool) {
 			// 	}
 			// }
 		}
-		record = nil
 	}
 	if len(valueArgs) > 1 {
 		_, err = tx.Exec(sqlbuild.String(), valueArgs...)
@@ -561,37 +557,33 @@ func loadtitles(types []string, full bool) {
 	gzreader = nil
 	parsertitle = nil
 	req = nil
-	client = nil
 	titlemap = nil
 }
 
 func main() {
 	fmt.Println("Imdb Importer by kellerman81 - version " + version + " " + githash + " from " + buildstamp)
-	var cfg_imdb imdbConfig = LoadCfgDataDB()
+	var cfgimdb = loadCfgDataDB()
 	fmt.Println("Started Imdb Import")
 	os.Remove("./databases/imdbtemp.db")
 	dbimdb = initImdbdb("info", "imdbtemp")
 
 	upgradeimdb()
 
-	imdbcache = NewCache(1200000)
+	imdbcache = newCache(1200000)
 
-	loadtitles(cfg_imdb.Indexedtypes, cfg_imdb.Indexfull)
-	loadakas(cfg_imdb.Indexedlanguages, cfg_imdb.Indexfull)
+	loadtitles(cfgimdb.Indexedtypes, cfgimdb.Indexfull)
+	loadakas(cfgimdb.Indexedlanguages, cfgimdb.Indexfull)
 	loadratings()
 
 	imdbcache.Items = nil
 
-	rows, err := dbimdb.Query("Select count(*) from imdb_titles")
+	var counter int
+	err := dbimdb.QueryRow("Select count(*) from imdb_titles").Scan(&counter)
 	if err != nil {
 		dbimdb.Close()
 		os.Remove("./databases/imdbtemp.db")
 		return
 	}
-	rows.Next()
-	var counter int
-	rows.Scan(&counter)
-	rows.Close()
 	if counter == 0 {
 		dbimdb.Close()
 		os.Remove("./databases/imdbtemp.db")
@@ -602,12 +594,11 @@ func main() {
 	fmt.Println("Ended Imdb Import")
 }
 
-func UnescapeString(instr string) string {
+func unescapeString(instr string) string {
 	if strings.Contains(instr, "&") || strings.Contains(instr, "%") {
 		return html.UnescapeString(instr)
-	} else {
-		return instr
 	}
+	return instr
 }
 
 var subRune = map[rune]string{
@@ -630,32 +621,20 @@ var subRune = map[rune]string{
 	'ß':  "ss",
 }
 
-func makeSlug(s string) string {
-	s = replaceUnwantedChars(strings.ToLower(unidecode.Unidecode(substituteRune(strings.TrimSpace(s)))))
-	if strings.Contains(s, "--") {
-		s = strings.Replace(s, "--", "-", -1)
-		if strings.Contains(s, "--") {
-			s = strings.Replace(s, "--", "-", -1)
-			if strings.Contains(s, "--") {
-				s = strings.Replace(s, "--", "-", -1)
-			}
-		}
-	}
-	return strings.TrimSuffix(s, "-")
-}
-
 // SubstituteRune substitutes string chars with provided rune
 // substitution map. One pass.
-func substituteRune(s string) string {
-	var buf bytes.Buffer
+func substituteRuneF(s string) string {
+	var buf strings.Builder
 	buf.Grow(len(s))
+
 	for _, c := range s {
-		if d, ok := subRune[c]; ok {
-			buf.WriteString(d)
+		if repl, ok := subRune[c]; ok {
+			buf.WriteString(repl)
 		} else {
 			buf.WriteRune(c)
 		}
 	}
+	defer buf.Reset()
 	return buf.String()
 }
 
@@ -730,54 +709,55 @@ func replaceUnwantedChars(s string) string {
 	buf.Grow(len(s))
 	for _, c := range s {
 		if _, ok := wantedChars[c]; ok {
-			buf.WriteString(string(c))
+			buf.WriteRune(c)
 		} else {
 			buf.WriteRune('-')
 		}
 	}
+	defer buf.Reset()
 	return buf.String()
 }
 
 // no chinese or cyrilic supported
-func StringToSlug(instr string) string {
-	instr = strings.Replace(instr, "\u00df", "ss", -1) // ß to ss handling
-	instr = UnescapeString(instr)
+func stringToSlug(instr string) string {
+	instr = strings.ReplaceAll(instr, "\u00df", "ss") // ß to ss handling
+	if strings.Contains(instr, "&") || strings.Contains(instr, "%") {
+		instr = html.UnescapeString(instr)
+	}
 	if strings.Contains(instr, "\\u") {
 		instr, _ = strconv.Unquote("\"" + instr + "\"")
 	}
-	return makeSlug(instr)
+	instr = replaceUnwantedChars(unidecode.Unidecode(substituteRuneF(strings.ToLower(instr))))
+	instr = strings.ReplaceAll(instr, "--", "-")
+	instr = strings.ReplaceAll(instr, "--", "-")
+	instr = strings.ReplaceAll(instr, "--", "-")
+	instr = strings.Trim(instr, "- ")
+	return instr
 }
 
-func ClearVar(i interface{}) {
-	v := reflect.ValueOf(i)
-	if !v.IsZero() && v.Kind() == reflect.Pointer {
-		v.Elem().Set(reflect.Zero(v.Elem().Type()))
-	}
-}
+var imdbcache *cache
 
-var imdbcache *Cache
-
-type Cache struct {
+type cache struct {
 	Items map[uint32]struct{}
 	// mu    *sync.Mutex
 }
 
-func NewCache(maxsize int) *Cache {
-	cache := &Cache{
+func newCache(maxsize int) *cache {
+	c := &cache{
 		Items: make(map[uint32]struct{}, maxsize),
 		// mu:    &sync.Mutex{},
 	}
 
-	return cache
+	return c
 }
-func (cache *Cache) Check(key uint32) bool {
+func (c *cache) Check(key uint32) bool {
 	// cache.mu.Lock()
 	// defer cache.mu.Unlock()
-	_, exists := cache.Items[key]
+	_, exists := c.Items[key]
 	return exists
 }
-func (cache *Cache) Set(key uint32) {
+func (c *cache) Set(key uint32) {
 	// cache.mu.Lock()
 	// defer cache.mu.Unlock()
-	cache.Items[key] = struct{}{}
+	c.Items[key] = struct{}{}
 }

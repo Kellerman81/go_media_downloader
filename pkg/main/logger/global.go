@@ -12,6 +12,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 	"text/template"
 	"time"
 
@@ -21,185 +22,28 @@ import (
 	//"github.com/rainycape/unidecode"
 )
 
-const FilterByID string = "id = ?"
-const StrRefreshMovies string = "Refresh Movies"
-const StrRefreshMoviesInc string = "Refresh Movies Incremental"
-const StrRefreshSeries string = "Refresh Series"
-const StrRefreshSeriesInc string = "Refresh Series Incremental"
-
-var DisableVariableCleanup bool
-var DisableParserStringMatch bool
-
-// var GlobalConfigCache *cache.Cache = cache.New(0)
-var GlobalCache *cache.Cache = cache.New(0)
-var GlobalRegexCache *cache.CacheRegex = cache.NewRegex(20 * time.Minute)
-var GlobalStmtCache *cache.CacheStmt = cache.NewStmt(20 * time.Minute)
-var GlobalStmtNamedCache *cache.CacheStmtNamed = cache.NewStmtNamed(20 * time.Minute)
-var WorkerPools map[string]*pond.WorkerPool
-var GlobalCounter map[string]int = map[string]int{}
-
-func ParseStringTemplate(message string, messagedata interface{}) (string, error) {
-	tmplmessage, err := template.New("tmplfile").Parse(message)
-	if err != nil {
-		Log.Error(err)
-		return "", err
-	}
-	var doc bytes.Buffer
-	defer doc.Reset()
-	err = tmplmessage.Execute(&doc, messagedata)
-	if err != nil {
-		Log.Error(err)
-		tmplmessage = nil
-		return "", err
-	}
-	tmplmessage = nil
-	return doc.String(), err
-}
-func StringBuild(str ...string) string {
-	var bld strings.Builder
-	defer bld.Reset()
-	for idx := range str {
-		bld.WriteString(str[idx])
-	}
-	str = nil
-	return bld.String()
-}
-
 type InStringArrayStruct struct {
 	Arr []string
 }
-
-func (s *InStringArrayStruct) Close() {
-	if s != nil {
-		s.Arr = nil
-		s = nil
-	}
-}
-
 type InIntArrayStruct struct {
 	Arr []int
 }
 
-func (s *InIntArrayStruct) Close() {
-	if s != nil {
-		s.Arr = nil
-		s = nil
-	}
-}
+const FilterByID = "id = ?"
+const StrRefreshMovies = "Refresh Movies"
+const StrRefreshMoviesInc = "Refresh Movies Incremental"
+const StrRefreshSeries = "Refresh Series"
+const StrRefreshSeriesInc = "Refresh Series Incremental"
 
-func InStringArray(target string, arr *InStringArrayStruct) bool {
-	for idx := range arr.Arr {
-		if strings.EqualFold(target, arr.Arr[idx]) {
-			return true
-		}
-	}
-	return false
-}
-
-func InStringArrayN(target string, arr InStringArrayStruct) bool {
-	for idx := range arr.Arr {
-		if strings.EqualFold(target, arr.Arr[idx]) {
-			return true
-		}
-	}
-	return false
-}
-func InStringArrayCaseSensitive(target string, arr *InStringArrayStruct) bool {
-	for idx := range arr.Arr {
-		if target == arr.Arr[idx] {
-			return true
-		}
-	}
-	return false
-}
-func InStringArrayContainsTarget(target string, arr *InStringArrayStruct) bool {
-	defer arr.Close()
-	for idx := range arr.Arr {
-		if strings.Contains(target, arr.Arr[idx]) {
-			return true
-		}
-	}
-	return false
-}
-func InStringArrayContainsCaseSensitive(target string, arr *InStringArrayStruct) bool {
-	for idx := range arr.Arr {
-		if strings.Contains(target, arr.Arr[idx]) {
-			return true
-		}
-	}
-	return false
-}
-func InStringArrayContainsCaseInSensitive(target string, arr *InStringArrayStruct) bool {
-	target = strings.ToLower(target)
-	for idx := range arr.Arr {
-		if strings.Contains(target, arr.Arr[idx]) {
-			return true
-		}
-	}
-	return false
-}
-
-func InIntArray(target int, arr *InIntArrayStruct) bool {
-	for idx := range arr.Arr {
-		if target == arr.Arr[idx] {
-			return true
-		}
-	}
-	return false
-}
-
-func InitWorkerPools(workerindexer int, workerparse int, workersearch int, workerfiles int, workermeta int, workerdefault int) {
-	WorkerPools = make(map[string]*pond.WorkerPool, 5)
-	if workerdefault == 0 {
-		workerdefault = 1
-	}
-	if workerindexer == 0 {
-		workerindexer = 1
-	}
-	if workerparse == 0 {
-		workerparse = 1
-	}
-	if workersearch == 0 {
-		workersearch = 1
-	}
-	if workerfiles == 0 {
-		workerfiles = 1
-	}
-	if workermeta == 0 {
-		workermeta = 1
-	}
-	panicHandler := func(p interface{}) {
-		Log.Errorln("Task panicked: ", p)
-	}
-	WorkerPools["Indexer"] = pond.New(workerindexer, 1000, pond.IdleTimeout(10*time.Second), pond.PanicHandler(panicHandler), pond.Strategy(pond.Lazy()))
-	WorkerPools["Parse"] = pond.New(workerparse, 1000, pond.IdleTimeout(10*time.Second), pond.PanicHandler(panicHandler), pond.Strategy(pond.Lazy()))
-	WorkerPools["Search"] = pond.New(workersearch, 1000, pond.IdleTimeout(10*time.Second), pond.PanicHandler(panicHandler), pond.Strategy(pond.Lazy()))
-	WorkerPools["Files"] = pond.New(workerfiles, 1000, pond.IdleTimeout(10*time.Second), pond.PanicHandler(panicHandler), pond.Strategy(pond.Lazy()))
-	WorkerPools["Metadata"] = pond.New(workermeta, 1000, pond.IdleTimeout(10*time.Second), pond.PanicHandler(panicHandler), pond.Strategy(pond.Lazy()))
-}
-
-func CloseWorkerPools() {
-	WorkerPools["Indexer"].Stop()
-	WorkerPools["Parse"].Stop()
-	WorkerPools["Search"].Stop()
-	WorkerPools["Files"].Stop()
-	WorkerPools["Metadata"].Stop()
-}
-
-func makeSlug(s string) string {
-	defer func() { // recovers panic
-		if e := recover(); e != nil {
-			Log.GlobalLogger.Error("Recovered from panic (makeslug) ")
-		}
-	}()
-	s = replaceUnwantedChars(unidecode.Unidecode(substituteRuneF(strings.ToLower(s))))
-	s = strings.Replace(s, "--", "-", -1)
-	s = strings.Replace(s, "--", "-", -1)
-	s = strings.Replace(s, "--", "-", -1)
-	s = strings.Trim(s, "- ")
-	return s
-}
-
+var DisableVariableCleanup bool
+var DisableParserStringMatch bool
+var GlobalCache = cache.New(0)
+var GlobalRegexCache = cache.NewRegex(20 * time.Minute)
+var GlobalStmtCache = cache.NewStmt(20 * time.Minute)
+var GlobalStmtNamedCache = cache.NewStmtNamed(20 * time.Minute)
+var WorkerPools map[string]*pond.WorkerPool
+var GlobalCounter = map[string]int{}
+var GlobalMu = &sync.Mutex{}
 var substituteRune = map[rune]string{
 	'&':  "and",
 	'@':  "at",
@@ -219,24 +63,6 @@ var substituteRune = map[rune]string{
 	'Ü':  "Ue",
 	'ß':  "ss",
 }
-
-// SubstituteRune substitutes string chars with provided rune
-// substitution map. One pass.
-func substituteRuneF(s string) string {
-	var buf bytes.Buffer
-	buf.Grow(len(s))
-	defer buf.Reset()
-
-	for _, c := range s {
-		if repl, ok := substituteRune[c]; ok {
-			buf.WriteString(repl)
-		} else {
-			buf.WriteRune(c)
-		}
-	}
-	return buf.String()
-}
-
 var subRune = map[rune]bool{
 	'a': true,
 	'b': true,
@@ -276,54 +102,16 @@ var subRune = map[rune]bool{
 	'9': true,
 	'-': true,
 }
-
-// Make sure to do this with lowercase strings
-func replaceUnwantedChars(s string) string {
-	var buf bytes.Buffer
-	buf.Grow(len(s))
-	defer buf.Reset()
-
-	for _, c := range s {
-		if _, ok := subRune[c]; ok {
-			buf.WriteString(string(c))
-		} else {
-			buf.WriteRune('-')
-		}
-	}
-	return buf.String()
+var substituteDiacritics = map[rune]string{
+	'ä': "ae",
+	'ö': "oe",
+	'ü': "ue",
+	'Ä': "Ae",
+	'Ö': "Oe",
+	'Ü': "Ue",
+	'ß': "ss",
 }
-
-// no chinese or cyrilic supported
-func StringToSlug(instr string) string {
-	instr = HtmlUnescape(instr)
-	instr = makeSlug(instr)
-	instr = strings.TrimSuffix(instr, "-")
-
-	return instr
-}
-
-func Path(s string, allowslash bool) string {
-	// Start with lowercase string
-	filePath := HtmlUnescape(s)
-
-	filePath = strings.Replace(filePath, "..", "", -1)
-	filePath = path.Clean(filePath)
-	if allowslash {
-		for _, line := range []string{":", "*", "?", "\"", "<", ">", "|"} {
-			filePath = strings.Replace(filePath, line, "", -1)
-		}
-	} else {
-		for _, line := range []string{"\\", "/", ":", "*", "?", "\"", "<", ">", "|"} {
-			filePath = strings.Replace(filePath, line, "", -1)
-		}
-	}
-	filePath = strings.Trim(filePath, " ")
-
-	// NB this may be of length 0, caller must check
-	return filePath
-}
-
-var WebClient *http.Client = &http.Client{Timeout: 120 * time.Second,
+var WebClient = &http.Client{Timeout: 120 * time.Second,
 	Transport: &http.Transport{
 		TLSHandshakeTimeout:   20 * time.Second,
 		ResponseHeaderTimeout: 20 * time.Second,
@@ -334,10 +122,255 @@ var WebClient *http.Client = &http.Client{Timeout: 120 * time.Second,
 		DisableKeepAlives:     true,
 		IdleConnTimeout:       120 * time.Second}}
 
+func ParseStringTemplate(message string, messagedata interface{}) (string, error) {
+	tmplmessage, err := template.New("tmplfile").Parse(message)
+	if err != nil {
+		Log.Error(err)
+		return "", err
+	}
+	var doc bytes.Buffer
+	err = tmplmessage.Execute(&doc, messagedata)
+	if err != nil {
+		Log.Error(err)
+		tmplmessage = nil
+		doc.Reset()
+		return "", err
+	}
+	tmplmessage = nil
+	defer doc.Reset()
+	return doc.String(), err
+}
+func StringBuild(str ...string) string {
+	var bld strings.Builder
+
+	for idx := range str {
+		bld.WriteString(str[idx])
+	}
+	// str = nil
+
+	defer bld.Reset()
+	return bld.String()
+}
+
+func (s *InStringArrayStruct) Close() {
+	if DisableVariableCleanup {
+		return
+	}
+	if s == nil {
+		return
+	}
+	s.Arr = nil
+	s = nil
+}
+
+func (s *InIntArrayStruct) Close() {
+	if DisableVariableCleanup {
+		return
+	}
+	if s == nil {
+		return
+	}
+	s.Arr = nil
+	s = nil
+}
+
+func InStringArray(target string, arr *InStringArrayStruct) bool {
+	for idx := range arr.Arr {
+		if strings.EqualFold(target, arr.Arr[idx]) {
+			return true
+		}
+	}
+	return false
+}
+
+func InStringArrayN(target string, arr InStringArrayStruct) bool {
+	for idx := range arr.Arr {
+		if strings.EqualFold(target, arr.Arr[idx]) {
+			arr.Close()
+			return true
+		}
+	}
+	arr.Close()
+	return false
+}
+func InStringArrayCaseSensitive(target string, arr *InStringArrayStruct) bool {
+	for idx := range arr.Arr {
+		if target == arr.Arr[idx] {
+			return true
+		}
+	}
+	return false
+}
+func InStringArrayContainsTarget(target string, arr *InStringArrayStruct) bool {
+	for idx := range arr.Arr {
+		if strings.Contains(target, arr.Arr[idx]) {
+			arr.Close()
+			return true
+		}
+	}
+	arr.Close()
+	return false
+}
+func InStringArrayContainsCaseSensitive(target string, arr *InStringArrayStruct) bool {
+	for idx := range arr.Arr {
+		if strings.Contains(target, arr.Arr[idx]) {
+			return true
+		}
+	}
+	return false
+}
+func InStringArrayContainsCaseInSensitive(target string, arr *InStringArrayStruct) bool {
+	target = strings.ToLower(target)
+	for idx := range arr.Arr {
+		if strings.Contains(target, arr.Arr[idx]) {
+			return true
+		}
+	}
+	return false
+}
+
+func InIntArray(target int, arr *InIntArrayStruct) bool {
+	for idx := range arr.Arr {
+		if target == arr.Arr[idx] {
+			return true
+		}
+	}
+	return false
+}
+
+func InitWorkerPools(workerindexer int, workerparse int, workersearch int, workerfiles int, workermeta int) {
+	WorkerPools = make(map[string]*pond.WorkerPool, 5)
+	if workerindexer == 0 {
+		workerindexer = 1
+	}
+	if workerparse == 0 {
+		workerparse = 1
+	}
+	if workersearch == 0 {
+		workersearch = 1
+	}
+	if workerfiles == 0 {
+		workerfiles = 1
+	}
+	if workermeta == 0 {
+		workermeta = 1
+	}
+	panicHandler := func(p interface{}) {
+		Log.Errorln("Task panicked: ", p)
+	}
+	WorkerPools["Indexer"] = pond.New(workerindexer, 100, pond.IdleTimeout(10*time.Second), pond.PanicHandler(panicHandler), pond.Strategy(pond.Lazy()))
+	WorkerPools["Parse"] = pond.New(workerparse, 100, pond.IdleTimeout(10*time.Second), pond.PanicHandler(panicHandler), pond.Strategy(pond.Lazy()))
+	WorkerPools["Search"] = pond.New(workersearch, 100, pond.IdleTimeout(10*time.Second), pond.PanicHandler(panicHandler), pond.Strategy(pond.Lazy()))
+	WorkerPools["Files"] = pond.New(workerfiles, 100, pond.IdleTimeout(10*time.Second), pond.PanicHandler(panicHandler), pond.Strategy(pond.Lazy()))
+	WorkerPools["Metadata"] = pond.New(workermeta, 100, pond.IdleTimeout(10*time.Second), pond.PanicHandler(panicHandler), pond.Strategy(pond.Lazy()))
+}
+
+func CloseWorkerPools() {
+	WorkerPools["Indexer"].Stop()
+	WorkerPools["Parse"].Stop()
+	WorkerPools["Search"].Stop()
+	WorkerPools["Files"].Stop()
+	WorkerPools["Metadata"].Stop()
+}
+
+func makeSlug(s string) string {
+	defer func() { // recovers panic
+		if e := recover(); e != nil {
+			Log.GlobalLogger.Error("Recovered from panic (makeslug) ")
+		}
+	}()
+	s = replaceUnwantedChars(unidecode.Unidecode(substituteRuneF(strings.ToLower(s))))
+	s = strings.ReplaceAll(s, "--", "-")
+	s = strings.ReplaceAll(s, "--", "-")
+	s = strings.ReplaceAll(s, "--", "-")
+	s = strings.Trim(s, "- ")
+	return s
+}
+
+// SubstituteRune substitutes string chars with provided rune
+// substitution map. One pass.
+func substituteRuneF(s string) string {
+	var buf strings.Builder
+	buf.Grow(len(s))
+
+	for _, c := range s {
+		if repl, ok := substituteRune[c]; ok {
+			buf.WriteString(repl)
+		} else {
+			buf.WriteRune(c)
+		}
+	}
+	defer buf.Reset()
+	return buf.String()
+}
+
+// Make sure to do this with lowercase strings
+func replaceUnwantedChars(s string) string {
+	var buf strings.Builder
+	buf.Grow(len(s))
+
+	for _, c := range s {
+		if _, ok := subRune[c]; ok {
+			buf.WriteRune(c)
+		} else {
+			buf.WriteRune('-')
+		}
+	}
+	defer buf.Reset()
+	return buf.String()
+}
+
+// no chinese or cyrilic supported
+func StringToSlug(instr string) string {
+	if strings.Contains(instr, "&") || strings.Contains(instr, "%") {
+		instr = html.UnescapeString(instr)
+	}
+	if strings.Contains(instr, "\\u") {
+		unquote, err := strconv.Unquote("\"" + instr + "\"")
+		if err == nil {
+			instr = unquote
+		}
+	}
+	instr = makeSlug(instr)
+	instr = strings.TrimSuffix(instr, "-")
+
+	return instr
+}
+
+func Path(s string, allowslash bool) string {
+	// Start with lowercase string
+	if strings.Contains(s, "&") || strings.Contains(s, "%") {
+		s = html.UnescapeString(s)
+	}
+	if strings.Contains(s, "\\u") {
+		unquote, err := strconv.Unquote("\"" + s + "\"")
+		if err == nil {
+			s = unquote
+		}
+	}
+
+	s = strings.ReplaceAll(s, "..", "")
+	s = path.Clean(s)
+	if allowslash && strings.ContainsAny(s, ":*?\"><|") {
+		for _, line := range []string{":", "*", "?", "\"", "<", ">", "|"} {
+			s = strings.ReplaceAll(s, line, "")
+		}
+
+	}
+	if !allowslash && strings.ContainsAny(s, "\\/:*?\"><|") {
+		for _, line := range []string{"\\", "/", ":", "*", "?", "\"", "<", ">", "|"} {
+			s = strings.ReplaceAll(s, line, "")
+		}
+	}
+
+	// NB this may be of length 0, caller must check
+	return strings.Trim(s, " ")
+}
+
 // DownloadFile will download a url to a local file. It's efficient because it will
 // write as it downloads and not load the whole file into memory.
 func DownloadFile(saveIn string, fileprefix string, filename string, url string) error {
-	req, _ := http.NewRequest("GET", url, nil)
+	req, _ := http.NewRequest(http.MethodGet, url, nil)
 	resp, err := WebClient.Do(req)
 	if err != nil || resp == nil {
 		return err
@@ -348,20 +381,19 @@ func DownloadFile(saveIn string, fileprefix string, filename string, url string)
 	if filename == "" {
 		filename = path.Base(resp.Request.URL.String())
 	}
-	var filepath string
 	if fileprefix != "" {
 		filename = fileprefix + filename
 	}
-	filepath = path.Join(saveIn, filename)
+	filepath := path.Join(saveIn, filename)
 	out, err := os.Create(filepath)
 	if err != nil {
 		return err
 	}
-	defer out.Close()
 
 	// Write the body to file
 	_, err = io.Copy(out, resp.Body)
 	out.Sync()
+	out.Close()
 	return err
 }
 
@@ -372,10 +404,8 @@ func ClearVar(i interface{}) {
 	v := reflect.ValueOf(i)
 	if !v.IsZero() && v.Kind() == reflect.Pointer {
 		v.Elem().Set(reflect.Zero(v.Elem().Type()))
-	} else {
-		if !v.IsZero() {
-			Log.Warningln("Couldn't cleanup: ", v.Kind(), " Type ", v.Elem().Type(), " value ", v.Interface())
-		}
+	} else if !v.IsZero() {
+		Log.Warningln("Couldn't cleanup: ", v.Kind(), " Type ", v.Elem().Type(), " value ", v.Interface())
 	}
 }
 func ClearMap(s interface{}) {
@@ -383,10 +413,8 @@ func ClearMap(s interface{}) {
 		return
 	}
 	v := reflect.ValueOf(s)
-	if v.Elem().Kind() == reflect.Map {
-		if !v.IsZero() && v.Kind() == reflect.Pointer {
-			v.Elem().Set(reflect.Zero(v.Elem().Type()))
-		}
+	if v.Elem().Kind() == reflect.Map && !v.IsZero() && v.Kind() == reflect.Pointer {
+		v.Elem().Set(reflect.Zero(v.Elem().Type()))
 	}
 }
 
@@ -415,27 +443,15 @@ func TrimStringInclAfterStringInsensitive(s string, search string) string {
 func TrimStringPrefixInsensitive(s string, search string) string {
 	if strings.HasPrefix(s, search) {
 		return strings.TrimLeft(s[(strings.Index(s, search)+len(search)):], "-. ")
-	} else if StringHasPrefixCaseInsensitive(s, search) {
-		return strings.TrimLeft(s[(len(search)):], "-. ")
+	} else if len(search) <= len(s) && strings.EqualFold(s[:len(search)], search) {
+		return strings.TrimLeft(s[len(search):], "-. ")
 	}
 	return s
 }
 
-var substituteDiacritics = map[rune]string{
-	'ä': "ae",
-	'ö': "oe",
-	'ü': "ue",
-	'Ä': "Ae",
-	'Ö': "Oe",
-	'Ü': "Ue",
-	'ß': "ss",
-}
-
 func StringReplaceDiacritics(instr string) string {
-	var buf bytes.Buffer
+	var buf strings.Builder
 	buf.Grow(len(instr))
-	defer buf.Reset()
-
 	for _, c := range instr {
 		if repl, ok := substituteDiacritics[c]; ok {
 			buf.WriteString(repl)
@@ -443,6 +459,7 @@ func StringReplaceDiacritics(instr string) string {
 			buf.WriteRune(c)
 		}
 	}
+	defer buf.Reset()
 	return unidecode.Unidecode(buf.String())
 }
 
@@ -460,8 +477,8 @@ func Getrootpath(foldername string) (string, string) {
 	}
 	foldername = strings.TrimPrefix(foldername, strings.TrimRight(folders[0], "/"))
 	foldername = strings.Trim(foldername, "/")
-	//Log.Debug("Removed ", folders[0], " from ", foldername)
 	folderfirst := strings.TrimRight(folders[0], "/")
+	folders = nil
 	return foldername, folderfirst
 }
 
@@ -472,7 +489,7 @@ func Getrootpath(foldername string) (string, string) {
 //		return strings.Contains(strings.ToLower(e.Name), strings.ToLower("woman"))
 //	})
 func Filter[T any](s []T, cond func(t T) bool) []T {
-	res := []T{}
+	var res []T
 	for i := range s {
 		if cond(s[i]) {
 			res = append(res, s[i])
@@ -500,31 +517,15 @@ func CopyFunc[T any, U any](src []T, copyFunc func(elem T) U) []U {
 func GrowSliceBy[T any](src []T, i int) []T {
 	if i == 0 {
 		return src
+	} else if cap(src) == 0 {
+		return make([]T, 0, i)
+	} else if i < cap(src) {
+		return src
 	} else {
-		t := make([]T, len(src), len(src)+i)
+		t := make([]T, cap(src), cap(src)+i)
 		copy(t, src)
 		return t
 	}
-}
-func GrowSliceByP[T any](src *[]T, i int) {
-	if i != 0 && src != nil {
-		t := make([]T, len(*src), len(*src)+i)
-		copy(t, *src)
-		*src = t
-	}
-}
-
-func HtmlUnescape(instr string) string {
-	if strings.Contains(instr, "&") || strings.Contains(instr, "%") {
-		instr = html.UnescapeString(instr)
-	}
-	if strings.Contains(instr, "\\u") {
-		unquote, err := strconv.Unquote("\"" + instr + "\"")
-		if err == nil {
-			instr = unquote
-		}
-	}
-	return instr
 }
 
 func StringArrayToLower(src []string) []string {
@@ -606,4 +607,12 @@ func ContainsIb(a string, b string) bool {
 		a,
 		strings.ToLower(b),
 	)
+}
+
+func StringToInt(s string) int {
+	in, err := strconv.Atoi(s)
+	if err != nil {
+		return 0
+	}
+	return in
 }

@@ -43,7 +43,7 @@ func GetSeriesTable(ctx *context.Context) table.Table {
 		action.PopUpWithIframe("/admin/info/serie_episode_histories", "see more", action.IframeData{Src: "/admin/info/serie_episode_histories", AddParameterFn: func(ctx *context.Context) string {
 			return "&serie_id=" + ctx.FormValue("id")
 		}}, "900px", "560px")), types.GetActionIconButton(icon.Search,
-		MyPopUpWithIframe("/search", "see more", action.IframeData{Src: "/api/series/search/id/{{.Id}}?apikey=" + config.Cfg.General.WebApiKey}, "900px", "560px")))
+		MyPopUpWithIframe("/search", "see more", action.IframeData{Src: "/api/series/search/id/{{.Id}}?apikey=" + config.Cfg.General.WebAPIKey}, "900px", "560px")))
 
 	info.AddField("Dbserie_id", "dbserie_id", db.Integer).FieldDisplay(func(value types.FieldModel) interface{} {
 		return template.Default().

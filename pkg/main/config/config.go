@@ -23,16 +23,6 @@ type MainSerieConfig struct {
 	Serie  []SerieConfig     `koanf:"series" toml:"series"`
 }
 
-func (s *MainSerieConfig) Close() {
-	if logger.DisableVariableCleanup {
-		return
-	}
-	if s != nil {
-		s.Serie = nil
-		logger.ClearVar(&s)
-	}
-}
-
 type GlobalSerieConfig struct {
 	Identifiedby   string `koanf:"identifiedby" toml:"identifiedby"`
 	Upgrade        bool   `koanf:"upgrade" toml:"upgrade"`
@@ -106,13 +96,12 @@ type GeneralConfig struct {
 	LogFileSize                        int      `koanf:"log_file_size" toml:"log_file_size"`
 	LogFileCount                       int      `koanf:"log_file_count" toml:"log_file_count"`
 	LogCompress                        bool     `koanf:"log_compress" toml:"log_compress"`
-	WorkerDefault                      int      `koanf:"worker_default" toml:"worker_default"`
 	WorkerMetadata                     int      `koanf:"worker_metadata" toml:"worker_metadata"`
 	WorkerFiles                        int      `koanf:"worker_files" toml:"worker_files"`
 	WorkerParse                        int      `koanf:"worker_parse" toml:"worker_parse"`
 	WorkerSearch                       int      `koanf:"worker_search" toml:"worker_search"`
 	WorkerIndexer                      int      `koanf:"worker_indexer" toml:"worker_indexer"`
-	OmdbApiKey                         string   `koanf:"omdb_apikey" toml:"omdb_apikey"`
+	OmdbAPIKey                         string   `koanf:"omdb_apikey" toml:"omdb_apikey"`
 	MovieMetaSourceImdb                bool     `koanf:"movie_meta_source_imdb" toml:"movie_meta_source_imdb"`
 	MovieMetaSourceTmdb                bool     `koanf:"movie_meta_source_tmdb" toml:"movie_meta_source_tmdb"`
 	MovieMetaSourceOmdb                bool     `koanf:"movie_meta_source_omdb" toml:"movie_meta_source_omdb"`
@@ -131,10 +120,10 @@ type GeneralConfig struct {
 	UseGoDir                           bool     `koanf:"use_godir" toml:"use_godir"`
 	MoveBufferSizeKB                   int      `koanf:"move_buffer_size_kb" toml:"move_buffer_size_kb"`
 	WebPort                            string   `koanf:"webport" toml:"webport"`
-	WebApiKey                          string   `koanf:"webapikey" toml:"webapikey"`
+	WebAPIKey                          string   `koanf:"webapikey" toml:"webapikey"`
 	ConcurrentScheduler                int      `koanf:"concurrent_scheduler" toml:"concurrent_scheduler"`
 	TheMovieDBApiKey                   string   `koanf:"themoviedb_apikey" toml:"themoviedb_apikey"`
-	TraktClientId                      string   `koanf:"trakt_client_id" toml:"trakt_client_id"`
+	TraktClientID                      string   `koanf:"trakt_client_id" toml:"trakt_client_id"`
 	TraktClientSecret                  string   `koanf:"trakt_client_secret" toml:"trakt_client_secret"`
 	SchedulerDisabled                  bool     `koanf:"scheduler_disabled" toml:"scheduler_disabled"`
 	DisableParserStringMatch           bool     `koanf:"disable_parser_string_match" toml:"disable_parser_string_match"`
@@ -229,26 +218,24 @@ type MediaNotificationConfig struct {
 }
 
 type DownloaderConfig struct {
-	Name                  string `koanf:"name" toml:"name"`
-	DlType                string `koanf:"type" toml:"type"`
-	Hostname              string `koanf:"hostname" toml:"hostname"`
-	Port                  int    `koanf:"port" toml:"port"`
-	Username              string `koanf:"username" toml:"username"`
-	Password              string `koanf:"password" toml:"password"`
-	AddPaused             bool   `koanf:"add_paused" toml:"add_paused"`
-	DelugeDlTo            string `koanf:"deluge_dl_to" toml:"deluge_dl_to"`
-	DelugeMoveAfter       bool   `koanf:"deluge_move_after" toml:"deluge_move_after"`
-	DelugeMoveTo          string `koanf:"deluge_move_to" toml:"deluge_move_to"`
-	Priority              int    `koanf:"priority" toml:"priority"`
-	Enabled               bool   `koanf:"enabled" toml:"enabled"`
-	Autoredownloadfailed  bool   `koanf:"auto_redownload_failed" toml:"auto_redownload_failed"`
-	Removefaileddownloads bool   `koanf:"remove_failed_downloads" toml:"remove_failed_downloads"`
+	Name            string `koanf:"name" toml:"name"`
+	DlType          string `koanf:"type" toml:"type"`
+	Hostname        string `koanf:"hostname" toml:"hostname"`
+	Port            int    `koanf:"port" toml:"port"`
+	Username        string `koanf:"username" toml:"username"`
+	Password        string `koanf:"password" toml:"password"`
+	AddPaused       bool   `koanf:"add_paused" toml:"add_paused"`
+	DelugeDlTo      string `koanf:"deluge_dl_to" toml:"deluge_dl_to"`
+	DelugeMoveAfter bool   `koanf:"deluge_move_after" toml:"deluge_move_after"`
+	DelugeMoveTo    string `koanf:"deluge_move_to" toml:"deluge_move_to"`
+	Priority        int    `koanf:"priority" toml:"priority"`
+	Enabled         bool   `koanf:"enabled" toml:"enabled"`
 }
 
 type ListsConfig struct {
 	Name             string   `koanf:"name" toml:"name"`
 	ListType         string   `koanf:"type" toml:"type"`
-	Url              string   `koanf:"url" toml:"url"`
+	URL              string   `koanf:"url" toml:"url"`
 	Enabled          bool     `koanf:"enabled" toml:"enabled"`
 	SeriesConfigFile string   `koanf:"series_config_file" toml:"series_config_file"`
 	TraktUsername    string   `koanf:"trakt_username" toml:"trakt_username"`
@@ -264,7 +251,7 @@ type ListsConfig struct {
 type IndexersConfig struct {
 	Name                   string `koanf:"name" toml:"name"`
 	IndexerType            string `koanf:"type" toml:"type"`
-	Url                    string `koanf:"url" toml:"url"`
+	URL                    string `koanf:"url" toml:"url"`
 	Apikey                 string `koanf:"apikey" toml:"apikey"`
 	Userid                 string `koanf:"userid" toml:"userid"`
 	Enabled                bool   `koanf:"enabled" toml:"enabled"`
@@ -272,8 +259,7 @@ type IndexersConfig struct {
 	Addquotesfortitlequery bool   `koanf:"add_quotes_for_title_query" toml:"add_quotes_for_title_query"`
 	MaxRssEntries          int    `koanf:"max_rss_entries" toml:"max_rss_entries"`
 	RssEntriesloop         int    `koanf:"rss_entries_loop" toml:"rss_entries_loop"`
-	RssDownloadAll         bool   `koanf:"rss_downlood_all" toml:"rss_downlood_all"`
-	OutputAsJson           bool   `koanf:"output_as_json" toml:"output_as_json"`
+	OutputAsJSON           bool   `koanf:"output_as_json" toml:"output_as_json"`
 	Customapi              string `koanf:"custom_api" toml:"custom_api"`
 	Customurl              string `koanf:"custom_url" toml:"custom_url"`
 	Customrssurl           string `koanf:"custom_rss_url" toml:"custom_rss_url"`
@@ -283,41 +269,48 @@ type IndexersConfig struct {
 	LimitercallsDaily      int    `koanf:"limiter_calls_daily" toml:"limiter_calls_daily"`
 	MaxAge                 int    `koanf:"max_age" toml:"max_age"`
 	DisableTLSVerify       bool   `koanf:"disable_tls_verify" toml:"disable_tls_verify"`
+	DisableCompression     bool   `koanf:"disable_compression" toml:"disable_compression"`
 	TimeoutSeconds         int    `koanf:"timeout_seconds" toml:"timeout_seconds"`
 }
 
 type PathsConfig struct {
-	Name                                string   `koanf:"name" toml:"name"`
-	Path                                string   `koanf:"path" toml:"path"`
-	AllowedVideoExtensions              []string `koanf:"allowed_video_extensions" toml:"allowed_video_extensions"`
-	AllowedOtherExtensions              []string `koanf:"allowed_other_extensions" toml:"allowed_other_extensions"`
-	AllowedVideoExtensionsNoRename      []string `koanf:"allowed_video_extensions_no_rename" toml:"allowed_video_extensions_no_rename"`
-	AllowedOtherExtensionsNoRename      []string `koanf:"allowed_other_extensions_no_rename" toml:"allowed_other_extensions_no_rename"`
-	AllowedVideoExtensionsLower         []string `koanf:"-" toml:"-"`
-	AllowedVideoExtensionsNoRenameLower []string `koanf:"-" toml:"-"`
-	Blocked                             []string `koanf:"blocked" toml:"blocked"`
-	BlockedLower                        []string `koanf:"-" toml:"-"`
-	Upgrade                             bool     `koanf:"upgrade" toml:"upgrade"`
-	MinSize                             int      `koanf:"min_size" toml:"min_size"`
-	MaxSize                             int      `koanf:"max_size" toml:"max_size"`
-	MinVideoSize                        int      `koanf:"min_video_size" toml:"min_video_size"`
-	CleanupsizeMB                       int      `koanf:"cleanup_size_mb" toml:"cleanup_size_mb"`
-	AllowedLanguages                    []string `koanf:"allowed_languages" toml:"allowed_languages"`
-	Replacelower                        bool     `koanf:"replace_lower" toml:"replace_lower"`
-	Usepresort                          bool     `koanf:"use_presort" toml:"use_presort"`
-	PresortFolderPath                   string   `koanf:"presort_folder_path" toml:"presort_folder_path"`
-	UpgradeScanInterval                 int      `koanf:"upgrade_scan_interval" toml:"upgrade_scan_interval"`
-	MissingScanInterval                 int      `koanf:"missing_scan_interval" toml:"missing_scan_interval"`
-	MissingScanReleaseDatePre           int      `koanf:"missing_scan_release_date_pre" toml:"missing_scan_release_date_pre"`
-	Disallowed                          []string `koanf:"disallowed" toml:"disallowed"`
-	DisallowedLower                     []string `koanf:"-" toml:"-"`
-	DeleteWrongLanguage                 bool     `koanf:"delete_wrong_language" toml:"delete_wrong_language"`
-	DeleteDisallowed                    bool     `koanf:"delete_disallowed" toml:"delete_disallowed"`
-	CheckRuntime                        bool     `koanf:"check_runtime" toml:"check_runtime"`
-	MaxRuntimeDifference                int      `koanf:"max_runtime_difference" toml:"max_runtime_difference"`
-	DeleteWrongRuntime                  bool     `koanf:"delete_wrong_runtime" toml:"delete_wrong_runtime"`
-	MoveReplaced                        bool     `koanf:"move_replaced" toml:"move_replaced"`
-	MoveReplacedTargetPath              string   `koanf:"move_replaced_target_path" toml:"move_replaced_target_path"`
+	Name                             string                     `koanf:"name" toml:"name"`
+	Path                             string                     `koanf:"path" toml:"path"`
+	AllowedVideoExtensions           []string                   `koanf:"allowed_video_extensions" toml:"allowed_video_extensions"`
+	AllowedOtherExtensions           []string                   `koanf:"allowed_other_extensions" toml:"allowed_other_extensions"`
+	AllowedVideoExtensionsNoRename   []string                   `koanf:"allowed_video_extensions_no_rename" toml:"allowed_video_extensions_no_rename"`
+	AllowedOtherExtensionsNoRename   []string                   `koanf:"allowed_other_extensions_no_rename" toml:"allowed_other_extensions_no_rename"`
+	Blocked                          []string                   `koanf:"blocked" toml:"blocked"`
+	Upgrade                          bool                       `koanf:"upgrade" toml:"upgrade"`
+	MinSize                          int                        `koanf:"min_size" toml:"min_size"`
+	MaxSize                          int                        `koanf:"max_size" toml:"max_size"`
+	MinSizeByte                      int64                      `koanf:"-" toml:"-"`
+	MaxSizeByte                      int64                      `koanf:"-" toml:"-"`
+	MinVideoSize                     int                        `koanf:"min_video_size" toml:"min_video_size"`
+	MinVideoSizeByte                 int64                      `koanf:"-" toml:"-"`
+	CleanupsizeMB                    int                        `koanf:"cleanup_size_mb" toml:"cleanup_size_mb"`
+	AllowedLanguages                 []string                   `koanf:"allowed_languages" toml:"allowed_languages"`
+	Replacelower                     bool                       `koanf:"replace_lower" toml:"replace_lower"`
+	Usepresort                       bool                       `koanf:"use_presort" toml:"use_presort"`
+	PresortFolderPath                string                     `koanf:"presort_folder_path" toml:"presort_folder_path"`
+	UpgradeScanInterval              int                        `koanf:"upgrade_scan_interval" toml:"upgrade_scan_interval"`
+	MissingScanInterval              int                        `koanf:"missing_scan_interval" toml:"missing_scan_interval"`
+	MissingScanReleaseDatePre        int                        `koanf:"missing_scan_release_date_pre" toml:"missing_scan_release_date_pre"`
+	Disallowed                       []string                   `koanf:"disallowed" toml:"disallowed"`
+	DeleteWrongLanguage              bool                       `koanf:"delete_wrong_language" toml:"delete_wrong_language"`
+	DeleteDisallowed                 bool                       `koanf:"delete_disallowed" toml:"delete_disallowed"`
+	CheckRuntime                     bool                       `koanf:"check_runtime" toml:"check_runtime"`
+	MaxRuntimeDifference             int                        `koanf:"max_runtime_difference" toml:"max_runtime_difference"`
+	DeleteWrongRuntime               bool                       `koanf:"delete_wrong_runtime" toml:"delete_wrong_runtime"`
+	MoveReplaced                     bool                       `koanf:"move_replaced" toml:"move_replaced"`
+	MoveReplacedTargetPath           string                     `koanf:"move_replaced_target_path" toml:"move_replaced_target_path"`
+	AllowedVideoExtensionsIn         logger.InStringArrayStruct `koanf:"-" toml:"-"`
+	AllowedVideoExtensionsNoRenameIn logger.InStringArrayStruct `koanf:"-" toml:"-"`
+	AllowedOtherExtensionsIn         logger.InStringArrayStruct `koanf:"-" toml:"-"`
+	AllowedOtherExtensionsNoRenameIn logger.InStringArrayStruct `koanf:"-" toml:"-"`
+	BlockedLowerIn                   logger.InStringArrayStruct `koanf:"-" toml:"-"`
+	DisallowedLowerIn                logger.InStringArrayStruct `koanf:"-" toml:"-"`
+	SetChmod                         string                     `koanf:"set_chmod" toml:"set_chmod"`
 }
 
 type NotificationConfig struct {
@@ -343,35 +336,36 @@ type RegexConfig struct {
 }
 
 type QualityConfig struct {
-	Name                          string                 `koanf:"name" toml:"name"`
-	WantedResolution              []string               `koanf:"wanted_resolution" toml:"wanted_resolution"`
-	WantedQuality                 []string               `koanf:"wanted_quality" toml:"wanted_quality"`
-	WantedAudio                   []string               `koanf:"wanted_audio" toml:"wanted_audio"`
-	WantedCodec                   []string               `koanf:"wanted_codec" toml:"wanted_codec"`
-	CutoffResolution              string                 `koanf:"cutoff_resolution" toml:"cutoff_resolution"`
-	CutoffQuality                 string                 `koanf:"cutoff_quality" toml:"cutoff_quality"`
-	BackupSearchForTitle          bool                   `koanf:"backup_search_for_title" toml:"backup_search_for_title"`
-	BackupSearchForAlternateTitle bool                   `koanf:"backup_search_for_alternate_title" toml:"backup_search_for_alternate_title"`
-	ExcludeYearFromTitleSearch    bool                   `koanf:"exclude_year_from_title_search" toml:"exclude_year_from_title_search"`
-	CheckUntilFirstFound          bool                   `koanf:"check_until_first_found" toml:"check_until_first_found"`
-	CheckTitle                    bool                   `koanf:"check_title" toml:"check_title"`
-	CheckYear                     bool                   `koanf:"check_year" toml:"check_year"`
-	CheckYear1                    bool                   `koanf:"check_year1" toml:"check_year1"`
-	TitleStripSuffixForSearch     []string               `koanf:"title_strip_suffix_for_search" toml:"title_strip_suffix_for_search"`
-	TitleStripPrefixForSearch     []string               `koanf:"title_strip_prefix_for_search" toml:"title_strip_prefix_for_search"`
-	QualityReorder                []QualityReorderConfig `koanf:"reorder" toml:"reorder"`
-	Indexer                       []QualityIndexerConfig `koanf:"indexers" toml:"indexers"`
-	Cutoff_priority               int
-	UseForPriorityResolution      bool                       `koanf:"use_for_priority_resolution" toml:"use_for_priority_resolution"`
-	UseForPriorityQuality         bool                       `koanf:"use_for_priority_quality" toml:"use_for_priority_quality"`
-	UseForPriorityAudio           bool                       `koanf:"use_for_priority_audio" toml:"use_for_priority_audio"`
-	UseForPriorityCodec           bool                       `koanf:"use_for_priority_codec" toml:"use_for_priority_codec"`
-	UseForPriorityOther           bool                       `koanf:"use_for_priority_other" toml:"use_for_priority_other"`
-	UseForPriorityMinDifference   int                        `koanf:"use_for_priority_min_difference" toml:"use_for_priority_min_difference"`
-	WantedResolutionIn            logger.InStringArrayStruct `koanf:"-" toml:"-"`
-	WantedQualityIn               logger.InStringArrayStruct `koanf:"-" toml:"-"`
-	WantedAudioIn                 logger.InStringArrayStruct `koanf:"-" toml:"-"`
-	WantedCodecIn                 logger.InStringArrayStruct `koanf:"-" toml:"-"`
+	Name                           string                     `koanf:"name" toml:"name"`
+	WantedResolution               []string                   `koanf:"wanted_resolution" toml:"wanted_resolution"`
+	WantedQuality                  []string                   `koanf:"wanted_quality" toml:"wanted_quality"`
+	WantedAudio                    []string                   `koanf:"wanted_audio" toml:"wanted_audio"`
+	WantedCodec                    []string                   `koanf:"wanted_codec" toml:"wanted_codec"`
+	CutoffResolution               string                     `koanf:"cutoff_resolution" toml:"cutoff_resolution"`
+	CutoffQuality                  string                     `koanf:"cutoff_quality" toml:"cutoff_quality"`
+	SearchForTitleIfEmpty          bool                       `koanf:"search_for_title_if_empty" toml:"search_for_title_if_empty"`
+	BackupSearchForTitle           bool                       `koanf:"backup_search_for_title" toml:"backup_search_for_title"`
+	SearchForAlternateTitleIfEmpty bool                       `koanf:"search_for_alternate_title_if_empty" toml:"search_for_alternate_title_if_empty"`
+	BackupSearchForAlternateTitle  bool                       `koanf:"backup_search_for_alternate_title" toml:"backup_search_for_alternate_title"`
+	ExcludeYearFromTitleSearch     bool                       `koanf:"exclude_year_from_title_search" toml:"exclude_year_from_title_search"`
+	CheckUntilFirstFound           bool                       `koanf:"check_until_first_found" toml:"check_until_first_found"`
+	CheckTitle                     bool                       `koanf:"check_title" toml:"check_title"`
+	CheckYear                      bool                       `koanf:"check_year" toml:"check_year"`
+	CheckYear1                     bool                       `koanf:"check_year1" toml:"check_year1"`
+	TitleStripSuffixForSearch      []string                   `koanf:"title_strip_suffix_for_search" toml:"title_strip_suffix_for_search"`
+	TitleStripPrefixForSearch      []string                   `koanf:"title_strip_prefix_for_search" toml:"title_strip_prefix_for_search"`
+	QualityReorder                 []QualityReorderConfig     `koanf:"reorder" toml:"reorder"`
+	Indexer                        []QualityIndexerConfig     `koanf:"indexers" toml:"indexers"`
+	UseForPriorityResolution       bool                       `koanf:"use_for_priority_resolution" toml:"use_for_priority_resolution"`
+	UseForPriorityQuality          bool                       `koanf:"use_for_priority_quality" toml:"use_for_priority_quality"`
+	UseForPriorityAudio            bool                       `koanf:"use_for_priority_audio" toml:"use_for_priority_audio"`
+	UseForPriorityCodec            bool                       `koanf:"use_for_priority_codec" toml:"use_for_priority_codec"`
+	UseForPriorityOther            bool                       `koanf:"use_for_priority_other" toml:"use_for_priority_other"`
+	UseForPriorityMinDifference    int                        `koanf:"use_for_priority_min_difference" toml:"use_for_priority_min_difference"`
+	WantedResolutionIn             logger.InStringArrayStruct `koanf:"-" toml:"-"`
+	WantedQualityIn                logger.InStringArrayStruct `koanf:"-" toml:"-"`
+	WantedAudioIn                  logger.InStringArrayStruct `koanf:"-" toml:"-"`
+	WantedCodecIn                  logger.InStringArrayStruct `koanf:"-" toml:"-"`
 }
 
 type QualityReorderConfig struct {
@@ -393,15 +387,6 @@ type QualityIndexerConfig struct {
 	SkipEmptySize         bool   `koanf:"skip_empty_size" toml:"skip_empty_size"`
 	HistoryCheckTitle     bool   `koanf:"history_check_title" toml:"history_check_title"`
 	CategoriesIndexer     string `koanf:"categories_indexer" toml:"categories_indexer"`
-}
-
-func (s *QualityIndexerConfig) Close() {
-	if logger.DisableVariableCleanup {
-		return
-	}
-	if s != nil {
-		logger.ClearVar(&s)
-	}
 }
 
 type SchedulerConfig struct {
@@ -452,6 +437,147 @@ type SchedulerConfig struct {
 	CronDatabaseCheck               string `koanf:"cron_database_check" toml:"cron_database_check"`
 }
 
+const configfile = "./config/config.toml"
+
+var Cfg MainConfigMap
+
+func (s *QualityReorderConfigGroup) Close() {
+	if logger.DisableVariableCleanup {
+		return
+	}
+	if s == nil {
+		return
+	}
+	s.Arr = nil
+	s = nil
+}
+func (s *MainConfig) Close() {
+	if logger.DisableVariableCleanup {
+		return
+	}
+	if s == nil {
+		return
+	}
+	s.Downloader = nil
+	s.Indexers = nil
+	s.Lists = nil
+	s.Media.Movies = nil
+	s.Media.Series = nil
+	s.Notification = nil
+	s.Paths = nil
+	s.Quality = nil
+	s.Regex = nil
+	s.Scheduler = nil
+	s = nil
+}
+func (q *MainConfigMap) GetPath(str string) *PathsConfig {
+	path := q.Paths[str]
+	return &path
+}
+func (q *MainConfigMap) GetMedia(str string) *MediaTypeConfig {
+	media := q.Media[str]
+	return &media
+}
+func (s *MainSerieConfig) Close() {
+	if logger.DisableVariableCleanup {
+		return
+	}
+	if s == nil {
+		return
+	}
+	s.Serie = nil
+	s = nil
+}
+func (q *SerieConfig) Close() {
+	if logger.DisableVariableCleanup {
+		return
+	}
+	if q == nil {
+		return
+	}
+	q.AlternateName = nil
+	q = nil
+}
+func (q *MediaTypeConfig) Close() {
+	if logger.DisableVariableCleanup {
+		return
+	}
+	if q == nil {
+		return
+	}
+	q.MetadataTitleLanguages = nil
+	q.Data = nil
+	q.DataImport = nil
+	q.Lists = nil
+	q.Notification = nil
+	q.ListsInterface = nil
+	q.QualatiesInterface = nil
+	q.ListsMap = nil
+	q = nil
+}
+func (q *MediaTypeConfig) GetList(str string) *MediaListsConfig {
+	for idx := range q.Lists {
+		if q.Lists[idx].Name == str {
+			return &q.Lists[idx]
+		}
+	}
+	return nil
+}
+func (q *MediaListsConfig) Close() {
+	if logger.DisableVariableCleanup {
+		return
+	}
+	if q == nil {
+		return
+	}
+	q.IgnoreMapLists = nil
+	q.ReplaceMapLists = nil
+	q = nil
+}
+func (c *PathsConfig) Close() {
+	if logger.DisableVariableCleanup {
+		return
+	}
+	if c == nil {
+		return
+	}
+	c.AllowedLanguages = nil
+	c.AllowedOtherExtensions = nil
+	c.AllowedOtherExtensionsIn.Close()
+	c.AllowedOtherExtensionsNoRename = nil
+	c.AllowedOtherExtensionsNoRenameIn.Close()
+	c.AllowedVideoExtensions = nil
+	c.AllowedVideoExtensionsIn.Close()
+	c.AllowedVideoExtensionsNoRename = nil
+	c.AllowedVideoExtensionsNoRenameIn.Close()
+	c.Blocked = nil
+	c.BlockedLowerIn.Close()
+	c.Disallowed = nil
+	c.DisallowedLowerIn.Close()
+	c = nil
+}
+func (q *QualityConfig) Close() {
+	if logger.DisableVariableCleanup {
+		return
+	}
+	if q == nil {
+		return
+	}
+	q.WantedAudio = nil
+	q.WantedAudioIn.Close()
+	q.WantedCodec = nil
+	q.WantedCodecIn.Close()
+	q.WantedQuality = nil
+	q.WantedQualityIn.Close()
+	q.WantedResolution = nil
+	q.WantedResolutionIn.Close()
+	q.Indexer = nil
+	q.QualityReorder = nil
+	q.TitleStripPrefixForSearch = nil
+	q.TitleStripSuffixForSearch = nil
+	q = nil
+}
+
 func Slepping(random bool, seconds int) {
 	if random {
 		rand.Seed(time.Now().UnixNano())
@@ -464,29 +590,19 @@ func Slepping(random bool, seconds int) {
 	}
 }
 
-const configfile string = "./config/config.toml"
-
-var Cfg MainConfigMap
-
 func GetCfgFile() string {
 	return configfile
 }
 
-func LoadCfgDB(f string) error {
-	LoadCfgDataDB(f)
-
-	return nil
-}
-
-func LoadCfgDataDB(parser string) {
+func LoadCfgDB(f string) {
 	content, err := os.ReadFile(configfile)
 	if err != nil {
 		logger.Log.GlobalLogger.Error("Error loading config. ", zap.Error(err))
 		content = nil
 		return
 	}
-	results := new(MainConfig)
-	err = toml.Unmarshal(content, results)
+	var results MainConfig
+	err = toml.Unmarshal(content, &results)
 	if err != nil {
 		logger.Log.GlobalLogger.Error("Error loading config. ", zap.Error(err))
 		content = nil
@@ -495,7 +611,6 @@ func LoadCfgDataDB(parser string) {
 	content = nil
 	configDB, _ := pudge.Open("./databases/config.db", &pudge.Config{
 		SyncInterval: 0})
-	defer configDB.Close()
 	pudge.BackupAll("")
 	Cfg.Keys = make(map[string]bool)
 	Cfg.Downloader = make(map[string]DownloaderConfig)
@@ -511,7 +626,7 @@ func LoadCfgDataDB(parser string) {
 	Cfg.Scheduler = make(map[string]SchedulerConfig)
 
 	Cfg.General = results.General
-	if Cfg.General.WebApiKey != "" {
+	if Cfg.General.WebAPIKey != "" {
 		Cfg.Keys["general"] = true
 	}
 	Cfg.Imdbindexer = results.Imdbindexer
@@ -537,10 +652,15 @@ func LoadCfgDataDB(parser string) {
 		Cfg.Keys["notification_"+results.Notification[idx].Name] = true
 	}
 	for idx := range results.Paths {
-		results.Paths[idx].BlockedLower = logger.StringArrayToLower(results.Paths[idx].Blocked)
-		results.Paths[idx].AllowedVideoExtensionsLower = logger.StringArrayToLower(results.Paths[idx].AllowedVideoExtensions)
-		results.Paths[idx].AllowedVideoExtensionsNoRenameLower = logger.StringArrayToLower(results.Paths[idx].AllowedVideoExtensionsNoRenameLower)
-		results.Paths[idx].DisallowedLower = logger.StringArrayToLower(results.Paths[idx].Disallowed)
+		results.Paths[idx].DisallowedLowerIn = logger.InStringArrayStruct{Arr: logger.StringArrayToLower(results.Paths[idx].Disallowed)}
+		results.Paths[idx].BlockedLowerIn = logger.InStringArrayStruct{Arr: logger.StringArrayToLower(results.Paths[idx].Blocked)}
+		results.Paths[idx].AllowedVideoExtensionsIn = logger.InStringArrayStruct{Arr: results.Paths[idx].AllowedVideoExtensions}
+		results.Paths[idx].AllowedVideoExtensionsNoRenameIn = logger.InStringArrayStruct{Arr: results.Paths[idx].AllowedVideoExtensionsNoRename}
+		results.Paths[idx].AllowedOtherExtensionsIn = logger.InStringArrayStruct{Arr: results.Paths[idx].AllowedOtherExtensions}
+		results.Paths[idx].AllowedOtherExtensionsNoRenameIn = logger.InStringArrayStruct{Arr: results.Paths[idx].AllowedOtherExtensionsNoRename}
+		results.Paths[idx].MaxSizeByte = int64(results.Paths[idx].MaxSize) * 1024 * 1024
+		results.Paths[idx].MinSizeByte = int64(results.Paths[idx].MinSize) * 1024 * 1024
+		results.Paths[idx].MinVideoSizeByte = int64(results.Paths[idx].MinVideoSize) * 1024 * 1024
 		Cfg.Paths[results.Paths[idx].Name] = results.Paths[idx]
 		Cfg.Keys["path_"+results.Paths[idx].Name] = true
 	}
@@ -555,18 +675,14 @@ func LoadCfgDataDB(parser string) {
 	for idx := range results.Regex {
 		Cfg.Regex[results.Regex[idx].Name] = results.Regex[idx]
 		Cfg.Keys["regex_"+results.Regex[idx].Name] = true
-		var generalCache RegexConfig
-		generalCache.Name = results.Regex[idx].Name
-		generalCache.Rejected = results.Regex[idx].Rejected
-		generalCache.Required = results.Regex[idx].Required
 		for idxreg := range results.Regex[idx].Rejected {
-			if !RegexCheck(results.Regex[idx].Rejected[idxreg]) {
-				logger.GlobalRegexCache.SetRegexp(results.Regex[idx].Rejected[idxreg], results.Regex[idx].Rejected[idxreg], 0)
+			if !logger.GlobalRegexCache.CheckRegexp(results.Regex[idx].Rejected[idxreg]) {
+				logger.GlobalRegexCache.SetRegexp(results.Regex[idx].Rejected[idxreg], 0)
 			}
 		}
 		for idxreg := range results.Regex[idx].Required {
-			if !RegexCheck(results.Regex[idx].Required[idxreg]) {
-				logger.GlobalRegexCache.SetRegexp(results.Regex[idx].Required[idxreg], results.Regex[idx].Required[idxreg], 0)
+			if !logger.GlobalRegexCache.CheckRegexp(results.Regex[idx].Required[idxreg]) {
+				logger.GlobalRegexCache.SetRegexp(results.Regex[idx].Required[idxreg], 0)
 			}
 		}
 	}
@@ -607,6 +723,7 @@ func LoadCfgDataDB(parser string) {
 		Cfg.Media["serie_"+results.Media.Series[idx].Name] = results.Media.Series[idx]
 		Cfg.Keys["serie_"+results.Media.Series[idx].Name] = true
 	}
+	results.Close()
 	//Get from DB and not config
 	hastoken, _ := configDB.Has("trakt_token")
 	if hastoken {
@@ -616,14 +733,10 @@ func LoadCfgDataDB(parser string) {
 			logger.GlobalCache.Set("trakt_token", token, 0)
 		}
 	}
-	results = nil
+	configDB.Close()
 }
 
 func UpdateCfg(configIn []Conf) {
-	configDB, _ := pudge.Open("./databases/config.db", &pudge.Config{
-		SyncInterval: 0})
-	defer configDB.Close()
-
 	for _, val := range configIn {
 		key := val.Name
 		Cfg.Keys[key] = true
@@ -660,13 +773,7 @@ func UpdateCfg(configIn []Conf) {
 			Cfg.Quality[val.Data.(QualityConfig).Name] = val.Data.(QualityConfig)
 		}
 		if strings.HasPrefix(key, "regex") {
-			var tmpin RegexConfigIn
-			var tmpout RegexConfig
-			tmpin = val.Data.(RegexConfigIn)
-			tmpout.Name = tmpin.Name
-			tmpout.Rejected = tmpin.Rejected
-			tmpout.Required = tmpin.Required
-			Cfg.Regex[tmpout.Name] = tmpout
+			Cfg.Regex[val.Data.(RegexConfigIn).Name] = RegexConfig{RegexConfigIn: val.Data.(RegexConfigIn)}
 		}
 		if strings.HasPrefix(key, "scheduler") {
 			Cfg.Scheduler[val.Data.(SchedulerConfig).Name] = val.Data.(SchedulerConfig)
@@ -677,7 +784,6 @@ func UpdateCfg(configIn []Conf) {
 func UpdateCfgEntry(configIn Conf) {
 	configDB, _ := pudge.Open("./databases/config.db", &pudge.Config{
 		SyncInterval: 0})
-	defer configDB.Close()
 
 	key := configIn.Name
 	Cfg.Keys[key] = true
@@ -715,13 +821,7 @@ func UpdateCfgEntry(configIn Conf) {
 		Cfg.Quality[configIn.Data.(QualityConfig).Name] = configIn.Data.(QualityConfig)
 	}
 	if strings.HasPrefix(key, "regex") {
-		var tmpin RegexConfigIn
-		var tmpout RegexConfig
-		tmpin = configIn.Data.(RegexConfigIn)
-		tmpout.Name = tmpin.Name
-		tmpout.Rejected = tmpin.Rejected
-		tmpout.Required = tmpin.Required
-		Cfg.Regex[tmpout.Name] = tmpout
+		Cfg.Regex[configIn.Data.(RegexConfigIn).Name] = RegexConfig{RegexConfigIn: configIn.Data.(RegexConfigIn)}
 	}
 	if strings.HasPrefix(key, "scheduler") {
 		Cfg.Scheduler[configIn.Data.(SchedulerConfig).Name] = configIn.Data.(SchedulerConfig)
@@ -730,12 +830,12 @@ func UpdateCfgEntry(configIn Conf) {
 		logger.GlobalCache.Set(key, configIn.Data.(oauth2.Token), 0)
 		configDB.Set(key, configIn.Data)
 	}
+	configDB.Close()
 }
 func DeleteCfgEntry(name string) {
 	logger.GlobalCache.Delete(name)
 	configDB, _ := pudge.Open("./databases/config.db", &pudge.Config{
 		SyncInterval: 0})
-	defer configDB.Close()
 
 	delete(Cfg.Keys, name)
 
@@ -779,12 +879,12 @@ func DeleteCfgEntry(name string) {
 	}
 
 	configDB.Delete(name)
+	configDB.Close()
 }
 
 func ClearCfg() {
 	configDB, _ := pudge.Open("./databases/config.db", &pudge.Config{
 		SyncInterval: 0})
-	defer configDB.Close()
 
 	configDB.DeleteFile()
 
@@ -810,9 +910,8 @@ func ClearCfg() {
 			LogFileCount:        5,
 			LogFileSize:         5,
 			LogCompress:         false,
-			WebApiKey:           "mysecure",
+			WebAPIKey:           "mysecure",
 			WebPort:             "9090",
-			WorkerDefault:       1,
 			WorkerMetadata:      1,
 			WorkerFiles:         1,
 			WorkerParse:         1,
@@ -854,12 +953,9 @@ func ClearCfg() {
 		Quality:      map[string]QualityConfig{"quality_initial": {Name: "initial", QualityReorder: qureoconfig, Indexer: quindconfig}},
 		Regex:        map[string]RegexConfig{"regex_initial": {RegexConfigIn: RegexConfigIn{Name: "initial"}}},
 	}
-
+	configDB.Close()
 }
 func WriteCfg() {
-	configDB, _ := pudge.Open("./databases/config.db", &pudge.Config{
-		SyncInterval: 0})
-	defer configDB.Close()
 
 	var bla MainConfigOut
 	bla.General = Cfg.General
@@ -946,32 +1042,4 @@ func QualityIndexerByQualityAndTemplateGetFieldString(quality string, indexerTem
 		}
 	}
 	return ""
-}
-
-func (indexer *QualityIndexerConfig) FilterSizeNzbs(cfgp *MediaTypeConfig, title string, size int64) bool {
-	for idx := range cfgp.DataImport {
-
-		if indexer.SkipEmptySize && size == 0 {
-			logger.Log.GlobalLogger.Debug("Skipped - Size missing", zap.String("title", title))
-			return true
-		}
-		if !ConfigCheck("path_" + cfgp.DataImport[idx].TemplatePath) {
-			return false
-		}
-
-		if Cfg.Paths[cfgp.DataImport[idx].TemplatePath].MinSize != 0 {
-			if size < (int64(Cfg.Paths[cfgp.DataImport[idx].TemplatePath].MinSize)*1024*1024) && size != 0 {
-				//logger.Log.GlobalLogger.Debug("Skipped - MinSize not matched", zap.String("title", title))
-				return true
-			}
-		}
-
-		if Cfg.Paths[cfgp.DataImport[idx].TemplatePath].MaxSize != 0 {
-			if size > (int64(Cfg.Paths[cfgp.DataImport[idx].TemplatePath].MaxSize) * 1024 * 1024) {
-				//logger.Log.GlobalLogger.Debug("Skipped - MaxSize not matched", zap.String("title", title))
-				return true
-			}
-		}
-	}
-	return false
 }

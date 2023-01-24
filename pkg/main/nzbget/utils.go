@@ -4,7 +4,6 @@ import (
 	"encoding/base64"
 	"encoding/xml"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"os"
 
@@ -37,7 +36,7 @@ func downloadURL(url string) (string, error) {
 	}
 	defer resp.Body.Close()
 
-	file, err := ioutil.TempFile("./temp", "flame-download-*")
+	file, err := os.CreateTemp("./temp", "flame-download-*")
 	if err != nil {
 		return "", errors.Wrap(err, "could not get tmp file")
 	}

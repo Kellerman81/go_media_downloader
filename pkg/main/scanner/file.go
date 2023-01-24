@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"github.com/Kellerman81/go_media_downloader/config"
 	"github.com/Kellerman81/go_media_downloader/logger"
@@ -13,12 +14,12 @@ import (
 	"go.uber.org/zap"
 )
 
-var errNoGeneral error = errors.New("no general")
-var errNoFiles error = errors.New("no files")
-var errNoPath error = errors.New("no path")
-var errNotFound error = errors.New("not found")
+const pathnotfound = "Path not found"
 
-const pathnotfound string = "Path not found"
+var errNoGeneral = errors.New("no general")
+var errNoFiles = errors.New("no files")
+var errNoPath = errors.New("no path")
+var errNotFound = errors.New("not found")
 
 func GetFilesDir(rootpath string, pathcfgstr string, useother bool) (*logger.InStringArrayStruct, error) {
 
@@ -30,56 +31,48 @@ func GetFilesDir(rootpath string, pathcfgstr string, useother bool) (*logger.InS
 	// 	return GetFilesGoDir(rootpath, pathcfgstr)
 	// }
 
-	if CheckFileExist(rootpath) {
-		files, err := GetFilesDirAll(rootpath, false)
-		if err != nil {
-			return nil, errNoFiles
-		}
-		defer files.Close()
-		return FilterFilesDir(files, pathcfgstr, useother, false)
-	} else {
+	if !CheckFileExist(rootpath) {
 		logger.Log.GlobalLogger.Error(pathnotfound, zap.String("path", rootpath))
-	}
-	return nil, errNoFiles
-}
-
-func FilterFilesDir(allfiles *logger.InStringArrayStruct, pathcfgstr string, useother bool, checkisdir bool) (*logger.InStringArrayStruct, error) {
-
-	if pathcfgstr == "" {
-		return nil, errNoGeneral
+		return nil, errNoFiles
 	}
 
-	allowedVideoExtensions := &logger.InStringArrayStruct{Arr: config.Cfg.Paths[pathcfgstr].AllowedVideoExtensions}
-	defer allowedVideoExtensions.Close()
+	pathcfg := config.Cfg.Paths[pathcfgstr]
+	defer pathcfg.Close()
+	var allfiles logger.InStringArrayStruct
 
-	allowedVideoExtensionsNoRename := &logger.InStringArrayStruct{Arr: config.Cfg.Paths[pathcfgstr].AllowedVideoExtensionsNoRename}
-	defer allowedVideoExtensionsNoRename.Close()
-
-	if useother {
-		allowedVideoExtensions = &logger.InStringArrayStruct{Arr: config.Cfg.Paths[pathcfgstr].AllowedOtherExtensions}
-		allowedVideoExtensionsNoRename = &logger.InStringArrayStruct{Arr: config.Cfg.Paths[pathcfgstr].AllowedOtherExtensionsNoRename}
-	}
-
-	blocked := &logger.InStringArrayStruct{Arr: config.Cfg.Paths[pathcfgstr].BlockedLower}
-	defer blocked.Close()
-
-	filterfiles := &logger.InStringArrayStruct{Arr: allfiles.Arr[:0]}
-	var ok bool
 	var extlower string
-	lennorename := len(allowedVideoExtensionsNoRename.Arr)
-	lenfiles := len(allowedVideoExtensions.Arr)
-	lenblock := len(blocked.Arr)
-	var pathdir string
-	for idx := range allfiles.Arr {
-		if checkisdir {
-			if GetFileInfo(allfiles.Arr[idx]).IsDir() {
-				continue
-			}
+	var lennorename, lenfiles int
+	if useother {
+		lennorename = len(pathcfg.AllowedOtherExtensionsIn.Arr)
+		lenfiles = len(pathcfg.AllowedOtherExtensionsNoRenameIn.Arr)
+	} else {
+		lennorename = len(pathcfg.AllowedVideoExtensionsIn.Arr)
+		lenfiles = len(pathcfg.AllowedVideoExtensionsNoRenameIn.Arr)
+	}
+	lenblock := len(pathcfg.BlockedLowerIn.Arr)
+	//var pathdir string
+	var ok bool
+
+	var walkfunc = func(path string, info fs.DirEntry, errwalk error) error {
+		if errwalk != nil {
+			return errwalk
 		}
-		extlower = filepath.Ext(allfiles.Arr[idx])
-		ok = logger.InStringArray(extlower, allowedVideoExtensions)
+		if info.IsDir() {
+			return nil
+		}
+		extlower = filepath.Ext(path)
+		if useother {
+			ok = logger.InStringArray(extlower, &pathcfg.AllowedOtherExtensionsIn)
+		} else {
+			ok = logger.InStringArray(extlower, &pathcfg.AllowedVideoExtensionsIn)
+		}
+
 		if lennorename >= 1 && !ok {
-			ok = logger.InStringArray(extlower, allowedVideoExtensionsNoRename)
+			if useother {
+				ok = logger.InStringArray(extlower, &pathcfg.AllowedOtherExtensionsNoRenameIn)
+			} else {
+				ok = logger.InStringArray(extlower, &pathcfg.AllowedVideoExtensionsNoRenameIn)
+			}
 		}
 
 		if lennorename == 0 && lenfiles == 0 && !ok {
@@ -87,69 +80,127 @@ func FilterFilesDir(allfiles *logger.InStringArrayStruct, pathcfgstr string, use
 		}
 
 		//Check IgnoredPaths
-		if lenblock >= 1 && ok {
-			pathdir, _ = filepath.Split(allfiles.Arr[idx])
-			if logger.InStringArrayContainsCaseInSensitive(pathdir, blocked) {
-				ok = false
+		if lenblock >= 1 && ok && logger.InStringArrayContainsCaseInSensitive(path, &pathcfg.BlockedLowerIn) {
+			return nil
+		}
+
+		if ok {
+			allfiles.Arr = append(allfiles.Arr, path)
+		}
+		return nil
+	}
+
+	return &allfiles, filepath.WalkDir(rootpath, walkfunc)
+}
+
+func FilterFilesDir(allfiles *logger.InStringArrayStruct, pathcfgstr string, useother bool, checkisdir bool) error {
+
+	if pathcfgstr == "" {
+		return errNoGeneral
+	}
+	pathcfg := config.Cfg.Paths[pathcfgstr]
+	defer pathcfg.Close()
+
+	filterfiles := logger.InStringArrayStruct{Arr: allfiles.Arr[:0]}
+	var ok bool
+	var extlower string
+	var lennorename, lenfiles int
+	if useother {
+		lennorename = len(pathcfg.AllowedOtherExtensionsIn.Arr)
+		lenfiles = len(pathcfg.AllowedOtherExtensionsNoRenameIn.Arr)
+	} else {
+		lennorename = len(pathcfg.AllowedVideoExtensionsIn.Arr)
+		lenfiles = len(pathcfg.AllowedVideoExtensionsNoRenameIn.Arr)
+	}
+	lenblock := len(pathcfg.BlockedLowerIn.Arr)
+	for idx := range allfiles.Arr {
+		if checkisdir && getFileInfo(allfiles.Arr[idx]).IsDir() {
+			continue
+		}
+		extlower = filepath.Ext(allfiles.Arr[idx])
+		if useother {
+			ok = logger.InStringArray(extlower, &pathcfg.AllowedOtherExtensionsIn)
+		} else {
+			ok = logger.InStringArray(extlower, &pathcfg.AllowedVideoExtensionsIn)
+		}
+
+		if lennorename >= 1 && !ok {
+			if useother {
+				ok = logger.InStringArray(extlower, &pathcfg.AllowedOtherExtensionsNoRenameIn)
+			} else {
+				ok = logger.InStringArray(extlower, &pathcfg.AllowedVideoExtensionsNoRenameIn)
 			}
+		}
+
+		if lennorename == 0 && lenfiles == 0 && !ok {
+			ok = true
+		}
+
+		//Check IgnoredPaths
+		if lenblock >= 1 && ok && logger.InStringArrayContainsCaseInSensitive(allfiles.Arr[idx], &pathcfg.BlockedLowerIn) {
+			continue
 		}
 
 		if ok {
 			filterfiles.Arr = append(filterfiles.Arr, allfiles.Arr[idx])
 		}
 	}
-	return filterfiles, nil
+	allfiles.Arr = filterfiles.Arr
+	filterfiles.Close()
+	return nil
 }
 
 func GetFilesDirAll(rootpath string, cachecount bool) (*logger.InStringArrayStruct, error) {
-	if CheckFileExist(rootpath) {
-		cnt, ok := logger.GlobalCounter[rootpath]
-
-		list := new(logger.InStringArrayStruct)
-		if ok {
-			list.Arr = logger.GrowSliceBy(list.Arr, cnt)
-		}
-		err := filepath.WalkDir(rootpath, func(path string, info fs.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-			if info.IsDir() {
-				return nil
-			}
-			list.Arr = append(list.Arr, path)
-			return nil
-		})
-		if err != nil {
-			logger.Log.GlobalLogger.Error("", zap.Error(err))
-		}
-		if cachecount {
-			logger.GlobalCounter[rootpath] = len(list.Arr)
-		}
-		return list, nil
-	} else {
+	if !CheckFileExist(rootpath) {
 		logger.Log.GlobalLogger.Error(pathnotfound, zap.String("path", rootpath))
+		return nil, errNoFiles
 	}
-	return nil, errNoFiles
+	cnt, ok := logger.GlobalCounter[rootpath]
+
+	var list logger.InStringArrayStruct
+	if ok {
+		list.Arr = make([]string, 0, cnt)
+	}
+	var walkfunc = func(path string, info fs.DirEntry, errwalk error) error {
+		if errwalk != nil {
+			return errwalk
+		}
+		if info.IsDir() {
+			return nil
+		}
+		list.Arr = append(list.Arr, path)
+		return nil
+	}
+	errwalk := filepath.WalkDir(rootpath, walkfunc)
+	if errwalk != nil {
+		logger.Log.GlobalLogger.Error("", zap.Error(errwalk))
+	}
+	if cachecount {
+		logger.GlobalMu.Lock()
+		logger.GlobalCounter[rootpath] = len(list.Arr)
+		logger.GlobalMu.Unlock()
+	}
+	return &list, nil
 }
 
 func GetFilesWithDirAll(rootpath string) (*logger.InStringArrayStruct, error) {
-	if CheckFileExist(rootpath) {
-		list := new(logger.InStringArrayStruct)
-		err := filepath.WalkDir(rootpath, func(path string, info fs.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-			list.Arr = append(list.Arr, path)
-			return nil
-		})
-		if err != nil {
-			logger.Log.GlobalLogger.Error("", zap.Error(err))
-		}
-		return list, nil
-	} else {
+	if !CheckFileExist(rootpath) {
 		logger.Log.GlobalLogger.Error(pathnotfound, zap.String("path", rootpath))
+		return nil, errNoFiles
 	}
-	return nil, errNoFiles
+	var list logger.InStringArrayStruct
+	var walkfunc = func(path string, info fs.DirEntry, errwalk error) error {
+		if errwalk != nil {
+			return errwalk
+		}
+		list.Arr = append(list.Arr, path)
+		return nil
+	}
+	errwalk := filepath.WalkDir(rootpath, walkfunc)
+	if errwalk != nil {
+		logger.Log.GlobalLogger.Error("", zap.Error(errwalk))
+	}
+	return &list, nil
 }
 
 func GetFilesGoDir(rootpath string, pathcfgstr string) ([]string, error) {
@@ -158,47 +209,70 @@ func GetFilesGoDir(rootpath string, pathcfgstr string) ([]string, error) {
 		return []string{}, errNoPath
 	}
 
+	if !CheckFileExist(rootpath) {
+		logger.Log.GlobalLogger.Error(pathnotfound, zap.String("path", rootpath))
+		return []string{}, errNoPath
+	}
+	pathcfg := config.Cfg.Paths[pathcfgstr]
+	defer pathcfg.Close()
+
+	var list []string
+	err := godirwalk.Walk(rootpath, &godirwalk.Options{
+		Callback: func(osPathname string, de *godirwalk.Dirent) error {
+			if de.IsDir() {
+				return nil
+			}
+			extlower := filepath.Ext(osPathname)
+
+			//Check Extension
+			ok := logger.InStringArray(extlower, &pathcfg.AllowedVideoExtensionsIn)
+
+			if len(pathcfg.AllowedVideoExtensionsNoRenameIn.Arr) >= 1 && !ok {
+				ok = logger.InStringArray(extlower, &pathcfg.AllowedVideoExtensionsNoRenameIn)
+			}
+
+			if len(pathcfg.AllowedVideoExtensionsNoRenameIn.Arr) == 0 && len(pathcfg.AllowedVideoExtensionsIn.Arr) == 0 && !ok {
+				ok = true
+			}
+
+			//Check IgnoredPaths
+			if len(pathcfg.BlockedLowerIn.Arr) >= 1 && ok {
+				if logger.InStringArrayContainsCaseInSensitive(osPathname, &pathcfg.BlockedLowerIn) {
+					ok = false
+				}
+			}
+
+			if ok {
+				list = append(list, osPathname)
+			}
+
+			return nil
+		},
+		ErrorCallback: func(osPathname string, err error) godirwalk.ErrorAction {
+			return godirwalk.SkipNode
+		},
+		Unsorted: true, // set true for faster yet non-deterministic enumeration (see godoc)
+	})
+	if err != nil {
+		logger.Log.GlobalLogger.Error("", zap.Error(err))
+	}
+	return list, nil
+}
+
+func getFolderSize(rootpath string) int64 {
+
 	if CheckFileExist(rootpath) {
-		allowedVideoExtensions := &logger.InStringArrayStruct{Arr: config.Cfg.Paths[pathcfgstr].AllowedVideoExtensions}
-		defer allowedVideoExtensions.Close()
-
-		allowedVideoExtensionsNoRename := &logger.InStringArrayStruct{Arr: config.Cfg.Paths[pathcfgstr].AllowedVideoExtensionsNoRename}
-		defer allowedVideoExtensionsNoRename.Close()
-
-		blocked := &logger.InStringArrayStruct{Arr: config.Cfg.Paths[pathcfgstr].BlockedLower}
-		defer blocked.Close()
-
-		var list []string
+		logger.Log.GlobalLogger.Error(pathnotfound, zap.String("path", rootpath))
+		return 0
+	}
+	var size int64
+	if config.Cfg.General.UseGoDir {
 		err := godirwalk.Walk(rootpath, &godirwalk.Options{
 			Callback: func(osPathname string, de *godirwalk.Dirent) error {
 				if de.IsDir() {
 					return nil
 				}
-				extlower := filepath.Ext(osPathname)
-
-				//Check Extension
-				ok := logger.InStringArray(extlower, allowedVideoExtensions)
-
-				if len(allowedVideoExtensionsNoRename.Arr) >= 1 && !ok {
-					ok = logger.InStringArray(extlower, allowedVideoExtensionsNoRename)
-				}
-
-				if len(allowedVideoExtensionsNoRename.Arr) == 0 && len(allowedVideoExtensions.Arr) == 0 && !ok {
-					ok = true
-				}
-
-				//Check IgnoredPaths
-				if len(blocked.Arr) >= 1 && ok {
-					pathdir, _ := filepath.Split(osPathname)
-					if logger.InStringArrayContainsCaseInSensitive(pathdir, blocked) {
-						ok = false
-					}
-				}
-
-				if ok {
-					list = append(list, osPathname)
-				}
-
+				size += GetFileSize(osPathname, false)
 				return nil
 			},
 			ErrorCallback: func(osPathname string, err error) godirwalk.ErrorAction {
@@ -209,148 +283,117 @@ func GetFilesGoDir(rootpath string, pathcfgstr string) ([]string, error) {
 		if err != nil {
 			logger.Log.GlobalLogger.Error("", zap.Error(err))
 		}
-		return list, nil
 	} else {
-		logger.Log.GlobalLogger.Error(pathnotfound, zap.String("path", rootpath))
-		return []string{}, errNoPath
-	}
-}
-
-func getFolderSize(rootpath string) int64 {
-	var size int64
-
-	if CheckFileExist(rootpath) {
-		if config.Cfg.General.UseGoDir {
-			err := godirwalk.Walk(rootpath, &godirwalk.Options{
-				Callback: func(osPathname string, de *godirwalk.Dirent) error {
-					if de.IsDir() {
-						return nil
-					}
-					size += GetFileSize(osPathname)
-					return nil
-				},
-				ErrorCallback: func(osPathname string, err error) godirwalk.ErrorAction {
-					return godirwalk.SkipNode
-				},
-				Unsorted: true, // set true for faster yet non-deterministic enumeration (see godoc)
-			})
-			if err != nil {
-				logger.Log.GlobalLogger.Error("", zap.Error(err))
-			}
-		} else {
-			var fsinfo fs.FileInfo
-
-			var errinfo error
-			err := filepath.WalkDir(rootpath, func(path string, info fs.DirEntry, err error) error {
-				if info.IsDir() {
-					return nil
-				}
-				fsinfo, errinfo = info.Info()
-				if errinfo == nil {
-					size += fsinfo.Size()
-				}
+		var walkfunc = func(path string, info fs.DirEntry, errwalk error) error {
+			if info.IsDir() {
 				return nil
-			})
-			if err != nil {
-				logger.Log.GlobalLogger.Error("", zap.Error(err))
 			}
+			size += GetFileSizeDirEntry(info)
+			return nil
 		}
-	} else {
-		logger.Log.GlobalLogger.Error(pathnotfound, zap.String("path", rootpath))
+		errwalk := filepath.WalkDir(rootpath, walkfunc)
+		if errwalk != nil {
+			logger.Log.GlobalLogger.Error("", zap.Error(errwalk))
+		}
 	}
 	return size
 }
 
-func MoveFile(file string, target string, newname string, filetypes *logger.InStringArrayStruct, filetypesNoRename *logger.InStringArrayStruct, usebuffercopy bool) bool {
-	defer filetypes.Close()
-	defer filetypesNoRename.Close()
-	if CheckFileExist(file) {
-		ok := false
-		oknorename := false
-		if len(filetypes.Arr) == 0 {
-			ok = true
-			oknorename = true
-		} else {
-			if len(filetypes.Arr) >= 1 {
-				if logger.InStringArray(filepath.Ext(file), filetypes) {
-					ok = true
-				}
-			}
-		}
-		if !ok {
-			if len(filetypesNoRename.Arr) >= 1 {
-				if logger.InStringArray(filepath.Ext(file), filetypesNoRename) {
-					ok = true
-				}
-				if ok {
-					oknorename = true
-				}
-			}
-		}
-		if ok {
-			if newname == "" || oknorename {
-				newname = filepath.Base(file)
-			}
-			newpath := filepath.Join(target, newname+filepath.Ext(file))
-			if CheckFileExist(newpath) {
-				if target != newpath {
-					//Remove Target to supress error
-					RemoveFile(newpath)
-				}
-			}
-			err := os.Rename(file, newpath)
-			if err != nil {
-				if usebuffercopy {
-					err = moveFileDriveBuffer(file, newpath)
-				} else {
-					err = moveFileDrive(file, newpath)
-				}
-				if err != nil {
-					logger.Log.GlobalLogger.Error("File could not be moved", zap.String("file", file), zap.Error(err))
-				} else {
-					logger.Log.GlobalLogger.Debug("File moved from ", zap.String("file", file), zap.String("to", newpath))
-					return true
-				}
-			} else {
-				logger.Log.GlobalLogger.Debug("File moved from ", zap.String("file", file), zap.String("to", newpath))
-				return true
-			}
-
-		}
+func MoveFile(file string, target string, newname string, filetypes *logger.InStringArrayStruct, filetypesNoRename *logger.InStringArrayStruct, usebuffercopy bool, chmod string) bool {
+	if !CheckFileExist(file) {
+		filetypes.Close()
+		filetypesNoRename.Close()
+		return false
 	}
+	var ok, oknorename bool
+	if len(filetypes.Arr) == 0 {
+		ok = true
+		oknorename = true
+	} else if len(filetypes.Arr) >= 1 && logger.InStringArray(filepath.Ext(file), filetypes) {
+		ok = true
+	}
+	if !ok && len(filetypesNoRename.Arr) >= 1 && logger.InStringArray(filepath.Ext(file), filetypesNoRename) {
+		ok = true
+		oknorename = true
+	}
+	if !ok {
+		filetypes.Close()
+		filetypesNoRename.Close()
+		return false
+	}
+	if newname == "" || oknorename {
+		newname = filepath.Base(file)
+	}
+	newpath := filepath.Join(target, newname+filepath.Ext(file))
+	if CheckFileExist(newpath) && target != newpath {
+		//Remove Target to supress error
+		RemoveFile(newpath)
+	}
+	if chmod != "" && len(chmod) == 4 {
+		tempval, _ := strconv.ParseUint(chmod, 0, 32)
+		Setchmod(file, fs.FileMode(uint32(tempval)))
+	}
+	if os.Rename(file, newpath) == nil {
+		logger.Log.GlobalLogger.Debug("File moved from ", zap.Stringp("file", &file), zap.Stringp("to", &newpath))
+		filetypes.Close()
+		filetypesNoRename.Close()
+		return true
+	}
+
+	var err error
+	if usebuffercopy {
+		err = moveFileDriveBuffer(file, newpath)
+	} else {
+		err = moveFileDrive(file, newpath)
+	}
+	if err == nil {
+		logger.Log.GlobalLogger.Debug("File moved from ", zap.Stringp("file", &file), zap.Stringp("to", &newpath))
+		filetypes.Close()
+		filetypesNoRename.Close()
+		return true
+	}
+	logger.Log.GlobalLogger.Error("File could not be moved", zap.Stringp("file", &file), zap.Error(err))
+	filetypes.Close()
+	filetypesNoRename.Close()
 	return false
 }
 
+func Setchmod(file string, chmod fs.FileMode) {
+	f, err := os.Open(file)
+	if err != nil {
+		f.Close()
+		return
+	}
+	f.Chmod(chmod)
+	f.Close()
+}
 func RemoveFiles(val string, pathcfgstr string) {
 
 	if pathcfgstr == "" {
 		return
 	}
-	allowedVideoExtensions := &logger.InStringArrayStruct{Arr: config.Cfg.Paths[pathcfgstr].AllowedVideoExtensions}
-	defer allowedVideoExtensions.Close()
-
-	allowedVideoExtensionsNoRename := &logger.InStringArrayStruct{Arr: config.Cfg.Paths[pathcfgstr].AllowedVideoExtensionsNoRename}
-	defer allowedVideoExtensionsNoRename.Close()
-
-	ok := false
-	oknorename := false
-	if len(allowedVideoExtensions.Arr) >= 1 {
-		ok = logger.InStringArray(filepath.Ext(val), allowedVideoExtensions)
+	if !CheckFileExist(val) {
+		return
 	}
-	if len(allowedVideoExtensionsNoRename.Arr) >= 1 && !ok {
-		ok = logger.InStringArray(filepath.Ext(val), allowedVideoExtensionsNoRename)
+	pathcfg := config.Cfg.Paths[pathcfgstr]
+	defer pathcfg.Close()
+
+	var ok, oknorename bool
+	if len(pathcfg.AllowedVideoExtensionsIn.Arr) >= 1 {
+		ok = logger.InStringArray(filepath.Ext(val), &pathcfg.AllowedVideoExtensionsIn)
+	}
+	if len(pathcfg.AllowedVideoExtensionsNoRenameIn.Arr) >= 1 && !ok {
+		ok = logger.InStringArray(filepath.Ext(val), &pathcfg.AllowedVideoExtensionsNoRenameIn)
 		if ok {
 			oknorename = true
 		}
 	}
-	if ok || oknorename || (len(allowedVideoExtensions.Arr) == 0 && len(allowedVideoExtensionsNoRename.Arr) == 0) {
-		if CheckFileExist(val) {
-			err := os.Remove(val)
-			if err != nil {
-				logger.Log.GlobalLogger.Error("File could not be removed", zap.String("file", val), zap.Error(err))
-			} else {
-				logger.Log.GlobalLogger.Debug("File removed", zap.String("file", val))
-			}
+	if ok || oknorename || (len(pathcfg.AllowedVideoExtensionsIn.Arr) == 0 && len(pathcfg.AllowedVideoExtensionsNoRenameIn.Arr) == 0) {
+		err := os.Remove(val)
+		if err != nil {
+			logger.Log.GlobalLogger.Error("File could not be removed", zap.Stringp("file", &val), zap.Error(err))
+		} else {
+			logger.Log.GlobalLogger.Debug("File removed", zap.Stringp("file", &val))
 		}
 	}
 }
@@ -359,40 +402,36 @@ func RemoveFile(file string) error {
 	if CheckFileExist(file) {
 		err := os.Remove(file)
 		if err != nil {
-			logger.Log.GlobalLogger.Error("File could not be removed", zap.String("file", file), zap.Error(err))
+			logger.Log.GlobalLogger.Error("File could not be removed", zap.Stringp("file", &file), zap.Error(err))
 		} else {
-			logger.Log.GlobalLogger.Debug("File removed", zap.String("file", file))
+			logger.Log.GlobalLogger.Debug("File removed", zap.Stringp("file", &file))
 		}
 		return err
-	} else {
-		return errNotFound
 	}
+	return errNotFound
 }
 
 func CleanUpFolder(folder string, CleanupsizeMB int) {
-	if CheckFileExist(folder) {
-		filesleft, err := GetFilesDirAll(folder, false)
+	if !CheckFileExist(folder) {
+		return
+	}
+	if CleanupsizeMB == 0 {
+		return
+	}
+	leftsize := getFolderSize(folder)
+	logger.Log.GlobalLogger.Debug("Left size", zap.Int("Size", int(leftsize/1024/1024)))
+	if CleanupsizeMB >= int(leftsize/1024/1024) {
+		err := os.RemoveAll(folder)
 		if err == nil {
-			defer filesleft.Close()
-			logger.Log.GlobalLogger.Debug("Left files", zap.Strings("files", filesleft.Arr))
-			if CleanupsizeMB >= 1 {
-				leftsize := getFolderSize(folder)
-				logger.Log.GlobalLogger.Debug("Left size", zap.Int("Size", int(leftsize/1024/1024)))
-				if CleanupsizeMB >= int(leftsize/1024/1024) {
-					err := os.RemoveAll(folder)
-					if err == nil {
-						logger.Log.GlobalLogger.Debug("Folder removed", zap.String("folder", folder))
-					} else {
-						logger.Log.GlobalLogger.Error("Folder could not be removed", zap.String("folder", folder), zap.Error(err))
-					}
-				}
-			}
+			logger.Log.GlobalLogger.Debug("Folder removed", zap.Stringp("folder", &folder))
+		} else {
+			logger.Log.GlobalLogger.Error("Folder could not be removed", zap.Stringp("folder", &folder), zap.Error(err))
 		}
 	}
 }
 
-func CheckRegular(path string) bool {
-	return GetFileInfo(path).Mode().IsRegular()
+func checkRegular(path string) bool {
+	return getFileInfo(path).Mode().IsRegular()
 }
 func moveFileDriveBuffer(sourcePath, destPath string) error {
 	bufferkb := 1024
@@ -402,8 +441,12 @@ func moveFileDriveBuffer(sourcePath, destPath string) error {
 		bufferkb = buffersize
 	}
 
-	if !CheckRegular(sourcePath) {
+	if !checkRegular(sourcePath) {
 		return errors.New(sourcePath + " is not a regular file")
+	}
+
+	if CheckFileExist(destPath) {
+		return errors.New(destPath + " already exists")
 	}
 
 	source, err := os.Open(sourcePath)
@@ -412,10 +455,6 @@ func moveFileDriveBuffer(sourcePath, destPath string) error {
 	}
 	defer source.Close()
 
-	if CheckFileExist(destPath) {
-		return errors.New(destPath + " already exists")
-	}
-
 	destination, err := os.Create(destPath)
 	if err != nil {
 		return err
@@ -423,9 +462,9 @@ func moveFileDriveBuffer(sourcePath, destPath string) error {
 	defer destination.Close()
 
 	buf := make([]byte, int64(bufferkb)*1024)
-	defer logger.ClearVar(&buf)
+	var n int
 	for {
-		n, err := source.Read(buf)
+		n, err = source.Read(buf)
 		if err != nil && err != io.EOF {
 			return err
 		}
@@ -437,8 +476,10 @@ func moveFileDriveBuffer(sourcePath, destPath string) error {
 			return err
 		}
 	}
+	destination.Sync()
 	// The copy was successful, so now delete the original file
 	err = os.Remove(sourcePath)
+	buf = nil
 	if err != nil {
 		return errors.New("failed removing original file: " + err.Error())
 	}
@@ -446,73 +487,23 @@ func moveFileDriveBuffer(sourcePath, destPath string) error {
 }
 
 func MoveFileDriveBuffer(sourcePath, destPath string) error {
-	bufferkb := 1024
+	return moveFileDriveBuffer(sourcePath, destPath)
+}
 
-	buffersize := config.Cfg.General.MoveBufferSizeKB
-	if buffersize != 0 {
-		bufferkb = buffersize
+func moveFileDrive(sourcePath, destPath string) error {
+	if !CheckFileExist(sourcePath) {
+		return errNotFound
 	}
-
-	if !CheckRegular(sourcePath) {
-		return errors.New(sourcePath + " is not a regular file")
-	}
-
-	source, err := os.Open(sourcePath)
+	err := copyFile(sourcePath, destPath, false)
 	if err != nil {
+		logger.Log.GlobalLogger.Error("Error copiing source", zap.Stringp("sourcepath", &sourcePath), zap.Stringp("targetpath", &destPath), zap.Error(err))
 		return err
-	}
-	defer source.Close()
-
-	if CheckFileExist(destPath) {
-		return errors.New(destPath + " already exists")
-	}
-
-	destination, err := os.Create(destPath)
-	if err != nil {
-		return err
-	}
-	defer destination.Close()
-
-	buf := make([]byte, int64(bufferkb)*1024)
-	defer logger.ClearVar(&buf)
-	for {
-		n, err := source.Read(buf)
-		if err != nil && err != io.EOF {
-			return err
-		}
-		if n == 0 {
-			break
-		}
-
-		if _, err = destination.Write(buf[:n]); err != nil {
-			return err
-		}
 	}
 	// The copy was successful, so now delete the original file
 	err = os.Remove(sourcePath)
 	if err != nil {
-		return errors.New("failed removing original file: " + err.Error())
-	}
-	return nil
-}
-
-func moveFileDrive(sourcePath, destPath string) error {
-	if CheckFileExist(sourcePath) {
-		err := copyFile(sourcePath, destPath, false)
-		if err != nil {
-			logger.Log.GlobalLogger.Error("Error copiing source", zap.String("sourcepath", sourcePath), zap.String("targetpath", destPath), zap.Error(err))
-			return err
-		}
-	} else {
-		return errNotFound
-	}
-	if CheckFileExist(sourcePath) {
-		// The copy was successful, so now delete the original file
-		err := os.Remove(sourcePath)
-		if err != nil {
-			logger.Log.GlobalLogger.Error("Error removing source", zap.String("path", sourcePath), zap.Error(err))
-			return err
-		}
+		logger.Log.GlobalLogger.Error("Error removing source", zap.Stringp("path", &sourcePath), zap.Error(err))
+		return err
 	}
 	return nil
 }
@@ -532,34 +523,50 @@ func CheckFileExist(path string) bool {
 	return !errors.Is(err, fs.ErrNotExist)
 }
 
-func GetFileInfo(path string) fs.FileInfo {
+func getFileInfo(path string) fs.FileInfo {
 	info, _ := os.Stat(path)
 	return info
 }
 
-func GetFileSize(path string) int64 {
-	return GetFileInfo(path).Size()
+func GetFileSize(path string, checkpath bool) int64 {
+	if checkpath {
+		if !CheckFileExist(path) {
+			return 0
+		}
+	}
+	return getFileInfo(path).Size()
+}
+func GetFileSizeDirEntry(info fs.DirEntry) int64 {
+	fsinfo, errinfo := info.Info()
+	if errinfo == nil {
+		return fsinfo.Size()
+	}
+	return 0
 }
 
 // CopyFile copies a file from src to dst. If src and dst files exist, and are
 // the same, then return success. Otherwise, attempt to create a hard link
 // between the two files. If that fails, copy the file contents from src to dst.
 // Creates any missing directories. Supports '~' notation for $HOME directory of the current user.
-func copyFile(src, dst string, allowFileLink bool) (err error) {
-	srcAbs, err := absolutePath(src)
+func copyFile(src, dst string, allowFileLink bool) error {
+	var srcAbs string
+	var err error
+	srcAbs, err = absolutePath(src)
 	if err != nil {
 		return err
 	}
-	dstAbs, err := absolutePath(dst)
+	var dstAbs string
+	dstAbs, err = absolutePath(dst)
 	if err != nil {
 		return err
 	}
 
 	// open source file
-	sfi, err := os.Stat(srcAbs)
+	var sfi fs.FileInfo
+	sfi, err = os.Stat(srcAbs)
 
 	if err != nil {
-		return
+		return err
 	}
 	if !sfi.Mode().IsRegular() {
 		// cannot copy non-regular files (e.g., directories,
@@ -568,42 +575,43 @@ func copyFile(src, dst string, allowFileLink bool) (err error) {
 	}
 
 	// open dest file
-	dfi, err := os.Stat(dstAbs)
+	var dfi fs.FileInfo
+	dfi, err = os.Stat(dstAbs)
 
 	if err != nil {
 		if !os.IsNotExist(err) {
-			return
+			return err
 		}
 		// file doesn't exist
-		err := os.MkdirAll(filepath.Dir(dst), 0755)
+		err = os.MkdirAll(filepath.Dir(dst), 0755)
 		if err != nil {
 			return err
 		}
 
 	} else {
-		if !(dfi.Mode().IsRegular()) {
+		if !dfi.Mode().IsRegular() {
 			return errors.New("CopyFile: non-regular destination file " + dfi.Name() + " (" + dfi.Mode().String() + ")")
 		}
 		if os.SameFile(sfi, dfi) {
-			return
+			return errors.New("same file")
 		}
 	}
 	if allowFileLink {
 		if err = os.Link(src, dst); err == nil {
-			return
+			return nil
 		}
 	}
 	// Open the source file for reading
 	srcFile, err := os.Open(src)
 	if err != nil {
-		return
+		return err
 	}
 	defer srcFile.Close()
 
 	// Open the destination file for writing
 	dstFile, err := os.Create(dst)
 	if err != nil {
-		return
+		return err
 	}
 	defer dstFile.Close()
 	// Return any errors that result from closing the destination file
@@ -611,27 +619,28 @@ func copyFile(src, dst string, allowFileLink bool) (err error) {
 
 	// Copy the contents of the source file into the destination files
 	if _, err = io.Copy(dstFile, srcFile); err != nil {
-		return
+		return err
 	}
 	dstFile.Sync()
-	return
+	return nil
 }
 
 func GetSubFolders(sourcepath string) ([]string, error) {
 	files, err := os.ReadDir(sourcepath)
-	if err == nil {
-		var folders []string
-		// cnt, ok := logger.GlobalCounter[sourcepath]
-		// if ok {
-		// 	folders = logger.GrowSliceBy(folders, cnt)
-		// }
-		for idxfile := range files {
-			if files[idxfile].IsDir() {
-				folders = append(folders, filepath.Join(sourcepath, files[idxfile].Name()))
-			}
-		}
-		//logger.GlobalCounter[sourcepath] = len(folders)
-		return folders, nil
+	if err != nil {
+		return []string{}, errNotFound
 	}
-	return []string{}, errNotFound
+	var folders []string
+	// cnt, ok := logger.GlobalCounter[sourcepath]
+	// if ok {
+	// 	folders = logger.GrowSliceBy(folders, cnt)
+	// }
+	for idxfile := range files {
+		if files[idxfile].IsDir() {
+			folders = append(folders, filepath.Join(sourcepath, files[idxfile].Name()))
+		}
+	}
+	files = nil
+	//logger.GlobalCounter[sourcepath] = len(folders)
+	return folders, nil
 }

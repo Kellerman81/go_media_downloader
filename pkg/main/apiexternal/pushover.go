@@ -11,43 +11,42 @@ import (
 )
 
 type pushOverClient struct {
-	ApiKey  string
-	Limiter *rate.RateLimiter
+	APIKey  string
+	Limiter *rate.Limiter
 }
-
-var PushoverApi *pushOverClient
-
-func NewPushOverClient(apikey string) {
-	rl := rate.New(3, 0, 10*time.Second) // 3 request every 10 seconds
-	PushoverApi = &pushOverClient{ApiKey: apikey, Limiter: rl}
-}
-
-const pushover_message_max = 512
-const pushover_url_max = 500
-const pushover_url_title_max = 50
-const pushover_api_url = "https://api.pushover.net/1/messages.json"
-
-type Pushover_Identity struct {
+type PushoverIdentity struct {
 	Token string
 	User  string
 }
 
-type Pushover_Message struct {
+type PushoverMessage struct {
 	token     string
 	user      string
 	text      string
 	device    string
 	title     string
 	url       string
-	url_title string
+	urlTitle  string
 	priority  string
 	timestamp string
+}
+
+const pushoverMessageMax = 512
+const pushoverURLMax = 500
+const pushoverURLTitleMax = 50
+const pushoverAPIURL = "https://api.pushover.net/1/messages.json"
+
+var PushoverAPI *pushOverClient
+
+func NewPushOverClient(apikey string) {
+	rl := rate.New(3, 0, 10*time.Second) // 3 request every 10 seconds
+	PushoverAPI = &pushOverClient{APIKey: apikey, Limiter: rl}
 }
 
 // returns a boolean indicating whether the message was valid. if the
 // message was invalid, the offending struct member(s) was/were
 // truncated.
-func validatemessage(message Pushover_Message) error {
+func validatemessage(message *PushoverMessage) error {
 	if message.token == "" {
 		return errors.New("missing authentication token")
 	}
@@ -61,22 +60,22 @@ func validatemessage(message Pushover_Message) error {
 	}
 
 	messagelen := len(message.text) + len(message.title)
-	if messagelen > pushover_message_max {
-		return errors.New("message length longer than " + strconv.Itoa(pushover_message_max) + " currently " + strconv.Itoa(messagelen))
+	if messagelen > pushoverMessageMax {
+		return errors.New("message length longer than " + strconv.Itoa(pushoverMessageMax) + " currently " + strconv.Itoa(messagelen))
 	}
 
-	if len(message.url) > pushover_url_max {
-		return errors.New("url length longer than " + strconv.Itoa(pushover_url_max) + " currently " + strconv.Itoa(len(message.url)))
+	if len(message.url) > pushoverURLMax {
+		return errors.New("url length longer than " + strconv.Itoa(pushoverURLMax) + " currently " + strconv.Itoa(len(message.url)))
 	}
 
-	if len(message.url_title) > pushover_url_title_max {
-		return errors.New("url title length longer than " + strconv.Itoa(pushover_url_title_max) + " currently " + strconv.Itoa(len(message.url_title)))
+	if len(message.urlTitle) > pushoverURLTitleMax {
+		return errors.New("url title length longer than " + strconv.Itoa(pushoverURLTitleMax) + " currently " + strconv.Itoa(len(message.urlTitle)))
 	}
 
 	return nil
 }
 
-func getbody(message Pushover_Message) url.Values {
+func getbody(message *PushoverMessage) url.Values {
 	body := url.Values{}
 
 	body.Add("token", message.token)
@@ -95,8 +94,8 @@ func getbody(message Pushover_Message) url.Values {
 		body.Add("url", message.url)
 	}
 
-	if len(message.url_title) > 0 {
-		body.Add("url_title", message.url_title)
+	if len(message.urlTitle) > 0 {
+		body.Add("url_title", message.urlTitle)
 	}
 
 	if len(message.priority) > 0 {
@@ -110,31 +109,30 @@ func getbody(message Pushover_Message) url.Values {
 	return body
 }
 
-func notify(message Pushover_Message) error {
+func notify(message *PushoverMessage) error {
 	err := validatemessage(message)
 	if err != nil {
 		return err
 	}
 
-	resp, err := http.PostForm(pushover_api_url, getbody(message))
+	resp, err := http.PostForm(pushoverAPIURL, getbody(message))
 	if err != nil {
 		return errors.New("POST request failed")
-	} else {
-		defer resp.Body.Close()
 	}
+	defer resp.Body.Close()
 
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		return errors.New("server returned " + resp.Status)
 	}
 	return nil
 }
 
-func Authenticate(token string, user string) Pushover_Identity {
-	return Pushover_Identity{token, user}
+func Authenticate(token string, user string) PushoverIdentity {
+	return PushoverIdentity{token, user}
 }
 
 func (p *pushOverClient) SendMessage(messagetext string, title string, recipientkey string) error {
-	if isok, waitfor := p.Limiter.Check(); !isok {
+	if isok, _, waitfor := p.Limiter.Check(true, false); !isok {
 		for i := 0; i < 10; i++ {
 			if waitfor == 0 {
 				waitfor = time.Duration(5) * time.Second
@@ -143,7 +141,7 @@ func (p *pushOverClient) SendMessage(messagetext string, title string, recipient
 				break
 			}
 			time.Sleep(waitfor)
-			if isok, waitfor = p.Limiter.Check(); isok {
+			if isok, _, waitfor = p.Limiter.Check(true, false); isok {
 				p.Limiter.AllowForce()
 				break
 			}
@@ -153,15 +151,13 @@ func (p *pushOverClient) SendMessage(messagetext string, title string, recipient
 				p.Limiter.WaitTill(time.Now().Add(5 * time.Second))
 			}
 			return errPleaseWait
-		} else {
-			p.Limiter.AllowForce()
 		}
+		p.Limiter.AllowForce()
 	}
 
-	msg := Pushover_Message{
-		token: p.ApiKey,
+	return notify(&PushoverMessage{
+		token: p.APIKey,
 		user:  recipientkey,
 		text:  messagetext,
-		title: title}
-	return notify(msg)
+		title: title})
 }

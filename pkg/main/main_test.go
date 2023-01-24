@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"compress/gzip"
 	"crypto/tls"
 	"encoding/csv"
 	"encoding/json"
@@ -12,6 +13,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -25,7 +27,6 @@ import (
 	"github.com/Kellerman81/go_media_downloader/scanner"
 	"github.com/Kellerman81/go_media_downloader/searcher"
 	"github.com/Kellerman81/go_media_downloader/structure"
-	"github.com/Kellerman81/go_media_downloader/utils"
 	"go.uber.org/zap"
 	"golang.org/x/net/html/charset"
 	"golang.org/x/oauth2"
@@ -35,11 +36,13 @@ import (
 //goleak.VerifyTestMain(m)
 //}
 
+//Test with: go.exe test -timeout 30s -v -run ^TestDir$ github.com/Kellerman81/go_media_downloader
+
 func Init() {
 	os.Mkdir("./temp", 0777)
 	config.LoadCfgDB(config.GetCfgFile())
 
-	logger.InitLogger(logger.LoggerConfig{
+	logger.InitLogger(logger.Config{
 		LogLevel:     config.Cfg.General.LogLevel,
 		LogFileSize:  config.Cfg.General.LogFileSize,
 		LogFileCount: config.Cfg.General.LogFileCount,
@@ -53,20 +56,19 @@ func Init() {
 		config.LoadCfgDB(config.GetCfgFile())
 	}
 	database.InitDb(config.Cfg.General.DBLogLevel)
-	apiexternal.NewOmdbClient(config.Cfg.General.OmdbApiKey, config.Cfg.General.Omdblimiterseconds, config.Cfg.General.Omdblimitercalls, config.Cfg.General.OmdbDisableTLSVerify, config.Cfg.General.OmdbTimeoutSeconds)
+	apiexternal.NewOmdbClient(config.Cfg.General.OmdbAPIKey, config.Cfg.General.Omdblimiterseconds, config.Cfg.General.Omdblimitercalls, config.Cfg.General.OmdbDisableTLSVerify, config.Cfg.General.OmdbTimeoutSeconds)
 	apiexternal.NewTmdbClient(config.Cfg.General.TheMovieDBApiKey, config.Cfg.General.Tmdblimiterseconds, config.Cfg.General.Tmdblimitercalls, config.Cfg.General.TheMovieDBDisableTLSVerify, config.Cfg.General.TmdbTimeoutSeconds)
 	apiexternal.NewTvdbClient(config.Cfg.General.Tvdblimiterseconds, config.Cfg.General.Tvdblimitercalls, config.Cfg.General.TvdbDisableTLSVerify, config.Cfg.General.TvdbTimeoutSeconds)
-	if config.ConfigCheck("trakt_token") {
-		apiexternal.NewTraktClient(config.Cfg.General.TraktClientId, config.Cfg.General.TraktClientSecret, *config.ConfigGetTrakt("trakt_token"), config.Cfg.General.Traktlimiterseconds, config.Cfg.General.Traktlimitercalls, config.Cfg.General.TraktDisableTLSVerify, config.Cfg.General.TraktTimeoutSeconds)
+	if config.Check("trakt_token") {
+		apiexternal.NewTraktClient(config.Cfg.General.TraktClientID, config.Cfg.General.TraktClientSecret, *config.GetTrakt("trakt_token"), config.Cfg.General.Traktlimiterseconds, config.Cfg.General.Traktlimitercalls, config.Cfg.General.TraktDisableTLSVerify, config.Cfg.General.TraktTimeoutSeconds)
 	} else {
-		apiexternal.NewTraktClient(config.Cfg.General.TraktClientId, config.Cfg.General.TraktClientSecret, oauth2.Token{}, config.Cfg.General.Traktlimiterseconds, config.Cfg.General.Traktlimitercalls, config.Cfg.General.TraktDisableTLSVerify, config.Cfg.General.TraktTimeoutSeconds)
+		apiexternal.NewTraktClient(config.Cfg.General.TraktClientID, config.Cfg.General.TraktClientSecret, oauth2.Token{}, config.Cfg.General.Traktlimiterseconds, config.Cfg.General.Traktlimitercalls, config.Cfg.General.TraktDisableTLSVerify, config.Cfg.General.TraktTimeoutSeconds)
 	}
 	database.InitImdbdb(config.Cfg.General.DBLogLevel)
 
 	logger.Log.GlobalLogger.Info("Check Database for Upgrades")
 	//database.UpgradeDB()
 	database.GetVars()
-	utils.InitRegex()
 }
 
 func TestStructure(t *testing.T) {
@@ -100,7 +102,7 @@ func TestMain(t *testing.T) {
 func TestGetAdded(t *testing.T) {
 	Init()
 	t.Run("test", func(t *testing.T) {
-		imdb, f1, f2 := importfeed.MovieFindImdbIDByTitle("Firestarter", "1986", "rss", false)
+		imdb, f1, f2 := importfeed.MovieFindImdbIDByTitle("Firestarter", 1986, "rss", false)
 		t.Log(imdb)
 		t.Log(f1)
 		t.Log(f2)
@@ -128,16 +130,75 @@ func TestParseXML(t *testing.T) {
 	d.Strict = false
 	d.DecodeElement(d, &xml.StartElement{})
 }
+func PrintMemUsage() {
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	// For info on each, see: https://golang.org/pkg/runtime/#MemStats
+	fmt.Printf("Alloc = %v MiB", bToMb(m.Alloc))
+	fmt.Printf("\tTotalAlloc = %v MiB", bToMb(m.TotalAlloc))
+	fmt.Printf("\tSys = %v MiB", bToMb(m.Sys))
+	fmt.Printf("\tNumGC = %v\n", m.NumGC)
+}
+func bToMb(b uint64) uint64 {
+	return b / 1024 / 1024
+}
+func TestGetCsv(t *testing.T) {
+	Init()
+	t.Run("test", func(t *testing.T) {
+		//var serie database.Dbmovie
+		req, _ := http.NewRequest("GET", "https://datasets.imdbws.com/title.akas.tsv.gz", nil)
+		// Get the data
 
+		resp, err := logger.WebClient.Do(req)
+		if err != nil {
+			return
+		}
+		defer resp.Body.Close()
+
+		gzreader, err := gzip.NewReader(resp.Body)
+		if err != nil {
+			return
+		}
+		defer gzreader.Close()
+
+		parseraka := csv.NewReader(gzreader)
+		parseraka.Comma = '\t'
+		parseraka.ReuseRecord = true
+		parseraka.LazyQuotes = true
+		_, _ = parseraka.Read() // skip header
+
+		var record []string
+		var csverr error
+		for {
+			record, csverr = parseraka.Read()
+			if csverr == io.EOF {
+				break
+			}
+			if csverr != nil {
+				fmt.Println(fmt.Errorf("an error occurred while parsing aka.. %v", csverr))
+				continue
+			}
+		}
+		var m runtime.MemStats
+		runtime.ReadMemStats(&m)
+		// For info on each, see: https://golang.org/pkg/runtime/#MemStats
+		t.Log(fmt.Printf("Alloc = %v MiB", bToMb(m.Alloc)))
+		t.Log(fmt.Printf("\tTotalAlloc = %v MiB", bToMb(m.TotalAlloc)))
+		t.Log(fmt.Printf("\tSys = %v MiB", bToMb(m.Sys)))
+		t.Log(fmt.Printf("\tNumGC = %v\n", m.NumGC))
+		_ = record
+		PrintMemUsage()
+	})
+}
 func TestGetTmdb(t *testing.T) {
 	Init()
 	t.Run("test", func(t *testing.T) {
 		//var serie database.Dbmovie
-		tmdbfind, _ := apiexternal.TmdbApi.FindImdb("tt7214954")
+		tmdbfind, _ := apiexternal.TmdbAPI.FindImdb("tt7214954")
 		t.Log(tmdbfind)
-		tmdbtitle, _ := apiexternal.TmdbApi.GetMovieTitles("585511")
+		tmdbtitle, _ := apiexternal.TmdbAPI.GetMovieTitles(585511)
 		t.Log(tmdbtitle)
-		tmdbdetails, _ := apiexternal.TmdbApi.GetMovie("585511")
+		tmdbdetails, _ := apiexternal.TmdbAPI.GetMovie(585511)
 		t.Log(tmdbdetails)
 		//var dbserie database.Dbserie
 		//dbserie.ThetvdbID = 85352
@@ -153,7 +214,7 @@ func TestGetTvdb(t *testing.T) {
 	Init()
 	t.Run("test", func(t *testing.T) {
 		var serie database.Dbserie
-		tvdbdetails, _ := apiexternal.TvdbApi.GetSeries(85352, "")
+		tvdbdetails, _ := apiexternal.TvdbAPI.GetSeries(85352, "")
 		if (serie.Seriename == "") && tvdbdetails.Data.SeriesName != "" {
 			serie.Seriename = tvdbdetails.Data.SeriesName
 		}
@@ -171,13 +232,12 @@ func TestGetTvdb(t *testing.T) {
 func TestGetDB(t *testing.T) {
 	Init()
 	t.Run("test", func(t *testing.T) {
-		out, _ := database.QueryDbmovie(database.Querywithargs{Query: database.Query{Limit: 10}})
+		var out []database.Dbmovie
+		database.QueryDbmovie(&database.Querywithargs{Query: database.Query{Limit: 10}}, &out)
 		t.Log(out)
-		dbm, _ := database.GetDbmovie(database.Querywithargs{Query: database.QueryFilterByID, Args: []interface{}{1}})
+		var dbm database.Dbmovie
+		database.GetDbmovie(&database.Querywithargs{Query: database.QueryFilterByID, Args: []interface{}{1}}, &dbm)
 		t.Log(dbm)
-		mm := make(map[string]int)
-		database.QueryStaticColumnsMapStringInt(&mm, database.Querywithargs{QueryString: "Select imdb_id, id from dbmovies limit 10"})
-		t.Log(mm)
 		//GetNewFilesTest("serie_EN", "series")
 	})
 }
@@ -188,7 +248,7 @@ func TestLst(t *testing.T) {
 		var query database.Query
 		query.InnerJoin = "Dbseries on series.dbserie_id=dbseries.id"
 		query.Where = "series.listname = ? COLLATE NOCASE"
-		rows, _ := database.CountRows("series", database.Querywithargs{Query: query})
+		rows, _ := database.CountRows("series", &database.Querywithargs{Query: query})
 		t.Log(rows)
 		// limit := 0
 		// page := 0
@@ -219,13 +279,21 @@ func TestMime(t *testing.T) {
 func TestCache(t *testing.T) {
 	Init()
 	t.Run("test", func(t *testing.T) {
-		logger.GlobalRegexCache.SetRegexp("ff", "[a-z]", 0)
+		logger.GlobalRegexCache.SetRegexp("[a-z]", 0)
 
-		a := logger.GlobalRegexCache.GetRegexpDirect("ff")
+		a := logger.GlobalRegexCache.GetRegexpDirect("[a-z]")
 		t.Log(a)
 		a = nil
-		a = logger.GlobalRegexCache.GetRegexpDirect("ff")
+		a = logger.GlobalRegexCache.GetRegexpDirect("[a-z]")
 		t.Log(a)
+	})
+}
+func TestDir(t *testing.T) {
+	Init()
+	t.Run("test", func(t *testing.T) {
+		bla, _ := scanner.GetFilesDir("W:\\", "de movies", false)
+		t.Log(bla)
+		t.Log(config.Cfg.Paths)
 	})
 }
 
@@ -245,13 +313,6 @@ func joinCats(cats []int) string {
 	return b.String()
 }
 
-func BenchmarkQuerySQL1(b *testing.B) {
-	Init()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		database.QueryStaticColumnsOneStringOneInt(false, database.CountRowsStaticNoError(database.Querywithargs{QueryString: "select count() from dbmovies"}), database.Querywithargs{QueryString: "select imdb_id, id from dbmovies"})
-	}
-}
 func BenchmarkQueryString1(b *testing.B) {
 	movieid := "Test123"
 	for i := 0; i < b.N; i++ {
@@ -450,10 +511,9 @@ func BenchmarkQuery4(b *testing.B) {
 	// categories := "2030,2035,2040,2045"
 	// apikey := "rEUDNavst5HxWG2SlhkuYg1WXC6qNSt7"
 	// apiBaseURL := "https://api.nzbgeek.info"
-	s := searcher.NewSearcher(&config.MediaTypeConfig{}, "SD")
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		s.SearchRSS("movie", true)
+		searcher.SearchRSS(&config.MediaTypeConfig{}, "SD", "movie", true)
 		//clie.SearchWithIMDB(categories, "tt0120655", additional_query_params, "", 0, false)
 		//clie.LoadRSSFeed(categories, 100, additional_query_params, "", "", "", 0, false)
 		//apiexternal.QueryNewznabRSSLast(apiexternal.NzbIndexer{URL: apiBaseURL, Apikey: apikey, UserID: 0, AdditionalQueryParams: additional_query_params, LastRssId: "", Limitercalls: 10, Limiterseconds: 5}, 100, categories, 2)
@@ -680,7 +740,7 @@ func BenchmarkQuery14(b *testing.B) {
 	cfgGrouptype := "movie"
 	//getconfig := "movie_EN"
 	for i := 0; i < b.N; i++ {
-		structure.StructureSingleFolder(cfgFolder, &config.MediaTypeConfig{}, structure.StructureConfig{Disableruntimecheck: cfgDisableruntimecheck, Disabledisallowed: cfgDisabledisallowed, Disabledeletewronglanguage: cfgDisabledeletewronglanguage, Grouptype: cfgGrouptype, Sourcepathstr: "path_" + "en movies", Targetpathstr: "path_" + "en movies import"})
+		structure.OrganizeSingleFolder(cfgFolder, &config.MediaTypeConfig{}, &structure.Config{Disableruntimecheck: cfgDisableruntimecheck, Disabledisallowed: cfgDisabledisallowed, Disabledeletewronglanguage: cfgDisabledeletewronglanguage, Grouptype: cfgGrouptype, Sourcepathstr: "path_" + "en movies", Targetpathstr: "path_" + "en movies import"})
 	}
 }
 func BenchmarkQuery15(b *testing.B) {

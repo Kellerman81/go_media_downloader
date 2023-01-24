@@ -94,7 +94,7 @@ func GetDbseriesTable(ctx *context.Context) table.Table {
 		action.PopUpWithIframe("/admin/info/series", "see more", action.IframeData{Src: "/admin/info/series", AddParameterFn: func(ctx *context.Context) string {
 			return "&dbserie_id=" + ctx.FormValue("id")
 		}}, "900px", "560px")), types.GetColumnButton("Refresh", icon.Refresh,
-		MyPopUpWithIframe("/admin/info/refresh", "see more", action.IframeData{Src: "/api/series/refresh/{{.Id}}?apikey=" + config.Cfg.General.WebApiKey}, "900px", "560px")))
+		MyPopUpWithIframe("/admin/info/refresh", "see more", action.IframeData{Src: "/api/series/refresh/{{.Id}}?apikey=" + config.Cfg.General.WebAPIKey}, "900px", "560px")))
 	info.SetTable("dbseries").SetTitle("Dbseries").SetDescription("Dbseries")
 
 	formList := dbseries.GetForm()
