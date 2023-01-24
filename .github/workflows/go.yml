@@ -30,7 +30,7 @@ jobs:
       run: echo "::set-output name=date::$(date +'%Y-%m-%d')"
     
     - name: Build with xgo
-      uses: crazy-max/ghaction-xgo@v2.2.0
+      uses: crazy-max/ghaction-xgo@v2.3.0
       with:
           dest: .
           prefix: go_media_downloader
@@ -43,7 +43,7 @@ jobs:
           working_dir: pkg/main
     
     - name: Build with xgo imdb
-      uses: crazy-max/ghaction-xgo@v2.2.0
+      uses: crazy-max/ghaction-xgo@v2.3.0
       with:
           dest: .
           prefix: imdb
