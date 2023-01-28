@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/Kellerman81/go_media_downloader/logger"
 )
 
 func (s *Sabnzbd) Version() (version string, err error) {
@@ -44,8 +46,8 @@ func (s *Sabnzbd) AdvancedQueue(start, limit int) (r *AdvancedQueueResponse, err
 	u.SetJsonOutput()
 	u.Authenticate()
 	u.SetMode("queue")
-	u.v.Set("start", fmt.Sprintf("%d", start))
-	u.v.Set("limit", fmt.Sprintf("%d", limit))
+	u.v.Set("start", logger.IntToString(start))
+	u.v.Set("limit", logger.IntToString(limit))
 	r = &AdvancedQueueResponse{}
 	err = u.CallJSON(r)
 	return r, err
@@ -56,8 +58,8 @@ func (s *Sabnzbd) History(start, limit int) (r *HistoryResponse, err error) {
 	u.SetJsonOutput()
 	u.Authenticate()
 	u.SetMode("history")
-	u.v.Set("start", fmt.Sprintf("%d", start))
-	u.v.Set("limit", fmt.Sprintf("%d", limit))
+	u.v.Set("start", logger.IntToString(start))
+	u.v.Set("limit", logger.IntToString(limit))
 	r = &HistoryResponse{}
 	err = u.CallJSON(r)
 	return r, err
@@ -149,7 +151,7 @@ func (s *Sabnzbd) MoveByPriority(nzo string, priority int) (err error) {
 	u.Authenticate()
 	u.SetMode("switch")
 	u.v.Set("value", nzo)
-	u.v.Set("value2", fmt.Sprintf("%d", priority))
+	u.v.Set("value2", logger.IntToString(priority))
 	r := &apiError{}
 	err = u.CallJSON(r)
 	return err
@@ -183,7 +185,7 @@ func (s *Sabnzbd) PauseTemporarily(t time.Duration) (err error) {
 	u.Authenticate()
 	u.SetMode("config")
 	u.v.Set("name", "set_pause")
-	u.v.Set("value", fmt.Sprintf("%d", int(t.Minutes())))
+	u.v.Set("value", logger.IntToString(int(t.Minutes())))
 	r := &apiError{}
 	err = u.CallJSON(r)
 	return err
@@ -212,7 +214,7 @@ type addNzbConfig struct {
 func (c *addNzbConfig) options() map[string]string {
 	opts := map[string]string{}
 	if c.UnpackingOption != nil {
-		opts["pp"] = fmt.Sprintf("%d", *c.UnpackingOption)
+		opts["pp"] = logger.IntToString(*c.UnpackingOption)
 	}
 	if c.Script != nil {
 		opts["script"] = *c.Script
@@ -224,7 +226,7 @@ func (c *addNzbConfig) options() map[string]string {
 		opts["xcat"] = *c.XCategory
 	}
 	if c.Priority != nil {
-		opts["priority"] = fmt.Sprintf("%d", *c.Priority)
+		opts["priority"] = logger.IntToString(*c.Priority)
 	}
 	if c.NzbName != nil {
 		opts["nzbname"] = *c.NzbName
@@ -616,7 +618,7 @@ func (s *Sabnzbd) SpeedLimit(kbps int) (err error) {
 	u.Authenticate()
 	u.SetMode("config")
 	u.v.Set("name", "speedlimit")
-	u.v.Set("value", fmt.Sprintf("%d", kbps))
+	u.v.Set("value", logger.IntToString(kbps))
 	r := &apiError{}
 	err = u.CallJSON(r)
 	return err

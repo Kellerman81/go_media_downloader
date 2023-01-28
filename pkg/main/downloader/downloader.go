@@ -1,7 +1,6 @@
 package downloader
 
 import (
-	"fmt"
 	"io"
 	"os"
 	"strconv"
@@ -114,15 +113,15 @@ func (d *Downloadertype) DownloadNzb() {
 		historytable = "serie_episode_histories"
 		if d.Dbserie.ThetvdbID != 0 {
 			if d.Nzb.NZB.Title == "" {
-				targetfolder = logger.Path(d.Nzb.ParseInfo.Title+"["+d.Nzb.ParseInfo.Resolution+" "+d.Nzb.ParseInfo.Quality+"]"+strTvdbid+strconv.Itoa(d.Dbserie.ThetvdbID)+")", false)
+				targetfolder = logger.Path(d.Nzb.ParseInfo.Title+"["+d.Nzb.ParseInfo.Resolution+" "+d.Nzb.ParseInfo.Quality+"]"+strTvdbid+logger.IntToString(d.Dbserie.ThetvdbID)+")", false)
 			} else {
-				targetfolder = logger.Path(d.Nzb.NZB.Title+strTvdbid+strconv.Itoa(d.Dbserie.ThetvdbID)+")", false)
+				targetfolder = logger.Path(d.Nzb.NZB.Title+strTvdbid+logger.IntToString(d.Dbserie.ThetvdbID)+")", false)
 			}
-		} else if d.Nzb.NZB.TVDBID != "" {
+		} else if d.Nzb.NZB.TVDBID != 0 {
 			if d.Nzb.NZB.Title == "" {
-				targetfolder = logger.Path(d.Nzb.ParseInfo.Title+"["+d.Nzb.ParseInfo.Resolution+" "+d.Nzb.ParseInfo.Quality+"]"+strTvdbid+d.Nzb.NZB.TVDBID+")", false)
+				targetfolder = logger.Path(d.Nzb.ParseInfo.Title+"["+d.Nzb.ParseInfo.Resolution+" "+d.Nzb.ParseInfo.Quality+"]"+strTvdbid+logger.IntToString(d.Nzb.NZB.TVDBID)+")", false)
 			} else {
-				targetfolder = logger.Path(d.Nzb.NZB.Title+strTvdbid+d.Nzb.NZB.TVDBID+")", false)
+				targetfolder = logger.Path(d.Nzb.NZB.Title+strTvdbid+logger.IntToString(d.Nzb.NZB.TVDBID)+")", false)
 			}
 		} else {
 			if d.Nzb.NZB.Title == "" {
@@ -287,7 +286,7 @@ func (d *Downloadertype) downloadByDrone() error {
 	return logger.DownloadFile(config.Cfg.Paths[d.Target].Path, "", filename, d.Nzb.NZB.DownloadURL)
 }
 func (d *Downloadertype) downloadByNzbget() error {
-	url := fmt.Sprintf("http://%s:%s@%s/jsonrpc", config.Cfg.Downloader[d.Downloader].Username, config.Cfg.Downloader[d.Downloader].Password, config.Cfg.Downloader[d.Downloader].Hostname)
+	url := "http://" + config.Cfg.Downloader[d.Downloader].Username + ":" + config.Cfg.Downloader[d.Downloader].Password + "@" + config.Cfg.Downloader[d.Downloader].Hostname + "/jsonrpc"
 	options := nzbget.NewOptions()
 
 	options.Category = d.Category
@@ -341,7 +340,7 @@ func (d *Downloadertype) downloadByQBittorrent() error {
 	logger.Log.GlobalLogger.Info("Download by qBittorrent", zap.Stringp("title", &d.Nzb.NZB.Title), zap.Stringp("url", &d.Nzb.NZB.DownloadURL))
 
 	err := apiexternal.SendToQBittorrent(
-		config.Cfg.Downloader[d.Downloader].Hostname, strconv.Itoa(config.Cfg.Downloader[d.Downloader].Port), config.Cfg.Downloader[d.Downloader].Username, config.Cfg.Downloader[d.Downloader].Password,
+		config.Cfg.Downloader[d.Downloader].Hostname, logger.IntToString(config.Cfg.Downloader[d.Downloader].Port), config.Cfg.Downloader[d.Downloader].Username, config.Cfg.Downloader[d.Downloader].Password,
 		d.Nzb.NZB.DownloadURL, config.Cfg.Downloader[d.Downloader].DelugeDlTo, strconv.FormatBool(config.Cfg.Downloader[d.Downloader].AddPaused))
 
 	if err != nil {

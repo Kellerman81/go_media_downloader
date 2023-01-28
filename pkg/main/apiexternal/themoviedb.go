@@ -1,7 +1,6 @@
 package apiexternal
 
 import (
-	"fmt"
 	"net/url"
 	"time"
 
@@ -197,7 +196,7 @@ func NewTmdbClient(apikey string, seconds int, calls int, disabletls bool, timeo
 }
 
 func (t *tmdbClient) SearchMovie(name string) (*TheMovieDBSearch, error) {
-	url := fmt.Sprintf("https://api.themoviedb.org/3/search/movie?api_key=%s&query=%s", t.APIKey, url.QueryEscape(name))
+	url := "https://api.themoviedb.org/3/search/movie?api_key=" + t.APIKey + "&query=" + url.QueryEscape(name)
 	var result TheMovieDBSearch
 	_, err := t.Client.DoJSON(url, &result, nil)
 
@@ -213,7 +212,7 @@ func (t *tmdbClient) SearchMovie(name string) (*TheMovieDBSearch, error) {
 }
 
 func (t *tmdbClient) SearchTV(name string) (*TheMovieDBSearchTV, error) {
-	url := fmt.Sprintf("https://api.themoviedb.org/3/search/tv?api_key=%s&query=%s", t.APIKey, url.QueryEscape(name))
+	url := "https://api.themoviedb.org/3/search/tv?api_key=" + t.APIKey + "&query=" + url.QueryEscape(name)
 	var result TheMovieDBSearchTV
 	_, err := t.Client.DoJSON(url, &result, nil)
 
@@ -229,7 +228,7 @@ func (t *tmdbClient) SearchTV(name string) (*TheMovieDBSearchTV, error) {
 }
 
 func (t *tmdbClient) FindImdb(imdbid string) (*TheMovieDBFind, error) {
-	url := fmt.Sprintf("https://api.themoviedb.org/3/find/%s%s%s&language=en-US&external_source=imdb_id", imdbid, strAPIKey, t.APIKey)
+	url := "https://api.themoviedb.org/3/find/" + imdbid + strAPIKey + t.APIKey + "&language=en-US&external_source=imdb_id"
 	var result TheMovieDBFind
 	_, err := t.Client.DoJSON(url, &result, nil)
 
@@ -244,7 +243,7 @@ func (t *tmdbClient) FindImdb(imdbid string) (*TheMovieDBFind, error) {
 	return &result, nil
 }
 func (t *tmdbClient) FindTvdb(thetvdbid int) (*TheMovieDBFind, error) {
-	url := fmt.Sprintf("https://api.themoviedb.org/3/find/%d%s%s&language=en-US&external_source=tvdb_id", thetvdbid, strAPIKey, t.APIKey)
+	url := "https://api.themoviedb.org/3/find/" + logger.IntToString(thetvdbid) + strAPIKey + t.APIKey + "&language=en-US&external_source=tvdb_id"
 	var result TheMovieDBFind
 	_, err := t.Client.DoJSON(url, &result, nil)
 
@@ -259,7 +258,7 @@ func (t *tmdbClient) FindTvdb(thetvdbid int) (*TheMovieDBFind, error) {
 	return &result, nil
 }
 func (t *tmdbClient) GetMovie(id int) (*TheMovieDBMovie, error) {
-	url := fmt.Sprintf("%s%d%s%s", apiurltmdbmovies, id, strAPIKey, t.APIKey)
+	url := apiurltmdbmovies + logger.IntToString(id) + strAPIKey + t.APIKey
 	var result TheMovieDBMovie
 	_, err := t.Client.DoJSON(url, &result, nil)
 
@@ -273,7 +272,7 @@ func (t *tmdbClient) GetMovie(id int) (*TheMovieDBMovie, error) {
 	return &result, nil
 }
 func (t *tmdbClient) GetMovieTitles(id int) (*TheMovieDBMovieTitles, error) {
-	url := fmt.Sprintf("%s%d/alternative_titles?api_key=%s", apiurltmdbmovies, id, t.APIKey)
+	url := apiurltmdbmovies + logger.IntToString(id) + "/alternative_titles?api_key=" + t.APIKey
 	var result TheMovieDBMovieTitles
 	_, err := t.Client.DoJSON(url, &result, nil)
 
@@ -287,7 +286,7 @@ func (t *tmdbClient) GetMovieTitles(id int) (*TheMovieDBMovieTitles, error) {
 	return &result, nil
 }
 func (t *tmdbClient) GetMovieExternal(id int) (*TheMovieDBTVExternal, error) {
-	url := fmt.Sprintf("%s%d/external_ids?api_key=%s", apiurltmdbmovies, id, t.APIKey)
+	url := apiurltmdbmovies + logger.IntToString(id) + "/external_ids?api_key=" + t.APIKey
 	var result TheMovieDBTVExternal
 	_, err := t.Client.DoJSON(url, &result, nil)
 
@@ -302,7 +301,7 @@ func (t *tmdbClient) GetMovieExternal(id int) (*TheMovieDBTVExternal, error) {
 	return &result, nil
 }
 func (t *tmdbClient) GetTVExternal(id string) (*TheMovieDBTVExternal, error) {
-	url := fmt.Sprintf("https://api.themoviedb.org/3/tv/%s/external_ids?api_key=%s", id, t.APIKey)
+	url := "https://api.themoviedb.org/3/tv/" + id + "/external_ids?api_key=" + t.APIKey
 	var result TheMovieDBTVExternal
 	_, err := t.Client.DoJSON(url, &result, nil)
 

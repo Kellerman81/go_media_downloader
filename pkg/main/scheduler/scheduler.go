@@ -1,7 +1,6 @@
 package scheduler
 
 import (
-	"fmt"
 	"math/rand"
 	"os"
 	"runtime/debug"
@@ -22,7 +21,7 @@ var QueueSearch *tasks.Dispatcher
 
 func converttime(interval string) time.Duration {
 	if strings.Contains(interval, "d") {
-		dur, _ := time.ParseDuration(fmt.Sprintf("%dh", logger.StringToInt(strings.Replace(interval, "d", "", 1))*24))
+		dur, _ := time.ParseDuration(logger.IntToString(logger.StringToInt(strings.Replace(interval, "d", "", 1))*24) + "h")
 		return dur
 	}
 	dur, _ := time.ParseDuration(interval)
@@ -31,12 +30,12 @@ func converttime(interval string) time.Duration {
 func convertcron(interval string) string {
 	rand.Seed(time.Now().UnixNano())
 	if strings.Contains(interval, "d") {
-		return fmt.Sprintf("0 %d %d */%s * *", rand.Intn(60), rand.Intn(24), strings.Replace(interval, "d", "", 1))
+		return "0 " + logger.IntToString(rand.Intn(60)) + " " + logger.IntToString(rand.Intn(24)) + " */" + strings.Replace(interval, "d", "", 1) + " * *"
 	}
 	if strings.Contains(interval, "h") {
-		return fmt.Sprintf("0 %d */%s * * *", rand.Intn(60), strings.Replace(interval, "h", "", 1))
+		return "0 " + logger.IntToString(rand.Intn(60)) + " */" + strings.Replace(interval, "h", "", 1) + " * * *"
 	}
-	return fmt.Sprintf("0 */%s * * * *", strings.Replace(interval, "m", "", 1))
+	return "0 */" + strings.Replace(interval, "m", "", 1) + " * * * *"
 }
 
 func InitScheduler() {

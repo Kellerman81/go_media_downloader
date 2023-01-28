@@ -1,10 +1,11 @@
 {
     "schemes": [
-        "http"
+        "http",
+        "https"
     ],
     "swagger": "2.0",
     "info": {
-        "title": "go_media_downloader API",
+        "title": "Go Media Downloader API",
         "contact": {},
         "version": "1.0"
     },
@@ -13,25 +14,10 @@
         "/api/all/data": {
             "get": {
                 "description": "Search all folders of movies and series for new entries",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "data"
                 ],
                 "summary": "Search all folders",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -51,25 +37,10 @@
         "/api/all/feeds": {
             "get": {
                 "description": "Search all feeds of movies and series for new entries",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "feeds"
                 ],
                 "summary": "Search all feeds",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -89,25 +60,10 @@
         "/api/all/search/missing/full": {
             "get": {
                 "description": "Search all media of movies and series for missing releases",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "search"
                 ],
                 "summary": "Search all Missing",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -127,25 +83,10 @@
         "/api/all/search/missing/inc": {
             "get": {
                 "description": "Search all media of movies and series for missing releases (incremental)",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "search"
                 ],
                 "summary": "Search all Missing Incremental",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -165,25 +106,10 @@
         "/api/all/search/rss": {
             "get": {
                 "description": "Search all rss feeds of movies and series for new releases",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "search"
                 ],
                 "summary": "Search all rss feeds",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -203,25 +129,10 @@
         "/api/all/search/upgrade/full": {
             "get": {
                 "description": "Search all media of movies and series for upgrades",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "search"
                 ],
                 "summary": "Search all Upgrades",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -241,25 +152,10 @@
         "/api/all/search/upgrade/inc": {
             "get": {
                 "description": "Search all media of movies and series for upgrades (incremental)",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "search"
                 ],
                 "summary": "Search all Upgrades Incremental",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -279,31 +175,19 @@
         "/api/config/all": {
             "get": {
                 "description": "Get All Config Parameters",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "config"
                 ],
                 "summary": "Get Complete Config",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "additionalProperties": true
+                            }
                         }
                     },
                     "401": {
@@ -318,31 +202,19 @@
         "/api/config/clear": {
             "delete": {
                 "description": "Clears the configuration and sets some examples",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "config"
                 ],
                 "summary": "Clear Config",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "additionalProperties": true
+                            }
                         }
                     },
                     "401": {
@@ -357,12 +229,6 @@
         "/api/config/delete/{name}": {
             "delete": {
                 "description": "Deletes a configuration",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "config"
                 ],
@@ -374,21 +240,17 @@
                         "name": "name",
                         "in": "path",
                         "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
                     }
                 ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "additionalProperties": true
+                            }
                         }
                     },
                     "401": {
@@ -403,12 +265,6 @@
         "/api/config/get/{name}": {
             "get": {
                 "description": "Gets a configuration",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "config"
                 ],
@@ -419,13 +275,6 @@
                         "description": "Type Name: ex. quality_SD",
                         "name": "name",
                         "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
                         "required": true
                     }
                 ],
@@ -448,31 +297,19 @@
         "/api/config/refresh": {
             "get": {
                 "description": "Refreshes the config from the file",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "config"
                 ],
                 "summary": "Reload ConfigFile",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "additionalProperties": true
+                            }
                         }
                     },
                     "401": {
@@ -487,12 +324,6 @@
         "/api/config/type/{type}": {
             "get": {
                 "description": "List configurations of type",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "config"
                 ],
@@ -503,13 +334,6 @@
                         "description": "Type Name: ex. quality",
                         "name": "type",
                         "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
                         "required": true
                     }
                 ],
@@ -533,12 +357,6 @@
         "/api/config/update/{name}": {
             "post": {
                 "description": "Updates a configuration",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "config"
                 ],
@@ -559,21 +377,17 @@
                         "name": "name",
                         "in": "path",
                         "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
                     }
                 ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "additionalProperties": true
+                            }
                         }
                     },
                     "400": {
@@ -594,25 +408,10 @@
         "/api/db/backup": {
             "get": {
                 "description": "Saves DB",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "database"
                 ],
                 "summary": "Backup DB",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -632,12 +431,6 @@
         "/api/db/clear/{name}": {
             "delete": {
                 "description": "Clears a DB Table",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "database"
                 ],
@@ -648,13 +441,6 @@
                         "description": "Table Name",
                         "name": "name",
                         "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
                         "required": true
                     }
                 ],
@@ -677,25 +463,10 @@
         "/api/db/close": {
             "get": {
                 "description": "Closes all database connections",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "database"
                 ],
                 "summary": "Close DB",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -715,25 +486,10 @@
         "/api/db/integrity": {
             "get": {
                 "description": "Integrity Check DB",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "database"
                 ],
                 "summary": "Integrity DB",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -753,24 +509,11 @@
         "/api/db/oldjobs": {
             "delete": {
                 "description": "Removes Jobs started over x days ago from db",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "database"
                 ],
                 "summary": "Clean Old Jobs",
                 "parameters": [
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
-                    },
                     {
                         "type": "integer",
                         "description": "Days ago",
@@ -798,25 +541,10 @@
         "/api/db/vacuum": {
             "get": {
                 "description": "Vacuum database",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "database"
                 ],
                 "summary": "Vacuum DB",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -836,28 +564,13 @@
         "/api/debugstats": {
             "get": {
                 "description": "Shows some stats",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "general"
                 ],
                 "summary": "Debug information",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
                 "responses": {
                     "200": {
-                        "description": ""
+                        "description": "OK"
                     },
                     "401": {
                         "description": "Unauthorized",
@@ -871,25 +584,10 @@
         "/api/fillimdb": {
             "get": {
                 "description": "Downloads IMDB Dataset and creates a new database from it",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "general"
                 ],
                 "summary": "Generate IMDB Cache",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -909,24 +607,11 @@
         "/api/movies": {
             "get": {
                 "description": "List Movies",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "movie"
                 ],
                 "summary": "List Movies",
                 "parameters": [
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
-                    },
                     {
                         "type": "integer",
                         "description": "Limit",
@@ -950,10 +635,7 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/database.DbmovieJson"
-                            }
+                            "$ref": "#/definitions/database.DbmovieJSON"
                         }
                     },
                     "401": {
@@ -966,12 +648,6 @@
             },
             "post": {
                 "description": "Updates or creates a movie",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "movie"
                 ],
@@ -983,15 +659,8 @@
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/database.DbmovieJson"
+                            "$ref": "#/definitions/database.DbmovieJSON"
                         }
-                    },
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
                     }
                 ],
                 "responses": {
@@ -1019,70 +688,10 @@
         "/api/movies/all/refresh": {
             "get": {
                 "description": "Refreshes Movie Metadata",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "movie"
                 ],
                 "summary": "Refresh Movies (Incremental)",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "type": "string"
-                        }
-                    }
-                }
-            }
-        },
-        "/api/movies/all/refresh/{id}": {
-            "get": {
-                "description": "Refreshes specific Movie Metadata",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "movie"
-                ],
-                "summary": "Refresh a Movie",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "Movie ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1102,25 +711,10 @@
         "/api/movies/all/refreshall": {
             "get": {
                 "description": "Refreshes Movie Metadata",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "movie"
                 ],
                 "summary": "Refresh Movies",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1140,12 +734,6 @@
         "/api/movies/job/{job}": {
             "get": {
                 "description": "Starts a Job",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "movie"
                 ],
@@ -1156,13 +744,6 @@
                         "description": "Job Name one of: rss, data, datafull, checkmissing, checkmissingflag, structure, searchmissingfull, searchmissinginc, searchupgradefull, searchupgradeinc, searchmissingfulltitle, searchmissinginctitle, searchupgradefulltitle, searchupgradeinctitle, clearhistory, feeds, refresh, refreshinc",
                         "name": "job",
                         "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
                         "required": true
                     }
                 ],
@@ -1191,12 +772,6 @@
         "/api/movies/job/{job}/{name}": {
             "get": {
                 "description": "Starts a Job",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "movie"
                 ],
@@ -1214,13 +789,6 @@
                         "description": "List Name: ex. list",
                         "name": "name",
                         "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
                         "required": true
                     }
                 ],
@@ -1249,12 +817,6 @@
         "/api/movies/list": {
             "post": {
                 "description": "Updates or creates a movie in a list",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "movie"
                 ],
@@ -1266,15 +828,8 @@
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/database.MovieJson"
+                            "$ref": "#/definitions/database.MovieJSON"
                         }
-                    },
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
                     }
                 ],
                 "responses": {
@@ -1302,12 +857,6 @@
         "/api/movies/list/{id}": {
             "delete": {
                 "description": "Deletes a Movie from a list",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "movie"
                 ],
@@ -1318,13 +867,6 @@
                         "description": "Movie ID: ex. 1",
                         "name": "id",
                         "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
                         "required": true
                     }
                 ],
@@ -1347,12 +889,6 @@
         "/api/movies/list/{name}": {
             "get": {
                 "description": "Lists Movies from a list",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "movie"
                 ],
@@ -1382,12 +918,37 @@
                         "description": "Order By",
                         "name": "order",
                         "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/database.ResultMoviesJSON"
+                        }
                     },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/movies/refresh/{id}": {
+            "get": {
+                "description": "Refreshes specific Movie Metadata",
+                "tags": [
+                    "movie"
+                ],
+                "summary": "Refresh a Movie",
+                "parameters": [
                     {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
+                        "type": "integer",
+                        "description": "Movie ID",
+                        "name": "id",
+                        "in": "path",
                         "required": true
                     }
                 ],
@@ -1395,10 +956,7 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/database.ResultMoviesJson"
-                            }
+                            "type": "string"
                         }
                     },
                     "401": {
@@ -1413,12 +971,6 @@
         "/api/movies/rss/search/list/{group}": {
             "get": {
                 "description": "Movie RSS",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "movie"
                 ],
@@ -1429,13 +981,6 @@
                         "description": "Group Name",
                         "name": "group",
                         "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
                         "required": true
                     }
                 ],
@@ -1458,12 +1003,6 @@
         "/api/movies/search/download/{id}": {
             "post": {
                 "description": "Downloads a release after select",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "movie"
                 ],
@@ -1475,7 +1014,7 @@
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/parser.NzbwithprioJson"
+                            "$ref": "#/definitions/apiexternal.NzbwithprioJSON"
                         }
                     },
                     {
@@ -1483,13 +1022,6 @@
                         "description": "Movie ID",
                         "name": "id",
                         "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
                         "required": true
                     }
                 ],
@@ -1512,12 +1044,6 @@
         "/api/movies/search/history/clear/{name}": {
             "get": {
                 "description": "Clear Movies Download History",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "movie"
                 ],
@@ -1528,13 +1054,6 @@
                         "description": "List Name",
                         "name": "name",
                         "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
                         "required": true
                     }
                 ],
@@ -1557,12 +1076,6 @@
         "/api/movies/search/history/clearid/{id}": {
             "get": {
                 "description": "Clear Episode Download History",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "movie"
                 ],
@@ -1573,13 +1086,6 @@
                         "description": "Movie ID",
                         "name": "id",
                         "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
                         "required": true
                     }
                 ],
@@ -1602,12 +1108,6 @@
         "/api/movies/search/id/{id}": {
             "get": {
                 "description": "Searches for upgrades and missing",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "movie"
                 ],
@@ -1618,13 +1118,6 @@
                         "description": "Movie ID",
                         "name": "id",
                         "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
                         "required": true
                     }
                 ],
@@ -1647,12 +1140,6 @@
         "/api/movies/search/list/{id}": {
             "get": {
                 "description": "Searches for upgrades and missing",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "movie"
                 ],
@@ -1664,19 +1151,6 @@
                         "name": "id",
                         "in": "path",
                         "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "searchByTitle",
-                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -1698,24 +1172,11 @@
         "/api/movies/unmatched": {
             "get": {
                 "description": "List Unmatched Movies",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "movie"
                 ],
                 "summary": "List Unmatched Movies",
                 "parameters": [
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
-                    },
                     {
                         "type": "integer",
                         "description": "Limit",
@@ -1739,10 +1200,7 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/database.MovieFileUnmatchedJson"
-                            }
+                            "$ref": "#/definitions/database.MovieFileUnmatchedJSON"
                         }
                     },
                     "401": {
@@ -1757,12 +1215,6 @@
         "/api/movies/{id}": {
             "delete": {
                 "description": "Deletes Movies from all lists",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "movie"
                 ],
@@ -1773,13 +1225,6 @@
                         "description": "Movie ID: ex. 1",
                         "name": "id",
                         "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
                         "required": true
                     }
                 ],
@@ -1802,12 +1247,6 @@
         "/api/naming": {
             "post": {
                 "description": "Test your Naming Convention",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "general"
                 ],
@@ -1819,15 +1258,8 @@
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/api.apiNameInputJson"
+                            "$ref": "#/definitions/api.apiNameInputJSON"
                         }
-                    },
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
                     }
                 ],
                 "responses": {
@@ -1855,12 +1287,6 @@
         "/api/parse/file": {
             "post": {
                 "description": "Parses a file for testing",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "parse"
                 ],
@@ -1874,20 +1300,13 @@
                         "schema": {
                             "$ref": "#/definitions/api.apiparse"
                         }
-                    },
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
                     }
                 ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/parser.ParseInfo"
+                            "$ref": "#/definitions/apiexternal.ParseInfo"
                         }
                     },
                     "400": {
@@ -1908,12 +1327,6 @@
         "/api/parse/string": {
             "post": {
                 "description": "Parses a string for testing",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "parse"
                 ],
@@ -1927,20 +1340,13 @@
                         "schema": {
                             "$ref": "#/definitions/api.apiparse"
                         }
-                    },
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
                     }
                 ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/parser.ParseInfo"
+                            "$ref": "#/definitions/apiexternal.ParseInfo"
                         }
                     },
                     "400": {
@@ -1961,33 +1367,15 @@
         "/api/quality": {
             "get": {
                 "description": "List Qualities with regex filters",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "quality"
                 ],
                 "summary": "List Qualities",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/database.Qualities"
-                            }
+                            "$ref": "#/definitions/database.Qualities"
                         }
                     },
                     "401": {
@@ -2000,12 +1388,6 @@
             },
             "post": {
                 "description": "Updates or adds a quality",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "quality"
                 ],
@@ -2019,23 +1401,13 @@
                         "schema": {
                             "$ref": "#/definitions/database.Qualities"
                         }
-                    },
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
                     }
                 ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/database.Qualities"
-                            }
+                            "$ref": "#/definitions/database.Qualities"
                         }
                     },
                     "400": {
@@ -2053,15 +1425,99 @@
                 }
             }
         },
+        "/api/quality/all": {
+            "get": {
+                "description": "List allowed qualities and their priorities",
+                "tags": [
+                    "quality"
+                ],
+                "summary": "List Quality Priorities",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Quality Name: ex. SD",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Config Name: ex. movie_EN or serie_EN",
+                        "name": "config",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apiexternal.ParseInfo"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/quality/complete": {
+            "get": {
+                "description": "List all qualities and their priorities",
+                "tags": [
+                    "quality"
+                ],
+                "summary": "List Quality Priorities",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Quality Name: ex. SD",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Config Name: ex. movie_EN or serie_EN",
+                        "name": "config",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apiexternal.ParseInfo"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
         "/api/quality/{id}": {
             "delete": {
                 "description": "Deletes a quality",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "quality"
                 ],
@@ -2073,23 +1529,13 @@
                         "name": "id",
                         "in": "path",
                         "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
                     }
                 ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/database.Qualities"
-                            }
+                            "$ref": "#/definitions/database.Qualities"
                         }
                     },
                     "401": {
@@ -2101,15 +1547,9 @@
                 }
             }
         },
-        "/api/quality/{name}/{config}": {
+        "/api/quality/{name}": {
             "get": {
                 "description": "List allowed qualities and their priorities",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "quality"
                 ],
@@ -2117,23 +1557,9 @@
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Quality Name: ex. quality_SD",
+                        "description": "Quality Name: ex. SD",
                         "name": "name",
                         "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Config Name: ex. movie_EN or serie_EN",
-                        "name": "config",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
                         "required": true
                     }
                 ],
@@ -2141,10 +1567,7 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/parser.ParseInfo"
-                            }
+                            "$ref": "#/definitions/apiexternal.ParseInfo"
                         }
                     },
                     "401": {
@@ -2165,25 +1588,10 @@
         "/api/queue": {
             "get": {
                 "description": "Lists Queued and Started Jobs (but not finished)",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "general"
                 ],
                 "summary": "Queue",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -2206,12 +1614,6 @@
         "/api/queue/history": {
             "get": {
                 "description": "Lists Started Jobs and finished but not queued jobs",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "general"
                 ],
@@ -2234,23 +1636,13 @@
                         "description": "Order By",
                         "name": "order",
                         "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
                     }
                 ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/database.JobHistoryJson"
-                            }
+                            "$ref": "#/definitions/database.JobHistoryJSON"
                         }
                     },
                     "401": {
@@ -2265,25 +1657,10 @@
         "/api/scheduler/list": {
             "get": {
                 "description": "Lists Planned Jobs",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "scheduler"
                 ],
                 "summary": "Scheduler Jobs",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -2303,25 +1680,10 @@
         "/api/scheduler/start": {
             "get": {
                 "description": "Start all Schedulers",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "scheduler"
                 ],
                 "summary": "Start Scheduler",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -2341,25 +1703,10 @@
         "/api/scheduler/stop": {
             "get": {
                 "description": "Stops all Schedulers",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "scheduler"
                 ],
                 "summary": "Stop Scheduler",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -2379,12 +1726,6 @@
         "/api/series": {
             "get": {
                 "description": "List Series",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "series"
                 ],
@@ -2407,23 +1748,13 @@
                         "description": "Order By",
                         "name": "order",
                         "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
                     }
                 ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/database.Dbserie"
-                            }
+                            "$ref": "#/definitions/database.Dbserie"
                         }
                     },
                     "401": {
@@ -2436,12 +1767,6 @@
             },
             "post": {
                 "description": "Updates or creates a series",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "series"
                 ],
@@ -2455,13 +1780,6 @@
                         "schema": {
                             "$ref": "#/definitions/database.Dbserie"
                         }
-                    },
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
                     }
                 ],
                 "responses": {
@@ -2489,70 +1807,10 @@
         "/api/series/all/refresh": {
             "get": {
                 "description": "Refreshes Series Metadata",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "series"
                 ],
                 "summary": "Refresh Series Incremental",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "type": "string"
-                        }
-                    }
-                }
-            }
-        },
-        "/api/series/all/refresh/{id}": {
-            "get": {
-                "description": "Refreshes Series Metadata",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "series"
-                ],
-                "summary": "Refresh Single Series",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "Serie ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -2572,25 +1830,10 @@
         "/api/series/all/refreshall": {
             "get": {
                 "description": "Refreshes Series Metadata",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "series"
                 ],
                 "summary": "Refresh Series",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -2610,12 +1853,6 @@
         "/api/series/episodes": {
             "get": {
                 "description": "List episodes",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "series"
                 ],
@@ -2638,23 +1875,13 @@
                         "description": "Order By",
                         "name": "order",
                         "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
                     }
                 ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/database.DbserieEpisodeJson"
-                            }
+                            "$ref": "#/definitions/database.DbserieEpisodeJSON"
                         }
                     },
                     "401": {
@@ -2667,12 +1894,6 @@
             },
             "post": {
                 "description": "Updates or creates a episode",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "series"
                 ],
@@ -2684,15 +1905,8 @@
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/database.DbserieEpisodeJson"
+                            "$ref": "#/definitions/database.DbserieEpisodeJSON"
                         }
-                    },
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
                     }
                 ],
                 "responses": {
@@ -2720,12 +1934,6 @@
         "/api/series/episodes/list": {
             "post": {
                 "description": "Updates or creates a episode",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "series"
                 ],
@@ -2737,15 +1945,8 @@
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/database.SerieEpisodeJson"
+                            "$ref": "#/definitions/database.SerieEpisodeJSON"
                         }
-                    },
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
                     }
                 ],
                 "responses": {
@@ -2773,12 +1974,6 @@
         "/api/series/episodes/list/{id}": {
             "get": {
                 "description": "List episodes",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "series"
                 ],
@@ -2808,23 +2003,13 @@
                         "description": "Order By",
                         "name": "order",
                         "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
                     }
                 ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/database.ResultSerieEpisodesJson"
-                            }
+                            "$ref": "#/definitions/database.ResultSerieEpisodesJSON"
                         }
                     },
                     "401": {
@@ -2837,12 +2022,6 @@
             },
             "delete": {
                 "description": "Delete Series Episode",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "series"
                 ],
@@ -2853,13 +2032,6 @@
                         "description": "Episode ID",
                         "name": "id",
                         "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
                         "required": true
                     }
                 ],
@@ -2882,12 +2054,6 @@
         "/api/series/episodes/search/download/{id}": {
             "post": {
                 "description": "Downloads a release after select",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "series"
                 ],
@@ -2899,7 +2065,7 @@
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/parser.NzbwithprioJson"
+                            "$ref": "#/definitions/apiexternal.NzbwithprioJSON"
                         }
                     },
                     {
@@ -2907,13 +2073,6 @@
                         "description": "Episode ID",
                         "name": "id",
                         "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
                         "required": true
                     }
                 ],
@@ -2936,12 +2095,6 @@
         "/api/series/episodes/search/id/{id}": {
             "get": {
                 "description": "Searches for upgrades and missing",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "series"
                 ],
@@ -2952,13 +2105,6 @@
                         "description": "Episode ID",
                         "name": "id",
                         "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
                         "required": true
                     }
                 ],
@@ -2981,12 +2127,6 @@
         "/api/series/episodes/search/list/{id}": {
             "get": {
                 "description": "Searches for upgrades and missing",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "series"
                 ],
@@ -3001,14 +2141,7 @@
                     },
                     {
                         "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "apikey",
+                        "description": "searchByTitle",
                         "name": "searchByTitle",
                         "in": "query"
                     }
@@ -3032,12 +2165,6 @@
         "/api/series/episodes/{id}": {
             "get": {
                 "description": "List episodes",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "series"
                 ],
@@ -3067,23 +2194,13 @@
                         "description": "Order By",
                         "name": "order",
                         "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
                     }
                 ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/database.DbserieEpisodeJson"
-                            }
+                            "$ref": "#/definitions/database.DbserieEpisodeJSON"
                         }
                     },
                     "401": {
@@ -3096,12 +2213,6 @@
             },
             "delete": {
                 "description": "Delete Series Episode",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "series"
                 ],
@@ -3112,13 +2223,6 @@
                         "description": "Episode ID",
                         "name": "id",
                         "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
                         "required": true
                     }
                 ],
@@ -3141,12 +2245,6 @@
         "/api/series/job/{job}": {
             "get": {
                 "description": "Starts a Job",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "series"
                 ],
@@ -3157,13 +2255,6 @@
                         "description": "Job Name one of: rss, data, datafull, checkmissing, checkmissingflag, structure, searchmissingfull, searchmissinginc, searchupgradefull, searchupgradeinc, searchmissingfulltitle, searchmissinginctitle, searchupgradefulltitle, searchupgradeinctitle, clearhistory, feeds, refresh, refreshinc",
                         "name": "job",
                         "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
                         "required": true
                     }
                 ],
@@ -3192,12 +2283,6 @@
         "/api/series/job/{job}/{name}": {
             "get": {
                 "description": "Starts a Job",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "series"
                 ],
@@ -3215,13 +2300,6 @@
                         "description": "List Name: ex. list",
                         "name": "name",
                         "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
                         "required": true
                     }
                 ],
@@ -3250,12 +2328,6 @@
         "/api/series/list": {
             "post": {
                 "description": "Updates or creates a series",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "series"
                 ],
@@ -3267,15 +2339,8 @@
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/database.SerieJson"
+                            "$ref": "#/definitions/database.SerieJSON"
                         }
-                    },
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
                     }
                 ],
                 "responses": {
@@ -3303,12 +2368,6 @@
         "/api/series/list/{id}": {
             "delete": {
                 "description": "Delete Series",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "series"
                 ],
@@ -3320,13 +2379,6 @@
                         "name": "id",
                         "in": "path",
                         "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
                     }
                 ],
                 "responses": {
@@ -3345,448 +2397,9 @@
                 }
             }
         },
-        "/api/series/rss/search/list/{group}": {
-            "get": {
-                "description": "Series RSS",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "series"
-                ],
-                "summary": "Series RSS (list ok, nok)",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Group Name",
-                        "name": "group",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "type": "string"
-                        }
-                    }
-                }
-            }
-        },
-        "/api/series/search/history/clear/{name}": {
-            "get": {
-                "description": "Clear Episode Download History",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "series"
-                ],
-                "summary": "Clear History (Full List)",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "List Name",
-                        "name": "name",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "type": "string"
-                        }
-                    }
-                }
-            }
-        },
-        "/api/series/search/history/clearid/{id}": {
-            "get": {
-                "description": "Clear Episode Download History",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "series"
-                ],
-                "summary": "Clear History (Single Item)",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Episode ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "type": "string"
-                        }
-                    }
-                }
-            }
-        },
-        "/api/series/search/id/{id}": {
-            "get": {
-                "description": "Searches for upgrades and missing",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "series"
-                ],
-                "summary": "Search a series",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "Series ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "type": "string"
-                        }
-                    }
-                }
-            }
-        },
-        "/api/series/search/id/{id}/{season}": {
-            "get": {
-                "description": "Searches for upgrades and missing",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "series"
-                ],
-                "summary": "Search a series",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "Series ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Season",
-                        "name": "season",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "type": "string"
-                        }
-                    }
-                }
-            }
-        },
-        "/api/series/searchrss/id/{id}": {
-            "get": {
-                "description": "Searches for upgrades and missing",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "series"
-                ],
-                "summary": "Search a series",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "Series ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "type": "string"
-                        }
-                    }
-                }
-            }
-        },
-        "/api/series/searchrss/id/{id}/{season}": {
-            "get": {
-                "description": "Searches for upgrades and missing",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "series"
-                ],
-                "summary": "Search a series",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "Series ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Season",
-                        "name": "season",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "type": "string"
-                        }
-                    }
-                }
-            }
-        },
-        "/api/series/unmatched": {
-            "get": {
-                "description": "List Unmatched episodes",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "series"
-                ],
-                "summary": "List Series Unmatched",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "Limit",
-                        "name": "limit",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "description": "Page",
-                        "name": "page",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Order By",
-                        "name": "order",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/database.SerieFileUnmatchedJson"
-                            }
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "type": "string"
-                        }
-                    }
-                }
-            }
-        },
-        "/api/series/{id}": {
-            "delete": {
-                "description": "Delete Series",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "series"
-                ],
-                "summary": "Delete Series",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "Series ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "type": "string"
-                        }
-                    }
-                }
-            }
-        },
-        "/api/series/{name}": {
+        "/api/series/list/{name}": {
             "get": {
                 "description": "List Series",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "series"
                 ],
@@ -3816,12 +2429,37 @@
                         "description": "Order By",
                         "name": "order",
                         "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/database.ResultSeries"
+                        }
                     },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/series/refresh/{id}": {
+            "get": {
+                "description": "Refreshes Series Metadata",
+                "tags": [
+                    "series"
+                ],
+                "summary": "Refresh Single Series",
+                "parameters": [
                     {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
+                        "type": "integer",
+                        "description": "Serie ID",
+                        "name": "id",
+                        "in": "path",
                         "required": true
                     }
                 ],
@@ -3829,10 +2467,343 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/database.ResultSeries"
-                            }
+                            "type": "string"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/series/rss/search/list/{group}": {
+            "get": {
+                "description": "Series RSS",
+                "tags": [
+                    "series"
+                ],
+                "summary": "Series RSS (list ok, nok)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Group Name",
+                        "name": "group",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/series/search/history/clear/{name}": {
+            "get": {
+                "description": "Clear Episode Download History",
+                "tags": [
+                    "series"
+                ],
+                "summary": "Clear History (Full List)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "List Name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/series/search/history/clearid/{id}": {
+            "get": {
+                "description": "Clear Episode Download History",
+                "tags": [
+                    "series"
+                ],
+                "summary": "Clear History (Single Item)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Episode ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/series/search/id/{id}": {
+            "get": {
+                "description": "Searches for upgrades and missing",
+                "tags": [
+                    "series"
+                ],
+                "summary": "Search a series (all seasons)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Series ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/series/search/id/{id}/{season}": {
+            "get": {
+                "description": "Searches for upgrades and missing",
+                "tags": [
+                    "series"
+                ],
+                "summary": "Search a series (one season)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Series ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Season",
+                        "name": "season",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/series/searchrss/id/{id}": {
+            "get": {
+                "description": "Searches for upgrades and missing",
+                "tags": [
+                    "series"
+                ],
+                "summary": "Search a series (any season - one search call)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Series ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/series/searchrss/id/{id}/{season}": {
+            "get": {
+                "description": "Searches for upgrades and missing",
+                "tags": [
+                    "series"
+                ],
+                "summary": "Search a series (one season - one search call)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Series ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Season",
+                        "name": "season",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/series/unmatched": {
+            "get": {
+                "description": "List Unmatched episodes",
+                "tags": [
+                    "series"
+                ],
+                "summary": "List Series Unmatched",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Limit",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Order By",
+                        "name": "order",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/database.SerieFileUnmatchedJSON"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/series/{id}": {
+            "delete": {
+                "description": "Delete Series",
+                "tags": [
+                    "series"
+                ],
+                "summary": "Delete Series",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Series ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/slug": {
+            "get": {
+                "description": "Regenerates Slugs",
+                "tags": [
+                    "general"
+                ],
+                "summary": "Refresh Slugs",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
                         }
                     },
                     "401": {
@@ -3847,12 +2818,6 @@
         "/api/structure": {
             "post": {
                 "description": "Structure a single folder",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "general"
                 ],
@@ -3864,15 +2829,8 @@
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/api.apiStructureJson"
+                            "$ref": "#/definitions/api.apiStructureJSON"
                         }
-                    },
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
                     }
                 ],
                 "responses": {
@@ -3899,26 +2857,11 @@
         },
         "/api/trakt/authorize": {
             "get": {
-                "description": "List Qualities with regex filters",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
+                "description": "Get trakt auth url",
                 "tags": [
                     "general"
                 ],
-                "summary": "Trakt Auhtorize",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
+                "summary": "Trakt Authorize",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -3938,24 +2881,11 @@
         "/api/trakt/token/{code}": {
             "get": {
                 "description": "Saves Trakt token after Authorization",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "general"
                 ],
                 "summary": "Trakt Save Token",
                 "parameters": [
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
-                        "required": true
-                    },
                     {
                         "type": "string",
                         "description": "code",
@@ -3983,12 +2913,6 @@
         "/api/trakt/user/{user}/{list}": {
             "get": {
                 "description": "Get User List",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "general"
                 ],
@@ -4006,13 +2930,6 @@
                         "description": "List Name",
                         "name": "list",
                         "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "apikey",
-                        "name": "apikey",
-                        "in": "query",
                         "required": true
                     }
                 ],
@@ -4034,7 +2951,7 @@
         }
     },
     "definitions": {
-        "api.apiNameInputJson": {
+        "api.apiNameInputJSON": {
             "type": "object",
             "properties": {
                 "cfg_media": {
@@ -4054,7 +2971,7 @@
                 }
             }
         },
-        "api.apiStructureJson": {
+        "api.apiStructureJSON": {
             "type": "object",
             "properties": {
                 "configentry": {
@@ -4109,7 +3026,203 @@
                 }
             }
         },
-        "database.DbmovieJson": {
+        "apiexternal.NZB": {
+            "type": "object",
+            "properties": {
+                "download_url": {
+                    "description": "Torznab specific stuff\nSeeders     int    `json:\"seeders,omitempty\"`\nPeers       int    `json:\"peers,omitempty\"`\nInfoHash    string `json:\"infohash,omitempty\"`",
+                    "type": "string"
+                },
+                "episode": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "imdb": {
+                    "description": "Movie Specific stuff",
+                    "type": "string"
+                },
+                "is_torrent": {
+                    "type": "boolean"
+                },
+                "season": {
+                    "type": "string"
+                },
+                "size": {
+                    "description": "Description string    `json:\"description,omitempty\"`",
+                    "type": "integer"
+                },
+                "source_endpoint": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "tvdbid": {
+                    "description": "TV Specific stuff",
+                    "type": "string"
+                }
+            }
+        },
+        "apiexternal.NzbwithprioJSON": {
+            "type": "object",
+            "properties": {
+                "denied": {
+                    "type": "boolean"
+                },
+                "indexer": {
+                    "type": "string"
+                },
+                "minimumPriority": {
+                    "type": "integer"
+                },
+                "nzb": {
+                    "$ref": "#/definitions/apiexternal.NZB"
+                },
+                "nzbepisodeID": {
+                    "type": "integer"
+                },
+                "nzbmovieID": {
+                    "type": "integer"
+                },
+                "parseInfo": {
+                    "$ref": "#/definitions/apiexternal.ParseInfo"
+                },
+                "prio": {
+                    "type": "integer"
+                },
+                "qualityTemplate": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "wantedAlternates": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "wantedTitle": {
+                    "type": "string"
+                }
+            }
+        },
+        "apiexternal.ParseInfo": {
+            "type": "object",
+            "properties": {
+                "audio": {
+                    "type": "string"
+                },
+                "audioid": {
+                    "type": "integer"
+                },
+                "codec": {
+                    "type": "string"
+                },
+                "codecid": {
+                    "type": "integer"
+                },
+                "date": {
+                    "type": "string"
+                },
+                "dbmovieid": {
+                    "type": "integer"
+                },
+                "dbserieepisodeid": {
+                    "type": "integer"
+                },
+                "dbserieid": {
+                    "type": "integer"
+                },
+                "episode": {
+                    "type": "integer"
+                },
+                "episodestr": {
+                    "type": "string"
+                },
+                "extended": {
+                    "type": "boolean"
+                },
+                "file": {
+                    "type": "string"
+                },
+                "height": {
+                    "type": "integer"
+                },
+                "identifier": {
+                    "type": "string"
+                },
+                "imdb": {
+                    "type": "string"
+                },
+                "languages": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "listname": {
+                    "type": "string"
+                },
+                "movieid": {
+                    "type": "integer"
+                },
+                "priority": {
+                    "type": "integer"
+                },
+                "proper": {
+                    "type": "boolean"
+                },
+                "quality": {
+                    "type": "string"
+                },
+                "qualityid": {
+                    "type": "integer"
+                },
+                "qualityset": {
+                    "type": "string"
+                },
+                "repack": {
+                    "type": "boolean"
+                },
+                "resolution": {
+                    "type": "string"
+                },
+                "resolutionid": {
+                    "type": "integer"
+                },
+                "runtime": {
+                    "type": "integer"
+                },
+                "season": {
+                    "type": "integer"
+                },
+                "seasonstr": {
+                    "type": "string"
+                },
+                "serieepisodeid": {
+                    "type": "integer"
+                },
+                "serieid": {
+                    "type": "integer"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "tvdb": {
+                    "type": "string"
+                },
+                "width": {
+                    "type": "integer"
+                },
+                "year": {
+                    "type": "integer"
+                }
+            }
+        },
+        "database.DbmovieJSON": {
             "type": "object",
             "properties": {
                 "adult": {
@@ -4305,7 +3418,7 @@
                 }
             }
         },
-        "database.DbserieEpisodeJson": {
+        "database.DbserieEpisodeJSON": {
             "type": "object",
             "properties": {
                 "createdAt": {
@@ -4343,7 +3456,7 @@
                 }
             }
         },
-        "database.JobHistoryJson": {
+        "database.JobHistoryJSON": {
             "type": "object",
             "properties": {
                 "createdAt": {
@@ -4372,7 +3485,7 @@
                 }
             }
         },
-        "database.MovieFileUnmatchedJson": {
+        "database.MovieFileUnmatchedJSON": {
             "type": "object",
             "properties": {
                 "createdAt": {
@@ -4398,7 +3511,7 @@
                 }
             }
         },
-        "database.MovieJson": {
+        "database.MovieJSON": {
             "type": "object",
             "properties": {
                 "blacklisted": {
@@ -4457,14 +3570,17 @@
                 "priority": {
                     "type": "integer"
                 },
+                "qualityType": {
+                    "type": "integer"
+                },
                 "regex": {
                     "type": "string"
                 },
                 "strings": {
                     "type": "string"
                 },
-                "type": {
-                    "type": "integer"
+                "stringsLower": {
+                    "type": "string"
                 },
                 "updatedAt": {
                     "type": "string"
@@ -4474,7 +3590,7 @@
                 }
             }
         },
-        "database.ResultMoviesJson": {
+        "database.ResultMoviesJSON": {
             "type": "object",
             "properties": {
                 "adult": {
@@ -4599,7 +3715,7 @@
                 }
             }
         },
-        "database.ResultSerieEpisodesJson": {
+        "database.ResultSerieEpisodesJSON": {
             "type": "object",
             "properties": {
                 "blacklisted": {
@@ -4765,7 +3881,7 @@
                 }
             }
         },
-        "database.SerieEpisodeJson": {
+        "database.SerieEpisodeJSON": {
             "type": "object",
             "properties": {
                 "blacklisted": {
@@ -4809,7 +3925,7 @@
                 }
             }
         },
-        "database.SerieFileUnmatchedJson": {
+        "database.SerieFileUnmatchedJSON": {
             "type": "object",
             "properties": {
                 "createdAt": {
@@ -4835,7 +3951,7 @@
                 }
             }
         },
-        "database.SerieJson": {
+        "database.SerieJSON": {
             "type": "object",
             "properties": {
                 "createdAt": {
@@ -4853,212 +3969,20 @@
                 "id": {
                     "type": "integer"
                 },
+                "ignoreRuntime": {
+                    "type": "boolean"
+                },
                 "listname": {
                     "type": "string"
                 },
                 "rootpath": {
                     "type": "string"
                 },
+                "searchSpecials": {
+                    "type": "boolean"
+                },
                 "updatedAt": {
                     "type": "string"
-                }
-            }
-        },
-        "newznab.NZB": {
-            "type": "object",
-            "properties": {
-                "download_url": {
-                    "description": "Torznab specific stuff\nSeeders     int    `json:\"seeders,omitempty\"`\nPeers       int    `json:\"peers,omitempty\"`\nInfoHash    string `json:\"infohash,omitempty\"`",
-                    "type": "string"
-                },
-                "episode": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "imdb": {
-                    "description": "Movie Specific stuff",
-                    "type": "string"
-                },
-                "is_torrent": {
-                    "type": "boolean"
-                },
-                "season": {
-                    "type": "string"
-                },
-                "size": {
-                    "description": "Description string    `json:\"description,omitempty\"`",
-                    "type": "integer"
-                },
-                "source_endpoint": {
-                    "type": "string"
-                },
-                "title": {
-                    "type": "string"
-                },
-                "tvdbid": {
-                    "description": "TV Specific stuff",
-                    "type": "string"
-                }
-            }
-        },
-        "parser.NzbwithprioJson": {
-            "type": "object",
-            "properties": {
-                "denied": {
-                    "type": "boolean"
-                },
-                "indexer": {
-                    "type": "string"
-                },
-                "minimumPriority": {
-                    "type": "integer"
-                },
-                "nzb": {
-                    "$ref": "#/definitions/newznab.NZB"
-                },
-                "nzbepisodeID": {
-                    "type": "integer"
-                },
-                "nzbmovieID": {
-                    "type": "integer"
-                },
-                "parseInfo": {
-                    "$ref": "#/definitions/parser.ParseInfo"
-                },
-                "prio": {
-                    "type": "integer"
-                },
-                "qualityTemplate": {
-                    "type": "string"
-                },
-                "reason": {
-                    "type": "string"
-                },
-                "wantedAlternates": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "wantedTitle": {
-                    "type": "string"
-                }
-            }
-        },
-        "parser.ParseInfo": {
-            "type": "object",
-            "properties": {
-                "Prio_audio": {
-                    "type": "integer"
-                },
-                "Prio_codec": {
-                    "type": "integer"
-                },
-                "Prio_quality": {
-                    "type": "integer"
-                },
-                "Prio_resolution": {
-                    "type": "integer"
-                },
-                "audio": {
-                    "type": "string"
-                },
-                "audioid": {
-                    "type": "integer"
-                },
-                "codec": {
-                    "type": "string"
-                },
-                "codecid": {
-                    "type": "integer"
-                },
-                "date": {
-                    "type": "string"
-                },
-                "episode": {
-                    "type": "integer"
-                },
-                "episodestr": {
-                    "type": "string"
-                },
-                "extended": {
-                    "type": "boolean"
-                },
-                "file": {
-                    "type": "string"
-                },
-                "height": {
-                    "type": "integer"
-                },
-                "identifier": {
-                    "description": "Group           string   `json:\"group,omitempty\"`\nRegion          string   `json:\"region,omitempty\"`",
-                    "type": "string"
-                },
-                "imdb": {
-                    "description": "Sbs             string   `json:\"sbs,omitempty\"`\nUnrated         bool     `json:\"unrated,omitempty\"`\nSubs            string   `json:\"subs,omitempty\"`",
-                    "type": "string"
-                },
-                "language": {
-                    "description": "Container       string   `json:\"container,omitempty\"`\nWidescreen      bool     `json:\"widescreen,omitempty\"`\nWebsite         string   `json:\"website,omitempty\"`",
-                    "type": "string"
-                },
-                "languages": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "priority": {
-                    "type": "integer"
-                },
-                "proper": {
-                    "description": "Hardcoded       bool     `json:\"hardcoded,omitempty\"`",
-                    "type": "boolean"
-                },
-                "quality": {
-                    "type": "string"
-                },
-                "qualityid": {
-                    "type": "integer"
-                },
-                "qualityset": {
-                    "description": "ThreeD          bool     `json:\"3d,omitempty\"`",
-                    "type": "string"
-                },
-                "repack": {
-                    "type": "boolean"
-                },
-                "resolution": {
-                    "type": "string"
-                },
-                "resolutionid": {
-                    "type": "integer"
-                },
-                "runtime": {
-                    "type": "integer"
-                },
-                "season": {
-                    "type": "integer"
-                },
-                "seasonstr": {
-                    "type": "string"
-                },
-                "size": {
-                    "type": "string"
-                },
-                "title": {
-                    "type": "string"
-                },
-                "tvdb": {
-                    "type": "string"
-                },
-                "width": {
-                    "type": "integer"
-                },
-                "year": {
-                    "type": "integer"
                 }
             }
         },
@@ -5077,13 +4001,20 @@
                 "queue": {
                     "type": "string"
                 },
-                "schedulerId": {
+                "schedulerID": {
                     "type": "string"
                 },
                 "started": {
                     "type": "string"
                 }
             }
+        }
+    },
+    "securityDefinitions": {
+        "ApiKeyAuth": {
+            "type": "apiKey",
+            "name": "apikey",
+            "in": "query"
         }
     }
 }

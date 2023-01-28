@@ -190,6 +190,46 @@ func TestGetCsv(t *testing.T) {
 		PrintMemUsage()
 	})
 }
+
+func buildPrioStr(r uint, q uint, c uint, a uint) string {
+	return logger.UintToString(r) + "_" + logger.UintToString(q) + "_" + logger.UintToString(c) + "_" + logger.UintToString(a)
+}
+
+func buildPrioStrf(r uint, q uint, c uint, a uint) string {
+	return fmt.Sprintf("%s_%s_%s_%s", logger.UintToString(r), logger.UintToString(q), logger.UintToString(c), logger.UintToString(a))
+}
+func BenchmarkPrio1(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		str := "Hallo123"
+		url := logger.Unquote(str)
+		_ = url
+	}
+}
+func BenchmarkPrio2(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		str := "Hallo123"
+		url := logger.Unquote(str)
+		_ = url
+	}
+}
+func TestGetUrl(t *testing.T) {
+	t.Run("test", func(t *testing.T) {
+		//url := fmt.Sprintf("S%sE%s", "01", "01")
+		for i := 0; i < 1000000; i++ {
+			url := buildPrioStr(10, 10, 10, 10)
+			//url := fmt.Sprintf("aa%d", 5)
+			_ = url
+		}
+		var m runtime.MemStats
+		runtime.ReadMemStats(&m)
+		// For info on each, see: https://golang.org/pkg/runtime/#MemStats
+		t.Log(fmt.Printf("Alloc = %v MiB", m.Alloc))
+		t.Log(fmt.Printf("\tTotalAlloc = %v MiB", m.TotalAlloc))
+		t.Log(fmt.Printf("\tSys = %v MiB", m.Sys))
+		t.Log(fmt.Printf("\tNumGC = %v\n", m.NumGC))
+	})
+}
+
 func TestGetTmdb(t *testing.T) {
 	Init()
 	t.Run("test", func(t *testing.T) {
@@ -276,18 +316,6 @@ func TestMime(t *testing.T) {
 	})
 }
 
-func TestCache(t *testing.T) {
-	Init()
-	t.Run("test", func(t *testing.T) {
-		logger.GlobalRegexCache.SetRegexp("[a-z]", 0)
-
-		a := logger.GlobalRegexCache.GetRegexpDirect("[a-z]")
-		t.Log(a)
-		a = nil
-		a = logger.GlobalRegexCache.GetRegexpDirect("[a-z]")
-		t.Log(a)
-	})
-}
 func TestDir(t *testing.T) {
 	Init()
 	t.Run("test", func(t *testing.T) {

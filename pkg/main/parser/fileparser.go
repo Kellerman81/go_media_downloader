@@ -2,10 +2,10 @@
 package parser
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"unicode"
@@ -103,7 +103,7 @@ func NewCutoffPrio(cfgp *config.MediaTypeConfig, qualityTemplate string) int {
 	return prio
 }
 
-func NewFileParser(filename string, includeYearInTitle bool, typegroup string) (*apiexternal.ParseInfo, error) {
+func NewFileParser(filename string, includeYearInTitle bool, typegroup string) *apiexternal.ParseInfo {
 	m := apiexternal.ParseInfo{File: filename}
 	var startIndex, endIndex = 0, len(m.File)
 	loadDBPatterns()
@@ -230,7 +230,7 @@ func NewFileParser(filename string, includeYearInTitle bool, typegroup string) (
 	if m.Date != "" {
 		m.Identifier = m.Date
 	} else if m.Identifier == "" && m.SeasonStr != "" && m.EpisodeStr != "" {
-		m.Identifier = fmt.Sprintf("S%sE%s", m.SeasonStr, m.EpisodeStr)
+		m.Identifier = "S" + m.SeasonStr + "E" + m.EpisodeStr
 	}
 	if endIndex < startIndex {
 		logger.Log.GlobalLogger.Debug("EndIndex < startindex", zap.Int("start", startIndex), zap.Int("end", endIndex), zap.String("Path", m.File))
@@ -250,11 +250,7 @@ func NewFileParser(filename string, includeYearInTitle bool, typegroup string) (
 	}
 	m.Title = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(cleanName), "-"))
 
-	return &m, nil
-}
-func NewFileParserNoPt(filename string, includeYearInTitle bool, typegroup string) (apiexternal.ParseInfo, error) {
-	m, err := NewFileParser(filename, includeYearInTitle, typegroup)
-	return *m, err
+	return &m
 }
 
 func GetDbIDs(grouptype string, m *apiexternal.ParseInfo, cfgp *config.MediaTypeConfig, listname string, allowsearchtitle bool) {
@@ -311,7 +307,7 @@ func GetDbIDs(grouptype string, m *apiexternal.ParseInfo, cfgp *config.MediaType
 	}
 	if m.DbserieID == 0 && (allowsearchtitle || m.Tvdb == "") {
 		if m.Year != 0 {
-			m.DbserieID, _ = importfeed.FindDbserieByName(fmt.Sprintf("%s (%d)", m.Title, m.Year))
+			m.DbserieID, _ = importfeed.FindDbserieByName(m.Title + " (" + logger.IntToString(m.Year) + ")")
 		}
 		if m.DbserieID == 0 {
 			m.DbserieID, _ = importfeed.FindDbserieByName(m.Title)
@@ -360,19 +356,18 @@ func ParseVideoFile(m *apiexternal.ParseInfo, file string, cfgp *config.MediaTyp
 	if err != nil {
 		return err
 	}
+	defer result.Close()
 
 	if len(result.Streams) == 0 {
-		result.Close()
-		return fmt.Errorf("failed to get ffprobe json for <%s> %s", file, err.Error())
+		return errors.New("failed to get ffprobe json for <" + file + "> " + err.Error())
 	}
 
 	if result.Error.Code != 0 {
 		err = fmt.Errorf("ffprobe error code %d: %s", result.Error.Code, result.Error.String)
-		result.Close()
 		return err
 	}
 	var duration float64
-	duration, err = strconv.ParseFloat(result.Format.Duration, 64)
+	duration, err = logger.ParseFloat64(result.Format.Duration)
 	if err == nil {
 		m.Runtime = int(math.Round(duration))
 	}
@@ -445,13 +440,13 @@ func ParseVideoFile(m *apiexternal.ParseInfo, file string, cfgp *config.MediaTyp
 	}
 	if redetermineprio {
 		allQualityPrioritiesMu.Lock()
-		prio, ok := allQualityPrioritiesWanted[qualityTemplate][fmt.Sprintf("%d_%d_%d_%d", m.ResolutionID, m.QualityID, m.CodecID, m.AudioID)]
+
+		prio, ok := allQualityPrioritiesWanted[qualityTemplate][buildPrioStr(m.ResolutionID, m.QualityID, m.CodecID, m.AudioID)]
 		if ok {
 			m.Priority = prio
 		}
 		allQualityPrioritiesMu.Unlock()
 	}
-	result.Close()
 	return nil
 }
 
@@ -518,14 +513,13 @@ func GetPriorityMap(m *apiexternal.ParseInfo, cfgp *config.MediaTypeConfig, qual
 	}
 
 	allQualityPrioritiesMu.Lock()
-	title := fmt.Sprintf("%d_%d_%d_%d", reso, qual, codec, aud)
 
 	var ok bool
 	var prio int
 	if checkwanted {
-		prio, ok = allQualityPrioritiesWanted[qualityTemplate][title]
+		prio, ok = allQualityPrioritiesWanted[qualityTemplate][buildPrioStr(reso, qual, codec, aud)]
 	} else {
-		prio, ok = allQualityPriorities[qualityTemplate][title]
+		prio, ok = allQualityPriorities[qualityTemplate][buildPrioStr(reso, qual, codec, aud)]
 	}
 	allQualityPrioritiesMu.Unlock()
 	if !ok {
@@ -585,19 +579,18 @@ func GetIDPriorityMap(m *apiexternal.ParseInfo, cfgp *config.MediaTypeConfig, qu
 		codec = m.CodecID
 	}
 	allQualityPrioritiesMu.Lock()
-	title := fmt.Sprintf("%d_%d_%d_%d", reso, qual, codec, aud)
 
 	var ok bool
 	var prio int
 	if checkwanted {
-		prio, ok = allQualityPrioritiesWanted[qualityTemplate][title]
+		prio, ok = allQualityPrioritiesWanted[qualityTemplate][buildPrioStr(reso, qual, codec, aud)]
 	} else {
-		prio, ok = allQualityPriorities[qualityTemplate][title]
+		prio, ok = allQualityPriorities[qualityTemplate][buildPrioStr(reso, qual, codec, aud)]
 	}
 	allQualityPrioritiesMu.Unlock()
 	if !ok {
 		m.Priority = 0
-		logger.Log.GlobalLogger.Debug("prio not found", zap.String("searched for", title), zap.String("in", qualityTemplate), zap.Bool("wanted", checkwanted))
+		logger.Log.GlobalLogger.Debug("prio not found", zap.String("searched for", buildPrioStr(reso, qual, codec, aud)), zap.String("in", qualityTemplate), zap.Bool("wanted", checkwanted))
 		return
 	}
 	m.Priority = prio
@@ -700,8 +693,7 @@ func GetAllQualityPriorities() {
 					for idxaudio := range getaudios {
 						parse.Audio = getaudios[idxaudio].Name
 						parse.AudioID = getaudios[idxaudio].ID
-
-						str4 = fmt.Sprintf("%d_%d_%d_%d", getresolutions[idxreso].ID, getqualities[idxqual].ID, getcodecs[idxcodec].ID, getaudios[idxaudio].ID)
+						str4 = buildPrioStr(getresolutions[idxreso].ID, getqualities[idxqual].ID, getcodecs[idxcodec].ID, getaudios[idxaudio].ID)
 						setprio = getIDPrioritySimple(&parse, qualconf.Name, &reordergroup)
 						allQualityPriorities[qualconf.Name][str4] = setprio
 						if addwanted {
@@ -816,4 +808,8 @@ func gettypeidpriority(m *apiexternal.ParseInfo, id uint, qualitystringtype stri
 		return 0
 	}
 	return 0
+}
+
+func buildPrioStr(r uint, q uint, c uint, a uint) string {
+	return logger.UintToString(r) + "_" + logger.UintToString(q) + "_" + logger.UintToString(c) + "_" + logger.UintToString(a)
 }

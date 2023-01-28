@@ -183,16 +183,6 @@ func InStringArray(target string, arr *InStringArrayStruct) bool {
 	return false
 }
 
-func InStringArrayN(target string, arr InStringArrayStruct) bool {
-	for idx := range arr.Arr {
-		if strings.EqualFold(target, arr.Arr[idx]) {
-			arr.Close()
-			return true
-		}
-	}
-	arr.Close()
-	return false
-}
 func InStringArrayCaseSensitive(target string, arr *InStringArrayStruct) bool {
 	for idx := range arr.Arr {
 		if target == arr.Arr[idx] {
@@ -202,13 +192,12 @@ func InStringArrayCaseSensitive(target string, arr *InStringArrayStruct) bool {
 	return false
 }
 func InStringArrayContainsTarget(target string, arr *InStringArrayStruct) bool {
+	defer arr.Close()
 	for idx := range arr.Arr {
 		if strings.Contains(target, arr.Arr[idx]) {
-			arr.Close()
 			return true
 		}
 	}
-	arr.Close()
 	return false
 }
 func InStringArrayContainsCaseSensitive(target string, arr *InStringArrayStruct) bool {
@@ -283,8 +272,7 @@ func makeSlug(s string) string {
 	s = strings.ReplaceAll(s, "--", "-")
 	s = strings.ReplaceAll(s, "--", "-")
 	s = strings.ReplaceAll(s, "--", "-")
-	s = strings.Trim(s, "- ")
-	return s
+	return strings.Trim(s, "- ")
 }
 
 // SubstituteRune substitutes string chars with provided rune
@@ -326,15 +314,9 @@ func StringToSlug(instr string) string {
 		instr = html.UnescapeString(instr)
 	}
 	if strings.Contains(instr, "\\u") {
-		unquote, err := strconv.Unquote("\"" + instr + "\"")
-		if err == nil {
-			instr = unquote
-		}
+		instr = Unquote(instr)
 	}
-	instr = makeSlug(instr)
-	instr = strings.TrimSuffix(instr, "-")
-
-	return instr
+	return strings.TrimSuffix(makeSlug(instr), "-")
 }
 
 func Path(s string, allowslash bool) string {
@@ -343,10 +325,7 @@ func Path(s string, allowslash bool) string {
 		s = html.UnescapeString(s)
 	}
 	if strings.Contains(s, "\\u") {
-		unquote, err := strconv.Unquote("\"" + s + "\"")
-		if err == nil {
-			s = unquote
-		}
+		s = Unquote(s)
 	}
 
 	s = strings.ReplaceAll(s, "..", "")
@@ -615,4 +594,26 @@ func StringToInt(s string) int {
 		return 0
 	}
 	return in
+}
+
+func IntToString(i int) string {
+	return strconv.FormatInt(int64(i), 10)
+}
+func UintToString(i uint) string {
+	return strconv.FormatInt(int64(i), 10)
+}
+
+func Unquote(s string) string {
+	unquote, err := strconv.Unquote("\"" + s + "\"")
+	if err == nil {
+		return unquote
+	}
+	return s
+}
+
+func ParseFloat(s string) (float64, error) {
+	return strconv.ParseFloat(s, 32)
+}
+func ParseFloat64(s string) (float64, error) {
+	return strconv.ParseFloat(s, 64)
 }

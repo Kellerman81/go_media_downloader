@@ -1034,7 +1034,7 @@ func apiSeriesRssSearchList(c *gin.Context) {
 // @Summary      Download a episode (manual)
 // @Description  Downloads a release after select
 // @Tags         series
-// @Param        nzb  body      nzb.NzbwithprioJSON  true  "Nzb: Req. Title, Indexer, tvdbid, downloadurl, parseinfo"
+// @Param        nzb  body      apiexternal.NzbwithprioJSON  true  "Nzb: Req. Title, Indexer, tvdbid, downloadurl, parseinfo"
 // @Param        id   path      int                     true  "Episode ID"
 // @Success      200     {object}  string
 // @Failure      401     {object}  string

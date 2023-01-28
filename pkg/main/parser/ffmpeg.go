@@ -3,7 +3,7 @@ package parser
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
+	"errors"
 	"os/exec"
 	"path"
 	"runtime"
@@ -148,12 +148,12 @@ func probeURL(fileURL string) (*ffProbeJSON, error) {
 	defer stdErr.Reset()
 	if err != nil {
 		cmd = nil
-		return nil, fmt.Errorf("error running FFProbe [%s] %s [%s]", stdErr.String(), err.Error(), outputBuf.String())
+		return nil, errors.New("error running FFProbe [" + stdErr.String() + "] " + err.Error() + " [" + outputBuf.String() + "]")
 	}
 
 	if stdErr.Len() > 0 {
 		cmd = nil
-		return nil, fmt.Errorf("ffprobe error: %s", stdErr.String())
+		return nil, errors.New("ffprobe error: " + stdErr.String())
 	}
 
 	var data ffProbeJSON
@@ -161,7 +161,7 @@ func probeURL(fileURL string) (*ffProbeJSON, error) {
 	if err != nil {
 		cmd = nil
 		data.Close()
-		return nil, fmt.Errorf("error parsing ffprobe output: %s", err.Error())
+		return nil, errors.New("error parsing ffprobe output: " + err.Error())
 	}
 	cmd = nil
 	return &data, nil

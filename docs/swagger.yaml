@@ -1,7 +1,5 @@
-consumes:
-- application/json
 definitions:
-  api.apiNameInputJson:
+  api.apiNameInputJSON:
     properties:
       cfg_media:
         type: string
@@ -14,7 +12,7 @@ definitions:
       serieid:
         type: integer
     type: object
-  api.apiStructureJson:
+  api.apiStructureJSON:
     properties:
       configentry:
         type: string
@@ -50,7 +48,142 @@ definitions:
       year:
         type: boolean
     type: object
-  database.DbmovieJson:
+  apiexternal.NZB:
+    properties:
+      download_url:
+        description: |-
+          Torznab specific stuff
+          Seeders     int    `json:"seeders,omitempty"`
+          Peers       int    `json:"peers,omitempty"`
+          InfoHash    string `json:"infohash,omitempty"`
+        type: string
+      episode:
+        type: string
+      id:
+        type: string
+      imdb:
+        description: Movie Specific stuff
+        type: string
+      is_torrent:
+        type: boolean
+      season:
+        type: string
+      size:
+        description: Description string    `json:"description,omitempty"`
+        type: integer
+      source_endpoint:
+        type: string
+      title:
+        type: string
+      tvdbid:
+        description: TV Specific stuff
+        type: string
+    type: object
+  apiexternal.NzbwithprioJSON:
+    properties:
+      denied:
+        type: boolean
+      indexer:
+        type: string
+      minimumPriority:
+        type: integer
+      nzb:
+        $ref: '#/definitions/apiexternal.NZB'
+      nzbepisodeID:
+        type: integer
+      nzbmovieID:
+        type: integer
+      parseInfo:
+        $ref: '#/definitions/apiexternal.ParseInfo'
+      prio:
+        type: integer
+      qualityTemplate:
+        type: string
+      reason:
+        type: string
+      wantedAlternates:
+        items:
+          type: string
+        type: array
+      wantedTitle:
+        type: string
+    type: object
+  apiexternal.ParseInfo:
+    properties:
+      audio:
+        type: string
+      audioid:
+        type: integer
+      codec:
+        type: string
+      codecid:
+        type: integer
+      date:
+        type: string
+      dbmovieid:
+        type: integer
+      dbserieepisodeid:
+        type: integer
+      dbserieid:
+        type: integer
+      episode:
+        type: integer
+      episodestr:
+        type: string
+      extended:
+        type: boolean
+      file:
+        type: string
+      height:
+        type: integer
+      identifier:
+        type: string
+      imdb:
+        type: string
+      languages:
+        items:
+          type: string
+        type: array
+      listname:
+        type: string
+      movieid:
+        type: integer
+      priority:
+        type: integer
+      proper:
+        type: boolean
+      quality:
+        type: string
+      qualityid:
+        type: integer
+      qualityset:
+        type: string
+      repack:
+        type: boolean
+      resolution:
+        type: string
+      resolutionid:
+        type: integer
+      runtime:
+        type: integer
+      season:
+        type: integer
+      seasonstr:
+        type: string
+      serieepisodeid:
+        type: integer
+      serieid:
+        type: integer
+      title:
+        type: string
+      tvdb:
+        type: string
+      width:
+        type: integer
+      year:
+        type: integer
+    type: object
+  database.DbmovieJSON:
     properties:
       adult:
         type: boolean
@@ -180,7 +313,7 @@ definitions:
       updatedAt:
         type: string
     type: object
-  database.DbserieEpisodeJson:
+  database.DbserieEpisodeJSON:
     properties:
       createdAt:
         type: string
@@ -205,7 +338,7 @@ definitions:
       updatedAt:
         type: string
     type: object
-  database.JobHistoryJson:
+  database.JobHistoryJSON:
     properties:
       createdAt:
         type: string
@@ -224,7 +357,7 @@ definitions:
       updatedAt:
         type: string
     type: object
-  database.MovieFileUnmatchedJson:
+  database.MovieFileUnmatchedJSON:
     properties:
       createdAt:
         type: string
@@ -241,7 +374,7 @@ definitions:
       updatedAt:
         type: string
     type: object
-  database.MovieJson:
+  database.MovieJSON:
     properties:
       blacklisted:
         type: boolean
@@ -280,18 +413,20 @@ definitions:
         type: string
       priority:
         type: integer
+      qualityType:
+        type: integer
       regex:
         type: string
       strings:
         type: string
-      type:
-        type: integer
+      stringsLower:
+        type: string
       updatedAt:
         type: string
       useRegex:
         type: boolean
     type: object
-  database.ResultMoviesJson:
+  database.ResultMoviesJSON:
     properties:
       adult:
         type: boolean
@@ -374,7 +509,7 @@ definitions:
       year:
         type: integer
     type: object
-  database.ResultSerieEpisodesJson:
+  database.ResultSerieEpisodesJSON:
     properties:
       blacklisted:
         type: boolean
@@ -484,7 +619,7 @@ definitions:
       updatedAt:
         type: string
     type: object
-  database.SerieEpisodeJson:
+  database.SerieEpisodeJSON:
     properties:
       blacklisted:
         type: boolean
@@ -513,7 +648,7 @@ definitions:
       updatedAt:
         type: string
     type: object
-  database.SerieFileUnmatchedJson:
+  database.SerieFileUnmatchedJSON:
     properties:
       createdAt:
         type: string
@@ -530,7 +665,7 @@ definitions:
       updatedAt:
         type: string
     type: object
-  database.SerieJson:
+  database.SerieJSON:
     properties:
       createdAt:
         type: string
@@ -542,158 +677,16 @@ definitions:
         type: boolean
       id:
         type: integer
+      ignoreRuntime:
+        type: boolean
       listname:
         type: string
       rootpath:
         type: string
+      searchSpecials:
+        type: boolean
       updatedAt:
         type: string
-    type: object
-  newznab.NZB:
-    properties:
-      download_url:
-        description: |-
-          Torznab specific stuff
-          Seeders     int    `json:"seeders,omitempty"`
-          Peers       int    `json:"peers,omitempty"`
-          InfoHash    string `json:"infohash,omitempty"`
-        type: string
-      episode:
-        type: string
-      id:
-        type: string
-      imdb:
-        description: Movie Specific stuff
-        type: string
-      is_torrent:
-        type: boolean
-      season:
-        type: string
-      size:
-        description: Description string    `json:"description,omitempty"`
-        type: integer
-      source_endpoint:
-        type: string
-      title:
-        type: string
-      tvdbid:
-        description: TV Specific stuff
-        type: string
-    type: object
-  parser.NzbwithprioJson:
-    properties:
-      denied:
-        type: boolean
-      indexer:
-        type: string
-      minimumPriority:
-        type: integer
-      nzb:
-        $ref: '#/definitions/newznab.NZB'
-      nzbepisodeID:
-        type: integer
-      nzbmovieID:
-        type: integer
-      parseInfo:
-        $ref: '#/definitions/parser.ParseInfo'
-      prio:
-        type: integer
-      qualityTemplate:
-        type: string
-      reason:
-        type: string
-      wantedAlternates:
-        items:
-          type: string
-        type: array
-      wantedTitle:
-        type: string
-    type: object
-  parser.ParseInfo:
-    properties:
-      Prio_audio:
-        type: integer
-      Prio_codec:
-        type: integer
-      Prio_quality:
-        type: integer
-      Prio_resolution:
-        type: integer
-      audio:
-        type: string
-      audioid:
-        type: integer
-      codec:
-        type: string
-      codecid:
-        type: integer
-      date:
-        type: string
-      episode:
-        type: integer
-      episodestr:
-        type: string
-      extended:
-        type: boolean
-      file:
-        type: string
-      height:
-        type: integer
-      identifier:
-        description: |-
-          Group           string   `json:"group,omitempty"`
-          Region          string   `json:"region,omitempty"`
-        type: string
-      imdb:
-        description: |-
-          Sbs             string   `json:"sbs,omitempty"`
-          Unrated         bool     `json:"unrated,omitempty"`
-          Subs            string   `json:"subs,omitempty"`
-        type: string
-      language:
-        description: |-
-          Container       string   `json:"container,omitempty"`
-          Widescreen      bool     `json:"widescreen,omitempty"`
-          Website         string   `json:"website,omitempty"`
-        type: string
-      languages:
-        items:
-          type: string
-        type: array
-      priority:
-        type: integer
-      proper:
-        description: Hardcoded       bool     `json:"hardcoded,omitempty"`
-        type: boolean
-      quality:
-        type: string
-      qualityid:
-        type: integer
-      qualityset:
-        description: ThreeD          bool     `json:"3d,omitempty"`
-        type: string
-      repack:
-        type: boolean
-      resolution:
-        type: string
-      resolutionid:
-        type: integer
-      runtime:
-        type: integer
-      season:
-        type: integer
-      seasonstr:
-        type: string
-      size:
-        type: string
-      title:
-        type: string
-      tvdb:
-        type: string
-      width:
-        type: integer
-      year:
-        type: integer
     type: object
   tasks.Job:
     properties:
@@ -705,7 +698,7 @@ definitions:
         type: string
       queue:
         type: string
-      schedulerId:
+      schedulerID:
         type: string
       started:
         type: string
@@ -828,8 +821,10 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
+            items:
+              additionalProperties: true
+              type: object
+            type: array
         "401":
           description: Unauthorized
           schema:
@@ -844,8 +839,10 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
+            items:
+              additionalProperties: true
+              type: object
+            type: array
         "401":
           description: Unauthorized
           schema:
@@ -866,8 +863,10 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
+            items:
+              additionalProperties: true
+              type: object
+            type: array
         "401":
           description: Unauthorized
           schema:
@@ -903,8 +902,10 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
+            items:
+              additionalProperties: true
+              type: object
+            type: array
         "401":
           description: Unauthorized
           schema:
@@ -953,8 +954,10 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
+            items:
+              additionalProperties: true
+              type: object
+            type: array
         "400":
           description: Bad Request
           schema:
@@ -1073,7 +1076,7 @@ paths:
       description: Shows some stats
       responses:
         "200":
-          description: ""
+          description: OK
         "401":
           description: Unauthorized
           schema:
@@ -1116,9 +1119,7 @@ paths:
         "200":
           description: OK
           schema:
-            items:
-              $ref: '#/definitions/database.DbmovieJson'
-            type: array
+            $ref: '#/definitions/database.DbmovieJSON'
         "401":
           description: Unauthorized
           schema:
@@ -1134,7 +1135,7 @@ paths:
         name: movie
         required: true
         schema:
-          $ref: '#/definitions/database.DbmovieJson'
+          $ref: '#/definitions/database.DbmovieJSON'
       responses:
         "200":
           description: OK
@@ -1185,27 +1186,6 @@ paths:
           schema:
             type: string
       summary: Refresh Movies (Incremental)
-      tags:
-      - movie
-  /api/movies/all/refresh/{id}:
-    get:
-      description: Refreshes specific Movie Metadata
-      parameters:
-      - description: Movie ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      responses:
-        "200":
-          description: OK
-          schema:
-            type: string
-        "401":
-          description: Unauthorized
-          schema:
-            type: string
-      summary: Refresh a Movie
       tags:
       - movie
   /api/movies/all/refreshall:
@@ -1293,7 +1273,7 @@ paths:
         name: movie
         required: true
         schema:
-          $ref: '#/definitions/database.MovieJson'
+          $ref: '#/definitions/database.MovieJSON'
       responses:
         "200":
           description: OK
@@ -1356,14 +1336,33 @@ paths:
         "200":
           description: OK
           schema:
-            items:
-              $ref: '#/definitions/database.ResultMoviesJson'
-            type: array
+            $ref: '#/definitions/database.ResultMoviesJSON'
         "401":
           description: Unauthorized
           schema:
             type: string
       summary: List Movies (List)
+      tags:
+      - movie
+  /api/movies/refresh/{id}:
+    get:
+      description: Refreshes specific Movie Metadata
+      parameters:
+      - description: Movie ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Refresh a Movie
       tags:
       - movie
   /api/movies/rss/search/list/{group}:
@@ -1396,7 +1395,7 @@ paths:
         name: nzb
         required: true
         schema:
-          $ref: '#/definitions/parser.NzbwithprioJson'
+          $ref: '#/definitions/apiexternal.NzbwithprioJSON'
       - description: Movie ID
         in: path
         name: id
@@ -1486,15 +1485,6 @@ paths:
         name: id
         required: true
         type: integer
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      - description: apikey
-        in: query
-        name: searchByTitle
-        type: string
       responses:
         "200":
           description: OK
@@ -1527,9 +1517,7 @@ paths:
         "200":
           description: OK
           schema:
-            items:
-              $ref: '#/definitions/database.MovieFileUnmatchedJson'
-            type: array
+            $ref: '#/definitions/database.MovieFileUnmatchedJSON'
         "401":
           description: Unauthorized
           schema:
@@ -1546,7 +1534,7 @@ paths:
         name: config
         required: true
         schema:
-          $ref: '#/definitions/api.apiNameInputJson'
+          $ref: '#/definitions/api.apiNameInputJSON'
       responses:
         "200":
           description: OK
@@ -1577,7 +1565,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/parser.ParseInfo'
+            $ref: '#/definitions/apiexternal.ParseInfo'
         "400":
           description: Bad Request
           schema:
@@ -1603,7 +1591,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/parser.ParseInfo'
+            $ref: '#/definitions/apiexternal.ParseInfo'
         "400":
           description: Bad Request
           schema:
@@ -1622,9 +1610,7 @@ paths:
         "200":
           description: OK
           schema:
-            items:
-              $ref: '#/definitions/database.Qualities'
-            type: array
+            $ref: '#/definitions/database.Qualities'
         "401":
           description: Unauthorized
           schema:
@@ -1645,9 +1631,7 @@ paths:
         "200":
           description: OK
           schema:
-            items:
-              $ref: '#/definitions/database.Qualities'
-            type: array
+            $ref: '#/definitions/database.Qualities'
         "400":
           description: Bad Request
           schema:
@@ -1672,9 +1656,7 @@ paths:
         "200":
           description: OK
           schema:
-            items:
-              $ref: '#/definitions/database.Qualities'
-            type: array
+            $ref: '#/definitions/database.Qualities'
         "401":
           description: Unauthorized
           schema:
@@ -1682,11 +1664,36 @@ paths:
       summary: Delete Quality
       tags:
       - quality
-  /api/quality/{name}/{config}:
+  /api/quality/{name}:
     get:
       description: List allowed qualities and their priorities
       parameters:
-      - description: 'Quality Name: ex. quality_SD'
+      - description: 'Quality Name: ex. SD'
+        in: path
+        name: name
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apiexternal.ParseInfo'
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      summary: List Quality Priorities
+      tags:
+      - quality
+  /api/quality/all:
+    get:
+      description: List allowed qualities and their priorities
+      parameters:
+      - description: 'Quality Name: ex. SD'
         in: path
         name: name
         required: true
@@ -1700,9 +1707,37 @@ paths:
         "200":
           description: OK
           schema:
-            items:
-              $ref: '#/definitions/parser.ParseInfo'
-            type: array
+            $ref: '#/definitions/apiexternal.ParseInfo'
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      summary: List Quality Priorities
+      tags:
+      - quality
+  /api/quality/complete:
+    get:
+      description: List all qualities and their priorities
+      parameters:
+      - description: 'Quality Name: ex. SD'
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: 'Config Name: ex. movie_EN or serie_EN'
+        in: path
+        name: config
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apiexternal.ParseInfo'
         "401":
           description: Unauthorized
           schema:
@@ -1751,9 +1786,7 @@ paths:
         "200":
           description: OK
           schema:
-            items:
-              $ref: '#/definitions/database.JobHistoryJson'
-            type: array
+            $ref: '#/definitions/database.JobHistoryJSON'
         "401":
           description: Unauthorized
           schema:
@@ -1826,9 +1859,7 @@ paths:
         "200":
           description: OK
           schema:
-            items:
-              $ref: '#/definitions/database.Dbserie'
-            type: array
+            $ref: '#/definitions/database.Dbserie'
         "401":
           description: Unauthorized
           schema:
@@ -1882,41 +1913,6 @@ paths:
       summary: Delete Series
       tags:
       - series
-  /api/series/{name}:
-    get:
-      description: List Series
-      parameters:
-      - description: List Name
-        in: path
-        name: name
-        required: true
-        type: string
-      - description: Limit
-        in: query
-        name: limit
-        type: integer
-      - description: Page
-        in: query
-        name: page
-        type: integer
-      - description: Order By
-        in: query
-        name: order
-        type: string
-      responses:
-        "200":
-          description: OK
-          schema:
-            items:
-              $ref: '#/definitions/database.ResultSeries'
-            type: array
-        "401":
-          description: Unauthorized
-          schema:
-            type: string
-      summary: List Series (List)
-      tags:
-      - series
   /api/series/all/refresh:
     get:
       description: Refreshes Series Metadata
@@ -1930,27 +1926,6 @@ paths:
           schema:
             type: string
       summary: Refresh Series Incremental
-      tags:
-      - series
-  /api/series/all/refresh/{id}:
-    get:
-      description: Refreshes Series Metadata
-      parameters:
-      - description: Serie ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      responses:
-        "200":
-          description: OK
-          schema:
-            type: string
-        "401":
-          description: Unauthorized
-          schema:
-            type: string
-      summary: Refresh Single Series
       tags:
       - series
   /api/series/all/refreshall:
@@ -1988,9 +1963,7 @@ paths:
         "200":
           description: OK
           schema:
-            items:
-              $ref: '#/definitions/database.DbserieEpisodeJson'
-            type: array
+            $ref: '#/definitions/database.DbserieEpisodeJSON'
         "401":
           description: Unauthorized
           schema:
@@ -2006,12 +1979,7 @@ paths:
         name: episode
         required: true
         schema:
-          $ref: '#/definitions/database.DbserieEpisodeJson'
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
+          $ref: '#/definitions/database.DbserieEpisodeJSON'
       responses:
         "200":
           description: OK
@@ -2073,9 +2041,7 @@ paths:
         "200":
           description: OK
           schema:
-            items:
-              $ref: '#/definitions/database.DbserieEpisodeJson'
-            type: array
+            $ref: '#/definitions/database.DbserieEpisodeJSON'
         "401":
           description: Unauthorized
           schema:
@@ -2092,12 +2058,7 @@ paths:
         name: episode
         required: true
         schema:
-          $ref: '#/definitions/database.SerieEpisodeJson'
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
+          $ref: '#/definitions/database.SerieEpisodeJSON'
       responses:
         "200":
           description: OK
@@ -2159,9 +2120,7 @@ paths:
         "200":
           description: OK
           schema:
-            items:
-              $ref: '#/definitions/database.ResultSerieEpisodesJson'
-            type: array
+            $ref: '#/definitions/database.ResultSerieEpisodesJSON'
         "401":
           description: Unauthorized
           schema:
@@ -2178,7 +2137,7 @@ paths:
         name: nzb
         required: true
         schema:
-          $ref: '#/definitions/parser.NzbwithprioJson'
+          $ref: '#/definitions/apiexternal.NzbwithprioJSON'
       - description: Episode ID
         in: path
         name: id
@@ -2226,12 +2185,7 @@ paths:
         name: id
         required: true
         type: integer
-      - description: apikey
-        in: query
-        name: apikey
-        required: true
-        type: string
-      - description: apikey
+      - description: searchByTitle
         in: query
         name: searchByTitle
         type: string
@@ -2317,7 +2271,7 @@ paths:
         name: series
         required: true
         schema:
-          $ref: '#/definitions/database.SerieJson'
+          $ref: '#/definitions/database.SerieJSON'
       responses:
         "200":
           description: OK
@@ -2353,6 +2307,60 @@ paths:
           schema:
             type: string
       summary: Delete Series (List)
+      tags:
+      - series
+  /api/series/list/{name}:
+    get:
+      description: List Series
+      parameters:
+      - description: List Name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Limit
+        in: query
+        name: limit
+        type: integer
+      - description: Page
+        in: query
+        name: page
+        type: integer
+      - description: Order By
+        in: query
+        name: order
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/database.ResultSeries'
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: List Series (List)
+      tags:
+      - series
+  /api/series/refresh/{id}:
+    get:
+      description: Refreshes Series Metadata
+      parameters:
+      - description: Serie ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Refresh Single Series
       tags:
       - series
   /api/series/rss/search/list/{group}:
@@ -2532,9 +2540,7 @@ paths:
         "200":
           description: OK
           schema:
-            items:
-              $ref: '#/definitions/database.SerieFileUnmatchedJson'
-            type: array
+            $ref: '#/definitions/database.SerieFileUnmatchedJSON'
         "401":
           description: Unauthorized
           schema:
@@ -2542,6 +2548,21 @@ paths:
       summary: List Series Unmatched
       tags:
       - series
+  /api/slug:
+    get:
+      description: Regenerates Slugs
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+      summary: Refresh Slugs
+      tags:
+      - general
   /api/structure:
     post:
       description: Structure a single folder
@@ -2551,7 +2572,7 @@ paths:
         name: config
         required: true
         schema:
-          $ref: '#/definitions/api.apiStructureJson'
+          $ref: '#/definitions/api.apiStructureJSON'
       responses:
         "200":
           description: OK
@@ -2630,8 +2651,6 @@ paths:
       summary: Trakt Get List (Auth Test)
       tags:
       - general
-produces:
-- application/json
 schemes:
 - http
 - https
