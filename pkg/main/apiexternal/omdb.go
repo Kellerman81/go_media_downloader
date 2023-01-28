@@ -1,7 +1,6 @@
 package apiexternal
 
 import (
-	"fmt"
 	"net/url"
 	"time"
 
@@ -78,7 +77,7 @@ func NewOmdbClient(apikey string, seconds int, calls int, disabletls bool, timeo
 }
 
 func (o *omdbClient) GetMovie(imdbid string, result *OmDBMovie) error {
-	url := fmt.Sprintf("http://www.omdbapi.com/?i=%s&apikey=%s", imdbid, o.OmdbAPIKey)
+	url := "http://www.omdbapi.com/?i=" + imdbid + "&apikey=" + o.OmdbAPIKey
 	_, err := o.Client.DoJSON(url, result, nil)
 
 	if err != nil {
@@ -96,7 +95,7 @@ func (o *omdbClient) SearchMovie(title string, year string, result *OmDBMovieSea
 	if year != "" && year != "0" {
 		yearstr = "&y=" + year
 	}
-	url := fmt.Sprintf("http://www.omdbapi.com/?s=%s%s&apikey=%s", url.QueryEscape(title), yearstr, o.OmdbAPIKey)
+	url := "http://www.omdbapi.com/?s=" + url.QueryEscape(title) + yearstr + "&apikey=" + o.OmdbAPIKey
 
 	_, err := o.Client.DoJSON(url, result, nil)
 

@@ -74,21 +74,6 @@ type Nzbwithprio struct {
 	AdditionalReason interface{}
 }
 
-type NzbwithprioJSON struct {
-	Prio             int
-	Indexer          string
-	ParseInfo        *ParseInfo
-	NZB              *NZB
-	NzbmovieID       uint
-	NzbepisodeID     uint
-	WantedTitle      string
-	WantedAlternates []string
-	QualityTemplate  string
-	MinimumPriority  int
-	Denied           bool
-	Reason           string
-}
-
 // NZB represents an NZB found on the index
 type NZB struct {
 	ID    string `json:"id,omitempty"`
@@ -112,7 +97,7 @@ type NZB struct {
 	//Group      string `json:"group,omitempty"`
 
 	// TV Specific stuff
-	TVDBID  string `json:"tvdbid,omitempty"`
+	TVDBID  int    `json:"tvdbid,omitempty"`
 	Season  string `json:"season,omitempty"`
 	Episode string `json:"episode,omitempty"`
 	//TVTitle string `json:"tvtitle,omitempty"`

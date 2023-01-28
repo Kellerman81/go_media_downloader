@@ -8,7 +8,8 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
-	"strconv"
+
+	"github.com/Kellerman81/go_media_downloader/logger"
 )
 
 //Source: https://github.com/dashotv/flame
@@ -210,7 +211,7 @@ type RPCError struct {
 
 // Error function is provided to be used as error object.
 func (e *RPCError) Error() string {
-	return strconv.Itoa(e.Code) + ":" + e.Message
+	return logger.IntToString(e.Code) + ":" + e.Message
 }
 
 // HTTPError represents a error that occurred on HTTP level.

@@ -441,6 +441,15 @@ const configfile = "./config/config.toml"
 
 var Cfg MainConfigMap
 
+func (s *QualityIndexerConfig) Close() {
+	if logger.DisableVariableCleanup {
+		return
+	}
+	if s == nil {
+		return
+	}
+	s = nil
+}
 func (s *QualityReorderConfigGroup) Close() {
 	if logger.DisableVariableCleanup {
 		return

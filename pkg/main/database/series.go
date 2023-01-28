@@ -237,9 +237,9 @@ func (serie *Dbserie) getMetadataTmdb(overwrite bool) {
 	if err != nil {
 		return
 	}
+	defer moviedb.Close()
 	if len(moviedb.TvResults) == 0 {
 		logger.Log.GlobalLogger.Warn("Serie tmdb data not found for", zap.Int("tvdb", serie.ThetvdbID))
-		moviedb.Close()
 		return
 	}
 	if (serie.Seriename == "" || overwrite) && moviedb.TvResults[0].Name != "" {
@@ -256,7 +256,6 @@ func (serie *Dbserie) getMetadataTmdb(overwrite bool) {
 	// } else {
 	// 	logger.Log.GlobalLogger.Warn("Serie tmdb externals not found for: ", serie.ThetvdbID)
 	// }
-	moviedb.Close()
 }
 func (serie *Dbserie) getMetadataTrakt(overwrite bool) {
 	if serie.ImdbID == "" {
@@ -283,7 +282,7 @@ func (serie *Dbserie) getMetadataTrakt(overwrite bool) {
 		serie.Rating = strconv.FormatFloat(float64(traktdetails.Rating), 'f', 4, 64) //fmt.Sprintf("%f", traktdetails.Rating)
 	}
 	if (serie.Runtime == "" || overwrite) && traktdetails.Runtime != 0 {
-		serie.Runtime = strconv.Itoa(traktdetails.Runtime)
+		serie.Runtime = logger.IntToString(traktdetails.Runtime)
 	}
 	if (serie.Seriename == "" || overwrite) && traktdetails.Title != "" {
 		serie.Seriename = traktdetails.Title
@@ -354,7 +353,7 @@ func (serie *Dbserie) getMetadataTvdb(language string, overwrite bool) []string 
 		serie.Siterating = strconv.FormatFloat(float64(tvdbdetails.Data.SiteRating), 'f', 1, 32)
 	}
 	if (serie.SiteratingCount == "" || overwrite) && tvdbdetails.Data.SiteRatingCount != 0 {
-		serie.SiteratingCount = strconv.Itoa(tvdbdetails.Data.SiteRatingCount)
+		serie.SiteratingCount = logger.IntToString(tvdbdetails.Data.SiteRatingCount)
 	}
 	if (serie.Slug == "" || overwrite) && tvdbdetails.Data.Slug != "" {
 		serie.Slug = tvdbdetails.Data.Slug

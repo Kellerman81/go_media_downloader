@@ -30,9 +30,7 @@ const querycountfilesserieslocation = "select count() from serie_episode_files w
 var lastSeriesStructure string
 
 func updateRootpath(file string, objtype string, objid uint, cfgp *config.MediaTypeConfig) {
-	var rootpath string
-	var tempfoldername string
-	var firstfolder string
+	var rootpath, tempfoldername, firstfolder string
 	for idxdata := range cfgp.Data {
 		if !config.Check("path_" + cfgp.Data[idxdata].TemplatePath) {
 			continue
@@ -44,7 +42,7 @@ func updateRootpath(file string, objtype string, objid uint, cfgp *config.MediaT
 			tempfoldername = filepath.Dir(tempfoldername)
 			_, firstfolder = logger.Getrootpath(tempfoldername)
 			rootpath = filepath.Join(rootpath, firstfolder)
-			database.UpdateColumnStatic(&database.Querywithargs{QueryString: fmt.Sprintf("Update %s set rootpath = ? where id = ?", objtype), Args: []interface{}{rootpath, objid}})
+			database.UpdateColumnStatic(&database.Querywithargs{QueryString: "Update " + objtype + " set rootpath = ? where id = ?", Args: []interface{}{rootpath, objid}})
 			return
 		}
 	}
@@ -62,11 +60,22 @@ type importstruct struct {
 	addfound      bool
 }
 
-func jobImportSeriesParseV2(imp *importstruct) {
-	m, err := parser.NewFileParser(filepath.Base(imp.path), true, "series")
-	if err != nil {
+func (c *importstruct) close() {
+	if c == nil {
 		return
 	}
+	c = nil
+}
+
+func jobImportSeriesParseV2(imp *importstruct) {
+	defer imp.close()
+
+	var counter int
+	database.QueryColumn(&database.Querywithargs{QueryString: querycountfilesserieslocation, Args: []interface{}{imp.path}}, &counter)
+	if counter >= 1 {
+		return
+	}
+	m := parser.NewFileParser(filepath.Base(imp.path), true, "series")
 	defer m.Close()
 	//keep list empty for auto detect list since the default list is in the listconfig!
 	parser.GetDbIDs("series", m, imp.cfgp, "", true)
@@ -75,12 +84,6 @@ func jobImportSeriesParseV2(imp *importstruct) {
 	}
 
 	if imp.listname == "" {
-		return
-	}
-
-	var counter int
-	database.QueryColumn(&database.Querywithargs{QueryString: querycountfilesserieslocation, Args: []interface{}{imp.path}}, &counter)
-	if counter >= 1 {
 		return
 	}
 
@@ -109,7 +112,7 @@ func jobImportSeriesParseV2(imp *importstruct) {
 		//logger.Log.GlobalLogger.Debug("SerieEpisode matched - found", zap.String("file", file), zap.String("title", m.Title), zap.String("Resolution", m.Resolution), zap.String("Quality", m.Quality), zap.String("Codec", m.Codec), zap.String("Audio", m.Audio), zap.String("Identifier", m.Identifier), zap.Uint("dbserieepisodeid", m.DbserieEpisodeID), zap.Uint("serieepisodeid", m.SerieEpisodeID))
 	} else {
 		var dbserieepisodeid, serieepisodeid uint
-		cntseries := &database.Querywithargs{QueryString: queryidseriesbyseriesdbepisode}
+		cntseries := database.Querywithargs{QueryString: queryidseriesbyseriesdbepisode}
 		for idx := range episodeArray.Arr {
 			if episodeArray.Arr[idx] == "" {
 				continue
@@ -122,7 +125,7 @@ func jobImportSeriesParseV2(imp *importstruct) {
 			dbserieepisodeid, _ = importfeed.FindDbserieEpisodeByIdentifierOrSeasonEpisode(m.DbserieID, m.Identifier, m.SeasonStr, episodeArray.Arr[idx])
 			if dbserieepisodeid != 0 {
 				cntseries.Args = []interface{}{m.SerieID, dbserieepisodeid}
-				database.QueryColumn(cntseries, &serieepisodeid)
+				database.QueryColumn(&cntseries, &serieepisodeid)
 				if serieepisodeid != 0 {
 					checkfiles = append(checkfiles, database.DbstaticTwoUint{Num1: serieepisodeid, Num2: dbserieepisodeid})
 					//logger.Log.GlobalLogger.Debug("SerieEpisode matched - found", zap.String("file", file), zap.String("title", m.Title), zap.String("Resolution", m.Resolution), zap.String("Quality", m.Quality), zap.String("Codec", m.Codec), zap.String("Audio", m.Audio), zap.String("Identifier", m.Identifier), zap.Uint("dbserieepisodeid", dbserieepisodeid), zap.Uint("serieepisodeid", serieepisodeid))
@@ -147,7 +150,7 @@ func jobImportSeriesParseV2(imp *importstruct) {
 
 	var reached bool
 	parser.GetPriorityMap(m, imp.cfgp, imp.cfgp.ListsMap[imp.listname].TemplateQuality, true, false)
-	err = parser.ParseVideoFile(m, imp.path, imp.cfgp, imp.cfgp.ListsMap[imp.listname].TemplateQuality)
+	err := parser.ParseVideoFile(m, imp.path, imp.cfgp, imp.cfgp.ListsMap[imp.listname].TemplateQuality)
 	if err != nil {
 		logger.Log.GlobalLogger.Error("Parse failed", zap.String("file", imp.path), zap.Error(err))
 		return
@@ -258,6 +261,7 @@ func SeriesSingleJobs(job string, cfgpstr string, listname string, force bool) {
 
 	jobName := job
 	cfgp := config.Cfg.Media[cfgpstr]
+	defer cfgp.Close()
 	if cfgp.Name != "" {
 		jobName += "_" + cfgp.NamePrefix
 	}
@@ -267,7 +271,6 @@ func SeriesSingleJobs(job string, cfgpstr string, listname string, force bool) {
 
 	if config.Cfg.General.SchedulerDisabled && !force {
 		logger.Log.GlobalLogger.Info("Skipped Job", zap.String("Job", job), zap.String("config", cfgp.NamePrefix))
-		cfgp.Close()
 		return
 	}
 
@@ -284,30 +287,46 @@ func SeriesSingleJobs(job string, cfgpstr string, listname string, force bool) {
 		searchupgradeIncremental = 20
 	}
 
+	var searchserie, searchtitle, searchmissing bool
+	var searchinterval int
 	switch job {
 	case "datafull":
 		getNewFilesMap(&cfgp, "")
 	case "rssseasons":
 		searcher.SearchSeriesRSSSeasons(cfgpstr)
 	case "searchmissingfull":
-		searcher.SearchSerieMissing(&cfgp, 0, false)
+		searchserie = true
+		searchmissing = true
 	case "searchmissinginc":
-		searcher.SearchSerieMissing(&cfgp, searchmissingIncremental, false)
+		searchserie = true
+		searchmissing = true
+		searchinterval = searchmissingIncremental
 	case "searchupgradefull":
-		searcher.SearchSerieUpgrade(&cfgp, 0, false)
+		searchserie = true
 	case "searchupgradeinc":
-		searcher.SearchSerieUpgrade(&cfgp, searchupgradeIncremental, false)
+		searchserie = true
+		searchinterval = searchupgradeIncremental
 	case "searchmissingfulltitle":
-		searcher.SearchSerieMissing(&cfgp, 0, true)
+		searchserie = true
+		searchmissing = true
+		searchtitle = true
 	case "searchmissinginctitle":
-		searcher.SearchSerieMissing(&cfgp, searchmissingIncremental, true)
+		searchserie = true
+		searchmissing = true
+		searchtitle = true
+		searchinterval = searchmissingIncremental
 	case "searchupgradefulltitle":
-		searcher.SearchSerieUpgrade(&cfgp, 0, true)
+		searchserie = true
+		searchtitle = true
 	case "searchupgradeinctitle":
-		searcher.SearchSerieUpgrade(&cfgp, searchupgradeIncremental, true)
+		searchserie = true
+		searchtitle = true
+		searchinterval = searchupgradeIncremental
 	case "structure":
 		seriesStructureSingle(&cfgp)
-
+	}
+	if searchserie {
+		searcher.SearchSerie(&cfgp, searchmissing, searchinterval, searchtitle)
 	}
 
 	if job == "data" || job == "checkmissing" || job == "checkmissingflag" || job == "checkreachedflag" || job == "clearhistory" || job == "feeds" || job == "rss" {
@@ -317,7 +336,7 @@ func SeriesSingleJobs(job string, cfgpstr string, listname string, force bool) {
 		} else {
 			lists = cfgp.Lists
 		}
-		qualis := &logger.InStringArrayStruct{Arr: make([]string, len(lists))}
+		qualis := logger.InStringArrayStruct{Arr: make([]string, len(lists))}
 
 		for idxlist := range lists {
 			qualis.Arr[idxlist] = lists[idxlist].TemplateQuality
@@ -340,11 +359,10 @@ func SeriesSingleJobs(job string, cfgpstr string, listname string, force bool) {
 		}
 		lists = nil
 		if job == "rss" {
-			qualis = unique(qualis)
-			for idxuni := range qualis.Arr {
+			for _, qual := range unique(&qualis).Arr {
 				switch job {
 				case "rss":
-					searcher.SearchSerieRSS(&cfgp, qualis.Arr[idxuni])
+					searcher.SearchSerieRSS(&cfgp, qual)
 				}
 			}
 		}
@@ -355,7 +373,6 @@ func SeriesSingleJobs(job string, cfgpstr string, listname string, force bool) {
 		endjobhistory(dbid)
 	}
 	logger.Log.GlobalLogger.Info(jobended, zap.Stringp("Job", &job), zap.Stringp("config", &cfgp.NamePrefix))
-	cfgp.Close()
 }
 
 func importnewseriessingle(cfgp *config.MediaTypeConfig, listname string) {
@@ -364,6 +381,7 @@ func importnewseriessingle(cfgp *config.MediaTypeConfig, listname string) {
 	if err != nil {
 		return
 	}
+	defer feed.Close()
 	if len(feed.Series.Serie) >= 1 {
 		workergroup := logger.WorkerPools["Metadata"].Group()
 		for idxserie := range feed.Series.Serie {
@@ -375,7 +393,6 @@ func importnewseriessingle(cfgp *config.MediaTypeConfig, listname string) {
 		}
 		workergroup.Wait()
 	}
-	feed.Close()
 }
 
 func checkmissingepisodesflag(listname string) {
@@ -434,6 +451,7 @@ func checkmissingepisodessingle(listname string) {
 }
 
 func getTraktUserPublicShowList(cfgplist *config.MediaListsConfig) (*feedResults, error) {
+	defer cfgplist.Close()
 	if !cfgplist.Enabled {
 		return nil, errNoListEnabled
 	}
@@ -451,6 +469,7 @@ func getTraktUserPublicShowList(cfgplist *config.MediaListsConfig) (*feedResults
 		logger.Log.GlobalLogger.Error("Failed to read trakt list", zap.String("Listname", config.Cfg.Lists[cfgplist.TemplateList].TraktListName))
 		return nil, errNoListRead
 	}
+	defer data.Close()
 	var results feedResults
 	results.Series.Serie = []config.SerieConfig{}
 	for idx := range data.Entries {
@@ -458,7 +477,6 @@ func getTraktUserPublicShowList(cfgplist *config.MediaListsConfig) (*feedResults
 			Name: data.Entries[idx].Serie.Title, TvdbID: data.Entries[idx].Serie.Ids.Tvdb,
 		})
 	}
-	data.Close()
 	return &results, nil
 }
 

@@ -35,13 +35,8 @@ var errNotAdded = errors.New("not added")
 var lastMoviesStructure string
 
 func jobImportMovieParseV2(imp *importstruct) {
-	m, err := parser.NewFileParser(filepath.Base(imp.path), false, "movie")
-
-	if err != nil {
-		logger.Log.GlobalLogger.Error("Movie Parse failed", zap.Stringp("file", &imp.path))
-		movieaddunmatched(m, imp.path, imp.listname)
-		return
-	}
+	defer imp.close()
+	m := parser.NewFileParser(filepath.Base(imp.path), false, "movie")
 	defer m.Close()
 	m.Title = strings.TrimSpace(m.Title)
 
@@ -55,10 +50,11 @@ func jobImportMovieParseV2(imp *importstruct) {
 		return
 	}
 	if !config.Check("quality_" + imp.cfgp.ListsMap[imp.listname].TemplateQuality) {
-		logger.Log.GlobalLogger.Error(fmt.Sprintf("Quality for List: %s not found", imp.listname))
+		logger.Log.GlobalLogger.Error("Quality for List: " + imp.listname + " not found")
 		return
 	}
 	var counter int
+	var err error
 	if m.MovieID == 0 && imp.listname != "" && imp.addfound {
 		var movie, dbmovie uint
 		if m.Imdb != "" {
@@ -177,6 +173,7 @@ func updatemoviesmissing(missing int, dbmovieid uint) {
 }
 
 func getMissingIMDBMoviesV2(cfgplist *config.MediaListsConfig) (*feedResults, error) {
+	defer cfgplist.Close()
 	if config.Cfg.Lists[cfgplist.TemplateList].URL == "" {
 		logger.Log.GlobalLogger.Error("Failed to get url")
 		return nil, errNoListOther
@@ -213,7 +210,7 @@ func getMissingIMDBMoviesV2(cfgplist *config.MediaListsConfig) (*feedResults, er
 			logger.Log.GlobalLogger.Error("Failed to get row", zap.Error(err))
 			d.Close()
 			parserimdb = nil
-			// record = nil
+			record = nil
 			return nil, errors.New("list csv import error")
 		}
 		if record[1] == "" || record[1] == "Const" || record[1] == "tconst" {
@@ -232,6 +229,7 @@ func getMissingIMDBMoviesV2(cfgplist *config.MediaListsConfig) (*feedResults, er
 }
 
 func getTraktUserPublicMovieList(cfgplist *config.MediaListsConfig) (*feedResults, error) {
+	defer cfgplist.Close()
 
 	if !cfgplist.Enabled {
 		return nil, errNoListEnabled
@@ -271,6 +269,7 @@ func importnewmoviessingle(cfgp *config.MediaTypeConfig, listname string) {
 	if err != nil {
 		return
 	}
+	defer feed.Close()
 
 	lenfeed := len(feed.Movies)
 	if lenfeed == 0 {
@@ -297,7 +296,7 @@ func importnewmoviessingle(cfgp *config.MediaTypeConfig, listname string) {
 		imdbArgs = nil
 	}
 	imdbids := logger.InStringArrayStruct{Arr: make([]string, 0, lenfeed)}
-
+	defer imdbids.Close()
 	var intid int
 	lenignore := len(cfgp.ListsMap[listname].IgnoreMapLists)
 	for idxmovie := range feed.Movies {
@@ -354,8 +353,6 @@ func importnewmoviessingle(cfgp *config.MediaTypeConfig, listname string) {
 	importmoviesbyimdbids(&imdbids, cfgp, listname)
 	dbmovies = nil
 	movies = nil
-	imdbids.Close()
-	feed.Close()
 }
 func importmoviesbyimdbids(imdbids *logger.InStringArrayStruct, cfgp *config.MediaTypeConfig, listname string) {
 	workergroup := logger.WorkerPools["Metadata"].Group()
@@ -493,6 +490,7 @@ func MoviesSingleJobs(job string, cfgpstr string, listname string, force bool) {
 	jobName := job
 
 	cfgp := config.Cfg.Media[cfgpstr]
+	defer cfgp.Close()
 	if cfgp.Name != "" {
 		jobName += "_" + cfgp.NamePrefix
 	}
@@ -502,7 +500,6 @@ func MoviesSingleJobs(job string, cfgpstr string, listname string, force bool) {
 
 	if config.Cfg.General.SchedulerDisabled && !force {
 		logger.Log.GlobalLogger.Info("Skipped Job", zap.String("Job", job), zap.String("config", cfgp.NamePrefix))
-		cfgp.Close()
 		return
 	}
 
@@ -518,27 +515,44 @@ func MoviesSingleJobs(job string, cfgpstr string, listname string, force bool) {
 		searchupgradeIncremental = 20
 	}
 
+	var searchmovie, searchtitle, searchmissing bool
+	var searchinterval int
 	switch job {
 	case "datafull":
 		getNewFilesMap(&cfgp, "")
 	case "searchmissingfull":
-		searcher.SearchMovieMissing(&cfgp, 0, false)
+		searchmovie = true
+		searchmissing = true
 	case "searchmissinginc":
-		searcher.SearchMovieMissing(&cfgp, searchmissingIncremental, false)
+		searchmovie = true
+		searchmissing = true
+		searchinterval = searchmissingIncremental
 	case "searchupgradefull":
-		searcher.SearchMovieUpgrade(&cfgp, 0, false)
+		searchmovie = true
 	case "searchupgradeinc":
-		searcher.SearchMovieUpgrade(&cfgp, searchupgradeIncremental, false)
+		searchmovie = true
+		searchinterval = searchupgradeIncremental
 	case "searchmissingfulltitle":
-		searcher.SearchMovieMissing(&cfgp, 0, true)
+		searchmovie = true
+		searchmissing = true
+		searchtitle = true
 	case "searchmissinginctitle":
-		searcher.SearchMovieMissing(&cfgp, searchmissingIncremental, true)
+		searchmovie = true
+		searchmissing = true
+		searchtitle = true
+		searchinterval = searchmissingIncremental
 	case "searchupgradefulltitle":
-		searcher.SearchMovieUpgrade(&cfgp, 0, true)
+		searchmovie = true
+		searchtitle = true
 	case "searchupgradeinctitle":
-		searcher.SearchMovieUpgrade(&cfgp, searchupgradeIncremental, true)
+		searchmovie = true
+		searchtitle = true
+		searchinterval = searchupgradeIncremental
 	case "structure":
 		moviesStructureSingle(&cfgp)
+	}
+	if searchmovie {
+		searcher.SearchMovie(&cfgp, searchmissing, searchinterval, searchtitle)
 	}
 
 	if job == "data" || job == "checkmissing" || job == "checkmissingflag" || job == "checkreachedflag" || job == "clearhistory" || job == "feeds" || job == "rss" {
@@ -548,7 +562,7 @@ func MoviesSingleJobs(job string, cfgpstr string, listname string, force bool) {
 		} else {
 			lists = cfgp.Lists
 		}
-		qualis := &logger.InStringArrayStruct{Arr: make([]string, len(lists))}
+		qualis := logger.InStringArrayStruct{Arr: make([]string, len(lists))}
 		for idxlist := range lists {
 			qualis.Arr[idxlist] = lists[idxlist].TemplateQuality
 
@@ -571,11 +585,10 @@ func MoviesSingleJobs(job string, cfgpstr string, listname string, force bool) {
 		}
 		lists = nil
 		if job == "rss" {
-			qualis = unique(qualis)
-			for idxuni := range qualis.Arr {
+			for _, qual := range unique(&qualis).Arr {
 				switch job {
 				case "rss":
-					searcher.SearchMovieRSS(&cfgp, qualis.Arr[idxuni])
+					searcher.SearchMovieRSS(&cfgp, qual)
 				}
 			}
 		}
@@ -586,7 +599,6 @@ func MoviesSingleJobs(job string, cfgpstr string, listname string, force bool) {
 		endjobhistory(dbid)
 	}
 	logger.Log.GlobalLogger.Info(jobended, zap.Stringp("Job", &jobName))
-	cfgp.Close()
 }
 
 func unique(s *logger.InStringArrayStruct) *logger.InStringArrayStruct {

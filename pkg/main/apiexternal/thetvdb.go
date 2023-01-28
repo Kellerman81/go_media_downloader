@@ -1,8 +1,6 @@
 package apiexternal
 
 import (
-	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/logger"
@@ -109,7 +107,7 @@ func NewTvdbClient(seconds int, calls int, disabletls bool, timeoutseconds int) 
 }
 
 func (t *tvdbClient) GetSeries(id int, language string) (*TheTVDBSeries, error) {
-	url := fmt.Sprintf("https://api.thetvdb.com/series/%d", id)
+	url := "https://api.thetvdb.com/series/" + logger.IntToString(id)
 	var result TheTVDBSeries
 	_, err := t.Client.DoJSON(url, &result, []addHeader{{key: "Accept-Language", val: language}})
 
@@ -123,7 +121,7 @@ func (t *tvdbClient) GetSeries(id int, language string) (*TheTVDBSeries, error) 
 	return &result, nil
 }
 func (t *tvdbClient) GetSeriesEpisodes(id int, language string) (*TheTVDBEpisodes, error) {
-	url := fmt.Sprintf("https://api.thetvdb.com/series/%d/episodes", id)
+	url := "https://api.thetvdb.com/series/" + logger.IntToString(id) + "/episodes"
 	var result TheTVDBEpisodes
 	_, err := t.Client.DoJSON(url, &result, []addHeader{{key: "Accept-Language", val: language}})
 
@@ -140,13 +138,12 @@ func (t *tvdbClient) GetSeriesEpisodes(id int, language string) (*TheTVDBEpisode
 		urlbase := url + "?page="
 		for k := 2; k <= result.Links.Last; k++ {
 			resultadd.Data = []TheTVDBEpisode{}
-			_, err = t.Client.DoJSON(urlbase+strconv.Itoa(k), &resultadd, []addHeader{{key: "Accept-Language", val: language}})
+			_, err = t.Client.DoJSON(urlbase+logger.IntToString(k), &resultadd, []addHeader{{key: "Accept-Language", val: language}})
 			if err != nil {
-				logger.Log.GlobalLogger.Error(errorCalling, zap.String("Url", urlbase+strconv.Itoa(k)), zap.Error(err))
+				logger.Log.GlobalLogger.Error(errorCalling, zap.String("Url", urlbase+logger.IntToString(k)), zap.Error(err))
 				break
 			} else if len(resultadd.Data) >= 1 {
-				result.Data = logger.GrowSliceBy(result.Data, len(resultadd.Data))
-				result.Data = append(result.Data, resultadd.Data...)
+				result.Data = append(logger.GrowSliceBy(result.Data, len(resultadd.Data)), resultadd.Data...)
 			}
 		}
 		resultadd.Close()

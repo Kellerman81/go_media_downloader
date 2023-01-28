@@ -3,8 +3,9 @@ package sabnzbd
 import (
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"time"
+
+	"github.com/Kellerman81/go_media_downloader/logger"
 )
 
 type BytesFromGB int
@@ -18,7 +19,7 @@ func (b *BytesFromGB) UnmarshalJSON(data []byte) error {
 		if err != nil {
 			return err
 		}
-		gb, err = strconv.ParseFloat(gbStr, 32)
+		gb, err = logger.ParseFloat(gbStr)
 		if err != nil {
 			return err
 		}
@@ -38,7 +39,7 @@ func (b *BytesFromMB) UnmarshalJSON(data []byte) error {
 		if err != nil {
 			return err
 		}
-		mb, err = strconv.ParseFloat(mbStr, 32)
+		mb, err = logger.ParseFloat(mbStr)
 		if err != nil {
 			return err
 		}
@@ -58,7 +59,7 @@ func (b *BytesFromKB) UnmarshalJSON(data []byte) error {
 		if err != nil {
 			return err
 		}
-		kb, err = strconv.ParseFloat(kbStr, 32)
+		kb, err = logger.ParseFloat(kbStr)
 		if err != nil {
 			return err
 		}
@@ -78,7 +79,7 @@ func (b *BytesFromB) UnmarshalJSON(data []byte) error {
 		if err != nil {
 			return err
 		}
-		bytes, err = strconv.ParseFloat(bytesStr, 32)
+		bytes, err = logger.ParseFloat(bytesStr)
 		if err != nil {
 			return err
 		}

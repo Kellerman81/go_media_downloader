@@ -300,9 +300,9 @@ func getFolderSize(rootpath string) int64 {
 }
 
 func MoveFile(file string, target string, newname string, filetypes *logger.InStringArrayStruct, filetypesNoRename *logger.InStringArrayStruct, usebuffercopy bool, chmod string) bool {
+	defer filetypes.Close()
+	defer filetypesNoRename.Close()
 	if !CheckFileExist(file) {
-		filetypes.Close()
-		filetypesNoRename.Close()
 		return false
 	}
 	var ok, oknorename bool
@@ -317,8 +317,6 @@ func MoveFile(file string, target string, newname string, filetypes *logger.InSt
 		oknorename = true
 	}
 	if !ok {
-		filetypes.Close()
-		filetypesNoRename.Close()
 		return false
 	}
 	if newname == "" || oknorename {
@@ -335,8 +333,6 @@ func MoveFile(file string, target string, newname string, filetypes *logger.InSt
 	}
 	if os.Rename(file, newpath) == nil {
 		logger.Log.GlobalLogger.Debug("File moved from ", zap.Stringp("file", &file), zap.Stringp("to", &newpath))
-		filetypes.Close()
-		filetypesNoRename.Close()
 		return true
 	}
 
@@ -348,24 +344,19 @@ func MoveFile(file string, target string, newname string, filetypes *logger.InSt
 	}
 	if err == nil {
 		logger.Log.GlobalLogger.Debug("File moved from ", zap.Stringp("file", &file), zap.Stringp("to", &newpath))
-		filetypes.Close()
-		filetypesNoRename.Close()
 		return true
 	}
 	logger.Log.GlobalLogger.Error("File could not be moved", zap.Stringp("file", &file), zap.Error(err))
-	filetypes.Close()
-	filetypesNoRename.Close()
 	return false
 }
 
 func Setchmod(file string, chmod fs.FileMode) {
 	f, err := os.Open(file)
 	if err != nil {
-		f.Close()
 		return
 	}
+	defer f.Close()
 	f.Chmod(chmod)
-	f.Close()
 }
 func RemoveFiles(val string, pathcfgstr string) {
 
@@ -549,13 +540,12 @@ func GetFileSizeDirEntry(info fs.DirEntry) int64 {
 // between the two files. If that fails, copy the file contents from src to dst.
 // Creates any missing directories. Supports '~' notation for $HOME directory of the current user.
 func copyFile(src, dst string, allowFileLink bool) error {
-	var srcAbs string
+	var srcAbs, dstAbs string
 	var err error
 	srcAbs, err = absolutePath(src)
 	if err != nil {
 		return err
 	}
-	var dstAbs string
 	dstAbs, err = absolutePath(dst)
 	if err != nil {
 		return err

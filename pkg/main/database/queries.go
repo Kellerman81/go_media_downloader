@@ -2,8 +2,6 @@ package database
 
 import (
 	"database/sql"
-	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
@@ -165,6 +163,7 @@ func (q *Querywithargs) Close() {
 }
 
 func queryObject[T any](s *searchdb, complex bool, obj *T) error {
+	defer s.Close()
 	if s.qu.QueryString == "" {
 		if s.qu.Query.Select != "" {
 			s.columns = s.qu.Query.Select
@@ -173,6 +172,7 @@ func queryObject[T any](s *searchdb, complex bool, obj *T) error {
 	}
 	var err error
 	readWriteMu.RLock()
+	defer readWriteMu.RUnlock()
 	if complex {
 		err = getstatement(s.qu, s.imdb).QueryRowx(s.qu.Args...).StructScan(obj)
 	} else {
@@ -182,18 +182,15 @@ func queryObject[T any](s *searchdb, complex bool, obj *T) error {
 		if err != sql.ErrNoRows {
 			logger.Log.GlobalLogger.Error("Query2", zap.String("Query", s.qu.QueryString), zap.Error(err))
 		}
-		s.Close()
-		readWriteMu.RUnlock()
 		var noop T
 		*obj = noop
 		return err
 	}
-	s.Close()
-	readWriteMu.RUnlock()
 	return nil
 }
 
 func queryComplexScan[T any](s *searchdb, targetobj *[]T) error {
+	defer s.Close()
 	if s.qu.QueryString == "" {
 		if s.qu.Query.Select != "" {
 			s.columns = s.qu.Query.Select
@@ -201,6 +198,7 @@ func queryComplexScan[T any](s *searchdb, targetobj *[]T) error {
 		s.buildquery(false)
 	}
 	readWriteMu.RLock()
+	defer readWriteMu.RUnlock()
 
 	var rows *sqlx.Rows
 	var err error
@@ -218,8 +216,6 @@ func queryComplexScan[T any](s *searchdb, targetobj *[]T) error {
 		if err != sql.ErrNoRows {
 			logger.Log.GlobalLogger.Error("Query", zap.String("Query", s.qu.QueryString), zap.Error(err))
 		}
-		readWriteMu.RUnlock()
-		s.Close()
 		return err
 	}
 	defer rows.Close()
@@ -235,9 +231,6 @@ func queryComplexScan[T any](s *searchdb, targetobj *[]T) error {
 
 		if err != nil {
 			logger.Log.GlobalLogger.Error("Query2", zap.String("Query", s.qu.QueryString), zap.Error(err))
-			readWriteMu.RUnlock()
-			s.Close()
-			rows.Close()
 			return err
 		}
 		*targetobj = append(*targetobj, u)
@@ -245,19 +238,14 @@ func queryComplexScan[T any](s *searchdb, targetobj *[]T) error {
 	err = rows.Err()
 	if err != nil {
 		logger.Log.GlobalLogger.Error("Query3", zap.String("Query", s.qu.QueryString), zap.Error(err))
-		readWriteMu.RUnlock()
-		s.Close()
-		rows.Close()
 		return err
 	}
 
-	readWriteMu.RUnlock()
-	s.Close()
-	rows.Close()
 	return nil
 }
 
 func querySimpleScan[T any](s *searchdb, targetobj *[]T) error {
+	defer s.Close()
 	if s.qu.QueryString == "" {
 		if s.qu.Query.Select != "" {
 			s.columns = s.qu.Query.Select
@@ -288,6 +276,7 @@ func querySimpleScan[T any](s *searchdb, targetobj *[]T) error {
 		typevar = 10
 	}
 	readWriteMu.RLock()
+	defer readWriteMu.RUnlock()
 
 	var rows *sql.Rows
 	var err error
@@ -305,8 +294,6 @@ func querySimpleScan[T any](s *searchdb, targetobj *[]T) error {
 		if err != sql.ErrNoRows {
 			logger.Log.GlobalLogger.Error("Query", zap.String("Query", s.qu.QueryString), zap.Error(err))
 		}
-		readWriteMu.RUnlock()
-		s.Close()
 		return err
 	}
 	defer rows.Close()
@@ -363,9 +350,6 @@ func querySimpleScan[T any](s *searchdb, targetobj *[]T) error {
 
 		if err != nil {
 			logger.Log.GlobalLogger.Error("Query2", zap.String("Query", s.qu.QueryString), zap.Error(err))
-			readWriteMu.RUnlock()
-			s.Close()
-			rows.Close()
 			return err
 		}
 		*targetobj = append(*targetobj, u)
@@ -373,15 +357,9 @@ func querySimpleScan[T any](s *searchdb, targetobj *[]T) error {
 	err = rows.Err()
 	if err != nil {
 		logger.Log.GlobalLogger.Error("Query3", zap.String("Query", s.qu.QueryString), zap.Error(err))
-		readWriteMu.RUnlock()
-		s.Close()
-		rows.Close()
 		return err
 	}
 
-	readWriteMu.RUnlock()
-	s.Close()
-	rows.Close()
 	return nil
 }
 
@@ -769,7 +747,8 @@ func (s *searchdb) buildquery(count bool) {
 			bld.WriteString("count()")
 		} else {
 			if s.qu.Query.InnerJoin != "" {
-				bld.WriteString(s.table + ".*") //fmt.Sprintf("%s.*", s.table))
+				bld.WriteString(s.table)
+				bld.WriteString(".*")
 			} else {
 				bld.WriteString(s.columns)
 			}
@@ -779,24 +758,23 @@ func (s *searchdb) buildquery(count bool) {
 	bld.WriteString(s.table)
 	if s.qu.Query.InnerJoin != "" {
 		bld.Write(byteinner)
-		bld.WriteString(s.qu.Query.InnerJoin) //fmt.Sprintf("%s%s", " inner join ", s.qu.Query.InnerJoin))
+		bld.WriteString(s.qu.Query.InnerJoin)
 	}
 	if s.qu.Query.Where != "" {
 		bld.Write(bytewhere)
-		bld.WriteString(s.qu.Query.Where) //fmt.Sprintf("%s%s", strWhere, s.qu.Query.Where))
+		bld.WriteString(s.qu.Query.Where)
 	}
 	if s.qu.Query.OrderBy != "" {
 		bld.Write(byteorder)
-		bld.WriteString(s.qu.Query.OrderBy) //fmt.Sprintf("%s%s", " order by ", s.qu.Query.OrderBy))
+		bld.WriteString(s.qu.Query.OrderBy)
 	}
 	if s.qu.Query.Limit != 0 {
 		if s.qu.Query.Offset != 0 {
 			bld.Write(bytelimit)
-			bld.WriteString(strconv.Itoa(s.qu.Query.Offset) + ",")
-			bld.WriteString(strconv.Itoa(s.qu.Query.Limit))
+			bld.WriteString(logger.IntToString(s.qu.Query.Offset) + "," + logger.IntToString(s.qu.Query.Limit))
 		} else {
 			bld.Write(bytelimit)
-			bld.WriteString(strconv.Itoa(s.qu.Query.Limit))
+			bld.WriteString(logger.IntToString(s.qu.Query.Limit))
 		}
 	}
 	s.qu.QueryString = bld.String()
@@ -985,7 +963,7 @@ func insertarrayprepare(table string, columns *logger.InStringArrayStruct) strin
 		cols += columns.Arr[idx]
 		vals += "?"
 	}
-	return fmt.Sprintf("insert into %s (%s) values (%s)", table, cols, vals)
+	return "insert into " + table + " (" + cols + ") values (" + vals + ")"
 }
 func InsertStatic(qu *Querywithargs) (sql.Result, error) {
 	result, err := dbexec(qu)
@@ -1036,9 +1014,9 @@ func updatearrayprepare(table string, columns *logger.InStringArrayStruct, qu *Q
 		cols += columns.Arr[idx] + " = ?"
 	}
 	if qu.Query.Where != "" {
-		return fmt.Sprintf("update %s set %s%s%s", table, cols, strWhere, qu.Query.Where)
+		return "update " + table + " set " + cols + strWhere + qu.Query.Where
 	}
-	return fmt.Sprintf("update %s set %s", table, cols)
+	return "update " + table + " set " + cols
 }
 func UpdateArray(table string, columns *logger.InStringArrayStruct, values []interface{}, qu *Querywithargs) (sql.Result, error) {
 
@@ -1061,9 +1039,9 @@ func UpdateNamed(query string, obj interface{}) (sql.Result, error) {
 
 func updatecolprepare(table string, column string, qu *Query) string {
 	if qu.Where != "" {
-		return fmt.Sprintf("update %s set %s = ?%s%s", table, column, strWhere, qu.Where)
+		return "update " + table + " set " + column + " = ?" + strWhere + qu.Where
 	}
-	return fmt.Sprintf("update %s set %s = ?", table, column)
+	return "update " + table + " set " + column + " = ?"
 }
 func UpdateColumn(table string, column string, value interface{}, qu *Querywithargs) (sql.Result, error) {
 
@@ -1071,7 +1049,6 @@ func UpdateColumn(table string, column string, value interface{}, qu *Querywitha
 	if err != nil {
 		logger.Log.GlobalLogger.Error("Update", zap.String("Table", table), zap.String("Column", column), zap.Any("Value", value), zap.String("where", qu.Query.Where), zap.Any("Values", qu.Args), zap.Error(err))
 	}
-	qu.Close()
 	return result, err
 }
 func UpdateColumnStatic(qu *Querywithargs) error {
@@ -1079,15 +1056,14 @@ func UpdateColumnStatic(qu *Querywithargs) error {
 	if err != nil {
 		logger.Log.GlobalLogger.Error("Update", zap.String("Query", qu.QueryString), zap.Any("Values", qu.Args), zap.Error(err))
 	}
-	qu.Close()
 	return err
 }
 
 func DeleteRow(table string, qu *Querywithargs) (sql.Result, error) {
 	if qu.Query.Where != "" {
-		qu.QueryString = fmt.Sprintf("delete from %s%s%s", table, strWhere, qu.Query.Where)
+		qu.QueryString = "delete from " + table + strWhere + qu.Query.Where
 	} else {
-		qu.QueryString = fmt.Sprintf("delete from %s", table)
+		qu.QueryString = "delete from " + table
 	}
 	if DBLogLevel == "debug" {
 		logger.Log.GlobalLogger.Debug("query count", zap.String("Query", qu.QueryString), zap.Any("args", qu.Args))
@@ -1098,7 +1074,6 @@ func DeleteRow(table string, qu *Querywithargs) (sql.Result, error) {
 	if err != nil {
 		logger.Log.GlobalLogger.Error("Delete", zap.String("Table", table), zap.String("Where", qu.Query.Where), zap.Any("Values", qu.Args), zap.Error(err))
 	}
-	qu.Close()
 	return result, err
 }
 func DeleteRowStatic(qu *Querywithargs) error {
@@ -1106,7 +1081,6 @@ func DeleteRowStatic(qu *Querywithargs) error {
 	if err != nil {
 		logger.Log.GlobalLogger.Error("Insert", zap.String("Query", qu.QueryString), zap.Any("Values", qu.Args), zap.Error(err))
 	}
-	qu.Close()
 	return err
 }
 
@@ -1130,12 +1104,13 @@ func UpsertNamed(table string, columns *logger.InStringArrayStruct, obj interfac
 			bld2.WriteString(":" + columns.Arr[idx])
 		}
 		qu.QueryString = bld.String() + bld2.String() + ")"
+		bld2.Reset()
+		bld.Reset()
 		qu.Args = []interface{}{obj}
 		result, err := execsql(false, true, qu)
 		if err != nil {
 			logger.Log.GlobalLogger.Error("Upsert-insert", zap.String("Table", table), zap.Any("Columns", columns), zap.String("where", qu.Query.Where), zap.Any("Values", qu.Args), zap.Error(err))
 		}
-		qu.Close()
 		columns.Close()
 		return result, err
 	}
@@ -1152,7 +1127,6 @@ func UpsertNamed(table string, columns *logger.InStringArrayStruct, obj interfac
 	if err != nil {
 		logger.Log.GlobalLogger.Error("Upsert-update", zap.String("table", table), zap.Any("Columns", columns), zap.String("where", qu.Query.Where), zap.Any("Values", qu.Args), zap.Error(err))
 	}
-	qu.Close()
 	columns.Close()
 	return result, err
 }

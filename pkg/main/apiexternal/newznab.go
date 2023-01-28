@@ -2,7 +2,6 @@ package apiexternal
 
 import (
 	"errors"
-	"fmt"
 	"html"
 	"math/rand"
 	"net/url"
@@ -168,7 +167,7 @@ const (
 	rssPath = "/rss"
 )
 
-var newznabClients []Clients
+var newznabClients []*Clients
 var Errnoresults = errors.New("no results")
 
 func NewznabCheckLimiter(url string) (bool, time.Duration) {
@@ -223,68 +222,101 @@ func (client *Client) buildURL(builder *urlbuilder, maxage int) string {
 		if builder.rss {
 			path = rssPath
 		}
-		bld.WriteString(fmt.Sprintf("%s%s?%s=%s", client.APIBaseURL, path, builder.customapi, client.Apikey))
+		bld.WriteString(client.APIBaseURL)
+		bld.WriteString(path)
+		bld.WriteString("?")
+		bld.WriteString(builder.customapi)
+		bld.WriteString("=")
+		bld.WriteString(client.Apikey)
 	} else {
 		if builder.rss {
-			bld.WriteString(fmt.Sprintf("%s%s?r=%s&i=%s", client.APIBaseURL, rssPath, client.Apikey, client.APIUserID))
+			bld.WriteString(client.APIBaseURL)
+			bld.WriteString(rssPath)
+			bld.WriteString("?r=")
+			bld.WriteString(client.Apikey)
+			bld.WriteString("&i=")
+			bld.WriteString(client.APIUserID)
 		} else {
-			bld.WriteString(fmt.Sprintf("%s%s?apikey=%s", client.APIBaseURL, apiPath, client.Apikey))
+			bld.WriteString(client.APIBaseURL)
+			bld.WriteString(apiPath)
+			bld.WriteString("?apikey=")
+			bld.WriteString(client.Apikey)
 		}
 	}
 	if builder.useseason {
-		bld.WriteString(fmt.Sprintf("&season=%d", builder.season))
+		bld.WriteString("&season=")
+		bld.WriteString(logger.IntToString(builder.season))
 	}
 	if builder.useepisode {
-		bld.WriteString(fmt.Sprintf("&ep=%d", builder.episode))
+		bld.WriteString("&ep=")
+		bld.WriteString(logger.IntToString(builder.episode))
 	}
 	if builder.limit != "0" && builder.limit != "" {
-		bld.WriteString(fmt.Sprintf("&limit=%s", builder.limit))
+		bld.WriteString("&limit=")
+		bld.WriteString(builder.limit)
 	}
 	if builder.imdbid != "" {
-		bld.WriteString(fmt.Sprintf("&imdbid=%s", builder.imdbid))
+		bld.WriteString("&imdbid=")
+		bld.WriteString(builder.imdbid)
 	}
 	if builder.tvdbid != 0 {
-		bld.WriteString(fmt.Sprintf("&tvdbid=%d", builder.tvdbid))
+		bld.WriteString("&tvdbid=")
+		bld.WriteString(logger.IntToString(builder.tvdbid))
 	}
 	if builder.categories != "" {
 		if builder.rss {
 			if builder.customrsscategory != "" {
-				bld.WriteString(fmt.Sprintf("&%s=%s", builder.customrsscategory, builder.categories))
+				bld.WriteString("&")
+				bld.WriteString(builder.customrsscategory)
+				bld.WriteString("=")
+				bld.WriteString(builder.categories)
 			} else {
-				bld.WriteString(fmt.Sprintf("&t=%s", builder.categories))
+				bld.WriteString("&t=")
+				bld.WriteString(builder.categories)
 			}
 		} else {
-			bld.WriteString(fmt.Sprintf("&cat=%s", builder.categories))
+			bld.WriteString("&cat=")
+			bld.WriteString(builder.categories)
 		}
 	}
 
 	if builder.offset != 0 {
-		bld.WriteString(fmt.Sprintf("&offset=%d", builder.offset))
+		bld.WriteString("&offset=")
+		bld.WriteString(logger.IntToString(builder.offset))
 	}
 
 	if builder.num != 0 {
-		bld.WriteString(fmt.Sprintf("&num=%d", builder.num))
+		bld.WriteString("&num=")
+		bld.WriteString(logger.IntToString(builder.num))
 	}
 
 	if builder.searchtype != "" {
-		bld.WriteString(fmt.Sprintf("&t=%s", builder.searchtype))
+		bld.WriteString("&t=")
+		bld.WriteString(builder.searchtype)
 	}
 
 	if builder.query != "" {
 		if builder.addquotesfortitlequery {
 			quotes := "%22"
-			bld.WriteString(fmt.Sprintf("&q=%s%s%s", quotes, url.QueryEscape(builder.query), quotes))
+			bld.WriteString("&q=")
+			bld.WriteString(quotes)
+			bld.WriteString(url.QueryEscape(builder.query))
+			bld.WriteString(quotes)
 		} else {
-			bld.WriteString(fmt.Sprintf("&q=%s", url.QueryEscape(builder.query)))
+			bld.WriteString("&q=")
+			bld.WriteString(url.QueryEscape(builder.query))
 		}
 	}
 	if builder.outputAsJSON {
 		bld.WriteString("&o=json")
 	}
 	if maxage != 0 {
-		bld.WriteString("&maxage=" + strconv.Itoa(maxage))
+		bld.WriteString("&maxage=")
+		bld.WriteString(logger.IntToString(maxage))
 	}
-	bld.WriteString(fmt.Sprintf("&dl=1%s", builder.additionalQueryParams))
+	bld.WriteString("&dl=1")
+	bld.WriteString(builder.additionalQueryParams)
+	defer bld.Reset()
 	return bld.String()
 }
 
@@ -293,8 +325,9 @@ func QueryNewznabMovieImdb(row *NzbIndexer, imdbid string, categories string) (*
 	if imdbid == "" {
 		return nil, false, errors.New("no imdbid")
 	}
-
-	return getnewznabclient(row).processurl(&urlbuilder{searchtype: "movie", imdbid: imdbid, outputAsJSON: row.OutputAsJSON, customurl: row.Customurl, customapi: row.Customapi, additionalQueryParams: row.AdditionalQueryParams, limit: "0", categories: categories}, "", row.MaxAge, row.OutputAsJSON)
+	entries := new(NZBArr)
+	broke, err := getnewznabclient(row).processurl(&urlbuilder{searchtype: "movie", imdbid: imdbid, outputAsJSON: row.OutputAsJSON, customurl: row.Customurl, customapi: row.Customapi, additionalQueryParams: row.AdditionalQueryParams, limit: "0", categories: categories}, "", row.MaxAge, row.OutputAsJSON, entries)
+	return entries, broke, err
 }
 
 func getnewznabclient(row *NzbIndexer) *Client {
@@ -303,7 +336,7 @@ func getnewznabclient(row *NzbIndexer) *Client {
 		return client
 	}
 	client = NewNewznab(row.URL, row.Apikey, row.UserID, row.SkipSslCheck, row.DisableCompression, true, limiterconfig{row.Limitercalls, row.Limiterseconds, row.LimitercallsDaily, row.TimeoutSeconds})
-	newznabClients = append(newznabClients, Clients{Name: row.URL, Client: client})
+	newznabClients = append(newznabClients, &Clients{Name: row.URL, Client: client})
 	return client
 }
 
@@ -316,13 +349,16 @@ func QueryNewznabTvTvdb(row *NzbIndexer, tvdbid int, categories string, season i
 	if !useepisode || !useseason {
 		limitstr = "100"
 	}
-
-	return getnewznabclient(row).processurl(&urlbuilder{searchtype: "tvsearch", tvdbid: tvdbid, useseason: useseason, season: season, useepisode: useepisode, episode: episode, outputAsJSON: row.OutputAsJSON, customurl: row.Customurl, customapi: row.Customapi, additionalQueryParams: row.AdditionalQueryParams, limit: limitstr, categories: categories}, "", row.MaxAge, row.OutputAsJSON)
+	entries := new(NZBArr)
+	broke, err := getnewznabclient(row).processurl(&urlbuilder{searchtype: "tvsearch", tvdbid: tvdbid, useseason: useseason, season: season, useepisode: useepisode, episode: episode, outputAsJSON: row.OutputAsJSON, customurl: row.Customurl, customapi: row.Customapi, additionalQueryParams: row.AdditionalQueryParams, limit: limitstr, categories: categories}, "", row.MaxAge, row.OutputAsJSON, entries)
+	return entries, broke, err
 }
 
 // QueryNewznabQuery searches Indexers for string
 func QueryNewznabQuery(row *NzbIndexer, query string, categories string, searchtype string) (*NZBArr, bool, error) {
-	return getnewznabclient(row).processurl(&urlbuilder{searchtype: searchtype, query: query, addquotesfortitlequery: row.Addquotesfortitlequery, outputAsJSON: row.OutputAsJSON, customurl: row.Customurl, customrsscategory: row.Customrsscategory, customapi: row.Customapi, additionalQueryParams: row.AdditionalQueryParams, limit: "0", categories: categories}, "", row.MaxAge, row.OutputAsJSON)
+	entries := new(NZBArr)
+	broke, err := getnewznabclient(row).processurl(&urlbuilder{searchtype: searchtype, query: query, addquotesfortitlequery: row.Addquotesfortitlequery, outputAsJSON: row.OutputAsJSON, customurl: row.Customurl, customrsscategory: row.Customrsscategory, customapi: row.Customapi, additionalQueryParams: row.AdditionalQueryParams, limit: "0", categories: categories}, "", row.MaxAge, row.OutputAsJSON, entries)
+	return entries, broke, err
 }
 
 func checkclient(find string) bool {
@@ -345,28 +381,27 @@ func getclient(find string) *Client {
 
 // QueryNewznabRSS returns x entries of given category
 func QueryNewznabRSS(row *NzbIndexer, maxitems int, categories string) (*NZBArr, bool, error) {
-	return getnewznabclient(row).processurl(&urlbuilder{rss: true, customurl: row.Customrssurl, customrsscategory: row.Customrsscategory, customapi: row.Customapi, additionalQueryParams: row.AdditionalQueryParams, limit: "0", num: maxitems, categories: categories}, "", 0, false)
+	entries := new(NZBArr)
+	broke, err := getnewznabclient(row).processurl(&urlbuilder{rss: true, customurl: row.Customrssurl, customrsscategory: row.Customrsscategory, customapi: row.Customapi, additionalQueryParams: row.AdditionalQueryParams, limit: "0", num: maxitems, categories: categories}, "", 0, false, entries)
+	return entries, broke, err
 }
 
 // QueryNewznabRSS returns entries of given category up to id
 func QueryNewznabRSSLast(row *NzbIndexer, maxitems int, categories string, maxrequests int) (*NZBArr, string, string, error) {
 
-	client := getnewznabclient(row)
 	count := 0
-	baseurl := urlbuilder{rss: true, customurl: row.Customrssurl, customrsscategory: row.Customrsscategory, customapi: row.Customapi, additionalQueryParams: row.AdditionalQueryParams, limit: "0", num: maxitems, categories: categories}
-
-	results, broke, erradd := client.processurl(&baseurl, row.LastRssID, 0, false)
+	results := new(NZBArr)
+	broke, erradd := getnewznabclient(row).processurl(&urlbuilder{rss: true, customurl: row.Customrssurl, customrsscategory: row.Customrsscategory, customapi: row.Customapi, additionalQueryParams: row.AdditionalQueryParams, limit: "0", num: maxitems, categories: categories}, row.LastRssID, 0, false, results)
 	if erradd != nil {
+		results = nil
 		return nil, "", "", erradd
 	}
 	if broke || len((results.Arr)) == 0 {
-		return results, "", "", erradd
+		return results, "", "", nil
 	}
 	count++
-	urlb := urlbuilder{rss: true, customurl: row.Customrssurl, customrsscategory: row.Customrsscategory, customapi: row.Customapi, additionalQueryParams: row.AdditionalQueryParams, limit: "0", num: maxitems, categories: categories}
 	for {
-		urlb.offset = (maxitems * count)
-		_, broke, erradd = client.processurl(&urlb, row.LastRssID, 0, false, results)
+		broke, erradd = getnewznabclient(row).processurl(&urlbuilder{rss: true, customurl: row.Customrssurl, customrsscategory: row.Customrsscategory, customapi: row.Customapi, additionalQueryParams: row.AdditionalQueryParams, limit: "0", num: maxitems, categories: categories, offset: (maxitems * count)}, row.LastRssID, 0, false, results)
 		if erradd != nil {
 			break
 		}
@@ -377,7 +412,8 @@ func QueryNewznabRSSLast(row *NzbIndexer, maxitems int, categories string, maxre
 	}
 
 	if erradd != nil {
-		return results, row.URL, "", erradd
+		results = nil
+		return nil, row.URL, "", erradd
 	}
 	if len(results.Arr) >= 1 {
 		return results, "", results.Arr[0].NZB.ID, nil
@@ -408,7 +444,9 @@ func NewNewznab(baseURL string, apikey string, userID string, insecure bool, dis
 
 // LoadRSSFeedUntilNZBID fetches NZBs until a given NZB id is reached.
 func (client *Client) SearchWithQueryUntilNZBID(categories string, query string, searchType string, addquotes bool, id string, additionalQueryParams string, customurl string, maxage int, outputasjson bool) (resultsadd *NZBArr, broke bool, erradd error) {
-	return client.processurl(&urlbuilder{searchtype: searchType, query: query, addquotesfortitlequery: addquotes, outputAsJSON: outputasjson, customurl: customurl, additionalQueryParams: additionalQueryParams, limit: "0", categories: categories}, id, maxage, outputasjson)
+	entries := new(NZBArr)
+	broke, err := client.processurl(&urlbuilder{searchtype: searchType, query: query, addquotesfortitlequery: addquotes, outputAsJSON: outputasjson, customurl: customurl, additionalQueryParams: additionalQueryParams, limit: "0", categories: categories}, id, maxage, outputasjson, entries)
+	return entries, broke, err
 }
 
 func addentrySearchResponseXML(tillid string, apiBaseURL string, item *rawNZB, entries *NZBArr) (bool, bool) {
@@ -489,59 +527,55 @@ func addentrySearchResponseJSON2(tillid string, apiBaseURL string, item *rawNZBJ
 	addentrySearchResponseXML(tillid, apiBaseURL, &itemconvert, entries)
 }
 
-func (client *Client) processurl(urlb *urlbuilder, tillid string, maxage int, outputasjson bool, invar ...*NZBArr) (*NZBArr, bool, error) {
+func (client *Client) processurl(urlb *urlbuilder, tillid string, maxage int, outputasjson bool, entries *NZBArr) (bool, error) {
 	url := client.buildURL(urlb, maxage)
 	urlb = nil
 	var breakatid bool
+	var err error
 	//logger.Log.GlobalLogger.Debug("call url", zap.String("url", url))
 	if outputasjson {
 		var result searchResponseJSON1
-		_, err := client.Client.DoJSON(url, &result, nil)
+		_, err = client.Client.DoJSON(url, &result, nil)
 		if err == nil {
+			defer result.close()
 			if len(result.Channel.Item) == 0 {
-				return nil, false, Errnoresults
+				return false, Errnoresults
 			}
-			var entries *NZBArr
-			if len(invar) >= 1 {
-				entries = invar[0]
-			} else {
-				entries = &NZBArr{Arr: make([]Nzbwithprio, 0, len(result.Channel.Item))}
+			if entries == nil || len(entries.Arr) == 0 {
+				entries.Arr = make([]Nzbwithprio, 0, len(result.Channel.Item))
 			}
 			for idx := range result.Channel.Item {
 				addentrySearchResponseJSON1(tillid, client.APIBaseURL, &result.Channel.Item[idx], entries)
 			}
-			result.close()
-			return entries, breakatid, nil
+			return breakatid, nil
 		}
 		var result2 searchResponseJSON2
 		_, err = client.Client.DoJSON(url, &result2, nil)
 		if err != nil {
-			return nil, false, err
+			return false, err
 		}
+		defer result2.close()
 		if len(result2.Item) == 0 {
-			return nil, false, Errnoresults
+			return false, Errnoresults
 		}
-		var entries *NZBArr
-		if len(invar) >= 1 {
-			entries = invar[0]
-		} else {
-			entries = &NZBArr{Arr: make([]Nzbwithprio, 0, len(result2.Item))}
+		if entries == nil || len(entries.Arr) == 0 {
+			entries.Arr = make([]Nzbwithprio, 0, len(result2.Item))
 		}
 		for idx := range result2.Item {
 			addentrySearchResponseJSON2(tillid, client.APIBaseURL, &result2.Item[idx], entries)
 		}
-		result2.close()
-		return entries, breakatid, nil
+		return breakatid, nil
 
 	}
 	var feed searchResponse
-	err := client.Client.DoXML(url, nil, &feed)
+	err = client.Client.DoXML(url, nil, &feed)
 	if err != nil {
 		//logger.Log.GlobalLogger.Debug("call url error", zap.Error(err))
-		return nil, false, err
+		return false, err
 	}
+	defer feed.close()
 	if len(feed.Nzbs) == 0 {
-		return nil, false, Errnoresults
+		return false, Errnoresults
 	}
 	var breakid, skip bool
 	//if tillid == "" && len(entries.Arr) == 0 {
@@ -549,11 +583,8 @@ func (client *Client) processurl(urlb *urlbuilder, tillid string, maxage int, ou
 	//}
 	//if len(entries.Arr) >= 1 {
 	//}
-	var entries *NZBArr
-	if len(invar) >= 1 {
-		entries = invar[0]
-	} else {
-		entries = &NZBArr{Arr: make([]Nzbwithprio, 0, len(feed.Nzbs))}
+	if entries == nil || len(entries.Arr) == 0 {
+		entries.Arr = make([]Nzbwithprio, 0, len(feed.Nzbs))
 	}
 	for idx := range feed.Nzbs {
 		breakid, skip = addentrySearchResponseXML(tillid, client.APIBaseURL, &feed.Nzbs[idx], entries)
@@ -561,13 +592,10 @@ func (client *Client) processurl(urlb *urlbuilder, tillid string, maxage int, ou
 			continue
 		}
 		if breakid {
-
-			feed.close()
-			return entries, breakatid, nil
+			return breakatid, nil
 		}
 	}
-	feed.close()
-	return entries, breakatid, nil
+	return breakatid, nil
 }
 
 func saveAttributes(newEntry *NZB, name string, value string) {
@@ -578,7 +606,7 @@ func saveAttributes(newEntry *NZB, name string, value string) {
 	// case "genre":
 	// 	newEntry.Genre = value
 	case "tvdbid":
-		newEntry.TVDBID = value
+		newEntry.TVDBID = logger.StringToInt(value)
 	// case "info":
 	// 	newEntry.Info = value
 	case "season":

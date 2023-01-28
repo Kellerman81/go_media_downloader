@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/Kellerman81/go_media_downloader/apiexternal"
@@ -197,6 +196,7 @@ func AllowMovieImport(imdb string, listTemplate string) bool {
 	}
 	var genrearr logger.InStringArrayStruct
 	database.QueryStaticStringArray(true, 0, &database.Querywithargs{QueryString: querygenregenresbytconst, Args: []interface{}{imdb}}, &genrearr.Arr)
+	defer genrearr.Close()
 	var excludebygenre bool
 
 	for idx := range config.Cfg.Lists[listTemplate].Excludegenre {
@@ -207,7 +207,6 @@ func AllowMovieImport(imdb string, listTemplate string) bool {
 		}
 	}
 	if excludebygenre && len(config.Cfg.Lists[listTemplate].Excludegenre) >= 1 {
-		genrearr.Close()
 		return false
 	}
 
@@ -219,7 +218,6 @@ func AllowMovieImport(imdb string, listTemplate string) bool {
 		}
 	}
 	if !includebygenre && len(config.Cfg.Lists[listTemplate].Includegenre) >= 1 {
-		genrearr.Close()
 		logger.Log.GlobalLogger.Warn("error included genre not found", zap.Stringp("imdb", &imdb))
 		return false
 	}
@@ -288,7 +286,7 @@ func findimdbbytitle(title string, slugged string, yearint int) (string, bool, b
 
 func findtmdbbytitle(title string, yearint int) (string, bool, bool) {
 	getmovie, _ := apiexternal.TmdbAPI.SearchMovie(title)
-
+	defer getmovie.Close()
 	if len(getmovie.Results) >= 1 {
 		var imdbID string
 		var moviedbexternal *apiexternal.TheMovieDBTVExternal
@@ -303,7 +301,6 @@ func findtmdbbytitle(title string, yearint int) (string, bool, bool) {
 					imdbID = moviedbexternal.ImdbID
 					moviedbexternal = nil
 				} else {
-					getmovie.Close()
 					return "", false, false
 				}
 			}
@@ -311,18 +308,14 @@ func findtmdbbytitle(title string, yearint int) (string, bool, bool) {
 				database.QueryImdbColumn(&database.Querywithargs{QueryString: queryyeartitlesbytconst, Args: []interface{}{imdbID}}, &dbyear)
 				found, found1 = checkifdbmovieyearmatches(dbyear, yearint)
 				if found {
-					getmovie.Close()
 					return imdbID, found, found1
 				}
 				if found1 && findqualityyear1(imdbID) {
-					getmovie.Close()
 					return imdbID, found, found1
 				}
 			}
 		}
-		moviedbexternal = nil
 	}
-	getmovie.Close()
 	return "", false, false
 }
 
@@ -690,12 +683,9 @@ func JobImportDbSeries(serieconfig *config.SerieConfig, cfgp *config.MediaTypeCo
 				imdbakadata = nil
 			}
 			if config.Cfg.General.SerieAlternateTitleMetaSourceTrakt && (dbserie.TraktID != 0 || dbserie.ImdbID != "") {
-				var queryid string
+				queryid := dbserie.ImdbID
 				if dbserie.TraktID != 0 {
-					queryid = strconv.Itoa(dbserie.TraktID)
-				}
-				if queryid == "" {
-					queryid = dbserie.ImdbID
+					queryid = logger.IntToString(dbserie.TraktID)
 				}
 				traktaliases, err := apiexternal.TraktAPI.GetSerieAliases(queryid)
 				if err == nil {
@@ -761,8 +751,8 @@ func JobImportDbSeries(serieconfig *config.SerieConfig, cfgp *config.MediaTypeCo
 						var strseason, strepisode string
 						for idx := range tvdbdetails.Data {
 							ok = true
-							strepisode = strconv.Itoa(tvdbdetails.Data[idx].AiredEpisodeNumber)
-							strseason = strconv.Itoa(tvdbdetails.Data[idx].AiredSeason)
+							strepisode = logger.IntToString(tvdbdetails.Data[idx].AiredEpisodeNumber)
+							strseason = logger.IntToString(tvdbdetails.Data[idx].AiredSeason)
 							for idxtbl := range tbl {
 								if tbl[idxtbl].Str1 == strseason && tbl[idxtbl].Str2 == strepisode {
 									ok = false
@@ -775,7 +765,7 @@ func JobImportDbSeries(serieconfig *config.SerieConfig, cfgp *config.MediaTypeCo
 							database.InsertNamed("insert into dbserie_episodes (episode, season, identifier, title, first_aired, overview, poster, dbserie_id) VALUES (:episode, :season, :identifier, :title, :first_aired, :overview, :poster, :dbserie_id)", database.DbserieEpisode{
 								Episode:    strepisode,
 								Season:     strseason,
-								Identifier: fmt.Sprintf("S%sE%s", padNumberWithZero(tvdbdetails.Data[idx].AiredSeason), padNumberWithZero(tvdbdetails.Data[idx].AiredEpisodeNumber)),
+								Identifier: "S" + padNumberWithZero(tvdbdetails.Data[idx].AiredSeason) + "E" + padNumberWithZero(tvdbdetails.Data[idx].AiredEpisodeNumber),
 								Title:      tvdbdetails.Data[idx].EpisodeName,
 								Overview:   tvdbdetails.Data[idx].Overview,
 								Poster:     tvdbdetails.Data[idx].Poster,
@@ -805,8 +795,8 @@ func JobImportDbSeries(serieconfig *config.SerieConfig, cfgp *config.MediaTypeCo
 							if err == nil {
 								for idxepi := range episodes.Episodes {
 									ok = true
-									strseason = strconv.Itoa(episodes.Episodes[idxepi].Season)
-									strepisode = strconv.Itoa(episodes.Episodes[idxepi].Episode)
+									strepisode = logger.IntToString(episodes.Episodes[idxepi].Episode)
+									strseason = logger.IntToString(episodes.Episodes[idxepi].Season)
 									for idxtbl := range tbl {
 										if tbl[idxtbl].Str1 == strseason && tbl[idxtbl].Str2 == strepisode {
 											ok = false
@@ -819,7 +809,7 @@ func JobImportDbSeries(serieconfig *config.SerieConfig, cfgp *config.MediaTypeCo
 									database.InsertNamed("insert into dbserie_episodes (episode, season, identifier, title, first_aired, overview, poster, dbserie_id) VALUES (:episode, :season, :identifier, :title, :first_aired, :overview, :poster, :dbserie_id)", database.DbserieEpisode{
 										Episode:    strepisode,
 										Season:     strseason,
-										Identifier: fmt.Sprintf("S%sE%s", padNumberWithZero(episodes.Episodes[idxepi].Season), padNumberWithZero(episodes.Episodes[idxepi].Episode)),
+										Identifier: "S" + padNumberWithZero(episodes.Episodes[idxepi].Season) + "E" + padNumberWithZero(episodes.Episodes[idxepi].Episode),
 										Title:      episodes.Episodes[idxepi].Title,
 										FirstAired: sql.NullTime{Time: episodes.Episodes[idxepi].FirstAired, Valid: true},
 										Overview:   episodes.Episodes[idxepi].Overview,
@@ -904,21 +894,21 @@ func JobImportDbSeries(serieconfig *config.SerieConfig, cfgp *config.MediaTypeCo
 	var dbepisode []int
 	database.QueryStaticIntArray(0, &database.Querywithargs{QueryString: "select id from dbserie_episodes where dbserie_id = ?", Args: []interface{}{dbserie.ID}}, &dbepisode)
 
-	var episodes logger.InIntArrayStruct
+	episodesint := new(logger.InIntArrayStruct)
 	queryepisodes := "select dbserie_episode_id from serie_episodes where dbserie_id = ? and serie_id = ?"
 	for idxserie := range series {
-		episodes.Arr = []int{}
+		episodesint.Arr = []int{}
 		database.QueryStaticIntArray(
 			0,
-			&database.Querywithargs{QueryString: queryepisodes, Args: []interface{}{dbserie.ID, series[idxserie]}}, &episodes.Arr)
+			&database.Querywithargs{QueryString: queryepisodes, Args: []interface{}{dbserie.ID, series[idxserie]}}, &episodesint.Arr)
 
 		for idxdbepi := range dbepisode {
-			if !logger.InIntArray(dbepisode[idxdbepi], &episodes) {
+			if !logger.InIntArray(dbepisode[idxdbepi], episodesint) {
 				database.InsertStatic(&database.Querywithargs{QueryString: "Insert into serie_episodes (dbserie_id, serie_id, missing, quality_profile, dbserie_episode_id) values (?, ?, ?, ?, ?)", Args: []interface{}{dbserie.ID, series[idxserie], true, cfgp.ListsMap[listname].TemplateQuality, dbepisode[idxdbepi]}})
 			}
 		}
 	}
-	episodes.Close()
+	episodesint.Close()
 	series = nil
 	dbepisode = nil
 }

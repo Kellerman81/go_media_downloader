@@ -188,7 +188,7 @@ func (c *client) request(path string, params url.Values, target interface{}) (er
 	var url string
 	var request *http.Request
 
-	url = fmt.Sprintf("%s/%s", c.URL, path)
+	url = c.URL + "/" + path
 
 	if request, err = http.NewRequest("GET", url, nil); err != nil {
 		return errors.Wrap(err, "creating "+url+" request failed")

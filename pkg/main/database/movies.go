@@ -4,7 +4,6 @@ package database
 import (
 	"database/sql"
 	"html"
-	"strconv"
 	"strings"
 	"time"
 
@@ -323,11 +322,10 @@ func (movie *Dbmovie) getTmdbMetadata(overwrite bool) {
 		if err != nil {
 			return
 		}
+		defer moviedb.Close()
 		if len(moviedb.MovieResults) >= 1 {
 			movie.MoviedbID = moviedb.MovieResults[0].ID
-			moviedb.Close()
 		} else {
-			moviedb.Close()
 			return
 		}
 	}
@@ -335,6 +333,7 @@ func (movie *Dbmovie) getTmdbMetadata(overwrite bool) {
 	if err != nil {
 		return
 	}
+	defer moviedbdetails.Close()
 	if (!movie.Adult && moviedbdetails.Adult) || overwrite {
 		movie.Adult = moviedbdetails.Adult
 	}
@@ -344,10 +343,7 @@ func (movie *Dbmovie) getTmdbMetadata(overwrite bool) {
 			movie.Title = html.UnescapeString(movie.Title)
 		}
 		if strings.Contains(movie.Title, "\\u") {
-			unquote, err := strconv.Unquote("\"" + movie.Title + "\"")
-			if err == nil {
-				movie.Title = unquote
-			}
+			movie.Title = logger.Unquote(movie.Title)
 		}
 	}
 	if (movie.Slug == "" || overwrite) && movie.Title != "" {
@@ -419,7 +415,6 @@ func (movie *Dbmovie) getTmdbMetadata(overwrite bool) {
 	if (movie.MoviedbID == 0 || overwrite) && moviedbdetails.ID != 0 {
 		movie.MoviedbID = moviedbdetails.ID
 	}
-	moviedbdetails.Close()
 }
 
 func (movie *Dbmovie) getOmdbMetadata(overwrite bool) {
@@ -436,10 +431,7 @@ func (movie *Dbmovie) getOmdbMetadata(overwrite bool) {
 			movie.Title = html.UnescapeString(movie.Title)
 		}
 		if strings.Contains(movie.Title, "\\u") {
-			unquote, err := strconv.Unquote("\"" + movie.Title + "\"")
-			if err == nil {
-				movie.Title = unquote
-			}
+			movie.Title = logger.Unquote(movie.Title)
 		}
 	}
 	if (movie.Slug == "" || overwrite) && movie.Title != "" {
@@ -479,10 +471,7 @@ func (movie *Dbmovie) getTraktMetadata(overwrite bool) {
 			movie.Title = html.UnescapeString(movie.Title)
 		}
 		if strings.Contains(movie.Title, "\\u") {
-			unquote, err := strconv.Unquote("\"" + movie.Title + "\"")
-			if err == nil {
-				movie.Title = unquote
-			}
+			movie.Title = logger.Unquote(movie.Title)
 		}
 	}
 	if (movie.Slug == "" || overwrite) && traktdetails.Ids.Slug != "" {

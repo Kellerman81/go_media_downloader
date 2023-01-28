@@ -257,7 +257,7 @@ func apiDBRefreshSlugs(ctx *gin.Context) {
 // @Description  Parses a string for testing
 // @Tags         parse
 // @Param        toparse  body      apiparse  true  "To Parse"
-// @Success      200      {object}  parser.ParseInfo
+// @Success      200      {object}  apiexternal.ParseInfo
 // @Failure      400      {object}  string
 // @Failure      401      {object}  string
 // @Router       /api/parse/string [post]
@@ -270,7 +270,7 @@ func apiParseString(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	parse, _ := parser.NewFileParser(getcfg.Name, getcfg.Year, getcfg.Typ)
+	parse := parser.NewFileParser(getcfg.Name, getcfg.Year, getcfg.Typ)
 	//defer parse.Close()
 	if getcfg.Typ == "movie" {
 		cfgp := config.Cfg.Media["movie_"+getcfg.Config]
@@ -293,7 +293,7 @@ func apiParseString(ctx *gin.Context) {
 // @Description  Parses a file for testing
 // @Tags         parse
 // @Param        toparse  body      apiparse  true  "To Parse"
-// @Success      200      {object}  parser.ParseInfo
+// @Success      200      {object}  apiexternal.ParseInfo
 // @Failure      400      {object}  string
 // @Failure      401      {object}  string
 // @Router       /api/parse/file [post]
@@ -306,7 +306,7 @@ func apiParseFile(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	parse, _ := parser.NewFileParser(filepath.Base(getcfg.Path), getcfg.Year, getcfg.Typ)
+	parse := parser.NewFileParser(filepath.Base(getcfg.Path), getcfg.Year, getcfg.Typ)
 	//defer parse.Close()
 	if getcfg.Typ == "movie" {
 		cfgp := config.Cfg.Media["movie_"+getcfg.Config]
@@ -573,7 +573,7 @@ func apiQualityUpdate(ctx *gin.Context) {
 // @Description  List allowed qualities and their priorities
 // @Tags         quality
 // @Param        name    path      string  true  "Quality Name: ex. SD"
-// @Success      200     {object}   parser.ParseInfo
+// @Success      200     {object}   apiexternal.ParseInfo
 // @Failure      401  {object}  string
 // @Failure      404     {object}  string
 // @Router       /api/quality/{name} [get]
@@ -587,7 +587,6 @@ func apiListQualityPriorities(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{"data": parser.Getallprios()[ctx.Param("name")]})
-	return
 }
 
 // @Summary      List Quality Priorities
@@ -595,7 +594,7 @@ func apiListQualityPriorities(ctx *gin.Context) {
 // @Tags         quality
 // @Param        name    path      string  true  "Quality Name: ex. SD"
 // @Param        config  path      string  true  "Config Name: ex. movie_EN or serie_EN"
-// @Success      200     {object}   parser.ParseInfo
+// @Success      200     {object}   apiexternal.ParseInfo
 // @Failure      401  {object}  string
 // @Failure      404     {object}  string
 // @Router       /api/quality/all [get]
@@ -611,7 +610,7 @@ func apiListAllQualityPriorities(ctx *gin.Context) {
 // @Tags         quality
 // @Param        name    path      string  true  "Quality Name: ex. SD"
 // @Param        config  path      string  true  "Config Name: ex. movie_EN or serie_EN"
-// @Success      200     {object}   parser.ParseInfo
+// @Success      200     {object}   apiexternal.ParseInfo
 // @Failure      401  {object}  string
 // @Failure      404     {object}  string
 // @Router       /api/quality/complete [get]
@@ -946,18 +945,11 @@ type apiNameInput struct {
 	MovieID   int    `json:"movieid"`
 	SerieID   int    `json:"serieid"`
 }
-type apiNameInputJSON struct {
-	CfgMedia  string `json:"cfg_media"`
-	GroupType string `json:"grouptype"`
-	FilePath  string `json:"filepath"`
-	MovieID   int    `json:"movieid"`
-	SerieID   int    `json:"serieid"`
-}
 
 // @Summary      Name Generation Test
 // @Description  Test your Naming Convention
 // @Tags         general
-// @Param        config  body      apiNameInputJSON  true  "Config"
+// @Param        config  body      apiNameInput  true  "Config"
 // @Success      200     {object}  string
 // @Failure      400     {object}  string
 // @Failure      401     {object}  string
@@ -988,11 +980,11 @@ func apiNamingGenerate(ctx *gin.Context) {
 			config.Cfg.Media[cfg.CfgMedia].Data[0].TemplatePath,
 		)
 		//defer s.Close()
-		s.ParseFile(cfg.FilePath, true, filepath.Dir(cfg.FilePath), false)
+		m := s.ParseFile(cfg.FilePath, true, filepath.Dir(cfg.FilePath), false)
 
-		s.ParseFileAdditional(cfg.FilePath, filepath.Dir(cfg.FilePath), false, 0, true)
+		s.ParseFileAdditional(cfg.FilePath, filepath.Dir(cfg.FilePath), false, 0, true, m)
 
-		foldername, filename := s.GenerateNamingTemplate(cfg.FilePath, movie.Rootpath, movie.DbmovieID, "", "", &[]database.DbstaticTwoUint{})
+		foldername, filename := s.GenerateNamingTemplate(cfg.FilePath, movie.Rootpath, movie.DbmovieID, "", "", &[]database.DbstaticTwoUint{}, m)
 		ctx.JSON(http.StatusOK, gin.H{"foldername": foldername, "filename": filename})
 	} else {
 		var series database.Serie
@@ -1009,10 +1001,10 @@ func apiNamingGenerate(ctx *gin.Context) {
 			config.Cfg.Media[cfg.CfgMedia].Data[0].TemplatePath,
 		)
 		//defer s.Close()
-		s.ParseFile(cfg.FilePath, true, filepath.Dir(cfg.FilePath), false)
-		s.ParseFileAdditional(cfg.FilePath, filepath.Dir(cfg.FilePath), false, 0, true)
+		m := s.ParseFile(cfg.FilePath, true, filepath.Dir(cfg.FilePath), false)
+		s.ParseFileAdditional(cfg.FilePath, filepath.Dir(cfg.FilePath), false, 0, true, m)
 
-		_, _, mapepi := s.GetSeriesEpisodes(series.ID, series.DbserieID, cfg.FilePath, filepath.Dir(cfg.FilePath))
+		_, _, mapepi := s.GetSeriesEpisodes(series.ID, series.DbserieID, cfg.FilePath, filepath.Dir(cfg.FilePath), m)
 
 		var firstdbepiid, firstepiid uint
 		for key := range mapepi {
@@ -1021,9 +1013,9 @@ func apiNamingGenerate(ctx *gin.Context) {
 			break
 		}
 
-		serietitle, episodetitle := s.GetEpisodeTitle(firstdbepiid, cfg.FilePath)
+		serietitle, episodetitle := s.GetEpisodeTitle(firstdbepiid, cfg.FilePath, m)
 
-		foldername, filename := s.GenerateNamingTemplate(cfg.FilePath, series.Rootpath, firstepiid, serietitle, episodetitle, &mapepi)
+		foldername, filename := s.GenerateNamingTemplate(cfg.FilePath, series.Rootpath, firstepiid, serietitle, episodetitle, &mapepi, m)
 		ctx.JSON(http.StatusOK, gin.H{"foldername": foldername, "filename": filename})
 	}
 }
