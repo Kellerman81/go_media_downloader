@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/Kellerman81/go_media_downloader/config"
 	"github.com/Kellerman81/go_media_downloader/logger"
@@ -36,61 +37,9 @@ func GetFilesDir(rootpath string, pathcfgstr string, useother bool) (*logger.InS
 		return nil, errNoFiles
 	}
 
-	pathcfg := config.Cfg.Paths[pathcfgstr]
-	defer pathcfg.Close()
 	var allfiles logger.InStringArrayStruct
 
-	var extlower string
-	var lennorename, lenfiles int
-	if useother {
-		lennorename = len(pathcfg.AllowedOtherExtensionsIn.Arr)
-		lenfiles = len(pathcfg.AllowedOtherExtensionsNoRenameIn.Arr)
-	} else {
-		lennorename = len(pathcfg.AllowedVideoExtensionsIn.Arr)
-		lenfiles = len(pathcfg.AllowedVideoExtensionsNoRenameIn.Arr)
-	}
-	lenblock := len(pathcfg.BlockedLowerIn.Arr)
-	//var pathdir string
-	var ok bool
-
-	var walkfunc = func(path string, info fs.DirEntry, errwalk error) error {
-		if errwalk != nil {
-			return errwalk
-		}
-		if info.IsDir() {
-			return nil
-		}
-		extlower = filepath.Ext(path)
-		if useother {
-			ok = logger.InStringArray(extlower, &pathcfg.AllowedOtherExtensionsIn)
-		} else {
-			ok = logger.InStringArray(extlower, &pathcfg.AllowedVideoExtensionsIn)
-		}
-
-		if lennorename >= 1 && !ok {
-			if useother {
-				ok = logger.InStringArray(extlower, &pathcfg.AllowedOtherExtensionsNoRenameIn)
-			} else {
-				ok = logger.InStringArray(extlower, &pathcfg.AllowedVideoExtensionsNoRenameIn)
-			}
-		}
-
-		if lennorename == 0 && lenfiles == 0 && !ok {
-			ok = true
-		}
-
-		//Check IgnoredPaths
-		if lenblock >= 1 && ok && logger.InStringArrayContainsCaseInSensitive(path, &pathcfg.BlockedLowerIn) {
-			return nil
-		}
-
-		if ok {
-			allfiles.Arr = append(allfiles.Arr, path)
-		}
-		return nil
-	}
-
-	return &allfiles, filepath.WalkDir(rootpath, walkfunc)
+	return &allfiles, filepath.WalkDir(rootpath, Walk(pathcfgstr, &allfiles, useother))
 }
 
 func FilterFilesDir(allfiles *logger.InStringArrayStruct, pathcfgstr string, useother bool, checkisdir bool) error {
@@ -98,37 +47,60 @@ func FilterFilesDir(allfiles *logger.InStringArrayStruct, pathcfgstr string, use
 	if pathcfgstr == "" {
 		return errNoGeneral
 	}
-	pathcfg := config.Cfg.Paths[pathcfgstr]
-	defer pathcfg.Close()
+
+	cfgpath := config.Cfg.Paths[pathcfgstr]
+	defer cfgpath.Close()
 
 	filterfiles := logger.InStringArrayStruct{Arr: allfiles.Arr[:0]}
 	var ok bool
 	var extlower string
 	var lennorename, lenfiles int
 	if useother {
-		lennorename = len(pathcfg.AllowedOtherExtensionsIn.Arr)
-		lenfiles = len(pathcfg.AllowedOtherExtensionsNoRenameIn.Arr)
+		lennorename = len(cfgpath.AllowedOtherExtensionsIn.Arr)
+		lenfiles = len(cfgpath.AllowedOtherExtensionsNoRenameIn.Arr)
 	} else {
-		lennorename = len(pathcfg.AllowedVideoExtensionsIn.Arr)
-		lenfiles = len(pathcfg.AllowedVideoExtensionsNoRenameIn.Arr)
+		lennorename = len(cfgpath.AllowedVideoExtensionsIn.Arr)
+		lenfiles = len(cfgpath.AllowedVideoExtensionsNoRenameIn.Arr)
 	}
-	lenblock := len(pathcfg.BlockedLowerIn.Arr)
+	lenblock := len(cfgpath.BlockedLowerIn.Arr)
+	var target string
 	for idx := range allfiles.Arr {
 		if checkisdir && getFileInfo(allfiles.Arr[idx]).IsDir() {
 			continue
 		}
 		extlower = filepath.Ext(allfiles.Arr[idx])
+		ok = false
 		if useother {
-			ok = logger.InStringArray(extlower, &pathcfg.AllowedOtherExtensionsIn)
+			for idx := range cfgpath.AllowedOtherExtensionsIn.Arr {
+				if strings.EqualFold(extlower, cfgpath.AllowedOtherExtensionsIn.Arr[idx]) {
+					ok = true
+					break
+				}
+			}
 		} else {
-			ok = logger.InStringArray(extlower, &pathcfg.AllowedVideoExtensionsIn)
+			for idx := range cfgpath.AllowedVideoExtensionsIn.Arr {
+				if strings.EqualFold(extlower, cfgpath.AllowedVideoExtensionsIn.Arr[idx]) {
+					ok = true
+					break
+				}
+			}
 		}
 
 		if lennorename >= 1 && !ok {
 			if useother {
-				ok = logger.InStringArray(extlower, &pathcfg.AllowedOtherExtensionsNoRenameIn)
+				for idx := range cfgpath.AllowedOtherExtensionsNoRenameIn.Arr {
+					if strings.EqualFold(extlower, cfgpath.AllowedOtherExtensionsNoRenameIn.Arr[idx]) {
+						ok = true
+						break
+					}
+				}
 			} else {
-				ok = logger.InStringArray(extlower, &pathcfg.AllowedVideoExtensionsNoRenameIn)
+				for idx := range cfgpath.AllowedVideoExtensionsNoRenameIn.Arr {
+					if strings.EqualFold(extlower, cfgpath.AllowedVideoExtensionsNoRenameIn.Arr[idx]) {
+						ok = true
+						break
+					}
+				}
 			}
 		}
 
@@ -137,8 +109,17 @@ func FilterFilesDir(allfiles *logger.InStringArrayStruct, pathcfgstr string, use
 		}
 
 		//Check IgnoredPaths
-		if lenblock >= 1 && ok && logger.InStringArrayContainsCaseInSensitive(allfiles.Arr[idx], &pathcfg.BlockedLowerIn) {
-			continue
+		if lenblock >= 1 && ok {
+			target = strings.ToLower(allfiles.Arr[idx])
+			for idx := range cfgpath.BlockedLowerIn.Arr {
+				if strings.Contains(target, cfgpath.BlockedLowerIn.Arr[idx]) {
+					ok = false
+					break
+				}
+			}
+			if !ok {
+				continue
+			}
 		}
 
 		if ok {
@@ -161,17 +142,8 @@ func GetFilesDirAll(rootpath string, cachecount bool) (*logger.InStringArrayStru
 	if ok {
 		list.Arr = make([]string, 0, cnt)
 	}
-	var walkfunc = func(path string, info fs.DirEntry, errwalk error) error {
-		if errwalk != nil {
-			return errwalk
-		}
-		if info.IsDir() {
-			return nil
-		}
-		list.Arr = append(list.Arr, path)
-		return nil
-	}
-	errwalk := filepath.WalkDir(rootpath, walkfunc)
+
+	errwalk := filepath.WalkDir(rootpath, WalkAll(&list, true))
 	if errwalk != nil {
 		logger.Log.GlobalLogger.Error("", zap.Error(errwalk))
 	}
@@ -189,14 +161,8 @@ func GetFilesWithDirAll(rootpath string) (*logger.InStringArrayStruct, error) {
 		return nil, errNoFiles
 	}
 	var list logger.InStringArrayStruct
-	var walkfunc = func(path string, info fs.DirEntry, errwalk error) error {
-		if errwalk != nil {
-			return errwalk
-		}
-		list.Arr = append(list.Arr, path)
-		return nil
-	}
-	errwalk := filepath.WalkDir(rootpath, walkfunc)
+
+	errwalk := filepath.WalkDir(rootpath, WalkAll(&list, false))
 	if errwalk != nil {
 		logger.Log.GlobalLogger.Error("", zap.Error(errwalk))
 	}
@@ -213,32 +179,50 @@ func GetFilesGoDir(rootpath string, pathcfgstr string) ([]string, error) {
 		logger.Log.GlobalLogger.Error(pathnotfound, zap.String("path", rootpath))
 		return []string{}, errNoPath
 	}
-	pathcfg := config.Cfg.Paths[pathcfgstr]
-	defer pathcfg.Close()
 
 	var list []string
+	var target string
+	var extlower string
+	var ok bool
+	cfgpath := config.Cfg.Paths[pathcfgstr]
+	defer cfgpath.Close()
 	err := godirwalk.Walk(rootpath, &godirwalk.Options{
 		Callback: func(osPathname string, de *godirwalk.Dirent) error {
 			if de.IsDir() {
 				return nil
 			}
-			extlower := filepath.Ext(osPathname)
+			extlower = filepath.Ext(osPathname)
 
 			//Check Extension
-			ok := logger.InStringArray(extlower, &pathcfg.AllowedVideoExtensionsIn)
-
-			if len(pathcfg.AllowedVideoExtensionsNoRenameIn.Arr) >= 1 && !ok {
-				ok = logger.InStringArray(extlower, &pathcfg.AllowedVideoExtensionsNoRenameIn)
+			ok = false
+			for idx := range cfgpath.AllowedVideoExtensionsIn.Arr {
+				if strings.EqualFold(extlower, cfgpath.AllowedVideoExtensionsIn.Arr[idx]) {
+					ok = true
+					break
+				}
 			}
 
-			if len(pathcfg.AllowedVideoExtensionsNoRenameIn.Arr) == 0 && len(pathcfg.AllowedVideoExtensionsIn.Arr) == 0 && !ok {
+			if len(cfgpath.AllowedVideoExtensionsNoRenameIn.Arr) >= 1 && !ok {
+				for idx := range cfgpath.AllowedVideoExtensionsNoRenameIn.Arr {
+					if strings.EqualFold(extlower, cfgpath.AllowedVideoExtensionsNoRenameIn.Arr[idx]) {
+						ok = true
+						break
+					}
+				}
+			}
+
+			if len(cfgpath.AllowedVideoExtensionsNoRenameIn.Arr) == 0 && len(cfgpath.AllowedVideoExtensionsIn.Arr) == 0 && !ok {
 				ok = true
 			}
 
 			//Check IgnoredPaths
-			if len(pathcfg.BlockedLowerIn.Arr) >= 1 && ok {
-				if logger.InStringArrayContainsCaseInSensitive(osPathname, &pathcfg.BlockedLowerIn) {
-					ok = false
+			if len(cfgpath.BlockedLowerIn.Arr) >= 1 && ok {
+				target = strings.ToLower(osPathname)
+				for idx := range cfgpath.BlockedLowerIn.Arr {
+					if strings.Contains(target, cfgpath.BlockedLowerIn.Arr[idx]) {
+						ok = false
+						break
+					}
 				}
 			}
 
@@ -284,14 +268,7 @@ func getFolderSize(rootpath string) int64 {
 			logger.Log.GlobalLogger.Error("", zap.Error(err))
 		}
 	} else {
-		var walkfunc = func(path string, info fs.DirEntry, errwalk error) error {
-			if info.IsDir() {
-				return nil
-			}
-			size += GetFileSizeDirEntry(info)
-			return nil
-		}
-		errwalk := filepath.WalkDir(rootpath, walkfunc)
+		errwalk := filepath.WalkDir(rootpath, WalkSize(&size))
 		if errwalk != nil {
 			logger.Log.GlobalLogger.Error("", zap.Error(errwalk))
 		}
@@ -366,20 +343,30 @@ func RemoveFiles(val string, pathcfgstr string) {
 	if !CheckFileExist(val) {
 		return
 	}
-	pathcfg := config.Cfg.Paths[pathcfgstr]
-	defer pathcfg.Close()
 
+	cfgpath := config.Cfg.Paths[pathcfgstr]
+	defer cfgpath.Close()
 	var ok, oknorename bool
-	if len(pathcfg.AllowedVideoExtensionsIn.Arr) >= 1 {
-		ok = logger.InStringArray(filepath.Ext(val), &pathcfg.AllowedVideoExtensionsIn)
+	if len(cfgpath.AllowedVideoExtensionsIn.Arr) >= 1 {
+		for idx := range cfgpath.AllowedVideoExtensionsIn.Arr {
+			if strings.EqualFold(filepath.Ext(val), cfgpath.AllowedVideoExtensionsIn.Arr[idx]) {
+				ok = true
+				break
+			}
+		}
 	}
-	if len(pathcfg.AllowedVideoExtensionsNoRenameIn.Arr) >= 1 && !ok {
-		ok = logger.InStringArray(filepath.Ext(val), &pathcfg.AllowedVideoExtensionsNoRenameIn)
+	if len(cfgpath.AllowedVideoExtensionsNoRenameIn.Arr) >= 1 && !ok {
+		for idx := range cfgpath.AllowedVideoExtensionsNoRenameIn.Arr {
+			if strings.EqualFold(filepath.Ext(val), cfgpath.AllowedVideoExtensionsNoRenameIn.Arr[idx]) {
+				ok = true
+				break
+			}
+		}
 		if ok {
 			oknorename = true
 		}
 	}
-	if ok || oknorename || (len(pathcfg.AllowedVideoExtensionsIn.Arr) == 0 && len(pathcfg.AllowedVideoExtensionsNoRenameIn.Arr) == 0) {
+	if ok || oknorename || (len(cfgpath.AllowedVideoExtensionsIn.Arr) == 0 && len(cfgpath.AllowedVideoExtensionsNoRenameIn.Arr) == 0) {
 		err := os.Remove(val)
 		if err != nil {
 			logger.Log.GlobalLogger.Error("File could not be removed", zap.Stringp("file", &val), zap.Error(err))
@@ -633,4 +620,127 @@ func GetSubFolders(sourcepath string) ([]string, error) {
 	files = nil
 	//logger.GlobalCounter[sourcepath] = len(folders)
 	return folders, nil
+}
+
+func Walk(pathcfgstr string, allfiles *logger.InStringArrayStruct, useother bool) func(path string, info fs.DirEntry, errwalk error) error {
+	var extlower string
+	var ok bool
+	cfgpath := config.Cfg.Paths[pathcfgstr]
+	defer cfgpath.Close()
+	lennorename := len(cfgpath.AllowedVideoExtensionsNoRenameIn.Arr)
+	lenfiles := len(cfgpath.AllowedVideoExtensionsIn.Arr)
+	lenblock := len(cfgpath.BlockedLowerIn.Arr)
+	var target string
+
+	return func(path string, info fs.DirEntry, errwalk error) error {
+		if errwalk != nil {
+			return errwalk
+		}
+		if info.IsDir() {
+			return nil
+		}
+		extlower = filepath.Ext(path)
+		ok = false
+		if useother {
+			for idx := range cfgpath.AllowedOtherExtensionsIn.Arr {
+				if strings.EqualFold(extlower, cfgpath.AllowedOtherExtensionsIn.Arr[idx]) {
+					ok = true
+					break
+				}
+			}
+		} else {
+			for idx := range cfgpath.AllowedVideoExtensionsIn.Arr {
+				if strings.EqualFold(extlower, cfgpath.AllowedVideoExtensionsIn.Arr[idx]) {
+					ok = true
+					break
+				}
+			}
+		}
+
+		if lennorename >= 1 && !ok {
+			if useother {
+				for idx := range cfgpath.AllowedOtherExtensionsNoRenameIn.Arr {
+					if strings.EqualFold(extlower, cfgpath.AllowedOtherExtensionsNoRenameIn.Arr[idx]) {
+						ok = true
+						break
+					}
+				}
+			} else {
+				for idx := range cfgpath.AllowedVideoExtensionsNoRenameIn.Arr {
+					if strings.EqualFold(extlower, cfgpath.AllowedVideoExtensionsNoRenameIn.Arr[idx]) {
+						ok = true
+						break
+					}
+				}
+			}
+		}
+
+		if lennorename == 0 && lenfiles == 0 && !ok {
+			ok = true
+		}
+
+		//Check IgnoredPaths
+		if lenblock >= 1 && ok {
+			target = strings.ToLower(path)
+			for idx := range cfgpath.BlockedLowerIn.Arr {
+				if strings.Contains(target, cfgpath.BlockedLowerIn.Arr[idx]) {
+					ok = false
+					break
+				}
+			}
+			if !ok {
+				return nil
+			}
+		}
+
+		if ok {
+			allfiles.Arr = append(allfiles.Arr, path)
+		}
+		return nil
+	}
+}
+func WalkAll(list *logger.InStringArrayStruct, usedir bool) func(path string, info fs.DirEntry, errwalk error) error {
+	return func(path string, info fs.DirEntry, errwalk error) error {
+		if errwalk != nil {
+			return errwalk
+		}
+		if usedir && info.IsDir() {
+			return nil
+		}
+		list.Arr = append(list.Arr, path)
+		return nil
+	}
+}
+func WalkSize(size *int64) func(path string, info fs.DirEntry, errwalk error) error {
+	return func(path string, info fs.DirEntry, errwalk error) error {
+		if info.IsDir() {
+			return nil
+		}
+		*size += GetFileSizeDirEntry(info)
+		return nil
+	}
+}
+func WalkDisAllowed(check bool, rootpath string, pathcfg *config.PathsConfig, disallowed *bool) func(path string, info fs.DirEntry, errwalk error) error {
+	var target string
+	return func(path string, info fs.DirEntry, errwalk error) error {
+		if errwalk != nil {
+			return errwalk
+		}
+		if info.IsDir() {
+			return nil
+		}
+		target = strings.ToLower(path)
+		for idx := range pathcfg.BlockedLowerIn.Arr {
+			if strings.Contains(target, pathcfg.BlockedLowerIn.Arr[idx]) {
+				logger.Log.GlobalLogger.Warn("path not allowed", zap.String("path", path))
+
+				if check {
+					CleanUpFolder(rootpath, 80000)
+				}
+				*disallowed = true
+				return errors.New("folder cleaned")
+			}
+		}
+		return nil
+	}
 }

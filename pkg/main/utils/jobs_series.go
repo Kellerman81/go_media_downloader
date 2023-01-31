@@ -30,26 +30,19 @@ const querycountfilesserieslocation = "select count() from serie_episode_files w
 var lastSeriesStructure string
 
 func updateRootpath(file string, objtype string, objid uint, cfgp *config.MediaTypeConfig) {
-	var rootpath, tempfoldername, firstfolder string
+	var firstfolder string
 	for idxdata := range cfgp.Data {
 		if !config.Check("path_" + cfgp.Data[idxdata].TemplatePath) {
 			continue
 		}
-		if strings.Contains(file, config.Cfg.Paths[cfgp.Data[idxdata].TemplatePath].Path) {
-			rootpath = config.Cfg.Paths[cfgp.Data[idxdata].TemplatePath].Path
-			tempfoldername = strings.Replace(file, config.Cfg.Paths[cfgp.Data[idxdata].TemplatePath].Path, "", -1)
-			tempfoldername = strings.TrimLeft(tempfoldername, "/\\")
-			tempfoldername = filepath.Dir(tempfoldername)
-			_, firstfolder = logger.Getrootpath(tempfoldername)
-			rootpath = filepath.Join(rootpath, firstfolder)
-			database.UpdateColumnStatic(&database.Querywithargs{QueryString: "Update " + objtype + " set rootpath = ? where id = ?", Args: []interface{}{rootpath, objid}})
-			return
+		if !strings.Contains(file, config.Cfg.Paths[cfgp.Data[idxdata].TemplatePath].Path) {
+			continue
 		}
+		_, firstfolder = logger.Getrootpath(filepath.Dir(strings.TrimLeft(strings.ReplaceAll(file, config.Cfg.Paths[cfgp.Data[idxdata].TemplatePath].Path, ""), "/\\")))
+		database.UpdateColumnStatic(&database.Querywithargs{QueryString: "Update " + objtype + " set rootpath = ? where id = ?", Args: []interface{}{filepath.Join(config.Cfg.Paths[cfgp.Data[idxdata].TemplatePath].Path, firstfolder), objid}})
+		return
 	}
 
-}
-func JobImportSeriesParseV2(file string, updatemissing bool, cfgp *config.MediaTypeConfig, listname string) {
-	jobImportSeriesParseV2(&importstruct{path: file, updatemissing: updatemissing, cfgp: cfgp, listname: listname})
 }
 
 type importstruct struct {
@@ -96,53 +89,7 @@ func jobImportSeriesParseV2(imp *importstruct) {
 		return
 	}
 
-	episodeArray := importfeed.GetEpisodeArray(identifiedby, m.Identifier)
-	if episodeArray == nil {
-		return
-	}
-	defer episodeArray.Close()
-	lenarray := len(episodeArray.Arr)
-	if lenarray == 0 {
-		return
-	}
-
-	checkfiles := make([]database.DbstaticTwoUint, 0, lenarray)
-	if lenarray == 1 && m.DbserieEpisodeID != 0 && m.SerieEpisodeID != 0 {
-		checkfiles = append(checkfiles, database.DbstaticTwoUint{Num1: m.SerieEpisodeID, Num2: m.DbserieEpisodeID})
-		//logger.Log.GlobalLogger.Debug("SerieEpisode matched - found", zap.String("file", file), zap.String("title", m.Title), zap.String("Resolution", m.Resolution), zap.String("Quality", m.Quality), zap.String("Codec", m.Codec), zap.String("Audio", m.Audio), zap.String("Identifier", m.Identifier), zap.Uint("dbserieepisodeid", m.DbserieEpisodeID), zap.Uint("serieepisodeid", m.SerieEpisodeID))
-	} else {
-		var dbserieepisodeid, serieepisodeid uint
-		cntseries := database.Querywithargs{QueryString: queryidseriesbyseriesdbepisode}
-		for idx := range episodeArray.Arr {
-			if episodeArray.Arr[idx] == "" {
-				continue
-			}
-			episodeArray.Arr[idx] = strings.Trim(episodeArray.Arr[idx], "-EX")
-			if identifiedby != "date" {
-				episodeArray.Arr[idx] = strings.TrimLeft(episodeArray.Arr[idx], "0")
-			}
-
-			dbserieepisodeid, _ = importfeed.FindDbserieEpisodeByIdentifierOrSeasonEpisode(m.DbserieID, m.Identifier, m.SeasonStr, episodeArray.Arr[idx])
-			if dbserieepisodeid != 0 {
-				cntseries.Args = []interface{}{m.SerieID, dbserieepisodeid}
-				database.QueryColumn(&cntseries, &serieepisodeid)
-				if serieepisodeid != 0 {
-					checkfiles = append(checkfiles, database.DbstaticTwoUint{Num1: serieepisodeid, Num2: dbserieepisodeid})
-					//logger.Log.GlobalLogger.Debug("SerieEpisode matched - found", zap.String("file", file), zap.String("title", m.Title), zap.String("Resolution", m.Resolution), zap.String("Quality", m.Quality), zap.String("Codec", m.Codec), zap.String("Audio", m.Audio), zap.String("Identifier", m.Identifier), zap.Uint("dbserieepisodeid", dbserieepisodeid), zap.Uint("serieepisodeid", serieepisodeid))
-				} else {
-					logger.Log.GlobalLogger.Debug(serieepiunmatched, zap.Stringp("file", &imp.path))
-					seriesSetUnmatched(m, imp.path, imp.listname)
-					checkfiles = nil
-					return
-				}
-			} else {
-				logger.Log.GlobalLogger.Debug(seriedbunmatched, zap.Stringp("file", &imp.path))
-				seriesSetUnmatched(m, imp.path, imp.listname)
-				checkfiles = nil
-				return
-			}
-		}
-	}
+	checkfiles := seriesgetcheckfiles(m, identifiedby, imp.path, imp.listname)
 	if len(checkfiles) == 0 {
 		seriesSetUnmatched(m, imp.path, imp.listname)
 		return
@@ -150,7 +97,7 @@ func jobImportSeriesParseV2(imp *importstruct) {
 
 	var reached bool
 	parser.GetPriorityMap(m, imp.cfgp, imp.cfgp.ListsMap[imp.listname].TemplateQuality, true, false)
-	err := parser.ParseVideoFile(m, imp.path, imp.cfgp, imp.cfgp.ListsMap[imp.listname].TemplateQuality)
+	err := parser.ParseVideoFile(m, imp.path, imp.cfgp.ListsMap[imp.listname].TemplateQuality)
 	if err != nil {
 		logger.Log.GlobalLogger.Error("Parse failed", zap.String("file", imp.path), zap.Error(err))
 		return
@@ -202,11 +149,60 @@ func jobImportSeriesParseV2(imp *importstruct) {
 	}
 }
 
+func seriesgetcheckfiles(m *apiexternal.ParseInfo, identifiedby string, path string, listname string) []database.DbstaticTwoUint {
+	episodeArray := importfeed.GetEpisodeArray(identifiedby, m.Identifier)
+	if episodeArray == nil {
+		return []database.DbstaticTwoUint{}
+	}
+	defer episodeArray.Close()
+	lenarray := len(episodeArray.Arr)
+	if lenarray == 0 {
+		return []database.DbstaticTwoUint{}
+	}
+
+	checkfiles := make([]database.DbstaticTwoUint, 0, lenarray)
+	if lenarray == 1 && m.DbserieEpisodeID != 0 && m.SerieEpisodeID != 0 {
+		checkfiles = append(checkfiles, database.DbstaticTwoUint{Num1: m.SerieEpisodeID, Num2: m.DbserieEpisodeID})
+		//logger.Log.GlobalLogger.Debug("SerieEpisode matched - found", zap.String("file", file), zap.String("title", m.Title), zap.String("Resolution", m.Resolution), zap.String("Quality", m.Quality), zap.String("Codec", m.Codec), zap.String("Audio", m.Audio), zap.String("Identifier", m.Identifier), zap.Uint("dbserieepisodeid", m.DbserieEpisodeID), zap.Uint("serieepisodeid", m.SerieEpisodeID))
+	} else {
+		var dbserieepisodeid, serieepisodeid uint
+		cntseries := database.Querywithargs{QueryString: queryidseriesbyseriesdbepisode}
+		for idx := range episodeArray.Arr {
+			if episodeArray.Arr[idx] == "" {
+				continue
+			}
+			episodeArray.Arr[idx] = strings.Trim(episodeArray.Arr[idx], "-EX")
+			if identifiedby != "date" {
+				episodeArray.Arr[idx] = strings.TrimLeft(episodeArray.Arr[idx], "0")
+			}
+
+			dbserieepisodeid, _ = importfeed.FindDbserieEpisodeByIdentifierOrSeasonEpisode(m.DbserieID, m.Identifier, m.SeasonStr, episodeArray.Arr[idx])
+			if dbserieepisodeid != 0 {
+				cntseries.Args = []interface{}{m.SerieID, dbserieepisodeid}
+				database.QueryColumn(&cntseries, &serieepisodeid)
+				if serieepisodeid != 0 {
+					checkfiles = append(checkfiles, database.DbstaticTwoUint{Num1: serieepisodeid, Num2: dbserieepisodeid})
+					//logger.Log.GlobalLogger.Debug("SerieEpisode matched - found", zap.String("file", file), zap.String("title", m.Title), zap.String("Resolution", m.Resolution), zap.String("Quality", m.Quality), zap.String("Codec", m.Codec), zap.String("Audio", m.Audio), zap.String("Identifier", m.Identifier), zap.Uint("dbserieepisodeid", dbserieepisodeid), zap.Uint("serieepisodeid", serieepisodeid))
+				} else {
+					logger.Log.GlobalLogger.Debug(serieepiunmatched, zap.Stringp("file", &path))
+					checkfiles = nil
+					return []database.DbstaticTwoUint{}
+				}
+			} else {
+				logger.Log.GlobalLogger.Debug(seriedbunmatched, zap.Stringp("file", &path))
+				checkfiles = nil
+				return []database.DbstaticTwoUint{}
+			}
+		}
+	}
+	return checkfiles
+}
+
 func seriesSetUnmatched(m *apiexternal.ParseInfo, file string, listname string) {
 	var id uint
 	database.QueryColumn(&database.Querywithargs{QueryString: "select id from serie_file_unmatcheds where filepath = ? and listname = ?", Args: []interface{}{file, listname}}, &id)
 	if id == 0 {
-		database.InsertNamed("Insert into serie_file_unmatcheds (listname, filepath, last_checked, parsed_data) values (:listname, :filepath, :last_checked, :parsed_data)", database.SerieFileUnmatched{Listname: listname, Filepath: file, LastChecked: sql.NullTime{Time: time.Now(), Valid: true}, ParsedData: buildparsedstring(m)})
+		database.InsertStatic(&database.Querywithargs{QueryString: "Insert into serie_file_unmatcheds (listname, filepath, last_checked, parsed_data) values (?, ?, ?, ?)", Args: []interface{}{listname, file, sql.NullTime{Time: time.Now(), Valid: true}, buildparsedstring(m)}})
 	} else {
 		database.UpdateColumnStatic(&database.Querywithargs{QueryString: "Update serie_file_unmatcheds SET last_checked = ? where id = ?", Args: []interface{}{sql.NullTime{Time: time.Now(), Valid: true}, id}})
 		database.UpdateColumnStatic(&database.Querywithargs{QueryString: "Update serie_file_unmatcheds SET parsed_data = ? where id = ?", Args: []interface{}{buildparsedstring(m), id}})
@@ -240,6 +236,7 @@ func refreshseriesquery(query string, args ...interface{}) {
 	for idxserie := range dbseries {
 		logger.Log.GlobalLogger.Info("Refresh Serie ", zap.Int("row", idxserie), zap.Int("row count", len(dbseries)), zap.Int("tvdb", dbseries[idxserie].Num))
 		if oldlistname != dbseries[idxserie].Str2 {
+			cfgp.Close()
 			cfgp = config.Cfg.Media[config.FindconfigTemplateOnList("serie_", dbseries[idxserie].Str2)]
 			oldlistname = dbseries[idxserie].Str2
 		}
@@ -258,10 +255,10 @@ func SeriesAllJobs(job string, force bool) {
 }
 
 func SeriesSingleJobs(job string, cfgpstr string, listname string, force bool) {
-
-	jobName := job
 	cfgp := config.Cfg.Media[cfgpstr]
 	defer cfgp.Close()
+
+	jobName := job
 	if cfgp.Name != "" {
 		jobName += "_" + cfgp.NamePrefix
 	}
@@ -323,46 +320,59 @@ func SeriesSingleJobs(job string, cfgpstr string, listname string, force bool) {
 		searchtitle = true
 		searchinterval = searchupgradeIncremental
 	case "structure":
-		seriesStructureSingle(&cfgp)
+		if !config.Check("path_" + cfgp.Data[0].TemplatePath) {
+			logger.Log.GlobalLogger.Error("Path not found", zap.String("config", cfgp.Data[0].TemplatePath))
+			return
+		}
+
+		for idxdata := range cfgp.DataImport {
+			if !config.Check("path_" + cfgp.DataImport[idxdata].TemplatePath) {
+				logger.Log.GlobalLogger.Error("Path not found", zap.String("config", cfgp.DataImport[idxdata].TemplatePath))
+
+				continue
+			}
+
+			if lastSeriesStructure == config.Cfg.Paths[cfgp.DataImport[idxdata].TemplatePath].Path {
+				time.Sleep(time.Duration(15) * time.Second)
+			}
+			lastSeriesStructure = config.Cfg.Paths[cfgp.DataImport[idxdata].TemplatePath].Path
+
+			structure.OrganizeFolders("series", cfgp.DataImport[idxdata].TemplatePath, cfgp.Data[0].TemplatePath, &cfgp)
+		}
 	}
 	if searchserie {
 		searcher.SearchSerie(&cfgp, searchmissing, searchinterval, searchtitle)
 	}
 
 	if job == "data" || job == "checkmissing" || job == "checkmissingflag" || job == "checkreachedflag" || job == "clearhistory" || job == "feeds" || job == "rss" {
-		var lists []config.MediaListsConfig
-		if listname != "" {
-			lists = []config.MediaListsConfig{cfgp.ListsMap[listname]}
-		} else {
-			lists = cfgp.Lists
-		}
-		qualis := logger.InStringArrayStruct{Arr: make([]string, len(lists))}
+		var qualis logger.InStringArrayStruct
 
-		for idxlist := range lists {
-			qualis.Arr[idxlist] = lists[idxlist].TemplateQuality
+		for _, list := range getjoblists(&cfgp, listname) {
+			if !logger.InStringArray(list.TemplateQuality, &qualis) {
+				qualis.Arr = append(qualis.Arr, list.TemplateQuality)
+			}
 			switch job {
 			case "data":
-				getNewFilesMap(&cfgp, lists[idxlist].Name)
+				getNewFilesMap(&cfgp, list.Name)
 			case "checkmissing":
-				checkmissingepisodessingle(lists[idxlist].Name)
+				checkmissingepisodessingle(list.Name)
 			case "checkmissingflag":
-				checkmissingepisodesflag(lists[idxlist].Name)
+				checkmissingepisodesflag(list.Name)
 			case "checkreachedflag":
-				checkreachedepisodesflag(&cfgp, lists[idxlist].Name)
+				checkreachedepisodesflag(&cfgp, list.Name)
 			case "clearhistory":
-				database.DeleteRow("serie_episode_histories", &database.Querywithargs{Query: database.Query{Where: "serie_id in (Select id from series where listname = ? COLLATE NOCASE)"}, Args: []interface{}{lists[idxlist].Name}})
+				database.DeleteRow("serie_episode_histories", &database.Querywithargs{Query: database.Query{Where: "serie_id in (Select id from series where listname = ? COLLATE NOCASE)"}, Args: []interface{}{list.Name}})
 			case "feeds":
-				importnewseriessingle(&cfgp, lists[idxlist].Name)
+				importnewseriessingle(&cfgp, list.Name)
 			default:
 				// other stuff
 			}
 		}
-		lists = nil
 		if job == "rss" {
-			for _, qual := range unique(&qualis).Arr {
+			for idxqual := range qualis.Arr {
 				switch job {
 				case "rss":
-					searcher.SearchSerieRSS(&cfgp, qual)
+					searcher.SearchSerieRSS(&cfgp, qualis.Arr[idxqual])
 				}
 			}
 		}
@@ -373,6 +383,13 @@ func SeriesSingleJobs(job string, cfgpstr string, listname string, force bool) {
 		endjobhistory(dbid)
 	}
 	logger.Log.GlobalLogger.Info(jobended, zap.Stringp("Job", &job), zap.Stringp("config", &cfgp.NamePrefix))
+}
+
+func getjoblists(cfgp *config.MediaTypeConfig, listname string) []config.MediaListsConfig {
+	if listname != "" {
+		return []config.MediaListsConfig{cfgp.ListsMap[listname]}
+	}
+	return cfgp.Lists
 }
 
 func importnewseriessingle(cfgp *config.MediaTypeConfig, listname string) {
@@ -428,6 +445,7 @@ func checkreachedepisodesflag(cfgp *config.MediaTypeConfig, listname string) {
 		}
 		if episodes[idxepi].QualityReached && !reached {
 			database.UpdateColumnStatic(&database.Querywithargs{QueryString: "Update Serie_episodes set quality_reached = ? where id = ?", Args: []interface{}{0, episodes[idxepi].ID}})
+			continue
 		}
 
 		if !episodes[idxepi].QualityReached && reached {
@@ -450,56 +468,29 @@ func checkmissingepisodessingle(listname string) {
 	filesfound = nil
 }
 
-func getTraktUserPublicShowList(cfgplist *config.MediaListsConfig) (*feedResults, error) {
-	defer cfgplist.Close()
-	if !cfgplist.Enabled {
-		return nil, errNoListEnabled
-	}
-	if !config.Check("list_" + cfgplist.TemplateList) {
+func getTraktUserPublicShowList(templatelist string) (*feedResults, error) {
+	if !config.Check("list_" + templatelist) {
 		return nil, errNoList
 	}
-	if config.Cfg.Lists[cfgplist.TemplateList].TraktListType == "" {
+	cfglist := config.Cfg.Lists[templatelist]
+	defer cfglist.Close()
+	if cfglist.TraktListType == "" {
 		return nil, errors.New("not show")
 	}
-	if config.Cfg.Lists[cfgplist.TemplateList].TraktUsername == "" || config.Cfg.Lists[cfgplist.TemplateList].TraktListName == "" {
+	if cfglist.TraktUsername == "" || cfglist.TraktListName == "" {
 		return nil, errors.New("no user")
 	}
-	data, err := apiexternal.TraktAPI.GetUserList(config.Cfg.Lists[cfgplist.TemplateList].TraktUsername, config.Cfg.Lists[cfgplist.TemplateList].TraktListName, config.Cfg.Lists[cfgplist.TemplateList].TraktListType, config.Cfg.Lists[cfgplist.TemplateList].Limit)
+	data, err := apiexternal.TraktAPI.GetUserList(cfglist.TraktUsername, cfglist.TraktListName, cfglist.TraktListType, cfglist.Limit)
 	if err != nil {
-		logger.Log.GlobalLogger.Error("Failed to read trakt list", zap.String("Listname", config.Cfg.Lists[cfgplist.TemplateList].TraktListName))
+		logger.Log.GlobalLogger.Error("Failed to read trakt list", zap.String("Listname", cfglist.TraktListName))
 		return nil, errNoListRead
 	}
 	defer data.Close()
-	var results feedResults
-	results.Series.Serie = []config.SerieConfig{}
+	results := feedResults{Series: config.MainSerieConfig{Serie: []config.SerieConfig{}}}
 	for idx := range data.Entries {
 		results.Series.Serie = append(results.Series.Serie, config.SerieConfig{
 			Name: data.Entries[idx].Serie.Title, TvdbID: data.Entries[idx].Serie.Ids.Tvdb,
 		})
 	}
 	return &results, nil
-}
-
-func seriesStructureSingle(cfgp *config.MediaTypeConfig) {
-	if !config.Check("path_" + cfgp.Data[0].TemplatePath) {
-		logger.Log.GlobalLogger.Error("Path not found", zap.String("config", cfgp.Data[0].TemplatePath))
-		return
-	}
-
-	var mappathimport string
-	for idxdata := range cfgp.DataImport {
-		mappathimport = cfgp.DataImport[idxdata].TemplatePath
-		if !config.Check("path_" + mappathimport) {
-			logger.Log.GlobalLogger.Error("Path not found", zap.String("config", mappathimport))
-
-			continue
-		}
-
-		if lastSeriesStructure == config.Cfg.Paths[mappathimport].Path {
-			time.Sleep(time.Duration(15) * time.Second)
-		}
-		lastSeriesStructure = config.Cfg.Paths[mappathimport].Path
-
-		structure.OrganizeFolders("series", mappathimport, cfgp.Data[0].TemplatePath, cfgp)
-	}
 }

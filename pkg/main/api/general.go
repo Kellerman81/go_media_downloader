@@ -50,7 +50,7 @@ func AddGeneralRoutes(routerapi *gin.RouterGroup) {
 	routerapi.POST("/quality", apiQualityUpdate)
 	routerapi.GET("/quality/all", apiListAllQualityPriorities)
 	routerapi.GET("/quality/complete", apiListCompleteAllQualityPriorities)
-	routerapi.GET("/quality/:name", apiListQualityPriorities)
+	routerapi.GET("/quality/get/:name", apiListQualityPriorities)
 	routerapi.GET("/slug", apiDBRefreshSlugs)
 
 	routerapi.GET("/config/all", apiConfigAll)
@@ -310,7 +310,7 @@ func apiParseFile(ctx *gin.Context) {
 	//defer parse.Close()
 	if getcfg.Typ == "movie" {
 		cfgp := config.Cfg.Media["movie_"+getcfg.Config]
-		parser.ParseVideoFile(parse, getcfg.Path, &cfgp, getcfg.Quality)
+		parser.ParseVideoFile(parse, getcfg.Path, getcfg.Quality)
 		parser.GetPriorityMap(parse, &cfgp, getcfg.Quality, true, true)
 		parser.GetDbIDs("movie", parse, &cfgp, "", true)
 		ctx.JSON(http.StatusOK, gin.H{"data": parse})
@@ -318,7 +318,7 @@ func apiParseFile(ctx *gin.Context) {
 	}
 	if getcfg.Typ == "series" {
 		cfgp := config.Cfg.Media["serie_"+getcfg.Config]
-		parser.ParseVideoFile(parse, getcfg.Path, &cfgp, getcfg.Quality)
+		parser.ParseVideoFile(parse, getcfg.Path, getcfg.Quality)
 		parser.GetPriorityMap(parse, &cfgp, getcfg.Quality, true, true)
 		parser.GetDbIDs("series", parse, &cfgp, "", true)
 		ctx.JSON(http.StatusOK, gin.H{"data": parse})
@@ -576,7 +576,7 @@ func apiQualityUpdate(ctx *gin.Context) {
 // @Success      200     {object}   apiexternal.ParseInfo
 // @Failure      401  {object}  string
 // @Failure      404     {object}  string
-// @Router       /api/quality/{name} [get]
+// @Router       /api/quality/get/{name} [get]
 func apiListQualityPriorities(ctx *gin.Context) {
 	if auth(ctx) == http.StatusUnauthorized {
 		return
@@ -592,8 +592,6 @@ func apiListQualityPriorities(ctx *gin.Context) {
 // @Summary      List Quality Priorities
 // @Description  List allowed qualities and their priorities
 // @Tags         quality
-// @Param        name    path      string  true  "Quality Name: ex. SD"
-// @Param        config  path      string  true  "Config Name: ex. movie_EN or serie_EN"
 // @Success      200     {object}   apiexternal.ParseInfo
 // @Failure      401  {object}  string
 // @Failure      404     {object}  string
@@ -608,8 +606,6 @@ func apiListAllQualityPriorities(ctx *gin.Context) {
 // @Summary      List Quality Priorities
 // @Description  List all qualities and their priorities
 // @Tags         quality
-// @Param        name    path      string  true  "Quality Name: ex. SD"
-// @Param        config  path      string  true  "Config Name: ex. movie_EN or serie_EN"
 // @Success      200     {object}   apiexternal.ParseInfo
 // @Failure      401  {object}  string
 // @Failure      404     {object}  string

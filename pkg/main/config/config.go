@@ -450,6 +450,46 @@ func (s *QualityIndexerConfig) Close() {
 	}
 	s = nil
 }
+func (s *ListsConfig) Close() {
+	if logger.DisableVariableCleanup {
+		return
+	}
+	if s == nil {
+		return
+	}
+	s.Excludegenre = nil
+	s.Includegenre = nil
+	s = nil
+}
+func (s *DownloaderConfig) Close() {
+	if logger.DisableVariableCleanup {
+		return
+	}
+	if s == nil {
+		return
+	}
+	s = nil
+}
+func (s *IndexersConfig) Close() {
+	if logger.DisableVariableCleanup {
+		return
+	}
+	if s == nil {
+		return
+	}
+	s = nil
+}
+func (s *RegexConfig) Close() {
+	if logger.DisableVariableCleanup {
+		return
+	}
+	if s == nil {
+		return
+	}
+	s.Rejected = nil
+	s.Required = nil
+	s = nil
+}
 func (s *QualityReorderConfigGroup) Close() {
 	if logger.DisableVariableCleanup {
 		return
@@ -482,10 +522,6 @@ func (s *MainConfig) Close() {
 func (q *MainConfigMap) GetPath(str string) *PathsConfig {
 	path := q.Paths[str]
 	return &path
-}
-func (q *MainConfigMap) GetMedia(str string) *MediaTypeConfig {
-	media := q.Media[str]
-	return &media
 }
 func (s *MainSerieConfig) Close() {
 	if logger.DisableVariableCleanup {
@@ -531,6 +567,14 @@ func (q *MediaTypeConfig) GetList(str string) *MediaListsConfig {
 		}
 	}
 	return nil
+}
+func (q *MediaTypeConfig) GetTemplateList(str string) (string, bool) {
+	for idx := range q.Lists {
+		if q.Lists[idx].Name == str {
+			return q.Lists[idx].TemplateList, q.Lists[idx].Enabled
+		}
+	}
+	return "", false
 }
 func (q *MediaListsConfig) Close() {
 	if logger.DisableVariableCleanup {
@@ -673,6 +717,9 @@ func LoadCfgDB(f string) {
 		Cfg.Paths[results.Paths[idx].Name] = results.Paths[idx]
 		Cfg.Keys["path_"+results.Paths[idx].Name] = true
 	}
+	//for key, val := range Cfg.Paths {
+	//Cfg.PathsP[key] = &val
+	//}
 	for idx := range results.Quality {
 		results.Quality[idx].WantedAudioIn = logger.InStringArrayStruct{Arr: results.Quality[idx].WantedAudio}
 		results.Quality[idx].WantedCodecIn = logger.InStringArrayStruct{Arr: results.Quality[idx].WantedCodec}
@@ -1007,15 +1054,15 @@ func WriteCfg() {
 	os.WriteFile(configfile, cnt, 0777)
 }
 
-func QualityIndexerByQualityAndTemplate(quality string, indexerTemplate string) *QualityIndexerConfig {
+func QualityIndexerByQualityAndTemplateFirTemplateAndSize(quality string, indexerTemplate string) (string, bool) {
 	if _, test := Cfg.Quality[quality]; test {
 		for idx := range Cfg.Quality[quality].Indexer {
 			if Cfg.Quality[quality].Indexer[idx].TemplateIndexer == indexerTemplate {
-				return &Cfg.Quality[quality].Indexer[idx]
+				return Cfg.Quality[quality].Indexer[idx].TemplateRegex, Cfg.Quality[quality].Indexer[idx].SkipEmptySize
 			}
 		}
 	}
-	return nil
+	return "", false
 }
 
 func QualityIndexerByQualityAndTemplateGetFieldBool(quality string, indexerTemplate string, field string) bool {

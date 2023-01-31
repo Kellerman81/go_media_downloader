@@ -974,11 +974,20 @@ func InsertStatic(qu *Querywithargs) (sql.Result, error) {
 	qu.Close()
 	return result, err
 }
+func InsertNamedOpen(query string, obj interface{}) (sql.Result, error) {
+	result, err := execsql(false, true, &Querywithargs{QueryString: query, Args: []interface{}{obj}})
+	if err != nil {
+		logger.Log.GlobalLogger.Error("Insert", zap.String("Query", query), zap.Any("values", obj), zap.Error(err))
+	}
+
+	return result, err
+}
 func InsertNamed(query string, obj interface{}) (sql.Result, error) {
 	result, err := execsql(false, true, &Querywithargs{QueryString: query, Args: []interface{}{obj}})
 	if err != nil {
 		logger.Log.GlobalLogger.Error("Insert", zap.String("Query", query), zap.Any("values", obj), zap.Error(err))
 	}
+	obj = nil
 
 	return result, err
 }

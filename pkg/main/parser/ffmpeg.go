@@ -126,12 +126,11 @@ func getFFProbeFilename() string {
 	if ffprobepath != "" {
 		return ffprobepath
 	}
-	ffprobepath = config.Cfg.General.FfprobePath
 
 	if runtime.GOOS == "windows" {
-		ffprobepath = path.Join(ffprobepath, "ffprobe.exe")
+		ffprobepath = path.Join(config.Cfg.General.FfprobePath, "ffprobe.exe")
 	} else {
-		ffprobepath = path.Join(ffprobepath, "ffprobe")
+		ffprobepath = path.Join(config.Cfg.General.FfprobePath, "ffprobe")
 	}
 	return ffprobepath
 }
