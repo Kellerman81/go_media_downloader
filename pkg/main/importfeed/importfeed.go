@@ -128,7 +128,11 @@ func JobImportMovies(imdbid string, cfgp *config.MediaTypeConfig, listname strin
 			return 0
 		}
 	}
+	if listname == "" {
+		return 0
+	}
 	listmap := cfgp.GetList(listname)
+	defer listmap.Close()
 	var movietest []database.DbstaticOneStringOneInt
 	database.QueryStaticColumnsOneStringOneInt(false, 0, &database.Querywithargs{QueryString: "select listname, id from movies where dbmovie_id = ?", Args: []interface{}{dbmovieID}}, &movietest)
 
@@ -148,12 +152,13 @@ func JobImportMovies(imdbid string, cfgp *config.MediaTypeConfig, listname strin
 			break
 		}
 		for idxlist := range listmap.ReplaceMapLists {
-			if strings.EqualFold(movietest[idx2].Str, listmap.ReplaceMapLists[idxlist]) {
-				if listmap.TemplateQuality == "" {
-					database.UpdateNamed("Update movies SET missing = :missing, listname = :listname, dbmovie_id = :dbmovie_id where id = :id", database.Movie{Listname: listmap.Name, Missing: true, DbmovieID: dbmovieID, ID: uint(movietest[idx2].Num)})
-				} else {
-					database.UpdateNamed("Update movies SET missing = :missing, listname = :listname, dbmovie_id = :dbmovie_id, quality_profile = :quality_profile where id = :id", database.Movie{Listname: listmap.Name, Missing: true, DbmovieID: dbmovieID, QualityProfile: listmap.TemplateQuality, ID: uint(movietest[idx2].Num)})
-				}
+			if !strings.EqualFold(movietest[idx2].Str, listmap.ReplaceMapLists[idxlist]) {
+				continue
+			}
+			if listmap.TemplateQuality == "" {
+				database.UpdateColumnStatic(&database.Querywithargs{QueryString: "Update movies SET missing = ?, listname = ?, dbmovie_id = ? where id = ?", Args: []interface{}{true, listmap.Name, dbmovieID, movietest[idx2].Num}})
+			} else {
+				database.UpdateColumnStatic(&database.Querywithargs{QueryString: "Update movies SET missing = ?, listname = ?, dbmovie_id = ?, quality_profile = ? where id = ?", Args: []interface{}{true, listmap.Name, dbmovieID, listmap.TemplateQuality, movietest[idx2].Num}})
 			}
 		}
 	}
@@ -166,7 +171,6 @@ func JobImportMovies(imdbid string, cfgp *config.MediaTypeConfig, listname strin
 			logger.Log.GlobalLogger.Error("", zap.Error(err))
 		}
 	}
-	listmap.Close()
 	return dbmovieID
 }
 
@@ -176,22 +180,24 @@ func AllowMovieImport(imdb string, listTemplate string) bool {
 		return false
 	}
 
-	if config.Cfg.Lists[listTemplate].MinVotes != 0 {
-		countergenre, _ := database.ImdbCountRowsStatic(&database.Querywithargs{QueryString: querycountratingbyvotes, Args: []interface{}{imdb, config.Cfg.Lists[listTemplate].MinVotes}})
+	cfglist := config.Cfg.Lists[listTemplate]
+	defer cfglist.Close()
+	if cfglist.MinVotes != 0 {
+		countergenre, _ := database.ImdbCountRowsStatic(&database.Querywithargs{QueryString: querycountratingbyvotes, Args: []interface{}{imdb, cfglist.MinVotes}})
 		if countergenre >= 1 {
 			logger.Log.GlobalLogger.Warn("error vote count too low for", zap.Stringp("imdb", &imdb))
 			return false
 		}
 	}
-	if config.Cfg.Lists[listTemplate].MinRating != 0 {
-		countergenre, _ := database.ImdbCountRowsStatic(&database.Querywithargs{QueryString: querycountratingbyrating, Args: []interface{}{imdb, config.Cfg.Lists[listTemplate].MinRating}})
+	if cfglist.MinRating != 0 {
+		countergenre, _ := database.ImdbCountRowsStatic(&database.Querywithargs{QueryString: querycountratingbyrating, Args: []interface{}{imdb, cfglist.MinRating}})
 		if countergenre >= 1 {
 			logger.Log.GlobalLogger.Warn("error average vote too low for", zap.Stringp("imdb", &imdb))
 			return false
 		}
 	}
 
-	if len(config.Cfg.Lists[listTemplate].Excludegenre) == 0 && len(config.Cfg.Lists[listTemplate].Includegenre) == 0 {
+	if len(cfglist.Excludegenre) == 0 && len(cfglist.Includegenre) == 0 {
 		return true
 	}
 	var genrearr logger.InStringArrayStruct
@@ -199,25 +205,25 @@ func AllowMovieImport(imdb string, listTemplate string) bool {
 	defer genrearr.Close()
 	var excludebygenre bool
 
-	for idx := range config.Cfg.Lists[listTemplate].Excludegenre {
-		if logger.InStringArray(config.Cfg.Lists[listTemplate].Excludegenre[idx], &genrearr) {
+	for idx := range cfglist.Excludegenre {
+		if logger.InStringArray(cfglist.Excludegenre[idx], &genrearr) {
 			excludebygenre = true
-			logger.Log.GlobalLogger.Warn("error excluded genre", zap.Stringp("excluded", &config.Cfg.Lists[listTemplate].Excludegenre[idx]), zap.Stringp("imdb", &imdb))
+			logger.Log.GlobalLogger.Warn("error excluded genre", zap.Stringp("excluded", &cfglist.Excludegenre[idx]), zap.Stringp("imdb", &imdb))
 			break
 		}
 	}
-	if excludebygenre && len(config.Cfg.Lists[listTemplate].Excludegenre) >= 1 {
+	if excludebygenre && len(cfglist.Excludegenre) >= 1 {
 		return false
 	}
 
 	var includebygenre bool
-	for idx := range config.Cfg.Lists[listTemplate].Includegenre {
-		if logger.InStringArray(config.Cfg.Lists[listTemplate].Includegenre[idx], &genrearr) {
+	for idx := range cfglist.Includegenre {
+		if logger.InStringArray(cfglist.Includegenre[idx], &genrearr) {
 			includebygenre = true
 			break
 		}
 	}
-	if !includebygenre && len(config.Cfg.Lists[listTemplate].Includegenre) >= 1 {
+	if !includebygenre && len(cfglist.Includegenre) >= 1 {
 		logger.Log.GlobalLogger.Warn("error included genre not found", zap.Stringp("imdb", &imdb))
 		return false
 	}
@@ -287,33 +293,35 @@ func findimdbbytitle(title string, slugged string, yearint int) (string, bool, b
 func findtmdbbytitle(title string, yearint int) (string, bool, bool) {
 	getmovie, _ := apiexternal.TmdbAPI.SearchMovie(title)
 	defer getmovie.Close()
-	if len(getmovie.Results) >= 1 {
-		var imdbID string
-		var moviedbexternal *apiexternal.TheMovieDBTVExternal
-		var err error
-		var dbyear int
-		var found, found1 bool
-		for idx2 := range getmovie.Results {
-			database.QueryColumn(&database.Querywithargs{QueryString: queryimdbdbmoviesbymoviedbid, Args: []interface{}{getmovie.Results[idx2].ID}}, &imdbID)
-			if imdbID == "" {
-				moviedbexternal, err = apiexternal.TmdbAPI.GetMovieExternal(getmovie.Results[idx2].ID)
-				if err == nil {
-					imdbID = moviedbexternal.ImdbID
-					moviedbexternal = nil
-				} else {
-					return "", false, false
-				}
+	if len(getmovie.Results) == 0 {
+		return "", false, false
+	}
+	var imdbID string
+	var moviedbexternal *apiexternal.TheMovieDBTVExternal
+	var err error
+	var dbyear int
+	var found, found1 bool
+	for idx2 := range getmovie.Results {
+		database.QueryColumn(&database.Querywithargs{QueryString: queryimdbdbmoviesbymoviedbid, Args: []interface{}{getmovie.Results[idx2].ID}}, &imdbID)
+		if imdbID == "" {
+			moviedbexternal, err = apiexternal.TmdbAPI.GetMovieExternal(getmovie.Results[idx2].ID)
+			if err == nil {
+				imdbID = moviedbexternal.ImdbID
+				moviedbexternal = nil
+			} else {
+				return "", false, false
 			}
-			if imdbID != "" {
-				database.QueryImdbColumn(&database.Querywithargs{QueryString: queryyeartitlesbytconst, Args: []interface{}{imdbID}}, &dbyear)
-				found, found1 = checkifdbmovieyearmatches(dbyear, yearint)
-				if found {
-					return imdbID, found, found1
-				}
-				if found1 && findqualityyear1(imdbID) {
-					return imdbID, found, found1
-				}
-			}
+		}
+		if imdbID == "" {
+			continue
+		}
+		database.QueryImdbColumn(&database.Querywithargs{QueryString: queryyeartitlesbytconst, Args: []interface{}{imdbID}}, &dbyear)
+		found, found1 = checkifdbmovieyearmatches(dbyear, yearint)
+		if found {
+			return imdbID, found, found1
+		}
+		if found1 && findqualityyear1(imdbID) {
+			return imdbID, found, found1
 		}
 	}
 	return "", false, false
@@ -323,16 +331,17 @@ func findomdbbytitle(title string, yearint int) (string, bool, bool) {
 	var searchomdb apiexternal.OmDBMovieSearchGlobal
 	apiexternal.OmdbAPI.SearchMovie(title, "", &searchomdb)
 	defer searchomdb.Close()
-	if len(searchomdb.Search) >= 1 {
-		var found, found1 bool
-		for idximdb := range searchomdb.Search {
-			found, found1 = checkifdbmovieyearmatches(logger.StringToInt(searchomdb.Search[idximdb].Year), yearint)
-			if found {
-				return searchomdb.Search[idximdb].ImdbID, found, found1
-			}
-			if found1 && findqualityyear1(searchomdb.Search[idximdb].ImdbID) {
-				return searchomdb.Search[idximdb].ImdbID, found, found1
-			}
+	if len(searchomdb.Search) == 0 {
+		return "", false, false
+	}
+	var found, found1 bool
+	for idximdb := range searchomdb.Search {
+		found, found1 = checkifdbmovieyearmatches(logger.StringToInt(searchomdb.Search[idximdb].Year), yearint)
+		if found {
+			return searchomdb.Search[idximdb].ImdbID, found, found1
+		}
+		if found1 && findqualityyear1(searchomdb.Search[idximdb].ImdbID) {
+			return searchomdb.Search[idximdb].ImdbID, found, found1
 		}
 	}
 	return "", false, false
@@ -345,27 +354,28 @@ func StripTitlePrefixPostfix(title string, qualityTemplate string) string {
 	}
 	lowertitle := strings.ToLower(title)
 	var trimidx int
-	for idx := range config.Cfg.Quality[qualityTemplate].TitleStripSuffixForSearch {
-		if strings.Contains(title, config.Cfg.Quality[qualityTemplate].TitleStripSuffixForSearch[idx]) {
-			trimidx = strings.Index(title, config.Cfg.Quality[qualityTemplate].TitleStripSuffixForSearch[idx])
-			if trimidx != -1 {
-				title = strings.TrimRight(title[:trimidx], "-. ")
-				lowertitle = strings.TrimRight(lowertitle[:trimidx], "-. ")
-			}
-		} else {
-			trimidx = strings.Index(lowertitle, strings.ToLower(config.Cfg.Quality[qualityTemplate].TitleStripSuffixForSearch[idx]))
+	cfgqual := config.Cfg.Quality[qualityTemplate]
+	defer cfgqual.Close()
+	for idx := range cfgqual.TitleStripSuffixForSearch {
+		if strings.Contains(title, cfgqual.TitleStripSuffixForSearch[idx]) {
+			trimidx = strings.Index(title, cfgqual.TitleStripSuffixForSearch[idx])
 			if trimidx != -1 {
 				title = strings.TrimRight(title[:trimidx], "-. ")
 				lowertitle = strings.TrimRight(lowertitle[:trimidx], "-. ")
 			}
 		}
+		trimidx = strings.Index(lowertitle, strings.ToLower(cfgqual.TitleStripSuffixForSearch[idx]))
+		if trimidx != -1 {
+			title = strings.TrimRight(title[:trimidx], "-. ")
+			lowertitle = strings.TrimRight(lowertitle[:trimidx], "-. ")
+		}
 		//title = strings.Trim(logger.TrimStringInclAfterStringInsensitive(title, list[idx]), " ")
 	}
-	for idx := range config.Cfg.Quality[qualityTemplate].TitleStripPrefixForSearch {
-		if strings.HasPrefix(title, config.Cfg.Quality[qualityTemplate].TitleStripPrefixForSearch[idx]) {
-			title = strings.TrimLeft(title[(strings.Index(title, config.Cfg.Quality[qualityTemplate].TitleStripPrefixForSearch[idx])+len(config.Cfg.Quality[qualityTemplate].TitleStripPrefixForSearch[idx])):], "-. ")
-		} else if len(config.Cfg.Quality[qualityTemplate].TitleStripPrefixForSearch[idx]) <= len(title) && strings.EqualFold(title[:len(config.Cfg.Quality[qualityTemplate].TitleStripPrefixForSearch[idx])], config.Cfg.Quality[qualityTemplate].TitleStripPrefixForSearch[idx]) {
-			title = strings.TrimLeft(title[len(config.Cfg.Quality[qualityTemplate].TitleStripPrefixForSearch[idx]):], "-. ")
+	for idx := range cfgqual.TitleStripPrefixForSearch {
+		if strings.HasPrefix(title, cfgqual.TitleStripPrefixForSearch[idx]) {
+			title = strings.TrimLeft(title[(strings.Index(title, cfgqual.TitleStripPrefixForSearch[idx])+len(cfgqual.TitleStripPrefixForSearch[idx])):], "-. ")
+		} else if len(cfgqual.TitleStripPrefixForSearch[idx]) <= len(title) && strings.EqualFold(title[:len(cfgqual.TitleStripPrefixForSearch[idx])], cfgqual.TitleStripPrefixForSearch[idx]) {
+			title = strings.TrimLeft(title[len(cfgqual.TitleStripPrefixForSearch[idx]):], "-. ")
 		}
 		//title = strings.Trim(logger.TrimStringPrefixInsensitive(title, list[idx]), " ")
 	}
@@ -583,7 +593,7 @@ func JobImportDbSeries(serieconfig *config.SerieConfig, cfgp *config.MediaTypeCo
 
 		if counter == 0 {
 			dbserieadded = true
-			inres, err := database.InsertNamed("insert into dbseries (seriename, aliases, season, status, firstaired, network, runtime, language, genre, overview, rating, siterating, siterating_count, slug, trakt_id, imdb_id, thetvdb_id, freebase_m_id, freebase_id, tvrage_id, facebook, instagram, twitter, banner, poster, fanart, identifiedby) values (:seriename, :aliases, :season, :status, :firstaired, :network, :runtime, :language, :genre, :overview, :rating, :siterating, :siterating_count, :slug, :trakt_id, :imdb_id, :thetvdb_id, :freebase_m_id, :freebase_id, :tvrage_id, :facebook, :instagram, :twitter, :banner, :poster, :fanart, :identifiedby)", dbserie)
+			inres, err := database.InsertNamedOpen("insert into dbseries (seriename, aliases, season, status, firstaired, network, runtime, language, genre, overview, rating, siterating, siterating_count, slug, trakt_id, imdb_id, thetvdb_id, freebase_m_id, freebase_id, tvrage_id, facebook, instagram, twitter, banner, poster, fanart, identifiedby) values (:seriename, :aliases, :season, :status, :firstaired, :network, :runtime, :language, :genre, :overview, :rating, :siterating, :siterating_count, :slug, :trakt_id, :imdb_id, :thetvdb_id, :freebase_m_id, :freebase_id, :tvrage_id, :facebook, :instagram, :twitter, :banner, :poster, :fanart, :identifiedby)", dbserie)
 			if err != nil {
 				logger.Log.GlobalLogger.Error("", zap.Error(err))
 				return
@@ -688,7 +698,7 @@ func JobImportDbSeries(serieconfig *config.SerieConfig, cfgp *config.MediaTypeCo
 					queryid = logger.IntToString(dbserie.TraktID)
 				}
 				traktaliases, err := apiexternal.TraktAPI.GetSerieAliases(queryid)
-				if err == nil {
+				if err == nil && len(traktaliases.Aliases) >= 1 {
 					titlegroup = logger.GrowSliceBy(titlegroup, len(traktaliases.Aliases))
 					lenarr := len(arrmetalang.Arr)
 					for idxalias := range traktaliases.Aliases {
@@ -744,7 +754,7 @@ func JobImportDbSeries(serieconfig *config.SerieConfig, cfgp *config.MediaTypeCo
 				if dbserie.ThetvdbID != 0 {
 					tvdbdetails, err := apiexternal.TvdbAPI.GetSeriesEpisodes(dbserie.ThetvdbID, cfgp.MetadataLanguage)
 
-					if err == nil {
+					if err == nil && len(tvdbdetails.Data) >= 1 {
 						var tbl []database.DbstaticTwoString
 						database.QueryStaticColumnsTwoString(false, 0, &database.Querywithargs{QueryString: "select season, episode from dbserie_episodes where dbserie_id = ?", Args: []interface{}{dbserie.ID}}, &tbl)
 						var ok bool
@@ -781,7 +791,7 @@ func JobImportDbSeries(serieconfig *config.SerieConfig, cfgp *config.MediaTypeCo
 				}
 				if config.Cfg.General.SerieMetaSourceTrakt && dbserie.ImdbID != "" {
 					seasons, err := apiexternal.TraktAPI.GetSerieSeasons(dbserie.ImdbID)
-					if err == nil {
+					if err == nil && len(seasons.Seasons) >= 1 {
 						var episodes apiexternal.TraktSerieSeasonEpisodeGroup
 						//var identifier string
 						var tbl []database.DbstaticTwoString
@@ -869,7 +879,7 @@ func JobImportDbSeries(serieconfig *config.SerieConfig, cfgp *config.MediaTypeCo
 			}
 			for idxreplace := range cfgp.ListsMap[listname].ReplaceMapLists {
 				if strings.EqualFold(serietest[idx2].Str, cfgp.ListsMap[listname].ReplaceMapLists[idxreplace]) {
-					database.UpdateNamed("Update series SET listname = :listname, dbserie_id = :dbserie_id where id = :id", database.Serie{Listname: cfgp.ListsMap[listname].Name, DbserieID: dbserie.ID, ID: uint(serietest[idx2].Num)})
+					database.UpdateColumnStatic(&database.Querywithargs{QueryString: "Update series SET listname = ?, dbserie_id = ? where id = ?", Args: []interface{}{cfgp.ListsMap[listname].Name, dbserie.ID, serietest[idx2].Num}})
 				}
 			}
 		}

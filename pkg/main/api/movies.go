@@ -580,7 +580,7 @@ func apiMoviesRssSearchList(c *gin.Context) {
 // @Summary      Download a movie (manual)
 // @Description  Downloads a release after select
 // @Tags         movie
-// @Param        nzb  body      apiexternal.NzbwithprioJSON  true  "Nzb: Req. Title, Indexer, imdbid, downloadurl, parseinfo"
+// @Param        nzb  body      apiexternal.Nzbwithprio  true  "Nzb: Req. Title, Indexer, imdbid, downloadurl, parseinfo"
 // @Param        id   path      int                     true  "Movie ID"
 // @Success      200  {object}  string
 // @Failure      401  {object}  string
@@ -604,11 +604,7 @@ func apimoviesSearchDownload(c *gin.Context) {
 		cfgp := config.Cfg.Media["movie_"+config.Cfg.Movies[idx].Name]
 		for idxlist := range config.Cfg.Movies[idx].Lists {
 			if strings.EqualFold(config.Cfg.Movies[idx].Lists[idxlist].Name, movie.Listname) {
-				downloadnow := downloader.NewDownloader(&cfgp)
-				downloadnow.SetMovie(movie.ID)
-				downloadnow.Nzb = nzb
-				downloadnow.DownloadNzb()
-				downloadnow.Close()
+				downloader.DownloadMovie(&cfgp, movie.ID, &nzb)
 				c.JSON(http.StatusOK, "started")
 				return
 			}

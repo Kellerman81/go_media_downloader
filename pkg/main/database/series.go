@@ -383,7 +383,7 @@ func (serie *Dbserie) GetMetadata(language string, querytmdb bool, querytrakt bo
 		if returnaliases {
 			traktaliases, err := apiexternal.TraktAPI.GetSerieAliases(serie.ImdbID)
 
-			if err == nil {
+			if err == nil && len(traktaliases.Aliases) >= 1 {
 				arrcfglang := logger.InStringArrayStruct{Arr: config.Cfg.Imdbindexer.Indexedlanguages}
 				lenarr := len(arrcfglang.Arr)
 				for idxalias := range traktaliases.Aliases {

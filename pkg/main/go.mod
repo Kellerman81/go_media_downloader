@@ -63,7 +63,6 @@ require (
 	go.uber.org/atomic v1.10.0 // indirect
 	go.uber.org/multierr v1.9.0 // indirect
 	golang.org/x/crypto v0.5.0 // indirect
-	golang.org/x/sync v0.1.0 // indirect
 	golang.org/x/sys v0.4.0 // indirect
 	golang.org/x/term v0.4.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
@@ -80,6 +79,7 @@ require (
 	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826 // indirect
 	github.com/natefinch/lumberjack v2.0.0+incompatible // indirect
 	github.com/syndtr/goleveldb v1.0.0 // indirect
+	golang.org/x/sync v0.1.0 // indirect
 	golang.org/x/tools v0.5.0 // indirect
 	xorm.io/builder v0.3.12 // indirect
 	xorm.io/xorm v1.3.2 // indirect

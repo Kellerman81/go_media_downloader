@@ -208,9 +208,8 @@ type DbmovieTitle struct {
 	Region    string
 }
 
-func (movie *Dbmovie) getTitles(cfgp *config.MediaTypeConfig, queryimdb bool, querytmdb bool, querytrakt bool) []DbmovieTitle {
-	arrcfglang := logger.InStringArrayStruct{Arr: cfgp.MetadataTitleLanguages}
-
+func (movie *Dbmovie) getTitles(arrcfglang *logger.InStringArrayStruct, queryimdb bool, querytmdb bool, querytrakt bool) []DbmovieTitle {
+	defer arrcfglang.Close()
 	var result []DbmovieTitle
 	if queryimdb && movie.ImdbID != "" {
 		if !strings.HasPrefix(movie.ImdbID, "tt") {
@@ -222,7 +221,7 @@ func (movie *Dbmovie) getTitles(cfgp *config.MediaTypeConfig, queryimdb bool, qu
 		result = make([]DbmovieTitle, 0, len(imdbakadata))
 		lenarr := len(arrcfglang.Arr)
 		for idxaka := range imdbakadata {
-			if logger.InStringArray(imdbakadata[idxaka].Str1, &arrcfglang) || lenarr == 0 {
+			if logger.InStringArray(imdbakadata[idxaka].Str1, arrcfglang) || lenarr == 0 {
 				result = append(result, DbmovieTitle{DbmovieID: movie.ID, Title: imdbakadata[idxaka].Str2, Slug: imdbakadata[idxaka].Str3, Region: imdbakadata[idxaka].Str1})
 			}
 		}
@@ -230,11 +229,11 @@ func (movie *Dbmovie) getTitles(cfgp *config.MediaTypeConfig, queryimdb bool, qu
 	}
 	if querytmdb && movie.MoviedbID != 0 {
 		moviedbtitles, err := apiexternal.TmdbAPI.GetMovieTitles(movie.MoviedbID)
-		if err == nil {
+		if err == nil && len(moviedbtitles.Titles) >= 1 {
 			result = logger.GrowSliceBy(result, len(moviedbtitles.Titles))
 			lenarr := len(arrcfglang.Arr)
 			for idx := range moviedbtitles.Titles {
-				if ok := logger.InStringArray(moviedbtitles.Titles[idx].Iso31661, &arrcfglang); !ok && lenarr >= 1 {
+				if ok := logger.InStringArray(moviedbtitles.Titles[idx].Iso31661, arrcfglang); !ok && lenarr >= 1 {
 					continue
 				}
 				result = append(result, DbmovieTitle{DbmovieID: movie.ID, Title: moviedbtitles.Titles[idx].Title, Slug: logger.StringToSlug(moviedbtitles.Titles[idx].Title), Region: moviedbtitles.Titles[idx].Iso31661})
@@ -246,14 +245,14 @@ func (movie *Dbmovie) getTitles(cfgp *config.MediaTypeConfig, queryimdb bool, qu
 	}
 	if querytrakt && movie.ImdbID != "" {
 		traktaliases, err := apiexternal.TraktAPI.GetMovieAliases(movie.ImdbID)
-		if err != nil {
+		if err != nil || len(traktaliases.Aliases) == 0 {
 			arrcfglang.Close()
 			return result
 		}
 		result = logger.GrowSliceBy(result, len(traktaliases.Aliases))
 		lenarr := len(arrcfglang.Arr)
 		for idxalias := range traktaliases.Aliases {
-			if logger.InStringArray(traktaliases.Aliases[idxalias].Country, &arrcfglang) || lenarr == 0 {
+			if logger.InStringArray(traktaliases.Aliases[idxalias].Country, arrcfglang) || lenarr == 0 {
 				result = append(result, DbmovieTitle{DbmovieID: movie.ID, Title: traktaliases.Aliases[idxalias].Title, Slug: logger.StringToSlug(traktaliases.Aliases[idxalias].Title), Region: traktaliases.Aliases[idxalias].Country})
 			}
 		}
@@ -563,13 +562,13 @@ func (movie *Dbmovie) Getmoviemetatitles(cfgp *config.MediaTypeConfig) {
 	}
 	var titles logger.InStringArrayStruct
 	QueryStaticStringArray(false, 0, &Querywithargs{QueryString: "select title from dbmovie_titles where dbmovie_id = ?", Args: []interface{}{movie.ID}}, &titles.Arr)
-	titlegroup := movie.getTitles(cfgp, config.Cfg.General.MovieAlternateTitleMetaSourceImdb, config.Cfg.General.MovieAlternateTitleMetaSourceTmdb, config.Cfg.General.MovieAlternateTitleMetaSourceTrakt)
+	titlegroup := movie.getTitles(&logger.InStringArrayStruct{Arr: cfgp.MetadataTitleLanguages}, config.Cfg.General.MovieAlternateTitleMetaSourceImdb, config.Cfg.General.MovieAlternateTitleMetaSourceTmdb, config.Cfg.General.MovieAlternateTitleMetaSourceTrakt)
 	for idx := range titlegroup {
 		if titlegroup[idx].Title == "" {
 			continue
 		}
 		if !logger.InStringArray(titlegroup[idx].Title, &titles) {
-			InsertNamed("Insert into dbmovie_titles (title, slug, dbmovie_id, region) values (:title, :slug, :dbmovie_id, :region)", DbmovieTitle{Title: titlegroup[idx].Title, Slug: titlegroup[idx].Slug, DbmovieID: movie.ID, Region: titlegroup[idx].Region})
+			InsertStatic(&Querywithargs{QueryString: "Insert into dbmovie_titles (title, slug, dbmovie_id, region) values (?, ?, ?, ?)", Args: []interface{}{titlegroup[idx].Title, titlegroup[idx].Slug, movie.ID, titlegroup[idx].Region}})
 			titles.Arr = append(titles.Arr, titlegroup[idx].Title)
 		}
 	}

@@ -96,19 +96,14 @@ func loadDBPatterns() {
 }
 
 func NewCutoffPrio(cfgp *config.MediaTypeConfig, qualityTemplate string) int {
-	m := apiexternal.ParseInfo{Quality: config.Cfg.Quality[qualityTemplate].CutoffQuality, Resolution: config.Cfg.Quality[qualityTemplate].CutoffResolution}
-	GetPriorityMap(&m, cfgp, qualityTemplate, true, false)
-	prio := m.Priority
-	m.Close()
-	return prio
+	return GetPriorityMapAutoClose(&apiexternal.ParseInfo{Quality: config.Cfg.Quality[qualityTemplate].CutoffQuality, Resolution: config.Cfg.Quality[qualityTemplate].CutoffResolution}, cfgp, qualityTemplate, true, false)
 }
 
 func NewFileParser(filename string, includeYearInTitle bool, typegroup string) *apiexternal.ParseInfo {
 	m := apiexternal.ParseInfo{File: filename}
 	var startIndex, endIndex = 0, len(m.File)
 	loadDBPatterns()
-	cleanName := strings.TrimRight(strings.TrimLeft(m.File, "["), "]")
-	cleanName = strings.ReplaceAll(cleanName, "_", " ")
+	cleanName := strings.ReplaceAll(strings.TrimRight(strings.TrimLeft(m.File, "["), "]"), "_", " ")
 
 	tolower := strings.ToLower(cleanName)
 	if !logger.DisableParserStringMatch {
@@ -348,7 +343,7 @@ func GetDbIDs(grouptype string, m *apiexternal.ParseInfo, cfgp *config.MediaType
 	database.QueryColumn(&database.Querywithargs{QueryString: querylistnameseriesbyid, Args: []interface{}{m.SerieID}}, &m.Listname)
 }
 
-func ParseVideoFile(m *apiexternal.ParseInfo, file string, cfgp *config.MediaTypeConfig, qualityTemplate string) error {
+func ParseVideoFile(m *apiexternal.ParseInfo, file string, qualityTemplate string) error {
 	if m.QualitySet == "" {
 		m.QualitySet = qualityTemplate
 	}
@@ -450,7 +445,11 @@ func ParseVideoFile(m *apiexternal.ParseInfo, file string, cfgp *config.MediaTyp
 	return nil
 }
 
-func GetPriorityMap(m *apiexternal.ParseInfo, cfgp *config.MediaTypeConfig, qualityTemplate string, useall bool, checkwanted bool) {
+func GetPriorityMapAutoClose(m *apiexternal.ParseInfo, cfgp *config.MediaTypeConfig, qualityTemplate string, useall bool, checkwanted bool) int {
+	defer m.Close()
+	return GetPriorityMap(m, cfgp, qualityTemplate, useall, checkwanted)
+}
+func GetPriorityMap(m *apiexternal.ParseInfo, cfgp *config.MediaTypeConfig, qualityTemplate string, useall bool, checkwanted bool) int {
 
 	m.QualitySet = qualityTemplate
 
@@ -499,16 +498,18 @@ func GetPriorityMap(m *apiexternal.ParseInfo, cfgp *config.MediaTypeConfig, qual
 	}
 	var reso, qual, aud, codec uint
 
-	if config.Cfg.Quality[qualityTemplate].UseForPriorityResolution || useall {
+	cfgqual := config.Cfg.Quality[qualityTemplate]
+	defer cfgqual.Close()
+	if cfgqual.UseForPriorityResolution || useall {
 		reso = m.ResolutionID
 	}
-	if config.Cfg.Quality[qualityTemplate].UseForPriorityQuality || useall {
+	if cfgqual.UseForPriorityQuality || useall {
 		qual = m.QualityID
 	}
-	if config.Cfg.Quality[qualityTemplate].UseForPriorityAudio || useall {
+	if cfgqual.UseForPriorityAudio || useall {
 		aud = m.AudioID
 	}
-	if config.Cfg.Quality[qualityTemplate].UseForPriorityCodec || useall {
+	if cfgqual.UseForPriorityCodec || useall {
 		codec = m.CodecID
 	}
 
@@ -524,11 +525,11 @@ func GetPriorityMap(m *apiexternal.ParseInfo, cfgp *config.MediaTypeConfig, qual
 	allQualityPrioritiesMu.Unlock()
 	if !ok {
 		m.Priority = 0
-		return
+		return 0
 	}
 	m.Priority = prio
-	if !config.Cfg.Quality[qualityTemplate].UseForPriorityOther && !useall {
-		return
+	if !cfgqual.UseForPriorityOther && !useall {
+		return m.Priority
 	}
 	if m.Proper {
 		m.Priority += 5
@@ -539,8 +540,10 @@ func GetPriorityMap(m *apiexternal.ParseInfo, cfgp *config.MediaTypeConfig, qual
 	if m.Repack {
 		m.Priority++
 	}
+	return m.Priority
 }
-func GetIDPriorityMap(m *apiexternal.ParseInfo, cfgp *config.MediaTypeConfig, qualityTemplate string, useall bool, checkwanted bool) {
+func GetIDPriorityMap(m *apiexternal.ParseInfo, cfgp *config.MediaTypeConfig, qualityTemplate string, useall bool, checkwanted bool) int {
+	defer m.Close()
 	if m.ResolutionID == 0 && m.Resolution == "" {
 		m.Resolution = cfgp.DefaultResolution
 	}
@@ -566,16 +569,18 @@ func GetIDPriorityMap(m *apiexternal.ParseInfo, cfgp *config.MediaTypeConfig, qu
 	}
 	var reso, qual, aud, codec uint
 
-	if config.Cfg.Quality[qualityTemplate].UseForPriorityResolution || useall {
+	cfgqual := config.Cfg.Quality[qualityTemplate]
+	defer cfgqual.Close()
+	if cfgqual.UseForPriorityResolution || useall {
 		reso = m.ResolutionID
 	}
-	if config.Cfg.Quality[qualityTemplate].UseForPriorityQuality || useall {
+	if cfgqual.UseForPriorityQuality || useall {
 		qual = m.QualityID
 	}
-	if config.Cfg.Quality[qualityTemplate].UseForPriorityAudio || useall {
+	if cfgqual.UseForPriorityAudio || useall {
 		aud = m.AudioID
 	}
-	if config.Cfg.Quality[qualityTemplate].UseForPriorityCodec || useall {
+	if cfgqual.UseForPriorityCodec || useall {
 		codec = m.CodecID
 	}
 	allQualityPrioritiesMu.Lock()
@@ -591,11 +596,11 @@ func GetIDPriorityMap(m *apiexternal.ParseInfo, cfgp *config.MediaTypeConfig, qu
 	if !ok {
 		m.Priority = 0
 		logger.Log.GlobalLogger.Debug("prio not found", zap.String("searched for", buildPrioStr(reso, qual, codec, aud)), zap.String("in", qualityTemplate), zap.Bool("wanted", checkwanted))
-		return
+		return 0
 	}
 	m.Priority = prio
-	if !config.Cfg.Quality[qualityTemplate].UseForPriorityOther && !useall {
-		return
+	if !cfgqual.UseForPriorityOther && !useall {
+		return m.Priority
 	}
 	if m.Proper {
 		m.Priority += 5
@@ -606,6 +611,7 @@ func GetIDPriorityMap(m *apiexternal.ParseInfo, cfgp *config.MediaTypeConfig, qu
 	if m.Repack {
 		m.Priority++
 	}
+	return m.Priority
 }
 
 func getIDPrioritySimple(m *apiexternal.ParseInfo, qualityTemplate string, reordergroup *config.QualityReorderConfigGroup) int {
@@ -623,6 +629,7 @@ func getIDPrioritySimple(m *apiexternal.ParseInfo, qualityTemplate string, reord
 		prioaud = gettypeidpriority(m, m.AudioID, "audio", true, reordergroup, &database.DBConnect.GetaudiosIn)
 	}
 	var namearr []string
+
 	for idxreorder := range reordergroup.Arr {
 		if strings.EqualFold(reordergroup.Arr[idxreorder].ReorderType, "combined_res_qual") {
 			namearr = strings.Split(reordergroup.Arr[idxreorder].Name, ",")
@@ -660,28 +667,41 @@ func GetAllQualityPriorities() {
 	//var mapPriorities map[string]int
 	//var mapPrioritieswanted map[string]int
 
-	var qualconf config.QualityConfig
 	var setprio int
 	var str4 string
-	var addwanted bool
+	var addwanted, wantedquery bool
 	for idxqualroot := range config.Cfg.Quality {
-		qualconf = config.Cfg.Quality[idxqualroot]
-		reordergroup.Arr = qualconf.QualityReorder
-		allQualityPriorities[qualconf.Name] = make(map[string]int, lenmap)
-		allQualityPrioritiesWanted[qualconf.Name] = make(map[string]int, lenmap)
+		reordergroup.Arr = config.Cfg.Quality[idxqualroot].QualityReorder
+		allQualityPriorities[config.Cfg.Quality[idxqualroot].Name] = make(map[string]int, lenmap)
+		allQualityPrioritiesWanted[config.Cfg.Quality[idxqualroot].Name] = make(map[string]int, lenmap)
 		for idxreso := range getresolutions {
 			addwanted = true
-			if !logger.InStringArray(getresolutions[idxreso].Name, &qualconf.WantedResolutionIn) && database.DBLogLevel == "debug" {
-				logger.Log.Debug("unwanted res: ", qualconf.Name, " ", parse.Resolution, " ", qualconf.WantedResolutionIn)
+			wantedquery = false
+			for idxarr := range config.Cfg.Quality[idxqualroot].WantedResolutionIn.Arr {
+				if strings.EqualFold(getresolutions[idxreso].Name, config.Cfg.Quality[idxqualroot].WantedResolutionIn.Arr[idxarr]) {
+					wantedquery = true
+					break
+				}
+			}
+			if !wantedquery && database.DBLogLevel == "debug" {
+				logger.Log.Debug("unwanted res: ", config.Cfg.Quality[idxqualroot].Name, " ", parse.Resolution, " ", config.Cfg.Quality[idxqualroot].WantedResolutionIn)
 				addwanted = false
 			}
-			parse = apiexternal.ParseInfo{}
-			parse.Resolution = getresolutions[idxreso].Name
-			parse.ResolutionID = getresolutions[idxreso].ID
+			parse = apiexternal.ParseInfo{
+				Resolution:   getresolutions[idxreso].Name,
+				ResolutionID: getresolutions[idxreso].ID,
+			}
 
 			for idxqual := range getqualities {
-				if !logger.InStringArray(getqualities[idxqual].Name, &qualconf.WantedQualityIn) && database.DBLogLevel == "debug" {
-					logger.Log.Debug("unwanted qual: ", qualconf.Name, " ", parse.Resolution, " ", parse.Quality, " ", qualconf.WantedQualityIn)
+				wantedquery = false
+				for idxarr := range config.Cfg.Quality[idxqualroot].WantedQualityIn.Arr {
+					if strings.EqualFold(getqualities[idxqual].Name, config.Cfg.Quality[idxqualroot].WantedQualityIn.Arr[idxarr]) {
+						wantedquery = true
+						break
+					}
+				}
+				if !wantedquery && database.DBLogLevel == "debug" {
+					logger.Log.Debug("unwanted qual: ", config.Cfg.Quality[idxqualroot].Name, " ", parse.Resolution, " ", parse.Quality, " ", config.Cfg.Quality[idxqualroot].WantedQualityIn)
 					addwanted = false
 				}
 
@@ -694,10 +714,10 @@ func GetAllQualityPriorities() {
 						parse.Audio = getaudios[idxaudio].Name
 						parse.AudioID = getaudios[idxaudio].ID
 						str4 = buildPrioStr(getresolutions[idxreso].ID, getqualities[idxqual].ID, getcodecs[idxcodec].ID, getaudios[idxaudio].ID)
-						setprio = getIDPrioritySimple(&parse, qualconf.Name, &reordergroup)
-						allQualityPriorities[qualconf.Name][str4] = setprio
+						setprio = getIDPrioritySimple(&parse, config.Cfg.Quality[idxqualroot].Name, &reordergroup)
+						allQualityPriorities[config.Cfg.Quality[idxqualroot].Name][str4] = setprio
 						if addwanted {
-							allQualityPrioritiesWanted[qualconf.Name][str4] = setprio
+							allQualityPrioritiesWanted[config.Cfg.Quality[idxqualroot].Name][str4] = setprio
 						}
 					}
 				}
@@ -706,7 +726,6 @@ func GetAllQualityPriorities() {
 	}
 
 	parse.Close()
-	qualconf.Close()
 	//tempmap = nil
 	reordergroup.Close()
 	getaudios = nil
@@ -764,6 +783,18 @@ func gettypeids(disableParserStringMatch bool, inval string, qualitytype *databa
 	}
 	return id
 }
+
+func reorderpriority(reordergroup *config.QualityReorderConfigGroup, qualitystringtype string, qualityname string, priority *int) {
+
+	for idxreorder := range reordergroup.Arr {
+		if strings.EqualFold(reordergroup.Arr[idxreorder].ReorderType, qualitystringtype) && strings.EqualFold(reordergroup.Arr[idxreorder].Name, qualityname) {
+			*priority = reordergroup.Arr[idxreorder].Newpriority
+		}
+		if strings.EqualFold(reordergroup.Arr[idxreorder].ReorderType, "position") && strings.EqualFold(reordergroup.Arr[idxreorder].Name, qualitystringtype) {
+			*priority *= reordergroup.Arr[idxreorder].Newpriority
+		}
+	}
+}
 func gettypeidpriority(m *apiexternal.ParseInfo, id uint, qualitystringtype string, setprioonly bool, reordergroup *config.QualityReorderConfigGroup, qualitytype *database.InQualitiesArray) int {
 	var priority int
 	var name string
@@ -773,14 +804,8 @@ func gettypeidpriority(m *apiexternal.ParseInfo, id uint, qualitystringtype stri
 		}
 		name = qualitytype.Arr[qualidx].Name
 		priority = qualitytype.Arr[qualidx].Priority
-		for idxreorder := range reordergroup.Arr {
-			if strings.EqualFold(reordergroup.Arr[idxreorder].ReorderType, qualitystringtype) && strings.EqualFold(reordergroup.Arr[idxreorder].Name, qualitytype.Arr[qualidx].Name) {
-				priority = reordergroup.Arr[idxreorder].Newpriority
-			}
-			if strings.EqualFold(reordergroup.Arr[idxreorder].ReorderType, "position") && strings.EqualFold(reordergroup.Arr[idxreorder].Name, qualitystringtype) {
-				priority *= reordergroup.Arr[idxreorder].Newpriority
-			}
-		}
+
+		reorderpriority(reordergroup, qualitystringtype, qualitytype.Arr[qualidx].Name, &priority)
 
 		switch qualitystringtype {
 		case "resolution":

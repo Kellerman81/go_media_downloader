@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"database/sql"
 	"errors"
-	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -70,7 +69,7 @@ func jobImportFileCheck(file string, dbtype string) {
 
 func insertjobhistory(job *database.JobHistory) (sql.Result, error) {
 	defer logger.ClearVar(job)
-	return database.InsertNamed("Insert into job_histories (job_type, job_group, job_category, started) values (:job_type, :job_group, :job_category, :started)", job)
+	return database.InsertStatic(&database.Querywithargs{QueryString: "Insert into job_histories (job_type, job_group, job_category, started) values (?, ?, ?, ?)", Args: []interface{}{job.JobType, job.JobGroup, job.JobCategory, job.Started}})
 }
 func endjobhistory(id int64) {
 	database.UpdateColumnStatic(&database.Querywithargs{QueryString: "Update job_histories set ended = ? where id = ?", Args: []interface{}{time.Now().In(logger.TimeZone), id}})
@@ -81,27 +80,22 @@ func InitialFillSeries() {
 
 	var dbresult sql.Result
 	var dbid int64
-	var cfgp config.MediaTypeConfig
-	for idx := range config.Cfg.Series {
-		cfgp = config.Cfg.Series[idx]
+	for _, cfgp := range config.Cfg.Series {
 		dbresult, _ = insertjobhistory(&database.JobHistory{JobType: "feeds", JobGroup: cfgp.Name, JobCategory: "Serie", Started: sql.NullTime{Time: time.Now().In(logger.TimeZone), Valid: true}})
-		//dbresult, _ = database.InsertNamed("Insert into job_histories (job_type, job_group, job_category, started) values (:job_type, :job_group, :job_category, :started)", database.JobHistory{JobType: "feeds", JobGroup: config.Cfg.Series[idx].Name, JobCategory: "Serie", Started: sql.NullTime{Time: time.Now().In(logger.TimeZone), Valid: true}})
 		for idxlist := range cfgp.Lists {
 			importnewseriessingle(&cfgp, cfgp.Lists[idxlist].Name)
 		}
 		dbid, _ = dbresult.LastInsertId()
 		endjobhistory(dbid)
-
+		cfgp.Close()
 	}
-	for idx := range config.Cfg.Series {
-		cfgp = config.Cfg.Series[idx]
+	for _, cfgp := range config.Cfg.Series {
 		dbresult, _ = insertjobhistory(&database.JobHistory{JobType: "datafull", JobGroup: cfgp.Name, JobCategory: "Serie", Started: sql.NullTime{Time: time.Now().In(logger.TimeZone), Valid: true}})
-		//dbresult, _ = database.InsertNamed("Insert into job_histories (job_type, job_group, job_category, started) values (:job_type, :job_group, :job_category, :started)", database.JobHistory{JobType: "datafull", JobGroup: config.Cfg.Series[idx].Name, JobCategory: "Serie", Started: sql.NullTime{Time: time.Now().In(logger.TimeZone), Valid: true}})
 		getNewFilesMap(&cfgp, "")
 		dbid, _ = dbresult.LastInsertId()
 		endjobhistory(dbid)
+		cfgp.Close()
 	}
-	cfgp.Close()
 }
 
 func InitialFillMovies() {
@@ -112,33 +106,46 @@ func InitialFillMovies() {
 	var dbresult sql.Result
 	var dbid int64
 
-	var cfgp config.MediaTypeConfig
-	for idx := range config.Cfg.Movies {
-		cfgp = config.Cfg.Movies[idx]
+	for _, cfgp := range config.Cfg.Movies {
 		dbresult, _ = insertjobhistory(&database.JobHistory{JobType: "feeds", JobGroup: cfgp.Name, JobCategory: "Movie", Started: sql.NullTime{Time: time.Now().In(logger.TimeZone), Valid: true}})
-		//dbresult, _ = database.InsertNamed("Insert into job_histories (job_type, job_group, job_category, started) values (:job_type, :job_group, :job_category, :started)", database.JobHistory{JobType: "feeds", JobGroup: config.Cfg.Movies[idx].Name, JobCategory: "Movie", Started: sql.NullTime{Time: time.Now().In(logger.TimeZone), Valid: true}})
 		for idxlist := range cfgp.Lists {
 			importnewmoviessingle(&cfgp, cfgp.Lists[idxlist].Name)
 		}
 		dbid, _ = dbresult.LastInsertId()
 		endjobhistory(dbid)
-
+		cfgp.Close()
 	}
 
-	for idx := range config.Cfg.Movies {
-		cfgp = config.Cfg.Movies[idx]
+	for _, cfgp := range config.Cfg.Movies {
 		dbresult, _ = insertjobhistory(&database.JobHistory{JobType: "datafull", JobGroup: cfgp.Name, JobCategory: "Movie", Started: sql.NullTime{Time: time.Now().In(logger.TimeZone), Valid: true}})
-		//dbresult, _ = database.InsertNamed("Insert into job_histories (job_type, job_group, job_category, started) values (:job_type, :job_group, :job_category, :started)", database.JobHistory{JobType: "datafull", JobGroup: config.Cfg.Movies[idx].Name, JobCategory: "Movie", Started: sql.NullTime{Time: time.Now().In(logger.TimeZone), Valid: true}})
 		getNewFilesMap(&cfgp, "")
 		dbid, _ = dbresult.LastInsertId()
 		endjobhistory(dbid)
+		cfgp.Close()
 	}
-	cfgp.Close()
 }
 
 func FillImdb() {
 	group := logger.WorkerPools["Files"].Group()
-	group.Submit(func() { fillimdb() })
+	group.Submit(func() {
+		file := "./init_imdb"
+		if runtime.GOOS == "windows" {
+			file = "init_imdb.exe"
+		}
+		cmd := exec.Command(file)
+		var stdoutBuf bytes.Buffer
+		cmd.Stdout = &stdoutBuf
+
+		if scanner.CheckFileExist(file) && cmd.Run() == nil {
+			logger.Log.GlobalLogger.Info(stdoutBuf.String())
+			database.CloseImdb()
+			os.Remove("./databases/imdb.db")
+			os.Rename("./databases/imdbtemp.db", "./databases/imdb.db")
+			database.InitImdbdb("info")
+		}
+		stdoutBuf.Reset()
+		cmd = nil
+	})
 	group.Wait()
 }
 func buildparsedstring(m *apiexternal.ParseInfo) string {
@@ -195,25 +202,6 @@ func buildparsedstring(m *apiexternal.ParseInfo) string {
 	}
 	return bld.String()
 }
-func fillimdb() {
-	file := "./init_imdb"
-	if runtime.GOOS == "windows" {
-		file = "init_imdb.exe"
-	}
-	cmd := exec.Command(file)
-	var stdoutBuf bytes.Buffer
-	cmd.Stdout = &stdoutBuf
-
-	if scanner.CheckFileExist(file) && cmd.Run() == nil {
-		logger.Log.GlobalLogger.Info(stdoutBuf.String())
-		database.CloseImdb()
-		os.Remove("./databases/imdb.db")
-		os.Rename("./databases/imdbtemp.db", "./databases/imdb.db")
-		database.InitImdbdb("info")
-	}
-	stdoutBuf.Reset()
-	cmd = nil
-}
 
 func (s *feedResults) Close() {
 	if logger.DisableVariableCleanup {
@@ -234,22 +222,23 @@ func feeds(cfgp *config.MediaTypeConfig, listname string) (*feedResults, error) 
 		logger.Log.GlobalLogger.Debug("Error - Group list not enabled")
 		return nil, errNoListEnabled
 	}
-	listmao := cfgp.GetList(listname)
-	listTemplateList := listmao.TemplateList
-	listmao.Close()
+	listTemplateList, listenabled := cfgp.GetTemplateList(listname)
+	//listmao.Close()
 	if !config.Check("list_" + listTemplateList) {
 		logger.Log.GlobalLogger.Debug("Error - list not found")
 		return nil, errNoList
 	}
 
-	if !config.Cfg.Lists[listTemplateList].Enabled {
+	if !listenabled {
 		logger.Log.GlobalLogger.Debug("Error - list not enabled")
 		return nil, errNoListEnabled
 	}
 
-	switch config.Cfg.Lists[listTemplateList].ListType {
+	cfglist := config.Cfg.Lists[listTemplateList]
+	defer cfglist.Close()
+	switch cfglist.ListType {
 	case "seriesconfig":
-		content, err := os.ReadFile(config.Cfg.Lists[listTemplateList].SeriesConfigFile)
+		content, err := os.ReadFile(cfglist.SeriesConfigFile)
 		if err != nil {
 			logger.Log.GlobalLogger.Error("Error loading config. ", zap.Error(err))
 		}
@@ -261,25 +250,24 @@ func feeds(cfgp *config.MediaTypeConfig, listname string) (*feedResults, error) 
 		}
 		return &feeddata, nil
 	case "traktpublicshowlist":
-		return getTraktUserPublicShowList(cfgp.GetList(listname))
+		return getTraktUserPublicShowList(listTemplateList)
 	case "imdbcsv":
-		return getMissingIMDBMoviesV2(cfgp.GetList(listname))
+		return getMissingIMDBMoviesV2(listTemplateList)
 	case "traktpublicmovielist":
-		return getTraktUserPublicMovieList(cfgp.GetList(listname))
+		return getTraktUserPublicMovieList(listTemplateList)
 	case "traktmoviepopular":
-		return gettractmoviefeeds("popular", config.Cfg.Lists[listTemplateList].Limit, listTemplateList)
+		return gettractmoviefeeds("popular", cfglist.Limit, listTemplateList)
 	case "traktmovieanticipated":
-		return gettractmoviefeeds("anticipated", config.Cfg.Lists[listTemplateList].Limit, listTemplateList)
+		return gettractmoviefeeds("anticipated", cfglist.Limit, listTemplateList)
 	case "traktmovietrending":
-		return gettractmoviefeeds("trending", config.Cfg.Lists[listTemplateList].Limit, listTemplateList)
+		return gettractmoviefeeds("trending", cfglist.Limit, listTemplateList)
 	case "traktseriepopular":
-		return gettractseriefeeds("popular", config.Cfg.Lists[listTemplateList].Limit)
+		return gettractseriefeeds("popular", cfglist.Limit)
 	case "traktserieanticipated":
-		return gettractseriefeeds("anticipated", config.Cfg.Lists[listTemplateList].Limit)
+		return gettractseriefeeds("anticipated", cfglist.Limit)
 	case "traktserietrending":
-		return gettractseriefeeds("trending", config.Cfg.Lists[listTemplateList].Limit)
+		return gettractseriefeeds("trending", cfglist.Limit)
 	case "newznabrss":
-
 		searchresults, err := (&searcher.Searcher{
 			Cfgp:    cfgp,
 			Quality: cfgp.ListsMap[listname].TemplateQuality,
@@ -287,18 +275,13 @@ func feeds(cfgp *config.MediaTypeConfig, listname string) (*feedResults, error) 
 		if err != nil {
 			return nil, err
 		}
-		var downloadnow *downloader.Downloadertype
 		for idxres := range searchresults.Nzbs {
 			logger.Log.GlobalLogger.Debug("nzb found - start downloading", zap.Stringp("url", &searchresults.Nzbs[idxres].NZB.Title))
-			downloadnow = downloader.NewDownloader(cfgp)
 			if searchresults.Nzbs[idxres].NzbmovieID != 0 {
-				downloadnow.SetMovie(searchresults.Nzbs[idxres].NzbmovieID)
+				downloader.DownloadMovie(cfgp, searchresults.Nzbs[idxres].NzbmovieID, &searchresults.Nzbs[idxres])
 			} else if searchresults.Nzbs[idxres].NzbepisodeID != 0 {
-				downloadnow.SetSeriesEpisode(searchresults.Nzbs[idxres].NzbepisodeID)
+				downloader.DownloadSeriesEpisode(cfgp, searchresults.Nzbs[idxres].NzbepisodeID, &searchresults.Nzbs[idxres])
 			}
-			downloadnow.Nzb = searchresults.Nzbs[idxres]
-			downloadnow.DownloadNzb()
-			downloadnow.Close()
 		}
 		searchresults.Close()
 		return nil, errNoList
@@ -308,24 +291,25 @@ func feeds(cfgp *config.MediaTypeConfig, listname string) (*feedResults, error) 
 	return nil, errNoConfig
 }
 
-func gettractmoviefeeds(traktlist string, limit int, templateList string) (*feedResults, error) {
-	var traktpopular *apiexternal.TraktMovieGroup
+func getmovietraktdata(traktlist string, limit int) (*apiexternal.TraktMovieGroup, error) {
 	switch traktlist {
 	case "popular":
-		traktpopular, _ = apiexternal.TraktAPI.GetMoviePopular(limit)
+		return apiexternal.TraktAPI.GetMoviePopular(limit)
 	case "trending":
-		traktpopular, _ = apiexternal.TraktAPI.GetMovieTrending(limit)
+		return apiexternal.TraktAPI.GetMovieTrending(limit)
 	case "anticipated":
-		traktpopular, _ = apiexternal.TraktAPI.GetMovieAnticipated(limit)
+		return apiexternal.TraktAPI.GetMovieAnticipated(limit)
 	default:
 		return nil, errwrongtype
-
 	}
+}
+func gettractmoviefeeds(traktlist string, limit int, templateList string) (*feedResults, error) {
+	traktpopular, _ := getmovietraktdata(traktlist, limit)
+
 	if traktpopular == nil {
 		return nil, errwrongtype
 	}
-	var results feedResults
-	results.Movies = make([]string, 0, len(traktpopular.Movies))
+	results := feedResults{Movies: make([]string, 0, len(traktpopular.Movies))}
 
 	var countermovie int
 	for idx := range traktpopular.Movies {
@@ -340,19 +324,20 @@ func gettractmoviefeeds(traktlist string, limit int, templateList string) (*feed
 	return &results, nil
 }
 
-func gettractseriefeeds(traktlist string, limit int) (*feedResults, error) {
-	var traktpopular *apiexternal.TraktSerieGroup
+func getserietraktdata(traktlist string, limit int) (*apiexternal.TraktSerieGroup, error) {
 	switch traktlist {
 	case "popular":
-		traktpopular, _ = apiexternal.TraktAPI.GetSeriePopular(limit)
+		return apiexternal.TraktAPI.GetSeriePopular(limit)
 	case "trending":
-		traktpopular, _ = apiexternal.TraktAPI.GetSerieTrending(limit)
+		return apiexternal.TraktAPI.GetSerieTrending(limit)
 	case "anticipated":
-		traktpopular, _ = apiexternal.TraktAPI.GetSerieAnticipated(limit)
+		return apiexternal.TraktAPI.GetSerieAnticipated(limit)
 	default:
 		return nil, errwrongtype
-
 	}
+}
+func gettractseriefeeds(traktlist string, limit int) (*feedResults, error) {
+	traktpopular, _ := getserietraktdata(traktlist, limit)
 
 	if traktpopular == nil {
 		return nil, errwrongtype
@@ -377,39 +362,11 @@ func getNewFilesMap(cfgp *config.MediaTypeConfig, checklist string) {
 		typestring = "series"
 	}
 	var allfiles logger.InStringArrayStruct
-	var cnt, lennorename, lenfiles, lenblock int
+	var cnt int
 	var ok bool
-	var extlower, pathpercent string
-	var pathcfg config.PathsConfig
-	var walkfunc = func(path string, info fs.DirEntry, errwalk error) error {
-		if errwalk != nil {
-			return errwalk
-		}
-		if info.IsDir() {
-			return nil
-		}
-		extlower = filepath.Ext(path)
-		ok = logger.InStringArray(extlower, &pathcfg.AllowedVideoExtensionsIn)
-		if lennorename >= 1 && !ok {
-			ok = logger.InStringArray(extlower, &pathcfg.AllowedVideoExtensionsNoRenameIn)
-		}
+	var pathpercent string
 
-		if lennorename == 0 && lenfiles == 0 && !ok {
-			ok = true
-		}
-
-		//Check IgnoredPaths
-		if lenblock >= 1 && ok && logger.InStringArrayContainsCaseInSensitive(path, &pathcfg.BlockedLowerIn) {
-			return nil
-		}
-
-		if ok {
-			allfiles.Arr = append(allfiles.Arr, path)
-		}
-		return nil
-	}
 	var unmatcheddb, unwantedpaths *logger.InStringArrayStruct
-	workergroup := logger.WorkerPools["Parse"].Group()
 	queryunmatched := "select filepath from " + table + " where filepath like ? and (last_checked > ? or last_checked is null)"
 	queryunmatchedcount := "select count() from " + table + " where filepath like ? and (last_checked > ? or last_checked is null)"
 	querywronglistfiles := "select location from " + tablefiles + " where location like ?"
@@ -419,79 +376,79 @@ func getNewFilesMap(cfgp *config.MediaTypeConfig, checklist string) {
 			logger.Log.Warn("Config not found ", cfgp.Data[idx].TemplatePath)
 			continue
 		}
-		pathcfg = config.Cfg.Paths[cfgp.Data[idx].TemplatePath]
-		if !scanner.CheckFileExist(pathcfg.Path) {
+		if !scanner.CheckFileExist(config.Cfg.Paths[cfgp.Data[idx].TemplatePath].Path) {
 			continue
 		}
-		cnt, ok = logger.GlobalCounter[pathcfg.Path]
-		pathpercent = pathcfg.Path + "%"
+		cnt, ok = logger.GlobalCounter[config.Cfg.Paths[cfgp.Data[idx].TemplatePath].Path]
+		pathpercent = config.Cfg.Paths[cfgp.Data[idx].TemplatePath].Path + "%"
 		if ok {
 			allfiles.Arr = make([]string, 0, cnt)
 		} else {
 			allfiles.Arr = []string{}
 		}
 
-		lennorename = len(pathcfg.AllowedVideoExtensionsNoRenameIn.Arr)
-		lenfiles = len(pathcfg.AllowedVideoExtensionsIn.Arr)
-		lenblock = len(pathcfg.BlockedLowerIn.Arr)
 		//var pathdir string
-
-		errwalk := filepath.WalkDir(pathcfg.Path, walkfunc)
+		if filepath.WalkDir(config.Cfg.Paths[cfgp.Data[idx].TemplatePath].Path, scanner.Walk(cfgp.Data[idx].TemplatePath, &allfiles, false)) != nil {
+			continue
+		}
 		if len(allfiles.Arr) == 0 {
-			logger.Log.GlobalLogger.Warn("No Files Found in", zap.String("Path", pathcfg.Path))
+			logger.Log.GlobalLogger.Warn("No Files Found in", zap.String("Path", config.Cfg.Paths[cfgp.Data[idx].TemplatePath].Path))
 		}
 		logger.GlobalMu.Lock()
-		logger.GlobalCounter[pathcfg.Path] = len(allfiles.Arr)
+		logger.GlobalCounter[config.Cfg.Paths[cfgp.Data[idx].TemplatePath].Path] = len(allfiles.Arr)
 		logger.GlobalMu.Unlock()
-		if errwalk != nil {
-			continue
-		}
 		if len(allfiles.Arr) == 0 {
 			continue
 		}
-		cnt = database.CountRowsStaticNoError(&database.Querywithargs{QueryString: queryunmatchedcount, Args: []interface{}{pathpercent, time.Now().Add(time.Hour * -12)}})
 
 		unmatcheddb = &logger.InStringArrayStruct{}
-		database.QueryStaticStringArray(false, cnt, &database.Querywithargs{QueryString: queryunmatched, Args: []interface{}{pathpercent, time.Now().Add(time.Hour * -12)}}, &unmatcheddb.Arr)
+		database.QueryStaticStringArray(false,
+			database.CountRowsStaticNoError(&database.Querywithargs{QueryString: queryunmatchedcount, Args: []interface{}{pathpercent, time.Now().Add(time.Hour * -12)}}),
+			&database.Querywithargs{QueryString: queryunmatched, Args: []interface{}{pathpercent, time.Now().Add(time.Hour * -12)}}, &unmatcheddb.Arr)
 
 		unwantedpaths = &logger.InStringArrayStruct{}
 		database.QueryStaticStringArray(false,
 			database.CountRowsStaticNoError(&database.Querywithargs{QueryString: querywronglistfilescount, Args: []interface{}{pathpercent}}),
 			&database.Querywithargs{QueryString: querywronglistfiles, Args: []interface{}{pathpercent}}, &unwantedpaths.Arr)
 
-		for idxall := range allfiles.Arr {
-			path := allfiles.Arr[idxall]
-			if logger.InStringArrayCaseSensitive(path, unmatcheddb) {
-				continue
-			}
-			if logger.InStringArrayCaseSensitive(path, unwantedpaths) {
-				continue
-			}
-
-			if typestring == "series" {
-				addfoundlist := cfgp.Data[idx].AddFoundList
-				workergroup.Submit(func() {
-					jobImportSeriesParseV2(&importstruct{path: path, updatemissing: true, cfgp: cfgp, listname: addfoundlist})
-				})
-			} else {
-				addfound := cfgp.Data[idx].AddFound
-				addfoundlist := cfgp.Data[idx].AddFoundList
-				workergroup.Submit(func() {
-					jobImportMovieParseV2(&importstruct{path: path, updatemissing: true, cfgp: cfgp, listname: addfoundlist, addfound: addfound})
-				})
-			}
-		}
+		//reduce vars with function
+		loopgetnewfiles(cfgp, idx, typestring, &allfiles, unmatcheddb, unwantedpaths)
+		unmatcheddb.Close()
+		unwantedpaths.Close()
 	}
-	pathcfg.Close()
-	workergroup.Wait()
-	unmatcheddb.Close()
-	unwantedpaths.Close()
 	allfiles.Close()
 }
 
+func loopgetnewfiles(cfgp *config.MediaTypeConfig, idx int, typestring string, allfiles *logger.InStringArrayStruct, unmatcheddb *logger.InStringArrayStruct, unwantedpaths *logger.InStringArrayStruct) {
+	addfoundlist := cfgp.Data[idx].AddFoundList
+	addfound := cfgp.Data[idx].AddFound
+	workergroup := logger.WorkerPools["Parse"].Group()
+	for idxall := range allfiles.Arr {
+		path := allfiles.Arr[idxall]
+		if logger.InStringArrayCaseSensitive(path, unmatcheddb) {
+			continue
+		}
+		if logger.InStringArrayCaseSensitive(path, unwantedpaths) {
+			continue
+		}
+
+		if typestring == "series" {
+			workergroup.Submit(func() {
+				jobImportSeriesParseV2(&importstruct{path: path, updatemissing: true, cfgp: cfgp, listname: addfoundlist})
+			})
+		} else {
+			workergroup.Submit(func() {
+				jobImportMovieParseV2(&importstruct{path: path, updatemissing: true, cfgp: cfgp, listname: addfoundlist, addfound: addfound})
+			})
+		}
+	}
+	workergroup.Wait()
+}
+
 func SingleJobs(typ string, job string, cfgpstr string, listname string, force bool) {
-	jobName := job
 	cfgp := config.Cfg.Media[cfgpstr]
+	defer cfgp.Close()
+	jobName := job
 	if cfgp.Name != "" {
 		jobName += "_" + cfgp.NamePrefix
 	}
@@ -501,7 +458,6 @@ func SingleJobs(typ string, job string, cfgpstr string, listname string, force b
 
 	if config.Cfg.General.SchedulerDisabled && !force {
 		logger.Log.GlobalLogger.Info("Skipped Job", zap.String("Job", job), zap.String("config", cfgp.NamePrefix))
-		cfgp.Close()
 		return
 	}
 
@@ -511,7 +467,6 @@ func SingleJobs(typ string, job string, cfgpstr string, listname string, force b
 	if typ != "movie" {
 		category = "Serie"
 	}
-	//dbresult, _ := database.InsertNamed("Insert into job_histories (job_type, job_group, job_category, started) values (:job_type, :job_group, :job_category, :started)", database.JobHistory{JobType: job, JobGroup: cfg, JobCategory: "Serie", Started: sql.NullTime{Time: time.Now().In(logger.TimeZone), Valid: true}})
 	dbresult, _ := insertjobhistory(&database.JobHistory{JobType: job, JobGroup: cfgp.NamePrefix, JobCategory: category, Started: sql.NullTime{Time: time.Now().In(logger.TimeZone), Valid: true}})
 
 	switch job {
@@ -523,17 +478,10 @@ func SingleJobs(typ string, job string, cfgpstr string, listname string, force b
 	}
 
 	if job == "data" {
-		var lists []config.MediaListsConfig
-		if listname != "" {
-			lists = []config.MediaListsConfig{cfgp.ListsMap[listname]}
-		} else {
-			lists = cfgp.Lists
-		}
-
-		for idxlist := range lists {
+		for _, list := range getjoblists(&cfgp, listname) {
 			switch job {
 			case "data":
-				getNewFilesMap(&cfgp, lists[idxlist].Name)
+				getNewFilesMap(&cfgp, list.Name)
 			}
 		}
 	}
@@ -542,7 +490,6 @@ func SingleJobs(typ string, job string, cfgpstr string, listname string, force b
 		endjobhistory(dbid)
 	}
 	logger.Log.GlobalLogger.Info(jobended, zap.Stringp("Job", &job), zap.Stringp("config", &cfgp.NamePrefix))
-	cfgp.Close()
 }
 
 func structureSingle(typ string, cfgp *config.MediaTypeConfig) {
@@ -551,20 +498,18 @@ func structureSingle(typ string, cfgp *config.MediaTypeConfig) {
 		return
 	}
 
-	var mappathimport string
 	for idxdata := range cfgp.DataImport {
-		mappathimport = cfgp.DataImport[idxdata].TemplatePath
-		if !config.Check("path_" + mappathimport) {
-			logger.Log.GlobalLogger.Error("Path not found", zap.String("config", mappathimport))
+		if !config.Check("path_" + cfgp.DataImport[idxdata].TemplatePath) {
+			logger.Log.GlobalLogger.Error("Path not found", zap.String("config", cfgp.DataImport[idxdata].TemplatePath))
 
 			continue
 		}
 
-		if lastSeriesStructure == config.Cfg.Paths[mappathimport].Path {
+		if lastSeriesStructure == config.Cfg.Paths[cfgp.DataImport[idxdata].TemplatePath].Path {
 			time.Sleep(time.Duration(15) * time.Second)
 		}
-		lastSeriesStructure = config.Cfg.Paths[mappathimport].Path
+		lastSeriesStructure = config.Cfg.Paths[cfgp.DataImport[idxdata].TemplatePath].Path
 
-		structure.OrganizeFolders(typ, mappathimport, cfgp.Data[0].TemplatePath, cfgp)
+		structure.OrganizeFolders(typ, cfgp.DataImport[idxdata].TemplatePath, cfgp.Data[0].TemplatePath, cfgp)
 	}
 }

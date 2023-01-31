@@ -112,10 +112,12 @@ func getbody(message *PushoverMessage) url.Values {
 func notify(message *PushoverMessage) error {
 	err := validatemessage(message)
 	if err != nil {
+		message = nil
 		return err
 	}
 
 	resp, err := http.PostForm(pushoverAPIURL, getbody(message))
+	message = nil
 	if err != nil {
 		return errors.New("POST request failed")
 	}

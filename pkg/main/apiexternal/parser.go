@@ -233,33 +233,35 @@ func (s *Nzbwithprio) Getnzbconfig(quality string) (string, string, string) {
 		return "", "", ""
 	}
 
-	for idx := range config.Cfg.Quality[quality].Indexer {
-		if strings.EqualFold(config.Cfg.Quality[quality].Indexer[idx].TemplateIndexer, s.Indexer) {
-			if !config.Check("path_" + config.Cfg.Quality[quality].Indexer[idx].TemplatePathNzb) {
+	cfgqual := config.Cfg.Quality[quality]
+	defer cfgqual.Close()
+	for idx := range cfgqual.Indexer {
+		if strings.EqualFold(cfgqual.Indexer[idx].TemplateIndexer, s.Indexer) {
+			if !config.Check("path_" + cfgqual.Indexer[idx].TemplatePathNzb) {
 				continue
 			}
 
-			if !config.Check("downloader_" + config.Cfg.Quality[quality].Indexer[idx].TemplateDownloader) {
+			if !config.Check("downloader_" + cfgqual.Indexer[idx].TemplateDownloader) {
 				continue
 			}
-			if config.Cfg.Quality[quality].Indexer[idx].CategoryDowloader != "" {
-				logger.Log.Debug("Quality ", config.Cfg.Quality[quality].Indexer[idx], " Downloader ", config.Cfg.Downloader[config.Cfg.Quality[quality].Indexer[idx].TemplateDownloader])
-				return config.Cfg.Quality[quality].Indexer[idx].CategoryDowloader, config.Cfg.Quality[quality].Indexer[idx].TemplatePathNzb, config.Cfg.Quality[quality].Indexer[idx].TemplateDownloader
+			if cfgqual.Indexer[idx].CategoryDowloader != "" {
+				logger.Log.Debug("Quality ", cfgqual.Indexer[idx], " Downloader ", config.Cfg.Downloader[cfgqual.Indexer[idx].TemplateDownloader])
+				return cfgqual.Indexer[idx].CategoryDowloader, cfgqual.Indexer[idx].TemplatePathNzb, cfgqual.Indexer[idx].TemplateDownloader
 			}
 		}
 	}
 	// defer indexer.Close()
 	logger.Log.GlobalLogger.Debug("Downloader nzb config NOT found - quality", zap.Stringp("Quality", &quality))
-	if !config.Check("path_" + config.Cfg.Quality[quality].Indexer[0].TemplatePathNzb) {
+	if !config.Check("path_" + cfgqual.Indexer[0].TemplatePathNzb) {
 		return "", "", ""
 	}
 
-	if !config.Check("downloader_" + config.Cfg.Quality[quality].Indexer[0].TemplateDownloader) {
+	if !config.Check("downloader_" + cfgqual.Indexer[0].TemplateDownloader) {
 		return "", "", ""
 	}
-	logger.Log.GlobalLogger.Debug("Downloader nzb config NOT found - use first", zap.Stringp("categories", &config.Cfg.Quality[quality].Indexer[0].CategoryDowloader))
+	logger.Log.GlobalLogger.Debug("Downloader nzb config NOT found - use first", zap.Stringp("categories", &cfgqual.Indexer[0].CategoryDowloader))
 
-	return config.Cfg.Quality[quality].Indexer[0].CategoryDowloader, config.Cfg.Quality[quality].Indexer[0].TemplatePathNzb, config.Cfg.Quality[quality].Indexer[0].TemplateDownloader
+	return cfgqual.Indexer[0].CategoryDowloader, cfgqual.Indexer[0].TemplatePathNzb, cfgqual.Indexer[0].TemplateDownloader
 }
 
 func Checknzbtitle(movietitle string, nzbtitle string) bool {
