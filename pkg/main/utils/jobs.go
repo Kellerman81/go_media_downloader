@@ -104,9 +104,6 @@ func InitialFillSeries() {
 
 func InitialFillMovies() {
 	logger.Log.GlobalLogger.Info("Starting initial DB fill for movies")
-
-	FillImdb()
-
 	var dbid int64
 
 	for _, cfgp := range config.Cfg.Movies {
