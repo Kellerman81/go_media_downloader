@@ -21,8 +21,8 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/database/sqlite3"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/mozillazg/go-unidecode"
 	"github.com/pelletier/go-toml/v2"
-	"github.com/rainycape/unidecode"
 )
 
 type mainConfig struct {
