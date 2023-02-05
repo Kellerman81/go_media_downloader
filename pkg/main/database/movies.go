@@ -11,6 +11,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/config"
 	"github.com/Kellerman81/go_media_downloader/logger"
 	"go.uber.org/zap"
+	"golang.org/x/exp/slices"
 )
 
 type Movie struct {
@@ -208,8 +209,35 @@ type DbmovieTitle struct {
 	Region    string
 }
 
+func (m *Movie) Close() {
+	if logger.DisableVariableCleanup {
+		return
+	}
+	if m == nil {
+		return
+	}
+	m = nil
+}
+func (movie *Dbmovie) Close() {
+	if logger.DisableVariableCleanup {
+		return
+	}
+	if movie == nil {
+		return
+	}
+	movie = nil
+}
+func (m *MovieFile) Close() {
+	if logger.DisableVariableCleanup {
+		return
+	}
+	if m == nil {
+		return
+	}
+	m = nil
+}
+
 func (movie *Dbmovie) getTitles(arrcfglang *logger.InStringArrayStruct, queryimdb bool, querytmdb bool, querytrakt bool) []DbmovieTitle {
-	defer arrcfglang.Close()
 	var result []DbmovieTitle
 	if queryimdb && movie.ImdbID != "" {
 		if !strings.HasPrefix(movie.ImdbID, "tt") {
@@ -221,7 +249,8 @@ func (movie *Dbmovie) getTitles(arrcfglang *logger.InStringArrayStruct, queryimd
 		result = make([]DbmovieTitle, 0, len(imdbakadata))
 		lenarr := len(arrcfglang.Arr)
 		for idxaka := range imdbakadata {
-			if logger.InStringArray(imdbakadata[idxaka].Str1, arrcfglang) || lenarr == 0 {
+			if slices.ContainsFunc(arrcfglang.Arr, func(c string) bool { return strings.EqualFold(c, imdbakadata[idxaka].Str1) }) || lenarr == 0 {
+				//if logger.InStringArray(imdbakadata[idxaka].Str1, arrcfglang) || lenarr == 0 {
 				result = append(result, DbmovieTitle{DbmovieID: movie.ID, Title: imdbakadata[idxaka].Str2, Slug: imdbakadata[idxaka].Str3, Region: imdbakadata[idxaka].Str1})
 			}
 		}
@@ -230,10 +259,14 @@ func (movie *Dbmovie) getTitles(arrcfglang *logger.InStringArrayStruct, queryimd
 	if querytmdb && movie.MoviedbID != 0 {
 		moviedbtitles, err := apiexternal.TmdbAPI.GetMovieTitles(movie.MoviedbID)
 		if err == nil && len(moviedbtitles.Titles) >= 1 {
-			result = logger.GrowSliceBy(result, len(moviedbtitles.Titles))
+			if len(moviedbtitles.Titles) > len(result) {
+				result = slices.Grow(result, len(moviedbtitles.Titles))
+			}
+			//result = logger.GrowSliceBy(result, len(moviedbtitles.Titles))
 			lenarr := len(arrcfglang.Arr)
 			for idx := range moviedbtitles.Titles {
-				if ok := logger.InStringArray(moviedbtitles.Titles[idx].Iso31661, arrcfglang); !ok && lenarr >= 1 {
+				if !slices.ContainsFunc(arrcfglang.Arr, func(c string) bool { return strings.EqualFold(c, moviedbtitles.Titles[idx].Iso31661) }) && lenarr >= 1 {
+					//if ok := logger.InStringArray(moviedbtitles.Titles[idx].Iso31661, arrcfglang); !ok && lenarr >= 1 {
 					continue
 				}
 				result = append(result, DbmovieTitle{DbmovieID: movie.ID, Title: moviedbtitles.Titles[idx].Title, Slug: logger.StringToSlug(moviedbtitles.Titles[idx].Title), Region: moviedbtitles.Titles[idx].Iso31661})
@@ -249,10 +282,14 @@ func (movie *Dbmovie) getTitles(arrcfglang *logger.InStringArrayStruct, queryimd
 			arrcfglang.Close()
 			return result
 		}
-		result = logger.GrowSliceBy(result, len(traktaliases.Aliases))
+		if len(traktaliases.Aliases) > len(result) {
+			result = slices.Grow(result, len(traktaliases.Aliases))
+		}
+		//result = logger.GrowSliceBy(result, len(traktaliases.Aliases))
 		lenarr := len(arrcfglang.Arr)
 		for idxalias := range traktaliases.Aliases {
-			if logger.InStringArray(traktaliases.Aliases[idxalias].Country, arrcfglang) || lenarr == 0 {
+			if slices.ContainsFunc(arrcfglang.Arr, func(c string) bool { return strings.EqualFold(c, traktaliases.Aliases[idxalias].Country) }) || lenarr == 0 {
+				//if logger.InStringArray(traktaliases.Aliases[idxalias].Country, arrcfglang) || lenarr == 0 {
 				result = append(result, DbmovieTitle{DbmovieID: movie.ID, Title: traktaliases.Aliases[idxalias].Title, Slug: logger.StringToSlug(traktaliases.Aliases[idxalias].Title), Region: traktaliases.Aliases[idxalias].Country})
 			}
 		}
@@ -271,8 +308,8 @@ func (movie *Dbmovie) getImdbMetadata(overwrite bool) {
 	if !strings.HasPrefix(movie.ImdbID, "tt") {
 		queryimdbid = "tt" + movie.ImdbID
 	}
-	var imdbdata ImdbTitle
-	if GetImdbTitle(&Querywithargs{Query: QueryFilterByTconst, Args: []interface{}{queryimdbid}}, &imdbdata) != nil {
+	imdbdata := new(ImdbTitle)
+	if GetImdbTitle(&Querywithargs{Query: QueryFilterByTconst, Args: []interface{}{queryimdbid}}, imdbdata) != nil {
 		return
 	}
 	if (movie.Title == "" || overwrite) && imdbdata.PrimaryTitle != "" {
@@ -299,9 +336,9 @@ func (movie *Dbmovie) getImdbMetadata(overwrite bool) {
 	if (movie.URL == "" || overwrite) && queryimdbid != "" {
 		movie.URL = "https://www.imdb.com/title/" + queryimdbid
 	}
-
-	var imdbratedata ImdbRatings
-	if GetImdbRating(&Querywithargs{Query: QueryFilterByTconst, Args: []interface{}{queryimdbid}}, &imdbratedata) != nil {
+	imdbdata = nil
+	imdbratedata := new(ImdbRatings)
+	if GetImdbRating(&Querywithargs{Query: QueryFilterByTconst, Args: []interface{}{queryimdbid}}, imdbratedata) != nil {
 		return
 	}
 	if (movie.VoteAverage == 0 || movie.VoteAverage == 0.0 || overwrite) && imdbratedata.AverageRating != 0 {
@@ -310,6 +347,7 @@ func (movie *Dbmovie) getImdbMetadata(overwrite bool) {
 	if (movie.VoteCount == 0 || overwrite) && imdbratedata.NumVotes != 0 {
 		movie.VoteCount = imdbratedata.NumVotes
 	}
+	imdbratedata = nil
 }
 
 func (movie *Dbmovie) getTmdbMetadata(overwrite bool) {
@@ -321,18 +359,17 @@ func (movie *Dbmovie) getTmdbMetadata(overwrite bool) {
 		if err != nil {
 			return
 		}
-		defer moviedb.Close()
 		if len(moviedb.MovieResults) >= 1 {
 			movie.MoviedbID = moviedb.MovieResults[0].ID
 		} else {
 			return
 		}
+		moviedb.Close()
 	}
 	moviedbdetails, err := apiexternal.TmdbAPI.GetMovie(movie.MoviedbID)
 	if err != nil {
 		return
 	}
-	defer moviedbdetails.Close()
 	if (!movie.Adult && moviedbdetails.Adult) || overwrite {
 		movie.Adult = moviedbdetails.Adult
 	}
@@ -414,14 +451,15 @@ func (movie *Dbmovie) getTmdbMetadata(overwrite bool) {
 	if (movie.MoviedbID == 0 || overwrite) && moviedbdetails.ID != 0 {
 		movie.MoviedbID = moviedbdetails.ID
 	}
+	moviedbdetails.Close()
 }
 
 func (movie *Dbmovie) getOmdbMetadata(overwrite bool) {
 	if movie.ImdbID == "" {
 		return
 	}
-	var omdbdetails apiexternal.OmDBMovie
-	if apiexternal.OmdbAPI.GetMovie(movie.ImdbID, &omdbdetails) != nil {
+	omdbdetails := new(apiexternal.OmDBMovie)
+	if apiexternal.OmdbAPI.GetMovie(movie.ImdbID, omdbdetails) != nil {
 		return
 	}
 	if (movie.Title == "" || overwrite) && omdbdetails.Title != "" {
@@ -552,22 +590,18 @@ func (movie *Dbmovie) Getmoviemetadata(refresh bool) {
 }
 
 func (movie *Dbmovie) Getmoviemetatitles(cfgp *config.MediaTypeConfig) {
-	//var tmpl string
-	//QueryColumn(Querywithargs{QueryString: "select listname from movies where dbmovie_id = ?", Args: []interface{}{dbmovie.ID}}, &tmpl)
-	// if tmpl != "" && tmpl != cfgp.Name {
-	// 	*cfgp = config.Cfg.Media[config.FindconfigTemplateOnList("movie_", tmpl)]
-	// }
 	if cfgp.Name == "" {
 		return
 	}
-	var titles logger.InStringArrayStruct
+	titles := new(logger.InStringArrayStruct)
 	QueryStaticStringArray(false, 0, &Querywithargs{QueryString: "select title from dbmovie_titles where dbmovie_id = ?", Args: []interface{}{movie.ID}}, &titles.Arr)
 	titlegroup := movie.getTitles(&logger.InStringArrayStruct{Arr: cfgp.MetadataTitleLanguages}, config.Cfg.General.MovieAlternateTitleMetaSourceImdb, config.Cfg.General.MovieAlternateTitleMetaSourceTmdb, config.Cfg.General.MovieAlternateTitleMetaSourceTrakt)
 	for idx := range titlegroup {
 		if titlegroup[idx].Title == "" {
 			continue
 		}
-		if !logger.InStringArray(titlegroup[idx].Title, &titles) {
+		if !slices.ContainsFunc(titles.Arr, func(c string) bool { return strings.EqualFold(c, titlegroup[idx].Title) }) {
+			//if !logger.InStringArray(titlegroup[idx].Title, titles) {
 			InsertStatic(&Querywithargs{QueryString: "Insert into dbmovie_titles (title, slug, dbmovie_id, region) values (?, ?, ?, ?)", Args: []interface{}{titlegroup[idx].Title, titlegroup[idx].Slug, movie.ID, titlegroup[idx].Region}})
 			titles.Arr = append(titles.Arr, titlegroup[idx].Title)
 		}

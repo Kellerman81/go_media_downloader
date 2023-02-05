@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/Kellerman81/go_media_downloader/logger"
+	"golang.org/x/exp/slices"
 	"golang.org/x/oauth2"
 )
 
@@ -57,16 +58,15 @@ func GetTrakt(key string) *oauth2.Token {
 	return &oauth2.Token{}
 }
 
-func FindconfigTemplateOnList(typeprefix string, listname string) string {
-	for idx := range Cfg.Media {
-		if !strings.HasPrefix(idx, typeprefix) {
+func FindconfigTemplateOnList(typeprefix string, listname string) *MediaTypeConfig {
+	for key, val := range Cfg.Media {
+		if !strings.HasPrefix(key, typeprefix) {
 			continue
 		}
-		for idxlist := range Cfg.Media[idx].Lists {
-			if Cfg.Media[idx].Lists[idxlist].Name == listname {
-				return idx
-			}
+		intid := slices.IndexFunc(val.Lists, func(e MediaListsConfig) bool { return e.Name == listname })
+		if intid != -1 {
+			return &val
 		}
 	}
-	return ""
+	return nil
 }

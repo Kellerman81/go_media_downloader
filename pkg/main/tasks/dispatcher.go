@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/robfig/cron/v3"
 	"go.uber.org/zap"
+	"golang.org/x/exp/slices"
 )
 
 //Source: https://github.com/mborders/artifex
@@ -109,54 +110,64 @@ func (s *scheduleSet) RemoveID(str string) {
 }
 
 func (s *scheduleSet) ContainsID(str string) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for idx := range s.values {
-		if s.values[idx].ID == str {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(s.values, func(c JobSchedule) bool { return c.ID == str })
+	// for idx := range s.values {
+	// 		if s.values[idx].ID == str {
+	// 			return true
+	// 		}
+	// 	}
+	// 	return false
 }
 func (s *scheduleSet) GetID(str string) *JobSchedule {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for idx := range s.values {
-		if s.values[idx].ID == str {
-			return &s.values[idx]
-		}
+	intid := slices.IndexFunc(s.values, func(c JobSchedule) bool { return c.ID == str })
+	if intid != -1 {
+		return &s.values[intid]
 	}
+	// for idx := range s.values {
+	// 	if s.values[idx].ID == str {
+	// 		return &s.values[idx]
+	// 	}
+	// }
 	return nil
 }
 func (s *scheduleSet) ContainsName(str string) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for idx := range s.values {
-		if s.values[idx].JobName == str {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(s.values, func(c JobSchedule) bool { return c.JobName == str })
+	// for idx := range s.values {
+	// 	if s.values[idx].JobName == str {
+	// 		return true
+	// 	}
+	// }
+	// return false
 }
 func (s *scheduleSet) GetName(str string) *JobSchedule {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for idx := range s.values {
-		if s.values[idx].JobName == str {
-			return &s.values[idx]
-		}
+	intid := slices.IndexFunc(s.values, func(c JobSchedule) bool { return c.JobName == str })
+	if intid != -1 {
+		return &s.values[intid]
 	}
+	// for idx := range s.values {
+	// 	if s.values[idx].JobName == str {
+	// 		return &s.values[idx]
+	// 	}
+	// }
 	return nil
 }
 func (s *scheduleSet) Update(str *JobSchedule) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for idx := range s.values {
-		if s.values[idx].ID == str.ID {
-			s.values[idx] = *str
-			return
-		}
+	intid := slices.IndexFunc(s.values, func(c JobSchedule) bool { return c.ID == str.ID })
+	if intid != -1 {
+		s.values[intid] = *str
 	}
+	// for idx := range s.values {
+	// 	if s.values[idx].ID == str.ID {
+	// 		s.values[idx] = *str
+	// 		return
+	// 	}
+	// }
 }
 
 func (s *scheduleSet) Clear() {
@@ -190,44 +201,56 @@ func (s *queueSet) RemoveID(str string) {
 }
 
 func (s *queueSet) ContainsName(str string) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for idx := range s.values {
-		if s.values[idx].Name == str {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(s.values, func(c dispatcherQueue) bool { return c.Name == str })
+
+	// for idx := range s.values {
+	// 	if s.values[idx].Name == str {
+	// 		return true
+	// 	}
+	// }
+	// return false
 }
 func (s *queueSet) GetName(str string) *dispatcherQueue {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for idx := range s.values {
-		if s.values[idx].Name == str {
-			return &s.values[idx]
-		}
+	intid := slices.IndexFunc(s.values, func(c dispatcherQueue) bool { return c.Name == str })
+	if intid != -1 {
+		return &s.values[intid]
 	}
+	// for idx := range s.values {
+	// 	if s.values[idx].Name == str {
+	// 		return &s.values[idx]
+	// 	}
+	// }
 	return nil
 }
 func (s *queueSet) GetID(str string) *dispatcherQueue {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for idx := range s.values {
-		if s.values[idx].Queue.ID == str {
-			return &s.values[idx]
-		}
+	intid := slices.IndexFunc(s.values, func(c dispatcherQueue) bool { return c.Queue.ID == str })
+	if intid != -1 {
+		return &s.values[intid]
 	}
+	// for idx := range s.values {
+	// 	if s.values[idx].Queue.ID == str {
+	// 		return &s.values[idx]
+	// 	}
+	// }
 	return nil
 }
 func (s *queueSet) Update(str *dispatcherQueue) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for idx := range s.values {
-		if s.values[idx].Queue.ID == str.Queue.ID {
-			s.values[idx] = *str
-			return
-		}
+	intid := slices.IndexFunc(s.values, func(c dispatcherQueue) bool { return c.Queue.ID == str.Queue.ID })
+	if intid != -1 {
+		s.values[intid] = *str
 	}
+	// for idx := range s.values {
+	// 	if s.values[idx].Queue.ID == str.Queue.ID {
+	// 		s.values[idx] = *str
+	// 		return
+	// 	}
+	// }
 }
 
 func (s *queueSet) Clear() {
@@ -235,14 +258,14 @@ func (s *queueSet) Clear() {
 }
 
 func GetQueues() map[string]dispatcherQueue {
-	globalQueue := make(map[string]dispatcherQueue)
+	globalQueue := make(map[string]dispatcherQueue, len(globalQueueSet.values))
 	for idx := range globalQueueSet.values {
 		globalQueue[globalQueueSet.values[idx].Name] = globalQueueSet.values[idx]
 	}
 	return globalQueue
 }
 func GetSchedules() map[string]JobSchedule {
-	globalSchedules := make(map[string]JobSchedule)
+	globalSchedules := make(map[string]JobSchedule, len(globalScheduleSet.values))
 	for idx := range globalScheduleSet.values {
 		globalSchedules[globalScheduleSet.values[idx].JobName] = globalScheduleSet.values[idx]
 	}
@@ -256,11 +279,11 @@ func updateStartedSchedule(findname string) {
 		return
 	}
 	if jobschedule.ScheduleTyp == "cron" {
-		jobschedule.NextRun = jobschedule.CronSchedule.Next(time.Now().In(logger.TimeZone))
-		jobschedule.LastRun = time.Now().In(logger.TimeZone)
+		jobschedule.NextRun = jobschedule.CronSchedule.Next(logger.TimeGetNow())
+		jobschedule.LastRun = logger.TimeGetNow()
 	} else {
-		jobschedule.NextRun = time.Now().In(logger.TimeZone).Add(jobschedule.Interval)
-		jobschedule.LastRun = time.Now().In(logger.TimeZone)
+		jobschedule.NextRun = logger.TimeGetNow().Add(jobschedule.Interval)
+		jobschedule.LastRun = logger.TimeGetNow()
 	}
 	globalScheduleSet.Update(jobschedule)
 }
@@ -274,7 +297,7 @@ func updateIsRunningSchedule(findname string, isrunning bool) {
 func updateStartedQueue(findname string) {
 	que := globalQueueSet.GetID(findname)
 	if que != nil {
-		que.Queue.Started = time.Now().In(logger.TimeZone)
+		que.Queue.Started = logger.TimeGetNow()
 		globalQueueSet.Update(que)
 	}
 }
@@ -420,7 +443,7 @@ func (d *Dispatcher) Dispatch(name string, run func()) error {
 	if !d.active {
 		return errDispatcherInactive
 	}
-	job := Job{Queue: d.name, ID: uuid.New().String(), Added: time.Now().In(logger.TimeZone), Name: name, Run: run}
+	job := Job{Queue: d.name, ID: uuid.New().String(), Added: logger.TimeGetNow(), Name: name, Run: run}
 	d.jobQueue <- job
 
 	globalQueueSet.Add(dispatcherQueue{Name: job.Name, Queue: job})
@@ -450,7 +473,7 @@ func (d *Dispatcher) DispatchIn(name string, run func(), duration time.Duration)
 			}
 		}()
 		time.Sleep(duration)
-		job := Job{Queue: d.name, ID: uuid.New().String(), Added: time.Now().In(logger.TimeZone), Name: name, Run: run}
+		job := Job{Queue: d.name, ID: uuid.New().String(), Added: logger.TimeGetNow(), Name: name, Run: run}
 
 		if d.TryEnqueue(job) {
 			globalQueueSet.Add(dispatcherQueue{Name: job.Name, Queue: job})
@@ -480,7 +503,7 @@ func (d *Dispatcher) DispatchEvery(name string, run func(), interval time.Durati
 		ScheduleString: interval.String(),
 		LastRun:        time.Time{},
 		Interval:       interval,
-		NextRun:        time.Now().In(logger.TimeZone).Add(interval)})
+		NextRun:        logger.TimeGetNow().Add(interval)})
 	dt := &dispatchTicker{ticker: t, quit: make(chan bool), schedulerid: schedulerid}
 	d.tickers = append(d.tickers, dt)
 
@@ -493,7 +516,7 @@ func (d *Dispatcher) DispatchEvery(name string, run func(), interval time.Durati
 		for {
 			select {
 			case <-t.C:
-				job := Job{Queue: d.name, ID: jobid, Added: time.Now().In(logger.TimeZone), Name: name, Run: run, SchedulerID: schedulerid}
+				job := Job{Queue: d.name, ID: jobid, Added: logger.TimeGetNow(), Name: name, Run: run, SchedulerID: schedulerid}
 
 				if d.TryEnqueue(job) {
 					globalQueueSet.Add(dispatcherQueue{Name: job.Name, Queue: job})
@@ -521,7 +544,7 @@ func (d *Dispatcher) DispatchCron(name string, run func(), cronStr string) error
 
 	jobid := uuid.New().String()
 	cjob, err := dc.cron.AddFunc(cronStr, func() {
-		job := Job{Queue: d.name, ID: jobid, Added: time.Now().In(logger.TimeZone), Name: name, Run: run, SchedulerID: schedulerid}
+		job := Job{Queue: d.name, ID: jobid, Added: logger.TimeGetNow(), Name: name, Run: run, SchedulerID: schedulerid}
 
 		if d.TryEnqueue(job) {
 			globalQueueSet.Add(dispatcherQueue{Name: job.Name, Queue: job})

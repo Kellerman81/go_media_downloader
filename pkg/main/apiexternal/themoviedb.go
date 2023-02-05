@@ -197,8 +197,8 @@ func NewTmdbClient(apikey string, seconds int, calls int, disabletls bool, timeo
 
 func (t *tmdbClient) SearchMovie(name string) (*TheMovieDBSearch, error) {
 	url := "https://api.themoviedb.org/3/search/movie?api_key=" + t.APIKey + "&query=" + url.QueryEscape(name)
-	var result TheMovieDBSearch
-	_, err := t.Client.DoJSON(url, &result, nil)
+	result := new(TheMovieDBSearch)
+	_, err := t.Client.DoJSON(url, result, nil)
 
 	if err != nil {
 		if err != errPleaseWait {
@@ -208,13 +208,13 @@ func (t *tmdbClient) SearchMovie(name string) (*TheMovieDBSearch, error) {
 		return nil, err
 	}
 
-	return &result, nil
+	return result, nil
 }
 
 func (t *tmdbClient) SearchTV(name string) (*TheMovieDBSearchTV, error) {
 	url := "https://api.themoviedb.org/3/search/tv?api_key=" + t.APIKey + "&query=" + url.QueryEscape(name)
-	var result TheMovieDBSearchTV
-	_, err := t.Client.DoJSON(url, &result, nil)
+	result := new(TheMovieDBSearchTV)
+	_, err := t.Client.DoJSON(url, result, nil)
 
 	if err != nil {
 		if err != errPleaseWait {
@@ -224,13 +224,13 @@ func (t *tmdbClient) SearchTV(name string) (*TheMovieDBSearchTV, error) {
 		return nil, err
 	}
 
-	return &result, nil
+	return result, nil
 }
 
 func (t *tmdbClient) FindImdb(imdbid string) (*TheMovieDBFind, error) {
 	url := "https://api.themoviedb.org/3/find/" + imdbid + strAPIKey + t.APIKey + "&language=en-US&external_source=imdb_id"
-	var result TheMovieDBFind
-	_, err := t.Client.DoJSON(url, &result, nil)
+	result := new(TheMovieDBFind)
+	_, err := t.Client.DoJSON(url, result, nil)
 
 	if err != nil {
 		if err != errPleaseWait {
@@ -240,12 +240,12 @@ func (t *tmdbClient) FindImdb(imdbid string) (*TheMovieDBFind, error) {
 		return nil, err
 	}
 
-	return &result, nil
+	return result, nil
 }
 func (t *tmdbClient) FindTvdb(thetvdbid int) (*TheMovieDBFind, error) {
 	url := "https://api.themoviedb.org/3/find/" + logger.IntToString(thetvdbid) + strAPIKey + t.APIKey + "&language=en-US&external_source=tvdb_id"
-	var result TheMovieDBFind
-	_, err := t.Client.DoJSON(url, &result, nil)
+	result := new(TheMovieDBFind)
+	_, err := t.Client.DoJSON(url, result, nil)
 
 	if err != nil {
 		if err != errPleaseWait {
@@ -255,12 +255,12 @@ func (t *tmdbClient) FindTvdb(thetvdbid int) (*TheMovieDBFind, error) {
 		return nil, err
 	}
 
-	return &result, nil
+	return result, nil
 }
 func (t *tmdbClient) GetMovie(id int) (*TheMovieDBMovie, error) {
 	url := apiurltmdbmovies + logger.IntToString(id) + strAPIKey + t.APIKey
-	var result TheMovieDBMovie
-	_, err := t.Client.DoJSON(url, &result, nil)
+	result := new(TheMovieDBMovie)
+	_, err := t.Client.DoJSON(url, result, nil)
 
 	if err != nil {
 		if err != errPleaseWait {
@@ -269,12 +269,12 @@ func (t *tmdbClient) GetMovie(id int) (*TheMovieDBMovie, error) {
 		result.Close()
 		return nil, err
 	}
-	return &result, nil
+	return result, nil
 }
 func (t *tmdbClient) GetMovieTitles(id int) (*TheMovieDBMovieTitles, error) {
 	url := apiurltmdbmovies + logger.IntToString(id) + "/alternative_titles?api_key=" + t.APIKey
-	var result TheMovieDBMovieTitles
-	_, err := t.Client.DoJSON(url, &result, nil)
+	result := new(TheMovieDBMovieTitles)
+	_, err := t.Client.DoJSON(url, result, nil)
 
 	if err != nil {
 		if err != errPleaseWait {
@@ -283,12 +283,12 @@ func (t *tmdbClient) GetMovieTitles(id int) (*TheMovieDBMovieTitles, error) {
 		result.Close()
 		return nil, err
 	}
-	return &result, nil
+	return result, nil
 }
 func (t *tmdbClient) GetMovieExternal(id int) (*TheMovieDBTVExternal, error) {
 	url := apiurltmdbmovies + logger.IntToString(id) + "/external_ids?api_key=" + t.APIKey
-	var result TheMovieDBTVExternal
-	_, err := t.Client.DoJSON(url, &result, nil)
+	result := new(TheMovieDBTVExternal)
+	_, err := t.Client.DoJSON(url, result, nil)
 
 	if err != nil {
 		if err != errPleaseWait {
@@ -298,12 +298,12 @@ func (t *tmdbClient) GetMovieExternal(id int) (*TheMovieDBTVExternal, error) {
 		return nil, err
 	}
 
-	return &result, nil
+	return result, nil
 }
 func (t *tmdbClient) GetTVExternal(id string) (*TheMovieDBTVExternal, error) {
 	url := "https://api.themoviedb.org/3/tv/" + id + "/external_ids?api_key=" + t.APIKey
-	var result TheMovieDBTVExternal
-	_, err := t.Client.DoJSON(url, &result, nil)
+	result := new(TheMovieDBTVExternal)
+	_, err := t.Client.DoJSON(url, result, nil)
 
 	if err != nil {
 		if err != errPleaseWait {
@@ -312,5 +312,5 @@ func (t *tmdbClient) GetTVExternal(id string) (*TheMovieDBTVExternal, error) {
 		return nil, err
 	}
 
-	return &result, nil
+	return result, nil
 }

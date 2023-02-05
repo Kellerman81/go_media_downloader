@@ -40,7 +40,7 @@ var errDailyLimit = errors.New("daily limit reached")
 func (c *RLHTTPClient) checkLimiter(retrycount int, retryafterseconds int64, url string) (bool, error) {
 	waituntil := (time.Duration(retryafterseconds) * time.Second)
 	waituntilmax := (time.Duration(retryafterseconds*int64(retrycount)) * time.Second)
-	rand.Seed(time.Now().UnixNano())
+	rand.New(rand.NewSource(time.Now().UnixNano()))
 	waitincrease := (time.Duration(rand.Intn(500)+10) * time.Millisecond)
 	_, dailyok, waitfor := c.Ratelimiter.Check(false, true)
 	if !dailyok {
@@ -80,9 +80,7 @@ func (c *RLHTTPClient) getResponse(url string, headers []addHeader) (*http.Respo
 			// headers = nil
 			return nil, err
 		}
-		for idx := range headers {
-			req.Header.Add((headers)[idx].key, (headers)[idx].val)
-		}
+		logger.RunFuncSimple(headers, func(e addHeader) { req.Header.Add(e.key, e.val) })
 		// headers = nil
 		return c.client.Do(req)
 	} else {

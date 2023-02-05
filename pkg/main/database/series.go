@@ -10,6 +10,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/config"
 	"github.com/Kellerman81/go_media_downloader/logger"
 	"go.uber.org/zap"
+	"golang.org/x/exp/slices"
 )
 
 type Serie struct {
@@ -229,6 +230,52 @@ type DbserieEpisodeJSON struct {
 	DbserieID  uint `db:"dbserie_id"`
 }
 
+func (s *Dbserie) Close() {
+	if logger.DisableVariableCleanup {
+		return
+	}
+	if s == nil {
+		return
+	}
+	s = nil
+}
+func (s *Serie) Close() {
+	if logger.DisableVariableCleanup {
+		return
+	}
+	if s == nil {
+		return
+	}
+	s = nil
+}
+func (s *SerieEpisode) Close() {
+	if logger.DisableVariableCleanup {
+		return
+	}
+	if s == nil {
+		return
+	}
+	s = nil
+}
+func (s *DbserieEpisode) Close() {
+	if logger.DisableVariableCleanup {
+		return
+	}
+	if s == nil {
+		return
+	}
+	s = nil
+}
+func (s *SerieEpisodeFile) Close() {
+	if logger.DisableVariableCleanup {
+		return
+	}
+	if s == nil {
+		return
+	}
+	s = nil
+}
+
 func (serie *Dbserie) getMetadataTmdb(overwrite bool) {
 	if serie.ThetvdbID == 0 || (serie.Seriename != "" && !overwrite) {
 		return
@@ -237,7 +284,6 @@ func (serie *Dbserie) getMetadataTmdb(overwrite bool) {
 	if err != nil {
 		return
 	}
-	defer moviedb.Close()
 	if len(moviedb.TvResults) == 0 {
 		logger.Log.GlobalLogger.Warn("Serie tmdb data not found for", zap.Int("tvdb", serie.ThetvdbID))
 		return
@@ -245,6 +291,7 @@ func (serie *Dbserie) getMetadataTmdb(overwrite bool) {
 	if (serie.Seriename == "" || overwrite) && moviedb.TvResults[0].Name != "" {
 		serie.Seriename = moviedb.TvResults[0].Name
 	}
+	moviedb.Close()
 	// var moviedbexternal apiexternal.TheMovieDBTVExternal
 	// err := apiexternal.TmdbApi.GetTVExternal(moviedb.TvResults[0].ID, moviedbexternal)
 	// if err == nil {
@@ -384,10 +431,11 @@ func (serie *Dbserie) GetMetadata(language string, querytmdb bool, querytrakt bo
 			traktaliases, err := apiexternal.TraktAPI.GetSerieAliases(serie.ImdbID)
 
 			if err == nil && len(traktaliases.Aliases) >= 1 {
-				arrcfglang := logger.InStringArrayStruct{Arr: config.Cfg.Imdbindexer.Indexedlanguages}
+				arrcfglang := &logger.InStringArrayStruct{Arr: config.Cfg.Imdbindexer.Indexedlanguages}
 				lenarr := len(arrcfglang.Arr)
 				for idxalias := range traktaliases.Aliases {
-					if logger.InStringArray(traktaliases.Aliases[idxalias].Country, &arrcfglang) && lenarr >= 1 {
+					if slices.ContainsFunc(arrcfglang.Arr, func(c string) bool { return strings.EqualFold(c, traktaliases.Aliases[idxalias].Country) }) && lenarr >= 1 {
+						//if logger.InStringArray(traktaliases.Aliases[idxalias].Country, &arrcfglang) && lenarr >= 1 {
 						aliases = append(aliases, traktaliases.Aliases[idxalias].Title)
 					}
 				}

@@ -6,6 +6,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/logger"
 	"github.com/Kellerman81/go_media_downloader/rate"
 	"go.uber.org/zap"
+	"golang.org/x/exp/slices"
 )
 
 type TheTVDBSeries struct {
@@ -108,8 +109,8 @@ func NewTvdbClient(seconds int, calls int, disabletls bool, timeoutseconds int) 
 
 func (t *tvdbClient) GetSeries(id int, language string) (*TheTVDBSeries, error) {
 	url := "https://api.thetvdb.com/series/" + logger.IntToString(id)
-	var result TheTVDBSeries
-	_, err := t.Client.DoJSON(url, &result, []addHeader{{key: "Accept-Language", val: language}})
+	result := new(TheTVDBSeries)
+	_, err := t.Client.DoJSON(url, result, []addHeader{{key: "Accept-Language", val: language}})
 
 	if err != nil {
 		if err != errPleaseWait {
@@ -118,12 +119,12 @@ func (t *tvdbClient) GetSeries(id int, language string) (*TheTVDBSeries, error) 
 		result.Close()
 		return nil, err
 	}
-	return &result, nil
+	return result, nil
 }
 func (t *tvdbClient) GetSeriesEpisodes(id int, language string) (*TheTVDBEpisodes, error) {
 	url := "https://api.thetvdb.com/series/" + logger.IntToString(id) + "/episodes"
-	var result TheTVDBEpisodes
-	_, err := t.Client.DoJSON(url, &result, []addHeader{{key: "Accept-Language", val: language}})
+	result := new(TheTVDBEpisodes)
+	_, err := t.Client.DoJSON(url, result, []addHeader{{key: "Accept-Language", val: language}})
 
 	if err != nil {
 		if err != errPleaseWait {
@@ -134,19 +135,26 @@ func (t *tvdbClient) GetSeriesEpisodes(id int, language string) (*TheTVDBEpisode
 	}
 
 	if result.Links.Last >= 2 {
-		var resultadd TheTVDBEpisodes
+		resultadd := new(TheTVDBEpisodes)
 		urlbase := url + "?page="
 		for k := 2; k <= result.Links.Last; k++ {
 			resultadd.Data = []TheTVDBEpisode{}
-			_, err = t.Client.DoJSON(urlbase+logger.IntToString(k), &resultadd, []addHeader{{key: "Accept-Language", val: language}})
+			_, err = t.Client.DoJSON(urlbase+logger.IntToString(k), resultadd, []addHeader{{key: "Accept-Language", val: language}})
 			if err != nil {
 				logger.Log.GlobalLogger.Error(errorCalling, zap.String("Url", urlbase+logger.IntToString(k)), zap.Error(err))
 				break
-			} else if len(resultadd.Data) >= 1 {
-				result.Data = append(logger.GrowSliceBy(result.Data, len(resultadd.Data)), resultadd.Data...)
+			} else {
+				if len(resultadd.Data) > len(result.Data) {
+					result.Data = slices.Grow(result.Data, len(resultadd.Data))
+				}
+
+				if len(resultadd.Data) >= 1 {
+					result.Data = append(result.Data, resultadd.Data...)
+				}
+				//result.Data = append(logger.GrowSliceBy(result.Data, len(resultadd.Data)), resultadd.Data...)
 			}
 		}
 		resultadd.Close()
 	}
-	return &result, nil
+	return result, nil
 }

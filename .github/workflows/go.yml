@@ -16,14 +16,14 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v2
       with:
-        go-version: 1.19
+        go-version: 1.20
     
     - id: commit
       uses: pr-mpt/actions-commit-hash@v1
     
     - name: Get current version
       id: version
-      run: echo "::set-output name=version::0.1.1"
+      run: echo "::set-output name=version::${{ github.ref_name }}"
 
     - name: Get current date
       id: date
@@ -65,7 +65,7 @@ jobs:
       uses: thedoctor0/zip-release@master
       with:
         type: 'zip'
-        filename: 'develop-windows-x86.zip'
+        filename: 'gomedia-windows-x86.zip'
         exclusions: '*.git* /.github/* /pkg/* Dockerfile go.* *.zip *.go go_media_downloader-*'
 
     - name: Rename Win64 binary
@@ -78,7 +78,7 @@ jobs:
       uses: thedoctor0/zip-release@master
       with:
         type: 'zip'
-        filename: 'develop-windows-x64.zip'
+        filename: 'gomedia-windows-x64.zip'
         exclusions: '*.git* /.github/* /pkg/* Dockerfile go.* *.zip *.go go_media_downloader-*'
 
     - name: Remove Win binary
@@ -97,7 +97,7 @@ jobs:
       uses: thedoctor0/zip-release@master
       with:
         type: 'zip'
-        filename: 'develop-linux-x86.zip'
+        filename: 'gomedia-linux-x86.zip'
         exclusions: '*.git* /.github/* /pkg/* Dockerfile go.* *.zip *.go go_media_downloader-*'
 
     - name: Rename Linux64 binary
@@ -110,7 +110,7 @@ jobs:
       uses: thedoctor0/zip-release@master
       with:
         type: 'zip'
-        filename: 'develop-linux-x64.zip'
+        filename: 'gomedia-linux-x64.zip'
         exclusions: '*.git* /.github/* /pkg/* Dockerfile go.* *.zip *.go go_media_downloader-*'
     
     - name: Rename Mac64 binary
@@ -123,11 +123,16 @@ jobs:
       uses: thedoctor0/zip-release@master
       with:
         type: 'zip'
-        filename: 'develop-macos-x64.zip'
+        filename: 'gomedia-macos-x64.zip'
         exclusions: '*.git* /.github/* /pkg/* Dockerfile go.* *.zip *.go go_media_downloader-*'
 
+    - name: Generate checksums
+      run: |
+        git describe --tags --exclude latest_develop | tee CHECKSUMS_SHA1
+        sha1sum dist/gomedia-* | sed 's/dist\///g' | tee -a CHECKSUMS_SHA1
+
     - name: Development Release
-      if: ${{ github.event_name == 'push' }}
+      if: ${{ github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/v') }}
       uses: marvinpinto/action-automatic-releases@v1.1.2
       with:
         repo_token: "${{ secrets.GITHUB_TOKEN }}"
@@ -135,8 +140,25 @@ jobs:
         automatic_release_tag: latest_develop
         title: "Latest development build"
         files: |
-          develop-macos-x64.zip
-          develop-linux-x64.zip
-          develop-windows-x64.zip
-          develop-linux-x86.zip
-          develop-windows-x86.zip
+          gomedia-macos-x64.zip
+          gomedia-linux-x64.zip
+          gomedia-windows-x64.zip
+          gomedia-linux-x86.zip
+          gomedia-windows-x86.zip
+          CHECKSUMS_SHA1
+          
+    - name: Stable Release
+      if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
+      uses: marvinpinto/action-automatic-releases@v1.1.2
+      with:
+        repo_token: "${{ secrets.GITHUB_TOKEN }}"
+        prerelease: false
+        automatic_release_tag: latest
+        title: "${{ github.ref_name }}"
+        files: |
+          gomedia-macos-x64.zip
+          gomedia-linux-x64.zip
+          gomedia-windows-x64.zip
+          gomedia-linux-x86.zip
+          gomedia-windows-x86.zip
+          CHECKSUMS_SHA1

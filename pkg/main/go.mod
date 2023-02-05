@@ -1,12 +1,12 @@
 module github.com/Kellerman81/go_media_downloader
 
-go 1.19
+go 1.20
 
 require (
 	github.com/DeanThompson/ginpprof v0.0.0-20201112072838-007b1e56b2e1 //extend webserver with pprof tools
 	github.com/GoAdminGroup/go-admin v1.2.24
 	github.com/GoAdminGroup/themes v0.0.43
-	github.com/alitto/pond v1.8.2
+	github.com/alitto/pond v1.8.3
 	github.com/andrewstuart/go-nzb v0.0.0-20151130213409-4af25f1cccf1 //access nzbget
 	github.com/gdm85/go-libdeluge v0.5.6 //access deluge
 	github.com/gin-contrib/zap v0.1.0
@@ -36,8 +36,8 @@ require (
 	github.com/gdm85/go-rencode v0.1.8 // indirect
 	github.com/gin-contrib/sse v0.1.0 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
-	github.com/go-playground/universal-translator v0.18.0 // indirect
-	github.com/go-playground/validator/v10 v10.11.1 // indirect
+	github.com/go-playground/universal-translator v0.18.1 // indirect
+	github.com/go-playground/validator/v10 v10.11.2 // indirect
 	github.com/gobuffalo/logger v1.0.7 // indirect
 	github.com/gobuffalo/packd v1.0.2 // indirect
 	github.com/gobuffalo/packr/v2 v2.8.3 // indirect
@@ -57,9 +57,9 @@ require (
 	github.com/mozillazg/go-unidecode v0.2.0
 	github.com/rogpeppe/go-internal v1.9.0 // indirect
 	github.com/sirupsen/logrus v1.9.0 // indirect; logger
-	github.com/ugorji/go/codec v1.2.8 // indirect
-	go.opentelemetry.io/otel v1.11.2 // indirect
-	go.opentelemetry.io/otel/trace v1.11.2 // indirect
+	github.com/ugorji/go/codec v1.2.9 // indirect
+	go.opentelemetry.io/otel v1.12.0 // indirect
+	go.opentelemetry.io/otel/trace v1.12.0 // indirect
 	go.uber.org/atomic v1.10.0 // indirect
 	go.uber.org/multierr v1.9.0 // indirect
 	golang.org/x/crypto v0.5.0 // indirect
@@ -79,6 +79,7 @@ require (
 	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826 // indirect
 	github.com/natefinch/lumberjack v2.0.0+incompatible // indirect
 	github.com/syndtr/goleveldb v1.0.0 // indirect
+	golang.org/x/exp v0.0.0-20230203172020-98cc5a0785f9
 	golang.org/x/sync v0.1.0 // indirect
 	golang.org/x/tools v0.5.0 // indirect
 	xorm.io/builder v0.3.12 // indirect

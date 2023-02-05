@@ -57,16 +57,9 @@ func New(cleaningInterval time.Duration) *globalcache {
 			for {
 				select {
 				case <-ticker.C:
-					now := time.Now().UnixNano()
-
-					for key := range c.items {
-						c.mu.Lock()
-						if c.items[key] != 0 && now > c.items[key] {
-							delete(c.items, key)
-							delete(c.itemsstatic, key)
-						}
-						c.mu.Unlock()
-					}
+					c.mu.Lock()
+					c.clearexpired()
+					c.mu.Unlock()
 
 				case <-c.close:
 					return
@@ -81,13 +74,10 @@ func New(cleaningInterval time.Duration) *globalcache {
 // Get gets the value for the given key.
 func (c *globalcache) Get(key string) (*Return, bool) {
 	c.mu.Lock()
-	item, exists := c.items[key]
-	if exists && item != 0 && time.Now().UnixNano() > item {
-		delete(c.items, key)
-		delete(c.itemsstatic, key)
+	c.clearexpiredkey(key)
+	if !c.CheckNoType(key) {
 		return nil, false
 	}
-
 	data, exists := c.itemsstatic[key]
 	c.mu.Unlock()
 	if exists {
@@ -99,15 +89,15 @@ func (c *globalcache) Get(key string) (*Return, bool) {
 // Get gets the value for the given key.
 func (c *globalcache) Check(key string, kind reflect.Type) bool {
 	c.mu.Lock()
-	item, exists := c.items[key]
+	c.clearexpiredkey(key)
+	_, exists := c.items[key]
 	if !exists {
-		_, exists = c.itemsstatic[key]
+		data, exists := c.itemsstatic[key]
+		if reflect.TypeOf(data) != kind {
+			exists = false
+		}
 		c.mu.Unlock()
 		return exists
-	}
-	if item != 0 && time.Now().UnixNano() > item {
-		delete(c.items, key)
-		delete(c.itemsstatic, key)
 	}
 
 	data, exists := c.itemsstatic[key]
@@ -125,15 +115,12 @@ func (c *globalcache) Check(key string, kind reflect.Type) bool {
 // Get gets the value for the given key.
 func (c *globalcache) CheckNoType(key string) bool {
 	c.mu.Lock()
-	item, exists := c.items[key]
+	c.clearexpiredkey(key)
+	_, exists := c.items[key]
 	if !exists {
 		_, exists = c.itemsstatic[key]
 		c.mu.Unlock()
 		return exists
-	}
-	if item != 0 && time.Now().UnixNano() > item {
-		delete(c.items, key)
-		delete(c.itemsstatic, key)
 	}
 
 	_, exists = c.itemsstatic[key]
@@ -150,12 +137,7 @@ func (c *globalcache) GetAll() map[string]interface{} {
 	c.mu.Lock()
 
 	ret := make(map[string]interface{})
-	for key := range c.items {
-		if c.items[key] != 0 && time.Now().UnixNano() > c.items[key] {
-			delete(c.items, key)
-			delete(c.itemsstatic, key)
-		}
-	}
+	c.clearexpired()
 	for key := range c.itemsstatic {
 		ret[key] = c.itemsstatic[key]
 	}
@@ -166,14 +148,7 @@ func (c *globalcache) GetPrefix(prefix string) map[string]interface{} {
 	c.mu.Lock()
 
 	ret := make(map[string]interface{})
-	for key := range c.items {
-		if strings.HasPrefix(key, prefix) {
-			if c.items[key] != 0 && time.Now().UnixNano() > c.items[key] {
-				delete(c.items, key)
-				delete(c.itemsstatic, key)
-			}
-		}
-	}
+	c.clearexpired()
 	for key := range c.itemsstatic {
 		if strings.HasPrefix(key, prefix) {
 			ret[key] = c.itemsstatic[key]
@@ -208,6 +183,21 @@ func (c *globalcache) Delete(key string) {
 func (c *globalcache) Close() {
 	c.items = map[string]int64{}
 	c.itemsstatic = map[string]interface{}{}
+}
+func (c *globalcache) clearexpired() {
+	now := time.Now().UnixNano()
+	for key := range c.items {
+		if c.items[key] != 0 && now > c.items[key] {
+			delete(c.items, key)
+			delete(c.itemsstatic, key)
+		}
+	}
+}
+func (c *globalcache) clearexpiredkey(key string) {
+	if c.items[key] != 0 && time.Now().UnixNano() > c.items[key] {
+		delete(c.items, key)
+		delete(c.itemsstatic, key)
+	}
 }
 
 // New Regex Cache
@@ -279,10 +269,10 @@ func (c *regex) CheckRegexp(key string) bool {
 
 	c.clearexpired(key)
 
-	val, exists := c.itemsstatic[key]
-	if val == nil {
-		exists = false
-	}
+	_, exists := c.itemsstatic[key]
+	// if val == nil {
+	// 	exists = false
+	// }
 	c.mu.Unlock()
 	return exists
 }
@@ -386,18 +376,17 @@ func (c *stmt) Check(key string) bool {
 	c.mu.Lock()
 	c.clearexpired(key)
 	_, exists := c.items[key]
-	if exists {
-		var val *sqlx.Stmt
-		val, exists = c.itemsstatic[key]
-		if val == nil {
-			exists = false
-		}
+	if !exists {
 		c.mu.Unlock()
-
-		return exists
+		return false
 	}
+	_, exists = c.itemsstatic[key]
+	// if val == nil {
+	// 	exists = false
+	// }
 	c.mu.Unlock()
-	return false
+
+	return exists
 }
 
 func (c *stmt) GetData(key string) *sqlx.Stmt {
@@ -469,17 +458,16 @@ func (c *stmtNamed) Check(key string) bool {
 	c.mu.Lock()
 	c.clearexpired(key)
 	_, exists := c.items[key]
-	if exists {
-		var val *sqlx.NamedStmt
-		val, exists = c.itemsstatic[key]
-		if val == nil {
-			exists = false
-		}
+	if !exists {
 		c.mu.Unlock()
-		return exists
+		return false
 	}
+	_, exists = c.itemsstatic[key]
+	// if val == nil {
+	// 	exists = false
+	// }
 	c.mu.Unlock()
-	return false
+	return exists
 }
 
 func (c *stmtNamed) GetData(key string) *sqlx.NamedStmt {

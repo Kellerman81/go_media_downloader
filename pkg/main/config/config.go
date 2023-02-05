@@ -13,6 +13,7 @@ import (
 	"github.com/pelletier/go-toml/v2"
 	"github.com/recoilme/pudge"
 	"go.uber.org/zap"
+	"golang.org/x/exp/slices"
 	"golang.org/x/oauth2"
 )
 
@@ -561,18 +562,16 @@ func (q *MediaTypeConfig) Close() {
 	q = nil
 }
 func (q *MediaTypeConfig) GetList(str string) *MediaListsConfig {
-	for idx := range q.Lists {
-		if q.Lists[idx].Name == str {
-			return &q.Lists[idx]
-		}
+	intid := slices.IndexFunc(q.Lists, func(e MediaListsConfig) bool { return e.Name == str })
+	if intid != -1 {
+		return &q.Lists[intid]
 	}
 	return nil
 }
 func (q *MediaTypeConfig) GetTemplateList(str string) (string, bool) {
-	for idx := range q.Lists {
-		if q.Lists[idx].Name == str {
-			return q.Lists[idx].TemplateList, q.Lists[idx].Enabled
-		}
+	intid := slices.IndexFunc(q.Lists, func(e MediaListsConfig) bool { return e.Name == str })
+	if intid != -1 {
+		return q.Lists[intid].TemplateList, q.Lists[intid].Enabled
 	}
 	return "", false
 }
@@ -633,7 +632,7 @@ func (q *QualityConfig) Close() {
 
 func Slepping(random bool, seconds int) {
 	if random {
-		rand.Seed(time.Now().UnixNano())
+		rand.New(rand.NewSource(time.Now().UnixNano()))
 		n := rand.Intn(seconds) // n will be between 0 and 10
 		logger.Log.GlobalLogger.Debug("Sleeping for", zap.Int("seconds", n+1))
 		time.Sleep(time.Duration(1+n) * time.Second)
@@ -666,17 +665,17 @@ func LoadCfgDB(f string) {
 		SyncInterval: 0})
 	pudge.BackupAll("")
 	Cfg.Keys = make(map[string]bool)
-	Cfg.Downloader = make(map[string]DownloaderConfig)
-	Cfg.Indexers = make(map[string]IndexersConfig)
-	Cfg.Lists = make(map[string]ListsConfig)
+	Cfg.Downloader = make(map[string]DownloaderConfig, len(results.Downloader))
+	Cfg.Indexers = make(map[string]IndexersConfig, len(results.Indexers))
+	Cfg.Lists = make(map[string]ListsConfig, len(results.Lists))
 	Cfg.Media = make(map[string]MediaTypeConfig)
-	Cfg.Movies = make(map[string]MediaTypeConfig)
-	Cfg.Series = make(map[string]MediaTypeConfig)
-	Cfg.Notification = make(map[string]NotificationConfig)
-	Cfg.Paths = make(map[string]PathsConfig)
-	Cfg.Quality = make(map[string]QualityConfig)
-	Cfg.Regex = make(map[string]RegexConfig)
-	Cfg.Scheduler = make(map[string]SchedulerConfig)
+	Cfg.Movies = make(map[string]MediaTypeConfig, len(results.Media.Movies))
+	Cfg.Series = make(map[string]MediaTypeConfig, len(results.Media.Series))
+	Cfg.Notification = make(map[string]NotificationConfig, len(results.Notification))
+	Cfg.Paths = make(map[string]PathsConfig, len(results.Paths))
+	Cfg.Quality = make(map[string]QualityConfig, len(results.Quality))
+	Cfg.Regex = make(map[string]RegexConfig, len(results.Regex))
+	Cfg.Scheduler = make(map[string]SchedulerConfig, len(results.Scheduler))
 
 	Cfg.General = results.General
 	if Cfg.General.WebAPIKey != "" {

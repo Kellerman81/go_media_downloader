@@ -195,9 +195,6 @@ func buildPrioStr(r uint, q uint, c uint, a uint) string {
 	return logger.UintToString(r) + "_" + logger.UintToString(q) + "_" + logger.UintToString(c) + "_" + logger.UintToString(a)
 }
 
-func buildPrioStrf(r uint, q uint, c uint, a uint) string {
-	return fmt.Sprintf("%s_%s_%s_%s", logger.UintToString(r), logger.UintToString(q), logger.UintToString(c), logger.UintToString(a))
-}
 func BenchmarkPrio1(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		str := "Hallo123"
@@ -319,8 +316,8 @@ func TestMime(t *testing.T) {
 func TestDir(t *testing.T) {
 	Init()
 	t.Run("test", func(t *testing.T) {
-		bla, _ := scanner.GetFilesDir("W:\\", "de movies", false)
-		t.Log(bla)
+		//bla, _ := scanner.GetFilesDir("W:\\", "de movies", false)
+		//t.Log(bla)
 		t.Log(config.Cfg.Paths)
 	})
 }
@@ -603,9 +600,6 @@ func BenchmarkQuery5(b *testing.B) {
 				logger.Log.GlobalLogger.Error("an error occurred while parsing csv.. ", zap.Error(err))
 				continue
 			}
-			if !importfeed.AllowMovieImport(record[1], "Watchlist") {
-				continue
-			}
 			year, err = strconv.ParseInt(record[10], 0, 32)
 			if err != nil {
 				continue
@@ -644,9 +638,6 @@ func BenchmarkQuery6(b *testing.B) {
 		_, _ = parserimdb.Read() //skip header
 		records, _ := parserimdb.ReadAll()
 		for _, record := range records {
-			if !importfeed.AllowMovieImport(record[1], "Watchlist") {
-				continue
-			}
 			year, err := strconv.ParseInt(record[10], 0, 64)
 			if err != nil {
 				continue
@@ -743,7 +734,7 @@ func BenchmarkQuery11(b *testing.B) {
 		for i := 0; i < 1000000; i++ {
 			cachetconst[uint32(i)] = struct{}{}
 		}
-		_, _ = cachetconst[uint32(999555)]
+		//_, _ = cachetconst[uint32(999555)]
 	}
 }
 
