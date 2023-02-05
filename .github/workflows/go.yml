@@ -23,14 +23,14 @@ jobs:
     
     - name: Get current version
       id: version
-      run: echo "::set-output name=version::${{ github.ref_name }}"
+      run: echo "version=${{ github.ref_name }}" >> $GITHUB_OUTPUT
 
     - name: Get current date
       id: date
-      run: echo "::set-output name=date::$(date +'%Y-%m-%d')"
+      run: echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
     
     - name: Build with xgo
-      uses: crazy-max/ghaction-xgo@v2.3.0
+      uses: crazy-max/ghaction-xgo@v2.4.0
       with:
           dest: .
           prefix: go_media_downloader
@@ -43,7 +43,7 @@ jobs:
           working_dir: pkg/main
     
     - name: Build with xgo imdb
-      uses: crazy-max/ghaction-xgo@v2.3.0
+      uses: crazy-max/ghaction-xgo@v2.4.0
       with:
           dest: .
           prefix: imdb
@@ -126,14 +126,9 @@ jobs:
         filename: 'gomedia-macos-x64.zip'
         exclusions: '*.git* /.github/* /pkg/* Dockerfile go.* *.zip *.go go_media_downloader-*'
 
-    - name: Generate checksums
-      run: |
-        git describe --tags --exclude latest_develop | tee CHECKSUMS_SHA1
-        sha1sum dist/gomedia-* | sed 's/dist\///g' | tee -a CHECKSUMS_SHA1
-
     - name: Development Release
       if: ${{ github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/v') }}
-      uses: marvinpinto/action-automatic-releases@v1.1.2
+      uses: marvinpinto/action-automatic-releases@v1.2.1
       with:
         repo_token: "${{ secrets.GITHUB_TOKEN }}"
         prerelease: true
@@ -145,11 +140,10 @@ jobs:
           gomedia-windows-x64.zip
           gomedia-linux-x86.zip
           gomedia-windows-x86.zip
-          CHECKSUMS_SHA1
           
     - name: Stable Release
       if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
-      uses: marvinpinto/action-automatic-releases@v1.1.2
+      uses: marvinpinto/action-automatic-releases@v1.2.1
       with:
         repo_token: "${{ secrets.GITHUB_TOKEN }}"
         prerelease: false
@@ -161,4 +155,3 @@ jobs:
           gomedia-windows-x64.zip
           gomedia-linux-x86.zip
           gomedia-windows-x86.zip
-          CHECKSUMS_SHA1
