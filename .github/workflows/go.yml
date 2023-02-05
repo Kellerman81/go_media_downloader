@@ -151,7 +151,7 @@ jobs:
         repo_token: "${{ secrets.GITHUB_TOKEN }}"
         prerelease: false
         automatic_release_tag: latest
-        title: "${{ github.ref_name }}"
+        title: "${{ steps.version.outputs.version }}"
         files: |
           gomedia-macos-x64.zip
           gomedia-linux-x64.zip

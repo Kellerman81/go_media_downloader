@@ -94,6 +94,7 @@ func main() {
 
 	logger.Log.GlobalLogger.Info("Check Database for Upgrades")
 	database.UpgradeDB()
+	database.UpgradeIMDB()
 	database.InitDb(config.Cfg.General.DBLogLevel)
 	database.InitImdbdb(config.Cfg.General.DBLogLevel)
 
@@ -110,8 +111,14 @@ func main() {
 	logger.Log.GlobalLogger.Info("Init Priorities")
 	parser.GetAllQualityPriorities()
 
+	logger.Log.GlobalLogger.Info("Check Fill IMDB")
+	counter, err := database.ImdbCountRowsStatic(&database.Querywithargs{QueryString: "select count() from imdb_titles"})
+	if counter == 0 || err != nil {
+		utils.FillImdb()
+	}
+
 	logger.Log.GlobalLogger.Info("Check Fill DB")
-	counter, _ := database.CountRows("dbmovies", &database.Querywithargs{})
+	counter, _ = database.CountRows("dbmovies", &database.Querywithargs{})
 	if counter == 0 {
 		utils.InitialFillMovies()
 	}

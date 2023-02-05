@@ -3,6 +3,7 @@ package database
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"io/fs"
 	"log"
 	"os"
@@ -255,6 +256,20 @@ func UpgradeDB() {
 	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
 		log.Fatalf("An error occurred while syncing the database.. %v", err)
 	}
+}
+func UpgradeIMDB() {
+	m, err := migrate.New(
+		"file://./schema/imdbdb",
+		"sqlite3://./databases/imdb.db?cache=shared&_fk=1&_mutex=no&_cslike=0",
+	)
+	if err != nil {
+		fmt.Println(fmt.Errorf("migration failed... %v", err))
+	}
+
+	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
+		fmt.Println(fmt.Errorf("an error occurred while syncing the database.. %v", err))
+	}
+	m = nil
 }
 
 func RemoveOldDbBackups(max int) error {

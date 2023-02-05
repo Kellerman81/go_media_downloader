@@ -2,6 +2,7 @@
 package config
 
 import (
+	"fmt"
 	"math/rand"
 	"os"
 	"reflect"
@@ -649,14 +650,14 @@ func GetCfgFile() string {
 func LoadCfgDB(f string) {
 	content, err := os.ReadFile(configfile)
 	if err != nil {
-		logger.Log.GlobalLogger.Error("Error loading config. ", zap.Error(err))
+		fmt.Println("Error loading config. " + err.Error())
 		content = nil
 		return
 	}
 	var results MainConfig
 	err = toml.Unmarshal(content, &results)
 	if err != nil {
-		logger.Log.GlobalLogger.Error("Error loading config. ", zap.Error(err))
+		fmt.Println("Error loading config. " + err.Error())
 		content = nil
 		return
 	}
@@ -1048,7 +1049,7 @@ func WriteCfg() {
 
 	cnt, err := toml.Marshal(bla)
 	if err != nil {
-		logger.Log.GlobalLogger.Error("Error loading config. ", zap.Error(err))
+		fmt.Println("Error loading config. " + err.Error())
 	}
 	os.WriteFile(configfile, cnt, 0777)
 }
