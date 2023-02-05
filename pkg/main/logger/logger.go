@@ -27,7 +27,7 @@ type zapLogger struct {
 type fnlog func(msg string, fields ...zapcore.Field)
 
 var Log zapLogger
-var TimeZone = time.UTC
+var TimeZone = *time.UTC
 var TimeFormat = time.RFC3339Nano
 
 func MyTimeEncoder(t time.Time, enc zapcore.PrimitiveArrayEncoder) {
@@ -48,7 +48,7 @@ func encodeTimeLayout(t time.Time, layout string, enc zapcore.PrimitiveArrayEnco
 }
 
 func (c zoneClock) Now() time.Time {
-	return time.Now().In(TimeZone)
+	return time.Now().In(&TimeZone)
 }
 func (c zoneClock) NewTicker(d time.Duration) *time.Ticker {
 	return &time.Ticker{}
@@ -85,11 +85,12 @@ func InitLogger(config Config) {
 	}
 	if config.TimeZone != "" {
 		if strings.EqualFold(config.TimeZone, "local") {
-			TimeZone = time.Local
+			TimeZone = *time.Local
 		} else if strings.EqualFold(config.TimeZone, "utc") {
-			TimeZone = time.UTC
+			TimeZone = *time.UTC
 		} else {
-			TimeZone, _ = time.LoadLocation(config.TimeZone)
+			TimeZone2, _ := time.LoadLocation(config.TimeZone)
+			TimeZone = *TimeZone2
 		}
 	}
 
@@ -119,14 +120,12 @@ func InitLogger(config Config) {
 		})),
 		zap.NewAtomicLevelAt(level),
 	)
-	var globalLogger *zap.Logger
 	if strings.EqualFold(config.LogLevel, "debug") {
-		globalLogger = zap.New(core, zap.WithClock(zoneClock{}), zap.AddCaller(), zap.AddStacktrace(zapcore.DebugLevel), zap.Development())
+		Log.GlobalLogger = zap.New(core, zap.WithClock(zoneClock{}), zap.AddCaller(), zap.AddStacktrace(zapcore.DebugLevel), zap.Development())
 	} else {
-		globalLogger = zap.New(core, zap.WithClock(zoneClock{}))
+		Log.GlobalLogger = zap.New(core, zap.WithClock(zoneClock{}))
 	}
-	zap.ReplaceGlobals(globalLogger)
-	Log.GlobalLogger = globalLogger
+	zap.ReplaceGlobals(Log.GlobalLogger)
 }
 
 func printlog(fun fnlog, args ...interface{}) {

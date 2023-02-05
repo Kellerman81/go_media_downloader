@@ -143,25 +143,29 @@ func probeURL(fileURL string) (*ffProbeJSON, error) {
 	cmd.Stdout = &outputBuf
 	cmd.Stderr = &stdErr
 	err := cmd.Run()
-	defer outputBuf.Reset()
-	defer stdErr.Reset()
 	if err != nil {
 		cmd = nil
+		defer outputBuf.Reset()
+		defer stdErr.Reset()
 		return nil, errors.New("error running FFProbe [" + stdErr.String() + "] " + err.Error() + " [" + outputBuf.String() + "]")
 	}
 
 	if stdErr.Len() > 0 {
 		cmd = nil
+		outputBuf.Reset()
+		defer stdErr.Reset()
 		return nil, errors.New("ffprobe error: " + stdErr.String())
 	}
+	stdErr.Reset()
 
-	var data ffProbeJSON
-	err = json.Unmarshal(outputBuf.Bytes(), &data)
+	data := new(ffProbeJSON)
+	err = json.Unmarshal(outputBuf.Bytes(), data)
+	outputBuf.Reset()
 	if err != nil {
 		cmd = nil
 		data.Close()
 		return nil, errors.New("error parsing ffprobe output: " + err.Error())
 	}
 	cmd = nil
-	return &data, nil
+	return data, nil
 }

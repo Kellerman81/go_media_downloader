@@ -28,7 +28,7 @@ func converttime(interval string) time.Duration {
 	return dur
 }
 func convertcron(interval string) string {
-	rand.Seed(time.Now().UnixNano())
+	rand.New(rand.NewSource(time.Now().UnixNano()))
 	if strings.Contains(interval, "d") {
 		return "0 " + logger.IntToString(rand.Intn(60)) + " " + logger.IntToString(rand.Intn(24)) + " */" + strings.Replace(interval, "d", "", 1) + " * *"
 	}

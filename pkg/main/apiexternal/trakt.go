@@ -307,7 +307,7 @@ func NewTraktClient(clientid string, clientsecret string, token oauth2.Token, se
 
 func (t *traktClient) GetMoviePopular(limit int) (*TraktMovieGroup, error) {
 	url := "https://api.trakt.tv/movies/popular"
-	var movies TraktMovieGroup
+	movies := new(TraktMovieGroup)
 	if limit >= 1 {
 		url += limitquery + logger.IntToString(limit)
 		movies.Movies = make([]TraktMovie, 0, limit)
@@ -323,7 +323,7 @@ func (t *traktClient) GetMoviePopular(limit int) (*TraktMovieGroup, error) {
 		return nil, err
 	}
 
-	return &movies, nil
+	return movies, nil
 }
 
 func (t *traktClient) GetMovieTrending(limit int) (*TraktMovieGroup, error) {
@@ -343,14 +343,14 @@ func (t *traktClient) GetMovieTrending(limit int) (*TraktMovieGroup, error) {
 		result = nil
 		return nil, err
 	}
-	var movies TraktMovieGroup
+	movies := new(TraktMovieGroup)
 	movies.Movies = make([]TraktMovie, len(result))
 	for idx := range result {
 		movies.Movies[idx] = result[idx].Movie
 	}
 
 	result = nil
-	return &movies, nil
+	return movies, nil
 }
 
 func (t *traktClient) GetMovieAnticipated(limit int) (*TraktMovieGroup, error) {
@@ -370,20 +370,20 @@ func (t *traktClient) GetMovieAnticipated(limit int) (*TraktMovieGroup, error) {
 		result = nil
 		return nil, err
 	}
-	var movies TraktMovieGroup
+	movies := new(TraktMovieGroup)
 	movies.Movies = make([]TraktMovie, len(result))
 	for idx := range result {
 		movies.Movies[idx] = result[idx].Movie
 	}
 	result = nil
 
-	return &movies, nil
+	return movies, nil
 }
 
 func (t *traktClient) GetMovieAliases(movieid string) (*TraktAliases, error) {
 	url := apiurlmovies + movieid + "/aliases"
 
-	var aliases TraktAliases
+	aliases := new(TraktAliases)
 	_, err := t.Client.DoJSON(url, &aliases.Aliases, t.DefaultHeaders)
 
 	if err != nil {
@@ -393,13 +393,13 @@ func (t *traktClient) GetMovieAliases(movieid string) (*TraktAliases, error) {
 		aliases.Close()
 		return nil, err
 	}
-	return &aliases, nil
+	return aliases, nil
 }
 func (t *traktClient) GetMovie(movieid string) (*TraktMovieExtend, error) {
 	url := apiurlmovies + movieid + extendedfull
 
-	var result TraktMovieExtend
-	_, err := t.Client.DoJSON(url, &result, t.DefaultHeaders)
+	result := new(TraktMovieExtend)
+	_, err := t.Client.DoJSON(url, result, t.DefaultHeaders)
 
 	if err != nil {
 		if err != errPleaseWait {
@@ -408,13 +408,13 @@ func (t *traktClient) GetMovie(movieid string) (*TraktMovieExtend, error) {
 		result.Close()
 		return nil, err
 	}
-	return &result, nil
+	return result, nil
 }
 func (t *traktClient) GetSerie(showid string) (*TraktSerieData, error) {
 	url := apiurlshows + showid + extendedfull
 
-	var result TraktSerieData
-	_, err := t.Client.DoJSON(url, &result, t.DefaultHeaders)
+	result := new(TraktSerieData)
+	_, err := t.Client.DoJSON(url, result, t.DefaultHeaders)
 
 	if err != nil {
 		if err != errPleaseWait {
@@ -424,13 +424,13 @@ func (t *traktClient) GetSerie(showid string) (*TraktSerieData, error) {
 		return nil, err
 	}
 
-	return &result, nil
+	return result, nil
 }
 
 func (t *traktClient) GetSerieAliases(showid string) (*TraktAliases, error) {
 	url := apiurlshows + showid + "/aliases"
 
-	var aliases TraktAliases
+	aliases := new(TraktAliases)
 	_, err := t.Client.DoJSON(url, &aliases.Aliases, t.DefaultHeaders)
 
 	if err != nil {
@@ -441,12 +441,12 @@ func (t *traktClient) GetSerieAliases(showid string) (*TraktAliases, error) {
 		return nil, err
 	}
 
-	return &aliases, nil
+	return aliases, nil
 }
 func (t *traktClient) GetSerieSeasons(showid string) (*TraktSerieSeasonGroup, error) {
 	url := apiurlshows + showid + "/seasons"
 
-	var seasons TraktSerieSeasonGroup
+	seasons := new(TraktSerieSeasonGroup)
 	_, err := t.Client.DoJSON(url, &seasons.Seasons, t.DefaultHeaders)
 
 	if err != nil {
@@ -457,7 +457,7 @@ func (t *traktClient) GetSerieSeasons(showid string) (*TraktSerieSeasonGroup, er
 		return nil, err
 	}
 
-	return &seasons, nil
+	return seasons, nil
 }
 func (t *traktClient) GetSerieSeasonEpisodes(showid string, season int, episodes *TraktSerieSeasonEpisodeGroup) error {
 	url := apiurlshows + showid + "/seasons/" + logger.IntToString(season) + extendedfull
@@ -477,7 +477,7 @@ func (t *traktClient) GetSerieSeasonEpisodes(showid string, season int, episodes
 
 func (t *traktClient) GetUserList(username string, listname string, listtype string, limit int) (*TraktUserListGroup, error) {
 	url := "https://api.trakt.tv/users/" + username + "/lists/" + listname + "/items/" + listtype
-	var entries TraktUserListGroup
+	entries := new(TraktUserListGroup)
 	if limit >= 1 {
 		url += limitquery + logger.IntToString(limit)
 		entries.Entries = make([]TraktUserList, 0, limit)
@@ -492,12 +492,12 @@ func (t *traktClient) GetUserList(username string, listname string, listtype str
 		return nil, err
 	}
 
-	return &entries, nil
+	return entries, nil
 }
 
 func (t *traktClient) GetSeriePopular(limit int) (*TraktSerieGroup, error) {
 	url := "https://api.trakt.tv/shows/popular"
-	var series TraktSerieGroup
+	series := new(TraktSerieGroup)
 	if limit >= 1 {
 		url += limitquery + logger.IntToString(limit)
 		series.Series = make([]TraktSerie, 0, limit)
@@ -513,7 +513,7 @@ func (t *traktClient) GetSeriePopular(limit int) (*TraktSerieGroup, error) {
 		return nil, err
 	}
 
-	return &series, nil
+	return series, nil
 }
 
 func (t *traktClient) GetSerieTrending(limit int) (*TraktSerieGroup, error) {
@@ -533,13 +533,13 @@ func (t *traktClient) GetSerieTrending(limit int) (*TraktSerieGroup, error) {
 		result = nil
 		return nil, err
 	}
-	var series TraktSerieGroup
+	series := new(TraktSerieGroup)
 	series.Series = make([]TraktSerie, len(result))
 	for idx := range result {
 		series.Series[idx] = result[idx].Serie
 	}
 	result = nil
-	return &series, nil
+	return series, nil
 }
 
 func (t *traktClient) GetSerieAnticipated(limit int) (*TraktSerieGroup, error) {
@@ -559,13 +559,13 @@ func (t *traktClient) GetSerieAnticipated(limit int) (*TraktSerieGroup, error) {
 		result = nil
 		return nil, err
 	}
-	var series TraktSerieGroup
+	series := new(TraktSerieGroup)
 	series.Series = make([]TraktSerie, len(result))
 	for idx := range result {
 		series.Series[idx] = result[idx].Serie
 	}
 	result = nil
-	return &series, nil
+	return series, nil
 }
 
 func (t *traktClient) GetAuthURL() string {
@@ -588,9 +588,9 @@ func (t *traktClient) GetAuthToken(clientcode string) *oauth2.Token {
 	return tok
 }
 
-func (t *traktClient) GetUserListAuth(username string, listname string, listtype string, limit int) (TraktUserListGroup, error) {
+func (t *traktClient) GetUserListAuth(username string, listname string, listtype string, limit int) (*TraktUserListGroup, error) {
 	url := "https://api.trakt.tv/users/" + username + "/lists/" + listname + "/items/" + listtype
-	var entries TraktUserListGroup
+	entries := new(TraktUserListGroup)
 	if limit >= 1 {
 		url += limitquery + logger.IntToString(limit)
 		entries.Entries = make([]TraktUserList, 0, limit)
@@ -602,7 +602,7 @@ func (t *traktClient) GetUserListAuth(username string, listname string, listtype
 		if err != errPleaseWait {
 			logger.Log.GlobalLogger.Error(errorCalling, zap.Stringp("url", &url), zap.Error(err))
 		}
-		return TraktUserListGroup{}, err
+		return nil, err
 	}
 
 	return entries, nil

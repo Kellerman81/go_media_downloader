@@ -5,7 +5,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/Kellerman81/go_media_downloader/apiexternal"
 	"github.com/Kellerman81/go_media_downloader/config"
@@ -46,6 +45,12 @@ func (d *downloadertype) Close() {
 	if d == nil {
 		return
 	}
+	d.Movie.Close()
+	d.Dbmovie.Close()
+	d.Serie.Close()
+	d.Dbserie.Close()
+	d.Serieepisode.Close()
+	d.Dbserieepisode.Close()
 	d.Nzb.ParseInfo.Close()
 	d.Nzb.Close()
 	d.cfgDownloader.Close()
@@ -61,15 +66,17 @@ func DownloadMovie(cfgp *config.MediaTypeConfig, movieid uint, nzb *apiexternal.
 		SearchGroupType: "movie",
 		Nzb:             *nzb,
 	}
-	defer d.Close()
 	if database.GetMovies(&database.Querywithargs{Query: database.QueryFilterByID, Args: []interface{}{movieid}}, &d.Movie) != nil {
+		d.Close()
 		return
 	}
 	if database.GetDbmovie(&database.Querywithargs{Query: database.QueryFilterByID, Args: []interface{}{d.Movie.DbmovieID}}, &d.Dbmovie) != nil {
+		d.Close()
 		return
 	}
 	d.Quality = d.Movie.QualityProfile
 	d.downloadNzb()
+	d.Close()
 }
 func DownloadSeriesEpisode(cfgp *config.MediaTypeConfig, episodeid uint, nzb *apiexternal.Nzbwithprio) {
 	d := &downloadertype{
@@ -77,21 +84,25 @@ func DownloadSeriesEpisode(cfgp *config.MediaTypeConfig, episodeid uint, nzb *ap
 		SearchGroupType: "series",
 		Nzb:             *nzb,
 	}
-	defer d.Close()
 	if database.GetSerieEpisodes(&database.Querywithargs{Query: database.QueryFilterByID, Args: []interface{}{episodeid}}, &d.Serieepisode) != nil {
+		d.Close()
 		return
 	}
 	if database.GetDbserie(&database.Querywithargs{Query: database.QueryFilterByID, Args: []interface{}{d.Serieepisode.DbserieID}}, &d.Dbserie) != nil {
+		d.Close()
 		return
 	}
 	if database.GetDbserieEpisodes(&database.Querywithargs{Query: database.QueryFilterByID, Args: []interface{}{d.Serieepisode.DbserieEpisodeID}}, &d.Dbserieepisode) != nil {
+		d.Close()
 		return
 	}
 	if database.GetSeries(&database.Querywithargs{Query: database.QueryFilterByID, Args: []interface{}{d.Serieepisode.SerieID}}, &d.Serie) != nil {
+		d.Close()
 		return
 	}
 	d.Quality = d.Serieepisode.QualityProfile
 	d.downloadNzb()
+	d.Close()
 }
 func (d *downloadertype) downloadNzb() {
 	d.Category, d.Target, d.Downloader = d.Nzb.Getnzbconfig(d.Quality)
@@ -186,7 +197,7 @@ func (d *downloadertype) downloadNzb() {
 				URL:            d.Nzb.NZB.DownloadURL,
 				Target:         config.Cfg.Paths[d.Target].Path,
 				Indexer:        d.Nzb.Indexer,
-				DownloadedAt:   time.Now().In(logger.TimeZone),
+				DownloadedAt:   logger.TimeGetNow(),
 				MovieID:        movieID,
 				DbmovieID:      dbmovieID,
 				ResolutionID:   d.Nzb.ParseInfo.ResolutionID,
@@ -195,6 +206,7 @@ func (d *downloadertype) downloadNzb() {
 				AudioID:        d.Nzb.ParseInfo.AudioID,
 				QualityProfile: moviequality,
 			})
+		return
 	}
 	serieid := d.Serie.ID
 	if serieid == 0 {
@@ -208,6 +220,8 @@ func (d *downloadertype) downloadNzb() {
 	serieepisodequality := d.Serieepisode.QualityProfile
 	if serieepisodeid == 0 {
 		serieepisodeid = d.Nzb.NzbepisodeID
+	}
+	if serieepisodequality == "" {
 		database.QueryColumn(&database.Querywithargs{QueryString: "select quality_profile from serie_episodes where id = ?", Args: []interface{}{d.Nzb.NzbepisodeID}}, &serieepisodequality)
 	}
 	dbserieepisodeid := d.Dbserieepisode.ID
@@ -221,7 +235,7 @@ func (d *downloadertype) downloadNzb() {
 			URL:              d.Nzb.NZB.DownloadURL,
 			Target:           config.Cfg.Paths[d.Target].Path,
 			Indexer:          d.Nzb.Indexer,
-			DownloadedAt:     time.Now().In(logger.TimeZone),
+			DownloadedAt:     logger.TimeGetNow(),
 			SerieID:          serieid,
 			SerieEpisodeID:   serieepisodeid,
 			DbserieEpisodeID: dbserieepisodeid,
@@ -235,9 +249,8 @@ func (d *downloadertype) downloadNzb() {
 }
 
 func (d *downloadertype) notify() {
-	d.Time = time.Now().In(logger.TimeZone).Format(logger.TimeFormat)
+	d.Time = logger.TimeGetNow().Format(logger.TimeFormat)
 	var f *os.File
-	defer f.Close()
 	var messagetext, messageTitle string
 	var err error
 	for idx := range d.Cfgp.Notification {

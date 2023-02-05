@@ -72,6 +72,7 @@ type Nzbwithprio struct {
 	Denied           bool
 	Reason           string
 	AdditionalReason interface{}
+	QualityCfg       config.QualityConfig
 }
 
 // NZB represents an NZB found on the index
@@ -122,6 +123,15 @@ type NZBArr struct {
 	Arr []Nzbwithprio
 }
 
+func (s *NZB) Close() {
+	if logger.DisableVariableCleanup {
+		return
+	}
+	if s == nil {
+		return
+	}
+	s = nil
+}
 func (s *ParseInfo) Close() {
 	if logger.DisableVariableCleanup {
 		return
@@ -161,6 +171,9 @@ func (s *ParseInfo) Parsegroup(tolower string, name string, group *logger.InStri
 		index = strings.Index(tolower, group.Arr[idx])
 		//substr = strings.Repeat(tolower[index:index+len(group[idx])], 1)
 		substr = tolower[index : index+lengroup]
+		if substr == "" {
+			continue
+		}
 		substrpre = before(tolower, index)
 		substrpost = after(tolower, index+lengroup)
 		if substrpost != "" {
@@ -183,17 +196,11 @@ func (s *ParseInfo) Parsegroup(tolower string, name string, group *logger.InStri
 		case "resolution":
 			s.Resolution = substr
 		case "extended":
-			if substr != "" {
-				s.Extended = true
-			}
+			s.Extended = true
 		case "proper":
-			if substr != "" {
-				s.Proper = true
-			}
+			s.Proper = true
 		case "repack":
-			if substr != "" {
-				s.Repack = true
-			}
+			s.Repack = true
 		}
 		break
 	}
@@ -206,6 +213,8 @@ func (s *Nzbwithprio) Close() {
 	if s == nil {
 		return
 	}
+	s.NZB.Close()
+	s.QualityCfg.Close()
 	s.ParseInfo.Close()
 	s.WantedAlternates = nil
 	s = nil
@@ -233,23 +242,25 @@ func (s *Nzbwithprio) Getnzbconfig(quality string) (string, string, string) {
 		return "", "", ""
 	}
 
-	cfgqual := config.Cfg.Quality[quality]
-	defer cfgqual.Close()
-	for idx := range cfgqual.Indexer {
-		if strings.EqualFold(cfgqual.Indexer[idx].TemplateIndexer, s.Indexer) {
-			if !config.Check("path_" + cfgqual.Indexer[idx].TemplatePathNzb) {
-				continue
-			}
+	for _, ind := range config.Cfg.Quality[quality].Indexer {
+		if !strings.EqualFold(ind.TemplateIndexer, s.Indexer) {
+			continue
+		}
+		if !config.Check("path_" + ind.TemplatePathNzb) {
+			continue
+		}
 
-			if !config.Check("downloader_" + cfgqual.Indexer[idx].TemplateDownloader) {
-				continue
-			}
-			if cfgqual.Indexer[idx].CategoryDowloader != "" {
-				logger.Log.Debug("Quality ", cfgqual.Indexer[idx], " Downloader ", config.Cfg.Downloader[cfgqual.Indexer[idx].TemplateDownloader])
-				return cfgqual.Indexer[idx].CategoryDowloader, cfgqual.Indexer[idx].TemplatePathNzb, cfgqual.Indexer[idx].TemplateDownloader
-			}
+		if !config.Check("downloader_" + ind.TemplateDownloader) {
+			continue
+		}
+		if ind.CategoryDowloader != "" {
+			logger.Log.Debug("Quality ", ind, " Downloader ", config.Cfg.Downloader[ind.TemplateDownloader])
+			return ind.CategoryDowloader, ind.TemplatePathNzb, ind.TemplateDownloader
 		}
 	}
+
+	cfgqual := config.Cfg.Quality[quality]
+	defer cfgqual.Close()
 	// defer indexer.Close()
 	logger.Log.GlobalLogger.Debug("Downloader nzb config NOT found - quality", zap.Stringp("Quality", &quality))
 	if !config.Check("path_" + cfgqual.Indexer[0].TemplatePathNzb) {

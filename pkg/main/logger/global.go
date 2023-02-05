@@ -183,41 +183,6 @@ func InStringArray(target string, arr *InStringArrayStruct) bool {
 	return false
 }
 
-func InStringArrayCaseSensitive(target string, arr *InStringArrayStruct) bool {
-	for idx := range arr.Arr {
-		if target == arr.Arr[idx] {
-			return true
-		}
-	}
-	return false
-}
-func InStringArrayContainsTarget(target string, arr *InStringArrayStruct) bool {
-	defer arr.Close()
-	for idx := range arr.Arr {
-		if strings.Contains(target, arr.Arr[idx]) {
-			return true
-		}
-	}
-	return false
-}
-func InStringArrayContainsCaseSensitive(target string, arr *InStringArrayStruct) bool {
-	for idx := range arr.Arr {
-		if strings.Contains(target, arr.Arr[idx]) {
-			return true
-		}
-	}
-	return false
-}
-func InStringArrayContainsCaseInSensitive(target string, arr *InStringArrayStruct) bool {
-	target = strings.ToLower(target)
-	for idx := range arr.Arr {
-		if strings.Contains(target, arr.Arr[idx]) {
-			return true
-		}
-	}
-	return false
-}
-
 func InIntArray(target int, arr *InIntArrayStruct) bool {
 	for idx := range arr.Arr {
 		if target == arr.Arr[idx] {
@@ -560,6 +525,12 @@ func RunFunc[T any](src []T, runFunc func(elem T), breakFunc func(elem T) bool) 
 	}
 }
 
+func RunFuncSimple[T any](src []T, runFunc func(elem T)) {
+	for i := range src {
+		runFunc(src[i])
+	}
+}
+
 func ContainsI(a string, b string) bool {
 	if strings.Contains(a, b) {
 		return true
@@ -601,6 +572,14 @@ func IntToString(i int) string {
 }
 func UintToString(i uint) string {
 	return strconv.FormatInt(int64(i), 10)
+}
+
+func TimeGetNow() time.Time {
+	return time.Now().In(&TimeZone)
+}
+
+func SqlTimeGetNow() sql.NullTime {
+	return sql.NullTime{Time: time.Now().In(&TimeZone), Valid: true}
 }
 
 func Unquote(s string) string {

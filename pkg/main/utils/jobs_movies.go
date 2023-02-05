@@ -1,7 +1,6 @@
 package utils
 
 import (
-	"database/sql"
 	"encoding/csv"
 	"errors"
 	"fmt"
@@ -9,7 +8,6 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/Kellerman81/go_media_downloader/apiexternal"
 	"github.com/Kellerman81/go_media_downloader/config"
@@ -18,8 +16,8 @@ import (
 	"github.com/Kellerman81/go_media_downloader/logger"
 	"github.com/Kellerman81/go_media_downloader/parser"
 	"github.com/Kellerman81/go_media_downloader/searcher"
-	"github.com/Kellerman81/go_media_downloader/structure"
 	"go.uber.org/zap"
+	"golang.org/x/exp/slices"
 )
 
 const queryidunmatched = "select id from movie_file_unmatcheds where filepath = ? and listname = ?"
@@ -32,61 +30,63 @@ const jobstarted = "Started Job"
 const jobended = "Ended Job"
 
 var errNotAdded = errors.New("not added")
-var lastMoviesStructure string
 
-func jobImportMovieParseV2(imp *importstruct) {
-	defer imp.close()
-	m := parser.NewFileParser(filepath.Base(imp.path), false, "movie")
+func jobImportMovieParseV2(path string, updatemissing bool, cfgp *config.MediaTypeConfig, listname string, addfound bool) {
+	m := parser.NewFileParser(filepath.Base(path), false, "movie")
 	defer m.Close()
 	m.Title = strings.TrimSpace(m.Title)
 
 	//keep list empty for auto detect list since the default list is in the listconfig!
-	parser.GetDbIDs("movie", m, imp.cfgp, "", true)
+	parser.GetDbIDs("movie", m, cfgp, "", true)
 	if m.MovieID != 0 && m.Listname != "" {
-		imp.listname = m.Listname
+		listname = m.Listname
 	}
 
-	if imp.listname == "" {
+	if listname == "" {
 		return
 	}
-	if !config.Check("quality_" + imp.cfgp.ListsMap[imp.listname].TemplateQuality) {
-		logger.Log.GlobalLogger.Error("Quality for List: " + imp.listname + " not found")
+	templatequality := cfgp.ListsMap[listname].TemplateQuality
+	if !config.Check("quality_" + templatequality) {
+		logger.Log.GlobalLogger.Error("Quality for List: " + listname + " not found")
 		return
 	}
+
 	var counter int
 	var err error
-	if m.MovieID == 0 && imp.listname != "" && imp.addfound {
+	if m.MovieID == 0 && listname != "" && addfound {
 		if m.Imdb != "" {
 			if m.DbmovieID == 0 {
-				m.DbmovieID = importfeed.JobImportMovies(m.Imdb, imp.cfgp, imp.listname, true)
+				m.DbmovieID = importfeed.JobImportMovies(m.Imdb, cfgp, listname, true)
 			}
 			if m.MovieID == 0 {
-				database.QueryColumn(&database.Querywithargs{QueryString: queryidmoviesbyimdb, Args: []interface{}{m.Imdb, imp.listname}}, &m.MovieID)
+				database.QueryColumn(&database.Querywithargs{QueryString: queryidmoviesbyimdb, Args: []interface{}{m.Imdb, listname}}, &m.MovieID)
 			}
 		}
 	}
-	if m.MovieID == 0 && imp.listname != "" && imp.addfound {
-		dbmovie, found, found1 := importfeed.MovieFindDbIDByTitle(m.Imdb, m.Title, m.Year, "rss", imp.cfgp.Data[0].AddFound)
-		if (found || found1) && imp.listname == imp.cfgp.Data[0].AddFoundList && imp.cfgp.Data[0].AddFound {
-			if database.QueryColumn(&database.Querywithargs{QueryString: queryidmoviesbylistname, Args: []interface{}{dbmovie, imp.listname}}, &m.MovieID) != nil {
+	if m.MovieID == 0 && listname != "" && addfound {
+		addfound := cfgp.Data[0].AddFound
+		addFoundList := cfgp.Data[0].AddFoundList
+		dbmovie, found, found1 := importfeed.MovieFindDbIDByTitle(m.Imdb, m.Title, m.Year, "rss", addfound)
+		if (found || found1) && listname == addFoundList && addfound {
+			if database.QueryColumn(&database.Querywithargs{QueryString: queryidmoviesbylistname, Args: []interface{}{dbmovie, listname}}, &m.MovieID) != nil {
 				if m.Imdb == "" {
 					database.QueryColumn(&database.Querywithargs{QueryString: queryimdbmoviesbyid, Args: []interface{}{dbmovie}}, &m.Imdb)
 				}
 				if m.Imdb != "" {
-					importfeed.JobImportMovies(m.Imdb, imp.cfgp, imp.listname, true)
-					database.QueryColumn(&database.Querywithargs{QueryString: queryidmoviesbylistname, Args: []interface{}{dbmovie, imp.listname}}, &m.MovieID)
+					importfeed.JobImportMovies(m.Imdb, cfgp, listname, true)
+					database.QueryColumn(&database.Querywithargs{QueryString: queryidmoviesbylistname, Args: []interface{}{dbmovie, listname}}, &m.MovieID)
 				}
 				if m.MovieID == 0 {
 					err = errNotAdded
 				}
 			}
-		} else if imp.listname == imp.cfgp.Data[0].AddFoundList && imp.cfgp.Data[0].AddFound {
-			imdbID, _, _ := importfeed.MovieFindImdbIDByTitle(m.Title, m.Year, "rss", imp.cfgp.Data[0].AddFound)
+		} else if listname == addFoundList && addfound {
+			imdbID, _, _ := importfeed.MovieFindImdbIDByTitle(m.Title, m.Year, "rss", addfound)
 			if m.DbmovieID == 0 {
-				m.DbmovieID = importfeed.JobImportMovies(imdbID, imp.cfgp, imp.listname, true)
+				m.DbmovieID = importfeed.JobImportMovies(imdbID, cfgp, listname, true)
 			}
 			if m.MovieID == 0 {
-				database.QueryColumn(&database.Querywithargs{QueryString: queryidmoviesbylistname, Args: []interface{}{dbmovie, imp.listname}}, &m.MovieID)
+				database.QueryColumn(&database.Querywithargs{QueryString: queryidmoviesbylistname, Args: []interface{}{dbmovie, listname}}, &m.MovieID)
 			}
 			if m.MovieID == 0 {
 				err = errNotAdded
@@ -98,43 +98,46 @@ func jobImportMovieParseV2(imp *importstruct) {
 	}
 	if m.MovieID == 0 {
 		var id uint
-		database.QueryColumn(&database.Querywithargs{QueryString: queryidunmatched, Args: []interface{}{imp.path, imp.listname}}, &id)
+		database.QueryColumn(&database.Querywithargs{QueryString: queryidunmatched, Args: []interface{}{path, listname}}, &id)
 		if id == 0 {
-			database.InsertStatic(&database.Querywithargs{QueryString: "Insert into movie_file_unmatcheds (listname, filepath, last_checked, parsed_data) values (:listname, :filepath, :last_checked, :parsed_data)", Args: []interface{}{imp.listname, imp.path, sql.NullTime{Time: time.Now(), Valid: true}, buildparsedstring(m)}})
+			database.InsertStatic(&database.Querywithargs{QueryString: "Insert into movie_file_unmatcheds (listname, filepath, last_checked, parsed_data) values (:listname, :filepath, :last_checked, :parsed_data)", Args: []interface{}{listname, path, logger.SqlTimeGetNow(), buildparsedstring(m)}})
 		} else {
-			database.UpdateColumnStatic(&database.Querywithargs{QueryString: "Update movie_file_unmatcheds SET last_checked = ? where id = ?", Args: []interface{}{sql.NullTime{Time: time.Now(), Valid: true}, id}})
+			database.UpdateColumnStatic(&database.Querywithargs{QueryString: "Update movie_file_unmatcheds SET last_checked = ? where id = ?", Args: []interface{}{logger.SqlTimeGetNow(), id}})
 			database.UpdateColumnStatic(&database.Querywithargs{QueryString: "Update movie_file_unmatcheds SET parsed_data = ? where id = ?", Args: []interface{}{buildparsedstring(m), id}})
 		}
 		return
 	}
+	cfgqual := config.Cfg.Quality[templatequality]
+	defer cfgqual.Close()
 
-	parser.GetPriorityMap(m, imp.cfgp, imp.cfgp.ListsMap[imp.listname].TemplateQuality, true, false)
-	err = parser.ParseVideoFile(m, imp.path, imp.cfgp.ListsMap[imp.listname].TemplateQuality)
+	parser.GetPriorityMapQual(m, cfgp, &cfgqual, true, false)
+	err = parser.ParseVideoFile(m, path, templatequality)
 	if err != nil {
-		logger.Log.GlobalLogger.Error("Parse failed", zap.String("file", imp.path), zap.Error(err))
+		logger.Log.GlobalLogger.Error("Parse failed", zap.String("file", path), zap.Error(err))
 		return
 	}
-	database.QueryColumn(&database.Querywithargs{QueryString: querycountfilesmovies, Args: []interface{}{imp.path, m.MovieID}}, &counter)
+	database.QueryColumn(&database.Querywithargs{QueryString: querycountfilesmovies, Args: []interface{}{path, m.MovieID}}, &counter)
 	if counter >= 1 {
 		return
 	}
 	var okint int
-	if m.Priority >= parser.NewCutoffPrio(imp.cfgp, imp.cfgp.ListsMap[imp.listname].TemplateQuality) {
+	if m.Priority >= parser.NewCutoffPrio(cfgp, &cfgqual) {
 		okint = 1
 	}
 	var rootpath string
 	database.QueryColumn(&database.Querywithargs{QueryString: queryrootpathmovies, Args: []interface{}{m.MovieID}}, &rootpath)
 
 	if rootpath == "" && m.MovieID != 0 {
-		updateRootpath(imp.path, "movies", m.MovieID, imp.cfgp)
+		updateRootpath(path, "movies", m.MovieID, cfgp)
 	}
 
+	logger.GlobalCache.Delete("movie_files_cached")
 	database.InsertNamed("insert into movie_files (location, filename, extension, quality_profile, resolution_id, quality_id, codec_id, audio_id, proper, repack, extended, movie_id, dbmovie_id, height, width) values (:location, :filename, :extension, :quality_profile, :resolution_id, :quality_id, :codec_id, :audio_id, :proper, :repack, :extended, :movie_id, :dbmovie_id, :height, :width)",
 		database.MovieFile{
-			Location:       imp.path,
-			Filename:       filepath.Base(imp.path),
-			Extension:      filepath.Ext(imp.path),
-			QualityProfile: imp.cfgp.ListsMap[imp.listname].TemplateQuality,
+			Location:       path,
+			Filename:       filepath.Base(path),
+			Extension:      filepath.Ext(path),
+			QualityProfile: templatequality,
 			ResolutionID:   m.ResolutionID,
 			QualityID:      m.QualityID,
 			CodecID:        m.CodecID,
@@ -146,13 +149,13 @@ func jobImportMovieParseV2(imp *importstruct) {
 			DbmovieID:      m.DbmovieID,
 			Height:         m.Height,
 			Width:          m.Width})
-	if imp.updatemissing {
+	if updatemissing {
 		updatemoviesmissing(0, m.MovieID)
 
 		updatemoviesreached(okint, m.MovieID)
 	}
 
-	database.DeleteRowStatic(&database.Querywithargs{QueryString: "Delete from movie_file_unmatcheds where filepath = ?", Args: []interface{}{imp.path}})
+	database.DeleteRowStatic(&database.Querywithargs{QueryString: "Delete from movie_file_unmatcheds where filepath = ?", Args: []interface{}{path}})
 }
 
 func updatemoviesreached(reached int, dbmovieid uint) {
@@ -163,9 +166,7 @@ func updatemoviesmissing(missing int, dbmovieid uint) {
 	database.UpdateColumnStatic(&database.Querywithargs{QueryString: "Update movies set missing = ? where id = ?", Args: []interface{}{missing, dbmovieid}})
 }
 
-func getMissingIMDBMoviesV2(templatelist string) (*feedResults, error) {
-	cfglist := config.Cfg.Lists[templatelist]
-	defer cfglist.Close()
+func getMissingIMDBMoviesV2(templatelist string, cfglist *config.ListsConfig) (*feedResults, error) {
 	if cfglist.URL == "" {
 		logger.Log.GlobalLogger.Error("Failed to get url")
 		return nil, errNoListOther
@@ -186,7 +187,7 @@ func getMissingIMDBMoviesV2(templatelist string) (*feedResults, error) {
 	parserimdb := csv.NewReader(resp.Body)
 	parserimdb.ReuseRecord = true
 
-	var d feedResults
+	d := new(feedResults)
 	cnt, ok := logger.GlobalCounter[cfglist.URL]
 
 	if ok {
@@ -217,16 +218,13 @@ func getMissingIMDBMoviesV2(templatelist string) (*feedResults, error) {
 	logger.GlobalCounter[cfglist.URL] = len(d.Movies)
 	logger.GlobalMu.Unlock()
 	parserimdb = nil
-	return &d, nil
+	return d, nil
 }
 
-func getTraktUserPublicMovieList(templatelist string) (*feedResults, error) {
+func getTraktUserPublicMovieList(templatelist string, cfglist *config.ListsConfig) (*feedResults, error) {
 	if !config.Check("list_" + templatelist) {
 		return nil, errNoList
 	}
-
-	cfglist := config.Cfg.Lists[templatelist]
-	defer cfglist.Close()
 
 	if cfglist.TraktUsername == "" || cfglist.TraktListName == "" {
 		return nil, errors.New("no username")
@@ -254,14 +252,15 @@ func importnewmoviessingle(cfgp *config.MediaTypeConfig, listname string) {
 	}
 	logger.Log.GlobalLogger.Debug("get feeds for ", zap.Stringp("config", &cfgp.NamePrefix), zap.Stringp("Listname", &listname))
 
-	feed, err := feeds(cfgp, listname)
+	cfglist := config.Cfg.Lists[cfgp.ListsMap[listname].TemplateList]
+	feed, err := feeds(cfgp, listname, &cfglist)
 	if err != nil {
+		cfglist.Close()
 		return
 	}
-	defer feed.Close()
-
 	lenfeed := len(feed.Movies)
 	if lenfeed == 0 {
+		cfglist.Close()
 		return
 	}
 
@@ -284,63 +283,74 @@ func importnewmoviessingle(cfgp *config.MediaTypeConfig, listname string) {
 		database.QueryStaticColumnsOneStringOneInt(false, 0, &database.Querywithargs{DontCache: true, QueryString: "select lower(movies.listname), movies.dbmovie_id from movies inner join dbmovies on dbmovies.id = movies.dbmovie_id where dbmovies.imdb_id IN (?" + strings.Repeat(",?", len(imdbArgs)-1) + ")", Args: imdbArgs}, &movies)
 		imdbArgs = nil
 	}
-	imdbids := logger.InStringArrayStruct{Arr: make([]string, 0, lenfeed)}
-	defer imdbids.Close()
+	imdbids := &logger.InStringArrayStruct{Arr: make([]string, 0, lenfeed)}
 	var intid int
-	lenignore := len(cfgp.ListsMap[listname].IgnoreMapLists)
-	for idxmovie := range feed.Movies {
-		if feed.Movies[idxmovie] == "" {
+	ignorelists := cfgp.ListsMap[listname].IgnoreMapLists
+	lenignore := len(ignorelists)
+	for _, feedentry := range feed.Movies {
+		if feedentry == "" {
 			continue
 		}
 		foundmovie = false
-		intid = 0
-		for idxsdbmovie := range dbmovies {
-			if dbmovies[idxsdbmovie].Str == feed.Movies[idxmovie] {
-				intid = dbmovies[idxsdbmovie].Num
-				break
-			}
-		}
-		if intid == 0 && importfeed.AllowMovieImport(feed.Movies[idxmovie], cfgp.ListsMap[listname].TemplateList) {
-			imdbids.Arr = append(imdbids.Arr, feed.Movies[idxmovie])
+
+		intid = slices.IndexFunc(dbmovies, func(c database.DbstaticOneStringOneInt) bool { return c.Str == feedentry })
+
+		// for idxsdbmovie := range dbmovies {
+		// 	if dbmovies[idxsdbmovie].Str == feedentry {
+		// 		intid = dbmovies[idxsdbmovie].Num
+		// 		break
+		// 	}
+		// }
+		if intid == -1 && importfeed.AllowMovieImport(feedentry, &cfglist) {
+			imdbids.Arr = append(imdbids.Arr, feedentry)
 			continue
 		}
-		if intid == 0 {
-			logger.Log.GlobalLogger.Debug("not allowed movie", zap.String("imdb", feed.Movies[idxmovie]))
+		if intid == -1 {
+			logger.Log.GlobalLogger.Debug("not allowed movie", zap.String("imdb", feedentry))
 			continue
 		}
+		intid = dbmovies[intid].Num
 		for idxsmovie := range movies {
 			if movies[idxsmovie].Num != intid {
 				continue
 			}
 			if strings.EqualFold(movies[idxsmovie].Str, listname) {
 				foundmovie = true
-				//logger.Log.GlobalLogger.Debug("not allowed movie1", zap.String("imdb", feed.Movies[idxmovie]))
+				//logger.Log.GlobalLogger.Debug("not allowed movie1", zap.String("imdb", feedentry))
 				break
 			}
 			if lenignore == 0 {
 				continue
 			}
-			for idx := range cfgp.ListsMap[listname].IgnoreMapLists {
-				if strings.EqualFold(movies[idxsmovie].Str, cfgp.ListsMap[listname].IgnoreMapLists[idx]) {
-					foundmovie = true
-					//logger.Log.GlobalLogger.Debug("not allowwed movie2", zap.String("imdb", feed.Movies[idxmovie]))
-					break
-				}
+			if !foundmovie {
+				foundmovie = slices.ContainsFunc(ignorelists, func(c string) bool { return strings.EqualFold(c, movies[idxsmovie].Str) })
 			}
+
+			// for idx := range ignorelists {
+			// 	if strings.EqualFold(movies[idxsmovie].Str, ignorelists[idx]) {
+			// 		foundmovie = true
+			// 		//logger.Log.GlobalLogger.Debug("not allowwed movie2", zap.String("imdb", feedentry))
+			// 		break
+			// 	}
+			// }
 			if foundmovie {
 				break
 			}
 		}
-		if !foundmovie && importfeed.AllowMovieImport(feed.Movies[idxmovie], cfgp.ListsMap[listname].TemplateList) {
-			imdbids.Arr = append(imdbids.Arr, feed.Movies[idxmovie])
+		if !foundmovie && importfeed.AllowMovieImport(feedentry, &cfglist) {
+			imdbids.Arr = append(imdbids.Arr, feedentry)
 			continue
 		}
 		if !foundmovie {
-			logger.Log.GlobalLogger.Debug("not allowed movie", zap.String("imdb", feed.Movies[idxmovie]))
+			logger.Log.GlobalLogger.Debug("not allowed movie", zap.String("imdb", feedentry))
 		}
 	}
-	workermovieimport(cfgp, listname, &imdbids)
+	cfglist.Close()
+	workermovieimport(cfgp, listname, imdbids)
 	imdbids.Close()
+	feed.Close()
+	ignorelists = nil
+
 	dbmovies = nil
 	movies = nil
 }
@@ -359,31 +369,29 @@ func workermovieimport(cfgp *config.MediaTypeConfig, listname string, imdbids *l
 
 func checkmissingmoviessingle(listname string) {
 	var filesfound []string
-	database.QueryStaticStringArray(false, database.CountRowsStaticNoError(&database.Querywithargs{QueryString: "select count() from movie_files where movie_id in (select id from movies where listname = ? COLLATE NOCASE)"}), &database.Querywithargs{QueryString: "select location from movie_files where movie_id in (select id from movies where listname = ?)", Args: []interface{}{listname}}, &filesfound)
+	database.QueryStaticStringArray(false, database.CountRowsStaticNoError(&database.Querywithargs{QueryString: "select count() from movie_files where movie_id in (select id from movies where listname = ? COLLATE NOCASE)", Args: []interface{}{listname}}), &database.Querywithargs{QueryString: "select location from movie_files where movie_id in (select id from movies where listname = ?)", Args: []interface{}{listname}}, &filesfound)
 	if len(filesfound) >= 1 {
-		for idx := range filesfound {
-			//workergroup.Submit(func() {
-			jobImportFileCheck(filesfound[idx], "movie")
-			//})
-		}
+		logger.RunFuncSimple(filesfound, func(e string) {
+			jobImportFileCheck(e, "movie")
+		})
 	}
 	filesfound = nil
 }
 
 func checkmissingmoviesflag(listname string) {
-	var movies []database.Movie
-	database.QueryMovies(&database.Querywithargs{Query: database.Query{Select: "id, missing", Where: "listname = ?"}, Args: []interface{}{listname}}, &movies)
+	var movies []database.DbstaticOneIntOneBool
+	database.QueryStaticColumnsOneIntOneBool(&database.Querywithargs{QueryString: "Select id, missing from movies where listname = ?", Args: []interface{}{listname}}, &movies)
 
 	var counter int
 	querycount := "select count() from movie_files where movie_id = ?"
 	for idxmovie := range movies {
-		database.QueryColumn(&database.Querywithargs{QueryString: querycount, Args: []interface{}{movies[idxmovie].ID}}, &counter)
-		if counter >= 1 && movies[idxmovie].Missing {
-			updatemoviesmissing(0, movies[idxmovie].ID)
+		counter = database.CountRowsStaticNoError(&database.Querywithargs{QueryString: querycount, Args: []interface{}{movies[idxmovie].Num}})
+		if counter >= 1 && movies[idxmovie].Bl {
+			updatemoviesmissing(0, uint(movies[idxmovie].Num))
 			continue
 		}
-		if counter == 0 && !movies[idxmovie].Missing {
-			updatemoviesmissing(1, movies[idxmovie].ID)
+		if counter == 0 && !movies[idxmovie].Bl {
+			updatemoviesmissing(1, uint(movies[idxmovie].Num))
 		}
 	}
 	movies = nil
@@ -400,7 +408,7 @@ func checkreachedmoviesflag(cfgp *config.MediaTypeConfig, listname string) {
 		}
 
 		reached = false
-		if searcher.GetHighestMoviePriorityByFiles(false, true, movies[idxepi].ID, cfgp, movies[idxepi].QualityProfile) >= parser.NewCutoffPrio(cfgp, movies[idxepi].QualityProfile) {
+		if searcher.GetHighestMoviePriorityByFilesGetQual(false, true, movies[idxepi].ID, cfgp, movies[idxepi].QualityProfile) >= parser.NewCutoffPrioGetQual(cfgp, movies[idxepi].QualityProfile) {
 			reached = true
 		}
 		if movies[idxepi].QualityReached && !reached {
@@ -436,16 +444,15 @@ func RefreshMoviesInc() {
 func refreshmoviesquery(query string, count int, args ...interface{}) {
 	var dbmovies []database.DbstaticTwoString
 	database.QueryStaticColumnsTwoString(false, count, &database.Querywithargs{QueryString: query, Args: args}, &dbmovies)
-	var cfgp config.MediaTypeConfig
+	var cfgp *config.MediaTypeConfig
 	var oldlistname string
 	for idxmovie := range dbmovies {
 		logger.Log.GlobalLogger.Info("Refresh Movie ", zap.Int("row", idxmovie), zap.Int("of rows", len(dbmovies)), zap.Stringp("imdb", &dbmovies[idxmovie].Str1))
 		if oldlistname != dbmovies[idxmovie].Str2 {
-			cfgp.Close()
-			cfgp = config.Cfg.Media[config.FindconfigTemplateOnList("movie_", dbmovies[idxmovie].Str2)]
+			cfgp = config.FindconfigTemplateOnList("movie_", dbmovies[idxmovie].Str2)
 			oldlistname = dbmovies[idxmovie].Str2
 		}
-		importfeed.JobImportMovies(dbmovies[idxmovie].Str1, &cfgp, dbmovies[idxmovie].Str2, false)
+		importfeed.JobImportMovies(dbmovies[idxmovie].Str1, cfgp, dbmovies[idxmovie].Str2, false)
 	}
 	cfgp.Close()
 	dbmovies = nil
@@ -475,7 +482,7 @@ func MoviesSingleJobs(job string, cfgpstr string, listname string, force bool) {
 	}
 
 	//dbresult, _ := database.InsertNamed("Insert into job_histories (job_type, job_group, job_category, started) values (:job_type, :job_group, :job_category, :started)", database.JobHistory{JobType: job, JobGroup: cfg, JobCategory: "Movie", Started: sql.NullTime{Time: time.Now().In(logger.TimeZone), Valid: true}})
-	dbresult, _ := insertjobhistory(&database.JobHistory{JobType: job, JobGroup: cfgp.NamePrefix, JobCategory: "Movie", Started: sql.NullTime{Time: time.Now().In(logger.TimeZone), Valid: true}})
+	dbinsert := insertjobhistory(&database.JobHistory{JobType: job, JobGroup: cfgp.NamePrefix, JobCategory: "Movie", Started: logger.SqlTimeGetNow()})
 	logger.Log.GlobalLogger.Info(jobstarted, zap.Stringp("Job", &jobName))
 	searchmissingIncremental := cfgp.SearchmissingIncremental
 	searchupgradeIncremental := cfgp.SearchupgradeIncremental
@@ -520,32 +527,18 @@ func MoviesSingleJobs(job string, cfgpstr string, listname string, force bool) {
 		searchtitle = true
 		searchinterval = searchupgradeIncremental
 	case "structure":
-		if !config.Check("path_" + cfgp.Data[0].TemplatePath) {
-			logger.Log.GlobalLogger.Error("Path not found", zap.String("config", cfgp.Data[0].TemplatePath))
-			return
-		}
-
-		for idx := range cfgp.DataImport {
-			if !config.Check("path_" + cfgp.DataImport[idx].TemplatePath) {
-				logger.Log.GlobalLogger.Error("Path not found", zap.String("config", cfgp.DataImport[idx].TemplatePath))
-				continue
-			}
-			if lastMoviesStructure == config.Cfg.Paths[cfgp.DataImport[idx].TemplatePath].Path {
-				time.Sleep(time.Duration(15) * time.Second)
-			}
-			lastMoviesStructure = config.Cfg.Paths[cfgp.DataImport[idx].TemplatePath].Path
-			structure.OrganizeFolders("movie", cfgp.DataImport[idx].TemplatePath, cfgp.Data[0].TemplatePath, &cfgp)
-		}
+		structurefolders(&cfgp, "movie")
 	}
 	if searchmovie {
 		searcher.SearchMovie(&cfgp, searchmissing, searchinterval, searchtitle)
 	}
 
 	if job == "data" || job == "checkmissing" || job == "checkmissingflag" || job == "checkreachedflag" || job == "clearhistory" || job == "feeds" || job == "rss" {
-		var qualis logger.InStringArrayStruct
+		qualis := new(logger.InStringArrayStruct)
 
 		for _, list := range getjoblists(&cfgp, listname) {
-			if !logger.InStringArray(list.TemplateQuality, &qualis) {
+			if job == "rss" && !slices.ContainsFunc(qualis.Arr, func(c string) bool { return c == list.TemplateQuality }) {
+				//if !logger.InStringArray(list.TemplateQuality, qualis) {
 				qualis.Arr = append(qualis.Arr, list.TemplateQuality)
 			}
 			switch job {
@@ -566,28 +559,14 @@ func MoviesSingleJobs(job string, cfgpstr string, listname string, force bool) {
 			}
 		}
 		if job == "rss" {
-			for idxqual := range qualis.Arr {
-				switch job {
-				case "rss":
-					searcher.SearchMovieRSS(&cfgp, qualis.Arr[idxqual])
-				}
-			}
+			logger.RunFuncSimple(qualis.Arr, func(e string) {
+				searcher.SearchMovieRSS(&cfgp, e)
+			})
 		}
 		qualis.Close()
 	}
-	if dbresult != nil {
-		dbid, _ := dbresult.LastInsertId()
-		endjobhistory(dbid)
+	if dbinsert != 0 {
+		endjobhistory(dbinsert)
 	}
 	logger.Log.GlobalLogger.Info(jobended, zap.Stringp("Job", &jobName))
-}
-
-func unique(s *logger.InStringArrayStruct) *logger.InStringArrayStruct {
-	inResult := logger.InStringArrayStruct{Arr: s.Arr[:0]}
-	for idx := range s.Arr {
-		if !logger.InStringArrayCaseSensitive(s.Arr[idx], &inResult) {
-			inResult.Arr = append(inResult.Arr, s.Arr[idx])
-		}
-	}
-	return &inResult
 }

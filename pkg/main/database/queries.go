@@ -81,17 +81,18 @@ var QueryFilterByImdb = Query{Where: "imdb_id = ?"}
 var QueryFilterByTvdb = Query{Where: "thetvdb_id = ?"}
 var QueryFilterByTconst = Query{Where: "tconst = ?"}
 
+func preparex(imdb bool, qu *Querywithargs) (*sqlx.Stmt, error) {
+	if imdb {
+		return dbImdb.Preparex(qu.QueryString)
+	} else {
+		return dbData.Preparex(qu.QueryString)
+	}
+}
 func getstatement(qu *Querywithargs, imdb bool) *sqlx.Stmt {
 	if logger.GlobalStmtCache.Check(qu.QueryString) {
 		return logger.GlobalStmtCache.GetData(qu.QueryString)
 	}
-	var val *sqlx.Stmt
-	var err error
-	if imdb {
-		val, err = dbImdb.Preparex(qu.QueryString)
-	} else {
-		val, err = dbData.Preparex(qu.QueryString)
-	}
+	val, err := preparex(imdb, qu)
 	if err == nil {
 		logger.GlobalStmtCache.SetStmt(qu.QueryString, val, time.Minute*30)
 		return val
@@ -100,18 +101,19 @@ func getstatement(qu *Querywithargs, imdb bool) *sqlx.Stmt {
 	return nil
 }
 
+func preparenamed(imdb bool, qu *Querywithargs) (*sqlx.NamedStmt, error) {
+	if imdb {
+		return dbImdb.PrepareNamed(qu.QueryString)
+	} else {
+		return dbData.PrepareNamed(qu.QueryString)
+	}
+}
 func getnamedstatement(qu *Querywithargs, imdb bool) *sqlx.NamedStmt {
 	if logger.GlobalStmtNamedCache.Check(qu.QueryString) {
 		return logger.GlobalStmtNamedCache.GetData(qu.QueryString)
 	}
 
-	var val *sqlx.NamedStmt
-	var err error
-	if imdb {
-		val, err = dbImdb.PrepareNamed(qu.QueryString)
-	} else {
-		val, err = dbData.PrepareNamed(qu.QueryString)
-	}
+	val, err := preparenamed(imdb, qu)
 	if err == nil {
 		logger.GlobalStmtNamedCache.SetNamedStmt(qu.QueryString, val, time.Minute*30)
 		return val
@@ -189,6 +191,17 @@ func queryObject[T any](s *searchdb, complex bool, obj *T) error {
 	return nil
 }
 
+func queryx(s *searchdb) (*sqlx.Rows, error) {
+	if s.qu.DontCache {
+		if s.imdb {
+			return dbImdb.Queryx(s.qu.QueryString, s.qu.Args...)
+		} else {
+			return dbData.Queryx(s.qu.QueryString, s.qu.Args...)
+		}
+	} else {
+		return getstatement(s.qu, s.imdb).Queryx(s.qu.Args...)
+	}
+}
 func queryComplexScan[T any](s *searchdb, targetobj *[]T) error {
 	defer s.Close()
 	if s.qu.QueryString == "" {
@@ -200,18 +213,7 @@ func queryComplexScan[T any](s *searchdb, targetobj *[]T) error {
 	readWriteMu.RLock()
 	defer readWriteMu.RUnlock()
 
-	var rows *sqlx.Rows
-	var err error
-
-	if s.qu.DontCache {
-		if s.imdb {
-			rows, err = dbImdb.Queryx(s.qu.QueryString, s.qu.Args...)
-		} else {
-			rows, err = dbData.Queryx(s.qu.QueryString, s.qu.Args...)
-		}
-	} else {
-		rows, err = getstatement(s.qu, s.imdb).Queryx(s.qu.Args...)
-	}
+	rows, err := queryx(s)
 	if err != nil {
 		if err != sql.ErrNoRows {
 			logger.Log.GlobalLogger.Error("Query", zap.String("Query", s.qu.QueryString), zap.Error(err))
@@ -224,9 +226,8 @@ func queryComplexScan[T any](s *searchdb, targetobj *[]T) error {
 		*targetobj = make([]T, 0, s.size)
 	}
 
-	var u, v T
 	for rows.Next() {
-		u = v
+		var u T
 		err = rows.StructScan(&u)
 
 		if err != nil {
@@ -244,6 +245,17 @@ func queryComplexScan[T any](s *searchdb, targetobj *[]T) error {
 	return nil
 }
 
+func query(s *searchdb) (*sql.Rows, error) {
+	if s.qu.DontCache {
+		if s.imdb {
+			return dbImdb.Query(s.qu.QueryString, s.qu.Args...)
+		} else {
+			return dbData.Query(s.qu.QueryString, s.qu.Args...)
+		}
+	} else {
+		return getstatement(s.qu, s.imdb).Query(s.qu.Args...)
+	}
+}
 func querySimpleScan[T any](s *searchdb, targetobj *[]T) error {
 	defer s.Close()
 	if s.qu.QueryString == "" {
@@ -278,18 +290,7 @@ func querySimpleScan[T any](s *searchdb, targetobj *[]T) error {
 	readWriteMu.RLock()
 	defer readWriteMu.RUnlock()
 
-	var rows *sql.Rows
-	var err error
-
-	if s.qu.DontCache {
-		if s.imdb {
-			rows, err = dbImdb.Query(s.qu.QueryString, s.qu.Args...)
-		} else {
-			rows, err = dbData.Query(s.qu.QueryString, s.qu.Args...)
-		}
-	} else {
-		rows, err = getstatement(s.qu, s.imdb).Query(s.qu.Args...)
-	}
+	rows, err := query(s)
 	if err != nil {
 		if err != sql.ErrNoRows {
 			logger.Log.GlobalLogger.Error("Query", zap.String("Query", s.qu.QueryString), zap.Error(err))
@@ -305,9 +306,8 @@ func querySimpleScan[T any](s *searchdb, targetobj *[]T) error {
 	var str1, str2, str3 string
 	var num1, num2 int
 	var bl bool
-	var u, v T
 	for rows.Next() {
-		u = v
+		var u T
 		switch typevar {
 		case 1:
 			err = rows.Scan(&str1, &str2, &str3)
@@ -724,13 +724,6 @@ func GetImdbTitle(qu *Querywithargs, result *ImdbTitle) error {
 	}, true, result)
 }
 
-var byteselect = []byte("select ")
-var bytefrom = []byte(" from ")
-var byteinner = []byte(" inner join ")
-var byteorder = []byte(" order by ")
-var bytelimit = []byte(" limit ")
-var bytewhere = []byte(" where ")
-
 func (s *searchdb) buildquery(count bool) {
 	var bld strings.Builder
 	if count {
@@ -738,7 +731,7 @@ func (s *searchdb) buildquery(count bool) {
 	} else {
 		bld.Grow(len(s.table) + len(s.columns) + len(s.qu.Query.Where) + len(s.qu.Query.InnerJoin) + len(s.qu.Query.OrderBy) + 50)
 	}
-	bld.Write(byteselect)
+	bld.WriteString("select ")
 
 	if strings.Contains(s.columns, s.table+".") {
 		bld.WriteString(s.columns)
@@ -754,26 +747,26 @@ func (s *searchdb) buildquery(count bool) {
 			}
 		}
 	}
-	bld.Write(bytefrom)
+	bld.WriteString(" from ")
 	bld.WriteString(s.table)
 	if s.qu.Query.InnerJoin != "" {
-		bld.Write(byteinner)
+		bld.WriteString(" inner join ")
 		bld.WriteString(s.qu.Query.InnerJoin)
 	}
 	if s.qu.Query.Where != "" {
-		bld.Write(bytewhere)
+		bld.WriteString(" where ")
 		bld.WriteString(s.qu.Query.Where)
 	}
 	if s.qu.Query.OrderBy != "" {
-		bld.Write(byteorder)
+		bld.WriteString(" order by ")
 		bld.WriteString(s.qu.Query.OrderBy)
 	}
 	if s.qu.Query.Limit != 0 {
 		if s.qu.Query.Offset != 0 {
-			bld.Write(bytelimit)
+			bld.WriteString(" limit ")
 			bld.WriteString(logger.IntToString(s.qu.Query.Offset) + "," + logger.IntToString(s.qu.Query.Limit))
 		} else {
-			bld.Write(bytelimit)
+			bld.WriteString(" limit ")
 			bld.WriteString(logger.IntToString(s.qu.Query.Limit))
 		}
 	}
