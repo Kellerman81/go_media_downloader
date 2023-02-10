@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Kellerman81/go_media_downloader/config"
 	"github.com/Kellerman81/go_media_downloader/logger"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-migrate/migrate/v4"
@@ -207,6 +208,19 @@ func GetVars() {
 		DBConnect.GetaudiosIn.Arr[idx] = QualitiesRegex{Regex: quali[idx].Regex, Qualities: quali[idx]}
 	}
 	quali = nil
+
+	for idx := range config.Cfg.Regex {
+		for idxreg := range config.Cfg.Regex[idx].Rejected {
+			if !logger.GlobalRegexCache.CheckRegexp(config.Cfg.Regex[idx].Rejected[idxreg]) {
+				logger.GlobalRegexCache.SetRegexp(config.Cfg.Regex[idx].Rejected[idxreg], 0)
+			}
+		}
+		for idxreg := range config.Cfg.Regex[idx].Required {
+			if !logger.GlobalRegexCache.CheckRegexp(config.Cfg.Regex[idx].Required[idxreg]) {
+				logger.GlobalRegexCache.SetRegexp(config.Cfg.Regex[idx].Required[idxreg], 0)
+			}
+		}
+	}
 
 	DBConnect.AudioStrIn.Arr = make([]string, 0, len(DBConnect.GetaudiosIn.Arr)*2)
 	for idx := range DBConnect.GetaudiosIn.Arr {

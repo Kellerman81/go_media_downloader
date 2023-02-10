@@ -62,7 +62,6 @@ func FilterFilesDir(allfiles *logger.InStringArrayStruct, cfgpath *config.PathsC
 		lenfiles = len(cfgpath.AllowedVideoExtensionsNoRenameIn.Arr)
 	}
 	lenblock := len(cfgpath.BlockedLowerIn.Arr)
-	var target string
 	for idx := range allfiles.Arr {
 		if checkisdir && getFileInfo(allfiles.Arr[idx]).IsDir() {
 			continue
@@ -97,11 +96,8 @@ func FilterFilesDir(allfiles *logger.InStringArrayStruct, cfgpath *config.PathsC
 
 		//Check IgnoredPaths
 		if lenblock >= 1 && ok {
-			target = strings.ToLower(allfiles.Arr[idx])
 
-			if slices.ContainsFunc(cfgpath.BlockedLowerIn.Arr, func(c string) bool {
-				return strings.Contains(target, c)
-			}) {
+			if logger.InStringArrayContainsCaseInSensitive(allfiles.Arr[idx], &cfgpath.BlockedLowerIn) {
 				ok = false
 			}
 			if !ok {
@@ -168,7 +164,6 @@ func GetFilesGoDir(rootpath string, pathcfgstr string) ([]string, error) {
 	}
 
 	var list []string
-	var target string
 	var extlower string
 	var ok bool
 	cfgpath := config.Cfg.Paths[pathcfgstr]
@@ -203,12 +198,8 @@ func GetFilesGoDir(rootpath string, pathcfgstr string) ([]string, error) {
 
 			//Check IgnoredPaths
 			if len(cfgpath.BlockedLowerIn.Arr) >= 1 && ok {
-				target = strings.ToLower(osPathname)
-				for idx := range cfgpath.BlockedLowerIn.Arr {
-					if strings.Contains(target, cfgpath.BlockedLowerIn.Arr[idx]) {
-						ok = false
-						break
-					}
+				if logger.InStringArrayContainsCaseInSensitive(osPathname, &cfgpath.BlockedLowerIn) {
+					ok = false
 				}
 			}
 
@@ -602,13 +593,6 @@ func GetSubFolders(sourcepath string) ([]string, error) {
 }
 
 func Walk(pathcfgstr string, allfiles *logger.InStringArrayStruct, useother bool, cfgpath *config.PathsConfig) func(path string, info fs.DirEntry, errwalk error) error {
-	var extlower string
-	var ok bool
-	lennorename := len(cfgpath.AllowedVideoExtensionsNoRenameIn.Arr)
-	lenfiles := len(cfgpath.AllowedVideoExtensionsIn.Arr)
-	lenblock := len(cfgpath.BlockedLowerIn.Arr)
-
-	var pathlower string
 	return func(path string, info fs.DirEntry, errwalk error) error {
 		if errwalk != nil {
 			return errwalk
@@ -616,8 +600,8 @@ func Walk(pathcfgstr string, allfiles *logger.InStringArrayStruct, useother bool
 		if info.IsDir() {
 			return nil
 		}
-		extlower = filepath.Ext(path)
-		ok = false
+		extlower := filepath.Ext(path)
+		var ok bool
 		if useother {
 			if slices.ContainsFunc(cfgpath.AllowedOtherExtensionsIn.Arr, func(c string) bool { return strings.EqualFold(c, extlower) }) {
 				ok = true
@@ -630,7 +614,7 @@ func Walk(pathcfgstr string, allfiles *logger.InStringArrayStruct, useother bool
 			//ok = logger.InStringArray(extlower, &cfgpath.AllowedVideoExtensionsIn)
 		}
 
-		if lennorename >= 1 && !ok {
+		if len(cfgpath.AllowedVideoExtensionsNoRenameIn.Arr) >= 1 && !ok {
 			if useother {
 				if slices.ContainsFunc(cfgpath.AllowedOtherExtensionsNoRenameIn.Arr, func(c string) bool { return strings.EqualFold(c, extlower) }) {
 					ok = true
@@ -644,15 +628,14 @@ func Walk(pathcfgstr string, allfiles *logger.InStringArrayStruct, useother bool
 			}
 		}
 
-		if lennorename == 0 && lenfiles == 0 && !ok {
+		if len(cfgpath.AllowedVideoExtensionsNoRenameIn.Arr) == 0 && len(cfgpath.AllowedVideoExtensionsIn.Arr) == 0 && !ok {
 			ok = true
 		}
 
 		//Check IgnoredPaths
 
-		if lenblock >= 1 && ok {
-			pathlower = strings.ToLower(path)
-			if slices.ContainsFunc(cfgpath.BlockedLowerIn.Arr, func(c string) bool { return strings.Contains(pathlower, c) }) {
+		if len(cfgpath.BlockedLowerIn.Arr) >= 1 && ok {
+			if logger.InStringArrayContainsCaseInSensitive(path, &cfgpath.BlockedLowerIn) {
 				ok = false
 			}
 		}
@@ -687,7 +670,7 @@ func WalkSize(size *int64) func(path string, info fs.DirEntry, errwalk error) er
 		return nil
 	}
 }
-func WalkDisAllowed(check bool, rootpath string, pathcfg *config.PathsConfig, disallowed *bool) func(path string, info fs.DirEntry, errwalk error) error {
+func WalkDisAllowed(check bool, rootpath string, cfgpath *config.PathsConfig, disallowed *bool) func(path string, info fs.DirEntry, errwalk error) error {
 	return func(path string, info fs.DirEntry, errwalk error) error {
 		if errwalk != nil {
 			return errwalk
@@ -695,11 +678,8 @@ func WalkDisAllowed(check bool, rootpath string, pathcfg *config.PathsConfig, di
 		if info.IsDir() {
 			return nil
 		}
-		tolower := strings.ToLower(path)
 
-		if slices.ContainsFunc(pathcfg.BlockedLowerIn.Arr, func(c string) bool {
-			return strings.Contains(tolower, c)
-		}) {
+		if logger.InStringArrayContainsCaseInSensitive(path, &cfgpath.BlockedLowerIn) {
 			logger.Log.GlobalLogger.Warn("path not allowed", zap.String("path", path))
 
 			if check {

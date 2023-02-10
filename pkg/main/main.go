@@ -111,6 +111,8 @@ func main() {
 	logger.Log.GlobalLogger.Info("Init Priorities")
 	parser.GetAllQualityPriorities()
 
+	parser.LoadDBPatterns()
+
 	logger.Log.GlobalLogger.Info("Check Fill IMDB")
 	counter, err := database.ImdbCountRowsStatic(&database.Querywithargs{QueryString: "select count() from imdb_titles"})
 	if counter == 0 || err != nil {
@@ -252,7 +254,6 @@ func main() {
 	logger.Log.GlobalLogger.Info("Queues stopped")
 
 	config.Slepping(true, 5)
-
 	database.DBClose()
 	logger.Log.GlobalLogger.Info("Databases stopped")
 

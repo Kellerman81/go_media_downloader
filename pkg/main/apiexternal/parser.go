@@ -11,6 +11,7 @@ import (
 
 type ParseInfo struct {
 	File             string
+	FileLower        string
 	Title            string
 	Season           int      `json:"season,omitempty"`
 	Episode          int      `json:"episode,omitempty"`

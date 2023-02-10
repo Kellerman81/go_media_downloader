@@ -182,6 +182,15 @@ func InStringArray(target string, arr *InStringArrayStruct) bool {
 	}
 	return false
 }
+func InStringArrayContainsCaseInSensitive(target string, arr *InStringArrayStruct) bool {
+	target = strings.ToLower(target)
+	for idx := range arr.Arr {
+		if strings.Contains(target, arr.Arr[idx]) {
+			return true
+		}
+	}
+	return false
+}
 
 func InIntArray(target int, arr *InIntArrayStruct) bool {
 	for idx := range arr.Arr {
@@ -373,14 +382,6 @@ func ParseDate(date string, layout string) sql.NullTime {
 func TrimStringInclAfterString(s string, search string) string {
 	if idx := strings.Index(s, search); idx != -1 {
 		return s[:idx]
-	}
-	return s
-}
-func TrimStringInclAfterStringInsensitive(s string, search string) string {
-	if strings.Contains(s, search) {
-		return strings.TrimRight(s[:strings.Index(s, search)], "-. ")
-	} else if idx := strings.Index(strings.ToLower(s), strings.ToLower(search)); idx != -1 {
-		return strings.TrimRight(s[:idx], "-. ")
 	}
 	return s
 }

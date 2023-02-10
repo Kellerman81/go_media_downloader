@@ -314,16 +314,12 @@ func searchstuff(cfgp *config.MediaTypeConfig, quality string, searchtype string
 	var downloaded []uint
 	for idx := range results.Nzbs {
 		if results.Nzbs[idx].NzbmovieID != 0 {
-			if slices.ContainsFunc(downloaded, func(c uint) bool {
-				return c == results.Nzbs[idx].NzbmovieID
-			}) {
+			if slices.Contains(downloaded, results.Nzbs[idx].NzbmovieID) {
 				break
 			}
 		}
 		if results.Nzbs[idx].NzbepisodeID != 0 {
-			if slices.ContainsFunc(downloaded, func(c uint) bool {
-				return c == results.Nzbs[idx].NzbepisodeID
-			}) {
+			if slices.Contains(downloaded, results.Nzbs[idx].NzbepisodeID) {
 				break
 			}
 		}
@@ -563,18 +559,14 @@ func (s *Searcher) rssqueryseriesindexer(search *searchstruct, thetvdbid int, se
 func (s *Searcher) checkhistory(search *searchstruct, historyurlcache *cache.Return, historytitlecache *cache.Return, entry *apiexternal.Nzbwithprio, dl *SearchResults) bool {
 	//Check History
 	if len(entry.NZB.DownloadURL) > 1 {
-		if slices.ContainsFunc(historyurlcache.Value.([]string), func(c string) bool {
-			return strings.EqualFold(c, entry.NZB.DownloadURL)
-		}) {
+		if slices.Contains(historyurlcache.Value.([]string), entry.NZB.DownloadURL) {
 			denynzb("Already downloaded (Url)", entry, dl)
 			// historycache.Close()
 			return true
 		}
 	}
 	if config.QualityIndexerByQualityAndTemplateGetFieldBool(search.quality, search.indexer, "HistoryCheckTitle") && len(entry.NZB.Title) > 1 {
-		if slices.ContainsFunc(historytitlecache.Value.([]string), func(c string) bool {
-			return strings.EqualFold(c, entry.NZB.Title)
-		}) {
+		if slices.Contains(historytitlecache.Value.([]string), entry.NZB.Title) {
 			denynzb("Already downloaded (Title)", entry, dl)
 			// historycache.Close()
 			return true
@@ -729,8 +721,7 @@ func (s *Searcher) checkyear(entry *apiexternal.Nzbwithprio, dl *SearchResults) 
 }
 func Checktitle(entry *apiexternal.Nzbwithprio, searchGroupType string, dl *SearchResults) bool {
 	//Checktitle
-	checktitle := entry.QualityCfg.CheckTitle
-	if !checktitle {
+	if !entry.QualityCfg.CheckTitle {
 		return false
 	}
 	yearstr := logger.IntToString(entry.ParseInfo.Year)
@@ -738,18 +729,22 @@ func Checktitle(entry *apiexternal.Nzbwithprio, searchGroupType string, dl *Sear
 	title := importfeed.StripTitlePrefixPostfix(entry.ParseInfo.Title, &entry.QualityCfg)
 	//title := entry.ParseInfo.Title
 	if entry.WantedTitle != "" {
-		if checktitle && lentitle >= 1 && apiexternal.Checknzbtitle(entry.WantedTitle, title) {
+		if entry.QualityCfg.CheckTitle && lentitle >= 1 && apiexternal.Checknzbtitle(entry.WantedTitle, title) {
 			return false
 		}
-		if entry.ParseInfo.Year != 0 && checktitle && lentitle >= 1 && apiexternal.Checknzbtitle(entry.WantedTitle, title+" "+yearstr) {
+		if entry.ParseInfo.Year != 0 && entry.QualityCfg.CheckTitle && lentitle >= 1 && apiexternal.Checknzbtitle(entry.WantedTitle, title+" "+yearstr) {
 			return false
 		}
 	}
 	if strings.EqualFold(searchGroupType, "movie") && len(entry.WantedAlternates) == 0 && entry.Dbid != 0 {
-		database.QueryStaticStringArray(false, 10, &database.Querywithargs{QueryString: "select distinct title from dbmovie_titles where dbmovie_id = ? and title != ''", Args: []interface{}{entry.Dbid}}, &entry.WantedAlternates)
+		database.QueryStaticStringArray(false,
+			database.CountRowsStaticNoError(&database.Querywithargs{QueryString: "select count() from dbmovie_titles where dbmovie_id = ? and title != ''", Args: []interface{}{entry.Dbid}}),
+			&database.Querywithargs{QueryString: "select distinct title from dbmovie_titles where dbmovie_id = ? and title != ''", Args: []interface{}{entry.Dbid}}, &entry.WantedAlternates)
 	}
 	if strings.EqualFold(searchGroupType, "series") && len(entry.WantedAlternates) == 0 && entry.Dbid != 0 {
-		database.QueryStaticStringArray(false, 10, &database.Querywithargs{QueryString: "select distinct title from dbserie_alternates where dbserie_id = ? and title != ''", Args: []interface{}{entry.Dbid}}, &entry.WantedAlternates)
+		database.QueryStaticStringArray(false,
+			database.CountRowsStaticNoError(&database.Querywithargs{QueryString: "select count() from dbserie_alternates where dbserie_id = ? and title != ''", Args: []interface{}{entry.Dbid}}),
+			&database.Querywithargs{QueryString: "select distinct title from dbserie_alternates where dbserie_id = ? and title != ''", Args: []interface{}{entry.Dbid}}, &entry.WantedAlternates)
 	}
 	lenalt := len(entry.WantedAlternates)
 	if lenalt == 0 || entry.ParseInfo.Title == "" {
@@ -764,7 +759,7 @@ func Checktitle(entry *apiexternal.Nzbwithprio, searchGroupType string, dl *Sear
 			return false
 		}
 
-		if entry.ParseInfo.Year != 0 && checktitle && apiexternal.Checknzbtitle(entry.WantedAlternates[idxtitle], title+" "+yearstr) {
+		if entry.ParseInfo.Year != 0 && entry.QualityCfg.CheckTitle && apiexternal.Checknzbtitle(entry.WantedAlternates[idxtitle], title+" "+yearstr) {
 			return false
 		}
 	}
@@ -779,10 +774,8 @@ func (s *Searcher) checkepisode(entry *apiexternal.Nzbwithprio, dl *SearchResult
 	}
 
 	// Check For S01E01 S01 E01 1x01 1 x 01 S01E02E03
-	var matchfound bool
 
 	lowerIdentifier := strings.ToLower(s.identifier)
-	lowerParseIdentifier := strings.ToLower(entry.ParseInfo.Identifier)
 	lowerTitle := strings.ToLower(entry.NZB.Title)
 	altIdentifier := strings.ReplaceAll(strings.TrimLeft(lowerIdentifier, "s0"), "e", "x")
 	if strings.Contains(lowerTitle, lowerIdentifier) ||
@@ -798,6 +791,11 @@ func (s *Searcher) checkepisode(entry *apiexternal.Nzbwithprio, dl *SearchResult
 		}
 	}
 
+	var matchfound bool
+	lowerParseIdentifier := lowerIdentifier
+	if entry.ParseInfo.Identifier != s.identifier {
+		lowerParseIdentifier = strings.ToLower(entry.ParseInfo.Identifier)
+	}
 	seasonarray := []string{"s" + s.season + "e", "s0" + s.season + "e", "s" + s.season + " e", "s0" + s.season + " e", s.season + "x", s.season + " x"}
 	episodearray := []string{"e" + s.episode, "e0" + s.episode, "x" + s.episode, "x0" + s.episode}
 	for idxseason := range seasonarray {
@@ -1133,7 +1131,9 @@ func MovieSearch(cfgp *config.MediaTypeConfig, movieid uint, forceDownload bool,
 	defer cfgqual.Close()
 	minimumPriority := GetHighestMoviePriorityByFiles(false, true, movie.ID, cfgp, &cfgqual)
 	var alternateTitles []string
-	database.QueryStaticStringArray(false, 10, &database.Querywithargs{QueryString: "select distinct title from dbmovie_titles where dbmovie_id = ? and title != ''", Args: []interface{}{movie.DbmovieID}}, &alternateTitles)
+	database.QueryStaticStringArray(false,
+		database.CountRowsStaticNoError(&database.Querywithargs{QueryString: "select count() from dbmovie_titles where dbmovie_id = ? and title != ''", Args: []interface{}{movie.DbmovieID}}),
+		&database.Querywithargs{QueryString: "select distinct title from dbmovie_titles where dbmovie_id = ? and title != ''", Args: []interface{}{movie.DbmovieID}}, &alternateTitles)
 
 	searchActionType := "upgrade"
 	if minimumPriority == 0 {
@@ -1334,7 +1334,10 @@ func SeriesSearch(cfgp *config.MediaTypeConfig, episodeid uint, forceDownload bo
 	defer cfgqual.Close()
 	minimumPriority := GetHighestEpisodePriorityByFiles(false, true, serieEpisode.ID, cfgp, &cfgqual)
 	var alternateTitles []string
-	database.QueryStaticStringArray(false, 10, &database.Querywithargs{QueryString: "select distinct title from dbserie_alternates where dbserie_id = ? and title != ''", Args: []interface{}{serieEpisode.DbserieID}}, &alternateTitles)
+	database.QueryStaticStringArray(false,
+		database.CountRowsStaticNoError(&database.Querywithargs{QueryString: "select count() from dbserie_alternates where dbserie_id = ? and title != ''", Args: []interface{}{serieEpisode.DbserieID}}),
+		&database.Querywithargs{QueryString: "select distinct title from dbserie_alternates where dbserie_id = ? and title != ''", Args: []interface{}{serieEpisode.DbserieID}},
+		&alternateTitles)
 
 	searchActionType := "upgrade"
 	if minimumPriority == 0 {

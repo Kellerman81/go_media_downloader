@@ -239,6 +239,7 @@ func (m *MovieFile) Close() {
 
 func (movie *Dbmovie) getTitles(arrcfglang *logger.InStringArrayStruct, queryimdb bool, querytmdb bool, querytrakt bool) []DbmovieTitle {
 	var result []DbmovieTitle
+	lenarr := len(arrcfglang.Arr)
 	if queryimdb && movie.ImdbID != "" {
 		if !strings.HasPrefix(movie.ImdbID, "tt") {
 			movie.ImdbID = "tt" + movie.ImdbID
@@ -247,9 +248,8 @@ func (movie *Dbmovie) getTitles(arrcfglang *logger.InStringArrayStruct, queryimd
 		QueryStaticColumnsThreeString(true, &Querywithargs{QueryString: "select region, title, slug from imdb_akas where tconst = ?", Args: []interface{}{movie.ImdbID}}, &imdbakadata)
 
 		result = make([]DbmovieTitle, 0, len(imdbakadata))
-		lenarr := len(arrcfglang.Arr)
 		for idxaka := range imdbakadata {
-			if slices.ContainsFunc(arrcfglang.Arr, func(c string) bool { return strings.EqualFold(c, imdbakadata[idxaka].Str1) }) || lenarr == 0 {
+			if lenarr == 0 || slices.ContainsFunc(arrcfglang.Arr, func(c string) bool { return strings.EqualFold(c, imdbakadata[idxaka].Str1) }) {
 				//if logger.InStringArray(imdbakadata[idxaka].Str1, arrcfglang) || lenarr == 0 {
 				result = append(result, DbmovieTitle{DbmovieID: movie.ID, Title: imdbakadata[idxaka].Str2, Slug: imdbakadata[idxaka].Str3, Region: imdbakadata[idxaka].Str1})
 			}
@@ -263,9 +263,8 @@ func (movie *Dbmovie) getTitles(arrcfglang *logger.InStringArrayStruct, queryimd
 				result = slices.Grow(result, len(moviedbtitles.Titles))
 			}
 			//result = logger.GrowSliceBy(result, len(moviedbtitles.Titles))
-			lenarr := len(arrcfglang.Arr)
 			for idx := range moviedbtitles.Titles {
-				if !slices.ContainsFunc(arrcfglang.Arr, func(c string) bool { return strings.EqualFold(c, moviedbtitles.Titles[idx].Iso31661) }) && lenarr >= 1 {
+				if lenarr >= 1 && !slices.ContainsFunc(arrcfglang.Arr, func(c string) bool { return strings.EqualFold(c, moviedbtitles.Titles[idx].Iso31661) }) {
 					//if ok := logger.InStringArray(moviedbtitles.Titles[idx].Iso31661, arrcfglang); !ok && lenarr >= 1 {
 					continue
 				}
@@ -286,9 +285,8 @@ func (movie *Dbmovie) getTitles(arrcfglang *logger.InStringArrayStruct, queryimd
 			result = slices.Grow(result, len(traktaliases.Aliases))
 		}
 		//result = logger.GrowSliceBy(result, len(traktaliases.Aliases))
-		lenarr := len(arrcfglang.Arr)
 		for idxalias := range traktaliases.Aliases {
-			if slices.ContainsFunc(arrcfglang.Arr, func(c string) bool { return strings.EqualFold(c, traktaliases.Aliases[idxalias].Country) }) || lenarr == 0 {
+			if lenarr == 0 || slices.ContainsFunc(arrcfglang.Arr, func(c string) bool { return strings.EqualFold(c, traktaliases.Aliases[idxalias].Country) }) {
 				//if logger.InStringArray(traktaliases.Aliases[idxalias].Country, arrcfglang) || lenarr == 0 {
 				result = append(result, DbmovieTitle{DbmovieID: movie.ID, Title: traktaliases.Aliases[idxalias].Title, Slug: logger.StringToSlug(traktaliases.Aliases[idxalias].Title), Region: traktaliases.Aliases[idxalias].Country})
 			}
@@ -594,7 +592,9 @@ func (movie *Dbmovie) Getmoviemetatitles(cfgp *config.MediaTypeConfig) {
 		return
 	}
 	titles := new(logger.InStringArrayStruct)
-	QueryStaticStringArray(false, 0, &Querywithargs{QueryString: "select title from dbmovie_titles where dbmovie_id = ?", Args: []interface{}{movie.ID}}, &titles.Arr)
+	QueryStaticStringArray(false,
+		CountRowsStaticNoError(&Querywithargs{QueryString: "select count() from dbmovie_titles where dbmovie_id = ?", Args: []interface{}{movie.ID}}),
+		&Querywithargs{QueryString: "select title from dbmovie_titles where dbmovie_id = ?", Args: []interface{}{movie.ID}}, &titles.Arr)
 	titlegroup := movie.getTitles(&logger.InStringArrayStruct{Arr: cfgp.MetadataTitleLanguages}, config.Cfg.General.MovieAlternateTitleMetaSourceImdb, config.Cfg.General.MovieAlternateTitleMetaSourceTmdb, config.Cfg.General.MovieAlternateTitleMetaSourceTrakt)
 	for idx := range titlegroup {
 		if titlegroup[idx].Title == "" {

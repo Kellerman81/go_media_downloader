@@ -63,8 +63,7 @@ func FindconfigTemplateOnList(typeprefix string, listname string) *MediaTypeConf
 		if !strings.HasPrefix(key, typeprefix) {
 			continue
 		}
-		intid := slices.IndexFunc(val.Lists, func(e MediaListsConfig) bool { return e.Name == listname })
-		if intid != -1 {
+		if slices.IndexFunc(val.Lists, func(e MediaListsConfig) bool { return e.Name == listname }) != -1 {
 			return &val
 		}
 	}
