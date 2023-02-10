@@ -54,7 +54,7 @@ func Getcompleteallprios() map[string]map[string]int {
 	return allQualityPriorities
 }
 
-func loadDBPatterns() {
+func LoadDBPatterns() {
 	if len(scanpatterns) == 0 {
 		scanpatterns = []regexpattern{
 			{"season", false, `(?i)(s?(\d{1,4}))(?: )?[ex]`, 2},
@@ -106,19 +106,19 @@ func NewCutoffPrioGetQual(cfgp *config.MediaTypeConfig, qualityTemplate string) 
 func NewFileParser(filename string, includeYearInTitle bool, typegroup string) *apiexternal.ParseInfo {
 	m := &apiexternal.ParseInfo{File: filename}
 	var startIndex, endIndex = 0, len(m.File)
-	loadDBPatterns()
 	cleanName := strings.ReplaceAll(strings.TrimRight(strings.TrimLeft(m.File, "["), "]"), "_", " ")
 
-	tolower := strings.ToLower(cleanName)
+	m.FileLower = strings.ToLower(cleanName)
+
 	if !logger.DisableParserStringMatch {
-		m.Parsegroup(tolower, "audio", &database.DBConnect.AudioStrIn)
-		m.Parsegroup(tolower, "codec", &database.DBConnect.CodecStrIn)
-		m.Parsegroup(tolower, "quality", &database.DBConnect.QualityStrIn)
-		m.Parsegroup(tolower, "resolution", &database.DBConnect.ResolutionStrIn)
+		m.Parsegroup(m.FileLower, "audio", &database.DBConnect.AudioStrIn)
+		m.Parsegroup(m.FileLower, "codec", &database.DBConnect.CodecStrIn)
+		m.Parsegroup(m.FileLower, "quality", &database.DBConnect.QualityStrIn)
+		m.Parsegroup(m.FileLower, "resolution", &database.DBConnect.ResolutionStrIn)
 	}
-	m.Parsegroup(tolower, "extended", varextended)
-	m.Parsegroup(tolower, "proper", varproper)
-	m.Parsegroup(tolower, "repack", varrepack)
+	m.Parsegroup(m.FileLower, "extended", varextended)
+	m.Parsegroup(m.FileLower, "proper", varproper)
+	m.Parsegroup(m.FileLower, "repack", varrepack)
 
 	var matchentry = make([]string, 0, 2)
 	var index int
@@ -441,7 +441,7 @@ func ParseVideoFile(m *apiexternal.ParseInfo, file string, qualityTemplate strin
 	if redetermineprio {
 		allQualityPrioritiesMu.Lock()
 
-		prio, ok := allQualityPrioritiesWanted[qualityTemplate][buildPrioStr(m.ResolutionID, m.QualityID, m.CodecID, m.AudioID)]
+		prio, ok := allQualityPrioritiesWanted[qualityTemplate][buildPrioStrParse(m)]
 		if ok {
 			m.Priority = prio
 		}
@@ -687,18 +687,18 @@ func GetAllQualityPriorities() {
 
 	var setprio int
 	var str4 string
-	var addwanted, wantedquery bool
-	for idxqualroot := range config.Cfg.Quality {
-		reordergroup.Arr = config.Cfg.Quality[idxqualroot].QualityReorder
-		allQualityPriorities[config.Cfg.Quality[idxqualroot].Name] = make(map[string]int, lenmap)
-		allQualityPrioritiesWanted[config.Cfg.Quality[idxqualroot].Name] = make(map[string]int, lenmap)
+	var addwanted bool
+	var r, q, c string
+	for _, qual := range config.Cfg.Quality {
+		reordergroup.Arr = qual.QualityReorder
+		allQualityPriorities[qual.Name] = make(map[string]int, lenmap)
+		allQualityPrioritiesWanted[qual.Name] = make(map[string]int, lenmap)
 		for idxreso := range getresolutions {
 			addwanted = true
-			wantedquery = slices.ContainsFunc(config.Cfg.Quality[idxqualroot].WantedResolutionIn.Arr, func(c string) bool {
+			if !slices.ContainsFunc(qual.WantedResolutionIn.Arr, func(c string) bool {
 				return strings.EqualFold(c, getresolutions[idxreso].Name)
-			})
-			if !wantedquery && database.DBLogLevel == "debug" {
-				logger.Log.Debug("unwanted res: ", config.Cfg.Quality[idxqualroot].Name, " ", parse.Resolution, " ", config.Cfg.Quality[idxqualroot].WantedResolutionIn)
+			}) && database.DBLogLevel == "debug" {
+				logger.Log.Debug("unwanted res: ", qual.Name, " ", parse.Resolution, " ", qual.WantedResolutionIn)
 				addwanted = false
 			}
 			parse.Close()
@@ -706,29 +706,31 @@ func GetAllQualityPriorities() {
 				Resolution:   getresolutions[idxreso].Name,
 				ResolutionID: getresolutions[idxreso].ID,
 			}
+			r = logger.UintToString(parse.ResolutionID)
 
 			for idxqual := range getqualities {
-				wantedquery = slices.ContainsFunc(config.Cfg.Quality[idxqualroot].WantedQualityIn.Arr, func(c string) bool {
+				if !slices.ContainsFunc(qual.WantedQualityIn.Arr, func(c string) bool {
 					return strings.EqualFold(c, getqualities[idxqual].Name)
-				})
-				if !wantedquery && database.DBLogLevel == "debug" {
-					logger.Log.Debug("unwanted qual: ", config.Cfg.Quality[idxqualroot].Name, " ", parse.Resolution, " ", parse.Quality, " ", config.Cfg.Quality[idxqualroot].WantedQualityIn)
+				}) && database.DBLogLevel == "debug" {
+					logger.Log.Debug("unwanted qual: ", qual.Name, " ", parse.Resolution, " ", parse.Quality, " ", qual.WantedQualityIn)
 					addwanted = false
 				}
 
 				parse.Quality = getqualities[idxqual].Name
 				parse.QualityID = getqualities[idxqual].ID
+				q = logger.UintToString(parse.QualityID)
 				for idxcodec := range getcodecs {
 					parse.Codec = getcodecs[idxcodec].Name
 					parse.CodecID = getcodecs[idxcodec].ID
+					c = logger.UintToString(parse.CodecID)
 					for idxaudio := range getaudios {
 						parse.Audio = getaudios[idxaudio].Name
 						parse.AudioID = getaudios[idxaudio].ID
-						str4 = buildPrioStr(getresolutions[idxreso].ID, getqualities[idxqual].ID, getcodecs[idxcodec].ID, getaudios[idxaudio].ID)
+						str4 = buildPrioStrString(r, q, c, logger.UintToString(parse.AudioID))
 						setprio = getIDPrioritySimple(parse, &reordergroup)
-						allQualityPriorities[config.Cfg.Quality[idxqualroot].Name][str4] = setprio
+						allQualityPriorities[qual.Name][str4] = setprio
 						if addwanted {
-							allQualityPrioritiesWanted[config.Cfg.Quality[idxqualroot].Name][str4] = setprio
+							allQualityPrioritiesWanted[qual.Name][str4] = setprio
 						}
 					}
 				}
@@ -849,6 +851,7 @@ func gettypeidpriority(m *apiexternal.ParseInfo, id uint, qualitystringtype stri
 func buildPrioStr(r uint, q uint, c uint, a uint) string {
 	var bld strings.Builder
 	bld.Grow(11)
+	defer bld.Reset()
 	spacer := []byte("_")
 	bld.WriteString(logger.UintToString(r))
 	bld.Write(spacer)
@@ -857,5 +860,33 @@ func buildPrioStr(r uint, q uint, c uint, a uint) string {
 	bld.WriteString(logger.UintToString(c))
 	bld.Write(spacer)
 	bld.WriteString(logger.UintToString(a))
+	return bld.String()
+}
+func buildPrioStrParse(m *apiexternal.ParseInfo) string {
+	var bld strings.Builder
+	bld.Grow(11)
+	defer bld.Reset()
+	spacer := []byte("_")
+	bld.WriteString(logger.UintToString(m.ResolutionID))
+	bld.Write(spacer)
+	bld.WriteString(logger.UintToString(m.QualityID))
+	bld.Write(spacer)
+	bld.WriteString(logger.UintToString(m.CodecID))
+	bld.Write(spacer)
+	bld.WriteString(logger.UintToString(m.AudioID))
+	return bld.String()
+}
+func buildPrioStrString(r string, q string, c string, a string) string {
+	var bld strings.Builder
+	bld.Grow(11)
+	defer bld.Reset()
+	spacer := []byte("_")
+	bld.WriteString(r)
+	bld.Write(spacer)
+	bld.WriteString(q)
+	bld.Write(spacer)
+	bld.WriteString(c)
+	bld.Write(spacer)
+	bld.WriteString(a)
 	return bld.String()
 }

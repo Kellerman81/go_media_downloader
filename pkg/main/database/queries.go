@@ -1130,6 +1130,7 @@ func UpsertNamed(table string, columns *logger.InStringArrayStruct, obj interfac
 		logger.Log.GlobalLogger.Error("Upsert-update", zap.String("table", table), zap.Any("Columns", columns), zap.String("where", qu.Query.Where), zap.Any("Values", qu.Args), zap.Error(err))
 	}
 	columns.Close()
+	bld.Reset()
 	return result, err
 }
 

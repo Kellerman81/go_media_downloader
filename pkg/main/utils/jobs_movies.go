@@ -369,7 +369,10 @@ func workermovieimport(cfgp *config.MediaTypeConfig, listname string, imdbids *l
 
 func checkmissingmoviessingle(listname string) {
 	var filesfound []string
-	database.QueryStaticStringArray(false, database.CountRowsStaticNoError(&database.Querywithargs{QueryString: "select count() from movie_files where movie_id in (select id from movies where listname = ? COLLATE NOCASE)", Args: []interface{}{listname}}), &database.Querywithargs{QueryString: "select location from movie_files where movie_id in (select id from movies where listname = ?)", Args: []interface{}{listname}}, &filesfound)
+	database.QueryStaticStringArray(false,
+		database.CountRowsStaticNoError(&database.Querywithargs{QueryString: "select count() from movie_files where movie_id in (select id from movies where listname = ? COLLATE NOCASE)", Args: []interface{}{listname}}),
+		&database.Querywithargs{QueryString: "select location from movie_files where movie_id in (select id from movies where listname = ?)", Args: []interface{}{listname}},
+		&filesfound)
 	if len(filesfound) >= 1 {
 		logger.RunFuncSimple(filesfound, func(e string) {
 			jobImportFileCheck(e, "movie")
@@ -537,7 +540,7 @@ func MoviesSingleJobs(job string, cfgpstr string, listname string, force bool) {
 		qualis := new(logger.InStringArrayStruct)
 
 		for _, list := range getjoblists(&cfgp, listname) {
-			if job == "rss" && !slices.ContainsFunc(qualis.Arr, func(c string) bool { return c == list.TemplateQuality }) {
+			if job == "rss" && !slices.Contains(qualis.Arr, list.TemplateQuality) {
 				//if !logger.InStringArray(list.TemplateQuality, qualis) {
 				qualis.Arr = append(qualis.Arr, list.TemplateQuality)
 			}

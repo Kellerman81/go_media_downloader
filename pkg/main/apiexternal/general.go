@@ -80,7 +80,9 @@ func (c *RLHTTPClient) getResponse(url string, headers []addHeader) (*http.Respo
 			// headers = nil
 			return nil, err
 		}
-		logger.RunFuncSimple(headers, func(e addHeader) { req.Header.Add(e.key, e.val) })
+		if len(headers) >= 1 {
+			logger.RunFuncSimple(headers, func(e addHeader) { req.Header.Add(e.key, e.val) })
+		}
 		// headers = nil
 		return c.client.Do(req)
 	} else {
@@ -121,6 +123,120 @@ func (c *RLHTTPClient) DoJSON(url string, jsonobj interface{}, headers []addHead
 
 // Do dispatches the HTTP request to the network
 func (c *RLHTTPClient) DoXML(url string, headers []addHeader, feed *searchResponse) error {
+	ok, err := c.checkLimiter(10, 1, url)
+	if !ok {
+		if err == nil {
+			err = errPleaseWait
+		}
+		return err
+	}
+
+	resp, err := c.getResponse(url, headers)
+	if err != nil {
+		if resp == nil {
+			return err
+		}
+		c.addwait(url, resp)
+		return err
+	}
+	defer resp.Body.Close()
+	if c.addwait(url, resp) {
+		return errPleaseWait
+	}
+	d := xml.NewDecoder(resp.Body)
+	d.CharsetReader = charset.NewReaderLabel
+
+	var b entry
+	var name, setname string
+	var startv, endv int64
+	var t xml.Token
+	var attrname, attrvalue string
+	var idxattr int
+	for {
+		t, err = d.RawToken()
+		if err != nil {
+			break
+		}
+		switch tt := t.(type) {
+		case xml.StartElement:
+			if tt.Name.Local == "item" {
+				startv = d.InputOffset()
+				b.attr = nil
+				b = entry{}
+			} else if startv > endv {
+				name = tt.Name.Local
+				switch tt.Name.Local {
+				case "enclosure":
+					for idxattr = range tt.Attr {
+						if tt.Attr[idxattr].Name.Local == "url" {
+							b.url = tt.Attr[idxattr].Value
+							break
+						}
+					}
+				case "source":
+					for idxattr = range tt.Attr {
+						if tt.Attr[idxattr].Name.Local == "url" {
+							b.source = tt.Attr[idxattr].Value
+							break
+						}
+					}
+				case "attr":
+					for idxattr = range tt.Attr {
+						if tt.Attr[idxattr].Name.Local == "name" {
+							attrname = tt.Attr[idxattr].Value
+							continue
+						}
+						if tt.Attr[idxattr].Name.Local == "value" {
+							attrvalue = tt.Attr[idxattr].Value
+						}
+
+					}
+
+					if b.attr == nil {
+						b.attr = make(map[string]string, 20)
+					}
+					if _, ok = b.attr[attrname]; ok {
+						b.attr[attrname] = b.attr[attrname] + "," + attrvalue
+					} else {
+						b.attr[attrname] = attrvalue
+					}
+				}
+			}
+		case xml.CharData:
+			if startv > endv {
+				if name == "title" || name == "link" || name == "guid" || name == "size" {
+
+					setname = string(tt)
+				}
+				switch name {
+				case "title":
+					b.title = setname
+				case "link":
+					b.link = setname
+				case "guid":
+					b.guid = setname
+				case "size":
+					b.size = setname
+				}
+			}
+		case xml.EndElement:
+			if tt.Name.Local == "item" {
+				endv = d.InputOffset()
+				if startv < endv {
+					feed.Nzbs = append(feed.Nzbs, b)
+					b.attr = nil
+				}
+			} else if startv > endv {
+				name = ""
+			}
+		}
+		t = nil
+	}
+	return nil
+}
+
+// Do dispatches the HTTP request to the network
+func (c *RLHTTPClient) DoXMLold(url string, headers []addHeader, feed *searchResponse) error {
 	ok, err := c.checkLimiter(10, 1, url)
 	if !ok {
 		if err == nil {

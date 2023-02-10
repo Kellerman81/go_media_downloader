@@ -1181,9 +1181,7 @@ func OrganizeSingleFolder(folder string, cfgp *config.MediaTypeConfig, inConfig 
 	}
 
 	for idxfile := range allfiles.Arr {
-		if !slices.ContainsFunc(structurevar.sourcepathcfg.DisallowedLowerIn.Arr, func(c string) bool {
-			return strings.Contains(strings.ToLower(allfiles.Arr[idxfile]), c)
-		}) {
+		if !logger.InStringArrayContainsCaseInSensitive(allfiles.Arr[idxfile], &structurevar.sourcepathcfg.DisallowedLowerIn) {
 			continue
 		}
 		logger.Log.GlobalLogger.Warn("path not allowed", zap.Stringp("path", &allfiles.Arr[idxfile]))
@@ -1281,7 +1279,10 @@ func (s *organizer) organizefileinfolder(path string, deletewronglanguage bool, 
 	var titleyear string
 	if s.groupType == "movie" && m.MovieID != 0 && m.DbmovieID != 0 {
 		database.QueryColumn(&database.Querywithargs{QueryString: "select title from dbmovies where id = ?", Args: []interface{}{m.DbmovieID}}, &titleyear)
-		database.QueryStaticStringArray(false, 0, &database.Querywithargs{QueryString: "select title from dbmovie_titles where dbmovie_id = ?", Args: []interface{}{m.DbmovieID}}, &wantedalt)
+		database.QueryStaticStringArray(false,
+			database.CountRowsStaticNoError(&database.Querywithargs{QueryString: "select count() from dbmovie_titles where dbmovie_id = ?", Args: []interface{}{m.DbmovieID}}),
+			&database.Querywithargs{QueryString: "select title from dbmovie_titles where dbmovie_id = ?", Args: []interface{}{m.DbmovieID}},
+			&wantedalt)
 		searchnzb := &apiexternal.Nzbwithprio{WantedTitle: titleyear, WantedAlternates: wantedalt, QualityTemplate: templateQuality, QualityCfg: config.Cfg.Quality[templateQuality], ParseInfo: *m}
 		if searcher.Checktitle(searchnzb, "movie", nil) {
 			logger.Log.GlobalLogger.Warn("Skipped - unwanted title", zap.Stringp("title", &m.Title), zap.Stringp("want title", &titleyear))
@@ -1294,7 +1295,10 @@ func (s *organizer) organizefileinfolder(path string, deletewronglanguage bool, 
 
 	} else if s.groupType == "series" && m.DbserieEpisodeID != 0 && m.DbserieID != 0 && m.SerieEpisodeID != 0 && m.SerieID != 0 {
 		database.QueryColumn(&database.Querywithargs{QueryString: "select seriename from dbseries where id = ?", Args: []interface{}{m.DbserieID}}, &titleyear)
-		database.QueryStaticStringArray(false, 0, &database.Querywithargs{QueryString: "select title from dbserie_alternates where dbserie_id = ?", Args: []interface{}{m.DbserieID}}, &wantedalt)
+		database.QueryStaticStringArray(false,
+			database.CountRowsStaticNoError(&database.Querywithargs{QueryString: "select count() from dbserie_alternates where dbserie_id = ?", Args: []interface{}{m.DbserieID}}),
+			&database.Querywithargs{QueryString: "select title from dbserie_alternates where dbserie_id = ?", Args: []interface{}{m.DbserieID}},
+			&wantedalt)
 		searchnzb := &apiexternal.Nzbwithprio{WantedTitle: titleyear, WantedAlternates: wantedalt, QualityTemplate: templateQuality, QualityCfg: config.Cfg.Quality[templateQuality], ParseInfo: *m}
 		if searcher.Checktitle(searchnzb, "series", nil) {
 			logger.Log.GlobalLogger.Warn("Skipped - unwanted title", zap.Stringp("title", &m.Title), zap.Stringp("want title", &titleyear))

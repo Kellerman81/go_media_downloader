@@ -1,8 +1,10 @@
 package apiexternal
 
 import (
+	"encoding/xml"
 	"errors"
 	"html"
+	"io"
 	"math/rand"
 	"net/url"
 	"strconv"
@@ -82,7 +84,7 @@ type limiterconfig struct {
 
 // SearchResponse is a RSS version of the response.
 type searchResponse struct {
-	Nzbs []rawNZB `xml:"channel>item"`
+	Nzbs []entry `xml:"channel>item"`
 }
 
 type searchResponseJSON1 struct {
@@ -95,30 +97,84 @@ type searchResponseJSON2 struct {
 	Item []rawNZBJson2 `json:"item"`
 }
 
-// RawNZB represents a single NZB item in search results.
-type rawNZB struct {
-	Title string `xml:"title,omitempty"`
-	//Link  string `xml:"link,omitempty"`
-	Size int64 `xml:"size,omitempty"`
+type entry struct {
+	title  string
+	guid   string
+	link   string
+	url    string
+	source string
+	size   string
+	attr   map[string]string
+}
 
-	Guid struct {
-		Guid string `xml:",chardata"`
-	} `xml:"guid,omitempty"`
+func (a *entry) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
+	//fmt.Println(start)
+	var t xml.Token
+	var err error
+	var name string
 
-	Source struct {
-		Url string `xml:"url,attr"`
-	} `xml:"source,omitempty"`
+	for {
+		t, err = d.Token()
+		if err == io.EOF || err != nil {
+			break
+		}
 
-	//Date string `xml:"pubDate,omitempty"`
+		switch tt := t.(type) {
+		case xml.StartElement:
+			name = tt.Name.Local
+			switch tt.Name.Local {
+			case "enclosure":
+				for _, x := range tt.Attr {
+					if x.Name.Local == "url" {
+						a.url = x.Value
+						break
+					}
+				}
+			case "source":
+				for _, x := range tt.Attr {
+					if x.Name.Local == "url" {
+						a.source = x.Value
+						break
+					}
+				}
+			case "attr":
+				var namesub, valuesub string
+				for _, x := range tt.Attr {
+					if x.Name.Local == "name" {
+						namesub = x.Value
+						continue
+					}
+					if x.Name.Local == "value" {
 
-	Enclosure struct {
-		Url string `xml:"url,attr"`
-	} `xml:"enclosure,omitempty"`
-
-	Attributes []struct {
-		Name  string `xml:"name,attr"`
-		Value string `xml:"value,attr"`
-	} `xml:"attr"`
+						valuesub = x.Value
+					}
+				}
+				if a.attr == nil {
+					a.attr = make(map[string]string, 20)
+				}
+				if _, ok := a.attr[name]; ok {
+					a.attr[namesub] = a.attr[namesub] + "," + valuesub
+				} else {
+					a.attr[namesub] = valuesub
+				}
+			}
+		case xml.CharData:
+			switch name {
+			case "title":
+				a.title = string(tt)
+			case "link":
+				a.link = string(tt)
+			case "guid":
+				a.guid = string(tt)
+			case "size":
+				a.size = string(tt)
+			}
+		case xml.EndElement:
+			name = ""
+		}
+	}
+	t = nil
+	return nil
 }
 
 type rawNZBJson1 struct {
@@ -423,12 +479,12 @@ func NewNewznab(baseURL string, apikey string, userID string, insecure bool, dis
 	}
 }
 
-func addentrySearchResponseXML(tillid string, apiBaseURL string, item *rawNZB, entries *NZBArr) (bool, bool) {
-	if item.Enclosure.Url == "" {
+func addentrySearchResponseXML(tillid string, apiBaseURL string, item *entry, entries *NZBArr) (bool, bool) {
+	if item.url == "" {
 		return false, true
 	}
 	newEntry := new(Nzbwithprio)
-	newEntry.NZB.Title = item.Title
+	newEntry.NZB.Title = item.title
 
 	if strings.Contains(newEntry.NZB.Title, "&") || strings.Contains(newEntry.NZB.Title, "%") {
 		newEntry.NZB.Title = html.UnescapeString(newEntry.NZB.Title)
@@ -439,7 +495,7 @@ func addentrySearchResponseXML(tillid string, apiBaseURL string, item *rawNZB, e
 			newEntry.NZB.Title = unquote
 		}
 	}
-	newEntry.NZB.DownloadURL = item.Enclosure.Url
+	newEntry.NZB.DownloadURL = item.url
 	if strings.Contains(newEntry.NZB.DownloadURL, "&amp") || strings.Contains(newEntry.NZB.DownloadURL, "%") {
 		newEntry.NZB.DownloadURL = html.UnescapeString(newEntry.NZB.DownloadURL)
 	}
@@ -448,19 +504,22 @@ func addentrySearchResponseXML(tillid string, apiBaseURL string, item *rawNZB, e
 		newEntry.NZB.IsTorrent = true
 	}
 
-	logger.RunFuncSimple(item.Attributes, func(e struct {
-		Name  string "xml:\"name,attr\""
-		Value string "xml:\"value,attr\""
-	}) {
-		saveAttributes(&newEntry.NZB, e.Name, e.Value)
-	})
-
-	if newEntry.NZB.Size == 0 && item.Size != 0 {
-		newEntry.NZB.Size = item.Size
+	for key := range item.attr {
+		saveAttributes(&newEntry.NZB, key, item.attr[key])
 	}
-	newEntry.NZB.ID = item.Guid.Guid
+	// logger.RunFuncSimple(item.attr, func(e struct {
+	// 	Name  string "xml:\"name,attr\""
+	// 	Value string "xml:\"value,attr\""
+	// }) {
+	// 	saveAttributes(&newEntry.NZB, e.Name, e.Value)
+	// })
+
+	if newEntry.NZB.Size == 0 && item.size != "" {
+		newEntry.NZB.Size, _ = strconv.ParseInt(item.size, 10, 64)
+	}
+	newEntry.NZB.ID = item.guid
 	if newEntry.NZB.ID == "" {
-		newEntry.NZB.ID = item.Enclosure.Url
+		newEntry.NZB.ID = item.url
 	}
 	entries.Arr = append(entries.Arr, *newEntry)
 	if tillid != "" && tillid == newEntry.NZB.ID {
@@ -471,40 +530,33 @@ func addentrySearchResponseXML(tillid string, apiBaseURL string, item *rawNZB, e
 	return false, false
 }
 func addentrySearchResponseJSON1(tillid string, apiBaseURL string, item *rawNZBJson1, entries *NZBArr) {
-	itemconvert := rawNZB{}
-	itemconvert.Enclosure.Url = item.Enclosure.Attributes.Url
-	itemconvert.Title = item.Title
-	itemconvert.Size = item.Size
-	itemconvert.Guid.Guid = item.Guid
-	itemconvert.Attributes = make([]struct {
-		Name  string "xml:\"name,attr\""
-		Value string "xml:\"value,attr\""
-	}, len(item.Attributes))
+	itemconvert := entry{}
+	itemconvert.url = item.Enclosure.Attributes.Url
+	itemconvert.title = item.Title
+	itemconvert.size = strconv.Itoa(int(item.Size))
+	itemconvert.guid = item.Guid
+	itemconvert.attr = make(map[string]string)
 	for idx2 := range item.Attributes {
-		itemconvert.Attributes[idx2].Name = item.Attributes[idx2].Attribute.Name
-		itemconvert.Attributes[idx2].Value = item.Attributes[idx2].Attribute.Value
+		itemconvert.attr[item.Attributes[idx2].Attribute.Name] = item.Attributes[idx2].Attribute.Value
 	}
 	addentrySearchResponseXML(tillid, apiBaseURL, &itemconvert, entries)
+	itemconvert.attr = nil
 }
 func addentrySearchResponseJSON2(tillid string, apiBaseURL string, item *rawNZBJson2, entries *NZBArr) {
-	itemconvert := rawNZB{}
-	itemconvert.Enclosure.Url = item.Enclosure.Url
-	itemconvert.Title = item.Title
-	itemconvert.Size = item.Size
-	itemconvert.Guid.Guid = item.Guid.Guid
-	itemconvert.Attributes = make([]struct {
-		Name  string "xml:\"name,attr\""
-		Value string "xml:\"value,attr\""
-	}, len(item.Attributes)+len(item.Attributes2))
+	itemconvert := entry{}
+	itemconvert.url = item.Enclosure.Url
+	itemconvert.title = item.Title
+	itemconvert.size = strconv.Itoa(int(item.Size))
+	itemconvert.guid = item.Guid.Guid
+	itemconvert.attr = make(map[string]string)
 	for idx2 := range item.Attributes {
-		itemconvert.Attributes[idx2].Name = item.Attributes[idx2].Name
-		itemconvert.Attributes[idx2].Value = item.Attributes[idx2].Value
+		itemconvert.attr[item.Attributes[idx2].Name] = item.Attributes[idx2].Value
 	}
 	for idx2 := range item.Attributes2 {
-		itemconvert.Attributes[idx2].Name = item.Attributes2[idx2].Name
-		itemconvert.Attributes[idx2].Value = item.Attributes2[idx2].Value
+		itemconvert.attr[item.Attributes2[idx2].Name] = item.Attributes2[idx2].Value
 	}
 	addentrySearchResponseXML(tillid, apiBaseURL, &itemconvert, entries)
+	itemconvert.attr = nil
 }
 
 func (client *Client) processurl(urlb *urlbuilder, tillid string, maxage int, outputasjson bool, entries *NZBArr) (bool, error) {

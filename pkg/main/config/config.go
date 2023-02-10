@@ -355,6 +355,7 @@ type QualityConfig struct {
 	CheckYear                      bool                       `koanf:"check_year" toml:"check_year"`
 	CheckYear1                     bool                       `koanf:"check_year1" toml:"check_year1"`
 	TitleStripSuffixForSearch      []string                   `koanf:"title_strip_suffix_for_search" toml:"title_strip_suffix_for_search"`
+	TitleStripSuffixForSearchLower []string                   `koanf:"-" toml:"-"`
 	TitleStripPrefixForSearch      []string                   `koanf:"title_strip_prefix_for_search" toml:"title_strip_prefix_for_search"`
 	QualityReorder                 []QualityReorderConfig     `koanf:"reorder" toml:"reorder"`
 	Indexer                        []QualityIndexerConfig     `koanf:"indexers" toml:"indexers"`
@@ -721,6 +722,7 @@ func LoadCfgDB(f string) {
 	//Cfg.PathsP[key] = &val
 	//}
 	for idx := range results.Quality {
+		results.Quality[idx].TitleStripSuffixForSearchLower = logger.StringArrayToLower(results.Quality[idx].TitleStripSuffixForSearch)
 		results.Quality[idx].WantedAudioIn = logger.InStringArrayStruct{Arr: results.Quality[idx].WantedAudio}
 		results.Quality[idx].WantedCodecIn = logger.InStringArrayStruct{Arr: results.Quality[idx].WantedCodec}
 		results.Quality[idx].WantedQualityIn = logger.InStringArrayStruct{Arr: results.Quality[idx].WantedQuality}
@@ -731,16 +733,6 @@ func LoadCfgDB(f string) {
 	for idx := range results.Regex {
 		Cfg.Regex[results.Regex[idx].Name] = results.Regex[idx]
 		Cfg.Keys["regex_"+results.Regex[idx].Name] = true
-		for idxreg := range results.Regex[idx].Rejected {
-			if !logger.GlobalRegexCache.CheckRegexp(results.Regex[idx].Rejected[idxreg]) {
-				logger.GlobalRegexCache.SetRegexp(results.Regex[idx].Rejected[idxreg], 0)
-			}
-		}
-		for idxreg := range results.Regex[idx].Required {
-			if !logger.GlobalRegexCache.CheckRegexp(results.Regex[idx].Required[idxreg]) {
-				logger.GlobalRegexCache.SetRegexp(results.Regex[idx].Required[idxreg], 0)
-			}
-		}
 	}
 	for idx := range results.Scheduler {
 		Cfg.Scheduler[results.Scheduler[idx].Name] = results.Scheduler[idx]

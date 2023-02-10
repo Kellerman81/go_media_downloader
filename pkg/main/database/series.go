@@ -434,7 +434,7 @@ func (serie *Dbserie) GetMetadata(language string, querytmdb bool, querytrakt bo
 				arrcfglang := &logger.InStringArrayStruct{Arr: config.Cfg.Imdbindexer.Indexedlanguages}
 				lenarr := len(arrcfglang.Arr)
 				for idxalias := range traktaliases.Aliases {
-					if slices.ContainsFunc(arrcfglang.Arr, func(c string) bool { return strings.EqualFold(c, traktaliases.Aliases[idxalias].Country) }) && lenarr >= 1 {
+					if lenarr >= 1 && slices.ContainsFunc(arrcfglang.Arr, func(c string) bool { return strings.EqualFold(c, traktaliases.Aliases[idxalias].Country) }) {
 						//if logger.InStringArray(traktaliases.Aliases[idxalias].Country, &arrcfglang) && lenarr >= 1 {
 						aliases = append(aliases, traktaliases.Aliases[idxalias].Title)
 					}

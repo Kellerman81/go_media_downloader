@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/apiexternal"
+	"github.com/Kellerman81/go_media_downloader/cache"
 	"github.com/Kellerman81/go_media_downloader/config"
 	"github.com/Kellerman81/go_media_downloader/database"
 	"github.com/Kellerman81/go_media_downloader/downloader"
@@ -238,13 +239,13 @@ func feeds(cfgp *config.MediaTypeConfig, listname string, cfglist *config.ListsC
 		if err != nil {
 			logger.Log.GlobalLogger.Error("Error loading config. ", zap.Error(err))
 		}
-		feeddata := feedResults{}
+		feeddata := new(feedResults)
 		err = toml.Unmarshal(content, &feeddata.Series)
 		if err != nil {
 			logger.Log.GlobalLogger.Error("Error loading config. ", zap.Error(err))
 			return nil, errNoList
 		}
-		return &feeddata, nil
+		return feeddata, nil
 	case "traktpublicshowlist":
 		return getTraktUserPublicShowList(listTemplateList, cfglist)
 	case "imdbcsv":
@@ -366,15 +367,19 @@ func getNewFilesMap(cfgp *config.MediaTypeConfig, checklist string) {
 	queryunmatched := "select filepath from " + table + " where filepath like ? and (last_checked > ? or last_checked is null)"
 	queryunmatchedcount := "select count() from " + table + " where filepath like ? and (last_checked > ? or last_checked is null)"
 
-	unwantedpaths := new(logger.InStringArrayStruct)
+	var unwantedcache *cache.Return
 	if !logger.GlobalCache.CheckNoType(tablefiles + "_cached") {
+		unwantedpaths := logger.InStringArrayStruct{}
 		database.QueryStaticStringArray(false,
 			database.CountRowsStaticNoError(&database.Querywithargs{QueryString: "select count() from " + tablefiles}),
-			&database.Querywithargs{QueryString: "select location from " + tablefiles}, &unwantedpaths.Arr)
-		logger.GlobalCache.Set(tablefiles+"_cached", unwantedpaths.Arr, 3*time.Hour)
+			&database.Querywithargs{QueryString: "select location from " + tablefiles},
+			&unwantedpaths.Arr)
+		logger.GlobalCache.Set(tablefiles+"_cached", unwantedpaths, 3*time.Hour)
+		unwantedcache = new(cache.Return)
+		unwantedcache.Value = unwantedpaths
+		unwantedpaths.Close()
 	} else {
-		unwantedcache := logger.GlobalCache.GetData(tablefiles + "_cached")
-		unwantedpaths.Arr = unwantedcache.Value.([]string)
+		unwantedcache = logger.GlobalCache.GetData(tablefiles + "_cached")
 	}
 
 	var cfgpath config.PathsConfig
@@ -385,11 +390,10 @@ func getNewFilesMap(cfgp *config.MediaTypeConfig, checklist string) {
 			logger.Log.Warn("Config not found ", templatepath)
 			continue
 		}
-		cfgpath = config.Cfg.Paths[templatepath]
-		if !scanner.CheckFileExist(cfgpath.Path) {
-			cfgpath.Close()
+		if !scanner.CheckFileExist(config.Cfg.Paths[templatepath].Path) {
 			continue
 		}
+		cfgpath = config.Cfg.Paths[templatepath]
 		cnt, ok = logger.GlobalCounter[cfgpath.Path]
 		pathpercent = cfgpath.Path + "%"
 		if ok {
@@ -418,33 +422,34 @@ func getNewFilesMap(cfgp *config.MediaTypeConfig, checklist string) {
 		unmatcheddb = &logger.InStringArrayStruct{}
 		database.QueryStaticStringArray(false,
 			database.CountRowsStaticNoError(&database.Querywithargs{QueryString: queryunmatchedcount, Args: []interface{}{pathpercent, time.Now().Add(time.Hour * -12)}}),
-			&database.Querywithargs{QueryString: queryunmatched, Args: []interface{}{pathpercent, time.Now().Add(time.Hour * -12)}}, &unmatcheddb.Arr)
+			&database.Querywithargs{QueryString: queryunmatched, Args: []interface{}{pathpercent, time.Now().Add(time.Hour * -12)}},
+			&unmatcheddb.Arr)
 
 		//reduce vars with function
-		loopgetnewfiles(cfgp, cfgp.Data[idx].AddFoundList, cfgp.Data[idx].AddFound, typestring, allfiles, unmatcheddb, unwantedpaths)
+		loopgetnewfiles(cfgp, cfgp.Data[idx].AddFoundList, cfgp.Data[idx].AddFound, typestring, allfiles, unmatcheddb, unwantedcache)
 		unmatcheddb.Close()
-		unwantedpaths.Close()
 	}
+	unwantedcache = nil
 	allfiles.Close()
 }
 
-func loopgetnewfiles(cfgp *config.MediaTypeConfig, addfoundlist string, addfound bool, typestring string, allfiles *logger.InStringArrayStruct, unmatcheddb *logger.InStringArrayStruct, unwantedpaths *logger.InStringArrayStruct) {
+func loopgetnewfiles(cfgp *config.MediaTypeConfig, addfoundlist string, addfound bool, typestring string, allfiles *logger.InStringArrayStruct, unmatcheddb *logger.InStringArrayStruct, unwantedpaths *cache.Return) {
 	workergroup := logger.WorkerPools["Parse"].Group()
 	for idxall := range allfiles.Arr {
-		path := allfiles.Arr[idxall]
-		if slices.ContainsFunc(unmatcheddb.Arr, func(c string) bool { return c == path }) {
+		if slices.Contains(unmatcheddb.Arr, allfiles.Arr[idxall]) {
 			continue
 		}
 		//if logger.InStringArrayCaseSensitive(path, unmatcheddb) {
 		//	continue
 		//}
-		if slices.ContainsFunc(unwantedpaths.Arr, func(c string) bool { return c == path }) {
+		if slices.Contains(unwantedpaths.Value.(logger.InStringArrayStruct).Arr, allfiles.Arr[idxall]) {
 			continue
 		}
 		//if logger.InStringArrayCaseSensitive(path, unwantedpaths) {
 		//	continue
 		//}
 
+		path := allfiles.Arr[idxall]
 		if typestring == "series" {
 			workergroup.Submit(func() {
 				jobImportSeriesParseV2(path, true, cfgp, addfoundlist, false)
