@@ -123,7 +123,7 @@ func (s *Config) close() {
 	}
 	s = nil
 }
-func (s *organizer) close() {
+func (s *organizer) Close() {
 	if logger.DisableVariableCleanup {
 		return
 	}
@@ -225,9 +225,9 @@ func (s *organizer) fileCleanup(folder string, videofile string) {
 		if scanner.RemoveFile(videofile) == nil {
 			toRemove, err := scanner.GetFilesDir(folder, s.sourcepathcfg, false)
 			if err == nil {
-				logger.RunFuncSimple(toRemove.Arr, func(e string) {
-					scanner.RemoveFile(e)
-				})
+				for idx := range toRemove.Arr {
+					scanner.RemoveFile(toRemove.Arr[idx])
+				}
 				toRemove.Close()
 			}
 		}
@@ -235,9 +235,9 @@ func (s *organizer) fileCleanup(folder string, videofile string) {
 	} else {
 		fileext := filepath.Ext(videofile)
 		if scanner.RemoveFile(videofile) == nil {
-			logger.RunFuncSimple(s.sourcepathcfg.AllowedOtherExtensions, func(e string) {
-				scanner.RemoveFile(strings.ReplaceAll(videofile, fileext, e))
-			})
+			for idx := range s.sourcepathcfg.AllowedOtherExtensions {
+				scanner.RemoveFile(strings.ReplaceAll(videofile, fileext, s.sourcepathcfg.AllowedOtherExtensions[idx]))
+			}
 		}
 		scanner.CleanUpFolder(folder, s.sourcepathcfg.CleanupsizeMB)
 	}
@@ -367,8 +367,8 @@ func (s *organizer) GenerateNamingTemplate(videofile string, rootpath string, db
 			movietitle = logger.TrimStringInclAfterString(movietitle, logger.IntToString(m.Year))
 		}
 		movietitle = strings.Trim(movietitle, ".")
-		movietitle = strings.ReplaceAll(movietitle, ".", " ")
-		forparser.TitleSource = strings.ReplaceAll(movietitle, "/", "")
+		movietitle = logger.StringReplaceRune(movietitle, '.', ' ')
+		forparser.TitleSource = logger.StringDeleteRuneAll(movietitle, '/')
 
 		if forparser.Dbmovie.Title == "" {
 			database.QueryColumn(&database.Querywithargs{QueryString: "select title from dbmovie_titles where dbmovie_id = ?", Args: []interface{}{dbid}}, &forparser.Dbmovie.Title)
@@ -376,7 +376,7 @@ func (s *organizer) GenerateNamingTemplate(videofile string, rootpath string, db
 				forparser.Dbmovie.Title = movietitle
 			}
 		}
-		forparser.Dbmovie.Title = strings.ReplaceAll(forparser.Dbmovie.Title, "/", "")
+		forparser.Dbmovie.Title = logger.StringDeleteRuneAll(forparser.Dbmovie.Title, '/')
 		if forparser.Dbmovie.Year == 0 {
 			forparser.Dbmovie.Year = m.Year
 		}
@@ -393,7 +393,7 @@ func (s *organizer) GenerateNamingTemplate(videofile string, rootpath string, db
 			m.Imdb = forparser.Dbmovie.ImdbID
 		}
 
-		forparser.Source.Title = strings.ReplaceAll(forparser.Source.Title, "/", "")
+		forparser.Source.Title = logger.StringDeleteRuneAll(forparser.Source.Title, '/')
 
 		var err error
 		foldername, err = logger.ParseStringTemplate(foldername, forparser)
@@ -436,11 +436,11 @@ func (s *organizer) GenerateNamingTemplate(videofile string, rootpath string, db
 				forparser.Dbserie.Seriename = serietitle
 			}
 		}
-		forparser.Dbserie.Seriename = strings.ReplaceAll(forparser.Dbserie.Seriename, "/", "")
+		forparser.Dbserie.Seriename = logger.StringDeleteRuneAll(forparser.Dbserie.Seriename, '/')
 		if forparser.DbserieEpisode.Title == "" {
 			forparser.DbserieEpisode.Title = episodetitle
 		}
-		forparser.DbserieEpisode.Title = strings.ReplaceAll(forparser.DbserieEpisode.Title, "/", "")
+		forparser.DbserieEpisode.Title = logger.StringDeleteRuneAll(forparser.DbserieEpisode.Title, '/')
 		if rootpath != "" {
 			foldername, _ = logger.Getrootpath(foldername)
 		}
@@ -453,8 +453,8 @@ func (s *organizer) GenerateNamingTemplate(videofile string, rootpath string, db
 			database.QueryColumn(&database.Querywithargs{QueryString: queryepisode, Args: []interface{}{(*mapepi)[key].Num2}}, &epitext)
 			forparser.Episodes[key] = logger.StringToInt(epitext)
 		}
-		forparser.TitleSource = strings.ReplaceAll(serietitle, "/", "")
-		forparser.EpisodeTitleSource = strings.ReplaceAll(episodetitle, "/", "")
+		forparser.TitleSource = logger.StringDeleteRuneAll(serietitle, '/')
+		forparser.EpisodeTitleSource = logger.StringDeleteRuneAll(episodetitle, '/')
 		if m.Tvdb == "" {
 			m.Tvdb = logger.IntToString(forparser.Dbserie.ThetvdbID)
 		}
@@ -540,14 +540,13 @@ func (s *organizer) moveRemoveOldMediaFile(oldfile string, id uint, usebuffer bo
 	fileext := filepath.Ext(oldfile)
 	logger.Log.GlobalLogger.Debug("Old File moved", zap.Stringp("path", &oldfile))
 	if strings.EqualFold(s.groupType, "movie") {
-		logger.GlobalCache.Delete("movie_files_cached")
+		logger.DeleteFromStringsArrCache("movie_files_cached", oldfile)
 		database.DeleteRowStatic(&database.Querywithargs{QueryString: "Delete from movie_files where movie_id = ? and location = ?", Args: []interface{}{id, oldfile}})
 	} else {
-		logger.GlobalCache.Delete("serie_episode_files_cached")
+		logger.DeleteFromStringsArrCache("serie_episode_files_cached", oldfile)
 		database.DeleteRowStatic(&database.Querywithargs{QueryString: "Delete from serie_episode_files where serie_id = ? and location = ?", Args: []interface{}{id, oldfile}})
 	}
 	var additionalfile string
-	var err error
 	for idxext := range s.sourcepathcfg.AllowedOtherExtensions {
 		ok = false
 		additionalfile = strings.ReplaceAll(oldfile, fileext, s.sourcepathcfg.AllowedOtherExtensions[idxext])
@@ -557,8 +556,7 @@ func (s *organizer) moveRemoveOldMediaFile(oldfile string, id uint, usebuffer bo
 		if move {
 			ok = scanner.MoveFile(additionalfile, filepath.Join(s.targetpathcfg.MoveReplacedTargetPath, filepath.Base(filepath.Dir(oldfile))), "", &logger.InStringArrayStruct{Arr: []string{}}, &logger.InStringArrayStruct{Arr: []string{}}, usebuffer, s.targetpathcfg.SetChmod)
 		} else {
-			err = scanner.RemoveFile(additionalfile)
-			if err == nil {
+			if scanner.RemoveFile(additionalfile) == nil {
 				ok = true
 			}
 		}
@@ -575,15 +573,15 @@ func (s *organizer) moveAdditionalFiles(folder string, videotarget string, filen
 	if strings.EqualFold(s.groupType, "movie") || videofilecount == 1 {
 		additionalfiles, err := scanner.GetFilesDir(folder, s.sourcepathcfg, true)
 		if err == nil && len(additionalfiles.Arr) >= 1 {
-			logger.RunFuncSimple(additionalfiles.Arr, func(e string) {
-				scanner.MoveFile(e, videotarget, filename, &s.sourcepathcfg.AllowedOtherExtensionsIn, &s.sourcepathcfg.AllowedOtherExtensionsNoRenameIn, config.Cfg.General.UseFileBufferCopy, s.targetpathcfg.SetChmod)
-			})
+			for idx := range additionalfiles.Arr {
+				scanner.MoveFile(additionalfiles.Arr[idx], videotarget, filename, &s.sourcepathcfg.AllowedOtherExtensionsIn, &s.sourcepathcfg.AllowedOtherExtensionsNoRenameIn, config.Cfg.General.UseFileBufferCopy, s.targetpathcfg.SetChmod)
+			}
 		}
 		additionalfiles.Close()
 	} else {
-		logger.RunFuncSimple(s.sourcepathcfg.AllowedOtherExtensions, func(e string) {
-			scanner.MoveFile(strings.ReplaceAll(videofile, sourcefileext, e), videotarget, filename, &s.sourcepathcfg.AllowedOtherExtensionsIn, &s.sourcepathcfg.AllowedOtherExtensionsNoRenameIn, config.Cfg.General.UseFileBufferCopy, s.targetpathcfg.SetChmod)
-		})
+		for idx := range s.sourcepathcfg.AllowedOtherExtensions {
+			scanner.MoveFile(strings.ReplaceAll(videofile, sourcefileext, s.sourcepathcfg.AllowedOtherExtensions[idx]), videotarget, filename, &s.sourcepathcfg.AllowedOtherExtensionsIn, &s.sourcepathcfg.AllowedOtherExtensionsNoRenameIn, config.Cfg.General.UseFileBufferCopy, s.targetpathcfg.SetChmod)
+		}
 	}
 }
 
@@ -609,6 +607,7 @@ func (s *organizer) organizeSeries(folder string, serieid uint, videofile string
 		intid := slices.IndexFunc(s.cfgp.Lists, func(c config.MediaListsConfig) bool { return c.Name == m.Listname })
 		if intid != -1 {
 			s.listcfg = &s.cfgp.Lists[intid]
+			s.cfgqual.Close()
 			cfgqual := config.Cfg.Quality[s.listcfg.TemplateQuality]
 			s.cfgqual = &cfgqual
 		}
@@ -677,9 +676,9 @@ func (s *organizer) organizeSeries(folder string, serieid uint, videofile string
 	}
 
 	if s.targetpathcfg.MoveReplaced && len(oldfiles.Arr) >= 1 && s.targetpathcfg.MoveReplacedTargetPath != "" {
-		logger.RunFuncSimple(oldfiles.Arr, func(e string) {
-			s.moveRemoveOldMediaFile(e, serieid, config.Cfg.General.UseFileBufferCopy, true)
-		})
+		for idx := range oldfiles.Arr {
+			s.moveRemoveOldMediaFile(oldfiles.Arr[idx], serieid, config.Cfg.General.UseFileBufferCopy, true)
+		}
 	}
 
 	if s.targetpathcfg.Usepresort && s.targetpathcfg.PresortFolderPath != "" {
@@ -735,7 +734,7 @@ func (s *organizer) organizeSeries(folder string, serieid uint, videofile string
 		oldfiles = nil
 		return
 	}
-	logger.GlobalCache.Delete("serie_episode_files_cached")
+	logger.InsertStringsArrCache("serie_episode_files_cached", videofile)
 	for key := range tblepi {
 		database.InsertNamed("insert into serie_episode_files (location, filename, extension, quality_profile, resolution_id, quality_id, codec_id, audio_id, proper, repack, extended, serie_id, serie_episode_id, dbserie_episode_id, dbserie_id, height, width) values (:location, :filename, :extension, :quality_profile, :resolution_id, :quality_id, :codec_id, :audio_id, :proper, :repack, :extended, :serie_id, :serie_episode_id, :dbserie_episode_id, :dbserie_id, :height, :width)",
 			database.SerieEpisodeFile{
@@ -785,6 +784,7 @@ func (s *organizer) organizeMovie(folder string, movieid uint, videofile string,
 		intid := slices.IndexFunc(s.cfgp.Lists, func(c config.MediaListsConfig) bool { return c.Name == m.Listname })
 		if intid != -1 {
 			s.listcfg = &s.cfgp.Lists[intid]
+			s.cfgqual.Close()
 			cfgqual := config.Cfg.Quality[s.listcfg.TemplateQuality]
 			s.cfgqual = &cfgqual
 		}
@@ -813,9 +813,9 @@ func (s *organizer) organizeMovie(folder string, movieid uint, videofile string,
 	}
 
 	if s.targetpathcfg.MoveReplaced && oldfiles != nil && len(oldfiles.Arr) >= 1 && s.targetpathcfg.MoveReplacedTargetPath != "" {
-		logger.RunFuncSimple(oldfiles.Arr, func(e string) {
-			s.moveRemoveOldMediaFile(e, movieid, config.Cfg.General.UseFileBufferCopy, true)
-		})
+		for idx := range oldfiles.Arr {
+			s.moveRemoveOldMediaFile(oldfiles.Arr[idx], movieid, config.Cfg.General.UseFileBufferCopy, true)
+		}
 	}
 	if s.targetpathcfg.Usepresort && s.targetpathcfg.PresortFolderPath != "" {
 		rootpath = filepath.Join(s.targetpathcfg.PresortFolderPath, foldername)
@@ -852,7 +852,7 @@ func (s *organizer) organizeMovie(folder string, movieid uint, videofile string,
 		return
 	}
 
-	logger.GlobalCache.Delete("movie_files_cached")
+	logger.InsertStringsArrCache("movie_files_cached", videofile)
 	//updatemovie
 	targetfile := filepath.Join(videotarget, filename+filepath.Ext(videofile))
 	database.InsertNamed("insert into movie_files (location, filename, extension, quality_profile, resolution_id, quality_id, codec_id, audio_id, proper, repack, extended, movie_id, dbmovie_id, height, width) values (:location, :filename, :extension, :quality_profile, :resolution_id, :quality_id, :codec_id, :audio_id, :proper, :repack, :extended, :movie_id, :dbmovie_id, :height, :width)",
@@ -886,9 +886,9 @@ func (s *organizer) GetEpisodeTitle(firstdbepiid uint, videofile string, m *apie
 		episodetitle = logger.TrimStringInclAfterString(episodetitle, "XXX")
 		episodetitle = logger.TrimStringInclAfterString(episodetitle, m.Quality)
 		episodetitle = logger.TrimStringInclAfterString(episodetitle, m.Resolution)
-		episodetitle = strings.ReplaceAll(strings.Trim(episodetitle, "."), ".", " ")
+		episodetitle = logger.StringReplaceRune(strings.Trim(episodetitle, "."), '.', ' ')
 
-		serietitle = strings.ReplaceAll(strings.Trim(serietitle, "."), ".", " ")
+		serietitle = logger.StringReplaceRune(strings.Trim(serietitle, "."), '.', ' ')
 	}
 
 	if episodetitle == "" {
@@ -1016,7 +1016,7 @@ func (s *organizer) GetSeriesEpisodes(serieid uint, dbserieid uint, videofile st
 				}
 			}
 
-			dbserieepisodeid, _ = importfeed.FindDbserieEpisodeByIdentifierOrSeasonEpisode(dbserieid, m.Identifier, m.SeasonStr, episodeArray.Arr[idx])
+			dbserieepisodeid = importfeed.FindDbserieEpisodeByIdentifierOrSeasonEpisode(dbserieid, m.Identifier, m.SeasonStr, episodeArray.Arr[idx])
 			if dbserieepisodeid != 0 {
 				database.QueryColumn(&database.Querywithargs{QueryString: "select id from serie_episodes where dbserie_episode_id = ? and serie_id = ?", Args: []interface{}{dbserieepisodeid, serieid}}, &serieepisodeid)
 				if serieepisodeid != 0 {
@@ -1058,9 +1058,9 @@ func (s *organizer) GetSeriesEpisodes(serieid uint, dbserieid uint, videofile st
 		} else {
 			if scanner.RemoveFile(videofile) == nil {
 				logger.Log.GlobalLogger.Debug("Lower Qual Import File removed", zap.Stringp("path", &videofile), zap.Int("old prio", oldPrio), zap.Int("new prio", m.Priority))
-				logger.RunFuncSimple(s.sourcepathcfg.AllowedOtherExtensions, func(e string) {
-					scanner.RemoveFile(strings.ReplaceAll(videofile, filepath.Ext(videofile), e))
-				})
+				for idxall := range s.sourcepathcfg.AllowedOtherExtensions {
+					scanner.RemoveFile(strings.ReplaceAll(videofile, filepath.Ext(videofile), s.sourcepathcfg.AllowedOtherExtensions[idxall]))
+				}
 				scanner.CleanUpFolder(folder, s.sourcepathcfg.CleanupsizeMB)
 			}
 		}
@@ -1076,7 +1076,7 @@ func OrganizeSingleFolderAs(folder string, id uint, cfgp *config.MediaTypeConfig
 	if err != nil {
 		return
 	}
-	defer structurevar.close()
+	defer structurevar.Close()
 	checkruntime := structurevar.sourcepathcfg.CheckRuntime
 	if inConfig.Disableruntimecheck {
 		checkruntime = false
@@ -1161,7 +1161,7 @@ func OrganizeSingleFolder(folder string, cfgp *config.MediaTypeConfig, inConfig 
 
 		return
 	}
-	defer structurevar.close()
+	defer structurevar.Close()
 
 	allfiles, err := scanner.GetFilesDirAll(folder, false)
 	if err != nil {
@@ -1188,9 +1188,9 @@ func OrganizeSingleFolder(folder string, cfgp *config.MediaTypeConfig, inConfig 
 
 		if removefolder {
 			structurevar.filterVideoFiles(allfiles, removesmallfiles)
-			logger.RunFuncSimple(allfiles.Arr, func(e string) {
-				scanner.RemoveFile(e)
-			})
+			for idx := range allfiles.Arr {
+				scanner.RemoveFile(allfiles.Arr[idx])
+			}
 			scanner.CleanUpFolder(folder, structurevar.sourcepathcfg.CleanupsizeMB)
 			break
 		}
@@ -1198,8 +1198,7 @@ func OrganizeSingleFolder(folder string, cfgp *config.MediaTypeConfig, inConfig 
 		continue
 	}
 
-	err = structurevar.filterVideoFiles(allfiles, removesmallfiles)
-	if err != nil {
+	if structurevar.filterVideoFiles(allfiles, removesmallfiles) != nil {
 		logger.Log.GlobalLogger.Debug("Folder skipped due to no video files found ", zap.Stringp("path", &folder))
 		//skip files
 		return
@@ -1223,9 +1222,9 @@ func OrganizeSingleFolder(folder string, cfgp *config.MediaTypeConfig, inConfig 
 	if inConfig.Disabledeletewronglanguage {
 		deletewronglanguage = false
 	}
-	logger.RunFuncSimple(allfiles.Arr, func(e string) {
-		structurevar.organizefileinfolder(e, deletewronglanguage, checkruntime)
-	})
+	for idx := range allfiles.Arr {
+		structurevar.organizefileinfolder(allfiles.Arr[idx], deletewronglanguage, checkruntime)
+	}
 }
 
 func (s *organizer) organizefileinfolder(path string, deletewronglanguage bool, checkruntime bool) {
@@ -1265,6 +1264,7 @@ func (s *organizer) organizefileinfolder(path string, deletewronglanguage bool, 
 		intid := slices.IndexFunc(s.cfgp.Lists, func(c config.MediaListsConfig) bool { return c.Name == m.Listname })
 		if intid != -1 {
 			s.listcfg = &s.cfgp.Lists[intid]
+			s.cfgqual.Close()
 			cfgqual := config.Cfg.Quality[s.listcfg.TemplateQuality]
 			s.cfgqual = &cfgqual
 		}
@@ -1283,7 +1283,14 @@ func (s *organizer) organizefileinfolder(path string, deletewronglanguage bool, 
 			database.CountRowsStaticNoError(&database.Querywithargs{QueryString: "select count() from dbmovie_titles where dbmovie_id = ?", Args: []interface{}{m.DbmovieID}}),
 			&database.Querywithargs{QueryString: "select title from dbmovie_titles where dbmovie_id = ?", Args: []interface{}{m.DbmovieID}},
 			&wantedalt)
-		searchnzb := &apiexternal.Nzbwithprio{WantedTitle: titleyear, WantedAlternates: wantedalt, QualityTemplate: templateQuality, QualityCfg: config.Cfg.Quality[templateQuality], ParseInfo: *m}
+		if s.cfgqual.Name != templateQuality {
+			s.cfgqual.Close()
+			cfgqual := config.Cfg.Quality[templateQuality]
+			s.cfgqual = &cfgqual
+		}
+
+		searchnzb := &apiexternal.Nzbwithprio{WantedTitle: titleyear, WantedAlternates: wantedalt, QualityTemplate: templateQuality, QualityCfg: s.cfgqual, ParseInfo: *m}
+
 		if searcher.Checktitle(searchnzb, "movie", nil) {
 			logger.Log.GlobalLogger.Warn("Skipped - unwanted title", zap.Stringp("title", &m.Title), zap.Stringp("want title", &titleyear))
 			searchnzb.Close()
@@ -1299,7 +1306,13 @@ func (s *organizer) organizefileinfolder(path string, deletewronglanguage bool, 
 			database.CountRowsStaticNoError(&database.Querywithargs{QueryString: "select count() from dbserie_alternates where dbserie_id = ?", Args: []interface{}{m.DbserieID}}),
 			&database.Querywithargs{QueryString: "select title from dbserie_alternates where dbserie_id = ?", Args: []interface{}{m.DbserieID}},
 			&wantedalt)
-		searchnzb := &apiexternal.Nzbwithprio{WantedTitle: titleyear, WantedAlternates: wantedalt, QualityTemplate: templateQuality, QualityCfg: config.Cfg.Quality[templateQuality], ParseInfo: *m}
+
+		if s.cfgqual.Name != templateQuality {
+			s.cfgqual.Close()
+			cfgqual := config.Cfg.Quality[templateQuality]
+			s.cfgqual = &cfgqual
+		}
+		searchnzb := &apiexternal.Nzbwithprio{WantedTitle: titleyear, WantedAlternates: wantedalt, QualityTemplate: templateQuality, QualityCfg: s.cfgqual, ParseInfo: *m}
 		if searcher.Checktitle(searchnzb, "series", nil) {
 			logger.Log.GlobalLogger.Warn("Skipped - unwanted title", zap.Stringp("title", &m.Title), zap.Stringp("want title", &titleyear))
 			searchnzb.Close()
@@ -1329,10 +1342,9 @@ func OrganizeFolders(grouptype string, sourcepathstr string, targetpathstr strin
 
 	folders, err := scanner.GetSubFolders(config.Cfg.Paths[sourcepathstr].Path)
 	if err == nil {
-
-		logger.RunFuncSimple(folders, func(e string) {
-			OrganizeSingleFolder(e, cfgp, &Config{Grouptype: grouptype, Sourcepathstr: sourcepathstr, Targetpathstr: targetpathstr})
-		})
+		for idx := range folders {
+			OrganizeSingleFolder(folders[idx], cfgp, &Config{Grouptype: grouptype, Sourcepathstr: sourcepathstr, Targetpathstr: targetpathstr})
+		}
 	}
 	folders = nil
 }

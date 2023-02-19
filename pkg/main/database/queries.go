@@ -135,11 +135,15 @@ func (s *searchdb) Close() {
 
 func GetDbmovie(qu *Querywithargs, result *Dbmovie) error {
 	//var result Dbmovie
-	return queryObject(&searchdb{
+	err := queryComplexObject(&searchdb{
 		table:   "dbmovies",
 		columns: "id,created_at,updated_at,title,release_date,year,adult,budget,genres,original_language,original_title,overview,popularity,revenue,runtime,spoken_languages,status,tagline,vote_average,vote_count,moviedb_id,imdb_id,freebase_m_id,freebase_id,facebook_id,instagram_id,twitter_id,url,backdrop,poster,slug,trakt_id",
 		qu:      qu,
-	}, true, result)
+	}, result)
+	if err != nil {
+		*result = Dbmovie{}
+	}
+	return err
 }
 
 func execsql(imdb bool, named bool, qu *Querywithargs) (sql.Result, error) {
@@ -164,7 +168,26 @@ func (q *Querywithargs) Close() {
 	q = nil
 }
 
-func queryObject[T any](s *searchdb, complex bool, obj *T) error {
+func queryObject[T any](qu *Querywithargs, imdb bool, obj *T) error {
+	defer qu.Close()
+	if qu.QueryString == "" {
+		return sql.ErrNoRows
+	}
+	readWriteMu.RLock()
+	defer readWriteMu.RUnlock()
+	err := getstatement(qu, imdb).QueryRow(qu.Args...).Scan(obj)
+	if err != nil {
+		if err != sql.ErrNoRows {
+			logger.Log.GlobalLogger.Error("Query2", zap.String("Query", qu.QueryString), zap.Error(err))
+		}
+		var noop T
+		*obj = noop
+		return err
+	}
+	return nil
+}
+
+func queryComplexObject[T any](s *searchdb, obj *T) error {
 	defer s.Close()
 	if s.qu.QueryString == "" {
 		if s.qu.Query.Select != "" {
@@ -172,14 +195,10 @@ func queryObject[T any](s *searchdb, complex bool, obj *T) error {
 		}
 		s.buildquery(false)
 	}
-	var err error
 	readWriteMu.RLock()
 	defer readWriteMu.RUnlock()
-	if complex {
-		err = getstatement(s.qu, s.imdb).QueryRowx(s.qu.Args...).StructScan(obj)
-	} else {
-		err = getstatement(s.qu, s.imdb).QueryRow(s.qu.Args...).Scan(obj)
-	}
+	err := getstatement(s.qu, s.imdb).QueryRowx(s.qu.Args...).StructScan(obj)
+
 	if err != nil {
 		if err != sql.ErrNoRows {
 			logger.Log.GlobalLogger.Error("Query2", zap.String("Query", s.qu.QueryString), zap.Error(err))
@@ -189,6 +208,23 @@ func queryObject[T any](s *searchdb, complex bool, obj *T) error {
 		return err
 	}
 	return nil
+}
+
+// need to return all prio ids and strings
+func Queryfilesprio(qu *Querywithargs) (resid uint, qualid uint, codecid uint, audid uint, proper bool, extended bool, repack bool, filename string, location string) {
+	defer qu.Close()
+	if qu.QueryString == "" {
+		return
+	}
+	readWriteMu.RLock()
+	defer readWriteMu.RUnlock()
+	err := getstatement(qu, false).QueryRow(qu.Args[0]).Scan(&resid, &qualid, &codecid, &audid, &proper, &extended, &repack, &filename, &location)
+	if err != nil {
+		if err != sql.ErrNoRows {
+			logger.Log.GlobalLogger.Error("Query2", zap.String("Query", qu.QueryString), zap.Error(err))
+		}
+	}
+	return
 }
 
 func queryx(s *searchdb) (*sqlx.Rows, error) {
@@ -215,9 +251,10 @@ func queryComplexScan[T any](s *searchdb, targetobj *[]T) error {
 
 	rows, err := queryx(s)
 	if err != nil {
-		if err != sql.ErrNoRows {
-			logger.Log.GlobalLogger.Error("Query", zap.String("Query", s.qu.QueryString), zap.Error(err))
+		if err == sql.ErrNoRows {
+			return nil
 		}
+		logger.Log.GlobalLogger.Error("Query", zap.String("Query", s.qu.QueryString), zap.Error(err))
 		return err
 	}
 	defer rows.Close()
@@ -256,7 +293,80 @@ func query(s *searchdb) (*sql.Rows, error) {
 		return getstatement(s.qu, s.imdb).Query(s.qu.Args...)
 	}
 }
-func querySimpleScan[T any](s *searchdb, targetobj *[]T) error {
+func querySimpleScan[T any](qu *Querywithargs, size int, imdb bool, targetobj *[]T) error {
+	defer qu.Close()
+	if qu.QueryString == "" {
+		return sql.ErrNoRows
+	}
+	readWriteMu.RLock()
+	defer readWriteMu.RUnlock()
+
+	rows, err := getstatement(qu, imdb).Query(qu.Args...)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil
+		}
+		logger.Log.GlobalLogger.Error("Query", zap.String("Query", qu.QueryString), zap.Error(err))
+		return err
+	}
+	defer rows.Close()
+
+	if size > 0 {
+		*targetobj = make([]T, 0, size)
+	}
+
+	var u T
+	for rows.Next() {
+		err = rows.Scan(&u)
+
+		if err != nil {
+			logger.Log.GlobalLogger.Error("Query2", zap.String("Query", qu.QueryString), zap.Error(err))
+			return err
+		}
+		*targetobj = append(*targetobj, u)
+	}
+
+	return nil
+}
+func queryThreeString(qu *Querywithargs, targetobj *[]DbstaticThreeString) error {
+	defer qu.Close()
+	if qu.QueryString == "" {
+		return sql.ErrNoRows
+	}
+
+	readWriteMu.RLock()
+	defer readWriteMu.RUnlock()
+
+	rows, err := getstatement(qu, true).Query(qu.Args...)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil
+		}
+		logger.Log.GlobalLogger.Error("Query", zap.String("Query", qu.QueryString), zap.Error(err))
+		return err
+	}
+	defer rows.Close()
+
+	var u DbstaticThreeString
+	for rows.Next() {
+		err = rows.Scan(&u.Str1, &u.Str2, &u.Str3)
+
+		if err != nil {
+			logger.Log.GlobalLogger.Error("Query2", zap.String("Query", qu.QueryString), zap.Error(err))
+			return err
+		}
+		*targetobj = append(*targetobj, u)
+	}
+	err = rows.Err()
+	if err != nil {
+		logger.Log.GlobalLogger.Error("Query3", zap.String("Query", qu.QueryString), zap.Error(err))
+		return err
+	}
+
+	return nil
+}
+
+func queryOneIntOneBool(s *searchdb, targetobj *[]DbstaticOneIntOneBool) error {
 	defer s.Close()
 	if s.qu.QueryString == "" {
 		if s.qu.Query.Select != "" {
@@ -264,89 +374,207 @@ func querySimpleScan[T any](s *searchdb, targetobj *[]T) error {
 		}
 		s.buildquery(false)
 	}
-	var typevar int
-	switch any(targetobj).(type) {
-	case *[]DbstaticThreeString:
-		typevar = 1
-	case *[]DbstaticOneInt:
-		typevar = 2
-	case *[]string:
-		typevar = 3
-	case *[]int:
-		typevar = 4
-	case *[]DbstaticOneIntOneBool:
-		typevar = 5
-	case *[]DbstaticOneStringOneInt:
-		typevar = 6
-	case *[]DbstaticTwoInt:
-		typevar = 7
-	case *[]DbstaticTwoString:
-		typevar = 8
-	case *[]DbstaticTwoStringOneInt:
-		typevar = 9
-	case *[]uint:
-		typevar = 10
-	}
+
 	readWriteMu.RLock()
 	defer readWriteMu.RUnlock()
 
-	rows, err := query(s)
+	rows, err := getstatement(s.qu, s.imdb).Query(s.qu.Args...)
 	if err != nil {
-		if err != sql.ErrNoRows {
-			logger.Log.GlobalLogger.Error("Query", zap.String("Query", s.qu.QueryString), zap.Error(err))
+		if err == sql.ErrNoRows {
+			return nil
 		}
+		logger.Log.GlobalLogger.Error("Query", zap.String("Query", s.qu.QueryString), zap.Error(err))
 		return err
 	}
 	defer rows.Close()
 
 	if s.size > 0 {
-		*targetobj = make([]T, 0, s.size)
+		*targetobj = make([]DbstaticOneIntOneBool, 0, s.size)
 	}
 
-	var str1, str2, str3 string
-	var num1, num2 int
-	var bl bool
+	var u DbstaticOneIntOneBool
 	for rows.Next() {
-		var u T
-		switch typevar {
-		case 1:
-			err = rows.Scan(&str1, &str2, &str3)
-			if err == nil {
-				setThreeStringFields(&u, str1, str2, str3)
-			}
-		case 2:
-			err = rows.Scan(&num1)
-			if err == nil {
-				setOneIntFields(&u, num1)
-			}
-		case 3, 4, 10:
-			err = rows.Scan(&u)
-		case 5:
-			err = rows.Scan(&num1, &bl)
-			if err == nil {
-				setOneIntOneBoolFields(&u, num1, bl)
-			}
-		case 6:
-			err = rows.Scan(&str1, &num1)
-			if err == nil {
-				setOneStringOneIntFields(&u, str1, num1)
-			}
-		case 7:
-			err = rows.Scan(&num1, &num2)
-			if err == nil {
-				setTwoIntFields(&u, num1, num2)
-			}
-		case 8:
-			err = rows.Scan(&str1, &str2)
-			if err == nil {
-				setTwoStringFields(&u, str1, str2)
-			}
-		case 9:
-			err = rows.Scan(&str1, &str2, &num1)
-			if err == nil {
-				setTwoStringOneIntFields(&u, str1, str2, num1)
-			}
+		err = rows.Scan(&u.Num, &u.Bl)
+
+		if err != nil {
+			logger.Log.GlobalLogger.Error("Query2", zap.String("Query", s.qu.QueryString), zap.Error(err))
+			return err
 		}
+		*targetobj = append(*targetobj, u)
+	}
+	err = rows.Err()
+	if err != nil {
+		logger.Log.GlobalLogger.Error("Query3", zap.String("Query", s.qu.QueryString), zap.Error(err))
+		return err
+	}
+
+	return nil
+}
+
+func queryOneStringOneInt(s *searchdb, targetobj *[]DbstaticOneStringOneInt) error {
+	defer s.Close()
+	if s.qu.QueryString == "" {
+		if s.qu.Query.Select != "" {
+			s.columns = s.qu.Query.Select
+		}
+		s.buildquery(false)
+	}
+
+	readWriteMu.RLock()
+	defer readWriteMu.RUnlock()
+
+	rows, err := query(s)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil
+		}
+		logger.Log.GlobalLogger.Error("Query", zap.String("Query", s.qu.QueryString), zap.Error(err))
+		return err
+	}
+	defer rows.Close()
+
+	if s.size > 0 {
+		*targetobj = make([]DbstaticOneStringOneInt, 0, s.size)
+	}
+
+	var u DbstaticOneStringOneInt
+	for rows.Next() {
+		err = rows.Scan(&u.Str, &u.Num)
+
+		if err != nil {
+			logger.Log.GlobalLogger.Error("Query2", zap.String("Query", s.qu.QueryString), zap.Error(err))
+			return err
+		}
+		*targetobj = append(*targetobj, u)
+	}
+	err = rows.Err()
+	if err != nil {
+		logger.Log.GlobalLogger.Error("Query3", zap.String("Query", s.qu.QueryString), zap.Error(err))
+		return err
+	}
+
+	return nil
+}
+
+func queryTwoInt(s *searchdb, targetobj *[]DbstaticTwoInt) error {
+	defer s.Close()
+	if s.qu.QueryString == "" {
+		if s.qu.Query.Select != "" {
+			s.columns = s.qu.Query.Select
+		}
+		s.buildquery(false)
+	}
+
+	readWriteMu.RLock()
+	defer readWriteMu.RUnlock()
+
+	rows, err := query(s)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil
+		}
+		logger.Log.GlobalLogger.Error("Query", zap.String("Query", s.qu.QueryString), zap.Error(err))
+		return err
+	}
+	defer rows.Close()
+
+	if s.size > 0 {
+		*targetobj = make([]DbstaticTwoInt, 0, s.size)
+	}
+
+	var u DbstaticTwoInt
+	for rows.Next() {
+		err = rows.Scan(&u.Num1, &u.Num2)
+
+		if err != nil {
+			logger.Log.GlobalLogger.Error("Query2", zap.String("Query", s.qu.QueryString), zap.Error(err))
+			return err
+		}
+		*targetobj = append(*targetobj, u)
+	}
+	err = rows.Err()
+	if err != nil {
+		logger.Log.GlobalLogger.Error("Query3", zap.String("Query", s.qu.QueryString), zap.Error(err))
+		return err
+	}
+
+	return nil
+}
+
+func queryTwoString(s *searchdb, targetobj *[]DbstaticTwoString) error {
+	defer s.Close()
+	if s.qu.QueryString == "" {
+		if s.qu.Query.Select != "" {
+			s.columns = s.qu.Query.Select
+		}
+		s.buildquery(false)
+	}
+
+	readWriteMu.RLock()
+	defer readWriteMu.RUnlock()
+
+	rows, err := getstatement(s.qu, s.imdb).Query(s.qu.Args...)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil
+		}
+		logger.Log.GlobalLogger.Error("Query", zap.String("Query", s.qu.QueryString), zap.Error(err))
+		return err
+	}
+	defer rows.Close()
+
+	if s.size > 0 {
+		*targetobj = make([]DbstaticTwoString, 0, s.size)
+	}
+
+	var u DbstaticTwoString
+	for rows.Next() {
+		err = rows.Scan(&u.Str1, &u.Str2)
+
+		if err != nil {
+			logger.Log.GlobalLogger.Error("Query2", zap.String("Query", s.qu.QueryString), zap.Error(err))
+			return err
+		}
+		*targetobj = append(*targetobj, u)
+	}
+	err = rows.Err()
+	if err != nil {
+		logger.Log.GlobalLogger.Error("Query3", zap.String("Query", s.qu.QueryString), zap.Error(err))
+		return err
+	}
+
+	return nil
+}
+
+func queryTwoStringOneInt(s *searchdb, targetobj *[]DbstaticTwoStringOneInt) error {
+	defer s.Close()
+	if s.qu.QueryString == "" {
+		if s.qu.Query.Select != "" {
+			s.columns = s.qu.Query.Select
+		}
+		s.buildquery(false)
+	}
+
+	readWriteMu.RLock()
+	defer readWriteMu.RUnlock()
+
+	rows, err := getstatement(s.qu, s.imdb).Query(s.qu.Args...)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil
+		}
+		logger.Log.GlobalLogger.Error("Query", zap.String("Query", s.qu.QueryString), zap.Error(err))
+		return err
+	}
+	defer rows.Close()
+
+	if s.size > 0 {
+		*targetobj = make([]DbstaticTwoStringOneInt, 0, s.size)
+	}
+
+	var u DbstaticTwoStringOneInt
+	for rows.Next() {
+		err = rows.Scan(&u.Str1, &u.Str2, &u.Num)
 
 		if err != nil {
 			logger.Log.GlobalLogger.Error("Query2", zap.String("Query", s.qu.QueryString), zap.Error(err))
@@ -369,17 +597,12 @@ func QueryDbmovie(qu *Querywithargs, result *[]Dbmovie) error {
 		counter = qu.Query.Limit
 	}
 
-	err := queryComplexScan(&searchdb{
+	return queryComplexScan(&searchdb{
 		table:   "dbmovies",
 		columns: "id,created_at,updated_at,title,release_date,year,adult,budget,genres,original_language,original_title,overview,popularity,revenue,runtime,spoken_languages,status,tagline,vote_average,vote_count,moviedb_id,imdb_id,freebase_m_id,freebase_id,facebook_id,instagram_id,twitter_id,url,backdrop,poster,slug,trakt_id",
 		qu:      qu,
 		size:    counter,
 	}, result)
-	if err != nil && err != sql.ErrNoRows {
-		return err
-	}
-
-	return nil
 }
 
 func QueryDbmovieTitle(qu *Querywithargs, result *[]DbmovieTitle) error {
@@ -388,26 +611,21 @@ func QueryDbmovieTitle(qu *Querywithargs, result *[]DbmovieTitle) error {
 		counter = qu.Query.Limit
 	}
 
-	err := queryComplexScan(&searchdb{
+	return queryComplexScan(&searchdb{
 		table:   "dbmovie_titles",
 		columns: "id,created_at,updated_at,dbmovie_id,title,slug,region",
 		qu:      qu,
 		size:    counter,
 	}, result)
-	if err != nil && err != sql.ErrNoRows {
-		return err
-	}
-
-	return nil
 }
 
 func GetDbserie(qu *Querywithargs, result *Dbserie) error {
 	//var result Dbserie
-	return queryObject(&searchdb{
+	return queryComplexObject(&searchdb{
 		table:   "dbseries",
 		columns: "id,created_at,updated_at,seriename,aliases,season,status,firstaired,network,runtime,language,genre,overview,rating,siterating,siterating_count,slug,imdb_id,thetvdb_id,freebase_m_id,freebase_id,tvrage_id,facebook,instagram,twitter,banner,poster,fanart,identifiedby, trakt_id",
 		qu:      qu,
-	}, true, result)
+	}, result)
 }
 
 func QueryDbserie(qu *Querywithargs, result *[]Dbserie) error {
@@ -416,27 +634,22 @@ func QueryDbserie(qu *Querywithargs, result *[]Dbserie) error {
 		counter = qu.Query.Limit
 	}
 
-	err := queryComplexScan(&searchdb{
+	return queryComplexScan(&searchdb{
 		table:   "dbseries",
 		columns: "id,created_at,updated_at,seriename,aliases,season,status,firstaired,network,runtime,language,genre,overview,rating,siterating,siterating_count,slug,imdb_id,thetvdb_id,freebase_m_id,freebase_id,tvrage_id,facebook,instagram,twitter,banner,poster,fanart,identifiedby, trakt_id",
 		qu:      qu,
 		size:    counter,
 	}, result)
-	if err != nil && err != sql.ErrNoRows {
-		return err
-	}
-
-	return nil
 }
 
 func GetDbserieEpisodes(qu *Querywithargs, result *DbserieEpisode) error {
 
 	//var result DbserieEpisode
-	return queryObject(&searchdb{
+	return queryComplexObject(&searchdb{
 		table:   "dbserie_episodes",
 		columns: "id,created_at,updated_at,episode,season,identifier,title,first_aired,overview,poster,runtime,dbserie_id",
 		qu:      qu,
-	}, true, result)
+	}, result)
 }
 func QueryDbserieEpisodes(qu *Querywithargs, result *[]DbserieEpisode) error {
 	counter := -1
@@ -444,17 +657,12 @@ func QueryDbserieEpisodes(qu *Querywithargs, result *[]DbserieEpisode) error {
 		counter = qu.Query.Limit
 	}
 
-	err := queryComplexScan(&searchdb{
+	return queryComplexScan(&searchdb{
 		table:   "dbserie_episodes",
 		columns: "id,created_at,updated_at,episode,season,identifier,title,first_aired,overview,poster,runtime,dbserie_id",
 		qu:      qu,
 		size:    counter,
 	}, result)
-	if err != nil && err != sql.ErrNoRows {
-		return err
-	}
-
-	return nil
 }
 func QueryDbserieAlternates(qu *Querywithargs, result *[]DbserieAlternate) error {
 	counter := -1
@@ -462,35 +670,30 @@ func QueryDbserieAlternates(qu *Querywithargs, result *[]DbserieAlternate) error
 		counter = qu.Query.Limit
 	}
 
-	err := queryComplexScan(&searchdb{
+	return queryComplexScan(&searchdb{
 		table:   "dbserie_alternates",
 		columns: "id,created_at,updated_at,title,slug,region,dbserie_id",
 		qu:      qu,
 		size:    counter,
 	}, result)
-	if err != nil && err != sql.ErrNoRows {
-		return err
-	}
-
-	return nil
 }
 
 func GetSeries(qu *Querywithargs, result *Serie) error {
 	//var result Serie
-	return queryObject(&searchdb{
+	return queryComplexObject(&searchdb{
 		table:   "series",
 		columns: "id,created_at,updated_at,listname,rootpath,dbserie_id,dont_upgrade,dont_search",
 		qu:      qu,
-	}, true, result)
+	}, result)
 }
 
 func GetSerieEpisodes(qu *Querywithargs, result *SerieEpisode) error {
 	//var result SerieEpisode
-	return queryObject(&searchdb{
+	return queryComplexObject(&searchdb{
 		table:   "serie_episodes",
 		columns: "id,created_at,updated_at,lastscan,blacklisted,quality_reached,quality_profile,missing,dont_upgrade,dont_search,dbserie_episode_id,serie_id,dbserie_id",
 		qu:      qu,
-	}, true, result)
+	}, result)
 }
 func QuerySerieEpisodes(qu *Querywithargs, result *[]SerieEpisode) error {
 	counter := -1
@@ -498,35 +701,30 @@ func QuerySerieEpisodes(qu *Querywithargs, result *[]SerieEpisode) error {
 		counter = qu.Query.Limit
 	}
 
-	err := queryComplexScan(&searchdb{
+	return queryComplexScan(&searchdb{
 		table:   "serie_episodes",
 		columns: "id,created_at,updated_at,lastscan,blacklisted,quality_reached,quality_profile,missing,dont_upgrade,dont_search,dbserie_episode_id,serie_id,dbserie_id",
 		qu:      qu,
 		size:    counter,
 	}, result)
-	if err != nil && err != sql.ErrNoRows {
-		return err
-	}
-
-	return nil
 }
 
 func GetSerieEpisodeFiles(qu *Querywithargs, result *SerieEpisodeFile) error {
 	//var result SerieEpisodeFile
-	return queryObject(&searchdb{
+	return queryComplexObject(&searchdb{
 		table:   "serie_episode_files",
 		columns: "id,created_at,updated_at,location,filename,extension,quality_profile,proper,extended,repack,height,width,resolution_id,quality_id,codec_id,audio_id,serie_id,serie_episode_id,dbserie_episode_id,dbserie_id",
 		qu:      qu,
-	}, true, result)
+	}, result)
 }
 
 func GetMovies(qu *Querywithargs, result *Movie) error {
 	//var result Movie
-	return queryObject(&searchdb{
+	return queryComplexObject(&searchdb{
 		table:   "movies",
 		columns: "id,created_at,updated_at,lastscan,blacklisted,quality_reached,quality_profile,missing,dont_upgrade,dont_search,listname,rootpath,dbmovie_id",
 		qu:      qu,
-	}, true, result)
+	}, result)
 }
 func QueryMovies(qu *Querywithargs, result *[]Movie) error {
 	counter := -1
@@ -534,39 +732,29 @@ func QueryMovies(qu *Querywithargs, result *[]Movie) error {
 		counter = qu.Query.Limit
 	}
 
-	err := queryComplexScan(&searchdb{
+	return queryComplexScan(&searchdb{
 		table:   "movies",
 		columns: "id,created_at,updated_at,lastscan,blacklisted,quality_reached,quality_profile,missing,dont_upgrade,dont_search,listname,rootpath,dbmovie_id",
 		qu:      qu,
 		size:    counter,
 	}, result)
-	if err != nil && err != sql.ErrNoRows {
-		return err
-	}
-
-	return nil
 }
 
 func GetMovieFiles(qu *Querywithargs, result *MovieFile) error {
 	//var result MovieFile
-	return queryObject(&searchdb{
+	return queryComplexObject(&searchdb{
 		table:   "movie_files",
 		columns: "id,created_at,updated_at,location,filename,extension,quality_profile,proper,extended,repack,height,width,resolution_id,quality_id,codec_id,audio_id,movie_id,dbmovie_id",
 		qu:      qu,
-	}, true, result)
+	}, result)
 }
 
 func QueryQualities(qu *Querywithargs, result *[]Qualities) error {
-	err := queryComplexScan(&searchdb{
+	return queryComplexScan(&searchdb{
 		table:   "qualities",
 		columns: "id,created_at,updated_at,type,name,regex,strings,priority,use_regex",
 		qu:      qu,
 	}, result)
-	if err != nil && err != sql.ErrNoRows {
-		return err
-	}
-
-	return nil
 }
 func QueryJobHistory(qu *Querywithargs) ([]JobHistory, error) {
 	counter := -1
@@ -581,11 +769,7 @@ func QueryJobHistory(qu *Querywithargs) ([]JobHistory, error) {
 		qu:      qu,
 		size:    counter,
 	}, &result)
-	if err != nil && err != sql.ErrNoRows {
-		return result, err
-	}
-
-	return result, nil
+	return result, err
 }
 
 func QuerySerieFileUnmatched(qu *Querywithargs) ([]SerieFileUnmatched, error) {
@@ -601,11 +785,7 @@ func QuerySerieFileUnmatched(qu *Querywithargs) ([]SerieFileUnmatched, error) {
 		qu:      qu,
 		size:    counter,
 	}, &result)
-	if err != nil && err != sql.ErrNoRows {
-		return result, err
-	}
-
-	return result, nil
+	return result, err
 }
 
 func QueryMovieFileUnmatched(qu *Querywithargs) ([]MovieFileUnmatched, error) {
@@ -621,11 +801,7 @@ func QueryMovieFileUnmatched(qu *Querywithargs) ([]MovieFileUnmatched, error) {
 		qu:      qu,
 		size:    counter,
 	}, &result)
-	if err != nil && err != sql.ErrNoRows {
-		return result, err
-	}
-
-	return result, nil
+	return result, err
 }
 func QueryResultMovies(qu *Querywithargs) ([]ResultMovies, error) {
 	counter := -1
@@ -640,11 +816,7 @@ func QueryResultMovies(qu *Querywithargs) ([]ResultMovies, error) {
 		qu:      qu,
 		size:    counter,
 	}, &result)
-	if err != nil && err != sql.ErrNoRows {
-		return result, err
-	}
-
-	return result, nil
+	return result, err
 }
 func QueryResultSeries(qu *Querywithargs) ([]ResultSeries, error) {
 	counter := -1
@@ -659,11 +831,7 @@ func QueryResultSeries(qu *Querywithargs) ([]ResultSeries, error) {
 		qu:      qu,
 		size:    counter,
 	}, &result)
-	if err != nil && err != sql.ErrNoRows {
-		return result, err
-	}
-
-	return result, nil
+	return result, err
 }
 
 func QueryResultSerieEpisodes(qu *Querywithargs) ([]ResultSerieEpisodes, error) {
@@ -679,20 +847,16 @@ func QueryResultSerieEpisodes(qu *Querywithargs) ([]ResultSerieEpisodes, error) 
 		qu:      qu,
 		size:    counter,
 	}, &result)
-	if err != nil && err != sql.ErrNoRows {
-		return result, err
-	}
-
-	return result, nil
+	return result, err
 }
 
 func GetImdbRating(qu *Querywithargs, result *ImdbRatings) error {
-	return queryObject(&searchdb{
+	return queryComplexObject(&searchdb{
 		table:   "imdb_ratings",
 		columns: "id,created_at,updated_at,tconst,num_votes,average_rating",
 		imdb:    true,
 		qu:      qu,
-	}, true, result)
+	}, result)
 }
 
 func QueryImdbAka(qu *Querywithargs, result *[]ImdbAka) error {
@@ -701,27 +865,22 @@ func QueryImdbAka(qu *Querywithargs, result *[]ImdbAka) error {
 		counter = qu.Query.Limit
 	}
 
-	err := queryComplexScan(&searchdb{
+	return queryComplexScan(&searchdb{
 		table:   "imdb_akas",
 		columns: "id,created_at,updated_at,tconst,ordering,title,slug,region,language,types,attributes,is_original_title",
 		imdb:    true,
 		qu:      qu,
 		size:    counter,
 	}, result)
-	if err != nil && err != sql.ErrNoRows {
-		return err
-	}
-
-	return nil
 }
 
 func GetImdbTitle(qu *Querywithargs, result *ImdbTitle) error {
-	return queryObject(&searchdb{
+	return queryComplexObject(&searchdb{
 		table:   "imdb_titles",
 		columns: "tconst,title_type,primary_title,slug,original_title,is_adult,start_year,end_year,runtime_minutes,genres",
 		imdb:    true,
 		qu:      qu,
-	}, true, result)
+	}, result)
 }
 
 func (s *searchdb) buildquery(count bool) {
@@ -774,24 +933,9 @@ func (s *searchdb) buildquery(count bool) {
 	bld.Reset()
 }
 
-func setOneIntOneBoolFields(v interface{}, value ...interface{}) {
-	v.(*DbstaticOneIntOneBool).Num = value[0].(int)
-	v.(*DbstaticOneIntOneBool).Bl = value[1].(bool)
-	// value = nil
-}
-
 // requires 1 column - int
 func QueryStaticColumnsOneIntOneBool(qu *Querywithargs, result *[]DbstaticOneIntOneBool) error {
-	err := querySimpleScan(&searchdb{qu: qu}, result)
-	if err != nil && err != sql.ErrNoRows {
-		return err
-	}
-	return nil
-}
-
-func setOneIntFields(v interface{}, value ...interface{}) {
-	v.(*DbstaticOneInt).Num = value[0].(int)
-	// value = nil
+	return queryOneIntOneBool(&searchdb{qu: qu}, result)
 }
 
 // Select has to be in it
@@ -799,124 +943,46 @@ func QueryStaticColumnsOneUintQueryObject(table string, qu *Querywithargs, resul
 	s := searchdb{table: table, qu: qu, columns: qu.Query.Select}
 	s.buildquery(false)
 
-	err := querySimpleScan(&s, result)
-	if err != nil && err != sql.ErrNoRows {
-		return err
-	}
-	return nil
+	return querySimpleScan(s.qu, 0, false, result)
 }
 
 // requires 1 column - string
 func QueryStaticStringArray(imdb bool, size int, qu *Querywithargs, result *[]string) error {
-	err := querySimpleScan(&searchdb{
-		qu:   qu,
-		size: size,
-		imdb: imdb,
-	}, result)
-	if err != nil && err != sql.ErrNoRows {
-		return err
-	}
-	return nil
+	return querySimpleScan(qu, size, imdb, result)
 }
 
 // requires 1 column - string
 func QueryStaticIntArray(size int, qu *Querywithargs, result *[]int) error {
-	err := querySimpleScan(&searchdb{
-		qu:   qu,
-		size: size,
-	}, result)
-	if err != nil && err != sql.ErrNoRows {
-		return err
-	}
-	return nil
+	return querySimpleScan(qu, size, false, result)
 }
 
 func QueryStaticUintArray(size int, qu *Querywithargs, result *[]uint) error {
-	err := querySimpleScan(&searchdb{
-		qu:   qu,
-		size: size,
-	}, result)
-	if err != nil && err != sql.ErrNoRows {
-		return err
-	}
-	return nil
-}
-
-func setOneStringOneIntFields(v interface{}, value ...interface{}) {
-	v.(*DbstaticOneStringOneInt).Str = value[0].(string)
-	v.(*DbstaticOneStringOneInt).Num = value[1].(int)
-	// value = nil
+	return querySimpleScan(qu, size, false, result)
 }
 
 // requires 2 columns- string and int
 func QueryStaticColumnsOneStringOneInt(imdb bool, size int, qu *Querywithargs, result *[]DbstaticOneStringOneInt) error {
-	err := querySimpleScan(&searchdb{qu: qu, imdb: imdb, size: size}, result)
-	if err != nil && err != sql.ErrNoRows {
-		return err
-	}
-	return nil
-}
-
-func setTwoStringOneIntFields(v interface{}, value ...interface{}) {
-	v.(*DbstaticTwoStringOneInt).Str1 = value[0].(string)
-	v.(*DbstaticTwoStringOneInt).Str2 = value[1].(string)
-	v.(*DbstaticTwoStringOneInt).Num = value[2].(int)
-	// value = nil
+	return queryOneStringOneInt(&searchdb{qu: qu, imdb: imdb, size: size}, result)
 }
 
 // requires 2 columns- string and int
 func QueryStaticColumnsTwoStringOneInt(imdb bool, size int, qu *Querywithargs, result *[]DbstaticTwoStringOneInt) error {
-	err := querySimpleScan(&searchdb{qu: qu, imdb: imdb, size: size}, result)
-	if err != nil && err != sql.ErrNoRows {
-		return err
-	}
-	return nil
-}
-
-func setTwoIntFields(v interface{}, value ...interface{}) {
-	v.(*DbstaticTwoInt).Num1 = value[0].(int)
-	v.(*DbstaticTwoInt).Num2 = value[1].(int)
-	// value = nil
+	return queryTwoStringOneInt(&searchdb{qu: qu, imdb: imdb, size: size}, result)
 }
 
 // requires 2 columns- int and int
 func QueryStaticColumnsTwoInt(qu *Querywithargs, result *[]DbstaticTwoInt) error {
-	err := querySimpleScan(&searchdb{qu: qu}, result)
-	if err != nil && err != sql.ErrNoRows {
-		return err
-	}
-	return nil
+	return queryTwoInt(&searchdb{qu: qu}, result)
 }
 
-func setThreeStringFields(v interface{}, value ...interface{}) {
-	v.(*DbstaticThreeString).Str1 = value[0].(string)
-	v.(*DbstaticThreeString).Str2 = value[1].(string)
-	v.(*DbstaticThreeString).Str3 = value[2].(string)
-	// value = nil
-}
-
-// requires 2 columns- int and int
-func QueryStaticColumnsThreeString(imdb bool, qu *Querywithargs, result *[]DbstaticThreeString) error {
-	err := querySimpleScan(&searchdb{qu: qu, imdb: imdb}, result)
-	if err != nil && err != sql.ErrNoRows {
-		return err
-	}
-	return nil
-}
-
-func setTwoStringFields(v interface{}, value ...interface{}) {
-	v.(*DbstaticTwoString).Str1 = value[0].(string)
-	v.(*DbstaticTwoString).Str2 = value[1].(string)
-	// value = nil
+// requires 3 columns- string - imdb-db
+func QueryStaticColumnsThreeString(qu *Querywithargs, result *[]DbstaticThreeString) error {
+	return queryThreeString(qu, result)
 }
 
 // requires 2 columns- int and int
 func QueryStaticColumnsTwoString(imdb bool, count int, qu *Querywithargs, result *[]DbstaticTwoString) error {
-	err := querySimpleScan(&searchdb{qu: qu, imdb: imdb, size: count}, result)
-	if err != nil && err != sql.ErrNoRows {
-		return err
-	}
-	return nil
+	return queryTwoString(&searchdb{qu: qu, imdb: imdb, size: count}, result)
 }
 
 // Uses column id
@@ -927,23 +993,23 @@ func CountRows(table string, qu *Querywithargs) (int, error) {
 	qu.Query.Select = "count()"
 	s := searchdb{table: table, qu: qu}
 	s.buildquery(true)
-	err := queryObject(&s, false, &obj)
+	err := queryObject(s.qu, false, &obj)
 	return obj, err
 }
 
 func CountRowsStaticNoError(qu *Querywithargs) int {
 	var obj int
-	if queryObject(&searchdb{qu: qu}, false, &obj) != nil {
+	if queryObject(qu, false, &obj) != nil {
 		obj = 0
 	}
 	return obj
 }
 
 func QueryColumn[T any](qu *Querywithargs, obj *T) error {
-	return queryObject(&searchdb{qu: qu}, false, obj)
+	return queryObject(qu, false, obj)
 }
 func QueryImdbColumn[T any](qu *Querywithargs, obj *T) error {
-	return queryObject(&searchdb{qu: qu, imdb: true}, false, obj)
+	return queryObject(qu, true, obj)
 }
 
 func insertarrayprepare(table string, columns *logger.InStringArrayStruct) string {
@@ -1136,20 +1202,20 @@ func UpsertNamed(table string, columns *logger.InStringArrayStruct, obj interfac
 
 func ImdbCountRowsStatic(qu *Querywithargs) (int, error) {
 	var obj int
-	err := queryObject(&searchdb{qu: qu, imdb: true}, false, &obj)
+	err := queryObject(qu, true, &obj)
 	return obj, err
 }
 
 func DbQuickCheck() string {
 	logger.Log.GlobalLogger.Info("Check Database for Errors 1")
 	var str string
-	queryObject(&searchdb{qu: &Querywithargs{QueryString: "PRAGMA quick_check;"}}, false, &str)
+	queryObject(&Querywithargs{QueryString: "PRAGMA quick_check;"}, false, &str)
 	logger.Log.GlobalLogger.Info("Check Database for Errors 2")
 	return str
 }
 
 func DbIntegrityCheck() string {
 	var str string
-	queryObject(&searchdb{qu: &Querywithargs{QueryString: "PRAGMA integrity_check;"}}, false, &str)
+	queryObject(&Querywithargs{QueryString: "PRAGMA integrity_check;"}, false, &str)
 	return str
 }

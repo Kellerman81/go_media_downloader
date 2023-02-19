@@ -160,11 +160,11 @@ func (c *globalcache) GetPrefix(prefix string) map[string]interface{} {
 
 // Set sets a value for the given key with an expiration duration.
 // If the duration is 0 or less, it will be stored forever.
-func (c *globalcache) Set(key string, value interface{}, duration time.Duration) {
+func (c *globalcache) Set(key string, value interface{}, duration time.Duration, keepduration bool) {
 	c.mu.Lock()
 	if duration > 0 {
 		c.items[key] = time.Now().Add(duration).UnixNano()
-	} else {
+	} else if !keepduration {
 		delete(c.items, key)
 	}
 	c.itemsstatic[key] = value
@@ -193,6 +193,7 @@ func (c *globalcache) clearexpired() {
 		}
 	}
 }
+
 func (c *globalcache) clearexpiredkey(key string) {
 	if c.items[key] != 0 && time.Now().UnixNano() > c.items[key] {
 		delete(c.items, key)

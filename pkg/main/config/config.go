@@ -776,9 +776,8 @@ func LoadCfgDB(f string) {
 	hastoken, _ := configDB.Has("trakt_token")
 	if hastoken {
 		var token oauth2.Token
-		err = configDB.Get("trakt_token", &token)
-		if err == nil {
-			logger.GlobalCache.Set("trakt_token", token, 0)
+		if configDB.Get("trakt_token", &token) == nil {
+			logger.GlobalCache.Set("trakt_token", token, 0, false)
 		}
 	}
 	configDB.Close()
@@ -875,7 +874,7 @@ func UpdateCfgEntry(configIn Conf) {
 		Cfg.Scheduler[configIn.Data.(SchedulerConfig).Name] = configIn.Data.(SchedulerConfig)
 	}
 	if strings.HasPrefix(key, "trakt_token") {
-		logger.GlobalCache.Set(key, configIn.Data.(oauth2.Token), 0)
+		logger.GlobalCache.Set(key, configIn.Data.(oauth2.Token), 0, false)
 		configDB.Set(key, configIn.Data)
 	}
 	configDB.Close()

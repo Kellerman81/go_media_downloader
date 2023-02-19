@@ -78,7 +78,7 @@ func NewOmdbClient(apikey string, seconds int, calls int, disabletls bool, timeo
 
 func (o *omdbClient) GetMovie(imdbid string, result *OmDBMovie) error {
 	url := "http://www.omdbapi.com/?i=" + imdbid + "&apikey=" + o.OmdbAPIKey
-	_, err := o.Client.DoJSON(url, result, nil)
+	_, err := o.Client.DoJSON(url, result)
 
 	if err != nil {
 		if err != errPleaseWait {
@@ -97,7 +97,7 @@ func (o *omdbClient) SearchMovie(title string, year string, result *OmDBMovieSea
 	}
 	url := "http://www.omdbapi.com/?s=" + url.QueryEscape(title) + yearstr + "&apikey=" + o.OmdbAPIKey
 
-	_, err := o.Client.DoJSON(url, result, nil)
+	_, err := o.Client.DoJSON(url, result)
 
 	if err != nil {
 		if err != errPleaseWait {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"errors"
+	"html"
 	"io"
 	"math/rand"
 	"net/http"
@@ -15,7 +16,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/config"
 	"github.com/Kellerman81/go_media_downloader/logger"
 	"github.com/Kellerman81/go_media_downloader/rate"
-	"go.uber.org/zap"
+	"golang.org/x/exp/slices"
 	"golang.org/x/net/html/charset"
 )
 
@@ -73,40 +74,42 @@ func (c *RLHTTPClient) checkLimiter(retrycount int, retryafterseconds int64, url
 	return false, errPleaseWait
 }
 
-func (c *RLHTTPClient) getResponse(url string, headers []addHeader) (*http.Response, error) {
+func (c *RLHTTPClient) getResponse(url string, headers ...addHeader) (*http.Response, error) {
 	if len(headers) >= 1 {
 		req, err := http.NewRequest(http.MethodGet, url, nil)
 		if err != nil {
-			// headers = nil
+			headers = nil
 			return nil, err
 		}
 		if len(headers) >= 1 {
-			logger.RunFuncSimple(headers, func(e addHeader) { req.Header.Add(e.key, e.val) })
+			for _, e := range headers {
+				req.Header.Add(e.key, e.val)
+			}
 		}
-		// headers = nil
+		headers = nil
 		return c.client.Do(req)
 	} else {
-		// headers = nil
+		headers = nil
 		return c.client.Get(url)
 	}
 }
 
 // Do dispatches the HTTP request to the network
-func (c *RLHTTPClient) DoJSON(url string, jsonobj interface{}, headers []addHeader) (int, error) {
+func (c *RLHTTPClient) DoJSON(url string, jsonobj interface{}, headers ...addHeader) (int, error) {
 	// Comment out the below 5 lines to turn off ratelimiting
 	ok, err := c.checkLimiter(10, 1, url)
 	if !ok {
 		if err == nil {
 			err = errPleaseWait
-		}
-		if err == errDailyLimit {
-			// headers = nil
+		} else if err == errDailyLimit {
+			headers = nil
 			return 0, nil
 		}
-		// headers = nil
+		headers = nil
 		return 0, err
 	}
-	resp, err := c.getResponse(url, headers)
+	resp, err := c.getResponse(url, headers...)
+	headers = nil
 	if err != nil {
 		if resp == nil {
 			return 404, err
@@ -122,38 +125,40 @@ func (c *RLHTTPClient) DoJSON(url string, jsonobj interface{}, headers []addHead
 }
 
 // Do dispatches the HTTP request to the network
-func (c *RLHTTPClient) DoXML(url string, headers []addHeader, feed *searchResponse) error {
+func (c *RLHTTPClient) DoXML(tillid string, apiBaseURL string, url string, results *NZBArr) (bool, error) {
 	ok, err := c.checkLimiter(10, 1, url)
 	if !ok {
 		if err == nil {
-			err = errPleaseWait
+			return false, errPleaseWait
 		}
-		return err
+		return false, err
 	}
 
-	resp, err := c.getResponse(url, headers)
+	resp, err := c.getResponse(url)
 	if err != nil {
 		if resp == nil {
-			return err
+			return false, err
 		}
 		c.addwait(url, resp)
-		return err
+		return false, err
 	}
 	defer resp.Body.Close()
 	if c.addwait(url, resp) {
-		return errPleaseWait
+		return false, errPleaseWait
 	}
 	d := xml.NewDecoder(resp.Body)
 	d.CharsetReader = charset.NewReaderLabel
 
-	var b entry
+	if results == nil {
+		results = &NZBArr{}
+	}
+	var b Nzbwithprio
 	var name, setname string
-	var startv, endv int64
-	var t xml.Token
-	var attrname, attrvalue string
-	var idxattr int
+	var startv, endv, intValue int64
+	//var t xml.Token
+	var idxattr, idxattr2 int
 	for {
-		t, err = d.RawToken()
+		t, err := d.RawToken()
 		if err != nil {
 			break
 		}
@@ -161,70 +166,96 @@ func (c *RLHTTPClient) DoXML(url string, headers []addHeader, feed *searchRespon
 		case xml.StartElement:
 			if tt.Name.Local == "item" {
 				startv = d.InputOffset()
-				b.attr = nil
-				b = entry{}
+				b.Close()
+				b = Nzbwithprio{}
 			} else if startv > endv {
 				name = tt.Name.Local
 				switch tt.Name.Local {
 				case "enclosure":
-					for idxattr = range tt.Attr {
-						if tt.Attr[idxattr].Name.Local == "url" {
-							b.url = tt.Attr[idxattr].Value
-							break
+					idxattr = slices.IndexFunc(tt.Attr, func(e xml.Attr) bool { return e.Name.Local == "url" })
+					if idxattr != -1 {
+						b.NZB.DownloadURL = tt.Attr[idxattr].Value
+						if strings.Contains(b.NZB.DownloadURL, "&amp") || logger.StringContainsRune(b.NZB.DownloadURL, '%') {
+							b.NZB.DownloadURL = html.UnescapeString(b.NZB.DownloadURL)
 						}
-					}
-				case "source":
-					for idxattr = range tt.Attr {
-						if tt.Attr[idxattr].Name.Local == "url" {
-							b.source = tt.Attr[idxattr].Value
-							break
+						if strings.Contains(b.NZB.DownloadURL, ".torrent") || strings.Contains(b.NZB.DownloadURL, "magnet:?") {
+							b.NZB.IsTorrent = true
 						}
 					}
 				case "attr":
-					for idxattr = range tt.Attr {
-						if tt.Attr[idxattr].Name.Local == "name" {
-							attrname = tt.Attr[idxattr].Value
-							continue
-						}
-						if tt.Attr[idxattr].Name.Local == "value" {
-							attrvalue = tt.Attr[idxattr].Value
-						}
+					idxattr = slices.IndexFunc(tt.Attr, func(e xml.Attr) bool { return e.Name.Local == "name" })
+					idxattr2 = slices.IndexFunc(tt.Attr, func(e xml.Attr) bool { return e.Name.Local == "value" })
 
-					}
+					if idxattr != -1 && idxattr2 != -1 {
+						if tt.Attr[idxattr2].Value != "" {
 
-					if b.attr == nil {
-						b.attr = make(map[string]string, 20)
-					}
-					if _, ok = b.attr[attrname]; ok {
-						b.attr[attrname] = b.attr[attrname] + "," + attrvalue
-					} else {
-						b.attr[attrname] = attrvalue
+							switch tt.Attr[idxattr].Value {
+							case "size":
+								intValue, err = strconv.ParseInt(tt.Attr[idxattr2].Value, 10, 64)
+								if err == nil {
+									b.NZB.Size = intValue
+								}
+							case "guid":
+								if b.NZB.ID == "" {
+									b.NZB.ID = tt.Attr[idxattr2].Value
+								}
+							case "tvdbid":
+								b.NZB.TVDBID = logger.StringToInt(tt.Attr[idxattr2].Value)
+							case "season":
+								b.NZB.Season = tt.Attr[idxattr2].Value
+							case "episode":
+								b.NZB.Episode = tt.Attr[idxattr2].Value
+							case "imdb":
+								b.NZB.IMDBID = tt.Attr[idxattr2].Value
+							}
+						}
 					}
 				}
 			}
 		case xml.CharData:
 			if startv > endv {
-				if name == "title" || name == "link" || name == "guid" || name == "size" {
-
-					setname = string(tt)
-				}
 				switch name {
 				case "title":
-					b.title = setname
-				case "link":
-					b.link = setname
+					b.NZB.Title = string(tt)
+
+					if logger.StringContainsRune(b.NZB.Title, '&') || logger.StringContainsRune(b.NZB.Title, '%') {
+						b.NZB.Title = html.UnescapeString(b.NZB.Title)
+					}
+					if strings.Contains(b.NZB.Title, "\\u") {
+						setname, err = strconv.Unquote("\"" + b.NZB.Title + "\"")
+						if err == nil {
+							b.NZB.Title = setname
+						}
+					}
+				// case "link":
+				// 	b.link = setname
 				case "guid":
-					b.guid = setname
+					b.NZB.ID = string(tt)
 				case "size":
-					b.size = setname
+					if b.NZB.Size == 0 && len(tt) != 0 {
+						b.NZB.Size, _ = strconv.ParseInt(string(tt), 10, 64)
+					}
 				}
 			}
 		case xml.EndElement:
 			if tt.Name.Local == "item" {
 				endv = d.InputOffset()
 				if startv < endv {
-					feed.Nzbs = append(feed.Nzbs, b)
-					b.attr = nil
+					if b.NZB.DownloadURL == "" {
+						t = nil
+						continue
+					}
+					if b.NZB.ID == "" {
+						b.NZB.ID = b.NZB.DownloadURL
+					}
+					b.NZB.SourceEndpoint = apiBaseURL
+					results.Arr = append(results.Arr, b)
+					if tillid != "" && tillid == b.NZB.ID {
+						t = nil
+						d = nil
+						b.Close()
+						return true, nil
+					}
 				}
 			} else if startv > endv {
 				name = ""
@@ -232,54 +263,15 @@ func (c *RLHTTPClient) DoXML(url string, headers []addHeader, feed *searchRespon
 		}
 		t = nil
 	}
-	return nil
-}
-
-// Do dispatches the HTTP request to the network
-func (c *RLHTTPClient) DoXMLold(url string, headers []addHeader, feed *searchResponse) error {
-	ok, err := c.checkLimiter(10, 1, url)
-	if !ok {
-		if err == nil {
-			err = errPleaseWait
-		}
-		return err
-	}
-
-	resp, err := c.getResponse(url, headers)
-	if err != nil {
-		if resp == nil {
-			return err
-		}
-		c.addwait(url, resp)
-		return err
-	}
-	defer resp.Body.Close()
-	if c.addwait(url, resp) {
-		return errPleaseWait
-	}
-	d := xml.NewDecoder(resp.Body)
-	d.CharsetReader = charset.NewReaderLabel
-	d.Strict = false
-	err = d.Decode(feed)
 	d = nil
-	if err != nil {
-		blockinterval := 5
-		if config.Cfg.General.FailedIndexerBlockTime != 0 {
-			blockinterval = 1 * config.Cfg.General.FailedIndexerBlockTime
-		}
-		c.Ratelimiter.WaitTill(time.Now().Add(time.Minute * time.Duration(blockinterval)))
-
-		logger.Log.GlobalLogger.Error("Err Decode ", zap.Stringp("Url", &url), zap.Error(err))
-		feed = nil
-		return err
-	}
-	return nil
+	b.Close()
+	return false, nil
 }
 
 func (c *RLHTTPClient) testsleep(s string) (bool, string) {
 	var errstr string
 	if sleep, err := strconv.ParseInt(s, 10, 64); err == nil {
-		c.Ratelimiter.WaitTill(time.Now().Add(time.Second * time.Duration(sleep)))
+		c.Ratelimiter.WaitTill(logger.TimeGetNow().Add(time.Second * time.Duration(sleep)))
 		return true, errstr
 	} else {
 		errstr = err.Error()

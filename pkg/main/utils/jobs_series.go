@@ -16,7 +16,6 @@ import (
 	"github.com/Kellerman81/go_media_downloader/searcher"
 	"github.com/Kellerman81/go_media_downloader/structure"
 	"go.uber.org/zap"
-	"golang.org/x/exp/slices"
 )
 
 const serieepiunmatched = "SerieEpisode not matched episode - serieepisode not found"
@@ -100,7 +99,7 @@ func jobImportSeriesParseV2(path string, updatemissing bool, cfgp *config.MediaT
 		if database.CountRowsStaticNoError(&database.Querywithargs{QueryString: querycountfilesseries, Args: []interface{}{path, checkfiles[idx].Num1}}) != 0 {
 			continue
 		}
-		logger.GlobalCache.Delete("serie_episode_files_cached")
+		logger.InsertStringsArrCache("serie_episode_files_cached", path)
 		database.InsertNamed("insert into serie_episode_files (location, filename, extension, quality_profile, resolution_id, quality_id, codec_id, audio_id, proper, repack, extended, serie_id, serie_episode_id, dbserie_episode_id, dbserie_id, height, width) values (:location, :filename, :extension, :quality_profile, :resolution_id, :quality_id, :codec_id, :audio_id, :proper, :repack, :extended, :serie_id, :serie_episode_id, :dbserie_episode_id, :dbserie_id, :height, :width)",
 			database.SerieEpisodeFile{
 				Location:         path,
@@ -129,7 +128,12 @@ func jobImportSeriesParseV2(path string, updatemissing bool, cfgp *config.MediaT
 			}
 		}
 
-		database.DeleteRowStatic(&database.Querywithargs{QueryString: "Delete from serie_file_unmatcheds where filepath = ?", Args: []interface{}{path}})
+		var id uint
+		database.QueryColumn(&database.Querywithargs{QueryString: "select id from serie_file_unmatcheds where filepath = ?", Args: []interface{}{path}}, &id)
+		if id != 0 {
+			logger.DeleteFromStringsArrCache("serie_file_unmatcheds_cached", path)
+			database.DeleteRowStatic(&database.Querywithargs{QueryString: "Delete from serie_file_unmatcheds where filepath = ?", Args: []interface{}{path}})
+		}
 	}
 	var rootpath string
 	err = database.QueryColumn(&database.Querywithargs{QueryString: queryrootpathseries, Args: []interface{}{m.SerieID}}, &rootpath)
@@ -165,7 +169,7 @@ func seriesgetcheckfiles(m *apiexternal.ParseInfo, identifiedby string, path str
 				episodeArray.Arr[idx] = strings.TrimLeft(episodeArray.Arr[idx], "0")
 			}
 
-			dbserieepisodeid, _ = importfeed.FindDbserieEpisodeByIdentifierOrSeasonEpisode(m.DbserieID, m.Identifier, m.SeasonStr, episodeArray.Arr[idx])
+			dbserieepisodeid = importfeed.FindDbserieEpisodeByIdentifierOrSeasonEpisode(m.DbserieID, m.Identifier, m.SeasonStr, episodeArray.Arr[idx])
 			if dbserieepisodeid != 0 {
 				cntseries.Args = []interface{}{m.SerieID, dbserieepisodeid}
 				database.QueryColumn(&cntseries, &serieepisodeid)
@@ -191,6 +195,7 @@ func seriesSetUnmatched(m *apiexternal.ParseInfo, file string, listname string) 
 	var id uint
 	database.QueryColumn(&database.Querywithargs{QueryString: "select id from serie_file_unmatcheds where filepath = ? and listname = ?", Args: []interface{}{file, listname}}, &id)
 	if id == 0 {
+		logger.InsertStringsArrCache("serie_file_unmatcheds", file)
 		database.InsertStatic(&database.Querywithargs{QueryString: "Insert into serie_file_unmatcheds (listname, filepath, last_checked, parsed_data) values (?, ?, ?, ?)", Args: []interface{}{listname, file, logger.SqlTimeGetNow(), buildparsedstring(m)}})
 	} else {
 		database.UpdateColumnStatic(&database.Querywithargs{QueryString: "Update serie_file_unmatcheds SET last_checked = ? where id = ?", Args: []interface{}{logger.SqlTimeGetNow(), id}})
@@ -225,6 +230,7 @@ func refreshseriesquery(query string, args ...interface{}) {
 	for idxserie := range dbseries {
 		logger.Log.GlobalLogger.Info("Refresh Serie ", zap.Int("row", idxserie), zap.Int("row count", len(dbseries)), zap.Int("tvdb", dbseries[idxserie].Num))
 		if oldlistname != dbseries[idxserie].Str2 {
+			cfgp.Close()
 			cfgp = config.FindconfigTemplateOnList("serie_", dbseries[idxserie].Str2)
 			oldlistname = dbseries[idxserie].Str2
 		}
@@ -235,124 +241,12 @@ func refreshseriesquery(query string, args ...interface{}) {
 }
 
 func SeriesAllJobs(job string, force bool) {
-
 	logger.Log.GlobalLogger.Info("Started Jobfor all", zap.Stringp("Job", &job))
 	for idx := range config.Cfg.Series {
-		SeriesSingleJobs(job, config.Cfg.Series[idx].NamePrefix, "", force)
+		SingleJobs("series", job, config.Cfg.Series[idx].NamePrefix, "", force)
 	}
 }
 
-func SeriesSingleJobs(job string, cfgpstr string, listname string, force bool) {
-	cfgp := config.Cfg.Media[cfgpstr]
-	defer cfgp.Close()
-
-	jobName := job
-	if cfgp.Name != "" {
-		jobName += "_" + cfgp.NamePrefix
-	}
-	if listname != "" {
-		jobName += "_" + listname
-	}
-
-	if config.Cfg.General.SchedulerDisabled && !force {
-		logger.Log.GlobalLogger.Info("Skipped Job", zap.String("Job", job), zap.String("config", cfgp.NamePrefix))
-		return
-	}
-
-	logger.Log.GlobalLogger.Info(jobstarted, zap.Stringp("Job", &jobName))
-
-	//dbresult, _ := database.InsertNamed("Insert into job_histories (job_type, job_group, job_category, started) values (:job_type, :job_group, :job_category, :started)", database.JobHistory{JobType: job, JobGroup: cfg, JobCategory: "Serie", Started: sql.NullTime{Time: time.Now().In(logger.TimeZone), Valid: true}})
-	dbinsert := insertjobhistory(&database.JobHistory{JobType: job, JobGroup: cfgp.NamePrefix, JobCategory: "Serie", Started: logger.SqlTimeGetNow()})
-	searchmissingIncremental := cfgp.SearchmissingIncremental
-	searchupgradeIncremental := cfgp.SearchupgradeIncremental
-	if searchmissingIncremental == 0 {
-		searchmissingIncremental = 20
-	}
-	if searchupgradeIncremental == 0 {
-		searchupgradeIncremental = 20
-	}
-
-	var searchserie, searchtitle, searchmissing bool
-	var searchinterval int
-	switch job {
-	case "datafull":
-		getNewFilesMap(&cfgp, "")
-	case "rssseasons":
-		searcher.SearchSeriesRSSSeasons(cfgpstr)
-	case "searchmissingfull":
-		searchserie = true
-		searchmissing = true
-	case "searchmissinginc":
-		searchserie = true
-		searchmissing = true
-		searchinterval = searchmissingIncremental
-	case "searchupgradefull":
-		searchserie = true
-	case "searchupgradeinc":
-		searchserie = true
-		searchinterval = searchupgradeIncremental
-	case "searchmissingfulltitle":
-		searchserie = true
-		searchmissing = true
-		searchtitle = true
-	case "searchmissinginctitle":
-		searchserie = true
-		searchmissing = true
-		searchtitle = true
-		searchinterval = searchmissingIncremental
-	case "searchupgradefulltitle":
-		searchserie = true
-		searchtitle = true
-	case "searchupgradeinctitle":
-		searchserie = true
-		searchtitle = true
-		searchinterval = searchupgradeIncremental
-	case "structure":
-		structurefolders(&cfgp, "series")
-	}
-	if searchserie {
-		searcher.SearchSerie(&cfgp, searchmissing, searchinterval, searchtitle)
-	}
-
-	if job == "data" || job == "checkmissing" || job == "checkmissingflag" || job == "checkreachedflag" || job == "clearhistory" || job == "feeds" || job == "rss" {
-		qualis := new(logger.InStringArrayStruct)
-
-		for _, list := range getjoblists(&cfgp, listname) {
-			if job == "rss" && !slices.Contains(qualis.Arr, list.TemplateQuality) {
-				qualis.Arr = append(qualis.Arr, list.TemplateQuality)
-			}
-			//if !logger.InStringArray(list.TemplateQuality, qualis) {
-			//	qualis.Arr = append(qualis.Arr, list.TemplateQuality)
-			//}
-			switch job {
-			case "data":
-				getNewFilesMap(&cfgp, list.Name)
-			case "checkmissing":
-				checkmissingepisodessingle(list.Name)
-			case "checkmissingflag":
-				checkmissingepisodesflag(list.Name)
-			case "checkreachedflag":
-				checkreachedepisodesflag(&cfgp, list.Name)
-			case "clearhistory":
-				database.DeleteRow("serie_episode_histories", &database.Querywithargs{Query: database.Query{Where: "serie_id in (Select id from series where listname = ? COLLATE NOCASE)"}, Args: []interface{}{list.Name}})
-			case "feeds":
-				importnewseriessingle(&cfgp, list.Name)
-			default:
-				// other stuff
-			}
-		}
-		if job == "rss" {
-			logger.RunFuncSimple(qualis.Arr, func(e string) {
-				searcher.SearchSerieRSS(&cfgp, e)
-			})
-		}
-		qualis.Close()
-	}
-	if dbinsert != 0 {
-		endjobhistory(dbinsert)
-	}
-	logger.Log.GlobalLogger.Info(jobended, zap.Stringp("Job", &job), zap.Stringp("config", &cfgp.NamePrefix))
-}
 func structurefolders(cfgp *config.MediaTypeConfig, typ string) {
 	if !config.Check("path_" + cfgp.Data[0].TemplatePath) {
 		logger.Log.GlobalLogger.Error("Path not found", zap.String("config", cfgp.Data[0].TemplatePath))
@@ -406,24 +300,6 @@ func importnewseriessingle(cfgp *config.MediaTypeConfig, listname string) {
 	feed.Close()
 }
 
-func checkmissingepisodesflag(listname string) {
-	var episodes []database.DbstaticOneIntOneBool
-	database.QueryStaticColumnsOneIntOneBool(&database.Querywithargs{QueryString: "select id, missing from serie_episodes where serie_id in (select id from series where listname = ? COLLATE NOCASE)", Args: []interface{}{listname}}, &episodes)
-	var counter int
-	querycount := "select count() from serie_episode_files where serie_episode_id = ?"
-	for idxepi := range episodes {
-		counter = database.CountRowsStaticNoError(&database.Querywithargs{QueryString: querycount, Args: []interface{}{episodes[idxepi].Num}})
-		if counter >= 1 && episodes[idxepi].Bl {
-			database.UpdateColumnStatic(&database.Querywithargs{QueryString: "Update Serie_episodes set missing = ? where id = ?", Args: []interface{}{0, episodes[idxepi].Num}})
-			continue
-		}
-		if counter == 0 && !episodes[idxepi].Bl {
-			database.UpdateColumnStatic(&database.Querywithargs{QueryString: "Update Serie_episodes set missing = ? where id = ?", Args: []interface{}{1, episodes[idxepi].Num}})
-		}
-	}
-	episodes = nil
-}
-
 func checkreachedepisodesflag(cfgp *config.MediaTypeConfig, listname string) {
 	var episodes []database.SerieEpisode
 	database.QuerySerieEpisodes(&database.Querywithargs{Query: database.Query{Select: "id, quality_reached, quality_profile", Where: "serie_id in (Select id from series where listname = ? COLLATE NOCASE)"}, Args: []interface{}{listname}}, &episodes)
@@ -447,20 +323,6 @@ func checkreachedepisodesflag(cfgp *config.MediaTypeConfig, listname string) {
 		}
 	}
 	episodes = nil
-}
-
-func checkmissingepisodessingle(listname string) {
-	var filesfound []string
-	database.QueryStaticStringArray(false,
-		database.CountRowsStaticNoError(&database.Querywithargs{QueryString: "select location from serie_episode_files where serie_id in (Select id from series where listname = ? COLLATE NOCASE)", Args: []interface{}{listname}}),
-		&database.Querywithargs{QueryString: "select location from serie_episode_files where serie_id in (Select id from series where listname = ?)", Args: []interface{}{listname}},
-		&filesfound)
-	if len(filesfound) >= 1 {
-		logger.RunFuncSimple(filesfound, func(e string) {
-			jobImportFileCheck(e, "serie")
-		})
-	}
-	filesfound = nil
 }
 
 func getTraktUserPublicShowList(templatelist string, cfglist *config.ListsConfig) (*feedResults, error) {

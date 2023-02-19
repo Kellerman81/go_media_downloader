@@ -29,8 +29,6 @@ const queryimdbmoviesbyid = "select imdb_id from dbmovies where id = ?"
 const jobstarted = "Started Job"
 const jobended = "Ended Job"
 
-var errNotAdded = errors.New("not added")
-
 func jobImportMovieParseV2(path string, updatemissing bool, cfgp *config.MediaTypeConfig, listname string, addfound bool) {
 	m := parser.NewFileParser(filepath.Base(path), false, "movie")
 	defer m.Close()
@@ -77,7 +75,7 @@ func jobImportMovieParseV2(path string, updatemissing bool, cfgp *config.MediaTy
 					database.QueryColumn(&database.Querywithargs{QueryString: queryidmoviesbylistname, Args: []interface{}{dbmovie, listname}}, &m.MovieID)
 				}
 				if m.MovieID == 0 {
-					err = errNotAdded
+					return
 				}
 			}
 		} else if listname == addFoundList && addfound {
@@ -89,7 +87,7 @@ func jobImportMovieParseV2(path string, updatemissing bool, cfgp *config.MediaTy
 				database.QueryColumn(&database.Querywithargs{QueryString: queryidmoviesbylistname, Args: []interface{}{dbmovie, listname}}, &m.MovieID)
 			}
 			if m.MovieID == 0 {
-				err = errNotAdded
+				return
 			}
 		}
 	}
@@ -100,6 +98,7 @@ func jobImportMovieParseV2(path string, updatemissing bool, cfgp *config.MediaTy
 		var id uint
 		database.QueryColumn(&database.Querywithargs{QueryString: queryidunmatched, Args: []interface{}{path, listname}}, &id)
 		if id == 0 {
+			logger.InsertStringsArrCache("movie_file_unmatcheds_cached", path)
 			database.InsertStatic(&database.Querywithargs{QueryString: "Insert into movie_file_unmatcheds (listname, filepath, last_checked, parsed_data) values (:listname, :filepath, :last_checked, :parsed_data)", Args: []interface{}{listname, path, logger.SqlTimeGetNow(), buildparsedstring(m)}})
 		} else {
 			database.UpdateColumnStatic(&database.Querywithargs{QueryString: "Update movie_file_unmatcheds SET last_checked = ? where id = ?", Args: []interface{}{logger.SqlTimeGetNow(), id}})
@@ -131,7 +130,7 @@ func jobImportMovieParseV2(path string, updatemissing bool, cfgp *config.MediaTy
 		updateRootpath(path, "movies", m.MovieID, cfgp)
 	}
 
-	logger.GlobalCache.Delete("movie_files_cached")
+	logger.InsertStringsArrCache("movie_files_cached", path)
 	database.InsertNamed("insert into movie_files (location, filename, extension, quality_profile, resolution_id, quality_id, codec_id, audio_id, proper, repack, extended, movie_id, dbmovie_id, height, width) values (:location, :filename, :extension, :quality_profile, :resolution_id, :quality_id, :codec_id, :audio_id, :proper, :repack, :extended, :movie_id, :dbmovie_id, :height, :width)",
 		database.MovieFile{
 			Location:       path,
@@ -155,7 +154,12 @@ func jobImportMovieParseV2(path string, updatemissing bool, cfgp *config.MediaTy
 		updatemoviesreached(okint, m.MovieID)
 	}
 
-	database.DeleteRowStatic(&database.Querywithargs{QueryString: "Delete from movie_file_unmatcheds where filepath = ?", Args: []interface{}{path}})
+	var id uint
+	database.QueryColumn(&database.Querywithargs{QueryString: "select id from movie_file_unmatcheds where filepath = ?", Args: []interface{}{path}}, &id)
+	if id != 0 {
+		logger.DeleteFromStringsArrCache("movie_file_unmatcheds_cached", path)
+		database.DeleteRowStatic(&database.Querywithargs{QueryString: "Delete from movie_file_unmatcheds where filepath = ?", Args: []interface{}{path}})
+	}
 }
 
 func updatemoviesreached(reached int, dbmovieid uint) {
@@ -207,7 +211,6 @@ func getMissingIMDBMoviesV2(templatelist string, cfglist *config.ListsConfig) (*
 			return nil, errors.New("list csv import error")
 		}
 		if record[1] == "" || record[1] == "Const" || record[1] == "tconst" {
-			logger.Log.GlobalLogger.Warn("skipped row", zap.String("imdb", record[1]))
 			continue
 		}
 		d.Movies = append(d.Movies, record[1])
@@ -367,39 +370,6 @@ func workermovieimport(cfgp *config.MediaTypeConfig, listname string, imdbids *l
 	workergroup.Wait()
 }
 
-func checkmissingmoviessingle(listname string) {
-	var filesfound []string
-	database.QueryStaticStringArray(false,
-		database.CountRowsStaticNoError(&database.Querywithargs{QueryString: "select count() from movie_files where movie_id in (select id from movies where listname = ? COLLATE NOCASE)", Args: []interface{}{listname}}),
-		&database.Querywithargs{QueryString: "select location from movie_files where movie_id in (select id from movies where listname = ?)", Args: []interface{}{listname}},
-		&filesfound)
-	if len(filesfound) >= 1 {
-		logger.RunFuncSimple(filesfound, func(e string) {
-			jobImportFileCheck(e, "movie")
-		})
-	}
-	filesfound = nil
-}
-
-func checkmissingmoviesflag(listname string) {
-	var movies []database.DbstaticOneIntOneBool
-	database.QueryStaticColumnsOneIntOneBool(&database.Querywithargs{QueryString: "Select id, missing from movies where listname = ?", Args: []interface{}{listname}}, &movies)
-
-	var counter int
-	querycount := "select count() from movie_files where movie_id = ?"
-	for idxmovie := range movies {
-		counter = database.CountRowsStaticNoError(&database.Querywithargs{QueryString: querycount, Args: []interface{}{movies[idxmovie].Num}})
-		if counter >= 1 && movies[idxmovie].Bl {
-			updatemoviesmissing(0, uint(movies[idxmovie].Num))
-			continue
-		}
-		if counter == 0 && !movies[idxmovie].Bl {
-			updatemoviesmissing(1, uint(movies[idxmovie].Num))
-		}
-	}
-	movies = nil
-}
-
 func checkreachedmoviesflag(cfgp *config.MediaTypeConfig, listname string) {
 	var movies []database.Movie
 	database.QueryMovies(&database.Querywithargs{Query: database.Query{Select: "id, quality_reached, quality_profile", Where: "listname = ?"}, Args: []interface{}{listname}}, &movies)
@@ -452,6 +422,7 @@ func refreshmoviesquery(query string, count int, args ...interface{}) {
 	for idxmovie := range dbmovies {
 		logger.Log.GlobalLogger.Info("Refresh Movie ", zap.Int("row", idxmovie), zap.Int("of rows", len(dbmovies)), zap.Stringp("imdb", &dbmovies[idxmovie].Str1))
 		if oldlistname != dbmovies[idxmovie].Str2 {
+			cfgp.Close()
 			cfgp = config.FindconfigTemplateOnList("movie_", dbmovies[idxmovie].Str2)
 			oldlistname = dbmovies[idxmovie].Str2
 		}
@@ -463,113 +434,6 @@ func refreshmoviesquery(query string, count int, args ...interface{}) {
 
 func MoviesAllJobs(job string, force bool) {
 	for idx := range config.Cfg.Movies {
-		MoviesSingleJobs(job, config.Cfg.Movies[idx].NamePrefix, "", force)
+		SingleJobs("movie", job, config.Cfg.Movies[idx].NamePrefix, "", force)
 	}
-}
-
-func MoviesSingleJobs(job string, cfgpstr string, listname string, force bool) {
-	cfgp := config.Cfg.Media[cfgpstr]
-	defer cfgp.Close()
-	jobName := job
-
-	if cfgp.Name != "" {
-		jobName += "_" + cfgp.NamePrefix
-	}
-	if listname != "" {
-		jobName += "_" + listname
-	}
-
-	if config.Cfg.General.SchedulerDisabled && !force {
-		logger.Log.GlobalLogger.Info("Skipped Job", zap.String("Job", job), zap.String("config", cfgp.NamePrefix))
-		return
-	}
-
-	//dbresult, _ := database.InsertNamed("Insert into job_histories (job_type, job_group, job_category, started) values (:job_type, :job_group, :job_category, :started)", database.JobHistory{JobType: job, JobGroup: cfg, JobCategory: "Movie", Started: sql.NullTime{Time: time.Now().In(logger.TimeZone), Valid: true}})
-	dbinsert := insertjobhistory(&database.JobHistory{JobType: job, JobGroup: cfgp.NamePrefix, JobCategory: "Movie", Started: logger.SqlTimeGetNow()})
-	logger.Log.GlobalLogger.Info(jobstarted, zap.Stringp("Job", &jobName))
-	searchmissingIncremental := cfgp.SearchmissingIncremental
-	searchupgradeIncremental := cfgp.SearchupgradeIncremental
-	if searchmissingIncremental == 0 {
-		searchmissingIncremental = 20
-	}
-	if searchupgradeIncremental == 0 {
-		searchupgradeIncremental = 20
-	}
-
-	var searchmovie, searchtitle, searchmissing bool
-	var searchinterval int
-	switch job {
-	case "datafull":
-		getNewFilesMap(&cfgp, "")
-	case "searchmissingfull":
-		searchmovie = true
-		searchmissing = true
-	case "searchmissinginc":
-		searchmovie = true
-		searchmissing = true
-		searchinterval = searchmissingIncremental
-	case "searchupgradefull":
-		searchmovie = true
-	case "searchupgradeinc":
-		searchmovie = true
-		searchinterval = searchupgradeIncremental
-	case "searchmissingfulltitle":
-		searchmovie = true
-		searchmissing = true
-		searchtitle = true
-	case "searchmissinginctitle":
-		searchmovie = true
-		searchmissing = true
-		searchtitle = true
-		searchinterval = searchmissingIncremental
-	case "searchupgradefulltitle":
-		searchmovie = true
-		searchtitle = true
-	case "searchupgradeinctitle":
-		searchmovie = true
-		searchtitle = true
-		searchinterval = searchupgradeIncremental
-	case "structure":
-		structurefolders(&cfgp, "movie")
-	}
-	if searchmovie {
-		searcher.SearchMovie(&cfgp, searchmissing, searchinterval, searchtitle)
-	}
-
-	if job == "data" || job == "checkmissing" || job == "checkmissingflag" || job == "checkreachedflag" || job == "clearhistory" || job == "feeds" || job == "rss" {
-		qualis := new(logger.InStringArrayStruct)
-
-		for _, list := range getjoblists(&cfgp, listname) {
-			if job == "rss" && !slices.Contains(qualis.Arr, list.TemplateQuality) {
-				//if !logger.InStringArray(list.TemplateQuality, qualis) {
-				qualis.Arr = append(qualis.Arr, list.TemplateQuality)
-			}
-			switch job {
-			case "data":
-				getNewFilesMap(&cfgp, list.Name)
-			case "checkmissing":
-				checkmissingmoviessingle(list.Name)
-			case "checkmissingflag":
-				checkmissingmoviesflag(list.Name)
-			case "checkreachedflag":
-				checkreachedmoviesflag(&cfgp, list.Name)
-			case "clearhistory":
-				database.DeleteRow("movie_histories", &database.Querywithargs{Query: database.Query{Where: "movie_id in (Select id from movies where listname = ? COLLATE NOCASE)"}, Args: []interface{}{list.Name}})
-			case "feeds":
-				importnewmoviessingle(&cfgp, list.Name)
-			default:
-				// other stuff
-			}
-		}
-		if job == "rss" {
-			logger.RunFuncSimple(qualis.Arr, func(e string) {
-				searcher.SearchMovieRSS(&cfgp, e)
-			})
-		}
-		qualis.Close()
-	}
-	if dbinsert != 0 {
-		endjobhistory(dbinsert)
-	}
-	logger.Log.GlobalLogger.Info(jobended, zap.Stringp("Job", &jobName))
 }

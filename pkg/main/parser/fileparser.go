@@ -106,7 +106,7 @@ func NewCutoffPrioGetQual(cfgp *config.MediaTypeConfig, qualityTemplate string) 
 func NewFileParser(filename string, includeYearInTitle bool, typegroup string) *apiexternal.ParseInfo {
 	m := &apiexternal.ParseInfo{File: filename}
 	var startIndex, endIndex = 0, len(m.File)
-	cleanName := strings.ReplaceAll(strings.TrimRight(strings.TrimLeft(m.File, "["), "]"), "_", " ")
+	cleanName := logger.StringReplaceRune(strings.TrimRight(strings.TrimLeft(m.File, "["), "]"), '_', ' ')
 
 	m.FileLower = strings.ToLower(cleanName)
 
@@ -237,15 +237,15 @@ func NewFileParser(filename string, includeYearInTitle bool, typegroup string) *
 	} else {
 		cleanName = m.File[startIndex:endIndex]
 	}
-	if strings.Contains(cleanName, "(") {
+	if logger.StringContainsRune(cleanName, '(') {
 		cleanName = strings.Split(cleanName, "(")[0]
 	}
 
 	cleanName = strings.TrimPrefix(cleanName, "- ")
-	if strings.ContainsRune(cleanName, '.') && !strings.ContainsRune(cleanName, ' ') {
-		cleanName = strings.ReplaceAll(cleanName, ".", " ")
-	} else if strings.ContainsRune(cleanName, '.') && strings.ContainsRune(cleanName, '_') {
-		cleanName = strings.ReplaceAll(cleanName, "_", " ")
+	if logger.StringContainsRune(cleanName, '.') && !logger.StringContainsRune(cleanName, ' ') {
+		cleanName = logger.StringReplaceRune(cleanName, '.', ' ')
+	} else if logger.StringContainsRune(cleanName, '.') && logger.StringContainsRune(cleanName, '_') {
+		cleanName = logger.StringReplaceRune(cleanName, '_', ' ')
 	}
 	m.Title = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(cleanName), "-"))
 
@@ -306,16 +306,16 @@ func GetDbIDs(grouptype string, m *apiexternal.ParseInfo, cfgp *config.MediaType
 	}
 	if m.DbserieID == 0 && (allowsearchtitle || m.Tvdb == "") {
 		if m.Year != 0 {
-			m.DbserieID, _ = importfeed.FindDbserieByName(m.Title + " (" + logger.IntToString(m.Year) + ")")
+			m.DbserieID = importfeed.FindDbserieByName(m.Title + " (" + logger.IntToString(m.Year) + ")")
 		}
 		if m.DbserieID == 0 {
-			m.DbserieID, _ = importfeed.FindDbserieByName(m.Title)
+			m.DbserieID = importfeed.FindDbserieByName(m.Title)
 		}
 	}
 	if m.DbserieID == 0 && m.File != "" {
 		matched, matched2 := config.RegexGetMatchesStr1Str2("RegexSeriesTitle", filepath.Base(m.File))
 		if matched2 != "" {
-			m.DbserieID, _ = importfeed.FindDbserieByName(matched)
+			m.DbserieID = importfeed.FindDbserieByName(matched)
 		}
 	}
 
@@ -340,7 +340,7 @@ func GetDbIDs(grouptype string, m *apiexternal.ParseInfo, cfgp *config.MediaType
 		logger.Log.GlobalLogger.Debug("NOT Found serie for ", zap.Stringp("path", &m.File))
 		return
 	}
-	m.DbserieEpisodeID, _ = importfeed.FindDbserieEpisodeByIdentifierOrSeasonEpisode(m.DbserieID, m.Identifier, m.SeasonStr, m.EpisodeStr)
+	m.DbserieEpisodeID = importfeed.FindDbserieEpisodeByIdentifierOrSeasonEpisode(m.DbserieID, m.Identifier, m.SeasonStr, m.EpisodeStr)
 	if m.DbserieEpisodeID != 0 {
 		database.QueryColumn(&database.Querywithargs{QueryString: queryidepisodebydbid, Args: []interface{}{m.SerieID, m.DbserieEpisodeID}}, &m.SerieEpisodeID)
 	}
@@ -362,9 +362,8 @@ func ParseVideoFile(m *apiexternal.ParseInfo, file string, qualityTemplate strin
 	}
 
 	if result.Error.Code != 0 {
-		err = fmt.Errorf("ffprobe error code %d: %s", result.Error.Code, result.Error.String)
-		result.Close()
-		return err
+		defer result.Close()
+		return fmt.Errorf("ffprobe error code %d: %s", result.Error.Code, result.Error.String)
 	}
 	var duration float64
 	duration, err = logger.ParseFloat64(result.Format.Duration)
@@ -491,9 +490,8 @@ func GetPriorityMapQual(m *apiexternal.ParseInfo, cfgp *config.MediaTypeConfig, 
 		m.QualityID = database.InQualitiesRegexArray(cfgp.DefaultQuality, &database.DBConnect.GetqualitiesIn)
 	}
 
-	var intid int
 	if m.ResolutionID != 0 {
-		intid = slices.IndexFunc(database.DBConnect.GetresolutionsIn.Arr, func(c database.QualitiesRegex) bool {
+		intid := slices.IndexFunc(database.DBConnect.GetresolutionsIn.Arr, func(c database.QualitiesRegex) bool {
 			return c.ID == m.ResolutionID
 		})
 		if intid != -1 {
@@ -501,7 +499,7 @@ func GetPriorityMapQual(m *apiexternal.ParseInfo, cfgp *config.MediaTypeConfig, 
 		}
 	}
 	if m.QualityID != 0 {
-		intid = slices.IndexFunc(database.DBConnect.GetqualitiesIn.Arr, func(c database.QualitiesRegex) bool {
+		intid := slices.IndexFunc(database.DBConnect.GetqualitiesIn.Arr, func(c database.QualitiesRegex) bool {
 			return c.ID == m.QualityID
 		})
 		if intid != -1 {
@@ -530,18 +528,16 @@ func GetPriorityMapQual(m *apiexternal.ParseInfo, cfgp *config.MediaTypeConfig, 
 	allQualityPrioritiesMu.Lock()
 
 	var ok bool
-	var prio int
 	if checkwanted {
-		prio, ok = allQualityPrioritiesWanted[cfgqual.Name][buildPrioStr(reso, qual, codec, aud)]
+		m.Priority, ok = allQualityPrioritiesWanted[cfgqual.Name][buildPrioStr(reso, qual, codec, aud)]
 	} else {
-		prio, ok = allQualityPriorities[cfgqual.Name][buildPrioStr(reso, qual, codec, aud)]
+		m.Priority, ok = allQualityPriorities[cfgqual.Name][buildPrioStr(reso, qual, codec, aud)]
 	}
 	allQualityPrioritiesMu.Unlock()
 	if !ok {
 		m.Priority = 0
 		return 0
 	}
-	m.Priority = prio
 	if !cfgqual.UseForPriorityOther && !useall {
 		return m.Priority
 	}
@@ -555,6 +551,23 @@ func GetPriorityMapQual(m *apiexternal.ParseInfo, cfgp *config.MediaTypeConfig, 
 		m.Priority++
 	}
 	return m.Priority
+}
+func Getdbidsfromfiles(useall bool, checkwanted bool, id uint, table string, cfgp *config.MediaTypeConfig, cfgqual *config.QualityConfig) int {
+	if database.CountRowsStaticNoError(&database.Querywithargs{QueryString: "Select count() from " + table + " where id = ?", Args: []interface{}{id}}) == 0 {
+		return 0
+	}
+	resid, qualid, codecid, audid, proper, extended, repack, filename, location := database.Queryfilesprio(&database.Querywithargs{QueryString: "select resolution_id, quality_id, codec_id, audio_id, proper, extended, repack, filename, location from " + table + " where id = ?", Args: []interface{}{id}})
+	return GetIDPriorityMap(&apiexternal.ParseInfo{
+		ResolutionID: resid,
+		QualityID:    qualid,
+		CodecID:      codecid,
+		AudioID:      audid,
+		Proper:       proper,
+		Extended:     extended,
+		Repack:       repack,
+		Title:        filename,
+		File:         location,
+	}, cfgp, cfgqual, useall, checkwanted)
 }
 func GetIDPriorityMap(m *apiexternal.ParseInfo, cfgp *config.MediaTypeConfig, cfgqual *config.QualityConfig, useall bool, checkwanted bool) int {
 	if m.ResolutionID == 0 && m.Resolution == "" {
@@ -605,30 +618,27 @@ func GetIDPriorityMap(m *apiexternal.ParseInfo, cfgp *config.MediaTypeConfig, cf
 	}
 	allQualityPrioritiesMu.Unlock()
 	if !ok {
-		m.Priority = 0
-		cfgqual.Close()
 		m.Close()
-
 		logger.Log.GlobalLogger.Debug("prio not found", zap.String("searched for", buildPrioStr(reso, qual, codec, aud)), zap.String("in", cfgqual.Name), zap.Bool("wanted", checkwanted))
 		return 0
 	}
-	m.Priority = prio
-	defer m.Close()
 	if !cfgqual.UseForPriorityOther && !useall {
-		cfgqual.Close()
-		return m.Priority
+		//cfgqual.Close()
+		m.Close()
+		return prio
 	}
 	cfgqual.Close()
 	if m.Proper {
-		m.Priority += 5
+		prio += 5
 	}
 	if m.Extended {
-		m.Priority += 2
+		prio += 2
 	}
 	if m.Repack {
-		m.Priority++
+		prio++
 	}
-	return m.Priority
+	m.Close()
+	return prio
 }
 
 func getIDPrioritySimple(m *apiexternal.ParseInfo, reordergroup *config.QualityReorderConfigGroup) int {
@@ -749,52 +759,46 @@ func GetAllQualityPriorities() {
 }
 
 func gettypeids(disableParserStringMatch bool, inval string, qualitytype *database.InQualitiesArray) uint {
-	var id uint
 	tolower := strings.ToLower(inval)
 	var index, substrpostLen, lenstr int
 	var substrpre, substrpost string
-	var isokpost, isokpre bool
 	lenval := len(inval)
 	var runev rune
 	for idx := range qualitytype.Arr {
-		id = 0
 		lenstr = len(qualitytype.Arr[idx].Strings)
 		if lenstr >= 1 && !disableParserStringMatch && strings.Contains(qualitytype.Arr[idx].StringsLower, tolower) {
 			index = strings.Index(qualitytype.Arr[idx].StringsLower, tolower)
-			substrpre = ""
 			if index >= 1 {
 				substrpre = qualitytype.Arr[idx].StringsLower[index-1 : index]
+			} else {
+				substrpre = ""
 			}
-			substrpostLen = index + lenval + 1
-			if lenstr < substrpostLen {
-				substrpostLen = index + lenval
+			substrpostLen = index + lenval
+			if lenstr > substrpostLen {
+				substrpostLen++
 			}
 			substrpost = qualitytype.Arr[idx].StringsLower[index+lenval : substrpostLen]
-			isokpost = true
-			isokpre = true
 			if substrpost != "" {
 				runev = []rune(substrpost)[0]
 				if unicode.IsDigit(runev) || unicode.IsLetter(runev) {
-					isokpost = false
+					continue
 				}
 			}
 			if substrpre != "" {
 				runev = []rune(substrpre)[0]
 				if unicode.IsDigit(runev) || unicode.IsLetter(runev) {
-					isokpre = false
+					continue
 				}
 			}
-			if isokpre && isokpost && qualitytype.Arr[idx].ID != 0 {
-				id = qualitytype.Arr[idx].ID
-				break
+			if qualitytype.Arr[idx].ID != 0 {
+				return qualitytype.Arr[idx].ID
 			}
 		}
 		if len(qualitytype.Arr[idx].Regex) >= 1 && qualitytype.Arr[idx].UseRegex && config.RegexGetMatchesFind(qualitytype.Arr[idx].Regex, tolower, 2) {
-			id = qualitytype.Arr[idx].ID
-			break
+			return qualitytype.Arr[idx].ID
 		}
 	}
-	return id
+	return 0
 }
 
 func reorderpriority(reordergroup *config.QualityReorderConfigGroup, qualitystringtype string, qualityname string, priority *int) {
@@ -810,12 +814,10 @@ func reorderpriority(reordergroup *config.QualityReorderConfigGroup, qualitystri
 }
 func gettypeidpriority(m *apiexternal.ParseInfo, id uint, qualitystringtype string, setprioonly bool, reordergroup *config.QualityReorderConfigGroup, qualitytype *database.InQualitiesArray) int {
 	var priority int
-	var name string
 	for qualidx := range qualitytype.Arr {
 		if qualitytype.Arr[qualidx].ID != id {
 			continue
 		}
-		name = qualitytype.Arr[qualidx].Name
 		priority = qualitytype.Arr[qualidx].Priority
 
 		reorderpriority(reordergroup, qualitystringtype, qualitytype.Arr[qualidx].Name, &priority)
@@ -823,22 +825,22 @@ func gettypeidpriority(m *apiexternal.ParseInfo, id uint, qualitystringtype stri
 		switch qualitystringtype {
 		case "resolution":
 			if !setprioonly {
-				m.Resolution = name
+				m.Resolution = qualitytype.Arr[qualidx].Name
 			}
 			return priority
 		case "quality":
 			if !setprioonly {
-				m.Quality = name
+				m.Quality = qualitytype.Arr[qualidx].Name
 			}
 			return priority
 		case "codec":
 			if !setprioonly {
-				m.Codec = name
+				m.Codec = qualitytype.Arr[qualidx].Name
 			}
 			return priority
 		case "audio":
 			if !setprioonly {
-				m.Audio = name
+				m.Audio = qualitytype.Arr[qualidx].Name
 			}
 			return priority
 		}
