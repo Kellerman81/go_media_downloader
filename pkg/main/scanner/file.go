@@ -63,7 +63,7 @@ func FilterFilesDir(allfiles *logger.InStringArrayStruct, cfgpath *config.PathsC
 	}
 	lenblock := len(cfgpath.BlockedLowerIn.Arr)
 	for idx := range allfiles.Arr {
-		if checkisdir && getFileInfo(allfiles.Arr[idx]).IsDir() {
+		if checkisdir && GetFileInfo(allfiles.Arr[idx]).IsDir() {
 			continue
 		}
 		extlower = filepath.Ext(allfiles.Arr[idx])
@@ -234,7 +234,7 @@ func getFolderSize(rootpath string) int64 {
 				if de.IsDir() {
 					return nil
 				}
-				size += GetFileSize(osPathname, false)
+				size += GetFileInfo(osPathname).Size()
 				return nil
 			},
 			ErrorCallback: func(osPathname string, err error) godirwalk.ErrorAction {
@@ -379,7 +379,7 @@ func CleanUpFolder(folder string, CleanupsizeMB int) {
 }
 
 func checkRegular(path string) bool {
-	return getFileInfo(path).Mode().IsRegular()
+	return GetFileInfo(path).Mode().IsRegular()
 }
 func moveFileDriveBuffer(sourcePath, destPath string) error {
 	bufferkb := 1024
@@ -471,7 +471,7 @@ func CheckFileExist(path string) bool {
 	return !errors.Is(err, fs.ErrNotExist)
 }
 
-func getFileInfo(path string) fs.FileInfo {
+func GetFileInfo(path string) fs.FileInfo {
 	info, _ := os.Stat(path)
 	return info
 }
@@ -482,14 +482,7 @@ func GetFileSize(path string, checkpath bool) int64 {
 			return 0
 		}
 	}
-	return getFileInfo(path).Size()
-}
-func GetFileSizeDirEntry(info fs.DirEntry) int64 {
-	fsinfo, errinfo := info.Info()
-	if errinfo == nil {
-		return fsinfo.Size()
-	}
-	return 0
+	return GetFileInfo(path).Size()
 }
 
 // CopyFile copies a file from src to dst. If src and dst files exist, and are
@@ -592,6 +585,25 @@ func GetSubFolders(sourcepath string) ([]string, error) {
 	return folders, nil
 }
 
+func GetSubFolderBool(sourcepath string) bool {
+	files, err := os.ReadDir(sourcepath)
+	if err != nil {
+		return false
+	}
+	// cnt, ok := logger.GlobalCounter[sourcepath]
+	// if ok {
+	// 	folders = logger.GrowSliceBy(folders, cnt)
+	// }
+	for idxfile := range files {
+		if files[idxfile].IsDir() {
+			return true
+		}
+	}
+	files = nil
+	//logger.GlobalCounter[sourcepath] = len(folders)
+	return false
+}
+
 func Walk(pathcfgstr string, allfiles *logger.InStringArrayStruct, useother bool, cfgpath *config.PathsConfig) func(path string, info fs.DirEntry, errwalk error) error {
 	return func(path string, info fs.DirEntry, errwalk error) error {
 		if errwalk != nil {
@@ -666,7 +678,10 @@ func WalkSize(size *int64) func(path string, info fs.DirEntry, errwalk error) er
 		if info.IsDir() {
 			return nil
 		}
-		*size += GetFileSizeDirEntry(info)
+		fsinfo, errinfo := info.Info()
+		if errinfo == nil {
+			*size += fsinfo.Size()
+		}
 		return nil
 	}
 }

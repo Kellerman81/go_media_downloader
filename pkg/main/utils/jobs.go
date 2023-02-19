@@ -2,7 +2,9 @@ package utils
 
 import (
 	"bytes"
+	"database/sql"
 	"errors"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,6 +20,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/logger"
 	"github.com/Kellerman81/go_media_downloader/scanner"
 	"github.com/Kellerman81/go_media_downloader/searcher"
+	"github.com/alitto/pond"
 	"github.com/pelletier/go-toml/v2"
 	"go.uber.org/zap"
 	"golang.org/x/exp/slices"
@@ -53,14 +56,12 @@ func jobImportFileCheck(file string, dbtype string) {
 	}
 	var files []database.DbstaticTwoInt
 	database.QueryStaticColumnsTwoInt(&database.Querywithargs{QueryString: query, Args: []interface{}{file}}, &files)
-	var err error
 	var counter int
 	for idx := range files {
 		logger.Log.GlobalLogger.Debug("File was removed", zap.Stringp("file", &file))
-		err = database.DeleteRowStatic(&database.Querywithargs{QueryString: "Delete from " + table + " where id = ?", Args: []interface{}{files[idx].Num1}})
-		if err == nil {
-			err = database.QueryColumn(&database.Querywithargs{QueryString: subquerycount, Args: []interface{}{files[idx].Num2}}, &counter)
-			if counter == 0 && err == nil {
+		if database.DeleteRowStatic(&database.Querywithargs{QueryString: "Delete from " + table + " where id = ?", Args: []interface{}{files[idx].Num1}}) == nil {
+			database.QueryColumn(&database.Querywithargs{QueryString: subquerycount, Args: []interface{}{files[idx].Num2}}, &counter)
+			if counter == 0 {
 				database.UpdateColumnStatic(&database.Querywithargs{QueryString: "Update " + updatetable + " set missing = ? where id = ?", Args: []interface{}{1, files[idx].Num2}})
 			}
 		}
@@ -68,19 +69,21 @@ func jobImportFileCheck(file string, dbtype string) {
 	files = nil
 }
 
-func insertjobhistory(job *database.JobHistory) int64 {
-	defer logger.ClearVar(job)
-	result, err := database.InsertStatic(&database.Querywithargs{QueryString: "Insert into job_histories (job_type, job_group, job_category, started) values (?, ?, ?, ?)", Args: []interface{}{job.JobType, job.JobGroup, job.JobCategory, job.Started}})
-	if err != nil && result != nil {
+func insertjobhistory(jobtype string, jobgroup string, jobcategory string) int64 {
+	result, err := database.InsertStatic(&database.Querywithargs{QueryString: "Insert into job_histories (job_type, job_group, job_category, started) values (?, ?, ?, ?)", Args: []interface{}{jobtype, jobgroup, jobcategory, logger.SqlTimeGetNow()}})
+	if err == nil && result != nil {
 		dbid, err := result.LastInsertId()
 		if err == nil {
 			return dbid
+		} else {
+			logger.Log.GlobalLogger.Debug("error task", zap.Int64("id", dbid), zap.Error(err))
 		}
 	}
 	return 0
 }
 func endjobhistory(id int64) {
-	database.UpdateColumnStatic(&database.Querywithargs{QueryString: "Update job_histories set ended = ? where id = ?", Args: []interface{}{logger.TimeGetNow(), id}})
+	//logger.Log.GlobalLogger.Debug("Ended task", zap.Int64("id", id))
+	database.UpdateColumnStatic(&database.Querywithargs{QueryString: "Update job_histories set ended = ? where id = ?", Args: []interface{}{logger.SqlTimeGetNow(), id}})
 }
 
 func InitialFillSeries() {
@@ -88,15 +91,15 @@ func InitialFillSeries() {
 
 	var dbid int64
 	for _, cfgp := range config.Cfg.Series {
-		dbid = insertjobhistory(&database.JobHistory{JobType: "feeds", JobGroup: cfgp.Name, JobCategory: "Serie", Started: logger.SqlTimeGetNow()})
-		logger.RunFuncSimple(cfgp.Lists, func(e config.MediaListsConfig) {
-			importnewseriessingle(&cfgp, e.Name)
-		})
+		dbid = insertjobhistory("feeds", cfgp.Name, "Serie")
+		for idx := range cfgp.Lists {
+			importnewseriessingle(&cfgp, cfgp.Lists[idx].Name)
+		}
 		endjobhistory(dbid)
 		cfgp.Close()
 	}
 	for _, cfgp := range config.Cfg.Series {
-		dbid = insertjobhistory(&database.JobHistory{JobType: "datafull", JobGroup: cfgp.Name, JobCategory: "Serie", Started: logger.SqlTimeGetNow()})
+		dbid = insertjobhistory("datafull", cfgp.Name, "Serie")
 		getNewFilesMap(&cfgp, "")
 		endjobhistory(dbid)
 		cfgp.Close()
@@ -108,16 +111,16 @@ func InitialFillMovies() {
 	var dbid int64
 
 	for _, cfgp := range config.Cfg.Movies {
-		dbid = insertjobhistory(&database.JobHistory{JobType: "feeds", JobGroup: cfgp.Name, JobCategory: "Movie", Started: logger.SqlTimeGetNow()})
-		logger.RunFuncSimple(cfgp.Lists, func(e config.MediaListsConfig) {
-			importnewmoviessingle(&cfgp, e.Name)
-		})
+		dbid = insertjobhistory("feeds", cfgp.Name, "Movie")
+		for idx := range cfgp.Lists {
+			importnewmoviessingle(&cfgp, cfgp.Lists[idx].Name)
+		}
 		endjobhistory(dbid)
 		cfgp.Close()
 	}
 
 	for _, cfgp := range config.Cfg.Movies {
-		dbid = insertjobhistory(&database.JobHistory{JobType: "datafull", JobGroup: cfgp.Name, JobCategory: "Movie", Started: logger.SqlTimeGetNow()})
+		dbid = insertjobhistory("datafull", cfgp.Name, "Movie")
 		getNewFilesMap(&cfgp, "")
 		endjobhistory(dbid)
 		cfgp.Close()
@@ -358,14 +361,23 @@ func getNewFilesMap(cfgp *config.MediaTypeConfig, checklist string) {
 		tablefiles = "serie_episode_files"
 		typestring = "series"
 	}
-	allfiles := new(logger.InStringArrayStruct)
-	var cnt int
-	var ok bool
-	var pathpercent string
 
-	var unmatcheddb *logger.InStringArrayStruct
-	queryunmatched := "select filepath from " + table + " where filepath like ? and (last_checked > ? or last_checked is null)"
-	queryunmatchedcount := "select count() from " + table + " where filepath like ? and (last_checked > ? or last_checked is null)"
+	var unmatchedcache *cache.Return
+	if !logger.GlobalCache.CheckNoType(table + "_cached") {
+		unmatchedpaths := logger.InStringArrayStruct{}
+		queryunmatched := "select filepath from " + table + " where (last_checked > ? or last_checked is null)"
+		queryunmatchedcount := "select count() from " + table + " where (last_checked > ? or last_checked is null)"
+		database.QueryStaticStringArray(false,
+			database.CountRowsStaticNoError(&database.Querywithargs{QueryString: queryunmatchedcount, Args: []interface{}{sql.NullTime{Time: logger.TimeGetNow().Add(time.Hour * -12), Valid: true}}}),
+			&database.Querywithargs{QueryString: queryunmatched, Args: []interface{}{sql.NullTime{Time: logger.TimeGetNow().Add(time.Hour * -12), Valid: true}}},
+			&unmatchedpaths.Arr)
+		logger.GlobalCache.Set(table+"_cached", unmatchedpaths, 3*time.Hour, false)
+		unmatchedcache = new(cache.Return)
+		unmatchedcache.Value = unmatchedpaths
+		unmatchedpaths.Close()
+	} else {
+		unmatchedcache = logger.GlobalCache.GetData(table + "_cached")
+	}
 
 	var unwantedcache *cache.Return
 	if !logger.GlobalCache.CheckNoType(tablefiles + "_cached") {
@@ -374,7 +386,7 @@ func getNewFilesMap(cfgp *config.MediaTypeConfig, checklist string) {
 			database.CountRowsStaticNoError(&database.Querywithargs{QueryString: "select count() from " + tablefiles}),
 			&database.Querywithargs{QueryString: "select location from " + tablefiles},
 			&unwantedpaths.Arr)
-		logger.GlobalCache.Set(tablefiles+"_cached", unwantedpaths, 3*time.Hour)
+		logger.GlobalCache.Set(tablefiles+"_cached", unwantedpaths, 3*time.Hour, false)
 		unwantedcache = new(cache.Return)
 		unwantedcache.Value = unwantedpaths
 		unwantedpaths.Close()
@@ -382,74 +394,69 @@ func getNewFilesMap(cfgp *config.MediaTypeConfig, checklist string) {
 		unwantedcache = logger.GlobalCache.GetData(tablefiles + "_cached")
 	}
 
-	var cfgpath config.PathsConfig
-	var templatepath string
+	workergroup := logger.WorkerPools["Parse"].Group()
 	for idx := range cfgp.Data {
-		templatepath = cfgp.Data[idx].TemplatePath
-		if !config.Check("path_" + templatepath) {
-			logger.Log.Warn("Config not found ", templatepath)
+		if !config.Check("path_" + cfgp.Data[idx].TemplatePath) {
+			logger.Log.Warn("Config not found ", cfgp.Data[idx].TemplatePath)
 			continue
 		}
-		if !scanner.CheckFileExist(config.Cfg.Paths[templatepath].Path) {
+		if !scanner.CheckFileExist(config.Cfg.Paths[cfgp.Data[idx].TemplatePath].Path) {
 			continue
 		}
-		cfgpath = config.Cfg.Paths[templatepath]
-		cnt, ok = logger.GlobalCounter[cfgpath.Path]
-		pathpercent = cfgpath.Path + "%"
-		if ok {
-			allfiles.Arr = make([]string, 0, cnt)
-		} else {
-			allfiles.Arr = []string{}
-		}
-
+		cfgpath := config.Cfg.Paths[cfgp.Data[idx].TemplatePath]
 		//var pathdir string
-		if filepath.WalkDir(cfgpath.Path, scanner.Walk(templatepath, allfiles, false, &cfgpath)) != nil {
-			cfgpath.Close()
-			continue
-		}
-		if len(allfiles.Arr) == 0 {
-			logger.Log.GlobalLogger.Warn("No Files Found in", zap.String("Path", cfgpath.Path))
-		}
-		logger.GlobalMu.Lock()
-		logger.GlobalCounter[cfgpath.Path] = len(allfiles.Arr)
-		logger.GlobalMu.Unlock()
-
+		filepath.WalkDir(cfgpath.Path, WalkDataDir(workergroup, cfgp.Data[idx].TemplatePath, cfgp, &cfgpath, cfgp.Data[idx].AddFoundList, cfgp.Data[idx].AddFound, typestring, unmatchedcache, unwantedcache))
 		cfgpath.Close()
-		if len(allfiles.Arr) == 0 {
-			continue
-		}
-
-		unmatcheddb = &logger.InStringArrayStruct{}
-		database.QueryStaticStringArray(false,
-			database.CountRowsStaticNoError(&database.Querywithargs{QueryString: queryunmatchedcount, Args: []interface{}{pathpercent, time.Now().Add(time.Hour * -12)}}),
-			&database.Querywithargs{QueryString: queryunmatched, Args: []interface{}{pathpercent, time.Now().Add(time.Hour * -12)}},
-			&unmatcheddb.Arr)
-
-		//reduce vars with function
-		loopgetnewfiles(cfgp, cfgp.Data[idx].AddFoundList, cfgp.Data[idx].AddFound, typestring, allfiles, unmatcheddb, unwantedcache)
-		unmatcheddb.Close()
 	}
+	workergroup.Wait()
+	unmatchedcache = nil
 	unwantedcache = nil
-	allfiles.Close()
 }
 
-func loopgetnewfiles(cfgp *config.MediaTypeConfig, addfoundlist string, addfound bool, typestring string, allfiles *logger.InStringArrayStruct, unmatcheddb *logger.InStringArrayStruct, unwantedpaths *cache.Return) {
-	workergroup := logger.WorkerPools["Parse"].Group()
-	for idxall := range allfiles.Arr {
-		if slices.Contains(unmatcheddb.Arr, allfiles.Arr[idxall]) {
-			continue
+func WalkDataDir(workergroup *pond.TaskGroup, pathcfgstr string, cfgp *config.MediaTypeConfig, cfgpath *config.PathsConfig, addfoundlist string, addfound bool, typestring string, unmatcheddb *cache.Return, unwantedpaths *cache.Return) func(path string, info fs.DirEntry, errwalk error) error {
+	return func(path string, info fs.DirEntry, errwalk error) error {
+		if errwalk != nil {
+			return errwalk
 		}
-		//if logger.InStringArrayCaseSensitive(path, unmatcheddb) {
-		//	continue
-		//}
-		if slices.Contains(unwantedpaths.Value.(logger.InStringArrayStruct).Arr, allfiles.Arr[idxall]) {
-			continue
+		if info.IsDir() {
+			return nil
 		}
-		//if logger.InStringArrayCaseSensitive(path, unwantedpaths) {
-		//	continue
-		//}
+		extlower := filepath.Ext(path)
+		var ok bool
 
-		path := allfiles.Arr[idxall]
+		if slices.ContainsFunc(cfgpath.AllowedVideoExtensionsIn.Arr, func(c string) bool { return strings.EqualFold(c, extlower) }) {
+			ok = true
+		}
+
+		if len(cfgpath.AllowedVideoExtensionsNoRenameIn.Arr) >= 1 && !ok {
+			if slices.ContainsFunc(cfgpath.AllowedVideoExtensionsNoRenameIn.Arr, func(c string) bool { return strings.EqualFold(c, extlower) }) {
+				ok = true
+			}
+		}
+
+		if len(cfgpath.AllowedVideoExtensionsNoRenameIn.Arr) == 0 && len(cfgpath.AllowedVideoExtensionsIn.Arr) == 0 && !ok {
+			ok = true
+		}
+
+		//Check IgnoredPaths
+
+		if len(cfgpath.BlockedLowerIn.Arr) >= 1 && ok {
+			if logger.InStringArrayContainsCaseInSensitive(path, &cfgpath.BlockedLowerIn) {
+				ok = false
+			}
+		}
+		//if lenblock >= 1 && ok && logger.InStringArrayContainsCaseInSensitive(path, &cfgpath.BlockedLowerIn) {
+		//	return nil
+		//}
+		if !ok {
+			return nil
+		}
+		if slices.Contains(unmatcheddb.Value.(logger.InStringArrayStruct).Arr, path) {
+			return nil
+		}
+		if slices.Contains(unwantedpaths.Value.(logger.InStringArrayStruct).Arr, path) {
+			return nil
+		}
 		if typestring == "series" {
 			workergroup.Submit(func() {
 				jobImportSeriesParseV2(path, true, cfgp, addfoundlist, false)
@@ -459,8 +466,8 @@ func loopgetnewfiles(cfgp *config.MediaTypeConfig, addfoundlist string, addfound
 				jobImportMovieParseV2(path, true, cfgp, addfoundlist, addfound)
 			})
 		}
+		return nil
 	}
-	workergroup.Wait()
 }
 
 func SingleJobs(typ string, job string, cfgpstr string, listname string, force bool) {
@@ -485,23 +492,171 @@ func SingleJobs(typ string, job string, cfgpstr string, listname string, force b
 	if typ != "movie" {
 		category = "Serie"
 	}
-	dbinsert := insertjobhistory(&database.JobHistory{JobType: job, JobGroup: cfgp.NamePrefix, JobCategory: category, Started: logger.SqlTimeGetNow()})
+	dbinsert := insertjobhistory(job, cfgp.NamePrefix, category)
 
+	searchmissingIncremental := cfgp.SearchmissingIncremental
+	searchupgradeIncremental := cfgp.SearchupgradeIncremental
+	if searchmissingIncremental == 0 {
+		searchmissingIncremental = 20
+	}
+	if searchupgradeIncremental == 0 {
+		searchupgradeIncremental = 20
+	}
+	var search, searchtitle, searchmissing bool
+	var searchinterval int
 	switch job {
 	case "datafull":
 		getNewFilesMap(&cfgp, "")
+	case "searchmissingfull":
+		search = true
+		searchmissing = true
+	case "searchmissinginc":
+		search = true
+		searchmissing = true
+		searchinterval = searchmissingIncremental
+	case "searchupgradefull":
+		search = true
+	case "searchupgradeinc":
+		search = true
+		searchinterval = searchupgradeIncremental
+	case "searchmissingfulltitle":
+		search = true
+		searchmissing = true
+		searchtitle = true
+	case "searchmissinginctitle":
+		search = true
+		searchmissing = true
+		searchtitle = true
+		searchinterval = searchmissingIncremental
+	case "searchupgradefulltitle":
+		search = true
+		searchtitle = true
+	case "searchupgradeinctitle":
+		search = true
+		searchtitle = true
+		searchinterval = searchupgradeIncremental
 	case "structure":
 		structurefolders(&cfgp, typ)
 
 	}
 
+	if search {
+		if typ == "movie" {
+			searcher.Searchlist(&cfgp, "movies", searchtitle, searcher.SearchMovie(&cfgp, searchmissing, searchinterval, searchtitle))
+		} else {
+			searcher.Searchlist(&cfgp, "serie_episodes", searchtitle, searcher.SearchSerie(&cfgp, searchmissing, searchinterval, searchtitle))
+		}
+	}
+
 	if job == "data" {
-		logger.RunFuncSimple(getjoblists(&cfgp, listname), func(e config.MediaListsConfig) {
-			getNewFilesMap(&cfgp, e.Name)
-		})
+		for _, list := range getjoblists(&cfgp, listname) {
+			getNewFilesMap(&cfgp, list.Name)
+		}
+	}
+
+	if job == "rss" || job == "checkreachedflag" || job == "clearhistory" || job == "feeds" || job == "checkmissing" || job == "checkmissingflag" {
+		qualis := new(logger.InStringArrayStruct)
+
+		for _, list := range getjoblists(&cfgp, listname) {
+			if job == "rss" && !slices.Contains(qualis.Arr, list.TemplateQuality) {
+				qualis.Arr = append(qualis.Arr, list.TemplateQuality)
+			}
+			switch job {
+			case "checkmissing":
+				checkmissing(typ, list.Name)
+			case "checkmissingflag":
+				checkmissingflag(typ, list.Name)
+			case "checkreachedflag":
+				if typ == "movie" {
+					checkreachedmoviesflag(&cfgp, list.Name)
+				} else {
+					checkreachedepisodesflag(&cfgp, list.Name)
+				}
+			case "clearhistory":
+				if typ == "movie" {
+					database.DeleteRow("movie_histories", &database.Querywithargs{Query: database.Query{Where: "movie_id in (Select id from movies where listname = ? COLLATE NOCASE)"}, Args: []interface{}{list.Name}})
+				} else {
+					database.DeleteRow("serie_episode_histories", &database.Querywithargs{Query: database.Query{Where: "serie_id in (Select id from series where listname = ? COLLATE NOCASE)"}, Args: []interface{}{list.Name}})
+				}
+			case "feeds":
+				if typ == "movie" {
+					importnewmoviessingle(&cfgp, list.Name)
+				} else {
+					importnewseriessingle(&cfgp, list.Name)
+				}
+			}
+		}
+		if job == "rss" {
+			if typ == "movie" {
+				for idx := range qualis.Arr {
+					searcher.SearchMovieRSS(&cfgp, qualis.Arr[idx])
+				}
+			} else {
+				for idx := range qualis.Arr {
+					searcher.SearchSerieRSS(&cfgp, qualis.Arr[idx])
+				}
+			}
+		}
+		qualis.Close()
 	}
 	if dbinsert != 0 {
 		endjobhistory(dbinsert)
 	}
 	logger.Log.GlobalLogger.Info(jobended, zap.Stringp("Job", &job), zap.Stringp("config", &cfgp.NamePrefix))
+}
+
+func checkmissing(typvar string, listname string) {
+	var filesfound []string
+	var query, querycount string
+	if typvar == "movie" {
+		query = "select location from movie_files where movie_id in (select id from movies where listname = ? COLLATE NOCASE)"
+		querycount = "select count() from movie_files where movie_id in (select id from movies where listname = ? COLLATE NOCASE)"
+	} else {
+		querycount = "select location from serie_episode_files where serie_id in (Select id from series where listname = ? COLLATE NOCASE)"
+		query = "select location from serie_episode_files where serie_id in (Select id from series where listname = ? COLLATE NOCASE)"
+	}
+	database.QueryStaticStringArray(false,
+		database.CountRowsStaticNoError(&database.Querywithargs{QueryString: querycount, Args: []interface{}{listname}}),
+		&database.Querywithargs{QueryString: query, Args: []interface{}{listname}},
+		&filesfound)
+	if len(filesfound) >= 1 {
+		for idx := range filesfound {
+			jobImportFileCheck(filesfound[idx], typvar)
+		}
+	}
+	filesfound = nil
+}
+
+func checkmissingflag(typvar string, listname string) {
+	var query, querycount, queryupdate string
+	if typvar == "movie" {
+		query = "Select id, missing from movies where listname = ? COLLATE NOCASE"
+		querycount = "select count() from movie_files where movie_id = ?"
+		queryupdate = "update movies set missing = ? where id = ?"
+	} else {
+		query = "select id, missing from serie_episodes where serie_id in (select id from series where listname = ? COLLATE NOCASE)"
+		querycount = "select count() from serie_episode_files where serie_episode_id = ?"
+		queryupdate = "update serie_episodes set missing = ? where id = ?"
+	}
+	var missing []database.DbstaticOneIntOneBool
+	database.QueryStaticColumnsOneIntOneBool(&database.Querywithargs{QueryString: query, Args: []interface{}{listname}}, &missing)
+
+	var counter, setmissing int
+	var set bool
+	for idxmovie := range missing {
+		counter = database.CountRowsStaticNoError(&database.Querywithargs{QueryString: querycount, Args: []interface{}{missing[idxmovie].Num}})
+		set = false
+		if counter >= 1 && missing[idxmovie].Bl {
+			set = true
+			setmissing = 0
+		}
+		if counter == 0 && !missing[idxmovie].Bl {
+			set = true
+			setmissing = 1
+		}
+		if set {
+			database.UpdateColumnStatic(&database.Querywithargs{QueryString: queryupdate, Args: []interface{}{setmissing, missing[idxmovie].Num}})
+		}
+	}
+	missing = nil
 }

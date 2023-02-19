@@ -2,7 +2,6 @@ package importfeed
 
 import (
 	"database/sql"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -40,7 +39,6 @@ const queryupdateseries = "Update dbseries SET Seriename = :seriename, Aliases =
 const queryupdatemovie = "Update dbmovies SET Title = :title , Release_Date = :release_date , Year = :year , Adult = :adult , Budget = :budget , Genres = :genres , Original_Language = :original_language , Original_Title = :original_title , Overview = :overview , Popularity = :popularity , Revenue = :revenue , Runtime = :runtime , Spoken_Languages = :spoken_languages , Status = :status , Tagline = :tagline , Vote_Average = :vote_average , Vote_Count = :vote_count , Trakt_ID = :trakt_id , Moviedb_ID = :moviedb_id , Imdb_ID = :imdb_id , Freebase_M_ID = :freebase_m_id , Freebase_ID = :freebase_id , Facebook_ID = :facebook_id , Instagram_ID = :instagram_id , Twitter_ID = :twitter_id , URL = :url , Backdrop = :backdrop , Poster = :poster , Slug = :slug where id = :id"
 
 var importJobRunning string
-var errNotFound = errors.New("not found")
 
 func JobImportMovies(imdbid string, cfgp *config.MediaTypeConfig, listname string, addnew bool) uint {
 	jobName := imdbid
@@ -499,47 +497,42 @@ func MovieFindImdbIDByTitle(title string, year int, searchtype string, addifnotf
 	return "", false, false
 }
 
-func FindDbserieByName(title string) (uint, error) {
+func FindDbserieByName(title string) uint {
 	var id uint
-	err := database.QueryColumn(&database.Querywithargs{QueryString: queryiddbseriesbyname, Args: []interface{}{title}}, &id)
+	database.QueryColumn(&database.Querywithargs{QueryString: queryiddbseriesbyname, Args: []interface{}{title}}, &id)
 	if id == 0 {
 		slugged := logger.StringToSlug(title)
-		err = database.QueryColumn(&database.Querywithargs{QueryString: queryiddbseriesbyslug, Args: []interface{}{slugged}}, &id)
+		database.QueryColumn(&database.Querywithargs{QueryString: queryiddbseriesbyslug, Args: []interface{}{slugged}}, &id)
 		if id == 0 {
-			err = database.QueryColumn(&database.Querywithargs{QueryString: querydbserieidseriealternatebytitle, Args: []interface{}{title, slugged}}, &id)
+			database.QueryColumn(&database.Querywithargs{QueryString: querydbserieidseriealternatebytitle, Args: []interface{}{title, slugged}}, &id)
 		}
 	}
-	return id, err
+	return id
 }
 
-func FindDbserieEpisodeByIdentifierOrSeasonEpisode(dbserieid uint, identifier string, season string, episode string) (uint, error) {
+func FindDbserieEpisodeByIdentifierOrSeasonEpisode(dbserieid uint, identifier string, season string, episode string) uint {
 	var id uint
-	var err error
 	if season != "" && episode != "" {
-		err = database.QueryColumn(&database.Querywithargs{QueryString: queryiddbseriesepisodesbyseason, Args: []interface{}{dbserieid, strings.TrimLeft(season, "0"), strings.TrimLeft(episode, "0")}}, &id)
-		if err == nil {
-			return id, err
+		if database.QueryColumn(&database.Querywithargs{QueryString: queryiddbseriesepisodesbyseason, Args: []interface{}{dbserieid, strings.TrimLeft(season, "0"), strings.TrimLeft(episode, "0")}}, &id) == nil {
+			return id
 		}
 	}
 	if identifier != "" {
-		err = database.QueryColumn(&database.Querywithargs{QueryString: queryiddbseriesepisodesbyidentifier, Args: []interface{}{dbserieid, identifier}}, &id)
-		if err == nil {
-			return id, err
+		if database.QueryColumn(&database.Querywithargs{QueryString: queryiddbseriesepisodesbyidentifier, Args: []interface{}{dbserieid, identifier}}, &id) == nil {
+			return id
 		}
-		if strings.Contains(identifier, ".") {
-			err = database.QueryColumn(&database.Querywithargs{QueryString: queryiddbseriesepisodesbyidentifier, Args: []interface{}{dbserieid, strings.ReplaceAll(identifier, ".", "-")}}, &id)
-			if err == nil {
-				return id, err
+		if logger.StringContainsRune(identifier, '.') {
+			if database.QueryColumn(&database.Querywithargs{QueryString: queryiddbseriesepisodesbyidentifier, Args: []interface{}{dbserieid, logger.StringReplaceRune(identifier, '.', '-')}}, &id) == nil {
+				return id
 			}
 		}
-		if strings.Contains(identifier, " ") {
-			err = database.QueryColumn(&database.Querywithargs{QueryString: queryiddbseriesepisodesbyidentifier, Args: []interface{}{dbserieid, strings.ReplaceAll(identifier, " ", "-")}}, &id)
-			if err == nil {
-				return id, err
+		if logger.StringContainsRune(identifier, ' ') {
+			if database.QueryColumn(&database.Querywithargs{QueryString: queryiddbseriesepisodesbyidentifier, Args: []interface{}{dbserieid, logger.StringReplaceRune(identifier, ' ', '-')}}, &id) == nil {
+				return id
 			}
 		}
 	}
-	return 0, errNotFound
+	return 0
 }
 func GetEpisodeArray(identifiedby string, identifier string) *logger.InStringArrayStruct {
 	str1, str2 := config.RegexGetMatchesStr1Str2("RegexSeriesIdentifier", identifier)
@@ -548,21 +541,21 @@ func GetEpisodeArray(identifiedby string, identifier string) *logger.InStringArr
 	}
 
 	if identifiedby == "date" {
-		str1 = strings.ReplaceAll(str2, " ", "-")
-		str1 = strings.ReplaceAll(str1, ".", "-")
+		str1 = logger.StringReplaceRune(str2, ' ', '-')
+		str1 = logger.StringReplaceRune(str1, '.', '-')
 	}
 	if identifiedby == "date" {
 		return &logger.InStringArrayStruct{Arr: []string{str1}}
 	}
-	if strings.ContainsRune(str1, []rune("E")[0]) {
+	if logger.StringContainsRune(str1, 'E') {
 		return &logger.InStringArrayStruct{Arr: strings.Split(str1, "E")}
-	} else if strings.ContainsRune(str1, []rune("e")[0]) {
+	} else if logger.StringContainsRune(str1, 'e') {
 		return &logger.InStringArrayStruct{Arr: strings.Split(str1, "e")}
-	} else if strings.ContainsRune(str1, []rune("X")[0]) {
+	} else if logger.StringContainsRune(str1, 'X') {
 		return &logger.InStringArrayStruct{Arr: strings.Split(str1, "X")}
-	} else if strings.ContainsRune(str1, []rune("x")[0]) {
+	} else if logger.StringContainsRune(str1, 'x') {
 		return &logger.InStringArrayStruct{Arr: strings.Split(str1, "x")}
-	} else if identifiedby != "date" && strings.ContainsRune(str1, []rune("-")[0]) {
+	} else if identifiedby != "date" && logger.StringContainsRune(str1, '-') {
 		return &logger.InStringArrayStruct{Arr: strings.Split(str1, "-")}
 	}
 	return &logger.InStringArrayStruct{}
@@ -616,7 +609,6 @@ func JobImportDbSeries(serieconfig *config.SerieConfig, cfgp *config.MediaTypeCo
 	defer dbserie.Close()
 
 	var counter int
-	var err error
 	if strings.EqualFold(serieconfig.Source, "none") && addnew {
 		database.QueryColumn(&database.Querywithargs{QueryString: querycountdbseriesbyseriename, Args: []interface{}{serieconfig.Name}}, &counter)
 
@@ -640,8 +632,7 @@ func JobImportDbSeries(serieconfig *config.SerieConfig, cfgp *config.MediaTypeCo
 				if serieconfig.AlternateName[idxalt] == "" {
 					continue
 				}
-				err = database.QueryColumn(&database.Querywithargs{QueryString: queryalternate, Args: []interface{}{dbserie.ID, serieconfig.AlternateName[idxalt]}}, &counter)
-				if err != nil {
+				if database.QueryColumn(&database.Querywithargs{QueryString: queryalternate, Args: []interface{}{dbserie.ID, serieconfig.AlternateName[idxalt]}}, &counter) != nil {
 					continue
 				}
 				if counter == 0 {
@@ -649,9 +640,7 @@ func JobImportDbSeries(serieconfig *config.SerieConfig, cfgp *config.MediaTypeCo
 				}
 			}
 		} else {
-			err = database.QueryColumn(&database.Querywithargs{QueryString: queryiddbseriesbyname, Args: []interface{}{serieconfig.Name}}, &dbserie.ID)
-
-			if err != nil {
+			if database.QueryColumn(&database.Querywithargs{QueryString: queryiddbseriesbyname, Args: []interface{}{serieconfig.Name}}, &dbserie.ID) != nil {
 				logger.Log.GlobalLogger.Debug("Job skipped - id not fetched", zap.Stringp("job", &jobName))
 				return
 			}
@@ -817,8 +806,7 @@ func JobImportDbSeries(serieconfig *config.SerieConfig, cfgp *config.MediaTypeCo
 						var strseason, strepisode string
 						for idxseason := range seasons.Seasons {
 							episodes.Episodes = []apiexternal.TraktSerieSeasonEpisodes{}
-							err = apiexternal.TraktAPI.GetSerieSeasonEpisodes(dbserie.ImdbID, seasons.Seasons[idxseason].Number, episodes)
-							if err == nil {
+							if apiexternal.TraktAPI.GetSerieSeasonEpisodes(dbserie.ImdbID, seasons.Seasons[idxseason].Number, episodes) == nil {
 								for idxepi := range episodes.Episodes {
 									strepisode = logger.IntToString(episodes.Episodes[idxepi].Episode)
 									strseason = logger.IntToString(episodes.Episodes[idxepi].Season)

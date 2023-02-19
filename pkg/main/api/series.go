@@ -111,6 +111,7 @@ func apiSeriesGet(ctx *gin.Context) {
 	var series []database.Dbserie
 	database.QueryDbserie(&database.Querywithargs{Query: query}, &series)
 	ctx.JSON(http.StatusOK, gin.H{"data": series, "total": rows})
+	series = nil
 }
 
 // @Summary      Delete Series
@@ -181,6 +182,7 @@ func apiSeriesListGet(ctx *gin.Context) {
 	}
 	series, _ := database.QueryResultSeries(&database.Querywithargs{Query: query, Args: []interface{}{ctx.Param("name")}})
 	ctx.JSON(http.StatusOK, gin.H{"data": series, "total": rows})
+	series = nil
 }
 
 // @Summary      Delete Series (List)
@@ -246,6 +248,7 @@ func apiSeriesUnmatched(ctx *gin.Context) {
 	}
 	series, _ := database.QuerySerieFileUnmatched(&database.Querywithargs{Query: query})
 	ctx.JSON(http.StatusOK, gin.H{"data": series, "total": rows})
+	series = nil
 }
 
 // @Summary      List Series Episodes
@@ -289,6 +292,7 @@ func apiSeriesEpisodesGet(ctx *gin.Context) {
 	var series []database.DbserieEpisode
 	database.QueryDbserieEpisodes(&database.Querywithargs{Query: query}, &series)
 	ctx.JSON(http.StatusOK, gin.H{"data": series, "total": rows})
+	series = nil
 }
 
 // @Summary      List Series Episodes (Single)
@@ -334,6 +338,7 @@ func apiSeriesEpisodesGetSingle(ctx *gin.Context) {
 	var series []database.DbserieEpisode
 	database.QueryDbserieEpisodes(&database.Querywithargs{Query: query, Args: []interface{}{ctx.Param("id")}}, &series)
 	ctx.JSON(http.StatusOK, gin.H{"data": series, "total": rows})
+	series = nil
 }
 
 // @Summary      Delete Episode
@@ -402,6 +407,7 @@ func apiSeriesEpisodesListGet(ctx *gin.Context) {
 	}
 	series, _ := database.QueryResultSerieEpisodes(&database.Querywithargs{Query: query, Args: []interface{}{ctx.Param("id")}})
 	ctx.JSON(http.StatusOK, gin.H{"data": series, "total": rows})
+	series = nil
 }
 
 // @Summary      Delete Episode (List)
@@ -456,17 +462,13 @@ func apiseriesAllJobs(c *gin.Context) {
 			cfgpstr := "serie_" + config.Cfg.Series[idx].Name
 
 			switch c.Param("job") {
-			case "data", "datafull", "structure":
+			case "data", "datafull", "structure", "clearhistory":
 				scheduler.QueueData.Dispatch(c.Param("job")+"_series_"+config.Cfg.Series[idx].Name, func() {
 					utils.SingleJobs("series", c.Param("job"), cfgpstr, "", true)
 				})
-			case "clearhistory":
-				scheduler.QueueData.Dispatch(c.Param("job")+"_series_"+config.Cfg.Series[idx].Name, func() {
-					utils.SeriesSingleJobs(c.Param("job"), cfgpstr, "", true)
-				})
 			case "rss", "rssseasons", "searchmissingfull", "searchmissinginc", "searchupgradefull", "searchupgradeinc", "searchmissingfulltitle", "searchmissinginctitle", "searchupgradefulltitle", "searchupgradeinctitle":
 				scheduler.QueueSearch.Dispatch(c.Param("job")+"_series_"+config.Cfg.Series[idx].Name, func() {
-					utils.SeriesSingleJobs(c.Param("job"), cfgpstr, "", true)
+					utils.SingleJobs("series", c.Param("job"), cfgpstr, "", true)
 				})
 			case "feeds", "checkmissing", "checkmissingflag", "checkreachedflag":
 				for idxlist := range config.Cfg.Series[idx].Lists {
@@ -483,11 +485,11 @@ func apiseriesAllJobs(c *gin.Context) {
 					listname := config.Cfg.Series[idx].Lists[idxlist].Name
 					if c.Param("job") == "feeds" {
 						scheduler.QueueFeeds.Dispatch(c.Param("job")+"_series_"+config.Cfg.Series[idx].Name, func() {
-							utils.SeriesSingleJobs(c.Param("job"), cfgpstr, listname, true)
+							utils.SingleJobs("series", c.Param("job"), cfgpstr, listname, true)
 						})
 					} else if c.Param("job") == "checkmissing" || c.Param("job") == "checkmissingflag" || c.Param("job") == "checkreachedflag" {
 						scheduler.QueueData.Dispatch(c.Param("job")+"_series_"+config.Cfg.Series[idx].Name, func() {
-							utils.SeriesSingleJobs(c.Param("job"), cfgpstr, listname, true)
+							utils.SingleJobs("series", c.Param("job"), cfgpstr, listname, true)
 						})
 					}
 					//cfg_list.Close()
@@ -497,7 +499,7 @@ func apiseriesAllJobs(c *gin.Context) {
 
 			default:
 				scheduler.QueueData.Dispatch(c.Param("job")+"_series_"+config.Cfg.Series[idx].Name, func() {
-					utils.SeriesSingleJobs(c.Param("job"), cfgpstr, "", true)
+					utils.SingleJobs("series", c.Param("job"), cfgpstr, "", true)
 				})
 			}
 			//cfgSerie.Close()
@@ -543,17 +545,13 @@ func apiseriesJobs(c *gin.Context) {
 		returnval := "Job " + c.Param("job") + " started"
 		cfgpstr := "serie_" + c.Param("name")
 		switch c.Param("job") {
-		case "data", "datafull", "structure":
+		case "data", "datafull", "structure", "clearhistory":
 			scheduler.QueueData.Dispatch(c.Param("job")+"_series_"+c.Param("name"), func() {
 				utils.SingleJobs("series", c.Param("job"), cfgpstr, "", true)
 			})
-		case "clearhistory":
-			scheduler.QueueData.Dispatch(c.Param("job")+"_series_"+c.Param("name"), func() {
-				utils.SeriesSingleJobs(c.Param("job"), cfgpstr, "", true)
-			})
 		case "rss", "rssseasons", "searchmissingfull", "searchmissinginc", "searchupgradefull", "searchupgradeinc", "searchmissingfulltitle", "searchmissinginctitle", "searchupgradefulltitle", "searchupgradeinctitle":
 			scheduler.QueueSearch.Dispatch(c.Param("job")+"_series_"+c.Param("name"), func() {
-				utils.SeriesSingleJobs(c.Param("job"), cfgpstr, "", true)
+				utils.SingleJobs("series", c.Param("job"), cfgpstr, "", true)
 			})
 		case "feeds", "checkmissing", "checkmissingflag", "checkreachedflag":
 			for idxlist := range config.Cfg.Series[c.Param("name")].Lists {
@@ -570,12 +568,12 @@ func apiseriesJobs(c *gin.Context) {
 				listname := config.Cfg.Series[c.Param("name")].Lists[idxlist].Name
 				if c.Param("job") == "feeds" {
 					scheduler.QueueFeeds.Dispatch(c.Param("job")+"_series_"+c.Param("name"), func() {
-						utils.SeriesSingleJobs(c.Param("job"), cfgpstr, listname, true)
+						utils.SingleJobs("series", c.Param("job"), cfgpstr, listname, true)
 					})
 				}
 				if c.Param("job") == "checkmissing" || c.Param("job") == "checkmissingflag" || c.Param("job") == "checkreachedflag" {
 					scheduler.QueueData.Dispatch(c.Param("job")+"_series_"+c.Param("name"), func() {
-						utils.SeriesSingleJobs(c.Param("job"), cfgpstr, listname, true)
+						utils.SingleJobs("series", c.Param("job"), cfgpstr, listname, true)
 					})
 				}
 				//cfg_list.Close()
@@ -590,7 +588,7 @@ func apiseriesJobs(c *gin.Context) {
 			})
 		default:
 			scheduler.QueueData.Dispatch(c.Param("job")+"_series_"+c.Param("name"), func() {
-				utils.SeriesSingleJobs(c.Param("job"), cfgpstr, "", true)
+				utils.SingleJobs("series", c.Param("job"), cfgpstr, "", true)
 			})
 		}
 		c.JSON(http.StatusOK, returnval)
@@ -809,9 +807,9 @@ func apiSeriesSearch(c *gin.Context) {
 	//defer logger.ClearVar(&serie)
 
 	for idx := range config.Cfg.Series {
-		cfgp := config.Cfg.Media["serie_"+config.Cfg.Series[idx].Name]
 		for idxlist := range config.Cfg.Series[idx].Lists {
 			if strings.EqualFold(config.Cfg.Series[idx].Lists[idxlist].Name, serie.Listname) {
+				cfgp := config.Cfg.Media["serie_"+config.Cfg.Series[idx].Name]
 				scheduler.QueueSearch.Dispatch("searchseries_series_"+config.Cfg.Series[idx].Name+"_"+strconv.Itoa(int(serie.ID)), func() {
 					searcher.SearchSerieSingle(serie.ID, &cfgp, true)
 				})
@@ -840,9 +838,9 @@ func apiSeriesSearchSeason(c *gin.Context) {
 	//defer logger.ClearVar(&serie)
 
 	for idx := range config.Cfg.Series {
-		cfgp := config.Cfg.Media["serie_"+config.Cfg.Series[idx].Name]
 		for idxlist := range config.Cfg.Series[idx].Lists {
 			if strings.EqualFold(config.Cfg.Series[idx].Lists[idxlist].Name, serie.Listname) {
+				cfgp := config.Cfg.Media["serie_"+config.Cfg.Series[idx].Name]
 				scheduler.QueueSearch.Dispatch("searchseriesseason_series_"+config.Cfg.Series[idx].Name+"_"+strconv.Itoa(int(serie.ID))+"_"+c.Param("season"), func() {
 					searcher.SearchSerieSeasonSingle(serie.ID, c.Param("season"), &cfgp, true)
 				})
@@ -870,9 +868,9 @@ func apiSeriesSearchRSS(c *gin.Context) {
 	//defer logger.ClearVar(&serie)
 
 	for idx := range config.Cfg.Series {
-		cfgp := config.Cfg.Media["serie_"+config.Cfg.Series[idx].Name]
 		for idxlist := range config.Cfg.Series[idx].Lists {
 			if strings.EqualFold(config.Cfg.Series[idx].Lists[idxlist].Name, serie.Listname) {
+				cfgp := config.Cfg.Media["serie_"+config.Cfg.Series[idx].Name]
 				scheduler.QueueSearch.Dispatch("searchseriesseason_series_"+config.Cfg.Series[idx].Name+"_"+strconv.Itoa(int(serie.ID))+"_"+c.Param("season"), func() {
 					searcher.SearchSerieRSSSeasonSingle(serie.ID, 0, false, &cfgp)
 				})
@@ -903,9 +901,9 @@ func apiSeriesSearchRSSSeason(c *gin.Context) {
 	seasonint, _ := strconv.Atoi(c.Param("season"))
 
 	for idx := range config.Cfg.Series {
-		cfgp := config.Cfg.Media["serie_"+config.Cfg.Series[idx].Name]
 		for idxlist := range config.Cfg.Series[idx].Lists {
 			if strings.EqualFold(config.Cfg.Series[idx].Lists[idxlist].Name, serie.Listname) {
+				cfgp := config.Cfg.Media["serie_"+config.Cfg.Series[idx].Name]
 				scheduler.QueueSearch.Dispatch("searchseriesseason_series_"+config.Cfg.Series[idx].Name+"_"+strconv.Itoa(int(serie.ID))+"_"+c.Param("season"), func() {
 					searcher.SearchSerieRSSSeasonSingle(serie.ID, seasonint, true, &cfgp)
 				})
@@ -937,10 +935,10 @@ func apiSeriesEpisodeSearch(c *gin.Context) {
 	//defer logger.ClearVar(&serie)
 
 	for idx := range config.Cfg.Series {
-		cfgp := config.Cfg.Media["serie_"+config.Cfg.Series[idx].Name]
 
 		for idxlist := range config.Cfg.Series[idx].Lists {
 			if strings.EqualFold(config.Cfg.Series[idx].Lists[idxlist].Name, serie.Listname) {
+				cfgp := config.Cfg.Media["serie_"+config.Cfg.Series[idx].Name]
 				scheduler.QueueSearch.Dispatch("searchseriesepisode_series_"+config.Cfg.Series[idx].Name+"_"+strconv.Itoa(id), func() {
 					searcher.SearchSerieEpisodeSingle(uid, &cfgp, true)
 				})
@@ -980,19 +978,21 @@ func apiSeriesEpisodeSearchList(c *gin.Context) {
 	}
 
 	for idx := range config.Cfg.Series {
-		cfgp := config.Cfg.Media["serie_"+config.Cfg.Series[idx].Name]
 
 		for idxlist := range config.Cfg.Series[idx].Lists {
 			if strings.EqualFold(config.Cfg.Series[idx].Lists[idxlist].Name, serie.Listname) {
+				cfgp := config.Cfg.Media["serie_"+config.Cfg.Series[idx].Name]
 				searchresults, err := searcher.SeriesSearch(&cfgp, serieepi.ID, false, titlesearch)
 				if err != nil {
 					str := "failed with " + err.Error()
 					c.JSON(http.StatusNotFound, str)
+					cfgp.Close()
 					//searchnow.Close()
 					return
 				}
 				c.JSON(http.StatusOK, gin.H{"accepted": searchresults.Nzbs, "rejected": searchresults.Rejected})
-				defer searchresults.Close()
+				searchresults.Close()
+				cfgp.Close()
 				//searchnow.Close()
 				return
 			}
@@ -1014,17 +1014,19 @@ func apiSeriesRssSearchList(c *gin.Context) {
 	}
 
 	for idx := range config.Cfg.Series {
-		cfgp := config.Cfg.Media["serie_"+config.Cfg.Series[idx].Name]
 
 		if strings.EqualFold(config.Cfg.Series[idx].Name, c.Param("group")) {
+			cfgp := config.Cfg.Media["serie_"+config.Cfg.Series[idx].Name]
 			searchresults, err := searcher.SearchRSS(&cfgp, config.Cfg.Series[idx].TemplateQuality, "series", true)
 			if err != nil {
 				str := "failed with " + err.Error()
 				c.JSON(http.StatusNotFound, str)
+				cfgp.Close()
 				return
 			}
-			defer searchresults.Close()
 			c.JSON(http.StatusOK, gin.H{"accepted": searchresults.Nzbs, "rejected": searchresults.Rejected})
+			cfgp.Close()
+			searchresults.Close()
 			return
 		}
 	}
@@ -1058,11 +1060,12 @@ func apiSeriesEpisodeSearchDownload(c *gin.Context) {
 	//defer logger.ClearVar(&nzb)
 
 	for idx := range config.Cfg.Series {
-		cfgp := config.Cfg.Media["serie_"+config.Cfg.Series[idx].Name]
 		for idxlist := range config.Cfg.Series[idx].Lists {
 			if strings.EqualFold(config.Cfg.Series[idx].Lists[idxlist].Name, serie.Listname) {
+				cfgp := config.Cfg.Media["serie_"+config.Cfg.Series[idx].Name]
 				downloader.DownloadSeriesEpisode(&cfgp, serieepi.ID, &nzb)
 				c.JSON(http.StatusOK, "started")
+				cfgp.Close()
 				return
 			}
 		}
@@ -1081,7 +1084,7 @@ func apiSeriesClearHistoryName(c *gin.Context) {
 	if auth(c) == http.StatusUnauthorized {
 		return
 	}
-	utils.SeriesSingleJobs("clearhistory", "serie_"+c.Param("name"), "", true)
+	utils.SingleJobs("series", "clearhistory", "serie_"+c.Param("name"), "", true)
 	c.JSON(http.StatusOK, "started")
 }
 

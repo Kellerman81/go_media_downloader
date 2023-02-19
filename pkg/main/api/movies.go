@@ -92,6 +92,7 @@ func apiMovieList(ctx *gin.Context) {
 	var movies []database.Dbmovie
 	database.QueryDbmovie(&database.Querywithargs{Query: query}, &movies)
 	ctx.JSON(http.StatusOK, gin.H{"data": movies, "total": rows})
+	movies = nil
 }
 
 // @Summary      List Unmatched Movies
@@ -134,6 +135,7 @@ func apiMovieListUnmatched(ctx *gin.Context) {
 	}
 	movies, _ := database.QueryMovieFileUnmatched(&database.Querywithargs{Query: query})
 	ctx.JSON(http.StatusOK, gin.H{"data": movies, "total": rows})
+	movies = nil
 }
 
 // @Summary      Delete Movies
@@ -201,6 +203,7 @@ func apiMovieListGet(ctx *gin.Context) {
 	}
 	movies, _ := database.QueryResultMovies(&database.Querywithargs{Query: query, Args: []interface{}{ctx.Param("name")}})
 	ctx.JSON(http.StatusOK, gin.H{"data": movies, "total": rows})
+	movies = nil
 }
 
 // @Summary      Delete a Movie (List)
@@ -253,17 +256,13 @@ func apimoviesAllJobs(c *gin.Context) {
 			cfgpstr := "movie_" + config.Cfg.Movies[idx].Name
 
 			switch c.Param("job") {
-			case "data", "datafull", "structure":
+			case "data", "datafull", "structure", "clearhistory":
 				scheduler.QueueData.Dispatch(c.Param("job")+"_"+cfgpstr, func() {
 					utils.SingleJobs("movie", c.Param("job"), cfgpstr, "", true)
 				})
-			case "clearhistory":
-				scheduler.QueueData.Dispatch(c.Param("job")+"_"+cfgpstr, func() {
-					utils.MoviesSingleJobs(c.Param("job"), cfgpstr, "", true)
-				})
 			case "rss", "searchmissingfull", "searchmissinginc", "searchupgradefull", "searchupgradeinc", "searchmissingfulltitle", "searchmissinginctitle", "searchupgradefulltitle", "searchupgradeinctitle":
 				scheduler.QueueSearch.Dispatch(c.Param("job")+"_"+cfgpstr, func() {
-					utils.MoviesSingleJobs(c.Param("job"), cfgpstr, "", true)
+					utils.SingleJobs("movie", c.Param("job"), cfgpstr, "", true)
 				})
 			case "feeds", "checkmissing", "checkmissingflag", "checkreachedflag":
 				for idxlist := range config.Cfg.Movies[idx].Lists {
@@ -280,12 +279,12 @@ func apimoviesAllJobs(c *gin.Context) {
 					listname := config.Cfg.Movies[idx].Lists[idxlist].Name
 					if c.Param("job") == "feeds" {
 						scheduler.QueueFeeds.Dispatch(c.Param("job")+"_"+cfgpstr+"_"+listname, func() {
-							utils.MoviesSingleJobs(c.Param("job"), cfgpstr, listname, true)
+							utils.SingleJobs("movie", c.Param("job"), cfgpstr, listname, true)
 						})
 					}
 					if c.Param("job") == "checkmissing" || c.Param("job") == "checkmissingflag" || c.Param("job") == "checkreachedflag" {
 						scheduler.QueueData.Dispatch(c.Param("job")+"_"+cfgpstr+"_"+listname, func() {
-							utils.MoviesSingleJobs(c.Param("job"), cfgpstr, listname, true)
+							utils.SingleJobs("movie", c.Param("job"), cfgpstr, listname, true)
 						})
 					}
 					//cfg_list.Close()
@@ -300,7 +299,7 @@ func apimoviesAllJobs(c *gin.Context) {
 				})
 			default:
 				scheduler.QueueData.Dispatch(c.Param("job")+"_"+cfgpstr, func() {
-					utils.MoviesSingleJobs(c.Param("job"), cfgpstr, "", true)
+					utils.SingleJobs("movie", c.Param("job"), cfgpstr, "", true)
 				})
 			}
 			//cfgMovie.Close()
@@ -337,18 +336,13 @@ func apimoviesJobs(c *gin.Context) {
 		cfgpstr := "movie_" + c.Param("name")
 
 		switch c.Param("job") {
-		case "data", "datafull", "structure":
+		case "data", "datafull", "structure", "clearhistory":
 			scheduler.QueueData.Dispatch(c.Param("job")+"_movies_"+c.Param("name"), func() {
 				utils.SingleJobs("movie", c.Param("job"), cfgpstr, "", true)
 			})
-
-		case "clearhistory":
-			scheduler.QueueData.Dispatch(c.Param("job")+"_movies_"+c.Param("name"), func() {
-				utils.MoviesSingleJobs(c.Param("job"), cfgpstr, "", true)
-			})
 		case "rss", "searchmissingfull", "searchmissinginc", "searchupgradefull", "searchupgradeinc", "searchmissingfulltitle", "searchmissinginctitle", "searchupgradefulltitle", "searchupgradeinctitle":
 			scheduler.QueueSearch.Dispatch(c.Param("job")+"_movies_"+c.Param("name"), func() {
-				utils.MoviesSingleJobs(c.Param("job"), cfgpstr, "", true)
+				utils.SingleJobs("movie", c.Param("job"), cfgpstr, "", true)
 			})
 		case "feeds", "checkmissing", "checkmissingflag", "checkreachedflag":
 
@@ -371,12 +365,12 @@ func apimoviesJobs(c *gin.Context) {
 						if c.Param("job") == "feeds" {
 							logger.Log.GlobalLogger.Debug("add job ", zap.String("Title", config.Cfg.Movies[idx].Name), zap.String("List", config.Cfg.Movies[idx].Lists[idxlist].Name))
 							scheduler.QueueFeeds.Dispatch(c.Param("job")+"_movies_"+config.Cfg.Movies[idx].Name+"_"+config.Cfg.Movies[idx].Lists[idxlist].Name, func() {
-								utils.MoviesSingleJobs(c.Param("job"), cfgpstr, listname, true)
+								utils.SingleJobs("movie", c.Param("job"), cfgpstr, listname, true)
 							})
 						}
 						if c.Param("job") == "checkmissing" || c.Param("job") == "checkmissingflag" || c.Param("job") == "checkreachedflag" {
 							scheduler.QueueData.Dispatch(c.Param("job")+"_movies_"+config.Cfg.Movies[idx].Name+"_"+config.Cfg.Movies[idx].Lists[idxlist].Name, func() {
-								utils.MoviesSingleJobs(c.Param("job"), cfgpstr, listname, true)
+								utils.SingleJobs("movie", c.Param("job"), cfgpstr, listname, true)
 							})
 						}
 						//cfg_list.Close()
@@ -394,7 +388,7 @@ func apimoviesJobs(c *gin.Context) {
 			})
 		default:
 			scheduler.QueueData.Dispatch(c.Param("job")+"_movies_"+c.Param("name"), func() {
-				utils.MoviesSingleJobs(c.Param("job"), cfgpstr, "", true)
+				utils.SingleJobs("movie", c.Param("job"), cfgpstr, "", true)
 			})
 		}
 		c.JSON(http.StatusOK, returnval)
@@ -490,10 +484,10 @@ func apimoviesSearch(c *gin.Context) {
 	//defer logger.ClearVar(&movie)
 
 	for idx := range config.Cfg.Movies {
-		cfgp := config.Cfg.Media["movie_"+config.Cfg.Movies[idx].Name]
 
 		for idxlist := range config.Cfg.Movies[idx].Lists {
 			if strings.EqualFold(config.Cfg.Movies[idx].Lists[idxlist].Name, movie.Listname) {
+				cfgp := config.Cfg.Media["movie_"+config.Cfg.Movies[idx].Name]
 				scheduler.QueueSearch.Dispatch("searchmovie_movies_"+config.Cfg.Movies[idx].Name+"_"+strconv.Itoa(int(movie.ID)), func() {
 					searcher.SearchMovieSingle(movie.ID, &cfgp, true)
 				})
@@ -528,19 +522,21 @@ func apimoviesSearchList(c *gin.Context) {
 	}
 
 	for idx := range config.Cfg.Movies {
-		cfgp := config.Cfg.Media["movie_"+config.Cfg.Movies[idx].Name]
 		for idxlist := range config.Cfg.Movies[idx].Lists {
 			if strings.EqualFold(config.Cfg.Movies[idx].Lists[idxlist].Name, movie.Listname) {
+				cfgp := config.Cfg.Media["movie_"+config.Cfg.Movies[idx].Name]
 				searchresults, err := searcher.MovieSearch(&cfgp, movie.ID, false, titlesearch)
 				if err != nil {
 					str := "failed with " + err.Error()
 					c.JSON(http.StatusNotFound, str)
 					//searchnow.Close()
+					cfgp.Close()
 					return
 				}
 				c.JSON(http.StatusOK, gin.H{"accepted": searchresults.Nzbs, "rejected": searchresults.Rejected})
 				//searchnow.Close()
-				defer searchresults.Close()
+				searchresults.Close()
+				cfgp.Close()
 				return
 			}
 		}
@@ -561,16 +557,18 @@ func apiMoviesRssSearchList(c *gin.Context) {
 	}
 
 	for idx := range config.Cfg.Movies {
-		cfgp := config.Cfg.Media["movie_"+config.Cfg.Movies[idx].Name]
 		if strings.EqualFold(config.Cfg.Movies[idx].Name, c.Param("group")) {
+			cfgp := config.Cfg.Media["movie_"+config.Cfg.Movies[idx].Name]
 			searchresults, err := searcher.SearchRSS(&cfgp, config.Cfg.Movies[idx].TemplateQuality, "movie", true)
 			if err != nil {
 				str := "failed with " + err.Error()
 				c.JSON(http.StatusNotFound, str)
+				cfgp.Close()
 				return
 			}
-			defer searchresults.Close()
 			c.JSON(http.StatusOK, gin.H{"accepted": searchresults.Nzbs, "rejected": searchresults.Rejected})
+			cfgp.Close()
+			searchresults.Close()
 			return
 		}
 	}
@@ -601,11 +599,12 @@ func apimoviesSearchDownload(c *gin.Context) {
 	//defer logger.ClearVar(&nzb)
 
 	for idx := range config.Cfg.Movies {
-		cfgp := config.Cfg.Media["movie_"+config.Cfg.Movies[idx].Name]
 		for idxlist := range config.Cfg.Movies[idx].Lists {
 			if strings.EqualFold(config.Cfg.Movies[idx].Lists[idxlist].Name, movie.Listname) {
+				cfgp := config.Cfg.Media["movie_"+config.Cfg.Movies[idx].Name]
 				downloader.DownloadMovie(&cfgp, movie.ID, &nzb)
 				c.JSON(http.StatusOK, "started")
+				cfgp.Close()
 				return
 			}
 		}
@@ -673,7 +672,7 @@ func apimoviesClearHistoryName(c *gin.Context) {
 	if auth(c) == http.StatusUnauthorized {
 		return
 	}
-	utils.MoviesSingleJobs("clearhistory", "movie_"+c.Param("name"), "", true)
+	utils.SingleJobs("movie", "clearhistory", "movie_"+c.Param("name"), "", true)
 	c.JSON(http.StatusOK, "started")
 }
 

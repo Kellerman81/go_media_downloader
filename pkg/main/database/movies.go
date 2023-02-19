@@ -245,7 +245,7 @@ func (movie *Dbmovie) getTitles(arrcfglang *logger.InStringArrayStruct, queryimd
 			movie.ImdbID = "tt" + movie.ImdbID
 		}
 		var imdbakadata []DbstaticThreeString
-		QueryStaticColumnsThreeString(true, &Querywithargs{QueryString: "select region, title, slug from imdb_akas where tconst = ?", Args: []interface{}{movie.ImdbID}}, &imdbakadata)
+		QueryStaticColumnsThreeString(&Querywithargs{QueryString: "select region, title, slug from imdb_akas where tconst = ?", Args: []interface{}{movie.ImdbID}}, &imdbakadata)
 
 		result = make([]DbmovieTitle, 0, len(imdbakadata))
 		for idxaka := range imdbakadata {
@@ -373,7 +373,7 @@ func (movie *Dbmovie) getTmdbMetadata(overwrite bool) {
 	}
 	if (movie.Title == "" || overwrite) && moviedbdetails.Title != "" {
 		movie.Title = moviedbdetails.Title
-		if strings.Contains(movie.Title, "&") || strings.Contains(movie.Title, "%") {
+		if logger.StringContainsRune(movie.Title, '&') || logger.StringContainsRune(movie.Title, '%') {
 			movie.Title = html.UnescapeString(movie.Title)
 		}
 		if strings.Contains(movie.Title, "\\u") {
@@ -462,7 +462,7 @@ func (movie *Dbmovie) getOmdbMetadata(overwrite bool) {
 	}
 	if (movie.Title == "" || overwrite) && omdbdetails.Title != "" {
 		movie.Title = omdbdetails.Title
-		if strings.Contains(movie.Title, "&") || strings.Contains(movie.Title, "%") {
+		if logger.StringContainsRune(movie.Title, '&') || logger.StringContainsRune(movie.Title, '%') {
 			movie.Title = html.UnescapeString(movie.Title)
 		}
 		if strings.Contains(movie.Title, "\\u") {
@@ -502,7 +502,7 @@ func (movie *Dbmovie) getTraktMetadata(overwrite bool) {
 	}
 	if (movie.Title == "" || overwrite) && traktdetails.Title != "" {
 		movie.Title = traktdetails.Title
-		if strings.Contains(movie.Title, "&") || strings.Contains(movie.Title, "%") {
+		if logger.StringContainsRune(movie.Title, '&') || logger.StringContainsRune(movie.Title, '%') {
 			movie.Title = html.UnescapeString(movie.Title)
 		}
 		if strings.Contains(movie.Title, "\\u") {

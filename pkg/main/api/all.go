@@ -136,8 +136,7 @@ func auth(c *gin.Context) int {
 			c.AbortWithStatus(http.StatusUnauthorized)
 			return http.StatusUnauthorized
 		}
-		apikey := config.Cfg.General.WebAPIKey
-		if queryParam != apikey {
+		if queryParam != config.Cfg.General.WebAPIKey {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 			c.AbortWithStatus(http.StatusUnauthorized)
 			return http.StatusUnauthorized

@@ -313,7 +313,7 @@ func (t *traktClient) GetMoviePopular(limit int) (*TraktMovieGroup, error) {
 		movies.Movies = make([]TraktMovie, 0, limit)
 	}
 
-	_, err := t.Client.DoJSON(url, &movies.Movies, t.DefaultHeaders)
+	_, err := t.Client.DoJSON(url, &movies.Movies, t.DefaultHeaders...)
 
 	if err != nil {
 		if err != errPleaseWait {
@@ -334,7 +334,7 @@ func (t *traktClient) GetMovieTrending(limit int) (*TraktMovieGroup, error) {
 		result = make([]TraktMovieTrending, 0, limit)
 	}
 
-	_, err := t.Client.DoJSON(url, &result, t.DefaultHeaders)
+	_, err := t.Client.DoJSON(url, &result, t.DefaultHeaders...)
 
 	if err != nil {
 		if err != errPleaseWait {
@@ -361,7 +361,7 @@ func (t *traktClient) GetMovieAnticipated(limit int) (*TraktMovieGroup, error) {
 		result = make([]TraktMovieAnticipated, 0, limit)
 	}
 
-	_, err := t.Client.DoJSON(url, &result, t.DefaultHeaders)
+	_, err := t.Client.DoJSON(url, &result, t.DefaultHeaders...)
 
 	if err != nil {
 		if err != errPleaseWait {
@@ -384,7 +384,7 @@ func (t *traktClient) GetMovieAliases(movieid string) (*TraktAliases, error) {
 	url := apiurlmovies + movieid + "/aliases"
 
 	aliases := new(TraktAliases)
-	_, err := t.Client.DoJSON(url, &aliases.Aliases, t.DefaultHeaders)
+	_, err := t.Client.DoJSON(url, &aliases.Aliases, t.DefaultHeaders...)
 
 	if err != nil {
 		if err != errPleaseWait {
@@ -399,7 +399,7 @@ func (t *traktClient) GetMovie(movieid string) (*TraktMovieExtend, error) {
 	url := apiurlmovies + movieid + extendedfull
 
 	result := new(TraktMovieExtend)
-	_, err := t.Client.DoJSON(url, result, t.DefaultHeaders)
+	_, err := t.Client.DoJSON(url, result, t.DefaultHeaders...)
 
 	if err != nil {
 		if err != errPleaseWait {
@@ -414,7 +414,7 @@ func (t *traktClient) GetSerie(showid string) (*TraktSerieData, error) {
 	url := apiurlshows + showid + extendedfull
 
 	result := new(TraktSerieData)
-	_, err := t.Client.DoJSON(url, result, t.DefaultHeaders)
+	_, err := t.Client.DoJSON(url, result, t.DefaultHeaders...)
 
 	if err != nil {
 		if err != errPleaseWait {
@@ -431,7 +431,7 @@ func (t *traktClient) GetSerieAliases(showid string) (*TraktAliases, error) {
 	url := apiurlshows + showid + "/aliases"
 
 	aliases := new(TraktAliases)
-	_, err := t.Client.DoJSON(url, &aliases.Aliases, t.DefaultHeaders)
+	_, err := t.Client.DoJSON(url, &aliases.Aliases, t.DefaultHeaders...)
 
 	if err != nil {
 		if err != errPleaseWait {
@@ -447,7 +447,7 @@ func (t *traktClient) GetSerieSeasons(showid string) (*TraktSerieSeasonGroup, er
 	url := apiurlshows + showid + "/seasons"
 
 	seasons := new(TraktSerieSeasonGroup)
-	_, err := t.Client.DoJSON(url, &seasons.Seasons, t.DefaultHeaders)
+	_, err := t.Client.DoJSON(url, &seasons.Seasons, t.DefaultHeaders...)
 
 	if err != nil {
 		if err != errPleaseWait {
@@ -462,7 +462,7 @@ func (t *traktClient) GetSerieSeasons(showid string) (*TraktSerieSeasonGroup, er
 func (t *traktClient) GetSerieSeasonEpisodes(showid string, season int, episodes *TraktSerieSeasonEpisodeGroup) error {
 	url := apiurlshows + showid + "/seasons/" + logger.IntToString(season) + extendedfull
 
-	_, err := t.Client.DoJSON(url, &episodes.Episodes, t.DefaultHeaders)
+	_, err := t.Client.DoJSON(url, &episodes.Episodes, t.DefaultHeaders...)
 
 	if err != nil {
 		if err != errPleaseWait {
@@ -483,7 +483,7 @@ func (t *traktClient) GetUserList(username string, listname string, listtype str
 		entries.Entries = make([]TraktUserList, 0, limit)
 	}
 
-	_, err := t.Client.DoJSON(url, &entries.Entries, t.DefaultHeaders)
+	_, err := t.Client.DoJSON(url, &entries.Entries, t.DefaultHeaders...)
 
 	if err != nil {
 		if err != errPleaseWait {
@@ -503,7 +503,7 @@ func (t *traktClient) GetSeriePopular(limit int) (*TraktSerieGroup, error) {
 		series.Series = make([]TraktSerie, 0, limit)
 	}
 
-	_, err := t.Client.DoJSON(url, &series.Series, t.DefaultHeaders)
+	_, err := t.Client.DoJSON(url, &series.Series, t.DefaultHeaders...)
 
 	if err != nil {
 		if err != errPleaseWait {
@@ -524,7 +524,7 @@ func (t *traktClient) GetSerieTrending(limit int) (*TraktSerieGroup, error) {
 		result = make([]TraktSerieTrending, 0, limit)
 	}
 
-	_, err := t.Client.DoJSON(url, &result, t.DefaultHeaders)
+	_, err := t.Client.DoJSON(url, &result, t.DefaultHeaders...)
 
 	if err != nil {
 		if err != errPleaseWait {
@@ -550,7 +550,7 @@ func (t *traktClient) GetSerieAnticipated(limit int) (*TraktSerieGroup, error) {
 		result = make([]TraktSerieAnticipated, 0, limit)
 	}
 
-	_, err := t.Client.DoJSON(url, &result, t.DefaultHeaders)
+	_, err := t.Client.DoJSON(url, &result, t.DefaultHeaders...)
 
 	if err != nil {
 		if err != errPleaseWait {
@@ -596,7 +596,7 @@ func (t *traktClient) GetUserListAuth(username string, listname string, listtype
 		entries.Entries = make([]TraktUserList, 0, limit)
 	}
 
-	_, err := t.Client.DoJSON(url, &entries.Entries, t.DefaultHeaders)
+	_, err := t.Client.DoJSON(url, &entries.Entries, t.DefaultHeaders...)
 
 	if err != nil {
 		if err != errPleaseWait {

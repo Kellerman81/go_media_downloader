@@ -284,7 +284,7 @@ func replaceUnwantedChars(s string) string {
 
 // no chinese or cyrilic supported
 func StringToSlug(instr string) string {
-	if strings.Contains(instr, "&") || strings.Contains(instr, "%") {
+	if StringContainsRune(instr, '&') || StringContainsRune(instr, '%') {
 		instr = html.UnescapeString(instr)
 	}
 	if strings.Contains(instr, "\\u") {
@@ -295,7 +295,7 @@ func StringToSlug(instr string) string {
 
 func Path(s string, allowslash bool) string {
 	// Start with lowercase string
-	if strings.Contains(s, "&") || strings.Contains(s, "%") {
+	if StringContainsRune(s, '&') || StringContainsRune(s, '%') {
 		s = html.UnescapeString(s)
 	}
 	if strings.Contains(s, "\\u") {
@@ -305,14 +305,13 @@ func Path(s string, allowslash bool) string {
 	s = strings.ReplaceAll(s, "..", "")
 	s = path.Clean(s)
 	if allowslash && strings.ContainsAny(s, ":*?\"><|") {
-		for _, line := range []string{":", "*", "?", "\"", "<", ">", "|"} {
-			s = strings.ReplaceAll(s, line, "")
+		for _, line := range []rune{':', '*', '?', '"', '<', '>', '|'} {
+			s = StringDeleteRuneAll(s, line)
 		}
-
 	}
 	if !allowslash && strings.ContainsAny(s, "\\/:*?\"><|") {
-		for _, line := range []string{"\\", "/", ":", "*", "?", "\"", "<", ">", "|"} {
-			s = strings.ReplaceAll(s, line, "")
+		for _, line := range []rune{'\\', '/', ':', '*', '?', '"', '<', '>', '|'} {
+			s = StringDeleteRuneAll(s, line)
 		}
 	}
 
@@ -408,16 +407,63 @@ func StringReplaceDiacritics(instr string) string {
 	return unidecode.Unidecode(buf.String())
 }
 
+func StringReplaceRune(instr string, search rune, replace rune) string {
+	for idx, r := range instr {
+		if r == search {
+			instr = instr[0:idx] + string(replace) + instr[idx+1:]
+		}
+	}
+	return instr
+}
+func StringRuneCount(instr string, search rune) int {
+	i := 0
+	for _, r := range instr {
+		if r == search {
+			i++
+		}
+	}
+	return i
+}
+
+func StringDeleteRuneAll(instr string, search rune) string {
+	return StringDeleteRune(instr, search, 0)
+}
+func StringDeleteRune(instr string, search rune, count int) string {
+	var idx int
+	j := StringRuneCount(instr, search)
+	if j == 0 {
+		return instr
+	}
+	for i := 0; i < j; i++ {
+		idx = strings.IndexRune(instr, search)
+		if idx != -1 {
+			instr = instr[0:idx] + instr[idx+1:]
+		}
+		if count != 0 && i == (count-1) {
+			break
+		}
+	}
+	return instr
+}
+func StringContainsRune(instr string, search rune) bool {
+	for _, c := range instr {
+		if c == search {
+			return true
+		}
+	}
+	return false
+}
+
 func Getrootpath(foldername string) (string, string) {
 	var folders []string
 
-	if strings.Contains(foldername, "/") {
+	if StringContainsRune(foldername, '/') {
 		folders = strings.Split(foldername, "/")
 	}
-	if strings.Contains(foldername, "\\") {
+	if StringContainsRune(foldername, '\\') {
 		folders = strings.Split(foldername, "\\")
 	}
-	if !strings.Contains(foldername, "/") && !strings.Contains(foldername, "\\") {
+	if !StringContainsRune(foldername, '/') && !StringContainsRune(foldername, '\\') {
 		folders = []string{foldername}
 	}
 	foldername = strings.TrimPrefix(foldername, strings.TrimRight(folders[0], "/"))
@@ -596,4 +642,59 @@ func ParseFloat(s string) (float64, error) {
 }
 func ParseFloat64(s string) (float64, error) {
 	return strconv.ParseFloat(s, 64)
+}
+
+func DeleteFromStringsCache(cachekey string, search string) {
+	if !GlobalCache.CheckNoType(cachekey) {
+		return
+	}
+	historycache := GlobalCache.GetData(cachekey)
+	newtbl := historycache.Value.([]string)[:0]
+	for idx := range historycache.Value.([]string) {
+		if historycache.Value.([]string)[idx] != search {
+			newtbl = append(newtbl, historycache.Value.([]string)[idx])
+		}
+	}
+	GlobalCache.Set(cachekey, newtbl, 0, true)
+	historycache = nil
+	newtbl = nil
+}
+
+func DeleteFromStringsArrCache(cachekey string, search string) {
+	if !GlobalCache.CheckNoType(cachekey) {
+		return
+	}
+	historycache := GlobalCache.GetData(cachekey)
+	newtbl := historycache.Value.(InStringArrayStruct).Arr[:0]
+	for idx := range historycache.Value.(InStringArrayStruct).Arr {
+		if historycache.Value.(InStringArrayStruct).Arr[idx] != search {
+			newtbl = append(newtbl, historycache.Value.(InStringArrayStruct).Arr[idx])
+		}
+	}
+	GlobalCache.Set(cachekey, InStringArrayStruct{Arr: newtbl}, 0, true)
+	historycache = nil
+	newtbl = nil
+}
+
+func InsertStringsArrCache(cachekey string, search string) {
+	if !GlobalCache.CheckNoType(cachekey) {
+		return
+	}
+	historycache := GlobalCache.GetData(cachekey)
+	newtbl := historycache.Value.(InStringArrayStruct).Arr
+	newtbl = append(newtbl, search)
+	GlobalCache.Set(cachekey, InStringArrayStruct{Arr: newtbl}, 0, true)
+	historycache = nil
+	newtbl = nil
+}
+func InsertStringsCache(cachekey string, search string) {
+	if !GlobalCache.CheckNoType(cachekey) {
+		return
+	}
+	historycache := GlobalCache.GetData(cachekey)
+	newtbl := historycache.Value.([]string)
+	newtbl = append(newtbl, search)
+	GlobalCache.Set(cachekey, newtbl, 0, true)
+	historycache = nil
+	newtbl = nil
 }

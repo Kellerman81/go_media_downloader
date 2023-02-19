@@ -73,7 +73,7 @@ type Nzbwithprio struct {
 	Denied           bool
 	Reason           string
 	AdditionalReason interface{}
-	QualityCfg       config.QualityConfig
+	QualityCfg       *config.QualityConfig
 }
 
 // NZB represents an NZB found on the index
@@ -215,7 +215,7 @@ func (s *Nzbwithprio) Close() {
 		return
 	}
 	s.NZB.Close()
-	s.QualityCfg.Close()
+	//s.QualityCfg.Close()
 	s.ParseInfo.Close()
 	s.WantedAlternates = nil
 	s = nil

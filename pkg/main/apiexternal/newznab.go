@@ -1,10 +1,8 @@
 package apiexternal
 
 import (
-	"encoding/xml"
 	"errors"
 	"html"
-	"io"
 	"math/rand"
 	"net/url"
 	"strconv"
@@ -82,11 +80,6 @@ type limiterconfig struct {
 	timeoutseconds    int
 }
 
-// SearchResponse is a RSS version of the response.
-type searchResponse struct {
-	Nzbs []entry `xml:"channel>item"`
-}
-
 type searchResponseJSON1 struct {
 	Title   string `json:"title,omitempty"`
 	Channel struct {
@@ -95,86 +88,6 @@ type searchResponseJSON1 struct {
 }
 type searchResponseJSON2 struct {
 	Item []rawNZBJson2 `json:"item"`
-}
-
-type entry struct {
-	title  string
-	guid   string
-	link   string
-	url    string
-	source string
-	size   string
-	attr   map[string]string
-}
-
-func (a *entry) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
-	//fmt.Println(start)
-	var t xml.Token
-	var err error
-	var name string
-
-	for {
-		t, err = d.Token()
-		if err == io.EOF || err != nil {
-			break
-		}
-
-		switch tt := t.(type) {
-		case xml.StartElement:
-			name = tt.Name.Local
-			switch tt.Name.Local {
-			case "enclosure":
-				for _, x := range tt.Attr {
-					if x.Name.Local == "url" {
-						a.url = x.Value
-						break
-					}
-				}
-			case "source":
-				for _, x := range tt.Attr {
-					if x.Name.Local == "url" {
-						a.source = x.Value
-						break
-					}
-				}
-			case "attr":
-				var namesub, valuesub string
-				for _, x := range tt.Attr {
-					if x.Name.Local == "name" {
-						namesub = x.Value
-						continue
-					}
-					if x.Name.Local == "value" {
-
-						valuesub = x.Value
-					}
-				}
-				if a.attr == nil {
-					a.attr = make(map[string]string, 20)
-				}
-				if _, ok := a.attr[name]; ok {
-					a.attr[namesub] = a.attr[namesub] + "," + valuesub
-				} else {
-					a.attr[namesub] = valuesub
-				}
-			}
-		case xml.CharData:
-			switch name {
-			case "title":
-				a.title = string(tt)
-			case "link":
-				a.link = string(tt)
-			case "guid":
-				a.guid = string(tt)
-			case "size":
-				a.size = string(tt)
-			}
-		case xml.EndElement:
-			name = ""
-		}
-	}
-	t = nil
-	return nil
 }
 
 type rawNZBJson1 struct {
@@ -479,86 +392,6 @@ func NewNewznab(baseURL string, apikey string, userID string, insecure bool, dis
 	}
 }
 
-func addentrySearchResponseXML(tillid string, apiBaseURL string, item *entry, entries *NZBArr) (bool, bool) {
-	if item.url == "" {
-		return false, true
-	}
-	newEntry := new(Nzbwithprio)
-	newEntry.NZB.Title = item.title
-
-	if strings.Contains(newEntry.NZB.Title, "&") || strings.Contains(newEntry.NZB.Title, "%") {
-		newEntry.NZB.Title = html.UnescapeString(newEntry.NZB.Title)
-	}
-	if strings.Contains(newEntry.NZB.Title, "\\u") {
-		unquote, err := strconv.Unquote("\"" + newEntry.NZB.Title + "\"")
-		if err == nil {
-			newEntry.NZB.Title = unquote
-		}
-	}
-	newEntry.NZB.DownloadURL = item.url
-	if strings.Contains(newEntry.NZB.DownloadURL, "&amp") || strings.Contains(newEntry.NZB.DownloadURL, "%") {
-		newEntry.NZB.DownloadURL = html.UnescapeString(newEntry.NZB.DownloadURL)
-	}
-	newEntry.NZB.SourceEndpoint = apiBaseURL
-	if strings.Contains(newEntry.NZB.DownloadURL, ".torrent") || strings.Contains(newEntry.NZB.DownloadURL, "magnet:?") {
-		newEntry.NZB.IsTorrent = true
-	}
-
-	for key := range item.attr {
-		saveAttributes(&newEntry.NZB, key, item.attr[key])
-	}
-	// logger.RunFuncSimple(item.attr, func(e struct {
-	// 	Name  string "xml:\"name,attr\""
-	// 	Value string "xml:\"value,attr\""
-	// }) {
-	// 	saveAttributes(&newEntry.NZB, e.Name, e.Value)
-	// })
-
-	if newEntry.NZB.Size == 0 && item.size != "" {
-		newEntry.NZB.Size, _ = strconv.ParseInt(item.size, 10, 64)
-	}
-	newEntry.NZB.ID = item.guid
-	if newEntry.NZB.ID == "" {
-		newEntry.NZB.ID = item.url
-	}
-	entries.Arr = append(entries.Arr, *newEntry)
-	if tillid != "" && tillid == newEntry.NZB.ID {
-		newEntry = nil
-		return true, false
-	}
-	newEntry = nil
-	return false, false
-}
-func addentrySearchResponseJSON1(tillid string, apiBaseURL string, item *rawNZBJson1, entries *NZBArr) {
-	itemconvert := entry{}
-	itemconvert.url = item.Enclosure.Attributes.Url
-	itemconvert.title = item.Title
-	itemconvert.size = strconv.Itoa(int(item.Size))
-	itemconvert.guid = item.Guid
-	itemconvert.attr = make(map[string]string)
-	for idx2 := range item.Attributes {
-		itemconvert.attr[item.Attributes[idx2].Attribute.Name] = item.Attributes[idx2].Attribute.Value
-	}
-	addentrySearchResponseXML(tillid, apiBaseURL, &itemconvert, entries)
-	itemconvert.attr = nil
-}
-func addentrySearchResponseJSON2(tillid string, apiBaseURL string, item *rawNZBJson2, entries *NZBArr) {
-	itemconvert := entry{}
-	itemconvert.url = item.Enclosure.Url
-	itemconvert.title = item.Title
-	itemconvert.size = strconv.Itoa(int(item.Size))
-	itemconvert.guid = item.Guid.Guid
-	itemconvert.attr = make(map[string]string)
-	for idx2 := range item.Attributes {
-		itemconvert.attr[item.Attributes[idx2].Name] = item.Attributes[idx2].Value
-	}
-	for idx2 := range item.Attributes2 {
-		itemconvert.attr[item.Attributes2[idx2].Name] = item.Attributes2[idx2].Value
-	}
-	addentrySearchResponseXML(tillid, apiBaseURL, &itemconvert, entries)
-	itemconvert.attr = nil
-}
-
 func (client *Client) processurl(urlb *urlbuilder, tillid string, maxage int, outputasjson bool, entries *NZBArr) (bool, error) {
 	url := client.buildURL(urlb, maxage)
 	urlb = nil
@@ -566,7 +399,7 @@ func (client *Client) processurl(urlb *urlbuilder, tillid string, maxage int, ou
 	//logger.Log.GlobalLogger.Debug("call url", zap.String("url", url))
 	if outputasjson {
 		var result searchResponseJSON1
-		_, err = client.Client.DoJSON(url, &result, nil)
+		_, err = client.Client.DoJSON(url, &result)
 		if err == nil {
 			if len(result.Channel.Item) == 0 {
 				return false, Errnoresults
@@ -574,14 +407,54 @@ func (client *Client) processurl(urlb *urlbuilder, tillid string, maxage int, ou
 			if entries == nil || len(entries.Arr) == 0 {
 				entries.Arr = make([]Nzbwithprio, 0, len(result.Channel.Item))
 			}
+			var newEntry *Nzbwithprio
 			for idx := range result.Channel.Item {
-				addentrySearchResponseJSON1(tillid, client.APIBaseURL, &result.Channel.Item[idx], entries)
+				if result.Channel.Item[idx].Enclosure.Attributes.Url == "" {
+					continue
+				}
+				newEntry = new(Nzbwithprio)
+				newEntry.NZB.Title = result.Channel.Item[idx].Title
+
+				if logger.StringContainsRune(newEntry.NZB.Title, '&') || logger.StringContainsRune(newEntry.NZB.Title, '%') {
+					newEntry.NZB.Title = html.UnescapeString(newEntry.NZB.Title)
+				}
+				if strings.Contains(newEntry.NZB.Title, "\\u") {
+					unquote, err := strconv.Unquote("\"" + newEntry.NZB.Title + "\"")
+					if err == nil {
+						newEntry.NZB.Title = unquote
+					}
+				}
+				newEntry.NZB.DownloadURL = result.Channel.Item[idx].Enclosure.Attributes.Url
+				if strings.Contains(newEntry.NZB.DownloadURL, "&amp") || logger.StringContainsRune(newEntry.NZB.DownloadURL, '%') {
+					newEntry.NZB.DownloadURL = html.UnescapeString(newEntry.NZB.DownloadURL)
+				}
+				newEntry.NZB.SourceEndpoint = client.APIBaseURL
+				if strings.Contains(newEntry.NZB.DownloadURL, ".torrent") || strings.Contains(newEntry.NZB.DownloadURL, "magnet:?") {
+					newEntry.NZB.IsTorrent = true
+				}
+
+				for key := range result.Channel.Item[idx].Attributes {
+					saveAttributes(&newEntry.NZB, result.Channel.Item[idx].Attributes[key].Attribute.Name, result.Channel.Item[idx].Attributes[key].Attribute.Value)
+				}
+				if newEntry.NZB.Size == 0 && result.Channel.Item[idx].Size != 0 {
+					newEntry.NZB.Size = result.Channel.Item[idx].Size
+				}
+				newEntry.NZB.ID = result.Channel.Item[idx].Guid
+				if newEntry.NZB.ID == "" {
+					newEntry.NZB.ID = result.Channel.Item[idx].Enclosure.Attributes.Url
+				}
+				entries.Arr = append(entries.Arr, *newEntry)
+				if tillid != "" && tillid == newEntry.NZB.ID {
+					newEntry = nil
+					return false, nil
+				}
+				newEntry = nil
 			}
 			result.close()
 			return false, nil
 		}
 		var result2 searchResponseJSON2
-		_, err = client.Client.DoJSON(url, &result2, nil)
+		_, err = client.Client.DoJSON(url, &result2)
 		if err != nil {
 			return false, err
 		}
@@ -591,43 +464,66 @@ func (client *Client) processurl(urlb *urlbuilder, tillid string, maxage int, ou
 		if entries == nil || len(entries.Arr) == 0 {
 			entries.Arr = make([]Nzbwithprio, 0, len(result2.Item))
 		}
+		var newEntry *Nzbwithprio
 		for idx := range result2.Item {
-			addentrySearchResponseJSON2(tillid, client.APIBaseURL, &result2.Item[idx], entries)
+			if result2.Item[idx].Enclosure.Url == "" {
+				continue
+			}
+			newEntry = new(Nzbwithprio)
+			newEntry.NZB.Title = result2.Item[idx].Title
+
+			if logger.StringContainsRune(newEntry.NZB.Title, '&') || logger.StringContainsRune(newEntry.NZB.Title, '%') {
+				newEntry.NZB.Title = html.UnescapeString(newEntry.NZB.Title)
+			}
+			if strings.Contains(newEntry.NZB.Title, "\\u") {
+				unquote, err := strconv.Unquote("\"" + newEntry.NZB.Title + "\"")
+				if err == nil {
+					newEntry.NZB.Title = unquote
+				}
+			}
+			newEntry.NZB.DownloadURL = result2.Item[idx].Enclosure.Url
+			if strings.Contains(newEntry.NZB.DownloadURL, "&amp") || logger.StringContainsRune(newEntry.NZB.DownloadURL, '%') {
+				newEntry.NZB.DownloadURL = html.UnescapeString(newEntry.NZB.DownloadURL)
+			}
+			newEntry.NZB.SourceEndpoint = client.APIBaseURL
+			if strings.Contains(newEntry.NZB.DownloadURL, ".torrent") || strings.Contains(newEntry.NZB.DownloadURL, "magnet:?") {
+				newEntry.NZB.IsTorrent = true
+			}
+
+			for key := range result2.Item[idx].Attributes {
+				saveAttributes(&newEntry.NZB, result2.Item[idx].Attributes[key].Name, result2.Item[idx].Attributes[key].Value)
+			}
+			for key := range result2.Item[idx].Attributes2 {
+				saveAttributes(&newEntry.NZB, result2.Item[idx].Attributes2[key].Name, result2.Item[idx].Attributes2[key].Value)
+			}
+			if newEntry.NZB.Size == 0 && result2.Item[idx].Size != 0 {
+				newEntry.NZB.Size = result2.Item[idx].Size
+			}
+			newEntry.NZB.ID = result2.Item[idx].Guid.Guid
+			if newEntry.NZB.ID == "" {
+				newEntry.NZB.ID = result2.Item[idx].Enclosure.Url
+			}
+			entries.Arr = append(entries.Arr, *newEntry)
+			if tillid != "" && tillid == newEntry.NZB.ID {
+				newEntry = nil
+				return false, nil
+			}
+			newEntry = nil
 		}
 		result2.close()
 		return false, nil
 
 	}
-	feed := new(searchResponse)
-	err = client.Client.DoXML(url, nil, feed)
+	var broke bool
+	broke, err = client.Client.DoXML(tillid, client.APIBaseURL, url, entries)
 	if err != nil {
 		//logger.Log.GlobalLogger.Debug("call url error", zap.Error(err))
 		return false, err
 	}
-	if len(feed.Nzbs) == 0 {
+	if len(entries.Arr) == 0 {
 		return false, Errnoresults
 	}
-	var breakid, skip bool
-	//if tillid == "" && len(entries.Arr) == 0 {
-	//	entries.Arr = make([]Nzbwithprio, 0, len(feed.NZBs))
-	//}
-	//if len(entries.Arr) >= 1 {
-	//}
-	if entries == nil || len(entries.Arr) == 0 {
-		entries.Arr = make([]Nzbwithprio, 0, len(feed.Nzbs))
-	}
-	for idx := range feed.Nzbs {
-		breakid, skip = addentrySearchResponseXML(tillid, client.APIBaseURL, &feed.Nzbs[idx], entries)
-		if skip {
-			continue
-		}
-		if breakid {
-			feed.close()
-			return true, nil
-		}
-	}
-	feed.close()
-	return false, nil
+	return broke, nil
 }
 
 func saveAttributes(newEntry *NZB, name string, value string) {
@@ -694,19 +590,6 @@ func saveAttributes(newEntry *NZB, name string, value string) {
 		// 	parsedFloat, _ := strconv.ParseFloat(value, 32)
 		// 	newEntry.IMDBScore = float32(parsedFloat)
 	}
-}
-
-func (s *searchResponse) close() {
-	if logger.DisableVariableCleanup {
-		return
-	}
-	if s == nil {
-		return
-	}
-	if len(s.Nzbs) >= 1 {
-		s.Nzbs = nil
-	}
-	s = nil
 }
 
 func (s *searchResponseJSON1) close() {

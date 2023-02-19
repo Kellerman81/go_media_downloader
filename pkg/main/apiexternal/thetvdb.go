@@ -110,7 +110,7 @@ func NewTvdbClient(seconds int, calls int, disabletls bool, timeoutseconds int) 
 func (t *tvdbClient) GetSeries(id int, language string) (*TheTVDBSeries, error) {
 	url := "https://api.thetvdb.com/series/" + logger.IntToString(id)
 	result := new(TheTVDBSeries)
-	_, err := t.Client.DoJSON(url, result, []addHeader{{key: "Accept-Language", val: language}})
+	_, err := t.Client.DoJSON(url, result, addHeader{key: "Accept-Language", val: language})
 
 	if err != nil {
 		if err != errPleaseWait {
@@ -124,7 +124,7 @@ func (t *tvdbClient) GetSeries(id int, language string) (*TheTVDBSeries, error) 
 func (t *tvdbClient) GetSeriesEpisodes(id int, language string) (*TheTVDBEpisodes, error) {
 	url := "https://api.thetvdb.com/series/" + logger.IntToString(id) + "/episodes"
 	result := new(TheTVDBEpisodes)
-	_, err := t.Client.DoJSON(url, result, []addHeader{{key: "Accept-Language", val: language}})
+	_, err := t.Client.DoJSON(url, result, addHeader{key: "Accept-Language", val: language})
 
 	if err != nil {
 		if err != errPleaseWait {
@@ -139,7 +139,7 @@ func (t *tvdbClient) GetSeriesEpisodes(id int, language string) (*TheTVDBEpisode
 		urlbase := url + "?page="
 		for k := 2; k <= result.Links.Last; k++ {
 			resultadd.Data = []TheTVDBEpisode{}
-			_, err = t.Client.DoJSON(urlbase+logger.IntToString(k), resultadd, []addHeader{{key: "Accept-Language", val: language}})
+			_, err = t.Client.DoJSON(urlbase+logger.IntToString(k), resultadd, addHeader{key: "Accept-Language", val: language})
 			if err != nil {
 				logger.Log.GlobalLogger.Error(errorCalling, zap.String("Url", urlbase+logger.IntToString(k)), zap.Error(err))
 				break

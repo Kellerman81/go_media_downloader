@@ -146,10 +146,12 @@ func (d *downloadertype) downloadNzb() {
 			}
 		}
 	}
-	logger.GlobalCache.Delete(historytable + "_url")
-	logger.GlobalCache.Delete(historytable + "_title")
-	targetfolder = strings.ReplaceAll(targetfolder, "[", "")
-	targetfolder = strings.ReplaceAll(targetfolder, "]", "")
+
+	logger.InsertStringsArrCache(historytable+"_url", d.Nzb.NZB.DownloadURL)
+	logger.InsertStringsArrCache(historytable+"_title", d.Nzb.NZB.Title)
+
+	targetfolder = logger.StringDeleteRuneAll(targetfolder, '[')
+	targetfolder = logger.StringDeleteRuneAll(targetfolder, ']')
 	d.Targetfile = targetfolder
 
 	logger.Log.GlobalLogger.Debug("Downloading", zap.Any("nzb", d.Nzb), zap.String("by", d.cfgDownloader.DlType))

@@ -8,6 +8,7 @@ import (
 	"github.com/GoAdminGroup/go-admin/modules/utils"
 	"github.com/GoAdminGroup/go-admin/template/types"
 	"github.com/GoAdminGroup/go-admin/template/types/action"
+	"github.com/Kellerman81/go_media_downloader/logger"
 )
 
 func MyPopUpWithIframe(id, title string, data action.IframeData, width, height string) *action.PopUpAction {
@@ -23,7 +24,7 @@ func MyPopUpWithIframe(id, title string, data action.IframeData, width, height s
 	//data.Src = utils.ReplaceAll(data.Src, "{%id}", "{{.Id}}", "{%ids}", "{{.Ids}}")
 	//
 	//fmt.Println(ctx.Request.Form)
-	if strings.Contains(data.Src, "?") {
+	if logger.StringContainsRune(data.Src, '?') {
 		data.Src = data.Src + "&"
 	} else {
 		data.Src = data.Src + "?"
