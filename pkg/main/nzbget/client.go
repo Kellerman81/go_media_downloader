@@ -21,23 +21,23 @@ const PriorityHigh = 50
 const PriorityVeryHigh = 100
 const PriorityForce = 900
 
-func NewOptions() *appendOptions {
-	return &appendOptions{
+func NewOptions() *AppendOptions {
+	return &AppendOptions{
 		Category: "",
 		Priority: PriorityNormal,
 		DupeMode: "SCORE",
 	}
 }
 
-func NewClient(endpoint string) *client {
-	client := &client{
+func NewClient(endpoint string) *Client {
+	client := &Client{
 		URL: endpoint,
 		rpc: NewJSONClient(endpoint),
 	}
 	return client
 }
 
-func (c *client) List() (*groupResponse, error) {
+func (c *Client) List() (*GroupResponse, error) {
 	s, err := c.Status()
 	if err != nil {
 		return nil, err
@@ -48,7 +48,7 @@ func (c *client) List() (*groupResponse, error) {
 	return r, err
 }
 
-func (c *client) Groups() ([]group, error) {
+func (c *Client) Groups() ([]Group, error) {
 	r, err := c.List()
 	if err != nil {
 		return nil, errors.Wrap(err, "could not get list")
@@ -56,28 +56,28 @@ func (c *client) Groups() ([]group, error) {
 	return r.Result, nil
 }
 
-func (c *client) Remove(number int) error {
+func (c *Client) Remove(number int) error {
 	// group delete
 	return c.EditQueue("GroupDelete", "", []int{number})
 }
 
-func (c *client) Delete(number int) error {
+func (c *Client) Delete(number int) error {
 	return c.EditQueue("HistoryDelete", "", []int{number})
 }
 
-func (c *client) Destroy(number int) error {
+func (c *Client) Destroy(number int) error {
 	return c.EditQueue("HistoryFinalDelete", "", []int{number})
 }
 
-func (c *client) Pause(number int) error {
+func (c *Client) Pause(number int) error {
 	return c.EditQueue("GroupPause", "", []int{number})
 }
 
-func (c *client) Resume(number int) error {
+func (c *Client) Resume(number int) error {
 	return c.EditQueue("GroupResume", "", []int{number})
 }
 
-func (c *client) PauseAll() error {
+func (c *Client) PauseAll() error {
 	r, err := c.rpc.Call("pausedownload", nil)
 	if err != nil {
 		return errors.Wrap(err, "could not pause all")
@@ -91,7 +91,7 @@ func (c *client) PauseAll() error {
 	return nil
 }
 
-func (c *client) ResumeAll() error {
+func (c *Client) ResumeAll() error {
 	r, err := c.rpc.Call("resumedownload", nil)
 	if err != nil {
 		return errors.Wrap(err, "could not pause all")
@@ -105,7 +105,7 @@ func (c *client) ResumeAll() error {
 	return nil
 }
 
-func (c *client) EditQueue(command, param string, ids []int) error {
+func (c *Client) EditQueue(command, param string, ids []int) error {
 	r, err := c.rpc.Call("editqueue", command, param, ids)
 	if err != nil {
 		return errors.Wrap(err, "could not pause all")

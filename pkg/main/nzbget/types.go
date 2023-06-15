@@ -64,7 +64,7 @@ type versionResponse struct {
 	Version string `json:"result"`
 }
 
-type history struct {
+type History struct {
 	ID                 int `json:"nzbid"`
 	Name               string
 	RemainingFileCount int
@@ -134,7 +134,7 @@ type historyResponse struct {
 	Result []History `json:"Result"`
 }
 
-type group struct {
+type Group struct {
 	ID                 int    `json:"nzbid"` // 4
 	RemainingSizeMB    int    // 3497
 	PausedSizeMB       int    // 3497
@@ -213,12 +213,12 @@ type GroupResponse struct {
 	Result []Group
 }
 
-type client struct {
+type Client struct {
 	URL string
 	rpc RPCClient
 }
 
-type appendOptions struct {
+type AppendOptions struct {
 	NiceName   string
 	Category   string
 	Priority   int
@@ -236,6 +236,6 @@ type appendOptions struct {
 type response struct {
 	APIVersion string `json:"version"`
 	Error      string
-	Status     *status
+	Status     *Status
 	Timestamp  time.Time
 }

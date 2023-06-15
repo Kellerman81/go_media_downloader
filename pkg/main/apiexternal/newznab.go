@@ -399,6 +399,7 @@ func NewNewznab(baseURL string, apikey string, userID string, insecure bool, dis
 	if lmtconfig.limiterseconds == 0 {
 		lmtconfig.limiterseconds = 10
 	}
+
 	return &Client{
 		Apikey:     apikey,
 		APIBaseURL: baseURL,
