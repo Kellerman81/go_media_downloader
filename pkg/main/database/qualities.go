@@ -16,4 +16,5 @@ type Qualities struct {
 	StringsLower string
 	Priority     int
 	UseRegex     bool `db:"use_regex"`
+	Regexgroup   int
 }

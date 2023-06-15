@@ -5,16 +5,12 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
-	"reflect"
-	"regexp"
 	"strings"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/logger"
 	"github.com/pelletier/go-toml/v2"
 	"github.com/recoilme/pudge"
-	"go.uber.org/zap"
-	"golang.org/x/exp/slices"
 	"golang.org/x/oauth2"
 )
 
@@ -59,23 +55,6 @@ type MainConfig struct {
 	Scheduler    []SchedulerConfig    `koanf:"scheduler" toml:"scheduler"`
 }
 
-type MainConfigMap struct {
-	Keys         map[string]bool
-	General      GeneralConfig
-	Imdbindexer  ImdbConfig
-	Media        map[string]MediaTypeConfig
-	Movies       map[string]MediaTypeConfig
-	Series       map[string]MediaTypeConfig
-	Downloader   map[string]DownloaderConfig
-	Lists        map[string]ListsConfig
-	Indexers     map[string]IndexersConfig
-	Paths        map[string]PathsConfig
-	Notification map[string]NotificationConfig
-	Regex        map[string]RegexConfig
-	Quality      map[string]QualityConfig
-	Scheduler    map[string]SchedulerConfig
-}
-
 type MainConfigOut struct {
 	General      GeneralConfig        `koanf:"general" toml:"general"`
 	Imdbindexer  ImdbConfig           `koanf:"imdbindexer" toml:"imdbindexer"`
@@ -104,6 +83,7 @@ type GeneralConfig struct {
 	WorkerSearch                       int      `koanf:"worker_search" toml:"worker_search"`
 	WorkerIndexer                      int      `koanf:"worker_indexer" toml:"worker_indexer"`
 	OmdbAPIKey                         string   `koanf:"omdb_apikey" toml:"omdb_apikey"`
+	UseMediaCache                      bool     `koanf:"use_media_cache" toml:"use_media_cache"`
 	MovieMetaSourceImdb                bool     `koanf:"movie_meta_source_imdb" toml:"movie_meta_source_imdb"`
 	MovieMetaSourceTmdb                bool     `koanf:"movie_meta_source_tmdb" toml:"movie_meta_source_tmdb"`
 	MovieMetaSourceOmdb                bool     `koanf:"movie_meta_source_omdb" toml:"movie_meta_source_omdb"`
@@ -146,6 +126,9 @@ type GeneralConfig struct {
 	OmdbDisableTLSVerify               bool     `koanf:"omdb_disable_tls_verify" toml:"omdb_disable_tls_verify"`
 	TvdbDisableTLSVerify               bool     `koanf:"tvdb_disable_tls_verify" toml:"tvdb_disable_tls_verify"`
 	FfprobePath                        string   `koanf:"ffprobe_path" toml:"ffprobe_path"`
+	MediainfoPath                      string   `koanf:"mediainfo_path" toml:"mediainfo_path"`
+	UseMediainfo                       bool     `koanf:"use_mediainfo" toml:"use_mediainfo"`
+	UseMediaFallback                   bool     `koanf:"use_media_fallback" toml:"use_media_fallback"`
 	FailedIndexerBlockTime             int      `koanf:"failed_indexer_block_time" toml:"failed_indexer_block_time"`
 	MaxDatabaseBackups                 int      `koanf:"max_database_backups" toml:"max_database_backups"`
 	DisableVariableCleanup             bool     `koanf:"disable_variable_cleanup" toml:"disable_variable_cleanup"`
@@ -167,27 +150,25 @@ type MediaConfig struct {
 }
 
 type MediaTypeConfig struct {
-	Name                     string                      `koanf:"name" toml:"name"`
-	NamePrefix               string                      `koanf:"name" toml:"nameprefix"`
-	DefaultQuality           string                      `koanf:"default_quality" toml:"default_quality"`
-	DefaultResolution        string                      `koanf:"default_resolution" toml:"default_resolution"`
-	Naming                   string                      `koanf:"naming" toml:"naming"`
-	NamingIdentifier         string                      `koanf:"naming_identifier" toml:"naming_identifier"`
-	TemplateQuality          string                      `koanf:"template_quality" toml:"template_quality"`
-	TemplateScheduler        string                      `koanf:"template_scheduler" toml:"template_scheduler"`
-	MetadataLanguage         string                      `koanf:"metadata_language" toml:"metadata_language"`
-	MetadataTitleLanguages   []string                    `koanf:"metadata_title_languages" toml:"metadata_title_languages"`
-	MetadataSource           string                      `koanf:"metadata_source" toml:"metadata_source"`
-	Structure                bool                        `koanf:"structure" toml:"structure"`
-	SearchmissingIncremental int                         `koanf:"search_missing_incremental" toml:"search_missing_incremental"`
-	SearchupgradeIncremental int                         `koanf:"search_upgrade_incremental" toml:"search_upgrade_incremental"`
-	Data                     []MediaDataConfig           `koanf:"data" toml:"data"`
-	DataImport               []MediaDataImportConfig     `koanf:"data_import" toml:"data_import"`
-	Lists                    []MediaListsConfig          `koanf:"lists" toml:"lists"`
-	Notification             []MediaNotificationConfig   `koanf:"notification" toml:"notification"`
-	ListsInterface           []interface{}               `koanf:"-" toml:"-"`
-	QualatiesInterface       []interface{}               `koanf:"-" toml:"-"`
-	ListsMap                 map[string]MediaListsConfig `koanf:"-" toml:"-"`
+	Name                     string                    `koanf:"name" toml:"name"`
+	NamePrefix               string                    `koanf:"name" toml:"nameprefix"`
+	DefaultQuality           string                    `koanf:"default_quality" toml:"default_quality"`
+	DefaultResolution        string                    `koanf:"default_resolution" toml:"default_resolution"`
+	Naming                   string                    `koanf:"naming" toml:"naming"`
+	NamingIdentifier         string                    `koanf:"naming_identifier" toml:"naming_identifier"`
+	TemplateQuality          string                    `koanf:"template_quality" toml:"template_quality"`
+	TemplateScheduler        string                    `koanf:"template_scheduler" toml:"template_scheduler"`
+	MetadataLanguage         string                    `koanf:"metadata_language" toml:"metadata_language"`
+	MetadataTitleLanguages   []string                  `koanf:"metadata_title_languages" toml:"metadata_title_languages"`
+	MetadataSource           string                    `koanf:"metadata_source" toml:"metadata_source"`
+	Structure                bool                      `koanf:"structure" toml:"structure"`
+	SearchmissingIncremental int                       `koanf:"search_missing_incremental" toml:"search_missing_incremental"`
+	SearchupgradeIncremental int                       `koanf:"search_upgrade_incremental" toml:"search_upgrade_incremental"`
+	Data                     []MediaDataConfig         `koanf:"data" toml:"data"`
+	DataImport               []MediaDataImportConfig   `koanf:"data_import" toml:"data_import"`
+	Lists                    []MediaListsConfig        `koanf:"lists" toml:"lists"`
+	ListsInt                 []interface{}             `koanf:"-" toml:"-"`
+	Notification             []MediaNotificationConfig `koanf:"notification" toml:"notification"`
 }
 
 type MediaDataConfig struct {
@@ -201,14 +182,15 @@ type MediaDataImportConfig struct {
 }
 
 type MediaListsConfig struct {
-	Name              string   `koanf:"name" toml:"name"`
-	TemplateList      string   `koanf:"template_list" toml:"template_list"`
-	TemplateQuality   string   `koanf:"template_quality" toml:"template_quality"`
-	TemplateScheduler string   `koanf:"template_scheduler" toml:"template_scheduler"`
-	IgnoreMapLists    []string `koanf:"ignore_template_lists" toml:"ignore_template_lists"`
-	ReplaceMapLists   []string `koanf:"replace_template_lists" toml:"replace_template_lists"`
-	Enabled           bool     `koanf:"enabled" toml:"enabled"`
-	Addfound          bool     `koanf:"add_found" toml:"add_found"`
+	Name              string        `koanf:"name" toml:"name"`
+	TemplateList      string        `koanf:"template_list" toml:"template_list"`
+	TemplateQuality   string        `koanf:"template_quality" toml:"template_quality"`
+	TemplateScheduler string        `koanf:"template_scheduler" toml:"template_scheduler"`
+	IgnoreMapLists    []string      `koanf:"ignore_template_lists" toml:"ignore_template_lists"`
+	IgnoreMapListsInt []interface{} `koanf:"-" toml:"-"`
+	ReplaceMapLists   []string      `koanf:"replace_template_lists" toml:"replace_template_lists"`
+	Enabled           bool          `koanf:"enabled" toml:"enabled"`
+	Addfound          bool          `koanf:"add_found" toml:"add_found"`
 }
 
 type MediaNotificationConfig struct {
@@ -276,43 +258,37 @@ type IndexersConfig struct {
 }
 
 type PathsConfig struct {
-	Name                             string                     `koanf:"name" toml:"name"`
-	Path                             string                     `koanf:"path" toml:"path"`
-	AllowedVideoExtensions           []string                   `koanf:"allowed_video_extensions" toml:"allowed_video_extensions"`
-	AllowedOtherExtensions           []string                   `koanf:"allowed_other_extensions" toml:"allowed_other_extensions"`
-	AllowedVideoExtensionsNoRename   []string                   `koanf:"allowed_video_extensions_no_rename" toml:"allowed_video_extensions_no_rename"`
-	AllowedOtherExtensionsNoRename   []string                   `koanf:"allowed_other_extensions_no_rename" toml:"allowed_other_extensions_no_rename"`
-	Blocked                          []string                   `koanf:"blocked" toml:"blocked"`
-	Upgrade                          bool                       `koanf:"upgrade" toml:"upgrade"`
-	MinSize                          int                        `koanf:"min_size" toml:"min_size"`
-	MaxSize                          int                        `koanf:"max_size" toml:"max_size"`
-	MinSizeByte                      int64                      `koanf:"-" toml:"-"`
-	MaxSizeByte                      int64                      `koanf:"-" toml:"-"`
-	MinVideoSize                     int                        `koanf:"min_video_size" toml:"min_video_size"`
-	MinVideoSizeByte                 int64                      `koanf:"-" toml:"-"`
-	CleanupsizeMB                    int                        `koanf:"cleanup_size_mb" toml:"cleanup_size_mb"`
-	AllowedLanguages                 []string                   `koanf:"allowed_languages" toml:"allowed_languages"`
-	Replacelower                     bool                       `koanf:"replace_lower" toml:"replace_lower"`
-	Usepresort                       bool                       `koanf:"use_presort" toml:"use_presort"`
-	PresortFolderPath                string                     `koanf:"presort_folder_path" toml:"presort_folder_path"`
-	UpgradeScanInterval              int                        `koanf:"upgrade_scan_interval" toml:"upgrade_scan_interval"`
-	MissingScanInterval              int                        `koanf:"missing_scan_interval" toml:"missing_scan_interval"`
-	MissingScanReleaseDatePre        int                        `koanf:"missing_scan_release_date_pre" toml:"missing_scan_release_date_pre"`
-	Disallowed                       []string                   `koanf:"disallowed" toml:"disallowed"`
-	DeleteWrongLanguage              bool                       `koanf:"delete_wrong_language" toml:"delete_wrong_language"`
-	DeleteDisallowed                 bool                       `koanf:"delete_disallowed" toml:"delete_disallowed"`
-	CheckRuntime                     bool                       `koanf:"check_runtime" toml:"check_runtime"`
-	MaxRuntimeDifference             int                        `koanf:"max_runtime_difference" toml:"max_runtime_difference"`
-	DeleteWrongRuntime               bool                       `koanf:"delete_wrong_runtime" toml:"delete_wrong_runtime"`
-	MoveReplaced                     bool                       `koanf:"move_replaced" toml:"move_replaced"`
-	MoveReplacedTargetPath           string                     `koanf:"move_replaced_target_path" toml:"move_replaced_target_path"`
-	AllowedVideoExtensionsIn         logger.InStringArrayStruct `koanf:"-" toml:"-"`
-	AllowedVideoExtensionsNoRenameIn logger.InStringArrayStruct `koanf:"-" toml:"-"`
-	AllowedOtherExtensionsIn         logger.InStringArrayStruct `koanf:"-" toml:"-"`
-	AllowedOtherExtensionsNoRenameIn logger.InStringArrayStruct `koanf:"-" toml:"-"`
-	BlockedLowerIn                   logger.InStringArrayStruct `koanf:"-" toml:"-"`
-	DisallowedLowerIn                logger.InStringArrayStruct `koanf:"-" toml:"-"`
-	SetChmod                         string                     `koanf:"set_chmod" toml:"set_chmod"`
+	Name                           string   `koanf:"name" toml:"name"`
+	Path                           string   `koanf:"path" toml:"path"`
+	AllowedVideoExtensions         []string `koanf:"allowed_video_extensions" toml:"allowed_video_extensions"`
+	AllowedOtherExtensions         []string `koanf:"allowed_other_extensions" toml:"allowed_other_extensions"`
+	AllowedVideoExtensionsNoRename []string `koanf:"allowed_video_extensions_no_rename" toml:"allowed_video_extensions_no_rename"`
+	AllowedOtherExtensionsNoRename []string `koanf:"allowed_other_extensions_no_rename" toml:"allowed_other_extensions_no_rename"`
+	Blocked                        []string `koanf:"blocked" toml:"blocked"`
+	Upgrade                        bool     `koanf:"upgrade" toml:"upgrade"`
+	MinSize                        int      `koanf:"min_size" toml:"min_size"`
+	MaxSize                        int      `koanf:"max_size" toml:"max_size"`
+	MinSizeByte                    int64    `koanf:"-" toml:"-"`
+	MaxSizeByte                    int64    `koanf:"-" toml:"-"`
+	MinVideoSize                   int      `koanf:"min_video_size" toml:"min_video_size"`
+	MinVideoSizeByte               int64    `koanf:"-" toml:"-"`
+	CleanupsizeMB                  int      `koanf:"cleanup_size_mb" toml:"cleanup_size_mb"`
+	AllowedLanguages               []string `koanf:"allowed_languages" toml:"allowed_languages"`
+	Replacelower                   bool     `koanf:"replace_lower" toml:"replace_lower"`
+	Usepresort                     bool     `koanf:"use_presort" toml:"use_presort"`
+	PresortFolderPath              string   `koanf:"presort_folder_path" toml:"presort_folder_path"`
+	UpgradeScanInterval            int      `koanf:"upgrade_scan_interval" toml:"upgrade_scan_interval"`
+	MissingScanInterval            int      `koanf:"missing_scan_interval" toml:"missing_scan_interval"`
+	MissingScanReleaseDatePre      int      `koanf:"missing_scan_release_date_pre" toml:"missing_scan_release_date_pre"`
+	Disallowed                     []string `koanf:"disallowed" toml:"disallowed"`
+	DeleteWrongLanguage            bool     `koanf:"delete_wrong_language" toml:"delete_wrong_language"`
+	DeleteDisallowed               bool     `koanf:"delete_disallowed" toml:"delete_disallowed"`
+	CheckRuntime                   bool     `koanf:"check_runtime" toml:"check_runtime"`
+	MaxRuntimeDifference           int      `koanf:"max_runtime_difference" toml:"max_runtime_difference"`
+	DeleteWrongRuntime             bool     `koanf:"delete_wrong_runtime" toml:"delete_wrong_runtime"`
+	MoveReplaced                   bool     `koanf:"move_replaced" toml:"move_replaced"`
+	MoveReplacedTargetPath         string   `koanf:"move_replaced_target_path" toml:"move_replaced_target_path"`
+	SetChmod                       string   `koanf:"set_chmod" toml:"set_chmod"`
 }
 
 type NotificationConfig struct {
@@ -329,46 +305,37 @@ type RegexConfigIn struct {
 	Rejected []string `koanf:"rejected" toml:"rejected"`
 }
 
-type RegexGroup struct {
-	Name string
-	Re   regexp.Regexp
-}
 type RegexConfig struct {
 	RegexConfigIn
 }
 
 type QualityConfig struct {
-	Name                           string                     `koanf:"name" toml:"name"`
-	WantedResolution               []string                   `koanf:"wanted_resolution" toml:"wanted_resolution"`
-	WantedQuality                  []string                   `koanf:"wanted_quality" toml:"wanted_quality"`
-	WantedAudio                    []string                   `koanf:"wanted_audio" toml:"wanted_audio"`
-	WantedCodec                    []string                   `koanf:"wanted_codec" toml:"wanted_codec"`
-	CutoffResolution               string                     `koanf:"cutoff_resolution" toml:"cutoff_resolution"`
-	CutoffQuality                  string                     `koanf:"cutoff_quality" toml:"cutoff_quality"`
-	SearchForTitleIfEmpty          bool                       `koanf:"search_for_title_if_empty" toml:"search_for_title_if_empty"`
-	BackupSearchForTitle           bool                       `koanf:"backup_search_for_title" toml:"backup_search_for_title"`
-	SearchForAlternateTitleIfEmpty bool                       `koanf:"search_for_alternate_title_if_empty" toml:"search_for_alternate_title_if_empty"`
-	BackupSearchForAlternateTitle  bool                       `koanf:"backup_search_for_alternate_title" toml:"backup_search_for_alternate_title"`
-	ExcludeYearFromTitleSearch     bool                       `koanf:"exclude_year_from_title_search" toml:"exclude_year_from_title_search"`
-	CheckUntilFirstFound           bool                       `koanf:"check_until_first_found" toml:"check_until_first_found"`
-	CheckTitle                     bool                       `koanf:"check_title" toml:"check_title"`
-	CheckYear                      bool                       `koanf:"check_year" toml:"check_year"`
-	CheckYear1                     bool                       `koanf:"check_year1" toml:"check_year1"`
-	TitleStripSuffixForSearch      []string                   `koanf:"title_strip_suffix_for_search" toml:"title_strip_suffix_for_search"`
-	TitleStripSuffixForSearchLower []string                   `koanf:"-" toml:"-"`
-	TitleStripPrefixForSearch      []string                   `koanf:"title_strip_prefix_for_search" toml:"title_strip_prefix_for_search"`
-	QualityReorder                 []QualityReorderConfig     `koanf:"reorder" toml:"reorder"`
-	Indexer                        []QualityIndexerConfig     `koanf:"indexers" toml:"indexers"`
-	UseForPriorityResolution       bool                       `koanf:"use_for_priority_resolution" toml:"use_for_priority_resolution"`
-	UseForPriorityQuality          bool                       `koanf:"use_for_priority_quality" toml:"use_for_priority_quality"`
-	UseForPriorityAudio            bool                       `koanf:"use_for_priority_audio" toml:"use_for_priority_audio"`
-	UseForPriorityCodec            bool                       `koanf:"use_for_priority_codec" toml:"use_for_priority_codec"`
-	UseForPriorityOther            bool                       `koanf:"use_for_priority_other" toml:"use_for_priority_other"`
-	UseForPriorityMinDifference    int                        `koanf:"use_for_priority_min_difference" toml:"use_for_priority_min_difference"`
-	WantedResolutionIn             logger.InStringArrayStruct `koanf:"-" toml:"-"`
-	WantedQualityIn                logger.InStringArrayStruct `koanf:"-" toml:"-"`
-	WantedAudioIn                  logger.InStringArrayStruct `koanf:"-" toml:"-"`
-	WantedCodecIn                  logger.InStringArrayStruct `koanf:"-" toml:"-"`
+	Name                           string                 `koanf:"name" toml:"name"`
+	WantedResolution               []string               `koanf:"wanted_resolution" toml:"wanted_resolution"`
+	WantedQuality                  []string               `koanf:"wanted_quality" toml:"wanted_quality"`
+	WantedAudio                    []string               `koanf:"wanted_audio" toml:"wanted_audio"`
+	WantedCodec                    []string               `koanf:"wanted_codec" toml:"wanted_codec"`
+	CutoffResolution               string                 `koanf:"cutoff_resolution" toml:"cutoff_resolution"`
+	CutoffQuality                  string                 `koanf:"cutoff_quality" toml:"cutoff_quality"`
+	SearchForTitleIfEmpty          bool                   `koanf:"search_for_title_if_empty" toml:"search_for_title_if_empty"`
+	BackupSearchForTitle           bool                   `koanf:"backup_search_for_title" toml:"backup_search_for_title"`
+	SearchForAlternateTitleIfEmpty bool                   `koanf:"search_for_alternate_title_if_empty" toml:"search_for_alternate_title_if_empty"`
+	BackupSearchForAlternateTitle  bool                   `koanf:"backup_search_for_alternate_title" toml:"backup_search_for_alternate_title"`
+	ExcludeYearFromTitleSearch     bool                   `koanf:"exclude_year_from_title_search" toml:"exclude_year_from_title_search"`
+	CheckUntilFirstFound           bool                   `koanf:"check_until_first_found" toml:"check_until_first_found"`
+	CheckTitle                     bool                   `koanf:"check_title" toml:"check_title"`
+	CheckYear                      bool                   `koanf:"check_year" toml:"check_year"`
+	CheckYear1                     bool                   `koanf:"check_year1" toml:"check_year1"`
+	TitleStripSuffixForSearch      []string               `koanf:"title_strip_suffix_for_search" toml:"title_strip_suffix_for_search"`
+	TitleStripPrefixForSearch      []string               `koanf:"title_strip_prefix_for_search" toml:"title_strip_prefix_for_search"`
+	QualityReorder                 []QualityReorderConfig `koanf:"reorder" toml:"reorder"`
+	Indexer                        []QualityIndexerConfig `koanf:"indexers" toml:"indexers"`
+	UseForPriorityResolution       bool                   `koanf:"use_for_priority_resolution" toml:"use_for_priority_resolution"`
+	UseForPriorityQuality          bool                   `koanf:"use_for_priority_quality" toml:"use_for_priority_quality"`
+	UseForPriorityAudio            bool                   `koanf:"use_for_priority_audio" toml:"use_for_priority_audio"`
+	UseForPriorityCodec            bool                   `koanf:"use_for_priority_codec" toml:"use_for_priority_codec"`
+	UseForPriorityOther            bool                   `koanf:"use_for_priority_other" toml:"use_for_priority_other"`
+	UseForPriorityMinDifference    int                    `koanf:"use_for_priority_min_difference" toml:"use_for_priority_min_difference"`
 }
 
 type QualityReorderConfig struct {
@@ -416,6 +383,8 @@ type SchedulerConfig struct {
 	IntervalDatabaseBackup          string `koanf:"interval_database_backup" toml:"interval_database_backup"`
 	IntervalDatabaseCheck           string `koanf:"interval_database_check" toml:"interval_database_check"`
 	IntervalIndexerRssSeasons       string `koanf:"interval_indexer_rss_seasons" toml:"interval_indexer_rss_seasons"`
+	IntervalIndexerRssSeasonsAll    string `koanf:"interval_indexer_rss_seasons_all" toml:"interval_indexer_rss_seasons_all"`
+	CronIndexerRssSeasonsAll        string `koanf:"cron_indexer_rss_seasons_all" toml:"cron_indexer_rss_seasons_all"`
 	CronIndexerRssSeasons           string `koanf:"cron_indexer_rss_seasons" toml:"cron_indexer_rss_seasons"`
 	CronImdb                        string `koanf:"cron_imdb" toml:"cron_imdb"`
 	CronFeeds                       string `koanf:"cron_feeds" toml:"cron_feeds"`
@@ -442,57 +411,22 @@ type SchedulerConfig struct {
 
 const configfile = "./config/config.toml"
 
-var Cfg MainConfigMap
+var (
+	SettingsGeneral      GeneralConfig
+	SettingsImdb         ImdbConfig
+	SettingsPath         map[string]PathsConfig
+	SettingsQuality      map[string]QualityConfig
+	SettingsList         map[string]ListsConfig
+	SettingsIndexer      map[string]IndexersConfig
+	SettingsRegex        map[string]RegexConfig
+	SettingsMedia        map[string]MediaTypeConfig
+	SettingsNotification map[string]NotificationConfig
+	SettingsDownloader   map[string]DownloaderConfig
+	SettingsScheduler    map[string]SchedulerConfig
+)
 
-func (s *QualityIndexerConfig) Close() {
-	if logger.DisableVariableCleanup {
-		return
-	}
-	if s == nil {
-		return
-	}
-	s = nil
-}
-func (s *ListsConfig) Close() {
-	if logger.DisableVariableCleanup {
-		return
-	}
-	if s == nil {
-		return
-	}
-	s.Excludegenre = nil
-	s.Includegenre = nil
-	s = nil
-}
-func (s *DownloaderConfig) Close() {
-	if logger.DisableVariableCleanup {
-		return
-	}
-	if s == nil {
-		return
-	}
-	s = nil
-}
-func (s *IndexersConfig) Close() {
-	if logger.DisableVariableCleanup {
-		return
-	}
-	if s == nil {
-		return
-	}
-	s = nil
-}
-func (s *RegexConfig) Close() {
-	if logger.DisableVariableCleanup {
-		return
-	}
-	if s == nil {
-		return
-	}
-	s.Rejected = nil
-	s.Required = nil
-	s = nil
-}
+//var Cfg MainConfigMap
+
 func (s *QualityReorderConfigGroup) Close() {
 	if logger.DisableVariableCleanup {
 		return
@@ -500,8 +434,8 @@ func (s *QualityReorderConfigGroup) Close() {
 	if s == nil {
 		return
 	}
-	s.Arr = nil
-	s = nil
+	logger.Clear(&s.Arr)
+	logger.ClearVar(s)
 }
 func (s *MainConfig) Close() {
 	if logger.DisableVariableCleanup {
@@ -520,11 +454,7 @@ func (s *MainConfig) Close() {
 	s.Quality = nil
 	s.Regex = nil
 	s.Scheduler = nil
-	s = nil
-}
-func (q *MainConfigMap) GetPath(str string) *PathsConfig {
-	path := q.Paths[str]
-	return &path
+	logger.ClearVar(s)
 }
 func (s *MainSerieConfig) Close() {
 	if logger.DisableVariableCleanup {
@@ -533,8 +463,8 @@ func (s *MainSerieConfig) Close() {
 	if s == nil {
 		return
 	}
-	s.Serie = nil
-	s = nil
+	logger.Clear(&s.Serie)
+	logger.ClearVar(s)
 }
 func (q *SerieConfig) Close() {
 	if logger.DisableVariableCleanup {
@@ -543,103 +473,30 @@ func (q *SerieConfig) Close() {
 	if q == nil {
 		return
 	}
-	q.AlternateName = nil
-	q = nil
+	logger.Clear(&q.AlternateName)
+	logger.ClearVar(q)
 }
-func (q *MediaTypeConfig) Close() {
-	if logger.DisableVariableCleanup {
-		return
+func GetTemplateList(cfgpstr string, str string) (string, bool) {
+	for idx := range SettingsMedia[cfgpstr].Lists {
+		if strings.EqualFold(SettingsMedia[cfgpstr].Lists[idx].Name, str) {
+			return SettingsMedia[cfgpstr].Lists[idx].TemplateList, SettingsMedia[cfgpstr].Lists[idx].Enabled
+		}
 	}
-	if q == nil {
-		return
-	}
-	q.MetadataTitleLanguages = nil
-	q.Data = nil
-	q.DataImport = nil
-	q.Lists = nil
-	q.Notification = nil
-	q.ListsInterface = nil
-	q.QualatiesInterface = nil
-	q.ListsMap = nil
-	q = nil
-}
-func (q *MediaTypeConfig) GetList(str string) *MediaListsConfig {
-	intid := slices.IndexFunc(q.Lists, func(e MediaListsConfig) bool { return e.Name == str })
-	if intid != -1 {
-		return &q.Lists[intid]
-	}
-	return nil
-}
-func (q *MediaTypeConfig) GetTemplateList(str string) (string, bool) {
-	intid := slices.IndexFunc(q.Lists, func(e MediaListsConfig) bool { return e.Name == str })
-	if intid != -1 {
-		return q.Lists[intid].TemplateList, q.Lists[intid].Enabled
-	}
+	// intid := logger.IndexFuncS(SettingsMedia[cfgpstr].Lists, func(e MediaListsConfig) bool { return strings.EqualFold(e.Name, str) })
+	// if intid != -1 {
+	// 	return SettingsMedia[cfgpstr].Lists[intid].TemplateList, SettingsMedia[cfgpstr].Lists[intid].Enabled
+	// }
 	return "", false
-}
-func (q *MediaListsConfig) Close() {
-	if logger.DisableVariableCleanup {
-		return
-	}
-	if q == nil {
-		return
-	}
-	q.IgnoreMapLists = nil
-	q.ReplaceMapLists = nil
-	q = nil
-}
-func (c *PathsConfig) Close() {
-	if logger.DisableVariableCleanup {
-		return
-	}
-	if c == nil {
-		return
-	}
-	c.AllowedLanguages = nil
-	c.AllowedOtherExtensions = nil
-	c.AllowedOtherExtensionsIn.Close()
-	c.AllowedOtherExtensionsNoRename = nil
-	c.AllowedOtherExtensionsNoRenameIn.Close()
-	c.AllowedVideoExtensions = nil
-	c.AllowedVideoExtensionsIn.Close()
-	c.AllowedVideoExtensionsNoRename = nil
-	c.AllowedVideoExtensionsNoRenameIn.Close()
-	c.Blocked = nil
-	c.BlockedLowerIn.Close()
-	c.Disallowed = nil
-	c.DisallowedLowerIn.Close()
-	c = nil
-}
-func (q *QualityConfig) Close() {
-	if logger.DisableVariableCleanup {
-		return
-	}
-	if q == nil {
-		return
-	}
-	q.WantedAudio = nil
-	q.WantedAudioIn.Close()
-	q.WantedCodec = nil
-	q.WantedCodecIn.Close()
-	q.WantedQuality = nil
-	q.WantedQualityIn.Close()
-	q.WantedResolution = nil
-	q.WantedResolutionIn.Close()
-	q.Indexer = nil
-	q.QualityReorder = nil
-	q.TitleStripPrefixForSearch = nil
-	q.TitleStripSuffixForSearch = nil
-	q = nil
 }
 
 func Slepping(random bool, seconds int) {
 	if random {
 		rand.New(rand.NewSource(time.Now().UnixNano()))
-		n := rand.Intn(seconds) // n will be between 0 and 10
-		logger.Log.GlobalLogger.Debug("Sleeping for", zap.Int("seconds", n+1))
-		time.Sleep(time.Duration(1+n) * time.Second)
+		n := rand.Intn(seconds) + 1 // n will be between 0 and 10
+		logger.Log.Debug().Int("seconds", n).Msg("Sleeping for")
+		time.Sleep(time.Duration(n) * time.Second)
 	} else {
-		logger.Log.GlobalLogger.Debug("Sleeping for", zap.Int("seconds", seconds))
+		logger.Log.Debug().Int("seconds", seconds).Msg("Sleeping for")
 		time.Sleep(time.Duration(seconds) * time.Second)
 	}
 }
@@ -648,128 +505,131 @@ func GetCfgFile() string {
 	return configfile
 }
 
-func LoadCfgDB(f string) {
-	content, err := os.ReadFile(configfile)
+func LoadCfgDB() {
+	content, err := os.Open(configfile)
 	if err != nil {
 		fmt.Println("Error loading config. " + err.Error())
-		content = nil
 		return
 	}
+	defer content.Close()
 	var results MainConfig
-	err = toml.Unmarshal(content, &results)
+	//err = toml.Unmarshal(content, &results)
+	err = toml.NewDecoder(content).Decode(&results)
 	if err != nil {
 		fmt.Println("Error loading config. " + err.Error())
-		content = nil
 		return
 	}
-	content = nil
 	configDB, _ := pudge.Open("./databases/config.db", &pudge.Config{
 		SyncInterval: 0})
 	pudge.BackupAll("")
-	Cfg.Keys = make(map[string]bool)
-	Cfg.Downloader = make(map[string]DownloaderConfig, len(results.Downloader))
-	Cfg.Indexers = make(map[string]IndexersConfig, len(results.Indexers))
-	Cfg.Lists = make(map[string]ListsConfig, len(results.Lists))
-	Cfg.Media = make(map[string]MediaTypeConfig)
-	Cfg.Movies = make(map[string]MediaTypeConfig, len(results.Media.Movies))
-	Cfg.Series = make(map[string]MediaTypeConfig, len(results.Media.Series))
-	Cfg.Notification = make(map[string]NotificationConfig, len(results.Notification))
-	Cfg.Paths = make(map[string]PathsConfig, len(results.Paths))
-	Cfg.Quality = make(map[string]QualityConfig, len(results.Quality))
-	Cfg.Regex = make(map[string]RegexConfig, len(results.Regex))
-	Cfg.Scheduler = make(map[string]SchedulerConfig, len(results.Scheduler))
+	// Cfg.Keys = make(map[string]bool)
+	SettingsDownloader = make(map[string]DownloaderConfig, len(results.Downloader))
+	SettingsIndexer = make(map[string]IndexersConfig, len(results.Indexers))
+	SettingsList = make(map[string]ListsConfig, len(results.Lists))
+	SettingsMedia = make(map[string]MediaTypeConfig)
+	// Cfg.Movies = make(map[string]MediaTypeConfig, len(results.Media.Movies))
+	// Cfg.Series = make(map[string]MediaTypeConfig, len(results.Media.Series))
+	SettingsNotification = make(map[string]NotificationConfig, len(results.Notification))
+	SettingsPath = make(map[string]PathsConfig, len(results.Paths))
+	SettingsQuality = make(map[string]QualityConfig, len(results.Quality))
+	SettingsRegex = make(map[string]RegexConfig, len(results.Regex))
+	SettingsScheduler = make(map[string]SchedulerConfig, len(results.Scheduler))
 
-	Cfg.General = results.General
-	if Cfg.General.WebAPIKey != "" {
-		Cfg.Keys["general"] = true
-	}
-	Cfg.Imdbindexer = results.Imdbindexer
-	if len(Cfg.Imdbindexer.Indexedtypes) >= 1 {
-		Cfg.Keys["imdb"] = true
-	}
+	//logger.Settings.Set("general", results.General, 0, false)
+	SettingsGeneral = results.General
+	//Cfg.General = results.General
+	// if Cfg.General.WebAPIKey != "" {
+	// 	Cfg.Keys["general"] = true
+	// }
+	//Cfg.Imdbindexer = results.Imdbindexer
+	//	logger.Settings.Set("imdb", results.Imdbindexer, 0, false)
+	SettingsImdb = results.Imdbindexer
+	// if len(Cfg.Imdbindexer.Indexedtypes) >= 1 {
+	// 	Cfg.Keys[logger.StrImdb] = true
+	// }
 
 	for idx := range results.Downloader {
-		Cfg.Downloader[results.Downloader[idx].Name] = results.Downloader[idx]
-		Cfg.Keys["downloader_"+results.Downloader[idx].Name] = true
+		//logger.Settings.Set("downloader_"+results.Downloader[idx].Name, results.Downloader[idx], 0, false)
+		SettingsDownloader["downloader_"+results.Downloader[idx].Name] = results.Downloader[idx]
+		//Cfg.Keys["downloader_"+results.Downloader[idx].Name] = true
 	}
 	for idx := range results.Indexers {
-		Cfg.Indexers[results.Indexers[idx].Name] = results.Indexers[idx]
-		Cfg.Keys["indexer_"+results.Indexers[idx].Name] = true
+		//logger.Settings.Set("indexer_"+results.Indexers[idx].Name, results.Indexers[idx], 0, false)
+		SettingsIndexer["indexer_"+results.Indexers[idx].Name] = results.Indexers[idx]
+		//Cfg.Indexers[results.Indexers[idx].Name] = results.Indexers[idx]
+		//Cfg.Keys["indexer_"+results.Indexers[idx].Name] = true
 	}
 	for idx := range results.Lists {
-		Cfg.Lists[results.Lists[idx].Name] = results.Lists[idx]
-		Cfg.Keys["list_"+results.Lists[idx].Name] = true
+		//logger.Settings.Set("list_"+results.Lists[idx].Name, results.Lists[idx], 0, false)
+		SettingsList["list_"+results.Lists[idx].Name] = results.Lists[idx]
+		//Cfg.Keys["list_"+results.Lists[idx].Name] = true
 	}
 
 	for idx := range results.Notification {
-		Cfg.Notification[results.Notification[idx].Name] = results.Notification[idx]
-		Cfg.Keys["notification_"+results.Notification[idx].Name] = true
+		//logger.Settings.Set("notification_"+results.Notification[idx].Name, results.Notification[idx], 0, false)
+		SettingsNotification["notification_"+results.Notification[idx].Name] = results.Notification[idx]
+		//Cfg.Keys["notification_"+results.Notification[idx].Name] = true
 	}
 	for idx := range results.Paths {
-		results.Paths[idx].DisallowedLowerIn = logger.InStringArrayStruct{Arr: logger.StringArrayToLower(results.Paths[idx].Disallowed)}
-		results.Paths[idx].BlockedLowerIn = logger.InStringArrayStruct{Arr: logger.StringArrayToLower(results.Paths[idx].Blocked)}
-		results.Paths[idx].AllowedVideoExtensionsIn = logger.InStringArrayStruct{Arr: results.Paths[idx].AllowedVideoExtensions}
-		results.Paths[idx].AllowedVideoExtensionsNoRenameIn = logger.InStringArrayStruct{Arr: results.Paths[idx].AllowedVideoExtensionsNoRename}
-		results.Paths[idx].AllowedOtherExtensionsIn = logger.InStringArrayStruct{Arr: results.Paths[idx].AllowedOtherExtensions}
-		results.Paths[idx].AllowedOtherExtensionsNoRenameIn = logger.InStringArrayStruct{Arr: results.Paths[idx].AllowedOtherExtensionsNoRename}
 		results.Paths[idx].MaxSizeByte = int64(results.Paths[idx].MaxSize) * 1024 * 1024
 		results.Paths[idx].MinSizeByte = int64(results.Paths[idx].MinSize) * 1024 * 1024
 		results.Paths[idx].MinVideoSizeByte = int64(results.Paths[idx].MinVideoSize) * 1024 * 1024
-		Cfg.Paths[results.Paths[idx].Name] = results.Paths[idx]
-		Cfg.Keys["path_"+results.Paths[idx].Name] = true
+		//logger.Settings.Set("path_"+results.Paths[idx].Name, results.Paths[idx], 0, false)
+		SettingsPath["path_"+results.Paths[idx].Name] = results.Paths[idx]
+		//Cfg.Keys["path_"+results.Paths[idx].Name] = true
 	}
 	//for key, val := range Cfg.Paths {
 	//Cfg.PathsP[key] = &val
 	//}
 	for idx := range results.Quality {
-		results.Quality[idx].TitleStripSuffixForSearchLower = logger.StringArrayToLower(results.Quality[idx].TitleStripSuffixForSearch)
-		results.Quality[idx].WantedAudioIn = logger.InStringArrayStruct{Arr: results.Quality[idx].WantedAudio}
-		results.Quality[idx].WantedCodecIn = logger.InStringArrayStruct{Arr: results.Quality[idx].WantedCodec}
-		results.Quality[idx].WantedQualityIn = logger.InStringArrayStruct{Arr: results.Quality[idx].WantedQuality}
-		results.Quality[idx].WantedResolutionIn = logger.InStringArrayStruct{Arr: results.Quality[idx].WantedResolution}
-		Cfg.Quality[results.Quality[idx].Name] = results.Quality[idx]
-		Cfg.Keys["quality_"+results.Quality[idx].Name] = true
+		//logger.Settings.Set("quality_"+results.Quality[idx].Name, results.Quality[idx], 0, false)
+		SettingsQuality["quality_"+results.Quality[idx].Name] = results.Quality[idx]
+		//Cfg.Keys["quality_"+results.Quality[idx].Name] = true
 	}
 	for idx := range results.Regex {
-		Cfg.Regex[results.Regex[idx].Name] = results.Regex[idx]
-		Cfg.Keys["regex_"+results.Regex[idx].Name] = true
+		//logger.Settings.Set("regex_"+results.Regex[idx].Name, results.Regex[idx], 0, false)
+		SettingsRegex["regex_"+results.Regex[idx].Name] = results.Regex[idx]
+		//Cfg.Keys["regex_"+results.Regex[idx].Name] = true
 	}
 	for idx := range results.Scheduler {
-		Cfg.Scheduler[results.Scheduler[idx].Name] = results.Scheduler[idx]
-		Cfg.Keys["scheduler_"+results.Scheduler[idx].Name] = true
+		//logger.Settings.Set("scheduler_"+results.Scheduler[idx].Name, results.Scheduler[idx], 0, false)
+		SettingsScheduler["scheduler_"+results.Scheduler[idx].Name] = results.Scheduler[idx]
+		//Cfg.Keys["scheduler_"+results.Scheduler[idx].Name] = true
 	}
 	for idx := range results.Media.Movies {
 		results.Media.Movies[idx].NamePrefix = "movie_" + results.Media.Movies[idx].Name
-		results.Media.Movies[idx].ListsMap = make(map[string]MediaListsConfig, len(results.Media.Movies[idx].Lists))
-		results.Media.Movies[idx].ListsInterface = make([]interface{}, len(results.Media.Movies[idx].Lists))
-		for idx2 := range results.Media.Movies[idx].Lists {
-			results.Media.Movies[idx].ListsInterface[idx2] = results.Media.Movies[idx].Lists[idx2].Name
-			results.Media.Movies[idx].ListsMap[results.Media.Movies[idx].Lists[idx2].Name] = results.Media.Movies[idx].Lists[idx2]
-		}
-		results.Media.Movies[idx].QualatiesInterface = make([]interface{}, len(results.Media.Movies[idx].Lists))
-		for idx2 := range results.Media.Movies[idx].Lists {
-			results.Media.Movies[idx].QualatiesInterface[idx2] = results.Media.Movies[idx].Lists[idx2].TemplateQuality
+		results.Media.Movies[idx].ListsInt = make([]interface{}, len(results.Media.Movies[idx].Lists))
+		for idxsub := range results.Media.Movies[idx].Lists {
+			results.Media.Movies[idx].Lists[idxsub].IgnoreMapListsInt = make([]interface{}, len(results.Media.Movies[idx].Lists[idxsub].IgnoreMapLists))
+			for idxign := range results.Media.Movies[idx].Lists[idxsub].IgnoreMapLists {
+				results.Media.Movies[idx].Lists[idxsub].IgnoreMapListsInt[idxign] = results.Media.Movies[idx].Lists[idxsub].IgnoreMapLists[idxign]
+			}
+			results.Media.Movies[idx].ListsInt[idxsub] = results.Media.Movies[idx].Lists[idxsub].Name
 		}
 
-		Cfg.Movies[results.Media.Movies[idx].Name] = results.Media.Movies[idx]
-		Cfg.Media["movie_"+results.Media.Movies[idx].Name] = results.Media.Movies[idx]
-		Cfg.Keys["movie_"+results.Media.Movies[idx].Name] = true
+		//logger.Settings.Set("movie_"+results.Media.Movies[idx].Name, results.Media.Movies[idx], 0, false)
+		//logger.Settings.Set("media_"+results.Media.Movies[idx].Name, results.Media.Movies[idx], 0, false)
+		SettingsMedia["movie_"+results.Media.Movies[idx].Name] = results.Media.Movies[idx]
+		//Cfg.Movies[results.Media.Movies[idx].Name] = results.Media.Movies[idx]
+		//Cfg.Media["movie_"+results.Media.Movies[idx].Name] = results.Media.Movies[idx]
+		//Cfg.Keys["movie_"+results.Media.Movies[idx].Name] = true
 	}
 	for idx := range results.Media.Series {
 		results.Media.Series[idx].NamePrefix = "serie_" + results.Media.Series[idx].Name
-		results.Media.Series[idx].ListsMap = make(map[string]MediaListsConfig, len(results.Media.Series[idx].Lists))
-		results.Media.Series[idx].ListsInterface = make([]interface{}, len(results.Media.Series[idx].Lists))
-		for idx2 := range results.Media.Series[idx].Lists {
-			results.Media.Series[idx].ListsInterface[idx2] = results.Media.Series[idx].Lists[idx2].Name
-			results.Media.Series[idx].ListsMap[results.Media.Series[idx].Lists[idx2].Name] = results.Media.Series[idx].Lists[idx2]
+		results.Media.Series[idx].ListsInt = make([]interface{}, len(results.Media.Series[idx].Lists))
+		for idxsub := range results.Media.Series[idx].Lists {
+			results.Media.Series[idx].Lists[idxsub].IgnoreMapListsInt = make([]interface{}, len(results.Media.Series[idx].Lists[idxsub].IgnoreMapLists))
+			for idxign := range results.Media.Series[idx].Lists[idxsub].IgnoreMapLists {
+				results.Media.Series[idx].Lists[idxsub].IgnoreMapListsInt[idxign] = results.Media.Series[idx].Lists[idxsub].IgnoreMapLists[idxign]
+			}
+			results.Media.Series[idx].ListsInt[idxsub] = results.Media.Series[idx].Lists[idxsub].Name
 		}
-		results.Media.Series[idx].QualatiesInterface = make([]interface{}, len(results.Media.Series[idx].Lists))
-		for idx2 := range results.Media.Series[idx].Lists {
-			results.Media.Series[idx].QualatiesInterface[idx2] = results.Media.Series[idx].Lists[idx2].TemplateQuality
-		}
-		Cfg.Series[results.Media.Series[idx].Name] = results.Media.Series[idx]
-		Cfg.Media["serie_"+results.Media.Series[idx].Name] = results.Media.Series[idx]
-		Cfg.Keys["serie_"+results.Media.Series[idx].Name] = true
+		//logger.Settings.Set("serie_"+results.Media.Series[idx].Name, results.Media.Series[idx], 0, false)
+		//logger.Settings.Set("media_"+results.Media.Series[idx].Name, results.Media.Series[idx], 0, false)
+		SettingsMedia["serie_"+results.Media.Series[idx].Name] = results.Media.Series[idx]
+		//Cfg.Series[results.Media.Series[idx].Name] = results.Media.Series[idx]
+		//Cfg.Media["serie_"+results.Media.Series[idx].Name] = results.Media.Series[idx]
+		//Cfg.Keys["serie_"+results.Media.Series[idx].Name] = true
 	}
 	results.Close()
 	//Get from DB and not config
@@ -777,101 +637,144 @@ func LoadCfgDB(f string) {
 	if hastoken {
 		var token oauth2.Token
 		if configDB.Get("trakt_token", &token) == nil {
-			logger.GlobalCache.Set("trakt_token", token, 0, false)
+			str := "trakt_token"
+			logger.GlobalCache.Set(str, token, 0, false)
 		}
 	}
 	configDB.Close()
 }
 
+func GetMediaListsEntryIndex(cfgpstr string, listname string) int {
+	if cfgpstr == "" {
+		logger.LogerrorStr(nil, "config empty", cfgpstr, "the config couldnt be found5")
+		return -1
+	}
+	for i := range SettingsMedia[cfgpstr].Lists {
+		if strings.EqualFold(SettingsMedia[cfgpstr].Lists[i].Name, listname) {
+			return i
+		}
+	}
+	return -1
+}
+
 func UpdateCfg(configIn []Conf) {
 	for _, val := range configIn {
 		key := val.Name
-		Cfg.Keys[key] = true
+		//Cfg.Keys[key] = true
 		if strings.HasPrefix(key, "general") {
-			Cfg.General = val.Data.(GeneralConfig)
+			SettingsGeneral = val.Data.(GeneralConfig)
 		}
 		if strings.HasPrefix(key, "downloader_") {
-			Cfg.Downloader[val.Data.(DownloaderConfig).Name] = val.Data.(DownloaderConfig)
+			SettingsDownloader[val.Data.(DownloaderConfig).Name] = val.Data.(DownloaderConfig)
 		}
-		if strings.HasPrefix(key, "imdb") {
-			Cfg.Imdbindexer = val.Data.(ImdbConfig)
+		if strings.HasPrefix(key, logger.StrImdb) {
+			SettingsImdb = val.Data.(ImdbConfig)
 		}
 		if strings.HasPrefix(key, "indexer") {
-			Cfg.Indexers[val.Data.(IndexersConfig).Name] = val.Data.(IndexersConfig)
+			SettingsIndexer[val.Data.(IndexersConfig).Name] = val.Data.(IndexersConfig)
 		}
 		if strings.HasPrefix(key, "list") {
-			Cfg.Lists[val.Data.(ListsConfig).Name] = val.Data.(ListsConfig)
+			SettingsList[val.Data.(ListsConfig).Name] = val.Data.(ListsConfig)
 		}
-		if strings.HasPrefix(key, "serie") {
-			Cfg.Series[val.Data.(MediaTypeConfig).Name] = val.Data.(MediaTypeConfig)
-			Cfg.Media["serie_"+val.Data.(MediaTypeConfig).Name] = val.Data.(MediaTypeConfig)
+		if strings.HasPrefix(key, logger.StrSerie) {
+			SettingsMedia["serie_"+val.Data.(MediaTypeConfig).Name] = val.Data.(MediaTypeConfig)
 		}
-		if strings.HasPrefix(key, "movie") {
-			Cfg.Movies[val.Data.(MediaTypeConfig).Name] = val.Data.(MediaTypeConfig)
-			Cfg.Media["movie_"+val.Data.(MediaTypeConfig).Name] = val.Data.(MediaTypeConfig)
+		if strings.HasPrefix(key, logger.StrMovie) {
+			SettingsMedia["movie_"+val.Data.(MediaTypeConfig).Name] = val.Data.(MediaTypeConfig)
 		}
 		if strings.HasPrefix(key, "notification") {
-			Cfg.Notification[val.Data.(NotificationConfig).Name] = val.Data.(NotificationConfig)
+			SettingsNotification[val.Data.(NotificationConfig).Name] = val.Data.(NotificationConfig)
 		}
 		if strings.HasPrefix(key, "path") {
-			Cfg.Paths[val.Data.(PathsConfig).Name] = val.Data.(PathsConfig)
+			SettingsPath[val.Data.(PathsConfig).Name] = val.Data.(PathsConfig)
 		}
 		if strings.HasPrefix(key, "quality") {
-			Cfg.Quality[val.Data.(QualityConfig).Name] = val.Data.(QualityConfig)
+			SettingsQuality[val.Data.(QualityConfig).Name] = val.Data.(QualityConfig)
 		}
 		if strings.HasPrefix(key, "regex") {
-			Cfg.Regex[val.Data.(RegexConfigIn).Name] = RegexConfig{RegexConfigIn: val.Data.(RegexConfigIn)}
+			SettingsRegex[val.Data.(RegexConfigIn).Name] = RegexConfig{RegexConfigIn: val.Data.(RegexConfigIn)}
 		}
 		if strings.HasPrefix(key, "scheduler") {
-			Cfg.Scheduler[val.Data.(SchedulerConfig).Name] = val.Data.(SchedulerConfig)
+			SettingsScheduler[val.Data.(SchedulerConfig).Name] = val.Data.(SchedulerConfig)
 		}
 	}
 }
 
+func GetCfgAll() map[string]interface{} {
+	q := make(map[string]interface{})
+	q["general"] = SettingsGeneral
+	q["imdb"] = SettingsImdb
+	for key := range SettingsMedia {
+		q[key] = SettingsMedia[key]
+	}
+	for key := range SettingsDownloader {
+		q[key] = SettingsDownloader[key]
+	}
+	for key := range SettingsIndexer {
+		q[key] = SettingsIndexer[key]
+	}
+	for key := range SettingsList {
+		q[key] = SettingsList[key]
+	}
+	for key := range SettingsNotification {
+		q[key] = SettingsNotification[key]
+	}
+	for key := range SettingsPath {
+		q[key] = SettingsPath[key]
+	}
+	for key := range SettingsQuality {
+		q[key] = SettingsQuality[key]
+	}
+	for key := range SettingsRegex {
+		q[key] = SettingsRegex[key]
+	}
+	for key := range SettingsScheduler {
+		q[key] = SettingsScheduler[key]
+	}
+	return q
+}
 func UpdateCfgEntry(configIn Conf) {
 	configDB, _ := pudge.Open("./databases/config.db", &pudge.Config{
 		SyncInterval: 0})
 
 	key := configIn.Name
-	Cfg.Keys[key] = true
+	//Cfg.Keys[key] = true
 
 	if strings.HasPrefix(key, "general") {
-		Cfg.General = configIn.Data.(GeneralConfig)
+		SettingsGeneral = configIn.Data.(GeneralConfig)
 	}
 	if strings.HasPrefix(key, "downloader_") {
-		Cfg.Downloader[configIn.Data.(DownloaderConfig).Name] = configIn.Data.(DownloaderConfig)
+		SettingsDownloader[configIn.Data.(DownloaderConfig).Name] = configIn.Data.(DownloaderConfig)
 	}
-	if strings.HasPrefix(key, "imdb") {
-		Cfg.Imdbindexer = configIn.Data.(ImdbConfig)
+	if strings.HasPrefix(key, logger.StrImdb) {
+		SettingsImdb = configIn.Data.(ImdbConfig)
 	}
 	if strings.HasPrefix(key, "indexer") {
-		Cfg.Indexers[configIn.Data.(IndexersConfig).Name] = configIn.Data.(IndexersConfig)
+		SettingsIndexer[configIn.Data.(IndexersConfig).Name] = configIn.Data.(IndexersConfig)
 	}
 	if strings.HasPrefix(key, "list") {
-		Cfg.Lists[configIn.Data.(ListsConfig).Name] = configIn.Data.(ListsConfig)
+		SettingsList[configIn.Data.(ListsConfig).Name] = configIn.Data.(ListsConfig)
 	}
-	if strings.HasPrefix(key, "serie") {
-		Cfg.Series[configIn.Data.(MediaTypeConfig).Name] = configIn.Data.(MediaTypeConfig)
-		Cfg.Media["serie_"+configIn.Data.(MediaTypeConfig).Name] = configIn.Data.(MediaTypeConfig)
+	if strings.HasPrefix(key, logger.StrSerie) {
+		SettingsMedia["serie_"+configIn.Data.(MediaTypeConfig).Name] = configIn.Data.(MediaTypeConfig)
 	}
-	if strings.HasPrefix(key, "movie") {
-		Cfg.Movies[configIn.Data.(MediaTypeConfig).Name] = configIn.Data.(MediaTypeConfig)
-		Cfg.Media["movie_"+configIn.Data.(MediaTypeConfig).Name] = configIn.Data.(MediaTypeConfig)
+	if strings.HasPrefix(key, logger.StrMovie) {
+		SettingsMedia["movie_"+configIn.Data.(MediaTypeConfig).Name] = configIn.Data.(MediaTypeConfig)
 	}
 	if strings.HasPrefix(key, "notification") {
-		Cfg.Notification[configIn.Data.(NotificationConfig).Name] = configIn.Data.(NotificationConfig)
+		SettingsNotification[configIn.Data.(NotificationConfig).Name] = configIn.Data.(NotificationConfig)
 	}
 	if strings.HasPrefix(key, "path") {
-		Cfg.Paths[configIn.Data.(PathsConfig).Name] = configIn.Data.(PathsConfig)
+		SettingsPath[configIn.Data.(PathsConfig).Name] = configIn.Data.(PathsConfig)
 	}
 	if strings.HasPrefix(key, "quality") {
-		Cfg.Quality[configIn.Data.(QualityConfig).Name] = configIn.Data.(QualityConfig)
+		SettingsQuality[configIn.Data.(QualityConfig).Name] = configIn.Data.(QualityConfig)
 	}
 	if strings.HasPrefix(key, "regex") {
-		Cfg.Regex[configIn.Data.(RegexConfigIn).Name] = RegexConfig{RegexConfigIn: configIn.Data.(RegexConfigIn)}
+		SettingsRegex[configIn.Data.(RegexConfigIn).Name] = RegexConfig{RegexConfigIn: configIn.Data.(RegexConfigIn)}
 	}
 	if strings.HasPrefix(key, "scheduler") {
-		Cfg.Scheduler[configIn.Data.(SchedulerConfig).Name] = configIn.Data.(SchedulerConfig)
+		SettingsScheduler[configIn.Data.(SchedulerConfig).Name] = configIn.Data.(SchedulerConfig)
 	}
 	if strings.HasPrefix(key, "trakt_token") {
 		logger.GlobalCache.Set(key, configIn.Data.(oauth2.Token), 0, false)
@@ -884,45 +787,43 @@ func DeleteCfgEntry(name string) {
 	configDB, _ := pudge.Open("./databases/config.db", &pudge.Config{
 		SyncInterval: 0})
 
-	delete(Cfg.Keys, name)
+	//delete(Cfg.Keys, name)
 
 	if strings.HasPrefix(name, "general") {
-		Cfg.General = GeneralConfig{}
+		SettingsGeneral = GeneralConfig{}
 	}
 	if strings.HasPrefix(name, "downloader_") {
-		delete(Cfg.Downloader, name)
+		delete(SettingsDownloader, name)
 	}
-	if strings.HasPrefix(name, "imdb") {
-		Cfg.Imdbindexer = ImdbConfig{}
+	if strings.HasPrefix(name, logger.StrImdb) {
+		SettingsImdb = ImdbConfig{}
 	}
 	if strings.HasPrefix(name, "indexer") {
-		delete(Cfg.Indexers, name)
+		delete(SettingsIndexer, name)
 	}
 	if strings.HasPrefix(name, "list") {
-		delete(Cfg.Lists, name)
+		delete(SettingsList, name)
 	}
-	if strings.HasPrefix(name, "serie") {
-		delete(Cfg.Media, name)
-		delete(Cfg.Series, strings.Replace(name, "serie_", "", 1))
+	if strings.HasPrefix(name, logger.StrSerie) {
+		delete(SettingsMedia, name)
 	}
-	if strings.HasPrefix(name, "movie") {
-		delete(Cfg.Media, name)
-		delete(Cfg.Movies, strings.Replace(name, "movie_", "", 1))
+	if strings.HasPrefix(name, logger.StrMovie) {
+		delete(SettingsMedia, name)
 	}
 	if strings.HasPrefix(name, "notification") {
-		delete(Cfg.Notification, name)
+		delete(SettingsNotification, name)
 	}
 	if strings.HasPrefix(name, "path") {
-		delete(Cfg.Paths, name)
+		delete(SettingsPath, name)
 	}
 	if strings.HasPrefix(name, "quality") {
-		delete(Cfg.Quality, name)
+		delete(SettingsQuality, name)
 	}
 	if strings.HasPrefix(name, "regex") {
-		delete(Cfg.Regex, name)
+		delete(SettingsRegex, name)
 	}
 	if strings.HasPrefix(name, "scheduler") {
-		delete(Cfg.Scheduler, name)
+		delete(SettingsScheduler, name)
 	}
 
 	configDB.Delete(name)
@@ -934,6 +835,15 @@ func ClearCfg() {
 		SyncInterval: 0})
 
 	configDB.DeleteFile()
+	SettingsDownloader = make(map[string]DownloaderConfig)
+	SettingsIndexer = make(map[string]IndexersConfig)
+	SettingsList = make(map[string]ListsConfig)
+	SettingsMedia = make(map[string]MediaTypeConfig)
+	SettingsNotification = make(map[string]NotificationConfig)
+	SettingsPath = make(map[string]PathsConfig)
+	SettingsQuality = make(map[string]QualityConfig)
+	SettingsRegex = make(map[string]RegexConfig)
+	SettingsScheduler = make(map[string]SchedulerConfig)
 
 	var dataconfig []MediaDataConfig
 	dataconfig = append(dataconfig, MediaDataConfig{TemplatePath: "initial"})
@@ -949,93 +859,99 @@ func ClearCfg() {
 	var qureoconfig []QualityReorderConfig
 	qureoconfig = append(qureoconfig, QualityReorderConfig{})
 
-	Cfg.Keys = map[string]bool{"general": true, "imdb": true, "scheduler_Default": true, "downloader_initial": true, "indexer_initial": true, "list_initial": true, "movie_initial": true, "serie_initial": true, "notification_initial": true, "path_initial": true, "quality_initial": true, "regex_initial": true}
-	Cfg = MainConfigMap{
-		General: GeneralConfig{
-			LogLevel:            "Info",
-			DBLogLevel:          "Info",
-			LogFileCount:        5,
-			LogFileSize:         5,
-			LogCompress:         false,
-			WebAPIKey:           "mysecure",
-			WebPort:             "9090",
-			WorkerMetadata:      1,
-			WorkerFiles:         1,
-			WorkerParse:         1,
-			WorkerSearch:        1,
-			WorkerIndexer:       1,
-			ConcurrentScheduler: 1,
-			Omdblimiterseconds:  1,
-			Omdblimitercalls:    1,
-			Tmdblimiterseconds:  1,
-			Tmdblimitercalls:    1,
-			Traktlimiterseconds: 1,
-			Traktlimitercalls:   1,
-			Tvdblimiterseconds:  1,
-			Tvdblimitercalls:    1,
-		},
-		Scheduler: map[string]SchedulerConfig{"scheduler_Default": {
-			Name:                       "Default",
-			IntervalImdb:               "3d",
-			IntervalFeeds:              "1d",
-			IntervalFeedsRefreshSeries: "1d",
-			IntervalFeedsRefreshMovies: "1d",
-			IntervalIndexerMissing:     "40m",
-			IntervalIndexerUpgrade:     "60m",
-			IntervalIndexerRss:         "15m",
-			IntervalScanData:           "1h",
-			IntervalScanDataMissing:    "1d",
-			IntervalScanDataimport:     "60m",
-		}},
-		Downloader:  map[string]DownloaderConfig{"downloader_initial": {Name: "initial", DlType: "drone"}},
-		Imdbindexer: ImdbConfig{Indexedtypes: []string{"movie"}, Indexedlanguages: []string{"US", "UK", "\\N"}},
-		Indexers:    map[string]IndexersConfig{"indexer_initial": {Name: "initial", IndexerType: "newznab", Limitercalls: 1, Limiterseconds: 1, MaxRssEntries: 100, RssEntriesloop: 2}},
-		Lists:       map[string]ListsConfig{"list_initial": {Name: "initial", ListType: "traktmovieanticipated", Limit: 20}},
-		Movies:      map[string]MediaTypeConfig{"initial": {Name: "initial", TemplateQuality: "initial", TemplateScheduler: "Default", Data: dataconfig, DataImport: dataimportconfig, Lists: listsconfig, Notification: noticonfig}},
-		Series:      map[string]MediaTypeConfig{"initial": {Name: "initial", TemplateQuality: "initial", TemplateScheduler: "Default", Data: dataconfig, DataImport: dataimportconfig, Lists: listsconfig, Notification: noticonfig}},
-		Media: map[string]MediaTypeConfig{"movie_initial": {Name: "initial", TemplateQuality: "initial", TemplateScheduler: "Default", Data: dataconfig, DataImport: dataimportconfig, Lists: listsconfig, Notification: noticonfig},
-			"serie_initial": {Name: "initial", TemplateQuality: "initial", TemplateScheduler: "Default", Data: dataconfig, DataImport: dataimportconfig, Lists: listsconfig, Notification: noticonfig}},
-		Notification: map[string]NotificationConfig{"notification_initial": {Name: "initial", NotificationType: "csv"}},
-		Paths:        map[string]PathsConfig{"path_initial": {Name: "initial", AllowedVideoExtensions: []string{".avi", ".mkv", ".mp4"}, AllowedOtherExtensions: []string{".idx", ".sub", ".srt"}}},
-		Quality:      map[string]QualityConfig{"quality_initial": {Name: "initial", QualityReorder: qureoconfig, Indexer: quindconfig}},
-		Regex:        map[string]RegexConfig{"regex_initial": {RegexConfigIn: RegexConfigIn{Name: "initial"}}},
+	//Cfg.Keys = map[string]bool{"general": true, logger.StrImdb: true, "scheduler_Default": true, "downloader_initial": true, "indexer_initial": true, "list_initial": true, "movie_initial": true, "serie_initial": true, "notification_initial": true, "path_initial": true, "quality_initial": true, "regex_initial": true}
+
+	SettingsGeneral = GeneralConfig{
+		LogLevel:            "Info",
+		DBLogLevel:          "Info",
+		LogFileCount:        5,
+		LogFileSize:         5,
+		LogCompress:         false,
+		WebAPIKey:           "mysecure",
+		WebPort:             "9090",
+		WorkerMetadata:      1,
+		WorkerFiles:         1,
+		WorkerParse:         1,
+		WorkerSearch:        1,
+		WorkerIndexer:       1,
+		ConcurrentScheduler: 1,
+		Omdblimiterseconds:  1,
+		Omdblimitercalls:    1,
+		Tmdblimiterseconds:  1,
+		Tmdblimitercalls:    1,
+		Traktlimiterseconds: 1,
+		Traktlimitercalls:   1,
+		Tvdblimiterseconds:  1,
+		Tvdblimitercalls:    1,
 	}
+	SettingsScheduler["scheduler_Default"] = SchedulerConfig{
+		Name:                       "Default",
+		IntervalImdb:               "3d",
+		IntervalFeeds:              "1d",
+		IntervalFeedsRefreshSeries: "1d",
+		IntervalFeedsRefreshMovies: "1d",
+		IntervalIndexerMissing:     "40m",
+		IntervalIndexerUpgrade:     "60m",
+		IntervalIndexerRss:         "15m",
+		IntervalScanData:           "1h",
+		IntervalScanDataMissing:    "1d",
+		IntervalScanDataimport:     "60m",
+	}
+	SettingsDownloader["downloader_initial"] = DownloaderConfig{Name: "initial", DlType: "drone"}
+
+	SettingsImdb = ImdbConfig{Indexedtypes: []string{logger.StrMovie}, Indexedlanguages: []string{"US", "UK", "\\N"}}
+	SettingsIndexer["indexer_initial"] = IndexersConfig{Name: "initial", IndexerType: "newznab", Limitercalls: 1, Limiterseconds: 1, MaxRssEntries: 100, RssEntriesloop: 2}
+	SettingsList["list_initial"] = ListsConfig{Name: "initial", ListType: "traktmovieanticipated", Limit: 20}
+	SettingsMedia["movie_initial"] = MediaTypeConfig{Name: "initial", TemplateQuality: "initial", TemplateScheduler: "Default", Data: dataconfig, DataImport: dataimportconfig, Lists: listsconfig, Notification: noticonfig}
+	SettingsMedia["serie_initial"] = MediaTypeConfig{Name: "initial", TemplateQuality: "initial", TemplateScheduler: "Default", Data: dataconfig, DataImport: dataimportconfig, Lists: listsconfig, Notification: noticonfig}
+	SettingsNotification["notification_initial"] = NotificationConfig{Name: "initial", NotificationType: "csv"}
+	SettingsPath["path_initial"] = PathsConfig{Name: "initial", AllowedVideoExtensions: []string{".avi", ".mkv", ".mp4"}, AllowedOtherExtensions: []string{".idx", ".sub", ".srt"}}
+	SettingsQuality["quality_initial"] = QualityConfig{Name: "initial", QualityReorder: qureoconfig, Indexer: quindconfig}
+	SettingsRegex["regex_initial"] = RegexConfig{RegexConfigIn: RegexConfigIn{Name: "initial"}}
+
 	configDB.Close()
 }
 func WriteCfg() {
 
 	var bla MainConfigOut
-	bla.General = Cfg.General
-	bla.Imdbindexer = Cfg.Imdbindexer
-	for idx := range Cfg.Downloader {
-		bla.Downloader = append(bla.Downloader, Cfg.Downloader[idx])
+
+	bla.General = SettingsGeneral
+	bla.Imdbindexer = SettingsImdb
+	for _, cfgdata := range SettingsDownloader {
+		bla.Downloader = append(bla.Downloader, cfgdata)
 	}
-	for idx := range Cfg.Indexers {
-		bla.Indexers = append(bla.Indexers, Cfg.Indexers[idx])
+	for _, cfgdata := range SettingsIndexer {
+		bla.Indexers = append(bla.Indexers, cfgdata)
 	}
-	for idx := range Cfg.Lists {
-		bla.Lists = append(bla.Lists, Cfg.Lists[idx])
+	for _, cfgdata := range SettingsList {
+		bla.Lists = append(bla.Lists, cfgdata)
 	}
-	for idx := range Cfg.Series {
-		bla.Media.Series = append(bla.Media.Series, Cfg.Series[idx])
+	for idxp := range SettingsMedia {
+		if !strings.HasPrefix(SettingsMedia[idxp].NamePrefix, logger.StrSerie) {
+			continue
+		}
+		bla.Media.Series = append(bla.Media.Series, SettingsMedia[idxp])
 	}
-	for idx := range Cfg.Movies {
-		bla.Media.Movies = append(bla.Media.Movies, Cfg.Movies[idx])
+	for idxp := range SettingsMedia {
+		if !strings.HasPrefix(SettingsMedia[idxp].NamePrefix, logger.StrMovie) {
+			continue
+		}
+		bla.Media.Movies = append(bla.Media.Movies, SettingsMedia[idxp])
 	}
-	for idx := range Cfg.Notification {
-		bla.Notification = append(bla.Notification, Cfg.Notification[idx])
+	for _, cfgdata := range SettingsNotification {
+		bla.Notification = append(bla.Notification, cfgdata)
 	}
-	for idx := range Cfg.Paths {
-		bla.Paths = append(bla.Paths, Cfg.Paths[idx])
+	for _, cfgdata := range SettingsPath {
+		bla.Paths = append(bla.Paths, cfgdata)
 	}
-	for idx := range Cfg.Quality {
-		bla.Quality = append(bla.Quality, Cfg.Quality[idx])
+	for _, cfgdata := range SettingsQuality {
+		bla.Quality = append(bla.Quality, cfgdata)
 	}
-	for idx := range Cfg.Regex {
-		bla.Regex = append(bla.Regex, RegexConfigIn{Name: Cfg.Regex[idx].Name, Required: Cfg.Regex[idx].Required, Rejected: Cfg.Regex[idx].Rejected})
+	for _, cfgdata := range SettingsRegex {
+		bla.Regex = append(bla.Regex, RegexConfigIn{Name: cfgdata.Name, Required: cfgdata.Required, Rejected: cfgdata.Rejected})
 	}
-	for idx := range Cfg.Scheduler {
-		bla.Scheduler = append(bla.Scheduler, Cfg.Scheduler[idx])
+	for _, cfgdata := range SettingsScheduler {
+		bla.Scheduler = append(bla.Scheduler, cfgdata)
 	}
 
 	cnt, err := toml.Marshal(bla)
@@ -1046,45 +962,39 @@ func WriteCfg() {
 }
 
 func QualityIndexerByQualityAndTemplateFirTemplateAndSize(quality string, indexerTemplate string) (string, bool) {
-	if _, test := Cfg.Quality[quality]; test {
-		for idx := range Cfg.Quality[quality].Indexer {
-			if Cfg.Quality[quality].Indexer[idx].TemplateIndexer == indexerTemplate {
-				return Cfg.Quality[quality].Indexer[idx].TemplateRegex, Cfg.Quality[quality].Indexer[idx].SkipEmptySize
-			}
+	for idx := range SettingsQuality["quality_"+quality].Indexer {
+		if strings.EqualFold(SettingsQuality["quality_"+quality].Indexer[idx].TemplateIndexer, indexerTemplate) {
+			return SettingsQuality["quality_"+quality].Indexer[idx].TemplateRegex, SettingsQuality["quality_"+quality].Indexer[idx].SkipEmptySize
+		}
+	}
+	for idx := range SettingsList {
+		if strings.EqualFold(SettingsList[idx].Name, indexerTemplate) {
+			return SettingsQuality["quality_"+quality].Indexer[0].TemplateRegex, SettingsQuality["quality_"+quality].Indexer[0].SkipEmptySize
 		}
 	}
 	return "", false
 }
 
-func QualityIndexerByQualityAndTemplateGetFieldBool(quality string, indexerTemplate string, field string) bool {
-	if _, test := Cfg.Quality[quality]; test {
-		for idx := range Cfg.Quality[quality].Indexer {
-			if Cfg.Quality[quality].Indexer[idx].TemplateIndexer == indexerTemplate {
-				switch field {
-				case "HistoryCheckTitle":
-					return Cfg.Quality[quality].Indexer[idx].HistoryCheckTitle
-				default:
-					return reflect.ValueOf(Cfg.Quality[quality].Indexer[idx]).FieldByName(field).Bool()
-				}
-			}
+func QualityIndexerByQualityAndTemplateGetFieldHistoryCheckTitle(quality string, indexerTemplate string) bool {
+	for idx := range SettingsQuality["quality_"+quality].Indexer {
+		if strings.EqualFold(SettingsQuality["quality_"+quality].Indexer[idx].TemplateIndexer, indexerTemplate) {
+			return SettingsQuality["quality_"+quality].Indexer[idx].HistoryCheckTitle
 		}
 	}
 	return false
 }
 func QualityIndexerByQualityAndTemplateGetFieldString(quality string, indexerTemplate string, field string) string {
-	if _, test := Cfg.Quality[quality]; test {
-		for idx := range Cfg.Quality[quality].Indexer {
-			if Cfg.Quality[quality].Indexer[idx].TemplateIndexer == indexerTemplate {
-				switch field {
-				case "TemplateRegex":
-					return Cfg.Quality[quality].Indexer[idx].TemplateRegex
-				case "AdditionalQueryParams":
-					return Cfg.Quality[quality].Indexer[idx].AdditionalQueryParams
-				case "CategoriesIndexer":
-					return Cfg.Quality[quality].Indexer[idx].CategoriesIndexer
-				default:
-					return reflect.ValueOf(Cfg.Quality[quality].Indexer[idx]).FieldByName(field).String()
-				}
+	for idx := range SettingsQuality["quality_"+quality].Indexer {
+		if strings.EqualFold(SettingsQuality["quality_"+quality].Indexer[idx].TemplateIndexer, indexerTemplate) {
+			switch field {
+			case "TemplateRegex":
+				return SettingsQuality["quality_"+quality].Indexer[idx].TemplateRegex
+			case "AdditionalQueryParams":
+				return SettingsQuality["quality_"+quality].Indexer[idx].AdditionalQueryParams
+			case "CategoriesIndexer":
+				return SettingsQuality["quality_"+quality].Indexer[idx].CategoriesIndexer
+				//default:
+				//	return reflect.ValueOf(Cfg.Quality[quality].Indexer[idx]).FieldByName(field).String()
 			}
 		}
 	}

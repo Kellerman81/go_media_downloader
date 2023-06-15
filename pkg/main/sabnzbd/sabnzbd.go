@@ -72,19 +72,19 @@ func (s *Sabnzbd) SetOptions(options ...Option) (err error) {
 	return nil
 }
 
-func (s *Sabnzbd) useHttps() {
+func (s *Sabnzbd) useHTTPS() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.https = true
 }
 
-func (s *Sabnzbd) useInsecureHttp() {
+func (s *Sabnzbd) useInsecureHTTP() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.insecure = true
 }
 
-func (s *Sabnzbd) useHttp() {
+func (s *Sabnzbd) useHTTP() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.https = false
@@ -169,7 +169,7 @@ func (s *Sabnzbd) url() *sabnzbdURL {
 	return su
 }
 
-func (su *sabnzbdURL) SetJsonOutput() {
+func (su *sabnzbdURL) SetJSONOutput() {
 	su.v.Set("output", "json")
 }
 
@@ -239,8 +239,8 @@ func (su *sabnzbdURL) CallJSONMultipart(reader io.Reader, contentType string, r 
 }
 
 var (
-	ErrApikeyIncorrect error = errors.New("API Key Incorrect")
-	ErrApikeyRequired  error = errors.New("API Key Required")
+	ErrApikeyIncorrect = errors.New("API Key Incorrect")
+	ErrApikeyRequired  = errors.New("API Key Required")
 )
 
 func apiStringError(str string) error {
@@ -256,4 +256,4 @@ func apiStringError(str string) error {
 	}
 }
 
-var ErrInvalidQueueCompleteAction error = errors.New("invalid queue complete action")
+var ErrInvalidQueueCompleteAction = errors.New("invalid queue complete action")

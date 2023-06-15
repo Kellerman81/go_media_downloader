@@ -4,9 +4,9 @@ import (
 	"encoding/base64"
 	"encoding/xml"
 	"io"
-	"net/http"
 	"os"
 
+	"github.com/Kellerman81/go_media_downloader/apiexternal"
 	"github.com/Kellerman81/go_media_downloader/logger"
 	nzb "github.com/andrewstuart/go-nzb"
 	"github.com/pkg/errors"
@@ -27,10 +27,9 @@ func base64encode(s string) string {
 	return base64.StdEncoding.EncodeToString([]byte(s))
 }
 
-func downloadURL(url string) (string, error) {
+func downloadURL(urlv *string) (string, error) {
 	// Get the data
-	req, _ := http.NewRequest("GET", url, nil)
-	resp, err := logger.WebClient.Do(req)
+	resp, err := apiexternal.WebClient.Do(logger.HTTPGetRequest(urlv))
 	if err != nil {
 		return "", errors.Wrap(err, "could not http get url")
 	}

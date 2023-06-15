@@ -1,13 +1,13 @@
 package logger
 
 import (
-	"fmt"
 	"os"
+	"runtime"
 	"strings"
 	"time"
 
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/pkgerrors"
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
@@ -19,40 +19,13 @@ type Config struct {
 	TimeFormat   string
 	TimeZone     string
 }
-type zoneClock time.Time
-type zapLogger struct {
-	GlobalLogger *zap.Logger
-}
 
-type fnlog func(msg string, fields ...zapcore.Field)
+var (
+	Log        zerolog.Logger
+	TimeZone   = *time.UTC
+	TimeFormat = time.RFC3339Nano
+)
 
-var Log zapLogger
-var TimeZone = *time.UTC
-var TimeFormat = time.RFC3339Nano
-
-func MyTimeEncoder(t time.Time, enc zapcore.PrimitiveArrayEncoder) {
-	encodeTimeLayout(t, TimeFormat, enc)
-}
-
-func encodeTimeLayout(t time.Time, layout string, enc zapcore.PrimitiveArrayEncoder) {
-	type appendTimeEncoder interface {
-		AppendTimeLayout(time.Time, string)
-	}
-
-	if enc, ok := enc.(appendTimeEncoder); ok {
-		enc.AppendTimeLayout(t, layout)
-		return
-	}
-
-	enc.AppendString(t.Format(layout))
-}
-
-func (c zoneClock) Now() time.Time {
-	return time.Now().In(&TimeZone)
-}
-func (c zoneClock) NewTicker(d time.Duration) *time.Ticker {
-	return &time.Ticker{}
-}
 func InitLogger(config Config) {
 	if config.LogFileSize == 0 {
 		config.LogFileSize = 10
@@ -76,12 +49,12 @@ func InitLogger(config Config) {
 	default:
 		TimeFormat = config.TimeFormat
 	}
-	var level zapcore.Level = zap.InfoLevel
-	if strings.EqualFold(config.LogLevel, "debug") {
-		level = zap.DebugLevel
+	var level = int(zerolog.InfoLevel)
+	if strings.EqualFold(config.LogLevel, StrDebug) {
+		level = int(zerolog.DebugLevel)
 	}
 	if strings.EqualFold(config.LogLevel, "warning") {
-		level = zap.WarnLevel
+		level = int(zerolog.WarnLevel)
 	}
 	if config.TimeZone != "" {
 		if strings.EqualFold(config.TimeZone, "local") {
@@ -94,70 +67,135 @@ func InitLogger(config Config) {
 		}
 	}
 
-	core := zapcore.NewCore(
-		// use NewConsoleEncoder for human readable output
-		zapcore.NewJSONEncoder(zapcore.EncoderConfig{
-			TimeKey:        "time",
-			LevelKey:       "level",
-			NameKey:        "logger",
-			CallerKey:      "caller",
-			FunctionKey:    zapcore.OmitKey,
-			MessageKey:     "msg",
-			StacktraceKey:  "stacktrace",
-			LineEnding:     zapcore.DefaultLineEnding,
-			EncodeLevel:    zapcore.LowercaseLevelEncoder,
-			EncodeTime:     MyTimeEncoder,
-			EncodeDuration: zapcore.SecondsDurationEncoder,
-			EncodeCaller:   zapcore.ShortCallerEncoder,
-		}),
-		// write to stdout as well as log files
-		zapcore.NewMultiWriteSyncer(zapcore.AddSync(os.Stdout), zapcore.AddSync(&lumberjack.Logger{
-			Filename:   "./logs/downloader.log",
-			MaxSize:    config.LogFileSize, // megabytes
-			MaxBackups: config.LogFileCount,
-			MaxAge:     28,                 //days
-			Compress:   config.LogCompress, // disabled by default
-		})),
-		zap.NewAtomicLevelAt(level),
-	)
-	if strings.EqualFold(config.LogLevel, "debug") {
-		Log.GlobalLogger = zap.New(core, zap.WithClock(zoneClock{}), zap.AddCaller(), zap.AddStacktrace(zapcore.DebugLevel), zap.Development())
-	} else {
-		Log.GlobalLogger = zap.New(core, zap.WithClock(zoneClock{}))
+	zerolog.ErrorStackMarshaler = pkgerrors.MarshalStack
+	zerolog.ErrorStackFieldName = "stack"
+	zerolog.DisableSampling(true)
+	zerolog.TimeFieldFormat = TimeFormat
+
+	Log = zerolog.New(zerolog.MultiLevelWriter(zerolog.ConsoleWriter{
+		Out:        os.Stdout,
+		TimeFormat: TimeFormat,
+	}, &lumberjack.Logger{
+		Filename:   "./logs/downloader.log",
+		MaxSize:    config.LogFileSize, // megabytes
+		MaxBackups: config.LogFileCount,
+		MaxAge:     28,                 //days
+		Compress:   config.LogCompress, // disabled by default
+	})).
+		Level(zerolog.Level(level)).
+		With().
+		Timestamp().Caller().
+		Logger()
+}
+func stack() string {
+	buf := make([]byte, 1024)
+	for {
+		n := runtime.Stack(buf, false)
+		if n < len(buf) {
+			return string(buf[:n])
+		}
+		buf = make([]byte, 2*len(buf))
 	}
-	zap.ReplaceGlobals(Log.GlobalLogger)
+}
+func Logerror(err error, msg string) {
+	LogAnyError(err, msg)
+	//Log.Error().Err(err).Msg(msg)
 }
 
-func printlog(fun fnlog, args ...interface{}) {
-	fun(fmt.Sprint(args...))
+func LogerrorStr(err error, str1 string, str2 string, msg string) {
+	LogAnyError(err, msg, LoggerValue{Name: str1, Value: str2})
+	//Log.Error().Err(err).Str(str1, str2).Msg(msg)
 }
-func (l *zapLogger) Println(args ...interface{}) {
-	printlog(l.GlobalLogger.Info, args...)
+
+type LoggerValue struct {
+	Name  string
+	Value interface{}
 }
-func (l *zapLogger) Info(args ...interface{}) {
-	printlog(l.GlobalLogger.Info, args...)
+
+func LogAnyError(err error, msg string, vals ...LoggerValue) {
+	evt := Log.Error()
+	if err != nil {
+		evt = evt.Err(err)
+	}
+	for idx := range vals {
+		switch tt := vals[idx].Value.(type) {
+		case string:
+			if len(tt) >= 1 {
+				evt.Str(vals[idx].Name, tt)
+			}
+		case int:
+			if tt != 0 {
+				evt.Int(vals[idx].Name, tt)
+			}
+		case uint:
+			if tt != 0 {
+				evt.Uint(vals[idx].Name, tt)
+			}
+		default:
+			evt.Any(vals[idx].Name, vals[idx].Value)
+		}
+	}
+	if msg != "" {
+		evt.Msg(msg)
+	} else {
+		evt.Send()
+	}
 }
-func (l *zapLogger) Infoln(args ...interface{}) {
-	printlog(l.GlobalLogger.Info, args...)
+
+func LogAnyInfo(msg string, vals ...LoggerValue) {
+	evt := Log.Info()
+	for idx := range vals {
+		switch tt := vals[idx].Value.(type) {
+		case string:
+			if len(tt) >= 1 {
+				evt.Str(vals[idx].Name, tt)
+			}
+		case int:
+			if tt != 0 {
+				evt.Int(vals[idx].Name, tt)
+			}
+		case uint:
+			if tt != 0 {
+				evt.Uint(vals[idx].Name, tt)
+			}
+		default:
+			evt.Any(vals[idx].Name, vals[idx].Value)
+		}
+	}
+	if msg != "" {
+		evt.Msg(msg)
+	} else {
+		evt.Send()
+	}
 }
-func (l *zapLogger) Error(args ...interface{}) {
-	printlog(l.GlobalLogger.Error, args...)
-}
-func (l *zapLogger) Errorln(args ...interface{}) {
-	printlog(l.GlobalLogger.Error, args...)
-}
-func (l *zapLogger) Warn(args ...interface{}) {
-	printlog(l.GlobalLogger.Warn, args...)
-}
-func (l *zapLogger) Warning(args ...interface{}) {
-	printlog(l.GlobalLogger.Warn, args...)
-}
-func (l *zapLogger) Warningln(args ...interface{}) {
-	printlog(l.GlobalLogger.Warn, args...)
-}
-func (l *zapLogger) Debug(args ...interface{}) {
-	printlog(l.GlobalLogger.Debug, args...)
-}
-func (l *zapLogger) Fatal(args ...interface{}) {
-	printlog(l.GlobalLogger.Fatal, args...)
+
+func LogAnyDebug(msg string, vals ...LoggerValue) {
+	evt := Log.Debug()
+	for idx := range vals {
+		switch tt := vals[idx].Value.(type) {
+		case string:
+			if len(tt) >= 1 {
+				evt.Str(vals[idx].Name, tt)
+			}
+		case int:
+			if tt != 0 {
+				evt.Int(vals[idx].Name, tt)
+			}
+		case []int:
+			if len(tt) != 0 {
+				evt.Ints(vals[idx].Name, tt)
+			}
+		case uint:
+			if tt != 0 {
+				evt.Uint(vals[idx].Name, tt)
+			}
+		default:
+			evt.Any(vals[idx].Name, vals[idx].Value)
+		}
+	}
+	if msg != "" {
+		evt.Msg(msg)
+	} else {
+		evt.Send()
+	}
 }

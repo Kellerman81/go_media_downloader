@@ -97,7 +97,7 @@ func GetSerieEpisodesTable(ctx *context.Context) table.Table {
 		action.PopUpWithIframe("/admin/info/serie_episode_histories", "see more", action.IframeData{Src: "/admin/info/serie_episode_histories", AddParameterFn: func(ctx *context.Context) string {
 			return "&serie_episode_id=" + ctx.FormValue("id")
 		}}, "900px", "560px")), types.GetActionIconButton(icon.Search, //action.JumpInNewTab("/api/series/episodes/search/id/{{.Id}}?apikey="+cfg_general.WebApiKey, "Search")))
-		MyPopUpWithIframe("/search", "see more", action.IframeData{Src: "/api/series/episodes/search/id/{{.Id}}?apikey=" + config.Cfg.General.WebAPIKey}, "900px", "560px")))
+		MyPopUpWithIframe("/search", "see more", action.IframeData{Src: "/api/series/episodes/search/id/{{.Id}}?apikey=" + config.SettingsGeneral.WebAPIKey}, "900px", "560px")))
 
 	info.AddField("Dbserie_id", "dbserie_id", db.Integer).FieldDisplay(func(value types.FieldModel) interface{} {
 		return template.Default().

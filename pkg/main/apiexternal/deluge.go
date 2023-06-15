@@ -1,14 +1,11 @@
 package apiexternal
 
 import (
-	"strings"
-
 	"github.com/Kellerman81/go_media_downloader/logger"
 	delugeclient "github.com/gdm85/go-libdeluge"
-	"go.uber.org/zap"
 )
 
-func SendToDeluge(host string, port int, username string, password string, url string, dlpath string, moveafter bool, moveafterpath string, addpaused bool) error {
+func SendToDeluge(host string, port int, username string, password string, urlv string, dlpath string, moveafter bool, moveafterpath string, addpaused bool) error {
 	cl := delugeclient.NewV2(delugeclient.Settings{
 		Hostname:             host,
 		Port:                 uint(port),
@@ -21,8 +18,8 @@ func SendToDeluge(host string, port int, username string, password string, url s
 	// perform connection to Deluge server
 	err := cl.Connect()
 	if err == nil {
-		if strings.HasPrefix(url, "magnet") {
-			_, err = cl.AddTorrentMagnet(url, &delugeclient.Options{
+		if logger.HasPrefixI(urlv, "magnet") {
+			_, err = cl.AddTorrentMagnet(urlv, &delugeclient.Options{
 				DownloadLocation:  &dlpath,
 				MoveCompleted:     &moveafter,
 				MoveCompletedPath: &moveafterpath,
@@ -30,10 +27,10 @@ func SendToDeluge(host string, port int, username string, password string, url s
 				AddPaused:         &addpaused,
 			})
 			if err != nil {
-				logger.Log.GlobalLogger.Error("", zap.Error(err))
+				return err
 			}
 		} else {
-			_, err = cl.AddTorrentURL(url, &delugeclient.Options{
+			_, err = cl.AddTorrentURL(urlv, &delugeclient.Options{
 				DownloadLocation:  &dlpath,
 				MoveCompleted:     &moveafter,
 				MoveCompletedPath: &moveafterpath,
@@ -41,11 +38,9 @@ func SendToDeluge(host string, port int, username string, password string, url s
 				AddPaused:         &addpaused,
 			})
 			if err != nil {
-				logger.Log.GlobalLogger.Error("", zap.Error(err))
+				return err
 			}
 		}
-	} else {
-		logger.Log.GlobalLogger.Error("", zap.Error(err))
 	}
 	return err
 }

@@ -9,14 +9,12 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/Kellerman81/go_media_downloader/logger"
 	wrapper "github.com/pkg/errors"
-	"go.uber.org/zap"
 
 	"golang.org/x/net/publicsuffix"
 )
 
-func SendToQBittorrent(host string, port string, username string, password string, url string, dlpath string, addpaused string) error {
+func SendToQBittorrent(host string, port string, username string, password string, urlv string, dlpath string, addpaused string) error {
 	cl := NewQBittorrentClient("http://" + host + ":" + port + "/")
 	var err error
 	_, err = cl.Login(username, password)
@@ -25,12 +23,7 @@ func SendToQBittorrent(host string, port string, username string, password strin
 			"savepath": dlpath,
 			"paused":   addpaused,
 		}
-		_, err = cl.DownloadFromLink(url, options)
-		if err != nil {
-			logger.Log.GlobalLogger.Error("", zap.Error(err))
-		}
-	} else {
-		logger.Log.GlobalLogger.Error("", zap.Error(err))
+		_, err = cl.DownloadFromLink(urlv, options)
 	}
 	return err
 }
@@ -39,7 +32,7 @@ func SendToQBittorrent(host string, port string, username string, password strin
 var errBadResponse = errors.New("received bad response")
 
 // Client creates a connection to qbittorrent and performs requests
-type qbtClient struct {
+type QbtClient struct {
 	http          *http.Client
 	URL           string
 	Authenticated bool
@@ -47,15 +40,15 @@ type qbtClient struct {
 }
 
 // NewClient creates a new client connection to qbittorrent
-func NewQBittorrentClient(url string) *qbtClient {
-	client := &qbtClient{}
+func NewQBittorrentClient(urlv string) *QbtClient {
+	client := &QbtClient{}
 
 	// ensure url ends with "/"
-	if url[len(url)-1:] != "/" {
-		url += "/"
+	if urlv[len(urlv)-1:] != "/" {
+		urlv += "/"
 	}
 
-	client.URL = url + "api/v2/"
+	client.URL = urlv + "api/v2/"
 
 	// create cookie jar
 	client.Jar, _ = cookiejar.New(&cookiejar.Options{PublicSuffixList: publicsuffix.List})
@@ -66,19 +59,20 @@ func NewQBittorrentClient(url string) *qbtClient {
 }
 
 // post will perform a POST request with no content-type specified
-func (client *qbtClient) post(endpoint string, opts map[string]string) (*http.Response, error) {
+func (client *QbtClient) post(endpoint string, opts map[string]string) (*http.Response, error) {
 	var req *http.Request
 	var err error
+	urlv := client.URL + endpoint
 	// add optional parameters that the user wants
 	if opts != nil {
 		var form url.Values
 		for k, v := range opts {
 			form.Add(k, v)
 		}
-		req, err = http.NewRequest(http.MethodPost, client.URL+endpoint, strings.NewReader(form.Encode()))
+		req, err = http.NewRequest(http.MethodPost, urlv, strings.NewReader(form.Encode()))
 
 	} else {
-		req, err = http.NewRequest(http.MethodPost, client.URL+endpoint, nil)
+		req, err = http.NewRequest(http.MethodPost, urlv, nil)
 	}
 	if err != nil {
 		return nil, wrapper.Wrap(err, "failed to build request")
@@ -102,8 +96,9 @@ func (client *qbtClient) post(endpoint string, opts map[string]string) (*http.Re
 }
 
 // postMultipart will perform a multiple part POST request
-func (client *qbtClient) postMultipart(endpoint string, buffer bytes.Buffer, contentType string) (*http.Response, error) {
-	req, err := http.NewRequest(http.MethodPost, client.URL+endpoint, &buffer)
+func (client *QbtClient) postMultipart(endpoint string, buffer bytes.Buffer, contentType string) (*http.Response, error) {
+	urlv := client.URL + endpoint
+	req, err := http.NewRequest(http.MethodPost, urlv, &buffer)
 	if err != nil {
 		return nil, wrapper.Wrap(err, "error creating request")
 	}
@@ -130,7 +125,7 @@ func writeOptions(writer *multipart.Writer, opts map[string]string) {
 }
 
 // postMultipartData will perform a multiple part POST request without a file
-func (client *qbtClient) postMultipartData(endpoint string, opts map[string]string) (*http.Response, error) {
+func (client *QbtClient) postMultipartData(endpoint string, opts map[string]string) (*http.Response, error) {
 	var buffer bytes.Buffer
 	writer := multipart.NewWriter(&buffer)
 
@@ -153,7 +148,7 @@ func (client *qbtClient) postMultipartData(endpoint string, opts map[string]stri
 
 // Login logs you in to the qbittorrent client
 // returns the current authentication status
-func (client *qbtClient) Login(username string, password string) (loggedIn bool, err error) {
+func (client *QbtClient) Login(username string, password string) (loggedIn bool, err error) {
 	credentials := make(map[string]string)
 	credentials["username"] = username
 	credentials["password"] = password
@@ -185,7 +180,7 @@ func (client *qbtClient) Login(username string, password string) (loggedIn bool,
 }
 
 // DownloadFromLink starts downloading a torrent from a link
-func (client *qbtClient) DownloadFromLink(link string, options map[string]string) (*http.Response, error) {
+func (client *QbtClient) DownloadFromLink(link string, options map[string]string) (*http.Response, error) {
 	options["urls"] = link
 	return client.postMultipartData("torrents/add", options)
 }

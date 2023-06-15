@@ -2,18 +2,20 @@ package sabnzbd
 
 import "net/http"
 
+//Source: https://github.com/mrobinsn/go-sabnzbd - fixed:add category
+
 type Option func(*Sabnzbd) error
 
-func UseHttp() Option {
+func UseHTTP() Option {
 	return func(s *Sabnzbd) error {
-		s.useHttp()
+		s.useHTTP()
 		return nil
 	}
 }
 
-func UseHttps() Option {
+func UseHTTPS() Option {
 	return func(s *Sabnzbd) error {
-		s.useHttps()
+		s.useHTTPS()
 		return nil
 	}
 }
@@ -28,7 +30,7 @@ func UseHTTPAuth(user, pass string) Option {
 
 func UseInsecureHTTP() Option {
 	return func(s *Sabnzbd) error {
-		s.useInsecureHttp()
+		s.useInsecureHTTP()
 		return nil
 	}
 }

@@ -7,7 +7,7 @@ import (
 	"github.com/GoAdminGroup/go-admin/context"
 	//"github.com/GoAdminGroup/go-admin/plugins/admin/models"
 	"github.com/Kellerman81/go_media_downloader/database"
-	"github.com/Kellerman81/go_media_downloader/tasks"
+	"github.com/Kellerman81/go_media_downloader/worker"
 
 	"github.com/GoAdminGroup/go-admin/modules/config"
 	template2 "github.com/GoAdminGroup/go-admin/template"
@@ -501,33 +501,23 @@ like Aldus PageMaker including versions of Lorem Ipsum.
 	var stats []map[string]types.InfoItem
 
 	id := 0
-	var lists []string
-	database.QueryStaticStringArray(false, 0, &database.Querywithargs{QueryString: "select distinct listname from movies where length(listname) >= 1"}, &lists)
-	for idx := range lists {
-		var all int
-		database.QueryColumn(&database.Querywithargs{QueryString: "select count(*) from movies where listname = ? COLLATE NOCASE", Args: []interface{}{lists[idx]}}, &all)
-		var missing int
-		database.QueryColumn(&database.Querywithargs{QueryString: "select count(*) from movies where listname = ? COLLATE NOCASE and missing=1", Args: []interface{}{lists[idx]}}, &missing)
-		var reached int
-		database.QueryColumn(&database.Querywithargs{QueryString: "select count(*) from movies where listname = ? COLLATE NOCASE and quality_reached=1", Args: []interface{}{lists[idx]}}, &reached)
-		var upgrade int
-		database.QueryColumn(&database.Querywithargs{QueryString: "select count(*) from movies where listname = ? COLLATE NOCASE and quality_reached=0 and missing=0", Args: []interface{}{lists[idx]}}, &upgrade)
-		stats = append(stats, map[string]types.InfoItem{"id": {Content: template.HTML(strconv.Itoa(id))}, "typ": {Content: "movies"}, "list": {Content: template.HTML(lists[idx])}, "total": {Content: template.HTML(strconv.Itoa(all))}, "missing": {Content: template.HTML(strconv.Itoa(missing))}, "finished": {Content: template.HTML(strconv.Itoa(reached))}, "upgrade": {Content: template.HTML(strconv.Itoa(upgrade))}})
-		id += 1
+	lists := database.QueryStaticStringArray(false, 2, "select distinct listname from movies where length(listname) >= 1")
+	for idx := range *lists {
+		all := database.QueryIntColumn("select count(*) from movies where listname = ? COLLATE NOCASE", (*lists)[idx])
+		missing := database.QueryIntColumn("select count(*) from movies where listname = ? COLLATE NOCASE and missing=1", (*lists)[idx])
+		reached := database.QueryIntColumn("select count(*) from movies where listname = ? COLLATE NOCASE and quality_reached=1", (*lists)[idx])
+		upgrade := database.QueryIntColumn("select count(*) from movies where listname = ? COLLATE NOCASE and quality_reached=0 and missing=0", (*lists)[idx])
+		stats = append(stats, map[string]types.InfoItem{"id": {Content: template.HTML(strconv.Itoa(id))}, "typ": {Content: "movies"}, "list": {Content: template.HTML((*lists)[idx])}, "total": {Content: template.HTML(strconv.Itoa(all))}, "missing": {Content: template.HTML(strconv.Itoa(missing))}, "finished": {Content: template.HTML(strconv.Itoa(reached))}, "upgrade": {Content: template.HTML(strconv.Itoa(upgrade))}})
+		id++
 	}
-	lists = nil
-	database.QueryStaticStringArray(false, 0, &database.Querywithargs{QueryString: "select distinct Listname from series where length(listname) >= 1"}, &lists)
-	for idx := range lists {
-		var all int
-		database.QueryColumn(&database.Querywithargs{QueryString: "select count(*) from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE)", Args: []interface{}{lists[idx]}}, &all)
-		var missing int
-		database.QueryColumn(&database.Querywithargs{QueryString: "select count(*) from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE) and missing=1", Args: []interface{}{lists[idx]}}, &missing)
-		var reached int
-		database.QueryColumn(&database.Querywithargs{QueryString: "select count(*) from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE) and quality_reached=1", Args: []interface{}{lists[idx]}}, &reached)
-		var upgrade int
-		database.QueryColumn(&database.Querywithargs{QueryString: "select count(*) from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE) and quality_reached=0 and missing=0", Args: []interface{}{lists[idx]}}, &upgrade)
-		stats = append(stats, map[string]types.InfoItem{"id": {Content: template.HTML(strconv.Itoa(id))}, "typ": {Content: "episodes"}, "list": {Content: template.HTML(lists[idx])}, "total": {Content: template.HTML(strconv.Itoa(all))}, "missing": {Content: template.HTML(strconv.Itoa(missing))}, "finished": {Content: template.HTML(strconv.Itoa(reached))}, "upgrade": {Content: template.HTML(strconv.Itoa(upgrade))}})
-		id += 1
+	lists = database.QueryStaticStringArray(false, 2, "select distinct Listname from series where length(listname) >= 1")
+	for idx := range *lists {
+		all := database.QueryIntColumn("select count(*) from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE)", (*lists)[idx])
+		missing := database.QueryIntColumn("select count(*) from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE) and missing=1", (*lists)[idx])
+		reached := database.QueryIntColumn("select count(*) from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE) and quality_reached=1", (*lists)[idx])
+		upgrade := database.QueryIntColumn("select count(*) from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE) and quality_reached=0 and missing=0", (*lists)[idx])
+		stats = append(stats, map[string]types.InfoItem{"id": {Content: template.HTML(strconv.Itoa(id))}, "typ": {Content: "episodes"}, "list": {Content: template.HTML((*lists)[idx])}, "total": {Content: template.HTML(strconv.Itoa(all))}, "missing": {Content: template.HTML(strconv.Itoa(missing))}, "finished": {Content: template.HTML(strconv.Itoa(reached))}, "upgrade": {Content: template.HTML(strconv.Itoa(upgrade))}})
+		id++
 	}
 
 	pnl := components.DataTable().SetInfoList(stats).
@@ -542,7 +532,7 @@ like Aldus PageMaker including versions of Lorem Ipsum.
 		})
 
 	var queue []map[string]types.InfoItem
-	for _, value := range tasks.GetQueues() {
+	for _, value := range worker.GetQueues() {
 		queue = append(queue, map[string]types.InfoItem{
 			"queue":   {Content: template.HTML(value.Queue.Queue)},
 			"added":   {Content: template.HTML(value.Queue.Added.Format("2006-01-02 15:04:05"))},
@@ -558,7 +548,7 @@ like Aldus PageMaker including versions of Lorem Ipsum.
 			{Head: "Started", Field: "started", Sortable: false},
 		})
 	var sched []map[string]types.InfoItem
-	for _, value := range tasks.GetSchedules() {
+	for _, value := range worker.GetSchedules() {
 		sched = append(sched, map[string]types.InfoItem{
 			"job":       {Content: template.HTML(value.JobName)},
 			"lastrun":   {Content: template.HTML(value.LastRun.Format("2006-01-02 15:04:05"))},

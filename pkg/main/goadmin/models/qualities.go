@@ -44,7 +44,7 @@ func GetQualitiesTable(ctx *context.Context) table.Table {
 		{Value: "0", Text: "No"},
 		{Value: "1", Text: "Yes"},
 	}).FieldFilterOptionExt(map[string]interface{}{"allowClear": true}).FieldSortable().FieldBool("1", "0")
-
+	info.AddField("Regexgroup", "regexgroup", db.Integer).FieldFilterable().FieldSortable()
 	info.SetTable("qualities").SetTitle("Qualities").SetDescription("Qualities")
 
 	formList := qualities.GetForm()
@@ -66,6 +66,7 @@ func GetQualitiesTable(ctx *context.Context) table.Table {
 		{Text: "Yes", Value: "1"},
 		{Text: "No", Value: "0"},
 	})
+	formList.AddField("Regexgroup", "regexgroup", db.Integer, form.Number)
 
 	formList.SetTable("qualities").SetTitle("Qualities").SetDescription("Qualities")
 

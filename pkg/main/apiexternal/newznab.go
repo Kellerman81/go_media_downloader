@@ -1,18 +1,11 @@
 package apiexternal
 
 import (
-	"errors"
-	"html"
-	"math/rand"
-	"net/url"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/logger"
-	"github.com/Kellerman81/go_media_downloader/rate"
-	"go.uber.org/zap"
-	"golang.org/x/exp/slices"
+	"github.com/Kellerman81/go_media_downloader/slidingwindow"
 )
 
 // NzbIndexer defines the Indexers to query
@@ -36,6 +29,7 @@ type NzbIndexer struct {
 	LimitercallsDaily      int
 	MaxAge                 int
 	TimeoutSeconds         int
+	InitRows               int
 }
 type urlbuilder struct {
 	rss                    bool
@@ -93,12 +87,12 @@ type searchResponseJSON2 struct {
 type rawNZBJson1 struct {
 	Title string `json:"title,omitempty"`
 	//Link      string `json:"link,omitempty"`
-	Guid string `json:"guid,omitempty"`
+	GUID string `json:"guid,omitempty"`
 	Size int64  `json:"size,omitempty"`
 	//Date      string `json:"pubDate,omitempty"`
 	Enclosure struct {
 		Attributes struct {
-			Url string `json:"url"`
+			URL string `json:"url"`
 		} `json:"@attributes,omitempty"`
 	} `json:"enclosure,omitempty"`
 
@@ -114,12 +108,12 @@ type rawNZBJson2 struct {
 	Title string `json:"title,omitempty"`
 	//Link  string `json:"link,omitempty"`
 	Size int64 `json:"size,omitempty"`
-	Guid struct {
-		Guid string `json:"text,omitempty"`
+	GUID struct {
+		GUID string `json:"text,omitempty"`
 	} `json:"guid,omitempty"`
 	//Date      string `json:"pubDate,omitempty"`
 	Enclosure struct {
-		Url string `json:"_url"`
+		URL string `json:"_url"`
 	} `json:"enclosure,omitempty"`
 
 	Attributes []struct {
@@ -137,61 +131,43 @@ const (
 	rssPath = "/rss"
 )
 
-var newznabClients []*Clients
-var Errnoresults = errors.New("no results")
+var (
+	newznabClients []Clients = make([]Clients, 0, 10)
+)
 
-func NewznabCheckLimiter(url string) (bool, time.Duration) {
-	intid := slices.IndexFunc(newznabClients, func(e *Clients) bool { return e.Name == url })
+func NewznabCheckLimiter(urlv string) (bool, error) {
+	intid := -1
+	for idxi := range newznabClients {
+		if newznabClients[idxi].Name == urlv {
+			intid = idxi
+			break
+		}
+	}
+	//intid := logger.IndexFunc(&newznabClients, func(e Clients) bool { return e.Name == urlv })
 	if intid == -1 {
-
-		return true, 0
+		return true, nil
 	}
-	var ok bool
-	var waitfor time.Duration
-	if newznabClients[intid].Client.Client.DailyLimiterEnabled {
-		_, ok, waitfor = newznabClients[intid].Client.Client.Ratelimiter.Check(false, true)
-		if !ok {
-			logger.Log.GlobalLogger.Debug("Daily not ok ", zap.Stringp("url", &url))
-			return ok, waitfor
-		}
-	}
-
-	waituntil := (time.Duration(1) * time.Second)
-	waituntilmax := (time.Duration(10) * time.Second)
-	rand.New(rand.NewSource(time.Now().UnixNano()))
-	waitincrease := (time.Duration(rand.Intn(500)+10) * time.Millisecond)
-	for i := 0; i < 10; i++ {
-		ok, _, waitfor = newznabClients[intid].Client.Client.Ratelimiter.Check(true, false)
-		if ok {
-			return true, 0
-		}
-
-		if waitfor > waituntilmax {
-			logger.Log.GlobalLogger.Warn("Hit rate limit - Should wait for (dont retry)", zap.Durationp("waitfor", &waitfor), zap.Stringp("Url", &url))
-			return false, waitfor
-		}
-		if waitfor == 0 {
-			waitfor = waituntil
-		} else {
-			waitfor += waitincrease
-		}
-		time.Sleep(waitfor)
-	}
-	logger.Log.GlobalLogger.Debug("Loops exceeded - still waiting", zap.Stringp("url", &url), zap.Durationp("waitfor", &waitfor))
-	return false, waitfor
+	return newznabClients[intid].Client.Client.checkLimiter(false, 20, 1)
 }
 
 func (client *Client) buildURL(builder *urlbuilder, maxage int) string {
-	var bld strings.Builder
-	bld.Grow(200)
 
-	path := apiPath
-	if builder.rss {
-		path = rssPath
+	if builder.query == "" && builder.imdbid == "" && builder.tvdbid == 0 && !builder.rss {
+		return ""
 	}
+
+	var bld strings.Builder
+	bld.Grow(200 + len(builder.query) + len(client.Apikey))
+
 	if builder.customurl != "" {
 		bld.WriteString(builder.customurl)
 	} else if builder.customapi != "" {
+		var path string
+		if builder.rss {
+			path = rssPath
+		} else {
+			path = apiPath
+		}
 		bld.WriteString(client.APIBaseURL)
 		bld.WriteString(path)
 		bld.WriteString("?")
@@ -199,6 +175,12 @@ func (client *Client) buildURL(builder *urlbuilder, maxage int) string {
 		bld.WriteString("=")
 		bld.WriteString(client.Apikey)
 	} else {
+		var path string
+		if builder.rss {
+			path = rssPath
+		} else {
+			path = apiPath
+		}
 		bld.WriteString(client.APIBaseURL)
 		bld.WriteString(path)
 		if builder.rss {
@@ -211,11 +193,11 @@ func (client *Client) buildURL(builder *urlbuilder, maxage int) string {
 			bld.WriteString(client.Apikey)
 		}
 	}
-	if builder.useseason {
+	if builder.useseason && builder.tvdbid != 0 {
 		bld.WriteString("&season=")
 		bld.WriteString(logger.IntToString(builder.season))
 	}
-	if builder.useepisode {
+	if builder.useepisode && builder.tvdbid != 0 {
 		bld.WriteString("&ep=")
 		bld.WriteString(logger.IntToString(builder.episode))
 	}
@@ -265,14 +247,13 @@ func (client *Client) buildURL(builder *urlbuilder, maxage int) string {
 
 	if builder.query != "" {
 		if builder.addquotesfortitlequery {
-			quotes := "%22"
 			bld.WriteString("&q=")
-			bld.WriteString(quotes)
-			bld.WriteString(url.QueryEscape(builder.query))
-			bld.WriteString(quotes)
+			bld.WriteString("%22")
+			bld.WriteString(QueryEscape(&builder.query))
+			bld.WriteString("%22")
 		} else {
 			bld.WriteString("&q=")
-			bld.WriteString(url.QueryEscape(builder.query))
+			bld.WriteString(QueryEscape(&builder.query))
 		}
 	}
 	if builder.outputAsJSON {
@@ -284,77 +265,112 @@ func (client *Client) buildURL(builder *urlbuilder, maxage int) string {
 	}
 	bld.WriteString("&dl=1")
 	bld.WriteString(builder.additionalQueryParams)
+	// if !logger.DisableVariableCleanup {
+	// 	defer bld.Reset()
+	// }
 	defer bld.Reset()
 	return bld.String()
 }
 
 // QueryNewznabMovieImdb searches Indexers for imbid - strip tt at beginning!
-func QueryNewznabMovieImdb(row *NzbIndexer, imdbid string, categories string) (*NZBArr, bool, error) {
+func QueryNewznabMovieImdb(indexer string, quality string, row *NzbIndexer, imdbid string, categories string) (*[]NZB, error) {
 	if imdbid == "" {
-		return nil, false, errors.New("no imdbid")
+		return nil, logger.ErrNoID
 	}
-	entries := new(NZBArr)
-	broke, err := getnewznabclient(row).processurl(&urlbuilder{searchtype: "movie", imdbid: imdbid, outputAsJSON: row.OutputAsJSON, customurl: row.Customurl, customapi: row.Customapi, additionalQueryParams: row.AdditionalQueryParams, limit: "0", categories: categories}, "", row.MaxAge, row.OutputAsJSON, entries)
-	return entries, broke, err
+	// if row.InitRows != 0 {
+	// 	entries.Arr = make(*[]Nzbwithprio, 0, row.InitRows)
+	// }
+	return nzbs3to2(getnewznabclient(row).processurl(indexer, quality, &urlbuilder{searchtype: logger.StrMovie, imdbid: imdbid, outputAsJSON: row.OutputAsJSON, customurl: row.Customurl, customapi: row.Customapi, additionalQueryParams: row.AdditionalQueryParams, limit: "0", categories: categories}, "", row.MaxAge, row.OutputAsJSON))
+}
+
+func nzbs3to2(nzbs *[]NZB, brk bool, err error) (*[]NZB, error) {
+	return nzbs, err
 }
 
 func getnewznabclient(row *NzbIndexer) *Client {
-	intid := slices.IndexFunc(newznabClients, func(e *Clients) bool { return e.Name == row.URL })
+	intid := -1
+	for idxi := range newznabClients {
+		if newznabClients[idxi].Name == row.URL {
+			intid = idxi
+			break
+		}
+	}
+	//intid := logger.IndexFunc(&newznabClients, func(e Clients) bool { return e.Name == row.URL })
 	if intid != -1 {
 		return newznabClients[intid].Client
 	}
-	client := NewNewznab(row.URL, row.Apikey, row.UserID, row.SkipSslCheck, row.DisableCompression, true, limiterconfig{row.Limitercalls, row.Limiterseconds, row.LimitercallsDaily, row.TimeoutSeconds})
-	newznabClients = append(newznabClients, &Clients{Name: row.URL, Client: client})
-	return client
+	newznabClients = append(newznabClients, Clients{Name: row.URL, Client: NewNewznab(row.URL, row.Apikey, row.UserID, row.SkipSslCheck, row.DisableCompression, true, limiterconfig{row.Limitercalls, row.Limiterseconds, row.LimitercallsDaily, row.TimeoutSeconds})})
+	intid = -1
+	for idxi := range newznabClients {
+		if newznabClients[idxi].Name == row.URL {
+			intid = idxi
+			break
+		}
+	}
+	//intid = logger.IndexFunc(&newznabClients, func(e Clients) bool { return e.Name == row.URL })
+	if intid != -1 {
+		return newznabClients[intid].Client
+	}
+	return nil
 }
 
 // QueryNewznabTvTvdb searches Indexers for tvdbid using season and episodes
-func QueryNewznabTvTvdb(row *NzbIndexer, tvdbid int, categories string, season int, episode int, useseason bool, useepisode bool) (*NZBArr, bool, error) {
+func QueryNewznabTvTvdb(indexer string, quality string, row *NzbIndexer, tvdbid int, categories string, season int, episode int, useseason bool, useepisode bool) (*[]NZB, error) {
 	if tvdbid == 0 {
-		return nil, false, errors.New("no tvdbid")
+		return nil, logger.ErrNoID
 	}
 	var limitstr string
 	if !useepisode || !useseason {
 		limitstr = "100"
 	}
-	entries := new(NZBArr)
-	broke, err := getnewznabclient(row).processurl(&urlbuilder{searchtype: "tvsearch", tvdbid: tvdbid, useseason: useseason, season: season, useepisode: useepisode, episode: episode, outputAsJSON: row.OutputAsJSON, customurl: row.Customurl, customapi: row.Customapi, additionalQueryParams: row.AdditionalQueryParams, limit: limitstr, categories: categories}, "", row.MaxAge, row.OutputAsJSON, entries)
-	return entries, broke, err
+	// if row.InitRows != 0 {
+	// 	entries.Arr = make(*[]Nzbwithprio, 0, row.InitRows)
+	// }
+	return nzbs3to2(getnewznabclient(row).processurl(indexer, quality, &urlbuilder{searchtype: "tvsearch", tvdbid: tvdbid, useseason: useseason, season: season, useepisode: useepisode, episode: episode, outputAsJSON: row.OutputAsJSON, customurl: row.Customurl, customapi: row.Customapi, additionalQueryParams: row.AdditionalQueryParams, limit: limitstr, categories: categories}, "", row.MaxAge, row.OutputAsJSON))
 }
 
 // QueryNewznabQuery searches Indexers for string
-func QueryNewznabQuery(row *NzbIndexer, query string, categories string, searchtype string) (*NZBArr, bool, error) {
-	entries := new(NZBArr)
-	broke, err := getnewznabclient(row).processurl(&urlbuilder{searchtype: searchtype, query: query, addquotesfortitlequery: row.Addquotesfortitlequery, outputAsJSON: row.OutputAsJSON, customurl: row.Customurl, customrsscategory: row.Customrsscategory, customapi: row.Customapi, additionalQueryParams: row.AdditionalQueryParams, limit: "0", categories: categories}, "", row.MaxAge, row.OutputAsJSON, entries)
-	return entries, broke, err
+func QueryNewznabQuery(indexer string, quality string, row *NzbIndexer, query string, categories string, searchtype string) (*[]NZB, error) {
+	// if row.InitRows != 0 {
+	// 	entries.Arr = make(*[]Nzbwithprio, 0, row.InitRows)
+	// }
+	return nzbs3to2(getnewznabclient(row).processurl(indexer, quality, &urlbuilder{searchtype: searchtype, query: query, addquotesfortitlequery: row.Addquotesfortitlequery, outputAsJSON: row.OutputAsJSON, customurl: row.Customurl, customrsscategory: row.Customrsscategory, customapi: row.Customapi, additionalQueryParams: row.AdditionalQueryParams, limit: "0", categories: categories}, "", row.MaxAge, row.OutputAsJSON))
 }
 
 // QueryNewznabRSS returns x entries of given category
-func QueryNewznabRSS(row *NzbIndexer, maxitems int, categories string) (*NZBArr, bool, error) {
-	entries := new(NZBArr)
-	broke, err := getnewznabclient(row).processurl(&urlbuilder{rss: true, customurl: row.Customrssurl, customrsscategory: row.Customrsscategory, customapi: row.Customapi, additionalQueryParams: row.AdditionalQueryParams, limit: "0", num: maxitems, categories: categories}, "", 0, false, entries)
-	return entries, broke, err
+func QueryNewznabRSS(indexer string, quality string, row *NzbIndexer, maxitems int, categories string) (*[]NZB, bool, error) {
+	// if row.InitRows != 0 {
+	// 	entries.Arr = make(*[]Nzbwithprio, 0, row.InitRows)
+	// }
+	return getnewznabclient(row).processurl(indexer, quality, &urlbuilder{rss: true, customurl: row.Customrssurl, customrsscategory: row.Customrsscategory, customapi: row.Customapi, additionalQueryParams: row.AdditionalQueryParams, limit: "0", num: maxitems, categories: categories}, "", 0, false)
 }
 
 // QueryNewznabRSS returns entries of given category up to id
-func QueryNewznabRSSLast(row *NzbIndexer, maxitems int, categories string, maxrequests int) (*NZBArr, string, string, error) {
+func QueryNewznabRSSLast(indexer string, quality string, row *NzbIndexer, maxitems int, categories string, maxrequests int) (*[]NZB, error) {
 
 	count := 0
-	results := new(NZBArr)
-	broke, erradd := getnewznabclient(row).processurl(&urlbuilder{rss: true, customurl: row.Customrssurl, customrsscategory: row.Customrsscategory, customapi: row.Customapi, additionalQueryParams: row.AdditionalQueryParams, limit: "0", num: maxitems, categories: categories}, row.LastRssID, 0, false, results)
+	// if row.InitRows != 0 {
+	// 	results.Arr = make(*[]Nzbwithprio, 0, row.InitRows)
+	// }
+	results, broke, erradd := getnewznabclient(row).processurl(indexer, quality, &urlbuilder{rss: true, customurl: row.Customrssurl, customrsscategory: row.Customrsscategory, customapi: row.Customapi, additionalQueryParams: row.AdditionalQueryParams, limit: "0", num: maxitems, categories: categories}, row.LastRssID, 0, false)
 	if erradd != nil {
-		results = nil
-		return nil, "", "", erradd
+		logger.Clear(results)
+		return nil, erradd
 	}
-	if broke || len((results.Arr)) == 0 {
-		return results, "", "", nil
+	if broke || results == nil || len(*results) == 0 {
+		return results, nil
 	}
 	count++
+	var addresults *[]NZB
 	for {
-		broke, erradd = getnewznabclient(row).processurl(&urlbuilder{rss: true, customurl: row.Customrssurl, customrsscategory: row.Customrsscategory, customapi: row.Customapi, additionalQueryParams: row.AdditionalQueryParams, limit: "0", num: maxitems, categories: categories, offset: (maxitems * count)}, row.LastRssID, 0, false, results)
+		addresults, broke, erradd = getnewznabclient(row).processurl(indexer, quality, &urlbuilder{rss: true, customurl: row.Customrssurl, customrsscategory: row.Customrsscategory, customapi: row.Customapi, additionalQueryParams: row.AdditionalQueryParams, limit: "0", num: maxitems, categories: categories, offset: (maxitems * count)}, row.LastRssID, 0, false)
 		if erradd != nil {
+			logger.Clear(addresults)
 			break
 		}
+		logger.Grow(results, len(*addresults))
+		*results = append(*results, *addresults...)
+		logger.Clear(addresults)
 		count++
 		if maxrequests == 0 || count >= maxrequests || broke {
 			break
@@ -362,13 +378,17 @@ func QueryNewznabRSSLast(row *NzbIndexer, maxitems int, categories string, maxre
 	}
 
 	if erradd != nil {
-		results = nil
-		return nil, row.URL, "", erradd
+		logger.Clear(results)
+		return nil, erradd
 	}
-	if len(results.Arr) >= 1 {
-		return results, "", results.Arr[0].NZB.ID, nil
+	return results, nil
+}
+
+func getdailylimiter(limit int64) *slidingwindow.Limiter {
+	if limit != 0 {
+		return slidingwindow.NewLimiter(24*time.Hour, limit)
 	}
-	return results, "", "", nil
+	return nil
 }
 
 // New returns a new instance of Client
@@ -379,6 +399,7 @@ func NewNewznab(baseURL string, apikey string, userID string, insecure bool, dis
 	if lmtconfig.limiterseconds == 0 {
 		lmtconfig.limiterseconds = 10
 	}
+
 	return &Client{
 		Apikey:     apikey,
 		APIBaseURL: baseURL,
@@ -387,143 +408,116 @@ func NewNewznab(baseURL string, apikey string, userID string, insecure bool, dis
 		Client: NewClient(
 			insecure,
 			disablecompression,
-			rate.New(lmtconfig.limitercalls, lmtconfig.limitercallsdaily, time.Duration(lmtconfig.limiterseconds)*time.Second), lmtconfig.timeoutseconds,
-		),
+			slidingwindow.NewLimiter(time.Duration(lmtconfig.limiterseconds)*time.Second, int64(lmtconfig.limitercalls)),
+			lmtconfig.limitercallsdaily != 0,
+			getdailylimiter(int64(lmtconfig.limitercallsdaily)), lmtconfig.timeoutseconds),
+
+		//rate.New(lmtconfig.limitercalls, lmtconfig.limitercallsdaily, time.Duration(lmtconfig.limiterseconds)*time.Second), lmtconfig.timeoutseconds,
+		//),
 	}
 }
 
-func (client *Client) processurl(urlb *urlbuilder, tillid string, maxage int, outputasjson bool, entries *NZBArr) (bool, error) {
-	url := client.buildURL(urlb, maxage)
-	urlb = nil
-	var err error
-	//logger.Log.GlobalLogger.Debug("call url", zap.String("url", url))
-	if outputasjson {
-		var result searchResponseJSON1
-		_, err = client.Client.DoJSON(url, &result)
-		if err == nil {
-			if len(result.Channel.Item) == 0 {
-				return false, Errnoresults
-			}
-			if entries == nil || len(entries.Arr) == 0 {
-				entries.Arr = make([]Nzbwithprio, 0, len(result.Channel.Item))
-			}
-			var newEntry *Nzbwithprio
-			for idx := range result.Channel.Item {
-				if result.Channel.Item[idx].Enclosure.Attributes.Url == "" {
-					continue
-				}
-				newEntry = new(Nzbwithprio)
-				newEntry.NZB.Title = result.Channel.Item[idx].Title
-
-				if logger.StringContainsRune(newEntry.NZB.Title, '&') || logger.StringContainsRune(newEntry.NZB.Title, '%') {
-					newEntry.NZB.Title = html.UnescapeString(newEntry.NZB.Title)
-				}
-				if strings.Contains(newEntry.NZB.Title, "\\u") {
-					unquote, err := strconv.Unquote("\"" + newEntry.NZB.Title + "\"")
-					if err == nil {
-						newEntry.NZB.Title = unquote
-					}
-				}
-				newEntry.NZB.DownloadURL = result.Channel.Item[idx].Enclosure.Attributes.Url
-				if strings.Contains(newEntry.NZB.DownloadURL, "&amp") || logger.StringContainsRune(newEntry.NZB.DownloadURL, '%') {
-					newEntry.NZB.DownloadURL = html.UnescapeString(newEntry.NZB.DownloadURL)
-				}
-				newEntry.NZB.SourceEndpoint = client.APIBaseURL
-				if strings.Contains(newEntry.NZB.DownloadURL, ".torrent") || strings.Contains(newEntry.NZB.DownloadURL, "magnet:?") {
-					newEntry.NZB.IsTorrent = true
-				}
-
-				for key := range result.Channel.Item[idx].Attributes {
-					saveAttributes(&newEntry.NZB, result.Channel.Item[idx].Attributes[key].Attribute.Name, result.Channel.Item[idx].Attributes[key].Attribute.Value)
-				}
-				if newEntry.NZB.Size == 0 && result.Channel.Item[idx].Size != 0 {
-					newEntry.NZB.Size = result.Channel.Item[idx].Size
-				}
-				newEntry.NZB.ID = result.Channel.Item[idx].Guid
-				if newEntry.NZB.ID == "" {
-					newEntry.NZB.ID = result.Channel.Item[idx].Enclosure.Attributes.Url
-				}
-				entries.Arr = append(entries.Arr, *newEntry)
-				if tillid != "" && tillid == newEntry.NZB.ID {
-					newEntry = nil
-					return false, nil
-				}
-				newEntry = nil
-			}
-			result.close()
-			return false, nil
-		}
-		var result2 searchResponseJSON2
-		_, err = client.Client.DoJSON(url, &result2)
-		if err != nil {
-			return false, err
-		}
-		if len(result2.Item) == 0 {
-			return false, Errnoresults
-		}
-		if entries == nil || len(entries.Arr) == 0 {
-			entries.Arr = make([]Nzbwithprio, 0, len(result2.Item))
-		}
-		var newEntry *Nzbwithprio
-		for idx := range result2.Item {
-			if result2.Item[idx].Enclosure.Url == "" {
-				continue
-			}
-			newEntry = new(Nzbwithprio)
-			newEntry.NZB.Title = result2.Item[idx].Title
-
-			if logger.StringContainsRune(newEntry.NZB.Title, '&') || logger.StringContainsRune(newEntry.NZB.Title, '%') {
-				newEntry.NZB.Title = html.UnescapeString(newEntry.NZB.Title)
-			}
-			if strings.Contains(newEntry.NZB.Title, "\\u") {
-				unquote, err := strconv.Unquote("\"" + newEntry.NZB.Title + "\"")
-				if err == nil {
-					newEntry.NZB.Title = unquote
-				}
-			}
-			newEntry.NZB.DownloadURL = result2.Item[idx].Enclosure.Url
-			if strings.Contains(newEntry.NZB.DownloadURL, "&amp") || logger.StringContainsRune(newEntry.NZB.DownloadURL, '%') {
-				newEntry.NZB.DownloadURL = html.UnescapeString(newEntry.NZB.DownloadURL)
-			}
-			newEntry.NZB.SourceEndpoint = client.APIBaseURL
-			if strings.Contains(newEntry.NZB.DownloadURL, ".torrent") || strings.Contains(newEntry.NZB.DownloadURL, "magnet:?") {
-				newEntry.NZB.IsTorrent = true
-			}
-
-			for key := range result2.Item[idx].Attributes {
-				saveAttributes(&newEntry.NZB, result2.Item[idx].Attributes[key].Name, result2.Item[idx].Attributes[key].Value)
-			}
-			for key := range result2.Item[idx].Attributes2 {
-				saveAttributes(&newEntry.NZB, result2.Item[idx].Attributes2[key].Name, result2.Item[idx].Attributes2[key].Value)
-			}
-			if newEntry.NZB.Size == 0 && result2.Item[idx].Size != 0 {
-				newEntry.NZB.Size = result2.Item[idx].Size
-			}
-			newEntry.NZB.ID = result2.Item[idx].Guid.Guid
-			if newEntry.NZB.ID == "" {
-				newEntry.NZB.ID = result2.Item[idx].Enclosure.Url
-			}
-			entries.Arr = append(entries.Arr, *newEntry)
-			if tillid != "" && tillid == newEntry.NZB.ID {
-				newEntry = nil
-				return false, nil
-			}
-			newEntry = nil
-		}
-		result2.close()
-		return false, nil
-
+func (client *Client) processurl(indexer string, quality string, urlb *urlbuilder, tillid string, maxage int, outputasjson bool) (*[]NZB, bool, error) {
+	defer logger.ClearVar(urlb)
+	if !outputasjson {
+		return client.Client.DoXML(indexer, quality, tillid, client.APIBaseURL, client.buildURL(urlb, maxage))
 	}
-	var broke bool
-	broke, err = client.Client.DoXML(tillid, client.APIBaseURL, url, entries)
+	result, err := DoJSONType[searchResponseJSON1](client.Client, client.buildURL(urlb, maxage))
+	if err == nil {
+		defer result.close()
+		if len(result.Channel.Item) == 0 {
+			return nil, false, logger.Errnoresults
+		}
+		return client.processjson1(result, indexer, quality, tillid)
+	}
+	result2, err := DoJSONType[searchResponseJSON2](client.Client, client.buildURL(urlb, maxage))
 	if err != nil {
-		//logger.Log.GlobalLogger.Debug("call url error", zap.Error(err))
-		return false, err
+		return nil, false, err
 	}
-	if len(entries.Arr) == 0 {
-		return false, Errnoresults
+	defer result2.close()
+	if len(result2.Item) == 0 {
+		return nil, false, logger.Errnoresults
 	}
-	return broke, nil
+	return client.processjson2(result2, indexer, quality, tillid)
+}
+
+func (client *Client) processjson1(result *searchResponseJSON1, indexer string, quality string, tillid string) (*[]NZB, bool, error) {
+	entries := make([]NZB, 0, len(result.Channel.Item))
+	for idx := range result.Channel.Item {
+		if result.Channel.Item[idx].Enclosure.Attributes.URL == "" {
+			continue
+		}
+		var newEntry NZB
+		newEntry.Indexer = indexer
+		newEntry.Quality = quality
+		newEntry.Title = result.Channel.Item[idx].Title
+		logger.HTMLUnescape(&newEntry.Title)
+		logger.Unquote(&newEntry.Title)
+		newEntry.DownloadURL = result.Channel.Item[idx].Enclosure.Attributes.URL
+		logger.HTMLUnescape(&newEntry.DownloadURL)
+		newEntry.SourceEndpoint = client.APIBaseURL
+		if logger.ContainsI(newEntry.DownloadURL, ".torrent") || logger.ContainsI(newEntry.DownloadURL, "magnet:?") {
+			newEntry.IsTorrent = true
+		}
+
+		for key := range result.Channel.Item[idx].Attributes {
+			saveAttributes(&newEntry, result.Channel.Item[idx].Attributes[key].Attribute.Name, result.Channel.Item[idx].Attributes[key].Attribute.Value)
+		}
+		if newEntry.Size == 0 && result.Channel.Item[idx].Size != 0 {
+			newEntry.Size = result.Channel.Item[idx].Size
+		}
+		newEntry.ID = result.Channel.Item[idx].GUID
+		if newEntry.ID == "" {
+			newEntry.ID = result.Channel.Item[idx].Enclosure.Attributes.URL
+		}
+		entries = append(entries, newEntry)
+		if tillid != "" && tillid == newEntry.ID {
+			return &entries, false, nil
+		}
+	}
+	result.close()
+	return &entries, false, nil
+}
+
+func (client *Client) processjson2(result2 *searchResponseJSON2, indexer string, quality string, tillid string) (*[]NZB, bool, error) {
+	entries := make([]NZB, 0, len(result2.Item))
+	for idx := range result2.Item {
+		if result2.Item[idx].Enclosure.URL == "" {
+			continue
+		}
+		var newEntry NZB
+		newEntry.Indexer = indexer
+		newEntry.Quality = quality
+		newEntry.Title = result2.Item[idx].Title
+		logger.HTMLUnescape(&newEntry.Title)
+		logger.Unquote(&newEntry.Title)
+		newEntry.DownloadURL = result2.Item[idx].Enclosure.URL
+		logger.HTMLUnescape(&newEntry.DownloadURL)
+		newEntry.SourceEndpoint = client.APIBaseURL
+		if logger.ContainsI(newEntry.DownloadURL, ".torrent") || logger.ContainsI(newEntry.DownloadURL, "magnet:?") {
+			newEntry.IsTorrent = true
+		}
+
+		for key := range result2.Item[idx].Attributes {
+			saveAttributes(&newEntry, result2.Item[idx].Attributes[key].Name, result2.Item[idx].Attributes[key].Value)
+		}
+		for key := range result2.Item[idx].Attributes2 {
+			saveAttributes(&newEntry, result2.Item[idx].Attributes2[key].Name, result2.Item[idx].Attributes2[key].Value)
+		}
+		if newEntry.Size == 0 && result2.Item[idx].Size != 0 {
+			newEntry.Size = result2.Item[idx].Size
+		}
+		newEntry.ID = result2.Item[idx].GUID.GUID
+		if newEntry.ID == "" {
+			newEntry.ID = result2.Item[idx].Enclosure.URL
+		}
+		entries = append(entries, newEntry)
+		if tillid != "" && tillid == newEntry.ID {
+			return &entries, false, nil
+		}
+	}
+	result2.close()
+	return &entries, false, nil
 }
 
 func saveAttributes(newEntry *NZB, name string, value string) {
@@ -565,10 +559,7 @@ func saveAttributes(newEntry *NZB, name string, value string) {
 	// case "usenetdate":
 	// 	newEntry.UsenetDate, _ = parseDate(value)
 	case "size":
-		intValue, err := strconv.ParseInt(value, 10, 64)
-		if err == nil {
-			newEntry.Size = intValue
-		}
+		newEntry.Size = logger.StringToInt64(value)
 		// case "grabs":
 		// 	intValue, _ := strconv.ParseInt(value, 10, 64)
 		// 	newEntry.NumGrabs = int(intValue)
@@ -599,10 +590,8 @@ func (s *searchResponseJSON1) close() {
 	if s == nil {
 		return
 	}
-	if len(s.Channel.Item) >= 1 {
-		s.Channel.Item = nil
-	}
-	s = nil
+	logger.Clear(&s.Channel.Item)
+	logger.ClearVar(s)
 }
 
 func (s *searchResponseJSON2) close() {
@@ -612,8 +601,6 @@ func (s *searchResponseJSON2) close() {
 	if s == nil {
 		return
 	}
-	if len(s.Item) >= 1 {
-		s.Item = nil
-	}
-	s = nil
+	logger.Clear(&s.Item)
+	logger.ClearVar(s)
 }

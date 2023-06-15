@@ -1,12 +1,10 @@
 package apiexternal
 
 import (
-	"net/url"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/logger"
-	"github.com/Kellerman81/go_media_downloader/rate"
-	"go.uber.org/zap"
+	"github.com/Kellerman81/go_media_downloader/slidingwindow"
 )
 
 type TheMovieDBSearch struct {
@@ -53,34 +51,38 @@ type TheMovieDBFindTvresults struct {
 	Popularity       float32  `json:"popularity"`
 }
 
+type TheMovieDBMovieGenres struct {
+	ID   int    `json:"id"`
+	Name string `json:"name"`
+}
+
+type TheMovieDBMovieSpokenLanguages struct {
+	EnglishName string `json:"english_name"`
+	Name        string `json:"name"`
+	Iso6391     string `json:"iso_639_1"`
+}
+
 type TheMovieDBMovie struct {
-	Adult  bool `json:"adult"`
-	Budget int  `json:"budget"`
-	Genres []struct {
-		ID   int    `json:"id"`
-		Name string `json:"name"`
-	} `json:"genres"`
-	ID               int     `json:"id"`
-	ImdbID           string  `json:"imdb_id"`
-	OriginalLanguage string  `json:"original_language"`
-	OriginalTitle    string  `json:"original_title"`
-	Overview         string  `json:"overview"`
-	Popularity       float32 `json:"popularity"`
-	ReleaseDate      string  `json:"release_date"`
-	Revenue          int     `json:"revenue"`
-	Runtime          int     `json:"runtime"`
-	SpokenLanguages  []struct {
-		EnglishName string `json:"english_name"`
-		Name        string `json:"name"`
-		Iso6391     string `json:"iso_639_1"`
-	} `json:"spoken_languages"`
-	Status      string  `json:"status"`
-	Tagline     string  `json:"tagline"`
-	Title       string  `json:"title"`
-	VoteAverage float32 `json:"vote_average"`
-	VoteCount   int     `json:"vote_count"`
-	Backdrop    string  `json:"backdrop_path"`
-	Poster      string  `json:"poster_path"`
+	Adult            bool                             `json:"adult"`
+	Budget           int                              `json:"budget"`
+	Genres           []TheMovieDBMovieGenres          `json:"genres"`
+	ID               int                              `json:"id"`
+	ImdbID           string                           `json:"imdb_id"`
+	OriginalLanguage string                           `json:"original_language"`
+	OriginalTitle    string                           `json:"original_title"`
+	Overview         string                           `json:"overview"`
+	Popularity       float32                          `json:"popularity"`
+	ReleaseDate      string                           `json:"release_date"`
+	Revenue          int                              `json:"revenue"`
+	Runtime          int                              `json:"runtime"`
+	SpokenLanguages  []TheMovieDBMovieSpokenLanguages `json:"spoken_languages"`
+	Status           string                           `json:"status"`
+	Tagline          string                           `json:"tagline"`
+	Title            string                           `json:"title"`
+	VoteAverage      float32                          `json:"vote_average"`
+	VoteCount        int                              `json:"vote_count"`
+	Backdrop         string                           `json:"backdrop_path"`
+	Poster           string                           `json:"poster_path"`
 }
 
 type TheMovieDBMovieTitles struct {
@@ -111,10 +113,12 @@ type tmdbClient struct {
 	Client *RLHTTPClient
 }
 
-const apiurltmdbmovies = "https://api.themoviedb.org/3/movie/"
-const strAPIKey = "?api_key="
+const (
+	apiurltmdbmovies = "https://api.themoviedb.org/3/movie/"
+	strAPIKey        = "?api_key="
+)
 
-var TmdbAPI tmdbClient
+var TmdbAPI *tmdbClient
 
 func (t *TheMovieDBMovieTitles) Close() {
 	if logger.DisableVariableCleanup {
@@ -123,8 +127,8 @@ func (t *TheMovieDBMovieTitles) Close() {
 	if t == nil {
 		return
 	}
-	t.Titles = nil
-	t = nil
+	logger.Clear(&t.Titles)
+	logger.ClearVar(t)
 }
 func (t *TheMovieDBMovie) Close() {
 	if logger.DisableVariableCleanup {
@@ -133,19 +137,9 @@ func (t *TheMovieDBMovie) Close() {
 	if t == nil {
 		return
 	}
-	t.Genres = nil
-	t.SpokenLanguages = nil
-	t = nil
-}
-func (t *TheMovieDBFindTvresults) Close() {
-	if logger.DisableVariableCleanup {
-		return
-	}
-	if t == nil {
-		return
-	}
-	t.OriginCountry = nil
-	t = nil
+	logger.Clear(&t.Genres)
+	logger.Clear(&t.SpokenLanguages)
+	logger.ClearVar(t)
 }
 func (t *TheMovieDBFind) Close() {
 	if logger.DisableVariableCleanup {
@@ -154,9 +148,9 @@ func (t *TheMovieDBFind) Close() {
 	if t == nil {
 		return
 	}
-	t.MovieResults = nil
-	t.TvResults = nil
-	t = nil
+	logger.Clear(&t.MovieResults)
+	logger.Clear(&t.TvResults)
+	logger.ClearVar(t)
 }
 func (t *TheMovieDBSearchTV) Close() {
 	if logger.DisableVariableCleanup {
@@ -165,8 +159,8 @@ func (t *TheMovieDBSearchTV) Close() {
 	if t == nil {
 		return
 	}
-	t.Results = nil
-	t = nil
+	logger.Clear(&t.Results)
+	logger.ClearVar(t)
 }
 func (t *TheMovieDBSearch) Close() {
 	if logger.DisableVariableCleanup {
@@ -175,8 +169,8 @@ func (t *TheMovieDBSearch) Close() {
 	if t == nil {
 		return
 	}
-	t.Results = nil
-	t = nil
+	logger.Clear(&t.Results)
+	logger.ClearVar(t)
 }
 
 func NewTmdbClient(apikey string, seconds int, calls int, disabletls bool, timeoutseconds int) {
@@ -186,131 +180,64 @@ func NewTmdbClient(apikey string, seconds int, calls int, disabletls bool, timeo
 	if calls == 0 {
 		calls = 1
 	}
-	TmdbAPI = tmdbClient{
+	TmdbAPI = &tmdbClient{
 		APIKey: apikey,
 		Client: NewClient(
 			disabletls,
 			true,
-			rate.New(calls, 0, time.Duration(seconds)*time.Second), timeoutseconds)}
+			slidingwindow.NewLimiter(time.Duration(seconds)*time.Second, int64(calls)),
+			false, slidingwindow.NewLimiter(10*time.Second, 10), timeoutseconds)}
 
 }
 
-func (t *tmdbClient) SearchMovie(name string) (*TheMovieDBSearch, error) {
-	url := "https://api.themoviedb.org/3/search/movie?api_key=" + t.APIKey + "&query=" + url.QueryEscape(name)
-	result := new(TheMovieDBSearch)
-	_, err := t.Client.DoJSON(url, result)
-
-	if err != nil {
-		if err != errPleaseWait {
-			logger.Log.GlobalLogger.Error(errorCalling, zap.Stringp("url", &url), zap.Error(err))
-		}
-		result.Close()
-		return nil, err
+func (t *tmdbClient) SearchMovie(name *string) (*TheMovieDBSearch, error) {
+	if *name == "" {
+		return nil, logger.ErrNotFound
 	}
-
-	return result, nil
+	return DoJSONType[TheMovieDBSearch](t.Client, "https://api.themoviedb.org/3/search/movie?api_key="+t.APIKey+"&query="+QueryEscape(name))
 }
 
 func (t *tmdbClient) SearchTV(name string) (*TheMovieDBSearchTV, error) {
-	url := "https://api.themoviedb.org/3/search/tv?api_key=" + t.APIKey + "&query=" + url.QueryEscape(name)
-	result := new(TheMovieDBSearchTV)
-	_, err := t.Client.DoJSON(url, result)
-
-	if err != nil {
-		if err != errPleaseWait {
-			logger.Log.GlobalLogger.Error(errorCalling, zap.Stringp("url", &url), zap.Error(err))
-		}
-		result.Close()
-		return nil, err
+	if name == "" {
+		return nil, logger.ErrNotFound
 	}
 
-	return result, nil
+	return DoJSONType[TheMovieDBSearchTV](t.Client, "https://api.themoviedb.org/3/search/tv?api_key="+t.APIKey+"&query="+QueryEscape(&name))
 }
 
 func (t *tmdbClient) FindImdb(imdbid string) (*TheMovieDBFind, error) {
-	url := "https://api.themoviedb.org/3/find/" + imdbid + strAPIKey + t.APIKey + "&language=en-US&external_source=imdb_id"
-	result := new(TheMovieDBFind)
-	_, err := t.Client.DoJSON(url, result)
-
-	if err != nil {
-		if err != errPleaseWait {
-			logger.Log.GlobalLogger.Error(errorCalling, zap.Stringp("url", &url), zap.Error(err))
-		}
-		result.Close()
-		return nil, err
+	if imdbid == "" {
+		return nil, logger.ErrNotFound
 	}
-
-	return result, nil
+	return DoJSONType[TheMovieDBFind](t.Client, "https://api.themoviedb.org/3/find/"+imdbid+strAPIKey+t.APIKey+"&language=en-US&external_source=imdb_id")
 }
 func (t *tmdbClient) FindTvdb(thetvdbid int) (*TheMovieDBFind, error) {
-	url := "https://api.themoviedb.org/3/find/" + logger.IntToString(thetvdbid) + strAPIKey + t.APIKey + "&language=en-US&external_source=tvdb_id"
-	result := new(TheMovieDBFind)
-	_, err := t.Client.DoJSON(url, result)
-
-	if err != nil {
-		if err != errPleaseWait {
-			logger.Log.GlobalLogger.Error(errorCalling, zap.Stringp("url", &url), zap.Error(err))
-		}
-		result.Close()
-		return nil, err
+	if thetvdbid == 0 {
+		return nil, logger.ErrNotFound
 	}
-
-	return result, nil
+	return DoJSONType[TheMovieDBFind](t.Client, "https://api.themoviedb.org/3/find/"+logger.IntToString(thetvdbid)+strAPIKey+t.APIKey+"&language=en-US&external_source=tvdb_id")
 }
 func (t *tmdbClient) GetMovie(id int) (*TheMovieDBMovie, error) {
-	url := apiurltmdbmovies + logger.IntToString(id) + strAPIKey + t.APIKey
-	result := new(TheMovieDBMovie)
-	_, err := t.Client.DoJSON(url, result)
-
-	if err != nil {
-		if err != errPleaseWait {
-			logger.Log.GlobalLogger.Error(errorCalling, zap.Stringp("url", &url), zap.Error(err))
-		}
-		result.Close()
-		return nil, err
+	if id == 0 {
+		return nil, logger.ErrNotFound
 	}
-	return result, nil
+	return DoJSONType[TheMovieDBMovie](t.Client, apiurltmdbmovies+logger.IntToString(id)+strAPIKey+t.APIKey)
 }
 func (t *tmdbClient) GetMovieTitles(id int) (*TheMovieDBMovieTitles, error) {
-	url := apiurltmdbmovies + logger.IntToString(id) + "/alternative_titles?api_key=" + t.APIKey
-	result := new(TheMovieDBMovieTitles)
-	_, err := t.Client.DoJSON(url, result)
-
-	if err != nil {
-		if err != errPleaseWait {
-			logger.Log.GlobalLogger.Error(errorCalling, zap.Stringp("url", &url), zap.Error(err))
-		}
-		result.Close()
-		return nil, err
+	if id == 0 {
+		return nil, logger.ErrNotFound
 	}
-	return result, nil
+	return DoJSONType[TheMovieDBMovieTitles](t.Client, apiurltmdbmovies+logger.IntToString(id)+"/alternative_titles?api_key="+t.APIKey)
 }
 func (t *tmdbClient) GetMovieExternal(id int) (*TheMovieDBTVExternal, error) {
-	url := apiurltmdbmovies + logger.IntToString(id) + "/external_ids?api_key=" + t.APIKey
-	result := new(TheMovieDBTVExternal)
-	_, err := t.Client.DoJSON(url, result)
-
-	if err != nil {
-		if err != errPleaseWait {
-			logger.Log.GlobalLogger.Error(errorCalling, zap.Stringp("url", &url), zap.Error(err))
-		}
-		// result = nil
-		return nil, err
+	if id == 0 {
+		return nil, logger.ErrNotFound
 	}
-
-	return result, nil
+	return DoJSONType[TheMovieDBTVExternal](t.Client, apiurltmdbmovies+logger.IntToString(id)+"/external_ids?api_key="+t.APIKey)
 }
 func (t *tmdbClient) GetTVExternal(id string) (*TheMovieDBTVExternal, error) {
-	url := "https://api.themoviedb.org/3/tv/" + id + "/external_ids?api_key=" + t.APIKey
-	result := new(TheMovieDBTVExternal)
-	_, err := t.Client.DoJSON(url, result)
-
-	if err != nil {
-		if err != errPleaseWait {
-			logger.Log.GlobalLogger.Error(errorCalling, zap.Stringp("url", &url), zap.Error(err))
-		}
-		return nil, err
+	if id == "" {
+		return nil, logger.ErrNotFound
 	}
-
-	return result, nil
+	return DoJSONType[TheMovieDBTVExternal](t.Client, "https://api.themoviedb.org/3/tv/"+id+"/external_ids?api_key="+t.APIKey)
 }

@@ -100,7 +100,7 @@ func GetDbmoviesTable(ctx *context.Context) table.Table {
 		action.PopUpWithIframe("/admin/info/movies", "see more", action.IframeData{Src: "/admin/info/movies", AddParameterFn: func(ctx *context.Context) string {
 			return "&dbmovie_id=" + ctx.FormValue("id")
 		}}, "900px", "560px")), types.GetColumnButton("Refresh", icon.Refresh,
-		MyPopUpWithIframe("/admin/info/refresh", "see more", action.IframeData{Src: "/api/movies/refresh/{{.Id}}?apikey=" + config.Cfg.General.WebAPIKey}, "900px", "560px")))
+		MyPopUpWithIframe("/admin/info/refresh", "see more", action.IframeData{Src: "/api/movies/refresh/{{.Id}}?apikey=" + config.SettingsGeneral.WebAPIKey}, "900px", "560px")))
 	info.SetTable("dbmovies").SetTitle("Dbmovies").SetDescription("Dbmovies")
 
 	formList := dbmovies.GetForm()

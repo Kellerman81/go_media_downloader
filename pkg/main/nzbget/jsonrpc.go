@@ -288,7 +288,7 @@ type RPCRequests []*RPCRequest
 // NewClient returns a new RPCClient instance with default configuration.
 //
 // endpoint: JSON-RPC service URL to which JSON-RPC requests are sent.
-func NewJsonClient(endpoint string) RPCClient {
+func NewJSONClient(endpoint string) RPCClient {
 	return NewClientWithOpts(endpoint, nil)
 }
 

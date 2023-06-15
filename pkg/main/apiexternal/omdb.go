@@ -1,12 +1,10 @@
 package apiexternal
 
 import (
-	"net/url"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/logger"
-	"github.com/Kellerman81/go_media_downloader/rate"
-	"go.uber.org/zap"
+	"github.com/Kellerman81/go_media_downloader/slidingwindow"
 )
 
 type OmDBMovie struct {
@@ -48,7 +46,7 @@ type omdbClient struct {
 	Client     *RLHTTPClient
 }
 
-var OmdbAPI omdbClient
+var OmdbAPI *omdbClient
 
 func (t *OmDBMovieSearchGlobal) Close() {
 	if logger.DisableVariableCleanup {
@@ -57,8 +55,8 @@ func (t *OmDBMovieSearchGlobal) Close() {
 	if t == nil {
 		return
 	}
-	t.Search = nil
-	t = nil
+	logger.Clear(&t.Search)
+	logger.ClearVar(t)
 }
 func NewOmdbClient(apikey string, seconds int, calls int, disabletls bool, timeoutseconds int) {
 	if seconds == 0 {
@@ -67,45 +65,32 @@ func NewOmdbClient(apikey string, seconds int, calls int, disabletls bool, timeo
 	if calls == 0 {
 		calls = 1
 	}
-	OmdbAPI = omdbClient{
+	OmdbAPI = &omdbClient{
 		OmdbAPIKey: apikey,
 		Client: NewClient(
 			disabletls,
 			true,
-			rate.New(calls, 0, time.Duration(seconds)*time.Second),
-			timeoutseconds)}
+			slidingwindow.NewLimiter(time.Duration(seconds)*time.Second, int64(calls)),
+			false, slidingwindow.NewLimiter(10*time.Second, 10), timeoutseconds)}
 }
 
-func (o *omdbClient) GetMovie(imdbid string, result *OmDBMovie) error {
-	url := "http://www.omdbapi.com/?i=" + imdbid + "&apikey=" + o.OmdbAPIKey
-	_, err := o.Client.DoJSON(url, result)
-
-	if err != nil {
-		if err != errPleaseWait {
-			logger.Log.GlobalLogger.Error(errorCalling, zap.Stringp("url", &url), zap.Error(err))
-		}
-		return err
+func (o *omdbClient) GetMovie(imdbid string) (*OmDBMovie, error) {
+	if imdbid == "" {
+		return nil, logger.ErrNotFound
 	}
-
-	return nil
+	return DoJSONType[OmDBMovie](o.Client, "http://www.omdbapi.com/?i="+imdbid+"&apikey="+o.OmdbAPIKey)
 }
 
-func (o *omdbClient) SearchMovie(title string, year string, result *OmDBMovieSearchGlobal) error {
+func (o *omdbClient) SearchMovie(title *string, year string) (*OmDBMovieSearchGlobal, error) {
+	if *title == "" {
+		return nil, logger.ErrNotFound
+	}
 	var yearstr string
-	if year != "" && year != "0" {
+	if year == "0" {
+		year = ""
+	}
+	if year != "" {
 		yearstr = "&y=" + year
 	}
-	url := "http://www.omdbapi.com/?s=" + url.QueryEscape(title) + yearstr + "&apikey=" + o.OmdbAPIKey
-
-	_, err := o.Client.DoJSON(url, result)
-
-	if err != nil {
-		if err != errPleaseWait {
-			logger.Log.GlobalLogger.Error(errorCalling, zap.Stringp("url", &url), zap.Error(err))
-		}
-		result.Close()
-		return err
-	}
-
-	return nil
+	return DoJSONType[OmDBMovieSearchGlobal](o.Client, "http://www.omdbapi.com/?s="+QueryEscape(title)+yearstr+"&apikey="+o.OmdbAPIKey)
 }

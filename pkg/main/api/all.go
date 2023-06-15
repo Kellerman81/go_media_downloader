@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/Kellerman81/go_media_downloader/config"
+	"github.com/Kellerman81/go_media_downloader/logger"
 	"github.com/Kellerman81/go_media_downloader/utils"
 	gin "github.com/gin-gonic/gin"
 )
@@ -33,8 +34,8 @@ func apiAllGetFeeds(c *gin.Context) {
 		return
 	}
 
-	utils.MoviesAllJobs("feeds", true)
-	utils.SeriesAllJobs("feeds", true)
+	utils.MoviesAllJobs(logger.StrFeeds, true)
+	utils.SeriesAllJobs(logger.StrFeeds, true)
 	c.JSON(http.StatusOK, "ok")
 }
 
@@ -63,8 +64,8 @@ func apiAllGetRss(c *gin.Context) {
 	if auth(c) == http.StatusUnauthorized {
 		return
 	}
-	utils.MoviesAllJobs("rss", true)
-	utils.SeriesAllJobs("rss", true)
+	utils.MoviesAllJobs(logger.StrRss, true)
+	utils.SeriesAllJobs(logger.StrRss, true)
 	c.JSON(http.StatusOK, "ok")
 }
 
@@ -78,8 +79,8 @@ func apiAllGetMissingFull(c *gin.Context) {
 	if auth(c) == http.StatusUnauthorized {
 		return
 	}
-	utils.MoviesAllJobs("searchmissingfull", true)
-	utils.SeriesAllJobs("searchmissingfull", true)
+	utils.MoviesAllJobs(logger.StrSearchMissingFull, true)
+	utils.SeriesAllJobs(logger.StrSearchMissingFull, true)
 	c.JSON(http.StatusOK, "ok")
 }
 
@@ -93,8 +94,8 @@ func apiAllGetMissingInc(c *gin.Context) {
 	if auth(c) == http.StatusUnauthorized {
 		return
 	}
-	utils.MoviesAllJobs("searchmissinginc", true)
-	utils.SeriesAllJobs("searchmissinginc", true)
+	utils.MoviesAllJobs(logger.StrSearchMissingInc, true)
+	utils.SeriesAllJobs(logger.StrSearchMissingInc, true)
 	c.JSON(http.StatusOK, "ok")
 }
 
@@ -108,8 +109,8 @@ func apiAllGetUpgradeFull(c *gin.Context) {
 	if auth(c) == http.StatusUnauthorized {
 		return
 	}
-	utils.MoviesAllJobs("searchupgradefull", true)
-	utils.SeriesAllJobs("searchupgradefull", true)
+	utils.MoviesAllJobs(logger.StrSearchUpgradeFull, true)
+	utils.SeriesAllJobs(logger.StrSearchUpgradeFull, true)
 	c.JSON(http.StatusOK, "ok")
 }
 
@@ -123,8 +124,8 @@ func apiAllGetUpgradeInc(c *gin.Context) {
 	if auth(c) == http.StatusUnauthorized {
 		return
 	}
-	utils.MoviesAllJobs("searchupgradeinc", true)
-	utils.SeriesAllJobs("searchupgradeinc", true)
+	utils.MoviesAllJobs(logger.StrSearchUpgradeInc, true)
+	utils.SeriesAllJobs(logger.StrSearchUpgradeInc, true)
 	c.JSON(http.StatusOK, "ok")
 }
 
@@ -136,7 +137,7 @@ func auth(c *gin.Context) int {
 			c.AbortWithStatus(http.StatusUnauthorized)
 			return http.StatusUnauthorized
 		}
-		if queryParam != config.Cfg.General.WebAPIKey {
+		if queryParam != config.SettingsGeneral.WebAPIKey {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 			c.AbortWithStatus(http.StatusUnauthorized)
 			return http.StatusUnauthorized

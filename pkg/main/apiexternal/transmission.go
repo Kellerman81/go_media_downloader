@@ -4,7 +4,7 @@ import (
 	"github.com/odwrtw/transmission"
 )
 
-func SendToTransmission(server string, username string, password string, url string, dlpath string, addpaused bool) error {
+func SendToTransmission(server string, username string, password string, urlv string, dlpath string, addpaused bool) error {
 	conf := transmission.Config{
 		User:     username,
 		Password: password,
@@ -17,7 +17,7 @@ func SendToTransmission(server string, username string, password string, url str
 
 	var torrentadd transmission.AddTorrentArg
 	torrentadd.DownloadDir = dlpath
-	torrentadd.Filename = url
+	torrentadd.Filename = urlv
 	torrentadd.Paused = addpaused
 
 	_, erradd := t.AddTorrent(torrentadd)

@@ -4,7 +4,7 @@ import "time"
 
 //Source: https://github.com/dashotv/flame
 
-type status struct {
+type Status struct {
 	RemainingSizeMB     int  // 0
 	ForcedSizeMB        int  // 0
 	DownloadedSizeMB    int  // 0
@@ -56,7 +56,7 @@ type newsServer struct {
 
 type statusResponse struct {
 	*response
-	Result *status
+	Result *Status
 }
 
 type versionResponse struct {
@@ -64,7 +64,7 @@ type versionResponse struct {
 	Version string `json:"result"`
 }
 
-type history struct {
+type History struct {
 	ID                 int `json:"nzbid"`
 	Name               string
 	RemainingFileCount int
@@ -87,7 +87,7 @@ type history struct {
 	ScriptStatus       string
 	DeleteStatus       string
 	MarkStatus         string
-	UrlStatus          string
+	URLStatus          string
 	FileSizeLo         int
 	FileSizeHi         int
 	FileSizeMB         int
@@ -131,10 +131,10 @@ type serverStat struct {
 
 type historyResponse struct {
 	*response
-	Result []history `json:"Result"`
+	Result []History `json:"Result"`
 }
 
-type group struct {
+type Group struct {
 	ID                 int    `json:"nzbid"` // 4
 	RemainingSizeMB    int    // 3497
 	PausedSizeMB       int    // 3497
@@ -159,7 +159,7 @@ type group struct {
 	ScriptStatus       string // NONE
 	DeleteStatus       string // NONE
 	MarkStatus         string // NONE
-	UrlStatus          string // NONE
+	URLStatus          string // NONE
 	FileSizeMB         int    // 3651
 	FileCount          int    // 77
 	MinPostTime        int    // 1586073677
@@ -208,17 +208,17 @@ type scriptStatus struct {
 type log struct {
 }
 
-type groupResponse struct {
+type GroupResponse struct {
 	*response
-	Result []group
+	Result []Group
 }
 
-type client struct {
+type Client struct {
 	URL string
 	rpc RPCClient
 }
 
-type appendOptions struct {
+type AppendOptions struct {
 	NiceName   string
 	Category   string
 	Priority   int
@@ -236,6 +236,6 @@ type appendOptions struct {
 type response struct {
 	APIVersion string `json:"version"`
 	Error      string
-	Status     *status
+	Status     *Status
 	Timestamp  time.Time
 }

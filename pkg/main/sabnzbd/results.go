@@ -3,10 +3,11 @@ package sabnzbd
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"time"
-
-	"github.com/Kellerman81/go_media_downloader/logger"
 )
+
+//Source: https://github.com/mrobinsn/go-sabnzbd - fixed:add category
 
 type BytesFromGB int
 
@@ -19,7 +20,7 @@ func (b *BytesFromGB) UnmarshalJSON(data []byte) error {
 		if err != nil {
 			return err
 		}
-		gb, err = logger.ParseFloat(gbStr)
+		gb, err = strconv.ParseFloat(gbStr, 32)
 		if err != nil {
 			return err
 		}
@@ -39,7 +40,7 @@ func (b *BytesFromMB) UnmarshalJSON(data []byte) error {
 		if err != nil {
 			return err
 		}
-		mb, err = logger.ParseFloat(mbStr)
+		mb, err = strconv.ParseFloat(mbStr, 32)
 		if err != nil {
 			return err
 		}
@@ -59,7 +60,7 @@ func (b *BytesFromKB) UnmarshalJSON(data []byte) error {
 		if err != nil {
 			return err
 		}
-		kb, err = logger.ParseFloat(kbStr)
+		kb, err = strconv.ParseFloat(kbStr, 32)
 		if err != nil {
 			return err
 		}
@@ -79,7 +80,7 @@ func (b *BytesFromB) UnmarshalJSON(data []byte) error {
 		if err != nil {
 			return err
 		}
-		bytes, err = logger.ParseFloat(bytesStr)
+		bytes, err = strconv.ParseFloat(bytesStr, 32)
 		if err != nil {
 			return err
 		}
@@ -164,7 +165,7 @@ type AdvancedQueueResponse struct {
 	LastWarning            string              `json:"last_warning"`
 	HaveWarnings           string              `json:"have_warnings"`
 	CacheArt               string              `json:"cache_art"`
-	FinishAction           *string             `json:"finishaction"`
+	FinishAction           string              `json:"finishaction"`
 	NoOfSlots              int                 `json:"noofslots"`
 	CacheSize              string              `json:"cache_size"`
 	Finish                 int                 `json:"finish"`
@@ -240,7 +241,7 @@ type HistoryResponse struct {
 	LastWarning            string        `json:"last_warning"`
 	HaveWarnings           string        `json:"have_warnings"`
 	CacheArt               string        `json:"cache_art"`
-	FinishAction           *string       `json:"finishaction"`
+	FinishAction           string        `json:"finishaction"`
 	NoOfSlots              int           `json:"noofslots"`
 	CacheSize              string        `json:"cache_size"`
 	NewRelease             string        `json:"new_release"`

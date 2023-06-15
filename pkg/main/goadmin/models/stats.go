@@ -16,33 +16,23 @@ func GetStatsTable(ctx *context.Context) (userTable table.Table) {
 
 	var stats []map[string]interface{}
 	id := 0
-	var lists []string
-	database.QueryStaticStringArray(false, 0, &database.Querywithargs{QueryString: "select distinct listname from movies where length(listname) >= 1"}, &lists)
-	for idx := range lists {
-		var all int
-		database.QueryColumn(&database.Querywithargs{QueryString: "select count(*) from movies where listname = ? COLLATE NOCASE", Args: []interface{}{lists[idx]}}, &all)
-		var missing int
-		database.QueryColumn(&database.Querywithargs{QueryString: "select count(*) from movies where listname = ? COLLATE NOCASE and missing=1", Args: []interface{}{lists[idx]}}, &missing)
-		var reached int
-		database.QueryColumn(&database.Querywithargs{QueryString: "select count(*) from movies where listname = ? COLLATE NOCASE and quality_reached=1", Args: []interface{}{lists[idx]}}, &reached)
-		var upgrade int
-		database.QueryColumn(&database.Querywithargs{QueryString: "select count(*) from movies where listname = ? COLLATE NOCASE and quality_reached=0 and missing=0", Args: []interface{}{lists[idx]}}, &upgrade)
-		stats = append(stats, map[string]interface{}{"id": id, "typ": "movies", "list": lists[idx], "total": all, "missing": missing, "finished": reached, "upgrade": upgrade})
-		id += 1
+	lists := database.QueryStaticStringArray(false, 0, "select distinct listname from movies where length(listname) >= 1")
+	for idx := range *lists {
+		all := database.QueryIntColumn("select count(*) from movies where listname = ? COLLATE NOCASE", (*lists)[idx])
+		missing := database.QueryIntColumn("select count(*) from movies where listname = ? COLLATE NOCASE and missing=1", (*lists)[idx])
+		reached := database.QueryIntColumn("select count(*) from movies where listname = ? COLLATE NOCASE and quality_reached=1", (*lists)[idx])
+		upgrade := database.QueryIntColumn("select count(*) from movies where listname = ? COLLATE NOCASE and quality_reached=0 and missing=0", (*lists)[idx])
+		stats = append(stats, map[string]interface{}{"id": id, "typ": "movies", "list": (*lists)[idx], "total": all, "missing": missing, "finished": reached, "upgrade": upgrade})
+		id++
 	}
-	lists = nil
-	database.QueryStaticStringArray(false, 0, &database.Querywithargs{QueryString: "select distinct listname from series where length(listname) >= 1"}, &lists)
-	for idx := range lists {
-		var all int
-		database.QueryColumn(&database.Querywithargs{QueryString: "select count(*) from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE)", Args: []interface{}{lists[idx]}}, &all)
-		var missing int
-		database.QueryColumn(&database.Querywithargs{QueryString: "select count(*) from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE) and missing=1", Args: []interface{}{lists[idx]}}, &missing)
-		var reached int
-		database.QueryColumn(&database.Querywithargs{QueryString: "select count(*) from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE) and quality_reached=1", Args: []interface{}{lists[idx]}}, &reached)
-		var upgrade int
-		database.QueryColumn(&database.Querywithargs{QueryString: "select count(*) from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE) and quality_reached=0 and missing=0", Args: []interface{}{lists[idx]}}, &upgrade)
-		stats = append(stats, map[string]interface{}{"id": id, "typ": "episodes", "list": lists[idx], "total": all, "missing": missing, "finished": reached, "upgrade": upgrade})
-		id += 1
+	lists = database.QueryStaticStringArray(false, 0, "select distinct listname from series where length(listname) >= 1")
+	for idx := range *lists {
+		all := database.QueryIntColumn("select count(*) from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE)", (*lists)[idx])
+		missing := database.QueryIntColumn("select count(*) from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE) and missing=1", (*lists)[idx])
+		reached := database.QueryIntColumn("select count(*) from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE) and quality_reached=1", (*lists)[idx])
+		upgrade := database.QueryIntColumn("select count(*) from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE) and quality_reached=0 and missing=0", (*lists)[idx])
+		stats = append(stats, map[string]interface{}{"id": id, "typ": "episodes", "list": (*lists)[idx], "total": all, "missing": missing, "finished": reached, "upgrade": upgrade})
+		id++
 	}
 	info := userTable.GetInfo().SetDefaultPageSize(100)
 	info.HideDeleteButton().HideDetailButton().HideEditButton().HideExportButton().HideFilterArea().HideFilterButton().HideNewButton().HidePagination()

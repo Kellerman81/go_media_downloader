@@ -5,7 +5,7 @@ import (
 	"github.com/GoAdminGroup/go-admin/modules/db"
 	"github.com/GoAdminGroup/go-admin/plugins/admin/modules/parameter"
 	"github.com/GoAdminGroup/go-admin/plugins/admin/modules/table"
-	"github.com/Kellerman81/go_media_downloader/tasks"
+	"github.com/Kellerman81/go_media_downloader/worker"
 )
 
 func GetSchedulerTable(ctx *context.Context) (userTable table.Table) {
@@ -14,7 +14,7 @@ func GetSchedulerTable(ctx *context.Context) (userTable table.Table) {
 	userTable.GetOnlyInfo()
 	var queue []map[string]interface{}
 	i := 0
-	for _, value := range tasks.GetSchedules() {
+	for _, value := range worker.GetSchedules() {
 		queue = append(queue, map[string]interface{}{
 			"id":        i,
 			"job":       value.JobName,
@@ -22,7 +22,7 @@ func GetSchedulerTable(ctx *context.Context) (userTable table.Table) {
 			"nextrun":   value.NextRun.Format("2006-01-02 15:04:05"),
 			"isrunning": value.IsRunning,
 		})
-		i += 1
+		i++
 	}
 
 	info := userTable.GetInfo().SetDefaultPageSize(100)

@@ -13,9 +13,11 @@ import (
 	"github.com/Kellerman81/go_media_downloader/logger"
 )
 
+//Source: https://github.com/mrobinsn/go-sabnzbd - fixed:add category
+
 func (s *Sabnzbd) Version() (version string, err error) {
 	u := s.url()
-	u.SetJsonOutput()
+	u.SetJSONOutput()
 	u.SetMode("version")
 	r := &versionResponse{}
 	err = u.CallJSON(r)
@@ -24,7 +26,7 @@ func (s *Sabnzbd) Version() (version string, err error) {
 
 func (s *Sabnzbd) Auth() (auth string, err error) {
 	u := s.url()
-	u.SetJsonOutput()
+	u.SetJSONOutput()
 	u.SetMode("auth")
 	r := &authResponse{}
 	err = u.CallJSON(r)
@@ -33,7 +35,7 @@ func (s *Sabnzbd) Auth() (auth string, err error) {
 
 func (s *Sabnzbd) SimpleQueue() (r *SimpleQueueResponse, err error) {
 	u := s.url()
-	u.SetJsonOutput()
+	u.SetJSONOutput()
 	u.Authenticate()
 	u.SetMode("qstatus")
 	r = &SimpleQueueResponse{}
@@ -43,7 +45,7 @@ func (s *Sabnzbd) SimpleQueue() (r *SimpleQueueResponse, err error) {
 
 func (s *Sabnzbd) AdvancedQueue(start, limit int) (r *AdvancedQueueResponse, err error) {
 	u := s.url()
-	u.SetJsonOutput()
+	u.SetJSONOutput()
 	u.Authenticate()
 	u.SetMode("queue")
 	u.v.Set("start", logger.IntToString(start))
@@ -55,7 +57,7 @@ func (s *Sabnzbd) AdvancedQueue(start, limit int) (r *AdvancedQueueResponse, err
 
 func (s *Sabnzbd) History(start, limit int) (r *HistoryResponse, err error) {
 	u := s.url()
-	u.SetJsonOutput()
+	u.SetJSONOutput()
 	u.Authenticate()
 	u.SetMode("history")
 	u.v.Set("start", logger.IntToString(start))
@@ -67,7 +69,7 @@ func (s *Sabnzbd) History(start, limit int) (r *HistoryResponse, err error) {
 
 func (s *Sabnzbd) Warnings() (warnings []string, err error) {
 	u := s.url()
-	u.SetJsonOutput()
+	u.SetJSONOutput()
 	u.Authenticate()
 	u.SetMode("warnings")
 	r := &warningsResponse{}
@@ -77,7 +79,7 @@ func (s *Sabnzbd) Warnings() (warnings []string, err error) {
 
 func (s *Sabnzbd) Categories() (categories []string, err error) {
 	u := s.url()
-	u.SetJsonOutput()
+	u.SetJSONOutput()
 	u.Authenticate()
 	u.SetMode("get_cats")
 	r := &categoriesResponse{}
@@ -87,7 +89,7 @@ func (s *Sabnzbd) Categories() (categories []string, err error) {
 
 func (s *Sabnzbd) Scripts() (scripts []string, err error) {
 	u := s.url()
-	u.SetJsonOutput()
+	u.SetJSONOutput()
 	u.Authenticate()
 	u.SetMode("get_scripts")
 	r := &scriptsResponse{}
@@ -97,7 +99,7 @@ func (s *Sabnzbd) Scripts() (scripts []string, err error) {
 
 func (s *Sabnzbd) Restart() (err error) {
 	u := s.url()
-	u.SetJsonOutput()
+	u.SetJSONOutput()
 	u.Authenticate()
 	u.SetMode("restart")
 	r := &apiError{}
@@ -107,7 +109,7 @@ func (s *Sabnzbd) Restart() (err error) {
 
 func (s *Sabnzbd) Delete(removeFiles bool, nzos ...string) (err error) {
 	u := s.url()
-	u.SetJsonOutput()
+	u.SetJSONOutput()
 	u.Authenticate()
 	u.SetMode("queue")
 	u.v.Set("name", "delete")
@@ -122,7 +124,7 @@ func (s *Sabnzbd) Delete(removeFiles bool, nzos ...string) (err error) {
 
 func (s *Sabnzbd) DeleteAll(removeFiles bool) (err error) {
 	u := s.url()
-	u.SetJsonOutput()
+	u.SetJSONOutput()
 	u.Authenticate()
 	u.SetMode("queue")
 	u.v.Set("name", "delete")
@@ -135,7 +137,7 @@ func (s *Sabnzbd) DeleteAll(removeFiles bool) (err error) {
 // todo deal with return value { "result": { "priority": int, "position": int } }
 func (s *Sabnzbd) Move(nzo1, nzo2 string) (err error) {
 	u := s.url()
-	u.SetJsonOutput()
+	u.SetJSONOutput()
 	u.Authenticate()
 	u.SetMode("switch")
 	u.v.Set("value", nzo1)
@@ -147,7 +149,7 @@ func (s *Sabnzbd) Move(nzo1, nzo2 string) (err error) {
 
 func (s *Sabnzbd) MoveByPriority(nzo string, priority int) (err error) {
 	u := s.url()
-	u.SetJsonOutput()
+	u.SetJSONOutput()
 	u.Authenticate()
 	u.SetMode("switch")
 	u.v.Set("value", nzo)
@@ -159,7 +161,7 @@ func (s *Sabnzbd) MoveByPriority(nzo string, priority int) (err error) {
 
 func (s *Sabnzbd) Pause() (err error) {
 	u := s.url()
-	u.SetJsonOutput()
+	u.SetJSONOutput()
 	u.Authenticate()
 	u.SetMode("pause")
 	r := &apiError{}
@@ -169,7 +171,7 @@ func (s *Sabnzbd) Pause() (err error) {
 
 func (s *Sabnzbd) Resume() (err error) {
 	u := s.url()
-	u.SetJsonOutput()
+	u.SetJSONOutput()
 	u.Authenticate()
 	u.SetMode("resume")
 	r := &apiError{}
@@ -181,7 +183,7 @@ func (s *Sabnzbd) Resume() (err error) {
 // is one minute. Durations below one minute will resume the queue.
 func (s *Sabnzbd) PauseTemporarily(t time.Duration) (err error) {
 	u := s.url()
-	u.SetJsonOutput()
+	u.SetJSONOutput()
 	u.Authenticate()
 	u.SetMode("config")
 	u.v.Set("name", "set_pause")
@@ -193,7 +195,7 @@ func (s *Sabnzbd) PauseTemporarily(t time.Duration) (err error) {
 
 func (s *Sabnzbd) Shutdown() (err error) {
 	u := s.url()
-	u.SetJsonOutput()
+	u.SetJSONOutput()
 	u.Authenticate()
 	u.SetMode("shutdown")
 	r := &apiError{}
@@ -281,16 +283,16 @@ func AddNzbName(name string) AddNzbOption {
 	}
 }
 
-func AddNzbUrl(url string) AddNzbOption {
+func AddNzbURL(urlv string) AddNzbOption {
 	return func(c *addNzbConfig) error {
-		c.Name = &url
+		c.Name = &urlv
 		return nil
 	}
 }
 
 func (s *Sabnzbd) AddReader(reader io.Reader, filename string, options ...AddNzbOption) (nzoids []string, err error) {
 	u := s.url()
-	u.SetJsonOutput()
+	u.SetJSONOutput()
 	u.Authenticate()
 	u.SetMode("addfile")
 	c := &addNzbConfig{}
@@ -340,7 +342,7 @@ func (s *Sabnzbd) AddReader(reader io.Reader, filename string, options ...AddNzb
 
 func (s *Sabnzbd) AddURL(options ...AddNzbOption) (nzoids []string, err error) {
 	u := s.url()
-	u.SetJsonOutput()
+	u.SetJSONOutput()
 	u.Authenticate()
 	u.SetMode("addurl")
 	c := &addNzbConfig{}
@@ -369,7 +371,7 @@ func (s *Sabnzbd) AddFile(filename string, options ...AddNzbOption) (nzoids []st
 
 func (s *Sabnzbd) AddLocalfile(filename string, options ...AddNzbOption) (nzoids []string, err error) {
 	u := s.url()
-	u.SetJsonOutput()
+	u.SetJSONOutput()
 	u.Authenticate()
 	u.SetMode("addlocalfile")
 	u.v.Set("name", filename)
@@ -389,7 +391,7 @@ func (s *Sabnzbd) AddLocalfile(filename string, options ...AddNzbOption) (nzoids
 
 func (s *Sabnzbd) ChangeScript(nzoid, script string) (err error) {
 	u := s.url()
-	u.SetJsonOutput()
+	u.SetJSONOutput()
 	u.Authenticate()
 	u.SetMode("change_script")
 	u.v.Set("value", nzoid)
@@ -401,7 +403,7 @@ func (s *Sabnzbd) ChangeScript(nzoid, script string) (err error) {
 
 func (s *Sabnzbd) ChangeCategory(nzoid, category string) (err error) {
 	u := s.url()
-	u.SetJsonOutput()
+	u.SetJSONOutput()
 	u.Authenticate()
 	u.SetMode("change_cat")
 	u.v.Set("value", nzoid)
@@ -430,7 +432,7 @@ var queueCompleteActionNames = []string{
 
 func (s *Sabnzbd) ChangeQueueCompleteAction(action QueueCompleteAction) (err error) {
 	u := s.url()
-	u.SetJsonOutput()
+	u.SetJSONOutput()
 	u.Authenticate()
 	u.SetMode("change_complete_action")
 	if action < queueCompleteActions {
@@ -454,7 +456,7 @@ const (
 
 func (s *Sabnzbd) ChangePostProcessing(nzoid string, method PostProcessingMethod) (err error) {
 	u := s.url()
-	u.SetJsonOutput()
+	u.SetJSONOutput()
 	u.Authenticate()
 	u.SetMode("change_opts")
 	u.v.Set("value", nzoid)
@@ -477,7 +479,7 @@ const (
 
 func (s *Sabnzbd) ChangePriority(nzoid string, priority PriorityType) (err error) {
 	u := s.url()
-	u.SetJsonOutput()
+	u.SetJSONOutput()
 	u.Authenticate()
 	u.SetMode("queue")
 	u.v.Set("name", "priority")
@@ -490,7 +492,7 @@ func (s *Sabnzbd) ChangePriority(nzoid string, priority PriorityType) (err error
 
 func (s *Sabnzbd) PauseItem(nzoid string) (err error) {
 	u := s.url()
-	u.SetJsonOutput()
+	u.SetJSONOutput()
 	u.Authenticate()
 	u.SetMode("queue")
 	u.v.Set("name", "pause")
@@ -502,7 +504,7 @@ func (s *Sabnzbd) PauseItem(nzoid string) (err error) {
 
 func (s *Sabnzbd) ResumeItem(nzoid string) (err error) {
 	u := s.url()
-	u.SetJsonOutput()
+	u.SetJSONOutput()
 	u.Authenticate()
 	u.SetMode("queue")
 	u.v.Set("name", "resume")
@@ -514,7 +516,7 @@ func (s *Sabnzbd) ResumeItem(nzoid string) (err error) {
 
 func (s *Sabnzbd) GetItemFiles(nzoid string) (files []ItemFile, err error) {
 	u := s.url()
-	u.SetJsonOutput()
+	u.SetJSONOutput()
 	u.Authenticate()
 	u.SetMode("get_files")
 	u.v.Set("value", nzoid)
@@ -525,7 +527,7 @@ func (s *Sabnzbd) GetItemFiles(nzoid string) (files []ItemFile, err error) {
 
 func (s *Sabnzbd) ChangeName(nzoid, name string) (err error) {
 	u := s.url()
-	u.SetJsonOutput()
+	u.SetJSONOutput()
 	u.Authenticate()
 	u.SetMode("queue")
 	u.v.Set("name", "rename")
@@ -538,7 +540,7 @@ func (s *Sabnzbd) ChangeName(nzoid, name string) (err error) {
 
 func (s *Sabnzbd) PausePostProcessing() (err error) {
 	u := s.url()
-	u.SetJsonOutput()
+	u.SetJSONOutput()
 	u.Authenticate()
 	u.SetMode("pause_pp")
 	r := &apiError{}
@@ -548,7 +550,7 @@ func (s *Sabnzbd) PausePostProcessing() (err error) {
 
 func (s *Sabnzbd) ResumePostProcessing() (err error) {
 	u := s.url()
-	u.SetJsonOutput()
+	u.SetJSONOutput()
 	u.Authenticate()
 	u.SetMode("resume_pp")
 	r := &apiError{}
@@ -558,7 +560,7 @@ func (s *Sabnzbd) ResumePostProcessing() (err error) {
 
 func (s *Sabnzbd) DeleteHistory(removeFailedFiles bool, nzos ...string) (err error) {
 	u := s.url()
-	u.SetJsonOutput()
+	u.SetJSONOutput()
 	u.Authenticate()
 	u.SetMode("history")
 	u.v.Set("name", "delete")
@@ -573,7 +575,7 @@ func (s *Sabnzbd) DeleteHistory(removeFailedFiles bool, nzos ...string) (err err
 
 func (s *Sabnzbd) DeleteAllHistory(removeFailedFiles bool) (err error) {
 	u := s.url()
-	u.SetJsonOutput()
+	u.SetJSONOutput()
 	u.Authenticate()
 	u.SetMode("history")
 	u.v.Set("name", "delete")
@@ -588,7 +590,7 @@ func (s *Sabnzbd) DeleteAllHistory(removeFailedFiles bool) (err error) {
 
 func (s *Sabnzbd) DeleteFailedHistory(removeFailedFiles bool) (err error) {
 	u := s.url()
-	u.SetJsonOutput()
+	u.SetJSONOutput()
 	u.Authenticate()
 	u.SetMode("history")
 	u.v.Set("name", "delete")
@@ -603,7 +605,7 @@ func (s *Sabnzbd) DeleteFailedHistory(removeFailedFiles bool) (err error) {
 
 func (s *Sabnzbd) Retry(nzoid string) (err error) {
 	u := s.url()
-	u.SetJsonOutput()
+	u.SetJSONOutput()
 	u.Authenticate()
 	u.SetMode("retry")
 	u.v.Set("value", nzoid)
@@ -614,7 +616,7 @@ func (s *Sabnzbd) Retry(nzoid string) (err error) {
 
 func (s *Sabnzbd) SpeedLimit(kbps int) (err error) {
 	u := s.url()
-	u.SetJsonOutput()
+	u.SetJSONOutput()
 	u.Authenticate()
 	u.SetMode("config")
 	u.v.Set("name", "speedlimit")

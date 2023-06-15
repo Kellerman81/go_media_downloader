@@ -2,28 +2,26 @@ package utils
 
 import (
 	"bytes"
-	"database/sql"
+	"encoding/csv"
 	"errors"
+	"io"
 	"io/fs"
 	"os"
-	"os/exec"
-	"path/filepath"
 	"runtime"
 	"strings"
-	"time"
 
 	"github.com/Kellerman81/go_media_downloader/apiexternal"
-	"github.com/Kellerman81/go_media_downloader/cache"
 	"github.com/Kellerman81/go_media_downloader/config"
 	"github.com/Kellerman81/go_media_downloader/database"
 	"github.com/Kellerman81/go_media_downloader/downloader"
+	"github.com/Kellerman81/go_media_downloader/importfeed"
 	"github.com/Kellerman81/go_media_downloader/logger"
+	"github.com/Kellerman81/go_media_downloader/parser"
 	"github.com/Kellerman81/go_media_downloader/scanner"
 	"github.com/Kellerman81/go_media_downloader/searcher"
-	"github.com/alitto/pond"
+	"github.com/Kellerman81/go_media_downloader/structure"
+	"github.com/Kellerman81/go_media_downloader/worker"
 	"github.com/pelletier/go-toml/v2"
-	"go.uber.org/zap"
-	"golang.org/x/exp/slices"
 )
 
 type feedResults struct {
@@ -31,178 +29,111 @@ type feedResults struct {
 	Movies []string
 }
 
-const countmovies = "select count() from movies where dbmovie_id in (select id from dbmovies where imdb_id = ?) and listname = ? COLLATE NOCASE"
+const (
+	serieepiunmatched = "SerieEpisode not matched episode - serieepisode not found"
+	seriedbunmatched  = "SerieEpisode not matched episode - dbserieepisode not found"
+	jobstarted        = "Started Job"
+	jobended          = "Ended Job"
+)
 
-var errNoList = errors.New("list not found")
-var errNoListEnabled = errors.New("list not enabled")
-var errNoListRead = errors.New("list not readable")
-var errNoListOther = errors.New("list other error")
-var errNoConfig = errors.New("config not found")
-var errwrongtype = errors.New("wrong type")
-
-func jobImportFileCheck(file string, dbtype string) {
-	if scanner.CheckFileExist(file) {
-		return
-	}
-	query := "select id, serie_episode_id from serie_episode_files where location = ?"
-	subquerycount := "select count() from serie_episode_files where serie_episode_id = ?"
-	table := "serie_episode_files"
-	updatetable := "serie_episodes"
-	if dbtype == "movie" {
-		query = "select id, movie_id from movie_files where location = ?"
-		subquerycount = "select count() from movie_files where movie_id = ?"
-		table = "movie_files"
-		updatetable = "movies"
-	}
-	var files []database.DbstaticTwoInt
-	database.QueryStaticColumnsTwoInt(&database.Querywithargs{QueryString: query, Args: []interface{}{file}}, &files)
-	var counter int
-	for idx := range files {
-		logger.Log.GlobalLogger.Debug("File was removed", zap.Stringp("file", &file))
-		if database.DeleteRowStatic(&database.Querywithargs{QueryString: "Delete from " + table + " where id = ?", Args: []interface{}{files[idx].Num1}}) == nil {
-			database.QueryColumn(&database.Querywithargs{QueryString: subquerycount, Args: []interface{}{files[idx].Num2}}, &counter)
-			if counter == 0 {
-				database.UpdateColumnStatic(&database.Querywithargs{QueryString: "Update " + updatetable + " set missing = ? where id = ?", Args: []interface{}{1, files[idx].Num2}})
-			}
-		}
-	}
-	files = nil
-}
+var (
+	lastStructure string
+)
 
 func insertjobhistory(jobtype string, jobgroup string, jobcategory string) int64 {
-	result, err := database.InsertStatic(&database.Querywithargs{QueryString: "Insert into job_histories (job_type, job_group, job_category, started) values (?, ?, ?, ?)", Args: []interface{}{jobtype, jobgroup, jobcategory, logger.SqlTimeGetNow()}})
+	result, err := database.InsertStatic("Insert into job_histories (job_type, job_group, job_category, started) values (?, ?, ?, ?)", jobtype, jobgroup, jobcategory, database.SQLTimeGetNow())
 	if err == nil && result != nil {
-		dbid, err := result.LastInsertId()
-		if err == nil {
-			return dbid
-		} else {
-			logger.Log.GlobalLogger.Debug("error task", zap.Int64("id", dbid), zap.Error(err))
-		}
+		return database.InsertRetID(result)
 	}
 	return 0
 }
 func endjobhistory(id int64) {
-	//logger.Log.GlobalLogger.Debug("Ended task", zap.Int64("id", id))
-	database.UpdateColumnStatic(&database.Querywithargs{QueryString: "Update job_histories set ended = ? where id = ?", Args: []interface{}{logger.SqlTimeGetNow(), id}})
+	database.UpdateColumnStatic(database.QueryUpdateHistory, database.SQLTimeGetNow(), id)
 }
 
 func InitialFillSeries() {
-	logger.Log.GlobalLogger.Info("Starting initial DB fill for series")
+	logger.Log.Info().Msg("Starting initial DB fill for series")
 
+	database.Refreshunmatchedcached("serie_")
+	database.Refreshfilescached("serie_")
 	var dbid int64
-	for _, cfgp := range config.Cfg.Series {
-		dbid = insertjobhistory("feeds", cfgp.Name, "Serie")
-		for idx := range cfgp.Lists {
-			importnewseriessingle(&cfgp, cfgp.Lists[idx].Name)
+	var err error
+	for idxp := range config.SettingsMedia {
+		if !strings.HasPrefix(config.SettingsMedia[idxp].NamePrefix, logger.StrSerie) {
+			continue
+		}
+		dbid = insertjobhistory(logger.StrFeeds, config.SettingsMedia[idxp].Name, logger.StrSeries)
+		for idx2 := range config.SettingsMedia[idxp].Lists {
+			err = importnewseriessingle(config.SettingsMedia[idxp].NamePrefix, config.SettingsMedia[idxp].Lists[idx2].Name)
+
+			if err != nil {
+				logger.Logerror(err, "Import new series failed")
+			}
 		}
 		endjobhistory(dbid)
-		cfgp.Close()
 	}
-	for _, cfgp := range config.Cfg.Series {
-		dbid = insertjobhistory("datafull", cfgp.Name, "Serie")
-		getNewFilesMap(&cfgp, "")
+	for idxp := range config.SettingsMedia {
+		if !strings.HasPrefix(config.SettingsMedia[idxp].NamePrefix, logger.StrSerie) {
+			continue
+		}
+		dbid = insertjobhistory(logger.StrDataFull, config.SettingsMedia[idxp].Name, logger.StrSeries)
+		getNewFilesMap(config.SettingsMedia[idxp].NamePrefix)
 		endjobhistory(dbid)
-		cfgp.Close()
 	}
 }
 
 func InitialFillMovies() {
-	logger.Log.GlobalLogger.Info("Starting initial DB fill for movies")
-	var dbid int64
+	logger.Log.Info().Msg("Starting initial DB fill for movies")
 
-	for _, cfgp := range config.Cfg.Movies {
-		dbid = insertjobhistory("feeds", cfgp.Name, "Movie")
-		for idx := range cfgp.Lists {
-			importnewmoviessingle(&cfgp, cfgp.Lists[idx].Name)
+	database.Refreshunmatchedcached("movie_")
+	database.Refreshfilescached("movie_")
+	var dbid int64
+	var err error
+	for idxp := range config.SettingsMedia {
+		if !strings.HasPrefix(config.SettingsMedia[idxp].NamePrefix, logger.StrMovie) {
+			continue
+		}
+		dbid = insertjobhistory(logger.StrFeeds, config.SettingsMedia[idxp].Name, logger.StrMovie)
+		for idx2 := range config.SettingsMedia[idxp].Lists {
+			err = importnewmoviessingle(config.SettingsMedia[idxp].NamePrefix, config.SettingsMedia[idxp].Lists[idx2].Name)
+			if err != nil {
+				logger.Logerror(err, "Import new movies failed")
+			}
 		}
 		endjobhistory(dbid)
-		cfgp.Close()
 	}
 
-	for _, cfgp := range config.Cfg.Movies {
-		dbid = insertjobhistory("datafull", cfgp.Name, "Movie")
-		getNewFilesMap(&cfgp, "")
+	for idxp := range config.SettingsMedia {
+		if !strings.HasPrefix(config.SettingsMedia[idxp].NamePrefix, logger.StrMovie) {
+			continue
+		}
+		dbid = insertjobhistory(logger.StrDataFull, config.SettingsMedia[idxp].Name, logger.StrMovie)
+		getNewFilesMap(config.SettingsMedia[idxp].NamePrefix)
 		endjobhistory(dbid)
-		cfgp.Close()
 	}
 }
 
 func FillImdb() {
-	group := logger.WorkerPools["Files"].Group()
-	group.Submit(func() {
-		file := "./init_imdb"
-		if runtime.GOOS == "windows" {
-			file = "init_imdb.exe"
-		}
-		cmd := exec.Command(file)
-		var stdoutBuf bytes.Buffer
-		cmd.Stdout = &stdoutBuf
-
-		if scanner.CheckFileExist(file) && cmd.Run() == nil {
-			logger.Log.GlobalLogger.Info(stdoutBuf.String())
+	dbinsert := insertjobhistory(logger.StrData, "RefreshImdb", logger.StrMovie)
+	workergroup := worker.WorkerPoolMetadata.Group()
+	workergroup.Submit(func() {
+		var outputBuf, stdErr bytes.Buffer
+		err := parser.ExecCmd(parser.GetImdbFilename(), new(string), "imdb", &outputBuf, &stdErr)
+		if err == nil {
+			logger.Log.Info().Msg(outputBuf.String())
+			//logger.LogAnyInfo("imdb import", logger.LoggerValue{Name: "output", Value: stdoutBuf.String()})
 			database.CloseImdb()
-			os.Remove("./databases/imdb.db")
-			os.Rename("./databases/imdbtemp.db", "./databases/imdb.db")
-			database.InitImdbdb("info")
+			scanner.RemoveFile("./databases/imdb.db")
+			scanner.RenameFileSimple("./databases/imdbtemp.db", "./databases/imdb.db")
+			database.InitImdbdb()
 		}
-		stdoutBuf.Reset()
-		cmd = nil
+		outputBuf.Reset()
+		stdErr.Reset()
 	})
-	group.Wait()
-}
-func buildparsedstring(m *apiexternal.ParseInfo) string {
-	var bld strings.Builder
-	bld.Grow(200)
-	defer bld.Reset()
-	if m.AudioID != 0 {
-		bld.WriteString(" Audioid: ")
-		bld.WriteString(logger.UintToString(m.AudioID))
+	workergroup.Wait()
+	if dbinsert != 0 {
+		endjobhistory(dbinsert)
 	}
-	if m.CodecID != 0 {
-		bld.WriteString(" Codecid: ")
-		bld.WriteString(logger.UintToString(m.CodecID))
-	}
-	if m.QualityID != 0 {
-		bld.WriteString(" Qualityid: ")
-		bld.WriteString(logger.UintToString(m.QualityID))
-	}
-	if m.ResolutionID != 0 {
-		bld.WriteString(" Resolutionid: ")
-		bld.WriteString(logger.UintToString(m.ResolutionID))
-	}
-	if m.EpisodeStr != "" {
-		bld.WriteString(" Episode: ")
-		bld.WriteString(m.EpisodeStr)
-	}
-	if m.Identifier != "" {
-		bld.WriteString(" Identifier: ")
-		bld.WriteString(m.Identifier)
-	}
-	if m.Listname != "" {
-		bld.WriteString(" Listname: ")
-		bld.WriteString(m.Listname)
-	}
-	if m.SeasonStr != "" {
-		bld.WriteString(" Season: ")
-		bld.WriteString(m.SeasonStr)
-	}
-	if m.Title != "" {
-		bld.WriteString(" Title: ")
-		bld.WriteString(m.Title)
-	}
-	if m.Tvdb != "" {
-		bld.WriteString(" Tvdb: ")
-		bld.WriteString(m.Tvdb)
-	}
-	if m.Imdb != "" {
-		bld.WriteString(" Imdb: ")
-		bld.WriteString(m.Imdb)
-	}
-	if m.Year != 0 {
-		bld.WriteString(" Year: ")
-		bld.WriteString(logger.IntToString(m.Year))
-	}
-	return bld.String()
 }
 
 func (s *feedResults) Close() {
@@ -213,450 +144,709 @@ func (s *feedResults) Close() {
 		return
 	}
 	s.Series.Close()
-	if len(s.Movies) >= 1 {
-		s.Movies = nil
-	}
-	s = nil
+	logger.Clear(&s.Movies)
+	logger.ClearVar(s)
 }
 
-func feeds(cfgp *config.MediaTypeConfig, listname string, cfglist *config.ListsConfig) (*feedResults, error) {
-	if !cfgp.ListsMap[listname].Enabled {
-		logger.Log.GlobalLogger.Debug("Error - Group list not enabled")
-		return nil, errNoListEnabled
+func feeds(cfgpstr string, listname string, templatelist string) (*feedResults, error) {
+
+	i := config.GetMediaListsEntryIndex(cfgpstr, listname)
+	var templateenabled bool
+	if i != -1 {
+		templateenabled = config.SettingsMedia[cfgpstr].Lists[i].Enabled
 	}
-	listTemplateList, listenabled := cfgp.GetTemplateList(listname)
+	if !templateenabled {
+		return nil, logger.ErrDisabled
+	}
+	listTemplateList, listenabled := config.GetTemplateList(cfgpstr, listname)
 	//listmao.Close()
-	if !config.Check("list_" + listTemplateList) {
-		logger.Log.GlobalLogger.Debug("Error - list not found")
-		return nil, errNoList
+	if !config.CheckGroup("list_", listTemplateList) {
+		return nil, errors.New("list template not found")
 	}
 
-	if !listenabled || !cfglist.Enabled {
-		logger.Log.GlobalLogger.Debug("Error - list not enabled")
-		return nil, errNoListEnabled
+	if !listenabled || !config.SettingsList["list_"+templatelist].Enabled {
+		return nil, errors.New("list template disabled")
 	}
 
-	switch cfglist.ListType {
+	var usetraktserie, usetraktmovie string
+	switch config.SettingsList["list_"+templatelist].ListType {
 	case "seriesconfig":
-		content, err := os.ReadFile(cfglist.SeriesConfigFile)
-		if err != nil {
-			logger.Log.GlobalLogger.Error("Error loading config. ", zap.Error(err))
-		}
-		feeddata := new(feedResults)
-		err = toml.Unmarshal(content, &feeddata.Series)
-		if err != nil {
-			logger.Log.GlobalLogger.Error("Error loading config. ", zap.Error(err))
-			return nil, errNoList
-		}
-		return feeddata, nil
+		return getseriesconfig(templatelist)
 	case "traktpublicshowlist":
-		return getTraktUserPublicShowList(listTemplateList, cfglist)
+		return getTraktUserPublicShowList(listTemplateList)
 	case "imdbcsv":
-		return getMissingIMDBMoviesV2(listTemplateList, cfglist)
+		return getimdbcsv(cfgpstr, listname, listTemplateList)
 	case "traktpublicmovielist":
-		return getTraktUserPublicMovieList(listTemplateList, cfglist)
+		return getTraktUserPublicMovieList(listTemplateList)
 	case "traktmoviepopular":
-		return gettractmoviefeeds("popular", cfglist.Limit, listTemplateList)
+		usetraktmovie = "popular"
 	case "traktmovieanticipated":
-		return gettractmoviefeeds("anticipated", cfglist.Limit, listTemplateList)
+		usetraktmovie = "anticipated"
 	case "traktmovietrending":
-		return gettractmoviefeeds("trending", cfglist.Limit, listTemplateList)
+		usetraktmovie = "trending"
 	case "traktseriepopular":
-		return gettractseriefeeds("popular", cfglist.Limit)
+		usetraktserie = "popular"
 	case "traktserieanticipated":
-		return gettractseriefeeds("anticipated", cfglist.Limit)
+		usetraktserie = "anticipated"
 	case "traktserietrending":
-		return gettractseriefeeds("trending", cfglist.Limit)
+		usetraktserie = "trending"
 	case "newznabrss":
-		searchresults, err := (&searcher.Searcher{
-			Cfgp:    cfgp,
-			Quality: cfgp.ListsMap[listname].TemplateQuality,
-		}).GetRSSFeed("movie", cfgp, listname)
+		return getnewznabrss(cfgpstr, listname)
+	default:
+		return nil, errors.New("switch not found")
+	}
+
+	if usetraktmovie != "" {
+		return gettraktmovielist(usetraktmovie, templatelist, listTemplateList)
+	}
+
+	if usetraktserie != "" {
+		return gettraktserielist(usetraktserie, templatelist)
+	}
+
+	return nil, errors.New("feed config not found")
+}
+
+func getseriesconfig(templatelist string) (*feedResults, error) {
+	content, err := os.ReadFile(config.SettingsList["list_"+templatelist].SeriesConfigFile)
+	if err != nil {
+		return nil, errors.New("loading config")
+	}
+	var feeddata feedResults
+	if toml.Unmarshal(content, &feeddata.Series) != nil {
+		return nil, errors.New("unmarshal config")
+	}
+	logger.Clear(&content)
+	return &feeddata, nil
+}
+
+func getimdbcsv(cfgpstr string, listname string, listTemplateList string) (*feedResults, error) {
+	if config.SettingsList["list_"+listTemplateList].URL == "" {
+		return nil, errors.New("no url")
+	}
+	urlv := config.SettingsList["list_"+listTemplateList].URL
+	resp, err := apiexternal.WebClient.Do(logger.HTTPGetRequest(&urlv))
+	if err != nil || resp == nil {
+		return nil, errors.New("csv read")
+	}
+
+	defer resp.Body.Close()
+
+	parserimdb := csv.NewReader(resp.Body)
+	parserimdb.ReuseRecord = true
+
+	d := feedResults{Movies: make([]string, 0, logger.GlobalCounter[config.SettingsList["list_"+listTemplateList].URL])}
+	cfglist := config.GetMediaListsEntryIndex(cfgpstr, listname)
+	var listnamefilter string
+	var args []interface{}
+	if len(config.SettingsMedia[cfgpstr].Lists[cfglist].IgnoreMapLists) >= 1 {
+		args = config.SettingsMedia[cfgpstr].Lists[cfglist].IgnoreMapListsInt
+		listnamefilter = "listname in (" + logger.StringsRepeat("?", ",?", len(config.SettingsMedia[cfgpstr].Lists[cfglist].IgnoreMapLists)-1) + ")"
+	}
+	var record []string
+	//var movieid, ti int
+	//var foundmovie, allowed bool
+
+	var movieid int
+	var foundmovie bool
+	var allowed bool
+	for {
+		record, err = parserimdb.Read()
+		if err == io.EOF {
+			break
+		}
 		if err != nil {
-			return nil, err
+			return nil, errors.New("failed to get row")
 		}
-		for idxres := range searchresults.Nzbs {
-			logger.Log.GlobalLogger.Debug("nzb found - start downloading", zap.Stringp("url", &searchresults.Nzbs[idxres].NZB.Title))
-			if searchresults.Nzbs[idxres].NzbmovieID != 0 {
-				downloader.DownloadMovie(cfgp, searchresults.Nzbs[idxres].NzbmovieID, &searchresults.Nzbs[idxres])
-			} else if searchresults.Nzbs[idxres].NzbepisodeID != 0 {
-				downloader.DownloadSeriesEpisode(cfgp, searchresults.Nzbs[idxres].NzbepisodeID, &searchresults.Nzbs[idxres])
+		if record[1] == "" || record[1] == "Const" || record[1] == "tconst" {
+			continue
+		}
+		movieid = 0
+		if config.SettingsGeneral.UseMediaCache {
+			ti := logger.IndexFunc(&database.CacheDBMovie, func(elem database.DbstaticThreeStringOneInt) bool {
+				return strings.EqualFold(elem.Str3, record[1])
+			})
+			if ti != -1 {
+				movieid = database.CacheDBMovie[ti].Num1
 			}
+		} else {
+			movieid = database.QueryIntColumn(database.QueryDbmoviesGetIDByImdb, &record[1])
 		}
-		searchresults.Close()
-		return nil, errNoList
-	}
+		//movieid := cache.GetFunc(logger.GlobalCache, "dbmovies_cached", func(elem database.DbstaticThreeStringOneInt) bool { return strings.EqualFold(elem.Str3, record[1]) }).Num1
 
-	logger.Log.GlobalLogger.Error("Feed Config not found", zap.String("template", listTemplateList), zap.String("type", listname))
-	return nil, errNoConfig
+		if movieid != 0 {
+			foundmovie = false
+			if config.SettingsGeneral.UseMediaCache {
+				foundmovie = logger.IndexFunc(&database.CacheMovie, func(elem database.DbstaticOneStringOneInt) bool {
+					return elem.Num == movieid && strings.EqualFold(elem.Str, listname)
+				}) != -1
+			} else {
+				foundmovie = database.QueryIntColumn("select count() from movies where dbmovie_id = ? and listname = ? COLLATE NOCASE", &movieid, &listname) >= 1
+			}
+			if !foundmovie && len(config.SettingsMedia[cfgpstr].Lists[cfglist].IgnoreMapLists) >= 1 {
+				if config.SettingsGeneral.UseMediaCache {
+					foundmovie = logger.IndexFunc(&database.CacheMovie, func(elem database.DbstaticOneStringOneInt) bool {
+						return elem.Num == movieid && logger.ContainsStringsI(&config.SettingsMedia[cfgpstr].Lists[cfglist].IgnoreMapLists, elem.Str)
+					}) != -1
+				} else if listnamefilter != "" {
+					foundmovie = database.QueryIntColumn("select count() from movies where dbmovie_id = ? and "+listnamefilter, append([]interface{}{&movieid}, args...)...) >= 1
+				}
+			}
+			if foundmovie {
+				continue
+			}
+		} else {
+			logger.Log.Debug().Str("imdb", record[1]).Msg("dbmovie not found in cache")
+		}
+		allowed, _ = importfeed.AllowMovieImport(&record[1], config.SettingsMedia[cfgpstr].Lists[cfglist].TemplateList)
+		if allowed {
+			d.Movies = append(d.Movies, record[1])
+		}
+	}
+	logger.GlobalCounter[config.SettingsList["list_"+listTemplateList].URL] = len(d.Movies)
+	logger.ClearVar(parserimdb)
+	logger.Clear(&args)
+	logger.Clear(&record)
+	logger.Log.Info().Int("entries to parse", len(d.Movies)).Str("url", config.SettingsList["list_"+listTemplateList].URL).Msg("imdb list fetched")
+	//logger.LogAnyInfo("imdb list fetched", logger.LoggerValue{Name: "entries to parse", Value: len(d.Movies)}, logger.LoggerValue{Name: "url", Value: config.SettingsList["list_"+listTemplateList].URL})
+	return &d, nil
 }
 
-func getmovietraktdata(traktlist string, limit int) (*apiexternal.TraktMovieGroup, error) {
-	switch traktlist {
+func getnewznabrss(cfgpstr string, listname string) (*feedResults, error) {
+	i := config.GetMediaListsEntryIndex(cfgpstr, listname)
+	var templatequality string
+	if i != -1 {
+		templatequality = config.SettingsMedia[cfgpstr].Lists[i].TemplateQuality
+	}
+	search := searcher.NewSearcher(cfgpstr, templatequality, "", "", 0)
+	defer search.Close()
+	searchresults, err := search.GetRSSFeed(logger.StrMovie, listname)
+	if err != nil {
+		return nil, err
+	}
+	for idxres := range searchresults.Accepted {
+		logger.Log.Debug().Str(logger.StrURL, searchresults.Accepted[idxres].NZB.Title).Msg("nzb found - start downloading")
+		if searchresults.Accepted[idxres].NzbmovieID != 0 {
+			downloader.DownloadMovie(cfgpstr, searchresults.Accepted[idxres].NzbmovieID, &searchresults.Accepted[idxres])
+		} else if searchresults.Accepted[idxres].NzbepisodeID != 0 {
+			downloader.DownloadSeriesEpisode(cfgpstr, searchresults.Accepted[idxres].NzbepisodeID, &searchresults.Accepted[idxres])
+		}
+	}
+	searchresults.Close()
+	return &feedResults{}, nil
+}
+
+func getraktapimovielist(usetraktmovie string, cfglistlimit int) (*[]apiexternal.TraktMovie, error) {
+	switch usetraktmovie {
 	case "popular":
-		return apiexternal.TraktAPI.GetMoviePopular(limit)
+		return apiexternal.TraktAPI.GetMoviePopular(cfglistlimit)
 	case "trending":
-		return apiexternal.TraktAPI.GetMovieTrending(limit)
+		return apiexternal.TraktAPI.GetMovieTrending(cfglistlimit)
 	case "anticipated":
-		return apiexternal.TraktAPI.GetMovieAnticipated(limit)
-	default:
-		return nil, errwrongtype
+		return apiexternal.TraktAPI.GetMovieAnticipated(cfglistlimit)
 	}
+	return nil, nil
 }
-func gettractmoviefeeds(traktlist string, limit int, templateList string) (*feedResults, error) {
-	traktpopular, _ := getmovietraktdata(traktlist, limit)
 
-	if traktpopular == nil {
-		return nil, errwrongtype
+func gettraktmovielist(usetraktmovie string, templatelist string, listTemplateList string) (*feedResults, error) {
+	traktpopular, _ := getraktapimovielist(usetraktmovie, config.SettingsList["list_"+templatelist].Limit)
+
+	if traktpopular == nil || len(*traktpopular) == 0 {
+		return nil, logger.Errwrongtype
 	}
-	results := &feedResults{Movies: make([]string, 0, len(traktpopular.Movies))}
-
+	results := feedResults{Movies: make([]string, 0, len(*traktpopular))}
 	var countermovie int
-	for idx := range traktpopular.Movies {
-		if traktpopular.Movies[idx].Ids.Imdb != "" {
-			database.QueryColumn(&database.Querywithargs{QueryString: countmovies, Args: []interface{}{traktpopular.Movies[idx].Ids.Imdb, templateList}}, &countermovie)
+	for idx := range *traktpopular {
+		if (*traktpopular)[idx].Ids.Imdb != "" {
+			countermovie = database.QueryIntColumn("select count() from movies where dbmovie_id in (select id from dbmovies where imdb_id = ?) and listname = ? COLLATE NOCASE", &(*traktpopular)[idx].Ids.Imdb, &listTemplateList)
 			if countermovie == 0 {
-				results.Movies = append(results.Movies, traktpopular.Movies[idx].Ids.Imdb)
+				results.Movies = append(results.Movies, (*traktpopular)[idx].Ids.Imdb)
 			}
 		}
 	}
-	traktpopular.Close()
-	return results, nil
+	logger.Clear(traktpopular)
+	return &results, nil
 }
 
-func getserietraktdata(traktlist string, limit int) (*apiexternal.TraktSerieGroup, error) {
-	switch traktlist {
+func gettraktapiserielist(usetraktserie string, cfglistlimit int) (*[]apiexternal.TraktSerie, error) {
+	switch usetraktserie {
 	case "popular":
-		return apiexternal.TraktAPI.GetSeriePopular(limit)
+		return apiexternal.TraktAPI.GetSeriePopular(cfglistlimit)
 	case "trending":
-		return apiexternal.TraktAPI.GetSerieTrending(limit)
+		return apiexternal.TraktAPI.GetSerieTrending(cfglistlimit)
 	case "anticipated":
-		return apiexternal.TraktAPI.GetSerieAnticipated(limit)
-	default:
-		return nil, errwrongtype
+		return apiexternal.TraktAPI.GetSerieAnticipated(cfglistlimit)
 	}
+	return nil, nil
 }
-func gettractseriefeeds(traktlist string, limit int) (*feedResults, error) {
-	traktpopular, _ := getserietraktdata(traktlist, limit)
+func gettraktserielist(usetraktserie string, templatelist string) (*feedResults, error) {
+	traktpopular, _ := gettraktapiserielist(usetraktserie, config.SettingsList["list_"+templatelist].Limit)
 
-	if traktpopular == nil {
-		return nil, errwrongtype
+	if traktpopular == nil || len(*traktpopular) == 0 {
+		return nil, logger.Errwrongtype
 	}
-	results := new(feedResults)
-	for idx := range traktpopular.Series {
+	results := feedResults{Series: config.MainSerieConfig{Serie: make([]config.SerieConfig, 0, len(*traktpopular))}}
+	//var results feedResults
+	for idx := range *traktpopular {
 		results.Series.Serie = append(results.Series.Serie, config.SerieConfig{
-			Name: traktpopular.Series[idx].Title, TvdbID: traktpopular.Series[idx].Ids.Tvdb,
+			Name: (*traktpopular)[idx].Title, TvdbID: (*traktpopular)[idx].Ids.Tvdb,
 		})
 	}
-	traktpopular.Close()
-	return results, nil
+	logger.Clear(traktpopular)
+	return &results, nil
 }
 
-func getNewFilesMap(cfgp *config.MediaTypeConfig, checklist string) {
-	table := "movie_file_unmatcheds"
-	tablefiles := "movie_files"
-	typestring := "movies"
-	if strings.HasPrefix(cfgp.NamePrefix, "serie") {
-		table = "serie_file_unmatcheds"
-		tablefiles = "serie_episode_files"
-		typestring = "series"
-	}
+func getNewFilesMap(cfgpstr string) {
 
-	var unmatchedcache *cache.Return
-	if !logger.GlobalCache.CheckNoType(table + "_cached") {
-		unmatchedpaths := logger.InStringArrayStruct{}
-		queryunmatched := "select filepath from " + table + " where (last_checked > ? or last_checked is null)"
-		queryunmatchedcount := "select count() from " + table + " where (last_checked > ? or last_checked is null)"
-		database.QueryStaticStringArray(false,
-			database.CountRowsStaticNoError(&database.Querywithargs{QueryString: queryunmatchedcount, Args: []interface{}{sql.NullTime{Time: logger.TimeGetNow().Add(time.Hour * -12), Valid: true}}}),
-			&database.Querywithargs{QueryString: queryunmatched, Args: []interface{}{sql.NullTime{Time: logger.TimeGetNow().Add(time.Hour * -12), Valid: true}}},
-			&unmatchedpaths.Arr)
-		logger.GlobalCache.Set(table+"_cached", unmatchedpaths, 3*time.Hour, false)
-		unmatchedcache = new(cache.Return)
-		unmatchedcache.Value = unmatchedpaths
-		unmatchedpaths.Close()
-	} else {
-		unmatchedcache = logger.GlobalCache.GetData(table + "_cached")
-	}
-
-	var unwantedcache *cache.Return
-	if !logger.GlobalCache.CheckNoType(tablefiles + "_cached") {
-		unwantedpaths := logger.InStringArrayStruct{}
-		database.QueryStaticStringArray(false,
-			database.CountRowsStaticNoError(&database.Querywithargs{QueryString: "select count() from " + tablefiles}),
-			&database.Querywithargs{QueryString: "select location from " + tablefiles},
-			&unwantedpaths.Arr)
-		logger.GlobalCache.Set(tablefiles+"_cached", unwantedpaths, 3*time.Hour, false)
-		unwantedcache = new(cache.Return)
-		unwantedcache.Value = unwantedpaths
-		unwantedpaths.Close()
-	} else {
-		unwantedcache = logger.GlobalCache.GetData(tablefiles + "_cached")
-	}
-
-	workergroup := logger.WorkerPools["Parse"].Group()
-	for idx := range cfgp.Data {
-		if !config.Check("path_" + cfgp.Data[idx].TemplatePath) {
-			logger.Log.Warn("Config not found ", cfgp.Data[idx].TemplatePath)
+	workergroup := worker.WorkerPoolParse.Group()
+	var added int
+	var path string
+	for idx := range config.SettingsMedia[cfgpstr].Data {
+		if !config.CheckGroup("path_", config.SettingsMedia[cfgpstr].Data[idx].TemplatePath) {
+			//logger.LogerrorStr(nil, "template", config.SettingsMedia[cfgpstr].Data[idx].TemplatePath, "config not found")
+			logger.Log.Error().Err(nil).Str("template", config.SettingsMedia[cfgpstr].Data[idx].TemplatePath).Msg("config not found")
 			continue
 		}
-		if !scanner.CheckFileExist(config.Cfg.Paths[cfgp.Data[idx].TemplatePath].Path) {
+		path = config.SettingsPath["path_"+config.SettingsMedia[cfgpstr].Data[idx].TemplatePath].Path
+		if !scanner.CheckFileExist(&path) {
+			logger.Log.Debug().Str(logger.StrPath, path).Str("template", config.SettingsMedia[cfgpstr].Data[idx].TemplatePath).Msg("path not found")
 			continue
 		}
-		cfgpath := config.Cfg.Paths[cfgp.Data[idx].TemplatePath]
-		//var pathdir string
-		filepath.WalkDir(cfgpath.Path, WalkDataDir(workergroup, cfgp.Data[idx].TemplatePath, cfgp, &cfgpath, cfgp.Data[idx].AddFoundList, cfgp.Data[idx].AddFound, typestring, unmatchedcache, unwantedcache))
-		cfgpath.Close()
+		addfoundlist := config.SettingsMedia[cfgpstr].Data[idx].AddFoundList
+		addfound := config.SettingsMedia[cfgpstr].Data[idx].AddFound
+		scanner.WalkdirProcess(path, true, func(file *string, _ *fs.DirEntry) error {
+			if !scanner.Filterfile(file, false, config.SettingsMedia[cfgpstr].Data[idx].TemplatePath) {
+				return nil
+			}
+			if structure.CheckUnmatched(cfgpstr, file) {
+				return nil
+			}
+			if structure.CheckFiles(cfgpstr, file) {
+				return nil
+			}
+			pathv := *file
+			if cfgpstr[:5] == logger.StrSerie {
+				added++
+				workergroup.Submit(func() {
+					err := jobImportSeriesParseV2(pathv, true, cfgpstr, addfoundlist)
+					if err != nil {
+						//logger.LogAnyError(err, "Error Importing Serie", logger.LoggerValue{Name: path, Value: pathv})
+						logger.Log.Error().Err(err).Str("Path", pathv).Msg("Error Importing Serie")
+					}
+				})
+			} else {
+				added++
+				workergroup.Submit(func() {
+					err := jobImportMovieParseV2(pathv, true, cfgpstr, addfoundlist, addfound)
+					if err != nil && err.Error() != "movie ignored" {
+						//logger.LogAnyError(err, "Error Importing Movie", logger.LoggerValue{Name: path, Value: pathv})
+						logger.Log.Error().Err(err).Str("Path", pathv).Msg("Error Importing Movie")
+					}
+				})
+			}
+			return nil
+		})
 	}
-	workergroup.Wait()
-	unmatchedcache = nil
-	unwantedcache = nil
-}
-
-func WalkDataDir(workergroup *pond.TaskGroup, pathcfgstr string, cfgp *config.MediaTypeConfig, cfgpath *config.PathsConfig, addfoundlist string, addfound bool, typestring string, unmatcheddb *cache.Return, unwantedpaths *cache.Return) func(path string, info fs.DirEntry, errwalk error) error {
-	return func(path string, info fs.DirEntry, errwalk error) error {
-		if errwalk != nil {
-			return errwalk
-		}
-		if info.IsDir() {
-			return nil
-		}
-		extlower := filepath.Ext(path)
-		var ok bool
-
-		if slices.ContainsFunc(cfgpath.AllowedVideoExtensionsIn.Arr, func(c string) bool { return strings.EqualFold(c, extlower) }) {
-			ok = true
-		}
-
-		if len(cfgpath.AllowedVideoExtensionsNoRenameIn.Arr) >= 1 && !ok {
-			if slices.ContainsFunc(cfgpath.AllowedVideoExtensionsNoRenameIn.Arr, func(c string) bool { return strings.EqualFold(c, extlower) }) {
-				ok = true
-			}
-		}
-
-		if len(cfgpath.AllowedVideoExtensionsNoRenameIn.Arr) == 0 && len(cfgpath.AllowedVideoExtensionsIn.Arr) == 0 && !ok {
-			ok = true
-		}
-
-		//Check IgnoredPaths
-
-		if len(cfgpath.BlockedLowerIn.Arr) >= 1 && ok {
-			if logger.InStringArrayContainsCaseInSensitive(path, &cfgpath.BlockedLowerIn) {
-				ok = false
-			}
-		}
-		//if lenblock >= 1 && ok && logger.InStringArrayContainsCaseInSensitive(path, &cfgpath.BlockedLowerIn) {
-		//	return nil
-		//}
-		if !ok {
-			return nil
-		}
-		if slices.Contains(unmatcheddb.Value.(logger.InStringArrayStruct).Arr, path) {
-			return nil
-		}
-		if slices.Contains(unwantedpaths.Value.(logger.InStringArrayStruct).Arr, path) {
-			return nil
-		}
-		if typestring == "series" {
-			workergroup.Submit(func() {
-				jobImportSeriesParseV2(path, true, cfgp, addfoundlist, false)
-			})
-		} else {
-			workergroup.Submit(func() {
-				jobImportMovieParseV2(path, true, cfgp, addfoundlist, addfound)
-			})
-		}
-		return nil
+	if added >= 1 {
+		workergroup.Wait()
 	}
 }
 
 func SingleJobs(typ string, job string, cfgpstr string, listname string, force bool) {
-	cfgp := config.Cfg.Media[cfgpstr]
-	defer cfgp.Close()
-	jobName := job
-	if cfgp.Name != "" {
-		jobName += "_" + cfgp.NamePrefix
-	}
-	if listname != "" {
-		jobName += "_" + listname
-	}
 
-	if config.Cfg.General.SchedulerDisabled && !force {
-		logger.Log.GlobalLogger.Info("Skipped Job", zap.String("Job", job), zap.String("config", cfgp.NamePrefix))
+	if config.SettingsGeneral.SchedulerDisabled && !force {
+		logger.Log.Info().Str(logger.StrJob, job).Msg("skipped job")
 		return
 	}
 
-	logger.Log.GlobalLogger.Info(jobstarted, zap.Stringp("Job", &jobName))
+	logjob(cfgpstr, job, listname, jobstarted)
 
-	category := "Movie"
-	if typ != "movie" {
-		category = "Serie"
-	}
-	dbinsert := insertjobhistory(job, cfgp.NamePrefix, category)
-
-	searchmissingIncremental := cfgp.SearchmissingIncremental
-	searchupgradeIncremental := cfgp.SearchupgradeIncremental
-	if searchmissingIncremental == 0 {
-		searchmissingIncremental = 20
-	}
-	if searchupgradeIncremental == 0 {
-		searchupgradeIncremental = 20
-	}
-	var search, searchtitle, searchmissing bool
-	var searchinterval int
-	switch job {
-	case "datafull":
-		getNewFilesMap(&cfgp, "")
-	case "searchmissingfull":
-		search = true
-		searchmissing = true
-	case "searchmissinginc":
-		search = true
-		searchmissing = true
-		searchinterval = searchmissingIncremental
-	case "searchupgradefull":
-		search = true
-	case "searchupgradeinc":
-		search = true
-		searchinterval = searchupgradeIncremental
-	case "searchmissingfulltitle":
-		search = true
-		searchmissing = true
-		searchtitle = true
-	case "searchmissinginctitle":
-		search = true
-		searchmissing = true
-		searchtitle = true
-		searchinterval = searchmissingIncremental
-	case "searchupgradefulltitle":
-		search = true
-		searchtitle = true
-	case "searchupgradeinctitle":
-		search = true
-		searchtitle = true
-		searchinterval = searchupgradeIncremental
-	case "structure":
-		structurefolders(&cfgp, typ)
-
+	category := logger.StrSeries
+	if typ == logger.StrMovie {
+		category = logger.StrMovie
 	}
 
-	if search {
-		if typ == "movie" {
-			searcher.Searchlist(&cfgp, "movies", searchtitle, searcher.SearchMovie(&cfgp, searchmissing, searchinterval, searchtitle))
+	var jobprefix string
+	if cfgpstr != "" {
+		jobprefix = config.SettingsMedia[cfgpstr].NamePrefix
+	}
+	dbinsert := insertjobhistory(job, jobprefix, category)
+
+	if job == logger.StrData || job == logger.StrRss || job == logger.StrReachedFlag || job == logger.StrClearHistory || job == logger.StrFeeds || job == logger.StrCheckMissing || job == logger.StrCheckMissingFlag {
+		qualis := make([]string, 0, len(config.SettingsMedia[cfgpstr].Lists)/2)
+
+		if listname != "" {
+			runjoblistfunc(job, cfgpstr, listname, typ)
 		} else {
-			searcher.Searchlist(&cfgp, "serie_episodes", searchtitle, searcher.SearchSerie(&cfgp, searchmissing, searchinterval, searchtitle))
-		}
-	}
-
-	if job == "data" {
-		for _, list := range getjoblists(&cfgp, listname) {
-			getNewFilesMap(&cfgp, list.Name)
-		}
-	}
-
-	if job == "rss" || job == "checkreachedflag" || job == "clearhistory" || job == "feeds" || job == "checkmissing" || job == "checkmissingflag" {
-		qualis := new(logger.InStringArrayStruct)
-
-		for _, list := range getjoblists(&cfgp, listname) {
-			if job == "rss" && !slices.Contains(qualis.Arr, list.TemplateQuality) {
-				qualis.Arr = append(qualis.Arr, list.TemplateQuality)
-			}
-			switch job {
-			case "checkmissing":
-				checkmissing(typ, list.Name)
-			case "checkmissingflag":
-				checkmissingflag(typ, list.Name)
-			case "checkreachedflag":
-				if typ == "movie" {
-					checkreachedmoviesflag(&cfgp, list.Name)
-				} else {
-					checkreachedepisodesflag(&cfgp, list.Name)
+			var breakv bool
+			for idx := range config.SettingsMedia[cfgpstr].Lists {
+				if job == logger.StrRss {
+					breakv = false
+					for idxi := range qualis {
+						if qualis[idxi] == config.SettingsMedia[cfgpstr].Lists[idx].TemplateQuality {
+							breakv = true
+							break
+						}
+					}
+					if !breakv {
+						qualis = append(qualis, config.SettingsMedia[cfgpstr].Lists[idx].TemplateQuality)
+					}
 				}
-			case "clearhistory":
-				if typ == "movie" {
-					database.DeleteRow("movie_histories", &database.Querywithargs{Query: database.Query{Where: "movie_id in (Select id from movies where listname = ? COLLATE NOCASE)"}, Args: []interface{}{list.Name}})
-				} else {
-					database.DeleteRow("serie_episode_histories", &database.Querywithargs{Query: database.Query{Where: "serie_id in (Select id from series where listname = ? COLLATE NOCASE)"}, Args: []interface{}{list.Name}})
-				}
-			case "feeds":
-				if typ == "movie" {
-					importnewmoviessingle(&cfgp, list.Name)
-				} else {
-					importnewseriessingle(&cfgp, list.Name)
-				}
+				runjoblistfunc(job, cfgpstr, config.SettingsMedia[cfgpstr].Lists[idx].Name, typ)
 			}
 		}
-		if job == "rss" {
-			if typ == "movie" {
-				for idx := range qualis.Arr {
-					searcher.SearchMovieRSS(&cfgp, qualis.Arr[idx])
+
+		if job == logger.StrRss {
+			database.Refreshhistorycache(typ)
+			var results *searcher.SearchResults
+			var err error
+			for idx := range qualis {
+				results, err = searcher.SearchRSS(cfgpstr, qualis[idx], category, false)
+				if err != nil && err != logger.ErrDisabled {
+					//logger.LogAnyError(err, "Search RSS Failed", logger.LoggerValue{Name: "quality", Value: qualis[idx]}, logger.LoggerValue{Name: "typ", Value: typ})
+					logger.Log.Error().Err(err).Str("quality", qualis[idx]).Str("typ", typ).Msg("Search RSS Failed")
+				} else {
+					if results != nil && len(results.Accepted) >= 1 {
+						results.Download(category, cfgpstr)
+					}
 				}
-			} else {
-				for idx := range qualis.Arr {
-					searcher.SearchSerieRSS(&cfgp, qualis.Arr[idx])
-				}
+				results.Close()
 			}
 		}
-		qualis.Close()
+		logger.Clear(&qualis)
+	} else {
+		runjoblistfunc(job, cfgpstr, "", typ)
 	}
 	if dbinsert != 0 {
 		endjobhistory(dbinsert)
 	}
-	logger.Log.GlobalLogger.Info(jobended, zap.Stringp("Job", &job), zap.Stringp("config", &cfgp.NamePrefix))
+	logjob(cfgpstr, job, listname, jobended)
+}
+
+func logjob(cfgpstr string, job string, listname string, msg string) {
+	//logger.LogAnyInfo(msg, logger.LoggerValue{Name: "cfg", Value: cfgpstr}, logger.LoggerValue{Name: "list", Value: listname}, logger.LoggerValue{Name: "Routines", Value: runtime.NumGoroutine()})
+	logger.Log.Info().Str("cfg", cfgpstr).Str(logger.StrJob, job).Str("list", listname).Int("Num Goroutines", runtime.NumGoroutine()).Msg(msg)
+}
+func getintervals(cfgpstr string, missing bool) (int, int) {
+
+	if len(config.SettingsMedia[cfgpstr].Data) >= 1 {
+		if !config.CheckGroup("path_", config.SettingsMedia[cfgpstr].Data[0].TemplatePath) {
+			return 0, 0
+		}
+		if missing {
+			return config.SettingsPath["path_"+config.SettingsMedia[cfgpstr].Data[0].TemplatePath].MissingScanInterval, config.SettingsPath["path_"+config.SettingsMedia[cfgpstr].Data[0].TemplatePath].MissingScanReleaseDatePre
+		}
+		return config.SettingsPath["path_"+config.SettingsMedia[cfgpstr].Data[0].TemplatePath].UpgradeScanInterval, 0
+	}
+	return 0, 0
+}
+func runjoblistfunc(job string, cfgpstr string, listname string, typ string) {
+	if typ == logger.StrMovie {
+		database.RefreshMoviesCache()
+		database.Refreshmoviestitlecache()
+	} else {
+		database.Refreshseriestitlecache()
+	}
+	var searchinterval int
+	switch job {
+	case logger.StrData, logger.StrDataFull:
+		if cfgpstr == "" {
+			return
+		}
+		database.Refreshunmatchedcached(cfgpstr)
+		database.Refreshfilescached(cfgpstr)
+		getNewFilesMap(cfgpstr)
+	case logger.StrCheckMissing:
+		checkmissing(typ, listname)
+	case "cleanqueue":
+		worker.Cleanqueue()
+	case logger.StrCheckMissingFlag:
+		checkmissingflag(typ, listname)
+	case logger.StrReachedFlag:
+		if cfgpstr == "" {
+			return
+		}
+		if typ == logger.StrMovie {
+			checkreachedmoviesflag(cfgpstr, listname)
+		} else {
+			checkreachedepisodesflag(cfgpstr, listname)
+		}
+	case logger.StrStructure:
+		if cfgpstr == "" {
+			return
+		}
+		structurefolders(cfgpstr, typ)
+	case logger.StrRssSeasons:
+		if cfgpstr == "" {
+			return
+		}
+		database.Refreshhistorycache(typ)
+		searcher.SearchSeriesRSSSeasons(cfgpstr)
+	case logger.StrRssSeasonsAll:
+		if cfgpstr == "" {
+			return
+		}
+		database.Refreshhistorycache(typ)
+		searcher.SearchSeriesRSSSeasonsAll(cfgpstr)
+	case "refreshinc":
+		if typ == logger.StrMovie {
+			RefreshMoviesInc()
+		} else {
+			RefreshSeriesInc()
+		}
+	case "refresh":
+		if typ == logger.StrMovie {
+			RefreshMovies()
+		} else {
+			RefreshSeries()
+		}
+	case logger.StrClearHistory:
+		if typ == logger.StrMovie {
+			database.DeleteRow(false, "movie_histories", "movie_id in (Select id from movies where listname = ? COLLATE NOCASE)", &listname)
+		} else {
+			database.DeleteRow(false, "serie_episode_histories", "serie_id in (Select id from series where listname = ? COLLATE NOCASE)", &listname)
+		}
+	case logger.StrFeeds:
+		if cfgpstr == "" {
+			return
+		}
+		var err error
+		if typ == logger.StrMovie {
+			err = importnewmoviessingle(cfgpstr, listname)
+		} else {
+			err = importnewseriessingle(cfgpstr, listname)
+		}
+		if err != nil {
+			logger.Log.Error().Err(err).Str("Listname", listname).Msg("import feeds failed")
+		}
+	case logger.StrRss:
+		database.Refreshhistorycache(typ)
+	case logger.StrSearchMissingFull:
+		if cfgpstr == "" {
+			return
+		}
+		runjobsearch(typ, cfgpstr, true, 0, false)
+	case logger.StrSearchMissingInc:
+		if cfgpstr == "" {
+			return
+		}
+		searchinterval = config.SettingsMedia[cfgpstr].SearchmissingIncremental
+		if searchinterval == 0 {
+			searchinterval = 20
+		}
+		runjobsearch(typ, cfgpstr, true, searchinterval, false)
+	case logger.StrSearchUpgradeFull:
+		if cfgpstr == "" {
+			return
+		}
+		runjobsearch(typ, cfgpstr, false, 0, false)
+	case logger.StrSearchUpgradeInc:
+		if cfgpstr == "" {
+			return
+		}
+		searchinterval = config.SettingsMedia[cfgpstr].SearchupgradeIncremental
+		if searchinterval == 0 {
+			searchinterval = 20
+		}
+		runjobsearch(typ, cfgpstr, false, searchinterval, false)
+	case logger.StrSearchMissingFullTitle:
+		if cfgpstr == "" {
+			return
+		}
+		runjobsearch(typ, cfgpstr, true, 0, true)
+	case logger.StrSearchMissingIncTitle:
+		if cfgpstr == "" {
+			return
+		}
+		searchinterval = config.SettingsMedia[cfgpstr].SearchmissingIncremental
+		if searchinterval == 0 {
+			searchinterval = 20
+		}
+		runjobsearch(typ, cfgpstr, true, searchinterval, true)
+	case logger.StrSearchUpgradeFullTitle:
+		if cfgpstr == "" {
+			return
+		}
+		runjobsearch(typ, cfgpstr, false, 0, true)
+	case logger.StrSearchUpgradeIncTitle:
+		if cfgpstr == "" {
+			return
+		}
+		searchinterval = config.SettingsMedia[cfgpstr].SearchupgradeIncremental
+		if searchinterval == 0 {
+			searchinterval = 20
+		}
+		runjobsearch(typ, cfgpstr, false, searchinterval, true)
+	default:
+		logger.Log.Error().Err(nil).Str(logger.StrJob, job).Msg("Switch not found")
+	}
+}
+
+func runjobsearch(typ string, cfgpstr string, searchmissing bool, searchinterval int, searchtitle bool) {
+	database.Refreshhistorycache(typ)
+	scaninterval, scandatepre := getintervals(cfgpstr, searchmissing)
+	var q database.Querywithargs
+	q.DontCache = true
+
+	args := config.SettingsMedia[cfgpstr].ListsInt
+	listcount := len(args)
+	if searchinterval >= 1 {
+		q.Limit = searchinterval
+	}
+
+	if typ == logger.StrMovie {
+		q.Table = "movies"
+		q.Select = "movies.id"
+		q.InnerJoin = "dbmovies on dbmovies.id=movies.dbmovie_id"
+		q.OrderBy = "movies.Lastscan asc"
+
+		if searchmissing {
+			q.Where = "dbmovies.year != 0 and movies.missing = 1 and movies.listname in (" + logger.StringsRepeat("?", ",?", listcount-1) + ")"
+		} else {
+			q.Where = "dbmovies.year != 0 and quality_reached = 0 and missing = 0 and listname in (" + logger.StringsRepeat("?", ",?", listcount-1) + ")"
+		}
+		if scaninterval != 0 {
+			q.Where += " and (movies.lastscan is null or movies.Lastscan < ?)"
+			args = append(args, logger.TimeGetNow().AddDate(0, 0, 0-scaninterval))
+		}
+		if scandatepre != 0 {
+			q.Where += " and (dbmovies.release_date < ? or dbmovies.release_date is null)"
+			args = append(args, logger.TimeGetNow().AddDate(0, 0, 0+scandatepre))
+		}
+		//searcher.SearchMovie(cfgpstr, searchmissing, searchinterval, searchtitle)
+	} else {
+		q.Table = "serie_episodes"
+		q.Select = "serie_episodes.id"
+		q.OrderBy = "Lastscan asc"
+		q.InnerJoin = "dbserie_episodes on dbserie_episodes.id=serie_episodes.dbserie_episode_id inner join series on series.id=serie_episodes.serie_id"
+
+		if searchmissing {
+			q.Where = "serie_episodes.missing = 1 and ((dbserie_episodes.season != '0' and series.search_specials=0) or (series.search_specials=1)) and series.listname in (" + logger.StringsRepeat("?", ",?", listcount-1) + ") and serie_episodes.dbserie_episode_id in (select id from dbserie_episodes group by dbserie_id, identifier having count() = 1)"
+		} else {
+			q.Where = database.QuerySearchSeriesUpgrade + " in (" + logger.StringsRepeat("?", ",?", listcount-1) + ")"
+		}
+		if scaninterval != 0 {
+			q.Where += " and (serie_episodes.lastscan is null or serie_episodes.lastscan < ?)"
+			args = append(args, logger.TimeGetNow().AddDate(0, 0, 0-scaninterval))
+			if scandatepre != 0 {
+				q.Where += " and (dbserie_episodes.first_aired < ? or dbserie_episodes.first_aired is null)"
+				args = append(args, logger.TimeGetNow().AddDate(0, 0, 0+scandatepre))
+			}
+		} else {
+			if scandatepre != 0 {
+				q.Where += " and (dbserie_episodes.first_aired < ? or dbserie_episodes.first_aired is null)"
+				args = append(args, logger.TimeGetNow().AddDate(0, 0, 0+scandatepre))
+			}
+		}
+
+		//searcher.SearchSerie(cfgpstr, searchmissing, searchinterval, searchtitle)
+	}
+	q.Buildquery(true)
+	count := database.QueryIntColumn(q.QueryString, args...)
+	q.Buildquery(false)
+
+	tbl := database.QueryStaticUintArrayNoError(false, count, q.QueryString, args...)
+	logger.Clear(&args)
+	var err error
+	var results *searcher.SearchResults
+	for idx := range *tbl {
+		switch typ {
+		case logger.StrMovie:
+			results, err = searcher.MovieSearch(cfgpstr, (*tbl)[idx], false, searchtitle)
+		default:
+			results, err = searcher.SeriesSearch(cfgpstr, (*tbl)[idx], false, searchtitle)
+		}
+		if err != nil {
+			if err != nil && err != logger.ErrDisabled {
+				//logger.LogAnyError(err, "Search Failed", logger.LoggerValue{Name: "id", Value: (*tbl)[idx]}, logger.LoggerValue{Name: "typ", Value: typ})
+				logger.Log.Error().Str("typ", typ).Err(err).Uint("id", (*tbl)[idx]).Msg("Search Failed")
+			}
+		} else {
+			if results != nil && len(results.Accepted) >= 1 {
+				results.Download(typ, cfgpstr)
+			}
+		}
+		results.Close()
+
+		//_, err := searcher.SearchMyMedia(cfgpstr, database.QueryStringColumn(database.QueryMoviesGetQualityByID, tbl[idx]), typ, typ, 0, 0, false, tbl[idx], searchtitle)
+
+	}
+	logger.Clear(tbl)
 }
 
 func checkmissing(typvar string, listname string) {
-	var filesfound []string
-	var query, querycount string
-	if typvar == "movie" {
+	querycount := "select location from serie_episode_files where serie_id in (Select id from series where listname = ? COLLATE NOCASE)"
+	query := "select location from serie_episode_files where serie_id in (Select id from series where listname = ? COLLATE NOCASE)"
+	if typvar == logger.StrMovie {
 		query = "select location from movie_files where movie_id in (select id from movies where listname = ? COLLATE NOCASE)"
 		querycount = "select count() from movie_files where movie_id in (select id from movies where listname = ? COLLATE NOCASE)"
-	} else {
-		querycount = "select location from serie_episode_files where serie_id in (Select id from series where listname = ? COLLATE NOCASE)"
-		query = "select location from serie_episode_files where serie_id in (Select id from series where listname = ? COLLATE NOCASE)"
 	}
-	database.QueryStaticStringArray(false,
-		database.CountRowsStaticNoError(&database.Querywithargs{QueryString: querycount, Args: []interface{}{listname}}),
-		&database.Querywithargs{QueryString: query, Args: []interface{}{listname}},
-		&filesfound)
-	if len(filesfound) >= 1 {
-		for idx := range filesfound {
-			jobImportFileCheck(filesfound[idx], typvar)
+
+	files := database.QueryStaticStringArray(false,
+		database.QueryIntColumn(querycount, &listname),
+		query, &listname)
+	var counter int
+	var tbl *[]database.DbstaticTwoInt
+	var subquerycount, table, updatetable string
+	for fileidx := range *files {
+		if scanner.CheckFileExist(&(*files)[fileidx]) {
+			continue
 		}
+		query = database.QuerySerieEpisodeFilesGetIDEpisodeIDByLocation
+		subquerycount = database.QuerySerieEpisodeFilesCountByEpisodeID
+		table = "serie_episode_files"
+		updatetable = "serie_episodes"
+		if typvar == logger.StrMovie {
+			query = database.QueryMovieFilesGetIDMovieIDByLocation
+			subquerycount = database.QueryMovieFilesCountByMovieID
+			table = "movie_files"
+			updatetable = "movies"
+		}
+		tbl = database.QueryStaticColumnsTwoInt(true, 1, query, &(*files)[fileidx])
+		for tblidx := range *tbl {
+			logger.Log.Debug().Str(logger.StrFile, (*files)[fileidx]).Msg("File was removed")
+			if database.DeleteRowStatic(false, "Delete from "+table+" where id = ?", (*tbl)[tblidx].Num1) == nil {
+				counter = database.QueryIntColumn(subquerycount, (*tbl)[tblidx].Num2)
+				if counter == 0 {
+					database.UpdateColumnStatic("Update "+updatetable+" set missing = ? where id = ?", 1, (*tbl)[tblidx].Num2)
+				}
+			}
+		}
+		logger.Clear(tbl)
 	}
-	filesfound = nil
+	logger.Clear(files)
 }
 
 func checkmissingflag(typvar string, listname string) {
-	var query, querycount, queryupdate string
-	if typvar == "movie" {
-		query = "Select id, missing from movies where listname = ? COLLATE NOCASE"
-		querycount = "select count() from movie_files where movie_id = ?"
+	query := database.QuerySerieEpisodeFilesGetIDMissingByListname
+	querysize := database.QuerySerieEpisodeFilesCountByListname
+	querycount := database.QuerySerieEpisodeFilesCountByEpisodeID
+	queryupdate := "update serie_episodes set missing = ? where id = ?"
+	if typvar == logger.StrMovie {
+		query = database.QueryMoviesGetIDMissingByListname
+		querysize = database.QueryMoviesCountByListname
+		querycount = database.QueryMovieFilesCountByMovieID
 		queryupdate = "update movies set missing = ? where id = ?"
-	} else {
-		query = "select id, missing from serie_episodes where serie_id in (select id from series where listname = ? COLLATE NOCASE)"
-		querycount = "select count() from serie_episode_files where serie_episode_id = ?"
-		queryupdate = "update serie_episodes set missing = ? where id = ?"
 	}
-	var missing []database.DbstaticOneIntOneBool
-	database.QueryStaticColumnsOneIntOneBool(&database.Querywithargs{QueryString: query, Args: []interface{}{listname}}, &missing)
 
-	var counter, setmissing int
+	tbl := database.QueryStaticColumnsOneIntOneBool(database.QueryIntColumn(querysize, &listname), query, &listname)
+	var counter int
 	var set bool
-	for idxmovie := range missing {
-		counter = database.CountRowsStaticNoError(&database.Querywithargs{QueryString: querycount, Args: []interface{}{missing[idxmovie].Num}})
+	var setmissing int
+	for idx := range *tbl {
+		counter = database.QueryIntColumn(querycount, (*tbl)[idx].Num)
 		set = false
-		if counter >= 1 && missing[idxmovie].Bl {
+		setmissing = 0
+		if counter >= 1 && (*tbl)[idx].Bl {
 			set = true
-			setmissing = 0
 		}
-		if counter == 0 && !missing[idxmovie].Bl {
+		if counter == 0 && !(*tbl)[idx].Bl {
 			set = true
 			setmissing = 1
 		}
 		if set {
-			database.UpdateColumnStatic(&database.Querywithargs{QueryString: queryupdate, Args: []interface{}{setmissing, missing[idxmovie].Num}})
+			database.UpdateColumnStatic(queryupdate, setmissing, (*tbl)[idx].Num)
 		}
 	}
-	missing = nil
+	logger.Clear(tbl)
 }
