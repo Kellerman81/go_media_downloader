@@ -36,7 +36,7 @@ jobs:
     - name: Build with xgo
       uses: crazy-max/ghaction-xgo@v3
       with:
-          xgo_version: latest
+          xgo_version: 1.21
           go_version: 1.22
           dest: .
           prefix: go_media_downloader
@@ -51,7 +51,7 @@ jobs:
     - name: Build with xgo imdb
       uses: crazy-max/ghaction-xgo@v3
       with:
-          xgo_version: latest
+          xgo_version: 1.21
           go_version: 1.22
           dest: .
           prefix: imdb
