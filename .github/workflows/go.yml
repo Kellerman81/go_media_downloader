@@ -36,6 +36,8 @@ jobs:
     - name: Build with xgo
       uses: crazy-max/ghaction-xgo@v3
       with:
+          xgo_version: latest
+          go_version: 1.22
           dest: .
           prefix: go_media_downloader
           targets: windows/386,windows/amd64,linux/386,linux/amd64,darwin/amd64
@@ -44,11 +46,13 @@ jobs:
           race: false
           ldflags: -s -w -X 'main.version=${{ steps.version.outputs.version }}' -X 'main.githash=${{ steps.commit.outputs.short }}' -X 'main.buildstamp=${{ steps.date.outputs.date }}'
           buildmode: default
-          working_dir: pkg/main
+          working_dir: $GITHUB_WORKSPACE/pkg/main
     
     - name: Build with xgo imdb
       uses: crazy-max/ghaction-xgo@v3
       with:
+          xgo_version: latest
+          go_version: 1.22
           dest: .
           prefix: imdb
           targets: windows/386,windows/amd64,linux/386,linux/amd64,darwin/amd64
@@ -57,7 +61,7 @@ jobs:
           race: false
           ldflags: -s -w -X 'main.version=${{ steps.version.outputs.version }}' -X 'main.githash=${{ steps.commit.outputs.short }}' -X 'main.buildstamp=${{ steps.date.outputs.date }}'
           buildmode: default
-          working_dir: pkg/imdb
+          working_dir: $GITHUB_WORKSPACE/pkg/imdb
     
     - name: Rename Win32 binary
       run: mv ./pkg/imdb/imdb-windows-386.exe init_imdb.exe
