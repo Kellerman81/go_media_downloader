@@ -95,18 +95,18 @@ jobs:
     - name: Remove Win binary dl
       run: rm ./go_media_downloader.exe
 
-    - name: Rename Linux32 binary
-      run: mv ./pkg/imdb/init_imdb-linux-386 init_imdb
+    #- name: Rename Linux32 binary
+    #  run: mv ./pkg/imdb/init_imdb-linux-386 init_imdb
 
-    - name: Rename Linux32 binary dl
-      run: mv ./pkg/main/go_media_downloader-linux-386 go_media_downloader
+    #- name: Rename Linux32 binary dl
+    #  run: mv ./pkg/main/go_media_downloader-linux-386 go_media_downloader
 
-    - name: Zip Linux32 binary
-      uses: thedoctor0/zip-release@master
-      with:
-        type: 'zip'
-        filename: 'gomedia-linux-x86.zip'
-        exclusions: '*.git* /.github/* /pkg/* Dockerfile go.* *.zip *.go go_media_downloader-*'
+    #- name: Zip Linux32 binary
+    #  uses: thedoctor0/zip-release@master
+    #  with:
+    #    type: 'zip'
+    #    filename: 'gomedia-linux-x86.zip'
+    #    exclusions: '*.git* /.github/* /pkg/* Dockerfile go.* *.zip *.go go_media_downloader-*'
 
     - name: Rename Linux64 binary
       run: mv ./pkg/imdb/init_imdb-linux-amd64 init_imdb
@@ -145,7 +145,6 @@ jobs:
         files: |
           gomedia-linux-x64.zip
           gomedia-windows-x64.zip
-          gomedia-linux-x86.zip
           
     - name: Stable Release
       if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
@@ -158,4 +157,3 @@ jobs:
         files: |
           gomedia-linux-x64.zip
           gomedia-windows-x64.zip
-          gomedia-linux-x86.zip
