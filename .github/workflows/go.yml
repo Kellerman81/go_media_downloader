@@ -56,7 +56,8 @@ jobs:
     #      ldflags: -s -w -X 'main.version=${{ steps.version.outputs.version }}' -X 'main.githash=${{ steps.commit.outputs.short }}' -X 'main.buildstamp=${{ steps.date.outputs.date }}'
     #      buildmode: default
     #      working_dir: /home/runner/work/go_media_downloader/go_media_downloader/pkg/imdb
-
+    - name: Set up MinGW
+      uses: egor-tensin/setup-mingw@v2
     - name: Build Main
       run: make buildmain
     - name: Build Imdb
