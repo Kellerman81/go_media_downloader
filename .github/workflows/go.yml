@@ -38,7 +38,7 @@ jobs:
       with:
           xgo_version: v0.31.0
           go_version: 1.21
-          dest: .
+          dest: pkg/main
           prefix: go_media_downloader
           targets: windows/386,windows/amd64,linux/386,linux/amd64,darwin/amd64
           v: false
@@ -53,7 +53,7 @@ jobs:
       with:
           xgo_version: v0.31.0
           go_version: 1.21
-          dest: .
+          dest: pkg/imdb
           prefix: imdb
           targets: windows/386,windows/amd64,linux/386,linux/amd64,darwin/amd64
           v: false
