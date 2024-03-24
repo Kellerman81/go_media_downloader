@@ -107,6 +107,7 @@ const (
 	DBCountHistoriesByTitle   = "DBCountHistoriesByTitle"
 	DBCountHistoriesByUrl     = "DBCountHistoriesByUrl"
 	DBLocationIDFilesByID     = "DBLocationIDFilesByID"
+	DBFilePrioFilesByID       = "DBFilePrioFilesByID"
 	UpdateMediaLastscan       = "UpdateMediaLastscan"
 	DBQualityMediaByID        = "DBQualityMediaByID"
 	SearchGenSelect           = "SearchGenSelect"
@@ -295,6 +296,7 @@ var (
 		DBCountHistoriesByTitle:  "select count() from movie_histories where title = ?",
 		DBCountHistoriesByUrl:    "select count() from movie_histories where url = ?",
 		DBLocationIDFilesByID:    "select location, id from movie_files where movie_id = ?",
+		DBFilePrioFilesByID:      "select location, movie_id, id, resolution_id, quality_id, codec_id, audio_id, proper, repack, extended from movie_files where movie_id = ?",
 		UpdateMediaLastscan:      "update movies set lastscan = datetime('now','localtime') where id = ?",
 		DBQualityMediaByID:       "select quality_profile from movies where id = ?",
 		SearchGenSelect:          "select movies.quality_profile, movies.id ",
@@ -350,6 +352,7 @@ var (
 		DBCountHistoriesByTitle:  "select count() from serie_episode_histories where title = ?",
 		DBCountHistoriesByUrl:    "select count() from serie_episode_histories where url = ?",
 		DBLocationIDFilesByID:    "select location, id from serie_episode_files where serie_episode_id = ?",
+		DBFilePrioFilesByID:      "select location, serie_episode_id, id, resolution_id, quality_id, codec_id, audio_id, proper, repack, extended from serie_episode_files where serie_episode_id = ?",
 		UpdateMediaLastscan:      "update serie_episodes set lastscan = datetime('now','localtime') where id = ?",
 		DBQualityMediaByID:       "select quality_profile from serie_episodes where id = ?",
 		SearchGenSelect:          "select serie_episodes.quality_profile, serie_episodes.id ",

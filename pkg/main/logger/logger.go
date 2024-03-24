@@ -82,8 +82,10 @@ func InitLogger(config Config) {
 		} else if strings.EqualFold(config.TimeZone, "utc") {
 			timeZone = *time.UTC
 		} else {
-			timeZone2, _ := time.LoadLocation(config.TimeZone)
-			timeZone = *timeZone2
+			timeZone2, err := time.LoadLocation(config.TimeZone)
+			if err == nil {
+				timeZone = *timeZone2
+			}
 		}
 	}
 

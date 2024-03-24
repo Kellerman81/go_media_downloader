@@ -1716,20 +1716,19 @@ func Getpriobyfiles(useseries bool, id uint, useall bool, wantedprio int, qualcf
 	}
 	var minPrio int
 	var oldfiles []string
-
 	countv := database.GetdatarowN[int](false, logger.GetStringsMap(useseries, logger.DBCountFilesByMediaID), &id)
 	if wantedprio != -1 && countv != 0 {
 		oldfiles = make([]string, 0, countv)
 	}
-	arr := database.GetrowsN[database.DbstaticOneStringOneInt](false, countv, logger.GetStringsMap(useseries, logger.DBLocationIDFilesByID), &id)
+	arr := database.GetrowsN[database.FilePrio](false, countv, logger.GetStringsMap(useseries, logger.DBFilePrioFilesByID), &id)
 	var prio int
 	for idx := range arr {
-		prio = parser.GetIDPrioritySimpleParse(arr[idx].Num, useseries, qualcfg, useall, true)
+		prio = parser.GetIDPrioritySimpleParse(&arr[idx], useseries, qualcfg, useall, true)
 		if minPrio < prio || minPrio == 0 {
 			minPrio = prio
 		}
 		if wantedprio != -1 && wantedprio > prio {
-			oldfiles = append(oldfiles, arr[idx].Str)
+			oldfiles = append(oldfiles, arr[idx].Location)
 		}
 	}
 	clear(arr)

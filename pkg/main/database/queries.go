@@ -188,6 +188,19 @@ type DbstaticTwoString struct {
 	Str2 string `db:"str2"`
 }
 
+type FilePrio struct {
+	Location     string
+	DBID         uint
+	ID           uint
+	ResolutionID uint
+	QualityID    uint
+	CodecID      uint
+	AudioID      uint
+	Proper       bool
+	Repack       bool
+	Extended     bool
+}
+
 const (
 	QueryDbseriesGetIdentifiedByID                 = "select lower(identifiedby) from dbseries where id = ?"
 	QueryDbserieEpisodesGetSeasonEpisodeByDBID     = "select season, episode from dbserie_episodes where dbserie_id = ?"
@@ -407,6 +420,8 @@ func getfunc2[T any](u *T) fieldconfig {
 		f.arr = []any{&elem.Str1, &elem.Str2, &elem.Str3, &elem.Num1}
 	case *DbstaticThreeStringTwoInt:
 		f.arr = []any{&elem.Str1, &elem.Str2, &elem.Str3, &elem.Num1, &elem.Num2}
+	case *FilePrio:
+		f.arr = []any{&elem.Location, &elem.DBID, &elem.ID, &elem.ResolutionID, &elem.QualityID, &elem.CodecID, &elem.AudioID, &elem.Proper, &elem.Repack, &elem.Extended}
 	case *DbstaticTwoString:
 		f.arr = []any{&elem.Str1, &elem.Str2}
 	case *int, *string, *uint:

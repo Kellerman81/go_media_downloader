@@ -837,55 +837,55 @@ func getqualityidxbyid(tbl []database.QualitiesRegex, id uint) int {
 // The qualcfg config is used to control which IDs are used and priority reordering.
 // The useall and checkwanted params control including all IDs vs just configured ones,
 // and checking wanted vs all available priorities.
-func GetIDPrioritySimpleParse(id int, useseries bool, qualcfg *config.QualityConfig, useall bool, checkwanted bool) int {
+func GetIDPrioritySimpleParse(row *database.FilePrio, useseries bool, qualcfg *config.QualityConfig, useall bool, checkwanted bool) int {
 	if qualcfg == nil {
 		return 0
 	}
-	var reso, qual, aud, codec uint
-	var proper, extended, repack bool
-	database.GetdatarowArgs(logger.GetStringsMap(useseries, logger.DBFilesQuality), &id, &reso, &qual, &codec, &aud, &proper, &extended, &repack)
+	//var reso, qual, aud, codec uint
+	//var proper, extended, repack bool
+	//database.GetdatarowArgs(logger.GetStringsMap(useseries, logger.DBFilesQuality), &id, &reso, &qual, &codec, &aud, &proper, &extended, &repack)
 
 	if !qualcfg.UseForPriorityResolution && !useall {
-		reso = 0
+		row.ResolutionID = 0
 	}
 	if !qualcfg.UseForPriorityQuality && !useall {
-		qual = 0
+		row.QualityID = 0
 	}
 	if !qualcfg.UseForPriorityAudio && !useall {
-		aud = 0
+		row.AudioID = 0
 	}
 	if !qualcfg.UseForPriorityCodec && !useall {
-		codec = 0
+		row.CodecID = 0
 	}
 	var intid, prio int
 	if checkwanted {
-		intid = findpriorityidxwanted(reso, qual, codec, aud, qualcfg)
+		intid = findpriorityidxwanted(row.ResolutionID, row.QualityID, row.CodecID, row.AudioID, qualcfg)
 		if intid != -1 {
 			prio = allQualityPrioritiesWantedT[intid].Priority
 		}
 	}
 	if prio == 0 {
-		intid = findpriorityidx(reso, qual, codec, aud, qualcfg)
+		intid = findpriorityidx(row.ResolutionID, row.QualityID, row.CodecID, row.AudioID, qualcfg)
 		if intid != -1 {
 			prio = allQualityPrioritiesWantedT[intid].Priority
 		}
 	}
 
 	if intid == -1 {
-		logger.LogDynamic("debug", "prio not found", logger.NewLogField("searched for", buildPrioStr(reso, qual, codec, aud)), logger.NewLogField("in", qualcfg.Name), logger.NewLogField("wanted", checkwanted))
+		logger.LogDynamic("debug", "prio not found", logger.NewLogField("searched for", buildPrioStr(row.ResolutionID, row.QualityID, row.CodecID, row.AudioID)), logger.NewLogField("in", qualcfg.Name), logger.NewLogField("wanted", checkwanted))
 
 		return 0
 	}
 	if !qualcfg.UseForPriorityOther && !useall {
 		return prio
 	}
-	if proper {
+	if row.Proper {
 		prio += 5
 	}
-	if extended {
+	if row.Extended {
 		prio += 2
 	}
-	if repack {
+	if row.Repack {
 		prio++
 	}
 	return prio

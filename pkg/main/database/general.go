@@ -312,12 +312,12 @@ func UpgradeDB() error {
 		"file://./schema/db",
 		"sqlite3://./databases/data.db?_fk=1&_cslike=0",
 	)
-
-	vers, _, _ := m.Version()
-	DBVersion = strconv.Itoa(int(vers))
 	if err != nil {
 		return err
 	}
+
+	vers, _, _ := m.Version()
+	DBVersion = strconv.Itoa(int(vers))
 
 	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		return err
