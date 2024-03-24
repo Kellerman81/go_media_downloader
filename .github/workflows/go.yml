@@ -44,7 +44,7 @@ jobs:
           race: false
           ldflags: -s -w -X 'main.version=${{ steps.version.outputs.version }}' -X 'main.githash=${{ steps.commit.outputs.short }}' -X 'main.buildstamp=${{ steps.date.outputs.date }}'
           buildmode: default
-          working_dir: pkg/main
+          working_dir: /home/runner/work/go_media_downloader/pkg/main
     
     - name: Build with xgo imdb
       uses: crazy-max/ghaction-xgo@v2
@@ -57,7 +57,7 @@ jobs:
           race: false
           ldflags: -s -w -X 'main.version=${{ steps.version.outputs.version }}' -X 'main.githash=${{ steps.commit.outputs.short }}' -X 'main.buildstamp=${{ steps.date.outputs.date }}'
           buildmode: default
-          working_dir: pkg/imdb
+          working_dir: /home/runner/work/go_media_downloader/pkg/imdb
 
     - name: List Files Root
       run: ls
