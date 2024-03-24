@@ -36,7 +36,6 @@ jobs:
     - name: Build with xgo
       uses: crazy-max/ghaction-xgo@v2
       with:
-          dest: /home/runner/work/go_media_downloader/go_media_downloader/pkg/main
           prefix: go_media_downloader
           targets: windows/386,windows/amd64,linux/386,linux/amd64,darwin/amd64
           v: false
@@ -49,7 +48,6 @@ jobs:
     - name: Build with xgo imdb
       uses: crazy-max/ghaction-xgo@v2
       with:
-          dest: /home/runner/work/go_media_downloader/go_media_downloader/pkg/imdb
           prefix: imdb
           targets: windows/386,windows/amd64,linux/386,linux/amd64,darwin/amd64
           v: false
