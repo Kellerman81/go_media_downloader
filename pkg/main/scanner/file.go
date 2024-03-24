@@ -1,253 +1,272 @@
 package scanner
 
 import (
-	"bufio"
 	"errors"
 	"io"
 	"io/fs"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
+	"time"
 
-	"github.com/Kellerman81/go_media_downloader/apiexternal"
 	"github.com/Kellerman81/go_media_downloader/config"
+	"github.com/Kellerman81/go_media_downloader/database"
 	"github.com/Kellerman81/go_media_downloader/logger"
 )
 
-func GetFilesExtCount(rootpath *string, ext string) int {
-	i := 0
-	// filepath.WalkDir(filepath.Dir(*rootpath), func(file string, _ fs.DirEntry, err error) error {
-	// 	if err != nil {
-	// 		return err
-	// 	}
-	// 	if strings.EqualFold(filepath.Ext(file), ext) {
-	// 		i++
-	// 	}
-	// 	return nil
-	// })
-	_ = WalkdirProcess(*rootpath, true, func(file *string, _ *fs.DirEntry) error {
-		if strings.EqualFold(filepath.Ext(*file), ext) {
-			i++
-		}
-		return nil
-	})
-	return i
+// MoveResponse represents the response from moving a file
+// It contains the new path of the moved file, any error that occurred,
+// and a bool indicating if the move was successful
+type MoveResponse struct {
+	// NewPath is the new path of the moved file
+	NewPath string
+	// Err contains any error that occurred during the move
+	Err error
+	// MoveDone indicates if the move was successful
+	MoveDone bool
 }
 
-func getFolderSize(rootpath string) (int64, error) {
-	var size int64
-	err := filepath.Walk(rootpath, func(_ string, info fs.FileInfo, err error) error {
-		if info.IsDir() {
-			return nil
-		}
-		size += info.Size()
-		return nil
-	})
-	return size, err
+type NewFileData struct {
+	Cfgp       *config.MediaTypeConfig
+	PathCfg    *config.PathsConfig
+	Listid     int
+	Checkfiles bool
+	AddFound   bool
 }
 
-func WalkdirProcess(rootpath string, usedir bool, fun func(path *string, info *fs.DirEntry) error) error {
-	return filepath.WalkDir(rootpath, func(path string, info fs.DirEntry, err error) error {
-		if err != nil {
-			return err
+// Filterfiles checks if the given path should be filtered based on the
+// provided media type config and paths config. It checks the useseries lists
+// in the config to see if the path is in the allowed files or unmatched files lists.
+// It also calls Filterfile to check the ignore/filter rules if checkfiles is true.
+// Returns true if the path should be filtered/ignored.
+func Filterfiles(pathv *string, filedata *NewFileData) bool {
+	if filedata.Checkfiles {
+		if config.SettingsGeneral.UseFileCache {
+			if database.SlicesCacheContains(logger.GetStringsMap(filedata.Cfgp.Useseries, logger.CacheFiles), *pathv) {
+				return true
+			}
+		} else if database.GetdatarowN[uint](false, logger.GetStringsMap(filedata.Cfgp.Useseries, logger.DBCountFilesLocation), pathv) >= 1 {
+			return true
 		}
-		if usedir && info.IsDir() {
-			return nil
+	}
+	//CheckUnmatched
+	if config.SettingsGeneral.UseFileCache {
+		if database.SlicesCacheContains(logger.GetStringsMap(filedata.Cfgp.Useseries, logger.CacheUnmatched), *pathv) {
+			return true
 		}
-		return fun(&path, &info)
-	})
+	} else if database.GetdatarowN[uint](false, logger.GetStringsMap(filedata.Cfgp.Useseries, logger.DBCountUnmatchedPath), pathv) >= 1 {
+		return true
+	}
+	ok, _ := CheckExtensions(true, false, filedata.PathCfg, filepath.Ext(*pathv))
+
+	//Check IgnoredPaths
+
+	if ok && filedata.PathCfg.BlockedLen >= 1 {
+		if logger.SlicesContainsPart2I(filedata.PathCfg.Blocked, *pathv) {
+			return true
+		}
+	}
+	return !ok
 }
 
-func MoveFile(file string, pathcfg string, target string, newname string, useother bool, usenil bool, usebuffercopy bool, chmod string) (bool, error) {
-	if !CheckFileExist(&file) {
-		return false, nil
+// MoveFile moves a file from one path to another. It handles checking extensions, renaming, setting permissions etc.
+// It returns a bool indicating if the move was successful, and an error.
+func MoveFile(file string, setpathcfg *config.PathsConfig, target, newname string, useother, usenil, usebuffercopy bool, chmodfolder, chmod string) MoveResponse {
+	var retval MoveResponse
+	if !CheckFileExist(file) {
+		return retval
 	}
 	var ok, oknorename bool
-	if usenil {
+	if usenil || setpathcfg == nil {
 		ok = true
 		oknorename = true
 	} else {
 		ext := filepath.Ext(file)
-		if !useother {
-			if len(config.SettingsPath["path_"+pathcfg].AllowedVideoExtensions) == 0 {
-				ok = true
-				oknorename = true
-			} else if len(config.SettingsPath["path_"+pathcfg].AllowedVideoExtensions) >= 1 {
-				for idx := range config.SettingsPath["path_"+pathcfg].AllowedVideoExtensions {
-					if strings.EqualFold(config.SettingsPath["path_"+pathcfg].AllowedVideoExtensions[idx], ext) {
-						ok = true
-						break
-					}
-				}
-			}
-
-			if !ok && len(config.SettingsPath["path_"+pathcfg].AllowedVideoExtensionsNoRename) >= 1 {
-				for idx := range config.SettingsPath["path_"+pathcfg].AllowedVideoExtensionsNoRename {
-					if strings.EqualFold(config.SettingsPath["path_"+pathcfg].AllowedVideoExtensionsNoRename[idx], ext) {
-						ok = true
-						oknorename = true
-						break
-					}
-				}
-			}
-		} else {
-			if len(config.SettingsPath["path_"+pathcfg].AllowedOtherExtensions) == 0 {
-				ok = true
-				oknorename = true
-			} else if len(config.SettingsPath["path_"+pathcfg].AllowedOtherExtensions) >= 1 {
-				for idx := range config.SettingsPath["path_"+pathcfg].AllowedOtherExtensions {
-					if strings.EqualFold(config.SettingsPath["path_"+pathcfg].AllowedOtherExtensions[idx], ext) {
-						ok = true
-						break
-					}
-				}
-			}
-
-			if !ok && len(config.SettingsPath["path_"+pathcfg].AllowedOtherExtensionsNoRename) >= 1 {
-				for idx := range config.SettingsPath["path_"+pathcfg].AllowedOtherExtensionsNoRename {
-					if strings.EqualFold(config.SettingsPath["path_"+pathcfg].AllowedOtherExtensionsNoRename[idx], ext) {
-						ok = true
-						oknorename = true
-						break
-					}
-				}
-			}
-		}
+		ok, oknorename = CheckExtensions(!useother, useother, setpathcfg, ext)
 	}
 
 	if !ok {
-		return false, logger.ErrNotAllowed
+		retval.Err = logger.ErrNotAllowed
+		return retval
 	}
 	if newname == "" || oknorename {
 		newname = filepath.Base(file)
 	}
 	if !strings.HasSuffix(newname, filepath.Ext(file)) {
-		newname = newname + filepath.Ext(file)
+		newname += filepath.Ext(file)
 	}
-	renamepath := logger.PathJoin(filepath.Dir(file), newname)
-	newpath := logger.PathJoin(target, newname)
-	if CheckFileExist(&newpath) && target != newpath {
+	renamepath := filepath.Join(filepath.Dir(file), newname)
+	newpath := filepath.Join(target, newname)
+	if target != newpath && CheckFileExist(newpath) {
 		//Remove Target to supress error
-		RemoveFile(newpath)
-	}
-	if chmod != "" && len(chmod) == 4 {
-		Setchmod(file, fs.FileMode(logger.StringToUint32(chmod)))
+		_, _ = RemoveFile(newpath)
 	}
 	err := os.Rename(file, renamepath)
 	if err != nil {
-		return false, errors.Join(err, errors.New("scanner move file rename"))
+		retval.Err = err
+		return retval
 	}
 
+	var uchmod, uchmodfolder fs.FileMode
+	if chmod != "" && len(chmod) == 4 {
+		uchmod = logger.StringToFileMode(chmod)
+	}
+	if chmodfolder != "" && len(chmodfolder) == 4 {
+		uchmodfolder = logger.StringToFileMode(chmodfolder)
+	}
 	if usebuffercopy {
-		err = moveFileDriveBuffer(renamepath, newpath)
+		if chmod != "" && len(chmod) == 4 {
+			setchmod(renamepath, logger.StringToFileMode(chmod))
+		}
+		err = MoveFileDriveBuffer(renamepath, newpath, uchmod)
 	} else {
-		err = moveFileDrive(renamepath, newpath)
+		err = moveFileDrive(renamepath, newpath, uchmodfolder, uchmod)
 	}
 	if err != nil {
-		return false, errors.Join(err, errors.New("scanner move file run"))
+		retval.Err = err
+		return retval
 	}
-	logger.Log.Debug().Str(logger.StrFile, file).Str("to", newpath).Msg("File moved from")
-	return true, nil
+	logger.LogDynamic("info", "File moved from", logger.NewLogField(logger.StrFile, file), logger.NewLogField("to", newpath))
+	retval.MoveDone = true
+	retval.NewPath = newpath
+	return retval
 }
 
-func Setchmod(file string, chmod fs.FileMode) {
+// CheckExtensions checks if the given file extension is allowed for the
+// provided checkvideo and checkother booleans. It returns a bool for if the
+// extension is allowed, and a bool for if renaming should be skipped.
+func CheckExtensions(checkvideo, checkother bool, pathcfg *config.PathsConfig, ext string) (bool, bool) {
+	var ok, oknorename bool
+	if checkvideo {
+		if pathcfg.AllowedVideoExtensionsLen == 0 {
+			ok = true
+			oknorename = true
+		} else if pathcfg.AllowedVideoExtensionsLen >= 1 {
+			ok = logger.SlicesContainsI(pathcfg.AllowedVideoExtensions, ext)
+		}
+
+		if !ok && pathcfg.AllowedVideoExtensionsNoRenameLen >= 1 {
+			ok = logger.SlicesContainsI(pathcfg.AllowedVideoExtensionsNoRename, ext)
+			if ok {
+				oknorename = ok
+			}
+		}
+	}
+	if checkother {
+		if pathcfg.AllowedOtherExtensionsLen == 0 {
+			ok = true
+			if ok {
+				oknorename = ok
+			}
+		} else if pathcfg.AllowedOtherExtensionsLen >= 1 {
+			ok = logger.SlicesContainsI(pathcfg.AllowedOtherExtensions, ext)
+		}
+
+		if !ok && pathcfg.AllowedOtherExtensionsNoRenameLen >= 1 {
+			ok = logger.SlicesContainsI(pathcfg.AllowedOtherExtensionsNoRename, ext)
+			if ok {
+				oknorename = ok
+			}
+		}
+	}
+	return ok, oknorename
+}
+
+// Setchmod sets the file mode permissions for the given file.
+// If chmod is 0, no change is made. Otherwise, it opens the file,
+// calls Chmod() to set the permissions, and closes the file.
+// Returns without error handling if the file failed to open.
+func setchmod(file string, chmod fs.FileMode) {
+	if chmod == 0 {
+		return
+	}
 	f, err := os.Open(file)
 	if err != nil {
 		return
 	}
-	f.Chmod(chmod)
+	if chmod != 0 {
+		_ = f.Chmod(chmod)
+	}
 	f.Close()
 }
-func RemoveFiles(val string, pathtemplate string) {
 
-	if config.SettingsPath["path_"+pathtemplate].Name == "" {
-		return
-	}
-	if !CheckFileExist(&val) {
-		return
-	}
-	ext := filepath.Ext(val)
-	var ok, oknorename bool
-	if len(config.SettingsPath["path_"+pathtemplate].AllowedVideoExtensions) >= 1 {
-		for idxi := range config.SettingsPath["path_"+pathtemplate].AllowedVideoExtensions {
-			if strings.EqualFold(config.SettingsPath["path_"+pathtemplate].AllowedVideoExtensions[idxi], ext) {
-				ok = true
-				break
-			}
-		}
-		//ok = logger.ContainsStringsIS(config.SettingsPath["path_"+pathtemplate].AllowedVideoExtensions, ext)
-	}
-	if len(config.SettingsPath["path_"+pathtemplate].AllowedVideoExtensionsNoRename) >= 1 && !ok {
-		for idxi := range config.SettingsPath["path_"+pathtemplate].AllowedVideoExtensionsNoRename {
-			if strings.EqualFold(config.SettingsPath["path_"+pathtemplate].AllowedVideoExtensionsNoRename[idxi], ext) {
-				ok = true
-				break
-			}
-		}
-		//ok = logger.ContainsStringsIS(config.SettingsPath["path_"+pathtemplate].AllowedVideoExtensionsNoRename, ext)
-		if ok {
-			oknorename = true
-		}
-	}
-	if ok || oknorename || (len(config.SettingsPath["path_"+pathtemplate].AllowedVideoExtensions) == 0 && len(config.SettingsPath["path_"+pathtemplate].AllowedVideoExtensionsNoRename) == 0) {
-		err := os.Remove(val)
-		if err != nil {
-			logger.Log.Error().Err(err).Str(logger.StrPath, val).Msg("file could not be removed")
-		} else {
-			logger.Log.Debug().Str(logger.StrFile, val).Msg("File removed")
-		}
-	}
-}
-
+// RemoveFile removes the file at the given path if it exists.
+// It checks if the file exists first before removing.
+// Returns a bool indicating if the file was removed, and an error if one occurred.
 func RemoveFile(file string) (bool, error) {
-	if !CheckFileExist(&file) {
+	if !CheckFileExist(file) {
 		return false, nil
 	}
+	_ = os.Chmod(file, 0777)
 	err := os.Remove(file)
 	if err != nil {
 		return false, err
 	}
-	logger.Log.Debug().Str(logger.StrFile, file).Msg("File removed")
+	logger.LogDynamic("info", "File removed", logger.NewLogField(logger.StrFile, file))
 	return true, nil
 }
 
-func RenameFileSimple(file string, filenew string) error {
-	err := os.Rename(file, filenew)
-	if err == nil {
-		logger.Log.Debug().Str(logger.StrFile, file).Msg("File renamed")
-	}
-	return err
-}
-
+// CleanUpFolder walks the given folder path to calculate total size.
+// It then compares total size to given cleanup threshold in MB.
+// If folder size is less than threshold, folder is deleted.
+// Returns any error encountered.
 func CleanUpFolder(folder string, cleanupsizeMB int) error {
-	if cleanupsizeMB == 0 {
-		return nil
-	}
-	if !CheckFileExist(&folder) {
+	// if cleanupsizeMB == 0 {
+	// 	return nil
+	// }
+	if !CheckFileExist(folder) {
 		return errors.New("cleanup folder not found")
 	}
-	leftsize, err := getFolderSize(folder)
+	var leftsize int64
+
+	cleanupsizeByte := int64(cleanupsizeMB) * 1024 * 1024 //MB to Byte
+	err := filepath.WalkDir(folder, func(fpath string, info fs.DirEntry, errw error) error {
+		if errw != nil {
+			return errw
+		}
+		if info.IsDir() {
+			return nil
+		}
+		if cleanupsizeByte <= leftsize {
+			return filepath.SkipAll
+		}
+		fsinfo, err := info.Info()
+		if err == nil {
+			leftsize += fsinfo.Size()
+		}
+		return nil
+	})
 	if err != nil {
 		return err
 	}
-	leftmb := int(leftsize / 1024 / 1024)
-	logger.Log.Debug().Int("Size", leftmb).Msg("Left size")
-	if cleanupsizeMB >= leftmb || leftmb == 0 {
+
+	logger.LogDynamic("debug", "Left size", logger.NewLogField("Size", leftsize))
+	if cleanupsizeByte >= leftsize || leftsize == 0 {
+		_ = filepath.WalkDir(folder, setchmodwalk)
 		err := os.RemoveAll(folder)
-		if err == nil {
-			logger.Log.Debug().Str(logger.StrPath, folder).Msg("Folder removed")
+		if err != nil {
+			return err
 		}
-		return err
+		logger.LogDynamic("info", "Folder removed", logger.NewLogField(logger.StrFile, folder))
 	}
 	return nil
 }
 
-func checkRegular(path *string) bool {
-	info, _ := filestat(path, false)
-	defer logger.ClearVar(info)
-	return (info).Mode().IsRegular()
+// setchmodwalk changes the file permissions of the given path to 0777 recursively.
+// It is used to ensure folders can be deleted properly.
+func setchmodwalk(pathv string, _ fs.DirEntry, errw error) error {
+	if errw != nil {
+		return errw
+	}
+	_ = os.Chmod(pathv, 0777)
+	return nil
 }
+
+// moveFileDriveBuffer moves a file from sourcePath to destPath using a buffer
+// to avoid memory issues with large files. It checks that the source file exists
+// and is a regular file, and that the destination does not already exist.
+// It copies the file in chunks using a buffer size determined by the
+// MoveBufferSizeKB setting, or 1024 KB by default.
 func moveFileDriveBuffer(sourcePath, destPath string) error {
 	bufferkb := 1024
 
@@ -256,30 +275,30 @@ func moveFileDriveBuffer(sourcePath, destPath string) error {
 		bufferkb = buffersize
 	}
 
-	if !checkRegular(&sourcePath) {
+	if !checkFile(sourcePath, false, true) {
 		return errors.New(sourcePath + " is not a regular file")
 	}
 
-	if CheckFileExist(&destPath) {
+	if CheckFileExist(destPath) {
 		return errors.New(destPath + " already exists")
 	}
 
 	source, err := os.Open(sourcePath)
 	if err != nil {
-		return errors.Join(err, errors.New("move source open"))
+		return err
 	}
 	defer source.Close()
 
 	destination, err := os.Create(destPath)
 	if err != nil {
-		return errors.Join(err, errors.New("move destionation create"))
+		return err
 	}
 	defer destination.Close()
 
 	for {
 		buf := make([]byte, int64(bufferkb)*1024)
 		n, err := source.Read(buf)
-		if err != nil && err != io.EOF {
+		if err != nil && !errors.Is(err, io.EOF) {
 			return err
 		}
 		if n == 0 {
@@ -287,124 +306,183 @@ func moveFileDriveBuffer(sourcePath, destPath string) error {
 		}
 
 		if _, err = destination.Write(buf[:n]); err != nil {
-			return errors.Join(err, errors.New("move destination write"))
+			return err
 		}
 	}
-	destination.Sync()
+	_ = destination.Sync()
 	// The copy was successful, so now delete the original file
+
+	return nil
+}
+
+// MoveFileDriveBuffer moves the file at sourcePath to destPath using a buffer,
+// sets the file permissions to chmod, and deletes the original source file
+// after a successful copy. Returns any error.
+func MoveFileDriveBuffer(sourcePath, destPath string, chmod fs.FileMode) error {
+	err := moveFileDriveBuffer(sourcePath, destPath)
+	if err != nil {
+		return err
+	}
+
 	err = os.Remove(sourcePath)
 	if err != nil {
-		return errors.New("failed removing original file: " + err.Error())
+		_ = os.Chmod(sourcePath, 0777)
+		err = os.Remove(sourcePath)
+		if err != nil {
+			return errors.New("failed removing original file: " + err.Error())
+		}
+	}
+	if chmod != 0 {
+		_ = os.Chmod(destPath, chmod)
 	}
 	return nil
 }
 
-func MoveFileDriveBuffer(sourcePath, destPath string) error {
-	return moveFileDriveBuffer(sourcePath, destPath)
-}
-
-func moveFileDrive(sourcePath, destPath string) error {
-	err := copyFile(sourcePath, destPath, false)
+// moveFileDrive copies the file at sourcePath to destPath, setting the folder
+// permissions to chmodfolder and file permissions to chmod after the copy.
+// It handles deleting the original source file after a successful copy.
+// Returns any errors from the copy or file deletions.
+func moveFileDrive(sourcePath, destPath string, chmodfolder, chmod fs.FileMode) error {
+	err := copyFile(sourcePath, destPath, false, chmodfolder, chmod)
 	if err != nil {
-		logger.Log.Error().Str("sourcepath", sourcePath).Str("targetpath", destPath).Err(err).Msg("Error copiing source")
+		logger.LogDynamic("error", "Error copiing source", logger.NewLogField("sourcepath", sourcePath), logger.NewLogField("targetpath", destPath), logger.NewLogFieldValue(err))
 		return err
 	}
+
+	if chmod != 0 {
+		_ = os.Chmod(destPath, chmod)
+	}
 	// The copy was successful, so now delete the original file
-	err = os.Remove(sourcePath)
-	if err != nil {
-		logger.Log.Error().Err(err).Str(logger.StrPath, sourcePath).Msg("file could not be removed")
-		return err
+	if os.Remove(sourcePath) != nil {
+		_ = os.Chmod(sourcePath, 0777)
+		err = os.Remove(sourcePath)
+		if err != nil {
+			logger.LogDynamic("error", "file could not be removed", logger.NewLogFieldValue(err), logger.NewLogField(logger.StrFile, sourcePath))
+			return err
+		}
 	}
 	return nil
 }
 
-func MoveFileDrive(sourcePath, destPath string) error {
-	return moveFileDrive(sourcePath, destPath)
-}
-
-func filestat(path *string, onlyerr bool) (fs.FileInfo, error) {
-	a, e := os.Stat(*path)
-	if onlyerr {
-		a = nil
-		return nil, e
+// checkFile checks if the file at fpath exists and/or is a regular file,
+// based on the provided checkexists and checkregular flags.
+func checkFile(fpath string, checkexists bool, checkregular bool) bool {
+	sfi, err := os.Stat(fpath)
+	if checkexists {
+		return !errors.Is(err, fs.ErrNotExist)
 	}
-	return a, e
-}
-func CheckFileExist(path *string) bool {
-	_, err := filestat(path, true)
-	return !errors.Is(err, fs.ErrNotExist)
+	if checkregular {
+		return sfi.Mode().IsRegular()
+	}
+	return false
 }
 
-func GetFileSize(path *string) int64 {
-	info, err := filestat(path, false)
+// CheckFileExist checks if the file exists at the given file path.
+// It returns true if the file exists, and false if there is an error
+// indicating the file does not exist.
+func CheckFileExist(fpath string) bool {
+	return checkFile(fpath, true, false)
+}
+
+// CheckFileSizeRecent checks if the file at fpath is recent and meets the
+// minimum size requirements from the PathsConfig. It returns true if the file
+// is too small or older than 2 minutes, which indicates it should be skipped.
+func CheckFileSizeRecent(fpath string, sourcepathCfg *config.PathsConfig) bool {
+	info, err := os.Stat(fpath)
 	if err != nil {
-		return 0
+		return false
 	}
-	defer logger.ClearVar(info)
-	return (info).Size()
+	if info.Size() < sourcepathCfg.MinVideoSizeByte {
+		logger.LogDynamic("warn", "skipped - small files", logger.NewLogField(logger.StrFile, fpath))
+		if sourcepathCfg.Name == "" {
+			return true
+		}
+		ext := filepath.Ext(fpath)
+
+		ok, oknorename := CheckExtensions(true, false, sourcepathCfg, ext)
+
+		if ok || oknorename || (sourcepathCfg.AllowedVideoExtensionsLen == 0 && sourcepathCfg.AllowedVideoExtensionsNoRenameLen == 0) {
+			_ = os.Chmod(fpath, 0777)
+			err := os.Remove(fpath)
+			if err != nil {
+				logger.LogDynamic("error", "file could not be removed", logger.NewLogFieldValue(err), logger.NewLogField(logger.StrFile, fpath))
+			} else {
+				logger.LogDynamic("info", "File removed", logger.NewLogField(logger.StrFile, fpath))
+			}
+		}
+		return true
+	}
+	bl := info.ModTime().After(logger.TimeGetNow().Add(-2 * time.Minute))
+	if bl {
+		logger.LogDynamic("error", "file modified too recently", logger.NewLogField(logger.StrFile, fpath))
+	}
+	return bl
 }
 
-// CopyFile copies a file from src to dst. If src and dst files exist, and are
-// the same, then return success. Otherwise, attempt to create a hard link
-// between the two files. If that fails, copy the file contents from src to dst.
-// Creates any missing directories. Supports '~' notation for $HOME directory of the current user.
-func copyFile(src, dst string, allowFileLink bool) error {
+// copyFile copies the contents of the file named src to the file named
+// dst. The file will be created if it does not already exist. If the
+// destination file exists, all it's contents will be replaced by the
+// contents of the source file. This function handles creating any missing
+// directories in the destination path and setting permissions.
+func copyFile(src, dst string, allowFileLink bool, chmodfolder, chmod fs.FileMode) error {
 	srcAbs, err := filepath.Abs(src)
 	if err != nil {
-		return errors.Join(err, errors.New("move file abs src"))
+		return err
 	}
 	dstAbs, err := filepath.Abs(dst)
 	if err != nil {
-		return errors.Join(err, errors.New("move file abs dst"))
+		return err
 	}
+	if srcAbs == dstAbs {
+		return errors.New("same file")
+	}
+
+	// open source file
+	if !checkFile(srcAbs, false, true) {
+		// cannot copy non-regular files (e.g., directories,
+		// symlinks, devices, etc.)
+		return errors.New("CopyFile: non-regular source file " + srcAbs)
+	}
+
+	dfi, err := os.Stat(dstAbs)
+	if errors.Is(err, fs.ErrNotExist) {
+		if chmodfolder == 0 {
+			chmodfolder = 0777
+		}
+		err = os.MkdirAll(filepath.Dir(dst), chmodfolder)
+		if err != nil {
+			return err
+		}
+		if chmodfolder != 0 {
+			_ = os.Chmod(filepath.Dir(dst), chmodfolder)
+		}
+	} else if err == nil {
+		if !dfi.Mode().IsRegular() {
+			return errors.New("CopyFile: non-regular destination file " + dfi.Name() + " - " + dfi.Mode().String())
+		}
+		//if os.SameFile(sfi, dfi) {
+		//	return errors.New("same file")
+		//}
+	}
+	// open dest file
+
+	// if allowFileLink {
+	// 	if err = os.Link(src, dst); err == nil {
+	// 		return nil
+	// 	}
+	// }
 
 	// Open the source file for reading
 	srcFile, err := os.Open(src)
 	if err != nil {
-		return errors.Join(err, errors.New("move file open"))
+		return err
 	}
 	defer srcFile.Close()
-
-	// open source file
-	sfi, err := filestat(&srcAbs, false)
-
-	if err != nil {
-		return errors.Join(err, errors.New("move file stat src"))
-	}
-	if !(sfi).Mode().IsRegular() {
-		// cannot copy non-regular files (e.g., directories,
-		// symlinks, devices, etc.)
-		return errors.New("CopyFile: non-regular source file " + (sfi).Name() + " (" + (sfi).Mode().String() + ")")
-	}
-
-	dfi, err := filestat(&dstAbs, false)
-	if errors.Is(err, fs.ErrNotExist) {
-		err = os.MkdirAll(filepath.Dir(dst), (sfi).Mode())
-		if err != nil {
-			return errors.Join(err, errors.New("move file dir"))
-		}
-		dfi, err = filestat(&dstAbs, false)
-	}
-	// open dest file
-
-	if err == nil {
-		if !(dfi).Mode().IsRegular() {
-			return errors.New("CopyFile: non-regular destination file " + (dfi).Name() + " (" + (dfi).Mode().String() + ")")
-		}
-		if os.SameFile(sfi, dfi) {
-			return errors.New("same file")
-		}
-	}
-	if allowFileLink {
-		if err = os.Link(src, dst); err == nil {
-			return nil
-		}
-	}
 
 	// Open the destination file for writing
 	dstFile, err := os.Create(dst)
 	if err != nil {
-		return errors.Join(err, errors.New("move file create"))
+		return err
 	}
 	defer dstFile.Close()
 	// Return any errors that result from closing the destination file
@@ -412,147 +490,55 @@ func copyFile(src, dst string, allowFileLink bool) error {
 
 	// Copy the contents of the source file into the destination files
 	if _, err = io.Copy(dstFile, srcFile); err != nil {
-		return errors.Join(err, errors.New("move file copy"))
+		return err
 	}
-	dstFile.Sync()
-	return os.Chmod(dst, (sfi).Mode())
+	// Sync and set permissions if needed
+	if err = dstFile.Sync(); err != nil {
+		return err
+	}
+	if chmod != 0 {
+		if err = os.Chmod(dstAbs, chmod); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-func Filterfile(path *string, useother bool, pathcfg string) bool {
-	var ok bool
-	extlower := filepath.Ext(*path)
-	if useother {
-		for idx := range config.SettingsPath["path_"+pathcfg].AllowedOtherExtensions {
-			if strings.EqualFold(config.SettingsPath["path_"+pathcfg].AllowedOtherExtensions[idx], extlower) {
-				ok = true
-				break
-			}
-		}
-	} else {
-		for idx := range config.SettingsPath["path_"+pathcfg].AllowedVideoExtensions {
-			if strings.EqualFold(config.SettingsPath["path_"+pathcfg].AllowedVideoExtensions[idx], extlower) {
-				ok = true
-				break
-			}
-		}
-	}
-
-	if !ok {
-		if useother && len(config.SettingsPath["path_"+pathcfg].AllowedOtherExtensionsNoRename) >= 1 {
-
-			for idx := range config.SettingsPath["path_"+pathcfg].AllowedOtherExtensionsNoRename {
-				if strings.EqualFold(config.SettingsPath["path_"+pathcfg].AllowedOtherExtensionsNoRename[idx], extlower) {
-					ok = true
-					break
-				}
-			}
-		} else if !useother && len(config.SettingsPath["path_"+pathcfg].AllowedVideoExtensionsNoRename) >= 1 {
-
-			for idx := range config.SettingsPath["path_"+pathcfg].AllowedVideoExtensionsNoRename {
-				if strings.EqualFold(config.SettingsPath["path_"+pathcfg].AllowedVideoExtensionsNoRename[idx], extlower) {
-					ok = true
-					break
-				}
-			}
-		}
-	}
-	if !ok {
-		if useother {
-			if len(config.SettingsPath["path_"+pathcfg].AllowedOtherExtensionsNoRename) == 0 && len(config.SettingsPath["path_"+pathcfg].AllowedOtherExtensions) == 0 && !ok {
-				ok = true
-			}
-		} else {
-			if len(config.SettingsPath["path_"+pathcfg].AllowedVideoExtensionsNoRename) == 0 && len(config.SettingsPath["path_"+pathcfg].AllowedVideoExtensions) == 0 && !ok {
-				ok = true
-			}
-		}
-	}
+// Filterfile checks if a file path matches the allowed extensions and is not in the blocked paths.
+// It takes the file path, a bool indicating if it is an "other" non-video file,
+// and a PathsConfig struct containing the allowed/blocked extensions and paths.
+// It returns a bool indicating if the path is allowed.
+func Filterfile(pathv string, useother bool, setpathcfg *config.PathsConfig) bool {
+	ok, _ := CheckExtensions(!useother, useother, setpathcfg, filepath.Ext(pathv))
 
 	//Check IgnoredPaths
 
-	if len(config.SettingsPath["path_"+pathcfg].Blocked) >= 1 && ok {
-		for idx := range config.SettingsPath["path_"+pathcfg].Blocked {
-			if logger.ContainsI(*path, config.SettingsPath["path_"+pathcfg].Blocked[idx]) {
-				return false
-			}
+	if ok && setpathcfg.BlockedLen >= 1 {
+		if logger.SlicesContainsPart2I(setpathcfg.Blocked, pathv) {
+			return false
 		}
 	}
 	return ok
 }
 
-func AppendCsv(path string, line string) error {
-	f, err := os.OpenFile(path,
-		os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+// AppendCsv appends a line to the CSV file at fpath.
+// It opens the file for appending, creating it if needed, with permissions 0777.
+// It writes the line to the file with a newline separator.
+// It handles logging and returning any errors.
+func AppendCsv(fpath, line string) error {
+	f, err := os.OpenFile(fpath,
+		os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0777)
 	if err != nil {
-		logger.Logerror(err, "Error opening csv to write")
+		logger.LogDynamic("error", "Error opening csv to write", logger.NewLogFieldValue(err))
 		return err
 	}
 	_, err = io.WriteString(f, line+"\n")
-	f.Sync()
+	_ = f.Sync()
 	f.Close()
 	if err != nil {
-		logger.Logerror(err, "Error writing to csv")
+		logger.LogDynamic("error", "Error writing to csv", logger.NewLogFieldValue(err))
 	} else {
-		logger.Log.Info().Msg("csv written")
+		logger.LogDynamic("info", "csv written")
 	}
 	return nil
-}
-
-// DownloadFile will download a url to a local file. It's efficient because it will
-// write as it downloads and not load the whole file into memory.
-func DownloadFile(saveIn string, fileprefix string, filename string, url *string, allowhtml bool) error {
-	resp, err := apiexternal.WebClient.Do(logger.HTTPGetRequest(url))
-	if err != nil || resp == nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	// Create the file
-	if filename == "" {
-		filename = path.Base(resp.Request.URL.String())
-	}
-	if fileprefix != "" {
-		filename = fileprefix + filename
-	}
-	filepath := path.Join(saveIn, filename)
-	out, err := os.Create(filepath)
-	if err != nil {
-		return err
-	}
-
-	// Write the body to file
-	_, err = io.Copy(out, resp.Body)
-	out.Sync()
-	out.Close()
-	if err != nil {
-		return err
-	}
-
-	if !allowhtml {
-		tst, err := os.Open(filepath)
-		if err != nil {
-			return err
-		}
-		defer tst.Close()
-		scanner := bufio.NewScanner(tst)
-		if scanner.Scan() {
-			str := strings.TrimSpace(scanner.Text())
-			if len(str) >= 5 {
-				if strings.EqualFold(str[:5], "<html") {
-					RemoveFile(filepath)
-					return errors.New("contained html")
-				}
-			}
-			if scanner.Scan() {
-				str = strings.TrimSpace(scanner.Text())
-				if len(str) >= 5 {
-					if strings.EqualFold(str[:5], "<html") {
-						RemoveFile(filepath)
-						return errors.New("contained html")
-					}
-				}
-			}
-		}
-	}
-	return err
 }

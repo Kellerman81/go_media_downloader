@@ -9,29 +9,28 @@ import (
 )
 
 func GetStatsTable(ctx *context.Context) (userTable table.Table) {
-
 	userTable = table.NewDefaultTable(table.Config{})
 	userTable.GetOnlyInfo()
 	//typ #List #count #missing #reached
 
-	var stats []map[string]interface{}
+	var stats []map[string]any
 	id := 0
-	lists := database.QueryStaticStringArray(false, 0, "select distinct listname from movies where length(listname) >= 1")
-	for idx := range *lists {
-		all := database.QueryIntColumn("select count(*) from movies where listname = ? COLLATE NOCASE", (*lists)[idx])
-		missing := database.QueryIntColumn("select count(*) from movies where listname = ? COLLATE NOCASE and missing=1", (*lists)[idx])
-		reached := database.QueryIntColumn("select count(*) from movies where listname = ? COLLATE NOCASE and quality_reached=1", (*lists)[idx])
-		upgrade := database.QueryIntColumn("select count(*) from movies where listname = ? COLLATE NOCASE and quality_reached=0 and missing=0", (*lists)[idx])
-		stats = append(stats, map[string]interface{}{"id": id, "typ": "movies", "list": (*lists)[idx], "total": all, "missing": missing, "finished": reached, "upgrade": upgrade})
+	lists := database.GetrowsN[string](false, 5, "select distinct listname from movies where length(listname) >= 1")
+	for idx := range lists {
+		all := database.GetdatarowN[int](false, "select count(*) from movies where listname = ? COLLATE NOCASE", &lists[idx])
+		missing := database.GetdatarowN[int](false, "select count(*) from movies where listname = ? COLLATE NOCASE and missing=1", &lists[idx])
+		reached := database.GetdatarowN[int](false, "select count(*) from movies where listname = ? COLLATE NOCASE and quality_reached=1", &lists[idx])
+		upgrade := database.GetdatarowN[int](false, "select count(*) from movies where listname = ? COLLATE NOCASE and quality_reached=0 and missing=0", &lists[idx])
+		stats = append(stats, map[string]any{"id": id, "typ": "movies", "list": lists[idx], "total": all, "missing": missing, "finished": reached, "upgrade": upgrade})
 		id++
 	}
-	lists = database.QueryStaticStringArray(false, 0, "select distinct listname from series where length(listname) >= 1")
-	for idx := range *lists {
-		all := database.QueryIntColumn("select count(*) from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE)", (*lists)[idx])
-		missing := database.QueryIntColumn("select count(*) from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE) and missing=1", (*lists)[idx])
-		reached := database.QueryIntColumn("select count(*) from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE) and quality_reached=1", (*lists)[idx])
-		upgrade := database.QueryIntColumn("select count(*) from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE) and quality_reached=0 and missing=0", (*lists)[idx])
-		stats = append(stats, map[string]interface{}{"id": id, "typ": "episodes", "list": (*lists)[idx], "total": all, "missing": missing, "finished": reached, "upgrade": upgrade})
+	lists = database.GetrowsN[string](false, 5, "select distinct listname from series where length(listname) >= 1")
+	for idx := range lists {
+		all := database.GetdatarowN[int](false, "select count(*) from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE)", &lists[idx])
+		missing := database.GetdatarowN[int](false, "select count(*) from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE) and missing=1", &lists[idx])
+		reached := database.GetdatarowN[int](false, "select count(*) from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE) and quality_reached=1", &lists[idx])
+		upgrade := database.GetdatarowN[int](false, "select count(*) from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE) and quality_reached=0 and missing=0", &lists[idx])
+		stats = append(stats, map[string]any{"id": id, "typ": "episodes", "list": lists[idx], "total": all, "missing": missing, "finished": reached, "upgrade": upgrade})
 		id++
 	}
 	info := userTable.GetInfo().SetDefaultPageSize(100)
@@ -47,7 +46,7 @@ func GetStatsTable(ctx *context.Context) (userTable table.Table) {
 	info.SetTable("Stats").
 		SetTitle("Stats").
 		SetDescription("Stats").
-		SetGetDataFn(func(param parameter.Parameters) (data []map[string]interface{}, size int) {
+		SetGetDataFn(func(param parameter.Parameters) (data []map[string]any, size int) {
 			param.PK()
 			return stats, len(stats)
 		})

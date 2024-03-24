@@ -45,6 +45,10 @@ func (c *Client) List() (*GroupResponse, error) {
 
 	r := &GroupResponse{response: &response{Timestamp: time.Now(), Status: s}}
 	err = c.request("listgroups", nil, r)
+
+	if err == nil {
+		return r, nil
+	}
 	return r, err
 }
 
@@ -120,7 +124,7 @@ func (c *Client) EditQueue(command, param string, ids []int) error {
 }
 
 func (c *Client) Add(URL string, options *AppendOptions) (int64, error) {
-	path, err := downloadURL(&URL)
+	path, err := downloadURL(URL)
 	if err != nil {
 		return 0, errors.Wrap(err, "could not download url")
 	}
@@ -184,7 +188,7 @@ func (c *Client) Version() (string, error) {
 	return version.Version, nil
 }
 
-func (c *Client) request(path string, params url.Values, target interface{}) (err error) {
+func (c *Client) request(path string, params url.Values, target any) (err error) {
 	var urlv string
 	var request *http.Request
 

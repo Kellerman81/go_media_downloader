@@ -2,34 +2,128 @@ package database
 
 import (
 	"database/sql"
+	"errors"
+	"os"
+	"reflect"
+	"regexp"
 	"strings"
-	"time"
+	"sync"
 
+	"github.com/Kellerman81/go_media_downloader/config"
 	"github.com/Kellerman81/go_media_downloader/logger"
 	"github.com/jmoiron/sqlx"
 )
 
-type Query struct {
-	Select    string
-	Where     string
-	OrderBy   string
-	Limit     int
-	Offset    int
-	InnerJoin string
+// ParseInfo is a struct containing parsed information about media files
+type ParseInfo struct {
+	// File is the path to the media file
+	File string
+	// Title is the title of the media
+	Title string
+	// Season is the season number, if applicable
+	Season int `json:"season,omitempty"`
+	// Episode is the episode number, if applicable
+	Episode int `json:"episode,omitempty"`
+	// SeasonStr is the season number as a string, if applicable
+	SeasonStr string `json:"seasonstr,omitempty"`
+	// EpisodeStr is the episode number as a string, if applicable
+	EpisodeStr string `json:"episodestr,omitempty"`
+	// Year is the year of release
+	Year int `json:"year,omitempty"`
+	// Resolution is the video resolution
+	Resolution string `json:"resolution,omitempty"`
+	// ResolutionID is the database ID of the resolution
+	ResolutionID uint `json:"resolutionid,omitempty"`
+	// Quality is the video quality description
+	Quality string `json:"quality,omitempty"`
+	// QualityID is the database ID of the quality
+	QualityID uint `json:"qualityid,omitempty"`
+	// Codec is the video codec
+	Codec string `json:"codec,omitempty"`
+	// CodecID is the database ID of the codec
+	CodecID uint `json:"codecid,omitempty"`
+	// Audio is the audio description
+	Audio string `json:"audio,omitempty"`
+	// AudioID is the database ID of the audio
+	AudioID uint `json:"audioid,omitempty"`
+	// Priority is the priority for downloading
+	Priority int `json:"priority,omitempty"`
+	// Identifier is an identifier string
+	Identifier string `json:"identifier,omitempty"`
+	// Date is the release date
+	Date string `json:"date,omitempty"`
+	// Extended is a flag indicating if it is an extended version
+	Extended bool `json:"extended,omitempty"`
+	// Proper is a flag indicating if it is a proper release
+	Proper bool `json:"proper,omitempty"`
+	// Repack is a flag indicating if it is a repack release
+	Repack bool `json:"repack,omitempty"`
+	// Imdb is the IMDB ID
+	Imdb string `json:"imdb,omitempty"`
+	// Tvdb is the TVDB ID
+	Tvdb string `json:"tvdb,omitempty"`
+	// Qualityset is the quality configuration
+	Qualityset *config.QualityConfig `json:"qualityset,omitempty"`
+	// Languages is a list of language codes
+	Languages []string `json:"languages,omitempty"`
+	// Runtime is the runtime in minutes
+	Runtime int `json:"runtime,omitempty"`
+	// Height is the video height in pixels
+	Height int `json:"height,omitempty"`
+	// Width is the video width in pixels
+	Width int `json:"width,omitempty"`
+	// DbmovieID is the database ID of the movie
+	DbmovieID uint `json:"dbmovieid,omitempty"`
+	// MovieID is the application ID of the movie
+	MovieID uint `json:"movieid,omitempty"`
+	// DbserieID is the database ID of the TV series
+	DbserieID uint `json:"dbserieid,omitempty"`
+	// DbserieEpisodeID is the database ID of the episode
+	DbserieEpisodeID uint `json:"dbserieepisodeid,omitempty"`
+	// SerieID is the application ID of the TV series
+	SerieID uint `json:"serieid,omitempty"`
+	// SerieEpisodeID is the application ID of the episode
+	SerieEpisodeID uint `json:"serieepisodeid,omitempty"`
+	// ListID is the ID of the list this came from
+	ListID int
+
+	//SluggedTitle     string
+	//Listname         string   `json:"listname,omitempty"`
+	//ListCfg *config.ListsConfig
+	//Group           string   `json:"group,omitempty"`
+	//Region          string   `json:"region,omitempty"`
+	//Hardcoded       bool     `json:"hardcoded,omitempty"`
+	//Container       string   `json:"container,omitempty"`
+	//Widescreen      bool     `json:"widescreen,omitempty"`
+	//Website         string   `json:"website,omitempty"`
+	//Sbs             string   `json:"sbs,omitempty"`
+	//Unrated         bool     `json:"unrated,omitempty"`
+	//Subs            string   `json:"subs,omitempty"`
+	//ThreeD          bool     `json:"3d,omitempty"`
 }
 
+// Querywithargs is a struct to hold query arguments
 type Querywithargs struct {
-	QueryString    string
-	Select         string
-	Table          string
-	InnerJoin      string
-	Where          string
-	OrderBy        string
-	Limit          int
-	Offset         int
-	DontCache      bool
+	// QueryString is the base SQL query
+	QueryString string
+	// Select is the columns to select
+	Select string
+	// Table is the main table in the query
+	Table string
+	// InnerJoin is any inner join statements
+	InnerJoin string
+	// Where is the WHERE clause
+	Where string
+	// OrderBy is the ORDER BY clause
+	OrderBy string
+	// Limit is the LIMIT clause value
+	Limit int
+	// Offset is the OFFSET clause value
+	Offset int
+	// defaultcolumns is used for default columns
 	defaultcolumns string
-	size           int
+	// size is the size of the result
+	size int
 }
 
 type DbstaticOneIntOneBool struct {
@@ -37,13 +131,22 @@ type DbstaticOneIntOneBool struct {
 	Bl  bool `db:"bl"`
 }
 
-type DbstaticOneInt struct {
+type dbstaticOneInt struct {
 	Num int `db:"num"`
 }
 
 type DbstaticOneStringOneInt struct {
 	Str string `db:"str"`
 	Num int    `db:"num"`
+}
+type DbstaticOneStringOneUInt struct {
+	Str string `db:"str"`
+	Num uint   `db:"num"`
+}
+type DbstaticOneStringTwoInt struct {
+	Str  string `db:"str"`
+	Num1 int    `db:"num1"`
+	Num2 int    `db:"num2"`
 }
 
 type DbstaticTwoStringOneInt struct {
@@ -66,11 +169,18 @@ type DbstaticThreeString struct {
 	Str2 string `db:"str2"`
 	Str3 string `db:"str3"`
 }
-type DbstaticThreeStringOneInt struct {
+type dbstaticThreeStringOneInt struct {
 	Str1 string `db:"str1"`
 	Str2 string `db:"str2"`
 	Str3 string `db:"str3"`
 	Num1 int    `db:"num1"`
+}
+type DbstaticThreeStringTwoInt struct {
+	Str1 string `db:"str1"`
+	Str2 string `db:"str2"`
+	Str3 string `db:"str3"`
+	Num1 int    `db:"num1"`
+	Num2 int    `db:"num2"`
 }
 
 type DbstaticTwoString struct {
@@ -79,340 +189,285 @@ type DbstaticTwoString struct {
 }
 
 const (
-	FilterByImdb                  = "imdb_id = ?"
-	FilterByTvdb                  = "thetvdb_id = ?"
-	FilterByTconst                = "tconst = ?"
-	strWhere                      = " where "
-	QueryDbmoviesGetImdbByMoviedb = "select imdb_id from dbmovies where moviedb_id = ?"
-	//QueryDbmoviesGetImdbYearByTitleSlug = "select imdb_id, year from dbmovies where title = ? COLLATE NOCASE OR slug = ?"
-	QueryDbmoviesGetImdbByID    = "select imdb_id from dbmovies where id = ?"
-	QueryDbmoviesGetIDByImdb    = "select id from dbmovies where imdb_id = ?"
-	QueryDbmoviesGetYearByID    = "Select year from dbmovies where id = ?"
-	QueryDbmoviesGetTitleByID   = "Select title from dbmovies where id = ?"
-	QueryDbmoviesGetRuntimeByID = "Select runtime from dbmovies where id = ?"
-
-	QueryDbmovieTitlesGetTitleByIDLmit1   = "select title from dbmovie_titles where dbmovie_id = ? limit 1"
-	QueryDbmovieTitlesGetTitleByID        = "select title from dbmovie_titles where dbmovie_id = ?"
-	QueryDbmovieTitlesGetTitleByIDNoEmpty = "select distinct title from dbmovie_titles where dbmovie_id = ? and title != ''"
-	//QueryDbmovieTitlesGetImdbYearByTitleSlug = "select dbmovies.imdb_id, dbmovies.year from dbmovie_titles inner join dbmovies on dbmovies.id=dbmovie_titles.dbmovie_id where dbmovie_titles.title = ? COLLATE NOCASE OR dbmovie_titles.slug = ?"
-
-	QueryMoviesGetQualityByImdb = "select movies.quality_profile from movies inner join dbmovies on dbmovies.id = movies.dbmovie_id where dbmovies.imdb_id = ?"
-	QueryMoviesGetQualityByID   = "select quality_profile from movies where id = ?"
-	QueryMoviesGetRootpathByID  = "select rootpath from movies where id = ?"
-	QueryMoviesGetListnameByID  = "select listname from movies where id = ?"
-	QueryMoviesGetDBIDByID      = "select dbmovie_id from movies where id = ?"
-	//QueryMoviesGetDontSearchByID      = "Select dont_search from movies where id = ?"
-	//QueryMoviesGetDontUpgradeByID     = "Select dont_upgrade from movies where id = ?"
-	QueryMoviesGetIDByImdbListname    = "select id from movies where dbmovie_id in (Select id from dbmovies where imdb_id = ?) and listname = ? COLLATE NOCASE"
-	QueryMoviesCountByListname        = "Select count() from movies where listname = ? COLLATE NOCASE"
-	QueryMoviesGetIDByDBIDListname    = "select id from movies where dbmovie_id = ? and listname = ? COLLATE NOCASE"
-	QueryMoviesGetIDMissingByListname = "Select id, missing from movies where listname = ? COLLATE NOCASE"
-
-	QueryMovieFilesCountByMovieID         = "select count() from movie_files where movie_id = ?"
-	QueryMovieFilesGetIDByMovieID         = "select id from movie_files where movie_id = ?"
-	QueryMovieFilesGetIDMovieIDByLocation = "select id, movie_id from movie_files where location = ?"
-
-	QueryImdbRatingsCountByImdbVotes      = "select count() from imdb_ratings where tconst = ? and num_votes < ?"
-	QueryImdbRatingsCountByImdbRating     = "select count() from imdb_ratings where tconst = ? and average_rating < ?"
-	QueryImdbGenresGetGenreByImdb         = "select genre from imdb_genres where tconst = ?"
-	QueryImdbGenresCountByImdbGenre       = "select count() from imdb_genres where tconst = ? and genre = ? COLLATE NOCASE"
-	QueryImdbTitlesGetImdbYearByTitleSlug = "select tconst,start_year from imdb_titles where (primary_title = ? COLLATE NOCASE or original_title = ? COLLATE NOCASE or slug = ?)"
-	QueryImdbTitlesCountByTitleSlug       = "select count() from imdb_titles where (primary_title = ? COLLATE NOCASE or original_title = ? COLLATE NOCASE or slug = ?)"
-	QueryImdbTitlesGetYearByImdb          = "select start_year from imdb_titles where tconst = ?"
-	QueryImdbAkasGetImdbByTitleSlug       = "select distinct tconst from imdb_akas where title = ? COLLATE NOCASE or slug = ?"
-	QueryImdbAkasCountByTitleSlug         = "select count() from imdb_akas where title = ? COLLATE NOCASE or slug = ?"
-
-	QueryDbseriesGetIDByName       = "select id from dbseries where seriename = ? COLLATE NOCASE"
-	QueryDbseriesGetIDByTvdb       = "select id from dbseries where thetvdb_id = ?"
-	QueryDbseriesGetIdentifiedByID = "select lower(identifiedby) from dbseries where id = ?"
-	QueryDbseriesGetTvdbByID       = "select thetvdb_id from dbseries where id = ?"
-	QueryDbseriesGetSerienameByID  = "Select seriename from dbseries where id = ?"
-	QueryDbseriesGetRuntimeByID    = "select runtime from dbseries where id = ?"
-	QueryDbseriesGetIDBySlug       = "select id from dbseries where slug = ?"
-
-	QueryDbserieAlternatesGetDBIDByTitleSlug    = "select dbserie_id from Dbserie_alternates where Title = ? COLLATE NOCASE or Slug = ?"
-	QueryDbserieAlternatesGetTitleByDBID        = "select title from dbserie_alternates where dbserie_id = ?"
-	QueryDbserieAlternatesGetTitleByDBIDNoEmpty = "select distinct title from dbserie_alternates where dbserie_id = ? and title != ''"
-
-	QueryDbserieEpisodesGetIDByDBIDSeasonEpisode = "select id from dbserie_episodes where dbserie_id = ? and season = ? and episode = ?"
-	QueryDbserieEpisodesGetIDByDBIDIdentifier    = "select id from dbserie_episodes where dbserie_id = ? and identifier = ? COLLATE NOCASE"
-	QueryDbserieEpisodesGetIDByDBID              = "select id from dbserie_episodes where dbserie_id = ?"
-	QueryDbserieEpisodesGetSeasonByID            = "Select season from dbserie_episodes where id = ?"
-	QueryDbserieEpisodesGetEpisodeByID           = "Select episode from dbserie_episodes where id = ?"
-	QueryDbserieEpisodesGetTitleByID             = "select title from dbserie_episodes where id = ?"
-	QueryDbserieEpisodesGetSeasonEpisodeByDBID   = "select season, episode from dbserie_episodes where dbserie_id = ?"
-
-	QuerySeriesGetRootpathByID     = "select rootpath from series where id = ?"
-	QuerySeriesGetDBIDByID         = "select dbserie_id from series where id = ?"
-	QuerySeriesGetIDByDBIDListname = "select id from series where dbserie_id = ? and listname = ? COLLATE NOCASE"
-	QuerySeriesGetListnameByID     = "select listname from series where id = ?"
-	QuerySeriesGetIDByDBID         = "select id from series where dbserie_id = ?"
-
-	QuerySerieEpisodesGetIDBySerieDBEpisode       = "select id from serie_episodes where serie_id = ? and dbserie_episode_id = ?"
-	QuerySerieEpisodesGetIDBySerie                = "select id from serie_episodes where serie_id = ?"
-	QuerySerieEpisodesGetQualityBySerieID         = "select quality_profile from serie_episodes where serie_id = ?"
-	QuerySerieEpisodesGetSerieIDByID              = "select serie_id from serie_episodes where id = ?"
-	QuerySerieEpisodesGetDBSerieIDByID            = "select dbserie_id from serie_episodes where id = ?"
-	QuerySerieEpisodesGetDBSerieEpisodeIDByID     = "Select dbserie_episode_id from serie_episodes where id = ?"
-	QuerySerieEpisodesGetQualityByID              = "Select quality_profile from serie_episodes where id = ?"
-	QuerySerieEpisodesGetDBEpisodeIDByDBIDSerieID = "select dbserie_episode_id from serie_episodes where dbserie_id = ? and serie_id = ?"
-	QuerySerieEpisodesGetDBEpisodeIDSerieIDByDBID = "select dbserie_episode_id, serie_id from serie_episodes where dbserie_id = ?"
-
-	QuerySerieEpisodeFilesCountByEpisodeID         = "select count() from serie_episode_files where serie_episode_id = ?"
-	QuerySerieEpisodeFilesCountByListname          = "select count() from serie_episodes where serie_id in (select id from series where listname = ? COLLATE NOCASE)"
-	QuerySerieEpisodeFilesGetIDByEpisodeID         = "select id from serie_episode_files where serie_episode_id = ?"
-	QuerySerieEpisodeFilesGetIDMissingByListname   = "select id, missing from serie_episodes where serie_id in (select id from series where listname = ? COLLATE NOCASE)"
-	QuerySerieEpisodeFilesGetIDEpisodeIDByLocation = "select id, serie_episode_id from serie_episode_files where location = ?"
-
-	QuerySearchSeriesUpgrade = "serie_episodes.missing = 0 and serie_episodes.quality_reached = 0 and ((dbserie_episodes.Season != '0' and series.search_specials=0) or (series.search_specials=1)) and series.listname"
-	QueryUpdateHistory       = "Update job_histories set ended = ? where id = ?"
-	QueryUpdateSerieLastscan = "Update serie_episodes set lastscan = ? where id = ?"
-	Queryupdateseries        = "Update dbseries SET Seriename = :seriename, Aliases = :aliases, Season = :season, Status = :status, Firstaired = :firstaired, Network = :network, Runtime = :runtime, Language = :language, Genre = :genre, Overview = :overview, Rating = :rating, Siterating = :siterating, Siterating_Count = :siterating_count, Slug = :slug, Trakt_ID = :trakt_id, Imdb_ID = :imdb_id, Thetvdb_ID = :thetvdb_id, Freebase_M_ID = :freebase_m_id, Freebase_ID = :freebase_id, Tvrage_ID = :tvrage_id, Facebook = :facebook, Instagram = :instagram, Twitter = :twitter, Banner = :banner, Poster = :poster, Fanart = :fanart, Identifiedby = :identifiedby where id = :id"
-	QueryupdateseriesStatic  = "Update dbseries SET Seriename = ?, Aliases = ?, Season = ?, Status = ?, Firstaired = ?, Network = ?, Runtime = ?, Language = ?, Genre = ?, Overview = ?, Rating = ?, Siterating = ?, Siterating_Count = ?, Slug = ?, Trakt_ID = ?, Imdb_ID = ?, Thetvdb_ID = ?, Freebase_M_ID = ?, Freebase_ID = ?, Tvrage_ID = ?, Facebook = ?, Instagram = ?, Twitter = ?, Banner = ?, Poster = ?, Fanart = ?, Identifiedby = ? where id = ?"
-	Queryupdatemovie         = "Update dbmovies SET Title = :title , Release_Date = :release_date , Year = :year , Adult = :adult , Budget = :budget , Genres = :genres , Original_Language = :original_language , Original_Title = :original_title , Overview = :overview , Popularity = :popularity , Revenue = :revenue , Runtime = :runtime , Spoken_Languages = :spoken_languages , Status = :status , Tagline = :tagline , Vote_Average = :vote_average , Vote_Count = :vote_count , Trakt_ID = :trakt_id , Moviedb_ID = :moviedb_id , Imdb_ID = :imdb_id , Freebase_M_ID = :freebase_m_id , Freebase_ID = :freebase_id , Facebook_ID = :facebook_id , Instagram_ID = :instagram_id , Twitter_ID = :twitter_id , URL = :url , Backdrop = :backdrop , Poster = :poster , Slug = :slug where id = :id"
-	QueryupdatemovieStatic   = "Update dbmovies SET Title = ? , Release_Date = ? , Year = ? , Adult = ? , Budget = ? , Genres = ? , Original_Language = ? , Original_Title = ? , Overview = ? , Popularity = ? , Revenue = ? , Runtime = ? , Spoken_Languages = ? , Status = ? , Tagline = ? , Vote_Average = ? , Vote_Count = ? , Trakt_ID = ? , Moviedb_ID = ? , Imdb_ID = ? , Freebase_M_ID = ? , Freebase_ID = ? , Facebook_ID = ? , Instagram_ID = ? , Twitter_ID = ? , URL = ? , Backdrop = ? , Poster = ? , Slug = ? where id = ?"
-	Queryidunmatched         = "select id from movie_file_unmatcheds where filepath = ? and listname = ? COLLATE NOCASE"
+	QueryDbseriesGetIdentifiedByID                 = "select lower(identifiedby) from dbseries where id = ?"
+	QueryDbserieEpisodesGetSeasonEpisodeByDBID     = "select season, episode from dbserie_episodes where dbserie_id = ?"
+	QueryDbserieEpisodesCountByDBID                = "select count() from dbserie_episodes where dbserie_id = ?"
+	QuerySeriesCountByDBID                         = "select count() from series where dbserie_id = ?"
+	QueryUpdateHistory                             = "update job_histories set ended = datetime('now','localtime') where id = ?"
+	QueryCountMoviesByDBIDList                     = "select count() from movies where dbmovie_id = ? and listname = ? COLLATE NOCASE"
+	QuerySeriesGetIDByDBIDListname                 = "select id from series where dbserie_id = ? and listname = ? COLLATE NOCASE"
+	QueryDbseriesGetIDByTvdb                       = "select id from dbseries where thetvdb_id = ?"
+	QueryMoviesGetIDByDBIDListname                 = "select id from movies where dbmovie_id = ? and listname = ? COLLATE NOCASE"
+	QueryDbseriesGetIDByName                       = "select id from dbseries where seriename = ? COLLATE NOCASE"
+	QueryDbmovieTitlesGetTitleByIDLmit1            = "select title from dbmovie_titles where dbmovie_id = ? limit 1"
+	QuerySerieEpisodesGetDBSerieEpisodeIDByID      = "select dbserie_episode_id from serie_episodes where id = ?"
+	QuerySerieEpisodesGetDBSerieIDByID             = "select dbserie_id from serie_episodes where id = ?"
+	QuerySerieEpisodesGetSerieIDByID               = "select serie_id from serie_episodes where id = ?"
+	QueryDBSerieEpisodeGetIDByDBSerieIDIdentifier  = "select id from dbserie_episodes where dbserie_id = ? and identifier = ? COLLATE NOCASE"
+	QueryDBSerieEpisodeGetIDByDBSerieIDIdentifier2 = "select id from dbserie_episodes where dbserie_id = ? and identifier=REPLACE(?,?,?) COLLATE NOCASE"
+	sel                                            = ("select ")
+	coun                                           = ("count()")
+	all                                            = (".*")
+	from                                           = (" from ")
+	join                                           = (" inner join ")
+	where                                          = (" where ")
+	order                                          = (" order by ")
+	limit                                          = (" limit ")
+	bqaudio                                        = (" Audioid: ")
+	bqcodec                                        = (" Codecid: ")
+	bqquality                                      = (" Qualityid: ")
+	bqresolution                                   = (" Resolutionid: ")
+	bqepisode                                      = (" Episode: ")
+	bqIdentifier                                   = (" Identifier: ")
+	bqListname                                     = (" Listname: ")
+	bqSeason                                       = (" Season: ")
+	bqTitle                                        = (" Title: ")
+	bqTvdb                                         = (" Tvdb: ")
+	bqImdb                                         = (" Imdb: ")
+	bqYear                                         = (" Year: ")
 )
 
 var (
-	QueryDBMovieColumns                                = "select id,created_at,updated_at,title,release_date,year,adult,budget,genres,original_language,original_title,overview,popularity,revenue,runtime,spoken_languages,status,tagline,vote_average,vote_count,moviedb_id,imdb_id,freebase_m_id,freebase_id,facebook_id,instagram_id,twitter_id,url,backdrop,poster,slug,trakt_id from dbmovies where "
-	QuerySerieeDBIDListnameRootByID                    = "select dbserie_id, listname, rootpath from series where id = ?"
-	QueryMovieDBIDListnameRootByID                     = "select dbmovie_id, listname, rootpath from movies where id = ?"
-	QuerySerieEpisodesGetIDsDontQualityByID            = "select dbserie_episode_id, dbserie_id, serie_id, dont_search, dont_upgrade, quality_profile from serie_episodes where id = ?"
-	QuerySerieEpisodesGetDontQualityByID               = "select dont_search, dont_upgrade, quality_profile from serie_episodes where id = ?"
-	QueryMoviesGetIDsDontQualityByID                   = "select dbmovie_id, dont_search, dont_upgrade, quality_profile from movies where id = ?"
-	QueryMoviesGetDontQualityByID                      = "select dont_search, dont_upgrade, quality_profile from movies where id = ?"
-	QueryDbmoviesGetYearImdbTitleByID                  = "select year, imdb_id, title from dbmovies where id = ?"
-	QueryDbseriesGetTvdbSerienameByID                  = "select thetvdb_id, seriename from dbseries where id = ?"
-	QueryDbserieEpisodesGetSeasonEpisodeIdentifierByID = "select season, episode, identifier from dbserie_episodes where id = ?"
+	readWriteMu = &sync.RWMutex{}
+	DBConnect   dbGlobal
+	dbData      *sqlx.DB
+	dbImdb      *sqlx.DB
+	DBVersion   = "1"
+	DBLogLevel  = "Info"
 )
 
-func RemoveFromTwoUIntArrayStructV1V2(in *[]DbstaticTwoUint, v1 uint, v2 uint) {
-	intid := -1
-	for idxi := range *in {
-		if (*in)[idxi].Num1 == v1 && (*in)[idxi].Num2 == v2 {
-			intid = idxi
-			break
+// cachedelete deletes an item from the cache by key. It first checks the type of
+// the cached value and handles closing any open resources before deleting the
+// key/value pair from the cache. This helps prevent memory leaks by cleaning up
+// prepared statements, connections, etc. that are no longer needed.
+func cachedelete(key, value any) {
+	if value != nil {
+		switch item := value.(type) {
+		case *itemstmt:
+			if item.value != nil {
+				item.value.Close()
+				if item.value != nil {
+					*item.value = sqlx.Stmt{}
+				}
+			}
+			*item = itemstmt{}
+		case *itemregex:
+			*item.value = regexp.Regexp{}
+			*item = itemregex{}
+		case *cacheOneStringIntExpire:
+			clear(item.Arr)
+			*item = cacheOneStringIntExpire{}
+		case *CacheOneStringTwoIntExpire:
+			clear(item.Arr)
+			*item = CacheOneStringTwoIntExpire{}
+		case *CacheThreeStringTwoIntExpire:
+			clear(item.Arr)
+			*item = CacheThreeStringTwoIntExpire{}
+		case *cacheStringExpire:
+			clear(item.Arr)
+			*item = cacheStringExpire{}
+		case *cacheTwoIntExpire:
+			clear(item.Arr)
+			*item = cacheTwoIntExpire{}
+		case *CacheTwoStringIntExpire:
+			clear(item.Arr)
+			*item = CacheTwoStringIntExpire{}
 		}
 	}
-	//intid := logger.IndexFunc(in, func(c DbstaticTwoUint) bool { return c.Num1 == v1 && c.Num2 == v2 })
-	if intid != -1 {
-		//logger.Delete(in, intid, intid+1)
-		logger.Delete(in, intid)
-	}
+	cache.items.Delete(key)
 }
 
+// Buildparsedstring concatenates the ParseInfo fields into a string for logging.
+func (m *ParseInfo) Buildparsedstring() string {
+	bld := logger.PlBuffer.Get()
+	bld.Grow(350)
+	//defer bld.Reset()
+	if m.AudioID != 0 {
+		bld.WriteString(bqaudio)
+		logger.BuilderAddUint(bld, m.AudioID)
+	}
+	if m.CodecID != 0 {
+		bld.WriteString(bqcodec)
+		logger.BuilderAddUint(bld, m.CodecID)
+	}
+	if m.QualityID != 0 {
+		bld.WriteString(bqquality)
+		logger.BuilderAddUint(bld, m.QualityID)
+	}
+	if m.ResolutionID != 0 {
+		bld.WriteString(bqresolution)
+		logger.BuilderAddUint(bld, m.ResolutionID)
+	}
+	if m.EpisodeStr != "" {
+		bld.WriteString(bqepisode)
+		bld.WriteString(m.EpisodeStr)
+	}
+	if m.Identifier != "" {
+		bld.WriteString(bqIdentifier)
+		bld.WriteString(m.Identifier)
+	}
+	if m.ListID != -1 {
+		bld.WriteString(bqListname)
+		logger.BuilderAddInt(bld, m.ListID)
+	}
+	if m.SeasonStr != "" {
+		bld.WriteString(bqSeason)
+		bld.WriteString(m.SeasonStr)
+	}
+	if m.Title != "" {
+		bld.WriteString(bqTitle)
+		bld.WriteString(m.Title)
+	}
+	if m.Tvdb != "" {
+		bld.WriteString(bqTvdb)
+		bld.WriteString(m.Tvdb)
+	}
+	if m.Imdb != "" {
+		bld.WriteString(bqImdb)
+		bld.WriteString(m.Imdb)
+	}
+	if m.Year != 0 {
+		bld.WriteString(bqYear)
+		logger.BuilderAddInt(bld, m.Year)
+	}
+	defer logger.PlBuffer.Put(bld)
+	return bld.String()
+}
+
+// getdb returns the database connection to use based on
+// the imdb parameter. If imdb is true, it returns the
+// dbImdb connection, otherwise it returns the dbData
+// connection.
 func getdb(imdb bool) *sqlx.DB {
 	if imdb {
 		return dbImdb
 	}
 	return dbData
 }
-func getstatement(cached bool, imdb bool, querystring *string) *sqlx.Stmt {
-	if cached && logger.GlobalCacheStmt.CheckNoType(querystring) {
-		stmt := logger.GlobalCacheStmt.GetData(querystring)
-		if stmt != nil {
-			return stmt
-		}
-	}
-	sq, err := getdb(imdb).Preparex(*querystring)
-	if err != nil {
-		logerror(err, querystring, "preparing sql")
-		return nil
-	}
-	if cached {
-		logger.GlobalCacheStmt.Set(querystring, sq, time.Minute*20, false)
-	}
-	return sq
-}
 
-func getnamedstatement(cached bool, imdb bool, querystring *string) *sqlx.NamedStmt {
-	if cached && logger.GlobalCacheNamed.CheckNoType(querystring) {
-		stmt := logger.GlobalCacheNamed.GetData(querystring)
-		if stmt != nil {
-			return stmt
-		}
+// queryGenericsT scans multiple rows from sqlx.Rows into a slice of any type T.
+// It handles scanning into simple types as well as structs.
+// For structs, it uses the getfunc mapping function to get the fields to scan into.
+// Size is a hint for the initial slice capacity.
+func queryGenericsT[T any](size int, rows *sqlx.Rows) []T {
+	var result []T
+	if size != 0 {
+		result = make([]T, 0, size)
 	}
-	sq, err := getdb(imdb).PrepareNamed(*querystring)
-	if err != nil {
-		logerror(err, querystring, "preparing named sql")
-		return nil
-	}
-	if cached {
-		logger.GlobalCacheNamed.Set(querystring, sq, time.Minute*20, false)
-	}
-	return sq
-}
-
-//	func checkargs(args *[]interface{}) []interface{} {
-//		if args == nil {
-//			return []interface{}{}
-//		}
-//		return *args
-//	}
-func execsql(cached bool, imdb bool, querystring *string, args *[]interface{}) (sql.Result, error) {
-	readWriteMu.Lock()
-	defer readWriteMu.Unlock()
-	defer logger.Clear(args)
-	if DBLogLevel == logger.StrDebug {
-		logger.Log.Debug().Str(logger.StrQuery, *querystring).Any("args", args).Msg("query exec")
-	}
-
-	return getstatement(cached, imdb, querystring).Exec(*args...)
-}
-
-func execnamedsql(imdb bool, querystring *string, args *[]interface{}) (sql.Result, error) {
-	readWriteMu.Lock()
-	defer readWriteMu.Unlock()
-	if DBLogLevel == logger.StrDebug {
-		logger.Log.Debug().Str(logger.StrQuery, *querystring).Any("args", args).Msg("query exec")
-	}
-
-	defer logger.Clear(args)
-	if args == nil || len(*args) == 0 {
-		return getnamedstatement(true, imdb, querystring).Exec(nil)
-	}
-	return getnamedstatement(true, imdb, querystring).Exec((*args)[0])
-}
-
-// scans single row into any Structure
-func queryComplexObject[T any](imdb bool, querystring *string, args *[]interface{}) (*T, error) {
-	readWriteMu.RLock()
-	defer readWriteMu.RUnlock()
 	var u T
-	return &u, logerror(getstatement(true, imdb, querystring).QueryRowx(*args...).StructScan(&u), querystring, "select complex")
+	d := getfunc2(&u)
+	for rows.Next() {
+		if d.simplescan {
+			if rows.Scan(&u) == nil {
+				result = append(result, u)
+			}
+		} else if d.structscan {
+			if rows.StructScan(&u) == nil {
+				result = append(result, u)
+			}
+		} else if rows.Scan(d.arr...) == nil {
+			result = append(result, u)
+		}
+	}
+	return result
 }
 
-func logerror(err error, querystring *string, msg string) error {
-	if err != nil && err != sql.ErrNoRows {
-		logger.Log.Error().Err(err).Str(logger.StrQuery, *querystring).Msg(msg)
+type fieldconfig struct {
+	simplescan bool
+	structscan bool
+	arr        []any
+}
+
+// getfunc2 determines how to scan a value of type any into a sqlx.Rows
+// result. It returns a fieldconfig struct indicating whether the value is a
+// simple type to scan directly, a struct to scan with StructScan, or a custom
+// slice of fields to scan individually.
+func getfunc2[T any](u *T) fieldconfig {
+	var f fieldconfig
+	switch elem := any(u).(type) {
+	case *DbstaticOneIntOneBool:
+		f.arr = []any{&elem.Num, &elem.Bl}
+	case *dbstaticOneInt:
+		f.arr = []any{&elem.Num}
+	case *DbstaticOneStringOneInt:
+		f.arr = []any{&elem.Str, &elem.Num}
+	case *DbstaticOneStringOneUInt:
+		f.arr = []any{&elem.Str, &elem.Num}
+	case *DbstaticOneStringTwoInt:
+		f.arr = []any{&elem.Str, &elem.Num1, &elem.Num2}
+	case *DbstaticTwoStringOneInt:
+		f.arr = []any{&elem.Str1, &elem.Str2, &elem.Num}
+	case *DbstaticTwoInt:
+		f.arr = []any{&elem.Num1, &elem.Num2}
+	case *DbstaticTwoUint:
+		f.arr = []any{&elem.Num1, &elem.Num2}
+	case *DbstaticThreeString:
+		f.arr = []any{&elem.Str1, &elem.Str2, &elem.Str3}
+	case *dbstaticThreeStringOneInt:
+		f.arr = []any{&elem.Str1, &elem.Str2, &elem.Str3, &elem.Num1}
+	case *DbstaticThreeStringTwoInt:
+		f.arr = []any{&elem.Str1, &elem.Str2, &elem.Str3, &elem.Num1, &elem.Num2}
+	case *DbstaticTwoString:
+		f.arr = []any{&elem.Str1, &elem.Str2}
+	case *int, *string, *uint:
+		f.simplescan = true
+	default:
+		f.structscan = true
+	}
+	return f
+}
+
+// structscan queries the database using the given query string and scans the
+// result into the given struct pointer. It handles locking/unlocking the read
+// write mutex, logging any errors, and returning sql.ErrNoRows if no rows were
+// returned.
+func structscan[T any](querystring string, imdb bool, u *T, id ...any) error {
+	readWriteMu.RLock()
+	err := GlobalCache.GetStmt(querystring, imdb, getdb(imdb)).QueryRowx(id...).StructScan(u)
+	readWriteMu.RUnlock()
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		logger.LogDynamic("error", "select", logger.NewLogFieldValue(err), logger.NewLogField(logger.StrQuery, querystring))
+		if err.Error() == "sql: database is closed" {
+			cache.items.Delete(querystring)
+		}
 	}
 	return err
 }
 
-// type queryobj struct {
-// 	imdb       bool
-// 	scaninto   []interface{}
-// 	query      string
-// 	args       []interface{}
-// 	cached     bool
-// 	simplescan bool
-// 	size       int
-// }
-
-// scans any single row into variables
-func queryGenericsSingle(imdb bool, fulllock bool, scanInto *[]interface{}, querystring *string, args *[]interface{}) error {
-	if fulllock {
-		readWriteMu.Lock()
-		defer readWriteMu.Unlock()
-	} else {
-		readWriteMu.RLock()
-		defer readWriteMu.RUnlock()
-	}
-	return logerror(getstatement(true, imdb, querystring).QueryRow(*args...).Scan(*scanInto...), querystring, "select single")
-}
-
-// scans any single row into a single variable
-func queryGenericsSingleObjT[T any](imdb bool, querystring *string, args *[]interface{}) *T {
-	var obj T
-	//queryGenericsSingleOne(imdb, &obj, querystring, args)
-	queryGenericsSingle(imdb, false, &[]interface{}{&obj}, querystring, args)
-	return &obj
-}
-
-// scans multiple rows into any Structure - must provide scanFunc Mapping for Columns
-func queryGenericsT[T any](cached bool, imdb bool, simplescan bool, size int, scanFunc func(elem *T) []interface{}, querystring *string, args *[]interface{}) *[]T {
-	var result []T
-	if size >= 1 {
-		result = make([]T, 0, size)
-	}
-	queryGenericsTAssigned(cached, imdb, simplescan, &result, scanFunc, querystring, args)
-	return &result
-}
-
-// scans multiple rows into any Structure - must provide scanFunc Mapping for Columns
-func queryGenericsTAssigned[T any](cached bool, imdb bool, simplescan bool, result *[]T, scanFunc func(elem *T) []interface{}, querystring *string, args *[]interface{}) {
-	readWriteMu.RLock()
-	defer readWriteMu.RUnlock()
-
-	rows, err := getstatement(cached, imdb, querystring).Queryx(*args...)
-	logger.Clear(args)
-
-	if err != nil {
-		logerror(err, querystring, "select")
-		return
-	}
-	defer rows.Close()
+// structscanG queries the database using the given query string and scans the
+// result into the given generic type T. It handles locking/unlocking the read
+// write mutex, logging any errors, and returning sql.ErrNoRows if no rows were
+// returned.
+func structscanG[T any, R any](querystring string, imdb bool, id *R) (T, error) {
 	var u T
-	var arr []interface{}
-	if scanFunc != nil {
-		arr = scanFunc(&u)
-	}
-	for rows.Next() {
-		if scanFunc == nil {
-			if simplescan {
-				err = rows.Scan(&u)
-			} else {
-				err = rows.StructScan(&u)
-			}
-		} else {
-			err = rows.Scan(arr...)
-		}
-
-		if err != nil {
-			logerror(err, querystring, "select array")
-			return
-		}
-		*result = append(*result, u)
-	}
-	logger.Clear(&arr)
+	err := structscan(querystring, imdb, &u, id)
+	return u, err
 }
 
-// need to return all prio ids and strings
-func Queryfilesprio(querystring string, resid *uint, qualid *uint, codecid *uint, audid *uint, proper *bool, extended *bool, repack *bool, args ...interface{}) {
-	queryGenericsSingle(false, false, &[]interface{}{resid, qualid, codecid, audid, proper, extended, repack}, &querystring, &args)
+// GetDbmovieByIDP retrieves a Dbmovie by ID. It takes a uint ID and a
+// pointer to a Dbmovie struct to scan the result into. It executes a SQL query
+// using the structscan function to select the dbmovie data and scan it into
+// the Dbmovie struct. Returns an error if there was a problem retrieving the data.
+func GetDbmovieByIDP(id uint, u *Dbmovie) error {
+	return structscan("select id,created_at,updated_at,title,release_date,year,adult,budget,genres,original_language,original_title,overview,popularity,revenue,runtime,spoken_languages,status,tagline,vote_average,vote_count,moviedb_id,imdb_id,freebase_m_id,freebase_id,facebook_id,instagram_id,twitter_id,url,backdrop,poster,slug,trakt_id from dbmovies where id = ?", false, u, &id)
 }
 
-func QueryEpisodeData(id uint, dbepisodeid *uint, dbserieid *uint, serieid *uint, dontsearch *bool, dontupgrade *bool, quality *string) {
-	queryGenericsSingle(false, false, &[]interface{}{dbepisodeid, dbserieid, serieid, dontsearch, dontupgrade, quality}, &QuerySerieEpisodesGetIDsDontQualityByID, &[]interface{}{id})
+// GetDbmovieByID retrieves a Dbmovie by ID. It takes a uint ID
+// and returns a Dbmovie struct and error.
+// It executes a SQL query using the structscanG function to select the
+// dbmovie data and scan it into the Dbmovie struct.
+// Returns an error if there was a problem retrieving the data.
+func GetDbmovieByID(id uint) (Dbmovie, error) {
+	return structscanG[Dbmovie]("select id,created_at,updated_at,title,release_date,year,adult,budget,genres,original_language,original_title,overview,popularity,revenue,runtime,spoken_languages,status,tagline,vote_average,vote_count,moviedb_id,imdb_id,freebase_m_id,freebase_id,facebook_id,instagram_id,twitter_id,url,backdrop,poster,slug,trakt_id from dbmovies where id = ?", false, &id)
 }
 
-func QueryEpisodeDataDont(id uint, dontsearch *bool, dontupgrade *bool, quality *string) {
-	queryGenericsSingle(false, false, &[]interface{}{dontsearch, dontupgrade, quality}, &QuerySerieEpisodesGetDontQualityByID, &[]interface{}{id})
-}
-func QueryMovieData(id uint, dbmovie *uint, dontsearch *bool, dontupgrade *bool, quality *string) {
-	queryGenericsSingle(false, false, &[]interface{}{dbmovie, dontsearch, dontupgrade, quality}, &QueryMoviesGetIDsDontQualityByID, &[]interface{}{id})
-}
-func QueryMovieDataSearch(id uint, dbmovie *uint, listname *string, rootpath *string) {
-	queryGenericsSingle(false, false, &[]interface{}{dbmovie, listname, rootpath}, &QueryMovieDBIDListnameRootByID, &[]interface{}{id})
-}
-func QuerySerieDataSearch(id uint, dbserie *uint, listname *string, rootpath *string) {
-	queryGenericsSingle(false, false, &[]interface{}{dbserie, listname, rootpath}, &QuerySerieeDBIDListnameRootByID, &[]interface{}{id})
-}
-func QueryMovieDataDont(id uint, dontsearch *bool, dontupgrade *bool, quality *string) {
-	queryGenericsSingle(false, false, &[]interface{}{dontsearch, dontupgrade, quality}, &QueryMoviesGetDontQualityByID, &[]interface{}{id})
-}
-func QueryDbmovieData(id uint, year *int, imdb *string, title *string) {
-	if id == 0 {
-		return
-	}
-	queryGenericsSingle(false, false, &[]interface{}{year, imdb, title}, &QueryDbmoviesGetYearImdbTitleByID, &[]interface{}{id})
-}
-
-func QueryDbserieData(id uint, tvdbid *int, seriename *string) {
-	queryGenericsSingle(false, false, &[]interface{}{tvdbid, seriename}, &QueryDbseriesGetTvdbSerienameByID, &[]interface{}{id})
-}
-
-func QueryDbserieEpisodeData(id uint, season *string, episode *string, identifier *string) {
-	queryGenericsSingle(false, false, &[]interface{}{season, episode, identifier}, &QueryDbserieEpisodesGetSeasonEpisodeIdentifierByID, &[]interface{}{id})
-}
-
-func GetDbmovie(where string, val interface{}) (*Dbmovie, error) {
-	query := QueryDBMovieColumns + where
-	return queryComplexObject[Dbmovie](false, &query, &[]interface{}{val})
-}
-
-func QueryDbmovie(qu Querywithargs, args ...interface{}) *[]Dbmovie {
+// QueryDbmovie queries the dbmovies table using the provided Querywithargs struct and arguments.
+// It sets the query size and limit, table name, default columns to select, builds the query if needed,
+// and executes the query using QueryStaticArrayN, returning a slice of Dbmovie structs.
+func QueryDbmovie(qu Querywithargs, args ...any) []Dbmovie {
 	qu.size = -1
 	if qu.Limit >= 1 {
 		qu.size = qu.Limit
@@ -422,11 +477,13 @@ func QueryDbmovie(qu Querywithargs, args ...interface{}) *[]Dbmovie {
 	if qu.QueryString == "" {
 		qu.Buildquery(false)
 	}
-	return queryGenericsT[Dbmovie](true, false, false, qu.size, nil, &qu.QueryString, &args)
-	//return queryComplexScan[Dbmovie](false, qu.size, qu.QueryString, &args)
+	return GetrowsN[Dbmovie](false, qu.Limit, qu.QueryString, args...)
 }
 
-func QueryDbmovieTitle(qu Querywithargs, args ...interface{}) *[]DbmovieTitle {
+// QueryDbmovieTitle queries the dbmovie_titles table using the provided Querywithargs struct and arguments.
+// It sets the query size and limit, table name, default columns to select, builds the query if needed,
+// and executes the query using QueryStaticArrayN, returning a slice of DbmovieTitle structs.
+func QueryDbmovieTitle(qu Querywithargs, args ...any) []DbmovieTitle {
 	qu.size = -1
 	if qu.Limit >= 1 {
 		qu.size = qu.Limit
@@ -436,16 +493,31 @@ func QueryDbmovieTitle(qu Querywithargs, args ...interface{}) *[]DbmovieTitle {
 	if qu.QueryString == "" {
 		qu.Buildquery(false)
 	}
-	return queryGenericsT[DbmovieTitle](true, false, false, qu.size, nil, &qu.QueryString, &args)
-	//return queryComplexScan[DbmovieTitle](false, qu.size, qu.QueryString, &args)
+	return GetrowsN[DbmovieTitle](false, qu.Limit, qu.QueryString, args...)
 }
 
-func GetDbserieByID(id uint) (*Dbserie, error) {
-	query := "select id,created_at,updated_at,seriename,aliases,season,status,firstaired,network,runtime,language,genre,overview,rating,siterating,siterating_count,slug,imdb_id,thetvdb_id,freebase_m_id,freebase_id,tvrage_id,facebook,instagram,twitter,banner,poster,fanart,identifiedby, trakt_id from dbseries where id = ?"
-	return queryComplexObject[Dbserie](false, &query, &[]interface{}{id})
+// GetDbserieByIDP retrieves a Dbserie by ID. It takes a uint ID
+// and a pointer to a Dbserie struct to scan the result into.
+// It executes a SQL query using the structscan function to select the
+// dbserie data and scan it into the Dbserie struct.
+// Returns an error if there was a problem retrieving the data.
+func GetDbserieByIDP(id uint, u *Dbserie) error {
+	return structscan("select id,created_at,updated_at,seriename,aliases,season,status,firstaired,network,runtime,language,genre,overview,rating,siterating,siterating_count,slug,imdb_id,thetvdb_id,freebase_m_id,freebase_id,tvrage_id,facebook,instagram,twitter,banner,poster,fanart,identifiedby, trakt_id from dbseries where id = ?", false, u, &id)
 }
 
-func QueryDbserie(qu Querywithargs, args ...interface{}) *[]Dbserie {
+// GetDbserieByID retrieves a Dbserie by ID. It takes a uint ID
+// and returns a Dbserie struct and error.
+// It executes a SQL query using the structscanG function to select the
+// dbserie data and scan it into the Dbserie struct.
+// Returns an error if there was a problem retrieving the data.
+func GetDbserieByID(id uint) (Dbserie, error) {
+	return structscanG[Dbserie]("select id,created_at,updated_at,seriename,aliases,season,status,firstaired,network,runtime,language,genre,overview,rating,siterating,siterating_count,slug,imdb_id,thetvdb_id,freebase_m_id,freebase_id,tvrage_id,facebook,instagram,twitter,banner,poster,fanart,identifiedby, trakt_id from dbseries where id = ?", false, &id)
+}
+
+// QueryDbserie queries the dbseries table using the provided Querywithargs struct and arguments.
+// It sets the query size and limit, table name, default columns to select, builds the query if needed,
+// and executes the query using QueryStaticArrayN, returning a slice of Dbserie structs.
+func QueryDbserie(qu Querywithargs, args ...any) []Dbserie {
 	qu.size = -1
 	if qu.Limit >= 1 {
 		qu.size = qu.Limit
@@ -456,16 +528,51 @@ func QueryDbserie(qu Querywithargs, args ...interface{}) *[]Dbserie {
 	if qu.QueryString == "" {
 		qu.Buildquery(false)
 	}
-	return queryGenericsT[Dbserie](true, false, false, qu.size, nil, &qu.QueryString, &args)
-	//return queryComplexScan[Dbserie](false, qu.size, qu.QueryString, &args)
+	return GetrowsN[Dbserie](false, qu.Limit, qu.QueryString, args...)
 }
 
-func GetDbserieEpisodesByID(id uint) (*DbserieEpisode, error) {
-	query := "select id,created_at,updated_at,episode,season,identifier,title,first_aired,overview,poster,runtime,dbserie_id from dbserie_episodes where id = ?"
-	return queryComplexObject[DbserieEpisode](false, &query, &[]interface{}{id})
+// GetDbserieEpisodesByIDP retrieves a DbserieEpisode by ID. It takes a uint ID
+// and a pointer to a DbserieEpisode struct to scan the result into.
+// It executes a SQL query using the structscan function to select the
+// dbserie episode data and scan it into the DbserieEpisode struct.
+// Returns an error if there was a problem retrieving the data.
+func GetDbserieEpisodesByIDP(id uint, u *DbserieEpisode) error {
+	return structscan("select id,created_at,updated_at,episode,season,identifier,title,first_aired,overview,poster,runtime,dbserie_id from dbserie_episodes where id = ?", false, u, &id)
 }
 
-func QueryDbserieEpisodes(qu Querywithargs, args ...interface{}) *[]DbserieEpisode {
+// GetSerieByIDP retrieves a Serie by ID. It takes a uint ID
+// and a pointer to a Serie struct to scan the result into.
+// It executes a SQL query using the structscan function to select the
+// serie data and scan it into the Serie struct.
+// Returns an error if there was a problem retrieving the data.
+func GetSerieByIDP(id uint, u *Serie) error {
+	return structscan("select id,created_at,updated_at,listname,rootpath,dbserie_id,dont_upgrade,dont_search from series where id = ?", false, u, &id)
+}
+
+// GetSerieEpisodesByIDP retrieves a SerieEpisode by ID. It takes a uint ID
+// and a pointer to a SerieEpisode struct to scan the result into.
+// It executes a SQL query using the structscan function to select the
+// serie episode data and scan it into the SerieEpisode struct.
+// Returns an error if there was a problem retrieving the data.
+func GetSerieEpisodesByIDP(id uint, u *SerieEpisode) error {
+	return structscan("select id,created_at,updated_at,lastscan,blacklisted,quality_reached,quality_profile,missing,dont_upgrade,dont_search,dbserie_episode_id,serie_id,dbserie_id from serie_episodes where id = ?", false, u, &id)
+}
+
+// GetMoviesByIDP retrieves a Movie by ID. It takes a uint ID
+// and a pointer to a Movie struct to scan the result into.
+// It executes a SQL query using the structscan function to select the
+// movie data and scan it into the Movie struct.
+// Returns an error if there was a problem retrieving the data.
+func GetMoviesByIDP(id uint, u *Movie) error {
+	return structscan("select id,created_at,updated_at,lastscan,blacklisted,quality_reached,quality_profile,missing,dont_upgrade,dont_search,listname,rootpath,dbmovie_id from movies where id = ?", false, u, &id)
+}
+
+// QueryDbserieEpisodes queries the dbserie_episodes table based on the provided Querywithargs struct and arguments.
+// It sets the query size limit from the Limit field if greater than 0.
+// It sets the default columns to query.
+// It builds the query string if not already set.
+// It executes the query using QueryStaticArrayN to return a slice of DbserieEpisode structs.
+func QueryDbserieEpisodes(qu Querywithargs, args ...any) []DbserieEpisode {
 	qu.size = -1
 	if qu.Limit >= 1 {
 		qu.size = qu.Limit
@@ -476,10 +583,15 @@ func QueryDbserieEpisodes(qu Querywithargs, args ...interface{}) *[]DbserieEpiso
 	if qu.QueryString == "" {
 		qu.Buildquery(false)
 	}
-	return queryGenericsT[DbserieEpisode](true, false, false, qu.size, nil, &qu.QueryString, &args)
-	//return queryComplexScan[DbserieEpisode](false, qu.size, qu.QueryString, &args)
+	return GetrowsN[DbserieEpisode](false, qu.Limit, qu.QueryString, args...)
 }
-func QueryDbserieAlternates(qu Querywithargs, args ...interface{}) *[]DbserieAlternate {
+
+// QueryDbserieAlternates queries the dbserie_alternates table based on the provided Querywithargs struct and arguments.
+// It sets the query size limit from the Limit field if greater than 0.
+// It sets the default columns to query.
+// It builds the query string if not already set.
+// It executes the query using QueryStaticArrayN to return a slice of DbserieAlternate structs.
+func QueryDbserieAlternates(qu Querywithargs, args ...any) []DbserieAlternate {
 	qu.size = -1
 	if qu.Limit >= 1 {
 		qu.size = qu.Limit
@@ -490,84 +602,100 @@ func QueryDbserieAlternates(qu Querywithargs, args ...interface{}) *[]DbserieAlt
 	if qu.QueryString == "" {
 		qu.Buildquery(false)
 	}
-	return queryGenericsT[DbserieAlternate](true, false, false, qu.size, nil, &qu.QueryString, &args)
-	//return queryComplexScan[DbserieAlternate](false, qu.size, qu.QueryString, &args)
+	return GetrowsN[DbserieAlternate](false, qu.Limit, qu.QueryString, args...)
 }
 
-func GetSeries(qu Querywithargs, args ...interface{}) (*Serie, error) {
-	//var result Serie
+// GetSeries retrieves a Serie struct based on the provided Querywithargs.
+// It sets the query table and columns.
+// It builds the query if not already set.
+// It executes the query and scans the result into a Serie struct.
+// Returns the Serie struct and any error.
+func GetSeries(qu Querywithargs, args ...any) (Serie, error) {
 	qu.Table = logger.StrSeries
 	qu.defaultcolumns = "id,created_at,updated_at,listname,rootpath,dbserie_id,dont_upgrade,dont_search"
 	if qu.QueryString == "" {
 		qu.Buildquery(false)
 	}
-	return queryComplexObject[Serie](false, &qu.QueryString, &args)
+	var u Serie
+	err := structscan(qu.QueryString, false, &u, args...)
+	if err == nil {
+		return u, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		logger.LogDynamic("error", "select", logger.NewLogFieldValue(err), logger.NewLogField(logger.StrQuery, qu.QueryString))
+	}
+	return u, err
 }
 
-func GetSerieEpisodes(qu Querywithargs, args ...interface{}) (*SerieEpisode, error) {
-	//var result
+// GetSerieEpisodes retrieves a SerieEpisode struct based on the provided Querywithargs.
+// It sets the query table and columns.
+// It builds the query if not already set.
+// It executes the query and scans the result into a SerieEpisode struct.
+// Returns a SerieEpisode struct and any error.
+func GetSerieEpisodes(qu Querywithargs, args ...any) (SerieEpisode, error) {
 	qu.Table = "serie_episodes"
 	qu.defaultcolumns = "id,created_at,updated_at,lastscan,blacklisted,quality_reached,quality_profile,missing,dont_upgrade,dont_search,dbserie_episode_id,serie_id,dbserie_id"
 	if qu.QueryString == "" {
 		qu.Buildquery(false)
 	}
-	return queryComplexObject[SerieEpisode](false, &qu.QueryString, &args)
+	var u SerieEpisode
+	err := structscan(qu.QueryString, false, &u, args...)
+	if err == nil {
+		return u, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		logger.LogDynamic("error", "select", logger.NewLogFieldValue(err), logger.NewLogField(logger.StrQuery, qu.QueryString))
+	}
+	return u, err
 }
 
-func QuerySerieEpisodes(querystring string, args ...interface{}) *[]SerieEpisode {
+// QuerySerieEpisodes retrieves all SerieEpisode records for the given series listname.
+// It takes a pointer to a string containing the listname to search for.
+// It returns a slice of SerieEpisode structs matching the listname.
+func QuerySerieEpisodes(arg *string) []SerieEpisode {
+	if arg == nil {
+		return nil
+	}
 
-	// qu.Table = "serie_episodes"
-	// qu.defaultcolumns = "id,created_at,updated_at,lastscan,blacklisted,quality_reached,quality_profile,missing,dont_upgrade,dont_search,dbserie_episode_id,serie_id,dbserie_id"
-	// if qu.QueryString == "" {
-	// 	qu.Buildquery(false)
-	// }
-	return queryGenericsT[SerieEpisode](true, false, false, 0, nil, &querystring, &args)
-	//return queryComplexScan[SerieEpisode](false, 0, querystring, &args)
+	return Getrows1size[SerieEpisode](false, "select count() from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE)", "select id, quality_reached, quality_profile from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE)", arg)
 }
 
-func GetSerieEpisodeFiles(querystring string, args ...interface{}) (*SerieEpisodeFile, error) {
-	//var result SerieEpisodeFile
-	// qu.Table = "serie_episode_files"
-	// qu.defaultcolumns = "id,created_at,updated_at,location,filename,extension,quality_profile,proper,extended,repack,height,width,resolution_id,quality_id,codec_id,audio_id,serie_id,serie_episode_id,dbserie_episode_id,dbserie_id"
-	return queryComplexObject[SerieEpisodeFile](false, &querystring, &args)
-}
-
-func GetMovies(qu Querywithargs, args ...interface{}) (*Movie, error) {
-	//var result Movie
+// GetMovies retrieves a Movie struct based on the provided Querywithargs.
+// It sets the query table and columns.
+// It builds the query if not already set.
+// It executes the query and scans the result into a Movie struct.
+// Returns the Movie struct and any error.
+func GetMovies(qu Querywithargs, args ...any) (Movie, error) {
 	qu.Table = "movies"
 	qu.defaultcolumns = "id,created_at,updated_at,lastscan,blacklisted,quality_reached,quality_profile,missing,dont_upgrade,dont_search,listname,rootpath,dbmovie_id"
 	if qu.QueryString == "" {
 		qu.Buildquery(false)
 	}
-	return queryComplexObject[Movie](false, &qu.QueryString, &args)
+	var u Movie
+	err := structscan(qu.QueryString, false, &u, args...)
+	if err == nil {
+		return u, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		logger.LogDynamic("error", "select", logger.NewLogFieldValue(err), logger.NewLogField(logger.StrQuery, qu.QueryString))
+	}
+	return u, err
 }
 
-func QueryMovies(querystring string, args ...interface{}) *[]Movie {
-
-	// qu.Table = "movies"
-	// qu.defaultcolumns = "id,created_at,updated_at,lastscan,blacklisted,quality_reached,quality_profile,missing,dont_upgrade,dont_search,listname,rootpath,dbmovie_id"
-	//var result MovieGroup
-	// if qu.QueryString == "" {
-	// 	qu.Buildquery(false)
-	// }
-	return queryGenericsT[Movie](true, false, false, 0, nil, &querystring, &args)
-	//return queryComplexScan[Movie](false, 0, querystring, &args)
+// QueryMovies retrieves all Movie records matching the given listname.
+// It takes a string containing the listname to search for.
+// It returns a slice of Movie structs matching the listname.
+func QueryMovies(arg string) []Movie {
+	if arg == "" {
+		return nil
+	}
+	return Getrows1size[Movie](false, "select count() from movies where listname = ? COLLATE NOCASE", "select id, quality_reached, quality_profile from movies where listname = ? COLLATE NOCASE", &arg)
 }
 
-func GetMovieFiles(querystring string, args ...interface{}) (*MovieFile, error) {
-	//var result MovieFile
-	// qu.Table = "movie_files"
-	// qu.defaultcolumns = "id,created_at,updated_at,location,filename,extension,quality_profile,proper,extended,repack,height,width,resolution_id,quality_id,codec_id,audio_id,movie_id,dbmovie_id"
-	return queryComplexObject[MovieFile](false, &querystring, &args)
-}
-
-func QueryQualities(querystring string, args ...interface{}) *[]Qualities {
-	// qu.Table = "qualities"
-	// qu.defaultcolumns = "id,created_at,updated_at,type,name,regex,strings,priority,use_regex,Regexgroup"
-	return queryGenericsT[Qualities](true, false, false, 0, nil, &querystring, &args)
-	//return queryComplexScan[Qualities](false, 0, querystring, &args)
-}
-func QueryJobHistory(qu Querywithargs, args ...interface{}) *[]JobHistory {
+// QueryJobHistory retrieves JobHistory records matching the query arguments.
+// It takes a Querywithargs struct to define the query parameters.
+// It returns a slice of JobHistory structs matching the query.
+func QueryJobHistory(qu Querywithargs, args ...any) []JobHistory {
 	qu.size = -1
 	if qu.Limit >= 1 {
 		qu.size = qu.Limit
@@ -578,11 +706,13 @@ func QueryJobHistory(qu Querywithargs, args ...interface{}) *[]JobHistory {
 	if qu.QueryString == "" {
 		qu.Buildquery(false)
 	}
-	return queryGenericsT[JobHistory](true, false, false, qu.size, nil, &qu.QueryString, &args)
-	//return queryComplexScan[JobHistory](false, qu.size, qu.QueryString, &args)
+	return GetrowsN[JobHistory](false, qu.Limit, qu.QueryString, args...)
 }
 
-func QuerySerieFileUnmatched(qu Querywithargs, args ...interface{}) *[]SerieFileUnmatched {
+// QuerySerieFileUnmatched retrieves SerieFileUnmatched records matching the query arguments.
+// It takes a Querywithargs struct to define the query parameters.
+// It returns a slice of SerieFileUnmatched structs matching the query.
+func QuerySerieFileUnmatched(qu Querywithargs, args ...any) []SerieFileUnmatched {
 	qu.size = -1
 	if qu.Limit >= 1 {
 		qu.size = qu.Limit
@@ -593,11 +723,13 @@ func QuerySerieFileUnmatched(qu Querywithargs, args ...interface{}) *[]SerieFile
 	if qu.QueryString == "" {
 		qu.Buildquery(false)
 	}
-	return queryGenericsT[SerieFileUnmatched](true, false, false, qu.size, nil, &qu.QueryString, &args)
-	//return queryComplexScan[SerieFileUnmatched](false, qu.size, qu.QueryString, &args)
+	return GetrowsN[SerieFileUnmatched](false, qu.Limit, qu.QueryString, args...)
 }
 
-func QueryMovieFileUnmatched(qu Querywithargs, args ...interface{}) *[]MovieFileUnmatched {
+// QueryMovieFileUnmatched retrieves MovieFileUnmatched records matching the query arguments.
+// It takes a Querywithargs struct to define the query parameters.
+// It returns a slice of MovieFileUnmatched structs matching the query.
+func QueryMovieFileUnmatched(qu Querywithargs, args ...any) []MovieFileUnmatched {
 	qu.size = -1
 	if qu.Limit >= 1 {
 		qu.size = qu.Limit
@@ -608,10 +740,13 @@ func QueryMovieFileUnmatched(qu Querywithargs, args ...interface{}) *[]MovieFile
 	if qu.QueryString == "" {
 		qu.Buildquery(false)
 	}
-	return queryGenericsT[MovieFileUnmatched](true, false, false, qu.size, nil, &qu.QueryString, &args)
-	//return queryComplexScan[MovieFileUnmatched](false, qu.size, qu.QueryString, &args)
+	return GetrowsN[MovieFileUnmatched](false, qu.Limit, qu.QueryString, args...)
 }
-func QueryResultMovies(qu Querywithargs, args ...interface{}) *[]ResultMovies {
+
+// QueryResultMovies retrieves ResultMovies records matching the query arguments.
+// It takes a Querywithargs struct to define the query parameters.
+// It returns a slice of ResultMovies structs matching the query.
+func QueryResultMovies(qu Querywithargs, args ...any) []ResultMovies {
 	qu.size = -1
 	if qu.Limit >= 1 {
 		qu.size = qu.Limit
@@ -621,10 +756,13 @@ func QueryResultMovies(qu Querywithargs, args ...interface{}) *[]ResultMovies {
 	if qu.QueryString == "" {
 		qu.Buildquery(false)
 	}
-	return queryGenericsT[ResultMovies](true, false, false, qu.size, nil, &qu.QueryString, &args)
-	//return queryComplexScan[ResultMovies](false, qu.size, qu.QueryString, &args)
+	return GetrowsN[ResultMovies](false, qu.Limit, qu.QueryString, args...)
 }
-func QueryResultSeries(qu Querywithargs, args ...interface{}) *[]ResultSeries {
+
+// QueryResultSeries retrieves ResultSeries records matching the query arguments.
+// It takes a Querywithargs struct to define the query parameters.
+// It returns a slice of ResultSeries structs matching the query.
+func QueryResultSeries(qu Querywithargs, args ...any) []ResultSeries {
 	qu.size = -1
 	if qu.Limit >= 1 {
 		qu.size = qu.Limit
@@ -634,11 +772,13 @@ func QueryResultSeries(qu Querywithargs, args ...interface{}) *[]ResultSeries {
 	if qu.QueryString == "" {
 		qu.Buildquery(false)
 	}
-	return queryGenericsT[ResultSeries](true, false, false, qu.size, nil, &qu.QueryString, &args)
-	//return queryComplexScan[ResultSeries](false, qu.size, qu.QueryString, &args)
+	return GetrowsN[ResultSeries](false, qu.Limit, qu.QueryString, args...)
 }
 
-func QueryResultSerieEpisodes(qu Querywithargs, args ...interface{}) *[]ResultSerieEpisodes {
+// QueryResultSerieEpisodes retrieves ResultSerieEpisodes records matching the query arguments.
+// It takes a Querywithargs struct to define the query parameters.
+// It returns a slice of ResultSerieEpisodes structs matching the query.
+func QueryResultSerieEpisodes(qu Querywithargs, args ...any) []ResultSerieEpisodes {
 	qu.size = -1
 	if qu.Limit >= 1 {
 		qu.size = qu.Limit
@@ -649,18 +789,31 @@ func QueryResultSerieEpisodes(qu Querywithargs, args ...interface{}) *[]ResultSe
 	if qu.QueryString == "" {
 		qu.Buildquery(false)
 	}
-	return queryGenericsT[ResultSerieEpisodes](true, false, false, qu.size, nil, &qu.QueryString, &args)
-	//return queryComplexScan[ResultSerieEpisodes](false, qu.size, qu.QueryString, &args)
+	return GetrowsN[ResultSerieEpisodes](false, qu.Limit, qu.QueryString, args...)
 }
 
-func GetImdbRating(querystring string, args ...interface{}) (*ImdbRatings, error) {
-	// qu.Table = "imdb_ratings"
-	// qu.defaultcolumns = "id,created_at,updated_at,tconst,num_votes,average_rating"
-	// qu.imdb = true
-	return queryComplexObject[ImdbRatings](true, &querystring, &args)
+// GetImdbRating queries the imdb_ratings table to get the average rating and number of votes for the given IMDb ID.
+// It populates the rating fields on the Dbmovie struct if they are empty or overwrite is true.
+func GetImdbRating(arg *string, movie *Dbmovie, overwrite bool) {
+	if arg == nil {
+		return
+	}
+	imdbratedata, err := structscanG[ImdbRatings]("select * from imdb_ratings where tconst = ?", true, arg)
+	if err == nil {
+		if (movie.VoteAverage == 0 || overwrite) && imdbratedata.AverageRating != 0 {
+			movie.VoteAverage = imdbratedata.AverageRating
+		}
+		if (movie.VoteCount == 0 || overwrite) && imdbratedata.NumVotes != 0 {
+			movie.VoteCount = imdbratedata.NumVotes
+		}
+		imdbratedata.Close()
+	}
 }
 
-func QueryImdbAka(qu Querywithargs, args ...interface{}) *[]ImdbAka {
+// QueryImdbAka queries the imdb_akas table to get alternate titles and regional releases for the given IMDb ID.
+// It takes a Querywithargs for pagination and filtering, and a pointer to the IMDb ID to query on.
+// It returns a slice of ImdbAka structs containing the alternate title data.
+func QueryImdbAka[R any](qu Querywithargs, arg *R) []imdbAka {
 	qu.size = -1
 	if qu.Limit >= 1 {
 		qu.size = qu.Limit
@@ -671,29 +824,74 @@ func QueryImdbAka(qu Querywithargs, args ...interface{}) *[]ImdbAka {
 	if qu.QueryString == "" {
 		qu.Buildquery(false)
 	}
-	return queryGenericsT[ImdbAka](true, true, false, qu.size, nil, &qu.QueryString, &args)
-	//return queryComplexScan[ImdbAka](true, qu.size, qu.QueryString, &args)
+	return GetrowsN[imdbAka](true, qu.Limit, qu.QueryString, arg)
 }
 
-func GetImdbTitle(querystring string, args ...interface{}) (*ImdbTitle, error) {
-	// qu.Table = "imdb_titles"
-	// qu.defaultcolumns = "tconst,title_type,primary_title,slug,original_title,is_adult,start_year,end_year,runtime_minutes,genres"
-	// qu.imdb = true
-	return queryComplexObject[ImdbTitle](true, &querystring, &args)
-}
+// GetImdbTitle queries the imdb_titles table to populate movie details from IMDb.
+// It takes the IMDb id pointer, movie struct pointer, and a boolean overwrite flag.
+// It will populate the movie struct with data from IMDb if fields are empty or overwrite is true.
+// This handles setting the title, year, adult flag, genres, original title, runtime, slug, url,
+// vote average, and vote count.
+func GetImdbTitle(arg *string, movie *Dbmovie, overwrite bool) {
+	if arg == nil {
+		return
+	}
 
-func (qu *Querywithargs) Buildquery(count bool) {
-	var bld strings.Builder
-	if count {
-		bld.Grow(len(qu.Table) + len(qu.Where) + len(qu.InnerJoin) + len(qu.OrderBy) + 50)
-	} else {
-		if len(qu.Select) >= 1 {
-			bld.Grow(len(qu.Table) + len(qu.Select) + len(qu.Where) + len(qu.InnerJoin) + len(qu.OrderBy) + 50)
+	imdbdata, err := structscanG[ImdbTitle]("select * from imdb_titles where tconst = ?", true, arg)
+	if err != nil {
+		return
+	}
+
+	if (movie.Title == "" || overwrite) && imdbdata.PrimaryTitle != "" {
+		movie.Title = imdbdata.PrimaryTitle
+	}
+	if (movie.Year == 0 || overwrite) && imdbdata.StartYear != 0 {
+		movie.Year = imdbdata.StartYear
+	}
+	if (!movie.Adult && imdbdata.IsAdult) || overwrite {
+		movie.Adult = imdbdata.IsAdult
+	}
+	if (movie.Genres == "" || overwrite) && imdbdata.Genres != "" {
+		movie.Genres = imdbdata.Genres
+	}
+	if (movie.OriginalTitle == "" || overwrite) && imdbdata.OriginalTitle != "" {
+		movie.OriginalTitle = imdbdata.OriginalTitle
+	}
+	if (movie.Runtime == 0 || movie.Runtime == 1 || movie.Runtime == 2 || movie.Runtime == 3 || movie.Runtime == 60 || movie.Runtime == 90 || movie.Runtime == 120 || overwrite) && imdbdata.RuntimeMinutes != 0 {
+		if movie.Runtime != 0 && (imdbdata.RuntimeMinutes == 1 || imdbdata.RuntimeMinutes == 2 || imdbdata.RuntimeMinutes == 3 || imdbdata.RuntimeMinutes == 60 || imdbdata.RuntimeMinutes == 90 || imdbdata.RuntimeMinutes == 120) {
+			logger.LogDynamic("debug", "skipped imdb movie runtime for", logger.NewLogField(logger.StrImdb, movie.ImdbID))
 		} else {
-			bld.Grow(len(qu.Table) + len(qu.defaultcolumns) + len(qu.Where) + len(qu.InnerJoin) + len(qu.OrderBy) + 50)
+			logger.LogDynamic("debug", "set imdb movie runtime for", logger.NewLogField(logger.StrImdb, movie.ImdbID))
+			movie.Runtime = imdbdata.RuntimeMinutes
 		}
 	}
-	bld.WriteString("select ")
+	if (movie.Slug == "" || overwrite) && imdbdata.Slug != "" {
+		movie.Slug = imdbdata.Slug
+	}
+	if movie.URL == "" || overwrite {
+		movie.URL = logger.URLJoinPath("https://www.imdb.com/title/", movie.ImdbID)
+	}
+
+	GetImdbRating(&movie.ImdbID, movie, overwrite)
+	imdbdata.Close()
+}
+
+// Buildquery constructs the SQL query string from the Querywithargs fields.
+// It handles adding the SELECT columns, FROM table, JOINs, WHERE, ORDER BY
+// and LIMIT clauses based on the configured fields.
+func (qu *Querywithargs) Buildquery(count bool) {
+	i := len(qu.Table) + len(qu.Where) + len(qu.InnerJoin) + len(qu.OrderBy) + 50
+	if !count {
+		if len(qu.Select) >= 1 {
+			i += len(qu.Select)
+		} else {
+			i += len(qu.defaultcolumns)
+		}
+	}
+	bld := logger.PlBuffer.Get()
+	bld.Grow(i)
+	//defer bld.Reset()
+	bld.WriteString(sel)
 	if len(qu.Select) >= 1 {
 		bld.WriteString(qu.Select)
 	} else {
@@ -701,296 +899,375 @@ func (qu *Querywithargs) Buildquery(count bool) {
 			bld.WriteString(qu.defaultcolumns)
 		} else {
 			if count {
-				bld.WriteString("count()")
+				bld.WriteString(coun)
 			} else {
 				if qu.InnerJoin != "" {
 					bld.WriteString(qu.Table)
-					bld.WriteString(".*")
+					bld.WriteString(all)
 				} else {
 					bld.WriteString(qu.defaultcolumns)
 				}
 			}
 		}
 	}
-	bld.WriteString(" from ")
+	bld.WriteString(from)
 	bld.WriteString(qu.Table)
 	if qu.InnerJoin != "" {
-		bld.WriteString(" inner join ")
+		bld.WriteString(join)
 		bld.WriteString(qu.InnerJoin)
 	}
 	if qu.Where != "" {
-		bld.WriteString(" where ")
+		bld.WriteString(where)
 		bld.WriteString(qu.Where)
 	}
 	if qu.OrderBy != "" {
-		bld.WriteString(" order by ")
+		bld.WriteString(order)
 		bld.WriteString(qu.OrderBy)
 	}
 	if qu.Limit != 0 {
+		bld.WriteString(limit)
 		if qu.Offset != 0 {
-			bld.WriteString(" limit ")
-			bld.WriteString(logger.IntToString(qu.Offset) + "," + logger.IntToString(qu.Limit))
-		} else {
-			bld.WriteString(" limit ")
-			bld.WriteString(logger.IntToString(qu.Limit))
+			logger.BuilderAddInt(bld, qu.Offset)
+			bld.WriteRune(',')
 		}
+		logger.BuilderAddInt(bld, qu.Limit)
+		//bld.WriteString(strconv.Itoa(qu.Limit))
 	}
 	qu.QueryString = bld.String()
-	bld.Reset()
+	logger.PlBuffer.Put(bld)
 }
 
-// requires 1 column - int
-func QueryStaticColumnsOneIntOneBool(size int, querystring string, args ...interface{}) *[]DbstaticOneIntOneBool {
-	return queryGenericsT(true, false, false, size, func(elem *DbstaticOneIntOneBool) []interface{} {
-		return []interface{}{&elem.Num, &elem.Bl}
-	}, &querystring, &args)
-}
-
-// requires 1 column - string
-func QueryStaticStringArray(imdb bool, size int, querystring string, args ...interface{}) *[]string {
-	return queryGenericsT[string](true, imdb, true, size, nil, &querystring, &args)
-}
-
-func QueryStaticStringArrayObj(obj *[]string, imdb bool, querystring string, args ...interface{}) {
-	queryGenericsTAssigned(true, imdb, true, obj, nil, &querystring, &args)
-}
-
-// requires 1 column - string
-func QueryStaticIntArray(size int, querystring string, args ...interface{}) *[]int {
-	return queryGenericsT[int](true, false, true, size, nil, &querystring, &args)
-}
-
-func QueryStaticUintArrayNoError(cached bool, size int, querystring string, args ...interface{}) *[]uint {
-	return queryGenericsT[uint](cached, false, true, size, nil, &querystring, &args)
-}
-
-// requires 2 columns- string and int
-func QueryStaticColumnsOneStringOneInt(imdb bool, size int, querystring string, args ...interface{}) *[]DbstaticOneStringOneInt {
-	return queryGenericsT(true, imdb, false, size, func(elem *DbstaticOneStringOneInt) []interface{} {
-		return []interface{}{&elem.Str, &elem.Num}
-	}, &querystring, &args)
-}
-
-// requires 2 columns- string and int
-func QueryStaticColumnsTwoStringOneInt(imdb bool, size int, querystring string, args ...interface{}) *[]DbstaticTwoStringOneInt {
-	return queryGenericsT(true, imdb, false, size, func(elem *DbstaticTwoStringOneInt) []interface{} {
-		return []interface{}{&elem.Str1, &elem.Str2, &elem.Num}
-	}, &querystring, &args)
-}
-
-// requires 2 columns- int and int
-func QueryStaticColumnsTwoInt(cached bool, size int, querystring string, args ...interface{}) *[]DbstaticTwoInt {
-	return queryGenericsT(cached, false, false, size, func(elem *DbstaticTwoInt) []interface{} {
-		return []interface{}{&elem.Num1, &elem.Num2}
-	}, &querystring, &args)
-}
-
-// requires 3 columns- string - imdb-db
-func QueryStaticColumnsThreeString(querystring string, args ...interface{}) *[]DbstaticThreeString {
-	return queryGenericsT(true, true, false, 0, func(elem *DbstaticThreeString) []interface{} {
-		return []interface{}{&elem.Str1, &elem.Str2, &elem.Str3}
-	}, &querystring, &args)
-}
-
-// requires 3 columns- string - imdb-db
-func QueryStaticColumnsThreeStringOneInt(imdb bool, size int, querystring string, args ...interface{}) *[]DbstaticThreeStringOneInt {
-	return queryGenericsT(true, imdb, false, size, func(elem *DbstaticThreeStringOneInt) []interface{} {
-		return []interface{}{&elem.Str1, &elem.Str2, &elem.Str3, &elem.Num1}
-	}, &querystring, &args)
-}
-
-// requires 2 columns- int and int
-func QueryStaticColumnsTwoString(imdb bool, size int, querystring string, args ...interface{}) *[]DbstaticTwoString {
-	return queryGenericsT(true, imdb, false, size, func(elem *DbstaticTwoString) []interface{} {
-		return []interface{}{&elem.Str1, &elem.Str2}
-	}, &querystring, &args)
-}
-
-// Uses column id
-func CountRows(table string, qu Querywithargs, args ...interface{}) int {
-	qu.Offset = 0
-	qu.Limit = 0
-	qu.Select = "count()"
-	qu.Table = table
-	qu.Buildquery(true)
-	return queryIntColumn(false, &qu.QueryString, &args)
-}
-
-func QueryColumn(querystring string, obj interface{}, args ...interface{}) error {
-	//return queryGenericsSingleOne(false, obj, querystring, args)
-	return queryGenericsSingle(false, false, &[]interface{}{obj}, &querystring, &args)
-}
-
-func QueryBoolColumn(querystring string, args ...interface{}) bool {
-	return *queryGenericsSingleObjT[bool](false, &querystring, &args)
-}
-func QueryStringColumn(querystring string, args ...interface{}) string {
-	return *queryGenericsSingleObjT[string](false, &querystring, &args)
-}
-
-func QueryUintColumn(querystring string, args ...interface{}) uint {
-	return *queryGenericsSingleObjT[uint](false, &querystring, &args)
-}
-
-func queryIntColumn(imdb bool, querystring *string, args *[]interface{}) int {
-	return *queryGenericsSingleObjT[int](imdb, querystring, args)
-}
-func QueryIntColumn(querystring string, args ...interface{}) int {
-	return *queryGenericsSingleObjT[int](false, &querystring, &args)
-}
-
-func QueryCountColumn(table string, argsstr string, args ...interface{}) int {
-	str := "select count() from " + table
-	if len(argsstr) >= 1 {
-		str += " where " + argsstr
-	}
-	return queryIntColumn(false, &str, &args)
-	// var bld strings.Builder
-	// bld.Grow(80)
-	// bld.WriteString("select count() from ")
-	// bld.WriteString(table)
-	// //str := "select count() from " + table
-	// if len(argsstr) >= 1 {
-	// 	bld.WriteString(" where ")
-	// 	bld.WriteString(argsstr)
-	// 	//str += " where " + argsstr
-	// }
-	// str := bld.String()
-	// //bld.Reset()
-	// return queryIntColumn(false, &str, &args)
-}
-
-func QueryImdbIntColumn(querystring string, args ...interface{}) int {
-	return queryIntColumn(true, &querystring, &args)
-}
-
-func InsertStatic(querystring string, args ...interface{}) (sql.Result, error) {
-	result, err := execsql(true, false, &querystring, &args)
+// ScanrowsNdyn scans a single row into a pointer to a struct,
+// setting fields of the struct to zero values if sql.ErrNoRows is returned.
+// It takes a bool indicating if the query is for the imdb database,
+// the query string, a pointer to the struct to scan into,
+// and optional variadic arguments.
+// It returns any error from the query.
+func ScanrowsNdyn[R any](imdb bool, querystring string, obj *R, args ...any) error {
+	readWriteMu.RLock()
+	err := GlobalCache.GetStmt(querystring, imdb, getdb(imdb)).QueryRow(args...).Scan(obj)
+	readWriteMu.RUnlock()
 	if err != nil {
-		logger.Log.Error().Str(logger.StrQuery, querystring).Any("Values", args).Err(err).Msg("Insert")
-	}
-	return result, err
-}
-func InsertNamed(query string, obj interface{}) (sql.Result, error) {
-	result, err := execnamedsql(false, &query, &[]interface{}{obj})
-	if err != nil {
-		logger.Log.Error().Str(logger.StrQuery, query).Any("values", &obj).Err(err).Msg("Insert")
-	}
-
-	return result, err
-}
-func InsertArray(table string, columns []string, values ...interface{}) (sql.Result, error) {
-	query := "insert into " + table + " (" + strings.Join(columns, ",") + ") values (" + logger.StringsRepeat("?", ",?", len(columns)-1) + ")"
-	result, err := execsql(false, false, &query, &values)
-	if err != nil {
-		logger.Log.Error().Str("Table", table).Any("Colums", columns).Any("Values", values).Err(err).Msg("Insert")
-	}
-	return result, err
-}
-
-func Dbexec(querystring string, args []interface{}) (sql.Result, error) {
-	if DBLogLevel == logger.StrDebug {
-		logger.Log.Debug().Str(logger.StrQuery, querystring).Any("args", args).Msg("query exec")
-	}
-	return execsql(true, false, &querystring, &args)
-}
-
-func UpdateArray(table string, columns []string, where string, args ...interface{}) (sql.Result, error) {
-	var cols, query string
-	for idx := range columns {
-		if idx != 0 {
-			cols += ","
+		switch val := any(obj).(type) {
+		case *int:
+			if *val != 0 {
+				*val = 0
+			}
+		case *uint:
+			if *val != 0 {
+				*val = 0
+			}
+		case *string:
+			if *val != "" {
+				*val = ""
+			}
+		case *bool:
+			if *val {
+				*val = false
+			}
+		default:
+			reflect.ValueOf(obj).Elem().SetZero()
 		}
-		cols += columns[idx] + " = ?"
-	}
-	if where != "" {
-		query = "update " + table + " set " + cols + strWhere + where
-	} else {
-		query = "update " + table + " set " + cols
-	}
-	result, err := execsql(false, false, &query, &args)
-	if err != nil {
-		logger.Log.Error().Str("Table", table).Any("Columns", &columns).Any("Values", args).Str("where", where).Err(err).Msg("Update")
-	}
-	return result, err
-}
-func UpdateNamed(query string, obj interface{}) (sql.Result, error) {
-	result, err := execnamedsql(false, &query, &[]interface{}{obj})
-	if err != nil {
-		logger.Log.Error().Str(logger.StrQuery, query).Any("Values", &obj).Err(err).Msg("Update")
-	}
-
-	return result, err
-}
-
-func UpdateColumn(table string, column string, value interface{}, where string, args ...interface{}) (sql.Result, error) {
-	setvalues := append([]interface{}{value}, args...)
-
-	querystring := "update " + table + " set " + column + " = ?"
-	if where != "" {
-		querystring += strWhere + where
-	}
-	result, err := execsql(true, false, &querystring, &setvalues)
-	logger.Clear(&setvalues)
-	if err != nil {
-		logger.Log.Error().Str("Table", table).Str("Column", column).Any("Value", value).Str("where", where).Any("Values", args).Err(err).Msg("Update")
-	}
-	return result, err
-}
-func UpdateColumnStatic(querystring string, args ...interface{}) error {
-	_, err := execsql(true, false, &querystring, &args)
-	if err != nil {
-		logger.Log.Error().Str(logger.StrQuery, querystring).Any("Values", args).Err(err).Msg("Update")
+		if !errors.Is(err, sql.ErrNoRows) {
+			logger.LogDynamic("error", "select", logger.NewLogFieldValue(err), logger.NewLogField(logger.StrQuery, querystring))
+		}
+		if err.Error() == "sql: database is closed" {
+			cache.items.Delete(querystring)
+		}
 	}
 	return err
 }
 
-func DeleteRow(imdb bool, table string, where string, args ...interface{}) (sql.Result, error) {
-	var querystring string
-	if where != "" {
-		querystring = "delete from " + table + strWhere + where
-	} else {
-		querystring = "delete from " + table
-	}
-	if DBLogLevel == logger.StrDebug {
-		logger.Log.Debug().Str(logger.StrQuery, querystring).Any("args", args).Msg("query count")
-	}
-
-	result, err := execsql(true, imdb, &querystring, &args)
-
-	if err != nil {
-		logger.Log.Error().Str("Table", table).Str("Where", where).Any("Values", args).Err(err).Msg("Delete")
-	}
-	return result, err
-}
-func DeleteRowStatic(imdb bool, querystring string, args ...interface{}) error {
-	_, err := execsql(true, imdb, &querystring, &args)
-	if err != nil {
-		logger.Log.Error().Str(logger.StrQuery, querystring).Any("Values", args).Err(err).Msg("Insert")
-	}
-	return err
+// DBLock locks the database for write access by calling Lock on readWriteMu.
+func DBLock() {
+	readWriteMu.Lock()
 }
 
-func DBQuickCheck() string {
-	logger.Log.Info().Msg("Check Database for Errors")
-	var str string
-	query := "PRAGMA quick_check;"
-	queryGenericsSingle(false, true, &[]interface{}{&str}, &query, &[]interface{}{})
-	return str
+// DBUnlock unlocks the database by calling Unlock on readWriteMu, which releases the write lock.
+func DBUnlock() {
+	readWriteMu.Unlock()
 }
 
-func DBIntegrityCheck() string {
-	var str string
-	query := "PRAGMA integrity_check;"
-	queryGenericsSingle(false, true, &[]interface{}{&str}, &query, &[]interface{}{})
-	return str
+// getdatarowN executes the given querystring with multiple arguments and scans the result into obj,
+// handling locking, logging errors, and returning the scanned object.
+func GetdatarowN[O any](imdb bool, querystring string, args ...any) O {
+	var obj O
+	_ = ScanrowsNdyn(imdb, querystring, &obj, args...)
+	return obj
 }
 
-func InsertRetID(dbresult sql.Result) int64 {
-	newid, err := dbresult.LastInsertId()
-	if err != nil {
-		logger.Logerror(err, "query insert")
+// GetdatarowArgs executes the given querystring with the provided argument
+// and scans the result into the given slice of objects, handling locking,
+// logging errors, and returning the scanned objects.
+func GetdatarowArgs[T any](querystring string, arg *T, objs ...any) {
+	readWriteMu.RLock()
+	err := GlobalCache.GetStmt(querystring, false, dbData).QueryRow(arg).Scan(objs...)
+	readWriteMu.RUnlock()
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		logger.LogDynamic("error", "select", logger.NewLogFieldValue(err), logger.NewLogField(logger.StrQuery, querystring))
+	}
+	if err != nil && err.Error() == "sql: database is closed" {
+		cache.items.Delete(querystring)
+	}
+
+}
+
+// getrows1 executes the given querystring with one argument, scans the result rows into
+// a slice of the generic type T, handles locking, logging errors, and returns the slice.
+// The size parameter limits the number of rows scanned.
+func Getrows1size[T any, R any](imdb bool, sizeq string, querystring string, arg *R) []T {
+	return GetrowsN[T](imdb, GetdatarowN[int](imdb, sizeq, arg), querystring, arg)
+}
+
+// getrowsN executes the given querystring with multiple arguments, scans the result
+// rows into a slice of the generic type T, handles locking, logging errors,
+// and returns the slice. The size parameter limits the number of rows scanned.
+func GetrowsN[T any](imdb bool, size int, querystring string, args ...any) []T {
+	readWriteMu.RLock()
+	defer readWriteMu.RUnlock()
+	rows, err := GlobalCache.GetStmt(querystring, imdb, getdb(imdb)).Queryx(args...)
+	if err == nil {
+		defer rows.Close()
+		return queryGenericsT[T](size, rows)
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		logger.LogDynamic("error", "select", logger.NewLogFieldValue(err), logger.NewLogField(logger.StrQuery, querystring))
+	}
+	if err.Error() == "sql: database is closed" {
+		cache.items.Delete(querystring)
+	}
+	return nil
+}
+
+// getrowsNuncached executes the given querystring with multiple arguments against the uncached database connection, scans the result
+// rows into a slice of the generic type T, handles locking, logging errors,
+// and returns the slice. The size parameter limits the number of rows scanned.
+func GetrowsNuncached[T any](size int, querystring string, args []any) []T {
+	readWriteMu.RLock()
+	defer readWriteMu.RUnlock()
+	rows, err := dbData.Queryx(querystring, args...)
+	if err == nil {
+		defer rows.Close()
+		return queryGenericsT[T](size, rows)
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		logger.LogDynamic("error", "select", logger.NewLogFieldValue(err), logger.NewLogField(logger.StrQuery, querystring))
+	}
+	return nil
+}
+
+// QueryDBEpisodeID retrieves the database episode ID for the given series ID, season number, and episode number.
+// It handles locking, error logging, and zeroing the output ID on error.
+func QueryDBEpisodeID(dbserie *uint, season *int, episode any, outid *uint) {
+	ScanrowsNdyn(false, "select id from dbserie_episodes where dbserie_id = ? and season = ? and episode = ?", outid, dbserie, season, episode)
+}
+
+// SetDBEpisodeIDByIdentifier sets the database episode ID for the given series ID and identifier.
+// It handles nil checks, retries with normalized identifiers, error handling, and zeroing the ID on error.
+func SetDBEpisodeIDByIdentifier(dbepiid *uint, dbserieid *uint, identifier *string) {
+	if identifier == nil || *identifier == "" {
+		return
+	}
+	if dbserieid == nil || *dbserieid == 0 {
+		return
+	}
+	err := ScanrowsNdyn(false, QueryDBSerieEpisodeGetIDByDBSerieIDIdentifier, dbepiid, dbserieid, identifier)
+	if err != nil && strings.ContainsRune(*identifier, '.') {
+		err = ScanrowsNdyn(false, QueryDBSerieEpisodeGetIDByDBSerieIDIdentifier2, dbepiid, dbserieid, identifier, ".", "-")
+	}
+	if err == nil {
+		return
+	}
+	if strings.ContainsRune(*identifier, ' ') {
+		ScanrowsNdyn(false, QueryDBSerieEpisodeGetIDByDBSerieIDIdentifier2, dbepiid, dbserieid, identifier, " ", "-")
+	}
+}
+
+// QueryImdbAkaCountByTitleSlug executes a query against the imdb database to get the number of aka title records matching the given title or slug parameters. Returns 0 if either parameter is nil. The title and slug values are matched case insensitively.
+func QueryImdbAkaCountByTitleSlug(arg *string, arg2 *string) int {
+	if arg == nil || arg2 == nil {
 		return 0
 	}
-	return newid
+	return GetdatarowN[int](true, "select count() from (select distinct tconst from imdb_akas where title = ? COLLATE NOCASE or slug = ?)", arg, arg2)
+}
+
+// execN executes a SQL statement with multiple arguments and returns the sql.Result and error.
+// It locks access to the database during the query, logs any errors, and handles error cases.
+func ExecN(querystring string, args ...any) (sql.Result, error) {
+	readWriteMu.Lock()
+	result, err := GlobalCache.GetStmt(querystring, false, dbData).Exec(args...)
+	readWriteMu.Unlock()
+	if err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			logger.LogDynamic("error", "exec", logger.NewLogFieldValue(err), logger.NewLogField(logger.StrQuery, querystring))
+		}
+		if err.Error() == "sql: database is closed" {
+			cache.items.Delete(querystring)
+		}
+
+		return nil, err
+	}
+	return result, nil
+}
+
+// ExecNid executes the given querystring with multiple arguments, returns the generated ID from the insert statement, handles errors.
+func ExecNid(querystring string, args ...any) (int64, error) {
+	dbresult, err := ExecN(querystring, args...)
+	if err != nil {
+		return 0, err
+	}
+	newid, err := dbresult.LastInsertId()
+	if err != nil {
+		logger.LogDynamic("error", "query insert", logger.NewLogFieldValue(err), logger.NewLogField("query", querystring))
+		return 0, err
+	}
+	return newid, nil
+}
+
+// InsertArray inserts a row into the given database table, with the provided columns and values.
+// The number of columns must match the number of value parameters.
+// It handles building the SQL insert statement from the parameters, executing the insert,
+// and returning the result or any error.
+func InsertArray(table string, columns []string, values ...any) (sql.Result, error) {
+	if len(columns) != len(values) {
+		return nil, errors.New("wrong number of columns")
+	}
+	return ExecN("insert into "+table+" ("+strings.Join(columns, ",")+") values (?"+strings.Repeat(",?", len(columns)-1)+")", values...)
+}
+
+// UpdateArray updates rows in the given database table by setting the provided
+// columns to the corresponding value parameters. It builds the SQL UPDATE
+// statement dynamically based on the parameters. The optional where parameter
+// allows specifying a WHERE clause to filter the rows to update. It handles
+// executing the statement and returning the result or any error.
+func UpdateArray(table string, columns []string, where string, args ...any) (sql.Result, error) {
+	bld := logger.PlBuffer.Get()
+	i := 12 + len(table)
+	i += logger.Getstringarrlength(columns)
+	i += len(columns)
+	if where != "" {
+		i += len(where) + 7
+	}
+	bld.Grow(i)
+	bld.WriteString("update ")
+	bld.WriteString(table)
+	bld.WriteString(" set ")
+	for idx := range columns {
+		if idx != 0 {
+			bld.WriteRune(',')
+		}
+		bld.WriteString(columns[idx])
+		bld.WriteString(" = ?")
+	}
+	if where != "" {
+		bld.WriteString(" where ")
+		bld.WriteString(where)
+	}
+	defer logger.PlBuffer.Put(bld)
+	return ExecN(bld.String(), args...)
+}
+
+// DeleteRow deletes rows from the given database table that match the provided
+// WHERE clause and arguments. It returns the sql.Result and error from the
+// query execution. The table parameter specifies the table name to delete from.
+// The where parameter allows specifying a WHERE condition to filter the rows
+// to delete. The args parameters allow providing arguments to replace any ?
+// placeholders in the where condition.
+func DeleteRow(table string, where string, args ...any) (sql.Result, error) {
+	var querystring = "delete from " + table
+	if where != "" {
+		querystring = querystring + " where " + where
+	}
+	if DBLogLevel == logger.StrDebug {
+		logger.LogDynamic("debug", "query count", logger.NewLogField(logger.StrQuery, querystring), logger.NewLogField("args", args))
+	}
+	return ExecN(querystring, args...)
+}
+
+// queryrowfulllockconnect executes the given SQL query while holding a write lock
+// on the database. It scans the result into str and returns any error.
+func queryrowfulllockconnect(query string) string {
+	readWriteMu.Lock()
+	defer readWriteMu.Unlock()
+	tempdb, err := sql.Open("sqlite3", "file:./databases/data.db?_fk=1&mode=rwc&_mutex=full&rt=1&_cslike=0")
+	if err != nil {
+		return ""
+	}
+	defer tempdb.Close()
+	var str string
+	err = tempdb.QueryRow(query).Scan(&str)
+	if err == nil {
+		return str
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		logger.LogDynamic("error", "select", logger.NewLogFieldValue(err), logger.NewLogField(logger.StrQuery, query))
+	}
+	return ""
+}
+
+// DBQuickCheck checks the database for errors using the
+// PRAGMA quick_check statement. It logs informational
+// messages before and after running the statement.
+// The string result from running the statement is
+// returned.
+func DBQuickCheck() string {
+	logger.LogDynamic("info", "Check Database for Errors")
+	str := queryrowfulllockconnect("PRAGMA quick_check;")
+	logger.LogDynamic("info", "Check Database for Errors finished")
+	return str
+}
+
+// DBIntegrityCheck checks the database integrity using the
+// PRAGMA integrity_check statement. It logs informational
+// messages before and after running the statement.
+// The string result from running the statement is
+// returned.
+func DBIntegrityCheck() string {
+	logger.LogDynamic("info", "Check Database for Integrity")
+	str := queryrowfulllockconnect("PRAGMA integrity_check;")
+	logger.LogDynamic("info", "Check Database for Integrity finished")
+	return str
+}
+
+// getentryalternatetitlesdirect queries the database to get alternate titles for the given media entry ID.
+// It returns a slice of DbstaticTwoString structs containing the alternate titles and slugs.
+// If useseries is true, it will query the series alternates table, otherwise it queries the movies titles table.
+// It first checks the cache if enabled, otherwise queries the DB directly.
+func Getentryalternatetitlesdirect(dbid uint, useseries bool) []DbstaticTwoStringOneInt {
+	if config.SettingsGeneral.UseMediaCache {
+		a := GetCachedObj[CacheTwoStringIntExpire](logger.GetStringsMap(useseries, logger.CacheMediaTitles))
+		b := a.Arr[:0]
+		intid := int(dbid)
+		for idx := range a.Arr {
+			if a.Arr[idx].Num != intid {
+				continue
+			}
+			b = append(b, a.Arr[idx])
+		}
+		return b
+	}
+	return Getrows1size[DbstaticTwoStringOneInt](false, logger.GetStringsMap(useseries, logger.DBCountDBTitlesDBID), logger.GetStringsMap(useseries, logger.DBDistinctDBTitlesDBID), &dbid)
+}
+
+// ExchangeImdbDB exchanges the imdb.db file with a temp copy.
+// It first checks if the main imdb.db file exists, locks the db,
+// makes the main file writable, deletes it, renames the temp
+// copy to the main name, unlocks the db, and logs the result.
+func ExchangeImdbDB() {
+	dbfile := "./databases/imdb.db"
+	dbfiletemp := "./databases/imdbtemp.db"
+	if !checkFile(dbfile) {
+		return
+	}
+	readWriteMu.Lock()
+	dbImdb.Close()
+
+	_ = os.Chmod(dbfile, 0777)
+	os.Remove(dbfile)
+	err := os.Rename(dbfiletemp, dbfile)
+	if err == nil {
+		logger.LogDynamic("debug", "File renamed", logger.NewLogFieldValue(dbfiletemp))
+	}
+	InitImdbdb()
+	readWriteMu.Unlock()
 }

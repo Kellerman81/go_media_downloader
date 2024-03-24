@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"os/signal"
 	"strings"
@@ -24,10 +25,11 @@ import (
 	"github.com/Kellerman81/go_media_downloader/goadmin/tables"
 	"github.com/Kellerman81/go_media_downloader/logger"
 	"github.com/Kellerman81/go_media_downloader/parser"
+	"github.com/Kellerman81/go_media_downloader/scanner"
 	"github.com/Kellerman81/go_media_downloader/scheduler"
+	"github.com/Kellerman81/go_media_downloader/searcher"
 	"github.com/Kellerman81/go_media_downloader/utils"
 	"github.com/Kellerman81/go_media_downloader/worker"
-	"github.com/rs/zerolog"
 
 	"github.com/DeanThompson/ginpprof"
 
@@ -35,11 +37,8 @@ import (
 	_ "github.com/GoAdminGroup/go-admin/modules/db/drivers/sqlite" // sql driver
 	"github.com/GoAdminGroup/themes/adminlte"
 	"github.com/gin-gonic/gin"
-
 	//webapp "github.com/maxence-charriere/go-app/v9/pkg/app"
-
 	//ginlog "github.com/toorop/gin-logrus"
-	ginlog "github.com/gin-contrib/logger"
 )
 
 // @title                       Go Media Downloader API
@@ -58,86 +57,104 @@ var githash string
 func main() {
 	//debug.SetGCPercent(30)
 	os.Mkdir("./temp", 0777)
-	config.LoadCfgDB()
-
-	if config.SettingsGeneral.WebPort == "" {
+	if !scanner.CheckFileExist(config.Configfile) {
 		config.ClearCfg()
 		config.WriteCfg()
-		config.LoadCfgDB()
 	}
+	err := config.LoadCfgDB()
+	if err != nil {
+		os.Exit(1)
+	}
+	database.InitCache()
 	worker.InitWorkerPools(config.SettingsGeneral.WorkerIndexer, config.SettingsGeneral.WorkerParse, config.SettingsGeneral.WorkerSearch, config.SettingsGeneral.WorkerFiles, config.SettingsGeneral.WorkerMetadata)
 	logger.InitLogger(logger.Config{
-		LogLevel:     config.SettingsGeneral.LogLevel,
-		LogFileSize:  config.SettingsGeneral.LogFileSize,
-		LogFileCount: config.SettingsGeneral.LogFileCount,
-		LogCompress:  config.SettingsGeneral.LogCompress,
-		TimeFormat:   config.SettingsGeneral.TimeFormat,
-		TimeZone:     config.SettingsGeneral.TimeZone,
+		LogLevel:      config.SettingsGeneral.LogLevel,
+		LogFileSize:   config.SettingsGeneral.LogFileSize,
+		LogFileCount:  config.SettingsGeneral.LogFileCount,
+		LogCompress:   config.SettingsGeneral.LogCompress,
+		LogToFileOnly: config.SettingsGeneral.LogToFileOnly,
+		LogColorize:   config.SettingsGeneral.LogColorize,
+		TimeFormat:    config.SettingsGeneral.TimeFormat,
+		TimeZone:      config.SettingsGeneral.TimeZone,
 	})
-	logger.DisableVariableCleanup = config.SettingsGeneral.DisableVariableCleanup
-	logger.DisableParserStringMatch = config.SettingsGeneral.DisableParserStringMatch
-	logger.Log.Info().Msg("Starting go_media_downloader")
-	logger.Log.Info().Msg("Version: " + version + " " + githash)
-	logger.Log.Info().Msg("Build Date: " + buildstamp)
-	logger.Log.Info().Msg("Programmer: kellerman81")
+	logger.LogDynamic("info", "Starting go_media_downloader")
+	logger.LogDynamic("info", "Version: "+version+" "+githash)
+	logger.LogDynamic("info", "Build Date: "+buildstamp)
+	logger.LogDynamic("info", "Programmer: kellerman81")
 	if config.SettingsGeneral.LogLevel != "Debug" {
-		logger.Log.Info().Msg("Hint: Set Loglevel to Debug to see possible API Paths")
+		logger.LogDynamic("info", "Hint: Set Loglevel to Debug to see possible API Paths")
 	}
-	logger.Log.Info().Msg("------------------------------")
-	logger.Log.Info().Send()
+	logger.LogDynamic("info", "------------------------------")
 
-	apiexternal.NewOmdbClient(config.SettingsGeneral.OmdbAPIKey, config.SettingsGeneral.Omdblimiterseconds, config.SettingsGeneral.Omdblimitercalls, config.SettingsGeneral.OmdbDisableTLSVerify, config.SettingsGeneral.OmdbTimeoutSeconds)
-	apiexternal.NewTmdbClient(config.SettingsGeneral.TheMovieDBApiKey, config.SettingsGeneral.Tmdblimiterseconds, config.SettingsGeneral.Tmdblimitercalls, config.SettingsGeneral.TheMovieDBDisableTLSVerify, config.SettingsGeneral.TmdbTimeoutSeconds)
-	apiexternal.NewTvdbClient(config.SettingsGeneral.Tvdblimiterseconds, config.SettingsGeneral.Tvdblimitercalls, config.SettingsGeneral.TvdbDisableTLSVerify, config.SettingsGeneral.TvdbTimeoutSeconds)
-	apiexternal.NewTraktClient(config.SettingsGeneral.TraktClientID, config.SettingsGeneral.TraktClientSecret, *config.GetTrakt("trakt_token"), config.SettingsGeneral.Traktlimiterseconds, config.SettingsGeneral.Traktlimitercalls, config.SettingsGeneral.TraktDisableTLSVerify, config.SettingsGeneral.TraktTimeoutSeconds)
+	apiexternal.NewOmdbClient(config.SettingsGeneral.OmdbAPIKey, config.SettingsGeneral.OmdbLimiterSeconds, config.SettingsGeneral.OmdbLimiterCalls, config.SettingsGeneral.OmdbDisableTLSVerify, config.SettingsGeneral.OmdbTimeoutSeconds)
+	apiexternal.NewTmdbClient(config.SettingsGeneral.TheMovieDBApiKey, config.SettingsGeneral.TmdbLimiterSeconds, config.SettingsGeneral.TmdbLimiterCalls, config.SettingsGeneral.TheMovieDBDisableTLSVerify, config.SettingsGeneral.TmdbTimeoutSeconds)
+	apiexternal.NewTvdbClient(config.SettingsGeneral.TvdbLimiterSeconds, config.SettingsGeneral.TvdbLimiterCalls, config.SettingsGeneral.TvdbDisableTLSVerify, config.SettingsGeneral.TvdbTimeoutSeconds)
+	apiexternal.NewTraktClient(config.SettingsGeneral.TraktClientID, config.SettingsGeneral.TraktClientSecret, config.SettingsGeneral.TraktLimiterSeconds, config.SettingsGeneral.TraktLimiterCalls, config.SettingsGeneral.TraktDisableTLSVerify, config.SettingsGeneral.TraktTimeoutSeconds)
 
-	logger.Log.Info().Msg("Initialize Database")
-
-	logger.Log.Info().Msg("Check Database for Upgrades")
-	database.UpgradeDB()
+	logger.LogDynamic("info", "Initialize Database")
+	err = database.UpgradeDB()
+	if err != nil {
+		logger.LogDynamic("fatal", "Database Upgrade Failed", logger.NewLogFieldValue(err))
+	}
 	database.UpgradeIMDB()
-	database.InitDB(config.SettingsGeneral.DBLogLevel)
-	database.InitImdbdb()
+	err = database.InitDB(config.SettingsGeneral.DBLogLevel)
+	if err != nil {
+		logger.LogDynamic("fatal", "Database Initialization Failed", logger.NewLogFieldValue(err))
+	}
+	err = database.InitImdbdb()
+	if err != nil {
+		logger.LogDynamic("fatal", "IMDB Database Initialization Failed", logger.NewLogFieldValue(err))
+	}
 
-	logger.Log.Info().Msg("Check Database for Errors")
 	if database.DBQuickCheck() != "ok" {
-		logger.Log.Error().Msg("integrity check failed")
+		logger.LogDynamic("fatal", "integrity check failed")
 		database.DBClose()
 		os.Exit(100)
 	}
 
-	logger.Log.Info().Msg("Init Regex")
-	database.GetVars()
+	database.SetVars()
 
-	logger.Log.Info().Msg("Init Priorities")
-	parser.GetAllQualityPriorities()
+	parser.GenerateAllQualityPriorities()
 
 	parser.LoadDBPatterns()
+	parser.GenerateCutoffPriorities()
+	if config.SettingsGeneral.SearcherSize == 0 {
+		config.SettingsGeneral.SearcherSize = 5000
+	}
+	searcher.DefineSearchPool(config.SettingsGeneral.SearcherSize)
 
-	logger.Log.Info().Msg("Check Fill IMDB")
-	counter := database.QueryImdbIntColumn("select count() from imdb_titles")
-	if counter == 0 {
+	for range config.SettingsGeneral.WorkerParse * config.SettingsGeneral.WorkerFiles {
+		parse := apiexternal.ParserPool.Get()
+		apiexternal.ParserPool.Put(parse)
+	}
+
+	logger.LogDynamic("info", "Check Fill IMDB")
+	if database.GetdatarowN[int](true, "select count() from imdb_titles") == 0 {
 		utils.FillImdb()
 	}
 
-	logger.Log.Info().Msg("Check Fill DB")
-	counter = database.QueryIntColumn("select count() from dbmovies")
-	if counter == 0 {
+	if database.GetdatarowN[int](false, "select count() from dbmovies") == 0 {
+		logger.LogDynamic("info", "Initial Fill Movies")
 		utils.InitialFillMovies()
 	}
-	counter = database.QueryIntColumn("select count() from dbseries")
-	if counter == 0 {
+	if database.GetdatarowN[int](false, "select count() from dbseries") == 0 {
+		logger.LogDynamic("info", "Initial Fill Series")
 		utils.InitialFillSeries()
 	}
 
-	logger.Log.Info().Msg("Starting Scheduler")
-	scheduler.InitScheduler()
+	utils.Refreshcache(true)
+	utils.Refreshcache(false)
 
-	logger.Log.Info().Msg("Starting API")
+	worker.CreateCronWorker()
+	logger.LogDynamic("info", "Starting Scheduler")
+	scheduler.InitScheduler()
+	worker.StartCronWorker()
+
+	logger.LogDynamic("info", "Starting API")
 	router := gin.New()
-	router.Use(ginlog.SetLogger(ginlog.WithLogger(func(_ *gin.Context, l zerolog.Logger) zerolog.Logger {
-		return l.Output(gin.DefaultWriter).With().Logger()
-	})))
+	// router.Use(ginlog.SetLogger(ginlog.WithLogger(func(_ *gin.Context, l zerolog.Logger) zerolog.Logger {
+	// 	return l.Output(gin.DefaultWriter).With().Logger()
+	// })))
 
 	//corsconfig := cors.DefaultConfig()
 	//corsconfig.AllowHeaders = []string{"*"}
@@ -149,17 +166,10 @@ func main() {
 	}
 	//router.Use(ginlog.Logger(logger.Log), cors.New(corsconfig), gin.Recovery())
 
-	logger.Log.Info().Msg("Starting API Endpoints")
 	routerapi := router.Group("/api")
 	api.AddGeneralRoutes(routerapi)
-
-	logger.Log.Info().Msg("Starting API Endpoints-2")
 	api.AddAllRoutes(routerapi.Group("/all"))
-
-	logger.Log.Info().Msg("Starting API Endpoints-3")
 	api.AddMoviesRoutes(routerapi.Group("/movies"))
-
-	logger.Log.Info().Msg("Starting API Endpoints-4")
 	api.AddSeriesRoutes(routerapi.Group("/series"))
 
 	//Less RAM Usage for static file - don't forget to recreate html file
@@ -170,10 +180,10 @@ func main() {
 	// 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 	// }
 
-	if true {
+	if config.SettingsGeneral.WebPortalEnabled {
 		template.AddComp(chartjs.NewChart())
 		eng := engine.Default()
-		acfg := &goadmincfg.Config{
+		acfg := goadmincfg.Config{
 			Databases: goadmincfg.DatabaseList{
 				"default": {Driver: "sqlite", File: "./databases/admin.db"},
 			},
@@ -203,12 +213,12 @@ func main() {
 			HidePluginEntrance:       true,
 			NoLimitLoginIP:           true,
 		}
-		if err := eng.AddConfig(acfg).AddPlugins(eng.AdminPlugin()).AddGenerators(tables.Generators).
+		if err := eng.AddConfig(&acfg).AddPlugins(eng.AdminPlugin()).AddGenerators(tables.Generators).
 			Use(router); err != nil {
 			panic(err)
 		}
-		eng.HTML("GET", "/admin", pages.GetDashBoardO)
-		eng.HTML("GET", "/", pages.GetDashBoardO)
+		eng.HTML("GET", "/admin", pages.GetDashBoard)
+		eng.HTML("GET", "/", pages.GetDashBoard)
 		eng.HTML("GET", "/actions", pages.GetActionsPage)
 		eng.Services["sqlite"] = database.GetSqliteDB().InitDB(map[string]goadmincfg.Database{
 			"default": {Driver: "sqlite", File: "./databases/admin.db"},
@@ -224,48 +234,44 @@ func main() {
 	//webapp.Route("/web", &web.Home{})
 	//router.Handle("GET", "/web", gin.WrapH(&webapp.Handler{}))
 
-	logger.Log.Info().Str("port", config.SettingsGeneral.WebPort).Msg("Starting API Webserver on port")
-	server := &http.Server{
+	logger.LogDynamic("info", "Starting API Webserver on port", logger.NewLogField("port", config.SettingsGeneral.WebPort))
+	server := http.Server{
 		Addr:    ":" + config.SettingsGeneral.WebPort,
 		Handler: router,
 	}
 
 	go func() {
 		// service connections
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			database.DBClose()
-			logger.Log.Error().Err(err).Msg("listen")
-			//logger.Logerror(err, "listen")
+			logger.LogDynamic("error", "listen", logger.NewLogField("", err))
+			//logger.LogDynamicError("error", err, "listen")
 		}
 	}()
-	logger.Log.Info().Str("port", config.SettingsGeneral.WebPort).Msg("Started API Webserver on port ")
+	logger.LogDynamic("info", "Started API Webserver on port ", logger.NewLogField("port", config.SettingsGeneral.WebPort))
 
+	// Wait for interrupt signal to gracefully shutdown the server with
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
-	logger.Log.Info().Msg("Server shutting down")
+	logger.LogDynamic("info", "Server shutting down")
 
+	worker.StopCronWorker()
 	worker.CloseWorkerPools()
 
-	for idx := range scheduler.Crons {
-		scheduler.Crons[idx].Stop()
-	}
-	for idx := range scheduler.Ticker {
-		scheduler.Ticker[idx].Stop()
-	}
-	logger.Log.Info().Msg("Queues stopped")
+	logger.LogDynamic("info", "Queues stopped")
 
 	config.Slepping(true, 5)
 	database.DBClose()
-	logger.Log.Info().Msg("Databases stopped")
+	logger.LogDynamic("info", "Databases stopped")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := server.Shutdown(ctx); err != nil {
-		logger.Log.Error().Err(err).Msg("server shutdown")
-		//logger.Logerror(err, "server shutdown")
+		logger.LogDynamic("error", "server shutdown", logger.NewLogField("", err))
+		//logger.LogDynamicError("error", err, "server shutdown")
 	}
 	ctx.Done()
 
-	logger.Log.Info().Msg("Server exiting")
+	logger.LogDynamic("info", "Server exiting")
 }

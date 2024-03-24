@@ -3,37 +3,64 @@ package api
 import (
 	"net/http"
 
+	"github.com/Kellerman81/go_media_downloader/apiexternal"
 	"github.com/Kellerman81/go_media_downloader/config"
+	"github.com/Kellerman81/go_media_downloader/database"
 	"github.com/Kellerman81/go_media_downloader/logger"
 	"github.com/Kellerman81/go_media_downloader/utils"
 	gin "github.com/gin-gonic/gin"
 )
 
-func AddAllRoutes(rg *gin.RouterGroup) {
-	rg.GET("/feeds", apiAllGetFeeds)
-	rg.GET("/data", apiAllGetData)
+type Jsonerror struct {
+	Error string `json:"error"`
+}
 
-	routerallsearch := rg.Group("/search")
+type Jsondata struct {
+	Data any `json:"data"`
+}
+type Jsondataerror struct {
+	Data  any    `json:"data"`
+	Error string `json:"error"`
+}
+type Jsondatarows struct {
+	Data  any `json:"data"`
+	Total int `json:"total"`
+}
+type JsonNaming struct {
+	Foldername string             `json:"foldername"`
+	Filename   string             `json:"filename"`
+	M          database.ParseInfo `json:"m"`
+}
+type Jsonresults struct {
+	Accepted []apiexternal.Nzbwithprio `json:"accepted"`
+	Denied   []apiexternal.Nzbwithprio `json:"denied"`
+}
+
+func AddAllRoutes(rg *gin.RouterGroup) {
+	rg.Use(checkauth)
 	{
-		routerallsearch.GET("/rss", apiAllGetRss)
-		routerallsearch.GET("/missing/full", apiAllGetMissingFull)
-		routerallsearch.GET("/missing/inc", apiAllGetMissingInc)
-		routerallsearch.GET("/upgrade/full", apiAllGetUpgradeFull)
-		routerallsearch.GET("/upgrade/inc", apiAllGetUpgradeInc)
+		rg.GET("/feeds", apiAllGetFeeds)
+		rg.GET("/data", apiAllGetData)
+
+		routerallsearch := rg.Group("/search")
+		{
+			routerallsearch.GET("/rss", apiAllGetRss)
+			routerallsearch.GET("/missing/full", apiAllGetMissingFull)
+			routerallsearch.GET("/missing/inc", apiAllGetMissingInc)
+			routerallsearch.GET("/upgrade/full", apiAllGetUpgradeFull)
+			routerallsearch.GET("/upgrade/inc", apiAllGetUpgradeInc)
+		}
 	}
 }
 
 // @Summary      Search all feeds
 // @Description  Search all feeds of movies and series for new entries
 // @Tags         feeds
-// @Success      200  {object}  string
-// @Failure      401  {object}  string
+// @Param        apikey query     string    true  "apikey"
+// @Success      200  {object}  string "returns ok"
+// @Failure      401  {object}  Jsonerror
 // @Router       /api/all/feeds [get]
 func apiAllGetFeeds(c *gin.Context) {
-	if auth(c) == http.StatusUnauthorized {
-		return
-	}
-
 	utils.MoviesAllJobs(logger.StrFeeds, true)
 	utils.SeriesAllJobs(logger.StrFeeds, true)
 	c.JSON(http.StatusOK, "ok")
@@ -42,13 +69,11 @@ func apiAllGetFeeds(c *gin.Context) {
 // @Summary      Search all folders
 // @Description  Search all folders of movies and series for new entries
 // @Tags         data
-// @Success      200  {object}  string
-// @Failure      401  {object}  string
+// @Param        apikey query     string    true  "apikey"
+// @Success      200  {object}  string "returns ok"
+// @Failure      401  {object}  Jsonerror
 // @Router       /api/all/data [get]
 func apiAllGetData(c *gin.Context) {
-	if auth(c) == http.StatusUnauthorized {
-		return
-	}
 	utils.MoviesAllJobs("data", true)
 	utils.SeriesAllJobs("data", true)
 	c.JSON(http.StatusOK, "ok")
@@ -57,13 +82,11 @@ func apiAllGetData(c *gin.Context) {
 // @Summary      Search all rss feeds
 // @Description  Search all rss feeds of movies and series for new releases
 // @Tags         search
-// @Success      200  {object}  string
-// @Failure      401  {object}  string
+// @Param        apikey query     string    true  "apikey"
+// @Success      200  {object}  string "returns ok"
+// @Failure      401  {object}  Jsonerror
 // @Router       /api/all/search/rss [get]
 func apiAllGetRss(c *gin.Context) {
-	if auth(c) == http.StatusUnauthorized {
-		return
-	}
 	utils.MoviesAllJobs(logger.StrRss, true)
 	utils.SeriesAllJobs(logger.StrRss, true)
 	c.JSON(http.StatusOK, "ok")
@@ -72,13 +95,11 @@ func apiAllGetRss(c *gin.Context) {
 // @Summary      Search all Missing
 // @Description  Search all media of movies and series for missing releases
 // @Tags         search
-// @Success      200  {object}  string
-// @Failure      401  {object}  string
+// @Param        apikey query     string    true  "apikey"
+// @Success      200  {object}  string "returns ok"
+// @Failure      401  {object}  Jsonerror
 // @Router       /api/all/search/missing/full [get]
 func apiAllGetMissingFull(c *gin.Context) {
-	if auth(c) == http.StatusUnauthorized {
-		return
-	}
 	utils.MoviesAllJobs(logger.StrSearchMissingFull, true)
 	utils.SeriesAllJobs(logger.StrSearchMissingFull, true)
 	c.JSON(http.StatusOK, "ok")
@@ -87,13 +108,11 @@ func apiAllGetMissingFull(c *gin.Context) {
 // @Summary      Search all Missing Incremental
 // @Description  Search all media of movies and series for missing releases (incremental)
 // @Tags         search
-// @Success      200  {object}  string
-// @Failure      401  {object}  string
+// @Param        apikey query     string    true  "apikey"
+// @Success      200  {object}  string "returns ok"
+// @Failure      401  {object}  Jsonerror
 // @Router       /api/all/search/missing/inc [get]
 func apiAllGetMissingInc(c *gin.Context) {
-	if auth(c) == http.StatusUnauthorized {
-		return
-	}
 	utils.MoviesAllJobs(logger.StrSearchMissingInc, true)
 	utils.SeriesAllJobs(logger.StrSearchMissingInc, true)
 	c.JSON(http.StatusOK, "ok")
@@ -102,13 +121,11 @@ func apiAllGetMissingInc(c *gin.Context) {
 // @Summary      Search all Upgrades
 // @Description  Search all media of movies and series for upgrades
 // @Tags         search
-// @Success      200  {object}  string
-// @Failure      401  {object}  string
+// @Param        apikey query     string    true  "apikey"
+// @Success      200  {object}  string "returns ok"
+// @Failure      401  {object}  Jsonerror
 // @Router       /api/all/search/upgrade/full [get]
 func apiAllGetUpgradeFull(c *gin.Context) {
-	if auth(c) == http.StatusUnauthorized {
-		return
-	}
 	utils.MoviesAllJobs(logger.StrSearchUpgradeFull, true)
 	utils.SeriesAllJobs(logger.StrSearchUpgradeFull, true)
 	c.JSON(http.StatusOK, "ok")
@@ -117,35 +134,28 @@ func apiAllGetUpgradeFull(c *gin.Context) {
 // @Summary      Search all Upgrades Incremental
 // @Description  Search all media of movies and series for upgrades (incremental)
 // @Tags         search
-// @Success      200  {object}  string
-// @Failure      401  {object}  string
+// @Param        apikey query     string    true  "apikey"
+// @Success      200  {object}  string "returns ok"
+// @Failure      401  {object}  Jsonerror
 // @Router       /api/all/search/upgrade/inc [get]
 func apiAllGetUpgradeInc(c *gin.Context) {
-	if auth(c) == http.StatusUnauthorized {
-		return
-	}
 	utils.MoviesAllJobs(logger.StrSearchUpgradeInc, true)
 	utils.SeriesAllJobs(logger.StrSearchUpgradeInc, true)
 	c.JSON(http.StatusOK, "ok")
 }
 
-func auth(c *gin.Context) int {
+func checkauth(c *gin.Context) {
+	var msg string
 	if queryParam, ok := c.GetQuery("apikey"); ok {
-		if queryParam == "" {
-			c.Header("Content-Type", "application/json")
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
-			c.AbortWithStatus(http.StatusUnauthorized)
-			return http.StatusUnauthorized
+		if queryParam == config.SettingsGeneral.WebAPIKey {
+			c.Next()
+			return
+		} else {
+			msg = "wrong apikey in query"
 		}
-		if queryParam != config.SettingsGeneral.WebAPIKey {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
-			c.AbortWithStatus(http.StatusUnauthorized)
-			return http.StatusUnauthorized
-		}
-		c.Next()
-		return http.StatusOK
+	} else {
+		msg = "no apikey in query"
 	}
-	c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+	c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized - " + msg})
 	c.AbortWithStatus(http.StatusUnauthorized)
-	return http.StatusUnauthorized
 }

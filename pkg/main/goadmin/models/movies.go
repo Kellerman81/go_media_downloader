@@ -12,7 +12,6 @@ import (
 )
 
 func GetMoviesTable(ctx *context.Context) table.Table {
-
 	movies := table.NewDefaultTable(table.DefaultConfigWithDriverAndConnection("sqlite", "media"))
 
 	detail := movies.GetDetail()
@@ -72,18 +71,18 @@ func GetMoviesTable(ctx *context.Context) table.Table {
 		JoinField: "id",
 		Table:     "dbmovies",
 	}).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
-	info.AddField("Listname", "listname", db.Text).FieldFilterable(types.FilterType{FormType: form.SelectSingle}).FieldFilterOptionsFromTable("movies", "listname", "listname", func(sql *db.SQL) *db.SQL { return sql.GroupBy("listname") }).FieldFilterOptionExt(map[string]interface{}{"allowClear": true}).FieldSortable()
+	info.AddField("Listname", "listname", db.Text).FieldFilterable(types.FilterType{FormType: form.SelectSingle}).FieldFilterOptionsFromTable("movies", "listname", "listname", func(sql *db.SQL) *db.SQL { return sql.GroupBy("listname") }).FieldFilterOptionExt(map[string]any{"allowClear": true}).FieldSortable()
 	info.AddField("Quality_reached", "quality_reached", db.Numeric).FieldBool("1", "0").FieldFilterable(types.FilterType{FormType: form.SelectSingle}).FieldFilterOptions(types.FieldOptions{
 		{Value: "0", Text: "No"},
 		{Value: "1", Text: "Yes"},
-	}).FieldFilterOptionExt(map[string]interface{}{"allowClear": true}).FieldSortable()
-	info.AddField("Quality_profile", "quality_profile", db.Text).FieldFilterable(types.FilterType{FormType: form.SelectSingle}).FieldFilterOptionsFromTable("movies", "quality_profile", "quality_profile", func(sql *db.SQL) *db.SQL { return sql.GroupBy("quality_profile") }).FieldFilterOptionExt(map[string]interface{}{"allowClear": true}).FieldSortable()
+	}).FieldFilterOptionExt(map[string]any{"allowClear": true}).FieldSortable()
+	info.AddField("Quality_profile", "quality_profile", db.Text).FieldFilterable(types.FilterType{FormType: form.SelectSingle}).FieldFilterOptionsFromTable("movies", "quality_profile", "quality_profile", func(sql *db.SQL) *db.SQL { return sql.GroupBy("quality_profile") }).FieldFilterOptionExt(map[string]any{"allowClear": true}).FieldSortable()
 	info.AddField("Missing", "missing", db.Numeric).FieldBool("1", "0").FieldFilterable(types.FilterType{FormType: form.SelectSingle}).FieldFilterOptions(types.FieldOptions{
 		{Value: "0", Text: "No"},
 		{Value: "1", Text: "Yes"},
-	}).FieldFilterOptionExt(map[string]interface{}{"allowClear": true}).FieldSortable()
+	}).FieldFilterOptionExt(map[string]any{"allowClear": true}).FieldSortable()
 	info.AddField("Rootpath", "rootpath", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
-	// info.AddField("Dbmovie_id", "dbmovie_id", db.Integer).FieldDisplay(func(value types.FieldModel) interface{} {
+	// info.AddField("Dbmovie_id", "dbmovie_id", db.Integer).FieldDisplay(func(value types.FieldModel) any {
 	// 	return template.Default().
 	// 		Link().
 	// 		SetURL("/admin/info/dbmovies/detail?__goadmin_detail_pk=" + value.Value).

@@ -15,7 +15,6 @@ import (
 )
 
 func GetSeriesTable(ctx *context.Context) table.Table {
-
 	series := table.NewDefaultTable(table.DefaultConfigWithDriverAndConnection("sqlite", "media"))
 
 	info := series.GetInfo().HideFilterArea()
@@ -30,7 +29,7 @@ func GetSeriesTable(ctx *context.Context) table.Table {
 		JoinField: "id",
 		Table:     "dbseries",
 	}).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
-	info.AddField("Listname", "listname", db.Text).FieldFilterable(types.FilterType{FormType: form.SelectSingle}).FieldFilterOptionsFromTable("series", "listname", "listname", func(sql *db.SQL) *db.SQL { return sql.GroupBy("listname") }).FieldFilterOptionExt(map[string]interface{}{"allowClear": true}).FieldSortable()
+	info.AddField("Listname", "listname", db.Text).FieldFilterable(types.FilterType{FormType: form.SelectSingle}).FieldFilterOptionsFromTable("series", "listname", "listname", func(sql *db.SQL) *db.SQL { return sql.GroupBy("listname") }).FieldFilterOptionExt(map[string]any{"allowClear": true}).FieldSortable()
 	info.AddField("Rootpath", "rootpath", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike})
 
 	info.AddColumnButtons("Details", types.GetActionIconButton(icon.List,
@@ -45,7 +44,7 @@ func GetSeriesTable(ctx *context.Context) table.Table {
 		}}, "900px", "560px")), types.GetActionIconButton(icon.Search,
 		MyPopUpWithIframe("/search", "see more", action.IframeData{Src: "/api/series/search/id/{{.Id}}?apikey=" + config.SettingsGeneral.WebAPIKey}, "900px", "560px")))
 
-	info.AddField("Dbserie_id", "dbserie_id", db.Integer).FieldDisplay(func(value types.FieldModel) interface{} {
+	info.AddField("Dbserie_id", "dbserie_id", db.Integer).FieldDisplay(func(value types.FieldModel) any {
 		return template.Default().
 			Link().
 			SetURL("/admin/info/dbseries/detail?__goadmin_detail_pk=" + value.Value).
@@ -57,19 +56,19 @@ func GetSeriesTable(ctx *context.Context) table.Table {
 	info.AddField("Dont_upgrade", "dont_upgrade", db.Numeric).FieldBool("1", "0").FieldFilterable(types.FilterType{FormType: form.SelectSingle}).FieldFilterOptions(types.FieldOptions{
 		{Value: "0", Text: "No"},
 		{Value: "1", Text: "Yes"},
-	}).FieldFilterOptionExt(map[string]interface{}{"allowClear": true}).FieldSortable()
+	}).FieldFilterOptionExt(map[string]any{"allowClear": true}).FieldSortable()
 	info.AddField("Dont_search", "dont_search", db.Numeric).FieldBool("1", "0").FieldFilterable(types.FilterType{FormType: form.SelectSingle}).FieldFilterOptions(types.FieldOptions{
 		{Value: "0", Text: "No"},
 		{Value: "1", Text: "Yes"},
-	}).FieldFilterOptionExt(map[string]interface{}{"allowClear": true}).FieldSortable()
+	}).FieldFilterOptionExt(map[string]any{"allowClear": true}).FieldSortable()
 	info.AddField("Search_Specials", "search_specials", db.Numeric).FieldBool("1", "0").FieldFilterable(types.FilterType{FormType: form.SelectSingle}).FieldFilterOptions(types.FieldOptions{
 		{Value: "0", Text: "No"},
 		{Value: "1", Text: "Yes"},
-	}).FieldFilterOptionExt(map[string]interface{}{"allowClear": true}).FieldSortable()
+	}).FieldFilterOptionExt(map[string]any{"allowClear": true}).FieldSortable()
 	info.AddField("Ignore_runtime", "ignore_runtime", db.Numeric).FieldBool("1", "0").FieldFilterable(types.FilterType{FormType: form.SelectSingle}).FieldFilterOptions(types.FieldOptions{
 		{Value: "0", Text: "No"},
 		{Value: "1", Text: "Yes"},
-	}).FieldFilterOptionExt(map[string]interface{}{"allowClear": true}).FieldSortable()
+	}).FieldFilterOptionExt(map[string]any{"allowClear": true}).FieldSortable()
 
 	info.SetTable("series").SetTitle("Series").SetDescription("Series")
 

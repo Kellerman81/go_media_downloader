@@ -9,7 +9,6 @@ import (
 )
 
 func GetQualitiesTable(ctx *context.Context) table.Table {
-
 	qualities := table.NewDefaultTable(table.DefaultConfigWithDriverAndConnection("sqlite", "media"))
 
 	info := qualities.GetInfo().HideFilterArea()
@@ -17,7 +16,7 @@ func GetQualitiesTable(ctx *context.Context) table.Table {
 	info.AddField("Id", "id", db.Integer).FieldSortable()
 	//info.AddField("Created_at", "created_at", db.Datetime)
 	//info.AddField("Updated_at", "updated_at", db.Datetime)
-	info.AddField("Type", "type", db.Integer).FieldDisplay(func(value types.FieldModel) interface{} {
+	info.AddField("Type", "type", db.Integer).FieldDisplay(func(value types.FieldModel) any {
 		stringvar := ""
 		switch value.Value {
 		case "1":
@@ -35,7 +34,7 @@ func GetQualitiesTable(ctx *context.Context) table.Table {
 		{Value: "2", Text: "Quality"},
 		{Value: "3", Text: "Codec"},
 		{Value: "4", Text: "Audio"},
-	}).FieldFilterOptionExt(map[string]interface{}{"allowClear": true}).FieldSortable()
+	}).FieldFilterOptionExt(map[string]any{"allowClear": true}).FieldSortable()
 	info.AddField("Name", "name", db.Text).FieldFilterable().FieldSortable()
 	info.AddField("Regex", "regex", db.Text).FieldFilterable().FieldSortable()
 	info.AddField("Strings", "strings", db.Text).FieldFilterable().FieldSortable()
@@ -43,7 +42,7 @@ func GetQualitiesTable(ctx *context.Context) table.Table {
 	info.AddField("Use_regex", "use_regex", db.Integer).FieldFilterable(types.FilterType{FormType: form.SelectSingle}).FieldFilterOptions(types.FieldOptions{
 		{Value: "0", Text: "No"},
 		{Value: "1", Text: "Yes"},
-	}).FieldFilterOptionExt(map[string]interface{}{"allowClear": true}).FieldSortable().FieldBool("1", "0")
+	}).FieldFilterOptionExt(map[string]any{"allowClear": true}).FieldSortable().FieldBool("1", "0")
 	info.AddField("Regexgroup", "regexgroup", db.Integer).FieldFilterable().FieldSortable()
 	info.SetTable("qualities").SetTitle("Qualities").SetDescription("Qualities")
 

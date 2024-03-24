@@ -1,140 +1,58 @@
 package config
 
 import (
-	"reflect"
-	"regexp"
 	"strings"
 
-	"github.com/Kellerman81/go_media_downloader/cache"
 	"github.com/Kellerman81/go_media_downloader/logger"
 	"golang.org/x/oauth2"
 )
 
+// Conf is a struct that contains a Name string field and a Data any field
 type Conf struct {
+	// Name is a string field
 	Name string
-	Data interface{}
+	// Data is an any field that can hold any type
+	Data any
 }
 
-func Check(key string) bool {
-	return checksettings(key)
-	//return logger.Settings.CheckNoType(key)
-}
+// CheckGroup checks if a setting key exists in the given settings group.
+// It takes a group name string and a key string as parameters.
+// It returns a boolean indicating if the key exists in the given group.
 func CheckGroup(group string, key string) bool {
-	return checksettings(group + key)
-	//return logger.Settings.CheckNoType(group + key)
-}
-
-func checksettings(key string) bool {
-	if strings.HasPrefix(key, "general") {
+	var exists bool
+	switch strings.TrimRight(group, "_") {
+	case "general", logger.StrImdb:
 		return true
+	case "downloader":
+		_, exists = SettingsDownloader[key]
+	case "indexer":
+		_, exists = SettingsIndexer[key]
+	case "list":
+		_, exists = SettingsList[key]
+	case logger.StrSerie, logger.StrMovie:
+		_, exists = SettingsMedia[key]
+	case "notification":
+		_, exists = SettingsNotification[key]
+	case "path":
+		_, exists = SettingsPath[key]
+	case "quality":
+		_, exists = SettingsQuality[key]
+	case "regex":
+		_, exists = SettingsRegex[key]
+	case "scheduler":
+		_, exists = SettingsScheduler[key]
 	}
-	if strings.HasPrefix(key, "downloader_") {
-		_, exists := SettingsDownloader[key]
-		return exists
-	}
-	if strings.HasPrefix(key, logger.StrImdb) {
-		return true
-	}
-	if strings.HasPrefix(key, "indexer") {
-		_, exists := SettingsIndexer[key]
-		return exists
-	}
-	if strings.HasPrefix(key, "list") {
-		_, exists := SettingsList[key]
-		return exists
-	}
-	if strings.HasPrefix(key, logger.StrSerie) {
-		_, exists := SettingsMedia[key]
-		return exists
-	}
-	if strings.HasPrefix(key, logger.StrMovie) {
-		_, exists := SettingsMedia[key]
-		return exists
-	}
-	if strings.HasPrefix(key, "notification") {
-		_, exists := SettingsNotification[key]
-		return exists
-	}
-	if strings.HasPrefix(key, "path") {
-		_, exists := SettingsPath[key]
-		return exists
-	}
-	if strings.HasPrefix(key, "quality") {
-		_, exists := SettingsQuality[key]
-		return exists
-	}
-	if strings.HasPrefix(key, "regex") {
-		_, exists := SettingsRegex[key]
-		return exists
-	}
-	if strings.HasPrefix(key, "scheduler") {
-		_, exists := SettingsScheduler[key]
-		return exists
-	}
-	return false
+	return exists
 }
 
-func Getmatches(cached bool, key *string, matchfor *string) *[]int {
-	var i *regexp.Regexp
-	if !cached {
-		i = regexp.MustCompile(*key)
-	} else {
-		i = logger.GlobalCacheRegex.GetRegexpDirect(key)
+// GetTrakt returns the OAuth2 token for accessing the Trakt API.
+// It first checks if the traktToken variable is nil, and if so logs
+// a debug message and returns an empty oauth2.Token struct.
+// Otherwise it returns the existing traktToken.
+func GetTrakt() *oauth2.Token {
+	if traktToken == nil {
+		logger.LogDynamic("debug", "token empty")
+		return &oauth2.Token{}
 	}
-	return logger.GetP(i.FindStringSubmatchIndex(*matchfor))
-}
-func RegexGetMatchesStr1Str2(cached bool, key *string, matchfor *string) (string, string) {
-	matches := Getmatches(cached, key, matchfor)
-
-	if len(*matches) == 0 {
-		return "", ""
-	}
-	defer logger.Clear(matches)
-	//ex Date := [0,8,-1,-1,0,8]
-	if len(*matches) >= 6 && (*matches)[3] != -1 && (*matches)[5] != -1 {
-		return (*matchfor)[(*matches)[2]:(*matches)[3]], (*matchfor)[(*matches)[4]:(*matches)[5]]
-	}
-	if len(*matches) >= 6 && (*matches)[3] == -1 && (*matches)[5] != -1 {
-		return "", (*matchfor)[(*matches)[4]:(*matches)[5]]
-	}
-	if len(*matches) >= 4 && (*matches)[3] != -1 {
-		return (*matchfor)[(*matches)[2]:(*matches)[3]], ""
-	}
-	//logger.Log.Debug().Ints("found", *matches).Str("search", *matchfor).Str("key", *key).Int("count", len(matches)).Msg("matches")
-	//logger.LogAnyDebug("matches", logger.LoggerValue{Name: "search", Value: matchfor}, logger.LoggerValue{Name: "key", Value: key}, logger.LoggerValue{Name: "count", Value: len(matches)}, logger.LoggerValue{Name: "found", Value: matches})
-
-	return "", ""
-}
-
-func RegexGetMatchesFind(key *string, matchfor string, mincount int) bool {
-	if mincount == 1 {
-		return len(logger.GlobalCacheRegex.GetRegexpDirect(key).FindStringIndex(matchfor)) >= 1
-	}
-	return len(logger.GlobalCacheRegex.GetRegexpDirect(key).FindAllStringIndex(matchfor, mincount)) >= mincount
-}
-
-func GetTrakt(key string) *oauth2.Token {
-	if logger.GlobalCache.Check(key, reflect.TypeOf(oauth2.Token{})) {
-		value := cache.GetDataT[oauth2.Token](logger.GlobalCache, key)
-		return &value
-	}
-	return &oauth2.Token{}
-}
-
-func FindconfigTemplateNameOnList(typeprefix string, listname string) string {
-	pre := "serie_"
-	if strings.HasPrefix(typeprefix, logger.StrMovie) {
-		pre = "movie_"
-	}
-	for idxm := range SettingsMedia {
-		if strings.HasPrefix(SettingsMedia[idxm].NamePrefix, pre) {
-			for idx := range SettingsMedia[idxm].Lists {
-				if strings.EqualFold(SettingsMedia[idxm].Lists[idx].Name, listname) {
-					return SettingsMedia[idxm].NamePrefix
-				}
-			}
-		}
-	}
-	logger.Log.Debug().Str("type", typeprefix).Str("list", listname).Msg("config template not found")
-	return ""
+	return traktToken
 }

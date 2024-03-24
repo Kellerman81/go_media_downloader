@@ -16,14 +16,17 @@ import (
 
 func SendToQBittorrent(host string, port string, username string, password string, urlv string, dlpath string, addpaused string) error {
 	cl := NewQBittorrentClient("http://" + host + ":" + port + "/")
-	var err error
-	_, err = cl.Login(username, password)
+	_, err := cl.Login(username, password)
 	if err == nil {
 		options := map[string]string{
 			"savepath": dlpath,
 			"paused":   addpaused,
 		}
-		_, err = cl.DownloadFromLink(urlv, options)
+		resp, err := cl.DownloadFromLink(urlv, options)
+		if err == nil {
+			resp.Body.Close()
+			return nil
+		}
 	}
 	return err
 }
@@ -32,7 +35,7 @@ func SendToQBittorrent(host string, port string, username string, password strin
 var errBadResponse = errors.New("received bad response")
 
 // Client creates a connection to qbittorrent and performs requests
-type QbtClient struct {
+type qbtClient struct {
 	http          *http.Client
 	URL           string
 	Authenticated bool
@@ -40,8 +43,8 @@ type QbtClient struct {
 }
 
 // NewClient creates a new client connection to qbittorrent
-func NewQBittorrentClient(urlv string) *QbtClient {
-	client := &QbtClient{}
+func NewQBittorrentClient(urlv string) *qbtClient {
+	client := &qbtClient{}
 
 	// ensure url ends with "/"
 	if urlv[len(urlv)-1:] != "/" {
@@ -59,7 +62,7 @@ func NewQBittorrentClient(urlv string) *QbtClient {
 }
 
 // post will perform a POST request with no content-type specified
-func (client *QbtClient) post(endpoint string, opts map[string]string) (*http.Response, error) {
+func (client *qbtClient) post(endpoint string, opts map[string]string) (*http.Response, error) {
 	var req *http.Request
 	var err error
 	urlv := client.URL + endpoint
@@ -70,16 +73,11 @@ func (client *QbtClient) post(endpoint string, opts map[string]string) (*http.Re
 			form.Add(k, v)
 		}
 		req, err = http.NewRequest(http.MethodPost, urlv, strings.NewReader(form.Encode()))
-
 	} else {
 		req, err = http.NewRequest(http.MethodPost, urlv, nil)
 	}
 	if err != nil {
 		return nil, wrapper.Wrap(err, "failed to build request")
-	}
-
-	if err != nil {
-		return nil, wrapper.Wrap(err, "failed to perform request")
 	}
 	// add the content-type so qbittorrent knows what to expect
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -92,11 +90,10 @@ func (client *QbtClient) post(endpoint string, opts map[string]string) (*http.Re
 	}
 
 	return resp, nil
-
 }
 
 // postMultipart will perform a multiple part POST request
-func (client *QbtClient) postMultipart(endpoint string, buffer bytes.Buffer, contentType string) (*http.Response, error) {
+func (client *qbtClient) postMultipart(endpoint string, buffer bytes.Buffer, contentType string) (*http.Response, error) {
 	urlv := client.URL + endpoint
 	req, err := http.NewRequest(http.MethodPost, urlv, &buffer)
 	if err != nil {
@@ -110,7 +107,6 @@ func (client *QbtClient) postMultipart(endpoint string, buffer bytes.Buffer, con
 
 	resp, err := client.http.Do(req)
 	if err != nil {
-
 		return nil, wrapper.Wrap(err, "failed to perform request")
 	}
 
@@ -125,7 +121,7 @@ func writeOptions(writer *multipart.Writer, opts map[string]string) {
 }
 
 // postMultipartData will perform a multiple part POST request without a file
-func (client *QbtClient) postMultipartData(endpoint string, opts map[string]string) (*http.Response, error) {
+func (client *qbtClient) postMultipartData(endpoint string, opts map[string]string) (*http.Response, error) {
 	var buffer bytes.Buffer
 	writer := multipart.NewWriter(&buffer)
 
@@ -148,7 +144,7 @@ func (client *QbtClient) postMultipartData(endpoint string, opts map[string]stri
 
 // Login logs you in to the qbittorrent client
 // returns the current authentication status
-func (client *QbtClient) Login(username string, password string) (loggedIn bool, err error) {
+func (client *qbtClient) Login(username string, password string) (loggedIn bool, err error) {
 	credentials := make(map[string]string)
 	credentials["username"] = username
 	credentials["password"] = password
@@ -157,6 +153,7 @@ func (client *QbtClient) Login(username string, password string) (loggedIn bool,
 	if err != nil {
 		return false, err
 	} else if resp.Status != "200 OK" { // check for correct status code
+		//io.Copy(io.Discard, resp.Body)
 		resp.Body.Close()
 		return false, wrapper.Wrap(errBadResponse, "couldnt log in with "+client.URL+"auth/login")
 	}
@@ -175,12 +172,13 @@ func (client *QbtClient) Login(username string, password string) (loggedIn bool,
 	client.http = &http.Client{
 		Jar: client.Jar,
 	}
+	//io.Copy(io.Discard, resp.Body)
 
 	return client.Authenticated, nil
 }
 
 // DownloadFromLink starts downloading a torrent from a link
-func (client *QbtClient) DownloadFromLink(link string, options map[string]string) (*http.Response, error) {
+func (client *qbtClient) DownloadFromLink(link string, options map[string]string) (*http.Response, error) {
 	options["urls"] = link
 	return client.postMultipartData("torrents/add", options)
 }

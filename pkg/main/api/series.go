@@ -3,6 +3,7 @@ package api
 
 import (
 	"database/sql"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -19,53 +20,56 @@ import (
 )
 
 func AddSeriesRoutes(routerseries *gin.RouterGroup) {
-	routerseries.GET("/", apiSeriesGet)
-	routerseries.POST("/", updateDBSeries)
-	routerseries.DELETE("/:id", apiSeriesDelete)
-
-	routerseries.GET("/list/:name", apiSeriesListGet)
-	routerseries.POST("/list/", updateSeries)
-	routerseries.DELETE("/list/:id", apiSeriesListDelete)
-
-	routerseries.GET("/all/refresh", apirefreshSeriesInc)
-	routerseries.GET("/all/refreshall", apirefreshSeries)
-	routerseries.GET("/refresh/:id", apirefreshSerie)
-
-	routerseries.GET("/job/:job", apiseriesAllJobs)
-	routerseries.GET("/job/:job/:name", apiseriesJobs)
-
-	routerseries.GET("/unmatched", apiSeriesUnmatched)
-
-	routerseries.GET("/episodes", apiSeriesEpisodesGet)
-	routerseries.POST("/episodes", updateDBEpisode)
-
-	routerseries.GET("/episodes/:id", apiSeriesEpisodesGetSingle)
-	routerseries.DELETE("/episodes/:id", apiSeriesEpisodesDelete)
-	routerseries.POST("/episodes/list/", updateEpisode)
-	routerseries.GET("/episodes/list/:id", apiSeriesEpisodesListGet)
-	routerseries.DELETE("/episodes/list/:id", apiSeriesEpisodesListDelete)
-	routerseries.GET("/rss/search/list/:group", apiSeriesRssSearchList)
-
-	routerseriessearch := routerseries.Group("/search")
+	routerseries.Use(checkauth)
 	{
-		routerseriessearch.GET("/id/:id", apiSeriesSearch)
-		routerseriessearch.GET("/id/:id/:season", apiSeriesSearchSeason)
-		routerseriessearch.GET("/history/clear/:name", apiSeriesClearHistoryName)
-		routerseriessearch.GET("/history/clearid/:id", apiSeriesClearHistoryID)
-	}
+		routerseries.GET("/", apiSeriesGet)
+		routerseries.POST("/", updateDBSeries)
+		routerseries.DELETE("/:id", apiSeriesDelete)
 
-	routerseriessearchrss := routerseries.Group("/searchrss")
-	{
-		routerseriessearchrss.GET("/id/:id", apiSeriesSearchRSS)
-		routerseriessearchrss.GET("/id/:id/:season", apiSeriesSearchRSSSeason)
-		routerseriessearchrss.GET("/list/id/:id", apiSeriesSearchRSSList)
-	}
+		routerseries.GET("/list/:name", apiSeriesListGet)
+		routerseries.POST("/list/", updateSeries)
+		routerseries.DELETE("/list/:id", apiSeriesListDelete)
 
-	routerseriesepisodessearch := routerseries.Group("/episodes/search")
-	{
-		routerseriesepisodessearch.GET("/id/:id", apiSeriesEpisodeSearch)
-		routerseriesepisodessearch.GET("/list/:id", apiSeriesEpisodeSearchList)
-		routerseriesepisodessearch.POST("/download/:id", apiSeriesEpisodeSearchDownload)
+		routerseries.GET("/all/refresh", apirefreshSeriesInc)
+		routerseries.GET("/all/refreshall", apirefreshSeries)
+		routerseries.GET("/refresh/:id", apirefreshSerie)
+
+		routerseries.GET("/job/:job", apiseriesAllJobs)
+		routerseries.GET("/job/:job/:name", apiseriesJobs)
+
+		routerseries.GET("/unmatched", apiSeriesUnmatched)
+
+		routerseries.GET("/episodes", apiSeriesEpisodesGet)
+		routerseries.POST("/episodes", updateDBEpisode)
+
+		routerseries.GET("/episodes/:id", apiSeriesEpisodesGetSingle)
+		routerseries.DELETE("/episodes/:id", apiSeriesEpisodesDelete)
+		routerseries.POST("/episodes/list/", updateEpisode)
+		routerseries.GET("/episodes/list/:id", apiSeriesEpisodesListGet)
+		routerseries.DELETE("/episodes/list/:id", apiSeriesEpisodesListDelete)
+		routerseries.GET("/rss/search/list/:group", apiSeriesRssSearchList)
+
+		routerseriessearch := routerseries.Group("/search")
+		{
+			routerseriessearch.GET("/id/:id", apiSeriesSearch)
+			routerseriessearch.GET("/id/:id/:season", apiSeriesSearchSeason)
+			routerseriessearch.GET("/history/clear/:name", apiSeriesClearHistoryName)
+			routerseriessearch.GET("/history/clearid/:id", apiSeriesClearHistoryID)
+		}
+
+		routerseriessearchrss := routerseries.Group("/searchrss")
+		{
+			routerseriessearchrss.GET("/id/:id", apiSeriesSearchRSS)
+			routerseriessearchrss.GET("/id/:id/:season", apiSeriesSearchRSSSeason)
+			routerseriessearchrss.GET("/list/id/:id", apiSeriesSearchRSSList)
+		}
+
+		routerseriesepisodessearch := routerseries.Group("/episodes/search")
+		{
+			routerseriesepisodessearch.GET("/id/:id", apiSeriesEpisodeSearch)
+			routerseriesepisodessearch.GET("/list/:id", apiSeriesEpisodeSearchList)
+			routerseriesepisodessearch.POST("/download/:id", apiSeriesEpisodeSearchDownload)
+		}
 	}
 }
 
@@ -77,15 +81,14 @@ const querybydbserieid = "dbserie_id = ?"
 // @Param        limit  query     int     false  "Limit"
 // @Param        page   query     int     false  "Page"
 // @Param        order  query     string  false  "Order By"
-// @Success      200    {object}   database.Dbserie
-// @Failure      401    {object}  string
+// @Param        apikey query     string    true  "apikey"
+// @Success      200    {object}   Jsondatarows{data=[]database.Dbserie}
+// @Failure      401    {object}  Jsonerror
 // @Router       /api/series [get]
 func apiSeriesGet(ctx *gin.Context) {
-	if auth(ctx) == http.StatusUnauthorized {
-		return
-	}
+
 	var query database.Querywithargs
-	rows := database.QueryIntColumn("select count() from dbseries")
+	rows := database.GetdatarowN[int](false, "select count() from dbseries")
 	limit := 0
 	page := 0
 	if queryParam, ok := ctx.GetQuery("limit"); ok {
@@ -116,19 +119,18 @@ func apiSeriesGet(ctx *gin.Context) {
 // @Description  Delete Series
 // @Tags         series
 // @Param        id   path      int  true  "Series ID"
-// @Success      200  {object}  string
-// @Failure      401  {object}  string
+// @Param        apikey query     string    true  "apikey"
+// @Success      200  {object}  string "returns ok"
+// @Failure      401  {object}  Jsonerror
 // @Router       /api/series/{id} [delete]
 func apiSeriesDelete(ctx *gin.Context) {
-	if auth(ctx) == http.StatusUnauthorized {
-		return
-	}
-	database.DeleteRow(false, "serie_episode_files", querybydbserieid, ctx.Param("id"))
-	database.DeleteRow(false, "serie_episode_histories", querybydbserieid, ctx.Param("id"))
-	database.DeleteRow(false, "serie_episodes", querybydbserieid, ctx.Param("id"))
-	database.DeleteRow(false, "dbserie_episodes", querybydbserieid, ctx.Param("id"))
-	database.DeleteRow(false, logger.StrSeries, querybydbserieid, ctx.Param("id"))
-	_, err := database.DeleteRow(false, "dbseries", logger.FilterByID, ctx.Param("id"))
+
+	database.DeleteRow("serie_episode_files", querybydbserieid, ctx.Param("id"))
+	database.DeleteRow("serie_episode_histories", querybydbserieid, ctx.Param("id"))
+	database.DeleteRow("serie_episodes", querybydbserieid, ctx.Param("id"))
+	database.DeleteRow("dbserie_episodes", querybydbserieid, ctx.Param("id"))
+	database.DeleteRow(logger.StrSeries, querybydbserieid, ctx.Param("id"))
+	_, err := database.DeleteRow("dbseries", logger.FilterByID, ctx.Param("id"))
 
 	if err == nil {
 		ctx.JSON(http.StatusOK, "ok")
@@ -144,17 +146,17 @@ func apiSeriesDelete(ctx *gin.Context) {
 // @Param        limit  query     int     false  "Limit"
 // @Param        page   query     int     false  "Page"
 // @Param        order  query     string  false  "Order By"
-// @Success      200    {object}   database.ResultSeries
-// @Failure      401    {object}  string
+// @Param        apikey query     string    true  "apikey"
+// @Success      200    {object}   Jsondatarows{data=[]database.ResultSeries}
+// @Failure      401    {object}  Jsonerror
 // @Router       /api/series/list/{name} [get]
 func apiSeriesListGet(ctx *gin.Context) {
-	if auth(ctx) == http.StatusUnauthorized {
-		return
-	}
+
 	var query database.Querywithargs
+	list := ctx.Param("name")
 	query.InnerJoin = "dbseries on series.dbserie_id=dbseries.id"
 	query.Where = "series.listname = ? COLLATE NOCASE"
-	rows := database.QueryIntColumn("select count() from series where listname = ?", ctx.Param("name"))
+	rows := database.GetdatarowN[int](false, "select count() from series where listname = ?", &list)
 	limit := 0
 	page := 0
 	if queryParam, ok := ctx.GetQuery("limit"); ok {
@@ -186,17 +188,16 @@ func apiSeriesListGet(ctx *gin.Context) {
 // @Description  Delete Series
 // @Tags         series
 // @Param        id   path      int  true  "Series ID"
-// @Success      200  {object}  string
-// @Failure      401  {object}  string
+// @Param        apikey query     string    true  "apikey"
+// @Success      200  {object}  string "returns ok"
+// @Failure      401  {object}  Jsonerror
 // @Router       /api/series/list/{id} [delete]
 func apiSeriesListDelete(ctx *gin.Context) {
-	if auth(ctx) == http.StatusUnauthorized {
-		return
-	}
-	database.DeleteRow(false, "serie_episode_files", querybydbserieid, ctx.Param("id"))
-	database.DeleteRow(false, "serie_episode_histories", querybydbserieid, ctx.Param("id"))
-	database.DeleteRow(false, "serie_episodes", querybydbserieid, ctx.Param("id"))
-	_, err := database.DeleteRow(false, logger.StrSeries, querybydbserieid, ctx.Param("id"))
+
+	database.DeleteRow("serie_episode_files", querybydbserieid, ctx.Param("id"))
+	database.DeleteRow("serie_episode_histories", querybydbserieid, ctx.Param("id"))
+	database.DeleteRow("serie_episodes", querybydbserieid, ctx.Param("id"))
+	_, err := database.DeleteRow(logger.StrSeries, querybydbserieid, ctx.Param("id"))
 
 	if err == nil {
 		ctx.JSON(http.StatusOK, "ok")
@@ -211,15 +212,14 @@ func apiSeriesListDelete(ctx *gin.Context) {
 // @Param        limit  query     int     false  "Limit"
 // @Param        page   query     int     false  "Page"
 // @Param        order  query     string  false  "Order By"
-// @Success      200    {object}   database.SerieFileUnmatchedJSON
-// @Failure      401    {object}  string
+// @Param        apikey query     string    true  "apikey"
+// @Success      200    {object}   Jsondatarows{data=[]database.SerieFileUnmatched}
+// @Failure      401    {object}  Jsonerror
 // @Router       /api/series/unmatched [get]
 func apiSeriesUnmatched(ctx *gin.Context) {
-	if auth(ctx) == http.StatusUnauthorized {
-		return
-	}
+
 	var query database.Querywithargs
-	rows := database.QueryIntColumn("select count() from serie_file_unmatcheds")
+	rows := database.GetdatarowN[int](false, "select count() from serie_file_unmatcheds")
 	limit := 0
 	page := 0
 	if queryParam, ok := ctx.GetQuery("limit"); ok {
@@ -252,15 +252,14 @@ func apiSeriesUnmatched(ctx *gin.Context) {
 // @Param        limit  query     int     false  "Limit"
 // @Param        page   query     int     false  "Page"
 // @Param        order  query     string  false  "Order By"
-// @Success      200    {object}   database.DbserieEpisodeJSON
-// @Failure      401    {object}  string
+// @Param        apikey query     string    true  "apikey"
+// @Success      200    {object}   Jsondatarows{data=[]database.DbserieEpisode}
+// @Failure      401    {object}  Jsonerror
 // @Router       /api/series/episodes [get]
 func apiSeriesEpisodesGet(ctx *gin.Context) {
-	if auth(ctx) == http.StatusUnauthorized {
-		return
-	}
+
 	var query database.Querywithargs
-	rows := database.QueryIntColumn("select count() from dbserie_episodes")
+	rows := database.GetdatarowN[int](false, "select count() from dbserie_episodes")
 	limit := 0
 	page := 0
 	if queryParam, ok := ctx.GetQuery("limit"); ok {
@@ -294,16 +293,16 @@ func apiSeriesEpisodesGet(ctx *gin.Context) {
 // @Param        limit  query     int     false  "Limit"
 // @Param        page   query     int     false  "Page"
 // @Param        order  query     string  false  "Order By"
-// @Success      200    {object}   database.DbserieEpisodeJSON
-// @Failure      401    {object}  string
+// @Param        apikey query     string    true  "apikey"
+// @Success      200    {object}   Jsondatarows{data=[]database.DbserieEpisode}
+// @Failure      401    {object}  Jsonerror
 // @Router       /api/series/episodes/{id} [get]
 func apiSeriesEpisodesGetSingle(ctx *gin.Context) {
-	if auth(ctx) == http.StatusUnauthorized {
-		return
-	}
+
 	var query database.Querywithargs
 	query.Where = querybydbserieid
-	rows := database.QueryCountColumn("series", "dbserie_id = ?", ctx.Param("id"))
+	dbid := ctx.Param("id")
+	rows := database.GetdatarowN[int](false, "select count() from series where dbserie_id = ?", &dbid)
 	limit := 0
 	page := 0
 	if queryParam, ok := ctx.GetQuery("limit"); ok {
@@ -334,17 +333,16 @@ func apiSeriesEpisodesGetSingle(ctx *gin.Context) {
 // @Description  Delete Series Episode
 // @Tags         series
 // @Param        id   path      int  true  "Episode ID"
-// @Success      200  {object}  string
-// @Failure      401  {object}  string
+// @Param        apikey query     string    true  "apikey"
+// @Success      200  {object}  string "returns ok"
+// @Failure      401  {object}  Jsonerror
 // @Router       /api/series/episodes/{id} [delete]
 func apiSeriesEpisodesDelete(ctx *gin.Context) {
-	if auth(ctx) == http.StatusUnauthorized {
-		return
-	}
-	database.DeleteRow(false, "serie_episode_files", "dbserie_episode_id = ?", ctx.Param("id"))
-	database.DeleteRow(false, "serie_episode_histories", "dbserie_episode_id = ?", ctx.Param("id"))
-	database.DeleteRow(false, "serie_episodes", "dbserie_episode_id = ?", ctx.Param("id"))
-	_, err := database.DeleteRow(false, "dbserie_episodes", logger.FilterByID, ctx.Param("id"))
+
+	database.DeleteRow("serie_episode_files", "dbserie_episode_id = ?", ctx.Param("id"))
+	database.DeleteRow("serie_episode_histories", "dbserie_episode_id = ?", ctx.Param("id"))
+	database.DeleteRow("serie_episodes", "dbserie_episode_id = ?", ctx.Param("id"))
+	_, err := database.DeleteRow("dbserie_episodes", logger.FilterByID, ctx.Param("id"))
 
 	if err == nil {
 		ctx.JSON(http.StatusOK, "ok")
@@ -360,17 +358,17 @@ func apiSeriesEpisodesDelete(ctx *gin.Context) {
 // @Param        limit  query     int     false  "Limit"
 // @Param        page   query     int     false  "Page"
 // @Param        order  query     string  false  "Order By"
-// @Success      200    {object}   database.ResultSerieEpisodesJSON
-// @Failure      401    {object}  string
+// @Param        apikey query     string    true  "apikey"
+// @Success      200    {object}   Jsondatarows{data=[]database.ResultSerieEpisodes}
+// @Failure      401    {object}  Jsonerror
 // @Router       /api/series/episodes/list/{id} [get]
 func apiSeriesEpisodesListGet(ctx *gin.Context) {
-	if auth(ctx) == http.StatusUnauthorized {
-		return
-	}
+
 	var query database.Querywithargs
+	dbid := ctx.Param("id")
 	query.InnerJoin = "dbserie_episodes on serie_episodes.dbserie_episode_id=dbserie_episodes.id inner join series on series.id=serie_episodes.serie_id"
 	query.Where = "series.id = ?"
-	rows := database.QueryCountColumn("serie_episodes", "serie_id = ?", ctx.Param("id"))
+	rows := database.GetdatarowN[int](false, "select count() from serie_episodes where serie_id = ?", &dbid)
 	limit := 0
 	page := 0
 	if queryParam, ok := ctx.GetQuery("limit"); ok {
@@ -401,16 +399,15 @@ func apiSeriesEpisodesListGet(ctx *gin.Context) {
 // @Description  Delete Series Episode
 // @Tags         series
 // @Param        id   path      int  true  "Episode ID"
-// @Success      200  {object}  string
-// @Failure      401  {object}  string
+// @Param        apikey query     string    true  "apikey"
+// @Success      200  {object}  string "returns ok"
+// @Failure      401  {object}  Jsonerror
 // @Router       /api/series/episodes/list/{id} [delete]
 func apiSeriesEpisodesListDelete(ctx *gin.Context) {
-	if auth(ctx) == http.StatusUnauthorized {
-		return
-	}
-	database.DeleteRow(false, "serie_episode_files", "serie_episode_id = ?", ctx.Param("id"))
-	database.DeleteRow(false, "serie_episode_histories", "serie_episode_id = ?", ctx.Param("id"))
-	_, err := database.DeleteRow(false, "serie_episodes", logger.FilterByID, ctx.Param("id"))
+
+	database.DeleteRow("serie_episode_files", "serie_episode_id = ?", ctx.Param("id"))
+	database.DeleteRow("serie_episode_histories", "serie_episode_id = ?", ctx.Param("id"))
+	_, err := database.DeleteRow("serie_episodes", logger.FilterByID, ctx.Param("id"))
 
 	if err == nil {
 		ctx.JSON(http.StatusOK, "ok")
@@ -425,14 +422,12 @@ const allowedjobsseriesstr = "rss,rssseasons,rssseasonsall,data,datafull,checkmi
 // @Description  Starts a Job
 // @Tags         series
 // @Param        job  path      string  true  "Job Name one of: rss, data, datafull, checkmissing, checkmissingflag, structure, searchmissingfull, searchmissinginc, searchupgradefull, searchupgradeinc, searchmissingfulltitle, searchmissinginctitle, searchupgradefulltitle, searchupgradeinctitle, clearhistory, feeds, refresh, refreshinc"
-// @Success      200  {object}  string
-// @Failure      204  {object}  string
-// @Failure      401  {object}  string
+// @Param        apikey query     string    true  "apikey"
+// @Success      200  {object}  string "returns job name started"
+// @Failure      204  {object}  string "error message"
+// @Failure      401  {object}  Jsonerror
 // @Router       /api/series/job/{job} [get]
 func apiseriesAllJobs(c *gin.Context) {
-	if auth(c) == http.StatusUnauthorized {
-		return
-	}
 	allowed := false
 	for _, allow := range strings.Split(allowedjobsseriesstr, ",") {
 		if strings.EqualFold(allow, c.Param(logger.StrJobLower)) {
@@ -443,67 +438,71 @@ func apiseriesAllJobs(c *gin.Context) {
 	if allowed {
 		returnval := "Job " + c.Param(logger.StrJobLower) + " started"
 
+		var cfgp *config.MediaTypeConfig
 		//defer cfgSerie.Close()
 		//defer cfg_list.Close()
-		for idxp := range config.SettingsMedia {
-			if !strings.HasPrefix(config.SettingsMedia[idxp].NamePrefix, logger.StrSerie) {
+	contloop:
+		for _, media := range config.SettingsMedia {
+			if !strings.HasPrefix(media.NamePrefix, logger.StrSerie) {
 				continue
 			}
-
-			cfgpstr := "serie_" + config.SettingsMedia[idxp].Name
+			cfgp = media
+			cfgpstr := "serie_" + media.Name
 
 			switch c.Param(logger.StrJobLower) {
 			case logger.StrData, logger.StrDataFull, logger.StrStructure, logger.StrClearHistory:
-				worker.Dispatch(worker.WorkerPoolFiles, worker.NewJobFunc(c.Param(logger.StrJobLower)+"_series_"+config.SettingsMedia[idxp].Name, func() {
-					utils.SingleJobs(logger.StrSeries, c.Param(logger.StrJobLower), cfgpstr, "", true)
-				}, "Data"))
+				worker.Dispatch(c.Param(logger.StrJobLower)+"_series_"+media.Name, func() {
+					utils.SingleJobs(c.Param(logger.StrJobLower), cfgpstr, "", true)
+				}, "Data")
 			case logger.StrRss, logger.StrRssSeasons, logger.StrRssSeasonsAll, logger.StrSearchMissingFull, logger.StrSearchMissingInc, logger.StrSearchUpgradeFull, logger.StrSearchUpgradeInc, logger.StrSearchMissingFullTitle, logger.StrSearchMissingIncTitle, logger.StrSearchUpgradeFullTitle, logger.StrSearchUpgradeIncTitle:
-				worker.Dispatch(worker.WorkerPoolSearch, worker.NewJobFunc(c.Param(logger.StrJobLower)+"_series_"+config.SettingsMedia[idxp].Name, func() {
-					utils.SingleJobs(logger.StrSeries, c.Param(logger.StrJobLower), cfgpstr, "", true)
-				}, "Search"))
+				worker.Dispatch(c.Param(logger.StrJobLower)+"_series_"+media.Name, func() {
+					utils.SingleJobs(c.Param(logger.StrJobLower), cfgpstr, "", true)
+				}, "Search")
 			case logger.StrFeeds, logger.StrCheckMissing, logger.StrCheckMissingFlag, logger.StrReachedFlag:
-				for idxlist := range config.SettingsMedia[idxp].Lists {
-					if !config.SettingsMedia[idxp].Lists[idxlist].Enabled {
+				for idxlist := range media.Lists {
+					if !media.Lists[idxlist].Enabled {
 						continue
 					}
-					if !config.CheckGroup("list_", config.SettingsMedia[idxp].Lists[idxlist].TemplateList) {
+					if media.Lists[idxlist].CfgList == nil {
 						continue
 					}
 
-					if !config.SettingsList["list_"+config.SettingsMedia[idxp].Lists[idxlist].TemplateList].Enabled {
+					if !config.SettingsList[media.Lists[idxlist].TemplateList].Enabled {
 						continue
 					}
-					listname := config.SettingsMedia[idxp].Lists[idxlist].Name
+					listname := media.Lists[idxlist].Name
 					if c.Param(logger.StrJobLower) == logger.StrFeeds {
-						worker.Dispatch(worker.WorkerPoolMetadata, worker.NewJobFunc(c.Param(logger.StrJobLower)+"_series_"+config.SettingsMedia[idxp].Name, func() {
-							utils.SingleJobs(logger.StrSeries, c.Param(logger.StrJobLower), cfgpstr, listname, true)
-						}, "Feeds"))
+						worker.Dispatch(c.Param(logger.StrJobLower)+"_series_"+media.Name, func() {
+							utils.SingleJobs(c.Param(logger.StrJobLower), cfgpstr, listname, true)
+						}, "Feeds")
 					} else if c.Param(logger.StrJobLower) == logger.StrCheckMissing || c.Param(logger.StrJobLower) == logger.StrCheckMissingFlag || c.Param(logger.StrJobLower) == logger.StrReachedFlag {
-						worker.Dispatch(worker.WorkerPoolFiles, worker.NewJobFunc(c.Param(logger.StrJobLower)+"_series_"+config.SettingsMedia[idxp].Name, func() {
-							utils.SingleJobs(logger.StrSeries, c.Param(logger.StrJobLower), cfgpstr, listname, true)
-						}, "Data"))
+						worker.Dispatch(c.Param(logger.StrJobLower)+"_series_"+media.Name, func() {
+							utils.SingleJobs(c.Param(logger.StrJobLower), cfgpstr, listname, true)
+						}, "Data")
 					}
 					//cfg_list.Close()
 				}
 			case "refresh":
 			case "refreshinc":
+			case "":
+				continue contloop
 
 			default:
-				worker.Dispatch(worker.WorkerPoolFiles, worker.NewJobFunc(c.Param(logger.StrJobLower)+"_series_"+config.SettingsMedia[idxp].Name, func() {
-					utils.SingleJobs(logger.StrSeries, c.Param(logger.StrJobLower), cfgpstr, "", true)
-				}, "Data"))
+				worker.Dispatch(c.Param(logger.StrJobLower)+"_series_"+media.Name, func() {
+					utils.SingleJobs(c.Param(logger.StrJobLower), cfgpstr, "", true)
+				}, "Data")
 			}
 			//cfgSerie.Close()
 		}
 		switch c.Param(logger.StrJobLower) {
 		case "refresh":
-			worker.Dispatch(worker.WorkerPoolMetadata, worker.NewJobFunc(logger.StrRefreshSeries, func() {
-				utils.SingleJobs(logger.StrSeries, "refresh", logger.StrSeries, "", false)
-			}, "Feeds"))
+			worker.Dispatch(logger.StrRefreshSeries, func() {
+				utils.SingleJobs("refresh", cfgp.NamePrefix, "", false)
+			}, "Feeds")
 		case "refreshinc":
-			worker.Dispatch(worker.WorkerPoolMetadata, worker.NewJobFunc(logger.StrRefreshSeriesInc, func() {
-				utils.SingleJobs(logger.StrSeries, "refreshinc", logger.StrSeries, "", false)
-			}, "Feeds"))
+			worker.Dispatch(logger.StrRefreshSeriesInc, func() {
+				utils.SingleJobs("refreshinc", cfgp.NamePrefix, "", false)
+			}, "Feeds")
 		}
 		c.JSON(http.StatusOK, returnval)
 	} else {
@@ -517,14 +516,12 @@ func apiseriesAllJobs(c *gin.Context) {
 // @Tags         series
 // @Param        job   path      string  true  "Job Name one of: rss, data, datafull, checkmissing, checkmissingflag, structure, searchmissingfull, searchmissinginc, searchupgradefull, searchupgradeinc, searchmissingfulltitle, searchmissinginctitle, searchupgradefulltitle, searchupgradeinctitle, clearhistory, feeds, refresh, refreshinc"
 // @Param        name  path      string  true  "List Name: ex. list"
-// @Success      200   {object}  string
-// @Failure      204   {object}  string
-// @Failure      401   {object}  string
+// @Param        apikey query     string    true  "apikey"
+// @Success      200  {object}  string "returns job name started"
+// @Failure      204  {object}  string "error message"
+// @Failure      401   {object}  Jsonerror
 // @Router       /api/series/job/{job}/{name} [get]
 func apiseriesJobs(c *gin.Context) {
-	if auth(c) == http.StatusUnauthorized {
-		return
-	}
 	allowed := false
 	for _, allow := range strings.Split(allowedjobsseriesstr, ",") {
 		if strings.EqualFold(allow, c.Param(logger.StrJobLower)) {
@@ -537,50 +534,53 @@ func apiseriesJobs(c *gin.Context) {
 		cfgpstr := "serie_" + c.Param("name")
 		switch c.Param(logger.StrJobLower) {
 		case logger.StrData, logger.StrDataFull, logger.StrStructure, logger.StrClearHistory:
-			worker.Dispatch(worker.WorkerPoolFiles, worker.NewJobFunc(c.Param(logger.StrJobLower)+"_series_"+c.Param("name"), func() {
-				utils.SingleJobs(logger.StrSeries, c.Param(logger.StrJobLower), cfgpstr, "", true)
-			}, "Data"))
+			worker.Dispatch(c.Param(logger.StrJobLower)+"_series_"+c.Param("name"), func() {
+				utils.SingleJobs(c.Param(logger.StrJobLower), cfgpstr, "", true)
+			}, "Data")
 		case logger.StrRss, logger.StrRssSeasons, logger.StrRssSeasonsAll, logger.StrSearchMissingFull, logger.StrSearchMissingInc, logger.StrSearchUpgradeFull, logger.StrSearchUpgradeInc, logger.StrSearchMissingFullTitle, logger.StrSearchMissingIncTitle, logger.StrSearchUpgradeFullTitle, logger.StrSearchUpgradeIncTitle:
-			worker.Dispatch(worker.WorkerPoolSearch, worker.NewJobFunc(c.Param(logger.StrJobLower)+"_series_"+c.Param("name"), func() {
-				utils.SingleJobs(logger.StrSeries, c.Param(logger.StrJobLower), cfgpstr, "", true)
-			}, "Search"))
+			worker.Dispatch(c.Param(logger.StrJobLower)+"_series_"+c.Param("name"), func() {
+				utils.SingleJobs(c.Param(logger.StrJobLower), cfgpstr, "", true)
+			}, "Search")
 		case logger.StrFeeds, logger.StrCheckMissing, logger.StrCheckMissingFlag, logger.StrReachedFlag:
-			for _, cfglists := range config.SettingsMedia[c.Param("name")].Lists {
+			var cfglists config.MediaListsConfig
+			for _, cfglists = range config.SettingsMedia[c.Param("name")].Lists {
 				if !cfglists.Enabled {
 					continue
 				}
-				if !config.CheckGroup("list_", cfglists.TemplateList) {
+				if cfglists.CfgList == nil {
 					continue
 				}
 
-				if !config.SettingsList["list_"+cfglists.TemplateList].Enabled {
+				if cfglists.CfgList.Enabled {
 					continue
 				}
 				listname := cfglists.Name
 				if c.Param(logger.StrJobLower) == logger.StrFeeds {
-					worker.Dispatch(worker.WorkerPoolMetadata, worker.NewJobFunc(c.Param(logger.StrJobLower)+"_series_"+c.Param("name"), func() {
-						utils.SingleJobs(logger.StrSeries, c.Param(logger.StrJobLower), cfgpstr, listname, true)
-					}, "Feeds"))
+					worker.Dispatch(c.Param(logger.StrJobLower)+"_series_"+c.Param("name"), func() {
+						utils.SingleJobs(c.Param(logger.StrJobLower), cfgpstr, listname, true)
+					}, "Feeds")
 				}
 				if c.Param(logger.StrJobLower) == logger.StrCheckMissing || c.Param(logger.StrJobLower) == logger.StrCheckMissingFlag || c.Param(logger.StrJobLower) == logger.StrReachedFlag {
-					worker.Dispatch(worker.WorkerPoolFiles, worker.NewJobFunc(c.Param(logger.StrJobLower)+"_series_"+c.Param("name"), func() {
-						utils.SingleJobs(logger.StrSeries, c.Param(logger.StrJobLower), cfgpstr, listname, true)
-					}, "Data"))
+					worker.Dispatch(c.Param(logger.StrJobLower)+"_series_"+c.Param("name"), func() {
+						utils.SingleJobs(c.Param(logger.StrJobLower), cfgpstr, listname, true)
+					}, "Data")
 				}
 				//cfg_list.Close()
 			}
 		case "refresh":
-			worker.Dispatch(worker.WorkerPoolMetadata, worker.NewJobFunc(logger.StrRefreshSeries, func() {
-				utils.SingleJobs(logger.StrSeries, "refresh", logger.StrSeries, "", false)
-			}, "Feeds"))
+			worker.Dispatch(logger.StrRefreshSeries, func() {
+				utils.SingleJobs("refresh", cfgpstr, "", false)
+			}, "Feeds")
 		case "refreshinc":
-			worker.Dispatch(worker.WorkerPoolMetadata, worker.NewJobFunc(logger.StrRefreshSeriesInc, func() {
-				utils.SingleJobs(logger.StrSeries, "refreshinc", logger.StrSeries, "", false)
-			}, "Feeds"))
+			worker.Dispatch(logger.StrRefreshSeriesInc, func() {
+				utils.SingleJobs("refreshinc", cfgpstr, "", false)
+			}, "Feeds")
+		case "":
+			break
 		default:
-			worker.Dispatch(worker.WorkerPoolFiles, worker.NewJobFunc(c.Param(logger.StrJobLower)+"_series_"+c.Param("name"), func() {
-				utils.SingleJobs(logger.StrSeries, c.Param(logger.StrJobLower), cfgpstr, "", true)
-			}, "Data"))
+			worker.Dispatch(c.Param(logger.StrJobLower)+"_series_"+c.Param("name"), func() {
+				utils.SingleJobs(c.Param(logger.StrJobLower), cfgpstr, "", true)
+			}, "Data")
 		}
 		c.JSON(http.StatusOK, returnval)
 	} else {
@@ -593,20 +593,19 @@ func apiseriesJobs(c *gin.Context) {
 // @Description  Updates or creates a series
 // @Tags         series
 // @Param        series  body      database.Dbserie  true  "Series"
-// @Success      200  {object}  string
-// @Failure      400     {object}  string
-// @Failure      401  {object}  string
+// @Param        apikey query     string    true  "apikey"
+// @Success      200  {object}  int64
+// @Failure      403  {object}  error "error message"
+// @Failure      400     {object}  Jsonerror
+// @Failure      401  {object}  Jsonerror
 // @Router       /api/series [post]
 func updateDBSeries(c *gin.Context) {
-	if auth(c) == http.StatusUnauthorized {
-		return
-	}
 	var dbserie database.Dbserie
 	if err := c.BindJSON(&dbserie); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	counter := database.QueryIntColumn("select count() from dbseries where id != 0 and id = ?", dbserie.ID)
+	counter := database.GetdatarowN[int](false, "select count() from dbseries where id != 0 and id = ?", &dbserie.ID)
 	var inres sql.Result
 	var inerr error
 
@@ -618,7 +617,8 @@ func updateDBSeries(c *gin.Context) {
 			"id != 0 and id = ?", dbserie.Seriename, dbserie.Aliases, dbserie.Season, dbserie.Status, dbserie.Firstaired, dbserie.Network, dbserie.Runtime, dbserie.Language, dbserie.Genre, dbserie.Overview, dbserie.Rating, dbserie.Siterating, dbserie.SiteratingCount, dbserie.Slug, dbserie.TraktID, dbserie.ImdbID, dbserie.ThetvdbID, dbserie.FreebaseMID, dbserie.FreebaseID, dbserie.TvrageID, dbserie.Facebook, dbserie.Instagram, dbserie.Twitter, dbserie.Banner, dbserie.Poster, dbserie.Fanart, dbserie.Identifiedby, dbserie.ID)
 	}
 	if inerr == nil {
-		c.JSON(http.StatusOK, inres)
+		rows, _ := inres.RowsAffected()
+		c.JSON(http.StatusOK, rows)
 	} else {
 		c.JSON(http.StatusForbidden, inerr)
 	}
@@ -627,21 +627,20 @@ func updateDBSeries(c *gin.Context) {
 // @Summary      Update Series Episodes (Global)
 // @Description  Updates or creates a episode
 // @Tags         series
-// @Param        episode  body      database.DbserieEpisodeJSON  true  "Episode"
-// @Success      200      {object}  string
-// @Failure      400      {object}  string
-// @Failure      401      {object}  string
+// @Param        episode  body      database.DbserieEpisode  true  "Episode"
+// @Param        apikey query     string    true  "apikey"
+// @Success      200      {object}  int64
+// @Failure      403      {object}  error
+// @Failure      400      {object}  Jsonerror
+// @Failure      401      {object}  Jsonerror
 // @Router       /api/series/episodes [post]
 func updateDBEpisode(c *gin.Context) {
-	if auth(c) == http.StatusUnauthorized {
-		return
-	}
-	var dbserieepisode database.DbserieEpisodeJSON
+	var dbserieepisode database.DbserieEpisode
 	if err := c.BindJSON(&dbserieepisode); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	counter := database.QueryIntColumn("select count() from dbserie_episodes where id != 0 and id = ?", dbserieepisode.ID)
+	counter := database.GetdatarowN[int](false, "select count() from dbserie_episodes where id != 0 and id = ?", &dbserieepisode.ID)
 	var inres sql.Result
 	var inerr error
 
@@ -653,7 +652,8 @@ func updateDBEpisode(c *gin.Context) {
 			"id != 0 and id = ?", dbserieepisode.Episode, dbserieepisode.Season, dbserieepisode.Identifier, dbserieepisode.Title, dbserieepisode.FirstAired, dbserieepisode.Overview, dbserieepisode.Poster, dbserieepisode.DbserieID, dbserieepisode.ID)
 	}
 	if inerr == nil {
-		c.JSON(http.StatusOK, inres)
+		rows, _ := inres.RowsAffected()
+		c.JSON(http.StatusOK, rows)
 	} else {
 		c.JSON(http.StatusForbidden, inerr)
 	}
@@ -662,21 +662,20 @@ func updateDBEpisode(c *gin.Context) {
 // @Summary      Update Series (List)
 // @Description  Updates or creates a series
 // @Tags         series
-// @Param        series  body      database.SerieJSON  true  "Series"
-// @Success      200  {object}  string
-// @Failure      400     {object}  string
-// @Failure      401  {object}  string
+// @Param        series  body      database.Serie  true  "Series"
+// @Param        apikey query     string    true  "apikey"
+// @Success      200  {object}  int64
+// @Failure      403     {object}  error "error message"
+// @Failure      400     {object}  Jsonerror
+// @Failure      401  {object}  Jsonerror
 // @Router       /api/series/list [post]
 func updateSeries(c *gin.Context) {
-	if auth(c) == http.StatusUnauthorized {
-		return
-	}
 	var serie database.Serie
 	if err := c.ShouldBindJSON(&serie); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	counter := database.QueryIntColumn("select count() from series where id != 0 and id = ?", serie.ID)
+	counter := database.GetdatarowN[int](false, "select count() from series where id != 0 and id = ?", &serie.ID)
 	var inres sql.Result
 	var inerr error
 
@@ -688,7 +687,8 @@ func updateSeries(c *gin.Context) {
 			"id != 0 and id = ?", serie.DbserieID, serie.Listname, serie.Rootpath, serie.DontUpgrade, serie.DontSearch, serie.ID)
 	}
 	if inerr == nil {
-		c.JSON(http.StatusOK, inres)
+		rows, _ := inres.RowsAffected()
+		c.JSON(http.StatusOK, rows)
 	} else {
 		c.JSON(http.StatusForbidden, inerr)
 	}
@@ -697,21 +697,20 @@ func updateSeries(c *gin.Context) {
 // @Summary      Update Series Episodes (List)
 // @Description  Updates or creates a episode
 // @Tags         series
-// @Param        episode  body      database.SerieEpisodeJSON  true  "Episode"
-// @Success      200      {object}  string
-// @Failure      400      {object}  string
-// @Failure      401      {object}  string
+// @Param        episode  body      database.SerieEpisode  true  "Episode"
+// @Param        apikey query     string    true  "apikey"
+// @Success      200      {object}  int64
+// @Failure      403      {object}  error
+// @Failure      400      {object}  Jsonerror
+// @Failure      401      {object}  Jsonerror
 // @Router       /api/series/episodes/list [post]
 func updateEpisode(c *gin.Context) {
-	if auth(c) == http.StatusUnauthorized {
-		return
-	}
 	var serieepisode database.SerieEpisode
 	if err := c.ShouldBindJSON(&serieepisode); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	counter := database.QueryIntColumn("select count() from serie_episodes where id != 0 and id = ?", serieepisode.ID)
+	counter := database.GetdatarowN[int](false, "select count() from serie_episodes where id != 0 and id = ?", &serieepisode.ID)
 	var inres sql.Result
 	var inerr error
 	if counter == 0 {
@@ -722,8 +721,9 @@ func updateEpisode(c *gin.Context) {
 		inres, inerr = database.UpdateArray("serie_episodes", []string{"dbserie_id", "serie_id", "missing", "quality_profile", "dbserie_episode_id", "blacklisted", "quality_reached", "dont_upgrade", "dont_search"},
 			"id != 0 and id = ?", serieepisode.DbserieID, serieepisode.SerieID, serieepisode.Missing, serieepisode.QualityProfile, serieepisode.DbserieEpisodeID, serieepisode.Blacklisted, serieepisode.QualityReached, serieepisode.DontUpgrade, serieepisode.DontSearch, serieepisode.ID)
 	}
+	rows, _ := inres.RowsAffected()
 	if inerr == nil {
-		c.JSON(http.StatusOK, inres)
+		c.JSON(http.StatusOK, rows)
 	} else {
 		c.JSON(http.StatusForbidden, inerr)
 	}
@@ -733,48 +733,63 @@ func updateEpisode(c *gin.Context) {
 // @Description  Refreshes Series Metadata
 // @Tags         series
 // @Param        id   path      int  true  "Serie ID"
-// @Success      200  {object}  string
-// @Failure      401  {object}  string
+// @Param        apikey query     string    true  "apikey"
+// @Success      200  {object}  string "returns started"
+// @Failure      401  {object}  Jsonerror
 // @Router       /api/series/refresh/{id} [get]
 func apirefreshSerie(c *gin.Context) {
-	if auth(c) == http.StatusUnauthorized {
-		return
+	var cfgp *config.MediaTypeConfig
+	for _, media := range config.SettingsMedia {
+		if media.NamePrefix[:5] != logger.StrMovie {
+			cfgp = media
+			break
+		}
 	}
-	worker.Dispatch(worker.WorkerPoolMetadata, worker.NewJobFunc("Refresh Single Serie", func() {
-		utils.RefreshSerie(c.Param(logger.StrID))
-	}, "Feeds"))
+	worker.Dispatch("Refresh Single Serie", func() {
+		utils.RefreshSerie(cfgp, c.Param(logger.StrID))
+	}, "Feeds")
 	c.JSON(http.StatusOK, "started")
 }
 
 // @Summary      Refresh Series
 // @Description  Refreshes Series Metadata
 // @Tags         series
-// @Success      200  {object}  string
-// @Failure      401  {object}  string
+// @Param        apikey query     string    true  "apikey"
+// @Success      200  {object}  string "returns started"
+// @Failure      401  {object}  Jsonerror
 // @Router       /api/series/all/refreshall [get]
 func apirefreshSeries(c *gin.Context) {
-	if auth(c) == http.StatusUnauthorized {
-		return
+	var cfgp *config.MediaTypeConfig
+	for _, media := range config.SettingsMedia {
+		if media.NamePrefix[:5] != logger.StrMovie {
+			cfgp = media
+			break
+		}
 	}
-	worker.Dispatch(worker.WorkerPoolMetadata, worker.NewJobFunc(logger.StrRefreshSeries, func() {
-		utils.SingleJobs(logger.StrSeries, "refresh", logger.StrSeries, "", false)
-	}, "Feeds"))
+	worker.Dispatch(logger.StrRefreshSeries, func() {
+		utils.SingleJobs("refresh", cfgp.NamePrefix, "", false)
+	}, "Feeds")
 	c.JSON(http.StatusOK, "started")
 }
 
 // @Summary      Refresh Series Incremental
 // @Description  Refreshes Series Metadata
 // @Tags         series
-// @Success      200  {object}  string
-// @Failure      401  {object}  string
+// @Param        apikey query     string    true  "apikey"
+// @Success      200  {object}  string "returns started"
+// @Failure      401  {object}  Jsonerror
 // @Router       /api/series/all/refresh [get]
 func apirefreshSeriesInc(c *gin.Context) {
-	if auth(c) == http.StatusUnauthorized {
-		return
+	var cfgp *config.MediaTypeConfig
+	for _, media := range config.SettingsMedia {
+		if media.NamePrefix[:5] != logger.StrMovie {
+			cfgp = media
+			break
+		}
 	}
-	worker.Dispatch(worker.WorkerPoolMetadata, worker.NewJobFunc(logger.StrRefreshSeriesInc, func() {
-		utils.SingleJobs(logger.StrSeries, "refreshinc", logger.StrSeries, "", false)
-	}, "Feeds"))
+	worker.Dispatch(logger.StrRefreshSeriesInc, func() {
+		utils.SingleJobs("refreshinc", cfgp.NamePrefix, "", false)
+	}, "Feeds")
 	c.JSON(http.StatusOK, "started")
 }
 
@@ -782,45 +797,43 @@ func apirefreshSeriesInc(c *gin.Context) {
 // @Description  Searches for upgrades and missing
 // @Tags         series
 // @Param        id   path      int  true  "Series ID"
-// @Success      200  {object}  string
-// @Failure      401  {object}  string
+// @Param        apikey query     string    true  "apikey"
+// @Success      200  {object}  string "returns started"
+// @Success      204  {object}  string "returns nothing done"
+// @Failure      401  {object}  Jsonerror
 // @Router       /api/series/search/id/{id} [get]
 func apiSeriesSearch(c *gin.Context) {
-	if auth(c) == http.StatusUnauthorized {
-		return
-	}
 	serie, _ := database.GetSeries(database.Querywithargs{Where: logger.FilterByID}, c.Param(logger.StrID))
 	//defer logger.ClearVar(&serie)
 
-	var episodes *[]uint
-	for idxp := range config.SettingsMedia {
-		if !strings.HasPrefix(config.SettingsMedia[idxp].NamePrefix, logger.StrSerie) {
+	for _, media := range config.SettingsMedia {
+		if !strings.HasPrefix(media.NamePrefix, logger.StrSerie) {
 			continue
 		}
-		for idxlist := range config.SettingsMedia[idxp].Lists {
-			if strings.EqualFold(config.SettingsMedia[idxp].Lists[idxlist].Name, serie.Listname) {
-				worker.Dispatch(worker.WorkerPoolSearch, worker.NewJobFunc("searchseries_series_"+config.SettingsMedia[idxp].Name+"_"+strconv.Itoa(int(serie.ID)), func() {
-					episodes = database.QueryStaticUintArrayNoError(true, database.QueryCountColumn("serie_episodes", "serie_id = ?", serie.ID), database.QuerySerieEpisodesGetIDBySerie, serie.ID)
-					for idxepisode := range *episodes {
-						results, err := searcher.SeriesSearch("serie_"+config.SettingsMedia[idxp].Name, (*episodes)[idxepisode], false, true)
+		for idxlist := range media.Lists {
+			if strings.EqualFold(media.Lists[idxlist].Name, serie.Listname) {
+				worker.Dispatch("searchseries_series_"+media.Name+"_"+strconv.Itoa(int(serie.ID)), func() {
+					episodes := database.GetrowsN[uint](false, database.GetdatarowN[int](false, "select count() from serie_episodes where serie_id = ?", &serie.ID), "select id from serie_episodes where serie_id = ?", &serie.ID)
+					for idxepisode := range episodes {
+						results := searcher.NewSearcher(media, nil, "", 0)
+						err := results.MediaSearch(media, episodes[idxepisode], true, false, false)
 
 						if err != nil {
-							if err != nil && err != logger.ErrDisabled {
-								logger.Log.Error().Err(err).Uint("id", (*episodes)[idxepisode]).Str("typ", logger.StrSeries).Msg("Search Failed")
+							if !errors.Is(err, logger.ErrDisabled) {
+								logger.LogDynamic("error", "Search Failed", logger.NewLogField("id", episodes[idxepisode]), logger.NewLogField("typ", logger.StrSeries), logger.NewLogFieldValue(err))
 							}
 						} else {
-							if results == nil || len(results.Accepted) == 0 {
-								results.Close()
+							if results == nil || len(results.Dl.Accepted) == 0 {
+
 							} else {
-								results.Download(logger.StrSeries, "serie_"+config.SettingsMedia[idxp].Name)
+								results.Download()
 
 							}
 						}
 						results.Close()
-						//searcher.SearchMyMedia("serie_"+cfgdata.(config.MediaTypeConfig).Name, database.QueryStringColumn(database.QuerySerieEpisodesGetQualityBySerieID, episodes[idxepisode]), logger.StrSeries, logger.StrSeries, 0, 0, false, episodes[idxepisode], true)
 					}
-					logger.Clear(episodes)
-				}, "Search"))
+					episodes = nil
+				}, "Search")
 				c.JSON(http.StatusOK, "started")
 				return
 			}
@@ -834,44 +847,44 @@ func apiSeriesSearch(c *gin.Context) {
 // @Tags         series
 // @Param        id   path      int  true  "Series ID"
 // @Param        season  path      string  true  "Season"
-// @Success      200    {object}  string
-// @Failure      401    {object}  string
+// @Param        apikey query     string    true  "apikey"
+// @Success      200  {object}  string "returns started"
+// @Success      204  {object}  string "returns nothing done"
+// @Failure      401    {object}  Jsonerror
 // @Router       /api/series/search/id/{id}/{season} [get]
 func apiSeriesSearchSeason(c *gin.Context) {
-	if auth(c) == http.StatusUnauthorized {
-		return
-	}
 	serie, _ := database.GetSeries(database.Querywithargs{Where: logger.FilterByID}, c.Param(logger.StrID))
 	//defer logger.ClearVar(&serie)
 
-	var episodes *[]uint
-	for idxp := range config.SettingsMedia {
-		if !strings.HasPrefix(config.SettingsMedia[idxp].NamePrefix, logger.StrSerie) {
+	var episodes []uint
+	for _, media := range config.SettingsMedia {
+		if !strings.HasPrefix(media.NamePrefix, logger.StrSerie) {
 			continue
 		}
-		for idxlist := range config.SettingsMedia[idxp].Lists {
-			if strings.EqualFold(config.SettingsMedia[idxp].Lists[idxlist].Name, serie.Listname) {
-				worker.Dispatch(worker.WorkerPoolSearch, worker.NewJobFunc("searchseriesseason_series_"+config.SettingsMedia[idxp].Name+"_"+strconv.Itoa(int(serie.ID))+"_"+c.Param("season"), func() {
-					episodes = database.QueryStaticUintArrayNoError(true, database.QueryIntColumn("select count() from serie_episodes where serie_id = ? and dbserie_episode_id in (select id from dbserie_episodes where season = ?)", serie.ID, c.Param("season")), "select id from serie_episodes where serie_id = ? and dbserie_episode_id in (select id from dbserie_episodes where season = ?)", serie.ID, c.Param("season"))
-					for idxepisode := range *episodes {
-						results, err := searcher.SeriesSearch("serie_"+config.SettingsMedia[idxp].Name, (*episodes)[idxepisode], false, true)
+		for idxlist := range media.Lists {
+			if strings.EqualFold(media.Lists[idxlist].Name, serie.Listname) {
+				worker.Dispatch("searchseriesseason_series_"+media.Name+"_"+strconv.Itoa(int(serie.ID))+"_"+c.Param("season"), func() {
+					a := c.Param("season")
+					episodes = database.GetrowsN[uint](false, database.GetdatarowN[int](false, "select count() from serie_episodes where serie_id = ? and dbserie_episode_id in (select id from dbserie_episodes where season = ?)", &serie.ID, &a), "select id from serie_episodes where serie_id = ? and dbserie_episode_id in (select id from dbserie_episodes where season = ?)", serie.ID, c.Param("season"))
+					for idxepisode := range episodes {
+						results := searcher.NewSearcher(media, nil, "", 0)
+						err := results.MediaSearch(media, episodes[idxepisode], true, false, false)
 
 						if err != nil {
-							if err != nil && err != logger.ErrDisabled {
-								logger.Log.Error().Err(err).Uint("id", (*episodes)[idxepisode]).Str("typ", logger.StrSeries).Msg("Search Failed")
+							if !errors.Is(err, logger.ErrDisabled) {
+								logger.LogDynamic("error", "Search Failed", logger.NewLogField("id", episodes[idxepisode]), logger.NewLogField("typ", logger.StrSeries), logger.NewLogFieldValue(err))
 							}
 						} else {
-							if results == nil || len(results.Accepted) == 0 {
-								results.Close()
+							if results == nil || len(results.Dl.Accepted) == 0 {
+
 							} else {
-								results.Download(logger.StrSeries, "serie_"+config.SettingsMedia[idxp].Name)
+								results.Download()
 							}
 						}
 						results.Close()
-						//searcher.SearchMyMedia("serie_"+cfgdata.(config.MediaTypeConfig).Name, database.QueryStringColumn(database.QuerySerieEpisodesGetQualityBySerieID, episodes[idxepisode]), logger.StrSeries, logger.StrSeries, 0, 0, false, episodes[idxepisode], true)
 					}
-					logger.Clear(episodes)
-				}, "Search"))
+					episodes = nil
+				}, "Search")
 				c.JSON(http.StatusOK, "started")
 				return
 			}
@@ -884,25 +897,25 @@ func apiSeriesSearchSeason(c *gin.Context) {
 // @Description  Searches for upgrades and missing
 // @Tags         series
 // @Param        id      path      int     true  "Series ID"
-// @Success      200  {object}  string
-// @Failure      401  {object}  string
+// @Param        apikey query     string    true  "apikey"
+// @Success      200  {object}  string "returns started"
+// @Success      204  {object}  string "returns nothing done"
+// @Failure      401  {object}  Jsonerror
 // @Router       /api/series/searchrss/id/{id} [get]
 func apiSeriesSearchRSS(c *gin.Context) {
-	if auth(c) == http.StatusUnauthorized {
-		return
-	}
 	serie, _ := database.GetSeries(database.Querywithargs{Select: "id, listname", Where: logger.FilterByID}, c.Param(logger.StrID))
 	//defer logger.ClearVar(&serie)
 
-	for idxp := range config.SettingsMedia {
-		if !strings.HasPrefix(config.SettingsMedia[idxp].NamePrefix, logger.StrSerie) {
+	for _, media := range config.SettingsMedia {
+		if !strings.HasPrefix(media.NamePrefix, logger.StrSerie) {
 			continue
 		}
-		for idxlist := range config.SettingsMedia[idxp].Lists {
-			if strings.EqualFold(config.SettingsMedia[idxp].Lists[idxlist].Name, serie.Listname) {
-				worker.Dispatch(worker.WorkerPoolSearch, worker.NewJobFunc("searchseriesseason_series_"+config.SettingsMedia[idxp].Name+"_"+strconv.Itoa(int(serie.ID))+"_"+c.Param("season"), func() {
-					searcher.SearchSerieRSSSeasonSingle(serie.ID, 0, false, "serie_"+config.SettingsMedia[idxp].Name)
-				}, "Search"))
+		for idxlist := range media.Lists {
+			if strings.EqualFold(media.Lists[idxlist].Name, serie.Listname) {
+				worker.Dispatch("searchseriesseason_series_"+media.Name+"_"+strconv.Itoa(int(serie.ID))+"_"+c.Param("season"), func() {
+					s, _ := searcher.SearchSerieRSSSeasonSingle(serie.ID, "", false, media, true, nil)
+					s.Close()
+				}, "Search")
 				c.JSON(http.StatusOK, "started")
 				return
 			}
@@ -915,29 +928,28 @@ func apiSeriesSearchRSS(c *gin.Context) {
 // @Description  Searches for upgrades and missing
 // @Tags         series
 // @Param        id      path      int     true  "Series ID"
-// @Success      200  {object}  string
-// @Failure      401  {object}  string
+// @Param        apikey query     string    true  "apikey"
+// @Success      200  {object}  Jsonresults
+// @Failure      401  {object}  Jsonerror
 // @Router       /api/series/searchrss/list/id/{id} [get]
 func apiSeriesSearchRSSList(c *gin.Context) {
-	if auth(c) == http.StatusUnauthorized {
-		return
-	}
 	serie, _ := database.GetSeries(database.Querywithargs{Select: "id, listname", Where: logger.FilterByID}, c.Param(logger.StrID))
 	//defer logger.ClearVar(&serie)
 
-	for idxp := range config.SettingsMedia {
-		if !strings.HasPrefix(config.SettingsMedia[idxp].NamePrefix, logger.StrSerie) {
+	for _, media := range config.SettingsMedia {
+		if !strings.HasPrefix(media.NamePrefix, logger.StrSerie) {
 			continue
 		}
-		for idxlist := range config.SettingsMedia[idxp].Lists {
-			if strings.EqualFold(config.SettingsMedia[idxp].Lists[idxlist].Name, serie.Listname) {
-				searchresults, _ := searcher.SearchSerieRSSSeasonSingle(serie.ID, 0, false, "serie_"+config.SettingsMedia[idxp].Name)
-				if len(searchresults.Raw) == 0 {
+		for idxlist := range media.Lists {
+			if strings.EqualFold(media.Lists[idxlist].Name, serie.Listname) {
+				searchresults, _ := searcher.SearchSerieRSSSeasonSingle(serie.ID, "", false, media, false, nil)
+				defer searchresults.Close()
+				if len(searchresults.Dl.Raw) == 0 {
 					c.JSON(http.StatusNoContent, "Failed")
 					return
 				}
-				c.JSON(http.StatusOK, gin.H{"accepted": searchresults.Accepted, "denied": searchresults.Denied})
-				searchresults.Close()
+				c.JSON(http.StatusOK, gin.H{"accepted": searchresults.Dl.Accepted, "denied": searchresults.Dl.Denied})
+				//searchresults.Close()
 				return
 			}
 		}
@@ -950,27 +962,25 @@ func apiSeriesSearchRSSList(c *gin.Context) {
 // @Tags         series
 // @Param        id      path      int     true  "Series ID"
 // @Param        season  path      string  true  "Season"
-// @Success      200   {object}  string
-// @Failure      401   {object}  string
+// @Param        apikey query     string    true  "apikey"
+// @Success      200   {object}  string "returns started"
+// @Success      204   {object}  string "returns nothing done"
+// @Failure      401   {object}  Jsonerror
 // @Router       /api/series/searchrss/id/{id}/{season} [get]
 func apiSeriesSearchRSSSeason(c *gin.Context) {
-	if auth(c) == http.StatusUnauthorized {
-		return
-	}
 	serie, _ := database.GetSeries(database.Querywithargs{Select: "id, listname", Where: logger.FilterByID}, c.Param(logger.StrID))
 	//defer logger.ClearVar(&serie)
-
-	seasonint, _ := strconv.Atoi(c.Param("season"))
-
-	for idxp := range config.SettingsMedia {
-		if !strings.HasPrefix(config.SettingsMedia[idxp].NamePrefix, logger.StrSerie) {
+	season := c.Param("season")
+	for _, media := range config.SettingsMedia {
+		if !strings.HasPrefix(media.NamePrefix, logger.StrSerie) {
 			continue
 		}
-		for idxlist := range config.SettingsMedia[idxp].Lists {
-			if strings.EqualFold(config.SettingsMedia[idxp].Lists[idxlist].Name, serie.Listname) {
-				worker.Dispatch(worker.WorkerPoolSearch, worker.NewJobFunc("searchseriesseason_series_"+config.SettingsMedia[idxp].Name+"_"+strconv.Itoa(int(serie.ID))+"_"+c.Param("season"), func() {
-					searcher.SearchSerieRSSSeasonSingle(serie.ID, seasonint, true, "serie_"+config.SettingsMedia[idxp].Name)
-				}, "Search"))
+		for idxlist := range media.Lists {
+			if strings.EqualFold(media.Lists[idxlist].Name, serie.Listname) {
+				worker.Dispatch("searchseriesseason_series_"+media.Name+"_"+strconv.Itoa(int(serie.ID))+"_"+c.Param("season"), func() {
+					s, _ := searcher.SearchSerieRSSSeasonSingle(serie.ID, season, true, media, true, nil)
+					s.Close()
+				}, "Search")
 				c.JSON(http.StatusOK, "started")
 				return
 			}
@@ -983,43 +993,43 @@ func apiSeriesSearchRSSSeason(c *gin.Context) {
 // @Description  Searches for upgrades and missing
 // @Tags         series
 // @Param        id   path      int  true  "Episode ID"
-// @Success      200  {object}  string
-// @Failure      401  {object}  string
+// @Param        apikey query     string    true  "apikey"
+// @Success      200  {object}  string "returns started"
+// @Success      204  {object}  string "returns nothing done"
+// @Failure      401  {object}  Jsonerror
 // @Router       /api/series/episodes/search/id/{id} [get]
 func apiSeriesEpisodeSearch(c *gin.Context) {
-	if auth(c) == http.StatusUnauthorized {
-		return
-	}
 	id, _ := strconv.Atoi(c.Param(logger.StrID))
 	uid := uint(id)
-	serieid := database.QueryUintColumn(database.QuerySerieEpisodesGetSerieIDByID, c.Param(logger.StrID))
+	dbid := c.Param(logger.StrID)
+	serieid := database.GetdatarowN[uint](false, database.QuerySerieEpisodesGetSerieIDByID, &dbid)
 	serie, _ := database.GetSeries(database.Querywithargs{Where: logger.FilterByID}, serieid)
 	//defer logger.ClearVar(&serie)
 
-	for idxp := range config.SettingsMedia {
-		if !strings.HasPrefix(config.SettingsMedia[idxp].NamePrefix, logger.StrSerie) {
+	for _, media := range config.SettingsMedia {
+		if !strings.HasPrefix(media.NamePrefix, logger.StrSerie) {
 			continue
 		}
 
-		for idxlist := range config.SettingsMedia[idxp].Lists {
-			if strings.EqualFold(config.SettingsMedia[idxp].Lists[idxlist].Name, serie.Listname) {
-				worker.Dispatch(worker.WorkerPoolSearch, worker.NewJobFunc("searchseriesepisode_series_"+config.SettingsMedia[idxp].Name+"_"+strconv.Itoa(id), func() {
-					//searcher.SearchMyMedia("serie_"+cfgdata.(config.MediaTypeConfig).Name, database.QueryStringColumn(database.QuerySerieEpisodesGetQualityBySerieID, uid), logger.StrSeries, logger.StrSeries, 0, 0, false, uid, true)
-					results, err := searcher.SeriesSearch("serie_"+config.SettingsMedia[idxp].Name, uid, false, true)
+		for idxlist := range media.Lists {
+			if strings.EqualFold(media.Lists[idxlist].Name, serie.Listname) {
+				worker.Dispatch("searchseriesepisode_series_"+media.Name+"_"+strconv.Itoa(id), func() {
+					results := searcher.NewSearcher(media, nil, "", 0)
+					err := results.MediaSearch(media, uid, true, false, false)
 
 					if err != nil {
-						if err != nil && err != logger.ErrDisabled {
-							logger.Log.Error().Err(err).Uint("id", uid).Str("typ", logger.StrSeries).Msg("Search Failed")
+						if !errors.Is(err, logger.ErrDisabled) {
+							logger.LogDynamic("error", "Search Failed", logger.NewLogField("id", uid), logger.NewLogField("typ", logger.StrSeries), logger.NewLogFieldValue(err))
 						}
 					} else {
-						if results == nil || len(results.Accepted) == 0 {
-							results.Close()
+						if results == nil || len(results.Dl.Accepted) == 0 {
+
 						} else {
-							results.Download(logger.StrSeries, "serie_"+config.SettingsMedia[idxp].Name)
+							results.Download()
 						}
 					}
 					results.Close()
-				}, "Search"))
+				}, "Search")
 				c.JSON(http.StatusOK, "started")
 				return
 			}
@@ -1033,13 +1043,12 @@ func apiSeriesEpisodeSearch(c *gin.Context) {
 // @Tags         series
 // @Param        id             path      int     true   "Episode ID"
 // @Param        searchByTitle  query     string  false  "searchByTitle"
-// @Success      200            {object}  string
+// @Param        download       query     bool    false  "download"
+// @Param        apikey query     string    true  "apikey"
+// @Success      200            {object}  Jsonresults
 // @Failure      401            {object}  string
 // @Router       /api/series/episodes/search/list/{id} [get]
 func apiSeriesEpisodeSearchList(c *gin.Context) {
-	if auth(c) == http.StatusUnauthorized {
-		return
-	}
 	serieepi, _ := database.GetSerieEpisodes(database.Querywithargs{Where: logger.FilterByID}, c.Param(logger.StrID))
 	//defer logger.ClearVar(&serieepi)
 
@@ -1053,21 +1062,25 @@ func apiSeriesEpisodeSearchList(c *gin.Context) {
 		}
 	}
 
-	for idxp := range config.SettingsMedia {
-		if !strings.HasPrefix(config.SettingsMedia[idxp].NamePrefix, logger.StrSerie) {
+	for _, media := range config.SettingsMedia {
+		if !strings.HasPrefix(media.NamePrefix, logger.StrSerie) {
 			continue
 		}
 
-		for idxlist := range config.SettingsMedia[idxp].Lists {
-			if strings.EqualFold(config.SettingsMedia[idxp].Lists[idxlist].Name, serie.Listname) {
-				searchresults, err := searcher.SeriesSearch("serie_"+config.SettingsMedia[idxp].Name, serieepi.ID, false, titlesearch)
+		for idxlist := range media.Lists {
+			if strings.EqualFold(media.Lists[idxlist].Name, serie.Listname) {
+				searchresults := searcher.NewSearcher(media, nil, "", 0)
+				err := searchresults.MediaSearch(media, serieepi.ID, titlesearch, false, false)
 				if err != nil {
 					str := "failed with " + err.Error()
 					c.JSON(http.StatusNotFound, str)
-					//searchnow.Close()
+					searchresults.Close()
 					return
 				}
-				c.JSON(http.StatusOK, gin.H{"accepted": searchresults.Accepted, "denied": searchresults.Denied})
+				if _, ok := c.GetQuery("download"); ok {
+					searchresults.Download()
+				}
+				c.JSON(http.StatusOK, gin.H{"accepted": searchresults.Dl.Accepted, "denied": searchresults.Dl.Denied})
 				searchresults.Close()
 				//searchnow.Close()
 				return
@@ -1081,28 +1094,28 @@ func apiSeriesEpisodeSearchList(c *gin.Context) {
 // @Description  Series RSS
 // @Tags         series
 // @Param        group  path      string  true  "Group Name"
-// @Success      200     {object}  string
-// @Failure      401     {object}  string
+// @Param        apikey query     string    true  "apikey"
+// @Success      200     {object}  Jsonresults
+// @Failure      401     {object}  Jsonerror
 // @Router       /api/series/rss/search/list/{group} [get]
 func apiSeriesRssSearchList(c *gin.Context) {
-	if auth(c) == http.StatusUnauthorized {
-		return
-	}
-
-	for idxp := range config.SettingsMedia {
-		if !strings.HasPrefix(config.SettingsMedia[idxp].NamePrefix, logger.StrSerie) {
+	for _, media := range config.SettingsMedia {
+		if !strings.HasPrefix(media.NamePrefix, logger.StrSerie) {
 			continue
 		}
 
-		if strings.EqualFold(config.SettingsMedia[idxp].Name, c.Param("group")) {
-			templatequality := config.SettingsMedia[idxp].TemplateQuality
-			searchresults, err := searcher.SearchRSS("serie_"+config.SettingsMedia[idxp].Name, templatequality, logger.StrSeries, true)
+		if strings.EqualFold(media.Name, c.Param("group")) {
+
+			templatequality := media.TemplateQuality
+			searchresults := searcher.NewSearcher(media, media.CfgQuality, logger.StrRss, 0)
+			err := searchresults.SearchRSS(media, config.SettingsQuality[templatequality], true, false, false)
 			if err != nil {
 				str := "failed with " + err.Error()
 				c.JSON(http.StatusNotFound, str)
+				searchresults.Close()
 				return
 			}
-			c.JSON(http.StatusOK, gin.H{"accepted": searchresults.Accepted, "denied": searchresults.Denied})
+			c.JSON(http.StatusOK, gin.H{"accepted": searchresults.Dl.Accepted, "denied": searchresults.Dl.Denied})
 			searchresults.Close()
 			return
 		}
@@ -1115,13 +1128,12 @@ func apiSeriesRssSearchList(c *gin.Context) {
 // @Tags         series
 // @Param        nzb  body      apiexternal.Nzbwithprio  true  "Nzb: Req. Title, Indexer, tvdbid, downloadurl, parseinfo"
 // @Param        id   path      int                     true  "Episode ID"
-// @Success      200     {object}  string
-// @Failure      401     {object}  string
+// @Param        apikey query     string    true  "apikey"
+// @Success      200     {object}  string "returns started"
+// @Success      204     {object}  string "returns nothing done"
+// @Failure      400     {object}  Jsonerror
 // @Router       /api/series/episodes/search/download/{id} [post]
 func apiSeriesEpisodeSearchDownload(c *gin.Context) {
-	if auth(c) == http.StatusUnauthorized {
-		return
-	}
 	serieepi, _ := database.GetSerieEpisodes(database.Querywithargs{Select: "id, serie_id, missing", Where: logger.FilterByID}, c.Param(logger.StrID))
 	//defer logger.ClearVar(&serieepi)
 	serie, _ := database.GetSeries(database.Querywithargs{Where: logger.FilterByID}, serieepi.SerieID)
@@ -1134,13 +1146,13 @@ func apiSeriesEpisodeSearchDownload(c *gin.Context) {
 	}
 	//defer logger.ClearVar(&nzb)
 
-	for idxp := range config.SettingsMedia {
-		if !strings.HasPrefix(config.SettingsMedia[idxp].NamePrefix, logger.StrSerie) {
+	for _, media := range config.SettingsMedia {
+		if !strings.HasPrefix(media.NamePrefix, logger.StrSerie) {
 			continue
 		}
-		for idxlist := range config.SettingsMedia[idxp].Lists {
-			if strings.EqualFold(config.SettingsMedia[idxp].Lists[idxlist].Name, serie.Listname) {
-				downloader.DownloadSeriesEpisode("serie_"+config.SettingsMedia[idxp].Name, serieepi.ID, &nzb)
+		for idxlist := range media.Lists {
+			if strings.EqualFold(media.Lists[idxlist].Name, serie.Listname) {
+				downloader.DownloadSeriesEpisode(media, serieepi.ID, &nzb)
 				c.JSON(http.StatusOK, "started")
 				return
 			}
@@ -1153,14 +1165,12 @@ func apiSeriesEpisodeSearchDownload(c *gin.Context) {
 // @Description  Clear Episode Download History
 // @Tags         series
 // @Param        name  path      string  true  "List Name"
-// @Success      200     {object}  string
-// @Failure      401     {object}  string
+// @Param        apikey query     string    true  "apikey"
+// @Success      200     {object}  string "returns started"
+// @Failure      401     {object}  Jsonerror
 // @Router       /api/series/search/history/clear/{name} [get]
 func apiSeriesClearHistoryName(c *gin.Context) {
-	if auth(c) == http.StatusUnauthorized {
-		return
-	}
-	utils.SingleJobs(logger.StrSeries, logger.StrClearHistory, "serie_"+c.Param("name"), "", true)
+	utils.SingleJobs(logger.StrClearHistory, "serie_"+c.Param("name"), "", true)
 	c.JSON(http.StatusOK, "started")
 }
 
@@ -1168,17 +1178,17 @@ func apiSeriesClearHistoryName(c *gin.Context) {
 // @Description  Clear Episode Download History
 // @Tags         series
 // @Param        id   path      string  true  "Episode ID"
-// @Success      200     {object}  string
-// @Failure      401     {object}  string
+// @Param        apikey query     string    true  "apikey"
+// @Success      200     {object}  int64
+// @Failure      403     {object}  error
+// @Failure      401     {object}  Jsonerror
 // @Router       /api/series/search/history/clearid/{id} [get]
 func apiSeriesClearHistoryID(c *gin.Context) {
-	if auth(c) == http.StatusUnauthorized {
-		return
-	}
-	inres, inerr := database.DeleteRow(false, "serie_episode_histories", "serie_episode_id = ?", c.Param(logger.StrID))
+	inres, inerr := database.DeleteRow("serie_episode_histories", "serie_episode_id = ?", c.Param(logger.StrID))
 
 	if inerr == nil {
-		c.JSON(http.StatusOK, inres)
+		rows, _ := inres.RowsAffected()
+		c.JSON(http.StatusOK, rows)
 	} else {
 		c.JSON(http.StatusForbidden, inerr)
 	}

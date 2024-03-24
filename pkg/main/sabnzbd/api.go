@@ -6,11 +6,10 @@ import (
 	"mime/multipart"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/Kellerman81/go_media_downloader/logger"
 )
 
 //Source: https://github.com/mrobinsn/go-sabnzbd - fixed:add category
@@ -48,8 +47,8 @@ func (s *Sabnzbd) AdvancedQueue(start, limit int) (r *AdvancedQueueResponse, err
 	u.SetJSONOutput()
 	u.Authenticate()
 	u.SetMode("queue")
-	u.v.Set("start", logger.IntToString(start))
-	u.v.Set("limit", logger.IntToString(limit))
+	u.v.Set("start", strconv.Itoa(start))
+	u.v.Set("limit", strconv.Itoa(limit))
 	r = &AdvancedQueueResponse{}
 	err = u.CallJSON(r)
 	return r, err
@@ -60,8 +59,8 @@ func (s *Sabnzbd) History(start, limit int) (r *HistoryResponse, err error) {
 	u.SetJSONOutput()
 	u.Authenticate()
 	u.SetMode("history")
-	u.v.Set("start", logger.IntToString(start))
-	u.v.Set("limit", logger.IntToString(limit))
+	u.v.Set("start", strconv.Itoa(start))
+	u.v.Set("limit", strconv.Itoa(limit))
 	r = &HistoryResponse{}
 	err = u.CallJSON(r)
 	return r, err
@@ -153,7 +152,7 @@ func (s *Sabnzbd) MoveByPriority(nzo string, priority int) (err error) {
 	u.Authenticate()
 	u.SetMode("switch")
 	u.v.Set("value", nzo)
-	u.v.Set("value2", logger.IntToString(priority))
+	u.v.Set("value2", strconv.Itoa(priority))
 	r := &apiError{}
 	err = u.CallJSON(r)
 	return err
@@ -187,7 +186,7 @@ func (s *Sabnzbd) PauseTemporarily(t time.Duration) (err error) {
 	u.Authenticate()
 	u.SetMode("config")
 	u.v.Set("name", "set_pause")
-	u.v.Set("value", logger.IntToString(int(t.Minutes())))
+	u.v.Set("value", strconv.Itoa(int(t.Minutes())))
 	r := &apiError{}
 	err = u.CallJSON(r)
 	return err
@@ -205,36 +204,36 @@ func (s *Sabnzbd) Shutdown() (err error) {
 
 type addNzbConfig struct {
 	UnpackingOption *int
-	Script          *string
-	Category        *string
-	XCategory       *string
+	Script          string
+	Category        string
+	XCategory       string
 	Priority        *int
-	NzbName         *string
-	Name            *string
+	NzbName         string
+	Name            string
 }
 
 func (c *addNzbConfig) options() map[string]string {
 	opts := map[string]string{}
 	if c.UnpackingOption != nil {
-		opts["pp"] = logger.IntToString(*c.UnpackingOption)
+		opts["pp"] = strconv.Itoa(*c.UnpackingOption)
 	}
-	if c.Script != nil {
-		opts["script"] = *c.Script
+	if c.Script != "" {
+		opts["script"] = c.Script
 	}
-	if c.Category != nil {
-		opts["cat"] = *c.Category
+	if c.Category != "" {
+		opts["cat"] = c.Category
 	}
-	if c.XCategory != nil {
-		opts["xcat"] = *c.XCategory
+	if c.XCategory != "" {
+		opts["xcat"] = c.XCategory
 	}
 	if c.Priority != nil {
-		opts["priority"] = logger.IntToString(*c.Priority)
+		opts["priority"] = strconv.Itoa(*c.Priority)
 	}
-	if c.NzbName != nil {
-		opts["nzbname"] = *c.NzbName
+	if c.NzbName != "" {
+		opts["nzbname"] = c.NzbName
 	}
-	if c.Name != nil {
-		opts["name"] = *c.Name
+	if c.Name != "" {
+		opts["name"] = c.Name
 	}
 	return opts
 }
@@ -250,21 +249,21 @@ func AddNzbUnpackingOption(unpackingOption int) AddNzbOption {
 
 func AddNzbScript(script string) AddNzbOption {
 	return func(c *addNzbConfig) error {
-		c.Script = &script
+		c.Script = script
 		return nil
 	}
 }
 
 func AddNzbCategory(category string) AddNzbOption {
 	return func(c *addNzbConfig) error {
-		c.Category = &category
+		c.Category = category
 		return nil
 	}
 }
 
 func AddNzbXCategory(xcategory string) AddNzbOption {
 	return func(c *addNzbConfig) error {
-		c.XCategory = &xcategory
+		c.XCategory = xcategory
 		return nil
 	}
 }
@@ -278,14 +277,14 @@ func AddNzbPriority(priority int) AddNzbOption {
 
 func AddNzbName(name string) AddNzbOption {
 	return func(c *addNzbConfig) error {
-		c.NzbName = &name
+		c.NzbName = name
 		return nil
 	}
 }
 
 func AddNzbURL(urlv string) AddNzbOption {
 	return func(c *addNzbConfig) error {
-		c.Name = &urlv
+		c.Name = urlv
 		return nil
 	}
 }
@@ -620,7 +619,7 @@ func (s *Sabnzbd) SpeedLimit(kbps int) (err error) {
 	u.Authenticate()
 	u.SetMode("config")
 	u.v.Set("name", "speedlimit")
-	u.v.Set("value", logger.IntToString(kbps))
+	u.v.Set("value", strconv.Itoa(kbps))
 	r := &apiError{}
 	err = u.CallJSON(r)
 	return err

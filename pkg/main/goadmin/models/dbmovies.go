@@ -12,7 +12,6 @@ import (
 )
 
 func GetDbmoviesTable(ctx *context.Context) table.Table {
-
 	//dbmovies := table.NewDefaultTable(table.DefaultConfig().SetConnection("media"))
 	//dbmovies := table.NewDefaultTable(table.DefaultConfigWithDriverAndConnection("sqlite", "media"))
 	dbmovies := table.NewDefaultTable(table.DefaultConfigWithDriverAndConnection("sqlite", "media"))

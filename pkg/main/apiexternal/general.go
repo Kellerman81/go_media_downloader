@@ -1,16 +1,20 @@
 package apiexternal
 
 import (
+	"context"
 	"crypto/tls"
-	"encoding/json"
 	"encoding/xml"
+	"errors"
 	"io"
 	"math/rand"
+	"net"
 	"net/http"
-	"net/url"
+	"runtime"
 	"strconv"
-	"strings"
+	"sync"
 	"time"
+
+	"github.com/goccy/go-json"
 
 	"github.com/Kellerman81/go_media_downloader/config"
 	"github.com/Kellerman81/go_media_downloader/logger"
@@ -18,54 +22,92 @@ import (
 	"golang.org/x/net/html/charset"
 )
 
-// RLHTTPClient Rate Limited HTTP Client
-type RLHTTPClient struct {
-	client *http.Client
-	//Ratelimiter         rate.Limiter
-	//DailyRatelimiter    rate.Limiter
-	DailyLimiterEnabled bool
-	Ratelimiter         *slidingwindow.Limiter
-	DailyRatelimiter    *slidingwindow.Limiter
+// rlHTTPClient is a rate limited HTTP client struct.
+// It contains fields for the underlying http.Client, name, timeouts,
+// rate limiters, and enabling daily rate limiting.
+type rlHTTPClient struct {
+	client              *http.Client           // The underlying HTTP client
+	clientname          string                 // The name of the client
+	Timeout             time.Duration          // The timeout duration
+	DailyLimiterEnabled bool                   // Whether daily rate limiting is enabled
+	Ratelimiter         *slidingwindow.Limiter // The per-request rate limiter
+	DailyRatelimiter    *slidingwindow.Limiter // The daily rate limiter
 }
 
-type addHeader struct {
-	key string
-	val string
-}
-
-const errorCalling = "Error calling"
-
-var (
-	WebClient = &http.Client{Timeout: 120 * time.Second,
-		Transport: &http.Transport{
-			TLSHandshakeTimeout:   20 * time.Second,
-			ResponseHeaderTimeout: 20 * time.Second,
-			TLSClientConfig:       &tls.Config{InsecureSkipVerify: true},
-			MaxIdleConns:          20,
-			MaxConnsPerHost:       10,
-			DisableCompression:    false,
-			DisableKeepAlives:     true,
-			IdleConnTimeout:       120 * time.Second}}
+const (
+	apiurltmdbmovies = "https://api.themoviedb.org/3/movie/"
+	apiurlshows      = "https://api.trakt.tv/shows/"
+	apiurlmovies     = "https://api.trakt.tv/movies/"
+	extendedfull     = "?extended=full"
+	strguid          = "guid"
+	strsize          = "size"
+	strlink          = "link"
+	strtitle         = "title"
+	strurl           = "url"
 )
 
-func (c *RLHTTPClient) checkLimiter(allow bool, retrycount int, retryafterseconds int64) (bool, error) {
+// traktAPI is a client for interacting with the Trakt API
+var traktAPI *traktClient
+
+// tvdbAPI is a client for interacting with the TVDB API
+var tvdbAPI *tvdbClient
+
+// tmdbAPI is a client for interacting with the TMDB API
+var tmdbAPI *tmdbClient
+
+// pushoverAPI is a client for sending Pushover notifications
+var pushoverAPI *pushOverClient
+
+// omdbAPI is a client for interacting with the OMDb API
+var omdbAPI *omdbClient
+
+// newznabClients is a slice of newznab client structs
+var newznabClients = make([]clients, 0, 10)
+
+// cl is a default HTTP client with rate limiting and timeouts
+var cl = NewClient("defaultdownloader", true, true, slidingwindow.NewLimiter(1*time.Second, 10), false, slidingwindow.NewLimiter(10*time.Second, 10), 30)
+
+// dialer is a net.Dialer with timeout and keepalive options set
+var dialer = &net.Dialer{
+	Timeout:   30 * time.Second,
+	KeepAlive: 30 * time.Second,
+	DualStack: true,
+}
+
+// fieldmap maps XML element numbers to field names
+var fieldmap = map[int]string{
+	1: strtitle,
+	2: strlink,
+	3: strguid,
+	4: strsize,
+}
+
+// WebGetByte performs a GET request to the provided URL and returns
+// the response body as a byte slice using a customized HTTP client
+// with timeouts and other options set.
+func WebGet(url string) (*http.Response, error) {
+	return cl.GetdoResp(url)
+}
+
+// checkLimiter checks if the rate limiter allows a request. It handles retrying with increasing backoff if rate limited.
+// allow forces an allowance if true. retrycount is the max number of retries.
+// retryafterseconds is the initial backoff duration.
+// Returns true if allowed, false if rate limited after retries.
+func (c *rlHTTPClient) checkLimiter(allow bool, retrycount int, retryafterseconds int64) (bool, error) {
 	waituntil := (time.Duration(retryafterseconds) * time.Second)
 	waituntilmax := (time.Duration(retryafterseconds*int64(retrycount)) * time.Second)
 	rand.New(rand.NewSource(time.Now().UnixNano()))
 	waitincrease := (time.Duration(rand.Intn(500)+10) * time.Millisecond)
-	var waitfor time.Duration
-	var ok bool
 	if c.DailyLimiterEnabled {
-		if ok, waitfor = c.DailyRatelimiter.Check(); !ok {
-			logger.Log.Debug().Dur("waitfor", waitfor).Msg("Hit rate limit - Daily limit reached (dont retry)")
-			//logger.LogAnyDebug("Hit rate limit - Daily limit reached (dont retry)", logger.LoggerValue{Name: "waitfor", Value: waitfor})
+		if ok, _ := c.DailyRatelimiter.Check(); !ok {
 			return false, logger.ErrDailyLimit
 		}
 	}
 	// ok, waitfor := c.Ratelimiter.CheckDaily()
 	// if !ok {
-
 	// }
+	var ok bool
+	var waitfor time.Duration
 	for i := 0; i < retrycount; i++ {
 		ok, waitfor = c.Ratelimiter.Check()
 		if ok {
@@ -79,8 +121,7 @@ func (c *RLHTTPClient) checkLimiter(allow bool, retrycount int, retryaftersecond
 		}
 		if waitfor > waituntilmax {
 			//time.Sleep(waituntilmax)
-			logger.Log.Debug().Dur("waitfor", waitfor).Msg("Hit rate limit - Should wait for (dont retry)")
-			//logger.LogAnyDebug("Hit rate limit - limit reached (dont retry)", logger.LoggerValue{Name: "waitfor", Value: waitfor})
+			logger.LogDynamic("debug", "Hit rate limit - Should wait for (dont retry)", logger.NewLogField("waitfor", waitfor), logger.NewLogField("url", &c.clientname))
 			return false, logger.ErrToWait
 		}
 		if waitfor == 0 {
@@ -92,420 +133,348 @@ func (c *RLHTTPClient) checkLimiter(allow bool, retrycount int, retryaftersecond
 	}
 
 	//logger.LogAnyError(nil, "Hit rate limit - retries failed")
-	logger.Log.Error().Msg("Hit rate limit - retrys failed")
+	logger.LogDynamic("warn", "Hit rate limit - retrys failed", logger.NewLogField("url", c.clientname))
 
 	return false, logger.ErrToWait
 }
 
-func do(c *RLHTTPClient, url *string, headers *[]addHeader) (*http.Response, error) {
-	return c.client.Do(getrequest(url, headers))
+// DoJSONType makes a request to the url and unmarshals the JSON response into the given type S.
+// It handles rate limiting and retries.
+func DoJSONType[S any](c *rlHTTPClient, urlv string, headers ...keyval) (S, error) {
+	var u S
+	resp, err := c.GetdoResp(urlv, headers...)
+	if err != nil {
+		return u, err
+	}
+	//defer clear(resp)
+	defer resp.Body.Close()
+	return u, json.NewDecoder(resp.Body).Decode(&u)
+	//return u, json.Unmarshal(resp, &u)
 }
 
-// Do dispatches the HTTP request to the network
-func DoJSONType[T any](c *RLHTTPClient, url string, headers ...addHeader) (*T, error) {
-	defer logger.Clear(&headers)
-	if url == "" {
-		return nil, logger.ErrNotFound
-	}
-	defer func() { // recovers panic
-		if e := recover(); e != nil {
-			logger.Log.Error().Msgf("Recovered from panic (json) %v", e)
-		}
-	}()
+// checklimiterwithdaily checks if the rate limiter and daily rate limiter
+// allow a request. It attempts to check the rate limiter up to the
+// specified number of retries and increasing backoff. If the daily rate
+// limiter is hit, it returns true to indicate the daily limit was reached.
+func (c *rlHTTPClient) checklimiterwithdaily() bool {
 	ok, err := c.checkLimiter(true, 20, 1)
 	if !ok {
-		logerror(err, &url)
-		if err == logger.ErrDailyLimit {
-			return nil, nil
+		if err == nil || errors.Is(err, logger.ErrDailyLimit) {
+			return true
 		}
-		return nil, err
+		return true
 	}
+	return false
+}
 
-	resp, err := do(c, &url, &headers)
+// DoJSONTypeG makes a request to the url and unmarshals the JSON response into
+// the given generic slice type T. It handles rate limiting and retries.
+func DoJSONTypeG[T any](c *rlHTTPClient, urlv string, headers ...keyval) ([]T, error) {
+	resp, err := c.GetdoResp(urlv, headers...)
+
 	if err != nil {
-		logerror(err, &url)
-		c.addwait(&url, resp)
 		return nil, err
 	}
-
+	//defer clear(resp)
 	defer resp.Body.Close()
-	if c.addwait(&url, resp) {
+	var u []T
+	//return u, json.Unmarshal(resp.Body, &u)
+	return u, json.NewDecoder(resp.Body).Decode(&u)
+}
+
+// Getdo makes an HTTP GET request to the given URL with the optional headers.
+// It returns the http.Response and any error.
+// It handles rate limiting by calling addwait.
+func (c *rlHTTPClient) Getdo(urlv string, headers []keyval, checkhtml bool) (*http.Response, error) {
+	//ctx, cancel := context.WithTimeout(context.Background(), c.Timeout)
+	//defer cancel()
+	req, err := http.NewRequest(http.MethodGet, urlv, nil)
+	if err != nil {
+		logger.LogDynamic("error", "failed to get url", logger.NewLogFieldValue(err), logger.NewLogField(logger.StrURL, urlv))
+		return nil, err
+	}
+	for _, h := range headers {
+		req.Header.Add(h.Key, h.Value)
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK && c.addwait(req, resp) {
+		defer resp.Body.Close()
 		return nil, logger.ErrToWait
 	}
-	var u T
-	return &u, json.NewDecoder(resp.Body).Decode(&u)
-}
-
-func logerror(err error, urlv *string) {
-	if err != nil {
-		if err != logger.ErrToWait && err != logger.ErrDailyLimit {
-			logger.Log.Error().Err(err).CallerSkipFrame(1).Str(logger.StrURL, *urlv).Msg(errorCalling)
+	if checkhtml {
+		if true && resp.Header.Get("Content-Type") == "text/html" {
+			io.Copy(io.Discard, resp.Body)
+			defer resp.Body.Close()
+			return nil, logger.ErrNotAllowed
 		}
 	}
+	return resp, nil
 }
 
-func QueryEscape(name *string) string {
-	return url.QueryEscape(*name)
+// GetdoByte makes an HTTP GET request to the given URL and returns
+// the response body as a byte slice. It handles rate limiting by
+// calling addwait.
+func (c *rlHTTPClient) GetdoByte(urlv string, headers ...keyval) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), c.Timeout)
+	defer cancel()
+	//ctx, cancel := context.WithCancel(context.Background())
+	//defer cancel()
+	//ctx := context.Background()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, urlv, nil)
+	if err != nil {
+		logger.LogDynamic("error", "failed to get url", logger.NewLogFieldValue(err), logger.NewLogField(logger.StrURL, urlv))
+		return nil, err
+	}
+	for idx := range headers {
+		req.Header.Add(headers[idx].Key, headers[idx].Value)
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK && c.addwait(req, resp) {
+		return nil, logger.ErrToWait
+	}
+	return io.ReadAll(resp.Body)
 }
 
-type xmlrow struct {
-	results    *[]NZB
-	startv     int64
-	name       string
-	b          NZB
-	i          int
-	j          int
-	indexer    string
-	quality    string
-	apiBaseURL string
-	tillid     string
+func (c *rlHTTPClient) GetdoResp(urlv string, headers ...keyval) (*http.Response, error) {
+	//ctx, cancel := context.WithTimeout(context.Background(), c.Timeout)
+	//defer cancel()
+	req, err := http.NewRequest(http.MethodGet, urlv, nil)
+	if err != nil {
+		logger.LogDynamic("error", "failed to get url", logger.NewLogFieldValue(err), logger.NewLogField(logger.StrURL, urlv))
+		return nil, err
+	}
+	for idx := range headers {
+		req.Header.Add(headers[idx].Key, headers[idx].Value)
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK && c.addwait(req, resp) {
+		defer resp.Body.Close()
+		return nil, logger.ErrToWait
+	}
+	return resp, nil
 }
 
-// Do dispatches the HTTP request to the network
-func (c *RLHTTPClient) DoXML(indexer string, quality string, tillid string, apiBaseURL string, url string) (*[]NZB, bool, error) {
-	if url == "" {
-		return nil, false, logger.ErrNotFound
+// XMLResponse represents the response from an XML API request.
+// It contains fields for:
+// - Err: Any error from the request
+// - FirstID: The ID of the first result
+// - BrokeLoop: Whether parsing broke out of the result loop early
+type XMLResponse struct {
+	Err       error
+	FirstID   string
+	BrokeLoop bool
+}
+
+// DoXMLItem parses an XML response from an indexer API endpoint to extract
+// NZB items. It handles rate limiting and decoding the XML into Nzbwithprio
+// structs, appending results to the provided slice. It can stop early if
+// a matching ID is found in tillid. Returns false, error on failure.
+func (c *rlHTTPClient) DoXMLItem(ind *config.IndexersConfig, qual *config.QualityConfig, tillid string, apiBaseURL string, urlv string, mu *sync.Mutex, createsize int, results *[]Nzbwithprio) XMLResponse {
+	var retval XMLResponse
+	if urlv == "" {
+		retval.Err = logger.ErrNotFound
+		return retval
 	}
 	ok, err := c.checkLimiter(true, 20, 1)
 	if !ok {
 		if err == nil {
-			return nil, false, logger.ErrToWait
+			retval.Err = logger.ErrToWait
+			return retval
 		}
-		return nil, false, err
+		retval.Err = err
+		return retval
 	}
-
-	resp, err := do(c, &url, nil)
+	resp, err := c.GetdoResp(urlv)
 	if err != nil {
-		logerror(err, &url)
-		c.addwait(&url, resp)
-		return nil, false, err
+		retval.Err = err
+		return retval
 	}
+	//defer clear(resp)
 	defer resp.Body.Close()
-	if c.addwait(&url, resp) {
-		return nil, false, logger.ErrToWait
-	}
+	//d := xml.NewDecoder(resp)
 	d := xml.NewDecoder(resp.Body)
 	d.CharsetReader = charset.NewReaderLabel
 	d.Strict = false
 
-	nzbs := make([]NZB, 0, 50)
-	row := xmlrow{tillid: tillid, indexer: indexer, quality: quality, apiBaseURL: apiBaseURL, results: &nzbs}
-	var t xml.Token
+	mu.Lock()
+	if results == nil || cap(*results) == 0 {
+		*results = make([]Nzbwithprio, 0, createsize*qual.IndexerLen)
+	}
+	mu.Unlock()
 
+	//b := plnzbprio.Get().(*Nzbwithprio)
+	//defer b.ClosePut()
+	var nameidx, valueidx int
+	var b Nzbwithprio
+	var lastfield int
 	for {
-		t, err = d.RawToken()
+		t, err := d.RawToken()
 		if err != nil {
 			break
 		}
+
 		switch tt := t.(type) {
 		case xml.StartElement:
-			startelement(d, &tt, &row)
+			lastfield = -1
+			switch tt.Name.Local {
+			case "item":
+				b.NZB = nzb{}
+				b.NZB.Indexer = ind
+				b.NZB.Quality = qual
+				b.NZB.SourceEndpoint = apiBaseURL
+			case strtitle:
+				lastfield = 1
+			case strlink:
+				lastfield = 2
+			case strguid:
+				lastfield = 3
+			case strsize:
+				lastfield = 4
+			case "enclosure", "source":
+				for idx := range tt.Attr {
+					switch tt.Attr[idx].Name.Local {
+					case strurl:
+						if b.NZB.DownloadURL == "" {
+							b.NZB.DownloadURL = tt.Attr[idx].Value
+						}
+					case "length":
+						if b.NZB.Size == 0 {
+							b.NZB.Size = logger.StringToInt64(tt.Attr[idx].Value)
+						}
+					}
+				}
+			case "attr":
+				nameidx = -1
+				valueidx = -1
+				for idx := range tt.Attr {
+					switch tt.Attr[idx].Name.Local {
+					case "name":
+						nameidx = idx
+					case "value":
+						valueidx = idx
+					}
+				}
+				if nameidx == -1 || valueidx == -1 || tt.Attr[valueidx].Value == "" {
+					break
+				}
+				setfield(tt.Attr[nameidx].Value, tt.Attr[valueidx].Value, &b.NZB)
+			}
 		case xml.CharData:
-			chardata(&tt, &row)
+			if lastfield > 0 && lastfield < 5 && len(tt) > 0 {
+				setfield(fieldmap[lastfield], string(tt), &b.NZB)
+			}
 		case xml.EndElement:
-			if endelement(&tt, &row) {
-				logger.ClearVar(d)
-				logger.ClearVar(&row)
-				return &nzbs, false, nil
+			if tt.Name.Local == "item" {
+				if b.NZB.ID == "" {
+					b.NZB.ID = b.NZB.DownloadURL
+				}
+				if retval.FirstID == "" {
+					retval.FirstID = b.NZB.ID
+				}
+				//mu.Lock()
+				*results = append(*results, b)
+				//mu.Unlock()
+				if tillid != "" && tillid == b.NZB.ID {
+					retval.BrokeLoop = true
+					return retval
+				}
 			}
 		}
 	}
-	logger.ClearVar(d)
-	logger.ClearVar(&row)
-	return &nzbs, false, nil
+	return retval
 }
 
-func chardata(tt *xml.CharData, row *xmlrow) {
-	if row.startv == 0 || row.name == "" { //endv is previous
-		return
-	}
-	if strings.EqualFold(row.name, "title") {
-		if row.b.Title == "" {
-			row.b.Title = logger.UnquoteS(string(*tt))
-			logger.HTMLUnescape(&row.b.Title)
-		}
-		return
-	}
-	if strings.EqualFold(row.name, "guid") {
-		if row.b.ID == "" {
-			row.b.ID = string(*tt)
-		}
-		return
-	}
-	if strings.EqualFold(row.name, "size") {
-		if row.b.Size == 0 {
-			row.b.Size = logger.StringToInt64(string(*tt))
-		}
-		return
-	}
-	// switch row.name {
-	// case "title":
-	// 	if row.b.Title == "" {
-	// 		row.b.Title = logger.UnquoteS(string(*tt))
-	// 		logger.HTMLUnescape(&row.b.Title)
-	// 	}
-	// case "guid":
-	// 	if row.b.ID == "" {
-	// 		row.b.ID = string(*tt)
-	// 	}
-	// case "size":
-	// 	if row.b.Size == 0 {
-	// 		row.b.Size = logger.StringToInt64(string(*tt))
-	// 	}
-	// }
-}
-func startelement(d *xml.Decoder, tt *xml.StartElement, row *xmlrow) {
-	if tt.Name.Local == "item" {
-		row.startv = d.InputOffset()
-		row.b = NZB{Indexer: row.indexer, Quality: row.quality, SourceEndpoint: row.apiBaseURL}
-		return
-	}
-	if row.startv <= 0 {
-		return
-	}
-	row.name = tt.Name.Local //strings.ToLower(tt.Name.Local)
-	if strings.EqualFold(row.name, "enclosure") {
-		row.i = -1
-		for idxi := range tt.Attr {
-			if strings.EqualFold(tt.Attr[idxi].Name.Local, "url") {
-				row.i = idxi
-				break
-			}
-		}
-		//i = logger.IndexFunc(&tt.Attr, func(e xml.Attr) bool { return strings.EqualFold(e.Name.Local, "url") })
-		if row.i == -1 {
-			return
-		}
-		row.b.DownloadURL = tt.Attr[row.i].Value
-		logger.HTMLUnescape(&row.b.DownloadURL)
-		if logger.ContainsI(row.b.DownloadURL, ".torrent") || logger.ContainsI(row.b.DownloadURL, "magnet:?") {
-			row.b.IsTorrent = true
-		}
-		return
-	}
-	if strings.EqualFold(row.name, "attr") {
-		row.i, row.j = -1, -1
-		for idxi := range tt.Attr {
-			if strings.EqualFold(tt.Attr[idxi].Name.Local, "name") {
-				row.i = idxi
-			}
-			if strings.EqualFold(tt.Attr[idxi].Name.Local, "value") {
-				row.j = idxi
-			}
-		}
-		//i = logger.IndexFunc(&tt.Attr, func(e xml.Attr) bool { return strings.EqualFold(e.Name.Local, "name") })
-		//j = logger.IndexFunc(&tt.Attr, func(e xml.Attr) bool { return strings.EqualFold(e.Name.Local, "value") })
-
-		if row.i == -1 || row.j == -1 || tt.Attr[row.j].Value == "" {
-			return
-		}
-		if strings.EqualFold(tt.Attr[row.i].Value, "size") {
-			row.b.Size = logger.StringToInt64(tt.Attr[row.j].Value)
-			return
-		}
-		if strings.EqualFold(tt.Attr[row.i].Value, "guid") {
-			if row.b.ID == "" {
-				row.b.ID = tt.Attr[row.j].Value
-			}
-			return
-		}
-		if strings.EqualFold(tt.Attr[row.i].Value, "tvdbid") {
-			row.b.TVDBID = logger.StringToInt(tt.Attr[row.j].Value)
-			return
-		}
-		if strings.EqualFold(tt.Attr[row.i].Value, "season") {
-			row.b.Season = tt.Attr[row.j].Value
-			return
-		}
-		if strings.EqualFold(tt.Attr[row.i].Value, "episode") {
-			row.b.Episode = tt.Attr[row.j].Value
-			return
-		}
-		if strings.EqualFold(tt.Attr[row.i].Value, "imdb") {
-			row.b.IMDBID = tt.Attr[row.j].Value
-			return
-		}
-		// switch strings.ToLower(tt.Attr[row.i].Value) {
-		// case "size":
-		// 	row.b.Size = logger.StringToInt64(tt.Attr[row.j].Value)
-		// case "guid":
-		// 	if row.b.ID == "" {
-		// 		row.b.ID = tt.Attr[row.j].Value
-		// 	}
-		// case "tvdbid":
-		// 	row.b.TVDBID = logger.StringToInt(tt.Attr[row.j].Value)
-		// case "season":
-		// 	row.b.Season = tt.Attr[row.j].Value
-		// case "episode":
-		// 	row.b.Episode = tt.Attr[row.j].Value
-		// case "imdb":
-		// 	row.b.IMDBID = tt.Attr[row.j].Value
-		// }
-		return
-	}
-	// switch row.name {
-	// case "enclosure":
-	// 	row.i = -1
-	// 	for idxi := range tt.Attr {
-	// 		if strings.EqualFold(tt.Attr[idxi].Name.Local, "url") {
-	// 			row.i = idxi
-	// 			break
-	// 		}
-	// 	}
-	// 	//i = logger.IndexFunc(&tt.Attr, func(e xml.Attr) bool { return strings.EqualFold(e.Name.Local, "url") })
-	// 	if row.i == -1 {
-	// 		return
-	// 	}
-	// 	row.b.DownloadURL = tt.Attr[row.i].Value
-	// 	logger.HTMLUnescape(&row.b.DownloadURL)
-	// 	if logger.ContainsI(row.b.DownloadURL, ".torrent") || logger.ContainsI(row.b.DownloadURL, "magnet:?") {
-	// 		row.b.IsTorrent = true
-	// 	}
-	// case "attr":
-	// 	row.i, row.j = -1, -1
-	// 	for idxi := range tt.Attr {
-	// 		if strings.EqualFold(tt.Attr[idxi].Name.Local, "name") {
-	// 			row.i = idxi
-	// 		}
-	// 		if strings.EqualFold(tt.Attr[idxi].Name.Local, "value") {
-	// 			row.j = idxi
-	// 		}
-	// 	}
-	// 	//i = logger.IndexFunc(&tt.Attr, func(e xml.Attr) bool { return strings.EqualFold(e.Name.Local, "name") })
-	// 	//j = logger.IndexFunc(&tt.Attr, func(e xml.Attr) bool { return strings.EqualFold(e.Name.Local, "value") })
-
-	// 	if row.i == -1 || row.j == -1 || tt.Attr[row.j].Value == "" {
-	// 		return
-	// 	}
-	// 	switch strings.ToLower(tt.Attr[row.i].Value) {
-	// 	case "size":
-	// 		row.b.Size = logger.StringToInt64(tt.Attr[row.j].Value)
-	// 	case "guid":
-	// 		if row.b.ID == "" {
-	// 			row.b.ID = tt.Attr[row.j].Value
-	// 		}
-	// 	case "tvdbid":
-	// 		row.b.TVDBID = logger.StringToInt(tt.Attr[row.j].Value)
-	// 	case "season":
-	// 		row.b.Season = tt.Attr[row.j].Value
-	// 	case "episode":
-	// 		row.b.Episode = tt.Attr[row.j].Value
-	// 	case "imdb":
-	// 		row.b.IMDBID = tt.Attr[row.j].Value
-	// 	}
-	// }
-}
-func endelement(tt *xml.EndElement, row *xmlrow) bool {
-	if tt.Name.Local == "item" {
-		if row.startv == 0 || row.b.DownloadURL == "" {
-			return false //Switch not for
-		}
-		row.startv = 0
-		if row.b.ID == "" {
-			row.b.ID = row.b.DownloadURL
-		}
-		*row.results = append(*row.results, row.b)
-		row.b.DownloadURL = ""
-		if row.tillid != "" && row.tillid == row.b.ID {
-			return true
-		}
-	}
-	return false
-}
-
-func (c *RLHTTPClient) testsleep(s string) bool {
-	if sleep, err := strconv.ParseInt(s, 10, 64); err == nil {
-		c.Ratelimiter.WaitTill(logger.TimeGetNow().Add((time.Second * time.Duration(sleep)) - c.Ratelimiter.Interval()))
-		return true
-	}
-	if sleeptime, err := time.Parse(time.RFC1123, s); err == nil {
-		c.Ratelimiter.WaitTill(sleeptime.Add(-c.Ratelimiter.Interval()))
-		return true
-	}
-	return false
-}
-func (c *RLHTTPClient) addwait(url *string, resp *http.Response) bool {
-	if resp == nil {
-		return true
-	}
+// addwait handles rate limiting and blocking based on the HTTP response.
+// It will wait and return true if the response indicates the request should be rate limited or blocked.
+func (c *rlHTTPClient) addwait(req *http.Request, resp *http.Response) bool {
 	blockinterval := 5
 	if config.SettingsGeneral.FailedIndexerBlockTime != 0 {
-		blockinterval = 1 * config.SettingsGeneral.FailedIndexerBlockTime
+		blockinterval = config.SettingsGeneral.FailedIndexerBlockTime
 	}
-	if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusRequestTimeout || resp.StatusCode == http.StatusInternalServerError || resp.StatusCode == http.StatusServiceUnavailable || resp.StatusCode == 521 || resp.StatusCode == 522 || resp.StatusCode == 524 || resp.StatusCode == 204 {
-		//408 Timeout
-		//404 not found
-		//500 Internal Server Error
-		//503 Service Unavailable
-		//522 Connection Timed Out
-		//521 Web Server Is Down
-		//524 A Timeout Occurred
-		//204 No Content
-
-		//Trakt responds with 404 if media not found
-		if resp.StatusCode != http.StatusNotFound {
-			c.Ratelimiter.WaitTill(time.Now().Add((time.Minute * time.Duration(blockinterval))))
-		}
-		//logger.LogAnyError(nil, "error get response url", logger.LoggerValue{Name: "url", Value: url}, logger.LoggerValue{Name: "status", Value: resp.Status})
-		logger.Log.Error().Str("url", *url).Str("status", resp.Status).Msg("error get response url")
-
+	if resp == nil {
+		c.Ratelimiter.WaitTill(time.Now().Add(time.Minute * time.Duration(blockinterval)))
 		return true
-	} else if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusBadRequest {
-		//403 Forbidden
-		//401 unauthorized
-		//429 too many requests
-		//400 bad request
-		var limitincreased bool
-		if s, ok := resp.Header["Retry-After"]; ok {
-			limitincreased = c.testsleep(s[0])
-		} else if s, ok := resp.Header["X-Retry-After"]; ok {
-			limitincreased = c.testsleep(s[0])
+	}
+
+	switch resp.StatusCode {
+	case http.StatusNotFound, http.StatusRequestTimeout, http.StatusInternalServerError, http.StatusServiceUnavailable, 521, 522, 524, http.StatusNoContent:
+		if resp.StatusCode != http.StatusNotFound {
+			c.Ratelimiter.WaitTill(time.Now().Add(time.Minute * time.Duration(blockinterval)))
+		}
+		logger.LogDynamic("error", "error get response url", logger.NewLogField(strurl, req.URL.String()), logger.NewLogField("status", resp.Status))
+		return true
+
+	case http.StatusUnauthorized, http.StatusForbidden, http.StatusTooManyRequests, http.StatusBadRequest:
+		s, ok := resp.Header["Retry-After"]
+		if !ok {
+			s, ok = resp.Header["X-Retry-After"]
+		}
+		if ok {
+			if sleep, err := strconv.Atoi(s[0]); err == nil {
+				c.Ratelimiter.WaitTill(logger.TimeGetNow().Add(time.Second*time.Duration(sleep) - c.Ratelimiter.Interval()))
+			} else if sleeptime, err := time.Parse(time.RFC1123, s[0]); err == nil {
+				c.Ratelimiter.WaitTill(sleeptime.Add(-c.Ratelimiter.Interval()))
+				io.Copy(io.Discard, resp.Body)
+				return true
+			} else {
+				c.Ratelimiter.WaitTill(time.Now().Add(time.Minute * time.Duration(blockinterval)))
+			}
 		} else if resp.StatusCode == 400 && resp.Body != nil {
-			b, _ := io.ReadAll(resp.Body)
-			if logger.ContainsI(string(b), "Request limit reached") {
+			if b, _ := io.ReadAll(resp.Body); logger.ContainsI(string(b), "Request limit reached") {
 				c.Ratelimiter.WaitTill(time.Now().Add(3 * time.Hour))
 				return true
 			}
 		}
-		if !limitincreased {
-			c.Ratelimiter.WaitTill(time.Now().Add(time.Minute * time.Duration(blockinterval)))
-		}
-		//logger.LogAnyError(nil, "error get response url", logger.LoggerValue{Name: "url", Value: url}, logger.LoggerValue{Name: "status", Value: resp.Status})
-		logger.Log.Error().Str("url", *url).Str("status", resp.Status).Msg("error get response url")
+
+		logger.LogDynamic("error", "error get response url", logger.NewLogField(strurl, req.URL.String()), logger.NewLogField("status", resp.Status))
+		io.Copy(io.Discard, resp.Body)
 		return true
 	}
+
 	return false
 }
 
-// NewClient return http client with a ratelimiter
-func NewClient(skiptlsverify bool, disablecompression bool, rl *slidingwindow.Limiter, usedaily bool, rldaily *slidingwindow.Limiter, timeoutseconds int) *RLHTTPClient {
+// NewClient creates a new HTTP client for making external API requests. It configures rate limiting, TLS verification, compression, timeouts etc. based on the provided parameters.
+func NewClient(clientname string, skiptlsverify bool, disablecompression bool, rl *slidingwindow.Limiter, usedaily bool, rldaily *slidingwindow.Limiter, timeoutseconds int) *rlHTTPClient {
 	if timeoutseconds == 0 {
 		timeoutseconds = 10
 	}
-	return &RLHTTPClient{
-		client: &http.Client{Timeout: time.Duration(timeoutseconds) * time.Second,
-			Transport: &http.Transport{
-				TLSHandshakeTimeout:   time.Duration(timeoutseconds) * time.Second,
-				ResponseHeaderTimeout: time.Duration(timeoutseconds) * time.Second,
-				TLSClientConfig:       &tls.Config{InsecureSkipVerify: skiptlsverify},
-				MaxIdleConns:          20,
-				MaxConnsPerHost:       10,
-				DisableCompression:    disablecompression,
-				DisableKeepAlives:     true,
-				IdleConnTimeout:       120 * time.Second}},
+
+	transport := &http.Transport{
+		Proxy:                 http.ProxyFromEnvironment,
+		DialContext:           dialer.DialContext,
+		ForceAttemptHTTP2:     false, //please don't
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+		MaxIdleConnsPerHost:   runtime.GOMAXPROCS(0) + 1,
+	}
+
+	transport.ResponseHeaderTimeout = time.Duration(timeoutseconds) * time.Second
+
+	if skiptlsverify {
+		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+	}
+	if disablecompression {
+		transport.DisableCompression = true
+	}
+	return &rlHTTPClient{
+		Timeout:             time.Duration(timeoutseconds) * time.Second,
+		clientname:          clientname,
+		client:              &http.Client{Transport: transport},
 		Ratelimiter:         rl,
 		DailyLimiterEnabled: usedaily,
 		DailyRatelimiter:    rldaily,
 	}
-}
-
-func getrequest(url *string, headers *[]addHeader) *http.Request {
-	req := logger.HTTPGetRequest(url)
-	if headers == nil {
-		return req
-	}
-	for i := range *headers {
-		req.Header.Add((*headers)[i].key, (*headers)[i].val)
-	}
-	return req
 }

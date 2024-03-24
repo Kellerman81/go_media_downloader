@@ -9,7 +9,6 @@ import (
 )
 
 func GetSerieFileUnmatchedsTable(ctx *context.Context) table.Table {
-
 	serieFileUnmatcheds := table.NewDefaultTable(table.DefaultConfigWithDriverAndConnection("sqlite", "media"))
 
 	info := serieFileUnmatcheds.GetInfo().HideFilterArea()

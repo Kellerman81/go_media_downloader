@@ -1,95 +1,108 @@
 package apiexternal
 
 import (
+	"errors"
+	"slices"
+	"strconv"
 	"time"
 
+	"github.com/Kellerman81/go_media_downloader/config"
+	"github.com/Kellerman81/go_media_downloader/database"
 	"github.com/Kellerman81/go_media_downloader/logger"
 	"github.com/Kellerman81/go_media_downloader/slidingwindow"
 )
 
-type TheTVDBSeries struct {
-	Data struct {
-		ID              int         `json:"id"`
-		SeriesID        interface{} `json:"seriesId"`
-		SeriesName      string      `json:"seriesName"`
-		Aliases         []string    `json:"aliases"`
-		Season          string      `json:"season"`
-		Status          string      `json:"status"`
-		FirstAired      string      `json:"firstAired"`
-		Network         string      `json:"network"`
-		NetworkID       string      `json:"networkId"`
-		Runtime         string      `json:"runtime"`
-		Language        string      `json:"language"`
-		Genre           []string    `json:"genre"`
-		Overview        string      `json:"overview"`
-		Rating          string      `json:"rating"`
-		ImdbID          string      `json:"imdbId"`
-		SiteRating      float32     `json:"siteRating"`
-		SiteRatingCount int         `json:"siteRatingCount"`
-		Slug            string      `json:"slug"`
-		Banner          string      `json:"banner"`
-		Poster          string      `json:"poster"`
-		Fanart          string      `json:"fanart"`
-	} `json:"data"`
+type theTVDBSeries struct {
+	Data theTVDBSeriesData `json:"data"`
+}
+type theTVDBSeriesData struct {
+	ID              int      `json:"id"`
+	SeriesName      string   `json:"seriesName"`
+	Aliases         []string `json:"aliases"`
+	Season          string   `json:"season"`
+	Status          string   `json:"status"`
+	FirstAired      string   `json:"firstAired"`
+	Network         string   `json:"network"`
+	Runtime         string   `json:"runtime"`
+	Language        string   `json:"language"`
+	Genre           []string `json:"genre"`
+	Overview        string   `json:"overview"`
+	Rating          string   `json:"rating"`
+	ImdbID          string   `json:"imdbId"`
+	SiteRating      float32  `json:"siteRating"`
+	SiteRatingCount int      `json:"siteRatingCount"`
+	Slug            string   `json:"slug"`
+	Banner          string   `json:"banner"`
+	Poster          string   `json:"poster"`
+	Fanart          string   `json:"fanart"`
+	//SeriesID        any      `json:"seriesId"`
+	//NetworkID       string   `json:"networkId"`
 }
 
-type TheTVDBEpisodes struct {
-	Links struct {
-		First int `json:"first"`
-		Last  int `json:"last"`
-	} `json:"links"`
-	Data []TheTVDBEpisode `json:"data"`
+type theTVDBEpisodes struct {
+	Links theTVDBEpisodesLinks `json:"links"`
+	Data  []theTVDBEpisode     `json:"data"`
+}
+type theTVDBEpisodesLinks struct {
+	First int `json:"first"`
+	Last  int `json:"last"`
 }
 
-type TheTVDBEpisode struct {
-	ID                 int    `json:"id"`
+type theTVDBEpisode struct {
 	AiredSeason        int    `json:"airedSeason"`
 	AiredEpisodeNumber int    `json:"airedEpisodeNumber"`
 	EpisodeName        string `json:"episodeName"`
 	FirstAired         string `json:"firstAired"`
 	Overview           string `json:"overview"`
-	Language           struct {
-		EpisodeName string `json:"episodeName"`
-		Overview    string `json:"overview"`
-	} `json:"language"`
-	ProductionCode  string  `json:"productionCode"`
-	ShowURL         string  `json:"showUrl"`
-	SeriesID        int     `json:"seriesId"`
-	ImdbID          string  `json:"imdbId"`
-	ContentRating   string  `json:"contentRating"`
-	SiteRating      float32 `json:"siteRating"`
-	SiteRatingCount int     `json:"siteRatingCount"`
-	IsMovie         int     `json:"isMovie"`
-	Poster          string  `json:"filename"`
+	Poster             string `json:"filename"`
+	//ID                 int    `json:"id"`
+	//Language           TheTVDBEpisodeLanguage `json:"language"`
+	//ProductionCode     string                 `json:"productionCode"`
+	//ShowURL            string                 `json:"showUrl"`
+	//SeriesID           int                    `json:"seriesId"`
+	//ImdbID string `json:"imdbId"`
+	//ContentRating      string                 `json:"contentRating"`
+	//SiteRating         float32                `json:"siteRating"`
+	//SiteRatingCount    int                    `json:"siteRatingCount"`
+	//IsMovie            int                    `json:"isMovie"`
 }
 
+// type theTVDBEpisodeLanguage struct {
+// 	EpisodeName string `json:"episodeName"`
+// 	Overview    string `json:"overview"`
+// }
+
+// tvdbClient is a struct for interacting with TheTVDB API.
+// It contains a field Client which is a pointer to a rate limited HTTP client.
 type tvdbClient struct {
-	Client *RLHTTPClient
+	// Client is a pointer to a rate limited HTTP client for making requests.
+	Client *rlHTTPClient
 }
 
-var TvdbAPI *tvdbClient
+// Close cleans up the theTVDBSeries object by setting all fields to their
+// zero values. This is done to avoid keeping large objects in memory
+// unnecessarily when they are no longer needed. The cleanup is skipped
+// if the DisableVariableCleanup setting is true or if t is nil.
+func (t *theTVDBSeries) Close() {
+	if config.SettingsGeneral.DisableVariableCleanup || t == nil {
+		return
+	}
+	*t = theTVDBSeries{}
+}
 
-func (t *TheTVDBSeries) Close() {
-	if logger.DisableVariableCleanup {
+// Close cleans up the theTVDBEpisodes struct by zeroing it out.
+// This is done to avoid keeping large structs in memory when no longer needed.
+func (t *theTVDBEpisodes) Close() {
+	if config.SettingsGeneral.DisableVariableCleanup || t == nil {
 		return
 	}
-	if t == nil {
-		return
-	}
-	logger.Clear(&t.Data.Genre)
-	logger.Clear(&t.Data.Aliases)
-	logger.ClearVar(t)
+	clear(t.Data)
+	*t = theTVDBEpisodes{}
 }
-func (t *TheTVDBEpisodes) Close() {
-	if logger.DisableVariableCleanup {
-		return
-	}
-	if t == nil {
-		return
-	}
-	logger.Clear(&t.Data)
-	logger.ClearVar(t)
-}
+
+// NewTvdbClient creates a new tvdbClient instance for making requests to
+// the TheTVDB API. It configures rate limiting and TLS based on the
+// provided parameters.
 func NewTvdbClient(seconds int, calls int, disabletls bool, timeoutseconds int) {
 	if seconds == 0 {
 		seconds = 1
@@ -97,58 +110,94 @@ func NewTvdbClient(seconds int, calls int, disabletls bool, timeoutseconds int) 
 	if calls == 0 {
 		calls = 1
 	}
-	TvdbAPI = &tvdbClient{
+	tvdbAPI = &tvdbClient{
 		Client: NewClient(
+			"tvdb",
 			disabletls,
 			true,
 			slidingwindow.NewLimiter(time.Duration(seconds)*time.Second, int64(calls)),
 			false, slidingwindow.NewLimiter(10*time.Second, 10), timeoutseconds)}
-
 }
 
-func (t *tvdbClient) GetSeries(id int, language string) (*TheTVDBSeries, error) {
-	if id == 0 {
-		return nil, logger.ErrNotFound
+// GetTvdbSeries retrieves TV series data from the TheTVDB API for the given series ID.
+// If a non-empty language is provided, it will be set in the API request headers.
+// Returns the TV series data, or an error if one occurs.
+func GetTvdbSeries(id int, language string) (theTVDBSeries, error) {
+	if id == 0 || tvdbAPI.Client.checklimiterwithdaily() {
+		return theTVDBSeries{}, logger.ErrNotFound
 	}
-	var add []addHeader
 	if language != "" {
-		add = append(add, addHeader{key: "Accept-Language", val: language})
+		return DoJSONType[theTVDBSeries](tvdbAPI.Client, logger.JoinStrings("https://api.thetvdb.com/series/", strconv.Itoa(id)), keyval{"Accept-Language", language})
 	}
-	return DoJSONType[TheTVDBSeries](t.Client, "https://api.thetvdb.com/series/"+logger.IntToString(id), add...)
+	return DoJSONType[theTVDBSeries](tvdbAPI.Client, logger.JoinStrings("https://api.thetvdb.com/series/", strconv.Itoa(id)))
 }
-func (t *tvdbClient) GetSeriesEpisodes(id int, language string) (*TheTVDBEpisodes, error) {
-	if id == 0 {
-		return nil, logger.ErrNotFound
+
+// GetTvdbSeriesEpisodes retrieves all episodes for the given TV series ID from
+// TheTVDB API. It accepts the series ID, preferred language, and database series
+// ID. It retrieves the episode data, checks for existing episodes to avoid
+// duplicates, and inserts any missing episodes into the database. If there are
+// multiple pages of results, it fetches additional pages.
+func UpdateTvdbSeriesEpisodes(id int, language string, dbid uint) {
+	if id == 0 || tvdbAPI.Client.checklimiterwithdaily() {
+		return
 	}
-	urlv := "https://api.thetvdb.com/series/" + logger.IntToString(id) + "/episodes"
-	var add []addHeader
+	urlv := logger.URLJoinPath("https://api.thetvdb.com/series/", strconv.Itoa(id), "episodes")
+	var result theTVDBEpisodes
+	var err error
+	var lang keyval
 	if language != "" {
-		add = append(add, addHeader{key: "Accept-Language", val: language})
+		lang = keyval{"Accept-Language", language}
+		result, err = DoJSONType[theTVDBEpisodes](tvdbAPI.Client, urlv, lang)
+	} else {
+		result, err = DoJSONType[theTVDBEpisodes](tvdbAPI.Client, urlv)
 	}
-	result, err := DoJSONType[TheTVDBEpisodes](t.Client, urlv, add...)
 
 	if err != nil {
-		if err != logger.ErrToWait {
-			logger.Log.Error().Err(err).Str(logger.StrURL, urlv).Msg(errorCalling)
+		if !errors.Is(err, logger.ErrToWait) {
+			logger.LogDynamic("error", "Error calling", logger.NewLogFieldValue(err), logger.NewLogField(logger.StrURL, urlv))
 		}
-		return nil, err
+		return
 	}
+	tbl := database.Getrows1size[database.DbstaticTwoString](false, database.QueryDbserieEpisodesCountByDBID, database.QueryDbserieEpisodesGetSeasonEpisodeByDBID, &dbid)
 
+	addthetvdbepisodes(&result, dbid, tbl)
+	urlv += "?page="
 	if result.Links.Last >= 2 {
-		logger.Grow(&result.Data, len(result.Data)*result.Links.Last)
-		var resultadd *TheTVDBEpisodes
+		result.Data = slices.Grow(result.Data, len(result.Data)*result.Links.Last)
+		var resultadd theTVDBEpisodes
 		for k := 2; k <= result.Links.Last; k++ {
-			resultadd, err = DoJSONType[TheTVDBEpisodes](t.Client, urlv+"?page="+logger.IntToString(k), add...)
-			if err != nil {
-				break
+			if language != "" {
+				resultadd, err = DoJSONType[theTVDBEpisodes](tvdbAPI.Client, urlv+strconv.Itoa(k), lang)
+			} else {
+				resultadd, err = DoJSONType[theTVDBEpisodes](tvdbAPI.Client, urlv+strconv.Itoa(k))
 			}
-			if len(resultadd.Data) >= 1 {
-				result.Data = append(result.Data, resultadd.Data...)
+			if err == nil {
+				addthetvdbepisodes(&resultadd, dbid, tbl)
 			}
 			resultadd.Close()
-			//result.Data = append(logger.GrowSliceBy(result.Data, len(resultadd.Data)), resultadd.Data...)
-
 		}
 	}
-	return result, nil
+	result.Close()
+	clear(tbl)
+}
+
+// addthetvdbepisodes iterates through the episodes in the given TheTVDBEpisodes
+// result and inserts any missing episodes into the dbserie_episodes table for
+// the series matching the given dbid. It returns false if no error occurs.
+func addthetvdbepisodes(resultadd *theTVDBEpisodes, dbid uint, tbl []database.DbstaticTwoString) bool {
+	var dt time.Time
+	var strepisode, strseason, stridentifier string
+	for idx := range resultadd.Data {
+		strepisode = strconv.Itoa(resultadd.Data[idx].AiredEpisodeNumber)
+		strseason = strconv.Itoa(resultadd.Data[idx].AiredSeason)
+
+		if checkdbtwostrings(tbl, strseason, strepisode) {
+			continue
+		}
+		dt = database.ParseDateTime(resultadd.Data[idx].FirstAired)
+		stridentifier = GenerateIdentifierStringFromInt(resultadd.Data[idx].AiredSeason, resultadd.Data[idx].AiredEpisodeNumber)
+		database.ExecN("insert into dbserie_episodes (episode, season, identifier, title, first_aired, overview, poster, dbserie_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+			&strepisode, &strseason, &stridentifier, &resultadd.Data[idx].EpisodeName, &dt, &resultadd.Data[idx].Overview, &resultadd.Data[idx].Poster, &dbid)
+	}
+	return false
 }

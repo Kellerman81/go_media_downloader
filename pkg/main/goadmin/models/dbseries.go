@@ -12,7 +12,6 @@ import (
 )
 
 func GetDbseriesTable(ctx *context.Context) table.Table {
-
 	dbseries := table.NewDefaultTable(table.DefaultConfigWithDriverAndConnection("sqlite", "media"))
 
 	detail := dbseries.GetDetail().HideFilterArea()

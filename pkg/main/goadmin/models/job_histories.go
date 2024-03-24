@@ -9,7 +9,6 @@ import (
 )
 
 func GetJobHistoriesTable(ctx *context.Context) table.Table {
-
 	jobHistories := table.NewDefaultTable(table.DefaultConfigWithDriverAndConnection("sqlite", "media"))
 
 	info := jobHistories.GetInfo().HideFilterArea()

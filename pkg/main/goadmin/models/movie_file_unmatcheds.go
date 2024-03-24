@@ -9,7 +9,6 @@ import (
 )
 
 func GetMovieFileUnmatchedsTable(ctx *context.Context) table.Table {
-
 	movieFileUnmatcheds := table.NewDefaultTable(table.DefaultConfigWithDriverAndConnection("sqlite", "media"))
 
 	info := movieFileUnmatcheds.GetInfo().HideFilterArea()

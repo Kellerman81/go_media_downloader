@@ -1,6 +1,10 @@
 package database
 
-import "time"
+import (
+	"time"
+
+	"github.com/Kellerman81/go_media_downloader/config"
+)
 
 type ImdbTitle struct {
 	Tconst         string
@@ -15,7 +19,7 @@ type ImdbTitle struct {
 	Genres         string
 }
 
-type ImdbAka struct {
+type imdbAka struct {
 	ID              uint
 	CreatedAt       time.Time `db:"created_at"`
 	UpdatedAt       time.Time `db:"updated_at"`
@@ -38,10 +42,29 @@ type ImdbRatings struct {
 	NumVotes      int     `db:"num_votes"`
 	AverageRating float32 `db:"average_rating"`
 }
-type ImdbGenres struct {
-	ID        uint
-	CreatedAt time.Time `db:"created_at"`
-	UpdatedAt time.Time `db:"updated_at"`
-	Tconst    string
-	Genre     string
+
+// type ImdbGenres struct {
+// 	ID        uint
+// 	CreatedAt time.Time `db:"created_at"`
+// 	UpdatedAt time.Time `db:"updated_at"`
+// 	Tconst    string
+// 	Genre     string
+// }
+
+// Close cleans up the imdbTitle struct by zeroing out fields when variable cleanup is enabled.
+// This allows the struct to be garbage collected and avoids potential memory leaks.
+func (s *ImdbTitle) Close() {
+	if config.SettingsGeneral.DisableVariableCleanup || s == nil {
+		return
+	}
+	*s = ImdbTitle{}
+}
+
+// Close cleans up the imdbRatings struct by zeroing it after use.
+// This avoids leaving sensitive data in memory.
+func (s *ImdbRatings) Close() {
+	if config.SettingsGeneral.DisableVariableCleanup || s == nil {
+		return
+	}
+	*s = ImdbRatings{}
 }

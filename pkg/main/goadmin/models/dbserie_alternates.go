@@ -12,7 +12,6 @@ import (
 )
 
 func GetDbserieAlternatesTable(ctx *context.Context) table.Table {
-
 	dbserieAlternates := table.NewDefaultTable(table.DefaultConfigWithDriverAndConnection("sqlite", "media"))
 
 	info := dbserieAlternates.GetInfo().HideFilterArea()
@@ -23,7 +22,7 @@ func GetDbserieAlternatesTable(ctx *context.Context) table.Table {
 	//info.AddField("Updated_at", "updated_at", db.Datetime)
 	info.AddField("Title", "title", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
 	info.AddField("Slug", "slug", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
-	info.AddField("Dbserie_id", "dbserie_id", db.Integer).FieldDisplay(func(value types.FieldModel) interface{} {
+	info.AddField("Dbserie_id", "dbserie_id", db.Integer).FieldDisplay(func(value types.FieldModel) any {
 		return template.Default().
 			Link().
 			SetURL("/admin/info/dbseries/detail?__goadmin_detail_pk=" + value.Value).

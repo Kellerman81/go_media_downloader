@@ -4,11 +4,12 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"log"
+	"io/fs"
 	"os"
+	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/config"
@@ -22,16 +23,26 @@ import (
 	_ "github.com/mattn/go-sqlite3"                           //Needed for DB
 )
 
-type DBGlobal struct {
-	AudioStrIn       []string
-	CodecStrIn       []string
-	QualityStrIn     []string
-	ResolutionStrIn  []string
-	GetqualitiesIn   []QualitiesRegex
+// dbGlobal stores globally accessible slices and arrays
+type dbGlobal struct {
+	// AudioStrIn is a globally accessible slice of audio strings
+	AudioStrIn []string
+	// CodecStrIn is a globally accessible slice of codec strings
+	CodecStrIn []string
+	// QualityStrIn is a globally accessible slice of quality strings
+	QualityStrIn []string
+	// ResolutionStrIn is a globally accessible slice of resolution strings
+	ResolutionStrIn []string
+	// GetqualitiesIn is a globally accessible slice of QualitiesRegex structs
+	GetqualitiesIn []QualitiesRegex
+	// GetresolutionsIn is a globally accessible slice of QualitiesRegex structs
 	GetresolutionsIn []QualitiesRegex
-	GetcodecsIn      []QualitiesRegex
-	GetaudiosIn      []QualitiesRegex
+	// GetcodecsIn is a globally accessible slice of QualitiesRegex structs
+	GetcodecsIn []QualitiesRegex
+	// GetaudiosIn is a globally accessible slice of QualitiesRegex structs
+	GetaudiosIn []QualitiesRegex
 }
+
 type JobHistory struct {
 	ID          uint
 	CreatedAt   time.Time `db:"created_at"`
@@ -43,17 +54,7 @@ type JobHistory struct {
 	Ended       sql.NullTime
 }
 
-type JobHistoryJSON struct {
-	ID          uint
-	CreatedAt   time.Time `db:"created_at"`
-	UpdatedAt   time.Time `db:"updated_at"`
-	JobType     string    `db:"job_type"`
-	JobCategory string    `db:"job_category"`
-	JobGroup    string    `db:"job_group"`
-	Started     time.Time
-	Ended       time.Time
-}
-type RSSHistory struct {
+type rSSHistory struct {
 	ID        uint
 	CreatedAt time.Time `db:"created_at"`
 	UpdatedAt time.Time `db:"updated_at"`
@@ -62,7 +63,7 @@ type RSSHistory struct {
 	Indexer   string
 	LastID    string `db:"last_id"`
 }
-type IndexerFail struct {
+type indexerFail struct {
 	ID        uint
 	CreatedAt time.Time `db:"created_at"`
 	UpdatedAt time.Time `db:"updated_at"`
@@ -80,48 +81,9 @@ type backupInfo struct {
 	path      string
 }
 
-// byFormatTime sorts by newest time formatted in the name.
-type byFormatTime []backupInfo
-
-var (
-	CacheFilesMovie               []string
-	CacheFilesMovieExpire         time.Time
-	CacheFilesSeries              []string
-	CacheFilesSeriesExpire        time.Time
-	CacheUnmatchedMovie           []string
-	CacheUnmatchedMovieExpire     time.Time
-	CacheUnmatchedSeries          []string
-	CacheUnmatchedSeriesExpire    time.Time
-	CacheHistoryTitleMovie        []string
-	CacheHistoryTitleMovieExpire  time.Time
-	CacheHistoryUrlMovie          []string
-	CacheHistoryUrlMovieExpire    time.Time
-	CacheHistoryTitleSeries       []string
-	CacheHistoryTitleSeriesExpire time.Time
-	CacheHistoryUrlSeries         []string
-	CacheHistoryUrlSeriesExpire   time.Time
-	CacheTitlesSeries             []DbstaticTwoStringOneInt
-	CacheTitlesSeriesExpire       time.Time
-	CacheTitlesMovie              []DbstaticTwoStringOneInt
-	CacheTitlesMovieExpire        time.Time
-	CacheMovie                    []DbstaticOneStringOneInt
-	CacheMovieExpire              time.Time
-	CacheDBMovie                  []DbstaticThreeStringOneInt
-	CacheDBMovieExpire            time.Time
-
-	readWriteMu = &sync.RWMutex{}
-	DBConnect   DBGlobal
-	dbData      *sqlx.DB
-	dbImdb      *sqlx.DB
-	DBVersion   = "1"
-	DBLogLevel  = "Info"
-)
-
-func Checkcacheexpire(tim time.Time) bool {
-	now := time.Now()
-	return tim.After(now)
-}
-
+// DBClose closes any open database connections to the data.db and imdb.db
+// SQLite databases. It is intended to be called when the application is
+// shutting down to cleanly close the connections.
 func DBClose() {
 	if dbData != nil {
 		dbData.Close()
@@ -131,119 +93,143 @@ func DBClose() {
 	}
 }
 
-func InitDB(dbloglevel string) {
-	if _, err := os.Stat("./databases/data.db"); os.IsNotExist(err) {
+// checkFile checks if the file exists at the given path.
+// It returns true if the file exists, false if it does not exist.
+func checkFile(fpath string) bool {
+	_, err := os.Stat(fpath)
+	return !errors.Is(err, fs.ErrNotExist)
+}
+
+// InitDB initializes a connection to the data.db SQLite database.
+// It creates the file if it does not exist and sets database
+// connection parameters.
+func InitDB(dbloglevel string) error {
+	if !checkFile("./databases/data.db") {
 		_, err := os.Create("./databases/data.db") // Create SQLite file
 		if err != nil {
-			log.Fatal(err.Error())
+			return err
 		}
 	}
 	var err error
 	dbData, err = sqlx.Connect("sqlite3", "file:./databases/data.db?_fk=1&mode=rwc&_mutex=full&rt=1&_cslike=0")
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	dbData.SetMaxIdleConns(15)
 	dbData.SetMaxOpenConns(5)
 	DBLogLevel = strings.ToLower(dbloglevel)
+	return nil
 }
 
+// CloseImdb closes the dbImdb database connection if it is open.
 func CloseImdb() {
 	if dbImdb != nil {
-		dbImdb.Close()
+		InvalidateImdbStmt()
+		dbImdb.DB.Close()
 	}
 }
+
+// GetVersion returns the current database version string stored in the DBVersion global variable.
 func GetVersion() string {
 	return DBVersion
 }
+
+// SetVersion sets the global DBVersion variable to the given version string.
 func SetVersion(str string) {
 	DBVersion = str
 }
 
-func InitImdbdb() {
-	var err error
-	if _, err = os.Stat("./databases/imdb.db"); os.IsNotExist(err) {
-		_, err = os.Create("./databases/imdb.db") // Create SQLite file
+func PingImdbdb() error {
+	return dbImdb.Ping()
+}
+
+func OpenImdbdb() {
+	dbImdb, _ = sqlx.Open("sqlite3", "file:./databases/imdb.db?_fk=1&mode=rwc&_mutex=full&rt=1&_cslike=0")
+}
+
+// InitImdbdb initializes a connection to the imdb.db SQLite database.
+// It creates the file if it does not exist.
+func InitImdbdb() error {
+	if !checkFile("./databases/imdb.db") {
+		_, err := os.Create("./databases/imdb.db") // Create SQLite file
 		if err != nil {
-			log.Fatal(err.Error())
+			return err
 		}
 	}
-	dbImdb, err = sqlx.Connect("sqlite3", "file:./databases/imdb.db?_fk=1&mode=rwc&_cslike=0")
+	var err error
+	dbImdb, err = sqlx.Connect("sqlite3", "file:./databases/imdb.db?_fk=1&mode=rwc&_mutex=full&rt=1&_cslike=0")
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	dbImdb.SetMaxIdleConns(15)
 	dbImdb.SetMaxOpenConns(5)
+	return nil
 }
 
-func GetVars() {
-	quali := QueryQualities("select * from qualities where type=1 order by priority desc")
-	logger.Log.Info().Msg("Database Get Variables 1")
-	DBConnect.GetresolutionsIn = make([]QualitiesRegex, len(*quali))
-	for idx := range *quali {
-		(*quali)[idx].StringsLower = strings.ToLower((*quali)[idx].Strings)
-		logger.GlobalCacheRegex.SetRegexp(&(*quali)[idx].Regex, 0)
-		DBConnect.GetresolutionsIn[idx] = QualitiesRegex{Regex: (*quali)[idx].Regex, Qualities: (*quali)[idx]}
+// getqualityregexes queries the database for quality regexes of the given type,
+// converts them to lowercase, compiles the regexes, and returns them along with
+// the corresponding quality data from the database.
+func getqualityregexes(querystr string, querycount string) []QualitiesRegex {
+	q := GetrowsN[Qualities](false, GetdatarowN[int](false, querycount), querystr)
+	if len(q) == 0 {
+		return nil
 	}
-
-	quali = QueryQualities("select * from qualities where type=2 order by priority desc")
-	logger.Log.Info().Msg("Database Get Variables 2")
-	DBConnect.GetqualitiesIn = make([]QualitiesRegex, len(*quali))
-	for idx := range *quali {
-		(*quali)[idx].StringsLower = strings.ToLower((*quali)[idx].Strings)
-		logger.GlobalCacheRegex.SetRegexp(&(*quali)[idx].Regex, 0)
-		DBConnect.GetqualitiesIn[idx] = QualitiesRegex{Regex: (*quali)[idx].Regex, Qualities: (*quali)[idx]}
+	ret := make([]QualitiesRegex, len(q))
+	for idx := range q {
+		q[idx].StringsLower = strings.ToLower(q[idx].Strings)
+		GlobalCache.SetRegexp(q[idx].Regex, 0)
+		ret[idx] = QualitiesRegex{Regex: q[idx].Regex, Qualities: q[idx]}
 	}
+	return ret
+}
 
-	quali = QueryQualities("select * from qualities where type=3 order by priority desc")
-	logger.Log.Info().Msg("Database Get Variables 3")
-	DBConnect.GetcodecsIn = make([]QualitiesRegex, len(*quali))
-	for idx := range *quali {
-		(*quali)[idx].StringsLower = strings.ToLower((*quali)[idx].Strings)
-		logger.GlobalCacheRegex.SetRegexp(&(*quali)[idx].Regex, 0)
-		DBConnect.GetcodecsIn[idx] = QualitiesRegex{Regex: (*quali)[idx].Regex, Qualities: (*quali)[idx]}
-	}
+// GetVars populates the global regex variables from the database.
+// It retrieves the quality regexes from the database and processes them to populate:
+// - DBConnect.GetresolutionsIn
+// - DBConnect.GetqualitiesIn
+// - DBConnect.GetcodecsIn
+// - DBConnect.GetaudiosIn
+// It also processes the config regex settings, and splits the regex strings to populate:
+// - DBConnect.AudioStrIn
+// - DBConnect.CodecStrIn
+// - DBConnect.QualityStrIn
+// - DBConnect.ResolutionStrIn
+func SetVars() {
+	DBConnect.GetresolutionsIn = getqualityregexes("select * from qualities where type=1 order by priority desc", "select count() from qualities where type=1")
 
-	quali = QueryQualities("select * from qualities where type=4 order by priority desc")
-	logger.Log.Info().Msg("Database Get Variables 4")
-	DBConnect.GetaudiosIn = make([]QualitiesRegex, len(*quali))
-	for idx := range *quali {
-		(*quali)[idx].StringsLower = strings.ToLower((*quali)[idx].Strings)
-		logger.GlobalCacheRegex.SetRegexp(&(*quali)[idx].Regex, 0)
-		DBConnect.GetaudiosIn[idx] = QualitiesRegex{Regex: (*quali)[idx].Regex, Qualities: (*quali)[idx]}
-	}
-	logger.Clear(quali)
+	DBConnect.GetqualitiesIn = getqualityregexes("select * from qualities where type=2 order by priority desc", "select count() from qualities where type=2")
 
-	for idx := range config.SettingsRegex {
-		for idxreg := range config.SettingsRegex[idx].Rejected {
-			if !logger.GlobalCacheRegex.CheckNoType(&config.SettingsRegex[idx].Rejected[idxreg]) {
-				logger.GlobalCacheRegex.SetRegexp(&config.SettingsRegex[idx].Rejected[idxreg], 0)
-			}
+	DBConnect.GetcodecsIn = getqualityregexes("select * from qualities where type=3 order by priority desc", "select count() from qualities where type=3")
+
+	DBConnect.GetaudiosIn = getqualityregexes("select * from qualities where type=4 order by priority desc", "select count() from qualities where type=4")
+
+	GlobalCache.SetRegexp("RegexSeriesTitle", 0)
+	GlobalCache.SetRegexp("RegexSeriesTitleDate", 0)
+	GlobalCache.SetRegexp("RegexSeriesIdentifier", 0)
+	for _, cfgregex := range config.SettingsRegex {
+		for idxreg := range cfgregex.Rejected {
+			GlobalCache.SetRegexp(cfgregex.Rejected[idxreg], 0)
 		}
-		for idxreg := range config.SettingsRegex[idx].Required {
-			if !logger.GlobalCacheRegex.CheckNoType(&config.SettingsRegex[idx].Required[idxreg]) {
-				logger.GlobalCacheRegex.SetRegexp(&config.SettingsRegex[idx].Required[idxreg], 0)
-			}
+		for idxreg := range cfgregex.Required {
+			GlobalCache.SetRegexp(cfgregex.Required[idxreg], 0)
 		}
 	}
 
-	//logger.Grow(&DBConnect.AudioStrIn, len(DBConnect.GetaudiosIn)*2)
 	for idx := range DBConnect.GetaudiosIn {
 		DBConnect.AudioStrIn = append(DBConnect.AudioStrIn, strings.Split(DBConnect.GetaudiosIn[idx].StringsLower, ",")...)
 	}
-	//logger.Grow(&DBConnect.CodecStrIn, len(DBConnect.GetcodecsIn)*2)
 	for idx := range DBConnect.GetcodecsIn {
 		DBConnect.CodecStrIn = append(DBConnect.CodecStrIn, strings.Split(DBConnect.GetcodecsIn[idx].StringsLower, ",")...)
 	}
-	//logger.Grow(&DBConnect.QualityStrIn, len(DBConnect.GetqualitiesIn)*7)
 	for idx := range DBConnect.GetqualitiesIn {
 		DBConnect.QualityStrIn = append(DBConnect.QualityStrIn, strings.Split(DBConnect.GetqualitiesIn[idx].StringsLower, ",")...)
 	}
-	//logger.Grow(&DBConnect.ResolutionStrIn, len(DBConnect.GetresolutionsIn)*4)
 	for idx := range DBConnect.GetresolutionsIn {
 		DBConnect.ResolutionStrIn = append(DBConnect.ResolutionStrIn, strings.Split(DBConnect.GetresolutionsIn[idx].StringsLower, ",")...)
 	}
 }
+
+// Upgrade handles upgrading the database by calling UpgradeDB.
 func Upgrade(c *gin.Context) {
 	UpgradeDB()
 }
@@ -251,350 +237,245 @@ func Upgrade(c *gin.Context) {
 // Backup the database. If db is nil, then uses the existing database
 // connection.
 func Backup(backupPath string, maxbackups int) error {
-	query := "VACUUM INTO ?"
-	_, err := execsql(true, false, &query, &[]interface{}{backupPath})
+	readWriteMu.Lock()
+	logger.LogDynamic("info", "Start db backup")
+	tempdb, err := sqlx.Connect("sqlite3", "file:./databases/data.db?_fk=1&mode=rwc&_mutex=full&rt=1&_cslike=0")
 	if err != nil {
-		return errors.New("vacuum failed: " + err.Error())
+		readWriteMu.Unlock()
+		return err
 	}
-	return RemoveOldDBBackups(maxbackups)
+	_, err = tempdb.Exec("VACUUM INTO ?", &backupPath)
+	readWriteMu.Unlock()
+	tempdb.Close()
+	if err != nil {
+		logger.LogDynamic("error", "exec", logger.NewLogFieldValue(err), logger.NewLogField(logger.StrQuery, "VACUUM INTO ?"))
+		return err
+	}
+	logger.LogDynamic("info", "End db backup")
+	if maxbackups == 0 {
+		return nil
+	}
+
+	f, err := os.Open("./backup")
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	files, err := f.ReadDir(-1)
+	if err != nil {
+		return errors.New("can't read log file directory: " + err.Error())
+	}
+	if len(files) == 0 {
+		return nil
+	}
+	backupFiles := make([]backupInfo, 0, len(files))
+
+	var tu time.Time
+	var addfile backupInfo
+	for idx := range files {
+		if files[idx].IsDir() {
+			continue
+		}
+		if !logger.HasPrefixI(files[idx].Name(), "data.db.") {
+			continue
+		}
+		addfile.timestamp = timeFromName(files[idx].Name(), "data.db.")
+		if !addfile.timestamp.Equal(tu) {
+			addfile.path = files[idx].Name()
+			backupFiles = append(backupFiles, addfile)
+			continue
+		}
+	}
+
+	//clear(files)
+	//defer clear(backupFiles)
+
+	if maxbackups == 0 || maxbackups >= len(backupFiles) {
+		return nil
+	}
+	sort.Slice(backupFiles, func(i, j int) bool {
+		return backupFiles[i].timestamp.After(backupFiles[j].timestamp)
+	})
+
+	for idx := maxbackups; idx < len(backupFiles); idx++ {
+		_ = os.Remove(filepath.Join("./backup", backupFiles[idx].path))
+	}
+
+	return nil
 }
 
-func UpgradeDB() {
+// UpgradeDB initializes the database schema and upgrades to the latest version.
+// It returns an error if migration fails.
+func UpgradeDB() error {
 	m, err := migrate.New(
 		"file://./schema/db",
 		"sqlite3://./databases/data.db?_fk=1&_cslike=0",
 	)
 
 	vers, _, _ := m.Version()
-	DBVersion = logger.IntToString(int(vers))
+	DBVersion = strconv.Itoa(int(vers))
 	if err != nil {
-		log.Fatalf("migration failed... %v", err)
+		return err
 	}
 
-	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-		log.Fatalf("An error occurred while syncing the database.. %v", err)
+	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
+		return err
 	}
+	return nil
 }
+
+// UpgradeIMDB migrates the imdb database to the latest version. It initializes
+// a database migration manager, pointing it to the migration scripts. It then
+// runs the Up() method to apply any necessary changes. Any errors are printed.
 func UpgradeIMDB() {
 	m, err := migrate.New(
 		"file://./schema/imdbdb",
 		"sqlite3://./databases/imdb.db?_fk=1&_mutex=no&_cslike=0",
 	)
 	if err != nil {
-		fmt.Println(fmt.Errorf("migration failed... %v", err))
+		fmt.Println(fmt.Errorf("migration failed... %w", err))
 	}
 
-	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-		fmt.Println(fmt.Errorf("an error occurred while syncing the database.. %v", err))
+	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
+		fmt.Println(fmt.Errorf("an error occurred while syncing the database.. %w", err))
 	}
 }
 
-func RemoveOldDBBackups(max int) error {
-	if max == 0 {
-		return nil
-	}
-
-	prefix := "data.db."
-	files, err := oldDatabaseFiles(prefix)
-	if err != nil {
-		return err
-	}
-
-	if max == 0 || max >= len(*files) {
-		logger.Clear(files)
-		return err
-	}
-
-	i := 0
-	for idx := range *files {
-		// Only count the uncompressed log file or the
-		// compressed log file, not both.
-		if !strings.HasPrefix((*files)[idx].path, prefix) {
-			//if len(files[idx].path) >= len(prefix) && files[idx].path[:len(prefix)] != prefix {
-			continue
-		}
-
-		i++
-
-		if i > max {
-			errRemove := os.Remove(logger.PathJoin("./backup", (*files)[idx].path))
-			if err == nil && errRemove != nil {
-				err = errRemove
-			}
-		}
-	}
-	logger.Clear(files)
-
-	return err
-}
-
-func oldDatabaseFiles(prefix string) (*[]backupInfo, error) {
-	files, err := os.ReadDir("./backup")
-	if err != nil {
-		return nil, errors.New("can't read log file directory: " + err.Error())
-	}
-	if len(files) == 0 {
-		return &[]backupInfo{}, nil
-	}
-	var backupFiles = make([]backupInfo, 0, len(files))
-
-	var fn string
-	for idx := range files {
-		if files[idx].IsDir() {
-			continue
-		}
-		fn = files[idx].Name()
-		if !logger.HasPrefixI(fn, prefix) {
-			//if len(files[idx].Name()) >= len(prefix) && files[idx].Name()[:len(prefix)] != prefix {
-			continue
-		}
-		if t, err := timeFromName(fn, prefix); err == nil {
-			backupFiles = append(backupFiles, backupInfo{t, files[idx].Name()})
-			continue
-		}
-	}
-	logger.Clear(&files)
-
-	sort.Sort(byFormatTime(backupFiles))
-
-	return &backupFiles, nil
-}
-
-func timeFromName(filename, prefix string) (time.Time, error) {
+// timeFromName parses a filename to extract a timestamp, given a known prefix.
+// It returns a zero Time if parsing fails.
+func timeFromName(filename, prefix string) time.Time {
 	if !logger.HasPrefixI(filename, prefix) {
 		//if len(filename) >= len(prefix) && filename[:len(prefix)] != prefix {
-		return time.Time{}, logger.ErrWrongPrefix
+		return time.Time{}
 	}
-	ts := filename[len(prefix):]
-	if idx := strings.Index(ts, "."); idx != -1 {
-		ts = ts[idx+1:]
+	if idx := strings.Index(filename[len(prefix):], "."); idx != -1 {
+		t, err := time.Parse("20060102_150405", filename[len(prefix):][idx+1:])
+		if err != nil {
+			return time.Time{}
+		}
+		return t
 	}
-	return time.Parse("20060102_150405", ts)
+	t, err := time.Parse("20060102_150405", filename[len(prefix):])
+	if err != nil {
+		return time.Time{}
+	}
+	return t
 }
 
-func (b byFormatTime) Less(i, j int) bool {
-	return b[i].timestamp.After(b[j].timestamp)
-}
-
-func (b byFormatTime) Swap(i, j int) {
-	b[i], b[j] = b[j], b[i]
-}
-
-func (b byFormatTime) Len() int {
-	return len(b)
-}
-
-func SQLTimeGetNow() *sql.NullTime {
-	return TimeToSQLTime(time.Now().In(&logger.TimeZone), true)
-}
-func TimeToSQLTime(time time.Time, valid bool) *sql.NullTime {
-	return &sql.NullTime{Time: time, Valid: valid}
-}
-
-func ParseDate(date string) *sql.NullTime {
+// ParseDate parses a date string in "2006-01-02" format and returns a sql.NullTime.
+// Returns a null sql.NullTime if the date string is empty or fails to parse.
+func ParseDate(date string) sql.NullTime {
+	var d sql.NullTime
 	if date == "" {
-		return &sql.NullTime{}
+		return d
+	}
+	var err error
+	d.Time, err = time.Parse("2006-01-02", date)
+	if err != nil {
+		return d
+	}
+	d.Valid = true
+	return d
+}
+
+// ParseDate parses a date string in "2006-01-02" format and returns a sql.NullTime.
+// Returns a null sql.NullTime if the date string is empty or fails to parse.
+func ParseDateTime(date string) time.Time {
+	if date == "" {
+		return time.Time{}
 	}
 	t, err := time.Parse("2006-01-02", date)
-	return TimeToSQLTime(t, err == nil)
+	if err != nil {
+		return t
+	}
+	return time.Time{}
 }
 
-// func SetStringsCache(cachekey string, countsql string, querysql string, dur time.Duration, queryargs ...interface{}) {
-// 	if !logger.GlobalCache.CheckNoType(cachekey) {
-// 		tbl := QueryStaticStringArray(false,
-// 			QueryIntColumn(countsql, queryargs...),
-// 			querysql, queryargs...)
-// 		cache.SetTable(logger.GlobalCache, cachekey, tbl, dur)
-// 	}
-// }
+// GetMediaQualityConfig returns the QualityConfig from cfgp for the
+// media with the given ID. It first checks if there is a quality profile
+// set for that media in the database. If not, it returns the default
+// QualityConfig from cfgp.
+func GetMediaQualityConfig(cfgp *config.MediaTypeConfig, mediaid uint) *config.QualityConfig {
+	str := GetdatarowN[string](false, logger.GetStringsMap(cfgp.Useseries, logger.DBQualityMediaByID), &mediaid)
 
-// func SetOneStringOneIntCache(cachekey string, countsql string, querysql string, dur time.Duration) {
-// 	if !logger.GlobalCache.CheckNoType(cachekey) {
-// 		tbl := queryGenericsT(true, false, QueryIntColumn(countsql), func(elem *DbstaticOneStringOneInt) []interface{} {
-// 			return []interface{}{&elem.Str, &elem.Num}
-// 		}, querysql, nil)
-// 		cache.SetTable(logger.GlobalCache, cachekey, tbl, dur)
-// 	}
-// }
-
-// func SetTwoStringOneIntCache(cachekey string, countsql string, querysql string, dur time.Duration) {
-// 	if !logger.GlobalCache.CheckNoType(cachekey) {
-// 		tbl := queryGenericsT(true, false, QueryIntColumn(countsql), func(elem *DbstaticTwoStringOneInt) []interface{} {
-// 			return []interface{}{&elem.Str1, &elem.Str2, &elem.Num}
-// 		}, querysql, nil)
-// 		cache.SetTable(logger.GlobalCache, cachekey, tbl, dur)
-// 	}
-// }
-
-// func SetThreeStringOneIntCache(cachekey string, countsql string, querysql string, dur time.Duration) {
-// 	if !logger.GlobalCache.CheckNoType(cachekey) {
-// 		tbl := queryGenericsT(true, false, QueryIntColumn(countsql), func(elem *DbstaticThreeStringOneInt) []interface{} {
-// 			return []interface{}{&elem.Str1, &elem.Str2, &elem.Str3, &elem.Num1}
-// 		}, querysql, nil)
-// 		cache.SetTable(logger.GlobalCache, cachekey, tbl, dur)
-// 	}
-// }
-
-func RefreshMoviesCache() {
-	if !config.SettingsGeneral.UseMediaCache {
-		return
+	if str == "" {
+		return config.SettingsQuality[cfgp.DefaultQuality]
 	}
-	// if logger.GlobalCache.CheckNoType("dbmovies_cached") && logger.GlobalCache.CheckNoType("movies_cached") {
-	// 	return
-	// }
-	// SetThreeStringOneIntCache("dbmovies_cached", "select count(*) from dbmovies", "select title, slug, imdb_id, id from dbmovies", 8*time.Hour)
-	// SetOneStringOneIntCache("movies_cached", QueryMoviesCount, "select lower(listname), dbmovie_id from movies", 8*time.Hour)
-
-	if Checkcacheexpire(CacheDBMovieExpire) && Checkcacheexpire(CacheMovieExpire) {
-		return
+	_, ok := config.SettingsQuality[str]
+	if ok {
+		return config.SettingsQuality[str]
 	}
-	CacheDBMovie = *QueryStaticColumnsThreeStringOneInt(false, QueryCountColumn("dbmovies", ""), "select title, slug, imdb_id, id from dbmovies")
-	CacheDBMovieExpire = logger.TimeGetNow().Add(time.Hour * -12)
-
-	CacheMovie = *QueryStaticColumnsOneStringOneInt(false, QueryCountColumn("movies", ""), "select lower(listname), dbmovie_id from movies")
-	CacheMovieExpire = logger.TimeGetNow().Add(time.Hour * -12)
+	return config.SettingsQuality[cfgp.DefaultQuality]
 }
 
-func Refreshmoviestitlecache() {
-	if !config.SettingsGeneral.UseMediaCache {
-		return
+// GetMediaQualityConfig returns the QualityConfig from cfgp for the
+// media with the given ID. It first checks if there is a quality profile
+// set for that media in the database. If not, it returns the default
+// QualityConfig from cfgp.
+func GetMediaQualityConfigStr(cfgp *config.MediaTypeConfig, str string) *config.QualityConfig {
+	if str == "" {
+		return config.SettingsQuality[cfgp.DefaultQuality]
 	}
-	// if logger.GlobalCache.CheckNoType("dbmovietitles_title_slug_cache") {
-	// 	return
-	// }
-	// SetTwoStringOneIntCache("dbmovietitles_title_slug_cache", "select count(*) from dbmovie_titles", "select title, slug, dbmovie_id from dbmovie_titles", 8*time.Hour)
-
-	if Checkcacheexpire(CacheTitlesMovieExpire) {
-		return
+	_, ok := config.SettingsQuality[str]
+	if ok {
+		return config.SettingsQuality[str]
 	}
-	CacheTitlesMovie = *QueryStaticColumnsTwoStringOneInt(false,
-		QueryIntColumn("select count(*) from dbmovie_titles"),
-		"select title, slug, dbmovie_id from dbmovie_titles")
-	CacheTitlesMovieExpire = logger.TimeGetNow().Add(time.Hour * -12)
-}
-func Refreshhistorycache(str string) {
-	if !config.SettingsGeneral.UseMediaCache {
-		return
-	}
-	if logger.HasPrefixI(str, logger.StrMovie) && Checkcacheexpire(CacheHistoryUrlMovieExpire) && Checkcacheexpire(CacheHistoryTitleMovieExpire) {
-		return
-	}
-	if !logger.HasPrefixI(str, logger.StrMovie) && Checkcacheexpire(CacheHistoryUrlSeriesExpire) && Checkcacheexpire(CacheHistoryTitleSeriesExpire) {
-		return
-	}
-
-	if logger.HasPrefixI(str, logger.StrSerie) {
-		CacheHistoryUrlSeries = *QueryStaticStringArray(false,
-			QueryIntColumn("select count() from serie_episode_histories"),
-			"select distinct url from serie_episode_histories")
-		CacheHistoryTitleSeries = *QueryStaticStringArray(false,
-			QueryIntColumn("select count() from serie_episode_histories"),
-			"select distinct title from serie_episode_histories")
-		CacheHistoryUrlSeriesExpire = logger.TimeGetNow().Add(time.Hour * -12)
-		CacheHistoryTitleSeriesExpire = logger.TimeGetNow().Add(time.Hour * -12)
-	} else {
-		CacheHistoryUrlMovie = *QueryStaticStringArray(false,
-			QueryIntColumn("select count() from movie_histories"),
-			"select distinct url from movie_histories")
-		CacheHistoryTitleMovie = *QueryStaticStringArray(false,
-			QueryIntColumn("select count() from movie_histories"),
-			"select distinct title from movie_histories")
-		CacheHistoryUrlMovieExpire = logger.TimeGetNow().Add(time.Hour * -12)
-		CacheHistoryTitleMovieExpire = logger.TimeGetNow().Add(time.Hour * -12)
-	}
-	// historytableurl := "serie_episode_histories_url"
-	// historytabletitle := "serie_episode_histories_title"
-	// historytablecount := "select count() from serie_episode_histories"
-	// historytablequeryurl := "select distinct url from serie_episode_histories"
-	// historytablequerytitle := "select distinct title from serie_episode_histories"
-	// if logger.HasPrefixI(str, logger.StrMovie) {
-	// 	historytableurl = "movie_histories_url"
-	// 	historytabletitle = "movie_histories_title"
-	// 	historytablecount = "select count() from movie_histories"
-	// 	historytablequeryurl = "select distinct url from movie_histories"
-	// 	historytablequerytitle = "select distinct title from movie_histories"
-	// }
-
-	// SetStringsCache(historytableurl, historytablecount, historytablequeryurl, 8*time.Hour)
-
-	// SetStringsCache(historytabletitle, historytablecount, historytablequerytitle, 8*time.Hour)
-
+	return config.SettingsQuality[cfgp.DefaultQuality]
 }
 
-func Refreshseriestitlecache() {
-	if !config.SettingsGeneral.UseMediaCache {
-		return
-	}
-	// if logger.GlobalCache.CheckNoType("dbseries_title_slug_cache") {
-	// 	return
-	// }
-	// SetTwoStringOneIntCache("dbseries_title_slug_cache", "select count(*) from dbseries", "select seriename, slug, id from dbseries", 8*time.Hour)
-
-	if Checkcacheexpire(CacheTitlesSeriesExpire) {
-		return
-	}
-	CacheTitlesSeries = *QueryStaticColumnsTwoStringOneInt(false,
-		QueryIntColumn("select count(*) from dbseries"),
-		"select seriename, slug, id from dbseries")
-	CacheTitlesSeriesExpire = logger.TimeGetNow().Add(time.Hour * -12)
-}
-func Refreshfilescached(cfgpstr string) string {
-	if !config.SettingsGeneral.UseMediaCache {
-		return ""
-	}
-	if cfgpstr[:5] == logger.StrSerie && Checkcacheexpire(CacheFilesSeriesExpire) {
-		return "serie_episode_files_cached"
-	}
-	if cfgpstr[:5] != logger.StrSerie && Checkcacheexpire(CacheFilesMovieExpire) {
-		return "movie_files_cached"
+// GetMediaListIDMovies returns the index of the media list with the given name
+// in cfgp for the movie with the given ID. It returns -1 if cfgp is nil,
+// listname is empty, or no list with that name exists.
+func GetMediaListIDGetListname(cfgp *config.MediaTypeConfig, mediaid uint) int {
+	if cfgp == nil {
+		logger.LogDynamic("error", "the config couldnt be found")
+		return -1
 	}
 
-	tablefilescached := "serie_episode_files_cached"
-	if cfgpstr[:5] == logger.StrSerie {
-		CacheFilesSeries = *QueryStaticStringArray(false,
-			QueryIntColumn("select count() from serie_episode_files"),
-			"select location from serie_episode_files")
-		CacheFilesSeriesExpire = logger.TimeGetNow().Add(time.Hour * -12)
-	} else {
-		tablefilescached = "movie_files_cached"
-		CacheFilesMovie = *QueryStaticStringArray(false,
-			QueryIntColumn("select count() from movie_files"),
-			"select location from movie_files")
-		CacheFilesMovieExpire = logger.TimeGetNow().Add(time.Hour * -12)
+	if config.SettingsGeneral.UseMediaCache {
+		GetMediaListID(cfgp, CacheOneStringTwoIntIndexFuncStr(logger.GetStringsMap(cfgp.Useseries, logger.CacheMedia), mediaid))
 	}
-
-	//SetStringsCache(tablefilescached, querycountunwanted, queryunwanted, 3*time.Hour)
-
-	return tablefilescached
+	return GetMediaListID(cfgp, GetdatarowN[string](false, logger.GetStringsMap(cfgp.Useseries, logger.DBListnameByMediaID), &mediaid))
 }
 
-func Refreshunmatchedcached(cfgpstr string) string {
-	if !config.SettingsGeneral.UseMediaCache {
-		return ""
-	}
-	if cfgpstr[:5] == logger.StrSerie && Checkcacheexpire(CacheUnmatchedSeriesExpire) {
-		return logger.StrSerieFileUnmatched
-	}
-	if cfgpstr[:5] != logger.StrSerie && Checkcacheexpire(CacheUnmatchedMovieExpire) {
-		return logger.StrMovieFileUnmatched
+// GetMediaListID returns the index of the media list with the given name in cfgp.
+// It returns -1 if cfgp is nil, listname is empty, or no list with that name exists.
+func GetMediaListID(cfgp *config.MediaTypeConfig, listname string) int {
+	if cfgp == nil {
+		logger.LogDynamic("error", "the config couldnt be found")
+		return -1
 	}
 
-	tablecached := logger.StrSerieFileUnmatched
-	//querycountunmatched := "select count() from serie_file_unmatcheds where (last_checked > ? or last_checked is null)"
-	//queryunmatched := "select filepath from serie_file_unmatcheds where (last_checked > ? or last_checked is null)"
-	if cfgpstr[:5] != logger.StrSerie {
-		CacheUnmatchedSeries = *QueryStaticStringArray(false,
-			QueryIntColumn("select count() from movie_file_unmatcheds where (last_checked > ? or last_checked is null)", TimeToSQLTime(logger.TimeGetNow().Add(time.Hour*-12), true)),
-			"select filepath from movie_file_unmatcheds where (last_checked > ? or last_checked is null)", TimeToSQLTime(logger.TimeGetNow().Add(time.Hour*-12), true))
-		CacheUnmatchedSeriesExpire = logger.TimeGetNow().Add(time.Hour * -12)
-	} else {
-		CacheUnmatchedMovie = *QueryStaticStringArray(false,
-			QueryIntColumn("select count() from movie_file_unmatcheds where (last_checked > ? or last_checked is null)", TimeToSQLTime(logger.TimeGetNow().Add(time.Hour*-12), true)),
-			"select filepath from movie_file_unmatcheds where (last_checked > ? or last_checked is null)", TimeToSQLTime(logger.TimeGetNow().Add(time.Hour*-12), true))
-		CacheUnmatchedMovieExpire = logger.TimeGetNow().Add(time.Hour * -12)
+	if listname == "" {
+		return -1
 	}
+	for k := range cfgp.Lists {
+		if strings.EqualFold(cfgp.Lists[k].Name, listname) {
+			return k
+		}
+	}
+	return -1
+}
 
-	//SetStringsCache(tablecached, querycountunmatched, queryunmatched, 3*time.Hour, TimeToSQLTime(logger.TimeGetNow().Add(time.Hour*-12), true))
+// GetDbStaticTwoStringIdx1 returns the index of the DbstaticTwoString element
+// with Str1 equal to v, or -1 if not found.
+func GetDbStaticTwoStringIdx1(tbl []DbstaticTwoString, v string) int {
+	for idx := range tbl {
+		if strings.EqualFold(tbl[idx].Str1, v) {
+			return idx
+		}
+	}
+	return -1
+}
 
-	return tablecached
+// GetDbStaticOneStringOneIntIdx searches tbl for an element where Str equals v, and returns
+// the index of that element, or -1 if not found.
+func GetDbStaticOneStringOneIntIdx(tbl []DbstaticOneStringOneInt, v string) int {
+	for idx := range tbl {
+		if strings.EqualFold(tbl[idx].Str, v) {
+			return idx
+		}
+	}
+	return -1
 }

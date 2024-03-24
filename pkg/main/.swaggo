@@ -1,0 +1,4 @@
+replace sql.NullTime time.Time
+replace time.Duration string
+replace cron.Schedule time.Time
+replace cron.EntryID int

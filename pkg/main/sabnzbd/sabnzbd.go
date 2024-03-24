@@ -190,7 +190,7 @@ func (su *sabnzbdURL) Unsecure() {
 	su.rt = defaultInsecureTransport
 }
 
-func (su *sabnzbdURL) CallJSON(r interface{}) error {
+func (su *sabnzbdURL) CallJSON(r any) error {
 	httpClient := &http.Client{Transport: su.rt}
 	//fmt.Printf("GET URL: %s", su.String())
 	resp, err := httpClient.Get(su.String())
@@ -216,7 +216,7 @@ func (su *sabnzbdURL) CallJSON(r interface{}) error {
 	return nil
 }
 
-func (su *sabnzbdURL) CallJSONMultipart(reader io.Reader, contentType string, r interface{}) error {
+func (su *sabnzbdURL) CallJSONMultipart(reader io.Reader, contentType string, r any) error {
 	httpClient := &http.Client{Transport: su.rt}
 	resp, err := httpClient.Post(su.String(), contentType, reader)
 	if err != nil {

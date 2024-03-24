@@ -29,7 +29,7 @@ func MyPopUpWithIframe(id, title string, data action.IframeData, width, height s
 		data.Src = data.Src + "?"
 	}
 	modalID := "info-popup-model-" + utils.Uuid(10)
-	var handler types.Handler = func(ctx *context.Context) (success bool, msg string, res interface{}) {
+	var handler types.Handler = func(ctx *context.Context) (success bool, msg string, res any) {
 		param := ""
 		if data.AddParameterFn != nil {
 			param = data.AddParameterFn(ctx)

@@ -3,21 +3,11 @@ package database
 import (
 	"database/sql"
 	"time"
+
+	"github.com/Kellerman81/go_media_downloader/config"
 )
 
 type Serie struct {
-	ID             uint
-	CreatedAt      time.Time `db:"created_at"`
-	UpdatedAt      time.Time `db:"updated_at"`
-	Listname       string
-	Rootpath       string
-	DbserieID      uint `db:"dbserie_id"`
-	DontUpgrade    bool `db:"dont_upgrade"`
-	DontSearch     bool `db:"dont_search"`
-	SearchSpecials bool `db:"search_specials"`
-	IgnoreRuntime  bool `db:"ignore_runtime"`
-}
-type SerieJSON struct {
 	ID             uint
 	CreatedAt      time.Time `db:"created_at"`
 	UpdatedAt      time.Time `db:"updated_at"`
@@ -45,21 +35,6 @@ type SerieEpisode struct {
 	SerieID          uint `db:"serie_id"`
 	DbserieID        uint `db:"dbserie_id"`
 }
-type SerieEpisodeJSON struct {
-	ID               uint
-	CreatedAt        time.Time `db:"created_at"`
-	UpdatedAt        time.Time `db:"updated_at"`
-	Lastscan         time.Time `db:"lastscan" json:"lastscan" time_format:"2006-01-02 22:00" time_utc:"1"`
-	Blacklisted      bool
-	QualityReached   bool   `db:"quality_reached"`
-	QualityProfile   string `db:"quality_profile"`
-	Missing          bool
-	DontUpgrade      bool `db:"dont_upgrade"`
-	DontSearch       bool `db:"dont_search"`
-	DbserieEpisodeID uint `db:"dbserie_episode_id"`
-	SerieID          uint `db:"serie_id"`
-	DbserieID        uint `db:"dbserie_id"`
-}
 type SerieFileUnmatched struct {
 	ID          uint
 	CreatedAt   time.Time `db:"created_at"`
@@ -68,15 +43,6 @@ type SerieFileUnmatched struct {
 	Filepath    string
 	LastChecked sql.NullTime `db:"last_checked"`
 	ParsedData  string       `db:"parsed_data"`
-}
-type SerieFileUnmatchedJSON struct {
-	ID          uint
-	CreatedAt   time.Time `db:"created_at"`
-	UpdatedAt   time.Time `db:"updated_at"`
-	Listname    string
-	Filepath    string
-	LastChecked time.Time `db:"last_checked" json:"last_checked" time_format:"2006-01-02 22:00" time_utc:"1"`
-	ParsedData  string    `db:"parsed_data"`
 }
 type SerieEpisodeFile struct {
 	ID               uint
@@ -182,17 +148,6 @@ type ResultSerieEpisodes struct {
 	Missing          bool
 	DbserieEpisodeID uint `db:"dbserie_episode_id"`
 }
-type ResultSerieEpisodesJSON struct {
-	DbserieEpisodeJSON
-	Listname         string
-	Rootpath         string
-	Lastscan         time.Time `db:"lastscan" json:"lastscan" time_format:"2006-01-02 22:00" time_utc:"1"`
-	Blacklisted      bool
-	QualityReached   bool   `db:"quality_reached"`
-	QualityProfile   string `db:"quality_profile"`
-	Missing          bool
-	DbserieEpisodeID uint `db:"dbserie_episode_id"`
-}
 
 type DbserieEpisode struct {
 	ID         uint
@@ -208,16 +163,15 @@ type DbserieEpisode struct {
 	Runtime    int
 	DbserieID  uint `db:"dbserie_id"`
 }
-type DbserieEpisodeJSON struct {
-	ID         uint
-	CreatedAt  time.Time `db:"created_at"`
-	UpdatedAt  time.Time `db:"updated_at"`
-	Episode    string
-	Season     string
-	Identifier string
-	Title      string
-	FirstAired time.Time `db:"first_aired" json:"first_aired" time_format:"2006-01-02" time_utc:"1"`
-	Overview   string
-	Poster     string
-	DbserieID  uint `db:"dbserie_id"`
+
+// Close cleans up the Dbserie value after use.
+// It nulls out fields to avoid lingering references and aid garbage collection.
+// This is useful to do after finishing using a Dbserie value
+// that was retrieved from the database.
+func (s *Dbserie) Close() {
+	if config.SettingsGeneral.DisableVariableCleanup || s == nil {
+		return
+	}
+	*s = Dbserie{}
+	//logger.Clear(s)
 }

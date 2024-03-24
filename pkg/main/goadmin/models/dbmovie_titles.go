@@ -12,13 +12,12 @@ import (
 )
 
 func GetDbmovieTitlesTable(ctx *context.Context) table.Table {
-
 	dbmovieTitles := table.NewDefaultTable(table.DefaultConfigWithDriverAndConnection("sqlite", "media"))
 
 	info := dbmovieTitles.GetInfo().HideFilterArea()
 
 	info.AddField("Id", "id", db.Integer).FieldSortable()
-	info.AddField("Dbmovie_id", "dbmovie_id", db.Integer).FieldDisplay(func(value types.FieldModel) interface{} {
+	info.AddField("Dbmovie_id", "dbmovie_id", db.Integer).FieldDisplay(func(value types.FieldModel) any {
 		return template.Default().
 			Link().
 			SetURL("/admin/info/dbmovies/detail?__goadmin_detail_pk=" + value.Value).

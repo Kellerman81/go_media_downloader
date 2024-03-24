@@ -9,13 +9,12 @@ import (
 )
 
 func GetSchedulerTable(ctx *context.Context) (userTable table.Table) {
-
 	userTable = table.NewDefaultTable(table.Config{})
 	userTable.GetOnlyInfo()
-	var queue []map[string]interface{}
+	var queue []map[string]any
 	i := 0
 	for _, value := range worker.GetSchedules() {
-		queue = append(queue, map[string]interface{}{
+		queue = append(queue, map[string]any{
 			"id":        i,
 			"job":       value.JobName,
 			"lastrun":   value.LastRun.Format("2006-01-02 15:04:05"),
@@ -44,7 +43,7 @@ func GetSchedulerTable(ctx *context.Context) (userTable table.Table) {
 	info.SetTable("Scheduler").
 		SetTitle("Scheduler").
 		SetDescription("Scheduler").
-		SetGetDataFn(func(param parameter.Parameters) (data []map[string]interface{}, size int) {
+		SetGetDataFn(func(param parameter.Parameters) (data []map[string]any, size int) {
 			param.PK()
 			return queue, len(queue)
 		})

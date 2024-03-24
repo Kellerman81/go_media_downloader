@@ -1,9 +1,9 @@
 package parser
 
 import (
-	"bytes"
-	"encoding/json"
 	"errors"
+	"fmt"
+	"path/filepath"
 	"runtime"
 	"strings"
 
@@ -11,188 +11,207 @@ import (
 	"github.com/Kellerman81/go_media_downloader/config"
 	"github.com/Kellerman81/go_media_downloader/database"
 	"github.com/Kellerman81/go_media_downloader/logger"
+	"github.com/Kellerman81/go_media_downloader/pool"
+	"github.com/goccy/go-json"
 )
 
-type MediaInfoJson struct {
-	Media struct {
-		Track []Track `json:"track"`
-	} `json:"media"`
+type mediaInfoJson struct {
+	Media mediaInfoJsonMedia `json:"media"`
+}
+type mediaInfoJsonMedia struct {
+	Track []track `json:"track"`
 }
 
-type Track struct {
-	Type                  string `json:"@type"`
-	ID                    string `json:"ID"`
-	VideoCount            string `json:"VideoCount,omitempty"`
-	AudioCount            string `json:"AudioCount,omitempty"`
-	FileExtension         string `json:"FileExtension,omitempty"`
-	Format                string `json:"Format"`
-	FileSize              string `json:"FileSize,omitempty"`
-	Duration              string `json:"Duration"`
-	OverallBitRateMode    string `json:"OverallBitRate_Mode,omitempty"`
-	OverallBitRate        string `json:"OverallBitRate,omitempty"`
-	FrameRate             string `json:"FrameRate"`
-	FrameCount            string `json:"FrameCount,omitempty"`
-	FileModifiedDate      string `json:"File_Modified_Date,omitempty"`
-	FileModifiedDateLocal string `json:"File_Modified_Date_Local,omitempty"`
-	Extra                 struct {
-		OverallBitRatePrecisionMin string `json:"OverallBitRate_Precision_Min"`
-		OverallBitRatePrecisionMax string `json:"OverallBitRate_Precision_Max"`
-	} `json:"extra,omitempty"`
-	StreamOrder                    string `json:"StreamOrder,omitempty"`
-	MenuID                         string `json:"MenuID,omitempty"`
-	FormatProfile                  string `json:"Format_Profile,omitempty"`
-	FormatLevel                    string `json:"Format_Level,omitempty"`
-	FormatSettingsCABAC            string `json:"Format_Settings_CABAC,omitempty"`
-	FormatSettingsRefFrames        string `json:"Format_Settings_RefFrames,omitempty"`
-	CodecID                        string `json:"CodecID,omitempty"`
-	BitRateMode                    string `json:"BitRate_Mode,omitempty"`
-	BitRateNominal                 string `json:"BitRate_Nominal,omitempty"`
-	BitRateMaximum                 string `json:"BitRate_Maximum,omitempty"`
-	Width                          string `json:"Width,omitempty"`
-	Height                         string `json:"Height,omitempty"`
-	StoredHeight                   string `json:"Stored_Height,omitempty"`
-	SampledWidth                   string `json:"Sampled_Width,omitempty"`
-	SampledHeight                  string `json:"Sampled_Height,omitempty"`
-	PixelAspectRatio               string `json:"PixelAspectRatio,omitempty"`
-	DisplayAspectRatio             string `json:"DisplayAspectRatio,omitempty"`
-	ColorSpace                     string `json:"ColorSpace,omitempty"`
-	ChromaSubsampling              string `json:"ChromaSubsampling,omitempty"`
-	BitDepth                       string `json:"BitDepth,omitempty"`
-	ScanType                       string `json:"ScanType,omitempty"`
-	Delay                          string `json:"Delay,omitempty"`
-	EncodedLibrary                 string `json:"Encoded_Library,omitempty"`
-	EncodedLibraryName             string `json:"Encoded_Library_Name,omitempty"`
-	EncodedLibraryVersion          string `json:"Encoded_Library_Version,omitempty"`
-	EncodedLibrarySettings         string `json:"Encoded_Library_Settings,omitempty"`
-	BufferSize                     string `json:"BufferSize,omitempty"`
-	ColourDescriptionPresent       string `json:"colour_description_present,omitempty"`
-	ColourDescriptionPresentSource string `json:"colour_description_present_Source,omitempty"`
-	ColourRange                    string `json:"colour_range,omitempty"`
-	ColourRangeSource              string `json:"colour_range_Source,omitempty"`
-	ColourPrimaries                string `json:"colour_primaries,omitempty"`
-	ColourPrimariesSource          string `json:"colour_primaries_Source,omitempty"`
-	TransferCharacteristics        string `json:"transfer_characteristics,omitempty"`
-	TransferCharacteristicsSource  string `json:"transfer_characteristics_Source,omitempty"`
-	MatrixCoefficients             string `json:"matrix_coefficients,omitempty"`
-	MatrixCoefficientsSource       string `json:"matrix_coefficients_Source,omitempty"`
-	FormatVersion                  string `json:"Format_Version,omitempty"`
-	FormatAdditionalFeatures       string `json:"Format_AdditionalFeatures,omitempty"`
-	MuxingMode                     string `json:"MuxingMode,omitempty"`
-	Channels                       string `json:"Channels,omitempty"`
-	ChannelPositions               string `json:"ChannelPositions,omitempty"`
-	ChannelLayout                  string `json:"ChannelLayout,omitempty"`
-	SamplesPerFrame                string `json:"SamplesPerFrame,omitempty"`
-	SamplingRate                   string `json:"SamplingRate,omitempty"`
-	SamplingCount                  string `json:"SamplingCount,omitempty"`
-	CompressionMode                string `json:"Compression_Mode,omitempty"`
-	DelaySource                    string `json:"Delay_Source,omitempty"`
-	Language                       string `json:"Language,omitempty"`
+// track represents a media track from the JSON response
+type track struct {
+	// Type is the JSON key "@type"
+	Type string `json:"@type"`
+
+	// Format is the JSON key "Format"
+	Format string `json:"Format"`
+
+	// Duration is the JSON key "Duration"
+	Duration string `json:"Duration"`
+
+	// CodecID is the JSON key "CodecID"
+	CodecID string `json:"CodecID,omitempty"`
+
+	// Width is the JSON key "Width"
+	Width string `json:"Width,omitempty"`
+
+	// Height is the JSON key "Height"
+	Height string `json:"Height,omitempty"`
+
+	// Language is the JSON key "Language"
+	Language string `json:"Language,omitempty"`
 }
 
-var mediainfopath string
+// type track struct {
+// 	Type string `json:"@type"`
+// 	//ID         string `json:"ID"`
+// 	//VideoCount string `json:"VideoCount,omitempty"`
+// 	//AudioCount string `json:"AudioCount,omitempty"`
+// 	//FileExtension                  string     `json:"FileExtension,omitempty"`
+// 	Format string `json:"Format"`
+// 	//FileSize                       string     `json:"FileSize,omitempty"`
+// 	Duration string `json:"Duration"`
+// 	//OverallBitRateMode             string     `json:"OverallBitRate_Mode,omitempty"`
+// 	//OverallBitRate                 string     `json:"OverallBitRate,omitempty"`
+// 	//FrameRate                      string     `json:"FrameRate"`
+// 	//FrameCount                     string     `json:"FrameCount,omitempty"`
+// 	//FileModifiedDate               string     `json:"File_Modified_Date,omitempty"`
+// 	//FileModifiedDateLocal          string     `json:"File_Modified_Date_Local,omitempty"`
+// 	//Extra                          TrackExtra `json:"extra,omitempty"`
+// 	//StreamOrder                    string     `json:"StreamOrder,omitempty"`
+// 	//MenuID                         string     `json:"MenuID,omitempty"`
+// 	//FormatProfile                  string     `json:"Format_Profile,omitempty"`
+// 	//FormatLevel                    string     `json:"Format_Level,omitempty"`
+// 	//FormatSettingsCABAC            string     `json:"Format_Settings_CABAC,omitempty"`
+// 	//FormatSettingsRefFrames        string     `json:"Format_Settings_RefFrames,omitempty"`
+// 	CodecID string `json:"CodecID,omitempty"`
+// 	//BitRateMode                    string     `json:"BitRate_Mode,omitempty"`
+// 	//BitRateNominal                 string     `json:"BitRate_Nominal,omitempty"`
+// 	//BitRateMaximum                 string     `json:"BitRate_Maximum,omitempty"`
+// 	Width  string `json:"Width,omitempty"`
+// 	Height string `json:"Height,omitempty"`
+// 	//StoredHeight                   string     `json:"Stored_Height,omitempty"`
+// 	//SampledWidth                   string     `json:"Sampled_Width,omitempty"`
+// 	//SampledHeight                  string     `json:"Sampled_Height,omitempty"`
+// 	//PixelAspectRatio               string     `json:"PixelAspectRatio,omitempty"`
+// 	//DisplayAspectRatio             string     `json:"DisplayAspectRatio,omitempty"`
+// 	//ColorSpace                     string     `json:"ColorSpace,omitempty"`
+// 	//ChromaSubsampling              string     `json:"ChromaSubsampling,omitempty"`
+// 	//BitDepth                       string     `json:"BitDepth,omitempty"`
+// 	//ScanType                       string     `json:"ScanType,omitempty"`
+// 	//Delay                          string     `json:"Delay,omitempty"`
+// 	//EncodedLibrary                 string     `json:"Encoded_Library,omitempty"`
+// 	//EncodedLibraryName             string     `json:"Encoded_Library_Name,omitempty"`
+// 	//EncodedLibraryVersion          string     `json:"Encoded_Library_Version,omitempty"`
+// 	//EncodedLibrarySettings         string     `json:"Encoded_Library_Settings,omitempty"`
+// 	//BufferSize                     string     `json:"BufferSize,omitempty"`
+// 	//ColourDescriptionPresent       string     `json:"colour_description_present,omitempty"`
+// 	//ColourDescriptionPresentSource string     `json:"colour_description_present_Source,omitempty"`
+// 	//ColourRange                    string     `json:"colour_range,omitempty"`
+// 	//ColourRangeSource              string     `json:"colour_range_Source,omitempty"`
+// 	//ColourPrimaries                string     `json:"colour_primaries,omitempty"`
+// 	//ColourPrimariesSource          string     `json:"colour_primaries_Source,omitempty"`
+// 	//TransferCharacteristics        string     `json:"transfer_characteristics,omitempty"`
+// 	//TransferCharacteristicsSource  string     `json:"transfer_characteristics_Source,omitempty"`
+// 	//MatrixCoefficients             string     `json:"matrix_coefficients,omitempty"`
+// 	//MatrixCoefficientsSource       string     `json:"matrix_coefficients_Source,omitempty"`
+// 	//FormatVersion                  string     `json:"Format_Version,omitempty"`
+// 	//FormatAdditionalFeatures       string     `json:"Format_AdditionalFeatures,omitempty"`
+// 	//MuxingMode                     string     `json:"MuxingMode,omitempty"`
+// 	//Channels                       string     `json:"Channels,omitempty"`
+// 	//ChannelPositions               string     `json:"ChannelPositions,omitempty"`
+// 	//ChannelLayout                  string     `json:"ChannelLayout,omitempty"`
+// 	//SamplesPerFrame                string     `json:"SamplesPerFrame,omitempty"`
+// 	//SamplingRate                   string     `json:"SamplingRate,omitempty"`
+// 	//SamplingCount                  string     `json:"SamplingCount,omitempty"`
+// 	//CompressionMode                string     `json:"Compression_Mode,omitempty"`
+// 	//DelaySource                    string     `json:"Delay_Source,omitempty"`
+// 	Language string `json:"Language,omitempty"`
+// }
 
+var plmediainfo = pool.NewPool(100, 0, func(b *mediaInfoJson) {}, func(b *mediaInfoJson) { *b = mediaInfoJson{} })
+
+// getmediainfoFilename returns the path to the mediainfo executable.
+// It first checks if a custom path has been set in mediainfopath.
+// If not, it constructs the default path based on the OS and the
+// config.SettingsGeneral.MediainfoPath setting.
 func getmediainfoFilename() string {
 	if mediainfopath != "" {
 		return mediainfopath
 	}
 
 	if runtime.GOOS == "windows" {
-		mediainfopath = logger.PathJoin(config.SettingsGeneral.MediainfoPath, "mediainfo.exe")
+		mediainfopath = filepath.Join(config.SettingsGeneral.MediainfoPath, "mediainfo.exe")
 	} else {
-		mediainfopath = logger.PathJoin(config.SettingsGeneral.MediainfoPath, "mediainfo")
+		mediainfopath = filepath.Join(config.SettingsGeneral.MediainfoPath, "mediainfo")
 	}
 	return mediainfopath
 }
-func parsemediainfo(m *apiexternal.ParseInfo, file *string, qualityTemplate string) error {
-	//ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	//defer cancel()
-	//cmd := exec.CommandContext(ctx, getmediainfoFilename(), "--Output=JSON", *file)
-	var outputBuf, stdErr bytes.Buffer
-	err := ExecCmd(getmediainfoFilename(), file, "mediainfo", &outputBuf, &stdErr)
-	defer outputBuf.Reset()
-	defer stdErr.Reset()
-	//cmd := exec.Command(getmediainfoFilename(), "--Output=JSON", *file)
-	//var outputBuf, stdErr bytes.Buffer
 
-	//cmd.Stdout = &outputBuf
-	//cmd.Stderr = &stdErr
-	//err := cmd.Run()
-	if err != nil {
-		return errors.New("error running mediainfo [" + stdErr.String() + "] " + err.Error() + " [" + outputBuf.String() + "]")
+// parsemediainfo parses the output of mediainfo for the given file.
+// It extracts information about the media tracks, resolution, languages,
+// codecs etc. and populates the FileParser struct with the extracted data.
+// It handles calling mediainfo and parsing the JSON output.
+func parsemediainfo(m *apiexternal.FileParser, file string, qualcfg *config.QualityConfig) error {
+	if file == "" {
+		return logger.ErrNotFound
 	}
-	//cancel()
-	//logger.ClearVar(cmd)
+	out := ExecCmd(getmediainfoFilename(), file, "mediainfo")
+	defer out.Close()
+	if out.Err != nil {
+		return fmt.Errorf("error running mediainfo [%s] %s [%s]", out.Outerror, out.Err.Error(), out.Out)
+	}
 
-	if stdErr.Len() > 0 {
-		return errors.New("mediainfo error: " + stdErr.String())
+	if out.Outerror != "" {
+		return errors.New("mediainfo error: " + out.Outerror)
 	}
-	var info MediaInfoJson
-	err = json.NewDecoder(&outputBuf).Decode(&info)
+	info := plmediainfo.Get()
+	defer plmediainfo.Put(info)
+	err := json.Unmarshal(out.Out, info)
 	if err != nil {
 		return err
 	}
 
 	if len(info.Media.Track) == 0 {
-		return errors.New("no tracks")
+		return logger.ErrTracksEmpty
 	}
-	defer logger.ClearVar(&info)
 	var redetermineprio bool
-	var getreso string
-	for idxstream := range info.Media.Track {
-		if info.Media.Track[idxstream].Type == "Audio" {
-			if info.Media.Track[idxstream].Language != "" {
-				m.Languages = append(m.Languages, info.Media.Track[idxstream].Language)
+	var n int
+	for idx := range info.Media.Track {
+		if info.Media.Track[idx].Type == "Audio" && info.Media.Track[idx].Language != "" {
+			n++
+		}
+	}
+	m.M.Languages = make([]string, 0, n)
+	for _, track := range info.Media.Track {
+		if track.Type == "Audio" {
+			if track.Language != "" {
+				m.M.Languages = append(m.M.Languages, track.Language)
 			}
-			if m.Audio == "" || (!strings.EqualFold(info.Media.Track[idxstream].CodecID, m.Audio) && info.Media.Track[idxstream].Format != "") {
-				m.Audio = info.Media.Track[idxstream].Format
-				m.AudioID = gettypeids(logger.DisableParserStringMatch, m.Audio, &database.DBConnect.GetaudiosIn)
+			if m.M.Audio == "" || (track.Format != "" && !strings.EqualFold(track.CodecID, m.M.Audio)) {
+				m.M.Audio = track.Format
+				m.M.AudioID = gettypeids(m.M.Audio, database.DBConnect.GetaudiosIn)
 				redetermineprio = true
 			}
 			continue
 		}
-		if info.Media.Track[idxstream].Type != "video" {
+		if track.Type != "video" {
 			continue
 		}
 
-		if strings.EqualFold(info.Media.Track[idxstream].Format, "mpeg4") && strings.EqualFold(info.Media.Track[idxstream].CodecID, "xvid") {
-			info.Media.Track[idxstream].Format = info.Media.Track[idxstream].CodecID
+		if strings.EqualFold(track.Format, "mpeg4") && strings.EqualFold(track.CodecID, "xvid") {
+			track.Format = track.CodecID
 		}
-		if m.Codec == "" || (!strings.EqualFold(info.Media.Track[idxstream].Format, m.Codec) && info.Media.Track[idxstream].Format != "") {
-			m.Codec = info.Media.Track[idxstream].Format
-			m.CodecID = gettypeids(logger.DisableParserStringMatch, m.Codec, &database.DBConnect.GetcodecsIn)
+		if m.M.Codec == "" || (track.Format != "" && !strings.EqualFold(track.Format, m.M.Codec)) {
+			m.M.Codec = track.Format
+			m.M.CodecID = gettypeids(m.M.Codec, database.DBConnect.GetcodecsIn)
 			redetermineprio = true
 		}
-		m.Height = logger.StringToInt(info.Media.Track[idxstream].Height)
-		m.Width = logger.StringToInt(info.Media.Track[idxstream].Width)
-		m.Runtime = logger.StringToInt(logger.SplitByRet(info.Media.Track[idxstream].Duration, '.'))
+		m.M.Height = logger.StringToInt(track.Height)
+		m.M.Width = logger.StringToInt(track.Width)
+		track.Duration = logger.SplitByFullP(track.Duration, '.')
+		m.M.Runtime = logger.StringToInt(track.Duration)
 
-		if m.Height > m.Width {
-			m.Height, m.Width = m.Width, m.Height
+		if m.M.Height > m.M.Width {
+			m.M.Height, m.M.Width = m.M.Width, m.M.Height
 		}
-		getreso = parseresolution(m.Height, m.Width)
+		getreso := parseresolution(&m.M)
 
-		if getreso != "" && (m.Resolution == "" || !strings.EqualFold(getreso, m.Resolution)) {
-			m.Resolution = getreso
-			m.ResolutionID = gettypeids(logger.DisableParserStringMatch, m.Resolution, &database.DBConnect.GetresolutionsIn)
+		if getreso != "" && (m.M.Resolution == "" || !strings.EqualFold(getreso, m.M.Resolution)) {
+			m.M.Resolution = getreso
+			m.M.ResolutionID = gettypeids(m.M.Resolution, database.DBConnect.GetresolutionsIn)
 			redetermineprio = true
 		}
 	}
 
 	if redetermineprio {
-		//allQualityPrioritiesMu.Lock()
-		cfgname := config.SettingsQuality["quality_"+qualityTemplate].Name
-		intid := -1
-		for idxi := range allQualityPrioritiesWantedT {
-			if strings.EqualFold(allQualityPrioritiesWantedT[idxi].QualityGroup, cfgname) && allQualityPrioritiesWantedT[idxi].ResolutionID == m.ResolutionID && allQualityPrioritiesWantedT[idxi].QualityID == m.QualityID && allQualityPrioritiesWantedT[idxi].CodecID == m.CodecID && allQualityPrioritiesWantedT[idxi].AudioID == m.AudioID {
-				intid = idxi
-				break
-			}
-		}
-		//intid := logger.IndexFunc(&allQualityPrioritiesWantedT, func(e Prioarr) bool {
-		//	return strings.EqualFold(e.QualityGroup, cfgname) && e.ResolutionID == m.ResolutionID && e.QualityID == m.QualityID && e.CodecID == m.CodecID && e.AudioID == m.AudioID
-		//})
+		intid := findpriorityidxwanted(m.M.ResolutionID, m.M.QualityID, m.M.CodecID, m.M.AudioID, qualcfg)
 		if intid != -1 {
-			m.Priority = allQualityPrioritiesWantedT[intid].Priority
+			m.M.Priority = allQualityPrioritiesWantedT[intid].Priority
 		}
 	}
 	return nil

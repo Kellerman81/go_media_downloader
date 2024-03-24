@@ -3,6 +3,7 @@ package api
 
 import (
 	"database/sql"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/database"
 	"github.com/Kellerman81/go_media_downloader/downloader"
 	"github.com/Kellerman81/go_media_downloader/logger"
+	"github.com/Kellerman81/go_media_downloader/metadata"
 	"github.com/Kellerman81/go_media_downloader/searcher"
 	"github.com/Kellerman81/go_media_downloader/utils"
 	"github.com/Kellerman81/go_media_downloader/worker"
@@ -19,33 +21,36 @@ import (
 )
 
 func AddMoviesRoutes(routermovies *gin.RouterGroup) {
-
-	routermovies.GET("/all/refresh", apirefreshMoviesInc)
-	routermovies.GET("/all/refreshall", apirefreshMovies)
-	routermovies.GET("/refresh/:id", apirefreshMovie)
-
-	routermovies.GET("/unmatched", apiMovieListUnmatched)
-	routermovies.GET("/", apiMovieList)
-	routermovies.POST("/", updateDBMovie)
-	routermovies.DELETE("/:id", apiMovieDelete)
-
-	routermovies.POST("/list/", updateMovie)
-
-	routermovies.GET("/list/:name", apiMovieListGet)
-	routermovies.DELETE("/list/:id", movieDeleteList)
-
-	routermovies.GET("/job/:job", apimoviesAllJobs)
-	routermovies.GET("/job/:job/:name", apimoviesJobs)
-
-	routermovies.GET("/rss/search/list/:group", apiMoviesRssSearchList)
-
-	routermoviessearch := routermovies.Group("/search")
+	routermovies.Use(checkauth)
 	{
-		routermoviessearch.GET("/id/:id", apimoviesSearch)
-		routermoviessearch.GET("/list/:id", apimoviesSearchList)
-		routermoviessearch.POST("/download/:id", apimoviesSearchDownload)
-		routermoviessearch.GET("/history/clear/:name", apimoviesClearHistoryName)
-		routermoviessearch.GET("/history/clearid/:id", apiMoviesClearHistoryID)
+		routermovies.GET("/all/refresh", apirefreshMoviesInc)
+		routermovies.GET("/all/refreshall", apirefreshMovies)
+		routermovies.GET("/refresh/:id", apirefreshMovie)
+
+		routermovies.GET("/unmatched", apiMovieListUnmatched)
+		routermovies.GET("/", apiMovieList)
+		routermovies.POST("/", updateDBMovie)
+		routermovies.DELETE("/:id", apiMovieDelete)
+
+		routermovies.POST("/list/", updateMovie)
+
+		routermovies.GET("/list/:name", apiMovieListGet)
+		routermovies.GET("/metadata/:imdb", apiMovieMetadataGet)
+		routermovies.DELETE("/list/:id", movieDeleteList)
+
+		routermovies.GET("/job/:job", apimoviesAllJobs)
+		routermovies.GET("/job/:job/:name", apimoviesJobs)
+
+		routermovies.GET("/rss/search/list/:group", apiMoviesRssSearchList)
+
+		routermoviessearch := routermovies.Group("/search")
+		{
+			routermoviessearch.GET("/id/:id", apimoviesSearch)
+			routermoviessearch.GET("/list/:id", apimoviesSearchList)
+			routermoviessearch.POST("/download/:id", apimoviesSearchDownload)
+			routermoviessearch.GET("/history/clear/:name", apimoviesClearHistoryName)
+			routermoviessearch.GET("/history/clearid/:id", apiMoviesClearHistoryID)
+		}
 	}
 }
 
@@ -55,16 +60,15 @@ func AddMoviesRoutes(routermovies *gin.RouterGroup) {
 // @Param        limit  query     int     false  "Limit"
 // @Param        page   query     int     false  "Page"
 // @Param        order  query     string  false  "Order By"
-// @Success      200    {object}   database.DbmovieJSON
-// @Failure      401    {object}  string
+// @Param        apikey query     string    true  "apikey"
+// @Success      200    {object}   Jsondatarows{data=[]database.Dbmovie}
+// @Failure      401    {object}  Jsonerror
 // @Router       /api/movies [get]
 func apiMovieList(ctx *gin.Context) {
-	if auth(ctx) == http.StatusUnauthorized {
-		return
-	}
+
 	var query database.Querywithargs
 
-	rows := database.QueryIntColumn("select count() from dbmovies")
+	rows := database.GetdatarowN[int](false, "select count() from dbmovies")
 	limit := 0
 	page := 0
 	if queryParam, ok := ctx.GetQuery("limit"); ok {
@@ -97,15 +101,14 @@ func apiMovieList(ctx *gin.Context) {
 // @Param        limit  query     int     false  "Limit"
 // @Param        page   query     int     false  "Page"
 // @Param        order  query     string  false  "Order By"
-// @Success      200    {object}   database.MovieFileUnmatchedJSON
-// @Failure      401    {object}  string
+// @Param        apikey query     string    true  "apikey"
+// @Success      200    {object}   Jsondatarows{data=[]database.MovieFileUnmatched}
+// @Failure      401    {object}  Jsonerror
 // @Router       /api/movies/unmatched [get]
 func apiMovieListUnmatched(ctx *gin.Context) {
-	if auth(ctx) == http.StatusUnauthorized {
-		return
-	}
+
 	var query database.Querywithargs
-	rows := database.QueryIntColumn("select count() from movie_file_unmatcheds")
+	rows := database.GetdatarowN[int](false, "select count() from movie_file_unmatcheds")
 	limit := 0
 	page := 0
 	if queryParam, ok := ctx.GetQuery("limit"); ok {
@@ -136,15 +139,14 @@ func apiMovieListUnmatched(ctx *gin.Context) {
 // @Description  Deletes Movies from all lists
 // @Tags         movie
 // @Param        id   path      int  true  "Movie ID: ex. 1"
-// @Success      200  {object}  string
-// @Failure      401  {object}  string
+// @Param        apikey query     string    true  "apikey"
+// @Success      200  {object}  string "returns ok"
+// @Failure      401  {object}  Jsonerror
 // @Router       /api/movies/{id} [delete]
 func apiMovieDelete(ctx *gin.Context) {
-	if auth(ctx) == http.StatusUnauthorized {
-		return
-	}
-	database.DeleteRow(false, "movies", "dbmovie_id=?", ctx.Param("id"))
-	_, err := database.DeleteRow(false, "dbmovies", "id=?", ctx.Param("id"))
+
+	database.DeleteRow("movies", "dbmovie_id=?", ctx.Param("id"))
+	_, err := database.DeleteRow("dbmovies", "id=?", ctx.Param("id"))
 
 	if err == nil {
 		ctx.JSON(http.StatusOK, "ok")
@@ -160,18 +162,18 @@ func apiMovieDelete(ctx *gin.Context) {
 // @Param        limit  query     int     false  "Limit"
 // @Param        page   query     int     false  "Page"
 // @Param        order  query     string  false  "Order By"
-// @Success      200    {object}   database.ResultMoviesJSON
-// @Failure      401    {object}  string
+// @Param        apikey query     string    true  "apikey"
+// @Success      200    {object}   Jsondatarows{data=[]database.ResultMovies}
+// @Failure      401    {object}  Jsonerror
 // @Router       /api/movies/list/{name} [get]
 func apiMovieListGet(ctx *gin.Context) {
-	if auth(ctx) == http.StatusUnauthorized {
-		return
-	}
+
 	var query database.Querywithargs
+	list := ctx.Param("name")
 	query.InnerJoin = "dbmovies on movies.dbmovie_id=dbmovies.id"
 	query.Where = "movies.listname = ? COLLATE NOCASE"
 
-	rows := database.QueryIntColumn("select count() from movies where listname = ? COLLATE NOCASE", ctx.Param("name"))
+	rows := database.GetdatarowN[int](false, "select count() from movies where listname = ? COLLATE NOCASE", &list)
 	limit := 0
 	page := 0
 	if queryParam, ok := ctx.GetQuery("limit"); ok {
@@ -198,18 +200,50 @@ func apiMovieListGet(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{"data": database.QueryResultMovies(query, ctx.Param("name")), "total": rows})
 }
 
+// @Summary      Get Movie Metadata
+// @Description  Gets metadata of a movie (for testing)
+// @Tags         movie
+// @Param        imdb   path      string  true   "imdb id: ex. tt123456"
+// @Param        provider  query     string  false  "Provider: imdb,tmdb,omdb,trakt"
+// @Param        apikey query     string    true  "apikey"
+// @Success      200    {object}   Jsondata{data=database.Dbmovie}
+// @Failure      401    {object}  Jsonerror
+// @Router       /api/movies/metadata/{imdb} [get]
+func apiMovieMetadataGet(ctx *gin.Context) {
+
+	var imdb, omdb, tmdb, trakt bool
+
+	var movie database.Dbmovie
+	movie.ImdbID = ctx.Param("imdb")
+	if queryParam, ok := ctx.GetQuery("provider"); ok {
+		switch queryParam {
+		case logger.StrImdb:
+			imdb = true
+		case "omdb":
+			omdb = true
+		case "tmdb":
+			tmdb = true
+		case "trakt":
+			trakt = true
+		}
+		metadata.MovieGetMetadata(&movie, imdb, tmdb, omdb, trakt)
+	} else {
+		metadata.Getmoviemetadata(&movie, true)
+	}
+	ctx.JSON(http.StatusOK, gin.H{"data": movie})
+}
+
 // @Summary      Delete a Movie (List)
 // @Description  Deletes a Movie from a list
 // @Tags         movie
 // @Param        id   path      int  true  "Movie ID: ex. 1"
-// @Success      200  {object}  string
-// @Failure      401  {object}  string
+// @Param        apikey query     string    true  "apikey"
+// @Success      200  {object}  string "returns ok"
+// @Failure      401  {object}  Jsonerror
 // @Router       /api/movies/list/{id} [delete]
 func movieDeleteList(ctx *gin.Context) {
-	if auth(ctx) == http.StatusUnauthorized {
-		return
-	}
-	_, err := database.DeleteRow(false, "movies", "id=?", ctx.Param("id"))
+
+	_, err := database.DeleteRow("movies", "id=?", ctx.Param("id"))
 
 	if err == nil {
 		ctx.JSON(http.StatusOK, "ok")
@@ -224,14 +258,12 @@ const allowedjobsmoviesstr = "rss,data,datafull,checkmissing,checkmissingflag,ch
 // @Description  Starts a Job
 // @Tags         movie
 // @Param        job  path      string  true  "Job Name one of: rss, data, datafull, checkmissing, checkmissingflag, structure, searchmissingfull, searchmissinginc, searchupgradefull, searchupgradeinc, searchmissingfulltitle, searchmissinginctitle, searchupgradefulltitle, searchupgradeinctitle, clearhistory, feeds, refresh, refreshinc"
-// @Success      200  {object}  string
-// @Failure      204  {object}  string
-// @Failure      401  {object}  string
+// @Param        apikey query     string    true  "apikey"
+// @Success      200  {object}  string "returns job name started"
+// @Failure      204  {object}  string "error message"
+// @Failure      401  {object}  Jsonerror
 // @Router       /api/movies/job/{job} [get]
 func apimoviesAllJobs(c *gin.Context) {
-	if auth(c) == http.StatusUnauthorized {
-		return
-	}
 	allowed := false
 	for _, allow := range strings.Split(allowedjobsmoviesstr, ",") {
 		if strings.EqualFold(allow, c.Param(logger.StrJobLower)) {
@@ -244,60 +276,61 @@ func apimoviesAllJobs(c *gin.Context) {
 
 		//defer cfgMovie.Close()
 		//defer cfg_list.Close()
-		for idxp := range config.SettingsMedia {
-			if !strings.HasPrefix(config.SettingsMedia[idxp].NamePrefix, logger.StrMovie) {
+		for _, media := range config.SettingsMedia {
+			if !strings.HasPrefix(media.NamePrefix, logger.StrMovie) {
 				continue
 			}
 
-			cfgpstr := config.SettingsMedia[idxp].NamePrefix
+			cfgpstr := media.NamePrefix
 
 			switch c.Param(logger.StrJobLower) {
 			case "data", logger.StrDataFull, logger.StrStructure, logger.StrClearHistory:
-				worker.Dispatch(worker.WorkerPoolFiles, worker.NewJobFunc(c.Param(logger.StrJobLower)+"_"+cfgpstr, func() {
-					utils.SingleJobs(logger.StrMovie, c.Param(logger.StrJobLower), cfgpstr, "", true)
-				}, "Data"))
+				worker.Dispatch(c.Param(logger.StrJobLower)+"_"+cfgpstr, func() {
+					utils.SingleJobs(c.Param(logger.StrJobLower), cfgpstr, "", true)
+				}, "Data")
 			case logger.StrRss, logger.StrSearchMissingFull, logger.StrSearchMissingInc, logger.StrSearchUpgradeFull, logger.StrSearchUpgradeInc, logger.StrSearchMissingFullTitle, logger.StrSearchMissingIncTitle, logger.StrSearchUpgradeFullTitle, logger.StrSearchUpgradeIncTitle:
-				worker.Dispatch(worker.WorkerPoolSearch, worker.NewJobFunc(c.Param(logger.StrJobLower)+"_"+cfgpstr, func() {
-					utils.SingleJobs(logger.StrMovie, c.Param(logger.StrJobLower), cfgpstr, "", true)
-				}, "Search"))
+				worker.Dispatch(c.Param(logger.StrJobLower)+"_"+cfgpstr, func() {
+					utils.SingleJobs(c.Param(logger.StrJobLower), cfgpstr, "", true)
+				}, "Search")
 			case logger.StrFeeds, logger.StrCheckMissing, logger.StrCheckMissingFlag, logger.StrReachedFlag:
-				for idxi := range config.SettingsMedia[idxp].Lists {
-					if !config.SettingsMedia[idxp].Lists[idxi].Enabled {
+				for idxi := range media.Lists {
+					if !media.Lists[idxi].Enabled {
 						continue
 					}
-					if !config.CheckGroup("list_", config.SettingsMedia[idxp].Lists[idxi].TemplateList) {
+					if media.Lists[idxi].CfgList == nil {
 						continue
 					}
 
-					if !config.SettingsList["list_"+config.SettingsMedia[idxp].Lists[idxi].TemplateList].Enabled {
+					if !config.SettingsList[media.Lists[idxi].TemplateList].Enabled {
 						continue
 					}
-					listname := config.SettingsMedia[idxp].Lists[idxi].Name
-					logger.Log.Debug().Str("listname", listname).Msg("dispatch movie")
+					listname := media.Lists[idxi].Name
 					if c.Param(logger.StrJobLower) == logger.StrFeeds {
-						worker.Dispatch(worker.WorkerPoolMetadata, worker.NewJobFunc(c.Param(logger.StrJobLower)+"_"+cfgpstr+"_"+listname, func() {
-							utils.SingleJobs(logger.StrMovie, c.Param(logger.StrJobLower), cfgpstr, listname, true)
-						}, "Feeds"))
+						worker.Dispatch(c.Param(logger.StrJobLower)+"_"+cfgpstr+"_"+listname, func() {
+							utils.SingleJobs(c.Param(logger.StrJobLower), cfgpstr, listname, true)
+						}, "Feeds")
 					}
 					if c.Param(logger.StrJobLower) == logger.StrCheckMissing || c.Param(logger.StrJobLower) == logger.StrCheckMissingFlag || c.Param(logger.StrJobLower) == logger.StrReachedFlag {
-						worker.Dispatch(worker.WorkerPoolFiles, worker.NewJobFunc(c.Param(logger.StrJobLower)+"_"+cfgpstr+"_"+listname, func() {
-							utils.SingleJobs(logger.StrMovie, c.Param(logger.StrJobLower), cfgpstr, listname, true)
-						}, "Data"))
+						worker.Dispatch(c.Param(logger.StrJobLower)+"_"+cfgpstr+"_"+listname, func() {
+							utils.SingleJobs(c.Param(logger.StrJobLower), cfgpstr, listname, true)
+						}, "Data")
 					}
 					//cfg_list.Close()
 				}
 			case "refresh":
-				worker.Dispatch(worker.WorkerPoolMetadata, worker.NewJobFunc(logger.StrRefreshMovies, func() {
-					utils.SingleJobs(logger.StrMovie, "refresh", logger.StrMovie, "", false)
-				}, "Feeds"))
+				worker.Dispatch(logger.StrRefreshMovies, func() {
+					utils.SingleJobs("refresh", cfgpstr, "", false)
+				}, "Feeds")
 			case "refreshinc":
-				worker.Dispatch(worker.WorkerPoolMetadata, worker.NewJobFunc(logger.StrRefreshMoviesInc, func() {
-					utils.SingleJobs(logger.StrMovie, "refreshinc", logger.StrMovie, "", false)
-				}, "Feeds"))
+				worker.Dispatch(logger.StrRefreshMoviesInc, func() {
+					utils.SingleJobs("refreshinc", cfgpstr, "", false)
+				}, "Feeds")
+			case "":
+				continue
 			default:
-				worker.Dispatch(worker.WorkerPoolFiles, worker.NewJobFunc(c.Param(logger.StrJobLower)+"_"+cfgpstr, func() {
-					utils.SingleJobs(logger.StrMovie, c.Param(logger.StrJobLower), cfgpstr, "", true)
-				}, "Data"))
+				worker.Dispatch(c.Param(logger.StrJobLower)+"_"+cfgpstr, func() {
+					utils.SingleJobs(c.Param(logger.StrJobLower), cfgpstr, "", true)
+				}, "Data")
 			}
 			//cfgMovie.Close()
 		}
@@ -313,14 +346,12 @@ func apimoviesAllJobs(c *gin.Context) {
 // @Tags         movie
 // @Param        job   path      string  true  "Job Name one of: rss, data, datafull, checkmissing, checkmissingflag, structure, searchmissingfull, searchmissinginc, searchupgradefull, searchupgradeinc, searchmissingfulltitle, searchmissinginctitle, searchupgradefulltitle, searchupgradeinctitle, clearhistory, feeds, refresh, refreshinc"
 // @Param        name  path      string  true  "List Name: ex. list"
-// @Success      200   {object}  string
-// @Failure      204   {object}  string
-// @Failure      401   {object}  string
+// @Param        apikey query     string    true  "apikey"
+// @Success      200  {object}  string "returns job name started"
+// @Failure      204  {object}  string "error message"
+// @Failure      401   {object}  Jsonerror
 // @Router       /api/movies/job/{job}/{name} [get]
 func apimoviesJobs(c *gin.Context) {
-	if auth(c) == http.StatusUnauthorized {
-		return
-	}
 	allowed := false
 	for _, allow := range strings.Split(allowedjobsmoviesstr, ",") {
 		if strings.EqualFold(allow, c.Param(logger.StrJobLower)) {
@@ -334,44 +365,44 @@ func apimoviesJobs(c *gin.Context) {
 
 		switch c.Param(logger.StrJobLower) {
 		case "data", logger.StrDataFull, logger.StrStructure, logger.StrClearHistory:
-			worker.Dispatch(worker.WorkerPoolFiles, worker.NewJobFunc(c.Param(logger.StrJobLower)+"_movies_"+c.Param("name"), func() {
-				utils.SingleJobs(logger.StrMovie, c.Param(logger.StrJobLower), cfgpstr, "", true)
-			}, "Data"))
+			worker.Dispatch(c.Param(logger.StrJobLower)+"_movies_"+c.Param("name"), func() {
+				utils.SingleJobs(c.Param(logger.StrJobLower), cfgpstr, "", true)
+			}, "Data")
 		case logger.StrRss, logger.StrSearchMissingFull, logger.StrSearchMissingInc, logger.StrSearchUpgradeFull, logger.StrSearchUpgradeInc, logger.StrSearchMissingFullTitle, logger.StrSearchMissingIncTitle, logger.StrSearchUpgradeFullTitle, logger.StrSearchUpgradeIncTitle:
-			worker.Dispatch(worker.WorkerPoolSearch, worker.NewJobFunc(c.Param(logger.StrJobLower)+"_movies_"+c.Param("name"), func() {
-				utils.SingleJobs(logger.StrMovie, c.Param(logger.StrJobLower), cfgpstr, "", true)
-			}, "Search"))
+			worker.Dispatch(c.Param(logger.StrJobLower)+"_movies_"+c.Param("name"), func() {
+				utils.SingleJobs(c.Param(logger.StrJobLower), cfgpstr, "", true)
+			}, "Search")
 		case logger.StrFeeds, logger.StrCheckMissing, logger.StrCheckMissingFlag, logger.StrReachedFlag:
 
 			//defer cfgMovie.Close()
 			//defer cfg_list.Close()
-			for idxp := range config.SettingsMedia {
-				if !strings.HasPrefix(config.SettingsMedia[idxp].NamePrefix, logger.StrMovie) {
+			for _, media := range config.SettingsMedia {
+				if !strings.HasPrefix(media.NamePrefix, logger.StrMovie) {
 					continue
 				}
-				if strings.EqualFold(config.SettingsMedia[idxp].Name, c.Param("name")) {
-					for idxlist := range config.SettingsMedia[idxp].Lists {
-						if !config.SettingsMedia[idxp].Lists[idxlist].Enabled {
+				if strings.EqualFold(media.Name, c.Param("name")) {
+					for idxlist := range media.Lists {
+						if !media.Lists[idxlist].Enabled {
 							continue
 						}
-						if !config.CheckGroup("list_", config.SettingsMedia[idxp].Lists[idxlist].TemplateList) {
+						if media.Lists[idxlist].CfgList == nil {
 							continue
 						}
 
-						if !config.SettingsList["list_"+config.SettingsMedia[idxp].Lists[idxlist].TemplateList].Enabled {
+						if !config.SettingsList[media.Lists[idxlist].TemplateList].Enabled {
 							continue
 						}
-						listname := config.SettingsMedia[idxp].Lists[idxlist].Name
+						listname := media.Lists[idxlist].Name
 						if c.Param(logger.StrJobLower) == logger.StrFeeds {
-							logger.Log.Debug().Str(logger.StrTitle, config.SettingsMedia[idxp].Name).Str("List", config.SettingsMedia[idxp].Lists[idxlist].Name).Msg("add job")
-							worker.Dispatch(worker.WorkerPoolMetadata, worker.NewJobFunc(c.Param(logger.StrJobLower)+"_movies_"+config.SettingsMedia[idxp].Name+"_"+config.SettingsMedia[idxp].Lists[idxlist].Name, func() {
-								utils.SingleJobs(logger.StrMovie, c.Param(logger.StrJobLower), cfgpstr, listname, true)
-							}, "Feeds"))
+							logger.LogDynamic("debug", "add job", logger.NewLogField(logger.StrTitle, media.Name), logger.NewLogField("List", media.Lists[idxlist].Name))
+							worker.Dispatch(c.Param(logger.StrJobLower)+"_movies_"+media.Name+"_"+media.Lists[idxlist].Name, func() {
+								utils.SingleJobs(c.Param(logger.StrJobLower), cfgpstr, listname, true)
+							}, "Feeds")
 						}
 						if c.Param(logger.StrJobLower) == logger.StrCheckMissing || c.Param(logger.StrJobLower) == logger.StrCheckMissingFlag || c.Param(logger.StrJobLower) == logger.StrReachedFlag {
-							worker.Dispatch(worker.WorkerPoolFiles, worker.NewJobFunc(c.Param(logger.StrJobLower)+"_movies_"+config.SettingsMedia[idxp].Name+"_"+config.SettingsMedia[idxp].Lists[idxlist].Name, func() {
-								utils.SingleJobs(logger.StrMovie, c.Param(logger.StrJobLower), cfgpstr, listname, true)
-							}, "Data"))
+							worker.Dispatch(c.Param(logger.StrJobLower)+"_movies_"+media.Name+"_"+media.Lists[idxlist].Name, func() {
+								utils.SingleJobs(c.Param(logger.StrJobLower), cfgpstr, listname, true)
+							}, "Data")
 						}
 						//cfg_list.Close()
 					}
@@ -379,17 +410,19 @@ func apimoviesJobs(c *gin.Context) {
 				//cfgMovie.Close()
 			}
 		case "refresh":
-			worker.Dispatch(worker.WorkerPoolMetadata, worker.NewJobFunc(logger.StrRefreshMovies, func() {
-				utils.SingleJobs(logger.StrMovie, "refresh", logger.StrMovie, "", false)
-			}, "Feeds"))
+			worker.Dispatch(logger.StrRefreshMovies, func() {
+				utils.SingleJobs("refresh", cfgpstr, "", false)
+			}, "Feeds")
 		case "refreshinc":
-			worker.Dispatch(worker.WorkerPoolMetadata, worker.NewJobFunc(logger.StrRefreshMoviesInc, func() {
-				utils.SingleJobs(logger.StrMovie, "refreshinc", logger.StrMovie, "", false)
-			}, "Feeds"))
+			worker.Dispatch(logger.StrRefreshMoviesInc, func() {
+				utils.SingleJobs("refreshinc", cfgpstr, "", false)
+			}, "Feeds")
+		case "":
+			break
 		default:
-			worker.Dispatch(worker.WorkerPoolFiles, worker.NewJobFunc(c.Param(logger.StrJobLower)+"_movies_"+c.Param("name"), func() {
-				utils.SingleJobs(logger.StrMovie, c.Param(logger.StrJobLower), cfgpstr, "", true)
-			}, "Data"))
+			worker.Dispatch(c.Param(logger.StrJobLower)+"_movies_"+c.Param("name"), func() {
+				utils.SingleJobs(c.Param(logger.StrJobLower), cfgpstr, "", true)
+			}, "Data")
 		}
 		c.JSON(http.StatusOK, returnval)
 	} else {
@@ -401,21 +434,20 @@ func apimoviesJobs(c *gin.Context) {
 // @Summary      Update Movie (Global)
 // @Description  Updates or creates a movie
 // @Tags         movie
-// @Param        movie  body      database.DbmovieJSON  true  "Movie"
-// @Success      200    {object}  string
-// @Failure      400    {object}  string
-// @Failure      401    {object}  string
+// @Param        movie  body      database.Dbmovie  true  "Movie"
+// @Param        apikey query     string    true  "apikey"
+// @Success      200    {object}  int64
+// @Failure      403    {object}  error
+// @Failure      400    {object}  Jsonerror
+// @Failure      401    {object}  Jsonerror
 // @Router       /api/movies [post]
 func updateDBMovie(c *gin.Context) {
-	if auth(c) == http.StatusUnauthorized {
-		return
-	}
-	var dbmovie database.DbmovieJSON
+	var dbmovie database.Dbmovie
 	if err := c.ShouldBindJSON(&dbmovie); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	counter := database.QueryIntColumn("select count() from dbmovies where id != 0 and id = ?", dbmovie.ID)
+	counter := database.GetdatarowN[int](false, "select count() from dbmovies where id != 0 and id = ?", &dbmovie.ID)
 	var inres sql.Result
 	var err error
 	if counter == 0 {
@@ -426,7 +458,8 @@ func updateDBMovie(c *gin.Context) {
 			"id != 0 and id = ?", dbmovie.Title, dbmovie.ReleaseDate, dbmovie.Year, dbmovie.Adult, dbmovie.Budget, dbmovie.Genres, dbmovie.OriginalLanguage, dbmovie.OriginalTitle, dbmovie.Overview, dbmovie.Popularity, dbmovie.Revenue, dbmovie.Runtime, dbmovie.SpokenLanguages, dbmovie.Status, dbmovie.Tagline, dbmovie.VoteAverage, dbmovie.VoteCount, dbmovie.TraktID, dbmovie.MoviedbID, dbmovie.ImdbID, dbmovie.FreebaseMID, dbmovie.FreebaseID, dbmovie.FacebookID, dbmovie.InstagramID, dbmovie.TwitterID, dbmovie.URL, dbmovie.Backdrop, dbmovie.Poster, dbmovie.Slug, dbmovie.ID)
 	}
 	if err == nil {
-		c.JSON(http.StatusOK, inres)
+		rows, _ := inres.RowsAffected()
+		c.JSON(http.StatusOK, rows)
 	} else {
 		c.JSON(http.StatusForbidden, err)
 	}
@@ -435,21 +468,20 @@ func updateDBMovie(c *gin.Context) {
 // @Summary      Update Movie (List)
 // @Description  Updates or creates a movie in a list
 // @Tags         movie
-// @Param        movie  body      database.MovieJSON  true  "Movie"
-// @Success      200    {object}  string
-// @Failure      400    {object}  string
-// @Failure      401    {object}  string
+// @Param        movie  body      database.Movie  true  "Movie"
+// @Param        apikey query     string    true  "apikey"
+// @Success      200    {object}  int64
+// @Failure      403    {object}  error
+// @Failure      400    {object}  Jsonerror
+// @Failure      401    {object}  Jsonerror
 // @Router       /api/movies/list [post]
 func updateMovie(c *gin.Context) {
-	if auth(c) == http.StatusUnauthorized {
-		return
-	}
-	var movie database.MovieJSON
+	var movie database.Movie
 	if err := c.ShouldBindJSON(&movie); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	counter := database.QueryIntColumn("select count() from dbmovies where id != 0 and id = ?", movie.ID)
+	counter := database.GetdatarowN[int](false, "select count() from dbmovies where id != 0 and id = ?", &movie.ID)
 	var inres sql.Result
 	var err error
 	if counter == 0 {
@@ -460,7 +492,8 @@ func updateMovie(c *gin.Context) {
 			"id != 0 and id = ?", movie.Missing, movie.Listname, movie.DbmovieID, movie.QualityProfile, movie.Blacklisted, movie.QualityReached, movie.DontUpgrade, movie.DontSearch, movie.Rootpath, movie.ID)
 	}
 	if err == nil {
-		c.JSON(http.StatusOK, inres)
+		rows, _ := inres.RowsAffected()
+		c.JSON(http.StatusOK, rows)
 	} else {
 		c.JSON(http.StatusForbidden, err)
 	}
@@ -470,39 +503,40 @@ func updateMovie(c *gin.Context) {
 // @Description  Searches for upgrades and missing
 // @Tags         movie
 // @Param        id   path      int  true  "Movie ID"
-// @Success      200  {object}  string
-// @Failure      401  {object}  string
+// @Param        apikey query     string    true  "apikey"
+// @Success      200  {object}  string "returns started"
+// @Failure      204  {object}  string "nothing done"
+// @Failure      401  {object}  Jsonerror
 // @Router       /api/movies/search/id/{id} [get]
 func apimoviesSearch(c *gin.Context) {
-	if auth(c) == http.StatusUnauthorized {
-		return
-	}
 	movie, _ := database.GetMovies(database.Querywithargs{Where: logger.FilterByID}, c.Param(logger.StrID))
 	//defer logger.ClearVar(&movie)
-	for idxp := range config.SettingsMedia {
-		if !strings.HasPrefix(config.SettingsMedia[idxp].NamePrefix, logger.StrMovie) {
+	var idxlist int
+	var err error
+	for _, media := range config.SettingsMedia {
+		if !strings.HasPrefix(media.NamePrefix, logger.StrMovie) {
 			continue
 		}
 
-		for idxlist := range config.SettingsMedia[idxp].Lists {
-			if strings.EqualFold(config.SettingsMedia[idxp].Lists[idxlist].Name, movie.Listname) {
-				worker.Dispatch(worker.WorkerPoolSearch, worker.NewJobFunc("searchmovie_movies_"+config.SettingsMedia[idxp].Name+"_"+strconv.Itoa(int(movie.ID)), func() {
-					//searcher.SearchMyMedia(cfgdata.(config.MediaTypeConfig).NamePrefix, database.QueryStringColumn(database.QueryMoviesGetQualityByID, movie.ID), logger.StrMovie, logger.StrMovie, 0, 0, false, movie.ID, true)
-					results, err := searcher.MovieSearch(config.SettingsMedia[idxp].NamePrefix, movie.ID, false, true)
+		for idxlist = range media.Lists {
+			if strings.EqualFold(media.Lists[idxlist].Name, movie.Listname) {
+				worker.Dispatch("searchmovie_movies_"+media.Name+"_"+strconv.Itoa(int(movie.ID)), func() {
+					searchvar := searcher.NewSearcher(media, nil, "", 0)
+					err = searchvar.MediaSearch(media, movie.ID, true, false, false)
 
 					if err != nil {
-						if err != nil && err != logger.ErrDisabled {
-							logger.Log.Error().Err(err).Uint("id", movie.ID).Str("typ", logger.StrMovie).Msg("Search Failed")
+						if err != nil && !errors.Is(err, logger.ErrDisabled) {
+							logger.LogDynamic("error", "Search Failed", logger.NewLogField("id", movie.ID), logger.NewLogField("typ", logger.StrMovie), logger.NewLogFieldValue(err))
 						}
 					} else {
-						if results == nil || len(results.Accepted) == 0 {
-							results.Close()
+						if searchvar == nil || len(searchvar.Dl.Accepted) == 0 {
+
 						} else {
-							results.Download(logger.StrMovie, "movie_"+config.SettingsMedia[idxp].Name)
+							searchvar.Download()
 						}
 					}
-					results.Close()
-				}, "Search"))
+					searchvar.Close()
+				}, "Search")
 				c.JSON(http.StatusOK, "started")
 				return
 			}
@@ -515,13 +549,13 @@ func apimoviesSearch(c *gin.Context) {
 // @Description  Searches for upgrades and missing
 // @Tags         movie
 // @Param        id             path      int     true   "Movie ID"
-// @Success      200            {object}  string
+// @Param        searchByTitle  query     string  false  "searchByTitle"
+// @Param        download       query     bool    false  "download"
+// @Param        apikey query     string    true  "apikey"
+// @Success      200            {object}  Jsonresults
 // @Failure      401            {object}  string
 // @Router       /api/movies/search/list/{id} [get]
 func apimoviesSearchList(c *gin.Context) {
-	if auth(c) == http.StatusUnauthorized {
-		return
-	}
 	movie, _ := database.GetMovies(database.Querywithargs{Where: logger.FilterByID}, c.Param(logger.StrID))
 	//defer logger.ClearVar(&movie)
 
@@ -531,20 +565,25 @@ func apimoviesSearchList(c *gin.Context) {
 			titlesearch = true
 		}
 	}
-	for idxp := range config.SettingsMedia {
-		if !strings.HasPrefix(config.SettingsMedia[idxp].NamePrefix, logger.StrMovie) {
+	var err error
+	for _, media := range config.SettingsMedia {
+		if !strings.HasPrefix(media.NamePrefix, logger.StrMovie) {
 			continue
 		}
-		for idxlist := range config.SettingsMedia[idxp].Lists {
-			if strings.EqualFold(config.SettingsMedia[idxp].Lists[idxlist].Name, movie.Listname) {
-				searchresults, err := searcher.MovieSearch(config.SettingsMedia[idxp].NamePrefix, movie.ID, false, titlesearch)
+		for idxlist := range media.Lists {
+			if strings.EqualFold(media.Lists[idxlist].Name, movie.Listname) {
+				searchresults := searcher.NewSearcher(media, nil, "", 0)
+				err = searchresults.MediaSearch(media, movie.ID, titlesearch, false, false)
 				if err != nil {
 					str := "failed with " + err.Error()
 					c.JSON(http.StatusNotFound, str)
-					//searchnow.Close()
+					searchresults.Close()
 					return
 				}
-				c.JSON(http.StatusOK, gin.H{"accepted": searchresults.Accepted, "denied": searchresults.Denied})
+				if _, ok := c.GetQuery("download"); ok {
+					searchresults.Download()
+				}
+				c.JSON(http.StatusOK, gin.H{"accepted": searchresults.Dl.Accepted, "denied": searchresults.Dl.Denied, "all": searchresults.Dl.Raw})
 				//searchnow.Close()
 				searchresults.Close()
 				return
@@ -558,26 +597,25 @@ func apimoviesSearchList(c *gin.Context) {
 // @Description  Movie RSS
 // @Tags         movie
 // @Param        group  path      string  true  "Group Name"
-// @Success      200    {object}  string
-// @Failure      401    {object}  string
+// @Param        apikey query     string    true  "apikey"
+// @Success      200    {object}  Jsonresults
+// @Failure      401    {object}  Jsonerror
 // @Router       /api/movies/rss/search/list/{group} [get]
 func apiMoviesRssSearchList(c *gin.Context) {
-	if auth(c) == http.StatusUnauthorized {
-		return
-	}
-	for idxp := range config.SettingsMedia {
-		if !strings.HasPrefix(config.SettingsMedia[idxp].NamePrefix, logger.StrMovie) {
+	for _, media := range config.SettingsMedia {
+		if !strings.HasPrefix(media.NamePrefix, logger.StrMovie) {
 			continue
 		}
-		if strings.EqualFold(config.SettingsMedia[idxp].Name, c.Param("group")) {
-			templatequality := config.SettingsMedia[idxp].TemplateQuality
-			searchresults, err := searcher.SearchRSS(config.SettingsMedia[idxp].NamePrefix, templatequality, logger.StrMovie, true)
+		if strings.EqualFold(media.Name, c.Param("group")) {
+			searchresults := searcher.NewSearcher(media, media.CfgQuality, logger.StrRss, 0)
+			err := searchresults.SearchRSS(media, media.CfgQuality, true, false, false)
 			if err != nil {
 				str := "failed with " + err.Error()
 				c.JSON(http.StatusNotFound, str)
+				searchresults.Close()
 				return
 			}
-			c.JSON(http.StatusOK, gin.H{"accepted": searchresults.Accepted, "denied": searchresults.Denied})
+			c.JSON(http.StatusOK, gin.H{"accepted": searchresults.Dl.Accepted, "denied": searchresults.Dl.Denied})
 			searchresults.Close()
 			return
 		}
@@ -590,13 +628,13 @@ func apiMoviesRssSearchList(c *gin.Context) {
 // @Tags         movie
 // @Param        nzb  body      apiexternal.Nzbwithprio  true  "Nzb: Req. Title, Indexer, imdbid, downloadurl, parseinfo"
 // @Param        id   path      int                     true  "Movie ID"
-// @Success      200  {object}  string
-// @Failure      401  {object}  string
+// @Param        apikey query     string    true  "apikey"
+// @Success      200  {object}  string "returns started"
+// @Failure      204  {object}  string "nothing done"
+// @Failure      400  {object}  Jsonerror
+// @Failure      401  {object}  Jsonerror
 // @Router       /api/movies/search/download/{id} [post]
 func apimoviesSearchDownload(c *gin.Context) {
-	if auth(c) == http.StatusUnauthorized {
-		return
-	}
 	movie, _ := database.GetMovies(database.Querywithargs{Where: logger.FilterByID}, c.Param(logger.StrID))
 	//defer logger.ClearVar(&movie)
 
@@ -606,13 +644,13 @@ func apimoviesSearchDownload(c *gin.Context) {
 		return
 	}
 	//defer logger.ClearVar(&nzb)
-	for idxp := range config.SettingsMedia {
-		if !strings.HasPrefix(config.SettingsMedia[idxp].NamePrefix, logger.StrMovie) {
+	for _, media := range config.SettingsMedia {
+		if !strings.HasPrefix(media.NamePrefix, logger.StrMovie) {
 			continue
 		}
-		for idxlist := range config.SettingsMedia[idxp].Lists {
-			if strings.EqualFold(config.SettingsMedia[idxp].Lists[idxlist].Name, movie.Listname) {
-				downloader.DownloadMovie(config.SettingsMedia[idxp].NamePrefix, movie.ID, &nzb)
+		for idxlist := range media.Lists {
+			if strings.EqualFold(media.Lists[idxlist].Name, movie.Listname) {
+				downloader.DownloadMovie(media, movie.ID, &nzb)
 				c.JSON(http.StatusOK, "started")
 				return
 			}
@@ -624,16 +662,21 @@ func apimoviesSearchDownload(c *gin.Context) {
 // @Summary      Refresh Movies
 // @Description  Refreshes Movie Metadata
 // @Tags         movie
-// @Success      200  {object}  string
-// @Failure      401  {object}  string
+// @Param        apikey query     string    true  "apikey"
+// @Success      200  {object}  string "returns started"
+// @Failure      401  {object}  Jsonerror
 // @Router       /api/movies/all/refreshall [get]
 func apirefreshMovies(c *gin.Context) {
-	if auth(c) == http.StatusUnauthorized {
-		return
+	var cfgp *config.MediaTypeConfig
+	for _, media := range config.SettingsMedia {
+		if media.NamePrefix[:5] == logger.StrMovie {
+			cfgp = media
+			break
+		}
 	}
-	worker.Dispatch(worker.WorkerPoolMetadata, worker.NewJobFunc(logger.StrRefreshMovies, func() {
-		utils.SingleJobs(logger.StrMovie, "refresh", logger.StrMovie, "", false)
-	}, "Feeds"))
+	worker.Dispatch(logger.StrRefreshMovies, func() {
+		utils.SingleJobs("refresh", cfgp.NamePrefix, "", false)
+	}, "Feeds")
 	c.JSON(http.StatusOK, "started")
 }
 
@@ -641,32 +684,42 @@ func apirefreshMovies(c *gin.Context) {
 // @Description  Refreshes specific Movie Metadata
 // @Tags         movie
 // @Param        id   path      int  true  "Movie ID"
-// @Success      200  {object}  string
-// @Failure      401  {object}  string
+// @Param        apikey query     string    true  "apikey"
+// @Success      200  {object}  string "returns started"
+// @Failure      401  {object}  Jsonerror
 // @Router       /api/movies/refresh/{id} [get]
 func apirefreshMovie(c *gin.Context) {
-	if auth(c) == http.StatusUnauthorized {
-		return
+	var cfgp *config.MediaTypeConfig
+	for _, media := range config.SettingsMedia {
+		if media.NamePrefix[:5] == logger.StrMovie {
+			cfgp = media
+			break
+		}
 	}
-	worker.Dispatch(worker.WorkerPoolMetadata, worker.NewJobFunc("Refresh Single Movie_"+c.Param(logger.StrID), func() {
-		utils.RefreshMovie(c.Param(logger.StrID))
-	}, "Feeds"))
+	worker.Dispatch("Refresh Single Movie_"+c.Param(logger.StrID), func() {
+		utils.RefreshMovie(cfgp, c.Param(logger.StrID))
+	}, "Feeds")
 	c.JSON(http.StatusOK, "started")
 }
 
 // @Summary      Refresh Movies (Incremental)
 // @Description  Refreshes Movie Metadata
 // @Tags         movie
-// @Success      200  {object}  string
-// @Failure      401  {object}  string
+// @Param        apikey query     string    true  "apikey"
+// @Success      200  {object}  string "returns started"
+// @Failure      401  {object}  Jsonerror
 // @Router       /api/movies/all/refresh [get]
 func apirefreshMoviesInc(c *gin.Context) {
-	if auth(c) == http.StatusUnauthorized {
-		return
+	var cfgp *config.MediaTypeConfig
+	for _, media := range config.SettingsMedia {
+		if media.NamePrefix[:5] == logger.StrMovie {
+			cfgp = media
+			break
+		}
 	}
-	worker.Dispatch(worker.WorkerPoolMetadata, worker.NewJobFunc(logger.StrRefreshMoviesInc, func() {
-		utils.SingleJobs(logger.StrMovie, "refreshinc", logger.StrMovie, "", false)
-	}, "Feeds"))
+	worker.Dispatch(logger.StrRefreshMoviesInc, func() {
+		utils.SingleJobs("refreshinc", cfgp.NamePrefix, "", false)
+	}, "Feeds")
 	c.JSON(http.StatusOK, "started")
 }
 
@@ -674,14 +727,12 @@ func apirefreshMoviesInc(c *gin.Context) {
 // @Description  Clear Movies Download History
 // @Tags         movie
 // @Param        name  path      string  true  "List Name"
-// @Success      200   {object}  string
-// @Failure      401   {object}  string
+// @Param        apikey query     string    true  "apikey"
+// @Success      200   {object}  string "returns started"
+// @Failure      401   {object}  Jsonerror
 // @Router       /api/movies/search/history/clear/{name} [get]
 func apimoviesClearHistoryName(c *gin.Context) {
-	if auth(c) == http.StatusUnauthorized {
-		return
-	}
-	utils.SingleJobs(logger.StrMovie, logger.StrClearHistory, "movie_"+c.Param("name"), "", true)
+	utils.SingleJobs(logger.StrClearHistory, "movie_"+c.Param("name"), "", true)
 	c.JSON(http.StatusOK, "started")
 }
 
@@ -689,17 +740,16 @@ func apimoviesClearHistoryName(c *gin.Context) {
 // @Description  Clear Episode Download History
 // @Tags         movie
 // @Param        id   path      string  true  "Movie ID"
-// @Success      200  {object}  string
-// @Failure      401  {object}  string
+// @Param        apikey query     string    true  "apikey"
+// @Success      200  {object}  int64
+// @Failure      403  {object}  error
+// @Failure      401  {object}  Jsonerror
 // @Router       /api/movies/search/history/clearid/{id} [get]
 func apiMoviesClearHistoryID(c *gin.Context) {
-	if auth(c) == http.StatusUnauthorized {
-		return
-	}
-	inres, inerr := database.DeleteRow(false, "movie_histories", "movie_id = ?", c.Param(logger.StrID))
-
+	inres, inerr := database.DeleteRow("movie_histories", "movie_id = ?", c.Param(logger.StrID))
 	if inerr == nil {
-		c.JSON(http.StatusOK, inres)
+		rows, _ := inres.RowsAffected()
+		c.JSON(http.StatusOK, rows)
 	} else {
 		c.JSON(http.StatusForbidden, inerr)
 	}

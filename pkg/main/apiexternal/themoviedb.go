@@ -1,32 +1,35 @@
 package apiexternal
 
 import (
+	"net/url"
+	"strconv"
 	"time"
 
+	"github.com/Kellerman81/go_media_downloader/config"
 	"github.com/Kellerman81/go_media_downloader/logger"
 	"github.com/Kellerman81/go_media_downloader/slidingwindow"
 )
 
-type TheMovieDBSearch struct {
-	TotalPages   int                          `json:"total_pages"`
-	TotalResults int                          `json:"total_results"`
-	Page         int                          `json:"page"`
-	Results      []TheMovieDBFindMovieresults `json:"results"`
+type theMovieDBSearch struct {
+	//TotalPages   int                          `json:"total_pages"`
+	//TotalResults int                          `json:"total_results"`
+	//Page         int                          `json:"page"`
+	Results []theMovieDBFindMovieresults `json:"results"`
 }
 
-type TheMovieDBSearchTV struct {
-	TotalPages   int                       `json:"total_pages"`
-	TotalResults int                       `json:"total_results"`
-	Page         int                       `json:"page"`
-	Results      []TheMovieDBFindTvresults `json:"results"`
+type theMovieDBSearchTV struct {
+	//TotalPages   int                       `json:"total_pages"`
+	//TotalResults int                       `json:"total_results"`
+	//Page         int                       `json:"page"`
+	Results []theMovieDBFindTvresults `json:"results"`
 }
 
-type TheMovieDBFind struct {
-	MovieResults []TheMovieDBFindMovieresults `json:"movie_results"`
-	TvResults    []TheMovieDBFindTvresults    `json:"tv_results"`
+type theMovieDBFind struct {
+	MovieResults []theMovieDBFindMovieresults `json:"movie_results"`
+	TvResults    []theMovieDBFindTvresults    `json:"tv_results"`
 }
 
-type TheMovieDBFindMovieresults struct {
+type theMovieDBFindMovieresults struct {
 	VoteAverage      float32 `json:"vote_average"`
 	Overview         string  `json:"overview"`
 	ReleaseDate      string  `json:"release_date"`
@@ -38,8 +41,8 @@ type TheMovieDBFindMovieresults struct {
 	ID               int     `json:"id"`
 	Popularity       float32 `json:"popularity"`
 }
-type TheMovieDBFindTvresults struct {
-	ID               int      `json:"id"`
+type theMovieDBFindTvresults struct {
+	//ID               int      `json:"id"`
 	OriginalLanguage string   `json:"original_language"`
 	FirstAirDate     string   `json:"first_air_date"`
 	Name             string   `json:"name"`
@@ -51,21 +54,21 @@ type TheMovieDBFindTvresults struct {
 	Popularity       float32  `json:"popularity"`
 }
 
-type TheMovieDBMovieGenres struct {
-	ID   int    `json:"id"`
+type theMovieDBMovieGenres struct {
+	//ID   int    `json:"id"`
 	Name string `json:"name"`
 }
 
-type TheMovieDBMovieSpokenLanguages struct {
+type theMovieDBMovieSpokenLanguages struct {
 	EnglishName string `json:"english_name"`
 	Name        string `json:"name"`
 	Iso6391     string `json:"iso_639_1"`
 }
 
-type TheMovieDBMovie struct {
+type theMovieDBMovie struct {
 	Adult            bool                             `json:"adult"`
 	Budget           int                              `json:"budget"`
-	Genres           []TheMovieDBMovieGenres          `json:"genres"`
+	Genres           []theMovieDBMovieGenres          `json:"genres"`
 	ID               int                              `json:"id"`
 	ImdbID           string                           `json:"imdb_id"`
 	OriginalLanguage string                           `json:"original_language"`
@@ -75,7 +78,7 @@ type TheMovieDBMovie struct {
 	ReleaseDate      string                           `json:"release_date"`
 	Revenue          int                              `json:"revenue"`
 	Runtime          int                              `json:"runtime"`
-	SpokenLanguages  []TheMovieDBMovieSpokenLanguages `json:"spoken_languages"`
+	SpokenLanguages  []theMovieDBMovieSpokenLanguages `json:"spoken_languages"`
 	Status           string                           `json:"status"`
 	Tagline          string                           `json:"tagline"`
 	Title            string                           `json:"title"`
@@ -85,18 +88,18 @@ type TheMovieDBMovie struct {
 	Poster           string                           `json:"poster_path"`
 }
 
-type TheMovieDBMovieTitles struct {
-	ID     int                         `json:"id"`
-	Titles []TheMovieDBMovieTitlesList `json:"titles"`
+type theMovieDBMovieTitles struct {
+	//ID     int                         `json:"id"`
+	Titles []theMovieDBMovieTitlesList `json:"titles"`
 }
 
-type TheMovieDBMovieTitlesList struct {
+type theMovieDBMovieTitlesList struct {
 	TmdbType string `json:"type"`
 	Title    string `json:"title"`
 	Iso31661 string `json:"iso_3166_1"`
 }
 
-type TheMovieDBTVExternal struct {
+type theMovieDBTVExternal struct {
 	ID          int    `json:"id"`
 	ImdbID      string `json:"imdb_id"`
 	FreebaseMID string `json:"freebase_mid"`
@@ -108,71 +111,81 @@ type TheMovieDBTVExternal struct {
 	TwitterID   string `json:"twitter_id"`
 }
 
+// tmdbClient is a struct for interacting with the TMDB API
+// It contains fields for the API key, query parameter API key,
+// and a pointer to the rate limited HTTP client
 type tmdbClient struct {
-	APIKey string
-	Client *RLHTTPClient
+	APIKey  string        // The TMDB API key
+	QAPIKey string        // The query parameter API key
+	Client  *rlHTTPClient // Pointer to the rate limited HTTP client
 }
 
-const (
-	apiurltmdbmovies = "https://api.themoviedb.org/3/movie/"
-	strAPIKey        = "?api_key="
-)
-
-var TmdbAPI *tmdbClient
-
-func (t *TheMovieDBMovieTitles) Close() {
-	if logger.DisableVariableCleanup {
+// Close releases the resources held by a TheMovieDBMovieTitles struct.
+// It sets the Titles field to nil if it has a capacity >= 1 to release the
+// underlying array. It also calls logger.Clear on the struct to release any
+// resources held by the logger.
+func (t *theMovieDBMovieTitles) Close() {
+	if config.SettingsGeneral.DisableVariableCleanup || t == nil {
 		return
 	}
-	if t == nil {
-		return
-	}
-	logger.Clear(&t.Titles)
-	logger.ClearVar(t)
-}
-func (t *TheMovieDBMovie) Close() {
-	if logger.DisableVariableCleanup {
-		return
-	}
-	if t == nil {
-		return
-	}
-	logger.Clear(&t.Genres)
-	logger.Clear(&t.SpokenLanguages)
-	logger.ClearVar(t)
-}
-func (t *TheMovieDBFind) Close() {
-	if logger.DisableVariableCleanup {
-		return
-	}
-	if t == nil {
-		return
-	}
-	logger.Clear(&t.MovieResults)
-	logger.Clear(&t.TvResults)
-	logger.ClearVar(t)
-}
-func (t *TheMovieDBSearchTV) Close() {
-	if logger.DisableVariableCleanup {
-		return
-	}
-	if t == nil {
-		return
-	}
-	logger.Clear(&t.Results)
-	logger.ClearVar(t)
-}
-func (t *TheMovieDBSearch) Close() {
-	if logger.DisableVariableCleanup {
-		return
-	}
-	if t == nil {
-		return
-	}
-	logger.Clear(&t.Results)
-	logger.ClearVar(t)
+	*t = theMovieDBMovieTitles{}
 }
 
+func (t *theMovieDBTVExternal) Close() {
+	if config.SettingsGeneral.DisableVariableCleanup || t == nil {
+		return
+	}
+	*t = theMovieDBTVExternal{}
+}
+
+// Close releases the memory allocated to the TheMovieDBMovie struct.
+// It checks if the struct is nil and returns immediately if so.
+// It then checks if the Genres and SpokenLanguages slices have a
+// capacity >= 1, and sets them to nil if so to release the backing
+// array memory.
+// Finally it calls logger.Clear() on the struct to clear any logged errors.
+func (t *theMovieDBMovie) Close() {
+	if config.SettingsGeneral.DisableVariableCleanup || t == nil {
+		return
+	}
+	*t = theMovieDBMovie{}
+}
+
+// Close releases the memory allocated to the TheMovieDBFind struct by
+// setting slices to nil and clearing pointers. This should be called after
+// the data from the struct is no longer needed.
+func (t *theMovieDBFind) Close() {
+	if config.SettingsGeneral.DisableVariableCleanup || t == nil {
+		return
+	}
+	*t = theMovieDBFind{}
+}
+
+// Close releases the resources held by a TheMovieDBSearchTV struct by
+// setting the Results field to nil if it has a capacity >= 1.
+// It also calls logger.Clear on the struct to release any resources held by the logger.
+func (t *theMovieDBSearchTV) Close() {
+	if config.SettingsGeneral.DisableVariableCleanup || t == nil {
+		return
+	}
+	*t = theMovieDBSearchTV{}
+}
+
+// Close releases the memory allocated to the TheMovieDBSearch struct.
+// It checks if the struct is nil and returns immediately if so.
+// It then checks if the Results slice has a capacity >= 1, and sets it to nil if so
+// to release the backing array memory.
+// Finally it calls logger.Clear() on the struct to clear any logged errors.
+func (t *theMovieDBSearch) Close() {
+	if config.SettingsGeneral.DisableVariableCleanup || t == nil {
+		return
+	}
+	*t = theMovieDBSearch{}
+}
+
+// NewTmdbClient creates a new TMDb client for making API requests.
+// It takes the TMDb API key, rate limiting settings, TLS setting, and timeout.
+// Returns a tmdbClient instance configured with the provided settings.
 func NewTmdbClient(apikey string, seconds int, calls int, disabletls bool, timeoutseconds int) {
 	if seconds == 0 {
 		seconds = 1
@@ -180,64 +193,101 @@ func NewTmdbClient(apikey string, seconds int, calls int, disabletls bool, timeo
 	if calls == 0 {
 		calls = 1
 	}
-	TmdbAPI = &tmdbClient{
-		APIKey: apikey,
+	tmdbAPI = &tmdbClient{
+		APIKey:  apikey,
+		QAPIKey: "?api_key=" + apikey,
 		Client: NewClient(
+			"tmdb",
 			disabletls,
 			true,
 			slidingwindow.NewLimiter(time.Duration(seconds)*time.Second, int64(calls)),
 			false, slidingwindow.NewLimiter(10*time.Second, 10), timeoutseconds)}
-
 }
 
-func (t *tmdbClient) SearchMovie(name *string) (*TheMovieDBSearch, error) {
-	if *name == "" {
+// SearchTmdbMovie searches for movies on TheMovieDB API by movie name.
+// It takes a movie name string as input and returns a pointer to a TheMovieDBSearch struct containing the search results,
+// or an error if the name is empty or the API call fails.
+func SearchTmdbMovie(name string) ([]theMovieDBFindMovieresults, error) {
+	if name == "" || tmdbAPI.Client.checklimiterwithdaily() {
 		return nil, logger.ErrNotFound
 	}
-	return DoJSONType[TheMovieDBSearch](t.Client, "https://api.themoviedb.org/3/search/movie?api_key="+t.APIKey+"&query="+QueryEscape(name))
+	//return DoJSONType[theMovieDBSearch](tmdbAPI.Client, logger.JoinStrings("https://api.themoviedb.org/3/search/movie", tmdbAPI.QAPIKey, "&query=", url.QueryEscape(name)), nil)
+	arr, err := DoJSONType[theMovieDBSearch](tmdbAPI.Client, logger.JoinStrings("https://api.themoviedb.org/3/search/movie", tmdbAPI.QAPIKey, "&query=", url.QueryEscape(name)))
+	return arr.Results, err
 }
 
-func (t *tmdbClient) SearchTV(name string) (*TheMovieDBSearchTV, error) {
-	if name == "" {
+// SearchTmdbTV searches for TV shows on TheMovieDB API.
+// It takes a search query string and returns a TheMovieDBSearchTV struct containing the search results.
+// Returns ErrNotFound error if the search query is empty.
+func SearchTmdbTV(name string) ([]theMovieDBFindTvresults, error) {
+	if name == "" || tmdbAPI.Client.checklimiterwithdaily() {
 		return nil, logger.ErrNotFound
 	}
 
-	return DoJSONType[TheMovieDBSearchTV](t.Client, "https://api.themoviedb.org/3/search/tv?api_key="+t.APIKey+"&query="+QueryEscape(&name))
+	//return DoJSONType[theMovieDBSearchTV](tmdbAPI.Client, logger.JoinStrings("https://api.themoviedb.org/3/search/tv", tmdbAPI.QAPIKey, "&query=", url.QueryEscape(name)), nil)
+	arr, err := DoJSONType[theMovieDBSearchTV](tmdbAPI.Client, logger.JoinStrings("https://api.themoviedb.org/3/search/tv", tmdbAPI.QAPIKey, "&query=", url.QueryEscape(name)))
+	return arr.Results, err
 }
 
-func (t *tmdbClient) FindImdb(imdbid string) (*TheMovieDBFind, error) {
-	if imdbid == "" {
+// FindTmdbImdb searches TheMovieDB API to find a movie based on its IMDb ID.
+// It takes an IMDb ID string as input and returns a TheMovieDBFind struct containing the lookup result.
+// Returns an ErrNotFound error if the IMDb ID is empty.
+func FindTmdbImdb(imdbid string) ([]theMovieDBFindMovieresults, error) {
+	if imdbid == "" || tmdbAPI.Client.checklimiterwithdaily() {
 		return nil, logger.ErrNotFound
 	}
-	return DoJSONType[TheMovieDBFind](t.Client, "https://api.themoviedb.org/3/find/"+imdbid+strAPIKey+t.APIKey+"&language=en-US&external_source=imdb_id")
+	arr, err := DoJSONType[theMovieDBFind](tmdbAPI.Client, logger.JoinStrings(logger.URLJoinPath("https://api.themoviedb.org/3/find/", imdbid), tmdbAPI.QAPIKey, "&language=en-US&external_source=imdb_id"))
+	return arr.MovieResults, err
 }
-func (t *tmdbClient) FindTvdb(thetvdbid int) (*TheMovieDBFind, error) {
-	if thetvdbid == 0 {
+
+// FindTmdbTvdb searches TheMovieDB API to find a TV show based on its TheTVDB ID.
+// It takes a TheTVDB ID int as input and returns a TheMovieDBFind struct containing the lookup result.
+// Returns an ErrNotFound error if the TheTVDB ID is 0.
+func FindTmdbTvdb(thetvdbid int) ([]theMovieDBFindTvresults, error) {
+	if thetvdbid == 0 || tmdbAPI.Client.checklimiterwithdaily() {
 		return nil, logger.ErrNotFound
 	}
-	return DoJSONType[TheMovieDBFind](t.Client, "https://api.themoviedb.org/3/find/"+logger.IntToString(thetvdbid)+strAPIKey+t.APIKey+"&language=en-US&external_source=tvdb_id")
+	arr, err := DoJSONType[theMovieDBFind](tmdbAPI.Client, logger.JoinStrings(logger.URLJoinPath("https://api.themoviedb.org/3/find/", strconv.Itoa(thetvdbid)), tmdbAPI.QAPIKey, "&language=en-US&external_source=tvdb_id"))
+	return arr.TvResults, err
 }
-func (t *tmdbClient) GetMovie(id int) (*TheMovieDBMovie, error) {
-	if id == 0 {
-		return nil, logger.ErrNotFound
+
+// GetTmdbMovie retrieves movie details from TheMovieDB API by movie ID.
+// It takes an integer movie ID as input and returns a TheMovieDBMovie struct containing the movie details.
+// Returns an error if the ID is invalid or the API call fails.
+func GetTmdbMovie(id int) (theMovieDBMovie, error) {
+	if id == 0 || tmdbAPI.Client.checklimiterwithdaily() {
+		return theMovieDBMovie{}, logger.ErrNotFound
 	}
-	return DoJSONType[TheMovieDBMovie](t.Client, apiurltmdbmovies+logger.IntToString(id)+strAPIKey+t.APIKey)
+	return DoJSONType[theMovieDBMovie](tmdbAPI.Client, logger.JoinStrings(logger.URLJoinPath(apiurltmdbmovies, strconv.Itoa(id)), tmdbAPI.QAPIKey))
 }
-func (t *tmdbClient) GetMovieTitles(id int) (*TheMovieDBMovieTitles, error) {
-	if id == 0 {
+
+// GetTmdbMovieTitles retrieves the alternative titles for a TMDb movie by ID.
+// It returns a TheMovieDBMovieTitles struct containing the titles,
+// or an error if the ID is invalid or the lookup fails.
+func GetTmdbMovieTitles(id int) ([]theMovieDBMovieTitlesList, error) {
+	if id == 0 || tmdbAPI.Client.checklimiterwithdaily() {
 		return nil, logger.ErrNotFound
 	}
-	return DoJSONType[TheMovieDBMovieTitles](t.Client, apiurltmdbmovies+logger.IntToString(id)+"/alternative_titles?api_key="+t.APIKey)
+	arr, err := DoJSONType[theMovieDBMovieTitles](tmdbAPI.Client, logger.JoinStrings(logger.URLJoinPath(apiurltmdbmovies, strconv.Itoa(id), "alternative_titles"), tmdbAPI.QAPIKey))
+	return arr.Titles, err
 }
-func (t *tmdbClient) GetMovieExternal(id int) (*TheMovieDBTVExternal, error) {
-	if id == 0 {
-		return nil, logger.ErrNotFound
+
+// GetTmdbMovieExternal retrieves the external IDs for a TMDb movie by ID.
+// It returns a TheMovieDBTVExternal struct containing the external IDs,
+// or an error if the ID is invalid or the lookup fails.
+func GetTmdbMovieExternal(id int) (theMovieDBTVExternal, error) {
+	if id == 0 || tmdbAPI.Client.checklimiterwithdaily() {
+		return theMovieDBTVExternal{}, logger.ErrNotFound
 	}
-	return DoJSONType[TheMovieDBTVExternal](t.Client, apiurltmdbmovies+logger.IntToString(id)+"/external_ids?api_key="+t.APIKey)
+	return DoJSONType[theMovieDBTVExternal](tmdbAPI.Client, logger.JoinStrings(logger.URLJoinPath(apiurltmdbmovies, strconv.Itoa(id), "external_ids"), tmdbAPI.QAPIKey))
 }
-func (t *tmdbClient) GetTVExternal(id string) (*TheMovieDBTVExternal, error) {
-	if id == "" {
-		return nil, logger.ErrNotFound
+
+// GetTVExternal retrieves the external IDs for a TV show from TheMovieDB.
+// It takes the ID of the TV show and returns a pointer to a TheMovieDBTVExternal struct containing the external IDs.
+// Returns an error if the ID is invalid or the API call fails.
+func GetTVExternal(id int) (theMovieDBTVExternal, error) {
+	if id == 0 || tmdbAPI.Client.checklimiterwithdaily() {
+		return theMovieDBTVExternal{}, logger.ErrNotFound
 	}
-	return DoJSONType[TheMovieDBTVExternal](t.Client, "https://api.themoviedb.org/3/tv/"+id+"/external_ids?api_key="+t.APIKey)
+	return DoJSONType[theMovieDBTVExternal](tmdbAPI.Client, logger.JoinStrings(logger.URLJoinPath("https://api.themoviedb.org/3/tv/", strconv.Itoa(id), "external_ids"), tmdbAPI.QAPIKey))
 }

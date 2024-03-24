@@ -1,31 +1,51 @@
 package logger
 
 import (
+	"bytes"
 	"os"
-	"runtime"
 	"strings"
 	"time"
 
 	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/pkgerrors"
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
+// Config defines the configuration options for the logger
 type Config struct {
-	LogLevel     string
-	LogFileSize  int
+	// LogLevel sets the minimum enabled logging level. Valid levels are
+	// "debug", "info", "warn", and "error".
+	LogLevel string
+
+	// LogFileSize is the maximum size in megabytes of the log file before it gets
+	// rotated. It defaults to 10 megabytes.
+	LogFileSize int
+
+	// LogFileCount is the maximum number of old log files to retain.
+	// The default is 5.
 	LogFileCount int
-	LogCompress  bool
-	TimeFormat   string
-	TimeZone     string
+
+	// LogCompress determines if the rotated log files should be compressed
+	// using gzip. The default is false.
+	LogCompress bool
+
+	// LogColorize enables output with colors
+	LogColorize bool
+
+	// TimeFormat sets the format for timestamp in logs. Valid formats are
+	// "rfc3339", "iso8601", etc. The default is RFC3339.
+	TimeFormat string
+
+	// TimeZone sets the time zone to use for timestamps in logs.
+	// The default is to use the local time zone.
+	TimeZone string
+
+	// LogToFileOnly disables logging to stdout.
+	// If true, logs will only be written to the file and not also stdout.
+	LogToFileOnly bool
 }
 
-var (
-	Log        zerolog.Logger
-	TimeZone   = *time.UTC
-	TimeFormat = time.RFC3339Nano
-)
-
+// InitLogger initializes the global logger based on the provided Config.
+// It sets the log level, output format, rotation options, etc.
 func InitLogger(config Config) {
 	if config.LogFileSize == 0 {
 		config.LogFileSize = 10
@@ -35,19 +55,19 @@ func InitLogger(config Config) {
 	}
 	switch config.TimeFormat {
 	case "rfc3339":
-		TimeFormat = time.RFC3339Nano
+		timeFormat = time.RFC3339Nano
 	case "iso8601":
-		TimeFormat = "2006-01-02T15:04:05.000Z0700"
+		timeFormat = "2006-01-02T15:04:05.000Z0700"
 	case "rfc1123":
-		TimeFormat = time.RFC1123
+		timeFormat = time.RFC1123
 	case "rfc822":
-		TimeFormat = time.RFC822
+		timeFormat = time.RFC822
 	case "rfc850":
-		TimeFormat = time.RFC850
+		timeFormat = time.RFC850
 	case "":
-		TimeFormat = time.RFC3339Nano
+		timeFormat = time.RFC3339Nano
 	default:
-		TimeFormat = config.TimeFormat
+		timeFormat = config.TimeFormat
 	}
 	var level = int(zerolog.InfoLevel)
 	if strings.EqualFold(config.LogLevel, StrDebug) {
@@ -58,144 +78,190 @@ func InitLogger(config Config) {
 	}
 	if config.TimeZone != "" {
 		if strings.EqualFold(config.TimeZone, "local") {
-			TimeZone = *time.Local
+			timeZone = *time.Local
 		} else if strings.EqualFold(config.TimeZone, "utc") {
-			TimeZone = *time.UTC
+			timeZone = *time.UTC
 		} else {
-			TimeZone2, _ := time.LoadLocation(config.TimeZone)
-			TimeZone = *TimeZone2
+			timeZone2, _ := time.LoadLocation(config.TimeZone)
+			timeZone = *timeZone2
 		}
 	}
 
-	zerolog.ErrorStackMarshaler = pkgerrors.MarshalStack
-	zerolog.ErrorStackFieldName = "stack"
-	zerolog.DisableSampling(true)
-	zerolog.TimeFieldFormat = TimeFormat
-
-	Log = zerolog.New(zerolog.MultiLevelWriter(zerolog.ConsoleWriter{
-		Out:        os.Stdout,
-		TimeFormat: TimeFormat,
-	}, &lumberjack.Logger{
+	Log = zerolog.New(zerolog.Logger{}).
+		Level(zerolog.Level(level)).
+		With().
+		Timestamp().Caller().
+		Logger()
+	filelogger := lumberjack.Logger{
 		Filename:   "./logs/downloader.log",
 		MaxSize:    config.LogFileSize, // megabytes
 		MaxBackups: config.LogFileCount,
 		MaxAge:     28,                 //days
 		Compress:   config.LogCompress, // disabled by default
-	})).
-		Level(zerolog.Level(level)).
-		With().
-		Timestamp().Caller().
-		Logger()
-}
-func stack() string {
-	buf := make([]byte, 1024)
-	for {
-		n := runtime.Stack(buf, false)
-		if n < len(buf) {
-			return string(buf[:n])
-		}
-		buf = make([]byte, 2*len(buf))
 	}
-}
-func Logerror(err error, msg string) {
-	LogAnyError(err, msg)
-	//Log.Error().Err(err).Msg(msg)
+	if config.LogToFileOnly {
+		Log = Log.Output(&filelogger)
+		return
+	}
+	if config.LogColorize {
+		Log = Log.Output(zerolog.MultiLevelWriter(zerolog.ConsoleWriter{Out: os.Stdout}, &filelogger))
+		return
+	}
+	Log = Log.Output(zerolog.MultiLevelWriter(os.Stdout, &filelogger))
 }
 
-func LogerrorStr(err error, str1 string, str2 string, msg string) {
-	LogAnyError(err, msg, LoggerValue{Name: str1, Value: str2})
-	//Log.Error().Err(err).Str(str1, str2).Msg(msg)
-}
-
-type LoggerValue struct {
+type LogField struct {
 	Name  string
-	Value interface{}
+	Value any
 }
 
-func LogAnyError(err error, msg string, vals ...LoggerValue) {
-	evt := Log.Error()
-	if err != nil {
-		evt = evt.Err(err)
+// NewLogField creates a new LogField struct with the given name and value.
+// LogField is used to represent a key-value pair that can be attached
+// to a log entry.
+func NewLogField(name string, value any) LogField {
+	return LogField{Name: name, Value: value}
+}
+
+// NewLogFieldValue creates a new LogField with the given value.
+func NewLogFieldValue(value any) LogField {
+	return LogField{Value: value}
+}
+
+// LogDynamicSlice logs a message with dynamic fields and static fields.
+// It allows specifying the log level, message, static fields, and dynamic fields.
+// The static fields are logged on every call, while the dynamic fields can vary per call.
+// For typev use one of the following: "info", "debug", "error", "fatal", "warn", "panic"
+func LogDynamicSlice(typev string, msg string, staticfields []LogField, fields ...LogField) {
+	var logv *zerolog.Event
+	switch typev {
+	case "info":
+		logv = Log.Info()
+	case "debug":
+		logv = Log.Debug()
+	case "error":
+		logv = Log.Error()
+	case "fatal":
+		logv = Log.Fatal()
+	case "warn":
+		logv = Log.Warn()
+	case "panic":
+		logv = Log.Panic()
+	default:
+		logv = Log.Info()
 	}
-	for idx := range vals {
-		switch tt := vals[idx].Value.(type) {
-		case string:
-			if len(tt) >= 1 {
-				evt.Str(vals[idx].Name, tt)
-			}
-		case int:
-			if tt != 0 {
-				evt.Int(vals[idx].Name, tt)
-			}
-		case uint:
-			if tt != 0 {
-				evt.Uint(vals[idx].Name, tt)
-			}
-		default:
-			evt.Any(vals[idx].Name, vals[idx].Value)
+	logv.CallerSkipFrame(1)
+	for idx := range fields {
+		if fields[idx].Value == nil {
+			continue
 		}
+		addlogvalue(logv, &fields[idx])
 	}
-	if msg != "" {
-		evt.Msg(msg)
-	} else {
-		evt.Send()
+	for idx := range staticfields {
+		if staticfields[idx].Value == nil {
+			continue
+		}
+		addlogvalue(logv, &staticfields[idx])
+	}
+	logv.Msg(msg)
+}
+
+// addlogvalue adds the provided LogField value to the given zerolog Event.
+// It inspects the dynamic type of the LogField Value and calls the appropriate
+// zerolog Event method like Str, Int, etc.
+func addlogvalue(logv *zerolog.Event, field *LogField) {
+	switch tt := field.Value.(type) {
+	case string:
+		if tt == "" {
+			break
+		}
+		logv.Str(field.Name, tt)
+	case *string:
+		if *tt == "" {
+			break
+		}
+		logv.Str(field.Name, *tt)
+	case *int:
+		if *tt == 0 {
+			break
+		}
+		logv.Int(field.Name, *tt)
+	case int:
+		if tt == 0 {
+			break
+		}
+		logv.Int(field.Name, tt)
+	case *int64:
+		if *tt == 0 {
+			break
+		}
+		logv.Int64(field.Name, *tt)
+	case int64:
+		if tt == 0 {
+			break
+		}
+		logv.Int64(field.Name, tt)
+	case uint:
+		if tt == 0 {
+			break
+		}
+		logv.Uint(field.Name, tt)
+	case *uint:
+		if *tt == 0 {
+			break
+		}
+		logv.Uint(field.Name, *tt)
+	case bool:
+		logv.Bool(field.Name, tt)
+	case *bool:
+		logv.Bool(field.Name, *tt)
+	case float64:
+		logv.Float64(field.Name, tt)
+	case float32:
+		logv.Float32(field.Name, tt)
+	case *float64:
+		logv.Float64(field.Name, *tt)
+	case *float32:
+		logv.Float32(field.Name, *tt)
+	case time.Duration:
+		logv.Str(field.Name, tt.Round(time.Second).String())
+	case error:
+		logv.Err(tt)
+	case *bytes.Buffer:
+		logv.Bytes(field.Name, tt.Bytes())
+	default:
+		logv.Any(field.Name, tt)
 	}
 }
 
-func LogAnyInfo(msg string, vals ...LoggerValue) {
-	evt := Log.Info()
-	for idx := range vals {
-		switch tt := vals[idx].Value.(type) {
-		case string:
-			if len(tt) >= 1 {
-				evt.Str(vals[idx].Name, tt)
-			}
-		case int:
-			if tt != 0 {
-				evt.Int(vals[idx].Name, tt)
-			}
-		case uint:
-			if tt != 0 {
-				evt.Uint(vals[idx].Name, tt)
-			}
-		default:
-			evt.Any(vals[idx].Name, vals[idx].Value)
+// LogDynamic logs a message with dynamic log level and arbitrary fields.
+// It takes the log level type as the first argument, followed by the log message,
+// and finally any number of LogField structs containing the key-value pairs.
+// It allows logging with different levels and custom fields in a flexible way.
+// For typev use one of the following: "info", "debug", "error", "fatal", "warn", "panic"
+func LogDynamic(typev string, msg string, fields ...LogField) {
+	var logv *zerolog.Event
+	switch typev {
+	case "info":
+		logv = Log.Info()
+	case "debug":
+		logv = Log.Debug()
+	case "error":
+		logv = Log.Error()
+	case "fatal":
+		logv = Log.Fatal()
+	case "warn":
+		logv = Log.Warn()
+	case "panic":
+		logv = Log.Panic()
+	default:
+		logv = Log.Info()
+	}
+	logv.CallerSkipFrame(1)
+	for idx := range fields {
+		if fields[idx].Value == nil {
+			continue
 		}
+		addlogvalue(logv, &fields[idx])
 	}
-	if msg != "" {
-		evt.Msg(msg)
-	} else {
-		evt.Send()
-	}
-}
-
-func LogAnyDebug(msg string, vals ...LoggerValue) {
-	evt := Log.Debug()
-	for idx := range vals {
-		switch tt := vals[idx].Value.(type) {
-		case string:
-			if len(tt) >= 1 {
-				evt.Str(vals[idx].Name, tt)
-			}
-		case int:
-			if tt != 0 {
-				evt.Int(vals[idx].Name, tt)
-			}
-		case []int:
-			if len(tt) != 0 {
-				evt.Ints(vals[idx].Name, tt)
-			}
-		case uint:
-			if tt != 0 {
-				evt.Uint(vals[idx].Name, tt)
-			}
-		default:
-			evt.Any(vals[idx].Name, vals[idx].Value)
-		}
-	}
-	if msg != "" {
-		evt.Msg(msg)
-	} else {
-		evt.Send()
-	}
+	logv.Msg(msg)
 }

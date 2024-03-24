@@ -4,10 +4,9 @@ import (
 	"encoding/base64"
 	"encoding/xml"
 	"io"
+	"net/http"
 	"os"
 
-	"github.com/Kellerman81/go_media_downloader/apiexternal"
-	"github.com/Kellerman81/go_media_downloader/logger"
 	nzb "github.com/andrewstuart/go-nzb"
 	"github.com/pkg/errors"
 )
@@ -27,9 +26,11 @@ func base64encode(s string) string {
 	return base64.StdEncoding.EncodeToString([]byte(s))
 }
 
-func downloadURL(urlv *string) (string, error) {
+func downloadURL(urlv string) (string, error) {
 	// Get the data
-	resp, err := apiexternal.WebClient.Do(logger.HTTPGetRequest(urlv))
+	//ctx, cancel := context.WithTimeout(context.Background(), 240*time.Second)
+	//defer cancel()
+	resp, err := http.Get(urlv)
 	if err != nil {
 		return "", errors.Wrap(err, "could not http get url")
 	}
@@ -37,6 +38,7 @@ func downloadURL(urlv *string) (string, error) {
 
 	file, err := os.CreateTemp("./temp", "flame-download-*")
 	if err != nil {
+		io.Copy(io.Discard, resp.Body)
 		return "", errors.Wrap(err, "could not get tmp file")
 	}
 	defer file.Close()

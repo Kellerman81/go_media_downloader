@@ -9,13 +9,12 @@ import (
 )
 
 func GetQueueTable(ctx *context.Context) (userTable table.Table) {
-
 	userTable = table.NewDefaultTable(table.Config{})
 	userTable.GetOnlyInfo()
-	var queue []map[string]interface{}
+	var queue []map[string]any
 	i := 0
 	for _, value := range worker.GetQueues() {
-		queue = append(queue, map[string]interface{}{
+		queue = append(queue, map[string]any{
 			"id":      i,
 			"queue":   value.Queue.Queue,
 			"job":     value.Queue.Name,
@@ -37,7 +36,7 @@ func GetQueueTable(ctx *context.Context) (userTable table.Table) {
 	info.SetTable("Queue").
 		SetTitle("Queue").
 		SetDescription("Queue").
-		SetGetDataFn(func(param parameter.Parameters) (data []map[string]interface{}, size int) {
+		SetGetDataFn(func(param parameter.Parameters) (data []map[string]any, size int) {
 			param.PK()
 
 			return queue, len(queue)

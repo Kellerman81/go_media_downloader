@@ -5,6 +5,9 @@ import (
 	delugeclient "github.com/gdm85/go-libdeluge"
 )
 
+// SendToDeluge connects to a Deluge server, authenticates, and adds a torrent from a magnet URI or URL.
+// It configures options like download location, moving completed downloads, pausing on add, etc.
+// Returns any error from the connection or add torrent operations.
 func SendToDeluge(host string, port int, username string, password string, urlv string, dlpath string, moveafter bool, moveafterpath string, addpaused bool) error {
 	cl := delugeclient.NewV2(delugeclient.Settings{
 		Hostname:             host,
@@ -41,6 +44,7 @@ func SendToDeluge(host string, port int, username string, password string, urlv 
 				return err
 			}
 		}
+		return nil
 	}
 	return err
 }

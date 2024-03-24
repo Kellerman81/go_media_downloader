@@ -1,108 +1,110 @@
 package apiexternal
 
 import (
-	"errors"
+	"strconv"
 	"strings"
 	"unicode"
 
 	"github.com/Kellerman81/go_media_downloader/config"
+	"github.com/Kellerman81/go_media_downloader/database"
 	"github.com/Kellerman81/go_media_downloader/logger"
+	"github.com/Kellerman81/go_media_downloader/pool"
 )
 
-type ParseInfo struct {
-	File             string
-	Title            string
-	Season           int      `json:"season,omitempty"`
-	Episode          int      `json:"episode,omitempty"`
-	SeasonStr        string   `json:"seasonstr,omitempty"`
-	EpisodeStr       string   `json:"episodestr,omitempty"`
-	Year             int      `json:"year,omitempty"`
-	Resolution       string   `json:"resolution,omitempty"`
-	ResolutionID     uint     `json:"resolutionid,omitempty"`
-	Quality          string   `json:"quality,omitempty"`
-	QualityID        uint     `json:"qualityid,omitempty"`
-	Codec            string   `json:"codec,omitempty"`
-	CodecID          uint     `json:"codecid,omitempty"`
-	Audio            string   `json:"audio,omitempty"`
-	AudioID          uint     `json:"audioid,omitempty"`
-	Priority         int      `json:"priority,omitempty"`
-	Identifier       string   `json:"identifier,omitempty"`
-	Date             string   `json:"date,omitempty"`
-	Extended         bool     `json:"extended,omitempty"`
-	Proper           bool     `json:"proper,omitempty"`
-	Repack           bool     `json:"repack,omitempty"`
-	Imdb             string   `json:"imdb,omitempty"`
-	Tvdb             string   `json:"tvdb,omitempty"`
-	QualitySet       string   `json:"qualityset,omitempty"`
-	Languages        []string `json:"languages,omitempty"`
-	Runtime          int      `json:"runtime,omitempty"`
-	Height           int      `json:"height,omitempty"`
-	Width            int      `json:"width,omitempty"`
-	DbmovieID        uint     `json:"dbmovieid,omitempty"`
-	MovieID          uint     `json:"movieid,omitempty"`
-	DbserieID        uint     `json:"dbserieid,omitempty"`
-	DbserieEpisodeID uint     `json:"dbserieepisodeid,omitempty"`
-	SerieID          uint     `json:"serieid,omitempty"`
-	SerieEpisodeID   uint     `json:"serieepisodeid,omitempty"`
-	Listname         string   `json:"listname,omitempty"`
-	//Group           string   `json:"group,omitempty"`
-	//Region          string   `json:"region,omitempty"`
-	//Hardcoded       bool     `json:"hardcoded,omitempty"`
-	//Container       string   `json:"container,omitempty"`
-	//Widescreen      bool     `json:"widescreen,omitempty"`
-	//Website         string   `json:"website,omitempty"`
-	//Sbs             string   `json:"sbs,omitempty"`
-	//Unrated         bool     `json:"unrated,omitempty"`
-	//Subs            string   `json:"subs,omitempty"`
-	//ThreeD          bool     `json:"3d,omitempty"`
-}
-
+// FileParser is a struct for parsing file names
+// It contains fields for the file name string, parsed info, config pointer,
+// whether to allow search by title, and if it is filled
 type FileParser struct {
-	Str                string
-	M                  ParseInfo
-	TypeGroup          string
-	IncludeYearInTitle bool
+	Str              string                  // the file name string
+	M                database.ParseInfo      // the parsed info
+	Cfgp             *config.MediaTypeConfig // pointer to the media type config
+	Allowsearchtitle bool                    // whether to allow search by title
+	Filled           bool                    // whether the struct is filled
 }
 
-func (s *FileParser) Close() {
-	if logger.DisableVariableCleanup {
+var (
+	ParserPool = pool.NewPool(100, 0, func(b *FileParser) {}, func(b *FileParser) { *b = FileParser{} })
+)
+
+func (s *FileParser) Clear() {
+	if s == nil || !s.Filled {
 		return
 	}
-	if s == nil {
-		return
-	}
-	s.M.Close()
-	logger.ClearVar(s)
+	*s = FileParser{}
 }
 
+// Nzbwithprio is a struct containing information about an NZB found on the index
+// It includes the parsed file name info, the NZB details, IDs, title,
+// alternate titles, quality, list name, priority, reasons, and search flags
 type Nzbwithprio struct {
-	Prio int
-	//Indexer          string
-	ParseInfo        *FileParser
-	NZB              *NZB
-	NzbmovieID       uint
-	NzbepisodeID     uint
-	Dbid             uint
-	WantedTitle      string
-	WantedAlternates []string
-	QualityTemplate  string
-	MinimumPriority  int
-	Reason           string
-	AdditionalReason string
+	Info             FileParser                         // The parsed file name information
+	NZB              nzb                                // The NZB details
+	NzbmovieID       uint                               // The associated movie ID if this is a movie
+	NzbepisodeID     uint                               // The associated episode ID if this is a TV episode
+	Dbid             uint                               // The DBMovie or DBEpisode ID
+	WantedTitle      string                             // The wanted title for this download
+	WantedAlternates []database.DbstaticTwoStringOneInt // Alternate wanted titles
+	Quality          string                             // The quality of this NZB
+	Listname         string                             // The name of the list this NZB is from
+	MinimumPriority  int                                // The minimum priority level
+	Reason           string                             // The reason for denying this NZB
+	AdditionalReason string                             // Any additional reason details
+	DontSearch       bool                               // Whether to avoid searching for this
+	DontUpgrade      bool                               // Whether to avoid upgrading this
 }
 
 // NZB represents an NZB found on the index
-type NZB struct {
-	ID    string `json:"id,omitempty"`
+type nzb struct {
+	// ID is the unique identifier for the NZB
+	ID string `json:"id,omitempty"`
+
+	// Title is the title of the content
 	Title string `json:"title,omitempty"`
-	//Description string    `json:"description,omitempty"`
+
+	// Size is the size of the NZB in bytes
 	Size int64 `json:"size,omitempty"`
+
+	// SourceEndpoint is the endpoint of the NZB source
+	SourceEndpoint string `json:"source_endpoint"`
+
+	// TVDBID is the TVDB ID if this NZB is for a TV show
+	TVDBID int `json:"tvdbid,omitempty"`
+
+	// Season is the season number if this NZB is for a TV show
+	Season string `json:"season,omitempty"`
+
+	// Episode is the episode number if this NZB is for a TV show
+	Episode string `json:"episode,omitempty"`
+
+	// IMDBID is the IMDb ID if this NZB is for a movie
+	IMDBID string `json:"imdb,omitempty"`
+
+	// DownloadURL is the URL to download the NZB
+	DownloadURL string `json:"download_url,omitempty"`
+
+	// IsTorrent indicates if this NZB is a torrent
+	IsTorrent bool `json:"is_torrent,omitempty"`
+
+	// Indexer is a pointer to the indexer config for this NZB
+	Indexer *config.IndexersConfig
+
+	// Quality is a pointer to the quality config for this NZB
+	Quality *config.QualityConfig
+
+	//TVTitle string `json:"tvtitle,omitempty"`
+	//Rating  int    `json:"rating,omitempty"`
+	//IMDBTitle string  `json:"imdbtitle,omitempty"`
+	//IMDBYear  int     `json:"imdbyear,omitempty"`
+	//IMDBScore float32 `json:"imdbscore,omitempty"`
+	//CoverURL  string  `json:"coverurl,omitempty"`
+	//Seeders     int    `json:"seeders,omitempty"`
+	//Peers       int    `json:"peers,omitempty"`
+	//InfoHash    string `json:"infohash,omitempty"`
+	//Description string    `json:"description,omitempty"`
 	//AirDate     time.Time `json:"air_date,omitempty"`
 	//PubDate time.Time `json:"pub_date,omitempty"`
 	//UsenetDate  time.Time `json:"usenet_date,omitempty"`
 	//NumGrabs    int       `json:"num_grabs,omitempty"`
-
-	SourceEndpoint string `json:"source_endpoint"`
 	//SourceAPIKey   string `json:"source_apikey"`
 
 	//Category []string `json:"category,omitempty"`
@@ -112,249 +114,202 @@ type NZB struct {
 	//Resolution string `json:"resolution,omitempty"`
 	//Poster     string `json:"poster,omitempty"`
 	//Group      string `json:"group,omitempty"`
-
-	// TV Specific stuff
-	TVDBID  int    `json:"tvdbid,omitempty"`
-	Season  string `json:"season,omitempty"`
-	Episode string `json:"episode,omitempty"`
-	//TVTitle string `json:"tvtitle,omitempty"`
-	//Rating  int    `json:"rating,omitempty"`
-
-	// Movie Specific stuff
-	IMDBID string `json:"imdb,omitempty"`
-	//IMDBTitle string  `json:"imdbtitle,omitempty"`
-	//IMDBYear  int     `json:"imdbyear,omitempty"`
-	//IMDBScore float32 `json:"imdbscore,omitempty"`
-	//CoverURL  string  `json:"coverurl,omitempty"`
-
-	// Torznab specific stuff
-	//Seeders     int    `json:"seeders,omitempty"`
-	//Peers       int    `json:"peers,omitempty"`
-	//InfoHash    string `json:"infohash,omitempty"`
-	DownloadURL string `json:"download_url,omitempty"`
-	IsTorrent   bool   `json:"is_torrent,omitempty"`
-
-	Indexer string `json:"indexer,omitempty"`
-	Quality string `json:"quality,omitempty"`
 }
 
-func (s *NZB) Close() {
-	if logger.DisableVariableCleanup {
-		return
-	}
-	if s == nil {
-		return
-	}
-	logger.ClearVar(s)
-}
-func (s *ParseInfo) Close() {
-	if logger.DisableVariableCleanup {
-		return
-	}
-	if s == nil {
-		return
-	}
-	logger.Clear(&s.Languages)
-	logger.ClearVar(s)
-}
-
-func Before(value string, index int) string {
-	if index <= 0 {
-		return ""
-	}
-	return value[index-1 : index]
-}
-
-func After(value string, index int) string {
-	if index >= len(value) {
-		return ""
-	}
-	return value[index : index+1]
-}
-
-func CheckDigitLetter(str string) bool {
-	if str == "" {
-		return true
-	}
-	//runev := []runestr0]
-	if unicode.IsDigit([]rune(str)[0]) || unicode.IsLetter([]rune(str)[0]) {
+// CheckDigitLetter returns true if the given rune is a digit or letter.
+func CheckDigitLetter(runev rune) bool {
+	if unicode.IsDigit(runev) || unicode.IsLetter(runev) {
 		return false
 	}
 	return true
 }
 
-func (s *ParseInfo) Parsegroup(tolower string, name string, group *[]string) {
-	var index int
-	var substr string
-	for idx := range *group {
-		//if !logger.ContainsI(tolower, &(*group)[idx]) {
-		//	continue
-		//}
-		//lengroup = len((*group)[idx])
-		index = logger.IndexI(tolower, (*group)[idx])
+// Parsegroup parses the given name and group strings from s.Str,
+// setting the corresponding fields on s.M when matches are found.
+// It searches s.Str for each string in group, checks for valid
+// surrounding characters, and extracts the matched substring if found.
+func (s *FileParser) Parsegroup(name string, group []string) {
+	var index, indexmax int
+	for idx := range group {
+		index = logger.IndexI(s.Str, group[idx])
 		if index == -1 {
 			continue
 		}
-		//substr = strings.Repeat(tolower[index:index+len(group[idx])], 1)
-
-		substr = tolower[index : index+len((*group)[idx])]
-		if substr == "" {
+		indexmax = index + len(group[idx])
+		if s.Str[index:indexmax] == "" {
 			continue
 		}
-		if !CheckDigitLetter(After(tolower, index+len((*group)[idx]))) {
+		if indexmax < len(s.Str) && !CheckDigitLetter(rune(s.Str[indexmax : indexmax+1][0])) {
 			continue
 		}
-		if !CheckDigitLetter(Before(tolower, index)) {
+		if index > 0 && !CheckDigitLetter(rune(s.Str[index-1 : index][0])) {
 			continue
 		}
 		switch name {
 		case "audio":
-			s.Audio = substr
+			s.M.Audio = s.Str[index:indexmax]
 		case "codec":
-			s.Codec = substr
+			s.M.Codec = s.Str[index:indexmax]
 		case "quality":
-			s.Quality = substr
+			s.M.Quality = s.Str[index:indexmax]
 		case "resolution":
-			s.Resolution = substr
+			s.M.Resolution = s.Str[index:indexmax]
 		case "extended":
-			s.Extended = true
+			s.M.Extended = true
 		case "proper":
-			s.Proper = true
+			s.M.Proper = true
 		case "repack":
-			s.Repack = true
+			s.M.Repack = true
 		}
 		break
 	}
 }
 
-func (s *Nzbwithprio) Close() {
-	if logger.DisableVariableCleanup {
+// ParsegroupEntry parses a single group string from s.Str, setting the
+// corresponding field on s.M when a match is found. It checks for valid
+// surrounding characters before extracting the matched substring.
+func (s *FileParser) ParsegroupEntry(name string, group string) {
+	index := logger.IndexI(s.Str, group)
+	if index == -1 {
 		return
 	}
+
+	indexmax := index + len(group)
+	if indexmax < len(s.Str) && !CheckDigitLetter(rune(s.Str[indexmax : indexmax+1][0])) {
+		return
+	}
+	if index > 0 && !CheckDigitLetter(rune(s.Str[index-1 : index][0])) {
+		return
+	}
+
+	if s.Str[index:indexmax] == "" {
+		return
+	}
+	switch name {
+	case "audio":
+		s.M.Audio = s.Str[index:indexmax]
+	case "codec":
+		s.M.Codec = s.Str[index:indexmax]
+	case "quality":
+		s.M.Quality = s.Str[index:indexmax]
+	case "resolution":
+		s.M.Resolution = s.Str[index:indexmax]
+	case "extended":
+		s.M.Extended = true
+	case "proper":
+		s.M.Proper = true
+	case "repack":
+		s.M.Repack = true
+	}
+}
+
+// Close closes the Nzbwithprio by closing the Info field, setting the
+// WantedAlternates field to nil if it has a capacity >= 1, and clearing
+// the Nzbwithprio with the logger.
+func (s *Nzbwithprio) Close() {
 	if s == nil {
 		return
 	}
-	s.NZB.Close()
-	//s.QualityCfg.Close()
-	//logger.ClearVar(&s.NZB)
-	s.ParseInfo.Close()
-	logger.Clear(&s.WantedAlternates)
-	logger.ClearVar(s)
+	*s = Nzbwithprio{}
 }
 
-//const requirednotmatched string = "Skipped - required not matched"
-//const regexrejected string = "Skipped - Regex rejected"
-
-func (s *Nzbwithprio) Getnzbconfig(quality string) (string, string, string, error) {
-	if !config.CheckGroup("quality_", quality) {
-		return "", "", "", errors.New("quality template not found")
+// ChecknzbtitleB checks if the nzbtitle matches the movietitle and year.
+// It compares the movietitle and nzbtitle directly, and also tries
+// appending/removing the year, converting to slugs, etc.
+// It is used to fuzzy match nzb titles to movie info during parsing.
+func ChecknzbtitleB(movietitle string, movietitleslug string, nzbtitle string, allowpm1 bool, yeari int) bool {
+	if movietitle == "" {
+		return false
+	}
+	if movietitle == nzbtitle || strings.EqualFold(movietitle, nzbtitle) {
+		return true
 	}
 
-	for idx := range config.SettingsQuality["quality_"+quality].Indexer {
-		if !strings.EqualFold(config.SettingsQuality["quality_"+quality].Indexer[idx].TemplateIndexer, s.NZB.Indexer) {
-			continue
-		}
-		if !config.CheckGroup("path_", config.SettingsQuality["quality_"+quality].Indexer[idx].TemplatePathNzb) {
-			continue
-		}
+	year := strconv.Itoa(yeari)
+	var yearp, yearm string
+	if yeari != 0 {
+		checkstr1 := logger.JoinStrings(movietitle, " ", year)
+		checkstr2 := logger.JoinStrings(movietitle, " (", year, ")")
+		if allowpm1 {
+			yearp = strconv.Itoa(yeari + 1)
+			yearm = strconv.Itoa(yeari - 1)
 
-		if !config.CheckGroup("downloader_", config.SettingsQuality["quality_"+quality].Indexer[idx].TemplateDownloader) {
-			continue
-		}
-		if config.SettingsQuality["quality_"+quality].Indexer[idx].CategoryDowloader != "" {
-			logger.Log.Debug().Str(logger.StrIndexer, config.SettingsQuality["quality_"+quality].Indexer[idx].TemplateIndexer).Str("Downloader", config.SettingsQuality["quality_"+quality].Indexer[idx].TemplateDownloader).Msg("Download")
-			return config.SettingsQuality["quality_"+quality].Indexer[idx].CategoryDowloader, config.SettingsQuality["quality_"+quality].Indexer[idx].TemplatePathNzb, config.SettingsQuality["quality_"+quality].Indexer[idx].TemplateDownloader, nil
+			if checkstr1 == nzbtitle ||
+				checkstr2 == nzbtitle ||
+				strings.EqualFold(checkstr1, nzbtitle) ||
+				strings.EqualFold(checkstr2, nzbtitle) {
+				return true
+			}
+
+			checkstr1 = logger.JoinStrings(movietitle, " ", yearp)
+			checkstr2 = logger.JoinStrings(movietitle, " (", yearp, ")")
+			if checkstr1 == nzbtitle ||
+				checkstr2 == nzbtitle ||
+				strings.EqualFold(checkstr1, nzbtitle) ||
+				strings.EqualFold(checkstr2, nzbtitle) {
+				return true
+			}
+
+			checkstr1 = logger.JoinStrings(movietitle, " ", yearm)
+			checkstr2 = logger.JoinStrings(movietitle, " (", yearm, ")")
+			if checkstr1 == nzbtitle ||
+				checkstr2 == nzbtitle ||
+				strings.EqualFold(checkstr1, nzbtitle) ||
+				strings.EqualFold(checkstr2, nzbtitle) {
+				return true
+			}
+		} else if checkstr1 == nzbtitle ||
+			checkstr2 == nzbtitle ||
+			strings.EqualFold(checkstr1, nzbtitle) ||
+			strings.EqualFold(checkstr2, nzbtitle) {
+			return true
 		}
 	}
 
-	// defer indexer.Close()
-	logger.Log.Debug().Str("Quality", quality).Msg("Downloader nzb config NOT found - quality")
-
-	if !config.CheckGroup("path_", config.SettingsQuality["quality_"+quality].Indexer[0].TemplatePathNzb) {
-		return "", "", "", errors.New("path template not found")
+	if movietitleslug == "" {
+		movietitleslug = logger.StringToSlug(movietitle)
+	}
+	slugged := logger.StringToSlug(nzbtitle)
+	if slugged == "" {
+		return false
+	}
+	if movietitleslug == slugged {
+		return true
 	}
 
-	if !config.CheckGroup("downloader_", config.SettingsQuality["quality_"+quality].Indexer[0].TemplateDownloader) {
-		return "", "", "", errors.New("downloader template not found")
+	movietitleslug = logger.StringRemoveAllRunes(movietitleslug, '-')
+	slugged = logger.StringRemoveAllRunes(slugged, '-')
+	if movietitleslug == slugged {
+		return true
 	}
-	logger.Log.Debug().Str("categories", config.SettingsQuality["quality_"+quality].Indexer[0].CategoryDowloader).Msg("Downloader nzb config NOT found - use first")
 
-	return config.SettingsQuality["quality_"+quality].Indexer[0].CategoryDowloader, config.SettingsQuality["quality_"+quality].Indexer[0].TemplatePathNzb, config.SettingsQuality["quality_"+quality].Indexer[0].TemplateDownloader, nil
+	if yeari != 0 {
+		if movietitleslug+year == slugged {
+			return true
+		}
+
+		if allowpm1 {
+			if movietitleslug+yearp == nzbtitle ||
+				movietitleslug+yearm == nzbtitle {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
-func Checknzbtitle(movietitle string, nzbtitle string) bool {
-	if movietitle == nzbtitle {
-		return true
-	} else if strings.EqualFold(movietitle, nzbtitle) {
-		return true
-	} else {
-		return strings.EqualFold(logger.StringToSlug(movietitle), logger.StringToSlug(nzbtitle))
-	}
+// GenerateIdentifierString generates an identifier string for a movie or episode
+// in the format "S{season}E{episode}", where {season} and {episode} are the
+// season and episode numbers formatted as strings.
+func GenerateIdentifierString(m *database.ParseInfo) string {
+	return logger.JoinStrings("S", m.SeasonStr, "E", m.EpisodeStr)
 }
 
-func ChecknzbtitleB(movietitle string, movietitleslug string, nzbtitle string) bool {
-	if movietitle == nzbtitle {
-		return true
-	} else if strings.EqualFold(movietitle, nzbtitle) {
-		return true
-	} else {
-		return strings.EqualFold(movietitleslug, logger.StringToSlug(nzbtitle))
-	}
-}
-
-func Buildparsedstring(m *ParseInfo) string {
-	var bld strings.Builder
-	bld.Grow(200)
-	// if !logger.DisableVariableCleanup {
-	// 	defer bld.Reset()
-	// }
-	if m.AudioID != 0 {
-		bld.WriteString(" Audioid: ")
-		bld.WriteString(logger.UintToString(m.AudioID))
-	}
-	if m.CodecID != 0 {
-		bld.WriteString(" Codecid: ")
-		bld.WriteString(logger.UintToString(m.CodecID))
-	}
-	if m.QualityID != 0 {
-		bld.WriteString(" Qualityid: ")
-		bld.WriteString(logger.UintToString(m.QualityID))
-	}
-	if m.ResolutionID != 0 {
-		bld.WriteString(" Resolutionid: ")
-		bld.WriteString(logger.UintToString(m.ResolutionID))
-	}
-	if m.EpisodeStr != "" {
-		bld.WriteString(" Episode: ")
-		bld.WriteString(m.EpisodeStr)
-	}
-	if m.Identifier != "" {
-		bld.WriteString(" Identifier: ")
-		bld.WriteString(m.Identifier)
-	}
-	if m.Listname != "" {
-		bld.WriteString(" Listname: ")
-		bld.WriteString(m.Listname)
-	}
-	if m.SeasonStr != "" {
-		bld.WriteString(" Season: ")
-		bld.WriteString(m.SeasonStr)
-	}
-	if m.Title != "" {
-		bld.WriteString(" Title: ")
-		bld.WriteString(m.Title)
-	}
-	if m.Tvdb != "" {
-		bld.WriteString(" Tvdb: ")
-		bld.WriteString(m.Tvdb)
-	}
-	if m.Imdb != "" {
-		bld.WriteString(" Imdb: ")
-		bld.WriteString(m.Imdb)
-	}
-	if m.Year != 0 {
-		bld.WriteString(" Year: ")
-		bld.WriteString(logger.IntToString(m.Year))
-	}
-	return bld.String()
+// GenerateIdentifierStringFromInt generates a season/episode identifier string
+// from the given season and episode integers. It pads each number with leading
+// zeros to ensure a consistent format like "S01E02". This is intended to generate
+// identifiers for public display/logging.
+func GenerateIdentifierStringFromInt(season int, episode int) string {
+	return logger.JoinStrings("S", padNumberWithZero(season), "E", padNumberWithZero(episode))
 }

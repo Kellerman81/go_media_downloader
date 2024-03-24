@@ -12,7 +12,6 @@ import (
 )
 
 func GetSerieEpisodeFilesTable(ctx *context.Context) table.Table {
-
 	serieEpisodeFiles := table.NewDefaultTable(table.DefaultConfigWithDriverAndConnection("sqlite", "media"))
 
 	detail := serieEpisodeFiles.GetDetail().HideFilterArea()
@@ -37,7 +36,7 @@ func GetSerieEpisodeFilesTable(ctx *context.Context) table.Table {
 	detail.AddField("Serie_id", "serie_id", db.Integer)
 	detail.AddField("Serie_episode_id", "serie_episode_id", db.Integer)
 	detail.AddField("Dbserie_episode_id", "dbserie_episode_id", db.Integer)
-	detail.AddField("Dbserie_id", "dbserie_id", db.Integer).FieldDisplay(func(value types.FieldModel) interface{} {
+	detail.AddField("Dbserie_id", "dbserie_id", db.Integer).FieldDisplay(func(value types.FieldModel) any {
 		return template.Default().
 			Link().
 			SetURL("/admin/info/dbseries/detail?__goadmin_detail_pk=" + value.Value).
@@ -59,7 +58,7 @@ func GetSerieEpisodeFilesTable(ctx *context.Context) table.Table {
 	info.AddField("Location", "location", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
 	// info.AddField("Filename", "filename", db.Text)
 	// info.AddField("Extension", "extension", db.Text)
-	info.AddField("Quality_profile", "quality_profile", db.Text).FieldFilterable(types.FilterType{FormType: form.SelectSingle}).FieldFilterOptionsFromTable("serie_episodes", "quality_profile", "quality_profile", func(sql *db.SQL) *db.SQL { return sql.GroupBy("quality_profile") }).FieldFilterOptionExt(map[string]interface{}{"allowClear": true}).FieldSortable()
+	info.AddField("Quality_profile", "quality_profile", db.Text).FieldFilterable(types.FilterType{FormType: form.SelectSingle}).FieldFilterOptionsFromTable("serie_episodes", "quality_profile", "quality_profile", func(sql *db.SQL) *db.SQL { return sql.GroupBy("quality_profile") }).FieldFilterOptionExt(map[string]any{"allowClear": true}).FieldSortable()
 	// info.AddField("Proper", "proper", db.Numeric)
 	// info.AddField("Extended", "extended", db.Numeric)
 	// info.AddField("Repack", "repack", db.Numeric)
@@ -75,7 +74,7 @@ func GetSerieEpisodeFilesTable(ctx *context.Context) table.Table {
 		Field:     "serie_id",
 		JoinField: "id",
 		Table:     "series",
-	}).FieldFilterable(types.FilterType{FormType: form.SelectSingle}).FieldFilterOptionsFromTable("series", "listname", "listname", func(sql *db.SQL) *db.SQL { return sql.GroupBy("listname") }).FieldFilterOptionExt(map[string]interface{}{"allowClear": true}).FieldSortable()
+	}).FieldFilterable(types.FilterType{FormType: form.SelectSingle}).FieldFilterOptionsFromTable("series", "listname", "listname", func(sql *db.SQL) *db.SQL { return sql.GroupBy("listname") }).FieldFilterOptionExt(map[string]any{"allowClear": true}).FieldSortable()
 	// info.AddField("Serie_episode_id", "serie_episode_id", db.Integer)
 	//info.AddField("Dbserie_episode_id", "dbserie_episode_id", db.Integer)
 	info.AddField("Identifier", "Identifier", db.Text).FieldJoin(types.Join{
@@ -90,7 +89,7 @@ func GetSerieEpisodeFilesTable(ctx *context.Context) table.Table {
 		JoinField: "id",
 		Table:     "dbseries",
 	}).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
-	info.AddField("Dbserie_id", "dbserie_id", db.Integer).FieldDisplay(func(value types.FieldModel) interface{} {
+	info.AddField("Dbserie_id", "dbserie_id", db.Integer).FieldDisplay(func(value types.FieldModel) any {
 		return template.Default().
 			Link().
 			SetURL("/admin/info/dbseries/detail?__goadmin_detail_pk=" + value.Value).

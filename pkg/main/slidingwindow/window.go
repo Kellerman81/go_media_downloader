@@ -24,10 +24,16 @@ type Limiter struct {
 	interval time.Duration
 }
 
+// NewLimiter returns a new Limiter that limits events to max
+// events per interval duration.
 func NewLimiter(interval time.Duration, max int64) *Limiter {
 	return &Limiter{interval: interval, max: max, start: time.Now(), last: time.Now()}
 }
 
+// add increments the count and updates the last and start timestamps if
+// the rate limit has not been reached. If the rate limit has been reached,
+// the start timestamp is updated if enough time has passed since the first
+// event in the window.
 func (lim *Limiter) add() {
 	set := time.Now()
 	if lim.last.After(time.Now()) {
@@ -62,7 +68,10 @@ func (lim *Limiter) add() {
 	lim.last = set
 }
 
-// AllowN reports whether n events may happen at time now.
+// Allow checks if the rate limit would be exceeded by calling add. If the
+// limit would be exceeded, Allow returns false and the remaining duration
+// until the next event can happen. If the event can happen immediately,
+// Allow calls add to increment the count and returns true.
 func (lim *Limiter) Allow() (bool, time.Duration) {
 	ok, wait := lim.Check()
 	if !ok {
@@ -72,13 +81,18 @@ func (lim *Limiter) Allow() (bool, time.Duration) {
 	return true, 0 * time.Minute
 }
 
-// AllowN reports whether n events may happen at time now.
+// AllowForce unconditionally increments the rate limiter count and returns
+// true, without checking if the rate limit would be exceeded. This allows
+// forcing an event through even if the rate limit has been reached.
 func (lim *Limiter) AllowForce() bool {
 	lim.add()
 	return true
 }
 
-// AllowN reports whether n events may happen at time now.
+// Check returns whether the rate limit would be exceeded if an event is added
+// now. It returns a bool indicating if the limit would be exceeded, and a
+// time.Duration for the remaining time until the next event can happen without
+// exceeding the rate limit.
 func (lim *Limiter) Check() (bool, time.Duration) {
 	if lim.last.After(time.Now()) {
 		//Date set to future for blocking
@@ -98,13 +112,15 @@ func (lim *Limiter) Check() (bool, time.Duration) {
 		return true, 0 * time.Second
 	}
 	return false, lim.interval - time.Since(lim.start)
-	//return int64((float64(lim.interval-elapsed)/float64(lim.interval))*float64(lim.prev.Count()))+lim.curr.Count()+1 <= lim.limit, lim.interval - elapsed
 }
 
+// Interval returns the interval duration configured for the rate limiter.
 func (lim *Limiter) Interval() time.Duration {
 	return lim.interval
 }
 
+// WaitTill sets the last time to the given time. This overrides
+// the rate limiting and forces the last time to be the given time.
 func (lim *Limiter) WaitTill(now time.Time) {
 	lim.last = now
 }

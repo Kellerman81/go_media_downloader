@@ -6,6 +6,11 @@ import (
 	"github.com/Kellerman81/go_media_downloader/sabnzbd"
 )
 
+// SendToSabnzbd sends a download URL to a Sabnzbd server.
+// It takes the Sabnzbd server address, API key, download URL, category, NZB name,
+// and priority as parameters.
+// It returns any error from creating the Sabnzbd client, authenticating,
+// validating the authentication method, or adding the NZB.
 func SendToSabnzbd(server string, apikey string, urlv string, category string, nzbname string, priority int) error {
 	s, err := sabnzbd.New(sabnzbd.Addr(server), sabnzbd.ApikeyAuth(apikey))
 	if err != nil {

@@ -42,14 +42,14 @@ func (d *Mysqlite) GetDelimiters() []string {
 }
 
 // QueryWithConnection implements the method Connection.QueryWithConnection.
-func (d *Mysqlite) QueryWithConnection(con string, query string, args ...interface{}) ([]map[string]interface{}, error) {
+func (d *Mysqlite) QueryWithConnection(con string, query string, args ...any) ([]map[string]any, error) {
 	readWriteMu.RLock()
 	defer readWriteMu.RUnlock()
 	return db.CommonQuery(d.DbList[con], query, args...)
 }
 
 // ExecWithConnection implements the method Connection.ExecWithConnection.
-func (d *Mysqlite) ExecWithConnection(con string, query string, args ...interface{}) (sql.Result, error) {
+func (d *Mysqlite) ExecWithConnection(con string, query string, args ...any) (sql.Result, error) {
 	readWriteMu.Lock()
 	defer readWriteMu.Unlock()
 
@@ -57,28 +57,27 @@ func (d *Mysqlite) ExecWithConnection(con string, query string, args ...interfac
 }
 
 // Query implements the method Connection.Query.
-func (d *Mysqlite) Query(query string, args ...interface{}) ([]map[string]interface{}, error) {
+func (d *Mysqlite) Query(query string, args ...any) ([]map[string]any, error) {
 	readWriteMu.RLock()
 	defer readWriteMu.RUnlock()
 	return db.CommonQuery(d.DbList["default"], query, args...)
 }
 
 // Exec implements the method Connection.Exec.
-func (d *Mysqlite) Exec(query string, args ...interface{}) (sql.Result, error) {
+func (d *Mysqlite) Exec(query string, args ...any) (sql.Result, error) {
 	readWriteMu.Lock()
 	defer readWriteMu.Unlock()
 	return db.CommonExec(d.DbList["default"], query, args...)
 }
 
-func (d *Mysqlite) QueryWith(tx *sql.Tx, conn, query string, args ...interface{}) ([]map[string]interface{}, error) {
+func (d *Mysqlite) QueryWith(tx *sql.Tx, conn, query string, args ...any) ([]map[string]any, error) {
 	if tx != nil {
 		return d.QueryWithTx(tx, query, args...)
 	}
 	return d.QueryWithConnection(conn, query, args...)
 }
 
-func (d *Mysqlite) ExecWith(tx *sql.Tx, conn, query string, args ...interface{}) (sql.Result, error) {
-
+func (d *Mysqlite) ExecWith(tx *sql.Tx, conn, query string, args ...any) (sql.Result, error) {
 	if tx != nil {
 		return d.ExecWithTx(tx, query, args...)
 	}
@@ -105,7 +104,7 @@ func (d *Mysqlite) InitDB(cfgList map[string]config.Database) db.Connection {
 
 				d.DbList[conn] = sqlDB
 
-				if err := sqlDB.Ping(); err != nil {
+				if err = sqlDB.Ping(); err != nil {
 					panic(err)
 				}
 			}
@@ -168,14 +167,14 @@ func (d *Mysqlite) BeginTxWithLevelAndConnection(conn string, level sql.Isolatio
 }
 
 // QueryWithTx is query method within the transaction.
-func (d *Mysqlite) QueryWithTx(tx *sql.Tx, query string, args ...interface{}) ([]map[string]interface{}, error) {
+func (d *Mysqlite) QueryWithTx(tx *sql.Tx, query string, args ...any) ([]map[string]any, error) {
 	readWriteMu.RLock()
 	defer readWriteMu.RUnlock()
 	return db.CommonQueryWithTx(tx, query, args...)
 }
 
 // ExecWithTx is exec method within the transaction.
-func (d *Mysqlite) ExecWithTx(tx *sql.Tx, query string, args ...interface{}) (sql.Result, error) {
+func (d *Mysqlite) ExecWithTx(tx *sql.Tx, query string, args ...any) (sql.Result, error) {
 	readWriteMu.Lock()
 	defer readWriteMu.Unlock()
 	return db.CommonExecWithTx(tx, query, args...)

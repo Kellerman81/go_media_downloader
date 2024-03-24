@@ -4,22 +4,26 @@ import (
 	"bytes"
 	"errors"
 	"html"
-	"net/http"
+	"io"
+	"io/fs"
+	"net/url"
 	"path"
-	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
 	"text/template"
 	"time"
+	"unicode"
 
-	"github.com/Kellerman81/go_media_downloader/cache"
-	"github.com/mozillazg/go-unidecode"
-	//"github.com/rainycape/unidecode"
+	"github.com/Kellerman81/go_media_downloader/pool"
+	"github.com/goccy/go-json"
+	"github.com/pelletier/go-toml/v2"
+
+	"github.com/mozillazg/go-unidecode/table"
+	"github.com/rs/zerolog"
 )
 
 const (
-	FilterByTvdb              = "thetvdb_id = ?"
 	FilterByID                = "id = ?"
 	StrRefreshMovies          = "Refresh Movies"
 	StrRefreshMoviesInc       = "Refresh Movies Incremental"
@@ -36,15 +40,8 @@ const (
 	StrPath                   = "Path"
 	StrListname               = "Listname"
 	StrImdb                   = "imdb"
-	StrName                   = "Name"
 	StrTitle                  = "Title"
-	StrIndexer                = "Indexer"
-	StrEntries                = "Entries"
 	StrPriority               = "Priority"
-	StrYear                   = "Year"
-	StrData                   = "data"
-	StrDataFull               = "datafull"
-	StrFeeds                  = "feeds"
 	StrSearchMissingInc       = "searchmissinginc"
 	StrSearchMissingFull      = "searchmissingfull"
 	StrSearchMissingIncTitle  = "searchmissinginctitle"
@@ -60,70 +57,169 @@ const (
 	StrReachedFlag            = "checkreachedflag"
 	StrClearHistory           = "clearhistory"
 	StrRssSeasonsAll          = "rssseasonsall"
-	StrMovieFileUnmatched     = "movie_file_unmatcheds_cached"
-	StrSerieFileUnmatched     = "serie_file_unmatcheds_cached"
+	StrSerie                  = "serie"
+	StrRssSeasons             = "rssseasons"
+	StrRss                    = "rss"
+	Underscore                = "_"
+	StrTvdb                   = "tvdb"
+	StrTt                     = "tt"
+	StrSeries                 = "series"
+	CacheDBMedia              = "CacheDBMedia"
+	DBCountDBMedia            = "DBCountDBMedia"
+	DBCacheDBMedia            = "DBCacheDBMedia"
+	CacheMedia                = "CacheMedia"
+	DBCountMedia              = "DBCountMedia"
+	DBCacheMedia              = "DBCacheMedia"
+	CacheHistoryTitle         = "CacheHistoryTitle"
+	CacheHistoryUrl           = "CacheHistoryUrl"
+	DBHistoriesUrl            = "DBHistoriesUrl"
+	DBHistoriesTitle          = "DBHistoriesTitle"
+	DBCountHistoriesUrl       = "DBCountHistoriesUrl"
+	DBCountHistoriesTitle     = "DBCountHistoriesTitle"
+	CacheMediaTitles          = "CacheMediaTitles"
+	DBCountDBTitles           = "DBCountDBTitles"
+	DBCacheDBTitles           = "DBCacheDBTitles"
+	CacheFiles                = "CacheFiles"
+	DBCountFiles              = "DBCountFiles"
+	DBCacheFiles              = "DBCacheFiles"
+	CacheUnmatched            = "CacheUnmatched"
+	DBCountUnmatched          = "DBCountUnmatched"
+	DBCacheUnmatched          = "DBCacheUnmatched"
+	DBCountFilesLocation      = "DBCountFilesLocation"
+	DBCountUnmatchedPath      = "DBCountUnmatchedPath"
+	DBCountDBTitlesDBID       = "DBCountDBTitlesDBID"
+	DBDistinctDBTitlesDBID    = "DBDistinctDBTitlesDBID"
+	DBMediaTitlesID           = "DBMediaTitlesID"
+	DBFilesQuality            = "DBFilesQuality"
+	DBCountFilesByList        = "DBCountFilesByList"
+	DBLocationFilesByList     = "DBLocationFilesByList"
+	DBIDsFilesByLocation      = "DBIDsFilesByLocation"
+	DBCountFilesByMediaID     = "DBCountFilesByMediaID"
+	DBCountFilesByLocation    = "DBCountFilesByLocation"
+	TableFiles                = "TableFiles"
+	TableMedia                = "TableMedia"
+	DBCountMediaByList        = "DBCountMediaByList"
+	DBIDMissingMediaByList    = "DBIDMissingMediaByList"
+	DBUpdateMissing           = "DBUpdateMissing"
+	DBListnameByMediaID       = "DBListnameByMediaID"
+	DBRootPathFromMediaID     = "DBRootPathFromMediaID"
+	DBDeleteFileByIDLocation  = "DBDeleteFileByIDLocation"
+	DBCountHistoriesByTitle   = "DBCountHistoriesByTitle"
+	DBCountHistoriesByUrl     = "DBCountHistoriesByUrl"
+	DBLocationIDFilesByID     = "DBLocationIDFilesByID"
+	UpdateMediaLastscan       = "UpdateMediaLastscan"
+	DBQualityMediaByID        = "DBQualityMediaByID"
+	SearchGenSelect           = "SearchGenSelect"
+	SearchGenTable            = "SearchGenTable"
+	SearchGenMissing          = "SearchGenMissing"
+	SearchGenMissingEnd       = "SearchGenMissingEnd"
+	SearchGenReached          = "SearchGenReached"
+	SearchGenLastScan         = "SearchGenLastScan"
+	SearchGenDate             = "SearchGenDate"
+	SearchGenOrder            = "SearchGenOrder"
+
+	CacheMovie              = "CacheMovie"
+	CacheSeries             = "CacheSeries"
+	CacheDBMovie            = "CacheDBMovie"
+	CacheDBSeries           = "CacheDBSeries"
+	CacheDBSeriesAlt        = "CacheDBSeriesAlt"
+	CacheTitlesMovie        = "CacheTitlesMovie"
+	CacheUnmatchedMovie     = "CacheUnmatchedMovie"
+	CacheUnmatchedSeries    = "CacheUnmatchedSeries"
+	CacheFilesMovie         = "CacheFilesMovie"
+	CacheFilesSeries        = "CacheFilesSeries"
+	CacheHistoryUrlMovie    = "CacheHistoryUrlMovie"
+	CacheHistoryTitleMovie  = "CacheHistoryTitleMovie"
+	CacheHistoryUrlSeries   = "CacheHistoryUrlSeries"
+	CacheHistoryTitleSeries = "CacheHistoryTitleSeries"
 )
 
 var (
-	StrRegexSeriesIdentifier = "RegexSeriesIdentifier"
-	StrRegexSeriesTitle      = "RegexSeriesTitle"
-	StrRssSeasons            = "rssseasons"
-	StrMovie                 = "movie"
-	StrSeries                = "series"
-	StrSerie                 = "serie"
-	StrRss                   = "rss"
-	Underscore               = "_"
-	Empty                    = ""
-	StrTvdb                  = "tvdb"
-	StrTt                    = "tt"
-	StrMissing               = "missing"
-	StrUpgrade               = "upgrade"
-	DisableVariableCleanup   bool
-	DisableParserStringMatch bool
-	GlobalCache              = cache.New(20*time.Minute, 20*time.Minute)
-	GlobalCacheRegex         = cache.NewRegex(20*time.Minute, 20*time.Minute)
-	GlobalCacheStmt          = cache.NewStmt(20*time.Minute, 20*time.Minute)
-	GlobalCacheNamed         = cache.NewNamed(20*time.Minute, 20*time.Minute)
-	GlobalCounter            = make(map[string]int)
-	ErrWrongExtension        = errors.New("mismatched extension")
-	ErrWrongPrefix           = errors.New("mismatched prefix")
-	ErrNoGeneral             = errors.New("no general")
-	ErrNoID                  = errors.New("no id")
-	ErrNoFiles               = errors.New("no files")
-	ErrNoPath                = errors.New("no path")
-	ErrNotFound              = errors.New("not found")
-	ErrNoListRead            = errors.New("list not readable")
-	ErrNoListOther           = errors.New("list other error")
-	Errwrongtype             = errors.New("wrong type")
-	ErrNoUsername            = errors.New("no username")
-	ErrNoShowOrMovie         = errors.New("not show or movie")
-	ErrCsvImport             = errors.New("list csv import error")
-	ErrRuntime               = errors.New("wrong runtime")
-	ErrLanguage              = errors.New("wrong language")
-	ErrNotAllowed            = errors.New("not allowed")
-	ErrLowerQuality          = errors.New("lower quality")
-	ErrNoIndexerSearched     = errors.New("no indexer searched")
-	ErrOther                 = errors.New("other error")
-	ErrDisabled              = errors.New("disabled")
-	ErrToWait                = errors.New("please wait")
-	ErrDailyLimit            = errors.New("daily limit reached")
-	Errnoresults             = errors.New("no results")
-	ErrInvalid               = errors.New("invalid")
-	ErrNotFoundDbmovie       = errors.New("dbmovie not found")
-	ErrNotFoundMovie         = errors.New("movie not found")
-	ErrNotFoundDbserie       = errors.New("dbserie not found")
-	ErrNotFoundSerie         = errors.New("serie not found")
-	ErrNotEnabled            = errors.New("not enabled")
-	ErrCfgpNotFound          = errors.New("cfgpstr not found")
-	pathchars                = [7]rune{':', '*', '?', '"', '<', '>', '|'}
-	pathcharsext             = [9]rune{'\\', '/', ':', '*', '?', '"', '<', '>', '|'}
-	substituteRune           = map[rune]string{
+	StrFeeds    = "feeds"
+	StrData     = "data"
+	StrDataFull = "datafull"
+	StrMovie    = "movie"
+	timeFormat  = time.RFC3339Nano
+	Log         zerolog.Logger
+	timeZone    = *time.UTC
+	//diacriticsReplacer   = strings.NewReplacer("ä", "ae", "ö", "oe", "ü", "ue", "Ä", "Ae", "Ö", "Oe", "Ü", "Ue", "ß", "ss")
+	//pathReplacer         = strings.NewReplacer(":", "", "*", "", "?", "", "\"", "", "<", "", ">", "", "|", "")
+	ErrNoID              = errors.New("no id")
+	ErrNoFiles           = errors.New("no files")
+	ErrNotFound          = errors.New("not found")
+	Errwrongtype         = errors.New("wrong type")
+	ErrRuntime           = errors.New("wrong runtime")
+	ErrNotAllowed        = errors.New("not allowed")
+	ErrLowerQuality      = errors.New("lower quality")
+	ErrOther             = errors.New("other error")
+	ErrDisabled          = errors.New("disabled")
+	ErrToWait            = errors.New("please wait")
+	ErrTooSmall          = errors.New("too small")
+	ErrDailyLimit        = errors.New("daily limit reached")
+	Errnoresults         = errors.New("no results")
+	ErrNotFoundDbmovie   = errors.New("dbmovie not found")
+	ErrNotFoundMovie     = errors.New("movie not found")
+	ErrNotFoundDbserie   = errors.New("dbserie not found")
+	ErrNotFoundSerie     = errors.New("serie not found")
+	ErrNotEnabled        = errors.New("not enabled")
+	ErrCfgpNotFound      = errors.New("cfgpstr not found")
+	ErrNotFoundDBEpisode = errors.New("dbepisode not found")
+	ErrNotFoundEpisode   = errors.New("episode not found")
+	ErrListnameEmpty     = errors.New("listname empty")
+	ErrTvdbEmpty         = errors.New("tvdb empty")
+	ErrImdbEmpty         = errors.New("imdb empty")
+	ErrSearchvarEmpty    = errors.New("searchvar empty")
+	ErrTracksEmpty       = errors.New("tracks empty")
+	PlBuffer             = pool.NewPool(100, 0, func(b *bytes.Buffer) {}, func(b *bytes.Buffer) { b.Reset() })
+
+	textparser = template.New("master")
+	subRune    = map[rune]struct{}{
+		'a': {},
+		'b': {},
+		'c': {},
+		'd': {},
+		'e': {},
+		'f': {},
+		'g': {},
+		'h': {},
+		'i': {},
+		'j': {},
+		'k': {},
+		'l': {},
+		'm': {},
+		'n': {},
+		'o': {},
+		'p': {},
+		'q': {},
+		'r': {},
+		's': {},
+		't': {},
+		'u': {},
+		'v': {},
+		'w': {},
+		'x': {},
+		'y': {},
+		'z': {},
+		'0': {},
+		'1': {},
+		'2': {},
+		'3': {},
+		'4': {},
+		'5': {},
+		'6': {},
+		'7': {},
+		'8': {},
+		'9': {},
+		'-': {},
+	}
+	substituteRuneSpace = map[rune]string{
 		'&':  "and",
 		'@':  "at",
 		'"':  "",
 		'\'': "",
 		'’':  "",
 		'_':  "",
+		' ':  "-",
 		'‒':  "-",
 		'–':  "-",
 		'—':  "-",
@@ -136,46 +232,7 @@ var (
 		'Ü':  "Ue",
 		'ß':  "ss",
 	}
-	subRune = map[rune]bool{
-		'a': true,
-		'b': true,
-		'c': true,
-		'd': true,
-		'e': true,
-		'f': true,
-		'g': true,
-		'h': true,
-		'i': true,
-		'j': true,
-		'k': true,
-		'l': true,
-		'm': true,
-		'n': true,
-		'o': true,
-		'p': true,
-		'q': true,
-		'r': true,
-		's': true,
-		't': true,
-		'u': true,
-		'v': true,
-		'w': true,
-		'x': true,
-		'y': true,
-		'z': true,
-		'0': true,
-		'1': true,
-		'2': true,
-		'3': true,
-		'4': true,
-		'5': true,
-		'6': true,
-		'7': true,
-		'8': true,
-		'9': true,
-		'-': true,
-	}
-	substituteDiacritics = map[rune]string{
+	diacriticsmap = map[rune]string{
 		'ä': "ae",
 		'ö': "oe",
 		'ü': "ue",
@@ -184,485 +241,544 @@ var (
 		'Ü': "Ue",
 		'ß': "ss",
 	}
+	pathmap = map[rune]string{
+		':':  "",
+		'*':  "",
+		'?':  "",
+		'\\': "",
+		'<':  "",
+		'>':  "",
+		'|':  "",
+	}
+
+	mapstringsmovies = map[string]string{
+		CacheDBMedia:             CacheDBMovie,
+		DBCountDBMedia:           "select count() from dbmovies",
+		DBCacheDBMedia:           "select title, slug, imdb_id, year, id from dbmovies",
+		CacheMedia:               CacheMovie,
+		DBCountMedia:             "select count() from movies",
+		DBCacheMedia:             "select lower(listname), dbmovie_id, id from movies",
+		CacheHistoryTitle:        CacheHistoryTitleMovie,
+		CacheHistoryUrl:          CacheHistoryUrlMovie,
+		DBHistoriesUrl:           "select distinct url from movie_histories",
+		DBHistoriesTitle:         "select distinct title from movie_histories",
+		DBCountHistoriesUrl:      "select count() from (select distinct url from movie_histories)",
+		DBCountHistoriesTitle:    "select count() from (select distinct title from movie_histories)",
+		CacheMediaTitles:         CacheTitlesMovie,
+		DBCountDBTitles:          "select count() from dbmovie_titles",
+		DBCacheDBTitles:          "select title, slug, dbmovie_id from dbmovie_titles",
+		CacheFiles:               CacheFilesMovie,
+		DBCountFiles:             "select count() from movie_files",
+		DBCacheFiles:             "select location from movie_files",
+		CacheUnmatched:           CacheUnmatchedMovie,
+		DBCountUnmatched:         "select count() from movie_file_unmatcheds where (last_checked > ? or last_checked is null)",
+		DBCacheUnmatched:         "select filepath from movie_file_unmatcheds where (last_checked > ? or last_checked is null)",
+		DBCountFilesLocation:     "select count() from movie_files where location = ?",
+		DBCountUnmatchedPath:     "select count() from movie_file_unmatcheds where filepath = ?",
+		DBCountDBTitlesDBID:      "select count() from (select distinct title, slug from dbmovie_titles where dbmovie_id = ? and title != '')",
+		DBDistinctDBTitlesDBID:   "select distinct title, slug, 0 from dbmovie_titles where dbmovie_id = ? and title != ''",
+		DBMediaTitlesID:          "select year, title, slug from dbmovies where id = ?",
+		DBFilesQuality:           "select resolution_id, quality_id, codec_id, audio_id, proper, extended, repack from movie_files where id = ?",
+		DBCountFilesByList:       "select count() from movie_files where movie_id in (select id from movies where listname = ? COLLATE NOCASE)",
+		DBLocationFilesByList:    "select location from movie_files where movie_id in (select id from movies where listname = ? COLLATE NOCASE)",
+		DBIDsFilesByLocation:     "select id, movie_id from movie_files where location = ?",
+		DBCountFilesByMediaID:    "select count() from movie_files where movie_id = ?",
+		DBCountFilesByLocation:   "select count() from movie_files where location = ?",
+		TableFiles:               "movie_files",
+		TableMedia:               "movies",
+		DBCountMediaByList:       "select count() from movies where listname = ? COLLATE NOCASE",
+		DBIDMissingMediaByList:   "select id,missing from movies where listname = ? COLLATE NOCASE",
+		DBUpdateMissing:          "update movies set missing = ? where id = ?",
+		DBListnameByMediaID:      "select listname from movies where id = ?",
+		DBRootPathFromMediaID:    "select rootpath from movies where id = ?",
+		DBDeleteFileByIDLocation: "delete from movie_files where movie_id = ? and location = ?",
+		DBCountHistoriesByTitle:  "select count() from movie_histories where title = ?",
+		DBCountHistoriesByUrl:    "select count() from movie_histories where url = ?",
+		DBLocationIDFilesByID:    "select location, id from movie_files where movie_id = ?",
+		UpdateMediaLastscan:      "update movies set lastscan = datetime('now','localtime') where id = ?",
+		DBQualityMediaByID:       "select quality_profile from movies where id = ?",
+		SearchGenSelect:          "select movies.quality_profile, movies.id ",
+		SearchGenTable:           " from movies inner join dbmovies on dbmovies.id=movies.dbmovie_id where ",
+		SearchGenMissing:         "dbmovies.year != 0 and movies.missing = 1 and movies.listname in (?",
+		SearchGenMissingEnd:      ")",
+		SearchGenReached:         "dbmovies.year != 0 and quality_reached = 0 and missing = 0 and listname in (?",
+		SearchGenLastScan:        " and (movies.lastscan is null or movies.Lastscan < ?)",
+		SearchGenDate:            " and (dbmovies.release_date < ? or dbmovies.release_date is null)",
+		SearchGenOrder:           " order by movies.Lastscan asc",
+	}
+	mapstringsseries = map[string]string{
+		CacheDBMedia:             CacheDBSeries,
+		DBCountDBMedia:           "select count() from dbseries",
+		DBCacheDBMedia:           "select seriename, slug, id from dbseries",
+		CacheMedia:               CacheSeries,
+		DBCountMedia:             "select count() from series",
+		DBCacheMedia:             "select lower(listname), dbserie_id, id from series",
+		CacheHistoryTitle:        CacheHistoryTitleSeries,
+		CacheHistoryUrl:          CacheHistoryUrlSeries,
+		DBHistoriesUrl:           "select distinct url from serie_episode_histories",
+		DBHistoriesTitle:         "select distinct title from serie_episode_histories",
+		DBCountHistoriesUrl:      "select count() from (select distinct url from serie_episode_histories)",
+		DBCountHistoriesTitle:    "select count() from (select distinct title from serie_episode_histories)",
+		CacheMediaTitles:         CacheDBSeriesAlt,
+		DBCountDBTitles:          "select count() from dbserie_alternates",
+		DBCacheDBTitles:          "select title, slug, dbserie_id from dbserie_alternates",
+		CacheFiles:               CacheFilesSeries,
+		DBCountFiles:             "select count() from serie_episode_files",
+		DBCacheFiles:             "select location from serie_episode_files",
+		CacheUnmatched:           CacheUnmatchedSeries,
+		DBCountUnmatched:         "select count() from serie_file_unmatcheds where (last_checked > ? or last_checked is null)",
+		DBCacheUnmatched:         "select filepath from serie_file_unmatcheds where (last_checked > ? or last_checked is null)",
+		DBCountFilesLocation:     "select count() from serie_episode_files where location = ?",
+		DBCountUnmatchedPath:     "select count() from serie_file_unmatcheds where filepath = ?",
+		DBCountDBTitlesDBID:      "select count() from (select distinct title, slug from dbserie_alternates where dbserie_id = ? and title != '')",
+		DBDistinctDBTitlesDBID:   "select distinct title, slug, 0 from dbserie_alternates where dbserie_id = ? and title != ''",
+		DBMediaTitlesID:          "select 0, seriename, slug from dbseries where id = ?",
+		DBFilesQuality:           "select resolution_id, quality_id, codec_id, audio_id, proper, extended, repack from serie_episode_files where id = ?",
+		DBCountFilesByList:       "select count() from serie_episode_files where serie_id in (Select id from series where listname = ? COLLATE NOCASE)",
+		DBLocationFilesByList:    "select location from serie_episode_files where serie_id in (Select id from series where listname = ? COLLATE NOCASE)",
+		DBIDsFilesByLocation:     "select id, serie_episode_id from serie_episode_files where location = ?",
+		DBCountFilesByMediaID:    "select count() from serie_episode_files where serie_episode_id = ?",
+		DBCountFilesByLocation:   "select count() from serie_episode_files where location = ?",
+		TableFiles:               "serie_episode_files",
+		TableMedia:               "serie_episodes",
+		DBCountMediaByList:       "select count() from serie_episodes where serie_id in (select id from series where listname = ? COLLATE NOCASE)",
+		DBIDMissingMediaByList:   "select id, missing from serie_episodes where serie_id in (select id from series where listname = ? COLLATE NOCASE)",
+		DBUpdateMissing:          "update serie_episodes set missing = ? where id = ?",
+		DBListnameByMediaID:      "select listname from series where id = ?",
+		DBRootPathFromMediaID:    "select rootpath from series where id = ?",
+		DBDeleteFileByIDLocation: "delete from serie_episode_files where serie_id = ? and location = ?",
+		DBCountHistoriesByTitle:  "select count() from serie_episode_histories where title = ?",
+		DBCountHistoriesByUrl:    "select count() from serie_episode_histories where url = ?",
+		DBLocationIDFilesByID:    "select location, id from serie_episode_files where serie_episode_id = ?",
+		UpdateMediaLastscan:      "update serie_episodes set lastscan = datetime('now','localtime') where id = ?",
+		DBQualityMediaByID:       "select quality_profile from serie_episodes where id = ?",
+		SearchGenSelect:          "select serie_episodes.quality_profile, serie_episodes.id ",
+		SearchGenTable:           " from serie_episodes inner join dbserie_episodes on dbserie_episodes.id=serie_episodes.dbserie_episode_id inner join series on series.id=serie_episodes.serie_id where ",
+		SearchGenMissing:         "serie_episodes.missing = 1 and ((dbserie_episodes.season != '0' and series.search_specials=0) or (series.search_specials=1)) and series.listname in (?",
+		SearchGenMissingEnd:      ") and serie_episodes.dbserie_episode_id in (select id from dbserie_episodes group by dbserie_id, identifier having count() = 1)",
+		SearchGenReached:         "serie_episodes.missing = 0 and serie_episodes.quality_reached = 0 and ((dbserie_episodes.Season != '0' and series.search_specials=0) or (series.search_specials=1)) and series.listname in (?",
+		SearchGenLastScan:        " and (serie_episodes.lastscan is null or serie_episodes.lastscan < ?)",
+		SearchGenDate:            " and (dbserie_episodes.first_aired < ? or dbserie_episodes.first_aired is null)",
+		SearchGenOrder:           " order by serie_episodes.Lastscan asc",
+	}
 )
 
-func ParseStringTemplate(message string, messagedata interface{}) (string, error) {
-	tmplmessage, err := template.New("tmplfile").Parse(message)
-	if err != nil {
-		Logerror(err, "template")
-		return "", err
-	}
-	var doc bytes.Buffer
-	defer doc.Reset()
-	err = tmplmessage.Execute(&doc, messagedata)
-	if err != nil {
-		Logerror(err, "template")
-		return "", err
-	}
-	return doc.String(), err
+// GetTimeZone returns a pointer to the time.Location representing the
+// timezone used for formatting logs. This allows checking the current
+// timezone.
+func GetTimeZone() *time.Location {
+	return &timeZone
 }
 
-// SubstituteRune substitutes string chars with provided rune
-// substitution map. One pass.
-// Changes the source string
-func substituteRuneF(s *string) {
-	var repl string
-	var ok bool
-	for _, c := range *s {
-		if repl, ok = substituteRune[c]; ok {
-			StringReplaceRunePP(s, c, &repl)
+// GetTimeFormat returns the time format string used for formatting logs.
+// This allows checking the current time format.
+func GetTimeFormat() string {
+	return timeFormat
+}
+
+// ParseJson decodes the JSON encoded data from the provided reader into
+// the given object. Returns any error encountered during decoding.
+func ParseJson(r io.Reader, obj any) error {
+	return json.NewDecoder(r).Decode(obj)
+}
+
+// ParseToml decodes the TOML encoded data from the provided reader into
+// the given object. Returns any error encountered during decoding.
+func ParseToml(r io.Reader, obj any) error {
+	return toml.NewDecoder(r).Decode(obj)
+}
+
+// ParseStringTemplate parses a text/template string into a template.Template, caches it, and executes it with the given data.
+// It returns the executed template string and any error encountered.
+func ParseStringTemplate[S any](message string, messagedata *S) (bool, string) {
+	tmplmessage := textparser.Lookup(message)
+	if tmplmessage == nil {
+		var err error
+		tmplmessage, err = textparser.New(message).Parse(message)
+		if err != nil {
+			LogDynamic("error", "template", NewLogFieldValue(err))
+			return true, ""
 		}
 	}
+	doc := PlBuffer.Get()
+	if err := tmplmessage.Execute(doc, messagedata); err != nil {
+		LogDynamic("error", "template", NewLogFieldValue(err))
+		return true, ""
+	}
+	defer PlBuffer.Put(doc)
+	return false, doc.String()
 }
 
-func replaceUnwantedChars(s string) string {
-	if len(s) == 0 {
-		return ""
+// unidecode2 converts a unicode string to an ASCII transliteration by
+// replacing each unicode rune with its best ASCII approximation. It handles
+// special cases like converting to lowercase and inserting separators between
+// contiguous substitutions. This allows sanitizing unicode strings into
+// a more filesystem-friendly ASCII format.
+func unidecode2(s string) []byte {
+	ret := PlBuffer.Get()
+	var laststr string
+	var lastrune rune
+	//var c byte
+	if strings.ContainsRune(s, '&') {
+		s = html.UnescapeString(s)
 	}
-	var ok bool
+	ret.Grow(len(s) + 10)
 	for _, r := range s {
-		if _, ok = subRune[r]; !ok {
-			break
+		if val, ok := substituteRuneSpace[r]; ok {
+			if laststr != "" && val == laststr {
+				continue
+			}
+			if lastrune == '-' && val == "-" {
+				continue
+			}
+			ret.WriteString(val)
+			laststr = val
+			if val == "-" {
+				lastrune = '-'
+			} else {
+				lastrune = ' '
+			}
+			continue
+		}
+		if laststr != "" {
+			laststr = ""
+		}
+
+		if r < unicode.MaxASCII {
+			if 'A' <= r && r <= 'Z' {
+				r += 'a' - 'A'
+			}
+			if _, ok := subRune[r]; !ok {
+				if lastrune == '-' {
+					continue
+				}
+				lastrune = '-'
+				ret.WriteRune('-')
+			} else {
+				if lastrune == '-' && r == '-' {
+					continue
+				}
+				lastrune = r
+				ret.WriteRune(r)
+			}
+			continue
+		}
+		if r > 0xeffff {
+			continue
+		}
+
+		section := r >> 8   // Chop off the last two hex digits
+		position := r % 256 // Last two hex digits
+		if tb, ok := table.Tables[section]; ok {
+			if len(tb) > int(position) {
+				if len(tb[position]) >= 1 {
+					if tb[position][0] > unicode.MaxASCII && lastrune != '-' {
+						lastrune = '-'
+						ret.WriteRune('-')
+						continue
+					}
+				}
+				if lastrune == '-' && tb[position] == "-" {
+					continue
+				}
+				ret.WriteString(tb[position])
+			}
 		}
 	}
-	if ok {
-		return s
-	}
-	out := []rune(s)
-	defer Clear(&out)
-	for idx, r := range out {
-		if _, ok = subRune[r]; !ok {
-			out[idx] = '-'
-			//*s = (*s)[0:idx] + "-" + (*s)[idx+1:]
-			//StringReplaceRuneP(s, r, "-")
-		}
-	}
-	return string(out)
+	defer PlBuffer.Put(ret)
+	return ret.Bytes()
 }
 
-// no chinese or cyrilic supported
+// StringToSlug converts the given string to a slug format by replacing
+// unwanted characters, transliterating accented characters, replacing multiple
+// hyphens with a single hyphen, and trimming leading/trailing hyphens.
 func StringToSlug(instr string) string {
-	if len(instr) == 0 {
+	if instr == "" {
 		return ""
 	}
-	HTMLUnescape(&instr)
-	Unquote(&instr)
-	substituteRuneF(&instr)
-	// defer func() { // recovers panic
-	// 	if e := recover(); e != nil {
-	// 		Log.Error().Msg("Recovered from panic (makeslug)")
-	// 	}
-	// }()
-	instr = strings.ReplaceAll(replaceUnwantedChars(unidecode.Unidecode(strings.ToLower(instr))), "--", "-")
-	instr = strings.ReplaceAll(instr, "--", "-")
-	instr = strings.ReplaceAll(instr, "--", "-")
-	return strings.Trim(instr, "- ")
+	inbyte := unidecode2(instr)
+	if len(inbyte) == 0 {
+		return ""
+	}
+	inbyte = bytes.TrimRight(inbyte, "- ")
+	inbyte = bytes.TrimLeft(inbyte, "- ")
+	return string(inbyte)
 }
 
+// AddImdbPrefix prepends the imdb prefix if it doesn't already exist.
 func AddImdbPrefix(str string) string {
-	if len(str) == 0 {
-		return ""
-	}
-	if !HasPrefixI(str, StrTt) {
-		return StrTt + str
+	if len(str) >= 1 && !HasPrefixI(str, StrTt) {
+		return JoinStrings(StrTt, str)
 	}
 	return str
 }
-func AddImdbPrefixP(str *string) {
-	if str == nil || len(*str) == 0 {
-		return
-	}
-	if !HasPrefixI(*str, StrTt) {
-		*str = StrTt + *str
-	}
-}
+
+// AddTvdbPrefix prepends the tvdb prefix if it doesn't already exist.
 func AddTvdbPrefix(str string) string {
-	if len(str) == 0 {
-		return ""
-	}
-	if !HasPrefixI(str, StrTvdb) {
+	if len(str) >= 1 && !HasPrefixI(str, StrTvdb) {
+		//return JoinStrings(StrTvdb, str)
 		return StrTvdb + str
 	}
 	return str
 }
 
-// Changes the source string
-func Path(s *string, allowslash bool) {
-	if s == nil || len(*s) == 0 {
-		return
+// Path sanitizes the given string by cleaning it with path.Clean, unquoting
+// and unescaping it, optionally removing slashes, and replacing invalid
+// characters. It returns the cleaned path string.
+func Path(s string, allowslash bool) string {
+	if s == "" {
+		return ""
 	}
-	HTMLUnescape(s)
-	Unquote(s)
-	*s = path.Clean(strings.ReplaceAll(*s, "..", ""))
-	if allowslash && strings.ContainsAny(*s, ":*?\"><|") {
-		for idx := range pathchars {
-			StringDeleteRuneP(s, pathchars[idx])
-		}
+	s = UnquoteUnescape(s)
+	s = path.Clean(s)
+	if !allowslash {
+		s = StringRemoveAllRunesMulti(s, '\\', '/')
+		//s = StringRemoveAllRunes(s, '\\')
+		//s = StringRemoveAllRunes(s, '/')
 	}
-	if !allowslash && strings.ContainsAny(*s, "\\/:*?\"><|") {
-		for idx := range pathcharsext {
-			StringDeleteRuneP(s, pathcharsext[idx])
-		}
-	}
+	s = pathReplacer(s)
 
-	*s = strings.Trim(*s, " ")
+	if s == "" {
+		return ""
+	}
+	if s != "" && (s[:1] == " " || s[len(s)-1:] == " ") {
+		return strings.TrimSpace(s)
+	}
+	return s
 }
 
-// Changes the source string
-func TrimStringInclAfterString(s *string, search string) {
-	if idx := IndexI(*s, search); idx != -1 {
-		*s = (*s)[:idx]
-	}
-}
-func TrimStringInclAfterStringB(s string, search string) string {
+// TrimStringInclAfterString truncates the given string s after the first
+// occurrence of the search string. It returns the truncated string.
+func TrimStringInclAfterString(s string, search string) string {
 	if idx := IndexI(s, search); idx != -1 {
 		return s[:idx]
 	}
 	return s
 }
 
-// Changes the source string
-func StringReplaceDiacritics(instr *string) {
-	var repl string
-	var ok bool
-	for _, c := range *instr {
-		if repl, ok = substituteDiacritics[c]; ok {
-			StringReplaceRunePP(instr, c, &repl)
-		}
+// Getrootpath returns the root path of the given folder name by splitting on '/' or '\'
+// and trimming any trailing slashes. If no slashes, it just trims trailing slashes.
+func Getrootpath(foldername string) string {
+	if !strings.ContainsRune(foldername, '/') && !strings.ContainsRune(foldername, '\\') {
+		return strings.Trim(foldername, "/")
 	}
-}
-
-func StringReplaceRuneS(instr string, search rune, replace string) string {
-	StringReplaceRunePP(&instr, search, &replace)
-	return instr
-}
-
-func RuneReplaceRuneS(instr string, search rune, replace rune) string {
-	RuneReplaceRuneP(&instr, search, replace)
-	return instr
-}
-
-// Changes the source string
-func RuneReplaceRuneP(instr *string, search rune, replace rune) {
-	//var idx int
-	*instr = strings.ReplaceAll(*instr, string(search), string(replace))
-	i := StringRuneCount(*instr, search)
-	if i == 0 {
-		return
-	}
-	*instr = strings.Replace(*instr, string(search), string(replace), i)
-	// return
-	// out := []rune(*instr)
-	// for idx, r := range out {
-	// 	if r == search {
-	// 		out[idx] = replace
-	// 	}
-	// }
-	// *instr = string(out)
-	// Clear(&out)
-}
-
-// Changes the source string
-func StringReplaceRuneP(instr *string, search rune, replace string) {
-	i := StringRuneCount(*instr, search)
-	if i == 0 {
-		return
-	}
-	*instr = strings.Replace(*instr, string(search), replace, i)
-}
-
-// Changes the source string
-func StringReplaceRunePP(instr *string, search rune, replace *string) {
-	i := StringRuneCount(*instr, search)
-	if i == 0 {
-		return
-	}
-	*instr = strings.Replace(*instr, string(search), *replace, i)
-}
-
-func StringRuneCount(instr string, search rune) int {
-	i := 0
-	for _, r := range instr {
-		if r == search {
-			i++
-		}
-	}
-	return i
-}
-
-// Changes the source string
-func StringDeleteRuneP(instr *string, search rune) {
-	//var idx int
-	i := StringRuneCount(*instr, search)
-	if i == 0 {
-		return
-	}
-	*instr = strings.Replace(*instr, string(search), "", i)
-	// for i := 0; i <= StringRuneCount(*instr, search); i++ {
-	// 	idx = strings.IndexRune(*instr, search)
-	// 	if idx != -1 {
-	// 		*instr = (*instr)[0:idx] + (*instr)[idx+1:]
-	// 	}
-	// 	if count != 0 && i == (count-1) {
-	// 		break
-	// 	}
-	// }
-}
-
-func Getrootpath(foldername string) (string, string) {
-	var splitby rune
-	if strings.ContainsRune(foldername, '/') {
-		splitby = '/'
-	} else if strings.ContainsRune(foldername, '\\') {
+	splitby := '/'
+	if !strings.ContainsRune(foldername, '/') {
 		splitby = '\\'
-	} else {
-		return strings.Trim(foldername, "/"), ""
+	}
+	idx := strings.IndexRune(foldername, splitby)
+	if idx != -1 {
+		foldername = foldername[:idx]
+	}
+	//foldername = SplitBy(foldername, splitby)
+	if foldername != "" && foldername[len(foldername)-1:] == "/" {
+		return strings.TrimRight(foldername, "/")
 	}
 
-	folders := strings.TrimRight(SplitBy(foldername, splitby), "/")
-	foldername = strings.TrimPrefix(foldername, folders)
-	foldername = strings.Trim(foldername, "/")
-	return foldername, folders
+	return foldername
 }
 
-// Filter any Slice
-// ex.
-//
-//	b := Filter(a.Elements, func(e Element) bool {
-//		return strings.Contains(strings.ToLower(e.Name), strings.ToLower("woman"))
-//	})
-// func Filter[T any](s []T, cond func(t T) bool) []T {
-// 	res := s[:0]
-// 	for i := range s {
-// 		if cond(s[i]) {
-// 			res = append(res, s[i])
-// 		}
-// 	}
-// 	return res
-// }
-
-// Copy one struct array to a different type one
-// a := []A{{"Batman"}, {"Diana"}}
-//
-//	b := CopyFunc[A, B](a, func(elem A) B {
-//		return B{
-//			Name: elem.Name,
-//		}
-//	})
-// func CopyFunc[T any, U any](src []T, copyFunc func(elem T) U) []U {
-// 	dst := make([]U, len(src))
-// 	for i := range src {
-// 		dst[i] = copyFunc(src[i])
-// 	}
-// 	return dst
-// }
-
-// func StringArrayToLower(src []string) []string {
-// 	for idx := range src {
-// 		src[idx] = strings.ToLower(src[idx])
-// 	}
-// 	return src
-// }
-
-// func CheckFunc[T any](src *[]T, checkFunc func(elem *T) bool) bool {
-// 	for _, a := range *src {
-// 		if checkFunc(&a) {
-// 			return true
-// 		}
-// 	}
-// 	return false
-// }
-
-// func RunFunc[T any](src *[]T, runFunc func(elem *T), breakFunc func(elem *T) bool) {
-// 	for _, a := range *src {
-// 		runFunc(&a)
-// 		if breakFunc(&a) {
-// 			break
-// 		}
-// 	}
-// }
-
-// func RunFuncSimple[T any](src *[]T, runFunc func(elem *T)) {
-// 	for _, a := range *src {
-// 		runFunc(&a)
-// 	}
-// }
-
+// ContainsI checks if string a contains string b, ignoring case.
+// It first checks for a direct match with strings.Contains.
+// If not found, it does a case-insensitive search by looping through a
+// and comparing substrings with EqualFold.
 func ContainsI(a string, b string) bool {
-	return IndexI(a, b) != -1
-}
-
-// HasPrefix tests whether the string s begins with prefix.
-func HasPrefixI(s, prefix string) bool {
-	if strings.HasPrefix(s, prefix) {
+	if strings.Contains(a, b) {
 		return true
 	}
+	if len(a) < len(b) {
+		return false
+	}
+	lb := len(b)
+	for i := 0; i < len(a)-lb+1; i++ {
+		if strings.EqualFold(a[i:i+lb], b) {
+			return true
+		}
+	}
+	return false
+}
+
+// ContainsInt checks if the string a contains the string representation of
+// the integer b. It converts b to a string using strconv.Itoa and calls
+// strings.Contains to check for a match.
+func ContainsInt(a string, b int) bool {
+	return strings.Contains(a, strconv.Itoa(b))
+}
+
+// HasPrefixI checks if string s starts with prefix, ignoring case.
+// It first checks for a direct match with strings.HasPrefix.
+// If not found, it does a case-insensitive check by comparing
+// the substring of s from 0 to len(prefix) with prefix using EqualFold.
+func HasPrefixI(s, prefix string) bool {
+	//if strings.HasPrefix(s, prefix) {
+	//	return true
+	//}
 	return len(s) >= len(prefix) && strings.EqualFold(s[0:len(prefix)], prefix)
 }
 
-// HasSuffix tests whether the string s ends with suffix.
+// HasSuffixI checks if string s ends with suffix, ignoring case.
+// It first checks for a direct match with strings.HasSuffix.
+// If not found, it does a case-insensitive check by comparing
+// the substring of s from len(s)-len(suffix) to len(s) with suffix
+// using EqualFold.
 func HasSuffixI(s, suffix string) bool {
-	if strings.HasSuffix(s, suffix) {
-		return true
-	}
+	//if strings.HasSuffix(s, suffix) {
+	//	return true
+	//}
 	return len(s) >= len(suffix) && strings.EqualFold(s[len(s)-len(suffix):], suffix)
 }
+
+// JoinStrings concatenates any number of strings together.
+// It is optimized to avoid unnecessary allocations when there are few elements.
+func JoinStrings(elems ...string) string {
+	if len(elems) == 0 {
+		return ""
+	}
+	if len(elems) == 1 {
+		return elems[0]
+	}
+
+	n := Getstringarrlength(elems)
+
+	b := PlBuffer.Get()
+	b.Grow(n)
+	for idx := range elems {
+		if elems[idx] != "" {
+			b.WriteString(elems[idx])
+		}
+	}
+	defer PlBuffer.Put(b)
+	return b.String()
+}
+
+// Getstringarrlength returns the total length of all strings in the given
+// string slice elems. It iterates through the slice and sums the individual
+// string lengths.
+func Getstringarrlength(elems []string) int {
+	var n int
+	for idx := range elems {
+		n += len(elems[idx])
+	}
+	return n
+}
+
+// URLJoinPath joins a base URL path with any number of path elements.
+// It uses url.JoinPath under the hood and discards any errors.
+func URLJoinPath(base string, elem ...string) string {
+	str, _ := url.JoinPath(base, elem...)
+	return str
+}
+
+// IndexI searches for the first case-insensitive instance of b in a.
+// It returns the index of the first match, or -1 if no match is found.
 func IndexI(a string, b string) int {
-	if len(a) < len(b) {
+	i := strings.Index(a, b)
+	if i != -1 {
+		return i
+	}
+
+	if len(b) > len(a) {
 		return -1
 	}
-	j := strings.Index(a, b)
-	if j >= 0 {
-		return j
-	}
+
 	lb := len(b)
-	la := len(a)
-	for i := 0; i < (la - lb + 1); i++ {
+	for i := 0; i < len(a)-lb+1; i++ {
+		if strings.EqualFold(a[i:i+lb], b) {
+			return i
+		}
+	}
+
+	return -1
+}
+
+// IndexILast searches for the last case-insensitive instance of b in a.
+// It returns the index of the last match, or -1 if no match is found.
+func IndexILast(a string, b string) int {
+	lb := len(b)
+	for i := len(a) - 1; i >= 0; i-- {
 		if strings.EqualFold(a[i:i+lb], b) {
 			return i
 		}
 	}
 	return -1
 }
-func IndexILast(a string, b string) int {
-	j := -1
-	lb := len(b)
-	la := len(a)
-	for i := 0; i < (la - lb + 1); i++ {
-		if strings.EqualFold(a[i:i+lb], b) {
-			j = i
-		}
-	}
-	return j
-}
 
-func StringToInt(s string) int {
+// StringToFileMode converts a string representing a file mode in octal to a uint32.
+// It returns 0 if the string is empty or cannot be parsed.
+func StringToFileMode(s string) fs.FileMode {
 	if s == "" {
 		return 0
 	}
-	in, err := strconv.ParseUint(s, 10, 0)
-	//in, err := strconv.Atoi(s)
+	in, err := strconv.ParseUint(s, 8, 0)
 	if err != nil {
 		return 0
 	}
-	return int(in)
+	return fs.FileMode(uint32(in))
 }
-func StringToInt64(s string) int64 {
-	if s == "" {
+
+// StringToInt converts the given string to an int.
+// It uses stringToUint64 to convert to a uint64 first,
+// then converts the result to an int.
+func StringToInt(s string) int {
+	if strings.ContainsRune(s, '.') || strings.ContainsRune(s, ',') {
+		in, err := strconv.ParseFloat(StringReplaceWith(s, ',', '.'), 64)
+		if err != nil {
+			return 0
+		}
+		return int(in)
+	}
+	in, err := strconv.Atoi(s)
+	if err != nil {
 		return 0
 	}
-	in, err := strconv.ParseUint(s, 10, 64)
+	return in
+}
+
+// StringToInt64 converts the given string to an int64.
+// It uses stringToUint64 to convert to a uint64 first,
+// then converts the result to an int64.
+func StringToInt64(s string) int64 {
+	if strings.ContainsRune(s, '.') || strings.ContainsRune(s, ',') {
+		in, err := strconv.ParseFloat(StringReplaceWith(s, ',', '.'), 64)
+		if err != nil {
+			return 0
+		}
+		return int64(in)
+	}
+	in, err := strconv.Atoi(s)
 	if err != nil {
 		return 0
 	}
 	return int64(in)
 }
-func StringToUint32(s string) uint32 {
-	if s == "" {
-		return 0
-	}
-	in, err := strconv.ParseUint(s, 0, 32)
-	if err != nil {
-		return 0
-	}
-	return uint32(in)
-}
 
-func IntToString(i int) string {
-	if i == 0 {
-		return "0"
-	}
-	if i < 0 {
-		return strconv.FormatInt(int64(i), 10)
-	}
-	return strconv.FormatUint(uint64(i), 10)
-}
-func UintToString(i uint) string {
-	if i == 0 {
-		return "0"
-	}
-	return strconv.FormatUint(uint64(i), 10)
-}
-
+// TimeGetNow returns the current time in the time zone specified by the
+// global timeZone variable.
 func TimeGetNow() time.Time {
-	return time.Now().In(&TimeZone)
+	return time.Now().In(&timeZone)
 }
 
-func HTMLUnescape(s *string) {
-	defer func() { // recovers panic
-		if e := recover(); e != nil {
-			Log.Error().Msgf("Recovered from panic (unescape) %v", e)
-		}
-	}()
-	if strings.ContainsRune(*s, '&') || strings.ContainsRune(*s, '%') {
-		*s = html.UnescapeString(*s)
-	}
-}
-
-func HTMLUnescapeS(s string) string {
-	HTMLUnescape(&s)
-	return s
-}
-func Unquote(s *string) {
-	if strings.Contains(*s, "\\u") {
-		unquote, err := strconv.Unquote("\"" + *s + "\"")
-		if err == nil {
-			*s = unquote
+// UnquoteUnescape unquotes a quoted string and unescapes HTML entities.
+// It first tries to unquote the string as a quoted string literal.
+// If that succeeds and the unquoted string contains HTML entities,
+// it unescapes the HTML entities.
+// If unquoting fails, it just unescapes any HTML entities in the original string.
+func UnquoteUnescape(s string) string {
+	if strings.Contains(s, "\\u") {
+		if u, err := strconv.Unquote(s); err == nil {
+			s = u
 		}
 	}
-}
-
-func UnquoteS(s string) string {
-	Unquote(&s)
+	if strings.ContainsRune(s, '&') {
+		s = html.UnescapeString(s)
+	}
 	return s
 }
 
-// repeat ,? - start ? - count 1
-func StringsRepeat(start string, repeat string, count int) string {
-	return start + strings.Repeat(repeat, count)
-}
-
-func DeleteFromStringsCache(cachekey string, search string) {
-	if !GlobalCache.CheckNoType(cachekey) {
-		return
-	}
-
-	GlobalCache.DeleteString(cachekey, search)
-}
-
-func SplitBy(str string, splitby rune) string {
-	idx := strings.IndexRune(str, splitby)
-	if idx != -1 {
-		return str[:idx]
-	}
-	return ""
-}
-func SplitByLR(str string, splitby rune) (string, string) {
-	var str1, str2 = "", str
-	var idx int
-	for i, c := range str {
-		if c == splitby {
-			idx = i
-		}
-	}
-	if idx != 0 {
-		str1 = str[:idx]
-		str2 = str[idx+1:]
-	}
-	return str1, str2
-}
-func Join[T any](str *[]T, getFunc func(elem *T) string, sep string) string {
-	if str == nil || len(*str) == 0 || sep == "" {
-		return ""
-	}
-	strs := make([]string, 0, (len(*str)))
-	for idx := range *str {
-		strs = append(strs, getFunc(&(*str)[idx]))
-	}
-	defer Clear(&strs)
-	return strings.Join(strs, sep)
-}
-func SplitByRet(str string, splitby rune) string {
+// SplitByFullP splits a string into two parts by the first
+// occurrence of the split rune. It returns the part before the split.
+// If the split rune is not found, it returns the original string.
+func SplitByFullP(str string, splitby rune) string {
 	idx := strings.IndexRune(str, splitby)
 	if idx != -1 {
 		return str[:idx]
@@ -670,195 +786,247 @@ func SplitByRet(str string, splitby rune) string {
 	return str
 }
 
-// func SplitByStr(str string, splitby string) string {
+// SplitByLR splits str into left and right substrings by the last occurrence of splitby byte.
+// It returns the left substring before the split byte and the right substring after.
+// If splitby byte is not found or invalid, an empty string and the original str are returned.
+func SplitByLR(str string, splitby byte) (string, string) { // left, right
+	idx := strings.LastIndexByte(str, splitby)
+	if idx == -1 || idx == 0 || idx == len(str) {
+		return "", str
+	}
+	return str[:idx], str[idx+1:]
+}
+
+// SplitByStrMod splits str into two strings by removing splitby from the right side of str.
+// It returns the left substring before the removed splitby string.
+// func SplitByStrMod(str string, splitby string) string {
 // 	idx := IndexI(str, splitby)
 // 	if idx != -1 {
-// 		return str[:idx]
+// 		str2 := str[:idx]
+// 		if str2 == "" {
+// 			return ""
+// 		}
+// 		switch str2[len(str2)-1:] {
+// 		case "-", ".", " ":
+// 			return strings.TrimRight(str2, "-. ")
+// 		}
 // 	}
 // 	return str
 // }
 
-// Changes source string
-func SplitByStrMod(str *string, splitby string) {
-	idx := IndexI(*str, splitby)
-	if idx != -1 {
-		*str = (*str)[:idx]
-		if *str == "" {
-			return
-		}
-		if (*str)[len(*str)-1:] == "-" || (*str)[len(*str)-1:] == "." || (*str)[len(*str)-1:] == " " {
-			*str = strings.TrimRight(*str, "-. ")
-		}
-	}
-}
-
-// Changes source string
-func SplitByStrModRight(str *string, splitby string) {
-	idx := IndexI(*str, splitby)
-	if idx != -1 {
-		*str = (*str)[idx+len(splitby):]
-		if *str == "" {
-			return
-		}
-		if (*str)[:1] == "-" || (*str)[:1] == "." || (*str)[:1] == " " {
-			*str = strings.TrimLeft(*str, "-. ")
-		}
-	}
-}
-
-func StringBuilder(str ...string) string {
-	if len(str) == 0 {
-		return ""
-	}
-	var strb strings.Builder
-	for idx := range str {
-		strb.WriteString(str[idx])
-	}
-	Clear(&str)
-	defer strb.Reset()
-	return strb.String()
-}
-func StringBuilderS(str ...string) string {
-	if len(str) == 0 {
-		return ""
-	}
-	var ret string
-	for idx := range str {
-		ret += str[idx]
-	}
-	Clear(&str)
-	return ret
-}
-func StringBuilderSP(str ...string) *string {
-	if len(str) == 0 {
-		return new(string)
-	}
-	var ret string
-	for idx := range str {
-		ret += str[idx]
-	}
-	Clear(&str)
-	return &ret
-}
-func StringBuilderPS(str ...*string) string {
-	if len(str) == 0 {
-		return ""
-	}
-	var ret string
-	for idx := range str {
-		ret += *(str[idx])
-	}
-	Clear(&str)
-	return ret
-}
-
-func Getarray[T any](size int) []T {
-	if size > 0 {
-		return make([]T, 0, size)
-	}
-	return []T{}
-}
-
-// func GetarrayStatic[T any](size int) []T {
-// 	return make([]T, size)
-// }
-
-func IndexFunc[T any](s *[]T, f func(T) bool) int {
-	for i := range *s {
-		if f((*s)[i]) {
-			return i
-		}
-	}
-	return -1
-}
-
-// func ContainsFunc[T any](s *[]T, f func(T) bool) bool {
-// 	return IndexFunc(s, f) >= 0
-// }
-
-// func Index[T comparable](s *[]T, v T) int {
-// 	for i := range *s {
-// 		if v == (*s)[i] {
-// 			return i
+// SplitByStrModRight splits str into two strings by removing splitby from the right side of str.
+// It trims any trailing spaces from the right side and returns the right string.
+// func SplitByStrModRight(str string, splitby string) string {
+// 	idx := IndexI(str, splitby)
+// 	if idx != -1 {
+// 		str2 := str[idx+len(splitby):]
+// 		if str2 == "" {
+// 			return ""
+// 		}
+// 		switch str2[0] {
+// 		case '-', '.', ' ':
+// 			return strings.TrimLeft(str2, "-. ")
 // 		}
 // 	}
-// 	return -1
-// }
-// func Contains[T comparable](s *[]T, v T) bool {
-// 	return Index(s, v) >= 0
+// 	return str
 // }
 
-func ContainsStringsI(s *[]string, v string) bool {
-	for i := range *s {
-		if strings.EqualFold(v, (*s)[i]) {
+// Contains reports whether v is present in s - case insensitive.
+func SlicesContainsI(s []string, v string) bool {
+	for idx := range s {
+		if strings.EqualFold(v, s[idx]) {
 			return true
 		}
 	}
 	return false
 }
 
-// func ContainsStringsContainI(s *[]string, v string) bool {
-// 	for i := range *s {
-// 		if ContainsI(v, (*s)[i]) {
-// 			return true
-// 		}
-// 	}
-// 	return false
-// }
-
-func Delete[T any](s *[]T, i int) {
-	(*s)[i] = (*s)[len(*s)-1] //Replace found entry with last
-	*s = (*s)[:len(*s)-1]
+// Contains reports whether v is contained in s - case insensitive.
+func SlicesContainsPart2I(s []string, v string) bool {
+	for idx := range s {
+		if ContainsI(v, s[idx]) {
+			return true
+		}
+	}
+	return false
 }
 
-func Grow[S *[]T, T any](s S, n int) {
-	if n < 1 {
-		return
+// Contains reports whether v is contained in s.
+func Contains[S ~[]E, E comparable](s S, v E) bool {
+	for idx := range s {
+		if v == s[idx] {
+			return true
+		}
 	}
-	if n -= cap(*s) - len(*s); n > 0 {
-		//*s = append(*s, make([]T, n)...)[:len(*s)]
-		// TODO(https://go.dev/issue/53888): Make using []E instead of S
-		// to workaround a compiler bug where the runtime.growslice optimization
-		// does not take effect. Revert when the compiler is fixed.
-		*s = append([]T(*s)[:cap(*s)], make([]T, n)...)[:len(*s)]
+	return false
+}
+
+// Clear sets all fields in the given object pointer to their zero value.
+// If obj is nil, no action is taken.
+func Clear[T any](obj *T) {
+	if obj != nil {
+		reflect.ValueOf(obj).Elem().SetZero()
 	}
 }
 
-func ClearVar(i interface{}) {
-	if DisableVariableCleanup {
-		return
-	}
-	v := reflect.ValueOf(i)
-	if !v.IsZero() && v.Kind() == reflect.Pointer {
-		v.Elem().Set(reflect.Zero(v.Elem().Type()))
-	}
-}
-func ClearVarNew[T any](i *T) {
-	if DisableVariableCleanup || i == nil {
-		return
-	}
-	*i = *new(T)
-}
-func Clear[T any](t *[]T) {
-	if DisableVariableCleanup || t == nil {
-		return
-	}
-	*t = nil
+// BuilderAddInt writes the string representation of the given int to the given bytes.Buffer.
+func BuilderAddInt(bld *bytes.Buffer, i int) {
+	bld.WriteString(strconv.Itoa(i))
 }
 
-func HTTPGetRequest(url *string) *http.Request {
-	req, err := http.NewRequest("GET", *url, nil)
-	if err != nil {
-		LogerrorStr(err, StrURL, *url, "failed to get url")
-		return nil
+// BuilderAddUint writes the string representation of the unsigned integer i to the buffer bld.
+func BuilderAddUint(bld *bytes.Buffer, i uint) {
+	bld.WriteString(strconv.Itoa(int(i)))
+}
+
+// StringRemoveAllRunes removes all occurrences of the rune r from s.
+func StringRemoveAllRunes(s string, r rune) string {
+	if !strings.ContainsRune(s, r) {
+		return s
 	}
-	return req
+
+	out := PlBuffer.Get()
+	out.Grow(len(s))
+	for _, z := range s {
+		if r != z {
+			out.WriteRune(z)
+		}
+	}
+	defer PlBuffer.Put(out)
+	return out.String()
 }
 
-func GetP[T any](s T) *T {
-	return &s
+// StringRemoveAllRunes removes all occurrences of the rune r from s.
+func StringRemoveAllRunesMulti(s string, r ...rune) string {
+	out := PlBuffer.Get()
+	out.Grow(len(s))
+contloop:
+	for _, z := range s {
+		for _, y := range r {
+			if y == z {
+				continue contloop
+			}
+		}
+		out.WriteRune(z)
+	}
+	defer PlBuffer.Put(out)
+	return out.String()
 }
 
-func PathJoin(str1 string, str2 string) string {
-	return filepath.Join(str1, str2)
+// StringReplaceWith replaces all occurrences of the rune r in s with the rune t.
+// It returns a new string with the replacements.
+func StringReplaceWith(s string, r rune, t rune) string {
+	if !strings.ContainsRune(s, r) {
+		return s
+	}
+	buf := PlBuffer.Get()
+	buf.Grow(len(s))
+	for _, z := range s {
+		if z == r {
+			buf.WriteRune(t)
+		} else {
+			buf.WriteRune(z)
+		}
+	}
+	defer PlBuffer.Put(buf)
+	return buf.String()
+}
+
+// StringReplaceWith replaces all occurrences of the rune r in s with the rune t.
+// It returns a new string with the replacements.
+func StringReplaceWithByte(s string, r rune, t rune) []byte {
+	if !strings.ContainsRune(s, r) {
+		return []byte(s)
+	}
+	buf := PlBuffer.Get()
+	buf.Grow(len(s))
+	for _, z := range s {
+		if z == r {
+			buf.WriteRune(t)
+		} else {
+			buf.WriteRune(z)
+		}
+	}
+	defer PlBuffer.Put(buf)
+	return buf.Bytes()
+}
+
+// StringReplaceWith replaces all occurrences of the rune r in s with the rune t.
+// It returns a new string with the replacements.
+func ByteReplaceWithByte(s []byte, r rune, t rune) []byte {
+	if !bytes.ContainsRune(s, r) {
+		return []byte(s)
+	}
+	buf := PlBuffer.Get()
+	buf.Grow(len(s))
+	for _, z := range s {
+		if rune(z) == r {
+			buf.WriteRune(t)
+		} else {
+			buf.WriteByte(z)
+		}
+	}
+	defer PlBuffer.Put(buf)
+	return buf.Bytes()
+}
+
+// GetStringsMap returns the map of strings for the given type based on
+// whether to use the series or movies map. If useseries is true, it returns
+// the mapstringsseries map, otherwise it returns the mapstringsmovies map.
+func GetStringsMap(useseries bool, typestr string) string {
+	if useseries {
+		return mapstringsseries[typestr]
+	}
+	return mapstringsmovies[typestr]
+}
+
+// diacriticsReplacer replaces diacritic marks in the input string s
+// with their ASCII equivalents, based on the provided diacriticsmap.
+// It calls the replacer function to perform the replacements.
+func DiacriticsReplacer(s string) string {
+	bld := PlBuffer.Get()
+	bld.Grow(len(s) + 2)
+	for _, z := range s {
+		if r, ok := diacriticsmap[z]; ok {
+			bld.WriteString(r)
+		} else {
+			bld.WriteRune(z)
+		}
+	}
+	defer PlBuffer.Put(bld)
+	return bld.String()
+	//return replacer(diacriticsmap, s)
+}
+
+// pathReplacer replaces characters in s that are keys in pathmap with the
+// corresponding values. It is used to replace problematic characters in paths.
+func pathReplacer(s string) string {
+	bld := PlBuffer.Get()
+	bld.Grow(len(s) + 2)
+	for _, z := range s {
+		if r, ok := pathmap[z]; ok {
+			bld.WriteString(r)
+		} else {
+			bld.WriteRune(z)
+		}
+	}
+	defer PlBuffer.Put(bld)
+	return bld.String()
+	//return replacer(pathmap, s)
+}
+
+// replacer replaces characters in s with corresponding strings from mapping m.
+// It allocates a new byte buffer to build the replaced string to avoid mutations.
+func replacer(m map[rune]string, s string) string {
+	bld := PlBuffer.Get()
+	bld.Grow(len(s) + 2)
+	for _, z := range s {
+		if r, ok := m[z]; ok {
+			bld.WriteString(r)
+		} else {
+			bld.WriteRune(z)
+		}
+	}
+	defer PlBuffer.Put(bld)
+	return bld.String()
 }

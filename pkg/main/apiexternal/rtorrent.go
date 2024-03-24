@@ -4,6 +4,11 @@ import (
 	"github.com/mrobinsn/go-rtorrent/rtorrent"
 )
 
+// SendToRtorrent sends a torrent file URL to an rTorrent
+// instance for downloading. hostname and insecure specify the
+// rTorrent server. urlv is the torrent file URL. dlpath is the
+// download location path. name is the name to save the torrent
+// as in rTorrent. Returns any error.
 func SendToRtorrent(hostname string, insecure bool, urlv string, dlpath string, name string) error {
 	cl := rtorrent.New(hostname, insecure)
 

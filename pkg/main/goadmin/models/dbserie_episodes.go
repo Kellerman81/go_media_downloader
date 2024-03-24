@@ -12,7 +12,6 @@ import (
 )
 
 func GetDbserieEpisodesTable(ctx *context.Context) table.Table {
-
 	dbserieEpisodes := table.NewDefaultTable(table.DefaultConfigWithDriverAndConnection("sqlite", "media"))
 
 	detail := dbserieEpisodes.GetDetail()
@@ -33,7 +32,7 @@ func GetDbserieEpisodesTable(ctx *context.Context) table.Table {
 		JoinField: "id",
 		Table:     "dbseries",
 	}).FieldSortable()
-	detail.AddField("Dbserie_id", "dbserie_id", db.Integer).FieldDisplay(func(value types.FieldModel) interface{} {
+	detail.AddField("Dbserie_id", "dbserie_id", db.Integer).FieldDisplay(func(value types.FieldModel) any {
 		return template.Default().
 			Link().
 			SetURL("/admin/info/dbseries/detail?__goadmin_detail_pk=" + value.Value).
@@ -65,7 +64,7 @@ func GetDbserieEpisodesTable(ctx *context.Context) table.Table {
 	info.AddField("Title", "title", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
 	//info.AddField("Overview", "overview", db.Text)
 	//info.AddField("Poster", "poster", db.Text)
-	info.AddField("Dbserie_id", "dbserie_id", db.Integer).FieldDisplay(func(value types.FieldModel) interface{} {
+	info.AddField("Dbserie_id", "dbserie_id", db.Integer).FieldDisplay(func(value types.FieldModel) any {
 		return template.Default().
 			Link().
 			SetURL("/admin/info/dbseries/detail?__goadmin_detail_pk=" + value.Value).
