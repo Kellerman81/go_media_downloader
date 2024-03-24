@@ -46,7 +46,7 @@ jobs:
           race: false
           ldflags: -s -w -X 'main.version=${{ steps.version.outputs.version }}' -X 'main.githash=${{ steps.commit.outputs.short }}' -X 'main.buildstamp=${{ steps.date.outputs.date }}'
           buildmode: default
-          working_dir: $GITHUB_WORKSPACE/pkg/main
+          working_dir: /pkg/main
     
     - name: Build with xgo imdb
       uses: crazy-max/ghaction-xgo@v3
@@ -61,7 +61,7 @@ jobs:
           race: false
           ldflags: -s -w -X 'main.version=${{ steps.version.outputs.version }}' -X 'main.githash=${{ steps.commit.outputs.short }}' -X 'main.buildstamp=${{ steps.date.outputs.date }}'
           buildmode: default
-          working_dir: $GITHUB_WORKSPACE/pkg/imdb
+          working_dir: /pkg/imdb
     
     - name: Rename Win32 binary
       run: mv ./pkg/imdb/imdb-windows-386.exe init_imdb.exe
