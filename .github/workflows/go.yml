@@ -34,10 +34,8 @@ jobs:
       run: echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
     
     - name: Build with xgo
-      uses: crazy-max/ghaction-xgo@v3
+      uses: crazy-max/ghaction-xgo@v2
       with:
-          xgo_version: v0.31.0
-          go_version: 1.21
           dest: .
           prefix: go_media_downloader
           targets: windows/386,windows/amd64,linux/386,linux/amd64,darwin/amd64
@@ -49,10 +47,8 @@ jobs:
           working_dir: pkg/main
     
     - name: Build with xgo imdb
-      uses: crazy-max/ghaction-xgo@v3
+      uses: crazy-max/ghaction-xgo@v2
       with:
-          xgo_version: v0.31.0
-          go_version: 1.21
           dest: .
           prefix: imdb
           targets: windows/386,windows/amd64,linux/386,linux/amd64,darwin/amd64
