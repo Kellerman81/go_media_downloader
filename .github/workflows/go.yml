@@ -33,10 +33,13 @@ jobs:
       id: date
       run: echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
     
+    - name: cd main
+      run: cd pgk/main
+
     - name: Build with xgo
       uses: crazy-max/ghaction-xgo@v2
       with:
-          dest: .
+          dest: /home/runner/work/go_media_downloader/go_media_downloader/pkg/main
           prefix: go_media_downloader
           targets: windows/386,windows/amd64,linux/386,linux/amd64,darwin/amd64
           v: false
@@ -44,12 +47,15 @@ jobs:
           race: false
           ldflags: -s -w -X 'main.version=${{ steps.version.outputs.version }}' -X 'main.githash=${{ steps.commit.outputs.short }}' -X 'main.buildstamp=${{ steps.date.outputs.date }}'
           buildmode: default
-          working_dir: /home/runner/work/go_media_downloader/pkg/main
+          working_dir: /home/runner/work/go_media_downloader/go_media_downloader/pkg/main
     
+    - name: cd imdb
+      run: cd pgk/imdb
+
     - name: Build with xgo imdb
       uses: crazy-max/ghaction-xgo@v2
       with:
-          dest: .
+          dest: /home/runner/work/go_media_downloader/go_media_downloader/pkg/imdb
           prefix: imdb
           targets: windows/386,windows/amd64,linux/386,linux/amd64,darwin/amd64
           v: false
@@ -57,7 +63,7 @@ jobs:
           race: false
           ldflags: -s -w -X 'main.version=${{ steps.version.outputs.version }}' -X 'main.githash=${{ steps.commit.outputs.short }}' -X 'main.buildstamp=${{ steps.date.outputs.date }}'
           buildmode: default
-          working_dir: /home/runner/work/go_media_downloader/pkg/imdb
+          working_dir: /home/runner/work/go_media_downloader/go_media_downloader/pkg/imdb
 
     - name: List Files Root
       run: ls
@@ -67,10 +73,10 @@ jobs:
       run: ls ./pkg/imdb
     
     - name: Rename Win32 binary
-      run: mv ./pkg/imdb/imdb-windows-386.exe init_imdb.exe
+      run: mv pkg/imdb/imdb-windows-386.exe init_imdb.exe
 
     - name: Rename Win32 binary dl
-      run: mv ./pkg/main/go_media_downloader-windows-386.exe go_media_downloader.exe
+      run: mv pkg/main/go_media_downloader-windows-386.exe go_media_downloader.exe
 
     - name: Zip Win32 binary
       uses: thedoctor0/zip-release@master
@@ -80,10 +86,10 @@ jobs:
         exclusions: '*.git* /.github/* /pkg/* Dockerfile go.* *.zip *.go go_media_downloader-*'
 
     - name: Rename Win64 binary
-      run: mv ./pkg/imdb/imdb-windows-amd64.exe init_imdb.exe
+      run: mv pkg/imdb/imdb-windows-amd64.exe init_imdb.exe
 
     - name: Rename Win64 binary dl
-      run: mv ./pkg/main/go_media_downloader-windows-amd64.exe go_media_downloader.exe
+      run: mv pkg/main/go_media_downloader-windows-amd64.exe go_media_downloader.exe
 
     - name: Zip Win64 binary
       uses: thedoctor0/zip-release@master
@@ -93,16 +99,16 @@ jobs:
         exclusions: '*.git* /.github/* /pkg/* Dockerfile go.* *.zip *.go go_media_downloader-*'
 
     - name: Remove Win binary
-      run: rm ./init_imdb.exe
+      run: rm init_imdb.exe
 
     - name: Remove Win binary dl
-      run: rm ./go_media_downloader.exe
+      run: rm go_media_downloader.exe
 
     - name: Rename Linux32 binary
-      run: mv ./pkg/imdb/imdb-linux-386 init_imdb
+      run: mv pkg/imdb/imdb-linux-386 init_imdb
 
     - name: Rename Linux32 binary dl
-      run: mv ./pkg/main/go_media_downloader-linux-386 go_media_downloader
+      run: mv pkg/main/go_media_downloader-linux-386 go_media_downloader
 
     - name: Zip Linux32 binary
       uses: thedoctor0/zip-release@master
@@ -112,10 +118,10 @@ jobs:
         exclusions: '*.git* /.github/* /pkg/* Dockerfile go.* *.zip *.go go_media_downloader-*'
 
     - name: Rename Linux64 binary
-      run: mv ./pkg/imdb/imdb-linux-amd64 init_imdb
+      run: mv pkg/imdb/imdb-linux-amd64 init_imdb
 
     - name: Rename Linux64 binary dl
-      run: mv ./pkg/main/go_media_downloader-linux-amd64 go_media_downloader
+      run: mv pkg/main/go_media_downloader-linux-amd64 go_media_downloader
 
     - name: Zip Linux64 binary
       uses: thedoctor0/zip-release@master
@@ -125,10 +131,10 @@ jobs:
         exclusions: '*.git* /.github/* /pkg/* Dockerfile go.* *.zip *.go go_media_downloader-*'
     
     - name: Rename Mac64 binary
-      run: mv ./pkg/imdb/imdb-darwin-amd64 init_imdb
+      run: mv pkg/imdb/imdb-darwin-amd64 init_imdb
 
     - name: Rename Mac64 binary dl
-      run: mv ./pkg/main/go_media_downloader-darwin-amd64 go_media_downloader
+      run: mv pkg/main/go_media_downloader-darwin-amd64 go_media_downloader
 
     - name: Zip Mac64 binary
       uses: thedoctor0/zip-release@master
