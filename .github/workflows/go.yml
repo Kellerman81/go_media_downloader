@@ -11,18 +11,18 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3.3.0
+    - uses: actions/checkout@v4
     
     - name: Checkout
       run: git fetch --prune --unshallow --tags
     
     - name: Set up Go
-      uses: actions/setup-go@v3.5.0
+      uses: actions/setup-go@v5
       with:
-        go-version: 1.20
+        go-version: 1.22
     
     - id: commit
-      uses: pr-mpt/actions-commit-hash@v2
+      uses: pr-mpt/actions-commit-hash@v3
     
     - name: Get current version
       id: version
@@ -34,7 +34,7 @@ jobs:
       run: echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
     
     - name: Build with xgo
-      uses: crazy-max/ghaction-xgo@v2.4.0
+      uses: crazy-max/ghaction-xgo@v3
       with:
           dest: .
           prefix: go_media_downloader
@@ -47,7 +47,7 @@ jobs:
           working_dir: pkg/main
     
     - name: Build with xgo imdb
-      uses: crazy-max/ghaction-xgo@v2.4.0
+      uses: crazy-max/ghaction-xgo@v3
       with:
           dest: .
           prefix: imdb
