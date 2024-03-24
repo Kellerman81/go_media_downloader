@@ -26,8 +26,8 @@ buildmain:
 		go get && \
 		GOARCH=amd64 GOOS=linux go build -ldflags="${LDFLAGS}" -o ../../${BINARY_NAME}-linux-amd64 main.go && \
 		CC=x86_64-w64-mingw32-gcc GOARCH=amd64 GOOS=windows go build -ldflags="${LDFLAGS}" -o ../../${BINARY_NAME}-windows-amd64.exe main.go && \
-		CC=i686-linux-gnu-gcc GOARCH=386 GOOS=linux go build -ldflags="${LDFLAGS}" -o ../../${BINARY_NAME}-linux-386 main.go && \
-		CC=i686-w64-mingw32-gcc GOARCH=386 GOOS=windows go build -ldflags="${LDFLAGS}" -o ../../${BINARY_NAME}-windows-386.exe main.go
+		CC=i686-linux-gnu-gcc GOARCH=386 GOOS=linux go build -ldflags="${LDFLAGS}" -o ../../${BINARY_NAME}-linux-386 main.go
+#CC=i686-w64-mingw32-gcc GOARCH=386 GOOS=windows go build -ldflags="${LDFLAGS}" -o ../../${BINARY_NAME}-windows-386.exe main.go
 #GOARCH=amd64 GOOS=darwin go build -ldflags="${LDFLAGS}" -o ../../${BINARY_NAME}-darwin-amd64 main.go && \
 		
 buildimdb:
@@ -35,7 +35,7 @@ buildimdb:
 		go get && \
 		GOARCH=amd64 GOOS=linux go build -ldflags="${LDFLAGS}" -o ../../${IMDB_BINARY_NAME}-linux-amd64 imdb.go && \
 		CC=x86_64-w64-mingw32-gcc GOARCH=amd64 GOOS=windows go build -ldflags="${LDFLAGS}" -o ../../${IMDB_BINARY_NAME}-windows-amd64.exe imdb.go && \
-		CC=i686-linux-gnu-gcc GOARCH=386 GOOS=linux go build -ldflags="${LDFLAGS}" -o ../../${IMDB_BINARY_NAME}-linux-386 imdb.go && \
-		CC=i686-w64-mingw32-gcc GOARCH=386 GOOS=windows go build -ldflags="${LDFLAGS}" -o ../../${IMDB_BINARY_NAME}-windows-386.exe imdb.go
+		CC=i686-linux-gnu-gcc GOARCH=386 GOOS=linux go build -ldflags="${LDFLAGS}" -o ../../${IMDB_BINARY_NAME}-linux-386 imdb.go
+#CC=i686-w64-mingw32-gcc GOARCH=386 GOOS=windows go build -ldflags="${LDFLAGS}" -o ../../${IMDB_BINARY_NAME}-windows-386.exe imdb.go
 #GOARCH=amd64 GOOS=darwin go build -ldflags="${LDFLAGS}" -o ../../${IMDB_BINARY_NAME}-darwin-amd64 imdb.go && \
 		
