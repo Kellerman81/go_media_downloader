@@ -77,23 +77,23 @@ jobs:
     #    exclusions: '*.git* /.github/* /pkg/* Dockerfile go.* *.zip *.go go_media_downloader-*'
 
     - name: Rename Win64 binary
-      run: mv ./pkg/imdb/init_imdb-windows-amd64.exe init_imdb.exe
+      run: mv init_imdb-windows-amd64.exe init_imdb.exe
 
     - name: Rename Win64 binary dl
-      run: mv ./pkg/main/go_media_downloader-windows-amd64.exe go_media_downloader.exe
+      run: mv go_media_downloader-windows-amd64.exe go_media_downloader.exe
 
     - name: Zip Win64 binary
       uses: thedoctor0/zip-release@master
       with:
         type: 'zip'
         filename: 'gomedia-windows-x64.zip'
-        exclusions: '*.git* /.github/* /pkg/* Dockerfile go.* *.zip *.go go_media_downloader-*'
+        exclusions: '*.git* /.github/* /pkg/* Dockerfile go.* *.zip *.go go_media_downloader-* init_imdb-*'
 
     - name: Remove Win binary
-      run: rm ./init_imdb.exe
+      run: rm init_imdb.exe
 
     - name: Remove Win binary dl
-      run: rm ./go_media_downloader.exe
+      run: rm go_media_downloader.exe
 
     #- name: Rename Linux32 binary
     #  run: mv ./pkg/imdb/init_imdb-linux-386 init_imdb
@@ -109,17 +109,17 @@ jobs:
     #    exclusions: '*.git* /.github/* /pkg/* Dockerfile go.* *.zip *.go go_media_downloader-*'
 
     - name: Rename Linux64 binary
-      run: mv ./pkg/imdb/init_imdb-linux-amd64 init_imdb
+      run: mv init_imdb-linux-amd64 init_imdb
 
     - name: Rename Linux64 binary dl
-      run: mv ./pkg/main/go_media_downloader-linux-amd64 go_media_downloader
+      run: mv go_media_downloader-linux-amd64 go_media_downloader
 
     - name: Zip Linux64 binary
       uses: thedoctor0/zip-release@master
       with:
         type: 'zip'
         filename: 'gomedia-linux-x64.zip'
-        exclusions: '*.git* /.github/* /pkg/* Dockerfile go.* *.zip *.go go_media_downloader-*'
+        exclusions: '*.git* /.github/* /pkg/* Dockerfile go.* *.zip *.go go_media_downloader-* init_imdb-*'
     
     #- name: Rename Mac64 binary
     #  run: mv ./pkg/imdb/imdb-darwin-amd64 init_imdb
