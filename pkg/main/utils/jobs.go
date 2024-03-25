@@ -225,7 +225,7 @@ func SingleJobs(job, cfgpstr, listname string, force bool) {
 	if job == logger.StrData || job == logger.StrRss || job == logger.StrReachedFlag || job == logger.StrClearHistory || job == logger.StrFeeds || job == logger.StrCheckMissing || job == logger.StrCheckMissingFlag {
 		if job == logger.StrRss {
 			for idx := range cfgp.ListsQualities {
-				searcher.NewSearcher(cfgp, config.SettingsQuality[cfgp.ListsQualities[idx]], logger.StrRss, 0).SearchRSS(cfgp, config.SettingsQuality[cfgp.ListsQualities[idx]], false, true, true)
+				searcher.NewSearcher(cfgp, config.SettingsQuality[cfgp.ListsQualities[idx]], logger.StrRss, &logger.V0).SearchRSS(cfgp, config.SettingsQuality[cfgp.ListsQualities[idx]], false, true, true)
 			}
 		} else {
 			for idxlist := range cfgp.Lists {
@@ -427,7 +427,7 @@ func jobsearchmedia(cfgp *config.MediaTypeConfig, searchmissing, searchtitle boo
 	}
 
 	for idx := range tbl {
-		searcher.NewSearcher(cfgp, database.GetMediaQualityConfigStr(cfgp, tbl[idx].Str), "", 0).MediaSearch(cfgp, tbl[idx].Num, searchtitle, true, true)
+		searcher.NewSearcher(cfgp, database.GetMediaQualityConfigStr(cfgp, tbl[idx].Str), "", &logger.V0).MediaSearch(cfgp, &tbl[idx].Num, searchtitle, true, true)
 	}
 	clear(tbl)
 }

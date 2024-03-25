@@ -347,7 +347,7 @@ func GetTraktSerieSeasons(showid string) []string {
 // It queries the local database for existing episodes to avoid duplicates.
 // For each season, it calls addtraktdbepisodes to insert any missing episodes into the database.
 // Returns nothing.
-func UpdateTraktSerieSeasonsAndEpisodes(showid string, id uint) {
+func UpdateTraktSerieSeasonsAndEpisodes(showid string, id *uint) {
 	if showid == "" || traktAPI.Client.checklimiterwithdaily() {
 		return
 	}
@@ -356,7 +356,7 @@ func UpdateTraktSerieSeasonsAndEpisodes(showid string, id uint) {
 		return
 	}
 	baseurl := logger.URLJoinPath(apiurlshows, showid, "seasons")
-	tbl := database.Getrows1size[database.DbstaticTwoString](false, database.QueryDbserieEpisodesCountByDBID, database.QueryDbserieEpisodesGetSeasonEpisodeByDBID, &id)
+	tbl := database.Getrows1size[database.DbstaticTwoString](false, database.QueryDbserieEpisodesCountByDBID, database.QueryDbserieEpisodesGetSeasonEpisodeByDBID, id)
 	for idx := range result {
 		//addtraktdbepisodes(&id, logger.JoinStrings(logger.URLJoinPath(apiurlshows, showid, "seasons", strconv.Itoa(result[idx].Number)), extendedfull), tbl)
 		addtraktdbepisodes(id, logger.JoinStrings(logger.URLJoinPath(baseurl, strconv.Itoa(result[idx].Number)), extendedfull), tbl)
@@ -367,7 +367,7 @@ func UpdateTraktSerieSeasonsAndEpisodes(showid string, id uint) {
 // addtraktdbepisodes retrieves Trakt episode data for a show and inserts any missing episodes into the dbserie_episodes table.
 // It takes a dbserie ID, the Trakt API URL to retrieve episode data, and a slice of existing episodes.
 // For each episode returned by Trakt that does not exist in the existing episode list, it inserts a new record into the database.
-func addtraktdbepisodes(dbid uint, urlv string, tbl []database.DbstaticTwoString) {
+func addtraktdbepisodes(dbid *uint, urlv string, tbl []database.DbstaticTwoString) {
 	if traktAPI.Client.checklimiterwithdaily() {
 		return
 	}
@@ -386,7 +386,7 @@ func addtraktdbepisodes(dbid uint, urlv string, tbl []database.DbstaticTwoString
 		}
 		stridentifier = GenerateIdentifierStringFromInt(data[idx].Season, data[idx].Episode)
 		database.ExecN("insert into dbserie_episodes (episode, season, identifier, title, first_aired, overview, dbserie_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
-			&strepisode, &strseason, &stridentifier, &data[idx].Title, &data[idx].FirstAired, &data[idx].Overview, &dbid)
+			&strepisode, &strseason, &stridentifier, &data[idx].Title, &data[idx].FirstAired, &data[idx].Overview, dbid)
 	}
 	clear(data)
 }

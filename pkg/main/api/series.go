@@ -815,8 +815,8 @@ func apiSeriesSearch(c *gin.Context) {
 				worker.Dispatch("searchseries_series_"+media.Name+"_"+strconv.Itoa(int(serie.ID)), func() {
 					episodes := database.GetrowsN[uint](false, database.GetdatarowN[int](false, "select count() from serie_episodes where serie_id = ?", &serie.ID), "select id from serie_episodes where serie_id = ?", &serie.ID)
 					for idxepisode := range episodes {
-						results := searcher.NewSearcher(media, nil, "", 0)
-						err := results.MediaSearch(media, episodes[idxepisode], true, false, false)
+						results := searcher.NewSearcher(media, nil, "", &logger.V0)
+						err := results.MediaSearch(media, &episodes[idxepisode], true, false, false)
 
 						if err != nil {
 							if !errors.Is(err, logger.ErrDisabled) {
@@ -867,8 +867,8 @@ func apiSeriesSearchSeason(c *gin.Context) {
 					a := c.Param("season")
 					episodes = database.GetrowsN[uint](false, database.GetdatarowN[int](false, "select count() from serie_episodes where serie_id = ? and dbserie_episode_id in (select id from dbserie_episodes where season = ?)", &serie.ID, &a), "select id from serie_episodes where serie_id = ? and dbserie_episode_id in (select id from dbserie_episodes where season = ?)", serie.ID, c.Param("season"))
 					for idxepisode := range episodes {
-						results := searcher.NewSearcher(media, nil, "", 0)
-						err := results.MediaSearch(media, episodes[idxepisode], true, false, false)
+						results := searcher.NewSearcher(media, nil, "", &logger.V0)
+						err := results.MediaSearch(media, &episodes[idxepisode], true, false, false)
 
 						if err != nil {
 							if !errors.Is(err, logger.ErrDisabled) {
@@ -1014,8 +1014,8 @@ func apiSeriesEpisodeSearch(c *gin.Context) {
 		for idxlist := range media.Lists {
 			if strings.EqualFold(media.Lists[idxlist].Name, serie.Listname) {
 				worker.Dispatch("searchseriesepisode_series_"+media.Name+"_"+strconv.Itoa(id), func() {
-					results := searcher.NewSearcher(media, nil, "", 0)
-					err := results.MediaSearch(media, uid, true, false, false)
+					results := searcher.NewSearcher(media, nil, "", &logger.V0)
+					err := results.MediaSearch(media, &uid, true, false, false)
 
 					if err != nil {
 						if !errors.Is(err, logger.ErrDisabled) {
@@ -1069,8 +1069,8 @@ func apiSeriesEpisodeSearchList(c *gin.Context) {
 
 		for idxlist := range media.Lists {
 			if strings.EqualFold(media.Lists[idxlist].Name, serie.Listname) {
-				searchresults := searcher.NewSearcher(media, nil, "", 0)
-				err := searchresults.MediaSearch(media, serieepi.ID, titlesearch, false, false)
+				searchresults := searcher.NewSearcher(media, nil, "", &logger.V0)
+				err := searchresults.MediaSearch(media, &serieepi.ID, titlesearch, false, false)
 				if err != nil {
 					str := "failed with " + err.Error()
 					c.JSON(http.StatusNotFound, str)
@@ -1107,7 +1107,7 @@ func apiSeriesRssSearchList(c *gin.Context) {
 		if strings.EqualFold(media.Name, c.Param("group")) {
 
 			templatequality := media.TemplateQuality
-			searchresults := searcher.NewSearcher(media, media.CfgQuality, logger.StrRss, 0)
+			searchresults := searcher.NewSearcher(media, media.CfgQuality, logger.StrRss, &logger.V0)
 			err := searchresults.SearchRSS(media, config.SettingsQuality[templatequality], true, false, false)
 			if err != nil {
 				str := "failed with " + err.Error()
@@ -1152,7 +1152,7 @@ func apiSeriesEpisodeSearchDownload(c *gin.Context) {
 		}
 		for idxlist := range media.Lists {
 			if strings.EqualFold(media.Lists[idxlist].Name, serie.Listname) {
-				downloader.DownloadSeriesEpisode(media, serieepi.ID, &nzb)
+				downloader.DownloadSeriesEpisode(media, &serieepi.ID, &nzb)
 				c.JSON(http.StatusOK, "started")
 				return
 			}

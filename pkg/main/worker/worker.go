@@ -57,8 +57,14 @@ var lastaddedfeeds = time.Now().Add(time.Second - 1)
 // lastaddedsearch is a timestamp for tracking last search time
 var lastaddedsearch = time.Now().Add(time.Second - 1)
 
+var mu = &sync.Mutex{}
+
 // pljobs is a Pool for tracking jobs
-var pljobs = pool.NewPool(100, 0, func(b *Job) {}, func(b *Job) { *b = Job{} })
+var pljobs = pool.NewPool(100, 0, func(b *Job) {}, func(b *Job) {
+	b.Run = nil
+	b.CronJob = nil
+	*b = Job{}
+})
 
 // phandler is a panic handler function
 var phandler = pond.PanicHandler(func(p any) {
@@ -102,6 +108,7 @@ func (wl *wrappedLogger) Error(err error, msg string, keysAndValues ...any) {
 // and removes the job from the global queue set.
 func submit(queue *pond.WorkerPool, job *Job) {
 	if job.Run == nil {
+		pljobs.Put(job)
 		return
 	}
 	if queue.MaxCapacity() <= int(queue.WaitingTasks()) {
@@ -223,6 +230,8 @@ func DispatchCron(cronStr string, name string, queue string, fn func()) error {
 
 	dc := getcronstuff(queue)
 	cjob, err := dc.AddFunc(cronStr, func() {
+		mu.Lock()
+		defer mu.Unlock()
 		if checkQueue(name) {
 			logger.LogDynamic("error", "Job already queued", logger.NewLogField("Job", name))
 		} else if checklastadded(queue) {
@@ -276,6 +285,8 @@ func DispatchCron(cronStr string, name string, queue string, fn func()) error {
 // to the appropriate worker pool for processing. It checks if the job is already
 // queued or if the queue is full before submitting.
 func addjob(name string, queue string, fn func(), schedulerID string) {
+	mu.Lock()
+	defer mu.Unlock()
 	if checkQueue(name) {
 		logger.LogDynamic("error", "Job already queued", logger.NewLogField("Job", name))
 	} else if checklastadded(queue) {

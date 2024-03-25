@@ -27,7 +27,11 @@ type feedResults struct {
 
 var (
 	globalCounter = sync.Map{}
-	plfeeds       = pool.NewPool(100, 0, func(b *feedResults) {}, func(b *feedResults) { *b = feedResults{} })
+	plfeeds       = pool.NewPool(100, 0, func(b *feedResults) {}, func(b *feedResults) {
+		b.Movies = nil
+		b.Series.Serie = nil
+		*b = feedResults{}
+	})
 )
 
 // gettraktmovielist queries the Trakt API for popular, trending, or anticipated movies
@@ -289,7 +293,7 @@ func getimdbcsv(cfglistp *config.MediaListsConfig) (*feedResults, error) {
 		movieid = importfeed.MovieFindDBIDByImdb(&imdb)
 
 		if movieid != 0 {
-			if getmovieid(movieid, cfglistp) {
+			if getmovieid(&movieid, cfglistp) {
 				continue
 			}
 
@@ -322,7 +326,7 @@ func getimdbcsv(cfglistp *config.MediaListsConfig) (*feedResults, error) {
 	if !ok || c != len(d.Movies) {
 		globalCounter.Store(cfglistp.CfgList.URL, len(d.Movies))
 	}
-	parserimdb = nil
+	clear(args)
 
 	logger.LogDynamic("info", "imdb list fetched", logger.NewLogField("url", cfglistp.CfgList.URL), logger.NewLogField("entries to parse", len(d.Movies)))
 	return d, nil
@@ -331,15 +335,18 @@ func getimdbcsv(cfglistp *config.MediaListsConfig) (*feedResults, error) {
 // getmovieid checks if the given movie ID exists in the database for the specified list.
 // It first checks the media cache if enabled, otherwise does a direct database query.
 // Returns true if the movie ID exists in the list, false otherwise.
-func getmovieid(dbid uint, cfglistp *config.MediaListsConfig) bool {
+func getmovieid(dbid *uint, cfglistp *config.MediaListsConfig) bool {
+	if dbid == nil {
+		return false
+	}
 	if config.SettingsGeneral.UseMediaCache {
-		id := int(dbid)
+		id := int(*dbid)
 		if database.CacheOneStringTwoIntIndexFunc(logger.CacheMovie, func(elem database.DbstaticOneStringTwoInt) bool {
 			return elem.Num1 == id && strings.EqualFold(elem.Str, cfglistp.Name)
 		}) {
 			return true
 		}
-	} else if database.GetdatarowN[uint](false, database.QueryCountMoviesByDBIDList, &dbid, &cfglistp.Name) >= 1 {
+	} else if database.GetdatarowN[uint](false, database.QueryCountMoviesByDBIDList, dbid, &cfglistp.Name) >= 1 {
 		return true
 	}
 	return false

@@ -201,6 +201,7 @@ func (c *rlHTTPClient) Getdo(urlv string, headers []keyval, checkhtml bool) (*ht
 		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK && c.addwait(req, resp) {
+		io.Copy(io.Discard, resp.Body)
 		defer resp.Body.Close()
 		return nil, logger.ErrToWait
 	}
@@ -258,6 +259,7 @@ func (c *rlHTTPClient) GetdoResp(urlv string, headers ...keyval) (*http.Response
 		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK && c.addwait(req, resp) {
+		io.Copy(io.Discard, resp.Body)
 		defer resp.Body.Close()
 		return nil, logger.ErrToWait
 	}
@@ -424,7 +426,6 @@ func (c *rlHTTPClient) addwait(req *http.Request, resp *http.Response) bool {
 				c.Ratelimiter.WaitTill(logger.TimeGetNow().Add(time.Second*time.Duration(sleep) - c.Ratelimiter.Interval()))
 			} else if sleeptime, err := time.Parse(time.RFC1123, s[0]); err == nil {
 				c.Ratelimiter.WaitTill(sleeptime.Add(-c.Ratelimiter.Interval()))
-				io.Copy(io.Discard, resp.Body)
 				return true
 			} else {
 				c.Ratelimiter.WaitTill(time.Now().Add(time.Minute * time.Duration(blockinterval)))
@@ -437,7 +438,6 @@ func (c *rlHTTPClient) addwait(req *http.Request, resp *http.Response) bool {
 		}
 
 		logger.LogDynamic("error", "error get response url", logger.NewLogField(strurl, req.URL.String()), logger.NewLogField("status", resp.Status))
-		io.Copy(io.Discard, resp.Body)
 		return true
 	}
 

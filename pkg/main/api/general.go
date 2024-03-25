@@ -912,7 +912,7 @@ func apiNamingGenerate(ctx *gin.Context) {
 
 		s.ParseFileAdditional(&orgadata, m, false, 0, false, s.Cfgp.Lists[orgadata.Listid].CfgQuality)
 
-		s.GenerateNamingTemplate(&orgadata, m, movie.DbmovieID, nil)
+		s.GenerateNamingTemplate(&orgadata, m, &movie.DbmovieID, nil)
 		ctx.JSON(http.StatusOK, gin.H{"foldername": orgadata.Foldername, "filename": orgadata.Filename, "m": &m.M})
 	} else {
 		series, _ := database.GetSeries(database.Querywithargs{Where: logger.FilterByID}, cfg.SerieID)
@@ -935,7 +935,7 @@ func apiNamingGenerate(ctx *gin.Context) {
 		m := parser.ParseFile(cfg.FilePath, true, true, cfgp, config.GetMediaListsEntryListID(cfgp, series.Listname))
 		s.ParseFileAdditional(&orgadata, m, false, 0, false, s.Cfgp.Lists[orgadata.Listid].CfgQuality)
 
-		tblepi, _, _ := s.GetSeriesEpisodes(&orgadata, m, series.ID, series.DbserieID, true, s.Cfgp.Lists[orgadata.Listid].CfgQuality)
+		tblepi, _, _ := s.GetSeriesEpisodes(&orgadata, m, &series.ID, &series.DbserieID, true, s.Cfgp.Lists[orgadata.Listid].CfgQuality)
 
 		var firstepiid uint
 		for _, entry := range tblepi {
@@ -943,7 +943,7 @@ func apiNamingGenerate(ctx *gin.Context) {
 			break
 		}
 
-		s.GenerateNamingTemplate(&orgadata, m, firstepiid, tblepi)
+		s.GenerateNamingTemplate(&orgadata, m, &firstepiid, tblepi)
 		ctx.JSON(http.StatusOK, gin.H{"foldername": orgadata.Foldername, "filename": orgadata.Filename, "m": &m.M})
 	}
 }

@@ -1138,8 +1138,8 @@ func TestQueryXML1(b *testing.T) {
 func TestQueryMovie(b *testing.T) {
 	Init()
 	var id uint = 14027
-	results := searcher.NewSearcher(config.SettingsMedia["movie_EN"], nil, "", 0)
-	err := results.MediaSearch(config.SettingsMedia["movie_EN"], id, false, false, false)
+	results := searcher.NewSearcher(config.SettingsMedia["movie_EN"], nil, "", &logger.V0)
+	err := results.MediaSearch(config.SettingsMedia["movie_EN"], &id, false, false, false)
 	//b.Log(results)
 	bla, _ := json.Marshal(results)
 	b.Log(string(bla))
@@ -1251,7 +1251,7 @@ func BenchmarkQuery4(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		//str := "SD"
 
-		searchresults := searcher.NewSearcher(nil, nil, logger.StrRss, 0)
+		searchresults := searcher.NewSearcher(nil, nil, logger.StrRss, &logger.V0)
 		searchresults.SearchRSS(nil, nil, true, false, false)
 
 		searchresults.Close()

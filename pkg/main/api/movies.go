@@ -521,8 +521,8 @@ func apimoviesSearch(c *gin.Context) {
 		for idxlist = range media.Lists {
 			if strings.EqualFold(media.Lists[idxlist].Name, movie.Listname) {
 				worker.Dispatch("searchmovie_movies_"+media.Name+"_"+strconv.Itoa(int(movie.ID)), func() {
-					searchvar := searcher.NewSearcher(media, nil, "", 0)
-					err = searchvar.MediaSearch(media, movie.ID, true, false, false)
+					searchvar := searcher.NewSearcher(media, nil, "", &logger.V0)
+					err = searchvar.MediaSearch(media, &movie.ID, true, false, false)
 
 					if err != nil {
 						if err != nil && !errors.Is(err, logger.ErrDisabled) {
@@ -572,8 +572,8 @@ func apimoviesSearchList(c *gin.Context) {
 		}
 		for idxlist := range media.Lists {
 			if strings.EqualFold(media.Lists[idxlist].Name, movie.Listname) {
-				searchresults := searcher.NewSearcher(media, nil, "", 0)
-				err = searchresults.MediaSearch(media, movie.ID, titlesearch, false, false)
+				searchresults := searcher.NewSearcher(media, nil, "", &logger.V0)
+				err = searchresults.MediaSearch(media, &movie.ID, titlesearch, false, false)
 				if err != nil {
 					str := "failed with " + err.Error()
 					c.JSON(http.StatusNotFound, str)
@@ -607,7 +607,7 @@ func apiMoviesRssSearchList(c *gin.Context) {
 			continue
 		}
 		if strings.EqualFold(media.Name, c.Param("group")) {
-			searchresults := searcher.NewSearcher(media, media.CfgQuality, logger.StrRss, 0)
+			searchresults := searcher.NewSearcher(media, media.CfgQuality, logger.StrRss, &logger.V0)
 			err := searchresults.SearchRSS(media, media.CfgQuality, true, false, false)
 			if err != nil {
 				str := "failed with " + err.Error()
@@ -650,7 +650,7 @@ func apimoviesSearchDownload(c *gin.Context) {
 		}
 		for idxlist := range media.Lists {
 			if strings.EqualFold(media.Lists[idxlist].Name, movie.Listname) {
-				downloader.DownloadMovie(media, movie.ID, &nzb)
+				downloader.DownloadMovie(media, &movie.ID, &nzb)
 				c.JSON(http.StatusOK, "started")
 				return
 			}

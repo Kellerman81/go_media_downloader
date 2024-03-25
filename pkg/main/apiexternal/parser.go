@@ -23,7 +23,9 @@ type FileParser struct {
 }
 
 var (
-	ParserPool = pool.NewPool(100, 0, func(b *FileParser) {}, func(b *FileParser) { *b = FileParser{} })
+	ParserPool = pool.NewPool(100, 0, func(b *FileParser) {}, func(b *FileParser) {
+		*b = FileParser{}
+	})
 )
 
 func (s *FileParser) Clear() {

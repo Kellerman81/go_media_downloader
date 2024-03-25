@@ -119,13 +119,20 @@ type Organizerdata struct {
 var namingReplacer = strings.NewReplacer("  ", " ", " ]", "]", "[ ", "[", "[]", "", "( )", "", "()", "")
 
 // plorga is a pool for Organizerdata structs
-var plorga = pool.NewPool(100, 0, func(b *Organizerdata) {}, func(b *Organizerdata) { *b = Organizerdata{} })
+var plorga = pool.NewPool(100, 0, func(b *Organizerdata) {}, func(b *Organizerdata) {
+	*b = Organizerdata{}
+})
 
 // plstructure is a pool for Organizer structs
-var plstructure = pool.NewPool(100, 0, func(b *Organizer) {}, func(b *Organizer) { *b = Organizer{} })
+var plstructure = pool.NewPool(100, 0, func(b *Organizer) {}, func(b *Organizer) {
+	*b = Organizer{}
+})
 
 // plparser is a pool for parsertype structs
-var plparser = pool.NewPool(100, 0, func(b *parsertype) {}, func(b *parsertype) { *b = parsertype{} })
+var plparser = pool.NewPool(100, 0, func(b *parsertype) {}, func(b *parsertype) {
+	b.Episodes = nil
+	*b = parsertype{}
+})
 
 // NewStructure initializes a new Organizer instance for organizing media
 // files based on the provided configuration. It returns nil if structure
@@ -243,7 +250,7 @@ func (s *Organizer) ParseFileAdditional(orgadata *Organizerdata, m *apiexternal.
 // based on the configured naming template. It looks up metadata from the database and parses
 // the naming template to replace placeholders with actual values. It handles movies and shows
 // differently based on the UseSeries config option.
-func (s *Organizer) GenerateNamingTemplate(orgadata *Organizerdata, m *apiexternal.FileParser, dbid uint, tblepi []database.DbstaticTwoUint) {
+func (s *Organizer) GenerateNamingTemplate(orgadata *Organizerdata, m *apiexternal.FileParser, dbid *uint, tblepi []database.DbstaticTwoUint) {
 	forparser := plparser.Get()
 	forparser.Source = &m.M
 	defer plparser.Put(forparser)
@@ -272,7 +279,7 @@ func (s *Organizer) GenerateNamingTemplate(orgadata *Organizerdata, m *apiextern
 		forparser.TitleSource = logger.StringReplaceWith(forparser.TitleSource, '.', ' ')
 
 		if forparser.Dbmovie.Title == "" {
-			_ = database.ScanrowsNdyn(false, database.QueryDbmovieTitlesGetTitleByIDLmit1, &forparser.Dbmovie.Title, &dbid)
+			_ = database.ScanrowsNdyn(false, database.QueryDbmovieTitlesGetTitleByIDLmit1, &forparser.Dbmovie.Title, dbid)
 			if forparser.Dbmovie.Title == "" {
 				forparser.Dbmovie.Title = forparser.TitleSource
 			}
@@ -329,15 +336,15 @@ func (s *Organizer) GenerateNamingTemplate(orgadata *Organizerdata, m *apiextern
 	}
 
 	//Naming Series
-	_ = database.ScanrowsNdyn(false, database.QuerySerieEpisodesGetDBSerieIDByID, &forparser.Dbserie.ID, &dbid)
-	_ = database.ScanrowsNdyn(false, database.QuerySerieEpisodesGetDBSerieEpisodeIDByID, &forparser.DbserieEpisode.ID, &dbid)
+	_ = database.ScanrowsNdyn(false, database.QuerySerieEpisodesGetDBSerieIDByID, &forparser.Dbserie.ID, dbid)
+	_ = database.ScanrowsNdyn(false, database.QuerySerieEpisodesGetDBSerieEpisodeIDByID, &forparser.DbserieEpisode.ID, dbid)
 	if forparser.DbserieEpisode.ID == 0 || forparser.Dbserie.ID == 0 {
 		return
 	}
-	if database.GetDbserieByIDP(forparser.Dbserie.ID, &forparser.Dbserie) != nil {
+	if database.GetDbserieByIDP(&forparser.Dbserie.ID, &forparser.Dbserie) != nil {
 		return
 	}
-	if database.GetDbserieEpisodesByIDP(forparser.DbserieEpisode.ID, &forparser.DbserieEpisode) != nil {
+	if database.GetDbserieEpisodesByIDP(&forparser.DbserieEpisode.ID, &forparser.DbserieEpisode) != nil {
 		return
 	}
 	orgadata.Foldername, orgadata.Filename = logger.SplitByLR(s.Cfgp.Naming, checksplit(s.Cfgp.Naming))
@@ -512,7 +519,6 @@ func (s *Organizer) moveRemoveOldMediaFile(oldfile string, id uint, move bool) e
 	database.ExecN(logger.GetStringsMap(s.Cfgp.Useseries, logger.DBDeleteFileByIDLocation), &id, &oldfile)
 
 	fileext := filepath.Ext(oldfile)
-	var retval scanner.MoveResponse
 	var additionalfile string
 	for idx := range s.SourcepathCfg.AllowedOtherExtensions {
 		if fileext == s.SourcepathCfg.AllowedOtherExtensions[idx] {
@@ -523,7 +529,7 @@ func (s *Organizer) moveRemoveOldMediaFile(oldfile string, id uint, move bool) e
 			continue
 		}
 		if move {
-			retval = scanner.MoveFile(additionalfile, nil, filepath.Join(s.TargetpathCfg.MoveReplacedTargetPath, filepath.Base(filepath.Dir(oldfile))), "", false, true, config.SettingsGeneral.UseFileBufferCopy, s.TargetpathCfg.SetChmodFolder, s.TargetpathCfg.SetChmod)
+			retval := scanner.MoveFile(additionalfile, nil, filepath.Join(s.TargetpathCfg.MoveReplacedTargetPath, filepath.Base(filepath.Dir(oldfile))), "", false, true, config.SettingsGeneral.UseFileBufferCopy, s.TargetpathCfg.SetChmodFolder, s.TargetpathCfg.SetChmod)
 			if retval.Err != nil && !errors.Is(retval.Err, logger.ErrNotFound) {
 				logger.LogDynamic("error", "file could not be moved", logger.NewLogFieldValue(retval.Err), logger.NewLogField(logger.StrFile, additionalfile))
 				continue
@@ -563,7 +569,7 @@ func (s *Organizer) OrganizeSeries(orgadata *Organizerdata, m *apiexternal.FileP
 		m.M.ListID = orgadata.Listid
 	}
 
-	tblepi, oldfiles, err := s.GetSeriesEpisodes(orgadata, m, serieid, dbserieid, false, cfgquality)
+	tblepi, oldfiles, err := s.GetSeriesEpisodes(orgadata, m, &serieid, &dbserieid, false, cfgquality)
 	if err != nil {
 		return err
 	}
@@ -571,6 +577,7 @@ func (s *Organizer) OrganizeSeries(orgadata *Organizerdata, m *apiexternal.FileP
 		return logger.ErrNotFoundEpisode
 	}
 	defer clear(tblepi)
+	defer clear(oldfiles)
 
 	var runtime, season string
 	database.GetdatarowArgs("select runtime, season from dbserie_episodes where id = ?", &tblepi[0].Num2, &runtime, &season)
@@ -599,7 +606,7 @@ func (s *Organizer) OrganizeSeries(orgadata *Organizerdata, m *apiexternal.FileP
 		return err
 	}
 
-	s.GenerateNamingTemplate(orgadata, m, tblepi[0].Num1, tblepi)
+	s.GenerateNamingTemplate(orgadata, m, &tblepi[0].Num1, tblepi)
 	if orgadata.Filename == "" {
 		return errors.New("generating filename")
 	}
@@ -676,7 +683,7 @@ func (s *Organizer) OrganizeMovie(orgadata *Organizerdata, m *apiexternal.FilePa
 		return errors.New("listconfig empty")
 	}
 
-	oldpriority, oldfiles := searcher.Getpriobyfiles(false, movieid, true, m.M.Priority, cfgquality)
+	oldpriority, oldfiles := searcher.Getpriobyfiles(false, &movieid, true, m.M.Priority, cfgquality)
 	if oldpriority != 0 && oldpriority >= m.M.Priority {
 		if true {
 			err := s.FileCleanup(orgadata)
@@ -693,7 +700,7 @@ func (s *Organizer) OrganizeMovie(orgadata *Organizerdata, m *apiexternal.FilePa
 	if err != nil {
 		return err
 	}
-	s.GenerateNamingTemplate(orgadata, m, dbmovieid, nil)
+	s.GenerateNamingTemplate(orgadata, m, &dbmovieid, nil)
 	if orgadata.Filename == "" {
 		return errors.New("generating filename")
 	}
@@ -764,9 +771,9 @@ func (s *Organizer) moveandcleanup(orgadata *Organizerdata, newfile string, m *a
 	if !s.TargetpathCfg.Usepresort {
 		if database.GetdatarowN[string](false, logger.GetStringsMap(s.Cfgp.Useseries, logger.DBRootPathFromMediaID), &id) != "" {
 			if !s.Cfgp.Useseries {
-				UpdateRootpath(orgadata.videotarget, "movies", m.M.MovieID, s.Cfgp)
+				UpdateRootpath(orgadata.videotarget, "movies", &m.M.MovieID, s.Cfgp)
 			} else {
-				UpdateRootpath(orgadata.videotarget, "series", m.M.SerieID, s.Cfgp)
+				UpdateRootpath(orgadata.videotarget, "series", &m.M.SerieID, s.Cfgp)
 			}
 		}
 	}
@@ -797,24 +804,26 @@ func (s *Organizer) moveandcleanup(orgadata *Organizerdata, newfile string, m *a
 			return logger.ErrNotFound
 		}
 		s.walkcleanup(orgadata, false)
-		s.notify(orgadata, &m.M, dbid, oldfiles)
+		s.notify(orgadata, &m.M, &dbid, oldfiles)
 		_ = scanner.CleanUpFolder(orgadata.Folder, s.SourcepathCfg.CleanupsizeMB)
 		return nil
 	}
 	//move other serie
 	fileext := filepath.Ext(orgadata.Videofile)
+	var retval scanner.MoveResponse
+	var also string
 	for idx := range s.SourcepathCfg.AllowedOtherExtensions {
 		if fileext == s.SourcepathCfg.AllowedOtherExtensions[idx] {
 			continue
 		}
-		also := strings.ReplaceAll(orgadata.Videofile, fileext, s.SourcepathCfg.AllowedOtherExtensions[idx])
-		retval := scanner.MoveFile(also, s.SourcepathCfg, orgadata.videotarget, orgadata.Filename, true, false, config.SettingsGeneral.UseFileBufferCopy, s.TargetpathCfg.SetChmodFolder, s.TargetpathCfg.SetChmod)
+		also = strings.ReplaceAll(orgadata.Videofile, fileext, s.SourcepathCfg.AllowedOtherExtensions[idx])
+		retval = scanner.MoveFile(also, s.SourcepathCfg, orgadata.videotarget, orgadata.Filename, true, false, config.SettingsGeneral.UseFileBufferCopy, s.TargetpathCfg.SetChmodFolder, s.TargetpathCfg.SetChmod)
 		if retval.Err != nil && !errors.Is(retval.Err, logger.ErrNotFound) {
 			logger.LogDynamic("error", "file move", logger.NewLogFieldValue(retval.Err), logger.NewLogField(logger.StrFile, also))
 		}
 	}
 
-	s.notify(orgadata, &m.M, dbid, oldfiles)
+	s.notify(orgadata, &m.M, &dbid, oldfiles)
 	_ = scanner.CleanUpFolder(orgadata.Folder, s.SourcepathCfg.CleanupsizeMB)
 	return nil
 }
@@ -824,17 +833,18 @@ func (s *Organizer) moveandcleanup(orgadata *Organizerdata, newfile string, m *a
 // It then extracts the first folder from the relative path of the file to that config path.
 // It joins that folder with the config path to form the new rootpath value.
 // Finally it executes a SQL update statement to update the rootpath for that object ID.
-func UpdateRootpath(file string, objtype string, objid uint, cfgp *config.MediaTypeConfig) {
+func UpdateRootpath(file string, objtype string, objid *uint, cfgp *config.MediaTypeConfig) {
+	var firstfolder string
 	for idxdata := range cfgp.Data {
 		if !logger.ContainsI(file, cfgp.Data[idxdata].CfgPath.Path) {
 			continue
 		}
-		firstfolder := strings.TrimLeft(strings.ReplaceAll(file, cfgp.Data[idxdata].CfgPath.Path, ""), "/\\")
+		firstfolder = strings.TrimLeft(strings.ReplaceAll(file, cfgp.Data[idxdata].CfgPath.Path, ""), "/\\")
 		if strings.ContainsRune(firstfolder, '/') || strings.ContainsRune(firstfolder, '\\') {
 			firstfolder = filepath.Dir(firstfolder)
 		}
 		firstfolder = filepath.Join(cfgp.Data[idxdata].CfgPath.Path, logger.Getrootpath(firstfolder))
-		database.ExecN(logger.JoinStrings("update ", objtype, " set rootpath = ? where id = ?"), &firstfolder, &objid)
+		database.ExecN(logger.JoinStrings("update ", objtype, " set rootpath = ? where id = ?"), &firstfolder, objid)
 		return
 	}
 }
@@ -876,9 +886,12 @@ func (s *Organizer) walkcleanup(orgadata *Organizerdata, useremove bool) error {
 // If any file cannot be moved/removed, it logs an error but continues the loop.
 // Finally it returns any error encountered, or nil if successful.
 func (s *Organizer) moveremoveoldfiles(orgadata *Organizerdata, usecompare bool, id uint, move bool, oldfiles []string) error {
+	var err error
+	var teststr string
+
 	for idx := range oldfiles {
 		if usecompare {
-			_, teststr := filepath.Split(oldfiles[idx])
+			_, teststr = filepath.Split(oldfiles[idx])
 			if teststr == orgadata.Filename || strings.HasPrefix(teststr, orgadata.videotarget) {
 				continue
 			}
@@ -886,7 +899,7 @@ func (s *Organizer) moveremoveoldfiles(orgadata *Organizerdata, usecompare bool,
 		if !scanner.CheckFileExist(oldfiles[idx]) {
 			continue
 		}
-		err := s.moveRemoveOldMediaFile(oldfiles[idx], id, move)
+		err = s.moveRemoveOldMediaFile(oldfiles[idx], id, move)
 		if err != nil {
 			//Continue if old cannot be moved
 			logger.LogDynamic("error", "Move old", logger.NewLogFieldValue(err), logger.NewLogField(logger.StrFile, oldfiles[idx]))
@@ -900,7 +913,7 @@ func (s *Organizer) moveremoveoldfiles(orgadata *Organizerdata, usecompare bool,
 // It populates notification data from the Organizerdata and ParseInfo,
 // loops through the configured notifications, renders notification messages,
 // and dispatches them based on the notification type.
-func (s *Organizer) notify(orgadata *Organizerdata, m *database.ParseInfo, id uint, oldfiles []string) {
+func (s *Organizer) notify(orgadata *Organizerdata, m *database.ParseInfo, id *uint, oldfiles []string) {
 	notify := forstructurenotify{Config: s, InputNotifier: inputNotifier{
 		Targetpath:    filepath.Join(orgadata.videotarget, orgadata.Filename),
 		SourcePath:    orgadata.Videofile,
@@ -922,7 +935,7 @@ func (s *Organizer) notify(orgadata *Organizerdata, m *database.ParseInfo, id ui
 		if database.GetDbserieEpisodesByIDP(id, &notify.InputNotifier.DbserieEpisode) != nil {
 			return
 		}
-		if database.GetDbserieByIDP(notify.InputNotifier.DbserieEpisode.DbserieID, &notify.InputNotifier.Dbserie) != nil {
+		if database.GetDbserieByIDP(&notify.InputNotifier.DbserieEpisode.DbserieID, &notify.InputNotifier.Dbserie) != nil {
 			return
 		}
 		notify.InputNotifier.Title = notify.InputNotifier.Dbserie.Seriename
@@ -978,8 +991,8 @@ func (s *Organizer) notify(orgadata *Organizerdata, m *database.ParseInfo, id ui
 // Getepisodestoimport parses the episode identifier from the filename
 // and returns the matching episode IDs from the database for importing.
 // It handles different identifier formats and splitting multi-episode files.
-func Getepisodestoimport(serieid uint, dbserieid uint, m *apiexternal.FileParser) ([]database.DbstaticTwoUint, error) {
-	identifiedby := database.GetdatarowN[string](false, database.QueryDbseriesGetIdentifiedByID, &dbserieid)
+func Getepisodestoimport(serieid *uint, dbserieid *uint, m *apiexternal.FileParser) ([]database.DbstaticTwoUint, error) {
+	identifiedby := database.GetdatarowN[string](false, database.QueryDbseriesGetIdentifiedByID, dbserieid)
 	if identifiedby == "" {
 		identifiedby = "ep"
 	}
@@ -1007,10 +1020,10 @@ func Getepisodestoimport(serieid uint, dbserieid uint, m *apiexternal.FileParser
 		addentry.Num1 = 0
 		addentry.Num2 = 0
 
-		parser.GetDBEpisodeID(m, episodeArray[idx], &dbserieid, &addentry.Num2)
+		parser.GetDBEpisodeID(m, episodeArray[idx], dbserieid, &addentry.Num2)
 
 		if addentry.Num2 != 0 {
-			database.ScanrowsNdyn(false, "select id from serie_episodes where dbserie_episode_id = ? and serie_id = ?", &addentry.Num1, &addentry.Num2, &serieid)
+			database.ScanrowsNdyn(false, "select id from serie_episodes where dbserie_episode_id = ? and serie_id = ?", &addentry.Num1, &addentry.Num2, serieid)
 			if addentry.Num1 != 0 {
 				tblepi = append(tblepi, addentry)
 			}
@@ -1069,7 +1082,7 @@ func getepisodearray(identifiedby string, m *apiexternal.FileParser) []string {
 // GetSeriesEpisodes checks existing files for a series episode, determines if a new file
 // should replace them based on configured quality priorities, deletes lower priority files if enabled,
 // and returns the list of episode IDs that are allowed to be imported along with any deleted file paths.
-func (s *Organizer) GetSeriesEpisodes(orgadata *Organizerdata, m *apiexternal.FileParser, serieid uint, dbserieid uint, skipdelete bool, cfgquality *config.QualityConfig) ([]database.DbstaticTwoUint, []string, error) {
+func (s *Organizer) GetSeriesEpisodes(orgadata *Organizerdata, m *apiexternal.FileParser, serieid *uint, dbserieid *uint, skipdelete bool, cfgquality *config.QualityConfig) ([]database.DbstaticTwoUint, []string, error) {
 	tblepi, err := Getepisodestoimport(serieid, dbserieid, m)
 	if err != nil {
 		return nil, nil, err
@@ -1087,7 +1100,7 @@ func (s *Organizer) GetSeriesEpisodes(orgadata *Organizerdata, m *apiexternal.Fi
 	var oldPrio int
 	var getoldfiles []string
 	for idx := 0; idx < len(tblepi); idx++ {
-		oldPrio, getoldfiles = searcher.Getpriobyfiles(true, tblepi[idx].Num1, true, m.M.Priority, cfgquality)
+		oldPrio, getoldfiles = searcher.Getpriobyfiles(true, &tblepi[idx].Num1, true, m.M.Priority, cfgquality)
 		if m.M.Priority > oldPrio || oldPrio == 0 {
 			oldfiles = append(oldfiles, getoldfiles...)
 			bl = true
@@ -1106,6 +1119,7 @@ func (s *Organizer) GetSeriesEpisodes(orgadata *Organizerdata, m *apiexternal.Fi
 				bl = false
 			}
 		}
+		clear(getoldfiles)
 		newtbl = append(newtbl, tblepi[idx])
 	}
 
@@ -1127,11 +1141,6 @@ func (s *Organizer) removeotherfiles(orgadata *Organizerdata) {
 		}
 		_, _ = scanner.RemoveFile(strings.ReplaceAll(orgadata.Videofile, fileext, s.SourcepathCfg.AllowedOtherExtensions[idx]))
 	}
-}
-
-// NewEmtyOrgadata returns an empty Organizerdata struct from the pool.
-func NewEmtyOrgadata() *Organizerdata {
-	return plorga.Get()
 }
 
 // OrganizeSingleFolder walks the given folder to find media files, parses them to get metadata,
@@ -1238,7 +1247,7 @@ func (s *Organizer) OrganizeSingleFolder(folder string) {
 			logger.LogDynamic("error", "listcfg not found", logger.NewLogField(logger.StrFile, fpath))
 			return nil
 		}
-		orgadata := NewEmtyOrgadata()
+		orgadata := plorga.Get()
 		defer plorga.Put(orgadata)
 		orgadata.Folder = folder
 		orgadata.Videofile = fpath
@@ -1283,10 +1292,6 @@ func (s *Organizer) OrganizeSingleFolder(folder string) {
 		}
 		return nil
 	})
-}
-
-func ParseFileIDsOld(pathv string, cfgp *config.MediaTypeConfig, listid int) (*apiexternal.FileParser, error) {
-	return ParseFileIDs(pathv, &scanner.NewFileData{Cfgp: cfgp, Listid: listid})
 }
 
 // ParseFileIDs parses the file at the given path to extract metadata.

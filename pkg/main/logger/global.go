@@ -8,7 +8,6 @@ import (
 	"io/fs"
 	"net/url"
 	"path"
-	"reflect"
 	"strconv"
 	"strings"
 	"text/template"
@@ -136,11 +135,12 @@ const (
 )
 
 var (
-	StrFeeds    = "feeds"
-	StrData     = "data"
-	StrDataFull = "datafull"
-	StrMovie    = "movie"
-	timeFormat  = time.RFC3339Nano
+	V0          uint = 0
+	StrFeeds         = "feeds"
+	StrData          = "data"
+	StrDataFull      = "datafull"
+	StrMovie         = "movie"
+	timeFormat       = time.RFC3339Nano
 	Log         zerolog.Logger
 	timeZone    = *time.UTC
 	//diacriticsReplacer   = strings.NewReplacer("ä", "ae", "ö", "oe", "ü", "ue", "Ä", "Ae", "Ö", "Oe", "Ü", "Ue", "ß", "ss")
@@ -171,7 +171,9 @@ var (
 	ErrImdbEmpty         = errors.New("imdb empty")
 	ErrSearchvarEmpty    = errors.New("searchvar empty")
 	ErrTracksEmpty       = errors.New("tracks empty")
-	PlBuffer             = pool.NewPool(100, 0, func(b *bytes.Buffer) {}, func(b *bytes.Buffer) { b.Reset() })
+	PlBuffer             = pool.NewPool(100, 0, func(b *bytes.Buffer) {}, func(b *bytes.Buffer) {
+		b.Reset()
+	})
 
 	textparser = template.New("master")
 	subRune    = map[rune]struct{}{
@@ -862,14 +864,6 @@ func Contains[S ~[]E, E comparable](s S, v E) bool {
 		}
 	}
 	return false
-}
-
-// Clear sets all fields in the given object pointer to their zero value.
-// If obj is nil, no action is taken.
-func Clear[T any](obj *T) {
-	if obj != nil {
-		reflect.ValueOf(obj).Elem().SetZero()
-	}
 }
 
 // BuilderAddInt writes the string representation of the given int to the given bytes.Buffer.

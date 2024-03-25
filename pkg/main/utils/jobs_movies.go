@@ -104,7 +104,7 @@ func jobImportMovieParseV2(m *apiexternal.FileParser, pathv string, updatemissin
 	}
 
 	if m.M.MovieID != 0 && database.GetdatarowN[string](false, "select rootpath from movies where id = ?", &m.M.MovieID) == "" {
-		structure.UpdateRootpath(pathv, "movies", m.M.MovieID, cfgp)
+		structure.UpdateRootpath(pathv, "movies", &m.M.MovieID, cfgp)
 	}
 
 	basestr := filepath.Base(pathv)
@@ -237,7 +237,7 @@ func checkreachedmoviesflag(listcfg *config.MediaListsConfig) {
 			continue
 		}
 
-		minPrio, _ = searcher.Getpriobyfiles(false, arr[idx].ID, false, -1, config.SettingsQuality[arr[idx].QualityProfile])
+		minPrio, _ = searcher.Getpriobyfiles(false, &arr[idx].ID, false, -1, config.SettingsQuality[arr[idx].QualityProfile])
 		if minPrio >= config.SettingsQuality[arr[idx].QualityProfile].CutoffPriority {
 			if !arr[idx].QualityReached {
 				database.ExecN("update movies set quality_reached = 1 where id = ?", &arr[idx].ID)

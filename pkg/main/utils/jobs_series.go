@@ -34,7 +34,7 @@ func jobImportSeriesParseV2(m *apiexternal.FileParser, pathv string, updatemissi
 		return logger.ErrListnameEmpty
 	}
 
-	tblepi, err := structure.Getepisodestoimport(m.M.SerieID, m.M.DbserieID, m)
+	tblepi, err := structure.Getepisodestoimport(&m.M.SerieID, &m.M.DbserieID, m)
 	if err != nil || len(tblepi) == 0 {
 		seriesSetUnmatched(m, pathv, list)
 		return err
@@ -81,7 +81,7 @@ func jobImportSeriesParseV2(m *apiexternal.FileParser, pathv string, updatemissi
 		database.AppendStringCache(logger.CacheFilesSeries, pathv)
 	}
 	if m.M.SerieID != 0 && database.GetdatarowN[string](false, "select rootpath from series where id = ?", &m.M.SerieID) == "" {
-		structure.UpdateRootpath(pathv, logger.StrSeries, m.M.SerieID, cfgp)
+		structure.UpdateRootpath(pathv, logger.StrSeries, &m.M.SerieID, cfgp)
 	}
 	return nil
 }
@@ -224,10 +224,12 @@ func structurefolders(cfgp *config.MediaTypeConfig) {
 			continue
 		}
 		if structurevar.SourcepathCfg == nil {
+			structurevar.Close()
 			logger.LogDynamic("error", "structure source not found", logger.NewLogField("config", cfgp.DataImport[idxi].TemplatePath))
 			continue
 		}
 		if structurevar.TargetpathCfg == nil {
+			structurevar.Close()
 			logger.LogDynamic("error", "structure target not found", logger.NewLogField("config", cfgp.DataImport[idxi].TemplatePath))
 			continue
 		}
@@ -292,7 +294,7 @@ func checkreachedepisodesflag(listcfg *config.MediaListsConfig) {
 			logger.LogDynamic("debug", "Quality for Episode not found", logger.NewLogField(logger.StrID, int(arr[idx].ID)))
 			continue
 		}
-		minPrio, _ = searcher.Getpriobyfiles(true, arr[idx].ID, false, -1, config.SettingsQuality[arr[idx].QualityProfile])
+		minPrio, _ = searcher.Getpriobyfiles(true, &arr[idx].ID, false, -1, config.SettingsQuality[arr[idx].QualityProfile])
 		reached = 0
 		if minPrio >= config.SettingsQuality[arr[idx].QualityProfile].CutoffPriority {
 			reached = 1

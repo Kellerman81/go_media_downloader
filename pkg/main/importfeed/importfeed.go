@@ -33,7 +33,7 @@ func checkimdbyearsingle(m *apiexternal.FileParser, imdb *ImdbID, haveyear int) 
 
 	if haveyear == m.M.Year+1 || haveyear == m.M.Year-1 {
 		id := MovieFindDBIDByImdb(imdb)
-		if database.GetMediaQualityConfig(m.Cfgp, id).CheckYear1 {
+		if database.GetMediaQualityConfig(m.Cfgp, &id).CheckYear1 {
 			return true
 		}
 	}
@@ -441,7 +441,7 @@ func JobImportMovies(imdb *ImdbID, cfgp *config.MediaTypeConfig, listid int, add
 
 	if dbmovieadded || !addnew {
 		logger.LogDynamic("debug", "Get metadata for", logger.NewLogField(logger.StrJob, imdb.Imdb))
-		dbmovie, err := database.GetDbmovieByID(dbid)
+		dbmovie, err := database.GetDbmovieByID(&dbid)
 		if err != nil {
 			return 0, err
 		}
@@ -755,7 +755,7 @@ func jobImportDBSeries(serieconfig *config.SerieConfig, cfgp *config.MediaTypeCo
 		}
 		if dbid != 0 && (dbserieadded || !addnew) && serieconfig.TvdbID != 0 {
 			//Update Metadata
-			dbserie, err := database.GetDbserieByID(dbid)
+			dbserie, err := database.GetDbserieByID(&dbid)
 			if err != nil {
 				return errors.New("db fetch failed")
 			}
@@ -840,7 +840,7 @@ func jobImportDBSeries(serieconfig *config.SerieConfig, cfgp *config.MediaTypeCo
 					apiexternal.UpdateTvdbSeriesEpisodes(dbserie.ThetvdbID, cfgp.MetadataLanguage, dbserie.ID)
 				}
 				if config.SettingsGeneral.SerieMetaSourceTrakt && dbserie.ImdbID != "" {
-					apiexternal.UpdateTraktSerieSeasonsAndEpisodes(dbserie.ImdbID, dbserie.ID)
+					apiexternal.UpdateTraktSerieSeasonsAndEpisodes(dbserie.ImdbID, &dbserie.ID)
 				}
 			}
 			clear(titles)

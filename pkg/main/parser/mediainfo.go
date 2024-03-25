@@ -113,7 +113,10 @@ type track struct {
 // 	Language string `json:"Language,omitempty"`
 // }
 
-var plmediainfo = pool.NewPool(100, 0, func(b *mediaInfoJson) {}, func(b *mediaInfoJson) { *b = mediaInfoJson{} })
+var plmediainfo = pool.NewPool(100, 0, func(b *mediaInfoJson) {}, func(b *mediaInfoJson) {
+	b.Media.Track = nil
+	*b = mediaInfoJson{}
+})
 
 // getmediainfoFilename returns the path to the mediainfo executable.
 // It first checks if a custom path has been set in mediainfopath.

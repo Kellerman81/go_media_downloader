@@ -67,7 +67,7 @@ func (d *downloadertype) Close() {
 
 // DownloadMovie initializes a downloader, gets the movie and related database
 // objects by ID, sets the quality config, and calls the download method.
-func DownloadMovie(cfgp *config.MediaTypeConfig, movieid uint, nzb *apiexternal.Nzbwithprio) {
+func DownloadMovie(cfgp *config.MediaTypeConfig, movieid *uint, nzb *apiexternal.Nzbwithprio) {
 	d := newDownloader(cfgp, nzb)
 	defer d.Close()
 	err := database.GetMoviesByIDP(movieid, &d.Movie)
@@ -75,7 +75,7 @@ func DownloadMovie(cfgp *config.MediaTypeConfig, movieid uint, nzb *apiexternal.
 		logger.LogDynamic("error", "not found", logger.NewLogFieldValue(err), logger.NewLogField("movie not found", movieid))
 		return
 	}
-	err = database.GetDbmovieByIDP(d.Movie.DbmovieID, &d.Dbmovie)
+	err = database.GetDbmovieByIDP(&d.Movie.DbmovieID, &d.Dbmovie)
 	if err != nil {
 		logger.LogDynamic("error", "not found", logger.NewLogFieldValue(err), logger.NewLogField("dbmovie not found", d.Movie.DbmovieID))
 		return
@@ -86,7 +86,7 @@ func DownloadMovie(cfgp *config.MediaTypeConfig, movieid uint, nzb *apiexternal.
 
 // DownloadSeriesEpisode initializes a downloader, gets the episode and related database
 // objects by ID, sets the quality config, and calls the download method.
-func DownloadSeriesEpisode(cfgp *config.MediaTypeConfig, episodeid uint, nzb *apiexternal.Nzbwithprio) {
+func DownloadSeriesEpisode(cfgp *config.MediaTypeConfig, episodeid *uint, nzb *apiexternal.Nzbwithprio) {
 	d := newDownloader(cfgp, nzb)
 	defer d.Close()
 	err := database.GetSerieEpisodesByIDP(episodeid, &d.Serieepisode)
@@ -94,17 +94,17 @@ func DownloadSeriesEpisode(cfgp *config.MediaTypeConfig, episodeid uint, nzb *ap
 		logger.LogDynamic("error", "not found", logger.NewLogFieldValue(err), logger.NewLogField("episode not found", episodeid))
 		return
 	}
-	err = database.GetDbserieByIDP(d.Serieepisode.DbserieID, &d.Dbserie)
+	err = database.GetDbserieByIDP(&d.Serieepisode.DbserieID, &d.Dbserie)
 	if err != nil {
 		logger.LogDynamic("error", "not found", logger.NewLogFieldValue(err), logger.NewLogField("dbserie not found", d.Serieepisode.DbserieID))
 		return
 	}
-	err = database.GetDbserieEpisodesByIDP(d.Serieepisode.DbserieEpisodeID, &d.Dbserieepisode)
+	err = database.GetDbserieEpisodesByIDP(&d.Serieepisode.DbserieEpisodeID, &d.Dbserieepisode)
 	if err != nil {
 		logger.LogDynamic("error", "not found", logger.NewLogFieldValue(err), logger.NewLogField("dbepisode not found", d.Serieepisode.DbserieEpisodeID))
 		return
 	}
-	err = database.GetSerieByIDP(d.Serieepisode.SerieID, &d.Serie)
+	err = database.GetSerieByIDP(&d.Serieepisode.SerieID, &d.Serie)
 	if err != nil {
 		logger.LogDynamic("error", "not found", logger.NewLogFieldValue(err), logger.NewLogField("serie not found", d.Serieepisode.SerieID))
 		return
@@ -321,8 +321,7 @@ func (d *downloadertype) downloadByDrone() error {
 		filename = d.Targetfile + ".torrent"
 	}
 	urlv := html.UnescapeString(d.Nzb.NZB.DownloadURL)
-	c := apiexternal.Getnewznabclient(d.IndexerCfg)
-	resp, err := c.Client.Getdo(urlv, nil, true)
+	resp, err := apiexternal.Getnewznabclient(d.IndexerCfg).Client.Getdo(urlv, nil, true)
 	if err != nil {
 		return err
 	}
@@ -336,8 +335,7 @@ func (d *downloadertype) downloadByDrone() error {
 	if fileprefix != "" && filename != "" {
 		filename = fileprefix + filename
 	}
-	filep := filepath.Join(d.TargetCfg.Path, filename)
-	out, err := os.Create(filep)
+	out, err := os.Create(filepath.Join(d.TargetCfg.Path, filename))
 	if err != nil {
 		return err
 	}
@@ -348,12 +346,11 @@ func (d *downloadertype) downloadByDrone() error {
 	if err != nil {
 		return err
 	}
-	_ = out.Sync()
 	// _, err = scanner.DownloadFileRes(resp, d.TargetCfg.Path, "", filename, urlv, true)
 	// if err != nil {
 	// 	return err
 	// }
-	return nil
+	return out.Sync()
 }
 
 // downloadByNzbget downloads the NZB file using the NZBGet downloader.

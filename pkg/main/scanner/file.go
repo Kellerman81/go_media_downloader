@@ -184,9 +184,7 @@ func setchmod(file string, chmod fs.FileMode) {
 	if err != nil {
 		return
 	}
-	if chmod != 0 {
-		_ = f.Chmod(chmod)
-	}
+	_ = f.Chmod(chmod)
 	f.Close()
 }
 

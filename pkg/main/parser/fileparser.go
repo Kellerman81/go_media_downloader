@@ -837,7 +837,7 @@ func getqualityidxbyid(tbl []database.QualitiesRegex, id uint) int {
 // The qualcfg config is used to control which IDs are used and priority reordering.
 // The useall and checkwanted params control including all IDs vs just configured ones,
 // and checking wanted vs all available priorities.
-func GetIDPrioritySimpleParse(row *database.FilePrio, useseries bool, qualcfg *config.QualityConfig, useall bool, checkwanted bool) int {
+func GetIDPrioritySimpleParse(row *database.FilePrio, useseries bool, qualcfg *config.QualityConfig, useall bool) int {
 	if qualcfg == nil {
 		return 0
 	}
@@ -858,7 +858,7 @@ func GetIDPrioritySimpleParse(row *database.FilePrio, useseries bool, qualcfg *c
 		row.CodecID = 0
 	}
 	var intid, prio int
-	if checkwanted {
+	if true {
 		intid = findpriorityidxwanted(row.ResolutionID, row.QualityID, row.CodecID, row.AudioID, qualcfg)
 		if intid != -1 {
 			prio = allQualityPrioritiesWantedT[intid].Priority
@@ -872,7 +872,7 @@ func GetIDPrioritySimpleParse(row *database.FilePrio, useseries bool, qualcfg *c
 	}
 
 	if intid == -1 {
-		logger.LogDynamic("debug", "prio not found", logger.NewLogField("searched for", buildPrioStr(row.ResolutionID, row.QualityID, row.CodecID, row.AudioID)), logger.NewLogField("in", qualcfg.Name), logger.NewLogField("wanted", checkwanted))
+		logger.LogDynamic("debug", "prio not found", logger.NewLogField("searched for", buildPrioStr(row.ResolutionID, row.QualityID, row.CodecID, row.AudioID)), logger.NewLogField("in", qualcfg.Name))
 
 		return 0
 	}

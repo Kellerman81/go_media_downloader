@@ -160,7 +160,7 @@ func UpdateTvdbSeriesEpisodes(id int, language string, dbid uint) {
 	}
 	tbl := database.Getrows1size[database.DbstaticTwoString](false, database.QueryDbserieEpisodesCountByDBID, database.QueryDbserieEpisodesGetSeasonEpisodeByDBID, &dbid)
 
-	addthetvdbepisodes(&result, dbid, tbl)
+	addthetvdbepisodes(&result, &dbid, tbl)
 	urlv += "?page="
 	if result.Links.Last >= 2 {
 		result.Data = slices.Grow(result.Data, len(result.Data)*result.Links.Last)
@@ -172,7 +172,7 @@ func UpdateTvdbSeriesEpisodes(id int, language string, dbid uint) {
 				resultadd, err = DoJSONType[theTVDBEpisodes](tvdbAPI.Client, urlv+strconv.Itoa(k))
 			}
 			if err == nil {
-				addthetvdbepisodes(&resultadd, dbid, tbl)
+				addthetvdbepisodes(&resultadd, &dbid, tbl)
 			}
 			resultadd.Close()
 		}
@@ -184,7 +184,7 @@ func UpdateTvdbSeriesEpisodes(id int, language string, dbid uint) {
 // addthetvdbepisodes iterates through the episodes in the given TheTVDBEpisodes
 // result and inserts any missing episodes into the dbserie_episodes table for
 // the series matching the given dbid. It returns false if no error occurs.
-func addthetvdbepisodes(resultadd *theTVDBEpisodes, dbid uint, tbl []database.DbstaticTwoString) bool {
+func addthetvdbepisodes(resultadd *theTVDBEpisodes, dbid *uint, tbl []database.DbstaticTwoString) bool {
 	var dt time.Time
 	var strepisode, strseason, stridentifier string
 	for idx := range resultadd.Data {
@@ -197,7 +197,7 @@ func addthetvdbepisodes(resultadd *theTVDBEpisodes, dbid uint, tbl []database.Db
 		dt = database.ParseDateTime(resultadd.Data[idx].FirstAired)
 		stridentifier = GenerateIdentifierStringFromInt(resultadd.Data[idx].AiredSeason, resultadd.Data[idx].AiredEpisodeNumber)
 		database.ExecN("insert into dbserie_episodes (episode, season, identifier, title, first_aired, overview, poster, dbserie_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-			&strepisode, &strseason, &stridentifier, &resultadd.Data[idx].EpisodeName, &dt, &resultadd.Data[idx].Overview, &resultadd.Data[idx].Poster, &dbid)
+			&strepisode, &strseason, &stridentifier, &resultadd.Data[idx].EpisodeName, &dt, &resultadd.Data[idx].Overview, &resultadd.Data[idx].Poster, dbid)
 	}
 	return false
 }

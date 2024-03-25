@@ -48,6 +48,7 @@ func downloadURL(urlv string) (string, error) {
 	if err != nil {
 		return "", errors.Wrap(err, "could not copy file")
 	}
+	_ = file.Sync()
 	return file.Name(), nil
 }
 

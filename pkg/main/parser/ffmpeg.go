@@ -140,7 +140,10 @@ type ffProbeStreamTags struct {
 	Language string `json:"language"`
 }
 
-var plffprobe = pool.NewPool(100, 0, func(b *ffProbeJSON) {}, func(b *ffProbeJSON) { *b = ffProbeJSON{} })
+var plffprobe = pool.NewPool(100, 0, func(b *ffProbeJSON) {}, func(b *ffProbeJSON) {
+	b.Streams = nil
+	*b = ffProbeJSON{}
+})
 
 // getFFProbeFilename returns the path to the ffprobe executable.
 // It checks if the path has already been set, otherwise determines the path based on OS.
@@ -199,6 +202,7 @@ func ExecCmd(com string, file string, typ string) Cmdout {
 	outputBuf := logger.PlBuffer.Get()
 	stdErr := logger.PlBuffer.Get()
 	cmd := exec.Command(com, args...)
+	args = nil
 	cmd.Stdout = outputBuf
 	cmd.Stderr = stdErr
 	out := Cmdout{Err: cmd.Run()}

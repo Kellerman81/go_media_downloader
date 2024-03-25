@@ -266,10 +266,12 @@ func Backup(backupPath string, maxbackups int) error {
 	if err != nil {
 		return errors.New("can't read log file directory: " + err.Error())
 	}
+	defer clear(files)
 	if len(files) == 0 {
 		return nil
 	}
 	backupFiles := make([]backupInfo, 0, len(files))
+	defer clear(backupFiles)
 
 	var tu time.Time
 	var addfile backupInfo
@@ -287,9 +289,6 @@ func Backup(backupPath string, maxbackups int) error {
 			continue
 		}
 	}
-
-	//clear(files)
-	//defer clear(backupFiles)
 
 	if maxbackups == 0 || maxbackups >= len(backupFiles) {
 		return nil
@@ -396,8 +395,8 @@ func ParseDateTime(date string) time.Time {
 // media with the given ID. It first checks if there is a quality profile
 // set for that media in the database. If not, it returns the default
 // QualityConfig from cfgp.
-func GetMediaQualityConfig(cfgp *config.MediaTypeConfig, mediaid uint) *config.QualityConfig {
-	str := GetdatarowN[string](false, logger.GetStringsMap(cfgp.Useseries, logger.DBQualityMediaByID), &mediaid)
+func GetMediaQualityConfig(cfgp *config.MediaTypeConfig, mediaid *uint) *config.QualityConfig {
+	str := GetdatarowN[string](false, logger.GetStringsMap(cfgp.Useseries, logger.DBQualityMediaByID), mediaid)
 
 	if str == "" {
 		return config.SettingsQuality[cfgp.DefaultQuality]

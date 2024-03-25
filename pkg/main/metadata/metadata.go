@@ -17,7 +17,7 @@ import (
 // It returns nothing.
 // It checks if the title already exists for that movie ID, slugifies the title,
 // inserts into dbmovie_titles if it does not exist, and updates the cache if enabled.
-func checkaddmovietitlewoslug(addentry database.DbstaticTwoStringOneInt, region string, titles []database.DbstaticTwoString) {
+func checkaddmovietitlewoslug(addentry *database.DbstaticTwoStringOneInt, region *string, titles []database.DbstaticTwoString) {
 	if addentry.Str1 == "" {
 		return
 	}
@@ -27,9 +27,9 @@ func checkaddmovietitlewoslug(addentry database.DbstaticTwoStringOneInt, region 
 	}
 	addentry.Str2 = logger.StringToSlug(addentry.Str1)
 	if database.GetdatarowN[int](false, "select count() from dbmovie_titles where dbmovie_id = ? and title = ? COLLATE NOCASE", &addentry.Num, &addentry.Str1) == 0 {
-		database.ExecN("Insert into dbmovie_titles (title, slug, dbmovie_id, region) values (?, ?, ?, ?)", &addentry.Str1, &addentry.Str2, &addentry.Num, &region)
+		database.ExecN("Insert into dbmovie_titles (title, slug, dbmovie_id, region) values (?, ?, ?, ?)", &addentry.Str1, &addentry.Str2, &addentry.Num, region)
 		if config.SettingsGeneral.UseMediaCache {
-			database.AppendTwoStringIntCache(logger.CacheTitlesMovie, addentry)
+			database.AppendTwoStringIntCache(logger.CacheTitlesMovie, *addentry)
 		}
 	}
 }
@@ -363,7 +363,7 @@ func Getmoviemetatitles(movie *database.Dbmovie, cfgp *config.MediaTypeConfig) {
 					}
 				}
 				addentry.Str1 = tbl[idx].Title
-				checkaddmovietitlewoslug(addentry, tbl[idx].Iso31661, titles)
+				checkaddmovietitlewoslug(&addentry, &tbl[idx].Iso31661, titles)
 			}
 			clear(tbl)
 		}
@@ -378,7 +378,7 @@ func Getmoviemetatitles(movie *database.Dbmovie, cfgp *config.MediaTypeConfig) {
 				}
 			}
 			addentry.Str1 = arr[idx].Title
-			checkaddmovietitlewoslug(addentry, arr[idx].Country, titles)
+			checkaddmovietitlewoslug(&addentry, &arr[idx].Country, titles)
 		}
 		clear(arr)
 	}
