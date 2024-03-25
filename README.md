@@ -125,7 +125,7 @@ Swap Memory: Default ~300-600MB - on a file move action the swap memory will gro
 
 - Guide for Docker:
 	- Download Repository - and create docker container for build/run using compose files/nzbs
-	- setup your config and name it config.toml ! - this will initialize the config.db and also update it on change
+	- setup your config and name it config.toml ! - this will initialize the config.db and also update it on change -> it will create an example if no config could be found
 	- setup your series.toml if wanted
 	- Start the build container to build the executable (use compose-build.yml to create the container)
 	- Start the run container to run the executable (use compose-run.yml to create the container)
