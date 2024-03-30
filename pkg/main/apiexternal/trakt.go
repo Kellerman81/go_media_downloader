@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Kellerman81/go_media_downloader/config"
-	"github.com/Kellerman81/go_media_downloader/database"
-	"github.com/Kellerman81/go_media_downloader/logger"
-	"github.com/Kellerman81/go_media_downloader/slidingwindow"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/slidingwindow"
 	"golang.org/x/oauth2"
 )
 
@@ -144,7 +144,7 @@ type traktClient struct {
 	APIKey         string        // The API key for authentication
 	ClientID       string        // The client ID for OAuth2
 	ClientSecret   string        // The client secret for OAuth2
-	Client         *rlHTTPClient // The HTTP client for requests
+	Client         rlHTTPClient  // The HTTP client for requests
 	Auth           oauth2.Config // The OAuth2 config
 	Token          *oauth2.Token // The OAuth2 access token
 	DefaultHeaders []keyval      // Default headers to send with requests
@@ -178,7 +178,7 @@ func NewTraktClient(clientid string, clientsecret string, seconds int, calls int
 	if calls == 0 {
 		calls = 1
 	}
-	traktAPI = &traktClient{
+	traktAPI = traktClient{
 		APIKey:       clientid,
 		ClientID:     clientid,
 		ClientSecret: clientsecret,
@@ -212,7 +212,7 @@ func GetTraktMoviePopular(limit string) []TraktMovie {
 	if traktAPI.Client.checklimiterwithdaily() {
 		return nil
 	}
-	result, err := DoJSONTypeG[TraktMovie](traktAPI.Client, traktaddlimit("https://api.trakt.tv/movies/popular", limit), traktAPI.DefaultHeaders...)
+	result, err := DoJSONTypeG[TraktMovie](&traktAPI.Client, traktaddlimit("https://api.trakt.tv/movies/popular", limit), traktAPI.DefaultHeaders...)
 	if err != nil {
 		return nil
 	}
@@ -227,7 +227,7 @@ func GetTraktMovieTrending(limit string) []TraktMovieTrending {
 	if traktAPI.Client.checklimiterwithdaily() {
 		return nil
 	}
-	result, err := DoJSONTypeG[TraktMovieTrending](traktAPI.Client, traktaddlimit("https://api.trakt.tv/movies/trending", limit), traktAPI.DefaultHeaders...)
+	result, err := DoJSONTypeG[TraktMovieTrending](&traktAPI.Client, traktaddlimit("https://api.trakt.tv/movies/trending", limit), traktAPI.DefaultHeaders...)
 
 	if err != nil {
 		return nil
@@ -253,7 +253,7 @@ func GetTraktMovieAnticipated(limit string) []TraktMovieAnticipated {
 	if traktAPI.Client.checklimiterwithdaily() {
 		return nil
 	}
-	result, err := DoJSONTypeG[TraktMovieAnticipated](traktAPI.Client, traktaddlimit("https://api.trakt.tv/movies/anticipated", limit), traktAPI.DefaultHeaders...)
+	result, err := DoJSONTypeG[TraktMovieAnticipated](&traktAPI.Client, traktaddlimit("https://api.trakt.tv/movies/anticipated", limit), traktAPI.DefaultHeaders...)
 
 	if err != nil {
 		return nil
@@ -269,7 +269,7 @@ func GetTraktMovieAliases(movieid string) []traktAlias {
 	if movieid == "" || traktAPI.Client.checklimiterwithdaily() {
 		return nil
 	}
-	result, err := DoJSONTypeG[traktAlias](traktAPI.Client, logger.URLJoinPath(apiurlmovies, movieid, "aliases"), traktAPI.DefaultHeaders...)
+	result, err := DoJSONTypeG[traktAlias](&traktAPI.Client, logger.URLJoinPath(apiurlmovies, movieid, "aliases"), traktAPI.DefaultHeaders...)
 	if err != nil {
 		return nil
 	}
@@ -285,7 +285,7 @@ func GetTraktMovie(movieid string) (traktMovieExtend, error) {
 		return traktMovieExtend{}, logger.ErrNotFound
 	}
 	//return DoJSONType[traktMovieExtend](traktAPI.Client, logger.JoinStrings(logger.URLJoinPath(apiurlmovies, movieid), extendedfull), &traktAPI.DefaultHeaders)
-	return DoJSONType[traktMovieExtend](traktAPI.Client, logger.JoinStrings(logger.URLJoinPath(apiurlmovies, movieid), extendedfull), traktAPI.DefaultHeaders...)
+	return DoJSONType[traktMovieExtend](&traktAPI.Client, logger.JoinStrings(logger.URLJoinPath(apiurlmovies, movieid), extendedfull), traktAPI.DefaultHeaders...)
 }
 
 // GetTraktSerie retrieves extended data for a Trakt TV show by its Trakt ID.
@@ -297,7 +297,7 @@ func GetTraktSerie(showid string) (traktSerieData, error) {
 		return traktSerieData{}, logger.ErrNotFound
 	}
 	//return DoJSONType[traktSerieData](traktAPI.Client, logger.JoinStrings(logger.URLJoinPath(apiurlshows, showid), extendedfull), &traktAPI.DefaultHeaders)
-	return DoJSONType[traktSerieData](traktAPI.Client, logger.JoinStrings(logger.URLJoinPath(apiurlshows, showid), extendedfull), traktAPI.DefaultHeaders...)
+	return DoJSONType[traktSerieData](&traktAPI.Client, logger.JoinStrings(logger.URLJoinPath(apiurlshows, showid), extendedfull), traktAPI.DefaultHeaders...)
 }
 
 // GetTraktSerieAliases retrieves alias data from the Trakt API for the given Dbserie.
@@ -312,13 +312,13 @@ func GetTraktSerieAliases(dbserie *database.Dbserie) []traktAlias {
 		if dbserie.ImdbID == "" {
 			return nil
 		}
-		result, err := DoJSONTypeG[traktAlias](traktAPI.Client, logger.URLJoinPath(apiurlshows, dbserie.ImdbID, "aliases"), traktAPI.DefaultHeaders...)
+		result, err := DoJSONTypeG[traktAlias](&traktAPI.Client, logger.URLJoinPath(apiurlshows, dbserie.ImdbID, "aliases"), traktAPI.DefaultHeaders...)
 		if err != nil {
 			return nil
 		}
 		return result
 	}
-	result, err := DoJSONTypeG[traktAlias](traktAPI.Client, logger.URLJoinPath(apiurlshows, strconv.Itoa(dbserie.TraktID), "aliases"), traktAPI.DefaultHeaders...)
+	result, err := DoJSONTypeG[traktAlias](&traktAPI.Client, logger.URLJoinPath(apiurlshows, strconv.Itoa(dbserie.TraktID), "aliases"), traktAPI.DefaultHeaders...)
 	if err != nil {
 		return nil
 	}
@@ -331,7 +331,7 @@ func GetTraktSerieSeasons(showid string) []string {
 	if showid == "" || traktAPI.Client.checklimiterwithdaily() {
 		return nil
 	}
-	result, err := DoJSONTypeG[traktSerieSeason](traktAPI.Client, logger.URLJoinPath(apiurlshows, showid, "seasons"), traktAPI.DefaultHeaders...)
+	result, err := DoJSONTypeG[traktSerieSeason](&traktAPI.Client, logger.URLJoinPath(apiurlshows, showid, "seasons"), traktAPI.DefaultHeaders...)
 	if err != nil {
 		return nil
 	}
@@ -339,6 +339,7 @@ func GetTraktSerieSeasons(showid string) []string {
 	for idx := range result {
 		ret[idx] = strconv.Itoa(result[idx].Number)
 	}
+	clear(result)
 	return ret
 }
 
@@ -351,7 +352,7 @@ func UpdateTraktSerieSeasonsAndEpisodes(showid string, id *uint) {
 	if showid == "" || traktAPI.Client.checklimiterwithdaily() {
 		return
 	}
-	result, err := DoJSONTypeG[traktSerieSeason](traktAPI.Client, logger.URLJoinPath(apiurlshows, showid, "seasons"), traktAPI.DefaultHeaders...)
+	result, err := DoJSONTypeG[traktSerieSeason](&traktAPI.Client, logger.URLJoinPath(apiurlshows, showid, "seasons"), traktAPI.DefaultHeaders...)
 	if err != nil {
 		return
 	}
@@ -371,20 +372,19 @@ func addtraktdbepisodes(dbid *uint, urlv string, tbl []database.DbstaticTwoStrin
 	if traktAPI.Client.checklimiterwithdaily() {
 		return
 	}
-	data, err := DoJSONTypeG[traktSerieSeasonEpisodes](traktAPI.Client, urlv, traktAPI.DefaultHeaders...)
+	data, err := DoJSONTypeG[traktSerieSeasonEpisodes](&traktAPI.Client, urlv, traktAPI.DefaultHeaders...)
 	if err != nil {
 		return
 	}
 
-	var strepisode, strseason, stridentifier string
 	for idx := range data {
-		strepisode = strconv.Itoa(data[idx].Episode)
-		strseason = strconv.Itoa(data[idx].Season)
+		strepisode := strconv.Itoa(data[idx].Episode)
+		strseason := strconv.Itoa(data[idx].Season)
 
 		if checkdbtwostrings(tbl, strseason, strepisode) {
 			continue
 		}
-		stridentifier = GenerateIdentifierStringFromInt(data[idx].Season, data[idx].Episode)
+		stridentifier := GenerateIdentifierStringFromInt(data[idx].Season, data[idx].Episode)
 		database.ExecN("insert into dbserie_episodes (episode, season, identifier, title, first_aired, overview, dbserie_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
 			&strepisode, &strseason, &stridentifier, &data[idx].Title, &data[idx].FirstAired, &data[idx].Overview, dbid)
 	}
@@ -421,7 +421,7 @@ func GetTraktSerieSeasonEpisodes(showid string, season string) []traktSerieSeaso
 		return nil
 	}
 	//result, err := DoJSONTypeG[traktSerieSeasonEpisodes](traktAPI.Client, logger.JoinStrings(logger.URLJoinPath(apiurlshows, showid, "seasons", season), extendedfull), &traktAPI.DefaultHeaders)
-	result, err := DoJSONTypeG[traktSerieSeasonEpisodes](traktAPI.Client, logger.JoinStrings(logger.URLJoinPath(apiurlshows, showid, "seasons", season), extendedfull), traktAPI.DefaultHeaders...)
+	result, err := DoJSONTypeG[traktSerieSeasonEpisodes](&traktAPI.Client, logger.JoinStrings(logger.URLJoinPath(apiurlshows, showid, "seasons", season), extendedfull), traktAPI.DefaultHeaders...)
 	if err != nil {
 		return nil
 	}
@@ -435,7 +435,7 @@ func GetTraktUserList(username string, listname string, listtype string, limit s
 	if username == "" || listname == "" || listtype == "" || traktAPI.Client.checklimiterwithdaily() {
 		return nil, logger.ErrNotFound
 	}
-	return DoJSONTypeG[TraktUserList](traktAPI.Client, traktaddlimit(logger.URLJoinPath("https://api.trakt.tv/users/", username, "lists", listname, "items", listtype), limit), traktAPI.DefaultHeaders...)
+	return DoJSONTypeG[TraktUserList](&traktAPI.Client, traktaddlimit(logger.URLJoinPath("https://api.trakt.tv/users/", username, "lists", listname, "items", listtype), limit), traktAPI.DefaultHeaders...)
 }
 
 // GetTraktSeriePopular retrieves popular TV shows from Trakt based on the
@@ -446,7 +446,7 @@ func GetTraktSeriePopular(limit string) []TraktSerie {
 	if traktAPI.Client.checklimiterwithdaily() {
 		return nil
 	}
-	result, err := DoJSONTypeG[TraktSerie](traktAPI.Client, traktaddlimit("https://api.trakt.tv/shows/popular", limit), traktAPI.DefaultHeaders...)
+	result, err := DoJSONTypeG[TraktSerie](&traktAPI.Client, traktaddlimit("https://api.trakt.tv/shows/popular", limit), traktAPI.DefaultHeaders...)
 	if err != nil {
 		return nil
 	}
@@ -459,7 +459,7 @@ func GetTraktSerieTrending(limit string) []TraktSerieTrending {
 	if traktAPI.Client.checklimiterwithdaily() {
 		return nil
 	}
-	result, err := DoJSONTypeG[TraktSerieTrending](traktAPI.Client, traktaddlimit("https://api.trakt.tv/shows/trending", limit), traktAPI.DefaultHeaders...)
+	result, err := DoJSONTypeG[TraktSerieTrending](&traktAPI.Client, traktaddlimit("https://api.trakt.tv/shows/trending", limit), traktAPI.DefaultHeaders...)
 
 	if err != nil {
 		return nil
@@ -475,7 +475,7 @@ func GetTraktSerieAnticipated(limit string) []TraktSerieAnticipated {
 	if traktAPI.Client.checklimiterwithdaily() {
 		return nil
 	}
-	result, err := DoJSONTypeG[TraktSerieAnticipated](traktAPI.Client, traktaddlimit("https://api.trakt.tv/shows/anticipated", limit), traktAPI.DefaultHeaders...)
+	result, err := DoJSONTypeG[TraktSerieAnticipated](&traktAPI.Client, traktaddlimit("https://api.trakt.tv/shows/anticipated", limit), traktAPI.DefaultHeaders...)
 
 	if err != nil {
 		return nil
@@ -529,5 +529,5 @@ func GetTraktUserListAuth(username string, listname string, listtype string, lim
 	if username == "" || listname == "" || listtype == "" || traktAPI.Client.checklimiterwithdaily() {
 		return nil, logger.ErrNotFound
 	}
-	return DoJSONTypeG[TraktUserList](traktAPI.Client, traktaddlimit(logger.URLJoinPath("https://api.trakt.tv/users/", username, "lists", listname, "items", listtype), limit), traktAPI.DefaultHeaders...)
+	return DoJSONTypeG[TraktUserList](&traktAPI.Client, traktaddlimit(logger.URLJoinPath("https://api.trakt.tv/users/", username, "lists", listname, "items", listtype), limit), traktAPI.DefaultHeaders...)
 }

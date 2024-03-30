@@ -7,11 +7,11 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/Kellerman81/go_media_downloader/apiexternal"
-	"github.com/Kellerman81/go_media_downloader/config"
-	"github.com/Kellerman81/go_media_downloader/database"
-	"github.com/Kellerman81/go_media_downloader/logger"
-	"github.com/Kellerman81/go_media_downloader/pool"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/pool"
 	"github.com/goccy/go-json"
 )
 
@@ -114,7 +114,7 @@ type track struct {
 // }
 
 var plmediainfo = pool.NewPool(100, 0, func(b *mediaInfoJson) {}, func(b *mediaInfoJson) {
-	b.Media.Track = nil
+	clear(b.Media.Track)
 	*b = mediaInfoJson{}
 })
 

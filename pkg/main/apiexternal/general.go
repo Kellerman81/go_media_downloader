@@ -16,9 +16,9 @@ import (
 
 	"github.com/goccy/go-json"
 
-	"github.com/Kellerman81/go_media_downloader/config"
-	"github.com/Kellerman81/go_media_downloader/logger"
-	"github.com/Kellerman81/go_media_downloader/slidingwindow"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/slidingwindow"
 	"golang.org/x/net/html/charset"
 )
 
@@ -26,12 +26,12 @@ import (
 // It contains fields for the underlying http.Client, name, timeouts,
 // rate limiters, and enabling daily rate limiting.
 type rlHTTPClient struct {
-	client              *http.Client           // The underlying HTTP client
-	clientname          string                 // The name of the client
-	Timeout             time.Duration          // The timeout duration
-	DailyLimiterEnabled bool                   // Whether daily rate limiting is enabled
-	Ratelimiter         *slidingwindow.Limiter // The per-request rate limiter
-	DailyRatelimiter    *slidingwindow.Limiter // The daily rate limiter
+	client              *http.Client          // The underlying HTTP client
+	clientname          string                // The name of the client
+	Timeout             time.Duration         // The timeout duration
+	DailyLimiterEnabled bool                  // Whether daily rate limiting is enabled
+	Ratelimiter         slidingwindow.Limiter // The per-request rate limiter
+	DailyRatelimiter    slidingwindow.Limiter // The daily rate limiter
 }
 
 const (
@@ -47,32 +47,34 @@ const (
 )
 
 // traktAPI is a client for interacting with the Trakt API
-var traktAPI *traktClient
+var traktAPI traktClient
 
 // tvdbAPI is a client for interacting with the TVDB API
-var tvdbAPI *tvdbClient
+var tvdbAPI tvdbClient
 
 // tmdbAPI is a client for interacting with the TMDB API
-var tmdbAPI *tmdbClient
+var tmdbAPI tmdbClient
 
 // pushoverAPI is a client for sending Pushover notifications
-var pushoverAPI *pushOverClient
+var pushoverAPI pushOverClient
 
 // omdbAPI is a client for interacting with the OMDb API
-var omdbAPI *omdbClient
+var omdbAPI omdbClient
 
 // newznabClients is a slice of newznab client structs
-var newznabClients = make([]clients, 0, 10)
+var newznabClients = make(map[string]*client, 10)
 
 // cl is a default HTTP client with rate limiting and timeouts
 var cl = NewClient("defaultdownloader", true, true, slidingwindow.NewLimiter(1*time.Second, 10), false, slidingwindow.NewLimiter(10*time.Second, 10), 30)
 
 // dialer is a net.Dialer with timeout and keepalive options set
-var dialer = &net.Dialer{
+var dialer = net.Dialer{
 	Timeout:   30 * time.Second,
 	KeepAlive: 30 * time.Second,
 	DualStack: true,
 }
+
+var tlsinsecure = tls.Config{InsecureSkipVerify: true}
 
 // fieldmap maps XML element numbers to field names
 var fieldmap = map[int]string{
@@ -330,10 +332,7 @@ func (c *rlHTTPClient) DoXMLItem(ind *config.IndexersConfig, qual *config.Qualit
 			lastfield = -1
 			switch tt.Name.Local {
 			case "item":
-				b.NZB = nzb{}
-				b.NZB.Indexer = ind
-				b.NZB.Quality = qual
-				b.NZB.SourceEndpoint = apiBaseURL
+				b.NZB = nzb{Indexer: ind, Quality: qual, SourceEndpoint: apiBaseURL}
 			case strtitle:
 				lastfield = 1
 			case strlink:
@@ -344,16 +343,7 @@ func (c *rlHTTPClient) DoXMLItem(ind *config.IndexersConfig, qual *config.Qualit
 				lastfield = 4
 			case "enclosure", "source":
 				for idx := range tt.Attr {
-					switch tt.Attr[idx].Name.Local {
-					case strurl:
-						if b.NZB.DownloadURL == "" {
-							b.NZB.DownloadURL = tt.Attr[idx].Value
-						}
-					case "length":
-						if b.NZB.Size == 0 {
-							b.NZB.Size = logger.StringToInt64(tt.Attr[idx].Value)
-						}
-					}
+					setfield(tt.Attr[idx].Name.Local, tt.Attr[idx].Value, &b.NZB)
 				}
 			case "attr":
 				nameidx = -1
@@ -383,9 +373,7 @@ func (c *rlHTTPClient) DoXMLItem(ind *config.IndexersConfig, qual *config.Qualit
 				if retval.FirstID == "" {
 					retval.FirstID = b.NZB.ID
 				}
-				//mu.Lock()
 				*results = append(*results, b)
-				//mu.Unlock()
 				if tillid != "" && tillid == b.NZB.ID {
 					retval.BrokeLoop = true
 					return retval
@@ -445,12 +433,12 @@ func (c *rlHTTPClient) addwait(req *http.Request, resp *http.Response) bool {
 }
 
 // NewClient creates a new HTTP client for making external API requests. It configures rate limiting, TLS verification, compression, timeouts etc. based on the provided parameters.
-func NewClient(clientname string, skiptlsverify bool, disablecompression bool, rl *slidingwindow.Limiter, usedaily bool, rldaily *slidingwindow.Limiter, timeoutseconds int) *rlHTTPClient {
+func NewClient(clientname string, skiptlsverify bool, disablecompression bool, rl slidingwindow.Limiter, usedaily bool, rldaily slidingwindow.Limiter, timeoutseconds int) rlHTTPClient {
 	if timeoutseconds == 0 {
 		timeoutseconds = 10
 	}
 
-	transport := &http.Transport{
+	transport := http.Transport{
 		Proxy:                 http.ProxyFromEnvironment,
 		DialContext:           dialer.DialContext,
 		ForceAttemptHTTP2:     false, //please don't
@@ -464,15 +452,16 @@ func NewClient(clientname string, skiptlsverify bool, disablecompression bool, r
 	transport.ResponseHeaderTimeout = time.Duration(timeoutseconds) * time.Second
 
 	if skiptlsverify {
-		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+		transport.TLSClientConfig = &tlsinsecure
 	}
 	if disablecompression {
 		transport.DisableCompression = true
 	}
-	return &rlHTTPClient{
+	cl := http.Client{Transport: &transport}
+	return rlHTTPClient{
 		Timeout:             time.Duration(timeoutseconds) * time.Second,
 		clientname:          clientname,
-		client:              &http.Client{Transport: transport},
+		client:              &cl,
 		Ratelimiter:         rl,
 		DailyLimiterEnabled: usedaily,
 		DailyRatelimiter:    rldaily,

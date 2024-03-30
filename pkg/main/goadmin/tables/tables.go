@@ -2,7 +2,7 @@
 package tables
 
 import (
-	"github.com/Kellerman81/go_media_downloader/goadmin/models"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/goadmin/models"
 
 	"github.com/GoAdminGroup/go-admin/plugins/admin/modules/table"
 )
@@ -17,7 +17,6 @@ import (
 // example:
 //
 // example end
-//
 var Generators = map[string]table.Generator{
 	"dbmovies":                models.GetDbmoviesTable,
 	"dbmovie_titles":          models.GetDbmovieTitlesTable,

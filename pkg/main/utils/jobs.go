@@ -4,15 +4,16 @@ import (
 	"io/fs"
 	"path/filepath"
 	"runtime"
+	"strings"
 
-	"github.com/Kellerman81/go_media_downloader/apiexternal"
-	"github.com/Kellerman81/go_media_downloader/config"
-	"github.com/Kellerman81/go_media_downloader/database"
-	"github.com/Kellerman81/go_media_downloader/logger"
-	"github.com/Kellerman81/go_media_downloader/parser"
-	"github.com/Kellerman81/go_media_downloader/scanner"
-	"github.com/Kellerman81/go_media_downloader/searcher"
-	"github.com/Kellerman81/go_media_downloader/worker"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/parser"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/scanner"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/searcher"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/worker"
 )
 
 const blimit = " limit "
@@ -153,6 +154,12 @@ func newFilesMap(cfgp *config.MediaTypeConfig) {
 			}
 			//sp := fpath
 			workergroup.Submit(func() {
+				defer func() {
+					err := recover()
+					if err != nil {
+						logger.LogDynamic("panic", "Panic in newfiles", logger.NewLogFieldValue(err))
+					}
+				}()
 				if filedata.Cfgp == nil {
 					logger.LogDynamic("error", "parse failed cfgp", logger.NewLogFieldValue(logger.ErrCfgpNotFound), logger.NewLogField(logger.StrFile, &fpath))
 					return
@@ -219,6 +226,14 @@ func SingleJobs(job, cfgpstr, listname string, force bool) {
 	logger.LogDynamic("info", jobstarted, logger.NewLogField("cfg", cfgpstr), logger.NewLogField(logger.StrJob, job), logger.NewLogField("list", listname), logger.NewLogField("Num Goroutines", runtime.NumGoroutine()))
 
 	cfgp := config.SettingsMedia[cfgpstr]
+	if cfgpstr != "" && cfgp == nil {
+		config.LoadCfgDB()
+		cfgp = config.SettingsMedia[cfgpstr]
+		if cfgp == nil {
+			logger.LogDynamic("error", "config not found", logger.NewLogField("cfg", cfgpstr))
+			return
+		}
+	}
 	Refreshcache(cfgp.Useseries)
 	dbinsert := insertjobhistory(job, cfgp)
 
@@ -321,38 +336,22 @@ func runjoblistfunc(job string, cfgp *config.MediaTypeConfig, listid int) {
 		}
 	case logger.StrRss:
 		return
-	case logger.StrSearchMissingFull:
-		jobsearchmedia(cfgp, true, false, 0)
-	case logger.StrSearchMissingInc:
-		searchinterval := cfgp.SearchmissingIncremental
-		if searchinterval == 0 {
-			searchinterval = 20
+	case logger.StrSearchMissingFull, logger.StrSearchMissingInc, logger.StrSearchUpgradeFull, logger.StrSearchUpgradeInc, logger.StrSearchMissingFullTitle, logger.StrSearchMissingIncTitle, logger.StrSearchUpgradeFullTitle, logger.StrSearchUpgradeIncTitle:
+		var searchinterval int
+		var searchmissing, searchtitle bool
+		if strings.Contains(job, "missing") {
+			searchmissing = true
 		}
-		jobsearchmedia(cfgp, true, false, searchinterval)
-	case logger.StrSearchUpgradeFull:
-		jobsearchmedia(cfgp, false, false, 0)
-	case logger.StrSearchUpgradeInc:
-		searchinterval := cfgp.SearchupgradeIncremental
-		if searchinterval == 0 {
-			searchinterval = 20
+		if strings.Contains(job, "title") {
+			searchtitle = true
 		}
-		jobsearchmedia(cfgp, false, false, searchinterval)
-	case logger.StrSearchMissingFullTitle:
-		jobsearchmedia(cfgp, true, true, 0)
-	case logger.StrSearchMissingIncTitle:
-		searchinterval := cfgp.SearchmissingIncremental
-		if searchinterval == 0 {
-			searchinterval = 20
+		if strings.HasSuffix(job, "inc") {
+			searchinterval = cfgp.SearchmissingIncremental
+			if searchinterval == 0 {
+				searchinterval = 20
+			}
 		}
-		jobsearchmedia(cfgp, true, true, searchinterval)
-	case logger.StrSearchUpgradeFullTitle:
-		jobsearchmedia(cfgp, false, true, 0)
-	case logger.StrSearchUpgradeIncTitle:
-		searchinterval := cfgp.SearchupgradeIncremental
-		if searchinterval == 0 {
-			searchinterval = 20
-		}
-		jobsearchmedia(cfgp, false, true, searchinterval)
+		jobsearchmedia(cfgp, searchmissing, searchtitle, searchinterval)
 	default:
 		logger.LogDynamic("error", "Switch not found", logger.NewLogField(logger.StrJob, job))
 	}
@@ -383,9 +382,9 @@ func jobsearchmedia(cfgp *config.MediaTypeConfig, searchmissing, searchtitle boo
 	if scandatepre != 0 {
 		n++
 	}
-	args := make([]any, n)
+	args := make([]any, 0, n)
 	for i := range cfgp.Lists {
-		args[i] = &cfgp.Lists[i].Name
+		args = append(args, &cfgp.Lists[i].Name)
 	}
 
 	bld := logger.PlBuffer.Get()
@@ -403,15 +402,11 @@ func jobsearchmedia(cfgp *config.MediaTypeConfig, searchmissing, searchtitle boo
 	}
 	if scaninterval != 0 {
 		bld.WriteString(logger.GetStringsMap(cfgp.Useseries, logger.SearchGenLastScan))
-		args[cfgp.ListsLen] = logger.TimeGetNow().AddDate(0, 0, 0-scaninterval)
+		args = append(args, logger.TimeGetNow().AddDate(0, 0, 0-scaninterval))
 	}
 	if scandatepre != 0 {
 		bld.WriteString(logger.GetStringsMap(cfgp.Useseries, logger.SearchGenDate))
-		if scaninterval != 0 {
-			args[cfgp.ListsLen+1] = logger.TimeGetNow().AddDate(0, 0, 0+scandatepre)
-		} else {
-			args[cfgp.ListsLen] = logger.TimeGetNow().AddDate(0, 0, 0+scandatepre)
-		}
+		args = append(args, logger.TimeGetNow().AddDate(0, 0, 0+scandatepre))
 	}
 	bld.WriteString(logger.GetStringsMap(cfgp.Useseries, logger.SearchGenOrder))
 	if searchinterval != 0 {
@@ -422,6 +417,8 @@ func jobsearchmedia(cfgp *config.MediaTypeConfig, searchmissing, searchtitle boo
 	str := bld.String()
 	tbl := database.GetrowsNuncached[database.DbstaticOneStringOneUInt](database.GetdatarowN[int](false, logger.JoinStrings("select count() ", str), args...), logger.JoinStrings(logger.GetStringsMap(cfgp.Useseries, logger.SearchGenSelect), str), args)
 	logger.PlBuffer.Put(bld)
+
+	clear(args)
 	if len(tbl) == 0 {
 		return
 	}
@@ -478,13 +475,12 @@ func checkmissingflag(useseries bool, listcfg *config.MediaListsConfig) {
 	querycount := logger.GetStringsMap(useseries, logger.DBCountFilesByMediaID)
 
 	var counter int
-	v0 := 0
 	v1 := 1
 	arr := database.Getrows1size[database.DbstaticOneIntOneBool](false, logger.GetStringsMap(useseries, logger.DBCountMediaByList), logger.GetStringsMap(useseries, logger.DBIDMissingMediaByList), &listcfg.Name)
 	for idx := range arr {
 		_ = database.ScanrowsNdyn(false, querycount, &counter, &arr[idx].Num)
 		if counter >= 1 && arr[idx].Bl {
-			database.ExecN(queryupdate, &v0, &arr[idx].Num)
+			database.ExecN(queryupdate, &logger.V0, &arr[idx].Num)
 		}
 		if counter == 0 && !arr[idx].Bl {
 			database.ExecN(queryupdate, &v1, &arr[idx].Num)

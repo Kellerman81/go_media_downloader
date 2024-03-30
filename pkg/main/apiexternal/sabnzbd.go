@@ -3,7 +3,7 @@ package apiexternal
 import (
 	"errors"
 
-	"github.com/Kellerman81/go_media_downloader/sabnzbd"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/sabnzbd"
 )
 
 // SendToSabnzbd sends a download URL to a Sabnzbd server.

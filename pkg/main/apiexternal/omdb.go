@@ -4,9 +4,9 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/Kellerman81/go_media_downloader/config"
-	"github.com/Kellerman81/go_media_downloader/logger"
-	"github.com/Kellerman81/go_media_downloader/slidingwindow"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/slidingwindow"
 )
 
 type omDBMovie struct {
@@ -47,9 +47,9 @@ type omDBMovieSearchGlobal struct {
 // It contains fields for the API key, query parameter API key,
 // and a pointer to the rate limited HTTP client.
 type omdbClient struct {
-	OmdbAPIKey string        // The OMDb API key
-	QAPIKey    string        // The query parameter API key
-	Client     *rlHTTPClient // Pointer to the rate limited HTTP client
+	OmdbAPIKey string       // The OMDb API key
+	QAPIKey    string       // The query parameter API key
+	Client     rlHTTPClient // Pointer to the rate limited HTTP client
 }
 
 // Close releases the resources used by the OmDBMovieSearchGlobal struct.
@@ -74,7 +74,7 @@ func NewOmdbClient(apikey string, seconds int, calls int, disabletls bool, timeo
 	if calls == 0 {
 		calls = 1
 	}
-	omdbAPI = &omdbClient{
+	omdbAPI = omdbClient{
 		OmdbAPIKey: apikey,
 		QAPIKey:    "&apikey=" + apikey,
 		Client: NewClient(
@@ -103,7 +103,7 @@ func GetOmdbMovie(imdbid string) (omDBMovie, error) {
 		return omDBMovie{}, logger.ErrNotFound
 	}
 	//return DoJSONType[omDBMovie](omdbAPI.Client, logger.JoinStrings("http://www.omdbapi.com/?i=", imdbid, omdbAPI.QAPIKey), nil)
-	return DoJSONType[omDBMovie](omdbAPI.Client, logger.JoinStrings("http://www.omdbapi.com/?i=", imdbid, omdbAPI.QAPIKey))
+	return DoJSONType[omDBMovie](&omdbAPI.Client, logger.JoinStrings("http://www.omdbapi.com/?i=", imdbid, omdbAPI.QAPIKey))
 }
 
 // SearchOmdbMovie searches the OMDb API for movies matching the given title and release year.
@@ -119,6 +119,6 @@ func SearchOmdbMovie(title string, year string) ([]omDBMovieSearch, error) {
 		year = "&y=" + year
 	}
 	//return DoJSONType[omDBMovieSearchGlobal](omdbAPI.Client, logger.JoinStrings("http://www.omdbapi.com/?s=", url.QueryEscape(title), yearstr, omdbAPI.QAPIKey), nil)
-	arr, err := DoJSONType[omDBMovieSearchGlobal](omdbAPI.Client, logger.JoinStrings("http://www.omdbapi.com/?s=", url.QueryEscape(title), year, omdbAPI.QAPIKey))
+	arr, err := DoJSONType[omDBMovieSearchGlobal](&omdbAPI.Client, logger.JoinStrings("http://www.omdbapi.com/?s=", url.QueryEscape(title), year, omdbAPI.QAPIKey))
 	return arr.Search, err
 }

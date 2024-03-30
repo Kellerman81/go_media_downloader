@@ -6,10 +6,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Kellerman81/go_media_downloader/apiexternal"
-	"github.com/Kellerman81/go_media_downloader/config"
-	"github.com/Kellerman81/go_media_downloader/database"
-	"github.com/Kellerman81/go_media_downloader/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 )
 
 // checkaddmovietitlewoslug adds a movie title to the dbmovie_titles table if it does not already exist.
@@ -321,7 +321,6 @@ func Getmoviemetatitles(movie *database.Dbmovie, cfgp *config.MediaTypeConfig) {
 		movie.ImdbID = logger.AddImdbPrefix(movie.ImdbID)
 		arr := database.Getrows1size[database.DbstaticThreeString](true, "select count() from imdb_akas where tconst = ?", "select region, title, slug from imdb_akas where tconst = ?", &movie.ImdbID)
 		var getid int
-		addentry := database.DbstaticTwoStringOneInt{Num: int(movie.ID)}
 		for idx := range arr {
 			if lenarr >= 1 {
 				if arr[idx].Str1 != "" && !logger.SlicesContainsI(cfgp.MetadataTitleLanguages, arr[idx].Str1) {
@@ -342,6 +341,7 @@ func Getmoviemetatitles(movie *database.Dbmovie, cfgp *config.MediaTypeConfig) {
 			if _ = database.ScanrowsNdyn(false, "select count() from dbmovie_titles where dbmovie_id = ? and title = ? COLLATE NOCASE", &getid, &movie.ID, &arr[idx].Str2); getid == 0 {
 				database.ExecN("Insert into dbmovie_titles (title, slug, dbmovie_id, region) values (?, ?, ?, ?)", &arr[idx].Str2, &arr[idx].Str3, &movie.ID, &arr[idx].Str1)
 				if config.SettingsGeneral.UseMediaCache {
+					addentry := database.DbstaticTwoStringOneInt{Num: int(movie.ID)}
 					addentry.Str1 = arr[idx].Str2
 					addentry.Str2 = arr[idx].Str3
 					database.AppendTwoStringIntCache(logger.CacheTitlesMovie, addentry)
@@ -350,8 +350,6 @@ func Getmoviemetatitles(movie *database.Dbmovie, cfgp *config.MediaTypeConfig) {
 		}
 		clear(arr)
 	}
-	var addentry database.DbstaticTwoStringOneInt
-	addentry.Num = int(movie.ID)
 	if config.SettingsGeneral.MovieAlternateTitleMetaSourceTmdb && movie.MoviedbID != 0 {
 		tbl, err := apiexternal.GetTmdbMovieTitles(movie.MoviedbID)
 		if err == nil {
@@ -362,7 +360,7 @@ func Getmoviemetatitles(movie *database.Dbmovie, cfgp *config.MediaTypeConfig) {
 						continue
 					}
 				}
-				addentry.Str1 = tbl[idx].Title
+				addentry := database.DbstaticTwoStringOneInt{Num: int(movie.ID), Str1: tbl[idx].Title}
 				checkaddmovietitlewoslug(&addentry, &tbl[idx].Iso31661, titles)
 			}
 			clear(tbl)
@@ -377,7 +375,7 @@ func Getmoviemetatitles(movie *database.Dbmovie, cfgp *config.MediaTypeConfig) {
 					continue
 				}
 			}
-			addentry.Str1 = arr[idx].Title
+			addentry := database.DbstaticTwoStringOneInt{Num: int(movie.ID), Str1: arr[idx].Title}
 			checkaddmovietitlewoslug(&addentry, &arr[idx].Country, titles)
 		}
 		clear(arr)

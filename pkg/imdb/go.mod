@@ -1,4 +1,4 @@
-module github.com/Kellerman81/go_media_downloader_imdb
+module github.com/Kellerman81/go_media_downloader/pkg/imdb
 
 go 1.22
 

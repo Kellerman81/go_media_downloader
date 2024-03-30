@@ -7,11 +7,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Kellerman81/go_media_downloader/apiexternal"
-	"github.com/Kellerman81/go_media_downloader/config"
-	"github.com/Kellerman81/go_media_downloader/database"
-	"github.com/Kellerman81/go_media_downloader/importfeed"
-	"github.com/Kellerman81/go_media_downloader/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/importfeed"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 )
 
 type regexpattern struct {
@@ -428,30 +428,28 @@ func ParseFileP(videofile string, usepath bool, usefolder bool, cfgp *config.Med
 func GetDBIDs(m *apiexternal.FileParser) error {
 	m.M.ListID = -1
 	if !m.Cfgp.Useseries {
-		var imdb importfeed.ImdbID
 		if m.M.Imdb != "" {
 			if !logger.HasPrefixI(m.M.Imdb, logger.StrTt) {
-				imdb.Imdb = logger.AddImdbPrefix(m.M.Imdb)
+				imdb := logger.AddImdbPrefix(m.M.Imdb)
 				m.M.DbmovieID = importfeed.MovieFindDBIDByImdb(&imdb)
 				if m.M.DbmovieID == 0 && len(m.M.Imdb) < 7 {
-					imdb.Imdb = logger.AddImdbPrefix("0" + m.M.Imdb)
+					imdb = logger.AddImdbPrefix("0" + m.M.Imdb)
 					m.M.DbmovieID = importfeed.MovieFindDBIDByImdb(&imdb)
 					if m.M.DbmovieID == 0 && len(m.M.Imdb) < 6 {
-						imdb.Imdb = logger.AddImdbPrefix("00" + m.M.Imdb)
+						imdb = logger.AddImdbPrefix("00" + m.M.Imdb)
 						m.M.DbmovieID = importfeed.MovieFindDBIDByImdb(&imdb)
 					}
 					if m.M.DbmovieID == 0 && len(m.M.Imdb) < 5 {
-						imdb.Imdb = logger.AddImdbPrefix("000" + m.M.Imdb)
+						imdb = logger.AddImdbPrefix("000" + m.M.Imdb)
 						m.M.DbmovieID = importfeed.MovieFindDBIDByImdb(&imdb)
 					}
 					if m.M.DbmovieID == 0 && len(m.M.Imdb) < 4 {
-						imdb.Imdb = logger.AddImdbPrefix("0000" + m.M.Imdb)
+						imdb = logger.AddImdbPrefix("0000" + m.M.Imdb)
 						m.M.DbmovieID = importfeed.MovieFindDBIDByImdb(&imdb)
 					}
 				}
 			} else {
-				imdb.Imdb = m.M.Imdb
-				m.M.DbmovieID = importfeed.MovieFindDBIDByImdb(&imdb)
+				m.M.DbmovieID = importfeed.MovieFindDBIDByImdb(&m.M.Imdb)
 			}
 		}
 		if m.M.DbmovieID == 0 && m.M.Title != "" && m.Allowsearchtitle && m.Cfgp.Name != "" {
@@ -465,10 +463,9 @@ func GetDBIDs(m *apiexternal.FileParser) error {
 			}
 			if m.M.Imdb == "" {
 				importfeed.MovieFindImdbIDByTitle(false, m)
-				imdb.Imdb = m.M.Imdb
 			}
 			if m.M.Imdb != "" && m.M.DbmovieID == 0 {
-				m.M.DbmovieID = importfeed.MovieFindDBIDByImdb(&imdb)
+				m.M.DbmovieID = importfeed.MovieFindDBIDByImdb(&m.M.Imdb)
 			}
 		}
 		if m.M.DbmovieID == 0 {
@@ -509,10 +506,10 @@ func GetDBIDs(m *apiexternal.FileParser) error {
 	if m.M.DbserieID == 0 && m.M.Title != "" && (m.Allowsearchtitle || m.M.Tvdb == "") {
 		if m.M.Year != 0 {
 			testtitle := logger.JoinStrings(m.M.Title, " (", strconv.Itoa(m.M.Year), ")")
-			findDbserieByName(testtitle, &m.M)
+			findDbserieByName(&testtitle, &m.M)
 		}
 		if m.M.DbserieID == 0 {
-			findDbserieByName(m.M.Title, &m.M)
+			findDbserieByName(&m.M.Title, &m.M)
 		}
 	}
 	if m.M.DbserieID == 0 && m.M.File != "" {
@@ -596,8 +593,8 @@ func GetDBEpisodeID(m *apiexternal.FileParser, epi string, dbserieid *uint, outi
 // findDbserieByName searches for a dbserie by title and sets dbid.
 // It first checks the cache, then falls back to a database query.
 // It handles both the original and slugged title.
-func findDbserieByName(title string, m *database.ParseInfo) {
-	if title == "" {
+func findDbserieByName(title *string, m *database.ParseInfo) {
+	if title == nil || *title == "" {
 		return
 	}
 	if config.SettingsGeneral.UseMediaCache {
@@ -609,26 +606,26 @@ func findDbserieByName(title string, m *database.ParseInfo) {
 		if m.DbserieID != 0 {
 			return
 		}
-		slugged := logger.StringToSlug(title)
+		slugged := logger.StringToSlug(*title)
 		if slugged == "" {
 			return
 		}
-		database.CacheTwoStringIntIndexFunc(logger.CacheDBSeries, false, slugged, m)
+		database.CacheTwoStringIntIndexFunc(logger.CacheDBSeries, false, &slugged, m)
 		if m.DbserieID != 0 {
 			return
 		}
-		database.CacheTwoStringIntIndexFunc(logger.CacheDBSeriesAlt, false, slugged, m)
+		database.CacheTwoStringIntIndexFunc(logger.CacheDBSeriesAlt, false, &slugged, m)
 		if m.DbserieID != 0 {
 			return
 		}
 		return
 	}
 
-	_ = database.ScanrowsNdyn(false, database.QueryDbseriesGetIDByName, &m.DbserieID, &title)
+	_ = database.ScanrowsNdyn(false, database.QueryDbseriesGetIDByName, &m.DbserieID, title)
 	if m.DbserieID != 0 {
 		return
 	}
-	slugged := logger.StringToSlug(title)
+	slugged := logger.StringToSlug(*title)
 	if slugged == "" {
 		return
 	}
@@ -636,7 +633,7 @@ func findDbserieByName(title string, m *database.ParseInfo) {
 	if m.DbserieID != 0 {
 		return
 	}
-	_ = database.ScanrowsNdyn(false, "select dbserie_id from Dbserie_alternates where Title = ? COLLATE NOCASE", &m.DbserieID, &title)
+	_ = database.ScanrowsNdyn(false, "select dbserie_id from Dbserie_alternates where Title = ? COLLATE NOCASE", &m.DbserieID, title)
 	if m.DbserieID == 0 {
 		_ = database.ScanrowsNdyn(false, "select dbserie_id from Dbserie_alternates where Slug = ?", &m.DbserieID, &slugged)
 	}
@@ -667,7 +664,7 @@ func RegexGetMatchesStr1(m *apiexternal.FileParser) {
 	if seriename == "" {
 		return
 	}
-	findDbserieByName(seriename, &m.M)
+	findDbserieByName(&seriename, &m.M)
 }
 
 // ParseVideoFile parses metadata for a video file using ffprobe or MediaInfo.
@@ -922,7 +919,6 @@ func findpriorityidx(reso, qual, codec, aud uint, quality *config.QualityConfig)
 // slices. It applies any priority reordering rules from the config's
 // QualityReorderConfig slice. Returns the sum of the individual priority values.
 func getIDPrioritySimple(priores, prioqual, priocodec, prioaud int, resolution, quality string, reordergroup []config.QualityReorderConfig) int {
-	var idxcomma int
 	for idxreorder := range reordergroup {
 		if !strings.EqualFold(reordergroup[idxreorder].ReorderType, "combined_res_qual") {
 			continue
@@ -930,7 +926,7 @@ func getIDPrioritySimple(priores, prioqual, priocodec, prioaud int, resolution, 
 		if strings.ContainsRune(reordergroup[idxreorder].Name, ',') {
 			continue
 		}
-		idxcomma = strings.IndexRune(reordergroup[idxreorder].Name, ',')
+		idxcomma := strings.IndexRune(reordergroup[idxreorder].Name, ',')
 
 		if strings.EqualFold(reordergroup[idxreorder].Name[:idxcomma], resolution) && strings.EqualFold(reordergroup[idxreorder].Name[idxcomma+1:], quality) {
 			priores = reordergroup[idxreorder].Newpriority
@@ -1013,12 +1009,11 @@ func GenerateAllQualityPriorities() {
 // match is found.
 func gettypeids(inval string, qualitytype []database.QualitiesRegex) uint {
 	lenval := len(inval)
-	var index, indexmax int
 	for idxtype := range qualitytype {
 		if qualitytype[idxtype].Strings != "" && !config.SettingsGeneral.DisableParserStringMatch && logger.ContainsI(qualitytype[idxtype].StringsLower, inval) {
-			index = logger.IndexI(qualitytype[idxtype].StringsLower, inval)
+			index := logger.IndexI(qualitytype[idxtype].StringsLower, inval)
 
-			indexmax = index + lenval
+			indexmax := index + lenval
 			if indexmax < len(qualitytype[idxtype].StringsLower) && !apiexternal.CheckDigitLetter(rune(qualitytype[idxtype].StringsLower[indexmax : indexmax+1][0])) {
 				return 0
 			}

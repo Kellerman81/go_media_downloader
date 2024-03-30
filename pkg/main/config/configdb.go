@@ -3,7 +3,7 @@ package config
 import (
 	"strings"
 
-	"github.com/Kellerman81/go_media_downloader/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"golang.org/x/oauth2"
 )
 

@@ -5,15 +5,15 @@ import (
 	"io/fs"
 	"path/filepath"
 
-	"github.com/Kellerman81/go_media_downloader/apiexternal"
-	"github.com/Kellerman81/go_media_downloader/config"
-	"github.com/Kellerman81/go_media_downloader/database"
-	"github.com/Kellerman81/go_media_downloader/importfeed"
-	"github.com/Kellerman81/go_media_downloader/logger"
-	"github.com/Kellerman81/go_media_downloader/parser"
-	"github.com/Kellerman81/go_media_downloader/searcher"
-	"github.com/Kellerman81/go_media_downloader/structure"
-	"github.com/Kellerman81/go_media_downloader/worker"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/importfeed"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/parser"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/searcher"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/structure"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/worker"
 )
 
 const (
@@ -43,6 +43,7 @@ func jobImportSeriesParseV2(m *apiexternal.FileParser, pathv string, updatemissi
 	parser.GetPriorityMapQual(&m.M, cfgp, list.CfgQuality, true, false)
 	err = parser.ParseVideoFile(m, pathv, list.CfgQuality)
 	if err != nil {
+		clear(tblepi)
 		return err
 	}
 
@@ -275,10 +276,17 @@ func importnewseriessingle(cfgp *config.MediaTypeConfig, list *config.MediaLists
 	workergroup := worker.WorkerPoolParse.Group()
 	for idxserie2 := range series.Serie {
 		workergroup.Submit(func() {
+			defer func() {
+				err := recover()
+				if err != nil {
+					logger.LogDynamic("panic", "Panic in importserie", logger.NewLogFieldValue(err))
+				}
+			}()
 			importfeed.JobImportDBSeries(series, idxserie2, cfgp, listid, false, true)
 		})
 	}
 	workergroup.Wait()
+	series = nil
 	feed.Close()
 	return nil
 }
@@ -288,14 +296,13 @@ func importnewseriessingle(cfgp *config.MediaTypeConfig, list *config.MediaLists
 // quality_reached flag in the database accordingly.
 func checkreachedepisodesflag(listcfg *config.MediaListsConfig) {
 	arr := database.QuerySerieEpisodes(&listcfg.Name)
-	var minPrio, reached int
 	for idx := range arr {
 		if !config.CheckGroup("quality_", arr[idx].QualityProfile) {
 			logger.LogDynamic("debug", "Quality for Episode not found", logger.NewLogField(logger.StrID, int(arr[idx].ID)))
 			continue
 		}
-		minPrio, _ = searcher.Getpriobyfiles(true, &arr[idx].ID, false, -1, config.SettingsQuality[arr[idx].QualityProfile])
-		reached = 0
+		minPrio, _ := searcher.Getpriobyfiles(true, &arr[idx].ID, false, -1, config.SettingsQuality[arr[idx].QualityProfile])
+		reached := 0
 		if minPrio >= config.SettingsQuality[arr[idx].QualityProfile].CutoffPriority {
 			reached = 1
 		}

@@ -5,10 +5,10 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/Kellerman81/go_media_downloader/config"
-	"github.com/Kellerman81/go_media_downloader/database"
-	"github.com/Kellerman81/go_media_downloader/logger"
-	"github.com/Kellerman81/go_media_downloader/pool"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/pool"
 )
 
 // FileParser is a struct for parsing file names
@@ -24,6 +24,7 @@ type FileParser struct {
 
 var (
 	ParserPool = pool.NewPool(100, 0, func(b *FileParser) {}, func(b *FileParser) {
+		clear(b.M.Languages)
 		*b = FileParser{}
 	})
 )
@@ -131,13 +132,12 @@ func CheckDigitLetter(runev rune) bool {
 // It searches s.Str for each string in group, checks for valid
 // surrounding characters, and extracts the matched substring if found.
 func (s *FileParser) Parsegroup(name string, group []string) {
-	var index, indexmax int
 	for idx := range group {
-		index = logger.IndexI(s.Str, group[idx])
+		index := logger.IndexI(s.Str, group[idx])
 		if index == -1 {
 			continue
 		}
-		indexmax = index + len(group[idx])
+		indexmax := index + len(group[idx])
 		if s.Str[index:indexmax] == "" {
 			continue
 		}

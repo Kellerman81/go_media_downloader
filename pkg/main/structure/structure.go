@@ -9,15 +9,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Kellerman81/go_media_downloader/apiexternal"
-	"github.com/Kellerman81/go_media_downloader/config"
-	"github.com/Kellerman81/go_media_downloader/database"
-	"github.com/Kellerman81/go_media_downloader/importfeed"
-	"github.com/Kellerman81/go_media_downloader/logger"
-	"github.com/Kellerman81/go_media_downloader/parser"
-	"github.com/Kellerman81/go_media_downloader/pool"
-	"github.com/Kellerman81/go_media_downloader/scanner"
-	"github.com/Kellerman81/go_media_downloader/searcher"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/importfeed"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/parser"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/pool"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/scanner"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/searcher"
 	"github.com/mozillazg/go-unidecode"
 )
 
@@ -130,7 +130,7 @@ var plstructure = pool.NewPool(100, 0, func(b *Organizer) {}, func(b *Organizer)
 
 // plparser is a pool for parsertype structs
 var plparser = pool.NewPool(100, 0, func(b *parsertype) {}, func(b *parsertype) {
-	b.Episodes = nil
+	clear(b.Episodes)
 	*b = parsertype{}
 })
 
@@ -519,12 +519,11 @@ func (s *Organizer) moveRemoveOldMediaFile(oldfile string, id uint, move bool) e
 	database.ExecN(logger.GetStringsMap(s.Cfgp.Useseries, logger.DBDeleteFileByIDLocation), &id, &oldfile)
 
 	fileext := filepath.Ext(oldfile)
-	var additionalfile string
 	for idx := range s.SourcepathCfg.AllowedOtherExtensions {
 		if fileext == s.SourcepathCfg.AllowedOtherExtensions[idx] {
 			continue
 		}
-		additionalfile = strings.ReplaceAll(oldfile, fileext, s.SourcepathCfg.AllowedOtherExtensions[idx])
+		additionalfile := strings.ReplaceAll(oldfile, fileext, s.SourcepathCfg.AllowedOtherExtensions[idx])
 		if !scanner.CheckFileExist(additionalfile) {
 			continue
 		}
@@ -688,9 +687,11 @@ func (s *Organizer) OrganizeMovie(orgadata *Organizerdata, m *apiexternal.FilePa
 		if true {
 			err := s.FileCleanup(orgadata)
 			if err != nil {
+				clear(oldfiles)
 				return err
 			}
 		}
+		clear(oldfiles)
 		return logger.ErrLowerQuality
 	}
 	defer clear(oldfiles)
@@ -810,14 +811,12 @@ func (s *Organizer) moveandcleanup(orgadata *Organizerdata, newfile string, m *a
 	}
 	//move other serie
 	fileext := filepath.Ext(orgadata.Videofile)
-	var retval scanner.MoveResponse
-	var also string
 	for idx := range s.SourcepathCfg.AllowedOtherExtensions {
 		if fileext == s.SourcepathCfg.AllowedOtherExtensions[idx] {
 			continue
 		}
-		also = strings.ReplaceAll(orgadata.Videofile, fileext, s.SourcepathCfg.AllowedOtherExtensions[idx])
-		retval = scanner.MoveFile(also, s.SourcepathCfg, orgadata.videotarget, orgadata.Filename, true, false, config.SettingsGeneral.UseFileBufferCopy, s.TargetpathCfg.SetChmodFolder, s.TargetpathCfg.SetChmod)
+		also := strings.ReplaceAll(orgadata.Videofile, fileext, s.SourcepathCfg.AllowedOtherExtensions[idx])
+		retval := scanner.MoveFile(also, s.SourcepathCfg, orgadata.videotarget, orgadata.Filename, true, false, config.SettingsGeneral.UseFileBufferCopy, s.TargetpathCfg.SetChmodFolder, s.TargetpathCfg.SetChmod)
 		if retval.Err != nil && !errors.Is(retval.Err, logger.ErrNotFound) {
 			logger.LogDynamic("error", "file move", logger.NewLogFieldValue(retval.Err), logger.NewLogField(logger.StrFile, also))
 		}
@@ -834,12 +833,11 @@ func (s *Organizer) moveandcleanup(orgadata *Organizerdata, newfile string, m *a
 // It joins that folder with the config path to form the new rootpath value.
 // Finally it executes a SQL update statement to update the rootpath for that object ID.
 func UpdateRootpath(file string, objtype string, objid *uint, cfgp *config.MediaTypeConfig) {
-	var firstfolder string
 	for idxdata := range cfgp.Data {
 		if !logger.ContainsI(file, cfgp.Data[idxdata].CfgPath.Path) {
 			continue
 		}
-		firstfolder = strings.TrimLeft(strings.ReplaceAll(file, cfgp.Data[idxdata].CfgPath.Path, ""), "/\\")
+		firstfolder := strings.TrimLeft(strings.ReplaceAll(file, cfgp.Data[idxdata].CfgPath.Path, ""), "/\\")
 		if strings.ContainsRune(firstfolder, '/') || strings.ContainsRune(firstfolder, '\\') {
 			firstfolder = filepath.Dir(firstfolder)
 		}
@@ -886,12 +884,9 @@ func (s *Organizer) walkcleanup(orgadata *Organizerdata, useremove bool) error {
 // If any file cannot be moved/removed, it logs an error but continues the loop.
 // Finally it returns any error encountered, or nil if successful.
 func (s *Organizer) moveremoveoldfiles(orgadata *Organizerdata, usecompare bool, id uint, move bool, oldfiles []string) error {
-	var err error
-	var teststr string
-
 	for idx := range oldfiles {
 		if usecompare {
-			_, teststr = filepath.Split(oldfiles[idx])
+			_, teststr := filepath.Split(oldfiles[idx])
 			if teststr == orgadata.Filename || strings.HasPrefix(teststr, orgadata.videotarget) {
 				continue
 			}
@@ -899,7 +894,7 @@ func (s *Organizer) moveremoveoldfiles(orgadata *Organizerdata, usecompare bool,
 		if !scanner.CheckFileExist(oldfiles[idx]) {
 			continue
 		}
-		err = s.moveRemoveOldMediaFile(oldfiles[idx], id, move)
+		err := s.moveRemoveOldMediaFile(oldfiles[idx], id, move)
 		if err != nil {
 			//Continue if old cannot be moved
 			logger.LogDynamic("error", "Move old", logger.NewLogFieldValue(err), logger.NewLogField(logger.StrFile, oldfiles[idx]))
@@ -947,28 +942,22 @@ func (s *Organizer) notify(orgadata *Organizerdata, m *database.ParseInfo, id *u
 		notify.InputNotifier.Identifier = notify.InputNotifier.DbserieEpisode.Identifier
 	}
 
-	var messagetext, messageTitle string
-	var bl bool
 	for idx := range s.Cfgp.Notification {
 		if s.Cfgp.Notification[idx].CfgNotification == nil || !strings.EqualFold(s.Cfgp.Notification[idx].Event, "added_data") {
 			continue
 		}
 		notify.InputNotifier.ReplacedPrefix = s.Cfgp.Notification[idx].ReplacedPrefix
-		if s.Cfgp.Notification[idx].Message != "" {
-			bl, messagetext = logger.ParseStringTemplate(s.Cfgp.Notification[idx].Message, &notify)
-			if bl {
-				continue
-			}
-		}
-		if s.Cfgp.Notification[idx].Title != "" {
-			bl, messageTitle = logger.ParseStringTemplate(s.Cfgp.Notification[idx].Title, &notify)
-			if bl {
-				continue
-			}
+		bl, messagetext := logger.ParseStringTemplate(s.Cfgp.Notification[idx].Message, &notify)
+		if bl {
+			continue
 		}
 
 		switch config.SettingsNotification[s.Cfgp.Notification[idx].MapNotification].NotificationType {
 		case "pushover":
+			bl, messageTitle := logger.ParseStringTemplate(s.Cfgp.Notification[idx].Title, &notify)
+			if bl {
+				continue
+			}
 			if apiexternal.GetPushOverKey() != config.SettingsNotification[s.Cfgp.Notification[idx].MapNotification].Apikey {
 				apiexternal.NewPushOverClient(config.SettingsNotification[s.Cfgp.Notification[idx].MapNotification].Apikey)
 			}
@@ -1008,7 +997,7 @@ func Getepisodestoimport(serieid *uint, dbserieid *uint, m *apiexternal.FilePars
 	}
 
 	tblepi := make([]database.DbstaticTwoUint, 0, len(episodeArray))
-	var addentry database.DbstaticTwoUint
+
 	for idx := range episodeArray {
 		episodeArray[idx] = strings.Trim(episodeArray[idx], "-EX")
 		if identifiedby != logger.StrDate {
@@ -1017,8 +1006,7 @@ func Getepisodestoimport(serieid *uint, dbserieid *uint, m *apiexternal.FilePars
 				continue
 			}
 		}
-		addentry.Num1 = 0
-		addentry.Num2 = 0
+		var addentry database.DbstaticTwoUint
 
 		parser.GetDBEpisodeID(m, episodeArray[idx], dbserieid, &addentry.Num2)
 
@@ -1124,6 +1112,9 @@ func (s *Organizer) GetSeriesEpisodes(orgadata *Organizerdata, m *apiexternal.Fi
 	}
 
 	if !bl {
+		clear(oldfiles)
+		clear(tblepi)
+		clear(newtbl)
 		return nil, nil, logger.ErrNotAllowed
 	}
 	return newtbl, oldfiles, nil
@@ -1159,7 +1150,7 @@ func (s *Organizer) OrganizeSingleFolder(folder string) {
 	filedata := scanner.NewFileData{Cfgp: s.Cfgp, PathCfg: s.SourcepathCfg, Listid: 0, Checkfiles: false}
 
 	//processfolders := make([]string, 0, 500)
-	filepath.WalkDir(folder, func(fpath string, info fs.DirEntry, errw error) error {
+	_ = filepath.WalkDir(folder, func(fpath string, info fs.DirEntry, errw error) error {
 		if errw != nil {
 			return errw
 		}
@@ -1438,14 +1429,14 @@ func Checktitle(useseries bool, qualcfg *config.QualityConfig, m *database.Parse
 		if !useseries {
 			b = logger.CacheTitlesMovie
 		}
-		a := database.GetCachedObj[database.CacheTwoStringIntExpire](b)
+		a := database.GetCachedTypeObjArr[database.DbstaticTwoStringOneInt](b)
 		if a != nil {
 			intid := int(id)
-			for idx := range a.Arr {
-				if a.Arr[idx].Str1 == "" || a.Arr[idx].Num != intid {
+			for idx := range a {
+				if a[idx].Str1 == "" || a[idx].Num != intid {
 					continue
 				}
-				if apiexternal.ChecknzbtitleB(a.Arr[idx].Str1, a.Arr[idx].Str2, m.Title, qualcfg.CheckYear1, m.Year) {
+				if apiexternal.ChecknzbtitleB(a[idx].Str1, a[idx].Str2, m.Title, qualcfg.CheckYear1, m.Year) {
 					return false
 				}
 			}

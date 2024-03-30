@@ -5,9 +5,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/Kellerman81/go_media_downloader/config"
-	"github.com/Kellerman81/go_media_downloader/logger"
-	"github.com/Kellerman81/go_media_downloader/slidingwindow"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/slidingwindow"
 )
 
 type theMovieDBSearch struct {
@@ -115,9 +115,9 @@ type theMovieDBTVExternal struct {
 // It contains fields for the API key, query parameter API key,
 // and a pointer to the rate limited HTTP client
 type tmdbClient struct {
-	APIKey  string        // The TMDB API key
-	QAPIKey string        // The query parameter API key
-	Client  *rlHTTPClient // Pointer to the rate limited HTTP client
+	APIKey  string       // The TMDB API key
+	QAPIKey string       // The query parameter API key
+	Client  rlHTTPClient // Pointer to the rate limited HTTP client
 }
 
 // Close releases the resources held by a TheMovieDBMovieTitles struct.
@@ -193,7 +193,7 @@ func NewTmdbClient(apikey string, seconds int, calls int, disabletls bool, timeo
 	if calls == 0 {
 		calls = 1
 	}
-	tmdbAPI = &tmdbClient{
+	tmdbAPI = tmdbClient{
 		APIKey:  apikey,
 		QAPIKey: "?api_key=" + apikey,
 		Client: NewClient(
@@ -212,7 +212,7 @@ func SearchTmdbMovie(name string) ([]theMovieDBFindMovieresults, error) {
 		return nil, logger.ErrNotFound
 	}
 	//return DoJSONType[theMovieDBSearch](tmdbAPI.Client, logger.JoinStrings("https://api.themoviedb.org/3/search/movie", tmdbAPI.QAPIKey, "&query=", url.QueryEscape(name)), nil)
-	arr, err := DoJSONType[theMovieDBSearch](tmdbAPI.Client, logger.JoinStrings("https://api.themoviedb.org/3/search/movie", tmdbAPI.QAPIKey, "&query=", url.QueryEscape(name)))
+	arr, err := DoJSONType[theMovieDBSearch](&tmdbAPI.Client, logger.JoinStrings("https://api.themoviedb.org/3/search/movie", tmdbAPI.QAPIKey, "&query=", url.QueryEscape(name)))
 	return arr.Results, err
 }
 
@@ -225,7 +225,7 @@ func SearchTmdbTV(name string) ([]theMovieDBFindTvresults, error) {
 	}
 
 	//return DoJSONType[theMovieDBSearchTV](tmdbAPI.Client, logger.JoinStrings("https://api.themoviedb.org/3/search/tv", tmdbAPI.QAPIKey, "&query=", url.QueryEscape(name)), nil)
-	arr, err := DoJSONType[theMovieDBSearchTV](tmdbAPI.Client, logger.JoinStrings("https://api.themoviedb.org/3/search/tv", tmdbAPI.QAPIKey, "&query=", url.QueryEscape(name)))
+	arr, err := DoJSONType[theMovieDBSearchTV](&tmdbAPI.Client, logger.JoinStrings("https://api.themoviedb.org/3/search/tv", tmdbAPI.QAPIKey, "&query=", url.QueryEscape(name)))
 	return arr.Results, err
 }
 
@@ -236,7 +236,7 @@ func FindTmdbImdb(imdbid string) ([]theMovieDBFindMovieresults, error) {
 	if imdbid == "" || tmdbAPI.Client.checklimiterwithdaily() {
 		return nil, logger.ErrNotFound
 	}
-	arr, err := DoJSONType[theMovieDBFind](tmdbAPI.Client, logger.JoinStrings(logger.URLJoinPath("https://api.themoviedb.org/3/find/", imdbid), tmdbAPI.QAPIKey, "&language=en-US&external_source=imdb_id"))
+	arr, err := DoJSONType[theMovieDBFind](&tmdbAPI.Client, logger.JoinStrings(logger.URLJoinPath("https://api.themoviedb.org/3/find/", imdbid), tmdbAPI.QAPIKey, "&language=en-US&external_source=imdb_id"))
 	return arr.MovieResults, err
 }
 
@@ -247,7 +247,7 @@ func FindTmdbTvdb(thetvdbid int) ([]theMovieDBFindTvresults, error) {
 	if thetvdbid == 0 || tmdbAPI.Client.checklimiterwithdaily() {
 		return nil, logger.ErrNotFound
 	}
-	arr, err := DoJSONType[theMovieDBFind](tmdbAPI.Client, logger.JoinStrings(logger.URLJoinPath("https://api.themoviedb.org/3/find/", strconv.Itoa(thetvdbid)), tmdbAPI.QAPIKey, "&language=en-US&external_source=tvdb_id"))
+	arr, err := DoJSONType[theMovieDBFind](&tmdbAPI.Client, logger.JoinStrings(logger.URLJoinPath("https://api.themoviedb.org/3/find/", strconv.Itoa(thetvdbid)), tmdbAPI.QAPIKey, "&language=en-US&external_source=tvdb_id"))
 	return arr.TvResults, err
 }
 
@@ -258,7 +258,7 @@ func GetTmdbMovie(id int) (theMovieDBMovie, error) {
 	if id == 0 || tmdbAPI.Client.checklimiterwithdaily() {
 		return theMovieDBMovie{}, logger.ErrNotFound
 	}
-	return DoJSONType[theMovieDBMovie](tmdbAPI.Client, logger.JoinStrings(logger.URLJoinPath(apiurltmdbmovies, strconv.Itoa(id)), tmdbAPI.QAPIKey))
+	return DoJSONType[theMovieDBMovie](&tmdbAPI.Client, logger.JoinStrings(logger.URLJoinPath(apiurltmdbmovies, strconv.Itoa(id)), tmdbAPI.QAPIKey))
 }
 
 // GetTmdbMovieTitles retrieves the alternative titles for a TMDb movie by ID.
@@ -268,7 +268,7 @@ func GetTmdbMovieTitles(id int) ([]theMovieDBMovieTitlesList, error) {
 	if id == 0 || tmdbAPI.Client.checklimiterwithdaily() {
 		return nil, logger.ErrNotFound
 	}
-	arr, err := DoJSONType[theMovieDBMovieTitles](tmdbAPI.Client, logger.JoinStrings(logger.URLJoinPath(apiurltmdbmovies, strconv.Itoa(id), "alternative_titles"), tmdbAPI.QAPIKey))
+	arr, err := DoJSONType[theMovieDBMovieTitles](&tmdbAPI.Client, logger.JoinStrings(logger.URLJoinPath(apiurltmdbmovies, strconv.Itoa(id), "alternative_titles"), tmdbAPI.QAPIKey))
 	return arr.Titles, err
 }
 
@@ -279,7 +279,7 @@ func GetTmdbMovieExternal(id int) (theMovieDBTVExternal, error) {
 	if id == 0 || tmdbAPI.Client.checklimiterwithdaily() {
 		return theMovieDBTVExternal{}, logger.ErrNotFound
 	}
-	return DoJSONType[theMovieDBTVExternal](tmdbAPI.Client, logger.JoinStrings(logger.URLJoinPath(apiurltmdbmovies, strconv.Itoa(id), "external_ids"), tmdbAPI.QAPIKey))
+	return DoJSONType[theMovieDBTVExternal](&tmdbAPI.Client, logger.JoinStrings(logger.URLJoinPath(apiurltmdbmovies, strconv.Itoa(id), "external_ids"), tmdbAPI.QAPIKey))
 }
 
 // GetTVExternal retrieves the external IDs for a TV show from TheMovieDB.
@@ -289,5 +289,5 @@ func GetTVExternal(id int) (theMovieDBTVExternal, error) {
 	if id == 0 || tmdbAPI.Client.checklimiterwithdaily() {
 		return theMovieDBTVExternal{}, logger.ErrNotFound
 	}
-	return DoJSONType[theMovieDBTVExternal](tmdbAPI.Client, logger.JoinStrings(logger.URLJoinPath("https://api.themoviedb.org/3/tv/", strconv.Itoa(id), "external_ids"), tmdbAPI.QAPIKey))
+	return DoJSONType[theMovieDBTVExternal](&tmdbAPI.Client, logger.JoinStrings(logger.URLJoinPath("https://api.themoviedb.org/3/tv/", strconv.Itoa(id), "external_ids"), tmdbAPI.QAPIKey))
 }

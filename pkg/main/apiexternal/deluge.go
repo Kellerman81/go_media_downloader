@@ -1,7 +1,7 @@
 package apiexternal
 
 import (
-	"github.com/Kellerman81/go_media_downloader/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	delugeclient "github.com/gdm85/go-libdeluge"
 )
 

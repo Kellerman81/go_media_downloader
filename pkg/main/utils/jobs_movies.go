@@ -5,15 +5,15 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Kellerman81/go_media_downloader/apiexternal"
-	"github.com/Kellerman81/go_media_downloader/config"
-	"github.com/Kellerman81/go_media_downloader/database"
-	"github.com/Kellerman81/go_media_downloader/importfeed"
-	"github.com/Kellerman81/go_media_downloader/logger"
-	"github.com/Kellerman81/go_media_downloader/parser"
-	"github.com/Kellerman81/go_media_downloader/searcher"
-	"github.com/Kellerman81/go_media_downloader/structure"
-	"github.com/Kellerman81/go_media_downloader/worker"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/importfeed"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/parser"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/searcher"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/structure"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/worker"
 )
 
 // jobImportMovieParseV2 parses a movie file at the given path using the
@@ -36,10 +36,8 @@ func jobImportMovieParseV2(m *apiexternal.FileParser, pathv string, updatemissin
 		}
 
 		var bl bool
-		var imdb importfeed.ImdbID
 		if m.M.Imdb != "" {
-			imdb.Imdb = m.M.Imdb
-			m.M.DbmovieID = importfeed.MovieFindDBIDByImdb(&imdb)
+			m.M.DbmovieID = importfeed.MovieFindDBIDByImdb(&m.M.Imdb)
 			if m.M.DbmovieID != 0 {
 				bl = true
 			}
@@ -64,7 +62,7 @@ func jobImportMovieParseV2(m *apiexternal.FileParser, pathv string, updatemissin
 		} else if list.Name == cfgp.Data[0].AddFoundList && cfgp.Data[0].AddFound {
 			importfeed.MovieFindImdbIDByTitle(cfgp.Data[0].AddFound, m)
 			if m.M.DbmovieID == 0 {
-				m.M.DbmovieID, err = importfeed.JobImportMovies(&imdb, cfgp, listid, true)
+				m.M.DbmovieID, err = importfeed.JobImportMovies(m.M.Imdb, cfgp, listid, true)
 			}
 			if err != nil && m.M.MovieID == 0 {
 				database.ScanrowsNdyn(false, database.QueryMoviesGetIDByDBIDListname, &m.M.MovieID, &m.M.DbmovieID, &list.Name)
@@ -131,8 +129,7 @@ func jobImportMovieParseV2(m *apiexternal.FileParser, pathv string, updatemissin
 func getdbmovieidbyimdb(m *apiexternal.FileParser, cfgp *config.MediaTypeConfig, listid int) error {
 	if m.M.DbmovieID == 0 {
 		var err error
-		imdb := importfeed.ImdbID{Imdb: m.M.Imdb}
-		m.M.DbmovieID, err = importfeed.JobImportMovies(&imdb, cfgp, listid, true)
+		m.M.DbmovieID, err = importfeed.JobImportMovies(m.M.Imdb, cfgp, listid, true)
 		if err != nil {
 			return err
 		}
@@ -164,27 +161,20 @@ func importnewmoviessingle(cfgp *config.MediaTypeConfig, list *config.MediaLists
 	listnamefilter := getlistnamefilterignore(list)
 
 	workergroup := worker.WorkerPoolParse.Group()
-	var movieid uint
 	var getid uint
-	var intmovie int
-	var allowed bool
-	args := make([]any, len(list.IgnoreMapLists)+1)
+	args := make([]any, list.IgnoreMapListsLen+1)
 	for i := range list.IgnoreMapLists {
 		args[i] = &list.IgnoreMapLists[i]
 	}
-
-	movies := feed.Movies
-	var imdb importfeed.ImdbID
-	for idx := range movies {
-		if movies[idx] == "" {
+	for idx := range feed.Movies {
+		if feed.Movies[idx] == "" {
 			continue
 		}
 
-		imdb.Imdb = movies[idx]
-		movieid = importfeed.MovieFindDBIDByImdb(&imdb)
+		movieid := importfeed.MovieFindDBIDByImdb(&feed.Movies[idx])
 
 		if movieid != 0 {
-			intmovie = int(movieid)
+			intmovie := int(movieid)
 			if config.SettingsGeneral.UseMediaCache {
 				if database.CacheOneStringTwoIntIndexFunc(logger.CacheMovie, func(elem database.DbstaticOneStringTwoInt) bool {
 					return elem.Num1 == intmovie && strings.EqualFold(elem.Str, list.Name)
@@ -211,10 +201,16 @@ func importnewmoviessingle(cfgp *config.MediaTypeConfig, list *config.MediaLists
 			}
 		}
 
-		allowed, _ = importfeed.AllowMovieImport(&imdb, list.CfgList)
+		allowed, _ := importfeed.AllowMovieImport(feed.Movies[idx], list.CfgList)
 		if allowed {
 			workergroup.Submit(func() {
-				importfeed.JobImportMoviesByList(movies, idx, cfgp, listid, true)
+				defer func() {
+					err := recover()
+					if err != nil {
+						logger.LogDynamic("panic", "Panic in importmovie", logger.NewLogFieldValue(err))
+					}
+				}()
+				importfeed.JobImportMoviesByList(feed.Movies, idx, cfgp, listid, true)
 			})
 		} else {
 			logger.LogDynamic("debug", "not allowed movie", logger.NewLogField(logger.StrImdb, feed.Movies[idx]))
@@ -222,6 +218,7 @@ func importnewmoviessingle(cfgp *config.MediaTypeConfig, list *config.MediaLists
 	}
 	workergroup.Wait()
 	feed.Close()
+	clear(args)
 	return nil
 }
 
@@ -230,14 +227,13 @@ func importnewmoviessingle(cfgp *config.MediaTypeConfig, list *config.MediaLists
 // and updates the quality_reached flag in the database accordingly.
 func checkreachedmoviesflag(listcfg *config.MediaListsConfig) {
 	arr := database.QueryMovies(listcfg.Name)
-	var minPrio int
 	for idx := range arr {
 		if !config.CheckGroup("quality_", arr[idx].QualityProfile) {
 			logger.LogDynamic("debug", "Quality for Movie not found", logger.NewLogField(logger.StrID, arr[idx].ID))
 			continue
 		}
 
-		minPrio, _ = searcher.Getpriobyfiles(false, &arr[idx].ID, false, -1, config.SettingsQuality[arr[idx].QualityProfile])
+		minPrio, _ := searcher.Getpriobyfiles(false, &arr[idx].ID, false, -1, config.SettingsQuality[arr[idx].QualityProfile])
 		if minPrio >= config.SettingsQuality[arr[idx].QualityProfile].CutoffPriority {
 			if !arr[idx].QualityReached {
 				database.ExecN("update movies set quality_reached = 1 where id = ?", &arr[idx].ID)
@@ -293,14 +289,10 @@ func refreshmovies(cfgp *config.MediaTypeConfig, count int, query string, arg *i
 		return
 	}
 
-	var listname string
 	arr := getrefreshmovies(count, query, arg)
 	for idx := range arr {
 		logger.LogDynamic("info", "Refresh Movie", logger.NewLogField(logger.StrImdb, arr[idx]))
-
-		_ = database.ScanrowsNdyn(false,
-			"SELECT listname FROM movies JOIN dbmovies ON dbmovies.id = movies.dbmovie_id WHERE dbmovies.imdb_id = ?",
-			&listname, &arr[idx])
+		listname := database.GetdatarowN[string](false, "SELECT listname FROM movies JOIN dbmovies ON dbmovies.id = movies.dbmovie_id WHERE dbmovies.imdb_id = ?", &arr[idx])
 		if listname == "" {
 			continue
 		}

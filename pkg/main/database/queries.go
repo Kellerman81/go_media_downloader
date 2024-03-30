@@ -9,8 +9,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/Kellerman81/go_media_downloader/config"
-	"github.com/Kellerman81/go_media_downloader/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/jmoiron/sqlx"
 )
 
@@ -241,7 +241,7 @@ const (
 )
 
 var (
-	readWriteMu = &sync.RWMutex{}
+	readWriteMu = sync.RWMutex{}
 	DBConnect   dbGlobal
 	dbData      *sqlx.DB
 	dbImdb      *sqlx.DB
@@ -267,24 +267,45 @@ func cachedelete(key, value any) {
 		case *itemregex:
 			*item.value = regexp.Regexp{}
 			*item = itemregex{}
-		case *cacheOneStringIntExpire:
+		case *cacheTypeExpire[string]:
 			clear(item.Arr)
-			*item = cacheOneStringIntExpire{}
-		case *CacheOneStringTwoIntExpire:
+			item.Arr = nil
+		case *cacheTypeExpire[DbstaticThreeStringTwoInt]:
 			clear(item.Arr)
-			*item = CacheOneStringTwoIntExpire{}
-		case *CacheThreeStringTwoIntExpire:
+			item.Arr = nil
+		case *cacheTypeExpire[DbstaticTwoStringOneInt]:
 			clear(item.Arr)
-			*item = CacheThreeStringTwoIntExpire{}
-		case *cacheStringExpire:
+			item.Arr = nil
+		case *cacheTypeExpire[DbstaticOneStringOneInt]:
 			clear(item.Arr)
-			*item = cacheStringExpire{}
-		case *cacheTwoIntExpire:
+			item.Arr = nil
+		case *cacheTypeExpire[DbstaticOneStringTwoInt]:
 			clear(item.Arr)
-			*item = cacheTwoIntExpire{}
-		case *CacheTwoStringIntExpire:
+			item.Arr = nil
+		case *cacheTypeExpire[DbstaticTwoInt]:
 			clear(item.Arr)
-			*item = CacheTwoStringIntExpire{}
+			item.Arr = nil
+		case *cacheTypeExpire[any]:
+			clear(item.Arr)
+			item.Arr = nil
+			// case *cacheOneStringIntExpire:
+			// 	clear(item.Arr)
+			// 	*item = cacheOneStringIntExpire{}
+			// case *CacheOneStringTwoIntExpire:
+			// 	clear(item.Arr)
+			// 	*item = CacheOneStringTwoIntExpire{}
+			// case *CacheThreeStringTwoIntExpire:
+			// 	clear(item.Arr)
+			// 	*item = CacheThreeStringTwoIntExpire{}
+			// case *cacheStringExpire:
+			// 	clear(item.Arr)
+			// 	*item = cacheStringExpire{}
+			// case *cacheTwoIntExpire:
+			// 	clear(item.Arr)
+			// 	*item = cacheTwoIntExpire{}
+			// case *CacheTwoStringIntExpire:
+			// 	clear(item.Arr)
+			// 	*item = CacheTwoStringIntExpire{}
 		}
 	}
 	cache.items.Delete(key)
@@ -395,9 +416,9 @@ type fieldconfig struct {
 // result. It returns a fieldconfig struct indicating whether the value is a
 // simple type to scan directly, a struct to scan with StructScan, or a custom
 // slice of fields to scan individually.
-func getfunc2[T any](u *T) fieldconfig {
+func getfunc2(u any) fieldconfig {
 	var f fieldconfig
-	switch elem := any(u).(type) {
+	switch elem := u.(type) {
 	case *DbstaticOneIntOneBool:
 		f.arr = []any{&elem.Num, &elem.Bl}
 	case *dbstaticOneInt:
@@ -436,7 +457,7 @@ func getfunc2[T any](u *T) fieldconfig {
 // result into the given struct pointer. It handles locking/unlocking the read
 // write mutex, logging any errors, and returning sql.ErrNoRows if no rows were
 // returned.
-func structscan[T any](querystring string, imdb bool, u *T, id ...any) error {
+func structscan(querystring string, imdb bool, u any, id ...any) error {
 	readWriteMu.RLock()
 	err := GlobalCache.GetStmt(querystring, imdb, getdb(imdb)).QueryRowx(id...).StructScan(u)
 	readWriteMu.RUnlock()
@@ -456,7 +477,7 @@ func structscan[T any](querystring string, imdb bool, u *T, id ...any) error {
 // result into the given generic type T. It handles locking/unlocking the read
 // write mutex, logging any errors, and returning sql.ErrNoRows if no rows were
 // returned.
-func structscanG[T any, R any](querystring string, imdb bool, id *R) (T, error) {
+func structscanG[T any](querystring string, imdb bool, id any) (T, error) {
 	var u T
 	err := structscan(querystring, imdb, &u, id)
 	return u, err
@@ -828,7 +849,7 @@ func GetImdbRating(arg *string, movie *Dbmovie, overwrite bool) {
 // QueryImdbAka queries the imdb_akas table to get alternate titles and regional releases for the given IMDb ID.
 // It takes a Querywithargs for pagination and filtering, and a pointer to the IMDb ID to query on.
 // It returns a slice of ImdbAka structs containing the alternate title data.
-func QueryImdbAka[R any](qu Querywithargs, arg *R) []imdbAka {
+func QueryImdbAka(qu Querywithargs, arg any) []imdbAka {
 	qu.size = -1
 	if qu.Limit >= 1 {
 		qu.size = qu.Limit
@@ -958,12 +979,12 @@ func (qu *Querywithargs) Buildquery(count bool) {
 // the query string, a pointer to the struct to scan into,
 // and optional variadic arguments.
 // It returns any error from the query.
-func ScanrowsNdyn[R any](imdb bool, querystring string, obj *R, args ...any) error {
+func ScanrowsNdyn(imdb bool, querystring string, obj any, args ...any) error {
 	readWriteMu.RLock()
 	err := GlobalCache.GetStmt(querystring, imdb, getdb(imdb)).QueryRow(args...).Scan(obj)
 	readWriteMu.RUnlock()
 	if err != nil {
-		switch val := any(obj).(type) {
+		switch val := obj.(type) {
 		case *int:
 			if *val != 0 {
 				*val = 0
@@ -1014,7 +1035,7 @@ func GetdatarowN[O any](imdb bool, querystring string, args ...any) O {
 // GetdatarowArgs executes the given querystring with the provided argument
 // and scans the result into the given slice of objects, handling locking,
 // logging errors, and returning the scanned objects.
-func GetdatarowArgs[T any](querystring string, arg *T, objs ...any) {
+func GetdatarowArgs(querystring string, arg any, objs ...any) {
 	readWriteMu.RLock()
 	err := GlobalCache.GetStmt(querystring, false, dbData).QueryRow(arg).Scan(objs...)
 	readWriteMu.RUnlock()
@@ -1250,14 +1271,14 @@ func DBIntegrityCheck() string {
 // It first checks the cache if enabled, otherwise queries the DB directly.
 func Getentryalternatetitlesdirect(dbid uint, useseries bool) []DbstaticTwoStringOneInt {
 	if config.SettingsGeneral.UseMediaCache {
-		a := GetCachedObj[CacheTwoStringIntExpire](logger.GetStringsMap(useseries, logger.CacheMediaTitles))
-		b := a.Arr[:0]
+		a := GetCachedTypeObjArr[DbstaticTwoStringOneInt](logger.GetStringsMap(useseries, logger.CacheMediaTitles))
+		b := a[:0]
 		intid := int(dbid)
-		for idx := range a.Arr {
-			if a.Arr[idx].Num != intid {
+		for idx := range a {
+			if a[idx].Num != intid {
 				continue
 			}
-			b = append(b, a.Arr[idx])
+			b = append(b, a[idx])
 		}
 		return b
 	}

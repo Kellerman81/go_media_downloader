@@ -9,12 +9,12 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Kellerman81/go_media_downloader/apiexternal"
-	"github.com/Kellerman81/go_media_downloader/config"
-	"github.com/Kellerman81/go_media_downloader/database"
-	"github.com/Kellerman81/go_media_downloader/logger"
-	"github.com/Kellerman81/go_media_downloader/nzbget"
-	"github.com/Kellerman81/go_media_downloader/scanner"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/nzbget"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/scanner"
 )
 
 type downloadertype struct {
@@ -273,18 +273,15 @@ func (d *downloadertype) getdownloadtargetfolder() string {
 // messages as templates using the downloader data.
 func (d *downloadertype) notify() {
 	d.Time = logger.TimeGetNow().Format(logger.GetTimeFormat())
-	var messagetext, messageTitle string
-	var err error
-	var bl bool
 	for idx := range d.Cfgp.Notification {
 		if !strings.EqualFold(d.Cfgp.Notification[idx].Event, "added_download") {
 			continue
 		}
-		bl, messagetext = logger.ParseStringTemplate(d.Cfgp.Notification[idx].Message, d)
+		bl, messagetext := logger.ParseStringTemplate(d.Cfgp.Notification[idx].Message, d)
 		if bl {
 			continue
 		}
-		bl, messageTitle = logger.ParseStringTemplate(d.Cfgp.Notification[idx].Title, d)
+		bl, messageTitle := logger.ParseStringTemplate(d.Cfgp.Notification[idx].Title, d)
 		if bl {
 			continue
 		}
@@ -299,7 +296,7 @@ func (d *downloadertype) notify() {
 				apiexternal.NewPushOverClient(d.Cfgp.Notification[idx].CfgNotification.Apikey)
 			}
 
-			err = apiexternal.SendPushoverMessage(messagetext, messageTitle, d.Cfgp.Notification[idx].CfgNotification.Recipient)
+			err := apiexternal.SendPushoverMessage(messagetext, messageTitle, d.Cfgp.Notification[idx].CfgNotification.Recipient)
 			if err != nil {
 				logger.LogDynamic("error", "Error sending pushover", logger.NewLogFieldValue(err))
 			} else {
@@ -321,7 +318,7 @@ func (d *downloadertype) downloadByDrone() error {
 		filename = d.Targetfile + ".torrent"
 	}
 	urlv := html.UnescapeString(d.Nzb.NZB.DownloadURL)
-	resp, err := apiexternal.Getnewznabclient(d.IndexerCfg).Client.Getdo(urlv, nil, true)
+	resp, err := apiexternal.GetnewznabclientRlClient(d.IndexerCfg).Getdo(urlv, nil, true)
 	if err != nil {
 		return err
 	}

@@ -3,8 +3,8 @@ package apiexternal
 import (
 	"time"
 
-	"github.com/Kellerman81/go_media_downloader/logger"
-	"github.com/Kellerman81/go_media_downloader/slidingwindow"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/slidingwindow"
 	"github.com/gregdel/pushover"
 )
 
@@ -14,7 +14,7 @@ type pushOverClient struct {
 	// APIKey is the Pushover API key.
 	APIKey string
 	// Limiter limits requests to the Pushover API.
-	Limiter *slidingwindow.Limiter
+	Limiter slidingwindow.Limiter
 }
 
 // NewPushOverClient initializes a new pushOverClient instance.
@@ -22,16 +22,16 @@ type pushOverClient struct {
 // It initializes a rate limiter to limit messages to 3 per 10 seconds.
 // If pushoverAPI is already initialized, it does nothing.
 func NewPushOverClient(apikey string) {
-	if pushoverAPI != nil {
+	if pushoverAPI.APIKey != "" {
 		return
 	}
-	pushoverAPI = &pushOverClient{APIKey: apikey, Limiter: slidingwindow.NewLimiter(10*time.Second, 3)}
+	pushoverAPI = pushOverClient{APIKey: apikey, Limiter: slidingwindow.NewLimiter(10*time.Second, 3)}
 }
 
 // GetPushOverKey returns the API key for the pushover client.
 // It returns an empty string if the client has not been initialized.
 func GetPushOverKey() string {
-	if pushoverAPI == nil {
+	if pushoverAPI.APIKey != "" {
 		return ""
 	}
 	return pushoverAPI.APIKey

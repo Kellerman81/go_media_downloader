@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Kellerman81/go_media_downloader/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/pelletier/go-toml/v2"
 	"github.com/recoilme/pudge"
 	"golang.org/x/oauth2"
@@ -1013,6 +1013,8 @@ func (q *SerieConfig) Close() {
 	if q == nil {
 		return
 	}
+	q.AlternateName = nil
+	q.DisallowedName = nil
 	*q = SerieConfig{}
 }
 

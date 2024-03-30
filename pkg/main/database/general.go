@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Kellerman81/go_media_downloader/config"
-	"github.com/Kellerman81/go_media_downloader/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/jmoiron/sqlx"
@@ -274,7 +274,6 @@ func Backup(backupPath string, maxbackups int) error {
 	defer clear(backupFiles)
 
 	var tu time.Time
-	var addfile backupInfo
 	for idx := range files {
 		if files[idx].IsDir() {
 			continue
@@ -282,7 +281,7 @@ func Backup(backupPath string, maxbackups int) error {
 		if !logger.HasPrefixI(files[idx].Name(), "data.db.") {
 			continue
 		}
-		addfile.timestamp = timeFromName(files[idx].Name(), "data.db.")
+		addfile := backupInfo{timestamp: timeFromName(files[idx].Name(), "data.db.")}
 		if !addfile.timestamp.Equal(tu) {
 			addfile.path = files[idx].Name()
 			backupFiles = append(backupFiles, addfile)

@@ -8,13 +8,13 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/Kellerman81/go_media_downloader/apiexternal"
-	"github.com/Kellerman81/go_media_downloader/config"
-	"github.com/Kellerman81/go_media_downloader/database"
-	"github.com/Kellerman81/go_media_downloader/importfeed"
-	"github.com/Kellerman81/go_media_downloader/logger"
-	"github.com/Kellerman81/go_media_downloader/pool"
-	"github.com/Kellerman81/go_media_downloader/searcher"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/importfeed"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/pool"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/searcher"
 )
 
 // feedResults is a struct that contains the results from processing feeds
@@ -27,10 +27,14 @@ type feedResults struct {
 
 var (
 	globalCounter = sync.Map{}
-	plfeeds       = pool.NewPool(100, 0, func(b *feedResults) {}, func(b *feedResults) {
-		b.Movies = nil
-		b.Series.Serie = nil
-		*b = feedResults{}
+	plfeeds       = pool.NewPool(100, 0, func(b *feedResults) {
+		b.Movies = make([]string, 0, 10000)
+	}, func(b *feedResults) {
+		clear(b.Movies)
+		b.Movies = b.Movies[:0]
+		clear(b.Series.Serie)
+		b.Series.Serie = b.Series.Serie[:0]
+		b.Series = config.MainSerieConfig{}
 	})
 )
 
@@ -67,13 +71,24 @@ func gettraktmovielist(usetraktmovie int, cfglist *config.MediaListsConfig) (*fe
 // (anticipated, trending, popular, or user list) and returns a feedResults struct
 // containing the movie IDs to check if the movie already exists before making
 // more API calls to get full details.
-func processmoviesgroup[T apiexternal.TraktUserList | apiexternal.TraktMovie | apiexternal.TraktMovieAnticipated | apiexternal.TraktMovieTrending](cfglist *config.MediaListsConfig, traktpopular []T) (*feedResults, error) {
+func processmoviesgroup[T any](cfglist *config.MediaListsConfig, traktpopular []T) (*feedResults, error) {
 	if len(traktpopular) == 0 {
 		return nil, logger.Errwrongtype
 	}
 	d := plfeeds.Get()
-	d.Movies = make([]string, 0, len(traktpopular))
-	looptraktmedia(false, cfglist, traktpopular, d)
+	//d.Movies = make([]string, 0, len(traktpopular))
+	for idx := range traktpopular {
+		switch tt := any(traktpopular[idx]).(type) {
+		case apiexternal.TraktUserList:
+			processmovies(d, &tt.Movie, cfglist)
+		case apiexternal.TraktMovieAnticipated:
+			processmovies(d, &tt.Movie, cfglist)
+		case apiexternal.TraktMovieTrending:
+			processmovies(d, &tt.Movie, cfglist)
+		case apiexternal.TraktMovie:
+			processmovies(d, &tt, cfglist)
+		}
+	}
 	return d, nil
 }
 
@@ -129,37 +144,19 @@ func processeeriesgroup[T any](traktpopular []T) (*feedResults, error) {
 	}
 	d := plfeeds.Get()
 	d.Series.Serie = make([]config.SerieConfig, 0, len(traktpopular))
-	looptraktmedia(true, nil, traktpopular, d)
-	return d, nil
-}
-
-// looptraktmedia iterates through the provided Trakt API response slice
-// traktpopular, detects the concrete Trakt struct type for each item, and
-// calls either processseries() or processmovies() accordingly to extract the
-// title and external IDs into the feedResults struct d.
-func looptraktmedia[T any](useseries bool, cfglist *config.MediaListsConfig, traktpopular []T, d *feedResults) {
 	for idx := range traktpopular {
 		switch tt := any(traktpopular[idx]).(type) {
 		case apiexternal.TraktUserList:
-			if useseries {
-				processseries(d, &tt.Serie, idx)
-			} else {
-				processmovies(d, &tt.Movie, cfglist)
-			}
+			processseries(d, &tt.Serie, idx)
 		case apiexternal.TraktSerieAnticipated:
 			processseries(d, &tt.Serie, idx)
 		case apiexternal.TraktSerieTrending:
 			processseries(d, &tt.Serie, idx)
 		case apiexternal.TraktSerie:
 			processseries(d, &tt, idx)
-		case apiexternal.TraktMovieAnticipated:
-			processmovies(d, &tt.Movie, cfglist)
-		case apiexternal.TraktMovieTrending:
-			processmovies(d, &tt.Movie, cfglist)
-		case apiexternal.TraktMovie:
-			processmovies(d, &tt, cfglist)
 		}
 	}
+	return d, nil
 }
 
 // processseries populates the idx'th element in the feedResults series list
@@ -265,19 +262,18 @@ func getimdbcsv(cfglistp *config.MediaListsConfig) (*feedResults, error) {
 	listnamefilter := getlistnamefilterignore(cfglistp)
 
 	d := plfeeds.Get()
-	d.Movies = make([]string, 0, c+10)
+	//d.Movies = make([]string, 0, c+10)
 
 	var movieid uint
 	var intmovie int
 	var allowed bool
 
-	args := make([]any, len(cfglistp.IgnoreMapLists)+1)
+	args := make([]any, cfglistp.IgnoreMapListsLen+1)
 	for i := range cfglistp.IgnoreMapLists {
 		args[i] = &cfglistp.IgnoreMapLists[i]
 	}
 
 	var getid uint
-	var imdb importfeed.ImdbID
 	for {
 		record, err := parserimdb.Read()
 		if errors.Is(err, io.EOF) {
@@ -289,8 +285,7 @@ func getimdbcsv(cfglistp *config.MediaListsConfig) (*feedResults, error) {
 		if record[1] == "" || record[1] == "Const" || record[1] == "tconst" {
 			continue
 		}
-		imdb.Imdb = record[1]
-		movieid = importfeed.MovieFindDBIDByImdb(&imdb)
+		movieid = importfeed.MovieFindDBIDByImdb(&record[1])
 
 		if movieid != 0 {
 			if getmovieid(&movieid, cfglistp) {
@@ -314,11 +309,11 @@ func getimdbcsv(cfglistp *config.MediaListsConfig) (*feedResults, error) {
 				}
 			}
 		} else {
-			logger.LogDynamic("debug", "dbmovie not found in cache", logger.NewLogField(logger.StrImdb, imdb.Imdb))
+			logger.LogDynamic("debug", "dbmovie not found in cache", logger.NewLogField(logger.StrImdb, &record[1]))
 		}
-		allowed, _ = importfeed.AllowMovieImport(&imdb, cfglistp.CfgList)
+		allowed, _ = importfeed.AllowMovieImport(record[1], cfglistp.CfgList)
 		if allowed {
-			d.Movies = append(d.Movies, imdb.Imdb)
+			d.Movies = append(d.Movies, record[1])
 		}
 	}
 	//processimdbcsvrow(parserimdb, cfglistp, &d, listnamefilter)

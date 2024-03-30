@@ -26,8 +26,8 @@ type Limiter struct {
 
 // NewLimiter returns a new Limiter that limits events to max
 // events per interval duration.
-func NewLimiter(interval time.Duration, max int64) *Limiter {
-	return &Limiter{interval: interval, max: max, start: time.Now(), last: time.Now()}
+func NewLimiter(interval time.Duration, max int64) Limiter {
+	return Limiter{interval: interval, max: max, start: time.Now(), last: time.Now()}
 }
 
 // add increments the count and updates the last and start timestamps if

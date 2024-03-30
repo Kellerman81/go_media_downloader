@@ -13,15 +13,15 @@ import (
 
 	"github.com/goccy/go-json"
 
-	"github.com/Kellerman81/go_media_downloader/apiexternal"
-	"github.com/Kellerman81/go_media_downloader/config"
-	"github.com/Kellerman81/go_media_downloader/database"
-	"github.com/Kellerman81/go_media_downloader/logger"
-	"github.com/Kellerman81/go_media_downloader/parser"
-	"github.com/Kellerman81/go_media_downloader/scanner"
-	"github.com/Kellerman81/go_media_downloader/structure"
-	"github.com/Kellerman81/go_media_downloader/utils"
-	"github.com/Kellerman81/go_media_downloader/worker"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/parser"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/scanner"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/structure"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/utils"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/worker"
 	gin "github.com/gin-gonic/gin"
 )
 

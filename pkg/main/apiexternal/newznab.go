@@ -9,27 +9,21 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Kellerman81/go_media_downloader/config"
-	"github.com/Kellerman81/go_media_downloader/logger"
-	"github.com/Kellerman81/go_media_downloader/slidingwindow"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/slidingwindow"
 )
-
-// clients stores a name and client instance
-type clients struct {
-	name string  // name of the client
-	c    *client // pointer to the client instance
-}
 
 // Client is a type for interacting with a newznab or torznab api
 // It contains fields for the api key, base API URL, debug mode,
 // and a pointer to the rate limited HTTP client
 type client struct {
-	apikey        string        // the API key for authentication
-	aPIBaseURL    string        // the base URL of the API
-	aPIBaseURLStr string        // the base URL as a string
-	aPIUserID     string        // the user ID for the API
-	debug         bool          // whether to enable debug logging
-	Client        *rlHTTPClient // pointer to the rate limited HTTP client
+	apikey        string       // the API key for authentication
+	aPIBaseURL    string       // the base URL of the API
+	aPIBaseURLStr string       // the base URL as a string
+	aPIUserID     string       // the user ID for the API
+	debug         bool         // whether to enable debug logging
+	Client        rlHTTPClient // pointer to the rate limited HTTP client
 }
 
 func setfield(field string, value string, n *nzb) {
@@ -38,7 +32,7 @@ func setfield(field string, value string, n *nzb) {
 		if n.Title == "" {
 			n.Title = value
 		}
-	case strlink:
+	case strlink, strurl:
 		if n.DownloadURL == "" {
 			n.DownloadURL = value
 		}
@@ -46,7 +40,7 @@ func setfield(field string, value string, n *nzb) {
 		if n.ID == "" {
 			n.ID = value
 		}
-	case strsize:
+	case strsize, "length":
 		if n.Size == 0 {
 			n.Size = logger.StringToInt64(value)
 		}
@@ -150,10 +144,9 @@ func qualityIndexerByQualityAndTemplate(bld *bytes.Buffer, cfgqual *config.Quali
 // and calls checkLimiter on it to check if the rate limit has been hit.
 // Returns true if under limit, false if over limit, and error if there was a problem.
 func NewznabCheckLimiter(cfgindexer *config.IndexersConfig) (bool, error) {
-	for idxi := range newznabClients {
-		if newznabClients[idxi].name == cfgindexer.URL {
-			return newznabClients[idxi].c.Client.checkLimiter(false, 20, 1)
-		}
+	c, ok := newznabClients[cfgindexer.URL]
+	if ok {
+		return c.Client.checkLimiter(false, 20, 1)
 	}
 	return true, nil
 }
@@ -300,14 +293,23 @@ func QueryNewznabMovieImdb(cfgind *config.IndexersConfig, qual *config.QualityCo
 // It checks if a client already exists for the given URL,
 // and returns it if found. Otherwise creates a new client and caches it.
 func Getnewznabclient(row *config.IndexersConfig) *client {
-	for idxi := range newznabClients {
-		if newznabClients[idxi].name == row.URL {
-			return newznabClients[idxi].c
-		}
+	c, ok := newznabClients[row.URL]
+	if ok && c != nil {
+		return c
 	}
-	c := newNewznab(true, row)
-	newznabClients = append(newznabClients, clients{name: row.URL, c: c})
-	return c
+	d := newNewznab(true, row)
+	newznabClients[row.URL] = &d
+	return &d
+}
+
+func GetnewznabclientRlClient(row *config.IndexersConfig) *rlHTTPClient {
+	c, ok := newznabClients[row.URL]
+	if ok && c != nil {
+		return &c.Client
+	}
+	d := newNewznab(true, row)
+	newznabClients[row.URL] = &d
+	return &d.Client
 }
 
 // QueryNewznabTvTvdb queries the Newznab indexer for TV episodes matching
@@ -475,7 +477,7 @@ func QueryNewznabRSSLast(cfgind *config.IndexersConfig, qual *config.QualityConf
 // It takes in debug mode and indexer configuration row parameters.
 // It sets up rate limiting and timeouts based on the configuration.
 // It returns a pointer to the constructed Client instance.
-func newNewznab(debug bool, row *config.IndexersConfig) *client {
+func newNewznab(debug bool, row *config.IndexersConfig) client {
 	if row.Limitercalls == 0 {
 		row.Limitercalls = 3
 	}
@@ -483,12 +485,12 @@ func newNewznab(debug bool, row *config.IndexersConfig) *client {
 		row.Limiterseconds = 10
 	}
 
-	var limiter *slidingwindow.Limiter
+	var limiter slidingwindow.Limiter
 	if row.LimitercallsDaily != 0 {
 		limiter = slidingwindow.NewLimiter(24*time.Hour, int64(row.LimitercallsDaily))
 	}
 
-	return &client{
+	return client{
 		apikey:        row.Apikey,
 		aPIBaseURL:    row.URL,
 		aPIBaseURLStr: row.URL,
@@ -521,14 +523,14 @@ func (c *client) processurl(ind *config.IndexersConfig, qual *config.QualityConf
 	if c.Client.checklimiterwithdaily() {
 		return XMLResponse{Err: logger.Errnoresults}
 	}
-	result, err := DoJSONType[searchResponseJSON1](c.Client, urlv)
+	result, err := DoJSONType[searchResponseJSON1](&c.Client, urlv)
 	if err == nil {
 		if len(result.Channel.Item) == 0 {
 			return XMLResponse{Err: logger.Errnoresults}
 		}
 		return c.processjson1(&result, ind, qual, tillid, results)
 	}
-	result2, err := DoJSONType[searchResponseJSON2](c.Client, urlv)
+	result2, err := DoJSONType[searchResponseJSON2](&c.Client, urlv)
 	if err != nil {
 		return XMLResponse{Err: err}
 	}

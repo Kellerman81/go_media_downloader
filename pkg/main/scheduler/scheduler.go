@@ -7,11 +7,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Kellerman81/go_media_downloader/config"
-	"github.com/Kellerman81/go_media_downloader/database"
-	"github.com/Kellerman81/go_media_downloader/logger"
-	"github.com/Kellerman81/go_media_downloader/utils"
-	"github.com/Kellerman81/go_media_downloader/worker"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/utils"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/worker"
 )
 
 // InitScheduler is called at startup to initialize the scheduler. This includes checking for the existence of the scheduler and setting up the

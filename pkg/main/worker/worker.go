@@ -5,9 +5,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Kellerman81/go_media_downloader/database"
-	"github.com/Kellerman81/go_media_downloader/logger"
-	"github.com/Kellerman81/go_media_downloader/pool"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/pool"
 	"github.com/alitto/pond"
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
@@ -57,7 +57,7 @@ var lastaddedfeeds = time.Now().Add(time.Second - 1)
 // lastaddedsearch is a timestamp for tracking last search time
 var lastaddedsearch = time.Now().Add(time.Second - 1)
 
-var mu = &sync.Mutex{}
+var mu = sync.Mutex{}
 
 // pljobs is a Pool for tracking jobs
 var pljobs = pool.NewPool(100, 0, func(b *Job) {}, func(b *Job) {
@@ -258,16 +258,18 @@ func DispatchCron(cronStr string, name string, queue string, fn func()) error {
 	if err != nil {
 		return err
 	}
-	globalScheduleSet.Store(schedulerID, &JobSchedule{
+	dcentry := dc.Entry(cjob)
+	s := JobSchedule{
 		JobName:        name,
 		JobID:          newuuid(),
 		ID:             schedulerID,
 		ScheduleTyp:    "cron",
 		ScheduleString: cronStr,
 		LastRun:        time.Time{},
-		NextRun:        dc.Entry(cjob).Next,
-		CronSchedule:   dc.Entry(cjob).Schedule,
-		CronID:         cjob})
+		NextRun:        dcentry.Next,
+		CronSchedule:   dcentry.Schedule,
+		CronID:         cjob}
+	globalScheduleSet.Store(schedulerID, &s)
 	// globalScheduleSet.values = append(globalScheduleSet.values, JobSchedule{
 	// 	JobName:        name,
 	// 	JobID:          newuuid(),
@@ -328,7 +330,7 @@ func DispatchEvery(interval time.Duration, name string, queue string, fn func())
 			addjob(name, queue, fn, schedulerID)
 		}
 	}()
-	globalScheduleSet.Store(schedulerID, &JobSchedule{
+	s := JobSchedule{
 		JobName:        name,
 		JobID:          newuuid(),
 		ID:             schedulerID,
@@ -336,7 +338,8 @@ func DispatchEvery(interval time.Duration, name string, queue string, fn func())
 		ScheduleString: interval.String(),
 		LastRun:        time.Time{},
 		Interval:       interval,
-		NextRun:        logger.TimeGetNow().Add(interval)})
+		NextRun:        logger.TimeGetNow().Add(interval)}
+	globalScheduleSet.Store(schedulerID, &s)
 	// globalScheduleSet.values = append(globalScheduleSet.values, JobSchedule{
 	// 	JobName:        name,
 	// 	JobID:          newuuid(),

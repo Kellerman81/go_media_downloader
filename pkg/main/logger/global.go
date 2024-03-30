@@ -14,7 +14,7 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/Kellerman81/go_media_downloader/pool"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/pool"
 	"github.com/goccy/go-json"
 	"github.com/pelletier/go-toml/v2"
 
@@ -395,7 +395,7 @@ func ParseToml(r io.Reader, obj any) error {
 
 // ParseStringTemplate parses a text/template string into a template.Template, caches it, and executes it with the given data.
 // It returns the executed template string and any error encountered.
-func ParseStringTemplate[S any](message string, messagedata *S) (bool, string) {
+func ParseStringTemplate(message string, messagedata any) (bool, string) {
 	tmplmessage := textparser.Lookup(message)
 	if tmplmessage == nil {
 		var err error

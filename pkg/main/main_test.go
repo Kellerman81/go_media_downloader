@@ -26,18 +26,18 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/Kellerman81/go_media_downloader/apiexternal"
-	"github.com/Kellerman81/go_media_downloader/config"
-	"github.com/Kellerman81/go_media_downloader/database"
-	"github.com/Kellerman81/go_media_downloader/importfeed"
-	"github.com/Kellerman81/go_media_downloader/logger"
-	"github.com/Kellerman81/go_media_downloader/metadata"
-	"github.com/Kellerman81/go_media_downloader/parser"
-	"github.com/Kellerman81/go_media_downloader/scanner"
-	"github.com/Kellerman81/go_media_downloader/searcher"
-	"github.com/Kellerman81/go_media_downloader/slidingwindow"
-	"github.com/Kellerman81/go_media_downloader/structure"
-	"github.com/Kellerman81/go_media_downloader/worker"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/importfeed"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/metadata"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/parser"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/scanner"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/searcher"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/slidingwindow"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/structure"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/worker"
 
 	"github.com/mozillazg/go-unidecode"
 	"github.com/mozillazg/go-unidecode/table"
@@ -1127,7 +1127,7 @@ func TestQueryXML1(b *testing.T) {
 		true,
 		slidingwindow.NewLimiter(time.Duration(1)*time.Second, 10000000),
 		false,
-		nil, 10)
+		slidingwindow.Limiter{}, 10)
 	results := make([]apiexternal.Nzbwithprio, 0, 100)
 	c.DoXMLItem(config.SettingsIndexer["nzbgeek"], config.SettingsQuality["sd"], "", "nzbgeek.info", "https://api.nzbgeek.info/rss?t=2000&limit=100&dl=1&r=rEUDNavst5HxWG2SlhkuYg1WXC6qNSt7", &sync.Mutex{}, 100, &results)
 	//b.Log(results)
@@ -1220,7 +1220,7 @@ func BenchmarkQueryXML1Item(b *testing.B) {
 		true,
 		slidingwindow.NewLimiter(time.Duration(1)*time.Second, 10000000),
 		false,
-		nil, 10)
+		slidingwindow.Limiter{}, 10)
 	results := make([]apiexternal.Nzbwithprio, 0, 100)
 	b.ResetTimer()
 	b.ReportAllocs()
@@ -1650,7 +1650,7 @@ func BenchmarkQuery15(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		importfeed.JobImportMovies(&importfeed.ImdbID{}, nil, -1, false)
+		importfeed.JobImportMovies("", nil, -1, false)
 	}
 }
 

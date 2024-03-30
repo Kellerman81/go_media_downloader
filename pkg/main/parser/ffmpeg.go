@@ -10,11 +10,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Kellerman81/go_media_downloader/apiexternal"
-	"github.com/Kellerman81/go_media_downloader/config"
-	"github.com/Kellerman81/go_media_downloader/database"
-	"github.com/Kellerman81/go_media_downloader/logger"
-	"github.com/Kellerman81/go_media_downloader/pool"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/pool"
 	"github.com/goccy/go-json"
 )
 
@@ -141,7 +141,7 @@ type ffProbeStreamTags struct {
 }
 
 var plffprobe = pool.NewPool(100, 0, func(b *ffProbeJSON) {}, func(b *ffProbeJSON) {
-	b.Streams = nil
+	clear(b.Streams)
 	*b = ffProbeJSON{}
 })
 
@@ -174,7 +174,7 @@ func (c *Cmdout) Close() {
 	if c == nil {
 		return
 	}
-	c.Out = nil
+	clear(c.Out)
 	*c = Cmdout{}
 }
 
@@ -202,7 +202,7 @@ func ExecCmd(com string, file string, typ string) Cmdout {
 	outputBuf := logger.PlBuffer.Get()
 	stdErr := logger.PlBuffer.Get()
 	cmd := exec.Command(com, args...)
-	args = nil
+	clear(args)
 	cmd.Stdout = outputBuf
 	cmd.Stderr = stdErr
 	out := Cmdout{Err: cmd.Run()}

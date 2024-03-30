@@ -96,8 +96,8 @@ Inspirations: Radarr/Sonarr and Flexget
 - Limiters (You can define how much you want to storm an API)
 - Configure which Meta Sources to use
 - Configure your Qualities and their priorities (use parse/quality api to test this) including wanted and Defaults
-- Use FProbe to get Media Information (dimensions, runtime, audio language)
-- Currently completly API and Scheduler controlled - NO User Inteface yet - contact me if you want to create one - i most likly won't
+- Use FProbe or mediainfo to get Media Information (dimensions, runtime, audio language)
+- Currently completly API and Scheduler controlled - basic webinterface which needs to be replace is included
 
 ### Under Consideration
 
@@ -118,21 +118,21 @@ Inspirations: Radarr/Sonarr and Flexget
 ## Ram Usage
 
 Currently seen: 
-Constanly in use - between 30MB-200MB-peek:1-1.5GB
+Constanly in use - between 30MB-400MB-peek:1-1.5GB
 Swap Memory: Default ~300-600MB - on a file move action the swap memory will grow to at least the complete file size - so for a 8GB file expect also this much!
 
 ## Get started
 
 - Guide for Docker:
 	- Download Repository - and create docker container for build/run using compose files/nzbs
-	- setup your config and name it config.toml ! - this will initialize the config.db and also update it on change -> it will create an example if no config could be found
+	- setup your config and name it config.toml ! - this will initialize the config.db -> it will create an example if no config could be found
 	- setup your series.toml if wanted
 	- Start the build container to build the executable (use compose-build.yml to create the container)
 	- Start the run container to run the executable (use compose-run.yml to create the container)
   
 - Guide for Windows/Linux/Mac:
 	- Download latest [prebuild zip](https://github.com/Kellerman81/go_media_downloader/releases/tag/latest_develop) for your OS or the latest release
-	- setup your config and name it config.toml ! - this will initialize the config.db and also update it on change
+	- setup your config and name it config.toml -> it will create an example if no config could be found
 	- setup your series.toml if wanted
 	- Run the go_media_downloader executable
 

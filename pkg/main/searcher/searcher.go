@@ -9,15 +9,15 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Kellerman81/go_media_downloader/apiexternal"
-	"github.com/Kellerman81/go_media_downloader/config"
-	"github.com/Kellerman81/go_media_downloader/database"
-	"github.com/Kellerman81/go_media_downloader/downloader"
-	"github.com/Kellerman81/go_media_downloader/importfeed"
-	"github.com/Kellerman81/go_media_downloader/logger"
-	"github.com/Kellerman81/go_media_downloader/parser"
-	"github.com/Kellerman81/go_media_downloader/pool"
-	"github.com/Kellerman81/go_media_downloader/worker"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/downloader"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/importfeed"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/parser"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/pool"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/worker"
 )
 
 // searchResults is a struct that contains slices of Nzbwithprio for Raw, Denied, and Accepted results
@@ -44,9 +44,9 @@ type ConfigSearcher struct {
 	// Sourceentry is a Nzbwithprio result
 	Sourceentry apiexternal.Nzbwithprio
 	// Dl contains the search results
-	Dl searchResults
+	Dl *searchResults
 	// Mu is a mutex for synchronization
-	Mu *sync.Mutex
+	Mu sync.Mutex
 }
 
 const (
@@ -57,10 +57,10 @@ var (
 	episodeprefixarray = []string{"", " ", "0", " 0"}
 	//plsearcher         sync.Pool
 	plparams = pool.NewPool(100, 0, func(b *searchparams) {}, func(b *searchparams) {
-		b.sourcealttitles = nil
+		clear(b.sourcealttitles)
 		*b = searchparams{}
 	})
-	plsearcher                pool.Poolobj[ConfigSearcher]
+	plsearcher                pool.Poolobj[searchResults]
 	strqualityunknown         = "unknown Quality"
 	strpriounknown            = "unknown Prio"
 	strpriosame               = "same Prio"
@@ -101,10 +101,16 @@ var (
 )
 
 func DefineSearchPool(maxcount int) {
-	plsearcher = pool.NewPool(config.SettingsGeneral.WorkerSearch+2, config.SettingsGeneral.WorkerSearch, func(cs *ConfigSearcher) {
-		cs.Dl.Raw = make([]apiexternal.Nzbwithprio, 0, maxcount)
-		cs.Mu = &sync.Mutex{}
-	}, nil)
+	plsearcher = pool.NewPool(config.SettingsGeneral.WorkerSearch+2, config.SettingsGeneral.WorkerSearch, func(cs *searchResults) {
+		cs.Raw = make([]apiexternal.Nzbwithprio, 0, maxcount)
+	}, func(cs *searchResults) {
+		clear(cs.Denied)
+		clear(cs.Accepted)
+		clear(cs.Raw)
+		cs.Denied = cs.Denied[:0]
+		cs.Accepted = cs.Accepted[:0]
+		cs.Raw = cs.Raw[:0]
+	})
 }
 
 // SearchSerieRSSSeasonSingle searches for a single season of a series.
@@ -176,33 +182,29 @@ func searchseasons(cfgp *config.MediaTypeConfig, queryrange string, queryrangeco
 		return
 	}
 
-	args := make([]any, len(cfgp.Lists))
+	args := make([]any, cfgp.ListsLen)
 	for i := range cfgp.Lists {
 		args[i] = &cfgp.Lists[i].Name
 	}
 	tbl := database.GetrowsNuncached[database.DbstaticTwoInt](queryrangecount, queryrange, args)
+	clear(args)
 	if len(tbl) == 0 {
 		return
 	}
 
-	var getid, queryseasoncounter int
-
-	var tbluint uint
-	var listid int
-	var arr []string
 	for idx := range tbl {
-		database.ScanrowsNdyn(false, queryseasoncount, &queryseasoncounter, &tbl[idx].Num2, &tbl[idx].Num1, &tbl[idx].Num1, &tbl[idx].Num2)
+		queryseasoncounter := database.GetdatarowN[int](false, queryseasoncount, &tbl[idx].Num2, &tbl[idx].Num1, &tbl[idx].Num1, &tbl[idx].Num2)
 		if queryseasoncounter == 0 {
 			continue
 		}
-		arr = database.GetrowsN[string](false, queryseasoncounter, queryseason, &tbl[idx].Num2, &tbl[idx].Num1, &tbl[idx].Num1, &tbl[idx].Num2)
-		tbluint = uint(tbl[idx].Num1)
+		arr := database.GetrowsN[string](false, queryseasoncounter, queryseason, &tbl[idx].Num2, &tbl[idx].Num1, &tbl[idx].Num1, &tbl[idx].Num2)
+		tbluint := uint(tbl[idx].Num1)
 		for idx2 := range arr {
-			listid = database.GetMediaListIDGetListname(cfgp, tbluint)
+			listid := database.GetMediaListIDGetListname(cfgp, tbluint)
 			if listid == -1 {
 				continue
 			}
-			_ = database.ScanrowsNdyn(false, "select thetvdb_id from dbseries where id = ?", &getid, &tbl[idx].Num2)
+			getid := database.GetdatarowN[int](false, "select thetvdb_id from dbseries where id = ?", &tbl[idx].Num2)
 			NewSearcher(cfgp, cfgp.Lists[listid].CfgQuality, logger.StrRss, &logger.V0).searchSeriesRSSSeason(cfgp, cfgp.Lists[listid].CfgQuality, getid, arr[idx2], true, true, true)
 		}
 		clear(arr)
@@ -273,7 +275,7 @@ func (searchvar *ConfigSearcher) SearchRSS(cfgp *config.MediaTypeConfig, quality
 // and updates the database with the new last ID.
 // Returns true if the search was successful, false otherwise.
 func runrsssearch(index2 int, searchvar *ConfigSearcher, _ *searchparams) bool {
-	xmlret := apiexternal.QueryNewznabRSSLast(searchvar.Quality.Indexer[index2].CfgIndexer, searchvar.Quality, database.GetdatarowN[string](false, "select last_id from r_sshistories where config = ? COLLATE NOCASE and list = ? COLLATE NOCASE and indexer = ? COLLATE NOCASE", &searchvar.Cfgp.NamePrefix, &searchvar.Quality.Name, &searchvar.Quality.Indexer[index2].CfgIndexer.URL), qualityIndexerByQualityAndTemplate(searchvar.Quality, searchvar.Quality.Indexer[index2].CfgIndexer), searchvar.Mu, &searchvar.Dl.Raw)
+	xmlret := apiexternal.QueryNewznabRSSLast(searchvar.Quality.Indexer[index2].CfgIndexer, searchvar.Quality, database.GetdatarowN[string](false, "select last_id from r_sshistories where config = ? COLLATE NOCASE and list = ? COLLATE NOCASE and indexer = ? COLLATE NOCASE", &searchvar.Cfgp.NamePrefix, &searchvar.Quality.Name, &searchvar.Quality.Indexer[index2].CfgIndexer.URL), qualityIndexerByQualityAndTemplate(searchvar.Quality, searchvar.Quality.Indexer[index2].CfgIndexer), &searchvar.Mu, &searchvar.Dl.Raw)
 	if xmlret.Err == nil {
 		if xmlret.FirstID != "" {
 			addrsshistory(&searchvar.Quality.Indexer[index2].CfgIndexer.URL, &xmlret.FirstID, searchvar.Quality, &searchvar.Cfgp.NamePrefix)
@@ -297,10 +299,8 @@ func runrsssearch(index2 int, searchvar *ConfigSearcher, _ *searchparams) bool {
 // It gets a searcher instance from the pool and sets the configs,
 // then returns the initialized searcher.
 func NewSearcher(cfgp *config.MediaTypeConfig, quality *config.QualityConfig, searchActionType string, mediaid *uint) *ConfigSearcher {
-	s := plsearcher.Get()
-	//s := logger.GetPool(plsearcher) //plsearcher.Get().(*ConfigSearcher)
-	s.searchActionType = searchActionType
-	s.Cfgp = cfgp
+	dl := plsearcher.Get()
+	s := &ConfigSearcher{Dl: dl, Cfgp: cfgp, searchActionType: searchActionType, Mu: sync.Mutex{}}
 	if quality == nil && mediaid != nil && *mediaid != 0 {
 		s.Quality = database.GetMediaQualityConfig(cfgp, mediaid)
 	} else {
@@ -362,7 +362,7 @@ func (searchvar *ConfigSearcher) searchSeriesRSSSeason(cfgp *config.MediaTypeCon
 // indexer at the provided index. It returns true if the search was successful,
 // false otherwise.
 func runrssseasonsearch(index2 int, searchvar *ConfigSearcher, params *searchparams) bool {
-	xmlret := apiexternal.QueryNewznabTvTvdb(searchvar.Quality.Indexer[index2].CfgIndexer, searchvar.Quality, params.thetvdbid, qualityIndexerByQualityAndTemplate(searchvar.Quality, searchvar.Quality.Indexer[index2].CfgIndexer), params.season, "", params.useseason, false, searchvar.Mu, &searchvar.Dl.Raw)
+	xmlret := apiexternal.QueryNewznabTvTvdb(searchvar.Quality.Indexer[index2].CfgIndexer, searchvar.Quality, params.thetvdbid, qualityIndexerByQualityAndTemplate(searchvar.Quality, searchvar.Quality.Indexer[index2].CfgIndexer), params.season, "", params.useseason, false, &searchvar.Mu, &searchvar.Dl.Raw)
 	if xmlret.Err == nil {
 		return true
 	}
@@ -407,11 +407,11 @@ func (searchvar *ConfigSearcher) MediaSearch(cfgp *config.MediaTypeConfig, media
 	if cfgp == nil {
 		return logger.ErrCfgpNotFound
 	}
-	if searchvar == nil || mediaid == nil || *mediaid == 0 {
-		return logger.ErrSearchvarEmpty
-	}
 	if autoclose {
 		defer searchvar.Close()
+	}
+	if searchvar == nil || mediaid == nil || *mediaid == 0 {
+		return logger.ErrSearchvarEmpty
 	}
 	searchvar.Dl.Clear()
 	if searchvar.Quality == nil {
@@ -419,9 +419,9 @@ func (searchvar *ConfigSearcher) MediaSearch(cfgp *config.MediaTypeConfig, media
 	}
 	var err error
 	if cfgp.Useseries {
-		err = searchvar.EpisodeFillSearchVar(*mediaid)
+		err = searchvar.EpisodeFillSearchVar(mediaid)
 	} else {
-		err = searchvar.MovieFillSearchVar(*mediaid)
+		err = searchvar.MovieFillSearchVar(mediaid)
 	}
 	if err != nil {
 		if !errors.Is(err, logger.ErrDisabled) && !errors.Is(err, logger.ErrToWait) {
@@ -434,7 +434,7 @@ func (searchvar *ConfigSearcher) MediaSearch(cfgp *config.MediaTypeConfig, media
 		return logger.ErrSearchvarEmpty
 	}
 
-	logger.LogDynamic("info", "Search for media id", logger.NewLogField(logger.StrID, mediaid), logger.NewLogField("series", searchvar.Cfgp.Useseries))
+	logger.LogDynamic("info", "Search for media id", logger.NewLogField(logger.StrID, mediaid), logger.NewLogField("series", searchvar.Cfgp.Useseries), logger.NewLogField("titlesearch", titlesearch))
 
 	params := plparams.Get()
 	params.titlesearch = titlesearch
@@ -449,7 +449,7 @@ func (searchvar *ConfigSearcher) MediaSearch(cfgp *config.MediaTypeConfig, media
 	if len(searchvar.Dl.Raw) >= 1 {
 		searchvar.searchparse(params.sourcealttitles)
 		if len(searchvar.Dl.Accepted) >= 1 || len(searchvar.Dl.Denied) >= 1 {
-			logger.LogDynamic("info", "Ended Search for media id", logger.NewLogField(logger.StrID, mediaid), logger.NewLogField("series", searchvar.Cfgp.Useseries), logger.NewLogField("Accepted", len(searchvar.Dl.Accepted)), logger.NewLogField("Denied", len(searchvar.Dl.Denied)))
+			logger.LogDynamic("info", "Ended Search for media id", logger.NewLogField(logger.StrID, mediaid), logger.NewLogField("series", searchvar.Cfgp.Useseries), logger.NewLogField("titlesearch", titlesearch), logger.NewLogField("Accepted", len(searchvar.Dl.Accepted)), logger.NewLogField("Denied", len(searchvar.Dl.Denied)))
 		}
 		if downloadentries {
 			searchvar.Download()
@@ -525,19 +525,18 @@ func runmediasearch(index2 int, searchvar *ConfigSearcher, param *searchparams) 
 	//searchvar.Dl.Raw = slices.Grow(searchvar.Dl.Raw, searchvar.Quality.Indexer[index2].CfgIndexer.MaxEntries*len(alttitles))
 	//}
 	//labTitles:
-	var xmlret apiexternal.XMLResponse
-	var searchtitle string
 	for loopidx := range alttitles {
 		if alttitles[loopidx].Str1 == "" && loopidx != 0 {
 			logger.LogDynamic("error", "Skipped empty title")
 			continue
 		}
 
+		var xmlret apiexternal.XMLResponse
 		if !usequerysearch {
 			if !searchvar.Cfgp.Useseries && searchvar.Sourceentry.Info.M.Imdb != "" {
-				xmlret = apiexternal.QueryNewznabMovieImdb(searchvar.Quality.Indexer[index2].CfgIndexer, searchvar.Quality, strings.Trim(searchvar.Sourceentry.Info.M.Imdb, "t"), cats, searchvar.Mu, &searchvar.Dl.Raw)
+				xmlret = apiexternal.QueryNewznabMovieImdb(searchvar.Quality.Indexer[index2].CfgIndexer, searchvar.Quality, strings.Trim(searchvar.Sourceentry.Info.M.Imdb, "t"), cats, &searchvar.Mu, &searchvar.Dl.Raw)
 			} else if searchvar.Cfgp.Useseries && searchvar.Sourceentry.NZB.TVDBID != 0 {
-				xmlret = apiexternal.QueryNewznabTvTvdb(searchvar.Quality.Indexer[index2].CfgIndexer, searchvar.Quality, searchvar.Sourceentry.NZB.TVDBID, cats, searchvar.Sourceentry.NZB.Season, searchvar.Sourceentry.NZB.Episode, true, true, searchvar.Mu, &searchvar.Dl.Raw)
+				xmlret = apiexternal.QueryNewznabTvTvdb(searchvar.Quality.Indexer[index2].CfgIndexer, searchvar.Quality, searchvar.Sourceentry.NZB.TVDBID, cats, searchvar.Sourceentry.NZB.Season, searchvar.Sourceentry.NZB.Episode, true, true, &searchvar.Mu, &searchvar.Dl.Raw)
 			}
 		} else if alttitles[loopidx].Str1 != "" {
 			if checkdbtwostrings(searched, alttitles[loopidx].Str1) {
@@ -545,11 +544,11 @@ func runmediasearch(index2 int, searchvar *ConfigSearcher, param *searchparams) 
 			}
 			searched = append(searched, alttitles[loopidx])
 
-			searchtitle = logger.StringRemoveAllRunesMulti(alttitles[loopidx].Str1, '&', '(', ')')
+			searchtitle := logger.StringRemoveAllRunesMulti(alttitles[loopidx].Str1, '&', '(', ')')
 			//searchtitle = logger.StringRemoveAllRunes(alttitles[loopidx].Str1, '&')
 			//searchtitle = logger.StringRemoveAllRunes(searchtitle, '(')
 			//searchtitle = logger.StringRemoveAllRunes(searchtitle, ')')
-			xmlret = apiexternal.QueryNewznabQuery(searchvar.Quality.Indexer[index2].CfgIndexer, searchvar.Quality, logger.JoinStrings(searchtitle, addstr), cats, searchvar.Mu, &searchvar.Dl.Raw)
+			xmlret = apiexternal.QueryNewznabQuery(searchvar.Quality.Indexer[index2].CfgIndexer, searchvar.Quality, logger.JoinStrings(searchtitle, addstr), cats, &searchvar.Mu, &searchvar.Dl.Raw)
 		} else {
 			continue
 		}
@@ -613,6 +612,12 @@ func (s *ConfigSearcher) searchindexers(userss bool, param *searchparams, fn fun
 		//index2 := index
 		workergroup.Submit(
 			func() {
+				defer func() {
+					err := recover()
+					if err != nil {
+						logger.LogDynamic("panic", "Panic in searchindexers", logger.NewLogFieldValue(err))
+					}
+				}()
 				done := fn(index, s, param)
 				if !searchdone && done {
 					searchdone = done
@@ -660,6 +665,7 @@ func (s *ConfigSearcher) Download() {
 			downloader.DownloadSeriesEpisode(s.Cfgp, &s.Dl.Accepted[idx].NzbepisodeID, &s.Dl.Accepted[idx])
 		}
 	}
+	clear(downloaded)
 }
 
 // checkdownloaded checks if the entry at index idx has already been downloaded
@@ -694,8 +700,11 @@ func (s *searchResults) Close() {
 	if s == nil {
 		return
 	}
-	s.Denied = nil
-	s.Accepted = nil
+	clear(s.Denied)
+	clear(s.Accepted)
+	clear(s.Raw)
+	s.Denied = s.Denied[:0]
+	s.Accepted = s.Accepted[:0]
 	s.Raw = s.Raw[:0]
 }
 
@@ -706,6 +715,9 @@ func (s *searchResults) Clear() {
 	if s == nil || cap(s.Raw) == 0 || len(s.Raw) == 0 {
 		return
 	}
+	clear(s.Denied)
+	clear(s.Accepted)
+	clear(s.Raw)
 	s.Denied = s.Denied[:0]
 	s.Accepted = s.Accepted[:0]
 	s.Raw = s.Raw[:0]
@@ -768,8 +780,9 @@ func (s *ConfigSearcher) Close() {
 	if s == nil {
 		return
 	}
-	*s = ConfigSearcher{Dl: searchResults{Raw: s.Dl.Raw[:0]}, Mu: s.Mu}
-	plsearcher.Put(s)
+	//*s = ConfigSearcher{Dl: searchResults{Raw: s.Dl.Raw[:0]}, Mu: s.Mu}
+	plsearcher.Put(s.Dl)
+	*s = ConfigSearcher{}
 }
 
 // searchparse parses the raw search results, runs validation on each entry, assigns quality
@@ -781,7 +794,6 @@ func (s *ConfigSearcher) searchparse(alttitles []database.DbstaticTwoStringOneIn
 	}
 	s.Dl.Denied = s.Dl.Raw[:0]
 	s.Dl.Accepted = s.Dl.Raw[:0]
-	var skipemptysize bool
 	for idxraw := range s.Dl.Raw {
 		if s.Dl.Raw[idxraw].NZB.DownloadURL == "" {
 			s.logdenied(strnourl, &s.Dl.Raw[idxraw])
@@ -802,7 +814,7 @@ func (s *ConfigSearcher) searchparse(alttitles []database.DbstaticTwoStringOneIn
 			continue
 		}
 		//Check Size
-		skipemptysize = false
+		skipemptysize := false
 		if s.Dl.Raw[idxraw].NZB.Indexer != nil {
 			indcfg := qualityIndexerByQualityAndTemplate(s.Quality, s.Dl.Raw[idxraw].NZB.Indexer)
 			if indcfg != nil {
@@ -1000,14 +1012,14 @@ func (s *ConfigSearcher) checkcorrectid(entry *apiexternal.Nzbwithprio) bool {
 	if !s.Cfgp.Useseries {
 		if entry.NZB.IMDBID != "" && s.Sourceentry.Info.M.Imdb != "" && s.Sourceentry.Info.M.Imdb != entry.NZB.IMDBID {
 			if strings.TrimLeft(s.Sourceentry.Info.M.Imdb, "t0") != strings.TrimLeft(entry.NZB.IMDBID, "t0") {
-				s.logdenied(strnotmatchimdb, entry)
+				s.logdenied(strnotmatchimdb, entry, logger.NewLogField("wanted imdb", s.Sourceentry.Info.M.Imdb), logger.NewLogField("found imdb", entry.NZB.IMDBID))
 				return true
 			}
 		}
 		return false
 	}
 	if s.Sourceentry.NZB.TVDBID != 0 && entry.NZB.TVDBID != 0 && s.Sourceentry.NZB.TVDBID != entry.NZB.TVDBID {
-		s.logdenied(strnotmatchtvdb, entry)
+		s.logdenied(strnotmatchtvdb, entry, logger.NewLogField("wanted tvdb", s.Sourceentry.NZB.TVDBID), logger.NewLogField("found tvdb", entry.NZB.TVDBID))
 		return true
 	}
 	return false
@@ -1088,7 +1100,7 @@ func (s *ConfigSearcher) checkyear(entry *apiexternal.Nzbwithprio, qual *config.
 	if qual.CheckYear1 && logger.ContainsInt(entry.NZB.Title, s.Sourceentry.Info.M.Year-1) {
 		return false
 	}
-	s.logdenied(stryearunwanted, entry)
+	s.logdenied(stryearunwanted, entry, logger.NewLogField("wanted year", s.Sourceentry.Info.M.Year))
 	return true
 }
 
@@ -1259,13 +1271,12 @@ func (s *ConfigSearcher) getmovierss(entry *apiexternal.Nzbwithprio, addinlistid
 		s.logdenied(strdbmovieunwanted, entry)
 		return true, nil
 	}
-	imdb := importfeed.ImdbID{Imdb: entry.NZB.IMDBID}
 	//add movie if not found
 	if addifnotfound && (entry.Info.M.DbmovieID == 0 || entry.Info.M.MovieID == 0) && logger.HasPrefixI(entry.NZB.IMDBID, logger.StrTt) {
 		if addinlistid == -1 {
 			return true, nil
 		}
-		bl, err := importfeed.AllowMovieImport(&imdb, s.Cfgp.Lists[addinlistid].CfgList)
+		bl, err := importfeed.AllowMovieImport(entry.NZB.IMDBID, s.Cfgp.Lists[addinlistid].CfgList)
 		if err != nil {
 			s.logdeniederr(err, entry)
 			return true, nil
@@ -1277,7 +1288,7 @@ func (s *ConfigSearcher) getmovierss(entry *apiexternal.Nzbwithprio, addinlistid
 	}
 	if addifnotfound && entry.Info.M.DbmovieID == 0 && logger.HasPrefixI(entry.NZB.IMDBID, logger.StrTt) {
 		var err error
-		entry.Info.M.DbmovieID, err = importfeed.JobImportMovies(&imdb, s.Cfgp, addinlistid, true)
+		entry.Info.M.DbmovieID, err = importfeed.JobImportMovies(entry.NZB.IMDBID, s.Cfgp, addinlistid, true)
 		if err != nil {
 			s.logdeniederr(err, entry)
 			return true, nil
@@ -1303,7 +1314,7 @@ func (s *ConfigSearcher) getmovierss(entry *apiexternal.Nzbwithprio, addinlistid
 			return true, nil
 		}
 
-		err := importfeed.Checkaddmovieentry(entry.Info.M.DbmovieID, &s.Cfgp.Lists[addinlistid], &imdb)
+		err := importfeed.Checkaddmovieentry(entry.Info.M.DbmovieID, &s.Cfgp.Lists[addinlistid], &entry.NZB.IMDBID)
 		if err != nil {
 			s.logdeniederr(err, entry)
 			return true, nil
@@ -1423,7 +1434,7 @@ func (s *ConfigSearcher) GetRSSFeed(listentry *config.MediaListsConfig, download
 	customindexer.Customrssurl = listentry.CfgList.URL
 	customindexer.URL = listentry.CfgList.URL
 	customindexer.MaxEntries = logger.StringToInt(listentry.CfgList.Limit)
-	xmlret := apiexternal.QueryNewznabRSSLastCustom(&customindexer, s.Quality, database.GetdatarowN[string](false, "select last_id from r_sshistories where config = ? COLLATE NOCASE and list = ? COLLATE NOCASE", &listentry.TemplateList, &s.Quality.Name), nil, s.Mu, &s.Dl.Raw)
+	xmlret := apiexternal.QueryNewznabRSSLastCustom(&customindexer, s.Quality, database.GetdatarowN[string](false, "select last_id from r_sshistories where config = ? COLLATE NOCASE and list = ? COLLATE NOCASE", &listentry.TemplateList, &s.Quality.Name), nil, &s.Mu, &s.Dl.Raw)
 	if xmlret.FirstID != "" && len(s.Dl.Raw) >= 1 {
 		addrsshistory(&listentry.CfgList.URL, &xmlret.FirstID, s.Quality, &s.Cfgp.NamePrefix)
 	}
@@ -1447,10 +1458,9 @@ func (s *ConfigSearcher) GetRSSFeed(listentry *config.MediaListsConfig, download
 // MovieFillSearchVar fills the search variables for the given movie ID.
 // It queries the database to get the movie details and configures the
 // search based on priorities, upgrade settings etc.
-func (s *ConfigSearcher) MovieFillSearchVar(movieid uint) error {
+func (s *ConfigSearcher) MovieFillSearchVar(movieid *uint) error {
 	s.Sourceentry.Close()
-	s.Sourceentry.NzbmovieID = movieid
-	database.GetdatarowArgs("select movies.dbmovie_id, movies.dont_search, movies.dont_upgrade, movies.listname, movies.quality_profile, dbmovies.year, dbmovies.imdb_id, dbmovies.title from movies inner join dbmovies ON dbmovies.id=movies.dbmovie_id where movies.id = ?", &movieid, &s.Sourceentry.Dbid, &s.Sourceentry.DontSearch, &s.Sourceentry.DontUpgrade, &s.Sourceentry.Listname, &s.Sourceentry.Quality, &s.Sourceentry.Info.M.Year, &s.Sourceentry.Info.M.Imdb, &s.Sourceentry.WantedTitle)
+	database.GetdatarowArgs("select movies.dbmovie_id, movies.dont_search, movies.dont_upgrade, movies.listname, movies.quality_profile, dbmovies.year, dbmovies.imdb_id, dbmovies.title from movies inner join dbmovies ON dbmovies.id=movies.dbmovie_id where movies.id = ?", movieid, &s.Sourceentry.Dbid, &s.Sourceentry.DontSearch, &s.Sourceentry.DontUpgrade, &s.Sourceentry.Listname, &s.Sourceentry.Quality, &s.Sourceentry.Info.M.Year, &s.Sourceentry.Info.M.Imdb, &s.Sourceentry.WantedTitle)
 	if s.Sourceentry.Dbid == 0 {
 		return logger.ErrNotFoundDbmovie
 	}
@@ -1458,7 +1468,8 @@ func (s *ConfigSearcher) MovieFillSearchVar(movieid uint) error {
 		return logger.ErrDisabled
 	}
 
-	s.Sourceentry.MinimumPriority, _ = Getpriobyfiles(s.Cfgp.Useseries, &movieid, false, -1, s.Quality)
+	s.Sourceentry.NzbmovieID = *movieid
+	s.Sourceentry.MinimumPriority, _ = Getpriobyfiles(s.Cfgp.Useseries, movieid, false, -1, s.Quality)
 	var err error
 	s.searchActionType, err = getsearchtype(s.Sourceentry.MinimumPriority, s.Sourceentry.DontUpgrade, false)
 	if err != nil {
@@ -1479,12 +1490,11 @@ func (s *ConfigSearcher) MovieFillSearchVar(movieid uint) error {
 // EpisodeFillSearchVar fills the search variables for the given episode ID.
 // It queries the database to get the necessary data and configures the
 // search based on priorities, upgrade settings etc.
-func (s *ConfigSearcher) EpisodeFillSearchVar(episodeid uint) error {
+func (s *ConfigSearcher) EpisodeFillSearchVar(episodeid *uint) error {
 	s.Sourceentry.Close()
-	s.Sourceentry.NzbepisodeID = episodeid
 
 	//dbserie_episode_id, dbserie_id, serie_id, dont_search, dont_upgrade
-	database.GetdatarowArgs("select serie_episodes.dbserie_episode_id, serie_episodes.dbserie_id, serie_episodes.serie_id, serie_episodes.dont_search, serie_episodes.dont_upgrade, serie_episodes.quality_profile, series.listname, dbseries.thetvdb_id, dbseries.seriename, dbserie_episodes.season, dbserie_episodes.episode, dbserie_episodes.identifier from serie_episodes inner join series ON series.id=serie_episodes.serie_id inner join dbseries ON dbseries.id=serie_episodes.dbserie_id inner join dbserie_episodes ON dbserie_episodes.id=serie_episodes.dbserie_episode_id where serie_episodes.id = ?", &episodeid, &s.Sourceentry.Info.M.DbserieEpisodeID, &s.Sourceentry.Dbid, &s.Sourceentry.Info.M.SerieID, &s.Sourceentry.DontSearch, &s.Sourceentry.DontUpgrade, &s.Sourceentry.Quality, &s.Sourceentry.Listname, &s.Sourceentry.NZB.TVDBID, &s.Sourceentry.WantedTitle, &s.Sourceentry.NZB.Season, &s.Sourceentry.NZB.Episode, &s.Sourceentry.Info.M.Identifier)
+	database.GetdatarowArgs("select serie_episodes.dbserie_episode_id, serie_episodes.dbserie_id, serie_episodes.serie_id, serie_episodes.dont_search, serie_episodes.dont_upgrade, serie_episodes.quality_profile, series.listname, dbseries.thetvdb_id, dbseries.seriename, dbserie_episodes.season, dbserie_episodes.episode, dbserie_episodes.identifier from serie_episodes inner join series ON series.id=serie_episodes.serie_id inner join dbseries ON dbseries.id=serie_episodes.dbserie_id inner join dbserie_episodes ON dbserie_episodes.id=serie_episodes.dbserie_episode_id where serie_episodes.id = ?", episodeid, &s.Sourceentry.Info.M.DbserieEpisodeID, &s.Sourceentry.Dbid, &s.Sourceentry.Info.M.SerieID, &s.Sourceentry.DontSearch, &s.Sourceentry.DontUpgrade, &s.Sourceentry.Quality, &s.Sourceentry.Listname, &s.Sourceentry.NZB.TVDBID, &s.Sourceentry.WantedTitle, &s.Sourceentry.NZB.Season, &s.Sourceentry.NZB.Episode, &s.Sourceentry.Info.M.Identifier)
 	if s.Sourceentry.Info.M.DbserieEpisodeID == 0 || s.Sourceentry.Dbid == 0 || s.Sourceentry.Info.M.SerieID == 0 {
 		return logger.ErrNotFoundDbserie
 	}
@@ -1492,7 +1502,8 @@ func (s *ConfigSearcher) EpisodeFillSearchVar(episodeid uint) error {
 		return logger.ErrDisabled
 	}
 
-	s.Sourceentry.MinimumPriority, _ = Getpriobyfiles(s.Cfgp.Useseries, &episodeid, false, -1, s.Quality)
+	s.Sourceentry.NzbepisodeID = *episodeid
+	s.Sourceentry.MinimumPriority, _ = Getpriobyfiles(s.Cfgp.Useseries, episodeid, false, -1, s.Quality)
 
 	s.Sourceentry.Info.M.ListID = database.GetMediaListID(s.Cfgp, s.Sourceentry.Listname)
 	var err error
@@ -1560,12 +1571,12 @@ func (s *ConfigSearcher) filterSizeNzbs(entry *apiexternal.Nzbwithprio) bool {
 			continue
 		}
 		if s.Cfgp.DataImport[idxdataimport].CfgPath.MinSize != 0 && entry.NZB.Size < s.Cfgp.DataImport[idxdataimport].CfgPath.MinSizeByte {
-			s.logdenied(strtoosmall, entry)
+			s.logdenied(strtoosmall, entry, logger.NewLogField("found size", entry.NZB.Size))
 			return true
 		}
 
 		if s.Cfgp.DataImport[idxdataimport].CfgPath.MaxSize != 0 && entry.NZB.Size > s.Cfgp.DataImport[idxdataimport].CfgPath.MaxSizeByte {
-			s.logdenied(strtoobig, entry)
+			s.logdenied(strtoobig, entry, logger.NewLogField("found size", entry.NZB.Size))
 			return true
 		}
 	}
@@ -1590,14 +1601,14 @@ func (s *ConfigSearcher) filterRegexNzbs(entry *apiexternal.Nzbwithprio, qual *c
 		}
 	}
 	if !bl && regexcfg.RequiredLen >= 1 {
-		s.logdenied(strnotmatchrequired, entry)
+		s.logdenied(strnotmatchrequired, entry, logger.NewLogField("checked for", regexcfg.Required))
 		return true
 	}
 
 	for idx := range regexcfg.Rejected {
 		if database.RegexGetMatchesFind(regexcfg.Rejected[idx], entry.NZB.Title, 1) {
 			if !database.RegexGetMatchesFind(regexcfg.Rejected[idx], entry.WantedTitle, 1) {
-				bl = false
+				bl := false
 				for idxi := range entry.WantedAlternates {
 					if database.RegexGetMatchesFind(regexcfg.Rejected[idx], entry.WantedAlternates[idxi].Str1, 1) {
 						bl = true
@@ -1696,8 +1707,8 @@ func (s *ConfigSearcher) logdenied(reason string, entry *apiexternal.Nzbwithprio
 // It sets the reason on the entry to the error message, and appends the entry to s.Dl.Denied.
 func (s *ConfigSearcher) logdeniederr(err error, entry *apiexternal.Nzbwithprio) {
 	if err != nil {
-		logger.LogDynamic("debug", skippedstr, logger.NewLogFieldValue(err), logger.NewLogField(logger.StrTitle, &entry.NZB.Title))
 		entry.Reason = err.Error()
+		logger.LogDynamic("debug", skippedstr, logger.NewLogField("reason", &entry.Reason), logger.NewLogField(logger.StrTitle, &entry.NZB.Title))
 	}
 	s.AppendDenied(entry)
 }
@@ -1712,16 +1723,15 @@ func Getpriobyfiles(useseries bool, id *uint, useall bool, wantedprio int, qualc
 	if qualcfg == nil || id == nil {
 		return 0, nil
 	}
-	var minPrio int
 	var oldfiles []string
 	countv := database.GetdatarowN[int](false, logger.GetStringsMap(useseries, logger.DBCountFilesByMediaID), id)
 	if wantedprio != -1 && countv != 0 {
 		oldfiles = make([]string, 0, countv)
 	}
 	arr := database.GetrowsN[database.FilePrio](false, countv, logger.GetStringsMap(useseries, logger.DBFilePrioFilesByID), id)
-	var prio int
+	var minPrio int
 	for idx := range arr {
-		prio = parser.GetIDPrioritySimpleParse(&arr[idx], useseries, qualcfg, useall)
+		prio := parser.GetIDPrioritySimpleParse(&arr[idx], useseries, qualcfg, useall)
 
 		if minPrio < prio || minPrio == 0 {
 			minPrio = prio

@@ -6,10 +6,10 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/Kellerman81/go_media_downloader/config"
-	"github.com/Kellerman81/go_media_downloader/database"
-	"github.com/Kellerman81/go_media_downloader/logger"
-	"github.com/Kellerman81/go_media_downloader/slidingwindow"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/slidingwindow"
 )
 
 type theTVDBSeries struct {
@@ -76,7 +76,7 @@ type theTVDBEpisode struct {
 // It contains a field Client which is a pointer to a rate limited HTTP client.
 type tvdbClient struct {
 	// Client is a pointer to a rate limited HTTP client for making requests.
-	Client *rlHTTPClient
+	Client rlHTTPClient
 }
 
 // Close cleans up the theTVDBSeries object by setting all fields to their
@@ -110,7 +110,7 @@ func NewTvdbClient(seconds int, calls int, disabletls bool, timeoutseconds int) 
 	if calls == 0 {
 		calls = 1
 	}
-	tvdbAPI = &tvdbClient{
+	tvdbAPI = tvdbClient{
 		Client: NewClient(
 			"tvdb",
 			disabletls,
@@ -127,9 +127,9 @@ func GetTvdbSeries(id int, language string) (theTVDBSeries, error) {
 		return theTVDBSeries{}, logger.ErrNotFound
 	}
 	if language != "" {
-		return DoJSONType[theTVDBSeries](tvdbAPI.Client, logger.JoinStrings("https://api.thetvdb.com/series/", strconv.Itoa(id)), keyval{"Accept-Language", language})
+		return DoJSONType[theTVDBSeries](&tvdbAPI.Client, logger.JoinStrings("https://api.thetvdb.com/series/", strconv.Itoa(id)), keyval{"Accept-Language", language})
 	}
-	return DoJSONType[theTVDBSeries](tvdbAPI.Client, logger.JoinStrings("https://api.thetvdb.com/series/", strconv.Itoa(id)))
+	return DoJSONType[theTVDBSeries](&tvdbAPI.Client, logger.JoinStrings("https://api.thetvdb.com/series/", strconv.Itoa(id)))
 }
 
 // GetTvdbSeriesEpisodes retrieves all episodes for the given TV series ID from
@@ -147,9 +147,9 @@ func UpdateTvdbSeriesEpisodes(id int, language string, dbid uint) {
 	var lang keyval
 	if language != "" {
 		lang = keyval{"Accept-Language", language}
-		result, err = DoJSONType[theTVDBEpisodes](tvdbAPI.Client, urlv, lang)
+		result, err = DoJSONType[theTVDBEpisodes](&tvdbAPI.Client, urlv, lang)
 	} else {
-		result, err = DoJSONType[theTVDBEpisodes](tvdbAPI.Client, urlv)
+		result, err = DoJSONType[theTVDBEpisodes](&tvdbAPI.Client, urlv)
 	}
 
 	if err != nil {
@@ -167,9 +167,9 @@ func UpdateTvdbSeriesEpisodes(id int, language string, dbid uint) {
 		var resultadd theTVDBEpisodes
 		for k := 2; k <= result.Links.Last; k++ {
 			if language != "" {
-				resultadd, err = DoJSONType[theTVDBEpisodes](tvdbAPI.Client, urlv+strconv.Itoa(k), lang)
+				resultadd, err = DoJSONType[theTVDBEpisodes](&tvdbAPI.Client, urlv+strconv.Itoa(k), lang)
 			} else {
-				resultadd, err = DoJSONType[theTVDBEpisodes](tvdbAPI.Client, urlv+strconv.Itoa(k))
+				resultadd, err = DoJSONType[theTVDBEpisodes](&tvdbAPI.Client, urlv+strconv.Itoa(k))
 			}
 			if err == nil {
 				addthetvdbepisodes(&resultadd, &dbid, tbl)
@@ -185,17 +185,15 @@ func UpdateTvdbSeriesEpisodes(id int, language string, dbid uint) {
 // result and inserts any missing episodes into the dbserie_episodes table for
 // the series matching the given dbid. It returns false if no error occurs.
 func addthetvdbepisodes(resultadd *theTVDBEpisodes, dbid *uint, tbl []database.DbstaticTwoString) bool {
-	var dt time.Time
-	var strepisode, strseason, stridentifier string
 	for idx := range resultadd.Data {
-		strepisode = strconv.Itoa(resultadd.Data[idx].AiredEpisodeNumber)
-		strseason = strconv.Itoa(resultadd.Data[idx].AiredSeason)
+		strepisode := strconv.Itoa(resultadd.Data[idx].AiredEpisodeNumber)
+		strseason := strconv.Itoa(resultadd.Data[idx].AiredSeason)
 
 		if checkdbtwostrings(tbl, strseason, strepisode) {
 			continue
 		}
-		dt = database.ParseDateTime(resultadd.Data[idx].FirstAired)
-		stridentifier = GenerateIdentifierStringFromInt(resultadd.Data[idx].AiredSeason, resultadd.Data[idx].AiredEpisodeNumber)
+		dt := database.ParseDateTime(resultadd.Data[idx].FirstAired)
+		stridentifier := GenerateIdentifierStringFromInt(resultadd.Data[idx].AiredSeason, resultadd.Data[idx].AiredEpisodeNumber)
 		database.ExecN("insert into dbserie_episodes (episode, season, identifier, title, first_aired, overview, poster, dbserie_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
 			&strepisode, &strseason, &stridentifier, &resultadd.Data[idx].EpisodeName, &dt, &resultadd.Data[idx].Overview, &resultadd.Data[idx].Poster, dbid)
 	}
