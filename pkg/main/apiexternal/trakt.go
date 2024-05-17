@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
@@ -155,6 +154,10 @@ func (t *traktMovieExtend) Close() {
 	if config.SettingsGeneral.DisableVariableCleanup || t == nil {
 		return
 	}
+	//clear(t.AvailableTranslations)
+	//clear(t.Genres)
+	t.AvailableTranslations = nil
+	t.Genres = nil
 	*t = traktMovieExtend{}
 }
 
@@ -165,6 +168,10 @@ func (t *traktSerieData) Close() {
 	if config.SettingsGeneral.DisableVariableCleanup || t == nil {
 		return
 	}
+	//clear(t.AvailableTranslations)
+	//clear(t.Genres)
+	t.AvailableTranslations = nil
+	t.Genres = nil
 	*t = traktSerieData{}
 }
 
@@ -339,7 +346,8 @@ func GetTraktSerieSeasons(showid string) []string {
 	for idx := range result {
 		ret[idx] = strconv.Itoa(result[idx].Number)
 	}
-	clear(result)
+	//clear(result)
+	result = nil
 	return ret
 }
 
@@ -352,17 +360,28 @@ func UpdateTraktSerieSeasonsAndEpisodes(showid string, id *uint) {
 	if showid == "" || traktAPI.Client.checklimiterwithdaily() {
 		return
 	}
-	result, err := DoJSONTypeG[traktSerieSeason](&traktAPI.Client, logger.URLJoinPath(apiurlshows, showid, "seasons"), traktAPI.DefaultHeaders...)
+	baseurl := logger.URLJoinPath(apiurlshows, showid, "seasons")
+	result, err := DoJSONTypeG[traktSerieSeason](&traktAPI.Client, baseurl, traktAPI.DefaultHeaders...)
 	if err != nil {
 		return
 	}
-	baseurl := logger.URLJoinPath(apiurlshows, showid, "seasons")
 	tbl := database.Getrows1size[database.DbstaticTwoString](false, database.QueryDbserieEpisodesCountByDBID, database.QueryDbserieEpisodesGetSeasonEpisodeByDBID, id)
 	for idx := range result {
 		//addtraktdbepisodes(&id, logger.JoinStrings(logger.URLJoinPath(apiurlshows, showid, "seasons", strconv.Itoa(result[idx].Number)), extendedfull), tbl)
-		addtraktdbepisodes(id, logger.JoinStrings(logger.URLJoinPath(baseurl, strconv.Itoa(result[idx].Number)), extendedfull), tbl)
+		addtraktdbepisodes(id, logger.JoinStrings(baseurl, "/", strconv.Itoa(result[idx].Number), extendedfull), tbl)
 	}
-	clear(tbl)
+	//clear(tbl)
+	//clear(result)
+	tbl = nil
+	result = nil
+}
+
+func Testaddtraktdbepisodes() ([]traktSerieSeasonEpisodes, error) {
+	if traktAPI.Client.checklimiterwithdaily() {
+		return nil, nil
+	}
+	urlv := logger.URLJoinPath(apiurlshows, "tt1183865", "seasons", "1")
+	return DoJSONTypeG[traktSerieSeasonEpisodes](&traktAPI.Client, urlv, traktAPI.DefaultHeaders...)
 }
 
 // addtraktdbepisodes retrieves Trakt episode data for a show and inserts any missing episodes into the dbserie_episodes table.
@@ -378,22 +397,27 @@ func addtraktdbepisodes(dbid *uint, urlv string, tbl []database.DbstaticTwoStrin
 	}
 
 	for idx := range data {
-		strepisode := strconv.Itoa(data[idx].Episode)
-		strseason := strconv.Itoa(data[idx].Season)
-
-		if checkdbtwostrings(tbl, strseason, strepisode) {
+		if checkdbtwostrings(tbl, data[idx].Season, data[idx].Episode) {
 			continue
 		}
 		stridentifier := GenerateIdentifierStringFromInt(data[idx].Season, data[idx].Episode)
+		strepisode := strconv.Itoa(data[idx].Episode)
+		strseason := strconv.Itoa(data[idx].Season)
 		database.ExecN("insert into dbserie_episodes (episode, season, identifier, title, first_aired, overview, dbserie_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
 			&strepisode, &strseason, &stridentifier, &data[idx].Title, &data[idx].FirstAired, &data[idx].Overview, dbid)
 	}
-	clear(data)
+	//clear(data)
+	data = nil
 }
 
-func checkdbtwostrings(tbl []database.DbstaticTwoString, str1, str2 string) bool {
+func checkdbtwostrings(tbl []database.DbstaticTwoString, int1, int2 int) bool {
+	if len(tbl) == 0 {
+		return false
+	}
+	str1 := strconv.Itoa(int1)
+	str2 := strconv.Itoa(int2)
 	for idxepi := range tbl {
-		if strings.EqualFold(tbl[idxepi].Str1, str1) && strings.EqualFold(tbl[idxepi].Str2, str2) {
+		if tbl[idxepi].Str1 == str1 && tbl[idxepi].Str2 == str2 {
 			return true
 		}
 	}

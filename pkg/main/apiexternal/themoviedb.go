@@ -128,6 +128,8 @@ func (t *theMovieDBMovieTitles) Close() {
 	if config.SettingsGeneral.DisableVariableCleanup || t == nil {
 		return
 	}
+	//clear(t.Titles)
+	t.Titles = nil
 	*t = theMovieDBMovieTitles{}
 }
 
@@ -148,6 +150,10 @@ func (t *theMovieDBMovie) Close() {
 	if config.SettingsGeneral.DisableVariableCleanup || t == nil {
 		return
 	}
+	//clear(t.Genres)
+	//clear(t.SpokenLanguages)
+	t.Genres = nil
+	t.SpokenLanguages = nil
 	*t = theMovieDBMovie{}
 }
 
@@ -158,6 +164,10 @@ func (t *theMovieDBFind) Close() {
 	if config.SettingsGeneral.DisableVariableCleanup || t == nil {
 		return
 	}
+	//clear(t.MovieResults)
+	//clear(t.TvResults)
+	t.MovieResults = nil
+	t.TvResults = nil
 	*t = theMovieDBFind{}
 }
 
@@ -168,6 +178,8 @@ func (t *theMovieDBSearchTV) Close() {
 	if config.SettingsGeneral.DisableVariableCleanup || t == nil {
 		return
 	}
+	//clear(t.Results)
+	t.Results = nil
 	*t = theMovieDBSearchTV{}
 }
 
@@ -180,6 +192,8 @@ func (t *theMovieDBSearch) Close() {
 	if config.SettingsGeneral.DisableVariableCleanup || t == nil {
 		return
 	}
+	//clear(t.Results)
+	t.Results = nil
 	*t = theMovieDBSearch{}
 }
 

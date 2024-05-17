@@ -24,7 +24,7 @@ import (
 )
 
 // dbGlobal stores globally accessible slices and arrays
-type dbGlobal struct {
+type DBGlobal struct {
 	// AudioStrIn is a globally accessible slice of audio strings
 	AudioStrIn []string
 	// CodecStrIn is a globally accessible slice of codec strings
@@ -175,10 +175,10 @@ func getqualityregexes(querystr string, querycount string) []QualitiesRegex {
 		return nil
 	}
 	ret := make([]QualitiesRegex, len(q))
-	for idx := range q {
-		q[idx].StringsLower = strings.ToLower(q[idx].Strings)
-		GlobalCache.SetRegexp(q[idx].Regex, 0)
-		ret[idx] = QualitiesRegex{Regex: q[idx].Regex, Qualities: q[idx]}
+	for idx, qual := range q {
+		qual.StringsLower = strings.ToLower(qual.Strings)
+		GlobalCache.SetRegexp(qual.Regex, 0)
+		ret[idx] = QualitiesRegex{Regex: qual.Regex, Qualities: qual}
 	}
 	return ret
 }
@@ -215,15 +215,19 @@ func SetVars() {
 		}
 	}
 
+	DBConnect.AudioStrIn = make([]string, 0, len(DBConnect.GetaudiosIn)*7)
 	for idx := range DBConnect.GetaudiosIn {
 		DBConnect.AudioStrIn = append(DBConnect.AudioStrIn, strings.Split(DBConnect.GetaudiosIn[idx].StringsLower, ",")...)
 	}
+	DBConnect.CodecStrIn = make([]string, 0, len(DBConnect.GetcodecsIn)*7)
 	for idx := range DBConnect.GetcodecsIn {
 		DBConnect.CodecStrIn = append(DBConnect.CodecStrIn, strings.Split(DBConnect.GetcodecsIn[idx].StringsLower, ",")...)
 	}
+	DBConnect.QualityStrIn = make([]string, 0, len(DBConnect.GetqualitiesIn)*7)
 	for idx := range DBConnect.GetqualitiesIn {
 		DBConnect.QualityStrIn = append(DBConnect.QualityStrIn, strings.Split(DBConnect.GetqualitiesIn[idx].StringsLower, ",")...)
 	}
+	DBConnect.ResolutionStrIn = make([]string, 0, len(DBConnect.GetresolutionsIn)*7)
 	for idx := range DBConnect.GetresolutionsIn {
 		DBConnect.ResolutionStrIn = append(DBConnect.ResolutionStrIn, strings.Split(DBConnect.GetresolutionsIn[idx].StringsLower, ",")...)
 	}
@@ -238,14 +242,13 @@ func Upgrade(c *gin.Context) {
 // connection.
 func Backup(backupPath string, maxbackups int) error {
 	readWriteMu.Lock()
+	defer readWriteMu.Unlock()
 	logger.LogDynamic("info", "Start db backup")
 	tempdb, err := sqlx.Connect("sqlite3", "file:./databases/data.db?_fk=1&mode=rwc&_mutex=full&rt=1&_cslike=0")
 	if err != nil {
-		readWriteMu.Unlock()
 		return err
 	}
 	_, err = tempdb.Exec("VACUUM INTO ?", &backupPath)
-	readWriteMu.Unlock()
 	tempdb.Close()
 	if err != nil {
 		logger.LogDynamic("error", "exec", logger.NewLogFieldValue(err), logger.NewLogField(logger.StrQuery, "VACUUM INTO ?"))
@@ -281,9 +284,8 @@ func Backup(backupPath string, maxbackups int) error {
 		if !logger.HasPrefixI(files[idx].Name(), "data.db.") {
 			continue
 		}
-		addfile := backupInfo{timestamp: timeFromName(files[idx].Name(), "data.db.")}
+		addfile := backupInfo{timestamp: timeFromName(files[idx].Name(), "data.db."), path: files[idx].Name()}
 		if !addfile.timestamp.Equal(tu) {
-			addfile.path = files[idx].Name()
 			backupFiles = append(backupFiles, addfile)
 			continue
 		}
@@ -432,7 +434,7 @@ func GetMediaListIDGetListname(cfgp *config.MediaTypeConfig, mediaid uint) int {
 	}
 
 	if config.SettingsGeneral.UseMediaCache {
-		GetMediaListID(cfgp, CacheOneStringTwoIntIndexFuncStr(logger.GetStringsMap(cfgp.Useseries, logger.CacheMedia), mediaid))
+		return GetMediaListID(cfgp, CacheOneStringTwoIntIndexFuncStr(logger.GetStringsMap(cfgp.Useseries, logger.CacheMedia), mediaid))
 	}
 	return GetMediaListID(cfgp, GetdatarowN[string](false, logger.GetStringsMap(cfgp.Useseries, logger.DBListnameByMediaID), &mediaid))
 }
@@ -449,7 +451,7 @@ func GetMediaListID(cfgp *config.MediaTypeConfig, listname string) int {
 		return -1
 	}
 	for k := range cfgp.Lists {
-		if strings.EqualFold(cfgp.Lists[k].Name, listname) {
+		if cfgp.Lists[k].Name == listname || strings.EqualFold(cfgp.Lists[k].Name, listname) {
 			return k
 		}
 	}
@@ -460,7 +462,7 @@ func GetMediaListID(cfgp *config.MediaTypeConfig, listname string) int {
 // with Str1 equal to v, or -1 if not found.
 func GetDbStaticTwoStringIdx1(tbl []DbstaticTwoString, v string) int {
 	for idx := range tbl {
-		if strings.EqualFold(tbl[idx].Str1, v) {
+		if tbl[idx].Str1 == v || strings.EqualFold(tbl[idx].Str1, v) {
 			return idx
 		}
 	}
@@ -471,7 +473,7 @@ func GetDbStaticTwoStringIdx1(tbl []DbstaticTwoString, v string) int {
 // the index of that element, or -1 if not found.
 func GetDbStaticOneStringOneIntIdx(tbl []DbstaticOneStringOneInt, v string) int {
 	for idx := range tbl {
-		if strings.EqualFold(tbl[idx].Str, v) {
+		if tbl[idx].Str == v || strings.EqualFold(tbl[idx].Str, v) {
 			return idx
 		}
 	}

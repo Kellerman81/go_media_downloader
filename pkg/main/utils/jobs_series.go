@@ -27,7 +27,7 @@ const (
 func jobImportSeriesParseV2(m *apiexternal.FileParser, pathv string, updatemissing bool, cfgp *config.MediaTypeConfig, listid int, list *config.MediaListsConfig) error {
 	//keep list empty for auto detect list since the default list is in the listconfig!
 	if listid == -1 || m.M.DbserieID == 0 || m.M.SerieID == 0 {
-		seriesSetUnmatched(m, pathv, &cfgp.Lists[listid])
+		structure.AddUnmatched(cfgp, &pathv, &cfgp.Lists[listid].Name, m)
 		return errors.New("unmatched")
 	}
 	if list.CfgQuality == nil {
@@ -36,14 +36,15 @@ func jobImportSeriesParseV2(m *apiexternal.FileParser, pathv string, updatemissi
 
 	tblepi, err := structure.Getepisodestoimport(&m.M.SerieID, &m.M.DbserieID, m)
 	if err != nil || len(tblepi) == 0 {
-		seriesSetUnmatched(m, pathv, list)
+		structure.AddUnmatched(cfgp, &pathv, &list.Name, m)
 		return err
 	}
 
 	parser.GetPriorityMapQual(&m.M, cfgp, list.CfgQuality, true, false)
 	err = parser.ParseVideoFile(m, pathv, list.CfgQuality)
 	if err != nil {
-		clear(tblepi)
+		//clear(tblepi)
+		tblepi = nil
 		return err
 	}
 
@@ -75,7 +76,8 @@ func jobImportSeriesParseV2(m *apiexternal.FileParser, pathv string, updatemissi
 
 		database.ExecN("delete from serie_file_unmatcheds where filepath = ?", &pathv)
 	}
-	clear(tblepi)
+	//clear(tblepi)
+	tblepi = nil
 
 	if config.SettingsGeneral.UseMediaCache {
 		database.SlicesCacheContainsDelete(logger.CacheUnmatchedSeries, pathv)
@@ -85,28 +87,6 @@ func jobImportSeriesParseV2(m *apiexternal.FileParser, pathv string, updatemissi
 		structure.UpdateRootpath(pathv, logger.StrSeries, &m.M.SerieID, cfgp)
 	}
 	return nil
-}
-
-// seriesSetUnmatched sets unmatched series data in the database.
-// It accepts a FileParser, file path, and MediaListsConfig.
-// It queries for an existing unmatched entry by path and list name.
-// If not found, it inserts a new unmatched entry with parsed data.
-// If found, it updates the last checked time and parsed data.
-func seriesSetUnmatched(m *apiexternal.FileParser, file string, listcfg *config.MediaListsConfig) {
-	id := database.GetdatarowN[uint](false, "select id from serie_file_unmatcheds where filepath = ? and listname = ? COLLATE NOCASE", &file, &listcfg.Name)
-	parsedstr := m.M.Buildparsedstring()
-	if id == 0 {
-		if config.SettingsGeneral.UseFileCache {
-			database.AppendStringCache(logger.CacheUnmatchedSeries, file)
-		}
-		database.ExecN("Insert into serie_file_unmatcheds (listname, filepath, last_checked, parsed_data) values (?, ?, datetime('now','localtime'), ?)", &listcfg.Name, &file, &parsedstr)
-		if config.SettingsGeneral.UseMediaCache {
-			database.SlicesCacheContainsDelete(logger.CacheUnmatchedSeries, file)
-		}
-	} else {
-		database.ExecN("update serie_file_unmatcheds SET last_checked = datetime('now','localtime') where id = ?", &id)
-		database.ExecN("update serie_file_unmatcheds SET parsed_data = ? where id = ?", &parsedstr, &id)
-	}
 }
 
 // RefreshSerie refreshes the database data for a single series.
@@ -147,12 +127,13 @@ func refreshseries(cfgp *config.MediaTypeConfig, count int, query string, arg *i
 	}
 
 	for idx := range tbl {
-		logger.LogDynamic("info", "Refresh Serie", logger.NewLogField(logger.StrTvdb, tbl[idx].Num), logger.NewLogField("row", idx), logger.NewLogField("of", len(tbl)))
-		if err := importfeed.JobImportDBSeriesStatic(&tbl[idx], findconfigTemplateNameOnList(true, tbl[idx].Str2), config.GetMediaListsEntryListID(cfgp, tbl[idx].Str2), true, false); err != nil {
-			logger.LogDynamic("error", "Import series failed", logger.NewLogFieldValue(err), logger.NewLogField(logger.StrTvdb, tbl[idx].Num))
+		logger.LogDynamic("info", "Refresh Serie", logger.NewLogField(logger.StrTvdb, &tbl[idx].Num), logger.NewLogField("row", &idx), logger.NewLogField("of", len(tbl)))
+		if err := importfeed.JobImportDBSeriesStatic(&tbl[idx], cfgp, true, false); err != nil {
+			logger.LogDynamic("error", "Import series failed", logger.NewLogFieldValue(err), logger.NewLogField(logger.StrTvdb, &tbl[idx].Num))
 		}
 	}
-	clear(tbl)
+	//clear(tbl)
+	tbl = nil
 }
 
 // getrefreshseries queries the database to get series data for refreshing.
@@ -178,7 +159,7 @@ func SeriesAllJobs(job string, force bool) {
 	if job == "" {
 		return
 	}
-	logger.LogDynamic("debug", "Started Jobfor all", logger.NewLogField(logger.StrJob, job))
+	logger.LogDynamic("debug", "Started Jobfor all", logger.NewLogField(logger.StrJob, &job))
 	for _, media := range config.SettingsMedia {
 		if !media.Useseries {
 			continue
@@ -196,11 +177,11 @@ func structurefolders(cfgp *config.MediaTypeConfig) {
 		return
 	}
 	if cfgp.Data[0].CfgPath == nil {
-		logger.LogDynamic("error", "Path not found", logger.NewLogField("config", cfgp.Data[0].TemplatePath))
+		logger.LogDynamic("error", "Path not found", logger.NewLogField("config", &cfgp.Data[0].TemplatePath))
 		return
 	}
 	if !cfgp.Structure {
-		logger.LogDynamic("error", "structure not allowed", logger.NewLogField("config", cfgp.NamePrefix))
+		logger.LogDynamic("error", "structure not allowed", logger.NewLogField("config", &cfgp.NamePrefix))
 		return
 	}
 
@@ -210,84 +191,74 @@ func structurefolders(cfgp *config.MediaTypeConfig) {
 	}
 
 	for idxi := range cfgp.DataImport {
-		if cfgp.DataImport[idxi].CfgPath == nil {
-			logger.LogDynamic("error", "Path not found", logger.NewLogField("config", cfgp.DataImport[idxi].TemplatePath))
-			continue
-		}
-
-		if idxi > 0 && cfgp.DataImport[idxi-1].CfgPath.Path == cfgp.DataImport[idxi].CfgPath.Path {
-			continue
-		}
-
-		structurevar := structure.NewStructure(cfgp, &cfgp.DataImport[idxi], cfgp.DataImport[idxi].TemplatePath, defaulttemplate)
-		if structurevar == nil {
-			logger.LogDynamic("error", "structure not found", logger.NewLogField("config", cfgp.DataImport[idxi].TemplatePath))
-			continue
-		}
-		if structurevar.SourcepathCfg == nil {
-			structurevar.Close()
-			logger.LogDynamic("error", "structure source not found", logger.NewLogField("config", cfgp.DataImport[idxi].TemplatePath))
-			continue
-		}
-		if structurevar.TargetpathCfg == nil {
-			structurevar.Close()
-			logger.LogDynamic("error", "structure target not found", logger.NewLogField("config", cfgp.DataImport[idxi].TemplatePath))
-			continue
-		}
-
-		structurevar.Checkruntime = structurevar.SourcepathCfg.CheckRuntime
-		structurevar.Deletewronglanguage = structurevar.SourcepathCfg.DeleteWrongLanguage
-
-		_ = filepath.WalkDir(structurevar.SourcepathCfg.Path, func(fpath string, info fs.DirEntry, errw error) error {
-			if errw != nil {
-				return errw
-			}
-			if !info.IsDir() {
-				return nil
-			}
-			if fpath == structurevar.SourcepathCfg.Path {
-				return nil
-			}
-			structurevar.OrganizeSingleFolder(fpath)
-			return filepath.SkipDir
-		})
-		structurevar.Close()
+		structurefolderloop(cfgp, &cfgp.DataImport[idxi], idxi, defaulttemplate)
 	}
+}
+
+func structurefolderloop(cfgp *config.MediaTypeConfig, data *config.MediaDataImportConfig, idxi int, defaulttemplate string) {
+	if data.CfgPath == nil {
+		logger.LogDynamic("error", "Path not found", logger.NewLogField("config", &data.TemplatePath))
+		return
+	}
+
+	if idxi > 0 && cfgp.DataImport[idxi-1].CfgPath.Path == data.CfgPath.Path {
+		return
+	}
+
+	structurevar := structure.NewStructure(cfgp, data, data.TemplatePath, defaulttemplate)
+	if structurevar == nil {
+		logger.LogDynamic("error", "structure not found", logger.NewLogField("config", &data.TemplatePath))
+		return
+	}
+	defer structurevar.Close()
+	if structurevar.SourcepathCfg == nil {
+		logger.LogDynamic("error", "structure source not found", logger.NewLogField("config", &data.TemplatePath))
+		return
+	}
+	if structurevar.TargetpathCfg == nil {
+		logger.LogDynamic("error", "structure target not found", logger.NewLogField("config", &data.TemplatePath))
+		return
+	}
+
+	structurevar.Checkruntime = structurevar.SourcepathCfg.CheckRuntime
+	structurevar.Deletewronglanguage = structurevar.SourcepathCfg.DeleteWrongLanguage
+
+	_ = filepath.WalkDir(structurevar.SourcepathCfg.Path, func(fpath string, info fs.DirEntry, errw error) error {
+		if errw != nil {
+			return errw
+		}
+		if !info.IsDir() || fpath == structurevar.SourcepathCfg.Path {
+			return nil
+		}
+		structurevar.OrganizeSingleFolder(fpath)
+		return filepath.SkipDir
+	})
 }
 
 // importnewseriessingle imports new series from a feed into the database.
 // It gets the feed for the given list, checks for new series, and spawns
 // goroutine workers to import each new series in parallel.
 func importnewseriessingle(cfgp *config.MediaTypeConfig, list *config.MediaListsConfig, listid int) error {
-	logger.LogDynamic("info", "get feeds for", logger.NewLogField("config", cfgp.NamePrefix), logger.NewLogField(logger.StrListname, cfgp.Lists[listid].Name))
+	logger.LogDynamic("info", "get feeds for", logger.NewLogField("config", &cfgp.NamePrefix), logger.NewLogField(logger.StrListname, &cfgp.Lists[listid].Name))
 	feed, err := feeds(cfgp, list)
 	if err != nil {
 		return err
 	}
+	defer feed.Close()
 	if feed == nil {
 		return logger.ErrNotFound
 	}
 	if len(feed.Series.Serie) == 0 {
-		feed.Close()
 		return nil
 	}
 
-	series := &feed.Series
 	workergroup := worker.WorkerPoolParse.Group()
-	for idxserie2 := range series.Serie {
+	for idxserie2 := range feed.Series.Serie {
 		workergroup.Submit(func() {
-			defer func() {
-				err := recover()
-				if err != nil {
-					logger.LogDynamic("panic", "Panic in importserie", logger.NewLogFieldValue(err))
-				}
-			}()
-			importfeed.JobImportDBSeries(series, idxserie2, cfgp, listid, false, true)
+			importfeed.JobImportDBSeries(&feed.Series, idxserie2, cfgp, listid, false, true)
 		})
 	}
 	workergroup.Wait()
-	series = nil
-	feed.Close()
 	return nil
 }
 
@@ -315,5 +286,6 @@ func checkreachedepisodesflag(listcfg *config.MediaListsConfig) {
 			database.ExecN("update Serie_episodes set quality_reached = 1 where id = ?", &arr[idx].ID)
 		}
 	}
-	clear(arr)
+	//clear(arr)
+	arr = nil
 }

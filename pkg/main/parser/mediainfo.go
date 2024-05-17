@@ -114,7 +114,8 @@ type track struct {
 // }
 
 var plmediainfo = pool.NewPool(100, 0, func(b *mediaInfoJson) {}, func(b *mediaInfoJson) {
-	clear(b.Media.Track)
+	//clear(b.Media.Track)
+	b.Media.Track = nil
 	*b = mediaInfoJson{}
 })
 
@@ -186,7 +187,7 @@ func parsemediainfo(m *apiexternal.FileParser, file string, qualcfg *config.Qual
 			continue
 		}
 
-		if strings.EqualFold(track.Format, "mpeg4") && strings.EqualFold(track.CodecID, "xvid") {
+		if (track.Format == "mpeg4" || strings.EqualFold(track.Format, "mpeg4")) && (track.CodecID == "xvid" || strings.EqualFold(track.CodecID, "xvid")) {
 			track.Format = track.CodecID
 		}
 		if m.M.Codec == "" || (track.Format != "" && !strings.EqualFold(track.Format, m.M.Codec)) {

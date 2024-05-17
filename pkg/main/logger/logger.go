@@ -164,6 +164,10 @@ func LogDynamicSlice(typev string, msg string, staticfields []LogField, fields .
 		}
 		addlogvalue(logv, &staticfields[idx])
 	}
+	//clear(fields)
+	fields = nil
+	//clear(staticfields)
+	staticfields = nil
 	logv.Msg(msg)
 }
 
@@ -230,6 +234,10 @@ func addlogvalue(logv *zerolog.Event, field *LogField) {
 		logv.Err(tt)
 	case *bytes.Buffer:
 		logv.Bytes(field.Name, tt.Bytes())
+	case []string:
+		logv.Strs(field.Name, tt)
+	case *[]string:
+		logv.Strs(field.Name, *tt)
 	default:
 		logv.Any(field.Name, tt)
 	}
@@ -265,5 +273,7 @@ func LogDynamic(typev string, msg string, fields ...LogField) {
 		}
 		addlogvalue(logv, &fields[idx])
 	}
+	//clear(fields)
+	fields = nil
 	logv.Msg(msg)
 }

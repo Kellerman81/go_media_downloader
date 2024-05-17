@@ -1013,6 +1013,8 @@ func (q *SerieConfig) Close() {
 	if q == nil {
 		return
 	}
+	//clear(q.AlternateName)
+	//clear(q.DisallowedName)
 	q.AlternateName = nil
 	q.DisallowedName = nil
 	*q = SerieConfig{}
@@ -1038,14 +1040,15 @@ func LoadCfgDB() error {
 		fmt.Println("Error loading config. " + err.Error())
 		return err
 	}
+	defer content.Close()
 	//err = toml.Unmarshal(content, &results)
 	err = logger.ParseToml(content, &cachetoml)
 	if err != nil {
 		fmt.Println("Error loading config. " + err.Error())
-		content.Close()
 		return err
 	}
 	configDB, _ := pudge.Open("./databases/config.db", &pudge.Config{SyncInterval: 0})
+	defer configDB.Close()
 	pudge.BackupAll("")
 	// Cfg.Keys = make(map[string]bool)
 	SettingsDownloader = make(map[string]*DownloaderConfig, len(cachetoml.Downloader))
@@ -1206,8 +1209,6 @@ func LoadCfgDB() error {
 			traktToken = &token
 		}
 	}
-	configDB.Close()
-	content.Close()
 
 	return nil
 }
@@ -1223,7 +1224,7 @@ func GetMediaListsEntryListID(cfgp *MediaTypeConfig, listname string) int {
 		return -1
 	}
 	for k := range cfgp.Lists {
-		if strings.EqualFold(cfgp.Lists[k].Name, listname) {
+		if cfgp.Lists[k].Name == listname || strings.EqualFold(cfgp.Lists[k].Name, listname) {
 			return k
 		}
 	}
@@ -1332,6 +1333,7 @@ func GetCfgAll() map[string]any {
 func UpdateCfgEntry(configIn Conf) {
 	configDB, _ := pudge.Open("./databases/config.db", &pudge.Config{SyncInterval: 0})
 
+	defer configDB.Close()
 	key := configIn.Name
 	//Cfg.Keys[key] = true
 
@@ -1386,7 +1388,6 @@ func UpdateCfgEntry(configIn Conf) {
 		//logger.GlobalCache.Set(key, *configIn.Data.(*oauth2.Token), 0, false)
 		configDB.Set(key, *configIn.Data.(*oauth2.Token))
 	}
-	configDB.Close()
 }
 
 // DeleteCfgEntry deletes the configuration entry with the given name from
@@ -1396,6 +1397,7 @@ func UpdateCfgEntry(configIn Conf) {
 func DeleteCfgEntry(name string) {
 	configDB, _ := pudge.Open("./databases/config.db", &pudge.Config{SyncInterval: 0})
 
+	defer configDB.Close()
 	//delete(Cfg.Keys, name)
 
 	if strings.HasPrefix(name, "general") {
@@ -1436,7 +1438,6 @@ func DeleteCfgEntry(name string) {
 	}
 
 	_ = configDB.Delete(name)
-	_ = configDB.Close()
 }
 
 // ClearCfg clears all configuration settings by deleting the config database file,
@@ -1444,7 +1445,7 @@ func DeleteCfgEntry(name string) {
 // It wipes the existing config and starts fresh with defaults.
 func ClearCfg() {
 	configDB, _ := pudge.Open("./databases/config.db", &pudge.Config{SyncInterval: 0})
-
+	defer configDB.Close()
 	_ = configDB.DeleteFile()
 	SettingsDownloader = make(map[string]*DownloaderConfig)
 	SettingsIndexer = make(map[string]*IndexersConfig)
@@ -1520,7 +1521,7 @@ func ClearCfg() {
 	SettingsPath["path_initial"] = &PathsConfig{Name: "initial", AllowedVideoExtensions: []string{".avi", ".mkv", ".mp4"}, AllowedOtherExtensions: []string{".idx", ".sub", ".srt"}}
 	SettingsQuality["quality_initial"] = &QualityConfig{Name: "initial", QualityReorder: qureoconfig, Indexer: quindconfig}
 	SettingsRegex["regex_initial"] = &RegexConfig{Name: "initial"}
-	configDB.Close()
+
 }
 
 // WriteCfg marshals the application configuration structs into a TOML

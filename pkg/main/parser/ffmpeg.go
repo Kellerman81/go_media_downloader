@@ -141,7 +141,8 @@ type ffProbeStreamTags struct {
 }
 
 var plffprobe = pool.NewPool(100, 0, func(b *ffProbeJSON) {}, func(b *ffProbeJSON) {
-	clear(b.Streams)
+	//clear(b.Streams)
+	b.Streams = nil
 	*b = ffProbeJSON{}
 })
 
@@ -174,7 +175,8 @@ func (c *Cmdout) Close() {
 	if c == nil {
 		return
 	}
-	clear(c.Out)
+	//clear(c.Out)
+	c.Out = nil
 	*c = Cmdout{}
 }
 
@@ -201,8 +203,11 @@ func ExecCmd(com string, file string, typ string) Cmdout {
 	}
 	outputBuf := logger.PlBuffer.Get()
 	stdErr := logger.PlBuffer.Get()
+	defer logger.PlBuffer.Put(outputBuf)
+	defer logger.PlBuffer.Put(stdErr)
 	cmd := exec.Command(com, args...)
-	clear(args)
+	//clear(args)
+	args = nil
 	cmd.Stdout = outputBuf
 	cmd.Stderr = stdErr
 	out := Cmdout{Err: cmd.Run()}
@@ -213,8 +218,6 @@ func ExecCmd(com string, file string, typ string) Cmdout {
 		out.Outerror = stdErr.String()
 	}
 
-	logger.PlBuffer.Put(outputBuf)
-	logger.PlBuffer.Put(stdErr)
 	return out
 }
 
@@ -259,14 +262,14 @@ func probeURL(m *apiexternal.FileParser, file string, qualcfg *config.QualityCon
 
 	var n int
 	for idx := range result.Streams {
-		if result.Streams[idx].Tags.Language != "" && strings.EqualFold(result.Streams[idx].CodecType, "audio") {
+		if result.Streams[idx].Tags.Language != "" && (result.Streams[idx].CodecType == "audio" || strings.EqualFold(result.Streams[idx].CodecType, "audio")) {
 			n++
 		}
 	}
 
 	m.M.Languages = make([]string, 0, n)
 	for _, stream := range result.Streams {
-		if strings.EqualFold(stream.CodecType, "audio") {
+		if stream.CodecType == "audio" || strings.EqualFold(stream.CodecType, "audio") {
 			if stream.Tags.Language != "" {
 				m.M.Languages = append(m.M.Languages, stream.Tags.Language)
 			}
@@ -277,14 +280,16 @@ func probeURL(m *apiexternal.FileParser, file string, qualcfg *config.QualityCon
 			}
 			continue
 		}
-		if !strings.EqualFold(stream.CodecType, "video") {
-			continue
+		if stream.CodecType != "video" {
+			if !strings.EqualFold(stream.CodecType, "video") {
+				continue
+			}
 		}
 		if stream.Height > stream.Width {
 			stream.Height, stream.Width = stream.Width, stream.Height
 		}
 
-		if strings.EqualFold(stream.CodecName, "mpeg4") && strings.EqualFold(stream.CodecTagString, "xvid") {
+		if (stream.CodecName == "mpeg4" || strings.EqualFold(stream.CodecName, "mpeg4")) && (stream.CodecTagString == "xvid" || strings.EqualFold(stream.CodecTagString, "xvid")) {
 			stream.CodecName = stream.CodecTagString
 		}
 		if m.M.Codec == "" || (stream.CodecName != "" && !strings.EqualFold(stream.CodecName, m.M.Codec)) {

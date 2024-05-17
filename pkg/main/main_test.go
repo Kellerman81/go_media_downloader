@@ -1171,6 +1171,13 @@ func TestReconnectQuery(b *testing.T) {
 	b.Log(outid)
 }
 
+func TestTraktQuery(b *testing.T) {
+	Init()
+	data, err := apiexternal.Testaddtraktdbepisodes()
+	b.Log(data)
+	b.Log(err)
+}
+
 func TestQueryXML1new(b *testing.T) {
 	Init()
 	// c := apiexternal.NewClient(

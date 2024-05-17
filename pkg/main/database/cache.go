@@ -78,7 +78,7 @@ type cacheTypeExpire[T any] struct {
 }
 
 var GlobalCache *globalcache
-var mu = sync.Mutex{}
+var mu = sync.Mutex{} //To make sure that the cache is only initialized once
 
 // InitCache initializes the global cache by creating a new Cache instance
 // with the provided expiration times and logger. It is called on startup
@@ -198,11 +198,12 @@ func SlicesCacheContainsI(s string, v string) bool {
 
 // SlicesCacheContains checks if the cached string array identified by s contains
 // the value v. It iterates over the array and returns true if a match is found.
-func SlicesCacheContains(s string, v string) bool {
+func SlicesCacheContains(s string, q *string) bool {
 	a := GetCachedTypeObjArr[string](s)
 	if a == nil {
 		return false
 	}
+	v := *q
 	for idx := range a {
 		if v == a[idx] {
 			return true
@@ -323,7 +324,7 @@ func CacheThreeStringIntIndexFunc(s string, str *string) uint {
 	}
 	t := *str
 	for idx := range a {
-		if strings.EqualFold(a[idx].Str3, t) {
+		if a[idx].Str3 == t || strings.EqualFold(a[idx].Str3, t) {
 			return uint(a[idx].Num2)
 		}
 	}
@@ -965,10 +966,8 @@ func (c *globalcache) GetStmt(key string, imdb bool, db *sqlx.DB) *sqlx.Stmt {
 // It then stores the regex and expiration in the cache.
 // Returns the compiled regex.
 func (c *globalcache) set(key string, dur time.Duration) *regexp.Regexp {
-	mu.Lock()
 	regex := getregex(key)
 	if regex == nil {
-		mu.Unlock()
 		return nil
 	}
 
@@ -979,7 +978,6 @@ func (c *globalcache) set(key string, dur time.Duration) *regexp.Regexp {
 		value:   regex,
 		expires: getexpireskey(dur, key),
 	})
-	mu.Unlock()
 	return regex
 }
 

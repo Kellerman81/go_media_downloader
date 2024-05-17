@@ -242,7 +242,7 @@ const (
 
 var (
 	readWriteMu = sync.RWMutex{}
-	DBConnect   dbGlobal
+	DBConnect   DBGlobal
 	dbData      *sqlx.DB
 	dbImdb      *sqlx.DB
 	DBVersion   = "1"
@@ -268,44 +268,32 @@ func cachedelete(key, value any) {
 			*item.value = regexp.Regexp{}
 			*item = itemregex{}
 		case *cacheTypeExpire[string]:
-			clear(item.Arr)
+			//clear(item.Arr)
 			item.Arr = nil
+			*item = cacheTypeExpire[string]{}
 		case *cacheTypeExpire[DbstaticThreeStringTwoInt]:
-			clear(item.Arr)
+			//clear(item.Arr)
 			item.Arr = nil
+			*item = cacheTypeExpire[DbstaticThreeStringTwoInt]{}
 		case *cacheTypeExpire[DbstaticTwoStringOneInt]:
-			clear(item.Arr)
+			//clear(item.Arr)
 			item.Arr = nil
+			*item = cacheTypeExpire[DbstaticTwoStringOneInt]{}
 		case *cacheTypeExpire[DbstaticOneStringOneInt]:
-			clear(item.Arr)
+			//clear(item.Arr)
 			item.Arr = nil
+			*item = cacheTypeExpire[DbstaticOneStringOneInt]{}
 		case *cacheTypeExpire[DbstaticOneStringTwoInt]:
-			clear(item.Arr)
+			//clear(item.Arr)
 			item.Arr = nil
+			*item = cacheTypeExpire[DbstaticOneStringTwoInt]{}
 		case *cacheTypeExpire[DbstaticTwoInt]:
-			clear(item.Arr)
+			//clear(item.Arr)
 			item.Arr = nil
+			*item = cacheTypeExpire[DbstaticTwoInt]{}
 		case *cacheTypeExpire[any]:
-			clear(item.Arr)
+			//clear(item.Arr)
 			item.Arr = nil
-			// case *cacheOneStringIntExpire:
-			// 	clear(item.Arr)
-			// 	*item = cacheOneStringIntExpire{}
-			// case *CacheOneStringTwoIntExpire:
-			// 	clear(item.Arr)
-			// 	*item = CacheOneStringTwoIntExpire{}
-			// case *CacheThreeStringTwoIntExpire:
-			// 	clear(item.Arr)
-			// 	*item = CacheThreeStringTwoIntExpire{}
-			// case *cacheStringExpire:
-			// 	clear(item.Arr)
-			// 	*item = cacheStringExpire{}
-			// case *cacheTwoIntExpire:
-			// 	clear(item.Arr)
-			// 	*item = cacheTwoIntExpire{}
-			// case *CacheTwoStringIntExpire:
-			// 	clear(item.Arr)
-			// 	*item = CacheTwoStringIntExpire{}
 		}
 	}
 	cache.items.Delete(key)
@@ -389,68 +377,105 @@ func queryGenericsT[T any](size int, rows *sqlx.Rows) []T {
 		result = make([]T, 0, size)
 	}
 	var u T
-	d := getfunc2(&u)
+	//d := getfunc2(&u)
+	simplescan, structscan := getfunctype(&u)
 	for rows.Next() {
-		if d.simplescan {
+		if simplescan {
 			if rows.Scan(&u) == nil {
 				result = append(result, u)
 			}
-		} else if d.structscan {
+		} else if structscan {
 			if rows.StructScan(&u) == nil {
 				result = append(result, u)
 			}
-		} else if rows.Scan(d.arr...) == nil {
+		} else if getfuncarr(&u, rows.Rows) == nil {
 			result = append(result, u)
 		}
 	}
 	return result
 }
 
-type fieldconfig struct {
-	simplescan bool
-	structscan bool
-	arr        []any
-}
-
 // getfunc2 determines how to scan a value of type any into a sqlx.Rows
 // result. It returns a fieldconfig struct indicating whether the value is a
 // simple type to scan directly, a struct to scan with StructScan, or a custom
 // slice of fields to scan individually.
-func getfunc2(u any) fieldconfig {
-	var f fieldconfig
-	switch elem := u.(type) {
-	case *DbstaticOneIntOneBool:
-		f.arr = []any{&elem.Num, &elem.Bl}
-	case *dbstaticOneInt:
-		f.arr = []any{&elem.Num}
-	case *DbstaticOneStringOneInt:
-		f.arr = []any{&elem.Str, &elem.Num}
-	case *DbstaticOneStringOneUInt:
-		f.arr = []any{&elem.Str, &elem.Num}
-	case *DbstaticOneStringTwoInt:
-		f.arr = []any{&elem.Str, &elem.Num1, &elem.Num2}
-	case *DbstaticTwoStringOneInt:
-		f.arr = []any{&elem.Str1, &elem.Str2, &elem.Num}
-	case *DbstaticTwoInt:
-		f.arr = []any{&elem.Num1, &elem.Num2}
-	case *DbstaticTwoUint:
-		f.arr = []any{&elem.Num1, &elem.Num2}
-	case *DbstaticThreeString:
-		f.arr = []any{&elem.Str1, &elem.Str2, &elem.Str3}
-	case *dbstaticThreeStringOneInt:
-		f.arr = []any{&elem.Str1, &elem.Str2, &elem.Str3, &elem.Num1}
-	case *DbstaticThreeStringTwoInt:
-		f.arr = []any{&elem.Str1, &elem.Str2, &elem.Str3, &elem.Num1, &elem.Num2}
-	case *FilePrio:
-		f.arr = []any{&elem.Location, &elem.DBID, &elem.ID, &elem.ResolutionID, &elem.QualityID, &elem.CodecID, &elem.AudioID, &elem.Proper, &elem.Repack, &elem.Extended}
-	case *DbstaticTwoString:
-		f.arr = []any{&elem.Str1, &elem.Str2}
+// func getfunc2(u any) fieldconfig {
+// 	var f fieldconfig
+// 	switch elem := u.(type) {
+// 	case *DbstaticOneIntOneBool:
+// 		f.arr = []any{&elem.Num, &elem.Bl}
+// 	case *dbstaticOneInt:
+// 		f.arr = []any{&elem.Num}
+// 	case *DbstaticOneStringOneInt:
+// 		f.arr = []any{&elem.Str, &elem.Num}
+// 	case *DbstaticOneStringOneUInt:
+// 		f.arr = []any{&elem.Str, &elem.Num}
+// 	case *DbstaticOneStringTwoInt:
+// 		f.arr = []any{&elem.Str, &elem.Num1, &elem.Num2}
+// 	case *DbstaticTwoStringOneInt:
+// 		f.arr = []any{&elem.Str1, &elem.Str2, &elem.Num}
+// 	case *DbstaticTwoInt:
+// 		f.arr = []any{&elem.Num1, &elem.Num2}
+// 	case *DbstaticTwoUint:
+// 		f.arr = []any{&elem.Num1, &elem.Num2}
+// 	case *DbstaticThreeString:
+// 		f.arr = []any{&elem.Str1, &elem.Str2, &elem.Str3}
+// 	case *dbstaticThreeStringOneInt:
+// 		f.arr = []any{&elem.Str1, &elem.Str2, &elem.Str3, &elem.Num1}
+// 	case *DbstaticThreeStringTwoInt:
+// 		f.arr = []any{&elem.Str1, &elem.Str2, &elem.Str3, &elem.Num1, &elem.Num2}
+// 	case *FilePrio:
+// 		f.arr = []any{&elem.Location, &elem.DBID, &elem.ID, &elem.ResolutionID, &elem.QualityID, &elem.CodecID, &elem.AudioID, &elem.Proper, &elem.Repack, &elem.Extended}
+// 	case *DbstaticTwoString:
+// 		f.arr = []any{&elem.Str1, &elem.Str2}
+// 	case *int, *string, *uint:
+// 		f.simplescan = true
+// 	default:
+// 		f.structscan = true
+// 	}
+// 	return f
+// }
+
+func getfunctype(u any) (bool, bool) {
+	switch u.(type) {
 	case *int, *string, *uint:
-		f.simplescan = true
-	default:
-		f.structscan = true
+		return true, false
+	case *dbstaticOneInt, *DbstaticTwoString, *DbstaticOneStringOneInt, *DbstaticOneStringOneUInt, *DbstaticOneIntOneBool, *DbstaticTwoInt, *DbstaticTwoUint, *DbstaticOneStringTwoInt, *DbstaticTwoStringOneInt, *DbstaticThreeString, *dbstaticThreeStringOneInt, *DbstaticThreeStringTwoInt, *FilePrio:
+		return false, false
 	}
-	return f
+	return false, true
+}
+
+func getfuncarr(u any, s *sql.Rows) error {
+	switch elem := u.(type) {
+	case *dbstaticOneInt:
+		return s.Scan(&elem.Num)
+	case *DbstaticTwoString:
+		return s.Scan(&elem.Str1, &elem.Str2)
+	case *DbstaticOneStringOneInt:
+		return s.Scan(&elem.Str, &elem.Num)
+	case *DbstaticOneStringOneUInt:
+		return s.Scan(&elem.Str, &elem.Num)
+	case *DbstaticOneIntOneBool:
+		return s.Scan(&elem.Num, &elem.Bl)
+	case *DbstaticTwoInt:
+		return s.Scan(&elem.Num1, &elem.Num2)
+	case *DbstaticTwoUint:
+		return s.Scan(&elem.Num1, &elem.Num2)
+	case *DbstaticOneStringTwoInt:
+		return s.Scan(&elem.Str, &elem.Num1, &elem.Num2)
+	case *DbstaticTwoStringOneInt:
+		return s.Scan(&elem.Str1, &elem.Str2, &elem.Num)
+	case *DbstaticThreeString:
+		return s.Scan(&elem.Str1, &elem.Str2, &elem.Str3)
+	case *dbstaticThreeStringOneInt:
+		return s.Scan(&elem.Str1, &elem.Str2, &elem.Str3, &elem.Num1)
+	case *DbstaticThreeStringTwoInt:
+		return s.Scan(&elem.Str1, &elem.Str2, &elem.Str3, &elem.Num1, &elem.Num2)
+	case *FilePrio:
+		return s.Scan(&elem.Location, &elem.DBID, &elem.ID, &elem.ResolutionID, &elem.QualityID, &elem.CodecID, &elem.AudioID, &elem.Proper, &elem.Repack, &elem.Extended)
+	}
+	return nil
 }
 
 // structscan queries the database using the given query string and scans the
@@ -465,7 +490,7 @@ func structscan(querystring string, imdb bool, u any, id ...any) error {
 		return nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
-		logger.LogDynamic("error", "select", logger.NewLogFieldValue(err), logger.NewLogField(logger.StrQuery, querystring))
+		logger.LogDynamic("error", "select", logger.NewLogFieldValue(err), logger.NewLogField(logger.StrQuery, &querystring))
 		if err.Error() == "sql: database is closed" {
 			cache.items.Delete(querystring)
 		}
@@ -479,8 +504,7 @@ func structscan(querystring string, imdb bool, u any, id ...any) error {
 // returned.
 func structscanG[T any](querystring string, imdb bool, id any) (T, error) {
 	var u T
-	err := structscan(querystring, imdb, &u, id)
-	return u, err
+	return u, structscan(querystring, imdb, &u, id)
 }
 
 // GetDbmovieByIDP retrieves a Dbmovie by ID. It takes a uint ID and a
@@ -658,7 +682,7 @@ func GetSeries(qu Querywithargs, args ...any) (Serie, error) {
 		return u, nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
-		logger.LogDynamic("error", "select", logger.NewLogFieldValue(err), logger.NewLogField(logger.StrQuery, qu.QueryString))
+		logger.LogDynamic("error", "select", logger.NewLogFieldValue(err), logger.NewLogField(logger.StrQuery, &qu.QueryString))
 	}
 	return u, err
 }
@@ -680,7 +704,7 @@ func GetSerieEpisodes(qu Querywithargs, args ...any) (SerieEpisode, error) {
 		return u, nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
-		logger.LogDynamic("error", "select", logger.NewLogFieldValue(err), logger.NewLogField(logger.StrQuery, qu.QueryString))
+		logger.LogDynamic("error", "select", logger.NewLogFieldValue(err), logger.NewLogField(logger.StrQuery, &qu.QueryString))
 	}
 	return u, err
 }
@@ -713,7 +737,7 @@ func GetMovies(qu Querywithargs, args ...any) (Movie, error) {
 		return u, nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
-		logger.LogDynamic("error", "select", logger.NewLogFieldValue(err), logger.NewLogField(logger.StrQuery, qu.QueryString))
+		logger.LogDynamic("error", "select", logger.NewLogFieldValue(err), logger.NewLogField(logger.StrQuery, &qu.QueryString))
 	}
 	return u, err
 }
@@ -842,7 +866,7 @@ func GetImdbRating(arg *string, movie *Dbmovie, overwrite bool) {
 		if (movie.VoteCount == 0 || overwrite) && imdbratedata.NumVotes != 0 {
 			movie.VoteCount = imdbratedata.NumVotes
 		}
-		imdbratedata.Close()
+		//imdbratedata.Close()
 	}
 }
 
@@ -893,11 +917,11 @@ func GetImdbTitle(arg *string, movie *Dbmovie, overwrite bool) {
 	if (movie.OriginalTitle == "" || overwrite) && imdbdata.OriginalTitle != "" {
 		movie.OriginalTitle = imdbdata.OriginalTitle
 	}
-	if (movie.Runtime == 0 || movie.Runtime == 1 || movie.Runtime == 2 || movie.Runtime == 3 || movie.Runtime == 60 || movie.Runtime == 90 || movie.Runtime == 120 || overwrite) && imdbdata.RuntimeMinutes != 0 {
-		if movie.Runtime != 0 && (imdbdata.RuntimeMinutes == 1 || imdbdata.RuntimeMinutes == 2 || imdbdata.RuntimeMinutes == 3 || imdbdata.RuntimeMinutes == 60 || imdbdata.RuntimeMinutes == 90 || imdbdata.RuntimeMinutes == 120) {
-			logger.LogDynamic("debug", "skipped imdb movie runtime for", logger.NewLogField(logger.StrImdb, movie.ImdbID))
+	if (movie.Runtime == 0 || movie.Runtime == 1 || movie.Runtime == 2 || movie.Runtime == 3 || movie.Runtime == 4 || movie.Runtime == 60 || movie.Runtime == 90 || movie.Runtime == 120 || overwrite) && imdbdata.RuntimeMinutes != 0 {
+		if movie.Runtime != 0 && (imdbdata.RuntimeMinutes == 1 || imdbdata.RuntimeMinutes == 2 || imdbdata.RuntimeMinutes == 3 || imdbdata.RuntimeMinutes == 4) {
+			logger.LogDynamic("debug", "skipped imdb movie runtime for", logger.NewLogField(logger.StrImdb, &movie.ImdbID))
 		} else {
-			logger.LogDynamic("debug", "set imdb movie runtime for", logger.NewLogField(logger.StrImdb, movie.ImdbID))
+			logger.LogDynamic("debug", "set imdb movie runtime for", logger.NewLogField(logger.StrImdb, &movie.ImdbID))
 			movie.Runtime = imdbdata.RuntimeMinutes
 		}
 	}
@@ -909,7 +933,7 @@ func GetImdbTitle(arg *string, movie *Dbmovie, overwrite bool) {
 	}
 
 	GetImdbRating(&movie.ImdbID, movie, overwrite)
-	imdbdata.Close()
+	//imdbdata.Close()
 }
 
 // Buildquery constructs the SQL query string from the Querywithargs fields.
@@ -1005,7 +1029,7 @@ func ScanrowsNdyn(imdb bool, querystring string, obj any, args ...any) error {
 			reflect.ValueOf(obj).Elem().SetZero()
 		}
 		if !errors.Is(err, sql.ErrNoRows) {
-			logger.LogDynamic("error", "select", logger.NewLogFieldValue(err), logger.NewLogField(logger.StrQuery, querystring))
+			logger.LogDynamic("error", "select", logger.NewLogFieldValue(err), logger.NewLogField(logger.StrQuery, &querystring))
 		}
 		if err.Error() == "sql: database is closed" {
 			cache.items.Delete(querystring)
@@ -1040,7 +1064,7 @@ func GetdatarowArgs(querystring string, arg any, objs ...any) {
 	err := GlobalCache.GetStmt(querystring, false, dbData).QueryRow(arg).Scan(objs...)
 	readWriteMu.RUnlock()
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		logger.LogDynamic("error", "select", logger.NewLogFieldValue(err), logger.NewLogField(logger.StrQuery, querystring))
+		logger.LogDynamic("error", "select", logger.NewLogFieldValue(err), logger.NewLogField(logger.StrQuery, &querystring))
 	}
 	if err != nil && err.Error() == "sql: database is closed" {
 		cache.items.Delete(querystring)
@@ -1067,7 +1091,7 @@ func GetrowsN[T any](imdb bool, size int, querystring string, args ...any) []T {
 		return queryGenericsT[T](size, rows)
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
-		logger.LogDynamic("error", "select", logger.NewLogFieldValue(err), logger.NewLogField(logger.StrQuery, querystring))
+		logger.LogDynamic("error", "select", logger.NewLogFieldValue(err), logger.NewLogField(logger.StrQuery, &querystring))
 	}
 	if err.Error() == "sql: database is closed" {
 		cache.items.Delete(querystring)
@@ -1087,7 +1111,7 @@ func GetrowsNuncached[T any](size int, querystring string, args []any) []T {
 		return queryGenericsT[T](size, rows)
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
-		logger.LogDynamic("error", "select", logger.NewLogFieldValue(err), logger.NewLogField(logger.StrQuery, querystring))
+		logger.LogDynamic("error", "select", logger.NewLogFieldValue(err), logger.NewLogField(logger.StrQuery, &querystring))
 	}
 	return nil
 }
@@ -1131,11 +1155,12 @@ func QueryImdbAkaCountByTitleSlug(arg *string, arg2 *string) int {
 // It locks access to the database during the query, logs any errors, and handles error cases.
 func ExecN(querystring string, args ...any) (sql.Result, error) {
 	readWriteMu.Lock()
+	defer readWriteMu.Unlock()
 	result, err := GlobalCache.GetStmt(querystring, false, dbData).Exec(args...)
-	readWriteMu.Unlock()
+
 	if err != nil {
 		if !errors.Is(err, sql.ErrNoRows) {
-			logger.LogDynamic("error", "exec", logger.NewLogFieldValue(err), logger.NewLogField(logger.StrQuery, querystring))
+			logger.LogDynamic("error", "exec", logger.NewLogFieldValue(err), logger.NewLogField(logger.StrQuery, &querystring))
 		}
 		if err.Error() == "sql: database is closed" {
 			cache.items.Delete(querystring)
@@ -1154,7 +1179,7 @@ func ExecNid(querystring string, args ...any) (int64, error) {
 	}
 	newid, err := dbresult.LastInsertId()
 	if err != nil {
-		logger.LogDynamic("error", "query insert", logger.NewLogFieldValue(err), logger.NewLogField("query", querystring))
+		logger.LogDynamic("error", "query insert", logger.NewLogFieldValue(err), logger.NewLogField("query", &querystring))
 		return 0, err
 	}
 	return newid, nil
@@ -1215,7 +1240,7 @@ func DeleteRow(table string, where string, args ...any) (sql.Result, error) {
 		querystring = querystring + " where " + where
 	}
 	if DBLogLevel == logger.StrDebug {
-		logger.LogDynamic("debug", "query count", logger.NewLogField(logger.StrQuery, querystring), logger.NewLogField("args", args))
+		logger.LogDynamic("debug", "query count", logger.NewLogField(logger.StrQuery, &querystring), logger.NewLogField("args", args))
 	}
 	return ExecN(querystring, args...)
 }
@@ -1236,7 +1261,7 @@ func queryrowfulllockconnect(query string) string {
 		return str
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
-		logger.LogDynamic("error", "select", logger.NewLogFieldValue(err), logger.NewLogField(logger.StrQuery, query))
+		logger.LogDynamic("error", "select", logger.NewLogFieldValue(err), logger.NewLogField(logger.StrQuery, &query))
 	}
 	return ""
 }
@@ -1296,6 +1321,7 @@ func ExchangeImdbDB() {
 		return
 	}
 	readWriteMu.Lock()
+	defer readWriteMu.Unlock()
 	dbImdb.Close()
 
 	_ = os.Chmod(dbfile, 0777)
@@ -1305,5 +1331,4 @@ func ExchangeImdbDB() {
 		logger.LogDynamic("debug", "File renamed", logger.NewLogFieldValue(dbfiletemp))
 	}
 	InitImdbdb()
-	readWriteMu.Unlock()
 }

@@ -277,16 +277,15 @@ func QueryNewznabMovieImdb(cfgind *config.IndexersConfig, qual *config.QualityCo
 	// 	entries.Arr = make(*[]Nzbwithprio, 0, row.InitRows)
 	// }
 	client := Getnewznabclient(cfgind)
-	bldstr := client.buildURLNew(false, categories, qual, cfgind, 0, func(b *bytes.Buffer) {
+
+	return client.processurlsimple(cfgind, qual, client.buildURLNew(false, categories, qual, cfgind, 0, func(b *bytes.Buffer) {
 		b.WriteString(bmovieimdb)
 		b.WriteString(imdbid)
 		if cfgind.MaxEntries != 0 {
 			b.WriteString(bqlimit)
 			logger.BuilderAddInt(b, cfgind.MaxEntries)
 		}
-	})
-
-	return client.processurlsimple(cfgind, qual, bldstr, mu, results)
+	}), mu, results)
 }
 
 // Getnewznabclient returns a Client for the given IndexersConfig.
@@ -327,7 +326,9 @@ func QueryNewznabTvTvdb(cfgind *config.IndexersConfig, qual *config.QualityConfi
 	// 	entries.Arr = make(*[]Nzbwithprio, 0, row.InitRows)
 	// }
 	client := Getnewznabclient(cfgind)
-	bldstr := client.buildURLNew(false, categories, qual, cfgind, 20, func(b *bytes.Buffer) {
+
+	//urlv := client.buildURL(urlbuilder{searchtype: "tvsearch", tvdbid: tvdbid, useseason: useseason, season: season, useepisode: useepisode, episode: episode, limit: limitstr, categories: categories}, row)
+	return client.processurlsimple(cfgind, qual, client.buildURLNew(false, categories, qual, cfgind, 20, func(b *bytes.Buffer) {
 		b.WriteString(btvsearchtvdb)
 		logger.BuilderAddInt(b, tvdbid)
 		if !useepisode || !useseason {
@@ -345,10 +346,7 @@ func QueryNewznabTvTvdb(cfgind *config.IndexersConfig, qual *config.QualityConfi
 			b.WriteString(bepi)
 			b.WriteString(episode)
 		}
-	})
-
-	//urlv := client.buildURL(urlbuilder{searchtype: "tvsearch", tvdbid: tvdbid, useseason: useseason, season: season, useepisode: useepisode, episode: episode, limit: limitstr, categories: categories}, row)
-	return client.processurlsimple(cfgind, qual, bldstr, mu, results)
+	}), mu, results)
 }
 
 // QueryNewznabQuery queries the Newznab API for the given search query, indexer
@@ -360,7 +358,8 @@ func QueryNewznabQuery(cfgind *config.IndexersConfig, qual *config.QualityConfig
 		return XMLResponse{}
 	}
 	client := Getnewznabclient(cfgind)
-	bldstr := client.buildURLNew(false, categories, qual, cfgind, len(query)+10, func(b *bytes.Buffer) {
+
+	return client.processurlsimple(cfgind, qual, client.buildURLNew(false, categories, qual, cfgind, len(query)+10, func(b *bytes.Buffer) {
 		b.WriteString(bsearchq)
 		if cfgind.Addquotesfortitlequery {
 			b.WriteString(bquotes)
@@ -377,9 +376,7 @@ func QueryNewznabQuery(cfgind *config.IndexersConfig, qual *config.QualityConfig
 				logger.BuilderAddInt(b, cfgind.MaxEntries)
 			}
 		}
-	})
-
-	return client.processurlsimple(cfgind, qual, bldstr, mu, results)
+	}), mu, results)
 }
 
 // writeescapequery escapes the provided query string using url.QueryEscape and writes it to the provided bytes.Buffer.
@@ -397,14 +394,13 @@ func QueryNewznabRSS(ind *config.IndexersConfig, qual *config.QualityConfig, max
 	// 	entries.Arr = make(*[]Nzbwithprio, 0, row.InitRows)
 	// }
 	client := Getnewznabclient(ind)
-	bldstr := client.buildURLNew(true, categories, qual, ind, 0, func(b *bytes.Buffer) {
+
+	return client.processurl(ind, qual, client.buildURLNew(true, categories, qual, ind, 0, func(b *bytes.Buffer) {
 		if maxitems != 0 {
 			b.WriteString(bqlimit)
 			logger.BuilderAddInt(b, maxitems)
 		}
-	})
-
-	return client.processurl(ind, qual, bldstr, "", mu, ind.MaxEntries, results)
+	}), "", mu, ind.MaxEntries, results)
 }
 
 // QueryNewznabRSSLastCustom queries the Newznab RSS feed for the latest items
@@ -450,11 +446,10 @@ func QueryNewznabRSSLastCustom(ind *config.IndexersConfig, qual *config.QualityC
 	}
 	urlv := logger.JoinStrings(bldstr, "&offset=")
 
-	var retloop XMLResponse
 	for count := 1; count <= maxloop; count++ {
 		//getid = len(*results)
 		//broke, _, erradd = client.processurl(ind, qual, logger.JoinStrings(urlv, strconv.Itoa(maxitems*count)), tillid, mu, maxitems*maxloop, results)
-		retloop = client.processurl(ind, qual, logger.JoinStrings(urlv, strconv.Itoa(maxitems*count)), tillid, mu, maxitems*maxloop, results)
+		retloop := client.processurl(ind, qual, logger.JoinStrings(urlv, strconv.Itoa(maxitems*count)), tillid, mu, maxitems*maxloop, results)
 		if retloop.Err != nil || len(*results) == 0 {
 			break
 		}

@@ -2,7 +2,6 @@ package apiexternal
 
 import (
 	"errors"
-	"slices"
 	"strconv"
 	"time"
 
@@ -87,6 +86,10 @@ func (t *theTVDBSeries) Close() {
 	if config.SettingsGeneral.DisableVariableCleanup || t == nil {
 		return
 	}
+	//clear(t.Data.Aliases)
+	//clear(t.Data.Genre)
+	t.Data.Aliases = nil
+	t.Data.Genre = nil
 	*t = theTVDBSeries{}
 }
 
@@ -96,7 +99,8 @@ func (t *theTVDBEpisodes) Close() {
 	if config.SettingsGeneral.DisableVariableCleanup || t == nil {
 		return
 	}
-	clear(t.Data)
+	//clear(t.Data)
+	t.Data = nil
 	*t = theTVDBEpisodes{}
 }
 
@@ -143,6 +147,7 @@ func UpdateTvdbSeriesEpisodes(id int, language string, dbid uint) {
 	}
 	urlv := logger.URLJoinPath("https://api.thetvdb.com/series/", strconv.Itoa(id), "episodes")
 	var result theTVDBEpisodes
+	defer result.Close()
 	var err error
 	var lang keyval
 	if language != "" {
@@ -154,7 +159,7 @@ func UpdateTvdbSeriesEpisodes(id int, language string, dbid uint) {
 
 	if err != nil {
 		if !errors.Is(err, logger.ErrToWait) {
-			logger.LogDynamic("error", "Error calling", logger.NewLogFieldValue(err), logger.NewLogField(logger.StrURL, urlv))
+			logger.LogDynamic("error", "Error calling", logger.NewLogFieldValue(err), logger.NewLogField(logger.StrURL, &urlv))
 		}
 		return
 	}
@@ -163,7 +168,6 @@ func UpdateTvdbSeriesEpisodes(id int, language string, dbid uint) {
 	addthetvdbepisodes(&result, &dbid, tbl)
 	urlv += "?page="
 	if result.Links.Last >= 2 {
-		result.Data = slices.Grow(result.Data, len(result.Data)*result.Links.Last)
 		var resultadd theTVDBEpisodes
 		for k := 2; k <= result.Links.Last; k++ {
 			if language != "" {
@@ -177,8 +181,8 @@ func UpdateTvdbSeriesEpisodes(id int, language string, dbid uint) {
 			resultadd.Close()
 		}
 	}
-	result.Close()
-	clear(tbl)
+	//clear(tbl)
+	tbl = nil
 }
 
 // addthetvdbepisodes iterates through the episodes in the given TheTVDBEpisodes
@@ -186,13 +190,12 @@ func UpdateTvdbSeriesEpisodes(id int, language string, dbid uint) {
 // the series matching the given dbid. It returns false if no error occurs.
 func addthetvdbepisodes(resultadd *theTVDBEpisodes, dbid *uint, tbl []database.DbstaticTwoString) bool {
 	for idx := range resultadd.Data {
-		strepisode := strconv.Itoa(resultadd.Data[idx].AiredEpisodeNumber)
-		strseason := strconv.Itoa(resultadd.Data[idx].AiredSeason)
-
-		if checkdbtwostrings(tbl, strseason, strepisode) {
+		if checkdbtwostrings(tbl, resultadd.Data[idx].AiredSeason, resultadd.Data[idx].AiredEpisodeNumber) {
 			continue
 		}
 		dt := database.ParseDateTime(resultadd.Data[idx].FirstAired)
+		strepisode := strconv.Itoa(resultadd.Data[idx].AiredEpisodeNumber)
+		strseason := strconv.Itoa(resultadd.Data[idx].AiredSeason)
 		stridentifier := GenerateIdentifierStringFromInt(resultadd.Data[idx].AiredSeason, resultadd.Data[idx].AiredEpisodeNumber)
 		database.ExecN("insert into dbserie_episodes (episode, season, identifier, title, first_aired, overview, poster, dbserie_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
 			&strepisode, &strseason, &stridentifier, &resultadd.Data[idx].EpisodeName, &dt, &resultadd.Data[idx].Overview, &resultadd.Data[idx].Poster, dbid)

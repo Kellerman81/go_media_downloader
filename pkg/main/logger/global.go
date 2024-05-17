@@ -174,7 +174,6 @@ var (
 	PlBuffer             = pool.NewPool(100, 0, func(b *bytes.Buffer) {}, func(b *bytes.Buffer) {
 		b.Reset()
 	})
-
 	textparser = template.New("master")
 	subRune    = map[rune]struct{}{
 		'a': {},
@@ -244,16 +243,15 @@ var (
 		'Ü': "Ue",
 		'ß': "ss",
 	}
-	pathmap = map[rune]string{
-		':':  "",
-		'*':  "",
-		'?':  "",
-		'\\': "",
-		'<':  "",
-		'>':  "",
-		'|':  "",
+	pathmap = map[rune]struct{}{
+		':':  {},
+		'*':  {},
+		'?':  {},
+		'\\': {},
+		'<':  {},
+		'>':  {},
+		'|':  {},
 	}
-
 	mapstringsmovies = map[string]string{
 		CacheDBMedia:             CacheDBMovie,
 		DBCountDBMedia:           "select count() from dbmovies",
@@ -534,8 +532,7 @@ func Path(s string, allowslash bool) string {
 	if s == "" {
 		return ""
 	}
-	s = UnquoteUnescape(s)
-	s = path.Clean(s)
+	s = path.Clean(UnquoteUnescape(s))
 	if !allowslash {
 		s = StringRemoveAllRunesMulti(s, '\\', '/')
 		//s = StringRemoveAllRunes(s, '\\')
@@ -618,7 +615,7 @@ func HasPrefixI(s, prefix string) bool {
 	//if strings.HasPrefix(s, prefix) {
 	//	return true
 	//}
-	return len(s) >= len(prefix) && strings.EqualFold(s[0:len(prefix)], prefix)
+	return len(s) >= len(prefix) && (s[0:len(prefix)] == prefix || strings.EqualFold(s[0:len(prefix)], prefix))
 }
 
 // HasSuffixI checks if string s ends with suffix, ignoring case.
@@ -630,7 +627,7 @@ func HasSuffixI(s, suffix string) bool {
 	//if strings.HasSuffix(s, suffix) {
 	//	return true
 	//}
-	return len(s) >= len(suffix) && strings.EqualFold(s[len(s)-len(suffix):], suffix)
+	return len(s) >= len(suffix) && (s[len(s)-len(suffix):] == suffix || strings.EqualFold(s[len(s)-len(suffix):], suffix))
 }
 
 // JoinStrings concatenates any number of strings together.
@@ -643,16 +640,16 @@ func JoinStrings(elems ...string) string {
 		return elems[0]
 	}
 
-	n := Getstringarrlength(elems)
-
 	b := PlBuffer.Get()
-	b.Grow(n)
+	b.Grow(Getstringarrlength(elems))
 	for idx := range elems {
 		if elems[idx] != "" {
 			b.WriteString(elems[idx])
 		}
 	}
 	defer PlBuffer.Put(b)
+	//clear(elems)
+	elems = nil
 	return b.String()
 }
 
@@ -671,6 +668,8 @@ func Getstringarrlength(elems []string) int {
 // It uses url.JoinPath under the hood and discards any errors.
 func URLJoinPath(base string, elem ...string) string {
 	str, _ := url.JoinPath(base, elem...)
+	//clear(elem)
+	elem = nil
 	return str
 }
 
@@ -701,7 +700,7 @@ func IndexI(a string, b string) int {
 func IndexILast(a string, b string) int {
 	lb := len(b)
 	for i := len(a) - 1; i >= 0; i-- {
-		if strings.EqualFold(a[i:i+lb], b) {
+		if a[i:i+lb] == b || strings.EqualFold(a[i:i+lb], b) {
 			return i
 		}
 	}
@@ -802,48 +801,18 @@ func SplitByLR(str string, splitby byte) (string, string) { // left, right
 	return str[:idx], str[idx+1:]
 }
 
-// SplitByStrMod splits str into two strings by removing splitby from the right side of str.
-// It returns the left substring before the removed splitby string.
-// func SplitByStrMod(str string, splitby string) string {
-// 	idx := IndexI(str, splitby)
-// 	if idx != -1 {
-// 		str2 := str[:idx]
-// 		if str2 == "" {
-// 			return ""
-// 		}
-// 		switch str2[len(str2)-1:] {
-// 		case "-", ".", " ":
-// 			return strings.TrimRight(str2, "-. ")
-// 		}
-// 	}
-// 	return str
-// }
-
-// SplitByStrModRight splits str into two strings by removing splitby from the right side of str.
-// It trims any trailing spaces from the right side and returns the right string.
-// func SplitByStrModRight(str string, splitby string) string {
-// 	idx := IndexI(str, splitby)
-// 	if idx != -1 {
-// 		str2 := str[idx+len(splitby):]
-// 		if str2 == "" {
-// 			return ""
-// 		}
-// 		switch str2[0] {
-// 		case '-', '.', ' ':
-// 			return strings.TrimLeft(str2, "-. ")
-// 		}
-// 	}
-// 	return str
-// }
-
 // Contains reports whether v is present in s - case insensitive.
 func SlicesContainsI(s []string, v string) bool {
 	for idx := range s {
-		if strings.EqualFold(v, s[idx]) {
+		if v == s[idx] || strings.EqualFold(v, s[idx]) {
 			return true
 		}
 	}
 	return false
+}
+
+func SlicesContainsPart2IP(s []string, v *string) bool {
+	return SlicesContainsPart2I(s, *v)
 }
 
 // Contains reports whether v is contained in s - case insensitive.
@@ -907,6 +876,8 @@ contloop:
 		out.WriteRune(z)
 	}
 	defer PlBuffer.Put(out)
+	//clear(r)
+	r = nil
 	return out.String()
 }
 
@@ -952,7 +923,7 @@ func StringReplaceWithByte(s string, r rune, t rune) []byte {
 // It returns a new string with the replacements.
 func ByteReplaceWithByte(s []byte, r rune, t rune) []byte {
 	if !bytes.ContainsRune(s, r) {
-		return []byte(s)
+		return s
 	}
 	buf := PlBuffer.Get()
 	buf.Grow(len(s))
@@ -999,31 +970,13 @@ func DiacriticsReplacer(s string) string {
 // corresponding values. It is used to replace problematic characters in paths.
 func pathReplacer(s string) string {
 	bld := PlBuffer.Get()
-	bld.Grow(len(s) + 2)
+	bld.Grow(len(s))
 	for _, z := range s {
-		if r, ok := pathmap[z]; ok {
-			bld.WriteString(r)
-		} else {
+		if _, ok := pathmap[z]; !ok {
 			bld.WriteRune(z)
 		}
 	}
 	defer PlBuffer.Put(bld)
 	return bld.String()
 	//return replacer(pathmap, s)
-}
-
-// replacer replaces characters in s with corresponding strings from mapping m.
-// It allocates a new byte buffer to build the replaced string to avoid mutations.
-func replacer(m map[rune]string, s string) string {
-	bld := PlBuffer.Get()
-	bld.Grow(len(s) + 2)
-	for _, z := range s {
-		if r, ok := m[z]; ok {
-			bld.WriteString(r)
-		} else {
-			bld.WriteRune(z)
-		}
-	}
-	defer PlBuffer.Put(bld)
-	return bld.String()
 }

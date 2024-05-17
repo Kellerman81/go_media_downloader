@@ -42,7 +42,7 @@ type NewFileData struct {
 func Filterfiles(pathv *string, filedata *NewFileData) bool {
 	if filedata.Checkfiles {
 		if config.SettingsGeneral.UseFileCache {
-			if database.SlicesCacheContains(logger.GetStringsMap(filedata.Cfgp.Useseries, logger.CacheFiles), *pathv) {
+			if database.SlicesCacheContains(logger.GetStringsMap(filedata.Cfgp.Useseries, logger.CacheFiles), pathv) {
 				return true
 			}
 		} else if database.GetdatarowN[uint](false, logger.GetStringsMap(filedata.Cfgp.Useseries, logger.DBCountFilesLocation), pathv) >= 1 {
@@ -51,7 +51,7 @@ func Filterfiles(pathv *string, filedata *NewFileData) bool {
 	}
 	//CheckUnmatched
 	if config.SettingsGeneral.UseFileCache {
-		if database.SlicesCacheContains(logger.GetStringsMap(filedata.Cfgp.Useseries, logger.CacheUnmatched), *pathv) {
+		if database.SlicesCacheContains(logger.GetStringsMap(filedata.Cfgp.Useseries, logger.CacheUnmatched), pathv) {
 			return true
 		}
 	} else if database.GetdatarowN[uint](false, logger.GetStringsMap(filedata.Cfgp.Useseries, logger.DBCountUnmatchedPath), pathv) >= 1 {
@@ -62,7 +62,7 @@ func Filterfiles(pathv *string, filedata *NewFileData) bool {
 	//Check IgnoredPaths
 
 	if ok && filedata.PathCfg.BlockedLen >= 1 {
-		if logger.SlicesContainsPart2I(filedata.PathCfg.Blocked, *pathv) {
+		if logger.SlicesContainsPart2IP(filedata.PathCfg.Blocked, pathv) {
 			return true
 		}
 	}
@@ -81,8 +81,7 @@ func MoveFile(file string, setpathcfg *config.PathsConfig, target, newname strin
 		ok = true
 		oknorename = true
 	} else {
-		ext := filepath.Ext(file)
-		ok, oknorename = CheckExtensions(!useother, useother, setpathcfg, ext)
+		ok, oknorename = CheckExtensions(!useother, useother, setpathcfg, filepath.Ext(file))
 	}
 
 	if !ok {
@@ -126,7 +125,7 @@ func MoveFile(file string, setpathcfg *config.PathsConfig, target, newname strin
 		retval.Err = err
 		return retval
 	}
-	logger.LogDynamic("info", "File moved from", logger.NewLogField(logger.StrFile, file), logger.NewLogField("to", newpath))
+	logger.LogDynamic("info", "File moved from", logger.NewLogField(logger.StrFile, &file), logger.NewLogField("to", &newpath))
 	retval.MoveDone = true
 	retval.NewPath = newpath
 	return retval
@@ -184,8 +183,8 @@ func setchmod(file string, chmod fs.FileMode) {
 	if err != nil {
 		return
 	}
+	defer f.Close()
 	_ = f.Chmod(chmod)
-	f.Close()
 }
 
 // RemoveFile removes the file at the given path if it exists.
@@ -195,13 +194,27 @@ func RemoveFile(file string) (bool, error) {
 	if !CheckFileExist(file) {
 		return false, nil
 	}
-	_ = os.Chmod(file, 0777)
+	return SecureRemove(file)
+}
+
+func SecureRemove(file string) (bool, error) {
 	err := os.Remove(file)
-	if err != nil {
+	if err != nil && errors.Is(err, os.ErrPermission) {
+		_ = os.Chmod(file, 0777)
+		err = os.Remove(file)
+		if err == nil {
+			logger.LogDynamic("info", "File removed", logger.NewLogField(logger.StrFile, &file))
+			return true, nil
+		}
+		logger.LogDynamic("error", "File not removed", logger.NewLogFieldValue(err), logger.NewLogField(logger.StrFile, &file))
 		return false, err
 	}
-	logger.LogDynamic("info", "File removed", logger.NewLogField(logger.StrFile, file))
-	return true, nil
+	if err == nil {
+		logger.LogDynamic("info", "File removed", logger.NewLogField(logger.StrFile, &file))
+		return true, nil
+	}
+	logger.LogDynamic("error", "File not removed", logger.NewLogFieldValue(err), logger.NewLogField(logger.StrFile, &file))
+	return false, err
 }
 
 // CleanUpFolder walks the given folder path to calculate total size.
@@ -245,7 +258,7 @@ func CleanUpFolder(folder string, cleanupsizeMB int) error {
 		if err != nil {
 			return err
 		}
-		logger.LogDynamic("info", "Folder removed", logger.NewLogField(logger.StrFile, folder))
+		logger.LogDynamic("info", "Folder removed", logger.NewLogField(logger.StrFile, &folder))
 	}
 	return nil
 }
@@ -307,7 +320,7 @@ func moveFileDriveBuffer(sourcePath, destPath string) error {
 			return err
 		}
 	}
-	_ = destination.Sync()
+	//_ = destination.Sync()
 	// The copy was successful, so now delete the original file
 
 	return nil
@@ -321,14 +334,9 @@ func MoveFileDriveBuffer(sourcePath, destPath string, chmod fs.FileMode) error {
 	if err != nil {
 		return err
 	}
-
-	err = os.Remove(sourcePath)
+	_, err = SecureRemove(sourcePath)
 	if err != nil {
-		_ = os.Chmod(sourcePath, 0777)
-		err = os.Remove(sourcePath)
-		if err != nil {
-			return errors.New("failed removing original file: " + err.Error())
-		}
+		return errors.New("failed removing original file: " + err.Error())
 	}
 	if chmod != 0 {
 		_ = os.Chmod(destPath, chmod)
@@ -341,23 +349,21 @@ func MoveFileDriveBuffer(sourcePath, destPath string, chmod fs.FileMode) error {
 // It handles deleting the original source file after a successful copy.
 // Returns any errors from the copy or file deletions.
 func moveFileDrive(sourcePath, destPath string, chmodfolder, chmod fs.FileMode) error {
-	err := copyFile(sourcePath, destPath, false, chmodfolder, chmod)
+	err := copyFile(sourcePath, destPath, false, chmodfolder)
 	if err != nil {
-		logger.LogDynamic("error", "Error copiing source", logger.NewLogField("sourcepath", sourcePath), logger.NewLogField("targetpath", destPath), logger.NewLogFieldValue(err))
+		logger.LogDynamic("error", "Error copiing source", logger.NewLogField("sourcepath", &sourcePath), logger.NewLogField("targetpath", &destPath), logger.NewLogFieldValue(err))
 		return err
 	}
 
 	if chmod != 0 {
-		_ = os.Chmod(destPath, chmod)
-	}
-	// The copy was successful, so now delete the original file
-	if os.Remove(sourcePath) != nil {
-		_ = os.Chmod(sourcePath, 0777)
-		err = os.Remove(sourcePath)
+		err = os.Chmod(destPath, chmod)
 		if err != nil {
-			logger.LogDynamic("error", "file could not be removed", logger.NewLogFieldValue(err), logger.NewLogField(logger.StrFile, sourcePath))
 			return err
 		}
+	}
+	_, err = SecureRemove(sourcePath)
+	if err != nil {
+		return err
 	}
 	return nil
 }
@@ -391,28 +397,21 @@ func CheckFileSizeRecent(fpath string, sourcepathCfg *config.PathsConfig) bool {
 		return false
 	}
 	if info.Size() < sourcepathCfg.MinVideoSizeByte {
-		logger.LogDynamic("warn", "skipped - small files", logger.NewLogField(logger.StrFile, fpath))
+		logger.LogDynamic("warn", "skipped - small files", logger.NewLogField(logger.StrFile, &fpath))
 		if sourcepathCfg.Name == "" {
 			return true
 		}
-		ext := filepath.Ext(fpath)
 
-		ok, oknorename := CheckExtensions(true, false, sourcepathCfg, ext)
+		ok, oknorename := CheckExtensions(true, false, sourcepathCfg, filepath.Ext(fpath))
 
 		if ok || oknorename || (sourcepathCfg.AllowedVideoExtensionsLen == 0 && sourcepathCfg.AllowedVideoExtensionsNoRenameLen == 0) {
-			_ = os.Chmod(fpath, 0777)
-			err := os.Remove(fpath)
-			if err != nil {
-				logger.LogDynamic("error", "file could not be removed", logger.NewLogFieldValue(err), logger.NewLogField(logger.StrFile, fpath))
-			} else {
-				logger.LogDynamic("info", "File removed", logger.NewLogField(logger.StrFile, fpath))
-			}
+			SecureRemove(fpath)
 		}
 		return true
 	}
 	bl := info.ModTime().After(logger.TimeGetNow().Add(-2 * time.Minute))
 	if bl {
-		logger.LogDynamic("error", "file modified too recently", logger.NewLogField(logger.StrFile, fpath))
+		logger.LogDynamic("error", "file modified too recently", logger.NewLogField(logger.StrFile, &fpath))
 	}
 	return bl
 }
@@ -422,7 +421,7 @@ func CheckFileSizeRecent(fpath string, sourcepathCfg *config.PathsConfig) bool {
 // destination file exists, all it's contents will be replaced by the
 // contents of the source file. This function handles creating any missing
 // directories in the destination path and setting permissions.
-func copyFile(src, dst string, allowFileLink bool, chmodfolder, chmod fs.FileMode) error {
+func copyFile(src, dst string, allowFileLink bool, chmodfolder fs.FileMode) error {
 	srcAbs, err := filepath.Abs(src)
 	if err != nil {
 		return err
@@ -464,11 +463,11 @@ func copyFile(src, dst string, allowFileLink bool, chmodfolder, chmod fs.FileMod
 	}
 	// open dest file
 
-	// if allowFileLink {
-	// 	if err = os.Link(src, dst); err == nil {
-	// 		return nil
-	// 	}
-	// }
+	if allowFileLink {
+		if err = os.Link(src, dst); err == nil {
+			return nil
+		}
+	}
 
 	// Open the source file for reading
 	srcFile, err := os.Open(src)
@@ -487,18 +486,15 @@ func copyFile(src, dst string, allowFileLink bool, chmodfolder, chmod fs.FileMod
 	// Will return nil if no errors occurred
 
 	// Copy the contents of the source file into the destination files
-	if _, err = io.Copy(dstFile, srcFile); err != nil {
+	_, err = io.Copy(dstFile, srcFile)
+	if err != nil {
 		return err
 	}
 	// Sync and set permissions if needed
-	if err = dstFile.Sync(); err != nil {
-		return err
-	}
-	if chmod != 0 {
-		if err = os.Chmod(dstAbs, chmod); err != nil {
-			return err
-		}
-	}
+	// err = dstFile.Sync()
+	// if err != nil {
+	// 	return err
+	// }
 	return nil
 }
 
@@ -530,9 +526,9 @@ func AppendCsv(fpath, line string) error {
 		logger.LogDynamic("error", "Error opening csv to write", logger.NewLogFieldValue(err))
 		return err
 	}
+	defer f.Close()
 	_, err = io.WriteString(f, line+"\n")
-	_ = f.Sync()
-	f.Close()
+	//_ = f.Sync()
 	if err != nil {
 		logger.LogDynamic("error", "Error writing to csv", logger.NewLogFieldValue(err))
 	} else {

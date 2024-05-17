@@ -24,8 +24,7 @@ type FileParser struct {
 
 var (
 	ParserPool = pool.NewPool(100, 0, func(b *FileParser) {}, func(b *FileParser) {
-		clear(b.M.Languages)
-		*b = FileParser{}
+		b.Close()
 	})
 )
 
@@ -33,6 +32,22 @@ func (s *FileParser) Clear() {
 	if s == nil || !s.Filled {
 		return
 	}
+	*s = FileParser{}
+}
+
+func (s *FileParser) ClearArr() {
+	if s == nil {
+		return
+	}
+	//clear(s.M.Languages)
+	s.M.Languages = nil
+}
+
+func (s *FileParser) Close() {
+	if s == nil {
+		return
+	}
+	s.ClearArr()
 	*s = FileParser{}
 }
 
@@ -212,7 +227,16 @@ func (s *Nzbwithprio) Close() {
 	if s == nil {
 		return
 	}
+	s.ClearArr()
 	*s = Nzbwithprio{}
+}
+func (s *Nzbwithprio) ClearArr() {
+	if s == nil {
+		return
+	}
+	//clear(s.WantedAlternates)
+	s.WantedAlternates = nil
+	s.Info.ClearArr()
 }
 
 // ChecknzbtitleB checks if the nzbtitle matches the movietitle and year.

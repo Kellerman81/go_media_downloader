@@ -60,6 +60,8 @@ func (t *omDBMovieSearchGlobal) Close() {
 	if config.SettingsGeneral.DisableVariableCleanup || t == nil {
 		return
 	}
+	//clear(t.Search)
+	t.Search = nil
 	*t = omDBMovieSearchGlobal{}
 }
 

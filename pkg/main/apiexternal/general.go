@@ -1,10 +1,8 @@
 package apiexternal
 
 import (
-	"context"
 	"crypto/tls"
 	"encoding/xml"
-	"errors"
 	"io"
 	"math/rand"
 	"net"
@@ -96,10 +94,6 @@ func WebGet(url string) (*http.Response, error) {
 // retryafterseconds is the initial backoff duration.
 // Returns true if allowed, false if rate limited after retries.
 func (c *rlHTTPClient) checkLimiter(allow bool, retrycount int, retryafterseconds int64) (bool, error) {
-	waituntil := (time.Duration(retryafterseconds) * time.Second)
-	waituntilmax := (time.Duration(retryafterseconds*int64(retrycount)) * time.Second)
-	rand.New(rand.NewSource(time.Now().UnixNano()))
-	waitincrease := (time.Duration(rand.Intn(500)+10) * time.Millisecond)
 	if c.DailyLimiterEnabled {
 		if ok, _ := c.DailyRatelimiter.Check(); !ok {
 			return false, logger.ErrDailyLimit
@@ -108,10 +102,12 @@ func (c *rlHTTPClient) checkLimiter(allow bool, retrycount int, retryaftersecond
 	// ok, waitfor := c.Ratelimiter.CheckDaily()
 	// if !ok {
 	// }
-	var ok bool
-	var waitfor time.Duration
+	waituntil := (time.Duration(retryafterseconds) * time.Second)
+	waituntilmax := (time.Duration(retryafterseconds*int64(retrycount)) * time.Second)
+	rand.New(rand.NewSource(time.Now().UnixNano()))
+	waitincrease := (time.Duration(rand.Intn(500)+10) * time.Millisecond)
 	for i := 0; i < retrycount; i++ {
-		ok, waitfor = c.Ratelimiter.Check()
+		ok, waitfor := c.Ratelimiter.Check()
 		if ok {
 			if allow {
 				c.Ratelimiter.AllowForce()
@@ -135,7 +131,7 @@ func (c *rlHTTPClient) checkLimiter(allow bool, retrycount int, retryaftersecond
 	}
 
 	//logger.LogAnyError(nil, "Hit rate limit - retries failed")
-	logger.LogDynamic("warn", "Hit rate limit - retrys failed", logger.NewLogField("url", c.clientname))
+	logger.LogDynamic("warn", "Hit rate limit - retrys failed", logger.NewLogField("url", &c.clientname))
 
 	return false, logger.ErrToWait
 }
@@ -159,14 +155,8 @@ func DoJSONType[S any](c *rlHTTPClient, urlv string, headers ...keyval) (S, erro
 // specified number of retries and increasing backoff. If the daily rate
 // limiter is hit, it returns true to indicate the daily limit was reached.
 func (c *rlHTTPClient) checklimiterwithdaily() bool {
-	ok, err := c.checkLimiter(true, 20, 1)
-	if !ok {
-		if err == nil || errors.Is(err, logger.ErrDailyLimit) {
-			return true
-		}
-		return true
-	}
-	return false
+	ok, _ := c.checkLimiter(true, 20, 1)
+	return !ok
 }
 
 // DoJSONTypeG makes a request to the url and unmarshals the JSON response into
@@ -192,7 +182,7 @@ func (c *rlHTTPClient) Getdo(urlv string, headers []keyval, checkhtml bool) (*ht
 	//defer cancel()
 	req, err := http.NewRequest(http.MethodGet, urlv, nil)
 	if err != nil {
-		logger.LogDynamic("error", "failed to get url", logger.NewLogFieldValue(err), logger.NewLogField(logger.StrURL, urlv))
+		logger.LogDynamic("error", "failed to get url", logger.NewLogFieldValue(err), logger.NewLogField(logger.StrURL, &urlv))
 		return nil, err
 	}
 	for _, h := range headers {
@@ -203,46 +193,19 @@ func (c *rlHTTPClient) Getdo(urlv string, headers []keyval, checkhtml bool) (*ht
 		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK && c.addwait(req, resp) {
-		io.Copy(io.Discard, resp.Body)
 		defer resp.Body.Close()
+		io.Copy(io.Discard, resp.Body)
 		return nil, logger.ErrToWait
 	}
-	if checkhtml {
-		if true && resp.Header.Get("Content-Type") == "text/html" {
-			io.Copy(io.Discard, resp.Body)
-			defer resp.Body.Close()
-			return nil, logger.ErrNotAllowed
-		}
+	if !checkhtml {
+		return resp, nil
+	}
+	if resp.Header.Get("Content-Type") == "text/html" {
+		defer resp.Body.Close()
+		io.Copy(io.Discard, resp.Body)
+		return nil, logger.ErrNotAllowed
 	}
 	return resp, nil
-}
-
-// GetdoByte makes an HTTP GET request to the given URL and returns
-// the response body as a byte slice. It handles rate limiting by
-// calling addwait.
-func (c *rlHTTPClient) GetdoByte(urlv string, headers ...keyval) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), c.Timeout)
-	defer cancel()
-	//ctx, cancel := context.WithCancel(context.Background())
-	//defer cancel()
-	//ctx := context.Background()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, urlv, nil)
-	if err != nil {
-		logger.LogDynamic("error", "failed to get url", logger.NewLogFieldValue(err), logger.NewLogField(logger.StrURL, urlv))
-		return nil, err
-	}
-	for idx := range headers {
-		req.Header.Add(headers[idx].Key, headers[idx].Value)
-	}
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK && c.addwait(req, resp) {
-		return nil, logger.ErrToWait
-	}
-	return io.ReadAll(resp.Body)
 }
 
 func (c *rlHTTPClient) GetdoResp(urlv string, headers ...keyval) (*http.Response, error) {
@@ -250,7 +213,7 @@ func (c *rlHTTPClient) GetdoResp(urlv string, headers ...keyval) (*http.Response
 	//defer cancel()
 	req, err := http.NewRequest(http.MethodGet, urlv, nil)
 	if err != nil {
-		logger.LogDynamic("error", "failed to get url", logger.NewLogFieldValue(err), logger.NewLogField(logger.StrURL, urlv))
+		logger.LogDynamic("error", "failed to get url", logger.NewLogFieldValue(err), logger.NewLogField(logger.StrURL, &urlv))
 		return nil, err
 	}
 	for idx := range headers {
@@ -261,8 +224,8 @@ func (c *rlHTTPClient) GetdoResp(urlv string, headers ...keyval) (*http.Response
 		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK && c.addwait(req, resp) {
-		io.Copy(io.Discard, resp.Body)
 		defer resp.Body.Close()
+		io.Copy(io.Discard, resp.Body)
 		return nil, logger.ErrToWait
 	}
 	return resp, nil
@@ -279,29 +242,30 @@ type XMLResponse struct {
 	BrokeLoop bool
 }
 
+func (x *XMLResponse) Close() {
+	if x != nil {
+		*x = XMLResponse{}
+	}
+}
+
 // DoXMLItem parses an XML response from an indexer API endpoint to extract
 // NZB items. It handles rate limiting and decoding the XML into Nzbwithprio
 // structs, appending results to the provided slice. It can stop early if
 // a matching ID is found in tillid. Returns false, error on failure.
 func (c *rlHTTPClient) DoXMLItem(ind *config.IndexersConfig, qual *config.QualityConfig, tillid string, apiBaseURL string, urlv string, mu *sync.Mutex, createsize int, results *[]Nzbwithprio) XMLResponse {
-	var retval XMLResponse
 	if urlv == "" {
-		retval.Err = logger.ErrNotFound
-		return retval
+		return XMLResponse{Err: logger.ErrNotFound}
 	}
 	ok, err := c.checkLimiter(true, 20, 1)
 	if !ok {
 		if err == nil {
-			retval.Err = logger.ErrToWait
-			return retval
+			return XMLResponse{Err: logger.ErrToWait}
 		}
-		retval.Err = err
-		return retval
+		return XMLResponse{Err: err}
 	}
 	resp, err := c.GetdoResp(urlv)
 	if err != nil {
-		retval.Err = err
-		return retval
+		return XMLResponse{Err: err}
 	}
 	//defer clear(resp)
 	defer resp.Body.Close()
@@ -321,6 +285,7 @@ func (c *rlHTTPClient) DoXMLItem(ind *config.IndexersConfig, qual *config.Qualit
 	var nameidx, valueidx int
 	var b Nzbwithprio
 	var lastfield int
+	var retval XMLResponse
 	for {
 		t, err := d.RawToken()
 		if err != nil {

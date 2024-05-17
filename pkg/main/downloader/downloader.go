@@ -61,7 +61,6 @@ func (d *downloadertype) Close() {
 	if config.SettingsGeneral.DisableVariableCleanup || d == nil {
 		return
 	}
-	d.Nzb.Close()
 	*d = downloadertype{}
 }
 
@@ -129,7 +128,7 @@ func (d *downloadertype) downloadNzb() {
 			continue
 		}
 		if d.Quality.Indexer[idx].CategoryDowloader != "" {
-			logger.LogDynamic("debug", "Download", logger.NewLogField("Indexer", d.Quality.Indexer[idx].TemplateIndexer), logger.NewLogField("Downloader", d.Quality.Indexer[idx].TemplateDownloader))
+			logger.LogDynamic("debug", "Download", logger.NewLogField("Indexer", &d.Quality.Indexer[idx].TemplateIndexer), logger.NewLogField("Downloader", &d.Quality.Indexer[idx].TemplateDownloader))
 			d.IndexerCfg = d.Quality.Indexer[idx].CfgIndexer
 			d.Category = d.Quality.Indexer[idx].CategoryDowloader
 			d.TargetCfg = d.Quality.Indexer[idx].CfgPath
@@ -140,7 +139,7 @@ func (d *downloadertype) downloadNzb() {
 	}
 
 	if d.Category == "" {
-		logger.LogDynamic("debug", "Downloader nzb config NOT found - quality", logger.NewLogField("Quality", d.Quality.Name))
+		logger.LogDynamic("debug", "Downloader nzb config NOT found - quality", logger.NewLogField("Quality", &d.Quality.Name))
 
 		if d.Quality.Indexer[0].CfgPath == nil {
 			logger.LogDynamic("error", "Error get Nzb Config", logger.NewLogFieldValue(errors.New("path template not found")))
@@ -151,7 +150,7 @@ func (d *downloadertype) downloadNzb() {
 			logger.LogDynamic("error", "Error get Nzb Config", logger.NewLogFieldValue(errors.New("downloader template not found")))
 			return
 		}
-		logger.LogDynamic("debug", "Downloader nzb config NOT found - use first", logger.NewLogField("categories", d.Quality.Indexer[0].CategoryDowloader))
+		logger.LogDynamic("debug", "Downloader nzb config NOT found - use first", logger.NewLogField("categories", &d.Quality.Indexer[0].CategoryDowloader))
 
 		d.IndexerCfg = d.Quality.Indexer[0].CfgIndexer
 		d.Category = d.Quality.Indexer[0].CategoryDowloader
@@ -169,7 +168,7 @@ func (d *downloadertype) downloadNzb() {
 	d.Targetfile = logger.StringRemoveAllRunesMulti(logger.Path(targetfolder, false), '[', ']')
 	//d.Targetfile = logger.StringRemoveAllRunes(logger.StringRemoveAllRunes(logger.Path(targetfolder, false), '['), ']')
 
-	logger.LogDynamic("debug", "Downloading", logger.NewLogField("nzb", d.Nzb.NZB.Title), logger.NewLogField("by", d.DownloaderCfg.DlType))
+	logger.LogDynamic("debug", "Downloading", logger.NewLogField("nzb", &d.Nzb.NZB.Title), logger.NewLogField("by", &d.DownloaderCfg.DlType))
 
 	var err error
 	switch d.DownloaderCfg.DlType {
@@ -197,6 +196,7 @@ func (d *downloadertype) downloadNzb() {
 	}
 	d.notify()
 
+	now := logger.TimeGetNow()
 	if !d.Cfgp.Useseries {
 		if d.Movie.ID == 0 {
 			d.Movie.ID = d.Nzb.NzbmovieID
@@ -207,7 +207,6 @@ func (d *downloadertype) downloadNzb() {
 		if d.Movie.DbmovieID == 0 && d.Nzb.NzbmovieID != 0 {
 			_ = database.ScanrowsNdyn(false, "select dbmovie_id from movies where id = ?", &d.Movie.DbmovieID, &d.Nzb.NzbmovieID)
 		}
-		now := logger.TimeGetNow()
 		database.ExecN("Insert into movie_histories (title, url, target, indexer, downloaded_at, movie_id, dbmovie_id, resolution_id, quality_id, codec_id, audio_id, quality_profile) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 			&d.Nzb.NZB.Title, &d.Nzb.NZB.DownloadURL, &d.TargetCfg.Path, &d.Nzb.NZB.Indexer.Name, &now, &d.Movie.ID, &d.Movie.DbmovieID, &d.Nzb.Info.M.ResolutionID, &d.Nzb.Info.M.QualityID, &d.Nzb.Info.M.CodecID, &d.Nzb.Info.M.AudioID, &d.Movie.QualityProfile)
 		return
@@ -228,7 +227,6 @@ func (d *downloadertype) downloadNzb() {
 		_ = database.ScanrowsNdyn(false, database.QuerySerieEpisodesGetDBSerieEpisodeIDByID, &d.Dbserieepisode.ID, &d.Nzb.NzbepisodeID)
 	}
 
-	now := logger.TimeGetNow()
 	database.ExecN("Insert into serie_episode_histories (title, url, target, indexer, downloaded_at, serie_id, serie_episode_id, dbserie_episode_id, dbserie_id, resolution_id, quality_id, codec_id, audio_id, quality_profile) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 		&d.Nzb.NZB.Title, &d.Nzb.NZB.DownloadURL, &d.TargetCfg.Path, &d.Nzb.NZB.Indexer.Name, &now, &d.Serie.ID, &d.Serieepisode.ID, &d.Dbserieepisode.ID, &d.Dbserie.ID, &d.Nzb.Info.M.ResolutionID, &d.Nzb.Info.M.QualityID, &d.Nzb.Info.M.CodecID, &d.Nzb.Info.M.AudioID, &d.Serieepisode.QualityProfile)
 }
@@ -347,7 +345,7 @@ func (d *downloadertype) downloadByDrone() error {
 	// if err != nil {
 	// 	return err
 	// }
-	return out.Sync()
+	return nil
 }
 
 // downloadByNzbget downloads the NZB file using the NZBGet downloader.

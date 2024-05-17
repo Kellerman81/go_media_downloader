@@ -42,60 +42,58 @@ var (
 // based on the usetraktmovie parameter. It returns a feedResults struct containing the
 // list of movie IDs with just the imdb ID populated. This allows checking if the movie
 // already exists in the database before doing more API calls to get full details.
-func gettraktmovielist(usetraktmovie int, cfglist *config.MediaListsConfig) (*feedResults, error) {
+func (d *feedResults) gettraktmovielist(usetraktmovie int, cfglist *config.MediaListsConfig) error {
 	switch usetraktmovie {
 	case 1:
-		return processmoviesgroup(cfglist, apiexternal.GetTraktMoviePopular(cfglist.CfgList.Limit))
+		return processmoviesgroup(d, cfglist, apiexternal.GetTraktMoviePopular(cfglist.CfgList.Limit))
 	case 2:
-		return processmoviesgroup(cfglist, apiexternal.GetTraktMovieTrending(cfglist.CfgList.Limit))
+		return processmoviesgroup(d, cfglist, apiexternal.GetTraktMovieTrending(cfglist.CfgList.Limit))
 	case 3:
-		return processmoviesgroup(cfglist, apiexternal.GetTraktMovieAnticipated(cfglist.CfgList.Limit))
+		return processmoviesgroup(d, cfglist, apiexternal.GetTraktMovieAnticipated(cfglist.CfgList.Limit))
 	case 4:
 		if cfglist.CfgList.TraktUsername == "" || cfglist.CfgList.TraktListName == "" {
-			return nil, errors.New("username empty")
+			return errors.New("username empty")
 		}
 		if cfglist.CfgList.TraktListType == "" {
-			return nil, errors.New("list type empty")
+			return errors.New("list type empty")
 		}
 		data, err := apiexternal.GetTraktUserList(cfglist.CfgList.TraktUsername, cfglist.CfgList.TraktListName, cfglist.CfgList.TraktListType, cfglist.CfgList.Limit)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		defer clear(data)
-		return processmoviesgroup(cfglist, data)
+		return processmoviesgroup(d, cfglist, data)
 	}
-	return nil, logger.Errwrongtype
+	return logger.Errwrongtype
 }
 
 // processmoviesgroup processes a slice of Trakt API responses for movies
 // (anticipated, trending, popular, or user list) and returns a feedResults struct
 // containing the movie IDs to check if the movie already exists before making
 // more API calls to get full details.
-func processmoviesgroup[T any](cfglist *config.MediaListsConfig, traktpopular []T) (*feedResults, error) {
+func processmoviesgroup[T any](d *feedResults, cfglist *config.MediaListsConfig, traktpopular []T) error {
 	if len(traktpopular) == 0 {
-		return nil, logger.Errwrongtype
+		return logger.Errwrongtype
 	}
-	d := plfeeds.Get()
-	//d.Movies = make([]string, 0, len(traktpopular))
 	for idx := range traktpopular {
 		switch tt := any(traktpopular[idx]).(type) {
 		case apiexternal.TraktUserList:
-			processmovies(d, &tt.Movie, cfglist)
+			d.processmovies(&tt.Movie, cfglist)
 		case apiexternal.TraktMovieAnticipated:
-			processmovies(d, &tt.Movie, cfglist)
+			d.processmovies(&tt.Movie, cfglist)
 		case apiexternal.TraktMovieTrending:
-			processmovies(d, &tt.Movie, cfglist)
+			d.processmovies(&tt.Movie, cfglist)
 		case apiexternal.TraktMovie:
-			processmovies(d, &tt, cfglist)
+			d.processmovies(&tt, cfglist)
 		}
 	}
-	return d, nil
+	return nil
 }
 
 // processmovies checks if a movie from the Trakt API response already exists
 // in the database under the given list name. If not, it appends the IMDb ID
 // to the feedResults movie list to retrieve full details later.
-func processmovies(d *feedResults, row *apiexternal.TraktMovie, cfglist *config.MediaListsConfig) {
+func (d *feedResults) processmovies(row *apiexternal.TraktMovie, cfglist *config.MediaListsConfig) {
 	if row.Ids.Imdb == "" {
 		return
 	}
@@ -109,40 +107,39 @@ func processmovies(d *feedResults, row *apiexternal.TraktMovie, cfglist *config.
 // a feedResults struct containing the list of TV series with just the
 // title and tvdb ID populated. This allows checking if the series already
 // exists in the database before doing more API calls to get full details.
-func gettraktserielist(usetraktserie int, cfglist *config.MediaListsConfig) (*feedResults, error) {
+func (d *feedResults) gettraktserielist(usetraktserie int, cfglist *config.MediaListsConfig) error {
 	switch usetraktserie {
 	case 1:
-		return processeeriesgroup(apiexternal.GetTraktSeriePopular(cfglist.CfgList.Limit))
+		return processeeriesgroup(d, apiexternal.GetTraktSeriePopular(cfglist.CfgList.Limit))
 	case 2:
-		return processeeriesgroup(apiexternal.GetTraktSerieTrending(cfglist.CfgList.Limit))
+		return processeeriesgroup(d, apiexternal.GetTraktSerieTrending(cfglist.CfgList.Limit))
 	case 3:
-		return processeeriesgroup(apiexternal.GetTraktSerieAnticipated(cfglist.CfgList.Limit))
+		return processeeriesgroup(d, apiexternal.GetTraktSerieAnticipated(cfglist.CfgList.Limit))
 	case 4:
 		if cfglist.CfgList.TraktUsername == "" || cfglist.CfgList.TraktListName == "" {
-			return nil, errors.New("username empty")
+			return errors.New("username empty")
 		}
 		if cfglist.CfgList.TraktListType == "" {
-			return nil, errors.New("list type empty")
+			return errors.New("list type empty")
 		}
 		traktpopular, err := apiexternal.GetTraktUserList(cfglist.CfgList.TraktUsername, cfglist.CfgList.TraktListName, cfglist.CfgList.TraktListType, cfglist.CfgList.Limit)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		defer clear(traktpopular)
-		return processeeriesgroup(traktpopular)
+		return processeeriesgroup(d, traktpopular)
 	}
-	return nil, logger.Errwrongtype
+	return logger.Errwrongtype
 }
 
 // processeeriesgroup processes a slice of Trakt API responses for TV series
 // (anticipated, trending, popular, or user list) and returns a feedResults struct
 // containing the series titles and tvdb IDs to check if the series already exists
 // before making more API calls to get full details.
-func processeeriesgroup[T any](traktpopular []T) (*feedResults, error) {
+func processeeriesgroup[T any](d *feedResults, traktpopular []T) error {
 	if len(traktpopular) == 0 {
-		return nil, logger.Errwrongtype
+		return logger.Errwrongtype
 	}
-	d := plfeeds.Get()
 	d.Series.Serie = make([]config.SerieConfig, 0, len(traktpopular))
 	for idx := range traktpopular {
 		switch tt := any(traktpopular[idx]).(type) {
@@ -156,7 +153,7 @@ func processeeriesgroup[T any](traktpopular []T) (*feedResults, error) {
 			processseries(d, &tt, idx)
 		}
 	}
-	return d, nil
+	return nil
 }
 
 // processseries populates the idx'th element in the feedResults series list
@@ -189,27 +186,39 @@ func feeds(cfgp *config.MediaTypeConfig, list *config.MediaListsConfig) (*feedRe
 		return nil, logger.ErrDisabled
 	}
 
+	d := plfeeds.Get()
+	var err error
 	switch list.CfgList.ListType {
 	case "seriesconfig":
-		return getseriesconfig(list.CfgList)
+		err = d.getseriesconfig(list.CfgList)
+		return d, err
 	case "traktpublicshowlist":
-		return gettraktserielist(4, list)
+		err = d.gettraktserielist(4, list)
+		return d, err
 	case "imdbcsv":
-		return getimdbcsv(list)
+		err = d.getimdbcsv(list)
+		return d, err
 	case "traktpublicmovielist":
-		return gettraktmovielist(4, list)
+		err = d.gettraktmovielist(4, list)
+		return d, err
 	case "traktmoviepopular":
-		return gettraktmovielist(1, list)
+		err = d.gettraktmovielist(1, list)
+		return d, err
 	case "traktmovieanticipated":
-		return gettraktmovielist(3, list)
+		err = d.gettraktmovielist(3, list)
+		return d, err
 	case "traktmovietrending":
-		return gettraktmovielist(2, list)
+		err = d.gettraktmovielist(2, list)
+		return d, err
 	case "traktseriepopular":
-		return gettraktserielist(1, list)
+		err = d.gettraktserielist(1, list)
+		return d, err
 	case "traktserieanticipated":
-		return gettraktserielist(3, list)
+		err = d.gettraktserielist(3, list)
+		return d, err
 	case "traktserietrending":
-		return gettraktserielist(2, list)
+		err = d.gettraktserielist(2, list)
+		return d, err
 	case "newznabrss":
 		return nil, searcher.Getnewznabrss(cfgp, list)
 	}
@@ -219,15 +228,14 @@ func feeds(cfgp *config.MediaTypeConfig, list *config.MediaListsConfig) (*feedRe
 // getseriesconfig loads the series config from the given file path.
 // It returns a feedResults struct containing the parsed series list on success.
 // Returns an error if the file could not be opened or parsed.
-func getseriesconfig(cfglist *config.ListsConfig) (*feedResults, error) {
+func (d *feedResults) getseriesconfig(cfglist *config.ListsConfig) error {
 	content, err := os.Open(cfglist.SeriesConfigFile)
 	if err != nil {
-		return nil, errors.New("loading config")
+		return errors.New("loading config")
 	}
-	d := plfeeds.Get()
+	defer content.Close()
 	err = logger.ParseToml(content, &d.Series)
-	content.Close()
-	return d, err
+	return err
 }
 
 // getimdbcsv loads an IMDB CSV list from a URL, parses it, filters movies,
@@ -239,10 +247,10 @@ func getseriesconfig(cfglist *config.ListsConfig) (*feedResults, error) {
 // movies to the results list.
 //
 // It handles locking/unlocking a global counter for tracking list item counts.
-func getimdbcsv(cfglistp *config.MediaListsConfig) (*feedResults, error) {
+func (d *feedResults) getimdbcsv(cfglistp *config.MediaListsConfig) error {
 	resp, err := apiexternal.WebGet(cfglistp.CfgList.URL)
 	if err != nil {
-		return nil, errors.New("csv read")
+		return errors.New("csv read")
 	}
 	defer resp.Body.Close()
 	parserimdb := csv.NewReader(resp.Body)
@@ -260,9 +268,6 @@ func getimdbcsv(cfglistp *config.MediaListsConfig) (*feedResults, error) {
 	}
 
 	listnamefilter := getlistnamefilterignore(cfglistp)
-
-	d := plfeeds.Get()
-	//d.Movies = make([]string, 0, c+10)
 
 	var movieid uint
 	var intmovie int
@@ -321,10 +326,11 @@ func getimdbcsv(cfglistp *config.MediaListsConfig) (*feedResults, error) {
 	if !ok || c != len(d.Movies) {
 		globalCounter.Store(cfglistp.CfgList.URL, len(d.Movies))
 	}
-	clear(args)
+	//clear(args)
+	args = nil
 
-	logger.LogDynamic("info", "imdb list fetched", logger.NewLogField("url", cfglistp.CfgList.URL), logger.NewLogField("entries to parse", len(d.Movies)))
-	return d, nil
+	logger.LogDynamic("info", "imdb list fetched", logger.NewLogField("url", &cfglistp.CfgList.URL), logger.NewLogField("entries to parse", len(d.Movies)))
+	return nil
 }
 
 // getmovieid checks if the given movie ID exists in the database for the specified list.
@@ -337,7 +343,7 @@ func getmovieid(dbid *uint, cfglistp *config.MediaListsConfig) bool {
 	if config.SettingsGeneral.UseMediaCache {
 		id := int(*dbid)
 		if database.CacheOneStringTwoIntIndexFunc(logger.CacheMovie, func(elem database.DbstaticOneStringTwoInt) bool {
-			return elem.Num1 == id && strings.EqualFold(elem.Str, cfglistp.Name)
+			return elem.Num1 == id && (elem.Str == cfglistp.Name || strings.EqualFold(elem.Str, cfglistp.Name))
 		}) {
 			return true
 		}

@@ -112,13 +112,21 @@ func submit(queue *pond.WorkerPool, job *Job) {
 		return
 	}
 	if queue.MaxCapacity() <= int(queue.WaitingTasks()) {
-		logger.LogDynamic("error", "queue limit reached", logger.NewLogField("job", job.Name), logger.NewLogField("queue", job.Queue))
+		logger.LogDynamic("error", "queue limit reached", logger.NewLogField("job", &job.Name), logger.NewLogField("queue", &job.Queue))
 	}
 	queue.Submit(func() {
+		id := job.ID
 		job.Started = logger.TimeGetNow()
 		q := dispatcherQueue{Name: job.Name, Queue: job}
-		globalQueueSet.Store(job.ID, &q)
+		globalQueueSet.Store(id, q)
 		s, ok := database.MapLoadP[JobSchedule](&globalScheduleSet, job.SchedulerID)
+		defer func() {
+			if ok {
+				s.IsRunning = false
+			}
+			globalQueueSet.Delete(id)
+			pljobs.Put(job)
+		}()
 		if ok {
 			s.IsRunning = true
 			s.LastRun = logger.TimeGetNow()
@@ -128,18 +136,7 @@ func submit(queue *pond.WorkerPool, job *Job) {
 				s.NextRun = logger.TimeGetNow().Add(s.Interval)
 			}
 		}
-		//}
 		job.Run()
-		if ok {
-			s.IsRunning = false
-		}
-		globalQueueSet.Delete(job.ID)
-		pljobs.Put(job)
-		//globalQueueSet.values = append(globalQueueSet.values, dispatcherQueue{Name: job.Name, Queue: job})
-		//globalScheduleSet.updateStartedSchedule(job.SchedulerID)
-		//job.Run()
-		//globalScheduleSet.updateIsRunningSchedule(job.SchedulerID, false)
-		//globalQueueSet.removeID(job.ID)
 	})
 }
 
@@ -233,7 +230,7 @@ func DispatchCron(cronStr string, name string, queue string, fn func()) error {
 		mu.Lock()
 		defer mu.Unlock()
 		if checkQueue(name) {
-			logger.LogDynamic("error", "Job already queued", logger.NewLogField("Job", name))
+			logger.LogDynamic("error", "Job already queued", logger.NewLogField("Job", &name))
 		} else if checklastadded(queue) {
 			job := pljobs.Get()
 			job.Added = logger.TimeGetNow()
@@ -252,7 +249,7 @@ func DispatchCron(cronStr string, name string, queue string, fn func()) error {
 				submit(WorkerPoolSearch, job)
 			}
 		} else {
-			logger.LogDynamic("error", "Job skipped - too many starting", logger.NewLogField("Job", name))
+			logger.LogDynamic("error", "Job skipped - too many starting", logger.NewLogField("Job", &name))
 		}
 	})
 	if err != nil {
@@ -290,7 +287,7 @@ func addjob(name string, queue string, fn func(), schedulerID string) {
 	mu.Lock()
 	defer mu.Unlock()
 	if checkQueue(name) {
-		logger.LogDynamic("error", "Job already queued", logger.NewLogField("Job", name))
+		logger.LogDynamic("error", "Job already queued", logger.NewLogField("Job", &name))
 	} else if checklastadded(queue) {
 		job := pljobs.Get()
 		job.Added = logger.TimeGetNow()
@@ -310,7 +307,7 @@ func addjob(name string, queue string, fn func(), schedulerID string) {
 			submit(WorkerPoolSearch, job)
 		}
 	} else {
-		logger.LogDynamic("error", "Job skipped - too many starting", logger.NewLogField("Job", name))
+		logger.LogDynamic("error", "Job skipped - too many starting", logger.NewLogField("Job", &name))
 	}
 }
 
@@ -488,8 +485,8 @@ func Cleanqueue() {
 func GetQueues() map[string]dispatcherQueue {
 	globalQueue := make(map[string]dispatcherQueue)
 	globalQueueSet.Range(func(key, value interface{}) bool {
-		s := value.(*dispatcherQueue)
-		globalQueue[key.(string)] = *s
+		s := value.(dispatcherQueue)
+		globalQueue[key.(string)] = s
 		return true
 	})
 	// for idx := range globalQueueSet.values {

@@ -315,10 +315,11 @@ func apiParseFile(ctx *gin.Context) {
 	cfgp := config.SettingsMedia[cfgv]
 	//defer parse.Close()
 	parse := parser.NewFileParser(filepath.Base(getcfg.Path), cfgp, -1, true)
+	parseinit := *parse
 	parser.ParseVideoFile(parse, getcfg.Path, config.SettingsQuality[getcfg.Quality])
 	parser.GetPriorityMapQual(&parse.M, cfgp, config.SettingsQuality[getcfg.Quality], true, true)
 	parser.GetDBIDs(parse)
-	ctx.JSON(http.StatusOK, gin.H{"data": parse})
+	ctx.JSON(http.StatusOK, gin.H{"data": parse, "data2": parseinit, "dbglobal": database.DBConnect, "scanparam": parser.Scanpatterns})
 	apiexternal.ParserPool.Put(parse)
 }
 
@@ -904,16 +905,17 @@ func apiNamingGenerate(ctx *gin.Context) {
 		//defer s.Close()
 		to := filepath.Dir(cfg.FilePath)
 
-		var orgadata structure.Organizerdata
-		orgadata.Videofile = cfg.FilePath
-		orgadata.Folder = to
-		orgadata.Rootpath = movie.Rootpath
+		var orgadata2 structure.Organizerdata
+		orgadata2.Videofile = cfg.FilePath
+		orgadata2.Folder = to
+		orgadata2.Rootpath = movie.Rootpath
+		s.SetOrga(&orgadata2)
 		m := parser.ParseFile(cfg.FilePath, true, true, cfgp, config.GetMediaListsEntryListID(cfgp, movie.Listname))
 
-		s.ParseFileAdditional(&orgadata, m, false, 0, false, s.Cfgp.Lists[orgadata.Listid].CfgQuality)
+		s.ParseFileAdditional(m, false, 0, false, s.Cfgp.Lists[s.GetOrgaListID()].CfgQuality)
 
-		s.GenerateNamingTemplate(&orgadata, m, &movie.DbmovieID, nil)
-		ctx.JSON(http.StatusOK, gin.H{"foldername": orgadata.Foldername, "filename": orgadata.Filename, "m": &m.M})
+		s.GenerateNamingTemplate(m, &movie.DbmovieID, nil)
+		ctx.JSON(http.StatusOK, gin.H{"foldername": s.GetOrgaFolderName(), "filename": s.GetOrgaFileName(), "m": &m.M})
 	} else {
 		series, _ := database.GetSeries(database.Querywithargs{Where: logger.FilterByID}, cfg.SerieID)
 		//defer logger.ClearVar(&series)
@@ -927,15 +929,16 @@ func apiNamingGenerate(ctx *gin.Context) {
 		)
 		//defer s.Close()
 		to := filepath.Dir(cfg.FilePath)
-		var orgadata structure.Organizerdata
-		orgadata.Videofile = cfg.FilePath
-		orgadata.Folder = to
-		orgadata.Rootpath = series.Rootpath
+		var orgadata2 structure.Organizerdata
+		orgadata2.Videofile = cfg.FilePath
+		orgadata2.Folder = to
+		orgadata2.Rootpath = series.Rootpath
+		s.SetOrga(&orgadata2)
 
 		m := parser.ParseFile(cfg.FilePath, true, true, cfgp, config.GetMediaListsEntryListID(cfgp, series.Listname))
-		s.ParseFileAdditional(&orgadata, m, false, 0, false, s.Cfgp.Lists[orgadata.Listid].CfgQuality)
+		s.ParseFileAdditional(m, false, 0, false, s.Cfgp.Lists[s.GetOrgaListID()].CfgQuality)
 
-		tblepi, _, _ := s.GetSeriesEpisodes(&orgadata, m, &series.ID, &series.DbserieID, true, s.Cfgp.Lists[orgadata.Listid].CfgQuality)
+		tblepi, _, _ := s.GetSeriesEpisodes(m, &series.ID, &series.DbserieID, true, s.Cfgp.Lists[s.GetOrgaListID()].CfgQuality)
 
 		var firstepiid uint
 		for _, entry := range tblepi {
@@ -943,8 +946,8 @@ func apiNamingGenerate(ctx *gin.Context) {
 			break
 		}
 
-		s.GenerateNamingTemplate(&orgadata, m, &firstepiid, tblepi)
-		ctx.JSON(http.StatusOK, gin.H{"foldername": orgadata.Foldername, "filename": orgadata.Filename, "m": &m.M})
+		s.GenerateNamingTemplate(m, &firstepiid, tblepi)
+		ctx.JSON(http.StatusOK, gin.H{"foldername": s.GetOrgaFolderName(), "filename": s.GetOrgaFileName(), "m": &m.M})
 	}
 }
 
