@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"os"
@@ -11,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/goccy/go-json"
+	//"github.com/goccy/go-json"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
@@ -151,7 +152,7 @@ func apiQueueListStarted(ctx *gin.Context) {
 	if queryParam, ok := ctx.GetQuery("limit"); ok {
 		if queryParam != "" {
 			limit, _ = strconv.Atoi(queryParam)
-			query.Limit = limit
+			query.Limit = uint(limit)
 		}
 	}
 	if limit != 0 {
@@ -211,8 +212,8 @@ func apiTraktGetStoreToken(ctx *gin.Context) {
 // @Failure      401   {object}  Jsonerror
 // @Router       /api/trakt/user/{user}/{list} [get]
 func apiTraktGetUserList(ctx *gin.Context) {
-
-	list, err := apiexternal.GetTraktUserList(ctx.Param("user"), ctx.Param("list"), "movie,show", "10")
+	lim := "10"
+	list, err := apiexternal.GetTraktUserList(ctx.Param("user"), ctx.Param("list"), "movie,show", &lim)
 	ctx.JSON(http.StatusOK, gin.H{"data": list, "error": err})
 	//list = nil
 }
@@ -230,25 +231,25 @@ func apiDBRefreshSlugs(ctx *gin.Context) {
 	var slug string
 	for idx := range dbmovies {
 		slug = logger.StringToSlug(dbmovies[idx].Title)
-		database.ExecN("update dbmovies set slug = ? where id = ?", &slug, &dbmovies[idx].ID)
+		database.ExecN("update dbmovies set slug = ? where id = ?", slug, &dbmovies[idx].ID)
 	}
 
 	dbmoviestitles := database.QueryDbmovieTitle(database.Querywithargs{})
 	for idx := range dbmoviestitles {
 		slug = logger.StringToSlug(dbmoviestitles[idx].Title)
-		database.ExecN("update dbmovie_titles set slug = ? where id = ?", &slug, &dbmoviestitles[idx].ID)
+		database.ExecN("update dbmovie_titles set slug = ? where id = ?", slug, &dbmoviestitles[idx].ID)
 	}
 
 	dbserie := database.QueryDbserie(database.Querywithargs{})
 	for idx := range dbserie {
 		slug = logger.StringToSlug(dbserie[idx].Seriename)
-		database.ExecN("update dbseries set slug = ? where id = ?", &slug, &dbserie[idx].ID)
+		database.ExecN("update dbseries set slug = ? where id = ?", slug, &dbserie[idx].ID)
 	}
 
 	dbserietitles := database.QueryDbserieAlternates(database.Querywithargs{})
 	for idx := range dbserietitles {
 		slug = logger.StringToSlug(dbserietitles[idx].Title)
-		database.ExecN("update dbserie_alternates set slug = ? where id = ?", &slug, &dbserietitles[idx].ID)
+		database.ExecN("update dbserie_alternates set slug = ? where id = ?", slug, &dbserietitles[idx].ID)
 	}
 	ctx.JSON(http.StatusOK, "ok")
 
@@ -263,7 +264,7 @@ func apiDBRefreshSlugs(ctx *gin.Context) {
 // @Tags         parse
 // @Param        toparse  body      apiparse  true  "To Parse"
 // @Param        apikey query     string    true  "apikey"
-// @Success      200      {object}  Jsondataerror{data=[]apiexternal.FileParser}
+// @Success      200      {object}  Jsondataerror{data=database.ParseInfo}
 // @Failure      400      {object}  Jsonerror
 // @Failure      401      {object}  Jsonerror
 // @Router       /api/parse/string [post]
@@ -282,11 +283,11 @@ func apiParseString(ctx *gin.Context) {
 		cfgv = "serie_" + getcfg.Config
 	}
 	cfgp := config.SettingsMedia[cfgv]
-	parse := parser.NewFileParser(getcfg.Name, cfgp, -1, true)
-	parser.GetPriorityMapQual(&parse.M, cfgp, config.SettingsQuality[getcfg.Quality], true, true)
-	err = parser.GetDBIDs(parse)
+	parse := parser.NewFileParser(getcfg.Name, cfgp, false, -1)
+	parser.GetPriorityMapQual(parse, cfgp, config.SettingsQuality[getcfg.Quality], true, true)
+	err = parser.GetDBIDs(parse, cfgp, true)
 	ctx.JSON(http.StatusOK, gin.H{"data": parse, "error": err})
-	apiexternal.ParserPool.Put(parse)
+	parse.Close()
 }
 
 // @Summary      Parse a file
@@ -294,7 +295,7 @@ func apiParseString(ctx *gin.Context) {
 // @Tags         parse
 // @Param        toparse  body      apiparse  true  "To Parse"
 // @Param        apikey query     string    true  "apikey"
-// @Success      200      {object}  Jsondata{data=apiexternal.FileParser}
+// @Success      200      {object}  Jsondata{data=database.ParseInfo}
 // @Failure      400      {object}  Jsonerror
 // @Failure      401      {object}  Jsonerror
 // @Router       /api/parse/file [post]
@@ -314,13 +315,12 @@ func apiParseFile(ctx *gin.Context) {
 	}
 	cfgp := config.SettingsMedia[cfgv]
 	//defer parse.Close()
-	parse := parser.NewFileParser(filepath.Base(getcfg.Path), cfgp, -1, true)
-	parseinit := *parse
+	parse := parser.NewFileParser(filepath.Base(getcfg.Path), cfgp, false, -1)
 	parser.ParseVideoFile(parse, getcfg.Path, config.SettingsQuality[getcfg.Quality])
-	parser.GetPriorityMapQual(&parse.M, cfgp, config.SettingsQuality[getcfg.Quality], true, true)
-	parser.GetDBIDs(parse)
-	ctx.JSON(http.StatusOK, gin.H{"data": parse, "data2": parseinit, "dbglobal": database.DBConnect, "scanparam": parser.Scanpatterns})
-	apiexternal.ParserPool.Put(parse)
+	parser.GetPriorityMapQual(parse, cfgp, config.SettingsQuality[getcfg.Quality], true, true)
+	parser.GetDBIDs(parse, cfgp, true)
+	ctx.JSON(http.StatusOK, gin.H{"data": parse})
+	parse.Close()
 }
 
 // @Summary      Generate IMDB Cache
@@ -405,7 +405,7 @@ func apiDBBackup(ctx *gin.Context) {
 	}
 	database.Backup("./backup/data.db."+database.GetVersion()+"."+time.Now().Format("20060102_150405"), config.SettingsGeneral.MaxDatabaseBackups)
 	if config.SettingsGeneral.DatabaseBackupStopTasks {
-		worker.InitWorkerPools(config.SettingsGeneral.WorkerIndexer, config.SettingsGeneral.WorkerParse, config.SettingsGeneral.WorkerSearch, config.SettingsGeneral.WorkerFiles, config.SettingsGeneral.WorkerMetadata)
+		worker.InitWorkerPools(config.SettingsGeneral.WorkerSearch, config.SettingsGeneral.WorkerFiles, config.SettingsGeneral.WorkerMetadata)
 		worker.StartCronWorker()
 	}
 	ctx.JSON(http.StatusOK, "ok")
@@ -513,7 +513,7 @@ func apiDBRemoveOldJobs(ctx *gin.Context) {
 // @Router       /api/quality [get]
 func apiGetQualities(ctx *gin.Context) {
 
-	ctx.JSON(http.StatusOK, gin.H{"data": database.GetrowsN[database.Qualities](false, database.GetdatarowN[int](false, "select count() from qualities"), "select * from qualities")})
+	ctx.JSON(http.StatusOK, gin.H{"data": database.GetrowsN[database.Qualities](false, database.GetdatarowN[uint](false, "select count() from qualities"), "select * from qualities")})
 }
 
 // @Summary      Delete Quality
@@ -528,7 +528,7 @@ func apiQualityDelete(ctx *gin.Context) {
 
 	database.DeleteRow("qualities", logger.FilterByID, ctx.Param("id"))
 	database.SetVars()
-	ctx.JSON(http.StatusOK, gin.H{"data": database.GetrowsN[database.Qualities](false, database.GetdatarowN[int](false, "select count() from qualities"), "select * from qualities")})
+	ctx.JSON(http.StatusOK, gin.H{"data": database.GetrowsN[database.Qualities](false, database.GetdatarowN[uint](false, "select count() from qualities"), "select * from qualities")})
 }
 
 // @Summary      Update Quality
@@ -547,7 +547,7 @@ func apiQualityUpdate(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	counter := database.GetdatarowN[int](false, "select count() from qualities where id != 0 and id = ?", &quality.ID)
+	counter := database.GetdatarowN[uint](false, "select count() from qualities where id != 0 and id = ?", &quality.ID)
 
 	if counter == 0 {
 		database.InsertArray("qualities", []string{"Type", "Name", "Regex", "Strings", "Priority", "Use_Regex"},
@@ -557,7 +557,7 @@ func apiQualityUpdate(ctx *gin.Context) {
 			"id != 0 and id = ?", quality.QualityType, quality.Name, quality.Regex, quality.Strings, quality.Priority, quality.UseRegex, quality.ID)
 	}
 	database.SetVars()
-	ctx.JSON(http.StatusOK, gin.H{"data": database.GetrowsN[database.Qualities](false, database.GetdatarowN[int](false, "select count() from qualities"), "select * from qualities")})
+	ctx.JSON(http.StatusOK, gin.H{"data": database.GetrowsN[database.Qualities](false, database.GetdatarowN[uint](false, "select count() from qualities"), "select * from qualities")})
 }
 
 // @Summary      List Quality Priorities
@@ -901,7 +901,7 @@ func apiNamingGenerate(ctx *gin.Context) {
 			cfgp,
 			&config.SettingsMedia[cfg.CfgMedia].DataImport[0],
 			config.SettingsMedia[cfg.CfgMedia].DataImport[0].TemplatePath,
-			config.SettingsMedia[cfg.CfgMedia].Data[0].TemplatePath)
+			config.SettingsMedia[cfg.CfgMedia].Data[0].TemplatePath, false, false, 0)
 		//defer s.Close()
 		to := filepath.Dir(cfg.FilePath)
 
@@ -909,13 +909,12 @@ func apiNamingGenerate(ctx *gin.Context) {
 		orgadata2.Videofile = cfg.FilePath
 		orgadata2.Folder = to
 		orgadata2.Rootpath = movie.Rootpath
-		s.SetOrga(&orgadata2)
-		m := parser.ParseFile(cfg.FilePath, true, true, cfgp, config.GetMediaListsEntryListID(cfgp, movie.Listname))
+		m := parser.ParseFile(cfg.FilePath, true, true, cfgp, cfgp.GetMediaListsEntryListID(movie.Listname))
+		orgadata2.Listid = m.ListID
+		s.ParseFileAdditional(&orgadata2, m, false, 0, false, s.Cfgp.Lists[m.ListID].CfgQuality)
 
-		s.ParseFileAdditional(m, false, 0, false, s.Cfgp.Lists[s.GetOrgaListID()].CfgQuality)
-
-		s.GenerateNamingTemplate(m, &movie.DbmovieID, nil)
-		ctx.JSON(http.StatusOK, gin.H{"foldername": s.GetOrgaFolderName(), "filename": s.GetOrgaFileName(), "m": &m.M})
+		s.GenerateNamingTemplate(&orgadata2, m, &movie.DbmovieID, nil)
+		ctx.JSON(http.StatusOK, gin.H{"foldername": orgadata2.Foldername, "filename": orgadata2.Filename, "m": m})
 	} else {
 		series, _ := database.GetSeries(database.Querywithargs{Where: logger.FilterByID}, cfg.SerieID)
 		//defer logger.ClearVar(&series)
@@ -926,6 +925,7 @@ func apiNamingGenerate(ctx *gin.Context) {
 			&config.SettingsMedia[cfg.CfgMedia].DataImport[0],
 			config.SettingsMedia[cfg.CfgMedia].DataImport[0].TemplatePath,
 			config.SettingsMedia[cfg.CfgMedia].Data[0].TemplatePath,
+			false, false, 0,
 		)
 		//defer s.Close()
 		to := filepath.Dir(cfg.FilePath)
@@ -933,21 +933,22 @@ func apiNamingGenerate(ctx *gin.Context) {
 		orgadata2.Videofile = cfg.FilePath
 		orgadata2.Folder = to
 		orgadata2.Rootpath = series.Rootpath
-		s.SetOrga(&orgadata2)
 
-		m := parser.ParseFile(cfg.FilePath, true, true, cfgp, config.GetMediaListsEntryListID(cfgp, series.Listname))
-		s.ParseFileAdditional(m, false, 0, false, s.Cfgp.Lists[s.GetOrgaListID()].CfgQuality)
-
-		tblepi, _, _ := s.GetSeriesEpisodes(m, &series.ID, &series.DbserieID, true, s.Cfgp.Lists[s.GetOrgaListID()].CfgQuality)
+		m := parser.ParseFile(cfg.FilePath, true, true, cfgp, cfgp.GetMediaListsEntryListID(series.Listname))
+		orgadata2.Listid = m.ListID
+		s.ParseFileAdditional(&orgadata2, m, false, 0, false, s.Cfgp.Lists[m.ListID].CfgQuality)
+		m.SerieID = series.ID
+		m.DbserieID = series.DbserieID
+		s.GetSeriesEpisodes(&orgadata2, m, true, s.Cfgp.Lists[orgadata2.Listid].CfgQuality)
 
 		var firstepiid uint
-		for _, entry := range tblepi {
+		for _, entry := range m.Episodes {
 			firstepiid = entry.Num1
 			break
 		}
 
-		s.GenerateNamingTemplate(m, &firstepiid, tblepi)
-		ctx.JSON(http.StatusOK, gin.H{"foldername": s.GetOrgaFolderName(), "filename": s.GetOrgaFileName(), "m": &m.M})
+		s.GenerateNamingTemplate(&orgadata2, m, &firstepiid, m.Episodes)
+		ctx.JSON(http.StatusOK, gin.H{"foldername": orgadata2.Foldername, "filename": orgadata2.Filename, "m": m})
 	}
 }
 
@@ -1016,18 +1017,18 @@ func apiStructure(ctx *gin.Context) {
 		}
 	}
 
-	structurevar := structure.NewStructure(cfgp, cfgimport, cfg.Sourcepathtemplate, cfg.Targetpathtemplate)
-
-	structurevar.Checkruntime = config.SettingsPath[cfg.Sourcepathtemplate].CheckRuntime
+	checkruntime := config.SettingsPath[cfg.Sourcepathtemplate].CheckRuntime
 	if cfg.Disableruntimecheck {
-		structurevar.Checkruntime = false
+		checkruntime = false
 	}
-	structurevar.Deletewronglanguage = config.SettingsPath[cfg.Sourcepathtemplate].DeleteWrongLanguage
+	deletewronglanguage := config.SettingsPath[cfg.Sourcepathtemplate].DeleteWrongLanguage
 	if cfg.Disabledeletewronglanguage {
-		structurevar.Deletewronglanguage = false
+		deletewronglanguage = false
 	}
-	structurevar.ManualId = cfg.Forceid
-	structurevar.OrganizeSingleFolder(cfg.Folder)
+	// structurevar := structure.NewStructure(cfgp, cfgimport, cfg.Sourcepathtemplate, cfg.Targetpathtemplate, false, false, 0)
+
+	// structurevar.ManualId = cfg.Forceid
+	structure.OrganizeSingleFolder(cfg.Folder, cfgp, cfgimport, cfg.Targetpathtemplate, checkruntime, deletewronglanguage, cfg.Forceid)
 
 	ctx.JSON(http.StatusOK, gin.H{})
 }

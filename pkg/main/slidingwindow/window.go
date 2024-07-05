@@ -24,12 +24,6 @@ type Limiter struct {
 	interval time.Duration
 }
 
-// NewLimiter returns a new Limiter that limits events to max
-// events per interval duration.
-func NewLimiter(interval time.Duration, max int64) Limiter {
-	return Limiter{interval: interval, max: max, start: time.Now(), last: time.Now()}
-}
-
 // add increments the count and updates the last and start timestamps if
 // the rate limit has not been reached. If the rate limit has been reached,
 // the start timestamp is updated if enough time has passed since the first
@@ -123,4 +117,10 @@ func (lim *Limiter) Interval() time.Duration {
 // the rate limiting and forces the last time to be the given time.
 func (lim *Limiter) WaitTill(now time.Time) {
 	lim.last = now
+}
+
+// NewLimiter returns a new Limiter that limits events to max
+// events per interval duration.
+func NewLimiter(interval time.Duration, max int64) Limiter {
+	return Limiter{interval: interval, max: max, start: time.Now(), last: time.Now()}
 }

@@ -5,16 +5,15 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/slidingwindow"
 )
 
-type theTVDBSeries struct {
-	Data theTVDBSeriesData `json:"data"`
+type TheTVDBSeries struct {
+	Data TheTVDBSeriesData `json:"data"`
 }
-type theTVDBSeriesData struct {
+type TheTVDBSeriesData struct {
 	ID              int      `json:"id"`
 	SeriesName      string   `json:"seriesName"`
 	Aliases         []string `json:"aliases"`
@@ -38,16 +37,17 @@ type theTVDBSeriesData struct {
 	//NetworkID       string   `json:"networkId"`
 }
 
-type theTVDBEpisodes struct {
-	Links theTVDBEpisodesLinks `json:"links"`
-	Data  []theTVDBEpisode     `json:"data"`
+type TheTVDBEpisodes struct {
+	Links TheTVDBEpisodesLinks `json:"links"`
+	Data  []TheTVDBEpisode     `json:"data"`
 }
-type theTVDBEpisodesLinks struct {
+type TheTVDBEpisodesLinks struct {
 	First int `json:"first"`
 	Last  int `json:"last"`
+	Next  int `json:"next"`
 }
 
-type theTVDBEpisode struct {
+type TheTVDBEpisode struct {
 	AiredSeason        int    `json:"airedSeason"`
 	AiredEpisodeNumber int    `json:"airedEpisodeNumber"`
 	EpisodeName        string `json:"episodeName"`
@@ -78,62 +78,40 @@ type tvdbClient struct {
 	Client rlHTTPClient
 }
 
-// Close cleans up the theTVDBSeries object by setting all fields to their
-// zero values. This is done to avoid keeping large objects in memory
-// unnecessarily when they are no longer needed. The cleanup is skipped
-// if the DisableVariableCleanup setting is true or if t is nil.
-func (t *theTVDBSeries) Close() {
-	if config.SettingsGeneral.DisableVariableCleanup || t == nil {
-		return
-	}
-	//clear(t.Data.Aliases)
-	//clear(t.Data.Genre)
-	t.Data.Aliases = nil
-	t.Data.Genre = nil
-	*t = theTVDBSeries{}
-}
-
-// Close cleans up the theTVDBEpisodes struct by zeroing it out.
-// This is done to avoid keeping large structs in memory when no longer needed.
-func (t *theTVDBEpisodes) Close() {
-	if config.SettingsGeneral.DisableVariableCleanup || t == nil {
-		return
-	}
-	//clear(t.Data)
-	t.Data = nil
-	*t = theTVDBEpisodes{}
-}
-
 // NewTvdbClient creates a new tvdbClient instance for making requests to
 // the TheTVDB API. It configures rate limiting and TLS based on the
 // provided parameters.
-func NewTvdbClient(seconds int, calls int, disabletls bool, timeoutseconds int) {
+func NewTvdbClient(seconds uint8, calls int, disabletls bool, timeoutseconds uint16) {
 	if seconds == 0 {
 		seconds = 1
 	}
 	if calls == 0 {
 		calls = 1
 	}
-	tvdbAPI = tvdbClient{
-		Client: NewClient(
-			"tvdb",
-			disabletls,
-			true,
-			slidingwindow.NewLimiter(time.Duration(seconds)*time.Second, int64(calls)),
-			false, slidingwindow.NewLimiter(10*time.Second, 10), timeoutseconds)}
+	tvdbApidata = apidata{
+		disabletls:     disabletls,
+		seconds:        seconds,
+		calls:          calls,
+		timeoutseconds: timeoutseconds,
+		limiter:        slidingwindow.NewLimiter(time.Duration(seconds)*time.Second, int64(calls)),
+		dailylimiter:   slidingwindow.NewLimiter(10*time.Second, 10),
+	}
 }
 
 // GetTvdbSeries retrieves TV series data from the TheTVDB API for the given series ID.
 // If a non-empty language is provided, it will be set in the API request headers.
 // Returns the TV series data, or an error if one occurs.
-func GetTvdbSeries(id int, language string) (theTVDBSeries, error) {
-	if id == 0 || tvdbAPI.Client.checklimiterwithdaily() {
-		return theTVDBSeries{}, logger.ErrNotFound
+func GetTvdbSeries(id int, language string) (TheTVDBSeries, error) {
+	p := pltvdb.Get()
+	defer pltvdb.Put(p)
+	if id == 0 || p.Client.checklimiterwithdaily() {
+		return TheTVDBSeries{}, logger.ErrNotFound
 	}
+	urlv := logger.JoinStrings("https://api.thetvdb.com/series/", strconv.Itoa(id)) //JoinStrings
 	if language != "" {
-		return DoJSONType[theTVDBSeries](&tvdbAPI.Client, logger.JoinStrings("https://api.thetvdb.com/series/", strconv.Itoa(id)), keyval{"Accept-Language", language})
+		return doJSONTypeHeader[TheTVDBSeries](&p.Client, urlv, []string{"Accept-Language", language})
 	}
-	return DoJSONType[theTVDBSeries](&tvdbAPI.Client, logger.JoinStrings("https://api.thetvdb.com/series/", strconv.Itoa(id)))
+	return doJSONType[TheTVDBSeries](&p.Client, urlv)
 }
 
 // GetTvdbSeriesEpisodes retrieves all episodes for the given TV series ID from
@@ -141,64 +119,74 @@ func GetTvdbSeries(id int, language string) (theTVDBSeries, error) {
 // ID. It retrieves the episode data, checks for existing episodes to avoid
 // duplicates, and inserts any missing episodes into the database. If there are
 // multiple pages of results, it fetches additional pages.
-func UpdateTvdbSeriesEpisodes(id int, language string, dbid uint) {
-	if id == 0 || tvdbAPI.Client.checklimiterwithdaily() {
+func UpdateTvdbSeriesEpisodes(id int, language string, dbid *uint) {
+	p := pltvdb.Get()
+	defer pltvdb.Put(p)
+	if id == 0 || p.Client.checklimiterwithdaily() {
 		return
 	}
-	urlv := logger.URLJoinPath("https://api.thetvdb.com/series/", strconv.Itoa(id), "episodes")
-	var result theTVDBEpisodes
-	defer result.Close()
+	urlv := logger.JoinStrings("https://api.thetvdb.com/series/", strconv.Itoa(id), "/episodes")
+	var result TheTVDBEpisodes
+	//defer result.Close()
 	var err error
-	var lang keyval
+	var lang []string
 	if language != "" {
-		lang = keyval{"Accept-Language", language}
-		result, err = DoJSONType[theTVDBEpisodes](&tvdbAPI.Client, urlv, lang)
+		lang = []string{"Accept-Language", language}
+		result, err = doJSONTypeHeader[TheTVDBEpisodes](&p.Client, urlv, lang)
 	} else {
-		result, err = DoJSONType[theTVDBEpisodes](&tvdbAPI.Client, urlv)
+		result, err = doJSONType[TheTVDBEpisodes](&p.Client, urlv)
 	}
 
 	if err != nil {
 		if !errors.Is(err, logger.ErrToWait) {
-			logger.LogDynamic("error", "Error calling", logger.NewLogFieldValue(err), logger.NewLogField(logger.StrURL, &urlv))
+			logger.LogDynamicany("error", "Error calling", err, &logger.StrURL, &urlv) //logpointer
 		}
 		return
 	}
-	tbl := database.Getrows1size[database.DbstaticTwoString](false, database.QueryDbserieEpisodesCountByDBID, database.QueryDbserieEpisodesGetSeasonEpisodeByDBID, &dbid)
+	tbl := database.Getrows1size[database.DbstaticTwoString](false, database.QueryDbserieEpisodesCountByDBID, database.QueryDbserieEpisodesGetSeasonEpisodeByDBID, dbid)
 
-	addthetvdbepisodes(&result, &dbid, tbl)
-	urlv += "?page="
-	if result.Links.Last >= 2 {
-		var resultadd theTVDBEpisodes
-		for k := 2; k <= result.Links.Last; k++ {
+	result.addthetvdbepisodes(dbid, tbl)
+	urlv = logger.JoinStrings(urlv, "?page=")
+	if result.Links.Next > 0 && (result.Links.First+1) < result.Links.Last {
+		var resultadd TheTVDBEpisodes
+		for k := result.Links.First + 1; k <= result.Links.Last; k++ {
 			if language != "" {
-				resultadd, err = DoJSONType[theTVDBEpisodes](&tvdbAPI.Client, urlv+strconv.Itoa(k), lang)
+				resultadd, err = doJSONTypeHeader[TheTVDBEpisodes](&p.Client, logger.JoinStrings(urlv, strconv.Itoa(k)), lang)
 			} else {
-				resultadd, err = DoJSONType[theTVDBEpisodes](&tvdbAPI.Client, urlv+strconv.Itoa(k))
+				resultadd, err = doJSONType[TheTVDBEpisodes](&p.Client, logger.JoinStrings(urlv, strconv.Itoa(k)))
 			}
 			if err == nil {
-				addthetvdbepisodes(&resultadd, &dbid, tbl)
+				resultadd.addthetvdbepisodes(dbid, tbl)
+				clear(resultadd.Data)
 			}
-			resultadd.Close()
 		}
 	}
+	//clear(result.Data)
 	//clear(tbl)
-	tbl = nil
 }
 
 // addthetvdbepisodes iterates through the episodes in the given TheTVDBEpisodes
 // result and inserts any missing episodes into the dbserie_episodes table for
 // the series matching the given dbid. It returns false if no error occurs.
-func addthetvdbepisodes(resultadd *theTVDBEpisodes, dbid *uint, tbl []database.DbstaticTwoString) bool {
-	for idx := range resultadd.Data {
-		if checkdbtwostrings(tbl, resultadd.Data[idx].AiredSeason, resultadd.Data[idx].AiredEpisodeNumber) {
+func (t *TheTVDBEpisodes) addthetvdbepisodes(dbid *uint, tbl []database.DbstaticTwoString) {
+	for idx := range t.Data {
+		if checkdbtwostrings(tbl, t.Data[idx].AiredSeason, t.Data[idx].AiredEpisodeNumber) {
 			continue
 		}
-		dt := database.ParseDateTime(resultadd.Data[idx].FirstAired)
-		strepisode := strconv.Itoa(resultadd.Data[idx].AiredEpisodeNumber)
-		strseason := strconv.Itoa(resultadd.Data[idx].AiredSeason)
-		stridentifier := GenerateIdentifierStringFromInt(resultadd.Data[idx].AiredSeason, resultadd.Data[idx].AiredEpisodeNumber)
 		database.ExecN("insert into dbserie_episodes (episode, season, identifier, title, first_aired, overview, poster, dbserie_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-			&strepisode, &strseason, &stridentifier, &resultadd.Data[idx].EpisodeName, &dt, &resultadd.Data[idx].Overview, &resultadd.Data[idx].Poster, dbid)
+			strconv.Itoa(t.Data[idx].AiredEpisodeNumber), strconv.Itoa(t.Data[idx].AiredSeason), generateIdentifierStringFromInt(t.Data[idx].AiredSeason, t.Data[idx].AiredEpisodeNumber), &t.Data[idx].EpisodeName, parseDateTime(t.Data[idx].FirstAired), &t.Data[idx].Overview, &t.Data[idx].Poster, dbid)
 	}
-	return false
+}
+
+// ParseDate parses a date string in "2006-01-02" format and returns a sql.NullTime.
+// Returns a null sql.NullTime if the date string is empty or fails to parse.
+func parseDateTime(date string) time.Time {
+	if date == "" {
+		return time.Time{}
+	}
+	t, err := time.Parse("2006-01-02", date)
+	if err != nil {
+		return t
+	}
+	return time.Time{}
 }

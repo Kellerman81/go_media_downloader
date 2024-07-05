@@ -2,10 +2,9 @@ package searcher
 
 import (
 	"bytes"
+	"cmp"
 	"errors"
-	"fmt"
-	"sort"
-	"strconv"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -18,19 +17,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/parser"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/pool"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/worker"
 )
-
-// searchResults is a struct that contains slices of Nzbwithprio for Raw, Denied, and Accepted results
-// As well as a boolean field bl
-type searchResults struct {
-	// Raw is a slice containing apiexternal.Nzbwithprio results
-	Raw []apiexternal.Nzbwithprio
-	// Denied is a slice containing denied apiexternal.Nzbwithprio results
-	Denied []apiexternal.Nzbwithprio
-	// Accepted is a slice containing accepted apiexternal.Nzbwithprio results
-	Accepted []apiexternal.Nzbwithprio
-}
 
 // ConfigSearcher is a struct containing configuration and search results
 type ConfigSearcher struct {
@@ -41,11 +28,14 @@ type ConfigSearcher struct {
 	// searchActionType is a string indicating the search action type
 	searchActionType string //missing,upgrade,rss
 	// Sourceentry is a Nzbwithprio result
-	Sourceentry apiexternal.Nzbwithprio
+	//Sourceentry apiexternal.Nzbwithprio
 	// Dl contains the search results
-	Dl *searchResults
-	// Mu is a mutex for synchronization
-	Mu sync.Mutex
+	Raw apiexternal.NzbSlice
+	// Denied is a slice containing denied apiexternal.Nzbwithprio results
+	Denied []apiexternal.Nzbwithprio
+	// Accepted is a slice containing accepted apiexternal.Nzbwithprio results
+	Accepted []apiexternal.Nzbwithprio
+	Done     bool
 }
 
 const (
@@ -53,224 +43,67 @@ const (
 )
 
 var (
-	episodeprefixarray = []string{"", " ", "0", " 0"}
-	//plsearcher         sync.Pool
-	plparams = pool.NewPool(100, 0, func(b *searchparams) {
-		b.alttitles = make([]database.DbstaticTwoStringOneInt, 0, 100)
-	}, func(b *searchparams) {
-		//clear(b.sourcealttitles)
-		b.sourcealttitles = nil
-		clear(b.alttitles)
-		b.alttitles = b.alttitles[:0]
-		b.titlesearch = false
-		b.season = ""
-		b.thetvdbid = 0
-		b.useseason = false
-	})
-	plsearcher                pool.Poolobj[searchResults]
-	strqualityunknown         = "unknown Quality"
-	strpriounknown            = "unknown Prio"
-	strpriosame               = "same Prio"
-	strpriolower              = "lower Prio"
-	strsearchdisabled         = "disabled Search"
-	strupgradedisabled        = "disabled Upgrade"
-	strmovieunwanted          = "unwanted Movie"
-	strepisodeunwanted        = "unwanted Episode"
-	stryearunwanted           = "unwanted Year"
-	strtitleunwanted          = "unwanted Title"
-	strtitlealternateunwanted = "unwanted Title and alternate"
-	strdbmovieunwanted        = "unwanted DBMovie"
-	strserieunwanted          = "unwanted Serie"
-	strdbserieunwanted        = "unwanted DBSerie"
-	strdbepisodeunwanted      = "unwanted DBEpisode"
-	stridentifierunwanted     = "unwanted Identifier"
-	strcodecunwanted          = "unwanted Codec"
-	straudiounwanted          = "unwanted Audio"
-	strqualityunwanted        = "unwanted Quality"
-	strresolutionunwanted     = "unwanted Resolution"
-	strseasonunwanted         = "unwanted Season"
-	strtoosmall               = "too small"
-	strtoobig                 = "too big"
-	strnotmatchrequired       = "not matched required"
-	strnotmatchimdb           = "not matched imdb"
-	strnotmatchtvdb           = "not matched tvdb"
-	strallreadydltitle        = "already downloaded title"
-	strallreadydlurl          = "already downloaded url"
-	strnoyear                 = "no year"
-	strnotitle                = "no title"
-	strnourl                  = "no url"
-	strnosize                 = "no size"
-	strnoidentifier           = "no identifier"
-	strnoaddinlist            = "no addinlist"
-	strshorttitle             = "short title"
-	strunalloweddbmovie       = "unallowed DBMovie"
-	deniedbyregex             = "Denied by Regex"
-)
+	strIdentifier      = "identifier"
+	strCheckedFor      = "checked for"
+	strTitlesearch     = "titlesearch"
+	strRejectedby      = "rejected by"
+	strResolution      = "resolution"
+	strQuality         = "quality"
+	strAudio           = "audio"
+	strCodec           = "codec"
+	strMediaid         = "Media ID"
+	episodeprefixarray = []string{"", logger.StrSpace, "0", " 0"}
+	errOther           = errors.New("other error")
+	errYearEmpty       = errors.New("year empty")
+	errSearchvarEmpty  = errors.New("searchvar empty")
+	errRegexEmpty      = errors.New("regex template empty")
+	plsearcher         = pool.NewPool(100, 10, func(cs *ConfigSearcher) {
+		cs.Raw.Arr = make([]apiexternal.Nzbwithprio, 0, 6000)
+		cs.Raw.Mu = sync.Mutex{}
+	}, func(cs *ConfigSearcher) {
+		cs.Cfgp = nil
+		cs.Quality = nil
+		cs.searchActionType = ""
+		//ce.Close()
 
-func DefineSearchPool(maxcount int) {
-	plsearcher = pool.NewPool(config.SettingsGeneral.WorkerSearch+2, config.SettingsGeneral.WorkerSearch, func(cs *searchResults) {
-		cs.Raw = make([]apiexternal.Nzbwithprio, 0, maxcount)
-	}, func(cs *searchResults) {
-		for i := range cs.Denied {
-			cs.Denied[i].ClearArr()
+		for idx := range cs.Denied {
+			cs.Denied[idx].ClearArr()
 		}
-		for i := range cs.Accepted {
-			cs.Accepted[i].ClearArr()
+		for idx := range cs.Accepted {
+			cs.Accepted[idx].ClearArr()
 		}
-		for i := range cs.Raw {
-			cs.Raw[i].ClearArr()
+		for idx := range cs.Raw.Arr {
+			cs.Raw.Arr[idx].ClearArr()
 		}
 		clear(cs.Denied)
 		clear(cs.Accepted)
-		clear(cs.Raw)
+		clear(cs.Raw.Arr)
 		cs.Denied = cs.Denied[:0]
 		cs.Accepted = cs.Accepted[:0]
-		cs.Raw = cs.Raw[:0]
+		cs.Raw.Arr = cs.Raw.Arr[:0]
 	})
-}
-
-// SearchSerieRSSSeasonSingle searches for a single season of a series.
-// It takes the series ID, season number, whether to search the full season or missing episodes,
-// media type config, whether to auto close the results, and a pointer to search results.
-// It returns a config searcher instance and error.
-// It queries the database to map the series ID to thetvdb ID, gets the quality config,
-// calls the search function, handles errors, downloads results,
-// closes the results if autoclose is true, and returns the config searcher.
-func SearchSerieRSSSeasonSingle(serieid uint, season string, useseason bool, cfgp *config.MediaTypeConfig, autoclose bool, results *ConfigSearcher) (*ConfigSearcher, error) {
-	if autoclose {
-		defer results.Close()
-	}
-	getid := database.GetdatarowN[uint](false, "select dbserie_id from series where id = ?", &serieid)
-	tvdb := database.GetdatarowN[uint](false, "select thetvdb_id from dbseries where id = ?", &getid)
-	if tvdb == 0 {
-		return nil, logger.ErrTvdbEmpty
-	}
-	listid := database.GetMediaListIDGetListname(cfgp, serieid)
-	if listid == -1 {
-		return nil, logger.ErrListnameEmpty
-	}
-
-	err := results.searchSeriesRSSSeason(cfgp, cfgp.Lists[listid].CfgQuality, int(tvdb), season, useseason, false, false)
-	if err != nil && !errors.Is(err, logger.ErrDisabled) && !errors.Is(err, logger.ErrToWait) {
-		logger.LogDynamic("error", "Season Search Inc Failed", logger.NewLogFieldValue(err), logger.NewLogField("ID", &serieid))
-
-		return nil, err
-	}
-	results.Download()
-	if autoclose {
-		return nil, nil
-	}
-	return results, nil
-	//return SearchMyMedia(cfgpstr, qualstr, logger.StrRssSeasons, logger.StrSeries, int(tvdb), season, useseason, 0, false)
-}
-
-// SearchSeriesRSSSeasons searches the RSS feeds for missing episodes for
-// random series. It selects up to 20 random series that have missing
-// episodes, gets the distinct seasons with missing episodes for each,
-// and searches the RSS feeds for those seasons.
-func SearchSeriesRSSSeasons(cfgp *config.MediaTypeConfig) {
-	searchseasons(cfgp, logger.JoinStrings("select id, dbserie_id from series where listname in (?", cfgp.ListsQu, ") and (select count() from serie_episodes inner join dbserie_episodes on dbserie_episodes.id = serie_episodes.dbserie_episode_id and serie_episodes.dbserie_id=series.dbserie_id where ((serie_episodes.missing=1 and series.search_specials=1) or (serie_episodes.missing=1 and dbserie_episodes.season != '0' and series.search_specials=0)) and serie_episodes.serie_id = series.id) >= 1 ORDER BY RANDOM() limit 20"), 20, "select distinct season from dbserie_episodes where dbserie_id = ? and season != '' and ((Select search_specials from series where id =?)=1 OR ((Select search_specials from series where id =?)=0 and season != '0')) and dbserie_episodes.id in ( Select distinct dbserie_episode_id from serie_episodes where missing=1 and dbserie_id = ? )", "select count(distinct season) from dbserie_episodes where dbserie_id = ? and season != '' and ((Select search_specials from series where id =?)=1 OR ((Select search_specials from series where id =?)=0 and season != '0')) and dbserie_episodes.id in ( Select distinct dbserie_episode_id from serie_episodes where missing=1 and dbserie_id = ? )")
-}
-
-// SearchSeriesRSSSeasonsAll searches all seasons for series matching the given
-// media type config. It searches series that have missing episodes and calls
-// searchseasons to perform the actual search.
-func SearchSeriesRSSSeasonsAll(cfgp *config.MediaTypeConfig) {
-	searchseasons(cfgp, logger.JoinStrings("select id, dbserie_id from series where listname in (?", cfgp.ListsQu, ") and (select count() from serie_episodes inner join dbserie_episodes on dbserie_episodes.id = serie_episodes.dbserie_episode_id and serie_episodes.dbserie_id=series.dbserie_id where (series.search_specials=1 or (dbserie_episodes.season != '0' and series.search_specials=0)) and serie_episodes.serie_id = series.id) >= 1"), database.GetdatarowN[int](false, "select count() from series"), "select distinct season from dbserie_episodes where dbserie_id = ? and season != '' and ((Select search_specials from series where id =?)=1 OR ((Select search_specials from series where id =?)=0 and season != '0')) and dbserie_episodes.id in ( Select distinct dbserie_episode_id from serie_episodes where dbserie_id = ? )", "select count(distinct season) from dbserie_episodes where dbserie_id = ? and season != '' and ((Select search_specials from series where id =?)=1 OR ((Select search_specials from series where id =?)=0 and season != '0')) and dbserie_episodes.id in ( Select distinct dbserie_episode_id from serie_episodes where dbserie_id = ? )")
-}
-
-// searchseasons searches for missing episodes for series matching the given
-// configuration and quality settings. It selects a random sample of series
-// to search, gets the distinct seasons with missing episodes for each, and
-// searches those seasons on the RSS feeds of the enabled indexers. Results
-// are added to the passed in DownloadResults instance.
-func searchseasons(cfgp *config.MediaTypeConfig, queryrange string, queryrangecount int, queryseason string, queryseasoncount string) {
-	args := make([]any, cfgp.ListsLen)
-	for i := range cfgp.Lists {
-		args[i] = &cfgp.Lists[i].Name
-	}
-	tbl := database.GetrowsNuncached[database.DbstaticTwoUint](queryrangecount, queryrange, args)
-	//clear(args)
-	args = nil
-	if len(tbl) == 0 {
-		return
-	}
-
-	for idx := range tbl {
-		queryseasoncounter := database.GetdatarowN[int](false, queryseasoncount, &tbl[idx].Num2, &tbl[idx].Num1, &tbl[idx].Num1, &tbl[idx].Num2)
-		if queryseasoncounter == 0 {
-			continue
-		}
-		arr := database.GetrowsN[string](false, queryseasoncounter, queryseason, &tbl[idx].Num2, &tbl[idx].Num1, &tbl[idx].Num1, &tbl[idx].Num2)
-		tbluint := uint(tbl[idx].Num1)
-		for idx2 := range arr {
-			listid := database.GetMediaListIDGetListname(cfgp, tbluint)
-			if listid == -1 {
-				continue
-			}
-			getid := database.GetdatarowN[int](false, "select thetvdb_id from dbseries where id = ?", &tbl[idx].Num2)
-			NewSearcher(cfgp, cfgp.Lists[listid].CfgQuality, logger.StrRss, &logger.V0).searchSeriesRSSSeason(cfgp, cfgp.Lists[listid].CfgQuality, getid, arr[idx2], true, true, true)
-		}
-		//clear(arr)
-		arr = nil
-	}
-	//clear(tbl)
-	tbl = nil
-}
-
-// qualityIndexerByQualityAndTemplate returns the CategoriesIndexer string for the indexer
-// in the given QualityConfig that matches the given IndexersConfig by name.
-// Returns empty string if no match is found.
-func qualityIndexerByQualityAndTemplate(quality *config.QualityConfig, ind *config.IndexersConfig) *config.QualityIndexerConfig {
-	if ind == nil {
-		return nil
-	}
-	for index := range quality.Indexer {
-		if quality.Indexer[index].TemplateIndexer == ind.Name || strings.EqualFold(quality.Indexer[index].TemplateIndexer, ind.Name) {
-			return &quality.Indexer[index]
-		}
-	}
-	return nil
-}
-
-// getlistbyindexer returns the ListsConfig for the list matching the
-// given IndexersConfig name. Returns nil if no match is found.
-func getlistbyindexer(ind *config.IndexersConfig) *config.ListsConfig {
-	for _, listcfg := range config.SettingsList {
-		if listcfg.Name == ind.Name || strings.EqualFold(listcfg.Name, ind.Name) {
-			return listcfg
-		}
-	}
-	return nil
-}
+)
 
 // SearchRSS searches the RSS feeds of the enabled Newznab indexers for the
 // given media type and quality configuration. It returns a ConfigSearcher
 // instance for managing the search, or an error if no search could be started.
 // Results are added to the passed in DownloadResults instance.
-func (searchvar *ConfigSearcher) SearchRSS(cfgp *config.MediaTypeConfig, quality *config.QualityConfig, fetchall bool, downloadresults bool, autoclose bool) error {
+func (s *ConfigSearcher) SearchRSS(cfgp *config.MediaTypeConfig, quality *config.QualityConfig, downloadresults bool, autoclose bool) error {
 	if autoclose {
-		defer searchvar.Close()
+		defer s.Close()
 	}
 	if cfgp == nil {
 		return logger.ErrCfgpNotFound
 	}
-	if searchvar == nil {
-		//searchvar = NewSearcher(cfgp, quality, logger.StrRss, nil)
-	} else {
-		searchvar.Dl.Clear()
-		searchvar.Quality = quality
+	if s == nil {
+		return errSearchvarEmpty
 	}
-	if searchvar == nil {
-		return logger.ErrSearchvarEmpty
-	}
-
-	params := plparams.Get()
-	defer plparams.Put(params)
-	if searchvar.searchindexers(true, params, searchvar.runrsssearch) && len(searchvar.Dl.Raw) >= 1 {
-		searchvar.searchparse(nil)
+	s.Quality = quality
+	s.searchindexers(2, true, false, nil, nil, 0, "", false)
+	if s.Done && len(s.Raw.Arr) >= 1 {
+		s.searchparse(nil, nil)
 		if downloadresults {
-			searchvar.Download()
+			s.Download()
 		}
 	}
 	return nil
@@ -280,23 +113,1309 @@ func (searchvar *ConfigSearcher) SearchRSS(cfgp *config.MediaTypeConfig, quality
 // It queries the database for the last ID, searches the RSS feed since that ID,
 // and updates the database with the new last ID.
 // Returns true if the search was successful, false otherwise.
-func (searchvar *ConfigSearcher) runrsssearch(index2 int, _ *searchparams) bool {
-	xmlret := apiexternal.QueryNewznabRSSLast(searchvar.Quality.Indexer[index2].CfgIndexer, searchvar.Quality, database.GetdatarowN[string](false, "select last_id from r_sshistories where config = ? COLLATE NOCASE and list = ? COLLATE NOCASE and indexer = ? COLLATE NOCASE", &searchvar.Cfgp.NamePrefix, &searchvar.Quality.Name, &searchvar.Quality.Indexer[index2].CfgIndexer.URL), qualityIndexerByQualityAndTemplate(searchvar.Quality, searchvar.Quality.Indexer[index2].CfgIndexer), &searchvar.Mu, &searchvar.Dl.Raw)
-	if xmlret.Err == nil {
-		if xmlret.FirstID != "" {
-			addrsshistory(&searchvar.Quality.Indexer[index2].CfgIndexer.URL, &xmlret.FirstID, searchvar.Quality, &searchvar.Cfgp.NamePrefix)
+func (s *ConfigSearcher) runrsssearch(idxcfg *config.IndexersConfig) bool {
+	_, firstid, err := apiexternal.QueryNewznabRSSLast(idxcfg, s.Quality, database.GetdatarowN[string](false, "select last_id from r_sshistories where config = ? COLLATE NOCASE and list = ? COLLATE NOCASE and indexer = ? COLLATE NOCASE", &s.Cfgp.NamePrefix, &s.Quality.Name, &idxcfg.URL), s.Quality.QualityIndexerByQualityAndTemplate(idxcfg), &s.Raw)
+	if err == nil {
+		if firstid != "" {
+			addrsshistory(&idxcfg.URL, &firstid, s.Quality, &s.Cfgp.NamePrefix)
 		}
-
-		xmlret.Close()
 		return true
 	}
-	if xmlret.Err != nil {
-		if !errors.Is(xmlret.Err, logger.Errnoresults) && !errors.Is(xmlret.Err, logger.ErrToWait) {
-			logger.LogDynamic("error", "Error searching indexer", logger.NewLogFieldValue(xmlret.Err), logger.NewLogField("indexer", &searchvar.Quality.Indexer[index2].CfgIndexer.Name))
+	if !errors.Is(err, logger.Errnoresults) && !errors.Is(err, logger.ErrToWait) {
+		logger.LogDynamicany("error", "Error searching indexer", err, &logger.StrIndexer, &idxcfg.Name)
+	}
+	return false
+}
+
+// searchSeriesRSSSeason searches configured indexers for the given TV series
+// season using the RSS search APIs. It handles executing searches across
+// enabled newznab indexers, parsing results, and adding accepted entries to
+// the search results. Returns the searcher and error if any.
+func (s *ConfigSearcher) searchSeriesRSSSeason(cfgp *config.MediaTypeConfig, quality *config.QualityConfig, thetvdbid int, season string, useseason bool, downloadentries bool, autoclose bool) error {
+	if autoclose {
+		defer s.Close()
+	}
+	if cfgp == nil {
+		return logger.ErrCfgpNotFound
+	}
+
+	if s == nil {
+		return logger.ErrCfgpNotFound
+	}
+	s.Quality = quality
+	logger.LogDynamicany("info", "Search for season", &logger.StrTvdb, thetvdbid, &logger.StrSeason, season) //logpointerr
+	s.searchindexers(3, false, false, nil, nil, thetvdbid, season, useseason)
+	if s.Done && len(s.Raw.Arr) >= 1 {
+		s.searchparse(nil, nil)
+
+		if downloadentries {
+			s.Download()
+		}
+		logger.LogDynamicany("info", "Ended Search for season", &logger.StrTvdb, thetvdbid, &logger.StrSeason, season, &logger.StrAccepted, len(s.Accepted), &logger.StrDenied, len(s.Denied)) //logpointerr
+	}
+	return nil
+}
+
+// runrssseasonsearch executes a season search for the given TV series on the
+// indexer at the provided index. It returns true if the search was successful,
+// false otherwise.
+func (s *ConfigSearcher) runrssseasonsearch(idxcfg *config.IndexersConfig, thetvdbid int, season string, useseason bool) bool {
+	_, _, err := apiexternal.QueryNewznabTvTvdb(idxcfg, s.Quality, thetvdbid, s.Quality.QualityIndexerByQualityAndTemplate(idxcfg), season, "", useseason, false, &s.Raw)
+	if err == nil {
+		return true
+	}
+	if !errors.Is(err, logger.Errnoresults) && !errors.Is(err, logger.ErrToWait) {
+		logger.LogDynamicany("error", "Error searching indexer", err, &logger.StrIndexer, &idxcfg.Name)
+	}
+	return false
+}
+
+// MediaSearch searches indexers for the given media entry (movie or TV episode)
+// using the configured quality profile. It handles filling search variables,
+// executing searches across enabled indexers, parsing results, and optionally
+// downloading accepted entries. Returns the search results and error if any.
+func (s *ConfigSearcher) MediaSearch(cfgp *config.MediaTypeConfig, mediaid *uint, titlesearch bool, downloadentries bool, autoclose bool) error {
+	if cfgp == nil {
+		return logger.ErrCfgpNotFound
+	}
+	if autoclose {
+		defer s.Close()
+	}
+	if s == nil || *mediaid == 0 {
+		return errSearchvarEmpty
+	}
+	e := apiexternal.PLNzbwithprio.Get()
+	defer e.Close()
+	var err error
+	if cfgp.Useseries {
+		err = s.episodeFillSearchVar(mediaid, e)
+	} else {
+		err = s.movieFillSearchVar(mediaid, e)
+	}
+	if err != nil {
+		if !errors.Is(err, logger.ErrDisabled) && !errors.Is(err, logger.ErrToWait) {
+			logger.LogDynamicany("error", "Media Search Failed", err, &logger.StrID, mediaid)
+		}
+		apiexternal.PLNzbwithprio.Put(e)
+		return err
+	}
+
+	if s.Quality == nil {
+		return errSearchvarEmpty
+	}
+
+	s.searchlog("info", "Search for media id", mediaid, titlesearch)
+
+	var sourcealttitles []database.DbstaticTwoStringOneInt
+	if s.Quality.BackupSearchForAlternateTitle {
+		sourcealttitles = database.Getentryalternatetitlesdirect(&e.Dbid, s.Cfgp.Useseries)
+	}
+	s.searchindexers(1, false, titlesearch, e, sourcealttitles, 0, "", false)
+	if !s.Done {
+		s.searchlog("error", "All searches failed", mediaid, titlesearch)
+		return nil
+	}
+	database.ExecNMap(cfgp.Useseries, logger.UpdateMediaLastscan, mediaid)
+
+	if len(s.Raw.Arr) >= 1 {
+		s.searchparse(e, sourcealttitles)
+		if downloadentries {
+			s.Download()
+		}
+		if len(s.Accepted) >= 1 || len(s.Denied) >= 1 {
+			s.searchlog("info", "Ended Search for media id", mediaid, titlesearch)
 		}
 	}
-	xmlret.Close()
+	return nil
+}
+
+func (s *ConfigSearcher) searchlog(typev string, msg string, mediaid *uint, titlesearch bool) {
+	if len(s.Accepted) >= 1 {
+		logger.LogDynamicany(typev, msg, &logger.StrID, mediaid, &logger.StrSeries, &s.Cfgp.Useseries, &strTitlesearch, &titlesearch, &logger.StrAccepted, len(s.Accepted), &logger.StrDenied, len(s.Denied)) //logpointer
+		return
+	}
+	if len(s.Denied) >= 1 {
+		logger.LogDynamicany(typev, msg, &logger.StrID, mediaid, &logger.StrSeries, &s.Cfgp.Useseries, &strTitlesearch, &titlesearch, &logger.StrDenied, len(s.Denied)) //logpointer
+		return
+	}
+	logger.LogDynamicany(typev, msg, &logger.StrID, mediaid, &logger.StrSeries, &s.Cfgp.Useseries, &strTitlesearch, &titlesearch) //logpointer
+}
+
+// getaddstr returns a string to append to the search query based on the
+// media year or identifier if available. For series it returns empty string.
+func (s *ConfigSearcher) getaddstr(e *apiexternal.Nzbwithprio) string {
+	if !s.Cfgp.Useseries && e.Info.Year != 0 {
+		return logger.JoinStrings(logger.StrSpace, logger.IntToString(e.Info.Year)) //JoinStrings
+	} else if e.Info.Identifier != "" {
+		return logger.JoinStrings(logger.StrSpace, e.Info.Identifier) //JoinStrings
+	}
+	return ""
+}
+
+// runmediasearch searches for the given media using the provided search parameters.
+// It iterates through the configured indexers and attempts different search queries based on the alternate titles.
+// Returns true if the search completed successfully, false otherwise.
+func (s *ConfigSearcher) runmediasearch(idxcfg *config.IndexersConfig, titlesearch bool, e *apiexternal.Nzbwithprio, sourcealttitles []database.DbstaticTwoStringOneInt) bool {
+	cats := s.Quality.QualityIndexerByQualityAndTemplate(idxcfg)
+	if cats == nil {
+		logger.LogDynamicany("error", "Error getting quality config")
+		return false
+	}
+
+	usequerysearch := true
+	if !titlesearch {
+		if !s.Cfgp.Useseries && e.Info.Imdb != "" {
+			usequerysearch = false
+		} else if s.Cfgp.Useseries && e.NZB.TVDBID != 0 {
+			usequerysearch = false
+		}
+	}
+	var err error
+	if !usequerysearch {
+		if !s.Cfgp.Useseries && e.Info.Imdb != "" {
+			_, _, err = apiexternal.QueryNewznabMovieImdb(idxcfg, s.Quality, strings.Trim(e.Info.Imdb, "t"), cats, &s.Raw)
+		} else if s.Cfgp.Useseries && e.NZB.TVDBID != 0 {
+			_, _, err = apiexternal.QueryNewznabTvTvdb(idxcfg, s.Quality, e.NZB.TVDBID, cats, e.NZB.Season, e.NZB.Episode, true, true, &s.Raw)
+		}
+	}
+
+	if err != nil && !errors.Is(err, logger.ErrToWait) {
+		if s.Cfgp.Useseries {
+			logger.LogDynamicany("error", "Error Searching Media by Title", &strMediaid, &e.NzbepisodeID, &logger.StrSeries, &s.Cfgp.Useseries, err)
+		} else {
+			logger.LogDynamicany("error", "Error Searching Media by Title", &strMediaid, &e.NzbmovieID, &logger.StrSeries, &s.Cfgp.Useseries, err)
+		}
+	} else {
+		if s.Quality.CheckUntilFirstFound && len(s.Accepted) >= 1 {
+			logger.LogDynamicany("debug", "Broke loop - result found")
+			return true
+		}
+	}
+	if s.Quality.SearchForTitleIfEmpty && !titlesearch && len(s.Raw.Arr) == 0 {
+		titlesearch = true
+		usequerysearch = true
+	}
+	if !titlesearch {
+		return (err == nil)
+	}
+	addstr := s.getaddstr(e)
+	if titlesearch || s.Quality.BackupSearchForTitle {
+		_, _, err = apiexternal.QueryNewznabQuery(idxcfg, s.Quality, logger.JoinStrings(e.WantedTitle, addstr), cats, &s.Raw)
+		if err != nil && !errors.Is(err, logger.ErrToWait) {
+			if s.Cfgp.Useseries {
+				logger.LogDynamicany("error", "Error Searching Media by Title", &strMediaid, &e.NzbepisodeID, &logger.StrSeries, &s.Cfgp.Useseries, &logger.StrTitle, &e.WantedTitle, err)
+			} else {
+				logger.LogDynamicany("error", "Error Searching Media by Title", &strMediaid, &e.NzbmovieID, &logger.StrSeries, &s.Cfgp.Useseries, &logger.StrTitle, &e.WantedTitle, err)
+			}
+			if !s.Quality.BackupSearchForAlternateTitle {
+				return false
+			}
+		} else {
+			if s.Quality.CheckUntilFirstFound && len(s.Accepted) >= 1 {
+				logger.LogDynamicany("debug", "Broke loop - result found")
+				return true
+			}
+		}
+	}
+	if titlesearch && s.Quality.BackupSearchForAlternateTitle {
+		searched := sourcealttitles[:0]
+		var success bool
+	rootloop:
+		for idx := range sourcealttitles {
+			if idx != 0 && sourcealttitles[idx].Str1 == "" {
+				//logger.LogDynamicany("error", "Skipped empty title")
+				continue
+			}
+
+			for idxepi := range searched {
+				if searched[idxepi].Str1 == sourcealttitles[idx].Str1 || strings.EqualFold(searched[idxepi].Str1, sourcealttitles[idx].Str1) {
+					continue rootloop
+				}
+			}
+			searched = append(searched, sourcealttitles[idx])
+			if strings.ContainsRune(sourcealttitles[idx].Str1, '(') || strings.ContainsRune(sourcealttitles[idx].Str1, ')') || strings.ContainsRune(sourcealttitles[idx].Str1, '&') {
+				sourcealttitles[idx].Str1 = logger.StringRemoveAllRunesMulti(sourcealttitles[idx].Str1, '&', '(', ')')
+			}
+			_, _, err = apiexternal.QueryNewznabQuery(idxcfg, s.Quality, logger.JoinStrings(sourcealttitles[idx].Str1, addstr), cats, &s.Raw)
+
+			if err != nil && !errors.Is(err, logger.ErrToWait) {
+				if s.Cfgp.Useseries {
+					logger.LogDynamicany("error", "Error Searching Media by Title", &strMediaid, &e.NzbepisodeID, &logger.StrSeries, &s.Cfgp.Useseries, &logger.StrTitle, &sourcealttitles[idx], err)
+				} else {
+					logger.LogDynamicany("error", "Error Searching Media by Title", &strMediaid, &e.NzbmovieID, &logger.StrSeries, &s.Cfgp.Useseries, &logger.StrTitle, &sourcealttitles[idx], err)
+				}
+			} else {
+				if err == nil {
+					success = true
+				}
+				if s.Quality.CheckUntilFirstFound && len(s.Accepted) >= 1 {
+					logger.LogDynamicany("debug", "Broke loop - result found")
+					break
+				}
+			}
+		}
+		return success
+	}
+	return true
+}
+
+// searchindexers searches the configured indexers for media content based on the provided search parameters.
+// It submits search tasks to a worker pool and waits for them to complete. The function returns true if any of the
+// indexer searches were successful, indicating that search results are available.
+//
+// The function checks the configured indexers and skips any that are not enabled or do not support RSS feeds
+// if the search is for a user's RSS feed. It also skips indexers that have exceeded their API rate limit.
+// For each enabled indexer, the function submits a search task to the worker pool, which can be one of three
+// types: media search, RSS search, or RSS season search. The function returns true if any of the search tasks
+// were successful.
+func (s *ConfigSearcher) searchindexers(searchtype int, userss bool, titlesearch bool, e *apiexternal.Nzbwithprio, sourcealttitles []database.DbstaticTwoStringOneInt, thetvdbid int, season string, useseason bool) {
+	if len(s.Quality.Indexer) == 0 {
+		return
+	}
+	wg := pool.NewSizedGroup(config.SettingsGeneral.WorkerIndexer)
+	s.Done = false
+	for _, indcfg := range s.Quality.IndexerCfg {
+		if userss && !indcfg.Rssenabled {
+			continue
+		}
+		if !userss && !indcfg.Enabled {
+			continue
+		}
+		if s.Quality == nil || indcfg == nil || !strings.EqualFold(indcfg.IndexerType, "newznab") {
+			continue
+		}
+		if ok, _ := apiexternal.NewznabCheckLimiter(indcfg); !ok {
+			continue
+		}
+		wg.Add()
+		go s.processsearch(wg, searchtype, indcfg, titlesearch, sourcealttitles, thetvdbid, season, useseason, e)
+	}
+	wg.Wait()
+	wg.Close()
+}
+
+func (s *ConfigSearcher) processsearch(wg *pool.SizedWaitGroup, searchtype int, indcfg *config.IndexersConfig, titlesearch bool, sourcealttitles []database.DbstaticTwoStringOneInt, thetvdbid int, season string, useseason bool, e *apiexternal.Nzbwithprio) {
+	defer logger.HandlePanic()
+	defer wg.Done()
+	var done bool
+	switch searchtype {
+	case 1:
+		done = s.runmediasearch(indcfg, titlesearch, e, sourcealttitles)
+	case 2:
+		done = s.runrsssearch(indcfg)
+	case 3:
+		done = s.runrssseasonsearch(indcfg, thetvdbid, season, useseason)
+	}
+	if !s.Done && done {
+		s.Done = done
+	}
+}
+
+// Download iterates through the Accepted list and starts downloading each entry,
+// tracking entries already downloaded to avoid duplicates. It handles both movies
+// and TV series based on config and entry details.
+func (s *ConfigSearcher) Download() {
+	if len(s.Accepted) == 0 {
+		return
+	}
+	downloaded := make([]uint, 0, len(s.Accepted))
+
+	for idx := range s.Accepted {
+		if s.Accepted[idx].Info.Priority == 0 {
+			logger.LogDynamicany("error", "download not wanted", &logger.StrSeries, &s.Cfgp.Useseries, &logger.StrTitle, &s.Accepted[idx].NZB.Title)
+			continue
+		}
+		if s.checkdownloaded(downloaded, idx) {
+			continue
+		}
+		qualcfg := s.getentryquality(&s.Accepted[idx])
+		if qualcfg == nil {
+			logger.LogDynamicany("info", "nzb found - start downloading", &logger.StrSeries, &s.Cfgp.Useseries, &logger.StrTitle, &s.Accepted[idx].NZB.Title, "minimum prio", &s.Accepted[idx].MinimumPriority, &logger.StrPriority, &s.Accepted[idx].Info.Priority)
+		} else {
+			logger.LogDynamicany("info", "nzb found - start downloading", &logger.StrSeries, &s.Cfgp.Useseries, &logger.StrTitle, &s.Accepted[idx].NZB.Title, "quality", &qualcfg.Name, "minimum prio", &s.Accepted[idx].MinimumPriority, &logger.StrPriority, &s.Accepted[idx].Info.Priority)
+		}
+		if !s.Cfgp.Useseries && s.Accepted[idx].NzbmovieID != 0 {
+			downloaded = append(downloaded, s.Accepted[idx].NzbmovieID)
+			downloader.DownloadMovie(s.Cfgp, &s.Accepted[idx])
+		} else if s.Cfgp.Useseries && s.Accepted[idx].NzbepisodeID != 0 {
+			downloaded = append(downloaded, s.Accepted[idx].NzbepisodeID)
+			downloader.DownloadSeriesEpisode(s.Cfgp, &s.Accepted[idx])
+		} else if s.Accepted[idx].NzbmovieID != 0 {
+			downloaded = append(downloaded, s.Accepted[idx].NzbmovieID)
+			downloader.DownloadMovie(s.Cfgp, &s.Accepted[idx])
+		} else if s.Accepted[idx].NzbepisodeID != 0 {
+			downloaded = append(downloaded, s.Accepted[idx].NzbepisodeID)
+			downloader.DownloadSeriesEpisode(s.Cfgp, &s.Accepted[idx])
+		}
+	}
+}
+
+// checkdownloaded checks if the entry at index idx has already been downloaded
+// by looking for its movie ID or episode ID in the downloaded slice.
+// It returns true if the entry is already in downloaded.
+func (s *ConfigSearcher) checkdownloaded(downloaded []uint, idx int) bool {
+	for idxi := range downloaded {
+		if s.Accepted[idx].NzbmovieID != 0 && downloaded[idxi] == s.Accepted[idx].NzbmovieID {
+			return true
+		}
+		if s.Accepted[idx].NzbepisodeID != 0 && downloaded[idxi] == s.Accepted[idx].NzbepisodeID {
+			return true
+		}
+	}
 	return false
+}
+
+// filterTestQualityWanted checks if the quality attributes of the
+// Nzbwithprio entry match the wanted quality configuration. It returns
+// true if any unwanted quality is found to stop further processing of
+// the entry.
+func (s *ConfigSearcher) filterTestQualityWanted(entry *apiexternal.Nzbwithprio, quality *config.QualityConfig) bool {
+	if quality == nil {
+		return false
+	}
+	if quality.WantedResolutionLen >= 1 && entry.Info.Resolution != "" {
+		if !logger.SlicesContainsI(quality.WantedResolution, entry.Info.Resolution) {
+			s.logdenied("unwanted Resolution", entry, &strResolution, &entry.Info.Resolution, &logger.StrWanted, &quality.WantedResolution)
+			return true
+		}
+	}
+
+	if quality.WantedQualityLen >= 1 && entry.Info.Quality != "" {
+		if !logger.SlicesContainsI(quality.WantedQuality, entry.Info.Quality) {
+			s.logdenied("unwanted Quality", entry, &strQuality, &entry.Info.Quality, &logger.StrWanted, &quality.WantedQuality)
+			return true
+		}
+	}
+
+	if quality.WantedAudioLen >= 1 && entry.Info.Audio != "" {
+		if !logger.SlicesContainsI(quality.WantedAudio, entry.Info.Audio) {
+			s.logdenied("unwanted Audio", entry, &strAudio, &entry.Info.Audio, &logger.StrWanted, &quality.WantedAudio)
+			return true
+		}
+	}
+
+	if quality.WantedCodecLen >= 1 && entry.Info.Codec != "" {
+		if !logger.SlicesContainsI(quality.WantedCodec, entry.Info.Codec) {
+			s.logdenied("unwanted Codec", entry, &strCodec, &entry.Info.Codec, &logger.StrWanted, &quality.WantedCodec)
+			return true
+		}
+	}
+	return false
+}
+
+// Close closes the ConfigSearcher, including closing any open connections and clearing resources.
+func (s *ConfigSearcher) Close() {
+	if s == nil {
+		return
+	}
+	plsearcher.Put(s)
+}
+
+// searchparse parses the raw search results, runs validation on each entry, assigns quality
+// profiles and priorities, separates accepted and denied entries, and sorts accepted entries
+// by priority
+func (s *ConfigSearcher) searchparse(e *apiexternal.Nzbwithprio, alttitles []database.DbstaticTwoStringOneInt) {
+	if len(s.Raw.Arr) == 0 {
+		return
+	}
+	s.Denied = s.Raw.Arr
+	s.Denied = s.Denied[:0]
+	s.Accepted = s.Raw.Arr
+	s.Accepted = s.Accepted[:0]
+	var err error
+	for idxraw := range s.Raw.Arr {
+		if s.Raw.Arr[idxraw].NZB.DownloadURL == "" {
+			s.logdenied("no url", &s.Raw.Arr[idxraw])
+			continue
+		}
+		if s.Raw.Arr[idxraw].NZB.Title == "" {
+			s.logdenied("no title", &s.Raw.Arr[idxraw])
+			continue
+		}
+		if s.Raw.Arr[idxraw].NZB.Title != "" && (s.Raw.Arr[idxraw].NZB.Title[:1] == logger.StrSpace || s.Raw.Arr[idxraw].NZB.Title[len(s.Raw.Arr[idxraw].NZB.Title)-1:] == logger.StrSpace) {
+			s.Raw.Arr[idxraw].NZB.Title = strings.Trim(s.Raw.Arr[idxraw].NZB.Title, logger.StrSpace)
+		}
+		if len(s.Raw.Arr[idxraw].NZB.Title) <= 3 {
+			s.logdenied("short title", &s.Raw.Arr[idxraw])
+			continue
+		}
+		if s.checkprocessed(&s.Raw.Arr[idxraw]) {
+			continue
+		}
+		//Check Size
+		if s.Raw.Arr[idxraw].NZB.Indexer != nil {
+			skipemptysize := false
+			indcfg := s.Quality.QualityIndexerByQualityAndTemplate(s.Raw.Arr[idxraw].NZB.Indexer)
+			if indcfg != nil {
+				skipemptysize = indcfg.SkipEmptySize
+			}
+			if !skipemptysize {
+				if _, ok := config.SettingsList[s.Raw.Arr[idxraw].NZB.Indexer.Name]; ok {
+					skipemptysize = s.Quality.Indexer[0].SkipEmptySize
+				} else if s.Raw.Arr[idxraw].NZB.Indexer.Getlistbyindexer() != nil {
+					skipemptysize = s.Quality.Indexer[0].SkipEmptySize
+				}
+			}
+			if skipemptysize && s.Raw.Arr[idxraw].NZB.Size == 0 {
+				s.logdenied("no size", &s.Raw.Arr[idxraw])
+				continue
+			}
+		}
+
+		//check history
+		if s.filterSizeNzbs(&s.Raw.Arr[idxraw]) {
+			continue
+		}
+		if s.checkcorrectid(e, &s.Raw.Arr[idxraw]) {
+			continue
+		}
+
+		parser.ParseFileP(s.Raw.Arr[idxraw].NZB.Title, false, false, s.Cfgp, -1, &s.Raw.Arr[idxraw].Info)
+		//if s.searchActionType == logger.StrRss {
+		if !s.Cfgp.Useseries && !s.Raw.Arr[idxraw].NZB.Indexer.TrustWithIMDBIDs {
+			s.Raw.Arr[idxraw].Info.Imdb = ""
+		}
+		if s.Cfgp.Useseries && !s.Raw.Arr[idxraw].NZB.Indexer.TrustWithTVDBIDs {
+			s.Raw.Arr[idxraw].Info.Tvdb = ""
+		}
+		//}
+		if s.searchActionType == logger.StrRss && e != nil {
+			e.Close()
+		}
+		err = parser.GetDBIDs(&s.Raw.Arr[idxraw].Info, s.Cfgp, true)
+		if err != nil {
+			s.logdenied(err.Error(), &s.Raw.Arr[idxraw])
+			continue
+		}
+		var qual *config.QualityConfig
+		var skip bool
+		if s.searchActionType == logger.StrRss {
+			skip, qual = s.getmediadatarss(&s.Raw.Arr[idxraw], -1, false)
+			if skip {
+				continue
+			}
+		} else {
+			if s.getmediadata(e, &s.Raw.Arr[idxraw]) {
+				continue
+			}
+			qual = s.Quality
+			s.Raw.Arr[idxraw].WantedAlternates = alttitles
+		}
+		//needs the identifier from getmediadata
+
+		if qual == nil {
+			qual = s.getentryquality(&s.Raw.Arr[idxraw])
+		}
+		if qual == nil {
+			s.logdenied("unknown Quality", &s.Raw.Arr[idxraw])
+			continue
+		}
+		if s.checkhistory(&s.Raw.Arr[idxraw], qual) {
+			continue
+		}
+		if s.checkepisode(e, &s.Raw.Arr[idxraw]) {
+			continue
+		}
+
+		if s.filterRegexNzbs(&s.Raw.Arr[idxraw], qual) {
+			continue
+		}
+
+		if s.Raw.Arr[idxraw].Info.Priority == 0 {
+			parser.GetPriorityMapQual(&s.Raw.Arr[idxraw].Info, s.Cfgp, qual, false, true)
+
+			if s.Raw.Arr[idxraw].Info.Priority == 0 {
+				s.logdenied("unknown Prio", &s.Raw.Arr[idxraw], &logger.StrFound, &s.Raw.Arr[idxraw].Info)
+				continue
+			}
+		}
+
+		s.Raw.Arr[idxraw].Info.StripTitlePrefixPostfixGetQual(qual)
+
+		//check quality
+		if s.filterTestQualityWanted(&s.Raw.Arr[idxraw], qual) {
+			continue
+		}
+		//check priority
+
+		if s.getminimumpriority(&s.Raw.Arr[idxraw], qual) {
+			continue
+		}
+		if s.Raw.Arr[idxraw].MinimumPriority != 0 && s.Raw.Arr[idxraw].MinimumPriority == s.Raw.Arr[idxraw].Info.Priority {
+			s.logdenied("same Prio", &s.Raw.Arr[idxraw])
+			continue
+		}
+
+		if s.Raw.Arr[idxraw].MinimumPriority != 0 {
+			if qual.UseForPriorityMinDifference == 0 && s.Raw.Arr[idxraw].Info.Priority <= s.Raw.Arr[idxraw].MinimumPriority {
+				s.logdenied("lower Prio", &s.Raw.Arr[idxraw], &logger.StrFound, &s.Raw.Arr[idxraw].Info.Priority, &logger.StrWanted, &s.Raw.Arr[idxraw].MinimumPriority)
+				continue
+			}
+			if qual.UseForPriorityMinDifference != 0 && s.Raw.Arr[idxraw].Info.Priority <= (s.Raw.Arr[idxraw].MinimumPriority+qual.UseForPriorityMinDifference) {
+				s.logdenied("lower Prio", &s.Raw.Arr[idxraw], &logger.StrFound, &s.Raw.Arr[idxraw].Info.Priority, &logger.StrWanted, &s.Raw.Arr[idxraw].MinimumPriority)
+				continue
+			}
+		}
+
+		if s.checkyear(e, &s.Raw.Arr[idxraw], qual) {
+			continue
+		}
+
+		if s.checktitle(&s.Raw.Arr[idxraw], qual) {
+			continue
+		}
+		logger.LogDynamicany("debug", "Release ok", "quality", &qual.Name, &logger.StrTitle, &s.Raw.Arr[idxraw].NZB.Title, "minimum prio", &s.Raw.Arr[idxraw].MinimumPriority, &logger.StrPriority, &s.Raw.Arr[idxraw].Info.Priority)
+
+		s.Accepted = append(s.Accepted, s.Raw.Arr[idxraw])
+
+		if qual.CheckUntilFirstFound {
+			break
+		}
+	}
+	if database.DBLogLevel == logger.StrDebug {
+		logger.LogDynamicany("debug", "Entries found", "Count", len(s.Raw.Arr))
+	}
+	if len(s.Accepted) > 1 {
+		slices.SortFunc(s.Accepted, func(a, b apiexternal.Nzbwithprio) int {
+			return cmp.Compare(a.Info.Priority, b.Info.Priority)
+		})
+		// sort.Slice(s.Accepted, func(i, j int) bool {
+		// 	return s.Accepted[i].Info.Priority > s.Accepted[j].Info.Priority
+		// })
+	}
+}
+
+// getminimumpriority checks the minimum priority configured for the entry's movie or series.
+// It sets the MinimumPriority field on the entry based on priorities configured in the quality
+// profiles. Returns true to skip the entry if upgrade/search is disabled or priority does not meet
+// configured minimum.
+func (s *ConfigSearcher) getminimumpriority(entry *apiexternal.Nzbwithprio, cfgqual *config.QualityConfig) bool {
+	if entry.MinimumPriority != 0 {
+		return false
+	}
+	if !s.Cfgp.Useseries {
+		entry.MinimumPriority, _ = Getpriobyfiles(false, &entry.NzbmovieID, false, -1, cfgqual)
+	} else {
+		//Check Minimum Priority
+		entry.MinimumPriority, _ = Getpriobyfiles(true, &entry.NzbepisodeID, false, -1, cfgqual)
+	}
+	if entry.MinimumPriority != 0 {
+		if entry.DontUpgrade {
+			s.logdenied("disabled Upgrade", entry)
+			return true
+		}
+	} else {
+		if entry.DontSearch {
+			s.logdenied("disabled Search", entry)
+			return true
+		}
+	}
+	return false
+}
+
+// checkcorrectid checks if the entry matches the expected ID based on
+// whether it is a movie or series. For movies it checks the IMDB ID,
+// trimming any "t0" prefix. For series it checks the TVDB ID. If the
+// IDs don't match, it logs a message and returns true to skip the entry.
+func (s *ConfigSearcher) checkcorrectid(sourceentry *apiexternal.Nzbwithprio, entry *apiexternal.Nzbwithprio) bool {
+	if s.searchActionType == logger.StrRss {
+		return false
+	}
+	if sourceentry == nil {
+		s.logdenied("no sourceentry", entry)
+		return true
+	}
+	if !s.Cfgp.Useseries {
+		if entry.NZB.IMDBID != "" && sourceentry.Info.Imdb != "" && sourceentry.Info.Imdb != entry.NZB.IMDBID {
+			if strings.TrimLeft(sourceentry.Info.Imdb, "t0") != strings.TrimLeft(entry.NZB.IMDBID, "t0") {
+				s.logdenied("not matched imdb", entry, &logger.StrWanted, &sourceentry.Info.Imdb, &logger.StrFound, &entry.NZB.IMDBID)
+				return true
+			}
+		}
+		return false
+	}
+	if sourceentry.NZB.TVDBID != 0 && entry.NZB.TVDBID != 0 && sourceentry.NZB.TVDBID != entry.NZB.TVDBID {
+		s.logdenied("not matched tvdb", entry, &logger.StrWanted, &sourceentry.NZB.TVDBID, &logger.StrFound, &entry.NZB.TVDBID)
+		return true
+	}
+	return false
+}
+
+// getmediadata validates the media data in the given entry against the
+// source entry to determine if it is a match. It sets various priority
+// and search control fields on the entry based on the source entry
+// configuration. Returns true to skip/reject the entry if no match, false
+// to continue processing if a match.
+func (s *ConfigSearcher) getmediadata(sourceentry *apiexternal.Nzbwithprio, entry *apiexternal.Nzbwithprio) bool {
+	if sourceentry == nil {
+		s.logdenied("no sourceentry", entry)
+		return true
+	}
+	if !s.Cfgp.Useseries {
+		if sourceentry.NzbmovieID != entry.Info.MovieID {
+			s.logdenied("unwanted Movie", entry, &logger.StrFound, &entry.Info.MovieID, &logger.StrWanted, &sourceentry.NzbmovieID, &logger.StrImdb, &sourceentry.Info.Imdb, &logger.StrConfig, &s.Cfgp.NamePrefix)
+			return true
+		}
+		entry.NzbmovieID = sourceentry.NzbmovieID
+		entry.Dbid = sourceentry.Dbid
+		entry.MinimumPriority = sourceentry.MinimumPriority
+		entry.DontSearch = sourceentry.DontSearch
+		entry.DontUpgrade = sourceentry.DontUpgrade
+		entry.WantedTitle = sourceentry.WantedTitle
+		return false
+	}
+
+	//Parse Series
+	if entry.Info.SerieEpisodeID != sourceentry.NzbepisodeID {
+		s.logdenied("unwanted Episode", entry, &logger.StrFound, &entry.Info.SerieEpisodeID, &logger.StrWanted, &sourceentry.NzbepisodeID, &strIdentifier, &sourceentry.Info.Identifier, &logger.StrConfig, &s.Cfgp.NamePrefix)
+		return true
+	}
+	entry.NzbepisodeID = sourceentry.NzbepisodeID
+	entry.Dbid = sourceentry.Dbid
+	entry.MinimumPriority = sourceentry.MinimumPriority
+	entry.DontSearch = sourceentry.DontSearch
+	entry.DontUpgrade = sourceentry.DontUpgrade
+	entry.WantedTitle = sourceentry.WantedTitle
+
+	return false
+}
+
+// getmediadatarss processes an Nzbwithprio entry for adding to the RSS feed.
+// It handles movie and series entries differently based on ConfigSearcher.Cfgp.Useseries.
+// For movies, it tries to add the entry to the list with ID addinlistid, or adds it if addifnotfound is true.
+// For series, it calls getserierss to filter the entry.
+// It returns true if the entry should be skipped.
+func (s *ConfigSearcher) getmediadatarss(entry *apiexternal.Nzbwithprio, addinlistid int8, addifnotfound bool) (bool, *config.QualityConfig) {
+	if !s.Cfgp.Useseries {
+		if addinlistid != -1 && s.Cfgp != nil {
+			entry.Info.ListID = addinlistid
+		}
+
+		return s.getmovierss(entry, addinlistid, addifnotfound)
+	}
+
+	//Parse Series
+	//Filter RSS Series
+	//return s.getserierss(entry)
+	if entry.Info.SerieID == 0 {
+		s.logdenied("unwanted Serie", entry)
+		return true, nil
+	}
+	if entry.Info.DbserieID == 0 {
+		s.logdenied("unwanted DBSerie", entry)
+		return true, nil
+	}
+	if entry.Info.DbserieEpisodeID == 0 {
+		s.logdenied("unwanted DBEpisode", entry)
+		return true, nil
+	}
+	if entry.Info.SerieEpisodeID == 0 {
+		s.logdenied("unwanted Episode", entry)
+		return true, nil
+	}
+	entry.NzbepisodeID = entry.Info.SerieEpisodeID
+	entry.Dbid = entry.Info.DbserieID
+
+	database.GetdatarowArgs("select serie_episodes.dont_search, serie_episodes.dont_upgrade, serie_episodes.quality_profile, series.listname, dbseries.seriename from serie_episodes inner join series ON series.id=serie_episodes.serie_id inner join dbseries ON dbseries.id=serie_episodes.dbserie_id where serie_episodes.id = ?", &entry.Info.SerieEpisodeID, &entry.DontSearch, &entry.DontUpgrade, &entry.Quality, &entry.Listname, &entry.WantedTitle)
+	entry.Info.ListID = s.Cfgp.GetMediaListsEntryListID(entry.Listname)
+	if entry.Quality == "" {
+		return false, config.SettingsQuality[s.Cfgp.DefaultQuality]
+	}
+	return false, config.SettingsQuality[entry.Quality]
+}
+
+// checkyear validates the year in the entry title against the year
+// configured for the wanted entry. It returns false if a match is found,
+// or true to skip the entry if no match is found. This is used during
+// search result processing to filter entries by year.
+func (s *ConfigSearcher) checkyear(sourceentry *apiexternal.Nzbwithprio, entry *apiexternal.Nzbwithprio, qual *config.QualityConfig) bool {
+	if s.Cfgp.Useseries || s.searchActionType == logger.StrRss {
+		return false
+	}
+	if sourceentry == nil {
+		s.logdenied("no sourceentry", entry)
+		return false
+	}
+
+	if sourceentry.Info.Year == 0 {
+		s.logdenied("no year", entry)
+		return true
+	}
+	if (qual.CheckYear || qual.CheckYear1) && logger.ContainsInt(entry.NZB.Title, sourceentry.Info.Year) {
+		return false
+	}
+	if qual.CheckYear1 && logger.ContainsInt(entry.NZB.Title, sourceentry.Info.Year+1) {
+		return false
+	}
+	if qual.CheckYear1 && logger.ContainsInt(entry.NZB.Title, sourceentry.Info.Year-1) {
+		return false
+	}
+	s.logdenied("unwanted Year", entry, &logger.StrWanted, &sourceentry.Info.Year)
+	return true
+}
+
+// checktitle validates the title and alternate titles of the entry against
+// the wanted title and quality configuration. It returns false if a match is
+// found, or true to skip the entry if no match is found. This is an internal
+// function used during search result processing.
+func (s *ConfigSearcher) checktitle(entry *apiexternal.Nzbwithprio, qual *config.QualityConfig) bool {
+	//Checktitle
+	if !qual.CheckTitle {
+		return false
+	}
+	if qual != nil {
+		entry.Info.StripTitlePrefixPostfixGetQual(qual)
+	}
+
+	wantedslug := logger.StringToSlugBytes(entry.WantedTitle)
+	//defer clear(wantedslug)
+	if entry.WantedTitle != "" {
+		if qual.CheckTitle && entry.WantedTitle != "" && database.ChecknzbtitleB(entry.WantedTitle, wantedslug, entry.Info.Title, qual.CheckYear1, entry.Info.Year) {
+			return false
+		}
+	}
+	var trytitle string
+	if entry.WantedTitle != "" && strings.ContainsRune(entry.Info.Title, ']') {
+		for i := len(entry.Info.Title) - 1; i >= 0; i-- {
+			if strings.EqualFold(entry.Info.Title[i:i+1], "]") {
+				if i < (len(entry.Info.Title) - 1) {
+					trytitle = strings.TrimLeft(entry.Info.Title[i+1:], "-. ")
+					if qual.CheckTitle && entry.WantedTitle != "" && database.ChecknzbtitleB(entry.WantedTitle, wantedslug, trytitle, qual.CheckYear1, entry.Info.Year) {
+						return false
+					}
+				}
+			}
+		}
+	}
+	if entry.Dbid != 0 && len(entry.WantedAlternates) == 0 {
+		entry.WantedAlternates = database.Getentryalternatetitlesdirect(&entry.Dbid, s.Cfgp.Useseries)
+	}
+
+	if entry.Info.Title == "" || len(entry.WantedAlternates) == 0 {
+		s.logdenied("unwanted Title", entry)
+		return true
+	}
+	for idx := range entry.WantedAlternates {
+		if entry.WantedAlternates[idx].Str1 == "" {
+			continue
+		}
+		if entry.WantedAlternates[idx].ChecknzbtitleC(entry.Info.Title, qual.CheckYear1, entry.Info.Year) {
+			return false
+		}
+
+		if trytitle != "" {
+			if entry.WantedAlternates[idx].ChecknzbtitleC(trytitle, qual.CheckYear1, entry.Info.Year) {
+				return false
+			}
+		}
+	}
+	s.logdenied("unwanted Title and alternate", entry)
+	return true
+}
+
+// checkepisode validates the episode identifier in the entry against the
+// season and episode values. It returns false if the identifier matches the
+// expected format, or true to skip the entry if the identifier is invalid.
+func (s *ConfigSearcher) checkepisode(sourceentry *apiexternal.Nzbwithprio, entry *apiexternal.Nzbwithprio) bool {
+	//Checkepisode
+	if !s.Cfgp.Useseries {
+		return false
+	}
+	if s.searchActionType == logger.StrRss {
+		if sourceentry == nil {
+			//s.logdenied("no sourceentry", entry)
+			return false
+		}
+
+		if sourceentry.Info.Identifier == "" {
+			return false
+		}
+	}
+	if sourceentry == nil {
+		s.logdenied("no sourceentry", entry)
+		return false
+	}
+
+	if sourceentry.Info.Identifier == "" {
+		s.logdenied("no identifier", entry)
+		return true
+	}
+	if logger.ContainsI(entry.NZB.Title, sourceentry.Info.Identifier) {
+		return false
+	}
+	if sourceentry.NZB.Season == "" && sourceentry.NZB.Episode == "" && strings.ContainsRune(sourceentry.Info.Identifier, '-') {
+		if logger.ContainsI(entry.NZB.Title, logger.StringReplaceWith(sourceentry.Info.Identifier, '-', '.')) {
+			return false
+		}
+		if logger.ContainsI(entry.NZB.Title, logger.StringReplaceWith(sourceentry.Info.Identifier, '-', ' ')) {
+			return false
+		}
+	}
+	// Check For S01E01 S01 E01 1x01 1 x 01 S01E02E03
+	altIdentifier := bytes.TrimLeft(logger.StringToByteArr(sourceentry.Info.Identifier), "sS0")
+	if bytes.ContainsRune(altIdentifier, 'E') || bytes.ContainsRune(altIdentifier, 'e') {
+		altIdentifier = logger.ByteReplaceWithByte(logger.ByteReplaceWithByte(altIdentifier, 'e', 'x'), 'E', 'x')
+	}
+
+	arrnzbtitle := logger.StringToByteArr(entry.NZB.Title)
+	if logger.ContainsByteI(arrnzbtitle, altIdentifier) {
+		return false
+	}
+	if sourceentry.NZB.Season == "" && sourceentry.NZB.Episode == "" && strings.ContainsRune(sourceentry.Info.Identifier, '-') {
+		if logger.ContainsByteI(arrnzbtitle, logger.ByteReplaceWithByte(altIdentifier, '-', '.')) {
+			return false
+		}
+		if logger.ContainsByteI(arrnzbtitle, logger.ByteReplaceWithByte(altIdentifier, '-', ' ')) {
+			return false
+		}
+	}
+
+	if sourceentry.NZB.Season == "" || sourceentry.NZB.Episode == "" {
+		s.logdenied("unwanted Identifier", entry, &strIdentifier, &sourceentry.Info.Identifier)
+		return true
+	}
+
+	sprefix, eprefix := "s", "e"
+	if logger.ContainsI(sourceentry.Info.Identifier, "x") {
+		sprefix = ""
+		eprefix = "x"
+	} else if !logger.ContainsI(sourceentry.Info.Identifier, "s") && !logger.ContainsI(sourceentry.Info.Identifier, "e") {
+		s.logdenied("unwanted Identifier", entry, &strIdentifier, &sourceentry.Info.Identifier)
+		return true
+	}
+
+	if !logger.HasPrefixI(sourceentry.Info.Identifier, logger.JoinStrings(sprefix, sourceentry.NZB.Season)) {
+		s.logdenied("unwanted Season", entry, &strIdentifier, &sourceentry.Info.Identifier)
+		return true
+	}
+	if !logger.ContainsI(sourceentry.Info.Identifier, sourceentry.NZB.Episode) {
+		s.logdenied("unwanted Identifier", entry, &strIdentifier, &sourceentry.Info.Identifier)
+		return true
+	}
+
+	//suffixcheck
+	for idxsub := range episodeprefixarray {
+		if logger.HasSuffixI(sourceentry.Info.Identifier, logger.JoinStrings(eprefix, episodeprefixarray[idxsub], sourceentry.NZB.Episode)) {
+			return false
+		}
+	}
+
+	episodesuffixarray := []string{eprefix, logger.StrSpace, logger.StrDash}
+	firstpart := logger.JoinStrings(eprefix, sourceentry.NZB.Episode)
+	for idx := range episodesuffixarray {
+		if logger.ContainsI(sourceentry.Info.Identifier, logger.JoinStrings(firstpart, episodesuffixarray[idx])) {
+			return false
+		}
+		for idxsub := range episodeprefixarray {
+			if logger.HasSuffixI(sourceentry.Info.Identifier, logger.JoinStrings(eprefix, episodeprefixarray[idxsub], logger.JoinStrings(sourceentry.NZB.Episode, episodesuffixarray[idx]))) {
+				return false
+			}
+		}
+	}
+
+	s.logdenied("unwanted Identifier", entry, &strIdentifier, &sourceentry.Info.Identifier)
+	return true
+}
+
+// getmovierss validates the movie data in the entry, sets additional fields,
+// queries the database for movie data like dontSearch/dontUpgrade flags,
+// and returns false to continue search result processing or true to skip the entry.
+func (s *ConfigSearcher) getmovierss(entry *apiexternal.Nzbwithprio, addinlistid int8, addifnotfound bool) (bool, *config.QualityConfig) {
+	//Add DbMovie if not found yet and enabled
+	if entry.Info.DbmovieID == 0 && (!addifnotfound || !logger.HasPrefixI(entry.NZB.IMDBID, logger.StrTt)) {
+		s.logdenied("unwanted DBMovie", entry)
+		return true, nil
+	}
+	//add movie if not found
+	if addifnotfound && (entry.Info.DbmovieID == 0 || entry.Info.MovieID == 0) && logger.HasPrefixI(entry.NZB.IMDBID, logger.StrTt) {
+		if addinlistid == -1 {
+			return true, nil
+		}
+		bl, err := importfeed.AllowMovieImport(entry.NZB.IMDBID, s.Cfgp.Lists[addinlistid].CfgList)
+		if err != nil {
+			s.logdenied(err.Error(), entry)
+			return true, nil
+		}
+		if !bl {
+			s.logdenied("unallowed DBMovie", entry)
+			return true, nil
+		}
+	}
+	if addifnotfound && entry.Info.DbmovieID == 0 && logger.HasPrefixI(entry.NZB.IMDBID, logger.StrTt) {
+		var err error
+		entry.Info.DbmovieID, err = importfeed.JobImportMovies(entry.NZB.IMDBID, s.Cfgp, addinlistid, true)
+		if err != nil {
+			s.logdenied(err.Error(), entry)
+			return true, nil
+		}
+		database.ScanrowsNdyn(false, database.QueryMoviesGetIDByDBIDListname, &entry.Info.MovieID, &entry.Info.DbmovieID, &s.Cfgp.Lists[addinlistid].Name)
+		if entry.Info.MovieID == 0 || entry.Info.DbmovieID == 0 {
+			s.logdenied("unwanted Movie", entry)
+			return true, nil
+		}
+	}
+	if entry.Info.DbmovieID == 0 {
+		s.logdenied("unwanted DBMovie", entry)
+		return true, nil
+	}
+
+	//continue only if dbmovie found
+	//Get List of movie by dbmovieid, year and possible lists
+
+	//if list was not found : should we add the movie to the list?
+	if addifnotfound && entry.Info.MovieID == 0 && logger.HasPrefixI(entry.NZB.IMDBID, logger.StrTt) {
+		if addinlistid == -1 {
+			s.logdenied("no addinlist", entry)
+			return true, nil
+		}
+
+		err := importfeed.Checkaddmovieentry(&entry.Info.DbmovieID, &s.Cfgp.Lists[addinlistid], entry.NZB.IMDBID)
+		if err != nil {
+			s.logdenied(err.Error(), entry)
+			return true, nil
+		}
+		if entry.Info.DbmovieID != 0 && entry.Info.MovieID == 0 {
+			database.ScanrowsNdyn(false, database.QueryMoviesGetIDByDBIDListname, &entry.Info.MovieID, &entry.Info.DbmovieID, &s.Cfgp.Lists[addinlistid].Name)
+		}
+		if entry.Info.DbmovieID == 0 || entry.Info.MovieID == 0 {
+			s.logdenied("unwanted Movie", entry)
+			return true, nil
+		}
+	}
+
+	if entry.Info.MovieID == 0 {
+		s.logdenied("unwanted Movie", entry)
+		return true, nil
+	}
+	entry.Dbid = entry.Info.DbmovieID
+	entry.NzbmovieID = entry.Info.MovieID
+
+	database.GetdatarowArgs("select movies.dont_search, movies.dont_upgrade, movies.listname, movies.quality_profile, dbmovies.title from movies inner join dbmovies ON dbmovies.id=movies.dbmovie_id where movies.id = ?", &entry.Info.MovieID, &entry.DontSearch, &entry.DontUpgrade, &entry.Listname, &entry.Quality, &entry.WantedTitle)
+
+	entry.Info.ListID = s.Cfgp.GetMediaListsEntryListID(entry.Listname)
+	if entry.Quality == "" {
+		return false, config.SettingsQuality[s.Cfgp.DefaultQuality]
+	}
+	return false, config.SettingsQuality[entry.Quality]
+}
+
+// getentryquality returns the quality config for the given entry.
+// If the entry is for a movie, it gets the config from the movies database using the movie ID.
+// If the entry is for a TV episode, it gets the config from the series database using the episode ID.
+// If no ID is set, it returns nil.
+func (s *ConfigSearcher) getentryquality(entry *apiexternal.Nzbwithprio) *config.QualityConfig {
+	if entry.Info.MovieID != 0 {
+		return database.GetMediaQualityConfig(s.Cfgp, entry.Info.MovieID)
+	}
+	if entry.Info.SerieEpisodeID != 0 {
+		return database.GetMediaQualityConfig(s.Cfgp, entry.Info.SerieEpisodeID)
+	}
+	return nil
+}
+
+// GetRSSFeed queries the RSS feed for the given media list, searches for and downloads new items,
+// and adds them to the search results. It handles checking if the indexer is blocked,
+// configuring the custom RSS feed URL, getting the last ID to prevent duplicates,
+// parsing results, and updating the RSS history.
+func (s *ConfigSearcher) getRSSFeed(listentry *config.MediaListsConfig, downloadentries bool, autoclose bool) error {
+	if autoclose {
+		defer s.Close()
+	}
+	if listentry.TemplateList == "" {
+		return logger.ErrListnameTemplateEmpty
+	}
+
+	s.searchActionType = logger.StrRss
+
+	intid := -1
+	for idx := range s.Quality.Indexer {
+		if s.Quality.Indexer[idx].TemplateIndexer == listentry.TemplateList || strings.EqualFold(s.Quality.Indexer[idx].TemplateIndexer, listentry.TemplateList) {
+			intid = idx
+			break
+		}
+	}
+	if intid != -1 && s.Quality.Indexer[intid].TemplateRegex == "" {
+		return errRegexEmpty
+	}
+
+	blockinterval := -5
+	if config.SettingsGeneral.FailedIndexerBlockTime != 0 {
+		blockinterval = -1 * config.SettingsGeneral.FailedIndexerBlockTime
+	}
+
+	intval := logger.TimeGetNow().Add(time.Minute * time.Duration(blockinterval))
+	if database.GetdatarowN[uint](false, "select count() from indexer_fails where indexer = ? and last_fail > ?", &listentry.CfgList.URL, &intval) >= 1 {
+		logger.LogDynamicany("debug", "Indexer temporarily disabled due to fail in last", &logger.StrListname, &listentry.TemplateList, "Minutes", &blockinterval)
+		return logger.ErrDisabled
+	}
+
+	if s.Cfgp == nil {
+		return errOther
+	}
+
+	customindexer := *config.SettingsIndexer[listentry.TemplateList]
+	customindexer.Name = listentry.TemplateList
+	customindexer.Customrssurl = listentry.CfgList.URL
+	customindexer.URL = listentry.CfgList.URL
+	customindexer.MaxEntries = logger.StringToUInt16(listentry.CfgList.Limit)
+	_, firstid, err := apiexternal.QueryNewznabRSSLastCustom(&customindexer, s.Quality, database.GetdatarowN[string](false, "select last_id from r_sshistories where config = ? COLLATE NOCASE and list = ? COLLATE NOCASE", &listentry.TemplateList, &s.Quality.Name), nil, &s.Raw)
+	if err != nil {
+		return err
+	}
+	if len(s.Raw.Arr) >= 1 {
+		if firstid != "" {
+			addrsshistory(&listentry.CfgList.URL, &firstid, s.Quality, &listentry.TemplateList)
+		}
+		s.searchparse(nil, nil)
+
+		if downloadentries {
+			s.Download()
+		}
+	}
+	return nil
+}
+
+// MovieFillSearchVar fills the search variables for the given movie ID.
+// It queries the database to get the movie details and configures the
+// search based on priorities, upgrade settings etc.
+func (s *ConfigSearcher) movieFillSearchVar(movieid *uint, e *apiexternal.Nzbwithprio) error {
+	database.GetdatarowArgs("select movies.dbmovie_id, movies.dont_search, movies.dont_upgrade, movies.listname, movies.quality_profile, dbmovies.year, dbmovies.imdb_id, dbmovies.title from movies inner join dbmovies ON dbmovies.id=movies.dbmovie_id where movies.id = ?", movieid, &e.Dbid, &e.DontSearch, &e.DontUpgrade, &e.Listname, &e.Quality, &e.Info.Year, &e.Info.Imdb, &e.WantedTitle)
+	if e.Dbid == 0 {
+		return logger.ErrNotFoundDbmovie
+	}
+	if e.DontSearch {
+		return logger.ErrDisabled
+	}
+
+	e.NzbmovieID = *movieid
+	if s.Quality == nil || s.Quality.Name != e.Quality {
+		if e.Quality == "" {
+			s.Quality = config.SettingsQuality[s.Cfgp.DefaultQuality]
+		} else {
+			var ok bool
+			s.Quality, ok = config.SettingsQuality[e.Quality]
+			if !ok {
+				s.Quality = config.SettingsQuality[s.Cfgp.DefaultQuality]
+			}
+		}
+	}
+	e.MinimumPriority, _ = Getpriobyfiles(s.Cfgp.Useseries, movieid, false, -1, s.Quality)
+
+	var err error
+	s.searchActionType, err = getsearchtype(e.MinimumPriority, e.DontUpgrade, false)
+	if err != nil {
+		return err
+	}
+
+	if e.Info.Year == 0 {
+		return errYearEmpty
+	}
+	e.Info.ListID = s.Cfgp.GetMediaListsEntryListID(e.Listname)
+
+	return nil
+}
+
+// EpisodeFillSearchVar fills the search variables for the given episode ID.
+// It queries the database to get the necessary data and configures the
+// search based on priorities, upgrade settings etc.
+func (s *ConfigSearcher) episodeFillSearchVar(episodeid *uint, e *apiexternal.Nzbwithprio) error {
+	//dbserie_episode_id, dbserie_id, serie_id, dont_search, dont_upgrade
+	database.GetdatarowArgs("select serie_episodes.dbserie_episode_id, serie_episodes.dbserie_id, serie_episodes.serie_id, serie_episodes.dont_search, serie_episodes.dont_upgrade, serie_episodes.quality_profile, series.listname, dbseries.thetvdb_id, dbseries.seriename, dbserie_episodes.season, dbserie_episodes.episode, dbserie_episodes.identifier from serie_episodes inner join series ON series.id=serie_episodes.serie_id inner join dbseries ON dbseries.id=serie_episodes.dbserie_id inner join dbserie_episodes ON dbserie_episodes.id=serie_episodes.dbserie_episode_id where serie_episodes.id = ?", episodeid, &e.Info.DbserieEpisodeID, &e.Dbid, &e.Info.SerieID, &e.DontSearch, &e.DontUpgrade, &e.Quality, &e.Listname, &e.NZB.TVDBID, &e.WantedTitle, &e.NZB.Season, &e.NZB.Episode, &e.Info.Identifier)
+	if e.Info.DbserieEpisodeID == 0 || e.Dbid == 0 || e.Info.SerieID == 0 {
+		return logger.ErrNotFoundDbserie
+	}
+	if e.DontSearch {
+		return logger.ErrDisabled
+	}
+	e.Info.DbserieID = e.Dbid
+
+	e.NzbepisodeID = *episodeid
+	if s.Quality == nil || s.Quality.Name != e.Quality {
+		if e.Quality == "" {
+			s.Quality = config.SettingsQuality[s.Cfgp.DefaultQuality]
+		} else {
+			var ok bool
+			s.Quality, ok = config.SettingsQuality[e.Quality]
+			if !ok {
+				s.Quality = config.SettingsQuality[s.Cfgp.DefaultQuality]
+			}
+		}
+	}
+	e.MinimumPriority, _ = Getpriobyfiles(s.Cfgp.Useseries, episodeid, false, -1, s.Quality)
+
+	e.Info.ListID = s.Cfgp.GetMediaListsEntryListID(e.Listname)
+	var err error
+	s.searchActionType, err = getsearchtype(e.MinimumPriority, e.DontUpgrade, false)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// // Getsearchalternatetitles returns alternate search titles to use when searching for media.
+// // It takes in alternate titles from the database, a flag indicating if this is already a title search,
+// // and the quality configuration. It returns a slice of string alternate titles.
+// func (s *ConfigSearcher) getsearchalternatetitles(titlesearch bool, sourcealttitles []database.DbstaticTwoStringOneInt, qualcfg *config.QualityConfig) []database.DbstaticTwoStringOneInt {
+// 	i := 2
+// 	if qualcfg.BackupSearchForAlternateTitle {
+// 		i += len(sourcealttitles)
+// 	}
+// 	n := make([]database.DbstaticTwoStringOneInt, 0, i)
+// 	if qualcfg.BackupSearchForAlternateTitle {
+// 		if qualcfg.BackupSearchForTitle {
+// 			if !titlesearch {
+// 				n = append(n, database.DbstaticTwoStringOneInt{})
+// 			}
+// 			n = append(n, database.DbstaticTwoStringOneInt{Str1: e.WantedTitle})
+// 			return append(n, sourcealttitles...)
+// 		}
+// 		if titlesearch && !qualcfg.BackupSearchForTitle {
+// 			return append(n, sourcealttitles...)
+// 		}
+// 	}
+// 	if qualcfg.BackupSearchForTitle {
+// 		if !titlesearch {
+// 			n = append(n, database.DbstaticTwoStringOneInt{})
+// 		}
+// 		return append(n, database.DbstaticTwoStringOneInt{Str1: e.WantedTitle})
+// 	}
+// 	if !titlesearch {
+// 		return append(n, database.DbstaticTwoStringOneInt{})
+// 	}
+// 	return append(n, database.DbstaticTwoStringOneInt{Str1: e.WantedTitle})
+// }
+
+// filterSizeNzbs checks if the NZB entry size is within the configured
+// minimum and maximum size limits, and returns true if it should be
+// rejected based on its size.
+func (s *ConfigSearcher) filterSizeNzbs(entry *apiexternal.Nzbwithprio) bool {
+	for idxdataimport := range s.Cfgp.DataImport {
+		if s.Cfgp.DataImport[idxdataimport].CfgPath == nil {
+			continue
+		}
+		if s.Cfgp.DataImport[idxdataimport].CfgPath.MinSize != 0 && entry.NZB.Size < s.Cfgp.DataImport[idxdataimport].CfgPath.MinSizeByte {
+			s.logdenied("too small", entry, &logger.StrFound, &entry.NZB.Size)
+			return true
+		}
+
+		if s.Cfgp.DataImport[idxdataimport].CfgPath.MaxSize != 0 && entry.NZB.Size > s.Cfgp.DataImport[idxdataimport].CfgPath.MaxSizeByte {
+			s.logdenied("too big", entry, &logger.StrFound, &entry.NZB.Size)
+			return true
+		}
+	}
+	return false
+}
+
+// filterRegexNzbs checks if the given NZB entry matches the required regexes
+// and does not match any rejected regexes from the quality configuration.
+// Returns true if the entry fails the regex checks, false if it passes.
+func (s *ConfigSearcher) filterRegexNzbs(entry *apiexternal.Nzbwithprio, qual *config.QualityConfig) bool {
+	regexcfg := entry.Getregexcfg(qual)
+	if regexcfg == nil {
+		s.logdenied("Denied by Regex", entry, "regex_template empty")
+		return true
+	}
+
+	var bl bool
+	for idx := range regexcfg.Required {
+		if database.RegexGetMatchesFind(regexcfg.Required[idx], entry.NZB.Title, 1) {
+			bl = true
+			break
+		}
+	}
+	if !bl && regexcfg.RequiredLen >= 1 {
+		s.logdenied("not matched required", entry, &strCheckedFor, &regexcfg.Required[0])
+		return true
+	}
+
+	for idx := range regexcfg.Rejected {
+		if database.RegexGetMatchesFind(regexcfg.Rejected[idx], entry.NZB.Title, 1) {
+			if !database.RegexGetMatchesFind(regexcfg.Rejected[idx], entry.WantedTitle, 1) {
+				bl := false
+				for idxi := range entry.WantedAlternates {
+					if database.RegexGetMatchesFind(regexcfg.Rejected[idx], entry.WantedAlternates[idxi].Str1, 1) {
+						bl = true
+						break
+					}
+				}
+				if !bl {
+					s.logdenied("Denied by Regex", entry, &strRejectedby, &regexcfg.Rejected[idx])
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// checkhistory checks if the given entry is already in the history cache
+// to avoid duplicate downloads. It checks based on the download URL and title.
+// Returns true if a duplicate is found, false otherwise.
+func (s *ConfigSearcher) checkhistory(entry *apiexternal.Nzbwithprio, qual *config.QualityConfig) bool {
+	if entry.NZB.DownloadURL != "" {
+		if database.CheckcachedUrlHistory(s.Cfgp.Useseries, &entry.NZB.DownloadURL) {
+			s.logdenied("already downloaded url", entry)
+			return true
+		}
+	}
+	if entry.NZB.Indexer == nil {
+		return false
+	}
+	indcfg := qual.QualityIndexerByQualityAndTemplate(entry.NZB.Indexer)
+	if indcfg != nil {
+		if !indcfg.HistoryCheckTitle {
+			return false
+		}
+	}
+
+	if database.CheckcachedTitleHistory(s.Cfgp.Useseries, &entry.NZB.Title) {
+		s.logdenied("already downloaded title", entry)
+		return true
+	}
+	return false
+}
+
+// checkprocessed checks if the given entry is already in the denied or accepted lists to avoid duplicate processing.
+// It loops through the denied and accepted entries and returns true if it finds a match on the download URL or title.
+// Otherwise returns false. Part of ConfigSearcher.
+func (s *ConfigSearcher) checkprocessed(entry *apiexternal.Nzbwithprio) bool {
+	for idx := range s.Denied {
+		if s.Denied[idx].NZB.DownloadURL == entry.NZB.DownloadURL {
+			return true
+		}
+		if s.Denied[idx].NZB.Title == entry.NZB.Title {
+			return true
+		}
+	}
+	for idx := range s.Accepted {
+		if s.Accepted[idx].NZB.DownloadURL == entry.NZB.DownloadURL {
+			return true
+		}
+		if s.Accepted[idx].NZB.Title == entry.NZB.Title {
+			return true
+		}
+	}
+	return false
+}
+
+// logdenied logs a denied entry with the given reason and optional additional fields.
+// It sets the reason and additional reason on the entry, and appends the entry to s.Denied.
+func (s *ConfigSearcher) logdenied(reason string, entry *apiexternal.Nzbwithprio, addfields ...any) {
+	if reason != "" {
+		vals := logger.PLArrAny.Get()
+		defer logger.PLArrAny.Put(vals)
+		if len(addfields) > 0 {
+			vals.Arr = append(vals.Arr, addfields...)
+		}
+		vals.Arr = append(vals.Arr, &logger.StrReason, &entry.Reason, &logger.StrTitle, &entry.NZB.Title)
+
+		entry.Reason = reason
+		if len(addfields) > 0 {
+			entry.AdditionalReason = addfields[1]
+		}
+		logger.LogDynamicany("debug", skippedstr, vals.Arr...)
+	}
+	s.Denied = append(s.Denied, *entry)
 }
 
 // NewSearcher creates a new ConfigSearcher instance.
@@ -306,82 +1425,19 @@ func (searchvar *ConfigSearcher) runrsssearch(index2 int, _ *searchparams) bool 
 // it will look up the quality config for that media in the database.
 // It gets a searcher instance from the pool and sets the configs,
 // then returns the initialized searcher.
-func NewSearcher(cfgp *config.MediaTypeConfig, quality *config.QualityConfig, searchActionType string, mediaid *uint) *ConfigSearcher {
-	dl := plsearcher.Get()
-	s := ConfigSearcher{Dl: dl, Cfgp: cfgp, searchActionType: searchActionType, Mu: sync.Mutex{}}
-	if quality == nil && mediaid != nil && *mediaid != 0 {
-		s.Quality = database.GetMediaQualityConfig(cfgp, mediaid)
+func NewSearcher(cfgp *config.MediaTypeConfig, quality *config.QualityConfig, searchActionType string, mediaid uint) *ConfigSearcher {
+	s := plsearcher.Get()
+	//s.Dl = plsearchresults.Get()
+	s.Cfgp = cfgp
+	s.searchActionType = searchActionType
+	if quality == nil {
+		if mediaid != 0 {
+			s.Quality = database.GetMediaQualityConfig(cfgp, mediaid)
+		}
 	} else {
 		s.Quality = quality
 	}
-	return &s
-}
-
-// Getnewznabrss queries Newznab indexers from the given MediaListsConfig
-// using the provided MediaTypeConfig. It searches for and downloads any
-// matching RSS feed items.
-func Getnewznabrss(cfgp *config.MediaTypeConfig, list *config.MediaListsConfig) error {
-	if list.CfgList == nil || cfgp == nil {
-		return logger.ErrNotFound
-	}
-
-	NewSearcher(cfgp, list.CfgQuality, logger.StrRss, &logger.V0).GetRSSFeed(list, true, true)
-	return nil
-}
-
-// searchSeriesRSSSeason searches configured indexers for the given TV series
-// season using the RSS search APIs. It handles executing searches across
-// enabled newznab indexers, parsing results, and adding accepted entries to
-// the search results. Returns the searcher and error if any.
-func (searchvar *ConfigSearcher) searchSeriesRSSSeason(cfgp *config.MediaTypeConfig, quality *config.QualityConfig, thetvdbid int, season string, useseason bool, downloadentries bool, autoclose bool) error {
-	if autoclose {
-		defer searchvar.Close()
-	}
-	if cfgp == nil {
-		return logger.ErrCfgpNotFound
-	}
-
-	if searchvar == nil {
-		return logger.ErrCfgpNotFound
-	}
-	searchvar.Dl.Clear()
-	searchvar.Quality = quality
-	logger.LogDynamic("info", "Search for season", logger.NewLogField(logger.StrTvdb, &thetvdbid), logger.NewLogField("season", &season))
-
-	params := plparams.Get()
-	defer plparams.Put(params)
-	params.thetvdbid = thetvdbid
-	params.season = season
-	params.useseason = useseason
-	if searchvar.searchindexers(false, params, searchvar.runrssseasonsearch) && len(searchvar.Dl.Raw) >= 1 {
-		if len(searchvar.Dl.Raw) >= 1 {
-			searchvar.searchparse(nil)
-
-			if downloadentries {
-				searchvar.Download()
-			}
-		}
-		logger.LogDynamic("info", "Ended Search for season", logger.NewLogField(logger.StrTvdb, &thetvdbid), logger.NewLogField("season", &season), logger.NewLogField("accepted", len(searchvar.Dl.Accepted)), logger.NewLogField("denied", len(searchvar.Dl.Denied)))
-	}
-	return nil
-}
-
-// runrssseasonsearch executes a season search for the given TV series on the
-// indexer at the provided index. It returns true if the search was successful,
-// false otherwise.
-func (searchvar *ConfigSearcher) runrssseasonsearch(index2 int, params *searchparams) bool {
-	xmlret := apiexternal.QueryNewznabTvTvdb(searchvar.Quality.Indexer[index2].CfgIndexer, searchvar.Quality, params.thetvdbid, qualityIndexerByQualityAndTemplate(searchvar.Quality, searchvar.Quality.Indexer[index2].CfgIndexer), params.season, "", params.useseason, false, &searchvar.Mu, &searchvar.Dl.Raw)
-	if xmlret.Err == nil {
-		xmlret.Close()
-		return true
-	}
-	if xmlret.Err != nil {
-		if !errors.Is(xmlret.Err, logger.Errnoresults) && !errors.Is(xmlret.Err, logger.ErrToWait) {
-			logger.LogDynamic("error", "Error searching indexer", logger.NewLogFieldValue(xmlret.Err), logger.NewLogField("indexer", &searchvar.Quality.Indexer[index2].CfgIndexer.Name))
-		}
-	}
-	xmlret.Close()
-	return false
+	return s
 }
 
 // addrsshistory updates the rss history table with the last processed item id
@@ -409,1333 +1465,97 @@ func getsearchtype(minimumPriority int, dont bool, force bool) (string, error) {
 	return "upgrade", nil
 }
 
-// MediaSearch searches indexers for the given media entry (movie or TV episode)
-// using the configured quality profile. It handles filling search variables,
-// executing searches across enabled indexers, parsing results, and optionally
-// downloading accepted entries. Returns the search results and error if any.
-func (searchvar *ConfigSearcher) MediaSearch(cfgp *config.MediaTypeConfig, mediaid *uint, titlesearch bool, downloadentries bool, autoclose bool) error {
-	if cfgp == nil {
-		return logger.ErrCfgpNotFound
+// Getnewznabrss queries Newznab indexers from the given MediaListsConfig
+// using the provided MediaTypeConfig. It searches for and downloads any
+// matching RSS feed items.
+func Getnewznabrss(cfgp *config.MediaTypeConfig, list *config.MediaListsConfig) error {
+	if list.CfgList == nil || cfgp == nil {
+		return logger.ErrNotFound
+	}
+
+	return NewSearcher(cfgp, list.CfgQuality, logger.StrRss, 0).getRSSFeed(list, true, true)
+}
+
+// SearchSerieRSSSeasonSingle searches for a single season of a series.
+// It takes the series ID, season number, whether to search the full season or missing episodes,
+// media type config, whether to auto close the results, and a pointer to search results.
+// It returns a config searcher instance and error.
+// It queries the database to map the series ID to thetvdb ID, gets the quality config,
+// calls the search function, handles errors, downloads results,
+// closes the results if autoclose is true, and returns the config searcher.
+func SearchSerieRSSSeasonSingle(serieid *uint, season string, useseason bool, cfgp *config.MediaTypeConfig, autoclose bool, results *ConfigSearcher) (*ConfigSearcher, error) {
+	if autoclose {
+		defer results.Close()
+	}
+	tvdb := database.Getdatarow1[int](false, "select thetvdb_id from dbseries where id = ?", database.Getdatarow1[uint](false, "select dbserie_id from series where id = ?", serieid))
+	if tvdb == 0 {
+		return nil, logger.ErrTvdbEmpty
+	}
+	listid := database.GetMediaListIDGetListname(cfgp, serieid)
+	if listid == -1 {
+		return nil, logger.ErrListnameEmpty
+	}
+
+	err := results.searchSeriesRSSSeason(cfgp, cfgp.Lists[listid].CfgQuality, tvdb, season, useseason, true, false)
+	if err != nil && !errors.Is(err, logger.ErrDisabled) && !errors.Is(err, logger.ErrToWait) {
+		logger.LogDynamicany("error", "Season Search Inc Failed", err, &logger.StrID, serieid)
+
+		return nil, err
 	}
 	if autoclose {
-		defer searchvar.Close()
+		return nil, nil
 	}
-	if searchvar == nil || mediaid == nil || *mediaid == 0 {
-		return logger.ErrSearchvarEmpty
-	}
-	searchvar.Dl.Clear()
-	if searchvar.Quality == nil {
-		searchvar.Quality = database.GetMediaQualityConfig(cfgp, mediaid)
-	}
-	var err error
-	if cfgp.Useseries {
-		err = searchvar.EpisodeFillSearchVar(mediaid)
-	} else {
-		err = searchvar.MovieFillSearchVar(mediaid)
-	}
-	if err != nil {
-		if !errors.Is(err, logger.ErrDisabled) && !errors.Is(err, logger.ErrToWait) {
-			logger.LogDynamic("error", "Media Search Failed", logger.NewLogFieldValue(err), logger.NewLogField("id", mediaid))
-		}
-		return err
-	}
-
-	if searchvar.Quality == nil {
-		return logger.ErrSearchvarEmpty
-	}
-
-	logger.LogDynamic("info", "Search for media id", logger.NewLogField(logger.StrID, mediaid), logger.NewLogField("series", searchvar.Cfgp.Useseries), logger.NewLogField("titlesearch", titlesearch))
-
-	params := plparams.Get()
-	defer plparams.Put(params)
-	params.titlesearch = titlesearch
-	searchvar.getsourcetitles(params)
-	if !searchvar.searchindexers(false, params, searchvar.runmediasearch) {
-		logger.LogDynamic("error", "All searches failed")
-		return nil
-	}
-	database.ExecN(logger.GetStringsMap(cfgp.Useseries, logger.UpdateMediaLastscan), mediaid)
-
-	if len(searchvar.Dl.Raw) >= 1 {
-		searchvar.searchparse(params.sourcealttitles)
-		if len(searchvar.Dl.Accepted) >= 1 || len(searchvar.Dl.Denied) >= 1 {
-			logger.LogDynamic("info", "Ended Search for media id", logger.NewLogField(logger.StrID, mediaid), logger.NewLogField("series", searchvar.Cfgp.Useseries), logger.NewLogField("titlesearch", titlesearch), logger.NewLogField("Accepted", len(searchvar.Dl.Accepted)), logger.NewLogField("Denied", len(searchvar.Dl.Denied)))
-		}
-		if downloadentries {
-			searchvar.Download()
-		}
-	}
-	return nil
+	return results, nil
+	//return SearchMyMedia(cfgpstr, qualstr, logger.StrRssSeasons, logger.StrSeries, int(tvdb), season, useseason, 0, false)
 }
 
-// getsourcetitles returns alternate titles from the database for the
-// given ConfigSearcher if backup searching for alternate titles is enabled.
-func (searchvar *ConfigSearcher) getsourcetitles(params *searchparams) {
-	if searchvar.Quality.BackupSearchForAlternateTitle {
-		params.sourcealttitles = database.Getentryalternatetitlesdirect(searchvar.Sourceentry.Dbid, searchvar.Cfgp.Useseries)
-	}
+// SearchSeriesRSSSeasons searches the RSS feeds for missing episodes for
+// random series. It selects up to 20 random series that have missing
+// episodes, gets the distinct seasons with missing episodes for each,
+// and searches the RSS feeds for those seasons.
+func SearchSeriesRSSSeasons(cfgp *config.MediaTypeConfig) {
+	searchseasons(cfgp, logger.JoinStrings("select id, dbserie_id from series where listname in (?", cfgp.ListsQu, ") and (select count() from serie_episodes inner join dbserie_episodes on dbserie_episodes.id = serie_episodes.dbserie_episode_id and serie_episodes.dbserie_id=series.dbserie_id where ((serie_episodes.missing=1 and series.search_specials=1) or (serie_episodes.missing=1 and dbserie_episodes.season != '0' and series.search_specials=0)) and serie_episodes.serie_id = series.id) >= 1 ORDER BY RANDOM() limit 20"), 20, "select distinct season from dbserie_episodes where dbserie_id = ? and season != '' and ((Select search_specials from series where id =?)=1 OR ((Select search_specials from series where id =?)=0 and season != '0')) and dbserie_episodes.id in ( Select distinct dbserie_episode_id from serie_episodes where missing=1 and dbserie_id = ? )", "select count(distinct season) from dbserie_episodes where dbserie_id = ? and season != '' and ((Select search_specials from series where id =?)=1 OR ((Select search_specials from series where id =?)=0 and season != '0')) and dbserie_episodes.id in ( Select distinct dbserie_episode_id from serie_episodes where missing=1 and dbserie_id = ? )")
 }
 
-// searchparams is a struct containing fields for search parameters
-type searchparams struct {
-	// titlesearch is a boolean indicating if title search is enabled
-	titlesearch bool
-	// sourcealttitles is a slice of DbstaticTwoStringOneInt containing alternate titles
-	sourcealttitles []database.DbstaticTwoStringOneInt
-	alttitles       []database.DbstaticTwoStringOneInt
-	// thetvdbid is an integer containing thetvdb ID
-	thetvdbid int
-	// season is a string containing the season number
-	season string
-	// useseason is a boolean indicating if season search is enabled
-	useseason bool
+// SearchSeriesRSSSeasonsAll searches all seasons for series matching the given
+// media type config. It searches series that have missing episodes and calls
+// searchseasons to perform the actual search.
+func SearchSeriesRSSSeasonsAll(cfgp *config.MediaTypeConfig) {
+	searchseasons(cfgp, logger.JoinStrings("select id, dbserie_id from series where listname in (?", cfgp.ListsQu, ") and (select count() from serie_episodes inner join dbserie_episodes on dbserie_episodes.id = serie_episodes.dbserie_episode_id and serie_episodes.dbserie_id=series.dbserie_id where (series.search_specials=1 or (dbserie_episodes.season != '0' and series.search_specials=0)) and serie_episodes.serie_id = series.id) >= 1"), database.GetdatarowN[uint](false, "select count() from series"), "select distinct season from dbserie_episodes where dbserie_id = ? and season != '' and ((Select search_specials from series where id =?)=1 OR ((Select search_specials from series where id =?)=0 and season != '0')) and dbserie_episodes.id in ( Select distinct dbserie_episode_id from serie_episodes where dbserie_id = ? )", "select count(distinct season) from dbserie_episodes where dbserie_id = ? and season != '' and ((Select search_specials from series where id =?)=1 OR ((Select search_specials from series where id =?)=0 and season != '0')) and dbserie_episodes.id in ( Select distinct dbserie_episode_id from serie_episodes where dbserie_id = ? )")
 }
 
-// getaddstr returns a string to append to the search query based on the
-// media year or identifier if available. For series it returns empty string.
-func (searchvar *ConfigSearcher) getaddstr() string {
-	if !searchvar.Cfgp.Useseries && searchvar.Sourceentry.Info.M.Year != 0 {
-		return logger.JoinStrings(" ", strconv.Itoa(searchvar.Sourceentry.Info.M.Year))
-		//return " " + strconv.Itoa(searchvar.Sourceentry.Info.M.Year)
-	} else if searchvar.Sourceentry.Info.M.Identifier != "" {
-		return logger.JoinStrings(" ", searchvar.Sourceentry.Info.M.Identifier)
-		//return " " + searchvar.Sourceentry.Info.M.Identifier
-	}
-	return ""
-}
+// searchseasons searches for missing episodes for series matching the given
+// configuration and quality settings. It selects a random sample of series
+// to search, gets the distinct seasons with missing episodes for each, and
+// searches those seasons on the RSS feeds of the enabled indexers. Results
+// are added to the passed in DownloadResults instance.
+func searchseasons(cfgp *config.MediaTypeConfig, queryrange string, queryrangecount uint, queryseason string, queryseasoncount string) {
+	args := logger.PLArrAny.Get()
 
-// runmediasearch searches for the given media using the provided search parameters.
-// It iterates through the configured indexers and attempts different search queries based on the alternate titles.
-// Returns true if the search completed successfully, false otherwise.
-func (searchvar *ConfigSearcher) runmediasearch(index2 int, param *searchparams) bool {
-	cats := qualityIndexerByQualityAndTemplate(searchvar.Quality, searchvar.Quality.Indexer[index2].CfgIndexer)
-	if cats == nil {
-		logger.LogDynamic("error", "Error getting quality config")
-		return false
+	//args := make([]any, 0, len(cfgp.Lists))
+	for idx := range cfgp.Lists {
+		args.Arr = append(args.Arr, &cfgp.Lists[idx].Name)
 	}
-	addstr := searchvar.getaddstr()
-
-	usequerysearch := true
-	if !param.titlesearch {
-		if !searchvar.Cfgp.Useseries && searchvar.Sourceentry.Info.M.Imdb != "" {
-			usequerysearch = false
-		} else if searchvar.Cfgp.Useseries && searchvar.Sourceentry.NZB.TVDBID != 0 {
-			usequerysearch = false
-		}
+	tbl := database.GetrowsNuncached[database.DbstaticTwoUint](queryrangecount, queryrange, args.Arr)
+	logger.PLArrAny.Put(args)
+	if len(tbl) == 0 {
+		return
 	}
 
-	searchvar.Getsearchalternatetitles(param, searchvar.Quality)
-	if param.alttitles == nil {
-		logger.LogDynamic("error", "Error getting search alternate titles")
-		return false
-	}
-	searched := param.alttitles[:0]
-	//if len(alttitles) > 2 {
-	//searchvar.Dl.Raw = slices.Grow(searchvar.Dl.Raw, searchvar.Quality.Indexer[index2].CfgIndexer.MaxEntries*len(alttitles))
-	//}
-	//labTitles:
-	for loopidx := range param.alttitles {
-		if param.alttitles[loopidx].Str1 == "" && loopidx != 0 {
-			logger.LogDynamic("error", "Skipped empty title")
-			continue
-		}
-
-		var xmlret apiexternal.XMLResponse
-		if !usequerysearch {
-			if !searchvar.Cfgp.Useseries && searchvar.Sourceentry.Info.M.Imdb != "" {
-				xmlret = apiexternal.QueryNewznabMovieImdb(searchvar.Quality.Indexer[index2].CfgIndexer, searchvar.Quality, strings.Trim(searchvar.Sourceentry.Info.M.Imdb, "t"), cats, &searchvar.Mu, &searchvar.Dl.Raw)
-			} else if searchvar.Cfgp.Useseries && searchvar.Sourceentry.NZB.TVDBID != 0 {
-				xmlret = apiexternal.QueryNewznabTvTvdb(searchvar.Quality.Indexer[index2].CfgIndexer, searchvar.Quality, searchvar.Sourceentry.NZB.TVDBID, cats, searchvar.Sourceentry.NZB.Season, searchvar.Sourceentry.NZB.Episode, true, true, &searchvar.Mu, &searchvar.Dl.Raw)
-			}
-		} else if param.alttitles[loopidx].Str1 != "" {
-			if checkdbtwostrings(searched, param.alttitles[loopidx].Str1) {
+	var listid int8
+	var arr []string
+	for idx := range tbl {
+		arr = database.GetrowsNsize[string](false, queryseasoncount, queryseason, &tbl[idx].Num2, &tbl[idx].Num1, &tbl[idx].Num1, &tbl[idx].Num2)
+		for idx2 := range arr {
+			listid = database.GetMediaListIDGetListname(cfgp, &tbl[idx].Num1)
+			if listid == -1 {
 				continue
 			}
-			searched = append(searched, param.alttitles[loopidx])
-			xmlret = apiexternal.QueryNewznabQuery(searchvar.Quality.Indexer[index2].CfgIndexer, searchvar.Quality, logger.JoinStrings(logger.StringRemoveAllRunesMulti(param.alttitles[loopidx].Str1, '&', '(', ')'), addstr), cats, &searchvar.Mu, &searchvar.Dl.Raw)
-		} else {
-			continue
+			NewSearcher(cfgp, cfgp.Lists[listid].CfgQuality, logger.StrRss, 0).searchSeriesRSSSeason(cfgp, cfgp.Lists[listid].CfgQuality, database.GetdatarowN[int](false, "select thetvdb_id from dbseries where id = ?", &tbl[idx].Num2), arr[idx2], true, true, true)
 		}
-
-		if xmlret.Err != nil && !errors.Is(xmlret.Err, logger.ErrToWait) {
-			if searchvar.Cfgp.Useseries {
-				logger.LogDynamic("error", "Error Searching Media by Title", logger.NewLogField("Media ID", &searchvar.Sourceentry.NzbepisodeID), logger.NewLogField("series", searchvar.Cfgp.Useseries), logger.NewLogField("Title", &param.alttitles[loopidx]), logger.NewLogFieldValue(xmlret.Err))
-			} else {
-				logger.LogDynamic("error", "Error Searching Media by Title", logger.NewLogField("Media ID", &searchvar.Sourceentry.NzbmovieID), logger.NewLogField("series", searchvar.Cfgp.Useseries), logger.NewLogField("Title", &param.alttitles[loopidx]), logger.NewLogFieldValue(xmlret.Err))
-			}
-		} else {
-			if searchvar.Quality.CheckUntilFirstFound && len(searchvar.Dl.Accepted) >= 1 {
-				logger.LogDynamic("debug", "Broke loop - result found")
-				xmlret.Close()
-				break
-			}
-		}
-		if searchvar.Quality.SearchForTitleIfEmpty && !param.titlesearch && len(searchvar.Dl.Raw) == 0 {
-			param.titlesearch = true
-			usequerysearch = true
-		}
-		if !param.titlesearch {
-			xmlret.Close()
-			break
-		}
-		xmlret.Close()
-	}
-	searched = nil
-	return true
-}
-
-// checkdbtwostrings checks if a given string exists in a slice of DbstaticTwoStringOneInt.
-// Returns true if the string is found, false otherwise.
-func checkdbtwostrings(tbl []database.DbstaticTwoStringOneInt, str1 string) bool {
-	for idxepi := range tbl {
-		if tbl[idxepi].Str1 == str1 || strings.EqualFold(tbl[idxepi].Str1, str1) {
-			return true
-		}
-	}
-	return false
-}
-
-// searchindexers searches the enabled indexers and runs the given
-// callback function fn for each one, passing the indexer index, searcher,
-// and search params. It returns true if any callback sets searchdone to true.
-// It uses a worker group to run the searches concurrently.
-func (s *ConfigSearcher) searchindexers(userss bool, param *searchparams, fn func(int, *searchparams) bool) bool {
-	if len(s.Quality.Indexer) == 0 {
-		return false
-	}
-	workergroup := worker.WorkerPoolIndexer.Group()
-	var searchdone bool
-	for index := range s.Quality.Indexer {
-		if userss && !s.Quality.Indexer[index].CfgIndexer.Rssenabled {
-			continue
-		}
-		if !userss && !s.Quality.Indexer[index].CfgIndexer.Enabled {
-			continue
-		}
-		if s.Quality == nil || s.Quality.Indexer[index].CfgIndexer == nil || !strings.EqualFold(s.Quality.Indexer[index].CfgIndexer.IndexerType, "newznab") {
-			continue
-		}
-		if ok, _ := apiexternal.NewznabCheckLimiter(s.Quality.Indexer[index].CfgIndexer); !ok {
-			continue
-		}
-		//index2 := index
-		workergroup.Submit(func() {
-			done := fn(index, param)
-			if !searchdone && done {
-				searchdone = done
-			}
-		})
-	}
-	workergroup.Wait()
-	return searchdone
-}
-
-// Download iterates through the Accepted list and starts downloading each entry,
-// tracking entries already downloaded to avoid duplicates. It handles both movies
-// and TV series based on config and entry details.
-func (s *ConfigSearcher) Download() {
-	if len(s.Dl.Accepted) == 0 {
-		return
-	}
-	downloaded := make([]uint, 0, len(s.Dl.Accepted))
-
-	for idx := range s.Dl.Accepted {
-		if s.Dl.Accepted[idx].Info.M.Priority == 0 {
-			logger.LogDynamic("error", "download not wanted", logger.NewLogField("series", s.Cfgp.Useseries), logger.NewLogField(logger.StrTitle, &s.Dl.Accepted[idx].NZB.Title))
-			continue
-		}
-		if s.checkdownloaded(downloaded, idx) {
-			continue
-		}
-		qualcfg := s.getentryquality(&s.Dl.Accepted[idx])
-		if qualcfg == nil {
-			logger.LogDynamic("info", "nzb found - start downloading", logger.NewLogField("series", s.Cfgp.Useseries), logger.NewLogField(logger.StrTitle, &s.Dl.Accepted[idx].NZB.Title), logger.NewLogField("minimum prio", &s.Dl.Accepted[idx].MinimumPriority), logger.NewLogField(logger.StrPriority, &s.Dl.Accepted[idx].Info.M.Priority))
-		} else {
-			logger.LogDynamic("info", "nzb found - start downloading", logger.NewLogField("series", s.Cfgp.Useseries), logger.NewLogField(logger.StrTitle, &s.Dl.Accepted[idx].NZB.Title), logger.NewLogField("quality", &qualcfg.Name), logger.NewLogField("minimum prio", &s.Dl.Accepted[idx].MinimumPriority), logger.NewLogField(logger.StrPriority, &s.Dl.Accepted[idx].Info.M.Priority))
-		}
-		if !s.Cfgp.Useseries && s.Dl.Accepted[idx].NzbmovieID != 0 {
-			downloaded = append(downloaded, s.Dl.Accepted[idx].NzbmovieID)
-			downloader.DownloadMovie(s.Cfgp, &s.Dl.Accepted[idx].NzbmovieID, &s.Dl.Accepted[idx])
-		} else if s.Cfgp.Useseries && s.Dl.Accepted[idx].NzbepisodeID != 0 {
-			downloaded = append(downloaded, s.Dl.Accepted[idx].NzbepisodeID)
-			downloader.DownloadSeriesEpisode(s.Cfgp, &s.Dl.Accepted[idx].NzbepisodeID, &s.Dl.Accepted[idx])
-		} else if s.Dl.Accepted[idx].NzbmovieID != 0 {
-			downloaded = append(downloaded, s.Dl.Accepted[idx].NzbmovieID)
-			downloader.DownloadMovie(s.Cfgp, &s.Dl.Accepted[idx].NzbmovieID, &s.Dl.Accepted[idx])
-		} else if s.Dl.Accepted[idx].NzbepisodeID != 0 {
-			downloaded = append(downloaded, s.Dl.Accepted[idx].NzbepisodeID)
-			downloader.DownloadSeriesEpisode(s.Cfgp, &s.Dl.Accepted[idx].NzbepisodeID, &s.Dl.Accepted[idx])
-		}
-	}
-	//clear(downloaded)
-	downloaded = nil
-}
-
-// checkdownloaded checks if the entry at index idx has already been downloaded
-// by looking for its movie ID or episode ID in the downloaded slice.
-// It returns true if the entry is already in downloaded.
-func (s *ConfigSearcher) checkdownloaded(downloaded []uint, idx int) bool {
-	for idxi := range downloaded {
-		if s.Dl.Accepted[idx].NzbmovieID != 0 && downloaded[idxi] == s.Dl.Accepted[idx].NzbmovieID {
-			return true
-		}
-		if s.Dl.Accepted[idx].NzbepisodeID != 0 && downloaded[idxi] == s.Dl.Accepted[idx].NzbepisodeID {
-			return true
-		}
-	}
-	return false
-}
-
-// AppendDenied appends the given Nzbwithprio entry to the denied list.
-// If entry is nil, it returns immediately without appending.
-func (s *ConfigSearcher) AppendDenied(entry *apiexternal.Nzbwithprio) {
-	if entry == nil {
-		return
-	}
-	s.Dl.Denied = append(s.Dl.Denied, *entry)
-}
-
-// Close closes all Nzbwithprio entries in the SearchResults by calling
-// the Close method on each entry. It then sets the slices to nil if they have
-// capacity, to allow garbage collection. It also calls the Clear method on
-// the logger to clear any log entries related to this SearchResults.
-func (s *searchResults) Close() {
-	if s == nil {
-		return
-	}
-	for i := range s.Denied {
-		s.Denied[i].ClearArr()
-	}
-	for i := range s.Accepted {
-		s.Accepted[i].ClearArr()
-	}
-	for i := range s.Raw {
-		s.Raw[i].ClearArr()
-	}
-	clear(s.Denied)
-	clear(s.Accepted)
-	clear(s.Raw)
-	s.Denied = s.Denied[:0]
-	s.Accepted = s.Accepted[:0]
-	s.Raw = s.Raw[:0]
-}
-
-// Clear closes all Nzbwithprio entries in the SearchResults by calling
-// the Close method on each entry. It then resets the slices to empty
-// while retaining capacity, to allow garbage collection.
-func (s *searchResults) Clear() {
-	if s == nil || cap(s.Raw) == 0 || len(s.Raw) == 0 {
-		return
-	}
-	for i := range s.Denied {
-		s.Denied[i].WantedAlternates = nil
-		s.Denied[i].Info.M.Languages = nil
-	}
-	for i := range s.Accepted {
-		s.Accepted[i].WantedAlternates = nil
-		s.Accepted[i].Info.M.Languages = nil
-	}
-	for i := range s.Raw {
-		s.Raw[i].WantedAlternates = nil
-		s.Raw[i].Info.M.Languages = nil
-	}
-	clear(s.Denied)
-	clear(s.Accepted)
-	clear(s.Raw)
-	s.Denied = s.Denied[:0]
-	s.Accepted = s.Accepted[:0]
-	s.Raw = s.Raw[:0]
-}
-
-// filterTestQualityWanted checks if the quality attributes of the
-// Nzbwithprio entry match the wanted quality configuration. It returns
-// true if any unwanted quality is found to stop further processing of
-// the entry.
-func (s *ConfigSearcher) filterTestQualityWanted(entry *apiexternal.Nzbwithprio, quality *config.QualityConfig) bool {
-	if quality == nil {
-		return false
-	}
-	if quality.WantedResolutionLen >= 1 && entry.Info.M.Resolution != "" {
-		if !logger.SlicesContainsI(quality.WantedResolution, entry.Info.M.Resolution) {
-			s.logdenied(&strresolutionunwanted, entry, logger.NewLogField("resolution", &entry.Info.M.Resolution), logger.NewLogField("wanted", &quality.WantedResolution))
-			return true
-		}
-	}
-
-	if quality.WantedQualityLen >= 1 && entry.Info.M.Quality != "" {
-		if !logger.SlicesContainsI(quality.WantedQuality, entry.Info.M.Quality) {
-			s.logdenied(&strqualityunwanted, entry, logger.NewLogField("quality", &entry.Info.M.Quality), logger.NewLogField("wanted", &quality.WantedQuality))
-			return true
-		}
-	}
-
-	if quality.WantedAudioLen >= 1 && entry.Info.M.Audio != "" {
-		if !logger.SlicesContainsI(quality.WantedAudio, entry.Info.M.Audio) {
-			s.logdenied(&straudiounwanted, entry, logger.NewLogField("audio", &entry.Info.M.Audio), logger.NewLogField("wanted", &quality.WantedAudio))
-			return true
-		}
-	}
-
-	if quality.WantedCodecLen >= 1 && entry.Info.M.Codec != "" {
-		if !logger.SlicesContainsI(quality.WantedCodec, entry.Info.M.Codec) {
-			s.logdenied(&strcodecunwanted, entry, logger.NewLogField("codec", &entry.Info.M.Codec), logger.NewLogField("wanted", &quality.WantedCodec))
-			return true
-		}
-	}
-	return false
-}
-
-// Close closes the ConfigSearcher, including closing any open connections and clearing resources.
-func (s *ConfigSearcher) Close() {
-	if s == nil {
-		return
-	}
-	s.Sourceentry.ClearArr()
-	//*s = ConfigSearcher{Dl: searchResults{Raw: s.Dl.Raw[:0]}, Mu: s.Mu}
-	plsearcher.Put(s.Dl)
-	*s = ConfigSearcher{}
-}
-
-// searchparse parses the raw search results, runs validation on each entry, assigns quality
-// profiles and priorities, separates accepted and denied entries, and sorts accepted entries
-// by priority
-func (s *ConfigSearcher) searchparse(alttitles []database.DbstaticTwoStringOneInt) {
-	if len(s.Dl.Raw) == 0 {
-		return
-	}
-	s.Dl.Denied = s.Dl.Raw[:0]
-	s.Dl.Accepted = s.Dl.Raw[:0]
-	for idxraw := range s.Dl.Raw {
-		if s.Dl.Raw[idxraw].NZB.DownloadURL == "" {
-			s.logdenied(&strnourl, &s.Dl.Raw[idxraw])
-			continue
-		}
-		if s.Dl.Raw[idxraw].NZB.Title == "" {
-			s.logdenied(&strnotitle, &s.Dl.Raw[idxraw])
-			continue
-		}
-		if s.Dl.Raw[idxraw].NZB.Title != "" && (s.Dl.Raw[idxraw].NZB.Title[:1] == " " || s.Dl.Raw[idxraw].NZB.Title[len(s.Dl.Raw[idxraw].NZB.Title)-1:] == " ") {
-			s.Dl.Raw[idxraw].NZB.Title = strings.Trim(s.Dl.Raw[idxraw].NZB.Title, " ")
-		}
-		if len(s.Dl.Raw[idxraw].NZB.Title) <= 3 {
-			s.logdenied(&strshorttitle, &s.Dl.Raw[idxraw])
-			continue
-		}
-		if s.checkprocessed(&s.Dl.Raw[idxraw]) {
-			continue
-		}
-		//Check Size
-		if s.Dl.Raw[idxraw].NZB.Indexer != nil {
-			skipemptysize := false
-			indcfg := qualityIndexerByQualityAndTemplate(s.Quality, s.Dl.Raw[idxraw].NZB.Indexer)
-			if indcfg != nil {
-				skipemptysize = indcfg.SkipEmptySize
-			}
-			if !skipemptysize {
-				if _, ok := config.SettingsList[s.Dl.Raw[idxraw].NZB.Indexer.Name]; ok {
-					skipemptysize = s.Quality.Indexer[0].SkipEmptySize
-				} else if getlistbyindexer(s.Dl.Raw[idxraw].NZB.Indexer) != nil {
-					skipemptysize = s.Quality.Indexer[0].SkipEmptySize
-				}
-			}
-			if skipemptysize && s.Dl.Raw[idxraw].NZB.Size == 0 {
-				s.logdenied(&strnosize, &s.Dl.Raw[idxraw])
-				continue
-			}
-		}
-
-		//check history
-		if s.filterSizeNzbs(&s.Dl.Raw[idxraw]) {
-			continue
-		}
-		if s.checkcorrectid(&s.Dl.Raw[idxraw]) {
-			continue
-		}
-
-		parser.ParseFileP(s.Dl.Raw[idxraw].NZB.Title, false, false, s.Cfgp, -1, &s.Dl.Raw[idxraw].Info)
-		//if s.searchActionType == logger.StrRss {
-		if !s.Cfgp.Useseries && !s.Dl.Raw[idxraw].NZB.Indexer.TrustWithIMDBIDs {
-			s.Dl.Raw[idxraw].Info.M.Imdb = ""
-		}
-		if s.Cfgp.Useseries && !s.Dl.Raw[idxraw].NZB.Indexer.TrustWithTVDBIDs {
-			s.Dl.Raw[idxraw].Info.M.Tvdb = ""
-		}
-		//}
-		if s.searchActionType == logger.StrRss {
-			s.Sourceentry.Close()
-		}
-		err := parser.GetDBIDs(&s.Dl.Raw[idxraw].Info)
-		if err != nil {
-			s.logdeniederr(err, &s.Dl.Raw[idxraw])
-			continue
-		}
-		var qual *config.QualityConfig
-		var skip bool
-		if s.searchActionType == logger.StrRss {
-			skip, qual = s.getmediadatarss(&s.Dl.Raw[idxraw], -1, false)
-			if skip {
-				continue
-			}
-		} else {
-			if s.getmediadata(&s.Dl.Raw[idxraw]) {
-				continue
-			}
-			qual = s.Quality
-			s.Dl.Raw[idxraw].WantedAlternates = alttitles
-		}
-		//needs the identifier from getmediadata
-
-		if qual == nil {
-			qual = s.getentryquality(&s.Dl.Raw[idxraw])
-		}
-		if qual == nil {
-			s.logdenied(&strqualityunknown, &s.Dl.Raw[idxraw])
-			continue
-		}
-		if s.checkhistory(&s.Dl.Raw[idxraw], qual) {
-			continue
-		}
-		if s.checkepisode(&s.Dl.Raw[idxraw]) {
-			continue
-		}
-
-		if s.filterRegexNzbs(&s.Dl.Raw[idxraw], qual) {
-			continue
-		}
-
-		if s.Dl.Raw[idxraw].Info.M.Priority == 0 {
-			parser.GetPriorityMapQual(&s.Dl.Raw[idxraw].Info.M, s.Cfgp, qual, false, true)
-
-			if s.Dl.Raw[idxraw].Info.M.Priority == 0 {
-				s.logdenied(&strpriounknown, &s.Dl.Raw[idxraw], logger.NewLogField("m", &s.Dl.Raw[idxraw].Info.M))
-				continue
-			}
-		}
-
-		importfeed.StripTitlePrefixPostfixGetQual(&s.Dl.Raw[idxraw].Info.M, qual)
-
-		//check quality
-		if s.filterTestQualityWanted(&s.Dl.Raw[idxraw], qual) {
-			continue
-		}
-		//check priority
-
-		if s.getminimumpriority(&s.Dl.Raw[idxraw], qual) {
-			continue
-		}
-		if s.Dl.Raw[idxraw].MinimumPriority != 0 && s.Dl.Raw[idxraw].MinimumPriority == s.Dl.Raw[idxraw].Info.M.Priority {
-			s.logdenied(&strpriosame, &s.Dl.Raw[idxraw])
-			continue
-		}
-
-		if s.Dl.Raw[idxraw].MinimumPriority != 0 {
-			if qual.UseForPriorityMinDifference == 0 && s.Dl.Raw[idxraw].Info.M.Priority <= s.Dl.Raw[idxraw].MinimumPriority {
-				s.logdenied(&strpriolower, &s.Dl.Raw[idxraw], logger.NewLogField("found prio", s.Dl.Raw[idxraw].Info.M.Priority))
-				continue
-			}
-			if qual.UseForPriorityMinDifference != 0 && s.Dl.Raw[idxraw].Info.M.Priority <= (s.Dl.Raw[idxraw].MinimumPriority+qual.UseForPriorityMinDifference) {
-				s.logdenied(&strpriolower, &s.Dl.Raw[idxraw], logger.NewLogField("found prio", s.Dl.Raw[idxraw].Info.M.Priority))
-				continue
-			}
-		}
-
-		if s.checkyear(&s.Dl.Raw[idxraw], qual) {
-			continue
-		}
-
-		if s.checktitle(&s.Dl.Raw[idxraw], qual) {
-			continue
-		}
-
-		logger.LogDynamic("debug", "Release ok", logger.NewLogField("quality", &qual.Name), logger.NewLogField(logger.StrTitle, &s.Dl.Raw[idxraw].NZB.Title), logger.NewLogField("minimum prio", &s.Dl.Raw[idxraw].MinimumPriority), logger.NewLogField(logger.StrPriority, &s.Dl.Raw[idxraw].Info.M.Priority))
-
-		s.Dl.Accepted = append(s.Dl.Accepted, s.Dl.Raw[idxraw])
-		if qual.CheckUntilFirstFound {
-			break
-		}
-	}
-	if database.DBLogLevel == logger.StrDebug {
-		logger.LogDynamic("debug", "Entries found", logger.NewLogField("Count", len(s.Dl.Raw)))
-	}
-	if len(s.Dl.Accepted) > 1 {
-		sort.Slice(s.Dl.Accepted, func(i, j int) bool {
-			return s.Dl.Accepted[i].Info.M.Priority > s.Dl.Accepted[j].Info.M.Priority
-		})
-	}
-}
-
-// getminimumpriority checks the minimum priority configured for the entry's movie or series.
-// It sets the MinimumPriority field on the entry based on priorities configured in the quality
-// profiles. Returns true to skip the entry if upgrade/search is disabled or priority does not meet
-// configured minimum.
-func (s *ConfigSearcher) getminimumpriority(entry *apiexternal.Nzbwithprio, cfgqual *config.QualityConfig) bool {
-	if entry.MinimumPriority != 0 {
-		return false
-	}
-	if !s.Cfgp.Useseries {
-		entry.MinimumPriority, _ = Getpriobyfiles(false, &entry.NzbmovieID, false, -1, cfgqual)
-	} else {
-		//Check Minimum Priority
-		entry.MinimumPriority, _ = Getpriobyfiles(true, &entry.NzbepisodeID, false, -1, cfgqual)
-	}
-	if entry.MinimumPriority != 0 {
-		if entry.DontUpgrade {
-			s.logdenied(&strupgradedisabled, entry)
-			return true
-		}
-	} else {
-		if entry.DontSearch {
-			s.logdenied(&strsearchdisabled, entry)
-			return true
-		}
-	}
-	return false
-}
-
-// getregexcfg returns the regex configuration for the given quality config
-// that matches the indexer name in the given Nzbwithprio entry. It first checks
-// the Indexer list in the quality config, and falls back to the SettingsList
-// global config if no match is found. Returns nil if no match is found.
-func getregexcfg(entry *apiexternal.Nzbwithprio, qual *config.QualityConfig) *config.RegexConfig {
-	if entry.NZB.Indexer != nil {
-		indcfg := qualityIndexerByQualityAndTemplate(qual, entry.NZB.Indexer)
-		if indcfg != nil {
-			return indcfg.CfgRegex
-		}
-		if _, ok := config.SettingsList[entry.NZB.Indexer.Name]; ok {
-			return qual.Indexer[0].CfgRegex
-		}
-		if getlistbyindexer(entry.NZB.Indexer) != nil {
-			return qual.Indexer[0].CfgRegex
-		}
-	}
-	return nil
-}
-
-// checkcorrectid checks if the entry matches the expected ID based on
-// whether it is a movie or series. For movies it checks the IMDB ID,
-// trimming any "t0" prefix. For series it checks the TVDB ID. If the
-// IDs don't match, it logs a message and returns true to skip the entry.
-func (s *ConfigSearcher) checkcorrectid(entry *apiexternal.Nzbwithprio) bool {
-	if s.searchActionType == logger.StrRss {
-		return false
-	}
-	if !s.Cfgp.Useseries {
-		if entry.NZB.IMDBID != "" && s.Sourceentry.Info.M.Imdb != "" && s.Sourceentry.Info.M.Imdb != entry.NZB.IMDBID {
-			if strings.TrimLeft(s.Sourceentry.Info.M.Imdb, "t0") != strings.TrimLeft(entry.NZB.IMDBID, "t0") {
-				s.logdenied(&strnotmatchimdb, entry, logger.NewLogField("wanted imdb", &s.Sourceentry.Info.M.Imdb), logger.NewLogField("found imdb", &entry.NZB.IMDBID))
-				return true
-			}
-		}
-		return false
-	}
-	if s.Sourceentry.NZB.TVDBID != 0 && entry.NZB.TVDBID != 0 && s.Sourceentry.NZB.TVDBID != entry.NZB.TVDBID {
-		s.logdenied(&strnotmatchtvdb, entry, logger.NewLogField("wanted tvdb", &s.Sourceentry.NZB.TVDBID), logger.NewLogField("found tvdb", &entry.NZB.TVDBID))
-		return true
-	}
-	return false
-}
-
-// getmediadata validates the media data in the given entry against the
-// source entry to determine if it is a match. It sets various priority
-// and search control fields on the entry based on the source entry
-// configuration. Returns true to skip/reject the entry if no match, false
-// to continue processing if a match.
-func (s *ConfigSearcher) getmediadata(entry *apiexternal.Nzbwithprio) bool {
-	if !s.Cfgp.Useseries {
-		if s.Sourceentry.NzbmovieID != entry.Info.M.MovieID {
-			s.logdenied(&strmovieunwanted, entry)
-			return true
-		}
-		entry.NzbmovieID = s.Sourceentry.NzbmovieID
-		entry.Dbid = s.Sourceentry.Dbid
-		entry.MinimumPriority = s.Sourceentry.MinimumPriority
-		entry.DontSearch = s.Sourceentry.DontSearch
-		entry.DontUpgrade = s.Sourceentry.DontUpgrade
-		entry.WantedTitle = s.Sourceentry.WantedTitle
-		return false
-	}
-
-	//Parse Series
-	if entry.Info.M.SerieEpisodeID != s.Sourceentry.NzbepisodeID {
-		s.logdenied(&strepisodeunwanted, entry)
-		return true
-	}
-	entry.NzbepisodeID = s.Sourceentry.NzbepisodeID
-	entry.Dbid = s.Sourceentry.Dbid
-	entry.MinimumPriority = s.Sourceentry.MinimumPriority
-	entry.DontSearch = s.Sourceentry.DontSearch
-	entry.DontUpgrade = s.Sourceentry.DontUpgrade
-	entry.WantedTitle = s.Sourceentry.WantedTitle
-
-	return false
-}
-
-// getmediadatarss processes an Nzbwithprio entry for adding to the RSS feed.
-// It handles movie and series entries differently based on ConfigSearcher.Cfgp.Useseries.
-// For movies, it tries to add the entry to the list with ID addinlistid, or adds it if addifnotfound is true.
-// For series, it calls getserierss to filter the entry.
-// It returns true if the entry should be skipped.
-func (s *ConfigSearcher) getmediadatarss(entry *apiexternal.Nzbwithprio, addinlistid int, addifnotfound bool) (bool, *config.QualityConfig) {
-	if !s.Cfgp.Useseries {
-		if addinlistid != -1 && s.Cfgp != nil {
-			entry.Info.M.ListID = addinlistid
-		}
-
-		return s.getmovierss(entry, addinlistid, addifnotfound)
-	}
-
-	//Parse Series
-	//Filter RSS Series
-	return s.getserierss(entry)
-}
-
-// checkyear validates the year in the entry title against the year
-// configured for the wanted entry. It returns false if a match is found,
-// or true to skip the entry if no match is found. This is used during
-// search result processing to filter entries by year.
-func (s *ConfigSearcher) checkyear(entry *apiexternal.Nzbwithprio, qual *config.QualityConfig) bool {
-	if s.Cfgp.Useseries || s.searchActionType == logger.StrRss {
-		return false
-	}
-	if s.Sourceentry.Info.M.Year == 0 {
-		s.logdenied(&strnoyear, entry)
-		return true
-	}
-	if (qual.CheckYear || qual.CheckYear1) && logger.ContainsInt(entry.NZB.Title, s.Sourceentry.Info.M.Year) {
-		return false
-	}
-	if qual.CheckYear1 && logger.ContainsInt(entry.NZB.Title, s.Sourceentry.Info.M.Year+1) {
-		return false
-	}
-	if qual.CheckYear1 && logger.ContainsInt(entry.NZB.Title, s.Sourceentry.Info.M.Year-1) {
-		return false
-	}
-	s.logdenied(&stryearunwanted, entry, logger.NewLogField("wanted year", &s.Sourceentry.Info.M.Year))
-	return true
-}
-
-// checktitle validates the title and alternate titles of the entry against
-// the wanted title and quality configuration. It returns false if a match is
-// found, or true to skip the entry if no match is found. This is an internal
-// function used during search result processing.
-func (s *ConfigSearcher) checktitle(entry *apiexternal.Nzbwithprio, qual *config.QualityConfig) bool {
-	//Checktitle
-	if !qual.CheckTitle {
-		return false
-	}
-	if qual != nil {
-		importfeed.StripTitlePrefixPostfixGetQual(&entry.Info.M, qual)
-	}
-
-	wantedslug := logger.StringToSlug(entry.WantedTitle)
-	if entry.WantedTitle != "" {
-		if qual.CheckTitle && entry.WantedTitle != "" && apiexternal.ChecknzbtitleB(entry.WantedTitle, wantedslug, entry.Info.M.Title, qual.CheckYear1, entry.Info.M.Year) {
-			return false
-		}
-	}
-	var trytitle string
-	if entry.WantedTitle != "" && strings.ContainsRune(entry.Info.M.Title, ']') {
-		for i := len(entry.Info.M.Title) - 1; i >= 0; i-- {
-			if strings.EqualFold(entry.Info.M.Title[i:i+1], "]") {
-				if i < (len(entry.Info.M.Title) - 1) {
-					trytitle = strings.TrimLeft(entry.Info.M.Title[i+1:], "-. ")
-					if qual.CheckTitle && entry.WantedTitle != "" && apiexternal.ChecknzbtitleB(entry.WantedTitle, wantedslug, trytitle, qual.CheckYear1, entry.Info.M.Year) {
-						return false
-					}
-				}
-			}
-		}
-		// return -1
-
-		// 	u := logger.IndexILast(entry.Info.M.Title, "]")
-		// 	if u != -1 && u < (len(entry.Info.M.Title)-1) {
-		// 		trytitle = strings.TrimLeft(entry.Info.M.Title[u+1:], "-. ")
-		// 		if qual.CheckTitle && entry.WantedTitle != "" && apiexternal.ChecknzbtitleB(entry.WantedTitle, wantedslug, trytitle, qual.CheckYear1, entry.Info.M.Year) {
-		// 			return false
-		// 		}
-		// 	}
-	}
-	if entry.Dbid != 0 && len(entry.WantedAlternates) == 0 {
-		entry.WantedAlternates = database.Getentryalternatetitlesdirect(entry.Dbid, s.Cfgp.Useseries)
-	}
-
-	if entry.Info.M.Title == "" || len(entry.WantedAlternates) == 0 {
-		s.logdenied(&strtitleunwanted, entry)
-		return true
-	}
-	for idx := range entry.WantedAlternates {
-		if entry.WantedAlternates[idx].Str1 == "" {
-			continue
-		}
-		if entry.WantedAlternates[idx].Str2 == "" {
-			entry.WantedAlternates[idx].Str2 = logger.StringToSlug(entry.WantedAlternates[idx].Str1)
-		}
-
-		if apiexternal.ChecknzbtitleB(entry.WantedAlternates[idx].Str1, entry.WantedAlternates[idx].Str2, entry.Info.M.Title, qual.CheckYear1, entry.Info.M.Year) {
-			return false
-		}
-
-		if trytitle != "" {
-			if apiexternal.ChecknzbtitleB(entry.WantedAlternates[idx].Str1, entry.WantedAlternates[idx].Str2, trytitle, qual.CheckYear1, entry.Info.M.Year) {
-				return false
-			}
-		}
-	}
-	s.logdenied(&strtitlealternateunwanted, entry)
-	return true
-}
-
-// checkepisode validates the episode identifier in the entry against the
-// season and episode values. It returns false if the identifier matches the
-// expected format, or true to skip the entry if the identifier is invalid.
-func (s *ConfigSearcher) checkepisode(entry *apiexternal.Nzbwithprio) bool {
-	//Checkepisode
-	if !s.Cfgp.Useseries {
-		return false
-	}
-	if s.Sourceentry.Info.M.Identifier == "" && s.searchActionType == logger.StrRss {
-		return false
-	}
-	if s.Sourceentry.Info.M.Identifier == "" {
-		s.logdenied(&strnoidentifier, entry)
-		return true
-	}
-	if logger.ContainsI(entry.NZB.Title, s.Sourceentry.Info.M.Identifier) {
-		return false
-	}
-	if strings.ContainsRune(s.Sourceentry.Info.M.Identifier, '-') && s.Sourceentry.NZB.Season != "" && s.Sourceentry.NZB.Episode != "" {
-		if logger.ContainsI(entry.NZB.Title, logger.StringReplaceWith(s.Sourceentry.Info.M.Identifier, '-', '.')) {
-			return false
-		}
-		if logger.ContainsI(entry.NZB.Title, logger.StringReplaceWith(s.Sourceentry.Info.M.Identifier, '-', ' ')) {
-			return false
-		}
-	}
-	// Check For S01E01 S01 E01 1x01 1 x 01 S01E02E03
-	altIdentifier := []byte(strings.TrimLeft(s.Sourceentry.Info.M.Identifier, "sS0"))
-	if bytes.ContainsRune(altIdentifier, 'E') || bytes.ContainsRune(altIdentifier, 'e') {
-		altIdentifier = logger.ByteReplaceWithByte(logger.ByteReplaceWithByte(altIdentifier, 'e', 'x'), 'E', 'x')
-	}
-
-	if logger.ContainsI(entry.NZB.Title, string(altIdentifier)) {
-		return false
-	}
-	if strings.ContainsRune(s.Sourceentry.Info.M.Identifier, '-') && s.Sourceentry.NZB.Season != "" && s.Sourceentry.NZB.Episode != "" {
-		if logger.ContainsI(entry.NZB.Title, string(logger.ByteReplaceWithByte(altIdentifier, '-', '.'))) {
-			return false
-		}
-		if logger.ContainsI(entry.NZB.Title, string(logger.ByteReplaceWithByte(altIdentifier, '-', ' '))) {
-			return false
-		}
-	}
-
-	if s.Sourceentry.NZB.Season == "" || s.Sourceentry.NZB.Episode == "" {
-		s.logdenied(&stridentifierunwanted, entry, logger.NewLogField("identifier", &s.Sourceentry.Info.M.Identifier))
-		return true
-	}
-
-	sprefix, eprefix := "s", "e"
-	if logger.ContainsI(s.Sourceentry.Info.M.Identifier, "x") {
-		sprefix = ""
-		eprefix = "x"
-	} else if !logger.ContainsI(s.Sourceentry.Info.M.Identifier, "s") && !logger.ContainsI(s.Sourceentry.Info.M.Identifier, "e") {
-		s.logdenied(&stridentifierunwanted, entry, logger.NewLogField("identifier", &s.Sourceentry.Info.M.Identifier))
-		return true
-	}
-
-	if !logger.HasPrefixI(s.Sourceentry.Info.M.Identifier, sprefix+s.Sourceentry.NZB.Season) {
-		s.logdenied(&strseasonunwanted, entry, logger.NewLogField("identifier", &s.Sourceentry.Info.M.Identifier))
-		return true
-	}
-	if !logger.ContainsI(s.Sourceentry.Info.M.Identifier, s.Sourceentry.NZB.Episode) {
-		return true
-	}
-
-	//suffixcheck
-
-	if checkprefixarray(s.Sourceentry.Info.M.Identifier, eprefix, s.Sourceentry.NZB.Episode) {
-		return false
-	}
-
-	episodesuffixarray := []string{eprefix, " ", "-"}
-	defer clear(episodesuffixarray)
-	firstpart := eprefix + s.Sourceentry.NZB.Episode
-	for idx := range episodesuffixarray {
-		if logger.ContainsI(s.Sourceentry.Info.M.Identifier, firstpart+episodesuffixarray[idx]) {
-			return false
-		}
-		if checkprefixarray(s.Sourceentry.Info.M.Identifier, eprefix, s.Sourceentry.NZB.Episode+episodesuffixarray[idx]) {
-			return false
-		}
-	}
-
-	s.logdenied(&stridentifierunwanted, entry, logger.NewLogField("identifier", &s.Sourceentry.Info.M.Identifier))
-	return true
-}
-
-// checkprefixarray checks if string s contains v1+any value in episodeprefixarray+v2 as a suffix.
-// Returns true if a match is found, false otherwise.
-func checkprefixarray(s string, v1, v2 string) bool {
-	for idxsub := range episodeprefixarray {
-		if logger.HasSuffixI(s, v1+episodeprefixarray[idxsub]+v2) {
-			return true
-		}
-	}
-	return false
-}
-
-// getmovierss validates the movie data in the entry, sets additional fields,
-// queries the database for movie data like dontSearch/dontUpgrade flags,
-// and returns false to continue search result processing or true to skip the entry.
-func (s *ConfigSearcher) getmovierss(entry *apiexternal.Nzbwithprio, addinlistid int, addifnotfound bool) (bool, *config.QualityConfig) {
-	//Add DbMovie if not found yet and enabled
-	if entry.Info.M.DbmovieID == 0 && (!addifnotfound || !logger.HasPrefixI(entry.NZB.IMDBID, logger.StrTt)) {
-		s.logdenied(&strdbmovieunwanted, entry)
-		return true, nil
-	}
-	//add movie if not found
-	if addifnotfound && (entry.Info.M.DbmovieID == 0 || entry.Info.M.MovieID == 0) && logger.HasPrefixI(entry.NZB.IMDBID, logger.StrTt) {
-		if addinlistid == -1 {
-			return true, nil
-		}
-		bl, err := importfeed.AllowMovieImport(entry.NZB.IMDBID, s.Cfgp.Lists[addinlistid].CfgList)
-		if err != nil {
-			s.logdeniederr(err, entry)
-			return true, nil
-		}
-		if !bl {
-			s.logdenied(&strunalloweddbmovie, entry)
-			return true, nil
-		}
-	}
-	if addifnotfound && entry.Info.M.DbmovieID == 0 && logger.HasPrefixI(entry.NZB.IMDBID, logger.StrTt) {
-		var err error
-		entry.Info.M.DbmovieID, err = importfeed.JobImportMovies(entry.NZB.IMDBID, s.Cfgp, addinlistid, true)
-		if err != nil {
-			s.logdeniederr(err, entry)
-			return true, nil
-		}
-		database.ScanrowsNdyn(false, database.QueryMoviesGetIDByDBIDListname, &entry.Info.M.MovieID, &entry.Info.M.DbmovieID, &s.Cfgp.Lists[addinlistid].Name)
-		if entry.Info.M.MovieID == 0 || entry.Info.M.DbmovieID == 0 {
-			s.logdenied(&strmovieunwanted, entry)
-			return true, nil
-		}
-	}
-	if entry.Info.M.DbmovieID == 0 {
-		s.logdenied(&strdbmovieunwanted, entry)
-		return true, nil
-	}
-
-	//continue only if dbmovie found
-	//Get List of movie by dbmovieid, year and possible lists
-
-	//if list was not found : should we add the movie to the list?
-	if addifnotfound && entry.Info.M.MovieID == 0 && logger.HasPrefixI(entry.NZB.IMDBID, logger.StrTt) {
-		if addinlistid == -1 {
-			s.logdenied(&strnoaddinlist, entry)
-			return true, nil
-		}
-
-		err := importfeed.Checkaddmovieentry(entry.Info.M.DbmovieID, &s.Cfgp.Lists[addinlistid], &entry.NZB.IMDBID)
-		if err != nil {
-			s.logdeniederr(err, entry)
-			return true, nil
-		}
-		if entry.Info.M.DbmovieID != 0 && entry.Info.M.MovieID == 0 {
-			database.ScanrowsNdyn(false, database.QueryMoviesGetIDByDBIDListname, &entry.Info.M.MovieID, &entry.Info.M.DbmovieID, &s.Cfgp.Lists[addinlistid].Name)
-		}
-		if entry.Info.M.DbmovieID == 0 || entry.Info.M.MovieID == 0 {
-			s.logdenied(&strmovieunwanted, entry)
-			return true, nil
-		}
-	}
-
-	if entry.Info.M.MovieID == 0 {
-		s.logdenied(&strmovieunwanted, entry)
-		return true, nil
-	}
-	entry.Dbid = entry.Info.M.DbmovieID
-	entry.NzbmovieID = entry.Info.M.MovieID
-
-	database.GetdatarowArgs("select movies.dont_search, movies.dont_upgrade, movies.listname, movies.quality_profile, dbmovies.title from movies inner join dbmovies ON dbmovies.id=movies.dbmovie_id where movies.id = ?", &entry.Info.M.MovieID, &entry.DontSearch, &entry.DontUpgrade, &entry.Listname, &entry.Quality, &entry.WantedTitle)
-
-	entry.Info.M.ListID = database.GetMediaListID(s.Cfgp, entry.Listname)
-	if entry.Quality == "" {
-		return false, config.SettingsQuality[s.Cfgp.DefaultQuality]
-	}
-	return false, config.SettingsQuality[entry.Quality]
-}
-
-// getentryquality returns the quality config for the given entry.
-// If the entry is for a movie, it gets the config from the movies database using the movie ID.
-// If the entry is for a TV episode, it gets the config from the series database using the episode ID.
-// If no ID is set, it returns nil.
-func (s *ConfigSearcher) getentryquality(entry *apiexternal.Nzbwithprio) *config.QualityConfig {
-	if entry.Info.M.MovieID != 0 {
-		return database.GetMediaQualityConfig(s.Cfgp, &entry.Info.M.MovieID)
-	}
-	if entry.Info.M.SerieEpisodeID != 0 {
-		return database.GetMediaQualityConfig(s.Cfgp, &entry.Info.M.SerieEpisodeID)
-	}
-	return nil
-}
-
-// getserierss validates the series data in the entry, sets additional fields,
-// queries the database for series/episode data like dontSearch/dontUpgrade flags,
-// and returns false to continue search result processing or true to skip the entry.
-func (s *ConfigSearcher) getserierss(entry *apiexternal.Nzbwithprio) (bool, *config.QualityConfig) {
-	if entry.Info.M.SerieID == 0 {
-		s.logdenied(&strserieunwanted, entry)
-		return true, nil
-	}
-	if entry.Info.M.DbserieID == 0 {
-		s.logdenied(&strdbserieunwanted, entry)
-		return true, nil
-	}
-	if entry.Info.M.DbserieEpisodeID == 0 {
-		s.logdenied(&strdbepisodeunwanted, entry)
-		return true, nil
-	}
-	if entry.Info.M.SerieEpisodeID == 0 {
-		s.logdenied(&strepisodeunwanted, entry)
-		return true, nil
-	}
-	entry.NzbepisodeID = entry.Info.M.SerieEpisodeID
-	entry.Dbid = entry.Info.M.DbserieID
-
-	database.GetdatarowArgs("select serie_episodes.dont_search, serie_episodes.dont_upgrade, serie_episodes.quality_profile, series.listname, dbseries.seriename from serie_episodes inner join series ON series.id=serie_episodes.serie_id inner join dbseries ON dbseries.id=serie_episodes.dbserie_id where serie_episodes.id = ?", &entry.Info.M.SerieEpisodeID, &entry.DontSearch, &entry.DontUpgrade, &entry.Quality, &entry.Listname, &entry.WantedTitle)
-	entry.Info.M.ListID = database.GetMediaListID(s.Cfgp, entry.Listname)
-	if entry.Quality == "" {
-		return false, config.SettingsQuality[s.Cfgp.DefaultQuality]
-	}
-	return false, config.SettingsQuality[entry.Quality]
-}
-
-// GetRSSFeed queries the RSS feed for the given media list, searches for and downloads new items,
-// and adds them to the search results. It handles checking if the indexer is blocked,
-// configuring the custom RSS feed URL, getting the last ID to prevent duplicates,
-// parsing results, and updating the RSS history.
-func (s *ConfigSearcher) GetRSSFeed(listentry *config.MediaListsConfig, downloadentries bool, autoclose bool) error {
-	if autoclose {
-		defer s.Close()
-	}
-	if listentry.TemplateList == "" {
-		return errors.New("listname template empty")
-	}
-
-	s.searchActionType = logger.StrRss
-
-	intid := -1
-	for index := range s.Quality.Indexer {
-		if s.Quality.Indexer[index].TemplateIndexer == listentry.TemplateList || strings.EqualFold(s.Quality.Indexer[index].TemplateIndexer, listentry.TemplateList) {
-			intid = index
-			break
-		}
-	}
-	if intid != -1 && s.Quality.Indexer[intid].TemplateRegex == "" {
-		return errors.New("regex template empty")
-	}
-
-	blockinterval := -5
-	if config.SettingsGeneral.FailedIndexerBlockTime != 0 {
-		blockinterval = -1 * config.SettingsGeneral.FailedIndexerBlockTime
-	}
-
-	intval := logger.TimeGetNow().Add(time.Minute * time.Duration(blockinterval))
-	if database.GetdatarowN[uint](false, "select count() from indexer_fails where indexer = ? and last_fail > ?", &listentry.CfgList.URL, &intval) >= 1 {
-		logger.LogDynamic("debug", "Indexer temporarily disabled due to fail in last", logger.NewLogField(logger.StrListname, &listentry.TemplateList), logger.NewLogField("Minutes", blockinterval))
-		return logger.ErrDisabled
-	}
-
-	if s.Cfgp == nil {
-		return logger.ErrOther
-	}
-
-	customindexer := *config.SettingsIndexer[listentry.TemplateList]
-	customindexer.Name = listentry.TemplateList
-	customindexer.Customrssurl = listentry.CfgList.URL
-	customindexer.URL = listentry.CfgList.URL
-	customindexer.MaxEntries = logger.StringToInt(listentry.CfgList.Limit)
-	xmlret := apiexternal.QueryNewznabRSSLastCustom(&customindexer, s.Quality, database.GetdatarowN[string](false, "select last_id from r_sshistories where config = ? COLLATE NOCASE and list = ? COLLATE NOCASE", &listentry.TemplateList, &s.Quality.Name), nil, &s.Mu, &s.Dl.Raw)
-	if xmlret.FirstID != "" && len(s.Dl.Raw) >= 1 {
-		addrsshistory(&listentry.CfgList.URL, &xmlret.FirstID, s.Quality, &s.Cfgp.NamePrefix)
-	}
-	if xmlret.Err != nil {
-		return xmlret.Err
-	}
-	if len(s.Dl.Raw) >= 1 {
-		if xmlret.FirstID != "" {
-			addrsshistory(&listentry.CfgList.URL, &xmlret.FirstID, s.Quality, &listentry.TemplateList)
-		}
-		s.searchparse(nil)
-
-		if downloadentries {
-			s.Download()
-		}
-	}
-	xmlret.Close()
-
-	return nil
-}
-
-// MovieFillSearchVar fills the search variables for the given movie ID.
-// It queries the database to get the movie details and configures the
-// search based on priorities, upgrade settings etc.
-func (s *ConfigSearcher) MovieFillSearchVar(movieid *uint) error {
-	s.Sourceentry.Close()
-	database.GetdatarowArgs("select movies.dbmovie_id, movies.dont_search, movies.dont_upgrade, movies.listname, movies.quality_profile, dbmovies.year, dbmovies.imdb_id, dbmovies.title from movies inner join dbmovies ON dbmovies.id=movies.dbmovie_id where movies.id = ?", movieid, &s.Sourceentry.Dbid, &s.Sourceentry.DontSearch, &s.Sourceentry.DontUpgrade, &s.Sourceentry.Listname, &s.Sourceentry.Quality, &s.Sourceentry.Info.M.Year, &s.Sourceentry.Info.M.Imdb, &s.Sourceentry.WantedTitle)
-	if s.Sourceentry.Dbid == 0 {
-		return logger.ErrNotFoundDbmovie
-	}
-	if s.Sourceentry.DontSearch {
-		return logger.ErrDisabled
-	}
-
-	s.Sourceentry.NzbmovieID = *movieid
-	s.Sourceentry.MinimumPriority, _ = Getpriobyfiles(s.Cfgp.Useseries, movieid, false, -1, s.Quality)
-
-	var err error
-	s.searchActionType, err = getsearchtype(s.Sourceentry.MinimumPriority, s.Sourceentry.DontUpgrade, false)
-	if err != nil {
-		return err
-	}
-
-	if s.Sourceentry.Info.M.Year == 0 {
-		return errors.New("year for movie not found")
-	}
-	s.Sourceentry.Info.M.ListID = database.GetMediaListID(s.Cfgp, s.Sourceentry.Listname)
-	if s.Sourceentry.Quality == "" {
-		s.Quality = config.SettingsQuality[s.Cfgp.DefaultQuality]
-	}
-	s.Quality = config.SettingsQuality[s.Sourceentry.Quality]
-	return nil
-}
-
-// EpisodeFillSearchVar fills the search variables for the given episode ID.
-// It queries the database to get the necessary data and configures the
-// search based on priorities, upgrade settings etc.
-func (s *ConfigSearcher) EpisodeFillSearchVar(episodeid *uint) error {
-	s.Sourceentry.Close()
-
-	//dbserie_episode_id, dbserie_id, serie_id, dont_search, dont_upgrade
-	database.GetdatarowArgs("select serie_episodes.dbserie_episode_id, serie_episodes.dbserie_id, serie_episodes.serie_id, serie_episodes.dont_search, serie_episodes.dont_upgrade, serie_episodes.quality_profile, series.listname, dbseries.thetvdb_id, dbseries.seriename, dbserie_episodes.season, dbserie_episodes.episode, dbserie_episodes.identifier from serie_episodes inner join series ON series.id=serie_episodes.serie_id inner join dbseries ON dbseries.id=serie_episodes.dbserie_id inner join dbserie_episodes ON dbserie_episodes.id=serie_episodes.dbserie_episode_id where serie_episodes.id = ?", episodeid, &s.Sourceentry.Info.M.DbserieEpisodeID, &s.Sourceentry.Dbid, &s.Sourceentry.Info.M.SerieID, &s.Sourceentry.DontSearch, &s.Sourceentry.DontUpgrade, &s.Sourceentry.Quality, &s.Sourceentry.Listname, &s.Sourceentry.NZB.TVDBID, &s.Sourceentry.WantedTitle, &s.Sourceentry.NZB.Season, &s.Sourceentry.NZB.Episode, &s.Sourceentry.Info.M.Identifier)
-	if s.Sourceentry.Info.M.DbserieEpisodeID == 0 || s.Sourceentry.Dbid == 0 || s.Sourceentry.Info.M.SerieID == 0 {
-		return logger.ErrNotFoundDbserie
-	}
-	if s.Sourceentry.DontSearch {
-		return logger.ErrDisabled
-	}
-
-	s.Sourceentry.NzbepisodeID = *episodeid
-	s.Sourceentry.MinimumPriority, _ = Getpriobyfiles(s.Cfgp.Useseries, episodeid, false, -1, s.Quality)
-
-	s.Sourceentry.Info.M.ListID = database.GetMediaListID(s.Cfgp, s.Sourceentry.Listname)
-	var err error
-	s.searchActionType, err = getsearchtype(s.Sourceentry.MinimumPriority, s.Sourceentry.DontUpgrade, false)
-	if err != nil {
-		return err
-	}
-	str := s.Sourceentry.Quality
-	if s.Sourceentry.Quality == "" {
-		str = s.Cfgp.DefaultQuality
-	}
-	qual, ok := config.SettingsQuality[str]
-	if !ok {
-		return nil
-	}
-	s.Quality = qual
-	return nil
-}
-
-// Getsearchalternatetitles returns alternate search titles to use when searching for media.
-// It takes in alternate titles from the database, a flag indicating if this is already a title search,
-// and the quality configuration. It returns a slice of string alternate titles.
-func (s *ConfigSearcher) Getsearchalternatetitles(param *searchparams, qualcfg *config.QualityConfig) {
-	if qualcfg.BackupSearchForAlternateTitle {
-		if qualcfg.BackupSearchForTitle {
-			if len(param.alttitles) >= 1 {
-				clear(param.alttitles)
-				param.alttitles = param.alttitles[:0]
-			}
-			if !param.titlesearch {
-				param.alttitles = append(param.alttitles, database.DbstaticTwoStringOneInt{})
-			}
-			param.alttitles = append(param.alttitles, database.DbstaticTwoStringOneInt{Str1: s.Sourceentry.WantedTitle})
-			param.alttitles = append(param.alttitles, param.sourcealttitles...)
-			return
-		}
-		if param.titlesearch && !qualcfg.BackupSearchForTitle {
-			param.alttitles = param.sourcealttitles
-			return
-		}
-	}
-	if qualcfg.BackupSearchForTitle {
-		if !param.titlesearch {
-			param.alttitles = []database.DbstaticTwoStringOneInt{{}, {Str1: s.Sourceentry.WantedTitle}}
-			return
-		}
-		param.alttitles = []database.DbstaticTwoStringOneInt{{Str1: s.Sourceentry.WantedTitle}}
-		return
-	}
-	if !param.titlesearch {
-		param.alttitles = []database.DbstaticTwoStringOneInt{{}}
-		return
-	}
-	param.alttitles = []database.DbstaticTwoStringOneInt{{Str1: s.Sourceentry.WantedTitle}}
-}
-
-// filterSizeNzbs checks if the NZB entry size is within the configured
-// minimum and maximum size limits, and returns true if it should be
-// rejected based on its size.
-func (s *ConfigSearcher) filterSizeNzbs(entry *apiexternal.Nzbwithprio) bool {
-	for idxdataimport := range s.Cfgp.DataImport {
-		if s.Cfgp.DataImport[idxdataimport].CfgPath == nil {
-			continue
-		}
-		if s.Cfgp.DataImport[idxdataimport].CfgPath.MinSize != 0 && entry.NZB.Size < s.Cfgp.DataImport[idxdataimport].CfgPath.MinSizeByte {
-			s.logdenied(&strtoosmall, entry, logger.NewLogField("found size", &entry.NZB.Size))
-			return true
-		}
-
-		if s.Cfgp.DataImport[idxdataimport].CfgPath.MaxSize != 0 && entry.NZB.Size > s.Cfgp.DataImport[idxdataimport].CfgPath.MaxSizeByte {
-			s.logdenied(&strtoobig, entry, logger.NewLogField("found size", &entry.NZB.Size))
-			return true
-		}
-	}
-	return false
-}
-
-// filterRegexNzbs checks if the given NZB entry matches the required regexes
-// and does not match any rejected regexes from the quality configuration.
-// Returns true if the entry fails the regex checks, false if it passes.
-func (s *ConfigSearcher) filterRegexNzbs(entry *apiexternal.Nzbwithprio, qual *config.QualityConfig) bool {
-	regexcfg := getregexcfg(entry, qual)
-	if regexcfg == nil {
-		s.logdenied(&deniedbyregex, entry, logger.NewLogField("", "regex_template empty"))
-		return true
-	}
-
-	var bl bool
-	for idx := range regexcfg.Required {
-		if database.RegexGetMatchesFind(regexcfg.Required[idx], entry.NZB.Title, 1) {
-			bl = true
-			break
-		}
-	}
-	if !bl && regexcfg.RequiredLen >= 1 {
-		s.logdenied(&strnotmatchrequired, entry, logger.NewLogField("checked for", &regexcfg.Required))
-		return true
-	}
-
-	for idx := range regexcfg.Rejected {
-		if database.RegexGetMatchesFind(regexcfg.Rejected[idx], entry.NZB.Title, 1) {
-			if !database.RegexGetMatchesFind(regexcfg.Rejected[idx], entry.WantedTitle, 1) {
-				bl := false
-				for idxi := range entry.WantedAlternates {
-					if database.RegexGetMatchesFind(regexcfg.Rejected[idx], entry.WantedAlternates[idxi].Str1, 1) {
-						bl = true
-						break
-					}
-				}
-				if !bl {
-					s.logdenied(&deniedbyregex, entry, logger.NewLogField("rejected by", &regexcfg.Rejected[idx]))
-					return true
-				}
-			}
-		}
-	}
-	return false
-}
-
-// checkhistory checks if the given entry is already in the history cache
-// to avoid duplicate downloads. It checks based on the download URL and title.
-// Returns true if a duplicate is found, false otherwise.
-func (s *ConfigSearcher) checkhistory(entry *apiexternal.Nzbwithprio, qual *config.QualityConfig) bool {
-	if entry.NZB.DownloadURL != "" {
-		if database.CheckcachedUrlHistory(s.Cfgp.Useseries, entry.NZB.DownloadURL) {
-			s.logdenied(&strallreadydlurl, entry)
-			return true
-		}
-	}
-	if entry.NZB.Indexer == nil {
-		return false
-	}
-	indcfg := qualityIndexerByQualityAndTemplate(qual, entry.NZB.Indexer)
-	if indcfg != nil {
-		if !indcfg.HistoryCheckTitle {
-			return false
-		}
-	}
-
-	if database.CheckcachedTitleHistory(s.Cfgp.Useseries, entry.NZB.Title) {
-		s.logdenied(&strallreadydltitle, entry)
-		return true
-	}
-	return false
-}
-
-// checkprocessed checks if the given entry is already in the denied or accepted lists to avoid duplicate processing.
-// It loops through the denied and accepted entries and returns true if it finds a match on the download URL or title.
-// Otherwise returns false. Part of ConfigSearcher.
-func (s *ConfigSearcher) checkprocessed(entry *apiexternal.Nzbwithprio) bool {
-	for idx := range s.Dl.Denied {
-		if s.Dl.Denied[idx].NZB.DownloadURL == entry.NZB.DownloadURL {
-			return true
-		}
-		if s.Dl.Denied[idx].NZB.Title == entry.NZB.Title {
-			return true
-		}
-	}
-	for idx := range s.Dl.Accepted {
-		if s.Dl.Accepted[idx].NZB.DownloadURL == entry.NZB.DownloadURL {
-			return true
-		}
-		if s.Dl.Accepted[idx].NZB.Title == entry.NZB.Title {
-			return true
-		}
-	}
-	return false
-}
-
-// logdenied logs a debug message indicating the entry was denied for the given reason.
-// It appends the entry to the denied list in s.Dl.Denied.
-// If addfields are provided, it will log them along with the reason and title.
-// It will also set the AdditionalReason field on the entry based on the first addfield.
-func (s *ConfigSearcher) logdenied(reason *string, entry *apiexternal.Nzbwithprio, addfields ...logger.LogField) {
-	if reason != nil && *reason != "" {
-		if len(addfields) > 0 {
-			logger.LogDynamicSlice("debug", skippedstr, addfields, logger.NewLogField("reason", reason), logger.NewLogField("title", &entry.NZB.Title))
-			switch v := addfields[0].Value.(type) {
-			case int:
-				entry.AdditionalReason = strconv.Itoa(v)
-			case *int:
-				entry.AdditionalReason = strconv.Itoa(*v)
-			case string:
-				entry.AdditionalReason = v
-			case *string:
-				entry.AdditionalReason = *v
-			default:
-				entry.AdditionalReason = fmt.Sprintf("%v", v)
-			}
-		} else {
-			logger.LogDynamic("debug", skippedstr, logger.NewLogField("reason", reason), logger.NewLogField("title", &entry.NZB.Title))
-		}
-		entry.Reason = *reason
-	}
-	s.AppendDenied(entry)
-	//clear(addfields)
-	addfields = nil
-}
-
-// logdeniederr logs a denied entry with the given error and optional title.
-// It sets the reason on the entry to the error message, and appends the entry to s.Dl.Denied.
-func (s *ConfigSearcher) logdeniederr(err error, entry *apiexternal.Nzbwithprio) {
-	if err != nil {
-		entry.Reason = err.Error()
-		logger.LogDynamic("debug", skippedstr, logger.NewLogField("reason", &entry.Reason), logger.NewLogField(logger.StrTitle, &entry.NZB.Title))
+		clear(arr)
 	}
-	s.AppendDenied(entry)
+	//clear(tbl)
 }
 
 // Getpriobyfiles returns the minimum priority of existing files for the given media
@@ -1745,30 +1565,71 @@ func (s *ConfigSearcher) logdeniederr(err error, entry *apiexternal.Nzbwithprio)
 // If useall is true it will include files marked as deleted.
 // If wantedprio is -1 it will not return any file paths.
 func Getpriobyfiles(useseries bool, id *uint, useall bool, wantedprio int, qualcfg *config.QualityConfig) (int, []string) {
-	if qualcfg == nil || id == nil {
+	if qualcfg == nil || *id == 0 {
 		return 0, nil
 	}
-	var oldfiles []string
-	countv := database.GetdatarowN[int](false, logger.GetStringsMap(useseries, logger.DBCountFilesByMediaID), id)
-	if wantedprio != -1 && countv != 0 {
-		oldfiles = make([]string, 0, countv)
-	}
-	arr := database.GetrowsN[database.FilePrio](false, countv, logger.GetStringsMap(useseries, logger.DBFilePrioFilesByID), id)
-	var minPrio int
+
+	var oldf []string
+	arr := database.GetrowsNsize[database.FilePrio](false, logger.GetStringsMap(useseries, logger.DBCountFilesByMediaID), logger.GetStringsMap(useseries, logger.DBFilePrioFilesByID), id)
+	var minPrio, prio int
 	for idx := range arr {
-		prio := parser.GetIDPrioritySimpleParse(&arr[idx], useseries, qualcfg, useall)
+		prio = 0
+		if !qualcfg.UseForPriorityResolution && !useall {
+			arr[idx].ResolutionID = 0
+		}
+		if !qualcfg.UseForPriorityQuality && !useall {
+			arr[idx].QualityID = 0
+		}
+		if !qualcfg.UseForPriorityAudio && !useall {
+			arr[idx].AudioID = 0
+		}
+		if !qualcfg.UseForPriorityCodec && !useall {
+			arr[idx].CodecID = 0
+		}
+		intid := parser.Findpriorityidxwanted(arr[idx].ResolutionID, arr[idx].QualityID, arr[idx].CodecID, arr[idx].AudioID, qualcfg)
+		if intid != -1 {
+			prio = parser.GetwantedArrPrio(intid)
+		}
+		if prio == 0 {
+			intid = parser.Findpriorityidx(arr[idx].ResolutionID, arr[idx].QualityID, arr[idx].CodecID, arr[idx].AudioID, qualcfg)
+			if intid != -1 {
+				prio = parser.GetwantedArrPrio(intid)
+			}
+		}
+
+		if intid == -1 {
+			logger.LogDynamicany("debug", "prio not found", "searched for", parser.BuildPrioStr(arr[idx].ResolutionID, arr[idx].QualityID, arr[idx].CodecID, arr[idx].AudioID), "in", &qualcfg.Name)
+			prio = 0
+		}
+		if !qualcfg.UseForPriorityOther && !useall {
+
+		} else {
+			if arr[idx].Proper {
+				prio += 5
+			}
+			if arr[idx].Extended {
+				prio += 2
+			}
+			if arr[idx].Repack {
+				prio++
+			}
+		}
+
+		//prio = parser.GetIDPrioritySimpleParse(&arr[idx], useseries, qualcfg, useall)
 
 		if minPrio < prio || minPrio == 0 {
 			minPrio = prio
 		}
 		if wantedprio != -1 && wantedprio > prio {
-			oldfiles = append(oldfiles, arr[idx].Location)
+			oldf = append(oldf, arr[idx].Location)
 		}
 	}
 	//clear(arr)
-	arr = nil
 	if wantedprio == -1 {
 		return minPrio, nil
 	}
-	return minPrio, oldfiles
+	if len(oldf) == 0 {
+		return minPrio, nil
+	}
+	return minPrio, oldf
 }

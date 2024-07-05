@@ -8,8 +8,8 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 )
 
-func GetStatsTable(ctx *context.Context) (userTable table.Table) {
-	userTable = table.NewDefaultTable(table.Config{})
+func getStatsTable(ctx *context.Context) (userTable table.Table) {
+	userTable = table.NewDefaultTable(ctx, table.Config{})
 	userTable.GetOnlyInfo()
 	//typ #List #count #missing #reached
 

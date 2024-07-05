@@ -8,8 +8,8 @@ import (
 	"github.com/GoAdminGroup/go-admin/template/types/form"
 )
 
-func GetQualitiesTable(ctx *context.Context) table.Table {
-	qualities := table.NewDefaultTable(table.DefaultConfigWithDriverAndConnection("sqlite", "media"))
+func getQualitiesTable(ctx *context.Context) table.Table {
+	qualities := table.NewDefaultTable(ctx, table.DefaultConfigWithDriverAndConnection("sqlite", "media"))
 
 	info := qualities.GetInfo().HideFilterArea()
 

@@ -1,13 +1,53 @@
 package pool
 
-type Poolobj[T any] struct {
+import (
+	"fmt"
+	"sync"
+)
+
+type Poolobj[t any] struct {
 	//objs is a channel of type T
-	objs chan *T
+	objs chan *t
 	//Function will be run on Get() - include here your logic to create the initial object
-	constructor func(*T)
+	constructor func(*t)
 	//Function will be run on Put() - include here your logic to reset the object
-	destructor func(*T)
+	destructor func(*t)
 }
+
+// Get retrieves an object from the pool or creates a new one if none are
+// available. If a constructor was provided, it will be called to initialize
+// any newly created objects.
+func (p *Poolobj[t]) Get() *t {
+	if len(p.objs) >= 1 {
+		return <-p.objs
+	}
+	var bo t
+	fmt.Printf("Creating new pool object %T", bo)
+	//fmt.Println(reflect.TypeOf(bo))
+	if p.constructor != nil {
+		p.constructor(&bo)
+	}
+	return &bo
+}
+
+// Put returns an object to the pool.
+// If the pool is not at capacity, it calls the destructor function if provided,
+// then sends the object back on the channel.
+func (p *Poolobj[t]) Put(bo *t) {
+	if bo == nil {
+		return
+	}
+	if len(p.objs) < cap(p.objs) {
+		if p.destructor != nil {
+			p.destructor(bo)
+		}
+		p.objs <- bo
+	}
+}
+
+// func Clear(bo any) {
+// 	reflect.ValueOf(bo).Elem().SetZero()
+// }
 
 // NewPool creates a new Poolobj initialized with the given parameters.
 //
@@ -22,13 +62,13 @@ type Poolobj[T any] struct {
 //
 // destructor, if non-nil, is called whenever an object is removed from
 // the pool.
-func NewPool[T any](maxsize int, initcreate int, constructor func(*T), destructor func(*T)) Poolobj[T] {
-	var a Poolobj[T]
+func NewPool[t any](maxsize int, initcreate int, constructor func(*t), destructor func(*t)) Poolobj[t] {
+	var a Poolobj[t]
 	a.constructor = constructor
-	a.objs = make(chan *T, maxsize)
+	a.objs = make(chan *t, maxsize)
 	if initcreate > 0 {
-		for i := 0; i < initcreate; i++ {
-			var bo T
+		for range initcreate {
+			var bo t
 			if a.constructor != nil {
 				a.constructor(&bo)
 			}
@@ -39,31 +79,33 @@ func NewPool[T any](maxsize int, initcreate int, constructor func(*T), destructo
 	return a
 }
 
-// Get retrieves an object from the pool or creates a new one if none are
-// available. If a constructor was provided, it will be called to initialize
-// any newly created objects.
-func (p *Poolobj[T]) Get() *T {
-	if len(p.objs) >= 1 {
-		return <-p.objs
-	}
-	var bo T
-	if p.constructor != nil {
-		p.constructor(&bo)
-	}
-	return &bo
+type SizedWaitGroup struct {
+	Size    int
+	current chan struct{}
+	wg      sync.WaitGroup
 }
 
-// Put returns an object to the pool.
-// If the pool is not at capacity, it calls the destructor function if provided,
-// then sends the object back on the channel.
-func (p *Poolobj[T]) Put(bo *T) {
-	if bo == nil {
-		return
+func NewSizedGroup(limit int) *SizedWaitGroup {
+	return &SizedWaitGroup{
+		Size:    limit,
+		current: make(chan struct{}, limit),
+		wg:      sync.WaitGroup{},
 	}
-	if len(p.objs) < cap(p.objs) {
-		if p.destructor != nil {
-			p.destructor(bo)
-		}
-		p.objs <- bo
-	}
+}
+func (s *SizedWaitGroup) Add() {
+	s.current <- struct{}{}
+	s.wg.Add(1)
+}
+
+func (s *SizedWaitGroup) Done() {
+	<-s.current
+	s.wg.Done()
+}
+
+func (s *SizedWaitGroup) Wait() {
+	s.wg.Wait()
+}
+func (s *SizedWaitGroup) Close() {
+	s.current = nil
+	*s = SizedWaitGroup{}
 }

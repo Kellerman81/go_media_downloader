@@ -3,381 +3,204 @@ package importfeed
 import (
 	"errors"
 	"strings"
-	"sync"
+	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/metadata"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/pool"
 )
 
-var importJobRunning = sync.Map{}
+var (
+	errIgnoredMovie          = errors.New("movie ignored")
+	errJobRunning            = errors.New("job running")
+	errVoteLow               = errors.New("error vote count too low")
+	errVoteRateLow           = errors.New("error average vote too low")
+	errIncludedGenreNotFound = errors.New("included genre not found")
+	importJobRunning         = logger.NewSynchedMap[struct{}](10)
+	defaultproviders         = []string{"imdb", "tmdb", "omdb"}
+)
 
 //var importJobRunning string
 
 // checkimdbyearsingle checks if the year from IMDB matches the year
 // in the FileParser, allowing a 1 year difference. It returns true if
 // the years match or are within 1 year difference.
-func checkimdbyearsingle(m *apiexternal.FileParser, imdb *string, haveyear int) bool {
-	if haveyear == 0 || m.M.Year == 0 || imdb == nil {
+func checkimdbyearsingle(m *database.ParseInfo, cfgp *config.MediaTypeConfig, imdb string, haveyear uint16) bool {
+	if haveyear == 0 || m.Year == 0 || imdb == "" {
 		return false
 	}
-	if haveyear == m.M.Year {
+	if haveyear == m.Year {
 		return true
 	}
 
-	if haveyear == m.M.Year+1 || haveyear == m.M.Year-1 {
-		id := MovieFindDBIDByImdb(imdb)
-		if database.GetMediaQualityConfig(m.Cfgp, &id).CheckYear1 {
+	if haveyear == m.Year+1 || haveyear == m.Year-1 {
+		if database.GetMediaQualityConfig(cfgp, MovieFindDBIDByImdb(imdb)).CheckYear1 {
 			return true
 		}
 	}
 	return false
-}
-
-// StripTitlePrefixPostfixGetQual strips any configured prefix or suffix from the
-// title in the provided ParseInfo, using the provided QualityConfig. It modifies
-// the Title field on the ParseInfo in place.
-func StripTitlePrefixPostfixGetQual(m *database.ParseInfo, quality *config.QualityConfig) {
-	if m.Title == "" {
-		return
-	}
-
-	for idx := range quality.TitleStripSuffixForSearch {
-		if !logger.ContainsI(m.Title, quality.TitleStripSuffixForSearch[idx]) {
-			continue
-		}
-		idx2 := logger.IndexI(m.Title, quality.TitleStripSuffixForSearch[idx])
-		if idx2 != -1 {
-			if m.Title[:idx2] != "" {
-				str2 := m.Title[:idx2]
-				switch str2[len(str2)-1:] {
-				case "-", ".", " ":
-					m.Title = strings.TrimRight(str2, "-. ")
-				}
-			}
-		}
-	}
-	for idx := range quality.TitleStripPrefixForSearch {
-		if !logger.HasPrefixI(m.Title, quality.TitleStripPrefixForSearch[idx]) {
-			continue
-		}
-		idx2 := logger.IndexI(m.Title, quality.TitleStripPrefixForSearch[idx])
-		if idx2 != -1 {
-			str2 := m.Title[idx2+len(quality.TitleStripPrefixForSearch[idx]):]
-			if str2 != "" {
-				switch str2[0] {
-				case '-', '.', ' ':
-					m.Title = strings.TrimLeft(str2, "-. ")
-				}
-			}
-		}
-	}
 }
 
 // MovieFindDBIDByImdb looks up the database ID for a movie by its IMDB ID.
 // It takes a string containing the IMDB ID and returns the uint database ID.
 // It first checks the cache if enabled, otherwise queries the database directly.
 // If no match is found, it returns 0.
-func MovieFindDBIDByImdb(imdb *string) uint {
-	if imdb == nil || *imdb == "" {
+func MovieFindDBIDByImdb(imdb string) uint {
+	if imdb == "" {
 		return 0
 	}
+	logger.AddImdbPrefixP(&imdb)
 	if config.SettingsGeneral.UseMediaCache {
 		return database.CacheThreeStringIntIndexFunc(logger.CacheDBMovie, imdb)
 	}
-	return database.GetdatarowN[uint](false, "select id from dbmovies where imdb_id = ?", imdb)
-}
-
-// moviegetimdbtitle checks if the found dbid of a movie has the correct year (also gets imdb)
-// It takes a dbid and a ParseInfo struct pointer.
-// It checks the dbid against the database, compares the year to the ParseInfo Year field,
-// and returns a bool indicating if it matches an IMDB entry.
-func moviegetimdbtitle(dbid int, m *database.ParseInfo) bool {
-	if config.SettingsGeneral.UseMediaCache {
-		year := database.CacheThreeStringIntIndexFuncGetYear(logger.CacheDBMovie, dbid)
-		if year != 0 {
-			if m.Year == 0 {
-				return false
-			}
-			if m.Year == year || m.Year == year+1 || m.Year == year-1 {
-				return true
-			}
-		}
-		return false
-	}
-	year := database.GetdatarowN[int](false, "select year from dbmovies where id = ?", &dbid)
-	if year == 0 {
-		return false
-	}
-	if year != 0 && m.Year == 0 {
-		return false
-	}
-	if m.Year == year || m.Year == year+1 || m.Year == year-1 {
-		return true
-	}
-	return false
-}
-
-// moviegetimdbtitleparser checks if the found dbid of a movie has the correct year (also gets imdb)
-// It takes a ParseInfo struct pointer, checks the DbmovieID field against the database,
-// compares the year to the Year field, and returns a bool indicating if it matches an IMDB entry.
-func moviegetimdbtitleparser(m *database.ParseInfo) bool {
-	if config.SettingsGeneral.UseMediaCache {
-		intdb := int(m.DbmovieID)
-		year := database.CacheThreeStringIntIndexFuncGetYear(logger.CacheDBMovie, intdb)
-		if year == 0 {
-			return false
-		}
-		if year != 0 && m.Year == 0 {
-			return false
-		}
-		if m.Year == year || m.Year == year+1 || m.Year == year-1 {
-			return true
-		}
-		return false
-	}
-	year := database.GetdatarowN[int](false, "select year from dbmovies where id = ?", &m.DbmovieID)
-	if year == 0 {
-		return false
-	}
-	if year != 0 && m.Year == 0 {
-		return false
-	}
-	if m.Year == year || m.Year == year+1 || m.Year == year-1 {
-		return true
-	}
-	return false
+	return database.Getdatarow1[uint](false, "select id from dbmovies where imdb_id = ?", imdb) //sqlpointerr
 }
 
 // MovieFindImdbIDByTitle searches for a movie's IMDB ID by its title.
 // It first searches the database and caches by title and slugified title.
 // If not found, it can search external APIs based on config settings.
 // It populates the ParseInfo struct with the found IMDB ID and other data.
-func MovieFindImdbIDByTitle(addifnotfound bool, m *apiexternal.FileParser) {
-	if m.M.Title == "" {
-		cleanimdbdbmovie(m)
+func MovieFindImdbIDByTitle(addifnotfound bool, m *database.ParseInfo, cfgp *config.MediaTypeConfig) {
+	if m.Title == "" {
+		m.Cleanimdbdbmovie()
 		return
 	}
 
-	findmoviedbidbytitle(&m.M)
-	if m.M.DbmovieID == 0 {
-		findmoviedbidbytitleslug(&m.M)
+	m.TempTitle = m.Title
+	m.Findmoviedbidbytitle()
+	if m.DbmovieID == 0 {
+		m.TempTitle = logger.StringToSlug(m.Title)
+		m.Findmoviedbidbytitle()
 	}
-	if m.M.DbmovieID != 0 {
+	if m.DbmovieID != 0 {
 		if config.SettingsGeneral.UseMediaCache {
-			database.CacheThreeStringIntIndexFuncGetImdb(logger.CacheDBMovie, int(m.M.DbmovieID), &m.M)
+			m.CacheThreeStringIntIndexFuncGetImdb(logger.CacheDBMovie, m.DbmovieID)
 			return
 		}
-		_ = database.ScanrowsNdyn(false, "select imdb_id from dbmovies where id = ?", &m.M.Imdb, &m.M.DbmovieID)
+		_ = database.Scanrows1dyn(false, "select imdb_id from dbmovies where id = ?", &m.Imdb, &m.DbmovieID)
 		return
 	}
 
 	if !addifnotfound {
-		cleanimdbdbmovie(m)
+		m.Cleanimdbdbmovie()
 		return
 	}
-	slug := logger.StringToSlug(m.M.Title)
-	if slug == "" {
-		slug = "please-fix-title88vv77b9gg"
-	}
+	slug := logger.StringToSlug(m.Title)
+
 	for _, provider := range getsearchprovider(false) {
 	breakswitch:
 		switch provider {
 		case logger.StrImdb:
 			if config.SettingsGeneral.MovieMetaSourceImdb {
-				arr := database.GetrowsN[database.DbstaticOneStringOneInt](true, database.GetdatarowN[int](true, "select count() from imdb_titles where (primary_title = ? COLLATE NOCASE or original_title = ? COLLATE NOCASE or slug = ?)", &m.M.Title, &m.M.Title, &slug), "select tconst,start_year from imdb_titles where (primary_title = ? COLLATE NOCASE or original_title = ? COLLATE NOCASE or slug = ?)", &m.M.Title, &m.M.Title, &slug)
+				arr := database.GetrowsNsize[database.DbstaticOneStringOneInt](true, "select count() from imdb_titles where (primary_title = ? COLLATE NOCASE or original_title = ? COLLATE NOCASE or slug = ?)", "select tconst,start_year from imdb_titles where (primary_title = ? COLLATE NOCASE or original_title = ? COLLATE NOCASE or slug = ?)", &m.Title, &m.Title, &slug)
 				for idx := range arr {
-					if checkimdbyearsingle(m, &arr[idx].Str, arr[idx].Num) {
-						m.M.Imdb = arr[idx].Str
-						m.M.DbmovieID = uint(arr[idx].Num)
+					if checkimdbyearsingle(m, cfgp, arr[idx].Str, uint16(arr[idx].Num)) {
+						m.Imdb = arr[idx].Str
+						m.DbmovieID = MovieFindDBIDByImdb(arr[idx].Str)
 						//clear(arr)
-						arr = nil
 						break breakswitch
 					}
 				}
 				//clear(arr)
-				arr = nil
 
-				var haveyear int
+				var haveyear uint16
 
-				arr2 := database.GetrowsN[string](true, database.QueryImdbAkaCountByTitleSlug(&m.M.Title, &slug), "select distinct tconst from imdb_akas where title = ? COLLATE NOCASE or slug = ?", &m.M.Title, &slug)
+				arr2 := database.GetrowsN[string](true, database.QueryImdbAkaCountByTitleSlug(m.Title, slug), "select distinct tconst from imdb_akas where title = ? COLLATE NOCASE or slug = ?", &m.Title, &slug)
 				for idx := range arr2 {
-					_ = database.ScanrowsNdyn(true, "select start_year from imdb_titles where tconst = ?", &haveyear, &arr2[idx])
-					if checkimdbyearsingle(m, &arr2[idx], haveyear) {
-						m.M.Imdb = arr2[idx]
-						m.M.DbmovieID = MovieFindDBIDByImdb(&arr2[idx])
+					_ = database.Scanrows1dyn(true, "select start_year from imdb_titles where tconst = ?", &haveyear, &arr2[idx])
+					if checkimdbyearsingle(m, cfgp, arr2[idx], haveyear) {
+						m.Imdb = arr2[idx]
+						m.DbmovieID = MovieFindDBIDByImdb(arr2[idx])
 						//clear(arr2)
-						arr2 = nil
 						break breakswitch
 					}
 				}
-				cleanimdbdbmovie(m)
 				//clear(arr2)
-				arr2 = nil
+				m.Cleanimdbdbmovie()
 			}
 		case "tmdb":
 			if config.SettingsGeneral.MovieMetaSourceTmdb {
-				if m.M.Title == "" {
-					cleanimdbdbmovie(m)
+				if m.Title == "" {
+					m.Cleanimdbdbmovie()
 					break breakswitch
 				}
 
-				tbl, err := apiexternal.SearchTmdbMovie(m.M.Title)
+				tbl, err := apiexternal.SearchTmdbMovie(m.Title)
 				if err != nil {
-					cleanimdbdbmovie(m)
+					m.Cleanimdbdbmovie()
 					break breakswitch
 				}
-				var haveyear int
-				for idx := range tbl {
-					_ = database.ScanrowsNdyn(false, "select imdb_id from dbmovies where moviedb_id = ?", &m.M.Imdb, &tbl[idx].ID)
-					if m.M.Imdb == "" {
-						moviedbexternal, err := apiexternal.GetTmdbMovieExternal(tbl[idx].ID)
+				var haveyear uint16
+				for idx := range tbl.Results {
+					_ = database.Scanrows1dyn(false, "select imdb_id from dbmovies where moviedb_id = ?", &m.Imdb, &tbl.Results[idx].ID)
+					if m.Imdb == "" {
+						moviedbexternal, err := apiexternal.GetTmdbMovieExternal(tbl.Results[idx].ID)
 						if err != nil {
 							continue
 						}
-						m.M.Imdb = moviedbexternal.ImdbID
-						_ = database.ScanrowsNdyn(false, "select id from dbmovies where imdb_id = ?", &m.M.DbmovieID, &m.M.Imdb)
-						//moviedbexternal.Close()
-						//clear(tbl)
-						tbl = nil
+						m.Imdb = moviedbexternal.ImdbID
+						_ = database.Scanrows1dyn(false, "select id from dbmovies where imdb_id = ?", &m.DbmovieID, &m.Imdb)
+						//clear(tbl.Results)
 						break breakswitch
 					}
-					if m.M.Imdb == "" {
+					if m.Imdb == "" {
 						continue
 					}
-					_ = database.ScanrowsNdyn(true, "select start_year from imdb_titles where tconst = ?", &haveyear, &m.M.Imdb)
-					if checkimdbyearsingle(m, &m.M.Imdb, haveyear) {
-						_ = database.ScanrowsNdyn(false, "select id from dbmovies where imdb_id = ?", &m.M.DbmovieID, &m.M.Imdb)
-						tbl = nil
-						//clear(tbl)
+					_ = database.Scanrows1dyn(true, "select start_year from imdb_titles where tconst = ?", &haveyear, &m.Imdb)
+					if checkimdbyearsingle(m, cfgp, m.Imdb, haveyear) {
+						_ = database.Scanrows1dyn(false, "select id from dbmovies where imdb_id = ?", &m.DbmovieID, &m.Imdb)
+						//clear(tbl.Results)
 						break breakswitch
 					}
 				}
-				cleanimdbdbmovie(m)
-				//clear(tbl)
-				tbl = nil
+				//clear(tbl.Results)
+				m.Cleanimdbdbmovie()
 			}
 		case "omdb":
 			if config.SettingsGeneral.MovieMetaSourceOmdb {
-				tbl, err := apiexternal.SearchOmdbMovie(m.M.Title, "")
+				tbl, err := apiexternal.SearchOmdbMovie(m.Title, "")
 				if err != nil {
-					cleanimdbdbmovie(m)
-					//clear(tbl)
-					tbl = nil
+					m.Cleanimdbdbmovie()
 					break breakswitch
 				}
-				for idx := range tbl {
-					if checkimdbyearsingle(m, &tbl[idx].ImdbID, logger.StringToInt(tbl[idx].Year)) {
-						m.M.Imdb = tbl[idx].ImdbID
-						_ = database.ScanrowsNdyn(false, "select id from dbmovies where imdb_id = ?", &m.M.DbmovieID, &tbl[idx].ImdbID)
-						//clear(tbl)
-						tbl = nil
+				for idx := range tbl.Search {
+					if checkimdbyearsingle(m, cfgp, tbl.Search[idx].ImdbID, logger.StringToUInt16(tbl.Search[idx].Year)) {
+						m.Imdb = tbl.Search[idx].ImdbID
+						_ = database.Scanrows1dyn(false, "select id from dbmovies where imdb_id = ?", &m.DbmovieID, &tbl.Search[idx].ImdbID)
+						//clear(tbl.Search)
 						break breakswitch
 					}
 				}
-				cleanimdbdbmovie(m)
-				//clear(tbl)
-				tbl = nil
+				//clear(tbl.Search)
+				m.Cleanimdbdbmovie()
 			}
 		default:
 			continue
 		}
-		if m.M.Imdb != "" {
+		if m.Imdb != "" {
 			return
 		}
 	}
-	cleanimdbdbmovie(m)
-}
-
-// cleanimdbdbmovie clears the Imdb and DbmovieID fields in the FileParser struct to empty values.
-// This is used to reset the state when a lookup fails.
-func cleanimdbdbmovie(m *apiexternal.FileParser) {
-	m.M.Imdb = ""
-	m.M.DbmovieID = 0
-}
-
-// findmoviedbidbytitle searches for a movie in the database by its title.
-// It first checks the title cache, then does a database query on dbmovies by title,
-// followed by a query on dbmovie_titles by title if needed.
-// It attempts to find the movie's id and populate ParseInfo.DbmovieID with it.
-func findmoviedbidbytitle(m *database.ParseInfo) {
-	if config.SettingsGeneral.UseMediaCache {
-		getdbmovieidbytitleincache(m, m.Title)
-		return
-	}
-	_ = database.ScanrowsNdyn(false, "select id from dbmovies where title = ? COLLATE NOCASE", &m.DbmovieID, &m.Title)
-	if m.DbmovieID != 0 && moviegetimdbtitleparser(m) {
-		return
-	}
-	_ = database.ScanrowsNdyn(false, "select dbmovie_id from dbmovie_titles where title = ? COLLATE NOCASE", &m.DbmovieID, &m.Title)
-	if m.DbmovieID != 0 && !moviegetimdbtitleparser(m) {
-		m.DbmovieID = 0
-	}
-}
-
-// findmoviedbidbytitleslug searches for a movie in the database by its sluggified title.
-// It first checks the title cache, then does a database query on dbmovies by slug,
-// followed by a query on dbmovie_titles by slug if needed.
-// It attempts to find the movie's id and populate ParseInfo.DbmovieID with it.
-func findmoviedbidbytitleslug(m *database.ParseInfo) {
-	if config.SettingsGeneral.UseMediaCache {
-		getdbmovieidbytitleincache(m, logger.StringToSlug(m.Title))
-		return
-	}
-	title := logger.StringToSlug(m.Title)
-	if title == "" {
-		return
-	}
-	_ = database.ScanrowsNdyn(false, "select id from dbmovies where slug = ?", &m.DbmovieID, &title)
-	if m.DbmovieID != 0 && moviegetimdbtitleparser(m) {
-		return
-	}
-	_ = database.ScanrowsNdyn(false, "select dbmovie_id from dbmovie_titles where slug = ?", &m.DbmovieID, &title)
-	if m.DbmovieID != 0 && !moviegetimdbtitleparser(m) {
-		m.DbmovieID = 0
-	}
-}
-
-// getdbmovieidbytitleincache checks the title cache for a movie ID by title.
-// It first checks the dbmovies cache, then the dbmovie_titles cache.
-// If found, it populates ParseInfo.DbmovieID with the ID if it matches the IMDB title.
-func getdbmovieidbytitleincache(m *database.ParseInfo, title string) {
-	if title == "" {
-		return
-	}
-	a := database.GetCachedTypeObjArr[database.DbstaticThreeStringTwoInt](logger.CacheDBMovie)
-	for idx := range a {
-		if a[idx].Str1 == title || a[idx].Str2 == title || strings.EqualFold(a[idx].Str1, title) || strings.EqualFold(a[idx].Str2, title) {
-			if moviegetimdbtitle(a[idx].Num2, m) {
-				m.DbmovieID = uint(a[idx].Num2)
-				return
-			}
-		}
-	}
-	b := database.GetCachedTypeObjArr[database.DbstaticTwoStringOneInt](logger.CacheTitlesMovie)
-	for idx := range b {
-		if b[idx].Str1 == title || b[idx].Str2 == title || strings.EqualFold(b[idx].Str1, title) || strings.EqualFold(b[idx].Str2, title) {
-			if moviegetimdbtitle(b[idx].Num, m) {
-				m.DbmovieID = uint(b[idx].Num)
-				return
-			}
-		}
-	}
-	m.DbmovieID = 0
+	m.Cleanimdbdbmovie()
 }
 
 // JobImportMoviesByList imports or updates a list of movies in parallel.
 // It takes a list of movie titles/IDs, an index, a media type config, a list ID,
 // and a flag for whether to add new movies.
 // It logs the import result for each movie.
-func JobImportMoviesByList(entry string, idx int, cfgp *config.MediaTypeConfig, listid int, addnew bool) {
-	logger.LogDynamic("info", "Import/Update Movie", logger.NewLogField(logger.StrMovie, &entry), logger.NewLogField("row", &idx))
+func JobImportMoviesByList(wg *pool.SizedWaitGroup, entry string, idx int, cfgp *config.MediaTypeConfig, listid int8, addnew bool) {
+	if wg != nil {
+		defer logger.HandlePanic()
+		defer wg.Done()
+	}
+	logger.LogDynamicany("info", "Import/Update Movie", &logger.StrMovie, entry, &logger.StrRow, idx) //logpointerr
 	_, err := JobImportMovies(entry, cfgp, listid, addnew)
 	if err != nil {
 		if err.Error() != "movie ignored" {
-			logger.LogDynamic("error", "Import/Update Failed", logger.NewLogFieldValue(err), logger.NewLogField(logger.StrImdb, &entry))
+			logger.LogDynamicany("error", "Import/Update Failed", err, &logger.StrImdb, entry) //logpointerr
 		}
 	}
 }
@@ -385,27 +208,26 @@ func JobImportMoviesByList(entry string, idx int, cfgp *config.MediaTypeConfig, 
 // JobImportMovies imports a movie into the database and specified list
 // given its IMDb ID. It handles checking if the movie exists, adding
 // it if needed, updating metadata, and adding it to the target list.
-func JobImportMovies(imdb string, cfgp *config.MediaTypeConfig, listid int, addnew bool) (uint, error) {
+func JobImportMovies(imdb string, cfgp *config.MediaTypeConfig, listid int8, addnew bool) (uint, error) {
 	if cfgp.Name == "" {
 		return 0, logger.ErrCfgpNotFound
 	}
 	if imdb == "" {
 		return 0, logger.ErrImdbEmpty
 	}
-	_, ok := importJobRunning.Load(imdb)
-	if ok {
-		return 0, errors.New("job running")
+	if importJobRunning.Check(imdb) {
+		return 0, errJobRunning
 	}
-	importJobRunning.Store(imdb, struct{}{})
+	importJobRunning.Set(imdb, struct{}{})
 	defer importJobRunning.Delete(imdb)
 
 	var dbmovieadded bool
 
-	dbid := MovieFindDBIDByImdb(&imdb)
+	dbid := MovieFindDBIDByImdb(imdb)
 	checkdbmovie := dbid >= 1
 
 	if listid == -1 {
-		listid = config.GetMediaListsEntryListID(cfgp, database.GetdatarowN[string](false, "select listname from movies where dbmovie_id in (Select id from dbmovies where imdb_id=?)", &imdb))
+		listid = cfgp.GetMediaListsEntryListID(database.Getdatarow1[string](false, "select listname from movies where dbmovie_id in (Select id from dbmovies where imdb_id=?)", imdb))
 	}
 	if !checkdbmovie && addnew {
 		if listid == -1 {
@@ -416,9 +238,9 @@ func JobImportMovies(imdb string, cfgp *config.MediaTypeConfig, listid int, addn
 			return 0, err
 		}
 
-		if database.GetdatarowN[uint](false, "select id from dbmovies where imdb_id = ?", &imdb) == 0 {
-			logger.LogDynamic("debug", "Insert dbmovie for", logger.NewLogField(logger.StrJob, &imdb))
-			dbresult, err := database.ExecNid("insert into dbmovies (Imdb_ID) VALUES (?)", &imdb)
+		if database.Getdatarow1[uint](false, "select id from dbmovies where imdb_id = ?", imdb) == 0 { //sqlpointerr
+			logger.LogDynamicany("debug", "Insert dbmovie for", &logger.StrJob, imdb)            //logpointerr
+			dbresult, err := database.ExecNid("insert into dbmovies (Imdb_ID) VALUES (?)", imdb) //sqlpointerr
 			if err != nil {
 				return 0, err
 			}
@@ -427,15 +249,43 @@ func JobImportMovies(imdb string, cfgp *config.MediaTypeConfig, listid int, addn
 		}
 	}
 	if dbid == 0 {
-		dbid = MovieFindDBIDByImdb(&imdb)
+		dbid = MovieFindDBIDByImdb(imdb)
 	}
 	if dbid == 0 {
 		return 0, logger.ErrNotFoundDbmovie
 	}
 
 	if dbmovieadded || !addnew {
-		if importmoviemetadata(imdb, dbid, cfgp, dbmovieadded) {
-			return 0, errors.New("movie ignored")
+		logger.LogDynamicany("debug", "Get metadata for", &logger.StrJob, imdb) //logpointerr
+		dbmovie, err := database.GetDbmovieByID(&dbid)
+		if err != nil {
+			return 0, errIgnoredMovie
+		}
+		if dbmovie.ImdbID == "" {
+			dbmovie.ImdbID = imdb
+		}
+		if !dbmovieadded && dbmovie.UpdatedAt.After(logger.TimeGetNow().Add(-1*time.Hour)) {
+			//update only if updated more than an hour ago
+			logger.LogDynamicany("debug", "Skipped update metadata for dbmovie ", &logger.StrJob, &dbmovie.ImdbID)
+		} else {
+			metadata.Getmoviemetadata(dbmovie, true)
+
+			database.ExecN("update dbmovies SET Title = ? , Release_Date = ? , Year = ? , Adult = ? , Budget = ? , Genres = ? , Original_Language = ? , Original_Title = ? , Overview = ? , Popularity = ? , Revenue = ? , Runtime = ? , Spoken_Languages = ? , Status = ? , Tagline = ? , Vote_Average = ? , Vote_Count = ? , Trakt_ID = ? , Moviedb_ID = ? , Imdb_ID = ? , Freebase_M_ID = ? , Freebase_ID = ? , Facebook_ID = ? , Instagram_ID = ? , Twitter_ID = ? , URL = ? , Backdrop = ? , Poster = ? , Slug = ? where id = ?",
+				&dbmovie.Title, &dbmovie.ReleaseDate, &dbmovie.Year, &dbmovie.Adult, &dbmovie.Budget, &dbmovie.Genres, &dbmovie.OriginalLanguage, &dbmovie.OriginalTitle, &dbmovie.Overview, &dbmovie.Popularity, &dbmovie.Revenue, &dbmovie.Runtime, &dbmovie.SpokenLanguages, &dbmovie.Status, &dbmovie.Tagline, &dbmovie.VoteAverage, &dbmovie.VoteCount, &dbmovie.TraktID, &dbmovie.MoviedbID, &dbmovie.ImdbID, &dbmovie.FreebaseMID, &dbmovie.FreebaseID, &dbmovie.FacebookID, &dbmovie.InstagramID, &dbmovie.TwitterID, &dbmovie.URL, &dbmovie.Backdrop, &dbmovie.Poster, &dbmovie.Slug, &dbid) //sqlpointer
+
+			metadata.Getmoviemetatitles(dbmovie, cfgp)
+			if dbmovieadded {
+				if config.SettingsGeneral.UseMediaCache {
+					database.AppendCache(logger.CacheDBMovie, database.DbstaticThreeStringTwoInt{Str1: dbmovie.Title, Str2: dbmovie.Slug, Str3: imdb, Num1: int(dbmovie.Year), Num2: dbmovie.ID})
+				}
+			}
+
+			if dbmovie.Title == "" {
+				_ = database.Scanrows1dyn(false, database.QueryDbmovieTitlesGetTitleByIDLmit1, &dbmovie.Title, &dbid)
+				if dbmovie.Title != "" {
+					database.ExecN("update dbmovies SET Title = ? where id = ?", &dbmovie.Title, &dbid)
+				}
+			}
 		}
 	}
 
@@ -443,98 +293,67 @@ func JobImportMovies(imdb string, cfgp *config.MediaTypeConfig, listid int, addn
 		return dbid, nil
 	}
 	if dbid == 0 {
-		dbid = MovieFindDBIDByImdb(&imdb)
+		dbid = MovieFindDBIDByImdb(imdb)
 		if dbid == 0 {
 			return 0, logger.ErrNotFoundMovie
 		}
 	}
 	if listid == -1 {
-		return 0, errors.New("movie list empty")
+		return 0, logger.ErrListnameEmpty
 	}
 
-	err := Checkaddmovieentry(dbid, &cfgp.Lists[listid], &imdb)
+	err := Checkaddmovieentry(&dbid, &cfgp.Lists[listid], imdb)
 	if err != nil {
 		return 0, err
 	}
 	return dbid, nil
 }
 
-func importmoviemetadata(imdb string, dbid uint, cfgp *config.MediaTypeConfig, dbmovieadded bool) bool {
-	logger.LogDynamic("debug", "Get metadata for", logger.NewLogField(logger.StrJob, &imdb))
-	dbmovie, err := database.GetDbmovieByID(&dbid)
-	if err != nil {
-		return true
-	}
-
-	metadata.Getmoviemetadata(&dbmovie, true)
-
-	database.ExecN("update dbmovies SET Title = ? , Release_Date = ? , Year = ? , Adult = ? , Budget = ? , Genres = ? , Original_Language = ? , Original_Title = ? , Overview = ? , Popularity = ? , Revenue = ? , Runtime = ? , Spoken_Languages = ? , Status = ? , Tagline = ? , Vote_Average = ? , Vote_Count = ? , Trakt_ID = ? , Moviedb_ID = ? , Imdb_ID = ? , Freebase_M_ID = ? , Freebase_ID = ? , Facebook_ID = ? , Instagram_ID = ? , Twitter_ID = ? , URL = ? , Backdrop = ? , Poster = ? , Slug = ? where id = ?",
-		&dbmovie.Title, &dbmovie.ReleaseDate, &dbmovie.Year, &dbmovie.Adult, &dbmovie.Budget, &dbmovie.Genres, &dbmovie.OriginalLanguage, &dbmovie.OriginalTitle, &dbmovie.Overview, &dbmovie.Popularity, &dbmovie.Revenue, &dbmovie.Runtime, &dbmovie.SpokenLanguages, &dbmovie.Status, &dbmovie.Tagline, &dbmovie.VoteAverage, &dbmovie.VoteCount, &dbmovie.TraktID, &dbmovie.MoviedbID, &dbmovie.ImdbID, &dbmovie.FreebaseMID, &dbmovie.FreebaseID, &dbmovie.FacebookID, &dbmovie.InstagramID, &dbmovie.TwitterID, &dbmovie.URL, &dbmovie.Backdrop, &dbmovie.Poster, &dbmovie.Slug, &dbmovie.ID)
-
-	metadata.Getmoviemetatitles(&dbmovie, cfgp)
-	if dbmovieadded {
-		if config.SettingsGeneral.UseMediaCache {
-			database.AppendThreeStringTwoIntCache(logger.CacheDBMovie, database.DbstaticThreeStringTwoInt{Str1: dbmovie.Title, Str2: dbmovie.Slug, Str3: imdb, Num1: dbmovie.Year, Num2: int(dbmovie.ID)})
-		}
-	}
-
-	if dbmovie.Title == "" {
-		_ = database.ScanrowsNdyn(false, database.QueryDbmovieTitlesGetTitleByIDLmit1, &dbmovie.Title, &dbmovie.ID)
-		if dbmovie.Title != "" {
-			database.ExecN("update dbmovies SET Title = ? where id = ?", &dbmovie.Title, &dbmovie.ID)
-		}
-	}
-	//dbmovie.Close()
-	return false
-}
-
 // Checkaddmovieentry checks if a movie with the given ID should be added to
 // the given list. It handles ignore lists, replacing existing lists, and
 // inserting into the DB if needed.
-func Checkaddmovieentry(dbid uint, cfgplist *config.MediaListsConfig, imdb *string) error {
-	if dbid == 0 {
+func Checkaddmovieentry(dbid *uint, cfgplist *config.MediaListsConfig, imdb string) error {
+	if dbid == nil || *dbid == 0 {
 		return nil
 	}
 	if cfgplist == nil || cfgplist.Name == "" {
-		return errors.New("movie list empty")
+		return logger.ErrListnameEmpty
 	}
 	var getid uint
 	if cfgplist.IgnoreMapListsLen >= 1 {
 		if config.SettingsGeneral.UseMediaCache {
-			id := int(dbid)
 			if database.CacheOneStringTwoIntIndexFunc(logger.CacheMovie, func(elem database.DbstaticOneStringTwoInt) bool {
-				return elem.Num1 == id && (elem.Str == cfgplist.Name || strings.EqualFold(elem.Str, cfgplist.Name) || logger.SlicesContainsI(cfgplist.IgnoreMapLists, elem.Str))
+				return elem.Num1 == *dbid && (elem.Str == cfgplist.Name || strings.EqualFold(elem.Str, cfgplist.Name) || logger.SlicesContainsI(cfgplist.IgnoreMapLists, elem.Str))
 			}) {
-				return errors.New("movie ignored")
+				return errIgnoredMovie
 			}
 		} else {
-			args := make([]any, cfgplist.IgnoreMapListsLen+1)
-			for i := range cfgplist.IgnoreMapLists {
-				args[i] = &cfgplist.IgnoreMapLists[i]
+			args := logger.PLArrAny.Get()
+			//args := make([]any, 0, cfgplist.IgnoreMapListsLen+1)
+			for idx := range cfgplist.IgnoreMapLists {
+				args.Arr = append(args.Arr, &cfgplist.IgnoreMapLists[idx])
 			}
-			args[cfgplist.IgnoreMapListsLen] = &dbid
-			_ = database.ScanrowsNdyn(false, logger.JoinStrings("select count() from movies where listname in (?", cfgplist.IgnoreMapListsQu, ") and dbmovie_id = ?"), &getid, args...)
-			//clear(args)
-			args = nil
+			args.Arr = append(args.Arr, dbid)
+			_ = database.ScanrowsNArr(false, logger.JoinStrings("select count() from movies where listname in (?", cfgplist.IgnoreMapListsQu, ") and dbmovie_id = ?"), &getid, args.Arr) //JoinStrings
+			logger.PLArrAny.Put(args)
 			if getid >= 1 {
-				return errors.New("movie ignored")
+				return errIgnoredMovie
 			}
 		}
 	}
 	if cfgplist.ReplaceMapListsLen >= 1 {
 		if config.SettingsGeneral.UseMediaCache {
 			var replaced bool
-			intdbid := int(dbid)
-			a := database.GetCachedTypeObjArr[database.DbstaticOneStringTwoInt](logger.CacheMovie)
-			for idx := range a {
-				if a[idx].Num1 != intdbid {
+			arr := database.GetCachedTypeObjArr[database.DbstaticOneStringTwoInt](logger.CacheMovie, false)
+			for idx := range arr {
+				if arr[idx].Num1 != *dbid {
 					continue
 				}
-				if !strings.EqualFold(a[idx].Str, cfgplist.Name) && logger.SlicesContainsI(cfgplist.ReplaceMapLists, a[idx].Str) {
+				if !strings.EqualFold(arr[idx].Str, cfgplist.Name) && logger.SlicesContainsI(cfgplist.ReplaceMapLists, arr[idx].Str) {
 					if cfgplist.TemplateQuality == "" {
-						database.ExecN("update movies SET listname = ? where dbmovie_id = ? and listname = ? COLLATE NOCASE", &cfgplist.Name, &dbid, &a[idx].Str)
+						database.ExecN("update movies SET listname = ? where dbmovie_id = ? and listname = ? COLLATE NOCASE", &cfgplist.Name, dbid, &arr[idx].Str)
 					} else {
-						database.ExecN("update movies SET listname = ?, quality_profile = ? where dbmovie_id = ? and listname = ? COLLATE NOCASE", &cfgplist.Name, &cfgplist.TemplateQuality, &dbid, &a[idx].Str)
+						database.ExecN("update movies SET listname = ?, quality_profile = ? where dbmovie_id = ? and listname = ? COLLATE NOCASE", &cfgplist.Name, &cfgplist.TemplateQuality, dbid, &arr[idx].Str)
 					}
 					replaced = true
 				}
@@ -544,47 +363,46 @@ func Checkaddmovieentry(dbid uint, cfgplist *config.MediaListsConfig, imdb *stri
 			}
 		} else {
 			var replaced bool
-			arr := database.GetrowsN[string](false, database.GetdatarowN[int](false, "select count() from movies where dbmovie_id = ? and listname != ? COLLATE NOCASE", &dbid, &cfgplist.Name), "select listname from movies where dbmovie_id = ? and listname != ? COLLATE NOCASE", &dbid, &cfgplist.Name)
+			arr := database.GetrowsNsize[string](false, "select count() from movies where dbmovie_id = ? and listname != ? COLLATE NOCASE", "select listname from movies where dbmovie_id = ? and listname != ? COLLATE NOCASE", dbid, &cfgplist.Name)
 			for idx := range arr {
 				if !logger.SlicesContainsI(cfgplist.ReplaceMapLists, arr[idx]) {
 					continue
 				}
 				if cfgplist.TemplateQuality == "" {
-					database.ExecN("update movies SET listname = ? where dbmovie_id = ? and listname = ? COLLATE NOCASE", &cfgplist.Name, &dbid, &arr[idx])
+					database.ExecN("update movies SET listname = ? where dbmovie_id = ? and listname = ? COLLATE NOCASE", &cfgplist.Name, dbid, &arr[idx])
 				} else {
-					database.ExecN("update movies SET listname = ?, quality_profile = ? where dbmovie_id = ? and listname = ? COLLATE NOCASE", &cfgplist.Name, &cfgplist.TemplateQuality, &dbid, &arr[idx])
+					database.ExecN("update movies SET listname = ?, quality_profile = ? where dbmovie_id = ? and listname = ? COLLATE NOCASE", &cfgplist.Name, &cfgplist.TemplateQuality, dbid, &arr[idx])
 				}
 				replaced = true
 			}
+			//clear(arr)
 			if replaced {
 				database.RefreshMediaCache(false)
 			}
-			//clear(arr)
-			arr = nil
 		}
 	}
 
-	database.ScanrowsNdyn(false, "select count() from movies where dbmovie_id = ? and listname = ?", &getid, &dbid, &cfgplist.Name)
+	database.ScanrowsNdyn(false, "select count() from movies where dbmovie_id = ? and listname = ?", &getid, dbid, &cfgplist.Name)
 	if cfgplist.IgnoreMapListsLen >= 1 {
 		if getid == 0 {
-			args := make([]any, cfgplist.IgnoreMapListsLen+1)
-			for i := range cfgplist.IgnoreMapLists {
-				args[i] = &cfgplist.IgnoreMapLists[i]
+			args := logger.PLArrAny.Get()
+			//args := make([]any, 0, cfgplist.IgnoreMapListsLen+1)
+			for idx := range cfgplist.IgnoreMapLists {
+				args.Arr = append(args.Arr, &cfgplist.IgnoreMapLists[idx])
 			}
-			args[cfgplist.IgnoreMapListsLen] = &dbid
-			_ = database.ScanrowsNdyn(false, logger.JoinStrings("select count() from movies where listname in (?", cfgplist.IgnoreMapListsQu, ") and dbmovie_id = ?"), &getid, args...)
-			//clear(args)
-			args = nil
+			args.Arr = append(args.Arr, dbid)
+			_ = database.ScanrowsNArr(false, logger.JoinStrings("select count() from movies where listname in (?", cfgplist.IgnoreMapListsQu, ") and dbmovie_id = ?"), &getid, args.Arr) //JoinStrings
+			logger.PLArrAny.Put(args)
 		}
 	}
 	if getid == 0 {
-		logger.LogDynamic("debug", "Insert Movie for", logger.NewLogField(logger.StrImdb, imdb))
-		movieid, err := database.ExecNid("Insert into movies (missing, listname, dbmovie_id, quality_profile) values (1, ?, ?, ?)", &cfgplist.Name, &dbid, &cfgplist.TemplateQuality)
+		logger.LogDynamicany("debug", "Insert Movie for", &logger.StrImdb, imdb) //logpointerr
+		movieid, err := database.ExecNid("Insert into movies (missing, listname, dbmovie_id, quality_profile) values (1, ?, ?, ?)", &cfgplist.Name, dbid, &cfgplist.TemplateQuality)
 		if err != nil {
 			return err
 		}
 		if config.SettingsGeneral.UseMediaCache {
-			database.AppendOneStringTwoIntCache(logger.CacheMovie, database.DbstaticOneStringTwoInt{Str: cfgplist.Name, Num1: int(dbid), Num2: int(movieid)})
+			database.AppendCache(logger.CacheMovie, database.DbstaticOneStringTwoInt{Str: cfgplist.Name, Num1: *dbid, Num2: uint(movieid)})
 		}
 	}
 	return nil
@@ -600,22 +418,22 @@ func AllowMovieImport(imdb string, listcfg *config.ListsConfig) (bool, error) {
 	}
 	var i int
 	if listcfg.MinVotes != 0 {
-		database.ScanrowsNdyn(true, "select count() from imdb_ratings where tconst = ? and num_votes < ?", &i, &imdb, &listcfg.MinVotes)
+		database.ScanrowsNdyn(true, "select count() from imdb_ratings where tconst = ? and num_votes < ?", &i, imdb, &listcfg.MinVotes) //sqlpointerr
 		if i >= 1 {
-			return false, errors.New("error vote count too low")
+			return false, errVoteLow
 		}
 	}
 	if listcfg.MinRating != 0 {
-		database.ScanrowsNdyn(true, "select count() from imdb_ratings where tconst = ? and average_rating < ?", &i, &imdb, &listcfg.MinRating)
+		database.ScanrowsNdyn(true, "select count() from imdb_ratings where tconst = ? and average_rating < ?", &i, imdb, &listcfg.MinRating) //sqlpointerr
 		if i >= 1 {
-			return false, errors.New("error average vote too low")
+			return false, errVoteRateLow
 		}
 	}
 
 	if listcfg.ExcludegenreLen == 0 && listcfg.IncludegenreLen == 0 {
 		return true, nil
 	}
-	genrearr := database.Getrows1size[string](true, "select count(genre) from imdb_genres where tconst = ?", "select genre from imdb_genres where tconst = ?", &imdb)
+	genrearr := database.Getrows1size[string](true, "select count(genre) from imdb_genres where tconst = ?", "select genre from imdb_genres where tconst = ?", imdb) //sqlpointerr
 	if len(genrearr) == 0 {
 		return true, nil
 	}
@@ -630,8 +448,7 @@ func AllowMovieImport(imdb string, listcfg *config.ListsConfig) (bool, error) {
 	}
 	if excludeby != "" && listcfg.ExcludegenreLen >= 1 {
 		//clear(genrearr)
-		genrearr = nil
-		return false, errors.New("excluded by " + excludeby)
+		return false, errors.New(logger.JoinStrings("excluded by ", excludeby))
 	}
 
 	var includebygenre bool
@@ -643,11 +460,10 @@ func AllowMovieImport(imdb string, listcfg *config.ListsConfig) (bool, error) {
 			break
 		}
 	}
-
 	//clear(genrearr)
-	genrearr = nil
+
 	if !includebygenre && listcfg.IncludegenreLen >= 1 {
-		return false, errors.New("included genre not found")
+		return false, errIncludedGenreNotFound
 	}
 	return true, nil
 }
@@ -666,38 +482,37 @@ func getsearchprovider(searchtyperss bool) []string {
 			return config.SettingsGeneral.MovieParseMetaSourcePriority
 		}
 	}
-	return []string{"imdb", "tmdb", "omdb"}
+	return defaultproviders
 }
 
 // JobImportDBSeriesStatic wraps jobImportDBSeries to import a series from a DbstaticTwoStringOneInt row containing the TVDB ID and name.
-func JobImportDBSeriesStatic(row *database.DbstaticTwoStringOneInt, cfgp *config.MediaTypeConfig, checkall, addnew bool) error {
-	s := config.SerieConfig{TvdbID: row.Num, Name: row.Str1}
-	defer s.Close()
-	//cfgp := findconfigTemplateNameOnList(true, row.Str2)
-	return jobImportDBSeries(&s, cfgp, config.GetMediaListsEntryListID(cfgp, row.Str2), checkall, addnew)
+func JobImportDBSeriesStatic(row *database.DbstaticTwoStringOneRInt, cfgp *config.MediaTypeConfig, checkall, addnew bool) error {
+	return jobImportDBSeries(&config.SerieConfig{TvdbID: row.Num, Name: row.Str1}, cfgp, cfgp.GetMediaListsEntryListID(row.Str2), checkall, addnew)
 }
 
 // JobImportDBSeries imports a series into the database and media lists from a SerieConfig.
 // It handles adding new series or updating existing ones, refreshing metadata from TheTVDB,
 // adding missing episodes, and updating the series lists table.
-func JobImportDBSeries(series *config.MainSerieConfig, idxserie int, cfgp *config.MediaTypeConfig, listid int, checkall, addnew bool) {
-	logger.LogDynamic("info", "Import/Update Serie", logger.NewLogField(logger.StrSeries, &series.Serie[idxserie].Name), logger.NewLogField("row", &idxserie))
-	err := jobImportDBSeries(&series.Serie[idxserie], cfgp, listid, checkall, addnew)
+func JobImportDBSeries(wg *pool.SizedWaitGroup, series *config.SerieConfig, idxserie int, cfgp *config.MediaTypeConfig, listid int8, checkall, addnew bool) {
+	defer logger.HandlePanic()
+	defer wg.Done()
+	logger.LogDynamicany("info", "Import/Update Serie", &logger.StrSeries, &series.Name, &logger.StrRow, &idxserie)
+	err := jobImportDBSeries(series, cfgp, listid, checkall, addnew)
 	if err != nil {
-		logger.LogDynamic("error", "Import/Update Failed", logger.NewLogFieldValue(err), logger.NewLogField("Serie", &series.Serie[idxserie].TvdbID))
+		logger.LogDynamicany("error", "Import/Update Failed", err, &logger.StrSeries, &series.TvdbID)
 	}
 }
 
 // jobImportDBSeries imports a series into the database and media lists from a SerieConfig.
 // It handles adding new series or updating existing ones, refreshing metadata from TheTVDB,
 // adding missing episodes, and updating the series lists table.
-func jobImportDBSeries(serieconfig *config.SerieConfig, cfgp *config.MediaTypeConfig, listid int, checkall, addnew bool) error {
+func jobImportDBSeries(serieconfig *config.SerieConfig, cfgp *config.MediaTypeConfig, listid int8, checkall, addnew bool) error {
 	if cfgp == nil {
 		return logger.ErrCfgpNotFound
 	}
 	jobName := serieconfig.Name
 	if listid == -1 {
-		listid = config.GetMediaListsEntryListID(cfgp, database.GetdatarowN[string](false, "select listname from series where dbserie_id in (Select id from dbseries where thetvdb_id=?)", &serieconfig.TvdbID))
+		listid = cfgp.GetMediaListsEntryListID(database.Getdatarow1[string](false, "select listname from series where dbserie_id in (Select id from dbseries where thetvdb_id=?)", &serieconfig.TvdbID))
 	}
 	if jobName == "" && listid >= 0 {
 		jobName = cfgp.Lists[listid].Name
@@ -706,62 +521,61 @@ func jobImportDBSeries(serieconfig *config.SerieConfig, cfgp *config.MediaTypeCo
 		return errors.New("jobname missing")
 	}
 
-	_, ok := importJobRunning.Load(jobName)
-	if ok {
-		return errors.New("job running")
+	if importJobRunning.Check(jobName) {
+		return errJobRunning
 	}
-	importJobRunning.Store(jobName, struct{}{})
+	importJobRunning.Set(jobName, struct{}{})
 	defer importJobRunning.Delete(jobName)
 	if !addnew && listid == -1 {
-		listid = config.GetMediaListsEntryListID(cfgp, database.GetdatarowN[string](false, "select listname from series where dbserie_id in (Select id from dbseries where thetvdb_id=?)", &serieconfig.TvdbID))
+		listid = cfgp.GetMediaListsEntryListID(database.Getdatarow1[string](false, "select listname from series where dbserie_id in (Select id from dbseries where thetvdb_id=?)", &serieconfig.TvdbID))
 	}
 
 	var dbserieadded bool
 	var dbid uint
 	if addnew && (serieconfig.Source == "none" || strings.EqualFold(serieconfig.Source, "none")) {
-		if database.GetdatarowN[int](false, "select count() from dbseries where seriename = ? COLLATE NOCASE", &serieconfig.Name) == 0 {
-			dbid = insertdbserie(serieconfig.Name, serieconfig.AlternateName, serieconfig.TvdbID, serieconfig.Identifiedby)
+		if database.Getdatarow1[uint](false, "select count() from dbseries where seriename = ? COLLATE NOCASE", &serieconfig.Name) == 0 {
+			dbid = insertdbserie(serieconfig)
 			if dbid != 0 {
 				dbserieadded = true
 			}
 		} else {
-			_ = database.ScanrowsNdyn(false, database.QueryDbseriesGetIDByName, &dbid, &serieconfig.Name)
+			_ = database.Scanrows1dyn(false, database.QueryDbseriesGetIDByName, &dbid, &serieconfig.Name)
 		}
 		if dbid == 0 {
-			return errors.New("id not fetched")
+			return logger.ErrNoID
 		}
 	}
 	//var addserietitle database.DbstaticTwoStringOneInt
 	if !addnew && (serieconfig.Source == "none" || strings.EqualFold(serieconfig.Source, "none")) {
-		_ = database.ScanrowsNdyn(false, database.QueryDbseriesGetIDByName, &dbid, &serieconfig.Name)
+		_ = database.Scanrows1dyn(false, database.QueryDbseriesGetIDByName, &dbid, &serieconfig.Name)
 		if dbid >= 1 {
 			for idx := range serieconfig.AlternateName {
-				addalternateserietitle(&database.DbstaticTwoStringOneInt{Num: int(dbid), Str1: serieconfig.AlternateName[idx]}, "")
+				addalternateserietitle(&dbid, &serieconfig.AlternateName[idx], "")
 			}
 		}
 	}
 	if serieconfig.Source == "" || serieconfig.Source == logger.StrTvdb || strings.EqualFold(serieconfig.Source, logger.StrTvdb) {
-		getid := database.GetdatarowN[int](false, "select count() from dbseries where thetvdb_id = ?", &serieconfig.TvdbID)
+		getid := database.Getdatarow1[uint](false, "select count() from dbseries where thetvdb_id = ?", &serieconfig.TvdbID)
 		if addnew && getid == 0 {
-			dbid = insertdbserie(serieconfig.Name, serieconfig.AlternateName, serieconfig.TvdbID, serieconfig.Identifiedby)
+			dbid = insertdbserie(serieconfig)
 			if dbid != 0 {
 				dbserieadded = true
 			}
 		} else if getid == 0 {
-			return errors.New("add not wanted")
+			return logger.ErrNotAllowed
 		} else if getid >= 1 {
-			_ = database.ScanrowsNdyn(false, database.QueryDbseriesGetIDByTvdb, &dbid, &serieconfig.TvdbID)
+			_ = database.Scanrows1dyn(false, database.QueryDbseriesGetIDByTvdb, &dbid, &serieconfig.TvdbID)
 		}
 		if dbid != 0 {
 			for idx := range serieconfig.AlternateName {
-				addalternateserietitle(&database.DbstaticTwoStringOneInt{Num: int(dbid), Str1: serieconfig.AlternateName[idx]}, "")
+				addalternateserietitle(&dbid, &serieconfig.AlternateName[idx], "")
 			}
 		}
 		if dbid != 0 && (dbserieadded || !addnew) && serieconfig.TvdbID != 0 {
 			//Update Metadata
 			dbserie, err := database.GetDbserieByID(&dbid)
 			if err != nil {
-				return errors.New("db fetch failed")
+				return logger.ErrNotFoundDbserie
 			}
 			if dbserie.Seriename == "" {
 				dbserie.Seriename = serieconfig.Name
@@ -769,81 +583,90 @@ func jobImportDBSeries(serieconfig *config.SerieConfig, cfgp *config.MediaTypeCo
 			if dbserie.Identifiedby == "" {
 				dbserie.Identifiedby = serieconfig.Identifiedby
 			}
-			logger.LogDynamic("debug", "Get metadata for", logger.NewLogField(logger.StrTvdb, &serieconfig.TvdbID))
-			alternateName := append(metadata.SerieGetMetadata(&dbserie, cfgp.MetadataLanguage, config.SettingsGeneral.SerieMetaSourceTmdb, config.SettingsGeneral.SerieMetaSourceTrakt, !addnew, serieconfig.AlternateName), serieconfig.Name, dbserie.Seriename)
+			if !dbserieadded && dbserie.UpdatedAt.After(logger.TimeGetNow().Add(-1*time.Hour)) {
+				//update only if updated more than an hour ago
+				logger.LogDynamicany("debug", "Skipped update metadata for dbserie ", &logger.StrTvdb, &serieconfig.TvdbID)
+			} else {
+				logger.LogDynamicany("debug", "Get metadata for", &logger.StrTvdb, &serieconfig.TvdbID)
 
-			database.ExecN("update dbseries SET Seriename = ?, Aliases = ?, Season = ?, Status = ?, Firstaired = ?, Network = ?, Runtime = ?, Language = ?, Genre = ?, Overview = ?, Rating = ?, Siterating = ?, Siterating_Count = ?, Slug = ?, Trakt_ID = ?, Imdb_ID = ?, Thetvdb_ID = ?, Freebase_M_ID = ?, Freebase_ID = ?, Tvrage_ID = ?, Facebook = ?, Instagram = ?, Twitter = ?, Banner = ?, Poster = ?, Fanart = ?, Identifiedby = ? where id = ?",
-				&dbserie.Seriename, &dbserie.Aliases, &dbserie.Season, &dbserie.Status, &dbserie.Firstaired, &dbserie.Network, &dbserie.Runtime, &dbserie.Language, &dbserie.Genre, &dbserie.Overview, &dbserie.Rating, &dbserie.Siterating, &dbserie.SiteratingCount, &dbserie.Slug, &dbserie.TraktID, &dbserie.ImdbID, &dbserie.ThetvdbID, &dbserie.FreebaseMID, &dbserie.FreebaseID, &dbserie.TvrageID, &dbserie.Facebook, &dbserie.Instagram, &dbserie.Twitter, &dbserie.Banner, &dbserie.Poster, &dbserie.Fanart, &dbserie.Identifiedby, &dbserie.ID)
+				database.ExecN("update dbseries SET Seriename = ?, Aliases = ?, Season = ?, Status = ?, Firstaired = ?, Network = ?, Runtime = ?, Language = ?, Genre = ?, Overview = ?, Rating = ?, Siterating = ?, Siterating_Count = ?, Slug = ?, Trakt_ID = ?, Imdb_ID = ?, Thetvdb_ID = ?, Freebase_M_ID = ?, Freebase_ID = ?, Tvrage_ID = ?, Facebook = ?, Instagram = ?, Twitter = ?, Banner = ?, Poster = ?, Fanart = ?, Identifiedby = ? where id = ?",
+					&dbserie.Seriename, &dbserie.Aliases, &dbserie.Season, &dbserie.Status, &dbserie.Firstaired, &dbserie.Network, &dbserie.Runtime, &dbserie.Language, &dbserie.Genre, &dbserie.Overview, &dbserie.Rating, &dbserie.Siterating, &dbserie.SiteratingCount, &dbserie.Slug, &dbserie.TraktID, &dbserie.ImdbID, &dbserie.ThetvdbID, &dbserie.FreebaseMID, &dbserie.FreebaseID, &dbserie.TvrageID, &dbserie.Facebook, &dbserie.Instagram, &dbserie.Twitter, &dbserie.Banner, &dbserie.Poster, &dbserie.Fanart, &dbserie.Identifiedby, &dbserie.ID)
 
-			//size+10
-			titles := database.GetrowsN[database.DbstaticOneStringOneInt](false, database.GetdatarowN[int](false, "select count() from dbserie_alternates where dbserie_id = ?", &dbserie.ID)+10, "select title, id from dbserie_alternates where dbserie_id = ?", &dbserie.ID)
+				//size+10
+				titles := database.GetrowsN[database.DbstaticOneStringOneUInt](false, database.Getdatarow1[uint](false, "select count() from dbserie_alternates where dbserie_id = ?", &dbserie.ID)+10, "select title, id from dbserie_alternates where dbserie_id = ?", &dbserie.ID)
 
-			lenarr := cfgp.MetadataTitleLanguagesLen
+				lenarr := cfgp.MetadataTitleLanguagesLen
 
-			if config.SettingsGeneral.SerieAlternateTitleMetaSourceImdb && dbserie.ImdbID != "" {
-				queryid := logger.AddImdbPrefix(dbserie.ImdbID)
-				arr := database.Getrows1size[database.DbstaticThreeString](true, "select count() from imdb_akas where tconst = ?", "select title, region, slug from imdb_akas where tconst = ?", &queryid)
-				for idx := range arr {
-					if database.GetDbStaticOneStringOneIntIdx(titles, arr[idx].Str1) != -1 {
-						continue
+				if config.SettingsGeneral.SerieAlternateTitleMetaSourceImdb && dbserie.ImdbID != "" {
+					logger.AddImdbPrefixP(&dbserie.ImdbID)
+					arr := database.Getrows1size[database.DbstaticThreeString](true, "select count() from imdb_akas where tconst = ?", "select title, region, slug from imdb_akas where tconst = ?", &dbserie.ImdbID)
+					for idx := range arr {
+						if database.GetDbStaticOneStringOneIntIdx(titles, arr[idx].Str1) != -1 {
+							continue
+						}
+
+						if logger.SlicesContainsI(serieconfig.DisallowedName, arr[idx].Str1) {
+							continue
+						}
+						if lenarr == 0 || logger.SlicesContainsI(cfgp.MetadataTitleLanguages, arr[idx].Str2) {
+							titles = append(titles, database.DbstaticOneStringOneUInt{Num: dbid, Str: arr[idx].Str1})
+							addalternateserietitle(&dbserie.ID, &arr[idx].Str1, arr[idx].Str2)
+						}
 					}
-
-					if logger.SlicesContainsI(serieconfig.DisallowedName, arr[idx].Str1) {
-						continue
-					}
-					if lenarr == 0 || logger.SlicesContainsI(cfgp.MetadataTitleLanguages, arr[idx].Str2) {
-						titles = append(titles, database.DbstaticOneStringOneInt{Num: int(dbid), Str: arr[idx].Str1})
-						addalternateserietitle(&database.DbstaticTwoStringOneInt{Num: int(dbserie.ID), Str1: arr[idx].Str1}, arr[idx].Str2)
-					}
+					//clear(arr)
 				}
-				//clear(arr)
-				arr = nil
-			}
-			if config.SettingsGeneral.SerieAlternateTitleMetaSourceTrakt && (dbserie.TraktID != 0 || dbserie.ImdbID != "") {
-				tbl := apiexternal.GetTraktSerieAliases(&dbserie)
-				for idx := range tbl {
-					if database.GetDbStaticOneStringOneIntIdx(titles, tbl[idx].Title) != -1 {
-						continue
-					}
-					if logger.SlicesContainsI(serieconfig.DisallowedName, tbl[idx].Title) {
-						continue
-					}
+				if config.SettingsGeneral.SerieAlternateTitleMetaSourceTrakt && (dbserie.TraktID != 0 || dbserie.ImdbID != "") {
+					tbl, _ := apiexternal.GetTraktSerieAliases(dbserie)
+					for idx := range tbl {
+						if database.GetDbStaticOneStringOneIntIdx(titles, tbl[idx].Title) != -1 {
+							continue
+						}
+						if logger.SlicesContainsI(serieconfig.DisallowedName, tbl[idx].Title) {
+							continue
+						}
 
-					if lenarr == 0 || logger.SlicesContainsI(cfgp.MetadataTitleLanguages, tbl[idx].Country) {
-						titles = append(titles, database.DbstaticOneStringOneInt{Num: int(dbid), Str: tbl[idx].Title})
-						addalternateserietitle(&database.DbstaticTwoStringOneInt{Num: int(dbserie.ID), Str1: tbl[idx].Title}, tbl[idx].Country)
+						if lenarr == 0 || logger.SlicesContainsI(cfgp.MetadataTitleLanguages, tbl[idx].Country) {
+							titles = append(titles, database.DbstaticOneStringOneUInt{Num: dbid, Str: tbl[idx].Title})
+							addalternateserietitle(&dbserie.ID, &tbl[idx].Title, tbl[idx].Country)
+						}
 					}
+					//clear(tbl)
+				}
+
+				tbl := metadata.SerieGetMetadata(dbserie, cfgp.MetadataLanguage, config.SettingsGeneral.SerieMetaSourceTmdb, config.SettingsGeneral.SerieMetaSourceTrakt, !addnew, serieconfig.AlternateName)
+				for idx := range tbl {
+					if database.GetDbStaticOneStringOneIntIdx(titles, tbl[idx]) != -1 {
+						continue
+					}
+					addalternateserietitle(&dbid, &tbl[idx], "")
+					titles = append(titles, database.DbstaticOneStringOneUInt{Num: dbserie.ID, Str: tbl[idx]})
 				}
 				//clear(tbl)
-				tbl = nil
-			}
-
-			for idx := range alternateName {
-				if database.GetDbStaticOneStringOneIntIdx(titles, alternateName[idx]) != -1 {
-					continue
+				if database.GetDbStaticOneStringOneIntIdx(titles, serieconfig.Name) == -1 {
+					addalternateserietitle(&dbid, &serieconfig.Name, "")
+					titles = append(titles, database.DbstaticOneStringOneUInt{Num: dbserie.ID, Str: serieconfig.Name})
 				}
-				addalternateserietitle(&database.DbstaticTwoStringOneInt{Num: int(dbid), Str1: alternateName[idx]}, "")
-				titles = append(titles, database.DbstaticOneStringOneInt{Num: int(dbserie.ID), Str: alternateName[idx]})
-			}
-			for idx := range serieconfig.DisallowedName {
-				database.ExecN("delete from dbserie_alternates where dbserie_id = ? and title = ? COLLATE NOCASE", &dbserie.ID, &serieconfig.DisallowedName[idx])
-			}
 
-			if (checkall || dbserieadded || !addnew) && (serieconfig.Source == "" || serieconfig.Source == logger.StrTvdb || strings.EqualFold(serieconfig.Source, logger.StrTvdb)) {
-				logger.LogDynamic("debug", "Get episodes for", logger.NewLogField(logger.StrTvdb, &serieconfig.TvdbID))
+				if database.GetDbStaticOneStringOneIntIdx(titles, dbserie.Seriename) == -1 {
+					addalternateserietitle(&dbid, &dbserie.Seriename, "")
+				}
 
-				if dbserie.ThetvdbID != 0 {
-					apiexternal.UpdateTvdbSeriesEpisodes(dbserie.ThetvdbID, cfgp.MetadataLanguage, dbserie.ID)
+				for idx := range serieconfig.DisallowedName {
+					database.ExecN("delete from dbserie_alternates where dbserie_id = ? and title = ? COLLATE NOCASE", &dbserie.ID, &serieconfig.DisallowedName[idx])
 				}
-				if config.SettingsGeneral.SerieMetaSourceTrakt && dbserie.ImdbID != "" {
-					apiexternal.UpdateTraktSerieSeasonsAndEpisodes(dbserie.ImdbID, &dbserie.ID)
+
+				if (checkall || dbserieadded || !addnew) && (serieconfig.Source == "" || serieconfig.Source == logger.StrTvdb || strings.EqualFold(serieconfig.Source, logger.StrTvdb)) {
+					logger.LogDynamicany("debug", "Get episodes for", &logger.StrTvdb, &serieconfig.TvdbID)
+
+					if dbserie.ThetvdbID != 0 {
+						apiexternal.UpdateTvdbSeriesEpisodes(dbserie.ThetvdbID, cfgp.MetadataLanguage, &dbserie.ID)
+					}
+					if config.SettingsGeneral.SerieMetaSourceTrakt && dbserie.ImdbID != "" {
+						apiexternal.UpdateTraktSerieSeasonsAndEpisodes(dbserie.ImdbID, &dbserie.ID)
+					}
 				}
+				//clear(titles)
 			}
-			//dbserie.Close()
-			//clear(titles)
-			titles = nil
-			//clear(alternateName)
-			alternateName = nil
 		}
 	}
 
@@ -860,6 +683,7 @@ func jobImportDBSeries(serieconfig *config.SerieConfig, cfgp *config.MediaTypeCo
 		arr := database.Getrows1size[database.DbstaticOneStringOneInt](false, database.QuerySeriesCountByDBID, "select lower(listname), id from series where dbserie_id = ?", &dbid)
 		for idx := range arr {
 			if logger.SlicesContainsI(cfgp.Lists[listid].IgnoreMapLists, arr[idx].Str) {
+				//clear(arr)
 				return errors.New("series skip2 for")
 			}
 			if logger.SlicesContainsI(cfgp.Lists[listid].ReplaceMapLists, arr[idx].Str) {
@@ -867,16 +691,15 @@ func jobImportDBSeries(serieconfig *config.SerieConfig, cfgp *config.MediaTypeCo
 			}
 		}
 		//clear(arr)
-		arr = nil
-		getid := database.GetdatarowN[int](false, "select count() from series where dbserie_id = ? and listname = ? COLLATE NOCASE", &dbid, &cfgp.Lists[listid].Name)
+		getid := database.GetdatarowN[uint](false, "select count() from series where dbserie_id = ? and listname = ? COLLATE NOCASE", dbid, &cfgp.Lists[listid].Name)
 		if getid == 0 {
-			logger.LogDynamic("debug", "Add series for", logger.NewLogField(logger.StrListname, &cfgp.Lists[listid].Name), logger.NewLogField(logger.StrTvdb, &serieconfig.TvdbID))
-			serieid, err := database.ExecNid("Insert into series (dbserie_id, listname, rootpath, search_specials, dont_search, dont_upgrade) values (?, ?, ?, ?, ?, ?)", &dbid, &cfgp.Lists[listid].Name, &serieconfig.Target, &serieconfig.SearchSpecials, &serieconfig.DontSearch, &serieconfig.DontUpgrade)
+			logger.LogDynamicany("debug", "Add series for", &logger.StrListname, &cfgp.Lists[listid].Name, &logger.StrTvdb, &serieconfig.TvdbID)
+			serieid, err := database.ExecNid("Insert into series (dbserie_id, listname, rootpath, search_specials, dont_search, dont_upgrade) values (?, ?, ?, ?, ?, ?)", &dbid, &cfgp.Lists[listid].Name, &serieconfig.Target, &serieconfig.SearchSpecials, &serieconfig.DontSearch, &serieconfig.DontUpgrade) //sqlpointer
 			if err != nil {
 				return err
 			}
 			if config.SettingsGeneral.UseMediaCache {
-				database.AppendOneStringTwoIntCache(logger.CacheSeries, database.DbstaticOneStringTwoInt{Str: cfgp.Lists[listid].Name, Num1: int(dbid), Num2: int(serieid)})
+				database.AppendCache(logger.CacheSeries, database.DbstaticOneStringTwoInt{Str: cfgp.Lists[listid].Name, Num1: dbid, Num2: uint(serieid)})
 			}
 		} else {
 			database.ExecN("update series SET search_specials=?, dont_search=?, dont_upgrade=? where dbserie_id = ? and listname = ?", &serieconfig.SearchSpecials, &serieconfig.DontSearch, &serieconfig.DontUpgrade, &dbid, &cfgp.Lists[listid].Name)
@@ -888,35 +711,31 @@ func jobImportDBSeries(serieconfig *config.SerieConfig, cfgp *config.MediaTypeCo
 		"select dbserie_episode_id, serie_id from serie_episodes where dbserie_id = ?", &dbid)
 
 	arr := database.Getrows1size[uint](false, database.QuerySeriesCountByDBID, "select id from series where dbserie_id = ?", &dbid)
+	var quality string
 	for idx := range arr {
-		checkandaddserieepisodes(dbseries, episodes, arr[idx], dbid, cfgp)
-	}
-
-	//clear(arr)
-	arr = nil
-	//clear(dbseries)
-	dbseries = nil
-	//clear(episodes)
-	episodes = nil
-	return nil
-}
-
-// checkandaddserieepisodes checks for any episodes in the dbseries slice that are not already associated with the given serieid. It adds any missing episodes, setting them as missing with the default quality profile.
-func checkandaddserieepisodes(dbseries []uint, episodes []database.DbstaticTwoUint, serieid uint, dbid uint, cfgp *config.MediaTypeConfig) {
-	quality := database.GetdatarowN[string](false, "select quality_profile from serie_episodes where serie_id = ? and length(quality_profile)>=1 limit 1", &serieid)
-	if quality == "" {
-		quality = cfgp.TemplateQuality
-	}
-
-LabDBSeries:
-	for idxdb := range dbseries {
-		for idxepi := range episodes {
-			if episodes[idxepi].Num2 == serieid && episodes[idxepi].Num1 == dbseries[idxdb] {
-				continue LabDBSeries
-			}
+		database.Scanrows1dyn(false, "select quality_profile from serie_episodes where serie_id = ? and length(quality_profile)>=1 limit 1", &quality, &arr[idx])
+		if quality == "" {
+			quality = cfgp.TemplateQuality
 		}
-		database.ExecN("Insert into serie_episodes (dbserie_id, serie_id, missing, quality_profile, dbserie_episode_id) values (?, ?, 1, ?, ?)", &dbid, &serieid, &quality, &dbseries[idxdb])
+
+		//LabDBSeries:
+		for idxdb := range dbseries {
+			if database.ArrStructContains(episodes, database.DbstaticTwoUint{Num1: dbseries[idxdb], Num2: arr[idx]}) {
+				continue
+			}
+			// for idxepi := range episodes {
+			// 	if episodes[idxepi].Num2 == arr[idx] && episodes[idxepi].Num1 == dbseries[idxdb] {
+			// 		continue LabDBSeries
+			// 	}
+			// }
+			database.ExecN("Insert into serie_episodes (dbserie_id, serie_id, missing, quality_profile, dbserie_episode_id) values (?, ?, 1, ?, ?)", &dbid, &arr[idx], &quality, &dbseries[idxdb])
+		}
+		//checkandaddserieepisodes(dbseries, episodes, &arr[idx], dbid, cfgp)
 	}
+	//clear(arr)
+	//clear(episodes)
+	//clear(dbseries)
+	return nil
 }
 
 // insertdbserie inserts a new dbseries row into the dbseries table.
@@ -924,26 +743,30 @@ LabDBSeries:
 // It inserts a new row into the dbseries table with those values.
 // It returns the auto generated uint ID for the new row.
 // It also handles caching and inserting alternate names.
-func insertdbserie(name string, aliases []string, tbdbid int, identifiedby string) uint {
-	logger.LogDynamic("debug", "Insert dbseries for", logger.NewLogField(logger.StrTvdb, &tbdbid))
+func insertdbserie(serieconfig *config.SerieConfig) uint {
+	getid := database.Getdatarow1[uint](false, "select id from dbseries where seriename = ? COLLATE NOCASE", &serieconfig.Name)
+	if getid >= 1 {
+		return getid
+	}
+	logger.LogDynamicany("debug", "Insert dbseries for", &logger.StrTvdb, &serieconfig.TvdbID)
 	inres, err := database.ExecNid("insert into dbseries (seriename, aliases, thetvdb_id, identifiedby) values (?, ?, ?, ?)",
-		&name, strings.Join(aliases, ","), &tbdbid, &identifiedby)
+		&serieconfig.Name, strings.Join(serieconfig.AlternateName, ","), &serieconfig.TvdbID, &serieconfig.Identifiedby)
 	if err != nil {
 		return 0
 	}
 	dbid := uint(inres)
 
 	if config.SettingsGeneral.UseMediaCache {
-		database.AppendTwoStringIntCache(logger.CacheDBSeries, database.DbstaticTwoStringOneInt{Str1: name, Str2: logger.StringToSlug(name), Num: int(dbid)})
+		database.AppendCache(logger.CacheDBSeries, database.DbstaticTwoStringOneInt{Str1: serieconfig.Name, Str2: logger.StringToSlug(serieconfig.Name), Num: dbid})
 	}
 
-	aliases = append(aliases, name)
-	for idx := range aliases {
-		if aliases[idx] == "" {
+	for idx := range serieconfig.AlternateName {
+		if serieconfig.AlternateName[idx] == "" {
 			continue
 		}
-		addalternateserietitle(&database.DbstaticTwoStringOneInt{Num: int(dbid), Str1: aliases[idx]}, "")
+		addalternateserietitle(&dbid, &serieconfig.AlternateName[idx], "")
 	}
+	addalternateserietitle(&dbid, &serieconfig.Name, "")
 	return dbid
 }
 
@@ -952,13 +775,13 @@ func insertdbserie(name string, aliases []string, tbdbid int, identifiedby strin
 // it into the dbserie_alternates table. The region parameter indicates
 // the language/region for the title. It also adds the title to the cache
 // if enabled.
-func addalternateserietitle(addserietitle *database.DbstaticTwoStringOneInt, region string) {
-	if database.GetdatarowN[uint](false, "select count() from dbserie_alternates where dbserie_id = ? and title = ? COLLATE NOCASE", &addserietitle.Num, &addserietitle.Str1) == 0 {
-		addserietitle.Str2 = logger.StringToSlug(addserietitle.Str1)
+func addalternateserietitle(dbserieid *uint, title *string, region string) {
+	if database.GetdatarowN[uint](false, "select count() from dbserie_alternates where dbserie_id = ? and title = ? COLLATE NOCASE", dbserieid, title) == 0 {
+		slug := logger.StringToSlug(*title)
 
-		database.ExecN("Insert into dbserie_alternates (title, slug, dbserie_id, region) values (?, ?, ?, ?)", &addserietitle.Str1, &addserietitle.Str2, &addserietitle.Num, &region)
+		database.ExecN("Insert into dbserie_alternates (title, slug, dbserie_id, region) values (?, ?, ?, ?)", title, &slug, dbserieid, region) //sqlpointerr
 		if config.SettingsGeneral.UseMediaCache {
-			database.AppendTwoStringIntCache(logger.CacheDBSeriesAlt, *addserietitle)
+			database.AppendCache(logger.CacheDBSeriesAlt, database.DbstaticTwoStringOneInt{Str1: *title, Str2: slug, Num: *dbserieid})
 		}
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"crypto/tls"
 	"encoding/csv"
 	"encoding/json"
@@ -21,7 +22,6 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 	"unicode"
@@ -33,7 +33,6 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/metadata"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/parser"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/scanner"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/searcher"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/slidingwindow"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/structure"
@@ -114,13 +113,18 @@ func Init() {
 	apiexternal.NewTmdbClient(config.SettingsGeneral.TheMovieDBApiKey, config.SettingsGeneral.TmdbLimiterSeconds, config.SettingsGeneral.TmdbLimiterCalls, config.SettingsGeneral.TheMovieDBDisableTLSVerify, config.SettingsGeneral.TmdbTimeoutSeconds)
 	apiexternal.NewTvdbClient(config.SettingsGeneral.TvdbLimiterSeconds, config.SettingsGeneral.TvdbLimiterCalls, config.SettingsGeneral.TvdbDisableTLSVerify, config.SettingsGeneral.TvdbTimeoutSeconds)
 	apiexternal.NewTraktClient(config.SettingsGeneral.TraktClientID, config.SettingsGeneral.TraktClientSecret, config.SettingsGeneral.TraktLimiterSeconds, config.SettingsGeneral.TraktLimiterCalls, config.SettingsGeneral.TraktDisableTLSVerify, config.SettingsGeneral.TraktTimeoutSeconds)
-	worker.InitWorkerPools(config.SettingsGeneral.WorkerIndexer, config.SettingsGeneral.WorkerParse, config.SettingsGeneral.WorkerSearch, config.SettingsGeneral.WorkerFiles, config.SettingsGeneral.WorkerMetadata)
+	worker.InitWorkerPools(config.SettingsGeneral.WorkerSearch, config.SettingsGeneral.WorkerFiles, config.SettingsGeneral.WorkerMetadata)
 
 	database.InitImdbdb()
 
-	logger.LogDynamic("info", "Check Database for Upgrades")
+	logger.LogDynamicany("info", "Check Database for Upgrades")
 	//database.UpgradeDB()
 	database.SetVars()
+
+	parser.GenerateAllQualityPriorities()
+
+	parser.LoadDBPatterns()
+	parser.GenerateCutoffPriorities()
 	database.Refreshhistorycache(true)
 	database.RefreshMediaCache(true)
 	database.RefreshMediaCacheTitles(true)
@@ -173,12 +177,20 @@ func TestGetDBIDParse(t *testing.T) {
 	Init()
 	t.Run("test", func(t *testing.T) {
 		cfgp := config.SettingsMedia["serie_EN"]
-		parse := parser.NewFileParser("Historical.Homos.S01E03.XviD-AFG", cfgp, -1, true)
-		parser.GetPriorityMapQual(&parse.M, cfgp, config.SettingsQuality["SD"], true, true)
-		err := parser.GetDBIDs(parse)
+		q := config.SettingsQuality["SD"]
+		//h, _ := json.Marshal(config.SettingsMedia)
+		t.Log(cfgp.Useseries)
+		//defer parse.Close()
+		parse := parser.NewFileParser("Alias - S01E01 - Truth Be Told - 480P DVDRIP XVID - proper", cfgp, false, -1)
+		parser.GetPriorityMapQual(parse, cfgp, q, true, true)
+		err := parser.GetDBIDs(parse, cfgp, true)
+
 		t.Log(err)
-		t.Log(parse)
-		t.Log(parse.M.DbserieID)
+		j, _ := json.Marshal(parse)
+		t.Log(string(j))
+		t.Log(parse.ListID)
+		t.Log(parse.DbserieID)
+		t.Log(parse.SerieID)
 		//GetNewFilesTest("serie_EN", logger.StrSeries)
 	})
 }
@@ -370,6 +382,48 @@ func BenchmarkPath2(b *testing.B) {
 	}
 }
 
+// JoinStrings concatenates any number of strings together.
+// It is optimized to avoid unnecessary allocations when there are few elements.
+func JoinStringsTest(elems ...string) string {
+	if len(elems) == 0 {
+		return ""
+	}
+	if len(elems) == 1 {
+		return elems[0]
+	}
+	if len(elems) == 2 {
+		return elems[0] + elems[1]
+	}
+	if len(elems) == 3 {
+		return elems[0] + elems[1] + elems[2]
+	}
+
+	b := logger.PlBuffer.Get()
+	//b.Grow(Getstringarrlength(elems))
+	for idx := range elems {
+		if elems[idx] != "" {
+			b.WriteString(elems[idx])
+		}
+	}
+	defer logger.PlBuffer.Put(b)
+	return b.String()
+}
+
+func BenchmarkJoinString1(b *testing.B) {
+	var str = "/downloads/completed/MoviesDE/Die.nackte.?<>?::Kanone.2.5.GERMAN.1991.DVDRiP.iNTERNAL.XViD-SKiLLED (tt0102510)/Die nackte Kanone 2.5 GERMAN.1991.DVDRiP.iNTERNAL.XViD-SKiLLED (tt0102510).avi"
+	b.ReportAllocs()
+	for j := 0; j < b.N; j++ {
+		_ = str + str
+	}
+}
+func BenchmarkJoinString2(b *testing.B) {
+	var str = "/downloads/completed/MoviesDE/Die.nackte.?<>?::Kanone.2.5.GERMAN.1991.DVDRiP.iNTERNAL.XViD-SKiLLED (tt0102510)/Die nackte Kanone 2.5 GERMAN.1991.DVDRiP.iNTERNAL.XViD-SKiLLED (tt0102510).avi"
+	b.ReportAllocs()
+	for j := 0; j < b.N; j++ {
+		_ = JoinStringsTest(str, str)
+	}
+}
+
 func BenchmarkGrowRemove(b *testing.B) {
 	var str []string
 	for j := 0; j < 1000; j++ {
@@ -383,6 +437,7 @@ func BenchmarkGrowRemove(b *testing.B) {
 		//logger.Grow(&c, len(str))
 		c = append(c, str...)
 		//logger.RemoveFromStringArray(&str, "500")
+		_ = c
 	}
 }
 func TestGetUrl(t *testing.T) {
@@ -414,11 +469,12 @@ func TestGetTmdb(t *testing.T) {
 		//t.Log(tmdbfind)
 		//tmdbtitle, _ := apiexternal.GetTmdbMovieTitles(585511)
 		//t.Log(tmdbtitle)
-		database.GetImdbTitle(&movie.ImdbID, &movie, true)
+		movie.GetImdbTitle(&movie.ImdbID, true)
 		t.Log(movie.Runtime)
 		tmdbdetails, _ := apiexternal.GetTmdbMovie(447277)
 		t.Log(tmdbdetails.Runtime)
-		traktdetails, _ := apiexternal.GetTraktMovie("tt5971474")
+		tt := "tt5971474"
+		traktdetails, _ := apiexternal.GetTraktMovie(tt)
 		t.Log(traktdetails.Runtime)
 		//var dbserie database.Dbserie
 		//dbserie.ThetvdbID = 85352
@@ -584,6 +640,14 @@ func TestSQL(t *testing.T) {
 	t.Run("test", func(t *testing.T) {
 		t.Log(database.GetdatarowN[int](false, "select id from dbmovies ORDER BY [id] ASC limit ?", 1))
 		t.Log(database.GetdatarowN[int](false, "select count() from dbmovies"))
+		var i int
+		database.ScanrowsNdyn(false, "select id from dbmovies ORDER BY [id] ASC limit ?", &i, 1)
+		t.Log(i)
+
+		//a := database.GetCachedTypeObjArr[database.DbstaticTwoStringOneInt](logger.CacheDBSeries)
+		a := database.GetrowsN[database.DbstaticThreeStringTwoInt](false, database.GetdatarowN[uint](false, "select count() from dbmovies")+100,
+			"select title, slug, imdb_id, year, id from dbmovies")
+		t.Log(a)
 		//t.Log(database.GetrowsN[database.DbstaticThreeStringTwoInt](false, database.GetdatarowN[int](false, "select count() from dbmovies")+100, "select title, slug, imdb_id, year, id from dbmovies"))
 	})
 }
@@ -594,17 +658,6 @@ func TestDir(t *testing.T) {
 		//bla, _ := scanner.GetFilesDir("W:\\", "de movies", false)
 		//t.Log(bla)
 		//t.Log(config.Cfg.Paths)
-	})
-}
-
-func TestFilter(t *testing.T) {
-	Init()
-	t.Run("testfilter", func(t *testing.T) {
-		//bla, _ := scanner.GetFilesDir("W:\\", "de movies", false)
-		//t.Log(bla)
-		filter := "C:\test\video.rtf"
-		bl := scanner.Filterfile(filter, false, nil)
-		t.Log(bl)
 	})
 }
 
@@ -990,21 +1043,6 @@ type A struct {
 	Str6 string
 }
 
-func BenchmarkStruct(b *testing.B) {
-	var d A
-
-	b.ReportAllocs()
-	b.SetBytes(0)
-	for i := 0; i < b.N; i++ {
-		d.Str1 = "aa"
-		d.Str2 = "sdkfdksfködsfsd"
-		d.Str3 = "sdfkdskfmkdsmkfm"
-		d.Str4 = "sdkfkdmdfkmsdkmfksm"
-		d.Str5 = "sdfkweöfmöwemrmekmwflmlw"
-		d.Str6 = "kkwmlfkmlmdslflsdlfmlwlmkekmlfmlfwdmkl"
-	}
-}
-
 var sep = string(os.PathSeparator)
 
 func FilepathJoinSeperator3(elem1 string, elem2 string) string {
@@ -1121,15 +1159,18 @@ func BenchmarkQuery3(b *testing.B) {
 
 func TestQueryXML1(b *testing.T) {
 	Init()
+	limiter := slidingwindow.NewLimiter(time.Duration(1)*time.Second, 10000000)
 	c := apiexternal.NewClient(
 		"test",
 		true,
 		true,
-		slidingwindow.NewLimiter(time.Duration(1)*time.Second, 10000000),
+		&limiter,
 		false,
-		slidingwindow.Limiter{}, 10)
-	results := make([]apiexternal.Nzbwithprio, 0, 100)
-	c.DoXMLItem(config.SettingsIndexer["nzbgeek"], config.SettingsQuality["sd"], "", "nzbgeek.info", "https://api.nzbgeek.info/rss?t=2000&limit=100&dl=1&r=rEUDNavst5HxWG2SlhkuYg1WXC6qNSt7", &sync.Mutex{}, 100, &results)
+		nil, 10)
+	//results := make([]apiexternal.Nzbwithprio, 0, 100)
+	var results apiexternal.NzbSlice
+	urlv := "https://api.nzbgeek.info/rss?t=2000&limit=100&dl=1&r="
+	c.DoXMLItem(config.SettingsIndexer["nzbgeek"], config.SettingsQuality["sd"], "", "nzbgeek.info", urlv, &results)
 	//b.Log(results)
 	//bla, _ := json.Marshal(results)
 	//b.Log(string(bla))
@@ -1138,7 +1179,7 @@ func TestQueryXML1(b *testing.T) {
 func TestQueryMovie(b *testing.T) {
 	Init()
 	var id uint = 14027
-	results := searcher.NewSearcher(config.SettingsMedia["movie_EN"], nil, "", &logger.V0)
+	results := searcher.NewSearcher(config.SettingsMedia["movie_EN"], nil, "", 0)
 	err := results.MediaSearch(config.SettingsMedia["movie_EN"], &id, false, false, false)
 	//b.Log(results)
 	bla, _ := json.Marshal(results)
@@ -1195,7 +1236,7 @@ func TestQueryXML1new(b *testing.T) {
 
 func BenchmarkAllowRange(b *testing.B) {
 	Init()
-	arr := database.GetrowsN[database.DbstaticThreeStringTwoInt](false, database.GetdatarowN[int](false, "select count() from dbmovies")+100,
+	arr := database.GetrowsN[database.DbstaticThreeStringTwoInt](false, database.GetdatarowN[uint](false, "select count() from dbmovies")+100,
 		"select title, slug, imdb_id, year, id from dbmovies")
 	b.ResetTimer()
 	b.ReportAllocs()
@@ -1208,7 +1249,7 @@ func BenchmarkAllowRange(b *testing.B) {
 }
 func BenchmarkAllowRange2(b *testing.B) {
 	Init()
-	arr := database.GetrowsN[database.DbstaticThreeStringTwoInt](false, database.GetdatarowN[int](false, "select count() from dbmovies")+100,
+	arr := database.GetrowsN[database.DbstaticThreeStringTwoInt](false, database.GetdatarowN[uint](false, "select count() from dbmovies")+100,
 		"select title, slug, imdb_id, year, id from dbmovies")
 	b.ResetTimer()
 	b.ReportAllocs()
@@ -1219,33 +1260,57 @@ func BenchmarkAllowRange2(b *testing.B) {
 	}
 	PrintMemUsage()
 }
+
+func BenchmarkLog1(b *testing.B) {
+	Init()
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		logger.GetLogger().Debug().Str("test", "test").Msg("test")
+	}
+	PrintMemUsage()
+}
+func BenchmarkLog2(b *testing.B) {
+	Init()
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		logger.LogDynamicany("debug", "test", "test", "test")
+	}
+	PrintMemUsage()
+}
+
+func BenchmarkLog3(b *testing.B) {
+	Init()
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		logger.LogDynamicany("debug", "test", "test", "test")
+	}
+	PrintMemUsage()
+}
 func BenchmarkQueryXML1Item(b *testing.B) {
 	Init()
+	limiter := slidingwindow.NewLimiter(time.Duration(1)*time.Second, 10000000)
 	c := apiexternal.NewClient(
 		"test",
 		true,
 		true,
-		slidingwindow.NewLimiter(time.Duration(1)*time.Second, 10000000),
+		&limiter,
 		false,
-		slidingwindow.Limiter{}, 10)
-	results := make([]apiexternal.Nzbwithprio, 0, 100)
+		nil, 10)
+	var results apiexternal.NzbSlice
+	//results := make([]apiexternal.Nzbwithprio, 0, 100)
 	b.ResetTimer()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		results = results[:0]
-		c.DoXMLItem(config.SettingsIndexer["nzbgeek"], config.SettingsQuality["sd"], "", "nzbgeek.info", "https://api.nzbgeek.info/rss?t=2000&limit=100&dl=1&r=rEUDNavst5HxWG2SlhkuYg1WXC6qNSt7", &sync.Mutex{}, 100, &results)
+		results.Arr = results.Arr[:0]
+		urlv := "https://api.nzbgeek.info/rss?t=2000&limit=100&dl=1&r="
+		c.DoXMLItem(config.SettingsIndexer["nzbgeek"], config.SettingsQuality["sd"], "", "nzbgeek.info", urlv, &results)
 		//c.DoXMLItem(config.SettingsIndexer["nzbgeek"], config.SettingsQuality["sd"], "", "nzbgeek.info", "https://api.nzbgeek.info/api?t=search&q=chinese&limit=100&extended=1&apikey=", &results)
 	}
 	_ = c
 	PrintMemUsage()
-}
-func getrequest(url string) *http.Request {
-	req, err := http.NewRequest(http.MethodGet, url, nil)
-	if err != nil {
-		logger.LogDynamic("error", "failed to get url", logger.NewLogFieldValue(err), logger.NewLogField(logger.StrURL, url))
-		return nil
-	}
-	return req
 }
 
 func BenchmarkQuery4(b *testing.B) {
@@ -1258,8 +1323,8 @@ func BenchmarkQuery4(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		//str := "SD"
 
-		searchresults := searcher.NewSearcher(nil, nil, logger.StrRss, &logger.V0)
-		searchresults.SearchRSS(nil, nil, true, false, false)
+		searchresults := searcher.NewSearcher(nil, nil, logger.StrRss, 0)
+		searchresults.SearchRSS(nil, nil, false, false)
 
 		searchresults.Close()
 		//clie.SearchWithIMDB(categories, "tt0120655", additional_query_params, "", 0, false)
@@ -1311,7 +1376,8 @@ func BenchmarkQuery5(b *testing.B) {
 		var record []string
 		var err2 error
 		var year, votes int64
-		var year32, votes32 int
+		var year32 uint16
+		var votes32 int32
 		var voteavg float64
 		var voteavg32 float32
 		for {
@@ -1320,19 +1386,19 @@ func BenchmarkQuery5(b *testing.B) {
 				break
 			}
 			if err2 != nil {
-				logger.LogDynamic("error", "an error occurred while parsing csv", logger.NewLogField("", err))
+				logger.LogDynamicany("error", "an error occurred while parsing csv", err)
 				continue
 			}
 			year, err = strconv.ParseInt(record[10], 0, 32)
 			if err != nil {
 				continue
 			}
-			year32 = int(year)
+			year32 = uint16(year)
 			votes, err = strconv.ParseInt(record[12], 0, 32)
 			if err != nil {
 				continue
 			}
-			votes32 = int(votes)
+			votes32 = int32(votes)
 			voteavg, err = strconv.ParseFloat(record[8], 32)
 			if err != nil {
 				continue
@@ -1340,6 +1406,7 @@ func BenchmarkQuery5(b *testing.B) {
 			voteavg32 = float32(voteavg)
 			d = append(d, database.Dbmovie{ImdbID: record[1], Title: record[5], URL: record[6], VoteAverage: voteavg32, Year: year32, VoteCount: votes32})
 		}
+		_ = d
 		resp.Body.Close()
 	}
 }
@@ -1373,8 +1440,9 @@ func BenchmarkQuery6(b *testing.B) {
 			if err != nil {
 				continue
 			}
-			d = append(d, database.Dbmovie{ImdbID: record[1], Title: record[5], URL: record[6], VoteAverage: float32(voteavg), Year: int(year), VoteCount: int(votes)})
+			d = append(d, database.Dbmovie{ImdbID: record[1], Title: record[5], URL: record[6], VoteAverage: float32(voteavg), Year: uint16(year), VoteCount: int32(votes)})
 		}
+		_ = d
 	}
 }
 
@@ -1394,9 +1462,28 @@ func TestSQLRepeat(t *testing.T) {
 	Init()
 	a := "a%"
 	str := database.GetdatarowN[string](false, "select title from dbmovies where title like ? limit 1", &a)
+	_ = str
 	str = database.GetdatarowN[string](false, "select title from dbmovies where title like ? limit 1", &a)
 	_ = str
 
+}
+
+func TestRequest(t *testing.T) {
+	Init()
+
+	ctx, cancelc := context.WithTimeout(context.Background(), 1500*time.Millisecond)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.thetvdb.com/series/341164", nil)
+	fmt.Println(err)
+	resp, err := http.DefaultClient.Do(req)
+	fmt.Println(err)
+	fmt.Println(resp.Body)
+	req, err = http.NewRequestWithContext(ctx, http.MethodGet, "https://api.thetvdb.com/series/289431", nil)
+	fmt.Println(err)
+	resp, err = http.DefaultClient.Do(req)
+	fmt.Println(err)
+	fmt.Println(resp.Body)
+	cancelc()
+	fmt.Println("Hello, 世界")
 }
 
 func TestGenQuery(t *testing.T) {
@@ -1409,7 +1496,8 @@ func TestGenQuery(t *testing.T) {
 	t.Log(cfgp.Data[0].CfgPath.MissingScanInterval)
 	searchmissing := true
 	searchinterval := 100
-	var scaninterval, scandatepre int
+	var scaninterval uint8
+	var scandatepre int
 	if cfgp.DataLen >= 1 && cfgp.Data[0].CfgPath != nil {
 		if searchmissing {
 			scaninterval = cfgp.Data[0].CfgPath.MissingScanInterval
@@ -1425,8 +1513,6 @@ func TestGenQuery(t *testing.T) {
 	args := make([]any, 0, len(cfgp.Lists)+2)
 	for i := range cfgp.Lists {
 		args = append(args, &cfgp.Lists[i])
-	}
-	if scaninterval == 0 && scandatepre == 0 {
 	}
 	if scaninterval != 0 {
 		if scandatepre == 0 {
@@ -1461,7 +1547,7 @@ func TestGenQuery(t *testing.T) {
 		}
 		if scaninterval != 0 {
 			bld.WriteString(" and (movies.lastscan is null or movies.Lastscan < ?)")
-			args[cfgp.ListsLen] = logger.TimeGetNow().AddDate(0, 0, 0-scaninterval)
+			args[cfgp.ListsLen] = logger.TimeGetNow().AddDate(0, 0, 0-int(scaninterval))
 		}
 		if scandatepre != 0 {
 			bld.WriteString(" and (dbmovies.release_date < ? or dbmovies.release_date is null)")
@@ -1474,7 +1560,7 @@ func TestGenQuery(t *testing.T) {
 		bld.WriteString(" order by movies.Lastscan asc")
 		if searchinterval != 0 {
 			bld.WriteString(" limit ")
-			logger.BuilderAddInt(&bld, searchinterval)
+			bld.WriteString(strconv.Itoa(searchinterval))
 		}
 		query = "select movies.id " + bld.String()
 	} else {
@@ -1491,7 +1577,7 @@ func TestGenQuery(t *testing.T) {
 		}
 		if scaninterval != 0 {
 			bld.WriteString(" and (serie_episodes.lastscan is null or serie_episodes.lastscan < ?)")
-			args[cfgp.ListsLen] = logger.TimeGetNow().AddDate(0, 0, 0-scaninterval)
+			args[cfgp.ListsLen] = logger.TimeGetNow().AddDate(0, 0, 0-int(scaninterval))
 		}
 		if scandatepre != 0 {
 			bld.WriteString(" and (dbserie_episodes.first_aired < ? or dbserie_episodes.first_aired is null)")
@@ -1504,12 +1590,12 @@ func TestGenQuery(t *testing.T) {
 		bld.WriteString(" order by serie_episodes.Lastscan asc")
 		if searchinterval != 0 {
 			bld.WriteString(" limit ")
-			logger.BuilderAddInt(&bld, searchinterval)
+			bld.WriteString(strconv.Itoa(searchinterval))
 		}
 		query = "select serie_episodes.id " + bld.String()
 	}
 	t.Log("select count() " + bld.String())
-	cntquery := database.GetdatarowN[int](false, "select count() "+bld.String(), args...)
+	cntquery := database.GetdatarowN[uint](false, "select count() "+bld.String(), args...)
 
 	if cntquery == 0 || query == "" || len(args) == 0 {
 		return
@@ -1531,9 +1617,9 @@ func Files(fsys fs.FS) (paths []string) {
 func TestParse(t *testing.T) {
 	Init()
 	cfgp := config.SettingsMedia["movie_EN"]
-	m := parser.NewFileParser("Dogma.1999.720p.BluRay.x264-x0r", cfgp, -1, true)
+	m := parser.NewFileParser("Dogma.1999.720p.BluRay.x264-x0r", cfgp, false, -1)
 	t.Log(m)
-	parser.GetDBIDs(m)
+	parser.GetDBIDs(m, cfgp, true)
 	t.Log(m)
 }
 func TestRegexRepeat(t *testing.T) {
@@ -1578,7 +1664,7 @@ func BenchmarkQueryLower(b *testing.B) {
 		str = strconv.Itoa(int(id1)) + "_" + strconv.Itoa(int(id2)) + "_" + strconv.Itoa(int(id3)) + "_" + strconv.Itoa(int(id4))
 		//str = fmt.Sprint(id1, "_", id2, "_", id3, "_", id4)
 	}
-	logger.LogDynamic("info", str)
+	logger.LogDynamicany("info", str)
 }
 func BenchmarkQueryLower2(b *testing.B) {
 	Init()
@@ -1644,20 +1730,20 @@ func BenchmarkQuery14(b *testing.B) {
 			break
 		}
 	}
-	structurevar := structure.NewStructure(cfgp, cfgimport, "en movies", "en movies import")
-	structurevar.Checkruntime = true
-	structurevar.Deletewronglanguage = false
+	// structurevar := structure.NewStructure(cfgp, cfgimport, "en movies", "en movies import")
+	// structurevar.Checkruntime = true
+	// structurevar.Deletewronglanguage = false
 	//structurevar.SetOrgadata(&structure.Organizerdata{})
 	for i := 0; i < b.N; i++ {
-		structurevar.OrganizeSingleFolder(cfgFolder)
+		structure.OrganizeSingleFolder(cfgFolder, cfgp, cfgimport, "en movies", true, false, 0)
 	}
 }
 func BenchmarkQuery15(b *testing.B) {
 	Init()
-
+	var x string
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		importfeed.JobImportMovies("", nil, -1, false)
+		importfeed.JobImportMovies(x, nil, -1, false)
 	}
 }
 

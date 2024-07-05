@@ -7,8 +7,8 @@ import (
 	"github.com/GoAdminGroup/go-admin/template/types/form"
 )
 
-func GetIndexerFailsTable(ctx *context.Context) table.Table {
-	indexerFails := table.NewDefaultTable(table.DefaultConfigWithDriverAndConnection("sqlite", "media"))
+func getIndexerFailsTable(ctx *context.Context) table.Table {
+	indexerFails := table.NewDefaultTable(ctx, table.DefaultConfigWithDriverAndConnection("sqlite", "media"))
 
 	info := indexerFails.GetInfo().HideFilterArea()
 	info.HideDeleteButton().HideEditButton().HideNewButton()

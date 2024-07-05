@@ -3,8 +3,6 @@ package database
 import (
 	"database/sql"
 	"time"
-
-	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 )
 
 type Serie struct {
@@ -55,8 +53,8 @@ type SerieEpisodeFile struct {
 	Proper           bool
 	Extended         bool
 	Repack           bool
-	Height           int
-	Width            int
+	Height           uint16
+	Width            uint16
 	ResolutionID     uint `db:"resolution_id"`
 	QualityID        uint `db:"quality_id"`
 	CodecID          uint `db:"codec_id"`
@@ -164,14 +162,38 @@ type DbserieEpisode struct {
 	DbserieID  uint `db:"dbserie_id"`
 }
 
-// Close cleans up the Dbserie value after use.
-// It nulls out fields to avoid lingering references and aid garbage collection.
-// This is useful to do after finishing using a Dbserie value
-// that was retrieved from the database.
-func (s *Dbserie) Close() {
-	if config.SettingsGeneral.DisableVariableCleanup || s == nil {
-		return
-	}
-	*s = Dbserie{}
-	//logger.Clear(s)
+// GetDbserieByIDP retrieves a Dbserie by ID. It takes a uint ID
+// and a pointer to a Dbserie struct to scan the result into.
+// It executes a SQL query using the structscan function to select the
+// dbserie data and scan it into the Dbserie struct.
+// Returns an error if there was a problem retrieving the data.
+func (s *Dbserie) GetDbserieByIDP(id *uint) error {
+	return structscan1("select id,created_at,updated_at,seriename,aliases,season,status,firstaired,network,runtime,language,genre,overview,rating,siterating,siterating_count,slug,imdb_id,thetvdb_id,freebase_m_id,freebase_id,tvrage_id,facebook,instagram,twitter,banner,poster,fanart,identifiedby, trakt_id from dbseries where id = ?", false, s, id)
+}
+
+// GetDbserieEpisodesByIDP retrieves a DbserieEpisode by ID. It takes a uint ID
+// and a pointer to a DbserieEpisode struct to scan the result into.
+// It executes a SQL query using the structscan function to select the
+// dbserie episode data and scan it into the DbserieEpisode struct.
+// Returns an error if there was a problem retrieving the data.
+func (u *DbserieEpisode) GetDbserieEpisodesByIDP(id *uint) error {
+	return structscan1("select id,created_at,updated_at,episode,season,identifier,title,first_aired,overview,poster,runtime,dbserie_id from dbserie_episodes where id = ?", false, u, id)
+}
+
+// GetSerieByIDP retrieves a Serie by ID. It takes a uint ID
+// and a pointer to a Serie struct to scan the result into.
+// It executes a SQL query using the structscan function to select the
+// serie data and scan it into the Serie struct.
+// Returns an error if there was a problem retrieving the data.
+func (u *Serie) GetSerieByIDP(id *uint) error {
+	return structscan1("select id,created_at,updated_at,listname,rootpath,dbserie_id,dont_upgrade,dont_search from series where id = ?", false, u, id)
+}
+
+// GetSerieEpisodesByIDP retrieves a SerieEpisode by ID. It takes a uint ID
+// and a pointer to a SerieEpisode struct to scan the result into.
+// It executes a SQL query using the structscan function to select the
+// serie episode data and scan it into the SerieEpisode struct.
+// Returns an error if there was a problem retrieving the data.
+func (u *SerieEpisode) GetSerieEpisodesByIDP(id *uint) error {
+	return structscan1("select id,created_at,updated_at,lastscan,blacklisted,quality_reached,quality_profile,missing,dont_upgrade,dont_search,dbserie_episode_id,serie_id,dbserie_id from serie_episodes where id = ?", false, u, id)
 }

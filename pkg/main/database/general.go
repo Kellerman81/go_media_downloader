@@ -7,8 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"sort"
-	"strconv"
+	"slices"
 	"strings"
 	"time"
 
@@ -33,14 +32,14 @@ type DBGlobal struct {
 	QualityStrIn []string
 	// ResolutionStrIn is a globally accessible slice of resolution strings
 	ResolutionStrIn []string
-	// GetqualitiesIn is a globally accessible slice of QualitiesRegex structs
-	GetqualitiesIn []QualitiesRegex
-	// GetresolutionsIn is a globally accessible slice of QualitiesRegex structs
-	GetresolutionsIn []QualitiesRegex
-	// GetcodecsIn is a globally accessible slice of QualitiesRegex structs
-	GetcodecsIn []QualitiesRegex
-	// GetaudiosIn is a globally accessible slice of QualitiesRegex structs
-	GetaudiosIn []QualitiesRegex
+	// GetqualitiesIn is a globally accessible slice of Qualities structs
+	GetqualitiesIn []Qualities
+	// GetresolutionsIn is a globally accessible slice of Qualities structs
+	GetresolutionsIn []Qualities
+	// GetcodecsIn is a globally accessible slice of Qualities structs
+	GetcodecsIn []Qualities
+	// GetaudiosIn is a globally accessible slice of Qualities structs
+	GetaudiosIn []Qualities
 }
 
 type JobHistory struct {
@@ -54,7 +53,7 @@ type JobHistory struct {
 	Ended       sql.NullTime
 }
 
-type rSSHistory struct {
+type RSSHistory struct {
 	ID        uint
 	CreatedAt time.Time `db:"created_at"`
 	UpdatedAt time.Time `db:"updated_at"`
@@ -63,7 +62,7 @@ type rSSHistory struct {
 	Indexer   string
 	LastID    string `db:"last_id"`
 }
-type indexerFail struct {
+type IndexerFail struct {
 	ID        uint
 	CreatedAt time.Time `db:"created_at"`
 	UpdatedAt time.Time `db:"updated_at"`
@@ -71,15 +70,16 @@ type indexerFail struct {
 	LastFail  sql.NullTime `db:"last_fail"`
 }
 
-type QualitiesRegex struct {
-	Regex string
-	Qualities
-}
-
 type backupInfo struct {
 	timestamp time.Time
 	path      string
 }
+
+const (
+	strRegexSeriesIdentifier = "RegexSeriesIdentifier"
+	strRegexSeriesTitle      = "RegexSeriesTitle"
+	strRegexSeriesTitleDate  = "RegexSeriesTitleDate"
+)
 
 // DBClose closes any open database connections to the data.db and imdb.db
 // SQLite databases. It is intended to be called when the application is
@@ -139,10 +139,8 @@ func SetVersion(str string) {
 	DBVersion = str
 }
 
-func PingImdbdb() error {
-	return dbImdb.Ping()
-}
-
+// OpenImdbdb opens a connection to the imdb.db SQLite database.
+// It creates the file if it does not exist.
 func OpenImdbdb() {
 	dbImdb, _ = sqlx.Open("sqlite3", "file:./databases/imdb.db?_fk=1&mode=rwc&_mutex=full&rt=1&_cslike=0")
 }
@@ -169,16 +167,16 @@ func InitImdbdb() error {
 // getqualityregexes queries the database for quality regexes of the given type,
 // converts them to lowercase, compiles the regexes, and returns them along with
 // the corresponding quality data from the database.
-func getqualityregexes(querystr string, querycount string) []QualitiesRegex {
-	q := GetrowsN[Qualities](false, GetdatarowN[int](false, querycount), querystr)
+func getqualityregexes(querystr string, querycount string) []Qualities {
+	q := GetrowsNsize[Qualities](false, querycount, querystr)
 	if len(q) == 0 {
 		return nil
 	}
-	ret := make([]QualitiesRegex, len(q))
-	for idx, qual := range q {
-		qual.StringsLower = strings.ToLower(qual.Strings)
-		GlobalCache.SetRegexp(qual.Regex, 0)
-		ret[idx] = QualitiesRegex{Regex: qual.Regex, Qualities: qual}
+	ret := make([]Qualities, len(q))
+	for idx := range q {
+		q[idx].StringsLower = strings.ToLower(q[idx].Strings)
+		globalCache.setRegexp(q[idx].Regex, 0)
+		ret[idx] = q[idx]
 	}
 	return ret
 }
@@ -203,15 +201,15 @@ func SetVars() {
 
 	DBConnect.GetaudiosIn = getqualityregexes("select * from qualities where type=4 order by priority desc", "select count() from qualities where type=4")
 
-	GlobalCache.SetRegexp("RegexSeriesTitle", 0)
-	GlobalCache.SetRegexp("RegexSeriesTitleDate", 0)
-	GlobalCache.SetRegexp("RegexSeriesIdentifier", 0)
+	globalCache.setRegexp(strRegexSeriesIdentifier, 0)
+	globalCache.setRegexp(strRegexSeriesTitle, 0)
+	globalCache.setRegexp(strRegexSeriesTitleDate, 0)
 	for _, cfgregex := range config.SettingsRegex {
 		for idxreg := range cfgregex.Rejected {
-			GlobalCache.SetRegexp(cfgregex.Rejected[idxreg], 0)
+			globalCache.setRegexp(cfgregex.Rejected[idxreg], 0)
 		}
 		for idxreg := range cfgregex.Required {
-			GlobalCache.SetRegexp(cfgregex.Required[idxreg], 0)
+			globalCache.setRegexp(cfgregex.Required[idxreg], 0)
 		}
 	}
 
@@ -234,47 +232,39 @@ func SetVars() {
 }
 
 // Upgrade handles upgrading the database by calling UpgradeDB.
-func Upgrade(c *gin.Context) {
+func Upgrade(_ *gin.Context) {
 	UpgradeDB()
 }
 
 // Backup the database. If db is nil, then uses the existing database
 // connection.
-func Backup(backupPath string, maxbackups int) error {
+func Backup(backupPath string, maxbackups uint8) error {
 	readWriteMu.Lock()
 	defer readWriteMu.Unlock()
-	logger.LogDynamic("info", "Start db backup")
-	tempdb, err := sqlx.Connect("sqlite3", "file:./databases/data.db?_fk=1&mode=rwc&_mutex=full&rt=1&_cslike=0")
+	// logger.LogDynamicany("info", "Start db backup")
+	// tempdb, err := sqlx.Connect("sqlite3", "file:./databases/data.db?_fk=1&mode=rwc&_mutex=full&rt=1&_cslike=0")
+	// if err != nil {
+	// 	return err
+	// }
+	_, err := dbData.Exec("VACUUM INTO ?", backupPath)
+	//tempdb.Close()
 	if err != nil {
+		logger.LogDynamicany("error", "exec", err, "VACUUM INTO ?")
 		return err
 	}
-	_, err = tempdb.Exec("VACUUM INTO ?", &backupPath)
-	tempdb.Close()
-	if err != nil {
-		logger.LogDynamic("error", "exec", logger.NewLogFieldValue(err), logger.NewLogField(logger.StrQuery, "VACUUM INTO ?"))
-		return err
-	}
-	logger.LogDynamic("info", "End db backup")
+	logger.LogDynamicany("info", "End db backup")
 	if maxbackups == 0 {
 		return nil
 	}
 
-	f, err := os.Open("./backup")
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	files, err := f.ReadDir(-1)
+	files, err := os.ReadDir("./backup")
 	if err != nil {
 		return errors.New("can't read log file directory: " + err.Error())
 	}
-	defer clear(files)
 	if len(files) == 0 {
 		return nil
 	}
 	backupFiles := make([]backupInfo, 0, len(files))
-	defer clear(backupFiles)
 
 	var tu time.Time
 	for idx := range files {
@@ -291,16 +281,29 @@ func Backup(backupPath string, maxbackups int) error {
 		}
 	}
 
-	if maxbackups == 0 || maxbackups >= len(backupFiles) {
+	if maxbackups == 0 || maxbackups >= uint8(len(backupFiles)) {
+		//clear(backupFiles)
+		//clear(files)
 		return nil
 	}
-	sort.Slice(backupFiles, func(i, j int) bool {
-		return backupFiles[i].timestamp.After(backupFiles[j].timestamp)
+	slices.SortFunc(backupFiles, func(a, b backupInfo) int {
+		if a.timestamp == b.timestamp {
+			return 0
+		}
+		if a.timestamp.After(b.timestamp) {
+			return -1
+		}
+		return 1
 	})
+	// sort.Slice(backupFiles, func(i, j int) bool {
+	// 	return backupFiles[i].timestamp.After(backupFiles[j].timestamp)
+	// })
 
-	for idx := maxbackups; idx < len(backupFiles); idx++ {
-		_ = os.Remove(filepath.Join("./backup", backupFiles[idx].path))
+	for _, e := range backupFiles[maxbackups:] {
+		_ = os.Remove(filepath.Join("./backup", e.path))
 	}
+	//clear(backupFiles)
+	//clear(files)
 
 	return nil
 }
@@ -317,7 +320,7 @@ func UpgradeDB() error {
 	}
 
 	vers, _, _ := m.Version()
-	DBVersion = strconv.Itoa(int(vers))
+	DBVersion = logger.IntToString(vers)
 
 	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		return err
@@ -349,7 +352,7 @@ func timeFromName(filename, prefix string) time.Time {
 		//if len(filename) >= len(prefix) && filename[:len(prefix)] != prefix {
 		return time.Time{}
 	}
-	if idx := strings.Index(filename[len(prefix):], "."); idx != -1 {
+	if idx := strings.Index(filename[len(prefix):], logger.StrDot); idx != -1 {
 		t, err := time.Parse("20060102_150405", filename[len(prefix):][idx+1:])
 		if err != nil {
 			return time.Time{}
@@ -379,83 +382,27 @@ func ParseDate(date string) sql.NullTime {
 	return d
 }
 
-// ParseDate parses a date string in "2006-01-02" format and returns a sql.NullTime.
-// Returns a null sql.NullTime if the date string is empty or fails to parse.
-func ParseDateTime(date string) time.Time {
-	if date == "" {
-		return time.Time{}
-	}
-	t, err := time.Parse("2006-01-02", date)
-	if err != nil {
-		return t
-	}
-	return time.Time{}
-}
-
 // GetMediaQualityConfig returns the QualityConfig from cfgp for the
 // media with the given ID. It first checks if there is a quality profile
 // set for that media in the database. If not, it returns the default
 // QualityConfig from cfgp.
-func GetMediaQualityConfig(cfgp *config.MediaTypeConfig, mediaid *uint) *config.QualityConfig {
-	str := GetdatarowN[string](false, logger.GetStringsMap(cfgp.Useseries, logger.DBQualityMediaByID), mediaid)
-
-	if str == "" {
-		return config.SettingsQuality[cfgp.DefaultQuality]
-	}
-	_, ok := config.SettingsQuality[str]
-	if ok {
-		return config.SettingsQuality[str]
-	}
-	return config.SettingsQuality[cfgp.DefaultQuality]
-}
-
-// GetMediaQualityConfig returns the QualityConfig from cfgp for the
-// media with the given ID. It first checks if there is a quality profile
-// set for that media in the database. If not, it returns the default
-// QualityConfig from cfgp.
-func GetMediaQualityConfigStr(cfgp *config.MediaTypeConfig, str string) *config.QualityConfig {
-	if str == "" {
-		return config.SettingsQuality[cfgp.DefaultQuality]
-	}
-	_, ok := config.SettingsQuality[str]
-	if ok {
-		return config.SettingsQuality[str]
-	}
-	return config.SettingsQuality[cfgp.DefaultQuality]
+func GetMediaQualityConfig(cfgp *config.MediaTypeConfig, mediaid uint) *config.QualityConfig {
+	return cfgp.GetMediaQualityConfigStr(Getdatarow1Map[string](false, cfgp.Useseries, logger.DBQualityMediaByID, mediaid))
 }
 
 // GetMediaListIDMovies returns the index of the media list with the given name
 // in cfgp for the movie with the given ID. It returns -1 if cfgp is nil,
 // listname is empty, or no list with that name exists.
-func GetMediaListIDGetListname(cfgp *config.MediaTypeConfig, mediaid uint) int {
+func GetMediaListIDGetListname(cfgp *config.MediaTypeConfig, mediaid *uint) int8 {
 	if cfgp == nil {
-		logger.LogDynamic("error", "the config couldnt be found")
+		logger.LogDynamicany("error", "the config couldnt be found")
 		return -1
 	}
 
 	if config.SettingsGeneral.UseMediaCache {
-		return GetMediaListID(cfgp, CacheOneStringTwoIntIndexFuncStr(logger.GetStringsMap(cfgp.Useseries, logger.CacheMedia), mediaid))
+		return cfgp.GetMediaListsEntryListID(CacheOneStringTwoIntIndexFuncStr(cfgp.Useseries, logger.CacheMedia, *mediaid))
 	}
-	return GetMediaListID(cfgp, GetdatarowN[string](false, logger.GetStringsMap(cfgp.Useseries, logger.DBListnameByMediaID), &mediaid))
-}
-
-// GetMediaListID returns the index of the media list with the given name in cfgp.
-// It returns -1 if cfgp is nil, listname is empty, or no list with that name exists.
-func GetMediaListID(cfgp *config.MediaTypeConfig, listname string) int {
-	if cfgp == nil {
-		logger.LogDynamic("error", "the config couldnt be found")
-		return -1
-	}
-
-	if listname == "" {
-		return -1
-	}
-	for k := range cfgp.Lists {
-		if cfgp.Lists[k].Name == listname || strings.EqualFold(cfgp.Lists[k].Name, listname) {
-			return k
-		}
-	}
-	return -1
+	return cfgp.GetMediaListsEntryListID(Getdatarow1Map[string](false, cfgp.Useseries, logger.DBListnameByMediaID, mediaid))
 }
 
 // GetDbStaticTwoStringIdx1 returns the index of the DbstaticTwoString element
@@ -471,7 +418,7 @@ func GetDbStaticTwoStringIdx1(tbl []DbstaticTwoString, v string) int {
 
 // GetDbStaticOneStringOneIntIdx searches tbl for an element where Str equals v, and returns
 // the index of that element, or -1 if not found.
-func GetDbStaticOneStringOneIntIdx(tbl []DbstaticOneStringOneInt, v string) int {
+func GetDbStaticOneStringOneIntIdx(tbl []DbstaticOneStringOneUInt, v string) int {
 	for idx := range tbl {
 		if tbl[idx].Str == v || strings.EqualFold(tbl[idx].Str, v) {
 			return idx

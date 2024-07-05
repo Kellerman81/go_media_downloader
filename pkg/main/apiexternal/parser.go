@@ -1,9 +1,7 @@
 package apiexternal
 
 import (
-	"strconv"
-	"strings"
-	"unicode"
+	"encoding/xml"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
@@ -11,52 +9,12 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/pool"
 )
 
-// FileParser is a struct for parsing file names
-// It contains fields for the file name string, parsed info, config pointer,
-// whether to allow search by title, and if it is filled
-type FileParser struct {
-	Str              string                  // the file name string
-	M                database.ParseInfo      // the parsed info
-	Cfgp             *config.MediaTypeConfig // pointer to the media type config
-	Allowsearchtitle bool                    // whether to allow search by title
-	Filled           bool                    // whether the struct is filled
-}
-
-var (
-	ParserPool = pool.NewPool(100, 0, func(b *FileParser) {}, func(b *FileParser) {
-		b.Close()
-	})
-)
-
-func (s *FileParser) Clear() {
-	if s == nil || !s.Filled {
-		return
-	}
-	*s = FileParser{}
-}
-
-func (s *FileParser) ClearArr() {
-	if s == nil {
-		return
-	}
-	//clear(s.M.Languages)
-	s.M.Languages = nil
-}
-
-func (s *FileParser) Close() {
-	if s == nil {
-		return
-	}
-	s.ClearArr()
-	*s = FileParser{}
-}
-
 // Nzbwithprio is a struct containing information about an NZB found on the index
 // It includes the parsed file name info, the NZB details, IDs, title,
 // alternate titles, quality, list name, priority, reasons, and search flags
 type Nzbwithprio struct {
-	Info             FileParser                         // The parsed file name information
-	NZB              nzb                                // The NZB details
+	Info             database.ParseInfo                 // The parsed file name information
+	NZB              Nzb                                // The NZB details
 	NzbmovieID       uint                               // The associated movie ID if this is a movie
 	NzbepisodeID     uint                               // The associated episode ID if this is a TV episode
 	Dbid             uint                               // The DBMovie or DBEpisode ID
@@ -66,13 +24,13 @@ type Nzbwithprio struct {
 	Listname         string                             // The name of the list this NZB is from
 	MinimumPriority  int                                // The minimum priority level
 	Reason           string                             // The reason for denying this NZB
-	AdditionalReason string                             // Any additional reason details
+	AdditionalReason any                                // Any additional reason details
 	DontSearch       bool                               // Whether to avoid searching for this
 	DontUpgrade      bool                               // Whether to avoid upgrading this
 }
 
 // NZB represents an NZB found on the index
-type nzb struct {
+type Nzb struct {
 	// ID is the unique identifier for the NZB
 	ID string `json:"id,omitempty"`
 
@@ -134,91 +92,11 @@ type nzb struct {
 	//Group      string `json:"group,omitempty"`
 }
 
-// CheckDigitLetter returns true if the given rune is a digit or letter.
-func CheckDigitLetter(runev rune) bool {
-	if unicode.IsDigit(runev) || unicode.IsLetter(runev) {
-		return false
-	}
-	return true
-}
-
-// Parsegroup parses the given name and group strings from s.Str,
-// setting the corresponding fields on s.M when matches are found.
-// It searches s.Str for each string in group, checks for valid
-// surrounding characters, and extracts the matched substring if found.
-func (s *FileParser) Parsegroup(name string, group []string) {
-	for idx := range group {
-		index := logger.IndexI(s.Str, group[idx])
-		if index == -1 {
-			continue
-		}
-		indexmax := index + len(group[idx])
-		if s.Str[index:indexmax] == "" {
-			continue
-		}
-		if indexmax < len(s.Str) && !CheckDigitLetter(rune(s.Str[indexmax : indexmax+1][0])) {
-			continue
-		}
-		if index > 0 && !CheckDigitLetter(rune(s.Str[index-1 : index][0])) {
-			continue
-		}
-		switch name {
-		case "audio":
-			s.M.Audio = s.Str[index:indexmax]
-		case "codec":
-			s.M.Codec = s.Str[index:indexmax]
-		case "quality":
-			s.M.Quality = s.Str[index:indexmax]
-		case "resolution":
-			s.M.Resolution = s.Str[index:indexmax]
-		case "extended":
-			s.M.Extended = true
-		case "proper":
-			s.M.Proper = true
-		case "repack":
-			s.M.Repack = true
-		}
-		break
-	}
-}
-
-// ParsegroupEntry parses a single group string from s.Str, setting the
-// corresponding field on s.M when a match is found. It checks for valid
-// surrounding characters before extracting the matched substring.
-func (s *FileParser) ParsegroupEntry(name string, group string) {
-	index := logger.IndexI(s.Str, group)
-	if index == -1 {
-		return
-	}
-
-	indexmax := index + len(group)
-	if indexmax < len(s.Str) && !CheckDigitLetter(rune(s.Str[indexmax : indexmax+1][0])) {
-		return
-	}
-	if index > 0 && !CheckDigitLetter(rune(s.Str[index-1 : index][0])) {
-		return
-	}
-
-	if s.Str[index:indexmax] == "" {
-		return
-	}
-	switch name {
-	case "audio":
-		s.M.Audio = s.Str[index:indexmax]
-	case "codec":
-		s.M.Codec = s.Str[index:indexmax]
-	case "quality":
-		s.M.Quality = s.Str[index:indexmax]
-	case "resolution":
-		s.M.Resolution = s.Str[index:indexmax]
-	case "extended":
-		s.M.Extended = true
-	case "proper":
-		s.M.Proper = true
-	case "repack":
-		s.M.Repack = true
-	}
-}
+var PLNzbwithprio = pool.NewPool(100, 10, nil, func(b *Nzbwithprio) {
+	b.ClearArr()
+	b.AdditionalReason = nil
+	*b = Nzbwithprio{}
+})
 
 // Close closes the Nzbwithprio by closing the Info field, setting the
 // WantedAlternates field to nil if it has a capacity >= 1, and clearing
@@ -227,115 +105,150 @@ func (s *Nzbwithprio) Close() {
 	if s == nil {
 		return
 	}
-	s.ClearArr()
-	*s = Nzbwithprio{}
+	PLNzbwithprio.Put(s)
+	// s.NZB.Indexer = nil
+	// s.NZB.Quality = nil
+	// s.ClearArr()
+	// *s = Nzbwithprio{}
 }
+
+// getregexcfg returns the regex configuration for the given quality config
+// that matches the indexer name in the given Nzbwithprio entry. It first checks
+// the Indexer list in the quality config, and falls back to the SettingsList
+// global config if no match is found. Returns nil if no match is found.
+func (s *Nzbwithprio) Getregexcfg(qual *config.QualityConfig) *config.RegexConfig {
+	if s.NZB.Indexer != nil {
+		indcfg := qual.QualityIndexerByQualityAndTemplate(s.NZB.Indexer)
+		if indcfg != nil {
+			return indcfg.CfgRegex
+		}
+		if _, ok := config.SettingsList[s.NZB.Indexer.Name]; ok {
+			return qual.Indexer[0].CfgRegex
+		}
+		if s.NZB.Indexer.Getlistbyindexer() != nil {
+			return qual.Indexer[0].CfgRegex
+		}
+	}
+	return nil
+}
+
+// ClearArr clears the WantedAlternates slice and calls ClearArr on the Info field.
+// This method is used to reset the state of an Nzbwithprio instance.
 func (s *Nzbwithprio) ClearArr() {
 	if s == nil {
 		return
 	}
-	//clear(s.WantedAlternates)
+	s.NZB.Indexer = nil
+	s.NZB.Quality = nil
+	clear(s.WantedAlternates)
 	s.WantedAlternates = nil
 	s.Info.ClearArr()
 }
 
-// ChecknzbtitleB checks if the nzbtitle matches the movietitle and year.
-// It compares the movietitle and nzbtitle directly, and also tries
-// appending/removing the year, converting to slugs, etc.
-// It is used to fuzzy match nzb titles to movie info during parsing.
-func ChecknzbtitleB(movietitle string, movietitleslug string, nzbtitle string, allowpm1 bool, yeari int) bool {
-	if movietitle == "" {
-		return false
+// saveAttributes populates the fields of the NZB struct from
+// the name/value pairs passed in. It handles translating the
+// values to the appropriate types for the NZB struct fields.
+func (n *Nzb) saveAttributes(name string, value string) {
+	switch name {
+	case strguid:
+		n.ID = value
+	case "tvdbid":
+		n.TVDBID = logger.StringToInt(value)
+	case "season":
+		n.Season = value
+	case "episode":
+		n.Episode = value
+	case logger.StrImdb:
+		n.IMDBID = value
+	case strsize:
+		n.Size = logger.StringToInt64(value)
 	}
-	if movietitle == nzbtitle || strings.EqualFold(movietitle, nzbtitle) {
-		return true
-	}
-
-	year := strconv.Itoa(yeari)
-	var yearp, yearm string
-	if yeari != 0 {
-		checkstr1 := logger.JoinStrings(movietitle, " ", year)
-		checkstr2 := logger.JoinStrings(movietitle, " (", year, ")")
-		if allowpm1 {
-			yearp = strconv.Itoa(yeari + 1)
-			yearm = strconv.Itoa(yeari - 1)
-
-			if checkstr1 == nzbtitle ||
-				checkstr2 == nzbtitle ||
-				strings.EqualFold(checkstr1, nzbtitle) ||
-				strings.EqualFold(checkstr2, nzbtitle) {
-				return true
-			}
-
-			checkstr1 = logger.JoinStrings(movietitle, " ", yearp)
-			checkstr2 = logger.JoinStrings(movietitle, " (", yearp, ")")
-			if checkstr1 == nzbtitle ||
-				checkstr2 == nzbtitle ||
-				strings.EqualFold(checkstr1, nzbtitle) ||
-				strings.EqualFold(checkstr2, nzbtitle) {
-				return true
-			}
-
-			checkstr1 = logger.JoinStrings(movietitle, " ", yearm)
-			checkstr2 = logger.JoinStrings(movietitle, " (", yearm, ")")
-			if checkstr1 == nzbtitle ||
-				checkstr2 == nzbtitle ||
-				strings.EqualFold(checkstr1, nzbtitle) ||
-				strings.EqualFold(checkstr2, nzbtitle) {
-				return true
-			}
-		} else if checkstr1 == nzbtitle ||
-			checkstr2 == nzbtitle ||
-			strings.EqualFold(checkstr1, nzbtitle) ||
-			strings.EqualFold(checkstr2, nzbtitle) {
-			return true
-		}
-	}
-
-	if movietitleslug == "" {
-		movietitleslug = logger.StringToSlug(movietitle)
-	}
-	slugged := logger.StringToSlug(nzbtitle)
-	if slugged == "" {
-		return false
-	}
-	if movietitleslug == slugged {
-		return true
-	}
-
-	movietitleslug = logger.StringRemoveAllRunes(movietitleslug, '-')
-	slugged = logger.StringRemoveAllRunes(slugged, '-')
-	if movietitleslug == slugged {
-		return true
-	}
-
-	if yeari != 0 {
-		if movietitleslug+year == slugged {
-			return true
-		}
-
-		if allowpm1 {
-			if movietitleslug+yearp == nzbtitle ||
-				movietitleslug+yearm == nzbtitle {
-				return true
-			}
-		}
-	}
-
-	return false
 }
 
-// GenerateIdentifierString generates an identifier string for a movie or episode
-// in the format "S{season}E{episode}", where {season} and {episode} are the
-// season and episode numbers formatted as strings.
-func GenerateIdentifierString(m *database.ParseInfo) string {
-	return logger.JoinStrings("S", m.SeasonStr, "E", m.EpisodeStr)
+// setfield sets the corresponding field in the Nzb struct based on the provided field name and value.
+// If the field is already set, it will not be overwritten.
+// The supported fields are:
+// - Title
+// - DownloadURL
+// - ID
+// - Size
+// - IMDBID
+// - TVDBID
+// - Season
+// - Episode
+func (n *Nzb) setfield(field string, val any) {
+	var value string
+	switch tt := val.(type) {
+	case string:
+		value = tt
+	case *string:
+		if tt != nil {
+			value = *tt
+		}
+	case []byte:
+		value = string(tt)
+	case xml.CharData:
+		value = string(tt)
+	default:
+		return
+	}
+	switch field {
+	case strtitle:
+		if n.Title == "" {
+			n.Title = value
+		}
+	case strlink, "url":
+		if n.DownloadURL == "" {
+			n.DownloadURL = value
+		}
+	case strguid:
+		if n.ID == "" {
+			n.ID = value
+		}
+	case strsize, "length":
+		if n.Size == 0 {
+			n.Size = logger.StringToInt64(value)
+		}
+	case logger.StrImdb:
+		if n.IMDBID == "" {
+			n.IMDBID = value
+			if value != "" {
+				logger.AddImdbPrefixP(&n.IMDBID)
+			}
+		}
+	case "tvdbid":
+		if n.TVDBID == 0 {
+			n.TVDBID = logger.StringToInt(value)
+		}
+	case "season":
+		if n.Season == "" {
+			n.Season = value
+		}
+	case "episode":
+		if n.Episode == "" {
+			n.Episode = value
+		}
+	}
+}
+
+// Clear resets the fields of an Nzb struct to their zero values.
+// This is useful for reusing an Nzb instance without creating a new one.
+func (n *Nzb) Clear(ind *config.IndexersConfig, qual *config.QualityConfig, baseurl string) {
+	if n == nil {
+		return
+	}
+	n.Indexer = nil
+	n.Quality = nil
+	*n = Nzb{}
+	n.Indexer = ind
+	n.Quality = qual
+	n.SourceEndpoint = baseurl
 }
 
 // GenerateIdentifierStringFromInt generates a season/episode identifier string
 // from the given season and episode integers. It pads each number with leading
 // zeros to ensure a consistent format like "S01E02". This is intended to generate
 // identifiers for public display/logging.
-func GenerateIdentifierStringFromInt(season int, episode int) string {
-	return logger.JoinStrings("S", padNumberWithZero(season), "E", padNumberWithZero(episode))
+func generateIdentifierStringFromInt(season int, episode int) string {
+	return logger.JoinStrings("S", padNumberWithZero(season), "E", padNumberWithZero(episode)) //JoinStrings
 }

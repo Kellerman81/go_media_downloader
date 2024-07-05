@@ -4,12 +4,11 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/slidingwindow"
 )
 
-type omDBMovie struct {
+type OmDBMovie struct {
 	Title string `json:"Title"`
 	Year  string `json:"Year"`
 	//Rated    string `json:"Rated"`
@@ -28,17 +27,22 @@ type omDBMovie struct {
 	//BoxOffice  string `json:"BoxOffice"`
 	//Production string `json:"Production"`
 	Website string `json:"Website"`
+	Runtime string `json:"Runtime"`
+	//Director  string `json:"Director"`
+	//Writer string `json:"Writer"`
+	//Actors string `json:"Actors"`
+	//Poster string `json:"Poster"`
 }
 
-type omDBMovieSearch struct {
+type OmDBMovieSearch struct {
 	Title  string `json:"Title"`
 	Year   string `json:"Year"`
 	ImdbID string `json:"imdbID"`
 	//OmdbType string `json:"Type"`
 	//Poster   string `json:"Poster"`
 }
-type omDBMovieSearchGlobal struct {
-	Search []omDBMovieSearch `json:"Search"`
+type OmDBMovieSearchGlobal struct {
+	Search []OmDBMovieSearch `json:"Search"`
 	//TotalResults int               `json:"TotalResults"`
 	//Response     bool              `json:"Reponse"`
 }
@@ -52,60 +56,40 @@ type omdbClient struct {
 	Client     rlHTTPClient // Pointer to the rate limited HTTP client
 }
 
-// Close releases the resources used by the OmDBMovieSearchGlobal struct.
-// It sets the Search field to nil and calls logger.Clear on the struct to
-// release any accumulated log messages. This should be called when the
-// struct is no longer needed.
-func (t *omDBMovieSearchGlobal) Close() {
-	if config.SettingsGeneral.DisableVariableCleanup || t == nil {
-		return
-	}
-	//clear(t.Search)
-	t.Search = nil
-	*t = omDBMovieSearchGlobal{}
-}
-
 // NewOmdbClient creates a new omdbClient instance for making requests to the
 // OMDb API. It takes the API key, rate limit seconds, rate limit calls per
 // second, whether to disable TLS, and request timeout in seconds.
 // It sets sane defaults for the rate limiting if 0 values are passed.
-func NewOmdbClient(apikey string, seconds int, calls int, disabletls bool, timeoutseconds int) {
+func NewOmdbClient(apikey string, seconds uint8, calls int, disabletls bool, timeoutseconds uint16) {
 	if seconds == 0 {
 		seconds = 1
 	}
 	if calls == 0 {
 		calls = 1
 	}
-	omdbAPI = omdbClient{
-		OmdbAPIKey: apikey,
-		QAPIKey:    "&apikey=" + apikey,
-		Client: NewClient(
-			"omdb",
-			disabletls,
-			true,
-			slidingwindow.NewLimiter(time.Duration(seconds)*time.Second, int64(calls)),
-			false, slidingwindow.NewLimiter(10*time.Second, 10), timeoutseconds)}
-}
-
-// Close cleans up the OmDBMovie instance by clearing its logger.
-// This is called automatically when the instance is no longer referenced.
-func (s *omDBMovie) Close() {
-	if config.SettingsGeneral.DisableVariableCleanup || s == nil {
-		return
+	omdbApidata = apidata{
+		apikey:         apikey,
+		apikeyq:        "&apikey=" + apikey,
+		disabletls:     disabletls,
+		seconds:        seconds,
+		calls:          calls,
+		timeoutseconds: timeoutseconds,
+		limiter:        slidingwindow.NewLimiter(time.Duration(seconds)*time.Second, int64(calls)),
+		dailylimiter:   slidingwindow.NewLimiter(10*time.Second, 10),
 	}
-	*s = omDBMovie{}
 }
 
 // GetOmdbMovie retrieves movie details from the OMDb API by imdbid.
 // It returns a pointer to an OmDBMovie struct and an error.
 // The imdbid parameter specifies the imdbid to look up.
 // It returns logger.ErrNotFound if the imdbid is empty.
-func GetOmdbMovie(imdbid string) (omDBMovie, error) {
-	if imdbid == "" || omdbAPI.Client.checklimiterwithdaily() {
-		return omDBMovie{}, logger.ErrNotFound
+func GetOmdbMovie(imdbid string) (OmDBMovie, error) {
+	p := plomdb.Get()
+	defer plomdb.Put(p)
+	if imdbid == "" || p.Client.checklimiterwithdaily() {
+		return OmDBMovie{}, logger.ErrNotFound
 	}
-	//return DoJSONType[omDBMovie](omdbAPI.Client, logger.JoinStrings("http://www.omdbapi.com/?i=", imdbid, omdbAPI.QAPIKey), nil)
-	return DoJSONType[omDBMovie](&omdbAPI.Client, logger.JoinStrings("http://www.omdbapi.com/?i=", imdbid, omdbAPI.QAPIKey))
+	return doJSONType[OmDBMovie](&p.Client, logger.JoinStrings("http://www.omdbapi.com/?i=", imdbid, p.QAPIKey))
 }
 
 // SearchOmdbMovie searches the OMDb API for movies matching the given title and release year.
@@ -113,14 +97,14 @@ func GetOmdbMovie(imdbid string) (omDBMovie, error) {
 // The year parameter optionally specifies a release year to filter by.
 // It returns a pointer to an OmDBMovieSearchGlobal struct containing search results,
 // and an error.
-func SearchOmdbMovie(title string, year string) ([]omDBMovieSearch, error) {
-	if title == "" || omdbAPI.Client.checklimiterwithdaily() {
-		return nil, logger.ErrNotFound
+func SearchOmdbMovie(title string, year string) (OmDBMovieSearchGlobal, error) {
+	p := plomdb.Get()
+	defer plomdb.Put(p)
+	if title == "" || p.Client.checklimiterwithdaily() {
+		return OmDBMovieSearchGlobal{}, logger.ErrNotFound
 	}
 	if year != "" && year != "0" {
-		year = "&y=" + year
+		year = logger.JoinStrings("&y=", year)
 	}
-	//return DoJSONType[omDBMovieSearchGlobal](omdbAPI.Client, logger.JoinStrings("http://www.omdbapi.com/?s=", url.QueryEscape(title), yearstr, omdbAPI.QAPIKey), nil)
-	arr, err := DoJSONType[omDBMovieSearchGlobal](&omdbAPI.Client, logger.JoinStrings("http://www.omdbapi.com/?s=", url.QueryEscape(title), year, omdbAPI.QAPIKey))
-	return arr.Search, err
+	return doJSONType[OmDBMovieSearchGlobal](&p.Client, logger.JoinStrings("http://www.omdbapi.com/?s=", url.QueryEscape(title), year, p.QAPIKey))
 }

@@ -7,8 +7,8 @@ import (
 	"github.com/GoAdminGroup/go-admin/template/types/form"
 )
 
-func GetRSshistoriesTable(ctx *context.Context) table.Table {
-	rSshistories := table.NewDefaultTable(table.DefaultConfigWithDriverAndConnection("sqlite", "media"))
+func getRSshistoriesTable(ctx *context.Context) table.Table {
+	rSshistories := table.NewDefaultTable(ctx, table.DefaultConfigWithDriverAndConnection("sqlite", "media"))
 
 	info := rSshistories.GetInfo()
 

@@ -8,8 +8,8 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/worker"
 )
 
-func GetQueueTable(ctx *context.Context) (userTable table.Table) {
-	userTable = table.NewDefaultTable(table.Config{})
+func getQueueTable(ctx *context.Context) (userTable table.Table) {
+	userTable = table.NewDefaultTable(ctx, table.Config{})
 	userTable.GetOnlyInfo()
 	var queue []map[string]any
 	i := 0

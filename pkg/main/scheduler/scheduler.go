@@ -23,7 +23,6 @@ func InitScheduler() {
 			groupnamestr = logger.StrMovie
 		}
 		for _, str := range []string{logger.StrSearchMissingInc, logger.StrSearchMissingFull, logger.StrSearchUpgradeInc, logger.StrSearchUpgradeFull, logger.StrSearchMissingIncTitle, logger.StrSearchMissingFullTitle, logger.StrSearchUpgradeIncTitle, logger.StrSearchUpgradeFullTitle, logger.StrRss, logger.StrDataFull, logger.StrStructure, logger.StrFeeds, logger.StrCheckMissing, logger.StrCheckMissingFlag, logger.StrUpgradeFlag, logger.StrRssSeasons, logger.StrRssSeasonsAll} {
-			str := str
 			var usequeuename string
 			var intervalstr, cronstr string
 			switch str {
@@ -34,7 +33,7 @@ func InitScheduler() {
 			default:
 				usequeuename = "Search"
 			}
-			jobname := str + logger.Underscore + groupnamestr + logger.Underscore + name
+			jobname := logger.JoinStrings(str, logger.Underscore, groupnamestr, logger.Underscore, name)
 			switch str {
 			case logger.StrSearchMissingInc:
 				intervalstr = cfgp.CfgScheduler.IntervalIndexerMissing
@@ -99,8 +98,6 @@ func InitScheduler() {
 			}
 			cfgpstr := cfgp.NamePrefix
 
-			//i, c := getSchCfg(templateScheduler, cfgpstr, str, groupname, name, &job)
-
 			schedulerdispatch(intervalstr, cronstr, jobname, usequeuename, func() {
 				utils.SingleJobs(str, cfgpstr, "", false)
 			})
@@ -125,7 +122,6 @@ func InitScheduler() {
 	}
 
 	for _, str := range []string{"backupdb", "checkdb", "imdb", "refreshmovies", "refreshmoviesfull", "refreshseries", "refreshseriesfull"} {
-		str := str
 		var usequeuename, name string
 		var intervalstr, cronstr string
 		var fn func()
@@ -233,9 +229,9 @@ func InitScheduler() {
 					worker.StopCronWorker()
 					worker.CloseWorkerPools()
 				}
-				database.Backup("./backup/data.db."+database.GetVersion()+"."+time.Now().Format("20060102_150405"), config.SettingsGeneral.MaxDatabaseBackups)
+				database.Backup(logger.JoinStrings("./backup/data.db.", database.GetVersion(), logger.StrDot, time.Now().Format("20060102_150405")), config.SettingsGeneral.MaxDatabaseBackups)
 				if config.SettingsGeneral.DatabaseBackupStopTasks {
-					worker.InitWorkerPools(config.SettingsGeneral.WorkerIndexer, config.SettingsGeneral.WorkerParse, config.SettingsGeneral.WorkerSearch, config.SettingsGeneral.WorkerFiles, config.SettingsGeneral.WorkerMetadata)
+					worker.InitWorkerPools(config.SettingsGeneral.WorkerSearch, config.SettingsGeneral.WorkerFiles, config.SettingsGeneral.WorkerMetadata)
 					worker.StartCronWorker()
 				}
 			}
@@ -263,7 +259,7 @@ func schedulerdispatch(intervalstr string, cronstr string, name string, queue st
 			rand.New(rand.NewSource(time.Now().UnixNano()))
 			if strings.ContainsRune(intervalstr, 'd') {
 				intervalstr = strings.Replace(intervalstr, "d", "", 1)
-				cronstr = "0 " + strconv.Itoa(rand.Intn(60)) + " " + strconv.Itoa(rand.Intn(24)) + " */" + intervalstr + " * *"
+				cronstr = "0 " + strconv.Itoa(rand.Intn(60)) + logger.StrSpace + strconv.Itoa(rand.Intn(24)) + " */" + intervalstr + " * *"
 			} else if strings.ContainsRune(intervalstr, 'h') {
 				intervalstr = strings.Replace(intervalstr, "h", "", 1)
 				cronstr = "0 " + strconv.Itoa(rand.Intn(60)) + " */" + intervalstr + " * * *"
@@ -280,7 +276,7 @@ func schedulerdispatch(intervalstr string, cronstr string, name string, queue st
 			err := worker.DispatchEvery(dur, name, queue, fn)
 
 			if err != nil {
-				logger.LogDynamic("error", "Cron", logger.NewLogFieldValue(err))
+				logger.LogDynamicany("error", "Cron", err)
 			}
 		}
 	}
@@ -289,7 +285,7 @@ func schedulerdispatch(intervalstr string, cronstr string, name string, queue st
 		//worker.AddCronJob(cfg)
 		err := worker.DispatchCron(cronstr, name, queue, fn)
 		if err != nil {
-			logger.LogDynamic("error", "Cron", logger.NewLogFieldValue(err))
+			logger.LogDynamicany("error", "Cron", err)
 		}
 	}
 }

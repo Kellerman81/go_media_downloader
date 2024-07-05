@@ -51,7 +51,7 @@ func CheckGroup(group string, key string) bool {
 // Otherwise it returns the existing traktToken.
 func GetTrakt() *oauth2.Token {
 	if traktToken == nil {
-		logger.LogDynamic("debug", "token empty")
+		logger.LogDynamicany("debug", "token empty")
 		return &oauth2.Token{}
 	}
 	return traktToken

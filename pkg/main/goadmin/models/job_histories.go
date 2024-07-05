@@ -8,8 +8,8 @@ import (
 	"github.com/GoAdminGroup/go-admin/template/types/form"
 )
 
-func GetJobHistoriesTable(ctx *context.Context) table.Table {
-	jobHistories := table.NewDefaultTable(table.DefaultConfigWithDriverAndConnection("sqlite", "media"))
+func getJobHistoriesTable(ctx *context.Context) table.Table {
+	jobHistories := table.NewDefaultTable(ctx, table.DefaultConfigWithDriverAndConnection("sqlite", "media"))
 
 	info := jobHistories.GetInfo().HideFilterArea()
 	info.SetAutoRefresh(60)
