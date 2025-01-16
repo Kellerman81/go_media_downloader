@@ -14,27 +14,232 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/worker"
 )
 
-// InitScheduler is called at startup to initialize the scheduler. This includes checking for the existence of the scheduler and setting up the
+// InitScheduler is called at startup to initialize the scheduler. This includes checking for the existence of the scheduler and setting up the.
 func InitScheduler() {
+	config.SettingsGeneral.Jobs = map[string]func(uint32){
+		"RefreshImdb": func(key uint32) {
+			utils.FillImdb()
+			worker.RemoveQueueEntry(key)
+		},
+		"CheckDatabase": func(key uint32) {
+			worker.RemoveQueueEntry(key)
+			if database.DBIntegrityCheck() != "ok" {
+				os.Exit(100)
+			}
+		},
+		"BackupDatabase": func(key uint32) {
+			if config.SettingsGeneral.DatabaseBackupStopTasks {
+				worker.StopCronWorker()
+				worker.CloseWorkerPools()
+			}
+			worker.RemoveQueueEntry(key)
+			backupto := logger.JoinStrings("./backup/data.db.", database.GetVersion(), logger.StrDot, time.Now().Format("20060102_150405"))
+			database.Backup(&backupto, config.SettingsGeneral.MaxDatabaseBackups)
+			if config.SettingsGeneral.DatabaseBackupStopTasks {
+				worker.InitWorkerPools(config.SettingsGeneral.WorkerSearch, config.SettingsGeneral.WorkerFiles, config.SettingsGeneral.WorkerMetadata)
+				worker.StartCronWorker()
+			}
+		},
+	}
+
+	if !config.CheckGroup("scheduler_", "Default") {
+		config.UpdateCfgEntry(config.Conf{Name: "Default", Data: config.SchedulerConfig{
+			Name:                       "Default",
+			IntervalImdb:               "3d",
+			IntervalFeeds:              "1d",
+			IntervalFeedsRefreshSeries: "1d",
+			IntervalFeedsRefreshMovies: "1d",
+			IntervalIndexerMissing:     "40m",
+			IntervalIndexerUpgrade:     "60m",
+			IntervalIndexerRss:         "15m",
+			IntervalScanData:           "1h",
+			IntervalScanDataMissing:    "1d",
+			IntervalScanDataimport:     "60m",
+		}})
+		config.WriteCfg()
+	}
 	for _, cfgp := range config.SettingsMedia {
+		if cfgp.Useseries {
+			cfgp.Jobs = map[string]func(uint32){
+				logger.StrSearchMissingInc: func(key uint32) {
+					utils.SingleJobs(logger.StrSearchMissingInc, cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				logger.StrSearchMissingFull: func(key uint32) {
+					utils.SingleJobs(logger.StrSearchMissingFull, cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				logger.StrSearchUpgradeInc: func(key uint32) {
+					utils.SingleJobs(logger.StrSearchUpgradeInc, cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				logger.StrSearchUpgradeFull: func(key uint32) {
+					utils.SingleJobs(logger.StrSearchUpgradeFull, cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				logger.StrSearchMissingIncTitle: func(key uint32) {
+					utils.SingleJobs(logger.StrSearchMissingIncTitle, cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				logger.StrSearchMissingFullTitle: func(key uint32) {
+					utils.SingleJobs(logger.StrSearchMissingFullTitle, cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				logger.StrSearchUpgradeIncTitle: func(key uint32) {
+					utils.SingleJobs(logger.StrSearchUpgradeIncTitle, cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				logger.StrSearchUpgradeFullTitle: func(key uint32) {
+					utils.SingleJobs(logger.StrSearchUpgradeFullTitle, cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				logger.StrRss: func(key uint32) {
+					utils.SingleJobs(logger.StrRss, cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				logger.StrDataFull: func(key uint32) {
+					utils.SingleJobs(logger.StrDataFull, cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				logger.StrStructure: func(key uint32) {
+					utils.SingleJobs(logger.StrStructure, cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				logger.StrFeeds: func(key uint32) {
+					utils.SingleJobs(logger.StrFeeds, cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				logger.StrCheckMissing: func(key uint32) {
+					utils.SingleJobs(logger.StrCheckMissing, cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				logger.StrCheckMissingFlag: func(key uint32) {
+					utils.SingleJobs(logger.StrCheckMissingFlag, cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				logger.StrUpgradeFlag: func(key uint32) {
+					utils.SingleJobs(logger.StrUpgradeFlag, cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				logger.StrRssSeasons: func(key uint32) {
+					utils.SingleJobs(logger.StrRssSeasons, cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				logger.StrRssSeasonsAll: func(key uint32) {
+					utils.SingleJobs(logger.StrRssSeasonsAll, cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				"refreshseriesfull": func(key uint32) {
+					utils.SingleJobs("refresh", cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				"refreshseriesinc": func(key uint32) {
+					utils.SingleJobs("refreshinc", cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+			}
+		} else {
+			cfgp.Jobs = map[string]func(uint32){
+				logger.StrSearchMissingInc: func(key uint32) {
+					utils.SingleJobs(logger.StrSearchMissingInc, cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				logger.StrSearchMissingFull: func(key uint32) {
+					utils.SingleJobs(logger.StrSearchMissingFull, cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				logger.StrSearchUpgradeInc: func(key uint32) {
+					utils.SingleJobs(logger.StrSearchUpgradeInc, cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				logger.StrSearchUpgradeFull: func(key uint32) {
+					utils.SingleJobs(logger.StrSearchUpgradeFull, cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				logger.StrSearchMissingIncTitle: func(key uint32) {
+					utils.SingleJobs(logger.StrSearchMissingIncTitle, cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				logger.StrSearchMissingFullTitle: func(key uint32) {
+					utils.SingleJobs(logger.StrSearchMissingFullTitle, cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				logger.StrSearchUpgradeIncTitle: func(key uint32) {
+					utils.SingleJobs(logger.StrSearchUpgradeIncTitle, cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				logger.StrSearchUpgradeFullTitle: func(key uint32) {
+					utils.SingleJobs(logger.StrSearchUpgradeFullTitle, cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				logger.StrRss: func(key uint32) {
+					utils.SingleJobs(logger.StrRss, cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				logger.StrDataFull: func(key uint32) {
+					utils.SingleJobs(logger.StrDataFull, cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				logger.StrStructure: func(key uint32) {
+					utils.SingleJobs(logger.StrStructure, cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				logger.StrFeeds: func(key uint32) {
+					utils.SingleJobs(logger.StrFeeds, cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				logger.StrCheckMissing: func(key uint32) {
+					utils.SingleJobs(logger.StrCheckMissing, cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				logger.StrCheckMissingFlag: func(key uint32) {
+					utils.SingleJobs(logger.StrCheckMissingFlag, cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				logger.StrUpgradeFlag: func(key uint32) {
+					utils.SingleJobs(logger.StrUpgradeFlag, cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				"refreshmoviesfull": func(key uint32) {
+					utils.SingleJobs("refresh", cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				"refreshmoviesinc": func(key uint32) {
+					utils.SingleJobs("refreshinc", cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+			}
+		}
 		name := cfgp.Name
 		groupnamestr := logger.StrSeries
 		if !cfgp.Useseries {
 			groupnamestr = logger.StrMovie
 		}
-		for _, str := range []string{logger.StrSearchMissingInc, logger.StrSearchMissingFull, logger.StrSearchUpgradeInc, logger.StrSearchUpgradeFull, logger.StrSearchMissingIncTitle, logger.StrSearchMissingFullTitle, logger.StrSearchUpgradeIncTitle, logger.StrSearchUpgradeFullTitle, logger.StrRss, logger.StrDataFull, logger.StrStructure, logger.StrFeeds, logger.StrCheckMissing, logger.StrCheckMissingFlag, logger.StrUpgradeFlag, logger.StrRssSeasons, logger.StrRssSeasonsAll} {
+		for _, str := range []string{"refreshseriesfull", "refreshseriesinc", "refreshmoviesfull", "refreshmoviesinc", logger.StrSearchMissingInc, logger.StrSearchMissingFull, logger.StrSearchUpgradeInc, logger.StrSearchUpgradeFull, logger.StrSearchMissingIncTitle, logger.StrSearchMissingFullTitle, logger.StrSearchUpgradeIncTitle, logger.StrSearchUpgradeFullTitle, logger.StrRss, logger.StrDataFull, logger.StrStructure, logger.StrFeeds, logger.StrCheckMissing, logger.StrCheckMissingFlag, logger.StrUpgradeFlag, logger.StrRssSeasons, logger.StrRssSeasonsAll} {
 			var usequeuename string
 			var intervalstr, cronstr string
 			switch str {
 			case logger.StrDataFull, logger.StrStructure, logger.StrCheckMissing, logger.StrCheckMissingFlag, logger.StrUpgradeFlag:
 				usequeuename = "Data"
-			case logger.StrFeeds:
+			case logger.StrFeeds, "refreshseriesfull", "refreshmoviesfull", "refreshseriesinc", "refreshmoviesinc":
 				usequeuename = "Feeds"
 			default:
 				usequeuename = "Search"
 			}
 			jobname := logger.JoinStrings(str, logger.Underscore, groupnamestr, logger.Underscore, name)
 			switch str {
+			case "refreshseriesfull":
+				intervalstr = config.SettingsScheduler["Default"].IntervalFeedsRefreshSeriesFull
+				cronstr = config.SettingsScheduler["Default"].CronFeedsRefreshSeriesFull
+			case "refreshseriesinc":
+				intervalstr = config.SettingsScheduler["Default"].IntervalFeedsRefreshSeries
+				cronstr = config.SettingsScheduler["Default"].CronFeedsRefreshSeries
+			case "refreshmoviesfull":
+				intervalstr = config.SettingsScheduler["Default"].IntervalFeedsRefreshMoviesFull
+				cronstr = config.SettingsScheduler["Default"].CronFeedsRefreshMoviesFull
+			case "refreshmoviesinc":
+				intervalstr = config.SettingsScheduler["Default"].IntervalFeedsRefreshMovies
+				cronstr = config.SettingsScheduler["Default"].CronFeedsRefreshMovies
 			case logger.StrSearchMissingInc:
 				intervalstr = cfgp.CfgScheduler.IntervalIndexerMissing
 				cronstr = cfgp.CfgScheduler.CronIndexerMissing
@@ -96,35 +301,16 @@ func InitScheduler() {
 			if (intervalstr == "" && cronstr == "") || str == "" {
 				continue
 			}
-			cfgpstr := cfgp.NamePrefix
 
-			schedulerdispatch(intervalstr, cronstr, jobname, usequeuename, func() {
-				utils.SingleJobs(str, cfgpstr, "", false)
-			})
+			schedulerdispatch(cfgp.NamePrefix, intervalstr, cronstr, jobname, usequeuename, str)
 		}
 	}
 
-	if !config.CheckGroup("scheduler_", "Default") {
-		config.UpdateCfgEntry(config.Conf{Name: "Default", Data: config.SchedulerConfig{
-			Name:                       "Default",
-			IntervalImdb:               "3d",
-			IntervalFeeds:              "1d",
-			IntervalFeedsRefreshSeries: "1d",
-			IntervalFeedsRefreshMovies: "1d",
-			IntervalIndexerMissing:     "40m",
-			IntervalIndexerUpgrade:     "60m",
-			IntervalIndexerRss:         "15m",
-			IntervalScanData:           "1h",
-			IntervalScanDataMissing:    "1d",
-			IntervalScanDataimport:     "60m",
-		}})
-		config.WriteCfg()
-	}
-
-	for _, str := range []string{"backupdb", "checkdb", "imdb", "refreshmovies", "refreshmoviesfull", "refreshseries", "refreshseriesfull"} {
+	for _, str := range []string{"backupdb", "checkdb", "imdb"} {
 		var usequeuename, name string
 		var intervalstr, cronstr string
-		var fn func()
+		// var fn func(uint32)
+		var jobname string
 		switch str {
 		case "backupdb", "checkdb":
 			usequeuename = "Data"
@@ -132,109 +318,21 @@ func InitScheduler() {
 			usequeuename = "Feeds"
 		}
 		switch str {
-		case "refreshseriesfull":
-			cfgpidx := ""
-			for idx, cfgp := range config.SettingsMedia {
-				if cfgp.Useseries {
-					cfgpidx = idx
-					break
-				}
-			}
-			if cfgpidx == "" {
-				break
-			}
-			intervalstr = config.SettingsScheduler["Default"].IntervalFeedsRefreshSeriesFull
-			cronstr = config.SettingsScheduler["Default"].CronFeedsRefreshSeriesFull
-			name = logger.StrRefreshSeries
-			cfgpstr := config.SettingsMedia[cfgpidx].NamePrefix
-			fn = func() {
-				utils.SingleJobs("refresh", cfgpstr, "", false)
-			}
-		case "refreshseries":
-			cfgpidx := ""
-			for idx, cfgp := range config.SettingsMedia {
-				if cfgp.Useseries {
-					cfgpidx = idx
-					break
-				}
-			}
-			if cfgpidx == "" {
-				break
-			}
-			intervalstr = config.SettingsScheduler["Default"].IntervalFeedsRefreshSeries
-			cronstr = config.SettingsScheduler["Default"].CronFeedsRefreshSeries
-			name = logger.StrRefreshSeriesInc
-			cfgpstr := config.SettingsMedia[cfgpidx].NamePrefix
-			fn = func() {
-				utils.SingleJobs("refreshinc", cfgpstr, "", false)
-			}
-		case "refreshmoviesfull":
-			cfgpidx := ""
-			for idx, cfgp := range config.SettingsMedia {
-				if !cfgp.Useseries {
-					cfgpidx = idx
-					break
-				}
-			}
-			if cfgpidx == "" {
-				break
-			}
-			intervalstr = config.SettingsScheduler["Default"].IntervalFeedsRefreshMoviesFull
-			cronstr = config.SettingsScheduler["Default"].CronFeedsRefreshMoviesFull
-			name = logger.StrRefreshMovies
-			cfgpstr := config.SettingsMedia[cfgpidx].NamePrefix
-			fn = func() {
-				utils.SingleJobs("refresh", cfgpstr, "", false)
-			}
-		case "refreshmovies":
-			cfgpidx := ""
-			for idx, cfgp := range config.SettingsMedia {
-				if !cfgp.Useseries {
-					cfgpidx = idx
-					break
-				}
-			}
-			if cfgpidx == "" {
-				break
-			}
-			intervalstr = config.SettingsScheduler["Default"].IntervalFeedsRefreshMovies
-			cronstr = config.SettingsScheduler["Default"].CronFeedsRefreshMovies
-			name = logger.StrRefreshMoviesInc
-			cfgpstr := config.SettingsMedia[cfgpidx].NamePrefix
-			fn = func() {
-				utils.SingleJobs("refreshinc", cfgpstr, "", false)
-			}
 		case logger.StrImdb:
 			intervalstr = config.SettingsScheduler["Default"].IntervalImdb
 			cronstr = config.SettingsScheduler["Default"].CronImdb
 			name = "Refresh IMDB"
-			fn = func() {
-				utils.FillImdb()
-			}
+			jobname = "RefreshImdb"
 		case "checkdb":
 			intervalstr = config.SettingsScheduler["Default"].IntervalDatabaseCheck
 			cronstr = config.SettingsScheduler["Default"].CronDatabaseCheck
 			name = "Check Database"
-			fn = func() {
-				if database.DBIntegrityCheck() != "ok" {
-					os.Exit(100)
-				}
-			}
+			jobname = "CheckDatabase"
 		case "backupdb":
 			intervalstr = config.SettingsScheduler["Default"].IntervalDatabaseBackup
 			cronstr = config.SettingsScheduler["Default"].CronDatabaseBackup
 			name = "Backup Database"
-			fn = func() {
-				if config.SettingsGeneral.DatabaseBackupStopTasks {
-					worker.StopCronWorker()
-					worker.CloseWorkerPools()
-				}
-				database.Backup(logger.JoinStrings("./backup/data.db.", database.GetVersion(), logger.StrDot, time.Now().Format("20060102_150405")), config.SettingsGeneral.MaxDatabaseBackups)
-				if config.SettingsGeneral.DatabaseBackupStopTasks {
-					worker.InitWorkerPools(config.SettingsGeneral.WorkerSearch, config.SettingsGeneral.WorkerFiles, config.SettingsGeneral.WorkerMetadata)
-					worker.StartCronWorker()
-				}
-			}
+			jobname = "BackupDatabase"
 		default:
 			intervalstr = ""
 			cronstr = ""
@@ -244,18 +342,18 @@ func InitScheduler() {
 			continue
 		}
 
-		//i, c := getGlobalSchCfg(typevarsglobal[idx], job)
-		schedulerdispatch(intervalstr, cronstr, name, usequeuename, fn)
+		// i, c := getGlobalSchCfg(typevarsglobal[idx], job)
+		schedulerdispatch("", intervalstr, cronstr, name, usequeuename, jobname)
 	}
 }
 
 // schedulerdispatch dispatches jobs to the worker queues based on the provided interval or cron schedule.
 // It handles converting interval durations to cron expressions and dispatching the jobs.
 // It also handles any errors from the dispatching.
-func schedulerdispatch(intervalstr string, cronstr string, name string, queue string, fn func()) {
+func schedulerdispatch(cfgpstr string, intervalstr string, cronstr string, name string, queue string, jobname string) {
 	if intervalstr != "" {
 		if config.SettingsGeneral.UseCronInsteadOfInterval {
-			//worker.AddCronJob(cfg)
+			// worker.AddCronJob(cfg)
 			rand.New(rand.NewSource(time.Now().UnixNano()))
 			if strings.ContainsRune(intervalstr, 'd') {
 				intervalstr = strings.Replace(intervalstr, "d", "", 1)
@@ -273,19 +371,18 @@ func schedulerdispatch(intervalstr string, cronstr string, name string, queue st
 				intervalstr = strconv.Itoa(logger.StringToInt(intervalstr)*24) + "h"
 			}
 			dur, _ := time.ParseDuration(intervalstr)
-			err := worker.DispatchEvery(dur, name, queue, fn)
-
+			err := worker.DispatchEvery(cfgpstr, dur, name, queue, jobname)
 			if err != nil {
-				logger.LogDynamicany("error", "Cron", err)
+				logger.LogDynamicanyErr("error", "Cron", err)
 			}
 		}
 	}
 
 	if cronstr != "" {
-		//worker.AddCronJob(cfg)
-		err := worker.DispatchCron(cronstr, name, queue, fn)
+		// worker.AddCronJob(cfg)
+		err := worker.DispatchCron(cfgpstr, cronstr, name, queue, jobname)
 		if err != nil {
-			logger.LogDynamicany("error", "Cron", err)
+			logger.LogDynamicanyErr("error", "Cron", err)
 		}
 	}
 }

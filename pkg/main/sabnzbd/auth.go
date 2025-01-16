@@ -6,9 +6,9 @@ import (
 	"net/url"
 )
 
-//Source: https://github.com/mrobinsn/go-sabnzbd - fixed:add category
+// Source: https://github.com/mrobinsn/go-sabnzbd - fixed:add category
 
-// authenticator adds authentication parameters to a url
+// authenticator adds authentication parameters to a url.
 type authenticator interface {
 	Authenticate(url.Values)
 	AuthenticateMultipart(*multipart.Writer) error

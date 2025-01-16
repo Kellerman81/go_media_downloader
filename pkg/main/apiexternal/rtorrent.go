@@ -9,7 +9,7 @@ import (
 // rTorrent server. urlv is the torrent file URL. dlpath is the
 // download location path. name is the name to save the torrent
 // as in rTorrent. Returns any error.
-func SendToRtorrent(hostname string, insecure bool, urlv string, dlpath string, name string) error {
+func SendToRtorrent(hostname string, insecure bool, urlv, dlpath, name string) error {
 	cl := rtorrent.New(hostname, insecure)
 
 	return cl.Add(urlv, rtorrent.DBasePath.SetValue(dlpath), rtorrent.DName.SetValue(name))

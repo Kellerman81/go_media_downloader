@@ -8,10 +8,10 @@ import (
 // SendToDeluge connects to a Deluge server, authenticates, and adds a torrent from a magnet URI or URL.
 // It configures options like download location, moving completed downloads, pausing on add, etc.
 // Returns any error from the connection or add torrent operations.
-func SendToDeluge(host string, port int, username string, password string, urlv string, dlpath string, moveafter bool, moveafterpath string, addpaused bool) error {
+func SendToDeluge(host string, port int, username, password, urlv, dlpath string, moveafter bool, moveafterpath string, addpaused bool) error {
 	cl := delugeclient.NewV2(delugeclient.Settings{
 		Hostname:             host,
-		Port:                 uint(port),
+		Port:                 logger.IntToUint(port),
 		Login:                username,
 		Password:             password,
 		DebugServerResponses: true,
@@ -20,31 +20,25 @@ func SendToDeluge(host string, port int, username string, password string, urlv 
 	fls := false
 	// perform connection to Deluge server
 	err := cl.Connect()
-	if err == nil {
-		if logger.HasPrefixI(urlv, "magnet") {
-			_, err = cl.AddTorrentMagnet(urlv, &delugeclient.Options{
-				DownloadLocation:  &dlpath,
-				MoveCompleted:     &moveafter,
-				MoveCompletedPath: &moveafterpath,
-				AutoManaged:       &fls,
-				AddPaused:         &addpaused,
-			})
-			if err != nil {
-				return err
-			}
-		} else {
-			_, err = cl.AddTorrentURL(urlv, &delugeclient.Options{
-				DownloadLocation:  &dlpath,
-				MoveCompleted:     &moveafter,
-				MoveCompletedPath: &moveafterpath,
-				AutoManaged:       &fls,
-				AddPaused:         &addpaused,
-			})
-			if err != nil {
-				return err
-			}
-		}
-		return nil
+	if err != nil {
+		return err
+	}
+	if logger.HasPrefixI(urlv, "magnet") {
+		_, err = cl.AddTorrentMagnet(urlv, &delugeclient.Options{
+			DownloadLocation:  &dlpath,
+			MoveCompleted:     &moveafter,
+			MoveCompletedPath: &moveafterpath,
+			AutoManaged:       &fls,
+			AddPaused:         &addpaused,
+		})
+	} else {
+		_, err = cl.AddTorrentURL(urlv, &delugeclient.Options{
+			DownloadLocation:  &dlpath,
+			MoveCompleted:     &moveafter,
+			MoveCompletedPath: &moveafterpath,
+			AutoManaged:       &fls,
+			AddPaused:         &addpaused,
+		})
 	}
 	return err
 }

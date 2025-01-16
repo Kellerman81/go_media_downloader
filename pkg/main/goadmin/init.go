@@ -15,7 +15,7 @@ import (
 )
 
 func Init(router *gin.Engine) {
-	//template.AddComp(chartjs.NewChart())
+	// template.AddComp(chartjs.NewChart())
 	eng := engine.Default()
 	acfg := config.Config{
 		Databases: config.DatabaseList{
@@ -56,7 +56,8 @@ func Init(router *gin.Engine) {
 	eng.HTML("GET", "/actions", pages.GetActionsPage)
 	eng.Services["sqlite"] = goadmindb.GetSqliteDB().InitDB(map[string]config.Database{
 		"default": {Driver: "sqlite", File: "./databases/admin.db"},
-		"media":   {Driver: "sqlite"}})
+		"media":   {Driver: "sqlite"},
+	})
 	eng.Adapter.SetConnection(db.GetConnection(eng.Services))
 	router.Static("/admin/uploads", "./temp")
 }

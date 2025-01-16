@@ -2,12 +2,9 @@ package parser
 
 import (
 	"errors"
-	"math"
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strconv"
-	"strings"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
@@ -15,25 +12,30 @@ import (
 	"github.com/goccy/go-json"
 )
 
-//Original Source: https://github.com/stashapp/stash/blob/develop/pkg/ffmpeg/ffprobe.go
+// Original Source: https://github.com/stashapp/stash/blob/develop/pkg/ffmpeg/ffprobe.go
 
-type FFProbeJSON struct {
-	Format  FFProbeJSONFormat `json:"format"`
-	Streams []FFProbeStream   `json:"streams"`
-	Error   FFProbeJSONError  `json:"error"`
-}
-type FFProbeJSONError struct {
-	Code   int    `json:"code"`
-	String string `json:"string"`
-}
+type ffProbeJSON struct {
+	Streams []struct {
+		Tags struct {
+			Language string `json:"language"`
+		} `json:"tags"`
+		CodecName      string `json:"codec_name"`
+		CodecTagString string `json:"codec_tag_string"`
+		CodecType      string `json:"codec_type"`
+		Height         int    `json:"height,omitempty"`
+		Width          int    `json:"width,omitempty"`
+	} `json:"streams"`
+	Format struct {
+		// BitRate is a string containing the bit rate of the media
+		// BitRate        string `json:"bit_rate"`
 
-// ffProbeJSONFormat contains metadata about the media format
-type FFProbeJSONFormat struct {
-	//BitRate is a string containing the bit rate of the media
-	//BitRate        string `json:"bit_rate"`
-
-	// Duration is a string containing the duration of the media
-	Duration string `json:"duration"`
+		// Duration is a string containing the duration of the media
+		Duration string `json:"duration"`
+	} `json:"format"`
+	Error struct {
+		String string `json:"string"`
+		Code   int    `json:"code"`
+	} `json:"error"`
 }
 
 //	type ffProbeJSONFormat struct {
@@ -57,24 +59,6 @@ type FFProbeJSONFormat struct {
 //		//Comment string `json:"comment"`
 //		//} `json:"tags"`
 //	}
-//
-// ffProbeStream contains metadata about a media stream
-type FFProbeStream struct {
-	// CodecName is a string containing the codec name
-	CodecName string `json:"codec_name"`
-
-	// CodecTagString is a string containing the codec tag string
-	CodecTagString string `json:"codec_tag_string"`
-
-	// CodecType is a string containing the codec type
-	CodecType string `json:"codec_type"`
-
-	// Height is an int containing the height
-	Height int `json:"height,omitempty"`
-
-	Tags  FFProbeStreamTags `json:"tags"`
-	Width int               `json:"width,omitempty"`
-}
 
 //		type ffProbeStream struct {
 //		//AvgFrameRate string `json:"avg_frame_rate"`
@@ -130,21 +114,6 @@ type FFProbeStream struct {
 //		//SampleFmt     string `json:"sample_fmt,omitempty"`
 //		//SampleRate    string `json:"sample_rate,omitempty"`
 //	}
-//
-// ffProbeStreamTags contains metadata tags about a media stream
-type FFProbeStreamTags struct {
-	// Language is a string containing the language
-	Language string `json:"language"`
-}
-
-func (t *FFProbeJSON) Close() {
-	if config.SettingsGeneral.DisableVariableCleanup || t == nil {
-		return
-	}
-	clear(t.Streams)
-	t.Streams = nil
-	*t = FFProbeJSON{}
-}
 
 // getFFProbeFilename returns the path to the ffprobe executable.
 // It checks if the path has already been set, otherwise determines the path based on OS.
@@ -158,139 +127,91 @@ func getFFProbeFilename() string {
 	} else {
 		ffprobepath = filepath.Join(config.SettingsGeneral.FfprobePath, "ffprobe")
 	}
-	// if !filepath.IsAbs(ffprobepath) {
-	// 	ffprobepath, _ = filepath.Abs(ffprobepath)
-	// }
 	return ffprobepath
 }
 
-// ExecCmd executes the given command with the provided arguments and returns
-// the stdout, stderr, and error. typ indicates the command type, either
-// "ffprobe" or "mediainfo". file is the path to the file to analyze.
-func ExecCmd(com string, file string, typ string) ([]byte, string, error) {
-	var params []string
+// getcmd returns an *exec.Cmd for the specified file and command type.
+// If the file is empty, it returns nil.
+// For "ffprobe" type, it returns a command with the ffprobe executable, loglevel set to "fatal",
+// print format set to "json", and specific entries to show.
+// For "mediainfo" type, it returns a command with the mediainfo executable and "--Output=JSON" option.
+// For any other type, it returns a command with the getImdbFilename() executable.
+func getcmd(file, typ string) *exec.Cmd {
 	switch typ {
 	case "ffprobe":
 		if file == "" {
-			return nil, "", logger.ErrNotFound
+			return nil
 		}
-		params = []string{"-loglevel", "fatal",
+		return exec.Command(getFFProbeFilename(), "-loglevel", "fatal",
 			"-print_format", "json",
 			"-show_entries",
 			"format=duration : stream=codec_name,codec_tag_string,codec_type,height,width : stream_tags=Language : error",
-			file}
+			file)
 	case "mediainfo":
 		if file == "" {
-			return nil, "", logger.ErrNotFound
+			return nil
 		}
-		params = []string{"--Output=JSON", file}
+		return exec.Command(getmediainfoFilename(), "--Output=JSON", file)
+	default:
+		return exec.Command(getImdbFilename())
 	}
+}
+
+// ExecCmdJson executes the given command with the provided arguments and returns
+// the parsed JSON output as either a mediaInfoJSON or ffProbeJSON struct, or an error.
+// The command type is specified by the 'typ' parameter, which can be either "ffprobe" or "mediainfo".
+// The 'file' parameter is the path to the file to analyze.
+// The 'm' and 'quality' parameters are used to pass additional context to the parsemediainfo and parseffprobe functions.
+func ExecCmdJson[t mediaInfoJSON | ffProbeJSON](file, typ string, m *database.ParseInfo, quality *config.QualityConfig) error {
 	outputBuf := logger.PlBuffer.Get()
 	stdErr := logger.PlBuffer.Get()
 	defer logger.PlBuffer.Put(outputBuf)
 	defer logger.PlBuffer.Put(stdErr)
-	cmd := exec.Command(com, params...)
+
+	cmd := getcmd(file, typ)
+	if cmd == nil {
+		return logger.ErrNotFound
+	}
 	cmd.Stdout = outputBuf
 	cmd.Stderr = stdErr
 	err := cmd.Run()
-	cmd = nil
-	return outputBuf.Bytes(), stdErr.String(), err
+	if err != nil {
+		return errors.New("error running cmd [" + stdErr.String() + "] " + err.Error() + " [" + outputBuf.String() + "]")
+	}
+
+	if stdErr.Len() > 0 {
+		return errors.New("cmd error: " + stdErr.String())
+	}
+	u := new(t)
+	err = json.Unmarshal(outputBuf.Bytes(), u)
+	if err == nil {
+		switch tt := any(u).(type) {
+		case *mediaInfoJSON:
+			return parsemediainfo(m, quality, tt)
+		case *ffProbeJSON:
+			return parseffprobe(m, quality, tt)
+		}
+		return nil
+	}
+	return err
 }
 
-// probeURL probes the provided file with ffprobe and parses the output to populate metadata fields on the FileParser struct.
-// It executes ffprobe, parses the JSON output, extracts information like duration, codecs, resolution etc.
-// It will re-determine the priority if certain key metadata fields change compared to what was already set.
-func probeURL(m *database.ParseInfo, file string, qualcfg *config.QualityConfig) error {
-	if file == "" {
-		return logger.ErrNotFound
-	}
+// ExecCmdString executes the given command with the provided arguments and returns
+// the stdout as a string, and any error that occurred. The command type is specified
+// by the 'typ' parameter, which can be either "ffprobe" or "mediainfo". The 'file'
+// parameter is the path to the file to analyze.
+func ExecCmdString[t []byte | mediaInfoJSON | ffProbeJSON](file, typ string) (string, error) {
+	outputBuf := logger.PlBuffer.Get()
+	stdErr := logger.PlBuffer.Get()
+	defer logger.PlBuffer.Put(outputBuf)
+	defer logger.PlBuffer.Put(stdErr)
 
-	//var outputBuf, stdErr bytes.Buffer
-	data, errstr, err := ExecCmd(getFFProbeFilename(), file, "ffprobe")
-	if err != nil {
-		return errors.New("error running FFProbe [" + errstr + "] " + err.Error() + " [" + logger.BytesToString2(data) + "]")
+	cmd := getcmd(file, typ)
+	if cmd == nil {
+		return "", logger.ErrNotFound
 	}
-
-	if errstr != "" {
-		return errors.New("ffprobe error: " + errstr)
-	}
-	var result FFProbeJSON
-
-	err = json.Unmarshal(data, &result)
-	if err != nil {
-		return err
-	}
-	//clear(data)
-	defer result.Close()
-
-	if len(result.Streams) == 0 {
-		return logger.ErrTracksEmpty
-	}
-
-	if result.Error.Code != 0 {
-		return errors.New("ffprobe error code " + strconv.Itoa(result.Error.Code) + " " + result.Error.String)
-	}
-	duration, err := strconv.ParseFloat(result.Format.Duration, 64)
-	if err == nil {
-		m.Runtime = int(math.Round(duration))
-	}
-
-	var redetermineprio bool
-
-	var n int
-	for idx := range result.Streams {
-		if result.Streams[idx].Tags.Language != "" && (result.Streams[idx].CodecType == "audio" || strings.EqualFold(result.Streams[idx].CodecType, "audio")) {
-			n++
-		}
-	}
-
-	if n > 0 {
-		m.Languages = make([]string, 0, n)
-	}
-	for idx := range result.Streams {
-		if result.Streams[idx].CodecType == "audio" || strings.EqualFold(result.Streams[idx].CodecType, "audio") {
-			if result.Streams[idx].Tags.Language != "" {
-				m.Languages = append(m.Languages, result.Streams[idx].Tags.Language)
-			}
-			if m.Audio == "" || (result.Streams[idx].CodecName != "" && !strings.EqualFold(result.Streams[idx].CodecName, m.Audio)) {
-				m.Audio = result.Streams[idx].CodecName
-				m.AudioID = database.Gettypeids(m.Audio, database.DBConnect.GetaudiosIn)
-				redetermineprio = true
-			}
-			continue
-		}
-		if result.Streams[idx].CodecType != "video" {
-			if !strings.EqualFold(result.Streams[idx].CodecType, "video") {
-				continue
-			}
-		}
-		m.Height = result.Streams[idx].Height
-		m.Width = result.Streams[idx].Width
-
-		if (result.Streams[idx].CodecName == "mpeg4" || strings.EqualFold(result.Streams[idx].CodecName, "mpeg4")) && (result.Streams[idx].CodecTagString == "xvid" || strings.EqualFold(result.Streams[idx].CodecTagString, "xvid")) {
-			result.Streams[idx].CodecName = result.Streams[idx].CodecTagString
-		}
-		if m.Codec == "" || (result.Streams[idx].CodecName != "" && !strings.EqualFold(result.Streams[idx].CodecName, m.Codec)) {
-			m.Codec = result.Streams[idx].CodecName
-			m.CodecID = database.Gettypeids(m.Codec, database.DBConnect.GetcodecsIn)
-			redetermineprio = true
-		}
-		if m.Height > m.Width {
-			m.Height, m.Width = m.Width, m.Height
-		}
-		getreso := m.Parseresolution()
-
-		if getreso != "" && (m.Resolution == "" || !strings.EqualFold(getreso, m.Resolution)) {
-			m.Resolution = getreso
-			m.ResolutionID = database.Gettypeids(m.Resolution, database.DBConnect.GetresolutionsIn)
-			redetermineprio = true
-		}
-	}
-	if redetermineprio {
-		intid := Findpriorityidxwanted(m.ResolutionID, m.QualityID, m.CodecID, m.AudioID, qualcfg)
-		if intid != -1 {
-			m.Priority = allQualityPrioritiesWantedT[intid].Priority
-		}
-	}
-	return nil
+	cmd.Stdout = outputBuf
+	cmd.Stderr = stdErr
+	err := cmd.Run()
+	return outputBuf.String(), err
 }

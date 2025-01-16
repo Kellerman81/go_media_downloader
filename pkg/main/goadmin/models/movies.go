@@ -54,8 +54,8 @@ func getMoviesTable(ctx *context.Context) table.Table {
 	info := movies.GetInfo().HideFilterArea()
 
 	info.AddField("Id", "id", db.Integer).FieldSortable()
-	//info.AddField("Created_at", "created_at", db.Datetime)
-	//info.AddField("Updated_at", "updated_at", db.Datetime)
+	// info.AddField("Created_at", "created_at", db.Datetime)
+	// info.AddField("Updated_at", "updated_at", db.Datetime)
 	info.AddField("Title", "Title", db.Text).FieldJoin(types.Join{
 		BaseTable: "movies",
 		Field:     "dbmovie_id",
@@ -107,8 +107,8 @@ func getMoviesTable(ctx *context.Context) table.Table {
 
 	formList := movies.GetForm()
 	formList.AddField("Id", "id", db.Integer, form.Default).FieldDisplayButCanNotEditWhenCreate().FieldDisableWhenUpdate()
-	//formList.AddField("Created_at", "created_at", db.Datetime, form.Datetime)
-	//formList.AddField("Updated_at", "updated_at", db.Datetime, form.Datetime)
+	// formList.AddField("Created_at", "created_at", db.Datetime, form.Datetime)
+	// formList.AddField("Updated_at", "updated_at", db.Datetime, form.Datetime)
 	formList.AddField("Lastscan", "lastscan", db.Datetime, form.Datetime)
 	formList.AddField("Blacklisted", "blacklisted", db.Numeric, form.Switch).FieldOptions(types.FieldOptions{
 		{Text: "Yes", Value: "1"},
@@ -132,7 +132,7 @@ func getMoviesTable(ctx *context.Context) table.Table {
 		{Text: "No", Value: "0"},
 	})
 	formList.AddField("Listname", "listname", db.Text, form.SelectSingle).FieldOptionsFromTable("movies", "listname", "listname", func(sql *db.SQL) *db.SQL { return sql.GroupBy("listname").Select("listname") })
-	//formList.AddField("Listname", "listname", db.Text, form.Text)
+	// formList.AddField("Listname", "listname", db.Text, form.Text)
 	formList.AddField("Rootpath", "rootpath", db.Text, form.Text)
 	formList.AddField("Dbmovie_id", "dbmovie_id", db.Integer, form.SelectSingle).FieldOptionsFromTable("dbmovies", "title", "id")
 
@@ -148,14 +148,14 @@ func getMovieHistoriesTable(ctx *context.Context) table.Table {
 
 	detail.AddField("Id", "id", db.Integer).
 		FieldFilterable()
-	//detail.AddField("Created_at", "created_at", db.Datetime)
-	//detail.AddField("Updated_at", "updated_at", db.Datetime)
+	// detail.AddField("Created_at", "created_at", db.Datetime)
+	// detail.AddField("Updated_at", "updated_at", db.Datetime)
 	detail.AddField("Title", "title", db.Text)
 	detail.AddField("Url", "url", db.Text)
 	detail.AddField("Indexer", "indexer", db.Text)
 	detail.AddField("Type", "type", db.Text)
 	detail.AddField("Target", "target", db.Text)
-	detail.AddField("Downloaded_at", "downloaded_at", db.Datetime) //.FieldDate("YYYY-MM-dd HH:mm")
+	detail.AddField("Downloaded_at", "downloaded_at", db.Datetime) // .FieldDate("YYYY-MM-dd HH:mm")
 	detail.AddField("Blacklisted", "blacklisted", db.Numeric)
 	detail.AddField("Quality_profile", "quality_profile", db.Text)
 	detail.AddField("Resolution", "name", db.Text).FieldJoin(types.Join{
@@ -214,8 +214,8 @@ func getMovieHistoriesTable(ctx *context.Context) table.Table {
 
 	info.AddField("Id", "id", db.Integer).
 		FieldSortable()
-	//info.AddField("Created_at", "created_at", db.Datetime)
-	//info.AddField("Updated_at", "updated_at", db.Datetime)
+	// info.AddField("Created_at", "created_at", db.Datetime)
+	// info.AddField("Updated_at", "updated_at", db.Datetime)
 	info.AddField("Title", "title", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
 	// info.AddField("Url", "url", db.Text)
 	info.AddField("Indexer", "indexer", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
@@ -254,8 +254,8 @@ func getMovieHistoriesTable(ctx *context.Context) table.Table {
 
 	formList := movieHistories.GetForm()
 	formList.AddField("Id", "id", db.Integer, form.Default).FieldDisplayButCanNotEditWhenCreate().FieldDisableWhenUpdate()
-	//formList.AddField("Created_at", "created_at", db.Datetime, form.Datetime)
-	//formList.AddField("Updated_at", "updated_at", db.Datetime, form.Datetime)
+	// formList.AddField("Created_at", "created_at", db.Datetime, form.Datetime)
+	// formList.AddField("Updated_at", "updated_at", db.Datetime, form.Datetime)
 	formList.AddField("Title", "title", db.Text, form.Text)
 	formList.AddField("Url", "url", db.Text, form.Text)
 	formList.AddField("Indexer", "indexer", db.Text, form.Text)
@@ -272,7 +272,7 @@ func getMovieHistoriesTable(ctx *context.Context) table.Table {
 	formList.AddField("Quality", "quality_id", db.Integer, form.SelectSingle).FieldOptionsFromTable("qualities", "name", "id", func(sql *db.SQL) *db.SQL { return sql.Where("type", "=", "2") })
 	formList.AddField("Codec", "codec_id", db.Integer, form.SelectSingle).FieldOptionsFromTable("qualities", "name", "id", func(sql *db.SQL) *db.SQL { return sql.Where("type", "=", "3") })
 	formList.AddField("Audio", "audio_id", db.Integer, form.SelectSingle).FieldOptionsFromTable("qualities", "name", "id", func(sql *db.SQL) *db.SQL { return sql.Where("type", "=", "4") })
-	//formList.AddField("Movie", "movie_id", db.Integer, form.SelectSingle).FieldOptionsFromTable("movies", "title", "movies.id", func(sql *db.SQL) *db.SQL {
+	// formList.AddField("Movie", "movie_id", db.Integer, form.SelectSingle).FieldOptionsFromTable("movies", "title", "movies.id", func(sql *db.SQL) *db.SQL {
 	//		return sql.LeftJoin("dbmovies", "dbmovies.id", "=", "movies.dbmovie_id")
 	//	})
 
@@ -291,8 +291,8 @@ func getMovieFilesTable(ctx *context.Context) table.Table {
 
 	detail.AddField("Id", "id", db.Integer).
 		FieldFilterable()
-	//detail.AddField("Created_at", "created_at", db.Datetime)
-	//detail.AddField("Updated_at", "updated_at", db.Datetime)
+	// detail.AddField("Created_at", "created_at", db.Datetime)
+	// detail.AddField("Updated_at", "updated_at", db.Datetime)
 	detail.AddField("Location", "location", db.Text)
 	detail.AddField("Filename", "filename", db.Text)
 	detail.AddField("Extension", "extension", db.Text)
@@ -359,8 +359,8 @@ func getMovieFilesTable(ctx *context.Context) table.Table {
 
 	info.AddField("Id", "id", db.Integer).
 		FieldSortable()
-	//info.AddField("Created_at", "created_at", db.Datetime)
-	//info.AddField("Updated_at", "updated_at", db.Datetime)
+	// info.AddField("Created_at", "created_at", db.Datetime)
+	// info.AddField("Updated_at", "updated_at", db.Datetime)
 	info.AddField("Location", "location", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
 	// info.AddField("Filename", "filename", db.Text)
 	// info.AddField("Extension", "extension", db.Text)
@@ -425,8 +425,8 @@ func getMovieFilesTable(ctx *context.Context) table.Table {
 
 	formList := movieFiles.GetForm()
 	formList.AddField("Id", "id", db.Integer, form.Default).FieldDisplayButCanNotEditWhenCreate().FieldDisableWhenUpdate()
-	//formList.AddField("Created_at", "created_at", db.Datetime, form.Datetime)
-	//formList.AddField("Updated_at", "updated_at", db.Datetime, form.Datetime)
+	// formList.AddField("Created_at", "created_at", db.Datetime, form.Datetime)
+	// formList.AddField("Updated_at", "updated_at", db.Datetime, form.Datetime)
 	formList.AddField("Location", "location", db.Text, form.Text)
 	formList.AddField("Filename", "filename", db.Text, form.Text)
 	formList.AddField("Extension", "extension", db.Text, form.Text)
@@ -464,8 +464,8 @@ func getMovieFileUnmatchedsTable(ctx *context.Context) table.Table {
 	info.HideDeleteButton().HideEditButton().HideNewButton()
 
 	info.AddField("Id", "id", db.Integer).FieldSortable()
-	//info.AddField("Created_at", "created_at", db.Datetime)
-	//info.AddField("Updated_at", "updated_at", db.Datetime)
+	// info.AddField("Created_at", "created_at", db.Datetime)
+	// info.AddField("Updated_at", "updated_at", db.Datetime)
 	info.AddField("Listname", "listname", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
 	info.AddField("Filepath", "filepath", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
 	info.AddField("Last_checked", "last_checked", db.Datetime).FieldFilterable().FieldSortable()
@@ -475,8 +475,8 @@ func getMovieFileUnmatchedsTable(ctx *context.Context) table.Table {
 
 	formList := movieFileUnmatcheds.GetForm()
 	formList.AddField("Id", "id", db.Integer, form.Default).FieldDisplayButCanNotEditWhenCreate().FieldDisableWhenUpdate()
-	//formList.AddField("Created_at", "created_at", db.Datetime, form.Datetime)
-	//formList.AddField("Updated_at", "updated_at", db.Datetime, form.Datetime)
+	// formList.AddField("Created_at", "created_at", db.Datetime, form.Datetime)
+	// formList.AddField("Updated_at", "updated_at", db.Datetime, form.Datetime)
 	formList.AddField("Listname", "listname", db.Text, form.Text)
 	formList.AddField("Filepath", "filepath", db.Text, form.Text)
 	formList.AddField("Last_checked", "last_checked", db.Datetime, form.Datetime)
@@ -488,8 +488,8 @@ func getMovieFileUnmatchedsTable(ctx *context.Context) table.Table {
 }
 
 func getDbmoviesTable(ctx *context.Context) table.Table {
-	//dbmovies := table.NewDefaultTable(table.DefaultConfig().SetConnection("media"))
-	//dbmovies := table.NewDefaultTable(table.DefaultConfigWithDriverAndConnection("sqlite", "media"))
+	// dbmovies := table.NewDefaultTable(table.DefaultConfig().SetConnection("media"))
+	// dbmovies := table.NewDefaultTable(table.DefaultConfigWithDriverAndConnection("sqlite", "media"))
 	dbmovies := table.NewDefaultTable(ctx, table.DefaultConfigWithDriverAndConnection("sqlite", "media"))
 
 	detail := dbmovies.GetDetail()
@@ -555,7 +555,7 @@ func getDbmoviesTable(ctx *context.Context) table.Table {
 	// info.AddField("Tagline", "tagline", db.Text)
 	info.AddField("Vote_average", "vote_average", db.Real).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
 	info.AddField("Vote_count", "vote_count", db.Integer).FieldSortable()
-	//info.AddField("Moviedb_id", "moviedb_id", db.Integer)
+	// info.AddField("Moviedb_id", "moviedb_id", db.Integer)
 	// info.AddField("Freebase_m_id", "freebase_m_id", db.Text)
 	// info.AddField("Freebase_id", "freebase_id", db.Text)
 	// info.AddField("Facebook_id", "facebook_id", db.Text)
@@ -580,8 +580,8 @@ func getDbmoviesTable(ctx *context.Context) table.Table {
 
 	formList := dbmovies.GetForm()
 	formList.AddField("Id", "id", db.Integer, form.Default).FieldDisplayButCanNotEditWhenCreate().FieldDisableWhenUpdate()
-	//formList.AddField("Created_at", "created_at", db.Datetime, form.Datetime)
-	//formList.AddField("Updated_at", "updated_at", db.Datetime, form.Datetime)
+	// formList.AddField("Created_at", "created_at", db.Datetime, form.Datetime)
+	// formList.AddField("Updated_at", "updated_at", db.Datetime, form.Datetime)
 	formList.AddField("Title", "title", db.Text, form.Text)
 	formList.AddField("Year", "year", db.Integer, form.Number)
 	formList.AddField("Adult", "adult", db.Numeric, form.Number)

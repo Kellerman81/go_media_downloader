@@ -11,8 +11,7 @@ import (
 	"strconv"
 )
 
-//Source: https://github.com/dashotv/flame
-
+// Source: https://github.com/dashotv/flame
 const (
 	jsonrpcVersion = "2.0"
 )
@@ -164,7 +163,7 @@ type RPCRequest struct {
 
 // NewRequest returns a new RPCRequest that can be created using the same convenient parameter syntax as Call()
 //
-// e.g. NewRequest("myMethod", "Alex", 35, true)
+// e.g. NewRequest("myMethod", "Alex", 35, true).
 func NewRequest(method string, params ...any) *RPCRequest {
 	request := &RPCRequest{
 		Method:  method,
@@ -239,14 +238,14 @@ type rpcClient struct {
 //
 // HTTPClient: provide a custom http.Client (e.g. to set a proxy, or tls options)
 //
-// CustomHeaders: provide custom headers, e.g. to set BasicAuth
+// CustomHeaders: provide custom headers, e.g. to set BasicAuth.
 type RPCClientOpts struct {
 	HTTPClient    *http.Client
 	CustomHeaders map[string]string
 }
 
 // RPCResponses is of type []*RPCResponse.
-// This type is used to provide helper functions on the result list
+// This type is used to provide helper functions on the result list.
 type RPCResponses []*RPCResponse
 
 // AsMap returns the responses as map with response id as key.
@@ -270,7 +269,7 @@ func (res RPCResponses) GetByID(id int) *RPCResponse {
 	return nil
 }
 
-// HasError returns true if one of the response objects has Error field != nil
+// HasError returns true if one of the response objects has Error field != nil.
 func (res RPCResponses) HasError() bool {
 	for _, res := range res {
 		if res.Error != nil {
@@ -281,7 +280,7 @@ func (res RPCResponses) HasError() bool {
 }
 
 // RPCRequests is of type []*RPCRequest.
-// This type is used to provide helper functions on the request list
+// This type is used to provide helper functions on the request list.
 type RPCRequests []*RPCRequest
 
 // NewClient returns a new RPCClient instance with default configuration.
@@ -404,10 +403,9 @@ func (client *rpcClient) doCall(RPCRequest *RPCRequest) (*RPCResponse, error) {
 	var rpcResponse *RPCResponse
 	decoder := json.NewDecoder(httpResponse.Body)
 
-	//decoder.DisallowUnknownFields()
+	// decoder.DisallowUnknownFields()
 	decoder.UseNumber()
 	err = decoder.Decode(&rpcResponse)
-
 	// parsing error
 	if err != nil {
 		// if we have some http error, return it
@@ -452,7 +450,6 @@ func (client *rpcClient) doBatchCall(rpcRequest []*RPCRequest) ([]*RPCResponse, 
 	decoder.DisallowUnknownFields()
 	decoder.UseNumber()
 	err = decoder.Decode(&rpcResponse)
-
 	// parsing error
 	if err != nil {
 		// if we have some http error, return it
@@ -610,7 +607,7 @@ func (RPCResponse *RPCResponse) GetString() (string, error) {
 
 // GetObject converts the rpc response to an arbitrary type.
 //
-// The function works as you would expect it from json.Unmarshal()
+// The function works as you would expect it from json.Unmarshal().
 func (RPCResponse *RPCResponse) GetObject(toType any) error {
 	js, err := json.Marshal(RPCResponse.Result)
 	if err != nil {

@@ -1,9 +1,13 @@
 package worker
 
 import (
+	"context"
 	"errors"
+	"strings"
+	"sync"
 	"time"
 
+	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/alitto/pond"
 	"github.com/google/uuid"
@@ -13,62 +17,67 @@ import (
 
 var (
 	strMsg = "msg"
-	// workerPoolIndexer is a WorkerPool for executing indexer tasks
-	//workerPoolIndexer *pond.WorkerPool
+	// workerPoolIndexer is a WorkerPool for executing indexer tasks.
+	WorkerPoolIndexer *pond.WorkerPool
 
-	// workerPoolParse is a WorkerPool for executing parse tasks
-	//workerPoolParse *pond.WorkerPool
+	// workerPoolParse is a WorkerPool for executing parse tasks.
+	WorkerPoolParse *pond.WorkerPool
 
-	// workerPoolSearch is a WorkerPool for executing search tasks
+	// workerPoolSearch is a WorkerPool for executing search tasks.
 	workerPoolSearch *pond.WorkerPool
 
-	// workerPoolFiles is a WorkerPool for executing file tasks
+	// workerPoolFiles is a WorkerPool for executing file tasks.
 	workerPoolFiles *pond.WorkerPool
 
-	// workerPoolMetadata is a WorkerPool for executing metadata tasks
+	// workerPoolMetadata is a WorkerPool for executing metadata tasks.
 	workerPoolMetadata *pond.WorkerPool
 
-	// cronWorkerData is a Cron instance for scheduling data worker jobs
+	// cronWorkerData is a Cron instance for scheduling data worker jobs.
 	cronWorkerData *cron.Cron
 
-	// cronWorkerFeeds is a Cron instance for scheduling feeds worker jobs
+	// cronWorkerFeeds is a Cron instance for scheduling feeds worker jobs.
 	cronWorkerFeeds *cron.Cron
 
-	// cronWorkerSearch is a Cron instance for scheduling search worker jobs
+	// cronWorkerSearch is a Cron instance for scheduling search worker jobs.
 	cronWorkerSearch *cron.Cron
 
-	// globalScheduleSet is a sync.Map to store jobSchedule objects
-	globalScheduleSet = logger.NewSynchedMapuint32[jobSchedule](100)
+	// globalScheduleSet is a sync.Map to store jobSchedule objects.
+	globalScheduleSet = syncMapUint[jobSchedule]{
+		m: make(map[uint32]jobSchedule, 100),
+	}
 
-	// globalQueueSet is a sync.Map to store dispatcherQueue objects
-	globalQueueSet = logger.NewSynchedMapuint32[dispatcherQueue](100)
+	// globalQueueSet is a sync.Map to store dispatcherQueue objects.
+	globalQueueSet = syncMapUint[Job]{
+		m: make(map[uint32]Job, 1000),
+	}
 
-	// lastadded is a timestamp for tracking last added time
+	// lastadded is a timestamp for tracking last added time.
 	lastadded = time.Now().Add(time.Second - 1)
 
-	// lastaddeddata is a timestamp for tracking last added data time
+	// lastaddeddata is a timestamp for tracking last added data time.
 	lastaddeddata = time.Now().Add(time.Second - 1)
 
-	// lastaddedfeeds is a timestamp for tracking last added feeds time
+	// lastaddedfeeds is a timestamp for tracking last added feeds time.
 	lastaddedfeeds = time.Now().Add(time.Second - 1)
 
-	// lastaddedsearch is a timestamp for tracking last search time
+	// lastaddedsearch is a timestamp for tracking last search time.
 	lastaddedsearch = time.Now().Add(time.Second - 1)
 
-	// phandler is a panic handler function
+	ErrNotQueued = errors.New("not queued")
+	// phandler is a panic handler function.
 	phandler = pond.PanicHandler(func(p any) {
-		logger.LogDynamicany("error", "Recovered from panic (dispatcher)", &strMsg, logger.Stack(), "vap", p)
+		logger.LogDynamicany2StrAny("error", "Recovered from panic (dispatcher)", strMsg, logger.Stack(), strMsg, p)
 	})
 )
 
 // SetScheduleStarted sets the IsRunning field of the jobSchedule with the given ID to true,
 // updates the LastRun field to the current time, and sets the NextRun field based on the
-// schedule type (cron or interval). This function is used to mark a jobSchedule as running. It Locks
+// schedule type (cron or interval). This function is used to mark a jobSchedule as running. It Locks.
 func SetScheduleStarted(id uint32) {
 	if !globalScheduleSet.Check(id) {
 		return
 	}
-	s := globalScheduleSet.Get(id)
+	s := globalScheduleSet.GetVal(id)
 	s.IsRunning = true
 	s.LastRun = logger.TimeGetNow()
 	if s.ScheduleTyp == "cron" {
@@ -76,7 +85,7 @@ func SetScheduleStarted(id uint32) {
 	} else {
 		s.NextRun = logger.TimeGetNow().Add(s.Interval)
 	}
-	globalScheduleSet.Set(id, s)
+	globalScheduleSet.UpdateVal(id, s)
 }
 
 // SetScheduleEnded sets the IsRunning field of the jobSchedule with the given ID to false.
@@ -86,79 +95,29 @@ func SetScheduleEnded(id uint32) {
 	if !globalScheduleSet.Check(id) {
 		return
 	}
-	s := globalScheduleSet.Get(id)
+	s := globalScheduleSet.GetVal(id)
+	if !s.IsRunning {
+		return
+	}
 	s.IsRunning = false
-	globalScheduleSet.Set(id, s)
-}
-
-// cleanupqueue removes any dispatcher queues from the globalQueueSet that have an empty Name field and match the provided queue name.
-// This function is used to clean up dispatcher queues that are no longer in use.
-func cleanupqueue(queue string) {
-	toremove := globalQueueSet.FuncMap(func(value dispatcherQueue) bool {
-		if value.Name == "" && value.Queue.Queue == queue {
-			return true
-		}
-		return false
-	})
-	if len(toremove) == 0 {
-		return
-	}
-	logger.LogDynamicany("debug", "Dispatcher clean empty name", "queue", queue)
-	for idx := range toremove {
-		globalQueueSet.Delete(toremove[idx])
-	}
-}
-
-// RemoveQueue removes a dispatcher queue from the globalQueueSet by its ID. It locks the mutex, finds the index of the queue in the globalQueueSet, sets the Name field to an empty string, and then deletes the queue from the slice. This function is used to clean up dispatcher queues that are no longer in use.
-func RemoveQueue(id uint32) {
-	if !globalQueueSet.Check(id) {
-		return
-	}
-	s := globalQueueSet.Get(id)
-	s.Name = ""
-	globalQueueSet.Set(id, s)
-	globalQueueSet.Delete(id)
-}
-
-// QueueSetStarted sets the Started field of the dispatcher queue with the given ID to the current time.
-// It returns the SchedulerID of the dispatcher queue if it is found, or -1 if the queue is not found.
-// This function is used to track when a dispatcher queue was started. It Locks
-func QueueSetStarted(id uint32) int32 {
-	if !globalQueueSet.Check(id) {
-		return -1
-	}
-	s := globalQueueSet.Get(id)
-	s.Queue.Started = logger.TimeGetNow()
-	globalQueueSet.Set(id, s)
-	return int32(s.Queue.SchedulerID)
-}
-
-// QueueRun runs the dispatcher queue with the given ID. It locks the mutex, finds the index of the queue in the globalQueueSet, and then runs the queue. If the queue is not found, it returns without doing anything. After running the queue, it defers the removal of the queue from the globalQueueSet.
-func QueueRun(id uint32) {
-	if !globalQueueSet.Check(id) {
-		return
-	}
-	defer RemoveQueue(id)
-	s := globalQueueSet.Get(id)
-	s.Queue.Run()
+	globalScheduleSet.UpdateVal(id, s)
 }
 
 type wrappedLogger struct {
-	//cron.Logger
+	// cron.Logger
 }
 
 // Info logs an informational message to the wrapped logger.
 // The message and key/value pairs are passed through to the wrapped
 // zerolog Logger's Info method.
 func (*wrappedLogger) Info(_ string, _ ...any) {
-	//wl.logger.Info().Any("values", keysAndValues).Str("msg", msg).Msg("cron")
+	// wl.logger.Info().Any("values", keysAndValues).Str("msg", msg).Msg("cron")
 }
 
 // Error logs an error message with additional key-value pairs to the wrapped logger.
 // It takes in an error, a message string, and any number of key-value pairs.
 func (*wrappedLogger) Error(err error, msg string, keysAndValues ...any) {
-	logger.LogDynamicany("error", "cron error", "values", &keysAndValues, &strMsg, &msg, err)
-	//wl.logger.Error().Err(err).Any("values", keysAndValues).Str("msg", msg).Msg("cron")
+	logger.Logtype("error", 0).Any("values", keysAndValues).Str(strMsg, msg).Err(err).Msg("cron error")
 }
 
 // CreateCronWorker initializes the cron workers for data, feeds, and search.
@@ -167,8 +126,7 @@ func (*wrappedLogger) Error(err error, msg string, keysAndValues ...any) {
 // and enables running jobs at a per-second interval.
 func CreateCronWorker() {
 	loggerworker := &wrappedLogger{}
-	var opts []cron.Option
-	opts = append(opts, cron.WithLocation(logger.GetTimeZone()), cron.WithLogger(loggerworker), cron.WithChain(cron.Recover(loggerworker), cron.SkipIfStillRunning(loggerworker)), cron.WithSeconds())
+	opts := []cron.Option{cron.WithLocation(logger.GetTimeZone()), cron.WithLogger(loggerworker), cron.WithChain(cron.Recover(loggerworker), cron.SkipIfStillRunning(loggerworker)), cron.WithSeconds()}
 	cronWorkerData = cron.New(opts...)
 	cronWorkerFeeds = cron.New(opts...)
 	cronWorkerSearch = cron.New(opts...)
@@ -188,14 +146,11 @@ func StopCronWorker() {
 	cronWorkerSearch.Stop()
 }
 
-// getcronstuff returns the cron.Cron instance for the given queue name.
-// It returns:
-//   - cronWorkerData for "Data"
-//   - cronWorkerFeeds for "Feeds"
-//   - cronWorkerSearch for "Search"
-//   - nil if the name does not match
-func getcronstuff(str string) *cron.Cron {
-	switch str {
+// getcron returns the appropriate cron.Cron instance for the given queue.
+// It checks the queue name and returns the corresponding cron worker instance.
+// If the queue name is not recognized, it returns nil.
+func getcron(queue string) *cron.Cron {
+	switch queue {
 	case "Data":
 		return cronWorkerData
 	case "Feeds":
@@ -206,55 +161,29 @@ func getcronstuff(str string) *cron.Cron {
 	return nil
 }
 
-// checklastadded checks if a job was recently added for the given queue
-// to rate limit job submission. It returns true if a job can be added,
-// false if one was added too recently.
-func checklastadded(qu string) bool {
-	var added time.Time
-	switch qu {
-	case "Data":
-		added = lastaddeddata
-	case "Feeds":
-		added = lastaddedfeeds
-	case "Search":
-		added = lastaddedsearch
-	default:
-		added = lastadded
-	}
-	for range 11 {
-		if added.After(time.Now().Add(time.Millisecond * 200)) {
-			time.Sleep(time.Millisecond * 100)
-			continue
-		}
-		switch qu {
-		case "Data":
-			lastaddeddata = time.Now()
-		case "Feeds":
-			lastaddedfeeds = time.Now()
-		case "Search":
-			lastaddedsearch = time.Now()
-		default:
-			lastadded = time.Now()
-		}
-		return true
-	}
-	return false
+func TestWorker(cfgpstr string, name string, queue string, jobname string) {
+	addjob(context.Background(), cfgpstr, newuuid(), name, jobname, queue, 0)
 }
 
 // DispatchCron schedules a cron job to run the given function fn
 // at the specified cron schedule cronStr.
 // It adds the job to the worker queue specified by queue and gives it the name name.
 // It returns any error from setting up the cron job.
-func DispatchCron(cronStr string, name string, queue string, fn func()) error {
+func DispatchCron(cfgpstr string, cronStr string, name string, queue string, jobname string) error {
 	schedulerID := newuuid()
 
-	dc := getcronstuff(queue)
-	cjob, err := dc.AddFunc(cronStr, func() { addjob(name, queue, fn, schedulerID) })
+	dc := getcron(queue)
+	if dc == nil {
+		return errors.New("queue not found")
+	}
+	cjob, err := dc.AddFunc(cronStr, func() {
+		addjob(context.Background(), cfgpstr, newuuid(), name, jobname, queue, schedulerID)
+	})
 	if err != nil {
 		return err
 	}
 	dcentry := dc.Entry(cjob)
-	globalScheduleSet.Set(schedulerID, jobSchedule{
+	globalScheduleSet.Add(schedulerID, jobSchedule{
 		JobName:        name,
 		JobID:          newuuid(),
 		ID:             schedulerID,
@@ -263,81 +192,148 @@ func DispatchCron(cronStr string, name string, queue string, fn func()) error {
 		LastRun:        time.Time{},
 		NextRun:        dcentry.Next,
 		CronSchedule:   dcentry.Schedule,
-		CronID:         cjob})
+		CronID:         cjob,
+	})
 	return nil
 }
 
 // addjob adds a new job with the given name, queue, function, and scheduler ID
 // to the appropriate worker pool for processing. It checks if the job is already
 // queued or if the queue is full before submitting.
-func addjob(name string, queue string, fn func(), schedulerID uint32) {
-	id, err := checkaddjob(name, queue, fn, schedulerID)
-	if err != nil {
-		logger.LogDynamicany("error", err.Error(), &logger.StrJob, &name)
+func addjob(_ context.Context, cfgpstr string, id uint32, name string, jobname string, queue string, schedulerID uint32) {
+	if jobname == "" {
+		logger.LogDynamicany1String("error", "empty func", logger.StrJob, name)
 		return
 	}
-	var workpool *pond.WorkerPool
-	switch queue {
-	case "Data":
-		workpool = workerPoolFiles
-	case "Feeds":
-		workpool = workerPoolMetadata
-	case "Search":
-		workpool = workerPoolSearch
-	}
-	if workpool.MaxCapacity() <= int(workpool.WaitingTasks()) {
-		logger.LogDynamicany("error", "queue limit reached", &logger.StrJob, name, "queue", queue)
-		RemoveQueue(id)
-		return
-	}
-	addjobrun(id, queue)
-}
 
-func addjobrun(id uint32, queue string) {
-	var workpool *pond.WorkerPool
-	switch queue {
-	case "Data":
-		workpool = workerPoolFiles
-	case "Feeds":
-		workpool = workerPoolMetadata
-	case "Search":
-		workpool = workerPoolSearch
-	}
-	if !workpool.TrySubmit(func() {
-		defer RemoveQueue(id)
-		sid := QueueSetStarted(id)
-		if sid != -1 {
-			SetScheduleStarted(uint32(sid))
-		}
-		QueueRun(id)
-		if sid != -1 {
-			SetScheduleEnded(uint32(sid))
-		}
-	}) {
-		RemoveQueue(id)
-	}
-}
-
-// checkaddjob adds a new job to the work queue if it doesn't already exist and the queue is not at the maximum number of running jobs. It returns the unique ID of the added job, or an error if the job could not be added.
-//
-// name is the name of the job to add.
-// queue is the name of the queue to add the job to.
-// fn is the function to execute for the job.
-// schedulerID is the ID of the scheduler that requested the job.
-// workpool is the worker pool to use for executing the job.
-func checkaddjob(name string, queue string, fn func(), schedulerID uint32) (uint32, error) {
-	if fn == nil {
-		return 0, errors.New("empty func")
-	}
 	if checkQueue(name) {
-		return 0, errors.New("already queued")
-	} else if checklastadded(queue) {
-		cleanupqueue(queue)
-		id := newuuid()
-		globalQueueSet.Set(id, dispatcherQueue{Name: name, Queue: job{Added: logger.TimeGetNow(), Name: name, Run: fn, Queue: queue, ID: id, SchedulerID: schedulerID}})
-		return id, nil
+		logger.LogDynamicany1String("error", "already queued", logger.StrJob, name)
+		return
+	}
+
+	workpool, added := getpooladded(queue)
+	capa := workpool.MaxCapacity()
+	if capa > 0 && uint64(capa) <= workpool.WaitingTasks() {
+		logger.Logtype("error", 0).Str("queue", queue).Str(logger.StrJob, name).Msg("queue limit reached")
+		return
+	}
+	for idx := range 11 {
+		// if logger.CheckContextEnded(ctx) != nil {
+		// 	return
+		// }
+		if !logger.TimeAfter(added, time.Now().Add(time.Millisecond*200)) {
+			break
+		}
+		time.Sleep(time.Millisecond * 100)
+		if idx == 10 {
+			logger.LogDynamicany1String("error", "queue recently added", logger.StrJob, name)
+			return
+		}
+	}
+	switch queue {
+	case "Data":
+		lastaddeddata = time.Now()
+	case "Feeds":
+		lastaddedfeeds = time.Now()
+	case "Search":
+		lastaddedsearch = time.Now()
+	default:
+		lastadded = time.Now()
+	}
+
+	if workpool == nil {
+		return
+	}
+	if cfgpstr == "" {
+		if config.SettingsGeneral.Jobs[jobname] == nil {
+			return
+		}
 	} else {
-		return 0, errors.New("too many starting")
+		if config.SettingsMedia[cfgpstr] == nil {
+			return
+		} else {
+			if config.SettingsMedia[cfgpstr].Jobs[jobname] == nil {
+				return
+			}
+		}
+	}
+	if workpool.SubmittedTasks() == workpool.CompletedTasks() {
+		DeleteQueueRunning(queue)
+	} else if workpool.SubmittedTasks()-workpool.WaitingTasks() == workpool.CompletedTasks() {
+		DeleteQueueRunning(queue)
+	}
+	globalQueueSet.Add(id, Job{
+		Added:       logger.TimeGetNow(),
+		Name:        name,
+		Queue:       queue,
+		ID:          id,
+		JobName:     jobname,
+		Cfgpstr:     cfgpstr,
+		SchedulerID: schedulerID,
+	})
+	if !workpool.TrySubmit(runjobcron(id)) {
+		globalQueueSet.Delete(id)
+	}
+}
+
+// runjobcron is a closure function that runs a scheduled job. It checks if the job is still in the global queue set,
+// retrieves the job details, sets the job as started, runs the job, and then deletes the job from the global queue set.
+// If the job's configuration is not found, it logs an error message.
+func runjobcron(id uint32) func() {
+	return func() {
+		if !globalQueueSet.Check(id) {
+			return
+		}
+		s := globalQueueSet.GetVal(id)
+		defer globalQueueSet.Delete(id)
+		SetScheduleStarted(s.SchedulerID)
+		defer SetScheduleEnded(s.SchedulerID)
+		s.Started = logger.TimeGetNow()
+		globalQueueSet.UpdateVal(id, s)
+		if s.Cfgpstr == "" {
+			if config.SettingsGeneral.Jobs[s.JobName] != nil {
+				config.SettingsGeneral.Jobs[s.JobName](id)
+				globalQueueSet.Delete(id)
+			} else {
+				logger.LogDynamicany2Str("error", "Cron Job not found", "job", s.JobName, "cfgp", s.Cfgpstr)
+			}
+		} else {
+			if config.SettingsMedia[s.Cfgpstr] == nil {
+				logger.LogDynamicany2Str("error", "Cron Job Config not found", "job", s.JobName, "cfgp", s.Cfgpstr)
+			} else {
+				if config.SettingsMedia[s.Cfgpstr].Jobs[s.JobName] != nil {
+					config.SettingsMedia[s.Cfgpstr].Jobs[s.JobName](id)
+					globalQueueSet.Delete(id)
+				} else {
+					logger.LogDynamicany2Str("error", "Cron Job not found", "job", s.JobName, "cfgp", s.Cfgpstr)
+				}
+			}
+		}
+	}
+}
+
+// RemoveQueueEntry removes the queue entry with the given ID from the global queue set.
+// If the provided ID is 0, the function returns without taking any action.
+func RemoveQueueEntry(id uint32) {
+	if id == 0 {
+		return
+	}
+	globalQueueSet.Delete(id)
+}
+
+// getpooladded returns the appropriate worker pool and the last time a job was added to that pool based on the provided queue name.
+// The function uses a switch statement to determine the correct worker pool and last added time for the given queue.
+// If the queue name is not recognized, the function returns nil and the lastadded time.
+func getpooladded(queue string) (*pond.WorkerPool, time.Time) {
+	switch queue {
+	case "Data":
+		return workerPoolFiles, lastaddeddata
+	case "Feeds":
+		return workerPoolMetadata, lastaddedfeeds
+	case "Search":
+		return workerPoolSearch, lastaddedsearch
+	default:
+		return nil, lastadded
 	}
 }
 
@@ -346,19 +342,19 @@ func newuuid() uint32 {
 	return uuid.New().ID()
 }
 
-// DispatchEvery dispatches a job to run on a regular time interval. It takes in the interval duration, job name, queue, and function to run. It returns any error from setting up the ticker.
-func DispatchEvery(interval time.Duration, name string, queue string, fn func()) error {
+// DispatchEvery dispatches a job to run on a regular time interval.
+// It takes in the interval duration, job name, queue, and function to run.
+// It returns any error from setting up the ticker.
+func DispatchEvery(cfgpstr string, interval time.Duration, name string, queue string, jobname string) error {
 	schedulerID := newuuid()
 	t := time.NewTicker(interval)
-	//ticker = append(ticker, t)s
 
 	go func() {
-		defer logger.HandlePanic()
 		for range t.C {
-			addjob(name, queue, fn, schedulerID)
+			addjob(context.Background(), cfgpstr, newuuid(), name, jobname, queue, schedulerID)
 		}
 	}()
-	globalScheduleSet.Set(schedulerID, jobSchedule{
+	globalScheduleSet.Add(schedulerID, jobSchedule{
 		JobName:        name,
 		JobID:          newuuid(),
 		ID:             schedulerID,
@@ -366,15 +362,91 @@ func DispatchEvery(interval time.Duration, name string, queue string, fn func())
 		ScheduleString: interval.String(),
 		LastRun:        time.Time{},
 		Interval:       interval,
-		NextRun:        logger.TimeGetNow().Add(interval)})
+		NextRun:        logger.TimeGetNow().Add(interval),
+	})
 	return nil
 }
 
 // Dispatch adds a new job with the given name, function, and queue to the
 // worker pool. It generates a new UUID to associate with the job.
-func Dispatch(name string, fn func(), queue string) error {
-	addjob(name, queue, fn, newuuid())
+func Dispatch(name string, fn func(uint32), queue string) error {
+	if fn == nil {
+		logger.LogDynamicany1String("error", "empty func", logger.StrJob, name)
+		return ErrNotQueued
+	}
+
+	if checkQueue(name) {
+		logger.LogDynamicany1String("error", "already queued", logger.StrJob, name)
+		return ErrNotQueued
+	}
+
+	workpool, added := getpooladded(queue)
+
+	if workpool == nil {
+		return ErrNotQueued
+	}
+	capa := workpool.MaxCapacity()
+	if capa > 0 && uint64(capa) <= workpool.WaitingTasks() {
+		logger.Logtype("error", 0).Str("queue", queue).Str(logger.StrJob, name).Msg("queue limit reached")
+		return ErrNotQueued
+	}
+	ctx := context.Background()
+	for idx := range 11 {
+		if err := logger.CheckContextEnded(ctx); err != nil {
+			return err
+		}
+		if !logger.TimeAfter(added, time.Now().Add(time.Millisecond*200)) {
+			break
+		}
+		time.Sleep(time.Millisecond * 100)
+		if idx == 10 {
+			logger.LogDynamicany1String("error", "queue recently added", logger.StrJob, name)
+			return ErrNotQueued
+		}
+	}
+	ctx.Done()
+	switch queue {
+	case "Data":
+		lastaddeddata = time.Now()
+	case "Feeds":
+		lastaddedfeeds = time.Now()
+	case "Search":
+		lastaddedsearch = time.Now()
+	default:
+		lastadded = time.Now()
+	}
+
+	id := newuuid()
+	globalQueueSet.Add(id, Job{
+		Added:       logger.TimeGetNow(),
+		Name:        name,
+		JobName:     name,
+		Queue:       queue,
+		ID:          id,
+		SchedulerID: newuuid(),
+	})
+	if !workpool.TrySubmit(runjob(id, fn)) {
+		globalQueueSet.Delete(id)
+	}
 	return nil
+}
+
+// runjob is a closure that wraps a job function and handles the job lifecycle.
+// It checks if the job is still in the global queue, retrieves the job details,
+// updates the job's started time, and then calls the provided job function.
+// After the job function completes, it removes the job from the global queue.
+func runjob(id uint32, fn func(uint32)) func() {
+	return func() {
+		if !globalQueueSet.Check(id) {
+			return
+		}
+		s := globalQueueSet.GetVal(id)
+		defer globalQueueSet.Delete(id)
+
+		s.Started = logger.TimeGetNow()
+		globalQueueSet.UpdateVal(id, s)
+		fn(id)
+	}
 }
 
 // InitWorkerPools initializes the worker pools for indexing, parsing,
@@ -382,7 +454,7 @@ func Dispatch(name string, fn func(), queue string) error {
 // desired number of workers for each pool and defaults them to 1 if 0 is
 // passed in. It configures the pools with balanced strategy and error
 // handling function.
-func InitWorkerPools(workersearch uint8, workerfiles uint8, workermeta uint8) {
+func InitWorkerPools(workersearch int, workerfiles int, workermeta int) {
 	if workersearch == 0 {
 		workersearch = 1
 	}
@@ -392,9 +464,11 @@ func InitWorkerPools(workersearch uint8, workerfiles uint8, workermeta uint8) {
 	if workermeta == 0 {
 		workermeta = 1
 	}
-	workerPoolSearch = pond.New(int(workersearch), 100, phandler, pond.Strategy(pond.Balanced()))
-	workerPoolFiles = pond.New(int(workerfiles), 100, phandler, pond.Strategy(pond.Balanced()))
-	workerPoolMetadata = pond.New(int(workermeta), 100, phandler, pond.Strategy(pond.Balanced()))
+	workerPoolSearch = pond.New(workersearch, 100, phandler, pond.Strategy(pond.Balanced()))
+	workerPoolFiles = pond.New(workerfiles, 100, phandler, pond.Strategy(pond.Balanced()))
+	workerPoolMetadata = pond.New(workermeta, 100, phandler, pond.Strategy(pond.Balanced()))
+	WorkerPoolIndexer = pond.New(workersearch, 100, phandler, pond.Strategy(pond.Balanced()))
+	WorkerPoolParse = pond.New(workerfiles, 100, phandler, pond.Strategy(pond.Balanced()))
 }
 
 // CloseWorkerPools stops all worker pools and waits for workers
@@ -404,74 +478,73 @@ func CloseWorkerPools() {
 	workerPoolSearch.StopAndWaitFor(2 * time.Minute)
 	workerPoolFiles.StopAndWaitFor(2 * time.Minute)
 	workerPoolMetadata.StopAndWaitFor(2 * time.Minute)
+	WorkerPoolIndexer.StopAndWaitFor(2 * time.Minute)
+	WorkerPoolParse.StopAndWaitFor(2 * time.Minute)
 }
 
-// dispatcherQueue is a struct that represents a queue for the dispatcher.
-// It contains a Name field that is a string identifier for the queue
-// and a Queue field that is a pointer to a Job struct that represents
-// the job queue.
-type dispatcherQueue struct {
-	Name  string // Name is a string identifier for the queue
-	Queue job    // Queue is a pointer to a Job struct representing the job queue
-}
-
-// Job represents a job to be run by a worker pool
-type job struct {
+// Job represents a job to be run by a worker pool.
+type Job struct {
 	// Queue is the name of the queue this job belongs to
-	Queue string
-	// ID is a unique identifier for this job
-	ID uint32
+	Queue   string
+	JobName string `json:"-"`
+	Cfgpstr string `json:"-"`
+	// Name is a descriptive name for this job
+	Name string
 	// Added is the time this job was added to the queue
 	Added time.Time
 	// Started is the time this job was started by a worker
 	Started time.Time
-	// Name is a descriptive name for this job
-	Name string
+	// ID is a unique identifier for this job
+	ID uint32
 	// SchedulerID is the ID of the scheduler that added this job
 	SchedulerID uint32
 	// Run is the function to execute for this job
-	Run func() `json:"-"`
+	// Run func(uint32) `json:"-"`
 	// CronJob is the cron job instance if this is a recurring cron job
-	CronJob cron.Job `json:"-"`
+	// CronJob cron.Job `json:"-"`
 }
 
-// jobSchedule represents a scheduled job
+// jobSchedule represents a scheduled job.
 type jobSchedule struct {
 	// JobName is the name of the job
 	JobName string
-	// JobID is the unique ID of the job
-	JobID uint32
-	// ID is the unique ID for this schedule
-	ID uint32
 	// ScheduleTyp is the type of schedule (cron, interval, etc)
 	ScheduleTyp string
 	// ScheduleString is the schedule string (cron expression, interval, etc)
 	ScheduleString string
-	// Interval is the interval duration if schedule type is interval
-	Interval time.Duration
-	// CronSchedule is the parsed cron.Schedule if type is cron
-	CronSchedule cron.Schedule
-	// CronID is the cron scheduler ID if scheduled as cron job
-	CronID cron.EntryID
-
 	// LastRun is the last time this job ran
 	LastRun time.Time
 	// NextRun is the next scheduled run time
 	NextRun time.Time
+	// Interval is the interval duration if schedule type is interval
+	Interval time.Duration
+	// CronID is the cron scheduler ID if scheduled as cron job
+	CronID cron.EntryID
+	// JobID is the unique ID of the job
+	JobID uint32
+	// ID is the unique ID for this schedule
+	ID uint32
+	// CronSchedule is the parsed cron.Schedule if type is cron
+	CronSchedule cron.Schedule
 	// IsRunning indicates if the job is currently running
 	IsRunning bool
 }
 
 // Cleanqueue clears the global queue set if there are no running or waiting workers across all pools.
 func Cleanqueue() {
-	if (uint64(workerPoolFiles.RunningWorkers()) + workerPoolFiles.WaitingTasks() + uint64(workerPoolMetadata.RunningWorkers()) + workerPoolMetadata.WaitingTasks() + uint64(workerPoolSearch.RunningWorkers()) + workerPoolSearch.WaitingTasks()) == 0 {
-		globalQueueSet = nil
-		//clear(globalQueueSet.values)
+	if workerPoolFiles.CompletedTasks() == workerPoolFiles.SubmittedTasks() {
+		DeleteQueue("Data")
+	}
+	if workerPoolMetadata.CompletedTasks() == workerPoolMetadata.SubmittedTasks() {
+		DeleteQueue("Feeds")
+	}
+	if workerPoolSearch.CompletedTasks() == workerPoolSearch.SubmittedTasks() {
+		DeleteQueue("Search")
 	}
 }
 
 // GetQueues returns a map of all currently configured queues, keyed by the queue name.
-func GetQueues() map[uint32]dispatcherQueue {
+func GetQueues() map[uint32]Job {
 	return globalQueueSet.GetMap()
 }
 
@@ -487,7 +560,13 @@ func GetSchedules() map[uint32]jobSchedule {
 // running in a queue, false otherwise.
 func checkQueue(jobname string) bool {
 	var alt1, alt2, alt3 string
-	pre, post := logger.SplitByLR(jobname, '_')
+	idx := strings.LastIndexByte(jobname, '_')
+	var pre string
+	if idx == -1 || idx == 0 || idx == len(jobname) {
+		pre = jobname
+	} else {
+		pre = jobname[:idx]
+	}
 	switch pre {
 	case "searchmissinginc":
 		alt1 = "searchmissinginctitle_"
@@ -521,31 +600,137 @@ func checkQueue(jobname string) bool {
 		alt1 = "searchupgradeinctitle_"
 		alt2 = "searchupgradefull_"
 		alt3 = "searchupgradeinc_"
+	default:
+		return globalQueueSet.ForFuncKey(func(key uint32, val Job) bool {
+			return val.Name == jobname && val.Started.IsZero()
+		})
 	}
 
-	return globalQueueSet.IterateMap(func(value dispatcherQueue) bool {
-		if value.Name == jobname {
+	end := jobname[idx+1:]
+
+	return globalQueueSet.ForFuncKey(func(key uint32, val Job) bool {
+		if val.Name == jobname && val.Started.IsZero() {
 			return true
 		}
-		if alt1 == "" {
+		if !strings.Contains(val.Name, end) {
 			return false
 		}
-		if (value.Name == logger.JoinStrings(alt1, post) || value.Name == logger.JoinStrings(alt2, post) || value.Name == logger.JoinStrings(alt3, post)) && !value.Queue.Started.IsZero() {
+		if val.Name == (alt1+end) && val.Started.IsZero() {
+			return true
+		}
+		if val.Name == (alt2+end) && val.Started.IsZero() {
+			return true
+		}
+		if val.Name == (alt3+end) && val.Started.IsZero() {
 			return true
 		}
 		return false
 	})
-	// m := globalQueueSet.GetMap()
-	// for key := range m {
-	// 	if m[key].Name == jobname {
-	// 		return true
-	// 	}
-	// 	if alt1 == "" {
-	// 		continue
-	// 	}
-	// 	if m[key].Name == logger.JoinStrings(alt1, post) || m[key].Name == logger.JoinStrings(alt2, post) || m[key].Name == logger.JoinStrings(alt3, post) && !m[key].Queue.Started.IsZero() {
-	// 		return true
-	// 	}
-	// }
-	// return false
+}
+
+type syncMapUint[T any] struct {
+	m  map[uint32]T
+	mu sync.Mutex
+}
+
+// DeleteFuncKey deletes all entries in the SyncMap for which the provided function
+// returns true, using both the key and value as arguments.
+func (s *syncMapUint[T]) ForFuncKey(fn func(uint32, T) bool) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for key, v := range s.m {
+		if fn(key, v) {
+			return true
+		}
+	}
+	return false
+}
+
+// Check returns true if the given key exists in the SyncMap, false otherwise.
+// The method acquires a read lock on the SyncMap before checking for the key,
+// and releases the lock before returning.
+func (s *syncMapUint[T]) Check(key uint32) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, ok := s.m[key]
+	return ok
+}
+
+// Add adds the given key-value pair to the SyncMap. The method acquires a write lock
+// on the SyncMap before adding the new entry, and releases the lock before returning.
+func (s *syncMapUint[T]) Add(key uint32, value T) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.m[key] = value
+}
+
+// UpdateVal updates the value associated with the given key in the SyncMap.
+// The method acquires a write lock on the SyncMap before updating the value,
+// and releases the lock before returning.
+func (s *syncMapUint[T]) UpdateVal(key uint32, value T) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.m[key] = value
+}
+
+// GetVal returns the value associated with the given key in the SyncMap.
+// The method acquires a read lock on the SyncMap before retrieving the value,
+// and releases the lock before returning.
+func (s *syncMapUint[T]) GetVal(key uint32) T {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.m[key]
+}
+
+// GetMap returns a copy of the underlying map stored in the syncMapUint.
+// The method acquires a read lock on the SyncMap before returning the map,
+// and releases the lock before returning.
+func (s *syncMapUint[T]) GetMap() map[uint32]T {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.m
+}
+
+// Delete removes the entry with the given id from the SyncMap. If the entry does not exist,
+// the method simply returns. If the entry is successfully deleted but the key still exists
+// in the map, a warning log is emitted.
+func (s *syncMapUint[T]) Delete(id uint32) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.m[id]; !ok {
+		return
+	}
+	delete(s.m, id)
+
+	if _, ok := s.m[id]; !ok {
+		return
+	}
+	logger.Logtype("warn", 1).Uint32("id", id).Msg("Failed to delete job from queue")
+}
+
+// DeleteFunc deletes all elements from the SyncMap that match the given predicate function fn.
+// The method acquires a write lock on the SyncMap before iterating through the map and deleting
+// any elements that satisfy the predicate. The lock is released before the method returns.
+func (s *syncMapUint[T]) DeleteFunc(fn func(T) bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for key, v := range s.m {
+		if fn(v) {
+			delete(s.m, key)
+		}
+	}
+}
+
+// DeleteQueue deletes all jobs from the global queue set that match the given queue name.
+func DeleteQueue(queue string) {
+	globalQueueSet.DeleteFunc(func(t Job) bool {
+		return t.Queue == queue
+	})
+}
+
+// DeleteQueueRunning deletes all jobs from the global queue set that match the given queue name and have a non-zero start time.
+func DeleteQueueRunning(queue string) {
+	globalQueueSet.DeleteFunc(func(t Job) bool {
+		return t.Queue == queue && !t.Started.IsZero()
+	})
 }

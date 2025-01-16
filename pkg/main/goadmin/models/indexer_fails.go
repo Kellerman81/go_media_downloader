@@ -15,8 +15,8 @@ func getIndexerFailsTable(ctx *context.Context) table.Table {
 
 	info.AddField("Id", "id", db.Integer).
 		FieldSortable()
-	//info.AddField("Created_at", "created_at", db.Datetime)
-	//info.AddField("Updated_at", "updated_at", db.Datetime)
+	// info.AddField("Created_at", "created_at", db.Datetime)
+	// info.AddField("Updated_at", "updated_at", db.Datetime)
 	info.AddField("Indexer", "indexer", db.Text)
 	info.AddField("Last_fail", "last_fail", db.Datetime).FieldSortable()
 
@@ -24,8 +24,8 @@ func getIndexerFailsTable(ctx *context.Context) table.Table {
 
 	formList := indexerFails.GetForm()
 	formList.AddField("Id", "id", db.Integer, form.Default)
-	//formList.AddField("Created_at", "created_at", db.Datetime, form.Datetime)
-	//formList.AddField("Updated_at", "updated_at", db.Datetime, form.Datetime)
+	// formList.AddField("Created_at", "created_at", db.Datetime, form.Datetime)
+	// formList.AddField("Updated_at", "updated_at", db.Datetime, form.Datetime)
 	formList.AddField("Indexer", "indexer", db.Text, form.Text)
 	formList.AddField("Last_fail", "last_fail", db.Datetime, form.Datetime)
 

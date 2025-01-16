@@ -17,8 +17,8 @@ func getJobHistoriesTable(ctx *context.Context) table.Table {
 
 	info.AddField("Id", "id", db.Integer).
 		FieldSortable()
-	//info.AddField("Created_at", "created_at", db.Datetime)
-	//info.AddField("Updated_at", "updated_at", db.Datetime)
+	// info.AddField("Created_at", "created_at", db.Datetime)
+	// info.AddField("Updated_at", "updated_at", db.Datetime)
 	info.AddField("Job_type", "job_type", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
 	info.AddField("Job_category", "job_category", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
 	info.AddField("Job_group", "job_group", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
@@ -29,8 +29,8 @@ func getJobHistoriesTable(ctx *context.Context) table.Table {
 
 	formList := jobHistories.GetForm()
 	formList.AddField("Id", "id", db.Integer, form.Default).FieldDisplayButCanNotEditWhenCreate().FieldDisableWhenUpdate()
-	//formList.AddField("Created_at", "created_at", db.Datetime, form.Datetime)
-	//formList.AddField("Updated_at", "updated_at", db.Datetime, form.Datetime)
+	// formList.AddField("Created_at", "created_at", db.Datetime, form.Datetime)
+	// formList.AddField("Updated_at", "updated_at", db.Datetime, form.Datetime)
 	formList.AddField("Job_type", "job_type", db.Text, form.Text)
 	formList.AddField("Job_category", "job_category", db.Text, form.Text)
 	formList.AddField("Job_group", "job_group", db.Text, form.Text)

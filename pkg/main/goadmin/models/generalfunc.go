@@ -20,9 +20,9 @@ func myPopUpWithIframe(id, title string, data action.IframeData, width, height s
 	if data.Height == "" {
 		data.Height = "100%"
 	}
-	//data.Src = utils.ReplaceAll(data.Src, "{%id}", "{{.Id}}", "{%ids}", "{{.Ids}}")
+	// data.Src = utils.ReplaceAll(data.Src, "{%id}", "{{.Id}}", "{%ids}", "{{.Ids}}")
 	//
-	//fmt.Println(ctx.Request.Form)
+	// fmt.Println(ctx.Request.Form)
 	if strings.ContainsRune(data.Src, '?') {
 		data.Src = data.Src + "&"
 	} else {

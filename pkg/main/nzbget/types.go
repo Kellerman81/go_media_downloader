@@ -2,8 +2,7 @@ package nzbget
 
 import "time"
 
-//Source: https://github.com/dashotv/flame
-
+// Source: https://github.com/dashotv/flame
 type Status struct {
 	RemainingSizeMB     int  // 0
 	ForcedSizeMB        int  // 0
@@ -29,20 +28,18 @@ type Status struct {
 	FeedActive          bool // false
 	QueueScriptCount    int  // 0
 	NewsServers         []newsServer
-	//RemainingSizeLo     int  // 0
-	//RemainingSizeHi     int  // 0
-	//ForcedSizeLo        int  // 0
-	//ForcedSizeHi        int  // 0
-	//DownloadedSizeLo    int  // 0
-	//DownloadedSizeHi    int  // 0
-	//MonthSizeLo         int  // 0
-	//MonthSizeHi         int  // 0
-	//DaySizeLo           int  // 0
-	//DaySizeHi           int  // 0
-	//ArticleCacheLo      int  // 0
-	//ArticleCacheHi      int  // 0
-	//ThreadCount         int  // 7
-	//ParJobCount         int  // 0
+	// RemainingSizeLo     int  // 0
+	// RemainingSizeHi     int  // 0
+	// ForcedSizeLo        int  // 0
+	// ForcedSizeHi        int  // 0
+	// DownloadedSizeLo    int  // 0
+	// DownloadedSizeHi    int  // 0
+	// MonthSizeLo         int  // 0
+	// MonthSizeHi         int  // 0
+
+	// ArticleCacheLo      int  // 0
+
+	// ParJobCount         int  // 0
 	//PostJobCount        int  // 0
 	//UrlCount            int  // 0
 	//FreeDiskSpaceLo     int  // 3635539968
@@ -188,16 +185,16 @@ type Group struct {
 	PostStageProgress  int    // 9193728
 	PostStageTimeSec   int    // 0
 	Log                []log
-	//FirstID            int    // 4
-	//LastID             int    // 4
-	//RemainingSizeLo    int    // 3666882216
-	//RemainingSizeHi    int    // 0
-	//PausedSizeLo       int    // 3666882216
-	//PausedSizeHi       int    // 0
-	//FileSizeLo         int    // 3829038352
-	//FileSizeHi         int    // 0
-	//DownloadedSizeLo   int // 247289836
-	//DownloadedSizeHi   int // 0
+	// FirstID            int    // 4
+	// LastID             int    // 4
+	// RemainingSizeLo    int    // 3666882216
+	// RemainingSizeHi    int    // 0
+	// PausedSizeLo       int    // 3666882216
+	// PausedSizeHi       int    // 0
+	// FileSizeLo         int    // 3829038352
+	// FileSizeHi         int    // 0
+
+	// DownloadedSizeHi   int // 0
 }
 
 type scriptStatus struct {
@@ -205,8 +202,7 @@ type scriptStatus struct {
 	Status string
 }
 
-type log struct {
-}
+type log struct{}
 
 type GroupResponse struct {
 	*response

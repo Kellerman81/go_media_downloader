@@ -1,46 +1,24 @@
 package parser
 
 import (
-	"errors"
 	"path/filepath"
 	"runtime"
-	"strings"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
-	"github.com/goccy/go-json"
 )
 
-type MediaInfoJson struct {
-	Media MediaInfoJsonMedia `json:"media"`
-}
-type MediaInfoJsonMedia struct {
-	Track []Track `json:"track"`
-}
-
-// track represents a media track from the JSON response
-type Track struct {
-	// Type is the JSON key "@type"
-	Type string `json:"@type"`
-
-	// Format is the JSON key "Format"
-	Format string `json:"Format"`
-
-	// Duration is the JSON key "Duration"
-	Duration string `json:"Duration"`
-
-	// CodecID is the JSON key "CodecID"
-	CodecID string `json:"CodecID,omitempty"`
-
-	// Width is the JSON key "Width"
-	Width string `json:"Width,omitempty"`
-
-	// Height is the JSON key "Height"
-	Height string `json:"Height,omitempty"`
-
-	// Language is the JSON key "Language"
-	Language string `json:"Language,omitempty"`
+type mediaInfoJSON struct {
+	Media struct {
+		Track []struct {
+			Type     string `json:"@type"`
+			Format   string `json:"Format"`
+			Duration string `json:"Duration"`
+			CodecID  string `json:"CodecID,omitempty"`
+			Width    string `json:"Width,omitempty"`
+			Height   string `json:"Height,omitempty"`
+			Language string `json:"Language,omitempty"`
+		} `json:"track"`
+	} `json:"media"`
 }
 
 // type track struct {
@@ -110,15 +88,6 @@ type Track struct {
 // 	Language string `json:"Language,omitempty"`
 // }
 
-func (t *MediaInfoJson) Close() {
-	if config.SettingsGeneral.DisableVariableCleanup || t == nil {
-		return
-	}
-	clear(t.Media.Track)
-	t.Media.Track = nil
-	*t = MediaInfoJson{}
-}
-
 // getmediainfoFilename returns the path to the mediainfo executable.
 // It first checks if a custom path has been set in mediainfopath.
 // If not, it constructs the default path based on the OS and the
@@ -133,94 +102,5 @@ func getmediainfoFilename() string {
 	} else {
 		mediainfopath = filepath.Join(config.SettingsGeneral.MediainfoPath, "mediainfo")
 	}
-	// if !filepath.IsAbs(mediainfopath) {
-	// 	mediainfopath, _ = filepath.Abs(mediainfopath)
-	// }
 	return mediainfopath
-}
-
-// parsemediainfo parses the output of mediainfo for the given file.
-// It extracts information about the media tracks, resolution, languages,
-// codecs etc. and populates the FileParser struct with the extracted data.
-// It handles calling mediainfo and parsing the JSON output.
-func parsemediainfo(m *database.ParseInfo, file string, qualcfg *config.QualityConfig) error {
-	if file == "" {
-		return logger.ErrNotFound
-	}
-	data, errstr, err := ExecCmd(getmediainfoFilename(), file, "mediainfo")
-	if err != nil {
-		return errors.New("error running mediainfo [" + errstr + "] " + err.Error() + " [" + logger.BytesToString2(data) + "]")
-	}
-
-	if errstr != "" {
-		return errors.New("mediainfo error: " + errstr)
-	}
-	var info MediaInfoJson
-	err = json.Unmarshal(data, &info)
-	if err != nil {
-		return err
-	}
-	//clear(data)
-	defer info.Close()
-
-	if len(info.Media.Track) == 0 {
-		return logger.ErrTracksEmpty
-	}
-	var redetermineprio bool
-	var n int
-	for idx := range info.Media.Track {
-		if info.Media.Track[idx].Type == "Audio" && info.Media.Track[idx].Language != "" {
-			n++
-		}
-	}
-	if n > 0 {
-		m.Languages = make([]string, 0, n)
-	}
-	for idx := range info.Media.Track {
-		if info.Media.Track[idx].Type == "Audio" {
-			if info.Media.Track[idx].Language != "" {
-				m.Languages = append(m.Languages, info.Media.Track[idx].Language)
-			}
-			if m.Audio == "" || (info.Media.Track[idx].Format != "" && !strings.EqualFold(info.Media.Track[idx].CodecID, m.Audio)) {
-				m.Audio = info.Media.Track[idx].Format
-				m.AudioID = database.Gettypeids(m.Audio, database.DBConnect.GetaudiosIn)
-				redetermineprio = true
-			}
-			continue
-		}
-		if info.Media.Track[idx].Type != "video" {
-			continue
-		}
-
-		if (info.Media.Track[idx].Format == "mpeg4" || strings.EqualFold(info.Media.Track[idx].Format, "mpeg4")) && (info.Media.Track[idx].CodecID == "xvid" || strings.EqualFold(info.Media.Track[idx].CodecID, "xvid")) {
-			info.Media.Track[idx].Format = info.Media.Track[idx].CodecID
-		}
-		if m.Codec == "" || (info.Media.Track[idx].Format != "" && !strings.EqualFold(info.Media.Track[idx].Format, m.Codec)) {
-			m.Codec = info.Media.Track[idx].Format
-			m.CodecID = database.Gettypeids(m.Codec, database.DBConnect.GetcodecsIn)
-			redetermineprio = true
-		}
-		m.Height = logger.StringToInt(info.Media.Track[idx].Height)
-		m.Width = logger.StringToInt(info.Media.Track[idx].Width)
-		info.Media.Track[idx].Duration = splitByFullP(info.Media.Track[idx].Duration, '.')
-		m.Runtime = logger.StringToInt(info.Media.Track[idx].Duration)
-
-		if m.Height > m.Width {
-			m.Height, m.Width = m.Width, m.Height
-		}
-		getreso := m.Parseresolution()
-
-		if getreso != "" && (m.Resolution == "" || !strings.EqualFold(getreso, m.Resolution)) {
-			m.Resolution = getreso
-			m.ResolutionID = database.Gettypeids(m.Resolution, database.DBConnect.GetresolutionsIn)
-			redetermineprio = true
-		}
-	}
-	if redetermineprio {
-		intid := Findpriorityidxwanted(m.ResolutionID, m.QualityID, m.CodecID, m.AudioID, qualcfg)
-		if intid != -1 {
-			m.Priority = allQualityPrioritiesWantedT[intid].Priority
-		}
-	}
-	return nil
 }

@@ -11,25 +11,25 @@ import (
 func getStatsTable(ctx *context.Context) (userTable table.Table) {
 	userTable = table.NewDefaultTable(ctx, table.Config{})
 	userTable.GetOnlyInfo()
-	//typ #List #count #missing #reached
+	// typ #List #count #missing #reached
 
 	var stats []map[string]any
 	id := 0
-	lists := database.GetrowsN[string](false, 5, "select distinct listname from movies where length(listname) >= 1")
+	lists := database.GetrowsN[string](false, 5, "select distinct listname from movies where listname is not null and listname != ''")
 	for idx := range lists {
-		all := database.GetdatarowN[int](false, "select count(*) from movies where listname = ? COLLATE NOCASE", &lists[idx])
-		missing := database.GetdatarowN[int](false, "select count(*) from movies where listname = ? COLLATE NOCASE and missing=1", &lists[idx])
-		reached := database.GetdatarowN[int](false, "select count(*) from movies where listname = ? COLLATE NOCASE and quality_reached=1", &lists[idx])
-		upgrade := database.GetdatarowN[int](false, "select count(*) from movies where listname = ? COLLATE NOCASE and quality_reached=0 and missing=0", &lists[idx])
+		all := database.GetdatarowN(false, "select count(*) from movies where listname = ? COLLATE NOCASE", &lists[idx])
+		missing := database.GetdatarowN(false, "select count(*) from movies where listname = ? COLLATE NOCASE and missing=1", &lists[idx])
+		reached := database.GetdatarowN(false, "select count(*) from movies where listname = ? COLLATE NOCASE and quality_reached=1", &lists[idx])
+		upgrade := database.GetdatarowN(false, "select count(*) from movies where listname = ? COLLATE NOCASE and quality_reached=0 and missing=0", &lists[idx])
 		stats = append(stats, map[string]any{"id": id, "typ": "movies", "list": lists[idx], "total": all, "missing": missing, "finished": reached, "upgrade": upgrade})
 		id++
 	}
-	lists = database.GetrowsN[string](false, 5, "select distinct listname from series where length(listname) >= 1")
+	lists = database.GetrowsN[string](false, 5, "select distinct listname from series where listname is not null and listname != ''")
 	for idx := range lists {
-		all := database.GetdatarowN[int](false, "select count(*) from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE)", &lists[idx])
-		missing := database.GetdatarowN[int](false, "select count(*) from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE) and missing=1", &lists[idx])
-		reached := database.GetdatarowN[int](false, "select count(*) from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE) and quality_reached=1", &lists[idx])
-		upgrade := database.GetdatarowN[int](false, "select count(*) from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE) and quality_reached=0 and missing=0", &lists[idx])
+		all := database.GetdatarowN(false, "select count(*) from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE)", &lists[idx])
+		missing := database.GetdatarowN(false, "select count(*) from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE) and missing=1", &lists[idx])
+		reached := database.GetdatarowN(false, "select count(*) from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE) and quality_reached=1", &lists[idx])
+		upgrade := database.GetdatarowN(false, "select count(*) from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE) and quality_reached=0 and missing=0", &lists[idx])
 		stats = append(stats, map[string]any{"id": id, "typ": "episodes", "list": lists[idx], "total": all, "missing": missing, "finished": reached, "upgrade": upgrade})
 		id++
 	}

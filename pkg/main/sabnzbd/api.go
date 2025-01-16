@@ -12,8 +12,7 @@ import (
 	"time"
 )
 
-//Source: https://github.com/mrobinsn/go-sabnzbd - fixed:add category
-
+// Source: https://github.com/mrobinsn/go-sabnzbd - fixed:add category.
 func (s *Sabnzbd) Version() (version string, err error) {
 	u := s.url()
 	u.SetJSONOutput()
@@ -133,7 +132,7 @@ func (s *Sabnzbd) DeleteAll(removeFiles bool) (err error) {
 	return err
 }
 
-// todo deal with return value { "result": { "priority": int, "position": int } }
+// todo deal with return value { "result": { "priority": int, "position": int } }.
 func (s *Sabnzbd) Move(nzo1, nzo2 string) (err error) {
 	u := s.url()
 	u.SetJSONOutput()

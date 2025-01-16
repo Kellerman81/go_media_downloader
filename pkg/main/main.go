@@ -19,13 +19,14 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/parser"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/scanner"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/scheduler"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/searcher"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/utils"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/worker"
 
 	"github.com/DeanThompson/ginpprof"
 	"github.com/gin-gonic/gin"
-	//webapp "github.com/maxence-charriere/go-app/v9/pkg/app"
-	//ginlog "github.com/toorop/gin-logrus"
+	// webapp "github.com/maxence-charriere/go-app/v9/pkg/app"
+	// ginlog "github.com/toorop/gin-logrus".
 )
 
 // @title                       Go Media Downloader API
@@ -36,7 +37,7 @@ import (
 // @in                          query
 // @name                        apikey
 // @Accept                      json
-// @Produce                     json
+// @Produce                     json.
 var (
 	version    string
 	buildstamp string
@@ -44,8 +45,8 @@ var (
 )
 
 func main() {
-	//debug.SetGCPercent(30)
-	os.Mkdir("./temp", 0777)
+	// debug.SetGCPercent(30)
+	os.Mkdir("./temp", 0o777)
 	cfgfile := config.Configfile
 	if !scanner.CheckFileExist(cfgfile) {
 		config.ClearCfg()
@@ -68,41 +69,41 @@ func main() {
 		TimeZone:      config.SettingsGeneral.TimeZone,
 		LogZeroValues: config.SettingsGeneral.LogZeroValues,
 	})
-	logger.LogDynamicany("info", "Starting go_media_downloader")
-	logger.LogDynamicany("info", "Version: "+version+" "+githash)
-	logger.LogDynamicany("info", "Build Date: "+buildstamp)
-	logger.LogDynamicany("info", "Programmer: kellerman81")
+	logger.LogDynamicany0("info", "Starting go_media_downloader")
+	logger.LogDynamicany0("info", "Version: "+version+" "+githash)
+	logger.LogDynamicany0("info", "Build Date: "+buildstamp)
+	logger.LogDynamicany0("info", "Programmer: kellerman81")
 	if config.SettingsGeneral.LogLevel != "Debug" {
-		logger.LogDynamicany("info", "Hint: Set Loglevel to Debug to see possible API Paths")
+		logger.LogDynamicany0("info", "Hint: Set Loglevel to Debug to see possible API Paths")
 	}
-	logger.LogDynamicany("info", "------------------------------")
+	logger.LogDynamicany0("info", "------------------------------")
 
 	apiexternal.NewOmdbClient(config.SettingsGeneral.OmdbAPIKey, config.SettingsGeneral.OmdbLimiterSeconds, config.SettingsGeneral.OmdbLimiterCalls, config.SettingsGeneral.OmdbDisableTLSVerify, config.SettingsGeneral.OmdbTimeoutSeconds)
 	apiexternal.NewTmdbClient(config.SettingsGeneral.TheMovieDBApiKey, config.SettingsGeneral.TmdbLimiterSeconds, config.SettingsGeneral.TmdbLimiterCalls, config.SettingsGeneral.TheMovieDBDisableTLSVerify, config.SettingsGeneral.TmdbTimeoutSeconds)
 	apiexternal.NewTvdbClient(config.SettingsGeneral.TvdbLimiterSeconds, config.SettingsGeneral.TvdbLimiterCalls, config.SettingsGeneral.TvdbDisableTLSVerify, config.SettingsGeneral.TvdbTimeoutSeconds)
 	apiexternal.NewTraktClient(config.SettingsGeneral.TraktClientID, config.SettingsGeneral.TraktClientSecret, config.SettingsGeneral.TraktLimiterSeconds, config.SettingsGeneral.TraktLimiterCalls, config.SettingsGeneral.TraktDisableTLSVerify, config.SettingsGeneral.TraktTimeoutSeconds)
 
-	logger.LogDynamicany("info", "Initialize Database")
+	logger.LogDynamicany0("info", "Initialize Database")
 	err = database.UpgradeDB()
 	if err != nil {
-		logger.LogDynamicany("fatal", "Database Upgrade Failed", err)
+		logger.LogDynamicanyErr("fatal", "Database Upgrade Failed", err)
 	}
 	database.UpgradeIMDB()
 	err = database.InitDB(config.SettingsGeneral.DBLogLevel)
 	if err != nil {
-		logger.LogDynamicany("fatal", "Database Initialization Failed", err)
+		logger.LogDynamicanyErr("fatal", "Database Initialization Failed", err)
 	}
 	err = database.InitImdbdb()
 	if err != nil {
-		logger.LogDynamicany("fatal", "IMDB Database Initialization Failed", err)
+		logger.LogDynamicanyErr("fatal", "IMDB Database Initialization Failed", err)
 	}
 
 	if database.DBQuickCheck() != "ok" {
-		logger.LogDynamicany("fatal", "integrity check failed")
+		logger.LogDynamicany0("fatal", "integrity check failed")
 		database.DBClose()
 		os.Exit(100)
 	}
-
+	//_ = html.UnescapeString("test")
 	database.SetVars()
 
 	parser.GenerateAllQualityPriorities()
@@ -112,45 +113,46 @@ func main() {
 	if config.SettingsGeneral.SearcherSize == 0 {
 		config.SettingsGeneral.SearcherSize = 5000
 	}
-	//searcher.DefineSearchPool(config.SettingsGeneral.SearcherSize)
+	// searcher.DefineSearchPool(config.SettingsGeneral.SearcherSize)
 
-	logger.LogDynamicany("info", "Check Fill IMDB")
-	if database.GetdatarowN[uint](true, "select count() from imdb_titles") == 0 {
+	logger.LogDynamicany0("info", "Check Fill IMDB")
+	if database.GetdatarowN(true, "select count() from imdb_titles") == 0 {
 		utils.FillImdb()
 	}
 
-	if database.GetdatarowN[uint](false, "select count() from dbmovies") == 0 {
-		logger.LogDynamicany("info", "Initial Fill Movies")
+	if database.GetdatarowN(false, "select count() from dbmovies") == 0 {
+		logger.LogDynamicany0("info", "Initial Fill Movies")
 		utils.InitialFillMovies()
 	}
-	if database.GetdatarowN[uint](false, "select count() from dbseries") == 0 {
-		logger.LogDynamicany("info", "Initial Fill Series")
+	if database.GetdatarowN(false, "select count() from dbseries") == 0 {
+		logger.LogDynamicany0("info", "Initial Fill Series")
 		utils.InitialFillSeries()
 	}
 
+	worker.CreateCronWorker()
+	utils.Init()
+	searcher.Init()
 	utils.Refreshcache(true)
 	utils.Refreshcache(false)
-
-	worker.CreateCronWorker()
-	logger.LogDynamicany("info", "Starting Scheduler")
+	logger.LogDynamicany0("info", "Starting Scheduler")
 	scheduler.InitScheduler()
 	worker.StartCronWorker()
 
-	logger.LogDynamicany("info", "Starting API")
+	logger.LogDynamicany0("info", "Starting API")
 	router := gin.New()
 	// router.Use(ginlog.SetLogger(ginlog.WithLogger(func(_ *gin.Context, l zerolog.Logger) zerolog.Logger {
 	// 	return l.Output(gin.DefaultWriter).With().Logger()
 	// })))
 
-	//corsconfig := cors.DefaultConfig()
-	//corsconfig.AllowHeaders = []string{"*"}
-	//corsconfig.AllowOrigins = []string{"*"}
-	//corsconfig.AllowMethods = []string{"*"}
+	// corsconfig := cors.DefaultConfig()
+	// corsconfig.AllowHeaders = []string{"*"}
+	// corsconfig.AllowOrigins = []string{"*"}
+	// corsconfig.AllowMethods = []string{"*"}
 
 	if !strings.EqualFold(config.SettingsGeneral.LogLevel, logger.StrDebug) {
 		gin.SetMode(gin.ReleaseMode)
 	}
-	//router.Use(ginlog.Logger(logger.Log), cors.New(corsconfig), gin.Recovery())
+	// router.Use(ginlog.Logger(logger.Log), cors.New(corsconfig), gin.Recovery())
 
 	routerapi := router.Group("/api")
 	api.AddGeneralRoutes(routerapi)
@@ -158,9 +160,9 @@ func main() {
 	api.AddMoviesRoutes(routerapi.Group("/movies"))
 	api.AddSeriesRoutes(routerapi.Group("/series"))
 
-	//Less RAM Usage for static file - don't forget to recreate html file
+	// Less RAM Usage for static file - don't forget to recreate html file
 	router.Static("/swagger", "./docs")
-	//router.StaticFile("/swagger/index.html", "./docs/api.html")
+	// router.StaticFile("/swagger/index.html", "./docs/api.html")
 	// if !config.SettingsGeneral.DisableSwagger {
 	// 	docs.SwaggerInfo.BasePath = "/"
 	// 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
@@ -174,8 +176,8 @@ func main() {
 		ginpprof.Wrap(router)
 	}
 
-	//webapp.Route("/web", &web.Home{})
-	//router.Handle("GET", "/web", gin.WrapH(&webapp.Handler{}))
+	// webapp.Route("/web", &web.Home{})
+	// router.Handle("GET", "/web", gin.WrapH(&webapp.Handler{}))
 
 	logger.LogDynamicany("info", "Starting API Webserver on port", "port", &config.SettingsGeneral.WebPort)
 	server := http.Server{
@@ -188,8 +190,8 @@ func main() {
 		// service connections
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			database.DBClose()
-			logger.LogDynamicany("error", "listen", err)
-			//logger.LogDynamicError("error", err, "listen")
+			logger.LogDynamicanyErr("error", "listen", err)
+			// logger.LogDynamicError("error", err, "listen")
 		}
 	}()
 	logger.LogDynamicany("info", "Started API Webserver on port ", "port", &config.SettingsGeneral.WebPort)
@@ -198,24 +200,24 @@ func main() {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
-	logger.LogDynamicany("info", "Server shutting down")
+	logger.LogDynamicany0("info", "Server shutting down")
 
 	worker.StopCronWorker()
 	worker.CloseWorkerPools()
 
-	logger.LogDynamicany("info", "Queues stopped")
+	logger.LogDynamicany0("info", "Queues stopped")
 
 	config.Slepping(true, 5)
 	database.DBClose()
-	logger.LogDynamicany("info", "Databases stopped")
+	logger.LogDynamicany0("info", "Databases stopped")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := server.Shutdown(ctx); err != nil {
-		logger.LogDynamicany("error", "server shutdown", err)
-		//logger.LogDynamicError("error", err, "server shutdown")
+		logger.LogDynamicanyErr("error", "server shutdown", err)
+		// logger.LogDynamicError("error", err, "server shutdown")
 	}
 	ctx.Done()
 
-	logger.LogDynamicany("info", "Server exiting")
+	logger.LogDynamicany0("info", "Server exiting")
 }

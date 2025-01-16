@@ -2,6 +2,7 @@
 package api
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"net/http"
@@ -84,11 +85,10 @@ const querybydbserieid = "dbserie_id = ?"
 // @Param        apikey query     string    true  "apikey"
 // @Success      200    {object}   Jsondatarows{data=[]database.Dbserie}
 // @Failure      401    {object}  Jsonerror
-// @Router       /api/series [get]
+// @Router       /api/series [get].
 func apiSeriesGet(ctx *gin.Context) {
-
 	var query database.Querywithargs
-	rows := database.GetdatarowN[uint](false, "select count() from dbseries")
+	rows := database.GetdatarowN(false, "select count() from dbseries")
 	limit := 0
 	page := 0
 	if queryParam, ok := ctx.GetQuery("limit"); ok {
@@ -122,9 +122,8 @@ func apiSeriesGet(ctx *gin.Context) {
 // @Param        apikey query     string    true  "apikey"
 // @Success      200  {object}  string "returns ok"
 // @Failure      401  {object}  Jsonerror
-// @Router       /api/series/{id} [delete]
+// @Router       /api/series/{id} [delete].
 func apiSeriesDelete(ctx *gin.Context) {
-
 	database.DeleteRow("serie_episode_files", querybydbserieid, ctx.Param("id"))
 	database.DeleteRow("serie_episode_histories", querybydbserieid, ctx.Param("id"))
 	database.DeleteRow("serie_episodes", querybydbserieid, ctx.Param("id"))
@@ -149,14 +148,13 @@ func apiSeriesDelete(ctx *gin.Context) {
 // @Param        apikey query     string    true  "apikey"
 // @Success      200    {object}   Jsondatarows{data=[]database.ResultSeries}
 // @Failure      401    {object}  Jsonerror
-// @Router       /api/series/list/{name} [get]
+// @Router       /api/series/list/{name} [get].
 func apiSeriesListGet(ctx *gin.Context) {
-
 	var query database.Querywithargs
 	list := ctx.Param("name")
 	query.InnerJoin = "dbseries on series.dbserie_id=dbseries.id"
 	query.Where = "series.listname = ? COLLATE NOCASE"
-	rows := database.GetdatarowN[uint](false, "select count() from series where listname = ?", &list)
+	rows := database.GetdatarowN(false, "select count() from series where listname = ?", &list)
 	limit := 0
 	page := 0
 	if queryParam, ok := ctx.GetQuery("limit"); ok {
@@ -181,7 +179,6 @@ func apiSeriesListGet(ctx *gin.Context) {
 		}
 	}
 	ctx.JSON(http.StatusOK, gin.H{logger.StrData: database.QueryResultSeries(query, ctx.Param("name")), "total": rows})
-	//series = nil
 }
 
 // @Summary      Delete Series (List)
@@ -191,9 +188,8 @@ func apiSeriesListGet(ctx *gin.Context) {
 // @Param        apikey query     string    true  "apikey"
 // @Success      200  {object}  string "returns ok"
 // @Failure      401  {object}  Jsonerror
-// @Router       /api/series/list/{id} [delete]
+// @Router       /api/series/list/{id} [delete].
 func apiSeriesListDelete(ctx *gin.Context) {
-
 	database.DeleteRow("serie_episode_files", querybydbserieid, ctx.Param("id"))
 	database.DeleteRow("serie_episode_histories", querybydbserieid, ctx.Param("id"))
 	database.DeleteRow("serie_episodes", querybydbserieid, ctx.Param("id"))
@@ -215,11 +211,10 @@ func apiSeriesListDelete(ctx *gin.Context) {
 // @Param        apikey query     string    true  "apikey"
 // @Success      200    {object}   Jsondatarows{data=[]database.SerieFileUnmatched}
 // @Failure      401    {object}  Jsonerror
-// @Router       /api/series/unmatched [get]
+// @Router       /api/series/unmatched [get].
 func apiSeriesUnmatched(ctx *gin.Context) {
-
 	var query database.Querywithargs
-	rows := database.GetdatarowN[uint](false, "select count() from serie_file_unmatcheds")
+	rows := database.GetdatarowN(false, "select count() from serie_file_unmatcheds")
 	limit := 0
 	page := 0
 	if queryParam, ok := ctx.GetQuery("limit"); ok {
@@ -255,11 +250,10 @@ func apiSeriesUnmatched(ctx *gin.Context) {
 // @Param        apikey query     string    true  "apikey"
 // @Success      200    {object}   Jsondatarows{data=[]database.DbserieEpisode}
 // @Failure      401    {object}  Jsonerror
-// @Router       /api/series/episodes [get]
+// @Router       /api/series/episodes [get].
 func apiSeriesEpisodesGet(ctx *gin.Context) {
-
 	var query database.Querywithargs
-	rows := database.GetdatarowN[uint](false, "select count() from dbserie_episodes")
+	rows := database.GetdatarowN(false, "select count() from dbserie_episodes")
 	limit := 0
 	page := 0
 	if queryParam, ok := ctx.GetQuery("limit"); ok {
@@ -296,13 +290,12 @@ func apiSeriesEpisodesGet(ctx *gin.Context) {
 // @Param        apikey query     string    true  "apikey"
 // @Success      200    {object}   Jsondatarows{data=[]database.DbserieEpisode}
 // @Failure      401    {object}  Jsonerror
-// @Router       /api/series/episodes/{id} [get]
+// @Router       /api/series/episodes/{id} [get].
 func apiSeriesEpisodesGetSingle(ctx *gin.Context) {
-
 	var query database.Querywithargs
 	query.Where = querybydbserieid
 	dbid := ctx.Param("id")
-	rows := database.GetdatarowN[uint](false, "select count() from series where dbserie_id = ?", &dbid)
+	rows := database.GetdatarowN(false, "select count() from series where dbserie_id = ?", &dbid)
 	limit := 0
 	page := 0
 	if queryParam, ok := ctx.GetQuery("limit"); ok {
@@ -336,9 +329,8 @@ func apiSeriesEpisodesGetSingle(ctx *gin.Context) {
 // @Param        apikey query     string    true  "apikey"
 // @Success      200  {object}  string "returns ok"
 // @Failure      401  {object}  Jsonerror
-// @Router       /api/series/episodes/{id} [delete]
+// @Router       /api/series/episodes/{id} [delete].
 func apiSeriesEpisodesDelete(ctx *gin.Context) {
-
 	database.DeleteRow("serie_episode_files", "dbserie_episode_id = ?", ctx.Param("id"))
 	database.DeleteRow("serie_episode_histories", "dbserie_episode_id = ?", ctx.Param("id"))
 	database.DeleteRow("serie_episodes", "dbserie_episode_id = ?", ctx.Param("id"))
@@ -361,14 +353,13 @@ func apiSeriesEpisodesDelete(ctx *gin.Context) {
 // @Param        apikey query     string    true  "apikey"
 // @Success      200    {object}   Jsondatarows{data=[]database.ResultSerieEpisodes}
 // @Failure      401    {object}  Jsonerror
-// @Router       /api/series/episodes/list/{id} [get]
+// @Router       /api/series/episodes/list/{id} [get].
 func apiSeriesEpisodesListGet(ctx *gin.Context) {
-
 	var query database.Querywithargs
 	dbid := ctx.Param("id")
 	query.InnerJoin = "dbserie_episodes on serie_episodes.dbserie_episode_id=dbserie_episodes.id inner join series on series.id=serie_episodes.serie_id"
 	query.Where = "series.id = ?"
-	rows := database.GetdatarowN[uint](false, "select count() from serie_episodes where serie_id = ?", &dbid)
+	rows := database.GetdatarowN(false, "select count() from serie_episodes where serie_id = ?", &dbid)
 	limit := 0
 	page := 0
 	if queryParam, ok := ctx.GetQuery("limit"); ok {
@@ -402,9 +393,8 @@ func apiSeriesEpisodesListGet(ctx *gin.Context) {
 // @Param        apikey query     string    true  "apikey"
 // @Success      200  {object}  string "returns ok"
 // @Failure      401  {object}  Jsonerror
-// @Router       /api/series/episodes/list/{id} [delete]
+// @Router       /api/series/episodes/list/{id} [delete].
 func apiSeriesEpisodesListDelete(ctx *gin.Context) {
-
 	database.DeleteRow("serie_episode_files", "serie_episode_id = ?", ctx.Param("id"))
 	database.DeleteRow("serie_episode_histories", "serie_episode_id = ?", ctx.Param("id"))
 	_, err := database.DeleteRow("serie_episodes", logger.FilterByID, ctx.Param("id"))
@@ -426,7 +416,7 @@ const allowedjobsseriesstr = "rss,rssseasons,rssseasonsall,data,datafull,checkmi
 // @Success      200  {object}  string "returns job name started"
 // @Failure      204  {object}  string "error message"
 // @Failure      401  {object}  Jsonerror
-// @Router       /api/series/job/{job} [get]
+// @Router       /api/series/job/{job} [get].
 func apiseriesAllJobs(c *gin.Context) {
 	allowed := false
 	for _, allow := range strings.Split(allowedjobsseriesstr, ",") {
@@ -439,8 +429,8 @@ func apiseriesAllJobs(c *gin.Context) {
 		returnval := "Job " + c.Param(strJobLower) + " started"
 
 		var cfgp *config.MediaTypeConfig
-		//defer cfgSerie.Close()
-		//defer cfg_list.Close()
+		// defer cfgSerie.Close()
+		// defer cfg_list.Close()
 	contloop:
 		for _, media := range config.SettingsMedia {
 			if !strings.HasPrefix(media.NamePrefix, logger.StrSerie) {
@@ -451,12 +441,12 @@ func apiseriesAllJobs(c *gin.Context) {
 
 			switch c.Param(strJobLower) {
 			case logger.StrData, logger.StrDataFull, logger.StrStructure, logger.StrClearHistory:
-				worker.Dispatch(c.Param(strJobLower)+"_series_"+media.Name, func() {
-					utils.SingleJobs(c.Param(strJobLower), cfgpstr, "", true)
+				worker.Dispatch(c.Param(strJobLower)+"_series_"+media.Name, func(key uint32) {
+					utils.SingleJobs(c.Param(strJobLower), cfgpstr, "", true, key)
 				}, "Data")
 			case logger.StrRss, logger.StrRssSeasons, logger.StrRssSeasonsAll, logger.StrSearchMissingFull, logger.StrSearchMissingInc, logger.StrSearchUpgradeFull, logger.StrSearchUpgradeInc, logger.StrSearchMissingFullTitle, logger.StrSearchMissingIncTitle, logger.StrSearchUpgradeFullTitle, logger.StrSearchUpgradeIncTitle:
-				worker.Dispatch(c.Param(strJobLower)+"_series_"+media.Name, func() {
-					utils.SingleJobs(c.Param(strJobLower), cfgpstr, "", true)
+				worker.Dispatch(c.Param(strJobLower)+"_series_"+media.Name, func(key uint32) {
+					utils.SingleJobs(c.Param(strJobLower), cfgpstr, "", true, key)
 				}, "Search")
 			case logger.StrFeeds, logger.StrCheckMissing, logger.StrCheckMissingFlag, logger.StrReachedFlag:
 				for idxlist := range media.Lists {
@@ -472,15 +462,15 @@ func apiseriesAllJobs(c *gin.Context) {
 					}
 					listname := media.Lists[idxlist].Name
 					if c.Param(strJobLower) == logger.StrFeeds {
-						worker.Dispatch(c.Param(strJobLower)+"_series_"+media.Name, func() {
-							utils.SingleJobs(c.Param(strJobLower), cfgpstr, listname, true)
+						worker.Dispatch(c.Param(strJobLower)+"_series_"+media.Name, func(key uint32) {
+							utils.SingleJobs(c.Param(strJobLower), cfgpstr, listname, true, key)
 						}, "Feeds")
 					} else if c.Param(strJobLower) == logger.StrCheckMissing || c.Param(strJobLower) == logger.StrCheckMissingFlag || c.Param(strJobLower) == logger.StrReachedFlag {
-						worker.Dispatch(c.Param(strJobLower)+"_series_"+media.Name, func() {
-							utils.SingleJobs(c.Param(strJobLower), cfgpstr, listname, true)
+						worker.Dispatch(c.Param(strJobLower)+"_series_"+media.Name, func(key uint32) {
+							utils.SingleJobs(c.Param(strJobLower), cfgpstr, listname, true, key)
 						}, "Data")
 					}
-					//cfg_list.Close()
+					// cfg_list.Close()
 				}
 			case "refresh":
 			case "refreshinc":
@@ -488,20 +478,20 @@ func apiseriesAllJobs(c *gin.Context) {
 				continue contloop
 
 			default:
-				worker.Dispatch(c.Param(strJobLower)+"_series_"+media.Name, func() {
-					utils.SingleJobs(c.Param(strJobLower), cfgpstr, "", true)
+				worker.Dispatch(c.Param(strJobLower)+"_series_"+media.Name, func(key uint32) {
+					utils.SingleJobs(c.Param(strJobLower), cfgpstr, "", true, key)
 				}, "Data")
 			}
-			//cfgSerie.Close()
+			// cfgSerie.Close()
 		}
 		switch c.Param(strJobLower) {
 		case "refresh":
-			worker.Dispatch(logger.StrRefreshSeries, func() {
-				utils.SingleJobs("refresh", cfgp.NamePrefix, "", false)
+			worker.Dispatch(logger.StrRefreshSeries, func(key uint32) {
+				utils.SingleJobs("refresh", cfgp.NamePrefix, "", false, key)
 			}, "Feeds")
 		case "refreshinc":
-			worker.Dispatch(logger.StrRefreshSeriesInc, func() {
-				utils.SingleJobs("refreshinc", cfgp.NamePrefix, "", false)
+			worker.Dispatch(logger.StrRefreshSeriesInc, func(key uint32) {
+				utils.SingleJobs("refreshinc", cfgp.NamePrefix, "", false, key)
 			}, "Feeds")
 		}
 		c.JSON(http.StatusOK, returnval)
@@ -520,7 +510,7 @@ func apiseriesAllJobs(c *gin.Context) {
 // @Success      200  {object}  string "returns job name started"
 // @Failure      204  {object}  string "error message"
 // @Failure      401   {object}  Jsonerror
-// @Router       /api/series/job/{job}/{name} [get]
+// @Router       /api/series/job/{job}/{name} [get].
 func apiseriesJobs(c *gin.Context) {
 	allowed := false
 	for _, allow := range strings.Split(allowedjobsseriesstr, ",") {
@@ -534,12 +524,12 @@ func apiseriesJobs(c *gin.Context) {
 		cfgpstr := "serie_" + c.Param("name")
 		switch c.Param(strJobLower) {
 		case logger.StrData, logger.StrDataFull, logger.StrStructure, logger.StrClearHistory:
-			worker.Dispatch(c.Param(strJobLower)+"_series_"+c.Param("name"), func() {
-				utils.SingleJobs(c.Param(strJobLower), cfgpstr, "", true)
+			worker.Dispatch(c.Param(strJobLower)+"_series_"+c.Param("name"), func(key uint32) {
+				utils.SingleJobs(c.Param(strJobLower), cfgpstr, "", true, key)
 			}, "Data")
 		case logger.StrRss, logger.StrRssSeasons, logger.StrRssSeasonsAll, logger.StrSearchMissingFull, logger.StrSearchMissingInc, logger.StrSearchUpgradeFull, logger.StrSearchUpgradeInc, logger.StrSearchMissingFullTitle, logger.StrSearchMissingIncTitle, logger.StrSearchUpgradeFullTitle, logger.StrSearchUpgradeIncTitle:
-			worker.Dispatch(c.Param(strJobLower)+"_series_"+c.Param("name"), func() {
-				utils.SingleJobs(c.Param(strJobLower), cfgpstr, "", true)
+			worker.Dispatch(c.Param(strJobLower)+"_series_"+c.Param("name"), func(key uint32) {
+				utils.SingleJobs(c.Param(strJobLower), cfgpstr, "", true, key)
 			}, "Search")
 		case logger.StrFeeds, logger.StrCheckMissing, logger.StrCheckMissingFlag, logger.StrReachedFlag:
 			var cfglists config.MediaListsConfig
@@ -556,30 +546,30 @@ func apiseriesJobs(c *gin.Context) {
 				}
 				listname := cfglists.Name
 				if c.Param(strJobLower) == logger.StrFeeds {
-					worker.Dispatch(c.Param(strJobLower)+"_series_"+c.Param("name"), func() {
-						utils.SingleJobs(c.Param(strJobLower), cfgpstr, listname, true)
+					worker.Dispatch(c.Param(strJobLower)+"_series_"+c.Param("name"), func(key uint32) {
+						utils.SingleJobs(c.Param(strJobLower), cfgpstr, listname, true, key)
 					}, "Feeds")
 				}
 				if c.Param(strJobLower) == logger.StrCheckMissing || c.Param(strJobLower) == logger.StrCheckMissingFlag || c.Param(strJobLower) == logger.StrReachedFlag {
-					worker.Dispatch(c.Param(strJobLower)+"_series_"+c.Param("name"), func() {
-						utils.SingleJobs(c.Param(strJobLower), cfgpstr, listname, true)
+					worker.Dispatch(c.Param(strJobLower)+"_series_"+c.Param("name"), func(key uint32) {
+						utils.SingleJobs(c.Param(strJobLower), cfgpstr, listname, true, key)
 					}, "Data")
 				}
-				//cfg_list.Close()
+				// cfg_list.Close()
 			}
 		case "refresh":
-			worker.Dispatch(logger.StrRefreshSeries, func() {
-				utils.SingleJobs("refresh", cfgpstr, "", false)
+			worker.Dispatch(logger.StrRefreshSeries, func(key uint32) {
+				utils.SingleJobs("refresh", cfgpstr, "", false, key)
 			}, "Feeds")
 		case "refreshinc":
-			worker.Dispatch(logger.StrRefreshSeriesInc, func() {
-				utils.SingleJobs("refreshinc", cfgpstr, "", false)
+			worker.Dispatch(logger.StrRefreshSeriesInc, func(key uint32) {
+				utils.SingleJobs("refreshinc", cfgpstr, "", false, key)
 			}, "Feeds")
 		case "":
 			break
 		default:
-			worker.Dispatch(c.Param(strJobLower)+"_series_"+c.Param("name"), func() {
-				utils.SingleJobs(c.Param(strJobLower), cfgpstr, "", true)
+			worker.Dispatch(c.Param(strJobLower)+"_series_"+c.Param("name"), func(key uint32) {
+				utils.SingleJobs(c.Param(strJobLower), cfgpstr, "", true, key)
 			}, "Data")
 		}
 		c.JSON(http.StatusOK, returnval)
@@ -598,14 +588,14 @@ func apiseriesJobs(c *gin.Context) {
 // @Failure      403  {object}  error "error message"
 // @Failure      400     {object}  Jsonerror
 // @Failure      401  {object}  Jsonerror
-// @Router       /api/series [post]
+// @Router       /api/series [post].
 func updateDBSeries(c *gin.Context) {
 	var dbserie database.Dbserie
 	if err := c.BindJSON(&dbserie); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	counter := database.GetdatarowN[uint](false, "select count() from dbseries where id != 0 and id = ?", &dbserie.ID)
+	counter := database.GetdatarowN(false, "select count() from dbseries where id != 0 and id = ?", &dbserie.ID)
 	var inres sql.Result
 	var inerr error
 
@@ -617,7 +607,12 @@ func updateDBSeries(c *gin.Context) {
 			"id != 0 and id = ?", dbserie.Seriename, dbserie.Aliases, dbserie.Season, dbserie.Status, dbserie.Firstaired, dbserie.Network, dbserie.Runtime, dbserie.Language, dbserie.Genre, dbserie.Overview, dbserie.Rating, dbserie.Siterating, dbserie.SiteratingCount, dbserie.Slug, dbserie.TraktID, dbserie.ImdbID, dbserie.ThetvdbID, dbserie.FreebaseMID, dbserie.FreebaseID, dbserie.TvrageID, dbserie.Facebook, dbserie.Instagram, dbserie.Twitter, dbserie.Banner, dbserie.Poster, dbserie.Fanart, dbserie.Identifiedby, dbserie.ID)
 	}
 	if inerr == nil {
-		rows, _ := inres.RowsAffected()
+		var rows int64
+		if counter == 0 {
+			rows, _ = inres.LastInsertId()
+		} else {
+			rows, _ = inres.RowsAffected()
+		}
 		c.JSON(http.StatusOK, rows)
 	} else {
 		c.JSON(http.StatusForbidden, inerr)
@@ -633,14 +628,14 @@ func updateDBSeries(c *gin.Context) {
 // @Failure      403      {object}  error
 // @Failure      400      {object}  Jsonerror
 // @Failure      401      {object}  Jsonerror
-// @Router       /api/series/episodes [post]
+// @Router       /api/series/episodes [post].
 func updateDBEpisode(c *gin.Context) {
 	var dbserieepisode database.DbserieEpisode
 	if err := c.BindJSON(&dbserieepisode); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	counter := database.GetdatarowN[uint](false, "select count() from dbserie_episodes where id != 0 and id = ?", &dbserieepisode.ID)
+	counter := database.GetdatarowN(false, "select count() from dbserie_episodes where id != 0 and id = ?", &dbserieepisode.ID)
 	var inres sql.Result
 	var inerr error
 
@@ -652,7 +647,12 @@ func updateDBEpisode(c *gin.Context) {
 			"id != 0 and id = ?", dbserieepisode.Episode, dbserieepisode.Season, dbserieepisode.Identifier, dbserieepisode.Title, dbserieepisode.FirstAired, dbserieepisode.Overview, dbserieepisode.Poster, dbserieepisode.DbserieID, dbserieepisode.ID)
 	}
 	if inerr == nil {
-		rows, _ := inres.RowsAffected()
+		var rows int64
+		if counter == 0 {
+			rows, _ = inres.LastInsertId()
+		} else {
+			rows, _ = inres.RowsAffected()
+		}
 		c.JSON(http.StatusOK, rows)
 	} else {
 		c.JSON(http.StatusForbidden, inerr)
@@ -668,14 +668,14 @@ func updateDBEpisode(c *gin.Context) {
 // @Failure      403     {object}  error "error message"
 // @Failure      400     {object}  Jsonerror
 // @Failure      401  {object}  Jsonerror
-// @Router       /api/series/list [post]
+// @Router       /api/series/list [post].
 func updateSeries(c *gin.Context) {
 	var serie database.Serie
 	if err := c.ShouldBindJSON(&serie); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	counter := database.GetdatarowN[uint](false, "select count() from series where id != 0 and id = ?", &serie.ID)
+	counter := database.GetdatarowN(false, "select count() from series where id != 0 and id = ?", &serie.ID)
 	var inres sql.Result
 	var inerr error
 
@@ -687,7 +687,12 @@ func updateSeries(c *gin.Context) {
 			"id != 0 and id = ?", serie.DbserieID, serie.Listname, serie.Rootpath, serie.DontUpgrade, serie.DontSearch, serie.ID)
 	}
 	if inerr == nil {
-		rows, _ := inres.RowsAffected()
+		var rows int64
+		if counter == 0 {
+			rows, _ = inres.LastInsertId()
+		} else {
+			rows, _ = inres.RowsAffected()
+		}
 		c.JSON(http.StatusOK, rows)
 	} else {
 		c.JSON(http.StatusForbidden, inerr)
@@ -703,14 +708,14 @@ func updateSeries(c *gin.Context) {
 // @Failure      403      {object}  error
 // @Failure      400      {object}  Jsonerror
 // @Failure      401      {object}  Jsonerror
-// @Router       /api/series/episodes/list [post]
+// @Router       /api/series/episodes/list [post].
 func updateEpisode(c *gin.Context) {
 	var serieepisode database.SerieEpisode
 	if err := c.ShouldBindJSON(&serieepisode); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	counter := database.GetdatarowN[uint](false, "select count() from serie_episodes where id != 0 and id = ?", &serieepisode.ID)
+	counter := database.GetdatarowN(false, "select count() from serie_episodes where id != 0 and id = ?", &serieepisode.ID)
 	var inres sql.Result
 	var inerr error
 	if counter == 0 {
@@ -721,8 +726,13 @@ func updateEpisode(c *gin.Context) {
 		inres, inerr = database.UpdateArray("serie_episodes", []string{"dbserie_id", "serie_id", "missing", "quality_profile", "dbserie_episode_id", "blacklisted", "quality_reached", "dont_upgrade", "dont_search"},
 			"id != 0 and id = ?", serieepisode.DbserieID, serieepisode.SerieID, serieepisode.Missing, serieepisode.QualityProfile, serieepisode.DbserieEpisodeID, serieepisode.Blacklisted, serieepisode.QualityReached, serieepisode.DontUpgrade, serieepisode.DontSearch, serieepisode.ID)
 	}
-	rows, _ := inres.RowsAffected()
 	if inerr == nil {
+		var rows int64
+		if counter == 0 {
+			rows, _ = inres.LastInsertId()
+		} else {
+			rows, _ = inres.RowsAffected()
+		}
 		c.JSON(http.StatusOK, rows)
 	} else {
 		c.JSON(http.StatusForbidden, inerr)
@@ -736,7 +746,7 @@ func updateEpisode(c *gin.Context) {
 // @Param        apikey query     string    true  "apikey"
 // @Success      200  {object}  string "returns started"
 // @Failure      401  {object}  Jsonerror
-// @Router       /api/series/refresh/{id} [get]
+// @Router       /api/series/refresh/{id} [get].
 func apirefreshSerie(c *gin.Context) {
 	var cfgp *config.MediaTypeConfig
 	for _, media := range config.SettingsMedia {
@@ -745,8 +755,9 @@ func apirefreshSerie(c *gin.Context) {
 			break
 		}
 	}
-	worker.Dispatch("Refresh Single Serie", func() {
-		utils.RefreshSerie(cfgp, c.Param(logger.StrID))
+	id := c.Param(logger.StrID)
+	worker.Dispatch("Refresh Single Serie", func(uint32) {
+		utils.RefreshSerie(cfgp, &id)
 	}, "Feeds")
 	c.JSON(http.StatusOK, "started")
 }
@@ -757,7 +768,7 @@ func apirefreshSerie(c *gin.Context) {
 // @Param        apikey query     string    true  "apikey"
 // @Success      200  {object}  string "returns started"
 // @Failure      401  {object}  Jsonerror
-// @Router       /api/series/all/refreshall [get]
+// @Router       /api/series/all/refreshall [get].
 func apirefreshSeries(c *gin.Context) {
 	var cfgp *config.MediaTypeConfig
 	for _, media := range config.SettingsMedia {
@@ -766,8 +777,8 @@ func apirefreshSeries(c *gin.Context) {
 			break
 		}
 	}
-	worker.Dispatch(logger.StrRefreshSeries, func() {
-		utils.SingleJobs("refresh", cfgp.NamePrefix, "", false)
+	worker.Dispatch(logger.StrRefreshSeries, func(key uint32) {
+		utils.SingleJobs("refresh", cfgp.NamePrefix, "", false, key)
 	}, "Feeds")
 	c.JSON(http.StatusOK, "started")
 }
@@ -778,7 +789,7 @@ func apirefreshSeries(c *gin.Context) {
 // @Param        apikey query     string    true  "apikey"
 // @Success      200  {object}  string "returns started"
 // @Failure      401  {object}  Jsonerror
-// @Router       /api/series/all/refresh [get]
+// @Router       /api/series/all/refresh [get].
 func apirefreshSeriesInc(c *gin.Context) {
 	var cfgp *config.MediaTypeConfig
 	for _, media := range config.SettingsMedia {
@@ -787,8 +798,8 @@ func apirefreshSeriesInc(c *gin.Context) {
 			break
 		}
 	}
-	worker.Dispatch(logger.StrRefreshSeriesInc, func() {
-		utils.SingleJobs("refreshinc", cfgp.NamePrefix, "", false)
+	worker.Dispatch(logger.StrRefreshSeriesInc, func(key uint32) {
+		utils.SingleJobs("refreshinc", cfgp.NamePrefix, "", false, key)
 	}, "Feeds")
 	c.JSON(http.StatusOK, "started")
 }
@@ -801,10 +812,10 @@ func apirefreshSeriesInc(c *gin.Context) {
 // @Success      200  {object}  string "returns started"
 // @Success      204  {object}  string "returns nothing done"
 // @Failure      401  {object}  Jsonerror
-// @Router       /api/series/search/id/{id} [get]
+// @Router       /api/series/search/id/{id} [get].
 func apiSeriesSearch(c *gin.Context) {
 	serie, _ := database.GetSeries(database.Querywithargs{Where: logger.FilterByID}, c.Param(logger.StrID))
-	//defer logger.ClearVar(&serie)
+	// defer logger.ClearVar(&serie)
 
 	for _, media := range config.SettingsMedia {
 		if !strings.HasPrefix(media.NamePrefix, logger.StrSerie) {
@@ -812,11 +823,12 @@ func apiSeriesSearch(c *gin.Context) {
 		}
 		for idxlist := range media.Lists {
 			if strings.EqualFold(media.Lists[idxlist].Name, serie.Listname) {
-				worker.Dispatch("searchseries_series_"+media.Name+"_"+strconv.Itoa(int(serie.ID)), func() {
-					episodes := database.GetrowsN[uint](false, database.GetdatarowN[uint](false, "select count() from serie_episodes where serie_id = ?", &serie.ID), "select id from serie_episodes where serie_id = ?", &serie.ID)
+				worker.Dispatch("searchseries_series_"+media.Name+"_"+strconv.Itoa(int(serie.ID)), func(uint32) {
+					episodes := database.GetrowsN[uint](false, database.GetdatarowN(false, "select count() from serie_episodes where serie_id = ?", &serie.ID), "select id from serie_episodes where serie_id = ?", &serie.ID)
 					for idxepisode := range episodes {
-						results := searcher.NewSearcher(media, nil, "", 0)
-						err := results.MediaSearch(media, &episodes[idxepisode], true, false, false)
+						ctx := context.Background()
+						results := searcher.NewSearcher(media, nil, "", nil)
+						err := results.MediaSearch(ctx, media, episodes[idxepisode], true, false, false)
 
 						if err != nil {
 							if !errors.Is(err, logger.ErrDisabled) {
@@ -824,15 +836,12 @@ func apiSeriesSearch(c *gin.Context) {
 							}
 						} else {
 							if results == nil || len(results.Accepted) == 0 {
-
 							} else {
 								results.Download()
-
 							}
 						}
 						results.Close()
 					}
-					episodes = nil
 				}, "Search")
 				c.JSON(http.StatusOK, "started")
 				return
@@ -851,10 +860,10 @@ func apiSeriesSearch(c *gin.Context) {
 // @Success      200  {object}  string "returns started"
 // @Success      204  {object}  string "returns nothing done"
 // @Failure      401    {object}  Jsonerror
-// @Router       /api/series/search/id/{id}/{season} [get]
+// @Router       /api/series/search/id/{id}/{season} [get].
 func apiSeriesSearchSeason(c *gin.Context) {
 	serie, _ := database.GetSeries(database.Querywithargs{Where: logger.FilterByID}, c.Param(logger.StrID))
-	//defer logger.ClearVar(&serie)
+	// defer logger.ClearVar(&serie)
 
 	var episodes []uint
 	for _, media := range config.SettingsMedia {
@@ -863,12 +872,13 @@ func apiSeriesSearchSeason(c *gin.Context) {
 		}
 		for idxlist := range media.Lists {
 			if strings.EqualFold(media.Lists[idxlist].Name, serie.Listname) {
-				worker.Dispatch("searchseriesseason_series_"+media.Name+"_"+strconv.Itoa(int(serie.ID))+"_"+c.Param("season"), func() {
+				worker.Dispatch("searchseriesseason_series_"+media.Name+"_"+strconv.Itoa(int(serie.ID))+"_"+c.Param("season"), func(uint32) {
 					a := c.Param("season")
-					episodes = database.GetrowsN[uint](false, database.GetdatarowN[uint](false, "select count() from serie_episodes where serie_id = ? and dbserie_episode_id in (select id from dbserie_episodes where season = ?)", &serie.ID, &a), "select id from serie_episodes where serie_id = ? and dbserie_episode_id in (select id from dbserie_episodes where season = ?)", serie.ID, c.Param("season"))
+					episodes = database.GetrowsN[uint](false, database.GetdatarowN(false, "select count() from serie_episodes where serie_id = ? and dbserie_episode_id in (select id from dbserie_episodes where season = ?)", &serie.ID, &a), "select id from serie_episodes where serie_id = ? and dbserie_episode_id in (select id from dbserie_episodes where season = ?)", serie.ID, c.Param("season"))
 					for idxepisode := range episodes {
-						results := searcher.NewSearcher(media, nil, "", 0)
-						err := results.MediaSearch(media, &episodes[idxepisode], true, false, false)
+						ctx := context.Background()
+						results := searcher.NewSearcher(media, nil, "", nil)
+						err := results.MediaSearch(ctx, media, episodes[idxepisode], true, false, false)
 
 						if err != nil {
 							if !errors.Is(err, logger.ErrDisabled) {
@@ -876,7 +886,6 @@ func apiSeriesSearchSeason(c *gin.Context) {
 							}
 						} else {
 							if results == nil || len(results.Accepted) == 0 {
-
 							} else {
 								results.Download()
 							}
@@ -901,10 +910,10 @@ func apiSeriesSearchSeason(c *gin.Context) {
 // @Success      200  {object}  string "returns started"
 // @Success      204  {object}  string "returns nothing done"
 // @Failure      401  {object}  Jsonerror
-// @Router       /api/series/searchrss/id/{id} [get]
+// @Router       /api/series/searchrss/id/{id} [get].
 func apiSeriesSearchRSS(c *gin.Context) {
 	serie, _ := database.GetSeries(database.Querywithargs{Select: "id, listname", Where: logger.FilterByID}, c.Param(logger.StrID))
-	//defer logger.ClearVar(&serie)
+	// defer logger.ClearVar(&serie)
 
 	for _, media := range config.SettingsMedia {
 		if !strings.HasPrefix(media.NamePrefix, logger.StrSerie) {
@@ -912,8 +921,8 @@ func apiSeriesSearchRSS(c *gin.Context) {
 		}
 		for idxlist := range media.Lists {
 			if strings.EqualFold(media.Lists[idxlist].Name, serie.Listname) {
-				worker.Dispatch("searchseriesseason_series_"+media.Name+"_"+strconv.Itoa(int(serie.ID))+"_"+c.Param("season"), func() {
-					s, _ := searcher.SearchSerieRSSSeasonSingle(&serie.ID, "", false, media, true, nil)
+				worker.Dispatch("searchseriesseason_series_"+media.Name+"_"+strconv.Itoa(int(serie.ID))+"_"+c.Param("season"), func(uint32) {
+					s, _ := searcher.SearchSerieRSSSeasonSingle(&serie.ID, "", false, media)
 					s.Close()
 				}, "Search")
 				c.JSON(http.StatusOK, "started")
@@ -931,10 +940,10 @@ func apiSeriesSearchRSS(c *gin.Context) {
 // @Param        apikey query     string    true  "apikey"
 // @Success      200  {object}  Jsonresults
 // @Failure      401  {object}  Jsonerror
-// @Router       /api/series/searchrss/list/id/{id} [get]
+// @Router       /api/series/searchrss/list/id/{id} [get].
 func apiSeriesSearchRSSList(c *gin.Context) {
 	serie, _ := database.GetSeries(database.Querywithargs{Select: "id, listname", Where: logger.FilterByID}, c.Param(logger.StrID))
-	//defer logger.ClearVar(&serie)
+	// defer logger.ClearVar(&serie)
 
 	for _, media := range config.SettingsMedia {
 		if !strings.HasPrefix(media.NamePrefix, logger.StrSerie) {
@@ -942,14 +951,14 @@ func apiSeriesSearchRSSList(c *gin.Context) {
 		}
 		for idxlist := range media.Lists {
 			if strings.EqualFold(media.Lists[idxlist].Name, serie.Listname) {
-				searchresults, _ := searcher.SearchSerieRSSSeasonSingle(&serie.ID, "", false, media, false, nil)
+				searchresults, _ := searcher.SearchSerieRSSSeasonSingle(&serie.ID, "", false, media)
 				defer searchresults.Close()
 				if len(searchresults.Raw.Arr) == 0 {
 					c.JSON(http.StatusNoContent, "Failed")
 					return
 				}
 				c.JSON(http.StatusOK, gin.H{"accepted": searchresults.Accepted, "denied": searchresults.Denied})
-				//searchresults.Close()
+				// searchresults.Close()
 				return
 			}
 		}
@@ -966,10 +975,10 @@ func apiSeriesSearchRSSList(c *gin.Context) {
 // @Success      200   {object}  string "returns started"
 // @Success      204   {object}  string "returns nothing done"
 // @Failure      401   {object}  Jsonerror
-// @Router       /api/series/searchrss/id/{id}/{season} [get]
+// @Router       /api/series/searchrss/id/{id}/{season} [get].
 func apiSeriesSearchRSSSeason(c *gin.Context) {
 	serie, _ := database.GetSeries(database.Querywithargs{Select: "id, listname", Where: logger.FilterByID}, c.Param(logger.StrID))
-	//defer logger.ClearVar(&serie)
+	// defer logger.ClearVar(&serie)
 	season := c.Param("season")
 	for _, media := range config.SettingsMedia {
 		if !strings.HasPrefix(media.NamePrefix, logger.StrSerie) {
@@ -977,8 +986,8 @@ func apiSeriesSearchRSSSeason(c *gin.Context) {
 		}
 		for idxlist := range media.Lists {
 			if strings.EqualFold(media.Lists[idxlist].Name, serie.Listname) {
-				worker.Dispatch("searchseriesseason_series_"+media.Name+"_"+strconv.Itoa(int(serie.ID))+"_"+c.Param("season"), func() {
-					s, _ := searcher.SearchSerieRSSSeasonSingle(&serie.ID, season, true, media, true, nil)
+				worker.Dispatch("searchseriesseason_series_"+media.Name+"_"+strconv.Itoa(int(serie.ID))+"_"+c.Param("season"), func(uint32) {
+					s, _ := searcher.SearchSerieRSSSeasonSingle(&serie.ID, season, true, media)
 					s.Close()
 				}, "Search")
 				c.JSON(http.StatusOK, "started")
@@ -997,14 +1006,14 @@ func apiSeriesSearchRSSSeason(c *gin.Context) {
 // @Success      200  {object}  string "returns started"
 // @Success      204  {object}  string "returns nothing done"
 // @Failure      401  {object}  Jsonerror
-// @Router       /api/series/episodes/search/id/{id} [get]
+// @Router       /api/series/episodes/search/id/{id} [get].
 func apiSeriesEpisodeSearch(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param(logger.StrID))
 	uid := uint(id)
 	dbid := c.Param(logger.StrID)
-	serieid := database.GetdatarowN[uint](false, database.QuerySerieEpisodesGetSerieIDByID, &dbid)
+	serieid := database.GetdatarowN(false, database.QuerySerieEpisodesGetSerieIDByID, &dbid)
 	serie, _ := database.GetSeries(database.Querywithargs{Where: logger.FilterByID}, serieid)
-	//defer logger.ClearVar(&serie)
+	// defer logger.ClearVar(&serie)
 
 	for _, media := range config.SettingsMedia {
 		if !strings.HasPrefix(media.NamePrefix, logger.StrSerie) {
@@ -1013,9 +1022,10 @@ func apiSeriesEpisodeSearch(c *gin.Context) {
 
 		for idxlist := range media.Lists {
 			if strings.EqualFold(media.Lists[idxlist].Name, serie.Listname) {
-				worker.Dispatch("searchseriesepisode_series_"+media.Name+"_"+strconv.Itoa(id), func() {
-					results := searcher.NewSearcher(media, nil, "", 0)
-					err := results.MediaSearch(media, &uid, true, false, false)
+				worker.Dispatch("searchseriesepisode_series_"+media.Name+"_"+strconv.Itoa(id), func(uint32) {
+					ctx := context.Background()
+					results := searcher.NewSearcher(media, nil, "", nil)
+					err := results.MediaSearch(ctx, media, uid, true, false, false)
 
 					if err != nil {
 						if !errors.Is(err, logger.ErrDisabled) {
@@ -1023,7 +1033,6 @@ func apiSeriesEpisodeSearch(c *gin.Context) {
 						}
 					} else {
 						if results == nil || len(results.Accepted) == 0 {
-
 						} else {
 							results.Download()
 						}
@@ -1047,13 +1056,13 @@ func apiSeriesEpisodeSearch(c *gin.Context) {
 // @Param        apikey query     string    true  "apikey"
 // @Success      200            {object}  Jsonresults
 // @Failure      401            {object}  string
-// @Router       /api/series/episodes/search/list/{id} [get]
+// @Router       /api/series/episodes/search/list/{id} [get].
 func apiSeriesEpisodeSearchList(c *gin.Context) {
 	serieepi, _ := database.GetSerieEpisodes(database.Querywithargs{Where: logger.FilterByID}, c.Param(logger.StrID))
-	//defer logger.ClearVar(&serieepi)
+	// defer logger.ClearVar(&serieepi)
 
 	serie, _ := database.GetSeries(database.Querywithargs{Where: logger.FilterByID}, serieepi.SerieID)
-	//defer logger.ClearVar(&serie)
+	// defer logger.ClearVar(&serie)
 
 	titlesearch := false
 	if queryParam, ok := c.GetQuery("searchByTitle"); ok {
@@ -1069,8 +1078,9 @@ func apiSeriesEpisodeSearchList(c *gin.Context) {
 
 		for idxlist := range media.Lists {
 			if strings.EqualFold(media.Lists[idxlist].Name, serie.Listname) {
-				searchresults := searcher.NewSearcher(media, nil, "", 0)
-				err := searchresults.MediaSearch(media, &serieepi.ID, titlesearch, false, false)
+				ctx := context.Background()
+				searchresults := searcher.NewSearcher(media, nil, "", nil)
+				err := searchresults.MediaSearch(ctx, media, serieepi.ID, titlesearch, false, false)
 				if err != nil {
 					str := "failed with " + err.Error()
 					c.JSON(http.StatusNotFound, str)
@@ -1082,7 +1092,7 @@ func apiSeriesEpisodeSearchList(c *gin.Context) {
 				}
 				c.JSON(http.StatusOK, gin.H{"accepted": searchresults.Accepted, "denied": searchresults.Denied})
 				searchresults.Close()
-				//searchnow.Close()
+				// searchnow.Close()
 				return
 			}
 		}
@@ -1097,7 +1107,7 @@ func apiSeriesEpisodeSearchList(c *gin.Context) {
 // @Param        apikey query     string    true  "apikey"
 // @Success      200     {object}  Jsonresults
 // @Failure      401     {object}  Jsonerror
-// @Router       /api/series/rss/search/list/{group} [get]
+// @Router       /api/series/rss/search/list/{group} [get].
 func apiSeriesRssSearchList(c *gin.Context) {
 	for _, media := range config.SettingsMedia {
 		if !strings.HasPrefix(media.NamePrefix, logger.StrSerie) {
@@ -1105,10 +1115,10 @@ func apiSeriesRssSearchList(c *gin.Context) {
 		}
 
 		if strings.EqualFold(media.Name, c.Param("group")) {
-
 			templatequality := media.TemplateQuality
-			searchresults := searcher.NewSearcher(media, media.CfgQuality, logger.StrRss, 0)
-			err := searchresults.SearchRSS(media, config.SettingsQuality[templatequality], false, false)
+			ctx := context.Background()
+			searchresults := searcher.NewSearcher(media, media.CfgQuality, logger.StrRss, nil)
+			err := searchresults.SearchRSS(ctx, media, config.SettingsQuality[templatequality], false, false)
 			if err != nil {
 				str := "failed with " + err.Error()
 				c.JSON(http.StatusNotFound, str)
@@ -1132,19 +1142,19 @@ func apiSeriesRssSearchList(c *gin.Context) {
 // @Success      200     {object}  string "returns started"
 // @Success      204     {object}  string "returns nothing done"
 // @Failure      400     {object}  Jsonerror
-// @Router       /api/series/episodes/search/download/{id} [post]
+// @Router       /api/series/episodes/search/download/{id} [post].
 func apiSeriesEpisodeSearchDownload(c *gin.Context) {
 	serieepi, _ := database.GetSerieEpisodes(database.Querywithargs{Select: "id, serie_id, missing", Where: logger.FilterByID}, c.Param(logger.StrID))
-	//defer logger.ClearVar(&serieepi)
+	// defer logger.ClearVar(&serieepi)
 	serie, _ := database.GetSeries(database.Querywithargs{Where: logger.FilterByID}, serieepi.SerieID)
-	//defer logger.ClearVar(&serie)
+	// defer logger.ClearVar(&serie)
 
 	var nzb apiexternal.Nzbwithprio
 	if err := c.ShouldBindJSON(&nzb); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	//defer logger.ClearVar(&nzb)
+	// defer logger.ClearVar(&nzb)
 
 	for _, media := range config.SettingsMedia {
 		if !strings.HasPrefix(media.NamePrefix, logger.StrSerie) {
@@ -1168,9 +1178,9 @@ func apiSeriesEpisodeSearchDownload(c *gin.Context) {
 // @Param        apikey query     string    true  "apikey"
 // @Success      200     {object}  string "returns started"
 // @Failure      401     {object}  Jsonerror
-// @Router       /api/series/search/history/clear/{name} [get]
+// @Router       /api/series/search/history/clear/{name} [get].
 func apiSeriesClearHistoryName(c *gin.Context) {
-	utils.SingleJobs(logger.StrClearHistory, "serie_"+c.Param("name"), "", true)
+	utils.SingleJobs(logger.StrClearHistory, "serie_"+c.Param("name"), "", true, 0)
 	c.JSON(http.StatusOK, "started")
 }
 
@@ -1182,7 +1192,7 @@ func apiSeriesClearHistoryName(c *gin.Context) {
 // @Success      200     {object}  int64
 // @Failure      403     {object}  error
 // @Failure      401     {object}  Jsonerror
-// @Router       /api/series/search/history/clearid/{id} [get]
+// @Router       /api/series/search/history/clearid/{id} [get].
 func apiSeriesClearHistoryID(c *gin.Context) {
 	inres, inerr := database.DeleteRow("serie_episode_histories", "serie_episode_id = ?", c.Param(logger.StrID))
 

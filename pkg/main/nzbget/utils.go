@@ -11,8 +11,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-//Source: https://github.com/dashotv/flame
-
+// Source: https://github.com/dashotv/flame
 func readFile(path string) (string, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
@@ -28,8 +27,8 @@ func base64encode(s string) string {
 
 func downloadURL(urlv string) (string, error) {
 	// Get the data
-	//ctx, cancel := context.WithTimeout(context.Background(), 240*time.Second)
-	//defer cancel()
+	// ctx, cancel := context.WithTimeout(context.Background(), 240*time.Second)
+	// defer cancel()
 	resp, err := http.Get(urlv)
 	if err != nil {
 		return "", errors.Wrap(err, "could not http get url")
@@ -48,7 +47,7 @@ func downloadURL(urlv string) (string, error) {
 	if err != nil {
 		return "", errors.Wrap(err, "could not copy file")
 	}
-	_ = file.Sync()
+	file.Sync()
 	return file.Name(), nil
 }
 

@@ -7,7 +7,7 @@ import (
 	"golang.org/x/oauth2"
 )
 
-// Conf is a struct that contains a Name string field and a Data any field
+// Conf is a struct that contains a Name string field and a Data any field.
 type Conf struct {
 	// Name is a string field
 	Name string
@@ -51,7 +51,7 @@ func CheckGroup(group string, key string) bool {
 // Otherwise it returns the existing traktToken.
 func GetTrakt() *oauth2.Token {
 	if traktToken == nil {
-		logger.LogDynamicany("debug", "token empty")
+		logger.LogDynamicany0("debug", "token empty")
 		return &oauth2.Token{}
 	}
 	return traktToken

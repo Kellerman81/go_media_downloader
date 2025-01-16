@@ -3,7 +3,6 @@ package apiexternal
 import (
 	"context"
 	"crypto/tls"
-	"encoding/xml"
 	"errors"
 	"io"
 	"math/rand"
@@ -14,45 +13,28 @@ import (
 	"sync"
 	"time"
 
-	//"encoding/json"
-
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/pool"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/slidingwindow"
 	"github.com/goccy/go-json"
-	"golang.org/x/oauth2"
 )
 
 // rlHTTPClient is a rate limited HTTP client struct.
 // It contains fields for the underlying http.Client, name, timeouts,
 // rate limiters, and enabling daily rate limiting.
 type rlHTTPClient struct {
-	client              *http.Client           // The underlying HTTP client
+	Ctx                 context.Context
 	Clientname          string                 // The name of the client
 	Timeout             time.Duration          // The timeout duration
+	Timeout5            time.Duration          // The timeout duration
 	DailyLimiterEnabled bool                   // Whether daily rate limiting is enabled
+	client              *http.Client           // The underlying HTTP client
 	Ratelimiter         *slidingwindow.Limiter // The per-request rate limiter
 	DailyRatelimiter    *slidingwindow.Limiter // The daily rate limiter
-	Ctx                 context.Context
 }
 
 type NzbSlice struct {
 	Arr []Nzbwithprio
-	Mu  sync.Mutex
-}
-
-type apidata struct {
-	apikey         string
-	apikeyq        string
-	seconds        uint8
-	calls          int
-	disabletls     bool
-	timeoutseconds uint16
-	clientID       string // The client ID for OAuth2
-	clientSecret   string
-	limiter        slidingwindow.Limiter
-	dailylimiter   slidingwindow.Limiter
 }
 
 const (
@@ -68,120 +50,26 @@ const (
 
 var (
 	errDailyLimit = errors.New("daily limit reached")
-	// traktAPI is a client for interacting with the Trakt API
-	//traktAPI     traktClient
-	traktApidata apidata
-	pltrakt      = pool.NewPool[traktClient](100, 0, func(p *traktClient) {
-		*p = traktClient{
-			APIKey:       traktApidata.apikey,
-			ClientID:     traktApidata.clientID,
-			ClientSecret: traktApidata.clientSecret,
-			Client: NewClient(
-				"trakt",
-				traktApidata.disabletls,
-				true,
-				&traktApidata.limiter,
-				false, &traktApidata.dailylimiter, traktApidata.timeoutseconds),
-			Auth: oauth2.Config{
-				ClientID:     traktApidata.clientID,
-				ClientSecret: traktApidata.clientSecret,
-				RedirectURL:  "http://localhost:9090",
-				Endpoint: oauth2.Endpoint{
-					AuthURL:  "https://api.trakt.tv/oauth/authorize",
-					TokenURL: "https://api.trakt.tv/oauth/token",
-				},
-			},
-			Token:          config.GetTrakt(),
-			DefaultHeaders: []string{"Content-Type", "application/json", "trakt-api-version", "2", "trakt-api-key", traktApidata.clientID}}
-		if p.Token.AccessToken != "" {
-			p.DefaultHeaders = append(p.DefaultHeaders, "Authorization", "Bearer "+p.Token.AccessToken)
-		}
-	}, func(p *traktClient) {
-		p.Client = NewClient(
-			"trakt",
-			traktApidata.disabletls,
-			true,
-			&traktApidata.limiter,
-			false, &traktApidata.dailylimiter, traktApidata.timeoutseconds)
-	})
+	// traktAPI is a client for interacting with the Trakt API.
+	traktAPI traktClient
+	// tvdbAPI is a client for interacting with the TVDB API.
+	tvdbAPI tvdbClient
+	// tmdbAPI is a client for interacting with the TMDB API.
+	tmdbAPI tmdbClient
+	// omdbAPI is a client for interacting with the OMDb API.
+	omdbAPI omdbClient
+	// newznabClients is a slice of newznab client structs.
+	newznabClients = logger.NewSyncMap[*client](10)
 
-	// tvdbAPI is a client for interacting with the TVDB API
-	//tvdbAPI tvdbClient
-	tvdbApidata apidata
-	pltvdb      = pool.NewPool[tvdbClient](100, 0, func(p *tvdbClient) {
-		*p = tvdbClient{
-			Client: NewClient(
-				"tvdb",
-				tvdbApidata.disabletls,
-				true,
-				&tvdbApidata.limiter,
-				false, &tvdbApidata.dailylimiter, tvdbApidata.timeoutseconds)}
-	}, func(p *tvdbClient) {
-		p.Client = NewClient(
-			"tvdb",
-			tvdbApidata.disabletls,
-			true,
-			&tvdbApidata.limiter,
-			false, &tvdbApidata.dailylimiter, tvdbApidata.timeoutseconds)
-	})
-
-	// tmdbAPI is a client for interacting with the TMDB API
-	//tmdbAPI tmdbClient
-	tmdbApidata apidata
-
-	pltmdb = pool.NewPool[tmdbClient](100, 0, func(p *tmdbClient) {
-		*p = tmdbClient{
-			APIKey:         tmdbApidata.apikey,
-			QAPIKey:        tmdbApidata.apikeyq,
-			DefaultHeaders: []string{"accept", "application/json", "Authorization", "Bearer " + tmdbApidata.apikey},
-			Client: NewClient(
-				"tmdb",
-				tmdbApidata.disabletls,
-				true,
-				&tmdbApidata.limiter,
-				false, &tmdbApidata.dailylimiter, tmdbApidata.timeoutseconds)}
-	}, func(p *tmdbClient) {
-		p.Client = NewClient(
-			"tmdb",
-			tmdbApidata.disabletls,
-			true,
-			&tmdbApidata.limiter,
-			false, &tmdbApidata.dailylimiter, tmdbApidata.timeoutseconds)
-	})
-
-	// pushoverAPI is a client for sending Pushover notifications
-	//pushoverAPI pushOverClient
-	//pushoverApidata apidata
-
-	// omdbAPI is a client for interacting with the OMDb API
-	//omdbAPI omdbClient
-	omdbApidata apidata
-
-	plomdb = pool.NewPool[omdbClient](100, 0, func(p *omdbClient) {
-		*p = omdbClient{
-			OmdbAPIKey: omdbApidata.apikey,
-			QAPIKey:    omdbApidata.apikeyq,
-			Client: NewClient(
-				"omdb",
-				omdbApidata.disabletls,
-				true,
-				&omdbApidata.limiter,
-				false, &omdbApidata.dailylimiter, omdbApidata.timeoutseconds)}
-	}, func(p *omdbClient) {
-		*p = omdbClient{}
-	})
-
-	// newznabClients is a slice of newznab client structs
-	newznabClients = logger.NewSynchedMap[*client](10)
-
-	// cl is a default HTTP client with rate limiting and timeouts
-	defaultLimiter = slidingwindow.NewLimiter(1*time.Second, 10)
-	cl             = NewClient("defaultdownloader", true, true, &defaultLimiter, false, &defaultLimiter, 30)
+	// cl is a default HTTP client with rate limiting and timeouts.
+	lim = slidingwindow.NewLimiter(1*time.Second, 10)
+	cl  = NewClient("defaultdownloader", true, true, &lim, false, nil, 30)
 
 	tlsinsecure = tls.Config{InsecureSkipVerify: true}
 
-	// fieldmap maps XML element numbers to field names
-	fieldmap = []string{"",
+	// fieldmap maps XML element numbers to field names.
+	fieldmap = []string{
+		"",
 		strtitle,
 		strlink,
 		strguid,
@@ -189,29 +77,31 @@ var (
 	}
 	bytesRequestLimitReached = []byte("Request limit reached")
 	strtimefound             = "time found"
+	nzbmu                    = sync.Mutex{}
 )
+
+// Add appends the given Nzbwithprio to the NzbSlice's Arr field, with synchronization
+// to ensure thread-safety.
+func (n *NzbSlice) Add(nzb *Nzbwithprio) {
+	nzbmu.Lock()
+	defer nzbmu.Unlock()
+	n.Arr = append(n.Arr, *nzb)
+}
 
 // checkLimiter checks if the rate limiter allows a request. It handles retrying with increasing backoff if rate limited.
 // allow forces an allowance if true. retrycount is the max number of retries.
 // retryafterseconds is the initial backoff duration.
 // Returns true if allowed, false if rate limited after retries.
-func (c *rlHTTPClient) checkLimiter(allow bool, retrycount int, retryafterseconds int64) (bool, error) {
+func (c *rlHTTPClient) checkLimiter(_ context.Context, allow bool) (bool, error) {
 	if c.DailyLimiterEnabled {
-		if ok, _ := c.DailyRatelimiter.Check(); !ok {
+		if !c.DailyRatelimiter.CheckBool() {
 			return false, errDailyLimit
 		}
 	}
-	// ok, waitfor := c.Ratelimiter.CheckDaily()
-	// if !ok {
-	// }
-	waituntil := (time.Duration(retryafterseconds) * time.Second)
-	waituntilmax := (time.Duration(retryafterseconds*int64(retrycount)) * time.Second)
-	rand.New(rand.NewSource(time.Now().UnixNano()))
-	waitincrease := (time.Duration(rand.Intn(500)+10) * time.Millisecond)
-	var ok bool
-	var waitfor time.Duration
-	for range retrycount {
-		ok, waitfor = c.Ratelimiter.Check()
+	waituntil := (time.Duration(1) * time.Second)
+	waituntilmax := (time.Duration(20) * time.Second)
+	for range 20 {
+		ok, waitfor := c.Ratelimiter.Check()
 		if ok {
 			if allow {
 				c.Ratelimiter.AllowForce()
@@ -221,20 +111,19 @@ func (c *rlHTTPClient) checkLimiter(allow bool, retrycount int, retryaftersecond
 			}
 			return true, nil
 		}
-		if waitfor > waituntilmax {
-			//time.Sleep(waituntilmax)
-			return false, logger.ErrToWait
-		}
 		if waitfor == 0 {
-			waitfor = waituntil
-		} else {
-			waitfor += waitincrease
+			time.Sleep(waituntil)
+			break
 		}
-		time.Sleep(waitfor)
+		time.Sleep((time.Duration(rand.New(config.RandomizerSource).Intn(500)+10) * time.Millisecond))
+		if waitfor > waituntilmax {
+			return false, logger.ErrToWait
+		} else {
+			time.Sleep(waitfor)
+		}
 	}
 
-	//logger.LogAnyError(nil, "Hit rate limit - retries failed")
-	logger.LogDynamicany("warn", "Hit rate limit - retrys failed", &logger.StrURL, &c.Clientname)
+	logger.LogDynamicany1String("warn", "Hit rate limit - retrys failed", logger.StrURL, c.Clientname)
 
 	return false, logger.ErrToWait
 }
@@ -243,194 +132,48 @@ func (c *rlHTTPClient) checkLimiter(allow bool, retrycount int, retryaftersecond
 // allow a request. It attempts to check the rate limiter up to the
 // specified number of retries and increasing backoff. If the daily rate
 // limiter is hit, it returns true to indicate the daily limit was reached.
-func (c *rlHTTPClient) checklimiterwithdaily() bool {
-	ok, _ := c.checkLimiter(true, 20, 1)
+func (c *rlHTTPClient) checklimiterwithdaily(ctx context.Context) bool {
+	ok, _ := c.checkLimiter(ctx, true)
 	return !ok
 }
 
-// Getdo makes an HTTP GET request to the given URL with the optional headers.
-// It returns the http.Response and any error.
-// It handles rate limiting by calling addwait.
-func (c *rlHTTPClient) Getdo(ctx context.Context, urlv string, checkhtml bool, headers []string) (io.ReadCloser, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, urlv, nil)
-	if err != nil {
-		logger.LogDynamicany("error", "failed to get url", err, &logger.StrURL, urlv) //logpointerr
-		return nil, err
-	}
-
-	if len(headers) >= 1 {
-		var key string
-		for idx := range headers {
-			if key == "" {
-				key = headers[idx]
-				continue
-			}
-			req.Header.Add(key, headers[idx])
-			key = ""
-		}
-	}
-	resp, err := c.client.Do(req)
-	if err != nil {
-		logger.LogDynamicany("error", "failed to process url", err, &logger.StrURL, urlv) //logpointerr
-		return nil, err
-	}
+// checkresperror checks the HTTP response status code and returns an error if the response indicates an error condition.
+// If the response status code is not http.StatusOK, it calls addwait to handle the error and returns logger.ErrToWait.
+// If the response Content-Type header is "text/html" and checkhtml is true, it returns logger.ErrNotAllowed.
+// Otherwise, it returns nil.
+func (c *rlHTTPClient) checkresperror(resp *http.Response, req *http.Request, checkhtml bool) error {
 	if resp.StatusCode != http.StatusOK {
-		defer resp.Body.Close()
 		if c.addwait(req, resp) {
-			return nil, logger.ErrToWait
+			return logger.ErrToWait
 		}
-		return nil, errors.New("http status error " + resp.Status)
+		return errors.New("http status error " + resp.Status)
 	}
-	if !checkhtml {
-		return resp.Body, nil
+	if checkhtml && resp.Header.Get("Content-Type") == "text/html" {
+		return logger.ErrNotAllowed
 	}
-	if resp.Header.Get("Content-Type") == "text/html" {
-		defer resp.Body.Close()
-		io.Copy(io.Discard, resp.Body)
-		return nil, logger.ErrNotAllowed
-	}
-	return resp.Body, nil
-}
-
-// DoXMLItem makes an HTTP request to the specified URL, decodes the XML response, and populates the provided results slice with the extracted NZB items. It supports rate limiting, timeouts, and handling various HTTP response codes. The function returns a boolean indicating whether the processing was interrupted (e.g. due to reaching a specific item ID), the ID of the first item processed, and any errors encountered.
-func (c *rlHTTPClient) DoXMLItem(ind *config.IndexersConfig, qual *config.QualityConfig, tillid string, apiBaseURL string, urlv string, results *NzbSlice) (bool, string, error) {
-	if urlv == "" {
-		return false, "", logger.ErrNotFound
-	}
-	ok, err := c.checkLimiter(true, 20, 1)
-	if !ok {
-		if err == nil {
-			return false, "", logger.ErrToWait
-		}
-		return false, "", err
-	}
-	ctx, ctxcancel := context.WithTimeoutCause(c.Ctx, c.Timeout*5, err)
-	defer ctxcancel()
-
-	resp, err := c.Getdo(ctx, urlv, false, nil)
-	if err != nil {
-		return false, "", err
-	}
-	defer resp.Close()
-	if err := logger.CheckContextEnded(ctx); err != nil {
-		return false, "", err
-	}
-	// readersize := 65000
-	// if resp.ContentLength < int64(readersize) {
-	// 	readersize = int(resp.ContentLength)
-	// }
-	d := xml.NewDecoder(resp) //testing
-	//d.CharsetReader = charset.NewReaderLabel
-	d.Strict = false
-	//d.AutoClose = xmlccloser
-
-	var (
-		b         Nzbwithprio
-		lastfield int8
-		firstid   string
-	)
-	var nameidx, valueidx int
-	for {
-		// if err = logger.CheckContextEnded(ctx); err != nil {
-		// 	d = nil
-		// 	return false, firstid, err
-		// }
-		t, err := d.RawToken()
-		if err != nil {
-			break
-		}
-		switch tt := t.(type) {
-		case xml.StartElement:
-			lastfield = -1
-			switch tt.Name.Local {
-			case "item":
-				b.NZB.Clear(ind, qual, apiBaseURL) //= Nzb{Indexer: ind, Quality: qual, SourceEndpoint: apiBaseURL}
-			case strtitle:
-				lastfield = 1
-			case strlink:
-				lastfield = 2
-			case strguid:
-				lastfield = 3
-			case strsize:
-				lastfield = 4
-			case "enclosure", "source":
-				for idx := range tt.Attr {
-					b.NZB.setfield(tt.Attr[idx].Name.Local, tt.Attr[idx].Value)
-				}
-				//clear(tt.Attr)
-			case "attr":
-				nameidx = -1
-				valueidx = -1
-				for idx := range tt.Attr {
-					switch tt.Attr[idx].Name.Local {
-					case "name":
-						nameidx = idx
-					case "value":
-						valueidx = idx
-					}
-				}
-				//clear(tt.Attr)
-				if nameidx == -1 || valueidx == -1 || tt.Attr[valueidx].Value == "" {
-					break
-				}
-				b.NZB.setfield(tt.Attr[nameidx].Value, tt.Attr[valueidx].Value)
-			}
-		case xml.CharData:
-			if lastfield > 0 && lastfield < 5 && len(tt) > 0 {
-				b.NZB.setfield(fieldmap[lastfield], tt)
-			}
-			//clear(tt)
-		case xml.EndElement:
-			if tt.Name.Local != "item" {
-				break
-			}
-			if b.NZB.ID == "" {
-				b.NZB.ID = b.NZB.DownloadURL
-			}
-			if firstid == "" {
-				firstid = b.NZB.ID
-			}
-			results.Mu.Lock()
-			results.Arr = append(results.Arr, b)
-			results.Mu.Unlock()
-			if tillid != "" && tillid == b.NZB.ID {
-				d = nil
-				return true, firstid, nil
-			}
-		}
-		t = nil
-	}
-	d = nil
-	return false, firstid, nil
+	return nil
 }
 
 // addwait checks the HTTP response status code and waits an appropriate amount of time before retrying the request.
 // If the response indicates a rate limit or error condition, it will wait the specified time before allowing the request to be retried.
 // If the response is successful, it will return false to indicate the request can proceed.
-// The Response will be invalid after this call
+// The Response will be invalid after this call.
 func (c *rlHTTPClient) addwait(req *http.Request, resp *http.Response) bool {
 	blockinterval := 5
 	if config.SettingsGeneral.FailedIndexerBlockTime != 0 {
 		blockinterval = config.SettingsGeneral.FailedIndexerBlockTime
 	}
-	waitfor := logger.TimeGetNow()
 	if resp == nil {
-		waitfor = waitfor.Add(time.Minute * time.Duration(blockinterval))
-		c.Ratelimiter.WaitTill(waitfor)
-		logger.LogDynamicany("debug", "Set Waittill", &logger.StrWaitfor, &waitfor, &logger.StrURL, &c.Clientname)
-
+		c.logwait(logger.TimeGetNow().Add(time.Minute*time.Duration(blockinterval)), nil)
 		return true
 	}
 
 	switch resp.StatusCode {
 	case http.StatusNotFound, http.StatusRequestTimeout, http.StatusInternalServerError, http.StatusServiceUnavailable, 521, 522, 524, http.StatusNoContent:
 		if resp.StatusCode != http.StatusNotFound {
-			waitfor = waitfor.Add(time.Minute * time.Duration(blockinterval))
-			c.Ratelimiter.WaitTill(waitfor)
-			logger.LogDynamicany("debug", "Set Waittill", &logger.StrWaitfor, &waitfor, &logger.StrURL, &c.Clientname)
+			c.logwait(logger.TimeGetNow().Add(time.Minute*time.Duration(blockinterval)), nil)
 		}
-		logger.LogDynamicany("error", "error get response url", &logger.StrURL, req.URL.String(), &logger.StrStatus, &resp.Status)
-		io.Copy(io.Discard, resp.Body)
+		logger.LogDynamicany2Str("error", "error get response url", logger.StrURL, req.URL.String(), logger.StrStatus, resp.Status)
 		return true
 
 	case http.StatusUnauthorized, http.StatusForbidden, http.StatusTooManyRequests, http.StatusBadRequest:
@@ -439,101 +182,94 @@ func (c *rlHTTPClient) addwait(req *http.Request, resp *http.Response) bool {
 			s, ok = resp.Header["X-Retry-After"]
 		}
 		if ok {
-			if sleep, err := strconv.Atoi(s[0]); err == nil {
-				waitfor = waitfor.Add(time.Second*time.Duration(sleep) - c.Ratelimiter.Interval())
-				c.Ratelimiter.WaitTill(waitfor)
-				logger.LogDynamicany("debug", "Set Waittill", &logger.StrWaitfor, &waitfor, &logger.StrURL, &c.Clientname)
-			} else if sleeptime, err := time.Parse(time.RFC1123, s[0]); err == nil {
-				waitfor = sleeptime.Add(-c.Ratelimiter.Interval())
-				c.Ratelimiter.WaitTill(waitfor)
-				logger.LogDynamicany("debug", "Set Waittill", &logger.StrWaitfor, &waitfor, &logger.StrURL, &c.Clientname)
+			if strings.Contains(s[0], "Request limit reached. Retry in ") {
+				a := strings.Split(logger.Trim(strings.Replace(s[0], "Request limit reached. Retry in ", "", 1), '.'), " ")
+				if len(a) != 2 {
+					c.logwait(logger.TimeGetNow().Add(time.Minute*time.Duration(blockinterval)), &s[0])
+					return true
+				}
+				switch a[1] {
+				case "minutes":
+					c.logwait(logger.TimeGetNow().Add(time.Minute*logger.StringToDuration(a[0])), nil)
+					return true
+				case "hours":
+					c.logwait(logger.TimeGetNow().Add(time.Hour*logger.StringToDuration(a[0])), nil)
+					return true
+				default:
+					c.logwait(logger.TimeGetNow().Add(time.Minute*time.Duration(blockinterval)), &s[0])
+					return true
+				}
+			} else if sleep, err := strconv.Atoi(s[0]); err == nil {
+				c.logwait(logger.TimeGetNow().Add(time.Second*time.Duration(sleep)-c.Ratelimiter.Interval()), nil)
 				return true
-			} else if sleeptime, err := time.Parse(time.RFC3339, s[0]); err == nil {
-				waitfor = sleeptime.Add(-c.Ratelimiter.Interval())
-				c.Ratelimiter.WaitTill(waitfor)
-				logger.LogDynamicany("debug", "Set Waittill", &logger.StrWaitfor, &waitfor, &logger.StrURL, &c.Clientname)
-				return true
-			} else if strings.Contains(s[0], "Request limit reached. Retry in ") {
-				str := strings.Replace(s[0], "Request limit reached. Retry in ", "", 1)
-				str = strings.Trim(str, ".")
-				a := strings.Split(str, " ")
-				if len(a) == 2 {
-					switch a[1] {
-					case "minutes":
-						i, _ := strconv.Atoi(a[0])
-						waitfor = waitfor.Add(time.Minute * time.Duration(i))
-						c.Ratelimiter.WaitTill(waitfor)
-						logger.LogDynamicany("debug", "Set Waittill", &logger.StrWaitfor, &waitfor, &logger.StrURL, &c.Clientname)
-						return true
-					case "hours":
-						i, _ := strconv.Atoi(a[0])
-						waitfor = waitfor.Add(time.Hour * time.Duration(i))
-						c.Ratelimiter.WaitTill(waitfor)
-						logger.LogDynamicany("debug", "Set Waittill", &logger.StrWaitfor, &waitfor, &logger.StrURL, &c.Clientname)
-						return true
-					default:
-						waitfor = waitfor.Add(time.Minute * time.Duration(blockinterval))
-						c.Ratelimiter.WaitTill(waitfor)
-						logger.LogDynamicany("debug", "Set Waittill parse failed", &logger.StrWaitfor, &waitfor, &strtimefound, &s[0], &logger.StrURL, &c.Clientname)
-						return true
-					}
-				} else {
-					waitfor = waitfor.Add(time.Minute * time.Duration(blockinterval))
-					c.Ratelimiter.WaitTill(waitfor)
-					logger.LogDynamicany("debug", "Set Waittill parse failed", &logger.StrWaitfor, &waitfor, &strtimefound, &s[0], &logger.StrURL, &c.Clientname)
+			} else if strings.ContainsRune(s[0], ' ') && strings.ContainsRune(s[0], ':') {
+				if sleeptime, ok := logger.TryTimeParse(time.RFC1123, s[0]); ok {
+					c.logwait(sleeptime.Add(-c.Ratelimiter.Interval()), nil)
+					return true
+				}
+			} else if strings.ContainsRune(s[0], 'T') && strings.ContainsRune(s[0], ':') {
+				if sleeptime, ok := logger.TryTimeParse(time.RFC3339, s[0]); ok {
+					c.logwait(sleeptime.Add(-c.Ratelimiter.Interval()), nil)
 					return true
 				}
 			} else {
-				waitfor = waitfor.Add(time.Minute * time.Duration(blockinterval))
-				c.Ratelimiter.WaitTill(waitfor)
-				logger.LogDynamicany("debug", "Set Waittill parse failed", &logger.StrWaitfor, &waitfor, &strtimefound, &s[0], &logger.StrURL, &c.Clientname)
+				c.logwait(logger.TimeGetNow().Add(time.Minute*time.Duration(blockinterval)), &s[0])
 				return true
 			}
 		} else if resp.StatusCode == 400 && resp.Body != nil {
 			b, err := io.ReadAll(resp.Body)
 			if err == nil && logger.ContainsByteI(b, bytesRequestLimitReached) {
-				waitfor = waitfor.Add(3 * time.Hour)
-				c.Ratelimiter.WaitTill(waitfor)
-				logger.LogDynamicany("debug", "Set Waittill", &logger.StrWaitfor, &waitfor, &logger.StrURL, &c.Clientname)
+				c.logwait(logger.TimeGetNow().Add(3*time.Hour), nil)
 				return true
 			}
+			logger.LogDynamicany2Str("error", "error get response url", logger.StrURL, req.URL.String(), logger.StrStatus, resp.Status)
+			return true
 		}
-		logger.LogDynamicany("error", "error get response url", &logger.StrURL, req.URL.String(), &logger.StrStatus, &resp.Status)
-		io.Copy(io.Discard, resp.Body)
+		logger.LogDynamicany2Str("error", "error get response url", logger.StrURL, req.URL.String(), logger.StrStatus, resp.Status)
 		return true
 	}
-
-	io.Copy(io.Discard, resp.Body)
 	return false
 }
 
+// logwait logs a debug message with the specified wait time and optional log message.
+// It waits until the specified time before returning.
+func (c *rlHTTPClient) logwait(waitfor time.Time, logfound *string) {
+	c.Ratelimiter.WaitTill(waitfor)
+	logv := logger.Logtype("debug", 1).Time(logger.StrWaitfor, waitfor).Str(logger.StrURL, c.Clientname)
+	if logfound != nil {
+		logv.Str(strtimefound, *logfound)
+	}
+	logv.Msg("Set Waittill")
+}
+
 // NewClient creates a new HTTP client for making external API requests. It configures rate limiting, TLS verification, compression, timeouts etc. based on the provided parameters.
-func NewClient(clientname string, skiptlsverify bool, disablecompression bool, rl *slidingwindow.Limiter, usedaily bool, rldaily *slidingwindow.Limiter, timeoutseconds uint16) rlHTTPClient {
+func NewClient(clientname string, skiptlsverify, disablecompression bool, rl *slidingwindow.Limiter, usedaily bool, rldaily *slidingwindow.Limiter, timeoutseconds uint16) rlHTTPClient {
 	if timeoutseconds == 0 {
 		timeoutseconds = 10
 	}
-
-	transport := &http.Transport{
-		Proxy:                 http.ProxyFromEnvironment,
-		ForceAttemptHTTP2:     false, //please don't
-		MaxIdleConns:          100,
-		IdleConnTimeout:       90 * time.Second,
-		TLSHandshakeTimeout:   10 * time.Second,
-		ExpectContinueTimeout: 1 * time.Second,
-		MaxIdleConnsPerHost:   runtime.GOMAXPROCS(0) + 1,
-		ResponseHeaderTimeout: time.Duration(timeoutseconds) * time.Second,
-	}
-
+	var insecure *tls.Config
 	if skiptlsverify {
-		transport.TLSClientConfig = &tlsinsecure
+		insecure = &tlsinsecure
 	}
-	if disablecompression {
-		transport.DisableCompression = true
-	}
+
 	return rlHTTPClient{
-		Timeout:             time.Duration(timeoutseconds) * time.Second,
-		Clientname:          clientname,
-		client:              &http.Client{Transport: transport},
+		Timeout:    time.Duration(timeoutseconds) * time.Second,
+		Timeout5:   time.Duration(timeoutseconds*5) * time.Second,
+		Clientname: clientname,
+		client: &http.Client{Transport: &http.Transport{
+			Proxy:                 http.ProxyFromEnvironment,
+			ForceAttemptHTTP2:     false,
+			DisableCompression:    disablecompression,
+			TLSClientConfig:       insecure,
+			MaxIdleConns:          50,
+			MaxConnsPerHost:       50,
+			IdleConnTimeout:       90 * time.Second,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ExpectContinueTimeout: 1 * time.Second,
+			MaxIdleConnsPerHost:   runtime.GOMAXPROCS(0) + 1,
+			ResponseHeaderTimeout: time.Duration(timeoutseconds) * time.Second,
+			DisableKeepAlives:     false,
+		}},
 		Ratelimiter:         rl,
 		DailyLimiterEnabled: usedaily,
 		DailyRatelimiter:    rldaily,
@@ -541,74 +277,73 @@ func NewClient(clientname string, skiptlsverify bool, disablecompression bool, r
 	}
 }
 
-// GetCl returns the singleton instance of the rlHTTPClient.
-func GetCl() *rlHTTPClient {
-	return &cl
-}
-
-// doJSONType makes a request to the url and unmarshals the JSON response into the given type S.
-// It handles rate limiting and retries.
-func doJSONType[S any](c *rlHTTPClient, urlv string) (S, error) {
-	var err error
-	ctx, ctxcancel := context.WithTimeoutCause(c.Ctx, c.Timeout*5, err)
-	defer ctxcancel()
-	resp, err := c.Getdo(ctx, urlv, false, nil)
-	if err != nil {
-		var u S
-		return u, err
+// ProcessHTTP is a helper function that makes a GET request to the provided URL,
+// sets the specified headers, and runs the provided function with the HTTP response.
+// The function uses a context with a timeout of 5 times the client's configured timeout.
+// If the request fails, the function returns the error.
+func ProcessHTTP(c *rlHTTPClient, urlv string, checklimiter bool, run func(context.Context, *http.Response) error, headers map[string][]string) error {
+	if c == nil {
+		c = &cl
 	}
-	defer resp.Close()
-	return jsondecode[S](ctx, resp)
+	ctx, ctxcancel := context.WithTimeout(c.Ctx, cl.Timeout5)
+	defer ctxcancel()
+
+	if checklimiter {
+		ok, err := c.checkLimiter(ctx, true)
+		if !ok {
+			if err == nil {
+				return logger.ErrToWait
+			}
+			return err
+		}
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, urlv, http.NoBody)
+	if err != nil {
+		logger.LogDynamicany1StringErr("error", "failed to get url", err, logger.StrURL, urlv) // nopointer
+		return err
+	}
+
+	if len(headers) >= 1 {
+		req.Header = headers
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		logger.LogDynamicany1StringErr("error", "failed to process url", err, logger.StrURL, urlv) // nopointer
+		return err
+	}
+	defer resp.Body.Close()
+	err = c.checkresperror(resp, req, false)
+	if err != nil {
+		logger.LogDynamicany1StringErr("error", "failed to process url", err, logger.StrURL, urlv) // nopointer
+		return err
+	}
+	return run(ctx, resp)
 }
 
-// doJSONTypeHeader is a helper function that makes a GET request to the provided URL,
+// doJSONType is a helper function that makes a GET request to the provided URL,
 // sets the specified headers, and decodes the JSON response into the provided type.
 // The function uses a context with a timeout of 5 times the client's configured timeout.
-// If the request fails, the function returns the zero value of the provided type and the error.
-func doJSONTypeHeader[S any](c *rlHTTPClient, urlv string, headers []string) (S, error) {
-	var err error
-	ctx, ctxcancel := context.WithTimeoutCause(c.Ctx, c.Timeout*5, err)
-	defer ctxcancel()
-	resp, err := c.Getdo(ctx, urlv, false, headers)
-	if err != nil {
-		var u S
-		return u, err
-	}
-	defer resp.Close()
-	return jsondecode[S](ctx, resp)
-}
-
-// jsondecode decodes the response body into the provided struct.
-// The function checks if the context has been canceled before decoding the response.
-func jsondecode[S any](ctx context.Context, resp io.ReadCloser) (S, error) {
-	if err := logger.CheckContextEnded(ctx); err != nil {
-		var u S
-		return u, err
-	}
+// If the request fails, the function returns the provided type and the error.
+func doJSONType[S any](c *rlHTTPClient, urlv string, headers map[string][]string) (S, error) {
 	var v S
-	if err := json.NewDecoder(resp).DecodeContext(ctx, &v); err != nil {
-		return v, err
-	}
-	return v, nil
+	err := ProcessHTTP(c, urlv, true, func(ctx context.Context, resp *http.Response) error {
+		return json.NewDecoder(resp.Body).DecodeContext(ctx, &v)
+	}, headers)
+	return v, err
 }
 
-// doJSONTypeG makes a request to the url and unmarshals the JSON response into
-// the given generic slice type T. It handles rate limiting and retries.
-func doJSONTypeG[T any](c *rlHTTPClient, urlv string, headers []string) ([]T, error) {
-	var err error
-	ctx, ctxcancel := context.WithTimeoutCause(c.Ctx, c.Timeout*5, err)
-	defer ctxcancel()
-	resp, err := c.Getdo(ctx, urlv, false, headers)
+// doJSONTypeP is a helper function that makes a GET request to the provided URL,
+// sets the specified headers, and decodes the JSON response into a pointer to the provided type.
+// The function uses a context with a timeout of 5 times the client's configured timeout.
+// If the request fails, the function returns a nil pointer to the provided type and the error.
+func doJSONTypeP[S any](c *rlHTTPClient, urlv string, headers map[string][]string) (*S, error) {
+	var v S
+	err := ProcessHTTP(c, urlv, true, func(ctx context.Context, resp *http.Response) error {
+		return json.NewDecoder(resp.Body).DecodeContext(ctx, &v)
+	}, headers)
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Close()
-	if err := logger.CheckContextEnded(ctx); err != nil {
-		return nil, err
-	}
-	var v []T
-	if err := json.NewDecoder(resp).DecodeContext(ctx, &v); err != nil {
-		return nil, err
-	}
-	return v, nil
+	return &v, err
 }

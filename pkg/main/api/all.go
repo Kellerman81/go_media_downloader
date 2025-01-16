@@ -19,17 +19,17 @@ type Jsondata struct {
 	Data any `json:"data"`
 }
 type Jsondataerror struct {
-	Data  any    `json:"data"`
 	Error string `json:"error"`
+	Data  any    `json:"data"`
 }
 type Jsondatarows struct {
-	Data  any `json:"data"`
 	Total int `json:"total"`
+	Data  any `json:"data"`
 }
 type JsonNaming struct {
+	M          database.ParseInfo `json:"m"`
 	Foldername string             `json:"foldername"`
 	Filename   string             `json:"filename"`
-	M          database.ParseInfo `json:"m"`
 }
 type Jsonresults struct {
 	Accepted []apiexternal.Nzbwithprio `json:"accepted"`
@@ -59,7 +59,7 @@ func AddAllRoutes(rg *gin.RouterGroup) {
 // @Param        apikey query     string    true  "apikey"
 // @Success      200  {object}  string "returns ok"
 // @Failure      401  {object}  Jsonerror
-// @Router       /api/all/feeds [get]
+// @Router       /api/all/feeds [get].
 func apiAllGetFeeds(c *gin.Context) {
 	utils.MoviesAllJobs(logger.StrFeeds, true)
 	utils.SeriesAllJobs(logger.StrFeeds, true)
@@ -72,7 +72,7 @@ func apiAllGetFeeds(c *gin.Context) {
 // @Param        apikey query     string    true  "apikey"
 // @Success      200  {object}  string "returns ok"
 // @Failure      401  {object}  Jsonerror
-// @Router       /api/all/data [get]
+// @Router       /api/all/data [get].
 func apiAllGetData(c *gin.Context) {
 	utils.MoviesAllJobs("data", true)
 	utils.SeriesAllJobs("data", true)
@@ -85,7 +85,7 @@ func apiAllGetData(c *gin.Context) {
 // @Param        apikey query     string    true  "apikey"
 // @Success      200  {object}  string "returns ok"
 // @Failure      401  {object}  Jsonerror
-// @Router       /api/all/search/rss [get]
+// @Router       /api/all/search/rss [get].
 func apiAllGetRss(c *gin.Context) {
 	utils.MoviesAllJobs(logger.StrRss, true)
 	utils.SeriesAllJobs(logger.StrRss, true)
@@ -98,7 +98,7 @@ func apiAllGetRss(c *gin.Context) {
 // @Param        apikey query     string    true  "apikey"
 // @Success      200  {object}  string "returns ok"
 // @Failure      401  {object}  Jsonerror
-// @Router       /api/all/search/missing/full [get]
+// @Router       /api/all/search/missing/full [get].
 func apiAllGetMissingFull(c *gin.Context) {
 	utils.MoviesAllJobs(logger.StrSearchMissingFull, true)
 	utils.SeriesAllJobs(logger.StrSearchMissingFull, true)
@@ -111,7 +111,7 @@ func apiAllGetMissingFull(c *gin.Context) {
 // @Param        apikey query     string    true  "apikey"
 // @Success      200  {object}  string "returns ok"
 // @Failure      401  {object}  Jsonerror
-// @Router       /api/all/search/missing/inc [get]
+// @Router       /api/all/search/missing/inc [get].
 func apiAllGetMissingInc(c *gin.Context) {
 	utils.MoviesAllJobs(logger.StrSearchMissingInc, true)
 	utils.SeriesAllJobs(logger.StrSearchMissingInc, true)
@@ -124,7 +124,7 @@ func apiAllGetMissingInc(c *gin.Context) {
 // @Param        apikey query     string    true  "apikey"
 // @Success      200  {object}  string "returns ok"
 // @Failure      401  {object}  Jsonerror
-// @Router       /api/all/search/upgrade/full [get]
+// @Router       /api/all/search/upgrade/full [get].
 func apiAllGetUpgradeFull(c *gin.Context) {
 	utils.MoviesAllJobs(logger.StrSearchUpgradeFull, true)
 	utils.SeriesAllJobs(logger.StrSearchUpgradeFull, true)
@@ -137,7 +137,7 @@ func apiAllGetUpgradeFull(c *gin.Context) {
 // @Param        apikey query     string    true  "apikey"
 // @Success      200  {object}  string "returns ok"
 // @Failure      401  {object}  Jsonerror
-// @Router       /api/all/search/upgrade/inc [get]
+// @Router       /api/all/search/upgrade/inc [get].
 func apiAllGetUpgradeInc(c *gin.Context) {
 	utils.MoviesAllJobs(logger.StrSearchUpgradeInc, true)
 	utils.SeriesAllJobs(logger.StrSearchUpgradeInc, true)

@@ -11,7 +11,7 @@ import (
 )
 
 func GetActionsPage(ctx *context.Context) (types.Panel, error) {
-	//components := template2.Get(config.GetTheme())
+	// components := template2.Get(config.GetTheme())
 	// imdb := action.PopUpWithIframe("imdb", "IMDB Import", action.IframeData{Src: "/api/fillimdb?apikey=" + cfg_general.WebApiKey}, "200px", "200px")
 	// types.NewPage(&types.NewPageParam{Iframe: true})
 
@@ -28,7 +28,7 @@ func GetActionsPage(ctx *context.Context) (types.Panel, error) {
 
 func GetDashBoard(*context.Context) (types.Panel, error) {
 	components := template2.Default()
-	//colComp := components.Col()
+	// colComp := components.Col()
 
 	return types.Panel{
 		Content:     components.Row().SetContent("Test").GetContent(),

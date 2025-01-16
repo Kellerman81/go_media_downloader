@@ -95,13 +95,12 @@ func (d *mysqlite) InitDB(cfgList map[string]config.Database) db.Connection {
 		for conn, cfg := range cfgList {
 			if conn == "default" {
 				sqlDB, err = sql.Open("sqlite3", cfg.GetDSN())
-
 				if err != nil {
 					panic(err)
 				}
 
-				//sqlDB.SetMaxIdleConns(cfg.MaxIdleCon)
-				//sqlDB.SetMaxOpenConns(cfg.MaxOpenCon)
+				// sqlDB.SetMaxIdleConns(cfg.MaxIdleCon)
+				// sqlDB.SetMaxOpenConns(cfg.MaxOpenCon)
 
 				d.DbList[conn] = sqlDB
 

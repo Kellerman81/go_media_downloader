@@ -12,14 +12,15 @@ import (
 	"github.com/pkg/errors"
 )
 
-//Source: https://github.com/dashotv/flame
-
-const PriorityVeryLow = -100
-const PriorityLow = -50
-const PriorityNormal = 0
-const PriorityHigh = 50
-const PriorityVeryHigh = 100
-const PriorityForce = 900
+// Source: https://github.com/dashotv/flame
+const (
+	PriorityVeryLow  = -100
+	PriorityLow      = -50
+	PriorityNormal   = 0
+	PriorityHigh     = 50
+	PriorityVeryHigh = 100
+	PriorityForce    = 900
+)
 
 func NewOptions() *AppendOptions {
 	return &AppendOptions{
@@ -194,7 +195,7 @@ func (c *Client) request(path string, params url.Values, target any) (err error)
 
 	urlv = c.URL + "/" + path
 
-	if request, err = http.NewRequest("GET", urlv, nil); err != nil {
+	if request, err = http.NewRequest("GET", urlv, http.NoBody); err != nil {
 		return errors.Wrap(err, "creating "+urlv+" request failed")
 	}
 	request.URL.RawQuery = params.Encode()
@@ -202,18 +203,18 @@ func (c *Client) request(path string, params url.Values, target any) (err error)
 	client := &http.Client{Timeout: 10 * time.Second}
 	var response *http.Response
 	if response, err = client.Do(request); err != nil {
-		//log.Fatal(err)
+		// log.Fatal(err)
 		return errors.Wrap(err, "error making http request")
 	}
 	defer response.Body.Close()
 
 	var body []byte
 	if body, err = io.ReadAll(response.Body); err != nil {
-		//log.Fatal(err)
+		// log.Fatal(err)
 		return errors.Wrap(err, "reading request body")
 	}
 
-	//logrus.Debugf("body: %s", string(body))
+	// logrus.Debugf("body: %s", string(body))
 
 	if target == nil {
 		return nil

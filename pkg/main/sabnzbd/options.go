@@ -2,8 +2,7 @@ package sabnzbd
 
 import "net/http"
 
-//Source: https://github.com/mrobinsn/go-sabnzbd - fixed:add category
-
+// Source: https://github.com/mrobinsn/go-sabnzbd - fixed:add category.
 type Option func(*Sabnzbd) error
 
 func UseHTTP() Option {

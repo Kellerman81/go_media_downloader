@@ -5,7 +5,9 @@ import (
 	"encoding/csv"
 	"errors"
 	"io"
+	"net/http"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
@@ -20,24 +22,37 @@ import (
 
 // feedResults is a struct that contains the results from processing feeds
 // Series contains the configuration for a TV series
-// Movies contains a slice of movie IDs as strings
+// Movies contains a slice of movie IDs as strings.
 type feedResults struct {
 	Series []config.SerieConfig // Configuration for a TV series
 	Movies []string             // Slice of movie IDs as strings
 }
 
 var (
-	errwrongtype = errors.New("wrong type")
-	plfeeds      = pool.NewPool(100, 5, func(b *feedResults) {
+	errwrongtype     = errors.New("wrong type")
+	errcsvread       = errors.New("csv read")
+	errusernameempty = errors.New("username empty")
+	errlistnameempty = errors.New("list type empty")
+	strtoparse       = "entries to parse"
+	plfeeds          pool.Poolobj[feedResults]
+)
+
+func Init() {
+	plfeeds.Init(5, func(b *feedResults) {
 		b.Movies = make([]string, 0, 10000)
 		b.Series = make([]config.SerieConfig, 0, 1000)
-	}, func(b *feedResults) {
-		clear(b.Movies)
-		b.Movies = b.Movies[:0]
-		clear(b.Series)
-		b.Series = b.Series[:0]
+	}, func(b *feedResults) bool {
+		if len(b.Movies) > 0 {
+			clear(b.Movies)
+			b.Movies = b.Movies[:0]
+		}
+		if len(b.Series) > 0 {
+			clear(b.Series)
+			b.Series = b.Series[:0]
+		}
+		return false
 	})
-)
+}
 
 // gettraktmovielist retrieves a list of movies from Trakt.tv based on the specified configuration.
 // The list type is determined by the `usetraktmovie` parameter, which can be one of the following:
@@ -49,74 +64,52 @@ var (
 // The retrieved movie information is added to the `d.Movies` slice.
 // An error is returned if there is a problem retrieving the movie list.
 func (d *feedResults) gettraktmovielist(usetraktmovie int, cfglist *config.MediaListsConfig) error {
-	var checkid int
 	switch usetraktmovie {
 	case 1:
-		arr, _ := apiexternal.GetTraktMoviePopular(&cfglist.CfgList.Limit)
-		for idx := range arr {
-			if arr[idx].Ids.Imdb == "" {
-				continue
-			}
-			database.ScanrowsNdyn(false, "select count() from movies where dbmovie_id in (select id from dbmovies where imdb_id = ?) and listname = ? COLLATE NOCASE", &checkid, &arr[idx].Ids.Imdb, &cfglist.Name)
-			if checkid == 0 {
-				d.Movies = append(d.Movies, arr[idx].Ids.Imdb)
-			}
+		for _, arr := range apiexternal.GetTraktMoviePopular(&cfglist.CfgList.Limit) {
+			checkaddimdbfeed(&arr.IDs.Imdb, cfglist, d)
 		}
-		//clear(arr)
 		return nil
 	case 2:
-		arr, _ := apiexternal.GetTraktMovieTrending(&cfglist.CfgList.Limit)
-		for idx := range arr {
-			if arr[idx].Movie.Ids.Imdb == "" {
-				continue
-			}
-			database.ScanrowsNdyn(false, "select count() from movies where dbmovie_id in (select id from dbmovies where imdb_id = ?) and listname = ? COLLATE NOCASE", &checkid, &arr[idx].Movie.Ids.Imdb, &cfglist.Name)
-			if checkid == 0 {
-				//if database.GetdatarowN[int](false, "select count() from movies where dbmovie_id in (select id from dbmovies where imdb_id = ?) and listname = ? COLLATE NOCASE", &arr[idx].Movie.Ids.Imdb, &cfglist.Name) == 0 {
-				d.Movies = append(d.Movies, arr[idx].Movie.Ids.Imdb)
-			}
+		for _, arr := range apiexternal.GetTraktMovieTrending(&cfglist.CfgList.Limit) {
+			checkaddimdbfeed(&arr.Movie.IDs.Imdb, cfglist, d)
 		}
-		//clear(arr)
 		return nil
 	case 3:
-		arr, _ := apiexternal.GetTraktMovieAnticipated(&cfglist.CfgList.Limit)
-		for idx := range arr {
-			if arr[idx].Movie.Ids.Imdb == "" {
-				continue
-			}
-			database.ScanrowsNdyn(false, "select count() from movies where dbmovie_id in (select id from dbmovies where imdb_id = ?) and listname = ? COLLATE NOCASE", &checkid, &arr[idx].Movie.Ids.Imdb, &cfglist.Name)
-			if checkid == 0 {
-				//if database.GetdatarowN[int](false, "select count() from movies where dbmovie_id in (select id from dbmovies where imdb_id = ?) and listname = ? COLLATE NOCASE", &arr[idx].Movie.Ids.Imdb, &cfglist.Name) == 0 {
-				d.Movies = append(d.Movies, arr[idx].Movie.Ids.Imdb)
-			}
+		for _, arr := range apiexternal.GetTraktMovieAnticipated(&cfglist.CfgList.Limit) {
+			checkaddimdbfeed(&arr.Movie.IDs.Imdb, cfglist, d)
 		}
-		//clear(arr)
 		return nil
 	case 4:
 		if cfglist.CfgList.TraktUsername == "" || cfglist.CfgList.TraktListName == "" {
-			return errors.New("username empty")
+			return errusernameempty
 		}
 		if cfglist.CfgList.TraktListType == "" {
-			return errors.New("list type empty")
+			return errlistnameempty
 		}
 		arr, err := apiexternal.GetTraktUserList(cfglist.CfgList.TraktUsername, cfglist.CfgList.TraktListName, cfglist.CfgList.TraktListType, &cfglist.CfgList.Limit)
 		if err != nil {
 			return err
 		}
 		for idx := range arr {
-			if arr[idx].Movie.Ids.Imdb == "" {
-				continue
-			}
-			database.ScanrowsNdyn(false, "select count() from movies where dbmovie_id in (select id from dbmovies where imdb_id = ?) and listname = ? COLLATE NOCASE", &checkid, &arr[idx].Movie.Ids.Imdb, &cfglist.Name)
-			if checkid == 0 {
-				//if database.GetdatarowN[int](false, "select count() from movies where dbmovie_id in (select id from dbmovies where imdb_id = ?) and listname = ? COLLATE NOCASE", &arr[idx].Movie.Ids.Imdb, &cfglist.Name) == 0 {
-				d.Movies = append(d.Movies, arr[idx].Movie.Ids.Imdb)
-			}
+			checkaddimdbfeed(&arr[idx].Movie.IDs.Imdb, cfglist, d)
 		}
-		//clear(arr)
 		return nil
 	}
 	return errwrongtype
+}
+
+// checkaddimdbfeed checks if the given IMDB ID is not already in the movies list, and if so, adds it to the d.Movies slice.
+// The function takes an IMDB ID pointer, a MediaListsConfig pointer, and a feedResults pointer as arguments.
+// It first checks if the IMDB ID is not nil and not an empty string. If it is, the function returns without doing anything.
+// It then checks if the movie with the given IMDB ID is not already in the movies list with the given list name. If the movie is not found, it adds the IMDB ID to the d.Movies slice.
+func checkaddimdbfeed(imdb *string, cfglist *config.MediaListsConfig, d *feedResults) {
+	if imdb == nil || *imdb == "" {
+		return
+	}
+	if database.Getdatarow2[uint](false, "select count() from movies where dbmovie_id in (select id from dbmovies where imdb_id = ?) and listname = ? COLLATE NOCASE", imdb, &cfglist.Name) == 0 {
+		d.Movies = append(d.Movies, *imdb)
+	}
 }
 
 // gettraktserielist retrieves a list of TV series from Trakt.tv based on the specified configuration.
@@ -131,38 +124,32 @@ func (d *feedResults) gettraktmovielist(usetraktmovie int, cfglist *config.Media
 func (d *feedResults) gettraktserielist(usetraktserie int, cfglist *config.MediaListsConfig) error {
 	switch usetraktserie {
 	case 1:
-		arr, _ := apiexternal.GetTraktSeriePopular(&cfglist.CfgList.Limit)
-		for idx := range arr {
+		for _, arr := range apiexternal.GetTraktSeriePopular(&cfglist.CfgList.Limit) {
 			d.Series = append(d.Series, config.SerieConfig{
-				Name: arr[idx].Title, TvdbID: arr[idx].Ids.Tvdb,
+				Name: arr.Title, TvdbID: arr.IDs.Tvdb,
 			})
 		}
-		//clear(arr)
 		return nil
 	case 2:
-		arr, _ := apiexternal.GetTraktSerieTrending(&cfglist.CfgList.Limit)
-		for idx := range arr {
+		for _, arr := range apiexternal.GetTraktSerieTrending(&cfglist.CfgList.Limit) {
 			d.Series = append(d.Series, config.SerieConfig{
-				Name: arr[idx].Serie.Title, TvdbID: arr[idx].Serie.Ids.Tvdb,
+				Name: arr.Serie.Title, TvdbID: arr.Serie.IDs.Tvdb,
 			})
 		}
-		//clear(arr)
 		return nil
 	case 3:
-		arr, _ := apiexternal.GetTraktSerieAnticipated(&cfglist.CfgList.Limit)
-		for idx := range arr {
+		for _, arr := range apiexternal.GetTraktSerieAnticipated(&cfglist.CfgList.Limit) {
 			d.Series = append(d.Series, config.SerieConfig{
-				Name: arr[idx].Serie.Title, TvdbID: arr[idx].Serie.Ids.Tvdb,
+				Name: arr.Serie.Title, TvdbID: arr.Serie.IDs.Tvdb,
 			})
 		}
-		//clear(arr)
 		return nil
 	case 4:
 		if cfglist.CfgList.TraktUsername == "" || cfglist.CfgList.TraktListName == "" {
-			return errors.New("username empty")
+			return errusernameempty
 		}
 		if cfglist.CfgList.TraktListType == "" {
-			return errors.New("list type empty")
+			return errlistnameempty
 		}
 		arr, err := apiexternal.GetTraktUserList(cfglist.CfgList.TraktUsername, cfglist.CfgList.TraktListName, cfglist.CfgList.TraktListType, &cfglist.CfgList.Limit)
 		if err != nil {
@@ -170,27 +157,18 @@ func (d *feedResults) gettraktserielist(usetraktserie int, cfglist *config.Media
 		}
 		for idx := range arr {
 			d.Series = append(d.Series, config.SerieConfig{
-				Name: arr[idx].Serie.Title, TvdbID: arr[idx].Serie.Ids.Tvdb,
+				Name: arr[idx].Serie.Title, TvdbID: arr[idx].Serie.IDs.Tvdb,
 			})
 		}
-		//clear(arr)
 		return nil
 	}
 	return errwrongtype
 }
 
-// Close clears the Movies and Series slices and returns the feedResults instance to the plfeeds pool.
-func (d *feedResults) Close() {
-	if d == nil {
-		return
-	}
-	plfeeds.Put(d)
-}
-
 // getseriesconfig loads the series config from the given file path.
 // It returns a feedResults struct containing the parsed series list on success.
 // Returns an error if the file could not be opened or parsed.
-func (d *feedResults) getseriesconfig(cfglist *config.ListsConfig) ([]config.SerieConfig, error) {
+func getseriesconfig(cfglist *config.ListsConfig) ([]config.SerieConfig, error) {
 	content, err := os.Open(cfglist.SeriesConfigFile)
 	if err != nil {
 		return nil, errors.New("loading config")
@@ -211,52 +189,52 @@ func (d *feedResults) getseriesconfig(cfglist *config.ListsConfig) ([]config.Ser
 //
 // It handles locking/unlocking a global counter for tracking list item counts.
 func (d *feedResults) getimdbcsv(cfglistp *config.MediaListsConfig) error {
-	cl := apiexternal.GetCl()
-	ctx, ctxcancel := context.WithTimeout(cl.Ctx, cl.Timeout*5)
-	defer ctxcancel()
+	return apiexternal.ProcessHTTP(nil, cfglistp.CfgList.URL, false, func(ctx context.Context, r *http.Response) error {
+		d.parseimdbcsv(ctx, r.Body, cfglistp)
+		return nil
+	}, nil)
+}
 
-	if err := logger.CheckContextEnded(ctx); err != nil {
-		return err
-	}
-	resp, err := cl.Getdo(ctx, cfglistp.CfgList.URL, false, nil)
-	//resp, err := apiexternal.WebGet(cfglistp.CfgList.URL)
-	if err != nil {
-		return errors.New("csv read")
-	}
-	defer resp.Close()
+// parseimdbcsv parses an IMDB CSV file from the provided io.ReadCloser, filters the movies based on the given configuration,
+// and appends the allowed movie IDs to the d.Movies slice.
+//
+// It uses a csv.Reader to parse the CSV data from the io.ReadCloser.
+// It iterates through each row, getting the movie ID, checking if it already
+// exists for this list, applying any configured filters, and adding allowed
+// movies to the d.Movies list.
+//
+// It handles locking/unlocking a global counter for tracking list item counts.
+func (d *feedResults) parseimdbcsv(_ context.Context, resp io.ReadCloser, cfglistp *config.MediaListsConfig) {
 	parserimdb := csv.NewReader(resp)
 	parserimdb.ReuseRecord = true
 
 	listnamefilter := cfglistp.Getlistnamefilterignore()
 
-	var allowed bool
-
-	//args := make([]any, 0, len(cfglistp.IgnoreMapLists)+1)
 	args := logger.PLArrAny.Get()
+	defer logger.PLArrAny.Put(args)
 	for idx := range cfglistp.IgnoreMapLists {
 		args.Arr = append(args.Arr, &cfglistp.IgnoreMapLists[idx])
 	}
-	args.Arr = append(args.Arr, &logger.V0)
-
-	var movieid uint
-	var record []string
-	if err := logger.CheckContextEnded(ctx); err != nil {
-		parserimdb = nil
-		return err
+	var existing []uint
+	if !config.SettingsGeneral.UseMediaCache && listnamefilter != "" {
+		existing = database.GetrowsNuncached[uint](database.GetdatarowNArg(false, logger.JoinStrings("select count() from movies where ", listnamefilter), args.Arr), logger.JoinStrings("select dbmovie_id from movies where ", listnamefilter), args.Arr)
 	}
-	var checkid int
+
+	var allowed bool
+	var movieid uint
 	for {
-		record, err = parserimdb.Read()
-		if errors.Is(err, io.EOF) {
-			break
-		}
+		record, err := parserimdb.Read()
 		if err != nil {
 			break
 		}
+		// if logger.CheckContextEnded(ctx) != nil {
+		// 	break
+		// }
 		if record[1] == "" || record[1] == "Const" || record[1] == "tconst" {
 			continue
 		}
-		movieid = importfeed.MovieFindDBIDByImdb(record[1])
+		record[1] = logger.AddImdbPrefixP(record[1])
+		movieid = importfeed.MovieFindDBIDByImdb(&record[1])
 
 		if movieid != 0 {
 			if getmovieid(&movieid, cfglistp) {
@@ -265,31 +243,39 @@ func (d *feedResults) getimdbcsv(cfglistp *config.MediaListsConfig) error {
 
 			if cfglistp.IgnoreMapListsLen >= 1 {
 				if config.SettingsGeneral.UseMediaCache {
-					if database.CacheOneStringTwoIntIndexFunc(logger.CacheMovie, func(elem database.DbstaticOneStringTwoInt) bool {
+					if database.CacheOneStringTwoIntIndexFunc(logger.CacheMovie, func(elem *database.DbstaticOneStringTwoInt) bool {
 						return elem.Num1 == movieid && logger.SlicesContainsI(cfglistp.IgnoreMapLists, elem.Str)
 					}) {
 						continue
 					}
 				} else if listnamefilter != "" {
-					args.Arr[cfglistp.IgnoreMapListsLen] = &movieid
-					database.ScanrowsNArr(false, logger.JoinStrings("select count() from movies where ", listnamefilter, " and dbmovie_id = ?"), &checkid, args.Arr)
-					if checkid >= 1 {
+					if slices.Contains(existing, movieid) {
 						continue
 					}
 				}
 			}
 		} else {
-			logger.LogDynamicany("debug", "dbmovie not found in cache", &logger.StrImdb, &record[1])
+			logger.LogDynamicany1String("debug", "dbmovie not found in cache", logger.StrImdb, record[1])
 		}
-		allowed, _ = importfeed.AllowMovieImport(record[1], cfglistp.CfgList)
+		allowed, _ = importfeed.AllowMovieImport(&record[1], cfglistp.CfgList)
 		if allowed {
 			d.Movies = append(d.Movies, record[1])
 		}
 	}
-	logger.PLArrAny.Put(args)
-	//args = nil
-	parserimdb = nil
-	logger.LogDynamicany("info", "imdb list fetched", &logger.StrURL, &cfglistp.CfgList.URL, "entries to parse", len(d.Movies))
+	i := len(d.Movies)
+	logger.LogDynamicany2StrAny("info", "imdb list fetched", logger.StrURL, cfglistp.CfgList.URL, strtoparse, &i)
+}
+
+// getimdbfile fetches the IMDB CSV file specified in the config and parses it using the parseimdbcsv method.
+// It returns an error if the file cannot be opened.
+func (d *feedResults) getimdbfile(cfglistp *config.MediaListsConfig) error {
+	resp, err := os.Open(cfglistp.CfgList.IMDBCSVFile)
+	if err != nil {
+		return errcsvread
+	}
+	defer resp.Close()
+
+	d.parseimdbcsv(context.Background(), resp, cfglistp)
 	return nil
 }
 
@@ -297,66 +283,50 @@ func (d *feedResults) getimdbcsv(cfglistp *config.MediaListsConfig) error {
 // It handles looking up the correct list type and calling the appropriate
 // handler function. Returns a feedResults struct containing the parsed list
 // items on success, or an error if the list could not be fetched or parsed.
-func feeds(cfgp *config.MediaTypeConfig, list *config.MediaListsConfig) (*feedResults, error) {
-	if !list.Enabled {
-		return nil, logger.ErrDisabled
-	}
-	if list.CfgList == nil {
-		return nil, errors.New("list template not found")
-	}
-
-	if !list.CfgList.Enabled {
-		return nil, logger.ErrDisabled
-	}
-
-	d := plfeeds.Get()
-	var err error
+func feeds(cfgp *config.MediaTypeConfig, list *config.MediaListsConfig, d *feedResults) error {
 	switch list.CfgList.ListType {
 	case "seriesconfig":
-		d.Series, err = d.getseriesconfig(list.CfgList)
+		var err error
+		d.Series, err = getseriesconfig(list.CfgList)
+		return err
 	case "traktpublicshowlist":
-		err = d.gettraktserielist(4, list)
+		return d.gettraktserielist(4, list)
 	case "imdbcsv":
-		err = d.getimdbcsv(list)
+		return d.getimdbcsv(list)
+	case "imdbfile":
+		return d.getimdbfile(list)
 	case "traktpublicmovielist":
-		err = d.gettraktmovielist(4, list)
+		return d.gettraktmovielist(4, list)
 	case "traktmoviepopular":
-		err = d.gettraktmovielist(1, list)
+		return d.gettraktmovielist(1, list)
 	case "traktmovieanticipated":
-		err = d.gettraktmovielist(3, list)
+		return d.gettraktmovielist(3, list)
 	case "traktmovietrending":
-		err = d.gettraktmovielist(2, list)
+		return d.gettraktmovielist(2, list)
 	case "traktseriepopular":
-		err = d.gettraktserielist(1, list)
+		return d.gettraktserielist(1, list)
 	case "traktserieanticipated":
-		err = d.gettraktserielist(3, list)
+		return d.gettraktserielist(3, list)
 	case "traktserietrending":
-		err = d.gettraktserielist(2, list)
+		return d.gettraktserielist(2, list)
 	case "newznabrss":
-		err = searcher.Getnewznabrss(cfgp, list)
-	default:
-		err = errors.New("switch not found")
+		return searcher.Getnewznabrss(cfgp, list)
 	}
-	if err != nil {
-		d.Close()
-	}
-	return d, err
+	return errors.New("switch not found " + list.CfgList.ListType)
 }
 
 // getmovieid checks if the given movie ID exists in the database for the specified list.
 // It first checks the media cache if enabled, otherwise does a direct database query.
 // Returns true if the movie ID exists in the list, false otherwise.
 func getmovieid(dbid *uint, cfglistp *config.MediaListsConfig) bool {
-	if dbid == nil || *dbid == 0 {
-		return false
-	}
 	if config.SettingsGeneral.UseMediaCache {
-		if database.CacheOneStringTwoIntIndexFunc(logger.CacheMovie, func(elem database.DbstaticOneStringTwoInt) bool {
-			return elem.Num1 == *dbid && (elem.Str == cfglistp.Name || strings.EqualFold(elem.Str, cfglistp.Name))
+		dbidn := *dbid
+		if database.CacheOneStringTwoIntIndexFunc(logger.CacheMovie, func(elem *database.DbstaticOneStringTwoInt) bool {
+			return elem.Num1 == dbidn && (elem.Str == cfglistp.Name || strings.EqualFold(elem.Str, cfglistp.Name))
 		}) {
 			return true
 		}
-	} else if database.GetdatarowN[uint](false, database.QueryCountMoviesByDBIDList, dbid, &cfglistp.Name) >= 1 {
+	} else if database.Getdatarow2[uint](false, database.QueryCountMoviesByDBIDList, dbid, &cfglistp.Name) >= 1 {
 		return true
 	}
 	return false

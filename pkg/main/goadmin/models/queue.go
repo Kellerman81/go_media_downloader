@@ -16,10 +16,10 @@ func getQueueTable(ctx *context.Context) (userTable table.Table) {
 	for _, value := range worker.GetQueues() {
 		queue = append(queue, map[string]any{
 			"id":      i,
-			"queue":   value.Queue.Queue,
-			"job":     value.Queue.Name,
-			"added":   value.Queue.Added.Format("2006-01-02 15:04:05"),
-			"started": value.Queue.Started.Format("2006-01-02 15:04:05"),
+			"queue":   value.Queue,
+			"job":     value.Name,
+			"added":   value.Added.Format("2006-01-02 15:04:05"),
+			"started": value.Started.Format("2006-01-02 15:04:05"),
 		})
 		i++
 	}

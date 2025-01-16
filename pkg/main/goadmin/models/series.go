@@ -21,8 +21,8 @@ func getSeriesTable(ctx *context.Context) table.Table {
 
 	info.AddField("Id", "id", db.Integer).
 		FieldSortable()
-	//info.AddField("Created_at", "created_at", db.Datetime)
-	//info.AddField("Updated_at", "updated_at", db.Datetime)
+	// info.AddField("Created_at", "created_at", db.Datetime)
+	// info.AddField("Updated_at", "updated_at", db.Datetime)
 	info.AddField("Title", "Seriename", db.Text).FieldJoin(types.Join{
 		BaseTable: "series",
 		Field:     "dbserie_id",
@@ -74,10 +74,10 @@ func getSeriesTable(ctx *context.Context) table.Table {
 
 	formList := series.GetForm()
 	formList.AddField("Id", "id", db.Integer, form.Default).FieldDisplayButCanNotEditWhenCreate().FieldDisableWhenUpdate()
-	//formList.AddField("Created_at", "created_at", db.Datetime, form.Datetime)
-	//formList.AddField("Updated_at", "updated_at", db.Datetime, form.Datetime)
+	// formList.AddField("Created_at", "created_at", db.Datetime, form.Datetime)
+	// formList.AddField("Updated_at", "updated_at", db.Datetime, form.Datetime)
 	formList.AddField("Listname", "listname", db.Text, form.SelectSingle).FieldOptionsFromTable("series", "listname", "listname", func(sql *db.SQL) *db.SQL { return sql.GroupBy("listname").Select("listname") })
-	//formList.AddField("Listname", "listname", db.Text, form.Text)
+	// formList.AddField("Listname", "listname", db.Text, form.Text)
 	formList.AddField("Rootpath", "rootpath", db.Text, form.Text)
 	formList.AddField("Dbserie_id", "dbserie_id", db.Integer, form.SelectSingle).FieldOptionsFromTable("dbseries", "seriename", "id")
 	formList.AddField("Dont_upgrade", "dont_upgrade", db.Numeric, form.Switch).FieldOptions(types.FieldOptions{
@@ -109,8 +109,8 @@ func getSerieEpisodesTable(ctx *context.Context) table.Table {
 
 	detail.AddField("Id", "id", db.Integer).
 		FieldFilterable()
-	//info.AddField("Created_at", "created_at", db.Datetime)
-	//info.AddField("Updated_at", "updated_at", db.Datetime)
+	// info.AddField("Created_at", "created_at", db.Datetime)
+	// info.AddField("Updated_at", "updated_at", db.Datetime)
 	detail.AddField("Lastscan", "lastscan", db.Datetime)
 	detail.AddField("Blacklisted", "blacklisted", db.Numeric)
 	detail.AddField("Quality_reached", "quality_reached", db.Numeric)
@@ -139,17 +139,17 @@ func getSerieEpisodesTable(ctx *context.Context) table.Table {
 		Field:     "serie_id",
 		JoinField: "id",
 		Table:     "series",
-	}).FieldFilterable(types.FilterType{FormType: form.SelectSingle}).FieldFilterOptionsFromTable("series", "listname", "listname", func(sql *db.SQL) *db.SQL { return sql.GroupBy("listname") }).FieldFilterOptionExt(map[string]any{"allowClear": true}).FieldSortable() //.FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
+	}).FieldFilterable(types.FilterType{FormType: form.SelectSingle}).FieldFilterOptionsFromTable("series", "listname", "listname", func(sql *db.SQL) *db.SQL { return sql.GroupBy("listname") }).FieldFilterOptionExt(map[string]any{"allowClear": true}).FieldSortable() // .FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
 	info.AddField("Identifier", "Identifier", db.Text).FieldJoin(types.Join{
 		BaseTable: "serie_episodes",
 		Field:     "dbserie_episode_id",
 		JoinField: "id",
 		Table:     "dbserie_episodes",
 	}).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
-	//info.AddField("Created_at", "created_at", db.Datetime)
-	//info.AddField("Updated_at", "updated_at", db.Datetime)
-	//info.AddField("Lastscan", "lastscan", db.Datetime)
-	//info.AddField("Blacklisted", "blacklisted", db.Numeric)
+	// info.AddField("Created_at", "created_at", db.Datetime)
+	// info.AddField("Updated_at", "updated_at", db.Datetime)
+	// info.AddField("Lastscan", "lastscan", db.Datetime)
+	// info.AddField("Blacklisted", "blacklisted", db.Numeric)
 	info.AddField("Quality_reached", "quality_reached", db.Numeric).FieldBool("1", "0").FieldFilterable(types.FilterType{FormType: form.SelectSingle}).FieldFilterOptions(types.FieldOptions{
 		{Value: "0", Text: "No"},
 		{Value: "1", Text: "Yes"},
@@ -163,10 +163,10 @@ func getSerieEpisodesTable(ctx *context.Context) table.Table {
 		{Value: "0", Text: "No"},
 		{Value: "1", Text: "Yes"},
 	}).FieldFilterOptionExt(map[string]any{"allowClear": true}).FieldSortable()
-	//info.AddField("Dont_upgrade", "dont_upgrade", db.Numeric)
-	//info.AddField("Dont_search", "dont_search", db.Numeric)
-	//info.AddField("Dbserie_episode_id", "dbserie_episode_id", db.Integer)
-	//info.AddField("Serie_id", "serie_id", db.Integer)
+	// info.AddField("Dont_upgrade", "dont_upgrade", db.Numeric)
+	// info.AddField("Dont_search", "dont_search", db.Numeric)
+	// info.AddField("Dbserie_episode_id", "dbserie_episode_id", db.Integer)
+	// info.AddField("Serie_id", "serie_id", db.Integer)
 
 	// info.AddColumnButtons("Details", types.GetColumnButton("Files", icon.File,
 	// 	action.PopUpWithIframe("/admin/info/serie_episode_files", "see more", action.IframeData{Src: "/admin/info/serie_episode_files", AddParameterFn: func(ctx *context.Context) string {
@@ -183,7 +183,7 @@ func getSerieEpisodesTable(ctx *context.Context) table.Table {
 		}}, "900px", "560px")), types.GetActionIconButton(icon.History,
 		action.PopUpWithIframe("/admin/info/serie_episode_histories", "see more", action.IframeData{Src: "/admin/info/serie_episode_histories", AddParameterFn: func(ctx *context.Context) string {
 			return "&serie_episode_id=" + ctx.FormValue("id")
-		}}, "900px", "560px")), types.GetActionIconButton(icon.Search, //action.JumpInNewTab("/api/series/episodes/search/id/{{.Id}}?apikey="+cfg_general.WebApiKey, "Search")))
+		}}, "900px", "560px")), types.GetActionIconButton(icon.Search, // action.JumpInNewTab("/api/series/episodes/search/id/{{.Id}}?apikey="+cfg_general.WebApiKey, "Search")))
 		myPopUpWithIframe("/search", "see more", action.IframeData{Src: "/api/series/episodes/search/id/{{.Id}}?apikey=" + config.SettingsGeneral.WebAPIKey}, "900px", "560px")))
 
 	info.AddField("Dbserie_id", "dbserie_id", db.Integer).FieldDisplay(func(value types.FieldModel) any {
@@ -200,8 +200,8 @@ func getSerieEpisodesTable(ctx *context.Context) table.Table {
 
 	formList := serieEpisodes.GetForm()
 	formList.AddField("Id", "id", db.Integer, form.Default).FieldDisplayButCanNotEditWhenCreate().FieldDisableWhenUpdate()
-	//formList.AddField("Created_at", "created_at", db.Datetime, form.Datetime)
-	//formList.AddField("Updated_at", "updated_at", db.Datetime, form.Datetime)
+	// formList.AddField("Created_at", "created_at", db.Datetime, form.Datetime)
+	// formList.AddField("Updated_at", "updated_at", db.Datetime, form.Datetime)
 	formList.AddField("Lastscan", "lastscan", db.Datetime, form.Datetime)
 	formList.AddField("Blacklisted", "blacklisted", db.Numeric, form.Switch).FieldOptions(types.FieldOptions{
 		{Text: "Yes", Value: "1"},
@@ -228,7 +228,7 @@ func getSerieEpisodesTable(ctx *context.Context) table.Table {
 		{Text: "Yes", Value: "1"},
 		{Text: "No", Value: "0"},
 	})
-	formList.AddField("Dbserie_episode_id", "dbserie_episode_id", db.Integer, form.SelectSingle) //.FieldOptionsFromTable("dbserie_episodes", "identifier", "id", func(sql *db.SQL) *db.SQL { return sql.Where("dbserie_id", "=", value.dbserie_id) })
+	formList.AddField("Dbserie_episode_id", "dbserie_episode_id", db.Integer, form.SelectSingle) // .FieldOptionsFromTable("dbserie_episodes", "identifier", "id", func(sql *db.SQL) *db.SQL { return sql.Where("dbserie_id", "=", value.dbserie_id) })
 	formList.AddField("Serie_id", "serie_id", db.Integer, form.Number)
 	formList.AddField("Dbserie_id", "dbserie_id", db.Integer, form.SelectSingle).FieldOptionsFromTable("dbseries", "seriename", "id")
 
@@ -244,8 +244,8 @@ func getSerieEpisodeFilesTable(ctx *context.Context) table.Table {
 
 	detail.AddField("Id", "id", db.Integer).
 		FieldFilterable()
-	//detail.AddField("Created_at", "created_at", db.Datetime)
-	//detail.AddField("Updated_at", "updated_at", db.Datetime)
+	// detail.AddField("Created_at", "created_at", db.Datetime)
+	// detail.AddField("Updated_at", "updated_at", db.Datetime)
 	detail.AddField("Location", "location", db.Text)
 	detail.AddField("Filename", "filename", db.Text)
 	detail.AddField("Extension", "extension", db.Text)
@@ -279,8 +279,8 @@ func getSerieEpisodeFilesTable(ctx *context.Context) table.Table {
 
 	info.AddField("Id", "id", db.Integer).
 		FieldSortable()
-	//info.AddField("Created_at", "created_at", db.Datetime)
-	//info.AddField("Updated_at", "updated_at", db.Datetime)
+	// info.AddField("Created_at", "created_at", db.Datetime)
+	// info.AddField("Updated_at", "updated_at", db.Datetime)
 	info.AddField("Location", "location", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
 	// info.AddField("Filename", "filename", db.Text)
 	// info.AddField("Extension", "extension", db.Text)
@@ -294,7 +294,7 @@ func getSerieEpisodeFilesTable(ctx *context.Context) table.Table {
 	// info.AddField("Quality_id", "quality_id", db.Integer)
 	// info.AddField("Codec_id", "codec_id", db.Integer)
 	// info.AddField("Audio_id", "audio_id", db.Integer)
-	//info.AddField("Serie_id", "serie_id", db.Integer)
+	// info.AddField("Serie_id", "serie_id", db.Integer)
 	info.AddField("List", "Listname", db.Text).FieldJoin(types.Join{
 		BaseTable: "serie_episode_files",
 		Field:     "serie_id",
@@ -302,7 +302,7 @@ func getSerieEpisodeFilesTable(ctx *context.Context) table.Table {
 		Table:     "series",
 	}).FieldFilterable(types.FilterType{FormType: form.SelectSingle}).FieldFilterOptionsFromTable("series", "listname", "listname", func(sql *db.SQL) *db.SQL { return sql.GroupBy("listname") }).FieldFilterOptionExt(map[string]any{"allowClear": true}).FieldSortable()
 	// info.AddField("Serie_episode_id", "serie_episode_id", db.Integer)
-	//info.AddField("Dbserie_episode_id", "dbserie_episode_id", db.Integer)
+	// info.AddField("Dbserie_episode_id", "dbserie_episode_id", db.Integer)
 	info.AddField("Identifier", "Identifier", db.Text).FieldJoin(types.Join{
 		BaseTable: "serie_episode_files",
 		Field:     "dbserie_episode_id",
@@ -329,8 +329,8 @@ func getSerieEpisodeFilesTable(ctx *context.Context) table.Table {
 
 	formList := serieEpisodeFiles.GetForm()
 	formList.AddField("Id", "id", db.Integer, form.Default).FieldDisplayButCanNotEditWhenCreate().FieldDisableWhenUpdate()
-	//formList.AddField("Created_at", "created_at", db.Datetime, form.Datetime)
-	//formList.AddField("Updated_at", "updated_at", db.Datetime, form.Datetime)
+	// formList.AddField("Created_at", "created_at", db.Datetime, form.Datetime)
+	// formList.AddField("Updated_at", "updated_at", db.Datetime, form.Datetime)
 	formList.AddField("Location", "location", db.Text, form.Text)
 	formList.AddField("Filename", "filename", db.Text, form.Text)
 	formList.AddField("Extension", "extension", db.Text, form.Text)
@@ -370,8 +370,8 @@ func getSerieEpisodeHistoriesTable(ctx *context.Context) table.Table {
 
 	detail.AddField("Id", "id", db.Integer).
 		FieldFilterable()
-	//detail.AddField("Created_at", "created_at", db.Datetime)
-	//detail.AddField("Updated_at", "updated_at", db.Datetime)
+	// detail.AddField("Created_at", "created_at", db.Datetime)
+	// detail.AddField("Updated_at", "updated_at", db.Datetime)
 	detail.AddField("Title", "title", db.Text)
 	detail.AddField("Url", "url", db.Text)
 	detail.AddField("Indexer", "indexer", db.Text)
@@ -404,8 +404,8 @@ func getSerieEpisodeHistoriesTable(ctx *context.Context) table.Table {
 
 	info.AddField("Id", "id", db.Integer).
 		FieldSortable()
-	//info.AddField("Created_at", "created_at", db.Datetime)
-	//info.AddField("Updated_at", "updated_at", db.Datetime)
+	// info.AddField("Created_at", "created_at", db.Datetime)
+	// info.AddField("Updated_at", "updated_at", db.Datetime)
 	info.AddField("Title", "title", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
 	// info.AddField("Url", "url", db.Text)
 	info.AddField("Indexer", "indexer", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
@@ -453,8 +453,8 @@ func getSerieEpisodeHistoriesTable(ctx *context.Context) table.Table {
 
 	formList := serieEpisodeHistories.GetForm()
 	formList.AddField("Id", "id", db.Integer, form.Default).FieldDisplayButCanNotEditWhenCreate().FieldDisableWhenUpdate()
-	//formList.AddField("Created_at", "created_at", db.Datetime, form.Datetime)
-	//formList.AddField("Updated_at", "updated_at", db.Datetime, form.Datetime)
+	// formList.AddField("Created_at", "created_at", db.Datetime, form.Datetime)
+	// formList.AddField("Updated_at", "updated_at", db.Datetime, form.Datetime)
 	formList.AddField("Title", "title", db.Text, form.Text)
 	formList.AddField("Url", "url", db.Text, form.Text)
 	formList.AddField("Indexer", "indexer", db.Text, form.Text)
@@ -479,6 +479,7 @@ func getSerieEpisodeHistoriesTable(ctx *context.Context) table.Table {
 
 	return serieEpisodeHistories
 }
+
 func getSerieFileUnmatchedsTable(ctx *context.Context) table.Table {
 	serieFileUnmatcheds := table.NewDefaultTable(ctx, table.DefaultConfigWithDriverAndConnection("sqlite", "media"))
 
@@ -486,8 +487,8 @@ func getSerieFileUnmatchedsTable(ctx *context.Context) table.Table {
 	info.HideDeleteButton().HideEditButton().HideNewButton()
 
 	info.AddField("Id", "id", db.Integer).FieldSortable()
-	//info.AddField("Created_at", "created_at", db.Datetime)
-	//info.AddField("Updated_at", "updated_at", db.Datetime).FieldDate("2006-01-02 15:04")
+	// info.AddField("Created_at", "created_at", db.Datetime)
+	// info.AddField("Updated_at", "updated_at", db.Datetime).FieldDate("2006-01-02 15:04")
 	info.AddField("Listname", "listname", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
 	info.AddField("Filepath", "filepath", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
 	info.AddField("Last_checked", "last_checked", db.Datetime).FieldFilterable().FieldSortable()
@@ -497,8 +498,8 @@ func getSerieFileUnmatchedsTable(ctx *context.Context) table.Table {
 
 	formList := serieFileUnmatcheds.GetForm()
 	formList.AddField("Id", "id", db.Integer, form.Default).FieldDisplayButCanNotEditWhenCreate().FieldDisableWhenUpdate()
-	//formList.AddField("Created_at", "created_at", db.Datetime, form.Datetime)
-	//formList.AddField("Updated_at", "updated_at", db.Datetime, form.Datetime)
+	// formList.AddField("Created_at", "created_at", db.Datetime, form.Datetime)
+	// formList.AddField("Updated_at", "updated_at", db.Datetime, form.Datetime)
 	formList.AddField("Listname", "listname", db.Text, form.Text)
 	formList.AddField("Filepath", "filepath", db.Text, form.Text)
 	formList.AddField("Last_checked", "last_checked", db.Datetime, form.Datetime)
@@ -516,8 +517,8 @@ func getDbseriesTable(ctx *context.Context) table.Table {
 
 	detail.AddField("Id", "id", db.Integer).
 		FieldFilterable()
-	//detail.AddField("Created_at", "created_at", db.Datetime)
-	//detail.AddField("Updated_at", "updated_at", db.Datetime)
+	// detail.AddField("Created_at", "created_at", db.Datetime)
+	// detail.AddField("Updated_at", "updated_at", db.Datetime)
 	detail.AddField("Seriename", "seriename", db.Text)
 	detail.AddField("Aliases", "aliases", db.Text)
 	detail.AddField("Season", "season", db.Text)
@@ -551,8 +552,8 @@ func getDbseriesTable(ctx *context.Context) table.Table {
 	info := dbseries.GetInfo().HideFilterArea()
 
 	info.AddField("Id", "id", db.Integer).FieldSortable()
-	//info.AddField("Created_at", "created_at", db.Datetime)
-	//info.AddField("Updated_at", "updated_at", db.Datetime)
+	// info.AddField("Created_at", "created_at", db.Datetime)
+	// info.AddField("Updated_at", "updated_at", db.Datetime)
 	info.AddField("Seriename", "seriename", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
 	// info.AddField("Aliases", "aliases", db.Text)
 	// info.AddField("Season", "season", db.Text)
@@ -596,8 +597,8 @@ func getDbseriesTable(ctx *context.Context) table.Table {
 
 	formList := dbseries.GetForm()
 	formList.AddField("Id", "id", db.Integer, form.Default).FieldDisplayButCanNotEditWhenCreate().FieldDisableWhenUpdate()
-	//formList.AddField("Created_at", "created_at", db.Datetime, form.Datetime)
-	//formList.AddField("Updated_at", "updated_at", db.Datetime, form.Datetime)
+	// formList.AddField("Created_at", "created_at", db.Datetime, form.Datetime)
+	// formList.AddField("Updated_at", "updated_at", db.Datetime, form.Datetime)
 	formList.AddField("Seriename", "seriename", db.Text, form.Text)
 	formList.AddField("Aliases", "aliases", db.Text, form.Text)
 	formList.AddField("Season", "season", db.Text, form.Text)
@@ -630,6 +631,7 @@ func getDbseriesTable(ctx *context.Context) table.Table {
 
 	return dbseries
 }
+
 func getDbserieEpisodesTable(ctx *context.Context) table.Table {
 	dbserieEpisodes := table.NewDefaultTable(ctx, table.DefaultConfigWithDriverAndConnection("sqlite", "media"))
 
@@ -675,14 +677,14 @@ func getDbserieEpisodesTable(ctx *context.Context) table.Table {
 		JoinField: "id",
 		Table:     "dbseries",
 	}).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
-	//info.AddField("Created_at", "created_at", db.Datetime)
-	//info.AddField("Updated_at", "updated_at", db.Datetime)
-	//info.AddField("Episode", "episode", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
-	//info.AddField("Season", "season", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
+	// info.AddField("Created_at", "created_at", db.Datetime)
+	// info.AddField("Updated_at", "updated_at", db.Datetime)
+	// info.AddField("Episode", "episode", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
+	// info.AddField("Season", "season", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
 	info.AddField("Identifier", "identifier", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
 	info.AddField("Title", "title", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
-	//info.AddField("Overview", "overview", db.Text)
-	//info.AddField("Poster", "poster", db.Text)
+	// info.AddField("Overview", "overview", db.Text)
+	// info.AddField("Poster", "poster", db.Text)
 	info.AddField("Dbserie_id", "dbserie_id", db.Integer).FieldDisplay(func(value types.FieldModel) any {
 		return template.Default().
 			Link().
@@ -699,8 +701,8 @@ func getDbserieEpisodesTable(ctx *context.Context) table.Table {
 
 	formList := dbserieEpisodes.GetForm()
 	formList.AddField("Id", "id", db.Integer, form.Default).FieldDisplayButCanNotEditWhenCreate().FieldDisableWhenUpdate()
-	//formList.AddField("Created_at", "created_at", db.Datetime, form.Datetime)
-	//formList.AddField("Updated_at", "updated_at", db.Datetime, form.Datetime)
+	// formList.AddField("Created_at", "created_at", db.Datetime, form.Datetime)
+	// formList.AddField("Updated_at", "updated_at", db.Datetime, form.Datetime)
 	formList.AddField("Episode", "episode", db.Text, form.Text)
 	formList.AddField("Season", "season", db.Text, form.Text)
 	formList.AddField("Identifier", "identifier", db.Text, form.Text)
@@ -723,8 +725,8 @@ func getDbserieAlternatesTable(ctx *context.Context) table.Table {
 
 	info.AddField("Id", "id", db.Integer).
 		FieldSortable()
-	//info.AddField("Created_at", "created_at", db.Datetime)
-	//info.AddField("Updated_at", "updated_at", db.Datetime)
+	// info.AddField("Created_at", "created_at", db.Datetime)
+	// info.AddField("Updated_at", "updated_at", db.Datetime)
 	info.AddField("Title", "title", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
 	info.AddField("Slug", "slug", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
 	info.AddField("Dbserie_id", "dbserie_id", db.Integer).FieldDisplay(func(value types.FieldModel) any {
@@ -742,8 +744,8 @@ func getDbserieAlternatesTable(ctx *context.Context) table.Table {
 
 	formList := dbserieAlternates.GetForm()
 	formList.AddField("Id", "id", db.Integer, form.Default).FieldDisplayButCanNotEditWhenCreate().FieldDisableWhenUpdate()
-	//formList.AddField("Created_at", "created_at", db.Datetime, form.Datetime)
-	//formList.AddField("Updated_at", "updated_at", db.Datetime, form.Datetime)
+	// formList.AddField("Created_at", "created_at", db.Datetime, form.Datetime)
+	// formList.AddField("Updated_at", "updated_at", db.Datetime, form.Datetime)
 	formList.AddField("Title", "title", db.Text, form.Text)
 	formList.AddField("Slug", "slug", db.Text, form.Text)
 	formList.AddField("Dbserie_id", "dbserie_id", db.Integer, form.SelectSingle).FieldOptionsFromTable("dbseries", "seriename", "id")

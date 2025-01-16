@@ -7,131 +7,132 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 )
 
 type Movie struct {
-	ID             uint
+	QualityProfile string `db:"quality_profile"`
+	Listname       string
+	Rootpath       string
+	Lastscan       sql.NullTime
 	CreatedAt      time.Time `db:"created_at"`
 	UpdatedAt      time.Time `db:"updated_at"`
-	Lastscan       sql.NullTime
+	ID             uint
+	DbmovieID      uint `db:"dbmovie_id"`
 	Blacklisted    bool
-	QualityReached bool   `db:"quality_reached"`
-	QualityProfile string `db:"quality_profile"`
+	QualityReached bool `db:"quality_reached"`
 	Missing        bool
 	DontUpgrade    bool `db:"dont_upgrade"`
 	DontSearch     bool `db:"dont_search"`
-	Listname       string
-	Rootpath       string
-	DbmovieID      uint `db:"dbmovie_id"`
 }
 
 type MovieFileUnmatched struct {
-	ID          uint
-	CreatedAt   time.Time `db:"created_at"`
-	UpdatedAt   time.Time `db:"updated_at"`
 	Listname    string
 	Filepath    string
-	LastChecked sql.NullTime `db:"last_checked"`
 	ParsedData  string       `db:"parsed_data"`
+	LastChecked sql.NullTime `db:"last_checked"`
+	CreatedAt   time.Time    `db:"created_at"`
+	UpdatedAt   time.Time    `db:"updated_at"`
+	ID          uint
 }
 
 type ResultMovies struct {
 	Dbmovie
 	Listname       string
-	Lastscan       sql.NullTime
-	Blacklisted    bool
-	QualityReached bool   `db:"quality_reached"`
 	QualityProfile string `db:"quality_profile"`
 	Rootpath       string
-	Missing        bool
+	Lastscan       sql.NullTime
 	DbmovieID      uint `db:"dbmovie_id"`
+	Blacklisted    bool
+	QualityReached bool `db:"quality_reached"`
+	Missing        bool
 }
 
 type MovieFile struct {
-	ID             uint
-	CreatedAt      time.Time `db:"created_at"`
-	UpdatedAt      time.Time `db:"updated_at"`
 	Location       string
 	Filename       string
 	Extension      string
-	QualityProfile string `db:"quality_profile"`
+	QualityProfile string    `db:"quality_profile"`
+	CreatedAt      time.Time `db:"created_at"`
+	UpdatedAt      time.Time `db:"updated_at"`
+	ResolutionID   uint      `db:"resolution_id"`
+	QualityID      uint      `db:"quality_id"`
+	CodecID        uint      `db:"codec_id"`
+	AudioID        uint      `db:"audio_id"`
+	MovieID        uint      `db:"movie_id"`
+	DbmovieID      uint      `db:"dbmovie_id"`
+	ID             uint
+	Height         uint16
+	Width          uint16
 	Proper         bool
 	Extended       bool
 	Repack         bool
-	Height         uint16
-	Width          uint16
+}
+
+type MovieHistory struct {
+	Title          string
+	URL            string
+	Indexer        string
+	HistoryType    string `db:"type"`
+	Target         string
+	QualityProfile string    `db:"quality_profile"`
+	CreatedAt      time.Time `db:"created_at"`
+	UpdatedAt      time.Time `db:"updated_at"`
+	DownloadedAt   time.Time `db:"downloaded_at"`
+	ID             uint
 	ResolutionID   uint `db:"resolution_id"`
 	QualityID      uint `db:"quality_id"`
 	CodecID        uint `db:"codec_id"`
 	AudioID        uint `db:"audio_id"`
 	MovieID        uint `db:"movie_id"`
 	DbmovieID      uint `db:"dbmovie_id"`
-}
-
-type MovieHistory struct {
-	ID             uint
-	CreatedAt      time.Time `db:"created_at"`
-	UpdatedAt      time.Time `db:"updated_at"`
-	Title          string
-	URL            string
-	Indexer        string
-	HistoryType    string `db:"type"`
-	Target         string
-	DownloadedAt   time.Time `db:"downloaded_at"`
 	Blacklisted    bool
-	QualityProfile string `db:"quality_profile"`
-	ResolutionID   uint   `db:"resolution_id"`
-	QualityID      uint   `db:"quality_id"`
-	CodecID        uint   `db:"codec_id"`
-	AudioID        uint   `db:"audio_id"`
-	MovieID        uint   `db:"movie_id"`
-	DbmovieID      uint   `db:"dbmovie_id"`
 }
 
 type Dbmovie struct {
-	ID               uint
-	CreatedAt        time.Time `db:"created_at"`
-	UpdatedAt        time.Time `db:"updated_at"`
-	Title            string
-	ReleaseDate      sql.NullTime `db:"release_date" json:"release_date" time_format:"2006-01-02" time_utc:"1"`
-	Year             uint16
-	Adult            bool
-	Budget           int
 	Genres           string
 	OriginalLanguage string `db:"original_language"`
 	OriginalTitle    string `db:"original_title"`
 	Overview         string
-	Popularity       float32
-	Revenue          int
-	Runtime          int
+	Title            string
 	SpokenLanguages  string `db:"spoken_languages"`
 	Status           string
 	Tagline          string
-	VoteAverage      float32 `db:"vote_average"`
-	VoteCount        int32   `db:"vote_count"`
-	TraktID          int     `db:"trakt_id"`
-	MoviedbID        int     `db:"moviedb_id"`
-	ImdbID           string  `db:"imdb_id"`
-	FreebaseMID      string  `db:"freebase_m_id"`
-	FreebaseID       string  `db:"freebase_id"`
-	FacebookID       string  `db:"facebook_id"`
-	InstagramID      string  `db:"instagram_id"`
-	TwitterID        string  `db:"twitter_id"`
+	ImdbID           string `db:"imdb_id"`
+	FreebaseMID      string `db:"freebase_m_id"`
+	FreebaseID       string `db:"freebase_id"`
+	FacebookID       string `db:"facebook_id"`
+	InstagramID      string `db:"instagram_id"`
+	TwitterID        string `db:"twitter_id"`
 	URL              string
 	Backdrop         string
 	Poster           string
 	Slug             string
+	ReleaseDate      sql.NullTime `db:"release_date" json:"release_date" time_format:"2006-01-02" time_utc:"1"`
+	CreatedAt        time.Time    `db:"created_at"`
+	UpdatedAt        time.Time    `db:"updated_at"`
+	Popularity       float32
+	VoteAverage      float32 `db:"vote_average"`
+	Budget           int
+	Revenue          int
+	Runtime          int
+	TraktID          int `db:"trakt_id"`
+	MoviedbID        int `db:"moviedb_id"`
+	ID               uint
+	VoteCount        int32 `db:"vote_count"`
+	Year             uint16
+	Adult            bool
 }
 
 type DbmovieTitle struct {
-	ID        uint
-	CreatedAt time.Time `db:"created_at"`
-	UpdatedAt time.Time `db:"updated_at"`
-	DbmovieID uint      `db:"dbmovie_id"`
 	Title     string
 	Slug      string
 	Region    string
+	CreatedAt time.Time `db:"created_at"`
+	UpdatedAt time.Time `db:"updated_at"`
+	ID        uint
+	DbmovieID uint `db:"dbmovie_id"`
 }
 
 // movieGetImdbMetadata fetches movie metadata from IMDB.
@@ -143,8 +144,8 @@ func (movie *Dbmovie) MovieGetImdbMetadata(overwrite bool) {
 	if movie.ImdbID == "" {
 		return
 	}
-	logger.AddImdbPrefixP(&movie.ImdbID)
-	movie.GetImdbTitle(&movie.ImdbID, overwrite)
+	movie.ImdbID = logger.AddImdbPrefixP(movie.ImdbID)
+	movie.GetImdbTitle(overwrite)
 }
 
 // GetImdbTitle queries the imdb_titles table to populate movie details from IMDb.
@@ -152,11 +153,12 @@ func (movie *Dbmovie) MovieGetImdbMetadata(overwrite bool) {
 // It will populate the movie struct with data from IMDb if fields are empty or overwrite is true.
 // This handles setting the title, year, adult flag, genres, original title, runtime, slug, url,
 // vote average, and vote count.
-func (movie *Dbmovie) GetImdbTitle(arg *string, overwrite bool) {
-	imdbdata, err := structscanG[ImdbTitle]("select * from imdb_titles where tconst = ?", true, arg)
-	if err != nil {
+func (movie *Dbmovie) GetImdbTitle(overwrite bool) {
+	if movie.ImdbID == "" {
 		return
 	}
+	var imdbdata ImdbTitle
+	GetdatarowArgsImdb("select primary_title, start_year, is_adult, genres, original_title, runtime_minutes, slug from imdb_titles where tconst = ?", &movie.ImdbID, &imdbdata.PrimaryTitle, &imdbdata.StartYear, &imdbdata.IsAdult, &imdbdata.Genres, &imdbdata.OriginalTitle, &imdbdata.RuntimeMinutes, &imdbdata.Slug)
 
 	if (movie.Title == "" || overwrite) && imdbdata.PrimaryTitle != "" {
 		movie.Title = imdbdata.PrimaryTitle
@@ -175,9 +177,9 @@ func (movie *Dbmovie) GetImdbTitle(arg *string, overwrite bool) {
 	}
 	if (movie.Runtime == 0 || movie.Runtime == 1 || movie.Runtime == 2 || movie.Runtime == 3 || movie.Runtime == 4 || movie.Runtime == 60 || movie.Runtime == 90 || movie.Runtime == 120 || overwrite) && imdbdata.RuntimeMinutes != 0 {
 		if movie.Runtime != 0 && (imdbdata.RuntimeMinutes == 1 || imdbdata.RuntimeMinutes == 2 || imdbdata.RuntimeMinutes == 3 || imdbdata.RuntimeMinutes == 4) {
-			logger.LogDynamicany("debug", "skipped imdb movie runtime for", &logger.StrImdb, &movie.ImdbID)
+			logger.LogDynamicany1String("debug", "skipped imdb movie runtime for", logger.StrImdb, movie.ImdbID)
 		} else {
-			logger.LogDynamicany("debug", "set imdb movie runtime for", &logger.StrImdb, &movie.ImdbID)
+			logger.LogDynamicany1String("debug", "set imdb movie runtime for", logger.StrImdb, movie.ImdbID)
 			movie.Runtime = imdbdata.RuntimeMinutes
 		}
 	}
@@ -188,8 +190,7 @@ func (movie *Dbmovie) GetImdbTitle(arg *string, overwrite bool) {
 		movie.URL = logger.JoinStrings("https://www.imdb.com/title/", movie.ImdbID)
 	}
 
-	movie.GetImdbRating(&movie.ImdbID, overwrite)
-	//imdbdata.Close()
+	movie.GetImdbRating(overwrite)
 }
 
 // GetDbmovieByIDP retrieves a Dbmovie by ID. It takes a uint ID and a
@@ -197,21 +198,39 @@ func (movie *Dbmovie) GetImdbTitle(arg *string, overwrite bool) {
 // using the structscan function to select the dbmovie data and scan it into
 // the Dbmovie struct. Returns an error if there was a problem retrieving the data.
 func (movie *Dbmovie) GetDbmovieByIDP(id *uint) error {
-	return structscan1(logger.DBMovieDetails, false, movie, id)
+	return structscan1(logger.DBMovieDetails, movie, id)
+}
+
+// MovieFindDBIDByImdbParser sets the ID field of the Dbmovie struct based on the ImdbID field.
+// If the ImdbID is empty, the ID is set to 0 and the function returns.
+// If the UseMediaCache setting is true, the ID is set by calling CacheThreeStringIntIndexFunc with the ImdbID.
+// Otherwise, the ID is set by executing a SQL query to select the id from the dbmovies table where the imdb_id matches the ImdbID.
+func (movie *Dbmovie) MovieFindDBIDByImdbParser() {
+	if movie.ImdbID == "" {
+		movie.ID = 0
+		return
+	}
+	movie.ImdbID = logger.AddImdbPrefixP(movie.ImdbID)
+	if config.SettingsGeneral.UseMediaCache {
+		movie.ID = CacheThreeStringIntIndexFunc(logger.CacheDBMovie, &movie.ImdbID)
+		return
+	}
+	Scanrows1dyn(false, "select id from dbmovies where imdb_id = ?", &movie.ID, &movie.ImdbID)
 }
 
 // GetImdbRating queries the imdb_ratings table to get the average rating and number of votes for the given IMDb ID.
 // It populates the rating fields on the Dbmovie struct if they are empty or overwrite is true.
-func (movie *Dbmovie) GetImdbRating(arg *string, overwrite bool) {
-	imdbratedata, err := structscanG[ImdbRatings]("select * from imdb_ratings where tconst = ?", true, arg)
-	if err == nil {
-		if (movie.VoteAverage == 0 || overwrite) && imdbratedata.AverageRating != 0 {
-			movie.VoteAverage = imdbratedata.AverageRating
-		}
-		if (movie.VoteCount == 0 || overwrite) && imdbratedata.NumVotes != 0 {
-			movie.VoteCount = imdbratedata.NumVotes
-		}
-		//imdbratedata.Close()
+func (movie *Dbmovie) GetImdbRating(overwrite bool) {
+	if movie.ImdbID == "" {
+		return
+	}
+	var imdbratedata ImdbRatings
+	GetdatarowArgsImdb("select num_votes, average_rating from imdb_ratings where tconst = ?", &movie.ImdbID, &imdbratedata.NumVotes, &imdbratedata.AverageRating)
+	if (movie.VoteAverage == 0 || overwrite) && imdbratedata.AverageRating != 0 {
+		movie.VoteAverage = imdbratedata.AverageRating
+	}
+	if (movie.VoteCount == 0 || overwrite) && imdbratedata.NumVotes != 0 {
+		movie.VoteCount = imdbratedata.NumVotes
 	}
 }
 
@@ -221,106 +240,83 @@ func (movie *Dbmovie) GetImdbRating(arg *string, overwrite bool) {
 // movie data and scan it into the Movie struct.
 // Returns an error if there was a problem retrieving the data.
 func (u *Movie) GetMoviesByIDP(id *uint) error {
-	return structscan1("select id,created_at,updated_at,lastscan,blacklisted,quality_reached,quality_profile,missing,dont_upgrade,dont_search,listname,rootpath,dbmovie_id from movies where id = ?", false, u, id)
+	return structscan1("select id,created_at,updated_at,blacklisted,quality_reached,quality_profile,missing,dont_upgrade,dont_search,listname,rootpath,dbmovie_id from movies where id = ?", u, id)
 }
 
 // ChecknzbtitleB checks if the nzbtitle matches the movietitle and year.
 // It compares the movietitle and nzbtitle directly, and also tries
 // appending/removing the year, converting to slugs, etc.
 // It is used to fuzzy match nzb titles to movie info during parsing.
-func ChecknzbtitleB(movietitle string, movietitlesluga any, nzbtitle string, allowpm1 bool, yearu uint16) bool {
+func ChecknzbtitleB(movietitle, movietitlesluga, nzbtitle string, allowpm1 bool, yearu uint16) bool {
 	if movietitle == "" {
 		return false
 	}
-	if movietitle == nzbtitle || strings.EqualFold(movietitle, nzbtitle) {
-		return true
-	}
-	if logger.ContainsI(nzbtitle, movietitle) {
-		if yearu != 0 {
-			year := logger.IntToString(yearu)
-			checkstr1 := logger.JoinStrings(movietitle, logger.StrSpace, year)
-			checkstr2 := logger.JoinStrings(movietitle, " (", year, ")")
-			if checkstr1 == nzbtitle ||
-				checkstr2 == nzbtitle ||
-				strings.EqualFold(checkstr1, nzbtitle) ||
-				strings.EqualFold(checkstr2, nzbtitle) {
+	if movietitle == nzbtitle || strings.EqualFold(movietitle, nzbtitle) || logger.ContainsI(nzbtitle, movietitle) {
+		if yearu == 0 {
+			return true
+		}
+		if strings.Contains(nzbtitle, logger.IntToString(yearu)) {
+			return true
+		}
+		if allowpm1 {
+			if strings.Contains(nzbtitle, logger.IntToString(yearu+1)) {
 				return true
 			}
-			if allowpm1 {
-				yearp := logger.IntToString(yearu + 1)
-				checkstr1 = logger.JoinStrings(movietitle, logger.StrSpace, yearp) //JoinStrings
-				checkstr2 = logger.JoinStrings(movietitle, " (", yearp, ")")       //JoinStrings
-				if checkstr1 == nzbtitle ||
-					checkstr2 == nzbtitle ||
-					strings.EqualFold(checkstr1, nzbtitle) ||
-					strings.EqualFold(checkstr2, nzbtitle) {
-					return true
-				}
-
-				yearm := logger.IntToString(yearu - 1)
-				checkstr1 = logger.JoinStrings(movietitle, logger.StrSpace, yearm) //JoinStrings
-				checkstr2 = logger.JoinStrings(movietitle, " (", yearm, ")")       //JoinStrings
-				if checkstr1 == nzbtitle ||
-					checkstr2 == nzbtitle ||
-					strings.EqualFold(checkstr1, nzbtitle) ||
-					strings.EqualFold(checkstr2, nzbtitle) {
-					return true
-				}
+			if strings.Contains(nzbtitle, logger.IntToString(yearu-1)) {
+				return true
 			}
 		}
 	}
 
 	var movietitleslug []byte
-	switch tt := movietitlesluga.(type) {
-	case string:
-		if tt != "" {
-			movietitleslug = logger.StringToByteArr(tt)
-		}
-	case []byte:
-		movietitleslug = tt
-	}
-	if len(movietitleslug) == 0 {
+	if movietitlesluga != "" {
+		ret := logger.PlBuffer.Get()
+		defer logger.PlBuffer.Put(ret)
+		ret.WriteString(movietitlesluga)
+		movietitleslug = ret.Bytes()
+	} else {
 		movietitleslug = logger.StringToSlugBytes(movietitle)
 	}
 	slugged := logger.StringToSlugBytes(nzbtitle)
-	//defer clear(slugged)
 	if len(slugged) == 0 {
 		return false
 	}
-	if bytes.Equal(movietitleslug, slugged) {
-		return true
+	if bytes.ContainsRune(movietitleslug, '-') {
+		movietitleslug = bytes.ReplaceAll(movietitleslug, arrdashbyte, nil)
 	}
-
-	movietitleslug = logger.BytesRemoveAllRunesP(movietitleslug, '-')
-	slugged = logger.BytesRemoveAllRunesP(slugged, '-')
-	if bytes.Equal(movietitleslug, slugged) {
-		return true
+	if bytes.ContainsRune(slugged, '-') {
+		slugged = bytes.ReplaceAll(slugged, arrdashbyte, nil)
 	}
-	if !bytes.Contains(slugged, movietitleslug) {
-		return false
-	}
-
-	if yearu != 0 {
+	if bytes.Equal(movietitleslug, slugged) || bytes.Contains(slugged, movietitleslug) {
+		if yearu == 0 {
+			return true
+		}
 		bld := logger.PlAddBuffer.Get()
 		defer logger.PlAddBuffer.Put(bld)
-		bld.WriteUInt16(yearu)
-		if bytes.Contains(slugged, bld.Bytes()) && bytes.Equal(append(movietitleslug, bld.Bytes()...), slugged) {
+		if bufferCheckYear(bld, slugged, yearu) {
 			return true
 		}
 
 		if allowpm1 {
-			bld.Reset()
-			bld.WriteUInt16(yearu + 1)
-			if bytes.Contains(slugged, bld.Bytes()) && bytes.Equal(append(movietitleslug, bld.Bytes()...), slugged) {
+			if bufferCheckYear(bld, slugged, yearu+1) {
 				return true
 			}
-			bld.Reset()
-			bld.WriteUInt16(yearu - 1)
-			if bytes.Contains(slugged, bld.Bytes()) && bytes.Equal(append(movietitleslug, bld.Bytes()...), slugged) {
+			if bufferCheckYear(bld, slugged, yearu-1) {
 				return true
 			}
 		}
 	}
 
 	return false
+}
+
+var arrdashbyte = []byte{'-'}
+
+// bufferCheckYear checks if the given slugged byte slice contains the year represented by the yearu parameter.
+// It resets the provided AddBuffer, writes the yearu value to it, and then checks if the slugged byte slice
+// contains the bytes written to the buffer.
+func bufferCheckYear(bld *logger.AddBuffer, slugged []byte, yearu uint16) bool {
+	bld.Reset()
+	bld.WriteUInt16(yearu)
+	return bytes.Contains(slugged, bld.Bytes())
 }

@@ -7,8 +7,7 @@ import (
 	"time"
 )
 
-//Source: https://github.com/mrobinsn/go-sabnzbd - fixed:add category
-
+// Source: https://github.com/mrobinsn/go-sabnzbd - fixed:add category.
 type BytesFromGB int
 
 func (b *BytesFromGB) UnmarshalJSON(data []byte) error {

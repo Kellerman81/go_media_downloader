@@ -11,7 +11,7 @@ import (
 // and priority as parameters.
 // It returns any error from creating the Sabnzbd client, authenticating,
 // validating the authentication method, or adding the NZB.
-func SendToSabnzbd(server string, apikey string, urlv string, category string, nzbname string, priority int) error {
+func SendToSabnzbd(server, apikey, urlv, category, nzbname string, priority int) error {
 	s, err := sabnzbd.New(sabnzbd.Addr(server), sabnzbd.ApikeyAuth(apikey))
 	if err != nil {
 		return err

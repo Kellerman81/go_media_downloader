@@ -13,8 +13,7 @@ import (
 	"sync"
 )
 
-//Source: https://github.com/mrobinsn/go-sabnzbd - fixed:add category
-
+// Source: https://github.com/mrobinsn/go-sabnzbd - fixed:add category.
 const (
 	Byte  = 1
 	KByte = Byte * 1000
@@ -192,15 +191,15 @@ func (su *sabnzbdURL) Unsecure() {
 
 func (su *sabnzbdURL) CallJSON(r any) error {
 	httpClient := &http.Client{Transport: su.rt}
-	//fmt.Printf("GET URL: %s", su.String())
+	// fmt.Printf("GET URL: %s", su.String())
 	resp, err := httpClient.Get(su.String())
 	if err != nil {
 		return fmt.Errorf("sabnzbdURL:CallJSON: failed to get: %s: %v", su.String(), err)
 	}
 	defer resp.Body.Close()
-	//fmt.Printf("Status: %v\n", resp.Status)
+	// fmt.Printf("Status: %v\n", resp.Status)
 
-	//decoder := json.NewDecoder(resp.Body)
+	// decoder := json.NewDecoder(resp.Body)
 	respStr, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return fmt.Errorf("sabnzbdURL:CallJSON: failed to read response: %v", err)

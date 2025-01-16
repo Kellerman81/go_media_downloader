@@ -14,8 +14,8 @@ func getQualitiesTable(ctx *context.Context) table.Table {
 	info := qualities.GetInfo().HideFilterArea()
 
 	info.AddField("Id", "id", db.Integer).FieldSortable()
-	//info.AddField("Created_at", "created_at", db.Datetime)
-	//info.AddField("Updated_at", "updated_at", db.Datetime)
+	// info.AddField("Created_at", "created_at", db.Datetime)
+	// info.AddField("Updated_at", "updated_at", db.Datetime)
 	info.AddField("Type", "type", db.Integer).FieldDisplay(func(value types.FieldModel) any {
 		stringvar := ""
 		switch value.Value {
@@ -48,8 +48,8 @@ func getQualitiesTable(ctx *context.Context) table.Table {
 
 	formList := qualities.GetForm()
 	formList.AddField("Id", "id", db.Integer, form.Default).FieldDisplayButCanNotEditWhenCreate().FieldDisableWhenUpdate()
-	//formList.AddField("Created_at", "created_at", db.Datetime, form.Datetime)
-	//formList.AddField("Updated_at", "updated_at", db.Datetime, form.Datetime)
+	// formList.AddField("Created_at", "created_at", db.Datetime, form.Datetime)
+	// formList.AddField("Updated_at", "updated_at", db.Datetime, form.Datetime)
 	formList.AddField("Type", "type", db.Integer, form.SelectSingle).
 		FieldOptions(types.FieldOptions{
 			{Text: "Resolution", Value: "1"},

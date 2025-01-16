@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -14,14 +15,14 @@ import (
 	"golang.org/x/oauth2"
 )
 
-//Series Config
+// Series Config
 
 type MainSerieConfig struct {
 	// Serie is a slice of SerieConfig structs that defines the series configurations
 	Serie []SerieConfig `toml:"series"`
 }
 
-// SerieConfig defines the configuration for a TV series
+// SerieConfig defines the configuration for a TV series.
 type SerieConfig struct {
 	// Name is the primary name for the series
 	Name string `toml:"name" comment:"the primary name for the serie"`
@@ -62,7 +63,7 @@ type SerieConfig struct {
 
 // Main Config
 // mainConfig struct defines the overall configuration
-// It contains fields for each configuration section
+// It contains fields for each configuration section.
 type mainConfig struct {
 	// GeneralConfig contains general configuration settings
 	General GeneralConfig `toml:"general" comment:"the general config"`
@@ -120,14 +121,14 @@ type GeneralConfig struct {
 	// LogZeroValues determines whether to log variables without a value.
 	LogZeroValues bool `toml:"log_zero_values" comment:"do you want to log variables without a value? - default: false"`
 	// WorkerMetadata defines how many parallel jobs of list retrievals to run - default: 1
-	WorkerMetadata uint8 `toml:"worker_metadata" comment:"how many parrallel jobs of list retrievals do you want to run? too many might decrease performance - default: 1"`
+	WorkerMetadata int `toml:"worker_metadata" comment:"how many parallel jobs of list retrievals do you want to run? too many might decrease performance - default: 1"`
 	// WorkerFiles defines how many parallel jobs of file scanning to run - default: 1
-	WorkerFiles uint8 `toml:"worker_files" comment:"how many parrallel jobs of file scanning do you want to run? i suggest one - default: 1"`
+	WorkerFiles int `toml:"worker_files" comment:"how many parallel jobs of file scanning do you want to run? i suggest one - default: 1"`
 
 	// WorkerParse defines how many parallel parsings to run for list retrievals - default: 1
-	WorkerParse uint8 `toml:"worker_parse" comment:"for list retrievals - how many parsings do you want to do at a time? - default: 1"`
+	WorkerParse int `toml:"worker_parse" comment:"for list retrievals - how many parsings do you want to do at a time? - default: 1"`
 	// WorkerSearch defines how many parallel indexer scan jobs to run - default: 1
-	WorkerSearch uint8 `toml:"worker_search" comment:"how many parrallel jobs of indexer scans do you want to run? too many might decrease performance - default: 1"`
+	WorkerSearch int `toml:"worker_search" comment:"how many parallel jobs of indexer scans do you want to run? too many might decrease performance - default: 1"`
 	// WorkerIndexer defines how many indexers to query in parallel for each scan job - default: 1
 	WorkerIndexer int `toml:"worker_indexer" comment:"for indexer scans - how many indexers do you want to query at a time? - default: 1"`
 	// OmdbAPIKey is the API key for OMDB - get one at https://www.omdbapi.com/apikey.aspx
@@ -143,7 +144,7 @@ type GeneralConfig struct {
 	// CacheAutoExtend defines whether cache expiration will be reset on access - default: false
 	CacheAutoExtend bool `toml:"cache_auto_extend" comment:"should the expiration be reset when the cache is accessed? - default: false"`
 	// SearcherSize defines initial size of found entries slice - default: 5000
-	SearcherSize int `toml:"searcher_size" comment:"the initial size of the found entries slice - indexercount mulitplied by maxentries mulitplied by a number of alternate titles - default 5000"`
+	SearcherSize int `toml:"searcher_size" comment:"the initial size of the found entries slice - indexercount multiplied by maxentries multiplied by a number of alternate titles - default 5000"`
 	// MovieMetaSourceImdb defines whether to scan IMDB for movie metadata - default: false
 	MovieMetaSourceImdb bool `toml:"movie_meta_source_imdb" comment:"should imdb be scanned for movie metadata? - default: false"`
 
@@ -252,7 +253,7 @@ type GeneralConfig struct {
 	FailedIndexerBlockTime int `toml:"failed_indexer_block_time" comment:"how long (minitues) should an indexer be blocked after fails - default: 5"`
 
 	// MaxDatabaseBackups defines the maximum number of database backups to retain
-	MaxDatabaseBackups uint8 `toml:"max_database_backups" comment:"how many backups of the database do you want to keep - default: 0 (disable backups)"`
+	MaxDatabaseBackups int `toml:"max_database_backups" comment:"how many backups of the database do you want to keep - default: 0 (disable backups)"`
 
 	// DatabaseBackupStopTasks specifies whether to stop background tasks during database backups
 	DatabaseBackupStopTasks bool `toml:"database_backup_stop_tasks" comment:"should we stop the task worker and scheduler during backup?"`
@@ -274,12 +275,14 @@ type GeneralConfig struct {
 	// Default is 10 seconds
 	TraktTimeoutSeconds uint16 `toml:"trakt_timeout_seconds" comment:"how long should the http timeout be for trakt calls (seconds)? - default: 10"`
 
-	//UseGoDir                           bool     `toml:"use_godir"`
-	//ConcurrentScheduler                int      `toml:"concurrent_scheduler"`
-	//EnableFileWatcher                  bool     `toml:"enable_file_watcher"`
+	// Jobs To Run
+	Jobs map[string]func(uint32) `toml:"-"`
+	// UseGoDir                           bool     `toml:"use_godir"`
+	// ConcurrentScheduler                int      `toml:"concurrent_scheduler"`
+	// EnableFileWatcher                  bool     `toml:"enable_file_watcher"`
 }
 
-// ImdbConfig defines the configuration for the IMDb indexer
+// ImdbConfig defines the configuration for the IMDb indexer.
 type ImdbConfig struct {
 	// Indexedtypes is an array of strings specifying the types of IMDb media to import
 	// Valid values are 'movie', 'tvMovie', 'tvmovie', 'tvSeries', 'tvseries', 'video'
@@ -316,7 +319,7 @@ type ImdbConfig struct {
 	UseCache bool `toml:"use_cache" comment:"use cache for sql queries - might reduce execution time - default: false"`
 }
 
-// mediaConfig defines the configuration for media types like series and movies
+// mediaConfig defines the configuration for media types like series and movies.
 type mediaConfig struct {
 	// Series defines the configuration for all series media types
 	Series []MediaTypeConfig `toml:"series" comment:"the definitions of all your series"`
@@ -324,7 +327,7 @@ type mediaConfig struct {
 	Movies []MediaTypeConfig `toml:"movies" comment:"the definitions of all your movies"`
 }
 
-// MediaTypeConfig defines the configuration for a media type like movies or series
+// MediaTypeConfig defines the configuration for a media type like movies or series.
 type MediaTypeConfig struct {
 	// Name is the name of the media group - keep it unique
 	Name string `toml:"name" comment:"the name of the media group - keep it unique"`
@@ -363,7 +366,7 @@ type MediaTypeConfig struct {
 	MetadataTitleLanguages []string `toml:"metadata_title_languages" multiline:"true" comment:"what languages should be imported for the titles - ex. de, us, uk, en"`
 
 	// MetadataTitleLanguagesLen is the number of title languages (not set in TOML)
-	MetadataTitleLanguagesLen uint8 `toml:"-"`
+	MetadataTitleLanguagesLen int `toml:"-"`
 
 	// Structure indicates whether to structure media after download
 	Structure bool `toml:"structure" comment:"do you want to structure your media after download? - default: false"`
@@ -375,34 +378,40 @@ type MediaTypeConfig struct {
 	SearchupgradeIncremental uint16 `toml:"search_upgrade_incremental" comment:"how many entries should be processed on an incremental upgrade scan - default: 20"`
 
 	// Data contains the media data configs
-	Data []MediaDataConfig `toml:"data"`
+	Data    []MediaDataConfig        `toml:"data"`
+	DataMap map[int]*MediaDataConfig `toml:"-"`
 
 	// DataLen is the number of data configs (not set in TOML)
 	DataLen int `toml:"-"`
 
 	// DataImport contains media data import configs
-	DataImport []MediaDataImportConfig `toml:"data_import"`
+	DataImport    []MediaDataImportConfig        `toml:"data_import"`
+	DataImportMap map[int]*MediaDataImportConfig `toml:"-"`
 
 	// Lists contains media lists configs
 	Lists []MediaListsConfig `toml:"lists"`
 
 	// ListsMap is a map of the lists configs (not set in TOML)
-	ListsMap map[string]*MediaListsConfig `toml:"-"`
+	ListsMap    map[string]*MediaListsConfig `toml:"-"`
+	ListsMapIdx map[string]int               `toml:"-"`
 
 	// ListsQu is the quality from the lists config (not set in TOML)
 	ListsQu string `toml:"-"`
 
 	// ListsLen is the number of lists configs (not set in TOML)
-	ListsLen uint8 `toml:"-"`
+	ListsLen int `toml:"-"`
 
 	// ListsQualities are the quality strings from lists (not set in TOML)
 	ListsQualities []string `toml:"-"`
 
 	// Notification contains notification configs
 	Notification []mediaNotificationConfig `toml:"notification"`
+
+	// Jobs To Run
+	Jobs map[string]func(uint32) `toml:"-"`
 }
 
-// MediaDataConfig is a struct that defines configuration for media data
+// MediaDataConfig is a struct that defines configuration for media data.
 type MediaDataConfig struct {
 	// TemplatePath is the template to use for the path
 	TemplatePath string `toml:"template_path" comment:"the template to use for the path"`
@@ -417,7 +426,7 @@ type MediaDataConfig struct {
 	AddFoundListCfg *ListsConfig `toml:"-"`
 }
 
-// MediaDataImportConfig defines the configuration for importing media data
+// MediaDataImportConfig defines the configuration for importing media data.
 type MediaDataImportConfig struct {
 	// TemplatePath is the template to use for the path
 	TemplatePath string `toml:"template_path" comment:"the template to use for the path"`
@@ -425,7 +434,7 @@ type MediaDataImportConfig struct {
 	CfgPath *PathsConfig `toml:"-"`
 }
 
-// MediaListsConfig defines a media list configuration
+// MediaListsConfig defines a media list configuration.
 type MediaListsConfig struct {
 	// Name is the name of the list - use this name in ignore or replace lists
 	Name string `toml:"name" comment:"the name of the list - use this name in ignore or replace lists"`
@@ -446,18 +455,18 @@ type MediaListsConfig struct {
 	// IgnoreMapListsQu is the quality string
 	IgnoreMapListsQu string `toml:"-"`
 	// IgnoreMapListsLen is the length of IgnoreMapLists
-	IgnoreMapListsLen uint8 `toml:"-"`
+	IgnoreMapListsLen int `toml:"-"`
 	// ReplaceMapLists are the lists to check for replacing entries
 	ReplaceMapLists []string `toml:"replace_template_lists" multiline:"true" comment:"if the entry exists in one of these lists it will be replaced"`
 	// ReplaceMapListsLen is the length of ReplaceMapLists
-	ReplaceMapListsLen uint8 `toml:"-"`
+	ReplaceMapListsLen int `toml:"-"`
 	// Enabled indicates if this configuration is active
 	Enabled bool `toml:"enabled" comment:"is this configuration active? - default: false"`
 	// Addfound indicates if entries not already watched should be added when found
 	Addfound bool `toml:"add_found" comment:"do you want to add entries not yet in your list of watched media if found? - default: false"`
 }
 
-// mediaNotificationConfig defines the configuration for notifications about media events
+// mediaNotificationConfig defines the configuration for notifications about media events.
 type mediaNotificationConfig struct {
 	// MapNotification is the template to use for the notification
 	MapNotification string `toml:"template_notification" comment:"the template to use for the notification"`
@@ -473,7 +482,7 @@ type mediaNotificationConfig struct {
 	ReplacedPrefix string `toml:"replaced_prefix" comment:"if the media was replaced what do you want to write in front of the old path?"`
 }
 
-// DownloaderConfig is a struct that defines the configuration for a downloader client
+// DownloaderConfig is a struct that defines the configuration for a downloader client.
 type DownloaderConfig struct {
 	// Name is the name of the downloader template
 	Name string `toml:"name" comment:"the name of the template"`
@@ -501,16 +510,17 @@ type DownloaderConfig struct {
 	Enabled bool `toml:"enabled" comment:"is this template active?"`
 }
 
-// ListsConfig defines the configuration for lists
+// ListsConfig defines the configuration for lists.
 type ListsConfig struct {
 	// Name is the name of the template
 	Name string `toml:"name" comment:"the name of the template"`
 	// ListType is the type of the list
-	ListType string `toml:"type" comment:"type of the list - use one of: seriesconfig,traktpublicshowlist,imdbcsv,traktpublicmovielist,traktmoviepopular,traktmovieanticipated,traktmovietrending,traktseriepopular,traktserieanticipated,traktserietrending,newznabrss"`
+	ListType string `toml:"type" comment:"type of the list - use one of: seriesconfig,traktpublicshowlist,imdbcsv,imdbfile,traktpublicmovielist,traktmoviepopular,traktmovieanticipated,traktmovietrending,traktseriepopular,traktserieanticipated,traktserietrending,newznabrss"`
 	// URL is the url of the list
 	URL string `toml:"url" comment:"the url of the list"`
 	// Enabled indicates if this template is active
-	Enabled bool `toml:"enabled" comment:"is this template active?"`
+	Enabled     bool   `toml:"enabled" comment:"is this template active?"`
+	IMDBCSVFile string `toml:"imdb_csv_file" comment:"the path of the imdb csv file - ex. ./config/movies.csv"`
 	// SeriesConfigFile is the path of the toml file
 	SeriesConfigFile string `toml:"series_config_file" comment:"the path of the toml file - ex. ./config/series.toml"`
 	// TraktUsername is the username who owns the trakt list
@@ -530,12 +540,12 @@ type ListsConfig struct {
 	// Includegenre only import if it's one of the configured genres
 	Includegenre []string `toml:"include_genre" multiline:"true" comment:"only import if it's one of the configured genres"`
 	// ExcludegenreLen is the length of Excludegenre
-	ExcludegenreLen uint8 `toml:"-"`
+	ExcludegenreLen int `toml:"-"`
 	// IncludegenreLen is the length of Includegenre
-	IncludegenreLen uint8 `toml:"-"`
+	IncludegenreLen int `toml:"-"`
 }
 
-// IndexersConfig defines the configuration for indexers
+// IndexersConfig defines the configuration for indexers.
 type IndexersConfig struct {
 	// Name is the name of the template
 	Name string `toml:"name" comment:"the name of the template"`
@@ -616,23 +626,23 @@ type PathsConfig struct {
 	// AllowedVideoExtensions lists the allowed video file extensions
 	AllowedVideoExtensions []string `toml:"allowed_video_extensions" multiline:"true" comment:"what extensions are allowed for videos - enter extensions with a dot in front"`
 	// AllowedVideoExtensionsLen is the number of allowed video extensions
-	AllowedVideoExtensionsLen uint8 `toml:"-"`
+	AllowedVideoExtensionsLen int `toml:"-"`
 	// AllowedOtherExtensions lists other allowed file extensions
 	AllowedOtherExtensions []string `toml:"allowed_other_extensions" multiline:"true" comment:"what extensions are allowed for other files we need to copy - enter extensions with a dot in front"`
 	// AllowedOtherExtensionsLen is the number of other allowed extensions
-	AllowedOtherExtensionsLen uint8 `toml:"-"`
+	AllowedOtherExtensionsLen int `toml:"-"`
 	// AllowedVideoExtensionsNoRename lists video extensions that should not be renamed
 	AllowedVideoExtensionsNoRename []string `toml:"allowed_video_extensions_no_rename" multiline:"true" comment:"what extensions are allowed for videos but should not be renamed - enter extensions with a dot in front"`
 	// AllowedVideoExtensionsNoRenameLen is the number of video extensions not to rename
-	AllowedVideoExtensionsNoRenameLen uint8 `toml:"-"`
+	AllowedVideoExtensionsNoRenameLen int `toml:"-"`
 	// AllowedOtherExtensionsNoRename lists other extensions not to rename
 	AllowedOtherExtensionsNoRename []string `toml:"allowed_other_extensions_no_rename" multiline:"true" comment:"what extensions are allowed for other files but should not be renamed - enter extensions with a dot in front"`
 	// AllowedOtherExtensionsNoRenameLen is the number of other extensions not to rename
-	AllowedOtherExtensionsNoRenameLen uint8 `toml:"-"`
+	AllowedOtherExtensionsNoRenameLen int `toml:"-"`
 	// Blocked lists strings that will block processing of files
 	Blocked []string `toml:"blocked" multiline:"true" comment:"if one of these strings are found the file will not be processed"`
 	// BlockedLen is the number of blocked strings
-	BlockedLen uint8 `toml:"-"`
+	BlockedLen int `toml:"-"`
 	// Upgrade indicates if media should be upgraded
 	Upgrade bool `toml:"upgrade" comment:"should media be upgraded"`
 	// MinSize is the minimum media size in MB for searches
@@ -652,7 +662,7 @@ type PathsConfig struct {
 	// AllowedLanguages lists allowed languages for audio streams in videos
 	AllowedLanguages []string `toml:"allowed_languages" multiline:"true" comment:"allowed languages for audio streams in videos"`
 	// AllowedLanguagesLen is the number of allowed languages
-	AllowedLanguagesLen uint8 `toml:"-"`
+	AllowedLanguagesLen int `toml:"-"`
 	// Replacelower indicates if lower quality video files should be replaced, default false
 	Replacelower bool `toml:"replace_lower" comment:"should we replace lower quality video files? - default: false"`
 	// Usepresort indicates if a presort folder should be used before media is moved, default false
@@ -660,15 +670,15 @@ type PathsConfig struct {
 	// PresortFolderPath is the path to the presort folder
 	PresortFolderPath string `toml:"presort_folder_path" comment:"the path of the presort folder"`
 	// UpgradeScanInterval is the number of days to wait after last search before looking for upgrades, 0 means don't wait
-	UpgradeScanInterval uint8 `toml:"upgrade_scan_interval" comment:"number of days to wait after the last media search for upgrades - 0 = don't wait"`
+	UpgradeScanInterval int `toml:"upgrade_scan_interval" comment:"number of days to wait after the last media search for upgrades - 0 = don't wait"`
 	// MissingScanInterval is the number of days to wait after last search before looking for missing media, 0 means don't wait
-	MissingScanInterval uint8 `toml:"missing_scan_interval" comment:"number of days to wait after the last media search for missing media - 0 = don't wait"`
+	MissingScanInterval int `toml:"missing_scan_interval" comment:"number of days to wait after the last media search for missing media - 0 = don't wait"`
 	// MissingScanReleaseDatePre is the minimum number of days to wait after media release before scanning, 0 means don't check
 	MissingScanReleaseDatePre int `toml:"missing_scan_release_date_pre" comment:"minimum wait time before a media is released to start scanning - in days - 0 = don't check"`
 	// Disallowed lists strings that will block processing if found
 	Disallowed []string `toml:"disallowed" multiline:"true" comment:"if one of these strings are found the release will not be structured"`
 	// DisallowedLen is the number of disallowed strings
-	DisallowedLen uint8 `toml:"-"`
+	DisallowedLen int `toml:"-"`
 	// DeleteWrongLanguage indicates if media with wrong language should be deleted, default false
 	DeleteWrongLanguage bool `toml:"delete_wrong_language" comment:"should releases with a wrong language be deleted? - default: false"`
 	// DeleteDisallowed indicates if media with disallowed strings should be deleted, default false
@@ -688,7 +698,7 @@ type PathsConfig struct {
 	SetChmodFolder string `toml:"set_chmod_folder" comment:"the chmod for folders - default 0777 - use octal format"`
 }
 
-// NotificationConfig defines the configuration for notifications
+// NotificationConfig defines the configuration for notifications.
 type NotificationConfig struct {
 	// Name is the name of the notification template
 	Name string `toml:"name" comment:"the name of the template"`
@@ -704,7 +714,7 @@ type NotificationConfig struct {
 
 // RegexConfig is a struct that defines a regex template
 // It contains fields for the template name, required regexes,
-// rejected regexes, and lengths of the regex slices
+// rejected regexes, and lengths of the regex slices.
 type RegexConfig struct {
 	// Name is the name of the regex template
 	Name string `toml:"name" comment:"the name of the template"`
@@ -713,9 +723,9 @@ type RegexConfig struct {
 	// Rejected is a slice of regex strings that cause rejection if matched
 	Rejected []string `toml:"rejected" multiline:"true" comment:"regexes which are rejected (any)"`
 	// RequiredLen is the length of the Required slice
-	RequiredLen uint8 `toml:"-"`
+	RequiredLen int `toml:"-"`
 	// RejectedLen is the length of the Rejected slice
-	RejectedLen uint8 `toml:"-"`
+	RejectedLen int `toml:"-"`
 }
 
 type QualityConfig struct {
@@ -730,13 +740,13 @@ type QualityConfig struct {
 	// WantedCodec is video codecs which are wanted - others are skipped - empty = allow all
 	WantedCodec []string `toml:"wanted_codec" multiline:"true" comment:"video codecs which are wanted - others are skipped - empty = allow all"`
 	// WantedResolutionLen is the length of the WantedResolution slice
-	WantedResolutionLen uint8 `toml:"-"`
+	WantedResolutionLen int `toml:"-"`
 	// WantedQualityLen is the length of the WantedQuality slice
-	WantedQualityLen uint8 `toml:"-"`
+	WantedQualityLen int `toml:"-"`
 	// WantedAudioLen is the length of the WantedAudio slice
-	WantedAudioLen uint8 `toml:"-"`
+	WantedAudioLen int `toml:"-"`
 	// WantedCodecLen is the length of the WantedCodec slice
-	WantedCodecLen uint8 `toml:"-"`
+	WantedCodecLen int `toml:"-"`
 	// CutoffResolution is after which resolution should we stop searching for upgrades
 	CutoffResolution string `toml:"cutoff_resolution" comment:"after which resolution should we stop searching for upgrades"`
 	// CutoffQuality is after which quality should we stop searching for upgrades
@@ -787,14 +797,14 @@ type QualityConfig struct {
 	IndexerCfg []*IndexersConfig      `toml:"-"`
 
 	// TitleStripSuffixForSearchLen is a int for the length of the TitleStripSuffixForSearch slice
-	TitleStripSuffixForSearchLen uint8 `toml:"-"`
+	TitleStripSuffixForSearchLen int `toml:"-"`
 
 	// TitleStripPrefixForSearchLen is the length of the TitleStripPrefixForSearch slice
-	TitleStripPrefixForSearchLen uint8 `toml:"-"`
+	TitleStripPrefixForSearchLen int `toml:"-"`
 	// QualityReorderLen is the length of the QualityReorder slice
-	QualityReorderLen uint8 `toml:"-"`
+	QualityReorderLen int `toml:"-"`
 	// IndexerLen is the length of the Indexer slice
-	IndexerLen uint8 `toml:"-"`
+	IndexerLen int `toml:"-"`
 	// UseForPriorityResolution indicates if resolution should be used for priority
 	UseForPriorityResolution bool `toml:"use_for_priority_resolution" comment:"should we use the resolution for the priority determination in searches? - default: false - recommended: true"`
 	// UseForPriorityQuality indicates if quality should be used for priority
@@ -812,17 +822,17 @@ type QualityConfig struct {
 // QualityReorderConfig is a struct for configuring reordering of qualities
 // It contains a Name string field for the name of the quality
 // A ReorderType string field for the type of reordering
-// And a Newpriority int field for the new priority
+// And a Newpriority int field for the new priority.
 type QualityReorderConfig struct {
 	// Name is the name of the quality to reorder
-	Name string `toml:"name" comment:"the name of the quality to reorder - ex. 1080p - use a comma to seperate multiple"`
+	Name string `toml:"name" comment:"the name of the quality to reorder - ex. 1080p - use a comma to separate multiple"`
 	// ReorderType is the type of reordering to use
 	ReorderType string `toml:"type" comment:"the type of the reorder: use one of resolution,quality,codec,audio,position,combined_res_qual"`
 	// Newpriority is the new priority to set for the quality
 	Newpriority int `toml:"new_priority" comment:"the new priority for the entry - if position is used it is muliplied by the number - others are set to the value - for combined_res_qual the resolution is used for the priority and the quality is set to 0"`
 }
 
-// QualityIndexerConfig defines the configuration for an indexer used for a specific quality
+// QualityIndexerConfig defines the configuration for an indexer used for a specific quality.
 type QualityIndexerConfig struct {
 	// TemplateIndexer is the template to use for the indexer
 	TemplateIndexer string `toml:"template_indexer" comment:"the template to use for the indexer"`
@@ -967,59 +977,63 @@ type SchedulerConfig struct {
 const Configfile = "./config/config.toml"
 
 var (
-	// SettingsGeneral contains the general configuration settings
+	// SettingsGeneral contains the general configuration settings.
 	SettingsGeneral GeneralConfig
 
-	// SettingsImdb contains the IMDB specific configuration
+	// SettingsImdb contains the IMDB specific configuration.
 	SettingsImdb ImdbConfig
 
-	// SettingsPath contains the path configuration settings
+	// SettingsPath contains the path configuration settings.
 	SettingsPath map[string]*PathsConfig
 
-	// SettingsQuality contains the quality configuration settings
+	// SettingsQuality contains the quality configuration settings.
 	SettingsQuality map[string]*QualityConfig
 
-	// SettingsList contains the list configuration settings
+	// SettingsList contains the list configuration settings.
 	SettingsList map[string]*ListsConfig
 
-	// SettingsIndexer contains the indexer configuration settings
+	// SettingsIndexer contains the indexer configuration settings.
 	SettingsIndexer map[string]*IndexersConfig
 
-	// SettingsRegex contains the regex configuration settings
+	// SettingsRegex contains the regex configuration settings.
 	SettingsRegex map[string]*RegexConfig
 
-	// SettingsMedia contains the media configuration settings
+	// SettingsMedia contains the media configuration settings.
 	SettingsMedia map[string]*MediaTypeConfig
 
-	// SettingsNotification contains the notification configuration settings
+	// SettingsNotification contains the notification configuration settings.
 	SettingsNotification map[string]*NotificationConfig
 
-	// SettingsDownloader contains the downloader configuration settings
+	// SettingsDownloader contains the downloader configuration settings.
 	SettingsDownloader map[string]*DownloaderConfig
 
-	// SettingsScheduler contains the scheduler configuration settings
+	// SettingsScheduler contains the scheduler configuration settings.
 	SettingsScheduler map[string]*SchedulerConfig
 
-	// traktToken contains the trakt OAuth token
+	// traktToken contains the trakt OAuth token.
 	traktToken *oauth2.Token
 
-	// cachetoml contains the cached TOML configuration
+	// cachetoml contains the cached TOML configuration.
 	cachetoml mainConfig
 )
 
 // GetMediaListsEntryListID returns the index position of the list with the given
 // name in the MediaTypeConfig. Returns -1 if no match is found.
-func (cfgp *MediaTypeConfig) GetMediaListsEntryListID(listname string) int8 {
+func (cfgp *MediaTypeConfig) GetMediaListsEntryListID(listname string) int {
 	if listname == "" {
 		return -1
 	}
 	if cfgp == nil {
-		logger.LogDynamicany("error", "the config couldnt be found")
+		logger.LogDynamicany0("error", "the config couldnt be found")
 		return -1
+	}
+	k, ok := cfgp.ListsMapIdx[listname]
+	if ok {
+		return k
 	}
 	for k := range cfgp.Lists {
 		if cfgp.Lists[k].Name == listname || strings.EqualFold(cfgp.Lists[k].Name, listname) {
-			return int8(k)
+			return k
 		}
 	}
 	return -1
@@ -1046,7 +1060,7 @@ func (cfgp *MediaTypeConfig) GetMediaQualityConfigStr(str string) *QualityConfig
 // Otherwise returns empty string.
 func (list *MediaListsConfig) Getlistnamefilterignore() string {
 	if list.IgnoreMapListsLen >= 1 {
-		return "listname in (?" + list.IgnoreMapListsQu + ") and " //JoinStrings
+		return ("listname in (?" + list.IgnoreMapListsQu + ") and ")
 	}
 	return ""
 }
@@ -1054,16 +1068,52 @@ func (list *MediaListsConfig) Getlistnamefilterignore() string {
 // qualityIndexerByQualityAndTemplate returns the CategoriesIndexer string for the indexer
 // in the given QualityConfig that matches the given IndexersConfig by name.
 // Returns empty string if no match is found.
-func (quality *QualityConfig) QualityIndexerByQualityAndTemplate(ind *IndexersConfig) *QualityIndexerConfig {
+func (quality *QualityConfig) QualityIndexerByQualityAndTemplate(ind *IndexersConfig) int {
+	if ind == nil {
+		return -1
+	}
+	for index := range quality.Indexer {
+		if quality.Indexer[index].TemplateIndexer == ind.Name || strings.EqualFold(quality.Indexer[index].TemplateIndexer, ind.Name) {
+			return index
+		}
+	}
+	return -1
+}
+
+func (quality *QualityConfig) QualityIndexerByQualityAndTemplateCheckRegex(ind *IndexersConfig) *RegexConfig {
 	if ind == nil {
 		return nil
 	}
 	for index := range quality.Indexer {
 		if quality.Indexer[index].TemplateIndexer == ind.Name || strings.EqualFold(quality.Indexer[index].TemplateIndexer, ind.Name) {
-			return &quality.Indexer[index]
+			return quality.Indexer[index].CfgRegex
 		}
 	}
 	return nil
+}
+
+func (quality *QualityConfig) QualityIndexerByQualityAndTemplateCheckTitle(ind *IndexersConfig) bool {
+	if ind == nil {
+		return false
+	}
+	for index := range quality.Indexer {
+		if quality.Indexer[index].TemplateIndexer == ind.Name || strings.EqualFold(quality.Indexer[index].TemplateIndexer, ind.Name) {
+			return quality.Indexer[index].HistoryCheckTitle
+		}
+	}
+	return false
+}
+
+func (quality *QualityConfig) QualityIndexerByQualityAndTemplateSkipEmpty(ind *IndexersConfig) bool {
+	if ind == nil {
+		return false
+	}
+	for index := range quality.Indexer {
+		if quality.Indexer[index].TemplateIndexer == ind.Name || strings.EqualFold(quality.Indexer[index].TemplateIndexer, ind.Name) {
+			return quality.Indexer[index].SkipEmptySize
+		}
+	}
+	return false
 }
 
 // getlistbyindexer returns the ListsConfig for the list matching the
@@ -1077,16 +1127,7 @@ func (ind *IndexersConfig) Getlistbyindexer() *ListsConfig {
 	return nil
 }
 
-func (s *SerieConfig) Close() {
-	if s == nil || SettingsGeneral.DisableVariableCleanup {
-		return
-	}
-	clear(s.AlternateName)
-	clear(s.DisallowedName)
-	s.AlternateName = nil
-	s.DisallowedName = nil
-	*s = SerieConfig{}
-}
+var RandomizerSource = rand.NewSource(time.Now().UnixNano())
 
 // Slepping sleeps for a random or fixed number of seconds. If random is true,
 // it will sleep for a random number of seconds between 1 and seconds. If random
@@ -1094,8 +1135,7 @@ func (s *SerieConfig) Close() {
 // rand and time packages to generate the random sleep duration and sleep.
 func Slepping(random bool, seconds int) {
 	if random {
-		rand.New(rand.NewSource(time.Now().UnixNano()))
-		n := rand.Intn(seconds) + 1 // n will be between 0 and 10
+		n := rand.New(RandomizerSource).Intn(seconds) + 1 // n will be between 0 and 10
 		time.Sleep(time.Duration(n) * time.Second)
 	} else {
 		time.Sleep(time.Duration(seconds) * time.Second)
@@ -1122,7 +1162,6 @@ func LoadCfgDB() error {
 	configDB, _ := pudge.Open("./databases/config.db", &pudge.Config{SyncInterval: 0})
 	defer configDB.Close()
 	pudge.BackupAll("")
-	// Cfg.Keys = make(map[string]bool)
 	SettingsDownloader = make(map[string]*DownloaderConfig, len(cachetoml.Downloader))
 	SettingsIndexer = make(map[string]*IndexersConfig, len(cachetoml.Indexers))
 	SettingsList = make(map[string]*ListsConfig, len(cachetoml.Lists))
@@ -1152,8 +1191,8 @@ func LoadCfgDB() error {
 		SettingsIndexer[cachetoml.Indexers[idx].Name] = &cachetoml.Indexers[idx]
 	}
 	for idx := range cachetoml.Lists {
-		cachetoml.Lists[idx].ExcludegenreLen = uint8(len(cachetoml.Lists[idx].Excludegenre))
-		cachetoml.Lists[idx].IncludegenreLen = uint8(len(cachetoml.Lists[idx].Includegenre))
+		cachetoml.Lists[idx].ExcludegenreLen = len(cachetoml.Lists[idx].Excludegenre)
+		cachetoml.Lists[idx].IncludegenreLen = len(cachetoml.Lists[idx].Includegenre)
 		SettingsList[cachetoml.Lists[idx].Name] = &cachetoml.Lists[idx]
 	}
 
@@ -1161,21 +1200,21 @@ func LoadCfgDB() error {
 		SettingsNotification[cachetoml.Notification[idx].Name] = &cachetoml.Notification[idx]
 	}
 	for idx := range cachetoml.Paths {
-		cachetoml.Paths[idx].AllowedLanguagesLen = uint8(len(cachetoml.Paths[idx].AllowedLanguages))
-		cachetoml.Paths[idx].AllowedOtherExtensionsLen = uint8(len(cachetoml.Paths[idx].AllowedOtherExtensions))
-		cachetoml.Paths[idx].AllowedOtherExtensionsNoRenameLen = uint8(len(cachetoml.Paths[idx].AllowedOtherExtensionsNoRename))
-		cachetoml.Paths[idx].AllowedVideoExtensionsLen = uint8(len(cachetoml.Paths[idx].AllowedVideoExtensions))
-		cachetoml.Paths[idx].AllowedVideoExtensionsNoRenameLen = uint8(len(cachetoml.Paths[idx].AllowedVideoExtensionsNoRename))
-		cachetoml.Paths[idx].BlockedLen = uint8(len(cachetoml.Paths[idx].Blocked))
-		cachetoml.Paths[idx].DisallowedLen = uint8(len(cachetoml.Paths[idx].Disallowed))
+		cachetoml.Paths[idx].AllowedLanguagesLen = len(cachetoml.Paths[idx].AllowedLanguages)
+		cachetoml.Paths[idx].AllowedOtherExtensionsLen = len(cachetoml.Paths[idx].AllowedOtherExtensions)
+		cachetoml.Paths[idx].AllowedOtherExtensionsNoRenameLen = len(cachetoml.Paths[idx].AllowedOtherExtensionsNoRename)
+		cachetoml.Paths[idx].AllowedVideoExtensionsLen = len(cachetoml.Paths[idx].AllowedVideoExtensions)
+		cachetoml.Paths[idx].AllowedVideoExtensionsNoRenameLen = len(cachetoml.Paths[idx].AllowedVideoExtensionsNoRename)
+		cachetoml.Paths[idx].BlockedLen = len(cachetoml.Paths[idx].Blocked)
+		cachetoml.Paths[idx].DisallowedLen = len(cachetoml.Paths[idx].Disallowed)
 		cachetoml.Paths[idx].MaxSizeByte = int64(cachetoml.Paths[idx].MaxSize) * 1024 * 1024
 		cachetoml.Paths[idx].MinSizeByte = int64(cachetoml.Paths[idx].MinSize) * 1024 * 1024
 		cachetoml.Paths[idx].MinVideoSizeByte = int64(cachetoml.Paths[idx].MinVideoSize) * 1024 * 1024
 		SettingsPath[cachetoml.Paths[idx].Name] = &cachetoml.Paths[idx]
 	}
 	for idx := range cachetoml.Regex {
-		cachetoml.Regex[idx].RejectedLen = uint8(len(cachetoml.Regex[idx].Rejected))
-		cachetoml.Regex[idx].RequiredLen = uint8(len(cachetoml.Regex[idx].Required))
+		cachetoml.Regex[idx].RejectedLen = len(cachetoml.Regex[idx].Rejected)
+		cachetoml.Regex[idx].RequiredLen = len(cachetoml.Regex[idx].Required)
 		SettingsRegex[cachetoml.Regex[idx].Name] = &cachetoml.Regex[idx]
 	}
 	for idx := range cachetoml.Scheduler {
@@ -1190,25 +1229,29 @@ func LoadCfgDB() error {
 			cachetoml.Quality[idx].Indexer[idx2].CfgPath = SettingsPath[cachetoml.Quality[idx].Indexer[idx2].TemplatePathNzb]
 			cachetoml.Quality[idx].Indexer[idx2].CfgRegex = SettingsRegex[cachetoml.Quality[idx].Indexer[idx2].TemplateRegex]
 		}
-		cachetoml.Quality[idx].IndexerLen = uint8(len(cachetoml.Quality[idx].Indexer))
-		cachetoml.Quality[idx].QualityReorderLen = uint8(len(cachetoml.Quality[idx].QualityReorder))
-		cachetoml.Quality[idx].TitleStripPrefixForSearchLen = uint8(len(cachetoml.Quality[idx].TitleStripPrefixForSearch))
-		cachetoml.Quality[idx].TitleStripSuffixForSearchLen = uint8(len(cachetoml.Quality[idx].TitleStripSuffixForSearch))
-		cachetoml.Quality[idx].WantedAudioLen = uint8(len(cachetoml.Quality[idx].WantedAudio))
-		cachetoml.Quality[idx].WantedCodecLen = uint8(len(cachetoml.Quality[idx].WantedCodec))
-		cachetoml.Quality[idx].WantedQualityLen = uint8(len(cachetoml.Quality[idx].WantedQuality))
-		cachetoml.Quality[idx].WantedResolutionLen = uint8(len(cachetoml.Quality[idx].WantedResolution))
+		cachetoml.Quality[idx].IndexerLen = len(cachetoml.Quality[idx].Indexer)
+		cachetoml.Quality[idx].QualityReorderLen = len(cachetoml.Quality[idx].QualityReorder)
+		cachetoml.Quality[idx].TitleStripPrefixForSearchLen = len(cachetoml.Quality[idx].TitleStripPrefixForSearch)
+		cachetoml.Quality[idx].TitleStripSuffixForSearchLen = len(cachetoml.Quality[idx].TitleStripSuffixForSearch)
+		cachetoml.Quality[idx].WantedAudioLen = len(cachetoml.Quality[idx].WantedAudio)
+		cachetoml.Quality[idx].WantedCodecLen = len(cachetoml.Quality[idx].WantedCodec)
+		cachetoml.Quality[idx].WantedQualityLen = len(cachetoml.Quality[idx].WantedQuality)
+		cachetoml.Quality[idx].WantedResolutionLen = len(cachetoml.Quality[idx].WantedResolution)
 		SettingsQuality[cachetoml.Quality[idx].Name] = &cachetoml.Quality[idx]
 	}
 	for idx := range cachetoml.Media.Movies {
+		cachetoml.Media.Movies[idx].DataMap = make(map[int]*MediaDataConfig, len(cachetoml.Media.Movies[idx].Data))
+		cachetoml.Media.Movies[idx].DataImportMap = make(map[int]*MediaDataImportConfig, len(cachetoml.Media.Movies[idx].DataImport))
 		for idx2 := range cachetoml.Media.Movies[idx].Data {
 			cachetoml.Media.Movies[idx].Data[idx2].CfgPath = SettingsPath[cachetoml.Media.Movies[idx].Data[idx2].TemplatePath]
 			if cachetoml.Media.Movies[idx].Data[idx2].AddFoundList != "" {
 				cachetoml.Media.Movies[idx].Data[idx2].AddFoundListCfg = SettingsList[cachetoml.Media.Movies[idx].Data[idx2].AddFoundList]
 			}
+			cachetoml.Media.Movies[idx].DataMap[idx2] = &cachetoml.Media.Movies[idx].Data[idx2]
 		}
 		for idx2 := range cachetoml.Media.Movies[idx].DataImport {
 			cachetoml.Media.Movies[idx].DataImport[idx2].CfgPath = SettingsPath[cachetoml.Media.Movies[idx].DataImport[idx2].TemplatePath]
+			cachetoml.Media.Movies[idx].DataImportMap[idx2] = &cachetoml.Media.Movies[idx].DataImport[idx2]
 		}
 		for idx2 := range cachetoml.Media.Movies[idx].Notification {
 			cachetoml.Media.Movies[idx].Notification[idx2].CfgNotification = SettingsNotification[cachetoml.Media.Movies[idx].Notification[idx2].MapNotification]
@@ -1218,11 +1261,12 @@ func LoadCfgDB() error {
 		cachetoml.Media.Movies[idx].NamePrefix = "movie_" + cachetoml.Media.Movies[idx].Name
 		cachetoml.Media.Movies[idx].Useseries = false
 		cachetoml.Media.Movies[idx].ListsMap = make(map[string]*MediaListsConfig, len(cachetoml.Media.Movies[idx].Lists))
+		cachetoml.Media.Movies[idx].ListsMapIdx = make(map[string]int, len(cachetoml.Media.Movies[idx].Lists))
 		if len(cachetoml.Media.Movies[idx].Lists) >= 1 {
 			cachetoml.Media.Movies[idx].ListsQu = strings.Repeat(",?", len(cachetoml.Media.Movies[idx].Lists)-1)
 		}
-		cachetoml.Media.Movies[idx].ListsLen = uint8(len(cachetoml.Media.Movies[idx].Lists))
-		cachetoml.Media.Movies[idx].MetadataTitleLanguagesLen = uint8(len(cachetoml.Media.Movies[idx].MetadataTitleLanguages))
+		cachetoml.Media.Movies[idx].ListsLen = len(cachetoml.Media.Movies[idx].Lists)
+		cachetoml.Media.Movies[idx].MetadataTitleLanguagesLen = len(cachetoml.Media.Movies[idx].MetadataTitleLanguages)
 		cachetoml.Media.Movies[idx].DataLen = len(cachetoml.Media.Movies[idx].Data)
 		cachetoml.Media.Movies[idx].ListsQualities = make([]string, 0, len(cachetoml.Media.Movies[idx].Lists))
 		for idxsub := range cachetoml.Media.Movies[idx].Lists {
@@ -1232,22 +1276,27 @@ func LoadCfgDB() error {
 			if len(cachetoml.Media.Movies[idx].Lists[idxsub].IgnoreMapLists) >= 1 {
 				cachetoml.Media.Movies[idx].Lists[idxsub].IgnoreMapListsQu = strings.Repeat(",?", len(cachetoml.Media.Movies[idx].Lists[idxsub].IgnoreMapLists)-1)
 			}
-			cachetoml.Media.Movies[idx].Lists[idxsub].IgnoreMapListsLen = uint8(len(cachetoml.Media.Movies[idx].Lists[idxsub].IgnoreMapLists))
-			cachetoml.Media.Movies[idx].Lists[idxsub].ReplaceMapListsLen = uint8(len(cachetoml.Media.Movies[idx].Lists[idxsub].ReplaceMapLists))
-			if !logger.Contains(cachetoml.Media.Movies[idx].ListsQualities, cachetoml.Media.Movies[idx].Lists[idxsub].TemplateQuality) {
+			cachetoml.Media.Movies[idx].Lists[idxsub].IgnoreMapListsLen = len(cachetoml.Media.Movies[idx].Lists[idxsub].IgnoreMapLists)
+			cachetoml.Media.Movies[idx].Lists[idxsub].ReplaceMapListsLen = len(cachetoml.Media.Movies[idx].Lists[idxsub].ReplaceMapLists)
+			if !slices.Contains(cachetoml.Media.Movies[idx].ListsQualities, cachetoml.Media.Movies[idx].Lists[idxsub].TemplateQuality) {
 				cachetoml.Media.Movies[idx].ListsQualities = append(cachetoml.Media.Movies[idx].ListsQualities, cachetoml.Media.Movies[idx].Lists[idxsub].TemplateQuality)
 			}
 			cachetoml.Media.Movies[idx].ListsMap[cachetoml.Media.Movies[idx].Lists[idxsub].Name] = &cachetoml.Media.Movies[idx].Lists[idxsub]
+			cachetoml.Media.Movies[idx].ListsMapIdx[cachetoml.Media.Movies[idx].Lists[idxsub].Name] = idxsub
 		}
 
 		SettingsMedia["movie_"+cachetoml.Media.Movies[idx].Name] = &cachetoml.Media.Movies[idx]
 	}
 	for idx := range cachetoml.Media.Series {
+		cachetoml.Media.Series[idx].DataMap = make(map[int]*MediaDataConfig, len(cachetoml.Media.Series[idx].Data))
+		cachetoml.Media.Series[idx].DataImportMap = make(map[int]*MediaDataImportConfig, len(cachetoml.Media.Series[idx].DataImport))
 		for idx2 := range cachetoml.Media.Series[idx].Data {
 			cachetoml.Media.Series[idx].Data[idx2].CfgPath = SettingsPath[cachetoml.Media.Series[idx].Data[idx2].TemplatePath]
+			cachetoml.Media.Series[idx].DataMap[idx2] = &cachetoml.Media.Series[idx].Data[idx2]
 		}
 		for idx2 := range cachetoml.Media.Series[idx].DataImport {
 			cachetoml.Media.Series[idx].DataImport[idx2].CfgPath = SettingsPath[cachetoml.Media.Series[idx].DataImport[idx2].TemplatePath]
+			cachetoml.Media.Series[idx].DataImportMap[idx2] = &cachetoml.Media.Series[idx].DataImport[idx2]
 		}
 		for idx2 := range cachetoml.Media.Series[idx].Notification {
 			cachetoml.Media.Series[idx].Notification[idx2].CfgNotification = SettingsNotification[cachetoml.Media.Series[idx].Notification[idx2].MapNotification]
@@ -1257,11 +1306,12 @@ func LoadCfgDB() error {
 		cachetoml.Media.Series[idx].NamePrefix = "serie_" + cachetoml.Media.Series[idx].Name
 		cachetoml.Media.Series[idx].Useseries = true
 		cachetoml.Media.Series[idx].ListsMap = make(map[string]*MediaListsConfig, len(cachetoml.Media.Series[idx].Lists))
+		cachetoml.Media.Series[idx].ListsMapIdx = make(map[string]int, len(cachetoml.Media.Series[idx].Lists))
 		if len(cachetoml.Media.Series[idx].Lists) >= 1 {
 			cachetoml.Media.Series[idx].ListsQu = strings.Repeat(",?", len(cachetoml.Media.Series[idx].Lists)-1)
 		}
-		cachetoml.Media.Series[idx].ListsLen = uint8(len(cachetoml.Media.Series[idx].Lists))
-		cachetoml.Media.Series[idx].MetadataTitleLanguagesLen = uint8(len(cachetoml.Media.Series[idx].MetadataTitleLanguages))
+		cachetoml.Media.Series[idx].ListsLen = len(cachetoml.Media.Series[idx].Lists)
+		cachetoml.Media.Series[idx].MetadataTitleLanguagesLen = len(cachetoml.Media.Series[idx].MetadataTitleLanguages)
 		cachetoml.Media.Series[idx].DataLen = len(cachetoml.Media.Series[idx].Data)
 		cachetoml.Media.Series[idx].ListsQualities = make([]string, 0, len(cachetoml.Media.Series[idx].Lists))
 		for idxsub := range cachetoml.Media.Series[idx].Lists {
@@ -1271,12 +1321,13 @@ func LoadCfgDB() error {
 			if len(cachetoml.Media.Series[idx].Lists[idxsub].IgnoreMapLists) >= 1 {
 				cachetoml.Media.Series[idx].Lists[idxsub].IgnoreMapListsQu = strings.Repeat(",?", len(cachetoml.Media.Series[idx].Lists[idxsub].IgnoreMapLists)-1)
 			}
-			cachetoml.Media.Series[idx].Lists[idxsub].IgnoreMapListsLen = uint8(len(cachetoml.Media.Series[idx].Lists[idxsub].IgnoreMapLists))
-			cachetoml.Media.Series[idx].Lists[idxsub].ReplaceMapListsLen = uint8(len(cachetoml.Media.Series[idx].Lists[idxsub].ReplaceMapLists))
-			if !logger.Contains(cachetoml.Media.Series[idx].ListsQualities, cachetoml.Media.Series[idx].Lists[idxsub].TemplateQuality) {
+			cachetoml.Media.Series[idx].Lists[idxsub].IgnoreMapListsLen = len(cachetoml.Media.Series[idx].Lists[idxsub].IgnoreMapLists)
+			cachetoml.Media.Series[idx].Lists[idxsub].ReplaceMapListsLen = len(cachetoml.Media.Series[idx].Lists[idxsub].ReplaceMapLists)
+			if !slices.Contains(cachetoml.Media.Series[idx].ListsQualities, cachetoml.Media.Series[idx].Lists[idxsub].TemplateQuality) {
 				cachetoml.Media.Series[idx].ListsQualities = append(cachetoml.Media.Series[idx].ListsQualities, cachetoml.Media.Series[idx].Lists[idxsub].TemplateQuality)
 			}
 			cachetoml.Media.Series[idx].ListsMap[cachetoml.Media.Series[idx].Lists[idxsub].Name] = &cachetoml.Media.Series[idx].Lists[idxsub]
+			cachetoml.Media.Series[idx].ListsMapIdx[cachetoml.Media.Series[idx].Lists[idxsub].Name] = idxsub
 		}
 		SettingsMedia["serie_"+cachetoml.Media.Series[idx].Name] = &cachetoml.Media.Series[idx]
 	}
@@ -1299,8 +1350,6 @@ func LoadCfgDB() error {
 // system to be extended by adding new config types.
 func UpdateCfg(configIn []Conf) {
 	for _, val := range configIn {
-		//key := val.Name
-		//Cfg.Keys[key] = true
 		if strings.HasPrefix(val.Name, "general") {
 			SettingsGeneral = val.Data.(GeneralConfig)
 		}
@@ -1394,7 +1443,6 @@ func UpdateCfgEntry(configIn Conf) {
 	configDB, _ := pudge.Open("./databases/config.db", &pudge.Config{SyncInterval: 0})
 
 	defer configDB.Close()
-	//Cfg.Keys[key] = true
 
 	if strings.HasPrefix(configIn.Name, "general") {
 		SettingsGeneral = configIn.Data.(GeneralConfig)
@@ -1444,7 +1492,6 @@ func UpdateCfgEntry(configIn Conf) {
 	}
 	if strings.HasPrefix(configIn.Name, "trakt_token") {
 		traktToken = configIn.Data.(*oauth2.Token)
-		//logger.GlobalCache.Set(key, *configIn.Data.(*oauth2.Token), 0, false)
 		configDB.Set("trakt_token", *configIn.Data.(*oauth2.Token))
 	}
 }
@@ -1457,7 +1504,6 @@ func DeleteCfgEntry(name string) {
 	configDB, _ := pudge.Open("./databases/config.db", &pudge.Config{SyncInterval: 0})
 
 	defer configDB.Close()
-	//delete(Cfg.Keys, name)
 
 	if strings.HasPrefix(name, "general") {
 		SettingsGeneral = GeneralConfig{}
@@ -1497,7 +1543,7 @@ func DeleteCfgEntry(name string) {
 	}
 
 	if strings.HasPrefix(name, "trakt_token") {
-		_ = configDB.Delete("trakt_token")
+		configDB.Delete("trakt_token")
 	}
 }
 
@@ -1507,7 +1553,7 @@ func DeleteCfgEntry(name string) {
 func ClearCfg() {
 	configDB, _ := pudge.Open("./databases/config.db", &pudge.Config{SyncInterval: 0})
 	defer configDB.Close()
-	_ = configDB.DeleteFile()
+	configDB.DeleteFile()
 	SettingsDownloader = make(map[string]*DownloaderConfig)
 	SettingsIndexer = make(map[string]*IndexersConfig)
 	SettingsList = make(map[string]*ListsConfig)
@@ -1532,8 +1578,6 @@ func ClearCfg() {
 	var qureoconfig []QualityReorderConfig
 	qureoconfig = append(qureoconfig, QualityReorderConfig{})
 
-	//Cfg.Keys = map[string]bool{"general": true, logger.StrImdb: true, "scheduler_Default": true, "downloader_initial": true, "indexer_initial": true, "list_initial": true, "movie_initial": true, "serie_initial": true, "notification_initial": true, "path_initial": true, "quality_initial": true, "regex_initial": true}
-
 	SettingsGeneral = GeneralConfig{
 		LogLevel:       "Info",
 		DBLogLevel:     "Info",
@@ -1547,7 +1591,7 @@ func ClearCfg() {
 		WorkerParse:    1,
 		WorkerSearch:   1,
 		WorkerIndexer:  1,
-		//ConcurrentScheduler: 1,
+		// ConcurrentScheduler: 1,
 		OmdbLimiterSeconds:  1,
 		OmdbLimiterCalls:    1,
 		TmdbLimiterSeconds:  1,
@@ -1634,5 +1678,5 @@ func WriteCfg() {
 	if err != nil {
 		fmt.Println("Error loading config. " + err.Error())
 	}
-	_ = os.WriteFile(Configfile, cnt, 0777)
+	os.WriteFile(Configfile, cnt, 0o777)
 }

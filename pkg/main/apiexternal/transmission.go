@@ -8,7 +8,7 @@ import (
 // credentials and settings, adds the torrent from the given URL to the client,
 // specifying the download path and whether to start paused, and returns any
 // error from the add operation.
-func SendToTransmission(server string, username string, password string, urlv string, dlpath string, addpaused bool) error {
+func SendToTransmission(server, username, password, urlv, dlpath string, addpaused bool) error {
 	conf := transmission.Config{
 		User:     username,
 		Password: password,

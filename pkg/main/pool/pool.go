@@ -1,17 +1,17 @@
 package pool
 
 import (
-	"fmt"
 	"sync"
 )
 
 type Poolobj[t any] struct {
-	//objs is a channel of type T
+	// objs is a channel of type T
 	objs chan *t
-	//Function will be run on Get() - include here your logic to create the initial object
+	// pool sync.Pool
+	// Function will be run on Get() - include here your logic to create the initial object
 	constructor func(*t)
-	//Function will be run on Put() - include here your logic to reset the object
-	destructor func(*t)
+	// Function will be run on Put() - include here your logic to reset the object
+	destructor func(*t) bool
 }
 
 // Get retrieves an object from the pool or creates a new one if none are
@@ -22,8 +22,7 @@ func (p *Poolobj[t]) Get() *t {
 		return <-p.objs
 	}
 	var bo t
-	fmt.Printf("Creating new pool object %T", bo)
-	//fmt.Println(reflect.TypeOf(bo))
+	// fmt.Printf("Creating new pool object %T", bo)
 	if p.constructor != nil {
 		p.constructor(&bo)
 	}
@@ -37,17 +36,35 @@ func (p *Poolobj[t]) Put(bo *t) {
 	if bo == nil {
 		return
 	}
+
 	if len(p.objs) < cap(p.objs) {
 		if p.destructor != nil {
-			p.destructor(bo)
+			if p.destructor(bo) {
+				return
+			}
 		}
 		p.objs <- bo
 	}
 }
 
-// func Clear(bo any) {
-// 	reflect.ValueOf(bo).Elem().SetZero()
-// }
+// Init initializes the Poolobj by setting the constructor and destructor functions,
+// creating the object channel with a capacity of 200, and optionally creating
+// and adding the initial set of objects to the pool using the provided constructor.
+func (p *Poolobj[t]) Init(initcreate int, constructor func(*t), destructor func(*t) bool) {
+	p.constructor = constructor
+	p.destructor = destructor
+
+	p.objs = make(chan *t, 200)
+	if initcreate > 0 {
+		for range initcreate {
+			var bo t
+			if p.constructor != nil {
+				p.constructor(&bo)
+			}
+			p.Put(&bo)
+		}
+	}
+}
 
 // NewPool creates a new Poolobj initialized with the given parameters.
 //
@@ -62,50 +79,65 @@ func (p *Poolobj[t]) Put(bo *t) {
 //
 // destructor, if non-nil, is called whenever an object is removed from
 // the pool.
-func NewPool[t any](maxsize int, initcreate int, constructor func(*t), destructor func(*t)) Poolobj[t] {
-	var a Poolobj[t]
-	a.constructor = constructor
-	a.objs = make(chan *t, maxsize)
+func NewPool[t any](maxsize, initcreate int, constructor func(*t), destructor func(*t) bool) *Poolobj[t] {
+	a := &Poolobj[t]{
+		objs:        make(chan *t, maxsize),
+		constructor: constructor,
+		destructor:  destructor,
+	}
 	if initcreate > 0 {
 		for range initcreate {
 			var bo t
 			if a.constructor != nil {
 				a.constructor(&bo)
 			}
-			a.objs <- &bo
+			a.Put(&bo)
 		}
 	}
-	a.destructor = destructor
 	return a
 }
 
 type SizedWaitGroup struct {
-	Size    int
-	current chan struct{}
 	wg      sync.WaitGroup
+	current chan struct{}
+	Size    int
 }
 
-func NewSizedGroup(limit int) *SizedWaitGroup {
-	return &SizedWaitGroup{
+// NewSizedGroup creates a new SizedWaitGroup with the specified limit.
+// If the limit is less than or equal to 0, it is set to 1.
+// The SizedWaitGroup has a channel to limit the number of concurrent operations,
+// and a sync.WaitGroup to track the completion of all operations.
+func NewSizedGroup(limit int) SizedWaitGroup {
+	if limit <= 0 {
+		limit = 1
+	}
+	return SizedWaitGroup{
 		Size:    limit,
 		current: make(chan struct{}, limit),
 		wg:      sync.WaitGroup{},
 	}
 }
+
+// Add increments the SizedWaitGroup counter by one. It also adds a token to the
+// current channel, which limits the number of concurrent operations.
 func (s *SizedWaitGroup) Add() {
 	s.current <- struct{}{}
 	s.wg.Add(1)
 }
 
+// Done decrements the SizedWaitGroup counter by one. It also removes a token from the
+// current channel, which limits the number of concurrent operations.
 func (s *SizedWaitGroup) Done() {
 	<-s.current
 	s.wg.Done()
 }
 
+// Wait blocks until all operations added to the SizedWaitGroup have completed.
 func (s *SizedWaitGroup) Wait() {
 	s.wg.Wait()
 }
+
+// Close resets the SizedWaitGroup to its initial state, allowing it to be reused.
 func (s *SizedWaitGroup) Close() {
-	s.current = nil
 	*s = SizedWaitGroup{}
 }

@@ -11,7 +11,7 @@ import "github.com/GoAdminGroup/go-admin/plugins/admin/modules/table"
 //
 // example:
 //
-// example end
+// example end.
 var Generators = map[string]table.Generator{
 	"dbmovies":                getDbmoviesTable,
 	"dbmovie_titles":          getDbmovieTitlesTable,

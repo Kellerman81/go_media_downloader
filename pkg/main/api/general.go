@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	//"github.com/goccy/go-json"
+	// "github.com/goccy/go-json".
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
@@ -21,7 +21,6 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/parser"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/scanner"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/structure"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/utils"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/worker"
 	gin "github.com/gin-gonic/gin"
 )
@@ -73,11 +72,11 @@ func AddGeneralRoutes(routerapi *gin.RouterGroup) {
 
 type apiparse struct {
 	Name    string
-	Year    bool
 	Typ     string
 	Path    string
 	Config  string
 	Quality string
+	Year    bool
 }
 
 // @Summary      Debug information
@@ -86,9 +85,8 @@ type apiparse struct {
 // @Param        apikey query     string    true  "apikey"
 // @Success      200  {object} Statsresults
 // @Failure      401  {object}  Jsonerror
-// @Router       /api/debugstats [get]
+// @Router       /api/debugstats [get].
 func apiDebugStats(ctx *gin.Context) {
-
 	var gc debug.GCStats
 	debug.ReadGCStats(&gc)
 	var mem runtime.MemStats
@@ -104,21 +102,23 @@ func apiDebugStats(ctx *gin.Context) {
 	debug.WriteHeapDump(f.Fd())
 
 	debug.FreeOSMemory()
-	ctx.JSON(http.StatusOK, gin.H{"GC Stats": string(gcjson),
+	ctx.JSON(http.StatusOK, gin.H{
+		"GC Stats":     string(gcjson),
 		"Mem Stats":    string(memjson),
 		"GOOS":         runtime.GOOS,
 		"NumCPU":       runtime.NumCPU(),
 		"NumGoroutine": runtime.NumGoroutine(),
-		"GOARCH":       runtime.GOARCH})
+		"GOARCH":       runtime.GOARCH,
+	})
 }
 
 type Statsresults struct {
 	GCStats      string `json:"GC Stats"`
 	MemStats     string `json:"Mem Stats"`
 	GOOS         string `json:"GOOS"`
+	GOARCH       string `json:"GOARCH"`
 	NumCPU       int    `json:"NumCPU"`
 	NumGoroutine int    `json:"NumGoroutine"`
-	GOARCH       string `json:"GOARCH"`
 }
 
 // @Summary      Queue
@@ -127,7 +127,7 @@ type Statsresults struct {
 // @Param        apikey query     string    true  "apikey"
 // @Success      200  {object}  Jsondata{data=map[string]worker.Job}
 // @Failure      401  {object}  Jsonerror
-// @Router       /api/queue [get]
+// @Router       /api/queue [get].
 func apiQueueList(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{"data": worker.GetQueues()})
 }
@@ -141,9 +141,8 @@ func apiQueueList(ctx *gin.Context) {
 // @Param        apikey query     string    true  "apikey"
 // @Success      200    {object}   Jsondata{data=[]database.JobHistory}
 // @Failure      401    {object}  Jsonerror
-// @Router       /api/queue/history [get]
+// @Router       /api/queue/history [get].
 func apiQueueListStarted(ctx *gin.Context) {
-
 	var query database.Querywithargs
 	limit := 0
 	query.OrderBy = "ID desc"
@@ -180,9 +179,8 @@ func apiQueueListStarted(ctx *gin.Context) {
 // @Param        apikey query     string    true  "apikey"
 // @Success      200  {object}  string
 // @Failure      401  {object}  Jsonerror
-// @Router       /api/trakt/authorize [get]
+// @Router       /api/trakt/authorize [get].
 func apiTraktGetAuthURL(ctx *gin.Context) {
-
 	ctx.JSON(http.StatusOK, apiexternal.GetTraktAuthURL())
 }
 
@@ -193,9 +191,8 @@ func apiTraktGetAuthURL(ctx *gin.Context) {
 // @Param        apikey query     string    true  "apikey"
 // @Success      200   {object}  Jsondata{data=any}
 // @Failure      401   {object}  Jsonerror
-// @Router       /api/trakt/token/{code} [get]
+// @Router       /api/trakt/token/{code} [get].
 func apiTraktGetStoreToken(ctx *gin.Context) {
-
 	apiexternal.SetTraktToken(apiexternal.GetTraktAuthToken(ctx.Param("code")))
 
 	config.UpdateCfgEntry(config.Conf{Name: "trakt_token", Data: apiexternal.GetTraktToken()})
@@ -210,12 +207,11 @@ func apiTraktGetStoreToken(ctx *gin.Context) {
 // @Param        apikey query     string    true  "apikey"
 // @Success      200   {object}  Jsondataerror{data=[]apiexternal.TraktUserList}
 // @Failure      401   {object}  Jsonerror
-// @Router       /api/trakt/user/{user}/{list} [get]
+// @Router       /api/trakt/user/{user}/{list} [get].
 func apiTraktGetUserList(ctx *gin.Context) {
 	lim := "10"
 	list, err := apiexternal.GetTraktUserList(ctx.Param("user"), ctx.Param("list"), "movie,show", &lim)
 	ctx.JSON(http.StatusOK, gin.H{"data": list, "error": err})
-	//list = nil
 }
 
 // @Summary      Refresh Slugs
@@ -224,9 +220,8 @@ func apiTraktGetUserList(ctx *gin.Context) {
 // @Param        apikey query     string    true  "apikey"
 // @Success      200   {object}  string "returns ok"
 // @Failure      401   {object}  Jsonerror
-// @Router       /api/slug [get]
+// @Router       /api/slug [get].
 func apiDBRefreshSlugs(ctx *gin.Context) {
-
 	dbmovies := database.QueryDbmovie(database.Querywithargs{})
 	var slug string
 	for idx := range dbmovies {
@@ -252,11 +247,6 @@ func apiDBRefreshSlugs(ctx *gin.Context) {
 		database.ExecN("update dbserie_alternates set slug = ? where id = ?", slug, &dbserietitles[idx].ID)
 	}
 	ctx.JSON(http.StatusOK, "ok")
-
-	dbmovies = nil
-	dbserie = nil
-	dbmoviestitles = nil
-	dbserietitles = nil
 }
 
 // @Summary      Parse a string
@@ -267,9 +257,8 @@ func apiDBRefreshSlugs(ctx *gin.Context) {
 // @Success      200      {object}  Jsondataerror{data=database.ParseInfo}
 // @Failure      400      {object}  Jsonerror
 // @Failure      401      {object}  Jsonerror
-// @Router       /api/parse/string [post]
+// @Router       /api/parse/string [post].
 func apiParseString(ctx *gin.Context) {
-
 	var getcfg apiparse
 	var err error
 	if err = ctx.ShouldBindJSON(&getcfg); err != nil {
@@ -283,7 +272,8 @@ func apiParseString(ctx *gin.Context) {
 		cfgv = "serie_" + getcfg.Config
 	}
 	cfgp := config.SettingsMedia[cfgv]
-	parse := parser.NewFileParser(getcfg.Name, cfgp, false, -1)
+	parse := parser.ParseFile(getcfg.Name, false, false, cfgp, -1)
+	// parse := parser.NewFileParser(getcfg.Name, cfgp, false, -1)
 	parser.GetPriorityMapQual(parse, cfgp, config.SettingsQuality[getcfg.Quality], true, true)
 	err = parser.GetDBIDs(parse, cfgp, true)
 	ctx.JSON(http.StatusOK, gin.H{"data": parse, "error": err})
@@ -298,9 +288,8 @@ func apiParseString(ctx *gin.Context) {
 // @Success      200      {object}  Jsondata{data=database.ParseInfo}
 // @Failure      400      {object}  Jsonerror
 // @Failure      401      {object}  Jsonerror
-// @Router       /api/parse/file [post]
+// @Router       /api/parse/file [post].
 func apiParseFile(ctx *gin.Context) {
-
 	var getcfg apiparse
 	var err error
 	if err = ctx.ShouldBindJSON(&getcfg); err != nil {
@@ -314,9 +303,11 @@ func apiParseFile(ctx *gin.Context) {
 		cfgv = "serie_" + getcfg.Config
 	}
 	cfgp := config.SettingsMedia[cfgv]
-	//defer parse.Close()
-	parse := parser.NewFileParser(filepath.Base(getcfg.Path), cfgp, false, -1)
-	parser.ParseVideoFile(parse, getcfg.Path, config.SettingsQuality[getcfg.Quality])
+	// defer parse.Close()
+	parse := parser.ParseFile(getcfg.Path, true, false, cfgp, -1)
+	// parse := parser.NewFileParser(filepath.Base(getcfg.Path), cfgp, false, -1)
+	parse.File = getcfg.Path
+	parser.ParseVideoFile(parse, config.SettingsQuality[getcfg.Quality])
 	parser.GetPriorityMapQual(parse, cfgp, config.SettingsQuality[getcfg.Quality], true, true)
 	parser.GetDBIDs(parse, cfgp, true)
 	ctx.JSON(http.StatusOK, gin.H{"data": parse})
@@ -329,11 +320,9 @@ func apiParseFile(ctx *gin.Context) {
 // @Param        apikey query     string    true  "apikey"
 // @Success      200  {object}  string "returns ok"
 // @Failure      401  {object}  Jsonerror
-// @Router       /api/fillimdb [get]
+// @Router       /api/fillimdb [get].
 func apiFillImdb(ctx *gin.Context) {
-
-	utils.FillImdb()
-
+	config.SettingsGeneral.Jobs["RefreshImdb"](0)
 	ctx.JSON(http.StatusOK, "ok")
 }
 
@@ -343,7 +332,7 @@ func apiFillImdb(ctx *gin.Context) {
 // @Param        apikey query     string    true  "apikey"
 // @Success      200  {object}  string "returns ok"
 // @Failure      401  {object}  Jsonerror
-// @Router       /api/scheduler/stop [get]
+// @Router       /api/scheduler/stop [get].
 func apiSchedulerStop(c *gin.Context) {
 	// scheduler.QueueData.Stop()
 	// scheduler.QueueFeeds.Stop()
@@ -357,7 +346,7 @@ func apiSchedulerStop(c *gin.Context) {
 // @Param        apikey query     string    true  "apikey"
 // @Success      200  {object}  string "returns ok"
 // @Failure      401  {object}  Jsonerror
-// @Router       /api/scheduler/start [get]
+// @Router       /api/scheduler/start [get].
 func apiSchedulerStart(c *gin.Context) {
 	// scheduler.QueueData.Start()
 	// scheduler.QueueFeeds.Start()
@@ -371,10 +360,9 @@ func apiSchedulerStart(c *gin.Context) {
 // @Param        apikey query     string    true  "apikey"
 // @Success      200  {object}  Jsondata{data=map[string]worker.JobSchedule}
 // @Failure      401  {object}  Jsonerror
-// @Router       /api/scheduler/list [get]
+// @Router       /api/scheduler/list [get].
 func apiSchedulerList(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{"data": worker.GetSchedules()})
-	//r = nil
 }
 
 // @Summary      Close DB
@@ -383,9 +371,8 @@ func apiSchedulerList(ctx *gin.Context) {
 // @Param        apikey query     string    true  "apikey"
 // @Success      200  {object}  string "returns ok"
 // @Failure      401  {object}  Jsonerror
-// @Router       /api/db/close [get]
+// @Router       /api/db/close [get].
 func apiDBClose(ctx *gin.Context) {
-
 	database.DBClose()
 	ctx.JSON(http.StatusOK, "ok")
 }
@@ -396,14 +383,14 @@ func apiDBClose(ctx *gin.Context) {
 // @Param        apikey query     string    true  "apikey"
 // @Success      200  {object}  string "returns ok"
 // @Failure      401  {object}  Jsonerror
-// @Router       /api/db/backup [get]
+// @Router       /api/db/backup [get].
 func apiDBBackup(ctx *gin.Context) {
-
 	if config.SettingsGeneral.DatabaseBackupStopTasks {
 		worker.StopCronWorker()
 		worker.CloseWorkerPools()
 	}
-	database.Backup("./backup/data.db."+database.GetVersion()+"."+time.Now().Format("20060102_150405"), config.SettingsGeneral.MaxDatabaseBackups)
+	backupto := "./backup/data.db." + database.GetVersion() + "." + time.Now().Format("20060102_150405")
+	database.Backup(&backupto, config.SettingsGeneral.MaxDatabaseBackups)
 	if config.SettingsGeneral.DatabaseBackupStopTasks {
 		worker.InitWorkerPools(config.SettingsGeneral.WorkerSearch, config.SettingsGeneral.WorkerFiles, config.SettingsGeneral.WorkerMetadata)
 		worker.StartCronWorker()
@@ -417,9 +404,8 @@ func apiDBBackup(ctx *gin.Context) {
 // @Param        apikey query     string    true  "apikey"
 // @Success      200  {object}  string
 // @Failure      401  {object}  Jsonerror
-// @Router       /api/db/integrity [get]
+// @Router       /api/db/integrity [get].
 func apiDBIntegrity(ctx *gin.Context) {
-
 	ctx.JSON(http.StatusOK, database.DBIntegrityCheck())
 }
 
@@ -430,10 +416,9 @@ func apiDBIntegrity(ctx *gin.Context) {
 // @Param        apikey query     string    true  "apikey"
 // @Success      200   {object}  string "returns ok"
 // @Failure      401   {object}  Jsonerror
-// @Router       /api/db/clear/{name} [delete]
+// @Router       /api/db/clear/{name} [delete].
 func apiDBClear(ctx *gin.Context) {
-
-	_, err := database.ExecN("DELETE from " + ctx.Param("name"))
+	err := database.ExecNErr("DELETE from " + ctx.Param("name"))
 	database.ExecN("VACUUM")
 	if err == nil {
 		ctx.JSON(http.StatusOK, "ok")
@@ -448,9 +433,8 @@ func apiDBClear(ctx *gin.Context) {
 // @Param        apikey query     string    true  "apikey"
 // @Success      200   {object}  string "returns ok"
 // @Failure      401   {object}  Jsonerror
-// @Router       /api/db/clearcache [delete]
+// @Router       /api/db/clearcache [delete].
 func apiDBClearCache(ctx *gin.Context) {
-
 	database.ClearCaches()
 	ctx.JSON(http.StatusOK, "ok")
 }
@@ -461,10 +445,9 @@ func apiDBClearCache(ctx *gin.Context) {
 // @Param        apikey query     string    true  "apikey"
 // @Success      200  {object}  string "returns ok"
 // @Failure      401  {object}  Jsonerror
-// @Router       /api/db/vacuum [get]
+// @Router       /api/db/vacuum [get].
 func apiDBVacuum(ctx *gin.Context) {
-
-	_, err := database.ExecN("VACUUM")
+	err := database.ExecNErr("VACUUM")
 	if err == nil {
 		ctx.JSON(http.StatusOK, "ok")
 	} else {
@@ -479,9 +462,8 @@ func apiDBVacuum(ctx *gin.Context) {
 // @Param        apikey query     string    true  "apikey"
 // @Success      200   {object}  string "returns ok"
 // @Failure      401   {object}  Jsonerror
-// @Router       /api/db/oldjobs [delete]
+// @Router       /api/db/oldjobs [delete].
 func apiDBRemoveOldJobs(ctx *gin.Context) {
-
 	if queryParam, ok := ctx.GetQuery("days"); ok {
 		if queryParam != "" {
 			days, _ := strconv.Atoi(queryParam)
@@ -510,10 +492,9 @@ func apiDBRemoveOldJobs(ctx *gin.Context) {
 // @Param        apikey query     string    true  "apikey"
 // @Success      200  {object}   Jsondata{data=[]database.Qualities}
 // @Failure      401  {object}  Jsonerror
-// @Router       /api/quality [get]
+// @Router       /api/quality [get].
 func apiGetQualities(ctx *gin.Context) {
-
-	ctx.JSON(http.StatusOK, gin.H{"data": database.GetrowsN[database.Qualities](false, database.GetdatarowN[uint](false, "select count() from qualities"), "select * from qualities")})
+	ctx.JSON(http.StatusOK, gin.H{"data": database.StructscanT[database.Qualities](false, database.GetdatarowN(false, "select count() from qualities"), "select * from qualities")})
 }
 
 // @Summary      Delete Quality
@@ -523,12 +504,11 @@ func apiGetQualities(ctx *gin.Context) {
 // @Param        apikey query     string    true  "apikey"
 // @Success      200  {object}   Jsondata{data=[]database.Qualities}
 // @Failure      401  {object}  Jsonerror
-// @Router       /api/quality/{id} [delete]
+// @Router       /api/quality/{id} [delete].
 func apiQualityDelete(ctx *gin.Context) {
-
 	database.DeleteRow("qualities", logger.FilterByID, ctx.Param("id"))
 	database.SetVars()
-	ctx.JSON(http.StatusOK, gin.H{"data": database.GetrowsN[database.Qualities](false, database.GetdatarowN[uint](false, "select count() from qualities"), "select * from qualities")})
+	ctx.JSON(http.StatusOK, gin.H{"data": database.StructscanT[database.Qualities](false, database.GetdatarowN(false, "select count() from qualities"), "select * from qualities")})
 }
 
 // @Summary      Update Quality
@@ -539,15 +519,14 @@ func apiQualityDelete(ctx *gin.Context) {
 // @Success      200      {object}   Jsondata{data=[]database.Qualities}
 // @Failure      400      {object}  Jsonerror
 // @Failure      401      {object}  Jsonerror
-// @Router       /api/quality [post]
+// @Router       /api/quality [post].
 func apiQualityUpdate(ctx *gin.Context) {
-
 	var quality database.Qualities
 	if err := ctx.ShouldBindJSON(&quality); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	counter := database.GetdatarowN[uint](false, "select count() from qualities where id != 0 and id = ?", &quality.ID)
+	counter := database.GetdatarowN(false, "select count() from qualities where id != 0 and id = ?", &quality.ID)
 
 	if counter == 0 {
 		database.InsertArray("qualities", []string{"Type", "Name", "Regex", "Strings", "Priority", "Use_Regex"},
@@ -557,7 +536,7 @@ func apiQualityUpdate(ctx *gin.Context) {
 			"id != 0 and id = ?", quality.QualityType, quality.Name, quality.Regex, quality.Strings, quality.Priority, quality.UseRegex, quality.ID)
 	}
 	database.SetVars()
-	ctx.JSON(http.StatusOK, gin.H{"data": database.GetrowsN[database.Qualities](false, database.GetdatarowN[uint](false, "select count() from qualities"), "select * from qualities")})
+	ctx.JSON(http.StatusOK, gin.H{"data": database.StructscanT[database.Qualities](false, database.GetdatarowN(false, "select count() from qualities"), "select * from qualities")})
 }
 
 // @Summary      List Quality Priorities
@@ -568,9 +547,8 @@ func apiQualityUpdate(ctx *gin.Context) {
 // @Success      200     {object}   Jsondata{data=[]parser.Prioarr}
 // @Failure      401  {object}  Jsonerror
 // @Failure      404     {object}  string
-// @Router       /api/quality/get/{name} [get]
+// @Router       /api/quality/get/{name} [get].
 func apiListQualityPriorities(ctx *gin.Context) {
-
 	if !config.CheckGroup("quality_", ctx.Param("name")) {
 		ctx.JSON(http.StatusNotFound, "quality not found")
 		return
@@ -581,7 +559,7 @@ func apiListQualityPriorities(ctx *gin.Context) {
 			returnprios = append(returnprios, prio)
 		}
 	}
-	//ctx.JSON(http.StatusOK, gin.H{"data": parser.Getallprios()[ctx.Param("name")]})
+	// ctx.JSON(http.StatusOK, gin.H{"data": parser.Getallprios()[ctx.Param("name")]})
 	ctx.JSON(http.StatusOK, gin.H{"data": returnprios})
 }
 
@@ -592,9 +570,8 @@ func apiListQualityPriorities(ctx *gin.Context) {
 // @Success      200     {object}   Jsondata{data=[]parser.Prioarr}
 // @Failure      401  {object}  Jsonerror
 // @Failure      404     {object}  string
-// @Router       /api/quality/all [get]
+// @Router       /api/quality/all [get].
 func apiListAllQualityPriorities(ctx *gin.Context) {
-
 	ctx.JSON(http.StatusOK, gin.H{"data": parser.Getallprios()})
 }
 
@@ -605,9 +582,8 @@ func apiListAllQualityPriorities(ctx *gin.Context) {
 // @Success      200     {object}   Jsondata{data=[]parser.Prioarr}
 // @Failure      401  {object}  Jsonerror
 // @Failure      404     {object}  string
-// @Router       /api/quality/complete [get]
+// @Router       /api/quality/complete [get].
 func apiListCompleteAllQualityPriorities(ctx *gin.Context) {
-
 	ctx.JSON(http.StatusOK, gin.H{"data": parser.Getcompleteallprios()})
 }
 
@@ -617,9 +593,8 @@ func apiListCompleteAllQualityPriorities(ctx *gin.Context) {
 // @Param        apikey query     string    true  "apikey"
 // @Success      200  {array}  Jsondata{data=map[string]any}
 // @Failure      401  {object}  Jsonerror
-// @Router       /api/config/all [get]
+// @Router       /api/config/all [get].
 func apiConfigAll(ctx *gin.Context) {
-
 	ctx.JSON(http.StatusOK, gin.H{"data": config.GetCfgAll()})
 }
 
@@ -629,9 +604,8 @@ func apiConfigAll(ctx *gin.Context) {
 // @Param        apikey query     string    true  "apikey"
 // @Success      200  {array}  Jsondata{data=map[string]any}
 // @Failure      401   {object}  Jsonerror
-// @Router       /api/config/clear [delete]
+// @Router       /api/config/clear [delete].
 func apiConfigClear(ctx *gin.Context) {
-
 	config.ClearCfg()
 	config.WriteCfg()
 	ctx.JSON(http.StatusOK, gin.H{"data": config.GetCfgAll()})
@@ -644,11 +618,9 @@ func apiConfigClear(ctx *gin.Context) {
 // @Param        apikey query     string    true  "apikey"
 // @Success      200   {object}  Jsondata{data=any}
 // @Failure      401   {object}  Jsonerror
-// @Router       /api/config/get/{name} [get]
+// @Router       /api/config/get/{name} [get].
 func apiConfigGet(ctx *gin.Context) {
-
 	ctx.JSON(http.StatusOK, gin.H{"data": config.GetCfgAll()[ctx.Param("name")]})
-	//data = nil
 }
 
 // @Summary      Delete Config
@@ -658,9 +630,8 @@ func apiConfigGet(ctx *gin.Context) {
 // @Param        apikey query     string    true  "apikey"
 // @Success      200   {array}  Jsondata{data=map[string]any}
 // @Failure      401  {object}  Jsonerror
-// @Router       /api/config/delete/{name} [delete]
+// @Router       /api/config/delete/{name} [delete].
 func apiConfigDelete(ctx *gin.Context) {
-
 	config.DeleteCfgEntry(ctx.Param("name"))
 	config.WriteCfg()
 	ctx.JSON(http.StatusOK, gin.H{"data": config.GetCfgAll()})
@@ -672,9 +643,8 @@ func apiConfigDelete(ctx *gin.Context) {
 // @Param        apikey query     string    true  "apikey"
 // @Success      200  {array}  Jsondata{data=map[string]any}
 // @Failure      401   {object}  Jsonerror
-// @Router       /api/config/refresh [get]
+// @Router       /api/config/refresh [get].
 func apiConfigRefreshFile(ctx *gin.Context) {
-
 	config.LoadCfgDB()
 	ctx.JSON(http.StatusOK, gin.H{"data": config.GetCfgAll()})
 }
@@ -689,9 +659,8 @@ func apiConfigRefreshFile(ctx *gin.Context) {
 // @Failure      401     {object}  Jsonerror
 // @Failure      400  {object}  Jsonerror
 // @Failure      401     {object}  Jsonerror
-// @Router       /api/config/update/{name} [post]
+// @Router       /api/config/update/{name} [post].
 func apiConfigUpdate(ctx *gin.Context) {
-
 	name := ctx.Param("name")
 	left, right := logger.SplitByLR(name, '_')
 	if left == "" {
@@ -788,9 +757,8 @@ func apiConfigUpdate(ctx *gin.Context) {
 // @Param        apikey query     string    true  "apikey"
 // @Success      200     {object}  Jsondata{data=map[string]any}
 // @Failure      401     {object}  Jsonerror
-// @Router       /api/config/type/{type} [get]
+// @Router       /api/config/type/{type} [get].
 func apiListConfigType(ctx *gin.Context) {
-
 	list := make(map[string]any)
 	name := ctx.Param("type")
 	left, right := logger.SplitByLR(name, '_')
@@ -864,7 +832,6 @@ func apiListConfigType(ctx *gin.Context) {
 		}
 	}
 	ctx.JSON(http.StatusOK, gin.H{"data": list})
-	//list = nil
 }
 
 type apiNameInput struct {
@@ -883,26 +850,23 @@ type apiNameInput struct {
 // @Success      200     {object}  JsonNaming
 // @Failure      400     {object}  Jsonerror
 // @Failure      401     {object}  Jsonerror
-// @Router       /api/naming [post]
+// @Router       /api/naming [post].
 func apiNamingGenerate(ctx *gin.Context) {
-
 	var cfg apiNameInput
 	if err := ctx.BindJSON(&cfg); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	//defer mediacfg.Close()
+	// defer mediacfg.Close()
 	if cfg.GroupType == logger.StrMovie {
 		movie, _ := database.GetMovies(database.Querywithargs{Where: logger.FilterByID}, cfg.MovieID)
-		//defer logger.ClearVar(&movie)
 		cfgp := config.SettingsMedia[cfg.CfgMedia]
 		s := structure.NewStructure(
 			cfgp,
-			&config.SettingsMedia[cfg.CfgMedia].DataImport[0],
 			config.SettingsMedia[cfg.CfgMedia].DataImport[0].TemplatePath,
 			config.SettingsMedia[cfg.CfgMedia].Data[0].TemplatePath, false, false, 0)
-		//defer s.Close()
+		// defer s.Close()
 		to := filepath.Dir(cfg.FilePath)
 
 		var orgadata2 structure.Organizerdata
@@ -911,23 +875,22 @@ func apiNamingGenerate(ctx *gin.Context) {
 		orgadata2.Rootpath = movie.Rootpath
 		m := parser.ParseFile(cfg.FilePath, true, true, cfgp, cfgp.GetMediaListsEntryListID(movie.Listname))
 		orgadata2.Listid = m.ListID
-		s.ParseFileAdditional(&orgadata2, m, false, 0, false, s.Cfgp.Lists[m.ListID].CfgQuality)
+		s.ParseFileAdditional(&orgadata2, m, 0, false, false, s.Cfgp.Lists[m.ListID].CfgQuality)
 
-		s.GenerateNamingTemplate(&orgadata2, m, &movie.DbmovieID, nil)
+		s.GenerateNamingTemplate(&orgadata2, m, &movie.DbmovieID)
 		ctx.JSON(http.StatusOK, gin.H{"foldername": orgadata2.Foldername, "filename": orgadata2.Filename, "m": m})
 	} else {
 		series, _ := database.GetSeries(database.Querywithargs{Where: logger.FilterByID}, cfg.SerieID)
-		//defer logger.ClearVar(&series)
+		// defer logger.ClearVar(&series)
 		cfgp := config.SettingsMedia[cfg.CfgMedia]
 
 		s := structure.NewStructure(
 			cfgp,
-			&config.SettingsMedia[cfg.CfgMedia].DataImport[0],
 			config.SettingsMedia[cfg.CfgMedia].DataImport[0].TemplatePath,
 			config.SettingsMedia[cfg.CfgMedia].Data[0].TemplatePath,
 			false, false, 0,
 		)
-		//defer s.Close()
+		// defer s.Close()
 		to := filepath.Dir(cfg.FilePath)
 		var orgadata2 structure.Organizerdata
 		orgadata2.Videofile = cfg.FilePath
@@ -936,7 +899,7 @@ func apiNamingGenerate(ctx *gin.Context) {
 
 		m := parser.ParseFile(cfg.FilePath, true, true, cfgp, cfgp.GetMediaListsEntryListID(series.Listname))
 		orgadata2.Listid = m.ListID
-		s.ParseFileAdditional(&orgadata2, m, false, 0, false, s.Cfgp.Lists[m.ListID].CfgQuality)
+		s.ParseFileAdditional(&orgadata2, m, 0, false, false, s.Cfgp.Lists[m.ListID].CfgQuality)
 		m.SerieID = series.ID
 		m.DbserieID = series.DbserieID
 		s.GetSeriesEpisodes(&orgadata2, m, true, s.Cfgp.Lists[orgadata2.Listid].CfgQuality)
@@ -947,21 +910,21 @@ func apiNamingGenerate(ctx *gin.Context) {
 			break
 		}
 
-		s.GenerateNamingTemplate(&orgadata2, m, &firstepiid, m.Episodes)
+		s.GenerateNamingTemplate(&orgadata2, m, &firstepiid)
 		ctx.JSON(http.StatusOK, gin.H{"foldername": orgadata2.Foldername, "filename": orgadata2.Filename, "m": m})
 	}
 }
 
 type apiStructureJSON struct {
 	Folder                     string
-	Disableruntimecheck        bool
-	Disabledisallowed          bool
-	Disabledeletewronglanguage bool
 	Grouptype                  string
 	Sourcepathtemplate         string
 	Targetpathtemplate         string
 	Configentry                string
 	Forceid                    uint
+	Disableruntimecheck        bool
+	Disabledisallowed          bool
+	Disabledeletewronglanguage bool
 }
 
 // @Summary      Structure Single Item
@@ -972,9 +935,8 @@ type apiStructureJSON struct {
 // @Success      200     {object}  string
 // @Failure      400     {object}  Jsonerror
 // @Failure      401     {object}  Jsonerror
-// @Router       /api/structure [post]
+// @Router       /api/structure [post].
 func apiStructure(ctx *gin.Context) {
-
 	var cfg apiStructureJSON
 	if err := ctx.BindJSON(&cfg); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -988,7 +950,7 @@ func apiStructure(ctx *gin.Context) {
 	if strings.EqualFold(cfg.Grouptype, logger.StrSeries) {
 		getconfig = "serie_" + cfg.Configentry
 	}
-	//defer media.Close()
+	// defer media.Close()
 	if config.SettingsMedia[getconfig].Name != cfg.Configentry {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "media config not found"})
 		return
@@ -1028,7 +990,7 @@ func apiStructure(ctx *gin.Context) {
 	// structurevar := structure.NewStructure(cfgp, cfgimport, cfg.Sourcepathtemplate, cfg.Targetpathtemplate, false, false, 0)
 
 	// structurevar.ManualId = cfg.Forceid
-	structure.OrganizeSingleFolder(cfg.Folder, cfgp, cfgimport, cfg.Targetpathtemplate, checkruntime, deletewronglanguage, cfg.Forceid)
+	structure.OrganizeSingleFolder(ctx, cfg.Folder, cfgp, cfgimport, cfg.Targetpathtemplate, checkruntime, deletewronglanguage, cfg.Forceid)
 
 	ctx.JSON(http.StatusOK, gin.H{})
 }

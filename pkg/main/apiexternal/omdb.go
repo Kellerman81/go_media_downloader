@@ -11,49 +11,49 @@ import (
 type OmDBMovie struct {
 	Title string `json:"Title"`
 	Year  string `json:"Year"`
-	//Rated    string `json:"Rated"`
-	//Released string `json:"Released"`
+	// Rated    string `json:"Rated"`
+	// Released string `json:"Released"`
 	Genre    string `json:"Genre"`
 	Language string `json:"Language"`
 	Country  string `json:"Country"`
-	//Awards     string `json:"Awards"`
-	//Metascore  string `json:"Metascore"`
+	// Awards     string `json:"Awards"`
+	// Metascore  string `json:"Metascore"`
 	ImdbRating string `json:"imdbRating"`
 	ImdbVotes  string `json:"imdbVotes"`
 	ImdbID     string `json:"imdbID"`
-	//OmdbType   string `json:"Type"`
-	//DVD        string `json:"DVD"`
+	// OmdbType   string `json:"Type"`
+	// DVD        string `json:"DVD"`
 	Plot string `json:"Plot"`
-	//BoxOffice  string `json:"BoxOffice"`
-	//Production string `json:"Production"`
+	// BoxOffice  string `json:"BoxOffice"`
+	// Production string `json:"Production"`
 	Website string `json:"Website"`
 	Runtime string `json:"Runtime"`
-	//Director  string `json:"Director"`
-	//Writer string `json:"Writer"`
-	//Actors string `json:"Actors"`
-	//Poster string `json:"Poster"`
+	// Director  string `json:"Director"`
+	// Writer string `json:"Writer"`
+	// Actors string `json:"Actors"`
+	// Poster string `json:"Poster"`
 }
 
-type OmDBMovieSearch struct {
-	Title  string `json:"Title"`
-	Year   string `json:"Year"`
-	ImdbID string `json:"imdbID"`
-	//OmdbType string `json:"Type"`
-	//Poster   string `json:"Poster"`
-}
 type OmDBMovieSearchGlobal struct {
-	Search []OmDBMovieSearch `json:"Search"`
-	//TotalResults int               `json:"TotalResults"`
-	//Response     bool              `json:"Reponse"`
+	Search []struct {
+		Title  string `json:"Title"`
+		Year   string `json:"Year"`
+		ImdbID string `json:"imdbID"`
+		// OmdbType string `json:"Type"`
+		// Poster   string `json:"Poster"`
+	} `json:"Search"`
+	// TotalResults int               `json:"TotalResults"`
+	// Response     bool              `json:"Response"`
 }
 
 // omdbClient is a struct for interacting with the OMDb API.
 // It contains fields for the API key, query parameter API key,
 // and a pointer to the rate limited HTTP client.
 type omdbClient struct {
-	OmdbAPIKey string       // The OMDb API key
-	QAPIKey    string       // The query parameter API key
 	Client     rlHTTPClient // Pointer to the rate limited HTTP client
+	Lim        slidingwindow.Limiter
+	OmdbAPIKey string // The OMDb API key
+	QAPIKey    string // The query parameter API key
 }
 
 // NewOmdbClient creates a new omdbClient instance for making requests to the
@@ -67,15 +67,16 @@ func NewOmdbClient(apikey string, seconds uint8, calls int, disabletls bool, tim
 	if calls == 0 {
 		calls = 1
 	}
-	omdbApidata = apidata{
-		apikey:         apikey,
-		apikeyq:        "&apikey=" + apikey,
-		disabletls:     disabletls,
-		seconds:        seconds,
-		calls:          calls,
-		timeoutseconds: timeoutseconds,
-		limiter:        slidingwindow.NewLimiter(time.Duration(seconds)*time.Second, int64(calls)),
-		dailylimiter:   slidingwindow.NewLimiter(10*time.Second, 10),
+	omdbAPI = omdbClient{
+		OmdbAPIKey: apikey,
+		QAPIKey:    "&apikey=" + apikey,
+		Lim:        slidingwindow.NewLimiter(time.Duration(seconds)*time.Second, int64(calls)),
+		Client: NewClient(
+			"omdb",
+			disabletls,
+			true,
+			&omdbAPI.Lim,
+			false, nil, timeoutseconds),
 	}
 }
 
@@ -83,13 +84,11 @@ func NewOmdbClient(apikey string, seconds uint8, calls int, disabletls bool, tim
 // It returns a pointer to an OmDBMovie struct and an error.
 // The imdbid parameter specifies the imdbid to look up.
 // It returns logger.ErrNotFound if the imdbid is empty.
-func GetOmdbMovie(imdbid string) (OmDBMovie, error) {
-	p := plomdb.Get()
-	defer plomdb.Put(p)
-	if imdbid == "" || p.Client.checklimiterwithdaily() {
-		return OmDBMovie{}, logger.ErrNotFound
+func GetOmdbMovie(imdbid string) (*OmDBMovie, error) {
+	if imdbid == "" {
+		return nil, logger.ErrNotFound
 	}
-	return doJSONType[OmDBMovie](&p.Client, logger.JoinStrings("http://www.omdbapi.com/?i=", imdbid, p.QAPIKey))
+	return doJSONTypeP[OmDBMovie](&omdbAPI.Client, logger.JoinStrings("http://www.omdbapi.com/?i=", imdbid, omdbAPI.QAPIKey), nil)
 }
 
 // SearchOmdbMovie searches the OMDb API for movies matching the given title and release year.
@@ -97,14 +96,12 @@ func GetOmdbMovie(imdbid string) (OmDBMovie, error) {
 // The year parameter optionally specifies a release year to filter by.
 // It returns a pointer to an OmDBMovieSearchGlobal struct containing search results,
 // and an error.
-func SearchOmdbMovie(title string, year string) (OmDBMovieSearchGlobal, error) {
-	p := plomdb.Get()
-	defer plomdb.Put(p)
-	if title == "" || p.Client.checklimiterwithdaily() {
-		return OmDBMovieSearchGlobal{}, logger.ErrNotFound
+func SearchOmdbMovie(title, yearin string) (*OmDBMovieSearchGlobal, error) {
+	if title == "" {
+		return nil, logger.ErrNotFound
 	}
-	if year != "" && year != "0" {
-		year = logger.JoinStrings("&y=", year)
+	if yearin != "" && yearin != "0" {
+		return doJSONTypeP[OmDBMovieSearchGlobal](&omdbAPI.Client, logger.JoinStrings("http://www.omdbapi.com/?s=", url.QueryEscape(title), "&y=", yearin, omdbAPI.QAPIKey), nil)
 	}
-	return doJSONType[OmDBMovieSearchGlobal](&p.Client, logger.JoinStrings("http://www.omdbapi.com/?s=", url.QueryEscape(title), year, p.QAPIKey))
+	return doJSONTypeP[OmDBMovieSearchGlobal](&omdbAPI.Client, logger.JoinStrings("http://www.omdbapi.com/?s=", url.QueryEscape(title), omdbAPI.QAPIKey), nil)
 }

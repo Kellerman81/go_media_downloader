@@ -4,7 +4,7 @@ import (
 	"time"
 )
 
-//Source: https://github.com/RussellLuo/slidingwindow
+// Source: https://github.com/RussellLuo/slidingwindow
 
 // LocalWindow represents a window that ignores sync behavior entirely
 // and only stores counters in memory.
@@ -12,16 +12,16 @@ type Limiter struct {
 	// The start boundary (timestamp in nanoseconds) of the window.
 	start time.Time
 
-	//The last call
+	// The last call
 	last time.Time
+
+	interval time.Duration
 
 	// The total count of events happened in the window.
 	count int64
 
 	// The total count of events happened in the window.
 	max int64
-
-	interval time.Duration
 }
 
 // add increments the count and updates the last and start timestamps if
@@ -29,21 +29,21 @@ type Limiter struct {
 // the start timestamp is updated if enough time has passed since the first
 // event in the window.
 func (lim *Limiter) add() {
-	set := time.Now()
-	if lim.last.After(time.Now()) {
-		//Moved Time to Future for Blocking
+	if timeAfter(lim.last) {
+		// Moved Time to Future for Blocking
 		return
 	}
 
+	set := time.Now()
 	if lim.count < lim.max {
-		//Queue not full
+		// Queue not full
 		lim.count++
 		lim.last = set
 		return
 	}
 
 	if time.Since(lim.last) > lim.interval {
-		//Last Call long ago
+		// Last Call long ago
 
 		lim.count = 1
 		lim.last = set
@@ -52,7 +52,7 @@ func (lim *Limiter) add() {
 	}
 
 	if time.Since(lim.start) > lim.interval {
-		//First Call long ago
+		// First Call long ago
 		lim.count = 1
 		lim.last = set
 		lim.start = set
@@ -60,6 +60,18 @@ func (lim *Limiter) add() {
 	}
 
 	lim.last = set
+}
+
+// timeAfter checks if the given time `a` is after the current time. It first
+// compares the Unix timestamps, and if they are equal, it compares the
+// nanosecond parts to determine if `a` is after the current time.
+func timeAfter(a time.Time) bool {
+	as := a.Unix()
+	bs := time.Now().Unix()
+	if as == bs {
+		return a.UnixNano() > time.Now().UnixNano()
+	}
+	return as > bs
 }
 
 // Allow checks if the rate limit would be exceeded by calling add. If the
@@ -88,8 +100,8 @@ func (lim *Limiter) AllowForce() bool {
 // time.Duration for the remaining time until the next event can happen without
 // exceeding the rate limit.
 func (lim *Limiter) Check() (bool, time.Duration) {
-	if lim.last.After(time.Now()) {
-		//Date set to future for blocking
+	if timeAfter(lim.last) {
+		// Date set to future for blocking
 		return false, time.Until(lim.last)
 	}
 	if lim.count < lim.max {
@@ -98,14 +110,37 @@ func (lim *Limiter) Check() (bool, time.Duration) {
 	}
 
 	if time.Since(lim.last) > lim.interval {
-		//Last Call long ago
+		// Last Call long ago
 		return true, 0 * time.Second
 	}
 	if time.Since(lim.start) > lim.interval {
-		//First Call long ago
+		// First Call long ago
 		return true, 0 * time.Second
 	}
 	return false, lim.interval - time.Since(lim.start)
+}
+
+// CheckBool checks if the rate limit would be exceeded by calling add. It returns
+// a boolean indicating whether the rate limit would be exceeded or not.
+func (lim *Limiter) CheckBool() bool {
+	if timeAfter(lim.last) {
+		// Date set to future for blocking
+		return false
+	}
+	if lim.count < lim.max {
+		// Queue not full
+		return true
+	}
+
+	if time.Since(lim.last) > lim.interval {
+		// Last Call long ago
+		return true
+	}
+	if time.Since(lim.start) > lim.interval {
+		// First Call long ago
+		return true
+	}
+	return false
 }
 
 // Interval returns the interval duration configured for the rate limiter.
@@ -121,6 +156,6 @@ func (lim *Limiter) WaitTill(now time.Time) {
 
 // NewLimiter returns a new Limiter that limits events to max
 // events per interval duration.
-func NewLimiter(interval time.Duration, max int64) Limiter {
-	return Limiter{interval: interval, max: max, start: time.Now(), last: time.Now()}
+func NewLimiter(interval time.Duration, maxevents int64) Limiter {
+	return Limiter{interval: interval, max: maxevents, start: time.Now(), last: time.Now()}
 }
