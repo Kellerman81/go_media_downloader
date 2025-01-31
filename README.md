@@ -32,6 +32,7 @@ Inspirations: Radarr/Sonarr and Flexget
 - Moved logs to logs subfolder
 - added first webinterface (admin only - crashes sometimes - not many data validity checks)
 - Webinterface Login: User: admin  -  Password: admin
+- IMDB List Url not supported any more
 ## Features
 
 - Get Feeds of wanted media (Movies: Imdb Public Lists, Series: Local Wanted file --series.toml--)
