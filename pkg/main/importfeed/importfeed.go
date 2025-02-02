@@ -713,8 +713,9 @@ func insertdbserie(serieconfig *config.SerieConfig, dbserie *database.Dbserie) {
 		return
 	}
 	logger.LogDynamicany1Int("debug", "Insert dbseries for", logger.StrTvdb, serieconfig.TvdbID)
+	aliases := logger.JoinStringsSep(serieconfig.AlternateName, ",")
 	inres, err := database.ExecNid("insert into dbseries (seriename, aliases, thetvdb_id, identifiedby) values (?, ?, ?, ?)",
-		&serieconfig.Name, logger.JoinStringsSep(serieconfig.AlternateName, ","), &serieconfig.TvdbID, &serieconfig.Identifiedby)
+		&serieconfig.Name, &aliases, &serieconfig.TvdbID, &serieconfig.Identifiedby)
 	if err != nil {
 		dbserie.ID = 0
 		return

@@ -229,7 +229,7 @@ func apiMovieMetadataGet(ctx *gin.Context) {
 	if queryParam, ok := ctx.GetQuery("update"); ok && queryParam == "1" {
 		dbmovie.MovieFindDBIDByImdbParser()
 		if dbmovie.ID == 0 {
-			dbresult, err := database.ExecNid("insert into dbmovies (Imdb_ID) VALUES (?)", dbmovie.ImdbID)
+			dbresult, err := database.ExecNid("insert into dbmovies (Imdb_ID) VALUES (?)", &dbmovie.ImdbID)
 			if err == nil {
 				dbmovie.ID = uint(dbresult)
 			}

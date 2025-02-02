@@ -6,12 +6,12 @@ require (
 	github.com/DeanThompson/ginpprof v0.0.0-20201112072838-007b1e56b2e1 //extend webserver with pprof tools
 	github.com/GoAdminGroup/go-admin v1.2.26
 	github.com/GoAdminGroup/themes v0.0.48
-	github.com/alitto/pond v1.9.2 //Worker Pool
+	github.com/alitto/pond/v2 v2.1.6
 	github.com/andrewstuart/go-nzb v0.0.0-20151130213409-4af25f1cccf1 //access nzbget
 	github.com/gdm85/go-libdeluge v0.6.0 //access deluge
 	github.com/gin-gonic/gin v1.10.0 //webapi
-	github.com/goccy/go-json v0.10.4
-	github.com/golang-migrate/migrate/v4 v4.18.1 //initialize db
+	github.com/goccy/go-json v0.10.5
+	github.com/golang-migrate/migrate/v4 v4.18.2 //initialize db
 	github.com/google/uuid v1.6.0 //scheduler
 	github.com/jmoiron/sqlx v1.4.0 //structscan for db
 	github.com/mattn/go-sqlite3 v2.0.3+incompatible // data and imdb db
@@ -64,8 +64,8 @@ require (
 	go.uber.org/multierr v1.7.0 // indirect
 	go.uber.org/zap v1.19.1 // indirect
 	golang.org/x/arch v0.8.0 // indirect
-	golang.org/x/crypto v0.30.0 // indirect
-	golang.org/x/net v0.29.0 // indirect
+	golang.org/x/crypto v0.31.0 // indirect
+	golang.org/x/net v0.33.0 // indirect
 	golang.org/x/sys v0.28.0 // indirect
 	golang.org/x/text v0.21.0 // indirect
 	google.golang.org/protobuf v1.34.2 // indirect

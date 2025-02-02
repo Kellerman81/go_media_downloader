@@ -9,7 +9,7 @@ import (
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
-	"github.com/alitto/pond"
+	"github.com/alitto/pond/v2"
 	"github.com/google/uuid"
 
 	"github.com/robfig/cron/v3"
@@ -18,19 +18,19 @@ import (
 var (
 	strMsg = "msg"
 	// workerPoolIndexer is a WorkerPool for executing indexer tasks.
-	WorkerPoolIndexer *pond.WorkerPool
+	WorkerPoolIndexer pond.Pool
 
 	// workerPoolParse is a WorkerPool for executing parse tasks.
-	WorkerPoolParse *pond.WorkerPool
+	WorkerPoolParse pond.Pool
 
 	// workerPoolSearch is a WorkerPool for executing search tasks.
-	workerPoolSearch *pond.WorkerPool
+	workerPoolSearch pond.Pool
 
 	// workerPoolFiles is a WorkerPool for executing file tasks.
-	workerPoolFiles *pond.WorkerPool
+	workerPoolFiles pond.Pool
 
 	// workerPoolMetadata is a WorkerPool for executing metadata tasks.
-	workerPoolMetadata *pond.WorkerPool
+	workerPoolMetadata pond.Pool
 
 	// cronWorkerData is a Cron instance for scheduling data worker jobs.
 	cronWorkerData *cron.Cron
@@ -65,9 +65,9 @@ var (
 
 	ErrNotQueued = errors.New("not queued")
 	// phandler is a panic handler function.
-	phandler = pond.PanicHandler(func(p any) {
-		logger.LogDynamicany2StrAny("error", "Recovered from panic (dispatcher)", strMsg, logger.Stack(), strMsg, p)
-	})
+	// phandler = pond.PanicHandler(func(p any) {
+	// 	logger.LogDynamicany2StrAny("error", "Recovered from panic (dispatcher)", strMsg, logger.Stack(), strMsg, p)
+	// })
 )
 
 // SetScheduleStarted sets the IsRunning field of the jobSchedule with the given ID to true,
@@ -212,7 +212,7 @@ func addjob(_ context.Context, cfgpstr string, id uint32, name string, jobname s
 	}
 
 	workpool, added := getpooladded(queue)
-	capa := workpool.MaxCapacity()
+	capa := workpool.MaxConcurrency()
 	if capa > 0 && uint64(capa) <= workpool.WaitingTasks() {
 		logger.Logtype("error", 0).Str("queue", queue).Str(logger.StrJob, name).Msg("queue limit reached")
 		return
@@ -271,7 +271,7 @@ func addjob(_ context.Context, cfgpstr string, id uint32, name string, jobname s
 		Cfgpstr:     cfgpstr,
 		SchedulerID: schedulerID,
 	})
-	if !workpool.TrySubmit(runjobcron(id)) {
+	if workpool.Go(runjobcron(id)) != nil {
 		globalQueueSet.Delete(id)
 	}
 }
@@ -284,6 +284,7 @@ func runjobcron(id uint32) func() {
 		if !globalQueueSet.Check(id) {
 			return
 		}
+		defer logger.HandlePanic()
 		s := globalQueueSet.GetVal(id)
 		defer globalQueueSet.Delete(id)
 		SetScheduleStarted(s.SchedulerID)
@@ -324,7 +325,7 @@ func RemoveQueueEntry(id uint32) {
 // getpooladded returns the appropriate worker pool and the last time a job was added to that pool based on the provided queue name.
 // The function uses a switch statement to determine the correct worker pool and last added time for the given queue.
 // If the queue name is not recognized, the function returns nil and the lastadded time.
-func getpooladded(queue string) (*pond.WorkerPool, time.Time) {
+func getpooladded(queue string) (pond.Pool, time.Time) {
 	switch queue {
 	case "Data":
 		return workerPoolFiles, lastaddeddata
@@ -385,7 +386,7 @@ func Dispatch(name string, fn func(uint32), queue string) error {
 	if workpool == nil {
 		return ErrNotQueued
 	}
-	capa := workpool.MaxCapacity()
+	capa := workpool.MaxConcurrency()
 	if capa > 0 && uint64(capa) <= workpool.WaitingTasks() {
 		logger.Logtype("error", 0).Str("queue", queue).Str(logger.StrJob, name).Msg("queue limit reached")
 		return ErrNotQueued
@@ -425,7 +426,7 @@ func Dispatch(name string, fn func(uint32), queue string) error {
 		ID:          id,
 		SchedulerID: newuuid(),
 	})
-	if !workpool.TrySubmit(runjob(id, fn)) {
+	if workpool.Go(runjob(id, fn)) != nil {
 		globalQueueSet.Delete(id)
 	}
 	return nil
@@ -440,6 +441,7 @@ func runjob(id uint32, fn func(uint32)) func() {
 		if !globalQueueSet.Check(id) {
 			return
 		}
+		defer logger.HandlePanic()
 		s := globalQueueSet.GetVal(id)
 		defer globalQueueSet.Delete(id)
 
@@ -464,22 +466,22 @@ func InitWorkerPools(workersearch int, workerfiles int, workermeta int) {
 	if workermeta == 0 {
 		workermeta = 1
 	}
-	workerPoolSearch = pond.New(workersearch, 100, phandler, pond.Strategy(pond.Balanced()))
-	workerPoolFiles = pond.New(workerfiles, 100, phandler, pond.Strategy(pond.Balanced()))
-	workerPoolMetadata = pond.New(workermeta, 100, phandler, pond.Strategy(pond.Balanced()))
-	WorkerPoolIndexer = pond.New(workersearch, 100, phandler, pond.Strategy(pond.Balanced()))
-	WorkerPoolParse = pond.New(workerfiles, 100, phandler, pond.Strategy(pond.Balanced()))
+	workerPoolSearch = pond.NewPool(workersearch)
+	workerPoolFiles = pond.NewPool(workerfiles)
+	workerPoolMetadata = pond.NewPool(workermeta)
+	WorkerPoolIndexer = pond.NewPool(workersearch)
+	WorkerPoolParse = pond.NewPool(workerfiles)
 }
 
 // CloseWorkerPools stops all worker pools and waits for workers
 // to finish current jobs before returning. Waits up to 2 minutes
 // per pool before timing out.
 func CloseWorkerPools() {
-	workerPoolSearch.StopAndWaitFor(2 * time.Minute)
-	workerPoolFiles.StopAndWaitFor(2 * time.Minute)
-	workerPoolMetadata.StopAndWaitFor(2 * time.Minute)
-	WorkerPoolIndexer.StopAndWaitFor(2 * time.Minute)
-	WorkerPoolParse.StopAndWaitFor(2 * time.Minute)
+	workerPoolSearch.Stop()
+	workerPoolFiles.Stop()
+	workerPoolMetadata.Stop()
+	WorkerPoolIndexer.Stop()
+	WorkerPoolParse.Stop()
 }
 
 // Job represents a job to be run by a worker pool.

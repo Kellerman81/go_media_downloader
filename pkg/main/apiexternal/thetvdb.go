@@ -117,7 +117,7 @@ func GetTvdbSeries(id int, language string) (*TheTVDBSeries, error) {
 	if id == 0 {
 		return nil, logger.ErrNotFound
 	}
-	urlv := ("https://api.thetvdb.com/series/" + strconv.Itoa(id))
+	urlv := logger.JoinStrings("https://api.thetvdb.com/series/", strconv.Itoa(id))
 	if language != "" {
 		_, ok := maptvdblanguageheader[language]
 		if !ok {
@@ -137,7 +137,7 @@ func UpdateTvdbSeriesEpisodes(id int, language string, dbid *uint) {
 	if id == 0 || tvdbAPI.Client.checklimiterwithdaily(tvdbAPI.Client.Ctx) {
 		return
 	}
-	urlv := ("https://api.thetvdb.com/series/" + strconv.Itoa(id) + "/episodes")
+	urlv := logger.JoinStrings("https://api.thetvdb.com/series/", strconv.Itoa(id), "/episodes")
 	result, err := querytvdb(language, urlv)
 	if err != nil {
 		if !errors.Is(err, logger.ErrToWait) {
@@ -149,7 +149,7 @@ func UpdateTvdbSeriesEpisodes(id int, language string, dbid *uint) {
 	result.addthetvdbepisodes(dbid, tbl)
 	if result.Links.Next > 0 && (result.Links.First+1) < result.Links.Last {
 		for k := result.Links.First + 1; k <= result.Links.Last; k++ {
-			resultadd, err := querytvdb(language, (urlv + "?page=" + strconv.Itoa(k)))
+			resultadd, err := querytvdb(language, logger.JoinStrings(urlv, "?page=", strconv.Itoa(k)))
 			if err == nil {
 				resultadd.addthetvdbepisodes(dbid, tbl)
 			}

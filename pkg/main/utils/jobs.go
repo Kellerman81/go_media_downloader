@@ -15,7 +15,6 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/scanner"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/searcher"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/worker"
-	"github.com/alitto/pond"
 )
 
 var (
@@ -156,7 +155,7 @@ func newfilesloop(ctx context.Context, cfgp *config.MediaTypeConfig, data *confi
 		return
 	}
 
-	pl, _ := worker.WorkerPoolParse.GroupContext(ctx)
+	pl := worker.WorkerPoolParse.NewGroupContext(ctx)
 	glblistid := cfgp.GetMediaListsEntryListID(data.AddFoundList)
 
 	filepath.WalkDir(data.CfgPath.Path, func(fpath string, info fs.DirEntry, errw error) error {
@@ -198,57 +197,51 @@ func newfilesloop(ctx context.Context, cfgp *config.MediaTypeConfig, data *confi
 			return nil
 		}
 
-		processnewfolder(pl, fpath, cfgp, glblistid, data)
+		pl.SubmitErr(func() error {
+			defer logger.HandlePanic()
+			m := parser.ParseFile(fpath, true, true, cfgp, -1)
+			if m == nil {
+				return nil
+			}
+			defer m.Close()
+
+			err := parser.GetDBIDs(m, cfgp, true)
+			if err != nil {
+				logger.LogDynamicany1StringErr("warn", logger.ParseFailedIDs, err, logger.StrFile, fpath)
+				return nil
+			}
+
+			listid := glblistid
+			if m.ListID != -1 && glblistid == -1 {
+				listid = m.ListID
+			}
+
+			if cfgp.Useseries && m.SerieID != 0 && m.ListID == -1 && listid == -1 {
+				listid = database.GetMediaListIDGetListname(cfgp, &m.SerieID)
+				m.ListID = listid
+			}
+			if !cfgp.Useseries && m.MovieID != 0 && m.ListID == -1 && listid == -1 {
+				listid = database.GetMediaListIDGetListname(cfgp, &m.MovieID)
+				m.ListID = listid
+			}
+			if listid == -1 {
+				return nil
+			}
+			if cfgp.Useseries {
+				err = jobImportSeriesParseV2(m, fpath, cfgp, &cfgp.Lists[listid])
+			} else {
+				err = jobImportMovieParseV2(m, fpath, cfgp, &cfgp.Lists[listid], data.AddFound)
+			}
+
+			if err != nil {
+				logger.LogDynamicany1StringErr("error", "Error Importing", err, logger.StrFile, fpath)
+			}
+			return nil
+		})
 		return nil
 	})
 
 	pl.Wait()
-}
-
-// processnewfolder is a helper function that processes a new folder by parsing the files in the folder,
-// getting the database IDs, and importing the media items into the appropriate lists.
-// It is called within the SingleJobs function to handle the processing of new folders.
-func processnewfolder(pl *pond.TaskGroupWithContext, fpath string, cfgp *config.MediaTypeConfig, glblistid int, data *config.MediaDataConfig) {
-	pl.Submit(func() error {
-		m := parser.ParseFile(fpath, true, true, cfgp, -1)
-		if m == nil {
-			return nil
-		}
-		defer m.Close()
-
-		err := parser.GetDBIDs(m, cfgp, true)
-		if err != nil {
-			logger.LogDynamicany1StringErr("warn", logger.ParseFailedIDs, err, logger.StrFile, fpath)
-			return nil
-		}
-
-		listid := glblistid
-		if m.ListID != -1 && glblistid == -1 {
-			listid = m.ListID
-		}
-
-		if cfgp.Useseries && m.SerieID != 0 && m.ListID == -1 && listid == -1 {
-			listid = database.GetMediaListIDGetListname(cfgp, &m.SerieID)
-			m.ListID = listid
-		}
-		if !cfgp.Useseries && m.MovieID != 0 && m.ListID == -1 && listid == -1 {
-			listid = database.GetMediaListIDGetListname(cfgp, &m.MovieID)
-			m.ListID = listid
-		}
-		if listid == -1 {
-			return nil
-		}
-		if cfgp.Useseries {
-			err = jobImportSeriesParseV2(m, fpath, cfgp, &cfgp.Lists[listid])
-		} else {
-			err = jobImportMovieParseV2(m, fpath, cfgp, &cfgp.Lists[listid], data.AddFound)
-		}
-
-		if err != nil {
-			logger.LogDynamicany1StringErr("error", "Error Importing", err, logger.StrFile, fpath)
-		}
-		return nil
-	})
 }
 
 // SingleJobs runs a single maintenance job for the given media config and list.

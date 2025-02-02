@@ -247,7 +247,7 @@ func GetTraktMovieAliases(movieid string) []TraktAlias {
 	if movieid == "" {
 		return nil
 	}
-	arr, _ := doJSONType[[]TraktAlias](&traktAPI.Client, (apiurlmovies + movieid + "/aliases"), traktAPI.DefaultHeaders)
+	arr, _ := doJSONType[[]TraktAlias](&traktAPI.Client, logger.JoinStrings(apiurlmovies, movieid, "/aliases"), traktAPI.DefaultHeaders)
 	return arr
 }
 
@@ -259,7 +259,7 @@ func GetTraktMovie(movieid string) (*TraktMovieExtend, error) {
 	if movieid == "" {
 		return nil, logger.ErrNotFound
 	}
-	return doJSONTypeP[TraktMovieExtend](&traktAPI.Client, (apiurlmovies + movieid + extendedfull), traktAPI.DefaultHeaders)
+	return doJSONTypeP[TraktMovieExtend](&traktAPI.Client, logger.JoinStrings(apiurlmovies, movieid, extendedfull), traktAPI.DefaultHeaders)
 }
 
 // GetTraktSerie retrieves extended data for a Trakt TV show by its Trakt ID.
@@ -270,7 +270,7 @@ func GetTraktSerie(showid string) (*TraktSerieData, error) {
 	if showid == "" {
 		return nil, logger.ErrNotFound
 	}
-	return doJSONTypeP[TraktSerieData](&traktAPI.Client, (apiurlshows + showid + extendedfull), traktAPI.DefaultHeaders)
+	return doJSONTypeP[TraktSerieData](&traktAPI.Client, logger.JoinStrings(apiurlshows, showid, extendedfull), traktAPI.DefaultHeaders)
 }
 
 // GetTraktSerieAliases retrieves alias data from the Trakt API for the given Dbserie.
@@ -286,7 +286,7 @@ func GetTraktSerieAliases(dbserie *database.Dbserie) []TraktAlias {
 	} else {
 		urlpart = strconv.Itoa(dbserie.TraktID)
 	}
-	arr, _ := doJSONType[[]TraktAlias](&traktAPI.Client, (apiurlshows + urlpart + "/aliases"), traktAPI.DefaultHeaders)
+	arr, _ := doJSONType[[]TraktAlias](&traktAPI.Client, logger.JoinStrings(apiurlshows, urlpart, "/aliases"), traktAPI.DefaultHeaders)
 	return arr
 }
 
@@ -296,7 +296,7 @@ func GetTraktSerieSeasons(showid string) ([]TraktSerieSeason, error) {
 	if showid == "" {
 		return nil, nil
 	}
-	return doJSONType[[]TraktSerieSeason](&traktAPI.Client, (apiurlshows + showid + "/seasons"), traktAPI.DefaultHeaders)
+	return doJSONType[[]TraktSerieSeason](&traktAPI.Client, logger.JoinStrings(apiurlshows, showid, "/seasons"), traktAPI.DefaultHeaders)
 }
 
 // GetTraktSerieSeasonsAndEpisodes retrieves all seasons and episodes for the given Trakt show ID from the Trakt API.

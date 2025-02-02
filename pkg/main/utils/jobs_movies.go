@@ -165,7 +165,7 @@ func importnewmoviessingle(cfgp *config.MediaTypeConfig, list *config.MediaLists
 
 	ctx := context.Background()
 	defer ctx.Done()
-	pl, _ := worker.WorkerPoolParse.GroupContext(ctx)
+	pl := worker.WorkerPoolParse.NewGroupContext(ctx)
 
 	var getid uint
 	args := logger.PLArrAny.Get()
@@ -216,7 +216,8 @@ func importnewmoviessingle(cfgp *config.MediaTypeConfig, list *config.MediaLists
 
 		allowed, _ = importfeed.AllowMovieImport(&feed.Movies[idx], list.CfgList)
 		if allowed {
-			pl.Submit(func() error {
+			pl.SubmitErr(func() error {
+				defer logger.HandlePanic()
 				importfeed.JobImportMoviesByList(feed.Movies[idx], idx, cfgp, listid, true)
 				return nil
 			})

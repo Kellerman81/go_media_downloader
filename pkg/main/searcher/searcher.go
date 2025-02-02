@@ -17,7 +17,6 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/parser"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/pool"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/worker"
-	"github.com/alitto/pond"
 )
 
 // ConfigSearcher is a struct containing configuration and search results.
@@ -281,7 +280,7 @@ func (s *ConfigSearcher) searchindexers(ctx context.Context, userss bool, p *sea
 	if len(s.Quality.IndexerCfg) == 0 {
 		return
 	}
-	pl, _ := worker.WorkerPoolIndexer.GroupContext(ctx)
+	pl := worker.WorkerPoolIndexer.NewGroupContext(ctx)
 	s.Done = false
 	for _, indcfg := range s.Quality.IndexerCfg {
 		if userss && !indcfg.Rssenabled {
@@ -296,50 +295,37 @@ func (s *ConfigSearcher) searchindexers(ctx context.Context, userss bool, p *sea
 		if !apiexternal.NewznabCheckLimiter(indcfg) {
 			continue
 		}
-		s.searchindexer(pl, p, indcfg)
+		pl.SubmitErr(func() error {
+			defer logger.HandlePanic()
+			var done bool
+			switch p.searchtype {
+			case 1:
+				done = s.searchnameid(p, indcfg)
+			case 2:
+				firstid, err := apiexternal.QueryNewznabRSSLast(indcfg, s.Quality, database.Getdatarow3[string](false, "select last_id from r_sshistories where config = ? COLLATE NOCASE and list = ? COLLATE NOCASE and indexer = ? COLLATE NOCASE", &s.Cfgp.NamePrefix, &s.Quality.Name, &indcfg.URL), s.Quality.QualityIndexerByQualityAndTemplate(indcfg), &s.Raw)
+				if err == nil {
+					if firstid != "" {
+						addrsshistory(&indcfg.URL, &firstid, s.Quality, &s.Cfgp.NamePrefix)
+					}
+					done = true
+				} else if !errors.Is(err, logger.Errnoresults) && !errors.Is(err, logger.ErrToWait) {
+					logger.LogDynamicany1StringErr("error", "Error searching indexer", err, logger.StrIndexer, indcfg.Name)
+				}
+			case 3:
+				_, _, err := apiexternal.QueryNewznabTvTvdb(indcfg, s.Quality, p.thetvdbid, s.Quality.QualityIndexerByQualityAndTemplate(indcfg), p.season, "", p.useseason, false, &s.Raw)
+				if err == nil {
+					done = true
+				} else if !errors.Is(err, logger.Errnoresults) && !errors.Is(err, logger.ErrToWait) {
+					logger.LogDynamicany1StringErr("error", "Error searching indexer", err, logger.StrIndexer, indcfg.Name)
+				}
+			}
+			if done && !s.Done {
+				s.Done = true
+			}
+			return nil
+		})
 	}
 	pl.Wait()
-}
-
-// searchindexer is a method of the ConfigSearcher struct that searches the configured indexers for media content
-// based on the provided search parameters. It submits search tasks to a worker pool and waits for them to complete.
-// The method returns true if any of the indexer searches were successful, indicating that search results are available.
-//
-// The method checks the configured indexers and skips any that are not enabled or do not support RSS feeds
-// if the search is for a user's RSS feed. It also skips indexers that have exceeded their API rate limit.
-// For each enabled indexer, the method submits a search task to the worker pool, which can be one of three
-// types: media search, RSS search, or RSS season search. The method returns true if any of the search tasks
-// were successful.
-func (s *ConfigSearcher) searchindexer(pl *pond.TaskGroupWithContext, p *searchParams, indcfg *config.IndexersConfig) {
-	// Returning an error stops all searchers
-	pl.Submit(func() error {
-		var done bool
-		switch p.searchtype {
-		case 1:
-			done = s.searchnameid(p, indcfg)
-		case 2:
-			firstid, err := apiexternal.QueryNewznabRSSLast(indcfg, s.Quality, database.Getdatarow3[string](false, "select last_id from r_sshistories where config = ? COLLATE NOCASE and list = ? COLLATE NOCASE and indexer = ? COLLATE NOCASE", &s.Cfgp.NamePrefix, &s.Quality.Name, &indcfg.URL), s.Quality.QualityIndexerByQualityAndTemplate(indcfg), &s.Raw)
-			if err == nil {
-				if firstid != "" {
-					addrsshistory(&indcfg.URL, &firstid, s.Quality, &s.Cfgp.NamePrefix)
-				}
-				done = true
-			} else if !errors.Is(err, logger.Errnoresults) && !errors.Is(err, logger.ErrToWait) {
-				logger.LogDynamicany1StringErr("error", "Error searching indexer", err, logger.StrIndexer, indcfg.Name)
-			}
-		case 3:
-			_, _, err := apiexternal.QueryNewznabTvTvdb(indcfg, s.Quality, p.thetvdbid, s.Quality.QualityIndexerByQualityAndTemplate(indcfg), p.season, "", p.useseason, false, &s.Raw)
-			if err == nil {
-				done = true
-			} else if !errors.Is(err, logger.Errnoresults) && !errors.Is(err, logger.ErrToWait) {
-				logger.LogDynamicany1StringErr("error", "Error searching indexer", err, logger.StrIndexer, indcfg.Name)
-			}
-		}
-		if done && !s.Done {
-			s.Done = true
-		}
-		return nil
-	})
 }
 
 // searchnameid is a method of the ConfigSearcher struct that performs a search for a media item
