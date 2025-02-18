@@ -24,6 +24,7 @@ Inspirations: Radarr/Sonarr and Flexget
 * [Donate](#donate)
 * [Examples](#examples)
 * [History](#history)
+* [References](#references)
 
 ## Breaking Change
 
@@ -175,6 +176,17 @@ https://go-media-downloader.readme.io/
 
 - V0.1: initial Release
 - V0.1.1: Performance and Ram Usage Changes - rewrite a lot of functions
+
+## References
+
+This Program uses the following API's (if wanted and if you register your own API key)
+- [Omdb](https://www.omdbapi.com/)
+- [TheMovieDB](https://www.themoviedb.org/)
+- [Trakt.tv](https://www.trakt.tv/)
+- [TheTVDB](https://thetvdb.com/)
+- [pushover.net](https://www.pushover.net)
+
+For a list of the used Go Modules please look into the go.mod File in pkg/main and pkg/imdb
 
 ## Bugs
 
