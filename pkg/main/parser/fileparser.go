@@ -1,4 +1,3 @@
-// parser
 package parser
 
 import (
@@ -62,19 +61,6 @@ var (
 // even indices are start positions and odd indices are end positions.
 func (pattern *regexpattern) getmatchesroot(m *database.ParseInfo, cfgp *config.MediaTypeConfig) (int, int) {
 	matchest := database.RunRetRegex(pattern.re, m.Str, (pattern.last && pattern.name == "year" && cfgp.Useseries))
-	// var matchest []int
-	// defer clear(matchest)
-	// rgx := database.SetRegexp(pattern.re, 0)
-	// if pattern.last && pattern.name == "year" && cfgp.Useseries {
-	// 	matches := rgx.FindAllStringSubmatchIndex(m.Str, 10)
-	// 	defer clear(matches)
-	// 	if !(len(matches) >= 1 && len(matches[len(matches)-1]) >= 1) {
-	// 		return -1, -1
-	// 	}
-	// 	matchest = matches[len(matches)-1]
-	// } else {
-	// 	matchest = rgx.FindStringSubmatchIndex(m.Str)
-	// }
 	if len(matchest) == 0 {
 		return -1, -1
 	}
@@ -145,30 +131,30 @@ func LoadDBPatterns() {
 	scanpatterns = append(scanpatterns, globalscanpatterns...)
 
 	for _, val := range scanpatterns {
-		database.SetRegexp(val.re, 0)
+		database.SetStaticRegexp(val.re)
 	}
 	for _, val := range database.DBConnect.GetaudiosIn {
 		if val.UseRegex {
 			scanpatterns = append(scanpatterns, regexpattern{name: "audio", last: false, re: val.Regex, getgroup: val.Regexgroup})
-			database.SetRegexp(val.Regex, 0)
+			database.SetStaticRegexp(val.Regex)
 		}
 	}
 	for _, val := range database.DBConnect.GetresolutionsIn {
 		if val.UseRegex {
 			scanpatterns = append(scanpatterns, regexpattern{name: "resolution", last: false, re: val.Regex, getgroup: val.Regexgroup})
-			database.SetRegexp(val.Regex, 0)
+			database.SetStaticRegexp(val.Regex)
 		}
 	}
 	for _, val := range database.DBConnect.GetqualitiesIn {
 		if val.UseRegex {
 			scanpatterns = append(scanpatterns, regexpattern{name: "quality", last: false, re: val.Regex, getgroup: val.Regexgroup})
-			database.SetRegexp(val.Regex, 0)
+			database.SetStaticRegexp(val.Regex)
 		}
 	}
 	for _, val := range database.DBConnect.GetcodecsIn {
 		if val.UseRegex {
 			scanpatterns = append(scanpatterns, regexpattern{name: "codec", last: false, re: val.Regex, getgroup: val.Regexgroup})
-			database.SetRegexp(val.Regex, 0)
+			database.SetStaticRegexp(val.Regex)
 		}
 	}
 }

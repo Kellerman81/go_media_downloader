@@ -25,8 +25,10 @@ type tcache struct {
 	itemstwoint      *logger.SyncMap[[]DbstaticOneStringTwoInt]
 	itemsthreestring *logger.SyncMap[[]DbstaticThreeStringTwoInt]
 	itemstwostring   *logger.SyncMap[[]DbstaticTwoStringOneInt]
-	itemsxstmt       *logger.SyncMap[sqlx.Stmt]     // sync.Map
-	itemsregex       *logger.SyncMap[regexp.Regexp] // sync.Map
+	itemsxstmt       *logger.SyncMap[sqlx.Stmt]      // sync.Map
+	itemsxstmtP      *logger.SyncMap[*sqlx.Stmt]     // sync.Map
+	itemsregex       *logger.SyncMap[regexp.Regexp]  // sync.Map
+	itemsregexP      *logger.SyncMap[*regexp.Regexp] // sync.Map
 	janitor          *time.Timer
 }
 
@@ -47,7 +49,9 @@ var (
 		itemsthreestring: logger.NewSyncMap[[]DbstaticThreeStringTwoInt](20),
 		itemstwostring:   logger.NewSyncMap[[]DbstaticTwoStringOneInt](20),
 		itemsxstmt:       logger.NewSyncMap[sqlx.Stmt](1000),
+		itemsxstmtP:      logger.NewSyncMap[*sqlx.Stmt](1000),
 		itemsregex:       logger.NewSyncMap[regexp.Regexp](1000),
+		itemsregexP:      logger.NewSyncMap[*regexp.Regexp](1000),
 		interval:         10 * time.Minute, // Set default interval to 5 minutes
 	}
 	globalCache *globalcache
@@ -64,17 +68,44 @@ func (c *globalcache) getexpiressql() int64 {
 	return 0
 }
 
+// addStaticXStmt adds a prepared SQL statement to the cache with the given key and database connection.
+// If the statement already exists in the cache, it returns without doing anything.
+// Otherwise, it prepares the statement using the provided database connection and adds it to the cache.
+// The function takes a key string and a boolean indicating whether to use the IMDB database connection.
+// It returns nothing.
+// Warning: Only use this function outside of goroutines - so only from the main program.
+func (c *globalcache) addStaticXStmt(key string, imdb bool) {
+	if cache.itemsxstmtP.Check(key) {
+		return
+	}
+	sq, err := Getdb(imdb).Preparex(key)
+	if err != nil || sq == nil {
+		return
+	}
+	cache.itemsxstmtP.Add(key, sq, 0, imdb, 0)
+}
+
+// getXStmt retrieves a cached SQL statement with the given key and database connection.
+// If the statement is not found in the cache, it prepares the statement using the provided
+// database connection and adds it to the cache. If the cache auto-extend feature is enabled,
+// it will extend the expiration time of the cached statement.
+// The function takes a key string, a boolean indicating whether to use the IMDB database
+// connection, and an optional slice of int64 values representing the expiration time in
+// nanoseconds. It returns the cached SQL statement.
 func (c *globalcache) getXStmt(key string, imdb bool, expiresa ...int64) *sqlx.Stmt {
+	if cache.itemsxstmtP.Check(key) { // only check and get not add to static cache - function is called from goroutines
+		return cache.itemsxstmtP.GetVal(key)
+	}
 	if !cache.itemsxstmt.Check(key) {
 		cache.itemsxstmt.Add(key, preparestmt(imdb, key), c.getexpiressql(), imdb, 0)
 		return cache.itemsxstmt.GetValP(key)
 	}
-	val := cache.itemsxstmt.GetVal(key)
-	if val.Stmt == nil {
-		cache.itemsxstmt.UpdateVal(key, preparestmt(imdb, key))
-		cache.itemsxstmt.UpdateExpire(key, c.getexpiressql())
-		return cache.itemsxstmt.GetValP(key)
-	}
+	// val := cache.itemsxstmt.GetVal(key)
+	// if val.Stmt == nil {
+	// 	cache.itemsxstmt.UpdateVal(key, preparestmt(imdb, key))
+	// 	cache.itemsxstmt.UpdateExpire(key, c.getexpiressql())
+	// 	return cache.itemsxstmt.GetValP(key)
+	// }
 	expires := cache.itemsxstmt.GetExpire(key)
 	if len(expiresa) == 1 {
 		expires = expiresa[0]
@@ -82,7 +113,7 @@ func (c *globalcache) getXStmt(key string, imdb bool, expiresa ...int64) *sqlx.S
 	if config.SettingsGeneral.CacheAutoExtend || expires != 0 && (time.Now().UnixNano() > expires) {
 		cache.itemsxstmt.UpdateExpire(key, c.getexpiressql())
 	}
-	return &val
+	return cache.itemsxstmt.GetValP(key)
 }
 
 // preparestmt prepares a SQL statement using the provided database connection and SQL query key.
@@ -96,11 +127,27 @@ func preparestmt(imdb bool, key string) sqlx.Stmt {
 	return *sq
 }
 
-// setRegexp sets a cached regular expression with the given key and duration.
-// If the cached regular expression does not exist or is expired, it creates a new one.
-// If the cache auto-extend feature is enabled, it will extend the expiration time of the cached regular expression.
-// The function returns the cached regular expression.
-func (c *globalcache) setRegexp(key string, duration time.Duration) regexp.Regexp {
+// setStaticRegexp sets a cached regular expression with the given key. If the cached regular expression
+// does not exist, it creates a new one and adds it to the cache. This function is used to cache regular
+// expressions that are used statically throughout the application.
+// Warning: Only use this function outside of goroutines - so only from the main program.
+func (c *globalcache) setStaticRegexp(key string) {
+	if !cache.itemsregexP.Check(key) {
+		cache.itemsregexP.Add(key, getregexP(key), 0, false, 0)
+		return // cache.itemsregex.GetVal(key)
+	}
+}
+
+// setRegexp sets a cached regular expression with the given key. If the cached regular expression
+// does not exist, it creates a new one and adds it to the cache. If the cached regular expression
+// already exists, it checks if the expiration time has passed and updates the expiration time if
+// necessary.
+// The function takes a key string and a duration time.Duration. If the duration is 0, it uses the
+// default extension time. The function returns the cached regular expression.
+func (c *globalcache) setRegexp(key string, duration time.Duration) *regexp.Regexp {
+	if cache.itemsregexP.Check(key) { // only check and get not add to static cache - function is called from goroutines
+		return cache.itemsregexP.GetVal(key)
+	}
 	if !cache.itemsregex.Check(key) {
 		if duration == 0 {
 			duration = c.defaultextension
@@ -112,7 +159,7 @@ func (c *globalcache) setRegexp(key string, duration time.Duration) regexp.Regex
 			expires = getexpireskey(duration)
 		}
 		cache.itemsregex.Add(key, getregex(key), expires, false, 0)
-		return cache.itemsregex.GetVal(key)
+		return cache.itemsregex.GetValP(key)
 	}
 	expires := cache.itemsregex.GetExpire(key)
 	if config.SettingsGeneral.CacheAutoExtend || expires != 0 && (time.Now().UnixNano() > expires) {
@@ -120,7 +167,7 @@ func (c *globalcache) setRegexp(key string, duration time.Duration) regexp.Regex
 			cache.itemsregex.UpdateExpire(key, getexpireskey(c.defaultextension))
 		}
 	}
-	return cache.itemsregex.GetVal(key)
+	return cache.itemsregex.GetValP(key)
 }
 
 // InitCache initializes the global cache by creating a new Cache instance
@@ -174,7 +221,6 @@ func AppendCache(a string, v string) {
 			return
 		}
 	}
-	// logger.LogDynamicany1String("debug", "cache append", "key", a)
 	cache.itemsstring.UpdateVal(a, append(s, v))
 }
 
@@ -192,7 +238,6 @@ func AppendCacheThreeString(a string, v DbstaticThreeStringTwoInt) {
 			return
 		}
 	}
-	// logger.LogDynamicany1String("debug", "cache append", "key", a)
 	cache.itemsthreestring.UpdateVal(a, append(s, v))
 }
 
@@ -210,7 +255,6 @@ func AppendCacheTwoInt(a string, v DbstaticOneStringTwoInt) {
 			return
 		}
 	}
-	// logger.LogDynamicany1String("debug", "cache append", "key", a)
 	cache.itemstwoint.UpdateVal(a, append(s, v))
 }
 
@@ -228,7 +272,6 @@ func AppendCacheTwoString(a string, v DbstaticTwoStringOneInt) {
 			return
 		}
 	}
-	// logger.LogDynamicany1String("debug", "cache append", "key", a)
 	cache.itemstwostring.UpdateVal(a, append(s, v))
 }
 
@@ -823,6 +866,11 @@ func InvalidateImdbStmt() {
 	}, func(s sqlx.Stmt) {
 		s.Close()
 	})
+	cache.itemsxstmtP.DeleteFuncImdbVal(func(b bool) bool {
+		return b
+	}, func(s *sqlx.Stmt) {
+		s.Close()
+	})
 }
 
 // getregex returns a compiled regular expression based on the provided key.
@@ -833,15 +881,19 @@ func InvalidateImdbStmt() {
 // "RegexSeriesIdentifier": Matches a series identifier (season and episode or date).
 // For any other key, it returns a regular expression compiled from the key string.
 func getregex(key string) regexp.Regexp {
+	return *getregexP(key)
+}
+
+func getregexP(key string) *regexp.Regexp {
 	switch key {
 	case "RegexSeriesTitle":
-		return *regexp.MustCompile(`^(.*)(?i)(?:(?:\.| - |-)s?[0-9]{1,4}((?:(?:(?: )?-?(?: )?[ex-][0-9]{1,3})+))|(\d{2,4}(?:\.|-| |_)\d{1,2}(?:\.|-| |_)\d{1,2})(?:[^0-9]|$))`)
+		return regexp.MustCompile(`^(.*)(?i)(?:(?:\.| - |-)s?[0-9]{1,4}((?:(?:(?: )?-?(?: )?[ex-][0-9]{1,3})+))|(\d{2,4}(?:\.|-| |_)\d{1,2}(?:\.|-| |_)\d{1,2})(?:[^0-9]|$))`)
 	case "RegexSeriesTitleDate":
-		return *regexp.MustCompile(`^(.*)(?i)(?:\.|-| |_)(\d{2,4}(?:\.|-| |_)\d{1,2}(?:\.|-| |_)\d{1,2})(?:[^0-9]|$)`)
+		return regexp.MustCompile(`^(.*)(?i)(?:\.|-| |_)(\d{2,4}(?:\.|-| |_)\d{1,2}(?:\.|-| |_)\d{1,2})(?:[^0-9]|$)`)
 	case "RegexSeriesIdentifier":
-		return *regexp.MustCompile(`(?i)s?[0-9]{1,4}((?:(?:(?: )?-?(?: )?[ex-][0-9]{1,3})+))|(\d{2,4}(?:\.|-| |_)\d{1,2}(?:\.|-| |_)\d{1,2})(?:\b|_)`)
+		return regexp.MustCompile(`(?i)s?[0-9]{1,4}((?:(?:(?: )?-?(?: )?[ex-][0-9]{1,3})+))|(\d{2,4}(?:\.|-| |_)\d{1,2}(?:\.|-| |_)\d{1,2})(?:\b|_)`)
 	default:
-		return *regexp.MustCompile(key)
+		return regexp.MustCompile(key)
 	}
 }
 
@@ -991,8 +1043,6 @@ func NewCache(cleaningInterval, extension time.Duration) {
 	}
 }
 
-// SetRegexp sets a regular expression in the global cache with the given key and duration.
-// The regular expression is returned, which can be used for matching.
-func SetRegexp(key string, duration time.Duration) regexp.Regexp {
-	return globalCache.setRegexp(key, duration)
+func SetStaticRegexp(key string) {
+	globalCache.setStaticRegexp(key)
 }

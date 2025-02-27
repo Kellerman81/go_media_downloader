@@ -197,18 +197,18 @@ func newfilesloop(ctx context.Context, cfgp *config.MediaTypeConfig, data *confi
 			return nil
 		}
 
-		pl.SubmitErr(func() error {
+		pl.Submit(func() {
 			defer logger.HandlePanic()
 			m := parser.ParseFile(fpath, true, true, cfgp, -1)
 			if m == nil {
-				return nil
+				return
 			}
 			defer m.Close()
 
 			err := parser.GetDBIDs(m, cfgp, true)
 			if err != nil {
 				logger.LogDynamicany1StringErr("warn", logger.ParseFailedIDs, err, logger.StrFile, fpath)
-				return nil
+				return
 			}
 
 			listid := glblistid
@@ -225,7 +225,7 @@ func newfilesloop(ctx context.Context, cfgp *config.MediaTypeConfig, data *confi
 				m.ListID = listid
 			}
 			if listid == -1 {
-				return nil
+				return
 			}
 			if cfgp.Useseries {
 				err = jobImportSeriesParseV2(m, fpath, cfgp, &cfgp.Lists[listid])
@@ -236,7 +236,6 @@ func newfilesloop(ctx context.Context, cfgp *config.MediaTypeConfig, data *confi
 			if err != nil {
 				logger.LogDynamicany1StringErr("error", "Error Importing", err, logger.StrFile, fpath)
 			}
-			return nil
 		})
 		return nil
 	})

@@ -60,6 +60,10 @@ func MovieFindDBIDByImdb(imdb *string) uint {
 	return database.Getdatarow1[uint](false, "select id from dbmovies where imdb_id = ?", imdb)
 }
 
+func MovieFindDBIDByTmdbID(tmdbid *int) uint {
+	return database.Getdatarow1[uint](false, "select id from dbmovies where moviedb_id = ?", tmdbid)
+}
+
 // MovieFindImdbIDByTitle searches for a movie's IMDB ID by its title.
 // It first searches the database and caches by title and slugified title.
 // If not found, it can search external APIs based on config settings.
@@ -412,6 +416,9 @@ func Checkaddmovieentry(dbid *uint, cfgplist *config.MediaListsConfig, imdb stri
 // genres, and included genres. It returns a bool indicating if the import
 // is allowed and an error if it is disallowed.
 func AllowMovieImport(imdb *string, listcfg *config.ListsConfig) (bool, error) {
+	if imdb == nil || *imdb == "" {
+		return false, errIgnoredMovie
+	}
 	if listcfg.MinVotes != 0 {
 		if database.Getdatarow2any[uint](true, "select count() from imdb_ratings where tconst = ? and num_votes < ?", imdb, &listcfg.MinVotes) >= 1 {
 			return false, errVoteLow

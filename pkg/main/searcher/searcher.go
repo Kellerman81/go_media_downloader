@@ -295,7 +295,7 @@ func (s *ConfigSearcher) searchindexers(ctx context.Context, userss bool, p *sea
 		if !apiexternal.NewznabCheckLimiter(indcfg) {
 			continue
 		}
-		pl.SubmitErr(func() error {
+		pl.Submit(func() {
 			defer logger.HandlePanic()
 			var done bool
 			switch p.searchtype {
@@ -322,7 +322,6 @@ func (s *ConfigSearcher) searchindexers(ctx context.Context, userss bool, p *sea
 			if done && !s.Done {
 				s.Done = true
 			}
-			return nil
 		})
 	}
 	pl.Wait()

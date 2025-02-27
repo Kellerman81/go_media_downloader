@@ -1,8 +1,10 @@
 package apiexternal
 
 import (
+	"fmt"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
@@ -23,6 +25,13 @@ type TheMovieDBSearchTV struct {
 	Results []TheMovieDBFindTvresults `json:"results"`
 }
 
+type TheMovieDBList struct {
+	// TotalPages   int                       `json:"total_pages"`
+	// TotalResults int                       `json:"total_results"`
+	ItemCount int                       `json:"item_count"`
+	Items     []TheMovieDBFindTvresults `json:"items"`
+}
+
 type TheMovieDBFind struct {
 	MovieResults []TheMovieDBFindMovieresults `json:"movie_results"`
 	TvResults    []TheMovieDBFindTvresults    `json:"tv_results"`
@@ -41,7 +50,7 @@ type TheMovieDBFindMovieresults struct {
 	Adult            bool    `json:"adult"`
 }
 type TheMovieDBFindTvresults struct {
-	// ID               int      `json:"id"`
+	ID               int     `json:"id"`
 	OriginalLanguage string  `json:"original_language"`
 	FirstAirDate     string  `json:"first_air_date"`
 	Name             string  `json:"name"`
@@ -156,6 +165,45 @@ func SearchTmdbTV(name string) (*TheMovieDBSearchTV, error) {
 	}
 
 	return doJSONTypeP[TheMovieDBSearchTV](&tmdbAPI.Client, logger.JoinStrings("https://api.themoviedb.org/3/search/tv?query=", url.QueryEscape(name)), tmdbAPI.DefaultHeaders)
+}
+
+func DiscoverTmdbMovie(query string) (*TheMovieDBSearch, error) {
+	if query == "" {
+		return nil, logger.ErrNotFound
+	}
+	return doJSONTypeP[TheMovieDBSearch](&tmdbAPI.Client, logger.JoinStrings("https://api.themoviedb.org/3/discover/movie?", query), tmdbAPI.DefaultHeaders)
+}
+
+func DiscoverTmdbSerie(query string) (*TheMovieDBSearchTV, error) {
+	if query == "" {
+		return nil, logger.ErrNotFound
+	}
+	return doJSONTypeP[TheMovieDBSearchTV](&tmdbAPI.Client, logger.JoinStrings("https://api.themoviedb.org/3/discover/tv?", query), tmdbAPI.DefaultHeaders)
+}
+
+func GetTmdbList(listid int) (TheMovieDBList, error) {
+	retdata, err := doJSONType[TheMovieDBList](&tmdbAPI.Client, logger.JoinStrings("https://api.themoviedb.org/3/list/", strconv.Itoa(listid), "&page=1"), tmdbAPI.DefaultHeaders)
+	if err != nil {
+		return TheMovieDBList{}, err
+	}
+	if len(retdata.Items) < 20 {
+		return retdata, err
+	}
+	pagesize := len(retdata.Items)
+	totalPages := retdata.ItemCount / pagesize
+	for i := 2; i <= totalPages; i++ {
+		listadd, err := doJSONTypeNoLimit[TheMovieDBList](&tmdbAPI.Client, logger.JoinStrings("https://api.themoviedb.org/3/list/", strconv.Itoa(listid), "?page=", strconv.Itoa(i)), tmdbAPI.DefaultHeaders)
+		if err != nil {
+			continue
+		}
+		retdata.Items = append(retdata.Items, listadd.Items...)
+	}
+	return retdata, err
+}
+
+func RemoveFromTmdbList(listid int, remove int) error {
+	body := strings.NewReader(fmt.Sprintf(`{"media_id":%d}`, remove))
+	return ProcessHTTP(&tmdbAPI.Client, logger.JoinStrings("https://api.themoviedb.org/3/list/", strconv.Itoa(listid), "/remove_item"), true, nil, tmdbAPI.DefaultHeaders, body)
 }
 
 // FindTmdbImdb searches TheMovieDB API to find a movie based on its IMDb ID.

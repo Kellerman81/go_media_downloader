@@ -1,4 +1,3 @@
-// movies
 package database
 
 import (

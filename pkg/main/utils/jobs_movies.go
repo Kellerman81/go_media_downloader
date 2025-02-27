@@ -216,10 +216,9 @@ func importnewmoviessingle(cfgp *config.MediaTypeConfig, list *config.MediaLists
 
 		allowed, _ = importfeed.AllowMovieImport(&feed.Movies[idx], list.CfgList)
 		if allowed {
-			pl.SubmitErr(func() error {
+			pl.Submit(func() {
 				defer logger.HandlePanic()
 				importfeed.JobImportMoviesByList(feed.Movies[idx], idx, cfgp, listid, true)
-				return nil
 			})
 		} else {
 			logger.LogDynamicany1String("debug", "not allowed movie", logger.StrImdb, feed.Movies[idx])

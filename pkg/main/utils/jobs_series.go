@@ -206,10 +206,9 @@ func importnewseriessingle(cfgp *config.MediaTypeConfig, list *config.MediaLists
 	defer ctx.Done()
 	pl := worker.WorkerPoolParse.NewGroupContext(ctx)
 	for idxserie2 := range feed.Series {
-		pl.SubmitErr(func() error {
+		pl.Submit(func() {
 			defer logger.HandlePanic()
 			importfeed.JobImportDBSeries(&feed.Series[idxserie2], idxserie2, cfgp, listid)
-			return nil
 		})
 	}
 	pl.Wait()

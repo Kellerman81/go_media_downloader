@@ -1,6 +1,7 @@
 package slidingwindow
 
 import (
+	"sync"
 	"time"
 )
 
@@ -22,6 +23,7 @@ type Limiter struct {
 
 	// The total count of events happened in the window.
 	max int64
+	mu  sync.Mutex
 }
 
 // add increments the count and updates the last and start timestamps if
@@ -29,6 +31,8 @@ type Limiter struct {
 // the start timestamp is updated if enough time has passed since the first
 // event in the window.
 func (lim *Limiter) add() {
+	lim.mu.Lock()
+	defer lim.mu.Unlock()
 	if timeAfter(lim.last) {
 		// Moved Time to Future for Blocking
 		return
@@ -100,6 +104,8 @@ func (lim *Limiter) AllowForce() bool {
 // time.Duration for the remaining time until the next event can happen without
 // exceeding the rate limit.
 func (lim *Limiter) Check() (bool, time.Duration) {
+	lim.mu.Lock()
+	defer lim.mu.Unlock()
 	if timeAfter(lim.last) {
 		// Date set to future for blocking
 		return false, time.Until(lim.last)
@@ -123,6 +129,8 @@ func (lim *Limiter) Check() (bool, time.Duration) {
 // CheckBool checks if the rate limit would be exceeded by calling add. It returns
 // a boolean indicating whether the rate limit would be exceeded or not.
 func (lim *Limiter) CheckBool() bool {
+	lim.mu.Lock()
+	defer lim.mu.Unlock()
 	if timeAfter(lim.last) {
 		// Date set to future for blocking
 		return false
@@ -145,12 +153,16 @@ func (lim *Limiter) CheckBool() bool {
 
 // Interval returns the interval duration configured for the rate limiter.
 func (lim *Limiter) Interval() time.Duration {
+	lim.mu.Lock()
+	defer lim.mu.Unlock()
 	return lim.interval
 }
 
 // WaitTill sets the last time to the given time. This overrides
 // the rate limiting and forces the last time to be the given time.
 func (lim *Limiter) WaitTill(now time.Time) {
+	lim.mu.Lock()
+	defer lim.mu.Unlock()
 	lim.last = now
 }
 

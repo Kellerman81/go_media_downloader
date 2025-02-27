@@ -342,7 +342,6 @@ func InitScheduler() {
 			continue
 		}
 
-		// i, c := getGlobalSchCfg(typevarsglobal[idx], job)
 		schedulerdispatch("", intervalstr, cronstr, name, usequeuename, jobname)
 	}
 }
@@ -353,7 +352,6 @@ func InitScheduler() {
 func schedulerdispatch(cfgpstr string, intervalstr string, cronstr string, name string, queue string, jobname string) {
 	if intervalstr != "" {
 		if config.SettingsGeneral.UseCronInsteadOfInterval {
-			// worker.AddCronJob(cfg)
 			rand.New(rand.NewSource(time.Now().UnixNano()))
 			if strings.ContainsRune(intervalstr, 'd') {
 				intervalstr = strings.Replace(intervalstr, "d", "", 1)
@@ -379,7 +377,6 @@ func schedulerdispatch(cfgpstr string, intervalstr string, cronstr string, name 
 	}
 
 	if cronstr != "" {
-		// worker.AddCronJob(cfg)
 		err := worker.DispatchCron(cfgpstr, cronstr, name, queue, jobname)
 		if err != nil {
 			logger.LogDynamicanyErr("error", "Cron", err)

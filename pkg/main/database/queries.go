@@ -849,6 +849,11 @@ func logSQLError(err error, querystring string) {
 		}, func(s sqlx.Stmt) {
 			s.Close()
 		})
+		cache.itemsxstmtP.DeleteFuncImdbVal(func(x bool) bool {
+			return x
+		}, func(s *sqlx.Stmt) {
+			s.Close()
+		})
 	}
 }
 

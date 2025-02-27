@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
@@ -378,6 +379,22 @@ func GetTraktUserList(username, listname, listtype string, limit *string) ([]Tra
 		return nil, logger.ErrNotFound
 	}
 	return doJSONType[[]TraktUserList](&traktAPI.Client, traktaddlimit(logger.JoinStrings("https://api.trakt.tv/users/", username, "/lists/", listname, "/items/", listtype), limit), traktAPI.DefaultHeaders)
+}
+
+func RemoveMovieFromTraktUserList(username, listname, remove string) error {
+	if username == "" || listname == "" {
+		return logger.ErrNotFound
+	}
+	body := strings.NewReader(fmt.Sprintf(`{"movies": [{"ids": {"imdb": "%s"}}]}`, remove))
+	return ProcessHTTP(&traktAPI.Client, logger.JoinStrings("https://api.trakt.tv/users/", username, "/lists/", listname, "/items/remove"), true, nil, traktAPI.DefaultHeaders, body)
+}
+
+func RemoveSerieFromTraktUserList(username, listname string, remove int) error {
+	if username == "" || listname == "" {
+		return logger.ErrNotFound
+	}
+	body := strings.NewReader(fmt.Sprintf(`{"shows": [{"ids": {"tvdb": %d}}]}`, remove))
+	return ProcessHTTP(&traktAPI.Client, logger.JoinStrings("https://api.trakt.tv/users/", username, "/lists/", listname, "/items/remove"), true, nil, traktAPI.DefaultHeaders, body)
 }
 
 // GetTraktSeriePopular retrieves popular TV shows from Trakt based on the

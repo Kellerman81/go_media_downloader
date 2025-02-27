@@ -59,6 +59,8 @@ Inspirations: Radarr/Sonarr and Flexget
 - Trakt Trending (Movies, Shows)
 - Trakt Anticipated (Movies, Shows)
 - local wanted file (Shows)
+- TMDB Lists (Movies)
+- TMDB Discover (Movies)
 
 #### External Meta Sources
 
@@ -171,11 +173,13 @@ https://go-media-downloader.readme.io/
 - config: Movies FR and EN as Groups with the same or different feeds - Folders have to be different for the group (don't mix for example english and French Movies) - Use Different Qualities for each group! in the qualities are the Downloader/Indexer Definitions thats why - also please let the downloader place them in different directories otherwise they might mix
 - exceptions: if a movie/show is in multiple lists i try to exclude them from the others (can be done in the config) so that i have the movie/show only in the list with the highest quality - if a movie/show is in 2 lists with different qualities the release would be constantly redownloaded
 - if you want more help start a discussion - the system is running stable for some time now
+- TmDBDiscover Hallmark Movies: tmdb_discover = ['include_video=true&sort_by=primary_release_date.desc&with_companies=4056&with_genres=10749|10751|35'] 
 
 ## History
 
 - V0.1: initial Release
 - V0.1.1: Performance and Ram Usage Changes - rewrite a lot of functions
+- v0.2.3: Added Tmdb List retrieve + tmdbdiscover
 
 ## References
 

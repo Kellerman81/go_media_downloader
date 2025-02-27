@@ -281,7 +281,7 @@ func NewClient(clientname string, skiptlsverify, disablecompression bool, rl *sl
 // sets the specified headers, and runs the provided function with the HTTP response.
 // The function uses a context with a timeout of 5 times the client's configured timeout.
 // If the request fails, the function returns the error.
-func ProcessHTTP(c *rlHTTPClient, urlv string, checklimiter bool, run func(context.Context, *http.Response) error, headers map[string][]string) error {
+func ProcessHTTP(c *rlHTTPClient, urlv string, checklimiter bool, run func(context.Context, *http.Response) error, headers map[string][]string, body ...io.Reader) error {
 	if c == nil {
 		c = &cl
 	}
@@ -297,8 +297,13 @@ func ProcessHTTP(c *rlHTTPClient, urlv string, checklimiter bool, run func(conte
 			return err
 		}
 	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, urlv, http.NoBody)
+	var req *http.Request
+	var err error
+	if len(body) >= 1 {
+		req, err = http.NewRequestWithContext(ctx, http.MethodPost, urlv, body[0])
+	} else {
+		req, err = http.NewRequestWithContext(ctx, http.MethodGet, urlv, http.NoBody)
+	}
 	if err != nil {
 		logger.LogDynamicany1StringErr("error", "failed to get url", err, logger.StrURL, urlv) // nopointer
 		return err
@@ -333,6 +338,14 @@ func doJSONType[S any](c *rlHTTPClient, urlv string, headers map[string][]string
 	return v, err
 }
 
+func doJSONTypeNoLimit[S any](c *rlHTTPClient, urlv string, headers map[string][]string) (S, error) {
+	var v S
+	err := ProcessHTTP(c, urlv, false, func(ctx context.Context, resp *http.Response) error {
+		return json.NewDecoder(resp.Body).DecodeContext(ctx, &v)
+	}, headers)
+	return v, err
+}
+
 // doJSONTypeP is a helper function that makes a GET request to the provided URL,
 // sets the specified headers, and decodes the JSON response into a pointer to the provided type.
 // The function uses a context with a timeout of 5 times the client's configured timeout.
@@ -340,6 +353,17 @@ func doJSONType[S any](c *rlHTTPClient, urlv string, headers map[string][]string
 func doJSONTypeP[S any](c *rlHTTPClient, urlv string, headers map[string][]string) (*S, error) {
 	var v S
 	err := ProcessHTTP(c, urlv, true, func(ctx context.Context, resp *http.Response) error {
+		return json.NewDecoder(resp.Body).DecodeContext(ctx, &v)
+	}, headers)
+	if err != nil {
+		return nil, err
+	}
+	return &v, err
+}
+
+func doJSONTypePNoLimit[S any](c *rlHTTPClient, urlv string, headers map[string][]string) (*S, error) {
+	var v S
+	err := ProcessHTTP(c, urlv, false, func(ctx context.Context, resp *http.Response) error {
 		return json.NewDecoder(resp.Body).DecodeContext(ctx, &v)
 	}, headers)
 	if err != nil {

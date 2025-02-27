@@ -1,4 +1,3 @@
-// koanf_api
 package config
 
 import (
@@ -543,6 +542,11 @@ type ListsConfig struct {
 	ExcludegenreLen int `toml:"-"`
 	// IncludegenreLen is the length of Includegenre
 	IncludegenreLen int `toml:"-"`
+	// URLExtensions for discover
+	TmdbDiscover []string `toml:"tmdb_discover" comment:"tmdb discover url extension - https://developer.themoviedb.org/reference/discover-movie - or - https://developer.themoviedb.org/reference/discover-tv"`
+	// List IDs of TMDB Lists
+	TmdbList       []int `toml:"tmdb_list"`
+	RemoveFromList bool  `toml:"remove_from_list" comment:"remove the list after processing"`
 }
 
 // IndexersConfig defines the configuration for indexers.
@@ -1407,31 +1411,31 @@ func GetCfgAll() map[string]any {
 	q["general"] = SettingsGeneral
 	q["imdb"] = SettingsImdb
 	for key := range SettingsMedia {
-		q[SettingsMedia[key].NamePrefix] = SettingsMedia[key]
+		q[SettingsMedia[key].NamePrefix] = *SettingsMedia[key]
 	}
 	for key := range SettingsDownloader {
-		q["downloader_"+key] = SettingsDownloader[key]
+		q["downloader_"+key] = *SettingsDownloader[key]
 	}
 	for key := range SettingsIndexer {
-		q["indexer_"+key] = SettingsIndexer[key]
+		q["indexer_"+key] = *SettingsIndexer[key]
 	}
 	for key := range SettingsList {
-		q["list_"+key] = SettingsList[key]
+		q["list_"+key] = *SettingsList[key]
 	}
 	for key := range SettingsNotification {
-		q["notification_"+key] = SettingsNotification[key]
+		q["notification_"+key] = *SettingsNotification[key]
 	}
 	for key := range SettingsPath {
-		q["path_"+key] = SettingsPath[key]
+		q["path_"+key] = *SettingsPath[key]
 	}
 	for key := range SettingsQuality {
-		q["quality_"+key] = SettingsQuality[key]
+		q["quality_"+key] = *SettingsQuality[key]
 	}
 	for key := range SettingsRegex {
-		q["regex_"+key] = SettingsRegex[key]
+		q["regex_"+key] = *SettingsRegex[key]
 	}
 	for key := range SettingsScheduler {
-		q["scheduler_"+key] = SettingsScheduler[key]
+		q["scheduler_"+key] = *SettingsScheduler[key]
 	}
 	return q
 }

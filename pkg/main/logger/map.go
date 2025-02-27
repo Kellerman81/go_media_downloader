@@ -95,13 +95,12 @@ func (s *SyncMap[T]) GetVal(key string) T {
 // The method acquires a read lock on the SyncMap before retrieving the value,
 // and releases the lock before returning the pointer.
 func (s *SyncMap[T]) GetValP(key string) *T {
-	if !s.Check(key) {
-		return nil
-	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	val := s.m[key]
-	return &val
+	if val, ok := s.m[key]; ok {
+		return &val
+	}
+	return nil
 }
 
 // CheckExpires checks if the given key in the SyncMap has expired. If the key has expired and
