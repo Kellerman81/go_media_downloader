@@ -53,7 +53,7 @@ Inspirations: Radarr/Sonarr and Flexget
 ### Supported
 #### Feed Sources
 
-- IMDB Public List (Movies)
+- IMDB Public List (Movies) - CSV Only!
 - Trakt Public+Private List (Movies + Shows)
 - Trakt Popular (Movies, Shows)
 - Trakt Trending (Movies, Shows)
@@ -165,7 +165,7 @@ https://go-media-downloader.readme.io/
 
 ## Donate
 
-[Donate](https://www.paypal.com/donate?hosted_button_id=JRT8FJ6GG8CXN)
+[Donate](https://www.paypal.com/donate/?hosted_button_id=QHYKHZXFNGQ2N)
 
 ## Examples
 

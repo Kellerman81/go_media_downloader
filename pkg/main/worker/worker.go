@@ -67,7 +67,7 @@ var (
 	// phandler is a panic handler function.
 	// phandler = pond.PanicHandler(func(p any) {
 	// 	logger.LogDynamicany2StrAny("error", "Recovered from panic (dispatcher)", strMsg, logger.Stack(), strMsg, p)
-	// })
+	// }).
 )
 
 // SetScheduleStarted sets the IsRunning field of the jobSchedule with the given ID to true,
@@ -251,10 +251,8 @@ func addjob(_ context.Context, cfgpstr string, id uint32, name string, jobname s
 	} else {
 		if config.SettingsMedia[cfgpstr] == nil {
 			return
-		} else {
-			if config.SettingsMedia[cfgpstr].Jobs[jobname] == nil {
-				return
-			}
+		} else if config.SettingsMedia[cfgpstr].Jobs[jobname] == nil {
+			return
 		}
 	}
 	if workpool.SubmittedTasks() == workpool.CompletedTasks() {
@@ -271,7 +269,8 @@ func addjob(_ context.Context, cfgpstr string, id uint32, name string, jobname s
 		Cfgpstr:     cfgpstr,
 		SchedulerID: schedulerID,
 	})
-	if workpool.Go(runjobcron(id)) != nil {
+	_, ok := workpool.TrySubmit(runjobcron(id))
+	if !ok {
 		globalQueueSet.Delete(id)
 	}
 }
@@ -426,8 +425,11 @@ func Dispatch(name string, fn func(uint32), queue string) error {
 		ID:          id,
 		SchedulerID: newuuid(),
 	})
-	if workpool.Go(runjob(id, fn)) != nil {
+	_, ok := workpool.TrySubmit(runjob(id, fn))
+	// if workpool.Go(runjob(id, fn)) != nil {
+	if !ok {
 		globalQueueSet.Delete(id)
+		return ErrNotQueued
 	}
 	return nil
 }
@@ -603,14 +605,14 @@ func checkQueue(jobname string) bool {
 		alt2 = "searchupgradefull_"
 		alt3 = "searchupgradeinc_"
 	default:
-		return globalQueueSet.ForFuncKey(func(key uint32, val Job) bool {
+		return globalQueueSet.ForFuncKey(func(_ uint32, val Job) bool {
 			return val.Name == jobname && val.Started.IsZero()
 		})
 	}
 
 	end := jobname[idx+1:]
 
-	return globalQueueSet.ForFuncKey(func(key uint32, val Job) bool {
+	return globalQueueSet.ForFuncKey(func(_ uint32, val Job) bool {
 		if val.Name == jobname && val.Started.IsZero() {
 			return true
 		}
