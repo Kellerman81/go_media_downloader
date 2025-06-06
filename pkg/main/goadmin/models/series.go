@@ -15,7 +15,10 @@ import (
 )
 
 func getSeriesTable(ctx *context.Context) table.Table {
-	series := table.NewDefaultTable(ctx, table.DefaultConfigWithDriverAndConnection("sqlite", "media"))
+	series := table.NewDefaultTable(
+		ctx,
+		table.DefaultConfigWithDriverAndConnection("sqlite", "media"),
+	)
 
 	info := series.GetInfo().HideFilterArea()
 
@@ -29,73 +32,150 @@ func getSeriesTable(ctx *context.Context) table.Table {
 		JoinField: "id",
 		Table:     "dbseries",
 	}).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
-	info.AddField("Listname", "listname", db.Text).FieldFilterable(types.FilterType{FormType: form.SelectSingle}).FieldFilterOptionsFromTable("series", "listname", "listname", func(sql *db.SQL) *db.SQL { return sql.GroupBy("listname") }).FieldFilterOptionExt(map[string]any{"allowClear": true}).FieldSortable()
-	info.AddField("Rootpath", "rootpath", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike})
+	info.AddField("Listname", "listname", db.Text).
+		FieldFilterable(types.FilterType{FormType: form.SelectSingle}).
+		FieldFilterOptionsFromTable("series", "listname", "listname", func(sql *db.SQL) *db.SQL { return sql.GroupBy("listname") }).
+		FieldFilterOptionExt(map[string]any{"allowClear": true}).
+		FieldSortable()
+	info.AddField("Rootpath", "rootpath", db.Text).
+		FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike})
 
-	info.AddColumnButtons(ctx, "Details", types.GetActionIconButton(icon.List,
-		action.PopUpWithIframe("/admin/info/serie_episodes", "see more", action.IframeData{Src: "/admin/info/serie_episodes", AddParameterFn: func(ctx *context.Context) string {
-			return "&serie_id=" + ctx.FormValue("id")
-		}}, "900px", "560px")), types.GetActionIconButton(icon.File,
-		action.PopUpWithIframe("/admin/info/serie_episode_files", "see more", action.IframeData{Src: "/admin/info/serie_episode_files", AddParameterFn: func(ctx *context.Context) string {
-			return "&serie_id=" + ctx.FormValue("id")
-		}}, "900px", "560px")), types.GetActionIconButton(icon.History,
-		action.PopUpWithIframe("/admin/info/serie_episode_histories", "see more", action.IframeData{Src: "/admin/info/serie_episode_histories", AddParameterFn: func(ctx *context.Context) string {
-			return "&serie_id=" + ctx.FormValue("id")
-		}}, "900px", "560px")), types.GetActionIconButton(icon.Search,
-		myPopUpWithIframe("/search", "see more", action.IframeData{Src: "/api/series/search/id/{{.Id}}?apikey=" + config.SettingsGeneral.WebAPIKey}, "900px", "560px")))
+	info.AddColumnButtons(ctx, "Details", types.GetActionIconButton(
+		icon.List,
+		action.PopUpWithIframe(
+			"/admin/info/serie_episodes",
+			"see more",
+			action.IframeData{
+				Src: "/admin/info/serie_episodes",
+				AddParameterFn: func(ctx *context.Context) string {
+					return "&serie_id=" + ctx.FormValue("id")
+				},
+			},
+			"900px",
+			"560px",
+		),
+	), types.GetActionIconButton(
+		icon.File,
+		action.PopUpWithIframe(
+			"/admin/info/serie_episode_files",
+			"see more",
+			action.IframeData{
+				Src: "/admin/info/serie_episode_files",
+				AddParameterFn: func(ctx *context.Context) string {
+					return "&serie_id=" + ctx.FormValue("id")
+				},
+			},
+			"900px",
+			"560px",
+		),
+	), types.GetActionIconButton(
+		icon.History,
+		action.PopUpWithIframe(
+			"/admin/info/serie_episode_histories",
+			"see more",
+			action.IframeData{
+				Src: "/admin/info/serie_episode_histories",
+				AddParameterFn: func(ctx *context.Context) string {
+					return "&serie_id=" + ctx.FormValue("id")
+				},
+			},
+			"900px",
+			"560px",
+		),
+	), types.GetActionIconButton(
+		icon.Search,
+		myPopUpWithIframe(
+			"/search",
+			"see more",
+			action.IframeData{
+				Src: "/api/series/search/id/{{.Id}}?apikey=" + config.SettingsGeneral.WebAPIKey,
+			},
+			"900px",
+			"560px",
+		),
+	))
 
-	info.AddField("Dbserie_id", "dbserie_id", db.Integer).FieldDisplay(func(value types.FieldModel) any {
-		return template.Default().
-			Link().
-			SetURL("/admin/info/dbseries/detail?__goadmin_detail_pk=" + value.Value).
-			SetContent(template2.HTML(value.Value)).
-			OpenInNewTab().
-			SetTabTitle(template.HTML("Serie Detail(" + value.Value + ")")).
-			GetContent()
-	})
-	info.AddField("Dont_upgrade", "dont_upgrade", db.Numeric).FieldBool("1", "0").FieldFilterable(types.FilterType{FormType: form.SelectSingle}).FieldFilterOptions(types.FieldOptions{
-		{Value: "0", Text: "No"},
-		{Value: "1", Text: "Yes"},
-	}).FieldFilterOptionExt(map[string]any{"allowClear": true}).FieldSortable()
-	info.AddField("Dont_search", "dont_search", db.Numeric).FieldBool("1", "0").FieldFilterable(types.FilterType{FormType: form.SelectSingle}).FieldFilterOptions(types.FieldOptions{
-		{Value: "0", Text: "No"},
-		{Value: "1", Text: "Yes"},
-	}).FieldFilterOptionExt(map[string]any{"allowClear": true}).FieldSortable()
-	info.AddField("Search_Specials", "search_specials", db.Numeric).FieldBool("1", "0").FieldFilterable(types.FilterType{FormType: form.SelectSingle}).FieldFilterOptions(types.FieldOptions{
-		{Value: "0", Text: "No"},
-		{Value: "1", Text: "Yes"},
-	}).FieldFilterOptionExt(map[string]any{"allowClear": true}).FieldSortable()
-	info.AddField("Ignore_runtime", "ignore_runtime", db.Numeric).FieldBool("1", "0").FieldFilterable(types.FilterType{FormType: form.SelectSingle}).FieldFilterOptions(types.FieldOptions{
-		{Value: "0", Text: "No"},
-		{Value: "1", Text: "Yes"},
-	}).FieldFilterOptionExt(map[string]any{"allowClear": true}).FieldSortable()
+	info.AddField("Dbserie_id", "dbserie_id", db.Integer).
+		FieldDisplay(func(value types.FieldModel) any {
+			return template.Default().
+				Link().
+				SetURL("/admin/info/dbseries/detail?__goadmin_detail_pk=" + value.Value).
+				SetContent(template2.HTML(value.Value)).
+				OpenInNewTab().
+				SetTabTitle(template.HTML("Serie Detail(" + value.Value + ")")).
+				GetContent()
+		})
+	info.AddField("Dont_upgrade", "dont_upgrade", db.Numeric).
+		FieldBool("1", "0").
+		FieldFilterable(types.FilterType{FormType: form.SelectSingle}).
+		FieldFilterOptions(types.FieldOptions{
+			{Value: "0", Text: "No"},
+			{Value: "1", Text: "Yes"},
+		}).
+		FieldFilterOptionExt(map[string]any{"allowClear": true}).
+		FieldSortable()
+	info.AddField("Dont_search", "dont_search", db.Numeric).
+		FieldBool("1", "0").
+		FieldFilterable(types.FilterType{FormType: form.SelectSingle}).
+		FieldFilterOptions(types.FieldOptions{
+			{Value: "0", Text: "No"},
+			{Value: "1", Text: "Yes"},
+		}).
+		FieldFilterOptionExt(map[string]any{"allowClear": true}).
+		FieldSortable()
+	info.AddField("Search_Specials", "search_specials", db.Numeric).
+		FieldBool("1", "0").
+		FieldFilterable(types.FilterType{FormType: form.SelectSingle}).
+		FieldFilterOptions(types.FieldOptions{
+			{Value: "0", Text: "No"},
+			{Value: "1", Text: "Yes"},
+		}).
+		FieldFilterOptionExt(map[string]any{"allowClear": true}).
+		FieldSortable()
+	info.AddField("Ignore_runtime", "ignore_runtime", db.Numeric).
+		FieldBool("1", "0").
+		FieldFilterable(types.FilterType{FormType: form.SelectSingle}).
+		FieldFilterOptions(types.FieldOptions{
+			{Value: "0", Text: "No"},
+			{Value: "1", Text: "Yes"},
+		}).
+		FieldFilterOptionExt(map[string]any{"allowClear": true}).
+		FieldSortable()
 
 	info.SetTable("series").SetTitle("Series").SetDescription("Series")
 
 	formList := series.GetForm()
-	formList.AddField("Id", "id", db.Integer, form.Default).FieldDisplayButCanNotEditWhenCreate().FieldDisableWhenUpdate()
+	formList.AddField("Id", "id", db.Integer, form.Default).
+		FieldDisplayButCanNotEditWhenCreate().
+		FieldDisableWhenUpdate()
 	// formList.AddField("Created_at", "created_at", db.Datetime, form.Datetime)
 	// formList.AddField("Updated_at", "updated_at", db.Datetime, form.Datetime)
-	formList.AddField("Listname", "listname", db.Text, form.SelectSingle).FieldOptionsFromTable("series", "listname", "listname", func(sql *db.SQL) *db.SQL { return sql.GroupBy("listname").Select("listname") })
+	formList.AddField("Listname", "listname", db.Text, form.SelectSingle).
+		FieldOptionsFromTable("series", "listname", "listname", func(sql *db.SQL) *db.SQL { return sql.GroupBy("listname").Select("listname") })
 	// formList.AddField("Listname", "listname", db.Text, form.Text)
 	formList.AddField("Rootpath", "rootpath", db.Text, form.Text)
-	formList.AddField("Dbserie_id", "dbserie_id", db.Integer, form.SelectSingle).FieldOptionsFromTable("dbseries", "seriename", "id")
-	formList.AddField("Dont_upgrade", "dont_upgrade", db.Numeric, form.Switch).FieldOptions(types.FieldOptions{
-		{Text: "Yes", Value: "1"},
-		{Text: "No", Value: "0"},
-	})
-	formList.AddField("Dont_search", "dont_search", db.Numeric, form.Switch).FieldOptions(types.FieldOptions{
-		{Text: "Yes", Value: "1"},
-		{Text: "No", Value: "0"},
-	})
-	formList.AddField("Search_specials", "search_specials", db.Numeric, form.Switch).FieldOptions(types.FieldOptions{
-		{Text: "Yes", Value: "1"},
-		{Text: "No", Value: "0"},
-	})
-	formList.AddField("Ignore_runtime", "ignore_runtime", db.Numeric, form.Switch).FieldOptions(types.FieldOptions{
-		{Text: "Yes", Value: "1"},
-		{Text: "No", Value: "0"},
-	})
+	formList.AddField("Dbserie_id", "dbserie_id", db.Integer, form.SelectSingle).
+		FieldOptionsFromTable("dbseries", "seriename", "id")
+	formList.AddField("Dont_upgrade", "dont_upgrade", db.Numeric, form.Switch).
+		FieldOptions(types.FieldOptions{
+			{Text: "Yes", Value: "1"},
+			{Text: "No", Value: "0"},
+		})
+	formList.AddField("Dont_search", "dont_search", db.Numeric, form.Switch).
+		FieldOptions(types.FieldOptions{
+			{Text: "Yes", Value: "1"},
+			{Text: "No", Value: "0"},
+		})
+	formList.AddField("Search_specials", "search_specials", db.Numeric, form.Switch).
+		FieldOptions(types.FieldOptions{
+			{Text: "Yes", Value: "1"},
+			{Text: "No", Value: "0"},
+		})
+	formList.AddField("Ignore_runtime", "ignore_runtime", db.Numeric, form.Switch).
+		FieldOptions(types.FieldOptions{
+			{Text: "Yes", Value: "1"},
+			{Text: "No", Value: "0"},
+		})
 
 	formList.SetTable("series").SetTitle("Series").SetDescription("Series")
 
@@ -103,7 +183,10 @@ func getSeriesTable(ctx *context.Context) table.Table {
 }
 
 func getSerieEpisodesTable(ctx *context.Context) table.Table {
-	serieEpisodes := table.NewDefaultTable(ctx, table.DefaultConfigWithDriverAndConnection("sqlite", "media"))
+	serieEpisodes := table.NewDefaultTable(
+		ctx,
+		table.DefaultConfigWithDriverAndConnection("sqlite", "media"),
+	)
 
 	detail := serieEpisodes.GetDetail().HideFilterArea()
 
@@ -150,23 +233,43 @@ func getSerieEpisodesTable(ctx *context.Context) table.Table {
 	// info.AddField("Updated_at", "updated_at", db.Datetime)
 	// info.AddField("Lastscan", "lastscan", db.Datetime)
 	// info.AddField("Blacklisted", "blacklisted", db.Numeric)
-	info.AddField("Quality_reached", "quality_reached", db.Numeric).FieldBool("1", "0").FieldFilterable(types.FilterType{FormType: form.SelectSingle}).FieldFilterOptions(types.FieldOptions{
-		{Value: "0", Text: "No"},
-		{Value: "1", Text: "Yes"},
-	}).FieldFilterOptionExt(map[string]any{"allowClear": true}).FieldSortable()
-	info.AddField("Quality_profile", "quality_profile", db.Text).FieldFilterable(types.FilterType{FormType: form.SelectSingle}).FieldFilterOptionsFromTable("serie_episodes", "quality_profile", "quality_profile", func(sql *db.SQL) *db.SQL { return sql.GroupBy("quality_profile") }).FieldFilterOptionExt(map[string]any{"allowClear": true}).FieldSortable()
-	info.AddField("Missing", "missing", db.Numeric).FieldBool("1", "0").FieldFilterable(types.FilterType{FormType: form.SelectSingle}).FieldFilterOptions(types.FieldOptions{
-		{Value: "0", Text: "No"},
-		{Value: "1", Text: "Yes"},
-	}).FieldFilterOptionExt(map[string]any{"allowClear": true}).FieldSortable()
-	info.AddField("Ignore_runtime", "ignore_runtime", db.Numeric).FieldBool("1", "0").FieldFilterable(types.FilterType{FormType: form.SelectSingle}).FieldFilterOptions(types.FieldOptions{
-		{Value: "0", Text: "No"},
-		{Value: "1", Text: "Yes"},
-	}).FieldFilterOptionExt(map[string]any{"allowClear": true}).FieldSortable()
-	// info.AddField("Dont_upgrade", "dont_upgrade", db.Numeric)
-	// info.AddField("Dont_search", "dont_search", db.Numeric)
-	// info.AddField("Dbserie_episode_id", "dbserie_episode_id", db.Integer)
-	// info.AddField("Serie_id", "serie_id", db.Integer)
+	info.AddField("Quality_reached", "quality_reached", db.Numeric).
+		FieldBool("1", "0").
+		FieldFilterable(types.FilterType{FormType: form.SelectSingle}).
+		FieldFilterOptions(types.FieldOptions{
+			{Value: "0", Text: "No"},
+			{Value: "1", Text: "Yes"},
+		}).
+		FieldFilterOptionExt(map[string]any{"allowClear": true}).
+		FieldSortable()
+	info.AddField("Quality_profile", "quality_profile", db.Text).
+		FieldFilterable(types.FilterType{FormType: form.SelectSingle}).
+		FieldFilterOptionsFromTable("serie_episodes", "quality_profile", "quality_profile", func(sql *db.SQL) *db.SQL { return sql.GroupBy("quality_profile") }).
+		FieldFilterOptionExt(map[string]any{"allowClear": true}).
+		FieldSortable()
+	info.AddField("Missing", "missing", db.Numeric).
+		FieldBool("1", "0").
+		FieldFilterable(types.FilterType{FormType: form.SelectSingle}).
+		FieldFilterOptions(types.FieldOptions{
+			{Value: "0", Text: "No"},
+			{Value: "1", Text: "Yes"},
+		}).
+		FieldFilterOptionExt(map[string]any{"allowClear": true}).
+		FieldSortable()
+	info.AddField("Ignore_runtime", "ignore_runtime", db.Numeric).
+		FieldBool("1", "0").
+		FieldFilterable(types.FilterType{FormType: form.SelectSingle}).
+		FieldFilterOptions(types.FieldOptions{
+			{Value: "0", Text: "No"},
+			{Value: "1", Text: "Yes"},
+		}).
+		FieldFilterOptionExt(map[string]any{"allowClear": true}).
+		FieldSortable()
+
+		// info.AddField("Dont_upgrade", "dont_upgrade", db.Numeric)
+		// info.AddField("Dont_search", "dont_search", db.Numeric)
+		// info.AddField("Dbserie_episode_id", "dbserie_episode_id", db.Integer)
+		// info.AddField("Serie_id", "serie_id", db.Integer)
 
 	// info.AddColumnButtons("Details", types.GetColumnButton("Files", icon.File,
 	// 	action.PopUpWithIframe("/admin/info/serie_episode_files", "see more", action.IframeData{Src: "/admin/info/serie_episode_files", AddParameterFn: func(ctx *context.Context) string {
@@ -177,60 +280,108 @@ func getSerieEpisodesTable(ctx *context.Context) table.Table {
 	// 	}}, "900px", "560px")), types.GetColumnButton("Force Scan", icon.Search,
 	// 	action.PopUpWithIframe("/search", "see more", action.IframeData{Src: "/api/series/episodes/search/id/{{.Id}}?apikey=" + cfg_general.WebApiKey}, "200px", "20px")))
 
-	info.AddColumnButtons(ctx, "Details", types.GetActionIconButton(icon.File,
-		action.PopUpWithIframe("/admin/info/serie_episode_files", "see more", action.IframeData{Src: "/admin/info/serie_episode_files", AddParameterFn: func(ctx *context.Context) string {
-			return "&serie_episode_id=" + ctx.FormValue("id")
-		}}, "900px", "560px")), types.GetActionIconButton(icon.History,
-		action.PopUpWithIframe("/admin/info/serie_episode_histories", "see more", action.IframeData{Src: "/admin/info/serie_episode_histories", AddParameterFn: func(ctx *context.Context) string {
-			return "&serie_episode_id=" + ctx.FormValue("id")
-		}}, "900px", "560px")), types.GetActionIconButton(icon.Search, // action.JumpInNewTab("/api/series/episodes/search/id/{{.Id}}?apikey="+cfg_general.WebApiKey, "Search")))
-		myPopUpWithIframe("/search", "see more", action.IframeData{Src: "/api/series/episodes/search/id/{{.Id}}?apikey=" + config.SettingsGeneral.WebAPIKey}, "900px", "560px")))
+	info.AddColumnButtons(ctx, "Details", types.GetActionIconButton(
+		icon.File,
+		action.PopUpWithIframe(
+			"/admin/info/serie_episode_files",
+			"see more",
+			action.IframeData{
+				Src: "/admin/info/serie_episode_files",
+				AddParameterFn: func(ctx *context.Context) string {
+					return "&serie_episode_id=" + ctx.FormValue("id")
+				},
+			},
+			"900px",
+			"560px",
+		),
+	), types.GetActionIconButton(
+		icon.History,
+		action.PopUpWithIframe(
+			"/admin/info/serie_episode_histories",
+			"see more",
+			action.IframeData{
+				Src: "/admin/info/serie_episode_histories",
+				AddParameterFn: func(ctx *context.Context) string {
+					return "&serie_episode_id=" + ctx.FormValue("id")
+				},
+			},
+			"900px",
+			"560px",
+		),
+	), types.GetActionIconButton(
+		icon.Search, // action.JumpInNewTab("/api/series/episodes/search/id/{{.Id}}?apikey="+cfg_general.WebApiKey, "Search")))
+		myPopUpWithIframe(
+			"/search",
+			"see more",
+			action.IframeData{
+				Src: "/api/series/episodes/search/id/{{.Id}}?apikey=" + config.SettingsGeneral.WebAPIKey,
+			},
+			"900px",
+			"560px",
+		),
+	))
 
-	info.AddField("Dbserie_id", "dbserie_id", db.Integer).FieldDisplay(func(value types.FieldModel) any {
-		return template.Default().
-			Link().
-			SetURL("/admin/info/dbseries/detail?__goadmin_detail_pk=" + value.Value).
-			SetContent(template2.HTML(value.Value)).
-			OpenInNewTab().
-			SetTabTitle(template.HTML("Serie Detail(" + value.Value + ")")).
-			GetContent()
-	})
+	info.AddField("Dbserie_id", "dbserie_id", db.Integer).
+		FieldDisplay(func(value types.FieldModel) any {
+			return template.Default().
+				Link().
+				SetURL("/admin/info/dbseries/detail?__goadmin_detail_pk=" + value.Value).
+				SetContent(template2.HTML(value.Value)).
+				OpenInNewTab().
+				SetTabTitle(template.HTML("Serie Detail(" + value.Value + ")")).
+				GetContent()
+		})
 
 	info.SetTable("serie_episodes").SetTitle("SerieEpisodes").SetDescription("SerieEpisodes")
 
 	formList := serieEpisodes.GetForm()
-	formList.AddField("Id", "id", db.Integer, form.Default).FieldDisplayButCanNotEditWhenCreate().FieldDisableWhenUpdate()
+	formList.AddField("Id", "id", db.Integer, form.Default).
+		FieldDisplayButCanNotEditWhenCreate().
+		FieldDisableWhenUpdate()
 	// formList.AddField("Created_at", "created_at", db.Datetime, form.Datetime)
 	// formList.AddField("Updated_at", "updated_at", db.Datetime, form.Datetime)
 	formList.AddField("Lastscan", "lastscan", db.Datetime, form.Datetime)
-	formList.AddField("Blacklisted", "blacklisted", db.Numeric, form.Switch).FieldOptions(types.FieldOptions{
-		{Text: "Yes", Value: "1"},
-		{Text: "No", Value: "0"},
-	})
-	formList.AddField("Quality_reached", "quality_reached", db.Numeric, form.Switch).FieldOptions(types.FieldOptions{
-		{Text: "Yes", Value: "1"},
-		{Text: "No", Value: "0"},
-	})
-	formList.AddField("Quality_profile", "quality_profile", db.Text, form.SelectSingle).FieldOptionsFromTable("serie_episodes", "quality_profile", "quality_profile", func(sql *db.SQL) *db.SQL { return sql.GroupBy("quality_profile").Select("quality_profile") })
-	formList.AddField("Missing", "missing", db.Numeric, form.Switch).FieldOptions(types.FieldOptions{
-		{Text: "Yes", Value: "1"},
-		{Text: "No", Value: "0"},
-	})
-	formList.AddField("Dont_upgrade", "dont_upgrade", db.Numeric, form.Switch).FieldOptions(types.FieldOptions{
-		{Text: "Yes", Value: "1"},
-		{Text: "No", Value: "0"},
-	})
-	formList.AddField("Dont_search", "dont_search", db.Numeric, form.Switch).FieldOptions(types.FieldOptions{
-		{Text: "Yes", Value: "1"},
-		{Text: "No", Value: "0"},
-	})
-	formList.AddField("Ignore_runtime", "ignore_runtime", db.Numeric, form.Switch).FieldOptions(types.FieldOptions{
-		{Text: "Yes", Value: "1"},
-		{Text: "No", Value: "0"},
-	})
-	formList.AddField("Dbserie_episode_id", "dbserie_episode_id", db.Integer, form.SelectSingle) // .FieldOptionsFromTable("dbserie_episodes", "identifier", "id", func(sql *db.SQL) *db.SQL { return sql.Where("dbserie_id", "=", value.dbserie_id) })
+	formList.AddField("Blacklisted", "blacklisted", db.Numeric, form.Switch).
+		FieldOptions(types.FieldOptions{
+			{Text: "Yes", Value: "1"},
+			{Text: "No", Value: "0"},
+		})
+	formList.AddField("Quality_reached", "quality_reached", db.Numeric, form.Switch).
+		FieldOptions(types.FieldOptions{
+			{Text: "Yes", Value: "1"},
+			{Text: "No", Value: "0"},
+		})
+	formList.AddField("Quality_profile", "quality_profile", db.Text, form.SelectSingle).
+		FieldOptionsFromTable("serie_episodes", "quality_profile", "quality_profile", func(sql *db.SQL) *db.SQL { return sql.GroupBy("quality_profile").Select("quality_profile") })
+	formList.AddField("Missing", "missing", db.Numeric, form.Switch).
+		FieldOptions(types.FieldOptions{
+			{Text: "Yes", Value: "1"},
+			{Text: "No", Value: "0"},
+		})
+	formList.AddField("Dont_upgrade", "dont_upgrade", db.Numeric, form.Switch).
+		FieldOptions(types.FieldOptions{
+			{Text: "Yes", Value: "1"},
+			{Text: "No", Value: "0"},
+		})
+	formList.AddField("Dont_search", "dont_search", db.Numeric, form.Switch).
+		FieldOptions(types.FieldOptions{
+			{Text: "Yes", Value: "1"},
+			{Text: "No", Value: "0"},
+		})
+	formList.AddField("Ignore_runtime", "ignore_runtime", db.Numeric, form.Switch).
+		FieldOptions(types.FieldOptions{
+			{Text: "Yes", Value: "1"},
+			{Text: "No", Value: "0"},
+		})
+	formList.AddField(
+		"Dbserie_episode_id",
+		"dbserie_episode_id",
+		db.Integer,
+		form.SelectSingle,
+	) // .FieldOptionsFromTable("dbserie_episodes", "identifier", "id", func(sql *db.SQL) *db.SQL { return sql.Where("dbserie_id", "=", value.dbserie_id) })
 	formList.AddField("Serie_id", "serie_id", db.Integer, form.Number)
-	formList.AddField("Dbserie_id", "dbserie_id", db.Integer, form.SelectSingle).FieldOptionsFromTable("dbseries", "seriename", "id")
+	formList.AddField("Dbserie_id", "dbserie_id", db.Integer, form.SelectSingle).
+		FieldOptionsFromTable("dbseries", "seriename", "id")
 
 	formList.SetTable("serie_episodes").SetTitle("SerieEpisodes").SetDescription("SerieEpisodes")
 
@@ -238,7 +389,10 @@ func getSerieEpisodesTable(ctx *context.Context) table.Table {
 }
 
 func getSerieEpisodeFilesTable(ctx *context.Context) table.Table {
-	serieEpisodeFiles := table.NewDefaultTable(ctx, table.DefaultConfigWithDriverAndConnection("sqlite", "media"))
+	serieEpisodeFiles := table.NewDefaultTable(
+		ctx,
+		table.DefaultConfigWithDriverAndConnection("sqlite", "media"),
+	)
 
 	detail := serieEpisodeFiles.GetDetail().HideFilterArea()
 
@@ -262,17 +416,20 @@ func getSerieEpisodeFilesTable(ctx *context.Context) table.Table {
 	detail.AddField("Serie_id", "serie_id", db.Integer)
 	detail.AddField("Serie_episode_id", "serie_episode_id", db.Integer)
 	detail.AddField("Dbserie_episode_id", "dbserie_episode_id", db.Integer)
-	detail.AddField("Dbserie_id", "dbserie_id", db.Integer).FieldDisplay(func(value types.FieldModel) any {
-		return template.Default().
-			Link().
-			SetURL("/admin/info/dbseries/detail?__goadmin_detail_pk=" + value.Value).
-			SetContent(template2.HTML(value.Value)).
-			OpenInNewTab().
-			SetTabTitle(template.HTML("Serie Detail(" + value.Value + ")")).
-			GetContent()
-	})
+	detail.AddField("Dbserie_id", "dbserie_id", db.Integer).
+		FieldDisplay(func(value types.FieldModel) any {
+			return template.Default().
+				Link().
+				SetURL("/admin/info/dbseries/detail?__goadmin_detail_pk=" + value.Value).
+				SetContent(template2.HTML(value.Value)).
+				OpenInNewTab().
+				SetTabTitle(template.HTML("Serie Detail(" + value.Value + ")")).
+				GetContent()
+		})
 
-	detail.SetTable("serie_episode_files").SetTitle("SerieEpisodeFiles").SetDescription("SerieEpisodeFiles")
+	detail.SetTable("serie_episode_files").
+		SetTitle("SerieEpisodeFiles").
+		SetDescription("SerieEpisodeFiles")
 
 	info := serieEpisodeFiles.GetInfo().HideFilterArea()
 	info.HideNewButton()
@@ -281,10 +438,16 @@ func getSerieEpisodeFilesTable(ctx *context.Context) table.Table {
 		FieldSortable()
 	// info.AddField("Created_at", "created_at", db.Datetime)
 	// info.AddField("Updated_at", "updated_at", db.Datetime)
-	info.AddField("Location", "location", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
+	info.AddField("Location", "location", db.Text).
+		FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).
+		FieldSortable()
 	// info.AddField("Filename", "filename", db.Text)
 	// info.AddField("Extension", "extension", db.Text)
-	info.AddField("Quality_profile", "quality_profile", db.Text).FieldFilterable(types.FilterType{FormType: form.SelectSingle}).FieldFilterOptionsFromTable("serie_episodes", "quality_profile", "quality_profile", func(sql *db.SQL) *db.SQL { return sql.GroupBy("quality_profile") }).FieldFilterOptionExt(map[string]any{"allowClear": true}).FieldSortable()
+	info.AddField("Quality_profile", "quality_profile", db.Text).
+		FieldFilterable(types.FilterType{FormType: form.SelectSingle}).
+		FieldFilterOptionsFromTable("serie_episodes", "quality_profile", "quality_profile", func(sql *db.SQL) *db.SQL { return sql.GroupBy("quality_profile") }).
+		FieldFilterOptionExt(map[string]any{"allowClear": true}).
+		FieldSortable()
 	// info.AddField("Proper", "proper", db.Numeric)
 	// info.AddField("Extended", "extended", db.Numeric)
 	// info.AddField("Repack", "repack", db.Numeric)
@@ -315,56 +478,73 @@ func getSerieEpisodeFilesTable(ctx *context.Context) table.Table {
 		JoinField: "id",
 		Table:     "dbseries",
 	}).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
-	info.AddField("Dbserie_id", "dbserie_id", db.Integer).FieldDisplay(func(value types.FieldModel) any {
-		return template.Default().
-			Link().
-			SetURL("/admin/info/dbseries/detail?__goadmin_detail_pk=" + value.Value).
-			SetContent(template2.HTML(value.Value)).
-			OpenInNewTab().
-			SetTabTitle(template.HTML("Serie Detail(" + value.Value + ")")).
-			GetContent()
-	})
+	info.AddField("Dbserie_id", "dbserie_id", db.Integer).
+		FieldDisplay(func(value types.FieldModel) any {
+			return template.Default().
+				Link().
+				SetURL("/admin/info/dbseries/detail?__goadmin_detail_pk=" + value.Value).
+				SetContent(template2.HTML(value.Value)).
+				OpenInNewTab().
+				SetTabTitle(template.HTML("Serie Detail(" + value.Value + ")")).
+				GetContent()
+		})
 
-	info.SetTable("serie_episode_files").SetTitle("SerieEpisodeFiles").SetDescription("SerieEpisodeFiles")
+	info.SetTable("serie_episode_files").
+		SetTitle("SerieEpisodeFiles").
+		SetDescription("SerieEpisodeFiles")
 
 	formList := serieEpisodeFiles.GetForm()
-	formList.AddField("Id", "id", db.Integer, form.Default).FieldDisplayButCanNotEditWhenCreate().FieldDisableWhenUpdate()
+	formList.AddField("Id", "id", db.Integer, form.Default).
+		FieldDisplayButCanNotEditWhenCreate().
+		FieldDisableWhenUpdate()
 	// formList.AddField("Created_at", "created_at", db.Datetime, form.Datetime)
 	// formList.AddField("Updated_at", "updated_at", db.Datetime, form.Datetime)
 	formList.AddField("Location", "location", db.Text, form.Text)
 	formList.AddField("Filename", "filename", db.Text, form.Text)
 	formList.AddField("Extension", "extension", db.Text, form.Text)
-	formList.AddField("Quality_profile", "quality_profile", db.Text, form.SelectSingle).FieldOptionsFromTable("serie_episodes", "quality_profile", "quality_profile", func(sql *db.SQL) *db.SQL { return sql.GroupBy("quality_profile").Select("quality_profile") })
+	formList.AddField("Quality_profile", "quality_profile", db.Text, form.SelectSingle).
+		FieldOptionsFromTable("serie_episodes", "quality_profile", "quality_profile", func(sql *db.SQL) *db.SQL { return sql.GroupBy("quality_profile").Select("quality_profile") })
 	formList.AddField("Proper", "proper", db.Numeric, form.Switch).FieldOptions(types.FieldOptions{
 		{Text: "Yes", Value: "1"},
 		{Text: "No", Value: "0"},
 	})
-	formList.AddField("Extended", "extended", db.Numeric, form.Switch).FieldOptions(types.FieldOptions{
-		{Text: "Yes", Value: "1"},
-		{Text: "No", Value: "0"},
-	})
+	formList.AddField("Extended", "extended", db.Numeric, form.Switch).
+		FieldOptions(types.FieldOptions{
+			{Text: "Yes", Value: "1"},
+			{Text: "No", Value: "0"},
+		})
 	formList.AddField("Repack", "repack", db.Numeric, form.Switch).FieldOptions(types.FieldOptions{
 		{Text: "Yes", Value: "1"},
 		{Text: "No", Value: "0"},
 	})
 	formList.AddField("Height", "height", db.Integer, form.Number)
 	formList.AddField("Width", "width", db.Integer, form.Number)
-	formList.AddField("Resolution", "resolution_id", db.Integer, form.SelectSingle).FieldOptionsFromTable("qualities", "name", "id", func(sql *db.SQL) *db.SQL { return sql.Where("type", "=", "1") })
-	formList.AddField("Quality", "quality_id", db.Integer, form.SelectSingle).FieldOptionsFromTable("qualities", "name", "id", func(sql *db.SQL) *db.SQL { return sql.Where("type", "=", "2") })
-	formList.AddField("Codec", "codec_id", db.Integer, form.SelectSingle).FieldOptionsFromTable("qualities", "name", "id", func(sql *db.SQL) *db.SQL { return sql.Where("type", "=", "3") })
-	formList.AddField("Audio", "audio_id", db.Integer, form.SelectSingle).FieldOptionsFromTable("qualities", "name", "id", func(sql *db.SQL) *db.SQL { return sql.Where("type", "=", "4") })
+	formList.AddField("Resolution", "resolution_id", db.Integer, form.SelectSingle).
+		FieldOptionsFromTable("qualities", "name", "id", func(sql *db.SQL) *db.SQL { return sql.Where("type", "=", "1") })
+	formList.AddField("Quality", "quality_id", db.Integer, form.SelectSingle).
+		FieldOptionsFromTable("qualities", "name", "id", func(sql *db.SQL) *db.SQL { return sql.Where("type", "=", "2") })
+	formList.AddField("Codec", "codec_id", db.Integer, form.SelectSingle).
+		FieldOptionsFromTable("qualities", "name", "id", func(sql *db.SQL) *db.SQL { return sql.Where("type", "=", "3") })
+	formList.AddField("Audio", "audio_id", db.Integer, form.SelectSingle).
+		FieldOptionsFromTable("qualities", "name", "id", func(sql *db.SQL) *db.SQL { return sql.Where("type", "=", "4") })
 	formList.AddField("Serie_id", "serie_id", db.Integer, form.Number)
 	formList.AddField("Serie_episode_id", "serie_episode_id", db.Integer, form.Number)
 	formList.AddField("Dbserie_episode_id", "dbserie_episode_id", db.Integer, form.Number)
-	formList.AddField("Dbserie_id", "dbserie_id", db.Integer, form.SelectSingle).FieldOptionsFromTable("dbseries", "seriename", "id")
+	formList.AddField("Dbserie_id", "dbserie_id", db.Integer, form.SelectSingle).
+		FieldOptionsFromTable("dbseries", "seriename", "id")
 
-	formList.SetTable("serie_episode_files").SetTitle("SerieEpisodeFiles").SetDescription("SerieEpisodeFiles")
+	formList.SetTable("serie_episode_files").
+		SetTitle("SerieEpisodeFiles").
+		SetDescription("SerieEpisodeFiles")
 
 	return serieEpisodeFiles
 }
 
 func getSerieEpisodeHistoriesTable(ctx *context.Context) table.Table {
-	serieEpisodeHistories := table.NewDefaultTable(ctx, table.DefaultConfigWithDriverAndConnection("sqlite", "media"))
+	serieEpisodeHistories := table.NewDefaultTable(
+		ctx,
+		table.DefaultConfigWithDriverAndConnection("sqlite", "media"),
+	)
 
 	detail := serieEpisodeHistories.GetDetail().HideFilterArea()
 
@@ -387,17 +567,20 @@ func getSerieEpisodeHistoriesTable(ctx *context.Context) table.Table {
 	detail.AddField("Serie_id", "serie_id", db.Integer)
 	detail.AddField("Serie_episode_id", "serie_episode_id", db.Integer)
 	detail.AddField("Dbserie_episode_id", "dbserie_episode_id", db.Integer)
-	detail.AddField("Dbserie_id", "dbserie_id", db.Integer).FieldDisplay(func(value types.FieldModel) any {
-		return template.Default().
-			Link().
-			SetURL("/admin/info/dbseries/detail?__goadmin_detail_pk=" + value.Value).
-			SetContent(template2.HTML(value.Value)).
-			OpenInNewTab().
-			SetTabTitle(template.HTML("Serie Detail(" + value.Value + ")")).
-			GetContent()
-	})
+	detail.AddField("Dbserie_id", "dbserie_id", db.Integer).
+		FieldDisplay(func(value types.FieldModel) any {
+			return template.Default().
+				Link().
+				SetURL("/admin/info/dbseries/detail?__goadmin_detail_pk=" + value.Value).
+				SetContent(template2.HTML(value.Value)).
+				OpenInNewTab().
+				SetTabTitle(template.HTML("Serie Detail(" + value.Value + ")")).
+				GetContent()
+		})
 
-	detail.SetTable("serie_episode_histories").SetTitle("SerieEpisodeHistories").SetDescription("SerieEpisodeHistories")
+	detail.SetTable("serie_episode_histories").
+		SetTitle("SerieEpisodeHistories").
+		SetDescription("SerieEpisodeHistories")
 
 	info := serieEpisodeHistories.GetInfo().HideFilterArea()
 	info.HideNewButton()
@@ -406,14 +589,24 @@ func getSerieEpisodeHistoriesTable(ctx *context.Context) table.Table {
 		FieldSortable()
 	// info.AddField("Created_at", "created_at", db.Datetime)
 	// info.AddField("Updated_at", "updated_at", db.Datetime)
-	info.AddField("Title", "title", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
+	info.AddField("Title", "title", db.Text).
+		FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).
+		FieldSortable()
 	// info.AddField("Url", "url", db.Text)
-	info.AddField("Indexer", "indexer", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
+	info.AddField("Indexer", "indexer", db.Text).
+		FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).
+		FieldSortable()
 	// info.AddField("Type", "type", db.Text)
 	// info.AddField("Target", "target", db.Text)
-	info.AddField("Downloaded_at", "downloaded_at", db.Datetime).FieldSortable().FieldFilterable(types.FilterType{FormType: form.DatetimeRange})
+	info.AddField("Downloaded_at", "downloaded_at", db.Datetime).
+		FieldSortable().
+		FieldFilterable(types.FilterType{FormType: form.DatetimeRange})
 	// info.AddField("Blacklisted", "blacklisted", db.Numeric)
-	info.AddField("Quality_profile", "quality_profile", db.Text).FieldFilterable(types.FilterType{FormType: form.SelectSingle}).FieldFilterOptionsFromTable("serie_episodes", "quality_profile", "quality_profile", func(sql *db.SQL) *db.SQL { return sql.GroupBy("quality_profile") }).FieldFilterOptionExt(map[string]any{"allowClear": true}).FieldSortable()
+	info.AddField("Quality_profile", "quality_profile", db.Text).
+		FieldFilterable(types.FilterType{FormType: form.SelectSingle}).
+		FieldFilterOptionsFromTable("serie_episodes", "quality_profile", "quality_profile", func(sql *db.SQL) *db.SQL { return sql.GroupBy("quality_profile") }).
+		FieldFilterOptionExt(map[string]any{"allowClear": true}).
+		FieldSortable()
 	// info.AddField("Resolution_id", "resolution_id", db.Integer)
 	// info.AddField("Quality_id", "quality_id", db.Integer)
 	// info.AddField("Codec_id", "codec_id", db.Integer)
@@ -439,20 +632,25 @@ func getSerieEpisodeHistoriesTable(ctx *context.Context) table.Table {
 		Table:     "dbseries",
 	}).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
 	// info.AddField("Dbserie_episode_id", "dbserie_episode_id", db.Integer)
-	info.AddField("Dbserie_id", "dbserie_id", db.Integer).FieldDisplay(func(value types.FieldModel) any {
-		return template.Default().
-			Link().
-			SetURL("/admin/info/dbseries/detail?__goadmin_detail_pk=" + value.Value).
-			SetContent(template2.HTML(value.Value)).
-			OpenInNewTab().
-			SetTabTitle(template.HTML("Serie Detail(" + value.Value + ")")).
-			GetContent()
-	})
+	info.AddField("Dbserie_id", "dbserie_id", db.Integer).
+		FieldDisplay(func(value types.FieldModel) any {
+			return template.Default().
+				Link().
+				SetURL("/admin/info/dbseries/detail?__goadmin_detail_pk=" + value.Value).
+				SetContent(template2.HTML(value.Value)).
+				OpenInNewTab().
+				SetTabTitle(template.HTML("Serie Detail(" + value.Value + ")")).
+				GetContent()
+		})
 
-	info.SetTable("serie_episode_histories").SetTitle("SerieEpisodeHistories").SetDescription("SerieEpisodeHistories")
+	info.SetTable("serie_episode_histories").
+		SetTitle("SerieEpisodeHistories").
+		SetDescription("SerieEpisodeHistories")
 
 	formList := serieEpisodeHistories.GetForm()
-	formList.AddField("Id", "id", db.Integer, form.Default).FieldDisplayButCanNotEditWhenCreate().FieldDisableWhenUpdate()
+	formList.AddField("Id", "id", db.Integer, form.Default).
+		FieldDisplayButCanNotEditWhenCreate().
+		FieldDisableWhenUpdate()
 	// formList.AddField("Created_at", "created_at", db.Datetime, form.Datetime)
 	// formList.AddField("Updated_at", "updated_at", db.Datetime, form.Datetime)
 	formList.AddField("Title", "title", db.Text, form.Text)
@@ -461,27 +659,39 @@ func getSerieEpisodeHistoriesTable(ctx *context.Context) table.Table {
 	formList.AddField("Type", "type", db.Text, form.Text)
 	formList.AddField("Target", "target", db.Text, form.Text)
 	formList.AddField("Downloaded_at", "downloaded_at", db.Datetime, form.Datetime)
-	formList.AddField("Blacklisted", "blacklisted", db.Numeric, form.Switch).FieldOptions(types.FieldOptions{
-		{Text: "Yes", Value: "1"},
-		{Text: "No", Value: "0"},
-	})
-	formList.AddField("Quality_profile", "quality_profile", db.Text, form.SelectSingle).FieldOptionsFromTable("serie_episodes", "quality_profile", "quality_profile", func(sql *db.SQL) *db.SQL { return sql.GroupBy("quality_profile").Select("quality_profile") })
-	formList.AddField("Resolution", "resolution_id", db.Integer, form.SelectSingle).FieldOptionsFromTable("qualities", "name", "id", func(sql *db.SQL) *db.SQL { return sql.Where("type", "=", "1") })
-	formList.AddField("Quality", "quality_id", db.Integer, form.SelectSingle).FieldOptionsFromTable("qualities", "name", "id", func(sql *db.SQL) *db.SQL { return sql.Where("type", "=", "2") })
-	formList.AddField("Codec", "codec_id", db.Integer, form.SelectSingle).FieldOptionsFromTable("qualities", "name", "id", func(sql *db.SQL) *db.SQL { return sql.Where("type", "=", "3") })
-	formList.AddField("Audio", "audio_id", db.Integer, form.SelectSingle).FieldOptionsFromTable("qualities", "name", "id", func(sql *db.SQL) *db.SQL { return sql.Where("type", "=", "4") })
+	formList.AddField("Blacklisted", "blacklisted", db.Numeric, form.Switch).
+		FieldOptions(types.FieldOptions{
+			{Text: "Yes", Value: "1"},
+			{Text: "No", Value: "0"},
+		})
+	formList.AddField("Quality_profile", "quality_profile", db.Text, form.SelectSingle).
+		FieldOptionsFromTable("serie_episodes", "quality_profile", "quality_profile", func(sql *db.SQL) *db.SQL { return sql.GroupBy("quality_profile").Select("quality_profile") })
+	formList.AddField("Resolution", "resolution_id", db.Integer, form.SelectSingle).
+		FieldOptionsFromTable("qualities", "name", "id", func(sql *db.SQL) *db.SQL { return sql.Where("type", "=", "1") })
+	formList.AddField("Quality", "quality_id", db.Integer, form.SelectSingle).
+		FieldOptionsFromTable("qualities", "name", "id", func(sql *db.SQL) *db.SQL { return sql.Where("type", "=", "2") })
+	formList.AddField("Codec", "codec_id", db.Integer, form.SelectSingle).
+		FieldOptionsFromTable("qualities", "name", "id", func(sql *db.SQL) *db.SQL { return sql.Where("type", "=", "3") })
+	formList.AddField("Audio", "audio_id", db.Integer, form.SelectSingle).
+		FieldOptionsFromTable("qualities", "name", "id", func(sql *db.SQL) *db.SQL { return sql.Where("type", "=", "4") })
 	formList.AddField("Serie_id", "serie_id", db.Integer, form.Number)
 	formList.AddField("Serie_episode_id", "serie_episode_id", db.Integer, form.Number)
 	formList.AddField("Dbserie_episode_id", "dbserie_episode_id", db.Integer, form.Number)
-	formList.AddField("Dbserie_id", "dbserie_id", db.Integer, form.SelectSingle).FieldOptionsFromTable("dbseries", "seriename", "id")
+	formList.AddField("Dbserie_id", "dbserie_id", db.Integer, form.SelectSingle).
+		FieldOptionsFromTable("dbseries", "seriename", "id")
 
-	formList.SetTable("serie_episode_histories").SetTitle("SerieEpisodeHistories").SetDescription("SerieEpisodeHistories")
+	formList.SetTable("serie_episode_histories").
+		SetTitle("SerieEpisodeHistories").
+		SetDescription("SerieEpisodeHistories")
 
 	return serieEpisodeHistories
 }
 
 func getSerieFileUnmatchedsTable(ctx *context.Context) table.Table {
-	serieFileUnmatcheds := table.NewDefaultTable(ctx, table.DefaultConfigWithDriverAndConnection("sqlite", "media"))
+	serieFileUnmatcheds := table.NewDefaultTable(
+		ctx,
+		table.DefaultConfigWithDriverAndConnection("sqlite", "media"),
+	)
 
 	info := serieFileUnmatcheds.GetInfo().HideFilterArea()
 	info.HideDeleteButton().HideEditButton().HideNewButton()
@@ -489,15 +699,23 @@ func getSerieFileUnmatchedsTable(ctx *context.Context) table.Table {
 	info.AddField("Id", "id", db.Integer).FieldSortable()
 	// info.AddField("Created_at", "created_at", db.Datetime)
 	// info.AddField("Updated_at", "updated_at", db.Datetime).FieldDate("2006-01-02 15:04")
-	info.AddField("Listname", "listname", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
-	info.AddField("Filepath", "filepath", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
+	info.AddField("Listname", "listname", db.Text).
+		FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).
+		FieldSortable()
+	info.AddField("Filepath", "filepath", db.Text).
+		FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).
+		FieldSortable()
 	info.AddField("Last_checked", "last_checked", db.Datetime).FieldFilterable().FieldSortable()
 	info.AddField("Parsed_data", "parsed_data", db.Text)
 
-	info.SetTable("serie_file_unmatcheds").SetTitle("SerieFileUnmatcheds").SetDescription("SerieFileUnmatcheds")
+	info.SetTable("serie_file_unmatcheds").
+		SetTitle("SerieFileUnmatcheds").
+		SetDescription("SerieFileUnmatcheds")
 
 	formList := serieFileUnmatcheds.GetForm()
-	formList.AddField("Id", "id", db.Integer, form.Default).FieldDisplayButCanNotEditWhenCreate().FieldDisableWhenUpdate()
+	formList.AddField("Id", "id", db.Integer, form.Default).
+		FieldDisplayButCanNotEditWhenCreate().
+		FieldDisableWhenUpdate()
 	// formList.AddField("Created_at", "created_at", db.Datetime, form.Datetime)
 	// formList.AddField("Updated_at", "updated_at", db.Datetime, form.Datetime)
 	formList.AddField("Listname", "listname", db.Text, form.Text)
@@ -505,13 +723,18 @@ func getSerieFileUnmatchedsTable(ctx *context.Context) table.Table {
 	formList.AddField("Last_checked", "last_checked", db.Datetime, form.Datetime)
 	formList.AddField("Parsed_data", "parsed_data", db.Text, form.Text)
 
-	formList.SetTable("serie_file_unmatcheds").SetTitle("SerieFileUnmatcheds").SetDescription("SerieFileUnmatcheds")
+	formList.SetTable("serie_file_unmatcheds").
+		SetTitle("SerieFileUnmatcheds").
+		SetDescription("SerieFileUnmatcheds")
 
 	return serieFileUnmatcheds
 }
 
 func getDbseriesTable(ctx *context.Context) table.Table {
-	dbseries := table.NewDefaultTable(ctx, table.DefaultConfigWithDriverAndConnection("sqlite", "media"))
+	dbseries := table.NewDefaultTable(
+		ctx,
+		table.DefaultConfigWithDriverAndConnection("sqlite", "media"),
+	)
 
 	detail := dbseries.GetDetail().HideFilterArea()
 
@@ -554,15 +777,20 @@ func getDbseriesTable(ctx *context.Context) table.Table {
 	info.AddField("Id", "id", db.Integer).FieldSortable()
 	// info.AddField("Created_at", "created_at", db.Datetime)
 	// info.AddField("Updated_at", "updated_at", db.Datetime)
-	info.AddField("Seriename", "seriename", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
+	info.AddField("Seriename", "seriename", db.Text).
+		FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).
+		FieldSortable()
 	// info.AddField("Aliases", "aliases", db.Text)
 	// info.AddField("Season", "season", db.Text)
-	info.AddField("Status", "status", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
+	info.AddField("Status", "status", db.Text).
+		FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).
+		FieldSortable()
 	info.AddField("Firstaired", "firstaired", db.Text)
 	// info.AddField("Network", "network", db.Text)
 	// info.AddField("Runtime", "runtime", db.Text)
 	// info.AddField("Language", "language", db.Text)
-	info.AddField("Genre", "genre", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike})
+	info.AddField("Genre", "genre", db.Text).
+		FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike})
 	// info.AddField("Overview", "overview", db.Text)
 	// info.AddField("Rating", "rating", db.Text)
 	// info.AddField("Siterating", "siterating", db.Text)
@@ -582,21 +810,70 @@ func getDbseriesTable(ctx *context.Context) table.Table {
 	// info.AddField("Identifiedby", "identifiedby", db.Text)
 	// info.AddField("Trakt_id", "trakt_id", db.Integer)
 
-	info.AddColumnButtons(ctx, "Details", types.GetColumnButton("Titles", icon.Info,
-		action.PopUpWithIframe("/admin/info/dbserie_alternates", "see more", action.IframeData{Src: "/admin/info/dbserie_alternates", AddParameterFn: func(ctx *context.Context) string {
-			return "&dbserie_id=" + ctx.FormValue("id")
-		}}, "900px", "560px")), types.GetColumnButton("Episodes", icon.Info,
-		action.PopUpWithIframe("/admin/info/dbserie_episodes", "see more", action.IframeData{Src: "/admin/info/dbserie_episodes", AddParameterFn: func(ctx *context.Context) string {
-			return "&dbserie_id=" + ctx.FormValue("id")
-		}}, "900px", "560px")), types.GetColumnButton("Shows", icon.Info,
-		action.PopUpWithIframe("/admin/info/series", "see more", action.IframeData{Src: "/admin/info/series", AddParameterFn: func(ctx *context.Context) string {
-			return "&dbserie_id=" + ctx.FormValue("id")
-		}}, "900px", "560px")), types.GetColumnButton("Refresh", icon.Refresh,
-		myPopUpWithIframe("/admin/info/refresh", "see more", action.IframeData{Src: "/api/series/refresh/{{.Id}}?apikey=" + config.SettingsGeneral.WebAPIKey}, "900px", "560px")))
+	info.AddColumnButtons(ctx, "Details", types.GetColumnButton(
+		"Titles",
+		icon.Info,
+		action.PopUpWithIframe(
+			"/admin/info/dbserie_alternates",
+			"see more",
+			action.IframeData{
+				Src: "/admin/info/dbserie_alternates",
+				AddParameterFn: func(ctx *context.Context) string {
+					return "&dbserie_id=" + ctx.FormValue("id")
+				},
+			},
+			"900px",
+			"560px",
+		),
+	), types.GetColumnButton(
+		"Episodes",
+		icon.Info,
+		action.PopUpWithIframe(
+			"/admin/info/dbserie_episodes",
+			"see more",
+			action.IframeData{
+				Src: "/admin/info/dbserie_episodes",
+				AddParameterFn: func(ctx *context.Context) string {
+					return "&dbserie_id=" + ctx.FormValue("id")
+				},
+			},
+			"900px",
+			"560px",
+		),
+	), types.GetColumnButton(
+		"Shows",
+		icon.Info,
+		action.PopUpWithIframe(
+			"/admin/info/series",
+			"see more",
+			action.IframeData{
+				Src: "/admin/info/series",
+				AddParameterFn: func(ctx *context.Context) string {
+					return "&dbserie_id=" + ctx.FormValue("id")
+				},
+			},
+			"900px",
+			"560px",
+		),
+	), types.GetColumnButton(
+		"Refresh",
+		icon.Refresh,
+		myPopUpWithIframe(
+			"/admin/info/refresh",
+			"see more",
+			action.IframeData{
+				Src: "/api/series/refresh/{{.Id}}?apikey=" + config.SettingsGeneral.WebAPIKey,
+			},
+			"900px",
+			"560px",
+		),
+	))
 	info.SetTable("dbseries").SetTitle("Dbseries").SetDescription("Dbseries")
 
 	formList := dbseries.GetForm()
-	formList.AddField("Id", "id", db.Integer, form.Default).FieldDisplayButCanNotEditWhenCreate().FieldDisableWhenUpdate()
+	formList.AddField("Id", "id", db.Integer, form.Default).
+		FieldDisplayButCanNotEditWhenCreate().
+		FieldDisableWhenUpdate()
 	// formList.AddField("Created_at", "created_at", db.Datetime, form.Datetime)
 	// formList.AddField("Updated_at", "updated_at", db.Datetime, form.Datetime)
 	formList.AddField("Seriename", "seriename", db.Text, form.Text)
@@ -633,7 +910,10 @@ func getDbseriesTable(ctx *context.Context) table.Table {
 }
 
 func getDbserieEpisodesTable(ctx *context.Context) table.Table {
-	dbserieEpisodes := table.NewDefaultTable(ctx, table.DefaultConfigWithDriverAndConnection("sqlite", "media"))
+	dbserieEpisodes := table.NewDefaultTable(
+		ctx,
+		table.DefaultConfigWithDriverAndConnection("sqlite", "media"),
+	)
 
 	detail := dbserieEpisodes.GetDetail()
 
@@ -653,19 +933,22 @@ func getDbserieEpisodesTable(ctx *context.Context) table.Table {
 		JoinField: "id",
 		Table:     "dbseries",
 	}).FieldSortable()
-	detail.AddField("Dbserie_id", "dbserie_id", db.Integer).FieldDisplay(func(value types.FieldModel) any {
-		return template.Default().
-			Link().
-			SetURL("/admin/info/dbseries/detail?__goadmin_detail_pk=" + value.Value).
-			SetContent(template2.HTML(value.Value)).
-			OpenInNewTab().
-			SetTabTitle(template.HTML("Serie Detail(" + value.Value + ")")).
-			GetContent()
-	})
+	detail.AddField("Dbserie_id", "dbserie_id", db.Integer).
+		FieldDisplay(func(value types.FieldModel) any {
+			return template.Default().
+				Link().
+				SetURL("/admin/info/dbseries/detail?__goadmin_detail_pk=" + value.Value).
+				SetContent(template2.HTML(value.Value)).
+				OpenInNewTab().
+				SetTabTitle(template.HTML("Serie Detail(" + value.Value + ")")).
+				GetContent()
+		})
 	detail.AddField("First_aired", "first_aired", db.Datetime)
 	detail.AddField("Runtime", "runtime", db.Integer)
 
-	detail.SetTable("dbserie_episodes").SetTitle("DbserieEpisodes").SetDescription("DbserieEpisodes")
+	detail.SetTable("dbserie_episodes").
+		SetTitle("DbserieEpisodes").
+		SetDescription("DbserieEpisodes")
 
 	info := dbserieEpisodes.GetInfo().HideFilterArea()
 
@@ -681,26 +964,34 @@ func getDbserieEpisodesTable(ctx *context.Context) table.Table {
 	// info.AddField("Updated_at", "updated_at", db.Datetime)
 	// info.AddField("Episode", "episode", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
 	// info.AddField("Season", "season", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
-	info.AddField("Identifier", "identifier", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
-	info.AddField("Title", "title", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
+	info.AddField("Identifier", "identifier", db.Text).
+		FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).
+		FieldSortable()
+	info.AddField("Title", "title", db.Text).
+		FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).
+		FieldSortable()
 	// info.AddField("Overview", "overview", db.Text)
 	// info.AddField("Poster", "poster", db.Text)
-	info.AddField("Dbserie_id", "dbserie_id", db.Integer).FieldDisplay(func(value types.FieldModel) any {
-		return template.Default().
-			Link().
-			SetURL("/admin/info/dbseries/detail?__goadmin_detail_pk=" + value.Value).
-			SetContent(template2.HTML(value.Value)).
-			OpenInNewTab().
-			SetTabTitle(template.HTML("Serie Detail(" + value.Value + ")")).
-			GetContent()
-	})
-	// info.AddField("First_aired", "first_aired", db.Datetime)
-	// info.AddField("Runtime", "runtime", db.Integer)
+	info.AddField("Dbserie_id", "dbserie_id", db.Integer).
+		FieldDisplay(func(value types.FieldModel) any {
+			return template.Default().
+				Link().
+				SetURL("/admin/info/dbseries/detail?__goadmin_detail_pk=" + value.Value).
+				SetContent(template2.HTML(value.Value)).
+				OpenInNewTab().
+				SetTabTitle(template.HTML("Serie Detail(" + value.Value + ")")).
+				GetContent()
+		})
+
+		// info.AddField("First_aired", "first_aired", db.Datetime)
+		// info.AddField("Runtime", "runtime", db.Integer)
 
 	info.SetTable("dbserie_episodes").SetTitle("DbserieEpisodes").SetDescription("DbserieEpisodes")
 
 	formList := dbserieEpisodes.GetForm()
-	formList.AddField("Id", "id", db.Integer, form.Default).FieldDisplayButCanNotEditWhenCreate().FieldDisableWhenUpdate()
+	formList.AddField("Id", "id", db.Integer, form.Default).
+		FieldDisplayButCanNotEditWhenCreate().
+		FieldDisableWhenUpdate()
 	// formList.AddField("Created_at", "created_at", db.Datetime, form.Datetime)
 	// formList.AddField("Updated_at", "updated_at", db.Datetime, form.Datetime)
 	formList.AddField("Episode", "episode", db.Text, form.Text)
@@ -709,17 +1000,23 @@ func getDbserieEpisodesTable(ctx *context.Context) table.Table {
 	formList.AddField("Title", "title", db.Text, form.Text)
 	formList.AddField("Overview", "overview", db.Text, form.RichText)
 	formList.AddField("Poster", "poster", db.Text, form.Text)
-	formList.AddField("Dbserie_id", "dbserie_id", db.Integer, form.SelectSingle).FieldOptionsFromTable("dbseries", "seriename", "id")
+	formList.AddField("Dbserie_id", "dbserie_id", db.Integer, form.SelectSingle).
+		FieldOptionsFromTable("dbseries", "seriename", "id")
 	formList.AddField("First_aired", "first_aired", db.Datetime, form.Datetime)
 	formList.AddField("Runtime", "runtime", db.Integer, form.Number)
 
-	formList.SetTable("dbserie_episodes").SetTitle("DbserieEpisodes").SetDescription("DbserieEpisodes")
+	formList.SetTable("dbserie_episodes").
+		SetTitle("DbserieEpisodes").
+		SetDescription("DbserieEpisodes")
 
 	return dbserieEpisodes
 }
 
 func getDbserieAlternatesTable(ctx *context.Context) table.Table {
-	dbserieAlternates := table.NewDefaultTable(ctx, table.DefaultConfigWithDriverAndConnection("sqlite", "media"))
+	dbserieAlternates := table.NewDefaultTable(
+		ctx,
+		table.DefaultConfigWithDriverAndConnection("sqlite", "media"),
+	)
 
 	info := dbserieAlternates.GetInfo().HideFilterArea()
 
@@ -727,31 +1024,43 @@ func getDbserieAlternatesTable(ctx *context.Context) table.Table {
 		FieldSortable()
 	// info.AddField("Created_at", "created_at", db.Datetime)
 	// info.AddField("Updated_at", "updated_at", db.Datetime)
-	info.AddField("Title", "title", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
-	info.AddField("Slug", "slug", db.Text).FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).FieldSortable()
-	info.AddField("Dbserie_id", "dbserie_id", db.Integer).FieldDisplay(func(value types.FieldModel) any {
-		return template.Default().
-			Link().
-			SetURL("/admin/info/dbseries/detail?__goadmin_detail_pk=" + value.Value).
-			SetContent(template2.HTML(value.Value)).
-			OpenInNewTab().
-			SetTabTitle(template.HTML("Serie Detail(" + value.Value + ")")).
-			GetContent()
-	})
+	info.AddField("Title", "title", db.Text).
+		FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).
+		FieldSortable()
+	info.AddField("Slug", "slug", db.Text).
+		FieldFilterable(types.FilterType{Operator: types.FilterOperatorLike}).
+		FieldSortable()
+	info.AddField("Dbserie_id", "dbserie_id", db.Integer).
+		FieldDisplay(func(value types.FieldModel) any {
+			return template.Default().
+				Link().
+				SetURL("/admin/info/dbseries/detail?__goadmin_detail_pk=" + value.Value).
+				SetContent(template2.HTML(value.Value)).
+				OpenInNewTab().
+				SetTabTitle(template.HTML("Serie Detail(" + value.Value + ")")).
+				GetContent()
+		})
 	info.AddField("Region", "region", db.Text)
 
-	info.SetTable("dbserie_alternates").SetTitle("DbserieAlternates").SetDescription("DbserieAlternates")
+	info.SetTable("dbserie_alternates").
+		SetTitle("DbserieAlternates").
+		SetDescription("DbserieAlternates")
 
 	formList := dbserieAlternates.GetForm()
-	formList.AddField("Id", "id", db.Integer, form.Default).FieldDisplayButCanNotEditWhenCreate().FieldDisableWhenUpdate()
+	formList.AddField("Id", "id", db.Integer, form.Default).
+		FieldDisplayButCanNotEditWhenCreate().
+		FieldDisableWhenUpdate()
 	// formList.AddField("Created_at", "created_at", db.Datetime, form.Datetime)
 	// formList.AddField("Updated_at", "updated_at", db.Datetime, form.Datetime)
 	formList.AddField("Title", "title", db.Text, form.Text)
 	formList.AddField("Slug", "slug", db.Text, form.Text)
-	formList.AddField("Dbserie_id", "dbserie_id", db.Integer, form.SelectSingle).FieldOptionsFromTable("dbseries", "seriename", "id")
+	formList.AddField("Dbserie_id", "dbserie_id", db.Integer, form.SelectSingle).
+		FieldOptionsFromTable("dbseries", "seriename", "id")
 	formList.AddField("Region", "region", db.Text, form.Text)
 
-	formList.SetTable("dbserie_alternates").SetTitle("DbserieAlternates").SetDescription("DbserieAlternates")
+	formList.SetTable("dbserie_alternates").
+		SetTitle("DbserieAlternates").
+		SetDescription("DbserieAlternates")
 
 	return dbserieAlternates
 }

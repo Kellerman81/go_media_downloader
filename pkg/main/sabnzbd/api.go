@@ -288,7 +288,11 @@ func AddNzbURL(urlv string) AddNzbOption {
 	}
 }
 
-func (s *Sabnzbd) AddReader(reader io.Reader, filename string, options ...AddNzbOption) (nzoids []string, err error) {
+func (s *Sabnzbd) AddReader(
+	reader io.Reader,
+	filename string,
+	options ...AddNzbOption,
+) (nzoids []string, err error) {
 	u := s.url()
 	u.SetJSONOutput()
 	u.Authenticate()
@@ -367,7 +371,10 @@ func (s *Sabnzbd) AddFile(filename string, options ...AddNzbOption) (nzoids []st
 	return s.AddReader(f, filepath.Base(filename), options...)
 }
 
-func (s *Sabnzbd) AddLocalfile(filename string, options ...AddNzbOption) (nzoids []string, err error) {
+func (s *Sabnzbd) AddLocalfile(
+	filename string,
+	options ...AddNzbOption,
+) (nzoids []string, err error) {
 	u := s.url()
 	u.SetJSONOutput()
 	u.Authenticate()

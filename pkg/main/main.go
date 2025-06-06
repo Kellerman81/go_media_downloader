@@ -57,7 +57,11 @@ func main() {
 		os.Exit(1)
 	}
 	database.InitCache()
-	worker.InitWorkerPools(config.SettingsGeneral.WorkerSearch, config.SettingsGeneral.WorkerFiles, config.SettingsGeneral.WorkerMetadata)
+	worker.InitWorkerPools(
+		config.SettingsGeneral.WorkerSearch,
+		config.SettingsGeneral.WorkerFiles,
+		config.SettingsGeneral.WorkerMetadata,
+	)
 	logger.InitLogger(logger.Config{
 		LogLevel:      config.SettingsGeneral.LogLevel,
 		LogFileSize:   config.SettingsGeneral.LogFileSize,
@@ -78,10 +82,34 @@ func main() {
 	}
 	logger.LogDynamicany0("info", "------------------------------")
 
-	apiexternal.NewOmdbClient(config.SettingsGeneral.OmdbAPIKey, config.SettingsGeneral.OmdbLimiterSeconds, config.SettingsGeneral.OmdbLimiterCalls, config.SettingsGeneral.OmdbDisableTLSVerify, config.SettingsGeneral.OmdbTimeoutSeconds)
-	apiexternal.NewTmdbClient(config.SettingsGeneral.TheMovieDBApiKey, config.SettingsGeneral.TmdbLimiterSeconds, config.SettingsGeneral.TmdbLimiterCalls, config.SettingsGeneral.TheMovieDBDisableTLSVerify, config.SettingsGeneral.TmdbTimeoutSeconds)
-	apiexternal.NewTvdbClient(config.SettingsGeneral.TvdbLimiterSeconds, config.SettingsGeneral.TvdbLimiterCalls, config.SettingsGeneral.TvdbDisableTLSVerify, config.SettingsGeneral.TvdbTimeoutSeconds)
-	apiexternal.NewTraktClient(config.SettingsGeneral.TraktClientID, config.SettingsGeneral.TraktClientSecret, config.SettingsGeneral.TraktLimiterSeconds, config.SettingsGeneral.TraktLimiterCalls, config.SettingsGeneral.TraktDisableTLSVerify, config.SettingsGeneral.TraktTimeoutSeconds)
+	apiexternal.NewOmdbClient(
+		config.SettingsGeneral.OmdbAPIKey,
+		config.SettingsGeneral.OmdbLimiterSeconds,
+		config.SettingsGeneral.OmdbLimiterCalls,
+		config.SettingsGeneral.OmdbDisableTLSVerify,
+		config.SettingsGeneral.OmdbTimeoutSeconds,
+	)
+	apiexternal.NewTmdbClient(
+		config.SettingsGeneral.TheMovieDBApiKey,
+		config.SettingsGeneral.TmdbLimiterSeconds,
+		config.SettingsGeneral.TmdbLimiterCalls,
+		config.SettingsGeneral.TheMovieDBDisableTLSVerify,
+		config.SettingsGeneral.TmdbTimeoutSeconds,
+	)
+	apiexternal.NewTvdbClient(
+		config.SettingsGeneral.TvdbLimiterSeconds,
+		config.SettingsGeneral.TvdbLimiterCalls,
+		config.SettingsGeneral.TvdbDisableTLSVerify,
+		config.SettingsGeneral.TvdbTimeoutSeconds,
+	)
+	apiexternal.NewTraktClient(
+		config.SettingsGeneral.TraktClientID,
+		config.SettingsGeneral.TraktClientSecret,
+		config.SettingsGeneral.TraktLimiterSeconds,
+		config.SettingsGeneral.TraktLimiterCalls,
+		config.SettingsGeneral.TraktDisableTLSVerify,
+		config.SettingsGeneral.TraktTimeoutSeconds,
+	)
 
 	logger.LogDynamicany0("info", "Initialize Database")
 	err = database.UpgradeDB()
@@ -103,7 +131,7 @@ func main() {
 		database.DBClose()
 		os.Exit(100)
 	}
-	//_ = html.UnescapeString("test")
+	// _ = html.UnescapeString("test")
 	database.SetVars()
 
 	parser.GenerateAllQualityPriorities()
@@ -179,7 +207,12 @@ func main() {
 	// webapp.Route("/web", &web.Home{})
 	// router.Handle("GET", "/web", gin.WrapH(&webapp.Handler{}))
 
-	logger.LogDynamicany("info", "Starting API Webserver on port", "port", &config.SettingsGeneral.WebPort)
+	logger.LogDynamicany(
+		"info",
+		"Starting API Webserver on port",
+		"port",
+		&config.SettingsGeneral.WebPort,
+	)
 	server := http.Server{
 		Addr:              ":" + config.SettingsGeneral.WebPort,
 		Handler:           router,
@@ -194,7 +227,12 @@ func main() {
 			// logger.LogDynamicError("error", err, "listen")
 		}
 	}()
-	logger.LogDynamicany("info", "Started API Webserver on port ", "port", &config.SettingsGeneral.WebPort)
+	logger.LogDynamicany(
+		"info",
+		"Started API Webserver on port ",
+		"port",
+		&config.SettingsGeneral.WebPort,
+	)
 
 	// Wait for interrupt signal to gracefully shutdown the server with
 	quit := make(chan os.Signal, 1)

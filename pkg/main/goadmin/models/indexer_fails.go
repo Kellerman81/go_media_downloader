@@ -8,7 +8,10 @@ import (
 )
 
 func getIndexerFailsTable(ctx *context.Context) table.Table {
-	indexerFails := table.NewDefaultTable(ctx, table.DefaultConfigWithDriverAndConnection("sqlite", "media"))
+	indexerFails := table.NewDefaultTable(
+		ctx,
+		table.DefaultConfigWithDriverAndConnection("sqlite", "media"),
+	)
 
 	info := indexerFails.GetInfo().HideFilterArea()
 	info.HideDeleteButton().HideEditButton().HideNewButton()

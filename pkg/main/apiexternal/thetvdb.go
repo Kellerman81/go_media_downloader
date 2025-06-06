@@ -141,15 +141,29 @@ func UpdateTvdbSeriesEpisodes(id int, language string, dbid *uint) {
 	result, err := querytvdb(language, urlv)
 	if err != nil {
 		if !errors.Is(err, logger.ErrToWait) {
-			logger.LogDynamicany1StringErr("error", "Error calling", err, logger.StrURL, urlv) // logpointer
+			logger.LogDynamicany1StringErr(
+				"error",
+				"Error calling",
+				err,
+				logger.StrURL,
+				urlv,
+			) // logpointer
 		}
 		return
 	}
-	tbl := database.Getrows1size[database.DbstaticTwoString](false, database.QueryDbserieEpisodesCountByDBID, database.QueryDbserieEpisodesGetSeasonEpisodeByDBID, dbid)
+	tbl := database.Getrows1size[database.DbstaticTwoString](
+		false,
+		database.QueryDbserieEpisodesCountByDBID,
+		database.QueryDbserieEpisodesGetSeasonEpisodeByDBID,
+		dbid,
+	)
 	result.addthetvdbepisodes(dbid, tbl)
 	if result.Links.Next > 0 && (result.Links.First+1) < result.Links.Last {
 		for k := result.Links.First + 1; k <= result.Links.Last; k++ {
-			resultadd, err := querytvdb(language, logger.JoinStrings(urlv, "?page=", strconv.Itoa(k)))
+			resultadd, err := querytvdb(
+				language,
+				logger.JoinStrings(urlv, "?page=", strconv.Itoa(k)),
+			)
 			if err == nil {
 				resultadd.addthetvdbepisodes(dbid, tbl)
 			}
@@ -157,6 +171,8 @@ func UpdateTvdbSeriesEpisodes(id int, language string, dbid *uint) {
 	}
 }
 
+// querytvdb queries the TheTVDB API for episode data, using the provided language
+// if specified. It returns the episode data or an error if one occurs.
 func querytvdb(language, urlv string) (*TheTVDBEpisodes, error) {
 	if language != "" {
 		_, ok := maptvdblanguageheader[language]
@@ -178,10 +194,22 @@ func (t *TheTVDBEpisodes) addthetvdbepisodes(dbid *uint, tbl []database.Dbstatic
 		}
 		epi := strconv.Itoa(t.Data[idx].AiredEpisodeNumber)
 		seas := strconv.Itoa(t.Data[idx].AiredSeason)
-		ident := generateIdentifierStringFromInt(&t.Data[idx].AiredSeason, &t.Data[idx].AiredEpisodeNumber)
+		ident := generateIdentifierStringFromInt(
+			&t.Data[idx].AiredSeason,
+			&t.Data[idx].AiredEpisodeNumber,
+		)
 		aired := parseDateTime(t.Data[idx].FirstAired)
-		database.ExecN("insert into dbserie_episodes (episode, season, identifier, title, first_aired, overview, poster, dbserie_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-			&epi, &seas, &ident, &t.Data[idx].EpisodeName, &aired, &t.Data[idx].Overview, &t.Data[idx].Poster, dbid)
+		database.ExecN(
+			"insert into dbserie_episodes (episode, season, identifier, title, first_aired, overview, poster, dbserie_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+			&epi,
+			&seas,
+			&ident,
+			&t.Data[idx].EpisodeName,
+			&aired,
+			&t.Data[idx].Overview,
+			&t.Data[idx].Poster,
+			dbid,
+		)
 	}
 }
 

@@ -53,7 +53,14 @@ func (d *downloadertype) downloadNzb() {
 			continue
 		}
 		if d.Quality.Indexer[idx].CategoryDowloader != "" {
-			logger.LogDynamicany2Str("debug", "Download", logger.StrIndexer, d.Quality.Indexer[idx].TemplateIndexer, "Downloader", d.Quality.Indexer[idx].TemplateDownloader)
+			logger.LogDynamicany2Str(
+				"debug",
+				"Download",
+				logger.StrIndexer,
+				d.Quality.Indexer[idx].TemplateIndexer,
+				"Downloader",
+				d.Quality.Indexer[idx].TemplateDownloader,
+			)
 			d.IndexerCfg = d.Quality.Indexer[idx].CfgIndexer
 			d.Category = d.Quality.Indexer[idx].CategoryDowloader
 			d.TargetCfg = d.Quality.Indexer[idx].CfgPath
@@ -64,18 +71,36 @@ func (d *downloadertype) downloadNzb() {
 	}
 
 	if d.Category == "" {
-		logger.LogDynamicany1String("debug", "Downloader nzb config NOT found - quality", "Quality", d.Quality.Name)
+		logger.LogDynamicany1String(
+			"debug",
+			"Downloader nzb config NOT found - quality",
+			"Quality",
+			d.Quality.Name,
+		)
 
 		if d.Quality.Indexer[0].CfgPath == nil {
-			logger.LogDynamicanyErr("error", "Error get Nzb Config", errors.New("path template not found"))
+			logger.LogDynamicanyErr(
+				"error",
+				"Error get Nzb Config",
+				errors.New("path template not found"),
+			)
 			return
 		}
 
 		if d.Quality.Indexer[0].CfgDownloader == nil {
-			logger.LogDynamicanyErr("error", "Error get Nzb Config", errors.New("downloader template not found"))
+			logger.LogDynamicanyErr(
+				"error",
+				"Error get Nzb Config",
+				errors.New("downloader template not found"),
+			)
 			return
 		}
-		logger.LogDynamicany1String("debug", "Downloader nzb config NOT found - use first", "categories", d.Quality.Indexer[0].CategoryDowloader)
+		logger.LogDynamicany1String(
+			"debug",
+			"Downloader nzb config NOT found - use first",
+			"categories",
+			d.Quality.Indexer[0].CategoryDowloader,
+		)
 
 		d.IndexerCfg = d.Quality.Indexer[0].CfgIndexer
 		d.Category = d.Quality.Indexer[0].CategoryDowloader
@@ -92,7 +117,14 @@ func (d *downloadertype) downloadNzb() {
 	logger.Path(&d.Targetfile, false)
 	logger.StringRemoveAllRunesP(&d.Targetfile, '[', ']')
 
-	logger.LogDynamicany2Str("debug", "Downloading", "nzb", d.Nzb.NZB.Title, "by", d.DownloaderCfg.DlType)
+	logger.LogDynamicany2Str(
+		"debug",
+		"Downloading",
+		"nzb",
+		d.Nzb.NZB.Title,
+		"by",
+		d.DownloaderCfg.DlType,
+	)
 
 	var err error
 	switch d.DownloaderCfg.DlType {
@@ -125,33 +157,89 @@ func (d *downloadertype) downloadNzb() {
 			d.Movie.ID = d.Nzb.NzbmovieID
 		}
 		if d.Movie.ID != 0 && d.Movie.QualityProfile == "" {
-			database.Scanrows1dyn(false, "select quality_profile from movies where id = ?", &d.Movie.QualityProfile, &d.Nzb.NzbmovieID)
+			database.Scanrows1dyn(
+				false,
+				"select quality_profile from movies where id = ?",
+				&d.Movie.QualityProfile,
+				&d.Nzb.NzbmovieID,
+			)
 		}
 		if d.Movie.DbmovieID == 0 && d.Nzb.NzbmovieID != 0 {
-			database.Scanrows1dyn(false, "select dbmovie_id from movies where id = ?", &d.Movie.DbmovieID, &d.Nzb.NzbmovieID)
+			database.Scanrows1dyn(
+				false,
+				"select dbmovie_id from movies where id = ?",
+				&d.Movie.DbmovieID,
+				&d.Nzb.NzbmovieID,
+			)
 		}
-		database.ExecN("Insert into movie_histories (title, url, target, indexer, downloaded_at, movie_id, dbmovie_id, resolution_id, quality_id, codec_id, audio_id, quality_profile) VALUES (?, ?, ?, ?, datetime('now','localtime'), ?, ?, ?, ?, ?, ?, ?)",
-			&d.Nzb.NZB.Title, &d.Nzb.NZB.DownloadURL, &d.TargetCfg.Path, &d.Nzb.NZB.Indexer.Name, &d.Movie.ID, &d.Movie.DbmovieID, &d.Nzb.Info.ResolutionID, &d.Nzb.Info.QualityID, &d.Nzb.Info.CodecID, &d.Nzb.Info.AudioID, &d.Movie.QualityProfile)
+		database.ExecN(
+			"Insert into movie_histories (title, url, target, indexer, downloaded_at, movie_id, dbmovie_id, resolution_id, quality_id, codec_id, audio_id, quality_profile) VALUES (?, ?, ?, ?, datetime('now','localtime'), ?, ?, ?, ?, ?, ?, ?)",
+			&d.Nzb.NZB.Title,
+			&d.Nzb.NZB.DownloadURL,
+			&d.TargetCfg.Path,
+			&d.Nzb.NZB.Indexer.Name,
+			&d.Movie.ID,
+			&d.Movie.DbmovieID,
+			&d.Nzb.Info.ResolutionID,
+			&d.Nzb.Info.QualityID,
+			&d.Nzb.Info.CodecID,
+			&d.Nzb.Info.AudioID,
+			&d.Movie.QualityProfile,
+		)
 		return
 	}
 	if d.Serie.ID == 0 {
-		database.Scanrows1dyn(false, database.QuerySerieEpisodesGetSerieIDByID, &d.Serie.ID, &d.Nzb.NzbepisodeID)
+		database.Scanrows1dyn(
+			false,
+			database.QuerySerieEpisodesGetSerieIDByID,
+			&d.Serie.ID,
+			&d.Nzb.NzbepisodeID,
+		)
 	}
 	if d.Dbserie.ID == 0 {
-		database.Scanrows1dyn(false, database.QuerySerieEpisodesGetDBSerieIDByID, &d.Dbserie.ID, &d.Nzb.NzbepisodeID)
+		database.Scanrows1dyn(
+			false,
+			database.QuerySerieEpisodesGetDBSerieIDByID,
+			&d.Dbserie.ID,
+			&d.Nzb.NzbepisodeID,
+		)
 	}
 	if d.Serieepisode.ID == 0 {
 		d.Serieepisode.ID = d.Nzb.NzbepisodeID
 	}
 	if d.Serieepisode.QualityProfile == "" {
-		database.Scanrows1dyn(false, "select quality_profile from serie_episodes where id = ?", &d.Serieepisode.QualityProfile, &d.Nzb.NzbepisodeID)
+		database.Scanrows1dyn(
+			false,
+			"select quality_profile from serie_episodes where id = ?",
+			&d.Serieepisode.QualityProfile,
+			&d.Nzb.NzbepisodeID,
+		)
 	}
 	if d.Dbserieepisode.ID == 0 {
-		database.Scanrows1dyn(false, database.QuerySerieEpisodesGetDBSerieEpisodeIDByID, &d.Dbserieepisode.ID, &d.Nzb.NzbepisodeID)
+		database.Scanrows1dyn(
+			false,
+			database.QuerySerieEpisodesGetDBSerieEpisodeIDByID,
+			&d.Dbserieepisode.ID,
+			&d.Nzb.NzbepisodeID,
+		)
 	}
 
-	database.ExecN("Insert into serie_episode_histories (title, url, target, indexer, downloaded_at, serie_id, serie_episode_id, dbserie_episode_id, dbserie_id, resolution_id, quality_id, codec_id, audio_id, quality_profile) VALUES (?, ?, ?, ?, datetime('now','localtime'), ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-		&d.Nzb.NZB.Title, &d.Nzb.NZB.DownloadURL, &d.TargetCfg.Path, &d.Nzb.NZB.Indexer.Name, &d.Serie.ID, &d.Serieepisode.ID, &d.Dbserieepisode.ID, &d.Dbserie.ID, &d.Nzb.Info.ResolutionID, &d.Nzb.Info.QualityID, &d.Nzb.Info.CodecID, &d.Nzb.Info.AudioID, &d.Serieepisode.QualityProfile)
+	database.ExecN(
+		"Insert into serie_episode_histories (title, url, target, indexer, downloaded_at, serie_id, serie_episode_id, dbserie_episode_id, dbserie_id, resolution_id, quality_id, codec_id, audio_id, quality_profile) VALUES (?, ?, ?, ?, datetime('now','localtime'), ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		&d.Nzb.NZB.Title,
+		&d.Nzb.NZB.DownloadURL,
+		&d.TargetCfg.Path,
+		&d.Nzb.NZB.Indexer.Name,
+		&d.Serie.ID,
+		&d.Serieepisode.ID,
+		&d.Dbserieepisode.ID,
+		&d.Dbserie.ID,
+		&d.Nzb.Info.ResolutionID,
+		&d.Nzb.Info.QualityID,
+		&d.Nzb.Info.CodecID,
+		&d.Nzb.Info.AudioID,
+		&d.Serieepisode.QualityProfile,
+	)
 }
 
 // getdownloadtargetfolder returns the target download folder path for a download based on whether it is a movie or TV show download.
@@ -173,9 +261,24 @@ func (d *downloadertype) getdownloadtargetfolder() string {
 	}
 	if d.Dbserie.ThetvdbID != 0 {
 		if d.Nzb.NZB.Title == "" {
-			return logger.JoinStrings(d.Nzb.Info.Title, "[", d.Nzb.Info.Resolution, logger.StrSpace, d.Nzb.Info.Quality, "]", strTvdbid, strconv.Itoa(d.Dbserie.ThetvdbID), ")")
+			return logger.JoinStrings(
+				d.Nzb.Info.Title,
+				"[",
+				d.Nzb.Info.Resolution,
+				logger.StrSpace,
+				d.Nzb.Info.Quality,
+				"]",
+				strTvdbid,
+				strconv.Itoa(d.Dbserie.ThetvdbID),
+				")",
+			)
 		}
-		return logger.JoinStrings(d.Nzb.NZB.Title, strTvdbid, strconv.Itoa(d.Dbserie.ThetvdbID), ")")
+		return logger.JoinStrings(
+			d.Nzb.NZB.Title,
+			strTvdbid,
+			strconv.Itoa(d.Dbserie.ThetvdbID),
+			")",
+		)
 	} else if d.Nzb.NZB.TVDBID != 0 {
 		if d.Nzb.NZB.Title == "" {
 			return logger.JoinStrings(d.Nzb.Info.Title, "[", d.Nzb.Info.Resolution, logger.StrSpace, d.Nzb.Info.Quality, "]", strTvdbid, strconv.Itoa(d.Nzb.NZB.TVDBID), ")")
@@ -183,7 +286,14 @@ func (d *downloadertype) getdownloadtargetfolder() string {
 		return logger.JoinStrings(d.Nzb.NZB.Title, strTvdbid, strconv.Itoa(d.Nzb.NZB.TVDBID), ")")
 	}
 	if d.Nzb.NZB.Title == "" {
-		return logger.JoinStrings(d.Nzb.Info.Title, "[", d.Nzb.Info.Resolution, logger.StrSpace, d.Nzb.Info.Quality, "]")
+		return logger.JoinStrings(
+			d.Nzb.Info.Title,
+			"[",
+			d.Nzb.Info.Resolution,
+			logger.StrSpace,
+			d.Nzb.Info.Quality,
+			"]",
+		)
 	}
 	return d.Nzb.NZB.Title
 }
@@ -215,8 +325,12 @@ func (d *downloadertype) notify() {
 			continue
 		}
 
-		if strings.EqualFold(d.Cfgp.Notification[idx].CfgNotification.NotificationType, "pushover") {
-			err = apiexternal.GetPushoverclient(d.Cfgp.Notification[idx].CfgNotification.Apikey).SendPushoverMessage(messagetext, messageTitle, d.Cfgp.Notification[idx].CfgNotification.Recipient)
+		if strings.EqualFold(
+			d.Cfgp.Notification[idx].CfgNotification.NotificationType,
+			"pushover",
+		) {
+			err = apiexternal.GetPushoverclient(d.Cfgp.Notification[idx].CfgNotification.Apikey).
+				SendPushoverMessage(messagetext, messageTitle, d.Cfgp.Notification[idx].CfgNotification.Recipient)
 			if err != nil {
 				logger.LogDynamicanyErr("error", "Error sending pushover", err)
 			} else {
@@ -248,7 +362,8 @@ func (d *downloadertype) downloadByNzbget() error {
 	options.AddPaused = d.DownloaderCfg.AddPaused
 	options.Priority = d.DownloaderCfg.Priority
 	options.NiceName = (d.Targetfile + ".nzb")
-	_, err := nzbget.NewClient("http://"+d.DownloaderCfg.Username+":"+d.DownloaderCfg.Password+"@"+d.DownloaderCfg.Hostname+"/jsonrpc").Add(logger.Checkhtmlentities(d.Nzb.NZB.DownloadURL), options)
+	_, err := nzbget.NewClient("http://"+d.DownloaderCfg.Username+":"+d.DownloaderCfg.Password+"@"+d.DownloaderCfg.Hostname+"/jsonrpc").
+		Add(logger.Checkhtmlentities(d.Nzb.NZB.DownloadURL), options)
 	return err
 }
 
@@ -256,21 +371,41 @@ func (d *downloadertype) downloadByNzbget() error {
 // It constructs the Sabnzbd options based on the downloader configuration,
 // downloads the NZB file using the Sabnzbd API, and returns any error.
 func (d *downloadertype) downloadBySabnzbd() error {
-	return apiexternal.SendToSabnzbd(d.DownloaderCfg.Hostname, d.DownloaderCfg.Password, logger.Checkhtmlentities(d.Nzb.NZB.DownloadURL), d.Category, d.Targetfile, d.DownloaderCfg.Priority)
+	return apiexternal.SendToSabnzbd(
+		d.DownloaderCfg.Hostname,
+		d.DownloaderCfg.Password,
+		logger.Checkhtmlentities(d.Nzb.NZB.DownloadURL),
+		d.Category,
+		d.Targetfile,
+		d.DownloaderCfg.Priority,
+	)
 }
 
 // downloadByRTorrent downloads the torrent file using the rTorrent downloader.
 // It sends the torrent URL to the rTorrent API based on the downloader
 // configuration and returns any error.
 func (d *downloadertype) downloadByRTorrent() error {
-	return apiexternal.SendToRtorrent(d.DownloaderCfg.Hostname, false, logger.Checkhtmlentities(d.Nzb.NZB.DownloadURL), d.DownloaderCfg.DelugeDlTo, d.Targetfile)
+	return apiexternal.SendToRtorrent(
+		d.DownloaderCfg.Hostname,
+		false,
+		logger.Checkhtmlentities(d.Nzb.NZB.DownloadURL),
+		d.DownloaderCfg.DelugeDlTo,
+		d.Targetfile,
+	)
 }
 
 // downloadByTransmission downloads the torrent file using the Transmission
 // downloader. It sends the torrent URL to the Transmission API based on
 // the downloader configuration and returns any error.
 func (d *downloadertype) downloadByTransmission() error {
-	return apiexternal.SendToTransmission(d.DownloaderCfg.Hostname, d.DownloaderCfg.Username, d.DownloaderCfg.Password, logger.Checkhtmlentities(d.Nzb.NZB.DownloadURL), d.DownloaderCfg.DelugeDlTo, d.DownloaderCfg.AddPaused)
+	return apiexternal.SendToTransmission(
+		d.DownloaderCfg.Hostname,
+		d.DownloaderCfg.Username,
+		d.DownloaderCfg.Password,
+		logger.Checkhtmlentities(d.Nzb.NZB.DownloadURL),
+		d.DownloaderCfg.DelugeDlTo,
+		d.DownloaderCfg.AddPaused,
+	)
 }
 
 // downloadByDeluge downloads the torrent file using the Deluge downloader.
@@ -278,8 +413,18 @@ func (d *downloadertype) downloadByTransmission() error {
 // configuration and returns any error.
 func (d *downloadertype) downloadByDeluge() error {
 	return apiexternal.SendToDeluge(
-		d.DownloaderCfg.Hostname, d.DownloaderCfg.Port, d.DownloaderCfg.Username, d.DownloaderCfg.Password,
-		logger.Checkhtmlentities(d.Nzb.NZB.DownloadURL), d.DownloaderCfg.DelugeDlTo, d.DownloaderCfg.DelugeMoveAfter, d.DownloaderCfg.DelugeMoveTo, d.DownloaderCfg.AddPaused)
+		d.DownloaderCfg.Hostname,
+		d.DownloaderCfg.Port,
+		d.DownloaderCfg.Username,
+		d.DownloaderCfg.Password,
+		logger.Checkhtmlentities(
+			d.Nzb.NZB.DownloadURL,
+		),
+		d.DownloaderCfg.DelugeDlTo,
+		d.DownloaderCfg.DelugeMoveAfter,
+		d.DownloaderCfg.DelugeMoveTo,
+		d.DownloaderCfg.AddPaused,
+	)
 }
 
 // downloadByQBittorrent downloads the torrent file using the qBittorrent
@@ -287,8 +432,16 @@ func (d *downloadertype) downloadByDeluge() error {
 // the downloader configuration and returns any error.
 func (d *downloadertype) downloadByQBittorrent() error {
 	return apiexternal.SendToQBittorrent(
-		d.DownloaderCfg.Hostname, strconv.Itoa(d.DownloaderCfg.Port), d.DownloaderCfg.Username, d.DownloaderCfg.Password,
-		logger.Checkhtmlentities(d.Nzb.NZB.DownloadURL), d.DownloaderCfg.DelugeDlTo, strconv.FormatBool(d.DownloaderCfg.AddPaused))
+		d.DownloaderCfg.Hostname,
+		strconv.Itoa(d.DownloaderCfg.Port),
+		d.DownloaderCfg.Username,
+		d.DownloaderCfg.Password,
+		logger.Checkhtmlentities(
+			d.Nzb.NZB.DownloadURL,
+		),
+		d.DownloaderCfg.DelugeDlTo,
+		strconv.FormatBool(d.DownloaderCfg.AddPaused),
+	)
 }
 
 // newDownloader initializes a new downloadertype struct.
@@ -313,7 +466,13 @@ func DownloadMovie(cfgp *config.MediaTypeConfig, nzb *apiexternal.Nzbwithprio) {
 	}
 	err = d.Dbmovie.GetDbmovieByIDP(&d.Movie.DbmovieID)
 	if err != nil {
-		logger.LogDynamicany1UIntErr("error", "not found", err, "dbmovie not found", d.Movie.DbmovieID)
+		logger.LogDynamicany1UIntErr(
+			"error",
+			"not found",
+			err,
+			"dbmovie not found",
+			d.Movie.DbmovieID,
+		)
 		return
 	}
 	d.Quality = database.GetMediaQualityConfigP(cfgp, &nzb.NzbmovieID)
@@ -326,22 +485,46 @@ func DownloadSeriesEpisode(cfgp *config.MediaTypeConfig, nzb *apiexternal.Nzbwit
 	d := newDownloader(cfgp, nzb)
 	err := d.Serieepisode.GetSerieEpisodesByIDP(&nzb.NzbepisodeID)
 	if err != nil {
-		logger.LogDynamicany1UIntErr("error", "not found", err, "episode not found", nzb.NzbepisodeID)
+		logger.LogDynamicany1UIntErr(
+			"error",
+			"not found",
+			err,
+			"episode not found",
+			nzb.NzbepisodeID,
+		)
 		return
 	}
 	err = d.Dbserie.GetDbserieByIDP(&d.Serieepisode.DbserieID)
 	if err != nil {
-		logger.LogDynamicany1UIntErr("error", "not found", err, "dbserie not found", d.Serieepisode.DbserieID)
+		logger.LogDynamicany1UIntErr(
+			"error",
+			"not found",
+			err,
+			"dbserie not found",
+			d.Serieepisode.DbserieID,
+		)
 		return
 	}
 	err = d.Dbserieepisode.GetDbserieEpisodesByIDP(&d.Serieepisode.DbserieEpisodeID)
 	if err != nil {
-		logger.LogDynamicany1UIntErr("error", "not found", err, "dbepisode not found", d.Serieepisode.DbserieEpisodeID)
+		logger.LogDynamicany1UIntErr(
+			"error",
+			"not found",
+			err,
+			"dbepisode not found",
+			d.Serieepisode.DbserieEpisodeID,
+		)
 		return
 	}
 	err = d.Serie.GetSerieByIDP(&d.Serieepisode.SerieID)
 	if err != nil {
-		logger.LogDynamicany1UIntErr("error", "not found", err, "serie not found", d.Serieepisode.SerieID)
+		logger.LogDynamicany1UIntErr(
+			"error",
+			"not found",
+			err,
+			"serie not found",
+			d.Serieepisode.SerieID,
+		)
 		return
 	}
 	d.Quality = database.GetMediaQualityConfigP(cfgp, &nzb.NzbepisodeID)

@@ -169,7 +169,13 @@ type traktClient struct {
 // NewTraktClient initializes a new traktClient instance for making requests to
 // the Trakt API. It takes in credentials and rate limiting settings and sets up
 // the OAuth2 configuration.
-func NewTraktClient(clientid, clientsecret string, seconds uint8, calls int, disabletls bool, timeoutseconds uint16) {
+func NewTraktClient(
+	clientid, clientsecret string,
+	seconds uint8,
+	calls int,
+	disabletls bool,
+	timeoutseconds uint16,
+) {
 	if seconds == 0 {
 		seconds = 1
 	}
@@ -195,8 +201,12 @@ func NewTraktClient(clientid, clientsecret string, seconds uint8, calls int, dis
 				TokenURL: "https://api.trakt.tv/oauth/token",
 			},
 		},
-		Token:          config.GetTrakt(),
-		DefaultHeaders: map[string][]string{"Content-Type": {"application/json"}, "trakt-api-version": {"2"}, "trakt-api-key": {clientid}},
+		Token: config.GetTrakt(),
+		DefaultHeaders: map[string][]string{
+			"Content-Type":      {"application/json"},
+			"trakt-api-version": {"2"},
+			"trakt-api-key":     {clientid},
+		},
 	}
 	if traktAPI.Token.AccessToken != "" {
 		traktAPI.DefaultHeaders["Authorization"] = []string{"Bearer " + traktAPI.Token.AccessToken}
@@ -208,7 +218,11 @@ func NewTraktClient(clientid, clientsecret string, seconds uint8, calls int, dis
 // It returns a slice of TraktMovie structs containing the movie data,
 // or nil if there was an error.
 func GetTraktMoviePopular(limit *string) []TraktMovie {
-	arr, _ := doJSONType[[]TraktMovie](&traktAPI.Client, traktaddlimit("https://api.trakt.tv/movies/popular", limit), traktAPI.DefaultHeaders)
+	arr, _ := doJSONType[[]TraktMovie](
+		&traktAPI.Client,
+		traktaddlimit("https://api.trakt.tv/movies/popular", limit),
+		traktAPI.DefaultHeaders,
+	)
 	return arr
 }
 
@@ -217,7 +231,11 @@ func GetTraktMoviePopular(limit *string) []TraktMovie {
 // It returns a slice of TraktMovieTrending structs containing the movie data,
 // or nil if there was an error.
 func GetTraktMovieTrending(limit *string) []TraktMovieTrending {
-	arr, _ := doJSONType[[]TraktMovieTrending](&traktAPI.Client, traktaddlimit("https://api.trakt.tv/movies/trending", limit), traktAPI.DefaultHeaders)
+	arr, _ := doJSONType[[]TraktMovieTrending](
+		&traktAPI.Client,
+		traktaddlimit("https://api.trakt.tv/movies/trending", limit),
+		traktAPI.DefaultHeaders,
+	)
 	return arr
 }
 
@@ -236,7 +254,11 @@ func traktaddlimit(urlv string, limit *string) string {
 // It returns a slice of TraktMovieAnticipated structs containing the movie data,
 // or nil if there was an error.
 func GetTraktMovieAnticipated(limit *string) []TraktMovieAnticipated {
-	arr, _ := doJSONType[[]TraktMovieAnticipated](&traktAPI.Client, traktaddlimit("https://api.trakt.tv/movies/anticipated", limit), traktAPI.DefaultHeaders)
+	arr, _ := doJSONType[[]TraktMovieAnticipated](
+		&traktAPI.Client,
+		traktaddlimit("https://api.trakt.tv/movies/anticipated", limit),
+		traktAPI.DefaultHeaders,
+	)
 	return arr
 }
 
@@ -248,7 +270,11 @@ func GetTraktMovieAliases(movieid string) []TraktAlias {
 	if movieid == "" {
 		return nil
 	}
-	arr, _ := doJSONType[[]TraktAlias](&traktAPI.Client, logger.JoinStrings(apiurlmovies, movieid, "/aliases"), traktAPI.DefaultHeaders)
+	arr, _ := doJSONType[[]TraktAlias](
+		&traktAPI.Client,
+		logger.JoinStrings(apiurlmovies, movieid, "/aliases"),
+		traktAPI.DefaultHeaders,
+	)
 	return arr
 }
 
@@ -260,7 +286,11 @@ func GetTraktMovie(movieid string) (*TraktMovieExtend, error) {
 	if movieid == "" {
 		return nil, logger.ErrNotFound
 	}
-	return doJSONTypeP[TraktMovieExtend](&traktAPI.Client, logger.JoinStrings(apiurlmovies, movieid, extendedfull), traktAPI.DefaultHeaders)
+	return doJSONTypeP[TraktMovieExtend](
+		&traktAPI.Client,
+		logger.JoinStrings(apiurlmovies, movieid, extendedfull),
+		traktAPI.DefaultHeaders,
+	)
 }
 
 // GetTraktSerie retrieves extended data for a Trakt TV show by its Trakt ID.
@@ -271,7 +301,11 @@ func GetTraktSerie(showid string) (*TraktSerieData, error) {
 	if showid == "" {
 		return nil, logger.ErrNotFound
 	}
-	return doJSONTypeP[TraktSerieData](&traktAPI.Client, logger.JoinStrings(apiurlshows, showid, extendedfull), traktAPI.DefaultHeaders)
+	return doJSONTypeP[TraktSerieData](
+		&traktAPI.Client,
+		logger.JoinStrings(apiurlshows, showid, extendedfull),
+		traktAPI.DefaultHeaders,
+	)
 }
 
 // GetTraktSerieAliases retrieves alias data from the Trakt API for the given Dbserie.
@@ -287,7 +321,11 @@ func GetTraktSerieAliases(dbserie *database.Dbserie) []TraktAlias {
 	} else {
 		urlpart = strconv.Itoa(dbserie.TraktID)
 	}
-	arr, _ := doJSONType[[]TraktAlias](&traktAPI.Client, logger.JoinStrings(apiurlshows, urlpart, "/aliases"), traktAPI.DefaultHeaders)
+	arr, _ := doJSONType[[]TraktAlias](
+		&traktAPI.Client,
+		logger.JoinStrings(apiurlshows, urlpart, "/aliases"),
+		traktAPI.DefaultHeaders,
+	)
 	return arr
 }
 
@@ -297,7 +335,11 @@ func GetTraktSerieSeasons(showid string) ([]TraktSerieSeason, error) {
 	if showid == "" {
 		return nil, nil
 	}
-	return doJSONType[[]TraktSerieSeason](&traktAPI.Client, logger.JoinStrings(apiurlshows, showid, "/seasons"), traktAPI.DefaultHeaders)
+	return doJSONType[[]TraktSerieSeason](
+		&traktAPI.Client,
+		logger.JoinStrings(apiurlshows, showid, "/seasons"),
+		traktAPI.DefaultHeaders,
+	)
 }
 
 // GetTraktSerieSeasonsAndEpisodes retrieves all seasons and episodes for the given Trakt show ID from the Trakt API.
@@ -310,13 +352,26 @@ func UpdateTraktSerieSeasonsAndEpisodes(showid string, id *uint) {
 		return
 	}
 	baseurl := (apiurlshows + showid + "/seasons")
-	result, err := doJSONType[[]TraktSerieSeason](&traktAPI.Client, baseurl, traktAPI.DefaultHeaders)
+	result, err := doJSONType[[]TraktSerieSeason](
+		&traktAPI.Client,
+		baseurl,
+		traktAPI.DefaultHeaders,
+	)
 	if err != nil {
 		return
 	}
-	tbl := database.Getrows1size[database.DbstaticTwoString](false, database.QueryDbserieEpisodesCountByDBID, database.QueryDbserieEpisodesGetSeasonEpisodeByDBID, id)
+	tbl := database.Getrows1size[database.DbstaticTwoString](
+		false,
+		database.QueryDbserieEpisodesCountByDBID,
+		database.QueryDbserieEpisodesGetSeasonEpisodeByDBID,
+		id,
+	)
 	for idx := range result {
-		data, _ := doJSONType[[]TraktSerieSeasonEpisodes](&traktAPI.Client, logger.JoinStrings(baseurl, "/", result[idx].Number, extendedfull), traktAPI.DefaultHeaders)
+		data, _ := doJSONType[[]TraktSerieSeasonEpisodes](
+			&traktAPI.Client,
+			logger.JoinStrings(baseurl, "/", result[idx].Number, extendedfull),
+			traktAPI.DefaultHeaders,
+		)
 		for idx2 := range data {
 			if checkdbtwostrings(tbl, data[idx2].Season, data[idx2].Episode) {
 				continue
@@ -324,8 +379,16 @@ func UpdateTraktSerieSeasonsAndEpisodes(showid string, id *uint) {
 			epi := strconv.Itoa(data[idx2].Episode)
 			seas := strconv.Itoa(data[idx2].Season)
 			ident := generateIdentifierStringFromInt(&data[idx2].Season, &data[idx2].Episode)
-			database.ExecN("insert into dbserie_episodes (episode, season, identifier, title, first_aired, overview, dbserie_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
-				&epi, &seas, &ident, &data[idx2].Title, &data[idx2].FirstAired, &data[idx2].Overview, id)
+			database.ExecN(
+				"insert into dbserie_episodes (episode, season, identifier, title, first_aired, overview, dbserie_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+				&epi,
+				&seas,
+				&ident,
+				&data[idx2].Title,
+				&data[idx2].FirstAired,
+				&data[idx2].Overview,
+				id,
+			)
 		}
 	}
 }
@@ -335,6 +398,8 @@ func Testaddtraktdbepisodes() ([]TraktSerieSeasonEpisodes, error) {
 	return doJSONType[[]TraktSerieSeasonEpisodes](&traktAPI.Client, urlv, traktAPI.DefaultHeaders)
 }
 
+// checkdbtwostrings checks if the given integer values int1 and int2 exist as a pair in the provided slice of database.DbstaticTwoString.
+// It returns true if the pair is found, false otherwise.
 func checkdbtwostrings(tbl []database.DbstaticTwoString, int1, int2 int) bool {
 	if len(tbl) == 0 {
 		return false
@@ -368,7 +433,11 @@ func GetTraktSerieSeasonEpisodes(showid, season string) ([]TraktSerieSeasonEpiso
 	if showid == "" || season == "" {
 		return nil, errDailyLimit
 	}
-	return doJSONType[[]TraktSerieSeasonEpisodes](&traktAPI.Client, logger.JoinStrings(apiurlshows, showid, "/seasons/", season, extendedfull), traktAPI.DefaultHeaders)
+	return doJSONType[[]TraktSerieSeasonEpisodes](
+		&traktAPI.Client,
+		logger.JoinStrings(apiurlshows, showid, "/seasons/", season, extendedfull),
+		traktAPI.DefaultHeaders,
+	)
 }
 
 // GetTraktUserList retrieves a Trakt user list by username, list name, list type,
@@ -378,23 +447,69 @@ func GetTraktUserList(username, listname, listtype string, limit *string) ([]Tra
 	if username == "" || listname == "" || listtype == "" {
 		return nil, logger.ErrNotFound
 	}
-	return doJSONType[[]TraktUserList](&traktAPI.Client, traktaddlimit(logger.JoinStrings("https://api.trakt.tv/users/", username, "/lists/", listname, "/items/", listtype), limit), traktAPI.DefaultHeaders)
+	return doJSONType[[]TraktUserList](
+		&traktAPI.Client,
+		traktaddlimit(
+			logger.JoinStrings(
+				"https://api.trakt.tv/users/",
+				username,
+				"/lists/",
+				listname,
+				"/items/",
+				listtype,
+			),
+			limit,
+		),
+		traktAPI.DefaultHeaders,
+	)
 }
 
+// RemoveMovieFromTraktUserList removes the specified movie from the given Trakt user list.
+// It takes the username, list name, and the IMDB ID of the movie to remove as parameters.
+// If the username or list name are empty, it returns an error.
 func RemoveMovieFromTraktUserList(username, listname, remove string) error {
 	if username == "" || listname == "" {
 		return logger.ErrNotFound
 	}
 	body := strings.NewReader(fmt.Sprintf(`{"movies": [{"ids": {"imdb": "%s"}}]}`, remove))
-	return ProcessHTTP(&traktAPI.Client, logger.JoinStrings("https://api.trakt.tv/users/", username, "/lists/", listname, "/items/remove"), true, nil, traktAPI.DefaultHeaders, body)
+	return ProcessHTTP(
+		&traktAPI.Client,
+		logger.JoinStrings(
+			"https://api.trakt.tv/users/",
+			username,
+			"/lists/",
+			listname,
+			"/items/remove",
+		),
+		true,
+		nil,
+		traktAPI.DefaultHeaders,
+		body,
+	)
 }
 
+// RemoveSerieFromTraktUserList removes the specified TV show from the given Trakt user list.
+// It takes the username, list name, and the TVDB ID of the show to remove as parameters.
+// If the username or list name are empty, it returns an error.
 func RemoveSerieFromTraktUserList(username, listname string, remove int) error {
 	if username == "" || listname == "" {
 		return logger.ErrNotFound
 	}
 	body := strings.NewReader(fmt.Sprintf(`{"shows": [{"ids": {"tvdb": %d}}]}`, remove))
-	return ProcessHTTP(&traktAPI.Client, logger.JoinStrings("https://api.trakt.tv/users/", username, "/lists/", listname, "/items/remove"), true, nil, traktAPI.DefaultHeaders, body)
+	return ProcessHTTP(
+		&traktAPI.Client,
+		logger.JoinStrings(
+			"https://api.trakt.tv/users/",
+			username,
+			"/lists/",
+			listname,
+			"/items/remove",
+		),
+		true,
+		nil,
+		traktAPI.DefaultHeaders,
+		body,
+	)
 }
 
 // GetTraktSeriePopular retrieves popular TV shows from Trakt based on the
@@ -402,14 +517,22 @@ func RemoveSerieFromTraktUserList(username, listname string, remove int) error {
 // to limit the number of results returned. Returns a slice of TraktSerie
 // structs containing the popular show data.
 func GetTraktSeriePopular(limit *string) []TraktSerie {
-	arr, _ := doJSONType[[]TraktSerie](&traktAPI.Client, traktaddlimit("https://api.trakt.tv/shows/popular", limit), traktAPI.DefaultHeaders)
+	arr, _ := doJSONType[[]TraktSerie](
+		&traktAPI.Client,
+		traktaddlimit("https://api.trakt.tv/shows/popular", limit),
+		traktAPI.DefaultHeaders,
+	)
 	return arr
 }
 
 // GetTraktSerieTrending retrieves the trending TV shows from Trakt based on the limit parameter.
 // It returns a slice of TraktSerieTrending structs containing the trending show data.
 func GetTraktSerieTrending(limit *string) []TraktSerieTrending {
-	arr, _ := doJSONType[[]TraktSerieTrending](&traktAPI.Client, traktaddlimit("https://api.trakt.tv/shows/trending", limit), traktAPI.DefaultHeaders)
+	arr, _ := doJSONType[[]TraktSerieTrending](
+		&traktAPI.Client,
+		traktaddlimit("https://api.trakt.tv/shows/trending", limit),
+		traktAPI.DefaultHeaders,
+	)
 	return arr
 }
 
@@ -418,7 +541,11 @@ func GetTraktSerieTrending(limit *string) []TraktSerieTrending {
 // the number of results returned. Returns a slice of TraktSerieAnticipated structs
 // containing the anticipated show data.
 func GetTraktSerieAnticipated(limit *string) []TraktSerieAnticipated {
-	arr, _ := doJSONType[[]TraktSerieAnticipated](&traktAPI.Client, traktaddlimit("https://api.trakt.tv/shows/anticipated", limit), traktAPI.DefaultHeaders)
+	arr, _ := doJSONType[[]TraktSerieAnticipated](
+		&traktAPI.Client,
+		traktaddlimit("https://api.trakt.tv/shows/anticipated", limit),
+		traktAPI.DefaultHeaders,
+	)
 	return arr
 }
 
@@ -462,9 +589,26 @@ func GetTraktAuthToken(clientcode string) *oauth2.Token {
 // It takes the username, list name, list type, and optional limit parameters and returns
 // the user list items as an array of TraktUserList structs and an error.
 // Returns ErrNotFound if username, listname or listtype are empty.
-func GetTraktUserListAuth(username, listname, listtype string, limit *string) ([]TraktUserList, error) {
+func GetTraktUserListAuth(
+	username, listname, listtype string,
+	limit *string,
+) ([]TraktUserList, error) {
 	if username == "" || listname == "" || listtype == "" {
 		return nil, logger.ErrNotFound
 	}
-	return doJSONType[[]TraktUserList](&traktAPI.Client, traktaddlimit(logger.JoinStrings("https://api.trakt.tv/users/", username, "/lists/", listname, "/items/", listtype), limit), traktAPI.DefaultHeaders)
+	return doJSONType[[]TraktUserList](
+		&traktAPI.Client,
+		traktaddlimit(
+			logger.JoinStrings(
+				"https://api.trakt.tv/users/",
+				username,
+				"/lists/",
+				listname,
+				"/items/",
+				listtype,
+			),
+			limit,
+		),
+		traktAPI.DefaultHeaders,
+	)
 }

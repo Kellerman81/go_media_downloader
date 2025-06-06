@@ -115,15 +115,21 @@ func (c *rlHTTPClient) checkLimiter(_ context.Context, allow bool) (bool, error)
 			time.Sleep(waituntil)
 			break
 		}
-		time.Sleep((time.Duration(rand.New(config.RandomizerSource).Intn(500)+10) * time.Millisecond))
+		time.Sleep(
+			(time.Duration(rand.New(config.RandomizerSource).Intn(500)+10) * time.Millisecond),
+		)
 		if waitfor > waituntilmax {
 			return false, logger.ErrToWait
-		} else {
-			time.Sleep(waitfor)
 		}
+		time.Sleep(waitfor)
 	}
 
-	logger.LogDynamicany1String("warn", "Hit rate limit - retrys failed", logger.StrURL, c.Clientname)
+	logger.LogDynamicany1String(
+		"warn",
+		"Hit rate limit - retrys failed",
+		logger.StrURL,
+		c.Clientname,
+	)
 
 	return false, logger.ErrToWait
 }
@@ -141,7 +147,11 @@ func (c *rlHTTPClient) checklimiterwithdaily(ctx context.Context) bool {
 // If the response status code is not http.StatusOK, it calls addwait to handle the error and returns logger.ErrToWait.
 // If the response Content-Type header is "text/html" and checkhtml is true, it returns logger.ErrNotAllowed.
 // Otherwise, it returns nil.
-func (c *rlHTTPClient) checkresperror(resp *http.Response, req *http.Request, checkhtml bool) error {
+func (c *rlHTTPClient) checkresperror(
+	resp *http.Response,
+	req *http.Request,
+	checkhtml bool,
+) error {
 	if resp.StatusCode != http.StatusOK {
 		if c.addwait(req, resp) {
 			return logger.ErrToWait
@@ -169,34 +179,66 @@ func (c *rlHTTPClient) addwait(req *http.Request, resp *http.Response) bool {
 	}
 
 	switch resp.StatusCode {
-	case http.StatusNotFound, http.StatusRequestTimeout, http.StatusInternalServerError, http.StatusServiceUnavailable, 521, 522, 524, http.StatusNoContent:
+	case http.StatusNotFound,
+		http.StatusRequestTimeout,
+		http.StatusInternalServerError,
+		http.StatusServiceUnavailable,
+		521,
+		522,
+		524,
+		http.StatusNoContent:
 		if resp.StatusCode != http.StatusNotFound {
 			c.logwait(logger.TimeGetNow().Add(time.Minute*time.Duration(blockinterval)), nil)
 		}
-		logger.LogDynamicany2Str("error", "error get response url", logger.StrURL, req.URL.String(), logger.StrStatus, resp.Status)
+		logger.LogDynamicany2Str(
+			"error",
+			"error get response url",
+			logger.StrURL,
+			req.URL.String(),
+			logger.StrStatus,
+			resp.Status,
+		)
 		return true
 
-	case http.StatusUnauthorized, http.StatusForbidden, http.StatusTooManyRequests, http.StatusBadRequest:
+	case http.StatusUnauthorized,
+		http.StatusForbidden,
+		http.StatusTooManyRequests,
+		http.StatusBadRequest:
 		s, ok := resp.Header["Retry-After"]
 		if !ok {
 			s, ok = resp.Header["X-Retry-After"]
 		}
 		if ok {
 			if strings.Contains(s[0], "Request limit reached. Retry in ") {
-				a := strings.Split(logger.Trim(strings.Replace(s[0], "Request limit reached. Retry in ", "", 1), '.'), " ")
+				a := strings.Split(
+					logger.Trim(
+						strings.Replace(s[0], "Request limit reached. Retry in ", "", 1),
+						'.',
+					),
+					" ",
+				)
 				if len(a) != 2 {
-					c.logwait(logger.TimeGetNow().Add(time.Minute*time.Duration(blockinterval)), &s[0])
+					c.logwait(
+						logger.TimeGetNow().Add(time.Minute*time.Duration(blockinterval)),
+						&s[0],
+					)
 					return true
 				}
 				switch a[1] {
 				case "minutes":
-					c.logwait(logger.TimeGetNow().Add(time.Minute*logger.StringToDuration(a[0])), nil)
+					c.logwait(
+						logger.TimeGetNow().Add(time.Minute*logger.StringToDuration(a[0])),
+						nil,
+					)
 					return true
 				case "hours":
 					c.logwait(logger.TimeGetNow().Add(time.Hour*logger.StringToDuration(a[0])), nil)
 					return true
 				default:
-					c.logwait(logger.TimeGetNow().Add(time.Minute*time.Duration(blockinterval)), &s[0])
+					c.logwait(
+						logger.TimeGetNow().Add(time.Minute*time.Duration(blockinterval)),
+						&s[0],
+					)
 					return true
 				}
 			} else if sleep, err := strconv.Atoi(s[0]); err == nil {
@@ -225,7 +267,14 @@ func (c *rlHTTPClient) addwait(req *http.Request, resp *http.Response) bool {
 			logger.LogDynamicany2Str("error", "error get response url", logger.StrURL, req.URL.String(), logger.StrStatus, resp.Status)
 			return true
 		}
-		logger.LogDynamicany2Str("error", "error get response url", logger.StrURL, req.URL.String(), logger.StrStatus, resp.Status)
+		logger.LogDynamicany2Str(
+			"error",
+			"error get response url",
+			logger.StrURL,
+			req.URL.String(),
+			logger.StrStatus,
+			resp.Status,
+		)
 		return true
 	}
 	return false
@@ -235,7 +284,9 @@ func (c *rlHTTPClient) addwait(req *http.Request, resp *http.Response) bool {
 // It waits until the specified time before returning.
 func (c *rlHTTPClient) logwait(waitfor time.Time, logfound *string) {
 	c.Ratelimiter.WaitTill(waitfor)
-	logv := logger.Logtype("debug", 1).Time(logger.StrWaitfor, waitfor).Str(logger.StrURL, c.Clientname)
+	logv := logger.Logtype("debug", 1).
+		Time(logger.StrWaitfor, waitfor).
+		Str(logger.StrURL, c.Clientname)
 	if logfound != nil {
 		logv.Str(strtimefound, *logfound)
 	}
@@ -243,7 +294,14 @@ func (c *rlHTTPClient) logwait(waitfor time.Time, logfound *string) {
 }
 
 // NewClient creates a new HTTP client for making external API requests. It configures rate limiting, TLS verification, compression, timeouts etc. based on the provided parameters.
-func NewClient(clientname string, skiptlsverify, disablecompression bool, rl *slidingwindow.Limiter, usedaily bool, rldaily *slidingwindow.Limiter, timeoutseconds uint16) rlHTTPClient {
+func NewClient(
+	clientname string,
+	skiptlsverify, disablecompression bool,
+	rl *slidingwindow.Limiter,
+	usedaily bool,
+	rldaily *slidingwindow.Limiter,
+	timeoutseconds uint16,
+) rlHTTPClient {
 	if timeoutseconds == 0 {
 		timeoutseconds = 10
 	}
@@ -281,7 +339,14 @@ func NewClient(clientname string, skiptlsverify, disablecompression bool, rl *sl
 // sets the specified headers, and runs the provided function with the HTTP response.
 // The function uses a context with a timeout of 5 times the client's configured timeout.
 // If the request fails, the function returns the error.
-func ProcessHTTP(c *rlHTTPClient, urlv string, checklimiter bool, run func(context.Context, *http.Response) error, headers map[string][]string, body ...io.Reader) error {
+func ProcessHTTP(
+	c *rlHTTPClient,
+	urlv string,
+	checklimiter bool,
+	run func(context.Context, *http.Response) error,
+	headers map[string][]string,
+	body ...io.Reader,
+) error {
 	if c == nil {
 		c = &cl
 	}
@@ -305,7 +370,13 @@ func ProcessHTTP(c *rlHTTPClient, urlv string, checklimiter bool, run func(conte
 		req, err = http.NewRequestWithContext(ctx, http.MethodGet, urlv, http.NoBody)
 	}
 	if err != nil {
-		logger.LogDynamicany1StringErr("error", "failed to get url", err, logger.StrURL, urlv) // nopointer
+		logger.LogDynamicany1StringErr(
+			"error",
+			"failed to get url",
+			err,
+			logger.StrURL,
+			urlv,
+		) // nopointer
 		return err
 	}
 
@@ -314,13 +385,25 @@ func ProcessHTTP(c *rlHTTPClient, urlv string, checklimiter bool, run func(conte
 	}
 	resp, err := c.client.Do(req)
 	if err != nil {
-		logger.LogDynamicany1StringErr("error", "failed to process url", err, logger.StrURL, urlv) // nopointer
+		logger.LogDynamicany1StringErr(
+			"error",
+			"failed to process url",
+			err,
+			logger.StrURL,
+			urlv,
+		) // nopointer
 		return err
 	}
 	defer resp.Body.Close()
 	err = c.checkresperror(resp, req, false)
 	if err != nil {
-		logger.LogDynamicany1StringErr("error", "failed to process url", err, logger.StrURL, urlv) // nopointer
+		logger.LogDynamicany1StringErr(
+			"error",
+			"failed to process url",
+			err,
+			logger.StrURL,
+			urlv,
+		) // nopointer
 		return err
 	}
 	return run(ctx, resp)
@@ -338,7 +421,15 @@ func doJSONType[S any](c *rlHTTPClient, urlv string, headers map[string][]string
 	return v, err
 }
 
-func doJSONTypeNoLimit[S any](c *rlHTTPClient, urlv string, headers map[string][]string) (S, error) {
+// doJSONTypeNoLimit is a helper function that makes a GET request to the provided URL,
+// sets the specified headers, and decodes the JSON response into the provided type.
+// The function does not use a context with a timeout, unlike doJSONType.
+// If the request fails, the function returns the provided type and the error.
+func doJSONTypeNoLimit[S any](
+	c *rlHTTPClient,
+	urlv string,
+	headers map[string][]string,
+) (S, error) {
 	var v S
 	err := ProcessHTTP(c, urlv, false, func(ctx context.Context, resp *http.Response) error {
 		return json.NewDecoder(resp.Body).DecodeContext(ctx, &v)
@@ -353,17 +444,6 @@ func doJSONTypeNoLimit[S any](c *rlHTTPClient, urlv string, headers map[string][
 func doJSONTypeP[S any](c *rlHTTPClient, urlv string, headers map[string][]string) (*S, error) {
 	var v S
 	err := ProcessHTTP(c, urlv, true, func(ctx context.Context, resp *http.Response) error {
-		return json.NewDecoder(resp.Body).DecodeContext(ctx, &v)
-	}, headers)
-	if err != nil {
-		return nil, err
-	}
-	return &v, err
-}
-
-func doJSONTypePNoLimit[S any](c *rlHTTPClient, urlv string, headers map[string][]string) (*S, error) {
-	var v S
-	err := ProcessHTTP(c, urlv, false, func(ctx context.Context, resp *http.Response) error {
 		return json.NewDecoder(resp.Body).DecodeContext(ctx, &v)
 	}, headers)
 	if err != nil {

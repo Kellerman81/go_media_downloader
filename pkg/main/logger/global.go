@@ -146,34 +146,135 @@ type Arrany struct {
 
 // global vars.
 var (
-	StrFeeds                 = "feeds"
-	StrDataFull              = "datafull"
-	StrStructure             = "structure"
-	V0                       = 0
-	StrMovie                 = "movie"
-	StrSeries                = "series"
-	StrID                    = "id"
-	StrWaitfor               = "waitfor"
-	StrURL                   = "Url"
-	StrImdb                  = "imdb"
-	StrFound                 = "found"
-	StrWanted                = "wanted"
-	StrTitle                 = "Title"
-	StrAccepted              = "accepted"
-	StrDenied                = "denied"
-	StrJob                   = "Job"
-	StrPath                  = "Path"
-	StrFile                  = "File"
-	StrListname              = "Listname"
-	StrData                  = "data"
-	StrTvdb                  = "tvdb"
-	StrSeason                = "season"
-	StrConfig                = "config"
-	StrReason                = "reason"
-	StrPriority              = "Priority"
-	StrMinPrio               = "minimum prio"
-	StrQuality               = "Quality"
-	ArrHTMLEntitys           = []string{"&AElig", "&AMP", "&Aacute", "&Acirc", "&Agrave", "&Aring", "&Atilde", "&Auml", "&COPY", "&Ccedil", "&ETH", "&Eacute", "&Ecirc", "&Egrave", "&Euml", "&GT", "&Iacute", "&Icirc", "&Igrave", "&Iuml", "&LT", "&Ntilde", "&Oacute", "&Ocirc", "&Ograve", "&Oslash", "&Otilde", "&Ouml", "&QUOT", "&REG", "&THORN", "&Uacute", "&Ucirc", "&Ugrave", "&Uuml", "&Yacute", "&aacute", "&acirc", "&acute", "&aelig", "&agrave", "&amp", "&aring", "&atilde", "&auml", "&brvbar", "&ccedil", "&cedil", "&cent", "&copy", "&curren", "&deg", "&divide", "&eacute", "&ecirc", "&egrave", "&eth", "&euml", "&gt", "&iacute", "&icirc", "&iexcl", "&igrave", "&iquest", "&iuml", "&laquo", "&lt", "&macr", "&micro", "&middot", "&nbsp", "&not", "&ntilde", "&oacute", "&ocirc", "&ograve", "&ordf", "&ordm", "&oslash", "&otilde", "&ouml", "&para", "&plusmn", "&pound", "&quot", "&raquo", "&reg", "&sect", "&shy", "&szlig", "&thorn", "&times", "&uacute", "&ucirc", "&ugrave", "&uml", "&uuml", "&yacute", "&yen", "&yuml"}
+	StrFeeds       = "feeds"
+	StrDataFull    = "datafull"
+	StrStructure   = "structure"
+	V0             = 0
+	StrMovie       = "movie"
+	StrSeries      = "series"
+	StrID          = "id"
+	StrWaitfor     = "waitfor"
+	StrURL         = "Url"
+	StrImdb        = "imdb"
+	StrFound       = "found"
+	StrWanted      = "wanted"
+	StrTitle       = "Title"
+	StrAccepted    = "accepted"
+	StrDenied      = "denied"
+	StrJob         = "Job"
+	StrPath        = "Path"
+	StrFile        = "File"
+	StrListname    = "Listname"
+	StrData        = "data"
+	StrTvdb        = "tvdb"
+	StrSeason      = "season"
+	StrConfig      = "config"
+	StrReason      = "reason"
+	StrPriority    = "Priority"
+	StrMinPrio     = "minimum prio"
+	StrQuality     = "Quality"
+	ArrHTMLEntitys = []string{
+		"&AElig",
+		"&AMP",
+		"&Aacute",
+		"&Acirc",
+		"&Agrave",
+		"&Aring",
+		"&Atilde",
+		"&Auml",
+		"&COPY",
+		"&Ccedil",
+		"&ETH",
+		"&Eacute",
+		"&Ecirc",
+		"&Egrave",
+		"&Euml",
+		"&GT",
+		"&Iacute",
+		"&Icirc",
+		"&Igrave",
+		"&Iuml",
+		"&LT",
+		"&Ntilde",
+		"&Oacute",
+		"&Ocirc",
+		"&Ograve",
+		"&Oslash",
+		"&Otilde",
+		"&Ouml",
+		"&QUOT",
+		"&REG",
+		"&THORN",
+		"&Uacute",
+		"&Ucirc",
+		"&Ugrave",
+		"&Uuml",
+		"&Yacute",
+		"&aacute",
+		"&acirc",
+		"&acute",
+		"&aelig",
+		"&agrave",
+		"&amp",
+		"&aring",
+		"&atilde",
+		"&auml",
+		"&brvbar",
+		"&ccedil",
+		"&cedil",
+		"&cent",
+		"&copy",
+		"&curren",
+		"&deg",
+		"&divide",
+		"&eacute",
+		"&ecirc",
+		"&egrave",
+		"&eth",
+		"&euml",
+		"&gt",
+		"&iacute",
+		"&icirc",
+		"&iexcl",
+		"&igrave",
+		"&iquest",
+		"&iuml",
+		"&laquo",
+		"&lt",
+		"&macr",
+		"&micro",
+		"&middot",
+		"&nbsp",
+		"&not",
+		"&ntilde",
+		"&oacute",
+		"&ocirc",
+		"&ograve",
+		"&ordf",
+		"&ordm",
+		"&oslash",
+		"&otilde",
+		"&ouml",
+		"&para",
+		"&plusmn",
+		"&pound",
+		"&quot",
+		"&raquo",
+		"&reg",
+		"&sect",
+		"&shy",
+		"&szlig",
+		"&thorn",
+		"&times",
+		"&uacute",
+		"&ucirc",
+		"&ugrave",
+		"&uml",
+		"&uuml",
+		"&yacute",
+		"&yen",
+		"&yuml",
+	}
 	ErrNoID                  = errors.New("no id")
 	ErrNotFound              = errors.New("not found")
 	ErrNotAllowed            = errors.New("not allowed")
@@ -484,6 +585,13 @@ var (
 		'9': {},
 		'-': {},
 	}
+	subRuneSet = [256]bool{
+		'a': true, 'b': true, 'c': true, 'd': true, 'e': true, 'f': true, 'g': true, 'h': true,
+		'i': true, 'j': true, 'k': true, 'l': true, 'm': true, 'n': true, 'o': true, 'p': true,
+		'q': true, 'r': true, 's': true, 't': true, 'u': true, 'v': true, 'w': true, 'x': true,
+		'y': true, 'z': true, '0': true, '1': true, '2': true, '3': true, '4': true, '5': true,
+		'6': true, '7': true, '8': true, '9': true, '-': true,
+	}
 	substituteRuneSpace = map[rune]string{
 		'&':  "and",
 		'@':  "at",
@@ -585,9 +693,10 @@ func ParseStringTemplate(message string, messagedata any) (bool, string) {
 	if message == "" {
 		return false, ""
 	}
-	var err error
+
 	tmplmessage := textparser.Lookup(message)
 	if tmplmessage == nil {
+		var err error
 		tmplmessage, err = textparser.New(message).Parse(message)
 		if err != nil {
 			LogDynamicanyErr("error", "template", err)
@@ -596,8 +705,7 @@ func ParseStringTemplate(message string, messagedata any) (bool, string) {
 	}
 	doc := PlBuffer.Get()
 	defer PlBuffer.Put(doc)
-	err = tmplmessage.Execute(doc, messagedata)
-	if err != nil {
+	if err := tmplmessage.Execute(doc, messagedata); err != nil {
 		LogDynamicanyErr("error", "template", err)
 		return true, ""
 	}
@@ -651,21 +759,22 @@ func StringToSlugBytes(instr string) []byte {
 // hyphens with a single hyphen, and trimming leading/trailing hyphens. The result
 // is written to the provided bytes.Buffer.
 func stringToSlugBuffer(ret *bytes.Buffer, instr string) {
-	if instr == "" {
+	if len(instr) == 0 {
 		return
 	}
 	var (
 		lastrune, section, position rune
 		laststr                     string
-		ok                          bool
 	)
 	for _, r := range instr {
 		if val, ok := substituteRuneSpace[r]; ok {
-			if (laststr == "" || val != laststr) && !(lastrune == '-' && val == StrDash) {
+			if (laststr == "" || val != laststr) && (lastrune != '-' || val != StrDash) {
 				ret.WriteString(val)
 				laststr = val
-				lastrune = '-'
-				if val != StrDash {
+
+				if val == StrDash {
+					lastrune = '-'
+				} else {
 					lastrune = ' '
 				}
 			}
@@ -681,8 +790,9 @@ func stringToSlugBuffer(ret *bytes.Buffer, instr string) {
 			if 'A' <= r && r <= 'Z' {
 				r += 'a' - 'A'
 			}
-			if _, ok = subRune[r]; ok {
-				if !(lastrune == '-' && r == '-') {
+			// if _, ok = subRune[r]; ok {
+			if r < 256 && subRuneSet[r] {
+				if lastrune != '-' || r != '-' {
 					ret.WriteRune(r)
 					lastrune = r
 				}
@@ -693,12 +803,11 @@ func stringToSlugBuffer(ret *bytes.Buffer, instr string) {
 		case r <= 0xeffff:
 			section = r >> 8
 			position = r % 256
-			tb, ok := table.Tables[section]
-			if ok && len(tb) > int(position) {
+			if tb, ok := table.Tables[section]; ok && len(tb) > int(position) {
 				if len(tb[position]) >= 1 && tb[position][0] > unicode.MaxASCII && lastrune != '-' {
 					ret.WriteByte('-')
 					lastrune = '-'
-				} else if !(lastrune == '-' && tb[position] == StrDash) {
+				} else if lastrune != '-' || tb[position] != StrDash {
 					ret.WriteString(tb[position])
 				}
 			}
@@ -727,6 +836,7 @@ func Path(s *string, allowslash bool) {
 		StringRemoveAllRunesP(&newpath, '\\', '/')
 	}
 	bld := PlBuffer.Get()
+	defer PlBuffer.Put(bld)
 
 	var bl bool
 	for _, z := range newpath {
@@ -742,14 +852,13 @@ func Path(s *string, allowslash bool) {
 	if bl {
 		*s = TrimSpace(bld.String())
 	}
-	PlBuffer.Put(bld)
 }
 
 // TrimSpace returns a slice of the string s, with all leading and trailing
 // Unicode code points that are considered whitespace removed.
 // If s is empty, TrimSpace returns s.
 func TrimSpace(s string) string {
-	if s == "" {
+	if len(s) == 0 {
 		return s
 	}
 	return Trim(s, ' ')
@@ -758,7 +867,7 @@ func TrimSpace(s string) string {
 // Trim returns a slice of the string s, with all leading and trailing Unicode code points contained in cutset removed.
 // If s is empty or cutset is empty, Trim returns s.
 func Trim(s string, cutset ...rune) string {
-	if s == "" {
+	if len(s) == 0 {
 		return s
 	}
 	i := getfirstinstring(s, cutset)
@@ -778,14 +887,13 @@ func Trim(s string, cutset ...rune) string {
 // TrimLeft returns a slice of the string s, with all leading Unicode code points contained in cutset removed.
 // If s is empty or cutset is empty, TrimLeft returns s.
 func TrimLeft(s string, cutset ...rune) string {
-	if s == "" {
+	if len(s) == 0 {
 		return s
 	}
-	i := getfirstinstring(s, cutset)
-	if i == -1 {
-		return s
+	if i := getfirstinstring(s, cutset); i != -1 {
+		return s[i:]
 	}
-	return s[i:]
+	return s
 }
 
 // getfirstinstring returns the index of the first character in the string s that is not in the cutset.
@@ -799,10 +907,11 @@ func getfirstinstring(s string, cutset []rune) int {
 				break
 			}
 		}
-		if !found && idx == 0 {
-			return -1
-		}
-		if !found && idx > 0 {
+
+		if !found {
+			if idx == 0 {
+				return -1
+			}
 			return idx
 		}
 	}
@@ -840,14 +949,13 @@ func getlastinstring(s string, cutset []rune) int {
 // TrimRight returns a slice of the string s, with all trailing
 // Unicode code points contained in cutset removed.
 func TrimRight(s string, cutset ...rune) string {
-	if s == "" {
+	if len(s) == 0 {
 		return s
 	}
-	i := getlastinstring(s, cutset)
-	if i == -1 {
-		return s
+	if i := getlastinstring(s, cutset); i != -1 {
+		return s[:i]
 	}
-	return s[:i]
+	return s
 }
 
 // ContainsI checks if string a contains string b, ignoring case.
@@ -884,7 +992,8 @@ func ContainsInt(a string, b uint16) bool {
 // If not found, it does a case-insensitive check by comparing
 // the substring of s from 0 to len(prefix) with prefix using EqualFold.
 func HasPrefixI(s, prefix string) bool {
-	return len(s) >= len(prefix) && (s[0:len(prefix)] == prefix || strings.EqualFold(s[0:len(prefix)], prefix))
+	return len(s) >= len(prefix) &&
+		(s[0:len(prefix)] == prefix || strings.EqualFold(s[0:len(prefix)], prefix))
 }
 
 // TimeAfter returns true if the time a is after the time b.
@@ -905,7 +1014,8 @@ func TimeAfter(a, b time.Time) bool {
 // the substring of s from len(s)-len(suffix) to len(s) with suffix
 // using EqualFold.
 func HasSuffixI(s, suffix string) bool {
-	return len(s) >= len(suffix) && (s[len(s)-len(suffix):] == suffix || strings.EqualFold(s[len(s)-len(suffix):], suffix))
+	return len(s) >= len(suffix) &&
+		(s[len(s)-len(suffix):] == suffix || strings.EqualFold(s[len(s)-len(suffix):], suffix))
 }
 
 // JoinStrings concatenates any number of strings together.
@@ -916,6 +1026,13 @@ func JoinStrings(elems ...string) string {
 		return ""
 	case 1:
 		return elems[0]
+	case 2:
+		if elems[0] == "" {
+			return elems[1]
+		}
+		if elems[1] == "" {
+			return elems[0]
+		}
 	}
 	b := PlBuffer.Get()
 	defer PlBuffer.Put(b)
@@ -936,39 +1053,36 @@ func JoinStringsSep(elems []string, sep string) string {
 		return ""
 	case 1:
 		return elems[0]
-	default:
-		b := PlBuffer.Get()
-		defer PlBuffer.Put(b)
-		l := len(elems)
-		for idx, val := range elems {
-			if val != "" {
-				b.WriteString(val)
-				if idx < l-1 {
-					b.WriteString(sep)
-				}
+	}
+	b := PlBuffer.Get()
+	defer PlBuffer.Put(b)
+	l := len(elems)
+	for idx, val := range elems {
+		if val != "" {
+			b.WriteString(val)
+			if idx < l-1 {
+				b.WriteString(sep)
 			}
 		}
-		return b.String()
 	}
+	return b.String()
 }
 
 // IndexI searches for the first case-insensitive instance of b in a.
 // It returns the index of the first match, or -1 if no match is found.
 func IndexI(a, b string) int {
-	i := strings.Index(a, b)
-	if i != -1 {
+	if i := strings.Index(a, b); i != -1 {
 		return i
 	}
 
 	if len(b) > len(a) {
 		return -1
 	}
-
-	_, hasUppera := true, false
+	hasUppera, hasUpperb := false, false
+	isASCIIb := true
 	for _, c := range a {
 		if c >= utf8.RuneSelf {
-			_, ok := diacriticslowermap[c]
-			if !ok {
+			if _, ok := diacriticslowermap[c]; !ok {
 				// isASCIIa = false
 				break
 			}
@@ -976,7 +1090,6 @@ func IndexI(a, b string) int {
 		hasUppera = hasUppera || ('A' <= c && c <= 'Z') || c == 'Ö' || c == 'Ü' || c == 'Ä'
 	}
 
-	isASCIIb, hasUpperb := true, false
 	for _, c := range b {
 		if c >= utf8.RuneSelf {
 			_, ok := diacriticslowermap[c]

@@ -8,7 +8,10 @@ import (
 )
 
 func getRSshistoriesTable(ctx *context.Context) table.Table {
-	rSshistories := table.NewDefaultTable(ctx, table.DefaultConfigWithDriverAndConnection("sqlite", "media"))
+	rSshistories := table.NewDefaultTable(
+		ctx,
+		table.DefaultConfigWithDriverAndConnection("sqlite", "media"),
+	)
 
 	info := rSshistories.GetInfo()
 

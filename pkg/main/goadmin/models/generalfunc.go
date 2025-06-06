@@ -10,7 +10,11 @@ import (
 	"github.com/GoAdminGroup/go-admin/template/types/action"
 )
 
-func myPopUpWithIframe(id, title string, data action.IframeData, width, height string) *action.PopUpAction {
+func myPopUpWithIframe(
+	id, title string,
+	data action.IframeData,
+	width, height string,
+) *action.PopUpAction {
 	if id == "" {
 		panic("wrong popup action parameter, empty id")
 	}

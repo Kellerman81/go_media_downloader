@@ -43,7 +43,11 @@ func (*mysqlite) GetDelimiters() []string {
 }
 
 // QueryWithConnection implements the method Connection.QueryWithConnection.
-func (d *mysqlite) QueryWithConnection(con string, query string, args ...any) ([]map[string]any, error) {
+func (d *mysqlite) QueryWithConnection(
+	con string,
+	query string,
+	args ...any,
+) ([]map[string]any, error) {
 	database.GetMutex().RLock()
 	defer database.GetMutex().RUnlock()
 	return db.CommonQuery(d.DbList[con], query, args...)
@@ -71,7 +75,11 @@ func (d *mysqlite) Exec(query string, args ...any) (sql.Result, error) {
 	return db.CommonExec(d.DbList["default"], query, args...)
 }
 
-func (d *mysqlite) QueryWith(tx *sql.Tx, conn, query string, args ...any) ([]map[string]any, error) {
+func (d *mysqlite) QueryWith(
+	tx *sql.Tx,
+	conn, query string,
+	args ...any,
+) ([]map[string]any, error) {
 	if tx != nil {
 		return d.QueryWithTx(tx, query, args...)
 	}

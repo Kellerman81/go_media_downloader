@@ -60,7 +60,13 @@ type omdbClient struct {
 // OMDb API. It takes the API key, rate limit seconds, rate limit calls per
 // second, whether to disable TLS, and request timeout in seconds.
 // It sets sane defaults for the rate limiting if 0 values are passed.
-func NewOmdbClient(apikey string, seconds uint8, calls int, disabletls bool, timeoutseconds uint16) {
+func NewOmdbClient(
+	apikey string,
+	seconds uint8,
+	calls int,
+	disabletls bool,
+	timeoutseconds uint16,
+) {
 	if seconds == 0 {
 		seconds = 1
 	}
@@ -88,7 +94,11 @@ func GetOmdbMovie(imdbid string) (*OmDBMovie, error) {
 	if imdbid == "" {
 		return nil, logger.ErrNotFound
 	}
-	return doJSONTypeP[OmDBMovie](&omdbAPI.Client, logger.JoinStrings("http://www.omdbapi.com/?i=", imdbid, omdbAPI.QAPIKey), nil)
+	return doJSONTypeP[OmDBMovie](
+		&omdbAPI.Client,
+		logger.JoinStrings("http://www.omdbapi.com/?i=", imdbid, omdbAPI.QAPIKey),
+		nil,
+	)
 }
 
 // SearchOmdbMovie searches the OMDb API for movies matching the given title and release year.
@@ -101,7 +111,21 @@ func SearchOmdbMovie(title, yearin string) (*OmDBMovieSearchGlobal, error) {
 		return nil, logger.ErrNotFound
 	}
 	if yearin != "" && yearin != "0" {
-		return doJSONTypeP[OmDBMovieSearchGlobal](&omdbAPI.Client, logger.JoinStrings("http://www.omdbapi.com/?s=", url.QueryEscape(title), "&y=", yearin, omdbAPI.QAPIKey), nil)
+		return doJSONTypeP[OmDBMovieSearchGlobal](
+			&omdbAPI.Client,
+			logger.JoinStrings(
+				"http://www.omdbapi.com/?s=",
+				url.QueryEscape(title),
+				"&y=",
+				yearin,
+				omdbAPI.QAPIKey,
+			),
+			nil,
+		)
 	}
-	return doJSONTypeP[OmDBMovieSearchGlobal](&omdbAPI.Client, logger.JoinStrings("http://www.omdbapi.com/?s=", url.QueryEscape(title), omdbAPI.QAPIKey), nil)
+	return doJSONTypeP[OmDBMovieSearchGlobal](
+		&omdbAPI.Client,
+		logger.JoinStrings("http://www.omdbapi.com/?s=", url.QueryEscape(title), omdbAPI.QAPIKey),
+		nil,
+	)
 }

@@ -92,8 +92,10 @@ func (c *globalcache) addStaticXStmt(key string, imdb bool) {
 // The function takes a key string, a boolean indicating whether to use the IMDB database
 // connection, and an optional slice of int64 values representing the expiration time in
 // nanoseconds. It returns the cached SQL statement.
-func (c *globalcache) getXStmt(key string, imdb bool, expiresa ...int64) *sqlx.Stmt {
-	if cache.itemsxstmtP.Check(key) { // only check and get not add to static cache - function is called from goroutines
+func (c *globalcache) getXStmt(key string, imdb bool) *sqlx.Stmt {
+	if cache.itemsxstmtP.Check(
+		key,
+	) { // only check and get not add to static cache - function is called from goroutines
 		return cache.itemsxstmtP.GetVal(key)
 	}
 	if !cache.itemsxstmt.Check(key) {
@@ -107,9 +109,6 @@ func (c *globalcache) getXStmt(key string, imdb bool, expiresa ...int64) *sqlx.S
 	// 	return cache.itemsxstmt.GetValP(key)
 	// }
 	expires := cache.itemsxstmt.GetExpire(key)
-	if len(expiresa) == 1 {
-		expires = expiresa[0]
-	}
 	if config.SettingsGeneral.CacheAutoExtend || expires != 0 && (time.Now().UnixNano() > expires) {
 		cache.itemsxstmt.UpdateExpire(key, c.getexpiressql())
 	}
@@ -145,7 +144,9 @@ func (c *globalcache) setStaticRegexp(key string) {
 // The function takes a key string and a duration time.Duration. If the duration is 0, it uses the
 // default extension time. The function returns the cached regular expression.
 func (c *globalcache) setRegexp(key string, duration time.Duration) *regexp.Regexp {
-	if cache.itemsregexP.Check(key) { // only check and get not add to static cache - function is called from goroutines
+	if cache.itemsregexP.Check(
+		key,
+	) { // only check and get not add to static cache - function is called from goroutines
 		return cache.itemsregexP.GetVal(key)
 	}
 	if !cache.itemsregex.Check(key) {
@@ -434,8 +435,14 @@ func RefreshMediaCacheDB(useseries bool, force bool) {
 		return
 	}
 	if count == 0 {
-		cache.storeMapThreeString(mapvar, nil, time.Now().Add(time.Duration(config.SettingsGeneral.CacheDuration)*time.Hour).UnixNano(),
-			time.Now().UnixNano())
+		cache.storeMapThreeString(
+			mapvar,
+			nil,
+			time.Now().
+				Add(time.Duration(config.SettingsGeneral.CacheDuration)*time.Hour).
+				UnixNano(),
+			time.Now().UnixNano(),
+		)
 		return
 	}
 	lastscan := cache.itemsthreestring.GetLastscan(mapvar)
@@ -444,10 +451,18 @@ func RefreshMediaCacheDB(useseries bool, force bool) {
 	}
 	logger.LogDynamicany1String("debug", "refresh cache", strcache, mapvar)
 
-	data := Getrows0[DbstaticThreeStringTwoInt](false, count+100, logger.GetStringsMap(useseries, logger.DBCacheDBMedia))
+	data := Getrows0[DbstaticThreeStringTwoInt](
+		false,
+		count+100,
+		logger.GetStringsMap(useseries, logger.DBCacheDBMedia),
+	)
 	if len(data) > 0 {
-		cache.storeMapThreeString(mapvar, data,
-			time.Now().Add(time.Duration(config.SettingsGeneral.CacheDuration)*time.Hour).UnixNano(),
+		cache.storeMapThreeString(
+			mapvar,
+			data,
+			time.Now().
+				Add(time.Duration(config.SettingsGeneral.CacheDuration)*time.Hour).
+				UnixNano(),
 			time.Now().UnixNano(),
 		)
 	} else {
@@ -474,8 +489,14 @@ func RefreshMediaCacheList(useseries bool, force bool) {
 		return
 	}
 	if count == 0 {
-		cache.storeMapTwoInt(mapvar, nil, time.Now().Add(time.Duration(config.SettingsGeneral.CacheDuration)*time.Hour).UnixNano(),
-			time.Now().UnixNano())
+		cache.storeMapTwoInt(
+			mapvar,
+			nil,
+			time.Now().
+				Add(time.Duration(config.SettingsGeneral.CacheDuration)*time.Hour).
+				UnixNano(),
+			time.Now().UnixNano(),
+		)
 		return
 	}
 	lastscan := cache.itemstwoint.GetLastscan(mapvar)
@@ -484,7 +505,13 @@ func RefreshMediaCacheList(useseries bool, force bool) {
 	}
 	logger.LogDynamicany1String("debug", "refresh cache", strcache, mapvar)
 
-	cache.storeMapTwoInt(mapvar, Getrows0[DbstaticOneStringTwoInt](false, count+100, logger.GetStringsMap(useseries, logger.DBCacheMedia)),
+	cache.storeMapTwoInt(
+		mapvar,
+		Getrows0[DbstaticOneStringTwoInt](
+			false,
+			count+100,
+			logger.GetStringsMap(useseries, logger.DBCacheMedia),
+		),
 		time.Now().Add(time.Duration(config.SettingsGeneral.CacheDuration)*time.Hour).UnixNano(),
 		time.Now().UnixNano(),
 	)
@@ -509,8 +536,14 @@ func Refreshhistorycachetitle(useseries bool, force bool) {
 		return
 	}
 	if count == 0 {
-		cache.storeMap(mapvar, nil, time.Now().Add(time.Duration(config.SettingsGeneral.CacheDuration)*time.Hour).UnixNano(),
-			time.Now().UnixNano())
+		cache.storeMap(
+			mapvar,
+			nil,
+			time.Now().
+				Add(time.Duration(config.SettingsGeneral.CacheDuration)*time.Hour).
+				UnixNano(),
+			time.Now().UnixNano(),
+		)
 		return
 	}
 	lastscan := cache.itemsstring.GetLastscan(mapvar)
@@ -518,7 +551,13 @@ func Refreshhistorycachetitle(useseries bool, force bool) {
 		return
 	}
 	logger.LogDynamicany1String("debug", "refresh cache", strcache, mapvar)
-	cache.storeMap(mapvar, Getrows0[string](false, count+100, logger.GetStringsMap(useseries, logger.DBHistoriesTitle)),
+	cache.storeMap(
+		mapvar,
+		Getrows0[string](
+			false,
+			count+100,
+			logger.GetStringsMap(useseries, logger.DBHistoriesTitle),
+		),
 		time.Now().Add(time.Duration(config.SettingsGeneral.CacheDuration)*time.Hour).UnixNano(),
 		time.Now().UnixNano(),
 	)
@@ -543,8 +582,14 @@ func Refreshhistorycacheurl(useseries bool, force bool) {
 		return
 	}
 	if count == 0 {
-		cache.storeMap(mapvar, nil, time.Now().Add(time.Duration(config.SettingsGeneral.CacheDuration)*time.Hour).UnixNano(),
-			time.Now().UnixNano())
+		cache.storeMap(
+			mapvar,
+			nil,
+			time.Now().
+				Add(time.Duration(config.SettingsGeneral.CacheDuration)*time.Hour).
+				UnixNano(),
+			time.Now().UnixNano(),
+		)
 		return
 	}
 	lastscan := cache.itemsstring.GetLastscan(mapvar)
@@ -552,7 +597,9 @@ func Refreshhistorycacheurl(useseries bool, force bool) {
 		return
 	}
 	logger.LogDynamicany1String("debug", "refresh cache", strcache, mapvar)
-	cache.storeMap(mapvar, Getrows0[string](false, count+100, logger.GetStringsMap(useseries, logger.DBHistoriesURL)),
+	cache.storeMap(
+		mapvar,
+		Getrows0[string](false, count+100, logger.GetStringsMap(useseries, logger.DBHistoriesURL)),
 		time.Now().Add(time.Duration(config.SettingsGeneral.CacheDuration)*time.Hour).UnixNano(),
 		time.Now().UnixNano(),
 	)
@@ -575,18 +622,41 @@ func RefreshMediaCacheTitles(useseries bool, force bool) {
 		return
 	}
 	if count == 0 {
-		cache.storeMapTwoString(mapvar, nil, time.Now().Add(time.Duration(config.SettingsGeneral.CacheDuration)*time.Hour).UnixNano(),
-			time.Now().UnixNano())
+		cache.storeMapTwoString(
+			mapvar,
+			nil,
+			time.Now().
+				Add(time.Duration(config.SettingsGeneral.CacheDuration)*time.Hour).
+				UnixNano(),
+			time.Now().UnixNano(),
+		)
 		return
 	}
 	lastscan := cache.itemstwostring.GetLastscan(mapvar)
 	if !force && lastscan != 0 && lastscan > time.Now().Add(-1*time.Minute).UnixNano() {
 		return
 	}
-	logger.LogDynamicany3StrIntInt("debug", "refresh media titles cache", strcache, mapvar, "oldcount", len(item), "newcount", int(count))
+	logger.LogDynamicany3StrIntInt(
+		"debug",
+		"refresh media titles cache",
+		strcache,
+		mapvar,
+		"oldcount",
+		len(item),
+		"newcount",
+		int(count),
+	)
 	expires := cache.itemstwostring.GetExpire(mapvar)
-	logger.Logtype("debug", 0).Time("Expires", time.Unix(0, expires)).Msg("refresh media titles cache expires")
-	cache.storeMapTwoString(mapvar, Getrows0[DbstaticTwoStringOneInt](false, count+100, logger.GetStringsMap(useseries, logger.DBCacheDBTitles)),
+	logger.Logtype("debug", 0).
+		Time("Expires", time.Unix(0, expires)).
+		Msg("refresh media titles cache expires")
+	cache.storeMapTwoString(
+		mapvar,
+		Getrows0[DbstaticTwoStringOneInt](
+			false,
+			count+100,
+			logger.GetStringsMap(useseries, logger.DBCacheDBTitles),
+		),
 		time.Now().Add(time.Duration(config.SettingsGeneral.CacheDuration)*time.Hour).UnixNano(),
 		time.Now().UnixNano(),
 	)
@@ -610,8 +680,14 @@ func Refreshfilescached(useseries bool, force bool) {
 		return
 	}
 	if count == 0 {
-		cache.storeMap(mapvar, nil, time.Now().Add(time.Duration(config.SettingsGeneral.CacheDuration)*time.Hour).UnixNano(),
-			time.Now().UnixNano())
+		cache.storeMap(
+			mapvar,
+			nil,
+			time.Now().
+				Add(time.Duration(config.SettingsGeneral.CacheDuration)*time.Hour).
+				UnixNano(),
+			time.Now().UnixNano(),
+		)
 		return
 	}
 
@@ -620,7 +696,9 @@ func Refreshfilescached(useseries bool, force bool) {
 		return
 	}
 	logger.LogDynamicany0("debug", "refresh files cache")
-	cache.storeMap(mapvar, Getrows0[string](false, count+300, logger.GetStringsMap(useseries, logger.DBCacheFiles)),
+	cache.storeMap(
+		mapvar,
+		Getrows0[string](false, count+300, logger.GetStringsMap(useseries, logger.DBCacheFiles)),
 		time.Now().Add(time.Duration(config.SettingsGeneral.CacheDuration)*time.Hour).UnixNano(),
 		time.Now().UnixNano(),
 	)
@@ -642,13 +720,23 @@ func Refreshunmatchedcached(useseries bool, force bool) {
 	ExecNMap(useseries, "DBRemoveUnmatched", &hours24)
 	mapvar := logger.GetStringsMap(useseries, logger.CacheUnmatched)
 	item := GetCachedStringArr(mapvar, true, false)
-	count := Getdatarow1[uint](false, logger.GetStringsMap(useseries, logger.DBCountUnmatched), &config.SettingsGeneral.CacheDuration)
+	count := Getdatarow1[uint](
+		false,
+		logger.GetStringsMap(useseries, logger.DBCountUnmatched),
+		&config.SettingsGeneral.CacheDuration,
+	)
 	if !force && len(item) == int(count) {
 		return
 	}
 	if count == 0 {
-		cache.storeMap(mapvar, nil, time.Now().Add(time.Duration(config.SettingsGeneral.CacheDuration)*time.Hour).UnixNano(),
-			time.Now().UnixNano())
+		cache.storeMap(
+			mapvar,
+			nil,
+			time.Now().
+				Add(time.Duration(config.SettingsGeneral.CacheDuration)*time.Hour).
+				UnixNano(),
+			time.Now().UnixNano(),
+		)
 		return
 	}
 	lastscan := cache.itemsstring.GetLastscan(mapvar)
@@ -656,7 +744,14 @@ func Refreshunmatchedcached(useseries bool, force bool) {
 		return
 	}
 	logger.LogDynamicany0("debug", "refresh unmatched cache")
-	cache.storeMap(mapvar, Getrows1[string](false, count+300, logger.GetStringsMap(useseries, logger.DBCacheUnmatched), &config.SettingsGeneral.CacheDuration),
+	cache.storeMap(
+		mapvar,
+		Getrows1[string](
+			false,
+			count+300,
+			logger.GetStringsMap(useseries, logger.DBCacheUnmatched),
+			&config.SettingsGeneral.CacheDuration,
+		),
 		time.Now().Add(time.Duration(config.SettingsGeneral.CacheDuration)*time.Hour).UnixNano(),
 		time.Now().UnixNano(),
 	)
@@ -705,7 +800,11 @@ func RefreshCached(key string, force bool) {
 func GetCachedStringArr(key string, checkexpire bool, retry bool) []string {
 	if cache.itemsstring.Check(key) {
 		if checkexpire {
-			if cache.itemsstring.CheckExpires(key, config.SettingsGeneral.CacheAutoExtend, config.SettingsGeneral.CacheDuration) {
+			if cache.itemsstring.CheckExpires(
+				key,
+				config.SettingsGeneral.CacheAutoExtend,
+				config.SettingsGeneral.CacheDuration,
+			) {
 				return nil
 			}
 		}
@@ -720,7 +819,11 @@ func GetCachedStringArr(key string, checkexpire bool, retry bool) []string {
 func GetCachedTwoStringArr(key string, checkexpire bool, retry bool) []DbstaticTwoStringOneInt {
 	if cache.itemstwostring.Check(key) {
 		if checkexpire {
-			if cache.itemstwostring.CheckExpires(key, config.SettingsGeneral.CacheAutoExtend, config.SettingsGeneral.CacheDuration) {
+			if cache.itemstwostring.CheckExpires(
+				key,
+				config.SettingsGeneral.CacheAutoExtend,
+				config.SettingsGeneral.CacheDuration,
+			) {
 				return nil
 			}
 		}
@@ -735,7 +838,11 @@ func GetCachedTwoStringArr(key string, checkexpire bool, retry bool) []DbstaticT
 func GetCachedTwoIntArr(key string, checkexpire bool, retry bool) []DbstaticOneStringTwoInt {
 	if cache.itemstwoint.Check(key) {
 		if checkexpire {
-			if cache.itemstwoint.CheckExpires(key, config.SettingsGeneral.CacheAutoExtend, config.SettingsGeneral.CacheDuration) {
+			if cache.itemstwoint.CheckExpires(
+				key,
+				config.SettingsGeneral.CacheAutoExtend,
+				config.SettingsGeneral.CacheDuration,
+			) {
 				return nil
 			}
 		}
@@ -750,7 +857,11 @@ func GetCachedTwoIntArr(key string, checkexpire bool, retry bool) []DbstaticOneS
 func GetCachedThreeStringArr(key string, checkexpire bool, retry bool) []DbstaticThreeStringTwoInt {
 	if cache.itemsthreestring.Check(key) {
 		if checkexpire {
-			if cache.itemsthreestring.CheckExpires(key, config.SettingsGeneral.CacheAutoExtend, config.SettingsGeneral.CacheDuration) {
+			if cache.itemsthreestring.CheckExpires(
+				key,
+				config.SettingsGeneral.CacheAutoExtend,
+				config.SettingsGeneral.CacheDuration,
+			) {
 				return nil
 			}
 		}
@@ -807,7 +918,11 @@ func (c *tcache) storeMapTwoInt(s string, val []DbstaticOneStringTwoInt, expires
 // It first checks if the key already exists in the cache, and if so, updates the expiration,
 // value, and last scan time. Otherwise, it adds the new key-value pair to the cache.
 // The logger.LogDynamicany1String function is called to log a debug message.
-func (c *tcache) storeMapThreeString(s string, val []DbstaticThreeStringTwoInt, expires, lastscan int64) {
+func (c *tcache) storeMapThreeString(
+	s string,
+	val []DbstaticThreeStringTwoInt,
+	expires, lastscan int64,
+) {
 	logger.LogDynamicany1String("debug", "refresh cache store", strquery, s)
 
 	if cache.itemsthreestring.Check(s) {
@@ -823,7 +938,11 @@ func (c *tcache) storeMapThreeString(s string, val []DbstaticThreeStringTwoInt, 
 // It first checks if the key already exists in the cache, and if so, updates the expiration,
 // value, and last scan time. Otherwise, it adds the new key-value pair to the cache.
 // The logger.LogDynamicany1String function is called to log a debug message.
-func (c *tcache) storeMapTwoString(s string, val []DbstaticTwoStringOneInt, expires, lastscan int64) {
+func (c *tcache) storeMapTwoString(
+	s string,
+	val []DbstaticTwoStringOneInt,
+	expires, lastscan int64,
+) {
 	logger.LogDynamicany1String("debug", "refresh cache store", strquery, s)
 
 	if cache.itemstwostring.Check(s) {
@@ -843,7 +962,11 @@ func CheckcachedTitleHistory(useseries bool, file *string) bool {
 	if config.SettingsGeneral.UseFileCache {
 		return SlicesCacheContainsI(useseries, logger.CacheHistoryTitle, file)
 	}
-	return Getdatarow1[uint](false, logger.GetStringsMap(useseries, logger.DBCountHistoriesByTitle), file) >= 1
+	return Getdatarow1[uint](
+		false,
+		logger.GetStringsMap(useseries, logger.DBCountHistoriesByTitle),
+		file,
+	) >= 1
 }
 
 // CheckcachedMovieUrlHistory checks if the given movie URL exists in the
@@ -854,7 +977,11 @@ func CheckcachedURLHistory(useseries bool, file *string) bool {
 	if config.SettingsGeneral.UseFileCache {
 		return SlicesCacheContainsI(useseries, logger.CacheHistoryURL, file)
 	}
-	return Getdatarow1[uint](false, logger.GetStringsMap(useseries, logger.DBCountHistoriesByURL), file) >= 1
+	return Getdatarow1[uint](
+		false,
+		logger.GetStringsMap(useseries, logger.DBCountHistoriesByURL),
+		file,
+	) >= 1
 }
 
 // InvalidateImdbStmt iterates over the cache.items sync.Map and deletes any
@@ -884,14 +1011,27 @@ func getregex(key string) regexp.Regexp {
 	return *getregexP(key)
 }
 
+// getregexP returns a compiled regular expression based on the provided key.
+// It supports the following keys:
+//
+// "RegexSeriesTitle": Matches a series title with optional season and episode information.
+// "RegexSeriesTitleDate": Matches a series title with a date.
+// "RegexSeriesIdentifier": Matches a series identifier (season and episode or date).
+// For any other key, it returns a regular expression compiled from the key string.
 func getregexP(key string) *regexp.Regexp {
 	switch key {
 	case "RegexSeriesTitle":
-		return regexp.MustCompile(`^(.*)(?i)(?:(?:\.| - |-)s?[0-9]{1,4}((?:(?:(?: )?-?(?: )?[ex-][0-9]{1,3})+))|(\d{2,4}(?:\.|-| |_)\d{1,2}(?:\.|-| |_)\d{1,2})(?:[^0-9]|$))`)
+		return regexp.MustCompile(
+			`^(.*)(?i)(?:(?:\.| - |-)s?[0-9]{1,4}((?:(?:(?: )?-?(?: )?[ex-][0-9]{1,3})+))|(\d{2,4}(?:\.|-| |_)\d{1,2}(?:\.|-| |_)\d{1,2})(?:[^0-9]|$))`,
+		)
 	case "RegexSeriesTitleDate":
-		return regexp.MustCompile(`^(.*)(?i)(?:\.|-| |_)(\d{2,4}(?:\.|-| |_)\d{1,2}(?:\.|-| |_)\d{1,2})(?:[^0-9]|$)`)
+		return regexp.MustCompile(
+			`^(.*)(?i)(?:\.|-| |_)(\d{2,4}(?:\.|-| |_)\d{1,2}(?:\.|-| |_)\d{1,2})(?:[^0-9]|$)`,
+		)
 	case "RegexSeriesIdentifier":
-		return regexp.MustCompile(`(?i)s?[0-9]{1,4}((?:(?:(?: )?-?(?: )?[ex-][0-9]{1,3})+))|(\d{2,4}(?:\.|-| |_)\d{1,2}(?:\.|-| |_)\d{1,2})(?:\b|_)`)
+		return regexp.MustCompile(
+			`(?i)s?[0-9]{1,4}((?:(?:(?: )?-?(?: )?[ex-][0-9]{1,3})+))|(\d{2,4}(?:\.|-| |_)\d{1,2}(?:\.|-| |_)\d{1,2})(?:\b|_)`,
+		)
 	default:
 		return regexp.MustCompile(key)
 	}
@@ -926,13 +1066,12 @@ func RunRetRegex(key string, matchfor string, useall bool) []int {
 	rgx := globalCache.setRegexp(key, globalCache.defaultextension)
 	if useall {
 		matches := rgx.FindAllStringSubmatchIndex(matchfor, 10)
-		if !(len(matches) >= 1 && len(matches[len(matches)-1]) >= 1) {
+		if len(matches) < 1 || len(matches[len(matches)-1]) < 1 {
 			return nil
 		}
 		return matches[len(matches)-1]
-	} else {
-		return rgx.FindStringSubmatchIndex(matchfor)
 	}
+	return rgx.FindStringSubmatchIndex(matchfor)
 }
 
 // RegexGetMatchesFind checks if the regular expression matches the input
@@ -1043,6 +1182,8 @@ func NewCache(cleaningInterval, extension time.Duration) {
 	}
 }
 
+// SetStaticRegexp sets a static regular expression in the global cache.
+// The regular expression can be used for fast matching without compiling it every time.
 func SetStaticRegexp(key string) {
 	globalCache.setStaticRegexp(key)
 }

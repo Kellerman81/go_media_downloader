@@ -79,7 +79,11 @@ func (p *Poolobj[t]) Init(initcreate int, constructor func(*t), destructor func(
 //
 // destructor, if non-nil, is called whenever an object is removed from
 // the pool.
-func NewPool[t any](maxsize, initcreate int, constructor func(*t), destructor func(*t) bool) *Poolobj[t] {
+func NewPool[t any](
+	maxsize, initcreate int,
+	constructor func(*t),
+	destructor func(*t) bool,
+) *Poolobj[t] {
 	a := &Poolobj[t]{
 		objs:        make(chan *t, maxsize),
 		constructor: constructor,

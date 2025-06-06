@@ -168,7 +168,11 @@ type DbserieEpisode struct {
 // dbserie data and scan it into the Dbserie struct.
 // Returns an error if there was a problem retrieving the data.
 func (s *Dbserie) GetDbserieByIDP(id *uint) error {
-	return structscan1("select id,created_at,updated_at,seriename,aliases,season,status,firstaired,network,runtime,language,genre,overview,rating,siterating,siterating_count,slug,imdb_id,thetvdb_id,freebase_m_id,freebase_id,tvrage_id,facebook,instagram,twitter,banner,poster,fanart,identifiedby, trakt_id from dbseries where id = ?", s, id)
+	return structscan1(
+		"select id,created_at,updated_at,seriename,aliases,season,status,firstaired,network,runtime,language,genre,overview,rating,siterating,siterating_count,slug,imdb_id,thetvdb_id,freebase_m_id,freebase_id,tvrage_id,facebook,instagram,twitter,banner,poster,fanart,identifiedby, trakt_id from dbseries where id = ?",
+		s,
+		id,
+	)
 }
 
 // GetDbserieEpisodesByIDP retrieves a DbserieEpisode by ID. It takes a uint ID
@@ -177,7 +181,11 @@ func (s *Dbserie) GetDbserieByIDP(id *uint) error {
 // dbserie episode data and scan it into the DbserieEpisode struct.
 // Returns an error if there was a problem retrieving the data.
 func (u *DbserieEpisode) GetDbserieEpisodesByIDP(id *uint) error {
-	return structscan1("select id,created_at,updated_at,episode,season,identifier,title,first_aired,overview,poster,runtime,dbserie_id from dbserie_episodes where id = ?", u, id)
+	return structscan1(
+		"select id,created_at,updated_at,episode,season,identifier,title,first_aired,overview,poster,runtime,dbserie_id from dbserie_episodes where id = ?",
+		u,
+		id,
+	)
 }
 
 // GetSerieByIDP retrieves a Serie by ID. It takes a uint ID
@@ -186,7 +194,11 @@ func (u *DbserieEpisode) GetDbserieEpisodesByIDP(id *uint) error {
 // serie data and scan it into the Serie struct.
 // Returns an error if there was a problem retrieving the data.
 func (u *Serie) GetSerieByIDP(id *uint) error {
-	return structscan1("select id,created_at,updated_at,listname,rootpath,dbserie_id,dont_upgrade,dont_search from series where id = ?", u, id)
+	return structscan1(
+		"select id,created_at,updated_at,listname,rootpath,dbserie_id,dont_upgrade,dont_search from series where id = ?",
+		u,
+		id,
+	)
 }
 
 // GetSerieEpisodesByIDP retrieves a SerieEpisode by ID. It takes a uint ID
@@ -195,5 +207,9 @@ func (u *Serie) GetSerieByIDP(id *uint) error {
 // serie episode data and scan it into the SerieEpisode struct.
 // Returns an error if there was a problem retrieving the data.
 func (u *SerieEpisode) GetSerieEpisodesByIDP(id *uint) error {
-	return structscan1("select id,created_at,updated_at,blacklisted,quality_reached,quality_profile,missing,dont_upgrade,dont_search,dbserie_episode_id,serie_id,dbserie_id from serie_episodes where id = ?", u, id)
+	return structscan1(
+		"select id,created_at,updated_at,blacklisted,quality_reached,quality_profile,missing,dont_upgrade,dont_search,dbserie_episode_id,serie_id,dbserie_id from serie_episodes where id = ?",
+		u,
+		id,
+	)
 }

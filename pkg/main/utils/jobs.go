@@ -31,7 +31,12 @@ func insertjobhistory(jobtype string, cfgp *config.MediaTypeConfig) int64 {
 	if !cfgp.Useseries {
 		jobcategory = logger.StrMovie
 	}
-	result, err := database.ExecNid("Insert into job_histories (job_type, job_group, job_category, started) values (?, ?, ?, datetime('now','localtime'))", jobtype, &cfgp.Name, &jobcategory)
+	result, err := database.ExecNid(
+		"Insert into job_histories (job_type, job_group, job_category, started) values (?, ?, ?, datetime('now','localtime'))",
+		jobtype,
+		&cfgp.Name,
+		&jobcategory,
+	)
 	if err == nil {
 		return result
 	}
@@ -106,7 +111,7 @@ func InitialFillMovies() {
 				logger.LogDynamicanyErr("error", "Import new movies failed", err)
 			}
 		}
-		database.Exec1(database.QueryUpdateHistory, dbid)
+		database.Exec1(database.QueryUpdateHistory, &dbid)
 	}
 
 	ctx := context.Background()
@@ -120,7 +125,7 @@ func InitialFillMovies() {
 		for idxi := range media.Data {
 			newfilesloop(ctx, media, &media.Data[idxi])
 		}
-		database.Exec1(database.QueryUpdateHistory, dbid)
+		database.Exec1(database.QueryUpdateHistory, &dbid)
 	}
 	ctx.Done()
 
@@ -131,7 +136,11 @@ func InitialFillMovies() {
 // It inserts a record into the job history table, executes the IMDB update,
 // reloads the IMDB database, and updates the job history record when done.
 func FillImdb() {
-	dbinsert, _ := database.ExecNid("Insert into job_histories (job_type, job_group, job_category, started) values (?, 'RefreshImdb', ?, datetime('now','localtime'))", &logger.StrData, &logger.StrMovie)
+	dbinsert, _ := database.ExecNid(
+		"Insert into job_histories (job_type, job_group, job_category, started) values (?, 'RefreshImdb', ?, datetime('now','localtime'))",
+		&logger.StrData,
+		&logger.StrMovie,
+	)
 	data, err := parser.ExecCmdString[[]byte]("", logger.StrImdb)
 	if err == nil {
 		logger.LogDynamicany1String("info", "imdb response", "response", data)
@@ -147,11 +156,22 @@ func FillImdb() {
 // media list ID and importing the file data.
 func newfilesloop(ctx context.Context, cfgp *config.MediaTypeConfig, data *config.MediaDataConfig) {
 	if data.CfgPath == nil {
-		logger.LogDynamicany1String("error", "config not found", logger.StrConfig, data.TemplatePath)
+		logger.LogDynamicany1String(
+			"error",
+			"config not found",
+			logger.StrConfig,
+			data.TemplatePath,
+		)
 		return
 	}
 	if cfgp == nil {
-		logger.LogDynamicany1StringErr("error", "parse failed cfgp", logger.ErrCfgpNotFound, logger.StrFile, data.TemplatePath)
+		logger.LogDynamicany1StringErr(
+			"error",
+			"parse failed cfgp",
+			logger.ErrCfgpNotFound,
+			logger.StrFile,
+			data.TemplatePath,
+		)
 		return
 	}
 
@@ -207,7 +227,13 @@ func newfilesloop(ctx context.Context, cfgp *config.MediaTypeConfig, data *confi
 
 			err := parser.GetDBIDs(m, cfgp, true)
 			if err != nil {
-				logger.LogDynamicany1StringErr("warn", logger.ParseFailedIDs, err, logger.StrFile, fpath)
+				logger.LogDynamicany1StringErr(
+					"warn",
+					logger.ParseFailedIDs,
+					err,
+					logger.StrFile,
+					fpath,
+				)
 				return
 			}
 
@@ -234,7 +260,13 @@ func newfilesloop(ctx context.Context, cfgp *config.MediaTypeConfig, data *confi
 			}
 
 			if err != nil {
-				logger.LogDynamicany1StringErr("error", "Error Importing", err, logger.StrFile, fpath)
+				logger.LogDynamicany1StringErr(
+					"error",
+					"Error Importing",
+					err,
+					logger.StrFile,
+					fpath,
+				)
 			}
 		})
 		return nil
@@ -271,12 +303,17 @@ func SingleJobs(job, cfgpstr, listname string, force bool, key uint32) {
 	dbinsert := insertjobhistory(job, cfgp)
 
 	idxlist := -2
-	if job == logger.StrData || job == logger.StrRss || job == logger.StrReachedFlag || job == logger.StrClearHistory || job == logger.StrFeeds || job == logger.StrCheckMissing || job == logger.StrCheckMissingFlag {
+	if job == logger.StrData || job == logger.StrRss || job == logger.StrReachedFlag ||
+		job == logger.StrClearHistory ||
+		job == logger.StrFeeds ||
+		job == logger.StrCheckMissing ||
+		job == logger.StrCheckMissingFlag {
 		if job == logger.StrRss {
 			ctx := context.Background()
 			defer ctx.Done()
 			for idx := range cfgp.ListsQualities {
-				searcher.NewSearcher(cfgp, config.SettingsQuality[cfgp.ListsQualities[idx]], logger.StrRss, nil).SearchRSS(ctx, cfgp, config.SettingsQuality[cfgp.ListsQualities[idx]], true, true)
+				searcher.NewSearcher(cfgp, config.SettingsQuality[cfgp.ListsQualities[idx]], logger.StrRss, nil).
+					SearchRSS(ctx, cfgp, config.SettingsQuality[cfgp.ListsQualities[idx]], true, true)
 			}
 			ctx.Done()
 		} else {
@@ -294,14 +331,19 @@ func SingleJobs(job, cfgpstr, listname string, force bool, key uint32) {
 	logjob("Ended Job", cfgpstr, listname, job)
 
 	if dbinsert != 0 {
-		database.Exec1(database.QueryUpdateHistory, dbinsert)
+		database.Exec1(database.QueryUpdateHistory, &dbinsert)
 	}
 }
 
 // logjob logs information about a job, including the action, configuration, list name, and job name.
 // It also logs the current number of goroutines.
 func logjob(act, cfgp, listname, job string) {
-	logger.Logtype("info", 1).Str(logger.StrConfig, cfgp).Str(logger.StrJob, job).Str(logger.StrListname, listname).Int(NumGo, runtime.NumGoroutine()).Msg(act)
+	logger.Logtype("info", 1).
+		Str(logger.StrConfig, cfgp).
+		Str(logger.StrJob, job).
+		Str(logger.StrListname, listname).
+		Int(NumGo, runtime.NumGoroutine()).
+		Msg(act)
 }
 
 // Refreshcache refreshes various database caches used for performance.
@@ -354,25 +396,47 @@ func runjoblistfunc(job string, cfgp *config.MediaTypeConfig, listid int) {
 		searcher.SearchSeriesRSSSeasonsAll(cfgp)
 	case "refreshinc":
 		if !cfgp.Useseries {
-			refreshmovies(cfgp, database.Getrows0[string](false, 100, "select distinct dbmovies.imdb_id from dbmovies inner join movies on movies.dbmovie_id = dbmovies.id group by dbmovies.imdb_id order by dbmovies.updated_at desc limit 100"))
+			refreshmovies(
+				cfgp,
+				database.Getrows0[string](
+					false,
+					100,
+					"select distinct dbmovies.imdb_id from dbmovies inner join movies on movies.dbmovie_id = dbmovies.id group by dbmovies.imdb_id order by dbmovies.updated_at desc limit 100",
+				),
+			)
 		} else {
 			refreshseries(cfgp, database.Getrows0[database.DbstaticTwoStringOneRInt](false, 20, "select seriename, (Select listname from series where dbserie_id=dbseries.id limit 1), thetvdb_id from dbseries where status = 'Continuing' and thetvdb_id != 0 order by updated_at asc limit 20"))
 		}
 	case "refresh":
 		if !cfgp.Useseries {
-			refreshmovies(cfgp, database.Getrows0[string](false, database.Getdatarow0(false, "select count() from dbmovies"), "select distinct dbmovies.imdb_id from dbmovies inner join movies on movies.dbmovie_id = dbmovies.id group by dbmovies.imdb_id"))
+			refreshmovies(
+				cfgp,
+				database.Getrows0[string](
+					false,
+					database.Getdatarow0(false, "select count() from dbmovies"),
+					"select distinct dbmovies.imdb_id from dbmovies inner join movies on movies.dbmovie_id = dbmovies.id group by dbmovies.imdb_id",
+				),
+			)
 		} else {
 			refreshseries(cfgp, database.Getrows0[database.DbstaticTwoStringOneRInt](false, database.Getdatarow0(false, "select count() from dbseries"), "select seriename, (Select listname from series where dbserie_id=dbseries.id limit 1), thetvdb_id from dbseries where thetvdb_id != 0"))
 		}
 	case logger.StrClearHistory:
 		if !cfgp.Useseries {
-			database.Exec1("delete from movie_histories where movie_id in (Select id from movies where listname = ? COLLATE NOCASE)", &cfgp.Lists[listid].Name)
+			database.Exec1(
+				"delete from movie_histories where movie_id in (Select id from movies where listname = ? COLLATE NOCASE)",
+				&cfgp.Lists[listid].Name,
+			)
 		} else {
 			database.Exec1("delete from serie_episode_histories where serie_id in (Select id from series where listname = ? COLLATE NOCASE)", &cfgp.Lists[listid].Name)
 		}
 	case logger.StrFeeds:
 		if cfgp.Lists[listid].CfgList == nil {
-			logger.LogDynamicany1String("error", "import feeds failed - no cfgp list", logger.StrListname, cfgp.Lists[listid].Name)
+			logger.LogDynamicany1String(
+				"error",
+				"import feeds failed - no cfgp list",
+				logger.StrListname,
+				cfgp.Lists[listid].Name,
+			)
 		} else {
 			var err error
 			if !cfgp.Useseries {
@@ -386,7 +450,14 @@ func runjoblistfunc(job string, cfgp *config.MediaTypeConfig, listid int) {
 		}
 	case logger.StrRss:
 		return
-	case logger.StrSearchMissingFull, logger.StrSearchMissingInc, logger.StrSearchUpgradeFull, logger.StrSearchUpgradeInc, logger.StrSearchMissingFullTitle, logger.StrSearchMissingIncTitle, logger.StrSearchUpgradeFullTitle, logger.StrSearchUpgradeIncTitle:
+	case logger.StrSearchMissingFull,
+		logger.StrSearchMissingInc,
+		logger.StrSearchUpgradeFull,
+		logger.StrSearchUpgradeInc,
+		logger.StrSearchMissingFullTitle,
+		logger.StrSearchMissingIncTitle,
+		logger.StrSearchUpgradeFullTitle,
+		logger.StrSearchUpgradeIncTitle:
 		var searchinterval uint16
 		var searchmissing, searchtitle bool
 		if strings.Contains(job, "missing") {
@@ -418,7 +489,11 @@ func runjoblistfunc(job string, cfgp *config.MediaTypeConfig, listid int) {
 // or missing files based on the provided config, search type, and interval.
 // It builds a database query, executes it to get a list of media IDs,
 // then calls MediaSearch on each ID to perform the actual search.
-func jobsearchmedia(cfgp *config.MediaTypeConfig, searchmissing, searchtitle bool, searchinterval uint16) {
+func jobsearchmedia(
+	cfgp *config.MediaTypeConfig,
+	searchmissing, searchtitle bool,
+	searchinterval uint16,
+) {
 	var scaninterval int
 	var scandatepre int
 	if cfgp.DataLen >= 1 && cfgp.Data[0].CfgPath != nil {
@@ -474,7 +549,8 @@ func jobsearchmedia(cfgp *config.MediaTypeConfig, searchmissing, searchtitle boo
 	str := bld.String()
 	ctx := context.Background()
 	for _, tbl := range database.GetrowsNuncached[database.DbstaticOneStringOneUInt](database.GetdatarowNArg(false, logger.JoinStrings("select count() ", str), args.Arr), logger.JoinStrings(logger.GetStringsMap(cfgp.Useseries, logger.SearchGenSelect), str), args.Arr) {
-		searcher.NewSearcher(cfgp, cfgp.GetMediaQualityConfigStr(tbl.Str), "", nil).MediaSearch(ctx, cfgp, tbl.Num, searchtitle, true, true)
+		searcher.NewSearcher(cfgp, cfgp.GetMediaQualityConfigStr(tbl.Str), "", nil).
+			MediaSearch(ctx, cfgp, tbl.Num, searchtitle, true, true)
 	}
 }
 
@@ -483,8 +559,17 @@ func jobsearchmedia(cfgp *config.MediaTypeConfig, searchmissing, searchtitle boo
 // the database to set missing flags on media items with no files.
 // It handles both movies and series based on the useseries flag.
 func checkmissing(useseries bool, listcfg *config.MediaListsConfig) {
-	arrfiles := database.Getrows0[database.DbstaticOneStringTwoInt](false, database.Getdatarow0(false, logger.GetStringsMap(useseries, logger.DBCountFilesByLocation)), logger.GetStringsMap(useseries, logger.DBIDsFilesByLocation))
-	arr := database.Getrows1size[string](false, logger.GetStringsMap(useseries, logger.DBCountFilesByList), logger.GetStringsMap(useseries, logger.DBLocationFilesByList), &listcfg.Name)
+	arrfiles := database.Getrows0[database.DbstaticOneStringTwoInt](
+		false,
+		database.Getdatarow0(false, logger.GetStringsMap(useseries, logger.DBCountFilesByLocation)),
+		logger.GetStringsMap(useseries, logger.DBIDsFilesByLocation),
+	)
+	arr := database.Getrows1size[string](
+		false,
+		logger.GetStringsMap(useseries, logger.DBCountFilesByList),
+		logger.GetStringsMap(useseries, logger.DBLocationFilesByList),
+		&listcfg.Name,
+	)
 	for idx := range arr {
 		if scanner.CheckFileExist(arr[idx]) {
 			continue
@@ -507,8 +592,16 @@ func checkmissing(useseries bool, listcfg *config.MediaListsConfig) {
 // and the file location that was found missing.
 func checkmissingfiles(useseries bool, row *string, arrfiles []database.DbstaticOneStringTwoInt) {
 	subquerycount := logger.GetStringsMap(useseries, logger.DBCountFilesByMediaID)
-	deletestmt := logger.JoinStrings("delete from ", logger.GetStringsMap(useseries, logger.TableFiles), " where id = ?")
-	updatestmt := logger.JoinStrings("update ", logger.GetStringsMap(useseries, logger.TableMedia), " set missing = 1 where id = ?")
+	deletestmt := logger.JoinStrings(
+		"delete from ",
+		logger.GetStringsMap(useseries, logger.TableFiles),
+		" where id = ?",
+	)
+	updatestmt := logger.JoinStrings(
+		"update ",
+		logger.GetStringsMap(useseries, logger.TableMedia),
+		" set missing = 1 where id = ?",
+	)
 	var err error
 	for idx := range arrfiles {
 		if arrfiles[idx].Str != *row {
@@ -534,7 +627,12 @@ func checkmissingflag(useseries bool, listcfg *config.MediaListsConfig) {
 
 	var counter int
 
-	arr := database.Getrows1size[database.DbstaticOneIntOneBool](false, logger.GetStringsMap(useseries, logger.DBCountMediaByList), logger.GetStringsMap(useseries, logger.DBIDMissingMediaByList), &listcfg.Name)
+	arr := database.Getrows1size[database.DbstaticOneIntOneBool](
+		false,
+		logger.GetStringsMap(useseries, logger.DBCountMediaByList),
+		logger.GetStringsMap(useseries, logger.DBIDMissingMediaByList),
+		&listcfg.Name,
+	)
 	for idx := range arr {
 		database.Scanrows1dyn(false, querycount, &counter, &arr[idx].Num)
 		if counter >= 1 && arr[idx].Bl {

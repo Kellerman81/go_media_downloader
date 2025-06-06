@@ -17,6 +17,10 @@ var (
 	pushovermessagesapi = "https://api.pushover.net/1/messages.json"
 )
 
+// SendPushoverMessage sends a Pushover message with the given message, title, and recipient.
+// The message must not be empty and must be less than 1024 characters.
+// The title must be less than 250 characters.
+// The function returns an error if the message or title are too long, or if there is an error sending the message.
 func (c *client) SendPushoverMessage(message, title, recipient string) error {
 	if message == "" {
 		return errors.New("message empty")
@@ -44,27 +48,45 @@ func (c *client) SendPushoverMessage(message, title, recipient string) error {
 	if title != "" {
 		data.Set("title", title)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, pushovermessagesapi, strings.NewReader(data.Encode()))
+	req, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodPost,
+		pushovermessagesapi,
+		strings.NewReader(data.Encode()),
+	)
 	if err != nil {
-		logger.LogDynamicany1StringErr("error", "failed to get url", err, logger.StrURL, pushovermessagesapi)
+		logger.LogDynamicany1StringErr(
+			"error",
+			"failed to get url",
+			err,
+			logger.StrURL,
+			pushovermessagesapi,
+		)
 		return err
 	}
 	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 
 	resp, err := c.Client.client.Do(req)
 	if err != nil {
-		logger.LogDynamicany1StringErr("error", "failed to process url", err, logger.StrURL, pushovermessagesapi)
+		logger.LogDynamicany1StringErr(
+			"error",
+			"failed to process url",
+			err,
+			logger.StrURL,
+			pushovermessagesapi,
+		)
 		return err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		if c.Client.addwait(req, resp) {
-			logger.LogDynamicany1String("error", "failed to process url", logger.StrURL, pushovermessagesapi)
-		} else {
-			logger.LogDynamicany1String("error", "failed to process url", logger.StrURL, pushovermessagesapi)
-		}
-
+		c.Client.addwait(req, resp)
+		logger.LogDynamicany1String(
+			"error",
+			"failed to process url",
+			logger.StrURL,
+			pushovermessagesapi,
+		)
 		return logger.ErrToWait
 	}
 	return nil
@@ -73,7 +95,10 @@ func (c *client) SendPushoverMessage(message, title, recipient string) error {
 // GetPushoverclient returns a Pushover client instance for the given API key. If a client for the API key does not exist, it creates a new one and adds it to the cache.
 func GetPushoverclient(apikey string) *client {
 	if !pushOverClients.Check(apikey) {
-		d := &client{apikey: apikey, Lim: slidingwindow.NewLimiter(10*time.Second, 3)} // Client: pushover.New(apikey)}
+		d := &client{
+			apikey: apikey,
+			Lim:    slidingwindow.NewLimiter(10*time.Second, 3),
+		} // Client: pushover.New(apikey)}
 		d.Client = NewClient("pushover", true, false, &d.Lim, false, nil, 30)
 		pushOverClients.Add(apikey, d, 0, false, 0)
 	}

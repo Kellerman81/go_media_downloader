@@ -33,10 +33,19 @@ func InitScheduler() {
 				worker.CloseWorkerPools()
 			}
 			worker.RemoveQueueEntry(key)
-			backupto := logger.JoinStrings("./backup/data.db.", database.GetVersion(), logger.StrDot, time.Now().Format("20060102_150405"))
+			backupto := logger.JoinStrings(
+				"./backup/data.db.",
+				database.GetVersion(),
+				logger.StrDot,
+				time.Now().Format("20060102_150405"),
+			)
 			database.Backup(&backupto, config.SettingsGeneral.MaxDatabaseBackups)
 			if config.SettingsGeneral.DatabaseBackupStopTasks {
-				worker.InitWorkerPools(config.SettingsGeneral.WorkerSearch, config.SettingsGeneral.WorkerFiles, config.SettingsGeneral.WorkerMetadata)
+				worker.InitWorkerPools(
+					config.SettingsGeneral.WorkerSearch,
+					config.SettingsGeneral.WorkerFiles,
+					config.SettingsGeneral.WorkerMetadata,
+				)
 				worker.StartCronWorker()
 			}
 		},
@@ -78,19 +87,43 @@ func InitScheduler() {
 					worker.RemoveQueueEntry(key)
 				},
 				logger.StrSearchMissingIncTitle: func(key uint32) {
-					utils.SingleJobs(logger.StrSearchMissingIncTitle, cfgp.NamePrefix, "", false, key)
+					utils.SingleJobs(
+						logger.StrSearchMissingIncTitle,
+						cfgp.NamePrefix,
+						"",
+						false,
+						key,
+					)
 					worker.RemoveQueueEntry(key)
 				},
 				logger.StrSearchMissingFullTitle: func(key uint32) {
-					utils.SingleJobs(logger.StrSearchMissingFullTitle, cfgp.NamePrefix, "", false, key)
+					utils.SingleJobs(
+						logger.StrSearchMissingFullTitle,
+						cfgp.NamePrefix,
+						"",
+						false,
+						key,
+					)
 					worker.RemoveQueueEntry(key)
 				},
 				logger.StrSearchUpgradeIncTitle: func(key uint32) {
-					utils.SingleJobs(logger.StrSearchUpgradeIncTitle, cfgp.NamePrefix, "", false, key)
+					utils.SingleJobs(
+						logger.StrSearchUpgradeIncTitle,
+						cfgp.NamePrefix,
+						"",
+						false,
+						key,
+					)
 					worker.RemoveQueueEntry(key)
 				},
 				logger.StrSearchUpgradeFullTitle: func(key uint32) {
-					utils.SingleJobs(logger.StrSearchUpgradeFullTitle, cfgp.NamePrefix, "", false, key)
+					utils.SingleJobs(
+						logger.StrSearchUpgradeFullTitle,
+						cfgp.NamePrefix,
+						"",
+						false,
+						key,
+					)
 					worker.RemoveQueueEntry(key)
 				},
 				logger.StrRss: func(key uint32) {
@@ -219,14 +252,28 @@ func InitScheduler() {
 			var usequeuename string
 			var intervalstr, cronstr string
 			switch str {
-			case logger.StrDataFull, logger.StrStructure, logger.StrCheckMissing, logger.StrCheckMissingFlag, logger.StrUpgradeFlag:
+			case logger.StrDataFull,
+				logger.StrStructure,
+				logger.StrCheckMissing,
+				logger.StrCheckMissingFlag,
+				logger.StrUpgradeFlag:
 				usequeuename = "Data"
-			case logger.StrFeeds, "refreshseriesfull", "refreshmoviesfull", "refreshseriesinc", "refreshmoviesinc":
+			case logger.StrFeeds,
+				"refreshseriesfull",
+				"refreshmoviesfull",
+				"refreshseriesinc",
+				"refreshmoviesinc":
 				usequeuename = "Feeds"
 			default:
 				usequeuename = "Search"
 			}
-			jobname := logger.JoinStrings(str, logger.Underscore, groupnamestr, logger.Underscore, name)
+			jobname := logger.JoinStrings(
+				str,
+				logger.Underscore,
+				groupnamestr,
+				logger.Underscore,
+				name,
+			)
 			switch str {
 			case "refreshseriesfull":
 				intervalstr = config.SettingsScheduler["Default"].IntervalFeedsRefreshSeriesFull
@@ -334,8 +381,6 @@ func InitScheduler() {
 			name = "Backup Database"
 			jobname = "BackupDatabase"
 		default:
-			intervalstr = ""
-			cronstr = ""
 			continue
 		}
 		if intervalstr == "" && cronstr == "" {
@@ -349,13 +394,24 @@ func InitScheduler() {
 // schedulerdispatch dispatches jobs to the worker queues based on the provided interval or cron schedule.
 // It handles converting interval durations to cron expressions and dispatching the jobs.
 // It also handles any errors from the dispatching.
-func schedulerdispatch(cfgpstr string, intervalstr string, cronstr string, name string, queue string, jobname string) {
+func schedulerdispatch(
+	cfgpstr string,
+	intervalstr string,
+	cronstr string,
+	name string,
+	queue string,
+	jobname string,
+) {
 	if intervalstr != "" {
 		if config.SettingsGeneral.UseCronInsteadOfInterval {
 			rand.New(rand.NewSource(time.Now().UnixNano()))
 			if strings.ContainsRune(intervalstr, 'd') {
 				intervalstr = strings.Replace(intervalstr, "d", "", 1)
-				cronstr = "0 " + strconv.Itoa(rand.Intn(60)) + logger.StrSpace + strconv.Itoa(rand.Intn(24)) + " */" + intervalstr + " * *"
+				cronstr = "0 " + strconv.Itoa(
+					rand.Intn(60),
+				) + logger.StrSpace + strconv.Itoa(
+					rand.Intn(24),
+				) + " */" + intervalstr + " * *"
 			} else if strings.ContainsRune(intervalstr, 'h') {
 				intervalstr = strings.Replace(intervalstr, "h", "", 1)
 				cronstr = "0 " + strconv.Itoa(rand.Intn(60)) + " */" + intervalstr + " * * *"

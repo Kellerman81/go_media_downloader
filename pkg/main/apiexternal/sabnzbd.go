@@ -25,7 +25,12 @@ func SendToSabnzbd(server, apikey, urlv, category, nzbname string, priority int)
 	if auth != "apikey" {
 		return errors.New("sabnzbd instance must be using apikey authentication")
 	}
-	_, err = s.AddURL(sabnzbd.AddNzbURL(urlv), sabnzbd.AddNzbName(nzbname), sabnzbd.AddNzbCategory(category), sabnzbd.AddNzbPriority(priority))
+	_, err = s.AddURL(
+		sabnzbd.AddNzbURL(urlv),
+		sabnzbd.AddNzbName(nzbname),
+		sabnzbd.AddNzbCategory(category),
+		sabnzbd.AddNzbPriority(priority),
+	)
 	if err != nil {
 		return err
 	}

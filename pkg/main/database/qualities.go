@@ -26,13 +26,18 @@ type Qualities struct {
 // after applying any reorder rules that match the given quality string type and name.
 // It checks each QualityReorderConfig in the reordergroup, looking for matches on
 // ReorderType and Name. If found, it will update the priority based on Newpriority.
-func (qual *Qualities) Gettypeidprioritysingle(qualitystringtype string, reorder *config.QualityConfig) int {
+func (qual *Qualities) Gettypeidprioritysingle(
+	qualitystringtype string,
+	reorder *config.QualityConfig,
+) int {
 	priority := qual.Priority
 	for idx := range reorder.QualityReorder {
-		if (reorder.QualityReorder[idx].ReorderType == qualitystringtype || strings.EqualFold(reorder.QualityReorder[idx].ReorderType, qualitystringtype)) && (reorder.QualityReorder[idx].Name == qual.Name || strings.EqualFold(reorder.QualityReorder[idx].Name, qual.Name)) {
+		if (reorder.QualityReorder[idx].ReorderType == qualitystringtype || strings.EqualFold(reorder.QualityReorder[idx].ReorderType, qualitystringtype)) &&
+			(reorder.QualityReorder[idx].Name == qual.Name || strings.EqualFold(reorder.QualityReorder[idx].Name, qual.Name)) {
 			priority = reorder.QualityReorder[idx].Newpriority
 		}
-		if (reorder.QualityReorder[idx].ReorderType == "position" || strings.EqualFold(reorder.QualityReorder[idx].ReorderType, "position")) && (reorder.QualityReorder[idx].Name == qualitystringtype || strings.EqualFold(reorder.QualityReorder[idx].Name, qualitystringtype)) {
+		if (reorder.QualityReorder[idx].ReorderType == "position" || strings.EqualFold(reorder.QualityReorder[idx].ReorderType, "position")) &&
+			(reorder.QualityReorder[idx].Name == qualitystringtype || strings.EqualFold(reorder.QualityReorder[idx].Name, qualitystringtype)) {
 			priority *= reorder.QualityReorder[idx].Newpriority
 		}
 	}

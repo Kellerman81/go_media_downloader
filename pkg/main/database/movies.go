@@ -108,7 +108,7 @@ type Dbmovie struct {
 	Backdrop         string
 	Poster           string
 	Slug             string
-	ReleaseDate      sql.NullTime `db:"release_date" json:"release_date" time_format:"2006-01-02" time_utc:"1"`
+	ReleaseDate      sql.NullTime `db:"release_date"      json:"release_date" time_format:"2006-01-02" time_utc:"1"`
 	CreatedAt        time.Time    `db:"created_at"`
 	UpdatedAt        time.Time    `db:"updated_at"`
 	Popularity       float32
@@ -157,7 +157,17 @@ func (movie *Dbmovie) GetImdbTitle(overwrite bool) {
 		return
 	}
 	var imdbdata ImdbTitle
-	GetdatarowArgsImdb("select primary_title, start_year, is_adult, genres, original_title, runtime_minutes, slug from imdb_titles where tconst = ?", &movie.ImdbID, &imdbdata.PrimaryTitle, &imdbdata.StartYear, &imdbdata.IsAdult, &imdbdata.Genres, &imdbdata.OriginalTitle, &imdbdata.RuntimeMinutes, &imdbdata.Slug)
+	GetdatarowArgsImdb(
+		"select primary_title, start_year, is_adult, genres, original_title, runtime_minutes, slug from imdb_titles where tconst = ?",
+		&movie.ImdbID,
+		&imdbdata.PrimaryTitle,
+		&imdbdata.StartYear,
+		&imdbdata.IsAdult,
+		&imdbdata.Genres,
+		&imdbdata.OriginalTitle,
+		&imdbdata.RuntimeMinutes,
+		&imdbdata.Slug,
+	)
 
 	if (movie.Title == "" || overwrite) && imdbdata.PrimaryTitle != "" {
 		movie.Title = imdbdata.PrimaryTitle
@@ -174,9 +184,16 @@ func (movie *Dbmovie) GetImdbTitle(overwrite bool) {
 	if (movie.OriginalTitle == "" || overwrite) && imdbdata.OriginalTitle != "" {
 		movie.OriginalTitle = imdbdata.OriginalTitle
 	}
-	if (movie.Runtime == 0 || movie.Runtime == 1 || movie.Runtime == 2 || movie.Runtime == 3 || movie.Runtime == 4 || movie.Runtime == 60 || movie.Runtime == 90 || movie.Runtime == 120 || overwrite) && imdbdata.RuntimeMinutes != 0 {
-		if movie.Runtime != 0 && (imdbdata.RuntimeMinutes == 1 || imdbdata.RuntimeMinutes == 2 || imdbdata.RuntimeMinutes == 3 || imdbdata.RuntimeMinutes == 4) {
-			logger.LogDynamicany1String("debug", "skipped imdb movie runtime for", logger.StrImdb, movie.ImdbID)
+	if (movie.Runtime == 0 || movie.Runtime == 1 || movie.Runtime == 2 || movie.Runtime == 3 || movie.Runtime == 4 || movie.Runtime == 60 || movie.Runtime == 90 || movie.Runtime == 120 || overwrite) &&
+		imdbdata.RuntimeMinutes != 0 {
+		if movie.Runtime != 0 &&
+			(imdbdata.RuntimeMinutes == 1 || imdbdata.RuntimeMinutes == 2 || imdbdata.RuntimeMinutes == 3 || imdbdata.RuntimeMinutes == 4) {
+			logger.LogDynamicany1String(
+				"debug",
+				"skipped imdb movie runtime for",
+				logger.StrImdb,
+				movie.ImdbID,
+			)
 		} else {
 			logger.LogDynamicany1String("debug", "set imdb movie runtime for", logger.StrImdb, movie.ImdbID)
 			movie.Runtime = imdbdata.RuntimeMinutes
@@ -224,7 +241,12 @@ func (movie *Dbmovie) GetImdbRating(overwrite bool) {
 		return
 	}
 	var imdbratedata ImdbRatings
-	GetdatarowArgsImdb("select num_votes, average_rating from imdb_ratings where tconst = ?", &movie.ImdbID, &imdbratedata.NumVotes, &imdbratedata.AverageRating)
+	GetdatarowArgsImdb(
+		"select num_votes, average_rating from imdb_ratings where tconst = ?",
+		&movie.ImdbID,
+		&imdbratedata.NumVotes,
+		&imdbratedata.AverageRating,
+	)
 	if (movie.VoteAverage == 0 || overwrite) && imdbratedata.AverageRating != 0 {
 		movie.VoteAverage = imdbratedata.AverageRating
 	}
@@ -239,18 +261,27 @@ func (movie *Dbmovie) GetImdbRating(overwrite bool) {
 // movie data and scan it into the Movie struct.
 // Returns an error if there was a problem retrieving the data.
 func (u *Movie) GetMoviesByIDP(id *uint) error {
-	return structscan1("select id,created_at,updated_at,blacklisted,quality_reached,quality_profile,missing,dont_upgrade,dont_search,listname,rootpath,dbmovie_id from movies where id = ?", u, id)
+	return structscan1(
+		"select id,created_at,updated_at,blacklisted,quality_reached,quality_profile,missing,dont_upgrade,dont_search,listname,rootpath,dbmovie_id from movies where id = ?",
+		u,
+		id,
+	)
 }
 
 // ChecknzbtitleB checks if the nzbtitle matches the movietitle and year.
 // It compares the movietitle and nzbtitle directly, and also tries
 // appending/removing the year, converting to slugs, etc.
 // It is used to fuzzy match nzb titles to movie info during parsing.
-func ChecknzbtitleB(movietitle, movietitlesluga, nzbtitle string, allowpm1 bool, yearu uint16) bool {
+func ChecknzbtitleB(
+	movietitle, movietitlesluga, nzbtitle string,
+	allowpm1 bool,
+	yearu uint16,
+) bool {
 	if movietitle == "" {
 		return false
 	}
-	if movietitle == nzbtitle || strings.EqualFold(movietitle, nzbtitle) || logger.ContainsI(nzbtitle, movietitle) {
+	if movietitle == nzbtitle || strings.EqualFold(movietitle, nzbtitle) ||
+		logger.ContainsI(nzbtitle, movietitle) {
 		if yearu == 0 {
 			return true
 		}

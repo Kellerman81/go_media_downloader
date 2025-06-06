@@ -12,6 +12,10 @@ import (
 	wrapper "github.com/pkg/errors"
 )
 
+// SendToQBittorrent sends a torrent to the qBittorrent client using the provided
+// connection details and options. It creates a new qBittorrent client connection,
+// logs in using the provided username and password, and then downloads the torrent
+// from the given URL with the specified save path and paused state.
 func SendToQBittorrent(host, port, username, password, urlv, dlpath, addpaused string) error {
 	cl := NewQBittorrentClient("http://" + host + ":" + port + "/")
 	_, err := cl.Login(username, password)
@@ -92,7 +96,11 @@ func (client *qbtClient) post(endpoint string, opts map[string]string) (*http.Re
 }
 
 // postMultipart will perform a multiple part POST request.
-func (client *qbtClient) postMultipart(endpoint string, buffer bytes.Buffer, contentType string) (*http.Response, error) {
+func (client *qbtClient) postMultipart(
+	endpoint string,
+	buffer bytes.Buffer,
+	contentType string,
+) (*http.Response, error) {
 	urlv := client.URL + endpoint
 	req, err := http.NewRequest(http.MethodPost, urlv, &buffer)
 	if err != nil {
@@ -120,7 +128,10 @@ func writeOptions(writer *multipart.Writer, opts map[string]string) {
 }
 
 // postMultipartData will perform a multiple part POST request without a file.
-func (client *qbtClient) postMultipartData(endpoint string, opts map[string]string) (*http.Response, error) {
+func (client *qbtClient) postMultipartData(
+	endpoint string,
+	opts map[string]string,
+) (*http.Response, error) {
 	var buffer bytes.Buffer
 	writer := multipart.NewWriter(&buffer)
 
@@ -175,7 +186,10 @@ func (client *qbtClient) Login(username, password string) (loggedIn bool, err er
 }
 
 // DownloadFromLink starts downloading a torrent from a link.
-func (client *qbtClient) DownloadFromLink(link string, options map[string]string) (*http.Response, error) {
+func (client *qbtClient) DownloadFromLink(
+	link string,
+	options map[string]string,
+) (*http.Response, error) {
 	options["urls"] = link
 	return client.postMultipartData("torrents/add", options)
 }

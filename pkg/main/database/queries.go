@@ -135,6 +135,7 @@ var (
 	DBLogLevel  = "Info"
 )
 
+// GetMutex returns the shared read-write mutex used for database operations.
 func GetMutex() *sync.RWMutex {
 	return &readWriteMu
 }
@@ -289,7 +290,11 @@ func StructscanT[t any](imdb bool, size uint, querystring string, args ...any) [
 // dbmovie data and scan it into the Dbmovie struct.
 // Returns an error if there was a problem retrieving the data.
 func GetDbmovieByID(id *uint) (*Dbmovie, error) {
-	return structscan[Dbmovie]("select id,created_at,updated_at,title,year,adult,budget,genres,original_language,original_title,overview,popularity,revenue,runtime,spoken_languages,status,tagline,vote_average,vote_count,moviedb_id,imdb_id,freebase_m_id,freebase_id,facebook_id,instagram_id,twitter_id,url,backdrop,poster,slug,trakt_id from dbmovies where id = ?", false, id)
+	return structscan[Dbmovie](
+		"select id,created_at,updated_at,title,year,adult,budget,genres,original_language,original_title,overview,popularity,revenue,runtime,spoken_languages,status,tagline,vote_average,vote_count,moviedb_id,imdb_id,freebase_m_id,freebase_id,facebook_id,instagram_id,twitter_id,url,backdrop,poster,slug,trakt_id from dbmovies where id = ?",
+		false,
+		id,
+	)
 }
 
 // QueryDbmovie queries the dbmovies table using the provided Querywithargs struct and arguments.
@@ -303,7 +308,7 @@ func QueryDbmovie(qu Querywithargs, args ...any) []Dbmovie {
 	qu.Table = "dbmovies"
 	qu.defaultcolumns = "id,created_at,updated_at,title,release_date,year,adult,budget,genres,original_language,original_title,overview,popularity,revenue,runtime,spoken_languages,status,tagline,vote_average,vote_count,moviedb_id,imdb_id,freebase_m_id,freebase_id,facebook_id,instagram_id,twitter_id,url,backdrop,poster,slug,trakt_id"
 	if qu.QueryString == "" {
-		qu.buildquery(false)
+		qu.buildquery()
 	}
 	return StructscanT[Dbmovie](false, qu.Limit, qu.QueryString, args...)
 }
@@ -319,7 +324,7 @@ func QueryDbmovieTitle(qu Querywithargs, args ...any) []DbmovieTitle {
 	qu.Table = "dbmovie_titles"
 	qu.defaultcolumns = "id,created_at,updated_at,dbmovie_id,title,slug,region"
 	if qu.QueryString == "" {
-		qu.buildquery(false)
+		qu.buildquery()
 	}
 	return StructscanT[DbmovieTitle](false, qu.Limit, qu.QueryString, args...)
 }
@@ -330,7 +335,11 @@ func QueryDbmovieTitle(qu Querywithargs, args ...any) []DbmovieTitle {
 // dbserie data and scan it into the Dbserie struct.
 // Returns an error if there was a problem retrieving the data.
 func GetDbserieByID(id *uint) (*Dbserie, error) {
-	return structscan[Dbserie]("select id,created_at,updated_at,seriename,aliases,season,status,firstaired,network,runtime,language,genre,overview,rating,siterating,siterating_count,slug,imdb_id,thetvdb_id,freebase_m_id,freebase_id,tvrage_id,facebook,instagram,twitter,banner,poster,fanart,identifiedby, trakt_id from dbseries where id = ?", false, id)
+	return structscan[Dbserie](
+		"select id,created_at,updated_at,seriename,aliases,season,status,firstaired,network,runtime,language,genre,overview,rating,siterating,siterating_count,slug,imdb_id,thetvdb_id,freebase_m_id,freebase_id,tvrage_id,facebook,instagram,twitter,banner,poster,fanart,identifiedby, trakt_id from dbseries where id = ?",
+		false,
+		id,
+	)
 }
 
 // QueryDbserie queries the dbseries table using the provided Querywithargs struct and arguments.
@@ -345,7 +354,7 @@ func QueryDbserie(qu Querywithargs, args ...any) []Dbserie {
 	qu.Table = "dbseries"
 	qu.defaultcolumns = "id,created_at,updated_at,seriename,aliases,season,status,firstaired,network,runtime,language,genre,overview,rating,siterating,siterating_count,slug,imdb_id,thetvdb_id,freebase_m_id,freebase_id,tvrage_id,facebook,instagram,twitter,banner,poster,fanart,identifiedby, trakt_id"
 	if qu.QueryString == "" {
-		qu.buildquery(false)
+		qu.buildquery()
 	}
 	return StructscanT[Dbserie](false, qu.Limit, qu.QueryString, args...)
 }
@@ -364,7 +373,7 @@ func QueryDbserieEpisodes(qu Querywithargs, args ...any) []DbserieEpisode {
 	qu.Table = "dbserie_episodes"
 	qu.defaultcolumns = "id,created_at,updated_at,episode,season,identifier,title,first_aired,overview,poster,runtime,dbserie_id"
 	if qu.QueryString == "" {
-		qu.buildquery(false)
+		qu.buildquery()
 	}
 	return StructscanT[DbserieEpisode](false, qu.Limit, qu.QueryString, args...)
 }
@@ -383,7 +392,7 @@ func QueryDbserieAlternates(qu Querywithargs, args ...any) []DbserieAlternate {
 	qu.Table = "dbserie_alternates"
 	qu.defaultcolumns = "id,created_at,updated_at,title,slug,region,dbserie_id"
 	if qu.QueryString == "" {
-		qu.buildquery(false)
+		qu.buildquery()
 	}
 	return StructscanT[DbserieAlternate](false, qu.Limit, qu.QueryString, args...)
 }
@@ -397,7 +406,7 @@ func GetSeries(qu Querywithargs, args ...any) (*Serie, error) {
 	qu.Table = logger.StrSeries
 	qu.defaultcolumns = "id,created_at,updated_at,listname,rootpath,dbserie_id,dont_upgrade,dont_search"
 	if qu.QueryString == "" {
-		qu.buildquery(false)
+		qu.buildquery()
 	}
 	return structscan[Serie](qu.QueryString, false, args...)
 }
@@ -411,7 +420,7 @@ func GetSerieEpisodes(qu Querywithargs, args ...any) (*SerieEpisode, error) {
 	qu.Table = "serie_episodes"
 	qu.defaultcolumns = "id,created_at,updated_at,blacklisted,quality_reached,quality_profile,missing,dont_upgrade,dont_search,dbserie_episode_id,serie_id,dbserie_id"
 	if qu.QueryString == "" {
-		qu.buildquery(false)
+		qu.buildquery()
 	}
 	return structscan[SerieEpisode](qu.QueryString, false, args...)
 }
@@ -420,7 +429,16 @@ func GetSerieEpisodes(qu Querywithargs, args ...any) (*SerieEpisode, error) {
 // It takes a pointer to a string containing the listname to search for.
 // It returns a slice of SerieEpisode structs matching the listname.
 func QuerySerieEpisodes(args *string) []SerieEpisode {
-	return StructscanT[SerieEpisode](false, Getdatarow1[uint](false, "select count() from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE)", args), "select id, quality_reached, quality_profile from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE)", args)
+	return StructscanT[SerieEpisode](
+		false,
+		Getdatarow1[uint](
+			false,
+			"select count() from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE)",
+			args,
+		),
+		"select id, quality_reached, quality_profile from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE)",
+		args,
+	)
 }
 
 // GetMovies retrieves a Movie struct based on the provided Querywithargs.
@@ -432,7 +450,7 @@ func GetMovies(qu Querywithargs, args ...any) (*Movie, error) {
 	qu.Table = "movies"
 	qu.defaultcolumns = "id,created_at,updated_at,blacklisted,quality_reached,quality_profile,missing,dont_upgrade,dont_search,listname,rootpath,dbmovie_id"
 	if qu.QueryString == "" {
-		qu.buildquery(false)
+		qu.buildquery()
 	}
 	return structscan[Movie](qu.QueryString, false, args...)
 }
@@ -441,7 +459,16 @@ func GetMovies(qu Querywithargs, args ...any) (*Movie, error) {
 // It takes a string containing the listname to search for.
 // It returns a slice of Movie structs matching the listname.
 func QueryMovies(args *string) []Movie {
-	return StructscanT[Movie](false, Getdatarow1[uint](false, "select count() from movies where listname = ? COLLATE NOCASE", args), "select id, quality_reached, quality_profile from movies where listname = ? COLLATE NOCASE", args)
+	return StructscanT[Movie](
+		false,
+		Getdatarow1[uint](
+			false,
+			"select count() from movies where listname = ? COLLATE NOCASE",
+			args,
+		),
+		"select id, quality_reached, quality_profile from movies where listname = ? COLLATE NOCASE",
+		args,
+	)
 }
 
 // QueryJobHistory retrieves JobHistory records matching the query arguments.
@@ -456,7 +483,7 @@ func QueryJobHistory(qu Querywithargs, args ...any) []JobHistory {
 	qu.Table = "job_histories"
 	qu.defaultcolumns = "id,created_at,updated_at,job_type,job_category,job_group,started,ended"
 	if qu.QueryString == "" {
-		qu.buildquery(false)
+		qu.buildquery()
 	}
 	return StructscanT[JobHistory](false, qu.Limit, qu.QueryString, args...)
 }
@@ -473,7 +500,7 @@ func QuerySerieFileUnmatched(qu Querywithargs, args ...any) []SerieFileUnmatched
 	qu.Table = "serie_file_unmatcheds"
 	qu.defaultcolumns = "id,created_at,updated_at,listname,filepath,last_checked,parsed_data"
 	if qu.QueryString == "" {
-		qu.buildquery(false)
+		qu.buildquery()
 	}
 	return StructscanT[SerieFileUnmatched](false, qu.Limit, qu.QueryString, args...)
 }
@@ -490,7 +517,7 @@ func QueryMovieFileUnmatched(qu Querywithargs, args ...any) []MovieFileUnmatched
 	qu.Table = "movie_file_unmatcheds"
 	qu.defaultcolumns = "id,created_at,updated_at,listname,filepath,last_checked,parsed_data"
 	if qu.QueryString == "" {
-		qu.buildquery(false)
+		qu.buildquery()
 	}
 	return StructscanT[MovieFileUnmatched](false, qu.Limit, qu.QueryString, args...)
 }
@@ -506,7 +533,7 @@ func QueryResultMovies(qu Querywithargs, args ...any) []ResultMovies {
 	qu.Table = "movies"
 	qu.defaultcolumns = `dbmovies.id as dbmovie_id,dbmovies.created_at,dbmovies.updated_at,dbmovies.title,dbmovies.release_date,dbmovies.year,dbmovies.adult,dbmovies.budget,dbmovies.genres,dbmovies.original_language,dbmovies.original_title,dbmovies.overview,dbmovies.popularity,dbmovies.revenue,dbmovies.runtime,dbmovies.spoken_languages,dbmovies.status,dbmovies.tagline,dbmovies.vote_average,dbmovies.vote_count,dbmovies.moviedb_id,dbmovies.imdb_id,dbmovies.freebase_m_id,dbmovies.freebase_id,dbmovies.facebook_id,dbmovies.instagram_id,dbmovies.twitter_id,dbmovies.url,dbmovies.backdrop,dbmovies.poster,dbmovies.slug,dbmovies.trakt_id,movies.listname,movies.lastscan,movies.blacklisted,movies.quality_reached,movies.quality_profile,movies.rootpath,movies.missing,movies.id as id`
 	if qu.QueryString == "" {
-		qu.buildquery(false)
+		qu.buildquery()
 	}
 	return StructscanT[ResultMovies](false, qu.Limit, qu.QueryString, args...)
 }
@@ -522,7 +549,7 @@ func QueryResultSeries(qu Querywithargs, args ...any) []ResultSeries {
 	qu.Table = logger.StrSeries
 	qu.defaultcolumns = `dbseries.id as dbserie_id,dbseries.created_at,dbseries.updated_at,dbseries.seriename,dbseries.aliases,dbseries.season,dbseries.status,dbseries.firstaired,dbseries.network,dbseries.runtime,dbseries.language,dbseries.genre,dbseries.overview,dbseries.rating,dbseries.siterating,dbseries.siterating_count,dbseries.slug,dbseries.imdb_id,dbseries.thetvdb_id,dbseries.freebase_m_id,dbseries.freebase_id,dbseries.tvrage_id,dbseries.facebook,dbseries.instagram,dbseries.twitter,dbseries.banner,dbseries.poster,dbseries.fanart,dbseries.identifiedby,dbseries.trakt_id,series.listname,series.rootpath,series.id as id`
 	if qu.QueryString == "" {
-		qu.buildquery(false)
+		qu.buildquery()
 	}
 	return StructscanT[ResultSeries](false, qu.Limit, qu.QueryString, args...)
 }
@@ -539,7 +566,7 @@ func QueryResultSerieEpisodes(qu Querywithargs, args ...any) []ResultSerieEpisod
 	qu.Table = "serie_episodes"
 	qu.defaultcolumns = `dbserie_episodes.id as dbserie_episode_id,dbserie_episodes.created_at,dbserie_episodes.updated_at,dbserie_episodes.episode,dbserie_episodes.season,dbserie_episodes.identifier,dbserie_episodes.title,dbserie_episodes.first_aired,dbserie_episodes.overview,dbserie_episodes.poster,dbserie_episodes.dbserie_id,dbserie_episodes.runtime,series.listname,series.rootpath,serie_episodes.lastscan,serie_episodes.blacklisted,serie_episodes.quality_reached,serie_episodes.quality_profile,serie_episodes.missing,serie_episodes.id as id`
 	if qu.QueryString == "" {
-		qu.buildquery(false)
+		qu.buildquery()
 	}
 	return StructscanT[ResultSerieEpisodes](false, qu.Limit, qu.QueryString, args...)
 }
@@ -547,7 +574,7 @@ func QueryResultSerieEpisodes(qu Querywithargs, args ...any) []ResultSerieEpisod
 // Buildquery constructs the SQL query string from the Querywithargs fields.
 // It handles adding the SELECT columns, FROM table, JOINs, WHERE, ORDER BY
 // and LIMIT clauses based on the configured fields.
-func (qu *Querywithargs) buildquery(count bool) {
+func (qu *Querywithargs) buildquery() {
 	bld := logger.PlAddBuffer.Get()
 	defer logger.PlAddBuffer.Put(bld)
 	bld.WriteString("select ")
@@ -556,15 +583,11 @@ func (qu *Querywithargs) buildquery(count bool) {
 	} else if logger.ContainsI(qu.defaultcolumns, qu.Table+logger.StrDot) {
 		bld.WriteString(qu.defaultcolumns)
 	} else {
-		if count {
-			bld.WriteString("count()")
+		if qu.InnerJoin != "" {
+			bld.WriteString(qu.Table)
+			bld.WriteString(".*")
 		} else {
-			if qu.InnerJoin != "" {
-				bld.WriteString(qu.Table)
-				bld.WriteString(".*")
-			} else {
-				bld.WriteString(qu.defaultcolumns)
-			}
+			bld.WriteString(qu.defaultcolumns)
 		}
 	}
 	bld.WriteString(" from ")
@@ -636,7 +659,11 @@ func Scanrows3dyn(imdb bool, querystring string, obj, arg *uint, arg2, arg3 *str
 func ScanrowsNArr(imdb bool, querystring string, obj any, args []any) {
 	readWriteMu.RLock()
 	defer readWriteMu.RUnlock()
-	logSQLErrorReset(globalCache.getXStmt(querystring, imdb).QueryRowContext(sqlCTX, args...).Scan(obj), obj, querystring)
+	logSQLErrorReset(
+		globalCache.getXStmt(querystring, imdb).QueryRowContext(sqlCTX, args...).Scan(obj),
+		obj,
+		querystring,
+	)
 }
 
 // checkerrorvalue is a helper function that sets the value of the provided object to a zero value
@@ -857,6 +884,9 @@ func logSQLError(err error, querystring string) {
 	}
 }
 
+// logSQLErrorReset logs an SQL error, checks the error value, and then calls logSQLError.
+// If the error is not nil, it calls checkerrorvalue with the provided 's' argument.
+// It then calls logSQLError with the error and the provided querystring argument.
 func logSQLErrorReset(err error, s any, querystring string) {
 	if err != nil {
 		checkerrorvalue(s)
@@ -870,7 +900,10 @@ func logSQLErrorReset(err error, s any, querystring string) {
 func GetdatarowArgs(querystring string, arg any, objs ...any) {
 	readWriteMu.RLock()
 	defer readWriteMu.RUnlock()
-	logSQLError(globalCache.getXStmt(querystring, false).QueryRowContext(sqlCTX, arg).Scan(objs...), querystring)
+	logSQLError(
+		globalCache.getXStmt(querystring, false).QueryRowContext(sqlCTX, arg).Scan(objs...),
+		querystring,
+	)
 }
 
 // GetdatarowArgsImdb executes the given querystring with the provided argument
@@ -880,7 +913,10 @@ func GetdatarowArgs(querystring string, arg any, objs ...any) {
 func GetdatarowArgsImdb(querystring string, arg any, objs ...any) {
 	readWriteMu.RLock()
 	defer readWriteMu.RUnlock()
-	logSQLError(globalCache.getXStmt(querystring, true).QueryRowContext(sqlCTX, arg).Scan(objs...), querystring)
+	logSQLError(
+		globalCache.getXStmt(querystring, true).QueryRowContext(sqlCTX, arg).Scan(objs...),
+		querystring,
+	)
 }
 
 // Getrows1size executes the given querystring with the provided argument against the database,
@@ -982,7 +1018,11 @@ func getrows(querystring string, imdb bool, arg, arg2 any, arg3 []any) *sql.Rows
 // If the query executes successfully, it calls queryGenericsT to convert the rows to the specified type and returns the slice.
 // If the query fails with an error other than sql.ErrNoRows, it logs the error using logger.LogDynamicany.
 // If the query fails with sql.ErrNoRows, it returns a nil slice.
-func GetrowsNuncached[t DbstaticTwoUint | DbstaticOneStringOneUInt | uint](size uint, querystring string, args []any) []t {
+func GetrowsNuncached[t DbstaticTwoUint | DbstaticOneStringOneUInt | uint](
+	size uint,
+	querystring string,
+	args []any,
+) []t {
 	readWriteMu.RLock()
 	defer readWriteMu.RUnlock()
 	rows, err := dbData.QueryContext(sqlCTX, querystring, args...)
@@ -1104,7 +1144,18 @@ func InsertArray(table string, columns []string, values ...any) (sql.Result, err
 	if len(columns) != len(values) {
 		return nil, errors.New("wrong number of columns")
 	}
-	return exec("insert into "+table+" ("+strings.Join(columns, ",")+") values (?"+strings.Repeat(",?", len(columns)-1)+")", nil, nil, values)
+	return exec(
+		"insert into "+table+" ("+strings.Join(
+			columns,
+			",",
+		)+") values (?"+strings.Repeat(
+			",?",
+			len(columns)-1,
+		)+")",
+		nil,
+		nil,
+		values,
+	)
 }
 
 // UpdateArray updates rows in the given database table by setting the provided
@@ -1188,11 +1239,21 @@ func DBIntegrityCheck() string {
 // Getentryalternatetitlesdirect retrieves a slice of DbstaticTwoStringOneInt objects that represent alternate titles for the movie with the given database ID. If the UseMediaCache setting is enabled, it will retrieve the titles from the cache. Otherwise, it will retrieve the titles directly from the database.
 func Getentryalternatetitlesdirect(dbid *uint, useseries bool) []DbstaticTwoStringOneInt {
 	if config.SettingsGeneral.UseMediaCache {
-		return GetCachedTwoStringArr(logger.GetStringsMap(useseries, logger.CacheMediaTitles), false, true)
+		return GetCachedTwoStringArr(
+			logger.GetStringsMap(useseries, logger.CacheMediaTitles),
+			false,
+			true,
+		)
 	}
-	return Getrows1size[DbstaticTwoStringOneInt](false, logger.GetStringsMap(useseries, logger.DBCountDBTitlesDBID), logger.GetStringsMap(useseries, logger.DBDistinctDBTitlesDBID), dbid)
+	return Getrows1size[DbstaticTwoStringOneInt](
+		false,
+		logger.GetStringsMap(useseries, logger.DBCountDBTitlesDBID),
+		logger.GetStringsMap(useseries, logger.DBDistinctDBTitlesDBID),
+		dbid,
+	)
 }
 
+// GetDbstaticTwoStringOneInt returns a slice of DbstaticTwoStringOneInt objects that match the given id. It first finds the index of the first match, then sorts the slice and returns the subslice containing all matches.
 func GetDbstaticTwoStringOneInt(s []DbstaticTwoStringOneInt, id uint) []DbstaticTwoStringOneInt {
 	if len(s) == 0 {
 		return nil
@@ -1254,7 +1315,11 @@ func ExchangeImdbDB() {
 }
 
 // ChecknzbtitleC checks if the given nzbtitle matches the title or alternate title of the movie. It also allows checking for the movie title with the year before and after the given year.
-func (movie *DbstaticTwoStringOneInt) ChecknzbtitleC(nzbtitle string, allowpm1 bool, yearu uint16) bool {
+func (movie *DbstaticTwoStringOneInt) ChecknzbtitleC(
+	nzbtitle string,
+	allowpm1 bool,
+	yearu uint16,
+) bool {
 	if strings.EqualFold(movie.Str1, nzbtitle) {
 		return true
 	}

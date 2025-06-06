@@ -52,7 +52,9 @@ import (
 func Benchmark1Concat(b *testing.B) { // 132 ns/op
 	// ss := []string{"sadsadsa", "dsadsakdas;k", "8930984"}
 	for i := 0; i < b.N; i++ {
-		s := "sadsadsa" + "dsadsakdas;k" + "8930984" + "8930984" + "8930984" + "8930984" + strconv.Itoa(23)
+		s := "sadsadsa" + "dsadsakdas;k" + "8930984" + "8930984" + "8930984" + "8930984" + strconv.Itoa(
+			23,
+		)
 		_ = s
 	}
 }
@@ -60,7 +62,16 @@ func Benchmark1Concat(b *testing.B) { // 132 ns/op
 func Benchmark1Printf(b *testing.B) { // 56.7 ns/op
 	// ss := []string{"sadsadsa", "dsadsakdas;k", "8930984"}
 	for i := 0; i < b.N; i++ {
-		s := fmt.Sprintf("%s%s%s%s%s%s%d", "sadsadsa", "dsadsakdas;k", "8930984", "8930984", "8930984", "8930984", 23)
+		s := fmt.Sprintf(
+			"%s%s%s%s%s%s%d",
+			"sadsadsa",
+			"dsadsakdas;k",
+			"8930984",
+			"8930984",
+			"8930984",
+			"8930984",
+			23,
+		)
 		_ = s
 	}
 }
@@ -103,11 +114,39 @@ func Init() {
 		fmt.Println(err)
 		os.Exit(1)
 	}
-	apiexternal.NewOmdbClient(config.SettingsGeneral.OmdbAPIKey, config.SettingsGeneral.OmdbLimiterSeconds, config.SettingsGeneral.OmdbLimiterCalls, config.SettingsGeneral.OmdbDisableTLSVerify, config.SettingsGeneral.OmdbTimeoutSeconds)
-	apiexternal.NewTmdbClient(config.SettingsGeneral.TheMovieDBApiKey, config.SettingsGeneral.TmdbLimiterSeconds, config.SettingsGeneral.TmdbLimiterCalls, config.SettingsGeneral.TheMovieDBDisableTLSVerify, config.SettingsGeneral.TmdbTimeoutSeconds)
-	apiexternal.NewTvdbClient(config.SettingsGeneral.TvdbLimiterSeconds, config.SettingsGeneral.TvdbLimiterCalls, config.SettingsGeneral.TvdbDisableTLSVerify, config.SettingsGeneral.TvdbTimeoutSeconds)
-	apiexternal.NewTraktClient(config.SettingsGeneral.TraktClientID, config.SettingsGeneral.TraktClientSecret, config.SettingsGeneral.TraktLimiterSeconds, config.SettingsGeneral.TraktLimiterCalls, config.SettingsGeneral.TraktDisableTLSVerify, config.SettingsGeneral.TraktTimeoutSeconds)
-	worker.InitWorkerPools(config.SettingsGeneral.WorkerSearch, config.SettingsGeneral.WorkerFiles, config.SettingsGeneral.WorkerMetadata)
+	apiexternal.NewOmdbClient(
+		config.SettingsGeneral.OmdbAPIKey,
+		config.SettingsGeneral.OmdbLimiterSeconds,
+		config.SettingsGeneral.OmdbLimiterCalls,
+		config.SettingsGeneral.OmdbDisableTLSVerify,
+		config.SettingsGeneral.OmdbTimeoutSeconds,
+	)
+	apiexternal.NewTmdbClient(
+		config.SettingsGeneral.TheMovieDBApiKey,
+		config.SettingsGeneral.TmdbLimiterSeconds,
+		config.SettingsGeneral.TmdbLimiterCalls,
+		config.SettingsGeneral.TheMovieDBDisableTLSVerify,
+		config.SettingsGeneral.TmdbTimeoutSeconds,
+	)
+	apiexternal.NewTvdbClient(
+		config.SettingsGeneral.TvdbLimiterSeconds,
+		config.SettingsGeneral.TvdbLimiterCalls,
+		config.SettingsGeneral.TvdbDisableTLSVerify,
+		config.SettingsGeneral.TvdbTimeoutSeconds,
+	)
+	apiexternal.NewTraktClient(
+		config.SettingsGeneral.TraktClientID,
+		config.SettingsGeneral.TraktClientSecret,
+		config.SettingsGeneral.TraktLimiterSeconds,
+		config.SettingsGeneral.TraktLimiterCalls,
+		config.SettingsGeneral.TraktDisableTLSVerify,
+		config.SettingsGeneral.TraktTimeoutSeconds,
+	)
+	worker.InitWorkerPools(
+		config.SettingsGeneral.WorkerSearch,
+		config.SettingsGeneral.WorkerFiles,
+		config.SettingsGeneral.WorkerMetadata,
+	)
 
 	database.InitImdbdb()
 
@@ -147,10 +186,22 @@ func TestCache(t *testing.T) {
 	database.RefreshMediaCacheDB(true, true)
 	database.RefreshMediaCacheTitles(true, true)
 
-	t.Log(database.GetCachedThreeStringArr(logger.GetStringsMap(true, logger.CacheDBMedia), true, true))
+	t.Log(
+		database.GetCachedThreeStringArr(
+			logger.GetStringsMap(true, logger.CacheDBMedia),
+			true,
+			true,
+		),
+	)
 	t.Log(database.GetCachedTwoIntArr(logger.GetStringsMap(true, logger.CacheMedia), true, true))
 
-	t.Log(database.GetCachedTwoStringArr(logger.GetStringsMap(true, logger.CacheMediaTitles), true, true))
+	t.Log(
+		database.GetCachedTwoStringArr(
+			logger.GetStringsMap(true, logger.CacheMediaTitles),
+			true,
+			true,
+		),
+	)
 }
 
 func TestMain(t *testing.T) {
@@ -318,7 +369,15 @@ func TestGetCsv(t *testing.T) {
 }
 
 func buildPrioStr(r uint, q uint, c uint, a uint) string {
-	return strconv.Itoa(int(r)) + "_" + strconv.Itoa(int(q)) + "_" + strconv.Itoa(int(c)) + "_" + strconv.Itoa(int(a))
+	return strconv.Itoa(
+		int(r),
+	) + "_" + strconv.Itoa(
+		int(q),
+	) + "_" + strconv.Itoa(
+		int(c),
+	) + "_" + strconv.Itoa(
+		int(a),
+	)
 }
 
 func BenchmarkPrio1(b *testing.B) {
@@ -332,7 +391,12 @@ func BenchmarkPrio1(b *testing.B) {
 func BenchmarkClose1(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		_ = apiexternal.Nzbwithprio{WantedTitle: "ffff", WantedAlternates: []database.DbstaticTwoStringOneInt{{Str1: "ffff", Str2: "ffff"}}, Quality: "test", Listname: "test"}
+		_ = apiexternal.Nzbwithprio{
+			WantedTitle:      "ffff",
+			WantedAlternates: []database.DbstaticTwoStringOneInt{{Str1: "ffff", Str2: "ffff"}},
+			Quality:          "test",
+			Listname:         "test",
+		}
 		// a.Close()
 	}
 	PrintMemUsage()
@@ -341,7 +405,12 @@ func BenchmarkClose1(b *testing.B) {
 func BenchmarkClose2(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		_ = apiexternal.Nzbwithprio{WantedTitle: "ffff", WantedAlternates: []database.DbstaticTwoStringOneInt{{Str1: "ffff", Str2: "ffff"}}, Quality: "test", Listname: "test"}
+		_ = apiexternal.Nzbwithprio{
+			WantedTitle:      "ffff",
+			WantedAlternates: []database.DbstaticTwoStringOneInt{{Str1: "ffff", Str2: "ffff"}},
+			Quality:          "test",
+			Listname:         "test",
+		}
 		// a.Close()
 	}
 	PrintMemUsage()
@@ -533,21 +602,26 @@ func TestGetUrl(t *testing.T) {
 func TestGetTmdb(t *testing.T) {
 	Init()
 	t.Run("test", func(t *testing.T) {
-		var movie database.Dbmovie
-		movie.ImdbID = "tt5971474"
-		movie.MoviedbID = 447277
-		metadata.Getmoviemetadata(&movie, true)
+		// var movie database.Dbmovie
+		// movie.ImdbID = "tt5971474"
+		// movie.MoviedbID = 447277
+		// metadata.Getmoviemetadata(&movie, true)
 		// tmdbfind, _ := apiexternal.TmdbAPI.FindImdb("tt7214954")
 		// t.Log(tmdbfind)
 		// tmdbtitle, _ := apiexternal.GetTmdbMovieTitles(585511)
 		// t.Log(tmdbtitle)
-		movie.GetImdbTitle(true)
-		t.Log(movie.Runtime)
-		tmdbdetails, _ := apiexternal.GetTmdbMovie(447277)
-		t.Log(tmdbdetails.Runtime)
-		tt := "tt5971474"
-		traktdetails, _ := apiexternal.GetTraktMovie(tt)
-		t.Log(traktdetails.Runtime)
+		// movie.GetImdbTitle(true)
+		// t.Log(movie.Runtime)
+		// tmdbdetails, _ := apiexternal.GetTmdbMovie(447277)
+		// t.Log(tmdbdetails.Runtime)
+		// tt := "tt5971474"
+		// traktdetails, _ := apiexternal.GetTraktMovie(tt)
+		// t.Log(traktdetails.Runtime)
+
+		lst, err := apiexternal.GetTmdbList(8515441)
+		t.Log(err)
+		t.Log(lst)
+		t.Log(len(lst.Items))
 		// var dbserie database.Dbserie
 		// dbserie.ThetvdbID = 85352
 		// dbserie.GetMetadata("", true, true, true, true)
@@ -713,19 +787,38 @@ func TestMime(t *testing.T) {
 func TestSQL(t *testing.T) {
 	Init()
 	t.Run("test", func(t *testing.T) {
-		a := database.GetrowsN[database.DbstaticThreeStringTwoInt](false, database.Getdatarow0(false, "select count() from dbmovies")+100,
-			"select title, slug, imdb_id, year, id from dbmovies")
+		a := database.GetrowsN[database.DbstaticThreeStringTwoInt](
+			false,
+			database.Getdatarow0(false, "select count() from dbmovies")+100,
+			"select title, slug, imdb_id, year, id from dbmovies",
+		)
 		t.Log(a)
-		t.Log(database.Getdatarow1[int](false, "select id from dbmovies ORDER BY [id] ASC limit ?", 1))
+		t.Log(
+			database.Getdatarow1[int](
+				false,
+				"select id from dbmovies ORDER BY [id] ASC limit ?",
+				1,
+			),
+		)
 		t.Log(database.Getdatarow0(false, "select count() from dbmovies"))
 		var i int
 		database.Scanrows1dyn(false, "select id from dbmovies ORDER BY [id] ASC limit ?", &i, 1)
 		t.Log(i)
 
-		b := database.GetrowsN[string](false, database.Getdatarow0(false, "select count() from dbmovies")+100,
-			"select distinct title from dbmovies")
+		b := database.GetrowsN[string](
+			false,
+			database.Getdatarow0(false, "select count() from dbmovies")+100,
+			"select distinct title from dbmovies",
+		)
 		t.Log(b)
-		ab := database.Getrows0[database.DbstaticTwoStringOneInt](false, database.Getdatarow0(false, "select count() from dbserie_alternates where title != ''")+100, "select title, slug, dbserie_id from dbserie_alternates where title != ''")
+		ab := database.Getrows0[database.DbstaticTwoStringOneInt](
+			false,
+			database.Getdatarow0(
+				false,
+				"select count() from dbserie_alternates where title != ''",
+			)+100,
+			"select title, slug, dbserie_id from dbserie_alternates where title != ''",
+		)
 		t.Log(ab)
 		t.Log(len(ab))
 		t.Log(cap(ab))
@@ -799,7 +892,11 @@ func TestGenIncQuery(t *testing.T) {
 		}
 
 		str := bld.String()
-		tbl := database.GetrowsNuncached[database.DbstaticOneStringOneUInt](database.GetdatarowNArg(false, logger.JoinStrings("select count() ", str), args.Arr), logger.JoinStrings(logger.GetStringsMap(cfgp.Useseries, logger.SearchGenSelect), str), args.Arr)
+		tbl := database.GetrowsNuncached[database.DbstaticOneStringOneUInt](
+			database.GetdatarowNArg(false, logger.JoinStrings("select count() ", str), args.Arr),
+			logger.JoinStrings(logger.GetStringsMap(cfgp.Useseries, logger.SearchGenSelect), str),
+			args.Arr,
+		)
 		logger.PlAddBuffer.Put(bld)
 		logger.PLArrAny.Put(args)
 		t.Log(tbl)
@@ -1363,8 +1460,11 @@ func TestQueryXML1new(b *testing.T) {
 
 func BenchmarkAllowRange(b *testing.B) {
 	Init()
-	arr := database.GetrowsN[database.DbstaticThreeStringTwoInt](false, database.GetdatarowN(false, "select count() from dbmovies")+100,
-		"select title, slug, imdb_id, year, id from dbmovies")
+	arr := database.GetrowsN[database.DbstaticThreeStringTwoInt](
+		false,
+		database.GetdatarowN(false, "select count() from dbmovies")+100,
+		"select title, slug, imdb_id, year, id from dbmovies",
+	)
 	b.ResetTimer()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
@@ -1377,8 +1477,11 @@ func BenchmarkAllowRange(b *testing.B) {
 
 func BenchmarkAllowRange2(b *testing.B) {
 	Init()
-	arr := database.GetrowsN[database.DbstaticThreeStringTwoInt](false, database.GetdatarowN(false, "select count() from dbmovies")+100,
-		"select title, slug, imdb_id, year, id from dbmovies")
+	arr := database.GetrowsN[database.DbstaticThreeStringTwoInt](
+		false,
+		database.GetdatarowN(false, "select count() from dbmovies")+100,
+		"select title, slug, imdb_id, year, id from dbmovies",
+	)
 	b.ResetTimer()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
@@ -1481,7 +1584,17 @@ func BenchmarkQuery5(b *testing.B) {
 				continue
 			}
 			voteavg32 = float32(voteavg)
-			d = append(d, database.Dbmovie{ImdbID: record[1], Title: record[5], URL: record[6], VoteAverage: voteavg32, Year: year32, VoteCount: votes32})
+			d = append(
+				d,
+				database.Dbmovie{
+					ImdbID:      record[1],
+					Title:       record[5],
+					URL:         record[6],
+					VoteAverage: voteavg32,
+					Year:        year32,
+					VoteCount:   votes32,
+				},
+			)
 		}
 		_ = d
 		resp.Body.Close()
@@ -1517,7 +1630,17 @@ func BenchmarkQuery6(b *testing.B) {
 			if err != nil {
 				continue
 			}
-			d = append(d, database.Dbmovie{ImdbID: record[1], Title: record[5], URL: record[6], VoteAverage: float32(voteavg), Year: uint16(year), VoteCount: int32(votes)})
+			d = append(
+				d,
+				database.Dbmovie{
+					ImdbID:      record[1],
+					Title:       record[5],
+					URL:         record[6],
+					VoteAverage: float32(voteavg),
+					Year:        uint16(year),
+					VoteCount:   int32(votes),
+				},
+			)
 		}
 		_ = d
 	}
@@ -1574,12 +1697,22 @@ func TestRequest(t *testing.T) {
 	Init()
 
 	ctx, cancelc := context.WithTimeout(context.Background(), 1500*time.Millisecond)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.thetvdb.com/series/341164", http.NoBody)
+	req, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodGet,
+		"https://api.thetvdb.com/series/341164",
+		http.NoBody,
+	)
 	fmt.Println(err)
 	resp, err := http.DefaultClient.Do(req)
 	fmt.Println(err)
 	fmt.Println(resp.Body)
-	req, err = http.NewRequestWithContext(ctx, http.MethodGet, "https://api.thetvdb.com/series/289431", http.NoBody)
+	req, err = http.NewRequestWithContext(
+		ctx,
+		http.MethodGet,
+		"https://api.thetvdb.com/series/289431",
+		http.NoBody,
+	)
 	fmt.Println(err)
 	resp, err = http.DefaultClient.Do(req)
 	fmt.Println(err)
@@ -1718,12 +1851,21 @@ func TestParse(t *testing.T) {
 	Init()
 	// cfgp := config.SettingsMedia["serie_EN"]
 	// m := parser.ParseFile("Eureka.S04E04.480p.x264-ZMNT", false, false, cfgp, -1)
-	cfgp := config.SettingsMedia["movie_EN"]
-	m := parser.ParseFile("Our.Holiday.Story.720p.WEBRip.2024-LAMA (tt33437460)", false, false, cfgp, -1)
+	cfgp := config.SettingsMedia["movie_DE"]
+	quality := config.SettingsQuality["SDDE"]
+	m := parser.ParseFile(
+		"Schneewittchen.2025.German.AC3.DL.1080p.Web.x265-FuN",
+		false,
+		false,
+		cfgp,
+		-1,
+	)
 	t.Log(m)
 	parser.GetDBIDs(m, cfgp, true)
+	parser.GetPriorityMapQual(m, cfgp, quality, false, true)
 	t.Log(m)
-	t.Log(m.DbserieID)
+	t.Log(m.Quality)
+	t.Log(m.QualityID)
 	t.Log(m.Title)
 	t.Log(m.Year)
 }
@@ -1745,7 +1887,15 @@ func BenchmarkQueryLower(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		// scanner.MoveFileDriveBufferNew(val, newpath)
 		// scanner.MoveFileDriveBuffer(val, newpath)
-		str = strconv.Itoa(int(id1)) + "_" + strconv.Itoa(int(id2)) + "_" + strconv.Itoa(int(id3)) + "_" + strconv.Itoa(int(id4))
+		str = strconv.Itoa(
+			int(id1),
+		) + "_" + strconv.Itoa(
+			int(id2),
+		) + "_" + strconv.Itoa(
+			int(id3),
+		) + "_" + strconv.Itoa(
+			int(id4),
+		)
 		// str = fmt.Sprint(id1, "_", id2, "_", id3, "_", id4)
 	}
 	logger.LogDynamicany0("info", str)

@@ -164,7 +164,7 @@ func (s *Sabnzbd) url() *sabnzbdURL {
 		su.Unsecure()
 	}
 
-	su.v = su.URL.Query()
+	su.v = su.Query()
 	return su
 }
 
@@ -194,7 +194,7 @@ func (su *sabnzbdURL) CallJSON(r any) error {
 	// fmt.Printf("GET URL: %s", su.String())
 	resp, err := httpClient.Get(su.String())
 	if err != nil {
-		return fmt.Errorf("sabnzbdURL:CallJSON: failed to get: %s: %v", su.String(), err)
+		return fmt.Errorf("sabnzbdURL:CallJSON: failed to get: %s: %w", su.String(), err)
 	}
 	defer resp.Body.Close()
 	// fmt.Printf("Status: %v\n", resp.Status)
@@ -202,11 +202,15 @@ func (su *sabnzbdURL) CallJSON(r any) error {
 	// decoder := json.NewDecoder(resp.Body)
 	respStr, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("sabnzbdURL:CallJSON: failed to read response: %v", err)
+		return fmt.Errorf("sabnzbdURL:CallJSON: failed to read response: %w", err)
 	}
 
 	if err = json.Unmarshal(respStr, r); err != nil {
-		return fmt.Errorf("sabnzbdURL:CallJSON: failed to decode json: %v: %s", err, string(respStr))
+		return fmt.Errorf(
+			"sabnzbdURL:CallJSON: failed to decode json: %w: %s",
+			err,
+			string(respStr),
+		)
 	}
 	if err, ok := r.(error); ok {
 		return apiStringError(err.Error())
@@ -219,16 +223,20 @@ func (su *sabnzbdURL) CallJSONMultipart(reader io.Reader, contentType string, r 
 	httpClient := &http.Client{Transport: su.rt}
 	resp, err := httpClient.Post(su.String(), contentType, reader)
 	if err != nil {
-		return fmt.Errorf("sabnzbdURL:CallJSONMultipart: failed to post: %s: %v", su.String(), err)
+		return fmt.Errorf("sabnzbdURL:CallJSONMultipart: failed to post: %s: %w", su.String(), err)
 	}
 	defer resp.Body.Close()
 
 	respStr, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("sabnzbdURL:CallJSONMultipart: failed to read response: %v", err)
+		return fmt.Errorf("sabnzbdURL:CallJSONMultipart: failed to read response: %w", err)
 	}
 	if err = json.Unmarshal(respStr, r); err != nil {
-		return fmt.Errorf("sabnzbdURL:CallJSONMultipart: failed to decode json: %v: %s", err, string(respStr))
+		return fmt.Errorf(
+			"sabnzbdURL:CallJSONMultipart: failed to decode json: %w: %s",
+			err,
+			string(respStr),
+		)
 	}
 	if err, ok := r.(error); ok {
 		return apiStringError(err.Error())

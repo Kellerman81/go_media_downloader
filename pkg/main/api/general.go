@@ -210,7 +210,12 @@ func apiTraktGetStoreToken(ctx *gin.Context) {
 // @Router       /api/trakt/user/{user}/{list} [get].
 func apiTraktGetUserList(ctx *gin.Context) {
 	lim := "10"
-	list, err := apiexternal.GetTraktUserList(ctx.Param("user"), ctx.Param("list"), "movie,show", &lim)
+	list, err := apiexternal.GetTraktUserList(
+		ctx.Param("user"),
+		ctx.Param("list"),
+		"movie,show",
+		&lim,
+	)
 	ctx.JSON(http.StatusOK, gin.H{"data": list, "error": err})
 }
 
@@ -232,7 +237,11 @@ func apiDBRefreshSlugs(ctx *gin.Context) {
 	dbmoviestitles := database.QueryDbmovieTitle(database.Querywithargs{})
 	for idx := range dbmoviestitles {
 		slug = logger.StringToSlug(dbmoviestitles[idx].Title)
-		database.ExecN("update dbmovie_titles set slug = ? where id = ?", slug, &dbmoviestitles[idx].ID)
+		database.ExecN(
+			"update dbmovie_titles set slug = ? where id = ?",
+			slug,
+			&dbmoviestitles[idx].ID,
+		)
 	}
 
 	dbserie := database.QueryDbserie(database.Querywithargs{})
@@ -244,7 +253,11 @@ func apiDBRefreshSlugs(ctx *gin.Context) {
 	dbserietitles := database.QueryDbserieAlternates(database.Querywithargs{})
 	for idx := range dbserietitles {
 		slug = logger.StringToSlug(dbserietitles[idx].Title)
-		database.ExecN("update dbserie_alternates set slug = ? where id = ?", slug, &dbserietitles[idx].ID)
+		database.ExecN(
+			"update dbserie_alternates set slug = ? where id = ?",
+			slug,
+			&dbserietitles[idx].ID,
+		)
 	}
 	ctx.JSON(http.StatusOK, "ok")
 }
@@ -358,7 +371,7 @@ func apiSchedulerStart(c *gin.Context) {
 // @Description  Lists Planned Jobs
 // @Tags         scheduler
 // @Param        apikey query     string    true  "apikey"
-// @Success      200  {object}  Jsondata{data=map[string]worker.JobSchedule}
+// @Success      200  {object}  Jsondata{data=map[string]worker.jobSchedule}
 // @Failure      401  {object}  Jsonerror
 // @Router       /api/scheduler/list [get].
 func apiSchedulerList(ctx *gin.Context) {
@@ -389,10 +402,15 @@ func apiDBBackup(ctx *gin.Context) {
 		worker.StopCronWorker()
 		worker.CloseWorkerPools()
 	}
-	backupto := "./backup/data.db." + database.GetVersion() + "." + time.Now().Format("20060102_150405")
+	backupto := "./backup/data.db." + database.GetVersion() + "." + time.Now().
+		Format("20060102_150405")
 	database.Backup(&backupto, config.SettingsGeneral.MaxDatabaseBackups)
 	if config.SettingsGeneral.DatabaseBackupStopTasks {
-		worker.InitWorkerPools(config.SettingsGeneral.WorkerSearch, config.SettingsGeneral.WorkerFiles, config.SettingsGeneral.WorkerMetadata)
+		worker.InitWorkerPools(
+			config.SettingsGeneral.WorkerSearch,
+			config.SettingsGeneral.WorkerFiles,
+			config.SettingsGeneral.WorkerMetadata,
+		)
 		worker.StartCronWorker()
 	}
 	ctx.JSON(http.StatusOK, "ok")
@@ -494,7 +512,16 @@ func apiDBRemoveOldJobs(ctx *gin.Context) {
 // @Failure      401  {object}  Jsonerror
 // @Router       /api/quality [get].
 func apiGetQualities(ctx *gin.Context) {
-	ctx.JSON(http.StatusOK, gin.H{"data": database.StructscanT[database.Qualities](false, database.GetdatarowN(false, "select count() from qualities"), "select * from qualities")})
+	ctx.JSON(
+		http.StatusOK,
+		gin.H{
+			"data": database.StructscanT[database.Qualities](
+				false,
+				database.GetdatarowN(false, "select count() from qualities"),
+				"select * from qualities",
+			),
+		},
+	)
 }
 
 // @Summary      Delete Quality
@@ -508,7 +535,16 @@ func apiGetQualities(ctx *gin.Context) {
 func apiQualityDelete(ctx *gin.Context) {
 	database.DeleteRow("qualities", logger.FilterByID, ctx.Param("id"))
 	database.SetVars()
-	ctx.JSON(http.StatusOK, gin.H{"data": database.StructscanT[database.Qualities](false, database.GetdatarowN(false, "select count() from qualities"), "select * from qualities")})
+	ctx.JSON(
+		http.StatusOK,
+		gin.H{
+			"data": database.StructscanT[database.Qualities](
+				false,
+				database.GetdatarowN(false, "select count() from qualities"),
+				"select * from qualities",
+			),
+		},
+	)
 }
 
 // @Summary      Update Quality
@@ -526,17 +562,38 @@ func apiQualityUpdate(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	counter := database.GetdatarowN(false, "select count() from qualities where id != 0 and id = ?", &quality.ID)
+	counter := database.GetdatarowN(
+		false,
+		"select count() from qualities where id != 0 and id = ?",
+		&quality.ID,
+	)
 
 	if counter == 0 {
-		database.InsertArray("qualities", []string{"Type", "Name", "Regex", "Strings", "Priority", "Use_Regex"},
-			quality.QualityType, quality.Name, quality.Regex, quality.Strings, quality.Priority, quality.UseRegex)
+		database.InsertArray(
+			"qualities",
+			[]string{"Type", "Name", "Regex", "Strings", "Priority", "Use_Regex"},
+			quality.QualityType,
+			quality.Name,
+			quality.Regex,
+			quality.Strings,
+			quality.Priority,
+			quality.UseRegex,
+		)
 	} else {
 		database.UpdateArray("qualities", []string{"Type", "Name", "Regex", "Strings", "Priority", "Use_Regex"},
 			"id != 0 and id = ?", quality.QualityType, quality.Name, quality.Regex, quality.Strings, quality.Priority, quality.UseRegex, quality.ID)
 	}
 	database.SetVars()
-	ctx.JSON(http.StatusOK, gin.H{"data": database.StructscanT[database.Qualities](false, database.GetdatarowN(false, "select count() from qualities"), "select * from qualities")})
+	ctx.JSON(
+		http.StatusOK,
+		gin.H{
+			"data": database.StructscanT[database.Qualities](
+				false,
+				database.GetdatarowN(false, "select count() from qualities"),
+				"select * from qualities",
+			),
+		},
+	)
 }
 
 // @Summary      List Quality Priorities
@@ -860,7 +917,10 @@ func apiNamingGenerate(ctx *gin.Context) {
 
 	// defer mediacfg.Close()
 	if cfg.GroupType == logger.StrMovie {
-		movie, _ := database.GetMovies(database.Querywithargs{Where: logger.FilterByID}, cfg.MovieID)
+		movie, _ := database.GetMovies(
+			database.Querywithargs{Where: logger.FilterByID},
+			cfg.MovieID,
+		)
 		cfgp := config.SettingsMedia[cfg.CfgMedia]
 		s := structure.NewStructure(
 			cfgp,
@@ -873,12 +933,21 @@ func apiNamingGenerate(ctx *gin.Context) {
 		orgadata2.Videofile = cfg.FilePath
 		orgadata2.Folder = to
 		orgadata2.Rootpath = movie.Rootpath
-		m := parser.ParseFile(cfg.FilePath, true, true, cfgp, cfgp.GetMediaListsEntryListID(movie.Listname))
+		m := parser.ParseFile(
+			cfg.FilePath,
+			true,
+			true,
+			cfgp,
+			cfgp.GetMediaListsEntryListID(movie.Listname),
+		)
 		orgadata2.Listid = m.ListID
 		s.ParseFileAdditional(&orgadata2, m, 0, false, false, s.Cfgp.Lists[m.ListID].CfgQuality)
 
 		s.GenerateNamingTemplate(&orgadata2, m, &movie.DbmovieID)
-		ctx.JSON(http.StatusOK, gin.H{"foldername": orgadata2.Foldername, "filename": orgadata2.Filename, "m": m})
+		ctx.JSON(
+			http.StatusOK,
+			gin.H{"foldername": orgadata2.Foldername, "filename": orgadata2.Filename, "m": m},
+		)
 	} else {
 		series, _ := database.GetSeries(database.Querywithargs{Where: logger.FilterByID}, cfg.SerieID)
 		// defer logger.ClearVar(&series)
@@ -990,7 +1059,16 @@ func apiStructure(ctx *gin.Context) {
 	// structurevar := structure.NewStructure(cfgp, cfgimport, cfg.Sourcepathtemplate, cfg.Targetpathtemplate, false, false, 0)
 
 	// structurevar.ManualId = cfg.Forceid
-	structure.OrganizeSingleFolder(ctx, cfg.Folder, cfgp, cfgimport, cfg.Targetpathtemplate, checkruntime, deletewronglanguage, cfg.Forceid)
+	structure.OrganizeSingleFolder(
+		ctx,
+		cfg.Folder,
+		cfgp,
+		cfgimport,
+		cfg.Targetpathtemplate,
+		checkruntime,
+		deletewronglanguage,
+		cfg.Forceid,
+	)
 
 	ctx.JSON(http.StatusOK, gin.H{})
 }

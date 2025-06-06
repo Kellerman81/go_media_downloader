@@ -251,7 +251,14 @@ func LogDynamicany2Int(typev, msg, field1 string, value1 int, field2 string, val
 // The 'msg' parameter is the log message.
 // The 'field1', 'field2', and 'field3' parameters are the field names for the dynamic fields.
 // The 'value1', 'value2', and 'value3' parameters are the values for the dynamic fields.
-func LogDynamicany3StrIntInt(typev, msg, field1 string, value1 string, field2 string, value2 int, field3 string, value3 int) {
+func LogDynamicany3StrIntInt(
+	typev, msg, field1 string,
+	value1 string,
+	field2 string,
+	value2 int,
+	field3 string,
+	value3 int,
+) {
 	Logtype(typev, 1).Str(field1, value1).Int(field2, value2).Int(field3, value3).Msg(msg)
 }
 

@@ -145,7 +145,19 @@ func (c *Client) Add(URL string, options *AppendOptions) (int64, error) {
 		name = options.NiceName
 	}
 
-	r, err := c.rpc.Call("append", name, enc, options.Category, options.Priority, options.AddToTop, options.AddPaused, options.DupeKey, options.DupeScore, options.DupeMode, options.Parameters)
+	r, err := c.rpc.Call(
+		"append",
+		name,
+		enc,
+		options.Category,
+		options.Priority,
+		options.AddToTop,
+		options.AddPaused,
+		options.DupeKey,
+		options.DupeScore,
+		options.DupeMode,
+		options.Parameters,
+	)
 	if err != nil {
 		if r != nil && r.Error != nil {
 			return 0, errors.Wrap(err, r.Error.Error())

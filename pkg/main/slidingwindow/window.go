@@ -11,12 +11,12 @@ import (
 // and only stores counters in memory.
 type Limiter struct {
 	// The start boundary (timestamp in nanoseconds) of the window.
-	start time.Time
+	start int64
 
 	// The last call
-	last time.Time
+	last int64
 
-	interval time.Duration
+	interval int64
 
 	// The total count of events happened in the window.
 	count int64
@@ -33,49 +33,32 @@ type Limiter struct {
 func (lim *Limiter) add() {
 	lim.mu.Lock()
 	defer lim.mu.Unlock()
-	if timeAfter(lim.last) {
+	now := time.Now().UnixNano()
+	if now < lim.last {
 		// Moved Time to Future for Blocking
 		return
 	}
 
-	set := time.Now()
 	if lim.count < lim.max {
 		// Queue not full
 		lim.count++
-		lim.last = set
+		lim.last = now
 		return
 	}
 
-	if time.Since(lim.last) > lim.interval {
+	timeSinceStart := now - lim.start
+	timeSinceLast := now - lim.last
+
+	if timeSinceLast > lim.interval || timeSinceStart > lim.interval {
 		// Last Call long ago
 
 		lim.count = 1
-		lim.last = set
-		lim.start = set
+		lim.last = now
+		lim.start = now
 		return
 	}
 
-	if time.Since(lim.start) > lim.interval {
-		// First Call long ago
-		lim.count = 1
-		lim.last = set
-		lim.start = set
-		return
-	}
-
-	lim.last = set
-}
-
-// timeAfter checks if the given time `a` is after the current time. It first
-// compares the Unix timestamps, and if they are equal, it compares the
-// nanosecond parts to determine if `a` is after the current time.
-func timeAfter(a time.Time) bool {
-	as := a.Unix()
-	bs := time.Now().Unix()
-	if as == bs {
-		return a.UnixNano() > time.Now().UnixNano()
-	}
-	return as > bs
+	lim.last = now
 }
 
 // Allow checks if the rate limit would be exceeded by calling add. If the
@@ -106,24 +89,25 @@ func (lim *Limiter) AllowForce() bool {
 func (lim *Limiter) Check() (bool, time.Duration) {
 	lim.mu.Lock()
 	defer lim.mu.Unlock()
-	if timeAfter(lim.last) {
+	now := time.Now().UnixNano()
+	if now < lim.last {
 		// Date set to future for blocking
-		return false, time.Until(lim.last)
+		return false, time.Duration(lim.last - now)
 	}
 	if lim.count < lim.max {
 		// Queue not full
 		return true, 0 * time.Second
 	}
 
-	if time.Since(lim.last) > lim.interval {
+	timeSinceStart := now - lim.start
+	timeSinceLast := now - lim.last
+
+	if timeSinceLast > lim.interval || timeSinceStart > lim.interval {
 		// Last Call long ago
-		return true, 0 * time.Second
+		return true, 0
 	}
-	if time.Since(lim.start) > lim.interval {
-		// First Call long ago
-		return true, 0 * time.Second
-	}
-	return false, lim.interval - time.Since(lim.start)
+	remainingTime := lim.interval - timeSinceStart
+	return false, time.Duration(remainingTime)
 }
 
 // CheckBool checks if the rate limit would be exceeded by calling add. It returns
@@ -131,7 +115,8 @@ func (lim *Limiter) Check() (bool, time.Duration) {
 func (lim *Limiter) CheckBool() bool {
 	lim.mu.Lock()
 	defer lim.mu.Unlock()
-	if timeAfter(lim.last) {
+	now := time.Now().UnixNano()
+	if now < lim.last {
 		// Date set to future for blocking
 		return false
 	}
@@ -140,22 +125,17 @@ func (lim *Limiter) CheckBool() bool {
 		return true
 	}
 
-	if time.Since(lim.last) > lim.interval {
-		// Last Call long ago
-		return true
-	}
-	if time.Since(lim.start) > lim.interval {
-		// First Call long ago
-		return true
-	}
-	return false
+	timeSinceStart := now - lim.start
+	timeSinceLast := now - lim.last
+
+	return timeSinceLast > lim.interval || timeSinceStart > lim.interval
 }
 
 // Interval returns the interval duration configured for the rate limiter.
 func (lim *Limiter) Interval() time.Duration {
 	lim.mu.Lock()
 	defer lim.mu.Unlock()
-	return lim.interval
+	return time.Duration(lim.interval)
 }
 
 // WaitTill sets the last time to the given time. This overrides
@@ -163,11 +143,12 @@ func (lim *Limiter) Interval() time.Duration {
 func (lim *Limiter) WaitTill(now time.Time) {
 	lim.mu.Lock()
 	defer lim.mu.Unlock()
-	lim.last = now
+	lim.last = now.UnixNano()
 }
 
 // NewLimiter returns a new Limiter that limits events to max
 // events per interval duration.
 func NewLimiter(interval time.Duration, maxevents int64) Limiter {
-	return Limiter{interval: interval, max: maxevents, start: time.Now(), last: time.Now()}
+	now := time.Now().UnixNano()
+	return Limiter{interval: int64(interval), max: maxevents, start: now, last: now}
 }

@@ -93,7 +93,13 @@ var (
 // buildURLNew constructs the API URL to query the Newznab indexer based
 // on the given parameters. It handles building the base URL, API key,
 // custom URLs, categories, quality settings, output format, etc.
-func buildURLNew(rss bool, indexerid int, cfgqual *config.QualityConfig, row *config.IndexersConfig, addb []byte) string {
+func buildURLNew(
+	rss bool,
+	indexerid int,
+	cfgqual *config.QualityConfig,
+	row *config.IndexersConfig,
+	addb []byte,
+) string {
 	bld := logger.PlAddBuffer.Get()
 	defer logger.PlAddBuffer.Put(bld)
 	switch {
@@ -168,11 +174,22 @@ func buildURLNew(rss bool, indexerid int, cfgqual *config.QualityConfig, row *co
 // into Nzbwithprio structs and adding them to the provided results slice. It returns
 // a boolean indicating whether more results are available, the first ID for continuation,
 // and any error that occurred during processing.
-func processurl(ind *config.IndexersConfig, qual *config.QualityConfig, urlv string, tillid string, results *NzbSlice) (bool, string, error) {
+func processurl(
+	ind *config.IndexersConfig,
+	qual *config.QualityConfig,
+	urlv string,
+	tillid string,
+	results *NzbSlice,
+) (bool, string, error) {
 	c := getnewznabclient(ind)
 	if ind.OutputAsJSON {
 		if !strings.Contains(urlv, "://") {
-			logger.LogDynamicany1String("error", "failed to get url", logger.StrURL, urlv) // nopointer
+			logger.LogDynamicany1String(
+				"error",
+				"failed to get url",
+				logger.StrURL,
+				urlv,
+			) // nopointer
 			return false, "", logger.Errnoresults
 		}
 		result, err := doJSONTypeP[searchResponseJSON1](&c.Client, urlv, nil)
@@ -211,14 +228,14 @@ func processurl(ind *config.IndexersConfig, qual *config.QualityConfig, urlv str
 		apiBaseURL = urlv
 	}
 
-	err := ProcessHTTP(&c.Client, urlv, true, func(ctx context.Context, r *http.Response) error {
+	err := ProcessHTTP(&c.Client, urlv, true, func(_ context.Context, r *http.Response) error {
 		d := xml.NewDecoder(r.Body)
 		d.Strict = false
 
 		for {
 			t, err := d.RawToken()
 			if err != nil {
-				if err == io.EOF {
+				if errors.Is(err, io.EOF) {
 					break
 				}
 				return err
@@ -319,7 +336,7 @@ func processurl(ind *config.IndexersConfig, qual *config.QualityConfig, urlv str
 		}
 		return nil
 	}, nil)
-	if err == errBroke {
+	if errors.Is(err, errBroke) {
 		return true, firstid, nil
 	}
 	if err != nil {
@@ -339,7 +356,13 @@ func processurl(ind *config.IndexersConfig, qual *config.QualityConfig, urlv str
 // fields into the NZB struct, handling special cases like missing fields, and closing the
 // response when done. It returns bools indicating more results and if it hit the tillid,
 // the first id for more search continuation, and any error.
-func (c *client) processjson1(result *searchResponseJSON1, ind *config.IndexersConfig, qual *config.QualityConfig, tillid string, results *NzbSlice) (bool, string, error) {
+func (c *client) processjson1(
+	result *searchResponseJSON1,
+	ind *config.IndexersConfig,
+	qual *config.QualityConfig,
+	tillid string,
+	results *NzbSlice,
+) (bool, string, error) {
 	var firstid string
 
 	defer result.close()
@@ -354,12 +377,16 @@ func (c *client) processjson1(result *searchResponseJSON1, ind *config.IndexersC
 		newEntry.NZB.Title = logger.UnquoteUnescape(newEntry.NZB.Title)
 		newEntry.NZB.DownloadURL = result.Channel.Item[idx].Enclosure.Attributes.URL
 		newEntry.NZB.SourceEndpoint = c.aPIBaseURLStr
-		if logger.ContainsI(newEntry.NZB.DownloadURL, ".torrent") || logger.ContainsI(newEntry.NZB.DownloadURL, "magnet:?") {
+		if logger.ContainsI(newEntry.NZB.DownloadURL, ".torrent") ||
+			logger.ContainsI(newEntry.NZB.DownloadURL, "magnet:?") {
 			newEntry.NZB.IsTorrent = true
 		}
 
 		for idx2 := range result.Channel.Item[idx].Attributes {
-			newEntry.NZB.saveAttributes(result.Channel.Item[idx].Attributes[idx2].Attribute.Name, result.Channel.Item[idx].Attributes[idx2].Attribute.Value)
+			newEntry.NZB.saveAttributes(
+				result.Channel.Item[idx].Attributes[idx2].Attribute.Name,
+				result.Channel.Item[idx].Attributes[idx2].Attribute.Value,
+			)
 		}
 		if newEntry.NZB.Size == 0 && result.Channel.Item[idx].Size != 0 {
 			newEntry.NZB.Size = result.Channel.Item[idx].Size
@@ -383,7 +410,13 @@ func (c *client) processjson1(result *searchResponseJSON1, ind *config.IndexersC
 // It iterates through the items in the result and converts them into Nzbwithprio structs,
 // populating the fields based on the attributes in the JSON. It returns whether more
 // results are available, the first ID and any error.
-func (c *client) processjson2(result2 *searchResponseJSON2, ind *config.IndexersConfig, qual *config.QualityConfig, tillid string, results *NzbSlice) (bool, string, error) {
+func (c *client) processjson2(
+	result2 *searchResponseJSON2,
+	ind *config.IndexersConfig,
+	qual *config.QualityConfig,
+	tillid string,
+	results *NzbSlice,
+) (bool, string, error) {
 	var firstid string
 	defer result2.close()
 	for idx := range result2.Item {
@@ -397,15 +430,22 @@ func (c *client) processjson2(result2 *searchResponseJSON2, ind *config.Indexers
 		newEntry.NZB.Title = logger.UnquoteUnescape(newEntry.NZB.Title)
 		newEntry.NZB.DownloadURL = result2.Item[idx].Enclosure.URL
 		newEntry.NZB.SourceEndpoint = c.aPIBaseURLStr
-		if logger.ContainsI(newEntry.NZB.DownloadURL, ".torrent") || logger.ContainsI(newEntry.NZB.DownloadURL, "magnet:?") {
+		if logger.ContainsI(newEntry.NZB.DownloadURL, ".torrent") ||
+			logger.ContainsI(newEntry.NZB.DownloadURL, "magnet:?") {
 			newEntry.NZB.IsTorrent = true
 		}
 
 		for idx2 := range result2.Item[idx].Attributes {
-			newEntry.NZB.saveAttributes(result2.Item[idx].Attributes[idx2].Name, result2.Item[idx].Attributes[idx2].Value)
+			newEntry.NZB.saveAttributes(
+				result2.Item[idx].Attributes[idx2].Name,
+				result2.Item[idx].Attributes[idx2].Value,
+			)
 		}
 		for idx2 := range result2.Item[idx].Attributes2 {
-			newEntry.NZB.saveAttributes(result2.Item[idx].Attributes2[idx2].Name, result2.Item[idx].Attributes2[idx2].Value)
+			newEntry.NZB.saveAttributes(
+				result2.Item[idx].Attributes2[idx2].Name,
+				result2.Item[idx].Attributes2[idx2].Value,
+			)
 		}
 		if newEntry.NZB.Size == 0 && result2.Item[idx].Size != 0 {
 			newEntry.NZB.Size = result2.Item[idx].Size
@@ -453,7 +493,12 @@ func NewznabCheckLimiter(cfgindexer *config.IndexersConfig) bool {
 	if !newznabClients.Check(cfgindexer.URL) {
 		return true
 	}
-	ok, _ := newznabClients.GetVal(cfgindexer.URL).Client.checkLimiter(newznabClients.GetVal(cfgindexer.URL).Client.Ctx, false)
+	ok, _ := newznabClients.GetVal(
+		cfgindexer.URL,
+	).Client.checkLimiter(
+		newznabClients.GetVal(cfgindexer.URL).Client.Ctx,
+		false,
+	)
 	return ok
 }
 
@@ -461,7 +506,13 @@ func NewznabCheckLimiter(cfgindexer *config.IndexersConfig) bool {
 // the given IMDB ID. It builds the query URL based on the config,
 // quality, and other parameters, executes the query, and stores
 // the results in the given slice. Returns an error if one occurs.
-func QueryNewznabMovieImdb(cfgind *config.IndexersConfig, qual *config.QualityConfig, imdbid string, indexerid int, results *NzbSlice) (bool, string, error) {
+func QueryNewznabMovieImdb(
+	cfgind *config.IndexersConfig,
+	qual *config.QualityConfig,
+	imdbid string,
+	indexerid int,
+	results *NzbSlice,
+) (bool, string, error) {
 	if imdbid == "" {
 		return false, "", logger.ErrNoID
 	}
@@ -474,7 +525,13 @@ func QueryNewznabMovieImdb(cfgind *config.IndexersConfig, qual *config.QualityCo
 		b.WriteString(bqlimit)
 		b.WriteString(cfgind.MaxEntriesStr)
 	}
-	return processurl(cfgind, qual, buildURLNew(false, indexerid, qual, cfgind, b.Bytes()), "", results)
+	return processurl(
+		cfgind,
+		qual,
+		buildURLNew(false, indexerid, qual, cfgind, b.Bytes()),
+		"",
+		results,
+	)
 }
 
 // getnewznabclient returns a Client for the given IndexersConfig.
@@ -491,33 +548,51 @@ func getnewznabclient(row *config.IndexersConfig) *client {
 // If the filename is empty, it uses the base name of the URL as the filename.
 // It uses the provided IndexersConfig to get a Newznab client and downloads the file using ProcessHTTP.
 // Returns an error if any step fails.
-func DownloadNZB(filename string, targetpath string, urlv string, idxcfg *config.IndexersConfig) error {
+func DownloadNZB(
+	filename string,
+	targetpath string,
+	urlv string,
+	idxcfg *config.IndexersConfig,
+) error {
 	// Create the file
 	if filename == "" {
 		filename = filepath.Base(urlv)
 	}
 
-	return ProcessHTTP(&getnewznabclient(idxcfg).Client, urlv, true, func(ctx context.Context, r *http.Response) error {
-		out, err := os.Create(filepath.Join(targetpath, filename))
-		if err != nil {
-			return err
-		}
-		defer out.Close()
+	return ProcessHTTP(
+		&getnewznabclient(idxcfg).Client,
+		urlv,
+		true,
+		func(_ context.Context, r *http.Response) error {
+			out, err := os.Create(filepath.Join(targetpath, filename))
+			if err != nil {
+				return err
+			}
+			defer out.Close()
 
-		// Write the body to file
-		_, err = io.Copy(out, r.Body)
-		if err != nil {
-			return err
-		}
-		return out.Sync()
-	}, nil)
+			// Write the body to file
+			_, err = io.Copy(out, r.Body)
+			if err != nil {
+				return err
+			}
+			return out.Sync()
+		},
+		nil,
+	)
 }
 
 // QueryNewznabTvTvdb queries the Newznab indexer for TV episodes matching
 // the given TVDB ID, season, and episode. It builds the query URL based on
 // the config, quality, and other parameters, executes the query, and stores
 // the results in the given slice. Returns an error if one occurs.
-func QueryNewznabTvTvdb(cfgind *config.IndexersConfig, qual *config.QualityConfig, tvdbid, indexerid int, season, episode string, useseason, useepisode bool, results *NzbSlice) (bool, string, error) {
+func QueryNewznabTvTvdb(
+	cfgind *config.IndexersConfig,
+	qual *config.QualityConfig,
+	tvdbid, indexerid int,
+	season, episode string,
+	useseason, useepisode bool,
+	results *NzbSlice,
+) (bool, string, error) {
 	if tvdbid == 0 {
 		return false, "", logger.ErrNoID
 	}
@@ -544,7 +619,13 @@ func QueryNewznabTvTvdb(cfgind *config.IndexersConfig, qual *config.QualityConfi
 		b.WriteString("&ep=")
 		b.WriteString(episode)
 	}
-	return processurl(cfgind, qual, buildURLNew(false, indexerid, qual, cfgind, b.Bytes()), "", results)
+	return processurl(
+		cfgind,
+		qual,
+		buildURLNew(false, indexerid, qual, cfgind, b.Bytes()),
+		"",
+		results,
+	)
 }
 
 // getaddstr constructs the search query string for a Newznab API request based on the
@@ -557,16 +638,23 @@ func getaddstr(cfgp *config.MediaTypeConfig, title string, e *Nzbwithprio) strin
 		return logger.JoinStrings(title, logger.StrSpace, logger.IntToString(e.Info.Year))
 	} else if e.Info.Identifier != "" {
 		return logger.JoinStrings(title, logger.StrSpace, e.Info.Identifier)
-	} else {
-		return title
 	}
+	return title
 }
 
 // QueryNewznabQuery queries the Newznab API for the given search query, indexer
 // configuration, quality config, categories, mutex, and result slice. It handles
 // escaping the search query, adding quotes if configured, and limiting results.
 // It returns any error that occurs.
-func QueryNewznabQuery(cfgp *config.MediaTypeConfig, e *Nzbwithprio, cfgind *config.IndexersConfig, qual *config.QualityConfig, title string, indexerid int, results *NzbSlice) (bool, string, error) {
+func QueryNewznabQuery(
+	cfgp *config.MediaTypeConfig,
+	e *Nzbwithprio,
+	cfgind *config.IndexersConfig,
+	qual *config.QualityConfig,
+	title string,
+	indexerid int,
+	results *NzbSlice,
+) (bool, string, error) {
 	if title == "" {
 		return false, "", nil
 	}
@@ -587,14 +675,25 @@ func QueryNewznabQuery(cfgp *config.MediaTypeConfig, e *Nzbwithprio, cfgind *con
 		b.WriteUInt16(cfgind.MaxEntries)
 	}
 
-	return processurl(cfgind, qual, buildURLNew(false, indexerid, qual, cfgind, b.Bytes()), "", results)
+	return processurl(
+		cfgind,
+		qual,
+		buildURLNew(false, indexerid, qual, cfgind, b.Bytes()),
+		"",
+		results,
+	)
 }
 
 // QueryNewznabRSS queries the Newznab RSS feed for the given indexer
 // configuration, quality config, max items, categories, mutex, and result
 // slice. It returns a bool indicating if the results were truncated, and
 // an error if one occurred.
-func QueryNewznabRSS(ind *config.IndexersConfig, qual *config.QualityConfig, maxitems, indexerid int, results *NzbSlice) (bool, string, error) {
+func QueryNewznabRSS(
+	ind *config.IndexersConfig,
+	qual *config.QualityConfig,
+	maxitems, indexerid int,
+	results *NzbSlice,
+) (bool, string, error) {
 	b := logger.PlAddBuffer.Get()
 	defer logger.PlAddBuffer.Put(b)
 	if maxitems != 0 {
@@ -608,7 +707,13 @@ func QueryNewznabRSS(ind *config.IndexersConfig, qual *config.QualityConfig, max
 // matching the given configuration and quality parameters. It handles pagination
 // to retrieve multiple pages of results if needed. It returns the ID of the first
 // result and any error.
-func QueryNewznabRSSLastCustom(ind *config.IndexersConfig, qual *config.QualityConfig, tillid string, indexerid int, results *NzbSlice) (string, error) {
+func QueryNewznabRSSLastCustom(
+	ind *config.IndexersConfig,
+	qual *config.QualityConfig,
+	tillid string,
+	indexerid int,
+	results *NzbSlice,
+) (string, error) {
 	if indexerid == -1 {
 		return "", errQualityConfig
 	}
@@ -653,7 +758,13 @@ func QueryNewznabRSSLastCustom(ind *config.IndexersConfig, qual *config.QualityC
 // QueryNewznabRSSLast queries the Newznab RSS feed for the latest items matching
 // the given configuration and quality parameters. It returns the latest item ID
 // and any error.
-func QueryNewznabRSSLast(cfgind *config.IndexersConfig, qual *config.QualityConfig, tillid string, indexerid int, results *NzbSlice) (string, error) {
+func QueryNewznabRSSLast(
+	cfgind *config.IndexersConfig,
+	qual *config.QualityConfig,
+	tillid string,
+	indexerid int,
+	results *NzbSlice,
+) (string, error) {
 	return QueryNewznabRSSLastCustom(cfgind, qual, tillid, indexerid, results)
 }
 
@@ -663,10 +774,10 @@ func QueryNewznabRSSLast(cfgind *config.IndexersConfig, qual *config.QualityConf
 // It returns a pointer to the constructed Client instance.
 func newNewznab(debug bool, row *config.IndexersConfig) *client {
 	if row.Limitercalls == 0 {
-		row.Limitercalls = 3
+		row.Limitercalls = 5
 	}
 	if row.Limiterseconds == 0 {
-		row.Limiterseconds = 10
+		row.Limiterseconds = 20
 	}
 
 	var limiter slidingwindow.Limiter
@@ -680,7 +791,10 @@ func newNewznab(debug bool, row *config.IndexersConfig) *client {
 		aPIBaseURLStr: row.URL,
 		aPIUserID:     row.Userid,
 		debug:         debug,
-		Lim:           slidingwindow.NewLimiter(time.Duration(row.Limiterseconds)*time.Second, int64(row.Limitercalls)),
+		Lim: slidingwindow.NewLimiter(
+			time.Duration(row.Limiterseconds)*time.Second,
+			int64(row.Limitercalls),
+		),
 	}
 	d.Client = NewClient(
 		row.URL,

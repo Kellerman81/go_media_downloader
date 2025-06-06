@@ -21,7 +21,12 @@ var errUnmatched = errors.New("unmatched")
 // jobImportSeriesParseV2 parses a video file for a series episode.
 // It matches the file to episodes needing import, inserts the file info,
 // updates episode status, and handles caching.
-func jobImportSeriesParseV2(m *database.ParseInfo, pathv string, cfgp *config.MediaTypeConfig, list *config.MediaListsConfig) error {
+func jobImportSeriesParseV2(
+	m *database.ParseInfo,
+	pathv string,
+	cfgp *config.MediaTypeConfig,
+	list *config.MediaListsConfig,
+) error {
 	if list == nil {
 		return logger.ErrListnameEmpty
 	}
@@ -57,18 +62,50 @@ func jobImportSeriesParseV2(m *database.ParseInfo, pathv string, cfgp *config.Me
 	extfile := filepath.Ext(pathv)
 	var count uint
 	for idx := range m.Episodes {
-		database.Scanrows2dyn(false, "select count() from serie_episode_files where location = ? and serie_episode_id = ?", &count, &m.File, &m.Episodes[idx].Num1)
+		database.Scanrows2dyn(
+			false,
+			"select count() from serie_episode_files where location = ? and serie_episode_id = ?",
+			&count,
+			&m.File,
+			&m.Episodes[idx].Num1,
+		)
 		if count >= 1 {
 			continue
 		}
 
-		database.ExecN("insert into serie_episode_files (location, filename, extension, quality_profile, resolution_id, quality_id, codec_id, audio_id, proper, repack, extended, serie_id, serie_episode_id, dbserie_episode_id, dbserie_id, height, width) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-			&m.File, &basefile, &extfile, &list.Name, &m.ResolutionID, &m.QualityID, &m.CodecID, &m.AudioID, &m.Proper, &m.Repack, &m.Extended, &m.SerieID, &m.Episodes[idx].Num1, &m.Episodes[idx].Num2, &m.DbserieID, &m.Height, &m.Width)
+		database.ExecN(
+			"insert into serie_episode_files (location, filename, extension, quality_profile, resolution_id, quality_id, codec_id, audio_id, proper, repack, extended, serie_id, serie_episode_id, dbserie_episode_id, dbserie_id, height, width) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+			&m.File,
+			&basefile,
+			&extfile,
+			&list.Name,
+			&m.ResolutionID,
+			&m.QualityID,
+			&m.CodecID,
+			&m.AudioID,
+			&m.Proper,
+			&m.Repack,
+			&m.Extended,
+			&m.SerieID,
+			&m.Episodes[idx].Num1,
+			&m.Episodes[idx].Num2,
+			&m.DbserieID,
+			&m.Height,
+			&m.Width,
+		)
 
 		database.Exec1("update serie_episodes set missing = 0 where id = ?", &m.Episodes[idx].Num1)
-		database.Exec2("update serie_episodes set quality_reached = ? where id = ?", &reached, &m.Episodes[idx].Num1)
+		database.Exec2(
+			"update serie_episodes set quality_reached = ? where id = ?",
+			&reached,
+			&m.Episodes[idx].Num1,
+		)
 		if list.Name != "" {
-			database.Exec2("update serie_episodes set quality_profile = ? where id = ?", &list.Name, &m.Episodes[idx].Num1)
+			database.Exec2(
+				"update serie_episodes set quality_profile = ? where id = ?",
+				&list.Name,
+				&m.Episodes[idx].Num1,
+			)
 		}
 
 		database.Exec1("delete from serie_file_unmatcheds where filepath = ?", &m.File)
@@ -79,7 +116,11 @@ func jobImportSeriesParseV2(m *database.ParseInfo, pathv string, cfgp *config.Me
 		database.AppendCache(logger.CacheFilesSeries, pathv)
 	}
 	if m.SerieID != 0 {
-		if database.Getdatarow1[string](false, "select rootpath from series where id = ?", &m.SerieID) == "" {
+		if database.Getdatarow1[string](
+			false,
+			"select rootpath from series where id = ?",
+			&m.SerieID,
+		) == "" {
 			structure.UpdateRootpath(pathv, logger.StrSeries, &m.SerieID, cfgp)
 		}
 	}
@@ -92,7 +133,15 @@ func jobImportSeriesParseV2(m *database.ParseInfo, pathv string, cfgp *config.Me
 // that single series, passing the config, a limit of 1 row, a query
 // to select the series data, and the series ID as a query arg.
 func RefreshSerie(cfgp *config.MediaTypeConfig, id *string) {
-	refreshseries(cfgp, database.Getrows1[database.DbstaticTwoStringOneRInt](false, 1, "select seriename, (Select listname from series where dbserie_id=dbseries.id limit 1), thetvdb_id from dbseries where id = ?", id))
+	refreshseries(
+		cfgp,
+		database.Getrows1[database.DbstaticTwoStringOneRInt](
+			false,
+			1,
+			"select seriename, (Select listname from series where dbserie_id=dbseries.id limit 1), thetvdb_id from dbseries where id = ?",
+			id,
+		),
+	)
 }
 
 // refreshseries queries the database for series to refresh, iterates through the results, and calls
@@ -106,10 +155,20 @@ func refreshseries(cfgp *config.MediaTypeConfig, tbl []database.DbstaticTwoStrin
 	of := len(tbl)
 	var err error
 	for idx := range tbl {
-		logger.Logtype("info", 0).Int(logger.StrTvdb, tbl[idx].Num).Int("row", idx).Int("of", of).Msg("Refresh Serie")
+		logger.Logtype("info", 0).
+			Int(logger.StrTvdb, tbl[idx].Num).
+			Int("row", idx).
+			Int("of", of).
+			Msg("Refresh Serie")
 		err = importfeed.JobImportDBSeriesStatic(&tbl[idx], cfgp)
 		if err != nil {
-			logger.LogDynamicany1IntErr("error", "Import series failed", err, logger.StrTvdb, tbl[idx].Num)
+			logger.LogDynamicany1IntErr(
+				"error",
+				"Import series failed",
+				err,
+				logger.StrTvdb,
+				tbl[idx].Num,
+			)
 		}
 	}
 }
@@ -139,11 +198,21 @@ func structurefolders(ctx context.Context, cfgp *config.MediaTypeConfig) {
 		return
 	}
 	if cfgp.Data[0].CfgPath == nil {
-		logger.LogDynamicany1String("error", "Path not found", logger.StrConfig, cfgp.Data[0].TemplatePath)
+		logger.LogDynamicany1String(
+			"error",
+			"Path not found",
+			logger.StrConfig,
+			cfgp.Data[0].TemplatePath,
+		)
 		return
 	}
 	if !cfgp.Structure {
-		logger.LogDynamicany1String("error", "structure not allowed", logger.StrConfig, cfgp.NamePrefix)
+		logger.LogDynamicany1String(
+			"error",
+			"structure not allowed",
+			logger.StrConfig,
+			cfgp.NamePrefix,
+		)
 		return
 	}
 
@@ -157,7 +226,12 @@ func structurefolders(ctx context.Context, cfgp *config.MediaTypeConfig) {
 			return
 		}
 		if dataimport.CfgPath == nil {
-			logger.LogDynamicany1String("error", "Path not found", logger.StrConfig, dataimport.TemplatePath)
+			logger.LogDynamicany1String(
+				"error",
+				"Path not found",
+				logger.StrConfig,
+				dataimport.TemplatePath,
+			)
 			continue
 		}
 
@@ -174,7 +248,16 @@ func structurefolders(ctx context.Context, cfgp *config.MediaTypeConfig) {
 				return
 			}
 			if entry[idx].IsDir() {
-				structure.OrganizeSingleFolder(ctx, filepath.Join(dataimport.CfgPath.Path, entry[idx].Name()), cfgp, dataimport, defaulttemplate, dataimport.CfgPath.CheckRuntime, dataimport.CfgPath.DeleteWrongLanguage, 0)
+				structure.OrganizeSingleFolder(
+					ctx,
+					filepath.Join(dataimport.CfgPath.Path, entry[idx].Name()),
+					cfgp,
+					dataimport,
+					defaulttemplate,
+					dataimport.CfgPath.CheckRuntime,
+					dataimport.CfgPath.DeleteWrongLanguage,
+					0,
+				)
 			}
 		}
 	}
@@ -183,8 +266,19 @@ func structurefolders(ctx context.Context, cfgp *config.MediaTypeConfig) {
 // importnewseriessingle imports new series from a feed into the database.
 // It gets the feed for the given list, checks for new series, and spawns
 // goroutine workers to import each new series in parallel.
-func importnewseriessingle(cfgp *config.MediaTypeConfig, list *config.MediaListsConfig, listid int) error {
-	logger.LogDynamicany2Str("info", "get feeds for", logger.StrConfig, cfgp.NamePrefix, logger.StrListname, cfgp.Lists[listid].Name)
+func importnewseriessingle(
+	cfgp *config.MediaTypeConfig,
+	list *config.MediaListsConfig,
+	listid int,
+) error {
+	logger.LogDynamicany2Str(
+		"info",
+		"get feeds for",
+		logger.StrConfig,
+		cfgp.NamePrefix,
+		logger.StrListname,
+		cfgp.Lists[listid].Name,
+	)
 	if !list.Enabled || !list.CfgList.Enabled {
 		return logger.ErrDisabled
 	}
@@ -224,21 +318,39 @@ func checkreachedepisodesflag(listcfg *config.MediaListsConfig) {
 	arr := database.QuerySerieEpisodes(&listcfg.Name)
 	for idx := range arr {
 		if !config.CheckGroup("quality_", arr[idx].QualityProfile) {
-			logger.LogDynamicany1UInt("debug", "Quality for Episode not found", logger.StrID, arr[idx].ID)
+			logger.LogDynamicany1UInt(
+				"debug",
+				"Quality for Episode not found",
+				logger.StrID,
+				arr[idx].ID,
+			)
 			continue
 		}
-		minPrio, _ = searcher.Getpriobyfiles(true, &arr[idx].ID, false, -1, config.SettingsQuality[arr[idx].QualityProfile], false)
+		minPrio, _ = searcher.Getpriobyfiles(
+			true,
+			&arr[idx].ID,
+			false,
+			-1,
+			config.SettingsQuality[arr[idx].QualityProfile],
+			false,
+		)
 		reached = 0
 		if minPrio >= config.SettingsQuality[arr[idx].QualityProfile].CutoffPriority {
 			reached = 1
 		}
 		if arr[idx].QualityReached && reached == 0 {
-			database.Exec1("update Serie_episodes set quality_reached = 0 where id = ?", &arr[idx].ID)
+			database.Exec1(
+				"update Serie_episodes set quality_reached = 0 where id = ?",
+				&arr[idx].ID,
+			)
 			continue
 		}
 
 		if !arr[idx].QualityReached && reached == 1 {
-			database.Exec1("update Serie_episodes set quality_reached = 1 where id = ?", &arr[idx].ID)
+			database.Exec1(
+				"update Serie_episodes set quality_reached = 1 where id = ?",
+				&arr[idx].ID,
+			)
 		}
 	}
 }

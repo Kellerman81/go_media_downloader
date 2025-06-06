@@ -122,12 +122,26 @@ func getFFProbeFilename() string {
 		return ffprobepath
 	}
 
+	executable := "ffprobe"
 	if runtime.GOOS == "windows" {
-		ffprobepath = filepath.Join(config.SettingsGeneral.FfprobePath, "ffprobe.exe")
-	} else {
-		ffprobepath = filepath.Join(config.SettingsGeneral.FfprobePath, "ffprobe")
+		executable += ".exe"
 	}
+	ffprobepath = filepath.Join(config.SettingsGeneral.FfprobePath, executable)
 	return ffprobepath
+}
+
+func buildFFProbeCmd(file string) *exec.Cmd {
+	return exec.Command(
+		getFFProbeFilename(),
+		"-loglevel", "fatal",
+		"-print_format", "json",
+		"-show_entries", "format=duration : stream=codec_name,codec_tag_string,codec_type,height,width : stream_tags=Language : error",
+		file,
+	)
+}
+
+func buildMediaInfoCmd(file string) *exec.Cmd {
+	return exec.Command(getmediainfoFilename(), "--Output=JSON", file)
 }
 
 // getcmd returns an *exec.Cmd for the specified file and command type.
@@ -142,16 +156,12 @@ func getcmd(file, typ string) *exec.Cmd {
 		if file == "" {
 			return nil
 		}
-		return exec.Command(getFFProbeFilename(), "-loglevel", "fatal",
-			"-print_format", "json",
-			"-show_entries",
-			"format=duration : stream=codec_name,codec_tag_string,codec_type,height,width : stream_tags=Language : error",
-			file)
+		return buildFFProbeCmd(file)
 	case "mediainfo":
 		if file == "" {
 			return nil
 		}
-		return exec.Command(getmediainfoFilename(), "--Output=JSON", file)
+		return buildMediaInfoCmd(file)
 	default:
 		return exec.Command(getImdbFilename())
 	}
@@ -162,38 +172,45 @@ func getcmd(file, typ string) *exec.Cmd {
 // The command type is specified by the 'typ' parameter, which can be either "ffprobe" or "mediainfo".
 // The 'file' parameter is the path to the file to analyze.
 // The 'm' and 'quality' parameters are used to pass additional context to the parsemediainfo and parseffprobe functions.
-func ExecCmdJson[t mediaInfoJSON | ffProbeJSON](file, typ string, m *database.ParseInfo, quality *config.QualityConfig) error {
-	outputBuf := logger.PlBuffer.Get()
-	stdErr := logger.PlBuffer.Get()
-	defer logger.PlBuffer.Put(outputBuf)
-	defer logger.PlBuffer.Put(stdErr)
-
+func ExecCmdJSON[T mediaInfoJSON | ffProbeJSON](
+	file, typ string,
+	m *database.ParseInfo,
+	quality *config.QualityConfig,
+) error {
 	cmd := getcmd(file, typ)
 	if cmd == nil {
 		return logger.ErrNotFound
 	}
+
+	outputBuf := logger.PlBuffer.Get()
+	stdErr := logger.PlBuffer.Get()
+	defer func() {
+		logger.PlBuffer.Put(outputBuf)
+		logger.PlBuffer.Put(stdErr)
+	}()
+
 	cmd.Stdout = outputBuf
 	cmd.Stderr = stdErr
-	err := cmd.Run()
-	if err != nil {
-		return errors.New("error running cmd [" + stdErr.String() + "] " + err.Error() + " [" + outputBuf.String() + "]")
+	if err := cmd.Run(); err != nil {
+		return errors.New(
+			"error running cmd [" + stdErr.String() + "] " + err.Error() + " [" + outputBuf.String() + "]",
+		)
 	}
 
 	if stdErr.Len() > 0 {
 		return errors.New("cmd error: " + stdErr.String())
 	}
-	u := new(t)
-	err = json.Unmarshal(outputBuf.Bytes(), u)
-	if err == nil {
-		switch tt := any(u).(type) {
-		case *mediaInfoJSON:
-			return parsemediainfo(m, quality, tt)
-		case *ffProbeJSON:
-			return parseffprobe(m, quality, tt)
-		}
-		return nil
+	var result T
+	if err := json.Unmarshal(outputBuf.Bytes(), &result); err != nil {
+		return err
 	}
-	return err
+	switch v := any(&result).(type) {
+	case *mediaInfoJSON:
+		return parsemediainfo(m, quality, v)
+	case *ffProbeJSON:
+		return parseffprobe(m, quality, v)
+	}
+	return nil
 }
 
 // ExecCmdString executes the given command with the provided arguments and returns
@@ -201,15 +218,18 @@ func ExecCmdJson[t mediaInfoJSON | ffProbeJSON](file, typ string, m *database.Pa
 // by the 'typ' parameter, which can be either "ffprobe" or "mediainfo". The 'file'
 // parameter is the path to the file to analyze.
 func ExecCmdString[t []byte | mediaInfoJSON | ffProbeJSON](file, typ string) (string, error) {
-	outputBuf := logger.PlBuffer.Get()
-	stdErr := logger.PlBuffer.Get()
-	defer logger.PlBuffer.Put(outputBuf)
-	defer logger.PlBuffer.Put(stdErr)
-
 	cmd := getcmd(file, typ)
 	if cmd == nil {
 		return "", logger.ErrNotFound
 	}
+
+	outputBuf := logger.PlBuffer.Get()
+	stdErr := logger.PlBuffer.Get()
+	defer func() {
+		logger.PlBuffer.Put(outputBuf)
+		logger.PlBuffer.Put(stdErr)
+	}()
+
 	cmd.Stdout = outputBuf
 	cmd.Stderr = stdErr
 	err := cmd.Run()

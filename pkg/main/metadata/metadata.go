@@ -20,16 +20,37 @@ var errTmdbNotFound = errors.New("tmdb not found")
 // It returns nothing.
 // It checks if the title already exists for that movie ID, slugifies the title,
 // inserts into dbmovie_titles if it does not exist, and updates the cache if enabled.
-func checkaddmovietitlewoslug(checkid *int, dbmovieid *uint, title *string, region *string, titles []database.DbstaticTwoString) {
+func checkaddmovietitlewoslug(
+	checkid *int,
+	dbmovieid *uint,
+	title *string,
+	region *string,
+	titles []database.DbstaticTwoString,
+) {
 	if title == nil || *title == "" || database.GetDBStaticTwoStringIdx1(titles, *title) != -1 {
 		return
 	}
-	database.Scanrows2dyn(false, "select count() from dbmovie_titles where dbmovie_id = ? and title = ? COLLATE NOCASE", checkid, dbmovieid, title)
+	database.Scanrows2dyn(
+		false,
+		"select count() from dbmovie_titles where dbmovie_id = ? and title = ? COLLATE NOCASE",
+		checkid,
+		dbmovieid,
+		title,
+	)
 	if *checkid == 0 {
 		slug := logger.StringToSlug(*title)
-		database.ExecN("Insert into dbmovie_titles (title, slug, dbmovie_id, region) values (?, ?, ?, ?)", title, &slug, dbmovieid, region)
+		database.ExecN(
+			"Insert into dbmovie_titles (title, slug, dbmovie_id, region) values (?, ?, ?, ?)",
+			title,
+			&slug,
+			dbmovieid,
+			region,
+		)
 		if config.SettingsGeneral.UseMediaCache {
-			database.AppendCacheTwoString(logger.CacheTitlesMovie, database.DbstaticTwoStringOneInt{Num: *dbmovieid, Str1: *title, Str2: slug})
+			database.AppendCacheTwoString(
+				logger.CacheTitlesMovie,
+				database.DbstaticTwoStringOneInt{Num: *dbmovieid, Str1: *title, Str2: slug},
+			)
 		}
 	}
 }
@@ -117,9 +138,16 @@ func movieGetTmdbMetadata(movie *database.Dbmovie, overwrite bool) {
 	if (movie.Revenue == 0 || overwrite) && moviedbdetails.Revenue != 0 {
 		movie.Revenue = moviedbdetails.Revenue
 	}
-	if (movie.Runtime == 0 || movie.Runtime == 1 || movie.Runtime == 2 || movie.Runtime == 3 || movie.Runtime == 60 || movie.Runtime == 90 || movie.Runtime == 120 || overwrite) && moviedbdetails.Runtime != 0 {
-		if movie.Runtime != 0 && (moviedbdetails.Runtime == 1 || moviedbdetails.Runtime == 2 || moviedbdetails.Runtime == 3 || moviedbdetails.Runtime == 4 || moviedbdetails.Runtime == 60 || moviedbdetails.Runtime == 90 || moviedbdetails.Runtime == 120) {
-			logger.LogDynamicany1String("debug", "skipped moviedb movie runtime for", logger.StrImdb, movie.ImdbID)
+	if (movie.Runtime == 0 || movie.Runtime == 1 || movie.Runtime == 2 || movie.Runtime == 3 || movie.Runtime == 60 || movie.Runtime == 90 || movie.Runtime == 120 || overwrite) &&
+		moviedbdetails.Runtime != 0 {
+		if movie.Runtime != 0 &&
+			(moviedbdetails.Runtime == 1 || moviedbdetails.Runtime == 2 || moviedbdetails.Runtime == 3 || moviedbdetails.Runtime == 4 || moviedbdetails.Runtime == 60 || moviedbdetails.Runtime == 90 || moviedbdetails.Runtime == 120) {
+			logger.LogDynamicany1String(
+				"debug",
+				"skipped moviedb movie runtime for",
+				logger.StrImdb,
+				movie.ImdbID,
+			)
 		} else if moviedbdetails.Runtime != 1 && moviedbdetails.Runtime != 2 {
 			movie.Runtime = moviedbdetails.Runtime
 		}
@@ -232,9 +260,16 @@ func movieGetTraktMetadata(movie *database.Dbmovie, overwrite bool) {
 	if (movie.Overview == "" || overwrite) && traktdetails.Overview != "" {
 		movie.Overview = traktdetails.Overview
 	}
-	if (movie.Runtime == 0 || movie.Runtime == 1 || movie.Runtime == 2 || movie.Runtime == 3 || movie.Runtime == 60 || movie.Runtime == 90 || movie.Runtime == 120 || overwrite) && traktdetails.Runtime != 0 {
-		if movie.Runtime != 0 && (traktdetails.Runtime == 1 || traktdetails.Runtime == 2 || traktdetails.Runtime == 3 || traktdetails.Runtime == 4 || traktdetails.Runtime == 60 || traktdetails.Runtime == 90 || traktdetails.Runtime == 120) {
-			logger.LogDynamicany1String("debug", "skipped trakt movie runtime for", logger.StrImdb, movie.ImdbID)
+	if (movie.Runtime == 0 || movie.Runtime == 1 || movie.Runtime == 2 || movie.Runtime == 3 || movie.Runtime == 60 || movie.Runtime == 90 || movie.Runtime == 120 || overwrite) &&
+		traktdetails.Runtime != 0 {
+		if movie.Runtime != 0 &&
+			(traktdetails.Runtime == 1 || traktdetails.Runtime == 2 || traktdetails.Runtime == 3 || traktdetails.Runtime == 4 || traktdetails.Runtime == 60 || traktdetails.Runtime == 90 || traktdetails.Runtime == 120) {
+			logger.LogDynamicany1String(
+				"debug",
+				"skipped trakt movie runtime for",
+				logger.StrImdb,
+				movie.ImdbID,
+			)
 		} else if traktdetails.Runtime != 1 && traktdetails.Runtime != 2 {
 			movie.Runtime = traktdetails.Runtime
 		}
@@ -306,28 +341,58 @@ func Getmoviemetatitles(movie *database.Dbmovie, cfgp *config.MediaTypeConfig) {
 	}
 
 	// size +5
-	titles := database.Getrows1size[database.DbstaticTwoString](false, "select count() from dbmovie_titles where dbmovie_id = ?",
-		"select title, slug from dbmovie_titles where dbmovie_id = ?", &movie.ID)
+	titles := database.Getrows1size[database.DbstaticTwoString](
+		false,
+		"select count() from dbmovie_titles where dbmovie_id = ?",
+		"select title, slug from dbmovie_titles where dbmovie_id = ?",
+		&movie.ID,
+	)
 
 	var checkid int
 	if config.SettingsGeneral.MovieAlternateTitleMetaSourceImdb && movie.ImdbID != "" {
 		movie.ImdbID = logger.AddImdbPrefixP(movie.ImdbID)
-		arr := database.Getrows1size[database.DbstaticThreeString](true, "select count() from imdb_akas where tconst = ?", "select region, title, slug from imdb_akas where tconst = ?", &movie.ImdbID)
+		arr := database.Getrows1size[database.DbstaticThreeString](
+			true,
+			"select count() from imdb_akas where tconst = ?",
+			"select region, title, slug from imdb_akas where tconst = ?",
+			&movie.ImdbID,
+		)
 		for idx := range arr {
-			if cfgp.MetadataTitleLanguagesLen >= 1 && arr[idx].Str1 != "" && !logger.SlicesContainsI(cfgp.MetadataTitleLanguages, arr[idx].Str1) {
+			if cfgp.MetadataTitleLanguagesLen >= 1 && arr[idx].Str1 != "" &&
+				!logger.SlicesContainsI(cfgp.MetadataTitleLanguages, arr[idx].Str1) {
 				continue
 			}
-			if arr[idx].Str2 == "" || database.GetDBStaticTwoStringIdx1(titles, arr[idx].Str2) != -1 {
+			if arr[idx].Str2 == "" ||
+				database.GetDBStaticTwoStringIdx1(titles, arr[idx].Str2) != -1 {
 				continue
 			}
 			if arr[idx].Str3 == "" {
 				arr[idx].Str3 = logger.StringToSlug(arr[idx].Str2)
 			}
-			database.Scanrows2dyn(false, "select count() from dbmovie_titles where dbmovie_id = ? and title = ? COLLATE NOCASE", &checkid, &movie.ID, &arr[idx].Str2)
+			database.Scanrows2dyn(
+				false,
+				"select count() from dbmovie_titles where dbmovie_id = ? and title = ? COLLATE NOCASE",
+				&checkid,
+				&movie.ID,
+				&arr[idx].Str2,
+			)
 			if checkid == 0 {
-				database.ExecN("Insert into dbmovie_titles (title, slug, dbmovie_id, region) values (?, ?, ?, ?)", &arr[idx].Str2, &arr[idx].Str3, &movie.ID, &arr[idx].Str1)
+				database.ExecN(
+					"Insert into dbmovie_titles (title, slug, dbmovie_id, region) values (?, ?, ?, ?)",
+					&arr[idx].Str2,
+					&arr[idx].Str3,
+					&movie.ID,
+					&arr[idx].Str1,
+				)
 				if config.SettingsGeneral.UseMediaCache {
-					database.AppendCacheTwoString(logger.CacheTitlesMovie, database.DbstaticTwoStringOneInt{Num: movie.ID, Str1: arr[idx].Str2, Str2: arr[idx].Str3})
+					database.AppendCacheTwoString(
+						logger.CacheTitlesMovie,
+						database.DbstaticTwoStringOneInt{
+							Num:  movie.ID,
+							Str1: arr[idx].Str2,
+							Str2: arr[idx].Str3,
+						},
+					)
 				}
 			}
 		}
@@ -337,20 +402,34 @@ func Getmoviemetatitles(movie *database.Dbmovie, cfgp *config.MediaTypeConfig) {
 		tbl, err := apiexternal.GetTmdbMovieTitles(movie.MoviedbID)
 		if err == nil {
 			for idx := range tbl.Titles {
-				if cfgp.MetadataTitleLanguagesLen >= 1 && tbl.Titles[idx].Iso31661 != "" && !logger.SlicesContainsI(cfgp.MetadataTitleLanguages, tbl.Titles[idx].Iso31661) {
+				if cfgp.MetadataTitleLanguagesLen >= 1 && tbl.Titles[idx].Iso31661 != "" &&
+					!logger.SlicesContainsI(cfgp.MetadataTitleLanguages, tbl.Titles[idx].Iso31661) {
 					continue
 				}
-				checkaddmovietitlewoslug(&checkid, &movie.ID, &tbl.Titles[idx].Title, &tbl.Titles[idx].Iso31661, titles)
+				checkaddmovietitlewoslug(
+					&checkid,
+					&movie.ID,
+					&tbl.Titles[idx].Title,
+					&tbl.Titles[idx].Iso31661,
+					titles,
+				)
 			}
 		}
 	}
 	if config.SettingsGeneral.MovieAlternateTitleMetaSourceTrakt && movie.ImdbID != "" {
 		arr := apiexternal.GetTraktMovieAliases(movie.ImdbID)
 		for idx := range arr {
-			if cfgp.MetadataTitleLanguagesLen >= 1 && arr[idx].Country != "" && !logger.SlicesContainsI(cfgp.MetadataTitleLanguages, arr[idx].Country) {
+			if cfgp.MetadataTitleLanguagesLen >= 1 && arr[idx].Country != "" &&
+				!logger.SlicesContainsI(cfgp.MetadataTitleLanguages, arr[idx].Country) {
 				continue
 			}
-			checkaddmovietitlewoslug(&checkid, &movie.ID, &arr[idx].Title, &arr[idx].Country, titles)
+			checkaddmovietitlewoslug(
+				&checkid,
+				&movie.ID,
+				&arr[idx].Title,
+				&arr[idx].Country,
+				titles,
+			)
 		}
 	}
 }
@@ -402,11 +481,21 @@ func serieGetMetadataTrakt(serie *database.Dbserie, overwrite bool) error {
 		serie.Overview = traktdetails.Overview
 	}
 	if (serie.Rating == "" || overwrite) && traktdetails.Rating != 0 {
-		serie.Rating = strconv.FormatFloat(float64(traktdetails.Rating), 'f', 4, 64) // fmt.Sprintf("%f", traktdetails.Rating)
+		serie.Rating = strconv.FormatFloat(
+			float64(traktdetails.Rating),
+			'f',
+			4,
+			64,
+		) // fmt.Sprintf("%f", traktdetails.Rating)
 	}
 	if (serie.Runtime == "" || overwrite) && traktdetails.Runtime != 0 {
 		if serie.Runtime != "0" && (traktdetails.Runtime == 1 || traktdetails.Runtime == 90) {
-			logger.LogDynamicany1String("debug", "skipped serie runtime for", logger.StrImdb, serie.ImdbID)
+			logger.LogDynamicany1String(
+				"debug",
+				"skipped serie runtime for",
+				logger.StrImdb,
+				serie.ImdbID,
+			)
 		} else {
 			serie.Runtime = strconv.Itoa(traktdetails.Runtime)
 		}
@@ -440,7 +529,12 @@ func serieGetMetadataTrakt(serie *database.Dbserie, overwrite bool) error {
 // It returns updated aliases after appending new ones from TheTVDB.
 // It populates serie fields like name, status, runtime etc if empty or overwrite is set.
 // It handles API errors and logs them.
-func serieGetMetadataTvdb(serie *database.Dbserie, language string, overwrite bool, aliases []string) ([]string, error) {
+func serieGetMetadataTvdb(
+	serie *database.Dbserie,
+	language string,
+	overwrite bool,
+	aliases []string,
+) ([]string, error) {
 	if serie.ThetvdbID == 0 {
 		return aliases, logger.ErrTvdbEmpty
 	}
@@ -523,9 +617,19 @@ func serieGetMetadataTvdb(serie *database.Dbserie, language string, overwrite bo
 // queries more APIs, using data from previous ones. Overall it populates serie
 // metadata like status, first air date, network etc. from TVDB, and collects
 // aliases from Trakt using the IMDB ID.
-func SerieGetMetadata(serie *database.Dbserie, language string, querytmdb, querytrakt, overwrite bool, aliases []string) []string {
+func SerieGetMetadata(
+	serie *database.Dbserie,
+	language string,
+	querytmdb, querytrakt, overwrite bool,
+	aliases []string,
+) []string {
 	logger.LogDynamicany1String("info", "Get Metadata for", logger.StrTitle, serie.Seriename)
-	defer logger.LogDynamicany1String("info", "ended get metadata for", logger.StrTitle, serie.Seriename)
+	defer logger.LogDynamicany1String(
+		"info",
+		"ended get metadata for",
+		logger.StrTitle,
+		serie.Seriename,
+	)
 
 	aliases, err := serieGetMetadataTvdb(serie, language, overwrite, aliases)
 	if err != nil {
@@ -547,7 +651,8 @@ func SerieGetMetadata(serie *database.Dbserie, language string, querytmdb, query
 			return aliases
 		}
 		for _, tbl := range apiexternal.GetTraktSerieAliases(serie) {
-			if !logger.SlicesContainsI(aliases, tbl.Title) && logger.SlicesContainsI(config.SettingsImdb.Indexedlanguages, tbl.Country) {
+			if !logger.SlicesContainsI(aliases, tbl.Title) &&
+				logger.SlicesContainsI(config.SettingsImdb.Indexedlanguages, tbl.Country) {
 				aliases = append(aliases, tbl.Title)
 			}
 		}

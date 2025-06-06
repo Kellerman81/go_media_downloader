@@ -26,7 +26,14 @@ func getQueueTable(ctx *context.Context) (userTable table.Table) {
 
 	info := userTable.GetInfo().SetDefaultPageSize(100)
 	info.SetAutoRefresh(10)
-	info.HideDeleteButton().HideDetailButton().HideEditButton().HideExportButton().HideFilterArea().HideFilterButton().HideNewButton().HidePagination()
+	info.HideDeleteButton().
+		HideDetailButton().
+		HideEditButton().
+		HideExportButton().
+		HideFilterArea().
+		HideFilterButton().
+		HideNewButton().
+		HidePagination()
 	info.AddField("ID", "id", db.Numeric)
 	info.AddField("Queue", "queue", db.Varchar)
 	info.AddField("Job", "job", db.Varchar)

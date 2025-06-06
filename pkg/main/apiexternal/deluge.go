@@ -8,7 +8,14 @@ import (
 // SendToDeluge connects to a Deluge server, authenticates, and adds a torrent from a magnet URI or URL.
 // It configures options like download location, moving completed downloads, pausing on add, etc.
 // Returns any error from the connection or add torrent operations.
-func SendToDeluge(host string, port int, username, password, urlv, dlpath string, moveafter bool, moveafterpath string, addpaused bool) error {
+func SendToDeluge(
+	host string,
+	port int,
+	username, password, urlv, dlpath string,
+	moveafter bool,
+	moveafterpath string,
+	addpaused bool,
+) error {
 	cl := delugeclient.NewV2(delugeclient.Settings{
 		Hostname:             host,
 		Port:                 logger.IntToUint(port),

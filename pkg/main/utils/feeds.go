@@ -37,6 +37,9 @@ var (
 	plfeeds          pool.Poolobj[feedResults]
 )
 
+// Init initializes the plfeeds pool object, which is used to manage the feedResults
+// struct. It sets the initial capacity for the Movies and Series slices, and
+// provides a cleanup function to clear the slices when they are reused.
 func Init() {
 	plfeeds.Init(5, func(b *feedResults) {
 		b.Movies = make([]string, 0, 10000)
@@ -87,14 +90,23 @@ func (d *feedResults) gettraktmovielist(usetraktmovie int, cfglist *config.Media
 		if cfglist.CfgList.TraktListType == "" {
 			return errlistnameempty
 		}
-		arr, err := apiexternal.GetTraktUserList(cfglist.CfgList.TraktUsername, cfglist.CfgList.TraktListName, cfglist.CfgList.TraktListType, &cfglist.CfgList.Limit)
+		arr, err := apiexternal.GetTraktUserList(
+			cfglist.CfgList.TraktUsername,
+			cfglist.CfgList.TraktListName,
+			cfglist.CfgList.TraktListType,
+			&cfglist.CfgList.Limit,
+		)
 		if err != nil {
 			return err
 		}
 		for idx := range arr {
 			if checkaddimdbfeed(&arr[idx].Movie.IDs.Imdb, cfglist, d) {
 				if cfglist.CfgList.RemoveFromList {
-					apiexternal.RemoveMovieFromTraktUserList(cfglist.CfgList.TraktUsername, cfglist.CfgList.TraktListName, arr[idx].Movie.IDs.Imdb)
+					apiexternal.RemoveMovieFromTraktUserList(
+						cfglist.CfgList.TraktUsername,
+						cfglist.CfgList.TraktListName,
+						arr[idx].Movie.IDs.Imdb,
+					)
 				}
 			}
 		}
@@ -103,6 +115,9 @@ func (d *feedResults) gettraktmovielist(usetraktmovie int, cfglist *config.Media
 	return errwrongtype
 }
 
+// gettmdbmoviediscover retrieves a list of movies from The Movie Database (TMDb) based on the specified configuration.
+// It checks the database for existing movies and adds new movies to the `d.Movies` slice if they are allowed to be imported.
+// The function returns an error if there is a problem retrieving the movie list from TMDb.
 func (d *feedResults) gettmdbmoviediscover(cfglist *config.MediaListsConfig) error {
 	if len(cfglist.CfgList.TmdbDiscover) == 0 {
 		return nil
@@ -115,14 +130,28 @@ func (d *feedResults) gettmdbmoviediscover(cfglist *config.MediaListsConfig) err
 	}
 	var existing []uint
 	if !config.SettingsGeneral.UseMediaCache && listnamefilter != "" {
-		existing = database.GetrowsNuncached[uint](database.GetdatarowNArg(false, logger.JoinStrings("select count() from movies where ", listnamefilter), args.Arr), logger.JoinStrings("select dbmovie_id from movies where ", listnamefilter), args.Arr)
+		existing = database.GetrowsNuncached[uint](
+			database.GetdatarowNArg(
+				false,
+				logger.JoinStrings("select count() from movies where ", listnamefilter),
+				args.Arr,
+			),
+			logger.JoinStrings("select dbmovie_id from movies where ", listnamefilter),
+			args.Arr,
+		)
 	}
 	var movieid uint
 	var allowed bool
 	for idxdiscover := range cfglist.CfgList.TmdbDiscover {
 		arr, err := apiexternal.DiscoverTmdbMovie(cfglist.CfgList.TmdbDiscover[idxdiscover])
 		if err != nil {
-			logger.LogDynamicany1StringErr("debug", "discover could not be executed", err, "query", cfglist.CfgList.TmdbDiscover[idxdiscover])
+			logger.LogDynamicany1StringErr(
+				"debug",
+				"discover could not be executed",
+				err,
+				"query",
+				cfglist.CfgList.TmdbDiscover[idxdiscover],
+			)
 			continue
 		}
 		for idx := range arr.Results {
@@ -134,9 +163,13 @@ func (d *feedResults) gettmdbmoviediscover(cfglist *config.MediaListsConfig) err
 
 				if cfglist.IgnoreMapListsLen >= 1 {
 					if config.SettingsGeneral.UseMediaCache {
-						if database.CacheOneStringTwoIntIndexFunc(logger.CacheMovie, func(elem *database.DbstaticOneStringTwoInt) bool {
-							return elem.Num1 == movieid && logger.SlicesContainsI(cfglist.IgnoreMapLists, elem.Str)
-						}) {
+						if database.CacheOneStringTwoIntIndexFunc(
+							logger.CacheMovie,
+							func(elem *database.DbstaticOneStringTwoInt) bool {
+								return elem.Num1 == movieid &&
+									logger.SlicesContainsI(cfglist.IgnoreMapLists, elem.Str)
+							},
+						) {
 							continue
 						}
 					} else if listnamefilter != "" {
@@ -149,7 +182,13 @@ func (d *feedResults) gettmdbmoviediscover(cfglist *config.MediaListsConfig) err
 
 			moviedbexternal, err := apiexternal.GetTmdbMovieExternal(arr.Results[idx].ID)
 			if err != nil {
-				logger.LogDynamicany1IntErr("debug", "imdb id could not be retrieved", err, logger.StrImdb, arr.Results[idx].ID)
+				logger.LogDynamicany1IntErr(
+					"debug",
+					"imdb id could not be retrieved",
+					err,
+					logger.StrImdb,
+					arr.Results[idx].ID,
+				)
 				continue
 			}
 			allowed, _ = importfeed.AllowMovieImport(&moviedbexternal.ImdbID, cfglist.CfgList)
@@ -161,6 +200,8 @@ func (d *feedResults) gettmdbmoviediscover(cfglist *config.MediaListsConfig) err
 	return nil
 }
 
+// gettmdbshowdiscover retrieves a list of TV shows from The Movie Database (TMDb) based on the configuration settings in the provided MediaListsConfig.
+// It iterates through the TmdbDiscover configuration, fetching the TV show details from TMDb and adding them to the d.Series slice if they are not already in the database.
 func (d *feedResults) gettmdbshowdiscover(cfglist *config.MediaListsConfig) error {
 	if len(cfglist.CfgList.TmdbDiscover) == 0 {
 		return nil
@@ -173,7 +214,12 @@ func (d *feedResults) gettmdbshowdiscover(cfglist *config.MediaListsConfig) erro
 			continue
 		}
 		for idx := range arr.Results {
-			database.Scanrows1dyn(false, "select id from dbseries where moviedb_id = ?", &imdbid, &arr.Results[idx].ID)
+			database.Scanrows1dyn(
+				false,
+				"select id from dbseries where moviedb_id = ?",
+				&imdbid,
+				&arr.Results[idx].ID,
+			)
 			if imdbid == "" {
 				moviedbexternal, err = apiexternal.GetTVExternal(arr.Results[idx].ID)
 				if err != nil || moviedbexternal == nil || moviedbexternal.TvdbID == 0 {
@@ -181,6 +227,40 @@ func (d *feedResults) gettmdbshowdiscover(cfglist *config.MediaListsConfig) erro
 				}
 				d.Series = append(d.Series, config.SerieConfig{
 					Name: arr.Results[idx].Name, TvdbID: moviedbexternal.TvdbID,
+				})
+			}
+		}
+	}
+	return nil
+}
+
+// gettmdbshowlist retrieves a list of TV shows from The Movie Database (TMDb) based on the configuration settings in the provided MediaListsConfig.
+// It iterates through the TmdbList configuration, fetching the TV show details from TMDb and adding them to the d.Series slice if they are not already in the database.
+func (d *feedResults) gettmdbshowlist(cfglist *config.MediaListsConfig) error {
+	if len(cfglist.CfgList.TmdbDiscover) == 0 {
+		return nil
+	}
+	var imdbid string
+	var moviedbexternal *apiexternal.TheMovieDBTVExternal
+	for idxdiscover := range cfglist.CfgList.TmdbList {
+		arr, err := apiexternal.GetTmdbList(cfglist.CfgList.TmdbList[idxdiscover])
+		if err != nil {
+			continue
+		}
+		for idx := range arr.Items {
+			database.Scanrows1dyn(
+				false,
+				"select id from dbseries where moviedb_id = ?",
+				&imdbid,
+				&arr.Items[idx].ID,
+			)
+			if imdbid == "" {
+				moviedbexternal, err = apiexternal.GetTVExternal(arr.Items[idx].ID)
+				if err != nil || moviedbexternal == nil || moviedbexternal.TvdbID == 0 {
+					continue
+				}
+				d.Series = append(d.Series, config.SerieConfig{
+					Name: arr.Items[idx].Name, TvdbID: moviedbexternal.TvdbID,
 				})
 			}
 		}
@@ -196,13 +276,23 @@ func checkaddimdbfeed(imdb *string, cfglist *config.MediaListsConfig, d *feedRes
 	if imdb == nil || *imdb == "" {
 		return false
 	}
-	if database.Getdatarow2[uint](false, "select count() from movies where dbmovie_id in (select id from dbmovies where imdb_id = ?) and listname = ? COLLATE NOCASE", imdb, &cfglist.Name) == 0 {
+	if database.Getdatarow2[uint](
+		false,
+		"select count() from movies where dbmovie_id in (select id from dbmovies where imdb_id = ?) and listname = ? COLLATE NOCASE",
+		imdb,
+		&cfglist.Name,
+	) == 0 {
 		d.Movies = append(d.Movies, *imdb)
 		return true
 	}
 	return false
 }
 
+// gettmdblist retrieves a list of movies from The Movie Database (TMDb) based on the configuration settings in the provided MediaListsConfig.
+// It iterates through the TmdbList configuration, fetching the movie details from TMDb and adding them to the d.Movies slice if they are not already in the database.
+// The function checks if the movie is already in the database, and if it is in the ignore list, it skips adding the movie to the list.
+// If the movie is not in the database and is allowed to be imported, it adds the IMDB ID to the d.Movies slice.
+// The function also removes the movie from the TMDb list if the RemoveFromList option is enabled in the configuration.
 func (d *feedResults) gettmdblist(cfglist *config.MediaListsConfig) error {
 	listnamefilter := cfglist.Getlistnamefilterignore()
 	args := logger.PLArrAny.Get()
@@ -212,7 +302,15 @@ func (d *feedResults) gettmdblist(cfglist *config.MediaListsConfig) error {
 	}
 	var existing []uint
 	if !config.SettingsGeneral.UseMediaCache && listnamefilter != "" {
-		existing = database.GetrowsNuncached[uint](database.GetdatarowNArg(false, logger.JoinStrings("select count() from movies where ", listnamefilter), args.Arr), logger.JoinStrings("select dbmovie_id from movies where ", listnamefilter), args.Arr)
+		existing = database.GetrowsNuncached[uint](
+			database.GetdatarowNArg(
+				false,
+				logger.JoinStrings("select count() from movies where ", listnamefilter),
+				args.Arr,
+			),
+			logger.JoinStrings("select dbmovie_id from movies where ", listnamefilter),
+			args.Arr,
+		)
 	}
 	var movieid uint
 	var allowed bool
@@ -227,18 +325,28 @@ func (d *feedResults) gettmdblist(cfglist *config.MediaListsConfig) error {
 			if movieid != 0 {
 				if getmovieid(&movieid, cfglist) {
 					if cfglist.CfgList.RemoveFromList {
-						apiexternal.RemoveFromTmdbList(cfglist.CfgList.TmdbList[idxlist], arr.Items[idx].ID)
+						apiexternal.RemoveFromTmdbList(
+							cfglist.CfgList.TmdbList[idxlist],
+							arr.Items[idx].ID,
+						)
 					}
 					continue
 				}
 
 				if cfglist.IgnoreMapListsLen >= 1 {
 					if config.SettingsGeneral.UseMediaCache {
-						if database.CacheOneStringTwoIntIndexFunc(logger.CacheMovie, func(elem *database.DbstaticOneStringTwoInt) bool {
-							return elem.Num1 == movieid && logger.SlicesContainsI(cfglist.IgnoreMapLists, elem.Str)
-						}) {
+						if database.CacheOneStringTwoIntIndexFunc(
+							logger.CacheMovie,
+							func(elem *database.DbstaticOneStringTwoInt) bool {
+								return elem.Num1 == movieid &&
+									logger.SlicesContainsI(cfglist.IgnoreMapLists, elem.Str)
+							},
+						) {
 							if cfglist.CfgList.RemoveFromList {
-								apiexternal.RemoveFromTmdbList(cfglist.CfgList.TmdbList[idxlist], arr.Items[idx].ID)
+								apiexternal.RemoveFromTmdbList(
+									cfglist.CfgList.TmdbList[idxlist],
+									arr.Items[idx].ID,
+								)
 							}
 							continue
 						}
@@ -255,14 +363,23 @@ func (d *feedResults) gettmdblist(cfglist *config.MediaListsConfig) error {
 
 			moviedbexternal, err := apiexternal.GetTmdbMovieExternal(arr.Items[idx].ID)
 			if err != nil {
-				logger.LogDynamicany1IntErr("debug", "imdb id could not be retrieved", err, logger.StrImdb, arr.Items[idx].ID)
+				logger.LogDynamicany1IntErr(
+					"debug",
+					"imdb id could not be retrieved",
+					err,
+					logger.StrImdb,
+					arr.Items[idx].ID,
+				)
 				continue
 			}
 			allowed, _ = importfeed.AllowMovieImport(&moviedbexternal.ImdbID, cfglist.CfgList)
 			if allowed {
 				d.Movies = append(d.Movies, moviedbexternal.ImdbID)
 				if cfglist.CfgList.RemoveFromList {
-					apiexternal.RemoveFromTmdbList(cfglist.CfgList.TmdbList[idxlist], arr.Items[idx].ID)
+					apiexternal.RemoveFromTmdbList(
+						cfglist.CfgList.TmdbList[idxlist],
+						arr.Items[idx].ID,
+					)
 				}
 			}
 		}
@@ -309,7 +426,12 @@ func (d *feedResults) gettraktserielist(usetraktserie int, cfglist *config.Media
 		if cfglist.CfgList.TraktListType == "" {
 			return errlistnameempty
 		}
-		arr, err := apiexternal.GetTraktUserList(cfglist.CfgList.TraktUsername, cfglist.CfgList.TraktListName, cfglist.CfgList.TraktListType, &cfglist.CfgList.Limit)
+		arr, err := apiexternal.GetTraktUserList(
+			cfglist.CfgList.TraktUsername,
+			cfglist.CfgList.TraktListName,
+			cfglist.CfgList.TraktListType,
+			&cfglist.CfgList.Limit,
+		)
 		if err != nil {
 			return err
 		}
@@ -318,7 +440,11 @@ func (d *feedResults) gettraktserielist(usetraktserie int, cfglist *config.Media
 				Name: arr[idx].Serie.Title, TvdbID: arr[idx].Serie.IDs.Tvdb,
 			})
 			if cfglist.CfgList.RemoveFromList {
-				apiexternal.RemoveSerieFromTraktUserList(cfglist.CfgList.TraktUsername, cfglist.CfgList.TraktListName, arr[idx].Movie.IDs.Tvdb)
+				apiexternal.RemoveSerieFromTraktUserList(
+					cfglist.CfgList.TraktUsername,
+					cfglist.CfgList.TraktListName,
+					arr[idx].Movie.IDs.Tvdb,
+				)
 			}
 		}
 		return nil
@@ -350,10 +476,16 @@ func getseriesconfig(cfglist *config.ListsConfig) ([]config.SerieConfig, error) 
 //
 // It handles locking/unlocking a global counter for tracking list item counts.
 func (d *feedResults) getimdbcsv(cfglistp *config.MediaListsConfig) error {
-	return apiexternal.ProcessHTTP(nil, cfglistp.CfgList.URL, false, func(ctx context.Context, r *http.Response) error {
-		d.parseimdbcsv(ctx, r.Body, cfglistp)
-		return nil
-	}, nil)
+	return apiexternal.ProcessHTTP(
+		nil,
+		cfglistp.CfgList.URL,
+		false,
+		func(ctx context.Context, r *http.Response) error {
+			d.parseimdbcsv(ctx, r.Body, cfglistp)
+			return nil
+		},
+		nil,
+	)
 }
 
 // parseimdbcsv parses an IMDB CSV file from the provided io.ReadCloser, filters the movies based on the given configuration,
@@ -365,7 +497,11 @@ func (d *feedResults) getimdbcsv(cfglistp *config.MediaListsConfig) error {
 // movies to the d.Movies list.
 //
 // It handles locking/unlocking a global counter for tracking list item counts.
-func (d *feedResults) parseimdbcsv(_ context.Context, resp io.ReadCloser, cfglistp *config.MediaListsConfig) {
+func (d *feedResults) parseimdbcsv(
+	_ context.Context,
+	resp io.ReadCloser,
+	cfglistp *config.MediaListsConfig,
+) {
 	parserimdb := csv.NewReader(resp)
 	parserimdb.ReuseRecord = true
 
@@ -378,7 +514,15 @@ func (d *feedResults) parseimdbcsv(_ context.Context, resp io.ReadCloser, cfglis
 	}
 	var existing []uint
 	if !config.SettingsGeneral.UseMediaCache && listnamefilter != "" {
-		existing = database.GetrowsNuncached[uint](database.GetdatarowNArg(false, logger.JoinStrings("select count() from movies where ", listnamefilter), args.Arr), logger.JoinStrings("select dbmovie_id from movies where ", listnamefilter), args.Arr)
+		existing = database.GetrowsNuncached[uint](
+			database.GetdatarowNArg(
+				false,
+				logger.JoinStrings("select count() from movies where ", listnamefilter),
+				args.Arr,
+			),
+			logger.JoinStrings("select dbmovie_id from movies where ", listnamefilter),
+			args.Arr,
+		)
 	}
 
 	var allowed bool
@@ -404,9 +548,13 @@ func (d *feedResults) parseimdbcsv(_ context.Context, resp io.ReadCloser, cfglis
 
 			if cfglistp.IgnoreMapListsLen >= 1 {
 				if config.SettingsGeneral.UseMediaCache {
-					if database.CacheOneStringTwoIntIndexFunc(logger.CacheMovie, func(elem *database.DbstaticOneStringTwoInt) bool {
-						return elem.Num1 == movieid && logger.SlicesContainsI(cfglistp.IgnoreMapLists, elem.Str)
-					}) {
+					if database.CacheOneStringTwoIntIndexFunc(
+						logger.CacheMovie,
+						func(elem *database.DbstaticOneStringTwoInt) bool {
+							return elem.Num1 == movieid &&
+								logger.SlicesContainsI(cfglistp.IgnoreMapLists, elem.Str)
+						},
+					) {
 						continue
 					}
 				} else if listnamefilter != "" {
@@ -424,7 +572,14 @@ func (d *feedResults) parseimdbcsv(_ context.Context, resp io.ReadCloser, cfglis
 		}
 	}
 	i := len(d.Movies)
-	logger.LogDynamicany2StrAny("info", "imdb list fetched", logger.StrURL, cfglistp.CfgList.URL, strtoparse, &i)
+	logger.LogDynamicany2StrAny(
+		"info",
+		"imdb list fetched",
+		logger.StrURL,
+		cfglistp.CfgList.URL,
+		strtoparse,
+		&i,
+	)
 }
 
 // getimdbfile fetches the IMDB CSV file specified in the config and parses it using the parseimdbcsv method.
@@ -458,6 +613,8 @@ func feeds(cfgp *config.MediaTypeConfig, list *config.MediaListsConfig, d *feedR
 		return d.getimdbfile(list)
 	case "tmdblist":
 		return d.gettmdblist(list)
+	case "tmdbshowlist":
+		return d.gettmdbshowlist(list)
 	case "traktpublicmovielist":
 		return d.gettraktmovielist(4, list)
 	case "traktmoviepopular":
@@ -490,9 +647,13 @@ func feeds(cfgp *config.MediaTypeConfig, list *config.MediaListsConfig, d *feedR
 func getmovieid(dbid *uint, cfglistp *config.MediaListsConfig) bool {
 	if config.SettingsGeneral.UseMediaCache {
 		dbidn := *dbid
-		if database.CacheOneStringTwoIntIndexFunc(logger.CacheMovie, func(elem *database.DbstaticOneStringTwoInt) bool {
-			return elem.Num1 == dbidn && (elem.Str == cfglistp.Name || strings.EqualFold(elem.Str, cfglistp.Name))
-		}) {
+		if database.CacheOneStringTwoIntIndexFunc(
+			logger.CacheMovie,
+			func(elem *database.DbstaticOneStringTwoInt) bool {
+				return elem.Num1 == dbidn &&
+					(elem.Str == cfglistp.Name || strings.EqualFold(elem.Str, cfglistp.Name))
+			},
+		) {
 			return true
 		}
 	} else if database.Getdatarow2[uint](false, database.QueryCountMoviesByDBIDList, dbid, &cfglistp.Name) >= 1 {

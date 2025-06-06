@@ -12,114 +12,159 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 )
 
+type MoveFileOptions struct {
+	UseOther      bool
+	UseNil        bool
+	UseBufferCopy bool
+	ChmodFolder   string
+	Chmod         string
+}
+
 var strto = "to"
 
 // MoveFile moves a file from one path to another. It handles checking extensions, renaming, setting permissions etc.
 // It returns a bool indicating if the move was successful, and an error.
-func MoveFile(file string, setpathcfg *config.PathsConfig, target, newname string, useother, usenil, usebuffercopy bool, chmodfolder, chmod string) (string, error) {
+func MoveFile(
+	file string,
+	setpathcfg *config.PathsConfig,
+	target, newname string,
+	opts MoveFileOptions,
+) (string, error) {
 	if !CheckFileExist(file) {
 		return "", logger.ErrNotFound
 	}
 	ext := filepath.Ext(file)
-	var ok, oknorename bool
-	if usenil || setpathcfg == nil {
-		ok = true
-		oknorename = true
-	} else {
-		ok, oknorename = CheckExtensions(!useother, useother, setpathcfg, ext)
-	}
-
+	ok, oknorename := checkExtensionPermissions(setpathcfg, ext, opts.UseOther, opts.UseNil)
 	if !ok {
 		return "", logger.ErrNotAllowed
 	}
+
+	newfilename := determineNewFilename(file, newname, ext, oknorename)
+	logger.Path(&newfilename, false)
+
+	renamepath := filepath.Join(filepath.Dir(file), newfilename)
+	newpath := filepath.Join(target, newfilename)
+
+	if err := prepareMove(file, newpath, renamepath); err != nil {
+		return "", err
+	}
+
+	if err := performMove(renamepath, newpath, opts); err != nil {
+		return "", err
+	}
+
+	logger.Logtype("info", 0).Str(logger.StrFile, file).Str("to", newpath).Msg("File moved from")
+	return newpath, nil
+}
+
+func checkExtensionPermissions(setpathcfg *config.PathsConfig, ext string, useother, usenil bool) (bool, bool) {
+	if usenil || setpathcfg == nil {
+		return true, true
+	}
+	return CheckExtensions(!useother, useother, setpathcfg, ext)
+}
+
+func determineNewFilename(file, newname, ext string, oknorename bool) string {
 	var newfilename string
 	if newname == "" || oknorename {
 		newfilename = filepath.Base(file)
 	} else {
 		newfilename = newname
 	}
+
 	if !strings.HasSuffix(newfilename, ext) {
-		newfilename = (newfilename + ext)
+		newfilename += ext
 	}
-	logger.Path(&newfilename, false)
-	renamepath := filepath.Join(filepath.Dir(file), newfilename)
-	newpath := filepath.Join(target, newfilename)
+	return newfilename
+}
 
-	logger.Logtype("info", 0).Str(logger.StrFile, file).Str(strto, newpath).Msg("File move start")
-	if target != newpath && CheckFileExist(newpath) {
-		// Remove Target to suppress error
+func prepareMove(file, newpath, renamepath string) error {
+	logger.Logtype("info", 0).Str(logger.StrFile, file).Str("to", newpath).Msg("File move start")
 
-		logger.Logtype("info", 0).Str(strto, newpath).Msg("File remove start")
+	if CheckFileExist(newpath) {
+		logger.Logtype("info", 0).Str("to", newpath).Msg("File remove start")
 		RemoveFile(newpath)
 	}
-	err := os.Rename(file, renamepath)
-	if err != nil {
-		return "", err
+
+	return os.Rename(file, renamepath)
+}
+
+func performMove(renamepath, newpath string, opts MoveFileOptions) error {
+	logger.Logtype("info", 0).Str(logger.StrFile, renamepath).Str("to", newpath).Msg("File move start move")
+
+	var fileMode fs.FileMode
+	if len(opts.Chmod) == 4 {
+		fileMode = logger.StringToFileMode(opts.Chmod)
 	}
 
-	logger.Logtype("info", 0).Str(logger.StrFile, file).Str(strto, newpath).Msg("File move start move")
-	var uchmod fs.FileMode
-	if chmod != "" && len(chmod) == 4 {
-		uchmod = logger.StringToFileMode(chmod)
-	}
-	if usebuffercopy {
-		if chmod != "" && len(chmod) == 4 {
-			setchmod(renamepath, uchmod)
+	if opts.UseBufferCopy {
+		if fileMode != 0 {
+			setchmod(renamepath, fileMode)
 		}
-		err = moveFileDriveBufferRemove(renamepath, newpath, uchmod)
-	} else {
-		var uchmodfolder fs.FileMode
-		if chmodfolder != "" && len(chmodfolder) == 4 {
-			uchmodfolder = logger.StringToFileMode(chmodfolder)
-		}
-		err = moveFileDrive(renamepath, newpath, uchmodfolder, uchmod)
+		return moveFileDriveBufferRemove(renamepath, newpath, fileMode)
 	}
-	if err != nil {
-		return "", err
+
+	var folderMode fs.FileMode
+	if len(opts.ChmodFolder) == 4 {
+		folderMode = logger.StringToFileMode(opts.ChmodFolder)
 	}
-	logger.Logtype("info", 0).Str(logger.StrFile, file).Str(strto, newpath).Msg("File moved from")
-	return newpath, nil
+	return moveFileDrive(renamepath, newpath, folderMode, fileMode)
 }
 
 // CheckExtensions checks if the given file extension is allowed for the
 // provided checkvideo and checkother booleans. It returns a bool for if the
 // extension is allowed, and a bool for if renaming should be skipped.
-func CheckExtensions(checkvideo, checkother bool, pathcfg *config.PathsConfig, ext string) (bool, bool) {
-	var ok, oknorename bool
+func CheckExtensions(
+	checkvideo, checkother bool,
+	pathcfg *config.PathsConfig,
+	ext string,
+) (bool, bool) {
 	if checkvideo {
-		if pathcfg.AllowedVideoExtensionsLen == 0 {
-			ok = true
-			oknorename = true
-		} else {
-			ok = logger.SlicesContainsI(pathcfg.AllowedVideoExtensions, ext)
+		if ok, oknorename := checkVideoExtensions(pathcfg, ext); checkvideo && !checkother {
+			return ok, oknorename
+		} else if ok {
+			return ok, oknorename
 		}
+	}
+	if checkother {
+		return checkOtherExtensions(pathcfg, ext)
+	}
 
-		if !ok && pathcfg.AllowedVideoExtensionsNoRenameLen >= 1 {
-			ok = logger.SlicesContainsI(pathcfg.AllowedVideoExtensionsNoRename, ext)
-			if ok {
-				oknorename = ok
-			}
-		}
+	return false, false
+}
+
+func checkVideoExtensions(pathcfg *config.PathsConfig, ext string) (bool, bool) {
+	if pathcfg.AllowedVideoExtensionsLen == 0 {
+		return true, true
 	}
-	if !checkother {
-		return ok, oknorename
+
+	if logger.SlicesContainsI(pathcfg.AllowedVideoExtensions, ext) {
+		return true, false
 	}
+
+	if pathcfg.AllowedVideoExtensionsNoRenameLen > 0 &&
+		logger.SlicesContainsI(pathcfg.AllowedVideoExtensionsNoRename, ext) {
+		return true, true
+	}
+
+	return false, false
+}
+
+func checkOtherExtensions(pathcfg *config.PathsConfig, ext string) (bool, bool) {
 	if pathcfg.AllowedOtherExtensionsLen == 0 {
-		ok = true
-		if ok {
-			oknorename = ok
-		}
-	} else {
-		ok = logger.SlicesContainsI(pathcfg.AllowedOtherExtensions, ext)
+		return true, true
 	}
 
-	if !ok && pathcfg.AllowedOtherExtensionsNoRenameLen >= 1 {
-		ok = logger.SlicesContainsI(pathcfg.AllowedOtherExtensionsNoRename, ext)
-		if ok {
-			oknorename = ok
-		}
+	if logger.SlicesContainsI(pathcfg.AllowedOtherExtensions, ext) {
+		return true, false
 	}
-	return ok, oknorename
+
+	if pathcfg.AllowedOtherExtensionsNoRenameLen > 0 &&
+		logger.SlicesContainsI(pathcfg.AllowedOtherExtensionsNoRename, ext) {
+		return true, true
+	}
+
+	return false, false
 }
 
 // Setchmod sets the file mode permissions for the given file.
@@ -130,12 +175,10 @@ func setchmod(file string, chmod fs.FileMode) {
 	if chmod == 0 {
 		return
 	}
-	f, err := os.Open(file)
-	if err != nil {
-		return
+	if f, err := os.Open(file); err == nil {
+		defer f.Close()
+		f.Chmod(chmod)
 	}
-	defer f.Close()
-	f.Chmod(chmod)
 }
 
 // RemoveFile removes the file at the given path if it exists.
@@ -153,7 +196,7 @@ func RemoveFile(file string) (bool, error) {
 // it logs an informational message. If the file cannot be removed, it logs an error message and returns the error.
 func SecureRemove(file string) (bool, error) {
 	err := os.Remove(file)
-	if err != nil && errors.Is(err, os.ErrPermission) {
+	if errors.Is(err, os.ErrPermission) {
 		os.Chmod(file, 0o777)
 		err = os.Remove(file)
 	}
@@ -208,8 +251,7 @@ func moveFileDriveBuffer(sourcePath, destPath string) error {
 			break
 		}
 
-		_, err = destination.Write(buf[:n])
-		if err != nil {
+		if _, err := destination.Write(buf[:n]); err != nil {
 			return err
 		}
 	}
@@ -220,12 +262,10 @@ func moveFileDriveBuffer(sourcePath, destPath string) error {
 // sets the file permissions to chmod, and deletes the original source file
 // after a successful copy. Returns any error.
 func moveFileDriveBufferRemove(sourcePath, destPath string, chmod fs.FileMode) error {
-	err := moveFileDriveBuffer(sourcePath, destPath)
-	if err != nil {
+	if err := moveFileDriveBuffer(sourcePath, destPath); err != nil {
 		return err
 	}
-	_, err = SecureRemove(sourcePath)
-	if err != nil {
+	if _, err := SecureRemove(sourcePath); err != nil {
 		return errors.New("failed removing original file: " + err.Error())
 	}
 	if chmod != 0 {
@@ -239,21 +279,29 @@ func moveFileDriveBufferRemove(sourcePath, destPath string, chmod fs.FileMode) e
 // It handles deleting the original source file after a successful copy.
 // Returns any errors from the copy or file deletions.
 func moveFileDrive(sourcePath, destPath string, chmodfolder, chmod fs.FileMode) error {
-	logger.Logtype("info", 0).Str(logger.StrFile, sourcePath).Str(strto, destPath).Msg("File move begin")
-	err := copyFile(sourcePath, destPath, false, chmodfolder)
-	if err != nil {
-		logger.Logtype("error", 0).Str(logger.StrFile, sourcePath).Str(strto, destPath).Err(err).Msg("Error copiing source")
+	logger.Logtype("info", 0).
+		Str(logger.StrFile, sourcePath).
+		Str(strto, destPath).
+		Msg("File move begin")
+	if err := copyFile(sourcePath, destPath, false, chmodfolder); err != nil {
+		logger.Logtype("error", 0).
+			Str(logger.StrFile, sourcePath).
+			Str(strto, destPath).
+			Err(err).
+			Msg("Error copiing source")
 		return err
 	}
-	logger.Logtype("info", 0).Str(logger.StrFile, sourcePath).Str(strto, destPath).Msg("File move end")
+	logger.Logtype("info", 0).
+		Str(logger.StrFile, sourcePath).
+		Str(strto, destPath).
+		Msg("File move end")
 
 	if chmod != 0 {
-		err = os.Chmod(destPath, chmod)
-		if err != nil {
+		if err := os.Chmod(destPath, chmod); err != nil {
 			return err
 		}
 	}
-	_, err = SecureRemove(sourcePath)
+	_, err := SecureRemove(sourcePath)
 	return err
 }
 
@@ -328,28 +376,26 @@ func copyFile(src, dst string, allowFileLink bool, chmodfolder fs.FileMode) erro
 		}
 	}
 
-	// Open the source file for reading
+	return performFileCopy(src, dst)
+}
+
+func performFileCopy(src, dst string) error {
 	srcFile, err := os.Open(src)
 	if err != nil {
 		return err
 	}
 	defer srcFile.Close()
 
-	// Open the destination file for writing
 	dstFile, err := os.Create(dst)
 	if err != nil {
 		return err
 	}
 	defer dstFile.Close()
-	// Return any errors that result from closing the destination file
-	// Will return nil if no errors occurred
 
-	// Copy the contents of the source file into the destination files
-	_, err = io.Copy(dstFile, srcFile)
-	if err != nil {
+	if _, err := io.Copy(dstFile, srcFile); err != nil {
 		return err
 	}
-	// Sync and set permissions if needed
+
 	return dstFile.Sync()
 }
 

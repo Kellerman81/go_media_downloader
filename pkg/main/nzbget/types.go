@@ -40,10 +40,10 @@ type Status struct {
 	// ArticleCacheLo      int  // 0
 
 	// ParJobCount         int  // 0
-	//PostJobCount        int  // 0
-	//UrlCount            int  // 0
-	//FreeDiskSpaceLo     int  // 3635539968
-	//FreeDiskSpaceHi     int  // 32
+	// PostJobCount        int  // 0
+	// UrlCount            int  // 0
+	// FreeDiskSpaceLo     int  // 3635539968
+	// FreeDiskSpaceHi     int  // 32
 }
 
 type newsServer struct {

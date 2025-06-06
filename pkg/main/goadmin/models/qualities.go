@@ -9,7 +9,10 @@ import (
 )
 
 func getQualitiesTable(ctx *context.Context) table.Table {
-	qualities := table.NewDefaultTable(ctx, table.DefaultConfigWithDriverAndConnection("sqlite", "media"))
+	qualities := table.NewDefaultTable(
+		ctx,
+		table.DefaultConfigWithDriverAndConnection("sqlite", "media"),
+	)
 
 	info := qualities.GetInfo().HideFilterArea()
 
@@ -39,15 +42,22 @@ func getQualitiesTable(ctx *context.Context) table.Table {
 	info.AddField("Regex", "regex", db.Text).FieldFilterable().FieldSortable()
 	info.AddField("Strings", "strings", db.Text).FieldFilterable().FieldSortable()
 	info.AddField("Priority", "priority", db.Integer).FieldFilterable().FieldSortable()
-	info.AddField("Use_regex", "use_regex", db.Integer).FieldFilterable(types.FilterType{FormType: form.SelectSingle}).FieldFilterOptions(types.FieldOptions{
-		{Value: "0", Text: "No"},
-		{Value: "1", Text: "Yes"},
-	}).FieldFilterOptionExt(map[string]any{"allowClear": true}).FieldSortable().FieldBool("1", "0")
+	info.AddField("Use_regex", "use_regex", db.Integer).
+		FieldFilterable(types.FilterType{FormType: form.SelectSingle}).
+		FieldFilterOptions(types.FieldOptions{
+			{Value: "0", Text: "No"},
+			{Value: "1", Text: "Yes"},
+		}).
+		FieldFilterOptionExt(map[string]any{"allowClear": true}).
+		FieldSortable().
+		FieldBool("1", "0")
 	info.AddField("Regexgroup", "regexgroup", db.Integer).FieldFilterable().FieldSortable()
 	info.SetTable("qualities").SetTitle("Qualities").SetDescription("Qualities")
 
 	formList := qualities.GetForm()
-	formList.AddField("Id", "id", db.Integer, form.Default).FieldDisplayButCanNotEditWhenCreate().FieldDisableWhenUpdate()
+	formList.AddField("Id", "id", db.Integer, form.Default).
+		FieldDisplayButCanNotEditWhenCreate().
+		FieldDisableWhenUpdate()
 	// formList.AddField("Created_at", "created_at", db.Datetime, form.Datetime)
 	// formList.AddField("Updated_at", "updated_at", db.Datetime, form.Datetime)
 	formList.AddField("Type", "type", db.Integer, form.SelectSingle).
@@ -61,10 +71,11 @@ func getQualitiesTable(ctx *context.Context) table.Table {
 	formList.AddField("Regex", "regex", db.Text, form.Text)
 	formList.AddField("Strings", "strings", db.Text, form.Text)
 	formList.AddField("Priority", "priority", db.Integer, form.Number)
-	formList.AddField("Use_regex", "use_regex", db.Integer, form.Switch).FieldOptions(types.FieldOptions{
-		{Text: "Yes", Value: "1"},
-		{Text: "No", Value: "0"},
-	})
+	formList.AddField("Use_regex", "use_regex", db.Integer, form.Switch).
+		FieldOptions(types.FieldOptions{
+			{Text: "Yes", Value: "1"},
+			{Text: "No", Value: "0"},
+		})
 	formList.AddField("Regexgroup", "regexgroup", db.Integer, form.Number)
 
 	formList.SetTable("qualities").SetTitle("Qualities").SetDescription("Qualities")

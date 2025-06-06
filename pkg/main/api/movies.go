@@ -170,7 +170,11 @@ func apiMovieListGet(ctx *gin.Context) {
 	query.InnerJoin = "dbmovies on movies.dbmovie_id=dbmovies.id"
 	query.Where = "movies.listname = ? COLLATE NOCASE"
 
-	rows := database.GetdatarowN(false, "select count() from movies where listname = ? COLLATE NOCASE", &list)
+	rows := database.GetdatarowN(
+		false,
+		"select count() from movies where listname = ? COLLATE NOCASE",
+		&list,
+	)
 	limit := 0
 	page := 0
 	if queryParam, ok := ctx.GetQuery("limit"); ok {
@@ -194,7 +198,10 @@ func apiMovieListGet(ctx *gin.Context) {
 			query.OrderBy = queryParam
 		}
 	}
-	ctx.JSON(http.StatusOK, gin.H{"data": database.QueryResultMovies(query, ctx.Param("name")), "total": rows})
+	ctx.JSON(
+		http.StatusOK,
+		gin.H{"data": database.QueryResultMovies(query, ctx.Param("name")), "total": rows},
+	)
 }
 
 // @Summary      Get Movie Metadata
@@ -229,13 +236,47 @@ func apiMovieMetadataGet(ctx *gin.Context) {
 	if queryParam, ok := ctx.GetQuery("update"); ok && queryParam == "1" {
 		dbmovie.MovieFindDBIDByImdbParser()
 		if dbmovie.ID == 0 {
-			dbresult, err := database.ExecNid("insert into dbmovies (Imdb_ID) VALUES (?)", &dbmovie.ImdbID)
+			dbresult, err := database.ExecNid(
+				"insert into dbmovies (Imdb_ID) VALUES (?)",
+				&dbmovie.ImdbID,
+			)
 			if err == nil {
 				dbmovie.ID = uint(dbresult)
 			}
 		}
-		database.ExecN("update dbmovies SET Title = ? , Release_Date = ? , Year = ? , Adult = ? , Budget = ? , Genres = ? , Original_Language = ? , Original_Title = ? , Overview = ? , Popularity = ? , Revenue = ? , Runtime = ? , Spoken_Languages = ? , Status = ? , Tagline = ? , Vote_Average = ? , Vote_Count = ? , Trakt_ID = ? , Moviedb_ID = ? , Imdb_ID = ? , Freebase_M_ID = ? , Freebase_ID = ? , Facebook_ID = ? , Instagram_ID = ? , Twitter_ID = ? , URL = ? , Backdrop = ? , Poster = ? , Slug = ? where id = ?",
-			&dbmovie.Title, &dbmovie.ReleaseDate, &dbmovie.Year, &dbmovie.Adult, &dbmovie.Budget, &dbmovie.Genres, &dbmovie.OriginalLanguage, &dbmovie.OriginalTitle, &dbmovie.Overview, &dbmovie.Popularity, &dbmovie.Revenue, &dbmovie.Runtime, &dbmovie.SpokenLanguages, &dbmovie.Status, &dbmovie.Tagline, &dbmovie.VoteAverage, &dbmovie.VoteCount, &dbmovie.TraktID, &dbmovie.MoviedbID, &dbmovie.ImdbID, &dbmovie.FreebaseMID, &dbmovie.FreebaseID, &dbmovie.FacebookID, &dbmovie.InstagramID, &dbmovie.TwitterID, &dbmovie.URL, &dbmovie.Backdrop, &dbmovie.Poster, &dbmovie.Slug, &dbmovie.ID)
+		database.ExecN(
+			"update dbmovies SET Title = ? , Release_Date = ? , Year = ? , Adult = ? , Budget = ? , Genres = ? , Original_Language = ? , Original_Title = ? , Overview = ? , Popularity = ? , Revenue = ? , Runtime = ? , Spoken_Languages = ? , Status = ? , Tagline = ? , Vote_Average = ? , Vote_Count = ? , Trakt_ID = ? , Moviedb_ID = ? , Imdb_ID = ? , Freebase_M_ID = ? , Freebase_ID = ? , Facebook_ID = ? , Instagram_ID = ? , Twitter_ID = ? , URL = ? , Backdrop = ? , Poster = ? , Slug = ? where id = ?",
+			&dbmovie.Title,
+			&dbmovie.ReleaseDate,
+			&dbmovie.Year,
+			&dbmovie.Adult,
+			&dbmovie.Budget,
+			&dbmovie.Genres,
+			&dbmovie.OriginalLanguage,
+			&dbmovie.OriginalTitle,
+			&dbmovie.Overview,
+			&dbmovie.Popularity,
+			&dbmovie.Revenue,
+			&dbmovie.Runtime,
+			&dbmovie.SpokenLanguages,
+			&dbmovie.Status,
+			&dbmovie.Tagline,
+			&dbmovie.VoteAverage,
+			&dbmovie.VoteCount,
+			&dbmovie.TraktID,
+			&dbmovie.MoviedbID,
+			&dbmovie.ImdbID,
+			&dbmovie.FreebaseMID,
+			&dbmovie.FreebaseID,
+			&dbmovie.FacebookID,
+			&dbmovie.InstagramID,
+			&dbmovie.TwitterID,
+			&dbmovie.URL,
+			&dbmovie.Backdrop,
+			&dbmovie.Poster,
+			&dbmovie.Slug,
+			&dbmovie.ID,
+		)
 	}
 	ctx.JSON(http.StatusOK, gin.H{"data": dbmovie})
 }
@@ -296,11 +337,22 @@ func apimoviesAllJobs(c *gin.Context) {
 				worker.Dispatch(c.Param(strJobLower)+"_"+cfgpstr, func(key uint32) {
 					utils.SingleJobs(c.Param(strJobLower), cfgpstr, "", true, key)
 				}, "Data")
-			case logger.StrRss, logger.StrSearchMissingFull, logger.StrSearchMissingInc, logger.StrSearchUpgradeFull, logger.StrSearchUpgradeInc, logger.StrSearchMissingFullTitle, logger.StrSearchMissingIncTitle, logger.StrSearchUpgradeFullTitle, logger.StrSearchUpgradeIncTitle:
+			case logger.StrRss,
+				logger.StrSearchMissingFull,
+				logger.StrSearchMissingInc,
+				logger.StrSearchUpgradeFull,
+				logger.StrSearchUpgradeInc,
+				logger.StrSearchMissingFullTitle,
+				logger.StrSearchMissingIncTitle,
+				logger.StrSearchUpgradeFullTitle,
+				logger.StrSearchUpgradeIncTitle:
 				worker.Dispatch(c.Param(strJobLower)+"_"+cfgpstr, func(key uint32) {
 					utils.SingleJobs(c.Param(strJobLower), cfgpstr, "", true, key)
 				}, "Search")
-			case logger.StrFeeds, logger.StrCheckMissing, logger.StrCheckMissingFlag, logger.StrReachedFlag:
+			case logger.StrFeeds,
+				logger.StrCheckMissing,
+				logger.StrCheckMissingFlag,
+				logger.StrReachedFlag:
 				for idxi := range media.Lists {
 					if !media.Lists[idxi].Enabled {
 						continue
@@ -314,14 +366,24 @@ func apimoviesAllJobs(c *gin.Context) {
 					}
 					listname := media.Lists[idxi].Name
 					if c.Param(strJobLower) == logger.StrFeeds {
-						worker.Dispatch(c.Param(strJobLower)+"_"+cfgpstr+"_"+listname, func(key uint32) {
-							utils.SingleJobs(c.Param(strJobLower), cfgpstr, listname, true, key)
-						}, "Feeds")
+						worker.Dispatch(
+							c.Param(strJobLower)+"_"+cfgpstr+"_"+listname,
+							func(key uint32) {
+								utils.SingleJobs(c.Param(strJobLower), cfgpstr, listname, true, key)
+							},
+							"Feeds",
+						)
 					}
-					if c.Param(strJobLower) == logger.StrCheckMissing || c.Param(strJobLower) == logger.StrCheckMissingFlag || c.Param(strJobLower) == logger.StrReachedFlag {
-						worker.Dispatch(c.Param(strJobLower)+"_"+cfgpstr+"_"+listname, func(key uint32) {
-							utils.SingleJobs(c.Param(strJobLower), cfgpstr, listname, true, key)
-						}, "Data")
+					if c.Param(strJobLower) == logger.StrCheckMissing ||
+						c.Param(strJobLower) == logger.StrCheckMissingFlag ||
+						c.Param(strJobLower) == logger.StrReachedFlag {
+						worker.Dispatch(
+							c.Param(strJobLower)+"_"+cfgpstr+"_"+listname,
+							func(key uint32) {
+								utils.SingleJobs(c.Param(strJobLower), cfgpstr, listname, true, key)
+							},
+							"Data",
+						)
 					}
 					// cfg_list.Close()
 				}
@@ -376,11 +438,22 @@ func apimoviesJobs(c *gin.Context) {
 			worker.Dispatch(c.Param(strJobLower)+"_movies_"+c.Param("name"), func(key uint32) {
 				utils.SingleJobs(c.Param(strJobLower), cfgpstr, "", true, key)
 			}, "Data")
-		case logger.StrRss, logger.StrSearchMissingFull, logger.StrSearchMissingInc, logger.StrSearchUpgradeFull, logger.StrSearchUpgradeInc, logger.StrSearchMissingFullTitle, logger.StrSearchMissingIncTitle, logger.StrSearchUpgradeFullTitle, logger.StrSearchUpgradeIncTitle:
+		case logger.StrRss,
+			logger.StrSearchMissingFull,
+			logger.StrSearchMissingInc,
+			logger.StrSearchUpgradeFull,
+			logger.StrSearchUpgradeInc,
+			logger.StrSearchMissingFullTitle,
+			logger.StrSearchMissingIncTitle,
+			logger.StrSearchUpgradeFullTitle,
+			logger.StrSearchUpgradeIncTitle:
 			worker.Dispatch(c.Param(strJobLower)+"_movies_"+c.Param("name"), func(key uint32) {
 				utils.SingleJobs(c.Param(strJobLower), cfgpstr, "", true, key)
 			}, "Search")
-		case logger.StrFeeds, logger.StrCheckMissing, logger.StrCheckMissingFlag, logger.StrReachedFlag:
+		case logger.StrFeeds,
+			logger.StrCheckMissing,
+			logger.StrCheckMissingFlag,
+			logger.StrReachedFlag:
 
 			// defer cfgMovie.Close()
 			// defer cfg_list.Close()
@@ -402,15 +475,48 @@ func apimoviesJobs(c *gin.Context) {
 						}
 						listname := media.Lists[idxlist].Name
 						if c.Param(strJobLower) == logger.StrFeeds {
-							logger.LogDynamicany2StrAny("debug", "add job", logger.StrTitle, media.Name, "List", &media.Lists[idxlist].Name)
-							worker.Dispatch(c.Param(strJobLower)+"_movies_"+media.Name+"_"+media.Lists[idxlist].Name, func(key uint32) {
-								utils.SingleJobs(c.Param(strJobLower), cfgpstr, listname, true, key)
-							}, "Feeds")
+							logger.LogDynamicany2StrAny(
+								"debug",
+								"add job",
+								logger.StrTitle,
+								media.Name,
+								"List",
+								&media.Lists[idxlist].Name,
+							)
+							worker.Dispatch(
+								c.Param(
+									strJobLower,
+								)+"_movies_"+media.Name+"_"+media.Lists[idxlist].Name,
+								func(key uint32) {
+									utils.SingleJobs(
+										c.Param(strJobLower),
+										cfgpstr,
+										listname,
+										true,
+										key,
+									)
+								},
+								"Feeds",
+							)
 						}
-						if c.Param(strJobLower) == logger.StrCheckMissing || c.Param(strJobLower) == logger.StrCheckMissingFlag || c.Param(strJobLower) == logger.StrReachedFlag {
-							worker.Dispatch(c.Param(strJobLower)+"_movies_"+media.Name+"_"+media.Lists[idxlist].Name, func(key uint32) {
-								utils.SingleJobs(c.Param(strJobLower), cfgpstr, listname, true, key)
-							}, "Data")
+						if c.Param(strJobLower) == logger.StrCheckMissing ||
+							c.Param(strJobLower) == logger.StrCheckMissingFlag ||
+							c.Param(strJobLower) == logger.StrReachedFlag {
+							worker.Dispatch(
+								c.Param(
+									strJobLower,
+								)+"_movies_"+media.Name+"_"+media.Lists[idxlist].Name,
+								func(key uint32) {
+									utils.SingleJobs(
+										c.Param(strJobLower),
+										cfgpstr,
+										listname,
+										true,
+										key,
+									)
+								},
+								"Data",
+							)
 						}
 						// cfg_list.Close()
 					}
@@ -455,12 +561,77 @@ func updateDBMovie(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	counter := database.GetdatarowN(false, "select count() from dbmovies where id != 0 and id = ?", &dbmovie.ID)
+	counter := database.GetdatarowN(
+		false,
+		"select count() from dbmovies where id != 0 and id = ?",
+		&dbmovie.ID,
+	)
 	var inres sql.Result
 	var err error
 	if counter == 0 {
-		inres, err = database.InsertArray("dbmovies", []string{"Title", "Release_Date", "Year", "Adult", "Budget", "Genres", "Original_Language", "Original_Title", "Overview", "Popularity", "Revenue", "Runtime", "Spoken_Languages", "Status", "Tagline", "Vote_Average", "Vote_Count", "Trakt_ID", "Moviedb_ID", "Imdb_ID", "Freebase_M_ID", "Freebase_ID", "Facebook_ID", "Instagram_ID", "Twitter_ID", "URL", "Backdrop", "Poster", "Slug"},
-			dbmovie.Title, dbmovie.ReleaseDate, dbmovie.Year, dbmovie.Adult, dbmovie.Budget, dbmovie.Genres, dbmovie.OriginalLanguage, dbmovie.OriginalTitle, dbmovie.Overview, dbmovie.Popularity, dbmovie.Revenue, dbmovie.Runtime, dbmovie.SpokenLanguages, dbmovie.Status, dbmovie.Tagline, dbmovie.VoteAverage, dbmovie.VoteCount, dbmovie.TraktID, dbmovie.MoviedbID, dbmovie.ImdbID, dbmovie.FreebaseMID, dbmovie.FreebaseID, dbmovie.FacebookID, dbmovie.InstagramID, dbmovie.TwitterID, dbmovie.URL, dbmovie.Backdrop, dbmovie.Poster, dbmovie.Slug)
+		inres, err = database.InsertArray(
+			"dbmovies",
+			[]string{
+				"Title",
+				"Release_Date",
+				"Year",
+				"Adult",
+				"Budget",
+				"Genres",
+				"Original_Language",
+				"Original_Title",
+				"Overview",
+				"Popularity",
+				"Revenue",
+				"Runtime",
+				"Spoken_Languages",
+				"Status",
+				"Tagline",
+				"Vote_Average",
+				"Vote_Count",
+				"Trakt_ID",
+				"Moviedb_ID",
+				"Imdb_ID",
+				"Freebase_M_ID",
+				"Freebase_ID",
+				"Facebook_ID",
+				"Instagram_ID",
+				"Twitter_ID",
+				"URL",
+				"Backdrop",
+				"Poster",
+				"Slug",
+			},
+			dbmovie.Title,
+			dbmovie.ReleaseDate,
+			dbmovie.Year,
+			dbmovie.Adult,
+			dbmovie.Budget,
+			dbmovie.Genres,
+			dbmovie.OriginalLanguage,
+			dbmovie.OriginalTitle,
+			dbmovie.Overview,
+			dbmovie.Popularity,
+			dbmovie.Revenue,
+			dbmovie.Runtime,
+			dbmovie.SpokenLanguages,
+			dbmovie.Status,
+			dbmovie.Tagline,
+			dbmovie.VoteAverage,
+			dbmovie.VoteCount,
+			dbmovie.TraktID,
+			dbmovie.MoviedbID,
+			dbmovie.ImdbID,
+			dbmovie.FreebaseMID,
+			dbmovie.FreebaseID,
+			dbmovie.FacebookID,
+			dbmovie.InstagramID,
+			dbmovie.TwitterID,
+			dbmovie.URL,
+			dbmovie.Backdrop,
+			dbmovie.Poster,
+			dbmovie.Slug,
+		)
 	} else {
 		inres, err = database.UpdateArray("dbmovies", []string{"Title", "Release_Date", "Year", "Adult", "Budget", "Genres", "Original_Language", "Original_Title", "Overview", "Popularity", "Revenue", "Runtime", "Spoken_Languages", "Status", "Tagline", "Vote_Average", "Vote_Count", "Trakt_ID", "Moviedb_ID", "Imdb_ID", "Freebase_M_ID", "Freebase_ID", "Facebook_ID", "Instagram_ID", "Twitter_ID", "URL", "Backdrop", "Poster", "Slug"},
 			"id != 0 and id = ?", dbmovie.Title, dbmovie.ReleaseDate, dbmovie.Year, dbmovie.Adult, dbmovie.Budget, dbmovie.Genres, dbmovie.OriginalLanguage, dbmovie.OriginalTitle, dbmovie.Overview, dbmovie.Popularity, dbmovie.Revenue, dbmovie.Runtime, dbmovie.SpokenLanguages, dbmovie.Status, dbmovie.Tagline, dbmovie.VoteAverage, dbmovie.VoteCount, dbmovie.TraktID, dbmovie.MoviedbID, dbmovie.ImdbID, dbmovie.FreebaseMID, dbmovie.FreebaseID, dbmovie.FacebookID, dbmovie.InstagramID, dbmovie.TwitterID, dbmovie.URL, dbmovie.Backdrop, dbmovie.Poster, dbmovie.Slug, dbmovie.ID)
@@ -494,12 +665,37 @@ func updateMovie(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	counter := database.GetdatarowN(false, "select count() from dbmovies where id != 0 and id = ?", &movie.ID)
+	counter := database.GetdatarowN(
+		false,
+		"select count() from dbmovies where id != 0 and id = ?",
+		&movie.ID,
+	)
 	var inres sql.Result
 	var err error
 	if counter == 0 {
-		inres, err = database.InsertArray("movies", []string{"missing", "listname", "dbmovie_id", "quality_profile", "blacklisted", "quality_reached", "dont_upgrade", "dont_search", "rootpath"},
-			movie.Missing, movie.Listname, movie.DbmovieID, movie.QualityProfile, movie.Blacklisted, movie.QualityReached, movie.DontUpgrade, movie.DontSearch, movie.Rootpath)
+		inres, err = database.InsertArray(
+			"movies",
+			[]string{
+				"missing",
+				"listname",
+				"dbmovie_id",
+				"quality_profile",
+				"blacklisted",
+				"quality_reached",
+				"dont_upgrade",
+				"dont_search",
+				"rootpath",
+			},
+			movie.Missing,
+			movie.Listname,
+			movie.DbmovieID,
+			movie.QualityProfile,
+			movie.Blacklisted,
+			movie.QualityReached,
+			movie.DontUpgrade,
+			movie.DontSearch,
+			movie.Rootpath,
+		)
 	} else {
 		inres, err = database.UpdateArray("dbmovies", []string{"missing", "listname", "dbmovie_id", "quality_profile", "blacklisted", "quality_reached", "dont_upgrade", "dont_search", "rootpath"},
 			"id != 0 and id = ?", movie.Missing, movie.Listname, movie.DbmovieID, movie.QualityProfile, movie.Blacklisted, movie.QualityReached, movie.DontUpgrade, movie.DontSearch, movie.Rootpath, movie.ID)
@@ -527,7 +723,10 @@ func updateMovie(c *gin.Context) {
 // @Failure      401  {object}  Jsonerror
 // @Router       /api/movies/search/id/{id} [get].
 func apimoviesSearch(c *gin.Context) {
-	movie, _ := database.GetMovies(database.Querywithargs{Where: logger.FilterByID}, c.Param(logger.StrID))
+	movie, _ := database.GetMovies(
+		database.Querywithargs{Where: logger.FilterByID},
+		c.Param(logger.StrID),
+	)
 	// defer logger.ClearVar(&movie)
 	var idxlist int
 	var err error
@@ -538,23 +737,35 @@ func apimoviesSearch(c *gin.Context) {
 
 		for idxlist = range media.Lists {
 			if strings.EqualFold(media.Lists[idxlist].Name, movie.Listname) {
-				worker.Dispatch("searchmovie_movies_"+media.Name+"_"+strconv.Itoa(int(movie.ID)), func(uint32) {
-					ctx := context.Background()
-					searchvar := searcher.NewSearcher(media, nil, "", nil)
-					err = searchvar.MediaSearch(ctx, media, movie.ID, true, false, false)
+				worker.Dispatch(
+					"searchmovie_movies_"+media.Name+"_"+strconv.Itoa(int(movie.ID)),
+					func(uint32) {
+						ctx := context.Background()
+						searchvar := searcher.NewSearcher(media, nil, "", nil)
+						err = searchvar.MediaSearch(ctx, media, movie.ID, true, false, false)
 
-					if err != nil {
-						if err != nil && !errors.Is(err, logger.ErrDisabled) {
-							logger.LogDynamicany("error", "Search Failed", "id", &movie.ID, "typ", &logger.StrMovie, err)
-						}
-					} else {
-						if searchvar == nil || len(searchvar.Accepted) == 0 {
+						if err != nil {
+							if err != nil && !errors.Is(err, logger.ErrDisabled) {
+								logger.LogDynamicany(
+									"error",
+									"Search Failed",
+									"id",
+									&movie.ID,
+									"typ",
+									&logger.StrMovie,
+									err,
+								)
+							}
 						} else {
-							searchvar.Download()
+							if searchvar == nil || len(searchvar.Accepted) == 0 {
+							} else {
+								searchvar.Download()
+							}
 						}
-					}
-					searchvar.Close()
-				}, "Search")
+						searchvar.Close()
+					},
+					"Search",
+				)
 				c.JSON(http.StatusOK, "started")
 				return
 			}
@@ -574,7 +785,10 @@ func apimoviesSearch(c *gin.Context) {
 // @Failure      401            {object}  string
 // @Router       /api/movies/search/list/{id} [get].
 func apimoviesSearchList(c *gin.Context) {
-	movie, _ := database.GetMovies(database.Querywithargs{Where: logger.FilterByID}, c.Param(logger.StrID))
+	movie, _ := database.GetMovies(
+		database.Querywithargs{Where: logger.FilterByID},
+		c.Param(logger.StrID),
+	)
 	// defer logger.ClearVar(&movie)
 
 	titlesearch := false
@@ -602,7 +816,10 @@ func apimoviesSearchList(c *gin.Context) {
 				if _, ok := c.GetQuery("download"); ok {
 					searchresults.Download()
 				}
-				c.JSON(http.StatusOK, gin.H{"accepted": searchresults.Accepted, "denied": searchresults.Denied})
+				c.JSON(
+					http.StatusOK,
+					gin.H{"accepted": searchresults.Accepted, "denied": searchresults.Denied},
+				)
 				// searchnow.Close()
 				searchresults.Close()
 				return
@@ -635,7 +852,10 @@ func apiMoviesRssSearchList(c *gin.Context) {
 				searchresults.Close()
 				return
 			}
-			c.JSON(http.StatusOK, gin.H{"accepted": searchresults.Accepted, "denied": searchresults.Denied})
+			c.JSON(
+				http.StatusOK,
+				gin.H{"accepted": searchresults.Accepted, "denied": searchresults.Denied},
+			)
 			searchresults.Close()
 			return
 		}
@@ -655,7 +875,10 @@ func apiMoviesRssSearchList(c *gin.Context) {
 // @Failure      401  {object}  Jsonerror
 // @Router       /api/movies/search/download/{id} [post].
 func apimoviesSearchDownload(c *gin.Context) {
-	movie, _ := database.GetMovies(database.Querywithargs{Where: logger.FilterByID}, c.Param(logger.StrID))
+	movie, _ := database.GetMovies(
+		database.Querywithargs{Where: logger.FilterByID},
+		c.Param(logger.StrID),
+	)
 	// defer logger.ClearVar(&movie)
 
 	var nzb apiexternal.Nzbwithprio
