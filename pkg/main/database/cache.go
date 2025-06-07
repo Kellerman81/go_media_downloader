@@ -435,14 +435,16 @@ func RefreshMediaCacheDB(useseries bool, force bool) {
 		return
 	}
 	if count == 0 {
-		cache.storeMapThreeString(
-			mapvar,
-			nil,
-			time.Now().
-				Add(time.Duration(config.SettingsGeneral.CacheDuration)*time.Hour).
-				UnixNano(),
-			time.Now().UnixNano(),
-		)
+		if len(item) > 0 {
+			cache.storeMapThreeString(
+				mapvar,
+				nil,
+				time.Now().
+					Add(time.Duration(config.SettingsGeneral.CacheDuration)*time.Hour).
+					UnixNano(),
+				time.Now().UnixNano(),
+			)
+		}
 		return
 	}
 	lastscan := cache.itemsthreestring.GetLastscan(mapvar)
@@ -489,14 +491,16 @@ func RefreshMediaCacheList(useseries bool, force bool) {
 		return
 	}
 	if count == 0 {
-		cache.storeMapTwoInt(
-			mapvar,
-			nil,
-			time.Now().
-				Add(time.Duration(config.SettingsGeneral.CacheDuration)*time.Hour).
-				UnixNano(),
-			time.Now().UnixNano(),
-		)
+		if len(item) > 0 {
+			cache.storeMapTwoInt(
+				mapvar,
+				nil,
+				time.Now().
+					Add(time.Duration(config.SettingsGeneral.CacheDuration)*time.Hour).
+					UnixNano(),
+				time.Now().UnixNano(),
+			)
+		}
 		return
 	}
 	lastscan := cache.itemstwoint.GetLastscan(mapvar)
@@ -536,14 +540,16 @@ func Refreshhistorycachetitle(useseries bool, force bool) {
 		return
 	}
 	if count == 0 {
-		cache.storeMap(
-			mapvar,
-			nil,
-			time.Now().
-				Add(time.Duration(config.SettingsGeneral.CacheDuration)*time.Hour).
-				UnixNano(),
-			time.Now().UnixNano(),
-		)
+		if len(item) > 0 {
+			cache.storeMap(
+				mapvar,
+				nil,
+				time.Now().
+					Add(time.Duration(config.SettingsGeneral.CacheDuration)*time.Hour).
+					UnixNano(),
+				time.Now().UnixNano(),
+			)
+		}
 		return
 	}
 	lastscan := cache.itemsstring.GetLastscan(mapvar)
@@ -582,14 +588,16 @@ func Refreshhistorycacheurl(useseries bool, force bool) {
 		return
 	}
 	if count == 0 {
-		cache.storeMap(
-			mapvar,
-			nil,
-			time.Now().
-				Add(time.Duration(config.SettingsGeneral.CacheDuration)*time.Hour).
-				UnixNano(),
-			time.Now().UnixNano(),
-		)
+		if len(item) > 0 {
+			cache.storeMap(
+				mapvar,
+				nil,
+				time.Now().
+					Add(time.Duration(config.SettingsGeneral.CacheDuration)*time.Hour).
+					UnixNano(),
+				time.Now().UnixNano(),
+			)
+		}
 		return
 	}
 	lastscan := cache.itemsstring.GetLastscan(mapvar)
@@ -622,14 +630,16 @@ func RefreshMediaCacheTitles(useseries bool, force bool) {
 		return
 	}
 	if count == 0 {
-		cache.storeMapTwoString(
-			mapvar,
-			nil,
-			time.Now().
-				Add(time.Duration(config.SettingsGeneral.CacheDuration)*time.Hour).
-				UnixNano(),
-			time.Now().UnixNano(),
-		)
+		if len(item) > 0 {
+			cache.storeMapTwoString(
+				mapvar,
+				nil,
+				time.Now().
+					Add(time.Duration(config.SettingsGeneral.CacheDuration)*time.Hour).
+					UnixNano(),
+				time.Now().UnixNano(),
+			)
+		}
 		return
 	}
 	lastscan := cache.itemstwostring.GetLastscan(mapvar)
@@ -680,14 +690,16 @@ func Refreshfilescached(useseries bool, force bool) {
 		return
 	}
 	if count == 0 {
-		cache.storeMap(
-			mapvar,
-			nil,
-			time.Now().
-				Add(time.Duration(config.SettingsGeneral.CacheDuration)*time.Hour).
-				UnixNano(),
-			time.Now().UnixNano(),
-		)
+		if len(item) > 0 {
+			cache.storeMap(
+				mapvar,
+				nil,
+				time.Now().
+					Add(time.Duration(config.SettingsGeneral.CacheDuration)*time.Hour).
+					UnixNano(),
+				time.Now().UnixNano(),
+			)
+		}
 		return
 	}
 
@@ -729,14 +741,16 @@ func Refreshunmatchedcached(useseries bool, force bool) {
 		return
 	}
 	if count == 0 {
-		cache.storeMap(
-			mapvar,
-			nil,
-			time.Now().
-				Add(time.Duration(config.SettingsGeneral.CacheDuration)*time.Hour).
-				UnixNano(),
-			time.Now().UnixNano(),
-		)
+		if len(item) > 0 {
+			cache.storeMap(
+				mapvar,
+				nil,
+				time.Now().
+					Add(time.Duration(config.SettingsGeneral.CacheDuration)*time.Hour).
+					UnixNano(),
+				time.Now().UnixNano(),
+			)
+		}
 		return
 	}
 	lastscan := cache.itemsstring.GetLastscan(mapvar)

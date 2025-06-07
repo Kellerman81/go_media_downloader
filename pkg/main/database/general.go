@@ -84,6 +84,39 @@ const (
 	strRegexSeriesTitleDate  = "RegexSeriesTitleDate"
 )
 
+func InitCfg() {
+	config.LoadCfgDB()
+
+	InitCache()
+
+	logger.InitLogger(logger.Config{
+		LogLevel:      config.SettingsGeneral.LogLevel,
+		LogFileSize:   config.SettingsGeneral.LogFileSize,
+		LogFileCount:  config.SettingsGeneral.LogFileCount,
+		LogCompress:   config.SettingsGeneral.LogCompress,
+		LogToFileOnly: config.SettingsGeneral.LogToFileOnly,
+		LogColorize:   config.SettingsGeneral.LogColorize,
+		TimeFormat:    config.SettingsGeneral.TimeFormat,
+		TimeZone:      config.SettingsGeneral.TimeZone,
+		LogZeroValues: config.SettingsGeneral.LogZeroValues,
+	})
+
+	err := UpgradeDB()
+	if err != nil {
+		logger.LogDynamicanyErr("fatal", "Database Upgrade Failed", err)
+	}
+	UpgradeIMDB()
+	err = InitDB(config.SettingsGeneral.DBLogLevel)
+	if err != nil {
+		logger.LogDynamicanyErr("fatal", "Database Initialization Failed", err)
+	}
+	err = InitImdbdb()
+	if err != nil {
+		logger.LogDynamicanyErr("fatal", "IMDB Database Initialization Failed", err)
+	}
+	SetVars()
+}
+
 // DBClose closes any open database connections to the data.db and imdb.db
 // SQLite databases. It is intended to be called when the application is
 // shutting down to cleanly close the connections.

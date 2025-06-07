@@ -1407,7 +1407,7 @@ func StringReplaceWithP(s *string, r, t byte) {
 // StringReplaceWithStr replaces all occurrences of the string r in s with the string t.
 // It returns a new string with the replacements.
 func StringReplaceWithStr(s, r, t string) string {
-	if s == "" {
+	if s == "" || r == "" {
 		return s
 	}
 	if !strings.Contains(s, r) {

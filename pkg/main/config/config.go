@@ -864,7 +864,7 @@ type QualityIndexerConfig struct {
 	// HistoryCheckTitle indicates if the download history should check the title in addition to the url
 	HistoryCheckTitle bool `toml:"history_check_title"     comment:"should the download history not only be checked for the url but also the title? - default: false"`
 	// CategoriesIndexer are the categories to use for the indexer
-	CategoriesIndexer string `toml:"categories_indexer"      comment:"categories to use for the indexer - sperate with a comma use no spaces"`
+	CategoriesIndexer string `toml:"categories_indexer"      comment:"categories to use for the indexer - separate with a comma use no spaces"`
 }
 
 type SchedulerConfig struct {
@@ -1172,7 +1172,7 @@ func Slepping(random bool, seconds int) {
 // data. This allows the configuration system to be extended by adding
 // new config types.
 func LoadCfgDB() error {
-	if _, err := os.Stat(Configfile); !errors.Is(err, os.ErrExist) {
+	if _, err := os.Stat(Configfile); errors.Is(err, os.ErrNotExist) {
 		fmt.Println("Config file not found. Creating new config file.")
 		ClearCfg()
 		WriteCfg()

@@ -71,7 +71,7 @@ func (lim *Limiter) Allow() (bool, time.Duration) {
 		return false, wait
 	}
 	lim.add()
-	return true, 0 * time.Minute
+	return true, 0
 }
 
 // AllowForce unconditionally increments the rate limiter count and returns
