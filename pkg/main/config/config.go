@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"math/rand"
 	"os"
@@ -71,7 +72,7 @@ type mainConfig struct {
 	Imdbindexer ImdbConfig `toml:"imdbindexer" comment:"the imdb config"`
 
 	// mediaConfig contains media related configuration
-	Media mediaConfig `toml:"media" comment:"the media definitions"`
+	Media MediaConfig `toml:"media" comment:"the media definitions"`
 
 	// DownloaderConfig defines downloader specific configuration
 	Downloader []DownloaderConfig `toml:"downloader" comment:"the downloader definitions"`
@@ -275,7 +276,7 @@ type GeneralConfig struct {
 	TraktTimeoutSeconds uint16 `toml:"trakt_timeout_seconds"    comment:"how long should the http timeout be for trakt calls (seconds)? - default: 10"`
 
 	// Jobs To Run
-	Jobs map[string]func(uint32) `toml:"-"`
+	Jobs map[string]func(uint32) `toml:"-" json:"-"`
 	// UseGoDir                           bool     `toml:"use_godir"`
 	// ConcurrentScheduler                int      `toml:"concurrent_scheduler"`
 	// EnableFileWatcher                  bool     `toml:"enable_file_watcher"`
@@ -318,8 +319,8 @@ type ImdbConfig struct {
 	UseCache bool `toml:"use_cache" comment:"use cache for sql queries - might reduce execution time - default: false"`
 }
 
-// mediaConfig defines the configuration for media types like series and movies.
-type mediaConfig struct {
+// MediaConfig defines the configuration for media types like series and movies.
+type MediaConfig struct {
 	// Series defines the configuration for all series media types
 	Series []MediaTypeConfig `toml:"series" comment:"the definitions of all your series"`
 	// Movies defines the configuration for all movies media types
@@ -407,7 +408,7 @@ type MediaTypeConfig struct {
 	Notification []mediaNotificationConfig `toml:"notification"`
 
 	// Jobs To Run
-	Jobs map[string]func(uint32) `toml:"-"`
+	Jobs map[string]func(uint32) `toml:"-" json:"-"`
 }
 
 // MediaDataConfig is a struct that defines configuration for media data.
@@ -1171,6 +1172,14 @@ func Slepping(random bool, seconds int) {
 // data. This allows the configuration system to be extended by adding
 // new config types.
 func LoadCfgDB() error {
+	if _, err := os.Stat(Configfile); !errors.Is(err, os.ErrExist) {
+		fmt.Println("Config file not found. Creating new config file.")
+		ClearCfg()
+		WriteCfg()
+		fmt.Println("Config file created. Please edit it and run the application again.")
+	} else {
+		fmt.Println("Config file found. Loading config.")
+	}
 	content, err := os.Open(Configfile)
 	if err != nil {
 		fmt.Println("Error loading config. " + err.Error())
@@ -1195,6 +1204,20 @@ func LoadCfgDB() error {
 	SettingsRegex = make(map[string]*RegexConfig, len(cachetoml.Regex))
 	SettingsScheduler = make(map[string]*SchedulerConfig, len(cachetoml.Scheduler))
 
+	getconfigtoml()
+
+	hastoken, _ := configDB.Has("trakt_token")
+	if hastoken {
+		var token oauth2.Token
+		if configDB.Get("trakt_token", &token) == nil {
+			traktToken = &token
+		}
+	}
+
+	return nil
+}
+
+func getconfigtoml() {
 	SettingsGeneral = cachetoml.General
 	if SettingsGeneral.CacheDuration == 0 {
 		SettingsGeneral.CacheDuration = 12
@@ -1441,15 +1464,6 @@ func LoadCfgDB() error {
 		}
 		SettingsMedia["serie_"+cachetoml.Media.Series[idx].Name] = &cachetoml.Media.Series[idx]
 	}
-	hastoken, _ := configDB.Has("trakt_token")
-	if hastoken {
-		var token oauth2.Token
-		if configDB.Get("trakt_token", &token) == nil {
-			traktToken = &token
-		}
-	}
-
-	return nil
 }
 
 // UpdateCfg updates the application configuration settings based on the
@@ -1657,6 +1671,10 @@ func DeleteCfgEntry(name string) {
 	}
 }
 
+func GetToml() mainConfig {
+	return cachetoml
+}
+
 // ClearCfg clears all configuration settings by deleting the config database file,
 // resetting all config maps to empty maps, and reinitializing default settings.
 // It wipes the existing config and starts fresh with defaults.
@@ -1674,124 +1692,118 @@ func ClearCfg() {
 	SettingsRegex = make(map[string]*RegexConfig)
 	SettingsScheduler = make(map[string]*SchedulerConfig)
 
-	var dataconfig []MediaDataConfig
-	dataconfig = append(dataconfig, MediaDataConfig{TemplatePath: "initial"})
-	var dataimportconfig []MediaDataImportConfig
-	dataimportconfig = append(dataimportconfig, MediaDataImportConfig{TemplatePath: "initial"})
-	var noticonfig []mediaNotificationConfig
-	noticonfig = append(noticonfig, mediaNotificationConfig{MapNotification: "initial"})
-	var listsconfig []MediaListsConfig
-	listsconfig = append(
-		listsconfig,
-		MediaListsConfig{
-			TemplateList:      "initial",
-			TemplateQuality:   "initial",
-			TemplateScheduler: "Default",
+	cachetoml = mainConfig{
+		General: GeneralConfig{
+			LogLevel:       "Info",
+			DBLogLevel:     "Info",
+			LogFileCount:   5,
+			LogFileSize:    5,
+			LogCompress:    false,
+			WebAPIKey:      "mysecure",
+			WebPort:        "9090",
+			WorkerMetadata: 1,
+			WorkerFiles:    1,
+			WorkerParse:    1,
+			WorkerSearch:   1,
+			WorkerIndexer:  1,
+			// ConcurrentScheduler: 1,
+			OmdbLimiterSeconds:  1,
+			OmdbLimiterCalls:    1,
+			TmdbLimiterSeconds:  1,
+			TmdbLimiterCalls:    1,
+			TraktLimiterSeconds: 1,
+			TraktLimiterCalls:   1,
+			TvdbLimiterSeconds:  1,
+			TvdbLimiterCalls:    1,
+			SchedulerDisabled:   true,
 		},
-	)
-
-	var quindconfig []QualityIndexerConfig
-	quindconfig = append(
-		quindconfig,
-		QualityIndexerConfig{
-			TemplateIndexer:    "initial",
-			TemplateDownloader: "initial",
-			TemplateRegex:      "initial",
-			TemplatePathNzb:    "initial",
+		Scheduler: []SchedulerConfig{{
+			Name:                       "Default",
+			IntervalImdb:               "3d",
+			IntervalFeeds:              "1d",
+			IntervalFeedsRefreshSeries: "1d",
+			IntervalFeedsRefreshMovies: "1d",
+			IntervalIndexerMissing:     "40m",
+			IntervalIndexerUpgrade:     "60m",
+			IntervalIndexerRss:         "15m",
+			IntervalScanData:           "1h",
+			IntervalScanDataMissing:    "1d",
+			IntervalScanDataimport:     "60m",
+		}},
+		Downloader: []DownloaderConfig{{
+			Name:   "initial",
+			DlType: "drone",
+		}},
+		Imdbindexer: ImdbConfig{
+			Indexedtypes:     []string{logger.StrMovie},
+			Indexedlanguages: []string{"US", "UK", "\\N"},
 		},
-	)
-	var qureoconfig []QualityReorderConfig
-	qureoconfig = append(qureoconfig, QualityReorderConfig{})
+		Indexers: []IndexersConfig{{
+			Name:           "initial",
+			IndexerType:    "newznab",
+			Limitercalls:   5,
+			Limiterseconds: 20,
+			MaxEntries:     100,
+			RssEntriesloop: 2,
+		}},
+		Lists: []ListsConfig{{
+			Name:     "initial",
+			ListType: "traktmovieanticipated",
+			Limit:    "20",
+		}},
+		Media: MediaConfig{
+			Movies: []MediaTypeConfig{{
+				Name:              "initial",
+				TemplateQuality:   "initial",
+				TemplateScheduler: "Default",
+				Data:              []MediaDataConfig{{TemplatePath: "initial"}},
+				DataImport:        []MediaDataImportConfig{{TemplatePath: "initial"}},
+				Lists: []MediaListsConfig{{
+					TemplateList:      "initial",
+					TemplateQuality:   "initial",
+					TemplateScheduler: "Default",
+				}},
+				Notification: []mediaNotificationConfig{{MapNotification: "initial"}},
+			}},
+			Series: []MediaTypeConfig{{
+				Name:              "initial",
+				TemplateQuality:   "initial",
+				TemplateScheduler: "Default",
+				Data:              []MediaDataConfig{{TemplatePath: "initial"}},
+				DataImport:        []MediaDataImportConfig{{TemplatePath: "initial"}},
+				Lists: []MediaListsConfig{{
+					TemplateList:      "initial",
+					TemplateQuality:   "initial",
+					TemplateScheduler: "Default",
+				}},
+				Notification: []mediaNotificationConfig{{MapNotification: "initial"}},
+			}},
+		},
+		Notification: []NotificationConfig{{
+			Name:             "initial",
+			NotificationType: "csv",
+		}},
+		Paths: []PathsConfig{{
+			Name:                   "initial",
+			AllowedVideoExtensions: []string{".avi", ".mkv", ".mp4"},
+			AllowedOtherExtensions: []string{".idx", ".sub", ".srt"},
+		}},
+		Quality: []QualityConfig{{
+			Name:           "initial",
+			QualityReorder: []QualityReorderConfig{{}},
+			Indexer: []QualityIndexerConfig{{
+				TemplateIndexer:    "initial",
+				TemplateDownloader: "initial",
+				TemplateRegex:      "initial",
+				TemplatePathNzb:    "initial",
+			}},
+		}},
+		Regex: []RegexConfig{{
+			Name: "initial",
+		}},
+	}
 
-	SettingsGeneral = GeneralConfig{
-		LogLevel:       "Info",
-		DBLogLevel:     "Info",
-		LogFileCount:   5,
-		LogFileSize:    5,
-		LogCompress:    false,
-		WebAPIKey:      "mysecure",
-		WebPort:        "9090",
-		WorkerMetadata: 1,
-		WorkerFiles:    1,
-		WorkerParse:    1,
-		WorkerSearch:   1,
-		WorkerIndexer:  1,
-		// ConcurrentScheduler: 1,
-		OmdbLimiterSeconds:  1,
-		OmdbLimiterCalls:    1,
-		TmdbLimiterSeconds:  1,
-		TmdbLimiterCalls:    1,
-		TraktLimiterSeconds: 1,
-		TraktLimiterCalls:   1,
-		TvdbLimiterSeconds:  1,
-		TvdbLimiterCalls:    1,
-		SchedulerDisabled:   true,
-	}
-	SettingsScheduler["Default"] = &SchedulerConfig{
-		Name:                       "Default",
-		IntervalImdb:               "3d",
-		IntervalFeeds:              "1d",
-		IntervalFeedsRefreshSeries: "1d",
-		IntervalFeedsRefreshMovies: "1d",
-		IntervalIndexerMissing:     "40m",
-		IntervalIndexerUpgrade:     "60m",
-		IntervalIndexerRss:         "15m",
-		IntervalScanData:           "1h",
-		IntervalScanDataMissing:    "1d",
-		IntervalScanDataimport:     "60m",
-	}
-	SettingsDownloader["downloader_initial"] = &DownloaderConfig{Name: "initial", DlType: "drone"}
-
-	SettingsImdb = ImdbConfig{
-		Indexedtypes:     []string{logger.StrMovie},
-		Indexedlanguages: []string{"US", "UK", "\\N"},
-	}
-	SettingsIndexer["indexer_initial"] = &IndexersConfig{
-		Name:           "initial",
-		IndexerType:    "newznab",
-		Limitercalls:   5,
-		Limiterseconds: 20,
-		MaxEntries:     100,
-		RssEntriesloop: 2,
-	}
-	SettingsList["list_initial"] = &ListsConfig{
-		Name:     "initial",
-		ListType: "traktmovieanticipated",
-		Limit:    "20",
-	}
-	SettingsMedia["movie_initial"] = &MediaTypeConfig{
-		Name:              "initial",
-		TemplateQuality:   "initial",
-		TemplateScheduler: "Default",
-		Data:              dataconfig,
-		DataImport:        dataimportconfig,
-		Lists:             listsconfig,
-		Notification:      noticonfig,
-	}
-	SettingsMedia["serie_initial"] = &MediaTypeConfig{
-		Name:              "initial",
-		TemplateQuality:   "initial",
-		TemplateScheduler: "Default",
-		Data:              dataconfig,
-		DataImport:        dataimportconfig,
-		Lists:             listsconfig,
-		Notification:      noticonfig,
-	}
-	SettingsNotification["notification_initial"] = &NotificationConfig{
-		Name:             "initial",
-		NotificationType: "csv",
-	}
-	SettingsPath["path_initial"] = &PathsConfig{
-		Name:                   "initial",
-		AllowedVideoExtensions: []string{".avi", ".mkv", ".mp4"},
-		AllowedOtherExtensions: []string{".idx", ".sub", ".srt"},
-	}
-	SettingsQuality["quality_initial"] = &QualityConfig{
-		Name:           "initial",
-		QualityReorder: qureoconfig,
-		Indexer:        quindconfig,
-	}
-	SettingsRegex["regex_initial"] = &RegexConfig{Name: "initial"}
+	getconfigtoml()
 }
 
 // WriteCfg marshals the application configuration structs into a TOML
@@ -1812,17 +1824,17 @@ func WriteCfg() {
 	for _, cfgdata := range SettingsList {
 		bla.Lists = append(bla.Lists, *cfgdata)
 	}
-	for idxp := range SettingsMedia {
-		if !strings.HasPrefix(SettingsMedia[idxp].NamePrefix, logger.StrSerie) {
+	for _, cfgdata := range cachetoml.Media.Series {
+		if !strings.HasPrefix(cfgdata.NamePrefix, logger.StrSerie) {
 			continue
 		}
-		bla.Media.Series = append(bla.Media.Series, *SettingsMedia[idxp])
+		bla.Media.Series = append(bla.Media.Series, cfgdata)
 	}
-	for idxp := range SettingsMedia {
-		if !strings.HasPrefix(SettingsMedia[idxp].NamePrefix, logger.StrMovie) {
+	for _, cfgdata := range cachetoml.Media.Movies {
+		if !strings.HasPrefix(cfgdata.NamePrefix, logger.StrMovie) {
 			continue
 		}
-		bla.Media.Movies = append(bla.Media.Movies, *SettingsMedia[idxp])
+		bla.Media.Movies = append(bla.Media.Movies, cfgdata)
 	}
 	for _, cfgdata := range SettingsNotification {
 		bla.Notification = append(bla.Notification, *cfgdata)
@@ -1848,4 +1860,5 @@ func WriteCfg() {
 		fmt.Println("Error loading config. " + err.Error())
 	}
 	os.WriteFile(Configfile, cnt, 0o777)
+	cachetoml = bla
 }

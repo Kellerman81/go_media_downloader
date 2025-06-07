@@ -270,29 +270,87 @@ func (m *ParseInfo) Parseresolution() string {
 		height = m.Width
 		width = m.Height
 	}
+	aspectRatio := float64(width) / float64(height)
+
+	// For ultra-wide content (aspect ratio > 2.5), prioritize width
+	if aspectRatio > 2.5 {
+		switch {
+		case width >= 7680: // 8K (7680x4320)
+			return "4320p"
+		case width >= 5120: // 5k
+			return "2880p"
+		case width >= 3840: // 4K/UHD (3840x2160)
+			return "2160p"
+		case width >= 2560: // 1440p/QHD (2560x1440)
+			return "1440p"
+		case width >= 1920: // 1080p/FHD (1920x1080)
+			return "1080p"
+		case width >= 1280: // 720p/HD (1280x720)
+			return "720p"
+		case width >= 854: // 480p/NTSC (720x480 or 640x480)
+			return "480p"
+		case width >= 640: // 360p (640x360)
+			return "360p"
+		default:
+			return "SD"
+		}
+	}
+
+	if aspectRatio >= 1.6 {
+		// 16:10 = 1.6 - 15:9 - 16:9 = 1.77 - 1.85:1 = 37:20
+		switch {
+		case width >= 7680: // 8K (7680x4320)
+			return "4320p"
+		case width >= 5120: // 5k
+			return "2880p"
+		case width >= 3840: // 4K/UHD (3840x2160)
+			return "2160p"
+		case width >= 2560: // 1440p/QHD (2560x1440)
+			return "1440p"
+		case width >= 1920: // 1080p/FHD (1920x1080)
+			return "1080p"
+		case width >= 1280: // 720p/HD (1280x720)
+			return "720p"
+		case width >= 720: // 480p/NTSC (720x480 or 640x480)
+			if height >= 500 {
+				return "576p"
+			}
+			return "480p"
+		case width >= 640: // 360p (640x360)
+			if height >= 400 {
+				return "480p"
+			}
+			return "360p"
+		case width >= 426: // 240p (426x240)
+			return "240p"
+		default:
+			return "SD" // Standard Definition for anything lower
+		}
+	}
+	// Standard resolution detection based on height
 	switch {
-	case height >= 4320 || width == 7680:
-		return "4320p" // 8k
-	case height >= 2880 || width == 5120:
-		return "2880p" // 5k
-	case height >= 2160 || width == 3840 || width == 4096:
-		return "2160p" // 4k
-	case height >= 1440 || width == 2560:
-		return "1440p" // QHD
-	case height >= 1080 || width == 1920:
-		return "1080p" // FHD
-	case height >= 720 || width == 1280:
-		return "720p" // HD
-	case height >= 576:
+	case height >= 4320: // 8K (7680x4320)
+		return "4320p"
+	case height >= 2880: // 5k
+		return "2880p"
+	case height >= 2160: // 4K/UHD (3840x2160)
+		return "2160p"
+	case height >= 1440: // 1440p/QHD (2560x1440)
+		return "1440p"
+	case height >= 1080: // 1080p/FHD (1920x1080)
+		return "1080p"
+	case height >= 720: // 720p/HD (1280x720)
+		return "720p"
+	case height >= 576: // 576p/PAL (720x576)
 		return "576p"
-	case height >= 480:
+	case height >= 480: // 480p/NTSC (720x480 or 640x480)
 		return "480p"
-	case height >= 368:
-		return "368p"
-	case height == 360:
+	case height >= 360: // 360p (640x360)
 		return "360p"
+	case height >= 240: // 240p (426x240)
+		return "240p"
 	default:
-		return "Unknown Resolution"
+		return "SD" // Standard Definition for anything lower
 	}
 }
 

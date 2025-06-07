@@ -33,10 +33,12 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/metadata"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/parser"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/scanner"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/scheduler"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/searcher"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/structure"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/worker"
+	"github.com/pelletier/go-toml/v2"
 
 	"github.com/mozillazg/go-unidecode"
 	"github.com/mozillazg/go-unidecode/table"
@@ -93,6 +95,10 @@ func Benchmark1Builder(b *testing.B) { // 58.5
 
 func Init() {
 	os.Mkdir("./temp", 0o777)
+	if !scanner.CheckFileExist(config.Configfile) {
+		config.ClearCfg()
+		config.WriteCfg()
+	}
 	config.LoadCfgDB()
 
 	database.InitCache()
@@ -102,13 +108,8 @@ func Init() {
 		LogFileCount: config.SettingsGeneral.LogFileCount,
 		LogCompress:  config.SettingsGeneral.LogCompress,
 	})
-	if config.SettingsGeneral.WebPort == "" {
-		// fmt.Println("Checked for general - config is missing", cfg_general)
-		// os.Exit(0)
-		config.ClearCfg()
-		config.WriteCfg()
-		config.LoadCfgDB()
-	}
+
+	database.UpgradeDB()
 	err := database.InitDB(config.SettingsGeneral.DBLogLevel)
 	if err != nil {
 		fmt.Println(err)
@@ -260,6 +261,78 @@ func TestToSlug(t *testing.T) {
 	t.Run("test", func(t *testing.T) {
 		t.Log(logger.StringToSlug("Hanäl-&$§áfedfe_feoke"))
 	})
+}
+
+func TestGetCfg(t *testing.T) {
+	Init()
+	t.Run("test", func(t *testing.T) {
+		t.Log(config.GetCfgAll())
+	})
+}
+
+func TestInitCfg(t *testing.T) {
+	Init()
+	t.Run("test", func(t *testing.T) {
+		cnt, err := toml.Marshal(config.GetToml().Media)
+
+		t.Log(err)
+		t.Log(string(cnt))
+	})
+}
+
+func TestGetResolutionFromDimensions(t *testing.T) {
+	Init()
+	tests := []struct {
+		name     string
+		width    int
+		height   int
+		expected string
+	}{
+		// Standard resolutions
+		{"8K", 7680, 4320, "4320p"},
+		{"8K", 8192, 4320, "4320p"},
+		{"4K UHD", 4096, 2160, "2160p"},
+		{"4K UHD", 3840, 2160, "2160p"},
+		{"1440p QHD", 2560, 1440, "1440p"},
+		{"1080p FHD", 1920, 1080, "1080p"},
+		{"720p HD", 1280, 720, "720p"},
+		{"576p PAL", 720, 576, "576p"},
+		{"480p NTSC", 720, 480, "480p"},
+		{"480p VGA", 640, 480, "480p"}, // 307.200  1.33
+		{"360p", 640, 360, "360p"},     // 1.77
+		{"360p", 576, 320, "240p"},
+		{"360p", 624, 352, "240p"}, // 219.648 1.77
+		{"240p", 426, 240, "240p"},
+
+		// Ultra-wide resolutions
+		//{"Ultra-wide 1080p", 2560, 1080, "1080p"},
+		{"Ultra-wide 1440p", 3440, 1440, "1440p"},
+		//{"Ultra-wide 4K", 5120, 2160, "2160p"},
+
+		// Edge cases
+		{"Very low resolution", 160, 120, "SD"},
+		{"Just under 360p", 576, 320, "240p"},
+
+		// Borderline cases
+		{"Just under 360p", 640, 359, "360p"},
+		{"Just over 360p", 640, 361, "360p"},
+		{"Just under 1080p", 1920, 1079, "1080p"},
+		{"Just over 1080p", 1920, 1081, "1080p"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := database.ParseInfo{
+				Width:  tt.width,
+				Height: tt.height,
+			}
+			result := m.Parseresolution()
+			if result != tt.expected {
+				t.Errorf("GetResolutionFromDimensions(%d, %d) = %s; expected %s",
+					tt.width, tt.height, result, tt.expected)
+			}
+		})
+	}
 }
 
 func TestGetSerieAdded(t *testing.T) {

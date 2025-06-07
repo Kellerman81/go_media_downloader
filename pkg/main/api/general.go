@@ -888,6 +888,7 @@ func apiListConfigType(ctx *gin.Context) {
 			}
 		}
 	}
+
 	ctx.JSON(http.StatusOK, gin.H{"data": list})
 }
 

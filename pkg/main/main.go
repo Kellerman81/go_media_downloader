@@ -17,7 +17,6 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/goadmin"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/parser"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/scanner"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/scheduler"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/searcher"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/utils"
@@ -47,11 +46,7 @@ var (
 func main() {
 	// debug.SetGCPercent(30)
 	os.Mkdir("./temp", 0o777)
-	cfgfile := config.Configfile
-	if !scanner.CheckFileExist(cfgfile) {
-		config.ClearCfg()
-		config.WriteCfg()
-	}
+
 	err := config.LoadCfgDB()
 	if err != nil {
 		os.Exit(1)
@@ -168,6 +163,7 @@ func main() {
 
 	logger.LogDynamicany0("info", "Starting API")
 	router := gin.New()
+	router.Use(logger.GinLogger(), logger.ErrorLogger())
 	// router.Use(ginlog.SetLogger(ginlog.WithLogger(func(_ *gin.Context, l zerolog.Logger) zerolog.Logger {
 	// 	return l.Output(gin.DefaultWriter).With().Logger()
 	// })))
