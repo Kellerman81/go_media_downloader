@@ -9,17 +9,18 @@ import (
 
 // type 1 reso 2 qual 3 codec 4 audio.
 type Qualities struct {
-	Name         string
-	Regex        string
-	Strings      string
-	StringsLower string
-	CreatedAt    time.Time `db:"created_at"`
-	UpdatedAt    time.Time `db:"updated_at"`
-	QualityType  int       `db:"type"`
-	Priority     int
-	Regexgroup   int
-	ID           uint
-	UseRegex     bool `db:"use_regex"`
+	Name                 string
+	Regex                string
+	Strings              string
+	StringsLower         string
+	StringsLowerSplitted []string  `json:"-"`
+	CreatedAt            time.Time `db:"created_at"`
+	UpdatedAt            time.Time `db:"updated_at"`
+	QualityType          int       `db:"type"`
+	Priority             int
+	Regexgroup           int
+	ID                   uint
+	UseRegex             bool `db:"use_regex"`
 }
 
 // Gettypeidprioritysingle returns the priority for the given Qualities struct

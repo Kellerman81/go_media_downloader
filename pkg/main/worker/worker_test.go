@@ -87,7 +87,7 @@ func TestDispatchEvery(t *testing.T) {
 }
 
 func TestDispatch(t *testing.T) {
-	InitWorkerPools(1, 1, 1)
+	InitWorkerPools(1, 1, 1, 1, 1)
 	defer CloseWorkerPools()
 
 	tests := []struct {

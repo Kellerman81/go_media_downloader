@@ -56,6 +56,8 @@ func main() {
 		config.SettingsGeneral.WorkerSearch,
 		config.SettingsGeneral.WorkerFiles,
 		config.SettingsGeneral.WorkerMetadata,
+		config.SettingsGeneral.WorkerRSS,
+		config.SettingsGeneral.WorkerIndexer,
 	)
 	logger.InitLogger(logger.Config{
 		LogLevel:      config.SettingsGeneral.LogLevel,
@@ -139,17 +141,27 @@ func main() {
 	// searcher.DefineSearchPool(config.SettingsGeneral.SearcherSize)
 
 	logger.LogDynamicany0("info", "Check Fill IMDB")
-	if database.GetdatarowN(true, "select count() from imdb_titles") == 0 {
+	if database.Getdatarow[uint](true, "select count() from imdb_titles") == 0 {
 		utils.FillImdb()
 	}
 
-	if database.GetdatarowN(false, "select count() from dbmovies") == 0 {
+	if database.Getdatarow[uint](false, "select count() from dbmovies") == 0 {
 		logger.LogDynamicany0("info", "Initial Fill Movies")
 		utils.InitialFillMovies()
 	}
-	if database.GetdatarowN(false, "select count() from dbseries") == 0 {
+	if database.Getdatarow[uint](false, "select count() from dbseries") == 0 {
 		logger.LogDynamicany0("info", "Initial Fill Series")
 		utils.InitialFillSeries()
+	}
+
+	for _, idx := range config.SettingsIndexer {
+		apiexternal.Getnewznabclient(idx)
+	}
+
+	for _, idx := range config.SettingsNotification {
+		if idx.NotificationType == "pushover" {
+			apiexternal.GetPushoverclient(idx.Apikey)
+		}
 	}
 
 	worker.CreateCronWorker()

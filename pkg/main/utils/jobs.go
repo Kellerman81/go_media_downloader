@@ -68,7 +68,7 @@ func InitialFillSeries() {
 				logger.LogDynamicanyErr("error", "Import new series failed", err)
 			}
 		}
-		database.Exec1(database.QueryUpdateHistory, &dbid)
+		database.ExecN(database.QueryUpdateHistory, &dbid)
 	}
 	ctx := context.Background()
 	defer ctx.Done()
@@ -80,7 +80,7 @@ func InitialFillSeries() {
 		for idxi := range media.Data {
 			newfilesloop(ctx, media, &media.Data[idxi])
 		}
-		database.Exec1(database.QueryUpdateHistory, &dbid)
+		database.ExecN(database.QueryUpdateHistory, &dbid)
 	}
 	ctx.Done()
 
@@ -111,7 +111,7 @@ func InitialFillMovies() {
 				logger.LogDynamicanyErr("error", "Import new movies failed", err)
 			}
 		}
-		database.Exec1(database.QueryUpdateHistory, &dbid)
+		database.ExecN(database.QueryUpdateHistory, &dbid)
 	}
 
 	ctx := context.Background()
@@ -125,7 +125,7 @@ func InitialFillMovies() {
 		for idxi := range media.Data {
 			newfilesloop(ctx, media, &media.Data[idxi])
 		}
-		database.Exec1(database.QueryUpdateHistory, &dbid)
+		database.ExecN(database.QueryUpdateHistory, &dbid)
 	}
 	ctx.Done()
 
@@ -147,7 +147,7 @@ func FillImdb() {
 		database.ExchangeImdbDB()
 	}
 	if dbinsert != 0 {
-		database.Exec1(database.QueryUpdateHistory, dbinsert)
+		database.ExecN(database.QueryUpdateHistory, dbinsert)
 	}
 }
 
@@ -197,10 +197,10 @@ func newfilesloop(ctx context.Context, cfgp *config.MediaTypeConfig, data *confi
 				return nil
 			}
 		} else {
-			if database.Getdatarow1[uint](false, logger.GetStringsMap(cfgp.Useseries, logger.DBCountFilesLocation), fpath) >= 1 {
+			if database.Getdatarow[uint](false, logger.GetStringsMap(cfgp.Useseries, logger.DBCountFilesLocation), fpath) >= 1 {
 				return nil
 			}
-			if database.Getdatarow1[uint](false, logger.GetStringsMap(cfgp.Useseries, logger.DBCountUnmatchedPath), fpath) >= 1 {
+			if database.Getdatarow[uint](false, logger.GetStringsMap(cfgp.Useseries, logger.DBCountUnmatchedPath), fpath) >= 1 {
 				return nil
 			}
 		}
@@ -331,7 +331,7 @@ func SingleJobs(job, cfgpstr, listname string, force bool, key uint32) {
 	logjob("Ended Job", cfgpstr, listname, job)
 
 	if dbinsert != 0 {
-		database.Exec1(database.QueryUpdateHistory, &dbinsert)
+		database.ExecN(database.QueryUpdateHistory, &dbinsert)
 	}
 }
 
@@ -398,36 +398,36 @@ func runjoblistfunc(job string, cfgp *config.MediaTypeConfig, listid int) {
 		if !cfgp.Useseries {
 			refreshmovies(
 				cfgp,
-				database.Getrows0[string](
+				database.GetrowsN[string](
 					false,
 					100,
 					"select distinct dbmovies.imdb_id from dbmovies inner join movies on movies.dbmovie_id = dbmovies.id group by dbmovies.imdb_id order by dbmovies.updated_at desc limit 100",
 				),
 			)
 		} else {
-			refreshseries(cfgp, database.Getrows0[database.DbstaticTwoStringOneRInt](false, 20, "select seriename, (Select listname from series where dbserie_id=dbseries.id limit 1), thetvdb_id from dbseries where status = 'Continuing' and thetvdb_id != 0 order by updated_at asc limit 20"))
+			refreshseries(cfgp, database.GetrowsN[database.DbstaticTwoStringOneRInt](false, 20, "select seriename, (Select listname from series where dbserie_id=dbseries.id limit 1), thetvdb_id from dbseries where status = 'Continuing' and thetvdb_id != 0 order by updated_at asc limit 20"))
 		}
 	case "refresh":
 		if !cfgp.Useseries {
 			refreshmovies(
 				cfgp,
-				database.Getrows0[string](
+				database.GetrowsN[string](
 					false,
-					database.Getdatarow0(false, "select count() from dbmovies"),
+					database.Getdatarow[uint](false, "select count() from dbmovies"),
 					"select distinct dbmovies.imdb_id from dbmovies inner join movies on movies.dbmovie_id = dbmovies.id group by dbmovies.imdb_id",
 				),
 			)
 		} else {
-			refreshseries(cfgp, database.Getrows0[database.DbstaticTwoStringOneRInt](false, database.Getdatarow0(false, "select count() from dbseries"), "select seriename, (Select listname from series where dbserie_id=dbseries.id limit 1), thetvdb_id from dbseries where thetvdb_id != 0"))
+			refreshseries(cfgp, database.GetrowsN[database.DbstaticTwoStringOneRInt](false, database.Getdatarow[uint](false, "select count() from dbseries"), "select seriename, (Select listname from series where dbserie_id=dbseries.id limit 1), thetvdb_id from dbseries where thetvdb_id != 0"))
 		}
 	case logger.StrClearHistory:
 		if !cfgp.Useseries {
-			database.Exec1(
+			database.ExecN(
 				"delete from movie_histories where movie_id in (Select id from movies where listname = ? COLLATE NOCASE)",
 				&cfgp.Lists[listid].Name,
 			)
 		} else {
-			database.Exec1("delete from serie_episode_histories where serie_id in (Select id from series where listname = ? COLLATE NOCASE)", &cfgp.Lists[listid].Name)
+			database.ExecN("delete from serie_episode_histories where serie_id in (Select id from series where listname = ? COLLATE NOCASE)", &cfgp.Lists[listid].Name)
 		}
 	case logger.StrFeeds:
 		if cfgp.Lists[listid].CfgList == nil {
@@ -548,7 +548,7 @@ func jobsearchmedia(
 
 	str := bld.String()
 	ctx := context.Background()
-	for _, tbl := range database.GetrowsNuncached[database.DbstaticOneStringOneUInt](database.GetdatarowNArg(false, logger.JoinStrings("select count() ", str), args.Arr), logger.JoinStrings(logger.GetStringsMap(cfgp.Useseries, logger.SearchGenSelect), str), args.Arr) {
+	for _, tbl := range database.GetrowsNuncached[database.DbstaticOneStringOneUInt](database.Getdatarow[uint](false, logger.JoinStrings("select count() ", str), args.Arr...), logger.JoinStrings(logger.GetStringsMap(cfgp.Useseries, logger.SearchGenSelect), str), args.Arr) {
 		searcher.NewSearcher(cfgp, cfgp.GetMediaQualityConfigStr(tbl.Str), "", nil).
 			MediaSearch(ctx, cfgp, tbl.Num, searchtitle, true, true)
 	}
@@ -559,12 +559,15 @@ func jobsearchmedia(
 // the database to set missing flags on media items with no files.
 // It handles both movies and series based on the useseries flag.
 func checkmissing(useseries bool, listcfg *config.MediaListsConfig) {
-	arrfiles := database.Getrows0[database.DbstaticOneStringTwoInt](
+	arrfiles := database.GetrowsN[database.DbstaticOneStringTwoInt](
 		false,
-		database.Getdatarow0(false, logger.GetStringsMap(useseries, logger.DBCountFilesByLocation)),
+		database.Getdatarow[uint](
+			false,
+			logger.GetStringsMap(useseries, logger.DBCountFilesByLocation),
+		),
 		logger.GetStringsMap(useseries, logger.DBIDsFilesByLocation),
 	)
-	arr := database.Getrows1size[string](
+	arr := database.Getrowssize[string](
 		false,
 		logger.GetStringsMap(useseries, logger.DBCountFilesByList),
 		logger.GetStringsMap(useseries, logger.DBLocationFilesByList),
@@ -579,7 +582,7 @@ func checkmissing(useseries bool, listcfg *config.MediaListsConfig) {
 }
 
 // func Checkruntimes(cfg *config.MediaTypeConfig) {
-// 	arr := database.Getrows0[database.DbstaticOneStringTwoInt](false, database.Getdatarow0(false, logger.GetStringsMap(cfg.Useseries, logger.DBCountFilesByLocation)), logger.GetStringsMap(cfg.Useseries, logger.DBIDsFilesByLocation))
+// 	arr := database.GetrowsN[database.DbstaticOneStringTwoInt](false, database.Getdatarow(false, logger.GetStringsMap(cfg.Useseries, logger.DBCountFilesByLocation)), logger.GetStringsMap(cfg.Useseries, logger.DBIDsFilesByLocation))
 // 	for idx := range arr {
 // 		Checkruntimesfiles(cfg, &arr[idx])
 // 	}
@@ -608,13 +611,13 @@ func checkmissingfiles(useseries bool, row *string, arrfiles []database.Dbstatic
 			continue
 		}
 		logger.LogDynamicany1String("info", "File was removed", logger.StrFile, *row)
-		err = database.Exec1Err(deletestmt, &arrfiles[idx].Num1)
+		err = database.ExecNErr(deletestmt, &arrfiles[idx].Num1)
 		if err != nil {
 			continue
 		}
 
-		if database.Getdatarow1[uint](false, subquerycount, &arrfiles[idx].Num2) == 0 {
-			database.Exec1(updatestmt, &arrfiles[idx].Num2)
+		if database.Getdatarow[uint](false, subquerycount, &arrfiles[idx].Num2) == 0 {
+			database.ExecN(updatestmt, &arrfiles[idx].Num2)
 		}
 	}
 }
@@ -627,19 +630,19 @@ func checkmissingflag(useseries bool, listcfg *config.MediaListsConfig) {
 
 	var counter int
 
-	arr := database.Getrows1size[database.DbstaticOneIntOneBool](
+	arr := database.Getrowssize[database.DbstaticOneIntOneBool](
 		false,
 		logger.GetStringsMap(useseries, logger.DBCountMediaByList),
 		logger.GetStringsMap(useseries, logger.DBIDMissingMediaByList),
 		&listcfg.Name,
 	)
 	for idx := range arr {
-		database.Scanrows1dyn(false, querycount, &counter, &arr[idx].Num)
+		database.Scanrowsdyn(false, querycount, &counter, &arr[idx].Num)
 		if counter >= 1 && arr[idx].Bl {
-			database.Exec2(queryupdate, &v0, &arr[idx].Num)
+			database.ExecN(queryupdate, &v0, &arr[idx].Num)
 		}
 		if counter == 0 && !arr[idx].Bl {
-			database.Exec2(queryupdate, &v1, &arr[idx].Num)
+			database.ExecN(queryupdate, &v1, &arr[idx].Num)
 		}
 	}
 }

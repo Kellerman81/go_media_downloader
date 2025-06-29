@@ -21,7 +21,10 @@ var (
 // The message must not be empty and must be less than 1024 characters.
 // The title must be less than 250 characters.
 // The function returns an error if the message or title are too long, or if there is an error sending the message.
-func (c *client) SendPushoverMessage(message, title, recipient string) error {
+func SendPushoverMessage(apikey, message, title, recipient string) error {
+	if apikey == "" {
+		return errors.New("apikey empty")
+	}
 	if message == "" {
 		return errors.New("message empty")
 	}
@@ -31,6 +34,7 @@ func (c *client) SendPushoverMessage(message, title, recipient string) error {
 	if len(title) > 250 {
 		return errors.New("title too long")
 	}
+	c := GetPushoverclient(apikey)
 	ctx, ctxcancel := context.WithTimeout(c.Client.Ctx, c.Client.Timeout5)
 	defer ctxcancel()
 	ok, err := c.Client.checkLimiter(ctx, true)
@@ -92,15 +96,16 @@ func (c *client) SendPushoverMessage(message, title, recipient string) error {
 	return nil
 }
 
-// GetPushoverclient returns a Pushover client instance for the given API key. If a client for the API key does not exist, it creates a new one and adds it to the cache.
+// getPushoverclient returns a Pushover client instance for the given API key. If a client for the API key does not exist, it creates a new one and adds it to the cache.
 func GetPushoverclient(apikey string) *client {
 	if !pushOverClients.Check(apikey) {
-		d := &client{
+		d := client{
 			apikey: apikey,
 			Lim:    slidingwindow.NewLimiter(10*time.Second, 3),
 		} // Client: pushover.New(apikey)}
-		d.Client = NewClient("pushover", true, false, &d.Lim, false, nil, 30)
-		pushOverClients.Add(apikey, d, 0, false, 0)
+		d.Client = newClient("pushover", true, false, &d.Lim, false, nil, 30)
+		pushOverClients.Add(apikey, &d, 0, false, 0)
+		return &d
 	}
 	return pushOverClients.GetVal(apikey)
 }

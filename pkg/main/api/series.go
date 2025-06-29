@@ -88,9 +88,8 @@ const querybydbserieid = "dbserie_id = ?"
 // @Router       /api/series [get].
 func apiSeriesGet(ctx *gin.Context) {
 	var query database.Querywithargs
-	rows := database.GetdatarowN(false, "select count() from dbseries")
-	limit := 0
-	page := 0
+	rows := database.Getdatarow[uint](false, "select count() from dbseries")
+	var limit, page int
 	if queryParam, ok := ctx.GetQuery("limit"); ok {
 		if queryParam != "" {
 			limit, _ = strconv.Atoi(queryParam)
@@ -154,9 +153,8 @@ func apiSeriesListGet(ctx *gin.Context) {
 	list := ctx.Param("name")
 	query.InnerJoin = "dbseries on series.dbserie_id=dbseries.id"
 	query.Where = "series.listname = ? COLLATE NOCASE"
-	rows := database.GetdatarowN(false, "select count() from series where listname = ?", &list)
-	limit := 0
-	page := 0
+	rows := database.Getdatarow[uint](false, "select count() from series where listname = ?", &list)
+	var limit, page int
 	if queryParam, ok := ctx.GetQuery("limit"); ok {
 		if queryParam != "" {
 			limit, _ = strconv.Atoi(queryParam)
@@ -217,9 +215,8 @@ func apiSeriesListDelete(ctx *gin.Context) {
 // @Router       /api/series/unmatched [get].
 func apiSeriesUnmatched(ctx *gin.Context) {
 	var query database.Querywithargs
-	rows := database.GetdatarowN(false, "select count() from serie_file_unmatcheds")
-	limit := 0
-	page := 0
+	rows := database.Getdatarow[uint](false, "select count() from serie_file_unmatcheds")
+	var limit, page int
 	if queryParam, ok := ctx.GetQuery("limit"); ok {
 		if queryParam != "" {
 			limit, _ = strconv.Atoi(queryParam)
@@ -259,9 +256,8 @@ func apiSeriesUnmatched(ctx *gin.Context) {
 // @Router       /api/series/episodes [get].
 func apiSeriesEpisodesGet(ctx *gin.Context) {
 	var query database.Querywithargs
-	rows := database.GetdatarowN(false, "select count() from dbserie_episodes")
-	limit := 0
-	page := 0
+	rows := database.Getdatarow[uint](false, "select count() from dbserie_episodes")
+	var limit, page int
 	if queryParam, ok := ctx.GetQuery("limit"); ok {
 		if queryParam != "" {
 			limit, _ = strconv.Atoi(queryParam)
@@ -304,9 +300,12 @@ func apiSeriesEpisodesGetSingle(ctx *gin.Context) {
 	var query database.Querywithargs
 	query.Where = querybydbserieid
 	dbid := ctx.Param("id")
-	rows := database.GetdatarowN(false, "select count() from series where dbserie_id = ?", &dbid)
-	limit := 0
-	page := 0
+	rows := database.Getdatarow[uint](
+		false,
+		"select count() from series where dbserie_id = ?",
+		&dbid,
+	)
+	var limit, page int
 	if queryParam, ok := ctx.GetQuery("limit"); ok {
 		if queryParam != "" {
 			limit, _ = strconv.Atoi(queryParam)
@@ -371,13 +370,12 @@ func apiSeriesEpisodesListGet(ctx *gin.Context) {
 	dbid := ctx.Param("id")
 	query.InnerJoin = "dbserie_episodes on serie_episodes.dbserie_episode_id=dbserie_episodes.id inner join series on series.id=serie_episodes.serie_id"
 	query.Where = "series.id = ?"
-	rows := database.GetdatarowN(
+	rows := database.Getdatarow[uint](
 		false,
 		"select count() from serie_episodes where serie_id = ?",
 		&dbid,
 	)
-	limit := 0
-	page := 0
+	var limit, page int
 	if queryParam, ok := ctx.GetQuery("limit"); ok {
 		if queryParam != "" {
 			limit, _ = strconv.Atoi(queryParam)
@@ -466,10 +464,14 @@ func apiseriesAllJobs(c *gin.Context) {
 				worker.Dispatch(c.Param(strJobLower)+"_series_"+media.Name, func(key uint32) {
 					utils.SingleJobs(c.Param(strJobLower), cfgpstr, "", true, key)
 				}, "Data")
-			case logger.StrRss, logger.StrRssSeasons, logger.StrRssSeasonsAll, logger.StrSearchMissingFull, logger.StrSearchMissingInc, logger.StrSearchUpgradeFull, logger.StrSearchUpgradeInc, logger.StrSearchMissingFullTitle, logger.StrSearchMissingIncTitle, logger.StrSearchUpgradeFullTitle, logger.StrSearchUpgradeIncTitle:
+			case logger.StrSearchMissingFull, logger.StrSearchMissingInc, logger.StrSearchUpgradeFull, logger.StrSearchUpgradeInc, logger.StrSearchMissingFullTitle, logger.StrSearchMissingIncTitle, logger.StrSearchUpgradeFullTitle, logger.StrSearchUpgradeIncTitle:
 				worker.Dispatch(c.Param(strJobLower)+"_series_"+media.Name, func(key uint32) {
 					utils.SingleJobs(c.Param(strJobLower), cfgpstr, "", true, key)
 				}, "Search")
+			case logger.StrRss, logger.StrRssSeasons, logger.StrRssSeasonsAll:
+				worker.Dispatch(c.Param(strJobLower)+"_series_"+media.Name, func(key uint32) {
+					utils.SingleJobs(c.Param(strJobLower), cfgpstr, "", true, key)
+				}, "RSS")
 			case logger.StrFeeds, logger.StrCheckMissing, logger.StrCheckMissingFlag, logger.StrReachedFlag:
 				for idxlist := range media.Lists {
 					if !media.Lists[idxlist].Enabled {
@@ -549,10 +551,7 @@ func apiseriesJobs(c *gin.Context) {
 			worker.Dispatch(c.Param(strJobLower)+"_series_"+c.Param("name"), func(key uint32) {
 				utils.SingleJobs(c.Param(strJobLower), cfgpstr, "", true, key)
 			}, "Data")
-		case logger.StrRss,
-			logger.StrRssSeasons,
-			logger.StrRssSeasonsAll,
-			logger.StrSearchMissingFull,
+		case logger.StrSearchMissingFull,
 			logger.StrSearchMissingInc,
 			logger.StrSearchUpgradeFull,
 			logger.StrSearchUpgradeInc,
@@ -563,6 +562,12 @@ func apiseriesJobs(c *gin.Context) {
 			worker.Dispatch(c.Param(strJobLower)+"_series_"+c.Param("name"), func(key uint32) {
 				utils.SingleJobs(c.Param(strJobLower), cfgpstr, "", true, key)
 			}, "Search")
+		case logger.StrRss,
+			logger.StrRssSeasons,
+			logger.StrRssSeasonsAll:
+			worker.Dispatch(c.Param(strJobLower)+"_series_"+c.Param("name"), func(key uint32) {
+				utils.SingleJobs(c.Param(strJobLower), cfgpstr, "", true, key)
+			}, "RSS")
 		case logger.StrFeeds,
 			logger.StrCheckMissing,
 			logger.StrCheckMissingFlag,
@@ -640,7 +645,7 @@ func updateDBSeries(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	counter := database.GetdatarowN(
+	counter := database.Getdatarow[uint](
 		false,
 		"select count() from dbseries where id != 0 and id = ?",
 		&dbserie.ID,
@@ -741,7 +746,7 @@ func updateDBEpisode(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	counter := database.GetdatarowN(
+	counter := database.Getdatarow[uint](
 		false,
 		"select count() from dbserie_episodes where id != 0 and id = ?",
 		&dbserieepisode.ID,
@@ -804,7 +809,7 @@ func updateSeries(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	counter := database.GetdatarowN(
+	counter := database.Getdatarow[uint](
 		false,
 		"select count() from series where id != 0 and id = ?",
 		&serie.ID,
@@ -855,7 +860,7 @@ func updateEpisode(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	counter := database.GetdatarowN(
+	counter := database.Getdatarow[uint](
 		false,
 		"select count() from serie_episodes where id != 0 and id = ?",
 		&serieepisode.ID,
@@ -995,7 +1000,7 @@ func apiSeriesSearch(c *gin.Context) {
 					func(uint32) {
 						episodes := database.GetrowsN[uint](
 							false,
-							database.GetdatarowN(
+							database.Getdatarow[uint](
 								false,
 								"select count() from serie_episodes where serie_id = ?",
 								&serie.ID,
@@ -1028,8 +1033,7 @@ func apiSeriesSearch(c *gin.Context) {
 									)
 								}
 							} else {
-								if results == nil || len(results.Accepted) == 0 {
-								} else {
+								if len(results.Accepted) >= 1 {
 									results.Download()
 								}
 							}
@@ -1080,7 +1084,7 @@ func apiSeriesSearchSeason(c *gin.Context) {
 						a := c.Param("season")
 						episodes = database.GetrowsN[uint](
 							false,
-							database.GetdatarowN(
+							database.Getdatarow[uint](
 								false,
 								"select count() from serie_episodes where serie_id = ? and dbserie_episode_id in (select id from dbserie_episodes where season = ?)",
 								&serie.ID,
@@ -1115,8 +1119,7 @@ func apiSeriesSearchSeason(c *gin.Context) {
 									)
 								}
 							} else {
-								if results == nil || len(results.Accepted) == 0 {
-								} else {
+								if len(results.Accepted) >= 1 {
 									results.Download()
 								}
 							}
@@ -1271,7 +1274,7 @@ func apiSeriesEpisodeSearch(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param(logger.StrID))
 	uid := uint(id)
 	dbid := c.Param(logger.StrID)
-	serieid := database.GetdatarowN(false, database.QuerySerieEpisodesGetSerieIDByID, &dbid)
+	serieid := database.Getdatarow[uint](false, database.QuerySerieEpisodesGetSerieIDByID, &dbid)
 	serie, _ := database.GetSeries(database.Querywithargs{Where: logger.FilterByID}, serieid)
 	// defer logger.ClearVar(&serie)
 
@@ -1302,8 +1305,7 @@ func apiSeriesEpisodeSearch(c *gin.Context) {
 								)
 							}
 						} else {
-							if results == nil || len(results.Accepted) == 0 {
-							} else {
+							if len(results.Accepted) >= 1 {
 								results.Download()
 							}
 						}

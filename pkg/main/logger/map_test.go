@@ -366,7 +366,11 @@ func TestSyncMap_UpdateExpire(t *testing.T) {
 
 			if tt.expectSet {
 				if sm.expires[key] != tt.update {
-					t.Errorf("UpdateExpire() did not set correct expiry value, got %v, want %v", sm.expires[key], tt.update)
+					t.Errorf(
+						"UpdateExpire() did not set correct expiry value, got %v, want %v",
+						sm.expires[key],
+						tt.update,
+					)
 				}
 				if sm.expires[key] == initialExpiry {
 					t.Error("UpdateExpire() did not change expiry value when it should have")

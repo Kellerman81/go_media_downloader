@@ -25,10 +25,8 @@ type tcache struct {
 	itemstwoint      *logger.SyncMap[[]DbstaticOneStringTwoInt]
 	itemsthreestring *logger.SyncMap[[]DbstaticThreeStringTwoInt]
 	itemstwostring   *logger.SyncMap[[]DbstaticTwoStringOneInt]
-	itemsxstmt       *logger.SyncMap[sqlx.Stmt]      // sync.Map
-	itemsxstmtP      *logger.SyncMap[*sqlx.Stmt]     // sync.Map
-	itemsregex       *logger.SyncMap[regexp.Regexp]  // sync.Map
-	itemsregexP      *logger.SyncMap[*regexp.Regexp] // sync.Map
+	itemsxstmt       *logger.SyncMap[sqlx.Stmt]     // sync.Map
+	itemsregex       *logger.SyncMap[regexp.Regexp] // sync.Map
 	janitor          *time.Timer
 }
 
@@ -49,9 +47,7 @@ var (
 		itemsthreestring: logger.NewSyncMap[[]DbstaticThreeStringTwoInt](20),
 		itemstwostring:   logger.NewSyncMap[[]DbstaticTwoStringOneInt](20),
 		itemsxstmt:       logger.NewSyncMap[sqlx.Stmt](1000),
-		itemsxstmtP:      logger.NewSyncMap[*sqlx.Stmt](1000),
 		itemsregex:       logger.NewSyncMap[regexp.Regexp](1000),
-		itemsregexP:      logger.NewSyncMap[*regexp.Regexp](1000),
 		interval:         10 * time.Minute, // Set default interval to 5 minutes
 	}
 	globalCache *globalcache
@@ -61,8 +57,8 @@ var (
 // getexpiressql returns the expiry time in nanoseconds for cached statements.
 // It checks the defaultextension field, and if greater than 0, sets the expiry to that duration from the current time.
 // Otherwise it returns 0 indicating no expiry.
-func (c *globalcache) getexpiressql() int64 {
-	if c.defaultextension > 0 {
+func (c *globalcache) getexpiressql(static bool) int64 {
+	if !static && c.defaultextension > 0 {
 		return time.Now().Add(c.defaultextension).UnixNano()
 	}
 	return 0
@@ -75,14 +71,14 @@ func (c *globalcache) getexpiressql() int64 {
 // It returns nothing.
 // Warning: Only use this function outside of goroutines - so only from the main program.
 func (c *globalcache) addStaticXStmt(key string, imdb bool) {
-	if cache.itemsxstmtP.Check(key) {
+	if cache.itemsxstmt.Check(key) {
 		return
 	}
 	sq, err := Getdb(imdb).Preparex(key)
 	if err != nil || sq == nil {
 		return
 	}
-	cache.itemsxstmtP.Add(key, sq, 0, imdb, 0)
+	cache.itemsxstmt.AddPointer(key, *sq, 0, imdb, 0)
 }
 
 // getXStmt retrieves a cached SQL statement with the given key and database connection.
@@ -92,27 +88,31 @@ func (c *globalcache) addStaticXStmt(key string, imdb bool) {
 // The function takes a key string, a boolean indicating whether to use the IMDB database
 // connection, and an optional slice of int64 values representing the expiration time in
 // nanoseconds. It returns the cached SQL statement.
-func (c *globalcache) getXStmt(key string, imdb bool) *sqlx.Stmt {
-	if cache.itemsxstmtP.Check(
-		key,
-	) { // only check and get not add to static cache - function is called from goroutines
-		return cache.itemsxstmtP.GetVal(key)
+func (c *globalcache) getXStmt(key string, imdb bool) sqlx.Stmt {
+	if cache.itemsxstmt.Check(key) {
+		expires := cache.itemsxstmt.GetExpire(key)
+		if config.SettingsGeneral.CacheAutoExtend ||
+			expires != 0 && (time.Now().UnixNano() > expires) {
+			cache.itemsxstmt.UpdateExpire(key, c.getexpiressql(false))
+		}
+	} else {
+		stmt := preparestmt(imdb, key)
+		cache.itemsxstmt.Add(key, stmt, c.getexpiressql(false), imdb, 0)
+		return stmt
 	}
-	if !cache.itemsxstmt.Check(key) {
-		cache.itemsxstmt.Add(key, preparestmt(imdb, key), c.getexpiressql(), imdb, 0)
+	return cache.itemsxstmt.GetVal(key)
+}
+
+func (c *globalcache) getXStmtP(key string) *sqlx.Stmt {
+	if cache.itemsxstmt.Check(key) {
+		expires := cache.itemsxstmt.GetExpire(key)
+		if config.SettingsGeneral.CacheAutoExtend ||
+			expires != 0 && (time.Now().UnixNano() > expires) {
+			cache.itemsxstmt.UpdateExpire(key, c.getexpiressql(false))
+		}
 		return cache.itemsxstmt.GetValP(key)
 	}
-	// val := cache.itemsxstmt.GetVal(key)
-	// if val.Stmt == nil {
-	// 	cache.itemsxstmt.UpdateVal(key, preparestmt(imdb, key))
-	// 	cache.itemsxstmt.UpdateExpire(key, c.getexpiressql())
-	// 	return cache.itemsxstmt.GetValP(key)
-	// }
-	expires := cache.itemsxstmt.GetExpire(key)
-	if config.SettingsGeneral.CacheAutoExtend || expires != 0 && (time.Now().UnixNano() > expires) {
-		cache.itemsxstmt.UpdateExpire(key, c.getexpiressql())
-	}
-	return cache.itemsxstmt.GetValP(key)
+	return nil
 }
 
 // preparestmt prepares a SQL statement using the provided database connection and SQL query key.
@@ -131,8 +131,8 @@ func preparestmt(imdb bool, key string) sqlx.Stmt {
 // expressions that are used statically throughout the application.
 // Warning: Only use this function outside of goroutines - so only from the main program.
 func (c *globalcache) setStaticRegexp(key string) {
-	if !cache.itemsregexP.Check(key) {
-		cache.itemsregexP.Add(key, getregexP(key), 0, false, 0)
+	if !cache.itemsregex.Check(key) {
+		cache.itemsregex.AddPointer(key, getregex(key), 0, false, 0)
 		return // cache.itemsregex.GetVal(key)
 	}
 }
@@ -143,12 +143,7 @@ func (c *globalcache) setStaticRegexp(key string) {
 // necessary.
 // The function takes a key string and a duration time.Duration. If the duration is 0, it uses the
 // default extension time. The function returns the cached regular expression.
-func (c *globalcache) setRegexp(key string, duration time.Duration) *regexp.Regexp {
-	if cache.itemsregexP.Check(
-		key,
-	) { // only check and get not add to static cache - function is called from goroutines
-		return cache.itemsregexP.GetVal(key)
-	}
+func (c *globalcache) setRegexp(key string, duration time.Duration) regexp.Regexp {
 	if !cache.itemsregex.Check(key) {
 		if duration == 0 {
 			duration = c.defaultextension
@@ -159,8 +154,22 @@ func (c *globalcache) setRegexp(key string, duration time.Duration) *regexp.Rege
 		} else {
 			expires = getexpireskey(duration)
 		}
-		cache.itemsregex.Add(key, getregex(key), expires, false, 0)
-		return cache.itemsregex.GetValP(key)
+		rgx := getregex(key)
+		cache.itemsregex.Add(key, rgx, expires, false, 0)
+		return rgx
+	}
+	expires := cache.itemsregex.GetExpire(key)
+	if config.SettingsGeneral.CacheAutoExtend || expires != 0 && (time.Now().UnixNano() > expires) {
+		if duration != 0 && key != "RegexSeriesIdentifier" && key != "RegexSeriesTitle" {
+			cache.itemsregex.UpdateExpire(key, getexpireskey(c.defaultextension))
+		}
+	}
+	return cache.itemsregex.GetVal(key)
+}
+
+func (c *globalcache) setRegexpP(key string, duration time.Duration) *regexp.Regexp {
+	if !cache.itemsregex.Check(key) {
+		return nil
 	}
 	expires := cache.itemsregex.GetExpire(key)
 	if config.SettingsGeneral.CacheAutoExtend || expires != 0 && (time.Now().UnixNano() > expires) {
@@ -216,11 +225,9 @@ func AppendCache(a string, v string) {
 	if !cache.itemsstring.Check(a) {
 		return
 	}
-	s := GetCachedStringArr(a, false, true)
-	for idx := range s {
-		if s[idx] == v {
-			return
-		}
+	s := GetCachedArr(cache.itemsstring, a, false, true)
+	if slices.Contains(s, v) {
+		return
 	}
 	cache.itemsstring.UpdateVal(a, append(s, v))
 }
@@ -233,11 +240,9 @@ func AppendCacheThreeString(a string, v DbstaticThreeStringTwoInt) {
 	if !cache.itemsthreestring.Check(a) {
 		return
 	}
-	s := GetCachedThreeStringArr(a, false, true)
-	for idx := range s {
-		if s[idx] == v {
-			return
-		}
+	s := GetCachedArr(cache.itemsthreestring, a, false, true)
+	if slices.Contains(s, v) {
+		return
 	}
 	cache.itemsthreestring.UpdateVal(a, append(s, v))
 }
@@ -250,11 +255,9 @@ func AppendCacheTwoInt(a string, v DbstaticOneStringTwoInt) {
 	if !cache.itemstwoint.Check(a) {
 		return
 	}
-	s := GetCachedTwoIntArr(a, false, true)
-	for idx := range s {
-		if s[idx] == v {
-			return
-		}
+	s := GetCachedArr(cache.itemstwoint, a, false, true)
+	if slices.Contains(s, v) {
+		return
 	}
 	cache.itemstwoint.UpdateVal(a, append(s, v))
 }
@@ -267,11 +270,9 @@ func AppendCacheTwoString(a string, v DbstaticTwoStringOneInt) {
 	if !cache.itemstwostring.Check(a) {
 		return
 	}
-	s := GetCachedTwoStringArr(a, false, true)
-	for idx := range s {
-		if s[idx] == v {
-			return
-		}
+	s := GetCachedArr(cache.itemstwostring, a, false, true)
+	if slices.Contains(s, v) {
+		return
 	}
 	cache.itemstwostring.UpdateVal(a, append(s, v))
 }
@@ -288,23 +289,13 @@ func AppendCacheMap(useseries bool, query string, v string) {
 // comparing values of the same type. If the values are of a custom struct type,
 // the comparison is performed by checking if all fields of the struct are equal.
 func ArrStructContains(s []DbstaticTwoUint, v DbstaticTwoUint) bool {
-	for idx := range s {
-		if s[idx] == v {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(s, v)
 }
 
 // ArrStructContainsString checks if the given slice s contains the string value v.
 // It iterates over the slice and returns true if a match is found, false otherwise.
 func ArrStructContainsString(s []string, v string) bool {
-	for idx := range s {
-		if s[idx] == v {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(s, v)
 }
 
 // SlicesCacheContainsI checks if string v exists in the cached string array
@@ -313,7 +304,7 @@ func ArrStructContainsString(s []string, v string) bool {
 // and returns true if a match is found.
 func SlicesCacheContainsI(useseries bool, query string, w *string) bool {
 	v := *w
-	for _, a := range GetCachedStringArr(logger.GetStringsMap(useseries, query), false, true) {
+	for _, a := range GetCachedArr(cache.itemsstring, logger.GetStringsMap(useseries, query), false, true) {
 		if v == a || strings.EqualFold(v, a) {
 			return true
 		}
@@ -324,12 +315,10 @@ func SlicesCacheContainsI(useseries bool, query string, w *string) bool {
 // SlicesCacheContains checks if the cached string array identified by s contains
 // the value v. It iterates over the array and returns true if a match is found.
 func SlicesCacheContains(useseries bool, query, v string) bool {
-	for _, a := range GetCachedStringArr(logger.GetStringsMap(useseries, query), false, true) {
-		if a == v {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(
+		GetCachedArr(cache.itemsstring, logger.GetStringsMap(useseries, query), false, true),
+		v,
+	)
 }
 
 // SlicesCacheContainsDelete removes an element matching v from the cached string
@@ -340,7 +329,7 @@ func SlicesCacheContainsDelete(s, v string) {
 	if !cache.itemsstring.Check(s) {
 		return
 	}
-	a := GetCachedStringArr(s, false, true)
+	a := GetCachedArr(cache.itemsstring, s, false, true)
 	if !ArrStructContainsString(a, v) {
 		return
 	}
@@ -353,7 +342,7 @@ func SlicesCacheContainsDelete(s, v string) {
 // identified by s and calls the passed in function f on each element.
 // Returns true if f returns true for any element.
 func CacheOneStringTwoIntIndexFunc(s string, f func(*DbstaticOneStringTwoInt) bool) bool {
-	a := GetCachedTwoIntArr(s, false, true)
+	a := GetCachedArr(cache.itemstwoint, s, false, true)
 	for idx := range a {
 		if f(&a[idx]) {
 			return true
@@ -367,7 +356,7 @@ func CacheOneStringTwoIntIndexFunc(s string, f func(*DbstaticOneStringTwoInt) bo
 // true for any element, the Num2 field of that element is returned. If no match is
 // found, 0 is returned.
 func CacheOneStringTwoIntIndexFuncRet(s string, id uint, listname string) uint {
-	for _, a := range GetCachedTwoIntArr(s, false, true) {
+	for _, a := range GetCachedArr(cache.itemstwoint, s, false, true) {
 		if a.Num1 == id && strings.EqualFold(a.Str, listname) {
 			return a.Num2
 		}
@@ -380,7 +369,7 @@ func CacheOneStringTwoIntIndexFuncRet(s string, id uint, listname string) uint {
 // second int matches the passed in uint i. It stores the returned string in
 // listname. If no match is found, it sets listname to an empty string.
 func CacheOneStringTwoIntIndexFuncStr(useseries bool, query string, i uint) string {
-	for _, a := range GetCachedTwoIntArr(logger.GetStringsMap(useseries, query), false, true) {
+	for _, a := range GetCachedArr(cache.itemstwoint, logger.GetStringsMap(useseries, query), false, true) {
 		if a.Num2 == i {
 			return a.Str
 		}
@@ -396,7 +385,7 @@ func CacheThreeStringIntIndexFunc(s string, u *string) uint {
 		return 0
 	}
 	t := *u
-	for _, a := range GetCachedThreeStringArr(s, false, true) {
+	for _, a := range GetCachedArr(cache.itemsthreestring, s, false, true) {
 		if a.Str3 == t || strings.EqualFold(a.Str3, t) {
 			return a.Num2
 		}
@@ -408,7 +397,7 @@ func CacheThreeStringIntIndexFunc(s string, u *string) uint {
 // identified by s and returns the first int value for the entry where the second int
 // matches the int str. Returns 0 if no match found.
 func CacheThreeStringIntIndexFuncGetYear(s string, i uint) uint16 {
-	for _, a := range GetCachedThreeStringArr(s, false, true) {
+	for _, a := range GetCachedArr(cache.itemsthreestring, s, false, true) {
 		if a.Num2 == i {
 			return uint16(a.Num1)
 		}
@@ -416,29 +405,45 @@ func CacheThreeStringIntIndexFuncGetYear(s string, i uint) uint16 {
 	return 0
 }
 
-// RefreshMediaCache refreshes the media caches for movies and series.
-// It will refresh the caches based on the useseries parameter:
-// - if useseries is false, it will refresh the movie caches
-// - if useseries is true, it will refresh the series caches
-// It locks access to the caches while refreshing to prevent concurrent access issues.
-func RefreshMediaCacheDB(useseries bool, force bool) {
-	if !config.SettingsGeneral.UseMediaCache {
-		return
-	}
+// refreshCacheDB is a generic function that refreshes a cache for a specific type of data.
+// It handles locking the cache, checking if a refresh is needed, and updating the cache
+// with new data from the database. The function supports different cache types based on
+// the generic type parameter and allows forcing a refresh.
+//
+// Parameters:
+//   - useseries: Determines whether to use series-specific or movie-specific data
+//   - force: If true, forces a cache refresh regardless of existing cache state
+//   - maptypestr: String identifier for the map type
+//   - mapcountsql: SQL query to get the count of items in the cache
+//   - mapsql: SQL query to retrieve the cache items
+//   - cachevar: Synchronized map to store the cache items
+func refreshCacheDB[t comparable](
+	useseries bool,
+	force bool,
+	maptypestr string,
+	mapcountsql string,
+	mapsql string,
+	cachevar *logger.SyncMap[[]t],
+) {
 	mu.Lock()
 	defer mu.Unlock()
 
-	mapvar := logger.GetStringsMap(useseries, logger.CacheDBMedia)
-	item := GetCachedThreeStringArr(mapvar, true, false)
-	count := Getdatarow0(false, logger.GetStringsMap(useseries, logger.DBCountDBMedia))
+	mapvar := logger.GetStringsMap(useseries, maptypestr)
+	item := GetCachedArr(cachevar, mapvar, true, false)
+	count := Getdatarow[uint](
+		false,
+		logger.GetStringsMap(useseries, mapcountsql),
+		&config.SettingsGeneral.CacheDuration,
+	)
 	if !force && len(item) == int(count) {
 		return
 	}
 	if count == 0 {
-		if len(item) > 0 {
-			cache.storeMapThreeString(
+		if len(item) > 0 || !cachevar.Check(mapvar) {
+			storeMapType(
+				cachevar,
 				mapvar,
-				nil,
+				make([]t, 0, 100),
 				time.Now().
 					Add(time.Duration(config.SettingsGeneral.CacheDuration)*time.Hour).
 					UnixNano(),
@@ -447,19 +452,21 @@ func RefreshMediaCacheDB(useseries bool, force bool) {
 		}
 		return
 	}
-	lastscan := cache.itemsthreestring.GetLastscan(mapvar)
+	lastscan := cachevar.GetLastscan(mapvar)
 	if !force && lastscan != 0 && lastscan > time.Now().Add(-1*time.Minute).UnixNano() {
 		return
 	}
 	logger.LogDynamicany1String("debug", "refresh cache", strcache, mapvar)
 
-	data := Getrows0[DbstaticThreeStringTwoInt](
+	data := GetrowsN[t](
 		false,
 		count+100,
-		logger.GetStringsMap(useseries, logger.DBCacheDBMedia),
+		logger.GetStringsMap(useseries, mapsql),
+		&config.SettingsGeneral.CacheDuration,
 	)
 	if len(data) > 0 {
-		cache.storeMapThreeString(
+		storeMapType(
+			cachevar,
 			mapvar,
 			data,
 			time.Now().
@@ -472,6 +479,25 @@ func RefreshMediaCacheDB(useseries bool, force bool) {
 	}
 }
 
+// RefreshMediaCache refreshes the media caches for movies and series.
+// It will refresh the caches based on the useseries parameter:
+// - if useseries is false, it will refresh the movie caches
+// - if useseries is true, it will refresh the series caches
+// It locks access to the caches while refreshing to prevent concurrent access issues.
+func RefreshMediaCacheDB(useseries bool, force bool) {
+	if !config.SettingsGeneral.UseMediaCache {
+		return
+	}
+	refreshCacheDB(
+		useseries,
+		force,
+		logger.CacheDBMedia,
+		logger.DBCountDBMedia,
+		logger.DBCacheDBMedia,
+		cache.itemsthreestring,
+	)
+}
+
 // RefreshMediaCacheList refreshes the media caches for movies and series.
 // It will refresh the caches based on the useseries parameter:
 // - if useseries is false, it will refresh the movie caches
@@ -481,43 +507,13 @@ func RefreshMediaCacheList(useseries bool, force bool) {
 	if !config.SettingsGeneral.UseMediaCache {
 		return
 	}
-	mu.Lock()
-	defer mu.Unlock()
-
-	mapvar := logger.GetStringsMap(useseries, logger.CacheMedia)
-	item := GetCachedTwoIntArr(mapvar, true, false)
-	count := Getdatarow0(false, logger.GetStringsMap(useseries, logger.DBCountMedia))
-	if !force && len(item) == int(count) {
-		return
-	}
-	if count == 0 {
-		if len(item) > 0 {
-			cache.storeMapTwoInt(
-				mapvar,
-				nil,
-				time.Now().
-					Add(time.Duration(config.SettingsGeneral.CacheDuration)*time.Hour).
-					UnixNano(),
-				time.Now().UnixNano(),
-			)
-		}
-		return
-	}
-	lastscan := cache.itemstwoint.GetLastscan(mapvar)
-	if !force && lastscan != 0 && lastscan > time.Now().Add(-1*time.Minute).UnixNano() {
-		return
-	}
-	logger.LogDynamicany1String("debug", "refresh cache", strcache, mapvar)
-
-	cache.storeMapTwoInt(
-		mapvar,
-		Getrows0[DbstaticOneStringTwoInt](
-			false,
-			count+100,
-			logger.GetStringsMap(useseries, logger.DBCacheMedia),
-		),
-		time.Now().Add(time.Duration(config.SettingsGeneral.CacheDuration)*time.Hour).UnixNano(),
-		time.Now().UnixNano(),
+	refreshCacheDB(
+		useseries,
+		force,
+		logger.CacheMedia,
+		logger.DBCountMedia,
+		logger.DBCacheMedia,
+		cache.itemstwoint,
 	)
 }
 
@@ -529,43 +525,13 @@ func Refreshhistorycachetitle(useseries bool, force bool) {
 	if !config.SettingsGeneral.UseHistoryCache {
 		return
 	}
-
-	mu.Lock()
-	defer mu.Unlock()
-
-	mapvar := logger.GetStringsMap(useseries, logger.CacheHistoryTitle)
-	item := GetCachedStringArr(mapvar, true, false)
-	count := Getdatarow0(false, logger.GetStringsMap(useseries, logger.DBCountHistoriesTitle))
-	if !force && len(item) == int(count) {
-		return
-	}
-	if count == 0 {
-		if len(item) > 0 {
-			cache.storeMap(
-				mapvar,
-				nil,
-				time.Now().
-					Add(time.Duration(config.SettingsGeneral.CacheDuration)*time.Hour).
-					UnixNano(),
-				time.Now().UnixNano(),
-			)
-		}
-		return
-	}
-	lastscan := cache.itemsstring.GetLastscan(mapvar)
-	if !force && lastscan != 0 && lastscan > time.Now().Add(-1*time.Minute).UnixNano() {
-		return
-	}
-	logger.LogDynamicany1String("debug", "refresh cache", strcache, mapvar)
-	cache.storeMap(
-		mapvar,
-		Getrows0[string](
-			false,
-			count+100,
-			logger.GetStringsMap(useseries, logger.DBHistoriesTitle),
-		),
-		time.Now().Add(time.Duration(config.SettingsGeneral.CacheDuration)*time.Hour).UnixNano(),
-		time.Now().UnixNano(),
+	refreshCacheDB(
+		useseries,
+		force,
+		logger.CacheHistoryTitle,
+		logger.DBCountHistoriesTitle,
+		logger.DBHistoriesTitle,
+		cache.itemsstring,
 	)
 }
 
@@ -577,39 +543,13 @@ func Refreshhistorycacheurl(useseries bool, force bool) {
 	if !config.SettingsGeneral.UseHistoryCache {
 		return
 	}
-
-	mu.Lock()
-	defer mu.Unlock()
-
-	mapvar := logger.GetStringsMap(useseries, logger.CacheHistoryURL)
-	item := GetCachedStringArr(mapvar, true, false)
-	count := Getdatarow0(false, logger.GetStringsMap(useseries, logger.DBCountHistoriesURL))
-	if !force && len(item) == int(count) {
-		return
-	}
-	if count == 0 {
-		if len(item) > 0 {
-			cache.storeMap(
-				mapvar,
-				nil,
-				time.Now().
-					Add(time.Duration(config.SettingsGeneral.CacheDuration)*time.Hour).
-					UnixNano(),
-				time.Now().UnixNano(),
-			)
-		}
-		return
-	}
-	lastscan := cache.itemsstring.GetLastscan(mapvar)
-	if !force && lastscan != 0 && lastscan > time.Now().Add(-1*time.Minute).UnixNano() {
-		return
-	}
-	logger.LogDynamicany1String("debug", "refresh cache", strcache, mapvar)
-	cache.storeMap(
-		mapvar,
-		Getrows0[string](false, count+100, logger.GetStringsMap(useseries, logger.DBHistoriesURL)),
-		time.Now().Add(time.Duration(config.SettingsGeneral.CacheDuration)*time.Hour).UnixNano(),
-		time.Now().UnixNano(),
+	refreshCacheDB(
+		useseries,
+		force,
+		logger.CacheHistoryURL,
+		logger.DBCountHistoriesURL,
+		logger.DBHistoriesURL,
+		cache.itemsstring,
 	)
 }
 
@@ -620,55 +560,13 @@ func RefreshMediaCacheTitles(useseries bool, force bool) {
 	if !config.SettingsGeneral.UseMediaCache {
 		return
 	}
-	mu.Lock()
-	defer mu.Unlock()
-
-	mapvar := logger.GetStringsMap(useseries, logger.CacheMediaTitles)
-	item := GetCachedTwoStringArr(mapvar, true, false)
-	count := Getdatarow0(false, logger.GetStringsMap(useseries, logger.DBCountDBTitles))
-	if !force && len(item) == int(count) {
-		return
-	}
-	if count == 0 {
-		if len(item) > 0 {
-			cache.storeMapTwoString(
-				mapvar,
-				nil,
-				time.Now().
-					Add(time.Duration(config.SettingsGeneral.CacheDuration)*time.Hour).
-					UnixNano(),
-				time.Now().UnixNano(),
-			)
-		}
-		return
-	}
-	lastscan := cache.itemstwostring.GetLastscan(mapvar)
-	if !force && lastscan != 0 && lastscan > time.Now().Add(-1*time.Minute).UnixNano() {
-		return
-	}
-	logger.LogDynamicany3StrIntInt(
-		"debug",
-		"refresh media titles cache",
-		strcache,
-		mapvar,
-		"oldcount",
-		len(item),
-		"newcount",
-		int(count),
-	)
-	expires := cache.itemstwostring.GetExpire(mapvar)
-	logger.Logtype("debug", 0).
-		Time("Expires", time.Unix(0, expires)).
-		Msg("refresh media titles cache expires")
-	cache.storeMapTwoString(
-		mapvar,
-		Getrows0[DbstaticTwoStringOneInt](
-			false,
-			count+100,
-			logger.GetStringsMap(useseries, logger.DBCacheDBTitles),
-		),
-		time.Now().Add(time.Duration(config.SettingsGeneral.CacheDuration)*time.Hour).UnixNano(),
-		time.Now().UnixNano(),
+	refreshCacheDB(
+		useseries,
+		force,
+		logger.CacheMediaTitles,
+		logger.DBCountDBTitles,
+		logger.DBCacheDBTitles,
+		cache.itemstwostring,
 	)
 }
 
@@ -679,40 +577,13 @@ func Refreshfilescached(useseries bool, force bool) {
 	if !config.SettingsGeneral.UseFileCache {
 		return
 	}
-
-	mu.Lock()
-	defer mu.Unlock()
-
-	mapvar := logger.GetStringsMap(useseries, logger.CacheFiles)
-	item := GetCachedStringArr(mapvar, true, false)
-	count := Getdatarow0(false, logger.GetStringsMap(useseries, logger.DBCountFiles))
-	if !force && len(item) == int(count) {
-		return
-	}
-	if count == 0 {
-		if len(item) > 0 {
-			cache.storeMap(
-				mapvar,
-				nil,
-				time.Now().
-					Add(time.Duration(config.SettingsGeneral.CacheDuration)*time.Hour).
-					UnixNano(),
-				time.Now().UnixNano(),
-			)
-		}
-		return
-	}
-
-	lastscan := cache.itemsstring.GetLastscan(mapvar)
-	if !force && lastscan != 0 && lastscan > time.Now().Add(-1*time.Minute).UnixNano() {
-		return
-	}
-	logger.LogDynamicany0("debug", "refresh files cache")
-	cache.storeMap(
-		mapvar,
-		Getrows0[string](false, count+300, logger.GetStringsMap(useseries, logger.DBCacheFiles)),
-		time.Now().Add(time.Duration(config.SettingsGeneral.CacheDuration)*time.Hour).UnixNano(),
-		time.Now().UnixNano(),
+	refreshCacheDB(
+		useseries,
+		force,
+		logger.CacheFiles,
+		logger.DBCountFiles,
+		logger.DBCacheFiles,
+		cache.itemsstring,
 	)
 }
 
@@ -723,51 +594,14 @@ func Refreshunmatchedcached(useseries bool, force bool) {
 	if !config.SettingsGeneral.UseFileCache {
 		return
 	}
-	mu.Lock()
-	defer mu.Unlock()
-
-	// hours12 := logger.JoinStrings("-", strconv.Itoa(config.SettingsGeneral.CacheDuration), " hours")
-	// hours24 := logger.JoinStrings("-", strconv.Itoa(2*config.SettingsGeneral.CacheDuration), " hours")
-	hours24 := 2 * config.SettingsGeneral.CacheDuration
-	ExecNMap(useseries, "DBRemoveUnmatched", &hours24)
-	mapvar := logger.GetStringsMap(useseries, logger.CacheUnmatched)
-	item := GetCachedStringArr(mapvar, true, false)
-	count := Getdatarow1[uint](
-		false,
-		logger.GetStringsMap(useseries, logger.DBCountUnmatched),
-		&config.SettingsGeneral.CacheDuration,
-	)
-	if !force && len(item) == int(count) {
-		return
-	}
-	if count == 0 {
-		if len(item) > 0 {
-			cache.storeMap(
-				mapvar,
-				nil,
-				time.Now().
-					Add(time.Duration(config.SettingsGeneral.CacheDuration)*time.Hour).
-					UnixNano(),
-				time.Now().UnixNano(),
-			)
-		}
-		return
-	}
-	lastscan := cache.itemsstring.GetLastscan(mapvar)
-	if !force && lastscan != 0 && lastscan > time.Now().Add(-1*time.Minute).UnixNano() {
-		return
-	}
-	logger.LogDynamicany0("debug", "refresh unmatched cache")
-	cache.storeMap(
-		mapvar,
-		Getrows1[string](
-			false,
-			count+300,
-			logger.GetStringsMap(useseries, logger.DBCacheUnmatched),
-			&config.SettingsGeneral.CacheDuration,
-		),
-		time.Now().Add(time.Duration(config.SettingsGeneral.CacheDuration)*time.Hour).UnixNano(),
-		time.Now().UnixNano(),
+	ExecNMap(useseries, "DBRemoveUnmatched", &config.SettingsGeneral.CacheDuration2)
+	refreshCacheDB(
+		useseries,
+		force,
+		logger.CacheUnmatched,
+		logger.DBCountUnmatched,
+		logger.DBCacheUnmatched,
+		cache.itemsstring,
 	)
 }
 
@@ -805,25 +639,6 @@ func RefreshCached(key string, force bool) {
 	case logger.CacheHistoryTitleSeries:
 		Refreshhistorycachetitle(true, force)
 	}
-}
-
-// GetCachedStringArr retrieves the cached array of strings associated with the given key.
-// If no cached object is found for the key, or the cached object has expired, it returns nil.
-// The checkexpire parameter determines whether to check if the cached object has expired.
-// The retry parameter determines whether to refresh the cached object if it is empty or the zero value.
-func GetCachedStringArr(key string, checkexpire bool, retry bool) []string {
-	if cache.itemsstring.Check(key) {
-		if checkexpire {
-			if cache.itemsstring.CheckExpires(
-				key,
-				config.SettingsGeneral.CacheAutoExtend,
-				config.SettingsGeneral.CacheDuration,
-			) {
-				return nil
-			}
-		}
-	}
-	return getrefresh(cache.itemsstring, key, retry)
 }
 
 // GetCachedTwoStringArr retrieves the cached array of DbstaticTwoStringOneInt objects associated with the given key.
@@ -883,89 +698,71 @@ func GetCachedThreeStringArr(key string, checkexpire bool, retry bool) []Dbstati
 	return getrefresh(cache.itemsthreestring, key, retry)
 }
 
+// GetCachedArr retrieves a cached array of generic type t from a SyncMap.
+// If the key exists and checkexpire is true, it checks for cache expiration.
+// If the cache is expired or not found, it attempts to refresh the cache based on the retry flag.
+// Returns the cached array or nil if not found or expired.
+func GetCachedArr[t comparable](
+	c *logger.SyncMap[[]t],
+	key string,
+	checkexpire bool,
+	retry bool,
+) []t {
+	if c.Check(key) {
+		if checkexpire {
+			if c.CheckExpires(
+				key,
+				config.SettingsGeneral.CacheAutoExtend,
+				config.SettingsGeneral.CacheDuration,
+			) {
+				return nil
+			}
+		}
+	}
+	return getrefresh(c, key, retry)
+}
+
 // getrefresh retrieves the value associated with the given key from the SyncMap, and refreshes the
 // cached value if the retry flag is set and the cached value is empty or the zero value of the
 // generic type T.
 func getrefresh[T comparable](s *logger.SyncMap[[]T], key string, retry bool) []T {
 	t := s.GetVal(key)
-	var x T
-	if retry && (len(t) == 0 || t[0] == x) {
-		RefreshCached(key, true)
-		return s.GetVal(key)
+	if retry {
+		if len(t) == 0 {
+			return forcerefresh(s, key)
+		} else {
+			var x T
+			if t[0] == x {
+				return forcerefresh(s, key)
+			}
+		}
 	}
 	return t
 }
 
-// storeMap stores a map with a string key and a slice of strings as the value in the cache.
-// It first checks if the key already exists in the cache, and if so, updates the expiration,
-// value, and last scan time. Otherwise, it adds the new key-value pair to the cache.
-// The logger.LogDynamicany1String function is called to log a debug message.
-func (c *tcache) storeMap(s string, val []string, expires, lastscan int64) {
-	logger.LogDynamicany1String("debug", "refresh cache store", strquery, s)
-
-	if cache.itemsstring.Check(s) {
-		cache.itemsstring.UpdateExpire(s, expires)
-		cache.itemsstring.UpdateVal(s, val)
-		cache.itemsstring.UpdateLastscan(s, lastscan)
-		return
-	}
-	c.itemsstring.Add(s, val, expires, false, lastscan)
+func forcerefresh[T comparable](s *logger.SyncMap[[]T], key string) []T {
+	RefreshCached(key, true)
+	return s.GetVal(key)
 }
 
-// storeMapTwoInt stores a map with one string key and two integer values in the cache.
-// It first checks if the key already exists in the cache, and if so, updates the expiration,
-// value, and last scan time. Otherwise, it adds the new key-value pair to the cache.
-// The logger.LogDynamicany1String function is called to log a debug message.
-func (c *tcache) storeMapTwoInt(s string, val []DbstaticOneStringTwoInt, expires, lastscan int64) {
-	logger.LogDynamicany1String("debug", "refresh cache store", strquery, s)
-
-	if cache.itemstwoint.Check(s) {
-		cache.itemstwoint.UpdateExpire(s, expires)
-		cache.itemstwoint.UpdateVal(s, val)
-		cache.itemstwoint.UpdateLastscan(s, lastscan)
-		return
-	}
-	c.itemstwoint.Add(s, val, expires, false, lastscan)
-}
-
-// storeMapThreeString stores a map with three string keys and two integer values in the cache.
-// It first checks if the key already exists in the cache, and if so, updates the expiration,
-// value, and last scan time. Otherwise, it adds the new key-value pair to the cache.
-// The logger.LogDynamicany1String function is called to log a debug message.
-func (c *tcache) storeMapThreeString(
+// storeMapType updates or adds a value to a SyncMap with the given key, updating expiration time, value, and last scan timestamp.
+// If the key already exists in the map, it updates the existing entry; otherwise, it adds a new entry.
+// The function is generic and works with any slice type, logging a debug message during the process.
+func storeMapType[t any](
+	c *logger.SyncMap[[]t],
 	s string,
-	val []DbstaticThreeStringTwoInt,
+	val []t,
 	expires, lastscan int64,
 ) {
 	logger.LogDynamicany1String("debug", "refresh cache store", strquery, s)
 
-	if cache.itemsthreestring.Check(s) {
-		cache.itemsthreestring.UpdateExpire(s, expires)
-		cache.itemsthreestring.UpdateVal(s, val)
-		cache.itemsthreestring.UpdateLastscan(s, lastscan)
+	if c.Check(s) {
+		c.UpdateExpire(s, expires)
+		c.UpdateVal(s, val)
+		c.UpdateLastscan(s, lastscan)
 		return
 	}
-	c.itemsthreestring.Add(s, val, expires, false, lastscan)
-}
-
-// storeMapTwoString stores a map with two string keys and one integer value in the cache.
-// It first checks if the key already exists in the cache, and if so, updates the expiration,
-// value, and last scan time. Otherwise, it adds the new key-value pair to the cache.
-// The logger.LogDynamicany1String function is called to log a debug message.
-func (c *tcache) storeMapTwoString(
-	s string,
-	val []DbstaticTwoStringOneInt,
-	expires, lastscan int64,
-) {
-	logger.LogDynamicany1String("debug", "refresh cache store", strquery, s)
-
-	if cache.itemstwostring.Check(s) {
-		cache.itemstwostring.UpdateExpire(s, expires)
-		cache.itemstwostring.UpdateVal(s, val)
-		cache.itemstwostring.UpdateLastscan(s, lastscan)
-		return
-	}
-	c.itemstwostring.Add(s, val, expires, false, lastscan)
+	c.Add(s, val, expires, false, lastscan)
 }
 
 // CheckcachedMovieTitleHistory checks if the given movie title exists in the
@@ -976,7 +773,7 @@ func CheckcachedTitleHistory(useseries bool, file *string) bool {
 	if config.SettingsGeneral.UseFileCache {
 		return SlicesCacheContainsI(useseries, logger.CacheHistoryTitle, file)
 	}
-	return Getdatarow1[uint](
+	return Getdatarow[uint](
 		false,
 		logger.GetStringsMap(useseries, logger.DBCountHistoriesByTitle),
 		file,
@@ -991,7 +788,7 @@ func CheckcachedURLHistory(useseries bool, file *string) bool {
 	if config.SettingsGeneral.UseFileCache {
 		return SlicesCacheContainsI(useseries, logger.CacheHistoryURL, file)
 	}
-	return Getdatarow1[uint](
+	return Getdatarow[uint](
 		false,
 		logger.GetStringsMap(useseries, logger.DBCountHistoriesByURL),
 		file,
@@ -1005,11 +802,6 @@ func InvalidateImdbStmt() {
 	cache.itemsxstmt.DeleteFuncImdbVal(func(b bool) bool {
 		return b
 	}, func(s sqlx.Stmt) {
-		s.Close()
-	})
-	cache.itemsxstmtP.DeleteFuncImdbVal(func(b bool) bool {
-		return b
-	}, func(s *sqlx.Stmt) {
 		s.Close()
 	})
 }
@@ -1051,40 +843,37 @@ func getregexP(key string) *regexp.Regexp {
 	}
 }
 
-// Getfirstsubmatchindex returns the indexes of the first submatch found
-// in matchfor using the compiled regular expression stored in cache
-// under key.
-// func Getfirstsubmatchindex(key, matchfor string) []int {
-// 	rgx := globalCache.setRegexp(key, globalCache.defaultextension)
-// 	return rgx.FindStringSubmatchIndex(matchfor)
-// }
-
-// Getallsubmatchindex returns the indexes of the last submatch found in matchfor
-// using the compiled regular expression stored in cache under key. If no matches
-// are found, it returns nil.
-// func Getallsubmatchindex(key, matchfor string) []int {
-// 	rgx := globalCache.setRegexp(key, globalCache.defaultextension)
-// 	matches := rgx.FindAllStringSubmatchIndex(matchfor, 10)
-// 	if !(len(matches) >= 1 && len(matches[len(matches)-1]) >= 1) {
-// 		return nil
-// 	}
-// 	return matches[len(matches)-1]
-// }
-
 // RunRetRegex returns the indexes of the last submatch found in matchfor
 // using the compiled regular expression stored in the global cache under key.
 // If useall is true, it returns the indexes of the last submatch from all
 // matches found, otherwise it returns the indexes of the first submatch.
 // If no matches are found, it returns nil.
 func RunRetRegex(key string, matchfor string, useall bool) []int {
-	rgx := globalCache.setRegexp(key, globalCache.defaultextension)
 	if useall {
-		matches := rgx.FindAllStringSubmatchIndex(matchfor, 10)
+		matches := findAllStringSubmatchIndex(key, matchfor)
 		if len(matches) < 1 || len(matches[len(matches)-1]) < 1 {
 			return nil
 		}
 		return matches[len(matches)-1]
 	}
+	return findStringSubmatchIndex(key, matchfor)
+}
+
+func findAllStringSubmatchIndex(key string, matchfor string) [][]int {
+	rgxp := globalCache.setRegexpP(key, globalCache.defaultextension)
+	if rgxp != nil {
+		return rgxp.FindAllStringSubmatchIndex(matchfor, 10)
+	}
+	rgx := globalCache.setRegexp(key, globalCache.defaultextension)
+	return rgx.FindAllStringSubmatchIndex(matchfor, 10)
+}
+
+func findStringSubmatchIndex(key string, matchfor string) []int {
+	rgxp := globalCache.setRegexpP(key, globalCache.defaultextension)
+	if rgxp != nil {
+		return rgxp.FindStringSubmatchIndex(matchfor)
+	}
+	rgx := globalCache.setRegexp(key, globalCache.defaultextension)
 	return rgx.FindStringSubmatchIndex(matchfor)
 }
 
@@ -1093,11 +882,28 @@ func RunRetRegex(key string, matchfor string, useall bool) []int {
 // mincount matches, false otherwise. The regular expression is retrieved
 // from the global cache.
 func RegexGetMatchesFind(key, matchfor string, mincount int) bool {
-	rgx := globalCache.setRegexp(key, globalCache.defaultextension)
 	if mincount == 1 {
-		return len(rgx.FindStringIndex(matchfor)) >= 1
+		return len(findStringIndex(key, matchfor)) >= 1
 	}
-	return len(rgx.FindAllStringIndex(matchfor, mincount)) >= mincount
+	return len(findAllStringIndex(key, matchfor, mincount)) >= mincount
+}
+
+func findStringIndex(key string, matchfor string) []int {
+	rgxp := globalCache.setRegexpP(key, globalCache.defaultextension)
+	if rgxp != nil {
+		return rgxp.FindStringIndex(matchfor)
+	}
+	rgx := globalCache.setRegexp(key, globalCache.defaultextension)
+	return rgx.FindStringIndex(matchfor)
+}
+
+func findAllStringIndex(key string, matchfor string, mincount int) [][]int {
+	rgxp := globalCache.setRegexpP(key, globalCache.defaultextension)
+	if rgxp != nil {
+		return rgxp.FindAllStringIndex(matchfor, mincount)
+	}
+	rgx := globalCache.setRegexp(key, globalCache.defaultextension)
+	return rgx.FindAllStringIndex(matchfor, mincount)
 }
 
 // getmatches returns the indexes of the first submatch found in matchfor

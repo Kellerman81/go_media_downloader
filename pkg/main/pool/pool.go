@@ -21,8 +21,11 @@ func (p *Poolobj[t]) Get() *t {
 	if len(p.objs) >= 1 {
 		return <-p.objs
 	}
+	return p.NewObj()
+}
+
+func (p *Poolobj[t]) NewObj() *t {
 	var bo t
-	// fmt.Printf("Creating new pool object %T", bo)
 	if p.constructor != nil {
 		p.constructor(&bo)
 	}
@@ -32,19 +35,22 @@ func (p *Poolobj[t]) Get() *t {
 // Put returns an object to the pool.
 // If the pool is not at capacity, it calls the destructor function if provided,
 // then sends the object back on the channel.
-func (p *Poolobj[t]) Put(bo *t) {
+func (p *Poolobj[t]) Put(bo *t) bool {
 	if bo == nil {
-		return
+		return false
 	}
 
 	if len(p.objs) < cap(p.objs) {
 		if p.destructor != nil {
 			if p.destructor(bo) {
-				return
+				// fmt.Println("destructor returned true")
+				return false
 			}
 		}
 		p.objs <- bo
+		return true
 	}
+	return false
 }
 
 // Init initializes the Poolobj by setting the constructor and destructor functions,
@@ -57,11 +63,7 @@ func (p *Poolobj[t]) Init(initcreate int, constructor func(*t), destructor func(
 	p.objs = make(chan *t, 200)
 	if initcreate > 0 {
 		for range initcreate {
-			var bo t
-			if p.constructor != nil {
-				p.constructor(&bo)
-			}
-			p.Put(&bo)
+			p.Put(p.NewObj())
 		}
 	}
 }
@@ -84,21 +86,17 @@ func NewPool[t any](
 	constructor func(*t),
 	destructor func(*t) bool,
 ) *Poolobj[t] {
-	a := &Poolobj[t]{
+	a := Poolobj[t]{
 		objs:        make(chan *t, maxsize),
 		constructor: constructor,
 		destructor:  destructor,
 	}
 	if initcreate > 0 {
 		for range initcreate {
-			var bo t
-			if a.constructor != nil {
-				a.constructor(&bo)
-			}
-			a.Put(&bo)
+			a.Put(a.NewObj())
 		}
 	}
-	return a
+	return &a
 }
 
 type SizedWaitGroup struct {

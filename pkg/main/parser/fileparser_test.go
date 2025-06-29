@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
@@ -47,7 +48,15 @@ func TestBuildPrioStr(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result := BuildPrioStr(tt.r, tt.q, tt.c, tt.a)
 			if result != tt.expected {
-				t.Errorf("BuildPrioStr(%d, %d, %d, %d) = %s; want %s", tt.r, tt.q, tt.c, tt.a, result, tt.expected)
+				t.Errorf(
+					"BuildPrioStr(%d, %d, %d, %d) = %s; want %s",
+					tt.r,
+					tt.q,
+					tt.c,
+					tt.a,
+					result,
+					tt.expected,
+				)
 			}
 		})
 	}
@@ -95,11 +104,15 @@ func TestGetDBIDs(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := GetDBIDs(tt.parseInfo, tt.cfgp, tt.allowSearch)
-			if err != tt.expectedError {
+			if !errors.Is(err, tt.expectedError) {
 				t.Errorf("GetDBIDs() error = %v, expectedError %v", err, tt.expectedError)
 			}
 			if tt.parseInfo != nil && tt.parseInfo.ListID != tt.expectedListID {
-				t.Errorf("GetDBIDs() ListID = %v, expected %v", tt.parseInfo.ListID, tt.expectedListID)
+				t.Errorf(
+					"GetDBIDs() ListID = %v, expected %v",
+					tt.parseInfo.ListID,
+					tt.expectedListID,
+				)
 			}
 		})
 	}
@@ -130,7 +143,11 @@ func TestLoadDBPatterns(t *testing.T) {
 	}
 
 	if foundGlobalPatterns != len(globalscanpatterns) {
-		t.Errorf("LoadDBPatterns() loaded %d global patterns, expected %d", foundGlobalPatterns, len(globalscanpatterns))
+		t.Errorf(
+			"LoadDBPatterns() loaded %d global patterns, expected %d",
+			foundGlobalPatterns,
+			len(globalscanpatterns),
+		)
 	}
 }
 

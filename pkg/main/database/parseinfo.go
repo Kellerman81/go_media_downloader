@@ -184,7 +184,7 @@ func (m *ParseInfo) moviegetimdbtitle(dbid *uint) bool {
 	if config.SettingsGeneral.UseMediaCache {
 		year = CacheThreeStringIntIndexFuncGetYear(logger.CacheDBMovie, *dbid)
 	} else {
-		year = Getdatarow1[uint16](false, "select year from dbmovies where id = ?", dbid)
+		year = Getdatarow[uint16](false, "select year from dbmovies where id = ?", dbid)
 	}
 	if year == 0 {
 		return false
@@ -218,7 +218,7 @@ func (m *ParseInfo) Findmoviedbidbytitle(slugged bool) {
 
 func (m *ParseInfo) findMovieInCache() {
 	// Search in main movie cache
-	c := GetCachedThreeStringArr(logger.CacheDBMovie, false, true)
+	c := GetCachedArr(cache.itemsthreestring, logger.CacheDBMovie, false, true)
 	for idx := range c {
 		if m.matchesTitle(c[idx].Str1, c[idx].Str2) && m.moviegetimdbtitle(&c[idx].Num2) {
 			m.DbmovieID = c[idx].Num2
@@ -227,7 +227,7 @@ func (m *ParseInfo) findMovieInCache() {
 	}
 
 	// Search in movie titles cache
-	d := GetCachedTwoStringArr(logger.CacheTitlesMovie, false, true)
+	d := GetCachedArr(cache.itemstwostring, logger.CacheTitlesMovie, false, true)
 	for idx := range d {
 		if m.matchesTitle(d[idx].Str1, d[idx].Str2) && m.moviegetimdbtitle(&d[idx].Num) {
 			m.DbmovieID = d[idx].Num
@@ -240,13 +240,13 @@ func (m *ParseInfo) findMovieInCache() {
 
 func (m *ParseInfo) findMovieInDB(slugged bool) {
 	// Try main movies table
-	Scanrows1dyn(false, GetSluggedMap(slugged, "dbmovies"), &m.DbmovieID, &m.TempTitle)
+	Scanrowsdyn(false, GetSluggedMap(slugged, "dbmovies"), &m.DbmovieID, &m.TempTitle)
 	if m.DbmovieID != 0 && m.moviegetimdbtitle(&m.DbmovieID) {
 		return
 	}
 
 	// Try alternate titles
-	Scanrows1dyn(false, GetSluggedMap(slugged, "dbmoviesalt"), &m.DbmovieID, &m.TempTitle)
+	Scanrowsdyn(false, GetSluggedMap(slugged, "dbmoviesalt"), &m.DbmovieID, &m.TempTitle)
 	if m.DbmovieID != 0 && m.moviegetimdbtitle(&m.DbmovieID) {
 		return
 	}
@@ -254,7 +254,7 @@ func (m *ParseInfo) findMovieInDB(slugged bool) {
 	m.DbmovieID = 0
 }
 
-// matchesTitle checks if temp title matches either string (exact or case-insensitive)
+// matchesTitle checks if temp title matches either string (exact or case-insensitive).
 func (m *ParseInfo) matchesTitle(str1, str2 string) bool {
 	return m.TempTitle == str1 || m.TempTitle == str2 ||
 		strings.EqualFold(m.TempTitle, str1) || strings.EqualFold(m.TempTitle, str2)
@@ -278,18 +278,27 @@ func (m *ParseInfo) Parseresolution() string {
 		case width >= 7680: // 8K (7680x4320)
 			return "4320p"
 		case width >= 5120: // 5k
+			if height == 2160 {
+				return "2160p"
+			}
 			return "2880p"
 		case width >= 3840: // 4K/UHD (3840x2160)
 			return "2160p"
 		case width >= 2560: // 1440p/QHD (2560x1440)
+			if height == 1080 {
+				return "1080p"
+			}
 			return "1440p"
 		case width >= 1920: // 1080p/FHD (1920x1080)
 			return "1080p"
 		case width >= 1280: // 720p/HD (1280x720)
 			return "720p"
-		case width >= 854: // 480p/NTSC (720x480 or 640x480)
+		case width >= 720: // 480p/NTSC (720x480 or 640x480)
 			return "480p"
 		case width >= 640: // 360p (640x360)
+			if height > 360 {
+				return "480p"
+			}
 			return "360p"
 		default:
 			return "SD"
@@ -302,10 +311,16 @@ func (m *ParseInfo) Parseresolution() string {
 		case width >= 7680: // 8K (7680x4320)
 			return "4320p"
 		case width >= 5120: // 5k
+			if height == 2160 {
+				return "2160p"
+			}
 			return "2880p"
 		case width >= 3840: // 4K/UHD (3840x2160)
 			return "2160p"
 		case width >= 2560: // 1440p/QHD (2560x1440)
+			if height == 1080 {
+				return "1080p"
+			}
 			return "1440p"
 		case width >= 1920: // 1080p/FHD (1920x1080)
 			return "1080p"
@@ -317,7 +332,7 @@ func (m *ParseInfo) Parseresolution() string {
 			}
 			return "480p"
 		case width >= 640: // 360p (640x360)
-			if height >= 400 {
+			if height > 360 {
 				return "480p"
 			}
 			return "360p"
@@ -363,12 +378,12 @@ func (m *ParseInfo) MovieFindDBIDByImdbParser() {
 		m.DbmovieID = 0
 		return
 	}
-	m.Imdb = logger.AddImdbPrefixP(m.Imdb)
+	m.Imdb = logger.AddImdbPrefix(m.Imdb)
 	if config.SettingsGeneral.UseMediaCache {
 		m.DbmovieID = CacheThreeStringIntIndexFunc(logger.CacheDBMovie, &m.Imdb)
 		return
 	}
-	Scanrows1dyn(false, "select id from dbmovies where imdb_id = ?", &m.DbmovieID, &m.Imdb)
+	Scanrowsdyn(false, "select id from dbmovies where imdb_id = ?", &m.DbmovieID, &m.Imdb)
 }
 
 // Getepisodestoimport retrieves a slice of DbstaticTwoUint values representing the episode IDs to import for the given series ID and database series ID.
@@ -376,7 +391,7 @@ func (m *ParseInfo) MovieFindDBIDByImdbParser() {
 // If there is only one episode and the SerieEpisodeID and DbserieEpisodeID are set, it returns a single-element slice with those values.
 // Otherwise, it populates the episode IDs into the returned slice.
 func (m *ParseInfo) Getepisodestoimport() error {
-	if Getdatarow1[string](false, QueryDbseriesGetIdentifiedByID, &m.DbserieID) == logger.StrDate {
+	if Getdatarow[string](false, QueryDbseriesGetIdentifiedByID, &m.DbserieID) == logger.StrDate {
 		if m.DbserieEpisodeID != 0 && m.SerieEpisodeID != 0 {
 			m.Episodes = []DbstaticTwoUint{{Num1: m.SerieEpisodeID, Num2: m.DbserieEpisodeID}}
 			return nil
@@ -521,14 +536,18 @@ func (m *ParseInfo) Checktitle(
 	}
 
 	if config.SettingsGeneral.UseMediaCache {
-		return m.checkalternatetitles(GetCachedTwoStringArr(
+		return m.checkalternatetitles(GetCachedArr(cache.itemstwostring,
 			logger.GetStringsMap(cfgp.Useseries, logger.CacheMediaTitles),
 			false,
 			true,
 		), id, qualcfg, title)
-	} else {
-		return m.checkalternatetitles(Getentryalternatetitlesdirect(&id, cfgp.Useseries), id, qualcfg, title)
 	}
+	return m.checkalternatetitles(
+		Getentryalternatetitlesdirect(&id, cfgp.Useseries),
+		id,
+		qualcfg,
+		title,
+	)
 }
 
 func (m *ParseInfo) checkalternatetitles(
@@ -571,7 +590,7 @@ func (m *ParseInfo) checkalternatetitles(
 func (m *ParseInfo) AddUnmatched(cfgp *config.MediaTypeConfig, listname *string, err error) {
 	if config.SettingsGeneral.UseFileCache {
 		if slices.Contains(
-			GetCachedStringArr(
+			GetCachedArr(cache.itemsstring,
 				logger.GetStringsMap(cfgp.Useseries, logger.CacheUnmatched),
 				false,
 				true,
@@ -586,7 +605,7 @@ func (m *ParseInfo) AddUnmatched(cfgp *config.MediaTypeConfig, listname *string,
 
 // ExecParsed adds an unmatched file to the database or updates an existing unmatched file record. It constructs a string representation of the parsed file information and inserts a new record or updates an existing record in the appropriate table (movie_file_unmatcheds or serie_file_unmatcheds).
 func (m *ParseInfo) ExecParsed(cfgp *config.MediaTypeConfig, err error, listname *string) {
-	id := Getdatarow2[uint](
+	id := Getdatarow[uint](
 		false,
 		logger.GetStringsMap(cfgp.Useseries, logger.DBIDUnmatchedPathList),
 		&m.TempTitle,
@@ -654,9 +673,9 @@ func (m *ParseInfo) ExecParsed(cfgp *config.MediaTypeConfig, err error, listname
 		if config.SettingsGeneral.UseFileCache {
 			AppendCacheMap(cfgp.Useseries, logger.CacheUnmatched, m.TempTitle)
 		}
-		exec3(logger.GetStringsMap(cfgp.Useseries, "InsertUnmatched"), &str, listname, &m.TempTitle)
+		ExecN(logger.GetStringsMap(cfgp.Useseries, "InsertUnmatched"), &str, listname, &m.TempTitle)
 	} else {
-		exec(logger.GetStringsMap(cfgp.Useseries, "UpdateUnmatched"), &str, &id, nil)
+		ExecN(logger.GetStringsMap(cfgp.Useseries, "UpdateUnmatched"), &str, &id)
 	}
 }
 
@@ -674,7 +693,7 @@ func (m *ParseInfo) FindDbserieByName(slugged bool) {
 		m.TempTitle = logger.StringToSlug(m.TempTitle)
 	}
 	if config.SettingsGeneral.UseMediaCache {
-		for _, a := range GetCachedThreeStringArr(logger.CacheDBSeries, false, true) {
+		for _, a := range GetCachedArr(cache.itemsthreestring, logger.CacheDBSeries, false, true) {
 			if a.Str1 == m.TempTitle || a.Str2 == m.TempTitle ||
 				strings.EqualFold(a.Str1, m.TempTitle) ||
 				strings.EqualFold(a.Str2, m.TempTitle) {
@@ -682,7 +701,7 @@ func (m *ParseInfo) FindDbserieByName(slugged bool) {
 				return
 			}
 		}
-		for _, b := range GetCachedTwoStringArr(logger.CacheDBSeriesAlt, false, true) {
+		for _, b := range GetCachedArr(cache.itemstwostring, logger.CacheDBSeriesAlt, false, true) {
 			if b.Str1 == m.TempTitle || b.Str2 == m.TempTitle ||
 				strings.EqualFold(b.Str1, m.TempTitle) ||
 				strings.EqualFold(b.Str2, m.TempTitle) {
@@ -694,11 +713,11 @@ func (m *ParseInfo) FindDbserieByName(slugged bool) {
 		return
 	}
 	if m.DbserieID == 0 {
-		Scanrows1dyn(false, GetSluggedMap(slugged, "dbseries"), &m.DbserieID, &m.TempTitle)
+		Scanrowsdyn(false, GetSluggedMap(slugged, "dbseries"), &m.DbserieID, &m.TempTitle)
 		if m.DbserieID != 0 {
 			return
 		}
-		Scanrows1dyn(false, GetSluggedMap(slugged, "dbseriesalt"), &m.DbserieID, &m.TempTitle)
+		Scanrowsdyn(false, GetSluggedMap(slugged, "dbseriesalt"), &m.DbserieID, &m.TempTitle)
 	}
 }
 
@@ -757,7 +776,7 @@ func (m *ParseInfo) SetEpisodeIDfromM() {
 		m.SerieEpisodeID = 0
 		return
 	}
-	Scanrows2dyn(
+	Scanrowsdyn(
 		false,
 		"select id from serie_episodes where dbserie_episode_id = ? and serie_id = ?",
 		&m.SerieEpisodeID,
@@ -775,7 +794,7 @@ func (m *ParseInfo) SetDBEpisodeIDfromM() {
 		return
 	}
 	if m.SeasonStr != "" && m.EpisodeStr != "" {
-		Scanrows3dyn(
+		Scanrowsdyn(
 			false,
 			"select id from dbserie_episodes where dbserie_id = ? and season = ? and episode = ?",
 			&m.DbserieEpisodeID,
@@ -789,7 +808,7 @@ func (m *ParseInfo) SetDBEpisodeIDfromM() {
 	}
 
 	if m.Identifier != "" {
-		Scanrows2dyn(
+		Scanrowsdyn(
 			false,
 			"select id from dbserie_episodes where dbserie_id = ? and identifier = ? COLLATE NOCASE",
 			&m.DbserieEpisodeID,
@@ -800,7 +819,7 @@ func (m *ParseInfo) SetDBEpisodeIDfromM() {
 			return
 		}
 		if strings.ContainsRune(m.Identifier, '.') {
-			Scanrows2dyn(
+			Scanrowsdyn(
 				false,
 				QueryDBSerieEpisodeGetIDByDBSerieIDIdentifierDot,
 				&m.DbserieEpisodeID,
@@ -812,7 +831,7 @@ func (m *ParseInfo) SetDBEpisodeIDfromM() {
 			}
 		}
 		if strings.ContainsRune(m.Identifier, ' ') {
-			Scanrows2dyn(
+			Scanrowsdyn(
 				false,
 				QueryDBSerieEpisodeGetIDByDBSerieIDIdentifierDash,
 				&m.DbserieEpisodeID,
@@ -856,7 +875,7 @@ func (m *ParseInfo) Cleanimdbdbmovie() {
 
 // CacheThreeStringIntIndexFuncGetImdb retrieves the IMDB value from a cached array of DbstaticThreeStringTwoInt objects that match the provided string and uint values. If a matching object is found, the IMDB value is stored in the ParseInfo struct. If no matching object is found, this method does nothing.
 func (m *ParseInfo) CacheThreeStringIntIndexFuncGetImdb() {
-	for _, a := range GetCachedThreeStringArr(logger.CacheDBMovie, false, true) {
+	for _, a := range GetCachedArr(cache.itemsthreestring, logger.CacheDBMovie, false, true) {
 		if a.Num2 == m.DbmovieID {
 			m.Imdb = a.Str3
 			return
@@ -890,49 +909,18 @@ func (m *ParseInfo) Getqualityidxbyid(tbl []Qualities, i uint8) int {
 // the given input string inval. It checks the Strings and Regex fields of each
 // QualitiesRegex struct, returning the ID if a match is found. 0 is returned if no
 // match is found.
-func (m *ParseInfo) Gettypeids(id uint8, qualitytype []Qualities) uint {
-	var inval string
-	switch id {
-	case 1:
-		inval = m.Resolution
-	case 2:
-		inval = m.Quality
-	case 3:
-		inval = m.Audio
-	case 4:
-		inval = m.Codec
-	}
-	lenval := len(inval)
-	var index, indexmax int
+func (m *ParseInfo) Gettypeids(inval string, qualitytype []Qualities) uint {
 	for idx := range qualitytype {
-		if qualitytype[idx].Strings != "" && !config.SettingsGeneral.DisableParserStringMatch &&
-			logger.ContainsI(qualitytype[idx].StringsLower, inval) {
-			index = logger.IndexI(qualitytype[idx].StringsLower, inval)
-			indexmax = index + lenval
-			if indexmax < len(qualitytype[idx].StringsLower) &&
-				!checkDigitLetter((qualitytype[idx].StringsLower[indexmax])) {
-				for v := range strings.SplitSeq(qualitytype[idx].StringsLower, ",") {
-					if strings.EqualFold(v, inval) {
-						return qualitytype[idx].ID
-					}
-				}
-				return 0
-			}
-			if index > 0 && !checkDigitLetter((qualitytype[idx].StringsLower[index-1])) {
-				for v := range strings.SplitSeq(qualitytype[idx].StringsLower, ",") {
-					if strings.EqualFold(v, inval) {
-						return qualitytype[idx].ID
-					}
-				}
-				return 0
-			}
-			if qualitytype[idx].ID != 0 {
-				return qualitytype[idx].ID
+		qual := &qualitytype[idx]
+		if qual.Strings != "" && !config.SettingsGeneral.DisableParserStringMatch &&
+			logger.SlicesContainsI(qual.StringsLowerSplitted, inval) {
+			if qual.ID != 0 {
+				return qual.ID
 			}
 		}
-		if qualitytype[idx].UseRegex && qualitytype[idx].Regex != "" &&
-			RegexGetMatchesFind(qualitytype[idx].Regex, inval, 2) {
-			return qualitytype[idx].ID
+		if qual.UseRegex && qual.Regex != "" &&
+			RegexGetMatchesFind(qual.Regex, inval, 2) {
+			return qual.ID
 		}
 	}
 	return 0
@@ -953,10 +941,10 @@ func (m *ParseInfo) Parsegroup(name string, onlyifempty bool, group []string) {
 		if m.Str[index:indexmax] == "" {
 			continue
 		}
-		if indexmax < len(m.Str) && !checkDigitLetter((m.Str[indexmax])) {
+		if indexmax < len(m.Str) && checkDigitLetter((m.Str[indexmax])) {
 			continue
 		}
-		if index > 0 && !checkDigitLetter((m.Str[index-1])) {
+		if index > 0 && checkDigitLetter((m.Str[index-1])) {
 			continue
 		}
 		if m.FirstIDX == 0 || index < m.FirstIDX {
@@ -1009,10 +997,10 @@ func (m *ParseInfo) ParsegroupEntry(group string) {
 		return
 	}
 	indexmax := index + len(group)
-	if indexmax < len(m.Str) && !checkDigitLetter((m.Str[indexmax])) {
+	if indexmax < len(m.Str) && checkDigitLetter((m.Str[indexmax])) {
 		return
 	}
-	if index > 0 && !checkDigitLetter((m.Str[index-1])) {
+	if index > 0 && checkDigitLetter((m.Str[index-1])) {
 		return
 	}
 
@@ -1086,7 +1074,8 @@ func Getqualityidxbyname(tbl []Qualities, cfgp *config.MediaTypeConfig, reso boo
 	return -1
 }
 
-// CheckDigitLetter returns true if the given rune is a digit or letter.
+// checkDigitLetter checks if the given byte is an alphanumeric character.
+// It returns true if the byte is a digit (0-9) or a letter (uppercase or lowercase), otherwise false.
 func checkDigitLetter(b byte) bool {
-	return !((b >= '0' && b <= '9') || (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z'))
+	return ((b >= '0' && b <= '9') || (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z'))
 }

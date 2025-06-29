@@ -62,33 +62,35 @@ type TheMovieDBFindTvresults struct {
 	// OriginCountry    []string `json:"origin_Country"`
 }
 
+type TheMovieDBMovieGenres struct {
+	Name string `json:"name"`
+}
+type TheMovieDBMovieLanguages struct {
+	EnglishName string `json:"english_name"`
+	Name        string `json:"name"`
+	Iso6391     string `json:"iso_639_1"`
+}
 type TheMovieDBMovie struct {
-	SpokenLanguages []struct {
-		EnglishName string `json:"english_name"`
-		Name        string `json:"name"`
-		Iso6391     string `json:"iso_639_1"`
-	} `json:"spoken_languages"`
-	Genres []struct {
-		Name string `json:"name"`
-	} `json:"genres"`
-	Backdrop         string  `json:"backdrop_path"`
-	Poster           string  `json:"poster_path"`
-	Status           string  `json:"status"`
-	Tagline          string  `json:"tagline"`
-	Title            string  `json:"title"`
-	ImdbID           string  `json:"imdb_id"`
-	OriginalLanguage string  `json:"original_language"`
-	OriginalTitle    string  `json:"original_title"`
-	Overview         string  `json:"overview"`
-	ReleaseDate      string  `json:"release_date"`
-	Popularity       float32 `json:"popularity"`
-	VoteAverage      float32 `json:"vote_average"`
-	Revenue          int     `json:"revenue"`
-	Runtime          int     `json:"runtime"`
-	Budget           int     `json:"budget"`
-	ID               int     `json:"id"`
-	VoteCount        int32   `json:"vote_count"`
-	Adult            bool    `json:"adult"`
+	SpokenLanguages  []TheMovieDBMovieLanguages `json:"spoken_languages"`
+	Genres           []TheMovieDBMovieGenres    `json:"genres"`
+	Backdrop         string                     `json:"backdrop_path"`
+	Poster           string                     `json:"poster_path"`
+	Status           string                     `json:"status"`
+	Tagline          string                     `json:"tagline"`
+	Title            string                     `json:"title"`
+	ImdbID           string                     `json:"imdb_id"`
+	OriginalLanguage string                     `json:"original_language"`
+	OriginalTitle    string                     `json:"original_title"`
+	Overview         string                     `json:"overview"`
+	ReleaseDate      string                     `json:"release_date"`
+	Popularity       float32                    `json:"popularity"`
+	VoteAverage      float32                    `json:"vote_average"`
+	Revenue          int                        `json:"revenue"`
+	Runtime          int                        `json:"runtime"`
+	Budget           int                        `json:"budget"`
+	ID               int                        `json:"id"`
+	VoteCount        int32                      `json:"vote_count"`
+	Adult            bool                       `json:"adult"`
 }
 
 type TheMovieDBMovieTitles struct {
@@ -146,7 +148,7 @@ func NewTmdbClient(
 			"Authorization": {"Bearer " + apikey},
 		},
 		Lim: slidingwindow.NewLimiter(time.Duration(seconds)*time.Second, int64(calls)),
-		Client: NewClient(
+		Client: newClient(
 			"tmdb",
 			disabletls,
 			true,

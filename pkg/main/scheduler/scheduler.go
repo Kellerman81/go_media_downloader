@@ -45,6 +45,8 @@ func InitScheduler() {
 					config.SettingsGeneral.WorkerSearch,
 					config.SettingsGeneral.WorkerFiles,
 					config.SettingsGeneral.WorkerMetadata,
+					config.SettingsGeneral.WorkerRSS,
+					config.SettingsGeneral.WorkerIndexer,
 				)
 				worker.StartCronWorker()
 			}
@@ -264,6 +266,10 @@ func InitScheduler() {
 				"refreshseriesinc",
 				"refreshmoviesinc":
 				usequeuename = "Feeds"
+			case logger.StrRss,
+				logger.StrRssSeasons,
+				logger.StrRssSeasonsAll:
+				usequeuename = "RSS"
 			default:
 				usequeuename = "Search"
 			}

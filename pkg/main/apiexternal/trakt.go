@@ -186,7 +186,7 @@ func NewTraktClient(
 		ClientID:     clientid,
 		ClientSecret: clientsecret,
 		Lim:          slidingwindow.NewLimiter(time.Duration(seconds)*time.Second, int64(calls)),
-		Client: NewClient(
+		Client: newClient(
 			"trakt",
 			disabletls,
 			true,
@@ -360,7 +360,7 @@ func UpdateTraktSerieSeasonsAndEpisodes(showid string, id *uint) {
 	if err != nil {
 		return
 	}
-	tbl := database.Getrows1size[database.DbstaticTwoString](
+	tbl := database.Getrowssize[database.DbstaticTwoString](
 		false,
 		database.QueryDbserieEpisodesCountByDBID,
 		database.QueryDbserieEpisodesGetSeasonEpisodeByDBID,

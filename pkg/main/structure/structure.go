@@ -255,8 +255,13 @@ func (s *Organizer) ParseFileAdditional(
 	return s.validateLanguage(m, deletewronglanguage, o)
 }
 
-// validateRuntime checks if the runtime matches expected values
-func (s *Organizer) validateRuntime(m *database.ParseInfo, runtime uint, checkruntime bool, o *Organizerdata) error {
+// validateRuntime checks if the runtime matches expected values.
+func (s *Organizer) validateRuntime(
+	m *database.ParseInfo,
+	runtime uint,
+	checkruntime bool,
+	o *Organizerdata,
+) error {
 	if m.Runtime < 1 || !checkruntime || runtime == 0 {
 		return nil
 	}
@@ -272,7 +277,14 @@ func (s *Organizer) validateRuntime(m *database.ParseInfo, runtime uint, checkru
 	}
 
 	if s.targetpathCfg.MaxRuntimeDifference == 0 {
-		logger.LogDynamicany2Int("warning", "wrong runtime", logger.StrWanted, wantedruntime, logger.StrFound, targetruntime)
+		logger.LogDynamicany2Int(
+			"warning",
+			"wrong runtime",
+			logger.StrWanted,
+			wantedruntime,
+			logger.StrFound,
+			targetruntime,
+		)
 		return errWrongRuntime
 	}
 
@@ -286,13 +298,20 @@ func (s *Organizer) validateRuntime(m *database.ParseInfo, runtime uint, checkru
 		if s.targetpathCfg.DeleteWrongRuntime {
 			s.fileCleanup(o.Folder, o.Videofile, o.Rootpath)
 		}
-		logger.LogDynamicany2Int("warning", "wrong runtime", logger.StrWanted, wantedruntime, logger.StrFound, targetruntime)
+		logger.LogDynamicany2Int(
+			"warning",
+			"wrong runtime",
+			logger.StrWanted,
+			wantedruntime,
+			logger.StrFound,
+			targetruntime,
+		)
 		return errWrongRuntime
 	}
 	return nil
 }
 
-// Helper function for absolute value
+// Helper function for absolute value.
 func abs(x int) int {
 	if x < 0 {
 		return -x
@@ -300,8 +319,12 @@ func abs(x int) int {
 	return x
 }
 
-// validateLanguage checks if the language is allowed
-func (s *Organizer) validateLanguage(m *database.ParseInfo, deletewronglanguage bool, o *Organizerdata) error {
+// validateLanguage checks if the language is allowed.
+func (s *Organizer) validateLanguage(
+	m *database.ParseInfo,
+	deletewronglanguage bool,
+	o *Organizerdata,
+) error {
 	if !deletewronglanguage || s.targetpathCfg.AllowedLanguagesLen == 0 {
 		return nil
 	}
@@ -316,7 +339,15 @@ func (s *Organizer) validateLanguage(m *database.ParseInfo, deletewronglanguage 
 	// Language not allowed
 	if deletewronglanguage {
 		if err := s.fileCleanup(o.Folder, o.Videofile, o.Rootpath); err != nil {
-			logger.LogDynamicany("warning", "wrong language", err, &logger.StrWanted, &s.targetpathCfg.AllowedLanguages[0], &logger.StrFound, &m.Languages[0])
+			logger.LogDynamicany(
+				"warning",
+				"wrong language",
+				err,
+				&logger.StrWanted,
+				&s.targetpathCfg.AllowedLanguages[0],
+				&logger.StrFound,
+				&m.Languages[0],
+			)
 			return errWrongLanguage
 		}
 	}
@@ -325,7 +356,14 @@ func (s *Organizer) validateLanguage(m *database.ParseInfo, deletewronglanguage 
 	if len(m.Languages) > 0 {
 		foundLang = m.Languages[0]
 	}
-	logger.LogDynamicany2StrAny("warning", "wrong language", logger.StrFound, foundLang, logger.StrWanted, &s.targetpathCfg.AllowedLanguages[0])
+	logger.LogDynamicany2StrAny(
+		"warning",
+		"wrong language",
+		logger.StrFound,
+		foundLang,
+		logger.StrWanted,
+		&s.targetpathCfg.AllowedLanguages[0],
+	)
 	return errWrongLanguage
 }
 
@@ -343,8 +381,8 @@ func stringRemoveAllRunes(s string, r byte) string {
 	if s == "" || !strings.ContainsRune(s, rune(r)) {
 		return s
 	}
-	out := logger.PlBuffer.Get()
-	defer logger.PlBuffer.Put(out)
+	out := logger.PlAddBuffer.Get()
+	defer logger.PlAddBuffer.Put(out)
 	for i := 0; i < len(s); i++ {
 		if r != s[i] {
 			out.WriteByte(s[i])
@@ -358,7 +396,7 @@ func stringRemoveAllRunes(s string, r byte) string {
 // the naming template to replace placeholders with actual values. It handles movies and shows
 // differently based on the UseSeries config option.
 func (s *Organizer) GenerateNamingTemplate(o *Organizerdata, m *database.ParseInfo, dbid *uint) {
-	forparser := &parsertype{Source: m}
+	forparser := parsertype{Source: m}
 	var bl bool
 	o.Foldername, o.Filename = logger.SplitByLR(s.Cfgp.Naming, checksplit(s.Cfgp.Naming))
 	if !s.Cfgp.Useseries {
@@ -388,7 +426,7 @@ func (s *Organizer) GenerateNamingTemplate(o *Organizerdata, m *database.ParseIn
 		logger.StringReplaceWithP(&forparser.TitleSource, '.', ' ')
 
 		if forparser.Dbmovie.Title == "" {
-			database.Scanrows1dyn(
+			database.Scanrowsdyn(
 				false,
 				database.QueryDbmovieTitlesGetTitleByIDLmit1,
 				&forparser.Dbmovie.Title,
@@ -413,21 +451,21 @@ func (s *Organizer) GenerateNamingTemplate(o *Organizerdata, m *database.ParseIn
 			forparser.Source.Imdb = forparser.Dbmovie.ImdbID
 		}
 		if forparser.Source.Imdb != "" {
-			forparser.Source.Imdb = logger.AddImdbPrefixP(forparser.Source.Imdb)
+			forparser.Source.Imdb = logger.AddImdbPrefix(forparser.Source.Imdb)
 		}
 
 		forparser.Source.Title = stringRemoveAllRunes(forparser.Source.Title, '/')
 		logger.Path(&forparser.Source.Title, false)
 	} else {
 		// Naming Series
-		database.Scanrows1dyn(false, database.QuerySerieEpisodesGetDBSerieIDByID, &forparser.Dbserie.ID, dbid)
-		database.Scanrows1dyn(false, database.QuerySerieEpisodesGetDBSerieEpisodeIDByID, &forparser.DbserieEpisode.ID, dbid)
+		database.Scanrowsdyn(false, database.QuerySerieEpisodesGetDBSerieIDByID, &forparser.Dbserie.ID, dbid)
+		database.Scanrowsdyn(false, database.QuerySerieEpisodesGetDBSerieEpisodeIDByID, &forparser.DbserieEpisode.ID, dbid)
 		if forparser.DbserieEpisode.ID == 0 || forparser.Dbserie.ID == 0 || forparser.Dbserie.GetDbserieByIDP(&forparser.Dbserie.ID) != nil || forparser.DbserieEpisode.GetDbserieEpisodesByIDP(&forparser.DbserieEpisode.ID) != nil {
 			return
 		}
 
-		episodetitle := database.Getdatarow1[string](false, "select title from dbserie_episodes where id = ?", &m.Episodes[0].Num2)
-		serietitle := database.Getdatarow1[string](false, "select seriename from dbseries where id = ?", &m.DbserieID)
+		episodetitle := database.Getdatarow[string](false, "select title from dbserie_episodes where id = ?", &m.Episodes[0].Num2)
+		serietitle := database.Getdatarow[string](false, "select seriename from dbseries where id = ?", &m.DbserieID)
 		if (serietitle == "" || episodetitle == "") && m.Identifier != "" {
 			serietitleparse, episodetitleparse := database.RegexGetMatchesStr1Str2(false, logger.JoinStrings(`^(.*)(?i)`, m.Identifier, `(?:\.| |-)(.*)$`), filepath.Base(o.Videofile))
 			if serietitle != "" && episodetitleparse != "" {
@@ -451,7 +489,7 @@ func (s *Organizer) GenerateNamingTemplate(o *Organizerdata, m *database.ParseIn
 			}
 		}
 		if forparser.Dbserie.Seriename == "" {
-			database.Scanrows1dyn(false, "select title from dbserie_alternates where dbserie_id = ?", &forparser.Dbserie.Seriename, &forparser.Dbserie.ID)
+			database.Scanrowsdyn(false, "select title from dbserie_alternates where dbserie_id = ?", &forparser.Dbserie.Seriename, &forparser.Dbserie.ID)
 			if forparser.Dbserie.Seriename == "" {
 				forparser.Dbserie.Seriename = serietitle
 			}
@@ -468,7 +506,7 @@ func (s *Organizer) GenerateNamingTemplate(o *Organizerdata, m *database.ParseIn
 		if o.Rootpath != "" {
 			_, getfoldername := logger.SplitByLR(o.Rootpath, checksplit(o.Rootpath))
 			if getfoldername != "" {
-				if database.Getdatarow1[string](false, database.QueryDbseriesGetIdentifiedByID, &m.DbserieID) == "date" {
+				if database.Getdatarow[string](false, database.QueryDbseriesGetIdentifiedByID, &m.DbserieID) == "date" {
 					o.Foldername = ""
 				} else {
 					splitbyget := checksplit(o.Foldername)
@@ -484,7 +522,7 @@ func (s *Organizer) GenerateNamingTemplate(o *Organizerdata, m *database.ParseIn
 
 		forparser.Episodes = make([]int, len(m.Episodes))
 		for idx := range m.Episodes {
-			database.Scanrows1dyn(false, "select episode from dbserie_episodes where id = ? and episode != ''", &forparser.Episodes[idx], &m.Episodes[idx].Num2)
+			database.Scanrowsdyn(false, "select episode from dbserie_episodes where id = ? and episode != ''", &forparser.Episodes[idx], &m.Episodes[idx].Num2)
 		}
 		forparser.TitleSource = serietitle
 		logger.Path(&forparser.TitleSource, false)
@@ -502,12 +540,12 @@ func (s *Organizer) GenerateNamingTemplate(o *Organizerdata, m *database.ParseIn
 		}
 	}
 
-	bl, o.Foldername = logger.ParseStringTemplate(o.Foldername, forparser)
+	bl, o.Foldername = logger.ParseStringTemplate(o.Foldername, &forparser)
 	if bl {
 		o.cleanorgafilefolder()
 		return
 	}
-	bl, o.Filename = logger.ParseStringTemplate(o.Filename, forparser)
+	bl, o.Filename = logger.ParseStringTemplate(o.Filename, &forparser)
 	if bl {
 		o.cleanorgafilefolder()
 		return
@@ -710,13 +748,13 @@ func (s *Organizer) organizeSeries(
 		&m.SeasonStr,
 	)
 
-	identifiedby := database.Getdatarow1[string](
+	identifiedby := database.Getdatarow[string](
 		false,
 		database.QueryDbseriesGetIdentifiedByID,
 		&m.DbserieID,
 	)
 	if (m.RuntimeStr == "" || m.RuntimeStr == "0") && identifiedby != "date" {
-		database.Scanrows1dyn(
+		database.Scanrowsdyn(
 			false,
 			"select runtime from dbseries where id = ?",
 			&m.RuntimeStr,
@@ -738,7 +776,7 @@ func (s *Organizer) organizeSeries(
 		}
 	}
 	if identifiedby == "date" ||
-		database.Getdatarow1[bool](
+		database.Getdatarow[bool](
 			false,
 			"select ignore_runtime from serie_episodes where id = ?",
 			&m.Episodes[0].Num1,
@@ -812,7 +850,7 @@ func (s *Organizer) organizeSeries(
 			&m.Width,
 		)
 
-		database.Exec2(
+		database.ExecN(
 			"update serie_episodes SET missing = 0, quality_reached = ? where id = ?",
 			reached,
 			m.Episodes[idx].Num1,
@@ -839,7 +877,7 @@ func (s *Organizer) organizeMovie(
 	if m.DbmovieID == 0 {
 		return logger.ErrNotFoundDbmovie
 	}
-	database.Scanrows1dyn(
+	database.Scanrowsdyn(
 		false,
 		"select runtime from dbmovies where id = ?",
 		&m.RuntimeStr,
@@ -936,7 +974,7 @@ func (s *Organizer) organizeMovie(
 	if m.Priority >= cfgquality.CutoffPriority {
 		vc = 1
 	}
-	database.Exec2(
+	database.ExecN(
 		"update movies SET missing = 0, quality_reached = ? where id = ?",
 		&vc,
 		&m.MovieID,
@@ -962,12 +1000,12 @@ func (s *Organizer) moveandcleanup(
 ) error {
 	// Update rootpath
 	if !s.targetpathCfg.Usepresort {
-		if database.Getdatarow1[string](
+		if database.Getdatarow[string](
 			false,
 			logger.GetStringsMap(s.Cfgp.Useseries, logger.DBRootPathFromMediaID),
 			id,
 		) == "" {
-			// if database.Getdatarow1Map[string](false, s.Cfgp.Useseries, logger.DBRootPathFromMediaID, id) == "" {
+			// if database.GetdatarowMap[string](false, s.Cfgp.Useseries, logger.DBRootPathFromMediaID, id) == "" {
 			if !s.Cfgp.Useseries {
 				UpdateRootpath(o.videotarget, "movies", &m.MovieID, s.Cfgp)
 			} else {
@@ -1130,14 +1168,14 @@ func (s *Organizer) moveremoveoldfiles(
 // loops through the configured notifications, renders notification messages,
 // and dispatches them based on the notification type.
 func (s *Organizer) notify(o *Organizerdata, m *database.ParseInfo, id *uint, oldfiles []string) {
-	notify := &inputNotifier{
+	notify := inputNotifier{
 		Targetpath:    filepath.Join(o.videotarget, o.Filename),
 		SourcePath:    o.Videofile,
 		Configuration: s.Cfgp.Lists[o.Listid].Name,
 		Source:        m,
+		Replaced:      oldfiles,
 		Time:          logger.TimeGetNow().Format(logger.GetTimeFormat()),
 	}
-	notify.Replaced = oldfiles
 	if !s.Cfgp.Useseries {
 		if notify.Dbmovie.GetDbmovieByIDP(id) != nil {
 			return
@@ -1168,19 +1206,23 @@ func (s *Organizer) notify(o *Organizerdata, m *database.ParseInfo, id *uint, ol
 			continue
 		}
 		notify.ReplacedPrefix = s.Cfgp.Notification[idx].ReplacedPrefix
-		bl, messagetext := logger.ParseStringTemplate(s.Cfgp.Notification[idx].Message, notify)
+		bl, messagetext := logger.ParseStringTemplate(s.Cfgp.Notification[idx].Message, &notify)
 		if bl {
 			continue
 		}
 
 		switch config.SettingsNotification[s.Cfgp.Notification[idx].MapNotification].NotificationType {
 		case "pushover":
-			bl, messageTitle := logger.ParseStringTemplate(s.Cfgp.Notification[idx].Title, notify)
+			bl, messageTitle := logger.ParseStringTemplate(s.Cfgp.Notification[idx].Title, &notify)
 			if bl {
 				continue
 			}
-			err = apiexternal.GetPushoverclient(config.SettingsNotification[s.Cfgp.Notification[idx].MapNotification].Apikey).
-				SendPushoverMessage(messagetext, messageTitle, config.SettingsNotification[s.Cfgp.Notification[idx].MapNotification].Recipient)
+			err = apiexternal.SendPushoverMessage(
+				config.SettingsNotification[s.Cfgp.Notification[idx].MapNotification].Apikey,
+				messagetext,
+				messageTitle,
+				config.SettingsNotification[s.Cfgp.Notification[idx].MapNotification].Recipient,
+			)
 			if err != nil {
 				logger.LogDynamicanyErr("error", "Error sending pushover", err)
 			} else {
@@ -1228,7 +1270,7 @@ func (s *Organizer) GetSeriesEpisodes(
 			o.Oldfiles = getoldfiles
 			bl = true
 		} else {
-			if database.Getdatarow1[uint](false, "select count() from serie_episode_files where serie_episode_id = ?", &m.Episodes[0].Num1) == 0 {
+			if database.Getdatarow[uint](false, "select count() from serie_episode_files where serie_episode_id = ?", &m.Episodes[0].Num1) == 0 {
 				bl = true
 			} else if !skipdelete {
 				bl, err = scanner.RemoveFile(o.Videofile)
@@ -1268,7 +1310,7 @@ func (s *Organizer) GetSeriesEpisodes(
 			}
 			bl = true
 		} else {
-			if database.Getdatarow1[uint](false, "select count() from serie_episode_files where serie_episode_id = ?", &m.Episodes[idx].Num1) == 0 {
+			if database.Getdatarow[uint](false, "select count() from serie_episode_files where serie_episode_id = ?", &m.Episodes[idx].Num1) == 0 {
 				bl = true
 			} else if !skipdelete {
 				bl, err = scanner.RemoveFile(o.Videofile)
@@ -1391,7 +1433,7 @@ func OrganizeSingleFolder(
 				return nil
 			}
 		} else {
-			if database.Getdatarow1[uint](false, logger.GetStringsMap(cfgp.Useseries, logger.DBCountUnmatchedPath), fpath) >= 1 {
+			if database.Getdatarow[uint](false, logger.GetStringsMap(cfgp.Useseries, logger.DBCountUnmatchedPath), fpath) >= 1 {
 				return nil
 			}
 		}
@@ -1547,10 +1589,10 @@ func (s *Organizer) walkorganizefolder(fpath, folder string, cfgp *config.MediaT
 		return logger.ErrListnameTemplateEmpty
 	}
 
-	o := &Organizerdata{Folder: folder, Videofile: fpath, Listid: m.ListID, Rootpath: rootpath}
+	o := Organizerdata{Folder: folder, Videofile: fpath, Listid: m.ListID, Rootpath: rootpath}
 	if s.Cfgp.Useseries {
 		err = s.organizeSeries(
-			o,
+			&o,
 			m,
 			s.Cfgp.Lists[m.ListID].CfgQuality,
 			s.deletewronglanguage,
@@ -1564,7 +1606,7 @@ func (s *Organizer) walkorganizefolder(fpath, folder string, cfgp *config.MediaT
 		}
 		database.SlicesCacheContainsDelete(logger.CacheUnmatchedSeries, fpath)
 	} else {
-		err = s.organizeMovie(o, m, s.Cfgp.Lists[m.ListID].CfgQuality, s.deletewronglanguage, s.checkruntime)
+		err = s.organizeMovie(&o, m, s.Cfgp.Lists[m.ListID].CfgQuality, s.deletewronglanguage, s.checkruntime)
 		if err != nil {
 			logger.LogDynamicany1StringErr("error", "structure", err, logger.StrFile, fpath)
 			m.TempTitle = fpath
@@ -1729,7 +1771,7 @@ func UpdateRootpath(file, objtype string, objid *uint, cfgp *config.MediaTypeCon
 			firstfolder = filepath.Dir(firstfolder)
 		}
 		firstfolder = filepath.Join(data.CfgPath.Path, getrootpath(firstfolder))
-		database.Exec2(
+		database.ExecN(
 			logger.JoinStrings("update ", objtype, " set rootpath = ? where id = ?"),
 			&firstfolder,
 			objid,

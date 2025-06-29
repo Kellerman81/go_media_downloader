@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -134,7 +133,7 @@ func DBClose() {
 // It returns true if the file exists, false if it does not exist.
 func checkFile(fpath string) bool {
 	_, err := os.Stat(fpath)
-	return !errors.Is(err, fs.ErrNotExist)
+	return !errors.Is(err, os.ErrNotExist)
 }
 
 // InitDB initializes a connection to the data.db SQLite database.
@@ -155,8 +154,10 @@ func InitDB(dbloglevel string) error {
 	if err != nil {
 		return err
 	}
-	dbData.SetMaxIdleConns(15)
-	dbData.SetMaxOpenConns(5)
+	dbData.SetMaxIdleConns(5)
+	dbData.SetMaxOpenConns(25)
+	dbData.SetConnMaxLifetime(5 * time.Minute) // Rotate connections
+	dbData.SetConnMaxIdleTime(1 * time.Minute) // Close idle
 	DBLogLevel = strings.ToLower(dbloglevel)
 	return nil
 }
@@ -205,8 +206,10 @@ func InitImdbdb() error {
 	if err != nil {
 		return err
 	}
-	dbImdb.SetMaxIdleConns(15)
-	dbImdb.SetMaxOpenConns(5)
+	dbImdb.SetMaxIdleConns(2)
+	dbImdb.SetMaxOpenConns(10)
+	dbImdb.SetConnMaxLifetime(5 * time.Minute) // Rotate connections
+	dbImdb.SetConnMaxIdleTime(2 * time.Minute) // Close idle
 	return nil
 }
 
@@ -214,17 +217,20 @@ func InitImdbdb() error {
 // converts them to lowercase, compiles the regexes, and returns them along with
 // the corresponding quality data from the database.
 func getqualityregexes(querystr, querycount string) []Qualities {
-	q := StructscanT[Qualities](false, Getdatarow0(false, querycount), querystr)
+	count := Getdatarow[uint](false, querycount)
+	if count == 0 {
+		return nil
+	}
+	q := StructscanT[Qualities](false, count, querystr)
 	if len(q) == 0 {
 		return nil
 	}
-	ret := make([]Qualities, len(q))
 	for idx := range q {
 		q[idx].StringsLower = strings.ToLower(q[idx].Strings)
+		q[idx].StringsLowerSplitted = strings.Split(q[idx].StringsLower, ",")
 		globalCache.setStaticRegexp(q[idx].Regex)
-		ret[idx] = q[idx]
 	}
-	return ret
+	return q
 }
 
 // GetVars populates the global regex variables from the database.
@@ -239,6 +245,7 @@ func getqualityregexes(querystr, querycount string) []Qualities {
 // - DBConnect.QualityStrIn
 // - DBConnect.ResolutionStrIn.
 func SetVars() {
+	var totalAudioCap, totalCodecCap, totalQualityCap, totalResolutionCap int
 	// prepare regexes - if you don't do this - you might get a memory leak
 	DBConnect.GetresolutionsIn = getqualityregexes(
 		"select * from qualities where type=1 order by priority desc",
@@ -272,29 +279,41 @@ func SetVars() {
 		}
 	}
 
-	DBConnect.AudioStrIn = make([]string, 0, len(DBConnect.GetaudiosIn)*7)
+	// Calculate required capacity
 	for idx := range DBConnect.GetaudiosIn {
-		DBConnect.AudioStrIn = append(
-			DBConnect.AudioStrIn,
-			strings.Split(DBConnect.GetaudiosIn[idx].StringsLower, ",")...)
+		totalAudioCap += len(DBConnect.GetaudiosIn[idx].StringsLowerSplitted)
 	}
-	DBConnect.CodecStrIn = make([]string, 0, len(DBConnect.GetcodecsIn)*7)
 	for idx := range DBConnect.GetcodecsIn {
-		DBConnect.CodecStrIn = append(
-			DBConnect.CodecStrIn,
-			strings.Split(DBConnect.GetcodecsIn[idx].StringsLower, ",")...)
+		totalCodecCap += len(DBConnect.GetcodecsIn[idx].StringsLowerSplitted)
 	}
-	DBConnect.QualityStrIn = make([]string, 0, len(DBConnect.GetqualitiesIn)*7)
 	for idx := range DBConnect.GetqualitiesIn {
-		DBConnect.QualityStrIn = append(
-			DBConnect.QualityStrIn,
-			strings.Split(DBConnect.GetqualitiesIn[idx].StringsLower, ",")...)
+		totalQualityCap += len(DBConnect.GetqualitiesIn[idx].StringsLowerSplitted)
 	}
-	DBConnect.ResolutionStrIn = make([]string, 0, len(DBConnect.GetresolutionsIn)*7)
 	for idx := range DBConnect.GetresolutionsIn {
-		DBConnect.ResolutionStrIn = append(
-			DBConnect.ResolutionStrIn,
-			strings.Split(DBConnect.GetresolutionsIn[idx].StringsLower, ",")...)
+		totalResolutionCap += len(DBConnect.GetresolutionsIn[idx].StringsLowerSplitted)
+	}
+
+	DBConnect.AudioStrIn = make([]string, 0, totalAudioCap)
+	DBConnect.CodecStrIn = make([]string, 0, totalCodecCap)
+	DBConnect.QualityStrIn = make([]string, 0, totalQualityCap)
+	DBConnect.ResolutionStrIn = make([]string, 0, totalResolutionCap)
+
+	// Populate slices efficiently
+	for idx := range DBConnect.GetaudiosIn {
+		DBConnect.AudioStrIn = append(DBConnect.AudioStrIn,
+			DBConnect.GetaudiosIn[idx].StringsLowerSplitted...)
+	}
+	for idx := range DBConnect.GetcodecsIn {
+		DBConnect.CodecStrIn = append(DBConnect.CodecStrIn,
+			DBConnect.GetcodecsIn[idx].StringsLowerSplitted...)
+	}
+	for idx := range DBConnect.GetqualitiesIn {
+		DBConnect.QualityStrIn = append(DBConnect.QualityStrIn,
+			DBConnect.GetqualitiesIn[idx].StringsLowerSplitted...)
+	}
+	for idx := range DBConnect.GetresolutionsIn {
+		DBConnect.ResolutionStrIn = append(DBConnect.ResolutionStrIn,
+			DBConnect.GetresolutionsIn[idx].StringsLowerSplitted...)
 	}
 
 	// prepare SQL statements for the cache (not expiring)
@@ -1148,13 +1167,13 @@ func timeFromName(filename, prefix string) time.Time {
 	return t
 }
 
-// GetMediaQualityConfigP returns the QualityConfig from cfgp for the
+// GetMediaQualityConfig returns the QualityConfig from cfgp for the
 // media with the given ID. It first checks if there is a quality profile
 // set for that media in the database. If not, it returns the default
 // QualityConfig from cfgp.
-func GetMediaQualityConfigP(cfgp *config.MediaTypeConfig, mediaid *uint) *config.QualityConfig {
+func GetMediaQualityConfig(cfgp *config.MediaTypeConfig, mediaid *uint) *config.QualityConfig {
 	return cfgp.GetMediaQualityConfigStr(
-		Getdatarow1[string](
+		Getdatarow[string](
 			false,
 			logger.GetStringsMap(cfgp.Useseries, logger.DBQualityMediaByID),
 			mediaid,
@@ -1183,7 +1202,7 @@ func GetMediaListIDGetListname(cfgp *config.MediaTypeConfig, mediaid *uint) int 
 		return -1
 	}
 	return cfgp.GetMediaListsEntryListID(
-		Getdatarow1[string](
+		Getdatarow[string](
 			false,
 			logger.GetStringsMap(cfgp.Useseries, logger.DBListnameByMediaID),
 			mediaid,

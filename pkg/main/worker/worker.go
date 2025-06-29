@@ -15,19 +15,42 @@ import (
 	"github.com/robfig/cron/v3"
 )
 
+type StatsDetail struct {
+	CompletedTasks  uint64 `json:"CompletedTasks"`
+	DroppedTasks    uint64 `json:"DroppedTasks"`
+	FailedTasks     uint64 `json:"FailedTasks"`
+	RunningWorkers  uint64 `json:"RunningWorkers"`
+	SubmittedTasks  uint64 `json:"SubmittedTasks"`
+	SuccessfulTasks uint64 `json:"SuccessfulTasks"`
+	WaitingTasks    uint64 `json:"WaitingTasks"`
+}
+
+type Stats struct {
+	WorkerParse    StatsDetail            `json:"WorkerParse"`
+	WorkerSearch   StatsDetail            `json:"WorkerSearch"`
+	WorkerRSS      StatsDetail            `json:"WorkerRSS"`
+	WorkerFiles    StatsDetail            `json:"WorkerFiles"`
+	WorkerMeta     StatsDetail            `json:"WorkerMeta"`
+	WorkerIndex    StatsDetail            `json:"WorkerIndex"`
+	WorkerIndexRSS StatsDetail            `json:"WorkerIndexFSS"`
+	ListQueue      map[uint32]Job         `json:"ListQueue"`
+	ListSchedule   map[uint32]JobSchedule `json:"ListSchedule"`
+}
+
 const (
 	strMsg = "msg"
 
-	// Queue names
+	// Queue names.
 	QueueData   = "Data"
 	QueueFeeds  = "Feeds"
 	QueueSearch = "Search"
+	QueueRSS    = "RSS"
 
-	// Schedule types
+	// Schedule types.
 	ScheduleTypeCron     = "cron"
 	ScheduleTypeInterval = "interval"
 
-	// Timing constants
+	// Timing constants.
 	queueCheckInterval = 200 * time.Millisecond
 	queueCheckDelay    = 100 * time.Millisecond
 	maxQueueRetries    = 10
@@ -37,11 +60,17 @@ var (
 	// workerPoolIndexer is a WorkerPool for executing indexer tasks.
 	WorkerPoolIndexer pond.Pool
 
+	// workerPoolIndexerRSS is a WorkerPool for executing indexer tasks for RSS Searches.
+	WorkerPoolIndexerRSS pond.Pool
+
 	// workerPoolParse is a WorkerPool for executing parse tasks.
 	WorkerPoolParse pond.Pool
 
 	// workerPoolSearch is a WorkerPool for executing search tasks.
 	workerPoolSearch pond.Pool
+
+	// workerPoolSearch is a WorkerPool for executing RSS search tasks.
+	workerPoolRSS pond.Pool
 
 	// workerPoolFiles is a WorkerPool for executing file tasks.
 	workerPoolFiles pond.Pool
@@ -59,8 +88,8 @@ var (
 	cronWorkerSearch *cron.Cron
 
 	// globalScheduleSet is a sync.Map to store jobSchedule objects.
-	globalScheduleSet = syncMapUint[jobSchedule]{
-		m: make(map[uint32]jobSchedule, 100),
+	globalScheduleSet = syncMapUint[JobSchedule]{
+		m: make(map[uint32]JobSchedule, 100),
 	}
 
 	// globalQueueSet is a sync.Map to store dispatcherQueue objects.
@@ -85,11 +114,13 @@ var (
 		data   time.Time
 		feeds  time.Time
 		search time.Time
+		rss    time.Time
 		other  time.Time
 	}{
 		data:   time.Now(),
 		feeds:  time.Now(),
 		search: time.Now(),
+		rss:    time.Now(),
 		other:  time.Now(),
 	}
 
@@ -125,7 +156,7 @@ type Job struct {
 }
 
 // jobSchedule represents a scheduled job.
-type jobSchedule struct {
+type JobSchedule struct {
 	// JobName is the name of the job
 	JobName string
 	// ScheduleTyp is the type of schedule (cron, interval, etc)
@@ -176,6 +207,32 @@ func (*wrappedLogger) Error(err error, msg string, keysAndValues ...any) {
 		Msg("cron error")
 }
 
+func GetStats() Stats {
+	return Stats{
+		WorkerIndex:    GetWorkerStats(WorkerPoolIndexer),
+		WorkerIndexRSS: GetWorkerStats(WorkerPoolIndexerRSS),
+		WorkerParse:    GetWorkerStats(WorkerPoolParse),
+		WorkerSearch:   GetWorkerStats(workerPoolSearch),
+		WorkerRSS:      GetWorkerStats(workerPoolRSS),
+		WorkerFiles:    GetWorkerStats(workerPoolFiles),
+		WorkerMeta:     GetWorkerStats(workerPoolMetadata),
+		ListQueue:      GetQueues(),
+		ListSchedule:   GetSchedules(),
+	}
+}
+
+func GetWorkerStats(w pond.Pool) StatsDetail {
+	return StatsDetail{
+		CompletedTasks:  w.CompletedTasks(),
+		FailedTasks:     w.FailedTasks(),
+		DroppedTasks:    w.DroppedTasks(),
+		RunningWorkers:  uint64(w.RunningWorkers()),
+		SubmittedTasks:  w.SubmittedTasks(),
+		SuccessfulTasks: w.SuccessfulTasks(),
+		WaitingTasks:    w.WaitingTasks(),
+	}
+}
+
 // SetScheduleStarted sets the IsRunning field of the jobSchedule with the given ID to true,
 // updates the LastRun field to the current time, and sets the NextRun field based on the
 // schedule type (cron or interval). This function is used to mark a jobSchedule as running. It Locks.
@@ -214,11 +271,11 @@ func SetScheduleEnded(id uint32) {
 // adds error recovery and duplicate job prevention middleware,
 // and enables running jobs at a per-second interval.
 func CreateCronWorker() {
-	loggerworker := &wrappedLogger{}
+	loggerworker := wrappedLogger{}
 	opts := []cron.Option{
 		cron.WithLocation(logger.GetTimeZone()),
-		cron.WithLogger(loggerworker),
-		cron.WithChain(cron.Recover(loggerworker), cron.SkipIfStillRunning(loggerworker)),
+		cron.WithLogger(&loggerworker),
+		cron.WithChain(cron.Recover(&loggerworker), cron.SkipIfStillRunning(&loggerworker)),
 		cron.WithSeconds(),
 	}
 	cronWorkerData = cron.New(opts...)
@@ -251,6 +308,8 @@ func getcron(queue string) *cron.Cron {
 		return cronWorkerFeeds
 	case QueueSearch:
 		return cronWorkerSearch
+	case QueueRSS:
+		return cronWorkerSearch
 	}
 	return nil
 }
@@ -266,6 +325,8 @@ func getPoolAndLastAdded(queue string) (pond.Pool, time.Time) {
 		return workerPoolMetadata, lastAddedTimes.feeds
 	case QueueSearch:
 		return workerPoolSearch, lastAddedTimes.search
+	case QueueRSS:
+		return workerPoolRSS, lastAddedTimes.rss
 	default:
 		return nil, lastAddedTimes.other
 	}
@@ -283,6 +344,8 @@ func updateLastAdded(queue string) {
 		lastAddedTimes.feeds = now
 	case QueueSearch:
 		lastAddedTimes.search = now
+	case QueueRSS:
+		lastAddedTimes.rss = now
 	default:
 		lastAddedTimes.other = now
 	}
@@ -323,7 +386,7 @@ func DispatchCron(cfgpstr string, cronStr string, name string, queue string, job
 		return err
 	}
 	dcentry := dc.Entry(cjob)
-	globalScheduleSet.Add(schedulerID, jobSchedule{
+	globalScheduleSet.Add(schedulerID, JobSchedule{
 		JobName:        name,
 		JobID:          newUUID(),
 		ID:             schedulerID,
@@ -364,7 +427,7 @@ func addjob(
 		return
 	}
 
-	if err := checkQueueCapacity(workpool, queue, name); err != nil {
+	if err := checkQueueCapacity(workpool.QueueSize(), workpool.WaitingTasks(), queue, name); err != nil {
 		return
 	}
 
@@ -390,13 +453,13 @@ func addjob(
 	})
 
 	if _, ok := workpool.TrySubmit(runjobcron(id)); !ok {
+		logger.LogDynamicany1String("error", "not queued", logger.StrJob, name)
 		globalQueueSet.Delete(id)
 	}
 }
 
-func checkQueueCapacity(workpool pond.Pool, queue, name string) error {
-	capa := workpool.MaxConcurrency()
-	if capa > 0 && uint64(capa) <= workpool.WaitingTasks() {
+func checkQueueCapacity(capa int, waiting uint64, queue, name string) error {
+	if capa > 0 && uint64(capa) <= waiting {
 		logger.Logtype("error", 0).
 			Str("queue", queue).
 			Str(logger.StrJob, name).
@@ -497,7 +560,7 @@ func DispatchEvery(
 			addjob(context.Background(), cfgpstr, newUUID(), name, jobname, queue, schedulerID)
 		}
 	}()
-	globalScheduleSet.Add(schedulerID, jobSchedule{
+	globalScheduleSet.Add(schedulerID, JobSchedule{
 		JobName:        name,
 		JobID:          newUUID(),
 		ID:             schedulerID,
@@ -529,7 +592,7 @@ func Dispatch(name string, fn func(uint32), queue string) error {
 		return ErrInvalidQueue
 	}
 
-	if err := checkQueueCapacity(workpool, queue, name); err != nil {
+	if err := checkQueueCapacity(workpool.QueueSize(), workpool.WaitingTasks(), queue, name); err != nil {
 		return err
 	}
 
@@ -549,6 +612,7 @@ func Dispatch(name string, fn func(uint32), queue string) error {
 		SchedulerID: newUUID(),
 	})
 	if _, ok := workpool.TrySubmit(runjob(id, fn)); !ok {
+		logger.LogDynamicany1String("error", "not queued", logger.StrJob, name)
 		globalQueueSet.Delete(id)
 		return ErrNotQueued
 	}
@@ -604,7 +668,7 @@ func runjob(id uint32, fn func(uint32)) func() {
 // desired number of workers for each pool and defaults them to 1 if 0 is
 // passed in. It configures the pools with balanced strategy and error
 // handling function.
-func InitWorkerPools(workersearch int, workerfiles int, workermeta int) {
+func InitWorkerPools(workersearch int, workerfiles int, workermeta int, workerrss int, workerindex int) {
 	if workersearch == 0 {
 		workersearch = 1
 	}
@@ -614,10 +678,18 @@ func InitWorkerPools(workersearch int, workerfiles int, workermeta int) {
 	if workermeta == 0 {
 		workermeta = 1
 	}
+	if workerrss == 0 {
+		workerrss = 1
+	}
+	if workerindex == 0 {
+		workerindex = 1
+	}
 	workerPoolSearch = pond.NewPool(workersearch)
+	workerPoolRSS = pond.NewPool(workerrss)
 	workerPoolFiles = pond.NewPool(workerfiles)
 	workerPoolMetadata = pond.NewPool(workermeta)
-	WorkerPoolIndexer = pond.NewPool(workersearch)
+	WorkerPoolIndexer = pond.NewPool(workerindex)
+	WorkerPoolIndexerRSS = pond.NewPool(workerindex)
 	WorkerPoolParse = pond.NewPool(workerfiles)
 }
 
@@ -627,9 +699,11 @@ func InitWorkerPools(workersearch int, workerfiles int, workermeta int) {
 func CloseWorkerPools() {
 	pools := []pond.Pool{
 		workerPoolSearch,
+		workerPoolRSS,
 		workerPoolFiles,
 		workerPoolMetadata,
 		WorkerPoolIndexer,
+		WorkerPoolIndexerRSS,
 		WorkerPoolParse,
 	}
 
@@ -646,6 +720,7 @@ func Cleanqueue() {
 		QueueData:   workerPoolFiles,
 		QueueFeeds:  workerPoolMetadata,
 		QueueSearch: workerPoolSearch,
+		QueueRSS:    workerPoolRSS,
 	}
 
 	for queueName, pool := range pools {
@@ -662,18 +737,42 @@ func GetQueues() map[uint32]Job {
 
 // GetSchedules returns a map of all currently configured schedules,
 // keyed by the job name.
-func GetSchedules() map[uint32]jobSchedule {
+func GetSchedules() map[uint32]JobSchedule {
 	return globalScheduleSet.GetMap()
 }
 
 var jobAlternatives = map[string][]string{
-	"searchmissinginc":       {"searchmissinginctitle_", "searchmissingfull_", "searchmissingfulltitle_"},
-	"searchmissinginctitle":  {"searchmissinginc_", "searchmissingfull_", "searchmissingfulltitle_"},
-	"searchmissingfull":      {"searchmissinginctitle_", "searchmissinginc_", "searchmissingfulltitle_"},
+	"searchmissinginc": {
+		"searchmissinginctitle_",
+		"searchmissingfull_",
+		"searchmissingfulltitle_",
+	},
+	"searchmissinginctitle": {
+		"searchmissinginc_",
+		"searchmissingfull_",
+		"searchmissingfulltitle_",
+	},
+	"searchmissingfull": {
+		"searchmissinginctitle_",
+		"searchmissinginc_",
+		"searchmissingfulltitle_",
+	},
 	"searchmissingfulltitle": {"searchmissinginctitle_", "searchmissingfull_", "searchmissinginc_"},
-	"searchupgradeinc":       {"searchupgradeinctitle_", "searchupgradefull_", "searchupgradefulltitle_"},
-	"searchupgradeinctitle":  {"searchupgradeinc_", "searchupgradefull_", "searchupgradefulltitle_"},
-	"searchupgradefull":      {"searchupgradeinctitle_", "searchupgradeinc_", "searchupgradefulltitle_"},
+	"searchupgradeinc": {
+		"searchupgradeinctitle_",
+		"searchupgradefull_",
+		"searchupgradefulltitle_",
+	},
+	"searchupgradeinctitle": {
+		"searchupgradeinc_",
+		"searchupgradefull_",
+		"searchupgradefulltitle_",
+	},
+	"searchupgradefull": {
+		"searchupgradeinctitle_",
+		"searchupgradeinc_",
+		"searchupgradefulltitle_",
+	},
 	"searchupgradefulltitle": {"searchupgradeinctitle_", "searchupgradefull_", "searchupgradeinc_"},
 }
 
@@ -684,7 +783,7 @@ var jobAlternatives = map[string][]string{
 func checkQueue(jobname string) bool {
 	idx := strings.LastIndexByte(jobname, '_')
 	if idx <= 0 || idx >= len(jobname)-1 {
-		return globalQueueSet.ForFuncKey(func(_ uint32, val Job) bool {
+		return globalQueueSet.ForFuncKey(func(_ uint32, val *Job) bool {
 			return val.Name == jobname && val.Started.IsZero()
 		})
 	}
@@ -694,12 +793,12 @@ func checkQueue(jobname string) bool {
 
 	alternatives, hasAlternatives := jobAlternatives[prefix]
 	if !hasAlternatives {
-		return globalQueueSet.ForFuncKey(func(_ uint32, val Job) bool {
+		return globalQueueSet.ForFuncKey(func(_ uint32, val *Job) bool {
 			return val.Name == jobname && val.Started.IsZero()
 		})
 	}
 
-	return globalQueueSet.ForFuncKey(func(_ uint32, val Job) bool {
+	return globalQueueSet.ForFuncKey(func(_ uint32, val *Job) bool {
 		if val.Started.IsZero() {
 			if val.Name == jobname {
 				return true
@@ -719,11 +818,11 @@ func checkQueue(jobname string) bool {
 
 // DeleteFuncKey deletes all entries in the SyncMap for which the provided function
 // returns true, using both the key and value as arguments.
-func (s *syncMapUint[T]) ForFuncKey(fn func(uint32, T) bool) bool {
+func (s *syncMapUint[T]) ForFuncKey(fn func(uint32, *T) bool) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for key, v := range s.m {
-		if fn(key, v) {
+		if fn(key, &v) {
 			return true
 		}
 	}
@@ -794,26 +893,28 @@ func (s *syncMapUint[T]) Delete(id uint32) {
 // DeleteFunc deletes all elements from the SyncMap that match the given predicate function fn.
 // The method acquires a write lock on the SyncMap before iterating through the map and deleting
 // any elements that satisfy the predicate. The lock is released before the method returns.
-func (s *syncMapUint[T]) DeleteFunc(fn func(T) bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for key, v := range s.m {
-		if fn(v) {
-			delete(s.m, key)
+func DeleteJobQueue(queue string, isStarted bool) {
+	globalQueueSet.mu.Lock()
+	defer globalQueueSet.mu.Unlock()
+	for key := range globalQueueSet.m {
+		if globalQueueSet.m[key].Queue == queue {
+			if isStarted {
+				if !globalQueueSet.m[key].Started.IsZero() {
+					delete(globalQueueSet.m, key)
+				}
+			} else {
+				delete(globalQueueSet.m, key)
+			}
 		}
 	}
 }
 
 // DeleteQueue deletes all jobs from the global queue set that match the given queue name.
 func DeleteQueue(queue string) {
-	globalQueueSet.DeleteFunc(func(t Job) bool {
-		return t.Queue == queue
-	})
+	DeleteJobQueue(queue, false)
 }
 
 // DeleteQueueRunning deletes all jobs from the global queue set that match the given queue name and have a non-zero start time.
 func DeleteQueueRunning(queue string) {
-	globalQueueSet.DeleteFunc(func(t Job) bool {
-		return t.Queue == queue && !t.Started.IsZero()
-	})
+	DeleteJobQueue(queue, true)
 }

@@ -77,7 +77,7 @@ func NewOmdbClient(
 		OmdbAPIKey: apikey,
 		QAPIKey:    "&apikey=" + apikey,
 		Lim:        slidingwindow.NewLimiter(time.Duration(seconds)*time.Second, int64(calls)),
-		Client: NewClient(
+		Client: newClient(
 			"omdb",
 			disabletls,
 			true,

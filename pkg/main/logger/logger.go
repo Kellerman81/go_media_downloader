@@ -54,17 +54,16 @@ var logZeroValues bool
 // InitLogger initializes the global logger based on the provided Config.
 // It sets the log level, output format, rotation options, etc.
 func InitLogger(config Config) {
-	PlAddBuffer.Init(5, func(b *AddBuffer) {
-		b.Grow(800)
+	PlAddBuffer.Init(10, func(b *AddBuffer) {
+		if b.Cap() < 900 {
+			b.Grow(900)
+		}
+		if b.Len() > 1 {
+			b.Reset()
+		}
 	}, func(b *AddBuffer) bool {
 		b.Reset()
-		return b.Cap() > 1000
-	})
-	PlBuffer.Init(5, func(b *bytes.Buffer) {
-		b.Grow(800)
-	}, func(b *bytes.Buffer) bool {
-		b.Reset()
-		return b.Cap() > 1000
+		return false
 	})
 	PLArrAny.Init(5, func(a *Arrany) { a.Arr = make([]any, 0, 20) }, func(a *Arrany) bool {
 		clear(a.Arr)

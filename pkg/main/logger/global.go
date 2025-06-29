@@ -146,34 +146,34 @@ type Arrany struct {
 
 // global vars.
 var (
-	StrFeeds       = "feeds"
-	StrDataFull    = "datafull"
-	StrStructure   = "structure"
-	V0             = 0
-	StrMovie       = "movie"
-	StrSeries      = "series"
-	StrID          = "id"
-	StrWaitfor     = "waitfor"
-	StrURL         = "Url"
-	StrImdb        = "imdb"
-	StrFound       = "found"
-	StrWanted      = "wanted"
-	StrTitle       = "Title"
-	StrAccepted    = "accepted"
-	StrDenied      = "denied"
-	StrJob         = "Job"
-	StrPath        = "Path"
-	StrFile        = "File"
-	StrListname    = "Listname"
-	StrData        = "data"
-	StrTvdb        = "tvdb"
-	StrSeason      = "season"
-	StrConfig      = "config"
-	StrReason      = "reason"
-	StrPriority    = "Priority"
-	StrMinPrio     = "minimum prio"
-	StrQuality     = "Quality"
-	ArrHTMLEntitys = []string{
+	StrFeeds        = "feeds"
+	StrDataFull     = "datafull"
+	StrStructure    = "structure"
+	V0              = 0
+	StrMovie        = "movie"
+	StrSeries       = "series"
+	StrID           = "id"
+	StrWaitfor      = "waitfor"
+	StrURL          = "Url"
+	StrImdb         = "imdb"
+	StrFound        = "found"
+	StrWanted       = "wanted"
+	StrTitle        = "Title"
+	StrAccepted     = "accepted"
+	StrDenied       = "denied"
+	StrJob          = "Job"
+	StrPath         = "Path"
+	StrFile         = "File"
+	StrListname     = "Listname"
+	StrData         = "data"
+	StrTvdb         = "tvdb"
+	StrSeason       = "season"
+	StrConfig       = "config"
+	StrReason       = "reason"
+	StrPriority     = "Priority"
+	StrMinPrio      = "minimum prio"
+	StrQuality      = "Quality"
+	ArrHTMLEntities = []string{
 		"&AElig",
 		"&AMP",
 		"&Aacute",
@@ -293,10 +293,9 @@ var (
 	ErrImdbEmpty             = errors.New("imdb empty")
 	ErrTracksEmpty           = errors.New("tracks empty")
 	PlAddBuffer              pool.Poolobj[AddBuffer]
-	PlBuffer                 pool.Poolobj[bytes.Buffer]
 	PLArrAny                 pool.Poolobj[Arrany]
 
-	mapSrings = map[string]mapmovieserie{
+	mapStrings = map[string]mapmovieserie{
 		"CacheDBMedia": {
 			Movie: "CacheDBMovie",
 			Serie: "CacheDBSeries",
@@ -545,8 +544,11 @@ var (
 	timeFormat = time.RFC3339Nano
 	log        zerolog.Logger
 	timeZone   = *time.UTC
+	// textparser is a template engine instance used for parsing and rendering text templates
 	textparser = template.New("master")
-	subRune    = map[rune]struct{}{
+	// subRune is a set of allowed characters for slugging, filename or path generation.
+	// It contains lowercase letters, numbers, and hyphens to ensure safe and consistent naming.
+	subRune = map[rune]struct{}{
 		'a': {},
 		'b': {},
 		'c': {},
@@ -585,6 +587,8 @@ var (
 		'9': {},
 		'-': {},
 	}
+	// subRuneSet is a pre-computed boolean array that efficiently checks if a rune is an allowed character
+	// for filename or path generation, including lowercase letters, numbers, and hyphen.
 	subRuneSet = [256]bool{
 		'a': true, 'b': true, 'c': true, 'd': true, 'e': true, 'f': true, 'g': true, 'h': true,
 		'i': true, 'j': true, 'k': true, 'l': true, 'm': true, 'n': true, 'o': true, 'p': true,
@@ -592,6 +596,11 @@ var (
 		'y': true, 'z': true, '0': true, '1': true, '2': true, '3': true, '4': true, '5': true,
 		'6': true, '7': true, '8': true, '9': true, '-': true,
 	}
+	// substituteRuneSpace is a mapping of special characters to their replacement strings.
+	// It handles character substitutions for filename or path sanitization, including:
+	// - Removing or replacing punctuation and whitespace
+	// - Converting diacritical characters to their base ASCII equivalents
+	// - Replacing special symbols with readable text
 	substituteRuneSpace = map[rune]string{
 		'&':  "and",
 		'@':  "at",
@@ -612,6 +621,9 @@ var (
 		'Ü':  "Ue",
 		'ß':  "ss",
 	}
+	// diacriticsmap is a mapping of diacritical characters to their ASCII equivalent replacements.
+	// It provides a standardized way to convert special characters with diacritical marks
+	// to their base letter representations, useful for text normalization and sanitization.
 	diacriticsmap = map[rune]string{
 		'ä': "ae",
 		'ö': "oe",
@@ -621,6 +633,9 @@ var (
 		'Ü': "Ue",
 		'ß': "ss",
 	}
+	// diacriticslowermap is a mapping of diacritical characters to their lowercase equivalents.
+	// It provides a standardized way to convert special characters with diacritical marks
+	// to their lowercase representations, useful for text normalization and case-insensitive comparisons.
 	diacriticslowermap = map[rune]rune{
 		'ä': 'ä',
 		'ö': 'ö',
@@ -630,6 +645,9 @@ var (
 		'Ü': 'ü',
 		'ß': 'ß',
 	}
+	// pathmap is a set of special characters that are considered invalid or problematic in file paths.
+	// It contains characters that typically need to be sanitized or escaped when working with file system paths.
+	// These characters include reserved symbols like colons, asterisks, question marks, backslashes, angle brackets, and pipe symbols.
 	pathmap = map[rune]struct{}{
 		':':  {},
 		'*':  {},
@@ -703,8 +721,8 @@ func ParseStringTemplate(message string, messagedata any) (bool, string) {
 			return true, ""
 		}
 	}
-	doc := PlBuffer.Get()
-	defer PlBuffer.Put(doc)
+	doc := PlAddBuffer.Get()
+	defer PlAddBuffer.Put(doc)
 	if err := tmplmessage.Execute(doc, messagedata); err != nil {
 		LogDynamicanyErr("error", "template", err)
 		return true, ""
@@ -713,8 +731,8 @@ func ParseStringTemplate(message string, messagedata any) (bool, string) {
 }
 
 func BytesToString(b []byte) string {
-	bld := PlBuffer.Get()
-	defer PlBuffer.Put(bld)
+	bld := PlAddBuffer.Get()
+	defer PlAddBuffer.Put(bld)
 	bld.Write(b)
 	return bld.String()
 }
@@ -736,8 +754,8 @@ func Checkhtmlentities(instr string) string {
 	if strings.ContainsRune(instr, ';') {
 		return html.UnescapeString(instr)
 	}
-	for idx := range ArrHTMLEntitys {
-		if strings.Contains(instr, ArrHTMLEntitys[idx]) {
+	for idx := range ArrHTMLEntities {
+		if strings.Contains(instr, ArrHTMLEntities[idx]) {
 			return html.UnescapeString(instr)
 		}
 	}
@@ -748,8 +766,8 @@ func Checkhtmlentities(instr string) string {
 // unwanted characters, transliterating accented characters, replacing multiple
 // hyphens with a single hyphen, and trimming leading/trailing hyphens.
 func StringToSlugBytes(instr string) []byte {
-	ret := PlBuffer.Get()
-	defer PlBuffer.Put(ret)
+	ret := PlAddBuffer.Get()
+	defer PlAddBuffer.Put(ret)
 	stringToSlugBuffer(ret, Checkhtmlentities(instr))
 	return bytes.Trim(ret.Bytes(), "- ")
 }
@@ -758,7 +776,7 @@ func StringToSlugBytes(instr string) []byte {
 // unwanted characters, transliterating accented characters, replacing multiple
 // hyphens with a single hyphen, and trimming leading/trailing hyphens. The result
 // is written to the provided bytes.Buffer.
-func stringToSlugBuffer(ret *bytes.Buffer, instr string) {
+func stringToSlugBuffer(ret *AddBuffer, instr string) {
 	if len(instr) == 0 {
 		return
 	}
@@ -817,7 +835,7 @@ func stringToSlugBuffer(ret *bytes.Buffer, instr string) {
 
 // AddImdbPrefixP adds the "tt" prefix to the given string if it doesn't already have the prefix.
 // If the string is nil or has a length less than 1, this function does nothing.
-func AddImdbPrefixP(str string) string {
+func AddImdbPrefix(str string) string {
 	if len(str) >= 1 && !HasPrefixI(str, StrTt) {
 		return JoinStrings(StrTt, str)
 	}
@@ -835,8 +853,8 @@ func Path(s *string, allowslash bool) {
 	if !allowslash {
 		StringRemoveAllRunesP(&newpath, '\\', '/')
 	}
-	bld := PlBuffer.Get()
-	defer PlBuffer.Put(bld)
+	bld := PlAddBuffer.Get()
+	defer PlAddBuffer.Put(bld)
 
 	var bl bool
 	for _, z := range newpath {
@@ -1034,8 +1052,8 @@ func JoinStrings(elems ...string) string {
 			return elems[0]
 		}
 	}
-	b := PlBuffer.Get()
-	defer PlBuffer.Put(b)
+	b := PlAddBuffer.Get()
+	defer PlAddBuffer.Put(b)
 	for idx := range elems {
 		if elems[idx] != "" {
 			b.WriteString(elems[idx])
@@ -1054,8 +1072,8 @@ func JoinStringsSep(elems []string, sep string) string {
 	case 1:
 		return elems[0]
 	}
-	b := PlBuffer.Get()
-	defer PlBuffer.Put(b)
+	b := PlAddBuffer.Get()
+	defer PlAddBuffer.Put(b)
 	l := len(elems)
 	for idx, val := range elems {
 		if val != "" {
@@ -1101,41 +1119,41 @@ func IndexI(a, b string) int {
 		hasUpperb = hasUpperb || ('A' <= c && c <= 'Z') || c == 'Ö' || c == 'Ü' || c == 'Ä'
 	}
 
-	if isASCIIb {
-		if !hasUppera && !hasUpperb {
-			return strings.Index(a, b)
-		}
-		bufa := PlBuffer.Get()
-		defer PlBuffer.Put(bufa)
-		for _, c := range a {
-			if 'A' <= c && c <= 'Z' {
-				c += 'a' - 'A'
-			} else if c >= utf8.RuneSelf {
-				d, ok := diacriticslowermap[c]
-				if ok {
-					c = d
-				}
-			}
-			bufa.WriteRune(c)
-		}
-
-		bufb := PlBuffer.Get()
-		defer PlBuffer.Put(bufb)
-		for _, c := range b {
-			if 'A' <= c && c <= 'Z' {
-				c += 'a' - 'A'
-			} else if c >= utf8.RuneSelf {
-				d, ok := diacriticslowermap[c]
-				if ok {
-					c = d
-				}
-			}
-			bufb.WriteRune(c)
-		}
-
-		return bytes.Index(bufa.Bytes(), bufb.Bytes())
+	if !isASCIIb {
+		return strings.Index(strings.Map(unicode.ToLower, a), strings.Map(unicode.ToLower, b))
 	}
-	return strings.Index(strings.Map(unicode.ToLower, a), strings.Map(unicode.ToLower, b))
+	if !hasUppera && !hasUpperb {
+		return strings.Index(a, b)
+	}
+	bufa := PlAddBuffer.Get()
+	defer PlAddBuffer.Put(bufa)
+	for _, c := range a {
+		if 'A' <= c && c <= 'Z' {
+			c += 'a' - 'A'
+		} else if c >= utf8.RuneSelf {
+			d, ok := diacriticslowermap[c]
+			if ok {
+				c = d
+			}
+		}
+		bufa.WriteRune(c)
+	}
+
+	bufb := PlAddBuffer.Get()
+	defer PlAddBuffer.Put(bufb)
+	for _, c := range b {
+		if 'A' <= c && c <= 'Z' {
+			c += 'a' - 'A'
+		} else if c >= utf8.RuneSelf {
+			d, ok := diacriticslowermap[c]
+			if ok {
+				c = d
+			}
+		}
+		bufb.WriteRune(c)
+	}
+
+	return bytes.Index(bufa.Bytes(), bufb.Bytes())
 }
 
 // IntToUint converts an int64 to a uint, returning 0 if the input is negative.
@@ -1192,7 +1210,7 @@ func StringToInt(s string) int {
 // It first tries to parse the string as a float and then cast it to time.Duration.
 // If that fails, it tries to parse the string directly as an int and then cast it to time.Duration.
 // If both attempts fail, it returns 0.
-func StringToDuration(s string) time.Duration {
+func StringToDuration(s string) int {
 	if s == "" || s == "0" {
 		return 0
 	}
@@ -1201,13 +1219,13 @@ func StringToDuration(s string) time.Duration {
 		if err != nil {
 			return 0
 		}
-		return time.Duration(in)
+		return int(in)
 	}
 	in, err := strconv.Atoi(s)
 	if err != nil {
 		return 0
 	}
-	return time.Duration(in)
+	return in
 }
 
 // StringToInt32 converts the given string to an int32.
@@ -1302,6 +1320,17 @@ func SlicesContainsI(s []string, v string) bool {
 	return false
 }
 
+// SlicesIndexI returns the index of the first occurrence of v in s, using case-insensitive comparison.
+// If v is not found in s, it returns -1.
+func SlicesIndexI(s []string, v string) int {
+	for idx := range s {
+		if v == s[idx] || strings.EqualFold(v, s[idx]) {
+			return idx
+		}
+	}
+	return -1
+}
+
 // Contains reports whether s is contained in v - case insensitive.
 func SlicesContainsPart2I(s []string, v string) bool {
 	for idx := range s {
@@ -1340,8 +1369,8 @@ func StringRemoveAllRunesP(s *string, r ...byte) {
 			return
 		}
 	}
-	out := PlBuffer.Get()
-	defer PlBuffer.Put(out)
+	out := PlAddBuffer.Get()
+	defer PlAddBuffer.Put(out)
 	for idx := range *s {
 		if isruneinbyteslice((*s)[idx], r) {
 			continue
@@ -1371,8 +1400,8 @@ func StringReplaceWith(s string, r, t byte) string {
 	if !strings.ContainsRune(s, rune(r)) {
 		return s
 	}
-	buf := PlBuffer.Get()
-	defer PlBuffer.Put(buf)
+	buf := PlAddBuffer.Get()
+	defer PlAddBuffer.Put(buf)
 	for idx := range s {
 		if s[idx] == r {
 			buf.WriteByte(t)
@@ -1392,8 +1421,8 @@ func StringReplaceWithP(s *string, r, t byte) {
 	if !strings.ContainsRune(*s, rune(r)) {
 		return
 	}
-	buf := PlBuffer.Get()
-	defer PlBuffer.Put(buf)
+	buf := PlAddBuffer.Get()
+	defer PlAddBuffer.Put(buf)
 	for idx := range *s {
 		if (*s)[idx] == r {
 			buf.WriteByte(t)
@@ -1420,8 +1449,8 @@ func StringReplaceWithStr(s, r, t string) string {
 	}
 
 	// Apply replacements to buffer.
-	buf := PlBuffer.Get()
-	defer PlBuffer.Put(buf)
+	buf := PlAddBuffer.Get()
+	defer PlAddBuffer.Put(buf)
 	start := 0
 	lenr := len(r)
 	for i := range n {
@@ -1447,9 +1476,9 @@ func StringReplaceWithStr(s, r, t string) string {
 // the mapstringsseries map, otherwise it returns the mapstringsmovies map.
 func GetStringsMap(useseries bool, typestr string) string {
 	if useseries {
-		return mapSrings[typestr].Serie
+		return mapStrings[typestr].Serie
 	}
-	return mapSrings[typestr].Movie
+	return mapStrings[typestr].Movie
 }
 
 // CheckContextEnded checks if the provided context has been canceled or has expired.

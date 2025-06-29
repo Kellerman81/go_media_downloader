@@ -1,12 +1,14 @@
 package logger
 
 import (
+	"reflect"
 	"sync"
 	"time"
 )
 
 type SyncMap[T any] struct {
 	m        map[string]T
+	mp       map[string]*T
 	expires  map[string]int64
 	lastScan map[string]int64
 	imdb     map[string]bool
@@ -20,6 +22,7 @@ type SyncMap[T any] struct {
 func NewSyncMap[T any](size int) *SyncMap[T] {
 	return &SyncMap[T]{
 		m:        make(map[string]T, size),
+		mp:       make(map[string]*T, size),
 		expires:  make(map[string]int64, size),
 		lastScan: make(map[string]int64, size),
 		imdb:     make(map[string]bool, size),
@@ -33,6 +36,21 @@ func (s *SyncMap[T]) Add(key string, value T, expires int64, imdb bool, lastscan
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.m[key] = value
+	//if reflect.ValueOf(value).Kind() != reflect.Ptr {
+	//	s.mp[key] = &value
+	//}
+	s.expires[key] = expires
+	s.lastScan[key] = lastscan
+	s.imdb[key] = imdb
+}
+
+func (s *SyncMap[T]) AddPointer(key string, value T, expires int64, imdb bool, lastscan int64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.m[key] = value
+	if reflect.ValueOf(value).Kind() != reflect.Ptr {
+		s.mp[key] = &value
+	}
 	s.expires[key] = expires
 	s.lastScan[key] = lastscan
 	s.imdb[key] = imdb
@@ -43,6 +61,9 @@ func (s *SyncMap[T]) UpdateVal(key string, value T) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.m[key] = value
+	//if reflect.ValueOf(value).Kind() != reflect.Ptr {
+	//s.mp[key] = &value
+	//}
 }
 
 // UpdateExpire updates the expiration time for the given key in the SyncMap.
@@ -75,6 +96,7 @@ func (s *SyncMap[T]) Delete(key string) {
 // public API.
 func (s *SyncMap[T]) delete(key string) {
 	// LogDynamicany1String("debug", "cache delete entry", "key", key)
+	delete(s.mp, key)
 	delete(s.m, key)
 	delete(s.expires, key)
 	delete(s.lastScan, key)
@@ -97,8 +119,9 @@ func (s *SyncMap[T]) GetVal(key string) T {
 func (s *SyncMap[T]) GetValP(key string) *T {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if val, ok := s.m[key]; ok {
-		return &val
+	p, ok := s.mp[key]
+	if ok && p != nil {
+		return p
 	}
 	return nil
 }

@@ -57,15 +57,15 @@ func ErrorLoggerT(typ gin.ErrorType) gin.HandlerFunc {
 	}
 }
 
-// Logger is a gin middleware which use zerolog
+// Logger is a gin middleware which use zerolog.
 func GinLogger() gin.HandlerFunc {
-	o := &Options{
+	o := Options{
 		FieldsOrder: ginDefaultFieldsOrder(),
 	}
-	return LoggerWithOptions(o)
+	return LoggerWithOptions(&o)
 }
 
-// LoggerWithOptions is a gin middleware which use zerolog
+// LoggerWithOptions is a gin middleware which use zerolog.
 func LoggerWithOptions(opt *Options) gin.HandlerFunc {
 	// List of fields
 	if len(opt.FieldsOrder) == 0 {
@@ -123,11 +123,16 @@ func LoggerWithOptions(opt *Options) gin.HandlerFunc {
 		var event *zerolog.Event
 
 		// set message level
-		if statusCode >= 400 && statusCode < 500 {
+		switch {
+		case statusCode >= 200 && statusCode < 300:
+			event = z.Info()
+		case statusCode >= 300 && statusCode < 400:
+			event = z.Info()
+		case statusCode >= 400 && statusCode < 500:
 			event = z.Warn()
-		} else if statusCode >= 500 {
+		case statusCode >= 500:
 			event = z.Error()
-		} else {
+		default:
 			event = z.Trace()
 		}
 
@@ -182,7 +187,9 @@ func LoggerWithOptions(opt *Options) gin.HandlerFunc {
 				case time.Hour:
 					durationFieldName = DurationFieldName + "_hr"
 				default:
-					z.Error().Interface("zerolog.DurationFieldUnit", zerolog.DurationFieldUnit).Msg("unknown value for DurationFieldUnit")
+					z.Error().
+						Interface("zerolog.DurationFieldUnit", zerolog.DurationFieldUnit).
+						Msg("unknown value for DurationFieldUnit")
 					durationFieldName = DurationFieldName
 				}
 				event.Dur(durationFieldName, duration)
@@ -216,7 +223,7 @@ func LoggerWithOptions(opt *Options) gin.HandlerFunc {
 	}
 }
 
-// gormDefaultFieldsOrder defines the default order of fields
+// gormDefaultFieldsOrder defines the default order of fields.
 func ginDefaultFieldsOrder() []string {
 	return []string{
 		NameFieldName,
@@ -235,7 +242,7 @@ func ginDefaultFieldsOrder() []string {
 	}
 }
 
-// isExcluded check if a field is excluded from the output
+// isExcluded check if a field is excluded from the output.
 func (o *Options) isExcluded(field string) bool {
 	if o.FieldsExclude == nil {
 		return false

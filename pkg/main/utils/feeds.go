@@ -131,10 +131,10 @@ func (d *feedResults) gettmdbmoviediscover(cfglist *config.MediaListsConfig) err
 	var existing []uint
 	if !config.SettingsGeneral.UseMediaCache && listnamefilter != "" {
 		existing = database.GetrowsNuncached[uint](
-			database.GetdatarowNArg(
+			database.Getdatarow[uint](
 				false,
 				logger.JoinStrings("select count() from movies where ", listnamefilter),
-				args.Arr,
+				args.Arr...,
 			),
 			logger.JoinStrings("select dbmovie_id from movies where ", listnamefilter),
 			args.Arr,
@@ -214,7 +214,7 @@ func (d *feedResults) gettmdbshowdiscover(cfglist *config.MediaListsConfig) erro
 			continue
 		}
 		for idx := range arr.Results {
-			database.Scanrows1dyn(
+			database.Scanrowsdyn(
 				false,
 				"select id from dbseries where moviedb_id = ?",
 				&imdbid,
@@ -248,7 +248,7 @@ func (d *feedResults) gettmdbshowlist(cfglist *config.MediaListsConfig) error {
 			continue
 		}
 		for idx := range arr.Items {
-			database.Scanrows1dyn(
+			database.Scanrowsdyn(
 				false,
 				"select id from dbseries where moviedb_id = ?",
 				&imdbid,
@@ -276,7 +276,7 @@ func checkaddimdbfeed(imdb *string, cfglist *config.MediaListsConfig, d *feedRes
 	if imdb == nil || *imdb == "" {
 		return false
 	}
-	if database.Getdatarow2[uint](
+	if database.Getdatarow[uint](
 		false,
 		"select count() from movies where dbmovie_id in (select id from dbmovies where imdb_id = ?) and listname = ? COLLATE NOCASE",
 		imdb,
@@ -303,10 +303,10 @@ func (d *feedResults) gettmdblist(cfglist *config.MediaListsConfig) error {
 	var existing []uint
 	if !config.SettingsGeneral.UseMediaCache && listnamefilter != "" {
 		existing = database.GetrowsNuncached[uint](
-			database.GetdatarowNArg(
+			database.Getdatarow[uint](
 				false,
 				logger.JoinStrings("select count() from movies where ", listnamefilter),
-				args.Arr,
+				args.Arr...,
 			),
 			logger.JoinStrings("select dbmovie_id from movies where ", listnamefilter),
 			args.Arr,
@@ -515,10 +515,10 @@ func (d *feedResults) parseimdbcsv(
 	var existing []uint
 	if !config.SettingsGeneral.UseMediaCache && listnamefilter != "" {
 		existing = database.GetrowsNuncached[uint](
-			database.GetdatarowNArg(
+			database.Getdatarow[uint](
 				false,
 				logger.JoinStrings("select count() from movies where ", listnamefilter),
-				args.Arr,
+				args.Arr...,
 			),
 			logger.JoinStrings("select dbmovie_id from movies where ", listnamefilter),
 			args.Arr,
@@ -538,7 +538,7 @@ func (d *feedResults) parseimdbcsv(
 		if record[1] == "" || record[1] == "Const" || record[1] == "tconst" {
 			continue
 		}
-		record[1] = logger.AddImdbPrefixP(record[1])
+		record[1] = logger.AddImdbPrefix(record[1])
 		movieid = importfeed.MovieFindDBIDByImdb(&record[1])
 
 		if movieid != 0 {
@@ -656,7 +656,7 @@ func getmovieid(dbid *uint, cfglistp *config.MediaListsConfig) bool {
 		) {
 			return true
 		}
-	} else if database.Getdatarow2[uint](false, database.QueryCountMoviesByDBIDList, dbid, &cfglistp.Name) >= 1 {
+	} else if database.Getdatarow[uint](false, database.QueryCountMoviesByDBIDList, dbid, &cfglistp.Name) >= 1 {
 		return true
 	}
 	return false

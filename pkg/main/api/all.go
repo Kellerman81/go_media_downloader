@@ -26,7 +26,7 @@ type Jsondatarows struct {
 	Total int `json:"total"`
 	Data  any `json:"data"`
 }
-type JsonNaming struct {
+type JSONNaming struct {
 	M          database.ParseInfo `json:"m"`
 	Foldername string             `json:"foldername"`
 	Filename   string             `json:"filename"`
@@ -150,9 +150,8 @@ func checkauth(c *gin.Context) {
 		if queryParam == config.SettingsGeneral.WebAPIKey {
 			c.Next()
 			return
-		} else {
-			msg = "wrong apikey in query"
 		}
+		msg = "wrong apikey in query"
 	} else {
 		msg = "no apikey in query"
 	}

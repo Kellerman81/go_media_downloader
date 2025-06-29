@@ -63,7 +63,7 @@ var (
 
 	// cl is a default HTTP client with rate limiting and timeouts.
 	lim = slidingwindow.NewLimiter(1*time.Second, 10)
-	cl  = NewClient("defaultdownloader", true, true, &lim, false, nil, 30)
+	cl  = newClient("defaultdownloader", true, true, &lim, false, nil, 30)
 
 	tlsinsecure = tls.Config{InsecureSkipVerify: true}
 
@@ -174,7 +174,7 @@ func (c *rlHTTPClient) addwait(req *http.Request, resp *http.Response) bool {
 		blockinterval = config.SettingsGeneral.FailedIndexerBlockTime
 	}
 	if resp == nil {
-		c.logwait(logger.TimeGetNow().Add(time.Minute*time.Duration(blockinterval)), nil)
+		c.logwait(logger.TimeGetNow().Add(time.Duration(blockinterval)*time.Minute), nil)
 		return true
 	}
 
@@ -188,7 +188,7 @@ func (c *rlHTTPClient) addwait(req *http.Request, resp *http.Response) bool {
 		524,
 		http.StatusNoContent:
 		if resp.StatusCode != http.StatusNotFound {
-			c.logwait(logger.TimeGetNow().Add(time.Minute*time.Duration(blockinterval)), nil)
+			c.logwait(logger.TimeGetNow().Add(time.Duration(blockinterval)*time.Minute), nil)
 		}
 		logger.LogDynamicany2Str(
 			"error",
@@ -219,7 +219,7 @@ func (c *rlHTTPClient) addwait(req *http.Request, resp *http.Response) bool {
 				)
 				if len(a) != 2 {
 					c.logwait(
-						logger.TimeGetNow().Add(time.Minute*time.Duration(blockinterval)),
+						logger.TimeGetNow().Add(time.Duration(blockinterval)*time.Minute),
 						&s[0],
 					)
 					return true
@@ -227,22 +227,27 @@ func (c *rlHTTPClient) addwait(req *http.Request, resp *http.Response) bool {
 				switch a[1] {
 				case "minutes":
 					c.logwait(
-						logger.TimeGetNow().Add(time.Minute*logger.StringToDuration(a[0])),
+						logger.TimeGetNow().
+							Add(time.Duration(logger.StringToDuration(a[0]))*time.Minute),
 						nil,
 					)
 					return true
 				case "hours":
-					c.logwait(logger.TimeGetNow().Add(time.Hour*logger.StringToDuration(a[0])), nil)
+					c.logwait(
+						logger.TimeGetNow().
+							Add(time.Duration(logger.StringToDuration(a[0]))*time.Hour),
+						nil,
+					)
 					return true
 				default:
 					c.logwait(
-						logger.TimeGetNow().Add(time.Minute*time.Duration(blockinterval)),
+						logger.TimeGetNow().Add(time.Duration(blockinterval)*time.Minute),
 						&s[0],
 					)
 					return true
 				}
 			} else if sleep, err := strconv.Atoi(s[0]); err == nil {
-				c.logwait(logger.TimeGetNow().Add(time.Second*time.Duration(sleep)-c.Ratelimiter.Interval()), nil)
+				c.logwait(logger.TimeGetNow().Add((time.Duration(sleep)*time.Second)-c.Ratelimiter.Interval()), nil)
 				return true
 			} else if strings.ContainsRune(s[0], ' ') && strings.ContainsRune(s[0], ':') {
 				if sleeptime, ok := logger.TryTimeParse(time.RFC1123, s[0]); ok {
@@ -255,7 +260,7 @@ func (c *rlHTTPClient) addwait(req *http.Request, resp *http.Response) bool {
 					return true
 				}
 			} else {
-				c.logwait(logger.TimeGetNow().Add(time.Minute*time.Duration(blockinterval)), &s[0])
+				c.logwait(logger.TimeGetNow().Add(time.Duration(blockinterval)*time.Minute), &s[0])
 				return true
 			}
 		} else if resp.StatusCode == 400 && resp.Body != nil {
@@ -293,8 +298,8 @@ func (c *rlHTTPClient) logwait(waitfor time.Time, logfound *string) {
 	logv.Msg("Set Waittill")
 }
 
-// NewClient creates a new HTTP client for making external API requests. It configures rate limiting, TLS verification, compression, timeouts etc. based on the provided parameters.
-func NewClient(
+// newClient creates a new HTTP client for making external API requests. It configures rate limiting, TLS verification, compression, timeouts etc. based on the provided parameters.
+func newClient(
 	clientname string,
 	skiptlsverify, disablecompression bool,
 	rl *slidingwindow.Limiter,
@@ -442,10 +447,7 @@ func doJSONTypeNoLimit[S any](
 // The function uses a context with a timeout of 5 times the client's configured timeout.
 // If the request fails, the function returns a nil pointer to the provided type and the error.
 func doJSONTypeP[S any](c *rlHTTPClient, urlv string, headers map[string][]string) (*S, error) {
-	var v S
-	err := ProcessHTTP(c, urlv, true, func(ctx context.Context, resp *http.Response) error {
-		return json.NewDecoder(resp.Body).DecodeContext(ctx, &v)
-	}, headers)
+	v, err := doJSONType[S](c, urlv, headers)
 	if err != nil {
 		return nil, err
 	}

@@ -17,7 +17,7 @@ import (
 // logs in using the provided username and password, and then downloads the torrent
 // from the given URL with the specified save path and paused state.
 func SendToQBittorrent(host, port, username, password, urlv, dlpath, addpaused string) error {
-	cl := NewQBittorrentClient("http://" + host + ":" + port + "/")
+	cl := newQBittorrentClient("http://" + host + ":" + port + "/")
 	_, err := cl.Login(username, password)
 	if err == nil {
 		options := map[string]string{
@@ -45,7 +45,7 @@ type qbtClient struct {
 }
 
 // NewClient creates a new client connection to qbittorrent.
-func NewQBittorrentClient(urlv string) *qbtClient {
+func newQBittorrentClient(urlv string) *qbtClient {
 	client := &qbtClient{}
 
 	// ensure url ends with "/"

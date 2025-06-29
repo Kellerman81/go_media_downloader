@@ -57,7 +57,11 @@ func MoveFile(
 	return newpath, nil
 }
 
-func checkExtensionPermissions(setpathcfg *config.PathsConfig, ext string, useother, usenil bool) (bool, bool) {
+func checkExtensionPermissions(
+	setpathcfg *config.PathsConfig,
+	ext string,
+	useother, usenil bool,
+) (bool, bool) {
 	if usenil || setpathcfg == nil {
 		return true, true
 	}
@@ -90,7 +94,10 @@ func prepareMove(file, newpath, renamepath string) error {
 }
 
 func performMove(renamepath, newpath string, opts MoveFileOptions) error {
-	logger.Logtype("info", 0).Str(logger.StrFile, renamepath).Str("to", newpath).Msg("File move start move")
+	logger.Logtype("info", 0).
+		Str(logger.StrFile, renamepath).
+		Str("to", newpath).
+		Msg("File move start move")
 
 	var fileMode fs.FileMode
 	if len(opts.Chmod) == 4 {
@@ -288,7 +295,7 @@ func moveFileDrive(sourcePath, destPath string, chmodfolder, chmod fs.FileMode) 
 			Str(logger.StrFile, sourcePath).
 			Str(strto, destPath).
 			Err(err).
-			Msg("Error copiing source")
+			Msg("Error copying source")
 		return err
 	}
 	logger.Logtype("info", 0).
@@ -310,7 +317,7 @@ func moveFileDrive(sourcePath, destPath string, chmodfolder, chmod fs.FileMode) 
 func checkFile(fpath string, checkexists, checkregular bool) bool {
 	sfi, err := os.Stat(fpath)
 	if checkexists {
-		return !errors.Is(err, fs.ErrNotExist)
+		return !errors.Is(err, os.ErrNotExist)
 	}
 	if checkregular {
 		if err != nil {

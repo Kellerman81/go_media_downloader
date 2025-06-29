@@ -21,22 +21,22 @@ func getStatsTable(ctx *context.Context) (userTable table.Table) {
 		"select distinct listname from movies where listname is not null and listname != ''",
 	)
 	for idx := range lists {
-		all := database.GetdatarowN(
+		all := database.Getdatarow[uint](
 			false,
 			"select count(*) from movies where listname = ? COLLATE NOCASE",
 			&lists[idx],
 		)
-		missing := database.GetdatarowN(
+		missing := database.Getdatarow[uint](
 			false,
 			"select count(*) from movies where listname = ? COLLATE NOCASE and missing=1",
 			&lists[idx],
 		)
-		reached := database.GetdatarowN(
+		reached := database.Getdatarow[uint](
 			false,
 			"select count(*) from movies where listname = ? COLLATE NOCASE and quality_reached=1",
 			&lists[idx],
 		)
-		upgrade := database.GetdatarowN(
+		upgrade := database.Getdatarow[uint](
 			false,
 			"select count(*) from movies where listname = ? COLLATE NOCASE and quality_reached=0 and missing=0",
 			&lists[idx],
@@ -61,22 +61,22 @@ func getStatsTable(ctx *context.Context) (userTable table.Table) {
 		"select distinct listname from series where listname is not null and listname != ''",
 	)
 	for idx := range lists {
-		all := database.GetdatarowN(
+		all := database.Getdatarow[uint](
 			false,
 			"select count(*) from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE)",
 			&lists[idx],
 		)
-		missing := database.GetdatarowN(
+		missing := database.Getdatarow[uint](
 			false,
 			"select count(*) from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE) and missing=1",
 			&lists[idx],
 		)
-		reached := database.GetdatarowN(
+		reached := database.Getdatarow[uint](
 			false,
 			"select count(*) from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE) and quality_reached=1",
 			&lists[idx],
 		)
-		upgrade := database.GetdatarowN(
+		upgrade := database.Getdatarow[uint](
 			false,
 			"select count(*) from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE) and quality_reached=0 and missing=0",
 			&lists[idx],

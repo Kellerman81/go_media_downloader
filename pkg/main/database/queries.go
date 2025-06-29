@@ -156,27 +156,25 @@ func Getdb(imdb bool) *sqlx.DB {
 // For structs, it uses the getfunc mapping function to get the fields to scan into.
 // Size is a hint for the initial slice capacity.
 func queryGenericsT[t any](size uint, rows *sql.Rows, querystring string) []t {
-	var u t
-	var simplescan, rowscan bool
-	switch any(u).(type) {
-	case string, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float32, float64, bool:
-		simplescan = true
-	case ImdbRatings, DbstaticTwoString, DbstaticOneStringOneInt, DbstaticOneStringOneUInt, DbstaticOneIntOneBool, DbstaticTwoUint, DbstaticOneStringTwoInt, DbstaticTwoStringOneInt, DbstaticTwoStringOneRInt, DbstaticThreeString, DbstaticThreeStringTwoInt, FilePrio:
-		rowscan = true
-	default:
-		return nil
+	var zero t
+	isSimpleType := isSimpleType(zero)
+
+	capacity := size
+	if capacity == 0 {
+		capacity = 16 // reasonable default
 	}
-	var result []t
-	if size != 0 {
-		result = make([]t, 0, size)
-	}
+	result := make([]t, 0, capacity)
 	for rows.Next() {
-		switch {
-		case simplescan, rowscan:
-			if getfuncarr(&u, rows) {
-				continue
-			}
-		default:
+		var u t
+		var err error
+
+		if isSimpleType {
+			err = rows.Scan(&u)
+		} else {
+			err = getfuncarr(&u, rows)
+		}
+
+		if err != nil {
 			continue
 		}
 		result = append(result, u)
@@ -185,44 +183,51 @@ func queryGenericsT[t any](size uint, rows *sql.Rows, querystring string) []t {
 	return result
 }
 
+func isSimpleType[T any](v T) bool {
+	switch any(v).(type) {
+	case string, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float32, float64, bool:
+		return true
+	default:
+		return false
+	}
+}
+
 // getfuncarr is a helper function that scans the results of a SQL query into a
 // generic struct type. It uses a type switch to determine the appropriate
 // fields to scan into the struct based on its type. This allows the function
 // to be used with a variety of different struct types that have the
 // appropriate field types.
-func getfuncarr(u any, s *sql.Rows) bool {
-	var err error
+func getfuncarr(u any, s *sql.Rows) error {
 	switch elem := u.(type) {
 	case *DbstaticTwoString:
-		err = s.Scan(&elem.Str1, &elem.Str2)
+		return s.Scan(&elem.Str1, &elem.Str2)
 	case *DbstaticOneStringOneInt:
-		err = s.Scan(&elem.Str, &elem.Num)
+		return s.Scan(&elem.Str, &elem.Num)
 	case *DbstaticOneStringOneUInt:
-		err = s.Scan(&elem.Str, &elem.Num)
+		return s.Scan(&elem.Str, &elem.Num)
 	case *DbstaticOneIntOneBool:
-		err = s.Scan(&elem.Num, &elem.Bl)
+		return s.Scan(&elem.Num, &elem.Bl)
 	case *DbstaticTwoUint:
-		err = s.Scan(&elem.Num1, &elem.Num2)
+		return s.Scan(&elem.Num1, &elem.Num2)
 	case *DbstaticOneStringTwoInt:
-		err = s.Scan(&elem.Str, &elem.Num1, &elem.Num2)
+		return s.Scan(&elem.Str, &elem.Num1, &elem.Num2)
 	case *DbstaticTwoStringOneInt:
-		err = s.Scan(&elem.Str1, &elem.Str2, &elem.Num)
+		return s.Scan(&elem.Str1, &elem.Str2, &elem.Num)
 	case *DbstaticTwoStringOneRInt:
-		err = s.Scan(&elem.Str1, &elem.Str2, &elem.Num)
+		return s.Scan(&elem.Str1, &elem.Str2, &elem.Num)
 	case *DbstaticThreeString:
-		err = s.Scan(&elem.Str1, &elem.Str2, &elem.Str3)
+		return s.Scan(&elem.Str1, &elem.Str2, &elem.Str3)
 	case *DbstaticThreeStringTwoInt:
-		err = s.Scan(&elem.Str1, &elem.Str2, &elem.Str3, &elem.Num1, &elem.Num2)
+		return s.Scan(&elem.Str1, &elem.Str2, &elem.Str3, &elem.Num1, &elem.Num2)
 	case *ImdbRatings:
-		err = s.Scan(&elem.AverageRating, &elem.NumVotes)
+		return s.Scan(&elem.AverageRating, &elem.NumVotes)
 	case *FilePrio:
-		err = s.Scan(&elem.Location, &elem.DBID, &elem.ID, &elem.ResolutionID, &elem.QualityID, &elem.CodecID, &elem.AudioID, &elem.Proper, &elem.Repack, &elem.Extended)
+		return s.Scan(&elem.Location, &elem.DBID, &elem.ID, &elem.ResolutionID, &elem.QualityID, &elem.CodecID, &elem.AudioID, &elem.Proper, &elem.Repack, &elem.Extended)
 	case *string, *int, *int8, *int16, *int32, *int64, *uint, *uint8, *uint16, *uint32, *uint64, *float32, *float64, *bool:
-		err = s.Scan(u)
+		return s.Scan(u)
 	default:
-		err = logger.ErrNotFound
+		return logger.ErrNotFound
 	}
-	return err != nil
 }
 
 // structscan queries the database using the given query string and scans the
@@ -233,7 +238,7 @@ func structscan[t any](querystring string, imdb bool, id ...any) (*t, error) {
 	readWriteMu.RLock()
 	defer readWriteMu.RUnlock()
 	var u t
-	err := globalCache.getXStmt(querystring, imdb).QueryRowxContext(sqlCTX, id...).StructScan(&u)
+	err := queryRowxContext(querystring, imdb, id).StructScan(&u)
 	if err != nil {
 		logSQLError(err, querystring)
 		return nil, err
@@ -248,7 +253,7 @@ func structscan[t any](querystring string, imdb bool, id ...any) (*t, error) {
 func structscan1(querystring string, u any, id *uint) error {
 	readWriteMu.RLock()
 	defer readWriteMu.RUnlock()
-	return globalCache.getXStmt(querystring, false).QueryRowxContext(sqlCTX, id).StructScan(u)
+	return queryRowxContext(querystring, false, []any{id}).StructScan(u)
 }
 
 // StructscanT executes a SQL query and scans the result into a slice of the provided struct type.
@@ -261,7 +266,7 @@ func structscan1(querystring string, u any, id *uint) error {
 func StructscanT[t any](imdb bool, size uint, querystring string, args ...any) []t {
 	readWriteMu.RLock()
 	defer readWriteMu.RUnlock()
-	rows, err := globalCache.getXStmt(querystring, imdb).QueryxContext(sqlCTX, args...)
+	rows, err := queryxContext(querystring, imdb, args)
 	if err != nil {
 		logSQLError(err, querystring)
 		return nil
@@ -431,7 +436,7 @@ func GetSerieEpisodes(qu Querywithargs, args ...any) (*SerieEpisode, error) {
 func QuerySerieEpisodes(args *string) []SerieEpisode {
 	return StructscanT[SerieEpisode](
 		false,
-		Getdatarow1[uint](
+		Getdatarow[uint](
 			false,
 			"select count() from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE)",
 			args,
@@ -461,7 +466,7 @@ func GetMovies(qu Querywithargs, args ...any) (*Movie, error) {
 func QueryMovies(args *string) []Movie {
 	return StructscanT[Movie](
 		false,
-		Getdatarow1[uint](
+		Getdatarow[uint](
 			false,
 			"select count() from movies where listname = ? COLLATE NOCASE",
 			args,
@@ -578,11 +583,12 @@ func (qu *Querywithargs) buildquery() {
 	bld := logger.PlAddBuffer.Get()
 	defer logger.PlAddBuffer.Put(bld)
 	bld.WriteString("select ")
-	if len(qu.Select) >= 1 {
+	switch {
+	case qu.Select != "":
 		bld.WriteString(qu.Select)
-	} else if logger.ContainsI(qu.defaultcolumns, qu.Table+logger.StrDot) {
+	case logger.ContainsI(qu.defaultcolumns, qu.Table+logger.StrDot):
 		bld.WriteString(qu.defaultcolumns)
-	} else {
+	default:
 		if qu.InnerJoin != "" {
 			bld.WriteString(qu.Table)
 			bld.WriteString(".*")
@@ -615,40 +621,13 @@ func (qu *Querywithargs) buildquery() {
 	qu.QueryString = bld.String()
 }
 
-// Scanrows0dyn executes a SQL query and scans the result into the provided object.
-// The query string and arguments are passed as parameters.
-// If the query fails, the error is logged and returned.
-// The function acquires a read lock on the readWriteMu mutex before executing the query,
-// and releases it when the function returns.
-func Scanrows0dyn(imdb bool, querystring string, obj any) {
-	scandatarow(imdb, querystring, obj, nil, nil, nil)
-}
-
 // Scanrows1dyn executes a SQL query and scans the result into the provided object.
 // The query string and arguments are passed as parameters.
 // If the query fails, the error is logged and returned.
 // The function acquires a read lock on the readWriteMu mutex before executing the query,
 // and releases it when the function returns.
-func Scanrows1dyn(imdb bool, querystring string, obj, arg any) {
-	scandatarow(imdb, querystring, obj, arg, nil, nil)
-}
-
-// Scanrows2dyn executes a SQL query and scans the result into the provided object.
-// The query string and arguments are passed as parameters.
-// If the query fails, the error is logged and returned.
-// The function acquires a read lock on the readWriteMu mutex before executing the query,
-// and releases it when the function returns.
-func Scanrows2dyn(imdb bool, querystring string, obj, arg, arg2 any) {
-	scandatarow(imdb, querystring, obj, arg, arg2, nil)
-}
-
-// Scanrows3dyn executes a SQL query and scans the result into the provided object.
-// The query string and arguments are passed as parameters.
-// If the query fails, the error is logged and returned.
-// The function acquires a read lock on the readWriteMu mutex before executing the query,
-// and releases it when the function returns.
-func Scanrows3dyn(imdb bool, querystring string, obj, arg *uint, arg2, arg3 *string) {
-	scandatarow(imdb, querystring, obj, arg, arg2, arg3)
+func Scanrowsdyn(imdb bool, querystring string, obj any, args ...any) {
+	scandatarow(imdb, querystring, obj, args)
 }
 
 // ScanrowsNArr executes a SQL query and scans the result into the provided object.
@@ -659,8 +638,9 @@ func Scanrows3dyn(imdb bool, querystring string, obj, arg *uint, arg2, arg3 *str
 func ScanrowsNArr(imdb bool, querystring string, obj any, args []any) {
 	readWriteMu.RLock()
 	defer readWriteMu.RUnlock()
+	err := queryRowContext(querystring, imdb, args).Scan(obj)
 	logSQLErrorReset(
-		globalCache.getXStmt(querystring, imdb).QueryRowContext(sqlCTX, args...).Scan(obj),
+		err,
 		obj,
 		querystring,
 	)
@@ -726,14 +706,6 @@ func checkerrorvalue(obj any) {
 	}
 }
 
-// GetdatarowN executes the given querystring with the provided arguments
-// and scans the result into the given object, handling locking,
-// logging errors, and returning the scanned object.
-// The imdb parameter specifies whether to use the imdb database connection.
-func GetdatarowN(imdb bool, querystring string, args ...any) uint {
-	return GetdatarowNArg(imdb, querystring, args)
-}
-
 // scandatarow is a helper function that executes a SQL query with the provided arguments and
 // scans the result into the given object. It uses the GlobalCache to cache the prepared
 // statement for the given query string and database connection. The function also handles
@@ -744,38 +716,51 @@ func GetdatarowN(imdb bool, querystring string, args ...any) uint {
 // - querystring: the SQL query to execute.
 // - s: the object to scan the result into.
 // - arg, arg2, arg3: the arguments to pass to the SQL query.
-func scandatarow(imdb bool, querystring string, s, arg, arg2, arg3 any) {
+func scandatarow(imdb bool, querystring string, s any, args []any) {
 	readWriteMu.RLock()
 	defer readWriteMu.RUnlock()
-	stmt := globalCache.getXStmt(querystring, imdb)
-	var r *sql.Row
-	switch {
-	case arg3 != nil:
-		r = stmt.QueryRowContext(sqlCTX, arg, arg2, arg3)
-	case arg2 != nil:
-		r = stmt.QueryRowContext(sqlCTX, arg, arg2)
-	case arg != nil:
-		r = stmt.QueryRowContext(sqlCTX, arg)
-	default:
-		r = stmt.QueryRowContext(sqlCTX)
-	}
-	logSQLErrorReset(r.Scan(s), s, querystring)
+	err := queryRowContext(querystring, imdb, args).Scan(s)
+	logSQLErrorReset(err, s, querystring)
 }
 
-// getdatarow is a generic function that executes a SQL query with the provided arguments and
-// returns the result as a value of type o. It uses the GlobalCache to cache the prepared
-// statement for the given query string and database connection.
-//
-// The function takes the following arguments:
-// - imdb: a boolean indicating whether to use the "imdb" database connection or the default one.
-// - querystring: the SQL query to execute.
-// - arg, arg2, arg3: the arguments to pass to the SQL query.
-//
-// The function returns a value of type o, which is the result of the SQL query.
-func getdatarow[o any](imdb bool, querystring string, arg, arg2, arg3 any) o {
-	var s o
-	scandatarow(imdb, querystring, &s, arg, arg2, arg3)
-	return s
+func queryRowContext(querystring string, imdb bool, args []any) *sql.Row {
+	stmtp := globalCache.getXStmtP(querystring)
+	if stmtp == nil {
+		// no pointer
+		stmt := globalCache.getXStmt(querystring, imdb)
+		return stmt.QueryRowContext(sqlCTX, args...)
+	}
+	return stmtp.QueryRowContext(sqlCTX, args...)
+}
+
+func queryContext(querystring string, imdb bool, args []any) (*sql.Rows, error) {
+	stmtp := globalCache.getXStmtP(querystring)
+	if stmtp == nil {
+		// no pointer
+		stmt := globalCache.getXStmt(querystring, imdb)
+		return stmt.QueryContext(sqlCTX, args...)
+	}
+	return stmtp.QueryContext(sqlCTX, args...)
+}
+
+func queryRowxContext(querystring string, imdb bool, args []any) *sqlx.Row {
+	stmtp := globalCache.getXStmtP(querystring)
+	if stmtp == nil {
+		// no pointer
+		stmt := globalCache.getXStmt(querystring, imdb)
+		return stmt.QueryRowxContext(sqlCTX, args...)
+	}
+	return stmtp.QueryRowxContext(sqlCTX, args...)
+}
+
+func queryxContext(querystring string, imdb bool, args []any) (*sqlx.Rows, error) {
+	stmtp := globalCache.getXStmtP(querystring)
+	if stmtp == nil {
+		// no pointer
+		stmt := globalCache.getXStmt(querystring, imdb)
+		return stmt.QueryxContext(sqlCTX, args...)
+	}
+	return stmtp.QueryxContext(sqlCTX, args...)
 }
 
 // Getdatarow0 is a generic function that executes a SQL query with the provided arguments and
@@ -787,76 +772,9 @@ func getdatarow[o any](imdb bool, querystring string, arg, arg2, arg3 any) o {
 // - querystring: the SQL query to execute.
 //
 // The function returns a value of type uint, which is the result of the SQL query.
-func Getdatarow0(imdb bool, querystring string) uint {
-	return getdatarow[uint](imdb, querystring, nil, nil, nil)
-}
-
-// Getdatarow1 is a generic function that executes a SQL query with the provided arguments and
-// returns the result as a value of type o. It uses the GlobalCache to cache the prepared
-// statement for the given query string and database connection.
-//
-// The function takes the following arguments:
-// - imdb: a boolean indicating whether to use the "imdb" database connection or the default one.
-// - querystring: the SQL query to execute.
-// - args: the argument to pass to the SQL query.
-//
-// The function returns a value of type o, which is the result of the SQL query.
-func Getdatarow1[o bool | int | uint | uint16 | string](imdb bool, querystring string, arg any) o {
-	return getdatarow[o](imdb, querystring, arg, nil, nil)
-}
-
-// Getdatarow2 is a generic function that executes a SQL query with the provided arguments and
-// returns the result as a value of type o. It uses the GlobalCache to cache the prepared
-// statement for the given query string and database connection.
-//
-// The function takes the following arguments:
-// - imdb: a boolean indicating whether to use the "imdb" database connection or the default one.
-// - querystring: the SQL query to execute.
-// - arg: the first argument to pass to the SQL query.
-// - arg2: the second argument to pass to the SQL query.
-//
-// The function returns a value of type o, which is the result of the SQL query.
-func Getdatarow2[o uint | string](imdb bool, querystring string, arg any, arg2 *string) o {
-	return getdatarow[o](imdb, querystring, arg, arg2, nil)
-}
-
-// Getdatarow2any is a generic function that executes a SQL query with the provided arguments and
-// returns the result as a value of type o. It uses the GlobalCache to cache the prepared
-// statement for the given query string and database connection.
-//
-// The function takes the following arguments:
-// - imdb: a boolean indicating whether to use the "imdb" database connection or the default one.
-// - querystring: the SQL query to execute.
-// - arg: the first argument to pass to the SQL query.
-// - arg2: the second argument to pass to the SQL query.
-//
-// The function returns a value of type o, which is the result of the SQL query.
-func Getdatarow2any[o uint | string](imdb bool, querystring string, arg any, arg2 any) o {
-	return getdatarow[o](imdb, querystring, arg, arg2, nil)
-}
-
-// Getdatarow3 executes the given querystring with the provided arguments
-// and scans the result into the given object, handling locking,
-// logging errors, and returning the scanned object.
-// The imdb parameter specifies whether to use the imdb database connection.
-// The arg, arg2, and arg3 parameters are pointers to strings that are used as arguments to the SQL query.
-func Getdatarow3[o uint | string](imdb bool, querystring string, arg, arg2, arg3 *string) o {
-	return getdatarow[o](imdb, querystring, arg, arg2, arg3)
-}
-
-// GetdatarowNArg is a generic function that executes a SQL query with the provided arguments and
-// returns the result as a value of type O. It uses the GlobalCache to cache the prepared
-// statement for the given query string and database connection.
-//
-// The function takes the following arguments:
-// - imdb: a boolean indicating whether to use the "imdb" database connection or the default one.
-// - querystring: the SQL query to execute.
-// - args: the arguments to pass to the SQL query.
-//
-// The function returns a value of type O, which is the result of the SQL query.
-func GetdatarowNArg(imdb bool, querystring string, args []any) uint {
-	var s uint
-	ScanrowsNArr(imdb, querystring, &s, args)
+func Getdatarow[o any](imdb bool, querystring string, args ...any) o {
+	var s o
+	scandatarow(imdb, querystring, &s, args)
 	return s
 }
 
@@ -874,11 +792,6 @@ func logSQLError(err error, querystring string) {
 		cache.itemsxstmt.DeleteFuncImdbVal(func(x bool) bool {
 			return x
 		}, func(s sqlx.Stmt) {
-			s.Close()
-		})
-		cache.itemsxstmtP.DeleteFuncImdbVal(func(x bool) bool {
-			return x
-		}, func(s *sqlx.Stmt) {
 			s.Close()
 		})
 	}
@@ -900,8 +813,9 @@ func logSQLErrorReset(err error, s any, querystring string) {
 func GetdatarowArgs(querystring string, arg any, objs ...any) {
 	readWriteMu.RLock()
 	defer readWriteMu.RUnlock()
+	err := queryRowContext(querystring, false, []any{arg}).Scan(objs...)
 	logSQLError(
-		globalCache.getXStmt(querystring, false).QueryRowContext(sqlCTX, arg).Scan(objs...),
+		err,
 		querystring,
 	)
 }
@@ -913,33 +827,19 @@ func GetdatarowArgs(querystring string, arg any, objs ...any) {
 func GetdatarowArgsImdb(querystring string, arg any, objs ...any) {
 	readWriteMu.RLock()
 	defer readWriteMu.RUnlock()
+	err := queryRowContext(querystring, true, []any{arg}).Scan(objs...)
 	logSQLError(
-		globalCache.getXStmt(querystring, true).QueryRowContext(sqlCTX, arg).Scan(objs...),
+		err,
 		querystring,
 	)
 }
 
-// Getrows1size executes the given querystring with the provided argument against the database,
+// Getrowssize executes the given querystring with the provided argument against the database,
 // scans the result rows into a slice of the generic type T, handles locking, logging errors,
 // and returns the slice. The sizeq parameter limits the number of rows scanned.
 // If imdb is true, the query will be executed against the imdb database, otherwise the main database.
-func Getrows1size[t any](imdb bool, sizeq, querystring string, arg any) []t {
-	return Getrows1[t](imdb, getdatarow[uint](imdb, sizeq, arg, nil, nil), querystring, arg)
-}
-
-// Getrows2size executes the given querystring with the provided arguments against the database,
-// scans the result rows into a slice of strings, handles locking, logs errors,
-// and returns the slice. The size parameter limits the number of rows scanned.
-// If imdb is true, the query will be executed against the imdb database, otherwise the main database.
-func Getrows2size(imdb bool, sizeq, querystring string, arg, arg2 any) []string {
-	readWriteMu.RLock()
-	defer readWriteMu.RUnlock()
-	rows := getrows(querystring, imdb, arg, arg2, nil)
-	if rows == nil {
-		return nil
-	}
-	defer rows.Close()
-	return queryGenericsT[string](getdatarow[uint](imdb, sizeq, arg, arg2, nil), rows, querystring)
+func Getrowssize[t any](imdb bool, sizeq, querystring string, args ...any) []t {
+	return GetrowsN[t](imdb, Getdatarow[uint](imdb, sizeq, args...), querystring, args...)
 }
 
 // GetrowsN executes the given querystring with multiple arguments against the database, scans the result
@@ -949,68 +849,13 @@ func Getrows2size(imdb bool, sizeq, querystring string, arg, arg2 any) []string 
 func GetrowsN[t any](imdb bool, size uint, querystring string, args ...any) []t {
 	readWriteMu.RLock()
 	defer readWriteMu.RUnlock()
-	rows := getrows(querystring, imdb, nil, nil, args)
-	if rows == nil {
-		return nil
-	}
-	defer rows.Close()
-	return queryGenericsT[t](size, rows, querystring)
-}
-
-// Getrows0 executes the given querystring against the database, scans the result
-// rows into a slice of the generic type T, handles locking, logging errors,
-// and returns the slice. The size parameter limits the number of rows scanned.
-// If imdb is true, the query will be executed against the imdb database, otherwise the main database.
-func Getrows0[t any](imdb bool, size uint, querystring string) []t {
-	readWriteMu.RLock()
-	defer readWriteMu.RUnlock()
-	rows := getrows(querystring, imdb, nil, nil, nil)
-	if rows == nil {
-		return nil
-	}
-	defer rows.Close()
-	return queryGenericsT[t](size, rows, querystring)
-}
-
-// Getrows1 executes the given querystring with a single argument against the database, scans the result
-// rows into a slice of the generic type T, handles locking, logging errors,
-// and returns the slice. The size parameter limits the number of rows scanned.
-// If imdb is true, the query will be executed against the imdb database, otherwise the main database.
-func Getrows1[t any](imdb bool, size uint, querystring string, arg any) []t {
-	readWriteMu.RLock()
-	defer readWriteMu.RUnlock()
-	rows := getrows(querystring, imdb, arg, nil, nil)
-	if rows == nil {
-		return nil
-	}
-	defer rows.Close()
-	return queryGenericsT[t](size, rows, querystring)
-}
-
-// getrows executes a SQL query using the provided query string, database context, and optional arguments.
-// It first retrieves a prepared statement from the global cache based on the query string and database context.
-// It then executes the prepared statement using the appropriate arguments based on the provided parameters.
-// If the query execution fails, it logs the error and returns nil.
-// Otherwise, it returns the resulting SQL rows.
-func getrows(querystring string, imdb bool, arg, arg2 any, arg3 []any) *sql.Rows {
-	var r *sql.Rows
-	var err error
-	stmt := globalCache.getXStmt(querystring, imdb)
-	switch {
-	case arg3 != nil:
-		r, err = stmt.QueryContext(sqlCTX, arg3...)
-	case arg2 != nil:
-		r, err = stmt.QueryContext(sqlCTX, arg, arg2)
-	case arg != nil:
-		r, err = stmt.QueryContext(sqlCTX, arg)
-	default:
-		r, err = stmt.QueryContext(sqlCTX)
-	}
-	if err != nil {
+	rows, err := queryContext(querystring, imdb, args)
+	if err != nil || rows == nil {
 		logSQLError(err, querystring)
 		return nil
 	}
-	return r
+	defer rows.Close()
+	return queryGenericsT[t](size, rows, querystring)
 }
 
 // GetrowsNuncached executes a SQL query and returns the results as a slice of the specified type T.
@@ -1039,14 +884,14 @@ func GetrowsNuncached[t DbstaticTwoUint | DbstaticOneStringOneUInt | uint](
 // If the query fails due to the database being closed, it removes the query from the cache to prevent future failed attempts.
 // If the query fails for any other reason, it logs the error.
 func ExecN(querystring string, args ...any) {
-	exec(querystring, nil, nil, args)
+	exec(querystring, args)
 }
 
 // ExecNErr executes the given SQL query string with the provided arguments and returns any error that occurred.
 // The function acquires a read/write lock before executing the query to ensure thread-safety.
 // If an error occurs during the execution, it is returned.
 func ExecNErr(querystring string, args ...any) error {
-	_, err := exec(querystring, nil, nil, args)
+	_, err := exec(querystring, args)
 	return err
 }
 
@@ -1056,34 +901,12 @@ func ExecNErr(querystring string, args ...any) error {
 // The function acquires a read/write lock before executing the query and releases it after the query is executed.
 // If an error occurs during the query execution, it is logged using the logExecError function.
 func ExecNMap(useseries bool, query string, args ...any) {
-	exec(logger.GetStringsMap(useseries, query), nil, nil, args)
-}
-
-// Exec1 executes the given SQL query string with the provided argument and returns the result and any error.
-// The function acquires a read/write lock before executing the query to ensure thread-safety.
-// If an error occurs during the execution, it is logged.
-func Exec1(querystring string, arg any) {
-	exec(querystring, arg, nil, nil)
-}
-
-// Exec1Err executes the given SQL query string with the provided argument and returns any error that occurred.
-// The function acquires a read/write lock before executing the query to ensure thread-safety.
-// If an error occurs during the execution, it is returned.
-func Exec1Err(querystring string, arg any) error {
-	_, err := exec(querystring, arg, nil, nil)
-	return err
-}
-
-// Exec2 executes the given SQL query string with the provided arguments arg and arg2.
-// It acquires a read/write lock before executing the query to ensure thread-safety, and releases the lock when the query is complete.
-// If an error occurs during the execution, it is logged using the exec function.
-func Exec2(querystring string, arg, arg2 any) {
-	exec(querystring, arg, arg2, nil)
+	ExecN(logger.GetStringsMap(useseries, query), args...)
 }
 
 // ExecNid executes the given querystring with multiple arguments, returns the generated ID from the insert statement, handles errors.
 func ExecNid(querystring string, args ...any) (int64, error) {
-	dbresult, err := exec(querystring, nil, nil, args)
+	dbresult, err := exec(querystring, args)
 	if err != nil {
 		return 0, err
 	}
@@ -1099,41 +922,25 @@ func ExecNid(querystring string, args ...any) (int64, error) {
 // The querystring parameter specifies the SQL query to execute.
 // The arg, arg2, and arg3 parameters are the arguments to pass to the query.
 // If the query fails, it logs the error and returns it.
-func exec(querystring string, arg, arg2 any, arg3 []any) (sql.Result, error) {
+func exec(querystring string, args []any) (sql.Result, error) {
 	readWriteMu.Lock()
 	defer readWriteMu.Unlock()
-	stmt := globalCache.getXStmt(querystring, false)
+	stmtp := globalCache.getXStmtP(querystring)
 	var r sql.Result
 	var err error
-	switch {
-	case arg3 != nil:
-		r, err = stmt.ExecContext(sqlCTX, arg3...)
-	case arg2 != nil:
-		r, err = stmt.ExecContext(sqlCTX, arg, arg2)
-	case arg != nil:
-		r, err = stmt.ExecContext(sqlCTX, arg)
-	default:
-		r, err = stmt.ExecContext(sqlCTX)
-	}
 
+	if stmtp == nil {
+		// no pointer
+		stmt := globalCache.getXStmt(querystring, false)
+		r, err = stmt.ExecContext(sqlCTX, args...)
+	} else {
+		r, err = stmtp.ExecContext(sqlCTX, args...)
+	}
 	if err != nil {
 		logger.LogDynamicany1StringErr("error", "query exec", err, strQuery, querystring)
 		return nil, err
 	}
 	return r, nil
-}
-
-// exec3 executes the given SQL query with the provided arguments and logs any errors that occur.
-// It acquires a read/write lock before executing the query and releases it when the query is complete.
-// The querystring parameter specifies the SQL query to execute.
-// The arg, arg2, and arg3 parameters are the arguments to pass to the query.
-func exec3(querystring string, arg, arg2 any, arg3 any) {
-	readWriteMu.Lock()
-	defer readWriteMu.Unlock()
-	_, err := globalCache.getXStmt(querystring, false).ExecContext(sqlCTX, arg, arg2, arg3)
-	if err != nil {
-		logger.LogDynamicany1StringErr("error", "query exec", err, strQuery, querystring)
-	}
 }
 
 // InsertArray inserts a row into the given database table, with the provided columns and values.
@@ -1152,8 +959,6 @@ func InsertArray(table string, columns []string, values ...any) (sql.Result, err
 			",?",
 			len(columns)-1,
 		)+")",
-		nil,
-		nil,
 		values,
 	)
 }
@@ -1164,8 +969,8 @@ func InsertArray(table string, columns []string, values ...any) (sql.Result, err
 // allows specifying a WHERE clause to filter the rows to update. It handles
 // executing the statement and returning the result or any error.
 func UpdateArray(table string, columns []string, where string, args ...any) (sql.Result, error) {
-	bld := logger.PlBuffer.Get()
-	defer logger.PlBuffer.Put(bld)
+	bld := logger.PlAddBuffer.Get()
+	defer logger.PlAddBuffer.Put(bld)
 	bld.WriteString("update ")
 	bld.WriteString(table)
 	bld.WriteString(" set ")
@@ -1180,7 +985,7 @@ func UpdateArray(table string, columns []string, where string, args ...any) (sql
 		bld.WriteString(" where ")
 		bld.WriteString(where)
 	}
-	return exec(bld.String(), nil, nil, args)
+	return exec(bld.String(), args)
 }
 
 // DeleteRow deletes rows from the given database table that match the provided
@@ -1197,7 +1002,7 @@ func DeleteRow(table, where string, args ...any) (sql.Result, error) {
 	if DBLogLevel == logger.StrDebug {
 		logger.LogDynamicany2StrAny("debug", "query delete", strQuery, querystring, "args", args)
 	}
-	return exec(querystring, nil, nil, args)
+	return exec(querystring, args)
 }
 
 // queryrowfulllockconnect executes the given SQL query while holding a write lock
@@ -1239,13 +1044,13 @@ func DBIntegrityCheck() string {
 // Getentryalternatetitlesdirect retrieves a slice of DbstaticTwoStringOneInt objects that represent alternate titles for the movie with the given database ID. If the UseMediaCache setting is enabled, it will retrieve the titles from the cache. Otherwise, it will retrieve the titles directly from the database.
 func Getentryalternatetitlesdirect(dbid *uint, useseries bool) []DbstaticTwoStringOneInt {
 	if config.SettingsGeneral.UseMediaCache {
-		return GetCachedTwoStringArr(
+		return GetCachedArr(cache.itemstwostring,
 			logger.GetStringsMap(useseries, logger.CacheMediaTitles),
 			false,
 			true,
 		)
 	}
-	return Getrows1size[DbstaticTwoStringOneInt](
+	return Getrowssize[DbstaticTwoStringOneInt](
 		false,
 		logger.GetStringsMap(useseries, logger.DBCountDBTitlesDBID),
 		logger.GetStringsMap(useseries, logger.DBDistinctDBTitlesDBID),

@@ -127,8 +127,10 @@ type GeneralConfig struct {
 
 	// WorkerParse defines how many parallel parsings to run for list retrievals - default: 1
 	WorkerParse int `toml:"worker_parse"           comment:"for list retrievals - how many parsings do you want to do at a time? - default: 1"`
-	// WorkerSearch defines how many parallel indexer scan jobs to run - default: 1
-	WorkerSearch int `toml:"worker_search"          comment:"how many parallel jobs of indexer scans do you want to run? too many might decrease performance - default: 1"`
+	// WorkerSearch defines how many parallel search jobs to run - default: 1
+	WorkerSearch int `toml:"worker_search"          comment:"how many parallel jobs of search scans do you want to run? too many might decrease performance - default: 1"`
+	// WorkerRSS defines how many parallel rss jobs to run - default: 1
+	WorkerRSS int `toml:"worker_rss"          comment:"how many parallel jobs of rss scans do you want to run? too many might decrease performance - default: 1"`
 	// WorkerIndexer defines how many indexers to query in parallel for each scan job - default: 1
 	WorkerIndexer int `toml:"worker_indexer"         comment:"for indexer scans - how many indexers do you want to query at a time? - default: 1"`
 	// OmdbAPIKey is the API key for OMDB - get one at https://www.omdbapi.com/apikey.aspx
@@ -140,7 +142,8 @@ type GeneralConfig struct {
 	// UseHistoryCache defines whether to cache downloaded entry history in RAM - default: false
 	UseHistoryCache bool `toml:"use_history_cache"      comment:"do you want to keep the list of downloaded entries in RAM? - default: false"`
 	// CacheDuration defines hours after which cached data will be refreshed - default: 12
-	CacheDuration int `toml:"cache_duration"         comment:"after how many hours do you want to refresh the cached data - default 12"`
+	CacheDuration  int `toml:"cache_duration"         comment:"after how many hours do you want to refresh the cached data - default 12"`
+	CacheDuration2 int `toml:"-"`
 	// CacheAutoExtend defines whether cache expiration will be reset on access - default: false
 	CacheAutoExtend bool `toml:"cache_auto_extend"      comment:"should the expiration be reset when the cache is accessed? - default: false"`
 	// SearcherSize defines initial size of found entries slice - default: 5000
@@ -199,7 +202,7 @@ type GeneralConfig struct {
 	// UseCronInsteadOfInterval defines whether to convert intervals to cron strings - default: false
 	UseCronInsteadOfInterval bool `toml:"use_cron_instead_of_interval" comment:"do you want to convert the scheduler intervals to cron strings? has better performance if you do - default: false"`
 	// UseFileBufferCopy defines whether to use buffered file copy - default: false
-	UseFileBufferCopy bool `toml:"use_file_buffer_copy"         comment:"do you want to use a buffered file copy? i suggest no - default: fals"`
+	UseFileBufferCopy bool `toml:"use_file_buffer_copy"         comment:"do you want to use a buffered file copy? i suggest no - default: false"`
 	// DisableSwagger defines whether to disable Swagger API docs - default: false
 	DisableSwagger bool `toml:"disable_swagger"              comment:"do you want to disable the swagger api documentation generation? - default: false"`
 	// TraktLimiterSeconds defines seconds limit for Trakt API calls - default: 1
@@ -621,6 +624,9 @@ type IndexersConfig struct {
 
 	TrustWithIMDBIDs bool `toml:"trust_with_imdb_ids" comment:"trust indexer imdb ids - can be problematic for RSS scans - some indexers tag wrong"`
 	TrustWithTVDBIDs bool `toml:"trust_with_tvdb_ids" comment:"trust indexer tvdb ids - can be problematic for RSS scans - some indexers tag wrong"`
+
+	// CheckTitleOnIDSearch is a bool indicating if the title of the release should be checked during an id based search? - default: false
+	CheckTitleOnIDSearch bool `toml:"check_title_on_id_search" comment:"should the title of the release be checked during an id based search? - default: false"`
 }
 
 type PathsConfig struct {
@@ -759,16 +765,16 @@ type QualityConfig struct {
 	// CutoffPriority is the priority cutoff
 	CutoffPriority int `toml:"-"`
 
-	// SearchForTitleIfEmpty is a bool indicating if we should do a title search if the id search didnt return an accepted release
+	// SearchForTitleIfEmpty is a bool indicating if we should do a title search if the id search didn't return an accepted release
 	// - backup_search_for_title needs to be true? - default: false
-	SearchForTitleIfEmpty bool `toml:"search_for_title_if_empty" comment:"should we do a title search if the id search didnt return an accepted release - backup_search_for_title needs to be true? - default: false"`
+	SearchForTitleIfEmpty bool `toml:"search_for_title_if_empty" comment:"should we do a title search if the id search didn't return an accepted release - backup_search_for_title needs to be true? - default: false"`
 
 	// BackupSearchForTitle is a bool indicating if we want to search for titles and not only id's - default: false
 	BackupSearchForTitle bool `toml:"backup_search_for_title" comment:"do we want to search for titles and not only id's - default: false"`
 
-	// SearchForAlternateTitleIfEmpty is a bool indicating if we should do a alternate title search if the id search didnt return an accepted release
+	// SearchForAlternateTitleIfEmpty is a bool indicating if we should do a alternate title search if the id search didn't return an accepted release
 	// - backup_search_for_alternate_title needs to be true? - default: false
-	SearchForAlternateTitleIfEmpty bool `toml:"search_for_alternate_title_if_empty" comment:"should we do a alternate title search if the id search didnt return an accepted release - backup_search_for_alternate_title needs to be true? - default: false"`
+	SearchForAlternateTitleIfEmpty bool `toml:"search_for_alternate_title_if_empty" comment:"should we do a alternate title search if the id search didn't return an accepted release - backup_search_for_alternate_title needs to be true? - default: false"`
 
 	// BackupSearchForAlternateTitle is a bool indicating if we want to search for alternate titles and not only id's - default: false
 	BackupSearchForAlternateTitle bool `toml:"backup_search_for_alternate_title" comment:"do we want to search for alternate titles and not only id's - default: false"`
@@ -777,10 +783,13 @@ type QualityConfig struct {
 	ExcludeYearFromTitleSearch bool `toml:"exclude_year_from_title_search" comment:"should the year not be included in the title search? - default: false"`
 
 	// CheckUntilFirstFound is a bool indicating if we should stop searching if we found a release? - default: false
-	CheckUntilFirstFound bool `toml:"check_until_first_found" comment:"should we stop searching if we foun a release? - default: false"`
+	CheckUntilFirstFound bool `toml:"check_until_first_found" comment:"should we stop searching if we found a release? - default: false"`
 
 	// CheckTitle is a bool indicating if the title of the release should be checked? - default: false
 	CheckTitle bool `toml:"check_title" comment:"should the title of the release be checked? - default: false"`
+
+	// CheckTitleOnIDSearch is a bool indicating if the title of the release should be checked during an id based search? - default: false
+	CheckTitleOnIDSearch bool `toml:"check_title_on_id_search" comment:"should the title of the release be checked during an id based search? - default: false"`
 
 	// CheckYear is a bool indicating if the year of the release should be checked? - default: false
 	CheckYear bool `toml:"check_year" comment:"should the year of the release be checked? - default: false"`
@@ -794,8 +803,8 @@ type QualityConfig struct {
 	// TitleStripPrefixForSearch is a []string indicating what prefixes should be removed from the title
 	TitleStripPrefixForSearch []string `toml:"title_strip_prefix_for_search" multiline:"true" comment:"what prefixes should be removed from the title"`
 
-	// QualityReorder is a []QualityReorderConfig for configs if a quality reording is needed - for example if 720p releases should be preferred over 1080p
-	QualityReorder []QualityReorderConfig `toml:"reorder" comment:"configs if a quality reording is needed - for example if 720p releases should be preferred over 1080p"`
+	// QualityReorder is a []QualityReorderConfig for configs if a quality reordering is needed - for example if 720p releases should be preferred over 1080p
+	QualityReorder []QualityReorderConfig `toml:"reorder" comment:"configs if a quality reordering is needed - for example if 720p releases should be preferred over 1080p"`
 
 	// Indexer is a []QualityIndexerConfig for configs of the indexers to be used for this quality
 	Indexer    []QualityIndexerConfig `toml:"indexers" comment:"configs of the indexers to be used for this quality"`
@@ -855,8 +864,8 @@ type QualityIndexerConfig struct {
 	TemplatePathNzb string `toml:"template_path_nzb"       comment:"the template to use for the nzb path"`
 	// CfgPath is a pointer to the PathsConfig for this path
 	CfgPath *PathsConfig `toml:"-"`
-	// CategoryDowloader is the category to use for the downloader
-	CategoryDowloader string `toml:"category_dowloader"      comment:"the category to use for the downloader"`
+	// CategoryDownloader is the category to use for the downloader
+	CategoryDownloader string `toml:"category_downloader"     comment:"the category to use for the downloader"`
 	// AdditionalQueryParams are additional params to add to the indexer query string
 	AdditionalQueryParams string `toml:"additional_query_params" comment:"additional params to add to the indexer query string like &extended=1&maxsize=1572864000"`
 	// SkipEmptySize indicates if releases with an empty size are allowed
@@ -1222,6 +1231,7 @@ func getconfigtoml() {
 	if SettingsGeneral.CacheDuration == 0 {
 		SettingsGeneral.CacheDuration = 12
 	}
+	SettingsGeneral.CacheDuration2 = 2 * SettingsGeneral.CacheDuration
 
 	if len(SettingsGeneral.MovieMetaSourcePriority) == 0 {
 		SettingsGeneral.MovieMetaSourcePriority = []string{"imdb", "tmdb", "omdb", "trakt"}

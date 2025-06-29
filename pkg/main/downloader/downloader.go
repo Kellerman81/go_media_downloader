@@ -52,7 +52,7 @@ func (d *downloadertype) downloadNzb() {
 		if d.Quality.Indexer[idx].CfgDownloader == nil {
 			continue
 		}
-		if d.Quality.Indexer[idx].CategoryDowloader != "" {
+		if d.Quality.Indexer[idx].CategoryDownloader != "" {
 			logger.LogDynamicany2Str(
 				"debug",
 				"Download",
@@ -62,7 +62,7 @@ func (d *downloadertype) downloadNzb() {
 				d.Quality.Indexer[idx].TemplateDownloader,
 			)
 			d.IndexerCfg = d.Quality.Indexer[idx].CfgIndexer
-			d.Category = d.Quality.Indexer[idx].CategoryDowloader
+			d.Category = d.Quality.Indexer[idx].CategoryDownloader
 			d.TargetCfg = d.Quality.Indexer[idx].CfgPath
 			d.Downloader = d.Quality.Indexer[idx].TemplateDownloader
 			d.DownloaderCfg = d.Quality.Indexer[idx].CfgDownloader
@@ -99,11 +99,11 @@ func (d *downloadertype) downloadNzb() {
 			"debug",
 			"Downloader nzb config NOT found - use first",
 			"categories",
-			d.Quality.Indexer[0].CategoryDowloader,
+			d.Quality.Indexer[0].CategoryDownloader,
 		)
 
 		d.IndexerCfg = d.Quality.Indexer[0].CfgIndexer
-		d.Category = d.Quality.Indexer[0].CategoryDowloader
+		d.Category = d.Quality.Indexer[0].CategoryDownloader
 		d.TargetCfg = d.Quality.Indexer[0].CfgPath
 		d.Downloader = d.Quality.Indexer[0].TemplateDownloader
 		d.DownloaderCfg = d.Quality.Indexer[0].CfgDownloader
@@ -157,7 +157,7 @@ func (d *downloadertype) downloadNzb() {
 			d.Movie.ID = d.Nzb.NzbmovieID
 		}
 		if d.Movie.ID != 0 && d.Movie.QualityProfile == "" {
-			database.Scanrows1dyn(
+			database.Scanrowsdyn(
 				false,
 				"select quality_profile from movies where id = ?",
 				&d.Movie.QualityProfile,
@@ -165,7 +165,7 @@ func (d *downloadertype) downloadNzb() {
 			)
 		}
 		if d.Movie.DbmovieID == 0 && d.Nzb.NzbmovieID != 0 {
-			database.Scanrows1dyn(
+			database.Scanrowsdyn(
 				false,
 				"select dbmovie_id from movies where id = ?",
 				&d.Movie.DbmovieID,
@@ -189,7 +189,7 @@ func (d *downloadertype) downloadNzb() {
 		return
 	}
 	if d.Serie.ID == 0 {
-		database.Scanrows1dyn(
+		database.Scanrowsdyn(
 			false,
 			database.QuerySerieEpisodesGetSerieIDByID,
 			&d.Serie.ID,
@@ -197,7 +197,7 @@ func (d *downloadertype) downloadNzb() {
 		)
 	}
 	if d.Dbserie.ID == 0 {
-		database.Scanrows1dyn(
+		database.Scanrowsdyn(
 			false,
 			database.QuerySerieEpisodesGetDBSerieIDByID,
 			&d.Dbserie.ID,
@@ -208,7 +208,7 @@ func (d *downloadertype) downloadNzb() {
 		d.Serieepisode.ID = d.Nzb.NzbepisodeID
 	}
 	if d.Serieepisode.QualityProfile == "" {
-		database.Scanrows1dyn(
+		database.Scanrowsdyn(
 			false,
 			"select quality_profile from serie_episodes where id = ?",
 			&d.Serieepisode.QualityProfile,
@@ -216,7 +216,7 @@ func (d *downloadertype) downloadNzb() {
 		)
 	}
 	if d.Dbserieepisode.ID == 0 {
-		database.Scanrows1dyn(
+		database.Scanrowsdyn(
 			false,
 			database.QuerySerieEpisodesGetDBSerieEpisodeIDByID,
 			&d.Dbserieepisode.ID,
@@ -251,7 +251,7 @@ func (d *downloadertype) getdownloadtargetfolder() string {
 		if d.Dbmovie.ImdbID != "" {
 			return logger.JoinStrings(d.Nzb.NZB.Title, " (", d.Dbmovie.ImdbID, ")")
 		} else if d.Nzb.NZB.IMDBID != "" {
-			d.Nzb.NZB.IMDBID = logger.AddImdbPrefixP(d.Nzb.NZB.IMDBID)
+			d.Nzb.NZB.IMDBID = logger.AddImdbPrefix(d.Nzb.NZB.IMDBID)
 			if d.Nzb.NZB.Title == "" {
 				return logger.JoinStrings(d.Nzb.Info.Title, "[", d.Nzb.Info.Resolution, logger.StrSpace, d.Nzb.Info.Quality, "] (", d.Nzb.NZB.IMDBID, ")")
 			}
@@ -329,8 +329,12 @@ func (d *downloadertype) notify() {
 			d.Cfgp.Notification[idx].CfgNotification.NotificationType,
 			"pushover",
 		) {
-			err = apiexternal.GetPushoverclient(d.Cfgp.Notification[idx].CfgNotification.Apikey).
-				SendPushoverMessage(messagetext, messageTitle, d.Cfgp.Notification[idx].CfgNotification.Recipient)
+			err = apiexternal.SendPushoverMessage(
+				d.Cfgp.Notification[idx].CfgNotification.Apikey,
+				messagetext,
+				messageTitle,
+				d.Cfgp.Notification[idx].CfgNotification.Recipient,
+			)
 			if err != nil {
 				logger.LogDynamicanyErr("error", "Error sending pushover", err)
 			} else {
@@ -475,7 +479,7 @@ func DownloadMovie(cfgp *config.MediaTypeConfig, nzb *apiexternal.Nzbwithprio) {
 		)
 		return
 	}
-	d.Quality = database.GetMediaQualityConfigP(cfgp, &nzb.NzbmovieID)
+	d.Quality = database.GetMediaQualityConfig(cfgp, &nzb.NzbmovieID)
 	d.downloadNzb()
 }
 
@@ -527,6 +531,6 @@ func DownloadSeriesEpisode(cfgp *config.MediaTypeConfig, nzb *apiexternal.Nzbwit
 		)
 		return
 	}
-	d.Quality = database.GetMediaQualityConfigP(cfgp, &nzb.NzbepisodeID)
+	d.Quality = database.GetMediaQualityConfig(cfgp, &nzb.NzbepisodeID)
 	d.downloadNzb()
 }

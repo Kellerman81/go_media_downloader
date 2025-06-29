@@ -6,26 +6,26 @@ require (
 	github.com/DeanThompson/ginpprof v0.0.0-20201112072838-007b1e56b2e1 //extend webserver with pprof tools
 	github.com/GoAdminGroup/go-admin v1.2.26
 	github.com/GoAdminGroup/themes v0.0.48
-	github.com/alitto/pond/v2 v2.3.4
+	github.com/alitto/pond/v2 v2.4.0 //worker pool
 	github.com/andrewstuart/go-nzb v0.0.0-20151130213409-4af25f1cccf1 //access nzbget
 	github.com/gdm85/go-libdeluge v0.6.0 //access deluge
 	github.com/gin-gonic/gin v1.10.1 //webapi
-	github.com/goccy/go-json v0.10.5
+	github.com/goccy/go-json v0.10.5 //json parser
 	github.com/golang-migrate/migrate/v4 v4.18.3 //initialize db
 	github.com/google/uuid v1.6.0 //scheduler
 	github.com/jmoiron/sqlx v1.4.0 //structscan for db
-	github.com/mattn/go-sqlite3 v2.0.3+incompatible // data and imdb db
-	github.com/mozillazg/go-unidecode v0.2.0
+	github.com/mattn/go-sqlite3 v2.0.3+incompatible // needed for database migrate 
+	github.com/mozillazg/go-unidecode v0.2.0 //unidecode tables
 	github.com/mrobinsn/go-rtorrent v1.8.0
 	github.com/odwrtw/transmission v0.0.0-20221028215408-b11d7d55c759
-	github.com/pelletier/go-toml/v2 v2.2.4
+	github.com/pelletier/go-toml/v2 v2.2.4 //toml config parser
 	github.com/pkg/errors v0.9.1 //used in external apis
 	github.com/recoilme/pudge v1.0.3 //config db
 	github.com/robfig/cron/v3 v3.0.1 //scheduler
-	github.com/rs/zerolog v1.34.0
+	github.com/rs/zerolog v1.34.0 //logging
 	golang.org/x/oauth2 v0.30.0 //used for trakt api
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 //Loop Logs
-	modernc.org/sqlite v1.37.1
+	modernc.org/sqlite v1.38.0 //sqlite db driver
 )
 
 require (
@@ -73,7 +73,7 @@ require (
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	modernc.org/libc v1.65.7 // indirect
+	modernc.org/libc v1.65.10 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
 	xorm.io/builder v0.3.7 // indirect

@@ -180,8 +180,9 @@ func processurl(
 	urlv string,
 	tillid string,
 	results *NzbSlice,
+	idsearched bool,
 ) (bool, string, error) {
-	c := getnewznabclient(ind)
+	c := Getnewznabclient(ind)
 	if ind.OutputAsJSON {
 		if !strings.Contains(urlv, "://") {
 			logger.LogDynamicany1String(
@@ -197,7 +198,7 @@ func processurl(
 			if len(result.Channel.Item) == 0 {
 				return false, "", logger.Errnoresults
 			}
-			return c.processjson1(result, ind, qual, tillid, results)
+			return c.processjson1(result, ind, qual, tillid, results, idsearched)
 		}
 		result2, err := doJSONTypeP[searchResponseJSON2](&c.Client, urlv, nil)
 		if err != nil {
@@ -206,7 +207,7 @@ func processurl(
 		if len(result2.Item) == 0 {
 			return false, "", logger.Errnoresults
 		}
-		return c.processjson2(result2, ind, qual, tillid, results)
+		return c.processjson2(result2, ind, qual, tillid, results, idsearched)
 	}
 	if len(urlv) == 0 {
 		return false, "", logger.ErrNotFound
@@ -227,6 +228,7 @@ func processurl(
 	if apiBaseURL == "" {
 		apiBaseURL = urlv
 	}
+	b.IDSearched = idsearched
 
 	err := ProcessHTTP(&c.Client, urlv, true, func(_ context.Context, r *http.Response) error {
 		d := xml.NewDecoder(r.Body)
@@ -362,6 +364,7 @@ func (c *client) processjson1(
 	qual *config.QualityConfig,
 	tillid string,
 	results *NzbSlice,
+	idsearched bool,
 ) (bool, string, error) {
 	var firstid string
 
@@ -371,6 +374,7 @@ func (c *client) processjson1(
 			continue
 		}
 		var newEntry Nzbwithprio
+		newEntry.IDSearched = idsearched
 		newEntry.NZB.Indexer = ind
 		newEntry.NZB.Quality = qual
 		newEntry.NZB.Title = result.Channel.Item[idx].Title
@@ -416,6 +420,7 @@ func (c *client) processjson2(
 	qual *config.QualityConfig,
 	tillid string,
 	results *NzbSlice,
+	idsearched bool,
 ) (bool, string, error) {
 	var firstid string
 	defer result2.close()
@@ -424,6 +429,7 @@ func (c *client) processjson2(
 			continue
 		}
 		var newEntry Nzbwithprio
+		newEntry.IDSearched = idsearched
 		newEntry.NZB.Indexer = ind
 		newEntry.NZB.Quality = qual
 		newEntry.NZB.Title = result2.Item[idx].Title
@@ -517,8 +523,8 @@ func QueryNewznabMovieImdb(
 		return false, "", logger.ErrNoID
 	}
 
-	b := logger.PlBuffer.Get()
-	defer logger.PlBuffer.Put(b)
+	b := logger.PlAddBuffer.Get()
+	defer logger.PlAddBuffer.Put(b)
 	b.WriteString(bmovieimdb)
 	b.WriteString(imdbid)
 	if cfgind.MaxEntries != 0 {
@@ -531,13 +537,14 @@ func QueryNewznabMovieImdb(
 		buildURLNew(false, indexerid, qual, cfgind, b.Bytes()),
 		"",
 		results,
+		true,
 	)
 }
 
 // getnewznabclient returns a Client for the given IndexersConfig.
 // It checks if a client already exists for the given URL,
 // and returns it if found. Otherwise creates a new client and caches it.
-func getnewznabclient(row *config.IndexersConfig) *client {
+func Getnewznabclient(row *config.IndexersConfig) *client {
 	if !newznabClients.Check(row.URL) {
 		newznabClients.Add(row.URL, newNewznab(true, row), 0, false, 0)
 	}
@@ -560,7 +567,7 @@ func DownloadNZB(
 	}
 
 	return ProcessHTTP(
-		&getnewznabclient(idxcfg).Client,
+		&Getnewznabclient(idxcfg).Client,
 		urlv,
 		true,
 		func(_ context.Context, r *http.Response) error {
@@ -625,6 +632,7 @@ func QueryNewznabTvTvdb(
 		buildURLNew(false, indexerid, qual, cfgind, b.Bytes()),
 		"",
 		results,
+		true,
 	)
 }
 
@@ -681,6 +689,7 @@ func QueryNewznabQuery(
 		buildURLNew(false, indexerid, qual, cfgind, b.Bytes()),
 		"",
 		results,
+		false,
 	)
 }
 
@@ -700,7 +709,14 @@ func QueryNewznabRSS(
 		b.WriteString(bqlimit)
 		b.WriteInt(maxitems)
 	}
-	return processurl(ind, qual, buildURLNew(true, indexerid, qual, ind, b.Bytes()), "", results)
+	return processurl(
+		ind,
+		qual,
+		buildURLNew(true, indexerid, qual, ind, b.Bytes()),
+		"",
+		results,
+		false,
+	)
 }
 
 // QueryNewznabRSSLastCustom queries the Newznab RSS feed for the latest items
@@ -722,8 +738,8 @@ func QueryNewznabRSSLastCustom(
 		ind.MaxEntriesStr = "100"
 	}
 
-	b := logger.PlBuffer.Get()
-	defer logger.PlBuffer.Put(b)
+	b := logger.PlAddBuffer.Get()
+	defer logger.PlAddBuffer.Put(b)
 	if ind.MaxEntries != 0 {
 		b.WriteString(bqlimit)
 		b.WriteString(ind.MaxEntriesStr)
@@ -733,7 +749,7 @@ func QueryNewznabRSSLastCustom(
 	if maxloop == 0 {
 		maxloop = 2
 	}
-	brokeloop, firstid, err := processurl(ind, qual, bld, tillid, results)
+	brokeloop, firstid, err := processurl(ind, qual, bld, tillid, results, false)
 	if err != nil || results == nil || len(results.Arr) == 0 || brokeloop || maxloop == 1 {
 		return firstid, err
 	}
@@ -746,7 +762,7 @@ func QueryNewznabRSSLastCustom(
 		buf.WriteString(bld)
 		buf.WriteString("&offset=")
 		buf.WriteUInt16(ind.MaxEntries * (uint16(count) + 1))
-		brokeloop, _, err = processurl(ind, qual, buf.String(), tillid, results)
+		brokeloop, _, err = processurl(ind, qual, buf.String(), tillid, results, false)
 		buf.Reset()
 		if err != nil || brokeloop || len(results.Arr) == 0 {
 			break
@@ -785,7 +801,7 @@ func newNewznab(debug bool, row *config.IndexersConfig) *client {
 		limiter = slidingwindow.NewLimiter(24*time.Hour, int64(row.LimitercallsDaily))
 	}
 
-	d := &client{
+	d := client{
 		apikey:        row.Apikey,
 		aPIBaseURL:    row.URL,
 		aPIBaseURLStr: row.URL,
@@ -796,12 +812,12 @@ func newNewznab(debug bool, row *config.IndexersConfig) *client {
 			int64(row.Limitercalls),
 		),
 	}
-	d.Client = NewClient(
+	d.Client = newClient(
 		row.URL,
 		row.DisableTLSVerify,
 		row.DisableCompression,
 		&d.Lim,
 		row.LimitercallsDaily != 0,
 		&limiter, row.TimeoutSeconds)
-	return d
+	return &d
 }

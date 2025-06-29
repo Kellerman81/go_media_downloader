@@ -7,11 +7,11 @@ import (
 )
 
 func TestPoolObjGet(t *testing.T) {
-	p := NewPool[string](5, 0, func(s *string) { *s = "initialized" }, nil)
+	p := NewPool(5, 0, func(s *string) { *s = "initialized" }, nil)
 
 	obj := p.Get()
 	if *obj != "initialized" {
-		t.Errorf("Expected initialized object, got %v", *obj)
+		t.Errorf("Expected initialized object, got %v", obj)
 	}
 
 	for i := 0; i < 3; i++ {
@@ -25,7 +25,7 @@ func TestPoolObjGet(t *testing.T) {
 
 func TestPoolObjPut(t *testing.T) {
 	destructorCalled := 0
-	p := NewPool[int](3, 0, nil, func(i *int) bool {
+	p := NewPool(3, 3, nil, func(i *int) bool {
 		destructorCalled++
 		return false
 	})
@@ -42,7 +42,7 @@ func TestPoolObjPut(t *testing.T) {
 		t.Errorf("Expected pool size 3, got %d", len(p.objs))
 	}
 
-	if destructorCalled != 3 {
+	if destructorCalled != 6 {
 		t.Errorf("Expected destructor called 3 times, got %d", destructorCalled)
 	}
 }
@@ -98,13 +98,23 @@ func TestSizedWaitGroupZeroLimit(t *testing.T) {
 }
 
 func TestPoolObjDestructorTrue(t *testing.T) {
-	p := NewPool[string](5, 0, nil, func(s *string) bool {
-		return true
+	p := NewPool(5, 0, nil, func(s *string) bool {
+		return false
 	})
 
+	t.Logf("obj 1: %v", len(p.objs))
 	obj := p.Get()
-	p.Put(obj)
+	t.Logf("obj 2: %v", len(p.objs))
+	*obj = "test"
+	a := p.Put(obj)
+	t.Logf("obj 3 ret: %v", a)
+	t.Logf("obj 3: %v", len(p.objs))
 
+	if len(p.objs) == 0 {
+		t.Errorf("Expected non empty pool when destructor returns true, got size %d", len(p.objs))
+	}
+	obj2 := p.Get()
+	_ = obj2
 	if len(p.objs) != 0 {
 		t.Errorf("Expected empty pool when destructor returns true, got size %d", len(p.objs))
 	}

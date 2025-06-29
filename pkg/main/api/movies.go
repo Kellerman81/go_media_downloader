@@ -68,9 +68,8 @@ func AddMoviesRoutes(routermovies *gin.RouterGroup) {
 func apiMovieList(ctx *gin.Context) {
 	var query database.Querywithargs
 
-	rows := database.GetdatarowN(false, "select count() from dbmovies")
-	limit := 0
-	page := 0
+	rows := database.Getdatarow[uint](false, "select count() from dbmovies")
+	var limit, page int
 	if queryParam, ok := ctx.GetQuery("limit"); ok {
 		if queryParam != "" {
 			limit, _ = strconv.Atoi(queryParam)
@@ -107,9 +106,8 @@ func apiMovieList(ctx *gin.Context) {
 // @Router       /api/movies/unmatched [get].
 func apiMovieListUnmatched(ctx *gin.Context) {
 	var query database.Querywithargs
-	rows := database.GetdatarowN(false, "select count() from movie_file_unmatcheds")
-	limit := 0
-	page := 0
+	rows := database.Getdatarow[uint](false, "select count() from movie_file_unmatcheds")
+	var limit, page int
 	if queryParam, ok := ctx.GetQuery("limit"); ok {
 		if queryParam != "" {
 			limit, _ = strconv.Atoi(queryParam)
@@ -170,13 +168,12 @@ func apiMovieListGet(ctx *gin.Context) {
 	query.InnerJoin = "dbmovies on movies.dbmovie_id=dbmovies.id"
 	query.Where = "movies.listname = ? COLLATE NOCASE"
 
-	rows := database.GetdatarowN(
+	rows := database.Getdatarow[uint](
 		false,
 		"select count() from movies where listname = ? COLLATE NOCASE",
 		&list,
 	)
-	limit := 0
-	page := 0
+	var limit, page int
 	if queryParam, ok := ctx.GetQuery("limit"); ok {
 		if queryParam != "" {
 			limit, _ = strconv.Atoi(queryParam)
@@ -337,8 +334,7 @@ func apimoviesAllJobs(c *gin.Context) {
 				worker.Dispatch(c.Param(strJobLower)+"_"+cfgpstr, func(key uint32) {
 					utils.SingleJobs(c.Param(strJobLower), cfgpstr, "", true, key)
 				}, "Data")
-			case logger.StrRss,
-				logger.StrSearchMissingFull,
+			case logger.StrSearchMissingFull,
 				logger.StrSearchMissingInc,
 				logger.StrSearchUpgradeFull,
 				logger.StrSearchUpgradeInc,
@@ -349,6 +345,10 @@ func apimoviesAllJobs(c *gin.Context) {
 				worker.Dispatch(c.Param(strJobLower)+"_"+cfgpstr, func(key uint32) {
 					utils.SingleJobs(c.Param(strJobLower), cfgpstr, "", true, key)
 				}, "Search")
+			case logger.StrRss:
+				worker.Dispatch(c.Param(strJobLower)+"_"+cfgpstr, func(key uint32) {
+					utils.SingleJobs(c.Param(strJobLower), cfgpstr, "", true, key)
+				}, "RSS")
 			case logger.StrFeeds,
 				logger.StrCheckMissing,
 				logger.StrCheckMissingFlag,
@@ -438,8 +438,7 @@ func apimoviesJobs(c *gin.Context) {
 			worker.Dispatch(c.Param(strJobLower)+"_movies_"+c.Param("name"), func(key uint32) {
 				utils.SingleJobs(c.Param(strJobLower), cfgpstr, "", true, key)
 			}, "Data")
-		case logger.StrRss,
-			logger.StrSearchMissingFull,
+		case logger.StrSearchMissingFull,
 			logger.StrSearchMissingInc,
 			logger.StrSearchUpgradeFull,
 			logger.StrSearchUpgradeInc,
@@ -450,6 +449,10 @@ func apimoviesJobs(c *gin.Context) {
 			worker.Dispatch(c.Param(strJobLower)+"_movies_"+c.Param("name"), func(key uint32) {
 				utils.SingleJobs(c.Param(strJobLower), cfgpstr, "", true, key)
 			}, "Search")
+		case logger.StrRss:
+			worker.Dispatch(c.Param(strJobLower)+"_movies_"+c.Param("name"), func(key uint32) {
+				utils.SingleJobs(c.Param(strJobLower), cfgpstr, "", true, key)
+			}, "RSS")
 		case logger.StrFeeds,
 			logger.StrCheckMissing,
 			logger.StrCheckMissingFlag,
@@ -561,7 +564,7 @@ func updateDBMovie(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	counter := database.GetdatarowN(
+	counter := database.Getdatarow[uint](
 		false,
 		"select count() from dbmovies where id != 0 and id = ?",
 		&dbmovie.ID,
@@ -665,7 +668,7 @@ func updateMovie(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	counter := database.GetdatarowN(
+	counter := database.Getdatarow[uint](
 		false,
 		"select count() from dbmovies where id != 0 and id = ?",
 		&movie.ID,
@@ -757,8 +760,7 @@ func apimoviesSearch(c *gin.Context) {
 								)
 							}
 						} else {
-							if searchvar == nil || len(searchvar.Accepted) == 0 {
-							} else {
+							if len(searchvar.Accepted) >= 1 {
 								searchvar.Download()
 							}
 						}

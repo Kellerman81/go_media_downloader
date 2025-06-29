@@ -3,6 +3,7 @@ package database
 import (
 	"bytes"
 	"database/sql"
+	"strconv"
 	"strings"
 	"time"
 
@@ -143,7 +144,7 @@ func (movie *Dbmovie) MovieGetImdbMetadata(overwrite bool) {
 	if movie.ImdbID == "" {
 		return
 	}
-	movie.ImdbID = logger.AddImdbPrefixP(movie.ImdbID)
+	movie.ImdbID = logger.AddImdbPrefix(movie.ImdbID)
 	movie.GetImdbTitle(overwrite)
 }
 
@@ -226,12 +227,12 @@ func (movie *Dbmovie) MovieFindDBIDByImdbParser() {
 		movie.ID = 0
 		return
 	}
-	movie.ImdbID = logger.AddImdbPrefixP(movie.ImdbID)
+	movie.ImdbID = logger.AddImdbPrefix(movie.ImdbID)
 	if config.SettingsGeneral.UseMediaCache {
 		movie.ID = CacheThreeStringIntIndexFunc(logger.CacheDBMovie, &movie.ImdbID)
 		return
 	}
-	Scanrows1dyn(false, "select id from dbmovies where imdb_id = ?", &movie.ID, &movie.ImdbID)
+	Scanrowsdyn(false, "select id from dbmovies where imdb_id = ?", &movie.ID, &movie.ImdbID)
 }
 
 // GetImdbRating queries the imdb_ratings table to get the average rating and number of votes for the given IMDb ID.
@@ -277,76 +278,77 @@ func ChecknzbtitleB(
 	allowpm1 bool,
 	yearu uint16,
 ) bool {
-	if movietitle == "" {
+	if movietitle == "" || nzbtitle == "" {
 		return false
 	}
-	if movietitle == nzbtitle || strings.EqualFold(movietitle, nzbtitle) ||
-		logger.ContainsI(nzbtitle, movietitle) {
-		if yearu == 0 {
-			return true
-		}
-		if strings.Contains(nzbtitle, logger.IntToString(yearu)) {
-			return true
-		}
-		if allowpm1 {
-			if strings.Contains(nzbtitle, logger.IntToString(yearu+1)) {
-				return true
-			}
-			if strings.Contains(nzbtitle, logger.IntToString(yearu-1)) {
-				return true
-			}
-		}
+
+	// Quick exact match first
+	if strings.EqualFold(movietitle, nzbtitle) {
+		return yearu == 0 || checkYearInTitle(nzbtitle, yearu, allowpm1)
 	}
 
+	// Check if movie title is contained in nzb title
+	if strings.Contains(strings.ToLower(nzbtitle), strings.ToLower(movietitle)) {
+		return yearu == 0 || checkYearInTitle(nzbtitle, yearu, allowpm1)
+	}
+
+	// Slug comparison (more expensive, do last)
+	return compareSluggedTitles(movietitle, movietitlesluga, nzbtitle, yearu, allowpm1)
+}
+
+func checkYearInTitle(title string, year uint16, allowpm1 bool) bool {
+	yearStr := logger.IntToString(year)
+	if strings.Contains(title, yearStr) {
+		return true
+	}
+
+	if allowpm1 {
+		if strings.Contains(title, logger.IntToString(year+1)) ||
+			strings.Contains(title, logger.IntToString(year-1)) {
+			return true
+		}
+	}
+	return false
+}
+
+func compareSluggedTitles(
+	movietitle, movietitlesluga, nzbtitle string,
+	yearu uint16,
+	allowpm1 bool,
+) bool {
 	var movietitleslug []byte
 	if movietitlesluga != "" {
-		ret := logger.PlBuffer.Get()
-		defer logger.PlBuffer.Put(ret)
-		ret.WriteString(movietitlesluga)
-		movietitleslug = ret.Bytes()
+		movietitleslug = []byte(movietitlesluga)
 	} else {
 		movietitleslug = logger.StringToSlugBytes(movietitle)
 	}
+
 	slugged := logger.StringToSlugBytes(nzbtitle)
 	if len(slugged) == 0 {
 		return false
 	}
-	if bytes.ContainsRune(movietitleslug, '-') {
-		movietitleslug = bytes.ReplaceAll(movietitleslug, arrdashbyte, nil)
-	}
-	if bytes.ContainsRune(slugged, '-') {
-		slugged = bytes.ReplaceAll(slugged, arrdashbyte, nil)
-	}
-	if bytes.Equal(movietitleslug, slugged) || bytes.Contains(slugged, movietitleslug) {
-		if yearu == 0 {
-			return true
-		}
-		bld := logger.PlAddBuffer.Get()
-		defer logger.PlAddBuffer.Put(bld)
-		if bufferCheckYear(bld, slugged, yearu) {
-			return true
-		}
 
-		if allowpm1 {
-			if bufferCheckYear(bld, slugged, yearu+1) {
-				return true
-			}
-			if bufferCheckYear(bld, slugged, yearu-1) {
-				return true
-			}
-		}
+	// Remove dashes for comparison
+	movietitleslug = bytes.ReplaceAll(movietitleslug, []byte{'-'}, nil)
+	slugged = bytes.ReplaceAll(slugged, []byte{'-'}, nil)
+
+	if bytes.Equal(movietitleslug, slugged) || bytes.Contains(slugged, movietitleslug) {
+		return yearu == 0 || checkYearInSluggedTitle(slugged, yearu, allowpm1)
 	}
 
 	return false
 }
 
-var arrdashbyte = []byte{'-'}
+func checkYearInSluggedTitle(slugged []byte, yearu uint16, allowpm1 bool) bool {
+	if bytes.Contains(slugged, []byte(strconv.Itoa(int(yearu)))) {
+		return true
+	}
 
-// bufferCheckYear checks if the given slugged byte slice contains the year represented by the yearu parameter.
-// It resets the provided AddBuffer, writes the yearu value to it, and then checks if the slugged byte slice
-// contains the bytes written to the buffer.
-func bufferCheckYear(bld *logger.AddBuffer, slugged []byte, yearu uint16) bool {
-	bld.Reset()
-	bld.WriteUInt16(yearu)
-	return bytes.Contains(slugged, bld.Bytes())
+	if allowpm1 {
+		if bytes.Contains(slugged, []byte(strconv.Itoa(int(yearu+1)))) ||
+			bytes.Contains(slugged, []byte(strconv.Itoa(int(yearu-1)))) {
+			return true
+		}
+	}
+	return false
 }

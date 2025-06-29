@@ -26,6 +26,7 @@ type Nzbwithprio struct {
 	MinimumPriority     int                                // The minimum priority level
 	DontSearch          bool                               // Whether to avoid searching for this
 	DontUpgrade         bool                               // Whether to avoid upgrading this
+	IDSearched          bool                               // Whether this NZB has been searched using the IMDB ID/THETVDB ID
 }
 
 // NZB represents an NZB found on the index.
@@ -126,7 +127,7 @@ func (n *Nzb) saveAttributes(name, value string) {
 	case "tvdbid":
 		n.TVDBID = logger.StringToInt(value)
 	case logger.StrImdb:
-		n.IMDBID = logger.AddImdbPrefixP(value)
+		n.IMDBID = logger.AddImdbPrefix(value)
 	case "season":
 		n.Season = value
 	case "episode":

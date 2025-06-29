@@ -62,7 +62,7 @@ func jobImportSeriesParseV2(
 	extfile := filepath.Ext(pathv)
 	var count uint
 	for idx := range m.Episodes {
-		database.Scanrows2dyn(
+		database.Scanrowsdyn(
 			false,
 			"select count() from serie_episode_files where location = ? and serie_episode_id = ?",
 			&count,
@@ -94,21 +94,21 @@ func jobImportSeriesParseV2(
 			&m.Width,
 		)
 
-		database.Exec1("update serie_episodes set missing = 0 where id = ?", &m.Episodes[idx].Num1)
-		database.Exec2(
+		database.ExecN("update serie_episodes set missing = 0 where id = ?", &m.Episodes[idx].Num1)
+		database.ExecN(
 			"update serie_episodes set quality_reached = ? where id = ?",
 			&reached,
 			&m.Episodes[idx].Num1,
 		)
 		if list.Name != "" {
-			database.Exec2(
+			database.ExecN(
 				"update serie_episodes set quality_profile = ? where id = ?",
 				&list.Name,
 				&m.Episodes[idx].Num1,
 			)
 		}
 
-		database.Exec1("delete from serie_file_unmatcheds where filepath = ?", &m.File)
+		database.ExecN("delete from serie_file_unmatcheds where filepath = ?", &m.File)
 	}
 
 	if config.SettingsGeneral.UseMediaCache {
@@ -116,7 +116,7 @@ func jobImportSeriesParseV2(
 		database.AppendCache(logger.CacheFilesSeries, pathv)
 	}
 	if m.SerieID != 0 {
-		if database.Getdatarow1[string](
+		if database.Getdatarow[string](
 			false,
 			"select rootpath from series where id = ?",
 			&m.SerieID,
@@ -135,7 +135,7 @@ func jobImportSeriesParseV2(
 func RefreshSerie(cfgp *config.MediaTypeConfig, id *string) {
 	refreshseries(
 		cfgp,
-		database.Getrows1[database.DbstaticTwoStringOneRInt](
+		database.GetrowsN[database.DbstaticTwoStringOneRInt](
 			false,
 			1,
 			"select seriename, (Select listname from series where dbserie_id=dbseries.id limit 1), thetvdb_id from dbseries where id = ?",
@@ -292,7 +292,7 @@ func importnewseriessingle(
 		return err
 	}
 	defer plfeeds.Put(feed)
-	if feed == nil || len(feed.Series) == 0 {
+	if len(feed.Series) == 0 {
 		return nil
 	}
 
@@ -339,7 +339,7 @@ func checkreachedepisodesflag(listcfg *config.MediaListsConfig) {
 			reached = 1
 		}
 		if arr[idx].QualityReached && reached == 0 {
-			database.Exec1(
+			database.ExecN(
 				"update Serie_episodes set quality_reached = 0 where id = ?",
 				&arr[idx].ID,
 			)
@@ -347,7 +347,7 @@ func checkreachedepisodesflag(listcfg *config.MediaListsConfig) {
 		}
 
 		if !arr[idx].QualityReached && reached == 1 {
-			database.Exec1(
+			database.ExecN(
 				"update Serie_episodes set quality_reached = 1 where id = ?",
 				&arr[idx].ID,
 			)

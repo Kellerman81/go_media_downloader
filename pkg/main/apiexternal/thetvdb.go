@@ -91,7 +91,7 @@ func NewTvdbClient(seconds uint8, calls int, disabletls bool, timeoutseconds uin
 	}
 	tvdbAPI = tvdbClient{
 		Lim: slidingwindow.NewLimiter(time.Duration(seconds)*time.Second, int64(calls)),
-		Client: NewClient(
+		Client: newClient(
 			"tvdb",
 			disabletls,
 			true,
@@ -151,7 +151,7 @@ func UpdateTvdbSeriesEpisodes(id int, language string, dbid *uint) {
 		}
 		return
 	}
-	tbl := database.Getrows1size[database.DbstaticTwoString](
+	tbl := database.Getrowssize[database.DbstaticTwoString](
 		false,
 		database.QueryDbserieEpisodesCountByDBID,
 		database.QueryDbserieEpisodesGetSeasonEpisodeByDBID,

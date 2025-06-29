@@ -70,7 +70,13 @@ func TestTimeAfter(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result := TimeAfter(tt.time1, tt.time2)
 			if result != tt.expected {
-				t.Errorf("TimeAfter(%v, %v) = %v, expected %v", tt.time1, tt.time2, result, tt.expected)
+				t.Errorf(
+					"TimeAfter(%v, %v) = %v, expected %v",
+					tt.time1,
+					tt.time2,
+					result,
+					tt.expected,
+				)
 			}
 		})
 	}
@@ -278,7 +284,13 @@ func TestAddBuffer_WriteStringMap(t *testing.T) {
 			b.WriteStringMap(tt.useseries, tt.typestr)
 			result := b.String()
 			if result != GetStringsMap(tt.useseries, tt.typestr) {
-				t.Errorf("WriteStringMap(%v, %s) wrote %s; want %s", tt.useseries, tt.typestr, result, tt.expected)
+				t.Errorf(
+					"WriteStringMap(%v, %s) wrote %s; want %s",
+					tt.useseries,
+					tt.typestr,
+					result,
+					tt.expected,
+				)
 			}
 			PlAddBuffer.Put(b)
 		})
@@ -458,7 +470,7 @@ func TestAddImdbPrefixP(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := AddImdbPrefixP(tt.input)
+			result := AddImdbPrefix(tt.input)
 			if result != tt.expected {
 				t.Errorf("AddImdbPrefixP(%q) = %q, expected %q", tt.input, result, tt.expected)
 			}
@@ -489,7 +501,13 @@ func TestPath(t *testing.T) {
 			input := tt.input
 			Path(&input, tt.allowslash)
 			if input != tt.expected {
-				t.Errorf("Path(%q, %v) = %q, expected %q", tt.input, tt.allowslash, input, tt.expected)
+				t.Errorf(
+					"Path(%q, %v) = %q, expected %q",
+					tt.input,
+					tt.allowslash,
+					input,
+					tt.expected,
+				)
 			}
 		})
 	}
@@ -542,7 +560,13 @@ func TestTrimLeft(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result := TrimLeft(tt.input, tt.cutset...)
 			if result != tt.expected {
-				t.Errorf("TrimLeft(%q, %v) = %q, expected %q", tt.input, tt.cutset, result, tt.expected)
+				t.Errorf(
+					"TrimLeft(%q, %v) = %q, expected %q",
+					tt.input,
+					tt.cutset,
+					result,
+					tt.expected,
+				)
 			}
 		})
 	}
@@ -569,7 +593,13 @@ func TestTrimRight(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result := TrimRight(tt.input, tt.cutset...)
 			if result != tt.expected {
-				t.Errorf("TrimRight(%q, %v) = %q, expected %q", tt.input, tt.cutset, result, tt.expected)
+				t.Errorf(
+					"TrimRight(%q, %v) = %q, expected %q",
+					tt.input,
+					tt.cutset,
+					result,
+					tt.expected,
+				)
 			}
 		})
 	}
@@ -683,7 +713,13 @@ func TestHasPrefixI(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result := HasPrefixI(tt.s, tt.prefix)
 			if result != tt.expected {
-				t.Errorf("HasPrefixI(%q, %q) = %v, expected %v", tt.s, tt.prefix, result, tt.expected)
+				t.Errorf(
+					"HasPrefixI(%q, %q) = %v, expected %v",
+					tt.s,
+					tt.prefix,
+					result,
+					tt.expected,
+				)
 			}
 		})
 	}
@@ -718,7 +754,13 @@ func TestHasSuffixI(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result := HasSuffixI(tt.s, tt.suffix)
 			if result != tt.expected {
-				t.Errorf("HasSuffixI(%q, %q) = %v, expected %v", tt.s, tt.suffix, result, tt.expected)
+				t.Errorf(
+					"HasSuffixI(%q, %q) = %v, expected %v",
+					tt.s,
+					tt.suffix,
+					result,
+					tt.expected,
+				)
 			}
 		})
 	}
@@ -794,7 +836,7 @@ func TestStringToDuration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := StringToDuration(tt.input)
+			result := time.Duration(StringToDuration(tt.input))
 			if result != tt.expected {
 				t.Errorf("StringToDuration(%q) = %v, expected %v", tt.input, result, tt.expected)
 			}
@@ -936,7 +978,13 @@ func TestSlicesContainsI(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result := SlicesContainsI(tt.slice, tt.value)
 			if result != tt.expected {
-				t.Errorf("SlicesContainsI(%v, %q) = %v, expected %v", tt.slice, tt.value, result, tt.expected)
+				t.Errorf(
+					"SlicesContainsI(%v, %q) = %v, expected %v",
+					tt.slice,
+					tt.value,
+					result,
+					tt.expected,
+				)
 			}
 		})
 	}
@@ -997,7 +1045,13 @@ func TestSlicesContainsPart2I(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result := SlicesContainsPart2I(tt.slice, tt.value)
 			if result != tt.expected {
-				t.Errorf("SlicesContainsPart2I(%v, %q) = %v, expected %v", tt.slice, tt.value, result, tt.expected)
+				t.Errorf(
+					"SlicesContainsPart2I(%v, %q) = %v, expected %v",
+					tt.slice,
+					tt.value,
+					result,
+					tt.expected,
+				)
 			}
 		})
 	}
@@ -1071,7 +1125,13 @@ func TestStringRemoveAllRunesP(t *testing.T) {
 			input := tt.input
 			StringRemoveAllRunesP(&input, tt.runes...)
 			if input != tt.expected {
-				t.Errorf("StringRemoveAllRunesP(%q, %v) = %q, expected %q", tt.input, tt.runes, input, tt.expected)
+				t.Errorf(
+					"StringRemoveAllRunesP(%q, %v) = %q, expected %q",
+					tt.input,
+					tt.runes,
+					input,
+					tt.expected,
+				)
 			}
 		})
 	}
@@ -1133,7 +1193,14 @@ func TestStringReplaceWith(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result := StringReplaceWith(tt.input, tt.r, tt.t)
 			if result != tt.expected {
-				t.Errorf("StringReplaceWith(%q, %q, %q) = %q, expected %q", tt.input, tt.r, tt.t, result, tt.expected)
+				t.Errorf(
+					"StringReplaceWith(%q, %q, %q) = %q, expected %q",
+					tt.input,
+					tt.r,
+					tt.t,
+					result,
+					tt.expected,
+				)
 			}
 		})
 	}
@@ -1189,7 +1256,14 @@ func TestStringReplaceWithP(t *testing.T) {
 			input := tt.input
 			StringReplaceWithP(&input, tt.r, tt.t)
 			if input != tt.expected {
-				t.Errorf("StringReplaceWithP(%q, %q, %q) = %q, expected %q", tt.input, tt.r, tt.t, input, tt.expected)
+				t.Errorf(
+					"StringReplaceWithP(%q, %q, %q) = %q, expected %q",
+					tt.input,
+					tt.r,
+					tt.t,
+					input,
+					tt.expected,
+				)
 			}
 		})
 	}
@@ -1265,7 +1339,14 @@ func TestStringReplaceWithStr(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result := StringReplaceWithStr(tt.s, tt.r, tt.t)
 			if result != tt.expected {
-				t.Errorf("StringReplaceWithStr(%q, %q, %q) = %q, expected %q", tt.s, tt.r, tt.t, result, tt.expected)
+				t.Errorf(
+					"StringReplaceWithStr(%q, %q, %q) = %q, expected %q",
+					tt.s,
+					tt.r,
+					tt.t,
+					result,
+					tt.expected,
+				)
 			}
 		})
 	}

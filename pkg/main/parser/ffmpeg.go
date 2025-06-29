@@ -133,9 +133,12 @@ func getFFProbeFilename() string {
 func buildFFProbeCmd(file string) *exec.Cmd {
 	return exec.Command(
 		getFFProbeFilename(),
-		"-loglevel", "fatal",
-		"-print_format", "json",
-		"-show_entries", "format=duration : stream=codec_name,codec_tag_string,codec_type,height,width : stream_tags=Language : error",
+		"-loglevel",
+		"fatal",
+		"-print_format",
+		"json",
+		"-show_entries",
+		"format=duration : stream=codec_name,codec_tag_string,codec_type,height,width : stream_tags=Language : error",
 		file,
 	)
 }
@@ -182,11 +185,11 @@ func ExecCmdJSON[T mediaInfoJSON | ffProbeJSON](
 		return logger.ErrNotFound
 	}
 
-	outputBuf := logger.PlBuffer.Get()
-	stdErr := logger.PlBuffer.Get()
+	outputBuf := logger.PlAddBuffer.Get()
+	stdErr := logger.PlAddBuffer.Get()
 	defer func() {
-		logger.PlBuffer.Put(outputBuf)
-		logger.PlBuffer.Put(stdErr)
+		logger.PlAddBuffer.Put(outputBuf)
+		logger.PlAddBuffer.Put(stdErr)
 	}()
 
 	cmd.Stdout = outputBuf
@@ -223,11 +226,11 @@ func ExecCmdString[t []byte | mediaInfoJSON | ffProbeJSON](file, typ string) (st
 		return "", logger.ErrNotFound
 	}
 
-	outputBuf := logger.PlBuffer.Get()
-	stdErr := logger.PlBuffer.Get()
+	outputBuf := logger.PlAddBuffer.Get()
+	stdErr := logger.PlAddBuffer.Get()
 	defer func() {
-		logger.PlBuffer.Put(outputBuf)
-		logger.PlBuffer.Put(stdErr)
+		logger.PlAddBuffer.Put(outputBuf)
+		logger.PlAddBuffer.Put(stdErr)
 	}()
 
 	cmd.Stdout = outputBuf

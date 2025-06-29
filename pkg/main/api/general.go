@@ -109,16 +109,18 @@ func apiDebugStats(ctx *gin.Context) {
 		"NumCPU":       runtime.NumCPU(),
 		"NumGoroutine": runtime.NumGoroutine(),
 		"GOARCH":       runtime.GOARCH,
+		"WorkerStats":  worker.GetStats(),
 	})
 }
 
 type Statsresults struct {
-	GCStats      string `json:"GC Stats"`
-	MemStats     string `json:"Mem Stats"`
-	GOOS         string `json:"GOOS"`
-	GOARCH       string `json:"GOARCH"`
-	NumCPU       int    `json:"NumCPU"`
-	NumGoroutine int    `json:"NumGoroutine"`
+	GCStats      string       `json:"GC Stats"`
+	MemStats     string       `json:"Mem Stats"`
+	GOOS         string       `json:"GOOS"`
+	GOARCH       string       `json:"GOARCH"`
+	NumCPU       int          `json:"NumCPU"`
+	NumGoroutine int          `json:"NumGoroutine"`
+	WorkerStats  worker.Stats `json:"WorkerStats"`
 }
 
 // @Summary      Queue
@@ -144,10 +146,9 @@ func apiQueueList(ctx *gin.Context) {
 // @Router       /api/queue/history [get].
 func apiQueueListStarted(ctx *gin.Context) {
 	var query database.Querywithargs
-	limit := 0
+	var limit, page int
 	query.OrderBy = "ID desc"
 	query.Limit = 100
-	page := 0
 	if queryParam, ok := ctx.GetQuery("limit"); ok {
 		if queryParam != "" {
 			limit, _ = strconv.Atoi(queryParam)
@@ -410,6 +411,8 @@ func apiDBBackup(ctx *gin.Context) {
 			config.SettingsGeneral.WorkerSearch,
 			config.SettingsGeneral.WorkerFiles,
 			config.SettingsGeneral.WorkerMetadata,
+			config.SettingsGeneral.WorkerRSS,
+			config.SettingsGeneral.WorkerIndexer,
 		)
 		worker.StartCronWorker()
 	}
@@ -517,7 +520,7 @@ func apiGetQualities(ctx *gin.Context) {
 		gin.H{
 			"data": database.StructscanT[database.Qualities](
 				false,
-				database.GetdatarowN(false, "select count() from qualities"),
+				database.Getdatarow[uint](false, "select count() from qualities"),
 				"select * from qualities",
 			),
 		},
@@ -540,7 +543,7 @@ func apiQualityDelete(ctx *gin.Context) {
 		gin.H{
 			"data": database.StructscanT[database.Qualities](
 				false,
-				database.GetdatarowN(false, "select count() from qualities"),
+				database.Getdatarow[uint](false, "select count() from qualities"),
 				"select * from qualities",
 			),
 		},
@@ -562,7 +565,7 @@ func apiQualityUpdate(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	counter := database.GetdatarowN(
+	counter := database.Getdatarow[uint](
 		false,
 		"select count() from qualities where id != 0 and id = ?",
 		&quality.ID,
@@ -589,7 +592,7 @@ func apiQualityUpdate(ctx *gin.Context) {
 		gin.H{
 			"data": database.StructscanT[database.Qualities](
 				false,
-				database.GetdatarowN(false, "select count() from qualities"),
+				database.Getdatarow[uint](false, "select count() from qualities"),
 				"select * from qualities",
 			),
 		},
@@ -610,7 +613,7 @@ func apiListQualityPriorities(ctx *gin.Context) {
 		ctx.JSON(http.StatusNotFound, "quality not found")
 		return
 	}
-	returnprios := make([]parser.Prioarr, 1000)
+	returnprios := make([]parser.Prioarr, 0, 1000)
 	for _, prio := range parser.Getallprios() {
 		if prio.QualityGroup == ctx.Param("name") {
 			returnprios = append(returnprios, prio)
@@ -905,7 +908,7 @@ type apiNameInput struct {
 // @Tags         general
 // @Param        config  body      apiNameInput  true  "Config"
 // @Param        apikey query     string    true  "apikey"
-// @Success      200     {object}  JsonNaming
+// @Success      200     {object}  JSONNaming
 // @Failure      400     {object}  Jsonerror
 // @Failure      401     {object}  Jsonerror
 // @Router       /api/naming [post].
