@@ -68,13 +68,13 @@ jobs:
         filename: 'gomedia-windows-x64.zip'
         exclusions: '*.git* /.github/* /pkg/* Dockerfile go.* *.zip *.go go_media_downloader-* init_imdb-*'
     
-    - name: Build and push windows/amd64
-      uses: docker/build-push-action@v6
-      with:
-        platforms: windows/amd64
-        load: true
-        file: './Dockerfile-Windows'
-        tags: user/app:latest,user/app:${{ steps.version.outputs.version }}
+    #- name: Build and push windows/amd64
+    #  uses: docker/build-push-action@v6
+    #  with:
+    #    platforms: windows/amd64
+    #    load: true
+    #    file: './Dockerfile-Windows'
+    #    tags: user/app:latest,user/app:${{ steps.version.outputs.version }}
     
     - name: Remove Win binary
       run: rm init_imdb.exe

@@ -1,16 +1,16 @@
 FROM golang:latest
 LABEL maintainer "Kellerman81 <Kellerman81@gmail.com>"
-RUN mkdir /app
-RUN mkdir /app/config
-RUN mkdir /app/databases
-RUN mkdir /app/logs
-RUN mkdir /app/backup
-RUN mkdir /app/temp
-WORKDIR /app
+RUN mkdir C:\app
+RUN mkdir C:\app/config
+RUN mkdir C:\app/databases
+RUN mkdir C:\app/logs
+RUN mkdir C:\app/backup
+RUN mkdir C:\app/temp
+WORKDIR C:\app
 USER 0:0
-VOLUME /app/databases
-VOLUME /app/config
-VOLUME /app/logs
+VOLUME C:\app/databases
+VOLUME C:\app/config
+VOLUME C:\app/logs
 COPY ./config/ /app/config/
 COPY ./databases/ /app/databases/
 COPY ./docs/ /app/docs/
