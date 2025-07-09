@@ -73,6 +73,7 @@ jobs:
       with:
         platforms: windows/amd64
         load: true
+        file: './Dockerfile-Windows'
         tags: user/app:latest,user/app:${{ steps.version.outputs.version }}
     
     - name: Remove Win binary

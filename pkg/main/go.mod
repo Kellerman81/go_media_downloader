@@ -8,13 +8,14 @@ require (
 	github.com/GoAdminGroup/themes v0.0.48
 	github.com/alitto/pond/v2 v2.4.0 //worker pool
 	github.com/andrewstuart/go-nzb v0.0.0-20151130213409-4af25f1cccf1 //access nzbget
+	github.com/fsnotify/fsnotify v1.9.0 //file watcher
 	github.com/gdm85/go-libdeluge v0.6.0 //access deluge
 	github.com/gin-gonic/gin v1.10.1 //webapi
 	github.com/goccy/go-json v0.10.5 //json parser
 	github.com/golang-migrate/migrate/v4 v4.18.3 //initialize db
 	github.com/google/uuid v1.6.0 //scheduler
 	github.com/jmoiron/sqlx v1.4.0 //structscan for db
-	github.com/mattn/go-sqlite3 v2.0.3+incompatible // needed for database migrate 
+	github.com/mattn/go-sqlite3 v2.0.3+incompatible // needed for database migrate
 	github.com/mozillazg/go-unidecode v0.2.0 //unidecode tables
 	github.com/mrobinsn/go-rtorrent v1.8.0
 	github.com/odwrtw/transmission v0.0.0-20221028215408-b11d7d55c759
