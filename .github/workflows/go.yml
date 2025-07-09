@@ -74,7 +74,7 @@ jobs:
     #    platforms: windows/amd64
     #    load: true
     #    file: './Dockerfile-Windows'
-    #    tags: user/app:latest,user/app:${{ steps.version.outputs.version }}
+    #    tags: kellerman81/go_media_downloader:latest,kellerman81/go_media_downloader:${{ steps.version.outputs.version }}
     
     - name: Remove Win binary
       run: rm init_imdb.exe
@@ -100,7 +100,7 @@ jobs:
       with:
         platforms: linux/amd64
         push: true
-        tags: user/app:latest,user/app:${{ steps.version.outputs.version }}
+        tags: kellerman81/go_media_downloader:latest,kellerman81/go_media_downloader:${{ steps.version.outputs.version }}
 
     - name: Remove Linux binary
       run: rm init_imdb
@@ -126,7 +126,7 @@ jobs:
       with:
         platforms: linux/arm64
         push: true
-        tags: user/app:latest,user/app:${{ steps.version.outputs.version }}
+        tags: kellerman81/go_media_downloader:latest,kellerman81/go_media_downloader:${{ steps.version.outputs.version }}
 
     - name: Development Release
       if: ${{ github.event_name == 'push' && !startsWith(steps.version.outputs.version, 'v') }}
