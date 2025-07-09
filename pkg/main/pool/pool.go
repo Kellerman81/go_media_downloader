@@ -24,6 +24,9 @@ func (p *Poolobj[t]) Get() *t {
 	return p.NewObj()
 }
 
+// NewObj creates a new object of type T, optionally initializing it using the pool's constructor function.
+// If a constructor is defined, it is called with a pointer to the newly created object.
+// Returns a pointer to the newly created object.
 func (p *Poolobj[t]) NewObj() *t {
 	var bo t
 	if p.constructor != nil {

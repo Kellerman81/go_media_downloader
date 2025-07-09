@@ -266,7 +266,7 @@ func importnewmoviessingle(
 				) {
 					continue
 				}
-			} else if database.Scanrowsdyn(false, database.QueryCountMoviesByDBIDList, &getid, movieid, &list.Name); getid >= 1 {
+			} else if database.Scanrowsdyn(false, database.QueryCountMoviesByDBIDList, &getid, &movieid, &list.Name); getid >= 1 {
 				continue
 			}
 

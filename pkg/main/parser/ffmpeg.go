@@ -130,6 +130,9 @@ func getFFProbeFilename() string {
 	return ffprobepath
 }
 
+// buildFFProbeCmd creates an *exec.Cmd for running ffprobe with specific JSON output options on the specified file.
+// It sets the log level to fatal, output format to JSON, and selects specific entries to show including
+// format duration, stream details, and stream language tags.
 func buildFFProbeCmd(file string) *exec.Cmd {
 	return exec.Command(
 		getFFProbeFilename(),
@@ -143,6 +146,9 @@ func buildFFProbeCmd(file string) *exec.Cmd {
 	)
 }
 
+// buildMediaInfoCmd creates an *exec.Cmd for running mediainfo with JSON output on the specified file.
+// It uses getmediainfoFilename() to determine the path to the mediainfo executable
+// and adds the "--Output=JSON" flag to generate JSON-formatted output.
 func buildMediaInfoCmd(file string) *exec.Cmd {
 	return exec.Command(getmediainfoFilename(), "--Output=JSON", file)
 }

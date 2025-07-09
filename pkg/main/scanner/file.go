@@ -57,6 +57,11 @@ func MoveFile(
 	return newpath, nil
 }
 
+// checkExtensionPermissions validates file extension permissions based on configuration and move options.
+// It determines whether a file can be processed and if renaming is allowed.
+// Returns two boolean values:
+//   - First indicates if the file is allowed to be processed
+//   - Second indicates if renaming is permitted
 func checkExtensionPermissions(
 	setpathcfg *config.PathsConfig,
 	ext string,
@@ -68,6 +73,11 @@ func checkExtensionPermissions(
 	return CheckExtensions(!useother, useother, setpathcfg, ext)
 }
 
+// determineNewFilename generates a new filename for a file during a move operation.
+// It handles filename generation based on provided parameters:
+// - If no new name is specified or renaming is allowed, it uses the original filename
+// - If a new name is provided, it uses that name
+// - Ensures the filename includes the original file extension
 func determineNewFilename(file, newname, ext string, oknorename bool) string {
 	var newfilename string
 	if newname == "" || oknorename {
@@ -82,6 +92,9 @@ func determineNewFilename(file, newname, ext string, oknorename bool) string {
 	return newfilename
 }
 
+// prepareMove prepares a file for moving by logging the move operation,
+// removing the destination file if it already exists, and renaming the source file
+// to an intermediate path before the final move.
 func prepareMove(file, newpath, renamepath string) error {
 	logger.Logtype("info", 0).Str(logger.StrFile, file).Str("to", newpath).Msg("File move start")
 
@@ -93,6 +106,9 @@ func prepareMove(file, newpath, renamepath string) error {
 	return os.Rename(file, renamepath)
 }
 
+// performMove moves a file from the rename path to the new path with optional file mode settings.
+// It supports two move strategies: buffer copy or direct drive move, with optional chmod operations.
+// The function handles logging, file mode configuration, and different move methods based on provided options.
 func performMove(renamepath, newpath string, opts MoveFileOptions) error {
 	logger.Logtype("info", 0).
 		Str(logger.StrFile, renamepath).
@@ -140,6 +156,13 @@ func CheckExtensions(
 	return false, false
 }
 
+// checkVideoExtensions checks if the given file extension is allowed for video file types.
+// It returns two booleans: the first indicates if the extension is allowed,
+// and the second indicates whether renaming should be skipped.
+// If no video extensions are configured, it returns (true, true).
+// If the extension is in the allowed list, it returns (true, false).
+// If the extension is in the no-rename list, it returns (true, true).
+// Otherwise, it returns (false, false).
 func checkVideoExtensions(pathcfg *config.PathsConfig, ext string) (bool, bool) {
 	if pathcfg.AllowedVideoExtensionsLen == 0 {
 		return true, true
@@ -157,6 +180,13 @@ func checkVideoExtensions(pathcfg *config.PathsConfig, ext string) (bool, bool) 
 	return false, false
 }
 
+// checkOtherExtensions checks if the given file extension is allowed for other file types.
+// It returns two booleans: the first indicates if the extension is allowed,
+// and the second indicates whether renaming should be skipped.
+// If no other extensions are configured, it returns (true, true).
+// If the extension is in the allowed list, it returns (true, false).
+// If the extension is in the no-rename list, it returns (true, true).
+// Otherwise, it returns (false, false).
 func checkOtherExtensions(pathcfg *config.PathsConfig, ext string) (bool, bool) {
 	if pathcfg.AllowedOtherExtensionsLen == 0 {
 		return true, true
@@ -386,6 +416,11 @@ func copyFile(src, dst string, allowFileLink bool, chmodfolder fs.FileMode) erro
 	return performFileCopy(src, dst)
 }
 
+// performFileCopy copies the contents of the source file to the destination file.
+// It opens the source file for reading and creates the destination file,
+// then uses io.Copy to transfer the contents. It ensures the destination
+// file is synchronized to disk after copying. Returns any error encountered
+// during the file copy process.
 func performFileCopy(src, dst string) error {
 	srcFile, err := os.Open(src)
 	if err != nil {

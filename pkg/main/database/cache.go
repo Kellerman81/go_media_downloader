@@ -103,6 +103,9 @@ func (c *globalcache) getXStmt(key string, imdb bool) sqlx.Stmt {
 	return cache.itemsxstmt.GetVal(key)
 }
 
+// getXStmtP retrieves a pointer to a cached SQL statement with the given key.
+// If the statement is found in the cache, it checks and potentially updates the expiration time
+// based on the cache auto-extend setting. Returns the cached statement pointer or nil if not found.
 func (c *globalcache) getXStmtP(key string) *sqlx.Stmt {
 	if cache.itemsxstmt.Check(key) {
 		expires := cache.itemsxstmt.GetExpire(key)
@@ -167,6 +170,10 @@ func (c *globalcache) setRegexp(key string, duration time.Duration) regexp.Regex
 	return cache.itemsregex.GetVal(key)
 }
 
+// setRegexpP retrieves a cached regular expression pointer with the given key. If the cached regular expression
+// exists, it checks and potentially updates the expiration time based on cache auto-extend settings.
+// Returns nil if the key is not found in the cache, otherwise returns a pointer to the cached regular expression.
+// The function handles special cases for "RegexSeriesIdentifier" and "RegexSeriesTitle" keys.
 func (c *globalcache) setRegexpP(key string, duration time.Duration) *regexp.Regexp {
 	if !cache.itemsregex.Check(key) {
 		return nil
@@ -740,6 +747,9 @@ func getrefresh[T comparable](s *logger.SyncMap[[]T], key string, retry bool) []
 	return t
 }
 
+// forcerefresh retrieves and refreshes the cached value for a given key in a SyncMap.
+// It triggers a cache refresh for the specified key and returns the updated value.
+// The function is generic and works with any slice type that is comparable.
 func forcerefresh[T comparable](s *logger.SyncMap[[]T], key string) []T {
 	RefreshCached(key, true)
 	return s.GetVal(key)
@@ -859,6 +869,10 @@ func RunRetRegex(key string, matchfor string, useall bool) []int {
 	return findStringSubmatchIndex(key, matchfor)
 }
 
+// findAllStringSubmatchIndex returns all string submatch indexes for a given key and matchfor string
+// with a maximum of 10 matches. It first attempts to use a cached precompiled
+// regular expression, falling back to compiling a new regular expression if needed.
+// Returns a slice of string submatch indexes or nil if no matches are found.
 func findAllStringSubmatchIndex(key string, matchfor string) [][]int {
 	rgxp := globalCache.setRegexpP(key, globalCache.defaultextension)
 	if rgxp != nil {
@@ -868,6 +882,10 @@ func findAllStringSubmatchIndex(key string, matchfor string) [][]int {
 	return rgx.FindAllStringSubmatchIndex(matchfor, 10)
 }
 
+// findStringSubmatchIndex returns the first string submatch index for a given key and matchfor string.
+// It first attempts to use a cached precompiled regular expression, falling back to
+// compiling a new regular expression if needed. Returns a slice of string submatch indexes
+// or nil if no matches are found.
 func findStringSubmatchIndex(key string, matchfor string) []int {
 	rgxp := globalCache.setRegexpP(key, globalCache.defaultextension)
 	if rgxp != nil {
@@ -888,6 +906,10 @@ func RegexGetMatchesFind(key, matchfor string, mincount int) bool {
 	return len(findAllStringIndex(key, matchfor, mincount)) >= mincount
 }
 
+// findStringIndex returns the first string index match for a given key and matchfor string.
+// It first attempts to use a cached precompiled regular expression, falling back to
+// compiling a new regular expression if needed. Returns a slice of string index matches
+// or nil if no matches are found.
 func findStringIndex(key string, matchfor string) []int {
 	rgxp := globalCache.setRegexpP(key, globalCache.defaultextension)
 	if rgxp != nil {
@@ -897,6 +919,10 @@ func findStringIndex(key string, matchfor string) []int {
 	return rgx.FindStringIndex(matchfor)
 }
 
+// findAllStringIndex returns all string index matches for a given key and matchfor string
+// with a minimum count of matches specified. It first attempts to use a cached precompiled
+// regular expression, falling back to compiling a new regular expression if needed.
+// Returns a slice of string index matches or nil if no matches are found.
 func findAllStringIndex(key string, matchfor string, mincount int) [][]int {
 	rgxp := globalCache.setRegexpP(key, globalCache.defaultextension)
 	if rgxp != nil {

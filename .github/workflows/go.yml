@@ -16,6 +16,21 @@ jobs:
     - name: Checkout
       run: git fetch --prune --unshallow --tags
     
+    - name: Login to Docker Hub
+      id: login_docker_hub
+      uses: docker/login-action@v3
+      with:
+        username: kellerman81
+        password: ${{ secrets.DOCKER }}
+    
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v3
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Install xmllint
+      run: sudo apt install -y gcc-aarch64-linux-gnu
+    
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
@@ -33,29 +48,6 @@ jobs:
       id: date
       run: echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
 
-    #- name: Build with xgo
-    #  uses: crazy-max/ghaction-xgo@v3
-    #  with:
-    #      prefix: go_media_downloader
-    #      targets: windows/386,windows/amd64,linux/386,linux/amd64,darwin/amd64
-    #      v: false
-    #      x: false
-    #      race: false
-    #      ldflags: -s -w -X 'main.version=${{ steps.version.outputs.version }}' -X 'main.githash=${{ steps.commit.outputs.short }}' -X 'main.buildstamp=${{ steps.date.outputs.date }}'
-    #      buildmode: default
-    #      working_dir: /home/runner/work/go_media_downloader/go_media_downloader/pkg/main
-    
-    #- name: Build with xgo imdb
-    #  uses: crazy-max/ghaction-xgo@v3
-    #  with:
-    #      prefix: imdb
-    #      targets: windows/386,windows/amd64,linux/386,linux/amd64,darwin/amd64
-    #      v: false
-    #      x: false
-    #      race: false
-    #      ldflags: -s -w -X 'main.version=${{ steps.version.outputs.version }}' -X 'main.githash=${{ steps.commit.outputs.short }}' -X 'main.buildstamp=${{ steps.date.outputs.date }}'
-    #      buildmode: default
-    #      working_dir: /home/runner/work/go_media_downloader/go_media_downloader/pkg/imdb
     - name: Set up MinGW
       uses: egor-tensin/setup-mingw@v2
     - name: Build Main
@@ -63,19 +55,6 @@ jobs:
     - name: Build Imdb
       run: make buildimdb
     
-    #- name: Rename Win32 binary
-    #  run: mv ./pkg/imdb/init_imdb-windows-386.exe init_imdb.exe
-
-    #- name: Rename Win32 binary dl
-    #  run: mv ./pkg/main/go_media_downloader-windows-386.exe go_media_downloader.exe
-
-    #- name: Zip Win32 binary
-    #  uses: thedoctor0/zip-release@master
-    #  with:
-    #    type: 'zip'
-    #    filename: 'gomedia-windows-x86.zip'
-    #    exclusions: '*.git* /.github/* /pkg/* Dockerfile go.* *.zip *.go go_media_downloader-*'
-
     - name: Rename Win64 binary
       run: mv init_imdb-windows-amd64.exe init_imdb.exe
 
@@ -88,25 +67,19 @@ jobs:
         type: 'zip'
         filename: 'gomedia-windows-x64.zip'
         exclusions: '*.git* /.github/* /pkg/* Dockerfile go.* *.zip *.go go_media_downloader-* init_imdb-*'
-
+    
+    - name: Build and push windows/amd64
+      uses: docker/build-push-action@v6
+      with:
+        platforms: windows/amd64
+        load: true
+        tags: user/app:latest,user/app:${{ steps.version.outputs.version }}
+    
     - name: Remove Win binary
       run: rm init_imdb.exe
 
     - name: Remove Win binary dl
       run: rm go_media_downloader.exe
-
-    #- name: Rename Linux32 binary
-    #  run: mv ./pkg/imdb/init_imdb-linux-386 init_imdb
-
-    #- name: Rename Linux32 binary dl
-    #  run: mv ./pkg/main/go_media_downloader-linux-386 go_media_downloader
-
-    #- name: Zip Linux32 binary
-    #  uses: thedoctor0/zip-release@master
-    #  with:
-    #    type: 'zip'
-    #    filename: 'gomedia-linux-x86.zip'
-    #    exclusions: '*.git* /.github/* /pkg/* Dockerfile go.* *.zip *.go go_media_downloader-*'
 
     - name: Rename Linux64 binary
       run: mv init_imdb-linux-amd64 init_imdb
@@ -121,18 +94,38 @@ jobs:
         filename: 'gomedia-linux-x64.zip'
         exclusions: '*.git* /.github/* /pkg/* Dockerfile go.* *.zip *.go go_media_downloader-* init_imdb-*'
     
-    #- name: Rename Mac64 binary
-    #  run: mv ./pkg/imdb/imdb-darwin-amd64 init_imdb
+    - name: Build and push linux/amd64
+      uses: docker/build-push-action@v6
+      with:
+        platforms: linux/amd64
+        load: true
+        tags: user/app:latest,user/app:${{ steps.version.outputs.version }}
 
-    #- name: Rename Mac64 binary dl
-    #  run: mv ./pkg/main/go_media_downloader-darwin-amd64 go_media_downloader
+    - name: Remove Linux binary
+      run: rm init_imdb
 
-    #- name: Zip Mac64 binary
-    #  uses: thedoctor0/zip-release@master
-    #  with:
-    #    type: 'zip'
-    #    filename: 'gomedia-macos-x64.zip'
-    #    exclusions: '*.git* /.github/* /pkg/* Dockerfile go.* *.zip *.go go_media_downloader-*'
+    - name: Remove Linux binary dl
+      run: rm go_media_downloader
+    
+    - name: Rename LinuxArm64 binary
+      run: mv init_imdb-linux-arm64 init_imdb
+
+    - name: Rename LinuxArm64 binary dl
+      run: mv go_media_downloader-linux-arm64 go_media_downloader
+
+    - name: Zip LinuxArm64 binary
+      uses: thedoctor0/zip-release@master
+      with:
+        type: 'zip'
+        filename: 'gomedia-linux-arm64.zip'
+        exclusions: '*.git* /.github/* /pkg/* Dockerfile go.* *.zip *.go go_media_downloader-* init_imdb-*'
+    
+    - name: Build and push linux/arm64
+      uses: docker/build-push-action@v6
+      with:
+        platforms: linux/arm64
+        load: true
+        tags: user/app:latest,user/app:${{ steps.version.outputs.version }}
 
     - name: Development Release
       if: ${{ github.event_name == 'push' && !startsWith(steps.version.outputs.version, 'v') }}
@@ -144,6 +137,7 @@ jobs:
         title: "Latest development build"
         files: |
           gomedia-linux-x64.zip
+          gomedia-linux-arm64.zip
           gomedia-windows-x64.zip
           
     - name: Stable Release
@@ -156,4 +150,8 @@ jobs:
         title: "${{ steps.version.outputs.version }}"
         files: |
           gomedia-linux-x64.zip
+          gomedia-linux-arm64.zip
           gomedia-windows-x64.zip
+
+    - name: Logout from Docker Hub
+      run: docker logout

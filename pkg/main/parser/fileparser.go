@@ -207,6 +207,11 @@ func GenerateCutoffPriorities() {
 	}
 }
 
+// processPatternMatch handles the processing of a matched regex pattern in file parsing.
+// It updates the ParseInfo struct with matched information based on the pattern type,
+// and manages the start and end indices of the matched substring within the original string.
+// The function is used internally during file name parsing to extract metadata like
+// IMDb ID, year, season, episode, and other media-related information.
 func processPatternMatch(
 	m *database.ParseInfo,
 	pattern *regexpattern,
@@ -261,6 +266,9 @@ func processPatternMatch(
 	}
 }
 
+// shouldSkipPattern determines whether a specific regex pattern should be skipped during file parsing.
+// It checks various conditions based on the pattern type, media type configuration, and existing parsed information.
+// Returns true if the pattern should be skipped, false otherwise.
 func shouldSkipPattern(
 	pattern *regexpattern,
 	m *database.ParseInfo,
@@ -456,6 +464,16 @@ func GetDBIDs(m *database.ParseInfo, cfgp *config.MediaTypeConfig, allowsearchti
 	return getSeriesDBIDs(m, cfgp, allowsearchtitle)
 }
 
+// getMovieDBIDs retrieves database IDs for a movie by attempting multiple lookup strategies.
+// It first tries IMDb ID lookup with padding optimization, then falls back to title-based search.
+// If an IMDb ID is found, it attempts to locate the movie in the database and configured media lists.
+//
+// Parameters:
+//   - m: Pointer to ParseInfo containing movie metadata
+//   - cfgp: Media type configuration
+//   - allowsearchtitle: Flag to enable title-based search
+//
+// Returns an error if no movie database ID can be found.
 func getMovieDBIDs(
 	m *database.ParseInfo,
 	cfgp *config.MediaTypeConfig,
@@ -508,6 +526,17 @@ func getMovieDBIDs(
 	return findMovieInLists(m, cfgp)
 }
 
+// getSeriesDBIDs retrieves database IDs for a TV series by attempting multiple lookup strategies.
+// It first tries TVDB lookup, then falls back to title-based search (with optional year),
+// and uses regex matching as a final attempt. If a series database ID is found, it sets
+// the corresponding episode ID and attempts to locate the series in configured media lists.
+//
+// Parameters:
+//   - m: Pointer to ParseInfo containing series metadata
+//   - cfgp: Media type configuration
+//   - allowsearchtitle: Flag to enable title-based search
+//
+// Returns an error if no series or episode database ID can be found.
 func getSeriesDBIDs(
 	m *database.ParseInfo,
 	cfgp *config.MediaTypeConfig,
@@ -548,6 +577,10 @@ func getSeriesDBIDs(
 	return findSeriesInLists(m, cfgp)
 }
 
+// findMovieInLists attempts to locate a movie in configured media lists by its database ID.
+// It first checks if a list ID is already specified, then searches through available lists.
+// If no movie is found, it returns an error. The function updates the ParseInfo
+// with the found movie ID and list index.
 func findMovieInLists(m *database.ParseInfo, cfgp *config.MediaTypeConfig) error {
 	if m.ListID != -1 {
 		database.Scanrowsdyn(
@@ -586,6 +619,10 @@ func findMovieInLists(m *database.ParseInfo, cfgp *config.MediaTypeConfig) error
 	return nil
 }
 
+// findSeriesInLists attempts to locate a series in configured media lists by its database ID.
+// It first checks if a list ID is already specified, then searches through available lists.
+// If no series is found, it resets episode-related IDs and returns an error.
+// The function updates the ParseInfo with the found series and episode IDs.
 func findSeriesInLists(m *database.ParseInfo, cfgp *config.MediaTypeConfig) error {
 	if m.ListID != -1 {
 		database.Scanrowsdyn(
@@ -721,6 +758,8 @@ func parseffprobe(m *database.ParseInfo, quality *config.QualityConfig, result *
 	return nil
 }
 
+// isAudioStream checks if the given stream is an audio stream by comparing its codec type.
+// It returns true if the stream's codec type is "audio" (case-insensitive), false otherwise.
 func isAudioStream(stream *struct {
 	Tags struct {
 		Language string `json:"language"`
@@ -735,6 +774,8 @@ func isAudioStream(stream *struct {
 	return stream.CodecType == "audio" || strings.EqualFold(stream.CodecType, "audio")
 }
 
+// isVideoStream checks if the given stream is a video stream by comparing its codec type.
+// It returns true if the stream's codec type is "video" (case-insensitive), false otherwise.
 func isVideoStream(stream *struct {
 	Tags struct {
 		Language string `json:"language"`
@@ -749,6 +790,9 @@ func isVideoStream(stream *struct {
 	return stream.CodecType == "video" || strings.EqualFold(stream.CodecType, "video")
 }
 
+// updateAudio updates the audio metadata in the ParseInfo struct based on the provided stream information.
+// It updates the audio codec and sets the corresponding audio ID using the Gettypeids method.
+// Returns true if the audio codec has changed, false otherwise.
 func updateAudio(m *database.ParseInfo, stream *struct {
 	Tags struct {
 		Language string `json:"language"`
@@ -768,6 +812,10 @@ func updateAudio(m *database.ParseInfo, stream *struct {
 	return false
 }
 
+// updateVideo updates the video metadata in the ParseInfo struct based on the provided stream information.
+// It updates the video resolution, codec, and dimensions. If the codec or resolution changes,
+// it updates the corresponding IDs using the Gettypeids method. Returns true if either the
+// codec or resolution has changed, false otherwise.
 func updateVideo(m *database.ParseInfo, stream *struct {
 	Tags struct {
 		Language string `json:"language"`
@@ -817,6 +865,9 @@ func updateVideo(m *database.ParseInfo, stream *struct {
 	return codecChanged || resolutionChanged
 }
 
+// updatePriority determines the priority of a media file based on its resolution, quality, codec, and audio characteristics.
+// It uses the provided QualityConfig to find the appropriate priority index and sets the Priority field accordingly.
+// If no matching priority is found, the priority remains unchanged.
 func updatePriority(m *database.ParseInfo, quality *config.QualityConfig) {
 	if intid := Findpriorityidxwanted(m.ResolutionID, m.QualityID, m.CodecID, m.AudioID, quality); intid != -1 {
 		m.Priority = allQualityPrioritiesWantedT[intid].Priority
@@ -867,6 +918,9 @@ func parsemediainfo(
 	return nil
 }
 
+// updateAudioFromMediaInfo updates the ParseInfo with audio track details from MediaInfo.
+// It handles audio codec and sets the corresponding audio ID.
+// Returns true if the audio codec changes, false otherwise.
 func updateAudioFromMediaInfo(m *database.ParseInfo, track *struct {
 	Type     string `json:"@type"`
 	Format   string `json:"Format"`
@@ -885,6 +939,9 @@ func updateAudioFromMediaInfo(m *database.ParseInfo, track *struct {
 	return false
 }
 
+// updateVideoFromMediaInfo updates the ParseInfo with video track details from MediaInfo.
+// It handles codec, resolution, height, width, and runtime information.
+// Returns true if codec or resolution changes, false otherwise.
 func updateVideoFromMediaInfo(m *database.ParseInfo, track *struct {
 	Type     string `json:"@type"`
 	Format   string `json:"Format"`
@@ -1010,6 +1067,9 @@ func GetPriorityMapQual(
 	}
 }
 
+// updateNamesFromIDs populates the name fields of a ParseInfo struct based on its corresponding ID fields.
+// It retrieves names for resolution, quality, audio, and codec by matching IDs with predefined database entries.
+// If an ID is non-zero, it attempts to find and set the corresponding name from the respective database slice.
 func updateNamesFromIDs(m *database.ParseInfo) {
 	if m.ResolutionID != 0 {
 		if idx := m.Getqualityidxbyid(database.DBConnect.GetresolutionsIn, 1); idx != -1 {
@@ -1033,6 +1093,9 @@ func updateNamesFromIDs(m *database.ParseInfo) {
 	}
 }
 
+// findPriorityIndex determines the priority index for a media file by first checking wanted priorities
+// if checkwanted is true, and falling back to the default priority index if no wanted priority is found.
+// It returns the index of the matching priority entry or -1 if no match is found.
 func findPriorityIndex(
 	reso, qual, codec, aud uint,
 	quality *config.QualityConfig,
@@ -1046,6 +1109,9 @@ func findPriorityIndex(
 	return Findpriorityidx(reso, qual, codec, aud, quality)
 }
 
+// applyPriorityModifiers adjusts the priority of a parsed media file based on specific attributes.
+// It increases the priority for proper releases, extended versions, and repacks.
+// The priority is incremented by 5 for proper releases, 2 for extended versions, and 1 for repacks.
 func applyPriorityModifiers(m *database.ParseInfo) {
 	if m.Proper {
 		m.Priority += 5
@@ -1198,6 +1264,10 @@ func GenerateAllQualityPriorities() {
 	}
 }
 
+// handleCombinedReorder processes quality reordering for combined resolution and quality configurations.
+// It checks if a specific resolution and quality combination matches a reordering rule and returns
+// adjusted priority values. If no matching rule is found, it returns the original priority values.
+// The function supports case-insensitive matching and handles combined resolution-quality reordering.
 func handleCombinedReorder(
 	qual *config.QualityConfig,
 	resolutionName, qualityName string,
@@ -1230,6 +1300,10 @@ func handleCombinedReorder(
 	return prioresoorg, prioqualorg
 }
 
+// isWantedCombination checks if a specific resolution and quality combination is desired
+// based on the quality configuration. When debug logging is enabled, it logs details
+// about unwanted resolutions or qualities. Returns true if both resolution and quality
+// are wanted, false otherwise.
 func isWantedCombination(qual *config.QualityConfig, resolutionName, qualityName string) bool {
 	if database.DBLogLevel != logger.StrDebug {
 		return true

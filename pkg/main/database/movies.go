@@ -296,6 +296,10 @@ func ChecknzbtitleB(
 	return compareSluggedTitles(movietitle, movietitlesluga, nzbtitle, yearu, allowpm1)
 }
 
+// checkYearInTitle checks if a given year is present in the title.
+// It checks for an exact match of the year, and optionally allows matching years
+// that are one year before or after the specified year.
+// Returns true if the year is found in the title, false otherwise.
 func checkYearInTitle(title string, year uint16, allowpm1 bool) bool {
 	yearStr := logger.IntToString(year)
 	if strings.Contains(title, yearStr) {
@@ -311,6 +315,10 @@ func checkYearInTitle(title string, year uint16, allowpm1 bool) bool {
 	return false
 }
 
+// compareSluggedTitles compares movie titles by converting them to slugs and checking for matches.
+// It handles cases where the slugged movie title is a substring or exact match of the slugged NZB title.
+// If a year is provided, it also verifies the year's presence in the slugged title.
+// Returns true if a match is found, false otherwise.
 func compareSluggedTitles(
 	movietitle, movietitlesluga, nzbtitle string,
 	yearu uint16,
@@ -339,6 +347,10 @@ func compareSluggedTitles(
 	return false
 }
 
+// checkYearInSluggedTitle checks if a given year or its adjacent years (when allowed) are present in a slugged title.
+// It converts the year to a string and searches for it within the slugged bytes.
+// If allowpm1 is true, it also checks for years one before or after the specified year.
+// Returns true if the year is found, false otherwise.
 func checkYearInSluggedTitle(slugged []byte, yearu uint16, allowpm1 bool) bool {
 	if bytes.Contains(slugged, []byte(strconv.Itoa(int(yearu)))) {
 		return true

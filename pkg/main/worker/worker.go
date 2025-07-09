@@ -275,7 +275,7 @@ func CreateCronWorker() {
 	opts := []cron.Option{
 		cron.WithLocation(logger.GetTimeZone()),
 		cron.WithLogger(&loggerworker),
-		cron.WithChain(cron.Recover(&loggerworker), cron.SkipIfStillRunning(&loggerworker)),
+		cron.WithChain(cron.Recover(&loggerworker)), //, cron.SkipIfStillRunning(&loggerworker)
 		cron.WithSeconds(),
 	}
 	cronWorkerData = cron.New(opts...)
@@ -451,7 +451,6 @@ func addjob(
 		Cfgpstr:     cfgpstr,
 		SchedulerID: schedulerID,
 	})
-
 	if _, ok := workpool.TrySubmit(runjobcron(id)); !ok {
 		logger.LogDynamicany1String("error", "not queued", logger.StrJob, name)
 		globalQueueSet.Delete(id)
@@ -469,6 +468,9 @@ func checkQueueCapacity(capa int, waiting uint64, queue, name string) error {
 	return nil
 }
 
+// waitForQueueAvailability checks if a job can be queued by waiting for a short interval and preventing immediate re-queueing.
+// It prevents rapid job re-submission by checking the time elapsed since the job was last added.
+// Returns an error if the maximum number of retries is reached, indicating the job cannot be queued.
 func waitForQueueAvailability(added time.Time, name string) error {
 	for idx := 0; idx <= maxQueueRetries; idx++ {
 		if !logger.TimeAfter(added, time.Now().Add(queueCheckInterval)) {
@@ -483,6 +485,8 @@ func waitForQueueAvailability(added time.Time, name string) error {
 	return nil
 }
 
+// cleanupCompletedJobs checks if all tasks in the workpool have been completed and deletes the running queue if so.
+// It handles two scenarios: when all submitted tasks are completed, or when all non-waiting tasks are completed.
 func cleanupCompletedJobs(workpool pond.Pool, queue string) {
 	if workpool.SubmittedTasks() == workpool.CompletedTasks() ||
 		workpool.SubmittedTasks()-workpool.WaitingTasks() == workpool.CompletedTasks() {
@@ -619,6 +623,10 @@ func Dispatch(name string, fn func(uint32), queue string) error {
 	return nil
 }
 
+// executeJob executes a job based on its configuration and job name.
+// If no configuration prefix is specified, it looks for the job in the general settings.
+// If a configuration prefix is provided, it looks for the job in the media settings for that specific configuration.
+// It logs an error if the job or configuration is not found.
 func executeJob(s Job) {
 	if s.Cfgpstr == "" {
 		if jobFunc := config.SettingsGeneral.Jobs[s.JobName]; jobFunc != nil {
@@ -783,48 +791,36 @@ var jobAlternatives = map[string][]string{
 func checkQueue(jobname string) bool {
 	idx := strings.LastIndexByte(jobname, '_')
 	if idx <= 0 || idx >= len(jobname)-1 {
-		return globalQueueSet.ForFuncKey(func(_ uint32, val *Job) bool {
-			return val.Name == jobname && val.Started.IsZero()
-		})
+		return checkQueueStarted(jobname, false, "", "")
 	}
 
-	prefix := jobname[:idx]
-	suffix := jobname[idx+1:]
+	return checkQueueStarted(jobname, true, jobname[:idx], jobname[idx+1:])
+}
 
+// checkQueueStarted checks if a job with the given name is currently in the global queue.
+// It supports checking alternative job name formats based on the provided prefix and suffix.
+// Returns true if the job is found in the queue with an unstarted status, false otherwise.
+func checkQueueStarted(jobname string, checkalternatives bool, prefix string, suffix string) bool {
+	globalQueueSet.mu.Lock()
+	defer globalQueueSet.mu.Unlock()
 	alternatives, hasAlternatives := jobAlternatives[prefix]
-	if !hasAlternatives {
-		return globalQueueSet.ForFuncKey(func(_ uint32, val *Job) bool {
-			return val.Name == jobname && val.Started.IsZero()
-		})
-	}
+	for _, getjob := range globalQueueSet.m {
+		// if getjob.Started.IsZero() {
+		if getjob.Name == jobname {
+			return true
+		}
+		if !hasAlternatives || !checkalternatives {
+			continue
+		}
 
-	return globalQueueSet.ForFuncKey(func(_ uint32, val *Job) bool {
-		if val.Started.IsZero() {
-			if val.Name == jobname {
-				return true
-			}
-
-			if strings.HasSuffix(val.Name, suffix) {
-				for _, alt := range alternatives {
-					if val.Name == alt+suffix {
-						return true
-					}
+		if strings.HasSuffix(getjob.Name, suffix) {
+			for _, alt := range alternatives {
+				if getjob.Name == alt+suffix {
+					return true
 				}
 			}
 		}
-		return false
-	})
-}
-
-// DeleteFuncKey deletes all entries in the SyncMap for which the provided function
-// returns true, using both the key and value as arguments.
-func (s *syncMapUint[T]) ForFuncKey(fn func(uint32, *T) bool) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for key, v := range s.m {
-		if fn(key, &v) {
-			return true
-		}
+		//}
 	}
 	return false
 }
@@ -890,16 +886,16 @@ func (s *syncMapUint[T]) Delete(id uint32) {
 	}
 }
 
-// DeleteFunc deletes all elements from the SyncMap that match the given predicate function fn.
-// The method acquires a write lock on the SyncMap before iterating through the map and deleting
-// any elements that satisfy the predicate. The lock is released before the method returns.
+// DeleteJobQueue removes jobs from the global queue set that match the given queue name.
+// If isStarted is true, only jobs with a non-zero start time are deleted.
+// If isStarted is false, all jobs matching the queue name are deleted.
 func DeleteJobQueue(queue string, isStarted bool) {
 	globalQueueSet.mu.Lock()
 	defer globalQueueSet.mu.Unlock()
-	for key := range globalQueueSet.m {
-		if globalQueueSet.m[key].Queue == queue {
+	for key, getjob := range globalQueueSet.m {
+		if getjob.Queue == queue {
 			if isStarted {
-				if !globalQueueSet.m[key].Started.IsZero() {
+				if !getjob.Started.IsZero() {
 					delete(globalQueueSet.m, key)
 				}
 			} else {

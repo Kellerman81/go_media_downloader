@@ -51,6 +51,7 @@ func main() {
 	if err != nil {
 		os.Exit(1)
 	}
+	go config.WatchConfig()
 	database.InitCache()
 	worker.InitWorkerPools(
 		config.SettingsGeneral.WorkerSearch,

@@ -183,6 +183,9 @@ func queryGenericsT[t any](size uint, rows *sql.Rows, querystring string) []t {
 	return result
 }
 
+// isSimpleType checks if the given value is a simple type (string, numeric, or boolean).
+// It returns true for primitive types that can be directly scanned from a database row,
+// and false for complex types like structs or pointers.
 func isSimpleType[T any](v T) bool {
 	switch any(v).(type) {
 	case string, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float32, float64, bool:
@@ -723,6 +726,16 @@ func scandatarow(imdb bool, querystring string, s any, args []any) {
 	logSQLErrorReset(err, s, querystring)
 }
 
+// queryRowContext is a helper function that executes a SQL query with the provided arguments.
+// It uses the GlobalCache to cache the prepared statement for the given query string and database connection.
+// The function handles both cached statement pointers and non-pointer statements.
+//
+// The function takes the following arguments:
+// - querystring: the SQL query to execute
+// - imdb: a boolean indicating whether to use the "imdb" database connection or the default one
+// - args: variadic arguments to pass to the SQL query
+//
+// Returns a *sql.Row from executing the query
 func queryRowContext(querystring string, imdb bool, args []any) *sql.Row {
 	stmtp := globalCache.getXStmtP(querystring)
 	if stmtp == nil {
@@ -733,6 +746,16 @@ func queryRowContext(querystring string, imdb bool, args []any) *sql.Row {
 	return stmtp.QueryRowContext(sqlCTX, args...)
 }
 
+// queryContext is a helper function that executes a SQL query with the provided arguments.
+// It uses the GlobalCache to cache the prepared statement for the given query string and database connection.
+// The function handles both cached statement pointers and non-pointer statements.
+//
+// The function takes the following arguments:
+// - querystring: the SQL query to execute
+// - imdb: a boolean indicating whether to use the "imdb" database connection or the default one
+// - args: variadic arguments to pass to the SQL query
+//
+// Returns a *sql.Rows and an error from executing the query
 func queryContext(querystring string, imdb bool, args []any) (*sql.Rows, error) {
 	stmtp := globalCache.getXStmtP(querystring)
 	if stmtp == nil {
@@ -743,6 +766,16 @@ func queryContext(querystring string, imdb bool, args []any) (*sql.Rows, error) 
 	return stmtp.QueryContext(sqlCTX, args...)
 }
 
+// queryRowxContext is a helper function that executes a SQL query using sqlx with the provided arguments.
+// It uses the GlobalCache to cache the prepared statement for the given query string and database connection.
+// The function handles both cached statement pointers and non-pointer statements.
+//
+// The function takes the following arguments:
+// - querystring: the SQL query to execute
+// - imdb: a boolean indicating whether to use the "imdb" database connection or the default one
+// - args: variadic arguments to pass to the SQL query
+//
+// Returns a *sqlx.Row from executing the query
 func queryRowxContext(querystring string, imdb bool, args []any) *sqlx.Row {
 	stmtp := globalCache.getXStmtP(querystring)
 	if stmtp == nil {
@@ -753,6 +786,16 @@ func queryRowxContext(querystring string, imdb bool, args []any) *sqlx.Row {
 	return stmtp.QueryRowxContext(sqlCTX, args...)
 }
 
+// queryxContext is a helper function that executes a SQL query using sqlx with the provided arguments.
+// It uses the GlobalCache to cache the prepared statement for the given query string and database connection.
+// The function handles both cached statement pointers and non-pointer statements.
+//
+// The function takes the following arguments:
+// - querystring: the SQL query to execute
+// - imdb: a boolean indicating whether to use the "imdb" database connection or the default one
+// - args: variadic arguments to pass to the SQL query
+//
+// Returns a *sqlx.Rows and an error from executing the query
 func queryxContext(querystring string, imdb bool, args []any) (*sqlx.Rows, error) {
 	stmtp := globalCache.getXStmtP(querystring)
 	if stmtp == nil {

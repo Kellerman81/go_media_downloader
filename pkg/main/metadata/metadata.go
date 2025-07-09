@@ -118,24 +118,6 @@ func buildGenreString(genres []apiexternal.TheMovieDBMovieGenres) string {
 	return bld.String()
 }
 
-func buildGenreStringSimple(genres []string) string {
-	if len(genres) == 0 {
-		return ""
-	}
-
-	bld := logger.PlAddBuffer.Get()
-	defer logger.PlAddBuffer.Put(bld)
-
-	for i, genre := range genres {
-		if i > 0 {
-			bld.WriteByte(',')
-		}
-		bld.WriteString(genre)
-	}
-
-	return bld.String()
-}
-
 // buildLanguageString efficiently builds a comma-separated language string.
 func buildLanguageString(languages []apiexternal.TheMovieDBMovieLanguages) string {
 	if len(languages) == 0 {
@@ -236,7 +218,10 @@ func movieGetTmdbMetadata(movie *database.Dbmovie, overwrite bool) {
 	}
 }
 
-// Helper functions for cleaner field updates.
+// updateStringField updates a string field with a new value if the current field is empty or overwrite is true.
+// It allows an optional transformation function to modify the new value before assignment.
+// If no transform function is provided, the new value is assigned directly.
+// The update occurs only when the new value is non-empty.
 func updateStringField(
 	field *string,
 	newValue string,
@@ -252,24 +237,32 @@ func updateStringField(
 	}
 }
 
+// updateBoolField updates a bool field with a new value if the current field is false or overwrite is true.
+// It ensures that only true values are used to update the field, with an optional overwrite behavior.
 func updateBoolField(field *bool, newValue bool, overwrite bool) {
 	if (!*field && newValue) || overwrite {
 		*field = newValue
 	}
 }
 
+// updateIntField updates an int field with a new value if the current field is zero or overwrite is true.
+// It ensures that only non-zero values are used to update the field, with an optional overwrite behavior.
 func updateIntField(field *int, newValue int, overwrite bool) {
 	if (*field == 0 || overwrite) && newValue != 0 {
 		*field = newValue
 	}
 }
 
+// updateInt32Field updates an int32 field with a new value if the current field is zero or overwrite is true.
+// It ensures that only non-zero values are used to update the field, with an optional overwrite behavior.
 func updateInt32Field(field *int32, newValue int32, overwrite bool) {
 	if (*field == 0 || overwrite) && newValue != 0 {
 		*field = newValue
 	}
 }
 
+// updateFloatField updates a float32 field with a new value if the current field is zero or overwrite is true.
+// It ensures that only non-zero values are used to update the field, with an optional overwrite behavior.
 func updateFloatField(field *float32, newValue float32, overwrite bool) {
 	if (*field == 0 || overwrite) && newValue != 0 {
 		*field = newValue
@@ -377,7 +370,7 @@ func movieGetTraktMetadata(movie *database.Dbmovie, overwrite bool) {
 	}
 }
 
-// movieGetMetadata retrieves metadata for the given movie from multiple sources based on the input flags.
+// MovieGetMetadata retrieves metadata for the given movie from multiple sources based on the input flags.
 // It queries IMDb, TMDb, OMDb and Trakt APIs based on the queryimdb, querytmdb, queryomdb and querytrakt flags passed in.
 // Results from each source are cached and merged into the movie struct.
 func MovieGetMetadata(movie *database.Dbmovie, queryimdb, querytmdb, queryomdb, querytrakt bool) {
@@ -469,7 +462,8 @@ func processImdbAlternateTitles(
 		&movie.ImdbID,
 	)
 
-	for _, aka := range arr {
+	for idx := range arr {
+		aka := &arr[idx]
 		if !shouldProcessTitle(aka.Str1, aka.Str2, cfgp, titles) {
 			continue
 		}
@@ -494,7 +488,8 @@ func processTmdbAlternateTitles(
 		return
 	}
 
-	for _, title := range tbl.Titles {
+	for idx := range tbl.Titles {
+		title := &tbl.Titles[idx]
 		if !shouldProcessTitle(title.Iso31661, title.Title, cfgp, titles) {
 			continue
 		}
@@ -512,7 +507,8 @@ func processTraktAlternateTitles(
 ) {
 	arr := apiexternal.GetTraktMovieAliases(movie.ImdbID)
 
-	for _, alias := range arr {
+	for idx := range arr {
+		alias := &arr[idx]
 		if !shouldProcessTitle(alias.Country, alias.Title, cfgp, titles) {
 			continue
 		}
@@ -656,6 +652,10 @@ func serieGetMetadataTrakt(serie *database.Dbserie, overwrite bool) error {
 	return nil
 }
 
+// shouldUpdateSerieRuntime determines whether the runtime of a series should be updated.
+// It checks if the new runtime is valid and if it should replace the current runtime
+// based on the overwrite flag and current runtime's validity.
+// Returns true if the runtime should be updated, false otherwise.
 func shouldUpdateSerieRuntime(currentRuntime string, newRuntime int, overwrite bool) bool {
 	if newRuntime == 0 {
 		return false
@@ -785,6 +785,12 @@ func SerieGetMetadata(
 	return aliases
 }
 
+// processTraktSerieAliases processes aliases from Trakt for a given series, adding new aliases
+// based on configured indexed languages. It retrieves Trakt aliases for the series and
+// appends unique aliases that match the indexed language settings to the existing aliases.
+//
+// It takes a database series pointer and an existing slice of aliases as input, and returns
+// an updated slice of aliases after processing Trakt aliases.
 func processTraktSerieAliases(serie *database.Dbserie, aliases []string) []string {
 	traktAliases := apiexternal.GetTraktSerieAliases(serie)
 

@@ -216,6 +216,10 @@ func (m *ParseInfo) Findmoviedbidbytitle(slugged bool) {
 	m.findMovieInDB(slugged)
 }
 
+// findMovieInCache searches for a movie in the media cache by checking both the main movie cache
+// and the movie titles cache. It attempts to match the movie title and verify the year.
+// If a matching movie is found, it sets the DbmovieID to the found movie's ID.
+// If no match is found, it sets DbmovieID to 0.
 func (m *ParseInfo) findMovieInCache() {
 	// Search in main movie cache
 	c := GetCachedArr(cache.itemsthreestring, logger.CacheDBMovie, false, true)
@@ -238,6 +242,10 @@ func (m *ParseInfo) findMovieInCache() {
 	m.DbmovieID = 0
 }
 
+// findMovieInDB searches for a movie ID in the database by checking the main movies table and alternate titles table.
+// It uses the provided slugged parameter to determine how to match the title.
+// If a movie ID is found and its IMDB title can be retrieved, it sets the DbmovieID.
+// If no matching movie is found, it sets DbmovieID to 0.
 func (m *ParseInfo) findMovieInDB(slugged bool) {
 	// Try main movies table
 	Scanrowsdyn(false, GetSluggedMap(slugged, "dbmovies"), &m.DbmovieID, &m.TempTitle)
@@ -450,6 +458,9 @@ func (m *ParseInfo) Getepisodestoimport() error {
 	return nil
 }
 
+// determineSplitChar identifies the character used to separate episode numbers in a string.
+// It checks for common episode separators like 'E', 'e', 'X', 'x', or a dash.
+// Returns the first matching separator character, or an empty string if no separator is found.
 func (m *ParseInfo) determineSplitChar(str1 string) string {
 	for _, char := range []string{"E", "e", "X", "x", logger.StrDash} {
 		if strings.ContainsRune(str1, rune(char[0])) {
@@ -550,6 +561,9 @@ func (m *ParseInfo) Checktitle(
 	)
 }
 
+// checkalternatetitles checks if the given title matches any alternate titles for a specific media item.
+// It takes an array of alternate titles, an ID, quality configuration, and the title to check.
+// Returns true if no matching alternate title is found, false otherwise.
 func (m *ParseInfo) checkalternatetitles(
 	arr []DbstaticTwoStringOneInt,
 	id uint,

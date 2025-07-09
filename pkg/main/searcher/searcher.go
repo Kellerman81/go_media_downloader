@@ -72,6 +72,9 @@ var (
 	plsearchparam      pool.Poolobj[searchParams]
 )
 
+// clearNzbSlice efficiently clears the contents of an Nzbwithprio slice by resetting
+// AdditionalReason to nil and clearing the Episodes and Languages maps for each element.
+// This helps prepare the slice for reuse without reallocating memory.
 func clearNzbSlice(slice []apiexternal.Nzbwithprio) {
 	for i := range slice {
 		slice[i].AdditionalReason = nil
@@ -80,6 +83,9 @@ func clearNzbSlice(slice []apiexternal.Nzbwithprio) {
 	}
 }
 
+// reset clears and resets the ConfigSearcher's internal state, efficiently resetting search-related slices
+// and preparing the searcher for a new search operation. It zeroes out the search action type,
+// marks the search as not done, and clears the Denied, Accepted, and Raw result arrays.
 func (s *ConfigSearcher) reset() {
 	s.searchActionType = ""
 	s.Done = false
@@ -219,19 +225,9 @@ func (s *ConfigSearcher) MediaSearch(
 	return nil
 }
 
-func (s *ConfigSearcher) isValidIndexer(indcfg *config.IndexersConfig, userss bool) bool {
-	if userss && !indcfg.Rssenabled {
-		return false
-	}
-	if !userss && !indcfg.Enabled {
-		return false
-	}
-	if s.Quality == nil || indcfg == nil || !strings.EqualFold(indcfg.IndexerType, "newznab") {
-		return false
-	}
-	return apiexternal.NewznabCheckLimiter(indcfg)
-}
-
+// executeSearch performs a search based on the search type specified in the search parameters.
+// It supports different search types: missing media, RSS feed, and season search.
+// Returns a boolean indicating whether the search was successful.
 func (s *ConfigSearcher) executeSearch(p *searchParams, indcfg *config.IndexersConfig) bool {
 	switch p.searchtype {
 	case searchTypeMissing:
@@ -291,6 +287,10 @@ func (s *ConfigSearcher) searchindexers(ctx context.Context, userss bool, p *sea
 	pl.Wait()
 }
 
+// handleRSSSearch performs an RSS search for a specific indexer configuration.
+// It queries the last RSS entry, updates the RSS history if a new entry is found,
+// and handles potential errors during the search process.
+// Returns true if the RSS search is successful, false otherwise.
 func (s *ConfigSearcher) handleRSSSearch(indcfg *config.IndexersConfig, _ *searchParams) bool {
 	firstid, err := apiexternal.QueryNewznabRSSLast(
 		indcfg,
@@ -325,6 +325,10 @@ func (s *ConfigSearcher) handleRSSSearch(indcfg *config.IndexersConfig, _ *searc
 	return false
 }
 
+// handleSeasonSearch performs a TV season search for a specific indexer configuration.
+// It queries the TV series using TVDB ID and season information, and handles potential
+// errors during the search process. Returns true if the season search is successful,
+// false otherwise.
 func (s *ConfigSearcher) handleSeasonSearch(indcfg *config.IndexersConfig, p *searchParams) bool {
 	_, _, err := apiexternal.QueryNewznabTvTvdb(
 		indcfg,
@@ -661,6 +665,19 @@ func (s *ConfigSearcher) searchparse(
 	}
 }
 
+// executeQuerySearch performs a Newznab query search for media content
+// using the provided search parameters, indexer configuration, and quality settings.
+// It returns a boolean indicating whether the search was successful.
+//
+// Parameters:
+//   - p: Search parameters containing media entry details
+//   - indcfg: Indexers configuration
+//   - cats: Category identifier for the search
+//   - searchTerm: Term used for searching media content
+//   - searchType: Type of search being performed
+//
+// Returns:
+//   - true if the search completes without errors, false otherwise
 func (s *ConfigSearcher) executeQuerySearch(
 	p *searchParams,
 	indcfg *config.IndexersConfig,
@@ -686,6 +703,15 @@ func (s *ConfigSearcher) executeQuerySearch(
 	return err == nil
 }
 
+// validateSize checks if an NZB entry meets size-related validation criteria.
+// It verifies whether the entry should be skipped based on empty size configuration
+// and performs additional size filtering.
+//
+// Parameters:
+//   - entry: The NZB entry to validate
+//
+// Returns:
+//   - true if the entry should be filtered out due to size constraints, false otherwise
 func (s *ConfigSearcher) validateSize(entry *apiexternal.Nzbwithprio) bool {
 	if entry.NZB.Indexer == nil {
 		return false
@@ -854,7 +880,10 @@ func (s *ConfigSearcher) getmediadatarss(
 	return s.processMovieRSS(entry, addinlistid, addifnotfound)
 }
 
-// processSeriesRSS extracted for better organization.
+// processSeriesRSS processes an NZB entry for a TV series in the RSS feed.
+// It validates the series, episode, and database identifiers before further processing.
+// Returns a boolean indicating whether the entry should be skipped, and the quality configuration.
+// If no specific quality is set, it uses the default quality from the configuration.
 func (s *ConfigSearcher) processSeriesRSS(
 	entry *apiexternal.Nzbwithprio,
 ) (bool, *config.QualityConfig) {
@@ -887,6 +916,10 @@ func (s *ConfigSearcher) processSeriesRSS(
 	return false, config.SettingsQuality[entry.Quality]
 }
 
+// performIDSearch searches for media content using either IMDB (for movies) or TVDB (for TV series) identifiers
+// across configured indexers. It performs a search based on the current configuration (series or movies)
+// and handles potential search errors. Returns true if a search was successful or if the first matching
+// result is found, depending on the quality configuration.
 func (s *ConfigSearcher) performIDSearch(
 	p *searchParams,
 	indcfg *config.IndexersConfig,
@@ -921,7 +954,10 @@ func (s *ConfigSearcher) performIDSearch(
 	return false
 }
 
-// processMovieRSS extracted for better organization.
+// processMovieRSS handles processing of a movie RSS entry, including import checks, list assignment,
+// and quality configuration. It determines whether a movie entry should be processed based on
+// database movie ID, list configuration, and IMDB identifier. Returns a boolean indicating
+// whether processing should be skipped and the associated quality configuration.
 func (s *ConfigSearcher) processMovieRSS(
 	entry *apiexternal.Nzbwithprio,
 	addinlistid int,
@@ -962,7 +998,16 @@ func (s *ConfigSearcher) processMovieRSS(
 	return false, config.SettingsQuality[entry.Quality]
 }
 
-// handleMovieImport extracted for cleaner code.
+// handleMovieImport attempts to import a movie into the system when necessary.
+// It checks if movie import is allowed, performs database lookups, and handles
+// movie entry creation for a given NZB entry. Returns true if import should be
+// skipped, false if successful.
+//
+// Parameters:
+//   - entry: The NZB entry containing movie information
+//   - addinlistid: The list ID to add the movie to
+//
+// Returns a boolean indicating whether movie import processing should be halted
 func (s *ConfigSearcher) handleMovieImport(entry *apiexternal.Nzbwithprio, addinlistid int) bool {
 	if addinlistid == -1 {
 		return true
@@ -1168,6 +1213,9 @@ func (s *ConfigSearcher) checkepisode(sourceentry, entry *apiexternal.Nzbwithpri
 	return s.checkEpisodeFormat(sourceentry, entry, sourceentry.Info.Identifier)
 }
 
+// checkEpisodeFormat validates the episode identifier format for a given entry.
+// It checks if the identifier matches the expected season and episode format.
+// Returns false if the identifier is valid, true if the entry should be skipped.
 func (s *ConfigSearcher) checkEpisodeFormat(
 	sourceentry, entry *apiexternal.Nzbwithprio,
 	identifier string,
@@ -1215,6 +1263,10 @@ func (s *ConfigSearcher) checkEpisodeFormat(
 	return true
 }
 
+// checkAlternativeFormats checks for alternative identifier formats when season and episode are not explicitly specified.
+// It handles cases where the original identifier uses a hyphen separator, and checks if the entry title
+// contains the same identifier with dot or space separators instead.
+// Returns true if an alternative format match is found, otherwise false.
 func (s *ConfigSearcher) checkAlternativeFormats(sourceentry, entry *apiexternal.Nzbwithprio) bool {
 	if sourceentry.NZB.Season == "" && sourceentry.NZB.Episode == "" &&
 		strings.ContainsRune(sourceentry.Info.Identifier, '-') {
@@ -1235,6 +1287,9 @@ func (s *ConfigSearcher) checkAlternativeFormats(sourceentry, entry *apiexternal
 	return false
 }
 
+// checkAlternativeIdentifier checks for alternative identifier formats by converting and transforming the source identifier.
+// It handles cases like removing leading 's/S', converting 'E/e' to 'x' format, and checking for alternative separators.
+// Returns true if an alternative identifier match is found in the entry title, otherwise false.
 func (s *ConfigSearcher) checkAlternativeIdentifier(
 	sourceentry, entry *apiexternal.Nzbwithprio,
 ) bool {
@@ -1332,6 +1387,10 @@ func (s *ConfigSearcher) getRSSFeed(
 	return nil
 }
 
+// isIndexerBlocked checks if an indexer is temporarily blocked due to previous failures.
+// It returns true if the indexer has failed within the configured block interval,
+// preventing repeated attempts to use a problematic indexer.
+// Returns false if blocking is disabled or no recent failures are found.
 func (s *ConfigSearcher) isIndexerBlocked(url string) bool {
 	if config.SettingsGeneral.FailedIndexerBlockTime == 0 {
 		return false
@@ -1347,6 +1406,9 @@ func (s *ConfigSearcher) isIndexerBlocked(url string) bool {
 	) >= 1
 }
 
+// findIndexerConfig searches for an indexer configuration in the Quality.Indexer slice
+// based on the provided templateList. It performs a case-insensitive comparison
+// of the TemplateIndexer field. Returns the index of the matching indexer or -1 if no match is found.
 func (s *ConfigSearcher) findIndexerConfig(templateList string) int {
 	for idx := range s.Quality.Indexer {
 		if s.Quality.Indexer[idx].TemplateIndexer == templateList ||
@@ -1457,6 +1519,10 @@ func (s *ConfigSearcher) episodeFillSearchVar(p *searchParams) error {
 	return err
 }
 
+// setQualityConfig sets the quality configuration for the ConfigSearcher.
+// If the current quality is nil or different from the provided quality name,
+// it updates the quality based on the given name or falls back to the default quality.
+// If the quality name is empty or not found in the settings, it uses the default quality.
 func (s *ConfigSearcher) setQualityConfig(qualityName *string) {
 	if s.Quality == nil || s.Quality.Name != *qualityName {
 		if *qualityName == "" {
@@ -1979,6 +2045,9 @@ func (s *ConfigSearcher) searchlog(typev, msg string, p *searchParams) {
 	logv.Msg(msg)
 }
 
+// logsearcherror logs an error during a search operation with details about the media search context.
+// It skips logging for expected errors when in debug mode to reduce noise.
+// The function logs the error with media ID, series flag, title, and the specific error message.
 func logsearcherror(msg string, id uint, useseries bool, title string, err error) {
 	// Skip logging for expected errors in debug mode
 	if database.DBLogLevel == logger.StrDebug && isExpectedError(err) {
@@ -2183,7 +2252,11 @@ func Getpriobyfiles(
 	return minPrio, oldf
 }
 
-// calculateFilePriority extracted for better organization.
+// calculateFilePriority determines the priority of a file based on its resolution, quality, codec, audio attributes,
+// and optional special attributes like 'proper', 'extended', or 'repack' flags.
+// The priority is calculated using quality configuration settings and can consider all attributes or
+// selectively use specific attributes based on configuration.
+// Returns an integer representing the file's priority, with optional bonuses for special attributes.
 func calculateFilePriority(
 	file *database.FilePrio,
 	qualcfg *config.QualityConfig,
@@ -2347,6 +2420,8 @@ func (s *ConfigSearcher) getminimumpriority(
 	return false
 }
 
+// isExpectedError checks if the given error is a known expected error type.
+// It returns true if the error is either "no results" or "wait" error.
 func isExpectedError(err error) bool {
 	return errors.Is(err, logger.Errnoresults) || errors.Is(err, logger.ErrToWait)
 }

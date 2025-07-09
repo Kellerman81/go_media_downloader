@@ -44,6 +44,10 @@ func (s *SyncMap[T]) Add(key string, value T, expires int64, imdb bool, lastscan
 	s.imdb[key] = imdb
 }
 
+// AddPointer adds a new key-value pair to the SyncMap, along with its expiration time, IMDB flag, and last scan time.
+// If the value is not a pointer, it creates a pointer to the value and stores it in the mp map.
+// The method acquires a write lock on the SyncMap before adding the new entry,
+// and releases the lock before returning.
 func (s *SyncMap[T]) AddPointer(key string, value T, expires int64, imdb bool, lastscan int64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

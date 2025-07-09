@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/fsnotify/fsnotify"
 	"github.com/pelletier/go-toml/v2"
 	"github.com/recoilme/pudge"
 	"golang.org/x/oauth2"
@@ -1189,15 +1191,8 @@ func LoadCfgDB() error {
 	} else {
 		fmt.Println("Config file found. Loading config.")
 	}
-	content, err := os.Open(Configfile)
+	err := readconfigtoml()
 	if err != nil {
-		fmt.Println("Error loading config. " + err.Error())
-		return err
-	}
-	defer content.Close()
-	err = toml.NewDecoder(content).Decode(&cachetoml)
-	if err != nil {
-		fmt.Println("Error loading config. " + err.Error())
 		return err
 	}
 	configDB, _ := pudge.Open("./databases/config.db", &pudge.Config{SyncInterval: 0})
@@ -1226,6 +1221,110 @@ func LoadCfgDB() error {
 	return nil
 }
 
+// WatchConfig sets up a file system watcher for the configuration file.
+// It creates a new watcher, starts listening for file events in a separate goroutine,
+// and watches the directory containing the configuration file.
+// The function blocks indefinitely to keep the watcher active.
+func WatchConfig() {
+	// Create a new watcher.
+	w, err := fsnotify.NewWatcher()
+	if err != nil {
+		fmt.Printf("creating a new watcher: %s", err)
+		return
+	}
+	defer w.Close()
+
+	// Start listening for events.
+	go fileWatch(w)
+
+	// Add all files from the commandline.
+	st, err := os.Lstat(Configfile)
+	if err != nil {
+		fmt.Printf("%s", err)
+		return
+	}
+
+	if st.IsDir() {
+		fmt.Printf("%q is a directory, not a file", Configfile)
+		return
+	}
+
+	// Watch the directory, not the file itself.
+	err = w.Add(filepath.Dir(Configfile))
+	if err != nil {
+		fmt.Printf("%q: %s", Configfile, err)
+		return
+	}
+
+	<-make(chan struct{}) // Block forever
+}
+
+// fileWatch monitors file system events for the configuration file.
+// It listens for write events on the configuration file and reloads the configuration
+// when changes are detected. If an error occurs during watching or reading the file,
+// it prints the error. The function runs in an infinite loop and is typically called
+// as a goroutine by WatchConfig().
+func fileWatch(w *fsnotify.Watcher) {
+	for {
+		select {
+		// Read from Errors.
+		case err, ok := <-w.Errors:
+			if !ok { // Channel was closed (i.e. Watcher.Close() was called).
+				return
+			}
+			fmt.Printf("ERROR: %s", err)
+		// Read from Events.
+		case e, ok := <-w.Events:
+			if !ok { // Channel was closed (i.e. Watcher.Close() was called).
+				return
+			}
+
+			if strings.Contains(e.Name, "config.toml") {
+				if e.Has(fsnotify.Write) {
+					if readconfigtoml() == nil {
+						SettingsDownloader = make(map[string]*DownloaderConfig, len(cachetoml.Downloader))
+						SettingsIndexer = make(map[string]*IndexersConfig, len(cachetoml.Indexers))
+						SettingsList = make(map[string]*ListsConfig, len(cachetoml.Lists))
+						SettingsMedia = make(map[string]*MediaTypeConfig)
+						SettingsNotification = make(map[string]*NotificationConfig, len(cachetoml.Notification))
+						SettingsPath = make(map[string]*PathsConfig, len(cachetoml.Paths))
+						SettingsQuality = make(map[string]*QualityConfig, len(cachetoml.Quality))
+						SettingsRegex = make(map[string]*RegexConfig, len(cachetoml.Regex))
+						SettingsScheduler = make(map[string]*SchedulerConfig, len(cachetoml.Scheduler))
+
+						getconfigtoml()
+					}
+				}
+			} else {
+				continue
+			}
+		}
+	}
+}
+
+// readconfigtoml reads and decodes the configuration file specified by Configfile into the global cachetoml struct.
+// It opens the configuration file, uses a TOML decoder to parse its contents, and handles any potential errors.
+// Returns an error if the file cannot be opened or decoded, otherwise returns nil.
+func readconfigtoml() error {
+	content, err := os.Open(Configfile)
+	if err != nil {
+		fmt.Println("Error loading config. " + err.Error())
+		return err
+	}
+	defer content.Close()
+	err = toml.NewDecoder(content).Decode(&cachetoml)
+	if err != nil {
+		fmt.Println("Error loading config. " + err.Error())
+		return err
+	}
+	return nil
+}
+
+// getconfigtoml populates global configuration settings from the cached TOML configuration.
+// It sets default values, initializes various configuration maps, and processes configuration
+// for different components such as general settings, downloaders, indexers, lists, media types,
+// notifications, paths, quality, regex, and schedulers. This function prepares the application's
+// configuration by linking and transforming configuration data from the parsed TOML file.
 func getconfigtoml() {
 	SettingsGeneral = cachetoml.General
 	if SettingsGeneral.CacheDuration == 0 {
@@ -1681,6 +1780,8 @@ func DeleteCfgEntry(name string) {
 	}
 }
 
+// GetToml returns the cached main configuration settings as a mainConfig struct.
+// This function provides read-only access to the current configuration state.
 func GetToml() mainConfig {
 	return cachetoml
 }
