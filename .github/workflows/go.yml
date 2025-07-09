@@ -99,7 +99,7 @@ jobs:
       uses: docker/build-push-action@v6
       with:
         platforms: linux/amd64
-        load: true
+        push: true
         tags: user/app:latest,user/app:${{ steps.version.outputs.version }}
 
     - name: Remove Linux binary
@@ -125,7 +125,7 @@ jobs:
       uses: docker/build-push-action@v6
       with:
         platforms: linux/arm64
-        load: true
+        push: true
         tags: user/app:latest,user/app:${{ steps.version.outputs.version }}
 
     - name: Development Release
