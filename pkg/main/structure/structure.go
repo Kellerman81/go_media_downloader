@@ -596,7 +596,7 @@ func (s *Organizer) moveVideoFile(o *Organizerdata) (string, error) {
 		o.videotarget,
 		o.Filename,
 		scanner.MoveFileOptions{
-			UseBufferCopy: config.SettingsGeneral.UseFileBufferCopy,
+			UseBufferCopy: config.GetSettingsGeneral().UseFileBufferCopy,
 			Chmod:         s.targetpathCfg.SetChmod,
 			ChmodFolder:   s.targetpathCfg.SetChmodFolder,
 		},
@@ -626,7 +626,7 @@ func (s *Organizer) moveRemoveOldMediaFile(
 			),
 			"",
 			scanner.MoveFileOptions{
-				UseBufferCopy: config.SettingsGeneral.UseFileBufferCopy,
+				UseBufferCopy: config.GetSettingsGeneral().UseFileBufferCopy,
 				Chmod:         s.targetpathCfg.SetChmod,
 				ChmodFolder:   s.targetpathCfg.SetChmodFolder,
 				UseNil:        true,
@@ -648,7 +648,7 @@ func (s *Organizer) moveRemoveOldMediaFile(
 		}
 	}
 
-	if config.SettingsGeneral.UseFileCache {
+	if config.GetSettingsGeneral().UseFileCache {
 		database.SlicesCacheContainsDelete(
 			logger.GetStringsMap(s.Cfgp.Useseries, logger.CacheFiles),
 			oldfile,
@@ -681,7 +681,7 @@ func (s *Organizer) moveRemoveOldMediaFile(
 				),
 				"",
 				scanner.MoveFileOptions{
-					UseBufferCopy: config.SettingsGeneral.UseFileBufferCopy,
+					UseBufferCopy: config.GetSettingsGeneral().UseFileBufferCopy,
 					Chmod:         s.targetpathCfg.SetChmod,
 					ChmodFolder:   s.targetpathCfg.SetChmodFolder,
 					UseNil:        true,
@@ -857,7 +857,7 @@ func (s *Organizer) organizeSeries(
 		)
 	}
 
-	if config.SettingsGeneral.UseMediaCache {
+	if config.GetSettingsGeneral().UseMediaCache {
 		database.SlicesCacheContainsDelete(logger.CacheUnmatchedSeries, newpath)
 		database.AppendCache(logger.CacheFilesSeries, newpath)
 	}
@@ -980,7 +980,7 @@ func (s *Organizer) organizeMovie(
 		&m.MovieID,
 	)
 
-	if config.SettingsGeneral.UseFileCache {
+	if config.GetSettingsGeneral().UseFileCache {
 		database.SlicesCacheContainsDelete(logger.CacheUnmatchedMovie, newpath)
 		database.AppendCache(logger.CacheFilesMovie, newpath)
 	}
@@ -1063,7 +1063,7 @@ func (s *Organizer) moveandcleanup(
 			o.videotarget,
 			o.Filename,
 			scanner.MoveFileOptions{
-				UseBufferCopy: config.SettingsGeneral.UseFileBufferCopy,
+				UseBufferCopy: config.GetSettingsGeneral().UseFileBufferCopy,
 				Chmod:         s.targetpathCfg.SetChmod,
 				ChmodFolder:   s.targetpathCfg.SetChmodFolder,
 				UseOther:      true,
@@ -1116,7 +1116,7 @@ func (s *Organizer) walkcleanup(rootpath, videotarget, filename string, useremov
 			} else {
 				_, err := scanner.MoveFile(fpath, s.sourcepathCfg, videotarget, filename,
 					scanner.MoveFileOptions{
-						UseBufferCopy: config.SettingsGeneral.UseFileBufferCopy,
+						UseBufferCopy: config.GetSettingsGeneral().UseFileBufferCopy,
 						Chmod:         s.targetpathCfg.SetChmod,
 						ChmodFolder:   s.targetpathCfg.SetChmodFolder,
 						UseOther:      true,
@@ -1211,17 +1211,19 @@ func (s *Organizer) notify(o *Organizerdata, m *database.ParseInfo, id *uint, ol
 			continue
 		}
 
-		switch config.SettingsNotification[s.Cfgp.Notification[idx].MapNotification].NotificationType {
+		cfgnot := config.GetSettingsNotification(s.Cfgp.Notification[idx].MapNotification)
+
+		switch cfgnot.NotificationType {
 		case "pushover":
 			bl, messageTitle := logger.ParseStringTemplate(s.Cfgp.Notification[idx].Title, &notify)
 			if bl {
 				continue
 			}
 			err = apiexternal.SendPushoverMessage(
-				config.SettingsNotification[s.Cfgp.Notification[idx].MapNotification].Apikey,
+				cfgnot.Apikey,
 				messagetext,
 				messageTitle,
-				config.SettingsNotification[s.Cfgp.Notification[idx].MapNotification].Recipient,
+				cfgnot.Recipient,
 			)
 			if err != nil {
 				logger.LogDynamicanyErr("error", "Error sending pushover", err)
@@ -1230,7 +1232,7 @@ func (s *Organizer) notify(o *Organizerdata, m *database.ParseInfo, id *uint, ol
 			}
 		case "csv":
 			scanner.AppendCsv(
-				config.SettingsNotification[s.Cfgp.Notification[idx].MapNotification].Outputto,
+				cfgnot.Outputto,
 				messagetext,
 			)
 		}
@@ -1428,7 +1430,7 @@ func OrganizeSingleFolder(
 		}
 
 		// CheckUnmatched
-		if config.SettingsGeneral.UseFileCache {
+		if config.GetSettingsGeneral().UseFileCache {
 			if database.SlicesCacheContains(cfgp.Useseries, logger.CacheUnmatched, fpath) {
 				return nil
 			}
@@ -1523,7 +1525,7 @@ func (s *Organizer) walkorganizefolder(fpath, folder string, cfgp *config.MediaT
 			return nil
 		}
 	}
-	if config.SettingsGeneral.UseFileCache {
+	if config.GetSettingsGeneral().UseFileCache {
 		database.SlicesCacheContainsDelete(
 			logger.GetStringsMap(s.Cfgp.Useseries, logger.CacheUnmatched),
 			fpath,
@@ -1702,7 +1704,7 @@ func NewStructure(
 		)
 		return nil
 	}
-	if config.SettingsPath[sourcepathstr] == nil {
+	if config.GetSettingsPath(sourcepathstr) == nil {
 		logger.LogDynamicany1String(
 			"error",
 			"structure source not found",
@@ -1711,7 +1713,7 @@ func NewStructure(
 		)
 		return nil
 	}
-	if config.SettingsPath[targetpathstr] == nil {
+	if config.GetSettingsPath(targetpathstr) == nil {
 		logger.LogDynamicany1String(
 			"error",
 			"structure target not found",
@@ -1721,10 +1723,10 @@ func NewStructure(
 		return nil
 	}
 
-	if config.SettingsPath[sourcepathstr].Name == "" {
+	if config.GetSettingsPath(sourcepathstr).Name == "" {
 		logger.LogDynamicany1String(
 			"error",
-			"template "+config.SettingsPath[sourcepathstr].Name+" not found",
+			"template "+config.GetSettingsPath(sourcepathstr).Name+" not found",
 			logger.StrFile,
 			sourcepathstr,
 		)
@@ -1734,8 +1736,8 @@ func NewStructure(
 	o.checkruntime = checkruntime
 	o.deletewronglanguage = deletewronglanguage
 	o.manualID = manualid
-	o.sourcepathCfg = config.SettingsPath[sourcepathstr]
-	o.targetpathCfg = config.SettingsPath[targetpathstr]
+	o.sourcepathCfg = config.GetSettingsPath(sourcepathstr)
+	o.targetpathCfg = config.GetSettingsPath(targetpathstr)
 	o.Cfgp = cfgp
 	return o
 }

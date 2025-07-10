@@ -181,7 +181,7 @@ func (m *ParseInfo) moviegetimdbtitle(dbid *uint) bool {
 		return false
 	}
 	var year uint16
-	if config.SettingsGeneral.UseMediaCache {
+	if config.GetSettingsGeneral().UseMediaCache {
 		year = CacheThreeStringIntIndexFuncGetYear(logger.CacheDBMovie, *dbid)
 	} else {
 		year = Getdatarow[uint16](false, "select year from dbmovies where id = ?", dbid)
@@ -209,7 +209,7 @@ func (m *ParseInfo) Findmoviedbidbytitle(slugged bool) {
 	if slugged {
 		m.TempTitle = logger.StringToSlug(m.Title)
 	}
-	if config.SettingsGeneral.UseMediaCache {
+	if config.GetSettingsGeneral().UseMediaCache {
 		m.findMovieInCache()
 		return
 	}
@@ -387,7 +387,7 @@ func (m *ParseInfo) MovieFindDBIDByImdbParser() {
 		return
 	}
 	m.Imdb = logger.AddImdbPrefix(m.Imdb)
-	if config.SettingsGeneral.UseMediaCache {
+	if config.GetSettingsGeneral().UseMediaCache {
 		m.DbmovieID = CacheThreeStringIntIndexFunc(logger.CacheDBMovie, &m.Imdb)
 		return
 	}
@@ -546,7 +546,7 @@ func (m *ParseInfo) Checktitle(
 		return true
 	}
 
-	if config.SettingsGeneral.UseMediaCache {
+	if config.GetSettingsGeneral().UseMediaCache {
 		return m.checkalternatetitles(GetCachedArr(cache.itemstwostring,
 			logger.GetStringsMap(cfgp.Useseries, logger.CacheMediaTitles),
 			false,
@@ -602,7 +602,7 @@ func (m *ParseInfo) checkalternatetitles(
 
 // AddUnmatched adds an unmatched file to the database. If the file is already in the cache, it returns without adding it. Otherwise, it inserts a new record into the appropriate table (movie_file_unmatcheds or serie_file_unmatcheds) with the file path, list name, and parsed data.
 func (m *ParseInfo) AddUnmatched(cfgp *config.MediaTypeConfig, listname *string, err error) {
-	if config.SettingsGeneral.UseFileCache {
+	if config.GetSettingsGeneral().UseFileCache {
 		if slices.Contains(
 			GetCachedArr(cache.itemsstring,
 				logger.GetStringsMap(cfgp.Useseries, logger.CacheUnmatched),
@@ -684,7 +684,7 @@ func (m *ParseInfo) ExecParsed(cfgp *config.MediaTypeConfig, err error, listname
 	str := bld.String()
 
 	if id == 0 {
-		if config.SettingsGeneral.UseFileCache {
+		if config.GetSettingsGeneral().UseFileCache {
 			AppendCacheMap(cfgp.Useseries, logger.CacheUnmatched, m.TempTitle)
 		}
 		ExecN(logger.GetStringsMap(cfgp.Useseries, "InsertUnmatched"), &str, listname, &m.TempTitle)
@@ -706,7 +706,7 @@ func (m *ParseInfo) FindDbserieByName(slugged bool) {
 	if slugged {
 		m.TempTitle = logger.StringToSlug(m.TempTitle)
 	}
-	if config.SettingsGeneral.UseMediaCache {
+	if config.GetSettingsGeneral().UseMediaCache {
 		for _, a := range GetCachedArr(cache.itemsthreestring, logger.CacheDBSeries, false, true) {
 			if a.Str1 == m.TempTitle || a.Str2 == m.TempTitle ||
 				strings.EqualFold(a.Str1, m.TempTitle) ||
@@ -926,7 +926,7 @@ func (m *ParseInfo) Getqualityidxbyid(tbl []Qualities, i uint8) int {
 func (m *ParseInfo) Gettypeids(inval string, qualitytype []Qualities) uint {
 	for idx := range qualitytype {
 		qual := &qualitytype[idx]
-		if qual.Strings != "" && !config.SettingsGeneral.DisableParserStringMatch &&
+		if qual.Strings != "" && !config.GetSettingsGeneral().DisableParserStringMatch &&
 			logger.SlicesContainsI(qual.StringsLowerSplitted, inval) {
 			if qual.ID != 0 {
 				return qual.ID

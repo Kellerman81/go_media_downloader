@@ -228,7 +228,7 @@ func (movie *Dbmovie) MovieFindDBIDByImdbParser() {
 		return
 	}
 	movie.ImdbID = logger.AddImdbPrefix(movie.ImdbID)
-	if config.SettingsGeneral.UseMediaCache {
+	if config.GetSettingsGeneral().UseMediaCache {
 		movie.ID = CacheThreeStringIntIndexFunc(logger.CacheDBMovie, &movie.ImdbID)
 		return
 	}

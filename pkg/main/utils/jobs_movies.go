@@ -61,7 +61,7 @@ func jobImportMovieParseV2(
 			)
 			if m.MovieID == 0 {
 				if m.Imdb == "" {
-					if config.SettingsGeneral.UseMediaCache {
+					if config.GetSettingsGeneral().UseMediaCache {
 						m.CacheThreeStringIntIndexFuncGetImdb()
 					} else {
 						database.Scanrowsdyn(false, "select imdb_id from dbmovies where id = ?", &m.Imdb, &m.DbmovieID)
@@ -142,7 +142,7 @@ func jobImportMovieParseV2(
 	database.ExecN("update movies set missing = 0 where id = ?", &m.MovieID)
 	database.ExecN("update movies set quality_reached = ? where id = ?", &i, &m.MovieID)
 
-	if config.SettingsGeneral.UseFileCache {
+	if config.GetSettingsGeneral().UseFileCache {
 		database.SlicesCacheContainsDelete(logger.CacheUnmatchedMovie, pathv)
 		database.AppendCache(logger.CacheFilesMovie, pathv)
 	}
@@ -233,7 +233,7 @@ func importnewmoviessingle(
 		args.Arr = append(args.Arr, &list.IgnoreMapLists[idx])
 	}
 	var existing []uint
-	if !config.SettingsGeneral.UseMediaCache && listnamefilter != "" {
+	if !config.GetSettingsGeneral().UseMediaCache && listnamefilter != "" {
 		existing = database.GetrowsNuncached[uint](
 			database.Getdatarow[uint](
 				false,
@@ -256,7 +256,7 @@ func importnewmoviessingle(
 		movieid = importfeed.MovieFindDBIDByImdb(&feed.Movies[idx])
 
 		if movieid != 0 {
-			if config.SettingsGeneral.UseMediaCache {
+			if config.GetSettingsGeneral().UseMediaCache {
 				if database.CacheOneStringTwoIntIndexFunc(
 					logger.CacheMovie,
 					func(elem *database.DbstaticOneStringTwoInt) bool {
@@ -271,7 +271,7 @@ func importnewmoviessingle(
 			}
 
 			if list.IgnoreMapListsLen >= 1 {
-				if config.SettingsGeneral.UseMediaCache {
+				if config.GetSettingsGeneral().UseMediaCache {
 					if database.CacheOneStringTwoIntIndexFunc(
 						logger.CacheMovie,
 						func(elem *database.DbstaticOneStringTwoInt) bool {
@@ -326,10 +326,10 @@ func checkreachedmoviesflag(listcfg *config.MediaListsConfig) {
 			&arr[idx].ID,
 			false,
 			-1,
-			config.SettingsQuality[arr[idx].QualityProfile],
+			config.GetSettingsQuality(arr[idx].QualityProfile),
 			false,
 		)
-		if minPrio >= config.SettingsQuality[arr[idx].QualityProfile].CutoffPriority {
+		if minPrio >= config.GetSettingsQuality(arr[idx].QualityProfile).CutoffPriority {
 			if !arr[idx].QualityReached {
 				database.ExecN("update movies set quality_reached = 1 where id = ?", &arr[idx].ID)
 			}
@@ -401,10 +401,10 @@ func MoviesAllJobs(job string, force bool) {
 	if job == "" {
 		return
 	}
-	for _, media := range config.SettingsMedia {
+	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) {
 		if !strings.HasPrefix(media.NamePrefix, logger.StrMovie) {
-			continue
+			return
 		}
 		SingleJobs(job, media.NamePrefix, "", force, 0)
-	}
+	})
 }

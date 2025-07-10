@@ -54,9 +54,9 @@ func InitialFillSeries() {
 	database.Refreshfilescached(true, true)
 
 	var err error
-	for _, media := range config.SettingsMedia {
+	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) {
 		if !media.Useseries {
-			continue
+			return
 		}
 		dbid := insertjobhistory(logger.StrFeeds, media)
 		for idx2 := range media.Lists {
@@ -69,19 +69,19 @@ func InitialFillSeries() {
 			}
 		}
 		database.ExecN(database.QueryUpdateHistory, &dbid)
-	}
+	})
 	ctx := context.Background()
 	defer ctx.Done()
-	for _, media := range config.SettingsMedia {
+	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) {
 		if !media.Useseries {
-			continue
+			return
 		}
 		dbid := insertjobhistory(logger.StrDataFull, media)
 		for idxi := range media.Data {
 			newfilesloop(ctx, media, &media.Data[idxi])
 		}
 		database.ExecN(database.QueryUpdateHistory, &dbid)
-	}
+	})
 	ctx.Done()
 
 	database.ClearCaches()
@@ -97,9 +97,9 @@ func InitialFillMovies() {
 	database.Refreshunmatchedcached(false, true)
 	database.Refreshfilescached(false, true)
 	var err error
-	for _, media := range config.SettingsMedia {
+	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) {
 		if media.Useseries {
-			continue
+			return
 		}
 		dbid := insertjobhistory(logger.StrFeeds, media)
 		for idx2 := range media.Lists {
@@ -112,21 +112,20 @@ func InitialFillMovies() {
 			}
 		}
 		database.ExecN(database.QueryUpdateHistory, &dbid)
-	}
+	})
 
 	ctx := context.Background()
 	defer ctx.Done()
-	for _, media := range config.SettingsMedia {
+	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) {
 		if media.Useseries {
-			continue
+			return
 		}
 		dbid := insertjobhistory(logger.StrDataFull, media)
-
 		for idxi := range media.Data {
 			newfilesloop(ctx, media, &media.Data[idxi])
 		}
 		database.ExecN(database.QueryUpdateHistory, &dbid)
-	}
+	})
 	ctx.Done()
 
 	database.ClearCaches()
@@ -189,7 +188,7 @@ func newfilesloop(ctx context.Context, cfgp *config.MediaTypeConfig, data *confi
 		if info.IsDir() {
 			return nil
 		}
-		if config.SettingsGeneral.UseFileCache {
+		if config.GetSettingsGeneral().UseFileCache {
 			if database.SlicesCacheContains(cfgp.Useseries, logger.CacheFiles, fpath) {
 				return nil
 			}
@@ -281,15 +280,15 @@ func newfilesloop(ctx context.Context, cfgp *config.MediaTypeConfig, data *confi
 // job string and dispatched to internal functions. List can be empty to run for all lists.
 func SingleJobs(job, cfgpstr, listname string, force bool, key uint32) {
 	defer worker.RemoveQueueEntry(key)
-	if job == "" || cfgpstr == "" || (config.SettingsGeneral.SchedulerDisabled && !force) {
+	if job == "" || cfgpstr == "" || (config.GetSettingsGeneral().SchedulerDisabled && !force) {
 		logjob("skipped Job", cfgpstr, listname, job)
 		return
 	}
 
-	cfgp := config.SettingsMedia[cfgpstr]
+	cfgp := config.GetSettingsMedia(cfgpstr)
 	if cfgpstr != "" && cfgp == nil {
 		config.LoadCfgDB()
-		cfgp = config.SettingsMedia[cfgpstr]
+		cfgp = config.GetSettingsMedia(cfgpstr)
 		if cfgp == nil {
 			logjob("config not found", cfgpstr, listname, job)
 			return
@@ -312,8 +311,8 @@ func SingleJobs(job, cfgpstr, listname string, force bool, key uint32) {
 			ctx := context.Background()
 			defer ctx.Done()
 			for idx := range cfgp.ListsQualities {
-				searcher.NewSearcher(cfgp, config.SettingsQuality[cfgp.ListsQualities[idx]], logger.StrRss, nil).
-					SearchRSS(ctx, cfgp, config.SettingsQuality[cfgp.ListsQualities[idx]], true, true)
+				searcher.NewSearcher(cfgp, config.GetSettingsQuality(cfgp.ListsQualities[idx]), logger.StrRss, nil).
+					SearchRSS(ctx, cfgp, config.GetSettingsQuality(cfgp.ListsQualities[idx]), true, true)
 			}
 			ctx.Done()
 		} else {

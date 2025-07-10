@@ -102,7 +102,7 @@ func (s *Nzbwithprio) Getregexcfg(qual *config.QualityConfig) *config.RegexConfi
 		if indcfg != nil {
 			return indcfg
 		}
-		_, ok := config.SettingsList[s.NZB.Indexer.Name]
+		ok := config.TestSettingsList(s.NZB.Indexer.Name)
 		if ok {
 			return qual.Indexer[0].CfgRegex
 		}

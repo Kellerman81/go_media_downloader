@@ -285,10 +285,10 @@ func apiParseString(ctx *gin.Context) {
 	} else {
 		cfgv = "serie_" + getcfg.Config
 	}
-	cfgp := config.SettingsMedia[cfgv]
+	cfgp := config.GetSettingsMedia(cfgv)
 	parse := parser.ParseFile(getcfg.Name, false, false, cfgp, -1)
 	// parse := parser.NewFileParser(getcfg.Name, cfgp, false, -1)
-	parser.GetPriorityMapQual(parse, cfgp, config.SettingsQuality[getcfg.Quality], true, true)
+	parser.GetPriorityMapQual(parse, cfgp, config.GetSettingsQuality(getcfg.Quality), true, true)
 	err = parser.GetDBIDs(parse, cfgp, true)
 	ctx.JSON(http.StatusOK, gin.H{"data": parse, "error": err})
 	parse.Close()
@@ -316,13 +316,13 @@ func apiParseFile(ctx *gin.Context) {
 	} else {
 		cfgv = "serie_" + getcfg.Config
 	}
-	cfgp := config.SettingsMedia[cfgv]
+	cfgp := config.GetSettingsMedia(cfgv)
 	// defer parse.Close()
 	parse := parser.ParseFile(getcfg.Path, true, false, cfgp, -1)
 	// parse := parser.NewFileParser(filepath.Base(getcfg.Path), cfgp, false, -1)
 	parse.File = getcfg.Path
-	parser.ParseVideoFile(parse, config.SettingsQuality[getcfg.Quality])
-	parser.GetPriorityMapQual(parse, cfgp, config.SettingsQuality[getcfg.Quality], true, true)
+	parser.ParseVideoFile(parse, config.GetSettingsQuality(getcfg.Quality))
+	parser.GetPriorityMapQual(parse, cfgp, config.GetSettingsQuality(getcfg.Quality), true, true)
 	parser.GetDBIDs(parse, cfgp, true)
 	ctx.JSON(http.StatusOK, gin.H{"data": parse})
 	parse.Close()
@@ -336,7 +336,7 @@ func apiParseFile(ctx *gin.Context) {
 // @Failure      401  {object}  Jsonerror
 // @Router       /api/fillimdb [get].
 func apiFillImdb(ctx *gin.Context) {
-	config.SettingsGeneral.Jobs["RefreshImdb"](0)
+	config.GetSettingsGeneral().Jobs["RefreshImdb"](0)
 	ctx.JSON(http.StatusOK, "ok")
 }
 
@@ -399,20 +399,20 @@ func apiDBClose(ctx *gin.Context) {
 // @Failure      401  {object}  Jsonerror
 // @Router       /api/db/backup [get].
 func apiDBBackup(ctx *gin.Context) {
-	if config.SettingsGeneral.DatabaseBackupStopTasks {
+	if config.GetSettingsGeneral().DatabaseBackupStopTasks {
 		worker.StopCronWorker()
 		worker.CloseWorkerPools()
 	}
 	backupto := "./backup/data.db." + database.GetVersion() + "." + time.Now().
 		Format("20060102_150405")
-	database.Backup(&backupto, config.SettingsGeneral.MaxDatabaseBackups)
-	if config.SettingsGeneral.DatabaseBackupStopTasks {
+	database.Backup(&backupto, config.GetSettingsGeneral().MaxDatabaseBackups)
+	if config.GetSettingsGeneral().DatabaseBackupStopTasks {
 		worker.InitWorkerPools(
-			config.SettingsGeneral.WorkerSearch,
-			config.SettingsGeneral.WorkerFiles,
-			config.SettingsGeneral.WorkerMetadata,
-			config.SettingsGeneral.WorkerRSS,
-			config.SettingsGeneral.WorkerIndexer,
+			config.GetSettingsGeneral().WorkerSearch,
+			config.GetSettingsGeneral().WorkerFiles,
+			config.GetSettingsGeneral().WorkerMetadata,
+			config.GetSettingsGeneral().WorkerRSS,
+			config.GetSettingsGeneral().WorkerIndexer,
 		)
 		worker.StartCronWorker()
 	}
@@ -827,69 +827,69 @@ func apiListConfigType(ctx *gin.Context) {
 	}
 	switch left {
 	case "general":
-		list["general"] = config.SettingsGeneral
+		list["general"] = config.GetSettingsGeneral()
 	case logger.StrImdb:
-		list[logger.StrImdb] = config.SettingsImdb
+		list[logger.StrImdb] = config.GetSettingsImdb()
 	case "downloader":
-		for key, cfgdata := range config.SettingsDownloader {
+		config.RangeSettingsDownloader(func(key string, cfgdata *config.DownloaderConfig) {
 			if strings.HasPrefix(key, right) {
 				list["downloader_"+key] = cfgdata
 			}
-		}
+		})
 	case "indexer":
-		for key, cfgdata := range config.SettingsIndexer {
+		config.RangeSettingsIndexer(func(key string, cfgdata *config.IndexersConfig) {
 			if strings.HasPrefix(key, right) {
 				list["indexer_"+key] = cfgdata
 			}
-		}
+		})
 	case "list":
-		for key, cfgdata := range config.SettingsList {
+		config.RangeSettingsList(func(key string, cfgdata *config.ListsConfig) {
 			if strings.HasPrefix(key, right) {
 				list["list_"+key] = cfgdata
 			}
-		}
+		})
 	case logger.StrSerie:
-		for key, cfgdata := range config.SettingsMedia {
+		config.RangeSettingsMedia(func(key string, cfgdata *config.MediaTypeConfig) {
 			if strings.HasPrefix(key, right) {
 				list["serie_"+key] = cfgdata
 			}
-		}
+		})
 	case logger.StrMovie:
-		for key, cfgdata := range config.SettingsMedia {
+		config.RangeSettingsMedia(func(key string, cfgdata *config.MediaTypeConfig) {
 			if strings.HasPrefix(key, right) {
 				list["movie_"+key] = cfgdata
 			}
-		}
+		})
 	case "notification":
-		for key, cfgdata := range config.SettingsNotification {
+		config.RangeSettingsNotification(func(key string, cfgdata *config.NotificationConfig) {
 			if strings.HasPrefix(key, right) {
 				list["notification_"+key] = cfgdata
 			}
-		}
+		})
 	case "path":
-		for key, cfgdata := range config.SettingsPath {
+		config.RangeSettingsPath(func(key string, cfgdata *config.PathsConfig) {
 			if strings.HasPrefix(key, right) {
 				list["path_"+key] = cfgdata
 			}
-		}
+		})
 	case "quality":
-		for key, cfgdata := range config.SettingsQuality {
+		config.RangeSettingsQuality(func(key string, cfgdata *config.QualityConfig) {
 			if strings.HasPrefix(key, right) {
 				list["quality_"+key] = cfgdata
 			}
-		}
+		})
 	case "regex":
-		for key, cfgdata := range config.SettingsRegex {
+		config.RangeSettingsRegex(func(key string, cfgdata *config.RegexConfig) {
 			if strings.HasPrefix(key, right) {
 				list["regex_"+key] = cfgdata
 			}
-		}
+		})
 	case "scheduler":
-		for key, cfgdata := range config.SettingsScheduler {
+		config.RangeSettingsScheduler(func(key string, cfgdata *config.SchedulerConfig) {
 			if strings.HasPrefix(key, right) {
 				list["scheduler_"+key] = cfgdata
 			}
-		}
+		})
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{"data": list})
@@ -925,11 +925,11 @@ func apiNamingGenerate(ctx *gin.Context) {
 			database.Querywithargs{Where: logger.FilterByID},
 			cfg.MovieID,
 		)
-		cfgp := config.SettingsMedia[cfg.CfgMedia]
+		cfgp := config.GetSettingsMedia(cfg.CfgMedia)
 		s := structure.NewStructure(
 			cfgp,
-			config.SettingsMedia[cfg.CfgMedia].DataImport[0].TemplatePath,
-			config.SettingsMedia[cfg.CfgMedia].Data[0].TemplatePath, false, false, 0)
+			config.GetSettingsMedia(cfg.CfgMedia).DataImport[0].TemplatePath,
+			config.GetSettingsMedia(cfg.CfgMedia).Data[0].TemplatePath, false, false, 0)
 		// defer s.Close()
 		to := filepath.Dir(cfg.FilePath)
 
@@ -955,12 +955,12 @@ func apiNamingGenerate(ctx *gin.Context) {
 	} else {
 		series, _ := database.GetSeries(database.Querywithargs{Where: logger.FilterByID}, cfg.SerieID)
 		// defer logger.ClearVar(&series)
-		cfgp := config.SettingsMedia[cfg.CfgMedia]
+		cfgp := config.GetSettingsMedia(cfg.CfgMedia)
 
 		s := structure.NewStructure(
 			cfgp,
-			config.SettingsMedia[cfg.CfgMedia].DataImport[0].TemplatePath,
-			config.SettingsMedia[cfg.CfgMedia].Data[0].TemplatePath,
+			config.GetSettingsMedia(cfg.CfgMedia).DataImport[0].TemplatePath,
+			config.GetSettingsMedia(cfg.CfgMedia).Data[0].TemplatePath,
 			false, false, 0,
 		)
 		// defer s.Close()
@@ -1024,7 +1024,7 @@ func apiStructure(ctx *gin.Context) {
 		getconfig = "serie_" + cfg.Configentry
 	}
 	// defer media.Close()
-	if config.SettingsMedia[getconfig].Name != cfg.Configentry {
+	if config.GetSettingsMedia(getconfig).Name != cfg.Configentry {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "media config not found"})
 		return
 	}
@@ -1042,7 +1042,7 @@ func apiStructure(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "folder not found"})
 		return
 	}
-	cfgp := config.SettingsMedia[getconfig]
+	cfgp := config.GetSettingsMedia(getconfig)
 
 	var cfgimport *config.MediaDataImportConfig
 	for _, imp := range cfgp.DataImport {
@@ -1052,11 +1052,11 @@ func apiStructure(ctx *gin.Context) {
 		}
 	}
 
-	checkruntime := config.SettingsPath[cfg.Sourcepathtemplate].CheckRuntime
+	checkruntime := config.GetSettingsPath(cfg.Sourcepathtemplate).CheckRuntime
 	if cfg.Disableruntimecheck {
 		checkruntime = false
 	}
-	deletewronglanguage := config.SettingsPath[cfg.Sourcepathtemplate].DeleteWrongLanguage
+	deletewronglanguage := config.GetSettingsPath(cfg.Sourcepathtemplate).DeleteWrongLanguage
 	if cfg.Disabledeletewronglanguage {
 		deletewronglanguage = false
 	}

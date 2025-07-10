@@ -61,7 +61,7 @@ func checkimdbyearsingle(
 // It first checks the cache if enabled, otherwise queries the database directly.
 // If no match is found, it returns 0.
 func MovieFindDBIDByImdb(imdb *string) uint {
-	if config.SettingsGeneral.UseMediaCache {
+	if config.GetSettingsGeneral().UseMediaCache {
 		id := database.CacheThreeStringIntIndexFunc(logger.CacheDBMovie, imdb)
 		if id != 0 {
 			return id
@@ -101,7 +101,7 @@ func MovieFindImdbIDByTitle(
 		m.Findmoviedbidbytitle(true)
 	}
 	if m.DbmovieID != 0 {
-		if config.SettingsGeneral.UseMediaCache {
+		if config.GetSettingsGeneral().UseMediaCache {
 			m.CacheThreeStringIntIndexFuncGetImdb()
 			if m.DbmovieID != 0 {
 				return
@@ -143,7 +143,7 @@ func processprovider(
 	var haveyear int
 	switch provider {
 	case logger.StrImdb:
-		if config.SettingsGeneral.MovieMetaSourceImdb {
+		if config.GetSettingsGeneral().MovieMetaSourceImdb {
 			arr := database.GetrowsN[database.DbstaticOneStringOneInt](
 				true,
 				database.Getdatarow[uint](
@@ -189,7 +189,7 @@ func processprovider(
 			m.Cleanimdbdbmovie()
 		}
 	case "tmdb":
-		if config.SettingsGeneral.MovieMetaSourceTmdb {
+		if config.GetSettingsGeneral().MovieMetaSourceTmdb {
 			if m.Title == "" {
 				m.Cleanimdbdbmovie()
 				return true
@@ -233,7 +233,7 @@ func processprovider(
 			m.Cleanimdbdbmovie()
 		}
 	case "omdb":
-		if config.SettingsGeneral.MovieMetaSourceOmdb {
+		if config.GetSettingsGeneral().MovieMetaSourceOmdb {
 			tbl, err := apiexternal.SearchOmdbMovie(m.Title, "")
 			if err != nil {
 				m.Cleanimdbdbmovie()
@@ -389,7 +389,7 @@ func JobImportMovies(
 
 			metadata.Getmoviemetatitles(&dbmovie, cfgp)
 			if dbmovieadded {
-				if config.SettingsGeneral.UseMediaCache {
+				if config.GetSettingsGeneral().UseMediaCache {
 					database.AppendCacheThreeString(logger.CacheDBMovie, database.DbstaticThreeStringTwoInt{Str1: dbmovie.Title, Str2: dbmovie.Slug, Str3: imdb, Num1: int(dbmovie.Year), Num2: dbmovie.ID})
 				}
 			}
@@ -432,7 +432,7 @@ func Checkaddmovieentry(dbid *uint, cfgplist *config.MediaListsConfig, imdb stri
 	}
 	var getcount uint
 	if cfgplist.IgnoreMapListsLen >= 1 {
-		if config.SettingsGeneral.UseMediaCache {
+		if config.GetSettingsGeneral().UseMediaCache {
 			dbidn := *dbid
 			if database.CacheOneStringTwoIntIndexFunc(
 				logger.CacheMovie,
@@ -457,7 +457,7 @@ func Checkaddmovieentry(dbid *uint, cfgplist *config.MediaListsConfig, imdb stri
 		}
 	}
 	if cfgplist.ReplaceMapListsLen >= 1 {
-		if config.SettingsGeneral.UseMediaCache {
+		if config.GetSettingsGeneral().UseMediaCache {
 			var replaced bool
 			arr := database.GetCachedTwoIntArr(logger.CacheMovie, false, true)
 			for idx := range arr {
@@ -545,7 +545,7 @@ func Checkaddmovieentry(dbid *uint, cfgplist *config.MediaListsConfig, imdb stri
 		if err != nil {
 			return err
 		}
-		if config.SettingsGeneral.UseMediaCache {
+		if config.GetSettingsGeneral().UseMediaCache {
 			database.AppendCacheTwoInt(
 				logger.CacheMovie,
 				database.DbstaticOneStringTwoInt{
@@ -625,12 +625,12 @@ func AllowMovieImport(imdb *string, listcfg *config.ListsConfig) (bool, error) {
 // If neither are set, it returns a default order of "imdb", "tmdb", "omdb".
 func getsearchprovider(searchtyperss bool) []string {
 	if searchtyperss {
-		if len(config.SettingsGeneral.MovieRSSMetaSourcePriority) >= 1 {
-			return config.SettingsGeneral.MovieRSSMetaSourcePriority
+		if len(config.GetSettingsGeneral().MovieRSSMetaSourcePriority) >= 1 {
+			return config.GetSettingsGeneral().MovieRSSMetaSourcePriority
 		}
 	} else {
-		if len(config.SettingsGeneral.MovieParseMetaSourcePriority) >= 1 {
-			return config.SettingsGeneral.MovieParseMetaSourcePriority
+		if len(config.GetSettingsGeneral().MovieParseMetaSourcePriority) >= 1 {
+			return config.GetSettingsGeneral().MovieParseMetaSourcePriority
 		}
 	}
 	return defaultproviders
@@ -803,7 +803,7 @@ func jobImportDBSeries(
 				database.Scanrowsdyn(false, "select count() from dbserie_alternates where dbserie_id = ?", &count, &dbserie.ID)
 				titles := database.GetrowsN[database.DbstaticOneStringOneUInt](false, count+10, "select title, id from dbserie_alternates where dbserie_id = ?", &dbserie.ID)
 
-				if config.SettingsGeneral.SerieAlternateTitleMetaSourceImdb && dbserie.ImdbID != "" {
+				if config.GetSettingsGeneral().SerieAlternateTitleMetaSourceImdb && dbserie.ImdbID != "" {
 					dbserie.ImdbID = logger.AddImdbPrefix(dbserie.ImdbID)
 					arr := database.Getrowssize[database.DbstaticThreeString](true, "select count() from imdb_akas where tconst = ?", "select title, region, slug from imdb_akas where tconst = ?", &dbserie.ImdbID)
 					for idx := range arr {
@@ -820,7 +820,7 @@ func jobImportDBSeries(
 						}
 					}
 				}
-				if config.SettingsGeneral.SerieAlternateTitleMetaSourceTrakt && (dbserie.TraktID != 0 || dbserie.ImdbID != "") {
+				if config.GetSettingsGeneral().SerieAlternateTitleMetaSourceTrakt && (dbserie.TraktID != 0 || dbserie.ImdbID != "") {
 					tbl := apiexternal.GetTraktSerieAliases(&dbserie)
 					for idx := range tbl {
 						if database.GetDBStaticOneStringOneIntIdx(titles, tbl[idx].Title) != -1 {
@@ -837,7 +837,7 @@ func jobImportDBSeries(
 					}
 				}
 
-				tbl := metadata.SerieGetMetadata(&dbserie, cfgp.MetadataLanguage, config.SettingsGeneral.SerieMetaSourceTmdb, config.SettingsGeneral.SerieMetaSourceTrakt, !addnew, serieconfig.AlternateName)
+				tbl := metadata.SerieGetMetadata(&dbserie, cfgp.MetadataLanguage, config.GetSettingsGeneral().SerieMetaSourceTmdb, config.GetSettingsGeneral().SerieMetaSourceTrakt, !addnew, serieconfig.AlternateName)
 				for idx := range tbl {
 					if database.GetDBStaticOneStringOneIntIdx(titles, tbl[idx]) != -1 {
 						continue
@@ -864,7 +864,7 @@ func jobImportDBSeries(
 					if dbserie.ThetvdbID != 0 {
 						apiexternal.UpdateTvdbSeriesEpisodes(dbserie.ThetvdbID, cfgp.MetadataLanguage, &dbserie.ID)
 					}
-					if config.SettingsGeneral.SerieMetaSourceTrakt && dbserie.ImdbID != "" {
+					if config.GetSettingsGeneral().SerieMetaSourceTrakt && dbserie.ImdbID != "" {
 						apiexternal.UpdateTraktSerieSeasonsAndEpisodes(dbserie.ImdbID, &dbserie.ID)
 					}
 				}
@@ -927,7 +927,7 @@ func jobImportDBSeries(
 			if err != nil {
 				return err
 			}
-			if config.SettingsGeneral.UseMediaCache {
+			if config.GetSettingsGeneral().UseMediaCache {
 				database.AppendCacheTwoInt(
 					logger.CacheSeries,
 					database.DbstaticOneStringTwoInt{
@@ -1014,7 +1014,7 @@ func insertdbserie(serieconfig *config.SerieConfig, dbserie *database.Dbserie) {
 	}
 	dbserie.ID = logger.Int64ToUint(inres)
 
-	if config.SettingsGeneral.UseMediaCache {
+	if config.GetSettingsGeneral().UseMediaCache {
 		database.AppendCacheThreeString(
 			logger.CacheDBSeries,
 			database.DbstaticThreeStringTwoInt{
@@ -1059,7 +1059,7 @@ func addalternateserietitle(dbserieid *uint, title *string, regionin ...*string)
 		} else {
 			database.ExecN("Insert into dbserie_alternates (title, slug, dbserie_id) values (?, ?, ?)", title, &slug, dbserieid)
 		}
-		if config.SettingsGeneral.UseMediaCache {
+		if config.GetSettingsGeneral().UseMediaCache {
 			database.AppendCacheTwoString(
 				logger.CacheDBSeriesAlt,
 				database.DbstaticTwoStringOneInt{Str1: *title, Str2: slug, Num: *dbserieid},

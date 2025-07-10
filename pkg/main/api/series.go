@@ -451,10 +451,9 @@ func apiseriesAllJobs(c *gin.Context) {
 		var cfgp *config.MediaTypeConfig
 		// defer cfgSerie.Close()
 		// defer cfg_list.Close()
-	contloop:
-		for _, media := range config.SettingsMedia {
+		config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) {
 			if !strings.HasPrefix(media.NamePrefix, logger.StrSerie) {
-				continue
+				return
 			}
 			cfgp = media
 			cfgpstr := "serie_" + media.Name
@@ -481,7 +480,7 @@ func apiseriesAllJobs(c *gin.Context) {
 						continue
 					}
 
-					if !config.SettingsList[media.Lists[idxlist].TemplateList].Enabled {
+					if !config.GetSettingsList(media.Lists[idxlist].TemplateList).Enabled {
 						continue
 					}
 					listname := media.Lists[idxlist].Name
@@ -499,7 +498,7 @@ func apiseriesAllJobs(c *gin.Context) {
 			case "refresh":
 			case "refreshinc":
 			case "":
-				continue contloop
+				return
 
 			default:
 				worker.Dispatch(c.Param(strJobLower)+"_series_"+media.Name, func(key uint32) {
@@ -507,7 +506,7 @@ func apiseriesAllJobs(c *gin.Context) {
 				}, "Data")
 			}
 			// cfgSerie.Close()
-		}
+		})
 		switch c.Param(strJobLower) {
 		case "refresh":
 			worker.Dispatch(logger.StrRefreshSeries, func(key uint32) {
@@ -572,17 +571,16 @@ func apiseriesJobs(c *gin.Context) {
 			logger.StrCheckMissing,
 			logger.StrCheckMissingFlag,
 			logger.StrReachedFlag:
-			var cfglists config.MediaListsConfig
-			for _, cfglists = range config.SettingsMedia[c.Param("name")].Lists {
+			config.RangeSettingsMediaLists(c.Param("name"), func(cfglists *config.MediaListsConfig) {
 				if !cfglists.Enabled {
-					continue
+					return
 				}
 				if cfglists.CfgList == nil {
-					continue
+					return
 				}
 
 				if cfglists.CfgList.Enabled {
-					continue
+					return
 				}
 				listname := cfglists.Name
 				if c.Param(strJobLower) == logger.StrFeeds {
@@ -606,7 +604,7 @@ func apiseriesJobs(c *gin.Context) {
 					)
 				}
 				// cfg_list.Close()
-			}
+			})
 		case "refresh":
 			worker.Dispatch(logger.StrRefreshSeries, func(key uint32) {
 				utils.SingleJobs("refresh", cfgpstr, "", false, key)
@@ -918,12 +916,13 @@ func updateEpisode(c *gin.Context) {
 // @Router       /api/series/refresh/{id} [get].
 func apirefreshSerie(c *gin.Context) {
 	var cfgp *config.MediaTypeConfig
-	for _, media := range config.SettingsMedia {
+	config.RangeSettingsMediaBreak(func(_ string, media *config.MediaTypeConfig) bool {
 		if media.NamePrefix[:5] != logger.StrMovie {
 			cfgp = media
-			break
+			return true
 		}
-	}
+		return false
+	})
 	id := c.Param(logger.StrID)
 	worker.Dispatch("Refresh Single Serie", func(uint32) {
 		utils.RefreshSerie(cfgp, &id)
@@ -940,12 +939,13 @@ func apirefreshSerie(c *gin.Context) {
 // @Router       /api/series/all/refreshall [get].
 func apirefreshSeries(c *gin.Context) {
 	var cfgp *config.MediaTypeConfig
-	for _, media := range config.SettingsMedia {
+	config.RangeSettingsMediaBreak(func(_ string, media *config.MediaTypeConfig) bool {
 		if media.NamePrefix[:5] != logger.StrMovie {
 			cfgp = media
-			break
+			return true
 		}
-	}
+		return false
+	})
 	worker.Dispatch(logger.StrRefreshSeries, func(key uint32) {
 		utils.SingleJobs("refresh", cfgp.NamePrefix, "", false, key)
 	}, "Feeds")
@@ -961,12 +961,13 @@ func apirefreshSeries(c *gin.Context) {
 // @Router       /api/series/all/refresh [get].
 func apirefreshSeriesInc(c *gin.Context) {
 	var cfgp *config.MediaTypeConfig
-	for _, media := range config.SettingsMedia {
+	config.RangeSettingsMediaBreak(func(_ string, media *config.MediaTypeConfig) bool {
 		if media.NamePrefix[:5] != logger.StrMovie {
 			cfgp = media
-			break
+			return true
 		}
-	}
+		return false
+	})
 	worker.Dispatch(logger.StrRefreshSeriesInc, func(key uint32) {
 		utils.SingleJobs("refreshinc", cfgp.NamePrefix, "", false, key)
 	}, "Feeds")
@@ -989,9 +990,9 @@ func apiSeriesSearch(c *gin.Context) {
 	)
 	// defer logger.ClearVar(&serie)
 
-	for _, media := range config.SettingsMedia {
+	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) {
 		if !strings.HasPrefix(media.NamePrefix, logger.StrSerie) {
-			continue
+			return
 		}
 		for idxlist := range media.Lists {
 			if strings.EqualFold(media.Lists[idxlist].Name, serie.Listname) {
@@ -1046,7 +1047,7 @@ func apiSeriesSearch(c *gin.Context) {
 				return
 			}
 		}
-	}
+	})
 	c.JSON(http.StatusNoContent, "Nothing Done")
 }
 
@@ -1068,9 +1069,9 @@ func apiSeriesSearchSeason(c *gin.Context) {
 	// defer logger.ClearVar(&serie)
 
 	var episodes []uint
-	for _, media := range config.SettingsMedia {
+	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) {
 		if !strings.HasPrefix(media.NamePrefix, logger.StrSerie) {
-			continue
+			return
 		}
 		for idxlist := range media.Lists {
 			if strings.EqualFold(media.Lists[idxlist].Name, serie.Listname) {
@@ -1133,7 +1134,7 @@ func apiSeriesSearchSeason(c *gin.Context) {
 				return
 			}
 		}
-	}
+	})
 	c.JSON(http.StatusNoContent, "Nothing Done")
 }
 
@@ -1153,9 +1154,9 @@ func apiSeriesSearchRSS(c *gin.Context) {
 	)
 	// defer logger.ClearVar(&serie)
 
-	for _, media := range config.SettingsMedia {
+	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) {
 		if !strings.HasPrefix(media.NamePrefix, logger.StrSerie) {
-			continue
+			return
 		}
 		for idxlist := range media.Lists {
 			if strings.EqualFold(media.Lists[idxlist].Name, serie.Listname) {
@@ -1175,7 +1176,7 @@ func apiSeriesSearchRSS(c *gin.Context) {
 				return
 			}
 		}
-	}
+	})
 	c.JSON(http.StatusNoContent, "Nothing Done")
 }
 
@@ -1194,9 +1195,9 @@ func apiSeriesSearchRSSList(c *gin.Context) {
 	)
 	// defer logger.ClearVar(&serie)
 
-	for _, media := range config.SettingsMedia {
+	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) {
 		if !strings.HasPrefix(media.NamePrefix, logger.StrSerie) {
-			continue
+			return
 		}
 		for idxlist := range media.Lists {
 			if strings.EqualFold(media.Lists[idxlist].Name, serie.Listname) {
@@ -1214,7 +1215,7 @@ func apiSeriesSearchRSSList(c *gin.Context) {
 				return
 			}
 		}
-	}
+	})
 	c.JSON(http.StatusNoContent, "Nothing Done")
 }
 
@@ -1235,9 +1236,9 @@ func apiSeriesSearchRSSSeason(c *gin.Context) {
 	)
 	// defer logger.ClearVar(&serie)
 	season := c.Param("season")
-	for _, media := range config.SettingsMedia {
+	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) {
 		if !strings.HasPrefix(media.NamePrefix, logger.StrSerie) {
-			continue
+			return
 		}
 		for idxlist := range media.Lists {
 			if strings.EqualFold(media.Lists[idxlist].Name, serie.Listname) {
@@ -1257,7 +1258,7 @@ func apiSeriesSearchRSSSeason(c *gin.Context) {
 				return
 			}
 		}
-	}
+	})
 	c.JSON(http.StatusNoContent, "Nothing Done")
 }
 
@@ -1278,9 +1279,9 @@ func apiSeriesEpisodeSearch(c *gin.Context) {
 	serie, _ := database.GetSeries(database.Querywithargs{Where: logger.FilterByID}, serieid)
 	// defer logger.ClearVar(&serie)
 
-	for _, media := range config.SettingsMedia {
+	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) {
 		if !strings.HasPrefix(media.NamePrefix, logger.StrSerie) {
-			continue
+			return
 		}
 
 		for idxlist := range media.Lists {
@@ -1317,7 +1318,7 @@ func apiSeriesEpisodeSearch(c *gin.Context) {
 				return
 			}
 		}
-	}
+	})
 	c.JSON(http.StatusNoContent, "Nothing Done")
 }
 
@@ -1351,9 +1352,9 @@ func apiSeriesEpisodeSearchList(c *gin.Context) {
 		}
 	}
 
-	for _, media := range config.SettingsMedia {
+	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) {
 		if !strings.HasPrefix(media.NamePrefix, logger.StrSerie) {
-			continue
+			return
 		}
 
 		for idxlist := range media.Lists {
@@ -1379,7 +1380,7 @@ func apiSeriesEpisodeSearchList(c *gin.Context) {
 				return
 			}
 		}
-	}
+	})
 	c.JSON(http.StatusNoContent, "Nothing Done")
 }
 
@@ -1392,9 +1393,9 @@ func apiSeriesEpisodeSearchList(c *gin.Context) {
 // @Failure      401     {object}  Jsonerror
 // @Router       /api/series/rss/search/list/{group} [get].
 func apiSeriesRssSearchList(c *gin.Context) {
-	for _, media := range config.SettingsMedia {
+	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) {
 		if !strings.HasPrefix(media.NamePrefix, logger.StrSerie) {
-			continue
+			return
 		}
 
 		if strings.EqualFold(media.Name, c.Param("group")) {
@@ -1404,7 +1405,7 @@ func apiSeriesRssSearchList(c *gin.Context) {
 			err := searchresults.SearchRSS(
 				ctx,
 				media,
-				config.SettingsQuality[templatequality],
+				config.GetSettingsQuality(templatequality),
 				false,
 				false,
 			)
@@ -1421,7 +1422,7 @@ func apiSeriesRssSearchList(c *gin.Context) {
 			searchresults.Close()
 			return
 		}
-	}
+	})
 	c.JSON(http.StatusNoContent, "Nothing Done")
 }
 
@@ -1454,9 +1455,9 @@ func apiSeriesEpisodeSearchDownload(c *gin.Context) {
 	}
 	// defer logger.ClearVar(&nzb)
 
-	for _, media := range config.SettingsMedia {
+	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) {
 		if !strings.HasPrefix(media.NamePrefix, logger.StrSerie) {
-			continue
+			return
 		}
 		for idxlist := range media.Lists {
 			if strings.EqualFold(media.Lists[idxlist].Name, serie.Listname) {
@@ -1465,7 +1466,7 @@ func apiSeriesEpisodeSearchDownload(c *gin.Context) {
 				return
 			}
 		}
-	}
+	})
 	c.JSON(http.StatusNoContent, "Nothing Done")
 }
 

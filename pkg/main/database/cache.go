@@ -91,7 +91,7 @@ func (c *globalcache) addStaticXStmt(key string, imdb bool) {
 func (c *globalcache) getXStmt(key string, imdb bool) sqlx.Stmt {
 	if cache.itemsxstmt.Check(key) {
 		expires := cache.itemsxstmt.GetExpire(key)
-		if config.SettingsGeneral.CacheAutoExtend ||
+		if config.GetSettingsGeneral().CacheAutoExtend ||
 			expires != 0 && (time.Now().UnixNano() > expires) {
 			cache.itemsxstmt.UpdateExpire(key, c.getexpiressql(false))
 		}
@@ -109,7 +109,7 @@ func (c *globalcache) getXStmt(key string, imdb bool) sqlx.Stmt {
 func (c *globalcache) getXStmtP(key string) *sqlx.Stmt {
 	if cache.itemsxstmt.Check(key) {
 		expires := cache.itemsxstmt.GetExpire(key)
-		if config.SettingsGeneral.CacheAutoExtend ||
+		if config.GetSettingsGeneral().CacheAutoExtend ||
 			expires != 0 && (time.Now().UnixNano() > expires) {
 			cache.itemsxstmt.UpdateExpire(key, c.getexpiressql(false))
 		}
@@ -162,7 +162,7 @@ func (c *globalcache) setRegexp(key string, duration time.Duration) regexp.Regex
 		return rgx
 	}
 	expires := cache.itemsregex.GetExpire(key)
-	if config.SettingsGeneral.CacheAutoExtend || expires != 0 && (time.Now().UnixNano() > expires) {
+	if config.GetSettingsGeneral().CacheAutoExtend || expires != 0 && (time.Now().UnixNano() > expires) {
 		if duration != 0 && key != "RegexSeriesIdentifier" && key != "RegexSeriesTitle" {
 			cache.itemsregex.UpdateExpire(key, getexpireskey(c.defaultextension))
 		}
@@ -179,7 +179,7 @@ func (c *globalcache) setRegexpP(key string, duration time.Duration) *regexp.Reg
 		return nil
 	}
 	expires := cache.itemsregex.GetExpire(key)
-	if config.SettingsGeneral.CacheAutoExtend || expires != 0 && (time.Now().UnixNano() > expires) {
+	if config.GetSettingsGeneral().CacheAutoExtend || expires != 0 && (time.Now().UnixNano() > expires) {
 		if duration != 0 && key != "RegexSeriesIdentifier" && key != "RegexSeriesTitle" {
 			cache.itemsregex.UpdateExpire(key, getexpireskey(c.defaultextension))
 		}
@@ -191,7 +191,7 @@ func (c *globalcache) setRegexpP(key string, duration time.Duration) *regexp.Reg
 // with the provided expiration times and logger. It is called on startup
 // to initialize the cache before it is used.
 func InitCache() {
-	NewCache(1*time.Hour, time.Hour*time.Duration(config.SettingsGeneral.CacheDuration))
+	NewCache(1*time.Hour, time.Hour*time.Duration(config.GetSettingsGeneral().CacheDuration))
 }
 
 // ClearCaches iterates over the cached string, three string two int, and two string int arrays, sets the Expire field on each cached array object to two hours in the past based on the config cache duration, and updates the cache with the expired array object. This effectively clears those cached arrays by expiring all entries.
@@ -440,7 +440,7 @@ func refreshCacheDB[t comparable](
 	count := Getdatarow[uint](
 		false,
 		logger.GetStringsMap(useseries, mapcountsql),
-		&config.SettingsGeneral.CacheDuration,
+		&config.GetSettingsGeneral().CacheDuration,
 	)
 	if !force && len(item) == int(count) {
 		return
@@ -452,7 +452,7 @@ func refreshCacheDB[t comparable](
 				mapvar,
 				make([]t, 0, 100),
 				time.Now().
-					Add(time.Duration(config.SettingsGeneral.CacheDuration)*time.Hour).
+					Add(time.Duration(config.GetSettingsGeneral().CacheDuration)*time.Hour).
 					UnixNano(),
 				time.Now().UnixNano(),
 			)
@@ -469,7 +469,7 @@ func refreshCacheDB[t comparable](
 		false,
 		count+100,
 		logger.GetStringsMap(useseries, mapsql),
-		&config.SettingsGeneral.CacheDuration,
+		&config.GetSettingsGeneral().CacheDuration,
 	)
 	if len(data) > 0 {
 		storeMapType(
@@ -477,7 +477,7 @@ func refreshCacheDB[t comparable](
 			mapvar,
 			data,
 			time.Now().
-				Add(time.Duration(config.SettingsGeneral.CacheDuration)*time.Hour).
+				Add(time.Duration(config.GetSettingsGeneral().CacheDuration)*time.Hour).
 				UnixNano(),
 			time.Now().UnixNano(),
 		)
@@ -492,7 +492,7 @@ func refreshCacheDB[t comparable](
 // - if useseries is true, it will refresh the series caches
 // It locks access to the caches while refreshing to prevent concurrent access issues.
 func RefreshMediaCacheDB(useseries bool, force bool) {
-	if !config.SettingsGeneral.UseMediaCache {
+	if !config.GetSettingsGeneral().UseMediaCache {
 		return
 	}
 	refreshCacheDB(
@@ -511,7 +511,7 @@ func RefreshMediaCacheDB(useseries bool, force bool) {
 // - if useseries is true, it will refresh the series caches
 // It locks access to the caches while refreshing to prevent concurrent access issues.
 func RefreshMediaCacheList(useseries bool, force bool) {
-	if !config.SettingsGeneral.UseMediaCache {
+	if !config.GetSettingsGeneral().UseMediaCache {
 		return
 	}
 	refreshCacheDB(
@@ -529,7 +529,7 @@ func RefreshMediaCacheList(useseries bool, force bool) {
 // The useseries parameter determines if it refreshes the cache for series or movies.
 // The force parameter determines if the cache should be refreshed regardless of the last scan time.
 func Refreshhistorycachetitle(useseries bool, force bool) {
-	if !config.SettingsGeneral.UseHistoryCache {
+	if !config.GetSettingsGeneral().UseHistoryCache {
 		return
 	}
 	refreshCacheDB(
@@ -547,7 +547,7 @@ func Refreshhistorycachetitle(useseries bool, force bool) {
 // The useseries parameter determines if it refreshes the cache for series or movies.
 // The force parameter determines if the cache should be refreshed regardless of the last scan time.
 func Refreshhistorycacheurl(useseries bool, force bool) {
-	if !config.SettingsGeneral.UseHistoryCache {
+	if !config.GetSettingsGeneral().UseHistoryCache {
 		return
 	}
 	refreshCacheDB(
@@ -564,7 +564,7 @@ func Refreshhistorycacheurl(useseries bool, force bool) {
 // It handles locking and unlocking the cache mutex.
 // The useseries parameter determines if it refreshes the cache for series or movies.
 func RefreshMediaCacheTitles(useseries bool, force bool) {
-	if !config.SettingsGeneral.UseMediaCache {
+	if !config.GetSettingsGeneral().UseMediaCache {
 		return
 	}
 	refreshCacheDB(
@@ -581,7 +581,7 @@ func RefreshMediaCacheTitles(useseries bool, force bool) {
 // It handles locking and unlocking the cache mutex.
 // The useseries parameter determines if it refreshes the cache for series or movies.
 func Refreshfilescached(useseries bool, force bool) {
-	if !config.SettingsGeneral.UseFileCache {
+	if !config.GetSettingsGeneral().UseFileCache {
 		return
 	}
 	refreshCacheDB(
@@ -598,10 +598,10 @@ func Refreshfilescached(useseries bool, force bool) {
 // It handles locking and unlocking the cache mutex.
 // The useseries parameter determines if it refreshes the cache for series or movies.
 func Refreshunmatchedcached(useseries bool, force bool) {
-	if !config.SettingsGeneral.UseFileCache {
+	if !config.GetSettingsGeneral().UseFileCache {
 		return
 	}
-	ExecNMap(useseries, "DBRemoveUnmatched", &config.SettingsGeneral.CacheDuration2)
+	ExecNMap(useseries, "DBRemoveUnmatched", &config.GetSettingsGeneral().CacheDuration2)
 	refreshCacheDB(
 		useseries,
 		force,
@@ -657,8 +657,8 @@ func GetCachedTwoStringArr(key string, checkexpire bool, retry bool) []DbstaticT
 		if checkexpire {
 			if cache.itemstwostring.CheckExpires(
 				key,
-				config.SettingsGeneral.CacheAutoExtend,
-				config.SettingsGeneral.CacheDuration,
+				config.GetSettingsGeneral().CacheAutoExtend,
+				config.GetSettingsGeneral().CacheDuration,
 			) {
 				return nil
 			}
@@ -676,8 +676,8 @@ func GetCachedTwoIntArr(key string, checkexpire bool, retry bool) []DbstaticOneS
 		if checkexpire {
 			if cache.itemstwoint.CheckExpires(
 				key,
-				config.SettingsGeneral.CacheAutoExtend,
-				config.SettingsGeneral.CacheDuration,
+				config.GetSettingsGeneral().CacheAutoExtend,
+				config.GetSettingsGeneral().CacheDuration,
 			) {
 				return nil
 			}
@@ -695,8 +695,8 @@ func GetCachedThreeStringArr(key string, checkexpire bool, retry bool) []Dbstati
 		if checkexpire {
 			if cache.itemsthreestring.CheckExpires(
 				key,
-				config.SettingsGeneral.CacheAutoExtend,
-				config.SettingsGeneral.CacheDuration,
+				config.GetSettingsGeneral().CacheAutoExtend,
+				config.GetSettingsGeneral().CacheDuration,
 			) {
 				return nil
 			}
@@ -719,8 +719,8 @@ func GetCachedArr[t comparable](
 		if checkexpire {
 			if c.CheckExpires(
 				key,
-				config.SettingsGeneral.CacheAutoExtend,
-				config.SettingsGeneral.CacheDuration,
+				config.GetSettingsGeneral().CacheAutoExtend,
+				config.GetSettingsGeneral().CacheDuration,
 			) {
 				return nil
 			}
@@ -780,7 +780,7 @@ func storeMapType[t any](
 // otherwise queries the database. Returns true if the title exists, false
 // otherwise.
 func CheckcachedTitleHistory(useseries bool, file *string) bool {
-	if config.SettingsGeneral.UseFileCache {
+	if config.GetSettingsGeneral().UseFileCache {
 		return SlicesCacheContainsI(useseries, logger.CacheHistoryTitle, file)
 	}
 	return Getdatarow[uint](
@@ -795,7 +795,7 @@ func CheckcachedTitleHistory(useseries bool, file *string) bool {
 // otherwise queries the database. Returns true if the URL exists, false
 // otherwise.
 func CheckcachedURLHistory(useseries bool, file *string) bool {
-	if config.SettingsGeneral.UseFileCache {
+	if config.GetSettingsGeneral().UseFileCache {
 		return SlicesCacheContainsI(useseries, logger.CacheHistoryURL, file)
 	}
 	return Getdatarow[uint](

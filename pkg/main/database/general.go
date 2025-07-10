@@ -89,15 +89,15 @@ func InitCfg() {
 	InitCache()
 
 	logger.InitLogger(logger.Config{
-		LogLevel:      config.SettingsGeneral.LogLevel,
-		LogFileSize:   config.SettingsGeneral.LogFileSize,
-		LogFileCount:  config.SettingsGeneral.LogFileCount,
-		LogCompress:   config.SettingsGeneral.LogCompress,
-		LogToFileOnly: config.SettingsGeneral.LogToFileOnly,
-		LogColorize:   config.SettingsGeneral.LogColorize,
-		TimeFormat:    config.SettingsGeneral.TimeFormat,
-		TimeZone:      config.SettingsGeneral.TimeZone,
-		LogZeroValues: config.SettingsGeneral.LogZeroValues,
+		LogLevel:      config.GetSettingsGeneral().LogLevel,
+		LogFileSize:   config.GetSettingsGeneral().LogFileSize,
+		LogFileCount:  config.GetSettingsGeneral().LogFileCount,
+		LogCompress:   config.GetSettingsGeneral().LogCompress,
+		LogToFileOnly: config.GetSettingsGeneral().LogToFileOnly,
+		LogColorize:   config.GetSettingsGeneral().LogColorize,
+		TimeFormat:    config.GetSettingsGeneral().TimeFormat,
+		TimeZone:      config.GetSettingsGeneral().TimeZone,
+		LogZeroValues: config.GetSettingsGeneral().LogZeroValues,
 	})
 
 	err := UpgradeDB()
@@ -105,7 +105,7 @@ func InitCfg() {
 		logger.LogDynamicanyErr("fatal", "Database Upgrade Failed", err)
 	}
 	UpgradeIMDB()
-	err = InitDB(config.SettingsGeneral.DBLogLevel)
+	err = InitDB(config.GetSettingsGeneral().DBLogLevel)
 	if err != nil {
 		logger.LogDynamicanyErr("fatal", "Database Initialization Failed", err)
 	}
@@ -270,14 +270,14 @@ func SetVars() {
 	globalCache.setStaticRegexp(strRegexSeriesIdentifier)
 	globalCache.setStaticRegexp(strRegexSeriesTitle)
 	globalCache.setStaticRegexp(strRegexSeriesTitleDate)
-	for _, cfgregex := range config.SettingsRegex {
+	config.RangeSettingsRegex(func(_ string, cfgregex *config.RegexConfig) {
 		for _, val := range cfgregex.Rejected {
 			globalCache.setStaticRegexp(val)
 		}
 		for _, val := range cfgregex.Required {
 			globalCache.setStaticRegexp(val)
 		}
-	}
+	})
 
 	// Calculate required capacity
 	for idx := range DBConnect.GetaudiosIn {
@@ -357,7 +357,7 @@ func SetVars() {
 	globalCache.addStaticXStmt("select count() from imdb_akas where tconst = ?", true)
 	globalCache.addStaticXStmt("select region, title, slug from imdb_akas where tconst = ?", true)
 
-	for _, media := range config.SettingsMedia {
+	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) {
 		if !media.Useseries {
 			for _, cfgplist := range media.ListsMap {
 				globalCache.addStaticXStmt(
@@ -396,7 +396,7 @@ func SetVars() {
 				false,
 			)
 		}
-	}
+	})
 
 	globalCache.addStaticXStmt(
 		"select count() from indexer_fails where  last_fail > ? and indexer = ?",
@@ -1192,7 +1192,7 @@ func GetMediaListIDGetListname(cfgp *config.MediaTypeConfig, mediaid *uint) int 
 	if *mediaid == 0 {
 		return -1
 	}
-	if config.SettingsGeneral.UseMediaCache {
+	if config.GetSettingsGeneral().UseMediaCache {
 		id := cfgp.GetMediaListsEntryListID(
 			CacheOneStringTwoIntIndexFuncStr(cfgp.Useseries, logger.CacheMedia, *mediaid),
 		)

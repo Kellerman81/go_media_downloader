@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -21,6 +23,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/searcher"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/utils"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/worker"
+	"github.com/fsnotify/fsnotify"
 
 	"github.com/DeanThompson/ginpprof"
 	"github.com/gin-gonic/gin"
@@ -51,62 +54,120 @@ func main() {
 	if err != nil {
 		os.Exit(1)
 	}
-	go config.WatchConfig()
+	if true {
+		watcher, err := fsnotify.NewWatcher()
+		if err != nil {
+			fmt.Printf("creating a new watcher: %s", err)
+			return
+		}
+		defer watcher.Close()
+
+		// Add all files from the commandline.
+		st, err := os.Lstat(config.Configfile)
+		if err != nil {
+			fmt.Printf("%s", err)
+			return
+		}
+
+		if st.IsDir() {
+			fmt.Printf("%q is a directory, not a file", config.Configfile)
+			return
+		}
+
+		// Watch the directory, not the file itself.
+		err = watcher.Add(filepath.Dir(config.Configfile))
+		if err != nil {
+			fmt.Printf("%q: %s", config.Configfile, err)
+			return
+		}
+
+		// Start listening for events.
+		go func() {
+			for {
+				select {
+				// Read from Errors.
+				case err, ok := <-watcher.Errors:
+					if !ok { // Channel was closed (i.e. Watcher.Close() was called).
+						return
+					}
+					fmt.Printf("ERROR: %s", err)
+				// Read from Events.
+				case e, ok := <-watcher.Events:
+					if !ok { // Channel was closed (i.e. Watcher.Close() was called).
+						return
+					}
+
+					if strings.Contains(e.Name, "config.toml") {
+						if e.Has(fsnotify.Write) {
+							if config.Readconfigtoml() == nil {
+								config.ClearSettings()
+								config.Getconfigtoml()
+							}
+						}
+					} else {
+						continue
+					}
+				}
+			}
+		}()
+	}
 	database.InitCache()
+
+	general := config.GetSettingsGeneral()
 	worker.InitWorkerPools(
-		config.SettingsGeneral.WorkerSearch,
-		config.SettingsGeneral.WorkerFiles,
-		config.SettingsGeneral.WorkerMetadata,
-		config.SettingsGeneral.WorkerRSS,
-		config.SettingsGeneral.WorkerIndexer,
+		general.WorkerSearch,
+		general.WorkerFiles,
+		general.WorkerMetadata,
+		general.WorkerRSS,
+		general.WorkerIndexer,
 	)
 	logger.InitLogger(logger.Config{
-		LogLevel:      config.SettingsGeneral.LogLevel,
-		LogFileSize:   config.SettingsGeneral.LogFileSize,
-		LogFileCount:  config.SettingsGeneral.LogFileCount,
-		LogCompress:   config.SettingsGeneral.LogCompress,
-		LogToFileOnly: config.SettingsGeneral.LogToFileOnly,
-		LogColorize:   config.SettingsGeneral.LogColorize,
-		TimeFormat:    config.SettingsGeneral.TimeFormat,
-		TimeZone:      config.SettingsGeneral.TimeZone,
-		LogZeroValues: config.SettingsGeneral.LogZeroValues,
+		LogLevel:      general.LogLevel,
+		LogFileSize:   general.LogFileSize,
+		LogFileCount:  general.LogFileCount,
+		LogCompress:   general.LogCompress,
+		LogToFileOnly: general.LogToFileOnly,
+		LogColorize:   general.LogColorize,
+		TimeFormat:    general.TimeFormat,
+		TimeZone:      general.TimeZone,
+		LogZeroValues: general.LogZeroValues,
 	})
 	logger.LogDynamicany0("info", "Starting go_media_downloader")
 	logger.LogDynamicany0("info", "Version: "+version+" "+githash)
 	logger.LogDynamicany0("info", "Build Date: "+buildstamp)
 	logger.LogDynamicany0("info", "Programmer: kellerman81")
-	if config.SettingsGeneral.LogLevel != "Debug" {
+	if general.LogLevel != "Debug" {
 		logger.LogDynamicany0("info", "Hint: Set Loglevel to Debug to see possible API Paths")
 	}
 	logger.LogDynamicany0("info", "------------------------------")
 
 	apiexternal.NewOmdbClient(
-		config.SettingsGeneral.OmdbAPIKey,
-		config.SettingsGeneral.OmdbLimiterSeconds,
-		config.SettingsGeneral.OmdbLimiterCalls,
-		config.SettingsGeneral.OmdbDisableTLSVerify,
-		config.SettingsGeneral.OmdbTimeoutSeconds,
+		general.OmdbAPIKey,
+		general.OmdbLimiterSeconds,
+		general.OmdbLimiterCalls,
+		general.OmdbDisableTLSVerify,
+		general.OmdbTimeoutSeconds,
 	)
 	apiexternal.NewTmdbClient(
-		config.SettingsGeneral.TheMovieDBApiKey,
-		config.SettingsGeneral.TmdbLimiterSeconds,
-		config.SettingsGeneral.TmdbLimiterCalls,
-		config.SettingsGeneral.TheMovieDBDisableTLSVerify,
-		config.SettingsGeneral.TmdbTimeoutSeconds,
+		general.TheMovieDBApiKey,
+		general.TmdbLimiterSeconds,
+		general.TmdbLimiterCalls,
+		general.TheMovieDBDisableTLSVerify,
+		general.TmdbTimeoutSeconds,
 	)
 	apiexternal.NewTvdbClient(
-		config.SettingsGeneral.TvdbLimiterSeconds,
-		config.SettingsGeneral.TvdbLimiterCalls,
-		config.SettingsGeneral.TvdbDisableTLSVerify,
-		config.SettingsGeneral.TvdbTimeoutSeconds,
+		general.TvdbLimiterSeconds,
+		general.TvdbLimiterCalls,
+		general.TvdbDisableTLSVerify,
+		general.TvdbTimeoutSeconds,
 	)
 	apiexternal.NewTraktClient(
-		config.SettingsGeneral.TraktClientID,
-		config.SettingsGeneral.TraktClientSecret,
-		config.SettingsGeneral.TraktLimiterSeconds,
-		config.SettingsGeneral.TraktLimiterCalls,
-		config.SettingsGeneral.TraktDisableTLSVerify,
-		config.SettingsGeneral.TraktTimeoutSeconds,
+		general.TraktClientID,
+		general.TraktClientSecret,
+		general.TraktLimiterSeconds,
+		general.TraktLimiterCalls,
+		general.TraktDisableTLSVerify,
+		general.TraktTimeoutSeconds,
 	)
 
 	logger.LogDynamicany0("info", "Initialize Database")
@@ -115,7 +176,7 @@ func main() {
 		logger.LogDynamicanyErr("fatal", "Database Upgrade Failed", err)
 	}
 	database.UpgradeIMDB()
-	err = database.InitDB(config.SettingsGeneral.DBLogLevel)
+	err = database.InitDB(general.DBLogLevel)
 	if err != nil {
 		logger.LogDynamicanyErr("fatal", "Database Initialization Failed", err)
 	}
@@ -129,17 +190,22 @@ func main() {
 		database.DBClose()
 		os.Exit(100)
 	}
+	logger.LogDynamicany0("info", "Set Vars")
 	// _ = html.UnescapeString("test")
 	database.SetVars()
 
+	logger.LogDynamicany0("info", "Generate All Quality Priorities")
 	parser.GenerateAllQualityPriorities()
 
+	logger.LogDynamicany0("info", "Load DB Patterns")
 	parser.LoadDBPatterns()
+
+	logger.LogDynamicany0("info", "Load DB Cutoff")
 	parser.GenerateCutoffPriorities()
-	if config.SettingsGeneral.SearcherSize == 0 {
-		config.SettingsGeneral.SearcherSize = 5000
+	if general.SearcherSize == 0 {
+		general.SearcherSize = 5000
 	}
-	// searcher.DefineSearchPool(config.SettingsGeneral.SearcherSize)
+	// searcher.DefineSearchPool(general.SearcherSize)
 
 	logger.LogDynamicany0("info", "Check Fill IMDB")
 	if database.Getdatarow[uint](true, "select count() from imdb_titles") == 0 {
@@ -155,19 +221,26 @@ func main() {
 		utils.InitialFillSeries()
 	}
 
-	for _, idx := range config.SettingsIndexer {
+	logger.LogDynamicany0("info", "Range Indexers")
+	config.RangeSettingsIndexer(func(_ string, idx *config.IndexersConfig) {
 		apiexternal.Getnewznabclient(idx)
-	}
+	})
 
-	for _, idx := range config.SettingsNotification {
+	logger.LogDynamicany0("info", "Range Notification")
+	config.RangeSettingsNotification(func(_ string, idx *config.NotificationConfig) {
 		if idx.NotificationType == "pushover" {
 			apiexternal.GetPushoverclient(idx.Apikey)
 		}
-	}
+	})
 
+	logger.LogDynamicany0("info", "Create Cron Worker")
 	worker.CreateCronWorker()
+
+	logger.LogDynamicany0("info", "Inits")
 	utils.Init()
 	searcher.Init()
+
+	logger.LogDynamicany0("info", "Refresh Cache")
 	utils.Refreshcache(true)
 	utils.Refreshcache(false)
 	logger.LogDynamicany0("info", "Starting Scheduler")
@@ -186,7 +259,7 @@ func main() {
 	// corsconfig.AllowOrigins = []string{"*"}
 	// corsconfig.AllowMethods = []string{"*"}
 
-	if !strings.EqualFold(config.SettingsGeneral.LogLevel, logger.StrDebug) {
+	if !strings.EqualFold(general.LogLevel, logger.StrDebug) {
 		gin.SetMode(gin.ReleaseMode)
 	}
 	// router.Use(ginlog.Logger(logger.Log), cors.New(corsconfig), gin.Recovery())
@@ -200,16 +273,16 @@ func main() {
 	// Less RAM Usage for static file - don't forget to recreate html file
 	router.Static("/swagger", "./docs")
 	// router.StaticFile("/swagger/index.html", "./docs/api.html")
-	// if !config.SettingsGeneral.DisableSwagger {
+	// if !general.DisableSwagger {
 	// 	docs.SwaggerInfo.BasePath = "/"
 	// 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 	// }
 
-	if config.SettingsGeneral.WebPortalEnabled {
+	if general.WebPortalEnabled {
 		goadmin.Init(router)
 	}
 
-	if strings.EqualFold(config.SettingsGeneral.LogLevel, logger.StrDebug) {
+	if strings.EqualFold(general.LogLevel, logger.StrDebug) {
 		ginpprof.Wrap(router)
 	}
 
@@ -220,10 +293,10 @@ func main() {
 		"info",
 		"Starting API Webserver on port",
 		"port",
-		&config.SettingsGeneral.WebPort,
+		&general.WebPort,
 	)
 	server := http.Server{
-		Addr:              ":" + config.SettingsGeneral.WebPort,
+		Addr:              ":" + general.WebPort,
 		Handler:           router,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
@@ -240,7 +313,7 @@ func main() {
 		"info",
 		"Started API Webserver on port ",
 		"port",
-		&config.SettingsGeneral.WebPort,
+		&general.WebPort,
 	)
 
 	// Wait for interrupt signal to gracefully shutdown the server with

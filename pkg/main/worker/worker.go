@@ -357,10 +357,10 @@ func newUUID() uint32 {
 
 func validateJobConfig(cfgpstr, jobname string) bool {
 	if cfgpstr == "" {
-		return config.SettingsGeneral.Jobs[jobname] != nil
+		return config.GetSettingsGeneral().Jobs[jobname] != nil
 	}
 
-	cfg := config.SettingsMedia[cfgpstr]
+	cfg := config.GetSettingsMedia(cfgpstr)
 	return cfg != nil && cfg.Jobs[jobname] != nil
 }
 
@@ -517,18 +517,18 @@ func runjobcron(id uint32) func() {
 
 		executeJob(s)
 		if s.Cfgpstr == "" {
-			if config.SettingsGeneral.Jobs[s.JobName] != nil {
-				config.SettingsGeneral.Jobs[s.JobName](id)
+			if config.GetSettingsGeneral().Jobs[s.JobName] != nil {
+				config.GetSettingsGeneral().Jobs[s.JobName](id)
 				globalQueueSet.Delete(id)
 			} else {
 				logger.LogDynamicany2Str("error", "Cron Job not found", "job", s.JobName, "cfgp", s.Cfgpstr)
 			}
 		} else {
-			if config.SettingsMedia[s.Cfgpstr] == nil {
+			if config.GetSettingsMedia(s.Cfgpstr) == nil {
 				logger.LogDynamicany2Str("error", "Cron Job Config not found", "job", s.JobName, "cfgp", s.Cfgpstr)
 			} else {
-				if config.SettingsMedia[s.Cfgpstr].Jobs[s.JobName] != nil {
-					config.SettingsMedia[s.Cfgpstr].Jobs[s.JobName](id)
+				if config.GetSettingsMedia(s.Cfgpstr).Jobs[s.JobName] != nil {
+					config.GetSettingsMedia(s.Cfgpstr).Jobs[s.JobName](id)
 					globalQueueSet.Delete(id)
 				} else {
 					logger.LogDynamicany2Str("error", "Cron Job not found", "job", s.JobName, "cfgp", s.Cfgpstr)
@@ -629,13 +629,13 @@ func Dispatch(name string, fn func(uint32), queue string) error {
 // It logs an error if the job or configuration is not found.
 func executeJob(s Job) {
 	if s.Cfgpstr == "" {
-		if jobFunc := config.SettingsGeneral.Jobs[s.JobName]; jobFunc != nil {
+		if jobFunc := config.GetSettingsGeneral().Jobs[s.JobName]; jobFunc != nil {
 			jobFunc(s.ID)
 		} else {
 			logger.LogDynamicany2Str("error", "Cron Job not found", "job", s.JobName, "cfgp", s.Cfgpstr)
 		}
 	} else {
-		cfg := config.SettingsMedia[s.Cfgpstr]
+		cfg := config.GetSettingsMedia(s.Cfgpstr)
 		if cfg == nil {
 			logger.LogDynamicany2Str("error", "Cron Job Config not found", "job", s.JobName, "cfgp", s.Cfgpstr)
 			return

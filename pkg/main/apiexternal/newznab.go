@@ -343,8 +343,8 @@ func processurl(
 	}
 	if err != nil {
 		blockinterval := 5
-		if config.SettingsGeneral.FailedIndexerBlockTime != 0 {
-			blockinterval = config.SettingsGeneral.FailedIndexerBlockTime
+		if config.GetSettingsGeneral().FailedIndexerBlockTime != 0 {
+			blockinterval = config.GetSettingsGeneral().FailedIndexerBlockTime
 		}
 		c.Client.logwait(logger.TimeGetNow().Add(time.Minute*time.Duration(blockinterval)), nil)
 		return false, "", err
@@ -475,7 +475,7 @@ func (c *client) processjson2(
 // This allows the garbage collector to reclaim the memory unless
 // config.SettingsGeneral.DisableVariableCleanup is true.
 func (s *searchResponseJSON1) close() {
-	if config.SettingsGeneral.DisableVariableCleanup || s == nil {
+	if config.GetSettingsGeneral().DisableVariableCleanup || s == nil {
 		return
 	}
 	s.Channel.Item = nil
@@ -485,7 +485,7 @@ func (s *searchResponseJSON1) close() {
 // struct if the DisableVariableCleanup setting is false. It sets the
 // Item field to nil to allow garbage collection.
 func (s *searchResponseJSON2) close() {
-	if config.SettingsGeneral.DisableVariableCleanup || s == nil {
+	if config.GetSettingsGeneral().DisableVariableCleanup || s == nil {
 		return
 	}
 	s.Item = nil

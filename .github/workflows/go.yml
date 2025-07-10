@@ -42,7 +42,7 @@ jobs:
     - name: Get current version
       id: version
       run: |
-        echo "version=$(git describe --tags --exclude latest_develop)" >> $GITHUB_OUTPUT
+        echo "version=$(git describe --exclude latest_develop)" >> $GITHUB_OUTPUT
       
     - name: Get current date
       id: date

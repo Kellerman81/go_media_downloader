@@ -111,7 +111,7 @@ func jobImportSeriesParseV2(
 		database.ExecN("delete from serie_file_unmatcheds where filepath = ?", &m.File)
 	}
 
-	if config.SettingsGeneral.UseMediaCache {
+	if config.GetSettingsGeneral().UseMediaCache {
 		database.SlicesCacheContainsDelete(logger.CacheUnmatchedSeries, pathv)
 		database.AppendCache(logger.CacheFilesSeries, pathv)
 	}
@@ -181,12 +181,12 @@ func SeriesAllJobs(job string, force bool) {
 		return
 	}
 	logger.LogDynamicany1String("debug", "Started Jobfor all", logger.StrJob, job)
-	for _, media := range config.SettingsMedia {
+	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) {
 		if !media.Useseries {
-			continue
+			return
 		}
 		SingleJobs(job, media.NamePrefix, "", force, 0)
-	}
+	})
 }
 
 // structurefolders organizes the files in the folders configured for the given
@@ -331,11 +331,11 @@ func checkreachedepisodesflag(listcfg *config.MediaListsConfig) {
 			&arr[idx].ID,
 			false,
 			-1,
-			config.SettingsQuality[arr[idx].QualityProfile],
+			config.GetSettingsQuality(arr[idx].QualityProfile),
 			false,
 		)
 		reached = 0
-		if minPrio >= config.SettingsQuality[arr[idx].QualityProfile].CutoffPriority {
+		if minPrio >= config.GetSettingsQuality(arr[idx].QualityProfile).CutoffPriority {
 			reached = 1
 		}
 		if arr[idx].QualityReached && reached == 0 {

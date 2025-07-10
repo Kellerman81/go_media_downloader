@@ -253,7 +253,7 @@ func SecureRemove(file string) (bool, error) {
 func moveFileDriveBuffer(sourcePath, destPath string) error {
 	bufferkb := 1024
 
-	buffersize := config.SettingsGeneral.MoveBufferSizeKB
+	buffersize := config.GetSettingsGeneral().MoveBufferSizeKB
 	if buffersize != 0 {
 		bufferkb = buffersize
 	}

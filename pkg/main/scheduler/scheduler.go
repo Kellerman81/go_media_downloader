@@ -16,7 +16,7 @@ import (
 
 // InitScheduler is called at startup to initialize the scheduler. This includes checking for the existence of the scheduler and setting up the.
 func InitScheduler() {
-	config.SettingsGeneral.Jobs = map[string]func(uint32){
+	config.GetSettingsGeneral().Jobs = map[string]func(uint32){
 		"RefreshImdb": func(key uint32) {
 			utils.FillImdb()
 			worker.RemoveQueueEntry(key)
@@ -28,7 +28,7 @@ func InitScheduler() {
 			}
 		},
 		"BackupDatabase": func(key uint32) {
-			if config.SettingsGeneral.DatabaseBackupStopTasks {
+			if config.GetSettingsGeneral().DatabaseBackupStopTasks {
 				worker.StopCronWorker()
 				worker.CloseWorkerPools()
 			}
@@ -39,14 +39,14 @@ func InitScheduler() {
 				logger.StrDot,
 				time.Now().Format("20060102_150405"),
 			)
-			database.Backup(&backupto, config.SettingsGeneral.MaxDatabaseBackups)
-			if config.SettingsGeneral.DatabaseBackupStopTasks {
+			database.Backup(&backupto, config.GetSettingsGeneral().MaxDatabaseBackups)
+			if config.GetSettingsGeneral().DatabaseBackupStopTasks {
 				worker.InitWorkerPools(
-					config.SettingsGeneral.WorkerSearch,
-					config.SettingsGeneral.WorkerFiles,
-					config.SettingsGeneral.WorkerMetadata,
-					config.SettingsGeneral.WorkerRSS,
-					config.SettingsGeneral.WorkerIndexer,
+					config.GetSettingsGeneral().WorkerSearch,
+					config.GetSettingsGeneral().WorkerFiles,
+					config.GetSettingsGeneral().WorkerMetadata,
+					config.GetSettingsGeneral().WorkerRSS,
+					config.GetSettingsGeneral().WorkerIndexer,
 				)
 				worker.StartCronWorker()
 			}
@@ -69,7 +69,7 @@ func InitScheduler() {
 		}})
 		config.WriteCfg()
 	}
-	for _, cfgp := range config.SettingsMedia {
+	config.RangeSettingsMedia(func(_ string, cfgp *config.MediaTypeConfig) {
 		if cfgp.Useseries {
 			cfgp.Jobs = map[string]func(uint32){
 				logger.StrSearchMissingInc: func(key uint32) {
@@ -282,17 +282,17 @@ func InitScheduler() {
 			)
 			switch str {
 			case "refreshseriesfull":
-				intervalstr = config.SettingsScheduler["Default"].IntervalFeedsRefreshSeriesFull
-				cronstr = config.SettingsScheduler["Default"].CronFeedsRefreshSeriesFull
+				intervalstr = config.GetSettingsScheduler("Default").IntervalFeedsRefreshSeriesFull
+				cronstr = config.GetSettingsScheduler("Default").CronFeedsRefreshSeriesFull
 			case "refreshseriesinc":
-				intervalstr = config.SettingsScheduler["Default"].IntervalFeedsRefreshSeries
-				cronstr = config.SettingsScheduler["Default"].CronFeedsRefreshSeries
+				intervalstr = config.GetSettingsScheduler("Default").IntervalFeedsRefreshSeries
+				cronstr = config.GetSettingsScheduler("Default").CronFeedsRefreshSeries
 			case "refreshmoviesfull":
-				intervalstr = config.SettingsScheduler["Default"].IntervalFeedsRefreshMoviesFull
-				cronstr = config.SettingsScheduler["Default"].CronFeedsRefreshMoviesFull
+				intervalstr = config.GetSettingsScheduler("Default").IntervalFeedsRefreshMoviesFull
+				cronstr = config.GetSettingsScheduler("Default").CronFeedsRefreshMoviesFull
 			case "refreshmoviesinc":
-				intervalstr = config.SettingsScheduler["Default"].IntervalFeedsRefreshMovies
-				cronstr = config.SettingsScheduler["Default"].CronFeedsRefreshMovies
+				intervalstr = config.GetSettingsScheduler("Default").IntervalFeedsRefreshMovies
+				cronstr = config.GetSettingsScheduler("Default").CronFeedsRefreshMovies
 			case logger.StrSearchMissingInc:
 				intervalstr = cfgp.CfgScheduler.IntervalIndexerMissing
 				cronstr = cfgp.CfgScheduler.CronIndexerMissing
@@ -357,7 +357,7 @@ func InitScheduler() {
 
 			schedulerdispatch(cfgp.NamePrefix, intervalstr, cronstr, jobname, usequeuename, str)
 		}
-	}
+	})
 
 	for _, str := range []string{"backupdb", "checkdb", "imdb"} {
 		var usequeuename, name string
@@ -372,18 +372,18 @@ func InitScheduler() {
 		}
 		switch str {
 		case logger.StrImdb:
-			intervalstr = config.SettingsScheduler["Default"].IntervalImdb
-			cronstr = config.SettingsScheduler["Default"].CronImdb
+			intervalstr = config.GetSettingsScheduler("Default").IntervalImdb
+			cronstr = config.GetSettingsScheduler("Default").CronImdb
 			name = "Refresh IMDB"
 			jobname = "RefreshImdb"
 		case "checkdb":
-			intervalstr = config.SettingsScheduler["Default"].IntervalDatabaseCheck
-			cronstr = config.SettingsScheduler["Default"].CronDatabaseCheck
+			intervalstr = config.GetSettingsScheduler("Default").IntervalDatabaseCheck
+			cronstr = config.GetSettingsScheduler("Default").CronDatabaseCheck
 			name = "Check Database"
 			jobname = "CheckDatabase"
 		case "backupdb":
-			intervalstr = config.SettingsScheduler["Default"].IntervalDatabaseBackup
-			cronstr = config.SettingsScheduler["Default"].CronDatabaseBackup
+			intervalstr = config.GetSettingsScheduler("Default").IntervalDatabaseBackup
+			cronstr = config.GetSettingsScheduler("Default").CronDatabaseBackup
 			name = "Backup Database"
 			jobname = "BackupDatabase"
 		default:
@@ -409,7 +409,7 @@ func schedulerdispatch(
 	jobname string,
 ) {
 	if intervalstr != "" {
-		if config.SettingsGeneral.UseCronInsteadOfInterval {
+		if config.GetSettingsGeneral().UseCronInsteadOfInterval {
 			rand.New(rand.NewSource(time.Now().UnixNano()))
 			if strings.ContainsRune(intervalstr, 'd') {
 				intervalstr = strings.Replace(intervalstr, "d", "", 1)

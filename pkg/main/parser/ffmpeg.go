@@ -126,7 +126,7 @@ func getFFProbeFilename() string {
 	if runtime.GOOS == "windows" {
 		executable += ".exe"
 	}
-	ffprobepath = filepath.Join(config.SettingsGeneral.FfprobePath, executable)
+	ffprobepath = filepath.Join(config.GetSettingsGeneral().FfprobePath, executable)
 	return ffprobepath
 }
 

@@ -147,7 +147,7 @@ func apiAllGetUpgradeInc(c *gin.Context) {
 func checkauth(c *gin.Context) {
 	var msg string
 	if queryParam, ok := c.GetQuery("apikey"); ok {
-		if queryParam == config.SettingsGeneral.WebAPIKey {
+		if queryParam == config.GetSettingsGeneral().WebAPIKey {
 			c.Next()
 			return
 		}

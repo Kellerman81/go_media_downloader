@@ -52,7 +52,7 @@ func checkaddmovietitlewoslug(
 			dbmovieid,
 			region,
 		)
-		if config.SettingsGeneral.UseMediaCache {
+		if config.GetSettingsGeneral().UseMediaCache {
 			database.AppendCacheTwoString(
 				logger.CacheTitlesMovie,
 				database.DbstaticTwoStringOneInt{Num: *dbmovieid, Str1: *title, Str2: slug},
@@ -398,8 +398,8 @@ func MovieGetMetadata(movie *database.Dbmovie, queryimdb, querytmdb, queryomdb, 
 // Getmoviemetadata retrieves metadata for the given movie from the configured
 // priority of metadata sources, refreshing cached data if refresh is true.
 func Getmoviemetadata(movie *database.Dbmovie, refresh bool) {
-	for idx := range config.SettingsGeneral.MovieMetaSourcePriority {
-		switch config.SettingsGeneral.MovieMetaSourcePriority[idx] {
+	for idx := range config.GetSettingsGeneral().MovieMetaSourcePriority {
+		switch config.GetSettingsGeneral().MovieMetaSourcePriority[idx] {
 		case logger.StrImdb:
 			movie.MovieGetImdbMetadata(refresh)
 		case "tmdb":
@@ -431,17 +431,17 @@ func Getmoviemetatitles(movie *database.Dbmovie, cfgp *config.MediaTypeConfig) {
 	var checkid int
 
 	// Process IMDb alternate titles
-	if config.SettingsGeneral.MovieAlternateTitleMetaSourceImdb && movie.ImdbID != "" {
+	if config.GetSettingsGeneral().MovieAlternateTitleMetaSourceImdb && movie.ImdbID != "" {
 		processImdbAlternateTitles(movie, cfgp, titles, &checkid)
 	}
 
 	// Process TMDb alternate titles
-	if config.SettingsGeneral.MovieAlternateTitleMetaSourceTmdb && movie.MoviedbID != 0 {
+	if config.GetSettingsGeneral().MovieAlternateTitleMetaSourceTmdb && movie.MoviedbID != 0 {
 		processTmdbAlternateTitles(movie, cfgp, titles, &checkid)
 	}
 
 	// Process Trakt alternate titles
-	if config.SettingsGeneral.MovieAlternateTitleMetaSourceTrakt && movie.ImdbID != "" {
+	if config.GetSettingsGeneral().MovieAlternateTitleMetaSourceTrakt && movie.ImdbID != "" {
 		processTraktAlternateTitles(movie, cfgp, titles, &checkid)
 	}
 }
@@ -553,7 +553,7 @@ func insertMovieTitle(checkid *int, movieID *uint, title, slug, region *string) 
 			region,
 		)
 
-		if config.SettingsGeneral.UseMediaCache {
+		if config.GetSettingsGeneral().UseMediaCache {
 			database.AppendCacheTwoString(
 				logger.CacheTitlesMovie,
 				database.DbstaticTwoStringOneInt{
@@ -778,7 +778,7 @@ func SerieGetMetadata(
 			logger.LogDynamicany1UIntErr("error", "Get Trakt data", err, logger.StrID, serie.ID)
 			return aliases
 		}
-		if len(config.SettingsImdb.Indexedlanguages) > 0 {
+		if len(config.GetSettingsImdb().Indexedlanguages) > 0 {
 			aliases = processTraktSerieAliases(serie, aliases)
 		}
 	}
@@ -806,5 +806,5 @@ func processTraktSerieAliases(serie *database.Dbserie, aliases []string) []strin
 // shouldAddAlias determines if an alias should be added based on existing aliases and language settings.
 func shouldAddAlias(title, country string, existingAliases []string) bool {
 	return !logger.SlicesContainsI(existingAliases, title) &&
-		logger.SlicesContainsI(config.SettingsImdb.Indexedlanguages, country)
+		logger.SlicesContainsI(config.GetSettingsImdb().Indexedlanguages, country)
 }

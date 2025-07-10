@@ -109,7 +109,7 @@ func (d *downloadertype) downloadNzb() {
 		d.DownloaderCfg = d.Quality.Indexer[0].CfgDownloader
 	}
 
-	if config.SettingsGeneral.UseHistoryCache {
+	if config.GetSettingsGeneral().UseHistoryCache {
 		database.AppendCacheMap(d.Cfgp.Useseries, logger.CacheHistoryTitle, d.Nzb.NZB.Title)
 		database.AppendCacheMap(d.Cfgp.Useseries, logger.CacheHistoryURL, d.Nzb.NZB.DownloadURL)
 	}

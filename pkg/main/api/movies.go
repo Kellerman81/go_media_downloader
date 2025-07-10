@@ -322,9 +322,9 @@ func apimoviesAllJobs(c *gin.Context) {
 
 		// defer cfgMovie.Close()
 		// defer cfg_list.Close()
-		for _, media := range config.SettingsMedia {
+		config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) {
 			if !strings.HasPrefix(media.NamePrefix, logger.StrMovie) {
-				continue
+				return
 			}
 
 			cfgpstr := media.NamePrefix
@@ -361,7 +361,7 @@ func apimoviesAllJobs(c *gin.Context) {
 						continue
 					}
 
-					if !config.SettingsList[media.Lists[idxi].TemplateList].Enabled {
+					if !config.GetSettingsList(media.Lists[idxi].TemplateList).Enabled {
 						continue
 					}
 					listname := media.Lists[idxi].Name
@@ -396,14 +396,14 @@ func apimoviesAllJobs(c *gin.Context) {
 					utils.SingleJobs("refreshinc", cfgpstr, "", false, key)
 				}, "Feeds")
 			case "":
-				continue
+				return
 			default:
 				worker.Dispatch(c.Param(strJobLower)+"_"+cfgpstr, func(key uint32) {
 					utils.SingleJobs(c.Param(strJobLower), cfgpstr, "", true, key)
 				}, "Data")
 			}
 			// cfgMovie.Close()
-		}
+		})
 		c.JSON(http.StatusOK, returnval)
 	} else {
 		returnval := "Job " + c.Param(strJobLower) + " not allowed!"
@@ -460,9 +460,9 @@ func apimoviesJobs(c *gin.Context) {
 
 			// defer cfgMovie.Close()
 			// defer cfg_list.Close()
-			for _, media := range config.SettingsMedia {
+			config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) {
 				if !strings.HasPrefix(media.NamePrefix, logger.StrMovie) {
-					continue
+					return
 				}
 				if strings.EqualFold(media.Name, c.Param("name")) {
 					for idxlist := range media.Lists {
@@ -473,7 +473,7 @@ func apimoviesJobs(c *gin.Context) {
 							continue
 						}
 
-						if !config.SettingsList[media.Lists[idxlist].TemplateList].Enabled {
+						if !config.GetSettingsList(media.Lists[idxlist].TemplateList).Enabled {
 							continue
 						}
 						listname := media.Lists[idxlist].Name
@@ -525,7 +525,7 @@ func apimoviesJobs(c *gin.Context) {
 					}
 				}
 				// cfgMovie.Close()
-			}
+			})
 		case "refresh":
 			worker.Dispatch(logger.StrRefreshMovies, func(key uint32) {
 				utils.SingleJobs("refresh", cfgpstr, "", false, key)
@@ -733,9 +733,9 @@ func apimoviesSearch(c *gin.Context) {
 	// defer logger.ClearVar(&movie)
 	var idxlist int
 	var err error
-	for _, media := range config.SettingsMedia {
+	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) {
 		if !strings.HasPrefix(media.NamePrefix, logger.StrMovie) {
-			continue
+			return
 		}
 
 		for idxlist = range media.Lists {
@@ -772,7 +772,7 @@ func apimoviesSearch(c *gin.Context) {
 				return
 			}
 		}
-	}
+	})
 	c.JSON(http.StatusNoContent, "Nothing Done")
 }
 
@@ -800,9 +800,9 @@ func apimoviesSearchList(c *gin.Context) {
 		}
 	}
 	var err error
-	for _, media := range config.SettingsMedia {
+	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) {
 		if !strings.HasPrefix(media.NamePrefix, logger.StrMovie) {
-			continue
+			return
 		}
 		for idxlist := range media.Lists {
 			if strings.EqualFold(media.Lists[idxlist].Name, movie.Listname) {
@@ -827,7 +827,7 @@ func apimoviesSearchList(c *gin.Context) {
 				return
 			}
 		}
-	}
+	})
 	c.JSON(http.StatusNoContent, "Nothing Done")
 }
 
@@ -840,9 +840,9 @@ func apimoviesSearchList(c *gin.Context) {
 // @Failure      401    {object}  Jsonerror
 // @Router       /api/movies/rss/search/list/{group} [get].
 func apiMoviesRssSearchList(c *gin.Context) {
-	for _, media := range config.SettingsMedia {
+	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) {
 		if !strings.HasPrefix(media.NamePrefix, logger.StrMovie) {
-			continue
+			return
 		}
 		if strings.EqualFold(media.Name, c.Param("group")) {
 			ctx := context.Background()
@@ -861,7 +861,7 @@ func apiMoviesRssSearchList(c *gin.Context) {
 			searchresults.Close()
 			return
 		}
-	}
+	})
 	c.JSON(http.StatusNoContent, "Nothing Done")
 }
 
@@ -889,9 +889,9 @@ func apimoviesSearchDownload(c *gin.Context) {
 		return
 	}
 	// defer logger.ClearVar(&nzb)
-	for _, media := range config.SettingsMedia {
+	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) {
 		if !strings.HasPrefix(media.NamePrefix, logger.StrMovie) {
-			continue
+			return
 		}
 		for idxlist := range media.Lists {
 			if strings.EqualFold(media.Lists[idxlist].Name, movie.Listname) {
@@ -900,7 +900,7 @@ func apimoviesSearchDownload(c *gin.Context) {
 				return
 			}
 		}
-	}
+	})
 	c.JSON(http.StatusNoContent, "Nothing Done")
 }
 
@@ -913,12 +913,13 @@ func apimoviesSearchDownload(c *gin.Context) {
 // @Router       /api/movies/all/refreshall [get].
 func apirefreshMovies(c *gin.Context) {
 	var cfgp *config.MediaTypeConfig
-	for _, media := range config.SettingsMedia {
+	config.RangeSettingsMediaBreak(func(_ string, media *config.MediaTypeConfig) bool {
 		if media.NamePrefix[:5] == logger.StrMovie {
 			cfgp = media
-			break
+			return true
 		}
-	}
+		return false
+	})
 	worker.Dispatch(logger.StrRefreshMovies, func(key uint32) {
 		utils.SingleJobs("refresh", cfgp.NamePrefix, "", false, key)
 	}, "Feeds")
@@ -935,12 +936,13 @@ func apirefreshMovies(c *gin.Context) {
 // @Router       /api/movies/refresh/{id} [get].
 func apirefreshMovie(c *gin.Context) {
 	var cfgp *config.MediaTypeConfig
-	for _, media := range config.SettingsMedia {
+	config.RangeSettingsMediaBreak(func(_ string, media *config.MediaTypeConfig) bool {
 		if media.NamePrefix[:5] == logger.StrMovie {
 			cfgp = media
-			break
+			return true
 		}
-	}
+		return false
+	})
 	id := c.Param(logger.StrID)
 	worker.Dispatch("Refresh Single Movie_"+c.Param(logger.StrID), func(uint32) {
 		utils.RefreshMovie(cfgp, &id)
@@ -957,12 +959,13 @@ func apirefreshMovie(c *gin.Context) {
 // @Router       /api/movies/all/refresh [get].
 func apirefreshMoviesInc(c *gin.Context) {
 	var cfgp *config.MediaTypeConfig
-	for _, media := range config.SettingsMedia {
+	config.RangeSettingsMediaBreak(func(_ string, media *config.MediaTypeConfig) bool {
 		if media.NamePrefix[:5] == logger.StrMovie {
 			cfgp = media
-			break
+			return true
 		}
-	}
+		return false
+	})
 	worker.Dispatch(logger.StrRefreshMoviesInc, func(key uint32) {
 		utils.SingleJobs("refreshinc", cfgp.NamePrefix, "", false, key)
 	}, "Feeds")

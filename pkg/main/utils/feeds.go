@@ -129,7 +129,7 @@ func (d *feedResults) gettmdbmoviediscover(cfglist *config.MediaListsConfig) err
 		args.Arr = append(args.Arr, &cfglist.IgnoreMapLists[idx])
 	}
 	var existing []uint
-	if !config.SettingsGeneral.UseMediaCache && listnamefilter != "" {
+	if !config.GetSettingsGeneral().UseMediaCache && listnamefilter != "" {
 		existing = database.GetrowsNuncached[uint](
 			database.Getdatarow[uint](
 				false,
@@ -162,7 +162,7 @@ func (d *feedResults) gettmdbmoviediscover(cfglist *config.MediaListsConfig) err
 				}
 
 				if cfglist.IgnoreMapListsLen >= 1 {
-					if config.SettingsGeneral.UseMediaCache {
+					if config.GetSettingsGeneral().UseMediaCache {
 						if database.CacheOneStringTwoIntIndexFunc(
 							logger.CacheMovie,
 							func(elem *database.DbstaticOneStringTwoInt) bool {
@@ -301,7 +301,7 @@ func (d *feedResults) gettmdblist(cfglist *config.MediaListsConfig) error {
 		args.Arr = append(args.Arr, &cfglist.IgnoreMapLists[idx])
 	}
 	var existing []uint
-	if !config.SettingsGeneral.UseMediaCache && listnamefilter != "" {
+	if !config.GetSettingsGeneral().UseMediaCache && listnamefilter != "" {
 		existing = database.GetrowsNuncached[uint](
 			database.Getdatarow[uint](
 				false,
@@ -334,7 +334,7 @@ func (d *feedResults) gettmdblist(cfglist *config.MediaListsConfig) error {
 				}
 
 				if cfglist.IgnoreMapListsLen >= 1 {
-					if config.SettingsGeneral.UseMediaCache {
+					if config.GetSettingsGeneral().UseMediaCache {
 						if database.CacheOneStringTwoIntIndexFunc(
 							logger.CacheMovie,
 							func(elem *database.DbstaticOneStringTwoInt) bool {
@@ -513,7 +513,7 @@ func (d *feedResults) parseimdbcsv(
 		args.Arr = append(args.Arr, &cfglistp.IgnoreMapLists[idx])
 	}
 	var existing []uint
-	if !config.SettingsGeneral.UseMediaCache && listnamefilter != "" {
+	if !config.GetSettingsGeneral().UseMediaCache && listnamefilter != "" {
 		existing = database.GetrowsNuncached[uint](
 			database.Getdatarow[uint](
 				false,
@@ -547,7 +547,7 @@ func (d *feedResults) parseimdbcsv(
 			}
 
 			if cfglistp.IgnoreMapListsLen >= 1 {
-				if config.SettingsGeneral.UseMediaCache {
+				if config.GetSettingsGeneral().UseMediaCache {
 					if database.CacheOneStringTwoIntIndexFunc(
 						logger.CacheMovie,
 						func(elem *database.DbstaticOneStringTwoInt) bool {
@@ -645,7 +645,7 @@ func feeds(cfgp *config.MediaTypeConfig, list *config.MediaListsConfig, d *feedR
 // It first checks the media cache if enabled, otherwise does a direct database query.
 // Returns true if the movie ID exists in the list, false otherwise.
 func getmovieid(dbid *uint, cfglistp *config.MediaListsConfig) bool {
-	if config.SettingsGeneral.UseMediaCache {
+	if config.GetSettingsGeneral().UseMediaCache {
 		dbidn := *dbid
 		if database.CacheOneStringTwoIntIndexFunc(
 			logger.CacheMovie,

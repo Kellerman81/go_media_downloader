@@ -170,8 +170,8 @@ func (c *rlHTTPClient) checkresperror(
 // The Response will be invalid after this call.
 func (c *rlHTTPClient) addwait(req *http.Request, resp *http.Response) bool {
 	blockinterval := 5
-	if config.SettingsGeneral.FailedIndexerBlockTime != 0 {
-		blockinterval = config.SettingsGeneral.FailedIndexerBlockTime
+	if config.GetSettingsGeneral().FailedIndexerBlockTime != 0 {
+		blockinterval = config.GetSettingsGeneral().FailedIndexerBlockTime
 	}
 	if resp == nil {
 		c.logwait(logger.TimeGetNow().Add(time.Duration(blockinterval)*time.Minute), nil)

@@ -719,7 +719,7 @@ func (s *ConfigSearcher) validateSize(entry *apiexternal.Nzbwithprio) bool {
 
 	skipemptysize := s.Quality.QualityIndexerByQualityAndTemplateSkipEmpty(entry.NZB.Indexer)
 	if !skipemptysize {
-		if _, ok := config.SettingsList[entry.NZB.Indexer.Name]; ok {
+		if ok := config.TestSettingsList(entry.NZB.Indexer.Name); ok {
 			skipemptysize = s.Quality.Indexer[0].SkipEmptySize
 		} else if entry.NZB.Indexer.Getlistbyindexer() != nil {
 			skipemptysize = s.Quality.Indexer[0].SkipEmptySize
@@ -911,9 +911,9 @@ func (s *ConfigSearcher) processSeriesRSS(
 	entry.Info.ListID = s.Cfgp.GetMediaListsEntryListID(entry.Listname)
 
 	if entry.Quality == "" {
-		return false, config.SettingsQuality[s.Cfgp.DefaultQuality]
+		return false, config.GetSettingsQuality(s.Cfgp.DefaultQuality)
 	}
-	return false, config.SettingsQuality[entry.Quality]
+	return false, config.GetSettingsQuality(entry.Quality)
 }
 
 // performIDSearch searches for media content using either IMDB (for movies) or TVDB (for TV series) identifiers
@@ -993,9 +993,9 @@ func (s *ConfigSearcher) processMovieRSS(
 	entry.Info.ListID = s.Cfgp.GetMediaListsEntryListID(entry.Listname)
 
 	if entry.Quality == "" {
-		return false, config.SettingsQuality[s.Cfgp.DefaultQuality]
+		return false, config.GetSettingsQuality(s.Cfgp.DefaultQuality)
 	}
-	return false, config.SettingsQuality[entry.Quality]
+	return false, config.GetSettingsQuality(entry.Quality)
 }
 
 // handleMovieImport attempts to import a movie into the system when necessary.
@@ -1350,7 +1350,7 @@ func (s *ConfigSearcher) getRSSFeed(
 		logger.LogDynamicany2StrAny(
 			"debug", "Indexer temporarily disabled due to fail in last",
 			logger.StrListname, listentry.TemplateList,
-			strMinutes, -1*config.SettingsGeneral.FailedIndexerBlockTime,
+			strMinutes, -1*config.GetSettingsGeneral().FailedIndexerBlockTime,
 		)
 		return logger.ErrDisabled
 	}
@@ -1392,11 +1392,11 @@ func (s *ConfigSearcher) getRSSFeed(
 // preventing repeated attempts to use a problematic indexer.
 // Returns false if blocking is disabled or no recent failures are found.
 func (s *ConfigSearcher) isIndexerBlocked(url string) bool {
-	if config.SettingsGeneral.FailedIndexerBlockTime == 0 {
+	if config.GetSettingsGeneral().FailedIndexerBlockTime == 0 {
 		return false
 	}
 
-	blockinterval := -1 * config.SettingsGeneral.FailedIndexerBlockTime
+	blockinterval := -1 * config.GetSettingsGeneral().FailedIndexerBlockTime
 	intval := logger.TimeGetNow().Add(time.Minute * time.Duration(blockinterval))
 
 	return database.Getdatarow[uint](
@@ -1526,12 +1526,12 @@ func (s *ConfigSearcher) episodeFillSearchVar(p *searchParams) error {
 func (s *ConfigSearcher) setQualityConfig(qualityName *string) {
 	if s.Quality == nil || s.Quality.Name != *qualityName {
 		if *qualityName == "" {
-			s.Quality = config.SettingsQuality[s.Cfgp.DefaultQuality]
+			s.Quality = config.GetSettingsQuality(s.Cfgp.DefaultQuality)
 		} else {
 			var ok bool
-			s.Quality, ok = config.SettingsQuality[*qualityName]
+			s.Quality, ok = config.GetSettingsQualityOk(*qualityName)
 			if !ok {
-				s.Quality = config.SettingsQuality[s.Cfgp.DefaultQuality]
+				s.Quality = config.GetSettingsQuality(s.Cfgp.DefaultQuality)
 			}
 		}
 	}
@@ -2333,7 +2333,7 @@ func (s *ConfigSearcher) validateBasicEntry(entry *apiexternal.Nzbwithprio) bool
 
 // setupIndexerConfig creates a custom indexer configuration.
 func setupIndexerConfig(listentry *config.MediaListsConfig) *config.IndexersConfig {
-	customindexer := *config.SettingsIndexer[listentry.TemplateList]
+	customindexer := *config.GetSettingsIndexer(listentry.TemplateList)
 	customindexer.Name = listentry.TemplateList
 	customindexer.Customrssurl = listentry.CfgList.URL
 	customindexer.URL = listentry.CfgList.URL

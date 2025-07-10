@@ -1086,7 +1086,7 @@ func DBIntegrityCheck() string {
 
 // Getentryalternatetitlesdirect retrieves a slice of DbstaticTwoStringOneInt objects that represent alternate titles for the movie with the given database ID. If the UseMediaCache setting is enabled, it will retrieve the titles from the cache. Otherwise, it will retrieve the titles directly from the database.
 func Getentryalternatetitlesdirect(dbid *uint, useseries bool) []DbstaticTwoStringOneInt {
-	if config.SettingsGeneral.UseMediaCache {
+	if config.GetSettingsGeneral().UseMediaCache {
 		return GetCachedArr(cache.itemstwostring,
 			logger.GetStringsMap(useseries, logger.CacheMediaTitles),
 			false,

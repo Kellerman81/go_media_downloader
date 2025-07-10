@@ -185,7 +185,7 @@ func TestCheckQueue(t *testing.T) {
 
 func TestExecuteJob(t *testing.T) {
 	executed := false
-	config.SettingsGeneral.Jobs = map[string]func(uint32){
+	config.GetSettingsGeneral().Jobs = map[string]func(uint32){
 		"test_job": func(uint32) { executed = true },
 	}
 

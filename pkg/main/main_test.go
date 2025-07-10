@@ -59,51 +59,51 @@ func Init() {
 	database.InitCache()
 	logger.InitLogger(logger.Config{
 		LogLevel:     "Warning",
-		LogFileSize:  config.SettingsGeneral.LogFileSize,
-		LogFileCount: config.SettingsGeneral.LogFileCount,
-		LogCompress:  config.SettingsGeneral.LogCompress,
+		LogFileSize:  config.GetSettingsGeneral().LogFileSize,
+		LogFileCount: config.GetSettingsGeneral().LogFileCount,
+		LogCompress:  config.GetSettingsGeneral().LogCompress,
 	})
 
 	database.UpgradeDB()
-	err := database.InitDB(config.SettingsGeneral.DBLogLevel)
+	err := database.InitDB(config.GetSettingsGeneral().DBLogLevel)
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}
 	apiexternal.NewOmdbClient(
-		config.SettingsGeneral.OmdbAPIKey,
-		config.SettingsGeneral.OmdbLimiterSeconds,
-		config.SettingsGeneral.OmdbLimiterCalls,
-		config.SettingsGeneral.OmdbDisableTLSVerify,
-		config.SettingsGeneral.OmdbTimeoutSeconds,
+		config.GetSettingsGeneral().OmdbAPIKey,
+		config.GetSettingsGeneral().OmdbLimiterSeconds,
+		config.GetSettingsGeneral().OmdbLimiterCalls,
+		config.GetSettingsGeneral().OmdbDisableTLSVerify,
+		config.GetSettingsGeneral().OmdbTimeoutSeconds,
 	)
 	apiexternal.NewTmdbClient(
-		config.SettingsGeneral.TheMovieDBApiKey,
-		config.SettingsGeneral.TmdbLimiterSeconds,
-		config.SettingsGeneral.TmdbLimiterCalls,
-		config.SettingsGeneral.TheMovieDBDisableTLSVerify,
-		config.SettingsGeneral.TmdbTimeoutSeconds,
+		config.GetSettingsGeneral().TheMovieDBApiKey,
+		config.GetSettingsGeneral().TmdbLimiterSeconds,
+		config.GetSettingsGeneral().TmdbLimiterCalls,
+		config.GetSettingsGeneral().TheMovieDBDisableTLSVerify,
+		config.GetSettingsGeneral().TmdbTimeoutSeconds,
 	)
 	apiexternal.NewTvdbClient(
-		config.SettingsGeneral.TvdbLimiterSeconds,
-		config.SettingsGeneral.TvdbLimiterCalls,
-		config.SettingsGeneral.TvdbDisableTLSVerify,
-		config.SettingsGeneral.TvdbTimeoutSeconds,
+		config.GetSettingsGeneral().TvdbLimiterSeconds,
+		config.GetSettingsGeneral().TvdbLimiterCalls,
+		config.GetSettingsGeneral().TvdbDisableTLSVerify,
+		config.GetSettingsGeneral().TvdbTimeoutSeconds,
 	)
 	apiexternal.NewTraktClient(
-		config.SettingsGeneral.TraktClientID,
-		config.SettingsGeneral.TraktClientSecret,
-		config.SettingsGeneral.TraktLimiterSeconds,
-		config.SettingsGeneral.TraktLimiterCalls,
-		config.SettingsGeneral.TraktDisableTLSVerify,
-		config.SettingsGeneral.TraktTimeoutSeconds,
+		config.GetSettingsGeneral().TraktClientID,
+		config.GetSettingsGeneral().TraktClientSecret,
+		config.GetSettingsGeneral().TraktLimiterSeconds,
+		config.GetSettingsGeneral().TraktLimiterCalls,
+		config.GetSettingsGeneral().TraktDisableTLSVerify,
+		config.GetSettingsGeneral().TraktTimeoutSeconds,
 	)
 	worker.InitWorkerPools(
-		config.SettingsGeneral.WorkerSearch,
-		config.SettingsGeneral.WorkerFiles,
-		config.SettingsGeneral.WorkerMetadata,
-		config.SettingsGeneral.WorkerRSS,
-		config.SettingsGeneral.WorkerIndexer,
+		config.GetSettingsGeneral().WorkerSearch,
+		config.GetSettingsGeneral().WorkerFiles,
+		config.GetSettingsGeneral().WorkerMetadata,
+		config.GetSettingsGeneral().WorkerRSS,
+		config.GetSettingsGeneral().WorkerIndexer,
 	)
 
 	database.InitImdbdb()
@@ -375,7 +375,7 @@ func TestSQL(t *testing.T) {
 func TestGenIncQuery(t *testing.T) {
 	Init()
 
-	cfgp := config.SettingsMedia["serie_EN"]
+	cfgp := config.GetSettingsMedia("serie_EN")
 	searchmissing := true
 	var searchinterval uint16 = 5
 	t.Run("test", func(t *testing.T) {
@@ -446,8 +446,8 @@ func TestQueryMovie(b *testing.T) {
 	Init()
 	var id uint = 14027
 	ctx := context.Background()
-	results := searcher.NewSearcher(config.SettingsMedia["movie_EN"], nil, "", nil)
-	err := results.MediaSearch(ctx, config.SettingsMedia["movie_EN"], id, false, false, false)
+	results := searcher.NewSearcher(config.GetSettingsMedia("movie_EN"), nil, "", nil)
+	err := results.MediaSearch(ctx, config.GetSettingsMedia("movie_EN"), id, false, false, false)
 	// b.Log(results)
 	bla, _ := json.Marshal(results)
 	b.Log(string(bla))
@@ -492,10 +492,10 @@ func TestRequest(t *testing.T) {
 func TestGenQuery(t *testing.T) {
 	Init()
 	var cfgp *config.MediaTypeConfig
-	for _, loop := range config.SettingsMedia {
+	config.RangeSettingsMediaBreak(func(_ string, loop *config.MediaTypeConfig) bool {
 		cfgp = loop
-		break
-	}
+		return true
+	})
 	t.Log(cfgp.Data[0].CfgPath.MissingScanInterval)
 	searchmissing := true
 	searchinterval := 100
@@ -1115,7 +1115,7 @@ func BenchmarkQuery14(b *testing.B) {
 	Init()
 	cfgFolder := "Y:\\completed\\Movies\\Morbius.2022.1080p.WEB-DL.x264.AAC-EVO. (tt5108870)"
 	getconfig := "movie_EN"
-	cfgp := config.SettingsMedia[getconfig]
+	cfgp := config.GetSettingsMedia(getconfig)
 	var cfgimport *config.MediaDataImportConfig
 	for _, imp := range cfgp.DataImport {
 		if strings.EqualFold(imp.TemplatePath, "en movies") {

@@ -192,7 +192,7 @@ func LoadDBPatterns() {
 // does not already have it set. It calls NewCutoffPrio to calculate
 // the priority value based on the cutoff quality and resolution.
 func GenerateCutoffPriorities() {
-	for _, media := range config.SettingsMedia {
+	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) {
 		for _, lst := range media.ListsMap {
 			if lst.CfgQuality.CutoffPriority != 0 {
 				continue
@@ -204,7 +204,7 @@ func GenerateCutoffPriorities() {
 			GetPriorityMapQual(&m, media, lst.CfgQuality, true, false) // newCutoffPrio(media, idxi)
 			lst.CfgQuality.CutoffPriority = m.Priority
 		}
-	}
+	})
 }
 
 // processPatternMatch handles the processing of a matched regex pattern in file parsing.
@@ -320,7 +320,7 @@ func newFileParser(
 	logger.StringReplaceWithP(&m.Str, '_', ' ')
 	m.Str = logger.Trim(m.Str, '[', ']')
 
-	if !config.SettingsGeneral.DisableParserStringMatch {
+	if !config.GetSettingsGeneral().DisableParserStringMatch {
 		m.Parsegroup("audio", onlyifempty, database.DBConnect.AudioStrIn)
 		m.Parsegroup("codec", onlyifempty, database.DBConnect.CodecStrIn)
 		m.Parsegroup("quality", onlyifempty, database.DBConnect.QualityStrIn)
@@ -594,7 +594,7 @@ func findMovieInLists(m *database.ParseInfo, cfgp *config.MediaTypeConfig) error
 
 	if m.MovieID == 0 && cfgp.Name != "" && m.ListID == -1 {
 		for idx := range cfgp.Lists {
-			if config.SettingsGeneral.UseMediaCache {
+			if config.GetSettingsGeneral().UseMediaCache {
 				m.MovieID = database.CacheOneStringTwoIntIndexFuncRet(
 					logger.CacheMovie,
 					m.DbmovieID,
@@ -636,7 +636,7 @@ func findSeriesInLists(m *database.ParseInfo, cfgp *config.MediaTypeConfig) erro
 
 	if m.SerieID == 0 && cfgp != nil && m.ListID == -1 {
 		for idx := range cfgp.Lists {
-			if config.SettingsGeneral.UseMediaCache {
+			if config.GetSettingsGeneral().UseMediaCache {
 				m.SerieID = database.CacheOneStringTwoIntIndexFuncRet(
 					logger.CacheSeries,
 					m.DbserieID,
@@ -678,14 +678,14 @@ func ParseVideoFile(m *database.ParseInfo, quality *config.QualityConfig) error 
 		return logger.ErrNotFound
 	}
 
-	err := parsemedia(!config.SettingsGeneral.UseMediainfo, m, quality)
+	err := parsemedia(!config.GetSettingsGeneral().UseMediainfo, m, quality)
 	if err == nil {
 		return nil
 	}
-	if !config.SettingsGeneral.UseMediaFallback {
+	if !config.GetSettingsGeneral().UseMediaFallback {
 		return err
 	}
-	return parsemedia(config.SettingsGeneral.UseMediainfo, m, quality)
+	return parsemedia(config.GetSettingsGeneral().UseMediainfo, m, quality)
 }
 
 // parsemedia attempts to parse the metadata of a video file using either ffprobe or MediaInfo.
@@ -1208,7 +1208,7 @@ func GenerateAllQualityPriorities() {
 	)
 	// var addwanted bool
 
-	for _, qual := range config.SettingsQuality {
+	config.RangeSettingsQuality(func(_ string, qual *config.QualityConfig) {
 		target := Prioarr{QualityGroup: qual.Name}
 
 		for idxreso := range getresolutions {
@@ -1261,7 +1261,7 @@ func GenerateAllQualityPriorities() {
 				}
 			}
 		}
-	}
+	})
 }
 
 // handleCombinedReorder processes quality reordering for combined resolution and quality configurations.

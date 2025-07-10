@@ -5,13 +5,12 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
-	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
-	"github.com/fsnotify/fsnotify"
 	"github.com/pelletier/go-toml/v2"
 	"github.com/recoilme/pudge"
 	"golang.org/x/oauth2"
@@ -1031,6 +1030,8 @@ var (
 
 	// cachetoml contains the cached TOML configuration.
 	cachetoml mainConfig
+
+	mu = sync.RWMutex{}
 )
 
 // GetMediaListsEntryListID returns the index position of the list with the given
@@ -1191,24 +1192,15 @@ func LoadCfgDB() error {
 	} else {
 		fmt.Println("Config file found. Loading config.")
 	}
-	err := readconfigtoml()
+	err := Readconfigtoml()
 	if err != nil {
 		return err
 	}
 	configDB, _ := pudge.Open("./databases/config.db", &pudge.Config{SyncInterval: 0})
 	defer configDB.Close()
 	pudge.BackupAll("")
-	SettingsDownloader = make(map[string]*DownloaderConfig, len(cachetoml.Downloader))
-	SettingsIndexer = make(map[string]*IndexersConfig, len(cachetoml.Indexers))
-	SettingsList = make(map[string]*ListsConfig, len(cachetoml.Lists))
-	SettingsMedia = make(map[string]*MediaTypeConfig)
-	SettingsNotification = make(map[string]*NotificationConfig, len(cachetoml.Notification))
-	SettingsPath = make(map[string]*PathsConfig, len(cachetoml.Paths))
-	SettingsQuality = make(map[string]*QualityConfig, len(cachetoml.Quality))
-	SettingsRegex = make(map[string]*RegexConfig, len(cachetoml.Regex))
-	SettingsScheduler = make(map[string]*SchedulerConfig, len(cachetoml.Scheduler))
-
-	getconfigtoml()
+	ClearSettings()
+	Getconfigtoml()
 
 	hastoken, _ := configDB.Has("trakt_token")
 	if hastoken {
@@ -1221,91 +1213,10 @@ func LoadCfgDB() error {
 	return nil
 }
 
-// WatchConfig sets up a file system watcher for the configuration file.
-// It creates a new watcher, starts listening for file events in a separate goroutine,
-// and watches the directory containing the configuration file.
-// The function blocks indefinitely to keep the watcher active.
-func WatchConfig() {
-	// Create a new watcher.
-	w, err := fsnotify.NewWatcher()
-	if err != nil {
-		fmt.Printf("creating a new watcher: %s", err)
-		return
-	}
-	defer w.Close()
-
-	// Start listening for events.
-	go fileWatch(w)
-
-	// Add all files from the commandline.
-	st, err := os.Lstat(Configfile)
-	if err != nil {
-		fmt.Printf("%s", err)
-		return
-	}
-
-	if st.IsDir() {
-		fmt.Printf("%q is a directory, not a file", Configfile)
-		return
-	}
-
-	// Watch the directory, not the file itself.
-	err = w.Add(filepath.Dir(Configfile))
-	if err != nil {
-		fmt.Printf("%q: %s", Configfile, err)
-		return
-	}
-
-	<-make(chan struct{}) // Block forever
-}
-
-// fileWatch monitors file system events for the configuration file.
-// It listens for write events on the configuration file and reloads the configuration
-// when changes are detected. If an error occurs during watching or reading the file,
-// it prints the error. The function runs in an infinite loop and is typically called
-// as a goroutine by WatchConfig().
-func fileWatch(w *fsnotify.Watcher) {
-	for {
-		select {
-		// Read from Errors.
-		case err, ok := <-w.Errors:
-			if !ok { // Channel was closed (i.e. Watcher.Close() was called).
-				return
-			}
-			fmt.Printf("ERROR: %s", err)
-		// Read from Events.
-		case e, ok := <-w.Events:
-			if !ok { // Channel was closed (i.e. Watcher.Close() was called).
-				return
-			}
-
-			if strings.Contains(e.Name, "config.toml") {
-				if e.Has(fsnotify.Write) {
-					if readconfigtoml() == nil {
-						SettingsDownloader = make(map[string]*DownloaderConfig, len(cachetoml.Downloader))
-						SettingsIndexer = make(map[string]*IndexersConfig, len(cachetoml.Indexers))
-						SettingsList = make(map[string]*ListsConfig, len(cachetoml.Lists))
-						SettingsMedia = make(map[string]*MediaTypeConfig)
-						SettingsNotification = make(map[string]*NotificationConfig, len(cachetoml.Notification))
-						SettingsPath = make(map[string]*PathsConfig, len(cachetoml.Paths))
-						SettingsQuality = make(map[string]*QualityConfig, len(cachetoml.Quality))
-						SettingsRegex = make(map[string]*RegexConfig, len(cachetoml.Regex))
-						SettingsScheduler = make(map[string]*SchedulerConfig, len(cachetoml.Scheduler))
-
-						getconfigtoml()
-					}
-				}
-			} else {
-				continue
-			}
-		}
-	}
-}
-
-// readconfigtoml reads and decodes the configuration file specified by Configfile into the global cachetoml struct.
+// Readconfigtoml reads and decodes the configuration file specified by Configfile into the global cachetoml struct.
 // It opens the configuration file, uses a TOML decoder to parse its contents, and handles any potential errors.
 // Returns an error if the file cannot be opened or decoded, otherwise returns nil.
-func readconfigtoml() error {
+func Readconfigtoml() error {
 	content, err := os.Open(Configfile)
 	if err != nil {
 		fmt.Println("Error loading config. " + err.Error())
@@ -1320,12 +1231,32 @@ func readconfigtoml() error {
 	return nil
 }
 
-// getconfigtoml populates global configuration settings from the cached TOML configuration.
+// ClearSettings initializes and resets global configuration maps for various application components.
+// It creates empty maps for downloaders, indexers, lists, media types, notifications,
+// paths, quality settings, regex, and schedulers, preparing them to be populated with
+// configuration data from the TOML configuration file.
+func ClearSettings() {
+	mu.Lock()
+	defer mu.Unlock()
+	SettingsDownloader = make(map[string]*DownloaderConfig, len(cachetoml.Downloader))
+	SettingsIndexer = make(map[string]*IndexersConfig, len(cachetoml.Indexers))
+	SettingsList = make(map[string]*ListsConfig, len(cachetoml.Lists))
+	SettingsMedia = make(map[string]*MediaTypeConfig)
+	SettingsNotification = make(map[string]*NotificationConfig, len(cachetoml.Notification))
+	SettingsPath = make(map[string]*PathsConfig, len(cachetoml.Paths))
+	SettingsQuality = make(map[string]*QualityConfig, len(cachetoml.Quality))
+	SettingsRegex = make(map[string]*RegexConfig, len(cachetoml.Regex))
+	SettingsScheduler = make(map[string]*SchedulerConfig, len(cachetoml.Scheduler))
+}
+
+// Getconfigtoml populates global configuration settings from the cached TOML configuration.
 // It sets default values, initializes various configuration maps, and processes configuration
 // for different components such as general settings, downloaders, indexers, lists, media types,
 // notifications, paths, quality, regex, and schedulers. This function prepares the application's
 // configuration by linking and transforming configuration data from the parsed TOML file.
-func getconfigtoml() {
+func Getconfigtoml() {
+	mu.Lock()
+	defer mu.Unlock()
 	SettingsGeneral = cachetoml.General
 	if SettingsGeneral.CacheDuration == 0 {
 		SettingsGeneral.CacheDuration = 12
@@ -1582,6 +1513,8 @@ func getconfigtoml() {
 // values to the respective global settings maps. This allows the config
 // system to be extended by adding new config types.
 func UpdateCfg(configIn []Conf) {
+	mu.Lock()
+	defer mu.Unlock()
 	for _, val := range configIn {
 		if strings.HasPrefix(val.Name, "general") {
 			SettingsGeneral = val.Data.(GeneralConfig)
@@ -1636,6 +1569,8 @@ func UpdateCfg(configIn []Conf) {
 // It collects the settings from the various global config variables and organizes
 // them into a single map indexed by config section name prefixes.
 func GetCfgAll() map[string]any {
+	mu.RLock()
+	defer mu.RUnlock()
 	q := make(map[string]any)
 	q["general"] = SettingsGeneral
 	q["imdb"] = SettingsImdb
@@ -1677,6 +1612,8 @@ func UpdateCfgEntry(configIn Conf) {
 
 	defer configDB.Close()
 
+	mu.Lock()
+	defer mu.Unlock()
 	if strings.HasPrefix(configIn.Name, "general") {
 		SettingsGeneral = configIn.Data.(GeneralConfig)
 	}
@@ -1738,6 +1675,8 @@ func DeleteCfgEntry(name string) {
 
 	defer configDB.Close()
 
+	mu.Lock()
+	defer mu.Unlock()
 	if strings.HasPrefix(name, "general") {
 		SettingsGeneral = GeneralConfig{}
 	}
@@ -1793,15 +1732,8 @@ func ClearCfg() {
 	configDB, _ := pudge.Open("./databases/config.db", &pudge.Config{SyncInterval: 0})
 	defer configDB.Close()
 	configDB.DeleteFile()
-	SettingsDownloader = make(map[string]*DownloaderConfig)
-	SettingsIndexer = make(map[string]*IndexersConfig)
-	SettingsList = make(map[string]*ListsConfig)
-	SettingsMedia = make(map[string]*MediaTypeConfig)
-	SettingsNotification = make(map[string]*NotificationConfig)
-	SettingsPath = make(map[string]*PathsConfig)
-	SettingsQuality = make(map[string]*QualityConfig)
-	SettingsRegex = make(map[string]*RegexConfig)
-	SettingsScheduler = make(map[string]*SchedulerConfig)
+
+	ClearSettings()
 
 	cachetoml = mainConfig{
 		General: GeneralConfig{
@@ -1914,7 +1846,7 @@ func ClearCfg() {
 		}},
 	}
 
-	getconfigtoml()
+	Getconfigtoml()
 }
 
 // WriteCfg marshals the application configuration structs into a TOML
@@ -1923,6 +1855,9 @@ func ClearCfg() {
 // to the Configfile location.
 func WriteCfg() {
 	var bla mainConfig
+
+	mu.Lock()
+	defer mu.Unlock()
 
 	bla.General = SettingsGeneral
 	bla.Imdbindexer = SettingsImdb
@@ -1972,4 +1907,163 @@ func WriteCfg() {
 	}
 	os.WriteFile(Configfile, cnt, 0o777)
 	cachetoml = bla
+}
+
+func GetSettingsGeneral() *GeneralConfig {
+	mu.RLock()
+	defer mu.RUnlock()
+	return &SettingsGeneral
+}
+
+func GetSettingsImdb() *ImdbConfig {
+	mu.RLock()
+	defer mu.RUnlock()
+	return &SettingsImdb
+}
+
+func GetSettingsMedia(name string) *MediaTypeConfig {
+	mu.RLock()
+	defer mu.RUnlock()
+	return SettingsMedia[name]
+}
+
+func GetSettingsPath(name string) *PathsConfig {
+	mu.RLock()
+	defer mu.RUnlock()
+	return SettingsPath[name]
+}
+
+func GetSettingsQuality(name string) *QualityConfig {
+	mu.RLock()
+	defer mu.RUnlock()
+	return SettingsQuality[name]
+}
+
+func GetSettingsQualityOk(name string) (*QualityConfig, bool) {
+	mu.RLock()
+	defer mu.RUnlock()
+	val, ok := SettingsQuality[name]
+	return val, ok
+}
+
+func GetSettingsScheduler(name string) *SchedulerConfig {
+	mu.RLock()
+	defer mu.RUnlock()
+	return SettingsScheduler[name]
+}
+
+func GetSettingsList(name string) *ListsConfig {
+	mu.RLock()
+	defer mu.RUnlock()
+	return SettingsList[name]
+}
+
+func TestSettingsList(name string) bool {
+	mu.RLock()
+	defer mu.RUnlock()
+	_, ok := SettingsList[name]
+	return ok
+}
+
+func GetSettingsIndexer(name string) *IndexersConfig {
+	mu.RLock()
+	defer mu.RUnlock()
+	return SettingsIndexer[name]
+}
+
+func GetSettingsNotification(name string) *NotificationConfig {
+	mu.RLock()
+	defer mu.RUnlock()
+	return SettingsNotification[name]
+}
+
+func RangeSettingsMedia(fn func(string, *MediaTypeConfig)) {
+	mu.RLock()
+	defer mu.RUnlock()
+	for key, cfg := range SettingsMedia {
+		fn(key, cfg)
+	}
+}
+
+func RangeSettingsMediaLists(media string, fn func(*MediaListsConfig)) {
+	mu.RLock()
+	defer mu.RUnlock()
+	for _, cfg := range SettingsMedia[media].Lists {
+		fn(&cfg)
+	}
+}
+
+func RangeSettingsMediaBreak(fn func(string, *MediaTypeConfig) bool) {
+	mu.RLock()
+	defer mu.RUnlock()
+	for key, cfg := range SettingsMedia {
+		if fn(key, cfg) {
+			break
+		}
+	}
+}
+
+func RangeSettingsQuality(fn func(string, *QualityConfig)) {
+	mu.RLock()
+	defer mu.RUnlock()
+	for key, cfg := range SettingsQuality {
+		fn(key, cfg)
+	}
+}
+
+func RangeSettingsList(fn func(string, *ListsConfig)) {
+	mu.RLock()
+	defer mu.RUnlock()
+	for key, cfg := range SettingsList {
+		fn(key, cfg)
+	}
+}
+
+func RangeSettingsIndexer(fn func(string, *IndexersConfig)) {
+	mu.RLock()
+	defer mu.RUnlock()
+	for key, cfg := range SettingsIndexer {
+		fn(key, cfg)
+	}
+}
+
+func RangeSettingsScheduler(fn func(string, *SchedulerConfig)) {
+	mu.RLock()
+	defer mu.RUnlock()
+	for key, cfg := range SettingsScheduler {
+		fn(key, cfg)
+	}
+}
+
+func RangeSettingsNotification(fn func(string, *NotificationConfig)) {
+	mu.RLock()
+	defer mu.RUnlock()
+	for key, cfg := range SettingsNotification {
+		fn(key, cfg)
+	}
+}
+
+func RangeSettingsPath(fn func(string, *PathsConfig)) {
+	mu.RLock()
+	defer mu.RUnlock()
+	for key, cfg := range SettingsPath {
+		fn(key, cfg)
+	}
+}
+
+func RangeSettingsRegex(fn func(string, *RegexConfig)) {
+	mu.RLock()
+	defer mu.RUnlock()
+	for key, cfg := range SettingsRegex {
+		fn(key, cfg)
+	}
+}
+
+func RangeSettingsDownloader(fn func(string, *DownloaderConfig)) {
+	mu.RLock()
+	defer mu.RUnlock()
+
+	for key, cfg := range SettingsDownloader {
+		fn(key, cfg)
+	}
 }
