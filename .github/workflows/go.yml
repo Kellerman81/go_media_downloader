@@ -121,12 +121,12 @@ jobs:
         filename: 'gomedia-linux-arm64.zip'
         exclusions: '*.git* /.github/* /pkg/* Dockerfile go.* *.zip *.go go_media_downloader-* init_imdb-*'
     
-    - name: Build and push linux/arm64
-      uses: docker/build-push-action@v6
-      with:
-        platforms: linux/arm64
-        push: true
-        tags: kellerman81/go_media_downloader:latest,kellerman81/go_media_downloader:${{ steps.version.outputs.version }}
+    #- name: Build and push linux/arm64
+    #  uses: docker/build-push-action@v6
+    #  with:
+    #    platforms: linux/arm64
+    #    push: true
+    #    tags: kellerman81/go_media_downloader:latest,kellerman81/go_media_downloader:${{ steps.version.outputs.version }}
 
     - name: Development Release
       if: ${{ github.event_name == 'push' && !startsWith(steps.version.outputs.version, 'v') }}
