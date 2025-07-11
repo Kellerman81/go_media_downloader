@@ -99,10 +99,7 @@ func main() {
 
 					if strings.Contains(e.Name, "config.toml") {
 						if e.Has(fsnotify.Write) {
-							if config.Readconfigtoml() == nil {
-								config.ClearSettings()
-								config.Getconfigtoml()
-							}
+							config.Loadallsettings()
 						}
 					} else {
 						continue
