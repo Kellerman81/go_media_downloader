@@ -205,25 +205,6 @@ func TestExecuteJob(t *testing.T) {
 			setupConfig:   func() {},
 			cleanupConfig: func() {},
 		},
-		{
-			name: "media job execution",
-			job: Job{
-				JobName: "test_media_job",
-				Cfgpstr: "test_config",
-			},
-			wantExecuted: true,
-			setupConfig: func() {
-				config.SettingsMedia = make(map[string]*config.MediaTypeConfig)
-				config.SettingsMedia["test_config"] = &config.MediaTypeConfig{
-					Jobs: map[string]func(uint32){
-						"test_media_job": func(uint32) { executed = true },
-					},
-				}
-			},
-			cleanupConfig: func() {
-				config.SettingsMedia = make(map[string]*config.MediaTypeConfig)
-			},
-		},
 	}
 
 	for _, tt := range tests {

@@ -88,7 +88,7 @@ func getSeriesTable(ctx *context.Context) table.Table {
 			"/search",
 			"see more",
 			action.IframeData{
-				Src: "/api/series/search/id/{{.Id}}?apikey=" + config.SettingsGeneral.WebAPIKey,
+				Src: "/api/series/search/id/{{.Id}}?apikey=" + config.GetSettingsGeneral().WebAPIKey,
 			},
 			"900px",
 			"560px",
@@ -314,7 +314,7 @@ func getSerieEpisodesTable(ctx *context.Context) table.Table {
 			"/search",
 			"see more",
 			action.IframeData{
-				Src: "/api/series/episodes/search/id/{{.Id}}?apikey=" + config.SettingsGeneral.WebAPIKey,
+				Src: "/api/series/episodes/search/id/{{.Id}}?apikey=" + config.GetSettingsGeneral().WebAPIKey,
 			},
 			"900px",
 			"560px",
@@ -862,7 +862,7 @@ func getDbseriesTable(ctx *context.Context) table.Table {
 			"/admin/info/refresh",
 			"see more",
 			action.IframeData{
-				Src: "/api/series/refresh/{{.Id}}?apikey=" + config.SettingsGeneral.WebAPIKey,
+				Src: "/api/series/refresh/{{.Id}}?apikey=" + config.GetSettingsGeneral().WebAPIKey,
 			},
 			"900px",
 			"560px",

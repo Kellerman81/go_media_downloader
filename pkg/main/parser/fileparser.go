@@ -1185,9 +1185,7 @@ func GenerateAllQualityPriorities() {
 	getcodecs := database.DBConnect.GetcodecsIn
 	getcodecs = append(getcodecs, regex0)
 
-	totalCombinations := len(
-		config.SettingsQuality,
-	) * len(
+	totalCombinations := config.GetSettingsQualityLen() * len(
 		getresolutions,
 	) * len(
 		getqualities,

@@ -84,7 +84,7 @@ const (
 )
 
 func InitCfg() {
-	config.LoadCfgDB()
+	config.LoadCfgDB(false)
 
 	InitCache()
 

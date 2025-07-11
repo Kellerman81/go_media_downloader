@@ -50,11 +50,11 @@ func main() {
 	// debug.SetGCPercent(30)
 	os.Mkdir("./temp", 0o777)
 
-	err := config.LoadCfgDB()
+	err := config.LoadCfgDB(false)
 	if err != nil {
 		os.Exit(1)
 	}
-	if true {
+	if config.GetSettingsGeneral().EnableFileWatcher {
 		watcher, err := fsnotify.NewWatcher()
 		if err != nil {
 			fmt.Printf("creating a new watcher: %s", err)
@@ -99,7 +99,9 @@ func main() {
 
 					if strings.Contains(e.Name, "config.toml") {
 						if e.Has(fsnotify.Write) {
-							config.Loadallsettings()
+							config.Loadallsettings(true)
+							utils.LoadGlobalSchedulerConfig()
+							utils.LoadSchedulerConfig()
 						}
 					} else {
 						continue

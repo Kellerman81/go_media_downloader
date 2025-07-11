@@ -91,16 +91,16 @@ type mediaInfoJSON struct {
 // getmediainfoFilename returns the path to the mediainfo executable.
 // It first checks if a custom path has been set in mediainfopath.
 // If not, it constructs the default path based on the OS and the
-// config.SettingsGeneral.MediainfoPath setting.
+// config.GetSettingsGeneral().MediainfoPath setting.
 func getmediainfoFilename() string {
 	if mediainfopath != "" {
 		return mediainfopath
 	}
 
 	if runtime.GOOS == "windows" {
-		mediainfopath = filepath.Join(config.SettingsGeneral.MediainfoPath, "mediainfo.exe")
+		mediainfopath = filepath.Join(config.GetSettingsGeneral().MediainfoPath, "mediainfo.exe")
 	} else {
-		mediainfopath = filepath.Join(config.SettingsGeneral.MediainfoPath, "mediainfo")
+		mediainfopath = filepath.Join(config.GetSettingsGeneral().MediainfoPath, "mediainfo")
 	}
 	return mediainfopath
 }

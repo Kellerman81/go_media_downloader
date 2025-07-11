@@ -197,7 +197,7 @@ func TestUpdateRootpath(t *testing.T) {
 			file:     "/media/photos/vacation.jpg",
 			objtype:  "photos",
 			objid:    2,
-			cfgp:     config.SettingsMedia["movie_EN"],
+			cfgp:     config.GetSettingsMedia("movie_EN"),
 			expected: "/media/photos",
 		},
 		{
@@ -205,7 +205,7 @@ func TestUpdateRootpath(t *testing.T) {
 			file:     "/content/videos/2023/summer/video.mp4",
 			objtype:  "videos",
 			objid:    3,
-			cfgp:     config.SettingsMedia["movie_EN"],
+			cfgp:     config.GetSettingsMedia("movie_EN"),
 			expected: "/content/videos",
 		},
 		{
@@ -213,7 +213,7 @@ func TestUpdateRootpath(t *testing.T) {
 			file:     "C:\\Users\\Media\\Pictures\\photo.jpg",
 			objtype:  "pictures",
 			objid:    4,
-			cfgp:     config.SettingsMedia["movie_EN"],
+			cfgp:     config.GetSettingsMedia("movie_EN"),
 			expected: "C:\\Users\\Media\\Pictures",
 		},
 		{
@@ -221,7 +221,7 @@ func TestUpdateRootpath(t *testing.T) {
 			file:     "/data/music/album/song.mp3",
 			objtype:  "music",
 			objid:    5,
-			cfgp:     config.SettingsMedia["movie_EN"],
+			cfgp:     config.GetSettingsMedia("movie_EN"),
 			expected: "/data/music",
 		},
 	}

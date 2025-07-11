@@ -189,7 +189,7 @@ func getMoviesTable(ctx *context.Context) table.Table {
 			"/search",
 			"see more",
 			action.IframeData{
-				Src: "/api/movies/search/id/{{.Id}}?apikey=" + config.SettingsGeneral.WebAPIKey,
+				Src: "/api/movies/search/id/{{.Id}}?apikey=" + config.GetSettingsGeneral().WebAPIKey,
 			},
 			"900px",
 			"560px",
@@ -812,7 +812,7 @@ func getDbmoviesTable(ctx *context.Context) table.Table {
 			"/admin/info/refresh",
 			"see more",
 			action.IframeData{
-				Src: "/api/movies/refresh/{{.Id}}?apikey=" + config.SettingsGeneral.WebAPIKey,
+				Src: "/api/movies/refresh/{{.Id}}?apikey=" + config.GetSettingsGeneral().WebAPIKey,
 			},
 			"900px",
 			"560px",

@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
@@ -287,7 +289,7 @@ func SingleJobs(job, cfgpstr, listname string, force bool, key uint32) {
 
 	cfgp := config.GetSettingsMedia(cfgpstr)
 	if cfgpstr != "" && cfgp == nil {
-		config.LoadCfgDB()
+		config.LoadCfgDB(true)
 		cfgp = config.GetSettingsMedia(cfgpstr)
 		if cfgp == nil {
 			logjob("config not found", cfgpstr, listname, job)
@@ -644,4 +646,223 @@ func checkmissingflag(useseries bool, listcfg *config.MediaListsConfig) {
 			database.ExecN(queryupdate, &v1, &arr[idx].Num)
 		}
 	}
+}
+
+func LoadGlobalSchedulerConfig() {
+	config.GetSettingsGeneral().Jobs = map[string]func(uint32){
+		"RefreshImdb": func(key uint32) {
+			FillImdb()
+			worker.RemoveQueueEntry(key)
+		},
+		"CheckDatabase": func(key uint32) {
+			worker.RemoveQueueEntry(key)
+			if database.DBIntegrityCheck() != "ok" {
+				os.Exit(100)
+			}
+		},
+		"BackupDatabase": func(key uint32) {
+			if config.GetSettingsGeneral().DatabaseBackupStopTasks {
+				worker.StopCronWorker()
+				worker.CloseWorkerPools()
+			}
+			worker.RemoveQueueEntry(key)
+			backupto := logger.JoinStrings(
+				"./backup/data.db.",
+				database.GetVersion(),
+				logger.StrDot,
+				time.Now().Format("20060102_150405"),
+			)
+			database.Backup(&backupto, config.GetSettingsGeneral().MaxDatabaseBackups)
+			if config.GetSettingsGeneral().DatabaseBackupStopTasks {
+				worker.InitWorkerPools(
+					config.GetSettingsGeneral().WorkerSearch,
+					config.GetSettingsGeneral().WorkerFiles,
+					config.GetSettingsGeneral().WorkerMetadata,
+					config.GetSettingsGeneral().WorkerRSS,
+					config.GetSettingsGeneral().WorkerIndexer,
+				)
+				worker.StartCronWorker()
+			}
+		},
+	}
+}
+
+func LoadSchedulerConfig() {
+	config.RangeSettingsMedia(func(_ string, cfgp *config.MediaTypeConfig) {
+		if cfgp.Useseries {
+			cfgp.Jobs = map[string]func(uint32){
+				logger.StrSearchMissingInc: func(key uint32) {
+					SingleJobs(logger.StrSearchMissingInc, cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				logger.StrSearchMissingFull: func(key uint32) {
+					SingleJobs(logger.StrSearchMissingFull, cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				logger.StrSearchUpgradeInc: func(key uint32) {
+					SingleJobs(logger.StrSearchUpgradeInc, cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				logger.StrSearchUpgradeFull: func(key uint32) {
+					SingleJobs(logger.StrSearchUpgradeFull, cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				logger.StrSearchMissingIncTitle: func(key uint32) {
+					SingleJobs(
+						logger.StrSearchMissingIncTitle,
+						cfgp.NamePrefix,
+						"",
+						false,
+						key,
+					)
+					worker.RemoveQueueEntry(key)
+				},
+				logger.StrSearchMissingFullTitle: func(key uint32) {
+					SingleJobs(
+						logger.StrSearchMissingFullTitle,
+						cfgp.NamePrefix,
+						"",
+						false,
+						key,
+					)
+					worker.RemoveQueueEntry(key)
+				},
+				logger.StrSearchUpgradeIncTitle: func(key uint32) {
+					SingleJobs(
+						logger.StrSearchUpgradeIncTitle,
+						cfgp.NamePrefix,
+						"",
+						false,
+						key,
+					)
+					worker.RemoveQueueEntry(key)
+				},
+				logger.StrSearchUpgradeFullTitle: func(key uint32) {
+					SingleJobs(
+						logger.StrSearchUpgradeFullTitle,
+						cfgp.NamePrefix,
+						"",
+						false,
+						key,
+					)
+					worker.RemoveQueueEntry(key)
+				},
+				logger.StrRss: func(key uint32) {
+					SingleJobs(logger.StrRss, cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				logger.StrDataFull: func(key uint32) {
+					SingleJobs(logger.StrDataFull, cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				logger.StrStructure: func(key uint32) {
+					SingleJobs(logger.StrStructure, cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				logger.StrFeeds: func(key uint32) {
+					SingleJobs(logger.StrFeeds, cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				logger.StrCheckMissing: func(key uint32) {
+					SingleJobs(logger.StrCheckMissing, cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				logger.StrCheckMissingFlag: func(key uint32) {
+					SingleJobs(logger.StrCheckMissingFlag, cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				logger.StrUpgradeFlag: func(key uint32) {
+					SingleJobs(logger.StrUpgradeFlag, cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				logger.StrRssSeasons: func(key uint32) {
+					SingleJobs(logger.StrRssSeasons, cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				logger.StrRssSeasonsAll: func(key uint32) {
+					SingleJobs(logger.StrRssSeasonsAll, cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				"refreshseriesfull": func(key uint32) {
+					SingleJobs("refresh", cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				"refreshseriesinc": func(key uint32) {
+					SingleJobs("refreshinc", cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+			}
+		} else {
+			cfgp.Jobs = map[string]func(uint32){
+				logger.StrSearchMissingInc: func(key uint32) {
+					SingleJobs(logger.StrSearchMissingInc, cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				logger.StrSearchMissingFull: func(key uint32) {
+					SingleJobs(logger.StrSearchMissingFull, cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				logger.StrSearchUpgradeInc: func(key uint32) {
+					SingleJobs(logger.StrSearchUpgradeInc, cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				logger.StrSearchUpgradeFull: func(key uint32) {
+					SingleJobs(logger.StrSearchUpgradeFull, cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				logger.StrSearchMissingIncTitle: func(key uint32) {
+					SingleJobs(logger.StrSearchMissingIncTitle, cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				logger.StrSearchMissingFullTitle: func(key uint32) {
+					SingleJobs(logger.StrSearchMissingFullTitle, cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				logger.StrSearchUpgradeIncTitle: func(key uint32) {
+					SingleJobs(logger.StrSearchUpgradeIncTitle, cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				logger.StrSearchUpgradeFullTitle: func(key uint32) {
+					SingleJobs(logger.StrSearchUpgradeFullTitle, cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				logger.StrRss: func(key uint32) {
+					SingleJobs(logger.StrRss, cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				logger.StrDataFull: func(key uint32) {
+					SingleJobs(logger.StrDataFull, cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				logger.StrStructure: func(key uint32) {
+					SingleJobs(logger.StrStructure, cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				logger.StrFeeds: func(key uint32) {
+					SingleJobs(logger.StrFeeds, cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				logger.StrCheckMissing: func(key uint32) {
+					SingleJobs(logger.StrCheckMissing, cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				logger.StrCheckMissingFlag: func(key uint32) {
+					SingleJobs(logger.StrCheckMissingFlag, cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				logger.StrUpgradeFlag: func(key uint32) {
+					SingleJobs(logger.StrUpgradeFlag, cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				"refreshmoviesfull": func(key uint32) {
+					SingleJobs("refresh", cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+				"refreshmoviesinc": func(key uint32) {
+					SingleJobs("refreshinc", cfgp.NamePrefix, "", false, key)
+					worker.RemoveQueueEntry(key)
+				},
+			}
+		}
+	})
 }

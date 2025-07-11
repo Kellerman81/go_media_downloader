@@ -19,28 +19,30 @@ type Conf struct {
 // It takes a group name string and a key string as parameters.
 // It returns a boolean indicating if the key exists in the given group.
 func CheckGroup(group string, key string) bool {
+	mu.Lock()
+	defer mu.Unlock()
 	var exists bool
 	switch strings.TrimRight(group, "_") {
 	case "general", logger.StrImdb:
 		return true
 	case "downloader":
-		_, exists = SettingsDownloader[key]
+		_, exists = settings.SettingsDownloader[key]
 	case "indexer":
-		_, exists = SettingsIndexer[key]
+		_, exists = settings.SettingsIndexer[key]
 	case "list":
-		_, exists = SettingsList[key]
+		_, exists = settings.SettingsList[key]
 	case logger.StrSerie, logger.StrMovie:
-		_, exists = SettingsMedia[key]
+		_, exists = settings.SettingsMedia[key]
 	case "notification":
-		_, exists = SettingsNotification[key]
+		_, exists = settings.SettingsNotification[key]
 	case "path":
-		_, exists = SettingsPath[key]
+		_, exists = settings.SettingsPath[key]
 	case "quality":
-		_, exists = SettingsQuality[key]
+		_, exists = settings.SettingsQuality[key]
 	case "regex":
-		_, exists = SettingsRegex[key]
+		_, exists = settings.SettingsRegex[key]
 	case "scheduler":
-		_, exists = SettingsScheduler[key]
+		_, exists = settings.SettingsScheduler[key]
 	}
 	return exists
 }

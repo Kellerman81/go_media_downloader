@@ -705,7 +705,7 @@ func apiConfigDelete(ctx *gin.Context) {
 // @Failure      401   {object}  Jsonerror
 // @Router       /api/config/refresh [get].
 func apiConfigRefreshFile(ctx *gin.Context) {
-	config.LoadCfgDB()
+	config.LoadCfgDB(true)
 	ctx.JSON(http.StatusOK, gin.H{"data": config.GetCfgAll()})
 }
 

@@ -54,7 +54,7 @@ func Init() {
 		config.ClearCfg()
 		config.WriteCfg()
 	}
-	config.LoadCfgDB()
+	config.LoadCfgDB(false)
 
 	database.InitCache()
 	logger.InitLogger(logger.Config{
@@ -728,13 +728,13 @@ func TestParse(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Get configuration objects
-			cfgp, ok := config.SettingsMedia[tt.configKey]
-			if !ok {
+			cfgp := config.GetSettingsMedia(tt.configKey)
+			if cfgp == nil {
 				t.Fatalf("Config key %s not found", tt.configKey)
 			}
 
-			quality, ok := config.SettingsQuality[tt.qualityKey]
-			if !ok {
+			quality := config.GetSettingsQuality(tt.qualityKey)
+			if quality == nil {
 				t.Fatalf("Quality key %s not found", tt.qualityKey)
 			}
 
