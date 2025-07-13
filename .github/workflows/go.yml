@@ -7,7 +7,7 @@ on:
     branches: [ main ]
 
 env:
-  GO_VERSION: "1.34"
+  GO_VERSION: "1.24"
   DOCKER_REGISTRY: kellerman81
   IMAGE_NAME: go_media_downloader
 
@@ -31,6 +31,7 @@ jobs:
       uses: actions/setup-go@v5
       with:
         go-version: ${{ env.GO_VERSION }}
+        check-latest: true
         cache: true  # Enable Go module caching
 
     - name: Install cross-compilation tools
