@@ -1,43 +1,91 @@
+# Binary names
 BINARY_NAME = go_media_downloader
 IMDB_BINARY_NAME = init_imdb
 
+# Build metadata
 BUILD_DATE ?= $(shell date +'%Y-%m-%d')
+GITHASH ?= $(shell git rev-parse --short HEAD)
+VERSION ?= $(shell git describe --exclude latest_develop)
 
-ifndef GITHASH
-	GITHASH = $(shell git rev-parse --short HEAD)
-endif
-ifndef VERSION
-	VERSION = $(shell git describe --tags --exclude latest_develop)
-endif
+# Build flags
+LDFLAGS := -s -w
+LDFLAGS += -X 'main.version=${VERSION}'
+LDFLAGS += -X 'main.githash=${GITHASH}'
+LDFLAGS += -X 'main.buildstamp=${BUILD_DATE}'
 
-LDFLAGS := $(LDFLAGS)
-$(eval LDFLAGS += -s -w)
-$(eval LDFLAGS += -X 'main.version=${VERSION}')
-$(eval LDFLAGS += -X 'main.githash=${GITHASH}')
-$(eval LDFLAGS += -X 'main.buildstamp=${BUILD_DATE}')
-
+# Go build settings
 export CGO_ENABLED := 1
 
+# Cross-compilation settings
+LINUX_AMD64_CC = gcc
+LINUX_ARM64_CC = aarch64-linux-gnu-gcc
+LINUX_ARM_CC = arm-linux-gnueabihf-gcc
+WINDOWS_AMD64_CC = x86_64-w64-mingw32-gcc
+
+GOARM = ""
+
+# Targets
+.PHONY: help clean buildmain buildimdb build-all
+
 help:
-	@echo "Please use \`make <target>' where <target> is one of the following: buildmain, buildimdb"
+	@echo "Available targets:"
+	@echo "  buildmain    - Build main application for all platforms"
+	@echo "  buildimdb    - Build IMDB utility for all platforms"
+	@echo "  build-all    - Build both applications for all platforms"
+	@echo "  clean        - Clean build artifacts"
+
+clean:
+	@echo "Cleaning build artifacts..."
+	rm -f ${BINARY_NAME}-*
+	rm -f ${IMDB_BINARY_NAME}-*
+	rm -f *.zip
 
 buildmain:
-	cd pkg/main && echo "building main ${BUILD_DATE}  ${LDFLAGS}" && \
-		go get && \
-		GOARCH=amd64 GOOS=linux go build -ldflags="${LDFLAGS}" -o ../../${BINARY_NAME}-linux-amd64 main.go && \
-		CC=aarch64-linux-gnu-gcc GOARCH=arm64 GOOS=linux go build -ldflags="${LDFLAGS}" -o ../../${BINARY_NAME}-linux-arm64 main.go && \
-		CC=x86_64-w64-mingw32-gcc GOARCH=amd64 GOOS=windows go build -ldflags="${LDFLAGS}" -o ../../${BINARY_NAME}-windows-amd64.exe main.go
-#CC=i686-linux-gnu-gcc GOARCH=386 GOOS=linux go build -ldflags="${LDFLAGS}" -o ../../${BINARY_NAME}-linux-386 main.go
-#CC=i686-w64-mingw32-gcc GOARCH=386 GOOS=windows go build -ldflags="${LDFLAGS}" -o ../../${BINARY_NAME}-windows-386.exe main.go
-#GOARCH=amd64 GOOS=darwin go build -ldflags="${LDFLAGS}" -o ../../${BINARY_NAME}-darwin-amd64 main.go && \
+	@echo "Building main application (${VERSION}) - ${BUILD_DATE}"
+	cd pkg/main && go mod tidy
+	
+	# Linux AMD64
+	cd pkg/main && \
+		CC=${LINUX_AMD64_CC} GOARCH=amd64 GOOS=linux \
+		go build -ldflags="${LDFLAGS}" -o ../../${BINARY_NAME}-linux-amd64 main.go
+	
+	# Linux ARM64
+	cd pkg/main && \
+		CC=${LINUX_ARM64_CC} GOARCH=arm64 GOOS=linux \
+		go build -ldflags="${LDFLAGS}" -o ../../${BINARY_NAME}-linux-arm64 main.go
 		
+	# Linux ARM7
+	cd pkg/main && \
+		CC=${LINUX_ARM_CC} GOARCH=arm GOOS=linux GOARM=${GOARM} \
+		go build -ldflags="${LDFLAGS}" -o ../../${BINARY_NAME}-linux-arm7 main.go
+	
+	# Windows AMD64
+	cd pkg/main && \
+		CC=${WINDOWS_AMD64_CC} GOARCH=amd64 GOOS=windows \
+		go build -ldflags="${LDFLAGS}" -o ../../${BINARY_NAME}-windows-amd64.exe main.go
+
 buildimdb:
-	cd pkg/imdb && echo "building imdb ${BUILD_DATE}" && \
-		go get && \
-		GOARCH=amd64 GOOS=linux go build -ldflags="${LDFLAGS}" -o ../../${IMDB_BINARY_NAME}-linux-amd64 imdb.go && \
-		CC=aarch64-linux-gnu-gcc GOARCH=arm64 GOOS=linux go build -ldflags="${LDFLAGS}" -o ../../${IMDB_BINARY_NAME}-linux-arm64 imdb.go && \
-		CC=x86_64-w64-mingw32-gcc GOARCH=amd64 GOOS=windows go build -ldflags="${LDFLAGS}" -o ../../${IMDB_BINARY_NAME}-windows-amd64.exe imdb.go
-#CC=i686-linux-gnu-gcc GOARCH=386 GOOS=linux go build -ldflags="${LDFLAGS}" -o ../../${IMDB_BINARY_NAME}-linux-386 imdb.go
-#CC=i686-w64-mingw32-gcc GOARCH=386 GOOS=windows go build -ldflags="${LDFLAGS}" -o ../../${IMDB_BINARY_NAME}-windows-386.exe imdb.go
-#GOARCH=amd64 GOOS=darwin go build -ldflags="${LDFLAGS}" -o ../../${IMDB_BINARY_NAME}-darwin-amd64 imdb.go && \
-		
+	@echo "Building IMDB utility (${VERSION}) - ${BUILD_DATE}"
+	cd pkg/imdb && go mod tidy
+	
+	# Linux AMD64
+	cd pkg/imdb && \
+		CC=${LINUX_AMD64_CC} GOARCH=amd64 GOOS=linux \
+		go build -ldflags="${LDFLAGS}" -o ../../${IMDB_BINARY_NAME}-linux-amd64 imdb.go
+	
+	# Linux ARM64
+	cd pkg/imdb && \
+		CC=${LINUX_ARM64_CC} GOARCH=arm64 GOOS=linux \
+		go build -ldflags="${LDFLAGS}" -o ../../${IMDB_BINARY_NAME}-linux-arm64 imdb.go
+
+	# Linux ARM7
+	cd pkg/imdb && \
+		CC=${LINUX_ARM_CC} GOARCH=arm GOOS=linux GOARM=${GOARM} \
+		go build -ldflags="${LDFLAGS}" -o ../../${IMDB_BINARY_NAME}-linux-arm7 imdb.go
+	
+	# Windows AMD64
+	cd pkg/imdb && \
+		CC=${WINDOWS_AMD64_CC} GOARCH=amd64 GOOS=windows \
+		go build -ldflags="${LDFLAGS}" -o ../../${IMDB_BINARY_NAME}-windows-amd64.exe imdb.go
+
+build-all: buildmain buildimdb
