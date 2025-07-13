@@ -100,7 +100,7 @@ jobs:
       with:
         name: release-packages
         path: packages/
-        retention-days: 180
+        retention-days: 5
   
   docker:
     runs-on: ubuntu-latest
@@ -177,11 +177,7 @@ jobs:
         prerelease: true
         automatic_release_tag: latest_develop
         title: "Latest development build"
-        files: |
-          gomedia-linux-x64.zip
-          gomedia-linux-arm64.zip
-          gomedia-linux-arm7.zip
-          gomedia-windows-x64.zip
+        files: packages/*
           
     - name: Stable Release
       if: ${{ github.event_name == 'push' && needs.build.outputs.IS_STABLE == 'true' }}
@@ -191,8 +187,4 @@ jobs:
         prerelease: false
         automatic_release_tag: "${{ needs.build.outputs.VERSION }}"
         title: "${{ needs.build.outputs.VERSION }}"
-        files: |
-          gomedia-linux-x64.zip
-          gomedia-linux-arm64.zip
-          gomedia-linux-arm7.zip
-          gomedia-windows-x64.zip
+        files: packages/*
