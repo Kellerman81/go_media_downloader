@@ -84,7 +84,7 @@ var (
 	sqlstmtshortakas        *sql.Stmt
 	sqlstmtlongakas         *sql.Stmt
 	sqlstmtshortratings     *sql.Stmt
-	PlBuffer                = NewPool(100, 0, func(b *bytes.Buffer) {}, func(b *bytes.Buffer) { b.Reset() })
+	PlBuffer                = NewPool(100, 0, nil, func(b *bytes.Buffer) { b.Reset() })
 	substituteRuneSpace     = map[rune]string{
 		'&':  "and",
 		'@':  "at",
@@ -167,7 +167,7 @@ func csvgetuint32arr(record string) uint32 {
 		return 0
 	}
 	getint, err := strconv.ParseUint(strings.TrimLeft(record, "t"), 10, 0)
-	//getint, err := strconv.Atoi(strings.TrimLeft(instr, "t"))
+	// getint, err := strconv.Atoi(strings.TrimLeft(instr, "t"))
 	if err != nil {
 		return 0
 	}
@@ -223,7 +223,7 @@ func loadCfgDataDB() imdbConfig {
 // settings like enabling shared cache and in-memory journaling. It also
 // optionally keeps the entire database in memory if the usememory flag
 // is set. The database handle is returned.
-func initImdbdb(dbloglevel string, dbfile string) *sql.DB {
+func initImdbdb(dbfile string) *sql.DB {
 	if _, err := os.Stat("./databases/" + dbfile + ".db"); os.IsNotExist(err) {
 		_, err := os.Create("./databases/" + dbfile + ".db") // Create SQLite file
 		if err != nil {
@@ -280,7 +280,7 @@ func loadakas() {
 	parseraka.LazyQuotes = true
 	parseraka.ReuseRecord = true
 	parseraka.TrimLeadingSpace = true
-	_, _ = parseraka.Read() //skip header
+	_, _ = parseraka.Read() // skip header
 
 	for {
 		if processakas(parseraka) == io.EOF {
@@ -418,7 +418,7 @@ func loadratings() {
 	parserrating.LazyQuotes = true
 	parserrating.ReuseRecord = true
 	parserrating.TrimLeadingSpace = true
-	_, _ = parserrating.Read() //skip header
+	_, _ = parserrating.Read() // skip header
 
 	for {
 		if processratings(parserrating) == io.EOF {
@@ -500,7 +500,7 @@ func loadtitles() {
 	parsertitle.LazyQuotes = true
 	parsertitle.ReuseRecord = true
 	parsertitle.TrimLeadingSpace = true
-	_, _ = parsertitle.Read() //skip header
+	_, _ = parsertitle.Read() // skip header
 
 	for {
 		if processtitles(parsertitle) == io.EOF {
@@ -571,14 +571,14 @@ func processtitles(parsertitle *csv.Reader) error {
 		if usecache {
 			sqlbuild.WriteString(sqlparam10byte)
 			i++
-			valueArgs = append(valueArgs, record[0], record[1], unescapeString(record[2]), stringToSlug(record[2]), unescapeString(record[3]), csvgetboolarr(record[4]), csvgetintarr(record[5]), csvgetintarr(record[7]), csvgetintarr(record[6]), record[8])
+			valueArgs = append(valueArgs, record[0], record[1], unescapeString(record[2]), stringToSlug(record[2]), unescapeString(record[3]), csvgetboolarr(record[4]), csvgetintarr(record[5]), csvgetintarr(record[6]), csvgetintarr(record[7]), record[8])
 		} else {
-			_, sqlerr := sqlstmtlongtitles.Exec(&record[0], &record[1], unescapeString(record[2]), stringToSlug(record[2]), unescapeString(record[3]), csvgetboolarr(record[4]), csvgetintarr(record[5]), csvgetintarr(record[7]), csvgetintarr(record[6]), &record[8])
+			_, sqlerr := sqlstmtlongtitles.Exec(&record[0], &record[1], unescapeString(record[2]), stringToSlug(record[2]), unescapeString(record[3]), csvgetboolarr(record[4]), csvgetintarr(record[5]), csvgetintarr(record[6]), csvgetintarr(record[7]), &record[8])
 			if sqlerr != nil {
 				fmt.Println(fmt.Errorf("an error occurred while processing sql.. %v", sqlerr))
 			}
 		}
-		//valueArgs = append(valueArgs, record[0], record[1], record[2], stringToSlug(&record[2]), record[3], csvgetbool(record[4]), csvgetint(record[5]), csvgetint(record[7]), csvgetint(record[6]), record[8])
+		// valueArgs = append(valueArgs, record[0], record[1], record[2], stringToSlug(&record[2]), record[3], csvgetbool(record[4]), csvgetint(record[5]), csvgetint(record[7]), csvgetint(record[6]), record[8])
 		if strings.ContainsRune(record[8], ',') {
 			genres := strings.Split(record[8], ",")
 			var sqlerr error
@@ -734,7 +734,7 @@ func main() {
 	imdbcache = make(map[uint32]struct{}, cfgimdb.ImdbIDSize)
 	fmt.Println("Started Imdb Import")
 	os.Remove("./databases/imdbtemp.db")
-	dbimdb = initImdbdb("info", "imdbtemp")
+	dbimdb = initImdbdb("imdbtemp")
 
 	if usememory {
 		dbimdb.Exec(`CREATE TABLE [schema_migrations] (
@@ -923,39 +923,6 @@ func unescapeString(record string) string {
 	return record
 }
 
-// replaceUnwantedChars replaces unwanted characters in s with '-'.
-// It checks if s only contains allowed characters, and returns early if so.
-// Otherwise it iterates through s and replaces disallowed characters with '-'.
-func replaceUnwantedChars(s *string) {
-	if s == nil || *s == "" {
-		return
-	}
-	ok := true
-	for idx := range *s {
-		if _, ok = subRune[rune((*s)[idx])]; !ok {
-			break
-		}
-	}
-	if ok {
-		return
-	}
-	var lastr byte
-	out := []byte(*s)[:0]
-	for idx := range *s {
-		if _, ok = subRune[rune((*s)[idx])]; !ok {
-			if idx > 0 && lastr == '-' {
-				continue
-			}
-			out = append(out, '-')
-			lastr = '-'
-		} else {
-			out = append(out, (*s)[idx])
-			lastr = (*s)[idx]
-		}
-	}
-	*s = string(out)
-}
-
 // stringToSlug converts a string of the record
 // to a slug format by removing unwanted characters, collapsing multiple
 // hyphens, and trimming leading/trailing hyphens. Returns empty string
@@ -982,7 +949,7 @@ func unidecode2(s string) []byte {
 	ret := PlBuffer.Get()
 	var laststr string
 	var lastrune rune
-	//var c byte
+	// var c byte
 	if strings.ContainsRune(s, '&') {
 		s = html.UnescapeString(s)
 	}
@@ -1141,16 +1108,16 @@ func gunzip(source string, target string) {
 		return
 	}
 
-	err = copy(target, 0666, bodyo)
+	err = copyfile(target, 0o666, bodyo)
 	if err != nil {
 		fmt.Println("err3. ", err)
 	}
 }
 
-// copy copies the contents of the source reader to the file at the provided path.
+// copyfile copies the contents of the source reader to the file at the provided path.
 // It creates any necessary parent directories, truncates any existing file, sets the mode,
 // copies the data, syncs, and closes the file. Any errors are printed and returned.
-func copy(path string, mode os.FileMode, src io.Reader) error {
+func copyfile(path string, mode os.FileMode, src io.Reader) error {
 	// We add the execution permission to be able to create files inside it
 	err := os.MkdirAll(filepath.Dir(path), mode|os.ModeDir|100)
 	if err != nil {
@@ -1183,11 +1150,11 @@ func match(r *gzip.Reader) (io.Reader, error) {
 }
 
 type Poolobj[T any] struct {
-	//objs is a channel of type T
+	// objs is a channel of type T
 	objs chan *T
-	//Function will be run on Get() - include here your logic to create the initial object
+	// Function will be run on Get() - include here your logic to create the initial object
 	constructor func(*T)
-	//Function will be run on Put() - include here your logic to reset the object
+	// Function will be run on Put() - include here your logic to reset the object
 	destructor func(*T)
 }
 
@@ -1204,7 +1171,7 @@ type Poolobj[T any] struct {
 //
 // destructor, if non-nil, is called whenever an object is removed from
 // the pool.
-func NewPool[T any](maxsize int, initcreate int, constructor func(*T), destructor func(*T)) Poolobj[T] {
+func NewPool[T any](maxsize, initcreate int, constructor func(*T), destructor func(*T)) Poolobj[T] {
 	var a Poolobj[T]
 	a.constructor = constructor
 	a.objs = make(chan *T, maxsize)

@@ -95,8 +95,7 @@ func shouldUpdateRuntime(currentRuntime, newRuntime int, overwrite bool) bool {
 		return true
 	}
 
-	// Update if current runtime is 0
-	return currentRuntime == 0 && isValidRuntime(newRuntime)
+	return currentRuntime == 0
 }
 
 // buildGenreString efficiently builds a comma-separated genre string.
