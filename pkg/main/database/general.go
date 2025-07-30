@@ -45,31 +45,31 @@ type DBGlobal struct {
 }
 
 type JobHistory struct {
-	CreatedAt   time.Time `db:"created_at"`
-	UpdatedAt   time.Time `db:"updated_at"`
-	JobType     string    `db:"job_type"`
-	JobCategory string    `db:"job_category"`
-	JobGroup    string    `db:"job_group"`
-	Started     sql.NullTime
-	Ended       sql.NullTime
-	ID          uint
+	CreatedAt   time.Time    `db:"created_at" displayname:"Date Created" comment:"Record creation timestamp"`
+	UpdatedAt   time.Time    `db:"updated_at" displayname:"Last Updated" comment:"Last modification timestamp"`
+	JobType     string       `db:"job_type" displayname:"Job Type" comment:"Type of job"`
+	JobCategory string       `db:"job_category" displayname:"Job Category" comment:"Job category classification"`
+	JobGroup    string       `db:"job_group" displayname:"Job Group" comment:"Job group identifier"`
+	Started     sql.NullTime `displayname:"Start Time" comment:"Job start timestamp"`
+	Ended       sql.NullTime `displayname:"End Time" comment:"Job completion timestamp"`
+	ID          uint         `displayname:"Job ID" comment:"Unique job identifier"`
 }
 
 type RSSHistory struct {
-	Config    string
-	List      string
-	Indexer   string
-	LastID    string    `db:"last_id"`
-	CreatedAt time.Time `db:"created_at"`
-	UpdatedAt time.Time `db:"updated_at"`
-	ID        uint
+	Config    string    `displayname:"Configuration Name" comment:"RSS configuration name"`
+	List      string    `displayname:"List Name" comment:"RSS list identifier"`
+	Indexer   string    `displayname:"Indexer Name" comment:"RSS indexer source"`
+	LastID    string    `db:"last_id" displayname:"Last Item ID" comment:"Last processed item"`
+	CreatedAt time.Time `db:"created_at" displayname:"Date Created" comment:"Record creation timestamp"`
+	UpdatedAt time.Time `db:"updated_at" displayname:"Last Updated" comment:"Last modification timestamp"`
+	ID        uint      `displayname:"RSS ID" comment:"Unique RSS identifier"`
 }
 type IndexerFail struct {
-	Indexer   string
-	LastFail  sql.NullTime `db:"last_fail"`
-	CreatedAt time.Time    `db:"created_at"`
-	UpdatedAt time.Time    `db:"updated_at"`
-	ID        uint
+	Indexer   string       `displayname:"Indexer Name" comment:"Failed indexer name"`
+	LastFail  sql.NullTime `db:"last_fail" displayname:"Last Failure" comment:"Last failure timestamp"`
+	CreatedAt time.Time    `db:"created_at" displayname:"Date Created" comment:"Record creation timestamp"`
+	UpdatedAt time.Time    `db:"updated_at" displayname:"Last Updated" comment:"Last modification timestamp"`
+	ID        uint         `displayname:"Failure ID" comment:"Unique failure identifier"`
 }
 
 type backupInfo struct {
@@ -83,6 +83,10 @@ const (
 	strRegexSeriesTitleDate  = "RegexSeriesTitleDate"
 )
 
+// InitCfg initializes the application configuration, cache, logger, and database systems.
+// It loads configuration from the database, initializes the cache, sets up the logger
+// with configured parameters, upgrades databases, and initializes both main and IMDB databases.
+// This is a comprehensive initialization function used in testing and setup scenarios.
 func InitCfg() {
 	config.LoadCfgDB(false)
 
@@ -163,6 +167,9 @@ func InitDB(dbloglevel string) error {
 }
 
 // CloseImdb closes the dbImdb database connection if it is open.
+// It first invalidates any prepared statements to prevent resource leaks,
+// then closes the database connection and sets the global dbImdb variable to nil.
+// This function should be called during application shutdown or database reinitialization.
 func CloseImdb() {
 	if dbImdb != nil {
 		InvalidateImdbStmt()
@@ -171,11 +178,16 @@ func CloseImdb() {
 }
 
 // GetVersion returns the current database version string stored in the DBVersion global variable.
+// This version string is used for database migration tracking and compatibility checks.
+// The version follows semantic versioning patterns and is updated during database upgrades.
 func GetVersion() string {
 	return DBVersion
 }
 
 // SetVersion sets the global DBVersion variable to the given version string.
+// This function is used during database initialization and migration processes
+// to update the current database schema version. Should be called after
+// successful database upgrades to maintain version consistency.
 func SetVersion(str string) {
 	DBVersion = str
 }
@@ -357,7 +369,7 @@ func SetVars() {
 	globalCache.addStaticXStmt("select count() from imdb_akas where tconst = ?", true)
 	globalCache.addStaticXStmt("select region, title, slug from imdb_akas where tconst = ?", true)
 
-	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) {
+	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) error {
 		if !media.Useseries {
 			for _, cfgplist := range media.ListsMap {
 				globalCache.addStaticXStmt(
@@ -377,8 +389,8 @@ func SetVars() {
 					false,
 				)
 			}
-		}
-		if media.Useseries {
+			return nil
+		} else {
 			globalCache.addStaticXStmt(
 				logger.JoinStrings(
 					"select id, dbserie_id from series where listname in (?",
@@ -395,6 +407,7 @@ func SetVars() {
 				),
 				false,
 			)
+			return nil
 		}
 	})
 
@@ -1230,4 +1243,38 @@ func GetDBStaticOneStringOneIntIdx(tbl []DbstaticOneStringOneUInt, v string) int
 		}
 	}
 	return -1
+}
+
+func GetSettingTemplatesFor(key string) map[string][]string {
+	var out map[string][]string = make(map[string][]string)
+
+	switch key {
+	case "quality":
+		out["options"] = make([]string, 0, len(DBConnect.QualityStrIn))
+		out["options"] = append(out["options"], "")
+		for _, cfg := range DBConnect.QualityStrIn {
+			out["options"] = append(out["options"], cfg)
+		}
+	case "resolution":
+		out["options"] = make([]string, 0, len(DBConnect.ResolutionStrIn))
+		out["options"] = append(out["options"], "")
+		for _, cfg := range DBConnect.ResolutionStrIn {
+			out["options"] = append(out["options"], cfg)
+		}
+	case "audio":
+		out["options"] = make([]string, 0, len(DBConnect.AudioStrIn))
+		out["options"] = append(out["options"], "")
+		for _, cfg := range DBConnect.AudioStrIn {
+			out["options"] = append(out["options"], cfg)
+		}
+	case "codec":
+		out["options"] = make([]string, 0, len(DBConnect.CodecStrIn))
+		out["options"] = append(out["options"], "")
+		for _, cfg := range DBConnect.CodecStrIn {
+			out["options"] = append(out["options"], cfg)
+		}
+	default:
+		return nil
+	}
+	return out
 }

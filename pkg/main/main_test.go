@@ -48,6 +48,10 @@ import (
 
 // Test with: go.exe test -timeout 30s -v -run ^TestDir$ github.com/Kellerman81/go_media_downloader
 
+// Init initializes the test environment for the Go Media Downloader application.
+// It creates necessary directories, sets up configuration files, initializes the database,
+// cache, logger, and external API clients (OMDB, TMDB, TVDB, Trakt). This function
+// prepares the application state for running tests and benchmarks.
 func Init() {
 	os.Mkdir("./temp", 0o777)
 	if !scanner.CheckFileExist(config.Configfile) {
@@ -166,6 +170,17 @@ func TestInitCfg(t *testing.T) {
 	})
 }
 
+func TestDBType(t *testing.T) {
+	Init()
+	t.Run("test", func(t *testing.T) {
+		dbrows := database.GetrowsType(database.Serie{}, false, 1000, "select * from series")
+		if len(dbrows) == 0 {
+			t.Error("no rows")
+		}
+		t.Log(dbrows)
+	})
+}
+
 func TestGetResolutionFromDimensions(t *testing.T) {
 	Init()
 	tests := []struct {
@@ -253,6 +268,9 @@ func TestParseXML(t *testing.T) {
 	d.DecodeElement(d, &xml.StartElement{})
 }
 
+// PrintMemUsage reads and displays current memory usage statistics for debugging purposes.
+// It prints allocation information including current allocations, total allocations,
+// heap statistics, system memory usage, and garbage collection counts.
 func PrintMemUsage() {
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
@@ -786,6 +804,10 @@ func TestParse(t *testing.T) {
 	}
 }
 
+// Path sanitizes a string to be safe for use as a file or directory path.
+// It removes potentially dangerous characters, handles path traversal attempts,
+// and optionally removes path separators. The allowslash parameter controls
+// whether forward and back slashes are preserved or removed.
 func Path(s string, allowslash bool) string {
 	if s == "" {
 		return ""
@@ -816,6 +838,10 @@ func Path(s string, allowslash bool) string {
 	return strings.Trim(s, " ")
 }
 
+// Path2 is an alternative path sanitization function with optimized character checking.
+// It performs similar sanitization to Path() but uses ContainsRune checks before
+// replacement operations for better performance. Removes unsafe characters and
+// handles path traversal attempts.
 func Path2(s string, allowslash bool) string {
 	if s == "" {
 		return ""
@@ -866,6 +892,9 @@ func Path2(s string, allowslash bool) string {
 	return s
 }
 
+// joinCats converts a slice of category integers into a comma-separated string.
+// It skips zero values and builds an efficient string representation using
+// a bytes.Buffer. Used for formatting category lists in search operations.
 func joinCats(cats []int) string {
 	var b bytes.Buffer
 	defer b.Reset()
@@ -903,6 +932,10 @@ var substituteRune = map[rune]string{
 	'ß':  "ss",
 }
 
+// unidecode2 converts Unicode characters to ASCII equivalents using a custom mapping.
+// It performs character substitution (e.g., ä->ae, ß->ss), handles case conversion,
+// and prevents consecutive duplicate characters. Used for normalizing text for
+// file names and database operations.
 func unidecode2(s string) string {
 	var ret strings.Builder
 	var laststr string

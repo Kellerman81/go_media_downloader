@@ -37,9 +37,16 @@ type downloadertype struct {
 
 const strTvdbid = " (tvdb"
 
-// downloadNzb downloads the NZB file using the configured downloader. It gets the
-// target download folder, logs the download, calls the specific downloader method,
-// handles errors, inserts history rows, and sends notifications.
+// downloadNzb orchestrates the download process for an NZB file using the configured
+// downloader client. It performs the following operations:
+//   - Matches the NZB indexer with quality configuration settings
+//   - Retrieves downloader configuration, target paths, and categories
+//   - Falls back to default settings if specific indexer config not found
+//   - Validates that required configurations (path, downloader) are available
+//   - Prepares download context with proper categorization and target handling
+//
+// The function sets up all necessary configuration before delegating to the specific
+// downloader implementation (SABnzbd, NZBGet, etc.) for the actual download operation.
 func (d *downloadertype) downloadNzb() {
 	for idx := range d.Quality.Indexer {
 		if !strings.EqualFold(d.Quality.Indexer[idx].TemplateIndexer, d.Nzb.NZB.Indexer.Name) {

@@ -36,6 +36,9 @@ type Jsonresults struct {
 	Denied   []apiexternal.Nzbwithprio `json:"denied"`
 }
 
+// AddAllRoutes sets up HTTP routes for the "all" API endpoints.
+// It configures routes for feeds, data scanning, and search operations
+// that apply to both movies and series. All routes require API key authentication.
 func AddAllRoutes(rg *gin.RouterGroup) {
 	rg.Use(checkauth)
 	{
@@ -144,6 +147,9 @@ func apiAllGetUpgradeInc(c *gin.Context) {
 	c.JSON(http.StatusOK, "ok")
 }
 
+// checkauth validates API key authentication for requests.
+// It checks for the "apikey" query parameter and compares it against
+// the configured WebAPIKey. Returns 401 Unauthorized if validation fails.
 func checkauth(c *gin.Context) {
 	var msg string
 	if queryParam, ok := c.GetQuery("apikey"); ok {

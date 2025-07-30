@@ -33,7 +33,7 @@ func InitScheduler() {
 	}
 
 	utils.LoadSchedulerConfig()
-	config.RangeSettingsMedia(func(_ string, cfgp *config.MediaTypeConfig) {
+	config.RangeSettingsMedia(func(_ string, cfgp *config.MediaTypeConfig) error {
 		name := cfgp.Name
 		groupnamestr := logger.StrSeries
 		if !cfgp.Useseries {
@@ -146,6 +146,7 @@ func InitScheduler() {
 
 			schedulerdispatch(cfgp.NamePrefix, intervalstr, cronstr, jobname, usequeuename, str)
 		}
+		return nil
 	})
 
 	for _, str := range []string{"backupdb", "checkdb", "imdb"} {

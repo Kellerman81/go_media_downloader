@@ -1030,6 +1030,9 @@ func NewCache(cleaningInterval, extension time.Duration) {
 
 // SetStaticRegexp sets a static regular expression in the global cache.
 // The regular expression can be used for fast matching without compiling it every time.
+// This function pre-compiles regex patterns and stores them in the global cache to avoid
+// the overhead of compilation during media processing. Used extensively for parsing
+// movie/series titles, quality detection, and file pattern matching.
 func SetStaticRegexp(key string) {
 	globalCache.setStaticRegexp(key)
 }

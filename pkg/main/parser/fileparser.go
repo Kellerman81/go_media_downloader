@@ -192,7 +192,7 @@ func LoadDBPatterns() {
 // does not already have it set. It calls NewCutoffPrio to calculate
 // the priority value based on the cutoff quality and resolution.
 func GenerateCutoffPriorities() {
-	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) {
+	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) error {
 		for _, lst := range media.ListsMap {
 			if lst.CfgQuality.CutoffPriority != 0 {
 				continue
@@ -204,6 +204,7 @@ func GenerateCutoffPriorities() {
 			GetPriorityMapQual(&m, media, lst.CfgQuality, true, false) // newCutoffPrio(media, idxi)
 			lst.CfgQuality.CutoffPriority = m.Priority
 		}
+		return nil
 	})
 }
 
@@ -1045,7 +1046,7 @@ func GetPriorityMapQual(
 		codec = m.CodecID
 	}
 
-	intid := findPriorityIndex(reso, qual, codec, aud, quality, checkwanted)
+	intid, cwanted := findPriorityIndex(reso, qual, codec, aud, quality, checkwanted)
 	if intid == -1 {
 		m.TempTitle = BuildPrioStr(reso, qual, codec, aud)
 		logger.LogDynamicany2StrAny(
@@ -1060,7 +1061,11 @@ func GetPriorityMapQual(
 		return
 	}
 
-	m.Priority = allQualityPrioritiesWantedT[intid].Priority
+	if cwanted {
+		m.Priority = allQualityPrioritiesWantedT[intid].Priority
+	} else {
+		m.Priority = allQualityPrioritiesT[intid].Priority
+	}
 
 	if quality.UseForPriorityOther || useall {
 		applyPriorityModifiers(m)
@@ -1100,13 +1105,13 @@ func findPriorityIndex(
 	reso, qual, codec, aud uint,
 	quality *config.QualityConfig,
 	checkwanted bool,
-) int {
+) (int, bool) {
 	if checkwanted {
 		if intid := Findpriorityidxwanted(reso, qual, codec, aud, quality); intid != -1 {
-			return intid
+			return intid, true
 		}
 	}
-	return Findpriorityidx(reso, qual, codec, aud, quality)
+	return Findpriorityidx(reso, qual, codec, aud, quality), false
 }
 
 // applyPriorityModifiers adjusts the priority of a parsed media file based on specific attributes.

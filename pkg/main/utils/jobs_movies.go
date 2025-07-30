@@ -291,9 +291,9 @@ func importnewmoviessingle(
 
 		allowed, _ = importfeed.AllowMovieImport(&feed.Movies[idx], list.CfgList)
 		if allowed {
-			pl.Submit(func() {
+			pl.SubmitErr(func() error {
 				defer logger.HandlePanic()
-				importfeed.JobImportMoviesByList(feed.Movies[idx], idx, cfgp, listid, true)
+				return importfeed.JobImportMoviesByList(feed.Movies[idx], idx, cfgp, listid, true)
 			})
 		} else {
 			logger.LogDynamicany1String("debug", "not allowed movie", logger.StrImdb, feed.Movies[idx])
@@ -307,7 +307,7 @@ func importnewmoviessingle(
 // checkreachedmoviesflag checks if the quality cutoff has been reached for all movies in the given list config.
 // It queries the movies table for the list, checks the priority of existing files against the config quality cutoff,
 // and updates the quality_reached flag in the database accordingly.
-func checkreachedmoviesflag(listcfg *config.MediaListsConfig) {
+func checkreachedmoviesflag(listcfg *config.MediaListsConfig) error {
 	var minPrio int
 	arr := database.QueryMovies(&listcfg.Name)
 	for idx := range arr {
@@ -339,13 +339,14 @@ func checkreachedmoviesflag(listcfg *config.MediaListsConfig) {
 			}
 		}
 	}
+	return nil
 }
 
 // RefreshMovie refreshes the data for the given movie by looking up its ID and calling refreshmovies.
 // It takes the media config and the movie ID string.
 // It converts the ID to an int and calls refreshmovies to refresh that single movie.
-func RefreshMovie(cfgp *config.MediaTypeConfig, id *string) {
-	refreshmovies(
+func RefreshMovie(cfgp *config.MediaTypeConfig, id *string) error {
+	return refreshmovies(
 		cfgp,
 		database.GetrowsN[string](
 			false,
@@ -357,20 +358,25 @@ func RefreshMovie(cfgp *config.MediaTypeConfig, id *string) {
 }
 
 // refreshmovies refreshes movie data for the given movies. It takes a media config, count of movies to refresh, a query to get the movie IDs, and an optional parameter for the query. It gets the list of movie IDs to refresh, logs info for each, looks up the list name, and calls the import job. Any errors are logged.
-func refreshmovies(cfgp *config.MediaTypeConfig, arr []string) {
+func refreshmovies(cfgp *config.MediaTypeConfig, arr []string) error {
 	if len(arr) == 0 {
-		return
+		return nil
 	}
+	var err error
 	for idx := range arr {
 		logger.LogDynamicany1String("info", "Refresh Movie", logger.StrImdb, arr[idx])
-		importfeed.JobImportMoviesByList(
+		errsub := importfeed.JobImportMoviesByList(
 			arr[idx],
 			idx,
 			cfgp,
 			getrefreshlistid(&arr[idx], cfgp),
 			false,
 		)
+		if errsub != nil {
+			err = errsub
+		}
 	}
+	return err
 }
 
 // getrefreshlistid looks up the list ID for the given IMDB ID and media config.
@@ -401,10 +407,10 @@ func MoviesAllJobs(job string, force bool) {
 	if job == "" {
 		return
 	}
-	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) {
+	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) error {
 		if !strings.HasPrefix(media.NamePrefix, logger.StrMovie) {
-			return
+			return nil
 		}
-		SingleJobs(job, media.NamePrefix, "", force, 0)
+		return SingleJobs(job, media.NamePrefix, "", force, 0)
 	})
 }

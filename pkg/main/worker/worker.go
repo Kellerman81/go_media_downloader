@@ -32,7 +32,7 @@ type Stats struct {
 	WorkerFiles    StatsDetail            `json:"WorkerFiles"`
 	WorkerMeta     StatsDetail            `json:"WorkerMeta"`
 	WorkerIndex    StatsDetail            `json:"WorkerIndex"`
-	WorkerIndexRSS StatsDetail            `json:"WorkerIndexFSS"`
+	WorkerIndexRSS StatsDetail            `json:"WorkerIndexRSS"`
 	ListQueue      map[uint32]Job         `json:"ListQueue"`
 	ListSchedule   map[uint32]JobSchedule `json:"ListSchedule"`
 }
@@ -207,6 +207,27 @@ func (*wrappedLogger) Error(err error, msg string, keysAndValues ...any) {
 		Msg("cron error")
 }
 
+// GetStats retrieves comprehensive statistics for all worker pools and job queues.
+// Provides real-time monitoring data for system performance analysis and debugging.
+//
+// Returns:
+//   - Stats: Comprehensive statistics structure containing:
+//   - Individual worker pool metrics (completed, failed, running, etc.)
+//   - Current queue contents and job details
+//   - Active schedule information and timing
+//
+// Worker Pool Statistics Include:
+//   - CompletedTasks: Total successful job completions
+//   - FailedTasks: Total job failures and errors
+//   - DroppedTasks: Jobs dropped due to capacity limits
+//   - RunningWorkers: Currently active worker threads
+//   - SubmittedTasks: Total jobs submitted to pool
+//   - SuccessfulTasks: Jobs completed without errors
+//   - WaitingTasks: Jobs queued but not yet started
+//
+// Additional Information:
+//   - ListQueue: Current jobs in all queues with metadata
+//   - ListSchedule: Active schedules with next run times
 func GetStats() Stats {
 	return Stats{
 		WorkerIndex:    GetWorkerStats(WorkerPoolIndexer),
@@ -221,6 +242,29 @@ func GetStats() Stats {
 	}
 }
 
+// GetWorkerStats extracts detailed performance metrics from a specific worker pool.
+// This helper function standardizes statistics collection across all worker pool types.
+//
+// Parameters:
+//   - w: Worker pool instance implementing the pond.Pool interface
+//
+// Returns:
+//   - StatsDetail: Structured statistics containing all relevant performance metrics
+//
+// Metrics Collected:
+//   - CompletedTasks: Total jobs finished (successful + failed)
+//   - FailedTasks: Jobs that terminated with errors or panics
+//   - DroppedTasks: Jobs rejected due to pool capacity limits
+//   - RunningWorkers: Active worker threads currently processing jobs
+//   - SubmittedTasks: Total jobs submitted since pool creation
+//   - SuccessfulTasks: Jobs completed without errors
+//   - WaitingTasks: Jobs queued awaiting available workers
+//
+// Performance Insights:
+//   - High WaitingTasks may indicate need for more workers
+//   - High FailedTasks suggests job logic or resource issues
+//   - DroppedTasks indicates system overload conditions
+//   - RunningWorkers shows current resource utilization
 func GetWorkerStats(w pond.Pool) StatsDetail {
 	return StatsDetail{
 		CompletedTasks:  w.CompletedTasks(),
@@ -233,9 +277,12 @@ func GetWorkerStats(w pond.Pool) StatsDetail {
 	}
 }
 
-// SetScheduleStarted sets the IsRunning field of the jobSchedule with the given ID to true,
-// updates the LastRun field to the current time, and sets the NextRun field based on the
-// schedule type (cron or interval). This function is used to mark a jobSchedule as running. It Locks.
+// SetScheduleStarted marks a job schedule as currently running and updates timing information.
+// This function is thread-safe and handles schedule state management for cron jobs
+// and interval-based jobs.
+//
+// Parameters:
+//   - id: Unique identifier of the job schedule to start
 func SetScheduleStarted(id uint32) {
 	if !globalScheduleSet.Check(id) {
 		return
@@ -251,9 +298,11 @@ func SetScheduleStarted(id uint32) {
 	globalScheduleSet.UpdateVal(id, s)
 }
 
-// SetScheduleEnded sets the IsRunning field of the jobSchedule with the given ID to false.
-// It locks the mutex, finds the index of the jobSchedule in the globalScheduleSet, and sets the IsRunning field to false.
-// This function is used to mark a jobSchedule as no longer running.
+// SetScheduleEnded marks a job schedule as no longer running.
+// This function is thread-safe and ensures proper state cleanup after job completion.
+//
+// Parameters:
+//   - id: Unique identifier of the job schedule to end
 func SetScheduleEnded(id uint32) {
 	if !globalScheduleSet.Check(id) {
 		return
@@ -266,10 +315,14 @@ func SetScheduleEnded(id uint32) {
 	globalScheduleSet.UpdateVal(id, s)
 }
 
-// CreateCronWorker initializes the cron workers for data, feeds, and search.
-// It configures each cron worker with the application logger, sets the timezone,
-// adds error recovery and duplicate job prevention middleware,
-// and enables running jobs at a per-second interval.
+// CreateCronWorker initializes three separate cron schedulers for different job categories.
+// Each scheduler is configured with consistent options for timezone handling, logging,
+// error recovery, and second-level precision scheduling.
+//
+// Cron workers created:
+//   - cronWorkerData: Handles data processing and database operations
+//   - cronWorkerFeeds: Handles RSS feed processing and updates
+//   - cronWorkerSearch: Handles search indexing and query operations
 func CreateCronWorker() {
 	loggerworker := wrappedLogger{}
 	opts := []cron.Option{
@@ -283,23 +336,44 @@ func CreateCronWorker() {
 	cronWorkerSearch = cron.New(opts...)
 }
 
-// StartCronWorker starts all cron workers.
+// StartCronWorker starts all cron schedulers to begin executing scheduled jobs.
+// This function activates the cron workers created by CreateCronWorker(),
+// enabling them to process their respective job queues according to their schedules.
+//
+// Workers started:
+//   - cronWorkerData: Begins processing data-related scheduled jobs
+//   - cronWorkerFeeds: Begins processing RSS feed scheduled jobs
+//   - cronWorkerSearch: Begins processing search-related scheduled jobs
 func StartCronWorker() {
 	cronWorkerData.Start()
 	cronWorkerFeeds.Start()
 	cronWorkerSearch.Start()
 }
 
-// StopCronWorker stops all cron workers.
+// StopCronWorker stops all cron schedulers and prevents new job executions.
+// Currently running jobs will continue to completion, but no new jobs will be started.
+// This provides a graceful shutdown mechanism for the cron scheduling system.
+//
+// Workers stopped:
+//   - cronWorkerData: Stops data processing scheduled jobs
+//   - cronWorkerFeeds: Stops RSS feed scheduled jobs
+//   - cronWorkerSearch: Stops search-related scheduled jobs
 func StopCronWorker() {
 	cronWorkerData.Stop()
 	cronWorkerFeeds.Stop()
 	cronWorkerSearch.Stop()
 }
 
-// getcron returns the appropriate cron.Cron instance for the given queue.
-// It checks the queue name and returns the corresponding cron worker instance.
-// If the queue name is not recognized, it returns nil.
+// getcron returns the appropriate cron scheduler instance for the specified queue type.
+// This function provides a centralized way to access the correct cron worker based
+// on the type of jobs being scheduled.
+//
+// Parameters:
+//   - queue: String identifier for the queue type
+//
+// Returns:
+//   - *cron.Cron: The appropriate cron scheduler instance
+//   - nil: If the queue name is not recognized
 func getcron(queue string) *cron.Cron {
 	switch queue {
 	case QueueData:
@@ -314,6 +388,15 @@ func getcron(queue string) *cron.Cron {
 	return nil
 }
 
+// getPoolAndLastAdded retrieves the worker pool and the last added timestamp for a given queue type.
+// It safely accesses the lastAddedTimes structure using a read lock to prevent concurrent modifications.
+//
+// Parameters:
+//   - queue: String identifier for the queue type
+//
+// Returns:
+//   - pond.Pool: The worker pool associated with the specified queue
+//   - time.Time: The timestamp of when a job was last added to the queue
 func getPoolAndLastAdded(queue string) (pond.Pool, time.Time) {
 	lastAddedTimes.RLock()
 	defer lastAddedTimes.RUnlock()
@@ -332,6 +415,12 @@ func getPoolAndLastAdded(queue string) (pond.Pool, time.Time) {
 	}
 }
 
+// updateLastAdded updates the timestamp for the last job added to a specific worker queue.
+// It uses a mutex lock to safely update the lastAddedTimes structure with the current time.
+// The queue parameter determines which specific queue's timestamp is updated.
+//
+// Parameters:
+//   - queue: String identifier for the queue type (e.g., QueueData, QueueFeeds)
 func updateLastAdded(queue string) {
 	now := time.Now()
 	lastAddedTimes.Lock()
@@ -351,10 +440,25 @@ func updateLastAdded(queue string) {
 	}
 }
 
+// newUUID generates a unique 32-bit unsigned integer identifier using the UUID package.
+// It returns a new UUID's ID component as a uint32 value.
+//
+// Returns:
+//   - uint32: A unique identifier derived from a newly generated UUID
 func newUUID() uint32 {
 	return uuid.New().ID()
 }
 
+// validateJobConfig checks if a job configuration exists for a given configuration path and job name.
+// If no configuration path is provided, it checks the general job settings.
+// If a configuration path is provided, it checks the media-specific job settings.
+//
+// Parameters:
+//   - cfgpstr: Optional configuration path string
+//   - jobname: Name of the job to validate
+//
+// Returns:
+//   - bool: True if the job configuration exists, false otherwise
 func validateJobConfig(cfgpstr, jobname string) bool {
 	if cfgpstr == "" {
 		return config.GetSettingsGeneral().Jobs[jobname] != nil
@@ -364,14 +468,32 @@ func validateJobConfig(cfgpstr, jobname string) bool {
 	return cfg != nil && cfg.Jobs[jobname] != nil
 }
 
+// TestWorker provides a testing interface for manually triggering worker jobs.
+// It creates a new job with the specified parameters and adds it to the queue
+// for immediate execution. This function is primarily used for debugging and
+// testing worker functionality outside of the normal scheduling system.
+//
+// Parameters:
+//   - cfgpstr: Configuration prefix string for the job context
+//   - name: Human-readable name for the job
+//   - queue: Target queue name for job execution
+//   - jobname: Specific job function name to execute
 func TestWorker(cfgpstr string, name string, queue string, jobname string) {
 	addjob(context.Background(), cfgpstr, newUUID(), name, jobname, queue, 0)
 }
 
-// DispatchCron schedules a cron job to run the given function fn
-// at the specified cron schedule cronStr.
-// It adds the job to the worker queue specified by queue and gives it the name name.
-// It returns any error from setting up the cron job.
+// DispatchCron schedules a job to run periodically using a cron expression.
+// It adds the job to a specified queue with a unique scheduler ID and returns an error if scheduling fails.
+//
+// Parameters:
+//   - cfgpstr: Configuration path string for the job
+//   - cronStr: Cron expression defining the job's schedule
+//   - name: Name of the job
+//   - queue: Queue to which the job will be added
+//   - jobname: Specific name of the job function
+//
+// Returns:
+//   - error: An error if the queue is invalid or scheduling fails, otherwise nil
 func DispatchCron(cfgpstr string, cronStr string, name string, queue string, jobname string) error {
 	schedulerID := newUUID()
 
@@ -400,9 +522,10 @@ func DispatchCron(cfgpstr string, cronStr string, name string, queue string, job
 	return nil
 }
 
-// addjob adds a new job with the given name, queue, function, and scheduler ID
-// to the appropriate worker pool for processing. It checks if the job is already
-// queued or if the queue is full before submitting.
+// addjob adds a job to the specified queue with the given configuration and details.
+// It performs several checks before adding the job, including queue availability, capacity, and job configuration validation.
+// The job is added to the global queue set and submitted to the workpool for execution.
+// If any checks fail, the job is not added and an error is logged.
 func addjob(
 	_ context.Context,
 	cfgpstr string,
@@ -451,7 +574,7 @@ func addjob(
 		Cfgpstr:     cfgpstr,
 		SchedulerID: schedulerID,
 	})
-	if _, ok := workpool.TrySubmit(runjobcron(id)); !ok {
+	if _, ok := workpool.TrySubmitErr(runjobcron(id)); !ok {
 		logger.LogDynamicany1String("error", "not queued", logger.StrJob, name)
 		globalQueueSet.Delete(id)
 	}
@@ -497,10 +620,10 @@ func cleanupCompletedJobs(workpool pond.Pool, queue string) {
 // runjobcron is a closure function that runs a scheduled job. It checks if the job is still in the global queue set,
 // retrieves the job details, sets the job as started, runs the job, and then deletes the job from the global queue set.
 // If the job's configuration is not found, it logs an error message.
-func runjobcron(id uint32) func() {
-	return func() {
+func runjobcron(id uint32) func() error {
+	return func() error {
 		if !globalQueueSet.Check(id) {
-			return
+			return errors.New("job not found")
 		}
 
 		defer func() {
@@ -515,7 +638,7 @@ func runjobcron(id uint32) func() {
 		s.Started = logger.TimeGetNow()
 		globalQueueSet.UpdateVal(id, s)
 
-		executeJob(s)
+		err := executeJob(s)
 		if s.Cfgpstr == "" {
 			if config.GetSettingsGeneral().Jobs[s.JobName] != nil {
 				config.GetSettingsGeneral().Jobs[s.JobName](id)
@@ -535,20 +658,34 @@ func runjobcron(id uint32) func() {
 				}
 			}
 		}
+		return err
 	}
 }
 
-// RemoveQueueEntry removes the queue entry with the given ID from the global queue set.
-// If the provided ID is 0, the function returns without taking any action.
+// RemoveQueueEntry removes a job from the global job queue by its unique identifier.
+// This function provides safe cleanup of completed or cancelled jobs from the queue.
+//
+// Parameters:
+//   - id: Unique identifier of the job to remove (uint32)
 func RemoveQueueEntry(id uint32) {
 	if id != 0 {
 		globalQueueSet.Delete(id)
 	}
 }
 
-// DispatchEvery dispatches a job to run on a regular time interval.
-// It takes in the interval duration, job name, queue, and function to run.
-// It returns any error from setting up the ticker.
+// DispatchEvery schedules a job to run repeatedly at specified time intervals.
+// Creates a persistent schedule that will continue executing until the application
+// stops or the schedule is manually removed.
+//
+// Parameters:
+//   - cfgpstr: Configuration prefix string for job context
+//   - interval: Time duration between job executions (e.g., 5*time.Minute)
+//   - name: Human-readable name for the scheduled job
+//   - queue: Target queue name for job execution
+//   - jobname: Specific job function name to execute
+//
+// Returns:
+//   - error: Any error encountered during schedule setup
 func DispatchEvery(
 	cfgpstr string,
 	interval time.Duration,
@@ -577,9 +714,21 @@ func DispatchEvery(
 	return nil
 }
 
-// Dispatch adds a new job with the given name, function, and queue to the
-// worker pool. It generates a new UUID to associate with the job.
-func Dispatch(name string, fn func(uint32), queue string) error {
+// Dispatch adds a new job to the appropriate worker pool queue for immediate execution.
+// This function handles job validation, queue management, capacity checking, and
+// rate limiting to ensure optimal system performance.
+//
+// Parameters:
+//   - name: Human-readable name for the job (used for logging and identification)
+//   - fn: Job function to execute, must accept uint32 parameter (job ID)
+//   - queue: Target worker pool queue name (e.g., "search", "files", "metadata")
+//
+// Returns:
+//   - error: Specific error if job cannot be queued:
+//   - ErrNotQueued: Function is nil or job already queued or submission failed
+//   - ErrInvalidQueue: Queue name not recognized
+//   - ErrQueueFull: Worker pool has reached capacity limits
+func Dispatch(name string, fn func(uint32) error, queue string) error {
 	if fn == nil {
 		logger.LogDynamicany1String("error", "empty func", logger.StrJob, name)
 		return ErrNotQueued
@@ -615,7 +764,7 @@ func Dispatch(name string, fn func(uint32), queue string) error {
 		ID:          id,
 		SchedulerID: newUUID(),
 	})
-	if _, ok := workpool.TrySubmit(runjob(id, fn)); !ok {
+	if _, ok := workpool.TrySubmitErr(runjob(id, fn)); !ok {
 		logger.LogDynamicany1String("error", "not queued", logger.StrJob, name)
 		globalQueueSet.Delete(id)
 		return ErrNotQueued
@@ -623,14 +772,16 @@ func Dispatch(name string, fn func(uint32), queue string) error {
 	return nil
 }
 
-// executeJob executes a job based on its configuration and job name.
-// If no configuration prefix is specified, it looks for the job in the general settings.
-// If a configuration prefix is provided, it looks for the job in the media settings for that specific configuration.
-// It logs an error if the job or configuration is not found.
-func executeJob(s Job) {
+// executeJob executes a job based on its configuration prefix and job name.
+// It attempts to locate the job function in either general settings (when no config prefix
+// is specified) or media-specific settings (when a config prefix is provided).
+//
+// Parameters:
+//   - s: Job containing the job name, configuration prefix, and ID
+func executeJob(s Job) error {
 	if s.Cfgpstr == "" {
 		if jobFunc := config.GetSettingsGeneral().Jobs[s.JobName]; jobFunc != nil {
-			jobFunc(s.ID)
+			return jobFunc(s.ID)
 		} else {
 			logger.LogDynamicany2Str("error", "Cron Job not found", "job", s.JobName, "cfgp", s.Cfgpstr)
 		}
@@ -638,25 +789,32 @@ func executeJob(s Job) {
 		cfg := config.GetSettingsMedia(s.Cfgpstr)
 		if cfg == nil {
 			logger.LogDynamicany2Str("error", "Cron Job Config not found", "job", s.JobName, "cfgp", s.Cfgpstr)
-			return
+			return errors.New("Cron Job Config not found")
 		}
 
 		if jobFunc := cfg.Jobs[s.JobName]; jobFunc != nil {
-			jobFunc(s.ID)
+			return jobFunc(s.ID)
 		} else {
 			logger.LogDynamicany2Str("error", "Cron Job not found", "job", s.JobName, "cfgp", s.Cfgpstr)
+			return errors.New("Cron Job not found")
 		}
 	}
+	return nil
 }
 
-// runjob is a closure that wraps a job function and handles the job lifecycle.
-// It checks if the job is still in the global queue, retrieves the job details,
-// updates the job's started time, and then calls the provided job function.
-// After the job function completes, it removes the job from the global queue.
-func runjob(id uint32, fn func(uint32)) func() {
-	return func() {
+// runjob creates a closure that wraps a job function with lifecycle management.
+// The returned function handles job validation, execution tracking, and cleanup.
+//
+// Parameters:
+//   - id: Unique identifier for the job
+//   - fn: Job function to execute, receiving the job ID as parameter
+//
+// Returns:
+//   - A closure function that manages the complete job lifecycle
+func runjob(id uint32, fn func(uint32) error) func() error {
+	return func() error {
 		if !globalQueueSet.Check(id) {
-			return
+			return ErrNotQueued
 		}
 
 		defer func() {
@@ -667,15 +825,20 @@ func runjob(id uint32, fn func(uint32)) func() {
 		s := globalQueueSet.GetVal(id)
 		s.Started = logger.TimeGetNow()
 		globalQueueSet.UpdateVal(id, s)
-		fn(id)
+		return fn(id)
 	}
 }
 
-// InitWorkerPools initializes the worker pools for indexing, parsing,
-// searching, downloading files, and updating metadata. It takes in the
-// desired number of workers for each pool and defaults them to 1 if 0 is
-// passed in. It configures the pools with balanced strategy and error
-// handling function.
+// InitWorkerPools initializes all worker pools used by the application.
+// Creates separate pools for different types of operations to optimize resource usage
+// and provide isolation between different workload types.
+//
+// Parameters:
+//   - workersearch: Number of workers for search operations (defaults to 1 if 0)
+//   - workerfiles: Number of workers for file operations (defaults to 1 if 0)
+//   - workermeta: Number of workers for metadata operations (defaults to 1 if 0)
+//   - workerrss: Number of workers for RSS operations (defaults to 1 if 0)
+//   - workerindex: Number of workers for indexing operations (defaults to 1 if 0)
 func InitWorkerPools(workersearch int, workerfiles int, workermeta int, workerrss int, workerindex int) {
 	if workersearch == 0 {
 		workersearch = 1
@@ -701,9 +864,9 @@ func InitWorkerPools(workersearch int, workerfiles int, workermeta int, workerrs
 	WorkerPoolParse = pond.NewPool(workerfiles)
 }
 
-// CloseWorkerPools stops all worker pools and waits for workers
-// to finish current jobs before returning. Waits up to 2 minutes
-// per pool before timing out.
+// CloseWorkerPools gracefully shuts down all worker pools.
+// Stops accepting new tasks and waits for currently running workers to complete
+// their jobs before terminating. Implements a timeout to prevent indefinite blocking.
 func CloseWorkerPools() {
 	pools := []pond.Pool{
 		workerPoolSearch,
@@ -723,7 +886,10 @@ func CloseWorkerPools() {
 }
 
 // Cleanqueue clears the global queue set if there are no running or waiting workers across all pools.
-func Cleanqueue() {
+// It checks all worker pools (data, feeds, search, RSS) for active or waiting tasks and only
+// clears the queue if all pools are idle. This prevents premature cleanup of pending jobs
+// and ensures system stability during shutdown or maintenance operations.
+func Cleanqueue() error {
 	pools := map[string]pond.Pool{
 		QueueData:   workerPoolFiles,
 		QueueFeeds:  workerPoolMetadata,
@@ -736,9 +902,13 @@ func Cleanqueue() {
 			DeleteQueue(queueName)
 		}
 	}
+	return nil
 }
 
 // GetQueues returns a map of all currently configured queues, keyed by the queue name.
+// The map contains all active and pending jobs across all worker pools, providing
+// a snapshot of the current system state. This is primarily used for monitoring,
+// debugging, and administrative interfaces to display job status and queue health.
 func GetQueues() map[uint32]Job {
 	return globalQueueSet.GetMap()
 }

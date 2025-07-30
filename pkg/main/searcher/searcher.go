@@ -6,6 +6,7 @@ import (
 	"errors"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
@@ -35,6 +36,11 @@ type ConfigSearcher struct {
 	Cfgp *config.MediaTypeConfig
 	// Quality is a pointer to a QualityConfig
 	Quality *config.QualityConfig
+
+	// Optimization: Pre-allocated buffers for frequent operations
+	episodeBuffer    [4]string       // Pre-allocated buffer for episode prefix array
+	qualityChecks    [4]qualityCheck // Pre-allocated for quality validation
+	indexerConfigMap map[string]int  // Cache for indexer config lookups
 }
 
 type searchParams struct {
@@ -48,28 +54,48 @@ type searchParams struct {
 	titlesearch     bool
 }
 
+// qualityCheck represents a single quality validation check
+type qualityCheck struct {
+	enabled    bool
+	entryValue string
+	wantedList []string
+	fieldName  string
+	logField   string
+}
+
 const (
 	skippedstr        = "Skipped"
 	searchTypeMissing = 1
 	searchTypeRSS     = 2
 	searchTypeSeason  = 3
+
+	// Buffer sizes for better memory management
+	defaultRawCapacity      = 8000
+	defaultDeniedCapacity   = 1000
+	defaultAcceptedCapacity = 100
+
+	// Pool sizes
+	searcherPoolSize = 10
+	paramPoolSize    = 5
 )
 
 var (
-	strRegexEmpty      = "regex_template empty"
-	strMinutes         = "Minutes"
-	strIdentifier      = "identifier"
-	strCheckedFor      = "checked for"
-	strTitlesearch     = "titlesearch"
-	strRejectedby      = "rejected by"
-	strMediaid         = "Media ID"
-	episodeprefixarray = [4]string{"", logger.StrSpace, "0", " 0"}
-	errOther           = errors.New("other error")
-	errYearEmpty       = errors.New("year empty")
-	errSearchvarEmpty  = errors.New("searchvar empty")
-	errRegexEmpty      = errors.New("regex template empty")
-	plsearcher         pool.Poolobj[ConfigSearcher]
-	plsearchparam      pool.Poolobj[searchParams]
+	strRegexEmpty     = "regex_template empty"
+	strMinutes        = "Minutes"
+	strIdentifier     = "identifier"
+	strCheckedFor     = "checked for"
+	strTitlesearch    = "titlesearch"
+	strRejectedby     = "rejected by"
+	strMediaid        = "Media ID"
+	episodePrefixes   = [4]string{"", logger.StrSpace, "0", " 0"}
+	errOther          = errors.New("other error")
+	errYearEmpty      = errors.New("year empty")
+	errSearchvarEmpty = errors.New("searchvar empty")
+	errRegexEmpty     = errors.New("regex template empty")
+	plsearcher        pool.Poolobj[ConfigSearcher]
+	plsearchparam     pool.Poolobj[searchParams]
+	// Optimization: String interner for frequently used strings
+	stringInterner = sync.Map{} // Cache for frequently used strings
 )
 
 // clearNzbSlice efficiently clears the contents of an Nzbwithprio slice by resetting
@@ -100,22 +126,59 @@ func (s *ConfigSearcher) reset() {
 	s.Raw.Arr = s.Raw.Arr[:0]
 }
 
-// Init initializes the plsearchparam and plsearcher pools. It sets up the initial
-// state of the ConfigSearcher struct, including clearing any existing search
-// results, denied items, and accepted items.
+// Init initializes the searcher subsystem by setting up object pools for efficient
+// memory management during search operations. It creates two pools:
+//   - plsearchparam: Pool for searchParams structs used in search operations
+//   - plsearcher: Pool for ConfigSearcher instances with pre-allocated buffers
+//
+// The ConfigSearcher pool is pre-configured with optimized buffer sizes for:
+//   - Raw search results (8000 capacity)
+//   - Indexer configuration lookup map (10 capacity)
+//   - Episode prefix buffer for efficient string operations
+//
+// This initialization reduces memory allocations during frequent search operations.
 func Init() {
-	plsearchparam.Init(5, nil, func(cs *searchParams) bool {
+	plsearchparam.Init(paramPoolSize, nil, func(cs *searchParams) bool {
 		*cs = searchParams{}
 		return false
 	})
-	plsearcher.Init(10, func(cs *ConfigSearcher) {
-		cs.Raw.Arr = make([]apiexternal.Nzbwithprio, 0, 8000)
+	plsearcher.Init(searcherPoolSize, func(cs *ConfigSearcher) {
+		cs.Raw.Arr = make([]apiexternal.Nzbwithprio, 0, defaultRawCapacity)
 		// cs.Denied = make([]apiexternal.Nzbwithprio, 0, 1000)
 		// cs.Accepted = make([]apiexternal.Nzbwithprio, 0, 100)
+		cs.indexerConfigMap = make(map[string]int, 10) // Pre-allocate map
+
+		// Pre-populate episode buffer
+		copy(cs.episodeBuffer[:], episodePrefixes[:])
 	}, func(cs *ConfigSearcher) bool {
 		cs.reset()
 		return false
 	})
+}
+
+// NewSearcher creates a new ConfigSearcher instance.
+// It initializes the searcher with the given media type config,
+// quality config, search action type, and media ID.
+// If no quality config is provided but a media ID is given,
+// it will look up the quality config for that media in the database.
+// It gets a searcher instance from the pool and sets the configs,
+// then returns the initialized searcher.
+func NewSearcher(
+	cfgp *config.MediaTypeConfig,
+	quality *config.QualityConfig,
+	searchActionType string,
+	mediaid *uint,
+) *ConfigSearcher {
+	s := plsearcher.Get()
+	s.Cfgp = cfgp
+	s.searchActionType = searchActionType
+
+	if quality != nil {
+		s.Quality = quality
+	} else if mediaid != nil {
+		s.Quality = database.GetMediaQualityConfig(cfgp, mediaid)
+	}
+	return s
 }
 
 // SearchRSS searches the RSS feeds of the enabled Newznab indexers for the
@@ -190,8 +253,8 @@ func (s *ConfigSearcher) MediaSearch(
 				Uint(logger.StrID, mediaid).
 				Err(err).
 				Msg("Media Search Failed")
+			return err
 		}
-		return err
 	}
 
 	if s.Quality == nil {
@@ -228,7 +291,7 @@ func (s *ConfigSearcher) MediaSearch(
 // executeSearch performs a search based on the search type specified in the search parameters.
 // It supports different search types: missing media, RSS feed, and season search.
 // Returns a boolean indicating whether the search was successful.
-func (s *ConfigSearcher) executeSearch(p *searchParams, indcfg *config.IndexersConfig) bool {
+func (s *ConfigSearcher) executeSearch(p *searchParams, indcfg *config.IndexersConfig) error {
 	switch p.searchtype {
 	case searchTypeMissing:
 		return s.searchnameid(p, indcfg)
@@ -237,7 +300,7 @@ func (s *ConfigSearcher) executeSearch(p *searchParams, indcfg *config.IndexersC
 	case searchTypeSeason:
 		return s.handleSeasonSearch(indcfg, p)
 	default:
-		return false
+		return nil
 	}
 }
 
@@ -264,6 +327,7 @@ func (s *ConfigSearcher) searchindexers(ctx context.Context, userss bool, p *sea
 
 	s.Done = false
 	for _, indcfg := range s.Quality.IndexerCfg {
+		indcfg := indcfg
 		if userss && !indcfg.Rssenabled {
 			continue
 		}
@@ -276,12 +340,13 @@ func (s *ConfigSearcher) searchindexers(ctx context.Context, userss bool, p *sea
 		if !apiexternal.NewznabCheckLimiter(indcfg) {
 			continue
 		}
-		pl.Submit(func() {
+		pl.SubmitErr(func() error {
 			defer logger.HandlePanic()
-			done := s.executeSearch(p, indcfg)
-			if done && !s.Done {
+			err := s.executeSearch(p, indcfg)
+			if err == nil && !s.Done {
 				s.Done = true
 			}
+			return err
 		})
 	}
 	pl.Wait()
@@ -291,7 +356,7 @@ func (s *ConfigSearcher) searchindexers(ctx context.Context, userss bool, p *sea
 // It queries the last RSS entry, updates the RSS history if a new entry is found,
 // and handles potential errors during the search process.
 // Returns true if the RSS search is successful, false otherwise.
-func (s *ConfigSearcher) handleRSSSearch(indcfg *config.IndexersConfig, _ *searchParams) bool {
+func (s *ConfigSearcher) handleRSSSearch(indcfg *config.IndexersConfig, _ *searchParams) error {
 	firstid, err := apiexternal.QueryNewznabRSSLast(
 		indcfg,
 		s.Quality,
@@ -310,7 +375,7 @@ func (s *ConfigSearcher) handleRSSSearch(indcfg *config.IndexersConfig, _ *searc
 		if firstid != "" {
 			addrsshistory(&indcfg.URL, &firstid, s.Quality, &s.Cfgp.NamePrefix)
 		}
-		return true
+		return nil
 	}
 
 	if !errors.Is(err, logger.Errnoresults) && !errors.Is(err, logger.ErrToWait) {
@@ -321,15 +386,16 @@ func (s *ConfigSearcher) handleRSSSearch(indcfg *config.IndexersConfig, _ *searc
 			logger.StrIndexer,
 			indcfg.Name,
 		)
+		return err
 	}
-	return false
+	return nil
 }
 
 // handleSeasonSearch performs a TV season search for a specific indexer configuration.
 // It queries the TV series using TVDB ID and season information, and handles potential
 // errors during the search process. Returns true if the season search is successful,
 // false otherwise.
-func (s *ConfigSearcher) handleSeasonSearch(indcfg *config.IndexersConfig, p *searchParams) bool {
+func (s *ConfigSearcher) handleSeasonSearch(indcfg *config.IndexersConfig, p *searchParams) error {
 	_, _, err := apiexternal.QueryNewznabTvTvdb(
 		indcfg,
 		s.Quality,
@@ -342,7 +408,7 @@ func (s *ConfigSearcher) handleSeasonSearch(indcfg *config.IndexersConfig, p *se
 		&s.Raw,
 	)
 	if err == nil {
-		return true
+		return nil
 	}
 
 	if !errors.Is(err, logger.Errnoresults) && !errors.Is(err, logger.ErrToWait) {
@@ -353,8 +419,9 @@ func (s *ConfigSearcher) handleSeasonSearch(indcfg *config.IndexersConfig, p *se
 			logger.StrIndexer,
 			indcfg.Name,
 		)
+		return err
 	}
-	return false
+	return nil
 }
 
 // searchnameid is a method of the ConfigSearcher struct that performs a search for a media item
@@ -362,21 +429,21 @@ func (s *ConfigSearcher) handleSeasonSearch(indcfg *config.IndexersConfig, p *se
 // such as whether to use a query search or a search by ID, and whether to search for a movie
 // or a TV series. It also handles errors that may occur during the search and logs them.
 // The method returns a boolean indicating whether the search was successful.
-func (s *ConfigSearcher) searchnameid(p *searchParams, indcfg *config.IndexersConfig) bool {
+func (s *ConfigSearcher) searchnameid(p *searchParams, indcfg *config.IndexersConfig) error {
 	cats := s.Quality.QualityIndexerByQualityAndTemplate(indcfg)
 	if cats == -1 {
 		logger.LogDynamicany0("error", "Error getting quality config")
-		return false
+		return errors.New("Error getting quality config")
 	}
 
 	usequerysearch := p.titlesearch || (s.Cfgp.Useseries && p.e.NZB.TVDBID == 0) ||
 		(!s.Cfgp.Useseries && p.e.Info.Imdb == "")
 
-	var done bool
+	var err error
 
 	// ID-based search (more efficient)
 	if !usequerysearch {
-		done = s.performIDSearch(p, indcfg, cats)
+		err = s.performIDSearch(p, indcfg, cats)
 
 		// Check if we should fallback to title search
 		if s.Quality.SearchForTitleIfEmpty && len(s.Raw.Arr) == 0 {
@@ -386,10 +453,13 @@ func (s *ConfigSearcher) searchnameid(p *searchParams, indcfg *config.IndexersCo
 
 	// Title-based search
 	if usequerysearch {
-		done = s.performTitleSearch(p, indcfg, cats) || done
+		errsub := s.performTitleSearch(p, indcfg, cats)
+		if err == nil && errsub != nil {
+			err = errsub
+		}
 	}
 
-	return done
+	return err
 }
 
 // performTitleSearch extracted and optimized.
@@ -397,15 +467,14 @@ func (s *ConfigSearcher) performTitleSearch(
 	p *searchParams,
 	indcfg *config.IndexersConfig,
 	cats int,
-) bool {
-	var done bool
+) error {
+	var err error
 
 	// Primary title search
 	if p.titlesearch || s.Quality.BackupSearchForTitle {
-		if s.executeQuerySearch(p, indcfg, cats, p.e.WantedTitle, "Title") {
-			done = true
+		if err = s.executeQuerySearch(p, indcfg, cats, p.e.WantedTitle, "Title"); err == nil {
 			if s.Quality.CheckUntilFirstFound && len(s.Accepted) > 0 {
-				return true
+				return nil
 			}
 		}
 	}
@@ -420,16 +489,17 @@ func (s *ConfigSearcher) performTitleSearch(
 			searchstr := altTitle.Str1
 			logger.StringRemoveAllRunesP(&searchstr, '&', '(', ')')
 
-			if s.executeQuerySearch(p, indcfg, cats, searchstr, "Alternative Title") {
-				done = true
+			if errsub := s.executeQuerySearch(p, indcfg, cats, searchstr, "Alternative Title"); errsub == nil {
 				if s.Quality.CheckUntilFirstFound && len(s.Accepted) > 0 {
 					break
 				}
+			} else {
+				err = errsub
 			}
 		}
 	}
 
-	return done || len(s.Raw.Arr) > 0
+	return err
 }
 
 // Download iterates through the Accepted list and starts downloading each entry,
@@ -536,7 +606,8 @@ func (s *ConfigSearcher) filterTestQualityWanted(
 		},
 	}
 
-	for _, check := range qualityChecks {
+	for i := range qualityChecks {
+		check := &qualityChecks[i]
 		if check.enabled && check.entryValue != "" {
 			if !logger.SlicesContainsI(check.wantedList, check.entryValue) {
 				reason := "unwanted " + check.fieldName
@@ -683,7 +754,7 @@ func (s *ConfigSearcher) executeQuerySearch(
 	indcfg *config.IndexersConfig,
 	cats int,
 	searchTerm, searchType string,
-) bool {
+) error {
 	_, _, err := apiexternal.QueryNewznabQuery(
 		s.Cfgp, &p.e, indcfg, s.Quality, searchTerm, cats, &s.Raw,
 	)
@@ -697,10 +768,10 @@ func (s *ConfigSearcher) executeQuerySearch(
 			searchTerm,
 			err,
 		)
-		return false
+		return err
 	}
 
-	return err == nil
+	return nil
 }
 
 // validateSize checks if an NZB entry meets size-related validation criteria.
@@ -924,7 +995,7 @@ func (s *ConfigSearcher) performIDSearch(
 	p *searchParams,
 	indcfg *config.IndexersConfig,
 	cats int,
-) bool {
+) error {
 	var err error
 
 	if !s.Cfgp.Useseries && p.e.Info.Imdb != "" {
@@ -941,17 +1012,17 @@ func (s *ConfigSearcher) performIDSearch(
 	if err != nil && !errors.Is(err, logger.ErrToWait) {
 		p.e.Info.TempID = p.mediaid
 		logsearcherror("Error Searching Media by ID", p.e.Info.TempID, s.Cfgp.Useseries, "", err)
-		return false
+		return err
 	}
 
 	if err == nil {
 		if s.Quality.CheckUntilFirstFound && len(s.Accepted) > 0 {
-			return true
+			return nil
 		}
-		return true
+		return nil
 	}
 
-	return false
+	return nil
 }
 
 // processMovieRSS handles processing of a movie RSS entry, including import checks, list assignment,
@@ -1240,7 +1311,7 @@ func (s *ConfigSearcher) checkEpisodeFormat(
 	}
 
 	// Check episode suffixes
-	for _, prefix := range episodeprefixarray {
+	for _, prefix := range episodePrefixes {
 		if logger.HasSuffixI(identifier, eprefix+prefix+sourceentry.NZB.Episode) {
 			return false
 		}
@@ -1252,7 +1323,7 @@ func (s *ConfigSearcher) checkEpisodeFormat(
 		if logger.ContainsI(identifier, eprefix+sourceentry.NZB.Episode+pattern) {
 			return false
 		}
-		for _, prefix := range episodeprefixarray {
+		for _, prefix := range episodePrefixes {
 			if logger.HasSuffixI(identifier, eprefix+prefix+sourceentry.NZB.Episode+pattern) {
 				return false
 			}
@@ -1810,7 +1881,7 @@ func (s *ConfigSearcher) searchSeriesRSSSeason(
 // random series. It selects up to 20 random series that have missing
 // episodes, gets the distinct seasons with missing episodes for each,
 // and searches the RSS feeds for those seasons.
-func SearchSeriesRSSSeasons(cfgp *config.MediaTypeConfig) {
+func SearchSeriesRSSSeasons(cfgp *config.MediaTypeConfig) error {
 	args := logger.PLArrAny.Get()
 	defer logger.PLArrAny.Put(args)
 
@@ -1818,7 +1889,7 @@ func SearchSeriesRSSSeasons(cfgp *config.MediaTypeConfig) {
 		args.Arr = append(args.Arr, &lst.Name)
 	}
 
-	searchseasons(
+	return searchseasons(
 		context.Background(),
 		cfgp,
 		logger.JoinStrings(
@@ -1836,7 +1907,7 @@ func SearchSeriesRSSSeasons(cfgp *config.MediaTypeConfig) {
 // SearchSeriesRSSSeasonsAll searches all seasons for series matching the given
 // media type config. It searches series that have missing episodes and calls
 // searchseasons to perform the actual search.
-func SearchSeriesRSSSeasonsAll(cfgp *config.MediaTypeConfig) {
+func SearchSeriesRSSSeasonsAll(cfgp *config.MediaTypeConfig) error {
 	args := logger.PLArrAny.Get()
 	defer logger.PLArrAny.Put(args)
 
@@ -1844,7 +1915,7 @@ func SearchSeriesRSSSeasonsAll(cfgp *config.MediaTypeConfig) {
 		args.Arr = append(args.Arr, &lst.Name)
 	}
 
-	searchseasons(
+	return searchseasons(
 		context.Background(),
 		cfgp,
 		logger.JoinStrings(
@@ -1868,7 +1939,7 @@ func searchseason(
 	cfgp *config.MediaTypeConfig,
 	row *database.DbstaticTwoUint,
 	queryseason, queryseasoncount string,
-) {
+) error {
 	seasonCount := database.Getdatarow[uint](
 		false,
 		queryseasoncount,
@@ -1878,13 +1949,13 @@ func searchseason(
 		&row.Num2,
 	)
 	if seasonCount == 0 {
-		return
+		return errors.New("No seasons found")
 	}
 
 	// Get list ID once
 	listid := database.GetMediaListIDGetListname(cfgp, &row.Num1)
 	if listid == -1 {
-		return
+		return errors.New("List not found")
 	}
 	tvdbid := database.Getdatarow[int](
 		false,
@@ -1892,7 +1963,7 @@ func searchseason(
 		&row.Num2,
 	)
 	if tvdbid == 0 {
-		return
+		return errors.New("TVDB ID not found")
 	}
 	seasons := database.GetrowsN[string](
 		false,
@@ -1904,8 +1975,9 @@ func searchseason(
 		&row.Num2,
 	)
 
+	var err error
 	for _, season := range seasons {
-		NewSearcher(cfgp, cfgp.Lists[listid].CfgQuality, logger.StrRss, nil).searchSeriesRSSSeason(
+		if errsub := NewSearcher(cfgp, cfgp.Lists[listid].CfgQuality, logger.StrRss, nil).searchSeriesRSSSeason(
 			ctx,
 			cfgp,
 			cfgp.Lists[listid].CfgQuality,
@@ -1914,8 +1986,11 @@ func searchseason(
 			true,
 			true,
 			true,
-		)
+		); errsub != nil {
+			err = errsub
+		}
 	}
+	return err
 }
 
 // SearchSerieRSSSeasonSingle searches for a single season of a series.
@@ -1970,6 +2045,7 @@ func SearchSerieRSSSeasonSingle(
 			Err(err).
 			Uint(logger.StrID, *serieid).
 			Msg("Season Search Inc Failed")
+		results.Close()
 		return nil, err
 	}
 	return results, nil
@@ -2152,30 +2228,6 @@ func (s *ConfigSearcher) logdenied1StrNo(
 	s.deniedappend(entry)
 }
 
-// NewSearcher creates a new ConfigSearcher instance.
-// It initializes the searcher with the given media type config,
-// quality config, search action type, and media ID.
-// If no quality config is provided but a media ID is given,
-// it will look up the quality config for that media in the database.
-// It gets a searcher instance from the pool and sets the configs,
-// then returns the initialized searcher.
-func NewSearcher(
-	cfgp *config.MediaTypeConfig,
-	quality *config.QualityConfig,
-	searchActionType string,
-	mediaid *uint,
-) *ConfigSearcher {
-	s := plsearcher.Get()
-	s.Cfgp = cfgp
-	s.searchActionType = searchActionType
-	if quality != nil {
-		s.Quality = quality
-	} else if mediaid != nil {
-		s.Quality = database.GetMediaQualityConfig(cfgp, mediaid)
-	}
-	return s
-}
-
 // searchseasons searches for missing episodes for series matching the given
 // configuration and quality settings. It selects a random sample of series
 // to search, gets the distinct seasons with missing episodes for each, and
@@ -2188,15 +2240,19 @@ func searchseasons(
 	queryrangecount uint,
 	queryseason, queryseasoncount string,
 	args *logger.Arrany,
-) {
+) error {
 	tbl := database.GetrowsN[database.DbstaticTwoUint](
 		false,
 		queryrangecount,
 		queryrange,
 		args.Arr...)
+	var err error
 	for idx := range tbl {
-		searchseason(ctx, cfgp, &tbl[idx], queryseason, queryseasoncount)
+		if errsub := searchseason(ctx, cfgp, &tbl[idx], queryseason, queryseasoncount); errsub != nil {
+			err = errsub
+		}
 	}
+	return err
 }
 
 // Getpriobyfiles returns the minimum priority of existing files for the given media
@@ -2213,7 +2269,7 @@ func Getpriobyfiles(
 	qualcfg *config.QualityConfig,
 	getold bool,
 ) (int, []string) {
-	if qualcfg == nil || *id == 0 {
+	if qualcfg == nil || id == nil || *id == 0 {
 		return 0, nil
 	}
 	arr := database.Getrowssize[database.FilePrio](
@@ -2262,6 +2318,9 @@ func calculateFilePriority(
 	qualcfg *config.QualityConfig,
 	useall bool,
 ) int {
+	if file == nil || qualcfg == nil {
+		return 0
+	}
 	var r, q, a, c uint
 
 	if useall {
@@ -2293,6 +2352,7 @@ func calculateFilePriority(
 	} else {
 		logger.LogDynamicany2Str("debug", "prio not found", "in", qualcfg.Name, "searched for",
 			parser.BuildPrioStr(file.ResolutionID, file.QualityID, file.CodecID, file.AudioID))
+		return 0
 	}
 
 	// Add bonuses for special attributes

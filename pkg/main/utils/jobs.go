@@ -56,9 +56,9 @@ func InitialFillSeries() {
 	database.Refreshfilescached(true, true)
 
 	var err error
-	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) {
+	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) error {
 		if !media.Useseries {
-			return
+			return nil
 		}
 		dbid := insertjobhistory(logger.StrFeeds, media)
 		for idx2 := range media.Lists {
@@ -71,18 +71,20 @@ func InitialFillSeries() {
 			}
 		}
 		database.ExecN(database.QueryUpdateHistory, &dbid)
+		return nil
 	})
 	ctx := context.Background()
 	defer ctx.Done()
-	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) {
+	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) error {
 		if !media.Useseries {
-			return
+			return nil
 		}
 		dbid := insertjobhistory(logger.StrDataFull, media)
 		for idxi := range media.Data {
 			newfilesloop(ctx, media, &media.Data[idxi])
 		}
 		database.ExecN(database.QueryUpdateHistory, &dbid)
+		return nil
 	})
 	ctx.Done()
 
@@ -99,9 +101,9 @@ func InitialFillMovies() {
 	database.Refreshunmatchedcached(false, true)
 	database.Refreshfilescached(false, true)
 	var err error
-	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) {
+	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) error {
 		if media.Useseries {
-			return
+			return nil
 		}
 		dbid := insertjobhistory(logger.StrFeeds, media)
 		for idx2 := range media.Lists {
@@ -114,19 +116,21 @@ func InitialFillMovies() {
 			}
 		}
 		database.ExecN(database.QueryUpdateHistory, &dbid)
+		return nil
 	})
 
 	ctx := context.Background()
 	defer ctx.Done()
-	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) {
+	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) error {
 		if media.Useseries {
-			return
+			return nil
 		}
 		dbid := insertjobhistory(logger.StrDataFull, media)
 		for idxi := range media.Data {
 			newfilesloop(ctx, media, &media.Data[idxi])
 		}
 		database.ExecN(database.QueryUpdateHistory, &dbid)
+		return nil
 	})
 	ctx.Done()
 
@@ -155,7 +159,7 @@ func FillImdb() {
 // newfilesloop processes a directory of files, checking for new or unmatched files, and importing them into the media database.
 // It uses a worker pool to parallelize the file processing, and handles various checks and logic for determining the appropriate
 // media list ID and importing the file data.
-func newfilesloop(ctx context.Context, cfgp *config.MediaTypeConfig, data *config.MediaDataConfig) {
+func newfilesloop(ctx context.Context, cfgp *config.MediaTypeConfig, data *config.MediaDataConfig) error {
 	if data.CfgPath == nil {
 		logger.LogDynamicany1String(
 			"error",
@@ -163,7 +167,7 @@ func newfilesloop(ctx context.Context, cfgp *config.MediaTypeConfig, data *confi
 			logger.StrConfig,
 			data.TemplatePath,
 		)
-		return
+		return errors.New("config not found")
 	}
 	if cfgp == nil {
 		logger.LogDynamicany1StringErr(
@@ -173,13 +177,13 @@ func newfilesloop(ctx context.Context, cfgp *config.MediaTypeConfig, data *confi
 			logger.StrFile,
 			data.TemplatePath,
 		)
-		return
+		return errors.New("parse failed cfgp")
 	}
 
 	pl := worker.WorkerPoolParse.NewGroupContext(ctx)
 	glblistid := cfgp.GetMediaListsEntryListID(data.AddFoundList)
 
-	filepath.WalkDir(data.CfgPath.Path, func(fpath string, info fs.DirEntry, errw error) error {
+	err := filepath.WalkDir(data.CfgPath.Path, func(fpath string, info fs.DirEntry, errw error) error {
 		if errw != nil {
 			return errw
 		}
@@ -218,11 +222,11 @@ func newfilesloop(ctx context.Context, cfgp *config.MediaTypeConfig, data *confi
 			return nil
 		}
 
-		pl.Submit(func() {
+		pl.SubmitErr(func() error {
 			defer logger.HandlePanic()
 			m := parser.ParseFile(fpath, true, true, cfgp, -1)
 			if m == nil {
-				return
+				return errors.New("parse failed")
 			}
 			defer m.Close()
 
@@ -235,7 +239,7 @@ func newfilesloop(ctx context.Context, cfgp *config.MediaTypeConfig, data *confi
 					logger.StrFile,
 					fpath,
 				)
-				return
+				return err
 			}
 
 			listid := glblistid
@@ -252,7 +256,7 @@ func newfilesloop(ctx context.Context, cfgp *config.MediaTypeConfig, data *confi
 				m.ListID = listid
 			}
 			if listid == -1 {
-				return
+				return errors.New("listid not found")
 			}
 			if cfgp.Useseries {
 				err = jobImportSeriesParseV2(m, fpath, cfgp, &cfgp.Lists[listid])
@@ -268,23 +272,36 @@ func newfilesloop(ctx context.Context, cfgp *config.MediaTypeConfig, data *confi
 					logger.StrFile,
 					fpath,
 				)
+				return err
 			}
+			return nil
 		})
 		return nil
 	})
 
 	pl.Wait()
+
+	if err != nil {
+		logger.LogDynamicany1StringErr(
+			"error",
+			"Error walking directory",
+			err,
+			logger.StrFile,
+			data.CfgPath.Path,
+		)
+	}
+	return err
 }
 
 // SingleJobs runs a single maintenance job for the given media config and list.
 // It handles running jobs like getting new files, checking for missing files,
 // refreshing data, searching for upgrades, etc. Jobs are determined by the
 // job string and dispatched to internal functions. List can be empty to run for all lists.
-func SingleJobs(job, cfgpstr, listname string, force bool, key uint32) {
+func SingleJobs(job, cfgpstr, listname string, force bool, key uint32) error {
 	defer worker.RemoveQueueEntry(key)
 	if job == "" || cfgpstr == "" || (config.GetSettingsGeneral().SchedulerDisabled && !force) {
 		logjob("skipped Job", cfgpstr, listname, job)
-		return
+		return errors.New("skipped Job")
 	}
 
 	cfgp := config.GetSettingsMedia(cfgpstr)
@@ -293,10 +310,10 @@ func SingleJobs(job, cfgpstr, listname string, force bool, key uint32) {
 		cfgp = config.GetSettingsMedia(cfgpstr)
 		if cfgp == nil {
 			logjob("config not found", cfgpstr, listname, job)
-			return
+			return errors.New("config not found")
 		}
 		if !cfgp.Useseries && (job == logger.StrRssSeasons || job == logger.StrRssSeasonsAll) {
-			return
+			return nil
 		}
 	}
 	logjob("Started Job", cfgpstr, listname, job)
@@ -325,8 +342,9 @@ func SingleJobs(job, cfgpstr, listname string, force bool, key uint32) {
 	} else {
 		idxlist = -1
 	}
+	var err error
 	if idxlist != -2 {
-		runjoblistfunc(job, cfgp, idxlist)
+		err = runjoblistfunc(job, cfgp, idxlist)
 	}
 	worker.RemoveQueueEntry(key)
 	logjob("Ended Job", cfgpstr, listname, job)
@@ -334,6 +352,7 @@ func SingleJobs(job, cfgpstr, listname string, force bool, key uint32) {
 	if dbinsert != 0 {
 		database.ExecN(database.QueryUpdateHistory, &dbinsert)
 	}
+	return err
 }
 
 // logjob logs information about a job, including the action, configuration, list name, and job name.
@@ -362,42 +381,47 @@ func Refreshcache(useseries bool) {
 // It handles running various maintenance jobs like getting new files, checking for missing files,
 // refreshing data, searching for upgrades, etc. Jobs are determined by the job string and dispatch
 // to the appropriate internal functions. List index of -1 runs the job for all lists in the config.
-func runjoblistfunc(job string, cfgp *config.MediaTypeConfig, listid int) {
+func runjoblistfunc(job string, cfgp *config.MediaTypeConfig, listid int) error {
 	if job == "" || cfgp == nil {
-		return
+		return errors.New("job or config not found")
 	}
 	switch job {
 	case logger.StrData, logger.StrDataFull:
 		ctx := context.Background()
 		defer ctx.Done()
+		var err error
 		for _, data := range cfgp.DataMap {
-			newfilesloop(ctx, cfgp, data)
+			if errsub := newfilesloop(ctx, cfgp, data); errsub != nil {
+				err = errsub
+			}
 		}
 		ctx.Done()
+		return err
 	case logger.StrCheckMissing:
-		checkmissing(cfgp.Useseries, &cfgp.Lists[listid])
+		return checkmissing(cfgp.Useseries, &cfgp.Lists[listid])
 	case "cleanqueue":
-		worker.Cleanqueue()
+		return worker.Cleanqueue()
 	case logger.StrCheckMissingFlag:
-		checkmissingflag(cfgp.Useseries, &cfgp.Lists[listid])
+		return checkmissingflag(cfgp.Useseries, &cfgp.Lists[listid])
 	case logger.StrReachedFlag:
 		if !cfgp.Useseries {
-			checkreachedmoviesflag(&cfgp.Lists[listid])
+			return checkreachedmoviesflag(&cfgp.Lists[listid])
 		} else {
-			checkreachedepisodesflag(&cfgp.Lists[listid])
+			return checkreachedepisodesflag(&cfgp.Lists[listid])
 		}
 	case logger.StrStructure:
 		ctx := context.Background()
 		defer ctx.Done()
-		structurefolders(ctx, cfgp)
+		err := structurefolders(ctx, cfgp)
 		ctx.Done()
+		return err
 	case logger.StrRssSeasons:
-		searcher.SearchSeriesRSSSeasons(cfgp)
+		return searcher.SearchSeriesRSSSeasons(cfgp)
 	case logger.StrRssSeasonsAll:
-		searcher.SearchSeriesRSSSeasonsAll(cfgp)
+		return searcher.SearchSeriesRSSSeasonsAll(cfgp)
 	case "refreshinc":
 		if !cfgp.Useseries {
-			refreshmovies(
+			return refreshmovies(
 				cfgp,
 				database.GetrowsN[string](
 					false,
@@ -406,11 +430,11 @@ func runjoblistfunc(job string, cfgp *config.MediaTypeConfig, listid int) {
 				),
 			)
 		} else {
-			refreshseries(cfgp, database.GetrowsN[database.DbstaticTwoStringOneRInt](false, 20, "select seriename, (Select listname from series where dbserie_id=dbseries.id limit 1), thetvdb_id from dbseries where status = 'Continuing' and thetvdb_id != 0 order by updated_at asc limit 20"))
+			return refreshseries(cfgp, database.GetrowsN[database.DbstaticTwoStringOneRInt](false, 20, "select seriename, (Select listname from series where dbserie_id=dbseries.id limit 1), thetvdb_id from dbseries where status = 'Continuing' and thetvdb_id != 0 order by updated_at asc limit 20"))
 		}
 	case "refresh":
 		if !cfgp.Useseries {
-			refreshmovies(
+			return refreshmovies(
 				cfgp,
 				database.GetrowsN[string](
 					false,
@@ -419,7 +443,7 @@ func runjoblistfunc(job string, cfgp *config.MediaTypeConfig, listid int) {
 				),
 			)
 		} else {
-			refreshseries(cfgp, database.GetrowsN[database.DbstaticTwoStringOneRInt](false, database.Getdatarow[uint](false, "select count() from dbseries"), "select seriename, (Select listname from series where dbserie_id=dbseries.id limit 1), thetvdb_id from dbseries where thetvdb_id != 0"))
+			return refreshseries(cfgp, database.GetrowsN[database.DbstaticTwoStringOneRInt](false, database.Getdatarow[uint](false, "select count() from dbseries"), "select seriename, (Select listname from series where dbserie_id=dbseries.id limit 1), thetvdb_id from dbseries where thetvdb_id != 0"))
 		}
 	case logger.StrClearHistory:
 		if !cfgp.Useseries {
@@ -430,6 +454,7 @@ func runjoblistfunc(job string, cfgp *config.MediaTypeConfig, listid int) {
 		} else {
 			database.ExecN("delete from serie_episode_histories where serie_id in (Select id from series where listname = ? COLLATE NOCASE)", &cfgp.Lists[listid].Name)
 		}
+		return nil
 	case logger.StrFeeds:
 		if cfgp.Lists[listid].CfgList == nil {
 			logger.LogDynamicany1String(
@@ -448,9 +473,10 @@ func runjoblistfunc(job string, cfgp *config.MediaTypeConfig, listid int) {
 			if err != nil && !errors.Is(err, logger.ErrDisabled) {
 				logger.LogDynamicany1StringErr("error", "import feeds failed", err, logger.StrListname, cfgp.Lists[listid].Name)
 			}
+			return err
 		}
 	case logger.StrRss:
-		return
+		return nil
 	case logger.StrSearchMissingFull,
 		logger.StrSearchMissingInc,
 		logger.StrSearchUpgradeFull,
@@ -480,10 +506,13 @@ func runjoblistfunc(job string, cfgp *config.MediaTypeConfig, listid int) {
 				searchinterval = 20
 			}
 		}
-		jobsearchmedia(cfgp, searchmissing, searchtitle, searchinterval)
+		return jobsearchmedia(cfgp, searchmissing, searchtitle, searchinterval)
 	default:
 		logger.LogDynamicany1String("error", "Switch not found", logger.StrJob, job) // logpointerr
+		return errors.New("Switch not found")
 	}
+
+	return nil
 }
 
 // jobsearchmedia searches for media items that need to be searched for new releases
@@ -494,7 +523,7 @@ func jobsearchmedia(
 	cfgp *config.MediaTypeConfig,
 	searchmissing, searchtitle bool,
 	searchinterval uint16,
-) {
+) error {
 	var scaninterval int
 	var scandatepre int
 	if cfgp.DataLen >= 1 && cfgp.Data[0].CfgPath != nil {
@@ -507,7 +536,7 @@ func jobsearchmedia(
 	}
 
 	if cfgp.ListsLen == 0 {
-		return
+		return errors.New("No lists")
 	}
 	args := logger.PLArrAny.Get()
 	defer logger.PLArrAny.Put(args)
@@ -515,7 +544,7 @@ func jobsearchmedia(
 		args.Arr = append(args.Arr, &lst.Name)
 	}
 	if len(args.Arr) == 0 {
-		return
+		return errors.New("No lists")
 	}
 
 	bld := logger.PlAddBuffer.Get()
@@ -549,17 +578,21 @@ func jobsearchmedia(
 
 	str := bld.String()
 	ctx := context.Background()
+	var err error
 	for _, tbl := range database.GetrowsNuncached[database.DbstaticOneStringOneUInt](database.Getdatarow[uint](false, logger.JoinStrings("select count() ", str), args.Arr...), logger.JoinStrings(logger.GetStringsMap(cfgp.Useseries, logger.SearchGenSelect), str), args.Arr) {
-		searcher.NewSearcher(cfgp, cfgp.GetMediaQualityConfigStr(tbl.Str), "", nil).
-			MediaSearch(ctx, cfgp, tbl.Num, searchtitle, true, true)
+		if errsub := searcher.NewSearcher(cfgp, cfgp.GetMediaQualityConfigStr(tbl.Str), "", nil).
+			MediaSearch(ctx, cfgp, tbl.Num, searchtitle, true, true); errsub != nil {
+			err = errsub
+		}
 	}
+	return err
 }
 
 // checkmissing checks for missing files for the given media list.
 // It queries for file locations, checks if they exist, and updates
 // the database to set missing flags on media items with no files.
 // It handles both movies and series based on the useseries flag.
-func checkmissing(useseries bool, listcfg *config.MediaListsConfig) {
+func checkmissing(useseries bool, listcfg *config.MediaListsConfig) error {
 	arrfiles := database.GetrowsN[database.DbstaticOneStringTwoInt](
 		false,
 		database.Getdatarow[uint](
@@ -574,12 +607,16 @@ func checkmissing(useseries bool, listcfg *config.MediaListsConfig) {
 		logger.GetStringsMap(useseries, logger.DBLocationFilesByList),
 		&listcfg.Name,
 	)
+	var err error
 	for idx := range arr {
 		if scanner.CheckFileExist(arr[idx]) {
 			continue
 		}
-		checkmissingfiles(useseries, &arr[idx], arrfiles)
+		if errsub := checkmissingfiles(useseries, &arr[idx], arrfiles); errsub != nil {
+			err = errsub
+		}
 	}
+	return err
 }
 
 // func Checkruntimes(cfg *config.MediaTypeConfig) {
@@ -594,7 +631,7 @@ func checkmissing(useseries bool, listcfg *config.MediaListsConfig) {
 // It takes the query to count files for the media item, the table to delete from,
 // the table to update the missing flag, the query to get the file ID and media item ID,
 // and the file location that was found missing.
-func checkmissingfiles(useseries bool, row *string, arrfiles []database.DbstaticOneStringTwoInt) {
+func checkmissingfiles(useseries bool, row *string, arrfiles []database.DbstaticOneStringTwoInt) error {
 	subquerycount := logger.GetStringsMap(useseries, logger.DBCountFilesByMediaID)
 	deletestmt := logger.JoinStrings(
 		"delete from ",
@@ -606,14 +643,15 @@ func checkmissingfiles(useseries bool, row *string, arrfiles []database.Dbstatic
 		logger.GetStringsMap(useseries, logger.TableMedia),
 		" set missing = 1 where id = ?",
 	)
-	var err error
+	var errret error
 	for idx := range arrfiles {
 		if arrfiles[idx].Str != *row {
 			continue
 		}
 		logger.LogDynamicany1String("info", "File was removed", logger.StrFile, *row)
-		err = database.ExecNErr(deletestmt, &arrfiles[idx].Num1)
+		err := database.ExecNErr(deletestmt, &arrfiles[idx].Num1)
 		if err != nil {
+			errret = err
 			continue
 		}
 
@@ -621,11 +659,12 @@ func checkmissingfiles(useseries bool, row *string, arrfiles []database.Dbstatic
 			database.ExecN(updatestmt, &arrfiles[idx].Num2)
 		}
 	}
+	return errret
 }
 
 // checkmissingflag checks for missing files for the given media list.
 // It updates the missing flag in the database based on file count.
-func checkmissingflag(useseries bool, listcfg *config.MediaListsConfig) {
+func checkmissingflag(useseries bool, listcfg *config.MediaListsConfig) error {
 	queryupdate := logger.GetStringsMap(useseries, logger.DBUpdateMissing)
 	querycount := logger.GetStringsMap(useseries, logger.DBCountFilesByMediaID)
 
@@ -646,21 +685,28 @@ func checkmissingflag(useseries bool, listcfg *config.MediaListsConfig) {
 			database.ExecN(queryupdate, &v1, &arr[idx].Num)
 		}
 	}
+	return nil
 }
 
+// LoadGlobalSchedulerConfig initializes the global scheduler job functions that are
+// not media-specific. These jobs include database maintenance, backup operations,
+// and system-wide tasks. The functions are registered in the general settings
+// job map for use by the worker scheduler system.
 func LoadGlobalSchedulerConfig() {
-	config.GetSettingsGeneral().Jobs = map[string]func(uint32){
-		"RefreshImdb": func(key uint32) {
+	config.GetSettingsGeneral().Jobs = map[string]func(uint32) error{
+		"RefreshImdb": func(key uint32) error {
 			FillImdb()
 			worker.RemoveQueueEntry(key)
+			return nil
 		},
-		"CheckDatabase": func(key uint32) {
+		"CheckDatabase": func(key uint32) error {
 			worker.RemoveQueueEntry(key)
 			if database.DBIntegrityCheck() != "ok" {
 				os.Exit(100)
 			}
+			return nil
 		},
-		"BackupDatabase": func(key uint32) {
+		"BackupDatabase": func(key uint32) error {
 			if config.GetSettingsGeneral().DatabaseBackupStopTasks {
 				worker.StopCronWorker()
 				worker.CloseWorkerPools()
@@ -672,7 +718,7 @@ func LoadGlobalSchedulerConfig() {
 				logger.StrDot,
 				time.Now().Format("20060102_150405"),
 			)
-			database.Backup(&backupto, config.GetSettingsGeneral().MaxDatabaseBackups)
+			err := database.Backup(&backupto, config.GetSettingsGeneral().MaxDatabaseBackups)
 			if config.GetSettingsGeneral().DatabaseBackupStopTasks {
 				worker.InitWorkerPools(
 					config.GetSettingsGeneral().WorkerSearch,
@@ -683,32 +729,42 @@ func LoadGlobalSchedulerConfig() {
 				)
 				worker.StartCronWorker()
 			}
+			return err
 		},
 	}
 }
 
+// LoadSchedulerConfig initializes the media-specific scheduler job functions for each
+// configured media type (movies and series). These jobs include search operations,
+// data processing, feed imports, and maintenance tasks. The function iterates through
+// all media configurations and registers appropriate job functions based on whether
+// the media type is for series or movies.
 func LoadSchedulerConfig() {
-	config.RangeSettingsMedia(func(_ string, cfgp *config.MediaTypeConfig) {
+	config.RangeSettingsMedia(func(_ string, cfgp *config.MediaTypeConfig) error {
 		if cfgp.Useseries {
-			cfgp.Jobs = map[string]func(uint32){
-				logger.StrSearchMissingInc: func(key uint32) {
-					SingleJobs(logger.StrSearchMissingInc, cfgp.NamePrefix, "", false, key)
+			cfgp.Jobs = map[string]func(uint32) error{
+				logger.StrSearchMissingInc: func(key uint32) error {
+					err := SingleJobs(logger.StrSearchMissingInc, cfgp.NamePrefix, "", false, key)
 					worker.RemoveQueueEntry(key)
+					return err
 				},
-				logger.StrSearchMissingFull: func(key uint32) {
-					SingleJobs(logger.StrSearchMissingFull, cfgp.NamePrefix, "", false, key)
+				logger.StrSearchMissingFull: func(key uint32) error {
+					err := SingleJobs(logger.StrSearchMissingFull, cfgp.NamePrefix, "", false, key)
 					worker.RemoveQueueEntry(key)
+					return err
 				},
-				logger.StrSearchUpgradeInc: func(key uint32) {
-					SingleJobs(logger.StrSearchUpgradeInc, cfgp.NamePrefix, "", false, key)
+				logger.StrSearchUpgradeInc: func(key uint32) error {
+					err := SingleJobs(logger.StrSearchUpgradeInc, cfgp.NamePrefix, "", false, key)
 					worker.RemoveQueueEntry(key)
+					return err
 				},
-				logger.StrSearchUpgradeFull: func(key uint32) {
-					SingleJobs(logger.StrSearchUpgradeFull, cfgp.NamePrefix, "", false, key)
+				logger.StrSearchUpgradeFull: func(key uint32) error {
+					err := SingleJobs(logger.StrSearchUpgradeFull, cfgp.NamePrefix, "", false, key)
 					worker.RemoveQueueEntry(key)
+					return err
 				},
-				logger.StrSearchMissingIncTitle: func(key uint32) {
-					SingleJobs(
+				logger.StrSearchMissingIncTitle: func(key uint32) error {
+					err := SingleJobs(
 						logger.StrSearchMissingIncTitle,
 						cfgp.NamePrefix,
 						"",
@@ -716,9 +772,10 @@ func LoadSchedulerConfig() {
 						key,
 					)
 					worker.RemoveQueueEntry(key)
+					return err
 				},
-				logger.StrSearchMissingFullTitle: func(key uint32) {
-					SingleJobs(
+				logger.StrSearchMissingFullTitle: func(key uint32) error {
+					err := SingleJobs(
 						logger.StrSearchMissingFullTitle,
 						cfgp.NamePrefix,
 						"",
@@ -726,9 +783,10 @@ func LoadSchedulerConfig() {
 						key,
 					)
 					worker.RemoveQueueEntry(key)
+					return err
 				},
-				logger.StrSearchUpgradeIncTitle: func(key uint32) {
-					SingleJobs(
+				logger.StrSearchUpgradeIncTitle: func(key uint32) error {
+					err := SingleJobs(
 						logger.StrSearchUpgradeIncTitle,
 						cfgp.NamePrefix,
 						"",
@@ -736,9 +794,10 @@ func LoadSchedulerConfig() {
 						key,
 					)
 					worker.RemoveQueueEntry(key)
+					return err
 				},
-				logger.StrSearchUpgradeFullTitle: func(key uint32) {
-					SingleJobs(
+				logger.StrSearchUpgradeFullTitle: func(key uint32) error {
+					err := SingleJobs(
 						logger.StrSearchUpgradeFullTitle,
 						cfgp.NamePrefix,
 						"",
@@ -746,123 +805,153 @@ func LoadSchedulerConfig() {
 						key,
 					)
 					worker.RemoveQueueEntry(key)
+					return err
 				},
-				logger.StrRss: func(key uint32) {
-					SingleJobs(logger.StrRss, cfgp.NamePrefix, "", false, key)
+				logger.StrRss: func(key uint32) error {
+					err := SingleJobs(logger.StrRss, cfgp.NamePrefix, "", false, key)
 					worker.RemoveQueueEntry(key)
+					return err
 				},
-				logger.StrDataFull: func(key uint32) {
-					SingleJobs(logger.StrDataFull, cfgp.NamePrefix, "", false, key)
+				logger.StrDataFull: func(key uint32) error {
+					err := SingleJobs(logger.StrDataFull, cfgp.NamePrefix, "", false, key)
 					worker.RemoveQueueEntry(key)
+					return err
 				},
-				logger.StrStructure: func(key uint32) {
-					SingleJobs(logger.StrStructure, cfgp.NamePrefix, "", false, key)
+				logger.StrStructure: func(key uint32) error {
+					err := SingleJobs(logger.StrStructure, cfgp.NamePrefix, "", false, key)
 					worker.RemoveQueueEntry(key)
+					return err
 				},
-				logger.StrFeeds: func(key uint32) {
-					SingleJobs(logger.StrFeeds, cfgp.NamePrefix, "", false, key)
+				logger.StrFeeds: func(key uint32) error {
+					err := SingleJobs(logger.StrFeeds, cfgp.NamePrefix, "", false, key)
 					worker.RemoveQueueEntry(key)
+					return err
 				},
-				logger.StrCheckMissing: func(key uint32) {
-					SingleJobs(logger.StrCheckMissing, cfgp.NamePrefix, "", false, key)
+				logger.StrCheckMissing: func(key uint32) error {
+					err := SingleJobs(logger.StrCheckMissing, cfgp.NamePrefix, "", false, key)
 					worker.RemoveQueueEntry(key)
+					return err
 				},
-				logger.StrCheckMissingFlag: func(key uint32) {
-					SingleJobs(logger.StrCheckMissingFlag, cfgp.NamePrefix, "", false, key)
+				logger.StrCheckMissingFlag: func(key uint32) error {
+					err := SingleJobs(logger.StrCheckMissingFlag, cfgp.NamePrefix, "", false, key)
 					worker.RemoveQueueEntry(key)
+					return err
 				},
-				logger.StrUpgradeFlag: func(key uint32) {
-					SingleJobs(logger.StrUpgradeFlag, cfgp.NamePrefix, "", false, key)
+				logger.StrUpgradeFlag: func(key uint32) error {
+					err := SingleJobs(logger.StrUpgradeFlag, cfgp.NamePrefix, "", false, key)
 					worker.RemoveQueueEntry(key)
+					return err
 				},
-				logger.StrRssSeasons: func(key uint32) {
-					SingleJobs(logger.StrRssSeasons, cfgp.NamePrefix, "", false, key)
+				logger.StrRssSeasons: func(key uint32) error {
+					err := SingleJobs(logger.StrRssSeasons, cfgp.NamePrefix, "", false, key)
 					worker.RemoveQueueEntry(key)
+					return err
 				},
-				logger.StrRssSeasonsAll: func(key uint32) {
-					SingleJobs(logger.StrRssSeasonsAll, cfgp.NamePrefix, "", false, key)
+				logger.StrRssSeasonsAll: func(key uint32) error {
+					err := SingleJobs(logger.StrRssSeasonsAll, cfgp.NamePrefix, "", false, key)
 					worker.RemoveQueueEntry(key)
+					return err
 				},
-				"refreshseriesfull": func(key uint32) {
-					SingleJobs("refresh", cfgp.NamePrefix, "", false, key)
+				"refreshseriesfull": func(key uint32) error {
+					err := SingleJobs("refresh", cfgp.NamePrefix, "", false, key)
 					worker.RemoveQueueEntry(key)
+					return err
 				},
-				"refreshseriesinc": func(key uint32) {
-					SingleJobs("refreshinc", cfgp.NamePrefix, "", false, key)
+				"refreshseriesinc": func(key uint32) error {
+					err := SingleJobs("refreshinc", cfgp.NamePrefix, "", false, key)
 					worker.RemoveQueueEntry(key)
+					return err
 				},
 			}
 		} else {
-			cfgp.Jobs = map[string]func(uint32){
-				logger.StrSearchMissingInc: func(key uint32) {
-					SingleJobs(logger.StrSearchMissingInc, cfgp.NamePrefix, "", false, key)
+			cfgp.Jobs = map[string]func(uint32) error{
+				logger.StrSearchMissingInc: func(key uint32) error {
+					err := SingleJobs(logger.StrSearchMissingInc, cfgp.NamePrefix, "", false, key)
 					worker.RemoveQueueEntry(key)
+					return err
 				},
-				logger.StrSearchMissingFull: func(key uint32) {
-					SingleJobs(logger.StrSearchMissingFull, cfgp.NamePrefix, "", false, key)
+				logger.StrSearchMissingFull: func(key uint32) error {
+					err := SingleJobs(logger.StrSearchMissingFull, cfgp.NamePrefix, "", false, key)
 					worker.RemoveQueueEntry(key)
+					return err
 				},
-				logger.StrSearchUpgradeInc: func(key uint32) {
-					SingleJobs(logger.StrSearchUpgradeInc, cfgp.NamePrefix, "", false, key)
+				logger.StrSearchUpgradeInc: func(key uint32) error {
+					err := SingleJobs(logger.StrSearchUpgradeInc, cfgp.NamePrefix, "", false, key)
 					worker.RemoveQueueEntry(key)
+					return err
 				},
-				logger.StrSearchUpgradeFull: func(key uint32) {
-					SingleJobs(logger.StrSearchUpgradeFull, cfgp.NamePrefix, "", false, key)
+				logger.StrSearchUpgradeFull: func(key uint32) error {
+					err := SingleJobs(logger.StrSearchUpgradeFull, cfgp.NamePrefix, "", false, key)
 					worker.RemoveQueueEntry(key)
+					return err
 				},
-				logger.StrSearchMissingIncTitle: func(key uint32) {
-					SingleJobs(logger.StrSearchMissingIncTitle, cfgp.NamePrefix, "", false, key)
+				logger.StrSearchMissingIncTitle: func(key uint32) error {
+					err := SingleJobs(logger.StrSearchMissingIncTitle, cfgp.NamePrefix, "", false, key)
 					worker.RemoveQueueEntry(key)
+					return err
 				},
-				logger.StrSearchMissingFullTitle: func(key uint32) {
-					SingleJobs(logger.StrSearchMissingFullTitle, cfgp.NamePrefix, "", false, key)
+				logger.StrSearchMissingFullTitle: func(key uint32) error {
+					err := SingleJobs(logger.StrSearchMissingFullTitle, cfgp.NamePrefix, "", false, key)
 					worker.RemoveQueueEntry(key)
+					return err
 				},
-				logger.StrSearchUpgradeIncTitle: func(key uint32) {
-					SingleJobs(logger.StrSearchUpgradeIncTitle, cfgp.NamePrefix, "", false, key)
+				logger.StrSearchUpgradeIncTitle: func(key uint32) error {
+					err := SingleJobs(logger.StrSearchUpgradeIncTitle, cfgp.NamePrefix, "", false, key)
 					worker.RemoveQueueEntry(key)
+					return err
 				},
-				logger.StrSearchUpgradeFullTitle: func(key uint32) {
-					SingleJobs(logger.StrSearchUpgradeFullTitle, cfgp.NamePrefix, "", false, key)
+				logger.StrSearchUpgradeFullTitle: func(key uint32) error {
+					err := SingleJobs(logger.StrSearchUpgradeFullTitle, cfgp.NamePrefix, "", false, key)
 					worker.RemoveQueueEntry(key)
+					return err
 				},
-				logger.StrRss: func(key uint32) {
-					SingleJobs(logger.StrRss, cfgp.NamePrefix, "", false, key)
+				logger.StrRss: func(key uint32) error {
+					err := SingleJobs(logger.StrRss, cfgp.NamePrefix, "", false, key)
 					worker.RemoveQueueEntry(key)
+					return err
 				},
-				logger.StrDataFull: func(key uint32) {
-					SingleJobs(logger.StrDataFull, cfgp.NamePrefix, "", false, key)
+				logger.StrDataFull: func(key uint32) error {
+					err := SingleJobs(logger.StrDataFull, cfgp.NamePrefix, "", false, key)
 					worker.RemoveQueueEntry(key)
+					return err
 				},
-				logger.StrStructure: func(key uint32) {
-					SingleJobs(logger.StrStructure, cfgp.NamePrefix, "", false, key)
+				logger.StrStructure: func(key uint32) error {
+					err := SingleJobs(logger.StrStructure, cfgp.NamePrefix, "", false, key)
 					worker.RemoveQueueEntry(key)
+					return err
 				},
-				logger.StrFeeds: func(key uint32) {
-					SingleJobs(logger.StrFeeds, cfgp.NamePrefix, "", false, key)
+				logger.StrFeeds: func(key uint32) error {
+					err := SingleJobs(logger.StrFeeds, cfgp.NamePrefix, "", false, key)
 					worker.RemoveQueueEntry(key)
+					return err
 				},
-				logger.StrCheckMissing: func(key uint32) {
-					SingleJobs(logger.StrCheckMissing, cfgp.NamePrefix, "", false, key)
+				logger.StrCheckMissing: func(key uint32) error {
+					err := SingleJobs(logger.StrCheckMissing, cfgp.NamePrefix, "", false, key)
 					worker.RemoveQueueEntry(key)
+					return err
 				},
-				logger.StrCheckMissingFlag: func(key uint32) {
-					SingleJobs(logger.StrCheckMissingFlag, cfgp.NamePrefix, "", false, key)
+				logger.StrCheckMissingFlag: func(key uint32) error {
+					err := SingleJobs(logger.StrCheckMissingFlag, cfgp.NamePrefix, "", false, key)
 					worker.RemoveQueueEntry(key)
+					return err
 				},
-				logger.StrUpgradeFlag: func(key uint32) {
-					SingleJobs(logger.StrUpgradeFlag, cfgp.NamePrefix, "", false, key)
+				logger.StrUpgradeFlag: func(key uint32) error {
+					err := SingleJobs(logger.StrUpgradeFlag, cfgp.NamePrefix, "", false, key)
 					worker.RemoveQueueEntry(key)
+					return err
 				},
-				"refreshmoviesfull": func(key uint32) {
-					SingleJobs("refresh", cfgp.NamePrefix, "", false, key)
+				"refreshmoviesfull": func(key uint32) error {
+					err := SingleJobs("refresh", cfgp.NamePrefix, "", false, key)
 					worker.RemoveQueueEntry(key)
+					return err
 				},
-				"refreshmoviesinc": func(key uint32) {
-					SingleJobs("refreshinc", cfgp.NamePrefix, "", false, key)
+				"refreshmoviesinc": func(key uint32) error {
+					err := SingleJobs("refreshinc", cfgp.NamePrefix, "", false, key)
 					worker.RemoveQueueEntry(key)
+					return err
 				},
 			}
 		}
+		return nil
 	})
 }

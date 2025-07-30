@@ -208,7 +208,7 @@ func LoggerWithOptions(opt *Options) gin.HandlerFunc {
 			}
 			// Body field
 			if f == BodyFieldName && !opt.isExcluded(f) && len(w.body.String()) > 0 {
-				event.Str(BodyFieldName, w.body.String())
+				// event.Str(BodyFieldName, w.body.String())
 			}
 		}
 

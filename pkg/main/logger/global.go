@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"net/url"
 	"path"
+	"reflect"
 	"runtime"
 	"strconv"
 	"strings"
@@ -1519,4 +1520,77 @@ func Stack() string {
 func TryTimeParse(layout string, s string) (time.Time, bool) {
 	sleeptime, err := time.Parse(layout, s)
 	return sleeptime, err == nil
+}
+
+// GetFieldComments returns a map of field names to their comment values
+func GetFieldComments(v interface{}) map[string]string {
+	comments := make(map[string]string)
+
+	t := reflect.TypeOf(v)
+	// If it's a pointer, get the underlying type
+	if t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+
+	// Ensure it's a struct
+	if t.Kind() != reflect.Struct {
+		return comments
+	}
+
+	// Iterate through all fields
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		comment := field.Tag.Get("comment")
+		if comment != "" {
+			comments[field.Name] = comment
+		}
+	}
+
+	return comments
+}
+
+// GetFieldDisplayNames returns a map of field names to their displayname tag values
+func GetFieldDisplayNames(v interface{}) map[string]string {
+	displayNames := make(map[string]string)
+
+	t := reflect.TypeOf(v)
+	// If it's a pointer, get the underlying type
+	if t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+
+	// Ensure it's a struct
+	if t.Kind() != reflect.Struct {
+		return displayNames
+	}
+
+	// Iterate through all fields
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		displayName := field.Tag.Get("displayname")
+		if displayName != "" {
+			displayNames[field.Name] = displayName
+		}
+	}
+
+	return displayNames
+}
+
+// GetFieldCommentByName returns the comment for a specific field
+func GetFieldCommentByName(v interface{}, fieldName string) string {
+	t := reflect.TypeOf(v)
+	if t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+
+	if t.Kind() != reflect.Struct {
+		return ""
+	}
+
+	field, found := t.FieldByName(fieldName)
+	if !found {
+		return ""
+	}
+
+	return field.Tag.Get("comment")
 }

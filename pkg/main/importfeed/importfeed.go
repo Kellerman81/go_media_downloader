@@ -269,9 +269,9 @@ func JobImportMoviesByList(
 	cfgp *config.MediaTypeConfig,
 	listid int,
 	addnew bool,
-) {
+) error {
 	if listid == -1 {
-		return
+		return errors.New("listid not set")
 	}
 	logger.Logtype("info", 0).
 		Str(logger.StrMovie, entry).
@@ -286,7 +286,9 @@ func JobImportMoviesByList(
 			logger.StrImdb,
 			entry,
 		) // logpointerr
+		return err
 	}
+	return nil
 }
 
 // JobImportMovies imports a movie into the database and specified list
@@ -658,7 +660,7 @@ func JobImportDBSeries(
 	idxserie int,
 	cfgp *config.MediaTypeConfig,
 	listid int,
-) {
+) error {
 	logger.Logtype("info", 0).
 		Str(logger.StrSeries, serie.Name).
 		Int(logger.StrRow, idxserie).
@@ -672,7 +674,9 @@ func JobImportDBSeries(
 			logger.StrSeries,
 			serie.TvdbID,
 		)
+		return err
 	}
+	return nil
 }
 
 // jobImportDBSeries imports a series into the database and media lists from a SerieConfig.

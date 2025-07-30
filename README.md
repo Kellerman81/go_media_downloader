@@ -128,14 +128,26 @@ Swap Memory: Default ~300-600MB - on a file move action the swap memory will gro
 ## Get started
 
 - Guide for Docker:
-	- Download Repository - and create docker container for build/run using compose files/nzbs
-	- setup your config and name it config.toml ! - this will initialize the config.db -> it will create an example if no config could be found
+  - create a compose file with the following content:
+  ```
+  services:
+    media_downloader:
+      image: kellerman81/go_media_downloader:latest
+      volumes:
+        - /mnt/user/go_media_downloader/databases:/app/databases
+        - /mnt/user/go_media_downloader/logs:/app/logs
+        - /mnt/user/go_media_downloader/config:/app/config
+      ports:
+        - 9094:9090
+  ```
+	- Start the container -> the config and the databases will be created
+  - Stop the container
+	- setup your config "config.toml"
 	- setup your series.toml if wanted
-	- Start the build container to build the executable (use compose-build.yml to create the container)
-	- Start the run container to run the executable (use compose-run.yml to create the container)
+	- Start the container again -> the metadata will be downloaded and the scheduler will be started (if enabled)
   
-- Guide for Windows/Linux/Mac:
-	- Download latest [prebuild zip](https://github.com/Kellerman81/go_media_downloader/releases/tag/latest_develop) for your OS or the latest release
+- Guide for Windows/Linux:
+	- Download latest [release](https://github.com/Kellerman81/go_media_downloader/releases) for your OS
 	- setup your config and name it config.toml -> it will create an example if no config could be found
 	- setup your series.toml if wanted
 	- Run the go_media_downloader executable
@@ -180,6 +192,7 @@ https://go-media-downloader.readme.io/
 - V0.1: initial Release
 - V0.1.1: Performance and Ram Usage Changes - rewrite a lot of functions
 - v0.2.3: Added Tmdb List retrieve + tmdbdiscover
+- v0.2.7: Added new Webinterface /api/admin - username is admin and password is the WebApiKey
 
 ## References
 

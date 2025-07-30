@@ -155,7 +155,7 @@ func Getdb(imdb bool) *sqlx.DB {
 // It handles scanning into simple types as well as structs.
 // For structs, it uses the getfunc mapping function to get the fields to scan into.
 // Size is a hint for the initial slice capacity.
-func queryGenericsT[t any](size uint, rows *sql.Rows, querystring string) []t {
+func queryGenericsT[t any](size uint, rows *sqlx.Rows, querystring string) []t {
 	var zero t
 	isSimpleType := isSimpleType(zero)
 
@@ -200,7 +200,7 @@ func isSimpleType[T any](v T) bool {
 // fields to scan into the struct based on its type. This allows the function
 // to be used with a variety of different struct types that have the
 // appropriate field types.
-func getfuncarr(u any, s *sql.Rows) error {
+func getfuncarr(u any, s *sqlx.Rows) error {
 	switch elem := u.(type) {
 	case *DbstaticTwoString:
 		return s.Scan(&elem.Str1, &elem.Str2)
@@ -229,7 +229,7 @@ func getfuncarr(u any, s *sql.Rows) error {
 	case *string, *int, *int8, *int16, *int32, *int64, *uint, *uint8, *uint16, *uint32, *uint64, *float32, *float64, *bool:
 		return s.Scan(u)
 	default:
-		return logger.ErrNotFound
+		return s.StructScan(&u)
 	}
 }
 
@@ -237,7 +237,7 @@ func getfuncarr(u any, s *sql.Rows) error {
 // result into the given struct pointer. It handles locking/unlocking the read
 // write mutex, logging any errors, and returning sql.ErrNoRows if no rows were
 // returned.
-func structscan[t any](querystring string, imdb bool, id ...any) (*t, error) {
+func Structscan[t any](querystring string, imdb bool, id ...any) (*t, error) {
 	readWriteMu.RLock()
 	defer readWriteMu.RUnlock()
 	var u t
@@ -298,7 +298,7 @@ func StructscanT[t any](imdb bool, size uint, querystring string, args ...any) [
 // dbmovie data and scan it into the Dbmovie struct.
 // Returns an error if there was a problem retrieving the data.
 func GetDbmovieByID(id *uint) (*Dbmovie, error) {
-	return structscan[Dbmovie](
+	return Structscan[Dbmovie](
 		"select id,created_at,updated_at,title,year,adult,budget,genres,original_language,original_title,overview,popularity,revenue,runtime,spoken_languages,status,tagline,vote_average,vote_count,moviedb_id,imdb_id,freebase_m_id,freebase_id,facebook_id,instagram_id,twitter_id,url,backdrop,poster,slug,trakt_id from dbmovies where id = ?",
 		false,
 		id,
@@ -319,6 +319,134 @@ func QueryDbmovie(qu Querywithargs, args ...any) []Dbmovie {
 		qu.buildquery()
 	}
 	return StructscanT[Dbmovie](false, qu.Limit, qu.QueryString, args...)
+}
+
+type QueryParams struct {
+	Table                  string
+	DefaultColumns         string
+	DefaultQuery           string
+	DefaultQueryParamCount int
+	DefaultOrderBy         string
+	Object                 any
+}
+
+func GetTableDefaults(table string) QueryParams {
+	var q QueryParams
+	switch table {
+	case "dbmovies":
+		q.Table = "dbmovies"
+		q.DefaultColumns = "id,created_at,updated_at,title,release_date,year,adult,budget,genres,original_language,original_title,overview,popularity,revenue,runtime,spoken_languages,status,tagline,vote_average,vote_count,moviedb_id,imdb_id,freebase_m_id,freebase_id,facebook_id,instagram_id,twitter_id,url,backdrop,poster,slug,trakt_id"
+		q.DefaultQuery = " where id like ? or title like ? or year like ? or moviedb_id like ? or imdb_id like ? or slug like ? or trakt_id like ?"
+		q.DefaultQueryParamCount = 7
+		q.DefaultOrderBy = " order by id desc"
+		q.Object = Dbmovie{}
+	case "dbmovie_titles":
+		q.Table = "dbmovie_titles dt LEFT JOIN dbmovies dm ON dt.dbmovie_id = dm.id"
+		q.DefaultColumns = "dt.id as id,dt.created_at as created_at,dt.updated_at as updated_at,dt.dbmovie_id as dbmovie_id,dt.title as title,dt.slug as slug,dt.region as region,dm.title as movie_title"
+		q.DefaultQuery = " where dt.id like ? or dt.dbmovie_id like ? or dt.title like ? or dt.slug like ? or dt.region like ?"
+		q.DefaultQueryParamCount = 5
+		q.DefaultOrderBy = " order by dt.id desc"
+		q.Object = DbmovieTitle{}
+	case "dbseries":
+		q.Table = "dbseries"
+		q.DefaultColumns = "id,created_at,updated_at,seriename,aliases,season,status,firstaired,network,runtime,language,genre,overview,rating,siterating,siterating_count,slug,imdb_id,thetvdb_id,freebase_m_id,freebase_id,tvrage_id,facebook,instagram,twitter,banner,poster,fanart,identifiedby, trakt_id"
+		q.DefaultQuery = " where id like ? or seriename like ? or season like ? or slug like ? or imdb_id like ? or thetvdb_id like ? or trakt_id like ?"
+		q.DefaultQueryParamCount = 7
+		q.DefaultOrderBy = " order by id desc"
+		q.Object = Dbserie{}
+	case "dbserie_alternates":
+		q.Table = "dbserie_alternates dsa LEFT JOIN dbseries ds ON dsa.dbserie_id = ds.id"
+		q.DefaultColumns = "dsa.id as id,dsa.created_at as created_at,dsa.updated_at as updated_at,dsa.dbserie_id as dbserie_id,dsa.title as title,dsa.slug as slug,dsa.region as region,ds.seriename as series_name"
+		q.DefaultQuery = " where dsa.id like ? or dsa.dbserie_id like ? or dsa.title like ? or dsa.slug like ? or dsa.region like ?"
+		q.DefaultQueryParamCount = 5
+		q.DefaultOrderBy = " order by dsa.id desc"
+		q.Object = DbserieAlternate{}
+	case "dbserie_episodes":
+		q.Table = "dbserie_episodes dse LEFT JOIN dbseries ds ON dse.dbserie_id = ds.id"
+		q.DefaultColumns = "dse.id as id,dse.created_at as created_at,dse.updated_at as updated_at,dse.episode as episode,dse.season as season,dse.identifier as identifier,dse.title as title,dse.first_aired as first_aired,dse.overview as overview,dse.poster as poster,dse.runtime as runtime,dse.dbserie_id as dbserie_id,ds.seriename as series_name"
+		q.DefaultQuery = " where dse.id like ? or dse.episode like ? or dse.season like ? or dse.dbserie_id like ? or dse.title like ? or dse.identifier like ?"
+		q.DefaultQueryParamCount = 6
+		q.DefaultOrderBy = " order by dse.id desc"
+		q.Object = DbserieEpisode{}
+	case "movies":
+		q.Table = "movies m LEFT JOIN dbmovies dm ON m.dbmovie_id = dm.id"
+		q.DefaultColumns = "m.id as id,m.created_at as created_at,m.updated_at as updated_at,m.blacklisted as blacklisted,m.quality_reached as quality_reached,m.quality_profile as quality_profile,m.missing as missing,m.dont_upgrade as dont_upgrade,m.dont_search as dont_search,m.listname as listname,m.rootpath as rootpath,m.dbmovie_id as dbmovie_id,dm.title as movie_title"
+		q.DefaultQuery = " where m.id like ? or m.quality_profile like ? or m.listname like ? or m.rootpath like ? or m.dbmovie_id like ?"
+		q.DefaultQueryParamCount = 5
+		q.DefaultOrderBy = " order by m.id desc"
+		q.Object = Movie{}
+	case "series":
+		q.Table = "series s LEFT JOIN dbseries ds ON s.dbserie_id = ds.id"
+		q.DefaultColumns = "s.id as id,s.created_at as created_at,s.updated_at as updated_at,s.listname as listname,s.rootpath as rootpath,s.dbserie_id as dbserie_id,s.dont_upgrade as dont_upgrade,s.dont_search as dont_search,ds.seriename as series_name"
+		q.DefaultQuery = " where s.id like ? or s.listname like ? or s.rootpath like ? or s.dbserie_id like ?"
+		q.DefaultQueryParamCount = 4
+		q.DefaultOrderBy = " order by s.id desc"
+		q.Object = Serie{}
+	case "serie_episodes":
+		q.Table = "serie_episodes se LEFT JOIN dbserie_episodes dse ON se.dbserie_episode_id = dse.id"
+		q.DefaultColumns = "se.id as id,se.created_at as created_at,se.updated_at as updated_at,se.blacklisted as blacklisted,se.quality_reached as quality_reached,se.quality_profile as quality_profile,se.missing as missing,se.dont_upgrade as dont_upgrade,se.dont_search as dont_search,se.dbserie_episode_id as dbserie_episode_id,se.serie_id as serie_id,se.dbserie_id as dbserie_id,dse.title as episode_title"
+		q.DefaultQuery = " where se.id like ? or se.quality_profile like ? or se.dbserie_episode_id like ? or se.serie_id like ? or se.dbserie_id like ?"
+		q.DefaultQueryParamCount = 5
+		q.DefaultOrderBy = " order by se.id desc"
+		q.Object = SerieEpisode{}
+	case "job_histories":
+		q.Table = "job_histories"
+		q.DefaultColumns = "id,created_at,updated_at,job_type,job_category,job_group,started,ended"
+		q.DefaultQuery = " where id like ? or job_type like ? or job_category like ? or job_group like ?"
+		q.DefaultQueryParamCount = 4
+		q.DefaultOrderBy = " order by started desc"
+		q.Object = JobHistory{}
+	case "serie_file_unmatcheds":
+		q.Table = "serie_file_unmatcheds sfu LEFT JOIN series s ON sfu.listname = s.listname"
+		q.DefaultColumns = "sfu.id as id,sfu.created_at as created_at,sfu.updated_at as updated_at,sfu.listname as listname,sfu.filepath as filepath,sfu.last_checked as last_checked,sfu.parsed_data as parsed_data,s.rootpath as series_rootpath"
+		q.DefaultQuery = " where sfu.id like ? or sfu.listname like ? or sfu.filepath like ?"
+		q.DefaultQueryParamCount = 3
+		q.DefaultOrderBy = " order by sfu.id desc"
+		q.Object = SerieFileUnmatched{}
+	case "movie_file_unmatcheds":
+		q.Table = "movie_file_unmatcheds mfu LEFT JOIN movies m ON mfu.listname = m.listname"
+		q.DefaultColumns = "mfu.id as id,mfu.created_at as created_at,mfu.updated_at as updated_at,mfu.listname as listname,mfu.filepath as filepath,mfu.last_checked as last_checked,mfu.parsed_data as parsed_data,m.quality_profile as movie_quality_profile"
+		q.DefaultQuery = " where mfu.id like ? or mfu.listname like ? or mfu.filepath like ?"
+		q.DefaultQueryParamCount = 3
+		q.DefaultOrderBy = " order by mfu.id desc"
+		q.Object = MovieFileUnmatched{}
+	case "qualities":
+		q.Table = "qualities"
+		q.DefaultColumns = "id,created_at,updated_at,name,regex,strings,type,priority,regexgroup,use_regex"
+		q.DefaultQuery = " where id like ? or name like ? or regex like ? or strings like ? or type like ? or regexgroup like ?"
+		q.DefaultQueryParamCount = 6
+		q.DefaultOrderBy = " order by id desc"
+		q.Object = Qualities{}
+	case "movie_files":
+		q.Table = "movie_files mf LEFT JOIN dbmovies dm ON mf.dbmovie_id = dm.id"
+		q.DefaultColumns = "mf.id as id,mf.location as location,mf.filename as filename,mf.extension as extension,mf.quality_profile as quality_profile,mf.created_at as created_at,mf.updated_at as updated_at,mf.resolution_id as resolution_id,mf.quality_id as quality_id,mf.codec_id as codec_id,mf.audio_id as audio_id,mf.movie_id as movie_id,mf.dbmovie_id as dbmovie_id,mf.height as height,mf.width as width,mf.proper as proper,mf.extended as extended,mf.repack as repack,dm.title as movie_title"
+		q.DefaultQuery = " where mf.id like ? or mf.location like ? or mf.filename like ? or mf.extension like ? or mf.quality_profile like ? or mf.movie_id like ? or mf.dbmovie_id like ?"
+		q.DefaultQueryParamCount = 7
+		q.DefaultOrderBy = " order by mf.id desc"
+		q.Object = MovieFile{}
+	case "serie_episode_files":
+		q.Table = "serie_episode_files sef LEFT JOIN dbserie_episodes dse ON sef.dbserie_episode_id = dse.id"
+		q.DefaultColumns = "sef.id as id,sef.location as location,sef.filename as filename,sef.extension as extension,sef.quality_profile as quality_profile,sef.created_at as created_at,sef.updated_at as updated_at,sef.resolution_id as resolution_id,sef.quality_id as quality_id,sef.codec_id as codec_id,sef.audio_id as audio_id,sef.serie_id as serie_id,sef.serie_episode_id as serie_episode_id,sef.dbserie_episode_id as dbserie_episode_id,sef.dbserie_id as dbserie_id,sef.height as height,sef.width as width,sef.proper as proper,sef.extended as extended,sef.repack as repack,dse.title as episode_title"
+		q.DefaultQuery = " where sef.id like ? or sef.location like ? or sef.filename like ? or sef.extension like ? or sef.quality_profile like ? or sef.serie_id like ? or sef.serie_episode_id like ? or sef.dbserie_episode_id like ? or sef.dbserie_id like ?"
+		q.DefaultQueryParamCount = 9
+		q.DefaultOrderBy = " order by sef.id desc"
+		q.Object = SerieEpisodeFile{}
+	case "movie_histories":
+		q.Table = "movie_histories mh LEFT JOIN dbmovies dm ON mh.dbmovie_id = dm.id"
+		q.DefaultColumns = "mh.id as id,mh.title as title,mh.url as url,mh.indexer as indexer,mh.type as type,mh.target as target,mh.quality_profile as quality_profile,mh.created_at as created_at,mh.updated_at as updated_at,mh.downloaded_at as downloaded_at,mh.resolution_id as resolution_id,mh.quality_id as quality_id,mh.codec_id as codec_id,mh.audio_id as audio_id,mh.movie_id as movie_id,mh.dbmovie_id as dbmovie_id,mh.blacklisted as blacklisted,dm.title as movie_title"
+		q.DefaultQuery = " where mh.id like ? or mh.title like ? or mh.url like ? or mh.indexer like ? or mh.type like ? or mh.target like ? or mh.quality_profile like ? or mh.movie_id like ? or mh.dbmovie_id like ?"
+		q.DefaultQueryParamCount = 9
+		q.DefaultOrderBy = " order by mh.id desc"
+		q.Object = MovieHistory{}
+	case "serie_episode_histories":
+		q.Table = "serie_episode_histories seh LEFT JOIN dbserie_episodes dse ON seh.dbserie_episode_id = dse.id"
+		q.DefaultColumns = "seh.id as id,seh.title as title,seh.url as url,seh.indexer as indexer,seh.type as type,seh.target as target,seh.quality_profile as quality_profile,seh.created_at as created_at,seh.updated_at as updated_at,seh.downloaded_at as downloaded_at,seh.resolution_id as resolution_id,seh.quality_id as quality_id,seh.codec_id as codec_id,seh.audio_id as audio_id,seh.serie_id as serie_id,seh.serie_episode_id as serie_episode_id,seh.dbserie_episode_id as dbserie_episode_id,seh.dbserie_id as dbserie_id,seh.blacklisted as blacklisted,dse.title as episode_title"
+		q.DefaultQuery = " where seh.id like ? or seh.title like ? or seh.url like ? or seh.indexer like ? or seh.type like ? or seh.target like ? or seh.quality_profile like ? or seh.serie_id like ? or seh.serie_episode_id like ? or seh.dbserie_episode_id like ? or seh.dbserie_id like ?"
+		q.DefaultQueryParamCount = 11
+		q.DefaultOrderBy = " order by seh.id desc"
+		q.Object = SerieEpisodeHistory{}
+	}
+	return q
 }
 
 // QueryDbmovieTitle queries the dbmovie_titles table using the provided Querywithargs struct and arguments.
@@ -343,7 +471,7 @@ func QueryDbmovieTitle(qu Querywithargs, args ...any) []DbmovieTitle {
 // dbserie data and scan it into the Dbserie struct.
 // Returns an error if there was a problem retrieving the data.
 func GetDbserieByID(id *uint) (*Dbserie, error) {
-	return structscan[Dbserie](
+	return Structscan[Dbserie](
 		"select id,created_at,updated_at,seriename,aliases,season,status,firstaired,network,runtime,language,genre,overview,rating,siterating,siterating_count,slug,imdb_id,thetvdb_id,freebase_m_id,freebase_id,tvrage_id,facebook,instagram,twitter,banner,poster,fanart,identifiedby, trakt_id from dbseries where id = ?",
 		false,
 		id,
@@ -416,7 +544,7 @@ func GetSeries(qu Querywithargs, args ...any) (*Serie, error) {
 	if qu.QueryString == "" {
 		qu.buildquery()
 	}
-	return structscan[Serie](qu.QueryString, false, args...)
+	return Structscan[Serie](qu.QueryString, false, args...)
 }
 
 // GetSerieEpisodes retrieves a SerieEpisode struct based on the provided Querywithargs.
@@ -430,7 +558,7 @@ func GetSerieEpisodes(qu Querywithargs, args ...any) (*SerieEpisode, error) {
 	if qu.QueryString == "" {
 		qu.buildquery()
 	}
-	return structscan[SerieEpisode](qu.QueryString, false, args...)
+	return Structscan[SerieEpisode](qu.QueryString, false, args...)
 }
 
 // QuerySerieEpisodes retrieves all SerieEpisode records for the given series listname.
@@ -460,7 +588,7 @@ func GetMovies(qu Querywithargs, args ...any) (*Movie, error) {
 	if qu.QueryString == "" {
 		qu.buildquery()
 	}
-	return structscan[Movie](qu.QueryString, false, args...)
+	return Structscan[Movie](qu.QueryString, false, args...)
 }
 
 // QueryMovies retrieves all Movie records matching the given listname.
@@ -806,7 +934,7 @@ func queryxContext(querystring string, imdb bool, args []any) (*sqlx.Rows, error
 	return stmtp.QueryxContext(sqlCTX, args...)
 }
 
-// Getdatarow0 is a generic function that executes a SQL query with the provided arguments and
+// Getdatarow is a generic function that executes a SQL query with the provided arguments and
 // returns the result as a value of type uint. It uses the GlobalCache to cache the prepared
 // statement for the given query string and database connection.
 //
@@ -892,13 +1020,81 @@ func Getrowssize[t any](imdb bool, sizeq, querystring string, args ...any) []t {
 func GetrowsN[t any](imdb bool, size uint, querystring string, args ...any) []t {
 	readWriteMu.RLock()
 	defer readWriteMu.RUnlock()
-	rows, err := queryContext(querystring, imdb, args)
+	rows, err := queryxContext(querystring, imdb, args)
 	if err != nil || rows == nil {
 		logSQLError(err, querystring)
 		return nil
 	}
 	defer rows.Close()
 	return queryGenericsT[t](size, rows, querystring)
+}
+
+func GetrowsType(o any, imdb bool, size uint, querystring string, args ...any) []map[string]any {
+	readWriteMu.RLock()
+	defer readWriteMu.RUnlock()
+	rows, err := queryxContext(querystring, imdb, args)
+	if err != nil || rows == nil {
+		logSQLError(err, querystring)
+		return nil
+	}
+	defer rows.Close()
+
+	capacity := size
+	if capacity == 0 {
+		capacity = 16 // reasonable default
+	}
+	result := make([]map[string]any, 0, capacity)
+
+	for rows.Next() {
+		o := make(map[string]any)
+		err := rows.MapScan(o)
+		if err == nil {
+			result = append(result, o)
+		}
+	}
+
+	logSQLError(rows.Err(), querystring)
+	return result
+}
+
+func GetrowsTypeOLD(o any, imdb bool, size uint, querystring string, args ...any) []map[string]any {
+	readWriteMu.RLock()
+	defer readWriteMu.RUnlock()
+	rows, err := queryxContext(querystring, imdb, args)
+	if err != nil || rows == nil {
+		logSQLError(err, querystring)
+		return nil
+	}
+	defer rows.Close()
+
+	capacity := size
+	if capacity == 0 {
+		capacity = 16 // reasonable default
+	}
+	result := make([]map[string]any, 0, capacity)
+
+	columns, _ := rows.Columns()
+	count := len(columns)
+	values := make([]any, count)
+	valuePtrs := make([]any, count)
+
+	for rows.Next() {
+		for i := range columns {
+			valuePtrs[i] = &values[i]
+		}
+
+		rows.Scan(valuePtrs...)
+
+		obj := map[string]any{}
+		for i, column := range columns {
+			obj[column] = values[i]
+		}
+
+		result = append(result, obj)
+	}
+
+	logSQLError(rows.Err(), querystring)
+	return result
 }
 
 // GetrowsNuncached executes a SQL query and returns the results as a slice of the specified type T.
@@ -913,7 +1109,7 @@ func GetrowsNuncached[t DbstaticTwoUint | DbstaticOneStringOneUInt | uint](
 ) []t {
 	readWriteMu.RLock()
 	defer readWriteMu.RUnlock()
-	rows, err := dbData.QueryContext(sqlCTX, querystring, args...)
+	rows, err := dbData.QueryxContext(sqlCTX, querystring, args...)
 	if err != nil {
 		logSQLError(err, querystring)
 		return nil

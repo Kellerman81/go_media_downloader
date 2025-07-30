@@ -94,7 +94,7 @@ func TestDispatch(t *testing.T) {
 		name      string
 		jobName   string
 		queue     string
-		fn        func(uint32)
+		fn        func(uint32) error
 		wantError bool
 	}{
 		{
@@ -108,8 +108,9 @@ func TestDispatch(t *testing.T) {
 			name:    "valid job",
 			jobName: "test_job",
 			queue:   QueueData,
-			fn: func(uint32) {
+			fn: func(uint32) error {
 				time.Sleep(time.Millisecond)
+				return nil
 			},
 			wantError: false,
 		},
@@ -117,8 +118,9 @@ func TestDispatch(t *testing.T) {
 			name:    "duplicate job",
 			jobName: "test_job",
 			queue:   QueueData,
-			fn: func(uint32) {
+			fn: func(uint32) error {
 				time.Sleep(time.Millisecond)
+				return nil
 			},
 			wantError: true,
 		},
@@ -185,8 +187,11 @@ func TestCheckQueue(t *testing.T) {
 
 func TestExecuteJob(t *testing.T) {
 	executed := false
-	config.GetSettingsGeneral().Jobs = map[string]func(uint32){
-		"test_job": func(uint32) { executed = true },
+	config.GetSettingsGeneral().Jobs = map[string]func(uint32) error{
+		"test_job": func(uint32) error {
+			executed = true
+			return nil
+		},
 	}
 
 	tests := []struct {

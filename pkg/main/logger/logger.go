@@ -168,6 +168,10 @@ func LogDynamicany1String(typev, msg, field1, value1 string) {
 	Logtype(typev, 1).Str(field1, value1).Msg(msg)
 }
 
+func LogDynamicany1Any(typev, msg, field1 string, value1 any) {
+	Logtype(typev, 1).Any(field1, value1).Msg(msg)
+}
+
 // LogDynamicany1Int logs a message with a dynamic int field.
 // The 'typev' parameter specifies the log level (info, debug, error, fatal, warn, panic).
 // The 'msg' parameter is the log message.

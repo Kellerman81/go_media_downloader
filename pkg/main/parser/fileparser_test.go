@@ -7,6 +7,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/worker"
 )
 
 func TestBuildPrioStr(t *testing.T) {
@@ -152,14 +153,43 @@ func TestLoadDBPatterns(t *testing.T) {
 }
 
 func TestGenerateAllQualityPriorities(t *testing.T) {
+	config.LoadCfgDB(false)
 	database.InitCache()
-
-	// Clear existing priorities
-	allQualityPrioritiesT = nil
-	allQualityPrioritiesWantedT = nil
-
-	// Run generation
+	general := config.GetSettingsGeneral()
+	worker.InitWorkerPools(
+		general.WorkerSearch,
+		general.WorkerFiles,
+		general.WorkerMetadata,
+		general.WorkerRSS,
+		general.WorkerIndexer,
+	)
+	logger.InitLogger(logger.Config{
+		LogLevel:      general.LogLevel,
+		LogFileSize:   general.LogFileSize,
+		LogFileCount:  general.LogFileCount,
+		LogCompress:   general.LogCompress,
+		LogToFileOnly: general.LogToFileOnly,
+		LogColorize:   general.LogColorize,
+		TimeFormat:    general.TimeFormat,
+		TimeZone:      general.TimeZone,
+		LogZeroValues: general.LogZeroValues,
+	})
+	err := database.InitDB(general.DBLogLevel)
+	if err != nil {
+		logger.LogDynamicanyErr("fatal", "Database Initialization Failed", err)
+	}
+	err = database.InitImdbdb()
+	if err != nil {
+		logger.LogDynamicanyErr("fatal", "IMDB Database Initialization Failed", err)
+	}
+	database.SetVars()
 	GenerateAllQualityPriorities()
+
+	logger.LogDynamicany0("info", "Load DB Patterns")
+	LoadDBPatterns()
+
+	logger.LogDynamicany0("info", "Load DB Cutoff")
+	GenerateCutoffPriorities()
 
 	// Verify priorities were generated
 	if len(allQualityPrioritiesT) == 0 {

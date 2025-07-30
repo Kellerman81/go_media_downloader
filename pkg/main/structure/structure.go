@@ -255,7 +255,18 @@ func (s *Organizer) ParseFileAdditional(
 	return s.validateLanguage(m, deletewronglanguage, o)
 }
 
-// validateRuntime checks if the runtime matches expected values.
+// validateRuntime checks if the parsed video file runtime matches the expected runtime
+// from the database. It handles special cases for series (multiplying by episode count)
+// and applies tolerance settings for runtime differences. If the runtime differs beyond
+// the configured threshold, it can optionally delete the file and return an error.
+//
+// Parameters:
+//   - m: ParseInfo containing parsed video metadata including runtime
+//   - runtime: Expected runtime in minutes from database
+//   - checkruntime: Flag to enable/disable runtime validation
+//   - o: Organizer data containing file paths for cleanup operations
+//
+// Returns error if runtime validation fails or file cleanup encounters issues.
 func (s *Organizer) validateRuntime(
 	m *database.ParseInfo,
 	runtime uint,
@@ -311,7 +322,9 @@ func (s *Organizer) validateRuntime(
 	return nil
 }
 
-// Helper function for absolute value.
+// abs returns the absolute value of an integer.
+// This helper function is used in runtime validation to calculate
+// the difference between expected and actual runtimes.
 func abs(x int) int {
 	if x < 0 {
 		return -x
@@ -319,7 +332,17 @@ func abs(x int) int {
 	return x
 }
 
-// validateLanguage checks if the language is allowed.
+// validateLanguage validates the audio languages of a parsed video file against
+// the configured allowed languages list. If the file contains languages not in
+// the allowed list and deletion is enabled, it will remove the file and clean up
+// the folder. This function helps enforce language preferences for media organization.
+//
+// Parameters:
+//   - m: ParseInfo containing detected audio languages from the video file
+//   - deletewronglanguage: Flag to enable deletion of files with wrong languages
+//   - o: Organizer data containing file paths for cleanup operations
+//
+// Returns error if language validation fails or file cleanup encounters issues.
 func (s *Organizer) validateLanguage(
 	m *database.ParseInfo,
 	deletewronglanguage bool,
@@ -376,7 +399,10 @@ func trimStringInclAfterString(s, search string) string {
 	return s
 }
 
-// StringRemoveAllRunes removes all occurrences of the rune r from s.
+// stringRemoveAllRunes efficiently removes all occurrences of a specific byte
+// from a string. It uses a buffer pool for memory efficiency and only allocates
+// when the byte is actually found in the string. This function is used to clean
+// file paths and names by removing problematic characters like forward slashes.
 func stringRemoveAllRunes(s string, r byte) string {
 	if s == "" || !strings.ContainsRune(s, rune(r)) {
 		return s
@@ -1376,7 +1402,7 @@ func OrganizeSingleFolder(
 	defaulttemplate string,
 	checkruntime, deleteWrongLanguage bool,
 	manualid uint,
-) {
+) error {
 	s := NewStructure(
 		cfgp,
 		data.TemplatePath,
@@ -1392,11 +1418,11 @@ func OrganizeSingleFolder(
 			logger.StrConfig,
 			data.TemplatePath,
 		)
-		return
+		return logger.ErrNotFound
 	}
 	defer s.Close()
 
-	filepath.WalkDir(folder, func(fpath string, info fs.DirEntry, errw error) error {
+	return filepath.WalkDir(folder, func(fpath string, info fs.DirEntry, errw error) error {
 		if errw != nil {
 			return errw
 		}

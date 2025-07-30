@@ -72,7 +72,7 @@ RUN ln -fs /usr/share/zoneinfo/Europe/Berlin /etc/localtime && \
 RUN groupadd -r appuser && useradd -r -g appuser appuser
 
 # Create application directories
-RUN mkdir -p /app/{config,databases,logs,backup,temp,docs,schema} && \
+RUN mkdir -p /app/{config,databases,logs,backup,temp,docs,schema,static} && \
     chown -R appuser:appuser /app
 
 WORKDIR /app
@@ -85,6 +85,7 @@ COPY --chown=appuser:appuser ./config/ /app/config/
 COPY --chown=appuser:appuser ./databases/ /app/databases/
 COPY --chown=appuser:appuser ./docs/ /app/docs/
 COPY --chown=appuser:appuser ./schema/ /app/schema/
+COPY --chown=appuser:appuser ./static/ /app/static/
 COPY --chown=appuser:appuser ./LICENSE /app/LICENSE
 COPY --chown=appuser:appuser ./README.md /app/README.md
 

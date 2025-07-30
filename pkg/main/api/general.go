@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -22,9 +23,14 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/scanner"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/structure"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/worker"
+	"github.com/PuerkitoBio/goquery"
 	gin "github.com/gin-gonic/gin"
 )
 
+// AddGeneralRoutes configures general API routes for the application.
+// It sets up endpoints for Trakt integration, debug stats, queue management,
+// database operations, parsing utilities, quality management, and configuration.
+// All routes require API key authentication.
 func AddGeneralRoutes(routerapi *gin.RouterGroup) {
 	routerapi.Use(checkauth)
 	{
@@ -41,6 +47,7 @@ func AddGeneralRoutes(routerapi *gin.RouterGroup) {
 		routerapi.GET("/db/close", apiDBClose)
 		routerapi.GET("/db/integrity", apiDBIntegrity)
 		routerapi.GET("/db/backup", apiDBBackup)
+		routerapi.DELETE("/db/delete/:name/:id", apiDBDelete)
 		routerapi.DELETE("/db/clear/:name", apiDBClear)
 		routerapi.DELETE("/db/clearcache", apiDBClearCache)
 		routerapi.DELETE("/db/oldjobs", apiDBRemoveOldJobs)
@@ -68,6 +75,340 @@ func AddGeneralRoutes(routerapi *gin.RouterGroup) {
 
 		routerapi.GET("/config/type/:type", apiListConfigType)
 	}
+}
+
+// AddWebRoutes sets up web interface routes for the admin panel.
+// It configures static file serving and admin pages for configuration
+// management including general settings, quality profiles, downloaders,
+// indexers, lists, media settings, paths, notifications, regex patterns,
+// and schedulers. Includes both GET routes for displaying forms and
+// POST routes for handling updates.
+func AddWebRoutes(routerapi *gin.RouterGroup) {
+	// Start session cleanup goroutine
+	startSessionCleanup()
+
+	// Apply authentication middleware to all routes
+	routerapi.Use(protectAdminRoutes)
+
+	// Public routes (no authentication required)
+	routerapi.Static("/static", "./static")
+	routerapi.GET("/", handleRootRedirect)
+	routerapi.GET("/login", loginPage)
+	routerapi.POST("/login", handleLogin)
+	routerapi.GET("/logout", handleLogout)
+
+	// All admin and manage routes are automatically protected by the middleware
+	routerapi.GET("/admin", apiAdminInterface)
+	routerapi.GET("/admin/:configtype", adminPageConfig)
+	routerapi.POST("/admin/:configtype/update", HandleConfigUpdate)
+	routerapi.GET("/admin/database/:tablename", adminPageDatabase)
+
+	// Handle POST requests to database routes - these should not be used for form submissions
+	// but provide helpful error message to prevent 404s
+	routerapi.POST("/admin/database/:name", func(ctx *gin.Context) {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "Form submission should use /api/admin/table/{name}/update/{id} or /api/admin/table/{name}/insert endpoints",
+		})
+	})
+
+	// routerapi.GET("/admin/table", apiAdminTableDataForm)
+	routerapi.Any("/admin/tablejson/:table", apiAdminTableDataJson)
+	// routerapi.POST("/admin/table", apiAdminTableDataForm)
+	routerapi.GET("/admin/tableedit/:name/:id", apiAdminTableDataEditForm)
+	// routerapi.GET("/admin/table/:name", apiAdminTableData)
+	// routerapi.GET("/admin/table/:name/schema", apiAdminTableSchema)
+	routerapi.POST("/admin/table/:name/insert", apiAdminTableInsert)
+	routerapi.POST("/admin/table/:name/update/:index", apiAdminTableUpdate)
+	routerapi.POST("/admin/table/:name/delete/:index", apiAdminTableDelete)
+	routerapi.Any("/admin/dropdown/:table/:field", apiAdminDropdownData)
+
+	routerapi.Any("/manage/media/form/:typev", func(ctx *gin.Context) {
+		if err := ctx.Request.ParseForm(); err != nil {
+			ctx.String(http.StatusOK, "")
+			return
+		}
+		formKeys := make(map[any]bool)
+		for key := range ctx.Request.PostForm {
+			if (strings.Contains(key, "_Name")) == false || (strings.Contains(key, "media_main_"+ctx.Param("typev")+"_")) == false {
+				continue
+			}
+			formKeys[strings.Split(key, "_")[3]] = true
+		}
+		form := renderMediaForm(ctx.Param("typev"), &config.MediaTypeConfig{Name: "new" + strconv.Itoa(len(formKeys))}, getCSRFToken(ctx))
+		var buf strings.Builder
+		form.Render(&buf)
+		ctx.Header("Content-Type", "text/html")
+		ctx.String(http.StatusOK, buf.String())
+	})
+	routerapi.Any("/manage/downloader/form", func(ctx *gin.Context) {
+		if err := ctx.Request.ParseForm(); err != nil {
+			ctx.String(http.StatusOK, "")
+			return
+		}
+		formKeys := make(map[any]bool)
+		for key := range ctx.Request.PostForm {
+			if (strings.Contains(key, "_Name")) == false || (strings.Contains(key, "downloader_")) == false {
+				continue
+			}
+			formKeys[strings.Split(key, "_")[1]] = true
+		}
+		form := renderDownloaderForm(&config.DownloaderConfig{Name: "new" + strconv.Itoa(len(formKeys))})
+		var buf strings.Builder
+		form.Render(&buf)
+		ctx.Header("Content-Type", "text/html")
+		ctx.String(http.StatusOK, buf.String())
+	})
+	routerapi.Any("/manage/lists/form", func(ctx *gin.Context) {
+		if err := ctx.Request.ParseForm(); err != nil {
+			ctx.String(http.StatusOK, "")
+			return
+		}
+		formKeys := make(map[any]bool)
+		for key := range ctx.Request.PostForm {
+			if (strings.Contains(key, "_Name")) == false || (strings.Contains(key, "lists_")) == false {
+				continue
+			}
+			formKeys[strings.Split(key, "_")[1]] = true
+		}
+		form := renderListsForm(&config.ListsConfig{Name: "new" + strconv.Itoa(len(formKeys))})
+		var buf strings.Builder
+		form.Render(&buf)
+		ctx.Header("Content-Type", "text/html")
+		ctx.String(http.StatusOK, buf.String())
+	})
+	routerapi.Any("/manage/indexers/form", func(ctx *gin.Context) {
+		if err := ctx.Request.ParseForm(); err != nil {
+			ctx.String(http.StatusOK, "")
+			return
+		}
+		formKeys := make(map[any]bool)
+		for key := range ctx.Request.PostForm {
+			if (strings.Contains(key, "_Name")) == false || (strings.Contains(key, "indexers_")) == false {
+				continue
+			}
+			formKeys[strings.Split(key, "_")[1]] = true
+		}
+		form := renderIndexersForm(&config.IndexersConfig{Name: "new" + strconv.Itoa(len(formKeys))})
+		var buf strings.Builder
+		form.Render(&buf)
+		ctx.Header("Content-Type", "text/html")
+		ctx.String(http.StatusOK, buf.String())
+	})
+	routerapi.Any("/manage/paths/form", func(ctx *gin.Context) {
+		if err := ctx.Request.ParseForm(); err != nil {
+			ctx.String(http.StatusOK, "")
+			return
+		}
+		formKeys := make(map[any]bool)
+		for key := range ctx.Request.PostForm {
+			if (strings.Contains(key, "_Name")) == false || (strings.Contains(key, "paths_")) == false {
+				continue
+			}
+			formKeys[strings.Split(key, "_")[1]] = true
+		}
+		form := renderPathsForm(&config.PathsConfig{Name: "new" + strconv.Itoa(len(formKeys))})
+		var buf strings.Builder
+		form.Render(&buf)
+		ctx.Header("Content-Type", "text/html")
+		ctx.String(http.StatusOK, buf.String())
+	})
+	routerapi.Any("/manage/notification/form", func(ctx *gin.Context) {
+		if err := ctx.Request.ParseForm(); err != nil {
+			ctx.String(http.StatusOK, "")
+			return
+		}
+		formKeys := make(map[any]bool)
+		for key := range ctx.Request.PostForm {
+			if (strings.Contains(key, "_Name")) == false || (strings.Contains(key, "notifications_")) == false {
+				continue
+			}
+			formKeys[strings.Split(key, "_")[1]] = true
+		}
+		form := renderNotificationForm(&config.NotificationConfig{Name: "new" + strconv.Itoa(len(formKeys))})
+		var buf strings.Builder
+		form.Render(&buf)
+		ctx.Header("Content-Type", "text/html")
+		ctx.String(http.StatusOK, buf.String())
+	})
+	routerapi.Any("/manage/regex/form", func(ctx *gin.Context) {
+		if err := ctx.Request.ParseForm(); err != nil {
+			ctx.String(http.StatusOK, "")
+			return
+		}
+		formKeys := make(map[any]bool)
+		for key := range ctx.Request.PostForm {
+			if (strings.Contains(key, "_Name")) == false || (strings.Contains(key, "regex_")) == false {
+				continue
+			}
+			formKeys[strings.Split(key, "_")[1]] = true
+		}
+		form := renderRegexForm(&config.RegexConfig{Name: "new" + strconv.Itoa(len(formKeys))})
+		var buf strings.Builder
+		form.Render(&buf)
+		ctx.Header("Content-Type", "text/html")
+		ctx.String(http.StatusOK, buf.String())
+	})
+	routerapi.Any("/manage/quality/form", func(ctx *gin.Context) {
+		if err := ctx.Request.ParseForm(); err != nil {
+			ctx.String(http.StatusOK, "")
+			return
+		}
+		formKeys := make(map[any]bool)
+		for key := range ctx.Request.PostForm {
+			if (strings.Contains(key, "_Name")) == false || (strings.Contains(key, "quality_main_")) == false {
+				continue
+			}
+			formKeys[strings.Split(key, "_")[2]] = true
+		}
+		form := renderQualityForm(&config.QualityConfig{Name: "new" + strconv.Itoa(len(formKeys))}, getCSRFToken(ctx))
+		var buf strings.Builder
+		form.Render(&buf)
+		ctx.Header("Content-Type", "text/html")
+		ctx.String(http.StatusOK, buf.String())
+	})
+	routerapi.Any("/manage/qualityreorder/form/:typev", func(ctx *gin.Context) {
+		var count int
+		a, err := goquery.NewDocumentFromReader(ctx.Request.Body)
+		if err == nil {
+			a.Find("#qualityContainer").Children().Each(
+				func(i int, s *goquery.Selection) {
+					s.Find(".qualityreorder").Each(func(i int, s *goquery.Selection) {
+						s.Find("array-item card").Each(
+							func(i int, s *goquery.Selection) {
+								count++
+							},
+						)
+					})
+				},
+			)
+		}
+		form := renderQualityReorderForm(count, ctx.Param("typev"), &config.QualityReorderConfig{})
+		var buf strings.Builder
+		form.Render(&buf)
+		ctx.Header("Content-Type", "text/html")
+		ctx.String(http.StatusOK, buf.String())
+	})
+	routerapi.Any("/manage/qualityindexer/form/:typev", func(ctx *gin.Context) {
+		var count int
+		a, err := goquery.NewDocumentFromReader(ctx.Request.Body)
+		if err == nil {
+			a.Find("#qualityContainer").Children().Each(
+				func(i int, s *goquery.Selection) {
+					s.Find(".qualityindexer").Each(func(i int, s *goquery.Selection) {
+						s.Find("array-item card").Each(
+							func(i int, s *goquery.Selection) {
+								count++
+							},
+						)
+					})
+				},
+			)
+		}
+		form := renderQualityIndexerForm(count, ctx.Param("typev"), &config.QualityIndexerConfig{})
+		var buf strings.Builder
+		form.Render(&buf)
+		ctx.Header("Content-Type", "text/html")
+		ctx.String(http.StatusOK, buf.String())
+	})
+	routerapi.Any("/manage/scheduler/form", func(ctx *gin.Context) {
+		if err := ctx.Request.ParseForm(); err != nil {
+			ctx.String(http.StatusOK, "")
+			return
+		}
+		formKeys := make(map[any]bool)
+		for key := range ctx.Request.PostForm {
+			if (strings.Contains(key, "_Name")) == false || (strings.Contains(key, "scheduler_")) == false {
+				continue
+			}
+			formKeys[strings.Split(key, "_")[1]] = true
+		}
+		form := renderSchedulerForm(&config.SchedulerConfig{Name: "new" + strconv.Itoa(len(formKeys))})
+		var buf strings.Builder
+		form.Render(&buf)
+		ctx.Header("Content-Type", "text/html")
+		ctx.String(http.StatusOK, buf.String())
+	})
+	routerapi.Any("/manage/mediadata/form/:prefix/:configv", func(ctx *gin.Context) {
+		if err := ctx.Request.ParseForm(); err != nil {
+			ctx.String(http.StatusOK, "")
+			return
+		}
+		prefix := "media_" + ctx.Param("prefix") + "_" + ctx.Param("configv") + "_data"
+		logger.LogDynamicany1String("info", "prefix", "prefix", prefix)
+		formKeys := make(map[any]bool)
+		for key := range ctx.Request.PostForm {
+			logger.LogDynamicany1String("info", "key", "key", key)
+			if (strings.Contains(key, "_TemplatePath")) == false || (strings.Contains(key, prefix+"_")) == false {
+				continue
+			}
+			logger.LogDynamicany1String("info", "key", "splitted", fmt.Sprintf("%v", strings.Split(key, "_")))
+			formKeys[strings.Split(key, "_")[4]] = true
+		}
+		jv, _ := json.Marshal(formKeys)
+		logger.LogDynamicany1String("info", "keys", "keys", string(jv))
+		form := renderMediaDataForm(prefix, len(formKeys), &config.MediaDataConfig{})
+		var buf strings.Builder
+		form.Render(&buf)
+		ctx.Header("Content-Type", "text/html")
+		ctx.String(http.StatusOK, buf.String())
+	})
+	routerapi.Any("/manage/mediaimport/form/:prefix/:configv", func(ctx *gin.Context) {
+		if err := ctx.Request.ParseForm(); err != nil {
+			ctx.String(http.StatusOK, "")
+			return
+		}
+		prefix := "media_" + ctx.Param("prefix") + "_" + ctx.Param("configv") + "_dataimport"
+		formKeys := make(map[any]bool)
+		for key := range ctx.Request.PostForm {
+			if (strings.Contains(key, "_TemplatePath")) == false || (strings.Contains(key, prefix+"_")) == false {
+				continue
+			}
+			formKeys[strings.Split(key, "_")[4]] = true
+		}
+		form := renderMediaDataImportForm(prefix, len(formKeys), &config.MediaDataImportConfig{})
+		var buf strings.Builder
+		form.Render(&buf)
+		ctx.Header("Content-Type", "text/html")
+		ctx.String(http.StatusOK, buf.String())
+	})
+	routerapi.Any("/manage/medianotification/form/:prefix/:configv", func(ctx *gin.Context) {
+		if err := ctx.Request.ParseForm(); err != nil {
+			ctx.String(http.StatusOK, "")
+			return
+		}
+		prefix := "media_" + ctx.Param("prefix") + "_" + ctx.Param("configv") + "_notification"
+		formKeys := make(map[any]bool)
+		for key := range ctx.Request.PostForm {
+			if (strings.Contains(key, "_MapNotification")) == false || (strings.Contains(key, prefix+"_")) == false {
+				continue
+			}
+			formKeys[strings.Split(key, "_")[4]] = true
+		}
+		form := renderMediaNotificationForm(prefix, len(formKeys), &config.MediaNotificationConfig{})
+		var buf strings.Builder
+		form.Render(&buf)
+		ctx.Header("Content-Type", "text/html")
+		ctx.String(http.StatusOK, buf.String())
+	})
+	routerapi.Any("/manage/medialists/form/:prefix/:configv", func(ctx *gin.Context) {
+		if err := ctx.Request.ParseForm(); err != nil {
+			ctx.String(http.StatusOK, "")
+			return
+		}
+		prefix := "media_" + ctx.Param("prefix") + "_" + ctx.Param("configv") + "_lists"
+		formKeys := make(map[any]bool)
+		for key := range ctx.Request.PostForm {
+			if (strings.Contains(key, "_Name")) == false || (strings.Contains(key, prefix+"_")) == false {
+				continue
+			}
+			formKeys[strings.Split(key, "_")[4]] = true
+		}
+		form := renderMediaListsForm(prefix, len(formKeys), &config.MediaListsConfig{})
+		var buf strings.Builder
+		form.Render(&buf)
+		ctx.Header("Content-Type", "text/html")
+		ctx.String(http.StatusOK, buf.String())
+	})
 }
 
 type apiparse struct {
@@ -441,6 +782,24 @@ func apiDBIntegrity(ctx *gin.Context) {
 func apiDBClear(ctx *gin.Context) {
 	err := database.ExecNErr("DELETE from " + ctx.Param("name"))
 	database.ExecN("VACUUM")
+	if err == nil {
+		ctx.JSON(http.StatusOK, "ok")
+	} else {
+		ctx.JSON(http.StatusForbidden, err)
+	}
+}
+
+// @Summary      Delete Row from DB Table
+// @Description  Deletes a Row from a DB Table
+// @Tags         database
+// @Param        name  path      string  true  "Table Name"
+// @Param        id    path      string  true  "Row ID"
+// @Param        apikey query     string    true  "apikey"
+// @Success      200   {object}  string "returns ok"
+// @Failure      401   {object}  Jsonerror
+// @Router       /api/db/delete/{name}/{id} [delete].
+func apiDBDelete(ctx *gin.Context) {
+	err := database.ExecNErr("DELETE FROM "+ctx.Param("name")+" WHERE id = ?", ctx.Param("id"))
 	if err == nil {
 		ctx.JSON(http.StatusOK, "ok")
 	} else {
@@ -849,16 +1208,18 @@ func apiListConfigType(ctx *gin.Context) {
 			}
 		})
 	case logger.StrSerie:
-		config.RangeSettingsMedia(func(key string, cfgdata *config.MediaTypeConfig) {
+		config.RangeSettingsMedia(func(key string, cfgdata *config.MediaTypeConfig) error {
 			if strings.HasPrefix(key, right) {
 				list["serie_"+key] = cfgdata
 			}
+			return nil
 		})
 	case logger.StrMovie:
-		config.RangeSettingsMedia(func(key string, cfgdata *config.MediaTypeConfig) {
+		config.RangeSettingsMedia(func(key string, cfgdata *config.MediaTypeConfig) error {
 			if strings.HasPrefix(key, right) {
 				list["movie_"+key] = cfgdata
 			}
+			return nil
 		})
 	case "notification":
 		config.RangeSettingsNotification(func(key string, cfgdata *config.NotificationConfig) {

@@ -12,127 +12,127 @@ import (
 )
 
 type Movie struct {
-	QualityProfile string `db:"quality_profile"`
-	Listname       string
-	Rootpath       string
-	Lastscan       sql.NullTime
-	CreatedAt      time.Time `db:"created_at"`
-	UpdatedAt      time.Time `db:"updated_at"`
-	ID             uint
-	DbmovieID      uint `db:"dbmovie_id"`
-	Blacklisted    bool
-	QualityReached bool `db:"quality_reached"`
-	Missing        bool
-	DontUpgrade    bool `db:"dont_upgrade"`
-	DontSearch     bool `db:"dont_search"`
+	QualityProfile string       `db:"quality_profile" displayname:"Quality Settings" comment:"Movie quality settings"`
+	Listname       string       `displayname:"Configuration List" comment:"Configuration list name"`
+	Rootpath       string       `displayname:"Storage Path" comment:"Movie storage directory"`
+	Lastscan       sql.NullTime `displayname:"Last Scanned" comment:"Last scan timestamp"`
+	CreatedAt      time.Time    `db:"created_at" displayname:"Date Created" comment:"Record creation timestamp"`
+	UpdatedAt      time.Time    `db:"updated_at" displayname:"Last Updated" comment:"Last modification timestamp"`
+	ID             uint         `displayname:"Movie ID" comment:"Unique movie identifier"`
+	DbmovieID      uint         `db:"dbmovie_id" displayname:"Database Reference" comment:"Database movie reference"`
+	Blacklisted    bool         `displayname:"Is Blacklisted" comment:"Movie is blacklisted"`
+	QualityReached bool         `db:"quality_reached" displayname:"Quality Target Met" comment:"Target quality achieved"`
+	Missing        bool         `displayname:"Is Missing" comment:"Movie is missing"`
+	DontUpgrade    bool         `db:"dont_upgrade" displayname:"Upgrades Disabled" comment:"Disable quality upgrades"`
+	DontSearch     bool         `db:"dont_search" displayname:"Search Disabled" comment:"Disable new searches"`
 }
 
 type MovieFileUnmatched struct {
-	Listname    string
-	Filepath    string
-	ParsedData  string       `db:"parsed_data"`
-	LastChecked sql.NullTime `db:"last_checked"`
-	CreatedAt   time.Time    `db:"created_at"`
-	UpdatedAt   time.Time    `db:"updated_at"`
-	ID          uint
+	Listname    string       `displayname:"Configuration List" comment:"Configuration list name"`
+	Filepath    string       `displayname:"File Location" comment:"Unmatched file location"`
+	ParsedData  string       `db:"parsed_data" displayname:"Parse Results" comment:"File parsing results"`
+	LastChecked sql.NullTime `db:"last_checked" displayname:"Last Check" comment:"Last check timestamp"`
+	CreatedAt   time.Time    `db:"created_at" displayname:"Date Created" comment:"Record creation timestamp"`
+	UpdatedAt   time.Time    `db:"updated_at" displayname:"Last Updated" comment:"Last modification timestamp"`
+	ID          uint         `displayname:"Record ID" comment:"Unique record identifier"`
 }
 
 type ResultMovies struct {
 	Dbmovie
-	Listname       string
-	QualityProfile string `db:"quality_profile"`
-	Rootpath       string
-	Lastscan       sql.NullTime
-	DbmovieID      uint `db:"dbmovie_id"`
-	Blacklisted    bool
-	QualityReached bool `db:"quality_reached"`
-	Missing        bool
+	Listname       string       `displayname:"Configuration List" comment:"Configuration list name"`
+	QualityProfile string       `db:"quality_profile" displayname:"Quality Settings" comment:"Movie quality settings"`
+	Rootpath       string       `displayname:"Storage Path" comment:"Movie storage directory"`
+	Lastscan       sql.NullTime `displayname:"Last Scanned" comment:"Last scan timestamp"`
+	DbmovieID      uint         `db:"dbmovie_id" displayname:"Movie Reference" comment:"Database movie reference"`
+	Blacklisted    bool         `displayname:"Is Blacklisted" comment:"Movie is blacklisted"`
+	QualityReached bool         `db:"quality_reached" displayname:"Quality Target Met" comment:"Target quality achieved"`
+	Missing        bool         `displayname:"Is Missing" comment:"Movie is missing"`
 }
 
 type MovieFile struct {
-	Location       string
-	Filename       string
-	Extension      string
-	QualityProfile string    `db:"quality_profile"`
-	CreatedAt      time.Time `db:"created_at"`
-	UpdatedAt      time.Time `db:"updated_at"`
-	ResolutionID   uint      `db:"resolution_id"`
-	QualityID      uint      `db:"quality_id"`
-	CodecID        uint      `db:"codec_id"`
-	AudioID        uint      `db:"audio_id"`
-	MovieID        uint      `db:"movie_id"`
-	DbmovieID      uint      `db:"dbmovie_id"`
-	ID             uint
-	Height         uint16
-	Width          uint16
-	Proper         bool
-	Extended       bool
-	Repack         bool
+	Location       string    `displayname:"File Path" comment:"File storage path"`
+	Filename       string    `displayname:"File Name" comment:"File name only"`
+	Extension      string    `displayname:"File Type" comment:"File extension type"`
+	QualityProfile string    `db:"quality_profile" displayname:"Quality Settings" comment:"File quality settings"`
+	CreatedAt      time.Time `db:"created_at" displayname:"Date Created" comment:"Record creation timestamp"`
+	UpdatedAt      time.Time `db:"updated_at" displayname:"Last Updated" comment:"Last modification timestamp"`
+	ResolutionID   uint      `db:"resolution_id" displayname:"Video Resolution" comment:"Video resolution reference"`
+	QualityID      uint      `db:"quality_id" displayname:"Source Quality" comment:"Quality type reference"`
+	CodecID        uint      `db:"codec_id" displayname:"Video Codec" comment:"Video codec reference"`
+	AudioID        uint      `db:"audio_id" displayname:"Audio Codec" comment:"Audio codec reference"`
+	MovieID        uint      `db:"movie_id" displayname:"Parent Movie" comment:"Parent movie reference"`
+	DbmovieID      uint      `db:"dbmovie_id" displayname:"Movie Reference" comment:"Database movie reference"`
+	ID             uint      `displayname:"File ID" comment:"Unique file identifier"`
+	Height         uint16    `displayname:"Video Height" comment:"Video height pixels"`
+	Width          uint16    `displayname:"Video Width" comment:"Video width pixels"`
+	Proper         bool      `displayname:"Proper Release" comment:"Proper release flag"`
+	Extended       bool      `displayname:"Extended Cut" comment:"Extended cut flag"`
+	Repack         bool      `displayname:"Repack Release" comment:"Repack release flag"`
 }
 
 type MovieHistory struct {
-	Title          string
-	URL            string
-	Indexer        string
-	HistoryType    string `db:"type"`
-	Target         string
-	QualityProfile string    `db:"quality_profile"`
-	CreatedAt      time.Time `db:"created_at"`
-	UpdatedAt      time.Time `db:"updated_at"`
-	DownloadedAt   time.Time `db:"downloaded_at"`
-	ID             uint
-	ResolutionID   uint `db:"resolution_id"`
-	QualityID      uint `db:"quality_id"`
-	CodecID        uint `db:"codec_id"`
-	AudioID        uint `db:"audio_id"`
-	MovieID        uint `db:"movie_id"`
-	DbmovieID      uint `db:"dbmovie_id"`
-	Blacklisted    bool
+	Title          string    `displayname:"Release Title" comment:"Release title name"`
+	URL            string    `displayname:"Download URL" comment:"Download source URL"`
+	Indexer        string    `displayname:"Source Indexer" comment:"Source indexer name"`
+	HistoryType    string    `db:"type" displayname:"Media Type" comment:"Movie category type"`
+	Target         string    `displayname:"Target Path" comment:"Download target path"`
+	QualityProfile string    `db:"quality_profile" displayname:"Quality Settings" comment:"Quality settings used"`
+	CreatedAt      time.Time `db:"created_at" displayname:"Date Created" comment:"Record creation timestamp"`
+	UpdatedAt      time.Time `db:"updated_at" displayname:"Last Updated" comment:"Last modification timestamp"`
+	DownloadedAt   time.Time `db:"downloaded_at" displayname:"Download Date" comment:"Download completion timestamp"`
+	ID             uint      `displayname:"History ID" comment:"Unique history identifier"`
+	ResolutionID   uint      `db:"resolution_id" displayname:"Video Resolution" comment:"Video resolution reference"`
+	QualityID      uint      `db:"quality_id" displayname:"Source Quality" comment:"Quality type reference"`
+	CodecID        uint      `db:"codec_id" displayname:"Video Codec" comment:"Video codec reference"`
+	AudioID        uint      `db:"audio_id" displayname:"Audio Codec" comment:"Audio codec reference"`
+	MovieID        uint      `db:"movie_id" displayname:"Parent Movie" comment:"Parent movie reference"`
+	DbmovieID      uint      `db:"dbmovie_id" displayname:"Movie Reference" comment:"Database movie reference"`
+	Blacklisted    bool      `displayname:"Is Blacklisted" comment:"Entry is blacklisted"`
 }
 
 type Dbmovie struct {
-	Genres           string
-	OriginalLanguage string `db:"original_language"`
-	OriginalTitle    string `db:"original_title"`
-	Overview         string
-	Title            string
-	SpokenLanguages  string `db:"spoken_languages"`
-	Status           string
-	Tagline          string
-	ImdbID           string `db:"imdb_id"`
-	FreebaseMID      string `db:"freebase_m_id"`
-	FreebaseID       string `db:"freebase_id"`
-	FacebookID       string `db:"facebook_id"`
-	InstagramID      string `db:"instagram_id"`
-	TwitterID        string `db:"twitter_id"`
-	URL              string
-	Backdrop         string
-	Poster           string
-	Slug             string
-	ReleaseDate      sql.NullTime `db:"release_date"      json:"release_date" time_format:"2006-01-02" time_utc:"1"`
-	CreatedAt        time.Time    `db:"created_at"`
-	UpdatedAt        time.Time    `db:"updated_at"`
-	Popularity       float32
-	VoteAverage      float32 `db:"vote_average"`
-	Budget           int
-	Revenue          int
-	Runtime          int
-	TraktID          int `db:"trakt_id"`
-	MoviedbID        int `db:"moviedb_id"`
-	ID               uint
-	VoteCount        int32 `db:"vote_count"`
-	Year             uint16
-	Adult            bool
+	Genres           string       `displayname:"Genre Categories" comment:"Movie genre classification"`
+	OriginalLanguage string       `db:"original_language" displayname:"Original Language" comment:"Movie original language"`
+	OriginalTitle    string       `db:"original_title" displayname:"Original Title" comment:"Movie original title"`
+	Overview         string       `displayname:"Plot Summary" comment:"Movie plot summary"`
+	Title            string       `displayname:"Movie Title" comment:"Primary movie title"`
+	SpokenLanguages  string       `db:"spoken_languages" displayname:"Spoken Languages" comment:"Languages spoken in movie"`
+	Status           string       `displayname:"Release Status" comment:"Movie release status"`
+	Tagline          string       `displayname:"Movie Tagline" comment:"Movie promotional tagline"`
+	ImdbID           string       `db:"imdb_id" displayname:"IMDB Identifier" comment:"IMDB database identifier"`
+	FreebaseMID      string       `db:"freebase_m_id" displayname:"Freebase Machine ID" comment:"Freebase machine identifier"`
+	FreebaseID       string       `db:"freebase_id" displayname:"Freebase Identifier" comment:"Freebase database identifier"`
+	FacebookID       string       `db:"facebook_id" displayname:"Facebook ID" comment:"Facebook page identifier"`
+	InstagramID      string       `db:"instagram_id" displayname:"Instagram ID" comment:"Instagram profile identifier"`
+	TwitterID        string       `db:"twitter_id" displayname:"Twitter ID" comment:"Twitter profile identifier"`
+	URL              string       `displayname:"Movie URL" comment:"Movie information URL"`
+	Backdrop         string       `displayname:"Backdrop Image" comment:"Movie backdrop image"`
+	Poster           string       `displayname:"Poster Image" comment:"Movie poster image"`
+	Slug             string       `displayname:"URL Slug" comment:"URL friendly identifier"`
+	ReleaseDate      sql.NullTime `db:"release_date" json:"release_date" time_format:"2006-01-02" time_utc:"1" displayname:"Release Date" comment:"Movie release date"`
+	CreatedAt        time.Time    `db:"created_at" displayname:"Date Created" comment:"Record creation timestamp"`
+	UpdatedAt        time.Time    `db:"updated_at" displayname:"Last Updated" comment:"Last modification timestamp"`
+	Popularity       float32      `displayname:"Popularity Score" comment:"Movie popularity rating"`
+	VoteAverage      float32      `db:"vote_average" displayname:"User Rating" comment:"Average user rating"`
+	Budget           int          `displayname:"Production Budget" comment:"Movie production budget"`
+	Revenue          int          `displayname:"Box Office" comment:"Movie box office revenue"`
+	Runtime          int          `displayname:"Movie Duration" comment:"Movie runtime minutes"`
+	TraktID          int          `db:"trakt_id" displayname:"Trakt Identifier" comment:"Trakt database identifier"`
+	MoviedbID        int          `db:"moviedb_id" displayname:"MovieDB Identifier" comment:"MovieDB database identifier"`
+	ID               uint         `displayname:"Movie ID" comment:"Unique movie identifier"`
+	VoteCount        int32        `db:"vote_count" displayname:"Rating Votes" comment:"Number of user votes"`
+	Year             uint16       `displayname:"Release Year" comment:"Movie release year"`
+	Adult            bool         `displayname:"Adult Content" comment:"Adult content flag"`
 }
 
 type DbmovieTitle struct {
-	Title     string
-	Slug      string
-	Region    string
-	CreatedAt time.Time `db:"created_at"`
-	UpdatedAt time.Time `db:"updated_at"`
-	ID        uint
-	DbmovieID uint `db:"dbmovie_id"`
+	Title     string    `displayname:"Alternative Title" comment:"Alternative movie title"`
+	Slug      string    `displayname:"URL Slug" comment:"URL friendly identifier"`
+	Region    string    `displayname:"Regional Code" comment:"Title regional variant"`
+	CreatedAt time.Time `db:"created_at" displayname:"Date Created" comment:"Record creation timestamp"`
+	UpdatedAt time.Time `db:"updated_at" displayname:"Last Updated" comment:"Last modification timestamp"`
+	ID        uint      `displayname:"Title ID" comment:"Unique title identifier"`
+	DbmovieID uint      `db:"dbmovie_id" displayname:"Movie Reference" comment:"Parent movie reference"`
 }
 
 // movieGetImdbMetadata fetches movie metadata from IMDB.

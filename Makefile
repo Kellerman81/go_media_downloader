@@ -22,7 +22,7 @@ LINUX_ARM64_CC = aarch64-linux-gnu-gcc
 LINUX_ARM_CC = arm-linux-gnueabihf-gcc
 WINDOWS_AMD64_CC = x86_64-w64-mingw32-gcc
 
-GOARM = ""
+GOARM = "7"
 
 # Targets
 .PHONY: help clean buildmain buildimdb build-all

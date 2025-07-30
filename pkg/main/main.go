@@ -46,6 +46,9 @@ var (
 	githash    string
 )
 
+// main initializes and starts the Go Media Downloader application server.
+// It sets up configuration, database connections, worker pools, schedulers,
+// external API clients, and the web server with graceful shutdown handling.
 func main() {
 	// debug.SetGCPercent(30)
 	os.Mkdir("./temp", 0o777)
@@ -262,8 +265,9 @@ func main() {
 		gin.SetMode(gin.ReleaseMode)
 	}
 	// router.Use(ginlog.Logger(logger.Log), cors.New(corsconfig), gin.Recovery())
-
+	router.Static("/static", "./static")
 	routerapi := router.Group("/api")
+	api.AddWebRoutes(routerapi)
 	api.AddGeneralRoutes(routerapi)
 	api.AddAllRoutes(routerapi.Group("/all"))
 	api.AddMoviesRoutes(routerapi.Group("/movies"))
@@ -298,6 +302,7 @@ func main() {
 		Addr:              ":" + general.WebPort,
 		Handler:           router,
 		ReadHeaderTimeout: 10 * time.Second,
+		MaxHeaderBytes:    20 << 20,
 	}
 
 	go func() {

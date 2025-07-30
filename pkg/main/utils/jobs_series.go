@@ -132,8 +132,8 @@ func jobImportSeriesParseV2(
 // It converts the ID to an int, and calls refreshseries to refresh
 // that single series, passing the config, a limit of 1 row, a query
 // to select the series data, and the series ID as a query arg.
-func RefreshSerie(cfgp *config.MediaTypeConfig, id *string) {
-	refreshseries(
+func RefreshSerie(cfgp *config.MediaTypeConfig, id *string) error {
+	return refreshseries(
 		cfgp,
 		database.GetrowsN[database.DbstaticTwoStringOneRInt](
 			false,
@@ -148,9 +148,9 @@ func RefreshSerie(cfgp *config.MediaTypeConfig, id *string) {
 // JobImportDBSeriesStatic to refresh each one. It accepts a MediaTypeConfig, count of rows to process,
 // query to run, and optional query argument. It returns a slice of DbstaticTwoStringOneInt structs
 // containing series data.
-func refreshseries(cfgp *config.MediaTypeConfig, tbl []database.DbstaticTwoStringOneRInt) {
+func refreshseries(cfgp *config.MediaTypeConfig, tbl []database.DbstaticTwoStringOneRInt) error {
 	if len(tbl) == 0 {
-		return
+		return nil
 	}
 	of := len(tbl)
 	var err error
@@ -160,17 +160,19 @@ func refreshseries(cfgp *config.MediaTypeConfig, tbl []database.DbstaticTwoStrin
 			Int("row", idx).
 			Int("of", of).
 			Msg("Refresh Serie")
-		err = importfeed.JobImportDBSeriesStatic(&tbl[idx], cfgp)
-		if err != nil {
+		errsub := importfeed.JobImportDBSeriesStatic(&tbl[idx], cfgp)
+		if errsub != nil {
 			logger.LogDynamicany1IntErr(
 				"error",
 				"Import series failed",
-				err,
+				errsub,
 				logger.StrTvdb,
 				tbl[idx].Num,
 			)
+			err = errsub
 		}
 	}
+	return err
 }
 
 // SeriesAllJobs runs the specified job for all configured media types that use series.
@@ -181,11 +183,11 @@ func SeriesAllJobs(job string, force bool) {
 		return
 	}
 	logger.LogDynamicany1String("debug", "Started Jobfor all", logger.StrJob, job)
-	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) {
+	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) error {
 		if !media.Useseries {
-			return
+			return nil
 		}
-		SingleJobs(job, media.NamePrefix, "", force, 0)
+		return SingleJobs(job, media.NamePrefix, "", force, 0)
 	})
 }
 
@@ -193,9 +195,9 @@ func SeriesAllJobs(job string, force bool) {
 // MediaTypeConfig into the folder structure defined by the templates. It loops
 // through each configured folder, gets the template, and calls
 // structuresinglefolder to organize the files.
-func structurefolders(ctx context.Context, cfgp *config.MediaTypeConfig) {
+func structurefolders(ctx context.Context, cfgp *config.MediaTypeConfig) error {
 	if cfgp.DataLen == 0 || len(cfgp.DataImport) == 0 {
-		return
+		return nil
 	}
 	if cfgp.Data[0].CfgPath == nil {
 		logger.LogDynamicany1String(
@@ -204,7 +206,7 @@ func structurefolders(ctx context.Context, cfgp *config.MediaTypeConfig) {
 			logger.StrConfig,
 			cfgp.Data[0].TemplatePath,
 		)
-		return
+		return errors.New("Path not found")
 	}
 	if !cfgp.Structure {
 		logger.LogDynamicany1String(
@@ -213,7 +215,7 @@ func structurefolders(ctx context.Context, cfgp *config.MediaTypeConfig) {
 			logger.StrConfig,
 			cfgp.NamePrefix,
 		)
-		return
+		return nil
 	}
 
 	var defaulttemplate string
@@ -221,9 +223,10 @@ func structurefolders(ctx context.Context, cfgp *config.MediaTypeConfig) {
 		defaulttemplate = cfgp.Data[0].TemplatePath
 	}
 
+	var errret error
 	for idxi, dataimport := range cfgp.DataImportMap {
 		if err := ctx.Err(); err != nil {
-			return
+			return err
 		}
 		if dataimport.CfgPath == nil {
 			logger.LogDynamicany1String(
@@ -241,14 +244,22 @@ func structurefolders(ctx context.Context, cfgp *config.MediaTypeConfig) {
 
 		entry, err := os.ReadDir(dataimport.CfgPath.Path)
 		if err != nil {
+			logger.LogDynamicany1StringErr(
+				"error",
+				"Error reading directory",
+				err,
+				logger.StrFile,
+				dataimport.CfgPath.Path,
+			)
+			errret = err
 			continue
 		}
 		for idx := range entry {
 			if err := ctx.Err(); err != nil {
-				return
+				return err
 			}
 			if entry[idx].IsDir() {
-				structure.OrganizeSingleFolder(
+				err = structure.OrganizeSingleFolder(
 					ctx,
 					filepath.Join(dataimport.CfgPath.Path, entry[idx].Name()),
 					cfgp,
@@ -258,9 +269,20 @@ func structurefolders(ctx context.Context, cfgp *config.MediaTypeConfig) {
 					dataimport.CfgPath.DeleteWrongLanguage,
 					0,
 				)
+				if err != nil {
+					logger.LogDynamicany1StringErr(
+						"error",
+						"Error organizing folder",
+						err,
+						logger.StrFile,
+						dataimport.CfgPath.Path,
+					)
+					errret = err
+				}
 			}
 		}
 	}
+	return errret
 }
 
 // importnewseriessingle imports new series from a feed into the database.
@@ -300,9 +322,9 @@ func importnewseriessingle(
 	defer ctx.Done()
 	pl := worker.WorkerPoolParse.NewGroupContext(ctx)
 	for idxserie2 := range feed.Series {
-		pl.Submit(func() {
+		pl.SubmitErr(func() error {
 			defer logger.HandlePanic()
-			importfeed.JobImportDBSeries(&feed.Series[idxserie2], idxserie2, cfgp, listid)
+			return importfeed.JobImportDBSeries(&feed.Series[idxserie2], idxserie2, cfgp, listid)
 		})
 	}
 	pl.Wait()
@@ -313,7 +335,7 @@ func importnewseriessingle(
 // checkreachedepisodesflag checks if episodes in a media list have reached
 // their target quality profile based on existing files. It updates the
 // quality_reached flag in the database accordingly.
-func checkreachedepisodesflag(listcfg *config.MediaListsConfig) {
+func checkreachedepisodesflag(listcfg *config.MediaListsConfig) error {
 	var minPrio, reached int
 	arr := database.QuerySerieEpisodes(&listcfg.Name)
 	for idx := range arr {
@@ -353,4 +375,5 @@ func checkreachedepisodesflag(listcfg *config.MediaListsConfig) {
 			)
 		}
 	}
+	return nil
 }
