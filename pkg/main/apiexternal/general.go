@@ -113,7 +113,7 @@ func (c *rlHTTPClient) checkLimiter(_ context.Context, allow bool) (bool, error)
 		}
 		if waitfor == 0 {
 			time.Sleep(waituntil)
-			break
+			// break
 		}
 		time.Sleep(
 			(time.Duration(rand.New(config.RandomizerSource).Intn(500)+10) * time.Millisecond),

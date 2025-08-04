@@ -140,12 +140,12 @@ type DbmovieTitle struct {
 // whether to overwrite existing data.
 // It adds the "tt" prefix to the IMDB ID if missing, fetches
 // the title from the IMDB API, and clears temporary variables.
-func (movie *Dbmovie) MovieGetImdbMetadata(overwrite bool) {
+func (movie *Dbmovie) MovieGetImdbMetadata(overwrite bool) error {
 	if movie.ImdbID == "" {
-		return
+		return nil
 	}
 	movie.ImdbID = logger.AddImdbPrefix(movie.ImdbID)
-	movie.GetImdbTitle(overwrite)
+	return movie.GetImdbTitle(overwrite)
 }
 
 // GetImdbTitle queries the imdb_titles table to populate movie details from IMDb.
@@ -153,12 +153,12 @@ func (movie *Dbmovie) MovieGetImdbMetadata(overwrite bool) {
 // It will populate the movie struct with data from IMDb if fields are empty or overwrite is true.
 // This handles setting the title, year, adult flag, genres, original title, runtime, slug, url,
 // vote average, and vote count.
-func (movie *Dbmovie) GetImdbTitle(overwrite bool) {
+func (movie *Dbmovie) GetImdbTitle(overwrite bool) error {
 	if movie.ImdbID == "" {
-		return
+		return nil
 	}
 	var imdbdata ImdbTitle
-	GetdatarowArgsImdb(
+	err := GetdatarowArgsImdb(
 		"select primary_title, start_year, is_adult, genres, original_title, runtime_minutes, slug from imdb_titles where tconst = ?",
 		&movie.ImdbID,
 		&imdbdata.PrimaryTitle,
@@ -169,6 +169,9 @@ func (movie *Dbmovie) GetImdbTitle(overwrite bool) {
 		&imdbdata.RuntimeMinutes,
 		&imdbdata.Slug,
 	)
+	if err != nil {
+		return err
+	}
 
 	if (movie.Title == "" || overwrite) && imdbdata.PrimaryTitle != "" {
 		movie.Title = imdbdata.PrimaryTitle
@@ -208,6 +211,7 @@ func (movie *Dbmovie) GetImdbTitle(overwrite bool) {
 	}
 
 	movie.GetImdbRating(overwrite)
+	return nil
 }
 
 // GetDbmovieByIDP retrieves a Dbmovie by ID. It takes a uint ID and a

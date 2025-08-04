@@ -2,7 +2,6 @@ package api
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -101,7 +100,32 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 	routerapi.GET("/admin", apiAdminInterface)
 	routerapi.GET("/admin/:configtype", adminPageConfig)
 	routerapi.POST("/admin/:configtype/update", HandleConfigUpdate)
+	routerapi.GET("/admin/testparse", adminPageTestParse)
+	routerapi.POST("/admin/testparse", HandleTestParse)
+	routerapi.GET("/admin/moviemetadata", adminPageMovieMetadata)
+	routerapi.POST("/admin/moviemetadata", HandleMovieMetadata)
+	routerapi.GET("/admin/traktauth", adminPageTraktAuth)
+	routerapi.POST("/admin/traktauth", HandleTraktAuth)
+	routerapi.GET("/admin/namingtest", adminPageNamingTest)
+	routerapi.POST("/admin/namingtest", HandleNamingTest)
+	routerapi.GET("/admin/jobmanagement", adminPageJobManagement)
+	routerapi.POST("/admin/jobmanagement", HandleJobManagement)
+	routerapi.GET("/admin/debugstats", adminPageDebugStats)
+	routerapi.POST("/admin/debugstats", HandleDebugStats)
+	routerapi.GET("/admin/dbmaintenance", adminPageDatabaseMaintenance)
+	routerapi.POST("/admin/dbmaintenance", HandleDatabaseMaintenance)
+	routerapi.GET("/admin/searchdownload", adminPageSearchDownload)
+	routerapi.POST("/admin/searchdownload", HandleSearchDownload)
+	routerapi.GET("/admin/pushovertest", adminPagePushoverTest)
+	routerapi.POST("/admin/pushovertest", HandlePushoverTest)
+	routerapi.GET("/admin/logviewer", adminPageLogViewer)
+	routerapi.POST("/admin/logviewer", HandleLogViewer)
+	routerapi.GET("/admin/feedparse", adminPageFeedParsing)
+	routerapi.POST("/admin/feedparse", HandleFeedParsing)
+	routerapi.GET("/admin/folderstructure", adminPageFolderStructure)
+	routerapi.POST("/admin/folderstructure", HandleFolderStructure)
 	routerapi.GET("/admin/database/:tablename", adminPageDatabase)
+	routerapi.GET("/admin/grid/:grid", adminPageGrid)
 
 	// Handle POST requests to database routes - these should not be used for form submissions
 	// but provide helpful error message to prevent 404s
@@ -472,7 +496,7 @@ type Statsresults struct {
 // @Failure      401  {object}  Jsonerror
 // @Router       /api/queue [get].
 func apiQueueList(ctx *gin.Context) {
-	ctx.JSON(http.StatusOK, gin.H{"data": worker.GetQueues()})
+	sendJSONResponse(ctx, http.StatusOK, worker.GetQueues())
 }
 
 // @Summary      Queue History
@@ -486,33 +510,19 @@ func apiQueueList(ctx *gin.Context) {
 // @Failure      401    {object}  Jsonerror
 // @Router       /api/queue/history [get].
 func apiQueueListStarted(ctx *gin.Context) {
-	var query database.Querywithargs
-	var limit, page int
-	query.OrderBy = "ID desc"
-	query.Limit = 100
-	if queryParam, ok := ctx.GetQuery("limit"); ok {
-		if queryParam != "" {
-			limit, _ = strconv.Atoi(queryParam)
-			query.Limit = uint(limit)
-		}
+	params := parsePaginationParams(ctx)
+	query := buildQuery(params)
+
+	// Set defaults if not provided
+	if query.OrderBy == "" {
+		query.OrderBy = "ID desc"
 	}
-	if limit != 0 {
-		if queryParam, ok := ctx.GetQuery("page"); ok {
-			if queryParam != "" {
-				page, _ = strconv.Atoi(queryParam)
-				if page >= 2 {
-					query.Offset = (page - 1) * limit
-				}
-			}
-		}
+	if query.Limit == 0 {
+		query.Limit = 100
 	}
-	if queryParam, ok := ctx.GetQuery("order"); ok {
-		if queryParam != "" {
-			query.OrderBy = queryParam
-		}
-	}
+
 	jobs := database.QueryJobHistory(query)
-	ctx.JSON(http.StatusOK, gin.H{"data": jobs})
+	sendJSONResponse(ctx, http.StatusOK, jobs)
 }
 
 // @Summary      Trakt Authorize
@@ -523,7 +533,7 @@ func apiQueueListStarted(ctx *gin.Context) {
 // @Failure      401  {object}  Jsonerror
 // @Router       /api/trakt/authorize [get].
 func apiTraktGetAuthURL(ctx *gin.Context) {
-	ctx.JSON(http.StatusOK, apiexternal.GetTraktAuthURL())
+	sendJSONResponse(ctx, http.StatusOK, apiexternal.GetTraktAuthURL())
 }
 
 // @Summary      Trakt Save Token
@@ -535,10 +545,14 @@ func apiTraktGetAuthURL(ctx *gin.Context) {
 // @Failure      401   {object}  Jsonerror
 // @Router       /api/trakt/token/{code} [get].
 func apiTraktGetStoreToken(ctx *gin.Context) {
-	apiexternal.SetTraktToken(apiexternal.GetTraktAuthToken(ctx.Param("code")))
+	code, ok := getParamID(ctx, "code")
+	if !ok {
+		return
+	}
+	apiexternal.SetTraktToken(apiexternal.GetTraktAuthToken(code))
 
 	config.UpdateCfgEntry(config.Conf{Name: "trakt_token", Data: apiexternal.GetTraktToken()})
-	ctx.JSON(http.StatusOK, gin.H{"data": apiexternal.GetTraktToken()})
+	sendJSONResponse(ctx, http.StatusOK, apiexternal.GetTraktToken())
 }
 
 // @Summary      Trakt Get List (Auth Test)
@@ -551,13 +565,17 @@ func apiTraktGetStoreToken(ctx *gin.Context) {
 // @Failure      401   {object}  Jsonerror
 // @Router       /api/trakt/user/{user}/{list} [get].
 func apiTraktGetUserList(ctx *gin.Context) {
+	user, ok := getParamID(ctx, "user")
+	if !ok {
+		return
+	}
+	listParam, ok := getParamID(ctx, "list")
+	if !ok {
+		return
+	}
+
 	lim := "10"
-	list, err := apiexternal.GetTraktUserList(
-		ctx.Param("user"),
-		ctx.Param("list"),
-		"movie,show",
-		&lim,
-	)
+	list, err := apiexternal.GetTraktUserList(user, listParam, "movie,show", &lim)
 	ctx.JSON(http.StatusOK, gin.H{"data": list, "error": err})
 }
 
@@ -601,7 +619,7 @@ func apiDBRefreshSlugs(ctx *gin.Context) {
 			&dbserietitles[idx].ID,
 		)
 	}
-	ctx.JSON(http.StatusOK, "ok")
+	sendSuccess(ctx, StrOK)
 }
 
 // @Summary      Parse a string
@@ -615,9 +633,7 @@ func apiDBRefreshSlugs(ctx *gin.Context) {
 // @Router       /api/parse/string [post].
 func apiParseString(ctx *gin.Context) {
 	var getcfg apiparse
-	var err error
-	if err = ctx.ShouldBindJSON(&getcfg); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if !bindJSONWithValidation(ctx, &getcfg) {
 		return
 	}
 	var cfgv string
@@ -630,7 +646,7 @@ func apiParseString(ctx *gin.Context) {
 	parse := parser.ParseFile(getcfg.Name, false, false, cfgp, -1)
 	// parse := parser.NewFileParser(getcfg.Name, cfgp, false, -1)
 	parser.GetPriorityMapQual(parse, cfgp, config.GetSettingsQuality(getcfg.Quality), true, true)
-	err = parser.GetDBIDs(parse, cfgp, true)
+	err := parser.GetDBIDs(parse, cfgp, true)
 	ctx.JSON(http.StatusOK, gin.H{"data": parse, "error": err})
 	parse.Close()
 }
@@ -646,9 +662,7 @@ func apiParseString(ctx *gin.Context) {
 // @Router       /api/parse/file [post].
 func apiParseFile(ctx *gin.Context) {
 	var getcfg apiparse
-	var err error
-	if err = ctx.ShouldBindJSON(&getcfg); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if !bindJSONWithValidation(ctx, &getcfg) {
 		return
 	}
 	var cfgv string
@@ -678,7 +692,7 @@ func apiParseFile(ctx *gin.Context) {
 // @Router       /api/fillimdb [get].
 func apiFillImdb(ctx *gin.Context) {
 	config.GetSettingsGeneral().Jobs["RefreshImdb"](0)
-	ctx.JSON(http.StatusOK, "ok")
+	sendSuccess(ctx, StrOK)
 }
 
 // @Summary      Stop Scheduler
@@ -692,7 +706,7 @@ func apiSchedulerStop(c *gin.Context) {
 	// scheduler.QueueData.Stop()
 	// scheduler.QueueFeeds.Stop()
 	// scheduler.QueueSearch.Stop()
-	c.JSON(http.StatusOK, "ok")
+	sendSuccess(c, StrOK)
 }
 
 // @Summary      Start Scheduler
@@ -706,7 +720,7 @@ func apiSchedulerStart(c *gin.Context) {
 	// scheduler.QueueData.Start()
 	// scheduler.QueueFeeds.Start()
 	// scheduler.QueueSearch.Start()
-	c.JSON(http.StatusOK, "ok")
+	sendSuccess(c, StrOK)
 }
 
 // @Summary      Scheduler Jobs
@@ -717,7 +731,7 @@ func apiSchedulerStart(c *gin.Context) {
 // @Failure      401  {object}  Jsonerror
 // @Router       /api/scheduler/list [get].
 func apiSchedulerList(ctx *gin.Context) {
-	ctx.JSON(http.StatusOK, gin.H{"data": worker.GetSchedules()})
+	sendJSONResponse(ctx, http.StatusOK, worker.GetSchedules())
 }
 
 // @Summary      Close DB
@@ -729,7 +743,7 @@ func apiSchedulerList(ctx *gin.Context) {
 // @Router       /api/db/close [get].
 func apiDBClose(ctx *gin.Context) {
 	database.DBClose()
-	ctx.JSON(http.StatusOK, "ok")
+	sendSuccess(ctx, StrOK)
 }
 
 // @Summary      Backup DB
@@ -757,7 +771,7 @@ func apiDBBackup(ctx *gin.Context) {
 		)
 		worker.StartCronWorker()
 	}
-	ctx.JSON(http.StatusOK, "ok")
+	sendSuccess(ctx, StrOK)
 }
 
 // @Summary      Integrity DB
@@ -768,7 +782,7 @@ func apiDBBackup(ctx *gin.Context) {
 // @Failure      401  {object}  Jsonerror
 // @Router       /api/db/integrity [get].
 func apiDBIntegrity(ctx *gin.Context) {
-	ctx.JSON(http.StatusOK, database.DBIntegrityCheck())
+	sendJSONResponse(ctx, http.StatusOK, database.DBIntegrityCheck())
 }
 
 // @Summary      Clear DB Table
@@ -780,13 +794,14 @@ func apiDBIntegrity(ctx *gin.Context) {
 // @Failure      401   {object}  Jsonerror
 // @Router       /api/db/clear/{name} [delete].
 func apiDBClear(ctx *gin.Context) {
-	err := database.ExecNErr("DELETE from " + ctx.Param("name"))
-	database.ExecN("VACUUM")
-	if err == nil {
-		ctx.JSON(http.StatusOK, "ok")
-	} else {
-		ctx.JSON(http.StatusForbidden, err)
+	tableName, ok := getParamID(ctx, StrName)
+	if !ok {
+		return
 	}
+
+	err := database.ExecNErr("DELETE from " + tableName)
+	database.ExecN("VACUUM")
+	handleDBError(ctx, err, StrOK)
 }
 
 // @Summary      Delete Row from DB Table
@@ -799,12 +814,18 @@ func apiDBClear(ctx *gin.Context) {
 // @Failure      401   {object}  Jsonerror
 // @Router       /api/db/delete/{name}/{id} [delete].
 func apiDBDelete(ctx *gin.Context) {
-	err := database.ExecNErr("DELETE FROM "+ctx.Param("name")+" WHERE id = ?", ctx.Param("id"))
-	if err == nil {
-		ctx.JSON(http.StatusOK, "ok")
-	} else {
-		ctx.JSON(http.StatusForbidden, err)
+	tableName, ok := getParamID(ctx, StrName)
+	if !ok {
+		return
 	}
+
+	id, ok := getParamID(ctx, StrID)
+	if !ok {
+		return
+	}
+
+	err := database.ExecNErr("DELETE FROM "+tableName+" WHERE id = ?", id)
+	handleDBError(ctx, err, StrOK)
 }
 
 // @Summary      Clear Caches
@@ -816,7 +837,7 @@ func apiDBDelete(ctx *gin.Context) {
 // @Router       /api/db/clearcache [delete].
 func apiDBClearCache(ctx *gin.Context) {
 	database.ClearCaches()
-	ctx.JSON(http.StatusOK, "ok")
+	sendSuccess(ctx, StrOK)
 }
 
 // @Summary      Vacuum DB
@@ -828,11 +849,7 @@ func apiDBClearCache(ctx *gin.Context) {
 // @Router       /api/db/vacuum [get].
 func apiDBVacuum(ctx *gin.Context) {
 	err := database.ExecNErr("VACUUM")
-	if err == nil {
-		ctx.JSON(http.StatusOK, "ok")
-	} else {
-		ctx.JSON(http.StatusForbidden, err)
-	}
+	handleDBError(ctx, err, StrOK)
 }
 
 // @Summary      Clean Old Jobs
@@ -844,26 +861,25 @@ func apiDBVacuum(ctx *gin.Context) {
 // @Failure      401   {object}  Jsonerror
 // @Router       /api/db/oldjobs [delete].
 func apiDBRemoveOldJobs(ctx *gin.Context) {
-	if queryParam, ok := ctx.GetQuery("days"); ok {
-		if queryParam != "" {
-			days, _ := strconv.Atoi(queryParam)
-
-			scantime := time.Now()
-			if days != 0 {
-				scantime = scantime.AddDate(0, 0, 0-days)
-				_, err := database.DeleteRow("job_histories", "created_at < ?", scantime)
-				if err == nil {
-					ctx.JSON(http.StatusOK, "ok")
-				} else {
-					ctx.JSON(http.StatusForbidden, err)
-				}
-			}
-		} else {
-			ctx.JSON(http.StatusForbidden, errors.New("days empty"))
-		}
-	} else {
-		ctx.JSON(http.StatusForbidden, errors.New("days missing"))
+	queryParam, ok := ctx.GetQuery("days")
+	if !ok {
+		sendForbidden(ctx, "days missing")
+		return
 	}
+	if queryParam == "" {
+		sendForbidden(ctx, "days empty")
+		return
+	}
+
+	days, _ := strconv.Atoi(queryParam)
+	if days == 0 {
+		sendSuccess(ctx, StrOK)
+		return
+	}
+
+	scantime := time.Now().AddDate(0, 0, 0-days)
+	_, err := database.DeleteRow("job_histories", "created_at < ?", scantime)
+	handleDBError(ctx, err, StrOK)
 }
 
 // @Summary      List Qualities
@@ -874,16 +890,12 @@ func apiDBRemoveOldJobs(ctx *gin.Context) {
 // @Failure      401  {object}  Jsonerror
 // @Router       /api/quality [get].
 func apiGetQualities(ctx *gin.Context) {
-	ctx.JSON(
-		http.StatusOK,
-		gin.H{
-			"data": database.StructscanT[database.Qualities](
-				false,
-				database.Getdatarow[uint](false, "select count() from qualities"),
-				"select * from qualities",
-			),
-		},
+	data := database.StructscanT[database.Qualities](
+		false,
+		database.Getdatarow[uint](false, "select count() from qualities"),
+		"select * from qualities",
 	)
+	sendJSONResponse(ctx, http.StatusOK, data)
 }
 
 // @Summary      Delete Quality
@@ -895,18 +907,18 @@ func apiGetQualities(ctx *gin.Context) {
 // @Failure      401  {object}  Jsonerror
 // @Router       /api/quality/{id} [delete].
 func apiQualityDelete(ctx *gin.Context) {
-	database.DeleteRow("qualities", logger.FilterByID, ctx.Param("id"))
+	id, ok := getParamID(ctx, StrID)
+	if !ok {
+		return
+	}
+	database.DeleteRow("qualities", logger.FilterByID, id)
 	database.SetVars()
-	ctx.JSON(
-		http.StatusOK,
-		gin.H{
-			"data": database.StructscanT[database.Qualities](
-				false,
-				database.Getdatarow[uint](false, "select count() from qualities"),
-				"select * from qualities",
-			),
-		},
+	data := database.StructscanT[database.Qualities](
+		false,
+		database.Getdatarow[uint](false, "select count() from qualities"),
+		"select * from qualities",
 	)
+	sendJSONResponse(ctx, http.StatusOK, data)
 }
 
 // @Summary      Update Quality
@@ -920,8 +932,7 @@ func apiQualityDelete(ctx *gin.Context) {
 // @Router       /api/quality [post].
 func apiQualityUpdate(ctx *gin.Context) {
 	var quality database.Qualities
-	if err := ctx.ShouldBindJSON(&quality); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if !bindJSONWithValidation(ctx, &quality) {
 		return
 	}
 	counter := database.Getdatarow[uint](
@@ -946,16 +957,12 @@ func apiQualityUpdate(ctx *gin.Context) {
 			"id != 0 and id = ?", quality.QualityType, quality.Name, quality.Regex, quality.Strings, quality.Priority, quality.UseRegex, quality.ID)
 	}
 	database.SetVars()
-	ctx.JSON(
-		http.StatusOK,
-		gin.H{
-			"data": database.StructscanT[database.Qualities](
-				false,
-				database.Getdatarow[uint](false, "select count() from qualities"),
-				"select * from qualities",
-			),
-		},
+	data := database.StructscanT[database.Qualities](
+		false,
+		database.Getdatarow[uint](false, "select count() from qualities"),
+		"select * from qualities",
 	)
+	sendJSONResponse(ctx, http.StatusOK, data)
 }
 
 // @Summary      List Quality Priorities
@@ -968,18 +975,21 @@ func apiQualityUpdate(ctx *gin.Context) {
 // @Failure      404     {object}  string
 // @Router       /api/quality/get/{name} [get].
 func apiListQualityPriorities(ctx *gin.Context) {
-	if !config.CheckGroup("quality_", ctx.Param("name")) {
-		ctx.JSON(http.StatusNotFound, "quality not found")
+	name, ok := getParamID(ctx, StrName)
+	if !ok {
+		return
+	}
+	if !config.CheckGroup("quality_", name) {
+		sendNotFound(ctx, "quality not found")
 		return
 	}
 	returnprios := make([]parser.Prioarr, 0, 1000)
 	for _, prio := range parser.Getallprios() {
-		if prio.QualityGroup == ctx.Param("name") {
+		if prio.QualityGroup == name {
 			returnprios = append(returnprios, prio)
 		}
 	}
-	// ctx.JSON(http.StatusOK, gin.H{"data": parser.Getallprios()[ctx.Param("name")]})
-	ctx.JSON(http.StatusOK, gin.H{"data": returnprios})
+	sendJSONResponse(ctx, http.StatusOK, returnprios)
 }
 
 // @Summary      List Quality Priorities
@@ -991,7 +1001,7 @@ func apiListQualityPriorities(ctx *gin.Context) {
 // @Failure      404     {object}  string
 // @Router       /api/quality/all [get].
 func apiListAllQualityPriorities(ctx *gin.Context) {
-	ctx.JSON(http.StatusOK, gin.H{"data": parser.Getallprios()})
+	sendJSONResponse(ctx, http.StatusOK, parser.Getallprios())
 }
 
 // @Summary      List Quality Priorities
@@ -1003,7 +1013,7 @@ func apiListAllQualityPriorities(ctx *gin.Context) {
 // @Failure      404     {object}  string
 // @Router       /api/quality/complete [get].
 func apiListCompleteAllQualityPriorities(ctx *gin.Context) {
-	ctx.JSON(http.StatusOK, gin.H{"data": parser.Getcompleteallprios()})
+	sendJSONResponse(ctx, http.StatusOK, parser.Getcompleteallprios())
 }
 
 // @Summary      Get Complete Config
@@ -1014,7 +1024,7 @@ func apiListCompleteAllQualityPriorities(ctx *gin.Context) {
 // @Failure      401  {object}  Jsonerror
 // @Router       /api/config/all [get].
 func apiConfigAll(ctx *gin.Context) {
-	ctx.JSON(http.StatusOK, gin.H{"data": config.GetCfgAll()})
+	sendJSONResponse(ctx, http.StatusOK, config.GetCfgAll())
 }
 
 // @Summary      Clear Config
@@ -1027,7 +1037,7 @@ func apiConfigAll(ctx *gin.Context) {
 func apiConfigClear(ctx *gin.Context) {
 	config.ClearCfg()
 	config.WriteCfg()
-	ctx.JSON(http.StatusOK, gin.H{"data": config.GetCfgAll()})
+	sendJSONResponse(ctx, http.StatusOK, config.GetCfgAll())
 }
 
 // @Summary      Get Config
@@ -1039,7 +1049,11 @@ func apiConfigClear(ctx *gin.Context) {
 // @Failure      401   {object}  Jsonerror
 // @Router       /api/config/get/{name} [get].
 func apiConfigGet(ctx *gin.Context) {
-	ctx.JSON(http.StatusOK, gin.H{"data": config.GetCfgAll()[ctx.Param("name")]})
+	name, ok := getParamID(ctx, StrName)
+	if !ok {
+		return
+	}
+	sendJSONResponse(ctx, http.StatusOK, config.GetCfgAll()[name])
 }
 
 // @Summary      Delete Config
@@ -1051,9 +1065,13 @@ func apiConfigGet(ctx *gin.Context) {
 // @Failure      401  {object}  Jsonerror
 // @Router       /api/config/delete/{name} [delete].
 func apiConfigDelete(ctx *gin.Context) {
-	config.DeleteCfgEntry(ctx.Param("name"))
+	name, ok := getParamID(ctx, StrName)
+	if !ok {
+		return
+	}
+	config.DeleteCfgEntry(name)
 	config.WriteCfg()
-	ctx.JSON(http.StatusOK, gin.H{"data": config.GetCfgAll()})
+	sendJSONResponse(ctx, http.StatusOK, config.GetCfgAll())
 }
 
 // @Summary      Reload ConfigFile
@@ -1065,7 +1083,7 @@ func apiConfigDelete(ctx *gin.Context) {
 // @Router       /api/config/refresh [get].
 func apiConfigRefreshFile(ctx *gin.Context) {
 	config.LoadCfgDB(true)
-	ctx.JSON(http.StatusOK, gin.H{"data": config.GetCfgAll()})
+	sendJSONResponse(ctx, http.StatusOK, config.GetCfgAll())
 }
 
 // @Summary      Update Config
@@ -1080,7 +1098,10 @@ func apiConfigRefreshFile(ctx *gin.Context) {
 // @Failure      401     {object}  Jsonerror
 // @Router       /api/config/update/{name} [post].
 func apiConfigUpdate(ctx *gin.Context) {
-	name := ctx.Param("name")
+	name, ok := getParamID(ctx, StrName)
+	if !ok {
+		return
+	}
 	left, right := logger.SplitByLR(name, '_')
 	if left == "" {
 		left = right
@@ -1088,85 +1109,74 @@ func apiConfigUpdate(ctx *gin.Context) {
 	switch left {
 	case "general":
 		var getcfg config.GeneralConfig
-		if err := ctx.ShouldBindJSON(&getcfg); err != nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		if !bindJSONWithValidation(ctx, &getcfg) {
 			return
 		}
-		config.UpdateCfgEntry(config.Conf{Name: ctx.Param("name"), Data: getcfg})
+		config.UpdateCfgEntry(config.Conf{Name: name, Data: getcfg})
 	case "downloader":
 		var getcfg config.DownloaderConfig
-		if err := ctx.ShouldBindJSON(&getcfg); err != nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		if !bindJSONWithValidation(ctx, &getcfg) {
 			return
 		}
-		config.UpdateCfgEntry(config.Conf{Name: ctx.Param("name"), Data: getcfg})
+		config.UpdateCfgEntry(config.Conf{Name: name, Data: getcfg})
 	case logger.StrImdb:
 		var getcfg config.ImdbConfig
-		if err := ctx.ShouldBindJSON(&getcfg); err != nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		if !bindJSONWithValidation(ctx, &getcfg) {
 			return
 		}
-		config.UpdateCfgEntry(config.Conf{Name: ctx.Param("name"), Data: getcfg})
+		config.UpdateCfgEntry(config.Conf{Name: name, Data: getcfg})
 	case "indexer":
 		var getcfg config.IndexersConfig
-		if err := ctx.ShouldBindJSON(&getcfg); err != nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		if !bindJSONWithValidation(ctx, &getcfg) {
 			return
 		}
-		config.UpdateCfgEntry(config.Conf{Name: ctx.Param("name"), Data: getcfg})
+		config.UpdateCfgEntry(config.Conf{Name: name, Data: getcfg})
 	case "list":
 		var getcfg config.ListsConfig
-		if err := ctx.ShouldBindJSON(&getcfg); err != nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		if !bindJSONWithValidation(ctx, &getcfg) {
 			return
 		}
-		config.UpdateCfgEntry(config.Conf{Name: ctx.Param("name"), Data: getcfg})
+		config.UpdateCfgEntry(config.Conf{Name: name, Data: getcfg})
 	case "serie":
 	case "movie":
 		var getcfg config.MediaTypeConfig
-		if err := ctx.ShouldBindJSON(&getcfg); err != nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		if !bindJSONWithValidation(ctx, &getcfg) {
 			return
 		}
-		config.UpdateCfgEntry(config.Conf{Name: ctx.Param("name"), Data: getcfg})
+		config.UpdateCfgEntry(config.Conf{Name: name, Data: getcfg})
 	case "notification":
 		var getcfg config.NotificationConfig
-		if err := ctx.ShouldBindJSON(&getcfg); err != nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		if !bindJSONWithValidation(ctx, &getcfg) {
 			return
 		}
-		config.UpdateCfgEntry(config.Conf{Name: ctx.Param("name"), Data: getcfg})
+		config.UpdateCfgEntry(config.Conf{Name: name, Data: getcfg})
 	case "path":
 		var getcfg config.PathsConfig
-		if err := ctx.ShouldBindJSON(&getcfg); err != nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		if !bindJSONWithValidation(ctx, &getcfg) {
 			return
 		}
-		config.UpdateCfgEntry(config.Conf{Name: ctx.Param("name"), Data: getcfg})
+		config.UpdateCfgEntry(config.Conf{Name: name, Data: getcfg})
 	case "quality":
 		var getcfg config.QualityConfig
-		if err := ctx.ShouldBindJSON(&getcfg); err != nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		if !bindJSONWithValidation(ctx, &getcfg) {
 			return
 		}
-		config.UpdateCfgEntry(config.Conf{Name: ctx.Param("name"), Data: getcfg})
+		config.UpdateCfgEntry(config.Conf{Name: name, Data: getcfg})
 	case "regex":
 		var getcfg config.RegexConfig
-		if err := ctx.ShouldBindJSON(&getcfg); err != nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		if !bindJSONWithValidation(ctx, &getcfg) {
 			return
 		}
-		config.UpdateCfgEntry(config.Conf{Name: ctx.Param("name"), Data: getcfg})
+		config.UpdateCfgEntry(config.Conf{Name: name, Data: getcfg})
 	case "scheduler":
 		var getcfg config.SchedulerConfig
-		if err := ctx.ShouldBindJSON(&getcfg); err != nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		if !bindJSONWithValidation(ctx, &getcfg) {
 			return
 		}
-		config.UpdateCfgEntry(config.Conf{Name: ctx.Param("name"), Data: getcfg})
+		config.UpdateCfgEntry(config.Conf{Name: name, Data: getcfg})
 	}
 	config.WriteCfg()
-	ctx.JSON(http.StatusOK, gin.H{"data": config.GetCfgAll()})
+	sendJSONResponse(ctx, http.StatusOK, config.GetCfgAll())
 }
 
 // @Summary      List Config Type
@@ -1179,7 +1189,10 @@ func apiConfigUpdate(ctx *gin.Context) {
 // @Router       /api/config/type/{type} [get].
 func apiListConfigType(ctx *gin.Context) {
 	list := make(map[string]any)
-	name := ctx.Param("type")
+	name, ok := getParamID(ctx, "type")
+	if !ok {
+		return
+	}
 	left, right := logger.SplitByLR(name, '_')
 	if left == "" {
 		left = right
@@ -1253,7 +1266,7 @@ func apiListConfigType(ctx *gin.Context) {
 		})
 	}
 
-	ctx.JSON(http.StatusOK, gin.H{"data": list})
+	sendJSONResponse(ctx, http.StatusOK, list)
 }
 
 type apiNameInput struct {
@@ -1275,8 +1288,7 @@ type apiNameInput struct {
 // @Router       /api/naming [post].
 func apiNamingGenerate(ctx *gin.Context) {
 	var cfg apiNameInput
-	if err := ctx.BindJSON(&cfg); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if !bindJSONWithValidation(ctx, &cfg) {
 		return
 	}
 
@@ -1372,8 +1384,7 @@ type apiStructureJSON struct {
 // @Router       /api/structure [post].
 func apiStructure(ctx *gin.Context) {
 	var cfg apiStructureJSON
-	if err := ctx.BindJSON(&cfg); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if !bindJSONWithValidation(ctx, &cfg) {
 		return
 	}
 
@@ -1386,21 +1397,21 @@ func apiStructure(ctx *gin.Context) {
 	}
 	// defer media.Close()
 	if config.GetSettingsMedia(getconfig).Name != cfg.Configentry {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "media config not found"})
+		sendBadRequest(ctx, "media config not found")
 		return
 	}
 
 	if !config.CheckGroup("path_", cfg.Sourcepathtemplate) {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "source config not found"})
+		sendBadRequest(ctx, "source config not found")
 		return
 	}
 
 	if !config.CheckGroup("path_", cfg.Targetpathtemplate) {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "target config not found"})
+		sendBadRequest(ctx, "target config not found")
 		return
 	}
 	if !scanner.CheckFileExist(cfg.Folder) {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "folder not found"})
+		sendBadRequest(ctx, "folder not found")
 		return
 	}
 	cfgp := config.GetSettingsMedia(getconfig)

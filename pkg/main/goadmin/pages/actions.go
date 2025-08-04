@@ -28,13 +28,13 @@ func GetActionsPage(ctx *context.Context) (types.Panel, error) {
 	}, nil
 }
 
-func GetDashBoard(*context.Context) (types.Panel, error) {
+func GetDashBoard(c *context.Context) (types.Panel, error) {
 	components := template2.Default()
 	// colComp := components.Col()
 
 	return types.Panel{
-		Content:     components.Row().SetContent("Test").GetContent(),
+		Content:     components.Row().SetContent("Please also check the new <a href='/api/admin' target='_blank'>webinterface</a>").GetContent(),
 		Title:       "Dashboard",
-		Description: "dashboard example",
+		Description: "Go Media Downloader - Dashboard",
 	}, nil
 }

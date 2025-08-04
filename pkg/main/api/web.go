@@ -13,6 +13,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/worker"
 	gin "github.com/gin-gonic/gin"
 	"maragu.dev/gomponents"
 	"maragu.dev/gomponents/html"
@@ -20,11 +21,11 @@ import (
 
 // TableInfo holds information about database tables
 type TableInfo struct {
-	Name      string                   `json:"name"`
-	Columns   []ColumnInfo             `json:"columns"`
-	Rows      []map[string]interface{} `json:"rows"`
-	RowsTyped any                      `json:"rowsTyped"`
-	DeleteURL string                   `json:"deleteURL"`
+	Name      string           `json:"name"`
+	Columns   []ColumnInfo     `json:"columns"`
+	Rows      []map[string]any `json:"rows"`
+	RowsTyped any              `json:"rowsTyped"`
+	DeleteURL string           `json:"deleteURL"`
 }
 
 // ColumnInfo holds information about table columns
@@ -36,9 +37,134 @@ type ColumnInfo struct {
 
 // ConfigSection represents a configuration section for display
 type ConfigSection struct {
-	Name string                 `json:"name"`
-	Type string                 `json:"type"`
-	Data map[string]interface{} `json:"data"`
+	Name string         `json:"name"`
+	Type string         `json:"type"`
+	Data map[string]any `json:"data"`
+}
+
+// HTML generation helper functions
+func formInput(inputType, name, id, class, value string, attrs ...gomponents.Node) gomponents.Node {
+	allAttrs := []gomponents.Node{
+		html.Type(inputType),
+		html.Name(name),
+		html.ID(id),
+		html.Class(class),
+	}
+	if value != "" {
+		allAttrs = append(allAttrs, html.Value(value))
+	}
+	allAttrs = append(allAttrs, attrs...)
+	return html.Input(allAttrs...)
+}
+
+func formTextInput(name, id, value string, attrs ...gomponents.Node) gomponents.Node {
+	return formInput("text", name, id, "form-control", value, attrs...)
+}
+
+func formPasswordInput(name, id, value string, attrs ...gomponents.Node) gomponents.Node {
+	return formInput("password", name, id, "form-control", value, attrs...)
+}
+
+func formGroupWithLabel(id, labelText string, input gomponents.Node) gomponents.Node {
+	return html.Div(html.Class("mb-3"),
+		html.Label(html.For(id), html.Class("form-label"), gomponents.Text(labelText)),
+		input,
+	)
+}
+
+func createOption(value, text string, selected bool) gomponents.Node {
+	attrs := []gomponents.Node{
+		html.Value(value),
+		gomponents.Text(text),
+	}
+	if selected {
+		attrs = append(attrs, html.Selected())
+	}
+	return html.Option(attrs...)
+}
+
+func sendDataTablesResponse(ctx *gin.Context, total, final int, data any) {
+	ctx.JSON(http.StatusOK, gin.H{
+		"sEcho":                getParamValue(ctx, "sEcho"),
+		"iTotalRecords":        total,
+		"iTotalDisplayRecords": final,
+		"aaData":               data,
+	})
+}
+
+func sendSuccessResponse(ctx *gin.Context, message string, data any) {
+	response := gin.H{
+		"success": true,
+		"message": message,
+	}
+	if data != nil {
+		response["data"] = data
+	}
+	ctx.JSON(http.StatusOK, response)
+}
+
+func sendErrorResponse(ctx *gin.Context, statusCode int, message string) {
+	ctx.JSON(statusCode, gin.H{
+		"success": false,
+		"error":   message,
+	})
+}
+
+func sendOperationResult(ctx *gin.Context, err error) {
+	response := gin.H{
+		"success": err == nil,
+	}
+	if err != nil {
+		response["error"] = err.Error()
+	} else {
+		response["error"] = ""
+	}
+	ctx.JSON(http.StatusOK, response)
+}
+
+func sendSelect2Response(ctx *gin.Context, results []map[string]any, hasMore bool) {
+	ctx.JSON(http.StatusOK, gin.H{
+		"results": results,
+		"pagination": gin.H{
+			"more": hasMore,
+		},
+	})
+}
+
+func createSelect2Option(id any, text string) map[string]any {
+	return map[string]any{
+		"id":   id,
+		"text": text,
+	}
+}
+
+func createSelect2OptionPtr(id any, text string) *map[string]any {
+	option := map[string]any{
+		"id":   id,
+		"text": text,
+	}
+	return &option
+}
+
+func createSelect2OptionString(value string, text string) map[string]any {
+	return map[string]any{
+		"id":   value,
+		"text": text,
+	}
+}
+
+func formCheckboxInput(name, id string, checked bool, attrs ...gomponents.Node) gomponents.Node {
+	allAttrs := []gomponents.Node{
+		html.Type("checkbox"),
+		html.Name(name),
+		html.ID(id),
+		html.Class("form-check-input form-control"),
+	}
+	if checked {
+		allAttrs = append(allAttrs, html.Checked())
+	}
+	allAttrs = append(allAttrs, attrs...)
+	return html.Input(allAttrs...)
 }
 
 // @Summary      Admin Web Interface
@@ -81,167 +207,6 @@ type DataTablesRequest struct {
 	ColumnSearches []string
 }
 
-// func handleDataTables(c *gin.Context) {
-// 	tableName := c.Param("name")
-// 	// Parse DataTables request parameters
-// 	req, err := parseDataTablesRequest(tableName, c)
-// 	if err != nil {
-// 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-// 		return
-// 	}
-
-// 	// Build and execute queries
-// 	response, err := processDataTablesRequest(tableName, req)
-// 	if err != nil {
-// 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-// 		return
-// 	}
-
-// 	c.JSON(http.StatusOK, response)
-// }
-
-// func handleDataTablesQuery(c *gin.Context) {
-// 	tableName := c.Query("table")
-// 	// Parse DataTables request parameters
-// 	req, err := parseDataTablesRequest(tableName, c)
-// 	if err != nil {
-// 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-// 		return
-// 	}
-
-// 	// Build and execute queries
-// 	response, err := processDataTablesRequest(tableName, req)
-// 	if err != nil {
-// 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-// 		return
-// 	}
-
-// 	c.JSON(http.StatusOK, response)
-// }
-
-// func parseDataTablesRequest(tablename string, c *gin.Context) (*DataTablesRequest, error) {
-// 	req := &DataTablesRequest{}
-
-// 	// Parse basic parameters
-// 	if echo := c.Query("draw"); echo != "" {
-// 		if val, err := strconv.Atoi(echo); err == nil {
-// 			req.Echo = val
-// 		}
-// 	}
-
-// 	if start := c.Query("start"); start != "" {
-// 		if val, err := strconv.Atoi(start); err == nil {
-// 			req.DisplayStart = val
-// 		}
-// 	}
-
-// 	if length := c.Query("length"); length != "" {
-// 		if val, err := strconv.Atoi(length); err == nil {
-// 			req.DisplayLength = val
-// 		}
-// 	}
-
-// 	req.Search = c.Query("search[value]")
-
-// 	// Parse sorting parameters
-// 	if sortCols := c.Query("iSortingCols"); sortCols != "" {
-// 		if val, err := strconv.Atoi(sortCols); err == nil {
-// 			req.SortingCols = val
-// 		}
-// 	}
-
-// 	// Parse sort columns and directions
-// 	for i := 0; i < req.SortingCols; i++ {
-// 		if sortCol := c.Query(fmt.Sprintf("iSortCol_%d", i)); sortCol != "" {
-// 			if val, err := strconv.Atoi(sortCol); err == nil {
-// 				// Check if column is sortable
-// 				sortableKey := fmt.Sprintf("bSortable_%d", val)
-// 				if c.Query(sortableKey) == "true" {
-// 					req.SortColumns = append(req.SortColumns, val)
-
-// 					sortDir := c.Query(fmt.Sprintf("sSortDir_%d", i))
-// 					if sortDir != "asc" {
-// 						sortDir = "desc"
-// 					}
-// 					req.SortDirections = append(req.SortDirections, sortDir)
-// 				}
-// 			}
-// 		}
-// 	}
-
-// 	tableDefault := database.GetTableDefaults(tablename)
-// 	columns := strings.Split(tableDefault.DefaultColumns, ",")
-// 	// Parse column searchability and individual searches
-// 	req.Searchable = make([]bool, len(columns))
-// 	req.ColumnSearches = make([]string, len(columns))
-
-// 	for i := 0; i < len(columns); i++ {
-// 		searchableKey := fmt.Sprintf("bSearchable_%d", i)
-// 		req.Searchable[i] = c.Query(searchableKey) == "true"
-
-// 		searchKey := fmt.Sprintf("sSearch_%d", i)
-// 		req.ColumnSearches[i] = c.Query(searchKey)
-// 	}
-
-// 	return req, nil
-// }
-
-// func processDataTablesRequest(tableName string, req *DataTablesRequest) (*DataTablesResponse, error) {
-// 	tableDefault := database.GetTableDefaults(tableName)
-// 	// Build WHERE clause
-// 	whereClause, args := buildWhereClause(tableDefault, req)
-
-// 	// Build ORDER BY clause
-// 	orderClause := buildOrderClause(tableDefault, req)
-
-// 	// Build LIMIT clause
-// 	limitClause := buildLimitClause(req)
-
-// 	// Main query to get data
-// 	columnsStr := tableDefault.DefaultColumns
-// 	query := fmt.Sprintf("SELECT %s FROM %s %s %s %s",
-// 		columnsStr, tableName, whereClause, orderClause, limitClause)
-
-// 	data := database.GetrowsType(tableDefault.Object, false, 1000, query, args...)
-
-// 	retdata := make([][]string, 0, len(data))
-// 	for _, loop := range data {
-// 		row := make([]string, 0, len(loop))
-// 		for _, v := range loop {
-// 			row = append(row, fmt.Sprint(v))
-// 		}
-// 		retdata = append(retdata, row)
-// 	}
-
-// 	// Get filtered total count
-// 	var filteredTotal int
-// 	queryfilter := fmt.Sprintf("SELECT Count(*) FROM %s %s %s",
-// 		tableName, whereClause, orderClause)
-// 	filteredTotal = database.Getdatarow[int](false, queryfilter)
-
-// 	// Get total count
-// 	var total int
-// 	totalQuery := fmt.Sprintf("SELECT COUNT(`%s`) FROM %s", "id", tableName)
-// 	total = database.Getdatarow[int](false, totalQuery)
-
-// 	response := &DataTablesResponse{
-// 		Echo:                req.Echo,
-// 		TotalRecords:        total,
-// 		TotalDisplayRecords: filteredTotal,
-// 		Data:                retdata,
-// 	}
-
-// 	return response, nil
-// }
-
-// func buildLimitClause(req *DataTablesRequest) string {
-// 	if req.DisplayLength == -1 {
-// 		return ""
-// 	}
-
-// 	return fmt.Sprintf("LIMIT %d, %d", req.DisplayStart, req.DisplayLength)
-// }
-
 // getParam retrieves a parameter from either GET query or POST form data
 func getParam(ctx *gin.Context, key, defaultValue string) string {
 	if ctx.Request.Method == "POST" {
@@ -259,9 +224,8 @@ func getParamValue(ctx *gin.Context, key string) string {
 }
 
 func apiAdminTableDataJson(ctx *gin.Context) {
-	tableName := ctx.Param("table")
-	if tableName == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "table name is required"})
+	tableName, ok := getParamID(ctx, "table")
+	if !ok {
 		return
 	}
 
@@ -320,14 +284,14 @@ func apiAdminTableDataJson(ctx *gin.Context) {
 
 	// Build the complete WHERE clause
 	var whereClause string
-	var queryArgs []interface{}
+	var queryArgs []any
 
 	if searchValue != "" || customFilters != "" {
 		var conditions []string
 
 		// Add general search condition
 		if searchValue != "" {
-			var aux []interface{}
+			var aux []any
 			for i := 0; i < tabledefault.DefaultQueryParamCount; i++ {
 				aux = append(aux, "%"+searchValue+"%")
 			}
@@ -364,7 +328,7 @@ func apiAdminTableDataJson(ctx *gin.Context) {
 
 		// Count filtered results
 		database.Scanrowsdyn(false, "select Count(*) as frequency FROM "+tabledefault.Table+" "+whereClause, &final, queryArgs...)
-		ctx.JSON(http.StatusOK, gin.H{"sEcho": getParamValue(ctx, "sEcho"), "iTotalRecords": total, "iTotalDisplayRecords": final, "aaData": retdata})
+		sendDataTablesResponse(ctx, total, final, retdata)
 		return
 	} else {
 		data := database.GetrowsType(tabledefault.Object, false, 1000, "select "+tabledefault.DefaultColumns+" from "+tabledefault.Table+" "+orderby+" LIMIT ?, ?", start, size)
@@ -382,14 +346,14 @@ func apiAdminTableDataJson(ctx *gin.Context) {
 			retdata = append(retdata, row)
 		}
 		database.Scanrowsdyn(false, "select Count(*) as frequency FROM "+countTable, &final)
-		ctx.JSON(http.StatusOK, gin.H{"sEcho": getParamValue(ctx, "sEcho"), "iTotalRecords": total, "iTotalDisplayRecords": final, "aaData": retdata})
+		sendDataTablesResponse(ctx, total, final, retdata)
 	}
 }
 
 // buildCustomFilters creates WHERE clause conditions based on custom filter parameters
-func buildCustomFilters(tableName string, ctx *gin.Context) (string, []interface{}) {
+func buildCustomFilters(tableName string, ctx *gin.Context) (string, []any) {
 	var conditions []string
-	var args []interface{}
+	var args []any
 
 	switch tableName {
 	case "dbmovies":
@@ -425,10 +389,6 @@ func buildCustomFilters(tableName string, ctx *gin.Context) (string, []interface
 			conditions = append(conditions, "seriename LIKE ?")
 			args = append(args, "%"+seriename+"%")
 		}
-		if imdbID := getParamValue(ctx, "filter-imdb_id"); imdbID != "" {
-			conditions = append(conditions, "imdb_id LIKE ?")
-			args = append(args, "%"+imdbID+"%")
-		}
 		if tvdbID := getParamValue(ctx, "filter-thetvdb_id"); tvdbID != "" {
 			conditions = append(conditions, "thetvdb_id = ?")
 			args = append(args, tvdbID)
@@ -436,30 +396,66 @@ func buildCustomFilters(tableName string, ctx *gin.Context) (string, []interface
 
 	case "movies":
 		if title := getParamValue(ctx, "filter-title"); title != "" {
-			conditions = append(conditions, "title LIKE ?")
+			conditions = append(conditions, "dbmovies.title LIKE ?")
 			args = append(args, "%"+title+"%")
 		}
+		if year := getParamValue(ctx, "filter-year"); year != "" {
+			conditions = append(conditions, "dbmovies.year = ?")
+			args = append(args, year)
+		}
 		if imdbID := getParamValue(ctx, "filter-imdb_id"); imdbID != "" {
-			conditions = append(conditions, "imdb_id LIKE ?")
+			conditions = append(conditions, "dbmovies.imdb_id LIKE ?")
 			args = append(args, "%"+imdbID+"%")
 		}
+		if listname := getParamValue(ctx, "filter-listname"); listname != "" {
+			conditions = append(conditions, "movies.listname = ?")
+			args = append(args, listname)
+		}
+		if qualityReached := getParamValue(ctx, "filter-quality_reached"); qualityReached != "" {
+			conditions = append(conditions, "movies.quality_reached = ?")
+			args = append(args, qualityReached)
+		}
+		if missing := getParamValue(ctx, "filter-missing"); missing != "" {
+			conditions = append(conditions, "movies.missing = ?")
+			args = append(args, missing)
+		}
 		if quality := getParamValue(ctx, "filter-quality_profile"); quality != "" {
-			conditions = append(conditions, "quality_profile LIKE ?")
-			args = append(args, "%"+quality+"%")
+			conditions = append(conditions, "movies.quality_profile = ?")
+			args = append(args, quality)
+		}
+		if rootpath := getParamValue(ctx, "filter-rootpath"); rootpath != "" {
+			conditions = append(conditions, "movies.rootpath LIKE ?")
+			args = append(args, "%"+rootpath+"%")
 		}
 
 	case "series":
-		if name := getParamValue(ctx, "filter-name"); name != "" {
-			conditions = append(conditions, "name LIKE ?")
-			args = append(args, "%"+name+"%")
+		if seriename := getParamValue(ctx, "filter-seriename"); seriename != "" {
+			conditions = append(conditions, "dbseries.seriename LIKE ?")
+			args = append(args, "%"+seriename+"%")
 		}
-		if imdbID := getParamValue(ctx, "filter-imdb_id"); imdbID != "" {
-			conditions = append(conditions, "imdb_id LIKE ?")
-			args = append(args, "%"+imdbID+"%")
+		if listname := getParamValue(ctx, "filter-listname"); listname != "" {
+			conditions = append(conditions, "series.listname = ?")
+			args = append(args, listname)
 		}
-		if quality := getParamValue(ctx, "filter-quality_profile"); quality != "" {
-			conditions = append(conditions, "quality_profile LIKE ?")
-			args = append(args, "%"+quality+"%")
+		if rootpath := getParamValue(ctx, "filter-rootpath"); rootpath != "" {
+			conditions = append(conditions, "series.rootpath LIKE ?")
+			args = append(args, "%"+rootpath+"%")
+		}
+		if dontUpgrade := getParamValue(ctx, "filter-dont_upgrade"); dontUpgrade != "" {
+			conditions = append(conditions, "series.dont_upgrade = ?")
+			args = append(args, dontUpgrade)
+		}
+		if dontSearch := getParamValue(ctx, "filter-dont_search"); dontSearch != "" {
+			conditions = append(conditions, "series.dont_search = ?")
+			args = append(args, dontSearch)
+		}
+		if searchSpecials := getParamValue(ctx, "filter-search_specials"); searchSpecials != "" {
+			conditions = append(conditions, "series.search_specials = ?")
+			args = append(args, searchSpecials)
+		}
+		if ignoreRuntime := getParamValue(ctx, "filter-ignore_runtime"); ignoreRuntime != "" {
+			conditions = append(conditions, "series.ignore_runtime = ?")
+			args = append(args, ignoreRuntime)
 		}
 
 	case "movie_files", "serie_episode_files":
@@ -530,6 +526,50 @@ func buildCustomFilters(tableName string, ctx *gin.Context) (string, []interface
 			}
 		}
 
+	case "job_histories":
+		if jobType := getParamValue(ctx, "filter-job_type"); jobType != "" {
+			conditions = append(conditions, "job_type LIKE ?")
+			args = append(args, "%"+jobType+"%")
+		}
+		if jobCategory := getParamValue(ctx, "filter-job_category"); jobCategory != "" {
+			conditions = append(conditions, "job_category LIKE ?")
+			args = append(args, "%"+jobCategory+"%")
+		}
+		if jobGroup := getParamValue(ctx, "filter-job_group"); jobGroup != "" {
+			conditions = append(conditions, "job_group LIKE ?")
+			args = append(args, "%"+jobGroup+"%")
+		}
+		if ended := getParamValue(ctx, "filter-ended"); ended != "" {
+			switch ended {
+			case "1":
+				conditions = append(conditions, "ended IS NOT NULL")
+			case "0":
+				conditions = append(conditions, "ended IS NULL")
+			}
+		}
+		if startedDate := getParamValue(ctx, "filter-started_date"); startedDate != "" {
+			conditions = append(conditions, "DATE(started) = ?")
+			args = append(args, startedDate)
+		}
+
+	case "qualities":
+		if qualityType := getParamValue(ctx, "filter-type"); qualityType != "" {
+			conditions = append(conditions, "type = ?")
+			args = append(args, qualityType)
+		}
+		if name := getParamValue(ctx, "filter-name"); name != "" {
+			conditions = append(conditions, "name LIKE ?")
+			args = append(args, "%"+name+"%")
+		}
+		if useRegex := getParamValue(ctx, "filter-use_regex"); useRegex != "" {
+			conditions = append(conditions, "use_regex = ?")
+			args = append(args, useRegex)
+		}
+		if priority := getParamValue(ctx, "filter-priority"); priority != "" {
+			conditions = append(conditions, "priority = ?")
+			args = append(args, priority)
+		}
+
 	case "movie_file_unmatcheds":
 		if filepath := getParamValue(ctx, "filter-filepath"); filepath != "" {
 			conditions = append(conditions, "mfu.filepath LIKE ?")
@@ -563,10 +603,6 @@ func buildCustomFilters(tableName string, ctx *gin.Context) (string, []interface
 			conditions = append(conditions, "mh.title LIKE ?")
 			args = append(args, "%"+title+"%")
 		}
-		if movieTitle := getParamValue(ctx, "filter-movie_title"); movieTitle != "" {
-			conditions = append(conditions, "dm.title LIKE ?")
-			args = append(args, "%"+movieTitle+"%")
-		}
 		if indexer := getParamValue(ctx, "filter-indexer"); indexer != "" {
 			conditions = append(conditions, "mh.indexer LIKE ?")
 			args = append(args, "%"+indexer+"%")
@@ -574,6 +610,10 @@ func buildCustomFilters(tableName string, ctx *gin.Context) (string, []interface
 		if quality := getParamValue(ctx, "filter-quality_profile"); quality != "" {
 			conditions = append(conditions, "mh.quality_profile LIKE ?")
 			args = append(args, "%"+quality+"%")
+		}
+		if downloadedDate := getParamValue(ctx, "filter-downloaded_date"); downloadedDate != "" {
+			conditions = append(conditions, "DATE(mh.downloaded_at) = ?")
+			args = append(args, downloadedDate)
 		}
 
 	case "serie_episode_histories":
@@ -594,23 +634,6 @@ func buildCustomFilters(tableName string, ctx *gin.Context) (string, []interface
 			args = append(args, "%"+quality+"%")
 		}
 
-	case "job_histories":
-		if jobType := getParamValue(ctx, "filter-job_type"); jobType != "" {
-			conditions = append(conditions, "job_type LIKE ?")
-			args = append(args, "%"+jobType+"%")
-		}
-		if jobCategory := getParamValue(ctx, "filter-job_category"); jobCategory != "" {
-			conditions = append(conditions, "job_category LIKE ?")
-			args = append(args, "%"+jobCategory+"%")
-		}
-		if ended := getParamValue(ctx, "filter-ended"); ended != "" {
-			switch ended {
-			case "1":
-				conditions = append(conditions, "ended IS NOT NULL")
-			case "0":
-				conditions = append(conditions, "ended IS NULL")
-			}
-		}
 	}
 
 	if len(conditions) == 0 {
@@ -623,27 +646,25 @@ func buildCustomFilters(tableName string, ctx *gin.Context) (string, []interface
 // }
 
 func apiAdminTableDataEditForm(ctx *gin.Context) {
-	tableName := ctx.Param("name")
-	if tableName == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "table name is required"})
+	tableName, ok := getParamID(ctx, StrName)
+	if !ok {
 		return
 	}
-	id := ctx.Param("id")
-	if id == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "id is required"})
+	id, ok := getParamID(ctx, StrID)
+	if !ok {
 		return
 	}
-	var rowMap map[string]interface{}
+	var rowMap map[string]any
 
 	switch tableName {
 	case "dbmovies":
 		// Get real movie data using StructscanT
 		movie, err := database.Structscan[database.Dbmovie]("SELECT ID, Title, Year, Imdb_id, Original_title, overview, runtime, genres, original_language, status, vote_average, vote_count, popularity, budget, revenue, created_at, updated_at FROM dbmovies WHERE ID = ?", false, id)
 		if err != nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			sendBadRequest(ctx, err.Error())
 			return
 		}
-		rowMap = map[string]interface{}{
+		rowMap = map[string]any{
 			"id":                movie.ID,
 			"title":             movie.Title,
 			"year":              movie.Year,
@@ -665,10 +686,10 @@ func apiAdminTableDataEditForm(ctx *gin.Context) {
 	case "dbmovie_titles":
 		dbmovietitle, err := database.Structscan[database.DbmovieTitle]("SELECT id, title, slug, region, created_at, updated_at, dbmovie_id FROM dbmovie_titles WHERE ID = ?", false, id)
 		if err != nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			sendBadRequest(ctx, err.Error())
 			return
 		}
-		rowMap = map[string]interface{}{
+		rowMap = map[string]any{
 			"id":         dbmovietitle.ID,
 			"title":      dbmovietitle.Title,
 			"slug":       dbmovietitle.Slug,
@@ -681,10 +702,10 @@ func apiAdminTableDataEditForm(ctx *gin.Context) {
 		// Get real series data using StructscanT
 		serie, err := database.Structscan[database.Dbserie]("SELECT id, seriename, imdb_id, thetvdb_id, status, firstaired, network, runtime, language, genre, overview, rating, created_at, updated_at FROM dbseries WHERE ID = ?", false, id)
 		if err != nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			sendBadRequest(ctx, err.Error())
 			return
 		}
-		rowMap = map[string]interface{}{
+		rowMap = map[string]any{
 			"id":         serie.ID,
 			"seriename":  serie.Seriename,
 			"imdb_id":    serie.ImdbID,
@@ -705,10 +726,10 @@ func apiAdminTableDataEditForm(ctx *gin.Context) {
 		// Get real episode data using StructscanT
 		episode, err := database.Structscan[database.DbserieEpisode]("SELECT id, title, season, episode, identifier, first_aired, overview, runtime, dbserie_id, created_at, updated_at FROM dbserie_episodes WHERE ID = ?", false, id)
 		if err != nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			sendBadRequest(ctx, err.Error())
 			return
 		}
-		rowMap = map[string]interface{}{
+		rowMap = map[string]any{
 			"id":          episode.ID,
 			"title":       episode.Title,
 			"season":      episode.Season,
@@ -726,10 +747,10 @@ func apiAdminTableDataEditForm(ctx *gin.Context) {
 		// Get real alternate data using StructscanT
 		alt, err := database.Structscan[database.DbserieAlternate]("SELECT id, title, slug, region, dbserie_id, created_at, updated_at FROM dbserie_alternates WHERE ID = ?", false, id)
 		if err != nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			sendBadRequest(ctx, err.Error())
 			return
 		}
-		rowMap = map[string]interface{}{
+		rowMap = map[string]any{
 			"id":         alt.ID,
 			"title":      alt.Title,
 			"slug":       alt.Slug,
@@ -742,10 +763,10 @@ func apiAdminTableDataEditForm(ctx *gin.Context) {
 		// Get real movies table data using StructscanT
 		movie, err := database.Structscan[database.Movie]("SELECT id, listname, rootpath, dbmovie_id, quality_profile, quality_reached, missing, blacklisted, dont_upgrade, dont_search, created_at, updated_at FROM movies WHERE ID = ?", false, id)
 		if err != nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			sendBadRequest(ctx, err.Error())
 			return
 		}
-		rowMap = map[string]interface{}{
+		rowMap = map[string]any{
 			"id":              movie.ID,
 			"listname":        movie.Listname,
 			"rootpath":        movie.Rootpath,
@@ -763,10 +784,10 @@ func apiAdminTableDataEditForm(ctx *gin.Context) {
 		// Get real movie file unmatched data using StructscanT
 		movieFileUnmatched, err := database.Structscan[database.MovieFileUnmatched]("SELECT id, listname, filepath, parsed_data, last_checked, created_at, updated_at FROM movie_file_unmatcheds WHERE ID = ?", false, id)
 		if err != nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			sendBadRequest(ctx, err.Error())
 			return
 		}
-		rowMap = map[string]interface{}{
+		rowMap = map[string]any{
 			"id":           movieFileUnmatched.ID,
 			"listname":     movieFileUnmatched.Listname,
 			"filepath":     movieFileUnmatched.Filepath,
@@ -779,10 +800,10 @@ func apiAdminTableDataEditForm(ctx *gin.Context) {
 		// Get real movie history data using StructscanT
 		movieHistory, err := database.Structscan[database.MovieHistory]("SELECT id, title, url, indexer, target, quality_profile, created_at, updated_at, downloaded_at, resolution_id, quality_id, codec_id, audio_id, movie_id, dbmovie_id, blacklisted FROM movie_histories WHERE ID = ?", false, id)
 		if err != nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			sendBadRequest(ctx, err.Error())
 			return
 		}
-		rowMap = map[string]interface{}{
+		rowMap = map[string]any{
 			"id":              movieHistory.ID,
 			"title":           movieHistory.Title,
 			"url":             movieHistory.URL,
@@ -804,10 +825,10 @@ func apiAdminTableDataEditForm(ctx *gin.Context) {
 		// Get real movie files data using StructscanT
 		movieFile, err := database.Structscan[database.MovieFile]("SELECT id, location, extension, quality_profile, created_at, updated_at, resolution_id, quality_id, codec_id, audio_id, movie_id, dbmovie_id, height, width, proper, extended, repack FROM movie_files WHERE ID = ?", false, id)
 		if err != nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			sendBadRequest(ctx, err.Error())
 			return
 		}
-		rowMap = map[string]interface{}{
+		rowMap = map[string]any{
 			"id":              movieFile.ID,
 			"location":        movieFile.Location,
 			"extension":       movieFile.Extension,
@@ -831,10 +852,10 @@ func apiAdminTableDataEditForm(ctx *gin.Context) {
 		// Get real series table data using StructscanT
 		serie, err := database.Structscan[database.Serie]("SELECT id, listname, rootpath, dbserie_id, dont_upgrade, dont_search, created_at, updated_at FROM series WHERE ID = ?", false, id)
 		if err != nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			sendBadRequest(ctx, err.Error())
 			return
 		}
-		rowMap = map[string]interface{}{
+		rowMap = map[string]any{
 			"id":           serie.ID,
 			"listname":     serie.Listname,
 			"rootpath":     serie.Rootpath,
@@ -849,10 +870,10 @@ func apiAdminTableDataEditForm(ctx *gin.Context) {
 		// Get real serie episodes data using StructscanT
 		episode, err := database.Structscan[database.SerieEpisode]("SELECT id, quality_profile, lastscan, created_at, updated_at, dbserie_episode_id, serie_id, dbserie_id, blacklisted, quality_reached, missing, dont_upgrade, dont_search, ignore_runtime FROM serie_episodes WHERE ID = ?", false, id)
 		if err != nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			sendBadRequest(ctx, err.Error())
 			return
 		}
-		rowMap = map[string]interface{}{
+		rowMap = map[string]any{
 			"id":                 episode.ID,
 			"quality_profile":    episode.QualityProfile,
 			"lastscan":           episode.Lastscan.Time,
@@ -872,10 +893,10 @@ func apiAdminTableDataEditForm(ctx *gin.Context) {
 		// Get real serie files
 		serieFile, err := database.Structscan[database.SerieEpisodeFile]("SELECT id, location, filename, extension, quality_profile, created_at, updated_at, resolution_id, quality_id, codec_id, audio_id, serie_id, serie_episode_id, dbserie_id, dbserie_episode_id, proper, extended, repack FROM serie_episode_files WHERE ID = ?", false, id)
 		if err != nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			sendBadRequest(ctx, err.Error())
 			return
 		}
-		rowMap = map[string]interface{}{
+		rowMap = map[string]any{
 			"id":                 serieFile.ID,
 			"location":           serieFile.Location,
 			"filename":           serieFile.Filename,
@@ -901,10 +922,10 @@ func apiAdminTableDataEditForm(ctx *gin.Context) {
 		// Get real serie file unmatched data using StructscanT
 		serieFileUnmatched, err := database.Structscan[database.SerieFileUnmatched]("SELECT id, listname, filepath, parsed_data, last_checked, created_at, updated_at FROM serie_file_unmatcheds WHERE ID = ?", false, id)
 		if err != nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			sendBadRequest(ctx, err.Error())
 			return
 		}
-		rowMap = map[string]interface{}{
+		rowMap = map[string]any{
 			"id":           serieFileUnmatched.ID,
 			"listname":     serieFileUnmatched.Listname,
 			"filepath":     serieFileUnmatched.Filepath,
@@ -917,10 +938,10 @@ func apiAdminTableDataEditForm(ctx *gin.Context) {
 		// Get real serie episode history data using StructscanT
 		serieEpisodeHistory, err := database.Structscan[database.SerieEpisodeHistory]("SELECT id, title, url, indexer, target, quality_profile, created_at, updated_at, downloaded_at, resolution_id, quality_id, codec_id, audio_id, serie_id, serie_episode_id, dbserie_id, dbserie_episode_id FROM serie_episode_histories WHERE ID = ?", false, id)
 		if err != nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			sendBadRequest(ctx, err.Error())
 			return
 		}
-		rowMap = map[string]interface{}{
+		rowMap = map[string]any{
 			"id":                 serieEpisodeHistory.ID,
 			"title":              serieEpisodeHistory.Title,
 			"url":                serieEpisodeHistory.URL,
@@ -943,10 +964,10 @@ func apiAdminTableDataEditForm(ctx *gin.Context) {
 		// Get real job history data using StructscanT
 		job, err := database.Structscan[database.JobHistory]("SELECT id, job_type, job_category, job_group, started, ended, created_at, updated_at FROM job_histories WHERE ID = ?", false, id)
 		if err != nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			sendBadRequest(ctx, err.Error())
 			return
 		}
-		rowMap = map[string]interface{}{
+		rowMap = map[string]any{
 			"id":           job.ID,
 			"job_type":     job.JobType,
 			"job_category": job.JobCategory,
@@ -960,10 +981,10 @@ func apiAdminTableDataEditForm(ctx *gin.Context) {
 		// Get real quality data using StructscanT
 		quality, err := database.Structscan[database.Qualities]("SELECT id, name, regex, strings, created_at, updated_at, type, priority, regexgroup, use_regex FROM qualities WHERE ID = ?", false, id)
 		if err != nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			sendBadRequest(ctx, err.Error())
 			return
 		}
-		rowMap = map[string]interface{}{
+		rowMap = map[string]any{
 			"id":         quality.ID,
 			"name":       quality.Name,
 			"regex":      quality.Regex,
@@ -980,14 +1001,6 @@ func apiAdminTableDataEditForm(ctx *gin.Context) {
 	renderTableEditForm(tableName, rowMap, id, getCSRFToken(ctx)).Render(&buf)
 	ctx.Header("Content-Type", "text/html; charset=utf-8")
 	ctx.String(http.StatusOK, buf.String())
-}
-
-// getCSRFToken extracts CSRF token from gin context if available
-func getCSRFToken(c *gin.Context) string {
-	if token, exists := c.Get("csrf_token"); exists {
-		return token.(string)
-	}
-	return ""
 }
 
 // getReferenceTable determines the reference table name from a foreign key field
@@ -1025,7 +1038,7 @@ func getReferenceTable(fieldName string) string {
 	return baseName + "s"
 }
 
-func renderTableEditForm(table string, data map[string]interface{}, id string, csrfToken string) gomponents.Node {
+func renderTableEditForm(table string, data map[string]any, id string, csrfToken string) gomponents.Node {
 	formNodes := []gomponents.Node{
 		html.Input(html.Type("hidden"), html.Name("csrf_token"), html.Value(csrfToken)),
 	}
@@ -1051,7 +1064,7 @@ func renderTableEditForm(table string, data map[string]interface{}, id string, c
 		var capitalizedParts []string
 		for _, part := range parts {
 			if len(part) > 0 {
-				capitalizedParts = append(capitalizedParts, strings.Title(strings.ToLower(part)))
+				capitalizedParts = append(capitalizedParts, strings.ToTitle(strings.ToLower(part)))
 			}
 		}
 		return strings.Join(capitalizedParts, " ")
@@ -1079,28 +1092,18 @@ func renderTableEditForm(table string, data map[string]interface{}, id string, c
 			}
 
 			var options []gomponents.Node
-			options = append(options, html.Option(html.Value(""), gomponents.Text("-- Select or type custom --")))
+			options = append(options, createOption("", "-- Select or type custom --", false))
 
 			// Add config options based on field type
 			switch col {
 			case "quality_profile":
 				qualityConfigs := config.GetSettingsQualityAll()
 				for _, qc := range qualityConfigs {
-					selected := gomponents.If(currentValue == qc.Name, html.Selected())
-					options = append(options, html.Option(
-						html.Value(qc.Name),
-						selected,
-						gomponents.Text(qc.Name),
-					))
+					options = append(options, createOption(qc.Name, qc.Name, currentValue == qc.Name))
 				}
 			case "listname":
 				for _, lc := range config.GetSettingsMediaListAll() {
-					selected := gomponents.If(currentValue == lc, html.Selected())
-					options = append(options, html.Option(
-						html.Value(lc),
-						selected,
-						gomponents.Text(lc),
-					))
+					options = append(options, createOption(lc, lc, currentValue == lc))
 				}
 			case "quality_type":
 				// Quality type options: 1 = Resolution, 2 = Quality, 3 = Codec, 4 = Audio
@@ -1111,12 +1114,7 @@ func renderTableEditForm(table string, data map[string]interface{}, id string, c
 					"4": "Audio",
 				}
 				for value, label := range qualityTypes {
-					selected := gomponents.If(currentValue == value, html.Selected())
-					options = append(options, html.Option(
-						html.Value(value),
-						selected,
-						gomponents.Text(label),
-					))
+					options = append(options, createOption(value, label, currentValue == value))
 				}
 			}
 
@@ -1167,15 +1165,11 @@ func renderTableEditForm(table string, data map[string]interface{}, id string, c
 
 				// Create AJAX-powered dropdown with current value
 				var optionNodes []gomponents.Node
-				optionNodes = append(optionNodes, html.Option(html.Value(""), gomponents.Text("-- Select --")))
+				optionNodes = append(optionNodes, createOption("", "-- Select --", false))
 
 				// If there's a current value, add it as a selected option (will be replaced by AJAX)
 				if currentValue != "" {
-					optionNodes = append(optionNodes, html.Option(
-						html.Value(currentValue),
-						html.Selected(),
-						gomponents.Text("Loading..."),
-					))
+					optionNodes = append(optionNodes, createOption(currentValue, "Loading...", true))
 				}
 
 				formNodes = append(formNodes, html.Div(
@@ -1197,31 +1191,23 @@ func renderTableEditForm(table string, data map[string]interface{}, id string, c
 
 		switch val := (fieldData).(type) {
 		case bool:
-			var checkedNode gomponents.Node
-			if val {
-				checkedNode = html.Checked()
-			}
 			formNodes = append(formNodes, html.Div(
 				html.Class("form-check form-switch"),
 				html.Label(html.Class("form-label"), html.For(col), gomponents.Text(getColumnDisplayName(columnMap, col))),
-				html.Input(html.Class("form-check-input form-control"), html.Type("checkbox"), html.Name(col), html.ID("field-"+col), checkedNode),
+				formCheckboxInput(col, "field-"+col, val),
 			))
 		case string:
 			formNodes = append(formNodes, html.Div(
 				html.Label(html.Class("form-label"), html.For(col), gomponents.Text(getColumnDisplayName(columnMap, col))),
-				html.Input(html.Class("form-control"), html.ID("field-"+col), html.Type("text"), html.Name(col), html.Value(val)),
+				formTextInput(col, "field-"+col, val),
 			))
 		case int:
 			if col == "missing" || col == "blacklisted" || col == "dont_search" || col == "dont_upgrade" || col == "use_regex" || col == "proper" || col == "extended" || col == "repack" || col == "ignore_runtime" || col == "adult" || col == "search_specials" || col == "quality_reached" {
 				checked, _ := strconv.ParseBool(fmt.Sprintf("%v", fieldData))
-				var checkedNode gomponents.Node
-				if checked {
-					checkedNode = html.Checked()
-				}
 				formNodes = append(formNodes, html.Div(
 					html.Class("form-check form-switch"),
 					html.Label(html.Class("form-label"), html.For(col), gomponents.Text(getColumnDisplayName(columnMap, col))),
-					html.Input(html.Class("form-check-input form-control"), html.Type("checkbox"), html.Name(col), html.ID("field-"+col), checkedNode, html.Value(fmt.Sprintf("%v", fieldData))),
+					formCheckboxInput(col, "field-"+col, checked, html.Value(fmt.Sprintf("%v", fieldData))),
 				))
 			} else {
 				formNodes = append(formNodes, html.Div(
@@ -1244,7 +1230,7 @@ func renderTableEditForm(table string, data map[string]interface{}, id string, c
 		default:
 			formNodes = append(formNodes, html.Div(
 				html.Label(html.Class("form-label"), html.For(col), gomponents.Text(getColumnDisplayName(columnMap, col))),
-				html.Input(html.Class("form-control"), html.ID("field-"+col), html.Type("text"), html.Name(col), html.Value(fmt.Sprintf("%v", fieldData))),
+				formTextInput(col, "field-"+col, fmt.Sprintf("%v", fieldData)),
 			))
 		}
 	}
@@ -1286,7 +1272,13 @@ func renderTableEditForm(table string, data map[string]interface{}, id string, c
 
 			html.ID("edit-form"),
 			gomponents.Group(formNodes),
-			html.Script(gomponents.Raw(`
+			addEditFormJavascript(),
+		),
+	)
+}
+
+func addEditFormJavascript() gomponents.Node {
+	return html.Script(gomponents.Raw(`
 				// Select2 initialization is now handled by the global initSelect2Global function
 				
 				// Initialize config dropdowns with custom input support
@@ -1382,9 +1374,7 @@ func renderTableEditForm(table string, data map[string]interface{}, id string, c
 					});
 					});
 				}
-			`)),
-		),
-	)
+			`))
 }
 
 type Mdata struct {
@@ -1446,72 +1436,132 @@ func renderCustomFilters(tableName string) gomponents.Node {
 			),
 		}
 	case "movies":
+		var qualoptions []gomponents.Node
+		qualoptions = append(qualoptions, html.Class("form-control custom-filter"))
+		qualoptions = append(qualoptions, html.ID("filter-quality_profile"))
+		qualoptions = append(qualoptions, createOption("", "All Profiles", false))
+		qualityConfigs := config.GetSettingsQualityAll()
+		for _, qc := range qualityConfigs {
+			qualoptions = append(qualoptions, createOption(qc.Name, qc.Name, false))
+		}
+		var listoptions []gomponents.Node
+		listoptions = append(listoptions, html.Class("form-control custom-filter"))
+		listoptions = append(listoptions, html.ID("filter-listname"))
+		listoptions = append(listoptions, createOption("", "All Lists", false))
+		for _, lc := range config.GetSettingsMediaListAll() {
+			listoptions = append(listoptions, createOption(lc, lc, false))
+		}
 		filterFields = []gomponents.Node{
 			html.Div(html.Class("col-md-4"),
 				html.Label(html.Class("form-label"), gomponents.Text("Title")),
 				html.Input(html.Class("form-control custom-filter"), html.Type("text"),
 					html.ID("filter-title"), html.Placeholder("Filter by title...")),
 			),
-			html.Div(html.Class("col-md-4"),
+			html.Div(html.Class("col-md-2"),
 				html.Label(html.Class("form-label"), gomponents.Text("Year")),
-				html.Input(html.Class("form-control custom-filter"), html.Type("text"),
-					html.ID("filter-year"), html.Placeholder("Filter by year...")),
+				html.Input(html.Class("form-control custom-filter"), html.Type("number"),
+					html.ID("filter-year"), html.Placeholder("Year...")),
 			),
 			html.Div(html.Class("col-md-3"),
 				html.Label(html.Class("form-label"), gomponents.Text("IMDB ID")),
 				html.Input(html.Class("form-control custom-filter"), html.Type("text"),
 					html.ID("filter-imdb_id"), html.Placeholder("tt1234567...")),
 			),
-			html.Div(html.Class("col-md-4"),
+			html.Div(html.Class("col-md-3"),
 				html.Label(html.Class("form-label"), gomponents.Text("Listname")),
-				html.Input(html.Class("form-control custom-filter"), html.Type("text"),
-					html.ID("filter-listname"), html.Placeholder("Filter by listname...")),
+				html.Select(listoptions...),
 			),
-			html.Div(html.Class("col-md-4"),
+			html.Div(html.Class("col-md-3"),
 				html.Label(html.Class("form-label"), gomponents.Text("Quality Reached")),
-				html.Input(html.Class("form-control custom-filter"), html.Type("text"),
-					html.ID("filter-quality_reached"), html.Placeholder("Filter by Quality Reached...")),
+				html.Select(html.Class("form-control custom-filter"), html.ID("filter-quality_reached"),
+					createOption("", "All", false),
+					createOption("1", "Yes", false),
+					createOption("0", "No", false),
+				),
 			),
-			html.Div(html.Class("col-md-4"),
+			html.Div(html.Class("col-md-3"),
 				html.Label(html.Class("form-label"), gomponents.Text("Missing")),
-				html.Input(html.Class("form-control custom-filter"), html.Type("text"),
-					html.ID("filter-missing"), html.Placeholder("Filter by missing...")),
+				html.Select(html.Class("form-control custom-filter"), html.ID("filter-missing"),
+					createOption("", "All", false),
+					createOption("1", "Missing", false),
+					createOption("0", "Available", false),
+				),
 			),
 			html.Div(html.Class("col-md-3"),
 				html.Label(html.Class("form-label"), gomponents.Text("Quality Profile")),
-				html.Input(html.Class("form-control custom-filter"), html.Type("text"),
-					html.ID("filter-quality_profile"), html.Placeholder("Quality...")),
-			),
-		}
-	case "series":
-		filterFields = []gomponents.Node{
-			html.Div(html.Class("col-md-4"),
-				html.Label(html.Class("form-label"), gomponents.Text("Name")),
-				html.Input(html.Class("form-control custom-filter"), html.Type("text"),
-					html.ID("filter-name"), html.Placeholder("Filter by name...")),
-			),
-			html.Div(html.Class("col-md-4"),
-				html.Label(html.Class("form-label"), gomponents.Text("Listname")),
-				html.Input(html.Class("form-control custom-filter"), html.Type("text"),
-					html.ID("filter-listname"), html.Placeholder("Filter by listname...")),
+				html.Select(qualoptions...),
 			),
 			html.Div(html.Class("col-md-4"),
 				html.Label(html.Class("form-label"), gomponents.Text("Rootpath")),
 				html.Input(html.Class("form-control custom-filter"), html.Type("text"),
 					html.ID("filter-rootpath"), html.Placeholder("Filter by rootpath...")),
 			),
-			html.Div(html.Class("col-md-3"),
-				html.Label(html.Class("form-label"), gomponents.Text("IMDB ID")),
+		}
+	case "series":
+		var listoptions []gomponents.Node
+		listoptions = append(listoptions, html.Class("form-control custom-filter"))
+		listoptions = append(listoptions, html.ID("filter-listname"))
+		listoptions = append(listoptions, createOption("", "All Lists", false))
+		for _, lc := range config.GetSettingsMediaListAll() {
+			listoptions = append(listoptions, createOption(lc, lc, false))
+		}
+		filterFields = []gomponents.Node{
+			html.Div(html.Class("col-md-4"),
+				html.Label(html.Class("form-label"), gomponents.Text("Series Name")),
 				html.Input(html.Class("form-control custom-filter"), html.Type("text"),
-					html.ID("filter-imdb_id"), html.Placeholder("tt1234567...")),
+					html.ID("filter-seriename"), html.Placeholder("Filter by series name...")),
 			),
 			html.Div(html.Class("col-md-3"),
-				html.Label(html.Class("form-label"), gomponents.Text("Quality Profile")),
+				html.Label(html.Class("form-label"), gomponents.Text("Listname")),
+				html.Select(listoptions...),
+			),
+			html.Div(html.Class("col-md-3"),
+				html.Label(html.Class("form-label"), gomponents.Text("Rootpath")),
 				html.Input(html.Class("form-control custom-filter"), html.Type("text"),
-					html.ID("filter-quality_profile"), html.Placeholder("Quality...")),
+					html.ID("filter-rootpath"), html.Placeholder("Filter by rootpath...")),
+			),
+			html.Div(html.Class("col-md-3"),
+				html.Label(html.Class("form-label"), gomponents.Text("Don't Upgrade")),
+				html.Select(html.Class("form-control custom-filter"), html.ID("filter-dont_upgrade"),
+					createOption("", "All", false),
+					createOption("1", "Yes", false),
+					createOption("0", "No", false),
+				),
+			),
+			html.Div(html.Class("col-md-3"),
+				html.Label(html.Class("form-label"), gomponents.Text("Don't Search")),
+				html.Select(html.Class("form-control custom-filter"), html.ID("filter-dont_search"),
+					createOption("", "All", false),
+					createOption("1", "Yes", false),
+					createOption("0", "No", false),
+				),
+			),
+			html.Div(html.Class("col-md-3"),
+				html.Label(html.Class("form-label"), gomponents.Text("Search Specials")),
+				html.Select(html.Class("form-control custom-filter"), html.ID("filter-search_specials"),
+					createOption("", "All", false),
+					createOption("1", "Yes", false),
+					createOption("0", "No", false),
+				),
+			),
+			html.Div(html.Class("col-md-3"),
+				html.Label(html.Class("form-label"), gomponents.Text("Ignore Runtime")),
+				html.Select(html.Class("form-control custom-filter"), html.ID("filter-ignore_runtime"),
+					createOption("", "All", false),
+					createOption("1", "Yes", false),
+					createOption("0", "No", false),
+				),
 			),
 		}
 	case "movie_files", "serie_episode_files":
+		var qualoptions []gomponents.Node
+		qualoptions = append(qualoptions, html.Class("form-control custom-filter"))
+		qualoptions = append(qualoptions, html.ID("filter-quality_profile"))
+		qualoptions = append(qualoptions, createOption("", "All Profiles", false))
+		qualityConfigs := config.GetSettingsQualityAll()
+		for _, qc := range qualityConfigs {
+			qualoptions = append(qualoptions, createOption(qc.Name, qc.Name, false))
+		}
 		filterFields = []gomponents.Node{
 			html.Div(html.Class("col-md-4"),
 				html.Label(html.Class("form-label"), gomponents.Text("Filename")),
@@ -1519,14 +1569,13 @@ func renderCustomFilters(tableName string) gomponents.Node {
 					html.ID("filter-filename"), html.Placeholder("Filter by filename...")),
 			),
 			html.Div(html.Class("col-md-3"),
-				html.Label(html.Class("form-label"), gomponents.Text("Quality")),
-				html.Input(html.Class("form-control custom-filter"), html.Type("text"),
-					html.ID("filter-quality_profile"), html.Placeholder("Quality...")),
-			),
-			html.Div(html.Class("col-md-3"),
 				html.Label(html.Class("form-label"), gomponents.Text("Resolution")),
 				html.Input(html.Class("form-control custom-filter"), html.Type("text"),
 					html.ID("filter-resolution"), html.Placeholder("1080p, 720p...")),
+			),
+			html.Div(html.Class("col-md-3"),
+				html.Label(html.Class("form-label"), gomponents.Text("Quality Profile")),
+				html.Select(qualoptions...),
 			),
 		}
 	case "dbserie_alternates":
@@ -1576,6 +1625,14 @@ func renderCustomFilters(tableName string) gomponents.Node {
 			),
 		}
 	case "serie_episodes":
+		var qualoptions []gomponents.Node
+		qualoptions = append(qualoptions, html.Class("form-control custom-filter"))
+		qualoptions = append(qualoptions, html.ID("filter-quality_profile"))
+		qualoptions = append(qualoptions, createOption("", "All Profiles", false))
+		qualityConfigs := config.GetSettingsQualityAll()
+		for _, qc := range qualityConfigs {
+			qualoptions = append(qualoptions, createOption(qc.Name, qc.Name, false))
+		}
 		filterFields = []gomponents.Node{
 			html.Div(html.Class("col-md-4"),
 				html.Label(html.Class("form-label"), gomponents.Text("Episode Title")),
@@ -1584,16 +1641,112 @@ func renderCustomFilters(tableName string) gomponents.Node {
 			),
 			html.Div(html.Class("col-md-3"),
 				html.Label(html.Class("form-label"), gomponents.Text("Quality Profile")),
-				html.Input(html.Class("form-control custom-filter"), html.Type("text"),
-					html.ID("filter-quality_profile"), html.Placeholder("Quality...")),
+				html.Select(qualoptions...),
 			),
 			html.Div(html.Class("col-md-3"),
 				html.Label(html.Class("form-label"), gomponents.Text("Missing")),
 				html.Select(html.Class("form-control custom-filter"), html.ID("filter-missing"),
-					html.Option(html.Value(""), gomponents.Text("All")),
-					html.Option(html.Value("1"), gomponents.Text("Missing")),
-					html.Option(html.Value("0"), gomponents.Text("Available")),
+					createOption("", "All", false),
+					createOption("1", "Missing", false),
+					createOption("0", "Available", false),
 				),
+			),
+		}
+	case "job_histories":
+		filterFields = []gomponents.Node{
+			html.Div(html.Class("col-md-3"),
+				html.Label(html.Class("form-label"), gomponents.Text("Job Type")),
+				html.Input(html.Class("form-control custom-filter"), html.Type("text"),
+					html.ID("filter-job_type"), html.Placeholder("Filter by job type...")),
+			),
+			html.Div(html.Class("col-md-3"),
+				html.Label(html.Class("form-label"), gomponents.Text("Job Category")),
+				html.Input(html.Class("form-control custom-filter"), html.Type("text"),
+					html.ID("filter-job_category"), html.Placeholder("Filter by category...")),
+			),
+			html.Div(html.Class("col-md-3"),
+				html.Label(html.Class("form-label"), gomponents.Text("Job Group")),
+				html.Input(html.Class("form-control custom-filter"), html.Type("text"),
+					html.ID("filter-job_group"), html.Placeholder("Filter by group...")),
+			),
+			html.Div(html.Class("col-md-3"),
+				html.Label(html.Class("form-label"), gomponents.Text("Status")),
+				html.Select(html.Class("form-control custom-filter"), html.ID("filter-ended"),
+					createOption("", "All", false),
+					createOption("1", "Completed", false),
+					createOption("0", "Running", false),
+				),
+			),
+			html.Div(html.Class("col-md-3"),
+				html.Label(html.Class("form-label"), gomponents.Text("Started Date")),
+				html.Input(html.Class("form-control custom-filter"), html.Type("date"),
+					html.ID("filter-started_date"), html.Placeholder("Started date...")),
+			),
+		}
+	case "qualities":
+		filterFields = []gomponents.Node{
+			html.Div(html.Class("col-md-3"),
+				html.Label(html.Class("form-label"), gomponents.Text("Type")),
+				html.Select(html.Class("form-control custom-filter"), html.ID("filter-type"),
+					createOption("", "All Types", false),
+					createOption("0", "Movies", false),
+					createOption("1", "Series", false),
+				),
+			),
+			html.Div(html.Class("col-md-3"),
+				html.Label(html.Class("form-label"), gomponents.Text("Name")),
+				html.Input(html.Class("form-control custom-filter"), html.Type("text"),
+					html.ID("filter-name"), html.Placeholder("Filter by name...")),
+			),
+			html.Div(html.Class("col-md-3"),
+				html.Label(html.Class("form-label"), gomponents.Text("Use Regex")),
+				html.Select(html.Class("form-control custom-filter"), html.ID("filter-use_regex"),
+					createOption("", "All", false),
+					createOption("1", "Yes", false),
+					createOption("0", "No", false),
+				),
+			),
+			html.Div(html.Class("col-md-3"),
+				html.Label(html.Class("form-label"), gomponents.Text("Priority")),
+				html.Input(html.Class("form-control custom-filter"), html.Type("number"),
+					html.ID("filter-priority"), html.Placeholder("Priority...")),
+			),
+		}
+	case "movie_histories":
+		var qualoptions []gomponents.Node
+		qualoptions = append(qualoptions, html.Class("form-control custom-filter"))
+		qualoptions = append(qualoptions, html.ID("filter-quality_profile"))
+		qualoptions = append(qualoptions, createOption("", "All Profiles", false))
+		qualityConfigs := config.GetSettingsQualityAll()
+		for _, qc := range qualityConfigs {
+			qualoptions = append(qualoptions, createOption(qc.Name, qc.Name, false))
+		}
+		var listoptions []gomponents.Node
+		listoptions = append(listoptions, html.Class("form-control custom-filter"))
+		listoptions = append(listoptions, html.ID("filter-listname"))
+		listoptions = append(listoptions, createOption("", "All Lists", false))
+		for _, lc := range config.GetSettingsMediaListAll() {
+			listoptions = append(listoptions, createOption(lc, lc, false))
+		}
+		filterFields = []gomponents.Node{
+			html.Div(html.Class("col-md-3"),
+				html.Label(html.Class("form-label"), gomponents.Text("Title")),
+				html.Input(html.Class("form-control custom-filter"), html.Type("text"),
+					html.ID("filter-title"), html.Placeholder("Filter by title...")),
+			),
+			html.Div(html.Class("col-md-3"),
+				html.Label(html.Class("form-label"), gomponents.Text("Indexer")),
+				html.Input(html.Class("form-control custom-filter"), html.Type("text"),
+					html.ID("filter-indexer"), html.Placeholder("Filter by indexer...")),
+			),
+			html.Div(html.Class("col-md-3"),
+				html.Label(html.Class("form-label"), gomponents.Text("Quality Profile")),
+				html.Select(qualoptions...),
+			),
+			html.Div(html.Class("col-md-3"),
+				html.Label(html.Class("form-label"), gomponents.Text("Downloaded Date")),
+				html.Input(html.Class("form-control custom-filter"), html.Type("date"),
+					html.ID("filter-downloaded_date"), html.Placeholder("Downloaded date...")),
 			),
 		}
 	case "movie_file_unmatcheds":
@@ -1632,29 +1785,6 @@ func renderCustomFilters(tableName string) gomponents.Node {
 					html.ID("filter-series_rootpath"), html.Placeholder("Root path...")),
 			),
 		}
-	case "movie_histories":
-		filterFields = []gomponents.Node{
-			html.Div(html.Class("col-md-3"),
-				html.Label(html.Class("form-label"), gomponents.Text("Title")),
-				html.Input(html.Class("form-control custom-filter"), html.Type("text"),
-					html.ID("filter-title"), html.Placeholder("Filter by title...")),
-			),
-			html.Div(html.Class("col-md-3"),
-				html.Label(html.Class("form-label"), gomponents.Text("Movie Title")),
-				html.Input(html.Class("form-control custom-filter"), html.Type("text"),
-					html.ID("filter-movie_title"), html.Placeholder("Filter by movie title...")),
-			),
-			html.Div(html.Class("col-md-2"),
-				html.Label(html.Class("form-label"), gomponents.Text("Indexer")),
-				html.Input(html.Class("form-control custom-filter"), html.Type("text"),
-					html.ID("filter-indexer"), html.Placeholder("Indexer...")),
-			),
-			html.Div(html.Class("col-md-2"),
-				html.Label(html.Class("form-label"), gomponents.Text("Quality")),
-				html.Input(html.Class("form-control custom-filter"), html.Type("text"),
-					html.ID("filter-quality_profile"), html.Placeholder("Quality...")),
-			),
-		}
 	case "serie_episode_histories":
 		filterFields = []gomponents.Node{
 			html.Div(html.Class("col-md-3"),
@@ -1676,27 +1806,6 @@ func renderCustomFilters(tableName string) gomponents.Node {
 				html.Label(html.Class("form-label"), gomponents.Text("Quality")),
 				html.Input(html.Class("form-control custom-filter"), html.Type("text"),
 					html.ID("filter-quality_profile"), html.Placeholder("Quality...")),
-			),
-		}
-	case "job_histories":
-		filterFields = []gomponents.Node{
-			html.Div(html.Class("col-md-4"),
-				html.Label(html.Class("form-label"), gomponents.Text("Job Type")),
-				html.Input(html.Class("form-control custom-filter"), html.Type("text"),
-					html.ID("filter-job_type"), html.Placeholder("Filter by job type...")),
-			),
-			html.Div(html.Class("col-md-3"),
-				html.Label(html.Class("form-label"), gomponents.Text("Job Category")),
-				html.Input(html.Class("form-control custom-filter"), html.Type("text"),
-					html.ID("filter-job_category"), html.Placeholder("Category...")),
-			),
-			html.Div(html.Class("col-md-3"),
-				html.Label(html.Class("form-label"), gomponents.Text("Status")),
-				html.Select(html.Class("form-control custom-filter"), html.ID("filter-ended"),
-					html.Option(html.Value(""), gomponents.Text("All")),
-					html.Option(html.Value("1"), gomponents.Text("Completed")),
-					html.Option(html.Value("0"), gomponents.Text("Running")),
-				),
 			),
 		}
 	default:
@@ -1854,6 +1963,20 @@ func renderTable(tableInfo *TableInfo, csrfToken string) gomponents.Node {
 						%s
 					});
 					
+					// Handle custom filter changes - trigger table refresh
+					$(document).on('change keyup input', '.custom-filter', function() {
+						var delay = 500; // Delay in milliseconds for text inputs
+						var element = $(this);
+						
+						// Clear existing timer
+						clearTimeout(element.data('timer'));
+						
+						// Set new timer
+						element.data('timer', setTimeout(function() {
+							oTable.ajax.reload();
+						}, element.is('select') ? 0 : delay)); // No delay for select elements
+					});
+					
 					// Handle Edit button clicks
 					$(document).on('click', '.edit-btn', function() {
 						var id = $(this).data('id');
@@ -1898,45 +2021,35 @@ func renderTable(tableInfo *TableInfo, csrfToken string) gomponents.Node {
 // @Description  Inserts a new record into the specified table
 // @Tags         admin
 // @Param        name   path     string                 true "Table name"
-// @Param        data   body     map[string]interface{} true "Record data"
+// @Param        data   body     map[string]any true "Record data"
 // @Param        apikey query    string                 true "apikey"
 // @Success      200    {object} gin.H{"success": bool}
 // @Failure      400    {object} Jsonerror
 // @Failure      401    {object} Jsonerror
 // @Router       /api/admin/table/{name}/insert [post]
 func apiAdminTableInsert(ctx *gin.Context) {
-	tableName := ctx.Param("name")
-	if tableName == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"error":   "table name is required",
-		})
+	tableName, ok := getParamID(ctx, StrName)
+	if !ok {
 		return
 	}
 
-	var data map[string]interface{}
+	var data map[string]any
 
 	// Handle both JSON and form data
 	contentType := ctx.GetHeader("Content-Type")
 	if strings.Contains(contentType, "application/json") {
 		if err := ctx.BindJSON(&data); err != nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{
-				"success": false,
-				"error":   err.Error(),
-			})
+			sendErrorResponse(ctx, http.StatusBadRequest, err.Error())
 			return
 		}
 	} else {
 		// Handle form data
 		if err := ctx.Request.ParseForm(); err != nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{
-				"success": false,
-				"error":   err.Error(),
-			})
+			sendErrorResponse(ctx, http.StatusBadRequest, err.Error())
 			return
 		}
 
-		data = make(map[string]interface{})
+		data = make(map[string]any)
 		for key, values := range ctx.Request.PostForm {
 			if len(values) > 0 {
 				data[key] = values[0] // Take first value if multiple
@@ -1945,15 +2058,7 @@ func apiAdminTableInsert(ctx *gin.Context) {
 	}
 
 	err := insertAdminRecord(tableName, data)
-	ctx.JSON(http.StatusOK, gin.H{
-		"success": err == nil,
-		"error": func() string {
-			if err != nil {
-				return err.Error()
-			}
-			return ""
-		}(),
-	})
+	sendOperationResult(ctx, err)
 }
 
 // @Summary      Update Table Record
@@ -1961,56 +2066,45 @@ func apiAdminTableInsert(ctx *gin.Context) {
 // @Tags         admin
 // @Param        name   path     string                 true "Table name"
 // @Param        index  path     int                    true "Record index"
-// @Param        data   body     map[string]interface{} true "Record data"
+// @Param        data   body     map[string]any true "Record data"
 // @Param        apikey query    string                 true "apikey"
 // @Success      200    {object} gin.H{"success": bool}
 // @Failure      400    {object} Jsonerror
 // @Failure      401    {object} Jsonerror
 // @Router       /api/admin/table/{name}/update/{index} [post]
 func apiAdminTableUpdate(ctx *gin.Context) {
-	tableName := ctx.Param("name")
-	indexStr := ctx.Param("index")
-
-	if tableName == "" || indexStr == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"error":   "table name and index are required",
-		})
+	tableName, ok := getParamID(ctx, StrName)
+	if !ok {
+		return
+	}
+	indexStr, ok := getParamID(ctx, "index")
+	if !ok {
 		return
 	}
 
 	index, err := strconv.Atoi(indexStr)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"error":   "invalid index",
-		})
+		sendErrorResponse(ctx, http.StatusBadRequest, "invalid index")
 		return
 	}
 
-	var data map[string]interface{}
+	var data map[string]any
 
 	// Handle both JSON and form data
 	contentType := ctx.GetHeader("Content-Type")
 	if strings.Contains(contentType, "application/json") {
 		if err := ctx.BindJSON(&data); err != nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{
-				"success": false,
-				"error":   err.Error(),
-			})
+			sendErrorResponse(ctx, http.StatusBadRequest, err.Error())
 			return
 		}
 	} else {
 		// Handle form data
 		if err := ctx.Request.ParseForm(); err != nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{
-				"success": false,
-				"error":   err.Error(),
-			})
+			sendErrorResponse(ctx, http.StatusBadRequest, err.Error())
 			return
 		}
 
-		data = make(map[string]interface{})
+		data = make(map[string]any)
 		for key, values := range ctx.Request.PostForm {
 			if len(values) > 0 {
 				data[key] = values[0] // Take first value if multiple
@@ -2019,15 +2113,7 @@ func apiAdminTableUpdate(ctx *gin.Context) {
 	}
 
 	err = updateAdminRecord(tableName, index, data)
-	ctx.JSON(http.StatusOK, gin.H{
-		"success": err == nil,
-		"error": func() string {
-			if err != nil {
-				return err.Error()
-			}
-			return ""
-		}(),
-	})
+	sendOperationResult(ctx, err)
 }
 
 // @Summary      Delete Table Record
@@ -2041,36 +2127,23 @@ func apiAdminTableUpdate(ctx *gin.Context) {
 // @Failure      401    {object} Jsonerror
 // @Router       /api/admin/table/{name}/delete/{index} [post]
 func apiAdminTableDelete(ctx *gin.Context) {
-	tableName := ctx.Param("name")
-	indexStr := ctx.Param("index")
-
-	if tableName == "" || indexStr == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"error":   "table name and index are required",
-		})
+	tableName, ok := getParamID(ctx, StrName)
+	if !ok {
+		return
+	}
+	indexStr, ok := getParamID(ctx, "index")
+	if !ok {
 		return
 	}
 
 	index, err := strconv.Atoi(indexStr)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"error":   "invalid index",
-		})
+		sendErrorResponse(ctx, http.StatusBadRequest, "invalid index")
 		return
 	}
 
 	err = deleteAdminRecord(tableName, index)
-	ctx.JSON(http.StatusOK, gin.H{
-		"success": err == nil,
-		"error": func() string {
-			if err != nil {
-				return err.Error()
-			}
-			return ""
-		}(),
-	})
+	sendOperationResult(ctx, err)
 }
 
 // Helper functions for admin functionality
@@ -2188,7 +2261,7 @@ func getStructFieldDisplayName(structType reflect.Type, fieldName string) string
 	var capitalizedParts []string
 	for _, part := range parts {
 		if len(part) > 0 {
-			capitalizedParts = append(capitalizedParts, strings.Title(strings.ToLower(part)))
+			capitalizedParts = append(capitalizedParts, strings.ToTitle(strings.ToLower(part)))
 		}
 	}
 	return strings.Join(capitalizedParts, " ")
@@ -2402,8 +2475,8 @@ func getFieldMapping(dbField string) FieldMapping {
 		displayParts := make([]string, 0, len(parts))
 		for _, part := range parts {
 			if len(part) > 0 {
-				structField += strings.Title(strings.ToLower(part))
-				displayParts = append(displayParts, strings.Title(strings.ToLower(part)))
+				structField += strings.ToTitle(strings.ToLower(part))
+				displayParts = append(displayParts, strings.ToTitle(strings.ToLower(part)))
 			}
 		}
 		displayName := strings.Join(displayParts, " ")
@@ -2425,13 +2498,13 @@ func getDescriptiveFieldName(fieldName string) string {
 	return mapping.DisplayName
 }
 
-func insertAdminRecord(tableName string, data map[string]interface{}) error {
+func insertAdminRecord(tableName string, data map[string]any) error {
 	if tableName == "" || len(data) == 0 {
 		return fmt.Errorf("table name and data are required")
 	}
 
 	var columns []string
-	var values []interface{}
+	var values []any
 
 	for col, val := range data {
 		// Skip created_at and updated_at columns as they should be managed by the database
@@ -2453,7 +2526,7 @@ func insertAdminRecord(tableName string, data map[string]interface{}) error {
 	return err
 }
 
-func updateAdminRecord(tableName string, id int, data map[string]interface{}) error {
+func updateAdminRecord(tableName string, id int, data map[string]any) error {
 	if tableName == "" || len(data) == 0 {
 		return fmt.Errorf("table name and data are required")
 	}
@@ -2468,7 +2541,7 @@ func updateAdminRecord(tableName string, id int, data map[string]interface{}) er
 
 	// Build update data
 	var columns []string
-	var values []interface{}
+	var values []any
 
 	for col, val := range data {
 		// Don't update id, created_at, updated_at, or csrf_token columns
@@ -2510,7 +2583,7 @@ func deleteAdminRecord(tableName string, id int) error {
 }
 
 func adminPage() string {
-	pageNode := page("Go Media Downloader")
+	pageNode := page("Go Media Downloader", false, false, false)
 
 	// Render to string
 	var buf strings.Builder
@@ -2521,9 +2594,8 @@ func adminPage() string {
 // adminPage generates the HTML page using gomponents
 // adminPageConfig - consolidated handler for all config pages
 func adminPageConfig(ctx *gin.Context) {
-	configType := ctx.Param("configtype")
-	if configType == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "config type is required"})
+	configType, ok := getParamID(ctx, "configtype")
+	if !ok {
 		return
 	}
 
@@ -2533,39 +2605,39 @@ func adminPageConfig(ctx *gin.Context) {
 	switch configType {
 	case "general":
 		configv := config.GetSettingsGeneral()
-		pageNode = page("Config General", renderGeneralConfig(configv, csrfToken))
+		pageNode = page("Config General", true, false, false, renderGeneralConfig(configv, csrfToken))
 	case "imdb":
 		configv := config.GetSettingsImdb()
-		pageNode = page("Config Imdb", renderImdbConfig(configv, csrfToken))
+		pageNode = page("Config Imdb", true, false, false, renderImdbConfig(configv, csrfToken))
 	case "media":
 		configv := config.GetSettingsMediaAll()
-		pageNode = page("Config Media", renderMediaConfig(configv, csrfToken))
+		pageNode = page("Config Media", true, false, false, renderMediaConfig(configv, csrfToken))
 	case "downloader":
 		configv := config.GetSettingsDownloaderAll()
-		pageNode = page("Config Downloader", renderDownloaderConfig(configv, csrfToken))
+		pageNode = page("Config Downloader", true, false, false, renderDownloaderConfig(configv, csrfToken))
 	case "indexers":
 		configv := config.GetSettingsIndexerAll()
-		pageNode = page("Config Indexer", renderIndexersConfig(configv, csrfToken))
+		pageNode = page("Config Indexer", true, false, false, renderIndexersConfig(configv, csrfToken))
 	case "lists":
 		configv := config.GetSettingsListAll()
-		pageNode = page("Config Lists", renderListsConfig(configv, csrfToken))
+		pageNode = page("Config Lists", true, false, false, renderListsConfig(configv, csrfToken))
 	case "paths":
 		configv := config.GetSettingsPathAll()
-		pageNode = page("Config Paths", renderPathsConfig(configv, csrfToken))
+		pageNode = page("Config Paths", true, false, false, renderPathsConfig(configv, csrfToken))
 	case "notifications":
 		configv := config.GetSettingsNotificationAll()
-		pageNode = page("Config Notifications", renderNotificationConfig(configv, csrfToken))
+		pageNode = page("Config Notifications", true, false, false, renderNotificationConfig(configv, csrfToken))
 	case "quality":
 		configv := config.GetSettingsQualityAll()
-		pageNode = page("Config Quality", renderQualityConfig(configv, csrfToken))
+		pageNode = page("Config Quality", true, false, false, renderQualityConfig(configv, csrfToken))
 	case "regex":
 		configv := config.GetSettingsRegexAll()
-		pageNode = page("Config Regex", renderRegexConfig(configv, csrfToken))
+		pageNode = page("Config Regex", true, false, false, renderRegexConfig(configv, csrfToken))
 	case "scheduler":
 		configv := config.GetSettingsSchedulerAll()
-		pageNode = page("Config Scheduler", renderSchedulerConfig(configv, csrfToken))
+		pageNode = page("Config Scheduler", true, false, false, renderSchedulerConfig(configv, csrfToken))
 	default:
-		ctx.JSON(http.StatusNotFound, gin.H{"error": "unknown config type: " + configType})
+		sendNotFound(ctx, "unknown config type: "+configType)
 		return
 	}
 
@@ -2575,20 +2647,166 @@ func adminPageConfig(ctx *gin.Context) {
 
 	ctx.Header("Content-Type", "text/html")
 	ctx.String(http.StatusOK, buf.String())
+}
+
+func adminPageTestParse(ctx *gin.Context) {
+	csrfToken := getCSRFToken(ctx)
+	pageNode := page("String Parse Test", false, false, true, renderTestParsePage(csrfToken))
+
+	var buf strings.Builder
+	pageNode.Render(&buf)
+
+	ctx.Header("Content-Type", "text/html")
+	ctx.String(http.StatusOK, buf.String())
+}
+
+func adminPageMovieMetadata(ctx *gin.Context) {
+	csrfToken := getCSRFToken(ctx)
+	pageNode := page("Movie Metadata Lookup", false, false, true, renderMovieMetadataPage(csrfToken))
+
+	var buf strings.Builder
+	pageNode.Render(&buf)
+
+	ctx.Header("Content-Type", "text/html")
+	ctx.String(http.StatusOK, buf.String())
+}
+
+func adminPageTraktAuth(ctx *gin.Context) {
+	csrfToken := getCSRFToken(ctx)
+	pageNode := page("Trakt Authentication", false, false, true, renderTraktAuthPage(csrfToken))
+
+	var buf strings.Builder
+	pageNode.Render(&buf)
+
+	ctx.Header("Content-Type", "text/html")
+	ctx.String(http.StatusOK, buf.String())
+}
+
+func adminPageNamingTest(ctx *gin.Context) {
+	csrfToken := getCSRFToken(ctx)
+	pageNode := page("Naming Convention Test", false, false, true, renderNamingTestPage(csrfToken))
+
+	var buf strings.Builder
+	pageNode.Render(&buf)
+
+	ctx.Header("Content-Type", "text/html")
+	ctx.String(http.StatusOK, buf.String())
+}
+
+func adminPageJobManagement(ctx *gin.Context) {
+	csrfToken := getCSRFToken(ctx)
+	pageNode := page("Job Management", false, false, true, renderJobManagementPage(csrfToken))
+
+	var buf strings.Builder
+	pageNode.Render(&buf)
+
+	ctx.Header("Content-Type", "text/html")
+	ctx.String(http.StatusOK, buf.String())
+}
+
+func adminPageDebugStats(ctx *gin.Context) {
+	csrfToken := getCSRFToken(ctx)
+	pageNode := page("Debug Statistics", false, false, true, renderDebugStatsPage(csrfToken))
+
+	var buf strings.Builder
+	pageNode.Render(&buf)
+
+	ctx.Header("Content-Type", "text/html")
+	ctx.String(http.StatusOK, buf.String())
+}
+
+func adminPageDatabaseMaintenance(ctx *gin.Context) {
+	csrfToken := getCSRFToken(ctx)
+	pageNode := page("Database Maintenance", false, false, true, renderDatabaseMaintenancePage(csrfToken))
+
+	var buf strings.Builder
+	pageNode.Render(&buf)
+
+	ctx.Header("Content-Type", "text/html")
+	ctx.String(http.StatusOK, buf.String())
+}
+
+func adminPageSearchDownload(ctx *gin.Context) {
+	csrfToken := getCSRFToken(ctx)
+	pageNode := page("Search & Download", false, false, true, renderSearchDownloadPage(csrfToken))
+
+	var buf strings.Builder
+	pageNode.Render(&buf)
+
+	ctx.Header("Content-Type", "text/html")
+	ctx.String(http.StatusOK, buf.String())
+}
+
+func adminPagePushoverTest(ctx *gin.Context) {
+	csrfToken := getCSRFToken(ctx)
+	pageNode := page("Pushover Test", false, false, true, renderPushoverTestPage(csrfToken))
+
+	var buf strings.Builder
+	pageNode.Render(&buf)
+
+	ctx.Header("Content-Type", "text/html")
+	ctx.String(http.StatusOK, buf.String())
+}
+
+func adminPageLogViewer(ctx *gin.Context) {
+	csrfToken := getCSRFToken(ctx)
+	pageNode := page("Log Viewer", false, false, true, renderLogViewerPage(csrfToken))
+
+	var buf strings.Builder
+	pageNode.Render(&buf)
+
+	ctx.Header("Content-Type", "text/html")
+	ctx.String(http.StatusOK, buf.String())
+}
+
+func adminPageFeedParsing(ctx *gin.Context) {
+	csrfToken := getCSRFToken(ctx)
+	pageNode := page("Feed Parser & Results", false, false, true, renderFeedParsingPage(csrfToken))
+
+	var buf strings.Builder
+	pageNode.Render(&buf)
+
+	ctx.Header("Content-Type", "text/html")
+	ctx.String(http.StatusOK, buf.String())
+}
+
+func adminPageFolderStructure(ctx *gin.Context) {
+	csrfToken := getCSRFToken(ctx)
+	pageNode := page("Folder Structure Organizer", false, false, true, renderFolderStructurePage(csrfToken))
+
+	var buf strings.Builder
+	pageNode.Render(&buf)
+
+	ctx.Header("Content-Type", "text/html")
+	ctx.String(http.StatusOK, buf.String())
+}
+
+func adminPageGrid(ctx *gin.Context) {
+	grid, ok := getParamID(ctx, "grid")
+	if !ok {
+		return
+	}
+	switch grid {
+	case "queue":
+		renderQueuePage(ctx)
+	case "scheduler":
+		renderSchedulerPage(ctx)
+	case "stats":
+		renderStatsPage(ctx)
+	}
 }
 
 // adminPageDatabase - consolidated handler for all database table pages
 func adminPageDatabase(ctx *gin.Context) {
-	tableName := ctx.Param("tablename")
-	if tableName == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "table name is required"})
+	tableName, ok := getParamID(ctx, "tablename")
+	if !ok {
 		return
 	}
 
 	// Create page title from table name
-	pageTitle := "Database " + strings.Title(strings.ReplaceAll(tableName, "_", " "))
+	pageTitle := "Database " + strings.ToTitle(strings.ReplaceAll(tableName, "_", " "))
 
-	pageNode := page(pageTitle, adminDatabaseContent(tableName, getCSRFToken(ctx)))
+	pageNode := page(pageTitle, false, true, false, adminDatabaseContent(tableName, getCSRFToken(ctx)))
 	// Render to string
 	var buf strings.Builder
 	pageNode.Render(&buf)
@@ -2597,7 +2815,17 @@ func adminPageDatabase(ctx *gin.Context) {
 	ctx.String(http.StatusOK, buf.String())
 }
 
-func page(headertext string, addcontent ...gomponents.Node) gomponents.Node {
+func AdminPageAny(ctx *gin.Context, pageTitle string, content gomponents.Node) {
+	pageNode := page(pageTitle, false, false, true, content)
+	// Render to string
+	var buf strings.Builder
+	pageNode.Render(&buf)
+
+	ctx.Header("Content-Type", "text/html")
+	ctx.String(http.StatusOK, buf.String())
+}
+
+func page(_ string, activeConfig bool, activeDatabase bool, activeManagement bool, addcontent ...gomponents.Node) gomponents.Node {
 	return html.Doctype(
 		html.HTML(
 			html.Lang("en"),
@@ -2643,7 +2871,7 @@ func page(headertext string, addcontent ...gomponents.Node) gomponents.Node {
 			),
 			html.Body(
 				html.Div(html.Class("wrapper"),
-					createNavbar(),
+					createNavbar(activeConfig, activeDatabase, activeManagement),
 					html.Div(html.Class("main"),
 						html.Nav(html.Class("navbar navbar-expand navbar-light navbar-bg"),
 							html.A(html.Class("sidebar-toggle js-sidebar-toggle"),
@@ -2652,7 +2880,7 @@ func page(headertext string, addcontent ...gomponents.Node) gomponents.Node {
 						),
 						html.Main(html.Class("content"),
 							html.Div(html.Class("container-fluid p-0"),
-								html.H1(html.Class("h3 mb-3"), gomponents.Text(headertext)),
+								// html.H1(html.Class("h3 mb-3"), gomponents.Text(headertext)),
 								html.Div(
 									append([]gomponents.Node{html.Class("row")}, addcontent...)...),
 							),
@@ -2666,22 +2894,23 @@ func page(headertext string, addcontent ...gomponents.Node) gomponents.Node {
 	)
 }
 
-func createNavbar() gomponents.Node {
-	html.Nav(
-		html.ID("sidebar"),
-		html.Class("sidebar js-sidebar"),
-		html.Div(
-			html.Class("sidebar-content js-simplebar"),
-			html.A(
-				html.Class("sidebar-brand"),
-				html.Href("index.html"),
-				html.Span(
-					html.Class("sidebar-brand-text align-middle"),
-					gomponents.Text("Go Media Downloader"),
-				),
-			),
-		),
-	)
+func createNavbar(activeConfig bool, activeDatabase bool, activeManagement bool) gomponents.Node {
+	collapsed := "sidebar-dropdown list-unstyled collapse"
+	uncollapsed := "sidebar-dropdown list-unstyled"
+
+	cssRootConfig := collapsed
+	cssRootDatabase := collapsed
+	cssRootManagement := collapsed
+
+	if activeConfig {
+		cssRootConfig = uncollapsed
+	}
+	if activeDatabase {
+		cssRootDatabase = uncollapsed
+	}
+	if activeManagement {
+		cssRootManagement = uncollapsed
+	}
 	return html.Nav(
 		html.ID("sidebar"),
 		html.Class("sidebar js-sidebar"),
@@ -2696,144 +2925,238 @@ func createNavbar() gomponents.Node {
 				),
 			),
 			html.Ul(html.Class("sidebar-nav "),
-				html.Li(html.Class("sidebar-header"), gomponents.Text("Configuration")),
-				html.Li(html.Class("sidebar-item"),
-					html.A(html.Class("sidebar-link"), html.Href("/api/admin/general"),
-						html.Span(html.Class("align-middle"), gomponents.Text("General")),
+				html.Li(html.Class("sidebar-header"), gomponents.Text("Pages")),
+				html.Li(html.Class("sidebar-item active"),
+					html.A(html.Data("bs-target", "#Configuration"), html.Data("bs-toggle", "collapse"), html.Class("sidebar-link collapsed"),
+						html.Span(html.Class("align-middle"), gomponents.Text("Configuration")),
+					),
+					html.Ul(html.Class(cssRootConfig), html.ID("Configuration"),
+						html.Li(html.Class("sidebar-item"),
+							html.A(html.Class("sidebar-link"), html.Href("/api/admin/general"),
+								html.Span(html.Class("align-middle"), gomponents.Text("General")),
+							),
+						),
+						html.Li(html.Class("sidebar-item"),
+							html.A(html.Class("sidebar-link"), html.Href("/api/admin/imdb"),
+								html.Span(html.Class("align-middle"), gomponents.Text("Imdb")),
+							),
+						),
+						html.Li(html.Class("sidebar-item"),
+							html.A(html.Class("sidebar-link"), html.Href("/api/admin/media"),
+								html.Span(html.Class("align-middle"), gomponents.Text("Media")),
+							),
+						),
+						html.Li(html.Class("sidebar-item"),
+							html.A(html.Class("sidebar-link"), html.Href("/api/admin/downloader"),
+								html.Span(html.Class("align-middle"), gomponents.Text("Downloader")),
+							),
+						),
+						html.Li(html.Class("sidebar-item"),
+							html.A(html.Class("sidebar-link"), html.Href("/api/admin/lists"),
+								html.Span(html.Class("align-middle"), gomponents.Text("Lists")),
+							),
+						),
+						html.Li(html.Class("sidebar-item"),
+							html.A(html.Class("sidebar-link"), html.Href("/api/admin/indexers"),
+								html.Span(html.Class("align-middle"), gomponents.Text("Indexers")),
+							),
+						),
+						html.Li(html.Class("sidebar-item"),
+							html.A(html.Class("sidebar-link"), html.Href("/api/admin/paths"),
+								html.Span(html.Class("align-middle"), gomponents.Text("Paths")),
+							),
+						),
+						html.Li(html.Class("sidebar-item"),
+							html.A(html.Class("sidebar-link"), html.Href("/api/admin/notifications"),
+								html.Span(html.Class("align-middle"), gomponents.Text("Notifications")),
+							),
+						),
+						html.Li(html.Class("sidebar-item"),
+							html.A(html.Class("sidebar-link"), html.Href("/api/admin/regex"),
+								html.Span(html.Class("align-middle"), gomponents.Text("Regex")),
+							),
+						),
+						html.Li(html.Class("sidebar-item"),
+							html.A(html.Class("sidebar-link"), html.Href("/api/admin/quality"),
+								html.Span(html.Class("align-middle"), gomponents.Text("Quality")),
+							),
+						),
+						html.Li(html.Class("sidebar-item"),
+							html.A(html.Class("sidebar-link"), html.Href("/api/admin/scheduler"),
+								html.Span(html.Class("align-middle"), gomponents.Text("Scheduler")),
+							),
+						),
 					),
 				),
-				html.Li(html.Class("sidebar-item"),
-					html.A(html.Class("sidebar-link"), html.Href("/api/admin/imdb"),
-						html.Span(html.Class("align-middle"), gomponents.Text("Imdb")),
+				html.Li(html.Class("sidebar-item inactive"),
+					html.A(html.Data("bs-target", "#Database"), html.Data("bs-toggle", "collapse"), html.Class("sidebar-link collapsed"),
+						html.Span(html.Class("align-middle"), gomponents.Text("Database")),
+					),
+					html.Ul(html.Class(cssRootDatabase), html.ID("Database"),
+						html.Li(html.Class("sidebar-item"),
+							html.A(html.Class("sidebar-link"), html.Href("/api/admin/database/dbmovies"),
+								html.Span(html.Class("align-middle"), gomponents.Text("DBMovies")),
+							),
+						),
+						html.Li(html.Class("sidebar-item"),
+							html.A(html.Class("sidebar-link"), html.Href("/api/admin/database/dbmovie_titles"),
+								html.Span(html.Class("align-middle"), gomponents.Text("DBMovie Titles")),
+							),
+						),
+						html.Li(html.Class("sidebar-item"),
+							html.A(html.Class("sidebar-link"), html.Href("/api/admin/database/dbseries"),
+								html.Span(html.Class("align-middle"), gomponents.Text("DBSeries")),
+							),
+						),
+						html.Li(html.Class("sidebar-item"),
+							html.A(html.Class("sidebar-link"), html.Href("/api/admin/database/dbserie_episodes"),
+								html.Span(html.Class("align-middle"), gomponents.Text("DBSerie Episodes")),
+							),
+						),
+						html.Li(html.Class("sidebar-item"),
+							html.A(html.Class("sidebar-link"), html.Href("/api/admin/database/dbserie_alternates"),
+								html.Span(html.Class("align-middle"), gomponents.Text("DBSerie Alternates")),
+							),
+						),
+						html.Li(html.Class("sidebar-item"),
+							html.A(html.Class("sidebar-link"), html.Href("/api/admin/database/movies"),
+								html.Span(html.Class("align-middle"), gomponents.Text("Movies")),
+							),
+						),
+						html.Li(html.Class("sidebar-item"),
+							html.A(html.Class("sidebar-link"), html.Href("/api/admin/database/movie_files"),
+								html.Span(html.Class("align-middle"), gomponents.Text("Movie Files")),
+							),
+						),
+						html.Li(html.Class("sidebar-item"),
+							html.A(html.Class("sidebar-link"), html.Href("/api/admin/database/movie_histories"),
+								html.Span(html.Class("align-middle"), gomponents.Text("Movie Histories")),
+							),
+						),
+						html.Li(html.Class("sidebar-item"),
+							html.A(html.Class("sidebar-link"), html.Href("/api/admin/database/movie_file_unmatcheds"),
+								html.Span(html.Class("align-middle"), gomponents.Text("Movie Unmatcheds")),
+							),
+						),
+						html.Li(html.Class("sidebar-item"),
+							html.A(html.Class("sidebar-link"), html.Href("/api/admin/database/series"),
+								html.Span(html.Class("align-middle"), gomponents.Text("Series")),
+							),
+						),
+						html.Li(html.Class("sidebar-item"),
+							html.A(html.Class("sidebar-link"), html.Href("/api/admin/database/serie_episodes"),
+								html.Span(html.Class("align-middle"), gomponents.Text("Serie Episodes")),
+							),
+						),
+						html.Li(html.Class("sidebar-item"),
+							html.A(html.Class("sidebar-link"), html.Href("/api/admin/database/serie_episode_files"),
+								html.Span(html.Class("align-middle"), gomponents.Text("Serie Episode Files")),
+							),
+						),
+						html.Li(html.Class("sidebar-item"),
+							html.A(html.Class("sidebar-link"), html.Href("/api/admin/database/serie_episode_histories"),
+								html.Span(html.Class("align-middle"), gomponents.Text("Serie Episode Histories")),
+							),
+						),
+						html.Li(html.Class("sidebar-item"),
+							html.A(html.Class("sidebar-link"), html.Href("/api/admin/database/serie_file_unmatcheds"),
+								html.Span(html.Class("align-middle"), gomponents.Text("Serie Episode Unmatcheds")),
+							),
+						),
+						html.Li(html.Class("sidebar-item"),
+							html.A(html.Class("sidebar-link"), html.Href("/api/admin/database/qualities"),
+								html.Span(html.Class("align-middle"), gomponents.Text("Qualities")),
+							),
+						),
+						html.Li(html.Class("sidebar-item"),
+							html.A(html.Class("sidebar-link"), html.Href("/api/admin/database/job_histories"),
+								html.Span(html.Class("align-middle"), gomponents.Text("Job Histories")),
+							),
+						),
 					),
 				),
-				html.Li(html.Class("sidebar-item"),
-					html.A(html.Class("sidebar-link"), html.Href("/api/admin/media"),
-						html.Span(html.Class("align-middle"), gomponents.Text("Media")),
+				html.Li(html.Class("sidebar-item inactive"),
+					html.A(html.Data("bs-target", "#Management"), html.Data("bs-toggle", "collapse"), html.Class("sidebar-link collapsed"),
+						html.Span(html.Class("align-middle"), gomponents.Text("Management")),
+					),
+					html.Ul(html.Class(cssRootManagement), html.ID("Management"),
+						html.Li(html.Class("sidebar-item"),
+							html.A(html.Class("sidebar-link"), html.Href("/api/admin/grid/queue"),
+								html.Span(html.Class("align-middle"), gomponents.Text("Queue")),
+							),
+						),
+						html.Li(html.Class("sidebar-item"),
+							html.A(html.Class("sidebar-link"), html.Href("/api/admin/grid/scheduler"),
+								html.Span(html.Class("align-middle"), gomponents.Text("Scheduler")),
+							),
+						),
+						html.Li(html.Class("sidebar-item"),
+							html.A(html.Class("sidebar-link"), html.Href("/api/admin/grid/stats"),
+								html.Span(html.Class("align-middle"), gomponents.Text("Stats")),
+							),
+						),
+						html.Li(html.Class("sidebar-item"),
+							html.A(html.Class("sidebar-link"), html.Href("/api/admin/jobmanagement"),
+								html.Span(html.Class("align-middle"), gomponents.Text("Job Management")),
+							),
+						),
+						html.Li(html.Class("sidebar-item"),
+							html.A(html.Class("sidebar-link"), html.Href("/api/admin/debugstats"),
+								html.Span(html.Class("align-middle"), gomponents.Text("Debug Statistics")),
+							),
+						),
+						html.Li(html.Class("sidebar-item"),
+							html.A(html.Class("sidebar-link"), html.Href("/api/admin/dbmaintenance"),
+								html.Span(html.Class("align-middle"), gomponents.Text("Database Maintenance")),
+							),
+						),
+						html.Li(html.Class("sidebar-item"),
+							html.A(html.Class("sidebar-link"), html.Href("/api/admin/searchdownload"),
+								html.Span(html.Class("align-middle"), gomponents.Text("Search & Download")),
+							),
+						),
+						html.Li(html.Class("sidebar-item"),
+							html.A(html.Class("sidebar-link"), html.Href("/api/admin/pushovertest"),
+								html.Span(html.Class("align-middle"), gomponents.Text("Pushover Test")),
+							),
+						),
+						html.Li(html.Class("sidebar-item"),
+							html.A(html.Class("sidebar-link"), html.Href("/api/admin/logviewer"),
+								html.Span(html.Class("align-middle"), gomponents.Text("Log Viewer")),
+							),
+						),
+						html.Li(html.Class("sidebar-item"),
+							html.A(html.Class("sidebar-link"), html.Href("/api/admin/feedparse"),
+								html.Span(html.Class("align-middle"), gomponents.Text("Feed Parser")),
+							),
+						),
+						// html.Li(html.Class("sidebar-item"),
+						// 	html.A(html.Class("sidebar-link"), html.Href("/api/admin/folderstructure"),
+						// 		html.Span(html.Class("align-middle"), gomponents.Text("Folder Organizer")),
+						// 	),
+						// ),
+						html.Li(html.Class("sidebar-item"),
+							html.A(html.Class("sidebar-link"), html.Href("/api/admin/testparse"),
+								html.Span(html.Class("align-middle"), gomponents.Text("Test Parsing")),
+							),
+						),
+						html.Li(html.Class("sidebar-item"),
+							html.A(html.Class("sidebar-link"), html.Href("/api/admin/moviemetadata"),
+								html.Span(html.Class("align-middle"), gomponents.Text("Test Metadata")),
+							),
+						),
+						html.Li(html.Class("sidebar-item"),
+							html.A(html.Class("sidebar-link"), html.Href("/api/admin/traktauth"),
+								html.Span(html.Class("align-middle"), gomponents.Text("Trakt Authenticate")),
+							),
+						),
+						html.Li(html.Class("sidebar-item"),
+							html.A(html.Class("sidebar-link"), html.Href("/api/admin/namingtest"),
+								html.Span(html.Class("align-middle"), gomponents.Text("Test Naming")),
+							),
+						),
 					),
 				),
-				html.Li(html.Class("sidebar-item"),
-					html.A(html.Class("sidebar-link"), html.Href("/api/admin/downloader"),
-						html.Span(html.Class("align-middle"), gomponents.Text("Downloader")),
-					),
-				),
-				html.Li(html.Class("sidebar-item"),
-					html.A(html.Class("sidebar-link"), html.Href("/api/admin/lists"),
-						html.Span(html.Class("align-middle"), gomponents.Text("Lists")),
-					),
-				),
-				html.Li(html.Class("sidebar-item"),
-					html.A(html.Class("sidebar-link"), html.Href("/api/admin/indexers"),
-						html.Span(html.Class("align-middle"), gomponents.Text("Indexers")),
-					),
-				),
-				html.Li(html.Class("sidebar-item"),
-					html.A(html.Class("sidebar-link"), html.Href("/api/admin/paths"),
-						html.Span(html.Class("align-middle"), gomponents.Text("Paths")),
-					),
-				),
-				html.Li(html.Class("sidebar-item"),
-					html.A(html.Class("sidebar-link"), html.Href("/api/admin/notifications"),
-						html.Span(html.Class("align-middle"), gomponents.Text("Notifications")),
-					),
-				),
-				html.Li(html.Class("sidebar-item"),
-					html.A(html.Class("sidebar-link"), html.Href("/api/admin/regex"),
-						html.Span(html.Class("align-middle"), gomponents.Text("Regex")),
-					),
-				),
-				html.Li(html.Class("sidebar-item"),
-					html.A(html.Class("sidebar-link"), html.Href("/api/admin/quality"),
-						html.Span(html.Class("align-middle"), gomponents.Text("Quality")),
-					),
-				),
-				html.Li(html.Class("sidebar-item"),
-					html.A(html.Class("sidebar-link"), html.Href("/api/admin/scheduler"),
-						html.Span(html.Class("align-middle"), gomponents.Text("Scheduler")),
-					),
-				),
-				html.Li(html.Class("sidebar-header"), gomponents.Text("Database")),
-				html.Li(html.Class("sidebar-item"),
-					html.A(html.Class("sidebar-link"), html.Href("/api/admin/database/dbmovies"),
-						html.Span(html.Class("align-middle"), gomponents.Text("DBMovies")),
-					),
-				),
-				html.Li(html.Class("sidebar-item"),
-					html.A(html.Class("sidebar-link"), html.Href("/api/admin/database/dbmovie_titles"),
-						html.Span(html.Class("align-middle"), gomponents.Text("DBMovie Titles")),
-					),
-				),
-				html.Li(html.Class("sidebar-item"),
-					html.A(html.Class("sidebar-link"), html.Href("/api/admin/database/dbseries"),
-						html.Span(html.Class("align-middle"), gomponents.Text("DBSeries")),
-					),
-				),
-				html.Li(html.Class("sidebar-item"),
-					html.A(html.Class("sidebar-link"), html.Href("/api/admin/database/dbserie_episodes"),
-						html.Span(html.Class("align-middle"), gomponents.Text("DBSerie Episodes")),
-					),
-				),
-				html.Li(html.Class("sidebar-item"),
-					html.A(html.Class("sidebar-link"), html.Href("/api/admin/database/dbserie_alternates"),
-						html.Span(html.Class("align-middle"), gomponents.Text("DBSerie Alternates")),
-					),
-				),
-				html.Li(html.Class("sidebar-item"),
-					html.A(html.Class("sidebar-link"), html.Href("/api/admin/database/movies"),
-						html.Span(html.Class("align-middle"), gomponents.Text("Movies")),
-					),
-				),
-				html.Li(html.Class("sidebar-item"),
-					html.A(html.Class("sidebar-link"), html.Href("/api/admin/database/movie_files"),
-						html.Span(html.Class("align-middle"), gomponents.Text("Movie Files")),
-					),
-				),
-				html.Li(html.Class("sidebar-item"),
-					html.A(html.Class("sidebar-link"), html.Href("/api/admin/database/movie_histories"),
-						html.Span(html.Class("align-middle"), gomponents.Text("Movie Histories")),
-					),
-				),
-				html.Li(html.Class("sidebar-item"),
-					html.A(html.Class("sidebar-link"), html.Href("/api/admin/database/movie_file_unmatcheds"),
-						html.Span(html.Class("align-middle"), gomponents.Text("Movie Unmatcheds")),
-					),
-				),
-				html.Li(html.Class("sidebar-item"),
-					html.A(html.Class("sidebar-link"), html.Href("/api/admin/database/series"),
-						html.Span(html.Class("align-middle"), gomponents.Text("Series")),
-					),
-				),
-				html.Li(html.Class("sidebar-item"),
-					html.A(html.Class("sidebar-link"), html.Href("/api/admin/database/serie_episodes"),
-						html.Span(html.Class("align-middle"), gomponents.Text("Serie Episodes")),
-					),
-				),
-				html.Li(html.Class("sidebar-item"),
-					html.A(html.Class("sidebar-link"), html.Href("/api/admin/database/serie_episode_files"),
-						html.Span(html.Class("align-middle"), gomponents.Text("Serie Episode Files")),
-					),
-				),
-				html.Li(html.Class("sidebar-item"),
-					html.A(html.Class("sidebar-link"), html.Href("/api/admin/database/serie_episode_histories"),
-						html.Span(html.Class("align-middle"), gomponents.Text("Serie Episode Histories")),
-					),
-				),
-				html.Li(html.Class("sidebar-item"),
-					html.A(html.Class("sidebar-link"), html.Href("/api/admin/database/serie_file_unmatcheds"),
-						html.Span(html.Class("align-middle"), gomponents.Text("Serie Episode Unmatcheds")),
-					),
-				),
-				html.Li(html.Class("sidebar-item"),
-					html.A(html.Class("sidebar-link"), html.Href("/api/admin/database/qualities"),
-						html.Span(html.Class("align-middle"), gomponents.Text("Qualities")),
-					),
-				),
-				html.Li(html.Class("sidebar-item"),
-					html.A(html.Class("sidebar-link"), html.Href("/api/admin/database/job_histories"),
-						html.Span(html.Class("align-middle"), gomponents.Text("Job Histories")),
-					),
-				),
-				html.Div(html.Class("simplebar-placeholder"), html.Style("width: auto; height: 949px;")),
 			),
 			html.Div(html.Class("simplebar-track simplebar-horizontal"), html.Style("visibility: hidden;"),
 				html.Div(html.Class("simplebar-scrollbar"), html.Style("width: 0px; display: none;")),
@@ -2860,7 +3183,7 @@ func adminDatabaseContent(tableName string, csrfToken string) gomponents.Node {
 	return html.Div(
 		html.Input(html.Name("table-name"), html.Type("hidden"), html.ID("table-name")),
 
-		adminModal(tableName),
+		adminModal(),
 		adminAddModal(tableName, csrfToken),
 		html.Div(
 			html.Class("config-section"),
@@ -2892,7 +3215,7 @@ func adminDatabaseContent(tableName string, csrfToken string) gomponents.Node {
 }
 
 // adminModal component
-func adminModal(tablename string) gomponents.Node {
+func adminModal() gomponents.Node {
 	return html.Div(
 		html.Class("modal fade"),
 		html.ID("editFormModal"),
@@ -2924,7 +3247,7 @@ func adminModal(tablename string) gomponents.Node {
 // adminAddModal component
 func adminAddModal(tableName string, csrfToken string) gomponents.Node {
 	// Get table columns to create empty data map - use form-specific columns to exclude joined columns
-	emptyData := make(map[string]interface{})
+	emptyData := make(map[string]any)
 	tableColumns := getAdminFormColumns(tableName)
 
 	// Initialize empty data for all columns except auto-generated ones
@@ -3123,8 +3446,14 @@ func adminJavaScript() gomponents.Node {
 
 // apiAdminDropdownData provides AJAX endpoint for dynamic dropdown data loading
 func apiAdminDropdownData(ctx *gin.Context) {
-	tableName := ctx.Param("table")
-	fieldName := ctx.Param("field")
+	tableName, ok := getParamID(ctx, "table")
+	if !ok {
+		return
+	}
+	fieldName, ok := getParamID(ctx, "field")
+	if !ok {
+		return
+	}
 	// Handle both GET and POST parameters
 	var search, page, idLookup string
 	if ctx.Request.Method == "POST" {
@@ -3157,31 +3486,21 @@ func apiAdminDropdownData(ctx *gin.Context) {
 		if idVal, err := strconv.Atoi(idLookup); err == nil {
 			option := getDropdownOptionByID(tableName, fieldName, idVal)
 			if option != nil {
-				ctx.JSON(http.StatusOK, gin.H{
-					"results": []map[string]interface{}{*option},
-					"pagination": gin.H{
-						"more": false,
-					},
-				})
+				sendSelect2Response(ctx, []map[string]any{*option}, false)
 				return
 			}
 		}
 		// If ID lookup fails, return empty result
-		ctx.JSON(http.StatusOK, gin.H{
-			"results": []map[string]interface{}{},
-			"pagination": gin.H{
-				"more": false,
-			},
-		})
+		sendSelect2Response(ctx, []map[string]any{}, false)
 		return
 	}
 
-	var options []map[string]interface{}
+	var options []map[string]any
 	var hasMore bool
 
 	// Build search filter
 	searchFilter := ""
-	searchArgs := []interface{}{}
+	searchArgs := []any{}
 	if search != "" {
 		switch tableName {
 		case "dbmovies":
@@ -3205,6 +3524,20 @@ func apiAdminDropdownData(ctx *gin.Context) {
 		case "qualities":
 			searchFilter = " WHERE name LIKE ?"
 			searchArgs = append(searchArgs, "%"+search+"%")
+		case "listnames":
+			if tableName == "movies" {
+				searchFilter = " WHERE listname LIKE ?"
+			} else {
+				searchFilter = " WHERE listname LIKE ?"
+			}
+			searchArgs = append(searchArgs, "%"+search+"%")
+		case "quality_profiles":
+			if tableName == "movies" {
+				searchFilter = " WHERE quality_profile LIKE ?"
+			} else {
+				searchFilter = " WHERE quality_profile LIKE ?"
+			}
+			searchArgs = append(searchArgs, "%"+search+"%")
 		}
 	}
 
@@ -3220,10 +3553,7 @@ func apiAdminDropdownData(ctx *gin.Context) {
 			movies = movies[:pageSize]
 		}
 		for _, movie := range movies {
-			options = append(options, map[string]interface{}{
-				"id":   movie.Num,
-				"text": movie.Str,
-			})
+			options = append(options, createSelect2Option(movie.Num, movie.Str))
 		}
 	case "dbseries":
 		query := fmt.Sprintf("SELECT seriename, id FROM dbseries%s ORDER BY seriename LIMIT ? OFFSET ?", searchFilter)
@@ -3233,10 +3563,7 @@ func apiAdminDropdownData(ctx *gin.Context) {
 			series = series[:pageSize]
 		}
 		for _, serie := range series {
-			options = append(options, map[string]interface{}{
-				"id":   serie.Num,
-				"text": serie.Str,
-			})
+			options = append(options, createSelect2Option(serie.Num, serie.Str))
 		}
 	case "dbserie_episodes":
 		query := fmt.Sprintf("SELECT identifier, title, id FROM dbserie_episodes%s ORDER BY identifier LIMIT ? OFFSET ?", searchFilter)
@@ -3247,10 +3574,7 @@ func apiAdminDropdownData(ctx *gin.Context) {
 		}
 		for _, episode := range episodes {
 			label := fmt.Sprintf("%s - %s", episode.Str1, episode.Str2)
-			options = append(options, map[string]interface{}{
-				"id":   episode.Num,
-				"text": label,
-			})
+			options = append(options, createSelect2Option(episode.Num, label))
 		}
 	case "movies":
 		query := fmt.Sprintf("SELECT dm.title || ' - ' || m.listname, m.id FROM movies m LEFT JOIN dbmovies dm ON m.dbmovie_id = dm.id%s ORDER BY dm.title LIMIT ? OFFSET ?", searchFilter)
@@ -3260,10 +3584,7 @@ func apiAdminDropdownData(ctx *gin.Context) {
 			movies = movies[:pageSize]
 		}
 		for _, movie := range movies {
-			options = append(options, map[string]interface{}{
-				"id":   movie.Num,
-				"text": movie.Str,
-			})
+			options = append(options, createSelect2Option(movie.Num, movie.Str))
 		}
 	case "series":
 		query := fmt.Sprintf("SELECT ds.seriename || ' - ' || s.listname, s.id FROM series s LEFT JOIN dbseries ds ON s.dbserie_id = ds.id%s ORDER BY ds.seriename LIMIT ? OFFSET ?", searchFilter)
@@ -3273,10 +3594,7 @@ func apiAdminDropdownData(ctx *gin.Context) {
 			series = series[:pageSize]
 		}
 		for _, serie := range series {
-			options = append(options, map[string]interface{}{
-				"id":   serie.Num,
-				"text": serie.Str,
-			})
+			options = append(options, createSelect2Option(serie.Num, serie.Str))
 		}
 	case "serie_episodes":
 		query := fmt.Sprintf("SELECT dse.identifier || ' - ' || dse.title || ' - ' || s.listname, se.id FROM serie_episodes se LEFT JOIN dbserie_episodes dse ON se.dbserie_episode_id = dse.id LEFT JOIN series s ON se.serie_id = s.id%s ORDER BY s.listname, dse.identifier LIMIT ? OFFSET ?", searchFilter)
@@ -3286,10 +3604,7 @@ func apiAdminDropdownData(ctx *gin.Context) {
 			episodes = episodes[:pageSize]
 		}
 		for _, episode := range episodes {
-			options = append(options, map[string]interface{}{
-				"id":   episode.Num,
-				"text": episode.Str,
-			})
+			options = append(options, createSelect2Option(episode.Num, episode.Str))
 		}
 	case "qualities":
 		// Determine quality type based on field name
@@ -3321,70 +3636,86 @@ func apiAdminDropdownData(ctx *gin.Context) {
 			qualities = qualities[:pageSize]
 		}
 		for _, quality := range qualities {
-			options = append(options, map[string]interface{}{
-				"id":   quality.Num,
-				"text": quality.Str,
-			})
+			options = append(options, createSelect2Option(quality.Num, quality.Str))
+		}
+	case "listnames":
+		var query string
+		switch tableName {
+		case "movies":
+			query = fmt.Sprintf("SELECT DISTINCT listname, listname FROM movies%s ORDER BY listname LIMIT ? OFFSET ?", searchFilter)
+		case "series":
+			query = fmt.Sprintf("SELECT DISTINCT listname, listname FROM series%s ORDER BY listname LIMIT ? OFFSET ?", searchFilter)
+		default:
+			query = fmt.Sprintf("SELECT DISTINCT listname, listname FROM %s%s ORDER BY listname LIMIT ? OFFSET ?", tableName, searchFilter)
+		}
+		listnames := database.GetrowsN[database.DbstaticTwoString](false, uint(pageSize+1), query, searchArgs...)
+		hasMore = len(listnames) > pageSize
+		if hasMore {
+			listnames = listnames[:pageSize]
+		}
+		for _, listname := range listnames {
+			options = append(options, createSelect2OptionString(listname.Str1, listname.Str1))
+		}
+	case "quality_profiles":
+		var query string
+		switch tableName {
+		case "movies":
+			query = fmt.Sprintf("SELECT DISTINCT quality_profile, quality_profile FROM movies%s ORDER BY quality_profile LIMIT ? OFFSET ?", searchFilter)
+		case "series":
+			query = fmt.Sprintf("SELECT DISTINCT quality_profile, quality_profile FROM serie_episodes%s ORDER BY quality_profile LIMIT ? OFFSET ?", searchFilter)
+		case "movie_histories":
+			query = fmt.Sprintf("SELECT DISTINCT quality_profile, quality_profile FROM movie_histories%s ORDER BY quality_profile LIMIT ? OFFSET ?", searchFilter)
+		case "serie_episode_histories":
+			query = fmt.Sprintf("SELECT DISTINCT quality_profile, quality_profile FROM serie_episode_histories%s ORDER BY quality_profile LIMIT ? OFFSET ?", searchFilter)
+		default:
+			query = fmt.Sprintf("SELECT DISTINCT quality_profile, quality_profile FROM %s%s ORDER BY quality_profile LIMIT ? OFFSET ?", tableName, searchFilter)
+		}
+		profiles := database.GetrowsN[database.DbstaticTwoString](false, uint(pageSize+1), query, searchArgs...)
+		hasMore = len(profiles) > pageSize
+		if hasMore {
+			profiles = profiles[:pageSize]
+		}
+		for _, profile := range profiles {
+			if profile.Str1 != "" {
+				options = append(options, createSelect2OptionString(profile.Str1, profile.Str1))
+			}
 		}
 	}
 
 	// Return Select2 compatible JSON response
-	ctx.JSON(http.StatusOK, gin.H{
-		"results": options,
-		"pagination": gin.H{
-			"more": hasMore,
-		},
-	})
+	sendSelect2Response(ctx, options, hasMore)
 }
 
 // getDropdownOptionByID retrieves a single dropdown option by ID for preselection
-func getDropdownOptionByID(tableName, fieldName string, id int) *map[string]interface{} {
+func getDropdownOptionByID(tableName, fieldName string, id int) *map[string]any {
 	switch tableName {
 	case "dbmovies":
 		if movie, err := database.Structscan[database.Dbmovie]("SELECT id, title FROM dbmovies WHERE id = ?", false, id); err == nil {
-			return &map[string]interface{}{
-				"id":   movie.ID,
-				"text": movie.Title,
-			}
+			return createSelect2OptionPtr(movie.ID, movie.Title)
 		}
 	case "dbseries":
 		if serie, err := database.Structscan[database.Dbserie]("SELECT id, seriename FROM dbseries WHERE id = ?", false, id); err == nil {
-			return &map[string]interface{}{
-				"id":   serie.ID,
-				"text": serie.Seriename,
-			}
+			return createSelect2OptionPtr(serie.ID, serie.Seriename)
 		}
 	case "dbserie_episodes":
 		if episode, err := database.Structscan[database.DbserieEpisode]("SELECT id, identifier, title FROM dbserie_episodes WHERE id = ?", false, id); err == nil {
 			label := fmt.Sprintf("%s - %s", episode.Identifier, episode.Title)
-			return &map[string]interface{}{
-				"id":   episode.ID,
-				"text": label,
-			}
+			return createSelect2OptionPtr(episode.ID, label)
 		}
 	case "movies":
 		result := database.GetrowsN[database.DbstaticOneStringOneUInt](false, 1, "SELECT dm.title || ' - ' || m.listname, m.id FROM movies m LEFT JOIN dbmovies dm ON m.dbmovie_id = dm.id WHERE m.id = ?", id)
 		if len(result) > 0 {
-			return &map[string]interface{}{
-				"id":   result[0].Num,
-				"text": result[0].Str,
-			}
+			return createSelect2OptionPtr(result[0].Num, result[0].Str)
 		}
 	case "series":
 		result := database.GetrowsN[database.DbstaticOneStringOneUInt](false, 1, "SELECT ds.seriename || ' - ' || s.listname, s.id FROM series s LEFT JOIN dbseries ds ON s.dbserie_id = ds.id WHERE s.id = ?", id)
 		if len(result) > 0 {
-			return &map[string]interface{}{
-				"id":   result[0].Num,
-				"text": result[0].Str,
-			}
+			return createSelect2OptionPtr(result[0].Num, result[0].Str)
 		}
 	case "serie_episodes":
 		result := database.GetrowsN[database.DbstaticOneStringOneUInt](false, 1, "SELECT dse.identifier || ' - ' || dse.title || ' - ' || s.listname, se.id FROM serie_episodes se LEFT JOIN dbserie_episodes dse ON se.dbserie_episode_id = dse.id LEFT JOIN series s ON se.serie_id = s.id WHERE se.id = ?", id)
 		if len(result) > 0 {
-			return &map[string]interface{}{
-				"id":   result[0].Num,
-				"text": result[0].Str,
-			}
+			return createSelect2OptionPtr(result[0].Num, result[0].Str)
 		}
 	case "qualities":
 		// Determine quality type based on field name
@@ -3404,11 +3735,372 @@ func getDropdownOptionByID(tableName, fieldName string, id int) *map[string]inte
 
 		query := fmt.Sprintf("SELECT id, name FROM qualities WHERE id = ?%s", typeFilter)
 		if quality, err := database.Structscan[database.Qualities](query, false, id); err == nil {
-			return &map[string]interface{}{
-				"id":   quality.ID,
-				"text": quality.Name,
-			}
+			return createSelect2OptionPtr(quality.ID, quality.Name)
 		}
 	}
 	return nil
+}
+
+// renderQueuePage renders the queue monitoring page
+func renderQueuePage(ctx *gin.Context) {
+	pageNode := page("Queue Monitor", false, false, true, renderQueueGrid())
+	var buf strings.Builder
+	pageNode.Render(&buf)
+	ctx.Header("Content-Type", "text/html; charset=utf-8")
+	ctx.String(http.StatusOK, buf.String())
+}
+
+// renderQueueGrid creates a grid showing active queue items
+func renderQueueGrid() gomponents.Node {
+	var queueData []map[string]any
+
+	for i, value := range worker.GetQueues() {
+		queueData = append(queueData, map[string]any{
+			"id":      i,
+			"queue":   value.Queue,
+			"job":     value.Name,
+			"added":   value.Added.Format("2006-01-02 15:04:05"),
+			"started": value.Started.Format("2006-01-02 15:04:05"),
+		})
+	}
+	var rows []gomponents.Node
+	for _, item := range queueData {
+		rows = append(rows, html.Tr(
+			html.Td(gomponents.Text(fmt.Sprintf("%v", item["id"]))),
+			html.Td(gomponents.Text(fmt.Sprintf("%v", item["queue"]))),
+			html.Td(gomponents.Text(fmt.Sprintf("%v", item["job"]))),
+			html.Td(gomponents.Text(fmt.Sprintf("%v", item["added"]))),
+			html.Td(gomponents.Text(fmt.Sprintf("%v", item["started"]))),
+		))
+	}
+	if len(rows) == 0 {
+		rows = append(rows, html.Tr(
+			html.Td(
+				html.ColSpan("5"),
+				html.Class("text-center text-muted"),
+				gomponents.Text("No queue items found"),
+			),
+		))
+	}
+	return html.Div(
+		html.Class("container-fluid"),
+		html.Div(
+			html.Class("row"),
+			html.Div(
+				html.Class("col-12"),
+				html.Div(
+					html.Class("card"),
+					html.Div(
+						html.Class("card-header"),
+						html.H5(html.Class("card-title"), gomponents.Text("Active Queue Items")),
+					),
+					html.Div(
+						html.Class("card-body"),
+						html.Div(
+							html.Class("table-responsive"),
+							html.Table(
+								html.Class("table table-striped"),
+								html.THead(
+									html.Tr(
+										html.Th(gomponents.Text("ID")),
+										html.Th(gomponents.Text("Queue")),
+										html.Th(gomponents.Text("Job")),
+										html.Th(gomponents.Text("Added")),
+										html.Th(gomponents.Text("Started")),
+									),
+								),
+								html.TBody(
+									rows...,
+								),
+							),
+						),
+					),
+				),
+			),
+		),
+		html.Script(
+			gomponents.Raw(`
+				// Auto-refresh every 10 seconds
+				setInterval(function() {
+					window.location.reload();
+				}, 10000);
+			`),
+		),
+	)
+}
+
+// renderSchedulerPage renders the scheduler monitoring page
+func renderSchedulerPage(ctx *gin.Context) {
+	pageNode := page("Scheduler Monitor", false, false, true, renderSchedulerGrid())
+	var buf strings.Builder
+	pageNode.Render(&buf)
+	ctx.Header("Content-Type", "text/html; charset=utf-8")
+	ctx.String(http.StatusOK, buf.String())
+}
+
+// renderSchedulerGrid creates a grid showing scheduler status
+func renderSchedulerGrid() gomponents.Node {
+	var schedulerData []map[string]any
+
+	for i, value := range worker.GetSchedules() {
+		schedulerData = append(schedulerData, map[string]any{
+			"id":        i,
+			"job":       value.JobName,
+			"lastrun":   value.LastRun.Format("2006-01-02 15:04:05"),
+			"nextrun":   value.NextRun.Format("2006-01-02 15:04:05"),
+			"isrunning": value.IsRunning,
+		})
+	}
+
+	var rows []gomponents.Node
+	for _, item := range schedulerData {
+		isRunning := item["isrunning"].(bool)
+		statusBadge := html.Span(
+			html.Class("badge bg-secondary"),
+			gomponents.Text("false"),
+		)
+		if isRunning {
+			statusBadge = html.Span(
+				html.Class("badge bg-success"),
+				gomponents.Text("true"),
+			)
+		}
+
+		rows = append(rows, html.Tr(
+			html.Td(gomponents.Text(fmt.Sprintf("%v", item["id"]))),
+			html.Td(gomponents.Text(fmt.Sprintf("%v", item["job"]))),
+			html.Td(gomponents.Text(fmt.Sprintf("%v", item["lastrun"]))),
+			html.Td(gomponents.Text(fmt.Sprintf("%v", item["nextrun"]))),
+			html.Td(statusBadge),
+		))
+	}
+	if len(rows) == 0 {
+		rows = append(rows, html.Tr(
+			html.Td(
+				html.ColSpan("5"),
+				html.Class("text-center text-muted"),
+				gomponents.Text("No scheduled jobs found"),
+			),
+		))
+	}
+	return html.Div(
+		html.Class("container-fluid"),
+		html.Div(
+			html.Class("row"),
+			html.Div(
+				html.Class("col-12"),
+				html.Div(
+					html.Class("card"),
+					html.Div(
+						html.Class("card-header"),
+						html.H5(html.Class("card-title"), gomponents.Text("Scheduled Jobs")),
+					),
+					html.Div(
+						html.Class("card-body"),
+						html.Div(
+							html.Class("table-responsive"),
+							html.Table(
+								html.Class("table table-striped"),
+								html.THead(
+									html.Tr(
+										html.Th(gomponents.Text("ID")),
+										html.Th(gomponents.Text("Job")),
+										html.Th(gomponents.Text("Last Run")),
+										html.Th(gomponents.Text("Next Run")),
+										html.Th(gomponents.Text("Is Running")),
+									),
+								),
+								html.TBody(
+									rows...,
+								),
+							),
+						),
+					),
+				),
+			),
+		),
+		html.Script(
+			gomponents.Raw(`
+				// Auto-refresh every 60 seconds
+				setInterval(function() {
+					window.location.reload();
+				}, 60000);
+			`),
+		),
+	)
+}
+
+func renderStatsPage(ctx *gin.Context) {
+	pageNode := page("Media Statistics", false, false, true, renderStatsGrid())
+	var buf strings.Builder
+	pageNode.Render(&buf)
+	ctx.Header("Content-Type", "text/html; charset=utf-8")
+	ctx.String(http.StatusOK, buf.String())
+}
+
+func renderStatsGrid() gomponents.Node {
+	var statsData []map[string]any
+	id := 0
+
+	movieLists := database.GetrowsN[string](
+		false,
+		5,
+		"select distinct listname from movies where listname is not null and listname != ''",
+	)
+	for idx := range movieLists {
+		all := database.Getdatarow[uint](
+			false,
+			"select count(*) from movies where listname = ? COLLATE NOCASE",
+			&movieLists[idx],
+		)
+		missing := database.Getdatarow[uint](
+			false,
+			"select count(*) from movies where listname = ? COLLATE NOCASE and missing=1",
+			&movieLists[idx],
+		)
+		reached := database.Getdatarow[uint](
+			false,
+			"select count(*) from movies where listname = ? COLLATE NOCASE and quality_reached=1",
+			&movieLists[idx],
+		)
+		upgrade := database.Getdatarow[uint](
+			false,
+			"select count(*) from movies where listname = ? COLLATE NOCASE and quality_reached=0 and missing=0",
+			&movieLists[idx],
+		)
+
+		statsData = append(statsData, map[string]any{
+			"id":       id,
+			"typ":      "movies",
+			"list":     movieLists[idx],
+			"total":    all,
+			"missing":  missing,
+			"finished": reached,
+			"upgrade":  upgrade,
+		})
+		id++
+	}
+
+	seriesLists := database.GetrowsN[string](
+		false,
+		5,
+		"select distinct listname from series where listname is not null and listname != ''",
+	)
+	for idx := range seriesLists {
+		all := database.Getdatarow[uint](
+			false,
+			"select count(*) from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE)",
+			&seriesLists[idx],
+		)
+		missing := database.Getdatarow[uint](
+			false,
+			"select count(*) from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE) and missing=1",
+			&seriesLists[idx],
+		)
+		reached := database.Getdatarow[uint](
+			false,
+			"select count(*) from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE) and quality_reached=1",
+			&seriesLists[idx],
+		)
+		upgrade := database.Getdatarow[uint](
+			false,
+			"select count(*) from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE) and quality_reached=0 and missing=0",
+			&seriesLists[idx],
+		)
+
+		statsData = append(statsData, map[string]any{
+			"id":       id,
+			"typ":      "episodes",
+			"list":     seriesLists[idx],
+			"total":    all,
+			"missing":  missing,
+			"finished": reached,
+			"upgrade":  upgrade,
+		})
+		id++
+	}
+
+	var rows []gomponents.Node
+	for _, stat := range statsData {
+		typ := stat["typ"].(string)
+		var typeBadge gomponents.Node
+		if typ == "movies" {
+			typeBadge = html.Span(
+				html.Class("badge bg-primary"),
+				gomponents.Text("Movies"),
+			)
+		} else {
+			typeBadge = html.Span(
+				html.Class("badge bg-success"),
+				gomponents.Text("Episodes"),
+			)
+		}
+
+		rows = append(rows, html.Tr(
+			html.Td(gomponents.Text(fmt.Sprintf("%d", stat["id"].(int)))),
+			html.Td(typeBadge),
+			html.Td(gomponents.Text(stat["list"].(string))),
+			html.Td(gomponents.Text(fmt.Sprintf("%d", stat["total"].(uint)))),
+			html.Td(
+				html.Span(
+					html.Class("badge bg-warning"),
+					gomponents.Text(fmt.Sprintf("%d", stat["missing"].(uint))),
+				),
+			),
+			html.Td(
+				html.Span(
+					html.Class("badge bg-success"),
+					gomponents.Text(fmt.Sprintf("%d", stat["finished"].(uint))),
+				),
+			),
+			html.Td(
+				html.Span(
+					html.Class("badge bg-info"),
+					gomponents.Text(fmt.Sprintf("%d", stat["upgrade"].(uint))),
+				),
+			),
+		))
+	}
+
+	if len(rows) == 0 {
+		rows = append(rows, html.Tr(
+			html.Td(
+				html.ColSpan("7"),
+				html.Class("text-center text-muted"),
+				gomponents.Text("No statistics available"),
+			),
+		))
+	}
+
+	return html.Div(
+		html.Class("card"),
+		html.Div(
+			html.Class("card-header"),
+			html.H5(
+				html.Class("card-title mb-0"),
+				gomponents.Text("Media Statistics"),
+			),
+		),
+		html.Div(
+			html.Class("card-body"),
+			html.Div(
+				html.Class("table-responsive"),
+				html.Table(
+					html.Class("table table-striped table-hover"),
+					html.THead(
+						html.Tr(
+							html.Th(gomponents.Text("ID")),
+							html.Th(gomponents.Text("Type")),
+							html.Th(gomponents.Text("List")),
+							html.Th(gomponents.Text("Total")),
+							html.Th(gomponents.Text("Missing")),
+							html.Th(gomponents.Text("Finished")),
+							html.Th(gomponents.Text("Upgradable")),
+						),
+					),
+					html.TBody(rows...),
+				),
+			),
+		),
+	)
 }

@@ -170,6 +170,7 @@ func main() {
 		general.TraktLimiterCalls,
 		general.TraktDisableTLSVerify,
 		general.TraktTimeoutSeconds,
+		general.TraktRedirectUrl,
 	)
 
 	logger.LogDynamicany0("info", "Initialize Database")

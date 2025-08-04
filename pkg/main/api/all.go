@@ -1,8 +1,6 @@
 package api
 
 import (
-	"net/http"
-
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
@@ -11,21 +9,7 @@ import (
 	gin "github.com/gin-gonic/gin"
 )
 
-type Jsonerror struct {
-	Error string `json:"error"`
-}
-
-type Jsondata struct {
-	Data any `json:"data"`
-}
-type Jsondataerror struct {
-	Error string `json:"error"`
-	Data  any    `json:"data"`
-}
-type Jsondatarows struct {
-	Total int `json:"total"`
-	Data  any `json:"data"`
-}
+// Redundant structs removed - using StandardResponse from common.go instead
 type JSONNaming struct {
 	M          database.ParseInfo `json:"m"`
 	Foldername string             `json:"foldername"`
@@ -66,7 +50,7 @@ func AddAllRoutes(rg *gin.RouterGroup) {
 func apiAllGetFeeds(c *gin.Context) {
 	utils.MoviesAllJobs(logger.StrFeeds, true)
 	utils.SeriesAllJobs(logger.StrFeeds, true)
-	c.JSON(http.StatusOK, "ok")
+	sendSuccess(c, StrOK)
 }
 
 // @Summary      Search all folders
@@ -79,7 +63,7 @@ func apiAllGetFeeds(c *gin.Context) {
 func apiAllGetData(c *gin.Context) {
 	utils.MoviesAllJobs("data", true)
 	utils.SeriesAllJobs("data", true)
-	c.JSON(http.StatusOK, "ok")
+	sendSuccess(c, StrOK)
 }
 
 // @Summary      Search all rss feeds
@@ -92,7 +76,7 @@ func apiAllGetData(c *gin.Context) {
 func apiAllGetRss(c *gin.Context) {
 	utils.MoviesAllJobs(logger.StrRss, true)
 	utils.SeriesAllJobs(logger.StrRss, true)
-	c.JSON(http.StatusOK, "ok")
+	sendSuccess(c, StrOK)
 }
 
 // @Summary      Search all Missing
@@ -105,7 +89,7 @@ func apiAllGetRss(c *gin.Context) {
 func apiAllGetMissingFull(c *gin.Context) {
 	utils.MoviesAllJobs(logger.StrSearchMissingFull, true)
 	utils.SeriesAllJobs(logger.StrSearchMissingFull, true)
-	c.JSON(http.StatusOK, "ok")
+	sendSuccess(c, StrOK)
 }
 
 // @Summary      Search all Missing Incremental
@@ -118,7 +102,7 @@ func apiAllGetMissingFull(c *gin.Context) {
 func apiAllGetMissingInc(c *gin.Context) {
 	utils.MoviesAllJobs(logger.StrSearchMissingInc, true)
 	utils.SeriesAllJobs(logger.StrSearchMissingInc, true)
-	c.JSON(http.StatusOK, "ok")
+	sendSuccess(c, StrOK)
 }
 
 // @Summary      Search all Upgrades
@@ -131,7 +115,7 @@ func apiAllGetMissingInc(c *gin.Context) {
 func apiAllGetUpgradeFull(c *gin.Context) {
 	utils.MoviesAllJobs(logger.StrSearchUpgradeFull, true)
 	utils.SeriesAllJobs(logger.StrSearchUpgradeFull, true)
-	c.JSON(http.StatusOK, "ok")
+	sendSuccess(c, StrOK)
 }
 
 // @Summary      Search all Upgrades Incremental
@@ -144,23 +128,25 @@ func apiAllGetUpgradeFull(c *gin.Context) {
 func apiAllGetUpgradeInc(c *gin.Context) {
 	utils.MoviesAllJobs(logger.StrSearchUpgradeInc, true)
 	utils.SeriesAllJobs(logger.StrSearchUpgradeInc, true)
-	c.JSON(http.StatusOK, "ok")
+	sendSuccess(c, StrOK)
 }
 
 // checkauth validates API key authentication for requests.
 // It checks for the "apikey" query parameter and compares it against
 // the configured WebAPIKey. Returns 401 Unauthorized if validation fails.
 func checkauth(c *gin.Context) {
-	var msg string
-	if queryParam, ok := c.GetQuery("apikey"); ok {
-		if queryParam == config.GetSettingsGeneral().WebAPIKey {
-			c.Next()
-			return
-		}
-		msg = "wrong apikey in query"
-	} else {
-		msg = "no apikey in query"
+	apikey, ok := c.GetQuery(StrApikey)
+	if !ok {
+		sendUnauthorized(c, "unauthorized - no apikey in query")
+		c.Abort()
+		return
 	}
-	c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized - " + msg})
-	c.AbortWithStatus(http.StatusUnauthorized)
+
+	if apikey != config.GetSettingsGeneral().WebAPIKey {
+		sendUnauthorized(c, "unauthorized - wrong apikey in query")
+		c.Abort()
+		return
+	}
+
+	c.Next()
 }

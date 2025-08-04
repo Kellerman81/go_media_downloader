@@ -384,24 +384,7 @@ func JobImportMovies(
 				dbmovie.ImdbID,
 			)
 		} else {
-			metadata.Getmoviemetadata(&dbmovie, true)
-
-			database.ExecN("update dbmovies SET Title = ? , Release_Date = ? , Year = ? , Adult = ? , Budget = ? , Genres = ? , Original_Language = ? , Original_Title = ? , Overview = ? , Popularity = ? , Revenue = ? , Runtime = ? , Spoken_Languages = ? , Status = ? , Tagline = ? , Vote_Average = ? , Vote_Count = ? , Trakt_ID = ? , Moviedb_ID = ? , Imdb_ID = ? , Freebase_M_ID = ? , Freebase_ID = ? , Facebook_ID = ? , Instagram_ID = ? , Twitter_ID = ? , URL = ? , Backdrop = ? , Poster = ? , Slug = ? where id = ?",
-				&dbmovie.Title, &dbmovie.ReleaseDate, &dbmovie.Year, &dbmovie.Adult, &dbmovie.Budget, &dbmovie.Genres, &dbmovie.OriginalLanguage, &dbmovie.OriginalTitle, &dbmovie.Overview, &dbmovie.Popularity, &dbmovie.Revenue, &dbmovie.Runtime, &dbmovie.SpokenLanguages, &dbmovie.Status, &dbmovie.Tagline, &dbmovie.VoteAverage, &dbmovie.VoteCount, &dbmovie.TraktID, &dbmovie.MoviedbID, &dbmovie.ImdbID, &dbmovie.FreebaseMID, &dbmovie.FreebaseID, &dbmovie.FacebookID, &dbmovie.InstagramID, &dbmovie.TwitterID, &dbmovie.URL, &dbmovie.Backdrop, &dbmovie.Poster, &dbmovie.Slug, &dbmovie.ID)
-
-			metadata.Getmoviemetatitles(&dbmovie, cfgp)
-			if dbmovieadded {
-				if config.GetSettingsGeneral().UseMediaCache {
-					database.AppendCacheThreeString(logger.CacheDBMovie, database.DbstaticThreeStringTwoInt{Str1: dbmovie.Title, Str2: dbmovie.Slug, Str3: imdb, Num1: int(dbmovie.Year), Num2: dbmovie.ID})
-				}
-			}
-
-			if dbmovie.Title == "" {
-				database.Scanrowsdyn(false, database.QueryDbmovieTitlesGetTitleByIDLmit1, &dbmovie.Title, &dbmovie.ID)
-				if dbmovie.Title != "" {
-					database.ExecN("update dbmovies SET Title = ? where id = ?", &dbmovie.Title, &dbmovie.ID)
-				}
-			}
+			metadata.Getmoviemetadata(&dbmovie, true, true, cfgp, dbmovieadded)
 		}
 	}
 

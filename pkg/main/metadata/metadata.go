@@ -141,20 +141,26 @@ func buildLanguageString(languages []apiexternal.TheMovieDBMovieLanguages) strin
 // It finds the TMDb ID if missing using the IMDb ID.
 // It fetches details from the TMDb API and populates Dbmovie fields if empty or overwrite is true.
 // It closes the TMDb response when done.
-func movieGetTmdbMetadata(movie *database.Dbmovie, overwrite bool) {
+func movieGetTmdbMetadata(movie *database.Dbmovie, overwrite bool) error {
 	if movie.MoviedbID == 0 {
 		if movie.ImdbID == "" {
-			return
+			return nil
 		}
 		moviedb, err := apiexternal.FindTmdbImdb(movie.ImdbID)
 		if err != nil || len(moviedb.MovieResults) == 0 {
-			return
+			if err == logger.ErrNotFound {
+				return nil
+			}
+			return err
+		}
+		if moviedb.MovieResults[0].ID == 0 {
+			return logger.ErrNotFound
 		}
 		movie.MoviedbID = moviedb.MovieResults[0].ID
 	}
 	moviedbdetails, err := apiexternal.GetTmdbMovie(movie.MoviedbID)
 	if err != nil {
-		return
+		return err
 	}
 
 	updateStringField(&movie.Title, moviedbdetails.Title, overwrite, func(title string) string {
@@ -215,6 +221,7 @@ func movieGetTmdbMetadata(movie *database.Dbmovie, overwrite bool) {
 	if (movie.MoviedbID == 0 || overwrite) && moviedbdetails.ID != 0 {
 		movie.MoviedbID = moviedbdetails.ID
 	}
+	return nil
 }
 
 // updateStringField updates a string field with a new value if the current field is empty or overwrite is true.
@@ -311,13 +318,13 @@ func movieGetOmdbMetadata(movie *database.Dbmovie, overwrite bool) {
 // movieGetTraktMetadata retrieves movie metadata from the Trakt API and merges it into the provided Dbmovie struct.
 // It will overwrite existing data in the Dbmovie if the overwrite param is true.
 // The Trakt API is queried using the ImdbID field in the Dbmovie.
-func movieGetTraktMetadata(movie *database.Dbmovie, overwrite bool) {
+func movieGetTraktMetadata(movie *database.Dbmovie, overwrite bool) error {
 	if movie.ImdbID == "" {
-		return
+		return nil
 	}
 	traktdetails, err := apiexternal.GetTraktMovie(movie.ImdbID)
 	if err != nil {
-		return
+		return err
 	}
 	updateStringField(&movie.Title, traktdetails.Title, overwrite, func(title string) string {
 		return logger.UnquoteUnescape(logger.Checkhtmlentities(title))
@@ -367,6 +374,7 @@ func movieGetTraktMetadata(movie *database.Dbmovie, overwrite bool) {
 	if (!movie.ReleaseDate.Valid || overwrite) && traktdetails.Released != "" {
 		movie.ReleaseDate = parseDate(traktdetails.Released)
 	}
+	return nil
 }
 
 // MovieGetMetadata retrieves metadata for the given movie from multiple sources based on the input flags.
@@ -396,17 +404,64 @@ func MovieGetMetadata(movie *database.Dbmovie, queryimdb, querytmdb, queryomdb, 
 
 // Getmoviemetadata retrieves metadata for the given movie from the configured
 // priority of metadata sources, refreshing cached data if refresh is true.
-func Getmoviemetadata(movie *database.Dbmovie, refresh bool) {
+func Getmoviemetadata(dbmovie *database.Dbmovie, refresh bool, updateNTitle bool, cfgp *config.MediaTypeConfig, dbmovieadded bool) {
+	var errTmdb, errTrakt, errImdb error
 	for idx := range config.GetSettingsGeneral().MovieMetaSourcePriority {
 		switch config.GetSettingsGeneral().MovieMetaSourcePriority[idx] {
 		case logger.StrImdb:
-			movie.MovieGetImdbMetadata(refresh)
+			errImdb = dbmovie.MovieGetImdbMetadata(refresh)
 		case "tmdb":
-			movieGetTmdbMetadata(movie, false)
+			errTmdb = movieGetTmdbMetadata(dbmovie, false)
 		case "omdb":
-			movieGetOmdbMetadata(movie, false)
+			movieGetOmdbMetadata(dbmovie, false)
 		case "trakt":
-			movieGetTraktMetadata(movie, false)
+			errTrakt = movieGetTraktMetadata(dbmovie, false)
+		}
+	}
+
+	if !updateNTitle {
+		return
+	}
+
+	database.ExecN("update dbmovies SET Title = ? , Release_Date = ? , Year = ? , Adult = ? , Budget = ? , Genres = ? , Original_Language = ? , Original_Title = ? , Overview = ? , Popularity = ? , Revenue = ? , Runtime = ? , Spoken_Languages = ? , Status = ? , Tagline = ? , Vote_Average = ? , Vote_Count = ? , Trakt_ID = ? , Moviedb_ID = ? , Imdb_ID = ? , Freebase_M_ID = ? , Freebase_ID = ? , Facebook_ID = ? , Instagram_ID = ? , Twitter_ID = ? , URL = ? , Backdrop = ? , Poster = ? , Slug = ? where id = ?",
+		&dbmovie.Title, &dbmovie.ReleaseDate, &dbmovie.Year, &dbmovie.Adult, &dbmovie.Budget, &dbmovie.Genres, &dbmovie.OriginalLanguage, &dbmovie.OriginalTitle, &dbmovie.Overview, &dbmovie.Popularity, &dbmovie.Revenue, &dbmovie.Runtime, &dbmovie.SpokenLanguages, &dbmovie.Status, &dbmovie.Tagline, &dbmovie.VoteAverage, &dbmovie.VoteCount, &dbmovie.TraktID, &dbmovie.MoviedbID, &dbmovie.ImdbID, &dbmovie.FreebaseMID, &dbmovie.FreebaseID, &dbmovie.FacebookID, &dbmovie.InstagramID, &dbmovie.TwitterID, &dbmovie.URL, &dbmovie.Backdrop, &dbmovie.Poster, &dbmovie.Slug, &dbmovie.ID)
+
+	if cfgp.Name != "" {
+		// size +5
+		titles := database.Getrowssize[database.DbstaticTwoString](
+			false,
+			"select count() from dbmovie_titles where dbmovie_id = ?",
+			"select title, slug from dbmovie_titles where dbmovie_id = ?",
+			&dbmovie.ID,
+		)
+
+		var checkid int
+
+		// Process IMDb alternate titles
+		if config.GetSettingsGeneral().MovieAlternateTitleMetaSourceImdb && dbmovie.ImdbID != "" && errImdb == nil {
+			processImdbAlternateTitles(dbmovie, cfgp, titles, &checkid)
+		}
+
+		// Process TMDb alternate titles
+		if config.GetSettingsGeneral().MovieAlternateTitleMetaSourceTmdb && dbmovie.MoviedbID != 0 && errTmdb == nil {
+			processTmdbAlternateTitles(dbmovie, cfgp, titles, &checkid)
+		}
+
+		// Process Trakt alternate titles
+		if config.GetSettingsGeneral().MovieAlternateTitleMetaSourceTrakt && dbmovie.ImdbID != "" && errTrakt == nil {
+			processTraktAlternateTitles(dbmovie, cfgp, titles, &checkid)
+		}
+	}
+	if dbmovieadded {
+		if config.GetSettingsGeneral().UseMediaCache {
+			database.AppendCacheThreeString(logger.CacheDBMovie, database.DbstaticThreeStringTwoInt{Str1: dbmovie.Title, Str2: dbmovie.Slug, Str3: dbmovie.ImdbID, Num1: int(dbmovie.Year), Num2: dbmovie.ID})
+		}
+	}
+
+	if dbmovie.Title == "" {
+		database.Scanrowsdyn(false, database.QueryDbmovieTitlesGetTitleByIDLmit1, &dbmovie.Title, &dbmovie.ID)
+		if dbmovie.Title != "" {
+			database.ExecN("update dbmovies SET Title = ? where id = ?", &dbmovie.Title, &dbmovie.ID)
 		}
 	}
 }

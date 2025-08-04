@@ -285,6 +285,10 @@ func structurefolders(ctx context.Context, cfgp *config.MediaTypeConfig) error {
 	return errret
 }
 
+func ReturnFeeds(feed *feedResults) {
+	plfeeds.Put(feed)
+}
+
 // importnewseriessingle imports new series from a feed into the database.
 // It gets the feed for the given list, checks for new series, and spawns
 // goroutine workers to import each new series in parallel.
@@ -308,9 +312,9 @@ func importnewseriessingle(
 		return errors.New("list template not found")
 	}
 
-	feed := plfeeds.Get()
-	err := feeds(cfgp, list, feed)
+	feed, err := Feeds(cfgp, list, false)
 	if err != nil {
+		plfeeds.Put(feed)
 		return err
 	}
 	defer plfeeds.Put(feed)
@@ -322,12 +326,19 @@ func importnewseriessingle(
 	defer ctx.Done()
 	pl := worker.WorkerPoolParse.NewGroupContext(ctx)
 	for idxserie2 := range feed.Series {
-		pl.SubmitErr(func() error {
+		pl.Submit(func() {
 			defer logger.HandlePanic()
-			return importfeed.JobImportDBSeries(&feed.Series[idxserie2], idxserie2, cfgp, listid)
+			importfeed.JobImportDBSeries(&feed.Series[idxserie2], idxserie2, cfgp, listid)
 		})
 	}
-	pl.Wait()
+	errjobs := pl.Wait()
+	if errjobs != nil {
+		logger.LogDynamicanyErr(
+			"error",
+			"Error importing series",
+			errjobs,
+		)
+	}
 	ctx.Done()
 	return nil
 }

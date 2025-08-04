@@ -1523,7 +1523,7 @@ func TryTimeParse(layout string, s string) (time.Time, bool) {
 }
 
 // GetFieldComments returns a map of field names to their comment values
-func GetFieldComments(v interface{}) map[string]string {
+func GetFieldComments(v any) map[string]string {
 	comments := make(map[string]string)
 
 	t := reflect.TypeOf(v)
@@ -1550,7 +1550,7 @@ func GetFieldComments(v interface{}) map[string]string {
 }
 
 // GetFieldDisplayNames returns a map of field names to their displayname tag values
-func GetFieldDisplayNames(v interface{}) map[string]string {
+func GetFieldDisplayNames(v any) map[string]string {
 	displayNames := make(map[string]string)
 
 	t := reflect.TypeOf(v)
@@ -1577,7 +1577,7 @@ func GetFieldDisplayNames(v interface{}) map[string]string {
 }
 
 // GetFieldCommentByName returns the comment for a specific field
-func GetFieldCommentByName(v interface{}, fieldName string) string {
+func GetFieldCommentByName(v any, fieldName string) string {
 	t := reflect.TypeOf(v)
 	if t.Kind() == reflect.Ptr {
 		t = t.Elem()

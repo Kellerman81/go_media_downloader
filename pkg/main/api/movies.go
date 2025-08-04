@@ -66,32 +66,13 @@ func AddMoviesRoutes(routermovies *gin.RouterGroup) {
 // @Failure      401    {object}  Jsonerror
 // @Router       /api/movies [get].
 func apiMovieList(ctx *gin.Context) {
-	var query database.Querywithargs
-
+	params := parsePaginationParams(ctx)
+	query := buildQuery(params)
+	
 	rows := database.Getdatarow[uint](false, "select count() from dbmovies")
-	var limit, page int
-	if queryParam, ok := ctx.GetQuery("limit"); ok {
-		if queryParam != "" {
-			limit, _ = strconv.Atoi(queryParam)
-			query.Limit = uint(limit)
-		}
-	}
-	if limit != 0 {
-		if queryParam, ok := ctx.GetQuery("page"); ok {
-			if queryParam != "" {
-				page, _ = strconv.Atoi(queryParam)
-				if page >= 2 {
-					query.Offset = (page - 1) * limit
-				}
-			}
-		}
-	}
-	if queryParam, ok := ctx.GetQuery("order"); ok {
-		if queryParam != "" {
-			query.OrderBy = queryParam
-		}
-	}
-	ctx.JSON(http.StatusOK, gin.H{"data": database.QueryDbmovie(query), "total": rows})
+	data := database.QueryDbmovie(query)
+	
+	sendJSONResponse(ctx, http.StatusOK, data, int(rows))
 }
 
 // @Summary      List Unmatched Movies
@@ -105,31 +86,13 @@ func apiMovieList(ctx *gin.Context) {
 // @Failure      401    {object}  Jsonerror
 // @Router       /api/movies/unmatched [get].
 func apiMovieListUnmatched(ctx *gin.Context) {
-	var query database.Querywithargs
+	params := parsePaginationParams(ctx)
+	query := buildQuery(params)
+	
 	rows := database.Getdatarow[uint](false, "select count() from movie_file_unmatcheds")
-	var limit, page int
-	if queryParam, ok := ctx.GetQuery("limit"); ok {
-		if queryParam != "" {
-			limit, _ = strconv.Atoi(queryParam)
-			query.Limit = uint(limit)
-		}
-	}
-	if limit != 0 {
-		if queryParam, ok := ctx.GetQuery("page"); ok {
-			if queryParam != "" {
-				page, _ = strconv.Atoi(queryParam)
-				if page >= 2 {
-					query.Offset = (page - 1) * limit
-				}
-			}
-		}
-	}
-	if queryParam, ok := ctx.GetQuery("order"); ok {
-		if queryParam != "" {
-			query.OrderBy = queryParam
-		}
-	}
-	ctx.JSON(http.StatusOK, gin.H{"data": database.QueryMovieFileUnmatched(query), "total": rows})
+	data := database.QueryMovieFileUnmatched(query)
+	
+	sendJSONResponse(ctx, http.StatusOK, data, int(rows))
 }
 
 // @Summary      Delete Movies
@@ -141,14 +104,15 @@ func apiMovieListUnmatched(ctx *gin.Context) {
 // @Failure      401  {object}  Jsonerror
 // @Router       /api/movies/{id} [delete].
 func apiMovieDelete(ctx *gin.Context) {
-	database.DeleteRow("movies", "dbmovie_id=?", ctx.Param("id"))
-	_, err := database.DeleteRow("dbmovies", "id=?", ctx.Param("id"))
-
-	if err == nil {
-		ctx.JSON(http.StatusOK, "ok")
-	} else {
-		ctx.JSON(http.StatusForbidden, err)
+	id, ok := getParamID(ctx, StrID)
+	if !ok {
+		return
 	}
+
+	database.DeleteRow("movies", "dbmovie_id=?", id)
+	_, err := database.DeleteRow("dbmovies", "id=?", id)
+
+	handleDBError(ctx, err, StrOK)
 }
 
 // @Summary      List Movies (List)
@@ -163,42 +127,23 @@ func apiMovieDelete(ctx *gin.Context) {
 // @Failure      401    {object}  Jsonerror
 // @Router       /api/movies/list/{name} [get].
 func apiMovieListGet(ctx *gin.Context) {
-	var query database.Querywithargs
-	list := ctx.Param("name")
+	listName, ok := getParamID(ctx, StrName)
+	if !ok {
+		return
+	}
+
+	params := parsePaginationParams(ctx)
+	query := buildQueryWithWhere(params, "movies.listname = ? COLLATE NOCASE")
 	query.InnerJoin = "dbmovies on movies.dbmovie_id=dbmovies.id"
-	query.Where = "movies.listname = ? COLLATE NOCASE"
 
 	rows := database.Getdatarow[uint](
 		false,
 		"select count() from movies where listname = ? COLLATE NOCASE",
-		&list,
+		&listName,
 	)
-	var limit, page int
-	if queryParam, ok := ctx.GetQuery("limit"); ok {
-		if queryParam != "" {
-			limit, _ = strconv.Atoi(queryParam)
-			query.Limit = uint(limit)
-		}
-	}
-	if limit != 0 {
-		if queryParam, ok := ctx.GetQuery("page"); ok {
-			if queryParam != "" {
-				page, _ = strconv.Atoi(queryParam)
-				if page >= 2 {
-					query.Offset = (page - 1) * limit
-				}
-			}
-		}
-	}
-	if queryParam, ok := ctx.GetQuery("order"); ok {
-		if queryParam != "" {
-			query.OrderBy = queryParam
-		}
-	}
-	ctx.JSON(
-		http.StatusOK,
-		gin.H{"data": database.QueryResultMovies(query, ctx.Param("name")), "total": rows},
-	)
+	data := database.QueryResultMovies(query, listName)
+
+	sendJSONResponse(ctx, http.StatusOK, data, int(rows))
 }
 
 // @Summary      Get Movie Metadata
@@ -228,7 +173,7 @@ func apiMovieMetadataGet(ctx *gin.Context) {
 		}
 		metadata.MovieGetMetadata(&dbmovie, imdb, tmdb, omdb, trakt)
 	} else {
-		metadata.Getmoviemetadata(&dbmovie, true)
+		metadata.Getmoviemetadata(&dbmovie, true, false, nil, false)
 	}
 	if queryParam, ok := ctx.GetQuery("update"); ok && queryParam == "1" {
 		dbmovie.MovieFindDBIDByImdbParser()
@@ -287,18 +232,16 @@ func apiMovieMetadataGet(ctx *gin.Context) {
 // @Failure      401  {object}  Jsonerror
 // @Router       /api/movies/list/{id} [delete].
 func movieDeleteList(ctx *gin.Context) {
-	_, err := database.DeleteRow("movies", "id=?", ctx.Param("id"))
-
-	if err == nil {
-		ctx.JSON(http.StatusOK, "ok")
-	} else {
-		ctx.JSON(http.StatusForbidden, err)
+	id, ok := getParamID(ctx, StrID)
+	if !ok {
+		return
 	}
+
+	_, err := database.DeleteRow("movies", "id=?", id)
+	handleDBError(ctx, err, StrOK)
 }
 
 const allowedjobsmoviesstr = "rss,data,datafull,checkmissing,checkmissingflag,checkreachedflag,structure,searchmissingfull,searchmissinginc,searchupgradefull,searchupgradeinc,searchmissingfulltitle,searchmissinginctitle,searchupgradefulltitle,searchupgradeinctitle,clearhistory,feeds,refresh,refreshinc"
-
-const strJobLower = "job"
 
 // @Summary      Start Jobs (All Lists)
 // @Description  Starts a Job
@@ -310,15 +253,13 @@ const strJobLower = "job"
 // @Failure      401  {object}  Jsonerror
 // @Router       /api/movies/job/{job} [get].
 func apimoviesAllJobs(c *gin.Context) {
-	allowed := false
-	for _, allow := range strings.Split(allowedjobsmoviesstr, ",") {
-		if strings.EqualFold(allow, c.Param(strJobLower)) {
-			allowed = true
-			break
-		}
+	jobParam := c.Param(StrJobLower)
+	if !validateJobParam(jobParam, allowedjobsmoviesstr) {
+		sendJSONError(c, http.StatusNoContent, "Job "+jobParam+" not allowed!")
+		return
 	}
-	if allowed {
-		returnval := "Job " + c.Param(strJobLower) + " started"
+
+	returnval := "Job " + jobParam + " started"
 
 		// defer cfgMovie.Close()
 		// defer cfg_list.Close()
@@ -329,10 +270,10 @@ func apimoviesAllJobs(c *gin.Context) {
 
 			cfgpstr := media.NamePrefix
 
-			switch c.Param(strJobLower) {
+			switch c.Param(StrJobLower) {
 			case "data", logger.StrDataFull, logger.StrStructure, logger.StrClearHistory:
-				worker.Dispatch(c.Param(strJobLower)+"_"+cfgpstr, func(key uint32) error {
-					return utils.SingleJobs(c.Param(strJobLower), cfgpstr, "", true, key)
+				worker.Dispatch(c.Param(StrJobLower)+"_"+cfgpstr, func(key uint32) error {
+					return utils.SingleJobs(c.Param(StrJobLower), cfgpstr, "", true, key)
 				}, "Data")
 			case logger.StrSearchMissingFull,
 				logger.StrSearchMissingInc,
@@ -342,12 +283,12 @@ func apimoviesAllJobs(c *gin.Context) {
 				logger.StrSearchMissingIncTitle,
 				logger.StrSearchUpgradeFullTitle,
 				logger.StrSearchUpgradeIncTitle:
-				worker.Dispatch(c.Param(strJobLower)+"_"+cfgpstr, func(key uint32) error {
-					return utils.SingleJobs(c.Param(strJobLower), cfgpstr, "", true, key)
+				worker.Dispatch(c.Param(StrJobLower)+"_"+cfgpstr, func(key uint32) error {
+					return utils.SingleJobs(c.Param(StrJobLower), cfgpstr, "", true, key)
 				}, "Search")
 			case logger.StrRss:
-				worker.Dispatch(c.Param(strJobLower)+"_"+cfgpstr, func(key uint32) error {
-					return utils.SingleJobs(c.Param(strJobLower), cfgpstr, "", true, key)
+				worker.Dispatch(c.Param(StrJobLower)+"_"+cfgpstr, func(key uint32) error {
+					return utils.SingleJobs(c.Param(StrJobLower), cfgpstr, "", true, key)
 				}, "RSS")
 			case logger.StrFeeds,
 				logger.StrCheckMissing,
@@ -366,11 +307,11 @@ func apimoviesAllJobs(c *gin.Context) {
 						continue
 					}
 					listname := media.Lists[idxi].Name
-					if c.Param(strJobLower) == logger.StrFeeds {
+					if c.Param(StrJobLower) == logger.StrFeeds {
 						if errsub := worker.Dispatch(
-							c.Param(strJobLower)+"_"+cfgpstr+"_"+listname,
+							c.Param(StrJobLower)+"_"+cfgpstr+"_"+listname,
 							func(key uint32) error {
-								return utils.SingleJobs(c.Param(strJobLower), cfgpstr, listname, true, key)
+								return utils.SingleJobs(c.Param(StrJobLower), cfgpstr, listname, true, key)
 							},
 							"Feeds",
 						); errsub != nil {
@@ -378,22 +319,22 @@ func apimoviesAllJobs(c *gin.Context) {
 						}
 					} else {
 						if errsub := worker.Dispatch(
-							c.Param(strJobLower)+"_"+cfgpstr+"_"+listname,
+							c.Param(StrJobLower)+"_"+cfgpstr+"_"+listname,
 							func(key uint32) error {
-								return utils.SingleJobs(c.Param(strJobLower), cfgpstr, listname, true, key)
+								return utils.SingleJobs(c.Param(StrJobLower), cfgpstr, listname, true, key)
 							},
 							"Data",
 						); errsub != nil {
 							err = errsub
 						}
 					}
-					if c.Param(strJobLower) == logger.StrCheckMissing ||
-						c.Param(strJobLower) == logger.StrCheckMissingFlag ||
-						c.Param(strJobLower) == logger.StrReachedFlag {
+					if c.Param(StrJobLower) == logger.StrCheckMissing ||
+						c.Param(StrJobLower) == logger.StrCheckMissingFlag ||
+						c.Param(StrJobLower) == logger.StrReachedFlag {
 						if errsub := worker.Dispatch(
-							c.Param(strJobLower)+"_"+cfgpstr+"_"+listname,
+							c.Param(StrJobLower)+"_"+cfgpstr+"_"+listname,
 							func(key uint32) error {
-								return utils.SingleJobs(c.Param(strJobLower), cfgpstr, listname, true, key)
+								return utils.SingleJobs(c.Param(StrJobLower), cfgpstr, listname, true, key)
 							},
 							"Data",
 						); errsub != nil {
@@ -414,17 +355,13 @@ func apimoviesAllJobs(c *gin.Context) {
 			case "":
 				return nil
 			default:
-				return worker.Dispatch(c.Param(strJobLower)+"_"+cfgpstr, func(key uint32) error {
-					return utils.SingleJobs(c.Param(strJobLower), cfgpstr, "", true, key)
+				return worker.Dispatch(c.Param(StrJobLower)+"_"+cfgpstr, func(key uint32) error {
+					return utils.SingleJobs(c.Param(StrJobLower), cfgpstr, "", true, key)
 				}, "Data")
 			}
 			return nil
 		})
-		c.JSON(http.StatusOK, returnval)
-	} else {
-		returnval := "Job " + c.Param(strJobLower) + " not allowed!"
-		c.JSON(http.StatusNoContent, returnval)
-	}
+		sendSuccess(c, returnval)
 }
 
 // @Summary      Start Jobs
@@ -438,21 +375,19 @@ func apimoviesAllJobs(c *gin.Context) {
 // @Failure      401   {object}  Jsonerror
 // @Router       /api/movies/job/{job}/{name} [get].
 func apimoviesJobs(c *gin.Context) {
-	allowed := false
-	for _, allow := range strings.Split(allowedjobsmoviesstr, ",") {
-		if strings.EqualFold(allow, c.Param(strJobLower)) {
-			allowed = true
-			break
-		}
+	jobParam := c.Param(StrJobLower)
+	if !validateJobParam(jobParam, allowedjobsmoviesstr) {
+		sendJSONError(c, http.StatusNoContent, "Job "+jobParam+" not allowed!")
+		return
 	}
-	if allowed {
-		returnval := "Job " + c.Param(strJobLower) + " started"
+
+	returnval := "Job " + jobParam + " started"
 		cfgpstr := "movie_" + c.Param("name")
 
-		switch c.Param(strJobLower) {
+		switch c.Param(StrJobLower) {
 		case "data", logger.StrDataFull, logger.StrStructure, logger.StrClearHistory:
-			worker.Dispatch(c.Param(strJobLower)+"_movies_"+c.Param("name"), func(key uint32) error {
-				return utils.SingleJobs(c.Param(strJobLower), cfgpstr, "", true, key)
+			worker.Dispatch(c.Param(StrJobLower)+"_movies_"+c.Param("name"), func(key uint32) error {
+				return utils.SingleJobs(c.Param(StrJobLower), cfgpstr, "", true, key)
 			}, "Data")
 		case logger.StrSearchMissingFull,
 			logger.StrSearchMissingInc,
@@ -462,12 +397,12 @@ func apimoviesJobs(c *gin.Context) {
 			logger.StrSearchMissingIncTitle,
 			logger.StrSearchUpgradeFullTitle,
 			logger.StrSearchUpgradeIncTitle:
-			worker.Dispatch(c.Param(strJobLower)+"_movies_"+c.Param("name"), func(key uint32) error {
-				return utils.SingleJobs(c.Param(strJobLower), cfgpstr, "", true, key)
+			worker.Dispatch(c.Param(StrJobLower)+"_movies_"+c.Param("name"), func(key uint32) error {
+				return utils.SingleJobs(c.Param(StrJobLower), cfgpstr, "", true, key)
 			}, "Search")
 		case logger.StrRss:
-			worker.Dispatch(c.Param(strJobLower)+"_movies_"+c.Param("name"), func(key uint32) error {
-				return utils.SingleJobs(c.Param(strJobLower), cfgpstr, "", true, key)
+			worker.Dispatch(c.Param(StrJobLower)+"_movies_"+c.Param("name"), func(key uint32) error {
+				return utils.SingleJobs(c.Param(StrJobLower), cfgpstr, "", true, key)
 			}, "RSS")
 		case logger.StrFeeds,
 			logger.StrCheckMissing,
@@ -493,7 +428,7 @@ func apimoviesJobs(c *gin.Context) {
 							continue
 						}
 						listname := media.Lists[idxlist].Name
-						if c.Param(strJobLower) == logger.StrFeeds {
+						if c.Param(StrJobLower) == logger.StrFeeds {
 							logger.LogDynamicany2StrAny(
 								"debug",
 								"add job",
@@ -504,11 +439,11 @@ func apimoviesJobs(c *gin.Context) {
 							)
 							worker.Dispatch(
 								c.Param(
-									strJobLower,
+									StrJobLower,
 								)+"_movies_"+media.Name+"_"+media.Lists[idxlist].Name,
 								func(key uint32) error {
 									return utils.SingleJobs(
-										c.Param(strJobLower),
+										c.Param(StrJobLower),
 										cfgpstr,
 										listname,
 										true,
@@ -518,16 +453,16 @@ func apimoviesJobs(c *gin.Context) {
 								"Feeds",
 							)
 						}
-						if c.Param(strJobLower) == logger.StrCheckMissing ||
-							c.Param(strJobLower) == logger.StrCheckMissingFlag ||
-							c.Param(strJobLower) == logger.StrReachedFlag {
+						if c.Param(StrJobLower) == logger.StrCheckMissing ||
+							c.Param(StrJobLower) == logger.StrCheckMissingFlag ||
+							c.Param(StrJobLower) == logger.StrReachedFlag {
 							worker.Dispatch(
 								c.Param(
-									strJobLower,
+									StrJobLower,
 								)+"_movies_"+media.Name+"_"+media.Lists[idxlist].Name,
 								func(key uint32) error {
 									return utils.SingleJobs(
-										c.Param(strJobLower),
+										c.Param(StrJobLower),
 										cfgpstr,
 										listname,
 										true,
@@ -554,15 +489,11 @@ func apimoviesJobs(c *gin.Context) {
 		case "":
 			break
 		default:
-			worker.Dispatch(c.Param(strJobLower)+"_movies_"+c.Param("name"), func(key uint32) error {
-				return utils.SingleJobs(c.Param(strJobLower), cfgpstr, "", true, key)
+			worker.Dispatch(c.Param(StrJobLower)+"_movies_"+c.Param("name"), func(key uint32) error {
+				return utils.SingleJobs(c.Param(StrJobLower), cfgpstr, "", true, key)
 			}, "Data")
 		}
-		c.JSON(http.StatusOK, returnval)
-	} else {
-		returnval := "Job " + c.Param(strJobLower) + " not allowed!"
-		c.JSON(http.StatusNoContent, returnval)
-	}
+		sendSuccess(c, returnval)
 }
 
 // @Summary      Update Movie (Global)
@@ -577,8 +508,7 @@ func apimoviesJobs(c *gin.Context) {
 // @Router       /api/movies [post].
 func updateDBMovie(c *gin.Context) {
 	var dbmovie database.Dbmovie
-	if err := c.ShouldBindJSON(&dbmovie); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if !bindJSONWithValidation(c, &dbmovie) {
 		return
 	}
 	counter := database.Getdatarow[uint](
@@ -656,17 +586,7 @@ func updateDBMovie(c *gin.Context) {
 		inres, err = database.UpdateArray("dbmovies", []string{"Title", "Release_Date", "Year", "Adult", "Budget", "Genres", "Original_Language", "Original_Title", "Overview", "Popularity", "Revenue", "Runtime", "Spoken_Languages", "Status", "Tagline", "Vote_Average", "Vote_Count", "Trakt_ID", "Moviedb_ID", "Imdb_ID", "Freebase_M_ID", "Freebase_ID", "Facebook_ID", "Instagram_ID", "Twitter_ID", "URL", "Backdrop", "Poster", "Slug"},
 			"id != 0 and id = ?", dbmovie.Title, dbmovie.ReleaseDate, dbmovie.Year, dbmovie.Adult, dbmovie.Budget, dbmovie.Genres, dbmovie.OriginalLanguage, dbmovie.OriginalTitle, dbmovie.Overview, dbmovie.Popularity, dbmovie.Revenue, dbmovie.Runtime, dbmovie.SpokenLanguages, dbmovie.Status, dbmovie.Tagline, dbmovie.VoteAverage, dbmovie.VoteCount, dbmovie.TraktID, dbmovie.MoviedbID, dbmovie.ImdbID, dbmovie.FreebaseMID, dbmovie.FreebaseID, dbmovie.FacebookID, dbmovie.InstagramID, dbmovie.TwitterID, dbmovie.URL, dbmovie.Backdrop, dbmovie.Poster, dbmovie.Slug, dbmovie.ID)
 	}
-	if err == nil {
-		var rows int64
-		if counter == 0 {
-			rows, _ = inres.LastInsertId()
-		} else {
-			rows, _ = inres.RowsAffected()
-		}
-		c.JSON(http.StatusOK, rows)
-	} else {
-		c.JSON(http.StatusForbidden, err)
-	}
+	handleDBInsertOrUpdate(c, inres, err, counter == 0)
 }
 
 // @Summary      Update Movie (List)
@@ -681,8 +601,7 @@ func updateDBMovie(c *gin.Context) {
 // @Router       /api/movies/list [post].
 func updateMovie(c *gin.Context) {
 	var movie database.Movie
-	if err := c.ShouldBindJSON(&movie); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if !bindJSONWithValidation(c, &movie) {
 		return
 	}
 	counter := database.Getdatarow[uint](
@@ -720,17 +639,7 @@ func updateMovie(c *gin.Context) {
 		inres, err = database.UpdateArray("dbmovies", []string{"missing", "listname", "dbmovie_id", "quality_profile", "blacklisted", "quality_reached", "dont_upgrade", "dont_search", "rootpath"},
 			"id != 0 and id = ?", movie.Missing, movie.Listname, movie.DbmovieID, movie.QualityProfile, movie.Blacklisted, movie.QualityReached, movie.DontUpgrade, movie.DontSearch, movie.Rootpath, movie.ID)
 	}
-	if err == nil {
-		var rows int64
-		if counter == 0 {
-			rows, _ = inres.LastInsertId()
-		} else {
-			rows, _ = inres.RowsAffected()
-		}
-		c.JSON(http.StatusOK, rows)
-	} else {
-		c.JSON(http.StatusForbidden, err)
-	}
+	handleDBInsertOrUpdate(c, inres, err, counter == 0)
 }
 
 // @Summary      Search a movie
@@ -786,13 +695,13 @@ func apimoviesSearch(c *gin.Context) {
 					},
 					"Search",
 				)
-				c.JSON(http.StatusOK, "started")
+				sendSuccess(c, StrStarted)
 				return nil
 			}
 		}
 		return nil
 	})
-	c.JSON(http.StatusNoContent, "Nothing Done")
+	sendJSONError(c, http.StatusNoContent, StrNothingDone)
 }
 
 // @Summary      Search a movie (List ok, nok)
@@ -848,7 +757,7 @@ func apimoviesSearchList(c *gin.Context) {
 		}
 		return nil
 	})
-	c.JSON(http.StatusNoContent, "Nothing Done")
+	sendJSONError(c, http.StatusNoContent, StrNothingDone)
 }
 
 // @Summary      Movie RSS (list ok, nok)
@@ -883,7 +792,7 @@ func apiMoviesRssSearchList(c *gin.Context) {
 		}
 		return nil
 	})
-	c.JSON(http.StatusNoContent, "Nothing Done")
+	sendJSONError(c, http.StatusNoContent, StrNothingDone)
 }
 
 // @Summary      Download a movie (manual)
@@ -917,13 +826,13 @@ func apimoviesSearchDownload(c *gin.Context) {
 		for idxlist := range media.Lists {
 			if strings.EqualFold(media.Lists[idxlist].Name, movie.Listname) {
 				downloader.DownloadMovie(media, &nzb)
-				c.JSON(http.StatusOK, "started")
+				sendSuccess(c, StrStarted)
 				return nil
 			}
 		}
 		return nil
 	})
-	c.JSON(http.StatusNoContent, "Nothing Done")
+	sendJSONError(c, http.StatusNoContent, StrNothingDone)
 }
 
 // @Summary      Refresh Movies
@@ -945,7 +854,7 @@ func apirefreshMovies(c *gin.Context) {
 	worker.Dispatch(logger.StrRefreshMovies, func(key uint32) error {
 		return utils.SingleJobs("refresh", cfgp.NamePrefix, "", false, key)
 	}, "Feeds")
-	c.JSON(http.StatusOK, "started")
+	sendSuccess(c, StrStarted)
 }
 
 // @Summary      Refresh a Movie
@@ -969,7 +878,7 @@ func apirefreshMovie(c *gin.Context) {
 	worker.Dispatch("Refresh Single Movie_"+c.Param(logger.StrID), func(uint32) error {
 		return utils.RefreshMovie(cfgp, &id)
 	}, "Feeds")
-	c.JSON(http.StatusOK, "started")
+	sendSuccess(c, StrStarted)
 }
 
 // @Summary      Refresh Movies (Incremental)
@@ -991,7 +900,7 @@ func apirefreshMoviesInc(c *gin.Context) {
 	worker.Dispatch(logger.StrRefreshMoviesInc, func(key uint32) error {
 		return utils.SingleJobs("refreshinc", cfgp.NamePrefix, "", false, key)
 	}, "Feeds")
-	c.JSON(http.StatusOK, "started")
+	sendSuccess(c, StrStarted)
 }
 
 // @Summary      Clear History (Full List)
@@ -1004,7 +913,7 @@ func apirefreshMoviesInc(c *gin.Context) {
 // @Router       /api/movies/search/history/clear/{name} [get].
 func apimoviesClearHistoryName(c *gin.Context) {
 	utils.SingleJobs(logger.StrClearHistory, "movie_"+c.Param("name"), "", true, 0)
-	c.JSON(http.StatusOK, "started")
+	sendSuccess(c, StrStarted)
 }
 
 // @Summary      Clear History (Single Item)
@@ -1017,11 +926,11 @@ func apimoviesClearHistoryName(c *gin.Context) {
 // @Failure      401  {object}  Jsonerror
 // @Router       /api/movies/search/history/clearid/{id} [get].
 func apiMoviesClearHistoryID(c *gin.Context) {
-	inres, inerr := database.DeleteRow("movie_histories", "movie_id = ?", c.Param(logger.StrID))
-	if inerr == nil {
-		rows, _ := inres.RowsAffected()
-		c.JSON(http.StatusOK, rows)
-	} else {
-		c.JSON(http.StatusForbidden, inerr)
+	id, ok := getParamID(c, StrID)
+	if !ok {
+		return
 	}
+
+	inres, inerr := database.DeleteRow("movie_histories", "movie_id = ?", id)
+	handleDBInsertOrUpdate(c, inres, inerr, false)
 }

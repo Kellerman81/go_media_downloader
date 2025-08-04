@@ -1315,26 +1315,26 @@ func isWantedCombination(qual *config.QualityConfig, resolutionName, qualityName
 	resWanted := logger.SlicesContainsI(qual.WantedResolution, resolutionName)
 	qualWanted := logger.SlicesContainsI(qual.WantedQuality, qualityName)
 
-	if !resWanted {
-		logger.LogDynamicany2Str(
-			"debug",
-			"unwanted res",
-			logger.StrQuality,
-			qual.Name,
-			"Resolution Parse",
-			resolutionName,
-		)
-	}
-	if !qualWanted {
-		logger.LogDynamicany2Str(
-			"debug",
-			"unwanted qual",
-			logger.StrQuality,
-			qual.Name,
-			"Quality Parse",
-			qualityName,
-		)
-	}
+	// if !resWanted {
+	// 	logger.LogDynamicany2Str(
+	// 		"debug",
+	// 		"unwanted res",
+	// 		logger.StrQuality,
+	// 		qual.Name,
+	// 		"Resolution Parse",
+	// 		resolutionName,
+	// 	)
+	// }
+	// if !qualWanted {
+	// 	logger.LogDynamicany2Str(
+	// 		"debug",
+	// 		"unwanted qual",
+	// 		logger.StrQuality,
+	// 		qual.Name,
+	// 		"Quality Parse",
+	// 		qualityName,
+	// 	)
+	// }
 
 	return resWanted && qualWanted
 }

@@ -101,6 +101,7 @@ func Init() {
 		config.GetSettingsGeneral().TraktLimiterCalls,
 		config.GetSettingsGeneral().TraktDisableTLSVerify,
 		config.GetSettingsGeneral().TraktTimeoutSeconds,
+		config.GetSettingsGeneral().TraktRedirectUrl,
 	)
 	worker.InitWorkerPools(
 		config.GetSettingsGeneral().WorkerSearch,

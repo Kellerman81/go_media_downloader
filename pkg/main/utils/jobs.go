@@ -222,11 +222,11 @@ func newfilesloop(ctx context.Context, cfgp *config.MediaTypeConfig, data *confi
 			return nil
 		}
 
-		pl.SubmitErr(func() error {
+		pl.Submit(func() {
 			defer logger.HandlePanic()
 			m := parser.ParseFile(fpath, true, true, cfgp, -1)
 			if m == nil {
-				return errors.New("parse failed")
+				return // errors.New("parse failed")
 			}
 			defer m.Close()
 
@@ -239,7 +239,7 @@ func newfilesloop(ctx context.Context, cfgp *config.MediaTypeConfig, data *confi
 					logger.StrFile,
 					fpath,
 				)
-				return err
+				return // err
 			}
 
 			listid := glblistid
@@ -256,7 +256,7 @@ func newfilesloop(ctx context.Context, cfgp *config.MediaTypeConfig, data *confi
 				m.ListID = listid
 			}
 			if listid == -1 {
-				return errors.New("listid not found")
+				return // errors.New("listid not found")
 			}
 			if cfgp.Useseries {
 				err = jobImportSeriesParseV2(m, fpath, cfgp, &cfgp.Lists[listid])
@@ -272,14 +272,22 @@ func newfilesloop(ctx context.Context, cfgp *config.MediaTypeConfig, data *confi
 					logger.StrFile,
 					fpath,
 				)
-				return err
+				return // err
 			}
-			return nil
 		})
 		return nil
 	})
 
-	pl.Wait()
+	errjobs := pl.Wait()
+	if errjobs != nil {
+		logger.LogDynamicany1StringErr(
+			"error",
+			"Error walking jobs",
+			errjobs,
+			logger.StrFile,
+			data.CfgPath.Path,
+		)
+	}
 
 	if err != nil {
 		logger.LogDynamicany1StringErr(
@@ -301,7 +309,7 @@ func SingleJobs(job, cfgpstr, listname string, force bool, key uint32) error {
 	defer worker.RemoveQueueEntry(key)
 	if job == "" || cfgpstr == "" || (config.GetSettingsGeneral().SchedulerDisabled && !force) {
 		logjob("skipped Job", cfgpstr, listname, job)
-		return errors.New("skipped Job")
+		return nil // errors.New("skipped Job")
 	}
 
 	cfgp := config.GetSettingsMedia(cfgpstr)
@@ -345,6 +353,13 @@ func SingleJobs(job, cfgpstr, listname string, force bool, key uint32) error {
 	var err error
 	if idxlist != -2 {
 		err = runjoblistfunc(job, cfgp, idxlist)
+		if err != nil {
+			logger.LogDynamicanyErr(
+				"error",
+				"Error running SingleJobs",
+				err,
+			)
+		}
 	}
 	worker.RemoveQueueEntry(key)
 	logjob("Ended Job", cfgpstr, listname, job)

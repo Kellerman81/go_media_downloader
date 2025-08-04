@@ -995,7 +995,7 @@ func GetdatarowArgs(querystring string, arg any, objs ...any) {
 // and scans the result into the given slice of objects, handling locking,
 // logging errors, and returning the scanned objects. This version of the function
 // uses the "imdb" database connection instead of the default one.
-func GetdatarowArgsImdb(querystring string, arg any, objs ...any) {
+func GetdatarowArgsImdb(querystring string, arg any, objs ...any) error {
 	readWriteMu.RLock()
 	defer readWriteMu.RUnlock()
 	err := queryRowContext(querystring, true, []any{arg}).Scan(objs...)
@@ -1003,6 +1003,7 @@ func GetdatarowArgsImdb(querystring string, arg any, objs ...any) {
 		err,
 		querystring,
 	)
+	return err
 }
 
 // Getrowssize executes the given querystring with the provided argument against the database,

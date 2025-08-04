@@ -175,6 +175,7 @@ func NewTraktClient(
 	calls int,
 	disabletls bool,
 	timeoutseconds uint16,
+	redirecturl string,
 ) {
 	if seconds == 0 {
 		seconds = 1
@@ -195,7 +196,7 @@ func NewTraktClient(
 		Auth: oauth2.Config{
 			ClientID:     clientid,
 			ClientSecret: clientsecret,
-			RedirectURL:  "http://localhost:9090",
+			RedirectURL:  redirecturl,
 			Endpoint: oauth2.Endpoint{
 				AuthURL:  "https://api.trakt.tv/oauth/authorize",
 				TokenURL: "https://api.trakt.tv/oauth/token",

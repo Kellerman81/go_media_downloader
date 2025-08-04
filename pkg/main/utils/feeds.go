@@ -26,6 +26,7 @@ import (
 type feedResults struct {
 	Series []config.SerieConfig // Configuration for a TV series
 	Movies []string             // Slice of movie IDs as strings
+	AddAll bool
 }
 
 var (
@@ -157,7 +158,7 @@ func (d *feedResults) gettmdbmoviediscover(cfglist *config.MediaListsConfig) err
 		for idx := range arr.Results {
 			movieid = importfeed.MovieFindDBIDByTmdbID(&arr.Results[idx].ID)
 			if movieid != 0 {
-				if getmovieid(&movieid, cfglist) {
+				if getmovieid(&movieid, cfglist) && !d.AddAll {
 					continue
 				}
 
@@ -192,7 +193,7 @@ func (d *feedResults) gettmdbmoviediscover(cfglist *config.MediaListsConfig) err
 				continue
 			}
 			allowed, _ = importfeed.AllowMovieImport(&moviedbexternal.ImdbID, cfglist.CfgList)
-			if allowed {
+			if allowed || d.AddAll {
 				d.Movies = append(d.Movies, moviedbexternal.ImdbID)
 			}
 		}
@@ -220,7 +221,7 @@ func (d *feedResults) gettmdbshowdiscover(cfglist *config.MediaListsConfig) erro
 				&imdbid,
 				&arr.Results[idx].ID,
 			)
-			if imdbid == "" {
+			if imdbid == "" || d.AddAll {
 				moviedbexternal, err = apiexternal.GetTVExternal(arr.Results[idx].ID)
 				if err != nil || moviedbexternal == nil || moviedbexternal.TvdbID == 0 {
 					continue
@@ -254,7 +255,7 @@ func (d *feedResults) gettmdbshowlist(cfglist *config.MediaListsConfig) error {
 				&imdbid,
 				&arr.Items[idx].ID,
 			)
-			if imdbid == "" {
+			if imdbid == "" || d.AddAll {
 				moviedbexternal, err = apiexternal.GetTVExternal(arr.Items[idx].ID)
 				if err != nil || moviedbexternal == nil || moviedbexternal.TvdbID == 0 {
 					continue
@@ -281,7 +282,7 @@ func checkaddimdbfeed(imdb *string, cfglist *config.MediaListsConfig, d *feedRes
 		"select count() from movies where dbmovie_id in (select id from dbmovies where imdb_id = ?) and listname = ? COLLATE NOCASE",
 		imdb,
 		&cfglist.Name,
-	) == 0 {
+	) == 0 || d.AddAll {
 		d.Movies = append(d.Movies, *imdb)
 		return true
 	}
@@ -323,7 +324,7 @@ func (d *feedResults) gettmdblist(cfglist *config.MediaListsConfig) error {
 		for idx := range arr.Items {
 			movieid = importfeed.MovieFindDBIDByTmdbID(&arr.Items[idx].ID)
 			if movieid != 0 {
-				if getmovieid(&movieid, cfglist) {
+				if getmovieid(&movieid, cfglist) && !d.AddAll {
 					if cfglist.CfgList.RemoveFromList {
 						apiexternal.RemoveFromTmdbList(
 							cfglist.CfgList.TmdbList[idxlist],
@@ -373,7 +374,7 @@ func (d *feedResults) gettmdblist(cfglist *config.MediaListsConfig) error {
 				continue
 			}
 			allowed, _ = importfeed.AllowMovieImport(&moviedbexternal.ImdbID, cfglist.CfgList)
-			if allowed {
+			if allowed || d.AddAll {
 				d.Movies = append(d.Movies, moviedbexternal.ImdbID)
 				if cfglist.CfgList.RemoveFromList {
 					apiexternal.RemoveFromTmdbList(
@@ -542,7 +543,7 @@ func (d *feedResults) parseimdbcsv(
 		movieid = importfeed.MovieFindDBIDByImdb(&record[1])
 
 		if movieid != 0 {
-			if getmovieid(&movieid, cfglistp) {
+			if getmovieid(&movieid, cfglistp) && !d.AddAll {
 				continue
 			}
 
@@ -567,7 +568,7 @@ func (d *feedResults) parseimdbcsv(
 			logger.LogDynamicany1String("debug", "dbmovie not found in cache", logger.StrImdb, record[1])
 		}
 		allowed, _ = importfeed.AllowMovieImport(&record[1], cfglistp.CfgList)
-		if allowed {
+		if allowed || d.AddAll {
 			d.Movies = append(d.Movies, record[1])
 		}
 	}
@@ -599,46 +600,48 @@ func (d *feedResults) getimdbfile(cfglistp *config.MediaListsConfig) error {
 // It handles looking up the correct list type and calling the appropriate
 // handler function. Returns a feedResults struct containing the parsed list
 // items on success, or an error if the list could not be fetched or parsed.
-func feeds(cfgp *config.MediaTypeConfig, list *config.MediaListsConfig, d *feedResults) error {
+func Feeds(cfgp *config.MediaTypeConfig, list *config.MediaListsConfig, addall bool) (*feedResults, error) {
+	d := plfeeds.Get()
+	d.AddAll = addall
 	switch list.CfgList.ListType {
 	case "seriesconfig":
 		var err error
 		d.Series, err = getseriesconfig(list.CfgList)
-		return err
+		return d, err
 	case "traktpublicshowlist":
-		return d.gettraktserielist(4, list)
+		return d, d.gettraktserielist(4, list)
 	case "imdbcsv":
-		return d.getimdbcsv(list)
+		return d, d.getimdbcsv(list)
 	case "imdbfile":
-		return d.getimdbfile(list)
+		return d, d.getimdbfile(list)
 	case "tmdblist":
-		return d.gettmdblist(list)
+		return d, d.gettmdblist(list)
 	case "tmdbshowlist":
-		return d.gettmdbshowlist(list)
+		return d, d.gettmdbshowlist(list)
 	case "traktpublicmovielist":
-		return d.gettraktmovielist(4, list)
+		return d, d.gettraktmovielist(4, list)
 	case "traktmoviepopular":
-		return d.gettraktmovielist(1, list)
+		return d, d.gettraktmovielist(1, list)
 	case "traktmovieanticipated":
-		return d.gettraktmovielist(3, list)
+		return d, d.gettraktmovielist(3, list)
 	case "traktmovietrending":
-		return d.gettraktmovielist(2, list)
+		return d, d.gettraktmovielist(2, list)
 	case "traktseriepopular":
-		return d.gettraktserielist(1, list)
+		return d, d.gettraktserielist(1, list)
 	case "traktserieanticipated":
-		return d.gettraktserielist(3, list)
+		return d, d.gettraktserielist(3, list)
 	case "traktserietrending":
-		return d.gettraktserielist(2, list)
+		return d, d.gettraktserielist(2, list)
 	case "tmdbmoviediscover":
-		return d.gettmdbmoviediscover(list)
+		return d, d.gettmdbmoviediscover(list)
 	case "tmdbshowdiscover":
-		return d.gettmdbshowdiscover(list)
+		return d, d.gettmdbshowdiscover(list)
 		// TODO: tmdbp private / public lists - tmdb popular / upcoming movies
 		// TODO: trakt list cleanup
 	case "newznabrss":
-		return searcher.Getnewznabrss(cfgp, list)
+		return d, searcher.Getnewznabrss(cfgp, list)
 	}
-	return errors.New("switch not found " + list.CfgList.ListType)
+	return d, errors.New("switch not found " + list.CfgList.ListType)
 }
 
 // getmovieid checks if the given movie ID exists in the database for the specified list.

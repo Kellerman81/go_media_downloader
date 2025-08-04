@@ -35,14 +35,17 @@ var sessionStore = &SessionStore{
 
 // generateSessionID creates a cryptographically secure session ID
 func generateSessionID() string {
-	bytes := make([]byte, 32)
-	rand.Read(bytes)
-	return hex.EncodeToString(bytes)
+	return generateSecureToken(SessionIDLength)
 }
 
 // generateCSRFToken creates a CSRF token for the session
 func generateCSRFToken() string {
-	bytes := make([]byte, 16)
+	return generateSecureToken(CSRFTokenLength)
+}
+
+// generateSecureToken creates a cryptographically secure token of specified length
+func generateSecureToken(length int) string {
+	bytes := make([]byte, length)
 	rand.Read(bytes)
 	return hex.EncodeToString(bytes)
 }
@@ -58,7 +61,7 @@ func (ss *SessionStore) createSession(userID string) *Session {
 	session := &Session{
 		ID:        sessionID,
 		CreatedAt: time.Now(),
-		ExpiresAt: time.Now().Add(24 * time.Hour), // 24 hour session
+		ExpiresAt: time.Now().Add(SessionDuration),
 		UserID:    userID,
 		CSRFToken: csrfToken,
 	}
@@ -103,20 +106,26 @@ func (ss *SessionStore) cleanupExpiredSessions() {
 	}
 }
 
+// Default authentication constants
+const (
+	DefaultUsername = "admin"
+	DefaultPassword = "admin"
+	SessionDuration = 24 * time.Hour
+	CSRFTokenLength = 16
+	SessionIDLength = 32
+)
+
 // authenticateUser checks if the provided credentials are valid
 func authenticateUser(username, password string) bool {
 	settings := config.GetSettingsGeneral()
 
-	// For now, use a simple admin/password check
-	// In production, this should be stored securely in database
-	expectedUsername := "admin"
-	expectedPassword := settings.WebAPIKey // Use API key as default password
-
+	// Use API key as password, fallback to default
+	expectedPassword := settings.WebAPIKey
 	if expectedPassword == "" {
-		expectedPassword = "admin" // Fallback default
+		expectedPassword = DefaultPassword
 	}
 
-	return username == expectedUsername && password == expectedPassword
+	return username == DefaultUsername && password == expectedPassword
 }
 
 // requireAuth middleware checks for valid session
@@ -150,7 +159,7 @@ func requireCSRF(c *gin.Context) {
 
 	session, exists := c.Get("session")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "No session found"})
+		sendUnauthorized(c, "No session found")
 		c.Abort()
 		return
 	}
@@ -164,8 +173,7 @@ func requireCSRF(c *gin.Context) {
 	}
 
 	if csrfToken != sessionObj.CSRFToken {
-		c.JSON(http.StatusForbidden, gin.H{"error": "Invalid CSRF token"})
-		c.Abort()
+		sendForbidden(c, "Invalid CSRF token")
 		return
 	}
 
@@ -189,8 +197,7 @@ func redirectToLogin(c *gin.Context) {
 	}
 
 	// For other API requests (JSON endpoints), return JSON error
-	c.JSON(http.StatusUnauthorized, gin.H{"error": "Authentication required"})
-	c.Abort()
+	sendUnauthorized(c, "Authentication required")
 }
 
 // loginPage renders the login form
@@ -229,14 +236,8 @@ func loginPage(c *gin.Context) {
 										),
 									),
 									html.Form(html.Method("POST"), html.Action("/api/login"),
-										html.Div(html.Class("mb-3"),
-											html.Label(html.For("username"), html.Class("form-label"), gomponents.Text("Username")),
-											html.Input(html.Type("text"), html.Class("form-control"), html.ID("username"), html.Name("username"), html.Required()),
-										),
-										html.Div(html.Class("mb-3"),
-											html.Label(html.For("password"), html.Class("form-label"), gomponents.Text("Password")),
-											html.Input(html.Type("password"), html.Class("form-control"), html.ID("password"), html.Name("password"), html.Required()),
-										),
+										formGroupWithLabel("username", "Username", formTextInput("username", "username", "", html.Required())),
+										formGroupWithLabel("password", "Password", formPasswordInput("password", "password", "", html.Required())),
 										html.Button(html.Type("submit"), html.Class("btn btn-primary w-100"),
 											gomponents.Text("Login"),
 										),
@@ -294,36 +295,16 @@ func protectAdminRoutes(c *gin.Context) {
 	if (strings.HasPrefix(path, "/api/admin") || strings.HasPrefix(path, "/api/manage")) &&
 		path != "/api/login" && path != "/api/logout" {
 
-		// Check for session cookie
-		sessionCookie, err := c.Cookie("session_id")
-		if err != nil {
-			redirectToLogin(c)
+		// Use requireAuth for authentication
+		requireAuth(c)
+		if c.IsAborted() {
 			return
 		}
 
-		// Validate session
-		session, exists := sessionStore.getSession(sessionCookie)
-		if !exists {
-			redirectToLogin(c)
+		// Use requireCSRF for CSRF protection
+		requireCSRF(c)
+		if c.IsAborted() {
 			return
-		}
-
-		// Store session in context for later use
-		c.Set("session", session)
-		c.Set("csrf_token", session.CSRFToken)
-
-		// Check CSRF for state-changing operations
-		if c.Request.Method != "GET" && c.Request.Method != "HEAD" {
-			csrfToken := c.GetHeader("X-CSRF-Token")
-			if csrfToken == "" {
-				csrfToken = c.PostForm("csrf_token")
-			}
-
-			if csrfToken != session.CSRFToken {
-				c.JSON(http.StatusForbidden, gin.H{"error": "Invalid CSRF token"})
-				c.Abort()
-				return
-			}
 		}
 	}
 

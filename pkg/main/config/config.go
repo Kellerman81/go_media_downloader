@@ -195,6 +195,8 @@ type GeneralConfig struct {
 	TraktClientID string `toml:"trakt_client_id" displayname:"Trakt Client ID" comment:"Client ID for Trakt API integration.\nRequired for Trakt features like list syncing and user ratings.\nCreate an application at: https://trakt.tv/oauth/applications/new\nUse 'http://localhost:9090' as the redirect URI.\nLeave empty if you don't want Trakt integration.\nExample: 'a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0'"`
 	// TraktClientSecret defines client secret for Trakt application
 	TraktClientSecret string `toml:"trakt_client_secret" displayname:"Trakt Client Secret" comment:"Client secret for your Trakt application.\nThis is the secret key paired with your Trakt client ID.\nFound in your application settings on Trakt after creating the application.\nKeep this secret and do not share it publicly.\nRequired if using Trakt integration.\nExample: 'z9y8x7w6v5u4t3s2r1q0p9o8n7m6l5k4j3i2h1g0'"`
+
+	TraktRedirectUrl string `toml:"trakt_redirect_url" displayname:"Trakt Client Secret" comment:"Redirect Url for your Trakt application.\nThis is the Redirect Url paired with your Trakt client ID.\nFound in your application settings on Trakt after creating the application.\nRequired if using Trakt integration.\nExample: 'http://localhost:9090/'"`
 	// SchedulerDisabled enables/disables scheduler - default false
 	SchedulerDisabled bool `toml:"scheduler_disabled" displayname:"Disable All Schedulers" comment:"Disable all automated scheduled tasks.\nWhen true, automatic searches, scans, and maintenance tasks are disabled.\nOnly manual operations will be performed.\nUseful for troubleshooting or when running tasks manually.\nDefault: false (scheduler enabled)"`
 
@@ -494,7 +496,7 @@ type DownloaderConfig struct {
 	// Name is the name of the downloader template
 	Name string `toml:"name" displayname:"Downloader Configuration Name" comment:"Unique name for this downloader configuration.\nUsed to identify this downloader in quality profiles and logs.\nChoose a descriptive name that identifies the client and purpose.\nExample: 'sabnzbd-main' or 'qbittorrent-movies'"`
 	// DlType is the type of downloader, e.g. drone, nzbget, etc.
-	DlType string `toml:"type" displayname:"Download Client Type" comment:"Type of download client software.\nSupported options:\n- 'sabnzbd': SABnzbd Usenet client\n- 'nzbget': NZBGet Usenet client\n- 'qbittorrent': qBittorrent torrent client\n- 'transmission': Transmission torrent client\n- 'rtorrent': rTorrent/ruTorrent client\n- 'deluge': Deluge torrent client\n- 'drone': Drone CI (deprecated)\nExample: 'sabnzbd' or 'qbittorrent'"`
+	DlType string `toml:"type" displayname:"Download Client Type" comment:"Type of download client software.\nSupported options:\n- 'sabnzbd': SABnzbd Usenet client\n- 'nzbget': NZBGet Usenet client\n- 'qbittorrent': qBittorrent torrent client\n- 'transmission': Transmission torrent client\n- 'rtorrent': rTorrent/ruTorrent client\n- 'deluge': Deluge torrent client\n- 'drone': Drone (Download to filesystem)\nExample: 'sabnzbd' or 'qbittorrent'"`
 	// Hostname is the hostname to use if needed
 	Hostname string `toml:"hostname" displayname:"Client Hostname Address" comment:"IP address or hostname of the download client.\nCan be a local IP (192.168.1.100), hostname (nas.local), or FQDN.\nUse 'localhost' or '127.0.0.1' for local installations.\nDo not include protocol (http://) or port number here.\nExample: '192.168.1.100' or 'localhost'"`
 	// Port is the port to use if needed
@@ -1290,63 +1292,261 @@ func Getconfigtoml(reload bool) {
 
 	settings.SettingsImdb = &settings.cachetoml.Imdbindexer
 
+	setupSimpleConfigMaps()
+	setupPathConfigs()
+	setupRegexConfigs()
+	setupSchedulerConfigs(reload)
+	setupQualityConfigs()
+	for idx := range settings.cachetoml.Media.Movies {
+		setupMediaTypeConfig(&settings.cachetoml.Media.Movies[idx], "movie_", false)
+		setupMediaConfigLists(&settings.cachetoml.Media.Movies[idx])
+		settings.SettingsMedia["movie_"+settings.cachetoml.Media.Movies[idx].Name] = &settings.cachetoml.Media.Movies[idx]
+	}
+	for idx := range settings.cachetoml.Media.Series {
+		setupMediaTypeConfig(&settings.cachetoml.Media.Series[idx], "serie_", true)
+		setupMediaConfigLists(&settings.cachetoml.Media.Series[idx])
+		settings.SettingsMedia["serie_"+settings.cachetoml.Media.Series[idx].Name] = &settings.cachetoml.Media.Series[idx]
+	}
+}
+
+// handleConfigEntry processes a single config entry based on its name prefix
+func handleConfigEntry(val Conf) {
+	switch {
+	case strings.HasPrefix(val.Name, "general"):
+		data := val.Data.(GeneralConfig)
+		settings.SettingsGeneral = &data
+	case strings.HasPrefix(val.Name, "downloader_"):
+		data := val.Data.(DownloaderConfig)
+		settings.SettingsDownloader[val.Data.(DownloaderConfig).Name] = &data
+	case strings.HasPrefix(val.Name, logger.StrImdb):
+		data := val.Data.(ImdbConfig)
+		settings.SettingsImdb = &data
+	case strings.HasPrefix(val.Name, "indexer"):
+		data := val.Data.(IndexersConfig)
+		settings.SettingsIndexer[val.Data.(IndexersConfig).Name] = &data
+	case strings.HasPrefix(val.Name, "list"):
+		data := val.Data.(ListsConfig)
+		settings.SettingsList[val.Data.(ListsConfig).Name] = &data
+	case strings.HasPrefix(val.Name, logger.StrSerie):
+		data := val.Data.(MediaTypeConfig)
+		settings.SettingsMedia["serie_"+val.Data.(MediaTypeConfig).Name] = &data
+	case strings.HasPrefix(val.Name, logger.StrMovie):
+		data := val.Data.(MediaTypeConfig)
+		settings.SettingsMedia["movie_"+val.Data.(MediaTypeConfig).Name] = &data
+	case strings.HasPrefix(val.Name, "notification"):
+		data := val.Data.(NotificationConfig)
+		settings.SettingsNotification[val.Data.(NotificationConfig).Name] = &data
+	case strings.HasPrefix(val.Name, "path"):
+		data := val.Data.(PathsConfig)
+		settings.SettingsPath[val.Data.(PathsConfig).Name] = &data
+	case strings.HasPrefix(val.Name, "quality"):
+		data := val.Data.(QualityConfig)
+		settings.SettingsQuality[val.Data.(QualityConfig).Name] = &data
+	case strings.HasPrefix(val.Name, "regex"):
+		data := val.Data.(RegexConfig)
+		settings.SettingsRegex[val.Data.(RegexConfig).Name] = &data
+	case strings.HasPrefix(val.Name, "scheduler"):
+		data := val.Data.(SchedulerConfig)
+		settings.SettingsScheduler[val.Data.(SchedulerConfig).Name] = &data
+	}
+}
+
+// handleConfigEntryWithDB processes a single config entry and handles trakt_token special case
+func handleConfigEntryWithDB(configIn Conf, configDB *pudge.Db) {
+	handleConfigEntry(configIn)
+
+	// Handle special case for trakt_token
+	if strings.HasPrefix(configIn.Name, "trakt_token") {
+		traktToken = configIn.Data.(*oauth2.Token)
+		configDB.Set("trakt_token", *configIn.Data.(*oauth2.Token))
+	}
+}
+
+// handleConfigDeletion deletes a config entry based on its name prefix
+func handleConfigDeletion(name string) {
+	switch {
+	case strings.HasPrefix(name, "general"):
+		settings.SettingsGeneral = &GeneralConfig{}
+	case strings.HasPrefix(name, "downloader_"):
+		delete(settings.SettingsDownloader, name)
+	case strings.HasPrefix(name, logger.StrImdb):
+		settings.SettingsImdb = &ImdbConfig{}
+	case strings.HasPrefix(name, "indexer"):
+		delete(settings.SettingsIndexer, name)
+	case strings.HasPrefix(name, "list"):
+		delete(settings.SettingsList, name)
+	case strings.HasPrefix(name, logger.StrSerie):
+		delete(settings.SettingsMedia, name)
+	case strings.HasPrefix(name, logger.StrMovie):
+		delete(settings.SettingsMedia, name)
+	case strings.HasPrefix(name, "notification"):
+		delete(settings.SettingsNotification, name)
+	case strings.HasPrefix(name, "path"):
+		delete(settings.SettingsPath, name)
+	case strings.HasPrefix(name, "quality"):
+		delete(settings.SettingsQuality, name)
+	case strings.HasPrefix(name, "regex"):
+		delete(settings.SettingsRegex, name)
+	case strings.HasPrefix(name, "scheduler"):
+		delete(settings.SettingsScheduler, name)
+	}
+}
+
+// handleConfigDeletionWithDB deletes a config entry and handles trakt_token special case
+func handleConfigDeletionWithDB(name string, configDB *pudge.Db) {
+	handleConfigDeletion(name)
+
+	// Handle special case for trakt_token
+	if strings.HasPrefix(name, "trakt_token") {
+		configDB.Delete("trakt_token")
+	}
+}
+
+// setupMediaTypeConfig initializes common configuration for a media type config
+func setupMediaTypeConfig(mediaConfig *MediaTypeConfig, prefix string, isSeriesType bool) {
+	// Initialize maps
+	mediaConfig.DataMap = make(map[int]*MediaDataConfig, len(mediaConfig.Data))
+	mediaConfig.DataImportMap = make(map[int]*MediaDataImportConfig, len(mediaConfig.DataImport))
+
+	// Setup Data configs
+	for idx2 := range mediaConfig.Data {
+		mediaConfig.Data[idx2].CfgPath = settings.SettingsPath[mediaConfig.Data[idx2].TemplatePath]
+		if !isSeriesType && mediaConfig.Data[idx2].AddFoundList != "" {
+			mediaConfig.Data[idx2].AddFoundListCfg = settings.SettingsList[mediaConfig.Data[idx2].AddFoundList]
+		}
+		mediaConfig.DataMap[idx2] = &mediaConfig.Data[idx2]
+	}
+
+	// Setup DataImport configs
+	for idx2 := range mediaConfig.DataImport {
+		mediaConfig.DataImport[idx2].CfgPath = settings.SettingsPath[mediaConfig.DataImport[idx2].TemplatePath]
+		mediaConfig.DataImportMap[idx2] = &mediaConfig.DataImport[idx2]
+	}
+
+	// Setup Notification configs
+	for idx2 := range mediaConfig.Notification {
+		mediaConfig.Notification[idx2].CfgNotification = settings.SettingsNotification[mediaConfig.Notification[idx2].MapNotification]
+	}
+
+	// Setup main configs
+	mediaConfig.CfgQuality = settings.SettingsQuality[mediaConfig.TemplateQuality]
+	mediaConfig.CfgScheduler = settings.SettingsScheduler[mediaConfig.TemplateScheduler]
+	mediaConfig.NamePrefix = prefix + mediaConfig.Name
+	mediaConfig.Useseries = isSeriesType
+
+	// Setup Lists maps and related fields
+	mediaConfig.ListsMap = make(map[string]*MediaListsConfig, len(mediaConfig.Lists))
+	mediaConfig.ListsMapIdx = make(map[string]int, len(mediaConfig.Lists))
+	if len(mediaConfig.Lists) >= 1 {
+		mediaConfig.ListsQu = strings.Repeat(",?", len(mediaConfig.Lists)-1)
+	}
+	mediaConfig.ListsLen = len(mediaConfig.Lists)
+	mediaConfig.MetadataTitleLanguagesLen = len(mediaConfig.MetadataTitleLanguages)
+	mediaConfig.DataLen = len(mediaConfig.Data)
+	mediaConfig.ListsQualities = make([]string, 0, len(mediaConfig.Lists))
+}
+
+// setupMediaListConfig initializes configuration for a media list
+func setupMediaListConfig(listConfig *MediaListsConfig, mediaConfig *MediaTypeConfig, idxsub int) {
+	listConfig.CfgList = settings.SettingsList[listConfig.TemplateList]
+	listConfig.CfgQuality = settings.SettingsQuality[listConfig.TemplateQuality]
+	listConfig.CfgScheduler = settings.SettingsScheduler[listConfig.TemplateScheduler]
+
+	if len(listConfig.IgnoreMapLists) >= 1 {
+		listConfig.IgnoreMapListsQu = strings.Repeat(",?", len(listConfig.IgnoreMapLists)-1)
+	}
+	listConfig.IgnoreMapListsLen = len(listConfig.IgnoreMapLists)
+	listConfig.ReplaceMapListsLen = len(listConfig.ReplaceMapLists)
+
+	// Add quality to ListsQualities if not already present
+	if !slices.Contains(mediaConfig.ListsQualities, listConfig.TemplateQuality) {
+		mediaConfig.ListsQualities = append(mediaConfig.ListsQualities, listConfig.TemplateQuality)
+	}
+
+	// Setup maps
+	mediaConfig.ListsMap[listConfig.Name] = listConfig
+	mediaConfig.ListsMapIdx[listConfig.Name] = idxsub
+}
+
+// setupMediaConfigLists processes all lists for a media configuration
+func setupMediaConfigLists(mediaConfig *MediaTypeConfig) {
+	for idxsub := range mediaConfig.Lists {
+		setupMediaListConfig(&mediaConfig.Lists[idxsub], mediaConfig, idxsub)
+	}
+}
+
+// setupSimpleConfigMaps sets up basic configuration mappings
+func setupSimpleConfigMaps() {
+	// Setup Downloader configs
 	for idx := range settings.cachetoml.Downloader {
 		settings.SettingsDownloader[settings.cachetoml.Downloader[idx].Name] = &settings.cachetoml.Downloader[idx]
 	}
+
+	// Setup Indexer configs with additional string conversion
 	for idx := range settings.cachetoml.Indexers {
-		settings.cachetoml.Indexers[idx].MaxEntriesStr = logger.IntToString(
-			settings.cachetoml.Indexers[idx].MaxEntries,
-		)
+		settings.cachetoml.Indexers[idx].MaxEntriesStr = logger.IntToString(settings.cachetoml.Indexers[idx].MaxEntries)
 		settings.SettingsIndexer[settings.cachetoml.Indexers[idx].Name] = &settings.cachetoml.Indexers[idx]
 	}
+
+	// Setup Lists configs with length calculations
 	for idx := range settings.cachetoml.Lists {
 		settings.cachetoml.Lists[idx].ExcludegenreLen = len(settings.cachetoml.Lists[idx].Excludegenre)
 		settings.cachetoml.Lists[idx].IncludegenreLen = len(settings.cachetoml.Lists[idx].Includegenre)
 		settings.SettingsList[settings.cachetoml.Lists[idx].Name] = &settings.cachetoml.Lists[idx]
 	}
 
+	// Setup Notification configs
 	for idx := range settings.cachetoml.Notification {
 		settings.SettingsNotification[settings.cachetoml.Notification[idx].Name] = &settings.cachetoml.Notification[idx]
 	}
-	for idx := range settings.cachetoml.Paths {
-		settings.cachetoml.Paths[idx].AllowedLanguagesLen = len(settings.cachetoml.Paths[idx].AllowedLanguages)
-		settings.cachetoml.Paths[idx].AllowedOtherExtensionsLen = len(
-			settings.cachetoml.Paths[idx].AllowedOtherExtensions,
-		)
-		settings.cachetoml.Paths[idx].AllowedOtherExtensionsNoRenameLen = len(
-			settings.cachetoml.Paths[idx].AllowedOtherExtensionsNoRename,
-		)
-		settings.cachetoml.Paths[idx].AllowedVideoExtensionsLen = len(
-			settings.cachetoml.Paths[idx].AllowedVideoExtensions,
-		)
-		settings.cachetoml.Paths[idx].AllowedVideoExtensionsNoRenameLen = len(
-			settings.cachetoml.Paths[idx].AllowedVideoExtensionsNoRename,
-		)
-		settings.cachetoml.Paths[idx].BlockedLen = len(settings.cachetoml.Paths[idx].Blocked)
-		settings.cachetoml.Paths[idx].DisallowedLen = len(settings.cachetoml.Paths[idx].Disallowed)
-		settings.cachetoml.Paths[idx].MaxSizeByte = int64(settings.cachetoml.Paths[idx].MaxSize) * 1024 * 1024
-		settings.cachetoml.Paths[idx].MinSizeByte = int64(settings.cachetoml.Paths[idx].MinSize) * 1024 * 1024
-		settings.cachetoml.Paths[idx].MinVideoSizeByte = int64(
-			settings.cachetoml.Paths[idx].MinVideoSize,
-		) * 1024 * 1024
-		settings.SettingsPath[settings.cachetoml.Paths[idx].Name] = &settings.cachetoml.Paths[idx]
-	}
+
+	// Setup Regex configs with length calculations
 	for idx := range settings.cachetoml.Regex {
 		settings.cachetoml.Regex[idx].RejectedLen = len(settings.cachetoml.Regex[idx].Rejected)
 		settings.cachetoml.Regex[idx].RequiredLen = len(settings.cachetoml.Regex[idx].Required)
 		settings.SettingsRegex[settings.cachetoml.Regex[idx].Name] = &settings.cachetoml.Regex[idx]
 	}
+}
 
+// setupPathConfigs sets up Path configurations with complex length calculations
+func setupPathConfigs() {
+	for idx := range settings.cachetoml.Paths {
+		settings.cachetoml.Paths[idx].AllowedLanguagesLen = len(settings.cachetoml.Paths[idx].AllowedLanguages)
+		settings.cachetoml.Paths[idx].AllowedOtherExtensionsLen = len(settings.cachetoml.Paths[idx].AllowedOtherExtensions)
+		settings.cachetoml.Paths[idx].AllowedOtherExtensionsNoRenameLen = len(settings.cachetoml.Paths[idx].AllowedOtherExtensionsNoRename)
+		settings.cachetoml.Paths[idx].AllowedVideoExtensionsLen = len(settings.cachetoml.Paths[idx].AllowedVideoExtensions)
+		settings.cachetoml.Paths[idx].AllowedVideoExtensionsNoRenameLen = len(settings.cachetoml.Paths[idx].AllowedVideoExtensionsNoRename)
+		settings.cachetoml.Paths[idx].BlockedLen = len(settings.cachetoml.Paths[idx].Blocked)
+		settings.cachetoml.Paths[idx].DisallowedLen = len(settings.cachetoml.Paths[idx].Disallowed)
+		settings.cachetoml.Paths[idx].MaxSizeByte = int64(settings.cachetoml.Paths[idx].MaxSize) * 1024 * 1024
+		settings.cachetoml.Paths[idx].MinSizeByte = int64(settings.cachetoml.Paths[idx].MinSize) * 1024 * 1024
+		settings.cachetoml.Paths[idx].MinVideoSizeByte = int64(settings.cachetoml.Paths[idx].MinVideoSize) * 1024 * 1024
+		settings.SettingsPath[settings.cachetoml.Paths[idx].Name] = &settings.cachetoml.Paths[idx]
+	}
+}
+
+// setupRegexConfigs sets up Regex configurations with length calculations
+func setupRegexConfigs() {
+	for idx := range settings.cachetoml.Regex {
+		settings.cachetoml.Regex[idx].RejectedLen = len(settings.cachetoml.Regex[idx].Rejected)
+		settings.cachetoml.Regex[idx].RequiredLen = len(settings.cachetoml.Regex[idx].Required)
+		settings.SettingsRegex[settings.cachetoml.Regex[idx].Name] = &settings.cachetoml.Regex[idx]
+	}
+}
+
+// setupSchedulerConfigs sets up scheduler configurations conditionally
+func setupSchedulerConfigs(reload bool) {
 	if !reload {
 		for idx := range settings.cachetoml.Scheduler {
 			settings.SettingsScheduler[settings.cachetoml.Scheduler[idx].Name] = &settings.cachetoml.Scheduler[idx]
 		}
 	}
+}
+
+// setupQualityConfigs sets up Quality configurations with nested indexer setup
+func setupQualityConfigs() {
 	for idx := range settings.cachetoml.Quality {
-		settings.cachetoml.Quality[idx].IndexerCfg = make(
-			[]*IndexersConfig,
-			len(settings.cachetoml.Quality[idx].Indexer),
-		)
+		settings.cachetoml.Quality[idx].IndexerCfg = make([]*IndexersConfig, len(settings.cachetoml.Quality[idx].Indexer))
 		for idx2 := range settings.cachetoml.Quality[idx].Indexer {
 			settings.cachetoml.Quality[idx].Indexer[idx2].CfgDownloader = settings.SettingsDownloader[settings.cachetoml.Quality[idx].Indexer[idx2].TemplateDownloader]
 			settings.cachetoml.Quality[idx].Indexer[idx2].CfgIndexer = settings.SettingsIndexer[settings.cachetoml.Quality[idx].Indexer[idx2].TemplateIndexer]
@@ -1356,177 +1556,144 @@ func Getconfigtoml(reload bool) {
 		}
 		settings.cachetoml.Quality[idx].IndexerLen = len(settings.cachetoml.Quality[idx].Indexer)
 		settings.cachetoml.Quality[idx].QualityReorderLen = len(settings.cachetoml.Quality[idx].QualityReorder)
-		settings.cachetoml.Quality[idx].TitleStripPrefixForSearchLen = len(
-			settings.cachetoml.Quality[idx].TitleStripPrefixForSearch,
-		)
-		settings.cachetoml.Quality[idx].TitleStripSuffixForSearchLen = len(
-			settings.cachetoml.Quality[idx].TitleStripSuffixForSearch,
-		)
+		settings.cachetoml.Quality[idx].TitleStripPrefixForSearchLen = len(settings.cachetoml.Quality[idx].TitleStripPrefixForSearch)
+		settings.cachetoml.Quality[idx].TitleStripSuffixForSearchLen = len(settings.cachetoml.Quality[idx].TitleStripSuffixForSearch)
 		settings.cachetoml.Quality[idx].WantedAudioLen = len(settings.cachetoml.Quality[idx].WantedAudio)
 		settings.cachetoml.Quality[idx].WantedCodecLen = len(settings.cachetoml.Quality[idx].WantedCodec)
 		settings.cachetoml.Quality[idx].WantedQualityLen = len(settings.cachetoml.Quality[idx].WantedQuality)
 		settings.cachetoml.Quality[idx].WantedResolutionLen = len(settings.cachetoml.Quality[idx].WantedResolution)
 		settings.SettingsQuality[settings.cachetoml.Quality[idx].Name] = &settings.cachetoml.Quality[idx]
 	}
-	for idx := range settings.cachetoml.Media.Movies {
-		settings.cachetoml.Media.Movies[idx].DataMap = make(
-			map[int]*MediaDataConfig,
-			len(settings.cachetoml.Media.Movies[idx].Data),
-		)
-		settings.cachetoml.Media.Movies[idx].DataImportMap = make(
-			map[int]*MediaDataImportConfig,
-			len(settings.cachetoml.Media.Movies[idx].DataImport),
-		)
-		for idx2 := range settings.cachetoml.Media.Movies[idx].Data {
-			settings.cachetoml.Media.Movies[idx].Data[idx2].CfgPath = settings.SettingsPath[settings.cachetoml.Media.Movies[idx].Data[idx2].TemplatePath]
-			if settings.cachetoml.Media.Movies[idx].Data[idx2].AddFoundList != "" {
-				settings.cachetoml.Media.Movies[idx].Data[idx2].AddFoundListCfg = settings.SettingsList[settings.cachetoml.Media.Movies[idx].Data[idx2].AddFoundList]
-			}
-			settings.cachetoml.Media.Movies[idx].DataMap[idx2] = &settings.cachetoml.Media.Movies[idx].Data[idx2]
-		}
-		for idx2 := range settings.cachetoml.Media.Movies[idx].DataImport {
-			settings.cachetoml.Media.Movies[idx].DataImport[idx2].CfgPath = settings.SettingsPath[settings.cachetoml.Media.Movies[idx].DataImport[idx2].TemplatePath]
-			settings.cachetoml.Media.Movies[idx].DataImportMap[idx2] = &settings.cachetoml.Media.Movies[idx].DataImport[idx2]
-		}
-		for idx2 := range settings.cachetoml.Media.Movies[idx].Notification {
-			settings.cachetoml.Media.Movies[idx].Notification[idx2].CfgNotification = settings.SettingsNotification[settings.cachetoml.Media.Movies[idx].Notification[idx2].MapNotification]
-		}
-		settings.cachetoml.Media.Movies[idx].CfgQuality = settings.SettingsQuality[settings.cachetoml.Media.Movies[idx].TemplateQuality]
-		settings.cachetoml.Media.Movies[idx].CfgScheduler = settings.SettingsScheduler[settings.cachetoml.Media.Movies[idx].TemplateScheduler]
-		settings.cachetoml.Media.Movies[idx].NamePrefix = "movie_" + settings.cachetoml.Media.Movies[idx].Name
-		settings.cachetoml.Media.Movies[idx].Useseries = false
-		settings.cachetoml.Media.Movies[idx].ListsMap = make(
-			map[string]*MediaListsConfig,
-			len(settings.cachetoml.Media.Movies[idx].Lists),
-		)
-		settings.cachetoml.Media.Movies[idx].ListsMapIdx = make(
-			map[string]int,
-			len(settings.cachetoml.Media.Movies[idx].Lists),
-		)
-		if len(settings.cachetoml.Media.Movies[idx].Lists) >= 1 {
-			settings.cachetoml.Media.Movies[idx].ListsQu = strings.Repeat(
-				",?",
-				len(settings.cachetoml.Media.Movies[idx].Lists)-1,
-			)
-		}
-		settings.cachetoml.Media.Movies[idx].ListsLen = len(settings.cachetoml.Media.Movies[idx].Lists)
-		settings.cachetoml.Media.Movies[idx].MetadataTitleLanguagesLen = len(
-			settings.cachetoml.Media.Movies[idx].MetadataTitleLanguages,
-		)
-		settings.cachetoml.Media.Movies[idx].DataLen = len(settings.cachetoml.Media.Movies[idx].Data)
-		settings.cachetoml.Media.Movies[idx].ListsQualities = make(
-			[]string,
-			0,
-			len(settings.cachetoml.Media.Movies[idx].Lists),
-		)
-		for idxsub := range settings.cachetoml.Media.Movies[idx].Lists {
-			settings.cachetoml.Media.Movies[idx].Lists[idxsub].CfgList = settings.SettingsList[settings.cachetoml.Media.Movies[idx].Lists[idxsub].TemplateList]
-			settings.cachetoml.Media.Movies[idx].Lists[idxsub].CfgQuality = settings.SettingsQuality[settings.cachetoml.Media.Movies[idx].Lists[idxsub].TemplateQuality]
-			settings.cachetoml.Media.Movies[idx].Lists[idxsub].CfgScheduler = settings.SettingsScheduler[settings.cachetoml.Media.Movies[idx].Lists[idxsub].TemplateScheduler]
-			if len(settings.cachetoml.Media.Movies[idx].Lists[idxsub].IgnoreMapLists) >= 1 {
-				settings.cachetoml.Media.Movies[idx].Lists[idxsub].IgnoreMapListsQu = strings.Repeat(
-					",?",
-					len(settings.cachetoml.Media.Movies[idx].Lists[idxsub].IgnoreMapLists)-1,
-				)
-			}
-			settings.cachetoml.Media.Movies[idx].Lists[idxsub].IgnoreMapListsLen = len(
-				settings.cachetoml.Media.Movies[idx].Lists[idxsub].IgnoreMapLists,
-			)
-			settings.cachetoml.Media.Movies[idx].Lists[idxsub].ReplaceMapListsLen = len(
-				settings.cachetoml.Media.Movies[idx].Lists[idxsub].ReplaceMapLists,
-			)
-			if !slices.Contains(
-				settings.cachetoml.Media.Movies[idx].ListsQualities,
-				settings.cachetoml.Media.Movies[idx].Lists[idxsub].TemplateQuality,
-			) {
-				settings.cachetoml.Media.Movies[idx].ListsQualities = append(
-					settings.cachetoml.Media.Movies[idx].ListsQualities,
-					settings.cachetoml.Media.Movies[idx].Lists[idxsub].TemplateQuality,
-				)
-			}
-			settings.cachetoml.Media.Movies[idx].ListsMap[settings.cachetoml.Media.Movies[idx].Lists[idxsub].Name] = &settings.cachetoml.Media.Movies[idx].Lists[idxsub]
-			settings.cachetoml.Media.Movies[idx].ListsMapIdx[settings.cachetoml.Media.Movies[idx].Lists[idxsub].Name] = idxsub
-		}
+}
 
-		settings.SettingsMedia["movie_"+settings.cachetoml.Media.Movies[idx].Name] = &settings.cachetoml.Media.Movies[idx]
+// populateConfigsInMap adds config entries to a map with prefix for GetCfgAll
+func populateConfigsInMap(configMap map[string]any) {
+	// Media configs use NamePrefix
+	for key := range settings.SettingsMedia {
+		configMap[settings.SettingsMedia[key].NamePrefix] = *settings.SettingsMedia[key]
 	}
-	for idx := range settings.cachetoml.Media.Series {
-		settings.cachetoml.Media.Series[idx].DataMap = make(
-			map[int]*MediaDataConfig,
-			len(settings.cachetoml.Media.Series[idx].Data),
-		)
-		settings.cachetoml.Media.Series[idx].DataImportMap = make(
-			map[int]*MediaDataImportConfig,
-			len(settings.cachetoml.Media.Series[idx].DataImport),
-		)
-		for idx2 := range settings.cachetoml.Media.Series[idx].Data {
-			settings.cachetoml.Media.Series[idx].Data[idx2].CfgPath = settings.SettingsPath[settings.cachetoml.Media.Series[idx].Data[idx2].TemplatePath]
-			settings.cachetoml.Media.Series[idx].DataMap[idx2] = &settings.cachetoml.Media.Series[idx].Data[idx2]
+	// All other configs use standard prefixes
+	for key := range settings.SettingsDownloader {
+		configMap["downloader_"+key] = *settings.SettingsDownloader[key]
+	}
+	for key := range settings.SettingsIndexer {
+		configMap["indexer_"+key] = *settings.SettingsIndexer[key]
+	}
+	for key := range settings.SettingsList {
+		configMap["list_"+key] = *settings.SettingsList[key]
+	}
+	for key := range settings.SettingsNotification {
+		configMap["notification_"+key] = *settings.SettingsNotification[key]
+	}
+	for key := range settings.SettingsPath {
+		configMap["path_"+key] = *settings.SettingsPath[key]
+	}
+	for key := range settings.SettingsQuality {
+		configMap["quality_"+key] = *settings.SettingsQuality[key]
+	}
+	for key := range settings.SettingsRegex {
+		configMap["regex_"+key] = *settings.SettingsRegex[key]
+	}
+	for key := range settings.SettingsScheduler {
+		configMap["scheduler_"+key] = *settings.SettingsScheduler[key]
+	}
+}
+
+// getTemplateOptionsForType returns template options for a specific config type
+func getTemplateOptionsForType(configType string) []string {
+	var options []string
+	switch configType {
+	case "downloader":
+		options = make([]string, 0, len(settings.SettingsDownloader)+1)
+		options = append(options, "")
+		for _, cfg := range settings.SettingsDownloader {
+			options = append(options, cfg.Name)
 		}
-		for idx2 := range settings.cachetoml.Media.Series[idx].DataImport {
-			settings.cachetoml.Media.Series[idx].DataImport[idx2].CfgPath = settings.SettingsPath[settings.cachetoml.Media.Series[idx].DataImport[idx2].TemplatePath]
-			settings.cachetoml.Media.Series[idx].DataImportMap[idx2] = &settings.cachetoml.Media.Series[idx].DataImport[idx2]
+	case "indexer":
+		options = make([]string, 0, len(settings.SettingsIndexer)+1)
+		options = append(options, "")
+		for _, cfg := range settings.SettingsIndexer {
+			options = append(options, cfg.Name)
 		}
-		for idx2 := range settings.cachetoml.Media.Series[idx].Notification {
-			settings.cachetoml.Media.Series[idx].Notification[idx2].CfgNotification = settings.SettingsNotification[settings.cachetoml.Media.Series[idx].Notification[idx2].MapNotification]
+	case "list":
+		options = make([]string, 0, len(settings.SettingsList)+1)
+		options = append(options, "")
+		for _, cfg := range settings.SettingsList {
+			options = append(options, cfg.Name)
 		}
-		settings.cachetoml.Media.Series[idx].CfgQuality = settings.SettingsQuality[settings.cachetoml.Media.Series[idx].TemplateQuality]
-		settings.cachetoml.Media.Series[idx].CfgScheduler = settings.SettingsScheduler[settings.cachetoml.Media.Series[idx].TemplateScheduler]
-		settings.cachetoml.Media.Series[idx].NamePrefix = "serie_" + settings.cachetoml.Media.Series[idx].Name
-		settings.cachetoml.Media.Series[idx].Useseries = true
-		settings.cachetoml.Media.Series[idx].ListsMap = make(
-			map[string]*MediaListsConfig,
-			len(settings.cachetoml.Media.Series[idx].Lists),
-		)
-		settings.cachetoml.Media.Series[idx].ListsMapIdx = make(
-			map[string]int,
-			len(settings.cachetoml.Media.Series[idx].Lists),
-		)
-		if len(settings.cachetoml.Media.Series[idx].Lists) >= 1 {
-			settings.cachetoml.Media.Series[idx].ListsQu = strings.Repeat(
-				",?",
-				len(settings.cachetoml.Media.Series[idx].Lists)-1,
-			)
+	case "notification":
+		options = make([]string, 0, len(settings.SettingsNotification)+1)
+		options = append(options, "")
+		for _, cfg := range settings.SettingsNotification {
+			options = append(options, cfg.Name)
 		}
-		settings.cachetoml.Media.Series[idx].ListsLen = len(settings.cachetoml.Media.Series[idx].Lists)
-		settings.cachetoml.Media.Series[idx].MetadataTitleLanguagesLen = len(
-			settings.cachetoml.Media.Series[idx].MetadataTitleLanguages,
-		)
-		settings.cachetoml.Media.Series[idx].DataLen = len(settings.cachetoml.Media.Series[idx].Data)
-		settings.cachetoml.Media.Series[idx].ListsQualities = make(
-			[]string,
-			0,
-			len(settings.cachetoml.Media.Series[idx].Lists),
-		)
-		for idxsub := range settings.cachetoml.Media.Series[idx].Lists {
-			settings.cachetoml.Media.Series[idx].Lists[idxsub].CfgList = settings.SettingsList[settings.cachetoml.Media.Series[idx].Lists[idxsub].TemplateList]
-			settings.cachetoml.Media.Series[idx].Lists[idxsub].CfgQuality = settings.SettingsQuality[settings.cachetoml.Media.Series[idx].Lists[idxsub].TemplateQuality]
-			settings.cachetoml.Media.Series[idx].Lists[idxsub].CfgScheduler = settings.SettingsScheduler[settings.cachetoml.Media.Series[idx].Lists[idxsub].TemplateScheduler]
-			if len(settings.cachetoml.Media.Series[idx].Lists[idxsub].IgnoreMapLists) >= 1 {
-				settings.cachetoml.Media.Series[idx].Lists[idxsub].IgnoreMapListsQu = strings.Repeat(
-					",?",
-					len(settings.cachetoml.Media.Series[idx].Lists[idxsub].IgnoreMapLists)-1,
-				)
-			}
-			settings.cachetoml.Media.Series[idx].Lists[idxsub].IgnoreMapListsLen = len(
-				settings.cachetoml.Media.Series[idx].Lists[idxsub].IgnoreMapLists,
-			)
-			settings.cachetoml.Media.Series[idx].Lists[idxsub].ReplaceMapListsLen = len(
-				settings.cachetoml.Media.Series[idx].Lists[idxsub].ReplaceMapLists,
-			)
-			if !slices.Contains(
-				settings.cachetoml.Media.Series[idx].ListsQualities,
-				settings.cachetoml.Media.Series[idx].Lists[idxsub].TemplateQuality,
-			) {
-				settings.cachetoml.Media.Series[idx].ListsQualities = append(
-					settings.cachetoml.Media.Series[idx].ListsQualities,
-					settings.cachetoml.Media.Series[idx].Lists[idxsub].TemplateQuality,
-				)
-			}
-			settings.cachetoml.Media.Series[idx].ListsMap[settings.cachetoml.Media.Series[idx].Lists[idxsub].Name] = &settings.cachetoml.Media.Series[idx].Lists[idxsub]
-			settings.cachetoml.Media.Series[idx].ListsMapIdx[settings.cachetoml.Media.Series[idx].Lists[idxsub].Name] = idxsub
+	case "path":
+		options = make([]string, 0, len(settings.SettingsPath)+1)
+		options = append(options, "")
+		for _, cfg := range settings.SettingsPath {
+			options = append(options, cfg.Name)
 		}
-		settings.SettingsMedia["serie_"+settings.cachetoml.Media.Series[idx].Name] = &settings.cachetoml.Media.Series[idx]
+	case "quality":
+		options = make([]string, 0, len(settings.SettingsQuality)+1)
+		options = append(options, "")
+		for _, cfg := range settings.SettingsQuality {
+			options = append(options, cfg.Name)
+		}
+	case "regex":
+		options = make([]string, 0, len(settings.SettingsRegex)+1)
+		options = append(options, "")
+		for _, cfg := range settings.SettingsRegex {
+			options = append(options, cfg.Name)
+		}
+	case "scheduler":
+		options = make([]string, 0, len(settings.SettingsScheduler)+1)
+		options = append(options, "")
+		for _, cfg := range settings.SettingsScheduler {
+			options = append(options, cfg.Name)
+		}
+	default:
+		return nil
+	}
+	return options
+}
+
+// populateConfigSlicesInMap adds config entries as slices for GetCfgAllJson
+func populateConfigSlicesInMap(configMap map[string]any) {
+	configMap["media"] = []MediaTypeConfig{}
+	for key := range settings.SettingsMedia {
+		configMap["media"] = append(configMap["media"].([]MediaTypeConfig), *settings.SettingsMedia[key])
+	}
+	configMap["downloader"] = []DownloaderConfig{}
+	for key := range settings.SettingsDownloader {
+		configMap["downloader"] = append(configMap["downloader"].([]DownloaderConfig), *settings.SettingsDownloader[key])
+	}
+	configMap["indexer"] = []IndexersConfig{}
+	for key := range settings.SettingsIndexer {
+		configMap["indexer"] = append(configMap["indexer"].([]IndexersConfig), *settings.SettingsIndexer[key])
+	}
+	configMap["list"] = []ListsConfig{}
+	for key := range settings.SettingsList {
+		configMap["list"] = append(configMap["list"].([]ListsConfig), *settings.SettingsList[key])
+	}
+	configMap["notification"] = []NotificationConfig{}
+	for key := range settings.SettingsNotification {
+		configMap["notification"] = append(configMap["notification"].([]NotificationConfig), *settings.SettingsNotification[key])
+	}
+	configMap["path"] = []PathsConfig{}
+	for key := range settings.SettingsPath {
+		configMap["path"] = append(configMap["path"].([]PathsConfig), *settings.SettingsPath[key])
+	}
+	configMap["quality"] = []QualityConfig{}
+	for key := range settings.SettingsQuality {
+		configMap["quality"] = append(configMap["quality"].([]QualityConfig), *settings.SettingsQuality[key])
+	}
+	configMap["regex"] = []RegexConfig{}
+	for key := range settings.SettingsRegex {
+		configMap["regex"] = append(configMap["regex"].([]RegexConfig), *settings.SettingsRegex[key])
+	}
+	configMap["scheduler"] = []SchedulerConfig{}
+	for key := range settings.SettingsScheduler {
+		configMap["scheduler"] = append(configMap["scheduler"].([]SchedulerConfig), *settings.SettingsScheduler[key])
 	}
 }
 
@@ -1540,54 +1707,7 @@ func UpdateCfg(configIn []Conf) {
 	mu.Lock()
 	defer mu.Unlock()
 	for _, val := range configIn {
-		if strings.HasPrefix(val.Name, "general") {
-			data := val.Data.(GeneralConfig)
-			settings.SettingsGeneral = &data
-		}
-		if strings.HasPrefix(val.Name, "downloader_") {
-			data := val.Data.(DownloaderConfig)
-			settings.SettingsDownloader[val.Data.(DownloaderConfig).Name] = &data
-		}
-		if strings.HasPrefix(val.Name, logger.StrImdb) {
-			data := val.Data.(ImdbConfig)
-			settings.SettingsImdb = &data
-		}
-		if strings.HasPrefix(val.Name, "indexer") {
-			data := val.Data.(IndexersConfig)
-			settings.SettingsIndexer[val.Data.(IndexersConfig).Name] = &data
-		}
-		if strings.HasPrefix(val.Name, "list") {
-			data := val.Data.(ListsConfig)
-			settings.SettingsList[val.Data.(ListsConfig).Name] = &data
-		}
-		if strings.HasPrefix(val.Name, logger.StrSerie) {
-			data := val.Data.(MediaTypeConfig)
-			settings.SettingsMedia["serie_"+val.Data.(MediaTypeConfig).Name] = &data
-		}
-		if strings.HasPrefix(val.Name, logger.StrMovie) {
-			data := val.Data.(MediaTypeConfig)
-			settings.SettingsMedia["movie_"+val.Data.(MediaTypeConfig).Name] = &data
-		}
-		if strings.HasPrefix(val.Name, "notification") {
-			data := val.Data.(NotificationConfig)
-			settings.SettingsNotification[val.Data.(NotificationConfig).Name] = &data
-		}
-		if strings.HasPrefix(val.Name, "path") {
-			data := val.Data.(PathsConfig)
-			settings.SettingsPath[val.Data.(PathsConfig).Name] = &data
-		}
-		if strings.HasPrefix(val.Name, "quality") {
-			data := val.Data.(QualityConfig)
-			settings.SettingsQuality[val.Data.(QualityConfig).Name] = &data
-		}
-		if strings.HasPrefix(val.Name, "regex") {
-			data := val.Data.(RegexConfig)
-			settings.SettingsRegex[val.Data.(RegexConfig).Name] = &data
-		}
-		if strings.HasPrefix(val.Name, "scheduler") {
-			data := val.Data.(SchedulerConfig)
-			settings.SettingsScheduler[val.Data.(SchedulerConfig).Name] = &data
-		}
+		handleConfigEntry(val)
 	}
 }
 
@@ -1600,33 +1720,7 @@ func GetCfgAll() map[string]any {
 	q := make(map[string]any)
 	q["general"] = settings.SettingsGeneral
 	q["imdb"] = settings.SettingsImdb
-	for key := range settings.SettingsMedia {
-		q[settings.SettingsMedia[key].NamePrefix] = *settings.SettingsMedia[key]
-	}
-	for key := range settings.SettingsDownloader {
-		q["downloader_"+key] = *settings.SettingsDownloader[key]
-	}
-	for key := range settings.SettingsIndexer {
-		q["indexer_"+key] = *settings.SettingsIndexer[key]
-	}
-	for key := range settings.SettingsList {
-		q["list_"+key] = *settings.SettingsList[key]
-	}
-	for key := range settings.SettingsNotification {
-		q["notification_"+key] = *settings.SettingsNotification[key]
-	}
-	for key := range settings.SettingsPath {
-		q["path_"+key] = *settings.SettingsPath[key]
-	}
-	for key := range settings.SettingsQuality {
-		q["quality_"+key] = *settings.SettingsQuality[key]
-	}
-	for key := range settings.SettingsRegex {
-		q["regex_"+key] = *settings.SettingsRegex[key]
-	}
-	for key := range settings.SettingsScheduler {
-		q["scheduler_"+key] = *settings.SettingsScheduler[key]
-	}
+	populateConfigsInMap(q)
 	return q
 }
 
@@ -1635,61 +1729,11 @@ func GetCfgAll() map[string]any {
 // (downloader, indexer, list, notification, path, quality, regex, scheduler).
 // Used to populate dropdown menus and form options in the web interface.
 func GetSettingTemplatesFor(key string) map[string][]string {
-	var out map[string][]string = make(map[string][]string)
-
-	switch key {
-	case "downloader":
-		out["options"] = make([]string, 0, len(settings.SettingsDownloader))
-		out["options"] = append(out["options"], "")
-		for _, cfg := range settings.SettingsDownloader {
-			out["options"] = append(out["options"], cfg.Name)
-		}
-	case "indexer":
-		out["options"] = make([]string, 0, len(settings.SettingsIndexer))
-		out["options"] = append(out["options"], "")
-		for _, cfg := range settings.SettingsIndexer {
-			out["options"] = append(out["options"], cfg.Name)
-		}
-	case "list":
-		out["options"] = make([]string, 0, len(settings.SettingsList))
-		out["options"] = append(out["options"], "")
-		for _, cfg := range settings.SettingsList {
-			out["options"] = append(out["options"], cfg.Name)
-		}
-	case "notification":
-		out["options"] = make([]string, 0, len(settings.SettingsNotification))
-		out["options"] = append(out["options"], "")
-		for _, cfg := range settings.SettingsNotification {
-			out["options"] = append(out["options"], cfg.Name)
-		}
-	case "path":
-		out["options"] = make([]string, 0, len(settings.SettingsPath))
-		out["options"] = append(out["options"], "")
-		for _, cfg := range settings.SettingsPath {
-			out["options"] = append(out["options"], cfg.Name)
-		}
-	case "quality":
-		out["options"] = make([]string, 0, len(settings.SettingsQuality))
-		out["options"] = append(out["options"], "")
-		for _, cfg := range settings.SettingsQuality {
-			out["options"] = append(out["options"], cfg.Name)
-		}
-	case "regex":
-		out["options"] = make([]string, 0, len(settings.SettingsRegex))
-		out["options"] = append(out["options"], "")
-		for _, cfg := range settings.SettingsRegex {
-			out["options"] = append(out["options"], cfg.Name)
-		}
-	case "scheduler":
-		out["options"] = make([]string, 0, len(settings.SettingsScheduler))
-		out["options"] = append(out["options"], "")
-		for _, cfg := range settings.SettingsScheduler {
-			out["options"] = append(out["options"], cfg.Name)
-		}
-	default:
+	options := getTemplateOptionsForType(key)
+	if options == nil {
 		return nil
 	}
-	return out
+	return map[string][]string{"options": options}
 }
 
 func GetCfgAllJson() map[string]any {
@@ -1698,42 +1742,7 @@ func GetCfgAllJson() map[string]any {
 	q := make(map[string]any)
 	q["general"] = *settings.SettingsGeneral
 	q["imdb"] = *settings.SettingsImdb
-	q["media"] = []MediaTypeConfig{}
-	for key := range settings.SettingsMedia {
-		q["media"] = append(q["media"].([]MediaTypeConfig), *settings.SettingsMedia[key])
-	}
-	q["downloader"] = []DownloaderConfig{}
-	for key := range settings.SettingsDownloader {
-		q["downloader"] = append(q["downloader"].([]DownloaderConfig), *settings.SettingsDownloader[key])
-	}
-	q["indexer"] = []IndexersConfig{}
-	for key := range settings.SettingsIndexer {
-		q["indexer"] = append(q["indexer"].([]IndexersConfig), *settings.SettingsIndexer[key])
-	}
-	q["list"] = []ListsConfig{}
-	for key := range settings.SettingsList {
-		q["list"] = append(q["list"].([]ListsConfig), *settings.SettingsList[key])
-	}
-	q["notification"] = []NotificationConfig{}
-	for key := range settings.SettingsNotification {
-		q["notification"] = append(q["notification"].([]NotificationConfig), *settings.SettingsNotification[key])
-	}
-	q["path"] = []PathsConfig{}
-	for key := range settings.SettingsPath {
-		q["path"] = append(q["path"].([]PathsConfig), *settings.SettingsPath[key])
-	}
-	q["quality"] = []QualityConfig{}
-	for key := range settings.SettingsQuality {
-		q["quality"] = append(q["quality"].([]QualityConfig), *settings.SettingsQuality[key])
-	}
-	q["regex"] = []RegexConfig{}
-	for key := range settings.SettingsRegex {
-		q["regex"] = append(q["regex"].([]RegexConfig), *settings.SettingsRegex[key])
-	}
-	q["scheduler"] = []SchedulerConfig{}
-	for key := range settings.SettingsScheduler {
-		q["scheduler"] = append(q["scheduler"].([]SchedulerConfig), *settings.SettingsScheduler[key])
-	}
+	populateConfigSlicesInMap(q)
 	return q
 }
 
@@ -1747,58 +1756,7 @@ func UpdateCfgEntry(configIn Conf) {
 
 	mu.Lock()
 	defer mu.Unlock()
-	if strings.HasPrefix(configIn.Name, "general") {
-		data := configIn.Data.(GeneralConfig)
-		settings.SettingsGeneral = &data
-	}
-	if strings.HasPrefix(configIn.Name, "downloader_") {
-		data := configIn.Data.(DownloaderConfig)
-		settings.SettingsDownloader[configIn.Data.(DownloaderConfig).Name] = &data
-	}
-	if strings.HasPrefix(configIn.Name, logger.StrImdb) {
-		data := configIn.Data.(ImdbConfig)
-		settings.SettingsImdb = &data
-	}
-	if strings.HasPrefix(configIn.Name, "indexer") {
-		data := configIn.Data.(IndexersConfig)
-		settings.SettingsIndexer[configIn.Data.(IndexersConfig).Name] = &data
-	}
-	if strings.HasPrefix(configIn.Name, "list") {
-		data := configIn.Data.(ListsConfig)
-		settings.SettingsList[configIn.Data.(ListsConfig).Name] = &data
-	}
-	if strings.HasPrefix(configIn.Name, logger.StrSerie) {
-		data := configIn.Data.(MediaTypeConfig)
-		settings.SettingsMedia["serie_"+configIn.Data.(MediaTypeConfig).Name] = &data
-	}
-	if strings.HasPrefix(configIn.Name, logger.StrMovie) {
-		data := configIn.Data.(MediaTypeConfig)
-		settings.SettingsMedia["movie_"+configIn.Data.(MediaTypeConfig).Name] = &data
-	}
-	if strings.HasPrefix(configIn.Name, "notification") {
-		data := configIn.Data.(NotificationConfig)
-		settings.SettingsNotification[configIn.Data.(NotificationConfig).Name] = &data
-	}
-	if strings.HasPrefix(configIn.Name, "path") {
-		data := configIn.Data.(PathsConfig)
-		settings.SettingsPath[configIn.Data.(PathsConfig).Name] = &data
-	}
-	if strings.HasPrefix(configIn.Name, "quality") {
-		data := configIn.Data.(QualityConfig)
-		settings.SettingsQuality[configIn.Data.(QualityConfig).Name] = &data
-	}
-	if strings.HasPrefix(configIn.Name, "regex") {
-		data := configIn.Data.(RegexConfig)
-		settings.SettingsRegex[configIn.Data.(RegexConfig).Name] = &data
-	}
-	if strings.HasPrefix(configIn.Name, "scheduler") {
-		data := configIn.Data.(SchedulerConfig)
-		settings.SettingsScheduler[configIn.Data.(SchedulerConfig).Name] = &data
-	}
-	if strings.HasPrefix(configIn.Name, "trakt_token") {
-		traktToken = configIn.Data.(*oauth2.Token)
-		configDB.Set("trakt_token", *configIn.Data.(*oauth2.Token))
-	}
+	handleConfigEntryWithDB(configIn, configDB)
 }
 
 func UpdateCfgEntryAny(configIn any) error {
@@ -1848,46 +1806,7 @@ func DeleteCfgEntry(name string) {
 
 	mu.Lock()
 	defer mu.Unlock()
-	if strings.HasPrefix(name, "general") {
-		settings.SettingsGeneral = &GeneralConfig{}
-	}
-	if strings.HasPrefix(name, "downloader_") {
-		delete(settings.SettingsDownloader, name)
-	}
-	if strings.HasPrefix(name, logger.StrImdb) {
-		settings.SettingsImdb = &ImdbConfig{}
-	}
-	if strings.HasPrefix(name, "indexer") {
-		delete(settings.SettingsIndexer, name)
-	}
-	if strings.HasPrefix(name, "list") {
-		delete(settings.SettingsList, name)
-	}
-	if strings.HasPrefix(name, logger.StrSerie) {
-		delete(settings.SettingsMedia, name)
-	}
-	if strings.HasPrefix(name, logger.StrMovie) {
-		delete(settings.SettingsMedia, name)
-	}
-	if strings.HasPrefix(name, "notification") {
-		delete(settings.SettingsNotification, name)
-	}
-	if strings.HasPrefix(name, "path") {
-		delete(settings.SettingsPath, name)
-	}
-	if strings.HasPrefix(name, "quality") {
-		delete(settings.SettingsQuality, name)
-	}
-	if strings.HasPrefix(name, "regex") {
-		delete(settings.SettingsRegex, name)
-	}
-	if strings.HasPrefix(name, "scheduler") {
-		delete(settings.SettingsScheduler, name)
-	}
-
-	if strings.HasPrefix(name, "trakt_token") {
-		configDB.Delete("trakt_token")
-	}
+	handleConfigDeletionWithDB(name, configDB)
 }
 
 // GetToml returns the cached main configuration settings as a mainConfig struct.

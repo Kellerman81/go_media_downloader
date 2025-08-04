@@ -210,9 +210,9 @@ func importnewmoviessingle(
 		return errors.New("list template not found")
 	}
 
-	feed := plfeeds.Get()
-	err := feeds(cfgp, list, feed)
+	feed, err := Feeds(cfgp, list, false)
 	if err != nil {
+		plfeeds.Put(feed)
 		return err
 	}
 	defer plfeeds.Put(feed)
@@ -291,15 +291,22 @@ func importnewmoviessingle(
 
 		allowed, _ = importfeed.AllowMovieImport(&feed.Movies[idx], list.CfgList)
 		if allowed {
-			pl.SubmitErr(func() error {
+			pl.Submit(func() {
 				defer logger.HandlePanic()
-				return importfeed.JobImportMoviesByList(feed.Movies[idx], idx, cfgp, listid, true)
+				importfeed.JobImportMoviesByList(feed.Movies[idx], idx, cfgp, listid, true)
 			})
 		} else {
 			logger.LogDynamicany1String("debug", "not allowed movie", logger.StrImdb, feed.Movies[idx])
 		}
 	}
-	pl.Wait()
+	errjobs := pl.Wait()
+	if errjobs != nil {
+		logger.LogDynamicanyErr(
+			"error",
+			"Error importing movies",
+			errjobs,
+		)
+	}
 	ctx.Done()
 	return nil
 }

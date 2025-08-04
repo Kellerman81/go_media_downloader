@@ -80,20 +80,22 @@ const (
 )
 
 var (
-	strRegexEmpty     = "regex_template empty"
-	strMinutes        = "Minutes"
-	strIdentifier     = "identifier"
-	strCheckedFor     = "checked for"
-	strTitlesearch    = "titlesearch"
-	strRejectedby     = "rejected by"
-	strMediaid        = "Media ID"
-	episodePrefixes   = [4]string{"", logger.StrSpace, "0", " 0"}
-	errOther          = errors.New("other error")
-	errYearEmpty      = errors.New("year empty")
-	errSearchvarEmpty = errors.New("searchvar empty")
-	errRegexEmpty     = errors.New("regex template empty")
-	plsearcher        pool.Poolobj[ConfigSearcher]
-	plsearchparam     pool.Poolobj[searchParams]
+	strRegexEmpty         = "regex_template empty"
+	strMinutes            = "Minutes"
+	strIdentifier         = "identifier"
+	strCheckedFor         = "checked for"
+	strTitlesearch        = "titlesearch"
+	strRejectedby         = "rejected by"
+	strMediaid            = "Media ID"
+	episodePrefixes       = [4]string{"", logger.StrSpace, "0", " 0"}
+	errOther              = errors.New("other error")
+	errYearEmpty          = errors.New("year empty")
+	errSearchvarEmpty     = errors.New("searchvar empty")
+	errSearchIDEmpty      = errors.New("search id empty")
+	errSearchQualityEmpty = errors.New("search quality empty")
+	errRegexEmpty         = errors.New("regex template empty")
+	plsearcher            pool.Poolobj[ConfigSearcher]
+	plsearchparam         pool.Poolobj[searchParams]
 	// Optimization: String interner for frequently used strings
 	stringInterner = sync.Map{} // Cache for frequently used strings
 )
@@ -222,17 +224,29 @@ func (s *ConfigSearcher) MediaSearch(
 	titlesearch, downloadentries, autoclose bool,
 ) error {
 	if s == nil {
+		logger.Logtype("error", 0).
+			Uint(logger.StrID, mediaid).
+			Err(errSearchvarEmpty).
+			Msg("Media Search Failed")
 		return errSearchvarEmpty
 	}
 	if autoclose {
 		defer s.Close()
 	}
 	if cfgp == nil {
+		logger.Logtype("error", 0).
+			Uint(logger.StrID, mediaid).
+			Err(logger.ErrCfgpNotFound).
+			Msg("Media Search Failed")
 		return logger.ErrCfgpNotFound
 	}
 
 	if mediaid == 0 {
-		return errSearchvarEmpty
+		logger.Logtype("error", 0).
+			Uint(logger.StrID, mediaid).
+			Err(errSearchIDEmpty).
+			Msg("Media Search Failed")
+		return errSearchIDEmpty
 	}
 	p := plsearchparam.Get()
 	defer plsearchparam.Put(p)
@@ -251,14 +265,21 @@ func (s *ConfigSearcher) MediaSearch(
 		if !errors.Is(err, logger.ErrDisabled) && !errors.Is(err, logger.ErrToWait) {
 			logger.Logtype("error", 0).
 				Uint(logger.StrID, mediaid).
+				Bool("Search Series", cfgp.Useseries).
 				Err(err).
 				Msg("Media Search Failed")
 			return err
 		}
+		return nil
 	}
 
 	if s.Quality == nil {
-		return errSearchvarEmpty
+		logger.Logtype("error", 0).
+			Uint(logger.StrID, mediaid).
+			Bool("Search Series", cfgp.Useseries).
+			Err(errSearchQualityEmpty).
+			Msg("Media Search Quality Failed")
+		return errSearchQualityEmpty
 	}
 
 	s.searchlog("info", "Search for media id", p)
@@ -340,16 +361,22 @@ func (s *ConfigSearcher) searchindexers(ctx context.Context, userss bool, p *sea
 		if !apiexternal.NewznabCheckLimiter(indcfg) {
 			continue
 		}
-		pl.SubmitErr(func() error {
+		pl.Submit(func() {
 			defer logger.HandlePanic()
 			err := s.executeSearch(p, indcfg)
 			if err == nil && !s.Done {
 				s.Done = true
 			}
-			return err
 		})
 	}
-	pl.Wait()
+	errjobs := pl.Wait()
+	if errjobs != nil {
+		logger.LogDynamicanyErr(
+			"error",
+			"Error searching indexers",
+			errjobs,
+		)
+	}
 }
 
 // handleRSSSearch performs an RSS search for a specific indexer configuration.
@@ -1949,7 +1976,7 @@ func searchseason(
 		&row.Num2,
 	)
 	if seasonCount == 0 {
-		return errors.New("No seasons found")
+		return nil // errors.New("No seasons found")
 	}
 
 	// Get list ID once
@@ -1963,7 +1990,7 @@ func searchseason(
 		&row.Num2,
 	)
 	if tvdbid == 0 {
-		return errors.New("TVDB ID not found")
+		return nil // errors.New("TVDB ID not found")
 	}
 	seasons := database.GetrowsN[string](
 		false,

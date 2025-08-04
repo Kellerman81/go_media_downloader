@@ -515,7 +515,7 @@ func DispatchCron(cfgpstr string, cronStr string, name string, queue string, job
 		ScheduleTyp:    ScheduleTypeCron,
 		ScheduleString: cronStr,
 		LastRun:        time.Time{},
-		NextRun:        dcentry.Next,
+		NextRun:        dcentry.Schedule.Next(logger.TimeGetNow()),
 		CronSchedule:   dcentry.Schedule,
 		CronID:         cjob,
 	})
@@ -623,6 +623,7 @@ func cleanupCompletedJobs(workpool pond.Pool, queue string) {
 func runjobcron(id uint32) func() error {
 	return func() error {
 		if !globalQueueSet.Check(id) {
+			logger.LogDynamicany1Int("error", "Job not found", "job", int(id))
 			return errors.New("job not found")
 		}
 
@@ -641,7 +642,7 @@ func runjobcron(id uint32) func() error {
 		err := executeJob(s)
 		if s.Cfgpstr == "" {
 			if config.GetSettingsGeneral().Jobs[s.JobName] != nil {
-				config.GetSettingsGeneral().Jobs[s.JobName](id)
+				err = config.GetSettingsGeneral().Jobs[s.JobName](id)
 				globalQueueSet.Delete(id)
 			} else {
 				logger.LogDynamicany2Str("error", "Cron Job not found", "job", s.JobName, "cfgp", s.Cfgpstr)
@@ -651,7 +652,7 @@ func runjobcron(id uint32) func() error {
 				logger.LogDynamicany2Str("error", "Cron Job Config not found", "job", s.JobName, "cfgp", s.Cfgpstr)
 			} else {
 				if config.GetSettingsMedia(s.Cfgpstr).Jobs[s.JobName] != nil {
-					config.GetSettingsMedia(s.Cfgpstr).Jobs[s.JobName](id)
+					err = config.GetSettingsMedia(s.Cfgpstr).Jobs[s.JobName](id)
 					globalQueueSet.Delete(id)
 				} else {
 					logger.LogDynamicany2Str("error", "Cron Job not found", "job", s.JobName, "cfgp", s.Cfgpstr)

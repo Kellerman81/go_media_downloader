@@ -231,7 +231,7 @@ func TestUpdateRootpath(t *testing.T) {
 			var capturedPath string
 			var capturedID uint
 
-			// database.ExecMock = func(query string, args ...interface{}) {
+			// database.ExecMock = func(query string, args ...any) {
 			// 	capturedPath = *args[0].(*string)
 			// 	capturedID = *args[1].(*uint)
 			// }
