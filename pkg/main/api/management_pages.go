@@ -751,15 +751,11 @@ func HandleDatabaseMaintenance(c *gin.Context) {
 func performIntegrityCheck(_ *gin.Context) (string, string) {
 	// Call the actual integrity check function
 	results := database.DBIntegrityCheck()
-	if len(results) == 0 {
+	if len(results) == 0 || results == "ok" {
 		return "✅ Database integrity check completed. No issues found.", "success"
 	}
 
-	var issues []string
-	for _, result := range results {
-		issues = append(issues, fmt.Sprintf("%v", result))
-	}
-	return fmt.Sprintf("⚠️ Database integrity issues found: %s", strings.Join(issues, ", ")), "warning"
+	return fmt.Sprintf("⚠️ Database integrity issues found: %s", results), "warning"
 }
 
 func performBackup(_ *gin.Context) (string, string) {

@@ -149,6 +149,10 @@ type Job struct {
 	ID uint32
 	// SchedulerID is the ID of the scheduler that added this job
 	SchedulerID uint32
+	// Ctx is the context for this job, used for cancellation
+	Ctx context.Context `json:"-"`
+	// CancelFunc is the function to cancel this job's context
+	CancelFunc context.CancelFunc `json:"-"`
 	// Run is the function to execute for this job
 	// Run func(uint32) `json:"-"`
 	// CronJob is the cron job instance if this is a recurring cron job
@@ -565,6 +569,7 @@ func addjob(
 	updateLastAdded(queue)
 	cleanupCompletedJobs(workpool, queue)
 
+	ctx, cancel := context.WithCancel(context.Background())
 	globalQueueSet.Add(id, Job{
 		Added:       logger.TimeGetNow(),
 		Name:        name,
@@ -573,6 +578,8 @@ func addjob(
 		JobName:     jobname,
 		Cfgpstr:     cfgpstr,
 		SchedulerID: schedulerID,
+		Ctx:         ctx,
+		CancelFunc:  cancel,
 	})
 	if _, ok := workpool.TrySubmitErr(runjobcron(id)); !ok {
 		logger.LogDynamicany1String("error", "not queued", logger.StrJob, name)
@@ -629,10 +636,26 @@ func runjobcron(id uint32) func() error {
 
 		defer func() {
 			logger.HandlePanic()
+			// Cancel the job's context when finished
+			if globalQueueSet.Check(id) {
+				job := globalQueueSet.GetVal(id)
+				if job.CancelFunc != nil {
+					job.CancelFunc()
+				}
+			}
 			globalQueueSet.Delete(id)
 		}()
 
 		s := globalQueueSet.GetVal(id)
+		
+		// Check if job was cancelled before starting
+		select {
+		case <-s.Ctx.Done():
+			return context.Canceled
+		default:
+			// Continue with execution
+		}
+		
 		SetScheduleStarted(s.SchedulerID)
 		defer SetScheduleEnded(s.SchedulerID)
 
@@ -665,11 +688,20 @@ func runjobcron(id uint32) func() error {
 
 // RemoveQueueEntry removes a job from the global job queue by its unique identifier.
 // This function provides safe cleanup of completed or cancelled jobs from the queue.
+// It also cancels the job's context to stop any running execution.
 //
 // Parameters:
 //   - id: Unique identifier of the job to remove (uint32)
 func RemoveQueueEntry(id uint32) {
 	if id != 0 {
+		// Check if job exists and get it to access its cancel function
+		if globalQueueSet.Check(id) {
+			job := globalQueueSet.GetVal(id)
+			// Cancel the job's context to stop execution
+			if job.CancelFunc != nil {
+				job.CancelFunc()
+			}
+		}
 		globalQueueSet.Delete(id)
 	}
 }
@@ -757,6 +789,7 @@ func Dispatch(name string, fn func(uint32) error, queue string) error {
 	updateLastAdded(queue)
 
 	id := newUUID()
+	ctx, cancel := context.WithCancel(context.Background())
 	globalQueueSet.Add(id, Job{
 		Added:       logger.TimeGetNow(),
 		Name:        name,
@@ -764,6 +797,8 @@ func Dispatch(name string, fn func(uint32) error, queue string) error {
 		Queue:       queue,
 		ID:          id,
 		SchedulerID: newUUID(),
+		Ctx:         ctx,
+		CancelFunc:  cancel,
 	})
 	if _, ok := workpool.TrySubmitErr(runjob(id, fn)); !ok {
 		logger.LogDynamicany1String("error", "not queued", logger.StrJob, name)
@@ -780,6 +815,14 @@ func Dispatch(name string, fn func(uint32) error, queue string) error {
 // Parameters:
 //   - s: Job containing the job name, configuration prefix, and ID
 func executeJob(s Job) error {
+	// Check if job was cancelled before execution
+	select {
+	case <-s.Ctx.Done():
+		return context.Canceled
+	default:
+		// Continue with execution
+	}
+
 	if s.Cfgpstr == "" {
 		if jobFunc := config.GetSettingsGeneral().Jobs[s.JobName]; jobFunc != nil {
 			return jobFunc(s.ID)
@@ -820,10 +863,26 @@ func runjob(id uint32, fn func(uint32) error) func() error {
 
 		defer func() {
 			logger.HandlePanic()
+			// Cancel the job's context when finished
+			if globalQueueSet.Check(id) {
+				job := globalQueueSet.GetVal(id)
+				if job.CancelFunc != nil {
+					job.CancelFunc()
+				}
+			}
 			globalQueueSet.Delete(id)
 		}()
 
 		s := globalQueueSet.GetVal(id)
+		
+		// Check if job was cancelled before starting
+		select {
+		case <-s.Ctx.Done():
+			return context.Canceled
+		default:
+			// Continue with execution
+		}
+		
 		s.Started = logger.TimeGetNow()
 		globalQueueSet.UpdateVal(id, s)
 		return fn(id)
@@ -912,6 +971,19 @@ func Cleanqueue() error {
 // debugging, and administrative interfaces to display job status and queue health.
 func GetQueues() map[uint32]Job {
 	return globalQueueSet.GetMap()
+}
+
+// GetJobContext returns the context for a job with the given ID.
+// Job functions can use this to check for cancellation and respond appropriately.
+// Returns context.Background() if the job is not found.
+func GetJobContext(id uint32) context.Context {
+	if globalQueueSet.Check(id) {
+		job := globalQueueSet.GetVal(id)
+		if job.Ctx != nil {
+			return job.Ctx
+		}
+	}
+	return context.Background()
 }
 
 // GetSchedules returns a map of all currently configured schedules,

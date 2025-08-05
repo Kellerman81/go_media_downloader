@@ -34,14 +34,7 @@ func renderSearchDownloadPage(csrfToken string) Node {
 		mediaConfigs = append(mediaConfigs, media.Series[i].NamePrefix)
 	}
 
-	// Get movie options from database
-	movieOptions := getMovieOptions()
-	
-	// Get series options from database  
-	seriesOptions := getSeriesOptions()
-	
-	// Get episode options (will be populated dynamically based on series selection)
-	episodeOptions := []string{"-- Select Series First --"}
+	// Movie, series, and episode options will be populated dynamically via apiAdminDropdownData
 
 	searchTypes := []string{
 		"movies_rss", "movies_search", "series_rss", "series_search", "series_episode_search",
@@ -55,6 +48,7 @@ func renderSearchDownloadPage(csrfToken string) Node {
 		Form(
 			Class("config-form"),
 			ID("searchForm"),
+			Input(Type("hidden"), Name("csrf_token"), Value(csrfToken)),
 
 			Div(
 				Class("row"),
@@ -95,21 +89,41 @@ func renderSearchDownloadPage(csrfToken string) Node {
 					Class("col-md-6"),
 					H5(Text("Search Parameters")),
 
-					renderFormGroup("search", map[string]string{
-						"MovieID": "Select movie to search for",
-					}, map[string]string{
-						"MovieID": "Movie",
-					}, "MovieID", "select", "", map[string][]string{
-						"options": movieOptions,
-					}),
+					Div(
+						Class("form-group"),
+						Label(
+							For("MovieID"),
+							Text("Movie"),
+							Small(Class("form-text text-muted"), Text("Select movie to search for")),
+						),
+						Select(
+							ID("MovieID"),
+							Name("MovieID"),
+							Class("form-control select2-ajax"),
+							Data("ajax-url", "/api/admin/dropdown/movies/dbmovie_id"),
+							Data("placeholder", "-- Select Movie --"),
+							Data("allow-clear", "true"),
+							Option(Attr("value", ""), Text("-- Select Movie --")),
+						),
+					),
 
-					renderFormGroup("search", map[string]string{
-						"SerieID": "Select series to search for",
-					}, map[string]string{
-						"SerieID": "Series",
-					}, "SerieID", "select", "", map[string][]string{
-						"options": seriesOptions,
-					}),
+					Div(
+						Class("form-group"),
+						Label(
+							For("SerieID"),
+							Text("Series"),
+							Small(Class("form-text text-muted"), Text("Select series to search for")),
+						),
+						Select(
+							ID("SerieID"),
+							Name("SerieID"),
+							Class("form-control select2-ajax"),
+							Data("ajax-url", "/api/admin/dropdown/series/dbserie_id"),
+							Data("placeholder", "-- Select Series --"),
+							Data("allow-clear", "true"),
+							Option(Attr("value", ""), Text("-- Select Series --")),
+						),
+					),
 
 					renderFormGroup("search", map[string]string{
 						"SeasonNum": "Season number (for episode searches and series RSS with specific season)",
@@ -117,13 +131,23 @@ func renderSearchDownloadPage(csrfToken string) Node {
 						"SeasonNum": "Season Number",
 					}, "SeasonNum", "number", "", nil),
 
-					renderFormGroup("search", map[string]string{
-						"EpisodeNum": "Select episode to search for (select series first)",
-					}, map[string]string{
-						"EpisodeNum": "Episode",
-					}, "EpisodeNum", "select", "", map[string][]string{
-						"options": episodeOptions,
-					}),
+					Div(
+						Class("form-group"),
+						Label(
+							For("EpisodeNum"),
+							Text("Episode"),
+							Small(Class("form-text text-muted"), Text("Select episode to search for (select series first)")),
+						),
+						Select(
+							ID("EpisodeNum"),
+							Name("EpisodeNum"),
+							Class("form-control"),
+							Data("placeholder", "-- Select Series First --"),
+							Data("allow-clear", "true"),
+							Data("depends-on", "SerieID"),
+							Option(Attr("value", ""), Text("-- Select Series First --")),
+						),
+					),
 				),
 			),
 
@@ -186,54 +210,69 @@ func renderSearchDownloadPage(csrfToken string) Node {
 		Script(Raw(`
 			document.addEventListener('DOMContentLoaded', function() {
 				const searchTypeSelect = document.querySelector('select[name="search_SearchType"]');
-				const movieFields = document.querySelector('select[name="search_MovieID"]').closest('.form-group');
-				const serieFields = document.querySelector('select[name="search_SerieID"]').closest('.form-group');
-				const seasonFields = document.querySelector('input[name="search_SeasonNum"]').closest('.form-group');
-				const episodeFields = document.querySelector('select[name="search_EpisodeNum"]').closest('.form-group');
-				const serieSelect = document.querySelector('select[name="search_SerieID"]');
-				const episodeSelect = document.querySelector('select[name="search_EpisodeNum"]');
+				const movieSelect = document.querySelector('select[name="MovieID"]');
+				const serieSelect = document.querySelector('select[name="SerieID"]');
+				const seasonInput = document.querySelector('input[name="search_SeasonNum"]');
+				const episodeSelect = document.querySelector('select[name="EpisodeNum"]');
+				
+				const movieFields = movieSelect ? movieSelect.closest('.form-group') : null;
+				const serieFields = serieSelect ? serieSelect.closest('.form-group') : null;
+				const seasonFields = seasonInput ? seasonInput.closest('.form-group') : null;
+				const episodeFields = episodeSelect ? episodeSelect.closest('.form-group') : null;
 				
 				function toggleFields() {
+					if (!searchTypeSelect) return;
+					
 					const searchType = searchTypeSelect.value;
 					
 					// Hide all fields initially
-					movieFields.style.display = 'none';
-					serieFields.style.display = 'none';
-					seasonFields.style.display = 'none';
-					episodeFields.style.display = 'none';
+					if (movieFields) movieFields.style.display = 'none';
+					if (serieFields) serieFields.style.display = 'none';
+					if (seasonFields) seasonFields.style.display = 'none';
+					if (episodeFields) episodeFields.style.display = 'none';
 					
 					// Show relevant fields based on search type
 					if (searchType.includes('movies')) {
-						movieFields.style.display = 'block';
+						if (movieFields) movieFields.style.display = 'block';
 					} else if (searchType.includes('series')) {
-						serieFields.style.display = 'block';
+						if (serieFields) serieFields.style.display = 'block';
 						if (searchType.includes('episode')) {
-							seasonFields.style.display = 'block';
-							episodeFields.style.display = 'block';
+							if (seasonFields) seasonFields.style.display = 'block';
+							if (episodeFields) episodeFields.style.display = 'block';
 						} else if (searchType === 'series_rss') {
 							// Show season field for RSS searches (optional)
-							seasonFields.style.display = 'block';
+							if (seasonFields) seasonFields.style.display = 'block';
 						}
 					}
 				}
 				
 				function loadEpisodes() {
+					if (!serieSelect || !episodeSelect) return;
+					
 					const seriesValue = serieSelect.value;
 					if (!seriesValue || seriesValue === '') {
 						episodeSelect.innerHTML = '<option value="">-- Select Series First --</option>';
 						return;
 					}
 					
-					// Extract series ID from value (format: "ID - Title")
-					const seriesID = seriesValue.split(' - ')[0];
+					// Series ID should be the direct value from Select2 (just the ID)
+					const seriesID = seriesValue;
 					
-					// Make AJAX request to load episodes
-					fetch('/api/admin/dropdown/serie_episodes/episode', {
+					// Get CSRF token
+					const csrfToken = document.querySelector('input[name="csrf_token"]').value;
+					
+					// Make AJAX request to load episodes  
+					const formData = new URLSearchParams();
+					formData.append('search', seriesID);
+					formData.append('page', '1');
+					
+					fetch('/api/admin/dropdown/serie_episodes/serie_id', {
 						method: 'POST',
 						headers: {
 							'Content-Type': 'application/x-www-form-urlencoded',
+							'X-CSRF-Token': csrfToken
 						},
-						body: 'search=' + encodeURIComponent(seriesID)
+						body: formData.toString()
 					})
 					.then(response => response.json())
 					.then(data => {
@@ -241,7 +280,7 @@ func renderSearchDownloadPage(csrfToken string) Node {
 						if (data.results && data.results.length > 0) {
 							data.results.forEach(function(episode) {
 								const option = document.createElement('option');
-								option.value = episode.id + ' - ' + episode.text;
+								option.value = episode.id;
 								option.textContent = episode.text;
 								episodeSelect.appendChild(option);
 							});
@@ -253,9 +292,29 @@ func renderSearchDownloadPage(csrfToken string) Node {
 					});
 				}
 				
-				searchTypeSelect.addEventListener('change', toggleFields);
-				serieSelect.addEventListener('change', loadEpisodes);
+				if (searchTypeSelect) {
+					searchTypeSelect.addEventListener('change', toggleFields);
+				}
+				if (serieSelect) {
+					// Listen for both regular change and Select2 change events
+					serieSelect.addEventListener('change', loadEpisodes);
+					$(serieSelect).on('change', loadEpisodes);
+				}
 				toggleFields(); // Initial setup
+				
+				// Initialize Select2 dropdowns
+				if (window.initSelect2Global) {
+					window.initSelect2Global();
+				}
+				
+				// Initialize basic Select2 for episode dropdown (no AJAX)
+				if (episodeSelect) {
+					$(episodeSelect).select2({
+						placeholder: '-- Select Series First --',
+						allowClear: true,
+						width: '100%'
+					});
+				}
 			});
 		`)),
 	)
@@ -288,11 +347,11 @@ func HandleSearchDownload(c *gin.Context) {
 	titleSearch := c.PostForm("search_TitleSearch") == "on"
 
 	// Get search parameters based on type
-	var movieID, serieID, seasonNum, episodeNum int
+	var movieID, serieID, seasonNum, episodeID int
 	var err error
 
 	if strings.Contains(searchType, "movies") {
-		movieIDStr := c.PostForm("search_MovieID")
+		movieIDStr := c.PostForm("MovieID")
 		if movieIDStr != "" {
 			movieID, err = strconv.Atoi(movieIDStr)
 			if err != nil {
@@ -301,7 +360,7 @@ func HandleSearchDownload(c *gin.Context) {
 			}
 		}
 	} else if strings.Contains(searchType, "series") {
-		serieIDStr := c.PostForm("search_SerieID")
+		serieIDStr := c.PostForm("SerieID")
 		if serieIDStr != "" {
 			serieID, err = strconv.Atoi(serieIDStr)
 			if err != nil {
@@ -317,15 +376,17 @@ func HandleSearchDownload(c *gin.Context) {
 		}
 
 		if strings.Contains(searchType, "episode") {
-			episodeStr := c.PostForm("search_EpisodeNum")
+			episodeStr := c.PostForm("EpisodeNum")
 			if episodeStr != "" {
-				episodeNum, _ = strconv.Atoi(episodeStr)
+				episodeID, _ = strconv.Atoi(episodeStr)
 			}
 		}
 	}
+	var searchResults *searcher.ConfigSearcher
+	defer searchResults.Close()
 
 	// Perform the search based on type
-	results, err := performSearch(searchType, mediaConfig, movieID, serieID, seasonNum, episodeNum, limit, titleSearch)
+	results, err := performSearch(searchResults, searchType, mediaConfig, movieID, serieID, seasonNum, episodeID, limit, titleSearch)
 	if err != nil {
 		c.String(http.StatusOK, renderAlert("Search failed: "+err.Error(), "danger"))
 		return
@@ -384,7 +445,7 @@ func formatFileSize(bytes int64) string {
 }
 
 // performSearch executes real search calls based on the specified type and parameters
-func performSearch(searchType, mediaConfig string, movieID, serieID, seasonNum, episodeNum, limit int, titleSearch bool) (*SearchResults, error) {
+func performSearch(searchResults *searcher.ConfigSearcher, searchType, mediaConfig string, movieID, serieID, seasonNum, episodeID, limit int, titleSearch bool) (*SearchResults, error) {
 	// Get the media configuration
 	var mediaTypeConfig *config.MediaTypeConfig
 
@@ -401,8 +462,6 @@ func performSearch(searchType, mediaConfig string, movieID, serieID, seasonNum, 
 	}
 
 	ctx := context.Background()
-	var searchResults *searcher.ConfigSearcher
-	defer searchResults.Close()
 	var err error
 
 	switch searchType {
@@ -412,6 +471,7 @@ func performSearch(searchType, mediaConfig string, movieID, serieID, seasonNum, 
 		err = searchResults.SearchRSS(ctx, mediaTypeConfig, mediaTypeConfig.CfgQuality, false, false)
 
 	case "movies_search":
+		logger.LogDynamicany1Any("info", "movie search", "id", movieID)
 		if movieID <= 0 {
 			return &SearchResults{Accepted: []SearchResult{}, Denied: []SearchResult{}}, nil
 		}
@@ -422,6 +482,7 @@ func performSearch(searchType, mediaConfig string, movieID, serieID, seasonNum, 
 			movieID,
 		)
 		if movie.ID == 0 {
+			logger.LogDynamicany1Any("error", "movie db search", "id", movieID)
 			return nil, fmt.Errorf("movie with ID %d not found", movieID)
 		}
 
@@ -435,6 +496,7 @@ func performSearch(searchType, mediaConfig string, movieID, serieID, seasonNum, 
 		}
 
 		if listConfig == nil {
+			logger.LogDynamicany1Any("info", "movie list search", "id", movieID)
 			return nil, fmt.Errorf("list configuration for movie not found")
 		}
 
@@ -494,17 +556,29 @@ func performSearch(searchType, mediaConfig string, movieID, serieID, seasonNum, 
 		err = searchResults.MediaSearch(ctx, mediaTypeConfig, serie.ID, titleSearch, false, false)
 
 	case "series_episode_search":
-		if serieID <= 0 || seasonNum <= 0 || episodeNum <= 0 {
+		if episodeID <= 0 {
 			return &SearchResults{Accepted: []SearchResult{}, Denied: []SearchResult{}}, nil
 		}
 
-		// Get series from database
+		// Get episode from database to get series info
+		episode, _ := database.GetSerieEpisodes(
+			database.Querywithargs{
+				Select: "id, serie_id",
+				Where:  "id = ?",
+			},
+			episodeID,
+		)
+		if episode.ID == 0 {
+			return nil, fmt.Errorf("episode with ID %d not found", episodeID)
+		}
+
+		// Get series from database to get list config
 		serie, _ := database.GetSeries(
 			database.Querywithargs{Select: "id, listname", Where: "id = ?"},
-			serieID,
+			episode.SerieID,
 		)
 		if serie.ID == 0 {
-			return nil, fmt.Errorf("series with ID %d not found", serieID)
+			return nil, fmt.Errorf("series with ID %d not found", episode.SerieID)
 		}
 
 		// Find the appropriate list config
@@ -518,18 +592,6 @@ func performSearch(searchType, mediaConfig string, movieID, serieID, seasonNum, 
 
 		if listConfig == nil {
 			return nil, fmt.Errorf("list configuration for series not found")
-		}
-
-		// Get episode from database
-		episode, _ := database.GetSerieEpisodes(
-			database.Querywithargs{
-				Select: "id",
-				Where:  "dbserie_id = ? AND season = ? AND episode = ?",
-			},
-			serie.ID, seasonNum, episodeNum,
-		)
-		if episode.ID == 0 {
-			return nil, fmt.Errorf("episode S%02dE%02d not found for series ID %d", seasonNum, episodeNum, serieID)
 		}
 
 		searchResults = searcher.NewSearcher(mediaTypeConfig, listConfig.CfgQuality, "search", &episode.ID)
@@ -809,75 +871,3 @@ func renderResultsTable(results []SearchResult, tableType string, showDownload b
 	)
 }
 
-// getMovieOptions retrieves movie options for dropdown list
-func getMovieOptions() []string {
-	options := []string{"-- Select Movie --"}
-	
-	// Query to get movies with their titles
-	query := `SELECT m.id, COALESCE(dm.title, 'Unknown Title') as title 
-	         FROM movies m 
-	         LEFT JOIN dbmovies dm ON m.dbmovie_id = dm.id 
-	         ORDER BY dm.title 
-	         LIMIT 1000`
-	
-	results := database.GetrowsN[database.DbstaticOneStringOneUInt](false, 1000, query)
-	
-	for _, result := range results {
-		// Format as "ID - Title"
-		option := fmt.Sprintf("%d - %s", result.Num, result.Str)
-		options = append(options, option)
-	}
-	
-	return options
-}
-
-// getSeriesOptions retrieves series options for dropdown list
-func getSeriesOptions() []string {
-	options := []string{"-- Select Series --"}
-	
-	// Query to get series with their titles
-	query := `SELECT s.id, COALESCE(ds.seriename, 'Unknown Series') as title 
-	         FROM series s 
-	         LEFT JOIN dbseries ds ON s.dbserie_id = ds.id 
-	         ORDER BY ds.seriename 
-	         LIMIT 1000`
-	
-	results := database.GetrowsN[database.DbstaticOneStringOneUInt](false, 1000, query)
-	
-	for _, result := range results {
-		// Format as "ID - Title"
-		option := fmt.Sprintf("%d - %s", result.Num, result.Str)
-		options = append(options, option)
-	}
-	
-	return options
-}
-
-// getEpisodeOptions retrieves episode options for a specific series
-func getEpisodeOptions(seriesID int) []string {
-	options := []string{"-- Select Episode --"}
-	
-	if seriesID == 0 {
-		return []string{"-- Select Series First --"}
-	}
-	
-	// Query to get episodes for the specified series
-	query := `SELECT se.id, 
-	         'S' || printf('%02d', se.season) || 'E' || printf('%02d', se.episode) || ' - ' || 
-	         COALESCE(dse.title, 'Episode ' || se.episode) as episode_info
-	         FROM serie_episodes se 
-	         LEFT JOIN dbserie_episodes dse ON se.dbserie_episode_id = dse.id 
-	         WHERE se.serie_id = ? 
-	         ORDER BY se.season, se.episode 
-	         LIMIT 500`
-	
-	results := database.GetrowsN[database.DbstaticOneStringOneUInt](false, 500, query, seriesID)
-	
-	for _, result := range results {
-		// Format as "ID - Episode Info"
-		option := fmt.Sprintf("%d - %s", result.Num, result.Str)
-		options = append(options, option)
-	}
-	
-	return options
-}

@@ -39,6 +39,7 @@ func AddGeneralRoutes(routerapi *gin.RouterGroup) {
 		routerapi.GET("/debugstats", apiDebugStats)
 		routerapi.GET("/queue", apiQueueList)
 		routerapi.GET("/queue/history", apiQueueListStarted)
+		routerapi.DELETE("/queue/cancel/:id", apiQueueCancel)
 		routerapi.GET("/fillimdb", apiFillImdb)
 		routerapi.GET("/scheduler/stop", apiSchedulerStop)
 		routerapi.GET("/scheduler/start", apiSchedulerStart)
@@ -1447,4 +1448,48 @@ func apiStructure(ctx *gin.Context) {
 	)
 
 	ctx.JSON(http.StatusOK, gin.H{})
+}
+
+// @Summary      Cancel Queue Job
+// @Description  Cancel a running or pending job in the queue
+// @Tags         queue
+// @Param        id     path     string    true  "Queue job ID"
+// @Param        apikey query    string    true  "apikey"
+// @Success      200    {object} gin.H{"success": bool}
+// @Failure      400    {object} Jsonerror
+// @Failure      401    {object} Jsonerror
+// @Failure      404    {object} Jsonerror
+// @Router       /api/queue/cancel/{id} [delete]
+func apiQueueCancel(ctx *gin.Context) {
+	idStr := ctx.Param("id")
+	if idStr == "" {
+		sendBadRequest(ctx, "Missing queue ID")
+		return
+	}
+
+	id, err := strconv.ParseUint(idStr, 10, 32)
+	if err != nil {
+		sendBadRequest(ctx, "Invalid queue ID format")
+		return
+	}
+
+	queueID := uint32(id)
+
+	// Check if the job exists in the queue
+	queues := worker.GetQueues()
+	if _, exists := queues[queueID]; !exists {
+		ctx.JSON(http.StatusNotFound, gin.H{
+			"success": false,
+			"error":   "Queue job not found",
+		})
+		return
+	}
+
+	// Cancel the job by removing it from the queue
+	worker.RemoveQueueEntry(queueID)
+
+	sendJSONResponse(ctx, http.StatusOK, gin.H{
+		"success": true,
+		"message": "Queue job canceled successfully",
+	})
 }

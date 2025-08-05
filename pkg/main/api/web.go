@@ -92,17 +92,6 @@ func sendDataTablesResponse(ctx *gin.Context, total, final int, data any) {
 	})
 }
 
-func sendSuccessResponse(ctx *gin.Context, message string, data any) {
-	response := gin.H{
-		"success": true,
-		"message": message,
-	}
-	if data != nil {
-		response["data"] = data
-	}
-	ctx.JSON(http.StatusOK, response)
-}
-
 func sendErrorResponse(ctx *gin.Context, statusCode int, message string) {
 	ctx.JSON(statusCode, gin.H{
 		"success": false,
@@ -396,79 +385,92 @@ func buildCustomFilters(tableName string, ctx *gin.Context) (string, []any) {
 
 	case "movies":
 		if title := getParamValue(ctx, "filter-title"); title != "" {
-			conditions = append(conditions, "dbmovies.title LIKE ?")
+			conditions = append(conditions, "dm.title LIKE ?")
 			args = append(args, "%"+title+"%")
 		}
 		if year := getParamValue(ctx, "filter-year"); year != "" {
-			conditions = append(conditions, "dbmovies.year = ?")
+			conditions = append(conditions, "dm.year = ?")
 			args = append(args, year)
 		}
 		if imdbID := getParamValue(ctx, "filter-imdb_id"); imdbID != "" {
-			conditions = append(conditions, "dbmovies.imdb_id LIKE ?")
+			conditions = append(conditions, "dm.imdb_id LIKE ?")
 			args = append(args, "%"+imdbID+"%")
 		}
 		if listname := getParamValue(ctx, "filter-listname"); listname != "" {
-			conditions = append(conditions, "movies.listname = ?")
+			conditions = append(conditions, "m.listname = ?")
 			args = append(args, listname)
 		}
 		if qualityReached := getParamValue(ctx, "filter-quality_reached"); qualityReached != "" {
-			conditions = append(conditions, "movies.quality_reached = ?")
+			conditions = append(conditions, "m.quality_reached = ?")
 			args = append(args, qualityReached)
 		}
 		if missing := getParamValue(ctx, "filter-missing"); missing != "" {
-			conditions = append(conditions, "movies.missing = ?")
+			conditions = append(conditions, "m.missing = ?")
 			args = append(args, missing)
 		}
 		if quality := getParamValue(ctx, "filter-quality_profile"); quality != "" {
-			conditions = append(conditions, "movies.quality_profile = ?")
+			conditions = append(conditions, "m.quality_profile = ?")
 			args = append(args, quality)
 		}
 		if rootpath := getParamValue(ctx, "filter-rootpath"); rootpath != "" {
-			conditions = append(conditions, "movies.rootpath LIKE ?")
+			conditions = append(conditions, "m.rootpath LIKE ?")
 			args = append(args, "%"+rootpath+"%")
 		}
 
 	case "series":
 		if seriename := getParamValue(ctx, "filter-seriename"); seriename != "" {
-			conditions = append(conditions, "dbseries.seriename LIKE ?")
+			conditions = append(conditions, "ds.seriename LIKE ?")
 			args = append(args, "%"+seriename+"%")
 		}
 		if listname := getParamValue(ctx, "filter-listname"); listname != "" {
-			conditions = append(conditions, "series.listname = ?")
+			conditions = append(conditions, "s.listname = ?")
 			args = append(args, listname)
 		}
 		if rootpath := getParamValue(ctx, "filter-rootpath"); rootpath != "" {
-			conditions = append(conditions, "series.rootpath LIKE ?")
+			conditions = append(conditions, "s.rootpath LIKE ?")
 			args = append(args, "%"+rootpath+"%")
 		}
 		if dontUpgrade := getParamValue(ctx, "filter-dont_upgrade"); dontUpgrade != "" {
-			conditions = append(conditions, "series.dont_upgrade = ?")
+			conditions = append(conditions, "s.dont_upgrade = ?")
 			args = append(args, dontUpgrade)
 		}
 		if dontSearch := getParamValue(ctx, "filter-dont_search"); dontSearch != "" {
-			conditions = append(conditions, "series.dont_search = ?")
+			conditions = append(conditions, "s.dont_search = ?")
 			args = append(args, dontSearch)
 		}
 		if searchSpecials := getParamValue(ctx, "filter-search_specials"); searchSpecials != "" {
-			conditions = append(conditions, "series.search_specials = ?")
+			conditions = append(conditions, "s.search_specials = ?")
 			args = append(args, searchSpecials)
 		}
 		if ignoreRuntime := getParamValue(ctx, "filter-ignore_runtime"); ignoreRuntime != "" {
-			conditions = append(conditions, "series.ignore_runtime = ?")
+			conditions = append(conditions, "s.ignore_runtime = ?")
 			args = append(args, ignoreRuntime)
 		}
 
-	case "movie_files", "serie_episode_files":
+	case "movie_files":
 		if filename := getParamValue(ctx, "filter-filename"); filename != "" {
-			conditions = append(conditions, "filename LIKE ?")
+			conditions = append(conditions, "mf.filename LIKE ?")
 			args = append(args, "%"+filename+"%")
 		}
 		if quality := getParamValue(ctx, "filter-quality_profile"); quality != "" {
-			conditions = append(conditions, "quality_profile LIKE ?")
+			conditions = append(conditions, "mf.quality_profile LIKE ?")
 			args = append(args, "%"+quality+"%")
 		}
 		if resolution := getParamValue(ctx, "filter-resolution"); resolution != "" {
-			conditions = append(conditions, "resolution LIKE ?")
+			conditions = append(conditions, "mf.resolution LIKE ?")
+			args = append(args, "%"+resolution+"%")
+		}
+	case "serie_episode_files":
+		if filename := getParamValue(ctx, "filter-filename"); filename != "" {
+			conditions = append(conditions, "sef.filename LIKE ?")
+			args = append(args, "%"+filename+"%")
+		}
+		if quality := getParamValue(ctx, "filter-quality_profile"); quality != "" {
+			conditions = append(conditions, "sef.quality_profile LIKE ?")
+			args = append(args, "%"+quality+"%")
+		}
+		if resolution := getParamValue(ctx, "filter-resolution"); resolution != "" {
+			conditions = append(conditions, "sef.resolution LIKE ?")
 			args = append(args, "%"+resolution+"%")
 		}
 
@@ -3439,9 +3441,7 @@ func adminJavaScript() gomponents.Node {
 				}, 100);
 			});
 		`
-	return html.Script(html.Type("text/javascript"),
-		gomponents.Raw(jsContent),
-	)
+	return html.Script(gomponents.Raw(jsContent))
 }
 
 // apiAdminDropdownData provides AJAX endpoint for dynamic dropdown data loading
@@ -3519,8 +3519,16 @@ func apiAdminDropdownData(ctx *gin.Context) {
 			searchFilter = " WHERE ds.seriename LIKE ?"
 			searchArgs = append(searchArgs, "%"+search+"%")
 		case "serie_episodes":
-			searchFilter = " WHERE dse.title LIKE ?"
-			searchArgs = append(searchArgs, "%"+search+"%")
+			// Check if search is a series ID (numeric) or a text search
+			if seriesID, err := strconv.Atoi(search); err == nil && seriesID > 0 {
+				// Search is a series ID - filter episodes by this series
+				searchFilter = " WHERE s.id = ?"
+				searchArgs = append(searchArgs, seriesID)
+			} else if search != "" {
+				// Search is text - filter by episode title
+				searchFilter = " WHERE dse.title LIKE ?"
+				searchArgs = append(searchArgs, "%"+search+"%")
+			}
 		case "qualities":
 			searchFilter = " WHERE name LIKE ?"
 			searchArgs = append(searchArgs, "%"+search+"%")
@@ -3597,7 +3605,7 @@ func apiAdminDropdownData(ctx *gin.Context) {
 			options = append(options, createSelect2Option(serie.Num, serie.Str))
 		}
 	case "serie_episodes":
-		query := fmt.Sprintf("SELECT dse.identifier || ' - ' || dse.title || ' - ' || s.listname, se.id FROM serie_episodes se LEFT JOIN dbserie_episodes dse ON se.dbserie_episode_id = dse.id LEFT JOIN series s ON se.serie_id = s.id%s ORDER BY s.listname, dse.identifier LIMIT ? OFFSET ?", searchFilter)
+		query := fmt.Sprintf("SELECT COALESCE(ds.seriename, 'Unknown Series') || ' - ' || COALESCE(CASE WHEN dse.identifier IS NOT NULL AND dse.identifier != 'S00E00' THEN dse.identifier ELSE 'ID:' || se.id END, 'Unknown') || ' - ' || COALESCE(CASE WHEN dse.title IS NOT NULL AND TRIM(dse.title) != '' THEN dse.title ELSE 'Episode ' || COALESCE(dse.episode, 'Unknown') END, 'Unknown Episode') || ' (' || s.listname || ')', se.id FROM serie_episodes se LEFT JOIN dbserie_episodes dse ON se.dbserie_episode_id = dse.id LEFT JOIN series s ON se.serie_id = s.id LEFT JOIN dbseries ds ON s.dbserie_id = ds.id%s ORDER BY ds.seriename, s.listname, dse.season, dse.episode LIMIT ? OFFSET ?", searchFilter)
 		episodes := database.GetrowsN[database.DbstaticOneStringOneInt](false, uint(pageSize+1), query, searchArgs...)
 		hasMore = len(episodes) > pageSize
 		if hasMore {
@@ -3713,7 +3721,7 @@ func getDropdownOptionByID(tableName, fieldName string, id int) *map[string]any 
 			return createSelect2OptionPtr(result[0].Num, result[0].Str)
 		}
 	case "serie_episodes":
-		result := database.GetrowsN[database.DbstaticOneStringOneUInt](false, 1, "SELECT dse.identifier || ' - ' || dse.title || ' - ' || s.listname, se.id FROM serie_episodes se LEFT JOIN dbserie_episodes dse ON se.dbserie_episode_id = dse.id LEFT JOIN series s ON se.serie_id = s.id WHERE se.id = ?", id)
+		result := database.GetrowsN[database.DbstaticOneStringOneUInt](false, 1, "SELECT COALESCE(ds.seriename, 'Unknown Series') || ' - ' || COALESCE(CASE WHEN dse.identifier IS NOT NULL AND dse.identifier != 'S00E00' THEN dse.identifier ELSE 'ID:' || se.id END, 'Unknown') || ' - ' || COALESCE(CASE WHEN dse.title IS NOT NULL AND TRIM(dse.title) != '' THEN dse.title ELSE 'Episode ' || COALESCE(dse.episode, 'Unknown') END, 'Unknown Episode') || ' (' || s.listname || ')', se.id FROM serie_episodes se LEFT JOIN dbserie_episodes dse ON se.dbserie_episode_id = dse.id LEFT JOIN series s ON se.serie_id = s.id LEFT JOIN dbseries ds ON s.dbserie_id = ds.id WHERE se.id = ?", id)
 		if len(result) > 0 {
 			return createSelect2OptionPtr(result[0].Num, result[0].Str)
 		}
@@ -3771,12 +3779,20 @@ func renderQueueGrid() gomponents.Node {
 			html.Td(gomponents.Text(fmt.Sprintf("%v", item["job"]))),
 			html.Td(gomponents.Text(fmt.Sprintf("%v", item["added"]))),
 			html.Td(gomponents.Text(fmt.Sprintf("%v", item["started"]))),
+			html.Td(
+				html.Button(
+					html.Class("btn btn-danger btn-sm cancel-queue-btn"),
+					html.Type("button"),
+					html.Data("queue-id", fmt.Sprintf("%v", item["id"])),
+					gomponents.Text("Cancel"),
+				),
+			),
 		))
 	}
 	if len(rows) == 0 {
 		rows = append(rows, html.Tr(
 			html.Td(
-				html.ColSpan("5"),
+				html.ColSpan("6"),
 				html.Class("text-center text-muted"),
 				gomponents.Text("No queue items found"),
 			),
@@ -3807,6 +3823,7 @@ func renderQueueGrid() gomponents.Node {
 										html.Th(gomponents.Text("Job")),
 										html.Th(gomponents.Text("Added")),
 										html.Th(gomponents.Text("Started")),
+										html.Th(gomponents.Text("Actions")),
 									),
 								),
 								html.TBody(
@@ -3824,6 +3841,35 @@ func renderQueueGrid() gomponents.Node {
 				setInterval(function() {
 					window.location.reload();
 				}, 10000);
+				
+				// Handle cancel button clicks
+				document.addEventListener('click', function(e) {
+					if (e.target.classList.contains('cancel-queue-btn')) {
+						const queueId = e.target.getAttribute('data-queue-id');
+						if (confirm('Are you sure you want to cancel this job?')) {
+							fetch('/api/queue/cancel/' + queueId, {
+								method: 'DELETE',
+								headers: {
+									'Content-Type': 'application/json',
+									'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
+								}
+							})
+							.then(response => response.json())
+							.then(data => {
+								if (data.success) {
+									// Refresh the page to show updated queue
+									window.location.reload();
+								} else {
+									alert('Failed to cancel job: ' + (data.error || 'Unknown error'));
+								}
+							})
+							.catch(error => {
+								console.error('Error:', error);
+								alert('Error canceling job: ' + error.message);
+							});
+						}
+					}
+				});
 			`),
 		),
 	)

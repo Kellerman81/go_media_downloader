@@ -128,10 +128,6 @@ func sendForbidden(ctx *gin.Context, message string) {
 	sendJSONError(ctx, http.StatusForbidden, message)
 }
 
-// sendInternalError sends a standardized 500 response
-func sendInternalError(ctx *gin.Context, message string) {
-	sendJSONError(ctx, http.StatusInternalServerError, message)
-}
 
 // handleDBError handles database operation errors consistently
 func handleDBError(ctx *gin.Context, err error, successMessage string) {
@@ -142,14 +138,6 @@ func handleDBError(ctx *gin.Context, err error, successMessage string) {
 	}
 }
 
-// handleDBResultWithRows handles database operations that return affected rows
-func handleDBResultWithRows(ctx *gin.Context, result any, err error) {
-	if err != nil {
-		sendForbidden(ctx, err.Error())
-	} else {
-		sendJSONResponse(ctx, http.StatusOK, result)
-	}
-}
 
 // validateJobParam validates if a job parameter is in the allowed list
 func validateJobParam(job string, allowedJobs string) bool {
