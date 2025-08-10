@@ -19,9 +19,24 @@ import (
 // renderMovieMetadataPage renders a page for testing movie metadata lookup
 func renderMovieMetadataPage(csrfToken string) Node {
 	return Div(
-		Class("config-section"),
-		H3(Text("Media Metadata Lookup")),
-		P(Text("Lookup metadata from various providers (IMDB, TMDB, OMDB, Trakt, TVDB). Support for movies, TV series, and episodes with comprehensive information retrieval.")),
+		Class("config-section-enhanced"),
+		
+		// Enhanced page header with gradient background
+		Div(
+			Class("page-header-enhanced"),
+			Div(
+				Class("header-content"),
+				Div(
+					Class("header-icon-wrapper"),
+					I(Class("fa-solid fa-info-circle header-icon")),
+				),
+				Div(
+					Class("header-text"),
+					H2(Class("header-title"), Text("Media Metadata Lookup")),
+					P(Class("header-subtitle"), Text("Lookup metadata from various providers (IMDB, TMDB, OMDB, Trakt, TVDB). Support for movies, TV series, and episodes with comprehensive information retrieval.")),
+				),
+			),
+		),
 
 		Form(
 			Class("config-form"),
@@ -31,7 +46,7 @@ func renderMovieMetadataPage(csrfToken string) Node {
 				Class("row"),
 				Div(
 					Class("col-md-6"),
-					H5(Text("Media Type & Identification")),
+					H5(Class("form-section-title"), Text("Media Type & Identification")),
 
 					renderFormGroup("metadata", map[string]string{
 						"MediaType": "Select the type of media to lookup",
@@ -60,7 +75,7 @@ func renderMovieMetadataPage(csrfToken string) Node {
 
 				Div(
 					Class("col-md-6"),
-					H5(Text("Additional Parameters")),
+					H5(Class("form-section-title"), Text("Additional Parameters")),
 
 					Div(
 						ID("episodeFields"),
@@ -124,51 +139,60 @@ func renderMovieMetadataPage(csrfToken string) Node {
 
 		// Instructions
 		Div(
-			Class("mt-4 alert alert-info"),
-			H5(Text("Metadata Lookup Instructions:")),
-			Ul(
-				Li(Strong(Text("Movies: ")), Text("Use IMDB ID (e.g., 'tt0133093' for The Matrix)")),
-				Li(Strong(Text("Series: ")), Text("Use IMDB ID or TVDB ID (e.g., TVDB '81189' for Breaking Bad)")),
-				Li(Strong(Text("Episodes: ")), Text("Use IMDB ID or TVDB ID plus season and episode numbers")),
+			Class("mt-4 card border-0 shadow-sm border-info mb-4"),
+			Div(
+				Class("card-header border-0"),
+				Style("background: linear-gradient(135deg, #d1ecf1 0%, #bee5eb 100%); border-radius: 15px 15px 0 0;"),
+				Div(
+					Class("d-flex align-items-center"),
+					Span(Class("badge bg-info me-3"), I(Class("fas fa-search me-1")), Text("Instructions")),
+					H5(Class("card-title mb-0 text-info fw-bold"), Text("Metadata Lookup Instructions")),
+				),
 			),
-			P(
-				Class("mt-2"),
-				Strong(Text("Providers: ")),
-				Text("Different providers offer different information. IMDB and TMDB are best for movies, TVDB is essential for TV series."),
-			),
-			P(
-				Class("mt-2"),
-				Strong(Text("Update Database: ")),
-				Text("Check this option to save retrieved metadata to your local database."),
+			Div(
+				Class("card-body"),
+				P(Class("card-text text-muted mb-3"), Text("Follow these guidelines to lookup metadata for your media")),
+				Ul(
+					Class("list-unstyled mb-3"),
+					Li(Class("mb-2"),
+						Span(Class("badge bg-success me-2"), I(Class("fas fa-film me-1")), Text("Movies")),
+						Text("Use IMDB ID (e.g., 'tt0133093' for The Matrix)"),
+					),
+					Li(Class("mb-2"),
+						Span(Class("badge bg-info me-2"), I(Class("fas fa-tv me-1")), Text("Series")),
+						Text("Use IMDB ID or TVDB ID (e.g., TVDB '81189' for Breaking Bad)"),
+					),
+					Li(Class("mb-2"),
+						Span(Class("badge bg-warning me-2"), I(Class("fas fa-play-circle me-1")), Text("Episodes")),
+						Text("Use IMDB ID or TVDB ID plus season and episode numbers"),
+					),
+				),
+
+				Div(
+					Class("alert alert-light border-0 mt-3 mb-3"),
+					Style("background-color: rgba(13, 110, 253, 0.1); border-radius: 8px; padding: 0.75rem 1rem;"),
+					Div(
+						Class("d-flex align-items-start"),
+						I(Class("fas fa-database me-2 mt-1"), Style("color: #0d6efd; font-size: 0.9rem;")),
+						Div(
+							Strong(Style("color: #0d6efd;"), Text("Providers: ")),
+							Text("Different providers offer different information. IMDB and TMDB are best for movies, TVDB is essential for TV series."),
+						),
+					),
+				),
+
+				P(
+					Class("mb-0"),
+					Strong(Text("Update Database: ")),
+					Text("Check this option to save retrieved metadata to your local database."),
+				),
 			),
 		),
 
 		// JavaScript for dynamic field visibility
+		// Simplified JavaScript for Metadata - CSS classes handle field visibility via HTMX
 		Script(Raw(`
-			document.addEventListener('DOMContentLoaded', function() {
-				const mediaTypeSelect = document.querySelector('select[name="metadata_MediaType"]');
-				const tvdbFields = document.getElementById('tvdbFields');
-				const episodeFields = document.getElementById('episodeFields');
-				
-				function toggleFields() {
-					const mediaType = mediaTypeSelect.value;
-					
-					// Hide all conditional fields initially
-					tvdbFields.style.display = 'none';
-					episodeFields.style.display = 'none';
-					
-					// Show relevant fields based on media type
-					if (mediaType === 'series') {
-						tvdbFields.style.display = 'block';
-					} else if (mediaType === 'episode') {
-						tvdbFields.style.display = 'block';
-						episodeFields.style.display = 'block';
-					}
-				}
-				
-				mediaTypeSelect.addEventListener('change', toggleFields);
-				toggleFields(); // Initial setup
-			});
+			// No JavaScript needed - HTMX and CSS handle field visibility
 		`)),
 	)
 }
@@ -545,9 +569,20 @@ func renderMetadataResults(result map[string]any) string {
 	default:
 		return renderComponentToString(
 			Div(
-				Class("alert alert-danger"),
-				H5(Text("Unknown Media Type")),
-				P(Text("Unable to render metadata for unknown media type: "+mediaType)),
+				Class("card border-0 shadow-sm border-danger mb-4"),
+				Div(
+					Class("card-header border-0"),
+					Style("background: linear-gradient(135deg, #f8d7da 0%, #f5c6cb 100%); border-radius: 15px 15px 0 0;"),
+					Div(
+						Class("d-flex align-items-center"),
+						Span(Class("badge bg-danger me-3"), I(Class("fas fa-exclamation-triangle me-1")), Text("Error")),
+						H5(Class("card-title mb-0 text-danger fw-bold"), Text("Unknown Media Type")),
+					),
+				),
+				Div(
+					Class("card-body"),
+					P(Class("card-text text-muted mb-0"), Text("Unable to render metadata for unknown media type: "+mediaType)),
+				),
 			),
 		)
 	}
@@ -677,11 +712,27 @@ func renderMovieMetadataDisplay(result map[string]any) string {
 
 	return renderComponentToString(
 		Div(
-			Class("alert alert-success"),
-			H5(Text("Movie Metadata Retrieved")),
-			Table(
-				Class("table table-striped table-sm"),
-				TBody(Group(resultRows)),
+			Class("card border-0 shadow-sm border-success mb-4"),
+			Div(
+				Class("card-header border-0"),
+				Style("background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%); border-radius: 15px 15px 0 0;"),
+				Div(
+					Class("d-flex align-items-center justify-content-between"),
+					Div(
+						Class("d-flex align-items-center"),
+						Span(Class("badge bg-success me-3"), I(Class("fas fa-check-circle me-1")), Text("Retrieved")),
+						H5(Class("card-title mb-0 text-success fw-bold"), Text("Movie Metadata Retrieved")),
+					),
+					Span(Class("badge bg-success"), I(Class("fas fa-film me-1")), Text("Movie")),
+				),
+			),
+			Div(
+				Class("card-body p-0"),
+				Table(
+					Class("table table-hover mb-0"),
+					Style("background: transparent;"),
+					TBody(Group(resultRows)),
+				),
 			),
 		),
 	)
@@ -745,11 +796,27 @@ func renderSeriesMetadataDisplay(result map[string]any) string {
 
 	return renderComponentToString(
 		Div(
-			Class("alert alert-success"),
-			H5(Text("Series Metadata Retrieved")),
-			Table(
-				Class("table table-striped table-sm"),
-				TBody(Group(resultRows)),
+			Class("card border-0 shadow-sm border-success mb-4"),
+			Div(
+				Class("card-header border-0"),
+				Style("background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%); border-radius: 15px 15px 0 0;"),
+				Div(
+					Class("d-flex align-items-center justify-content-between"),
+					Div(
+						Class("d-flex align-items-center"),
+						Span(Class("badge bg-success me-3"), I(Class("fas fa-check-circle me-1")), Text("Retrieved")),
+						H5(Class("card-title mb-0 text-success fw-bold"), Text("Series Metadata Retrieved")),
+					),
+					Span(Class("badge bg-success"), I(Class("fas fa-tv me-1")), Text("Series")),
+				),
+			),
+			Div(
+				Class("card-body p-0"),
+				Table(
+					Class("table table-hover mb-0"),
+					Style("background: transparent;"),
+					TBody(Group(resultRows)),
+				),
 			),
 		),
 	)
@@ -797,11 +864,27 @@ func renderEpisodeMetadataDisplay(result map[string]any) string {
 
 	return renderComponentToString(
 		Div(
-			Class("alert alert-success"),
-			H5(Text("Episode Metadata Retrieved")),
-			Table(
-				Class("table table-striped table-sm"),
-				TBody(Group(resultRows)),
+			Class("card border-0 shadow-sm border-success mb-4"),
+			Div(
+				Class("card-header border-0"),
+				Style("background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%); border-radius: 15px 15px 0 0;"),
+				Div(
+					Class("d-flex align-items-center justify-content-between"),
+					Div(
+						Class("d-flex align-items-center"),
+						Span(Class("badge bg-success me-3"), I(Class("fas fa-check-circle me-1")), Text("Retrieved")),
+						H5(Class("card-title mb-0 text-success fw-bold"), Text("Episode Metadata Retrieved")),
+					),
+					Span(Class("badge bg-success"), I(Class("fas fa-play-circle me-1")), Text("Episode")),
+				),
+			),
+			Div(
+				Class("card-body p-0"),
+				Table(
+					Class("table table-hover mb-0"),
+					Style("background: transparent;"),
+					TBody(Group(resultRows)),
+				),
 			),
 		),
 	)

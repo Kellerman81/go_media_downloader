@@ -80,9 +80,24 @@ func renderFolderStructurePage(csrfToken string) Node {
 	}
 
 	return Div(
-		Class("config-section"),
-		H3(Text("Folder Structure Organizer")),
-		P(Text("Organize and structure a single folder using your media configuration templates. This tool will scan the folder, parse media files, and organize them according to your naming conventions.")),
+		Class("config-section-enhanced"),
+		
+		// Enhanced page header with gradient background
+		Div(
+			Class("page-header-enhanced"),
+			Div(
+				Class("header-content"),
+				Div(
+					Class("header-icon-wrapper"),
+					I(Class("fa-solid fa-folder header-icon")),
+				),
+				Div(
+					Class("header-text"),
+					H2(Class("header-title"), Text("Folder Structure Organizer")),
+					P(Class("header-subtitle"), Text("Organize and structure a single folder using your media configuration templates. This tool will scan the folder, parse media files, and organize them according to your naming conventions.")),
+				),
+			),
+		),
 
 		Form(
 			Class("config-form"),
@@ -92,7 +107,7 @@ func renderFolderStructurePage(csrfToken string) Node {
 				Class("row"),
 				Div(
 					Class("col-md-6"),
-					H5(Text("Folder & Configuration")),
+					H5(Class("form-section-title"), Text("Folder & Configuration")),
 
 					renderFormGroup("structure", map[string]string{
 						"FolderPath": "Path to the folder to organize (must exist)",
@@ -119,7 +134,7 @@ func renderFolderStructurePage(csrfToken string) Node {
 
 				Div(
 					Class("col-md-6"),
-					H5(Text("Organization Options")),
+					H5(Class("form-section-title"), Text("Organization Options")),
 
 					renderFormGroup("structure", map[string]string{
 						"DefaultTemplate": "Default template for organization",
@@ -184,25 +199,66 @@ func renderFolderStructurePage(csrfToken string) Node {
 
 		// Instructions
 		Div(
-			Class("mt-4 alert alert-info"),
-			H5(Text("Folder Organization Information:")),
-			Ul(
-				Li(Strong(Text("Folder Path: ")), Text("Full path to the folder containing media files to organize")),
-				Li(Strong(Text("Media Config: ")), Text("Configuration containing naming templates and organization rules")),
-				Li(Strong(Text("Templates: ")), Text("Templates define how files should be named and organized")),
-				Li(Strong(Text("Check Runtime: ")), Text("Validates media file runtime against expected values")),
-				Li(Strong(Text("Delete Wrong Language: ")), Text("Removes files that don't match language preferences")),
-				Li(Strong(Text("Manual ID: ")), Text("Override automatic ID detection with a specific value")),
+			Class("mt-4 card border-0 shadow-sm border-info mb-4"),
+			Div(
+				Class("card-header border-0"),
+				Style("background: linear-gradient(135deg, #d1ecf1 0%, #bee5eb 100%); border-radius: 15px 15px 0 0;"),
+				Div(
+					Class("d-flex align-items-center"),
+					Span(Class("badge bg-info me-3"), I(Class("fas fa-folder-open me-1")), Text("Organization")),
+					H5(Class("card-title mb-0 text-info fw-bold"), Text("Folder Organization Information")),
+				),
 			),
-			P(
-				Class("mt-2"),
-				Strong(Text("Dry Run: ")),
-				Text("When enabled, shows what changes would be made without actually moving or renaming files. Recommended for testing before actual organization."),
+			Div(
+				Class("card-body"),
+				P(Class("card-text text-muted mb-3"), Text("Configure your folder organization settings and understand the options below:")),
+				Ul(
+					Class("list-unstyled mb-3"),
+					Li(Class("mb-2 d-flex align-items-start"),
+						I(Class("fas fa-folder me-2 mt-1 text-success")),
+						Div(Strong(Text("Folder Path: ")), Text("Full path to the folder containing media files to organize"))),
+					Li(Class("mb-2 d-flex align-items-start"),
+						I(Class("fas fa-cogs me-2 mt-1 text-info")),
+						Div(Strong(Text("Media Config: ")), Text("Configuration containing naming templates and organization rules"))),
+					Li(Class("mb-2 d-flex align-items-start"),
+						I(Class("fas fa-code me-2 mt-1 text-primary")),
+						Div(Strong(Text("Templates: ")), Text("Templates define how files should be named and organized"))),
+					Li(Class("mb-2 d-flex align-items-start"),
+						I(Class("fas fa-clock me-2 mt-1 text-warning")),
+						Div(Strong(Text("Check Runtime: ")), Text("Validates media file runtime against expected values"))),
+					Li(Class("mb-2 d-flex align-items-start"),
+						I(Class("fas fa-language me-2 mt-1 text-warning")),
+						Div(Strong(Text("Delete Wrong Language: ")), Text("Removes files that don't match language preferences"))),
+					Li(Class("mb-2 d-flex align-items-start"),
+						I(Class("fas fa-hashtag me-2 mt-1 text-primary")),
+						Div(Strong(Text("Manual ID: ")), Text("Override automatic ID detection with a specific value"))),
+				),
+
+				Div(
+					Class("alert alert-light border-0 mt-3 mb-0"),
+					Style("background-color: rgba(13, 110, 253, 0.1); border-radius: 8px; padding: 0.75rem 1rem;"),
+					Div(
+						Class("d-flex align-items-start"),
+						I(Class("fas fa-eye me-2 mt-1"), Style("color: #0d6efd; font-size: 0.9rem;")),
+						Div(
+							Strong(Style("color: #0d6efd;"), Text("Dry Run: ")),
+							Text("When enabled, shows what changes would be made without actually moving or renaming files. Recommended for testing before actual organization."),
+						),
+					),
+				),
 			),
-			P(
-				Class("mt-2"),
-				Strong(Text("Warning: ")),
-				Text("Organization will move and rename files according to your templates. Always test with dry run first!"),
+		),
+
+		Div(
+			Class("alert alert-warning border-0 mb-0"),
+			Style("background-color: rgba(255, 193, 7, 0.1); border-radius: 8px; padding: 0.75rem 1rem; border-left: 4px solid #ffc107;"),
+			Div(
+				Class("d-flex align-items-start"),
+				I(Class("fas fa-exclamation-triangle me-2 mt-1"), Style("color: #ffc107; font-size: 0.9rem;")),
+				Div(
+					Strong(Style("color: #856404;"), Text("Warning: ")),
+					Text("Organization will move and rename files according to your templates. Always test with dry run first!"),
+				),
 			),
 		),
 	)
@@ -245,7 +301,7 @@ func previewFolderOrganization(ctx context.Context, folderPath string) (*FolderO
 		// For preview, we'll simulate the organization process
 		// In a real implementation, this would use the actual parser and structure logic
 		mediaTitle := "Example Media"
-		mediaYear := "2023"
+		mediaYear := fmt.Sprintf("%d", time.Now().Year())
 		quality := "1080p"
 		resolution := "HD"
 
@@ -463,9 +519,20 @@ func renderFolderStructureResults(result map[string]any) string {
 	if !hasResults {
 		return renderComponentToString(
 			Div(
-				Class("alert alert-danger"),
-				H5(Text("Organization Error")),
-				P(Text("No results were returned from the folder organization operation.")),
+				Class("card border-0 shadow-sm border-danger mb-4"),
+				Div(
+					Class("card-header border-0"),
+					Style("background: linear-gradient(135deg, #f8d7da 0%, #f5c6cb 100%); border-radius: 15px 15px 0 0;"),
+					Div(
+						Class("d-flex align-items-center"),
+						Span(Class("badge bg-danger me-3"), I(Class("fas fa-exclamation-triangle me-1")), Text("Error")),
+						H5(Class("card-title mb-0 text-danger fw-bold"), Text("Organization Error")),
+					),
+				),
+				Div(
+					Class("card-body"),
+					P(Class("card-text text-muted mb-0"), Text("No results were returned from the folder organization operation.")),
+				),
 			),
 		)
 	}
@@ -503,17 +570,29 @@ func renderFolderStructureResults(result map[string]any) string {
 	// Add results summary
 	components = append(components,
 		Div(
-			Class("mt-3 alert alert-info"),
-			H6(Text("Organization Results")),
-			Table(
-				Class("table table-sm"),
-				TBody(
-					Tr(Td(Text("Total Files:")), Td(Text(fmt.Sprintf("%d", organizationResults.TotalFiles)))),
-					Tr(Td(Text("Processed Files:")), Td(Text(fmt.Sprintf("%d", organizationResults.ProcessedFiles)))),
-					Tr(Td(Text("Organized Files:")), Td(Text(fmt.Sprintf("%d", organizationResults.OrganizedFiles)))),
-					Tr(Td(Text("Skipped Files:")), Td(Text(fmt.Sprintf("%d", organizationResults.SkippedFiles)))),
-					Tr(Td(Text("Error Files:")), Td(Text(fmt.Sprintf("%d", organizationResults.ErrorFiles)))),
-					Tr(Td(Text("Processing Time:")), Td(Text(organizationResults.Summary.ProcessingTime))),
+			Class("mt-3 card border-0 shadow-sm border-info mb-4"),
+			Div(
+				Class("card-header border-0"),
+				Style("background: linear-gradient(135deg, #d1ecf1 0%, #bee5eb 100%); border-radius: 15px 15px 0 0;"),
+				Div(
+					Class("d-flex align-items-center"),
+					Span(Class("badge bg-info me-3"), I(Class("fas fa-chart-bar me-1")), Text("Results")),
+					H5(Class("card-title mb-0 text-info fw-bold"), Text("Organization Results")),
+				),
+			),
+			Div(
+				Class("card-body p-0"),
+				Table(
+					Class("table table-hover mb-0"),
+					Style("background: transparent;"),
+					TBody(
+						Tr(Td(Text("Total Files:")), Td(Text(fmt.Sprintf("%d", organizationResults.TotalFiles)))),
+						Tr(Td(Text("Processed Files:")), Td(Text(fmt.Sprintf("%d", organizationResults.ProcessedFiles)))),
+						Tr(Td(Text("Organized Files:")), Td(Text(fmt.Sprintf("%d", organizationResults.OrganizedFiles)))),
+						Tr(Td(Text("Skipped Files:")), Td(Text(fmt.Sprintf("%d", organizationResults.SkippedFiles)))),
+						Tr(Td(Text("Error Files:")), Td(Text(fmt.Sprintf("%d", organizationResults.ErrorFiles)))),
+						Tr(Td(Text("Processing Time:")), Td(Text(organizationResults.Summary.ProcessingTime))),
+					),
 				),
 			),
 		),
@@ -603,26 +682,38 @@ func renderFolderStructureResults(result map[string]any) string {
 	if organizationResults.Summary.MovedFiles > 0 || organizationResults.Summary.CreatedFolders > 0 {
 		components = append(components,
 			Div(
-				Class("mt-3 alert alert-success"),
-				H6(Text("Summary Statistics")),
-				Ul(
-					If(organizationResults.Summary.MovedFiles > 0,
-						Li(Text(fmt.Sprintf("Files moved: %d", organizationResults.Summary.MovedFiles))),
+				Class("mt-3 card border-0 shadow-sm border-success mb-4"),
+				Div(
+					Class("card-header border-0"),
+					Style("background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%); border-radius: 15px 15px 0 0;"),
+					Div(
+						Class("d-flex align-items-center"),
+						Span(Class("badge bg-success me-3"), I(Class("fas fa-check-circle me-1")), Text("Summary")),
+						H5(Class("card-title mb-0 text-success fw-bold"), Text("Summary Statistics")),
 					),
-					If(organizationResults.Summary.RenamedFiles > 0,
-						Li(Text(fmt.Sprintf("Files renamed: %d", organizationResults.Summary.RenamedFiles))),
-					),
-					If(organizationResults.Summary.CreatedFolders > 0,
-						Li(Text(fmt.Sprintf("Folders created: %d", organizationResults.Summary.CreatedFolders))),
-					),
-					If(organizationResults.Summary.DeletedFiles > 0,
-						Li(Text(fmt.Sprintf("Files deleted: %d", organizationResults.Summary.DeletedFiles))),
-					),
-					If(organizationResults.Summary.RuntimeVerified > 0,
-						Li(Text(fmt.Sprintf("Runtime verified: %d", organizationResults.Summary.RuntimeVerified))),
-					),
-					If(organizationResults.Summary.LanguageFiltered > 0,
-						Li(Text(fmt.Sprintf("Language filtered: %d", organizationResults.Summary.LanguageFiltered))),
+				),
+				Div(
+					Class("card-body"),
+					Ul(
+						Class("list-unstyled mb-0"),
+						If(organizationResults.Summary.MovedFiles > 0,
+							Li(Class("mb-2"), I(Class("fas fa-arrow-right me-2 text-success")), Text(fmt.Sprintf("Files moved: %d", organizationResults.Summary.MovedFiles))),
+						),
+						If(organizationResults.Summary.RenamedFiles > 0,
+							Li(Class("mb-2"), I(Class("fas fa-edit me-2 text-info")), Text(fmt.Sprintf("Files renamed: %d", organizationResults.Summary.RenamedFiles))),
+						),
+						If(organizationResults.Summary.CreatedFolders > 0,
+							Li(Class("mb-2"), I(Class("fas fa-folder-plus me-2 text-primary")), Text(fmt.Sprintf("Folders created: %d", organizationResults.Summary.CreatedFolders))),
+						),
+						If(organizationResults.Summary.DeletedFiles > 0,
+							Li(Class("mb-2"), I(Class("fas fa-trash me-2 text-danger")), Text(fmt.Sprintf("Files deleted: %d", organizationResults.Summary.DeletedFiles))),
+						),
+						If(organizationResults.Summary.RuntimeVerified > 0,
+							Li(Class("mb-2"), I(Class("fas fa-clock me-2 text-warning")), Text(fmt.Sprintf("Runtime verified: %d", organizationResults.Summary.RuntimeVerified))),
+						),
+						If(organizationResults.Summary.LanguageFiltered > 0,
+							Li(Class("mb-2"), I(Class("fas fa-language me-2 text-info")), Text(fmt.Sprintf("Language filtered: %d", organizationResults.Summary.LanguageFiltered))),
+						),
 					),
 				),
 			),
@@ -632,31 +723,73 @@ func renderFolderStructureResults(result map[string]any) string {
 	if organizationResults.TotalFiles == 0 {
 		components = append(components,
 			Div(
-				Class("mt-3 alert alert-warning"),
-				H6(Text("No Files Found")),
-				P(Text("No files were found in the specified folder path. This could be due to:")),
-				Ul(
-					Li(Text("Empty folder")),
-					Li(Text("No media files matching the configured extensions")),
-					Li(Text("Insufficient permissions to read folder contents")),
-					Li(Text("Folder path does not exist or is not accessible")),
+				Class("mt-3 card border-0 shadow-sm border-warning mb-4"),
+				Div(
+					Class("card-header border-0"),
+					Style("background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%); border-radius: 15px 15px 0 0;"),
+					Div(
+						Class("d-flex align-items-center"),
+						Span(Class("badge bg-warning me-3"), I(Class("fas fa-exclamation-triangle me-1")), Text("Warning")),
+						H5(Class("card-title mb-0 text-warning fw-bold"), Text("No Files Found")),
+					),
+				),
+				Div(
+					Class("card-body"),
+					P(Class("card-text text-muted mb-3"), Text("No files were found in the specified folder path. This could be due to:")),
+					Ul(
+						Class("list-unstyled mb-0"),
+						Li(Class("mb-2"), Text("• Empty folder")),
+						Li(Class("mb-2"), Text("• No media files matching the configured extensions")),
+						Li(Class("mb-2"), Text("• Insufficient permissions to read folder contents")),
+						Li(Class("mb-2"), Text("• Folder path does not exist or is not accessible")),
+					),
 				),
 			),
 		)
 	}
 
-	alertClass := "alert-success"
-	statusText := "Folder Organization Complete"
+	// Determine styling based on results
+	var borderClass, gradientStyle, badgeClass, badgeIcon, badgeText string
+	var statusText string
+
 	if organizationResults.ErrorFiles > 0 {
-		alertClass = "alert-warning"
+		borderClass = "border-warning"
+		gradientStyle = "background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%); border-radius: 15px 15px 0 0;"
+		badgeClass = "bg-warning"
+		badgeIcon = "fas fa-exclamation-triangle"
+		badgeText = "Warning"
 		statusText = "Folder Organization Complete with Errors"
-	}
-	if dryRun {
-		statusText = "Folder Organization Preview"
+	} else {
+		borderClass = "border-success"
+		gradientStyle = "background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%); border-radius: 15px 15px 0 0;"
+		badgeClass = "bg-success"
+		badgeIcon = "fas fa-check-circle"
+		badgeText = "Success"
+		statusText = "Folder Organization Complete"
 	}
 
-	folderAllNodes := append([]Node{Class("alert " + alertClass), H5(Text(statusText))}, components...)
+	if dryRun {
+		statusText = "Folder Organization Preview"
+		badgeText = "Preview"
+		badgeIcon = "fas fa-eye"
+	}
+
+	// Create header card
+	headerCard := Div(
+		Class("card border-0 shadow-sm "+borderClass+" mb-4"),
+		Div(
+			Class("card-header border-0"),
+			Style(gradientStyle),
+			Div(
+				Class("d-flex align-items-center"),
+				Span(Class("badge "+badgeClass+" me-3"), I(Class(badgeIcon+" me-1")), Text(badgeText)),
+				H5(Class("card-title mb-0 fw-bold"), Text(statusText)),
+			),
+		),
+	)
+
+	allNodes := append([]Node{headerCard}, components...)
 	return renderComponentToString(
-		Div(folderAllNodes...),
+		Div(allNodes...),
 	)
 }

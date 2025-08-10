@@ -41,9 +41,24 @@ func renderSearchDownloadPage(csrfToken string) Node {
 	}
 
 	return Div(
-		Class("config-section"),
-		H3(Text("Search & Download")),
-		P(Text("Search for movies, TV series, and episodes across your configured indexers. View results and optionally download selected items.")),
+		Class("config-section-enhanced"),
+
+		// Enhanced page header with gradient background
+		Div(
+			Class("page-header-enhanced"),
+			Div(
+				Class("header-content"),
+				Div(
+					Class("header-icon-wrapper"),
+					I(Class("fa-solid fa-magnifying-glass-arrow-right header-icon")),
+				),
+				Div(
+					Class("header-text"),
+					H2(Class("header-title"), Text("Search & Download")),
+					P(Class("header-subtitle"), Text("Search for movies, TV series, and episodes across your configured indexers. View results and optionally download selected items.")),
+				),
+			),
+		),
 
 		Form(
 			Class("config-form"),
@@ -51,177 +66,312 @@ func renderSearchDownloadPage(csrfToken string) Node {
 			Input(Type("hidden"), Name("csrf_token"), Value(csrfToken)),
 
 			Div(
-				Class("row"),
+				Class("form-cards-grid"),
+
+				// Search Configuration Card
 				Div(
-					Class("col-md-6"),
-					H5(Text("Search Configuration")),
+					Class("form-card"),
+					Div(
+						Class("card-header"),
+						I(Class("fas fa-cog card-icon")),
+						H5(Class("card-title"), Text("Search Configuration")),
+						P(Class("card-subtitle"), Text("Configure search type and settings")),
+					),
+					Div(
+						Class("card-body"),
+						renderFormGroup("search", map[string]string{
+							"SearchType": "Type of search to perform",
+						}, map[string]string{
+							"SearchType": "Search Type",
+						}, "SearchType", "select", "movies_search", map[string][]string{
+							"options": searchTypes,
+						}),
 
-					renderFormGroup("search", map[string]string{
-						"SearchType": "Type of search to perform",
-					}, map[string]string{
-						"SearchType": "Search Type",
-					}, "SearchType", "select", "movies_search", map[string][]string{
-						"options": searchTypes,
-					}),
+						renderFormGroup("search", map[string]string{
+							"MediaConfig": "Media configuration to use for search",
+						}, map[string]string{
+							"MediaConfig": "Media Configuration",
+						}, "MediaConfig", "select", "", map[string][]string{
+							"options": mediaConfigs,
+						}),
 
-					renderFormGroup("search", map[string]string{
-						"MediaConfig": "Media configuration to use for search",
-					}, map[string]string{
-						"MediaConfig": "Media Configuration",
-					}, "MediaConfig", "select", "", map[string][]string{
-						"options": mediaConfigs,
-					}),
+						renderFormGroup("search", map[string]string{
+							"Limit": "Maximum number of results to return",
+						}, map[string]string{
+							"Limit": "Result Limit",
+						}, "Limit", "number", "50", nil),
 
-					renderFormGroup("search", map[string]string{
-						"Limit": "Maximum number of results to return",
-					}, map[string]string{
-						"Limit": "Result Limit",
-					}, "Limit", "number", "50", nil),
-
-					renderFormGroup("search", map[string]string{
-						"TitleSearch": "Use title-based search instead of ID-based search for better results",
-					}, map[string]string{
-						"TitleSearch": "Enable Title Search",
-					}, "TitleSearch", "checkbox", false, nil),
+						renderFormGroup("search", map[string]string{
+							"TitleSearch": "Use title-based search instead of ID-based search for better results",
+						}, map[string]string{
+							"TitleSearch": "Enable Title Search",
+						}, "TitleSearch", "checkbox", false, nil),
+					),
 				),
 
+				// Search Parameters Card
 				Div(
-					Class("col-md-6"),
-					H5(Text("Search Parameters")),
-
+					Class("form-card"),
 					Div(
-						Class("form-group"),
-						Label(
-							For("MovieID"),
-							Text("Movie"),
-							Small(Class("form-text text-muted"), Text("Select movie to search for")),
-						),
-						Select(
-							ID("MovieID"),
-							Name("MovieID"),
-							Class("form-control select2-ajax"),
-							Data("ajax-url", "/api/admin/dropdown/movies/dbmovie_id"),
-							Data("placeholder", "-- Select Movie --"),
-							Data("allow-clear", "true"),
-							Option(Attr("value", ""), Text("-- Select Movie --")),
-						),
+						Class("card-header"),
+						I(Class("fas fa-target card-icon")),
+						H5(Class("card-title"), Text("Search Parameters")),
+						P(Class("card-subtitle"), Text("Select specific content to search for")),
 					),
-
 					Div(
-						Class("form-group"),
-						Label(
-							For("SerieID"),
-							Text("Series"),
-							Small(Class("form-text text-muted"), Text("Select series to search for")),
-						),
-						Select(
-							ID("SerieID"),
-							Name("SerieID"),
-							Class("form-control select2-ajax"),
-							Data("ajax-url", "/api/admin/dropdown/series/dbserie_id"),
-							Data("placeholder", "-- Select Series --"),
-							Data("allow-clear", "true"),
-							Option(Attr("value", ""), Text("-- Select Series --")),
-						),
-					),
+						Class("card-body"),
 
-					renderFormGroup("search", map[string]string{
-						"SeasonNum": "Season number (for episode searches and series RSS with specific season)",
-					}, map[string]string{
-						"SeasonNum": "Season Number",
-					}, "SeasonNum", "number", "", nil),
+						Div(
+							Class("form-group-enhanced mb-4"),
+							Div(
+								Class("form-field-card p-3 border rounded-3"),
+								Style("background: #ffffff; border: 1px solid #dee2e6 !important; transition: all 0.3s ease; box-shadow: 0 1px 2px rgba(0,0,0,0.03);"),
+								Div(
+									Class("d-flex align-items-center mb-2"),
+									I(Class("fa-solid fa-list text-primary me-2")),
+									createFormLabel("MovieID", "Movie", false),
+								),
 
-					Div(
-						Class("form-group"),
-						Label(
-							For("EpisodeNum"),
-							Text("Episode"),
-							Small(Class("form-text text-muted"), Text("Select episode to search for (select series first)")),
+								Select(
+									ID("MovieID"),
+									Name("MovieID"),
+									Class("form-select choices-ajax"),
+									Data("ajax-url", "/api/admin/dropdown/movies/dbmovie_id"),
+									Data("placeholder", "-- Select Movie --"),
+									Data("allow-clear", "true"),
+									Option(Attr("value", ""), Text("-- Select Movie --")),
+								),
+							),
 						),
-						Select(
-							ID("EpisodeNum"),
-							Name("EpisodeNum"),
-							Class("form-control"),
-							Data("placeholder", "-- Select Series First --"),
-							Data("allow-clear", "true"),
-							Data("depends-on", "SerieID"),
-							Option(Attr("value", ""), Text("-- Select Series First --")),
+
+						Div(
+							Class("form-group-enhanced mb-4"),
+							Div(
+								Class("form-field-card p-3 border rounded-3"),
+								Style("background: #ffffff; border: 1px solid #dee2e6 !important; transition: all 0.3s ease; box-shadow: 0 1px 2px rgba(0,0,0,0.03);"),
+								Div(
+									Class("d-flex align-items-center mb-2"),
+									I(Class("fa-solid fa-list text-primary me-2")),
+									createFormLabel("SerieID", "Series", false),
+								),
+								Select(
+									ID("SerieID"),
+									Name("SerieID"),
+									Class("form-select choices-ajax"),
+									Data("ajax-url", "/api/admin/dropdown/series/dbserie_id"),
+									Data("placeholder", "-- Select Series --"),
+									Data("allow-clear", "true"),
+									Option(Attr("value", ""), Text("-- Select Series --")),
+								),
+							),
+						),
+
+						renderFormGroup("search", map[string]string{
+							"SeasonNum": "Season number (for episode searches and series RSS with specific season)",
+						}, map[string]string{
+							"SeasonNum": "Season Number",
+						}, "SeasonNum", "number", "", nil),
+
+						Div(
+							Class("form-group-enhanced mb-4"),
+							Div(
+								Class("form-field-card p-3 border rounded-3"),
+								Style("background: #ffffff; border: 1px solid #dee2e6 !important; transition: all 0.3s ease; box-shadow: 0 1px 2px rgba(0,0,0,0.03);"),
+								Div(
+									Class("d-flex align-items-center mb-2"),
+									I(Class("fa-solid fa-list text-primary me-2")),
+									createFormLabel("EpisodeNum", "Episode", false),
+								),
+								Select(
+									ID("EpisodeNum"),
+									Name("EpisodeNum"),
+									Class("form-select"),
+									Data("placeholder", "-- Select Series First --"),
+									Data("allow-clear", "true"),
+									Data("depends-on", "SerieID"),
+									Option(Attr("value", ""), Text("-- Select Series First --")),
+								),
+							),
 						),
 					),
 				),
 			),
 
+			// Enhanced action buttons
 			Div(
-				Class("form-group submit-group"),
+				Class("form-actions-enhanced"),
 				Button(
-					Class("btn btn-primary"),
-					Text("Search"),
+					Class("btn-action-primary"),
+					ID("searchButton"),
 					Type("button"),
 					hx.Target("#searchResults"),
 					hx.Swap("innerHTML"),
 					hx.Post("/api/admin/searchdownload"),
 					hx.Headers("{\"X-CSRF-Token\": \""+csrfToken+"\"}"),
 					hx.Include("#searchForm"),
+					I(Class("fas fa-search action-icon")),
+					Span(
+						Class("action-text"),
+						ID("searchButtonText"),
+						Text("Search"),
+					),
 				),
 				Button(
 					Type("button"),
-					Class("btn btn-secondary ml-2"),
+					Class("btn-action-secondary"),
 					Attr("onclick", "document.getElementById('searchForm').reset(); document.getElementById('searchResults').innerHTML = '';"),
-					Text("Reset"),
+					I(Class("fas fa-undo action-icon")),
+					Span(Class("action-text"), Text("Reset Form")),
 				),
 			),
 		),
 
+		// Enhanced results container
 		Div(
+			Class("results-container-enhanced"),
 			ID("searchResults"),
-			Class("mt-4"),
-			Style("min-height: 50px;"),
+			// Search results will be injected here
 		),
 
-		// Instructions
+		// Enhanced help section with modern styling
 		Div(
-			Class("mt-4 alert alert-info"),
-			H5(Text("Search Type Descriptions:")),
-			Ul(
-				Li(Strong(Text("movies_rss: ")), Text("Search RSS feeds for movies")),
-				Li(Strong(Text("movies_search: ")), Text("Search indexers for specific movies (supports title search)")),
-				Li(Strong(Text("series_rss: ")), Text("Search RSS feeds for TV series (supports season filtering)")),
-				Li(Strong(Text("series_search: ")), Text("Search indexers for specific series (supports title search)")),
-				Li(Strong(Text("series_episode_search: ")), Text("Search for specific episodes (supports title search)")),
+			Class("help-section-enhanced"),
+			Div(
+				Class("help-header"),
+				I(Class("fas fa-info-circle help-icon")),
+				H5(Class("help-title"), Text("Search Types & Options")),
 			),
-			P(
-				Class("mt-2"),
-				Strong(Text("Title Search: ")),
-				Text("Enable for better search results using titles instead of just database IDs. Recommended for most searches."),
-			),
-			P(
-				Class("mt-2"),
-				Strong(Text("Season Filter: ")),
-				Text("For series RSS searches, specify a season number to search only for that season's episodes."),
-			),
-			P(
-				Class("mt-2"),
-				Strong(Text("Note: ")),
-				Text("Search results will include download links. Use caution when downloading content and ensure compliance with your local laws."),
+			Div(
+				Class("help-content"),
+				Div(
+					Class("help-grid"),
+					Div(
+						Class("help-card"),
+						Div(Class("help-card-icon"), I(Class("fas fa-rss"))),
+						Div(Class("help-card-content"),
+							Strong(Text("RSS Searches")),
+							P(Text("Search RSS feeds for movies and TV series from your configured indexers")),
+						),
+					),
+					Div(
+						Class("help-card"),
+						Div(Class("help-card-icon"), I(Class("fas fa-search"))),
+						Div(Class("help-card-content"),
+							Strong(Text("Targeted Search")),
+							P(Text("Search indexers for specific movies, series, or episodes with ID-based matching")),
+						),
+					),
+					Div(
+						Class("help-card"),
+						Div(Class("help-card-icon"), I(Class("fas fa-filter"))),
+						Div(Class("help-card-content"),
+							Strong(Text("Advanced Filtering")),
+							P(Text("Season filtering for series and episode-specific searches with quality matching")),
+						),
+					),
+					Div(
+						Class("help-card"),
+						Div(Class("help-card-icon"), I(Class("fas fa-download"))),
+						Div(Class("help-card-content"),
+							Strong(Text("Direct Download")),
+							P(Text("View results with download links and quality information for immediate action")),
+						),
+					),
+				),
+				Div(
+					Class("help-tips"),
+					Div(
+						Class("tip-item"),
+						I(Class("fas fa-lightbulb tip-icon")),
+						Strong(Text("Title Search: ")),
+						Text("Enable for better search results using titles instead of just database IDs. Recommended for most searches."),
+					),
+					Div(
+						Class("tip-item"),
+						I(Class("fas fa-calendar-alt tip-icon")),
+						Strong(Text("Season Filter: ")),
+						Text("For series RSS searches, specify a season number to search only for that season's episodes."),
+					),
+					Div(
+						Class("tip-item"),
+						I(Class("fas fa-shield-alt tip-icon")),
+						Strong(Text("Legal Notice: ")),
+						Text("Search results will include download links. Use caution when downloading content and ensure compliance with your local laws."),
+					),
+				),
 			),
 		),
+
+		// CSS for loading indicator
+		StyleEl(Raw(`
+			#searchButton {
+				position: relative;
+			}
+			.htmx-indicator {
+				display: none !important;
+				position: absolute;
+				top: 50%;
+				left: 50%;
+				transform: translate(-50%, -50%);
+				white-space: nowrap;
+			}
+			.htmx-request .htmx-indicator {
+				display: inline !important;
+			}
+			.htmx-request #searchButtonText {
+				visibility: hidden; /* Use visibility instead of display to maintain button size */
+			}
+			/* Full page overlay during search */
+			.search-overlay {
+				display: none;
+				position: fixed;
+				top: 0;
+				left: 0;
+				width: 100%;
+				height: 100%;
+				background-color: rgba(0, 0, 0, 0.05);
+				z-index: 9999;
+				cursor: wait;
+			}
+			/* Show overlay when search button is making request */
+			#searchButton.htmx-request ~ .search-overlay,
+			.htmx-request .search-overlay {
+				display: block;
+			}
+		`)),
 
 		// JavaScript for dynamic field visibility and episode loading
+		// Simplified JavaScript for Search Download - HTMX handles field visibility and episode loading
 		Script(Raw(`
 			document.addEventListener('DOMContentLoaded', function() {
-				const searchTypeSelect = document.querySelector('select[name="search_SearchType"]');
-				const movieSelect = document.querySelector('select[name="MovieID"]');
-				const serieSelect = document.querySelector('select[name="SerieID"]');
-				const seasonInput = document.querySelector('input[name="search_SeasonNum"]');
-				const episodeSelect = document.querySelector('select[name="EpisodeNum"]');
+				// Initialize Choices.js for enhanced selects
+				if (window.initChoicesGlobal) {
+					window.initChoicesGlobal();
+				}
 				
-				const movieFields = movieSelect ? movieSelect.closest('.form-group') : null;
-				const serieFields = serieSelect ? serieSelect.closest('.form-group') : null;
+				// Wait for Choices.js to initialize before setting up field visibility
+				setTimeout(function() {
+					setupFieldVisibility();
+				}, 1000);
+			});
+			
+			function setupFieldVisibility() {
+				
+				const searchTypeSelect = document.getElementById('search_SearchType');
+				const movieSelect = document.getElementById('MovieID');
+				const serieSelect = document.getElementById('SerieID');
+				const seasonInput = document.querySelector('input[name="search_SeasonNum"]');
+				const episodeSelect = document.getElementById('EpisodeNum');
+				
+				const movieFields = movieSelect ? movieSelect.closest('.form-group-enhanced') : null;
+				const serieFields = serieSelect ? serieSelect.closest('.form-group-enhanced') : null;
 				const seasonFields = seasonInput ? seasonInput.closest('.form-group') : null;
-				const episodeFields = episodeSelect ? episodeSelect.closest('.form-group') : null;
+				const episodeFields = episodeSelect ? episodeSelect.closest('.form-group-enhanced') : null;
 				
 				function toggleFields() {
-					if (!searchTypeSelect) return;
+					if (!searchTypeSelect) {
+						return;
+					}
 					
 					const searchType = searchTypeSelect.value;
 					
@@ -232,17 +382,20 @@ func renderSearchDownloadPage(csrfToken string) Node {
 					if (episodeFields) episodeFields.style.display = 'none';
 					
 					// Show relevant fields based on search type
-					if (searchType.includes('movies')) {
-						if (movieFields) movieFields.style.display = 'block';
-					} else if (searchType.includes('series')) {
-						if (serieFields) serieFields.style.display = 'block';
-						if (searchType.includes('episode')) {
+					switch(searchType) {
+						case 'movies_search':
+						case 'movies_rss':
+							if (movieFields) movieFields.style.display = 'block';
+							break;
+						case 'series_search':
+						case 'series_rss':
+							if (serieFields) serieFields.style.display = 'block';
 							if (seasonFields) seasonFields.style.display = 'block';
+							break;
+						case 'series_episode_search':
+							if (serieFields) serieFields.style.display = 'block';
 							if (episodeFields) episodeFields.style.display = 'block';
-						} else if (searchType === 'series_rss') {
-							// Show season field for RSS searches (optional)
-							if (seasonFields) seasonFields.style.display = 'block';
-						}
+							break;
 					}
 				}
 				
@@ -251,11 +404,17 @@ func renderSearchDownloadPage(csrfToken string) Node {
 					
 					const seriesValue = serieSelect.value;
 					if (!seriesValue || seriesValue === '') {
-						episodeSelect.innerHTML = '<option value="">-- Select Series First --</option>';
+						if (episodeSelect.choicesInstance) {
+							episodeSelect.choicesInstance.clearChoices();
+							episodeSelect.choicesInstance.setChoices([{
+								value: '',
+								label: '-- Select Series First --'
+							}], 'value', 'label', true);
+						}
 						return;
 					}
 					
-					// Series ID should be the direct value from Select2 (just the ID)
+					// Series ID should be the direct value from Choices.js (just the ID)
 					const seriesID = seriesValue;
 					
 					// Get CSRF token
@@ -276,19 +435,33 @@ func renderSearchDownloadPage(csrfToken string) Node {
 					})
 					.then(response => response.json())
 					.then(data => {
-						episodeSelect.innerHTML = '<option value="">-- Select Episode --</option>';
+						// Clear existing choices
+						if (episodeSelect.choicesInstance) {
+							episodeSelect.choicesInstance.clearChoices();
+						}
+						
 						if (data.results && data.results.length > 0) {
-							data.results.forEach(function(episode) {
-								const option = document.createElement('option');
-								option.value = episode.id;
-								option.textContent = episode.text;
-								episodeSelect.appendChild(option);
+							const choicesList = data.results.map(function(episode) {
+								return {
+									value: episode.id,
+									label: episode.text
+								};
 							});
+							
+							if (episodeSelect.choicesInstance) {
+								episodeSelect.choicesInstance.setChoices(choicesList, 'value', 'label', true);
+							}
 						}
 					})
 					.catch(error => {
 						console.error('Error loading episodes:', error);
-						episodeSelect.innerHTML = '<option value="">-- Error Loading Episodes --</option>';
+						if (episodeSelect.choicesInstance) {
+							episodeSelect.choicesInstance.clearChoices();
+							episodeSelect.choicesInstance.setChoices([{
+								value: '',
+								label: '-- Error Loading Episodes --'
+							}], 'value', 'label', true);
+						}
 					});
 				}
 				
@@ -296,27 +469,33 @@ func renderSearchDownloadPage(csrfToken string) Node {
 					searchTypeSelect.addEventListener('change', toggleFields);
 				}
 				if (serieSelect) {
-					// Listen for both regular change and Select2 change events
+					// Listen for Choices.js change events
 					serieSelect.addEventListener('change', loadEpisodes);
-					$(serieSelect).on('change', loadEpisodes);
+					serieSelect.addEventListener('choice', loadEpisodes);
 				}
 				toggleFields(); // Initial setup
 				
-				// Initialize Select2 dropdowns
-				if (window.initSelect2Global) {
-					window.initSelect2Global();
-				}
-				
-				// Initialize basic Select2 for episode dropdown (no AJAX)
-				if (episodeSelect) {
-					$(episodeSelect).select2({
-						placeholder: '-- Select Series First --',
-						allowClear: true,
-						width: '100%'
-					});
-				}
-			});
+				// Initialize basic Choices.js for episode dropdown (no AJAX)
+				setTimeout(function() {
+					if (episodeSelect && !episodeSelect.classList.contains('choices-initialized')) {
+						episodeSelect.choicesInstance = new Choices(episodeSelect, {
+							placeholder: true,
+							placeholderValue: '-- Select Series First --',
+							removeItemButton: true,
+							searchEnabled: false,
+							allowHTML: true
+						});
+						episodeSelect.classList.add('choices-initialized');
+					}
+				}, 500);
+			}
 		`)),
+
+		// Full page overlay to prevent clicks during search
+		Div(
+			Class("search-overlay"),
+			ID("searchOverlay"),
+		),
 	)
 }
 
@@ -658,9 +837,20 @@ func renderSearchResults(results *SearchResults, searchType, mediaConfig string)
 	if results == nil || (len(results.Accepted) == 0 && len(results.Denied) == 0) {
 		return renderComponentToString(
 			Div(
-				Class("alert-warning"),
-				H5(Text("No Results Found")),
-				P(Text("No search results were found matching your criteria. Try adjusting your search parameters or check your indexer configurations.")),
+				Class("card border-0 shadow-sm border-warning mb-4"),
+				Div(
+					Class("card-header border-0"),
+					Style("background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%); border-radius: 15px 15px 0 0;"),
+					Div(
+						Class("d-flex align-items-center"),
+						Span(Class("badge bg-warning me-3"), I(Class("fas fa-search me-1")), Text("Search")),
+						H5(Class("card-title mb-0 text-warning fw-bold"), Text("No Results Found")),
+					),
+				),
+				Div(
+					Class("card-body"),
+					P(Class("card-text text-muted mb-0"), Text("No search results were found matching your criteria. Try adjusting your search parameters or check your indexer configurations.")),
+				),
 			),
 		)
 	}
@@ -672,53 +862,146 @@ func renderSearchResults(results *SearchResults, searchType, mediaConfig string)
 
 		// Summary Header
 		Div(
-			Class("alert-success mb-4"),
-			H5(Text(fmt.Sprintf("Search Results (%d total: %d accepted, %d denied)", totalResults, len(results.Accepted), len(results.Denied)))),
-			P(Text(fmt.Sprintf("Search Type: %s | Media Config: %s", searchType, mediaConfig))),
+			Class("card border-0 shadow-sm border-success mb-4"),
+			Div(
+				Class("card-body"),
+				H5(Class("card-title fw-bold mb-3"), Text("Search Results")),
+				Div(Class("row g-3 mb-3"),
+					Div(Class("col-md-4"),
+						Div(Class("d-flex align-items-center"),
+							Span(Class("badge bg-primary me-2"), I(Class("fas fa-search me-1")), Text("Total")),
+							Span(Class("fw-bold text-primary"), Text(fmt.Sprintf("%d", totalResults))),
+						),
+					),
+					Div(Class("col-md-4"),
+						Div(Class("d-flex align-items-center"),
+							Span(Class("badge bg-success me-2"), I(Class("fas fa-check me-1")), Text("Accepted")),
+							Span(Class("fw-bold text-success"), Text(fmt.Sprintf("%d", len(results.Accepted)))),
+						),
+					),
+					Div(Class("col-md-4"),
+						Div(Class("d-flex align-items-center"),
+							Span(Class("badge bg-danger me-2"), I(Class("fas fa-times me-1")), Text("Denied")),
+							Span(Class("fw-bold text-danger"), Text(fmt.Sprintf("%d", len(results.Denied)))),
+						),
+					),
+				),
+				Div(Class("row g-2"),
+					Div(Class("col-md-6"),
+						Small(Class("text-muted"),
+							I(Class("fas fa-tag me-1")),
+							Text("Search Type: "),
+							Span(Class("fw-bold"), Text(searchType)),
+						),
+					),
+					Div(Class("col-md-6"),
+						Small(Class("text-muted"),
+							I(Class("fas fa-cog me-1")),
+							Text("Media Config: "),
+							Span(Class("fw-bold"), Text(mediaConfig)),
+						),
+					),
+				),
+			),
 		),
 
 		// Accepted Results Section - Full Width
 		Div(
-			Class("mb-5"),
-			H4(Text("✅ Accepted Results"), Class("text-success mb-3")),
-			func() Node {
-				if len(results.Accepted) == 0 {
-					return Div(
-						Class("alert-info"),
-						Text("No results met the acceptance criteria."),
-					)
-				}
-				return renderResultsTable(results.Accepted, "accepted", true)
-			}(),
+			Class("card border-0 shadow-sm border-success mb-5"),
+			Div(
+				Class("card-header border-0"),
+				Style("background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%); border-radius: 15px 15px 0 0;"),
+				Div(
+					Class("d-flex align-items-center justify-content-between"),
+					Div(
+						Class("d-flex align-items-center"),
+						Span(Class("badge bg-success me-3"), I(Class("fas fa-check me-1")), Text("Accepted")),
+						H4(Class("card-title mb-0 text-success fw-bold"), Text("Accepted Results")),
+					),
+					Span(Class("badge bg-success"), Text(fmt.Sprintf("%d", len(results.Accepted)))),
+				),
+			),
+			Div(
+				Class("card-body p-0"),
+				func() Node {
+					if len(results.Accepted) == 0 {
+						return Div(
+							Class("text-center p-5"),
+							I(Class("fas fa-search mb-3"), Style("font-size: 3rem; color: #28a745; opacity: 0.3;")),
+							H5(Class("text-muted mb-2"), Text("No Accepted Results")),
+							P(Class("text-muted small mb-0"), Text("No results met the acceptance criteria for this search.")),
+						)
+					}
+					return renderResultsTable(results.Accepted, "accepted", true)
+				}(),
+			),
 		),
 
 		// Denied Results Section - Full Width
 		Div(
-			Class("mb-5"),
-			H4(Text("❌ Denied Results"), Class("text-danger mb-3")),
-			func() Node {
-				if len(results.Denied) == 0 {
-					return Div(
-						Class("alert-info"),
-						Text("No results were denied."),
-					)
-				}
-				return renderResultsTable(results.Denied, "denied", true)
-			}(),
+			Class("card border-0 shadow-sm border-danger mb-5"),
+			Div(
+				Class("card-header border-0"),
+				Style("background: linear-gradient(135deg, #f8d7da 0%, #f1aeb5 100%); border-radius: 15px 15px 0 0;"),
+				Div(
+					Class("d-flex align-items-center justify-content-between"),
+					Div(
+						Class("d-flex align-items-center"),
+						Span(Class("badge bg-danger me-3"), I(Class("fas fa-times me-1")), Text("Denied")),
+						H4(Class("card-title mb-0 text-danger fw-bold"), Text("Denied Results")),
+					),
+					Span(Class("badge bg-danger"), Text(fmt.Sprintf("%d", len(results.Denied)))),
+				),
+			),
+			Div(
+				Class("card-body p-0"),
+				func() Node {
+					if len(results.Denied) == 0 {
+						return Div(
+							Class("text-center p-5"),
+							I(Class("fas fa-filter mb-3"), Style("font-size: 3rem; color: #dc3545; opacity: 0.3;")),
+							H5(Class("text-muted mb-2"), Text("No Denied Results")),
+							P(Class("text-muted small mb-0"), Text("No results were filtered out during this search.")),
+						)
+					}
+					return renderResultsTable(results.Denied, "denied", true)
+				}(),
+			),
 		),
 
 		// Information Footer
 		Div(
-			Class("alert-info"),
-			H6(Text("Search Results Information")),
-			P(Text("Real-time search results from your configured indexers:")),
-			Ul(
-				Li(Text("✅ Accepted: Results that passed quality and criteria filters")),
-				Li(Text("❌ Denied: Results that were filtered out with reasons (quality, size, etc.)")),
-				Li(Text("🔍 Live Search: Queries actual indexers using your media configuration")),
-				Li(Text("📊 Quality Analysis: Shows detailed quality matching and rejection reasons")),
-				Li(Text("💾 Download Available: Both accepted and denied results can be downloaded")),
-				Li(Text("⚠️ Manual Override: Downloading denied results bypasses quality filters")),
+			Class("card border-0 shadow-sm border-info"),
+			Div(
+				Class("card-body"),
+				H6(Class("card-title fw-bold mb-3"), Text("Search Results Information")),
+				P(Class("card-text text-muted mb-3"), Text("Real-time search results from your configured indexers")),
+				Ul(Class("list-unstyled"),
+					Li(Class("mb-2"),
+						Span(Class("badge bg-success me-2"), I(Class("fas fa-check me-1")), Text("Accepted")),
+						Text("Results that passed quality and criteria filters"),
+					),
+					Li(Class("mb-2"),
+						Span(Class("badge bg-danger me-2"), I(Class("fas fa-times me-1")), Text("Denied")),
+						Text("Results that were filtered out with reasons (quality, size, etc.)"),
+					),
+					Li(Class("mb-2"),
+						Span(Class("badge bg-primary me-2"), I(Class("fas fa-search me-1")), Text("Live Search")),
+						Text("Queries actual indexers using your media configuration"),
+					),
+					Li(Class("mb-2"),
+						Span(Class("badge bg-info me-2"), I(Class("fas fa-chart-bar me-1")), Text("Quality Analysis")),
+						Text("Shows detailed quality matching and rejection reasons"),
+					),
+					Li(Class("mb-2"),
+						Span(Class("badge bg-secondary me-2"), I(Class("fas fa-download me-1")), Text("Download Available")),
+						Text("Both accepted and denied results can be downloaded"),
+					),
+					Li(Class("mb-0"),
+						Span(Class("badge bg-warning me-2"), I(Class("fas fa-exclamation-triangle me-1")), Text("Manual Override")),
+						Text("Downloading denied results bypasses quality filters"),
+					),
+				),
 			),
 		),
 	)
@@ -838,36 +1121,28 @@ func renderResultsTable(results []SearchResult, tableType string, showDownload b
 		),
 		Script(Rawf(`
 			$(document).ready(function() {
-				if ($.fn.DataTable.isDataTable('#%s')) {
-					$('#%s').DataTable().destroy();
-				}
-				$('#%s').DataTable({
-					"bDestroy": true,
-					"bFilter": true,
-					"bSort": true,
-					"bPaginate": true,
-					"pageLength": 25,
-					"lengthMenu": [[10, 25, 50, 100, -1], [10, 25, 50, 100, "All"]],
-					responsive: true,
-					"aaSorting": [[ 0, "asc" ]],
-					"columnDefs": [
-						{
-							"targets": "no-sort",
-							"orderable": false,
-							"searchable": false
+				if (window.initDataTable) {
+					window.initDataTable('#%s', {
+						lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, "All"]],
+						order: [[ 0, "asc" ]],
+						columnDefs: [
+							{
+								targets: "no-sort",
+								orderable: false,
+								searchable: false
+							}
+						],
+						language: {
+							search: "Filter %s results:",
+							lengthMenu: "Show _MENU_ %s results per page",
+							info: "Showing _START_ to _END_ of _TOTAL_ %s results",
+							infoEmpty: "No %s results to show",
+							infoFiltered: "(filtered from _MAX_ total results)",
+							zeroRecords: "No matching %s results found"
 						}
-					],
-					"language": {
-						"search": "Filter %s results:",
-						"lengthMenu": "Show _MENU_ %s results per page",
-						"info": "Showing _START_ to _END_ of _TOTAL_ %s results",
-						"infoEmpty": "No %s results to show",
-						"infoFiltered": "(filtered from _MAX_ total results)",
-						"zeroRecords": "No matching %s results found"
-					}
-				});
+					});
+				}
 			});
-		`, tableID, tableID, tableID, tableType, tableType, tableType, tableType, tableType)),
+		`, tableID, tableType, tableType, tableType, tableType, tableType)),
 	)
 }
-

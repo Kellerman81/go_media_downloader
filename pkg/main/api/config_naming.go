@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
@@ -28,9 +29,24 @@ func renderNamingTestPage(csrfToken string) Node {
 		lists = append(lists, media.Series[i].NamePrefix)
 	}
 	return Div(
-		Class("config-section"),
-		H3(Text("Naming Convention Test")),
-		P(Text("Test how your naming templates will format movie and episode filenames. This tool helps you preview the generated folder and file names before applying them to your media library.")),
+		Class("config-section-enhanced"),
+
+		// Enhanced page header with gradient background
+		Div(
+			Class("page-header-enhanced"),
+			Div(
+				Class("header-content"),
+				Div(
+					Class("header-icon-wrapper"),
+					I(Class("fa-solid fa-edit header-icon")),
+				),
+				Div(
+					Class("header-text"),
+					H2(Class("header-title"), Text("Naming Convention Test")),
+					P(Class("header-subtitle"), Text("Test how your naming templates will format movie and episode filenames. This tool helps you preview the generated folder and file names before applying them to your media library.")),
+				),
+			),
+		),
 
 		Form(
 			Class("config-form"),
@@ -40,7 +56,7 @@ func renderNamingTestPage(csrfToken string) Node {
 				Class("row"),
 				Div(
 					Class("col-md-6"),
-					H5(Text("Media Configuration")),
+					H5(Class("form-section-title"), Text("Media Configuration")),
 
 					renderFormGroup("naming", map[string]string{
 						"MediaType": "Select whether you're testing movie or TV series naming",
@@ -59,7 +75,7 @@ func renderNamingTestPage(csrfToken string) Node {
 					}),
 
 					renderFormGroup("naming", map[string]string{
-						"FilePath": "Example file path to test (e.g., '/downloads/Movie.2023.1080p.BluRay.mkv')",
+						"FilePath": fmt.Sprintf("Example file path to test (e.g., '/downloads/Movie.%d.1080p.BluRay.mkv')", time.Now().Year()),
 					}, map[string]string{
 						"FilePath": "File Path",
 					}, "FilePath", "text", "/downloads/The.Matrix.1999.1080p.BluRay.x264-RARBG.mkv", nil),
@@ -67,7 +83,7 @@ func renderNamingTestPage(csrfToken string) Node {
 
 				Div(
 					Class("col-md-6"),
-					H5(Text("Media Selection")),
+					H5(Class("form-section-title"), Text("Media Selection")),
 					P(Class("text-muted"), Text("Select existing media from your database to test naming conventions:")),
 
 					Div(
@@ -121,43 +137,47 @@ func renderNamingTestPage(csrfToken string) Node {
 
 		// Instructions
 		Div(
-			Class("mt-4 alert alert-info"),
-			H5(Text("Usage Instructions:")),
-			Ol(
-				Li(Text("Select the media type (Movie or TV Series)")),
-				Li(Text("Choose the media configuration that contains your naming templates")),
-				Li(Text("Enter a sample file path to test")),
-				Li(Text("Provide the database ID of an existing movie or series")),
-				Li(Text("Click 'Test Naming' to see how your templates will format the names")),
+			Class("mt-4 card border-0 shadow-sm border-info mb-4"),
+			Div(
+				Class("card-header border-0"),
+				Style("background: linear-gradient(135deg, #d1ecf1 0%, #bee5eb 100%); border-radius: 15px 15px 0 0;"),
+				Div(
+					Class("d-flex align-items-center"),
+					Span(Class("badge bg-info me-3"), I(Class("fas fa-info-circle me-1")), Text("Usage")),
+					H5(Class("card-title mb-0 text-info fw-bold"), Text("Usage Instructions")),
+				),
 			),
-			P(
-				Class("mt-2"),
-				Strong(Text("Note: ")),
-				Text("The movie or series ID must exist in your database. You can find these IDs in the database management interface."),
+			Div(
+				Class("card-body"),
+				P(Class("card-text text-muted mb-3"), Text("Follow these steps to test your naming templates")),
+				Ol(
+					Class("mb-3 list-unstyled"),
+					Li(Class("mb-2"), Text("1. Select the media type (Movie or TV Series)")),
+					Li(Class("mb-2"), Text("2. Choose the media configuration that contains your naming templates")),
+					Li(Class("mb-2"), Text("3. Enter a sample file path to test")),
+					Li(Class("mb-2"), Text("4. Provide the database ID of an existing movie or series")),
+					Li(Class("mb-2"), Text("5. Click 'Test Naming' to see how your templates will format the names")),
+				),
+
+				Div(
+					Class("alert alert-light border-0 mt-3 mb-0"),
+					Style("background-color: rgba(13, 110, 253, 0.1); border-radius: 8px; padding: 0.75rem 1rem;"),
+					Div(
+						Class("d-flex align-items-start"),
+						I(Class("fas fa-lightbulb me-2 mt-1"), Style("color: #0d6efd; font-size: 0.9rem;")),
+						Div(
+							Strong(Style("color: #0d6efd;"), Text("Note: ")),
+							Text("The movie or series ID must exist in your database. You can find these IDs in the database management interface."),
+						),
+					),
+				),
 			),
 		),
 
 		// JavaScript for toggling fields
+		// Simplified JavaScript for Naming - CSS classes handle field visibility  
 		Script(Raw(`
-			document.addEventListener('DOMContentLoaded', function() {
-				const mediaTypeSelect = document.querySelector('select[name="naming_MediaType"]');
-				const movieFields = document.getElementById('movieFields');
-				const serieFields = document.getElementById('serieFields');
-				
-				function toggleFields() {
-					const mediaType = mediaTypeSelect.value;
-					if (mediaType === 'movie') {
-						movieFields.style.display = 'block';
-						serieFields.style.display = 'none';
-					} else {
-						movieFields.style.display = 'none';
-						serieFields.style.display = 'block';
-					}
-				}
-				
-				mediaTypeSelect.addEventListener('change', toggleFields);
-				toggleFields(); // Initial setup
-			});
+			// No JavaScript needed - CSS classes handle movie/series field visibility
 		`)),
 	)
 }
@@ -324,16 +344,28 @@ func renderNamingResults(result map[string]any, mediaType, configKey, filePath s
 	if errMsg, ok := result["error"]; ok {
 		return renderComponentToString(
 			Div(
-				Class("alert alert-warning"),
-				H5(Text("API Integration Limitation")),
-				P(Text(fmt.Sprintf("%v", errMsg))),
-				P(Text(fmt.Sprintf("Note: %v", result["note"]))),
-				Details(
-					Summary(Text("Technical Details")),
-					P(Text("Payload that would be sent to /api/naming:")),
-					Pre(
-						Class("bg-light p-3"),
-						Code(Text(fmt.Sprintf("%v", result["payload"]))),
+				Class("card border-0 shadow-sm border-warning mb-4"),
+				Div(
+					Class("card-header border-0"),
+					Style("background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%); border-radius: 15px 15px 0 0;"),
+					Div(
+						Class("d-flex align-items-center"),
+						Span(Class("badge bg-warning me-3"), I(Class("fas fa-exclamation-triangle me-1")), Text("Error")),
+						H5(Class("card-title mb-0 text-warning fw-bold"), Text("API Integration Limitation")),
+					),
+				),
+				Div(
+					Class("card-body"),
+					P(Class("card-text text-muted mb-3"), Text(fmt.Sprintf("%v", errMsg))),
+					P(Class("card-text text-muted mb-3"), Text(fmt.Sprintf("Note: %v", result["note"]))),
+					Details(
+						Summary(Text("Technical Details")),
+						P(Text("Payload that would be sent to /api/naming:")),
+						Pre(
+							Class("bg-light p-3 mt-2"),
+							Style("border-radius: 6px;"),
+							Code(Text(fmt.Sprintf("%v", result["payload"]))),
+						),
 					),
 				),
 			),
@@ -441,48 +473,106 @@ func renderNamingResults(result map[string]any, mediaType, configKey, filePath s
 		}
 	}
 
-	var alertClass, message string
+	var alertClass, message, icon, color string
 	if foldername != "" && filename != "" {
-		alertClass = "alert-success"
+		alertClass = "card border-0 shadow-sm border-success mb-4"
 		message = "Naming Test Completed Successfully"
+		icon = "fas fa-check-circle"
+		color = "#28a745"
 	} else if foldername != "" || filename != "" {
-		alertClass = "alert-warning"
+		alertClass = "card border-0 shadow-sm border-warning mb-4"
 		message = "Naming Test Partially Successful"
+		icon = "fas fa-exclamation-circle"
+		color = "#ffc107"
 	} else {
-		alertClass = "alert-danger"
+		alertClass = "card border-0 shadow-sm border-danger mb-4"
 		message = "Naming Test Failed"
+		icon = "fas fa-times-circle"
+		color = "#dc3545"
 	}
+	_ = color
 
 	results := Div(
 		Class(alertClass),
-		H5(Text(message)),
-		Table(
-			Class("table table-striped table-sm"),
-			TBody(Group(resultRows)),
+		Div(
+			Class("card-header border-0"),
+			Style("background: linear-gradient(135deg, "+func() string {
+				if foldername != "" && filename != "" {
+					return "#d4edda 0%, #c3e6cb 100%"
+				} else if foldername != "" || filename != "" {
+					return "#fff3cd 0%, #ffeaa7 100%"
+				}
+				return "#f8d7da 0%, #f5c6cb 100%"
+			}()+"); border-radius: 15px 15px 0 0;"),
+			Div(
+				Class("d-flex align-items-center"),
+				Span(Class("badge "+func() string {
+					if foldername != "" && filename != "" {
+						return "bg-success"
+					} else if foldername != "" || filename != "" {
+						return "bg-warning"
+					}
+					return "bg-danger"
+				}()+" me-3"), I(Class(icon+" me-1")), Text(func() string {
+					if foldername != "" && filename != "" {
+						return "Success"
+					} else if foldername != "" || filename != "" {
+						return "Partial"
+					}
+					return "Failed"
+				}())),
+				H5(Class("card-title mb-0 "+func() string {
+					if foldername != "" && filename != "" {
+						return "text-success"
+					} else if foldername != "" || filename != "" {
+						return "text-warning"
+					}
+					return "text-danger"
+				}()+" fw-bold"), Text(message)),
+			),
+		),
+		Div(
+			Class("card-body p-0"),
+			Table(
+				Class("table table-hover mb-0"),
+				Style("background: transparent;"),
+				TBody(Group(resultRows)),
+			),
 		),
 
 		// Add helpful information about naming results
 		Div(
-			Class("mt-3 alert-info"),
-			H6(Text("Naming Test Information")),
-			P(Text("This page tests your naming conventions using real file parsing and naming generation:")),
-			Ul(
-				Li(Text("✅ File Parsing: Real parsing using your quality and regex configurations")),
-				Li(Text("📁 Folder Naming: Generated using your folder naming templates")),
-				Li(Text("📄 File Naming: Generated using your file naming templates")),
-				Li(Text("🔍 Quality Analysis: Shows parsed quality, resolution, codec, and audio information")),
-				Li(Text("📊 Media Details: Displays season/episode info for TV series")),
+			Class("mt-3 card border-0 shadow-sm border-info mb-4"),
+			Div(
+				Class("card-header border-0"),
+				Style("background: linear-gradient(135deg, #d1ecf1 0%, #bee5eb 100%); border-radius: 15px 15px 0 0;"),
+				Div(
+					Class("d-flex align-items-center"),
+					Span(Class("badge bg-info me-3"), I(Class("fas fa-info-circle me-1")), Text("Information")),
+					H5(Class("card-title mb-0 text-info fw-bold"), Text("Naming Test Information")),
+				),
 			),
-			func() Node {
-				if foldername == "" && filename == "" {
-					return P(Class("mt-2 text-warning"), Strong(Text("Note: ")), Text("No names were generated. Check your naming templates and ensure the media exists in your database."))
-				} else if foldername == "" {
-					return P(Class("mt-2 text-warning"), Strong(Text("Note: ")), Text("Folder name not generated. Check your folder naming template configuration."))
-				} else if filename == "" {
-					return P(Class("mt-2 text-warning"), Strong(Text("Note: ")), Text("File name not generated. Check your file naming template configuration."))
-				}
-				return P(Class("mt-2 text-success"), Strong(Text("Success: ")), Text("Both folder and file names generated successfully!"))
-			}(),
+			Div(
+				Class("card-body"),
+				P(Text("This page tests your naming conventions using real file parsing and naming generation:")),
+				Ul(
+					Li(Text("✅ File Parsing: Real parsing using your quality and regex configurations")),
+					Li(Text("📁 Folder Naming: Generated using your folder naming templates")),
+					Li(Text("📄 File Naming: Generated using your file naming templates")),
+					Li(Text("🔍 Quality Analysis: Shows parsed quality, resolution, codec, and audio information")),
+					Li(Text("📊 Media Details: Displays season/episode info for TV series")),
+				),
+				func() Node {
+					if foldername == "" && filename == "" {
+						return P(Class("mt-2 text-warning"), Strong(Text("Note: ")), Text("No names were generated. Check your naming templates and ensure the media exists in your database."))
+					} else if foldername == "" {
+						return P(Class("mt-2 text-warning"), Strong(Text("Note: ")), Text("Folder name not generated. Check your folder naming template configuration."))
+					} else if filename == "" {
+						return P(Class("mt-2 text-warning"), Strong(Text("Note: ")), Text("File name not generated. Check your file naming template configuration."))
+					}
+					return P(Class("mt-2 text-success"), Strong(Text("Success: ")), Text("Both folder and file names generated successfully!"))
+				}(),
+			),
 		),
 	)
 

@@ -2,6 +2,7 @@ package structure
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"io/fs"
 	"os"
@@ -142,6 +143,200 @@ var (
 		return false
 	})
 )
+
+func TestInputnotifier(parsestring string) (string, error) {
+	forparser := inputNotifier{
+		Dbmovie: database.Dbmovie{
+			Title:            "Inception",
+			OriginalTitle:    "Inception",
+			Year:             2000,
+			Overview:         "A thief who steals corporate secrets through the use of dream-sharing technology is given the inverse task of planting an idea into the mind of a C.E.O.",
+			Tagline:          "Your mind is the scene of the crime",
+			Genres:           "Action, Science Fiction, Adventure",
+			Runtime:          148,
+			ReleaseDate:      sql.NullTime{Time: time.Now(), Valid: true},
+			Status:           "Released",
+			OriginalLanguage: "en",
+			SpokenLanguages:  "English",
+			ImdbID:           "tt1375666",
+			MoviedbID:        27205,
+			TraktID:          1390,
+			FacebookID:       "123",
+			InstagramID:      "134",
+			TwitterID:        "145",
+			VoteAverage:      8.3,
+			VoteCount:        4000,
+			Popularity:       5.5,
+			Budget:           160000000,
+			Revenue:          825532764,
+			Poster:           "/poster.jpg",
+			Backdrop:         "/backdrop.jpg",
+		},
+		Dbserie: database.Dbserie{
+			Identifiedby:    "ep",
+			Aliases:         "Breaking Bad",
+			Firstaired:      "2010-01-01",
+			Runtime:         "45:00",
+			Language:        "English",
+			Rating:          "5.6",
+			Siterating:      "5.7",
+			SiteratingCount: "500",
+			TvrageID:        1,
+			Facebook:        "2",
+			Instagram:       "3",
+			Twitter:         "4",
+			Seriename:       "Breaking Bad",
+			Overview:        "A high school chemistry teacher diagnosed with inoperable lung cancer turns to manufacturing and selling methamphetamine in order to secure his family's future.",
+			Status:          "Ended",
+			Network:         "AMC",
+			Genre:           "Crime, Drama, Thriller",
+			ImdbID:          "tt0903747",
+			ThetvdbID:       81189,
+			TraktID:         1388,
+			Poster:          "/poster.jpg",
+			Banner:          "/banner.jpg",
+			Fanart:          "/fanart.jpg",
+		},
+		DbserieEpisode: database.DbserieEpisode{
+			Title:      "Pilot",
+			Season:     "1",
+			Episode:    "1",
+			Identifier: "S01E01",
+			Overview:   "Walter White, a struggling high school chemistry teacher, is diagnosed with inoperable lung cancer.",
+			FirstAired: sql.NullTime{Time: time.Now(), Valid: true},
+			Runtime:    58,
+		},
+		Title:          "Breaking Bad",
+		Year:           "2008",
+		Season:         "1",
+		Episode:        "1",
+		Series:         "Breaking Bad",
+		EpisodeTitle:   "Pilot",
+		Configuration:  "series-hd",
+		SourcePath:     "/downloads/Breaking.Bad.S01E01.Pilot.1080p.BluRay.x264-ROVERS.mkv",
+		Targetpath:     "/media/tv/Breaking Bad/Season 01/Breaking Bad - S01E01 - Pilot.mkv",
+		Imdb:           "tt0903747",
+		Tvdb:           "81189",
+		Time:           "2024-01-15 14:30:00",
+		ReplacedPrefix: "Replaced: ",
+		Replaced:       []string{"/old/Breaking.Bad.S01E01.720p.mkv"},
+		Source: &database.ParseInfo{
+			Title:      "Breaking Bad",
+			Year:       uint16(2008),
+			Season:     1,
+			Episode:    1,
+			Quality:    "bluray",
+			Resolution: "1080p",
+			Codec:      "x264",
+			Audio:      "AC3",
+			File:       "/downloads/Breaking.Bad.S01E01.Pilot.1080p.BluRay.x264-ROVERS.mkv",
+			Runtime:    58,
+			Height:     1080,
+			Width:      1920,
+			Imdb:       "tt0903747",
+			Tvdb:       "tvdb81189",
+			Identifier: "S01E01",
+			Proper:     false,
+			Extended:   false,
+			Repack:     false,
+			Languages:  []string{"English"},
+		},
+	}
+	_, outstr, err := logger.ParseStringTemplate(parsestring, &forparser)
+	return outstr, err
+}
+
+func TestParsertype(parsestring string) (string, error) {
+	forparser := parsertype{
+		Dbmovie: database.Dbmovie{
+			Title:            "Inception",
+			OriginalTitle:    "Inception",
+			Year:             2000,
+			Overview:         "A thief who steals corporate secrets through the use of dream-sharing technology is given the inverse task of planting an idea into the mind of a C.E.O.",
+			Tagline:          "Your mind is the scene of the crime",
+			Genres:           "Action, Science Fiction, Adventure",
+			Runtime:          148,
+			ReleaseDate:      sql.NullTime{Time: time.Now(), Valid: true},
+			Status:           "Released",
+			OriginalLanguage: "en",
+			SpokenLanguages:  "English",
+			ImdbID:           "tt1375666",
+			MoviedbID:        27205,
+			TraktID:          1390,
+			FacebookID:       "123",
+			InstagramID:      "134",
+			TwitterID:        "145",
+			VoteAverage:      8.3,
+			VoteCount:        4000,
+			Popularity:       5.5,
+			Budget:           160000000,
+			Revenue:          825532764,
+			Poster:           "/poster.jpg",
+			Backdrop:         "/backdrop.jpg",
+		},
+		Dbserie: database.Dbserie{
+			Identifiedby:    "ep",
+			Aliases:         "Breaking Bad",
+			Firstaired:      "2010-01-01",
+			Runtime:         "45:00",
+			Language:        "English",
+			Rating:          "5.6",
+			Siterating:      "5.7",
+			SiteratingCount: "500",
+			TvrageID:        1,
+			Facebook:        "2",
+			Instagram:       "3",
+			Twitter:         "4",
+			Seriename:       "Breaking Bad",
+			Overview:        "A high school chemistry teacher diagnosed with inoperable lung cancer turns to manufacturing and selling methamphetamine in order to secure his family's future.",
+			Status:          "Ended",
+			Network:         "AMC",
+			Genre:           "Crime, Drama, Thriller",
+			ImdbID:          "tt0903747",
+			ThetvdbID:       81189,
+			TraktID:         1388,
+			Poster:          "/poster.jpg",
+			Banner:          "/banner.jpg",
+			Fanart:          "/fanart.jpg",
+		},
+		DbserieEpisode: database.DbserieEpisode{
+			Title:      "Pilot",
+			Season:     "1",
+			Episode:    "1",
+			Identifier: "S01E01",
+			Overview:   "Walter White, a struggling high school chemistry teacher, is diagnosed with inoperable lung cancer.",
+			FirstAired: sql.NullTime{Time: time.Now(), Valid: true},
+			Runtime:    58,
+		},
+		Source: &database.ParseInfo{
+			Title:      "Breaking Bad",
+			Year:       uint16(2008),
+			Season:     1,
+			Episode:    1,
+			Quality:    "bluray",
+			Resolution: "1080p",
+			Codec:      "x264",
+			Audio:      "AC3",
+			File:       "/downloads/Breaking.Bad.S01E01.Pilot.1080p.BluRay.x264-ROVERS.mkv",
+			Runtime:    58,
+			Height:     1080,
+			Width:      1920,
+			Imdb:       "tt0903747",
+			Tvdb:       "tvdb81189",
+			Identifier: "S01E01",
+			Proper:     false,
+			Extended:   false,
+			Repack:     false,
+			Languages:  []string{"English"},
+		},
+		TitleSource:        "Breaking.Bad.S01E01.Pilot.1080p.BluRay.x264-ROVERS",
+		EpisodeTitleSource: "Pilot",
+		Identifier:         "S01E01",
+		Episodes:           []int{1},
+	}
+	_, outstr, err := logger.ParseStringTemplate(parsestring, &forparser)
+	return outstr, err
+}
 
 // Clear resets the fields of an Organizerdata struct to their zero values.
 // This is useful for clearing the state of an Organizerdata instance.
@@ -566,12 +761,12 @@ func (s *Organizer) GenerateNamingTemplate(o *Organizerdata, m *database.ParseIn
 		}
 	}
 
-	bl, o.Foldername = logger.ParseStringTemplate(o.Foldername, &forparser)
+	bl, o.Foldername, _ = logger.ParseStringTemplate(o.Foldername, &forparser)
 	if bl {
 		o.cleanorgafilefolder()
 		return
 	}
-	bl, o.Filename = logger.ParseStringTemplate(o.Filename, &forparser)
+	bl, o.Filename, _ = logger.ParseStringTemplate(o.Filename, &forparser)
 	if bl {
 		o.cleanorgafilefolder()
 		return
@@ -1232,7 +1427,7 @@ func (s *Organizer) notify(o *Organizerdata, m *database.ParseInfo, id *uint, ol
 			continue
 		}
 		notify.ReplacedPrefix = s.Cfgp.Notification[idx].ReplacedPrefix
-		bl, messagetext := logger.ParseStringTemplate(s.Cfgp.Notification[idx].Message, &notify)
+		bl, messagetext, _ := logger.ParseStringTemplate(s.Cfgp.Notification[idx].Message, &notify)
 		if bl {
 			continue
 		}
@@ -1241,7 +1436,7 @@ func (s *Organizer) notify(o *Organizerdata, m *database.ParseInfo, id *uint, ol
 
 		switch cfgnot.NotificationType {
 		case "pushover":
-			bl, messageTitle := logger.ParseStringTemplate(s.Cfgp.Notification[idx].Title, &notify)
+			bl, messageTitle, _ := logger.ParseStringTemplate(s.Cfgp.Notification[idx].Title, &notify)
 			if bl {
 				continue
 			}

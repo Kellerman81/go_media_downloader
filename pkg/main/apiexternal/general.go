@@ -453,3 +453,47 @@ func doJSONTypeP[S any](c *rlHTTPClient, urlv string, headers map[string][]strin
 	}
 	return &v, err
 }
+
+// ProcessHTTPNoRateCheck is like ProcessHTTP but completely bypasses all rate limiting and response error checking
+// This is specifically for connectivity testing purposes
+func ProcessHTTPNoRateCheck(
+	c *rlHTTPClient,
+	urlv string,
+	run func(context.Context, *http.Response) error,
+	headers map[string][]string,
+	body ...io.Reader,
+) error {
+	if c == nil {
+		c = &cl
+	}
+	ctx, ctxcancel := context.WithTimeout(c.Ctx, cl.Timeout5)
+	defer ctxcancel()
+	
+	var req *http.Request
+	var err error
+	if len(body) >= 1 {
+		req, err = http.NewRequestWithContext(ctx, http.MethodPost, urlv, body[0])
+	} else {
+		req, err = http.NewRequestWithContext(ctx, http.MethodGet, urlv, http.NoBody)
+	}
+	if err != nil {
+		return err
+	}
+	
+	// Set headers
+	for key, values := range headers {
+		for _, value := range values {
+			req.Header.Add(key, value)
+		}
+	}
+	
+	// Make the request directly without any rate limiting or error checking
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	
+	// Run the callback function
+	return run(ctx, resp)
+}

@@ -708,9 +708,9 @@ func GetTimeFormat() string {
 
 // ParseStringTemplate parses a text/template string into a template.Template, caches it, and executes it with the given data.
 // It returns the executed template string and any error encountered.
-func ParseStringTemplate(message string, messagedata any) (bool, string) {
+func ParseStringTemplate(message string, messagedata any) (bool, string, error) {
 	if message == "" {
-		return false, ""
+		return false, "", errors.New("empty message")
 	}
 
 	tmplmessage := textparser.Lookup(message)
@@ -719,16 +719,16 @@ func ParseStringTemplate(message string, messagedata any) (bool, string) {
 		tmplmessage, err = textparser.New(message).Parse(message)
 		if err != nil {
 			LogDynamicanyErr("error", "template", err)
-			return true, ""
+			return true, "", err
 		}
 	}
 	doc := PlAddBuffer.Get()
 	defer PlAddBuffer.Put(doc)
 	if err := tmplmessage.Execute(doc, messagedata); err != nil {
 		LogDynamicanyErr("error", "template", err)
-		return true, ""
+		return true, "", err
 	}
-	return false, doc.String()
+	return false, doc.String(), nil
 }
 
 func BytesToString(b []byte) string {
@@ -1540,7 +1540,7 @@ func GetFieldComments(v any) map[string]string {
 	// Iterate through all fields
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
-		comment := field.Tag.Get("comment")
+		comment := field.Tag.Get("longcomment")
 		if comment != "" {
 			comments[field.Name] = comment
 		}

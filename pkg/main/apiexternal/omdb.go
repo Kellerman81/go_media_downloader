@@ -1,6 +1,9 @@
 package apiexternal
 
 import (
+	"context"
+	"fmt"
+	"net/http"
 	"net/url"
 	"time"
 
@@ -128,4 +131,25 @@ func SearchOmdbMovie(title, yearin string) (*OmDBMovieSearchGlobal, error) {
 		logger.JoinStrings("http://www.omdbapi.com/?s=", url.QueryEscape(title), omdbAPI.QAPIKey),
 		nil,
 	)
+}
+
+// TestOMDBConnectivity tests the connectivity to the OMDB API
+// Returns status code and error if any
+func TestOMDBConnectivity(timeout time.Duration) (int, error) {
+	// Check if client is initialized
+	if omdbAPI.OmdbAPIKey == "" {
+		return 0, fmt.Errorf("OMDB API client not initialized or missing API key")
+	}
+
+	statusCode := 0
+	err := ProcessHTTPNoRateCheck(
+		&omdbAPI.Client,
+		"http://www.omdbapi.com/?s=test",
+		func(ctx context.Context, resp *http.Response) error {
+			statusCode = resp.StatusCode
+			return nil
+		},
+		nil,
+	)
+	return statusCode, err
 }

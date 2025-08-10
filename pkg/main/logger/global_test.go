@@ -375,7 +375,7 @@ func TestParseStringTemplate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotErr, gotResult := ParseStringTemplate(tt.message, tt.messageData)
+			gotErr, gotResult, _ := ParseStringTemplate(tt.message, tt.messageData)
 			if gotErr != tt.wantErr {
 				t.Errorf("ParseStringTemplate() error = %v, wantErr %v", gotErr, tt.wantErr)
 			}

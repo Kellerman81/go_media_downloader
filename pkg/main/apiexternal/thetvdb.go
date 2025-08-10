@@ -1,7 +1,9 @@
 package apiexternal
 
 import (
+	"context"
 	"errors"
+	"net/http"
 	"strconv"
 	"time"
 
@@ -224,4 +226,20 @@ func parseDateTime(date string) time.Time {
 		return t
 	}
 	return time.Time{}
+}
+
+// TestTVDBConnectivity tests the connectivity to the TVDB API
+// Returns status code and error if any
+func TestTVDBConnectivity(timeout time.Duration) (int, error) {
+	statusCode := 0
+	err := ProcessHTTPNoRateCheck(
+		&tvdbAPI.Client,
+		"https://api.thetvdb.com/series/1",
+		func(ctx context.Context, resp *http.Response) error {
+			statusCode = resp.StatusCode
+			return nil
+		},
+		nil,
+	)
+	return statusCode, err
 }

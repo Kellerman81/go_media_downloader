@@ -1200,7 +1200,7 @@ func apiSeriesEpisodeSearchList(c *gin.Context) {
 
 	titlesearch := false
 	if queryParam, ok := c.GetQuery("searchByTitle"); ok {
-		if queryParam == "true" || queryParam == "yes" {
+		if queryParam == "true" || queryParam == "yes" || queryParam == "on" {
 			titlesearch = true
 		}
 	}

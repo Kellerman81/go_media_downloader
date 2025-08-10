@@ -341,11 +341,11 @@ func GetTableDefaults(table string) QueryParams {
 		q.DefaultOrderBy = " order by id desc"
 		q.Object = Dbmovie{}
 	case "dbmovie_titles":
-		q.Table = "dbmovie_titles dt LEFT JOIN dbmovies dm ON dt.dbmovie_id = dm.id"
-		q.DefaultColumns = "dt.id as id,dt.created_at as created_at,dt.updated_at as updated_at,dt.dbmovie_id as dbmovie_id,dt.title as title,dt.slug as slug,dt.region as region,dm.title as movie_title"
-		q.DefaultQuery = " where dt.id like ? or dt.dbmovie_id like ? or dt.title like ? or dt.slug like ? or dt.region like ?"
+		q.Table = "dbmovie_titles LEFT JOIN dbmovies ON dbmovie_titles.dbmovie_id = dbmovies.id"
+		q.DefaultColumns = "dbmovie_titles.id as id,dbmovie_titles.created_at as created_at,dbmovie_titles.updated_at as updated_at,dbmovie_titles.dbmovie_id as dbmovie_id,dbmovie_titles.title as title,dbmovie_titles.slug as slug,dbmovie_titles.region as region,dbmovies.title as movie_title"
+		q.DefaultQuery = " where dbmovie_titles.id like ? or dbmovie_titles.dbmovie_id like ? or dbmovie_titles.title like ? or dbmovie_titles.slug like ? or dbmovie_titles.region like ?"
 		q.DefaultQueryParamCount = 5
-		q.DefaultOrderBy = " order by dt.id desc"
+		q.DefaultOrderBy = " order by dbmovie_titles.id desc"
 		q.Object = DbmovieTitle{}
 	case "dbseries":
 		q.Table = "dbseries"
@@ -355,60 +355,60 @@ func GetTableDefaults(table string) QueryParams {
 		q.DefaultOrderBy = " order by id desc"
 		q.Object = Dbserie{}
 	case "dbserie_alternates":
-		q.Table = "dbserie_alternates dsa LEFT JOIN dbseries ds ON dsa.dbserie_id = ds.id"
-		q.DefaultColumns = "dsa.id as id,dsa.created_at as created_at,dsa.updated_at as updated_at,dsa.dbserie_id as dbserie_id,dsa.title as title,dsa.slug as slug,dsa.region as region,ds.seriename as series_name"
-		q.DefaultQuery = " where dsa.id like ? or dsa.dbserie_id like ? or dsa.title like ? or dsa.slug like ? or dsa.region like ?"
+		q.Table = "dbserie_alternates LEFT JOIN dbseries ON dbserie_alternates.dbserie_id = dbseries.id"
+		q.DefaultColumns = "dbserie_alternates.id as id,dbserie_alternates.created_at as created_at,dbserie_alternates.updated_at as updated_at,dbserie_alternates.dbserie_id as dbserie_id,dbserie_alternates.title as title,dbserie_alternates.slug as slug,dbserie_alternates.region as region,dbseries.seriename as series_name"
+		q.DefaultQuery = " where dbserie_alternates.id like ? or dbserie_alternates.dbserie_id like ? or dbserie_alternates.title like ? or dbserie_alternates.slug like ? or dbserie_alternates.region like ?"
 		q.DefaultQueryParamCount = 5
-		q.DefaultOrderBy = " order by dsa.id desc"
+		q.DefaultOrderBy = " order by dbserie_alternates.id desc"
 		q.Object = DbserieAlternate{}
 	case "dbserie_episodes":
-		q.Table = "dbserie_episodes dse LEFT JOIN dbseries ds ON dse.dbserie_id = ds.id"
-		q.DefaultColumns = "dse.id as id,dse.created_at as created_at,dse.updated_at as updated_at,dse.episode as episode,dse.season as season,dse.identifier as identifier,dse.title as title,dse.first_aired as first_aired,dse.overview as overview,dse.poster as poster,dse.runtime as runtime,dse.dbserie_id as dbserie_id,ds.seriename as series_name"
-		q.DefaultQuery = " where dse.id like ? or dse.episode like ? or dse.season like ? or dse.dbserie_id like ? or dse.title like ? or dse.identifier like ?"
+		q.Table = "dbserie_episodes LEFT JOIN dbseries ON dbserie_episodes.dbserie_id = dbseries.id"
+		q.DefaultColumns = "dbserie_episodes.id as id,dbserie_episodes.created_at as created_at,dbserie_episodes.updated_at as updated_at,dbserie_episodes.episode as episode,dbserie_episodes.season as season,dbserie_episodes.identifier as identifier,dbserie_episodes.title as title,dbserie_episodes.first_aired as first_aired,dbserie_episodes.overview as overview,dbserie_episodes.poster as poster,dbserie_episodes.runtime as runtime,dbserie_episodes.dbserie_id as dbserie_id,dbseries.seriename as series_name"
+		q.DefaultQuery = " where dbserie_episodes.id like ? or dbserie_episodes.episode like ? or dbserie_episodes.season like ? or dbserie_episodes.dbserie_id like ? or dbserie_episodes.title like ? or dbserie_episodes.identifier like ?"
 		q.DefaultQueryParamCount = 6
-		q.DefaultOrderBy = " order by dse.id desc"
+		q.DefaultOrderBy = " order by dbserie_episodes.id desc"
 		q.Object = DbserieEpisode{}
 	case "movies":
-		q.Table = "movies m LEFT JOIN dbmovies dm ON m.dbmovie_id = dm.id"
-		q.DefaultColumns = "m.id as id,m.created_at as created_at,m.updated_at as updated_at,m.blacklisted as blacklisted,m.quality_reached as quality_reached,m.quality_profile as quality_profile,m.missing as missing,m.dont_upgrade as dont_upgrade,m.dont_search as dont_search,m.listname as listname,m.rootpath as rootpath,m.dbmovie_id as dbmovie_id,dm.title as movie_title"
-		q.DefaultQuery = " where m.id like ? or m.quality_profile like ? or m.listname like ? or m.rootpath like ? or m.dbmovie_id like ?"
+		q.Table = "movies LEFT JOIN dbmovies ON movies.dbmovie_id = dbmovies.id"
+		q.DefaultColumns = "movies.id as id,movies.created_at as created_at,movies.updated_at as updated_at,movies.blacklisted as blacklisted,movies.quality_reached as quality_reached,movies.quality_profile as quality_profile,movies.missing as missing,movies.dont_upgrade as dont_upgrade,movies.dont_search as dont_search,movies.listname as listname,movies.rootpath as rootpath,movies.dbmovie_id as dbmovie_id,dbmovies.title as movie_title"
+		q.DefaultQuery = " where movies.id like ? or movies.quality_profile like ? or movies.listname like ? or movies.rootpath like ? or movies.dbmovie_id like ?"
 		q.DefaultQueryParamCount = 5
-		q.DefaultOrderBy = " order by m.id desc"
+		q.DefaultOrderBy = " order by movies.id desc"
 		q.Object = Movie{}
 	case "series":
-		q.Table = "series s LEFT JOIN dbseries ds ON s.dbserie_id = ds.id"
-		q.DefaultColumns = "s.id as id,s.created_at as created_at,s.updated_at as updated_at,s.listname as listname,s.rootpath as rootpath,s.dbserie_id as dbserie_id,s.dont_upgrade as dont_upgrade,s.dont_search as dont_search,ds.seriename as series_name"
-		q.DefaultQuery = " where s.id like ? or s.listname like ? or s.rootpath like ? or s.dbserie_id like ?"
+		q.Table = "series LEFT JOIN dbseries ON series.dbserie_id = dbseries.id"
+		q.DefaultColumns = "series.id as id,series.created_at as created_at,series.updated_at as updated_at,series.listname as listname,series.rootpath as rootpath,series.dbserie_id as dbserie_id,series.dont_upgrade as dont_upgrade,series.dont_search as dont_search,dbseries.seriename as series_name"
+		q.DefaultQuery = " where series.id like ? or series.listname like ? or series.rootpath like ? or series.dbserie_id like ?"
 		q.DefaultQueryParamCount = 4
-		q.DefaultOrderBy = " order by s.id desc"
+		q.DefaultOrderBy = " order by series.id desc"
 		q.Object = Serie{}
 	case "serie_episodes":
-		q.Table = "serie_episodes se LEFT JOIN dbserie_episodes dse ON se.dbserie_episode_id = dse.id"
-		q.DefaultColumns = "se.id as id,se.created_at as created_at,se.updated_at as updated_at,se.blacklisted as blacklisted,se.quality_reached as quality_reached,se.quality_profile as quality_profile,se.missing as missing,se.dont_upgrade as dont_upgrade,se.dont_search as dont_search,se.dbserie_episode_id as dbserie_episode_id,se.serie_id as serie_id,se.dbserie_id as dbserie_id,dse.title as episode_title"
-		q.DefaultQuery = " where se.id like ? or se.quality_profile like ? or se.dbserie_episode_id like ? or se.serie_id like ? or se.dbserie_id like ?"
+		q.Table = "serie_episodes LEFT JOIN dbserie_episodes ON serie_episodes.dbserie_episode_id = dbserie_episodes.id"
+		q.DefaultColumns = "serie_episodes.id as id,serie_episodes.created_at as created_at,serie_episodes.updated_at as updated_at,serie_episodes.blacklisted as blacklisted,serie_episodes.quality_reached as quality_reached,serie_episodes.quality_profile as quality_profile,serie_episodes.missing as missing,serie_episodes.dont_upgrade as dont_upgrade,serie_episodes.dont_search as dont_search,serie_episodes.dbserie_episode_id as dbserie_episode_id,serie_episodes.serie_id as serie_id,serie_episodes.dbserie_id as dbserie_id,dbserie_episodes.title as episode_title"
+		q.DefaultQuery = " where serie_episodes.id like ? or serie_episodes.quality_profile like ? or serie_episodes.dbserie_episode_id like ? or serie_episodes.serie_id like ? or serie_episodes.dbserie_id like ?"
 		q.DefaultQueryParamCount = 5
-		q.DefaultOrderBy = " order by se.id desc"
+		q.DefaultOrderBy = " order by serie_episodes.id desc"
 		q.Object = SerieEpisode{}
 	case "job_histories":
 		q.Table = "job_histories"
-		q.DefaultColumns = "id,created_at,updated_at,job_type,job_category,job_group,started,ended"
+		q.DefaultColumns = "id,created_at,updated_at,job_type,job_category,job_group,started,ended,CASE WHEN started IS NOT NULL AND ended IS NOT NULL THEN ROUND((julianday(ended) - julianday(started)) * 86400) ELSE NULL END as duration"
 		q.DefaultQuery = " where id like ? or job_type like ? or job_category like ? or job_group like ?"
 		q.DefaultQueryParamCount = 4
 		q.DefaultOrderBy = " order by started desc"
 		q.Object = JobHistory{}
 	case "serie_file_unmatcheds":
-		q.Table = "serie_file_unmatcheds sfu LEFT JOIN series s ON sfu.listname = s.listname"
-		q.DefaultColumns = "sfu.id as id,sfu.created_at as created_at,sfu.updated_at as updated_at,sfu.listname as listname,sfu.filepath as filepath,sfu.last_checked as last_checked,sfu.parsed_data as parsed_data,s.rootpath as series_rootpath"
-		q.DefaultQuery = " where sfu.id like ? or sfu.listname like ? or sfu.filepath like ?"
+		q.Table = "serie_file_unmatcheds LEFT JOIN series ON serie_file_unmatcheds.listname = series.listname"
+		q.DefaultColumns = "serie_file_unmatcheds.id as id,serie_file_unmatcheds.created_at as created_at,serie_file_unmatcheds.updated_at as updated_at,serie_file_unmatcheds.listname as listname,serie_file_unmatcheds.filepath as filepath,serie_file_unmatcheds.last_checked as last_checked,serie_file_unmatcheds.parsed_data as parsed_data,series.rootpath as series_rootpath"
+		q.DefaultQuery = " where serie_file_unmatcheds.id like ? or serie_file_unmatcheds.listname like ? or serie_file_unmatcheds.filepath like ?"
 		q.DefaultQueryParamCount = 3
-		q.DefaultOrderBy = " order by sfu.id desc"
+		q.DefaultOrderBy = " order by serie_file_unmatcheds.id desc"
 		q.Object = SerieFileUnmatched{}
 	case "movie_file_unmatcheds":
-		q.Table = "movie_file_unmatcheds mfu LEFT JOIN movies m ON mfu.listname = m.listname"
-		q.DefaultColumns = "mfu.id as id,mfu.created_at as created_at,mfu.updated_at as updated_at,mfu.listname as listname,mfu.filepath as filepath,mfu.last_checked as last_checked,mfu.parsed_data as parsed_data,m.quality_profile as movie_quality_profile"
-		q.DefaultQuery = " where mfu.id like ? or mfu.listname like ? or mfu.filepath like ?"
+		q.Table = "movie_file_unmatcheds LEFT JOIN movies ON movie_file_unmatcheds.listname = movies.listname"
+		q.DefaultColumns = "movie_file_unmatcheds.id as id,movie_file_unmatcheds.created_at as created_at,movie_file_unmatcheds.updated_at as updated_at,movie_file_unmatcheds.listname as listname,movie_file_unmatcheds.filepath as filepath,movie_file_unmatcheds.last_checked as last_checked,movie_file_unmatcheds.parsed_data as parsed_data,movies.quality_profile as movie_quality_profile"
+		q.DefaultQuery = " where movie_file_unmatcheds.id like ? or movie_file_unmatcheds.listname like ? or movie_file_unmatcheds.filepath like ?"
 		q.DefaultQueryParamCount = 3
-		q.DefaultOrderBy = " order by mfu.id desc"
+		q.DefaultOrderBy = " order by movie_file_unmatcheds.id desc"
 		q.Object = MovieFileUnmatched{}
 	case "qualities":
 		q.Table = "qualities"
@@ -418,32 +418,32 @@ func GetTableDefaults(table string) QueryParams {
 		q.DefaultOrderBy = " order by id desc"
 		q.Object = Qualities{}
 	case "movie_files":
-		q.Table = "movie_files mf LEFT JOIN dbmovies dm ON mf.dbmovie_id = dm.id"
-		q.DefaultColumns = "mf.id as id,mf.location as location,mf.filename as filename,mf.extension as extension,mf.quality_profile as quality_profile,mf.created_at as created_at,mf.updated_at as updated_at,mf.resolution_id as resolution_id,mf.quality_id as quality_id,mf.codec_id as codec_id,mf.audio_id as audio_id,mf.movie_id as movie_id,mf.dbmovie_id as dbmovie_id,mf.height as height,mf.width as width,mf.proper as proper,mf.extended as extended,mf.repack as repack,dm.title as movie_title"
-		q.DefaultQuery = " where mf.id like ? or mf.location like ? or mf.filename like ? or mf.extension like ? or mf.quality_profile like ? or mf.movie_id like ? or mf.dbmovie_id like ?"
+		q.Table = "movie_files LEFT JOIN dbmovies ON  movie_files.dbmovie_id = dbmovies.id"
+		q.DefaultColumns = "movie_files.id as id,movie_files.location as location,movie_files.filename as filename,movie_files.extension as extension,movie_files.quality_profile as quality_profile,movie_files.created_at as created_at,movie_files.updated_at as updated_at,movie_files.resolution_id as resolution_id,movie_files.quality_id as quality_id,movie_files.codec_id as codec_id,movie_files.audio_id as audio_id,movie_files.movie_id as movie_id,movie_files.dbmovie_id as dbmovie_id,movie_files.height as height,movie_files.width as width,movie_files.proper as proper,movie_files.extended as extended,movie_files.repack as repack,dbmovies.title as movie_title"
+		q.DefaultQuery = " where movie_files.id like ? or movie_files.location like ? or movie_files.filename like ? or movie_files.extension like ? or movie_files.quality_profile like ? or movie_files.movie_id like ? or movie_files.dbmovie_id like ?"
 		q.DefaultQueryParamCount = 7
-		q.DefaultOrderBy = " order by mf.id desc"
+		q.DefaultOrderBy = " order by movie_files.id desc"
 		q.Object = MovieFile{}
 	case "serie_episode_files":
-		q.Table = "serie_episode_files sef LEFT JOIN dbserie_episodes dse ON sef.dbserie_episode_id = dse.id"
-		q.DefaultColumns = "sef.id as id,sef.location as location,sef.filename as filename,sef.extension as extension,sef.quality_profile as quality_profile,sef.created_at as created_at,sef.updated_at as updated_at,sef.resolution_id as resolution_id,sef.quality_id as quality_id,sef.codec_id as codec_id,sef.audio_id as audio_id,sef.serie_id as serie_id,sef.serie_episode_id as serie_episode_id,sef.dbserie_episode_id as dbserie_episode_id,sef.dbserie_id as dbserie_id,sef.height as height,sef.width as width,sef.proper as proper,sef.extended as extended,sef.repack as repack,dse.title as episode_title"
-		q.DefaultQuery = " where sef.id like ? or sef.location like ? or sef.filename like ? or sef.extension like ? or sef.quality_profile like ? or sef.serie_id like ? or sef.serie_episode_id like ? or sef.dbserie_episode_id like ? or sef.dbserie_id like ?"
+		q.Table = "serie_episode_files LEFT JOIN dbserie_episodes ON serie_episode_files.dbserie_episode_id = dbserie_episodes.id"
+		q.DefaultColumns = "serie_episode_files.id as id,serie_episode_files.location as location,serie_episode_files.filename as filename,serie_episode_files.extension as extension,serie_episode_files.quality_profile as quality_profile,serie_episode_files.created_at as created_at,serie_episode_files.updated_at as updated_at,serie_episode_files.resolution_id as resolution_id,serie_episode_files.quality_id as quality_id,serie_episode_files.codec_id as codec_id,serie_episode_files.audio_id as audio_id,serie_episode_files.serie_id as serie_id,serie_episode_files.serie_episode_id as serie_episode_id,serie_episode_files.dbserie_episode_id as dbserie_episode_id,serie_episode_files.dbserie_id as dbserie_id,serie_episode_files.height as height,serie_episode_files.width as width,serie_episode_files.proper as proper,serie_episode_files.extended as extended,serie_episode_files.repack as repack,dbserie_episodes.title as episode_title"
+		q.DefaultQuery = " where serie_episode_files.id like ? or serie_episode_files.location like ? or serie_episode_files.filename like ? or serie_episode_files.extension like ? or serie_episode_files.quality_profile like ? or serie_episode_files.serie_id like ? or serie_episode_files.serie_episode_id like ? or serie_episode_files.dbserie_episode_id like ? or serie_episode_files.dbserie_id like ?"
 		q.DefaultQueryParamCount = 9
-		q.DefaultOrderBy = " order by sef.id desc"
+		q.DefaultOrderBy = " order by serie_episode_files.id desc"
 		q.Object = SerieEpisodeFile{}
 	case "movie_histories":
-		q.Table = "movie_histories mh LEFT JOIN dbmovies dm ON mh.dbmovie_id = dm.id"
-		q.DefaultColumns = "mh.id as id,mh.title as title,mh.url as url,mh.indexer as indexer,mh.type as type,mh.target as target,mh.quality_profile as quality_profile,mh.created_at as created_at,mh.updated_at as updated_at,mh.downloaded_at as downloaded_at,mh.resolution_id as resolution_id,mh.quality_id as quality_id,mh.codec_id as codec_id,mh.audio_id as audio_id,mh.movie_id as movie_id,mh.dbmovie_id as dbmovie_id,mh.blacklisted as blacklisted,dm.title as movie_title"
-		q.DefaultQuery = " where mh.id like ? or mh.title like ? or mh.url like ? or mh.indexer like ? or mh.type like ? or mh.target like ? or mh.quality_profile like ? or mh.movie_id like ? or mh.dbmovie_id like ?"
+		q.Table = "movie_histories LEFT JOIN dbmovies ON movie_histories.dbmovie_id = dbmovies.id"
+		q.DefaultColumns = "movie_histories.id as id,movie_histories.title as title,movie_histories.url as url,movie_histories.indexer as indexer,movie_histories.type as type,movie_histories.target as target,movie_histories.quality_profile as quality_profile,movie_histories.created_at as created_at,movie_histories.updated_at as updated_at,movie_histories.downloaded_at as downloaded_at,movie_histories.resolution_id as resolution_id,movie_histories.quality_id as quality_id,movie_histories.codec_id as codec_id,movie_histories.audio_id as audio_id,movie_histories.movie_id as movie_id,movie_histories.dbmovie_id as dbmovie_id,movie_histories.blacklisted as blacklisted,dbmovies.title as movie_title"
+		q.DefaultQuery = " where movie_histories.id like ? or movie_histories.title like ? or movie_histories.url like ? or movie_histories.indexer like ? or movie_histories.type like ? or movie_histories.target like ? or movie_histories.quality_profile like ? or movie_histories.movie_id like ? or movie_histories.dbmovie_id like ?"
 		q.DefaultQueryParamCount = 9
-		q.DefaultOrderBy = " order by mh.id desc"
+		q.DefaultOrderBy = " order by movie_histories.id desc"
 		q.Object = MovieHistory{}
 	case "serie_episode_histories":
-		q.Table = "serie_episode_histories seh LEFT JOIN dbserie_episodes dse ON seh.dbserie_episode_id = dse.id"
-		q.DefaultColumns = "seh.id as id,seh.title as title,seh.url as url,seh.indexer as indexer,seh.type as type,seh.target as target,seh.quality_profile as quality_profile,seh.created_at as created_at,seh.updated_at as updated_at,seh.downloaded_at as downloaded_at,seh.resolution_id as resolution_id,seh.quality_id as quality_id,seh.codec_id as codec_id,seh.audio_id as audio_id,seh.serie_id as serie_id,seh.serie_episode_id as serie_episode_id,seh.dbserie_episode_id as dbserie_episode_id,seh.dbserie_id as dbserie_id,seh.blacklisted as blacklisted,dse.title as episode_title"
-		q.DefaultQuery = " where seh.id like ? or seh.title like ? or seh.url like ? or seh.indexer like ? or seh.type like ? or seh.target like ? or seh.quality_profile like ? or seh.serie_id like ? or seh.serie_episode_id like ? or seh.dbserie_episode_id like ? or seh.dbserie_id like ?"
+		q.Table = "serie_episode_histories LEFT JOIN dbserie_episodes ON serie_episode_histories.dbserie_episode_id = dbserie_episodes.id"
+		q.DefaultColumns = "serie_episode_histories.id as id,serie_episode_histories.title as title,serie_episode_histories.url as url,serie_episode_histories.indexer as indexer,serie_episode_histories.type as type,serie_episode_histories.target as target,serie_episode_histories.quality_profile as quality_profile,serie_episode_histories.created_at as created_at,serie_episode_histories.updated_at as updated_at,serie_episode_histories.downloaded_at as downloaded_at,serie_episode_histories.resolution_id as resolution_id,serie_episode_histories.quality_id as quality_id,serie_episode_histories.codec_id as codec_id,serie_episode_histories.audio_id as audio_id,serie_episode_histories.serie_id as serie_id,serie_episode_histories.serie_episode_id as serie_episode_id,serie_episode_histories.dbserie_episode_id as dbserie_episode_id,serie_episode_histories.dbserie_id as dbserie_id,serie_episode_histories.blacklisted as blacklisted,dbserie_episodes.title as episode_title"
+		q.DefaultQuery = " where serie_episode_histories.id like ? or serie_episode_histories.title like ? or serie_episode_histories.url like ? or serie_episode_histories.indexer like ? or serie_episode_histories.type like ? or serie_episode_histories.target like ? or serie_episode_histories.quality_profile like ? or serie_episode_histories.serie_id like ? or serie_episode_histories.serie_episode_id like ? or serie_episode_histories.dbserie_episode_id like ? or serie_episode_histories.dbserie_id like ?"
 		q.DefaultQueryParamCount = 11
-		q.DefaultOrderBy = " order by seh.id desc"
+		q.DefaultOrderBy = " order by serie_episode_histories.id desc"
 		q.Object = SerieEpisodeHistory{}
 	}
 	return q
@@ -707,7 +707,7 @@ func QueryResultSerieEpisodes(qu Querywithargs, args ...any) []ResultSerieEpisod
 	return StructscanT[ResultSerieEpisodes](false, qu.Limit, qu.QueryString, args...)
 }
 
-// Buildquery constructs the SQL query string from the Querywithargs fields.
+// Buildquery constructs the SQL query string from the Querywithargs fieldbseries.
 // It handles adding the SELECT columns, FROM table, JOINs, WHERE, ORDER BY
 // and LIMIT clauses based on the configured fields.
 func (qu *Querywithargs) buildquery() {

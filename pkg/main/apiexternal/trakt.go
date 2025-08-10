@@ -3,6 +3,7 @@ package apiexternal
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/slidingwindow"
+	"github.com/goccy/go-json"
 	"golang.org/x/oauth2"
 )
 
@@ -612,4 +614,27 @@ func GetTraktUserListAuth(
 		),
 		traktAPI.DefaultHeaders,
 	)
+}
+
+// TestTraktConnectivity tests the connectivity to the Trakt API
+// Returns status code and error if any
+func TestTraktConnectivity(timeout time.Duration, limit *string) (int, []TraktMovieTrending, error) {
+	// Check if client is initialized
+	if traktAPI.ClientID == "" {
+		return 0, nil, fmt.Errorf("Trakt API client not initialized or missing ClientID")
+	}
+
+	statusCode := 0
+	var v []TraktMovieTrending
+	err := ProcessHTTPNoRateCheck(
+		&traktAPI.Client,
+		traktaddlimit("https://api.trakt.tv/movies/trending", limit),
+		func(ctx context.Context, resp *http.Response) error {
+			json.NewDecoder(resp.Body).DecodeContext(ctx, &v)
+			statusCode = resp.StatusCode
+			return nil
+		},
+		traktAPI.DefaultHeaders,
+	)
+	return statusCode, v, err
 }

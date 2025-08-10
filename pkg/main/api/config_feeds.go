@@ -104,194 +104,343 @@ func renderFeedParsingPage(csrfToken string) Node {
 	}
 
 	return Div(
-		Class("config-section"),
-		H3(Text("Feed Parser & Results")),
-		P(Text("Parse and display feed results from various sources (IMDB lists, Trakt lists, CSV files, etc.). View the parsed movies and series that would be added to your configuration.")),
+		Class("config-section-enhanced"),
+
+		// Enhanced page header with gradient background
+		Div(
+			Class("page-header-enhanced"),
+			Div(
+				Class("header-content"),
+				Div(
+					Class("header-icon-wrapper"),
+					I(Class("fa-solid fa-rss header-icon")),
+				),
+				Div(
+					Class("header-text"),
+					H2(Class("header-title"), Text("Feed Parser & Results")),
+					P(Class("header-subtitle"), Text("Parse and display feed results from various sources (IMDB lists, Trakt lists, CSV files, etc.). View the parsed movies and series that would be added to your configuration.")),
+				),
+			),
+		),
 
 		Form(
 			Class("config-form"),
 			ID("feedParsingForm"),
 
 			Div(
-				Class("row"),
+				Class("form-cards-grid"),
+
+				// Feed Configuration Card
 				Div(
-					Class("col-md-6"),
-					H5(Text("Feed Configuration")),
+					Class("form-card"),
+					Div(
+						Class("card-header"),
+						I(Class("fas fa-cog card-icon")),
+						H5(Class("card-title"), Text("Feed Configuration")),
+						P(Class("card-subtitle"), Text("Select source and media settings")),
+					),
+					Div(
+						Class("card-body"),
+						renderFormGroup("feed", map[string]string{
+							"MediaConfig": "Select the media configuration to use for feed parsing",
+						}, map[string]string{
+							"MediaConfig": "Media Configuration",
+						}, "MediaConfig", "select", "", map[string][]string{
+							"options": mediaConfigs,
+						}),
 
-					renderFormGroup("feed", map[string]string{
-						"MediaConfig": "Select the media configuration to use for feed parsing",
-					}, map[string]string{
-						"MediaConfig": "Media Configuration",
-					}, "MediaConfig", "select", "", map[string][]string{
-						"options": mediaConfigs,
-					}),
-
-					renderFormGroup("feed", map[string]string{
-						"FeedType": "Type of feed to parse",
-					}, map[string]string{
-						"FeedType": "Feed Type",
-					}, "FeedType", "select", "imdb", map[string][]string{
-						"options": feedTypes,
-					}),
+						renderFormGroup("feed", map[string]string{
+							"FeedType": "Type of feed to parse",
+						}, map[string]string{
+							"FeedType": "Feed Type",
+						}, "FeedType", "select", "imdb", map[string][]string{
+							"options": feedTypes,
+						}),
+					),
 				),
 
+				// Parsing Options Card
 				Div(
-					Class("col-md-6"),
-					H5(Text("Parsing Options")),
+					Class("form-card"),
+					Div(
+						Class("card-header"),
+						I(Class("fas fa-sliders-h card-icon")),
+						H5(Class("card-title"), Text("Parsing Options")),
+						P(Class("card-subtitle"), Text("Configure parsing behavior")),
+					),
+					Div(
+						Class("card-body"),
+						renderFormGroup("feed", map[string]string{
+							"ListName": "Target list name for parsed items (select media configuration first)",
+						}, map[string]string{
+							"ListName": "List Name",
+						}, "ListName", "select", "", map[string][]string{
+							"options": {"-- Select Media Configuration First --"},
+						}),
 
-					renderFormGroup("feed", map[string]string{
-						"ListName": "Target list name for parsed items (select media configuration first)",
-					}, map[string]string{
-						"ListName": "List Name",
-					}, "ListName", "select", "", map[string][]string{
-						"options": {"-- Select Media Configuration First --"},
-					}),
+						renderFormGroup("feed", map[string]string{
+							"DryRun": "Parse feeds without adding to database (preview only)",
+						}, map[string]string{
+							"DryRun": "Dry Run (Preview Only)",
+						}, "DryRun", "checkbox", true, nil),
 
-					renderFormGroup("feed", map[string]string{
-						"DryRun": "Parse feeds without adding to database (preview only)",
-					}, map[string]string{
-						"DryRun": "Dry Run (Preview Only)",
-					}, "DryRun", "checkbox", true, nil),
-
-					renderFormGroup("feed", map[string]string{
-						"Limit": "Maximum number of items to parse (0 = no limit)",
-					}, map[string]string{
-						"Limit": "Parse Limit",
-					}, "Limit", "number", "100", nil),
+						renderFormGroup("feed", map[string]string{
+							"Limit": "Maximum number of items to parse (0 = no limit)",
+						}, map[string]string{
+							"Limit": "Parse Limit",
+						}, "Limit", "number", "100", nil),
+					),
 				),
 			),
 
+			// Enhanced action buttons
 			Div(
-				Class("form-group submit-group"),
+				Class("form-actions-enhanced"),
 				Button(
-					Class(ClassBtnPrimary),
-					Text("Parse Feed"),
+					Class("btn-action-primary"),
 					Type("button"),
 					hx.Target("#feedResults"),
 					hx.Swap("innerHTML"),
 					hx.Post("/api/admin/feedparse"),
 					hx.Headers(createHTMXHeaders(csrfToken)),
 					hx.Include("#feedParsingForm"),
+					I(Class("fas fa-play action-icon")),
+					Span(Class("action-text"), Text("Parse Feed")),
 				),
 				Button(
 					Type("button"),
-					Class("btn btn-secondary ml-2"),
+					Class("btn-action-secondary"),
 					Attr("onclick", "document.getElementById('feedParsingForm').reset(); document.getElementById('feedResults').innerHTML = '';"),
-					Text("Reset"),
+					I(Class("fas fa-undo action-icon")),
+					Span(Class("action-text"), Text("Reset Form")),
 				),
 			),
 		),
 
+		// Enhanced results container
 		Div(
+			Class("results-container-enhanced"),
 			ID("feedResults"),
-			Class("mt-4"),
-			Style("min-height: 50px;"),
+			// Loading state will be injected here
 		),
 
-		// JavaScript for dynamic list updates
-		Script(
-			Rawf(`
-				const mediaToLists = %s;
-				
-				function updateListOptions() {
-					const mediaSelect = document.querySelector('select[name="feed_MediaConfig"]');
-					const listSelect = document.querySelector('select[name="feed_ListName"]');
-					
-					console.log('updateListOptions called');
-					console.log('mediaSelect found:', !!mediaSelect);
-					console.log('listSelect found:', !!listSelect);
-					
-					if (!mediaSelect || !listSelect) {
-						console.error('Could not find form elements');
-						return;
-					}
-					
-					const selectedMedia = mediaSelect.value;
-					const lists = mediaToLists[selectedMedia] || [];
-					
-					console.log('Selected media:', selectedMedia);
-					console.log('Available lists:', lists);
-					
-					// Clear existing options
-					listSelect.innerHTML = '';
-					
-					if (lists.length === 0) {
-						const option = document.createElement('option');
-						option.value = '';
-						option.textContent = '-- No lists available for this configuration --';
-						listSelect.appendChild(option);
-					} else {
-						// Add default option
-						const defaultOption = document.createElement('option');
-						defaultOption.value = '';
-						defaultOption.textContent = '-- Select a list --';
-						listSelect.appendChild(defaultOption);
-						
-						// Add list options
-						lists.forEach(function(list) {
-							const option = document.createElement('option');
-							option.value = list;
-							option.textContent = list;
-							listSelect.appendChild(option);
-						});
-					}
+		// Enhanced HTMX approach - add dynamic behavior to the MediaConfig select
+		Script(Raw(`
+			document.addEventListener('DOMContentLoaded', function() {
+				// Initialize Choices.js first
+				if (window.initChoicesGlobal) {
+					window.initChoicesGlobal();
 				}
 				
-				// Set up event listener
-				document.addEventListener('DOMContentLoaded', function() {
-					console.log('DOM loaded, setting up feed parser event listeners');
-					console.log('mediaToLists:', mediaToLists);
+				// Wait for Choices.js to initialize before setting up HTMX
+				setTimeout(function() {
+					setupFeedListsHTMX();
+				}, 1500);
+			});
+			
+			function setupFeedListsHTMX() {
+				const mediaSelect = document.querySelector('select[name="feed_MediaConfig"]');
+				const listSelect = document.querySelector('select[name="feed_ListName"]');
+				
+				if (mediaSelect && listSelect) {
 					
-					const mediaSelect = document.querySelector('select[name="feed_MediaConfig"]');
-					console.log('Media select element found:', !!mediaSelect);
-					
-					if (mediaSelect) {
-						mediaSelect.addEventListener('change', updateListOptions);
-						console.log('Event listener added to media select');
+					// Function to update list options
+					function updateListOptions(mediaConfig) {
+						if (!mediaConfig || mediaConfig === '') {
+							// Clear list options
+							updateListChoices([]);
+							return;
+						}
 						
-						// Call updateListOptions initially to handle any pre-selected values
-						updateListOptions();
-						console.log('Initial updateListOptions called');
-					} else {
-						// Try alternative selectors
-						const altMediaSelect = document.querySelector('#feedParsingForm select[name="feed_MediaConfig"]');
-						console.log('Alternative media select found:', !!altMediaSelect);
-						if (altMediaSelect) {
-							altMediaSelect.addEventListener('change', updateListOptions);
-							console.log('Event listener added to alternative media select');
+						// Make AJAX request to get lists
+						fetch('/api/admin/feed-lists', {
+							method: 'POST',
+							headers: {
+								'Content-Type': 'application/x-www-form-urlencoded',
+								'X-CSRF-Token': '`+csrfToken+`'
+							},
+							body: 'feed_MediaConfig=' + encodeURIComponent(mediaConfig)
+						})
+						.then(response => {
+							return response.text();
+						})
+						.then(html => {
+							// Parse the HTML to get options
+							var tempDiv = document.createElement('div');
+							tempDiv.innerHTML = html;
+							var options = tempDiv.querySelectorAll('option');
 							
-							// Call updateListOptions initially for alternative selector too
-							updateListOptions();
-							console.log('Initial updateListOptions called for alternative selector');
+							var choicesOptions = [];
+							options.forEach(function(option) {
+								choicesOptions.push({
+									value: option.value,
+									label: option.textContent,
+									selected: option.selected
+								});
+							});
+							
+							updateListChoices(choicesOptions);
+						})
+						.catch(error => {
+							console.error('Error loading feed lists:', error);
+							updateListChoices([{
+								value: '',
+								label: 'Error loading lists',
+								disabled: true
+							}]);
+						});
+					}
+					
+					// Function to update Choices.js with new options
+					function updateListChoices(options) {
+						// Find the Choices.js instance for the list select
+						var listChoicesInstance = null;
+						if (window.Choices && listSelect.choicesInstance) {
+							listChoicesInstance = listSelect.choicesInstance;
+						}						
+						if (listChoicesInstance) {
+							listChoicesInstance.clearStore();
+							listChoicesInstance.setChoices(options, 'value', 'label', true);
+						} else {
+							// Fallback: update the select element directly
+							listSelect.innerHTML = '';
+							options.forEach(function(option) {
+								var optionElement = document.createElement('option');
+								optionElement.value = option.value;
+								optionElement.textContent = option.label;
+								if (option.selected) optionElement.selected = true;
+								if (option.disabled) optionElement.disabled = true;
+								listSelect.appendChild(optionElement);
+							});
 						}
 					}
-				});
-			`, createJSONString(mediaToLists)),
-		),
+					
+					// Listen for changes to media select
+					mediaSelect.addEventListener('change', function() {
+						updateListOptions(this.value);
+					});
+					
+					// Trigger initial load if there's a selected value
+					if (mediaSelect.value && mediaSelect.value !== '') {
+						setTimeout(function() {
+							updateListOptions(mediaSelect.value);
+						}, 100);
+					}
+				}
+			}
+		`)),
 
-		// Instructions
+		// Enhanced help section with modern styling
 		Div(
-			Class("mt-4 alert alert-info"),
-			H5(Text("Feed Types & Sources:")),
-			Ul(
-				Li(Strong(Text("IMDB Sources: ")), Text("Import from IMDB CSV lists or local files")),
-				Li(Strong(Text("Trakt Sources: ")), Text("Popular, trending, anticipated, or user's public lists")),
-				Li(Strong(Text("TMDB Sources: ")), Text("Import from TMDB lists or discovery queries")),
-				Li(Strong(Text("Series Config: ")), Text("Import from series configuration files")),
-				Li(Strong(Text("RSS Feeds: ")), Text("Import from Newznab RSS feeds")),
+			Class("help-section-enhanced"),
+			Div(
+				Class("help-header"),
+				I(Class("fas fa-info-circle help-icon")),
+				H5(Class("help-title"), Text("Feed Types & Sources")),
 			),
-			P(
-				Class("mt-2"),
-				Strong(Text("Media Configuration: ")),
-				Text("Select a media configuration first to see its available lists. Only lists from the selected configuration will be shown."),
-			),
-			P(
-				Class("mt-2"),
-				Strong(Text("Dry Run: ")),
-				Text("When enabled, shows what would be parsed without adding to your database. Useful for testing feeds before import."),
+			Div(
+				Class("help-content"),
+				Div(
+					Class("help-grid"),
+					Div(
+						Class("help-card"),
+						Div(Class("help-card-icon"), I(Class("fas fa-film"))),
+						Div(Class("help-card-content"),
+							Strong(Text("IMDB Sources")),
+							P(Text("Import from IMDB CSV lists or local files")),
+						),
+					),
+					Div(
+						Class("help-card"),
+						Div(Class("help-card-icon"), I(Class("fas fa-fire"))),
+						Div(Class("help-card-content"),
+							Strong(Text("Trakt Sources")),
+							P(Text("Popular, trending, anticipated, or user's public lists")),
+						),
+					),
+					Div(
+						Class("help-card"),
+						Div(Class("help-card-icon"), I(Class("fas fa-database"))),
+						Div(Class("help-card-content"),
+							Strong(Text("TMDB Sources")),
+							P(Text("Import from TMDB lists or discovery queries")),
+						),
+					),
+					Div(
+						Class("help-card"),
+						Div(Class("help-card-icon"), I(Class("fas fa-rss"))),
+						Div(Class("help-card-content"),
+							Strong(Text("RSS Feeds")),
+							P(Text("Import from Newznab RSS feeds")),
+						),
+					),
+				),
+				Div(
+					Class("help-tips"),
+					Div(
+						Class("tip-item"),
+						I(Class("fas fa-lightbulb tip-icon")),
+						Strong(Text("Media Configuration: ")),
+						Text("Select a media configuration first to see its available lists. Only lists from the selected configuration will be shown."),
+					),
+					Div(
+						Class("tip-item"),
+						I(Class("fas fa-eye tip-icon")),
+						Strong(Text("Dry Run: ")),
+						Text("When enabled, shows what would be parsed without adding to your database. Useful for testing feeds before import."),
+					),
+				),
 			),
 		),
 	)
+}
+
+// HandleFeedLists returns list options for selected media config via HTMX
+func HandleFeedLists(c *gin.Context) {
+	selectedConfig := c.PostForm("feed_MediaConfig")
+	if selectedConfig == "" {
+		c.String(http.StatusOK, `<option value="">-- Select a media configuration first --</option>`)
+		return
+	}
+
+	// Get media configurations
+	media := config.GetSettingsMediaAll()
+	mediaToLists := make(map[string][]string)
+	for i := range media.Movies {
+		config := &media.Movies[i]
+		var lists []string
+		for j := range config.Lists {
+			lists = append(lists, config.Lists[j].Name)
+		}
+		if len(lists) > 0 {
+			mediaToLists[config.NamePrefix] = lists
+		}
+	}
+	for i := range media.Series {
+		config := &media.Series[i]
+		var lists []string
+		for j := range config.Lists {
+			lists = append(lists, config.Lists[j].Name)
+		}
+		if len(lists) > 0 {
+			mediaToLists[config.NamePrefix] = lists
+		}
+	}
+
+	lists, exists := mediaToLists[selectedConfig]
+	if !exists || len(lists) == 0 {
+		c.String(http.StatusOK, `<option value="">-- No lists available for this configuration --</option>`)
+		return
+	}
+
+	// Build HTML options
+	var result strings.Builder
+	result.WriteString(`<option value="">-- Select a list --</option>`)
+	for _, list := range lists {
+		result.WriteString(fmt.Sprintf(`<option value="%s">%s</option>`, list, list))
+	}
+
+	c.String(http.StatusOK, result.String())
 }
 
 // FeedParsingRequest represents the parsed form data for feed parsing
@@ -401,6 +550,7 @@ func renderFeedParsingResults(result map[string]any) string {
 
 	// Create components for movies and series
 	var components []Node
+	var alertcomponents []Node
 
 	// Add basic information table
 	components = append(components,
@@ -430,6 +580,7 @@ func renderFeedParsingResults(result map[string]any) string {
 		// Display movies if found
 		if count > 0 {
 			feedComponents = append(feedComponents,
+
 				H6(Text(fmt.Sprintf("Movies (%d)", count))),
 			)
 
@@ -460,6 +611,7 @@ func renderFeedParsingResults(result map[string]any) string {
 		// Display series if found
 		if count > 0 {
 			feedComponents = append(feedComponents,
+
 				H6(Text(fmt.Sprintf("Series (%d)", count))),
 			)
 
@@ -492,38 +644,82 @@ func renderFeedParsingResults(result map[string]any) string {
 	if count == 0 {
 		return renderComponentToString(
 			Div(
-				Class("alert alert-danger"),
-				H5(Text("Feed Parsing Error")),
-				P(Text("No results were returned from the feed parsing operation.")),
-			),
-		)
-	}
-
-	components = append(components,
-		Div(
-			Class("mt-3 alert alert-info"),
-			H6(Text("Parsing Results")),
-			P(Text(fmt.Sprintf("Found %d entries from the feed source.", count))),
-		),
-	)
-
-	if count == 0 {
-		components = append(components,
-			Div(
-				Class("mt-3 alert alert-warning"),
-				H6(Text("No Results")),
-				P(Text("No movies or series were found from the specified feed source. This could be due to:")),
-				Ul(
-					Li(Text("Empty or invalid feed source")),
-					Li(Text("Network connectivity issues")),
-					Li(Text("Invalid credentials for private lists")),
-					Li(Text("Feed source temporarily unavailable")),
+				Class("card border-0 shadow-sm border-danger mb-4"),
+				Div(
+					Class("card-header border-0"),
+					Style("background: linear-gradient(135deg, #f8d7da 0%, #f5c6cb 100%); border-radius: 15px 15px 0 0;"),
+					Div(
+						Class("d-flex align-items-center"),
+						Span(Class("badge bg-danger me-3"), I(Class("fas fa-exclamation-triangle me-1")), Text("Error")),
+						H5(Class("card-title mb-0 text-danger fw-bold"), Text("Feed Parsing Error")),
+					),
+				),
+				Div(
+					Class("card-body"),
+					P(Class("card-text text-muted mb-0"), Text("No results were returned from the feed parsing operation.")),
 				),
 			),
 		)
 	}
 
-	feedAllNodes := append([]Node{Class("alert alert-success"), H5(Text("Feed Parsing Complete"))}, components...)
+	alertcomponents = append(alertcomponents,
+
+		Div(
+			Class("mt-3 card border-0 shadow-sm"),
+			Div(
+				Class("card-body"),
+				H6(Class("card-title fw-bold mb-3"), Text("Parsing Results")),
+				Div(Class("d-flex align-items-center mb-2"),
+					Span(Class("badge bg-info me-2"), I(Class("fas fa-rss me-1")), Text("Feed Entries")),
+					Span(Class("fw-bold text-info"), Text(fmt.Sprintf("%d", count))),
+					Span(Class("text-muted ms-2"), Text("entries found")),
+				),
+				P(Class("card-text text-muted small mb-0"), Text("Successfully parsed feed source and extracted available entries")),
+			),
+		),
+	)
+
+	if count == 0 {
+		alertcomponents = append(alertcomponents,
+			Div(
+				Class("mt-3 card border-0 shadow-sm border-warning mb-4"),
+				Div(
+					Class("card-header border-0"),
+					Style("background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%); border-radius: 15px 15px 0 0;"),
+					Div(
+						Class("d-flex align-items-center"),
+						Span(Class("badge bg-warning me-3"), I(Class("fas fa-exclamation-circle me-1")), Text("Warning")),
+						H5(Class("card-title mb-0 text-warning fw-bold"), Text("No Results")),
+					),
+				),
+				Div(
+					Class("card-body"),
+					P(Class("card-text text-muted mb-3"), Text("No movies or series were found from the specified feed source. This could be due to:")),
+					Ul(
+						Class("mb-0 list-unstyled"),
+						Li(Class("mb-2"), Text("• Empty or invalid feed source")),
+						Li(Class("mb-2"), Text("• Network connectivity issues")),
+						Li(Class("mb-2"), Text("• Invalid credentials for private lists")),
+						Li(Class("mb-2"), Text("• Feed source temporarily unavailable")),
+					),
+				),
+			),
+		)
+	}
+
+	resultnodes := Div(append([]Node{
+		Class("card border-0 shadow-sm border-success"),
+		Div(
+			Class("card-body"),
+			H5(Class("card-title fw-bold mb-3"), Text("Feed Parsing Complete")),
+			Div(Class("d-flex align-items-center mb-3"),
+				Span(Class("badge bg-success me-2"), I(Class("fas fa-check me-1")), Text("Success")),
+				Span(Class("text-success"), Text("Feed has been parsed successfully")),
+			),
+		),
+	}, components...)...)
+
+	feedAllNodes := append([]Node{resultnodes}, alertcomponents...)
 	return renderComponentToString(
 		Div(feedAllNodes...),
 	)

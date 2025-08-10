@@ -1,7 +1,9 @@
 package apiexternal
 
 import (
+	"context"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
@@ -362,4 +364,25 @@ func GetTVExternal(id int) (*TheMovieDBTVExternal, error) {
 		logger.JoinStrings("https://api.themoviedb.org/3/tv/", strconv.Itoa(id), "/external_ids"),
 		tmdbAPI.DefaultHeaders,
 	)
+}
+
+// TestTMDBConnectivity tests the connectivity to the TMDB API
+// Returns status code and error if any
+func TestTMDBConnectivity(timeout time.Duration) (int, error) {
+	// Check if client is initialized
+	if tmdbAPI.APIKey == "" {
+		return 0, fmt.Errorf("TMDB API client not initialized or missing API key")
+	}
+
+	statusCode := 0
+	err := ProcessHTTPNoRateCheck(
+		&tmdbAPI.Client,
+		"https://api.themoviedb.org/3/search/movie?query=test",
+		func(ctx context.Context, resp *http.Response) error {
+			statusCode = resp.StatusCode
+			return nil
+		},
+		tmdbAPI.DefaultHeaders,
+	)
+	return statusCode, err
 }

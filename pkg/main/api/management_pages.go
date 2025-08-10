@@ -48,9 +48,24 @@ func renderJobManagementPage(csrfToken string) Node {
 	}
 
 	return Div(
-		Class("config-section"),
-		H3(Text("Job Management")),
-		P(Text("Start single jobs for media processing, data refreshing, and searching. Jobs will be queued and executed based on your configuration settings.")),
+		Class("config-section-enhanced"),
+
+		// Enhanced page header with gradient background
+		Div(
+			Class("page-header-enhanced"),
+			Div(
+				Class("header-content"),
+				Div(
+					Class("header-icon-wrapper"),
+					I(Class("fa-solid fa-tasks header-icon")),
+				),
+				Div(
+					Class("header-text"),
+					H2(Class("header-title"), Text("Job Management")),
+					P(Class("header-subtitle"), Text("Start single jobs for media processing, data refreshing, and searching. Jobs will be queued and executed based on your configuration settings.")),
+				),
+			),
+		),
 
 		Form(
 			Class("config-form"),
@@ -60,7 +75,7 @@ func renderJobManagementPage(csrfToken string) Node {
 				Class("row"),
 				Div(
 					Class("col-md-4"),
-					H5(Text("Job Configuration")),
+					H5(Class("form-section-title"), Text("Job Configuration")),
 
 					renderFormGroup("job", map[string]string{
 						"JobType": "Select the type of job to run",
@@ -81,7 +96,7 @@ func renderJobManagementPage(csrfToken string) Node {
 
 				Div(
 					Class("col-md-4"),
-					H5(Text("Job Options")),
+					H5(Class("form-section-title"), Text("Job Options")),
 
 					renderFormGroup("job", map[string]string{
 						"ListName": "Optional: Specific list name to process",
@@ -98,7 +113,7 @@ func renderJobManagementPage(csrfToken string) Node {
 
 				Div(
 					Class("col-md-4"),
-					H5(Text("Job Descriptions")),
+					H5(Class("form-section-title"), Text("Job Descriptions")),
 					Details(
 						Summary(Text("Job Type Descriptions")),
 						Ul(
@@ -144,19 +159,44 @@ func renderJobManagementPage(csrfToken string) Node {
 
 		// Instructions
 		Div(
-			Class("mt-4 alert alert-info"),
-			H5(Text("Usage Instructions:")),
-			Ol(
-				Li(Text("Select the job type you want to execute")),
-				Li(Text("Choose the media configuration (required for most jobs)")),
-				Li(Text("Optionally specify a list name for targeted processing")),
-				Li(Text("Check 'Force Execution' to run even if scheduler is disabled")),
-				Li(Text("Click 'Start Job' to queue the job for execution")),
+			Class("mt-4 card border-0 shadow-sm border-info mb-4"),
+			Div(
+				Class("card-header border-0"),
+				Style("background: linear-gradient(135deg, #d1ecf1 0%, #bee5eb 100%); border-radius: 15px 15px 0 0;"),
+				Div(
+					Class("d-flex align-items-center"),
+					Span(Class("badge bg-info me-3"), I(Class("fas fa-info-circle me-1")), Text("Usage")),
+					H5(Class("card-title mb-0 text-info fw-bold"), Text("Usage Instructions")),
+				),
 			),
-			P(
-				Class("mt-2"),
-				Strong(Text("Note: ")),
-				Text("Jobs are queued and executed asynchronously. Check the scheduler page for job status and history."),
+			Div(
+				Class("card-body"),
+				P(Class("card-text text-muted mb-3"), Text("Follow these steps to execute management jobs")),
+				Ol(
+					Class("mb-0 list-unstyled"),
+					Li(Class("mb-2"), Text("1. Select the job type you want to execute")),
+					Li(Class("mb-2"), Text("2. Choose the media configuration (required for most jobs)")),
+					Li(Class("mb-2"), Text("3. Optionally specify a list name for targeted processing")),
+					Li(Class("mb-2"), Text("4. Check 'Force Execution' to run even if scheduler is disabled")),
+					Li(Class("mb-2"), Text("5. Click 'Start Job' to queue the job for execution")),
+				),
+			),
+		),
+
+		Div(
+			Class("card border-0 shadow-sm border-info mb-4"),
+			Div(
+				Class("card-header border-0"),
+				Style("background: linear-gradient(135deg, #d1ecf1 0%, #bee5eb 100%); border-radius: 15px 15px 0 0;"),
+				Div(
+					Class("d-flex align-items-center"),
+					Span(Class("badge bg-info me-3"), I(Class("fas fa-lightbulb me-1")), Text("Note")),
+					H5(Class("card-title mb-0 text-info fw-bold"), Text("Important Information")),
+				),
+			),
+			Div(
+				Class("card-body"),
+				P(Class("card-text text-muted mb-0"), Text("Jobs are queued and executed asynchronously. Check the scheduler page for job status and history.")),
 			),
 		),
 	)
@@ -194,23 +234,122 @@ func HandleJobManagement(c *gin.Context) {
 	}
 
 	result := Div(
-		Class("alert alert-success"),
-		H5(Text("Job Started Successfully")),
-		P(Text(fmt.Sprintf("Job '%s' has been queued for execution with the following parameters:", jobType))),
-		Ul(
-			Li(Text("Job Type: "+jobType)),
-			Li(Text("Media Config: "+mediaConfig)),
-			Li(func() Node {
-				if listName != "" {
-					return Text("List Name: " + listName)
-				}
-				return Text("List Name: (all lists)")
-			}()),
-			Li(Text(fmt.Sprintf("Force Execution: %t", force))),
+		Class("card border-0 shadow-sm border-success mb-4"),
+
+		Div(
+			Class("card-header border-0"),
+			Style("background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%); border-radius: 15px 15px 0 0;"),
+			Div(
+				Class("d-flex align-items-center"),
+				Span(Class("badge bg-success me-3"), I(Class("fas fa-play-circle me-1")), Text("Started")),
+				H5(Class("card-title mb-0 text-success fw-bold"), Text("Job Started Successfully")),
+			),
 		),
-		P(
-			Class("mt-2"),
-			Text("The job is now running in the background. You can monitor its progress in the scheduler interface."),
+
+		Div(
+			Class("card-body"),
+			Div(
+				Class("card border-0 mb-3"),
+				Style("background: rgba(40, 167, 69, 0.05); border-radius: 8px;"),
+				Div(
+					Class("card-body p-3"),
+					P(Class("mb-3"), Style("color: #495057;"), Text(fmt.Sprintf("Job '%s' has been queued for execution with the following parameters:", jobType))),
+
+					Div(
+						Class("row g-2 mb-3"),
+						Div(
+							Class("col-sm-6"),
+							Div(
+								Class("card border-0"),
+								Style("background: rgba(40, 167, 69, 0.1); border-radius: 6px;"),
+								Div(
+									Class("card-body p-2"),
+									Div(Class("d-flex align-items-center"),
+										I(Class("fas fa-cog me-2"), Style("color: #28a745;")),
+										Div(
+											Div(Class("small fw-bold text-muted"), Text("Job Type")),
+											Div(Class("fw-semibold"), Text(jobType)),
+										),
+									),
+								),
+							),
+						),
+						Div(
+							Class("col-sm-6"),
+							Div(
+								Class("card border-0"),
+								Style("background: rgba(40, 167, 69, 0.1); border-radius: 6px;"),
+								Div(
+									Class("card-body p-2"),
+									Div(Class("d-flex align-items-center"),
+										I(Class("fas fa-film me-2"), Style("color: #28a745;")),
+										Div(
+											Div(Class("small fw-bold text-muted"), Text("Media Config")),
+											Div(Class("fw-semibold"), Text(mediaConfig)),
+										),
+									),
+								),
+							),
+						),
+						Div(
+							Class("col-sm-6"),
+							Div(
+								Class("card border-0"),
+								Style("background: rgba(40, 167, 69, 0.1); border-radius: 6px;"),
+								Div(
+									Class("card-body p-2"),
+									Div(Class("d-flex align-items-center"),
+										I(Class("fas fa-list me-2"), Style("color: #28a745;")),
+										Div(
+											Div(Class("small fw-bold text-muted"), Text("List Name")),
+											Div(Class("fw-semibold"), func() Node {
+												if listName != "" {
+													return Text(listName)
+												}
+												return Text("(all lists)")
+											}()),
+										),
+									),
+								),
+							),
+						),
+						Div(
+							Class("col-sm-6"),
+							Div(
+								Class("card border-0"),
+								Style("background: rgba(40, 167, 69, 0.1); border-radius: 6px;"),
+								Div(
+									Class("card-body p-2"),
+									Div(Class("d-flex align-items-center"),
+										I(Class("fas fa-bolt me-2"), Style("color: #28a745;")),
+										Div(
+											Div(Class("small fw-bold text-muted"), Text("Force Execution")),
+											Div(Class("fw-semibold"), Text(fmt.Sprintf("%t", force))),
+										),
+									),
+								),
+							),
+						),
+					),
+				),
+			),
+
+			Div(
+				Class("card border-0 mb-0"),
+				Style("background-color: rgba(40, 167, 69, 0.1); border-radius: 8px;"),
+				Div(
+					Class("card-body p-3"),
+					Div(
+						Class("d-flex align-items-start"),
+						I(Class("fas fa-info-circle me-2 mt-1"), Style("color: #28a745; font-size: 0.9rem;")),
+						Small(
+							Style("color: #495057; line-height: 1.4;"),
+							Strong(Text("Status: ")),
+							Text("The job is now running in the background. You can monitor its progress in the scheduler interface."),
+						),
+					),
+				),
+			),
 		),
 	)
 
@@ -224,9 +363,24 @@ func HandleJobManagement(c *gin.Context) {
 // renderDebugStatsPage renders a page for viewing debug statistics
 func renderDebugStatsPage(csrfToken string) Node {
 	return Div(
-		Class("config-section"),
-		H3(Text("Debug Statistics")),
-		P(Text("View runtime statistics, memory usage, garbage collection info, and worker statistics. This information is useful for monitoring application performance and troubleshooting issues.")),
+		Class("config-section-enhanced"),
+
+		// Enhanced page header with gradient background
+		Div(
+			Class("page-header-enhanced"),
+			Div(
+				Class("header-content"),
+				Div(
+					Class("header-icon-wrapper"),
+					I(Class("fa-solid fa-bug header-icon")),
+				),
+				Div(
+					Class("header-text"),
+					H2(Class("header-title"), Text("Debug Statistics")),
+					P(Class("header-subtitle"), Text("View runtime statistics, memory usage, garbage collection info, and worker statistics. This information is useful for monitoring application performance and troubleshooting issues.")),
+				),
+			),
+		),
 
 		Div(
 			Class("form-group"),
@@ -259,14 +413,33 @@ func renderDebugStatsPage(csrfToken string) Node {
 
 		// Instructions
 		Div(
-			Class("mt-4 alert alert-info"),
-			H5(Text("Debug Information:")),
-			Ul(
-				Li(Strong(Text("Runtime Stats: ")), Text("Go runtime information including OS, CPU count, and goroutine count")),
-				Li(Strong(Text("Memory Stats: ")), Text("Detailed memory usage including heap, stack, and GC statistics")),
-				Li(Strong(Text("GC Stats: ")), Text("Garbage collection performance metrics and timing")),
-				Li(Strong(Text("Worker Stats: ")), Text("Background job queue and worker pool statistics")),
-				Li(Strong(Text("Heap Dump: ")), Text("Memory heap dump is saved to temp/heapdump for analysis")),
+			Class("mt-4 card border-0 shadow-sm border-info"),
+			Div(
+				Class("card-body"),
+				H5(Class("card-title fw-bold mb-3"), Text("Debug Information")),
+				P(Class("card-text text-muted mb-3"), Text("Available debug operations and system information")),
+				Ul(Class("list-unstyled"),
+					Li(Class("mb-2"),
+						Span(Class("badge bg-primary me-2"), I(Class("fas fa-server me-1")), Text("Runtime")),
+						Text("Go runtime information including OS, CPU count, and goroutine count"),
+					),
+					Li(Class("mb-2"),
+						Span(Class("badge bg-info me-2"), I(Class("fas fa-memory me-1")), Text("Memory")),
+						Text("Detailed memory usage including heap, stack, and GC statistics"),
+					),
+					Li(Class("mb-2"),
+						Span(Class("badge bg-success me-2"), I(Class("fas fa-recycle me-1")), Text("GC Stats")),
+						Text("Garbage collection performance metrics and timing"),
+					),
+					Li(Class("mb-2"),
+						Span(Class("badge bg-warning me-2"), I(Class("fas fa-tasks me-1")), Text("Workers")),
+						Text("Background job queue and worker pool statistics"),
+					),
+					Li(Class("mb-0"),
+						Span(Class("badge bg-danger me-2"), I(Class("fas fa-download me-1")), Text("Heap Dump")),
+						Text("Memory heap dump is saved to temp/heapdump for analysis"),
+					),
+				),
 			),
 		),
 	)
@@ -299,159 +472,227 @@ func HandleDebugStats(c *gin.Context) {
 	workerStats := worker.GetStats()
 
 	result := Div(
-		Class("alert-info"),
-		H5(Text("Debug Statistics")),
-		P(Text(fmt.Sprintf("Generated at: %s", time.Now().Format("2006-01-02 15:04:05")))),
-		Br(),
-		// Runtime Information
-		H6(Text("Runtime Information")),
-		Table(
-			Class("table table-sm table-striped"),
-			TBody(
-				Tr(Td(Strong(Text("Operating System:"))), Td(Text(runtime.GOOS))),
-				Tr(Td(Strong(Text("Architecture:"))), Td(Text(runtime.GOARCH))),
-				Tr(Td(Strong(Text("CPU Count:"))), Td(Text(fmt.Sprintf("%d", runtime.NumCPU())))),
-				Tr(Td(Strong(Text("Goroutines:"))), Td(Text(fmt.Sprintf("%d", runtime.NumGoroutine())))),
-				Tr(Td(Strong(Text("Go Version:"))), Td(Text(runtime.Version()))),
+		Class("card border-0 shadow-sm border-info mb-4"),
+		Div(
+			Class("card-header border-0"),
+			Style("background: linear-gradient(135deg, #d1ecf1 0%, #bee5eb 100%); border-radius: 15px 15px 0 0;"),
+			Div(
+				Class("d-flex align-items-center"),
+				Span(Class("badge bg-info me-3"), I(Class("fas fa-chart-line me-1")), Text("Statistics")),
+				H5(Class("card-title mb-0 text-info fw-bold"), Text("Debug Statistics")),
 			),
 		),
-		Br(),
+		Div(
+			Class("card-body"),
+			P(Class("card-text text-muted mb-3"), Text(fmt.Sprintf("Generated at: %s", time.Now().Format("2006-01-02 15:04:05")))),
 
-		// Memory Statistics
-		H6(Text("Memory Statistics")),
-		Table(
-			Class("table table-sm table-striped"),
-			TBody(
-				Tr(Td(Strong(Text("Allocated Memory:"))), Td(Text(formatBytes(mem.Alloc)))),
-				Tr(Td(Strong(Text("Total Allocated:"))), Td(Text(formatBytes(mem.TotalAlloc)))),
-				Tr(Td(Strong(Text("System Memory:"))), Td(Text(formatBytes(mem.Sys)))),
-				Tr(Td(Strong(Text("Lookups:"))), Td(Text(fmt.Sprintf("%d", mem.Lookups)))),
-				Tr(Td(Strong(Text("Malloc Count:"))), Td(Text(fmt.Sprintf("%d", mem.Mallocs)))),
-				Tr(Td(Strong(Text("Free Count:"))), Td(Text(fmt.Sprintf("%d", mem.Frees)))),
-				Tr(Td(Strong(Text("Heap Allocated:"))), Td(Text(formatBytes(mem.HeapAlloc)))),
-				Tr(Td(Strong(Text("Heap System:"))), Td(Text(formatBytes(mem.HeapSys)))),
-				Tr(Td(Strong(Text("Heap Objects:"))), Td(Text(fmt.Sprintf("%d", mem.HeapObjects)))),
+			// Runtime Information
+			Div(
+				Class("card border-0 mb-3"),
+				Style("background: rgba(13, 110, 253, 0.05); border-radius: 8px;"),
+				Div(
+					Class("card-header bg-transparent border-0 pb-0"),
+					Style("background: transparent !important;"),
+					H6(Style("color: #0d6efd; font-weight: 600; margin-bottom: 0.5rem;"), Text("Runtime Information")),
+				),
+				Div(
+					Class("card-body pt-2"),
+					Table(
+						Class("table table-hover table-sm mb-0"),
+						Style("background: transparent;"),
+						TBody(
+							Tr(Td(Strong(Text("Operating System:"))), Td(Text(runtime.GOOS))),
+							Tr(Td(Strong(Text("Architecture:"))), Td(Text(runtime.GOARCH))),
+							Tr(Td(Strong(Text("CPU Count:"))), Td(Text(fmt.Sprintf("%d", runtime.NumCPU())))),
+							Tr(Td(Strong(Text("Goroutines:"))), Td(Text(fmt.Sprintf("%d", runtime.NumGoroutine())))),
+							Tr(Td(Strong(Text("Go Version:"))), Td(Text(runtime.Version()))),
+						),
+					),
+				),
 			),
+
+			// Memory Statistics
+			Div(
+				Class("card border-0 mb-3"),
+				Style("background: rgba(13, 110, 253, 0.05); border-radius: 8px;"),
+				Div(
+					Class("card-header bg-transparent border-0 pb-0"),
+					Style("background: transparent !important;"),
+					H6(Style("color: #0d6efd; font-weight: 600; margin-bottom: 0.5rem;"), Text("Memory Statistics")),
+				),
+				Div(
+					Class("card-body pt-2"),
+					Table(
+						Class("table table-hover table-sm mb-0"),
+						Style("background: transparent;"),
+						TBody(
+							Tr(Td(Strong(Text("Allocated Memory:"))), Td(Text(formatBytes(mem.Alloc)))),
+							Tr(Td(Strong(Text("Total Allocated:"))), Td(Text(formatBytes(mem.TotalAlloc)))),
+							Tr(Td(Strong(Text("System Memory:"))), Td(Text(formatBytes(mem.Sys)))),
+							Tr(Td(Strong(Text("Lookups:"))), Td(Text(fmt.Sprintf("%d", mem.Lookups)))),
+							Tr(Td(Strong(Text("Malloc Count:"))), Td(Text(fmt.Sprintf("%d", mem.Mallocs)))),
+							Tr(Td(Strong(Text("Free Count:"))), Td(Text(fmt.Sprintf("%d", mem.Frees)))),
+							Tr(Td(Strong(Text("Heap Allocated:"))), Td(Text(formatBytes(mem.HeapAlloc)))),
+							Tr(Td(Strong(Text("Heap System:"))), Td(Text(formatBytes(mem.HeapSys)))),
+							Tr(Td(Strong(Text("Heap Objects:"))), Td(Text(fmt.Sprintf("%d", mem.HeapObjects)))),
+						),
+					),
+				),
+			),
+
+			// Garbage Collection Statistics
+			Div(
+				Class("card border-0 mb-3"),
+				Style("background: rgba(13, 110, 253, 0.05); border-radius: 8px;"),
+				Div(
+					Class("card-header bg-transparent border-0 pb-0"),
+					Style("background: transparent !important;"),
+					H6(Style("color: #0d6efd; font-weight: 600; margin-bottom: 0.5rem;"), Text("Garbage Collection Statistics")),
+				),
+				Div(
+					Class("card-body pt-2"),
+					Table(
+						Class("table table-hover table-sm mb-0"),
+						Style("background: transparent;"),
+						TBody(
+							Tr(Td(Strong(Text("GC Cycles:"))), Td(Text(fmt.Sprintf("%d", gc.NumGC)))),
+							Tr(Td(Strong(Text("Last GC:"))), Td(Text(gc.LastGC.Format("2006-01-02 15:04:05")))),
+							Tr(Td(Strong(Text("Total Pause:"))), Td(Text(gc.PauseTotal.String()))),
+							Tr(Td(Strong(Text("Average Pause:"))), Td(Text(func() string {
+								if gc.NumGC > 0 {
+									return (gc.PauseTotal / time.Duration(gc.NumGC)).String()
+								}
+								return "0"
+							}()))),
+						),
+					),
+				),
+			),
+
+			// Worker Statistics
+			Div(
+				Class("card border-0 mb-3"),
+				Style("background: rgba(13, 110, 253, 0.05); border-radius: 8px;"),
+				Div(
+					Class("card-header bg-transparent border-0 pb-0"),
+					Style("background: transparent !important;"),
+					H6(Style("color: #0d6efd; font-weight: 600; margin-bottom: 0.5rem;"), Text("Worker Statistics")),
+				),
+				Div(
+					Class("card-body pt-2"),
+					Table(
+						Class("table table-hover table-sm mb-0"),
+						Style("background: transparent;"),
+						THead(
+							Tr(
+								Th(Text("Worker Pool")),
+								Th(Text("Submitted")),
+								Th(Text("Completed")),
+								Th(Text("Successful")),
+								Th(Text("Failed")),
+								Th(Text("Dropped")),
+								Th(Text("Waiting")),
+								Th(Text("Running")),
+							),
+						),
+						TBody(
+							Tr(
+								Td(Strong(Text("Parse"))),
+								Td(Text(fmt.Sprintf("%d", workerStats.WorkerParse.SubmittedTasks))),
+								Td(Text(fmt.Sprintf("%d", workerStats.WorkerParse.CompletedTasks))),
+								Td(Text(fmt.Sprintf("%d", workerStats.WorkerParse.SuccessfulTasks))),
+								Td(Text(fmt.Sprintf("%d", workerStats.WorkerParse.FailedTasks))),
+								Td(Text(fmt.Sprintf("%d", workerStats.WorkerParse.DroppedTasks))),
+								Td(Text(fmt.Sprintf("%d", workerStats.WorkerParse.WaitingTasks))),
+								Td(Text(fmt.Sprintf("%d", workerStats.WorkerParse.RunningWorkers))),
+							),
+							Tr(
+								Td(Strong(Text("Search"))),
+								Td(Text(fmt.Sprintf("%d", workerStats.WorkerSearch.SubmittedTasks))),
+								Td(Text(fmt.Sprintf("%d", workerStats.WorkerSearch.CompletedTasks))),
+								Td(Text(fmt.Sprintf("%d", workerStats.WorkerSearch.SuccessfulTasks))),
+								Td(Text(fmt.Sprintf("%d", workerStats.WorkerSearch.FailedTasks))),
+								Td(Text(fmt.Sprintf("%d", workerStats.WorkerSearch.DroppedTasks))),
+								Td(Text(fmt.Sprintf("%d", workerStats.WorkerSearch.WaitingTasks))),
+								Td(Text(fmt.Sprintf("%d", workerStats.WorkerSearch.RunningWorkers))),
+							),
+							Tr(
+								Td(Strong(Text("RSS"))),
+								Td(Text(fmt.Sprintf("%d", workerStats.WorkerRSS.SubmittedTasks))),
+								Td(Text(fmt.Sprintf("%d", workerStats.WorkerRSS.CompletedTasks))),
+								Td(Text(fmt.Sprintf("%d", workerStats.WorkerRSS.SuccessfulTasks))),
+								Td(Text(fmt.Sprintf("%d", workerStats.WorkerRSS.FailedTasks))),
+								Td(Text(fmt.Sprintf("%d", workerStats.WorkerRSS.DroppedTasks))),
+								Td(Text(fmt.Sprintf("%d", workerStats.WorkerRSS.WaitingTasks))),
+								Td(Text(fmt.Sprintf("%d", workerStats.WorkerRSS.RunningWorkers))),
+							),
+							Tr(
+								Td(Strong(Text("Files"))),
+								Td(Text(fmt.Sprintf("%d", workerStats.WorkerFiles.SubmittedTasks))),
+								Td(Text(fmt.Sprintf("%d", workerStats.WorkerFiles.CompletedTasks))),
+								Td(Text(fmt.Sprintf("%d", workerStats.WorkerFiles.SuccessfulTasks))),
+								Td(Text(fmt.Sprintf("%d", workerStats.WorkerFiles.FailedTasks))),
+								Td(Text(fmt.Sprintf("%d", workerStats.WorkerFiles.DroppedTasks))),
+								Td(Text(fmt.Sprintf("%d", workerStats.WorkerFiles.WaitingTasks))),
+								Td(Text(fmt.Sprintf("%d", workerStats.WorkerFiles.RunningWorkers))),
+							),
+							Tr(
+								Td(Strong(Text("Meta"))),
+								Td(Text(fmt.Sprintf("%d", workerStats.WorkerMeta.SubmittedTasks))),
+								Td(Text(fmt.Sprintf("%d", workerStats.WorkerMeta.CompletedTasks))),
+								Td(Text(fmt.Sprintf("%d", workerStats.WorkerMeta.SuccessfulTasks))),
+								Td(Text(fmt.Sprintf("%d", workerStats.WorkerMeta.FailedTasks))),
+								Td(Text(fmt.Sprintf("%d", workerStats.WorkerMeta.DroppedTasks))),
+								Td(Text(fmt.Sprintf("%d", workerStats.WorkerMeta.WaitingTasks))),
+								Td(Text(fmt.Sprintf("%d", workerStats.WorkerMeta.RunningWorkers))),
+							),
+							Tr(
+								Td(Strong(Text("Index"))),
+								Td(Text(fmt.Sprintf("%d", workerStats.WorkerIndex.SubmittedTasks))),
+								Td(Text(fmt.Sprintf("%d", workerStats.WorkerIndex.CompletedTasks))),
+								Td(Text(fmt.Sprintf("%d", workerStats.WorkerIndex.SuccessfulTasks))),
+								Td(Text(fmt.Sprintf("%d", workerStats.WorkerIndex.FailedTasks))),
+								Td(Text(fmt.Sprintf("%d", workerStats.WorkerIndex.DroppedTasks))),
+								Td(Text(fmt.Sprintf("%d", workerStats.WorkerIndex.WaitingTasks))),
+								Td(Text(fmt.Sprintf("%d", workerStats.WorkerIndex.RunningWorkers))),
+							),
+							Tr(
+								Td(Strong(Text("Index RSS"))),
+								Td(Text(fmt.Sprintf("%d", workerStats.WorkerIndexRSS.SubmittedTasks))),
+								Td(Text(fmt.Sprintf("%d", workerStats.WorkerIndexRSS.CompletedTasks))),
+								Td(Text(fmt.Sprintf("%d", workerStats.WorkerIndexRSS.SuccessfulTasks))),
+								Td(Text(fmt.Sprintf("%d", workerStats.WorkerIndexRSS.FailedTasks))),
+								Td(Text(fmt.Sprintf("%d", workerStats.WorkerIndexRSS.DroppedTasks))),
+								Td(Text(fmt.Sprintf("%d", workerStats.WorkerIndexRSS.WaitingTasks))),
+								Td(Text(fmt.Sprintf("%d", workerStats.WorkerIndexRSS.RunningWorkers))),
+							),
+						),
+					),
+				),
+			),
+
+			func() Node {
+				if action == "gc" {
+					return Div(
+						Class("mt-3 card border-0 shadow-sm border-success mb-4"),
+						Div(
+							Class("card-header border-0"),
+							Style("background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%); border-radius: 15px 15px 0 0;"),
+							Div(
+								Class("d-flex align-items-center"),
+								Span(Class("badge bg-success me-3"), I(Class("fas fa-check-circle me-1")), Text("Success")),
+								H5(Class("card-title mb-0 text-success fw-bold"), Text("Garbage Collection Complete")),
+							),
+						),
+						Div(
+							Class("card-body"),
+							P(Class("card-text text-muted mb-0"), Text("Garbage collection completed and memory freed.")),
+						),
+					)
+				}
+				return Text("")
+			}(),
 		),
-		Br(),
-
-		// Garbage Collection Statistics
-		H6(Text("Garbage Collection Statistics")),
-		Table(
-			Class("table table-sm table-striped"),
-			TBody(
-				Tr(Td(Strong(Text("GC Cycles:"))), Td(Text(fmt.Sprintf("%d", gc.NumGC)))),
-				Tr(Td(Strong(Text("Last GC:"))), Td(Text(gc.LastGC.Format("2006-01-02 15:04:05")))),
-				Tr(Td(Strong(Text("Total Pause:"))), Td(Text(gc.PauseTotal.String()))),
-				Tr(Td(Strong(Text("Average Pause:"))), Td(Text(func() string {
-					if gc.NumGC > 0 {
-						return (gc.PauseTotal / time.Duration(gc.NumGC)).String()
-					}
-					return "0"
-				}()))),
-			),
-		),
-		Br(),
-
-		// Worker Statistics
-		H6(Text("Worker Statistics")),
-		Table(
-			Class("table table-sm table-striped"),
-			THead(
-				Tr(
-					Th(Text("Worker Pool")),
-					Th(Text("Submitted")),
-					Th(Text("Completed")),
-					Th(Text("Successful")),
-					Th(Text("Failed")),
-					Th(Text("Dropped")),
-					Th(Text("Waiting")),
-					Th(Text("Running")),
-				),
-			),
-			TBody(
-				Tr(
-					Td(Strong(Text("Parse"))),
-					Td(Text(fmt.Sprintf("%d", workerStats.WorkerParse.SubmittedTasks))),
-					Td(Text(fmt.Sprintf("%d", workerStats.WorkerParse.CompletedTasks))),
-					Td(Text(fmt.Sprintf("%d", workerStats.WorkerParse.SuccessfulTasks))),
-					Td(Text(fmt.Sprintf("%d", workerStats.WorkerParse.FailedTasks))),
-					Td(Text(fmt.Sprintf("%d", workerStats.WorkerParse.DroppedTasks))),
-					Td(Text(fmt.Sprintf("%d", workerStats.WorkerParse.WaitingTasks))),
-					Td(Text(fmt.Sprintf("%d", workerStats.WorkerParse.RunningWorkers))),
-				),
-				Tr(
-					Td(Strong(Text("Search"))),
-					Td(Text(fmt.Sprintf("%d", workerStats.WorkerSearch.SubmittedTasks))),
-					Td(Text(fmt.Sprintf("%d", workerStats.WorkerSearch.CompletedTasks))),
-					Td(Text(fmt.Sprintf("%d", workerStats.WorkerSearch.SuccessfulTasks))),
-					Td(Text(fmt.Sprintf("%d", workerStats.WorkerSearch.FailedTasks))),
-					Td(Text(fmt.Sprintf("%d", workerStats.WorkerSearch.DroppedTasks))),
-					Td(Text(fmt.Sprintf("%d", workerStats.WorkerSearch.WaitingTasks))),
-					Td(Text(fmt.Sprintf("%d", workerStats.WorkerSearch.RunningWorkers))),
-				),
-				Tr(
-					Td(Strong(Text("RSS"))),
-					Td(Text(fmt.Sprintf("%d", workerStats.WorkerRSS.SubmittedTasks))),
-					Td(Text(fmt.Sprintf("%d", workerStats.WorkerRSS.CompletedTasks))),
-					Td(Text(fmt.Sprintf("%d", workerStats.WorkerRSS.SuccessfulTasks))),
-					Td(Text(fmt.Sprintf("%d", workerStats.WorkerRSS.FailedTasks))),
-					Td(Text(fmt.Sprintf("%d", workerStats.WorkerRSS.DroppedTasks))),
-					Td(Text(fmt.Sprintf("%d", workerStats.WorkerRSS.WaitingTasks))),
-					Td(Text(fmt.Sprintf("%d", workerStats.WorkerRSS.RunningWorkers))),
-				),
-				Tr(
-					Td(Strong(Text("Files"))),
-					Td(Text(fmt.Sprintf("%d", workerStats.WorkerFiles.SubmittedTasks))),
-					Td(Text(fmt.Sprintf("%d", workerStats.WorkerFiles.CompletedTasks))),
-					Td(Text(fmt.Sprintf("%d", workerStats.WorkerFiles.SuccessfulTasks))),
-					Td(Text(fmt.Sprintf("%d", workerStats.WorkerFiles.FailedTasks))),
-					Td(Text(fmt.Sprintf("%d", workerStats.WorkerFiles.DroppedTasks))),
-					Td(Text(fmt.Sprintf("%d", workerStats.WorkerFiles.WaitingTasks))),
-					Td(Text(fmt.Sprintf("%d", workerStats.WorkerFiles.RunningWorkers))),
-				),
-				Tr(
-					Td(Strong(Text("Meta"))),
-					Td(Text(fmt.Sprintf("%d", workerStats.WorkerMeta.SubmittedTasks))),
-					Td(Text(fmt.Sprintf("%d", workerStats.WorkerMeta.CompletedTasks))),
-					Td(Text(fmt.Sprintf("%d", workerStats.WorkerMeta.SuccessfulTasks))),
-					Td(Text(fmt.Sprintf("%d", workerStats.WorkerMeta.FailedTasks))),
-					Td(Text(fmt.Sprintf("%d", workerStats.WorkerMeta.DroppedTasks))),
-					Td(Text(fmt.Sprintf("%d", workerStats.WorkerMeta.WaitingTasks))),
-					Td(Text(fmt.Sprintf("%d", workerStats.WorkerMeta.RunningWorkers))),
-				),
-				Tr(
-					Td(Strong(Text("Index"))),
-					Td(Text(fmt.Sprintf("%d", workerStats.WorkerIndex.SubmittedTasks))),
-					Td(Text(fmt.Sprintf("%d", workerStats.WorkerIndex.CompletedTasks))),
-					Td(Text(fmt.Sprintf("%d", workerStats.WorkerIndex.SuccessfulTasks))),
-					Td(Text(fmt.Sprintf("%d", workerStats.WorkerIndex.FailedTasks))),
-					Td(Text(fmt.Sprintf("%d", workerStats.WorkerIndex.DroppedTasks))),
-					Td(Text(fmt.Sprintf("%d", workerStats.WorkerIndex.WaitingTasks))),
-					Td(Text(fmt.Sprintf("%d", workerStats.WorkerIndex.RunningWorkers))),
-				),
-				Tr(
-					Td(Strong(Text("Index RSS"))),
-					Td(Text(fmt.Sprintf("%d", workerStats.WorkerIndexRSS.SubmittedTasks))),
-					Td(Text(fmt.Sprintf("%d", workerStats.WorkerIndexRSS.CompletedTasks))),
-					Td(Text(fmt.Sprintf("%d", workerStats.WorkerIndexRSS.SuccessfulTasks))),
-					Td(Text(fmt.Sprintf("%d", workerStats.WorkerIndexRSS.FailedTasks))),
-					Td(Text(fmt.Sprintf("%d", workerStats.WorkerIndexRSS.DroppedTasks))),
-					Td(Text(fmt.Sprintf("%d", workerStats.WorkerIndexRSS.WaitingTasks))),
-					Td(Text(fmt.Sprintf("%d", workerStats.WorkerIndexRSS.RunningWorkers))),
-				),
-			),
-		),
-
-		func() Node {
-			if action == "gc" {
-				return Div(
-					Class("alert alert-success mt-3"),
-					Text("Garbage collection completed and memory freed."),
-				)
-			}
-			return Text("")
-		}(),
 	)
 
 	c.String(http.StatusOK, renderComponentToString(result))
@@ -487,15 +728,30 @@ func renderDatabaseMaintenancePage(csrfToken string) Node {
 	}
 
 	return Div(
-		Class("config-section"),
-		H3(Text("Database Maintenance")),
-		P(Text("Perform various database maintenance operations including integrity checks, backups, cleanup, and optimization tasks.")),
+		Class("config-section-enhanced"),
+
+		// Enhanced page header with gradient background
+		Div(
+			Class("page-header-enhanced"),
+			Div(
+				Class("header-content"),
+				Div(
+					Class("header-icon-wrapper"),
+					I(Class("fa-solid fa-tools header-icon")),
+				),
+				Div(
+					Class("header-text"),
+					H2(Class("header-title"), Text("Database Maintenance")),
+					P(Class("header-subtitle"), Text("Perform various database maintenance operations including integrity checks, backups, cleanup, and optimization tasks.")),
+				),
+			),
+		),
 
 		Div(
 			Class("row"),
 			Div(
 				Class("col-md-6"),
-				H5(Text("Maintenance Operations")),
+				H5(Class("form-section-title"), Text("Maintenance Operations")),
 
 				Div(
 					Class("btn-group-vertical d-block"),
@@ -589,7 +845,7 @@ func renderDatabaseMaintenancePage(csrfToken string) Node {
 
 			Div(
 				Class("col-md-6"),
-				H5(Text("Table Operations")),
+				H5(Class("form-section-title"), Text("Table Operations")),
 
 				Details(
 					Summary(Text("Clear Specific Table")),
@@ -682,17 +938,45 @@ func renderDatabaseMaintenancePage(csrfToken string) Node {
 
 		// Instructions
 		Div(
-			Class("mt-4 alert alert-info"),
-			H5(Text("Operation Descriptions:")),
-			Ul(
-				Li(Strong(Text("Integrity Check: ")), Text("Verifies database consistency and reports any corruption")),
-				Li(Strong(Text("Backup: ")), Text("Creates a backup of the current database")),
-				Li(Strong(Text("Vacuum: ")), Text("Optimizes database by reclaiming space and defragmenting")),
-				Li(Strong(Text("Fill IMDB: ")), Text("Populates IMDB data for movies and series")),
-				Li(Strong(Text("Clear Cache: ")), Text("Removes cached data to free memory")),
-				Li(Strong(Text("Remove Old Jobs: ")), Text("Cleans up job history older than specified days")),
-				Li(Strong(Text("Clear Table: ")), Text("⚠️ Removes all data from the selected table")),
-				Li(Strong(Text("Delete Record: ")), Text("⚠️ Removes a specific record by ID")),
+			Class("mt-4 card border-0 shadow-sm border-info"),
+			Div(
+				Class("card-body"),
+				H5(Class("card-title fw-bold mb-3"), Text("Operation Descriptions")),
+				P(Class("card-text text-muted mb-3"), Text("Database maintenance and management operations")),
+				Ul(Class("list-unstyled"),
+					Li(Class("mb-2"),
+						Span(Class("badge bg-success me-2"), I(Class("fas fa-check me-1")), Text("Integrity")),
+						Text("Verifies database consistency and reports any corruption"),
+					),
+					Li(Class("mb-2"),
+						Span(Class("badge bg-primary me-2"), I(Class("fas fa-save me-1")), Text("Backup")),
+						Text("Creates a backup of the current database"),
+					),
+					Li(Class("mb-2"),
+						Span(Class("badge bg-info me-2"), I(Class("fas fa-compress me-1")), Text("Vacuum")),
+						Text("Optimizes database by reclaiming space and defragmenting"),
+					),
+					Li(Class("mb-2"),
+						Span(Class("badge bg-secondary me-2"), I(Class("fas fa-film me-1")), Text("Fill IMDB")),
+						Text("Populates IMDB data for movies and series"),
+					),
+					Li(Class("mb-2"),
+						Span(Class("badge bg-warning me-2"), I(Class("fas fa-broom me-1")), Text("Clear Cache")),
+						Text("Removes cached data to free memory"),
+					),
+					Li(Class("mb-2"),
+						Span(Class("badge bg-dark me-2"), I(Class("fas fa-history me-1")), Text("Remove Jobs")),
+						Text("Cleans up job history older than specified days"),
+					),
+					Li(Class("mb-2"),
+						Span(Class("badge bg-danger me-2"), I(Class("fas fa-exclamation-triangle me-1")), Text("Clear Table")),
+						Text("⚠️ Removes all data from the selected table"),
+					),
+					Li(Class("mb-0"),
+						Span(Class("badge bg-danger me-2"), I(Class("fas fa-trash me-1")), Text("Delete Record")),
+						Text("⚠️ Removes a specific record by ID"),
+					),
+				),
 			),
 		),
 	)
@@ -735,12 +1019,17 @@ func HandleDatabaseMaintenance(c *gin.Context) {
 	}
 
 	result = Div(
-		Class("alert alert-"+alertClass),
-		H5(Text("Maintenance Operation Result")),
-		P(Text(message)),
-		P(
-			Class("text-muted"),
-			Small(Text("Operation completed at: "+time.Now().Format("2006-01-02 15:04:05"))),
+		Class("card border-0 shadow-sm border-"+alertClass),
+		Div(
+			Class("card-body"),
+			H5(Class("card-title fw-bold mb-3"), Text("Maintenance Operation Result")),
+			Div(Class("mb-3"),
+				P(Class("card-text"), Text(message)),
+			),
+			Div(Class("d-flex align-items-center text-muted"),
+				I(Class("fas fa-clock me-2")),
+				Small(Text("Operation completed at: "+time.Now().Format("2006-01-02 15:04:05"))),
+			),
 		),
 	)
 
@@ -875,9 +1164,24 @@ func renderPushoverTestPage(csrfToken string) Node {
 	}
 
 	return Div(
-		Class("config-section"),
-		H3(Text("Pushover Test Message")),
-		P(Text("Send a test message through Pushover to verify your notification configuration is working correctly.")),
+		Class("config-section-enhanced"),
+
+		// Enhanced page header with gradient background
+		Div(
+			Class("page-header-enhanced"),
+			Div(
+				Class("header-content"),
+				Div(
+					Class("header-icon-wrapper"),
+					I(Class("fa-solid fa-paper-plane header-icon")),
+				),
+				Div(
+					Class("header-text"),
+					H2(Class("header-title"), Text("Pushover Test Message")),
+					P(Class("header-subtitle"), Text("Send a test message through Pushover to verify your notification configuration is working correctly.")),
+				),
+			),
+		),
 
 		Form(
 			Class("config-form"),
@@ -887,7 +1191,7 @@ func renderPushoverTestPage(csrfToken string) Node {
 				Class("row"),
 				Div(
 					Class("col-md-6"),
-					H5(Text("Message Configuration")),
+					H5(Class("form-section-title"), Text("Message Configuration")),
 
 					renderFormGroup("pushover", map[string]string{
 						"NotificationConfig": "Select the Pushover notification configuration to use",
@@ -912,7 +1216,7 @@ func renderPushoverTestPage(csrfToken string) Node {
 
 				Div(
 					Class("col-md-6"),
-					H5(Text("Pushover Information")),
+					H5(Class("form-section-title"), Text("Pushover Information")),
 					P(Text("Pushover is a service that sends real-time notifications to your devices. To use this feature:")),
 					Ol(
 						Li(Text("Create a Pushover account at pushover.net")),
@@ -996,23 +1300,120 @@ func HandlePushoverTest(c *gin.Context) {
 	var result Node
 	if err != nil {
 		result = Div(
-			Class("alert alert-danger"),
-			H5(Text("Message Send Failed")),
-			P(Text("Failed to send Pushover message: "+err.Error())),
-			P(Text("Please check your notification configuration and try again.")),
+			Class("card border-0 shadow-sm border-danger mb-4"),
+			Div(
+				Class("card-header border-0"),
+				Style("background: linear-gradient(135deg, #f8d7da 0%, #f5c6cb 100%); border-radius: 15px 15px 0 0;"),
+				Div(
+					Class("d-flex align-items-center"),
+					Span(Class("badge bg-danger me-3"), I(Class("fas fa-times-circle me-1")), Text("Failed")),
+					H5(Class("card-title mb-0 text-danger fw-bold"), Text("Message Send Failed")),
+				),
+			),
+
+			Div(
+				Class("card border-0"),
+				Style("background: rgba(220, 53, 69, 0.05); border-radius: 8px;"),
+				Div(
+					Class("card-body p-3 text-center"),
+					I(Class("fas fa-exclamation-triangle mb-2"), Style("color: #dc3545; font-size: 2rem;")),
+					P(Class("mb-2"), Style("color: #495057;"), Text("Failed to send Pushover message:")),
+					P(Class("mb-2"), Style("color: #dc3545; font-family: monospace; background: rgba(220, 53, 69, 0.1); padding: 0.5rem; border-radius: 4px;"), Text(err.Error())),
+					P(Class("mb-0"), Style("color: #495057;"), Text("Please check your notification configuration and try again.")),
+				),
+			),
 		)
 	} else {
 		result = Div(
-			Class("alert alert-success"),
-			H5(Text("Message Sent Successfully")),
-			P(Text("Test message sent via Pushover with the following details:")),
-			Ul(
-				Li(Text("Configuration: "+notificationConfig)),
-				Li(Text("Title: "+messageTitle)),
-				Li(Text("Message: "+messageText)),
-				Li(Text("Recipient: "+notifCfg.Recipient)),
+			Class("card border-0 shadow-sm border-success mb-4"),
+			Div(
+				Class("card-header border-0"),
+				Style("background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%); border-radius: 15px 15px 0 0;"),
+				Div(
+					Class("d-flex align-items-center"),
+					Span(Class("badge bg-success me-3"), I(Class("fas fa-paper-plane me-1")), Text("Success")),
+					H5(Class("card-title mb-0 text-success fw-bold"), Text("Message Sent Successfully")),
+				),
 			),
-			P(Text("Check your device to confirm the message was received.")),
+
+			Div(
+				Class("card border-0 mb-3"),
+				Style("background: rgba(40, 167, 69, 0.05); border-radius: 8px;"),
+				Div(
+					Class("card-body p-3"),
+					P(Class("mb-3 text-center"), Style("color: #495057;"), Text("Test message sent via Pushover with the following details:")),
+
+					Div(
+						Class("row g-2"),
+						Div(
+							Class("col-sm-6"),
+							Div(
+								Class("card border-0"),
+								Style("background: rgba(40, 167, 69, 0.1); border-radius: 6px;"),
+								Div(
+									Class("card-body p-2"),
+									Div(Class("d-flex align-items-center"),
+										I(Class("fas fa-cogs me-2"), Style("color: #28a745;")),
+										Div(
+											Div(Class("small fw-bold text-muted"), Text("Configuration")),
+											Div(Class("fw-semibold"), Text(notificationConfig)),
+										),
+									),
+								),
+							),
+						),
+						Div(
+							Class("col-sm-6"),
+							Div(
+								Class("card border-0"),
+								Style("background: rgba(40, 167, 69, 0.1); border-radius: 6px;"),
+								Div(
+									Class("card-body p-2"),
+									Div(Class("d-flex align-items-center"),
+										I(Class("fas fa-user me-2"), Style("color: #28a745;")),
+										Div(
+											Div(Class("small fw-bold text-muted"), Text("Recipient")),
+											Div(Class("fw-semibold"), Text(notifCfg.Recipient)),
+										),
+									),
+								),
+							),
+						),
+						Div(
+							Class("col-12"),
+							Div(
+								Class("card border-0"),
+								Style("background: rgba(40, 167, 69, 0.1); border-radius: 6px;"),
+								Div(
+									Class("card-body p-2"),
+									Div(Class("d-flex align-items-start"),
+										I(Class("fas fa-envelope me-2 mt-1"), Style("color: #28a745;")),
+										Div(Class("flex-grow-1"),
+											Div(Class("small fw-bold text-muted"), Text("Message Details")),
+											Div(Class("fw-semibold mb-1"), Text("Title: "+messageTitle)),
+											Div(Class("text-muted small"), Text(messageText)),
+										),
+									),
+								),
+							),
+						),
+					),
+				),
+			),
+
+			Div(
+				Class("alert alert-light border-0 mb-0"),
+				Style("background-color: rgba(40, 167, 69, 0.1); border-radius: 8px; padding: 0.75rem 1rem;"),
+				Div(
+					Class("d-flex align-items-start"),
+					I(Class("fas fa-mobile-alt me-2 mt-1"), Style("color: #28a745; font-size: 0.9rem;")),
+					Small(
+						Style("color: #495057; line-height: 1.4;"),
+						Strong(Text("Next Step: ")),
+						Text("Check your device to confirm the message was received."),
+					),
+				),
+			),
 		)
 	}
 
@@ -1026,26 +1427,47 @@ func HandlePushoverTest(c *gin.Context) {
 // renderLogViewerPage renders a page for viewing log files
 func renderLogViewerPage(csrfToken string) Node {
 	return Div(
-		Class("config-section"),
-		H3(Text("Log Viewer")),
-		P(Text("View the last entries from the downloader.log file to monitor application activity and troubleshoot issues.")),
+		Class("config-section-enhanced"),
+
+		// Enhanced page header with gradient background
+		Div(
+			Class("page-header-enhanced"),
+			Div(
+				Class("header-content"),
+				Div(
+					Class("header-icon-wrapper"),
+					I(Class("fa-solid fa-file-text header-icon")),
+				),
+				Div(
+					Class("header-text"),
+					H2(Class("header-title"), Text("Log Viewer")),
+					P(Class("header-subtitle"), Text("Real-time application logs and system events monitoring. Filter by log level and automatically refresh to stay up-to-date with system activity.")),
+				),
+			),
+		),
 
 		Form(
 			Class("config-form"),
 			ID("logForm"),
+			Input(Type("hidden"), Name("csrf_token"), Value(csrfToken)),
 
 			Div(
 				Class("row"),
 				Div(
 					Class("col-md-6"),
+					H5(Class("form-section-title"), Text("Log Configuration")),
+
 					renderFormGroup("log", map[string]string{
 						"LineCount": "Number of lines to display from the end of the log file",
 					}, map[string]string{
 						"LineCount": "Number of Lines",
 					}, "LineCount", "number", "100", nil),
 				),
+
 				Div(
 					Class("col-md-6"),
+					H5(Class("form-section-title"), Text("Filter Options")),
+
 					renderFormGroup("log", map[string]string{
 						"LogLevel": "Filter logs by level (leave empty for all)",
 					}, map[string]string{
@@ -1067,6 +1489,7 @@ func renderLogViewerPage(csrfToken string) Node {
 					hx.Post("/api/admin/logviewer"),
 					hx.Headers("{\"X-CSRF-Token\": \""+csrfToken+"\"}"),
 					hx.Include("#logForm"),
+					I(Class("fas fa-sync-alt me-1")),
 				),
 				Button(
 					Class("btn btn-info ml-2"),
@@ -1079,6 +1502,13 @@ func renderLogViewerPage(csrfToken string) Node {
 					hx.Include("#logForm"),
 					hx.Trigger("every 5s"),
 					ID("autoRefreshBtn"),
+					I(Class("fas fa-play me-1")),
+				),
+				Button(
+					Type("button"),
+					Class("btn btn-secondary ml-2"),
+					Attr("onclick", "document.getElementById('logForm').reset(); document.getElementById('logResults').innerHTML = '';"),
+					Text("Reset"),
 				),
 			),
 		),
@@ -1086,19 +1516,33 @@ func renderLogViewerPage(csrfToken string) Node {
 		Div(
 			ID("logResults"),
 			Class("mt-4"),
-			Style("min-height: 50px;"),
+			Style("min-height: 400px; background: #1e1e1e; color: #f8f8f2; font-family: 'Courier New', monospace; padding: 1rem; overflow-y: auto; max-height: 600px; border-radius: 8px;"),
+			P(Class("text-center text-muted"), Text("Click 'Load Log' to view application logs...")),
 		),
 
 		// Instructions
 		Div(
-			Class("mt-4 alert alert-info"),
-			H5(Text("Log Viewer Information:")),
-			Ul(
-				Li(Text("Logs are read from the 'logs/downloader.log' file")),
-				Li(Text("Lines are displayed in reverse chronological order (newest first)")),
-				Li(Text("Use the log level filter to show only specific types of messages")),
-				Li(Text("Auto-refresh updates the display every 5 seconds")),
-				Li(Text("Large log files may take a moment to load")),
+			Class("mt-4 card border-0 shadow-sm border-info mb-4"),
+			Div(
+				Class("card-header border-0"),
+				Style("background: linear-gradient(135deg, #d1ecf1 0%, #bee5eb 100%); border-radius: 15px 15px 0 0;"),
+				Div(
+					Class("d-flex align-items-center"),
+					Span(Class("badge bg-info me-3"), I(Class("fas fa-info-circle me-1")), Text("Usage")),
+					H5(Class("card-title mb-0 text-info fw-bold"), Text("Log Viewer Information")),
+				),
+			),
+			Div(
+				Class("card-body"),
+				P(Class("card-text text-muted mb-3"), Text("Real-time log monitoring with filtering capabilities")),
+				Ul(
+					Class("mb-3 list-unstyled"),
+					Li(Class("mb-2"), Text("📂 Logs are read from the 'logs/downloader.log' file")),
+					Li(Class("mb-2"), Text("🔄 Lines are displayed in reverse chronological order (newest first)")),
+					Li(Class("mb-2"), Text("🎯 Use the log level filter to show only specific types of messages")),
+					Li(Class("mb-2"), Text("⚡ Auto-refresh updates the display every 5 seconds")),
+					Li(Class("mb-2"), Text("⏱️ Large log files may take a moment to load")),
+				),
 			),
 		),
 	)
@@ -1151,20 +1595,36 @@ func HandleLogViewer(c *gin.Context) {
 	}
 
 	result := Div(
-		Class("alert-secondary"),
-		H5(Text(fmt.Sprintf("Log Entries (Last %d lines)", len(lines)))),
-		P(Text(fmt.Sprintf("Loaded at: %s", time.Now().Format("2006-01-02 15:04:05")))),
-		func() Node {
-			if logLevel != "" {
-				return P(Text("Filtered by level: " + logLevel))
-			}
-			return Text("")
-		}(),
-		Hr(),
+		Class("card border-0 shadow-sm border-info mb-4"),
 		Div(
-			Class("log-container"),
-			Style("max-height: 400px; overflow-y: auto; background: #f8f9fa; padding: 10px; border-radius: 4px;"),
-			Group(logNodes),
+			Class("card-header border-0"),
+			Style("background: linear-gradient(135deg, #d1ecf1 0%, #bee5eb 100%); border-radius: 15px 15px 0 0;"),
+			Div(
+				Class("d-flex align-items-center justify-content-between"),
+				Div(
+					Class("d-flex align-items-center"),
+					Span(Class("badge bg-info me-3"), I(Class("fas fa-file-text me-1")), Text("Logs")),
+					H5(Class("card-title mb-0 text-info fw-bold"), Text(fmt.Sprintf("Log Entries (Last %d lines)", len(lines)))),
+				),
+				Span(Class("badge bg-info"), Text(fmt.Sprintf("%s", time.Now().Format("15:04:05")))),
+			),
+		),
+		Div(
+			Class("card-body"),
+			P(Class("card-text text-muted mb-3"),
+				Text(fmt.Sprintf("Loaded at: %s", time.Now().Format("2006-01-02 15:04:05"))),
+				func() Node {
+					if logLevel != "" {
+						return Text(" - Filtered by level: " + logLevel)
+					}
+					return Text("")
+				}(),
+			),
+			Div(
+				Class("log-container"),
+				Style("max-height: 400px; overflow-y: auto; background: #f8f9fa; padding: 10px; border-radius: 4px;"),
+				Group(logNodes),
+			),
 		),
 	)
 
@@ -1223,4 +1683,865 @@ func readLastLines(filename string, lineCount int, logLevel string) ([]string, e
 	}
 
 	return result, nil
+}
+
+// renderMediaCleanupWizardPage renders a page for media cleanup operations
+func renderMediaCleanupWizardPage(csrfToken string) Node {
+	return Div(
+		Class("config-section-enhanced"),
+
+		// Enhanced page header with gradient background
+		Div(
+			Class("page-header-enhanced"),
+			Div(
+				Class("header-content"),
+				Div(
+					Class("header-icon-wrapper"),
+					I(Class("fa-solid fa-broom header-icon")),
+				),
+				Div(
+					Class("header-text"),
+					H2(Class("header-title"), Text("Media Cleanup Wizard")),
+					P(Class("header-subtitle"), Text("Find and remove orphaned files, duplicates, or broken links in your media library. Keep your collection clean and organized.")),
+				),
+			),
+		),
+
+		Form(
+			Class("config-form"),
+			ID("cleanupForm"),
+
+			Div(
+				Class("row"),
+				Div(
+					Class("col-md-6"),
+					H5(Class("form-section-title"), Text("Cleanup Options")),
+
+					renderFormGroup("cleanup",
+						map[string]string{
+							"FindOrphans": "Files on disk that aren't tracked in the database",
+						},
+						map[string]string{
+							"FindOrphans": "Find Orphaned Files",
+						},
+						"FindOrphans", "checkbox", true, nil),
+
+					renderFormGroup("cleanup",
+						map[string]string{
+							"FindDuplicates": "Files with identical names or sizes",
+						},
+						map[string]string{
+							"FindDuplicates": "Find Duplicate Files",
+						},
+						"FindDuplicates", "checkbox", false, nil),
+
+					renderFormGroup("cleanup",
+						map[string]string{
+							"FindBroken": "Database entries pointing to missing files",
+						},
+						map[string]string{
+							"FindBroken": "Find Broken Links",
+						},
+						"FindBroken", "checkbox", false, nil),
+
+					renderFormGroup("cleanup",
+						map[string]string{
+							"FindEmpty": "Folders that contain no media files",
+						},
+						map[string]string{
+							"FindEmpty": "Find Empty Directories",
+						},
+						"FindEmpty", "checkbox", false, nil),
+				),
+
+				Div(
+					Class("col-md-6"),
+					H5(Class("form-section-title"), Text("Scan Configuration")),
+
+					renderFormGroup("cleanup", map[string]string{
+						"MediaTypes": "Select which media types to scan",
+					}, map[string]string{
+						"MediaTypes": "Media Types",
+					}, "MediaTypes", "select", "all", map[string][]string{
+						"options": {"all", "movies", "series"},
+					}),
+
+					renderFormGroup("cleanup", map[string]string{
+						"MinFileSize": "Minimum file size in MB to consider (0 = no limit)",
+					}, map[string]string{
+						"MinFileSize": "Min File Size (MB)",
+					}, "MinFileSize", "number", "10", nil),
+
+					renderFormGroup("cleanup", map[string]string{
+						"Paths": "Specific paths to scan (leave empty for all configured paths)",
+					}, map[string]string{
+						"Paths": "Scan Paths",
+					}, "Paths", "textarea", "", nil),
+
+					renderFormGroup("cleanup",
+						map[string]string{
+							"DryRun": "Scan and report issues without making changes",
+						},
+						map[string]string{
+							"DryRun": "Dry Run (Preview Only)",
+						},
+						"DryRun", "checkbox", true, nil),
+				),
+			),
+
+			Div(
+				Class("form-group submit-group"),
+				Button(
+					Class("btn btn-primary"),
+					Text("Start Cleanup Scan"),
+					Type("button"),
+					hx.Target("#cleanupResults"),
+					hx.Swap("innerHTML"),
+					hx.Post("/api/admin/cleanup"),
+					hx.Headers("{\"X-CSRF-Token\": \""+csrfToken+"\"}"),
+					hx.Include("#cleanupForm"),
+				),
+				Button(
+					Type("button"),
+					Class("btn btn-secondary ml-2"),
+					Attr("onclick", "document.getElementById('cleanupForm').reset(); document.getElementById('cleanupResults').innerHTML = '';"),
+					Text("Reset"),
+				),
+			),
+		),
+
+		Div(
+			ID("cleanupResults"),
+			Class("mt-4"),
+			Style("min-height: 50px;"),
+		),
+	)
+}
+
+// ================================================================================
+// CRON EXPRESSION GENERATOR PAGE
+// ================================================================================
+
+// renderCronGeneratorPage renders the cron expression generator page
+func renderCronGeneratorPage(csrfToken string) Node {
+	return Div(
+		Class("container-fluid"),
+
+		// Header
+		Div(
+			Class("page-header-enhanced"),
+			Div(
+				Class("header-content"),
+				Div(
+					Class("header-icon-wrapper"),
+					I(Class("fa-solid fa-clock header-icon")),
+				),
+				Div(
+					Class("header-text"),
+					H2(Class("header-title"), Text("Cron Expression Generator")),
+					P(Class("header-subtitle"), Text("Generate and validate cron expressions for scheduling tasks. Choose from presets or build custom expressions with validation and examples.")),
+				),
+			),
+		),
+
+		// Generator Form
+		Div(
+			Class("row"),
+
+			// Input Form Column
+			Div(
+				Class("col-lg-6"),
+				Div(
+					Class("card"),
+					Div(
+						Class("card-header"),
+						H5(Class("card-title mb-0"), Text("Generate Expression")),
+					),
+					Div(
+						Class("card-body"),
+						Form(
+							ID("cronForm"),
+							Input(Type("hidden"), Name("csrf_token"), Value(csrfToken)),
+
+							// Preset Options
+							Div(
+								Class("form-group mb-3"),
+								Label(Class("form-label fw-bold"), Text("Quick Presets")),
+								Div(
+									Class("btn-group d-flex flex-wrap gap-2"),
+									Button(Type("button"), Class("btn btn-outline-primary btn-sm"), Attr("data-cron", "*/30 * * * * *"), Text("Every 30s")),
+									Button(Type("button"), Class("btn btn-outline-primary btn-sm"), Attr("data-cron", "0 */5 * * * *"), Text("Every 5min")),
+									Button(Type("button"), Class("btn btn-outline-primary btn-sm"), Attr("data-cron", "0 0 * * * *"), Text("Every Hour")),
+									Button(Type("button"), Class("btn btn-outline-primary btn-sm"), Attr("data-cron", "0 0 0 * * *"), Text("Daily at Midnight")),
+									Button(Type("button"), Class("btn btn-outline-primary btn-sm"), Attr("data-cron", "0 0 12 * * *"), Text("Daily at Noon")),
+									Button(Type("button"), Class("btn btn-outline-primary btn-sm"), Attr("data-cron", "0 0 0 * * 0"), Text("Weekly (Sunday)")),
+									Button(Type("button"), Class("btn btn-outline-primary btn-sm"), Attr("data-cron", "0 0 0 1 * *"), Text("Monthly")),
+								),
+							),
+
+							Hr(),
+
+							// Manual Input Fields
+							Div(
+								Class("row"),
+								Div(
+									Class("col-md-2"),
+									Div(
+										Class("form-group"),
+										Label(Class("form-label"), Text("Second")),
+										Input(
+											Type("text"),
+											Class("form-control cron-field"),
+											ID("second"),
+											Placeholder("0-59"),
+											Value("0"),
+											Attr("data-toggle", "tooltip"),
+											Attr("title", "0-59 or * or */5 for every 5 seconds"),
+										),
+										Small(Class("form-text text-muted"), Text("0-59")),
+									),
+								),
+								Div(
+									Class("col-md-2"),
+									Div(
+										Class("form-group"),
+										Label(Class("form-label"), Text("Minute")),
+										Input(
+											Type("text"),
+											Class("form-control cron-field"),
+											ID("minute"),
+											Placeholder("0-59"),
+											Value("0"),
+											Attr("data-toggle", "tooltip"),
+											Attr("title", "0-59 or * or */5 for every 5 minutes"),
+										),
+										Small(Class("form-text text-muted"), Text("0-59")),
+									),
+								),
+								Div(
+									Class("col-md-2"),
+									Div(
+										Class("form-group"),
+										Label(Class("form-label"), Text("Hour")),
+										Input(
+											Type("text"),
+											Class("form-control cron-field"),
+											ID("hour"),
+											Placeholder("0-23"),
+											Value("*"),
+											Attr("data-toggle", "tooltip"),
+											Attr("title", "0-23 or * or */2 for every 2 hours"),
+										),
+										Small(Class("form-text text-muted"), Text("0-23")),
+									),
+								),
+								Div(
+									Class("col-md-2"),
+									Div(
+										Class("form-group"),
+										Label(Class("form-label"), Text("Day")),
+										Input(
+											Type("text"),
+											Class("form-control cron-field"),
+											ID("day"),
+											Placeholder("1-31"),
+											Value("*"),
+											Attr("data-toggle", "tooltip"),
+											Attr("title", "1-31 or * or L for last day"),
+										),
+										Small(Class("form-text text-muted"), Text("1-31")),
+									),
+								),
+								Div(
+									Class("col-md-2"),
+									Div(
+										Class("form-group"),
+										Label(Class("form-label"), Text("Month")),
+										Input(
+											Type("text"),
+											Class("form-control cron-field"),
+											ID("month"),
+											Placeholder("1-12"),
+											Value("*"),
+											Attr("data-toggle", "tooltip"),
+											Attr("title", "1-12 or JAN-DEC or *"),
+										),
+										Small(Class("form-text text-muted"), Text("1-12")),
+									),
+								),
+								Div(
+									Class("col-md-2"),
+									Div(
+										Class("form-group"),
+										Label(Class("form-label"), Text("Weekday")),
+										Input(
+											Type("text"),
+											Class("form-control cron-field"),
+											ID("weekday"),
+											Placeholder("0-6"),
+											Value("*"),
+											Attr("data-toggle", "tooltip"),
+											Attr("title", "0-6 (0=Sunday) or SUN-SAT or *"),
+										),
+										Small(Class("form-text text-muted"), Text("0-6")),
+									),
+								),
+							),
+
+							Hr(),
+
+							// Manual Expression Input
+							Div(
+								Class("form-group"),
+								Label(Class("form-label fw-bold"), Text("Manual Expression")),
+								Div(
+									Class("input-group"),
+									Input(
+										Type("text"),
+										Class("form-control font-monospace"),
+										ID("cronExpression"),
+										Placeholder("0 12 * * 1"),
+										Attr("data-toggle", "tooltip"),
+										Attr("title", "Enter a complete cron expression"),
+										hx.Post("/api/admin/crongen/validate"),
+										hx.Target("#cronResult"),
+										hx.Swap("innerHTML"),
+										hx.Trigger("input changed delay:500ms"),
+										hx.Headers(createHTMXHeaders(csrfToken)),
+									),
+									Button(
+										Class("btn btn-primary"),
+										Type("button"),
+										Attr("onclick", "htmx.trigger('#cronExpression', 'input')"),
+										Text("Validate"),
+									),
+								),
+							),
+						),
+					),
+				),
+			),
+
+			// Result Column
+			Div(
+				Class("col-lg-6"),
+				Div(
+					Class("card"),
+					Div(
+						Class("card-header"),
+						H5(Class("card-title mb-0"), Text("Expression Details")),
+					),
+					Div(
+						Class("card-body"),
+						Div(
+							ID("cronResult"),
+							Class("p-3 bg-light rounded"),
+							P(Class("text-muted mb-0"), Text("Enter a cron expression to see its details...")),
+						),
+					),
+				),
+
+				// Help Card
+				Div(
+					Class("card mt-4"),
+					Div(
+						Class("card-header"),
+						H5(Class("card-title mb-0"), Text("Cron Format Help")),
+					),
+					Div(
+						Class("card-body"),
+						Table(
+							Class("table table-sm"),
+							THead(
+								Tr(
+									Th(Text("Field")),
+									Th(Text("Values")),
+									Th(Text("Special Characters")),
+								),
+							),
+							TBody(
+								Tr(Td(Text("Second")), Td(Text("0-59")), Td(Text("* , - /"))),
+								Tr(Td(Text("Minute")), Td(Text("0-59")), Td(Text("* , - /"))),
+								Tr(Td(Text("Hour")), Td(Text("0-23")), Td(Text("* , - /"))),
+								Tr(Td(Text("Day")), Td(Text("1-31")), Td(Text("* , - / L"))),
+								Tr(Td(Text("Month")), Td(Text("1-12 or JAN-DEC")), Td(Text("* , - /"))),
+								Tr(Td(Text("Weekday")), Td(Text("0-7 or SUN-SAT")), Td(Text("* , - / L #"))),
+							),
+						),
+						Div(
+							Class("mt-3"),
+							H6(Text("Examples:")),
+							Ul(
+								Class("list-unstyled small text-muted"),
+								Li(Code(Text("0 0 12 * * *")), Text(" - Daily at 12:00 PM (6-field)")),
+								Li(Code(Text("0 12 * * *")), Text(" - Daily at 12:00 PM (5-field)")),
+								Li(Code(Text("*/30 * * * * *")), Text(" - Every 30 seconds")),
+								Li(Code(Text("0 */15 * * * *")), Text(" - Every 15 minutes")),
+								Li(Code(Text("0 0 9-17 * * 1-5")), Text(" - Every hour from 9-5, Mon-Fri")),
+							),
+						),
+					),
+				),
+			),
+		),
+
+		// Complete JavaScript for Cron Generator
+		Script(Raw(`
+			$(document).ready(function() {
+				// Initialize tooltips
+				$('[data-toggle="tooltip"]').tooltip();
+
+				// Expression builder function
+				function updateExpression() {
+					const second = $('#second').val() || '0';
+					const minute = $('#minute').val() || '0';
+					const hour = $('#hour').val() || '*';
+					const day = $('#day').val() || '*';
+					const month = $('#month').val() || '*';
+					const weekday = $('#weekday').val() || '*';
+					const expression = second + ' ' + minute + ' ' + hour + ' ' + day + ' ' + month + ' ' + weekday;
+					$('#cronExpression').val(expression);
+					validateExpression(expression);
+				}
+
+				// Field change handlers
+				$('.cron-field').on('input', updateExpression);
+
+				// Preset button handlers
+				$('[data-cron]').click(function() {
+					const cron = $(this).data('cron');
+					const parts = cron.split(' ');
+					if (parts.length === 5) {
+						// 5-field format: minute hour day month weekday -> convert to 6-field
+						$('#second').val('0');
+						$('#minute').val(parts[0] || '*');
+						$('#hour').val(parts[1] || '*');
+						$('#day').val(parts[2] || '*');
+						$('#month').val(parts[3] || '*');
+						$('#weekday').val(parts[4] || '*');
+						// Convert to 6-field expression
+						const sixFieldExpr = '0 ' + cron;
+						$('#cronExpression').val(sixFieldExpr);
+						validateExpression(sixFieldExpr);
+					} else if (parts.length === 6) {
+						// 6-field format: second minute hour day month weekday
+						$('#second').val(parts[0] || '0');
+						$('#minute').val(parts[1] || '0');
+						$('#hour').val(parts[2] || '*');
+						$('#day').val(parts[3] || '*');
+						$('#month').val(parts[4] || '*');
+						$('#weekday').val(parts[5] || '*');
+						$('#cronExpression').val(cron);
+						validateExpression(cron);
+					}
+				});
+
+				// Manual expression input handler
+				$('#cronExpression').on('input', function() {
+					const expression = $(this).val();
+					const parts = expression.split(' ');
+					if (parts.length === 5) {
+						// 5-field format: minute hour day month weekday
+						$('#second').val('0');
+						$('#minute').val(parts[0]);
+						$('#hour').val(parts[1]);
+						$('#day').val(parts[2]);
+						$('#month').val(parts[3]);
+						$('#weekday').val(parts[4]);
+					} else if (parts.length === 6) {
+						// 6-field format: second minute hour day month weekday
+						$('#second').val(parts[0]);
+						$('#minute').val(parts[1]);
+						$('#hour').val(parts[2]);
+						$('#day').val(parts[3]);
+						$('#month').val(parts[4]);
+						$('#weekday').val(parts[5]);
+					}
+					validateExpression(expression);
+				});
+
+				// Validate button handler
+				$('#validateBtn').click(function() {
+					const expression = $('#cronExpression').val();
+					validateExpression(expression);
+				});
+
+				// Validation function
+				function validateExpression(expression) {
+					if (!expression || expression.trim() === '') {
+						$('#cronResult').html('<p class="text-muted mb-0">Enter a cron expression to see its details...</p>');
+						return;
+					}
+					// Get CSRF token from form
+					const csrfToken = document.querySelector('input[name="csrf_token"]').value;
+
+					$.ajax({
+						url: '/api/admin/crongen/validate',
+						method: 'POST',
+						headers: {
+							'X-CSRF-Token': csrfToken,
+							'Content-Type': 'application/x-www-form-urlencoded'
+						},
+						data: { expression: expression },
+						success: function(response) {
+							$('#cronResult').html(response);
+						},
+						error: function() {
+							$('#cronResult').html('<div class="alert alert-danger">Error validating expression</div>');
+						}
+					});
+				}
+
+				// Initialize with default expression
+				updateExpression();
+			});
+		`)),
+	)
+}
+
+func renderQualityReorderPage(csrfToken string) Node {
+	// Get all available quality profiles
+	qualityConfigs := config.GetSettingsQualityAll()
+
+	var qualityOptions []Node
+	qualityOptions = append(qualityOptions, Option(Value(""), Text("-- Select Quality Profile --")))
+	for _, qc := range qualityConfigs {
+		qualityOptions = append(qualityOptions, Option(Value(qc.Name), Text(qc.Name)))
+	}
+
+	// Get all resolutions and qualities from database for filter options
+	allResolutions := database.DBConnect.GetresolutionsIn
+	allQualities := database.DBConnect.GetqualitiesIn
+
+	var resolutionOptions []Node
+	resolutionOptions = append(resolutionOptions, Option(Value("all"), Text("All Resolutions")))
+	for _, res := range allResolutions {
+		if res.Name != "" {
+			resolutionOptions = append(resolutionOptions, Option(Value(res.Name), Text(res.Name)))
+		}
+	}
+
+	var qualityFilterOptions []Node
+	qualityFilterOptions = append(qualityFilterOptions, Option(Value("all"), Text("All Qualities")))
+	for _, qual := range allQualities {
+		if qual.Name != "" {
+			qualityFilterOptions = append(qualityFilterOptions, Option(Value(qual.Name), Text(qual.Name)))
+		}
+	}
+
+	return Div(
+		Class("config-section-enhanced"),
+		// Enhanced page header
+		Div(
+			Class("page-header-enhanced"),
+			Div(
+				Class("header-content"),
+				Div(
+					Class("header-icon-wrapper"),
+					I(Class("fas fa-sort-amount-down header-icon")),
+				),
+				Div(
+					Class("header-text"),
+					H2(Class("header-title"), Text("Quality Reorder Testing")),
+					P(Class("header-subtitle"), Text("Experiment with quality settings and preview the resulting order and priority")),
+				),
+			),
+		),
+
+		// Main form
+		Div(
+			Class("row"),
+			Div(
+				Class("col-12"),
+				Div(
+					Class("card border-0 shadow-sm"),
+					Style("border-radius: 15px; overflow: hidden;"),
+					Div(
+						Class("card-header border-0"),
+						Style("background: linear-gradient(135deg, #fff 0%, #f8f9fa 100%); padding: 1.5rem;"),
+						H5(Class("card-title mb-0"),
+							I(Class("fas fa-cog me-2 text-primary")),
+							Text("Quality Profile Selection"),
+						),
+					),
+					Div(
+						Class("card-body p-4"),
+						Form(
+							ID("quality-reorder-form"),
+							hx.Post("/api/admin/quality-reorder"),
+							hx.Target("#quality-results"),
+							hx.Swap("innerHTML"),
+							hx.Headers(createHTMXHeaders(csrfToken)),
+							Input(Type("hidden"), Name("csrf_token"), Value(csrfToken)),
+
+							Div(
+								Class("mb-4"),
+								Label(Class("form-label fw-semibold"), Text("Quality Profile")),
+								Select(
+									Class("form-select"),
+									Name("selected_quality"),
+									ID("selected_quality"),
+									Required(),
+									Attr("hx-get", "/api/admin/quality-reorder/rules"),
+									Attr("hx-target", "#reorder-rules-container"),
+									Attr("hx-trigger", "change"),
+									Attr("hx-vals", "js:{profile: this.value}"),
+									Attr("hx-headers", `{"X-CSRF-Token": "`+csrfToken+`"}`),
+									Attr("hx-indicator", "#loading-indicator"),
+									Group(qualityOptions),
+								),
+								Div(Class("form-text"), Text("Select a quality profile to view its current ordering")),
+							),
+
+							Div(
+								Class("row mb-4"),
+								Div(
+									Class("col-md-6"),
+									Label(Class("form-label fw-semibold"), Text("Filter by Resolution")),
+									Select(
+										Class("form-select"),
+										Name("filter_resolution"),
+										ID("filter_resolution"),
+										Group(resolutionOptions),
+									),
+									Div(Class("form-text"), Text("Filter results to specific resolution")),
+								),
+								Div(
+									Class("col-md-6"),
+									Label(Class("form-label fw-semibold"), Text("Filter by Quality")),
+									Select(
+										Class("form-select"),
+										Name("filter_quality"),
+										ID("filter_quality"),
+										Group(qualityFilterOptions),
+									),
+									Div(Class("form-text"), Text("Filter results to specific quality source")),
+								),
+							),
+
+							// Additional Filter Options Row
+							Div(
+								Class("row mb-4"),
+								Div(
+									Class("col-12"),
+									Div(
+										Class("card border-0 shadow-sm"),
+										Style("border-radius: 10px;"),
+										Div(
+											Class("card-header border-0"),
+											Style("background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); padding: 1rem;"),
+											H6(Class("card-title mb-0"),
+												I(Class("fas fa-filter me-2 text-info")),
+												Text("Filter Options"),
+											),
+										),
+										Div(
+											Class("card-body p-3"),
+											renderFormGroup("",
+												map[string]string{
+													"wanted_only": "When enabled, only shows qualities that are actively wanted by the selected profile. When disabled, shows all available qualities regardless of wanted status.",
+												},
+												map[string]string{
+													"wanted_only": "Show Wanted Qualities Only",
+												},
+												"wanted_only", "checkbox", false, nil),
+										),
+									),
+								),
+							),
+
+							// Reorder Rules Management Section
+							Div(
+								Class("mb-4"),
+								Div(
+									Class("d-flex justify-content-between align-items-center mb-3"),
+									H6(Class("mb-0 fw-semibold"),
+										I(Class("fas fa-flask me-2 text-warning")),
+										Text("Temporary Reorder Rules"),
+									),
+									Div(
+										Class("btn-group"),
+										Button(
+											Type("button"),
+											Class("btn btn-sm btn-outline-primary"),
+											hx.Post("/api/admin/quality-reorder/add-rule"),
+											hx.Target("#reorder-rules-container"),
+											hx.Swap("beforeend"),
+											hx.Headers(createHTMXHeaders(csrfToken)),
+											I(Class("fas fa-plus me-1")),
+											Text("Add Rule"),
+										),
+										Button(
+											Type("button"),
+											Class("btn btn-sm btn-outline-secondary"),
+											hx.Post("/api/admin/quality-reorder/reset-rules"),
+											hx.Target("#reorder-rules-container"),
+											hx.Swap("innerHTML"),
+											hx.Headers(createHTMXHeaders(csrfToken)),
+											hx.Confirm("Are you sure you want to reset all temporary reorder rules?"),
+											I(Class("fas fa-undo me-1")),
+											Text("Reset"),
+										),
+									),
+								),
+								// Rules headers
+								Div(
+									Class("row mb-2 px-3"),
+									Div(Class("col-md-2"), Small(Class("text-muted fw-semibold"), Text("TYPE"))),
+									Div(Class("col-md-3"), Small(Class("text-muted fw-semibold"), Text("PATTERN"))),
+									Div(Class("col-md-2"), Small(Class("text-muted fw-semibold"), Text("PRIORITY (+/-)"))),
+									Div(Class("col-md-3"), Small(Class("text-muted fw-semibold"), Text("ENABLED"))),
+									Div(Class("col-md-2"), Small(Class("text-muted fw-semibold"), Text("ACTIONS"))),
+								),
+								Div(
+									ID("reorder-rules-container"),
+									Class("border rounded p-3 bg-light"),
+									P(Class("text-muted mb-0 text-center"), Text("No temporary reorder rules. Select a quality profile above to load rules.")),
+								),
+								Div(
+									ID("loading-indicator"),
+									Class("htmx-indicator text-center p-2"),
+									I(Class("fas fa-spinner fa-spin me-2")),
+									Text("Loading rules..."),
+								),
+								Input(Type("hidden"), Name("reorder_rules"), ID("reorder_rules_json"), Value("[]")),
+								Div(Class("form-text mt-2"),
+									Text("Add temporary reorder rules to test priority changes without modifying the actual configuration. Changes are not saved permanently. Priorities can be negative to reduce ranking."),
+								),
+							),
+
+							Div(
+								Class("d-flex gap-2"),
+								Button(
+									Type("submit"),
+									Class("btn btn-primary px-4"),
+									hx.Post("/api/admin/quality-reorder"),
+									hx.Target("#quality-results"),
+									hx.Swap("innerHTML"),
+									hx.Headers(createHTMXHeaders(csrfToken)),
+									hx.Include("#quality-reorder-form"),
+									hx.Indicator("#loading-indicator"),
+									I(Class("fas fa-eye me-2")),
+									Text("Preview Quality Order"),
+								),
+								Button(
+									Type("button"),
+									Class("btn btn-outline-secondary px-4"),
+									ID("refresh-profiles"),
+									I(Class("fas fa-sync-alt me-2")),
+									Text("Refresh Profiles"),
+								),
+							),
+						),
+					),
+				),
+			),
+		),
+
+		// Results container
+		Div(
+			ID("quality-results"),
+			Class("mt-4"),
+		),
+
+		// Instructions card
+		Div(
+			Class("row mt-4"),
+			Div(
+				Class("col-12"),
+				Div(
+					Class("card border-0 shadow-sm bg-light"),
+					Div(
+						Class("card-body p-4"),
+						H6(Class("card-title text-muted mb-3"),
+							I(Class("fas fa-info-circle me-2")),
+							Text("How to Use This Tool"),
+						),
+						Ul(
+							Class("list-unstyled mb-0 text-muted small"),
+							Li(Class("mb-2"),
+								I(Class("fas fa-check text-success me-2")),
+								Text("Select a quality profile from the dropdown to view its current ordering"),
+							),
+							Li(Class("mb-2"),
+								I(Class("fas fa-check text-success me-2")),
+								Text("Use filters to focus on specific resolutions or quality sources"),
+							),
+							Li(Class("mb-2"),
+								I(Class("fas fa-flask text-warning me-2")),
+								Text("Add temporary reorder rules to test priority changes (positive values increase ranking, negative decrease)"),
+							),
+							Li(Class("mb-2"),
+								I(Class("fas fa-check text-success me-2")),
+								Text("Enable/disable rules to see how they affect priority calculations"),
+							),
+							Li(Class("mb-0"),
+								I(Class("fas fa-check text-success me-2")),
+								Text("The results table shows resolution + quality combinations ranked by total priority"),
+							),
+						),
+					),
+				),
+			),
+		),
+
+		// Complete JavaScript for Quality Reorder
+		Script(Raw(`
+			$(document).ready(function() {
+				
+				// Refresh button handler
+				$('#refresh-profiles').on('click', function() {
+					location.reload();
+				});
+
+				// Profile selection handler - removed jQuery handler as HTMX handles this directly
+
+				// Function to collect temporary reorder rules and update the JSON field
+				function updateReorderRulesJSON() {
+					var rules = [];
+					$('#reorder-rules-container [data-rule-id]').each(function() {
+						var $rule = $(this);
+						var type = $rule.find('select[name="rule_type"]').val();
+						var pattern = $rule.find('input[name="rule_pattern"]').val();
+						var priority = parseInt($rule.find('input[name="rule_priority"]').val()) || 0;
+						var enabled = $rule.find('input[name="rule_enabled"]').is(':checked');
+						
+						if (type && pattern && enabled) {
+							rules.push({
+								name: pattern,
+								type: type,
+								new_priority: priority
+							});
+						}
+					});
+					
+					$('#reorder_rules_json').val(JSON.stringify(rules));
+				}
+				
+				// Update JSON before form submission
+				$(document).on('htmx:configRequest', function(evt) {
+					if (evt.target.id === 'quality-reorder-form' || $(evt.target).closest('#quality-reorder-form').length) {
+						updateReorderRulesJSON();
+					}
+				});
+				
+				// Update JSON when rules change
+				$(document).on('change', '#reorder-rules-container input, #reorder-rules-container select', function() {
+					updateReorderRulesJSON();
+				});
+				
+				// Filter change handlers - trigger HTMX form submission
+				$('#filter_resolution, #filter_quality, #wanted_only, #_wanted_only').on('change', function() {
+					if ($('#selected_quality').val()) {
+						// Use HTMX to trigger form submission
+						htmx.trigger('#quality-reorder-form', 'submit');
+					}
+				});
+
+				document.addEventListener('htmx:responseError', function(evt) {
+					console.error('HTMX Response Error:', evt.detail);
+				});
+			});
+		`)),
+	)
 }

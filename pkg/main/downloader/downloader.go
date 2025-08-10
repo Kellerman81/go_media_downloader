@@ -319,7 +319,7 @@ func (d *downloadertype) notify() {
 		if d.Cfgp.Notification[idx].CfgNotification == nil {
 			continue
 		}
-		bl, messagetext := logger.ParseStringTemplate(d.Cfgp.Notification[idx].Message, d)
+		bl, messagetext, _ := logger.ParseStringTemplate(d.Cfgp.Notification[idx].Message, d)
 		if bl {
 			continue
 		}
@@ -327,7 +327,7 @@ func (d *downloadertype) notify() {
 			scanner.AppendCsv(d.Cfgp.Notification[idx].CfgNotification.Outputto, messagetext)
 			continue
 		}
-		bl, messageTitle := logger.ParseStringTemplate(d.Cfgp.Notification[idx].Title, d)
+		bl, messageTitle, _ := logger.ParseStringTemplate(d.Cfgp.Notification[idx].Title, d)
 		if bl {
 			continue
 		}

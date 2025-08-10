@@ -33,6 +33,7 @@ Inspirations: Radarr/Sonarr and Flexget
 - Moved logs to logs subfolder
 - added first webinterface (admin only - crashes sometimes - not many data validity checks)
 - Webinterface Login: User: admin  -  Password: admin
+- Webinterface V2 Login (/api/admin): User: admin  -  Password: <WebApiKey from config>
 - IMDB List Url not supported any more
 ## Features
 
@@ -102,6 +103,7 @@ Inspirations: Radarr/Sonarr and Flexget
 - Configure your Qualities and their priorities (use parse/quality api to test this) including wanted and Defaults
 - Use FProbe or mediainfo to get Media Information (dimensions, runtime, audio language)
 - Currently completly API and Scheduler controlled - basic webinterface which needs to be replace is included
+- Webinterface V2 in Development and can be accessed by /api/admin - Username admin - Password is the WebApiKey   -  BUT: It is in Development Backup Config and Database before using - it could break
 
 ### Under Consideration
 
@@ -174,6 +176,8 @@ https://go-media-downloader.readme.io/
 - Open Url in Browser
 - Open : http://{server}:{port}/api/trakt/token/{code}?apikey={apikey}  to get the token and save it - the code is in the url from the step above
 - Best Practice restart App - You need to do this only once every 3 month if the expiry is reached
+
+- The Auth can now also be done from the new Webinterface
 
 ## Donate
 
