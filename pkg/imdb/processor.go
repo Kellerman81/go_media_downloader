@@ -965,10 +965,6 @@ func (p *IMDBProcessor) processTitleRecord(record []string) error {
 	return nil
 }
 
-// processGenres processes genre information for a title (deprecated - use processGenresBatch)
-func (p *IMDBProcessor) processGenres(tconst, genres string) error {
-	return p.processGenresBatch(tconst, genres)
-}
 
 // processGenresBatch processes genre information for a title using batch processing
 func (p *IMDBProcessor) processGenresBatch(tconst, genres string) error {
