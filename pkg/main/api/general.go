@@ -74,6 +74,12 @@ func AddGeneralRoutes(routerapi *gin.RouterGroup) {
 		routerapi.POST("/config/update/:name", apiConfigUpdate)
 
 		routerapi.GET("/config/type/:type", apiListConfigType)
+
+		routerapi.GET("/cache/refresh", apiCacheRefresh)
+		routerapi.GET("/cache/list", apiCacheList)
+		routerapi.POST("/cache/add", apiCacheAdd)
+		routerapi.DELETE("/cache/remove/:key", apiCacheRemove)
+		routerapi.DELETE("/cache/clear/:type", apiCacheClear)
 	}
 }
 
@@ -153,7 +159,7 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 	routerapi.POST("/admin/quality-reorder/add-rule", HandleQualityReorderAddRule)
 	routerapi.POST("/admin/quality-reorder/reset-rules", HandleQualityReorderResetRules)
 	routerapi.GET("/admin/quality-profile-rules", HandleQualityProfileRules)
-	
+
 	routerapi.GET("/admin/regex-tester", adminPageRegexTester)
 	routerapi.POST("/admin/regex-tester/test", HandleRegexTesting)
 	routerapi.GET("/admin/naming-generator", adminPageNamingGenerator)
@@ -395,18 +401,18 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 			return
 		}
 		prefix := "media_" + ctx.Param("prefix") + "_" + ctx.Param("configv") + "_data"
-		logger.LogDynamicany1String("info", "prefix", "prefix", prefix)
+		logger.Logtype("info", 1).Str("prefix", prefix).Msg("prefix")
 		formKeys := make(map[any]bool)
 		for key := range ctx.Request.PostForm {
-			logger.LogDynamicany1String("info", "key", "key", key)
+			logger.Logtype("info", 1).Str("key", key).Msg("key")
 			if (strings.Contains(key, "_TemplatePath")) == false || (strings.Contains(key, prefix+"_")) == false {
 				continue
 			}
-			logger.LogDynamicany1String("info", "key", "splitted", fmt.Sprintf("%v", strings.Split(key, "_")))
+			logger.Logtype("info", 1).Str("splitted", fmt.Sprintf("%v", strings.Split(key, "_"))).Msg("key")
 			formKeys[strings.Split(key, "_")[4]] = true
 		}
 		jv, _ := json.Marshal(formKeys)
-		logger.LogDynamicany1String("info", "keys", "keys", string(jv))
+		logger.Logtype("info", 1).Str("keys", string(jv)).Msg("keys")
 		form := renderMediaDataForm(prefix, len(formKeys), &config.MediaDataConfig{})
 		var buf strings.Builder
 		form.Render(&buf)
@@ -728,7 +734,7 @@ func apiParseFile(ctx *gin.Context) {
 // @Failure      401  {object}  Jsonerror
 // @Router       /api/fillimdb [get].
 func apiFillImdb(ctx *gin.Context) {
-	config.GetSettingsGeneral().Jobs["RefreshImdb"](0)
+	config.GetSettingsGeneral().Jobs["RefreshImdb"](0, ctx)
 	sendSuccess(ctx, StrOK)
 }
 
@@ -1410,6 +1416,12 @@ type apiStructureJSON struct {
 	Disabledeletewronglanguage bool
 }
 
+type apiCacheAddJSON struct {
+	CacheType string `json:"cache_type" binding:"required"`
+	Key       string `json:"key" binding:"required"`
+	Value     string `json:"value" binding:"required"`
+}
+
 // @Summary      Structure Single Item
 // @Description  Structure a single folder
 // @Tags         general
@@ -1521,11 +1533,181 @@ func apiQueueCancel(ctx *gin.Context) {
 		return
 	}
 
-	// Cancel the job by removing it from the queue
-	worker.RemoveQueueEntry(queueID)
+	// Cancel the job and remove it from the queue
+	worker.CancelQueueEntry(queueID)
 
 	sendJSONResponse(ctx, http.StatusOK, gin.H{
 		"success": true,
 		"message": "Queue job canceled successfully",
 	})
+}
+
+// @Summary      Refresh Cache
+// @Description  Manually trigger a full cache refresh for database tables
+// @Tags         cache
+// @Param        apikey query     string    true  "apikey"
+// @Success      200  {object}  Jsondata{data=string} "returns ok"
+// @Failure      401  {object}  Jsonerror
+// @Router       /api/cache/refresh [get].
+func apiCacheRefresh(ctx *gin.Context) {
+	config.GetSettingsGeneral().Jobs["RefreshCache"](0, ctx)
+	sendSuccess(ctx, StrOK)
+}
+
+// @Summary      List Cache Types
+// @Description  List all available cache types and their current status
+// @Tags         cache
+// @Param        apikey query     string    true  "apikey"
+// @Success      200  {object}  Jsondata{data=map[string]any} "cache types and status"
+// @Failure      401  {object}  Jsonerror
+// @Router       /api/cache/list [get].
+func apiCacheList(ctx *gin.Context) {
+	cacheInfo := map[string]any{
+		"available_types": []string{
+			logger.CacheMovie,
+			logger.CacheSeries,
+			logger.CacheDBMovie,
+			logger.CacheDBSeries,
+			logger.CacheDBSeriesAlt,
+			logger.CacheTitlesMovie,
+			logger.CacheUnmatchedMovie,
+			logger.CacheUnmatchedSeries,
+			logger.CacheFilesMovie,
+			logger.CacheFilesSeries,
+			logger.CacheHistoryURLMovie,
+			logger.CacheHistoryTitleMovie,
+			logger.CacheHistoryURLSeries,
+			logger.CacheHistoryTitleSeries,
+		},
+		"description": map[string]string{
+			logger.CacheMovie:              "Movie list cache",
+			logger.CacheSeries:             "Series list cache",
+			logger.CacheDBMovie:            "Movie database cache",
+			logger.CacheDBSeries:           "Series database cache",
+			logger.CacheDBSeriesAlt:        "Alternative series database cache",
+			logger.CacheTitlesMovie:        "Movie titles cache",
+			logger.CacheUnmatchedMovie:     "Unmatched movie files cache",
+			logger.CacheUnmatchedSeries:    "Unmatched series files cache",
+			logger.CacheFilesMovie:         "Movie files cache",
+			logger.CacheFilesSeries:        "Series files cache",
+			logger.CacheHistoryURLMovie:    "Movie URL history cache",
+			logger.CacheHistoryTitleMovie:  "Movie title history cache",
+			logger.CacheHistoryURLSeries:   "Series URL history cache",
+			logger.CacheHistoryTitleSeries: "Series title history cache",
+		},
+	}
+	sendJSONResponse(ctx, http.StatusOK, cacheInfo)
+}
+
+// @Summary      Add Cache Entry
+// @Description  Manually add an entry to a specific cache
+// @Tags         cache
+// @Param        cache  body      apiCacheAddJSON  true  "Cache entry data"
+// @Param        apikey query     string    true  "apikey"
+// @Success      200  {object}  Jsondata{data=string} "returns ok"
+// @Failure      400  {object}  Jsonerror
+// @Failure      401  {object}  Jsonerror
+// @Router       /api/cache/add [post].
+func apiCacheAdd(ctx *gin.Context) {
+	var req apiCacheAddJSON
+	if !bindJSONWithValidation(ctx, &req) {
+		return
+	}
+
+	// Validate cache type
+	validTypes := []string{
+		logger.CacheMovie, logger.CacheSeries, logger.CacheDBMovie, logger.CacheDBSeries,
+		logger.CacheDBSeriesAlt, logger.CacheTitlesMovie, logger.CacheUnmatchedMovie,
+		logger.CacheUnmatchedSeries, logger.CacheFilesMovie, logger.CacheFilesSeries,
+		logger.CacheHistoryURLMovie, logger.CacheHistoryTitleMovie,
+		logger.CacheHistoryURLSeries, logger.CacheHistoryTitleSeries,
+	}
+
+	valid := false
+	for _, validType := range validTypes {
+		if req.CacheType == validType {
+			valid = true
+			break
+		}
+	}
+
+	if !valid {
+		sendBadRequest(ctx, "Invalid cache type. Use /api/cache/list to see available types")
+		return
+	}
+
+	// Add to appropriate cache based on type
+	// For simplicity, most cache types use string append
+	database.AppendCache(req.Key, req.Value)
+
+	logger.Logtype("info", 0).Str("type", req.CacheType).Str("key", req.Key).Str("value", req.Value).Msg("Manual cache entry added")
+	sendSuccess(ctx, "Cache entry added successfully")
+}
+
+// @Summary      Remove Cache Entry
+// @Description  Remove a specific cache entry by key
+// @Tags         cache
+// @Param        key    path     string    true  "Cache key to remove"
+// @Param        apikey query    string    true  "apikey"
+// @Success      200  {object}  Jsondata{data=string} "returns ok"
+// @Failure      401  {object}  Jsonerror
+// @Router       /api/cache/remove/{key} [delete].
+func apiCacheRemove(ctx *gin.Context) {
+	key := ctx.Param("key")
+	if key == "" {
+		sendBadRequest(ctx, "Missing cache key")
+		return
+	}
+
+	// Remove from all cache types that might contain this key
+	// This is a bit brute force, but ensures removal from all relevant caches
+	database.DeleteCacheEntry(key)
+
+	logger.Logtype("info", 0).Str("key", key).Msg("Manual cache entry removed")
+	sendSuccess(ctx, "Cache entry removed successfully")
+}
+
+// @Summary      Clear Cache Type
+// @Description  Clear all entries from a specific cache type
+// @Tags         cache
+// @Param        type   path     string    true  "Cache type to clear"
+// @Param        apikey query    string    true  "apikey"
+// @Success      200  {object}  Jsondata{data=string} "returns ok"
+// @Failure      400  {object}  Jsonerror
+// @Failure      401  {object}  Jsonerror
+// @Router       /api/cache/clear/{type} [delete].
+func apiCacheClear(ctx *gin.Context) {
+	cacheType := ctx.Param("type")
+	if cacheType == "" {
+		sendBadRequest(ctx, "Missing cache type")
+		return
+	}
+
+	// Validate cache type
+	validTypes := []string{
+		logger.CacheMovie, logger.CacheSeries, logger.CacheDBMovie, logger.CacheDBSeries,
+		logger.CacheDBSeriesAlt, logger.CacheTitlesMovie, logger.CacheUnmatchedMovie,
+		logger.CacheUnmatchedSeries, logger.CacheFilesMovie, logger.CacheFilesSeries,
+		logger.CacheHistoryURLMovie, logger.CacheHistoryTitleMovie,
+		logger.CacheHistoryURLSeries, logger.CacheHistoryTitleSeries,
+	}
+
+	valid := false
+	for _, validType := range validTypes {
+		if cacheType == validType {
+			valid = true
+			break
+		}
+	}
+
+	if !valid {
+		sendBadRequest(ctx, "Invalid cache type. Use /api/cache/list to see available types")
+		return
+	}
+
+	// Clear the specific cache type
+	database.ClearCacheType(cacheType)
+
+	logger.Logtype("info", 0).Str("type", cacheType).Msg("Manual cache type cleared")
+	sendSuccess(ctx, fmt.Sprintf("Cache type %s cleared successfully", cacheType))
 }

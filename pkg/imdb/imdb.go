@@ -3,28 +3,26 @@ package main
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"database/sql"
-	"encoding/csv"
 	"fmt"
 	"html"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
 	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"unicode"
 
 	_ "net/http/pprof"
 
-	"github.com/golang-migrate/migrate/v4"
-	_ "github.com/golang-migrate/migrate/v4/database/sqlite3"
-	_ "github.com/golang-migrate/migrate/v4/source/file"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/mozillazg/go-unidecode/table"
-	"github.com/pelletier/go-toml/v2"
 
 	"github.com/h2non/filetype"
 )
@@ -42,50 +40,223 @@ type imdbConfig struct {
 	UseCache         bool     `toml:"use_cache"`
 }
 
-const configfile = "./config/config.toml"
+// Validate validates the configuration and sets defaults
+func (c *imdbConfig) Validate() error {
+	if c.ImdbIDSize <= 0 {
+		c.ImdbIDSize = DefaultImdbIDSize
+	}
+	if c.LoopSize <= 0 {
+		c.LoopSize = SQLBatchSize // Set to actual batch size used
+	}
+	if c.ImdbIDSize > MaxImdbIDSize {
+		return fmt.Errorf("imdbid_size %d exceeds maximum %d", c.ImdbIDSize, MaxImdbIDSize)
+	}
+	if c.LoopSize > MaxLoopSize {
+		return fmt.Errorf("loop_size %d exceeds maximum %d", c.LoopSize, MaxLoopSize)
+	}
+	return nil
+}
 
+const (
+	configfile = "./config/config.toml"
+
+	// Default configuration values
+	DefaultImdbIDSize = 1200000
+	DefaultLoopSize   = SQLBatchSize // Match the actual batch size
+
+	// Maximum values for safety
+	MaxImdbIDSize = 20000000
+	MaxLoopSize   = 1000000
+
+	// Optimized batch processing constants
+	SQLBatchSize     = 400000 // Large but reasonable batches for commit frequency
+	SQLParamBatch    = 99     // Max records per SQL batch (SQLite limit: 999 params, titles have 10 params: 99*10=990)
+	ValueArgsCapInit = 50000  // Pre-allocated buffers
+	SQLCacheSize     = 1000
+
+	// Buffer sizes
+	BufferPoolSize = 100
+)
+
+// Build info variables (set by build flags)
 var (
-	loopsize                int
-	i                       int
-	tx                      *sql.Tx
-	indexfull               bool
-	usecache                = false
-	usememory               = true
-	imdbcache               map[uint32]struct{}
-	sqlcache                = make(map[string]*sql.Stmt, 1000)
-	titlemap                map[string]struct{}
-	akamap                  map[string]struct{}
-	allowemptylang          bool
-	sqlbuild                bytes.Buffer
-	valueArgs               = make([]interface{}, 0, 999)
-	sqlbuildgenre           bytes.Buffer
-	valueArgsGenre          = make([]interface{}, 0, 999)
-	version                 string
-	buildstamp              string
-	githash                 string
-	dbimdb                  *sql.DB
-	nilstuct                = struct{}{}
-	sqlparam2byte           = "(?, ?)"
-	sqlparam3byte           = "(?, ?, ?)"
-	sqlparam4byte           = "(?, ?, ?, ?)"
-	sqlparam6byte           = "(?, ?, ?, ?, ?, ?)"
-	sqlparam9byte           = "(?, ?, ?, ?, ?, ?, ?, ?, ?)"
-	sqlparam10byte          = "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-	sqlcommabyte            = ","
-	sqlstmtbyteshorttitles  = "insert into imdb_titles (tconst, title_type, primary_title, slug, start_year, runtime_minutes) VALUES "
-	sqlstmtbytelongtitles   = "insert into imdb_titles (tconst, title_type, primary_title, slug, original_title, is_adult, start_year, end_year, runtime_minutes, genres) VALUES "
-	sqlstmtbytegenre        = "insert into imdb_genres (tconst, genre) VALUES "
-	sqlstmtbyteshortakas    = "insert into imdb_akas (tconst, title, slug, region) VALUES "
-	sqlstmtbytelongakas     = "insert into imdb_akas (tconst, ordering, title, slug, region, language, types, attributes, is_original_title) VALUES "
-	sqlstmtbyteshortratings = "insert into imdb_ratings (tconst, num_votes, average_rating) VALUES "
-	sqlstmtshorttitles      *sql.Stmt
-	sqlstmtlongtitles       *sql.Stmt
-	sqlstmtgenre            *sql.Stmt
-	sqlstmtshortakas        *sql.Stmt
-	sqlstmtlongakas         *sql.Stmt
-	sqlstmtshortratings     *sql.Stmt
-	PlBuffer                = NewPool(100, 0, nil, func(b *bytes.Buffer) { b.Reset() })
-	substituteRuneSpace     = map[rune]string{
+	version    string
+	buildstamp string
+	githash    string
+)
+
+// Global objects that need to be package-level
+var (
+	PlBuffer  = NewPool(BufferPoolSize, 0, nil, func(b *bytes.Buffer) { b.Reset() })
+	nilStruct = struct{}{}
+)
+
+// ProgressReporter interface for reporting processing progress
+type ProgressReporter interface {
+	Report(stage string, current, total int64, message string)
+}
+
+// DefaultProgressReporter provides basic console progress reporting
+type DefaultProgressReporter struct {
+	logger *slog.Logger
+}
+
+func (p *DefaultProgressReporter) Report(stage string, current, total int64, message string) {
+	if total > 0 {
+		percent := float64(current) / float64(total) * 100
+		p.logger.Info("Progress", "stage", stage, "current", current, "total", total, "percent", fmt.Sprintf("%.1f%%", percent), "message", message)
+	} else {
+		p.logger.Info("Progress", "stage", stage, "current", current, "message", message)
+	}
+}
+
+// IMDBProcessor encapsulates all IMDB processing state and behavior
+type IMDBProcessor struct {
+	ctx      context.Context
+	cancel   context.CancelFunc
+	logger   *slog.Logger
+	progress ProgressReporter
+	config   imdbConfig
+
+	// Database connection and transaction
+	db *sql.DB
+	tx *sql.Tx
+
+	// Processing state
+	allowEmptyLang bool
+
+	// Caches and maps
+	imdbCache map[uint32]struct{}
+	titleMap  map[string]struct{}
+	akaMap    map[string]struct{}
+	sqlCache  map[string]*sql.Stmt
+
+	// SQL building buffers for batch processing
+	sqlBuild       strings.Builder
+	valueArgs      []any
+	sqlBuildGenre  strings.Builder
+	valueArgsGenre []any
+
+	// Prepared statements
+	stmtShortTitles  *sql.Stmt
+	stmtLongTitles   *sql.Stmt
+	stmtGenre        *sql.Stmt
+	stmtShortAkas    *sql.Stmt
+	stmtLongAkas     *sql.Stmt
+	stmtShortRatings *sql.Stmt
+}
+
+// NewIMDBProcessor creates a new IMDB processor with the given configuration
+func NewIMDBProcessor(ctx context.Context, config imdbConfig, logger *slog.Logger) (*IMDBProcessor, error) {
+	if err := config.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid config: %w", err)
+	}
+
+	ctx, cancel := context.WithCancel(ctx)
+
+	p := &IMDBProcessor{
+		ctx:      ctx,
+		cancel:   cancel,
+		logger:   logger,
+		progress: &DefaultProgressReporter{logger: logger},
+		config:   config,
+
+		imdbCache:      make(map[uint32]struct{}, config.ImdbIDSize),
+		sqlCache:       make(map[string]*sql.Stmt, SQLCacheSize),
+		valueArgs:      make([]any, 0, ValueArgsCapInit),
+		valueArgsGenre: make([]any, 0, ValueArgsCapInit),
+	}
+
+	// Pre-allocate string builders for batch SQL generation
+	p.sqlBuild.Grow(1000000)     // 1MB should be enough
+	p.sqlBuildGenre.Grow(500000) // 0.5MB for genres
+
+	return p, nil
+}
+
+// Close cleans up resources used by the processor
+func (p *IMDBProcessor) Close() error {
+	p.cancel()
+
+	var errs []error
+
+	// Close prepared statements
+	if p.stmtShortTitles != nil {
+		if err := p.stmtShortTitles.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if p.stmtLongTitles != nil {
+		if err := p.stmtLongTitles.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if p.stmtGenre != nil {
+		if err := p.stmtGenre.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if p.stmtShortAkas != nil {
+		if err := p.stmtShortAkas.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if p.stmtLongAkas != nil {
+		if err := p.stmtLongAkas.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if p.stmtShortRatings != nil {
+		if err := p.stmtShortRatings.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+
+	// Close cached statements
+	for _, stmt := range p.sqlCache {
+		if stmt != nil {
+			if err := stmt.Close(); err != nil {
+				errs = append(errs, err)
+			}
+		}
+	}
+
+	// Commit or rollback any active transaction
+	if p.tx != nil {
+		if err := p.tx.Commit(); err != nil {
+			p.logger.Warn("Failed to commit final transaction", "error", err)
+			if rollbackErr := p.tx.Rollback(); rollbackErr != nil {
+				errs = append(errs, rollbackErr)
+			}
+		}
+	}
+
+	// Close database
+	if p.db != nil {
+		if err := p.db.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+
+	// Clear maps to help GC
+	clear(p.imdbCache)
+	clear(p.titleMap)
+	clear(p.akaMap)
+	clear(p.sqlCache)
+	p.imdbCache = nil
+	p.titleMap = nil
+	p.akaMap = nil
+	p.sqlCache = nil
+
+	if len(errs) > 0 {
+		return fmt.Errorf("multiple errors during close: %v", errs)
+	}
+	return nil
+}
+
+// Character substitution maps for slug generation
+var (
+	substituteRuneSpace = map[rune]string{
 		'&':  "and",
 		'@':  "at",
 		'"':  "",
@@ -156,7 +327,7 @@ func csvgetintarr(record string) int {
 	if err != nil {
 		return 0
 	}
-	return int(getint)
+	return getint
 }
 
 // csvgetuint32arr converts the string value from the provided CSV
@@ -167,7 +338,6 @@ func csvgetuint32arr(record string) uint32 {
 		return 0
 	}
 	getint, err := strconv.ParseUint(strings.TrimLeft(record, "t"), 10, 0)
-	// getint, err := strconv.Atoi(strings.TrimLeft(instr, "t"))
 	if err != nil {
 		return 0
 	}
@@ -191,7 +361,7 @@ func csvgetfloatarr(record string) float32 {
 // Returns false if the value is "\\N", otherwise returns true if the
 // value is "1", "t", "T", "true", "TRUE", or "True", and false otherwise.
 func csvgetboolarr(record string) bool {
-	if record == "\\N" {
+	if record == "" || record == "\\N" {
 		return false
 	}
 	switch record {
@@ -201,720 +371,72 @@ func csvgetboolarr(record string) bool {
 	return false
 }
 
-// loadCfgDataDB loads the configuration from the config file and unmarshals it into a struct.
-// It returns the Imdbindexer config struct on success, or an empty struct on error.
-func loadCfgDataDB() imdbConfig {
-	content, err := os.ReadFile(configfile)
-	if err != nil {
-		fmt.Println("Error loading config. ", err)
-	}
-	var outim mainConfig
-	errimdb := toml.Unmarshal(content, &outim)
-
-	if errimdb == nil {
-		return outim.Imdbindexer
-	}
-	return imdbConfig{}
-}
-
-// initImdbdb initializes a SQLite database connection for the
-// given database file. It creates the database file if it doesn't exist.
-// It configures the database connection with some performance tuning
-// settings like enabling shared cache and in-memory journaling. It also
-// optionally keeps the entire database in memory if the usememory flag
-// is set. The database handle is returned.
-func initImdbdb(dbfile string) *sql.DB {
-	if _, err := os.Stat("./databases/" + dbfile + ".db"); os.IsNotExist(err) {
-		_, err := os.Create("./databases/" + dbfile + ".db") // Create SQLite file
-		if err != nil {
-			log.Fatal(err.Error())
-		}
-	}
-	str := "file:./databases/" + dbfile + ".db?_fk=1&_journal=memory&cache=shared"
-	if usememory {
-		str = "file:./databases/" + dbfile + ".db?_fk=1&_journal=memory&mode=memory&cache=shared"
-	}
-	db, err := sql.Open("sqlite3", str)
-	if err != nil {
-		log.Fatal(err)
-	}
-	db.SetMaxIdleConns(15)
-	db.SetMaxOpenConns(5)
-	return db
-}
-
-// upgradeimdb upgrades the imdb database schema. It initializes a new
-// migrate instance to run the upgrades defined in the imdbdb schema
-// files, opens the temporary database, and runs the migration Up
-// method to perform the schema changes.
-func upgradeimdb() {
-	m, err := migrate.New(
-		"file://./schema/imdbdb",
-		"sqlite3://./databases/imdbtemp.db?_fk=1&_journal=memory&mode=memory&_cslike=0",
-	)
-	if err != nil {
-		fmt.Println(fmt.Errorf("migration failed... %v", err))
-	}
-
-	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-		fmt.Println(fmt.Errorf("an error occurred while syncing the database.. %v", err))
-	}
-	m = nil
-}
-
-// loadakas loads akas (alternative titles) data from a TSV file into the database.
-// It opens the TSV file, initializes a CSV reader, skips the header row,
-// processes each row by calling processakas, and executes batched INSERT statements.
-// It also clears maps used for caching after loading all data.
-func loadakas() {
-	fmt.Println("Opening akas..")
-
-	filetitle, err := os.Open("./title.akas.tsv")
-	if err != nil {
-		fmt.Println(fmt.Errorf("an error occurred while opening akas.. %v", err))
-		return
-	}
-	defer filetitle.Close()
-	parseraka := csv.NewReader(filetitle)
-	parseraka.Comma = '\t'
-	parseraka.LazyQuotes = true
-	parseraka.ReuseRecord = true
-	parseraka.TrimLeadingSpace = true
-	_, _ = parseraka.Read() // skip header
-
-	for {
-		if processakas(parseraka) == io.EOF {
-			break
-		}
-	}
-
-	if usecache && len(valueArgs) > 1 {
-		err = exec(sqlbuild.String(), true, valueArgs)
-		if err != nil {
-			fmt.Println(fmt.Errorf("an error occurred while exec..%s %v", sqlbuild.String(), err))
-			return
-		}
-	}
-	clear(akamap)
-
-	sqlbuild.Reset()
-	valueArgs = valueArgs[:0]
-
-	akamap = nil
-}
-
-// processakas parses akas (alternative titles) records from the input
-// and inserts them into the database. It handles caching optimization
-// to batch insert queries.
-func processakas(parsertitle *csv.Reader) error {
-	record, err := parsertitle.Read()
-	if err == io.EOF {
-		return err
-	}
-	if err != nil {
-		fmt.Println(fmt.Errorf("an error occurred while parsing title.. %v", err))
-		return nil
-	}
-	if record[1] == "" {
-		return nil
-	}
-	_, exists := imdbcache[csvgetuint32arr(record[0])]
-	if !exists {
-		return nil
-	}
-	if !allowemptylang && len(record[3]) == 0 {
-		return nil
-	}
-	if _, ok := akamap[record[3]]; !ok {
-		if !allowemptylang {
-			return nil
-		}
-		if record[3] != "" {
-			return nil
-		}
-	}
-
-	if usecache {
-		if len(valueArgs) == 0 {
-			if indexfull {
-				sqlbuild.WriteString(sqlstmtbytelongakas)
-			} else {
-				sqlbuild.WriteString(sqlstmtbyteshortakas)
-			}
-		} else {
-			sqlbuild.WriteString(sqlcommabyte)
-		}
-	}
-	if indexfull {
-		if record[3] == "\\N" {
-			record[3] = ""
-		}
-		if record[4] == "\\N" {
-			record[4] = ""
-		}
-		if record[5] == "\\N" {
-			record[5] = ""
-		}
-		if record[6] == "\\N" {
-			record[6] = ""
-		}
-		if usecache {
-			sqlbuild.WriteString(sqlparam9byte)
-			i++
-			valueArgs = append(valueArgs, record[0], csvgetintarr(record[1]), unescapeString(record[2]), stringToSlug(record[2]), record[3], record[4], record[5], record[6], csvgetboolarr(record[7]))
-		} else {
-			_, sqlerr := sqlstmtlongakas.Exec(&record[0], csvgetintarr(record[1]), unescapeString(record[2]), stringToSlug(record[2]), &record[3], &record[4], &record[5], &record[6], csvgetboolarr(record[7]))
-			if sqlerr != nil {
-				fmt.Println(fmt.Errorf("an error occurred while processing sql.. %v", sqlerr))
-			}
-		}
-	} else {
-		if record[3] == "\\N" {
-			record[3] = ""
-		}
-		if usecache {
-			sqlbuild.WriteString(sqlparam4byte)
-			i++
-			valueArgs = append(valueArgs, record[0], unescapeString(record[2]), stringToSlug(record[2]), record[3])
-		} else {
-			_, sqlerr := sqlstmtshortakas.Exec(&record[0], unescapeString(record[2]), stringToSlug(record[2]), &record[3])
-			if sqlerr != nil {
-				fmt.Println(fmt.Errorf("an error occurred while processing sql.. %v", sqlerr))
-			}
-		}
-	}
-	if !usecache {
-		return nil
-	}
-	if len(valueArgs) <= 900 {
-		return nil
-	}
-	sqlerr := exec(sqlbuild.String(), false, valueArgs)
-	if sqlerr != nil {
-		fmt.Println(fmt.Errorf("an error occurred while processing sql.. %v", sqlerr))
-		return nil
-	}
-
-	sqlbuild.Reset()
-	valueArgs = valueArgs[:0]
-	return nil
-}
-
-// loadratings loads the ratings data from a TSV file and inserts it into the database.
-// It opens the file, initializes a CSV parser for it, skips the header row,
-// builds an INSERT statement to batch insert ratings data, executes the statement in batches,
-// and closes the file and parser when finished.
-func loadratings() {
-	fmt.Println("Opening ratings..")
-
-	filetitle, err := os.Open("./title.ratings.tsv")
-	if err != nil {
-		fmt.Println(fmt.Errorf("an error occurred while opening ratings.. %v", err))
-		return
-	}
-	defer filetitle.Close()
-	parserrating := csv.NewReader(filetitle)
-	parserrating.Comma = '\t'
-	parserrating.LazyQuotes = true
-	parserrating.ReuseRecord = true
-	parserrating.TrimLeadingSpace = true
-	_, _ = parserrating.Read() // skip header
-
-	for {
-		if processratings(parserrating) == io.EOF {
-			break
-		}
-	}
-	if len(valueArgs) > 1 {
-		sqlerr := exec(sqlbuild.String(), true, valueArgs)
-		if sqlerr != nil {
-			fmt.Println(fmt.Errorf("an error occurred while processing sql.. %v", sqlerr))
-			return
-		}
-	}
-
-	sqlbuild.Reset()
-	valueArgs = valueArgs[:0]
-}
-
-// processratings processes each record from the ratings CSV file.
-// It checks if the title ID exists in the cache and inserts the rating data into
-// the database, either executing the query directly or batching for performance.
-func processratings(parsertitle *csv.Reader) error {
-	record, err := parsertitle.Read()
-	if err == io.EOF {
-		return err
-	}
-	if err != nil {
-		fmt.Println(fmt.Errorf("an error occurred while parsing title.. %v", err))
-		return nil
-	}
-	if record[1] == "" {
-		return nil
-	}
-	_, exists := imdbcache[csvgetuint32arr(record[0])]
-	if !exists {
-		return nil
-	}
-	if !usecache {
-		_, sqlerr := sqlstmtshortratings.Exec(&record[0], csvgetintarr(record[2]), csvgetfloatarr(record[1]))
-		if sqlerr != nil {
-			fmt.Println(fmt.Errorf("an error occurred while processing sql.. %v", sqlerr))
-		}
-		return nil
-	}
-	if len(valueArgs) == 0 {
-		sqlbuild.WriteString(sqlstmtbyteshortratings)
-	} else {
-		sqlbuild.WriteString(sqlcommabyte)
-	}
-	sqlbuild.WriteString(sqlparam3byte)
-	i++
-	valueArgs = append(valueArgs, record[0], csvgetintarr(record[2]), csvgetfloatarr(record[1]))
-	if len(valueArgs) <= 900 {
-		return nil
-	}
-	sqlerr := exec(sqlbuild.String(), false, valueArgs)
-	if sqlerr != nil {
-		fmt.Println(fmt.Errorf("an error occurred while processing sql.. %v", sqlerr))
-		return nil
-	}
-	sqlbuild.Reset()
-	valueArgs = valueArgs[:0]
-	return nil
-}
-
-// loadtitles loads title data from a TSV file into database tables.
-// It parses the TSV rows into structs, handles caching and batch inserts for performance.
-func loadtitles() {
-	fmt.Println("Opening titles..")
-
-	filetitle, err := os.Open("./title.basics.tsv")
-	if err != nil {
-		fmt.Println(fmt.Errorf("an error occurred while opening titles.. %v", err))
-		return
-	}
-	defer filetitle.Close()
-	parsertitle := csv.NewReader(filetitle)
-	parsertitle.Comma = '\t'
-	parsertitle.LazyQuotes = true
-	parsertitle.ReuseRecord = true
-	parsertitle.TrimLeadingSpace = true
-	_, _ = parsertitle.Read() // skip header
-
-	for {
-		if processtitles(parsertitle) == io.EOF {
-			break
-		}
-	}
-
-	if usecache {
-		if len(valueArgs) > 1 {
-			err = exec(sqlbuild.String(), true, valueArgs)
-			if err != nil {
-				fmt.Println(fmt.Errorf("an error occurred while exec..%s %v", sqlbuild.String(), err))
-				return
-			}
-		}
-		if len(valueArgsGenre) > 1 {
-			err = exec(sqlbuildgenre.String(), true, valueArgsGenre)
-			if err != nil {
-				fmt.Println(fmt.Errorf("an error occurred while exec..%s %v", sqlbuild.String(), err))
-				return
-			}
-		}
-	}
-	clear(titlemap)
-	titlemap = nil
-
-	sqlbuild.Reset()
-	sqlbuildgenre.Reset()
-	valueArgs = valueArgs[:0]
-	valueArgsGenre = valueArgsGenre[:0]
-}
-
-// processtitles processes CSV records from a titles file.
-// It inserts/updates records into database tables like imdb_titles and imdb_genres.
-// It handles caching for performance by batching INSERTs.
-func processtitles(parsertitle *csv.Reader) error {
-	record, err := parsertitle.Read()
-	if err == io.EOF {
-		return err
-	}
-	if err != nil {
-		fmt.Println(fmt.Errorf("an error occurred while parsing title.. %v", err))
-		return nil
-	}
-	if record[1] == "" {
-		return nil
-	}
-	if _, ok := titlemap[record[1]]; !ok {
-		return nil
-	}
-	imdbcache[csvgetuint32arr(record[0])] = nilstuct
-
-	if usecache {
-		if len(valueArgs) == 0 {
-			if indexfull {
-				sqlbuild.WriteString(sqlstmtbytelongtitles)
-			} else {
-				sqlbuild.WriteString(sqlstmtbyteshorttitles)
-			}
-		} else {
-			sqlbuild.WriteString(sqlcommabyte)
-		}
-	}
-	if indexfull {
-		if record[8] == "\\N" {
-			record[8] = ""
-		}
-		if usecache {
-			sqlbuild.WriteString(sqlparam10byte)
-			i++
-			valueArgs = append(valueArgs, record[0], record[1], unescapeString(record[2]), stringToSlug(record[2]), unescapeString(record[3]), csvgetboolarr(record[4]), csvgetintarr(record[5]), csvgetintarr(record[6]), csvgetintarr(record[7]), record[8])
-		} else {
-			_, sqlerr := sqlstmtlongtitles.Exec(&record[0], &record[1], unescapeString(record[2]), stringToSlug(record[2]), unescapeString(record[3]), csvgetboolarr(record[4]), csvgetintarr(record[5]), csvgetintarr(record[6]), csvgetintarr(record[7]), &record[8])
-			if sqlerr != nil {
-				fmt.Println(fmt.Errorf("an error occurred while processing sql.. %v", sqlerr))
-			}
-		}
-		// valueArgs = append(valueArgs, record[0], record[1], record[2], stringToSlug(&record[2]), record[3], csvgetbool(record[4]), csvgetint(record[5]), csvgetint(record[7]), csvgetint(record[6]), record[8])
-		if strings.ContainsRune(record[8], ',') {
-			genres := strings.Split(record[8], ",")
-			var sqlerr error
-			for idx := range genres {
-				if genres[idx] != "" && genres[idx] != "\\N" {
-					if usecache {
-						if len(valueArgsGenre) == 0 {
-							sqlbuildgenre.WriteString(sqlstmtbytegenre)
-						} else {
-							sqlbuildgenre.WriteString(sqlcommabyte)
-						}
-						sqlbuildgenre.WriteString(sqlparam2byte)
-						i++
-						valueArgsGenre = append(valueArgsGenre, record[0], genres[idx])
-						if len(valueArgsGenre) > 900 {
-							sqlerr = exec(sqlbuildgenre.String(), false, valueArgsGenre)
-							if sqlerr != nil {
-								fmt.Println(fmt.Errorf("an error occurred while processing sql.. %v", sqlerr))
-								return nil
-							}
-							sqlbuildgenre.Reset()
-							valueArgsGenre = valueArgsGenre[:0]
-						}
-					} else {
-						_, sqlerr = sqlstmtgenre.Exec(&record[0], &genres[idx])
-						if sqlerr != nil {
-							fmt.Println(fmt.Errorf("an error occurred while processing sql.. %v", sqlerr))
-						}
-					}
-				}
-			}
-		} else if len(record[8]) >= 1 {
-			if usecache {
-				if len(valueArgsGenre) == 0 {
-					sqlbuildgenre.WriteString(sqlstmtbytegenre)
-				} else {
-					sqlbuildgenre.WriteString(sqlcommabyte)
-				}
-				sqlbuildgenre.WriteString(sqlparam2byte)
-				i++
-				valueArgsGenre = append(valueArgsGenre, record[0], record[8])
-				if len(valueArgsGenre) > 900 {
-					sqlerr := exec(sqlbuildgenre.String(), false, valueArgsGenre)
-					if sqlerr != nil {
-						fmt.Println(fmt.Errorf("an error occurred while processing sql.. %v", sqlerr))
-						return nil
-					}
-					sqlbuildgenre.Reset()
-					valueArgsGenre = valueArgsGenre[:0]
-				}
-			} else {
-				_, sqlerr := sqlstmtgenre.Exec(&record[0], &record[8])
-				if sqlerr != nil {
-					fmt.Println(fmt.Errorf("an error occurred while processing sql.. %v", sqlerr))
-				}
-			}
-		}
-	} else {
-		if usecache {
-			sqlbuild.WriteString(sqlparam6byte)
-			i++
-			valueArgs = append(valueArgs, record[0], record[1], unescapeString(record[2]), stringToSlug(record[2]), csvgetintarr(record[5]), csvgetintarr(record[7]))
-		} else {
-			_, sqlerr := sqlstmtshorttitles.Exec(&record[0], &record[1], unescapeString(record[2]), stringToSlug(record[2]), csvgetintarr(record[5]), csvgetintarr(record[7]))
-			if sqlerr != nil {
-				fmt.Println(fmt.Errorf("an error occurred while processing sql.. %v", sqlerr))
-			}
-		}
-	}
-	if !usecache {
-		return nil
-	}
-	if len(valueArgs) >= 900 {
-		sqlerr := exec(sqlbuild.String(), false, valueArgs)
-		if sqlerr != nil {
-			fmt.Println(fmt.Errorf("an error occurred while processing sql.. %v", sqlerr))
-			return nil
-		}
-		sqlbuild.Reset()
-		valueArgs = valueArgs[:0]
-	}
-	if len(valueArgsGenre) >= 900 {
-		sqlerr := exec(sqlbuildgenre.String(), false, valueArgsGenre)
-		if sqlerr != nil {
-			fmt.Println(fmt.Errorf("an error occurred while processing sql.. %v", sqlerr))
-			return nil
-		}
-		sqlbuildgenre.Reset()
-		valueArgsGenre = valueArgsGenre[:0]
-	}
-	return nil
-}
-
-// exec executes the provided SQL query using the prepared statement
-// cached in sqlcache. It starts a new transaction if startnew is true.
-// It handles commit/rollback on errors and clearing the cache when
-// a new transaction starts.
-func exec(query string, last bool, args []interface{}) error {
-	stmt, exists := sqlcache[query]
-	if !exists {
-		sqlcache[query], _ = dbimdb.Prepare(query)
-		stmt, exists = sqlcache[query]
-	}
-	var err error
-	if exists && stmt == nil {
-		stmt, err = tx.Prepare(query)
-		if err != nil {
-			fmt.Println(fmt.Errorf("an error occurred while prepping..%s %v", query, err))
-			return err
-		}
-		sqlcache[query] = stmt
-	}
-	_, err = stmt.Exec(args...)
-	if err != nil {
-		tx.Rollback()
-		tx, _ = dbimdb.Begin()
-		fmt.Println(fmt.Errorf("an error occurred while exec..%s %v", query, err))
-		return err
-	}
-	if !last {
-		if i < loopsize {
-			return nil
-		}
-	}
-	fmt.Println("committing rows: " + strconv.Itoa(i))
-	i = 0
-	err = tx.Commit()
-	if err != nil {
-		fmt.Println(fmt.Errorf("an error occurred while commit..%s %v", query, err))
-		return err
-	}
-	tx, _ = dbimdb.Begin()
-
-	return nil
-}
-
 func main() {
-	// go func() {
-	// 	_ = http.ListenAndServe(":8848", nil)
-	// }()
-	fmt.Println("Imdb Importer by kellerman81 - version " + version + " " + githash + " from " + buildstamp)
-	cfgimdb := loadCfgDataDB()
-	if cfgimdb.ImdbIDSize == 0 {
-		cfgimdb.ImdbIDSize = 1200000
+	if err := run(); err != nil {
+		slog.Error("Application failed", "error", err)
+		os.Exit(1)
 	}
-	if cfgimdb.LoopSize == 0 {
-		cfgimdb.LoopSize = 400000
-	}
-	loopsize = cfgimdb.LoopSize
-	indexfull = cfgimdb.Indexfull
-	usecache = cfgimdb.UseCache
-	usememory = cfgimdb.UseMemory
-	imdbcache = make(map[uint32]struct{}, cfgimdb.ImdbIDSize)
-	fmt.Println("Started Imdb Import")
-	os.Remove("./databases/imdbtemp.db")
-	dbimdb = initImdbdb("imdbtemp")
-
-	if usememory {
-		dbimdb.Exec(`CREATE TABLE [schema_migrations] (
-			[version] uint64, 
-			[dirty] bool
-		);`)
-		dbimdb.Exec(`CREATE UNIQUE INDEX [version_unique]
-			ON [schema_migrations] ([version]);`)
-		dbimdb.Exec(`Insert into [schema_migrations] (version, dirty) VALUES (2, 0)`)
-
-		dbimdb.Exec(`CREATE TABLE "imdb_titles" (
-		"tconst"	text NOT NULL,
-		"title_type"	text DEFAULT "",
-		"primary_title"	text DEFAULT "",
-		"slug"	text DEFAULT "",
-		"original_title"	text DEFAULT "",
-		"is_adult"	numeric,
-		"start_year"	integer,
-		"end_year"	integer,
-		"runtime_minutes"	integer,
-		"genres"	text DEFAULT ""
-	);`)
-		dbimdb.Exec(`CREATE TABLE "imdb_ratings" (
-		"id"	integer,
-		"created_at"	datetime NOT NULL DEFAULT current_timestamp,
-		"updated_at"	datetime NOT NULL DEFAULT current_timestamp,
-		"tconst"	text DEFAULT "",
-		"num_votes"	integer,
-		"average_rating"	real,
-		PRIMARY KEY("id")
-	);`)
-		dbimdb.Exec(`CREATE TABLE "imdb_genres" (
-		"id"	integer,
-		"created_at"	datetime NOT NULL DEFAULT current_timestamp,
-		"updated_at"	datetime NOT NULL DEFAULT current_timestamp,
-		"tconst"	text DEFAULT "",
-		"genre"	text DEFAULT "",
-		PRIMARY KEY("id")
-	);`)
-		dbimdb.Exec(`CREATE TABLE "imdb_akas" (
-		"id"	integer,
-		"created_at"	datetime NOT NULL DEFAULT current_timestamp,
-		"updated_at"	datetime NOT NULL DEFAULT current_timestamp,
-		"tconst"	text DEFAULT "",
-		"ordering"	integer,
-		"title"	text DEFAULT "",
-		"slug"	text DEFAULT "",
-		"region"	text DEFAULT "",
-		"language"	text DEFAULT "",
-		"types"	text DEFAULT "",
-		"attributes"	text DEFAULT "",
-		"is_original_title"	numeric,
-		PRIMARY KEY("id")
-	);`)
-		dbimdb.Exec(`CREATE INDEX "idx_imdb_titles_slug" ON "imdb_titles" (
-		"slug"
-	);`)
-		dbimdb.Exec(`CREATE INDEX "idx_imdb_titles_primary_title" ON "imdb_titles" (
-		"primary_title"
-	);`)
-		dbimdb.Exec(`CREATE UNIQUE INDEX "idx_imdb_titles_tconst" ON "imdb_titles" (
-		"tconst"
-	);`)
-		dbimdb.Exec(`CREATE INDEX "idx_imdb_akas_slug" ON "imdb_akas" (
-		"slug"
-	);`)
-		dbimdb.Exec(`CREATE INDEX "idx_imdb_akas_title" ON "imdb_akas" (
-		"title"
-	);`)
-		dbimdb.Exec(`CREATE TRIGGER tg_imdb_akas_updated_at
-	AFTER UPDATE
-	ON imdb_akas FOR EACH ROW
-	BEGIN
-	  UPDATE imdb_akas SET updated_at = current_timestamp
-		where id = old.id;
-	END;`)
-		dbimdb.Exec(`CREATE TRIGGER tg_imdb_ratings_updated_at
-	AFTER UPDATE
-	ON imdb_ratings FOR EACH ROW
-	BEGIN
-	  UPDATE imdb_ratings SET updated_at = current_timestamp
-		where id = old.id;
-	END;`)
-		dbimdb.Exec(`CREATE TRIGGER tg_imdb_genres_updated_at
-	AFTER UPDATE
-	ON imdb_genres FOR EACH ROW
-	BEGIN
-	  UPDATE imdb_genres SET updated_at = current_timestamp
-		where id = old.id;
-	END;`)
-		dbimdb.Exec(`CREATE INDEX "idx_imdb_akas_tconst" ON "imdb_akas" (
-		"tconst"
-	);`)
-		dbimdb.Exec(`CREATE INDEX "idx_imdb_titles_start_year" ON "imdb_titles" (
-		"start_year"
-	);`)
-		dbimdb.Exec(`CREATE INDEX "idx_imdb_titles_original_title" ON "imdb_titles" (
-		"original_title"
-	);`)
-		dbimdb.Exec(`CREATE INDEX "idx_imdb_akas_title_slug" ON "imdb_akas" (
-		"title",
-		"slug"
-	);`)
-		dbimdb.Exec(`CREATE INDEX "idx_imdb_titles_primary_original_slug" ON "imdb_titles" (
-		"primary_title",
-		"original_title",
-		"slug"
-	);`)
-	} else {
-		upgradeimdb()
-	}
-	dbimdb.Exec("PRAGMA journal_mode=OFF")
-	sqlbuild.Grow(100000)
-	sqlbuildgenre.Grow(100000)
-
-	tx, _ = dbimdb.Begin()
-
-	var err error
-	sqlstmtshorttitles, _ = dbimdb.Prepare("insert into imdb_titles (tconst, title_type, primary_title, slug, start_year, runtime_minutes) VALUES (?,?,?,?,?,?)")
-	sqlstmtlongtitles, err = dbimdb.Prepare("insert into imdb_titles (tconst, title_type, primary_title, slug, original_title, is_adult, start_year, end_year, runtime_minutes, genres) VALUES (?,?,?,?,?,?,?,?,?,?)")
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(0)
-	}
-	sqlstmtgenre, _ = dbimdb.Prepare("insert into imdb_genres (tconst, genre) VALUES (?,?)")
-	sqlstmtshortakas, _ = dbimdb.Prepare("insert into imdb_akas (tconst, title, slug, region) VALUES (?,?,?,?)")
-	sqlstmtlongakas, _ = dbimdb.Prepare("insert into imdb_akas (tconst, ordering, title, slug, region, language, types, attributes, is_original_title) VALUES (?,?,?,?,?,?,?,?,?)")
-	sqlstmtshortratings, _ = dbimdb.Prepare("insert into imdb_ratings (tconst, num_votes, average_rating) VALUES (?,?,?)")
-
-	allowemptylang = false
-	titlemap = make(map[string]struct{}, len(cfgimdb.Indexedtypes))
-	for idx := range cfgimdb.Indexedtypes {
-		titlemap[cfgimdb.Indexedtypes[idx]] = nilstuct
-	}
-
-	downloadimdbfiles()
-
-	loadtitles()
-	clear(titlemap)
-
-	akamap = make(map[string]struct{}, len(cfgimdb.Indexedlanguages))
-	for idx := range cfgimdb.Indexedlanguages {
-		if cfgimdb.Indexedlanguages[idx] == "" {
-			allowemptylang = true
-		} else {
-			akamap[cfgimdb.Indexedlanguages[idx]] = nilstuct
-		}
-	}
-	loadakas()
-	clear(akamap)
-
-	loadratings()
-
-	if usememory {
-		dbimdb.Exec("VACUUM INTO ?", "./databases/imdbtemp.db")
-	}
-
-	clear(imdbcache)
-	imdbcache = nil
-	var counter int
-	if dbimdb.QueryRow("Select count(*) from imdb_titles").Scan(&counter) != nil {
-		dbimdb.Close()
-		os.Remove("./databases/imdbtemp.db")
-		return
-	}
-	if counter == 0 {
-		dbimdb.Close()
-		os.Remove("./databases/imdbtemp.db")
-		return
-	}
-	dbimdb.Close()
-
-	fmt.Println("Ended Imdb Import")
 }
 
-// unescapeString unescapes HTML entities in the string of the given record. It returns an empty string if the
-// record's value is "\\N", otherwise it unescapes &amp; entities if
-// present before returning the string.
+func run() error {
+	// Setup structured logging
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	}))
+	slog.SetDefault(logger)
+
+	// Create context with cancellation for graceful shutdown
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Setup signal handling for graceful shutdown
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		sig := <-sigChan
+		logger.Info("Received shutdown signal", "signal", sig)
+		cancel()
+	}()
+
+	logger.Info("IMDB Importer starting",
+		"version", version,
+		"githash", githash,
+		"buildstamp", buildstamp)
+
+	// Load and validate configuration
+	cfg, err := loadCfgDataDBImproved()
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+
+	if err := cfg.Validate(); err != nil {
+		return fmt.Errorf("invalid configuration: %w", err)
+	}
+
+	// Create processor
+	processor, err := NewIMDBProcessor(ctx, cfg, logger)
+	if err != nil {
+		return fmt.Errorf("failed to create processor: %w", err)
+	}
+	defer func() {
+		if closeErr := processor.Close(); closeErr != nil {
+			logger.Error("Error closing processor", "error", closeErr)
+		}
+	}()
+
+	// Run the import process
+	if err := processor.Run(ctx); err != nil {
+		return fmt.Errorf("import process failed: %w", err)
+	}
+
+	logger.Info("IMDB import completed successfully")
+	return nil
+}
+
+// unescapeString unescapes HTML entities in the string of the given record.
+// Optimized for maximum performance with fast path checks.
 func unescapeString(record string) string {
-	if record == "\\N" {
+	if record == "" || record == "\\N" {
 		return ""
 	}
 	if strings.ContainsRune(record, '&') {
@@ -924,13 +446,12 @@ func unescapeString(record string) string {
 }
 
 // stringToSlug converts a string of the record
-// to a slug format by removing unwanted characters, collapsing multiple
-// hyphens, and trimming leading/trailing hyphens. Returns empty string
-// if input string is empty.
+// to a slug format. Optimized for performance.
 func stringToSlug(instr string) string {
-	if instr == "" {
+	if len(instr) == 0 {
 		return ""
 	}
+
 	inbyte := unidecode2(instr)
 	if len(inbyte) == 0 {
 		return ""
@@ -950,6 +471,7 @@ func unidecode2(s string) []byte {
 	var laststr string
 	var lastrune rune
 	// var c byte
+	// Fast check for '&' using byte indexing instead of ContainsRune
 	if strings.ContainsRune(s, '&') {
 		s = html.UnescapeString(s)
 	}
@@ -1066,26 +588,6 @@ func RemoveFile(file string) error {
 		fmt.Println("File not found: ", file)
 	}
 	return err
-}
-
-// downloadimdbfiles downloads compressed IMDB dataset files,
-// uncompresses them, and removes the original compressed files.
-// It downloads and uncompresses 3 files:
-// - title.basics.tsv.gz
-// - title.akas.tsv.gz
-// - title.ratings.tsv.gz
-func downloadimdbfiles() {
-	downloadFile("./", "", "title.basics.tsv.gz", "https://datasets.imdbws.com/title.basics.tsv.gz")
-	gunzip("./title.basics.tsv.gz", "title.basics.tsv")
-	RemoveFile("./title.basics.tsv.gz")
-
-	downloadFile("./", "", "title.akas.tsv.gz", "https://datasets.imdbws.com/title.akas.tsv.gz")
-	gunzip("./title.akas.tsv.gz", "title.akas.tsv")
-	RemoveFile("./title.akas.tsv.gz")
-
-	downloadFile("./", "", "title.ratings.tsv.gz", "https://datasets.imdbws.com/title.ratings.tsv.gz")
-	gunzip("./title.ratings.tsv.gz", "title.ratings.tsv")
-	RemoveFile("./title.ratings.tsv.gz")
 }
 
 // gunzip decompresses a gzipped file to a target filename.

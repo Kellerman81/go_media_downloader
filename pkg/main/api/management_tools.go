@@ -1460,6 +1460,61 @@ func renderAPITestingPage() Node {
 				statusElement.innerHTML = '<i class="' + iconClass + ' ' + textColor + '"></i>';
 				statusElement.title = message;
 			}
+			
+			// Resizer functionality
+			let isResizing = false;
+			let startX = 0;
+			let startSidebarWidth = 0;
+			
+			const resizer = document.getElementById('resizer');
+			const sidebar = document.getElementById('sidebar-content');
+			const container = document.getElementById('resizable-container');
+			
+			if (resizer && sidebar) {
+				resizer.addEventListener('mousedown', function(e) {
+					isResizing = true;
+					startX = e.clientX;
+					startSidebarWidth = parseInt(window.getComputedStyle(sidebar).width, 10);
+					
+					document.addEventListener('mousemove', doResize);
+					document.addEventListener('mouseup', stopResize);
+					
+					// Prevent text selection during resize
+					document.body.style.userSelect = 'none';
+					document.body.style.webkitUserSelect = 'none';
+					document.body.style.msUserSelect = 'none';
+					
+					e.preventDefault();
+				});
+				
+				function doResize(e) {
+					if (!isResizing) return;
+					
+					const deltaX = startX - e.clientX;
+					const newWidth = startSidebarWidth + deltaX;
+					
+					// Set min and max width constraints
+					const minWidth = 300;
+					const maxWidth = 800;
+					const containerWidth = container.offsetWidth;
+					const maxAllowedWidth = containerWidth - 400; // Leave space for main content
+					
+					const constrainedWidth = Math.max(minWidth, Math.min(newWidth, Math.min(maxWidth, maxAllowedWidth)));
+					
+					sidebar.style.width = constrainedWidth + 'px';
+				}
+				
+				function stopResize() {
+					isResizing = false;
+					document.removeEventListener('mousemove', doResize);
+					document.removeEventListener('mouseup', stopResize);
+					
+					// Restore text selection
+					document.body.style.userSelect = '';
+					document.body.style.webkitUserSelect = '';
+					document.body.style.msUserSelect = '';
+				}
+			}
 		`)),
 	)
 }
@@ -1476,22 +1531,22 @@ func HandleQualityReorderRules(c *gin.Context) {
 	if selectedProfile == "" {
 		selectedProfile = c.PostForm("selected_quality")
 	}
-	
+
 	if selectedProfile == "" {
 		c.String(http.StatusOK, `<p class="text-muted mb-0 text-center">Select a quality profile to load rules.</p>`)
 		return
 	}
-	
+
 	// Get the selected quality profile configuration
 	qualityConfig := config.GetSettingsQuality(selectedProfile)
 	if qualityConfig == nil {
 		c.String(http.StatusOK, `<p class="text-danger mb-0 text-center">Quality profile "<strong>`+selectedProfile+`</strong>" not found.</p>`)
 		return
 	}
-	
+
 	// Build HTML for displaying existing reorder rules from the profile
 	var html strings.Builder
-	
+
 	if len(qualityConfig.QualityReorder) == 0 {
 		html.WriteString(`<p class="text-muted mb-0 text-center">No reorder rules defined in profile: <strong>`)
 		html.WriteString(selectedProfile)
@@ -1502,14 +1557,14 @@ func HandleQualityReorderRules(c *gin.Context) {
 		html.WriteString(` reorder rule(s) from profile: <strong>`)
 		html.WriteString(selectedProfile)
 		html.WriteString(`</strong></p>`)
-		
+
 		// Display each reorder rule
 		for i, rule := range qualityConfig.QualityReorder {
 			ruleID := fmt.Sprintf("rule_%d_%d", time.Now().Unix(), i)
 			html.WriteString(`<div class="row mb-2 border rounded p-2 bg-white" data-rule-id="`)
 			html.WriteString(ruleID)
 			html.WriteString(`">`)
-			
+
 			// Type column
 			html.WriteString(`<div class="col-md-2">`)
 			html.WriteString(`<select class="form-select form-select-sm" name="rule_type" disabled>`)
@@ -1520,21 +1575,21 @@ func HandleQualityReorderRules(c *gin.Context) {
 			html.WriteString(`</option>`)
 			html.WriteString(`</select>`)
 			html.WriteString(`</div>`)
-			
+
 			// Pattern column
 			html.WriteString(`<div class="col-md-3">`)
 			html.WriteString(`<input type="text" class="form-control form-control-sm" name="rule_pattern" value="`)
 			html.WriteString(rule.Name)
 			html.WriteString(`" placeholder="Pattern/Name">`)
 			html.WriteString(`</div>`)
-			
+
 			// Priority column
 			html.WriteString(`<div class="col-md-2">`)
 			html.WriteString(`<input type="number" class="form-control form-control-sm" name="rule_priority" value="`)
 			html.WriteString(strconv.Itoa(rule.Newpriority))
 			html.WriteString(`" min="-1000000" max="1000000" step="1">`)
 			html.WriteString(`</div>`)
-			
+
 			// Enabled column
 			html.WriteString(`<div class="col-md-3">`)
 			html.WriteString(`<div class="form-check">`)
@@ -1542,22 +1597,22 @@ func HandleQualityReorderRules(c *gin.Context) {
 			html.WriteString(`<label class="form-check-label">Profile Rule (Editable)</label>`)
 			html.WriteString(`</div>`)
 			html.WriteString(`</div>`)
-			
+
 			// Actions column
 			html.WriteString(`<div class="col-md-2">`)
 			html.WriteString(`<small class="text-muted">From Config</small>`)
 			html.WriteString(`</div>`)
-			
+
 			html.WriteString(`</div>`)
 		}
-		
+
 		html.WriteString(`<hr class="my-3">`)
 		html.WriteString(`<p class="text-muted small text-center mb-0">`)
 		html.WriteString(`The rules above are from the quality profile configuration. `)
 		html.WriteString(`Use 'Add Rule' to create temporary overrides for testing.`)
 		html.WriteString(`</p>`)
 	}
-	
+
 	c.String(http.StatusOK, html.String())
 }
 
@@ -1573,6 +1628,8 @@ func HandleQualityReorderAddRule(c *gin.Context) {
 				<option value="quality">Quality</option>
 				<option value="codec">Codec</option>
 				<option value="audio">Audio</option>
+				<option value="position">Position</option>
+				<option value="combined_res_qual">Resolution,Quality</option>
 			</select>
 		</div>
 		<div class="col-md-3">
@@ -1593,7 +1650,7 @@ func HandleQualityReorderAddRule(c *gin.Context) {
 			</button>
 		</div>
 	</div>`
-	
+
 	c.String(http.StatusOK, ruleHTML)
 }
 
@@ -1852,7 +1909,7 @@ func HandleMissingEpisodes(c *gin.Context) {
 
 	// Query for missing episodes based on the provided filters
 	var queryWhere string
-	var queryArgs []interface{}
+	var queryArgs []any
 
 	// Base query for missing episodes
 	queryWhere = "serie_episodes.missing = 1"

@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"maragu.dev/gomponents"
 	"maragu.dev/gomponents/html"
 )
@@ -541,11 +540,11 @@ func adminDatabaseContent(tableName string, csrfToken string) gomponents.Node {
 		Columns: tableColumns,
 		Rows: func() []map[string]any {
 			if tableDefault.DefaultColumns == "" {
-				logger.LogDynamicany2Str("warning", "Empty DefaultColumns", "table", tableName, "defaultColumns", tableDefault.DefaultColumns)
+				// logger.Logtype("warning", 2).Str("table", tableName).Str("defaultColumns", tableDefault.DefaultColumns).Msg("Empty DefaultColumns")
 				return []map[string]any{}
 			}
 			query := fmt.Sprintf("SELECT %s FROM %s LIMIT 10", tableDefault.DefaultColumns, tableDefault.Table)
-			logger.LogDynamicany1String("debug", "Executing preview query", "query", query)
+			// logger.Logtype("debug", 1).Str("query", query).Msg("Executing preview query")
 			return database.GetrowsType(tableDefault.Object, false, 10, query)
 		}(),
 		DeleteURL: fmt.Sprintf("/api/admin/table/%s/delete", tableName),

@@ -249,8 +249,20 @@ func HandleMovieMetadata(c *gin.Context) {
 	case "series":
 		c.String(http.StatusOK, handleSeriesMetadataLookup(imdbID, tvdbID, provider, updateDB))
 	case "episode":
-		seasonNum, _ := strconv.Atoi(c.PostForm("metadata_Season"))
-		episodeNum, _ := strconv.Atoi(c.PostForm("metadata_Episode"))
+		seasonNum, err := strconv.Atoi(c.PostForm("metadata_Season"))
+		if err != nil {
+			logger.Logtype("error", 1).
+				Str("value", c.PostForm("metadata_Season")).
+				Err(err).
+				Msg("Failed to parse season number")
+		}
+		episodeNum, err := strconv.Atoi(c.PostForm("metadata_Episode"))
+		if err != nil {
+			logger.Logtype("error", 1).
+				Str("value", c.PostForm("metadata_Episode")).
+				Err(err).
+				Msg("Failed to parse episode number")
+		}
 		c.String(http.StatusOK, handleEpisodeMetadataLookup(imdbID, tvdbID, seasonNum, episodeNum, provider, updateDB))
 	}
 }

@@ -753,7 +753,7 @@ func HandleNamingPreview(ctx *gin.Context) {
 		}
 	}
 
-	response := map[string]interface{}{
+	response := map[string]any{
 		"template": template,
 		"output":   outstr,
 	}
@@ -782,7 +782,7 @@ func HandleNamingVerify(ctx *gin.Context) {
 	// Verify template syntax and provide suggestions
 	verification := verifyGoTemplate(template, dataType)
 
-	response := map[string]interface{}{
+	response := map[string]any{
 		"template": template,
 		"valid":    verification.Valid,
 		"message":  verification.Message,

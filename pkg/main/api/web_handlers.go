@@ -8,6 +8,7 @@ import (
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/syncops"
 	gin "github.com/gin-gonic/gin"
 )
 
@@ -142,7 +143,7 @@ func apiAdminDropdownData(ctx *gin.Context) {
 		}
 	case "dbserie_episodes":
 		query := fmt.Sprintf("SELECT identifier, title, id FROM dbserie_episodes%s ORDER BY identifier LIMIT ? OFFSET ?", searchFilter)
-		episodes := database.GetrowsN[database.DbstaticTwoStringOneInt](false, uint(pageSize+1), query, searchArgs...)
+		episodes := database.GetrowsN[syncops.DbstaticTwoStringOneInt](false, uint(pageSize+1), query, searchArgs...)
 		hasMore = len(episodes) > pageSize
 		if hasMore {
 			episodes = episodes[:pageSize]
@@ -423,7 +424,7 @@ func apiAdminTableDataJson(ctx *gin.Context) {
 		return
 	}
 
-	logger.LogDynamicany1String("info", "table", "method", ctx.Request.Method)
+	// logger.Logtype("info", 1).Str("method", ctx.Request.Method).Msg("table")
 
 	size, _ := strconv.Atoi(getParam(ctx, "iDisplayLength", "10"))
 	start, _ := strconv.Atoi(getParam(ctx, "iDisplayStart", "0"))

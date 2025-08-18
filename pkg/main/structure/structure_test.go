@@ -1,6 +1,7 @@
 package structure
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
@@ -144,7 +145,7 @@ func TestStringRemoveAllRunes(t *testing.T) {
 			name:     "Mixed content",
 			input:    "a1b2c3d4",
 			remove:   '2',
-			expected: "a1b3c3d4",
+			expected: "a1bc3d4",
 		},
 		{
 			name:     "First character",
@@ -392,6 +393,152 @@ func TestGetRootPath(t *testing.T) {
 			result := getrootpath(tt.input)
 			if result != tt.expected {
 				t.Errorf("getrootpath(%q) = %q, expected %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestTestInputnotifier(t *testing.T) {
+	tests := []struct {
+		name     string
+		template string
+		wantErr  bool
+		contains []string // strings that should be in the result
+	}{
+		{
+			name:     "Simple movie template",
+			template: "{{.Dbmovie.Title}} ({{.Dbmovie.Year}})",
+			wantErr:  false,
+			contains: []string{"Inception", "(2000)"},
+		},
+		{
+			name:     "Series template",
+			template: "{{.Dbserie.Seriename}} S{{.DbserieEpisode.Season}}E{{.DbserieEpisode.Episode}}",
+			wantErr:  false,
+			contains: []string{"Breaking Bad", "S1E1"},
+		},
+		{
+			name:     "Template with source info",
+			template: "{{.Source.Quality}} {{.Source.Resolution}} {{.Source.Codec}}",
+			wantErr:  false,
+			contains: []string{"bluray", "1080p", "x264"},
+		},
+		{
+			name:     "Template with notification fields",
+			template: "{{.Title}} from {{.SourcePath}} to {{.Targetpath}}",
+			wantErr:  false,
+			contains: []string{},
+		},
+		{
+			name:     "Invalid template syntax",
+			template: "{{.Invalid}",
+			wantErr:  true,
+			contains: []string{},
+		},
+		{
+			name:     "Empty template",
+			template: "",
+			wantErr:  false,
+			contains: []string{},
+		},
+		{
+			name:     "Template with conditionals",
+			template: "{{if .Dbmovie.Title}}{{.Dbmovie.Title}}{{end}}",
+			wantErr:  false,
+			contains: []string{"Inception"},
+		},
+		{
+			name:     "Template with replaced files",
+			template: "Replaced: {{range .Replaced}}{{.}} {{end}}",
+			wantErr:  false,
+			contains: []string{"Replaced:"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := TestInputnotifier(tt.template)
+			
+			if tt.wantErr && err == nil {
+				t.Errorf("TestInputnotifier() expected error but got none")
+			}
+			
+			if !tt.wantErr && err != nil {
+				t.Errorf("TestInputnotifier() unexpected error: %v", err)
+			}
+			
+			// Check if expected strings are contained in result
+			for _, expected := range tt.contains {
+				if !strings.Contains(result, expected) {
+					t.Errorf("TestInputnotifier() result should contain %q, got: %q", expected, result)
+				}
+			}
+		})
+	}
+}
+
+func TestTestParsertype(t *testing.T) {
+	tests := []struct {
+		name     string
+		template string
+		wantErr  bool
+		contains []string
+	}{
+		{
+			name:     "Movie parser template",
+			template: "{{.Dbmovie.Title}} ({{.Dbmovie.Year}})",
+			wantErr:  false,
+			contains: []string{"Inception", "(2000)"},
+		},
+		{
+			name:     "Series parser template",
+			template: "{{.Dbserie.Seriename}}/Season {{.DbserieEpisode.Season}}",
+			wantErr:  false,
+			contains: []string{"Breaking Bad", "Season 1"},
+		},
+		{
+			name:     "Source template with quality info",
+			template: "[{{.Source.Resolution}} {{.Source.Quality}} {{.Source.Codec}}]",
+			wantErr:  false,
+			contains: []string{"[1080p", "bluray", "x264]"},
+		},
+		{
+			name:     "Episode identifier template",
+			template: "{{.Identifier}}",
+			wantErr:  false,
+			contains: []string{"S01E01"},
+		},
+		{
+			name:     "Complex template with conditionals",
+			template: "{{.TitleSource}}{{if .Source.Proper}} proper{{end}}",
+			wantErr:  false,
+			contains: []string{},
+		},
+		{
+			name:     "Invalid template",
+			template: "{{.NonExistent",
+			wantErr:  true,
+			contains: []string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := TestParsertype(tt.template)
+			
+			if tt.wantErr && err == nil {
+				t.Errorf("TestParsertype() expected error but got none")
+			}
+			
+			if !tt.wantErr && err != nil {
+				t.Errorf("TestParsertype() unexpected error: %v", err)
+			}
+			
+			// Check if expected strings are contained in result
+			for _, expected := range tt.contains {
+				if !strings.Contains(result, expected) {
+					t.Errorf("TestParsertype() result should contain %q, got: %q", expected, result)
+				}
 			}
 		})
 	}

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -225,8 +226,8 @@ func HandleJobManagement(c *gin.Context) {
 	}
 
 	// Start the job using worker.Dispatch
-	err := worker.Dispatch(jobType+"_"+mediaConfig, func(key uint32) error {
-		return utils.SingleJobs(jobType, mediaConfig, listName, force, key)
+	err := worker.Dispatch(jobType+"_"+mediaConfig, func(key uint32, ctx context.Context) error {
+		return utils.SingleJobs(ctx, jobType, mediaConfig, listName, force, key)
 	}, "Data")
 	if err != nil {
 		c.String(http.StatusOK, renderAlert("Failed to start job: "+err.Error(), "danger"))
@@ -1082,9 +1083,9 @@ func performVacuum(_ *gin.Context) (string, string) {
 	return "✅ Database vacuum completed. Storage optimized.", "success"
 }
 
-func performFillIMDB(_ *gin.Context) (string, string) {
+func performFillIMDB(c *gin.Context) (string, string) {
 	// Call the actual IMDB fill function
-	config.GetSettingsGeneral().Jobs["RefreshImdb"](0)
+	config.GetSettingsGeneral().Jobs["RefreshImdb"](0, c)
 	return "✅ IMDB data population started in background.", "info"
 }
 

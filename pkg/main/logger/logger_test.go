@@ -40,7 +40,7 @@ func TestLogDynamicany_NilValues(t *testing.T) {
 	var buf bytes.Buffer
 	log = zerolog.New(&buf)
 
-	LogDynamicany("info", "test message", "field1", nil, "field2", nil)
+	Logtype("info", 1).Any("field1", nil).Any("field2", nil).Msg("test message")
 
 	if buf.Len() == 0 {
 		t.Error("Expected log output, got nothing")
@@ -51,12 +51,7 @@ func TestLogDynamicany_MixedTypes(t *testing.T) {
 	var buf bytes.Buffer
 	log = zerolog.New(&buf)
 
-	LogDynamicany("info", "test message",
-		"string", "value",
-		"int", 42,
-		"bool", true,
-		"float", 3.14,
-		"error", errors.New("test error"))
+	Logtype("info", 1).Str("string", "value").Int("int", 42).Bool("bool", true).Float64("float", 3.14).Err(errors.New("test error")).Msg("test message")
 
 	if buf.Len() == 0 {
 		t.Error("Expected log output, got nothing")
@@ -67,7 +62,7 @@ func TestLogDynamicany_InvalidLevel(t *testing.T) {
 	var buf bytes.Buffer
 	log = zerolog.New(&buf)
 
-	LogDynamicany("invalid_level", "test message", "field", "value")
+	Logtype("invalid_level", 1).Str("field", "value").Msg("test message")
 
 	if buf.Len() == 0 {
 		t.Error("Expected fallback to info level and log output, got nothing")
@@ -85,7 +80,7 @@ func TestInitLogger_LogToFileOnly(t *testing.T) {
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 
-	LogDynamicany0("info", "test message")
+	Logtype("info", 1).Msg("test message")
 
 	w.Close()
 	os.Stdout = oldStdout
@@ -102,7 +97,7 @@ func TestLogDynamicany_EmptyFieldNames(t *testing.T) {
 	var buf bytes.Buffer
 	log = zerolog.New(&buf)
 
-	LogDynamicany("info", "test message", "", "value", "field2", "value2")
+	Logtype("info", 1).Str("", "value").Str("field2", "value2").Msg("test message")
 
 	if buf.Len() == 0 {
 		t.Error("Expected log output despite empty field name")
@@ -118,11 +113,7 @@ func TestLogDynamicany_PointerTypes(t *testing.T) {
 	b := true
 	f := 3.14
 
-	LogDynamicany("info", "test message",
-		"strPtr", &str,
-		"intPtr", &num,
-		"boolPtr", &b,
-		"floatPtr", &f)
+	Logtype("info", 1).Any("strPtr", &str).Any("intPtr", &num).Any("boolPtr", &b).Any("floatPtr", &f).Msg("test message")
 
 	if buf.Len() == 0 {
 		t.Error("Expected log output for pointer types")
@@ -134,7 +125,7 @@ func TestLogDynamicany_BytesBuffer(t *testing.T) {
 	log = zerolog.New(&buf)
 
 	testBuf := bytes.NewBufferString("test data")
-	LogDynamicany("info", "test message", "buffer", testBuf)
+	Logtype("info", 1).Any("buffer", testBuf).Msg("test message")
 
 	if buf.Len() == 0 {
 		t.Error("Expected log output for bytes.Buffer")
@@ -146,7 +137,7 @@ func TestLogDynamicany_DurationTypes(t *testing.T) {
 	log = zerolog.New(&buf)
 
 	duration := 5 * time.Second
-	LogDynamicany("info", "test message", "duration", duration)
+	Logtype("info", 1).Dur("duration", duration).Msg("test message")
 
 	if buf.Len() == 0 {
 		t.Error("Expected log output for duration type")

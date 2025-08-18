@@ -1,6 +1,7 @@
 package importfeed
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/metadata"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/syncops"
 )
 
 var (
@@ -19,7 +21,7 @@ var (
 	errVoteRateLow           = errors.New("error average vote too low")
 	errIncludedGenreNotFound = errors.New("included genre not found")
 	errSeriesSkipped         = errors.New("series skip for")
-	importJobRunning         = logger.NewSyncMap[struct{}](10)
+	importJobRunning         = syncops.NewSyncMap[struct{}](10)
 	defaultproviders         = []string{"imdb", "tmdb", "omdb"}
 )
 
@@ -120,7 +122,7 @@ func MovieFindImdbIDByTitle(
 
 	for _, val := range getsearchprovider(false) {
 		if processprovider(val, m, cfgp, &slug) {
-			continue
+			return
 		}
 
 		if m.Imdb != "" {
@@ -264,7 +266,7 @@ func processprovider(
 // and a flag for whether to add new movies.
 // It logs the import result for each movie.
 func JobImportMoviesByList(
-	entry string,
+	ctx context.Context, entry string,
 	idx int,
 	cfgp *config.MediaTypeConfig,
 	listid int,
@@ -273,19 +275,19 @@ func JobImportMoviesByList(
 	if listid == -1 {
 		return errors.New("listid not set")
 	}
+	if err := logger.CheckContextEnded(ctx); err != nil {
+		return err
+	}
 	logger.Logtype("info", 0).
 		Str(logger.StrMovie, entry).
 		Int(logger.StrRow, idx).
 		Msg("Import/Update Movie")
 	_, err := JobImportMovies(entry, cfgp, listid, addnew)
 	if err != nil && err.Error() != "movie ignored" {
-		logger.LogDynamicany1StringErr(
-			"error",
-			"Import/Update Failed",
-			err,
-			logger.StrImdb,
-			entry,
-		) // logpointerr
+		logger.Logtype("error", 1).
+			Str(logger.StrImdb, entry).
+			Err(err).
+			Msg("Import/Update Failed")
 		return err
 	}
 	return nil
@@ -309,8 +311,8 @@ func JobImportMovies(
 	if importJobRunning.Check(imdb) {
 		return 0, errJobRunning
 	}
-	importJobRunning.Add(imdb, struct{}{}, 0, false, 0)
-	defer importJobRunning.Delete(imdb)
+	syncops.QueueSyncMapAdd(syncops.MapTypeStructEmpty, imdb, struct{}{}, 0, false, 0)
+	defer syncops.QueueSyncMapDelete(syncops.MapTypeStructEmpty, imdb)
 
 	var dbmovieadded bool
 	var dbmovie database.Dbmovie
@@ -341,12 +343,9 @@ func JobImportMovies(
 			"select id from dbmovies where imdb_id = ?",
 			&dbmovie.ImdbID,
 		) == 0 {
-			logger.LogDynamicany1String(
-				"debug",
-				"Insert dbmovie for",
-				logger.StrJob,
-				imdb,
-			) // logpointerr
+			logger.Logtype("debug", 1).
+				Str(logger.StrJob, imdb).
+				Msg("Insert dbmovie for")
 			dbresult, err := database.ExecNid(
 				"insert into dbmovies (Imdb_ID) VALUES (?)",
 				&dbmovie.ImdbID,
@@ -366,7 +365,9 @@ func JobImportMovies(
 	}
 
 	if dbmovieadded || !addnew {
-		logger.LogDynamicany1String("debug", "Get metadata for", logger.StrJob, imdb) // logpointerr
+		logger.Logtype("debug", 1).
+			Str(logger.StrJob, imdb).
+			Msg("Get metadata for")
 		err := dbmovie.GetDbmovieByIDP(&dbmovie.ID)
 		if err != nil {
 			return 0, errIgnoredMovie
@@ -377,12 +378,9 @@ func JobImportMovies(
 		if !dbmovieadded &&
 			logger.TimeAfter(dbmovie.UpdatedAt, logger.TimeGetNow().Add(-1*time.Hour)) {
 			// update only if updated more than an hour ago
-			logger.LogDynamicany1String(
-				"debug",
-				"Skipped update metadata for dbmovie",
-				logger.StrJob,
-				dbmovie.ImdbID,
-			)
+			logger.Logtype("debug", 1).
+				Str(logger.StrJob, dbmovie.ImdbID).
+				Msg("Skipped update metadata for dbmovie")
 		} else {
 			metadata.Getmoviemetadata(&dbmovie, true, true, cfgp, dbmovieadded)
 		}
@@ -421,7 +419,7 @@ func Checkaddmovieentry(dbid *uint, cfgplist *config.MediaListsConfig, imdb stri
 			dbidn := *dbid
 			if database.CacheOneStringTwoIntIndexFunc(
 				logger.CacheMovie,
-				func(elem *database.DbstaticOneStringTwoInt) bool {
+				func(elem *syncops.DbstaticOneStringTwoInt) bool {
 					return elem.Num1 == dbidn &&
 						(elem.Str == cfgplist.Name || strings.EqualFold(elem.Str, cfgplist.Name) || logger.SlicesContainsI(cfgplist.IgnoreMapLists, elem.Str))
 				},
@@ -515,12 +513,9 @@ func Checkaddmovieentry(dbid *uint, cfgplist *config.MediaListsConfig, imdb stri
 		}
 	}
 	if getcount == 0 {
-		logger.LogDynamicany1String(
-			"debug",
-			"Insert Movie for",
-			logger.StrImdb,
-			imdb,
-		) // logpointerr
+		logger.Logtype("debug", 1).
+			Str(logger.StrImdb, imdb).
+			Msg("Insert Movie for")
 		movieid, err := database.ExecNid(
 			"Insert into movies (missing, listname, dbmovie_id, quality_profile) values (1, ?, ?, ?)",
 			&cfgplist.Name,
@@ -533,7 +528,7 @@ func Checkaddmovieentry(dbid *uint, cfgplist *config.MediaListsConfig, imdb stri
 		if config.GetSettingsGeneral().UseMediaCache {
 			database.AppendCacheTwoInt(
 				logger.CacheMovie,
-				database.DbstaticOneStringTwoInt{
+				syncops.DbstaticOneStringTwoInt{
 					Str:  cfgplist.Name,
 					Num1: *dbid,
 					Num2: logger.Int64ToUint(movieid),
@@ -639,24 +634,24 @@ func JobImportDBSeriesStatic(
 // It handles adding new series or updating existing ones, refreshing metadata from TheTVDB,
 // adding missing episodes, and updating the series lists table.
 func JobImportDBSeries(
-	serie *config.SerieConfig,
+	ctx context.Context, serie *config.SerieConfig,
 	idxserie int,
 	cfgp *config.MediaTypeConfig,
 	listid int,
 ) error {
+	if err := logger.CheckContextEnded(ctx); err != nil {
+		return err
+	}
 	logger.Logtype("info", 0).
 		Str(logger.StrSeries, serie.Name).
 		Int(logger.StrRow, idxserie).
 		Msg("Import/Update Serie")
 	err := jobImportDBSeries(serie, cfgp, listid, false, true)
 	if err != nil {
-		logger.LogDynamicany1IntErr(
-			"error",
-			"Import/Update Failed",
-			err,
-			logger.StrSeries,
-			serie.TvdbID,
-		)
+		logger.Logtype("error", 1).
+			Int(logger.StrSeries, serie.TvdbID).
+			Err(err).
+			Msg("Import/Update Failed")
 		return err
 	}
 	return nil
@@ -694,8 +689,8 @@ func jobImportDBSeries(
 	if importJobRunning.Check(jobName) {
 		return errJobRunning
 	}
-	importJobRunning.Add(jobName, struct{}{}, 0, false, 0)
-	defer importJobRunning.Delete(jobName)
+	syncops.QueueSyncMapAdd(syncops.MapTypeStructEmpty, jobName, struct{}{}, 0, false, 0)
+	defer syncops.QueueSyncMapDelete(syncops.MapTypeStructEmpty, jobName)
 	if !addnew && listid == -1 {
 		listid = cfgp.GetMediaListsEntryListID(
 			database.Getdatarow[string](
@@ -776,14 +771,13 @@ func jobImportDBSeries(
 			if !dbserieadded &&
 				logger.TimeAfter(dbserie.UpdatedAt, logger.TimeGetNow().Add(-1*time.Hour)) {
 				// update only if updated more than an hour ago
-				logger.LogDynamicany1Int(
-					"debug",
-					"Skipped update metadata for dbserie ",
-					logger.StrTvdb,
-					serieconfig.TvdbID,
-				)
+				logger.Logtype("debug", 1).
+					Int(logger.StrTvdb, serieconfig.TvdbID).
+					Msg("Skipped update metadata for dbserie")
 			} else {
-				logger.LogDynamicany1Int("debug", "Get metadata for", logger.StrTvdb, serieconfig.TvdbID)
+				logger.Logtype("debug", 1).
+					Int(logger.StrTvdb, serieconfig.TvdbID).
+					Msg("Get metadata for")
 
 				database.ExecN("update dbseries SET Seriename = ?, Aliases = ?, Season = ?, Status = ?, Firstaired = ?, Network = ?, Runtime = ?, Language = ?, Genre = ?, Overview = ?, Rating = ?, Siterating = ?, Siterating_Count = ?, Slug = ?, Trakt_ID = ?, Imdb_ID = ?, Thetvdb_ID = ?, Freebase_M_ID = ?, Freebase_ID = ?, Tvrage_ID = ?, Facebook = ?, Instagram = ?, Twitter = ?, Banner = ?, Poster = ?, Fanart = ?, Identifiedby = ? where id = ?",
 					&dbserie.Seriename, &dbserie.Aliases, &dbserie.Season, &dbserie.Status, &dbserie.Firstaired, &dbserie.Network, &dbserie.Runtime, &dbserie.Language, &dbserie.Genre, &dbserie.Overview, &dbserie.Rating, &dbserie.Siterating, &dbserie.SiteratingCount, &dbserie.Slug, &dbserie.TraktID, &dbserie.ImdbID, &dbserie.ThetvdbID, &dbserie.FreebaseMID, &dbserie.FreebaseID, &dbserie.TvrageID, &dbserie.Facebook, &dbserie.Instagram, &dbserie.Twitter, &dbserie.Banner, &dbserie.Poster, &dbserie.Fanart, &dbserie.Identifiedby, &dbserie.ID)
@@ -846,7 +840,9 @@ func jobImportDBSeries(
 				}
 
 				if (checkall || dbserieadded || !addnew) && (serieconfig.Source == "" || serieconfig.Source == logger.StrTvdb || strings.EqualFold(serieconfig.Source, logger.StrTvdb)) {
-					logger.LogDynamicany1Int("debug", "Get episodes for", logger.StrTvdb, serieconfig.TvdbID)
+					logger.Logtype("debug", 1).
+						Int(logger.StrTvdb, serieconfig.TvdbID).
+						Msg("Get episodes for")
 
 					if dbserie.ThetvdbID != 0 {
 						apiexternal.UpdateTvdbSeriesEpisodes(dbserie.ThetvdbID, cfgp.MetadataLanguage, &dbserie.ID)
@@ -894,14 +890,10 @@ func jobImportDBSeries(
 			&dbserie.ID,
 			&cfgp.Lists[listid].Name,
 		) == 0 {
-			logger.LogDynamicany2StrAny(
-				"debug",
-				"Add series for",
-				logger.StrListname,
-				cfgp.Lists[listid].Name,
-				logger.StrTvdb,
-				&serieconfig.TvdbID,
-			)
+			logger.Logtype("debug", 2).
+				Str(logger.StrListname, cfgp.Lists[listid].Name).
+				Int(logger.StrTvdb, serieconfig.TvdbID).
+				Msg("Add series for")
 			serieid, err := database.ExecNid(
 				"Insert into series (dbserie_id, listname, rootpath, search_specials, dont_search, dont_upgrade) values (?, ?, ?, ?, ?, ?)",
 				&dbserie.ID,
@@ -917,7 +909,7 @@ func jobImportDBSeries(
 			if config.GetSettingsGeneral().UseMediaCache {
 				database.AppendCacheTwoInt(
 					logger.CacheSeries,
-					database.DbstaticOneStringTwoInt{
+					syncops.DbstaticOneStringTwoInt{
 						Str:  cfgp.Lists[listid].Name,
 						Num1: dbserie.ID,
 						Num2: logger.Int64ToUint(serieid),
@@ -986,7 +978,9 @@ func insertdbserie(serieconfig *config.SerieConfig, dbserie *database.Dbserie) {
 	if dbserie.ID >= 1 {
 		return
 	}
-	logger.LogDynamicany1Int("debug", "Insert dbseries for", logger.StrTvdb, serieconfig.TvdbID)
+	logger.Logtype("debug", 1).
+		Int(logger.StrTvdb, serieconfig.TvdbID).
+		Msg("Insert dbseries for")
 	aliases := logger.JoinStringsSep(serieconfig.AlternateName, ",")
 	inres, err := database.ExecNid(
 		"insert into dbseries (seriename, aliases, thetvdb_id, identifiedby) values (?, ?, ?, ?)",
@@ -1004,7 +998,7 @@ func insertdbserie(serieconfig *config.SerieConfig, dbserie *database.Dbserie) {
 	if config.GetSettingsGeneral().UseMediaCache {
 		database.AppendCacheThreeString(
 			logger.CacheDBSeries,
-			database.DbstaticThreeStringTwoInt{
+			syncops.DbstaticThreeStringTwoInt{
 				Str1: serieconfig.Name,
 				Str2: logger.StringToSlug(serieconfig.Name),
 				Num2: dbserie.ID,
@@ -1049,8 +1043,13 @@ func addalternateserietitle(dbserieid *uint, title *string, regionin ...*string)
 		if config.GetSettingsGeneral().UseMediaCache {
 			database.AppendCacheTwoString(
 				logger.CacheDBSeriesAlt,
-				database.DbstaticTwoStringOneInt{Str1: *title, Str2: slug, Num: *dbserieid},
+				syncops.DbstaticTwoStringOneInt{Str1: *title, Str2: slug, Num: *dbserieid},
 			)
 		}
 	}
+}
+
+// GetImportJobRunning returns the import job running SyncMap for syncops registration
+func GetImportJobRunning() *syncops.SyncMap[struct{}] {
+	return importJobRunning
 }

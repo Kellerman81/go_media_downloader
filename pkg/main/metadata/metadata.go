@@ -12,6 +12,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/syncops"
 )
 
 var (
@@ -55,7 +56,7 @@ func checkaddmovietitlewoslug(
 		if config.GetSettingsGeneral().UseMediaCache {
 			database.AppendCacheTwoString(
 				logger.CacheTitlesMovie,
-				database.DbstaticTwoStringOneInt{Num: *dbmovieid, Str1: *title, Str2: slug},
+				syncops.DbstaticTwoStringOneInt{Num: *dbmovieid, Str1: *title, Str2: slug},
 			)
 		}
 	}
@@ -207,12 +208,9 @@ func movieGetTmdbMetadata(movie *database.Dbmovie, overwrite bool) error {
 	// Handle runtime with validation
 	if shouldUpdateRuntime(movie.Runtime, moviedbdetails.Runtime, overwrite) {
 		if movie.Runtime != 0 && !isValidRuntime(moviedbdetails.Runtime) {
-			logger.LogDynamicany1String(
-				"debug",
-				"skipped moviedb movie runtime for",
-				logger.StrImdb,
-				movie.ImdbID,
-			)
+			logger.Logtype("debug", 1).
+				Str(logger.StrImdb, movie.ImdbID).
+				Msg("skipped moviedb movie runtime for")
 		} else {
 			movie.Runtime = moviedbdetails.Runtime
 		}
@@ -352,12 +350,9 @@ func movieGetTraktMetadata(movie *database.Dbmovie, overwrite bool) error {
 	// Handle runtime with validation
 	if shouldUpdateRuntime(movie.Runtime, traktdetails.Runtime, overwrite) {
 		if movie.Runtime != 0 && !isValidRuntime(traktdetails.Runtime) {
-			logger.LogDynamicany1String(
-				"debug",
-				"skipped trakt movie runtime for",
-				logger.StrImdb,
-				movie.ImdbID,
-			)
+			logger.Logtype("debug", 1).
+				Str(logger.StrImdb, movie.ImdbID).
+				Msg("skipped trakt movie runtime for")
 		} else {
 			movie.Runtime = traktdetails.Runtime
 		}
@@ -381,13 +376,12 @@ func movieGetTraktMetadata(movie *database.Dbmovie, overwrite bool) error {
 // It queries IMDb, TMDb, OMDb and Trakt APIs based on the queryimdb, querytmdb, queryomdb and querytrakt flags passed in.
 // Results from each source are cached and merged into the movie struct.
 func MovieGetMetadata(movie *database.Dbmovie, queryimdb, querytmdb, queryomdb, querytrakt bool) {
-	logger.LogDynamicany1String("info", "Get Metadata for", logger.StrTitle, movie.ImdbID)
-	defer logger.LogDynamicany1String(
-		"info",
-		"ended get metadata for",
-		logger.StrImdb,
-		movie.ImdbID,
-	)
+	logger.Logtype("info", 1).
+		Str(logger.StrTitle, movie.ImdbID).
+		Msg("Get Metadata for")
+	defer logger.Logtype("info", 1).
+		Str(logger.StrImdb, movie.ImdbID).
+		Msg("ended get metadata for")
 	if queryimdb {
 		movie.MovieGetImdbMetadata(false)
 	}
@@ -454,7 +448,7 @@ func Getmoviemetadata(dbmovie *database.Dbmovie, refresh bool, updateNTitle bool
 	}
 	if dbmovieadded {
 		if config.GetSettingsGeneral().UseMediaCache {
-			database.AppendCacheThreeString(logger.CacheDBMovie, database.DbstaticThreeStringTwoInt{Str1: dbmovie.Title, Str2: dbmovie.Slug, Str3: dbmovie.ImdbID, Num1: int(dbmovie.Year), Num2: dbmovie.ID})
+			database.AppendCacheThreeString(logger.CacheDBMovie, syncops.DbstaticThreeStringTwoInt{Str1: dbmovie.Title, Str2: dbmovie.Slug, Str3: dbmovie.ImdbID, Num1: int(dbmovie.Year), Num2: dbmovie.ID})
 		}
 	}
 
@@ -610,7 +604,7 @@ func insertMovieTitle(checkid *int, movieID *uint, title, slug, region *string) 
 		if config.GetSettingsGeneral().UseMediaCache {
 			database.AppendCacheTwoString(
 				logger.CacheTitlesMovie,
-				database.DbstaticTwoStringOneInt{
+				syncops.DbstaticTwoStringOneInt{
 					Num:  *movieID,
 					Str1: *title,
 					Str2: *slug,
@@ -677,12 +671,9 @@ func serieGetMetadataTrakt(serie *database.Dbserie, overwrite bool) error {
 	// Handle runtime with validation
 	if shouldUpdateSerieRuntime(serie.Runtime, traktdetails.Runtime, overwrite) {
 		if serie.Runtime != "0" && !isValidRuntime(traktdetails.Runtime) {
-			logger.LogDynamicany1String(
-				"debug",
-				"skipped serie runtime for",
-				logger.StrImdb,
-				serie.ImdbID,
-			)
+			logger.Logtype("debug", 1).
+				Str(logger.StrImdb, serie.ImdbID).
+				Msg("skipped serie runtime for")
 		} else {
 			serie.Runtime = strconv.Itoa(traktdetails.Runtime)
 		}
@@ -808,28 +799,47 @@ func SerieGetMetadata(
 	querytmdb, querytrakt, overwrite bool,
 	aliases []string,
 ) []string {
-	logger.LogDynamicany1String("info", "Get Metadata for", logger.StrTitle, serie.Seriename)
-	defer logger.LogDynamicany1String(
-		"info",
-		"ended get metadata for",
-		logger.StrTitle,
-		serie.Seriename,
-	)
+	logger.Logtype("info", 1).
+		Str(logger.StrTitle, serie.Seriename).
+		Msg("Get Metadata for")
+	defer logger.Logtype("info", 1).
+		Str(logger.StrTitle, serie.Seriename).
+		Msg("ended get metadata for")
 
 	aliases, err := serieGetMetadataTvdb(serie, language, overwrite, aliases)
 	if err != nil {
-		logger.LogDynamicany1UIntErr("error", "Get Tvdb data", err, logger.StrID, serie.ID)
+		logger.Logtype("error", 1).
+			Uint(logger.StrID, serie.ID).
+			Err(err).
+			Msg("Get Tvdb data")
 	}
+
+	// Try TVmaze as additional metadata source
+	err = serieGetMetadataTvmaze(serie, overwrite, aliases)
+	if err != nil && err != logger.ErrNotFound {
+		logger.Logtype("error", 2).
+			Str(logger.StrTitle, serie.Seriename).
+			Uint(logger.StrID, serie.ID).
+			Err(err).
+			Msg("Failed to retrieve TVmaze metadata")
+	}
+
 	if querytmdb && serie.ThetvdbID != 0 {
 		err = serieGetMetadataTmdb(serie, false)
 		if err != nil {
-			logger.LogDynamicany1UIntErr("error", "Get Tmdb data", err, logger.StrID, serie.ID)
+			logger.Logtype("error", 1).
+				Uint(logger.StrID, serie.ID).
+				Err(err).
+				Msg("Get Tmdb data")
 		}
 	}
 	if querytrakt && serie.ImdbID != "" {
 		err = serieGetMetadataTrakt(serie, false)
 		if err != nil {
-			logger.LogDynamicany1UIntErr("error", "Get Trakt data", err, logger.StrID, serie.ID)
+			logger.Logtype("error", 1).
+				Uint(logger.StrID, serie.ID).
+				Err(err).
+				Msg("Get Trakt data")
 			return aliases
 		}
 		if len(config.GetSettingsImdb().Indexedlanguages) > 0 {

@@ -19,8 +19,8 @@ type Conf struct {
 // It takes a group name string and a key string as parameters.
 // It returns a boolean indicating if the key exists in the given group.
 func CheckGroup(group string, key string) bool {
-	mu.Lock()
-	defer mu.Unlock()
+	mu.RLock()
+	defer mu.RUnlock()
 	var exists bool
 	switch strings.TrimRight(group, "_") {
 	case "general", logger.StrImdb:
@@ -52,8 +52,10 @@ func CheckGroup(group string, key string) bool {
 // a debug message and returns an empty oauth2.Token struct.
 // Otherwise it returns the existing traktToken.
 func GetTrakt() *oauth2.Token {
+	mu.RLock()
+	defer mu.RUnlock()
 	if traktToken == nil {
-		logger.LogDynamicany0("debug", "token empty")
+		logger.Logtype("debug", 0).Msg("token empty")
 		return &oauth2.Token{}
 	}
 	return traktToken

@@ -1,10 +1,13 @@
 package worker
 
 import (
+	"context"
 	"testing"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/syncops"
 )
 
 func TestDispatchCron(t *testing.T) {
@@ -90,50 +93,51 @@ func TestDispatch(t *testing.T) {
 	InitWorkerPools(1, 1, 1, 1, 1)
 	defer CloseWorkerPools()
 
-	tests := []struct {
-		name      string
-		jobName   string
-		queue     string
-		fn        func(uint32) error
-		wantError bool
-	}{
-		{
-			name:      "nil function",
-			jobName:   "test_job",
-			queue:     QueueData,
-			fn:        nil,
-			wantError: true,
-		},
-		{
-			name:    "valid job",
-			jobName: "test_job",
-			queue:   QueueData,
-			fn: func(uint32) error {
-				time.Sleep(time.Millisecond)
-				return nil
-			},
-			wantError: false,
-		},
-		{
-			name:    "duplicate job",
-			jobName: "test_job",
-			queue:   QueueData,
-			fn: func(uint32) error {
-				time.Sleep(time.Millisecond)
-				return nil
-			},
-			wantError: true,
-		},
-	}
+	// Initialize clean state and register with syncops
+	globalQueueSet = syncops.NewSyncMapUint[syncops.Job](100)
+	syncops.RegisterSyncMap(syncops.MapTypeQueue, globalQueueSet)
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := Dispatch(tt.jobName, tt.fn, tt.queue)
-			if (err != nil) != tt.wantError {
-				t.Errorf("Dispatch() error = %v, wantError %v", err, tt.wantError)
-			}
-		})
-	}
+	// Test nil function
+	t.Run("nil function", func(t *testing.T) {
+		err := Dispatch("test_job", nil, QueueData)
+		if err == nil {
+			t.Errorf("Expected error for nil function, got nil")
+		}
+	})
+
+	t.Run("submit function", func(t *testing.T) {
+		err := Dispatch("test_submit_job", func(u uint32, _ context.Context) error {
+			time.Sleep(10 * time.Second)
+			return nil
+		}, QueueData)
+		if err == nil {
+			t.Errorf("Expected error for nil function, got nil")
+		}
+	})
+
+	// Test duplicate detection
+	t.Run("duplicate detection", func(t *testing.T) {
+		jobName := "test_duplicate_job"
+
+		// Dispatch first job
+		err1 := Dispatch(jobName, func(uint32, context.Context) error {
+			time.Sleep(10 * time.Millisecond)
+			return nil
+		}, QueueData)
+
+		// Try to dispatch duplicate immediately - should fail
+		err2 := Dispatch(jobName, func(uint32, context.Context) error {
+			return nil
+		}, QueueData)
+
+		// The first job should succeed, second should fail
+		if err1 != nil {
+			t.Errorf("First dispatch should succeed, got error: %v", err1)
+		}
+		if err2 == nil {
+			t.Errorf("Second dispatch should fail with duplicate error, got nil")
+		}
+	})
 }
 
 func TestCheckQueue(t *testing.T) {
@@ -153,7 +157,7 @@ func TestCheckQueue(t *testing.T) {
 			name:    "job in queue",
 			jobName: "test_job",
 			setup: func() {
-				globalQueueSet.Add(1, Job{
+				globalQueueSet.Add(1, syncops.Job{
 					Name:    "test_job",
 					Started: time.Time{},
 				})
@@ -164,7 +168,7 @@ func TestCheckQueue(t *testing.T) {
 			name:    "alternative job names",
 			jobName: "searchmissinginc_test",
 			setup: func() {
-				globalQueueSet.Add(1, Job{
+				globalQueueSet.Add(1, syncops.Job{
 					Name:    "searchmissingfull_test",
 					Started: time.Time{},
 				})
@@ -175,7 +179,7 @@ func TestCheckQueue(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			globalQueueSet = syncMapUint[Job]{m: make(map[uint32]Job)}
+			globalQueueSet = syncops.NewSyncMapUint[syncops.Job](100)
 			tt.setup()
 			result := checkQueue(tt.jobName)
 			if result != tt.expected {
@@ -186,25 +190,27 @@ func TestCheckQueue(t *testing.T) {
 }
 
 func TestExecuteJob(t *testing.T) {
+	config.LoadCfgDB(true)
+	database.InitCache()
 	executed := false
-	config.GetSettingsGeneral().Jobs = map[string]func(uint32) error{
-		"test_job": func(uint32) error {
-			executed = true
-			return nil
-		},
+	jobs := make(map[string]func(uint32, context.Context) error, 1)
+	jobs["test_job"] = func(uint32, context.Context) error {
+		executed = true
+		return nil
 	}
-
+	config.GetSettingsGeneral().Jobs = jobs
 	tests := []struct {
 		name          string
-		job           Job
+		job           syncops.Job
 		wantExecuted  bool
 		setupConfig   func()
 		cleanupConfig func()
 	}{
 		{
 			name: "general job execution",
-			job: Job{
+			job: syncops.Job{
 				JobName: "test_job",
+				Ctx:     context.Background(),
 			},
 			wantExecuted:  true,
 			setupConfig:   func() {},
@@ -226,7 +232,7 @@ func TestExecuteJob(t *testing.T) {
 }
 
 func TestSyncMapUint(t *testing.T) {
-	sm := syncMapUint[string]{m: make(map[uint32]string)}
+	sm := syncops.NewSyncMapUint[string](100)
 
 	t.Run("Add and Get", func(t *testing.T) {
 		sm.Add(1, "test")

@@ -74,7 +74,7 @@ type TheTVDBEpisodes struct {
 type tvdbClient struct {
 	// Client is a pointer to a rate limited HTTP client for making requests.
 	Client rlHTTPClient
-	Lim    slidingwindow.Limiter
+	Lim    *slidingwindow.Limiter
 }
 
 // type tvdbHeader struct {
@@ -91,15 +91,26 @@ func NewTvdbClient(seconds uint8, calls int, disabletls bool, timeoutseconds uin
 	if calls == 0 {
 		calls = 1
 	}
-	tvdbAPI = tvdbClient{
-		Lim: slidingwindow.NewLimiter(time.Duration(seconds)*time.Second, int64(calls)),
+	lim := slidingwindow.NewLimiter(time.Duration(seconds)*time.Second, int64(calls))
+	client := &tvdbClient{
+		Lim: &lim,
 		Client: newClient(
 			"tvdb",
 			disabletls,
 			true,
-			&tvdbAPI.Lim,
+			&lim,
 			false, nil, timeoutseconds),
 	}
+	setTvdbAPI(client)
+}
+
+// Helper functions for thread-safe access to tvdbAPI
+func getTvdbClient() *rlHTTPClient {
+	api := getTvdbAPI()
+	if api == nil {
+		return nil
+	}
+	return &api.Client
 }
 
 // var plheader = pool.NewPool(100, 5, func(t *tvdbHeader) { *t = tvdbHeader{Header: make(map[string][]string, 5)} }, func(b *tvdbHeader) bool {
@@ -125,9 +136,9 @@ func GetTvdbSeries(id int, language string) (*TheTVDBSeries, error) {
 		if !ok {
 			maptvdblanguageheader[language] = map[string][]string{"Accept-Language": {language}}
 		}
-		return doJSONTypeP[TheTVDBSeries](&tvdbAPI.Client, urlv, maptvdblanguageheader[language])
+		return doJSONTypeP[TheTVDBSeries](getTvdbClient(), urlv, maptvdblanguageheader[language])
 	}
-	return doJSONTypeP[TheTVDBSeries](&tvdbAPI.Client, urlv, nil)
+	return doJSONTypeP[TheTVDBSeries](getTvdbClient(), urlv, nil)
 }
 
 // GetTvdbSeriesEpisodes retrieves all episodes for the given TV series ID from
@@ -136,20 +147,18 @@ func GetTvdbSeries(id int, language string) (*TheTVDBSeries, error) {
 // duplicates, and inserts any missing episodes into the database. If there are
 // multiple pages of results, it fetches additional pages.
 func UpdateTvdbSeriesEpisodes(id int, language string, dbid *uint) {
-	if id == 0 || tvdbAPI.Client.checklimiterwithdaily(tvdbAPI.Client.Ctx) {
+	api := getTvdbAPI()
+	if id == 0 || api == nil || api.Client.checklimiterwithdaily(api.Client.Ctx) {
 		return
 	}
 	urlv := logger.JoinStrings("https://api.thetvdb.com/series/", strconv.Itoa(id), "/episodes")
 	result, err := querytvdb(language, urlv)
 	if err != nil {
 		if !errors.Is(err, logger.ErrToWait) {
-			logger.LogDynamicany1StringErr(
-				"error",
-				"Error calling",
-				err,
-				logger.StrURL,
-				urlv,
-			) // logpointer
+			logger.Logtype("error", 1).
+				Str(logger.StrURL, urlv).
+				Err(err).
+				Msg("Error calling") // logpointer
 		}
 		return
 	}
@@ -181,9 +190,9 @@ func querytvdb(language, urlv string) (*TheTVDBEpisodes, error) {
 		if !ok {
 			maptvdblanguageheader[language] = map[string][]string{"Accept-Language": {language}}
 		}
-		return doJSONTypeP[TheTVDBEpisodes](&tvdbAPI.Client, urlv, maptvdblanguageheader[language])
+		return doJSONTypeP[TheTVDBEpisodes](getTvdbClient(), urlv, maptvdblanguageheader[language])
 	}
-	return doJSONTypeP[TheTVDBEpisodes](&tvdbAPI.Client, urlv, nil)
+	return doJSONTypeP[TheTVDBEpisodes](getTvdbClient(), urlv, nil)
 }
 
 // addthetvdbepisodes iterates through the episodes in the given TheTVDBEpisodes
@@ -215,25 +224,26 @@ func (t *TheTVDBEpisodes) addthetvdbepisodes(dbid *uint, tbl []database.Dbstatic
 	}
 }
 
-// ParseDate parses a date string in "2006-01-02" format and returns a sql.NullTime.
-// Returns a null sql.NullTime if the date string is empty or fails to parse.
+// ParseDate parses a date string in "2006-01-02" format and returns a time.Time.
+// Returns a zero time.Time if the date string is empty or fails to parse.
 func parseDateTime(date string) time.Time {
 	if date == "" {
 		return time.Time{}
 	}
 	t, err := time.Parse("2006-01-02", date)
 	if err != nil {
-		return t
+		return time.Time{}
 	}
-	return time.Time{}
+	return t
 }
 
 // TestTVDBConnectivity tests the connectivity to the TVDB API
+// Note: timeout parameter is currently unused as ProcessHTTPNoRateCheck handles its own timeouts
 // Returns status code and error if any
 func TestTVDBConnectivity(timeout time.Duration) (int, error) {
 	statusCode := 0
 	err := ProcessHTTPNoRateCheck(
-		&tvdbAPI.Client,
+		getTvdbClient(),
 		"https://api.thetvdb.com/series/1",
 		func(ctx context.Context, resp *http.Response) error {
 			statusCode = resp.StatusCode

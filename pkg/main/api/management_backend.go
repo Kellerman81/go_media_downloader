@@ -153,10 +153,7 @@ func PerformMediaCleanup(findOrphans, findDuplicates, findBroken, findEmpty bool
 		performCleanupActions(orphanedPaths, duplicateGroups, brokenPaths, result.EmptyDirectories, dryRun)
 	}
 
-	logger.LogDynamicany("info", "Media cleanup completed",
-		"total_issues", result.TotalIssues,
-		"duration", result.ScanDuration.String(),
-		"dry_run", dryRun)
+	logger.Logtype("info", 3).Int("total_issues", result.TotalIssues).Str("duration", result.ScanDuration.String()).Bool("dry_run", dryRun).Msg("Media cleanup completed")
 
 	return result, nil
 }
@@ -229,9 +226,7 @@ func FindMissingEpisodes(seriesName string, seasonNumber int, status string, inc
 
 		missing, err := checkSeriesMissingEpisodes(seriesName, seasonNumber, includeSpecials, onlyAired, dateRangeDays, status)
 		if err != nil {
-			logger.LogDynamicany("warning", "Failed to check series for missing episodes",
-				"series_id", serie.ID,
-				"error", err.Error())
+			logger.Logtype("warning", 2).Uint("series_id", serie.ID).Str("error", err.Error()).Msg("Failed to check series for missing episodes")
 			continue
 		}
 
@@ -244,7 +239,7 @@ func FindMissingEpisodes(seriesName string, seasonNumber int, status string, inc
 		if autoDownload && len(missing) > 0 {
 			downloadResult, err := triggerEpisodeDownloads(missing, qualityProfile, autoDownload)
 			if err != nil {
-				logger.LogDynamicany("warning", "Failed to trigger episode downloads", "error", err.Error())
+				logger.Logtype("warning", 1).Str("error", err.Error()).Msg("Failed to trigger episode downloads")
 				continue
 			}
 			result.DownloadTriggered += downloadResult.TriggeredDownloads
@@ -254,11 +249,7 @@ func FindMissingEpisodes(seriesName string, seasonNumber int, status string, inc
 	result.TotalMissing = len(result.MissingEpisodes)
 	result.ScanDuration = time.Since(startTime)
 
-	logger.LogDynamicany("info", "Missing episodes scan completed",
-		"series_scanned", result.SeriesScanned,
-		"total_missing", result.TotalMissing,
-		"downloads_triggered", result.DownloadTriggered,
-		"duration", result.ScanDuration.String())
+	logger.Logtype("info", 4).Int("series_scanned", result.SeriesScanned).Int("total_missing", result.TotalMissing).Int("downloads_triggered", result.DownloadTriggered).Str("duration", result.ScanDuration.String()).Msg("Missing episodes scan completed")
 
 	return result, nil
 }
@@ -387,10 +378,7 @@ func AnalyzeLogs(timeRange, logLevel string, maxLines int64, analyzeErrors, anal
 
 	result.AnalysisDuration = time.Since(startTime)
 
-	logger.LogDynamicany("info", "Log analysis completed",
-		"total_entries", result.TotalEntries,
-		"error_count", result.ErrorCount,
-		"duration", result.AnalysisDuration.String())
+	logger.Logtype("info", 3).Int64("total_entries", result.TotalEntries).Int64("error_count", result.ErrorCount).Str("duration", result.AnalysisDuration.String()).Msg("Log analysis completed")
 
 	return result, nil
 }
@@ -539,12 +527,7 @@ func CheckStorageHealth(checkDiskSpace, checkPermission, checkMounts, checkIO bo
 		OverallScore:  healthStatus.HealthScore,
 	}
 
-	logger.LogDynamicany("info", "Storage health check completed",
-		"total_paths", result.Summary.TotalPaths,
-		"healthy_paths", result.Summary.HealthyPaths,
-		"warning_paths", result.Summary.WarningPaths,
-		"critical_paths", result.Summary.CriticalPaths,
-		"overall_score", result.Summary.OverallScore)
+	logger.Logtype("info", 5).Int("total_paths", result.Summary.TotalPaths).Int("healthy_paths", result.Summary.HealthyPaths).Int("warning_paths", result.Summary.WarningPaths).Int("critical_paths", result.Summary.CriticalPaths).Float64("overall_score", result.Summary.OverallScore).Msg("Storage health check completed")
 
 	return result, nil
 }
@@ -663,12 +646,7 @@ func CheckServiceHealth(checkIMDB, checkTrakt, checkIndexers, checkNotifications
 	result.OverallStatus, result.Summary = calculateServiceHealth(result.ServiceResults)
 	result.TestDuration = time.Since(startTime)
 
-	logger.LogDynamicany("info", "Service health check completed",
-		"total_services", result.Summary.TotalServices,
-		"online_services", result.Summary.OnlineServices,
-		"failed_services", result.Summary.FailedServices,
-		"avg_response_time", result.Summary.AvgResponseTime,
-		"duration", result.TestDuration.String())
+	logger.Logtype("info", 5).Int("total_services", result.Summary.TotalServices).Int("online_services", result.Summary.OnlineServices).Int("failed_services", result.Summary.FailedServices).Float64("avg_response_time", result.Summary.AvgResponseTime).Str("duration", result.TestDuration.String()).Msg("Service health check completed")
 
 	return result, nil
 }
@@ -708,7 +686,7 @@ func testServiceHealth(serviceName string, _, _ int, detailed bool) ServiceStatu
 	status := ServiceStatus{
 		ServiceName: serviceName,
 		Status:      "offline",
-		Details:     make(map[string]interface{}),
+		Details:     make(map[string]any),
 	}
 
 	switch strings.ToLower(serviceName) {
@@ -732,7 +710,7 @@ func testServiceHealth(serviceName string, _, _ int, detailed bool) ServiceStatu
 func testIMDBHealth(detailed bool) ServiceStatus {
 	status := ServiceStatus{
 		ServiceName: "IMDB Database",
-		Details:     make(map[string]interface{}),
+		Details:     make(map[string]any),
 	}
 
 	// Test IMDB database connection by attempting a simple query
@@ -774,7 +752,7 @@ func testIMDBHealth(detailed bool) ServiceStatus {
 func testTraktHealth(detailed bool) ServiceStatus {
 	status := ServiceStatus{
 		ServiceName: "Trakt",
-		Details:     make(map[string]interface{}),
+		Details:     make(map[string]any),
 	}
 
 	// Simple connectivity test to Trakt API
@@ -806,7 +784,7 @@ func testTraktHealth(detailed bool) ServiceStatus {
 func testDatabaseHealth(detailed bool) ServiceStatus {
 	status := ServiceStatus{
 		ServiceName: "Database",
-		Details:     make(map[string]interface{}),
+		Details:     make(map[string]any),
 	}
 
 	// Test database connection by attempting a simple query
@@ -832,7 +810,7 @@ func testDatabaseHealth(detailed bool) ServiceStatus {
 func testFilesystemHealth(detailed bool) ServiceStatus {
 	status := ServiceStatus{
 		ServiceName: "Filesystem",
-		Details:     make(map[string]interface{}),
+		Details:     make(map[string]any),
 	}
 
 	// Check configured media paths
@@ -868,7 +846,7 @@ func testGenericServiceHealth(serviceName string, detailed bool) ServiceStatus {
 	status := ServiceStatus{
 		ServiceName: serviceName,
 		Status:      "unknown",
-		Details:     make(map[string]interface{}),
+		Details:     make(map[string]any),
 	}
 
 	// Check if service is configured in indexers
@@ -923,7 +901,7 @@ func testIndexerQuery(indexer config.IndexersConfig, detailed bool) ServiceStatu
 	status := ServiceStatus{
 		ServiceName: indexer.Name,
 		Status:      "offline",
-		Details:     make(map[string]interface{}),
+		Details:     make(map[string]any),
 	}
 
 	// Start timing the query

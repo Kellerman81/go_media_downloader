@@ -10,6 +10,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/pool"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/syncops"
 )
 
 // ParseInfo is a struct containing parsed information about media files.
@@ -222,7 +223,7 @@ func (m *ParseInfo) Findmoviedbidbytitle(slugged bool) {
 // If no match is found, it sets DbmovieID to 0.
 func (m *ParseInfo) findMovieInCache() {
 	// Search in main movie cache
-	c := GetCachedArr(cache.itemsthreestring, logger.CacheDBMovie, false, true)
+	c := GetCachedThreeStringArr(logger.CacheDBMovie, false, true)
 	for idx := range c {
 		if m.matchesTitle(c[idx].Str1, c[idx].Str2) && m.moviegetimdbtitle(&c[idx].Num2) {
 			m.DbmovieID = c[idx].Num2
@@ -231,7 +232,7 @@ func (m *ParseInfo) findMovieInCache() {
 	}
 
 	// Search in movie titles cache
-	d := GetCachedArr(cache.itemstwostring, logger.CacheTitlesMovie, false, true)
+	d := GetCachedTwoStringArr(logger.CacheTitlesMovie, false, true)
 	for idx := range d {
 		if m.matchesTitle(d[idx].Str1, d[idx].Str2) && m.moviegetimdbtitle(&d[idx].Num) {
 			m.DbmovieID = d[idx].Num
@@ -479,7 +480,8 @@ func (m *ParseInfo) Checktitle(
 	title string,
 ) bool {
 	if qualcfg == nil {
-		logger.LogDynamicany0("debug", "qualcfg empty")
+		logger.Logtype("debug", 0).
+			Msg("qualcfg empty")
 		return true
 	}
 	if !qualcfg.CheckTitle {
@@ -505,28 +507,26 @@ func (m *ParseInfo) Checktitle(
 	)
 
 	if wantedTitle == "" {
-		logger.LogDynamicany0("debug", "wanttitle empty")
+		logger.Logtype("debug", 0).
+			Msg("wanttitle empty")
 		return true
 	}
 	if qualcfg.Name != "" {
 		m.StripTitlePrefixPostfixGetQual(qualcfg)
 	}
 	if m.Title == "" {
-		logger.LogDynamicany0("debug", "m Title empty")
+		logger.Logtype("debug", 0).
+			Msg("m Title empty")
 		return true
 	}
 
 	if m.Year != 0 && year != 0 {
 		if (m.Year != year && !qualcfg.CheckYear1) ||
 			(qualcfg.CheckYear1 && (m.Year != year && m.Year != year+1 && m.Year != year-1)) {
-			logger.LogDynamicany(
-				"debug",
-				"year different",
-				&logger.StrFound,
-				&m.Year,
-				&logger.StrWanted,
-				&year,
-			)
+			logger.Logtype("debug", 4).
+				Uint16(logger.StrFound, m.Year).
+				Uint16(logger.StrWanted, year).
+				Msg("year different")
 			return true
 		}
 	}
@@ -537,17 +537,14 @@ func (m *ParseInfo) Checktitle(
 		}
 	}
 	if !qualcfg.CheckTitle {
-		logger.LogDynamicany1String(
-			"debug",
-			"no alternate title check allowed",
-			logger.StrTitle,
-			m.Title,
-		) // , "checked", arr - better use string array
+		logger.Logtype("debug", 1).
+			Str(logger.StrTitle, m.Title).
+			Msg("no alternate title check allowed") // , "checked", arr - better use string array
 		return true
 	}
 
 	if config.GetSettingsGeneral().UseMediaCache {
-		return m.checkalternatetitles(GetCachedArr(cache.itemstwostring,
+		return m.checkalternatetitles(GetCachedTwoStringArr(
 			logger.GetStringsMap(cfgp.Useseries, logger.CacheMediaTitles),
 			false,
 			true,
@@ -565,18 +562,15 @@ func (m *ParseInfo) Checktitle(
 // It takes an array of alternate titles, an ID, quality configuration, and the title to check.
 // Returns true if no matching alternate title is found, false otherwise.
 func (m *ParseInfo) checkalternatetitles(
-	arr []DbstaticTwoStringOneInt,
+	arr []syncops.DbstaticTwoStringOneInt,
 	id uint,
 	qualcfg *config.QualityConfig,
 	title string,
 ) bool {
 	if len(arr) == 0 {
-		logger.LogDynamicany1String(
-			"debug",
-			"no alternate titles found",
-			logger.StrTitle,
-			m.Title,
-		) // , "checked", arr - better use string array
+		logger.Logtype("debug", 1).
+			Str(logger.StrTitle, m.Title).
+			Msg("no alternate titles found") // , "checked", arr - better use string array
 		return true
 	}
 	for idx := range FilterDbstaticTwoStringOneInt(arr, id) {
@@ -587,24 +581,20 @@ func (m *ParseInfo) checkalternatetitles(
 			return false
 		}
 	}
-	logger.LogDynamicany(
-		"debug",
-		"no alternate title match found",
-		&logger.StrTitle,
-		&m.Title,
-		"Year",
-		&m.Year,
-		"Titles",
-		GetDbstaticTwoStringOneInt(arr, id),
-	)
+	logger.Logtype("debug", 3).
+		Str(logger.StrTitle, m.Title).
+		Uint16("Year", m.Year).
+		Interface("Titles", GetDbstaticTwoStringOneInt(arr, id)).
+		Msg("no alternate title match found")
 	return true
 }
 
 // AddUnmatched adds an unmatched file to the database. If the file is already in the cache, it returns without adding it. Otherwise, it inserts a new record into the appropriate table (movie_file_unmatcheds or serie_file_unmatcheds) with the file path, list name, and parsed data.
 func (m *ParseInfo) AddUnmatched(cfgp *config.MediaTypeConfig, listname *string, err error) {
+	// logger.Logtype("info", 1).Str("File", m.File).Msg("Pre Add Unmatched")
 	if config.GetSettingsGeneral().UseFileCache {
 		if slices.Contains(
-			GetCachedArr(cache.itemsstring,
+			GetCachedStringArr(
 				logger.GetStringsMap(cfgp.Useseries, logger.CacheUnmatched),
 				false,
 				true,
@@ -614,7 +604,9 @@ func (m *ParseInfo) AddUnmatched(cfgp *config.MediaTypeConfig, listname *string,
 			return
 		}
 	}
+	// logger.Logtype("info", 1).Str("File", m.File).Msg("Pre Set Unmatched")
 	m.ExecParsed(cfgp, err, listname)
+	// logger.Logtype("info", 1).Str("File", m.File).Msg("Post Add Unmatched")
 }
 
 // ExecParsed adds an unmatched file to the database or updates an existing unmatched file record. It constructs a string representation of the parsed file information and inserts a new record or updates an existing record in the appropriate table (movie_file_unmatcheds or serie_file_unmatcheds).
@@ -707,7 +699,7 @@ func (m *ParseInfo) FindDbserieByName(slugged bool) {
 		m.TempTitle = logger.StringToSlug(m.TempTitle)
 	}
 	if config.GetSettingsGeneral().UseMediaCache {
-		for _, a := range GetCachedArr(cache.itemsthreestring, logger.CacheDBSeries, false, true) {
+		for _, a := range GetCachedThreeStringArr(logger.CacheDBSeries, false, true) {
 			if a.Str1 == m.TempTitle || a.Str2 == m.TempTitle ||
 				strings.EqualFold(a.Str1, m.TempTitle) ||
 				strings.EqualFold(a.Str2, m.TempTitle) {
@@ -715,7 +707,7 @@ func (m *ParseInfo) FindDbserieByName(slugged bool) {
 				return
 			}
 		}
-		for _, b := range GetCachedArr(cache.itemstwostring, logger.CacheDBSeriesAlt, false, true) {
+		for _, b := range GetCachedTwoStringArr(logger.CacheDBSeriesAlt, false, true) {
 			if b.Str1 == m.TempTitle || b.Str2 == m.TempTitle ||
 				strings.EqualFold(b.Str1, m.TempTitle) ||
 				strings.EqualFold(b.Str2, m.TempTitle) {
@@ -889,7 +881,7 @@ func (m *ParseInfo) Cleanimdbdbmovie() {
 
 // CacheThreeStringIntIndexFuncGetImdb retrieves the IMDB value from a cached array of DbstaticThreeStringTwoInt objects that match the provided string and uint values. If a matching object is found, the IMDB value is stored in the ParseInfo struct. If no matching object is found, this method does nothing.
 func (m *ParseInfo) CacheThreeStringIntIndexFuncGetImdb() {
-	for _, a := range GetCachedArr(cache.itemsthreestring, logger.CacheDBMovie, false, true) {
+	for _, a := range GetCachedThreeStringArr(logger.CacheDBMovie, false, true) {
 		if a.Num2 == m.DbmovieID {
 			m.Imdb = a.Str3
 			return
@@ -1055,10 +1047,10 @@ func GetSluggedMap(slugged bool, typestr string) string {
 
 // FilterDbstaticTwoStringOneInt filters a slice of DbstaticTwoStringOneInt structs by the provided id. It returns a sequence that yields the filtered elements.
 func FilterDbstaticTwoStringOneInt(
-	s []DbstaticTwoStringOneInt,
+	s []syncops.DbstaticTwoStringOneInt,
 	id uint,
-) iter.Seq[DbstaticTwoStringOneInt] {
-	return func(yield func(DbstaticTwoStringOneInt) bool) {
+) iter.Seq[syncops.DbstaticTwoStringOneInt] {
+	return func(yield func(syncops.DbstaticTwoStringOneInt) bool) {
 		for idx := range s {
 			if s[idx].Num != id {
 				continue

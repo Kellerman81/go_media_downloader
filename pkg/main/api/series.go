@@ -337,16 +337,16 @@ func apiseriesAllJobs(c *gin.Context) {
 
 		switch c.Param(StrJobLower) {
 		case logger.StrData, logger.StrDataFull, logger.StrStructure, logger.StrClearHistory:
-			worker.Dispatch(c.Param(StrJobLower)+"_series_"+media.Name, func(key uint32) error {
-				return utils.SingleJobs(c.Param(StrJobLower), cfgpstr, "", true, key)
+			worker.Dispatch(c.Param(StrJobLower)+"_series_"+media.Name, func(key uint32, ctx context.Context) error {
+				return utils.SingleJobs(ctx, c.Param(StrJobLower), cfgpstr, "", true, key)
 			}, "Data")
 		case logger.StrSearchMissingFull, logger.StrSearchMissingInc, logger.StrSearchUpgradeFull, logger.StrSearchUpgradeInc, logger.StrSearchMissingFullTitle, logger.StrSearchMissingIncTitle, logger.StrSearchUpgradeFullTitle, logger.StrSearchUpgradeIncTitle:
-			worker.Dispatch(c.Param(StrJobLower)+"_series_"+media.Name, func(key uint32) error {
-				return utils.SingleJobs(c.Param(StrJobLower), cfgpstr, "", true, key)
+			worker.Dispatch(c.Param(StrJobLower)+"_series_"+media.Name, func(key uint32, ctx context.Context) error {
+				return utils.SingleJobs(ctx, c.Param(StrJobLower), cfgpstr, "", true, key)
 			}, "Search")
 		case logger.StrRss, logger.StrRssSeasons, logger.StrRssSeasonsAll:
-			worker.Dispatch(c.Param(StrJobLower)+"_series_"+media.Name, func(key uint32) error {
-				return utils.SingleJobs(c.Param(StrJobLower), cfgpstr, "", true, key)
+			worker.Dispatch(c.Param(StrJobLower)+"_series_"+media.Name, func(key uint32, ctx context.Context) error {
+				return utils.SingleJobs(ctx, c.Param(StrJobLower), cfgpstr, "", true, key)
 			}, "RSS")
 		case logger.StrFeeds, logger.StrCheckMissing, logger.StrCheckMissingFlag, logger.StrReachedFlag:
 			for idxlist := range media.Lists {
@@ -362,12 +362,12 @@ func apiseriesAllJobs(c *gin.Context) {
 				}
 				listname := media.Lists[idxlist].Name
 				if c.Param(StrJobLower) == logger.StrFeeds {
-					worker.Dispatch(c.Param(StrJobLower)+"_series_"+media.Name, func(key uint32) error {
-						return utils.SingleJobs(c.Param(StrJobLower), cfgpstr, listname, true, key)
+					worker.Dispatch(c.Param(StrJobLower)+"_series_"+media.Name, func(key uint32, ctx context.Context) error {
+						return utils.SingleJobs(ctx, c.Param(StrJobLower), cfgpstr, listname, true, key)
 					}, "Feeds")
 				} else if c.Param(StrJobLower) == logger.StrCheckMissing || c.Param(StrJobLower) == logger.StrCheckMissingFlag || c.Param(StrJobLower) == logger.StrReachedFlag {
-					worker.Dispatch(c.Param(StrJobLower)+"_series_"+media.Name, func(key uint32) error {
-						return utils.SingleJobs(c.Param(StrJobLower), cfgpstr, listname, true, key)
+					worker.Dispatch(c.Param(StrJobLower)+"_series_"+media.Name, func(key uint32, ctx context.Context) error {
+						return utils.SingleJobs(ctx, c.Param(StrJobLower), cfgpstr, listname, true, key)
 					}, "Data")
 				}
 				// cfg_list.Close()
@@ -378,8 +378,8 @@ func apiseriesAllJobs(c *gin.Context) {
 			return nil
 
 		default:
-			worker.Dispatch(c.Param(StrJobLower)+"_series_"+media.Name, func(key uint32) error {
-				return utils.SingleJobs(c.Param(StrJobLower), cfgpstr, "", true, key)
+			worker.Dispatch(c.Param(StrJobLower)+"_series_"+media.Name, func(key uint32, ctx context.Context) error {
+				return utils.SingleJobs(ctx, c.Param(StrJobLower), cfgpstr, "", true, key)
 			}, "Data")
 		}
 		// cfgSerie.Close()
@@ -387,12 +387,12 @@ func apiseriesAllJobs(c *gin.Context) {
 	})
 	switch c.Param(StrJobLower) {
 	case "refresh":
-		worker.Dispatch(logger.StrRefreshSeries, func(key uint32) error {
-			return utils.SingleJobs("refresh", cfgp.NamePrefix, "", false, key)
+		worker.Dispatch(logger.StrRefreshSeries, func(key uint32, ctx context.Context) error {
+			return utils.SingleJobs(ctx, "refresh", cfgp.NamePrefix, "", false, key)
 		}, "Feeds")
 	case "refreshinc":
-		worker.Dispatch(logger.StrRefreshSeriesInc, func(key uint32) error {
-			return utils.SingleJobs("refreshinc", cfgp.NamePrefix, "", false, key)
+		worker.Dispatch(logger.StrRefreshSeriesInc, func(key uint32, ctx context.Context) error {
+			return utils.SingleJobs(ctx, "refreshinc", cfgp.NamePrefix, "", false, key)
 		}, "Feeds")
 	}
 	sendSuccess(c, returnval)
@@ -421,8 +421,8 @@ func apiseriesJobs(c *gin.Context) {
 		cfgpstr := "serie_" + c.Param("name")
 		switch c.Param(StrJobLower) {
 		case logger.StrData, logger.StrDataFull, logger.StrStructure, logger.StrClearHistory:
-			worker.Dispatch(c.Param(StrJobLower)+"_series_"+c.Param("name"), func(key uint32) error {
-				return utils.SingleJobs(c.Param(StrJobLower), cfgpstr, "", true, key)
+			worker.Dispatch(c.Param(StrJobLower)+"_series_"+c.Param("name"), func(key uint32, ctx context.Context) error {
+				return utils.SingleJobs(ctx, c.Param(StrJobLower), cfgpstr, "", true, key)
 			}, "Data")
 		case logger.StrSearchMissingFull,
 			logger.StrSearchMissingInc,
@@ -432,14 +432,14 @@ func apiseriesJobs(c *gin.Context) {
 			logger.StrSearchMissingIncTitle,
 			logger.StrSearchUpgradeFullTitle,
 			logger.StrSearchUpgradeIncTitle:
-			worker.Dispatch(c.Param(StrJobLower)+"_series_"+c.Param("name"), func(key uint32) error {
-				return utils.SingleJobs(c.Param(StrJobLower), cfgpstr, "", true, key)
+			worker.Dispatch(c.Param(StrJobLower)+"_series_"+c.Param("name"), func(key uint32, ctx context.Context) error {
+				return utils.SingleJobs(ctx, c.Param(StrJobLower), cfgpstr, "", true, key)
 			}, "Search")
 		case logger.StrRss,
 			logger.StrRssSeasons,
 			logger.StrRssSeasonsAll:
-			worker.Dispatch(c.Param(StrJobLower)+"_series_"+c.Param("name"), func(key uint32) error {
-				return utils.SingleJobs(c.Param(StrJobLower), cfgpstr, "", true, key)
+			worker.Dispatch(c.Param(StrJobLower)+"_series_"+c.Param("name"), func(key uint32, ctx context.Context) error {
+				return utils.SingleJobs(ctx, c.Param(StrJobLower), cfgpstr, "", true, key)
 			}, "RSS")
 		case logger.StrFeeds,
 			logger.StrCheckMissing,
@@ -460,8 +460,8 @@ func apiseriesJobs(c *gin.Context) {
 				if c.Param(StrJobLower) == logger.StrFeeds {
 					worker.Dispatch(
 						c.Param(StrJobLower)+"_series_"+c.Param("name"),
-						func(key uint32) error {
-							return utils.SingleJobs(c.Param(StrJobLower), cfgpstr, listname, true, key)
+						func(key uint32, ctx context.Context) error {
+							return utils.SingleJobs(ctx, c.Param(StrJobLower), cfgpstr, listname, true, key)
 						},
 						"Feeds",
 					)
@@ -471,8 +471,8 @@ func apiseriesJobs(c *gin.Context) {
 					c.Param(StrJobLower) == logger.StrReachedFlag {
 					worker.Dispatch(
 						c.Param(StrJobLower)+"_series_"+c.Param("name"),
-						func(key uint32) error {
-							return utils.SingleJobs(c.Param(StrJobLower), cfgpstr, listname, true, key)
+						func(key uint32, ctx context.Context) error {
+							return utils.SingleJobs(ctx, c.Param(StrJobLower), cfgpstr, listname, true, key)
 						},
 						"Data",
 					)
@@ -480,18 +480,18 @@ func apiseriesJobs(c *gin.Context) {
 				// cfg_list.Close()
 			})
 		case "refresh":
-			worker.Dispatch(logger.StrRefreshSeries, func(key uint32) error {
-				return utils.SingleJobs("refresh", cfgpstr, "", false, key)
+			worker.Dispatch(logger.StrRefreshSeries, func(key uint32, ctx context.Context) error {
+				return utils.SingleJobs(ctx, "refresh", cfgpstr, "", false, key)
 			}, "Feeds")
 		case "refreshinc":
-			worker.Dispatch(logger.StrRefreshSeriesInc, func(key uint32) error {
-				return utils.SingleJobs("refreshinc", cfgpstr, "", false, key)
+			worker.Dispatch(logger.StrRefreshSeriesInc, func(key uint32, ctx context.Context) error {
+				return utils.SingleJobs(ctx, "refreshinc", cfgpstr, "", false, key)
 			}, "Feeds")
 		case "":
 			break
 		default:
-			worker.Dispatch(c.Param(StrJobLower)+"_series_"+c.Param("name"), func(key uint32) error {
-				return utils.SingleJobs(c.Param(StrJobLower), cfgpstr, "", true, key)
+			worker.Dispatch(c.Param(StrJobLower)+"_series_"+c.Param("name"), func(key uint32, ctx context.Context) error {
+				return utils.SingleJobs(ctx, c.Param(StrJobLower), cfgpstr, "", true, key)
 			}, "Data")
 		}
 		sendSuccess(c, returnval)
@@ -757,7 +757,7 @@ func apirefreshSerie(c *gin.Context) {
 	if !ok {
 		return
 	}
-	worker.Dispatch("Refresh Single Serie", func(uint32) error {
+	worker.Dispatch("Refresh Single Serie", func(_ uint32, _ context.Context) error {
 		return utils.RefreshSerie(cfgp, &id)
 	}, "Feeds")
 	sendSuccess(c, StrStarted)
@@ -779,8 +779,8 @@ func apirefreshSeries(c *gin.Context) {
 		}
 		return false
 	})
-	worker.Dispatch(logger.StrRefreshSeries, func(key uint32) error {
-		return utils.SingleJobs("refresh", cfgp.NamePrefix, "", false, key)
+	worker.Dispatch(logger.StrRefreshSeries, func(key uint32, ctx context.Context) error {
+		return utils.SingleJobs(ctx, "refresh", cfgp.NamePrefix, "", false, key)
 	}, "Feeds")
 	sendSuccess(c, StrStarted)
 }
@@ -801,8 +801,8 @@ func apirefreshSeriesInc(c *gin.Context) {
 		}
 		return false
 	})
-	worker.Dispatch(logger.StrRefreshSeriesInc, func(key uint32) error {
-		return utils.SingleJobs("refreshinc", cfgp.NamePrefix, "", false, key)
+	worker.Dispatch(logger.StrRefreshSeriesInc, func(key uint32, ctx context.Context) error {
+		return utils.SingleJobs(ctx, "refreshinc", cfgp.NamePrefix, "", false, key)
 	}, "Feeds")
 	sendSuccess(c, StrStarted)
 }
@@ -831,7 +831,7 @@ func apiSeriesSearch(c *gin.Context) {
 			if strings.EqualFold(media.Lists[idxlist].Name, serie.Listname) {
 				worker.Dispatch(
 					"searchseries_series_"+media.Name+"_"+strconv.Itoa(int(serie.ID)),
-					func(uint32) error {
+					func(_ uint32, ctx context.Context) error {
 						episodes := database.GetrowsN[uint](
 							false,
 							database.Getdatarow[uint](
@@ -844,7 +844,6 @@ func apiSeriesSearch(c *gin.Context) {
 						)
 						var err error
 						for idxepisode := range episodes {
-							ctx := context.Background()
 							results := searcher.NewSearcher(media, nil, "", nil)
 							errsub := results.MediaSearch(
 								ctx,
@@ -857,15 +856,7 @@ func apiSeriesSearch(c *gin.Context) {
 
 							if errsub != nil {
 								if !errors.Is(errsub, logger.ErrDisabled) {
-									logger.LogDynamicany(
-										"error",
-										"Search Failed",
-										&logger.StrID,
-										&episodes[idxepisode],
-										"typ",
-										&logger.StrSeries,
-										errsub,
-									)
+									logger.Logtype("error", 2).Any(logger.StrID, &episodes[idxepisode]).Str("typ", logger.StrSeries).Err(errsub).Msg("Search Failed")
 									err = errsub
 								}
 							} else {
@@ -918,7 +909,7 @@ func apiSeriesSearchSeason(c *gin.Context) {
 					)+"_"+c.Param(
 						"season",
 					),
-					func(uint32) error {
+					func(_ uint32, ctx context.Context) error {
 						a := c.Param("season")
 						episodes = database.GetrowsN[uint](
 							false,
@@ -934,7 +925,6 @@ func apiSeriesSearchSeason(c *gin.Context) {
 						)
 						var err error
 						for idxepisode := range episodes {
-							ctx := context.Background()
 							results := searcher.NewSearcher(media, nil, "", nil)
 							errsub := results.MediaSearch(
 								ctx,
@@ -947,15 +937,7 @@ func apiSeriesSearchSeason(c *gin.Context) {
 
 							if errsub != nil {
 								if !errors.Is(errsub, logger.ErrDisabled) {
-									logger.LogDynamicany(
-										"error",
-										"Search Failed",
-										&logger.StrID,
-										&episodes[idxepisode],
-										"typ",
-										&logger.StrSeries,
-										errsub,
-									)
+									logger.Logtype("error", 2).Any(logger.StrID, &episodes[idxepisode]).Str("typ", logger.StrSeries).Err(errsub).Msg("Search Failed")
 									err = errsub
 								}
 							} else {
@@ -1007,7 +989,7 @@ func apiSeriesSearchRSS(c *gin.Context) {
 					)+"_"+c.Param(
 						"season",
 					),
-					func(uint32) error {
+					func(uint32, context.Context) error {
 						s, err := searcher.SearchSerieRSSSeasonSingle(&serie.ID, "", false, media)
 						s.Close()
 						return err
@@ -1096,7 +1078,7 @@ func apiSeriesSearchRSSSeason(c *gin.Context) {
 					)+"_"+c.Param(
 						"season",
 					),
-					func(uint32) error {
+					func(uint32, context.Context) error {
 						s, err := searcher.SearchSerieRSSSeasonSingle(&serie.ID, season, true, media)
 						s.Close()
 						return err
@@ -1138,22 +1120,13 @@ func apiSeriesEpisodeSearch(c *gin.Context) {
 			if strings.EqualFold(media.Lists[idxlist].Name, serie.Listname) {
 				worker.Dispatch(
 					"searchseriesepisode_series_"+media.Name+"_"+strconv.Itoa(id),
-					func(uint32) error {
-						ctx := context.Background()
+					func(_ uint32, ctx context.Context) error {
 						results := searcher.NewSearcher(media, nil, "", nil)
 						err := results.MediaSearch(ctx, media, uid, true, false, false)
 
 						if err != nil {
 							if !errors.Is(err, logger.ErrDisabled) {
-								logger.LogDynamicany(
-									"error",
-									"Search Failed",
-									&logger.StrID,
-									&uid,
-									"typ",
-									&logger.StrSeries,
-									err,
-								)
+								logger.Logtype("error", 2).Any(logger.StrID, &uid).Str("typ", logger.StrSeries).Err(err).Msg("Search Failed")
 								return err
 							}
 						} else {
@@ -1334,7 +1307,7 @@ func apiSeriesEpisodeSearchDownload(c *gin.Context) {
 // @Failure      401     {object}  Jsonerror
 // @Router       /api/series/search/history/clear/{name} [get].
 func apiSeriesClearHistoryName(c *gin.Context) {
-	utils.SingleJobs(logger.StrClearHistory, "serie_"+c.Param("name"), "", true, 0)
+	utils.SingleJobs(c, logger.StrClearHistory, "serie_"+c.Param("name"), "", true, 0)
 	sendSuccess(c, StrStarted)
 }
 

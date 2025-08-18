@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -409,13 +410,20 @@ func (s *Organizer) cleanUpFolder(folder string) error {
 			if errw != nil {
 				return errw
 			}
-			os.Chmod(fpath, 0o777)
+			if err := os.Chmod(fpath, 0o777); err != nil {
+				logger.Logtype("error", 1).
+					Str(logger.StrFile, fpath).
+					Err(err).
+					Msg("Failed to change file permissions")
+			}
 			return nil
 		})
 		if err := os.RemoveAll(folder); err != nil {
 			return err
 		}
-		logger.LogDynamicany1String("info", "Folder removed", logger.StrFile, folder)
+		logger.Logtype("info", 1).
+			Str(logger.StrFile, folder).
+			Msg("Folder removed")
 	}
 	return nil
 }
@@ -483,14 +491,10 @@ func (s *Organizer) validateRuntime(
 	}
 
 	if s.targetpathCfg.MaxRuntimeDifference == 0 {
-		logger.LogDynamicany2Int(
-			"warning",
-			"wrong runtime",
-			logger.StrWanted,
-			wantedruntime,
-			logger.StrFound,
-			targetruntime,
-		)
+		logger.Logtype("warning", 2).
+			Int(logger.StrWanted, wantedruntime).
+			Int(logger.StrFound, targetruntime).
+			Msg("wrong runtime")
 		return errWrongRuntime
 	}
 
@@ -504,14 +508,10 @@ func (s *Organizer) validateRuntime(
 		if s.targetpathCfg.DeleteWrongRuntime {
 			s.fileCleanup(o.Folder, o.Videofile, o.Rootpath)
 		}
-		logger.LogDynamicany2Int(
-			"warning",
-			"wrong runtime",
-			logger.StrWanted,
-			wantedruntime,
-			logger.StrFound,
-			targetruntime,
-		)
+		logger.Logtype("warning", 2).
+			Int(logger.StrWanted, wantedruntime).
+			Int(logger.StrFound, targetruntime).
+			Msg("wrong runtime")
 		return errWrongRuntime
 	}
 	return nil
@@ -557,16 +557,20 @@ func (s *Organizer) validateLanguage(
 	// Language not allowed
 	if deletewronglanguage {
 		if err := s.fileCleanup(o.Folder, o.Videofile, o.Rootpath); err != nil {
-			logger.LogDynamicany(
-				"warning",
-				"wrong language",
-				err,
-				&logger.StrWanted,
-				&s.targetpathCfg.AllowedLanguages[0],
-				&logger.StrFound,
-				&m.Languages[0],
-			)
-			return errWrongLanguage
+			wantedLang := ""
+			if len(s.targetpathCfg.AllowedLanguages) > 0 {
+				wantedLang = s.targetpathCfg.AllowedLanguages[0]
+			}
+			foundLang := ""
+			if len(m.Languages) > 0 {
+				foundLang = m.Languages[0]
+			}
+			logger.Logtype("error", 2).
+				Str(logger.StrWanted, wantedLang).
+				Str(logger.StrFound, foundLang).
+				Err(err).
+				Msg("failed to cleanup wrong language file")
+			return err
 		}
 	}
 
@@ -574,14 +578,14 @@ func (s *Organizer) validateLanguage(
 	if len(m.Languages) > 0 {
 		foundLang = m.Languages[0]
 	}
-	logger.LogDynamicany2StrAny(
-		"warning",
-		"wrong language",
-		logger.StrFound,
-		foundLang,
-		logger.StrWanted,
-		&s.targetpathCfg.AllowedLanguages[0],
-	)
+	wantedLang := ""
+	if len(s.targetpathCfg.AllowedLanguages) > 0 {
+		wantedLang = s.targetpathCfg.AllowedLanguages[0]
+	}
+	logger.Logtype("warning", 2).
+		Str(logger.StrFound, foundLang).
+		Str(logger.StrWanted, wantedLang).
+		Msg("wrong language")
 	return errWrongLanguage
 }
 
@@ -685,8 +689,11 @@ func (s *Organizer) GenerateNamingTemplate(o *Organizerdata, m *database.ParseIn
 			return
 		}
 
-		episodetitle := database.Getdatarow[string](false, "select title from dbserie_episodes where id = ?", &m.Episodes[0].Num2)
-		serietitle := database.Getdatarow[string](false, "select seriename from dbseries where id = ?", &m.DbserieID)
+		var episodetitle, serietitle string
+		if len(m.Episodes) > 0 {
+			episodetitle = database.Getdatarow[string](false, "select title from dbserie_episodes where id = ?", &m.Episodes[0].Num2)
+		}
+		serietitle = database.Getdatarow[string](false, "select seriename from dbseries where id = ?", &m.DbserieID)
 		if (serietitle == "" || episodetitle == "") && m.Identifier != "" {
 			serietitleparse, episodetitleparse := database.RegexGetMatchesStr1Str2(false, logger.JoinStrings(`^(.*)(?i)`, m.Identifier, `(?:\.| |-)(.*)$`), filepath.Base(o.Videofile))
 			if serietitle != "" && episodetitleparse != "" {
@@ -809,7 +816,13 @@ func (s *Organizer) moveVideoFile(o *Organizerdata) (string, error) {
 		return "", err
 	}
 	if mode != 0 {
-		os.Chmod(o.videotarget, mode)
+		if err := os.Chmod(o.videotarget, mode); err != nil {
+			logger.Logtype("error", 1).
+				Str("path", o.videotarget).
+				Str("mode", mode.String()).
+				Err(err).
+				Msg("Failed to change directory permissions")
+		}
 	}
 	return scanner.MoveFile(
 		o.Videofile,
@@ -910,32 +923,28 @@ func (s *Organizer) moveRemoveOldMediaFile(
 			)
 			if err != nil {
 				if !errors.Is(err, logger.ErrNotFound) {
-					logger.LogDynamicany1StringErr(
-						"error",
-						"file could not be moved",
-						err,
-						logger.StrFile,
-						additionalfile,
-					)
+					logger.Logtype("error", 1).
+						Str(logger.StrFile, additionalfile).
+						Err(err).
+						Msg("file could not be moved")
 				}
 				continue
 			}
 		} else {
 			bl, err = scanner.RemoveFile(additionalfile)
 			if err != nil {
-				logger.LogDynamicanyErr("error", "delete Files", err)
+				logger.Logtype("error", 0).
+					Err(err).
+					Msg("delete Files")
 				continue
 			}
 			if !bl {
 				continue
 			}
 		}
-		logger.LogDynamicany1String(
-			"info",
-			"Additional File removed",
-			logger.StrFile,
-			additionalfile,
-		)
+		logger.Logtype("info", 1).
+			Str(logger.StrFile, additionalfile).
+			Msg("Additional File removed")
 	}
 	return nil
 }
@@ -962,12 +971,14 @@ func (s *Organizer) organizeSeries(
 		return logger.ErrNotFoundEpisode
 	}
 
-	database.GetdatarowArgs(
-		"select runtime, season from dbserie_episodes where id = ?",
-		&m.Episodes[0].Num2,
-		&m.RuntimeStr,
-		&m.SeasonStr,
-	)
+	if len(m.Episodes) > 0 {
+		database.GetdatarowArgs(
+			"select runtime, season from dbserie_episodes where id = ?",
+			&m.Episodes[0].Num2,
+			&m.RuntimeStr,
+			&m.SeasonStr,
+		)
+	}
 
 	identifiedby := database.Getdatarow[string](
 		false,
@@ -997,7 +1008,7 @@ func (s *Organizer) organizeSeries(
 		}
 	}
 	if identifiedby == "date" ||
-		database.Getdatarow[bool](
+		len(m.Episodes) > 0 && database.Getdatarow[bool](
 			false,
 			"select ignore_runtime from serie_episodes where id = ?",
 			&m.Episodes[0].Num1,
@@ -1114,11 +1125,14 @@ func (s *Organizer) organizeMovie(
 			runtime = uint(getrun)
 		}
 	}
+	// logger.Logtype("info", 1).Str("File", m.File).Msg("Pre Process1")
+
 	err := s.ParseFileAdditional(o, m, runtime, deletewronglanguage, checkruntime, cfgquality)
 	if err != nil {
 		return err
 	}
 
+	// logger.Logtype("info", 1).Str("File", m.File).Msg("Pre Process2")
 	oldpriority, oldfiles := searcher.Getpriobyfiles(
 		false,
 		&m.MovieID,
@@ -1127,6 +1141,7 @@ func (s *Organizer) organizeMovie(
 		cfgquality,
 		true,
 	)
+	// logger.Logtype("info", 1).Str("File", m.File).Msg("Pre Process3")
 	if oldpriority != 0 && oldpriority >= m.Priority {
 		if true {
 			err := s.fileCleanup(o.Folder, o.Videofile, o.Rootpath)
@@ -1136,11 +1151,13 @@ func (s *Organizer) organizeMovie(
 		}
 		return errLowerQuality
 	}
+	// logger.Logtype("info", 1).Str("File", m.File).Msg("Pre Process4")
 
 	s.GenerateNamingTemplate(o, m, &m.DbmovieID)
 	if o.Filename == "" {
 		return errGeneratingFilename
 	}
+	// logger.Logtype("info", 1).Str("File", m.File).Msg("Pre Process5")
 
 	if s.targetpathCfg.MoveReplaced && s.targetpathCfg.MoveReplacedTargetPath != "" &&
 		len(oldfiles) >= 1 {
@@ -1150,12 +1167,16 @@ func (s *Organizer) organizeMovie(
 			return err
 		}
 	}
+	// logger.Logtype("info", 1).Str("File", m.File).Msg("Pre Process6")
 
 	if s.targetpathCfg.Usepresort && s.targetpathCfg.PresortFolderPath != "" {
 		o.Rootpath = filepath.Join(s.targetpathCfg.PresortFolderPath, o.Foldername)
 	}
+	// logger.Logtype("info", 1).Str("File", m.File).Msg("Pre Process7")
+
 	// Move new files to target folder
 	newpath, err := s.moveVideoFile(o)
+	// logger.Logtype("info", 1).Str("File", m.File).Msg("Pre Process8")
 	if err != nil {
 		if errors.Is(err, logger.ErrNotFound) {
 			return nil
@@ -1163,11 +1184,14 @@ func (s *Organizer) organizeMovie(
 		return err
 	}
 
+	// logger.Logtype("info", 1).Str("File", m.File).Msg("Pre Process9")
+
 	// Remove old files from target folder
 	err = s.moveandcleanup(o, newpath, m, &m.MovieID, &m.DbmovieID, oldfiles)
 	if err != nil {
 		return err
 	}
+	// logger.Logtype("info", 1).Str("File", m.File).Msg("Pre Process10")
 
 	fileext := filepath.Ext(newpath)
 	filebase := filepath.Base(newpath)
@@ -1200,11 +1224,14 @@ func (s *Organizer) organizeMovie(
 		&vc,
 		&m.MovieID,
 	)
+	// logger.Logtype("info", 1).Str("File", m.File).Msg("Pre Process11")
 
 	if config.GetSettingsGeneral().UseFileCache {
 		database.SlicesCacheContainsDelete(logger.CacheUnmatchedMovie, newpath)
 		database.AppendCache(logger.CacheFilesMovie, newpath)
 	}
+	// logger.Logtype("info", 1).Str("File", m.File).Msg("Pre Process12")
+
 	return nil
 }
 
@@ -1291,7 +1318,10 @@ func (s *Organizer) moveandcleanup(
 			},
 		)
 		if err != nil && !errors.Is(err, logger.ErrNotFound) {
-			logger.LogDynamicany1StringErr("error", "file move", err, logger.StrFile, also)
+			logger.Logtype("error", 1).
+				Str(logger.StrFile, also).
+				Err(err).
+				Msg("file move")
 		}
 	}
 
@@ -1343,7 +1373,10 @@ func (s *Organizer) walkcleanup(rootpath, videotarget, filename string, useremov
 						UseOther:      true,
 					})
 				if err != nil && !errors.Is(err, logger.ErrNotFound) {
-					logger.LogDynamicany1StringErr("error", "file move", err, logger.StrFile, fpath)
+					logger.Logtype("error", 1).
+						Str(logger.StrFile, fpath).
+						Err(err).
+						Msg("file move")
 				}
 			}
 		}
@@ -1377,7 +1410,10 @@ func (s *Organizer) moveremoveoldfiles(
 		err = s.moveRemoveOldMediaFile(oldfiles[idx], &oldfiles[idx], id, move)
 		if err != nil {
 			// Continue if old cannot be moved
-			logger.LogDynamicany1StringErr("error", "Move old", err, logger.StrFile, oldfiles[idx])
+			logger.Logtype("error", 1).
+				Str(logger.StrFile, oldfiles[idx]).
+				Err(err).
+				Msg("Move old")
 			return err
 		}
 	}
@@ -1447,9 +1483,68 @@ func (s *Organizer) notify(o *Organizerdata, m *database.ParseInfo, id *uint, ol
 				cfgnot.Recipient,
 			)
 			if err != nil {
-				logger.LogDynamicanyErr("error", "Error sending pushover", err)
+				logger.Logtype("error", 0).
+					Err(err).
+					Msg("Error sending pushover")
 			} else {
-				logger.LogDynamicany0("info", "Pushover message sent")
+				logger.Logtype("info", 0).
+					Msg("Pushover message sent")
+			}
+		case "gotify":
+			bl, messageTitle, _ := logger.ParseStringTemplate(s.Cfgp.Notification[idx].Title, &notify)
+			if bl {
+				continue
+			}
+			err = apiexternal.SendGotifyMessage(
+				cfgnot.ServerURL,
+				cfgnot.Apikey,
+				messagetext,
+				messageTitle,
+			)
+			if err != nil {
+				logger.Logtype("error", 0).
+					Err(err).
+					Msg("Error sending Gotify notification")
+			} else {
+				logger.Logtype("info", 0).
+					Msg("Gotify message sent")
+			}
+		case "pushbullet":
+			bl, messageTitle, _ := logger.ParseStringTemplate(s.Cfgp.Notification[idx].Title, &notify)
+			if bl {
+				continue
+			}
+			err = apiexternal.SendPushbulletMessage(
+				cfgnot.Apikey,
+				messagetext,
+				messageTitle,
+			)
+			if err != nil {
+				logger.Logtype("error", 0).
+					Err(err).
+					Msg("Error sending Pushbullet notification")
+			} else {
+				logger.Logtype("info", 0).
+					Msg("Pushbullet message sent")
+			}
+		case "apprise":
+			bl, messageTitle, _ := logger.ParseStringTemplate(s.Cfgp.Notification[idx].Title, &notify)
+			if bl {
+				continue
+			}
+			err = apiexternal.SendAppriseMessage(
+				cfgnot.ServerURL,
+				messagetext,
+				messageTitle,
+				cfgnot.AppriseURLs,
+			)
+			if err != nil {
+				logger.Logtype("error", 0).
+					Err(err).
+					Msg("Error sending Apprise notification")
+			} else {
+				logger.Logtype("info", 0).
+					Msg("Apprise message sent")
 			}
 		case "csv":
 			scanner.AppendCsv(
@@ -1493,18 +1588,29 @@ func (s *Organizer) GetSeriesEpisodes(
 			o.Oldfiles = getoldfiles
 			bl = true
 		} else {
-			if database.Getdatarow[uint](false, "select count() from serie_episode_files where serie_episode_id = ?", &m.Episodes[0].Num1) == 0 {
+			if len(m.Episodes) > 0 && database.Getdatarow[uint](false, "select count() from serie_episode_files where serie_episode_id = ?", &m.Episodes[0].Num1) == 0 {
 				bl = true
 			} else if !skipdelete {
 				bl, err = scanner.RemoveFile(o.Videofile)
 				if err == nil && bl {
-					logger.LogDynamicany3StrIntInt("info", "Lower Qual Import File removed", logger.StrPath, o.Videofile, strOldPrio, oldPrio, logger.StrPriority, m.Priority)
+					logger.Logtype("info", 3).
+						Str(logger.StrPath, o.Videofile).
+						Int(strOldPrio, oldPrio).
+						Int(logger.StrPriority, m.Priority).
+						Msg("Lower Qual Import File removed")
 					s.removeotherfiles(o.Videofile)
 					s.cleanUpFolder(o.Folder)
+					bl = false
 				} else if err != nil {
-					logger.LogDynamicanyErr("error", "delete Files", err)
+					logger.Logtype("error", 0).
+						Err(err).
+						Msg("delete Files")
+					clear(m.Episodes)
+					m.Episodes = m.Episodes[:0]
+					return err
+				} else {
+					bl = false
 				}
-				bl = false
 			}
 		}
 		if !bl {
@@ -1538,14 +1644,20 @@ func (s *Organizer) GetSeriesEpisodes(
 			} else if !skipdelete {
 				bl, err = scanner.RemoveFile(o.Videofile)
 				if err == nil && bl {
-					logger.LogDynamicany3StrIntInt("info", "Lower Qual Import File removed", logger.StrPath, o.Videofile, strOldPrio, oldPrio, logger.StrPriority, m.Priority)
+					logger.Logtype("info", 3).
+						Str(logger.StrPath, o.Videofile).
+						Int(strOldPrio, oldPrio).
+						Int(logger.StrPriority, m.Priority).
+						Msg("Lower Qual Import File removed")
 					s.removeotherfiles(o.Videofile)
 					s.cleanUpFolder(o.Folder)
 					bl = false
 					break
 				}
 				if err != nil {
-					logger.LogDynamicanyErr("error", "delete Files", err)
+					logger.Logtype("error", 0).
+						Err(err).
+						Msg("delete Files")
 				}
 				bl = false
 			}
@@ -1585,6 +1697,283 @@ func (s *Organizer) removeotherfiles(videofile string) {
 	}
 }
 
+// getArchiveExtensions returns a map of supported archive extensions for fast lookup
+func getArchiveExtensions() map[string]bool {
+	return map[string]bool{
+		".rar":     true,
+		".zip":     true,
+		".7z":      true,
+		".tar":     true,
+		".tar.gz":  true,
+		".tgz":     true,
+		".tar.bz2": true,
+		".tbz2":    true,
+		".tar.xz":  true,
+		".txz":     true,
+		".gz":      true,
+		".bz2":     true,
+		".xz":      true,
+	}
+}
+
+// IsArchiveFile checks if a file is a supported archive format
+func IsArchiveFile(filename string) bool {
+	archiveExtensions := getArchiveExtensions()
+
+	// Check for compound extensions like .tar.gz
+	lowerName := strings.ToLower(filename)
+	for ext := range archiveExtensions {
+		if strings.HasSuffix(lowerName, ext) {
+			return true
+		}
+	}
+	return false
+}
+
+// IsMainArchiveFile checks if this is the main archive file to extract for multipart archives
+func IsMainArchiveFile(filename string) bool {
+	lowerName := strings.ToLower(filename)
+
+	// For RAR multipart archives, look for .part1.rar, .part01.rar, or just .rar (single file)
+	if strings.Contains(lowerName, ".part") && strings.HasSuffix(lowerName, ".rar") {
+		// Only extract .part1.rar or .part01.rar
+		return strings.Contains(lowerName, ".part1.rar") || strings.Contains(lowerName, ".part01.rar")
+	}
+
+	// For ZIP multipart archives, look for .z01, .z02, etc. - only extract .zip
+	if strings.HasSuffix(lowerName, ".zip") && !strings.Contains(lowerName, ".z0") {
+		return true
+	}
+
+	// For 7z multipart archives, look for .7z.001, .7z.002, etc. - only extract .7z
+	if strings.Contains(lowerName, ".7z.") && !strings.HasSuffix(lowerName, ".7z") {
+		return false
+	}
+
+	// For all other formats, extract normally
+	return IsArchiveFile(filename)
+}
+
+// getUnpackCommand determines the appropriate unpacking command for a given archive file
+func getUnpackCommand(archivePath, extractPath string) (string, []string, error) {
+	generalCfg := config.GetSettingsGeneral()
+	lowerPath := strings.ToLower(archivePath)
+
+	switch {
+	case strings.HasSuffix(lowerPath, ".rar"):
+		if generalCfg.UnrarPath != "" {
+			return generalCfg.UnrarPath, []string{"x", "-o+", archivePath, extractPath}, nil
+		}
+		if generalCfg.SevenZipPath != "" {
+			return generalCfg.SevenZipPath, []string{"x", "-o" + extractPath, "-y", archivePath}, nil
+		}
+		return "unrar", []string{"x", "-o+", archivePath, extractPath}, nil
+
+	case strings.HasSuffix(lowerPath, ".zip"):
+		if generalCfg.SevenZipPath != "" {
+			return generalCfg.SevenZipPath, []string{"x", "-o" + extractPath, "-y", archivePath}, nil
+		}
+		if generalCfg.UnzipPath != "" {
+			return generalCfg.UnzipPath, []string{"-o", archivePath, "-d", extractPath}, nil
+		}
+		return "unzip", []string{"-o", archivePath, "-d", extractPath}, nil
+
+	case strings.HasSuffix(lowerPath, ".7z"):
+		if generalCfg.SevenZipPath != "" {
+			return generalCfg.SevenZipPath, []string{"x", "-o" + extractPath, "-y", archivePath}, nil
+		}
+		return "7z", []string{"x", "-o" + extractPath, "-y", archivePath}, nil
+
+	case strings.HasSuffix(lowerPath, ".tar.gz") || strings.HasSuffix(lowerPath, ".tgz"):
+		if generalCfg.TarPath != "" {
+			return generalCfg.TarPath, []string{"-xzf", archivePath, "-C", extractPath}, nil
+		}
+		if generalCfg.SevenZipPath != "" {
+			return generalCfg.SevenZipPath, []string{"x", "-o" + extractPath, "-y", archivePath}, nil
+		}
+		return "tar", []string{"-xzf", archivePath, "-C", extractPath}, nil
+
+	case strings.HasSuffix(lowerPath, ".tar.bz2") || strings.HasSuffix(lowerPath, ".tbz2"):
+		if generalCfg.TarPath != "" {
+			return generalCfg.TarPath, []string{"-xjf", archivePath, "-C", extractPath}, nil
+		}
+		if generalCfg.SevenZipPath != "" {
+			return generalCfg.SevenZipPath, []string{"x", "-o" + extractPath, "-y", archivePath}, nil
+		}
+		return "tar", []string{"-xjf", archivePath, "-C", extractPath}, nil
+
+	case strings.HasSuffix(lowerPath, ".tar.xz") || strings.HasSuffix(lowerPath, ".txz"):
+		if generalCfg.TarPath != "" {
+			return generalCfg.TarPath, []string{"-xJf", archivePath, "-C", extractPath}, nil
+		}
+		if generalCfg.SevenZipPath != "" {
+			return generalCfg.SevenZipPath, []string{"x", "-o" + extractPath, "-y", archivePath}, nil
+		}
+		return "tar", []string{"-xJf", archivePath, "-C", extractPath}, nil
+
+	case strings.HasSuffix(lowerPath, ".tar"):
+		if generalCfg.TarPath != "" {
+			return generalCfg.TarPath, []string{"-xf", archivePath, "-C", extractPath}, nil
+		}
+		if generalCfg.SevenZipPath != "" {
+			return generalCfg.SevenZipPath, []string{"x", "-o" + extractPath, "-y", archivePath}, nil
+		}
+		return "tar", []string{"-xf", archivePath, "-C", extractPath}, nil
+
+	case strings.HasSuffix(lowerPath, ".gz"):
+		if generalCfg.SevenZipPath != "" {
+			return generalCfg.SevenZipPath, []string{"x", "-o" + extractPath, "-y", archivePath}, nil
+		}
+		return "gzip", []string{"-d", "-c", archivePath}, nil
+
+	case strings.HasSuffix(lowerPath, ".bz2"):
+		if generalCfg.SevenZipPath != "" {
+			return generalCfg.SevenZipPath, []string{"x", "-o" + extractPath, "-y", archivePath}, nil
+		}
+		return "bzip2", []string{"-d", "-c", archivePath}, nil
+
+	case strings.HasSuffix(lowerPath, ".xz"):
+		if generalCfg.SevenZipPath != "" {
+			return generalCfg.SevenZipPath, []string{"x", "-o" + extractPath, "-y", archivePath}, nil
+		}
+		return "xz", []string{"-d", "-c", archivePath}, nil
+	}
+
+	return "", nil, errors.New("unsupported archive format")
+}
+
+// extractArchive extracts a single archive file to the specified directory
+func extractArchive(archivePath, extractPath string) error {
+	// Create extraction directory if it doesn't exist
+	if err := os.MkdirAll(extractPath, 0o755); err != nil {
+		return err
+	}
+
+	command, args, err := getUnpackCommand(archivePath, extractPath)
+	if err != nil {
+		return err
+	}
+
+	logger.Logtype("info", 1).
+		Str(logger.StrFile, archivePath).
+		Msg("Extracting archive")
+
+	cmd := exec.Command(command, args...)
+	cmd.Dir = filepath.Dir(archivePath)
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		logger.Logtype("error", 1).
+			Str(logger.StrFile, archivePath).
+			Err(err).
+			Msg("Archive extraction failed")
+		if len(output) > 0 {
+			logger.Logtype("debug", 1).
+				Str("output", string(output)).
+				Msg("Extraction output")
+		}
+		return err
+	}
+
+	logger.Logtype("info", 1).
+		Str(logger.StrFile, archivePath).
+		Msg("Archive extracted successfully")
+
+	return nil
+}
+
+// unpackArchivesInFolder scans a folder for archive files and extracts them
+func unpackArchivesInFolder(ctx context.Context, folder string, data *config.MediaDataImportConfig) error {
+	if !data.EnableUnpacking {
+		return nil
+	}
+
+	logger.Logtype("info", 1).
+		Str(logger.StrPath, folder).
+		Msg("Scanning for archives to unpack")
+
+	var archiveFiles []string
+
+	// Find all archive files in the folder (only main archives for multipart)
+	err := filepath.WalkDir(folder, func(fpath string, info fs.DirEntry, errw error) error {
+		if errw != nil {
+			return errw
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if info.IsDir() {
+			return nil
+		}
+
+		// Skip files in _unpack directories to avoid recursive unpacking
+		if logger.ContainsI(fpath, "_unpack") {
+			return nil
+		}
+
+		// Only extract main archive files (handles multipart archives correctly)
+		if IsMainArchiveFile(info.Name()) {
+			archiveFiles = append(archiveFiles, fpath)
+		}
+
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	if len(archiveFiles) == 0 {
+		return nil
+	}
+
+	logger.Logtype("info", 1).
+		Str(logger.StrPath, folder).
+		Msg("Found archives to extract")
+
+	// Extract each archive
+	for _, archivePath := range archiveFiles {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
+		// Create extraction path: <archive_dir>/<archive_name>_unpack/
+		archiveDir := filepath.Dir(archivePath)
+		archiveName := strings.TrimSuffix(filepath.Base(archivePath), filepath.Ext(archivePath))
+
+		// Handle compound extensions like .tar.gz and multipart names
+		for ext := range getArchiveExtensions() {
+			if strings.HasSuffix(strings.ToLower(archiveName), strings.TrimSuffix(ext, filepath.Ext(ext))) {
+				archiveName = strings.TrimSuffix(archiveName, strings.TrimSuffix(ext, filepath.Ext(ext)))
+				break
+			}
+		}
+
+		// Remove multipart suffix from archive name for extraction directory
+		archiveName = strings.TrimSuffix(archiveName, ".part1")
+		archiveName = strings.TrimSuffix(archiveName, ".part01")
+
+		extractPath := filepath.Join(archiveDir, archiveName+"_unpack")
+
+		// Skip if already extracted
+		if scanner.CheckFileExist(extractPath) {
+			logger.Logtype("info", 1).
+				Str(logger.StrFile, archivePath).
+				Msg("Archive already extracted, skipping")
+			continue
+		}
+
+		if err := extractArchive(archivePath, extractPath); err != nil {
+			logger.Logtype("error", 1).
+				Str(logger.StrFile, archivePath).
+				Err(err).
+				Msg("Failed to extract archive")
+			continue
+		}
+	}
+
+	return nil
+}
+
 // OrganizeSingleFolder walks the given folder to find media files, parses them to get metadata,
 // checks that metadata against the database, and moves/renames files based on the config.
 // It applies various filters for unsupported files, errors, etc.
@@ -1607,15 +1996,21 @@ func OrganizeSingleFolder(
 		manualid,
 	)
 	if s == nil {
-		logger.LogDynamicany1String(
-			"error",
-			"structure not found",
-			logger.StrConfig,
-			data.TemplatePath,
-		)
+		logger.Logtype("error", 1).
+			Str(logger.StrConfig, data.TemplatePath).
+			Msg("structure not found")
 		return logger.ErrNotFound
 	}
 	defer s.Close()
+
+	// Unpack archives before processing media files if enabled
+	if err := unpackArchivesInFolder(ctx, folder, data); err != nil {
+		logger.Logtype("error", 1).
+			Str(logger.StrPath, folder).
+			Err(err).
+			Msg("Failed to unpack archives")
+		// Continue processing even if unpacking fails
+	}
 
 	return filepath.WalkDir(folder, func(fpath string, info fs.DirEntry, errw error) error {
 		if errw != nil {
@@ -1632,21 +2027,11 @@ func OrganizeSingleFolder(
 		}
 
 		if logger.ContainsI(fpath, "_unpack") {
-			logger.LogDynamicany1String(
-				"warn",
-				"skipped - unpacking",
-				logger.StrFile,
-				fpath,
-			) // logpointerr
+			logger.Logtype("warn", 1).Str(logger.StrFile, fpath).Msg("skipped - unpacking") // logpointerr
 			return fs.SkipDir
 		}
 		if logger.SlicesContainsPart2I(s.sourcepathCfg.Disallowed, fpath) {
-			logger.LogDynamicany1String(
-				"warn",
-				"skipped - disallowed",
-				logger.StrFile,
-				fpath,
-			) // logpointerr
+			logger.Logtype("warn", 1).Str(logger.StrFile, fpath).Msg("skipped - disallowed") // logpointerr
 			return fs.SkipDir
 		}
 
@@ -1680,26 +2065,37 @@ func OrganizeSingleFolder(
 // It performs various checks and validations on the file, such as checking for disallowed subtitle files, minimum video size, and valid IDs. It then updates the media item's metadata and organizes the file accordingly.
 // If any errors occur during the process, it logs the errors and adds the file to the unmatched list.
 func (s *Organizer) walkorganizefolder(fpath, folder string, cfgp *config.MediaTypeConfig) error {
+	// logger.Logtype("info", 1).Str("File", fpath).Msg("Pre Parse")
+
 	m := parser.ParseFile(fpath, true, true, cfgp, -1)
 	if m == nil {
-		logger.LogDynamicany1String("error", "parse failed", logger.StrFile, fpath) // logpointerr
+		logger.Logtype("error", 1).
+			Str(logger.StrFile, fpath).
+			Msg("parse failed") // logpointerr
 		return nil
 	}
 	defer m.Close()
 	err := parser.GetDBIDs(m, cfgp, true)
+	// logger.Logtype("info", 1).Str("File", fpath).Msg("Pre Parse1")
 	if err != nil || !s.hasValidIDs(m) {
-		logger.LogDynamicany1StringErr("warn", logger.ParseFailedIDs, err, logger.StrFile, fpath)
+		logger.Logtype("warn", 1).
+			Str(logger.StrFile, fpath).
+			Err(err).
+			Msg(logger.ParseFailedIDs)
 
 		m.TempTitle = fpath
 		m.AddUnmatched(cfgp, &logger.StrStructure, err)
 		return nil
 	}
+	// logger.Logtype("info", 1).Str("File", fpath).Msg("Pre Parse2")
 
 	if s.sourcepathCfg.MinVideoSize > 0 {
 		info, err := os.Stat(fpath)
 		if err == nil {
 			if info.Size() < s.sourcepathCfg.MinVideoSizeByte {
-				logger.LogDynamicany1String("warn", "skipped - small files", logger.StrFile, fpath)
+				logger.Logtype("warn", 1).
+					Str(logger.StrFile, fpath).
+					Msg("skipped - small files")
 				if s.sourcepathCfg.Name == "" {
 					m.TempTitle = fpath
 					m.AddUnmatched(cfgp, &logger.StrStructure, errors.New("small file"))
@@ -1721,12 +2117,7 @@ func (s *Organizer) walkorganizefolder(fpath, folder string, cfgp *config.MediaT
 				return fs.SkipDir
 			}
 			if logger.TimeAfter(info.ModTime(), logger.TimeGetNow().Add(-2*time.Minute)) {
-				logger.LogDynamicany1String(
-					"error",
-					"file modified too recently",
-					logger.StrFile,
-					fpath,
-				)
+				logger.Logtype("error", 1).Str(logger.StrFile, fpath).Msg("file modified too recently")
 				return fs.SkipDir
 			}
 		}
@@ -1736,22 +2127,29 @@ func (s *Organizer) walkorganizefolder(fpath, folder string, cfgp *config.MediaT
 	} else {
 		m.TempID = m.MovieID
 	}
+	// logger.Logtype("info", 1).Str("File", fpath).Msg("Pre Parse3")
+
 	if m.ListID == -1 {
 		m.ListID = database.GetMediaListIDGetListname(s.Cfgp, &m.TempID)
 
 		if m.ListID == -1 {
-			logger.LogDynamicany1String("warn", "listcfg not found", logger.StrFile, fpath)
+			logger.Logtype("warn", 1).
+				Str(logger.StrFile, fpath).
+				Msg("listcfg not found")
 			m.TempTitle = fpath
 			m.AddUnmatched(cfgp, &logger.StrStructure, errors.New("listcfg not found"))
 			return nil
 		}
 	}
+	// logger.Logtype("info", 1).Str("File", fpath).Msg("Pre Parse4")
+
 	if config.GetSettingsGeneral().UseFileCache {
 		database.SlicesCacheContainsDelete(
 			logger.GetStringsMap(s.Cfgp.Useseries, logger.CacheUnmatched),
 			fpath,
 		)
 	}
+	// logger.Logtype("info", 1).Str("File", fpath).Msg("Pre Parse5")
 
 	if s.Cfgp.Useseries &&
 		(m.DbserieEpisodeID == 0 || m.DbserieID == 0 || m.SerieEpisodeID == 0 || m.SerieID == 0) {
@@ -1763,8 +2161,12 @@ func (s *Organizer) walkorganizefolder(fpath, folder string, cfgp *config.MediaT
 		m.AddUnmatched(cfgp, &logger.StrStructure, errors.New("no valid IDs"))
 		return nil
 	}
+	// logger.Logtype("info", 1).Str("File", fpath).Msg("Pre Parse6")
+
 	if s.checksubfiles(folder, fpath, "") {
-		logger.LogDynamicany1String("error", "check sub files", logger.StrFile, fpath)
+		logger.Logtype("error", 1).
+			Str(logger.StrFile, fpath).
+			Msg("check sub files")
 		m.TempTitle = fpath
 		m.AddUnmatched(cfgp, &logger.StrStructure, errors.New("check sub files"))
 		return nil
@@ -1800,8 +2202,12 @@ func (s *Organizer) walkorganizefolder(fpath, folder string, cfgp *config.MediaT
 	if m.ListID == -1 {
 		m.ListID = s.Cfgp.GetMediaListsEntryListID(listname)
 	}
+	// logger.Logtype("info", 1).Str("File", fpath).Msg("Pre Parse7")
+
 	if m.Checktitle(s.Cfgp, s.Cfgp.Lists[m.ListID].CfgQuality, filepath.Base(fpath)) {
-		logger.LogDynamicany1String("warn", "skipped - unwanted title", logger.StrFile, fpath)
+		logger.Logtype("warn", 1).
+			Str(logger.StrFile, fpath).
+			Msg("skipped - unwanted title")
 		m.TempTitle = fpath
 		m.AddUnmatched(cfgp, &logger.StrStructure, errors.New("unwanted title"))
 		return nil
@@ -1811,6 +2217,7 @@ func (s *Organizer) walkorganizefolder(fpath, folder string, cfgp *config.MediaT
 		m.AddUnmatched(cfgp, &logger.StrStructure, errors.New("no ListID found"))
 		return logger.ErrListnameTemplateEmpty
 	}
+	// logger.Logtype("info", 1).Str("File", fpath).Msg("Pre Parse8")
 
 	o := Organizerdata{Folder: folder, Videofile: fpath, Listid: m.ListID, Rootpath: rootpath}
 	if s.Cfgp.Useseries {
@@ -1822,7 +2229,10 @@ func (s *Organizer) walkorganizefolder(fpath, folder string, cfgp *config.MediaT
 			s.checkruntime,
 		)
 		if err != nil {
-			logger.LogDynamicany1StringErr("error", "structure", err, logger.StrFile, fpath)
+			logger.Logtype("error", 1).
+				Str(logger.StrFile, fpath).
+				Err(err).
+				Msg("structure")
 			m.TempTitle = fpath
 			m.AddUnmatched(cfgp, &logger.StrStructure, err)
 			return nil
@@ -1831,15 +2241,25 @@ func (s *Organizer) walkorganizefolder(fpath, folder string, cfgp *config.MediaT
 	} else {
 		err = s.organizeMovie(&o, m, s.Cfgp.Lists[m.ListID].CfgQuality, s.deletewronglanguage, s.checkruntime)
 		if err != nil {
-			logger.LogDynamicany1StringErr("error", "structure", err, logger.StrFile, fpath)
+			logger.Logtype("error", 1).
+				Str(logger.StrFile, fpath).
+				Err(err).
+				Msg("structure")
 			m.TempTitle = fpath
 			m.AddUnmatched(cfgp, &logger.StrStructure, err)
 			return nil
 		}
+		// logger.Logtype("info", 1).Str("File", fpath).Msg("Pre Parse9")
+
 		database.SlicesCacheContainsDelete(logger.CacheUnmatchedMovie, fpath)
+		// logger.Logtype("info", 1).Str("File", fpath).Msg("Pre Parse10")
+
 	}
+	// logger.Logtype("info", 1).Str("File", fpath).Msg("Pre Parse11")
 
 	s.cleanUpFolder(folder)
+	// logger.Logtype("info", 1).Str("File", fpath).Msg("Pre Parse12")
+
 	return nil
 }
 
@@ -1880,11 +2300,15 @@ func (s *Organizer) checksubfiles(folder, videofile, rootpath string) bool {
 		if s.sourcepathCfg.DeleteDisallowed && videofile != s.sourcepathCfg.Path {
 			s.fileCleanup(folder, videofile, rootpath)
 		}
-		logger.LogDynamicany1String("warn", "skipped - disallowed", logger.StrFile, videofile)
+		logger.Logtype("warn", 1).
+			Str(logger.StrFile, videofile).
+			Msg("skipped - disallowed")
 		return true
 	}
 	if !s.Cfgp.Useseries && count >= 2 {
-		logger.LogDynamicany1String("warn", "skipped - too many files", logger.StrFile, videofile)
+		logger.Logtype("warn", 1).
+			Str(logger.StrFile, videofile).
+			Msg("skipped - too many files")
 		return true
 	}
 	return false
@@ -1916,41 +2340,23 @@ func NewStructure(
 	manualid uint,
 ) *Organizer {
 	if cfgp == nil || !cfgp.Structure {
-		logger.LogDynamicany1StringErr(
-			"error",
-			"parse failed cfgp",
-			logger.ErrCfgpNotFound,
-			logger.StrFile,
-			sourcepathstr,
-		)
+		logger.Logtype("error", 1).
+			Str(logger.StrFile, sourcepathstr).
+			Err(logger.ErrCfgpNotFound).
+			Msg("parse failed cfgp")
 		return nil
 	}
 	if config.GetSettingsPath(sourcepathstr) == nil {
-		logger.LogDynamicany1String(
-			"error",
-			"structure source not found",
-			logger.StrConfig,
-			sourcepathstr,
-		)
+		logger.Logtype("error", 1).Str(logger.StrConfig, sourcepathstr).Msg("structure source not found")
 		return nil
 	}
 	if config.GetSettingsPath(targetpathstr) == nil {
-		logger.LogDynamicany1String(
-			"error",
-			"structure target not found",
-			logger.StrConfig,
-			targetpathstr,
-		)
+		logger.Logtype("error", 1).Str(logger.StrConfig, targetpathstr).Msg("structure target not found")
 		return nil
 	}
 
 	if config.GetSettingsPath(sourcepathstr).Name == "" {
-		logger.LogDynamicany1String(
-			"error",
-			"template "+config.GetSettingsPath(sourcepathstr).Name+" not found",
-			logger.StrFile,
-			sourcepathstr,
-		)
+		logger.Logtype("error", 1).Str(logger.StrFile, sourcepathstr).Msg("template " + config.GetSettingsPath(sourcepathstr).Name + " not found")
 		return nil
 	}
 	o := plStructure.Get()

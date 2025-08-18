@@ -81,7 +81,7 @@ func renderFolderStructurePage(csrfToken string) Node {
 
 	return Div(
 		Class("config-section-enhanced"),
-		
+
 		// Enhanced page header with gradient background
 		Div(
 			Class("page-header-enhanced"),

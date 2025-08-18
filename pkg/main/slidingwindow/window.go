@@ -65,13 +65,38 @@ func (lim *Limiter) add() {
 // limit would be exceeded, Allow returns false and the remaining duration
 // until the next event can happen. If the event can happen immediately,
 // Allow calls add to increment the count and returns true.
+// This method is atomic to prevent race conditions between check and add operations.
 func (lim *Limiter) Allow() (bool, time.Duration) {
-	ok, wait := lim.Check()
-	if !ok {
-		return false, wait
+	lim.mu.Lock()
+	defer lim.mu.Unlock()
+	
+	now := time.Now().UnixNano()
+	if now < lim.last {
+		// Date set to future for blocking
+		return false, time.Duration(lim.last - now)
 	}
-	lim.add()
-	return true, 0
+	if lim.count < lim.max {
+		// Queue not full - can allow and increment
+		lim.count++
+		lim.last = now
+		return true, 0
+	}
+
+	timeSinceStart := now - lim.start
+	timeSinceLast := now - lim.last
+
+	if timeSinceLast > lim.interval || timeSinceStart > lim.interval {
+		// Last Call long ago - reset and allow
+		lim.count = 1
+		lim.last = now
+		lim.start = now
+		return true, 0
+	}
+	
+	// Rate limit exceeded
+	remainingTime := lim.interval - timeSinceStart
+	lim.last = now
+	return false, time.Duration(remainingTime)
 }
 
 // AllowForce unconditionally increments the rate limiter count and returns

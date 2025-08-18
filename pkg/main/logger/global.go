@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"text/template"
 	"time"
 	"unicode"
@@ -547,6 +548,7 @@ var (
 	timeZone   = *time.UTC
 	// textparser is a template engine instance used for parsing and rendering text templates
 	textparser = template.New("master")
+	poolsOnce  sync.Once
 	// subRune is a set of allowed characters for slugging, filename or path generation.
 	// It contains lowercase letters, numbers, and hyphens to ensure safe and consistent naming.
 	subRune = map[rune]struct{}{
@@ -660,6 +662,31 @@ var (
 	}
 )
 
+// initializePools initializes the object pools safely with sync.Once
+func initializePools() {
+	poolsOnce.Do(func() {
+		PlAddBuffer.Init(200, 10, func(b *AddBuffer) {
+			if b.Cap() < 900 {
+				b.Grow(900)
+			}
+			if b.Len() > 1 {
+				b.Reset()
+			}
+		}, func(b *AddBuffer) bool {
+			b.Reset()
+			return false
+		})
+		PLArrAny.Init(200, 5, func(a *Arrany) { a.Arr = make([]any, 0, 20) }, func(a *Arrany) bool {
+			clear(a.Arr)
+			if cap(a.Arr) > 200 {
+				return true
+			}
+			a.Arr = a.Arr[:0]
+			return false
+		})
+	})
+}
+
 // IntToString converts any numeric type to a string.
 // It handles all integer types, including signed and unsigned.
 func IntToString(a uint16) string {
@@ -707,10 +734,10 @@ func GetTimeFormat() string {
 }
 
 // ParseStringTemplate parses a text/template string into a template.Template, caches it, and executes it with the given data.
-// It returns the executed template string and any error encountered.
+// It returns whether an error occurred, the executed template string, and any error encountered.
 func ParseStringTemplate(message string, messagedata any) (bool, string, error) {
 	if message == "" {
-		return false, "", errors.New("empty message")
+		return false, "", nil
 	}
 
 	tmplmessage := textparser.Lookup(message)
@@ -718,20 +745,22 @@ func ParseStringTemplate(message string, messagedata any) (bool, string, error) 
 		var err error
 		tmplmessage, err = textparser.New(message).Parse(message)
 		if err != nil {
-			LogDynamicanyErr("error", "template", err)
+			Logtype("error", 1).Err(err).Msg("template")
 			return true, "", err
 		}
 	}
+	initializePools()
 	doc := PlAddBuffer.Get()
 	defer PlAddBuffer.Put(doc)
 	if err := tmplmessage.Execute(doc, messagedata); err != nil {
-		LogDynamicanyErr("error", "template", err)
+		Logtype("error", 1).Err(err).Msg("template")
 		return true, "", err
 	}
 	return false, doc.String(), nil
 }
 
 func BytesToString(b []byte) string {
+	initializePools()
 	bld := PlAddBuffer.Get()
 	defer PlAddBuffer.Put(bld)
 	bld.Write(b)
@@ -767,10 +796,15 @@ func Checkhtmlentities(instr string) string {
 // unwanted characters, transliterating accented characters, replacing multiple
 // hyphens with a single hyphen, and trimming leading/trailing hyphens.
 func StringToSlugBytes(instr string) []byte {
+	initializePools()
 	ret := PlAddBuffer.Get()
 	defer PlAddBuffer.Put(ret)
 	stringToSlugBuffer(ret, Checkhtmlentities(instr))
-	return bytes.Trim(ret.Bytes(), "- ")
+	// Create a copy to avoid referencing pool memory after Put()
+	trimmed := bytes.Trim(ret.Bytes(), "- ")
+	result := make([]byte, len(trimmed))
+	copy(result, trimmed)
+	return result
 }
 
 // stringToSlugBuffer converts the given input string to a slug format by replacing
@@ -850,10 +884,14 @@ func Path(s *string, allowslash bool) {
 	if s == nil || *s == "" {
 		return
 	}
-	newpath := path.Clean(UnquoteUnescape(*s))
+	
+	// Read once to avoid concurrent modification issues
+	original := *s
+	newpath := path.Clean(UnquoteUnescape(original))
 	if !allowslash {
 		StringRemoveAllRunesP(&newpath, '\\', '/')
 	}
+	initializePools()
 	bld := PlAddBuffer.Get()
 	defer PlAddBuffer.Put(bld)
 
@@ -918,7 +956,9 @@ func TrimLeft(s string, cutset ...rune) string {
 // getfirstinstring returns the index of the first character in the string s that is not in the cutset.
 // If no such character is found, it returns -1.
 func getfirstinstring(s string, cutset []rune) int {
-	for idx, y := range s {
+	runeIdx := 0
+	byteIdx := 0
+	for _, y := range s {
 		found := false
 		for _, z := range cutset {
 			if y == z {
@@ -928,11 +968,13 @@ func getfirstinstring(s string, cutset []rune) int {
 		}
 
 		if !found {
-			if idx == 0 {
+			if runeIdx == 0 {
 				return -1
 			}
-			return idx
+			return byteIdx
 		}
+		runeIdx++
+		byteIdx += len(string(y))
 	}
 	return -1
 }
@@ -940,17 +982,11 @@ func getfirstinstring(s string, cutset []rune) int {
 // getlastinstring returns the index of the last character in the string s that is not in the cutset.
 // If no such character is found, it returns -1.
 func getlastinstring(s string, cutset []rune) int {
-	for idx := len(s) - 1; idx >= 0; idx-- {
+	runes := []rune(s)
+	for idx := len(runes) - 1; idx >= 0; idx-- {
 		found := false
-		var x rune
-		for idx2, y := range s {
-			if idx2 == idx {
-				x = y
-				break
-			}
-		}
 		for _, z := range cutset {
-			if x == z {
+			if runes[idx] == z {
 				found = true
 				break
 			}
@@ -959,7 +995,8 @@ func getlastinstring(s string, cutset []rune) int {
 			return -1
 		}
 		if !found && idx > 0 {
-			return idx + 1
+			// Convert rune index back to byte index
+			return len(string(runes[:idx+1]))
 		}
 	}
 	return -1
@@ -1053,6 +1090,7 @@ func JoinStrings(elems ...string) string {
 			return elems[0]
 		}
 	}
+	initializePools()
 	b := PlAddBuffer.Get()
 	defer PlAddBuffer.Put(b)
 	for idx := range elems {
@@ -1073,6 +1111,7 @@ func JoinStringsSep(elems []string, sep string) string {
 	case 1:
 		return elems[0]
 	}
+	initializePools()
 	b := PlAddBuffer.Get()
 	defer PlAddBuffer.Put(b)
 	l := len(elems)
@@ -1126,6 +1165,7 @@ func IndexI(a, b string) int {
 	if !hasUppera && !hasUpperb {
 		return strings.Index(a, b)
 	}
+	initializePools()
 	bufa := PlAddBuffer.Get()
 	defer PlAddBuffer.Put(bufa)
 	for _, c := range a {
@@ -1252,13 +1292,13 @@ func StringToInt32(s string) int32 {
 }
 
 // StringToUInt16 converts a string to a uint16 value.
-// It does this by first converting the string to an int64 using StringToInt,
-// and then casting the result to a uint16.
+// It returns 0 for empty strings, "0", invalid strings, negative values,
+// or values that exceed the uint16 range (0-65535).
 func StringToUInt16(s string) uint16 {
 	if s == "" || s == "0" {
 		return 0
 	}
-	i, err := strconv.ParseInt(s, 10, 16)
+	i, err := strconv.ParseUint(s, 10, 16)
 	if err != nil {
 		return 0
 	}
@@ -1370,6 +1410,7 @@ func StringRemoveAllRunesP(s *string, r ...byte) {
 			return
 		}
 	}
+	initializePools()
 	out := PlAddBuffer.Get()
 	defer PlAddBuffer.Put(out)
 	for idx := range *s {
@@ -1401,6 +1442,7 @@ func StringReplaceWith(s string, r, t byte) string {
 	if !strings.ContainsRune(s, rune(r)) {
 		return s
 	}
+	initializePools()
 	buf := PlAddBuffer.Get()
 	defer PlAddBuffer.Put(buf)
 	for idx := range s {
@@ -1422,6 +1464,7 @@ func StringReplaceWithP(s *string, r, t byte) {
 	if !strings.ContainsRune(*s, rune(r)) {
 		return
 	}
+	initializePools()
 	buf := PlAddBuffer.Get()
 	defer PlAddBuffer.Put(buf)
 	for idx := range *s {
@@ -1450,11 +1493,12 @@ func StringReplaceWithStr(s, r, t string) string {
 	}
 
 	// Apply replacements to buffer.
+	initializePools()
 	buf := PlAddBuffer.Get()
 	defer PlAddBuffer.Put(buf)
 	start := 0
 	lenr := len(r)
-	for i := range n {
+	for i := 0; i < n; i++ {
 		j := start
 		if lenr == 0 {
 			if i > 0 {
@@ -1462,7 +1506,12 @@ func StringReplaceWithStr(s, r, t string) string {
 				j += wid
 			}
 		} else {
-			j += strings.Index(s[start:], r)
+			idx := strings.Index(s[start:], r)
+			if idx == -1 {
+				// This shouldn't happen given our Count check, but handle gracefully
+				break
+			}
+			j = start + idx
 		}
 		buf.WriteString(s[start:j])
 		buf.WriteString(t)
@@ -1500,19 +1549,22 @@ func HandlePanic() {
 	// detect if panic occurs or not
 	a := recover()
 	if a != nil {
-		LogDynamicany2StrAny("error", "Recovered from panic", "RECOVER", Stack(), "vap", a)
+		Logtype("error", 1).Str("RECOVER", Stack()).Any("vap", a).Msg("Recovered from panic")
 	}
 }
 
 func Stack() string {
 	buf := make([]byte, 1024)
-	for {
+	maxSize := 64 * 1024 // Prevent runaway memory usage
+	for len(buf) <= maxSize {
 		n := runtime.Stack(buf, false)
 		if n < len(buf) {
 			return string(buf[:n])
 		}
 		buf = make([]byte, 2*len(buf))
 	}
+	// Fallback if stack is exceptionally large
+	return "Stack trace too large"
 }
 
 // TryTimeParse attempts to parse the given string `s` using the provided time layout `layout`.
@@ -1526,10 +1578,21 @@ func TryTimeParse(layout string, s string) (time.Time, bool) {
 func GetFieldComments(v any) map[string]string {
 	comments := make(map[string]string)
 
+	if v == nil {
+		return comments
+	}
+
 	t := reflect.TypeOf(v)
+	if t == nil {
+		return comments
+	}
+	
 	// If it's a pointer, get the underlying type
 	if t.Kind() == reflect.Ptr {
 		t = t.Elem()
+		if t == nil {
+			return comments
+		}
 	}
 
 	// Ensure it's a struct
@@ -1553,10 +1616,21 @@ func GetFieldComments(v any) map[string]string {
 func GetFieldDisplayNames(v any) map[string]string {
 	displayNames := make(map[string]string)
 
+	if v == nil {
+		return displayNames
+	}
+
 	t := reflect.TypeOf(v)
+	if t == nil {
+		return displayNames
+	}
+	
 	// If it's a pointer, get the underlying type
 	if t.Kind() == reflect.Ptr {
 		t = t.Elem()
+		if t == nil {
+			return displayNames
+		}
 	}
 
 	// Ensure it's a struct
@@ -1578,9 +1652,20 @@ func GetFieldDisplayNames(v any) map[string]string {
 
 // GetFieldCommentByName returns the comment for a specific field
 func GetFieldCommentByName(v any, fieldName string) string {
+	if v == nil || fieldName == "" {
+		return ""
+	}
+
 	t := reflect.TypeOf(v)
+	if t == nil {
+		return ""
+	}
+	
 	if t.Kind() == reflect.Ptr {
 		t = t.Elem()
+		if t == nil {
+			return ""
+		}
 	}
 
 	if t.Kind() != reflect.Struct {

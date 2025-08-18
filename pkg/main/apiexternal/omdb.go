@@ -54,7 +54,7 @@ type OmDBMovieSearchGlobal struct {
 // and a pointer to the rate limited HTTP client.
 type omdbClient struct {
 	Client     rlHTTPClient // Pointer to the rate limited HTTP client
-	Lim        slidingwindow.Limiter
+	Lim        *slidingwindow.Limiter
 	OmdbAPIKey string // The OMDb API key
 	QAPIKey    string // The query parameter API key
 }
@@ -76,17 +76,44 @@ func NewOmdbClient(
 	if calls == 0 {
 		calls = 1
 	}
-	omdbAPI = omdbClient{
+	lim := slidingwindow.NewLimiter(time.Duration(seconds)*time.Second, int64(calls))
+	client := &omdbClient{
 		OmdbAPIKey: apikey,
 		QAPIKey:    "&apikey=" + apikey,
-		Lim:        slidingwindow.NewLimiter(time.Duration(seconds)*time.Second, int64(calls)),
+		Lim:        &lim,
 		Client: newClient(
 			"omdb",
 			disabletls,
 			true,
-			&omdbAPI.Lim,
+			&lim,
 			false, nil, timeoutseconds),
 	}
+	setOmdbAPI(client)
+}
+
+// Helper functions for thread-safe access to omdbAPI
+func getOmdbClient() *rlHTTPClient {
+	api := getOmdbAPI()
+	if api == nil {
+		return nil
+	}
+	return &api.Client
+}
+
+func getOmdbAPIKey() string {
+	api := getOmdbAPI()
+	if api == nil {
+		return ""
+	}
+	return api.OmdbAPIKey
+}
+
+func getQAPIKey() string {
+	api := getOmdbAPI()
+	if api == nil {
+		return ""
+	}
+	return api.QAPIKey
 }
 
 // GetOmdbMovie retrieves movie details from the OMDb API by imdbid.
@@ -98,8 +125,8 @@ func GetOmdbMovie(imdbid string) (*OmDBMovie, error) {
 		return nil, logger.ErrNotFound
 	}
 	return doJSONTypeP[OmDBMovie](
-		&omdbAPI.Client,
-		logger.JoinStrings("http://www.omdbapi.com/?i=", imdbid, omdbAPI.QAPIKey),
+		getOmdbClient(),
+		logger.JoinStrings("http://www.omdbapi.com/?i=", imdbid, getQAPIKey()),
 		nil,
 	)
 }
@@ -115,20 +142,20 @@ func SearchOmdbMovie(title, yearin string) (*OmDBMovieSearchGlobal, error) {
 	}
 	if yearin != "" && yearin != "0" {
 		return doJSONTypeP[OmDBMovieSearchGlobal](
-			&omdbAPI.Client,
+			getOmdbClient(),
 			logger.JoinStrings(
 				"http://www.omdbapi.com/?s=",
 				url.QueryEscape(title),
 				"&y=",
 				yearin,
-				omdbAPI.QAPIKey,
+				getQAPIKey(),
 			),
 			nil,
 		)
 	}
 	return doJSONTypeP[OmDBMovieSearchGlobal](
-		&omdbAPI.Client,
-		logger.JoinStrings("http://www.omdbapi.com/?s=", url.QueryEscape(title), omdbAPI.QAPIKey),
+		getOmdbClient(),
+		logger.JoinStrings("http://www.omdbapi.com/?s=", url.QueryEscape(title), getQAPIKey()),
 		nil,
 	)
 }
@@ -137,13 +164,13 @@ func SearchOmdbMovie(title, yearin string) (*OmDBMovieSearchGlobal, error) {
 // Returns status code and error if any
 func TestOMDBConnectivity(timeout time.Duration) (int, error) {
 	// Check if client is initialized
-	if omdbAPI.OmdbAPIKey == "" {
+	if getOmdbAPIKey() == "" {
 		return 0, fmt.Errorf("OMDB API client not initialized or missing API key")
 	}
 
 	statusCode := 0
 	err := ProcessHTTPNoRateCheck(
-		&omdbAPI.Client,
+		getOmdbClient(),
 		"http://www.omdbapi.com/?s=test",
 		func(ctx context.Context, resp *http.Response) error {
 			statusCode = resp.StatusCode

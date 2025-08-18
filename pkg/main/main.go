@@ -17,10 +17,12 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/goadmin"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/importfeed"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/parser"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/scheduler"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/searcher"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/syncops"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/utils"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/worker"
 	"github.com/fsnotify/fsnotify"
@@ -123,6 +125,20 @@ func main() {
 		general.WorkerRSS,
 		general.WorkerIndexer,
 	)
+
+	// Initialize syncops single-writer system
+	syncops.InitSyncOps()
+
+	// Register additional SyncMaps with syncops for architectural consistency
+	syncops.RegisterSyncMap(syncops.MapTypeStructEmpty, importfeed.GetImportJobRunning())
+	syncops.RegisterSyncMap(syncops.MapTypeAny, syncops.NewSyncMap[syncops.SyncAny](20))
+	
+	// Register API client SyncMaps
+	syncops.RegisterSyncMap(syncops.MapTypeNewznab, apiexternal.NewznabClients)
+	syncops.RegisterSyncMap(syncops.MapTypeApprise, apiexternal.AppriseClients)
+	syncops.RegisterSyncMap(syncops.MapTypeGotify, apiexternal.GotifyClients)
+	syncops.RegisterSyncMap(syncops.MapTypePushbullet, apiexternal.PushbulletClients)
+	syncops.RegisterSyncMap(syncops.MapTypePushover, apiexternal.PushOverClients)
 	logger.InitLogger(logger.Config{
 		LogLevel:      general.LogLevel,
 		LogFileSize:   general.LogFileSize,
@@ -134,14 +150,14 @@ func main() {
 		TimeZone:      general.TimeZone,
 		LogZeroValues: general.LogZeroValues,
 	})
-	logger.LogDynamicany0("info", "Starting go_media_downloader")
-	logger.LogDynamicany0("info", "Version: "+version+" "+githash)
-	logger.LogDynamicany0("info", "Build Date: "+buildstamp)
-	logger.LogDynamicany0("info", "Programmer: kellerman81")
+	logger.Logtype("info", 0).Msg("Starting go_media_downloader")
+	logger.Logtype("info", 0).Msg("Version: " + version + " " + githash)
+	logger.Logtype("info", 0).Msg("Build Date: " + buildstamp)
+	logger.Logtype("info", 0).Msg("Programmer: kellerman81")
 	if general.LogLevel != "Debug" {
-		logger.LogDynamicany0("info", "Hint: Set Loglevel to Debug to see possible API Paths")
+		logger.Logtype("info", 0).Msg("Hint: Set Loglevel to Debug to see possible API Paths")
 	}
-	logger.LogDynamicany0("info", "------------------------------")
+	logger.Logtype("info", 0).Msg("------------------------------")
 
 	apiexternal.NewOmdbClient(
 		general.OmdbAPIKey,
@@ -163,6 +179,12 @@ func main() {
 		general.TvdbDisableTLSVerify,
 		general.TvdbTimeoutSeconds,
 	)
+	apiexternal.NewTVmazeClient(
+		general.TvmazeLimiterSeconds,
+		general.TvmazeLimiterCalls,
+		general.TvmazeDisableTLSVerify,
+		general.TvmazeTimeoutSeconds,
+	)
 	apiexternal.NewTraktClient(
 		general.TraktClientID,
 		general.TraktClientSecret,
@@ -172,85 +194,111 @@ func main() {
 		general.TraktTimeoutSeconds,
 		general.TraktRedirectUrl,
 	)
+	apiexternal.NewPlexClient(
+		general.PlexLimiterSeconds,
+		general.PlexLimiterCalls,
+		general.PlexDisableTLSVerify,
+		general.PlexTimeoutSeconds,
+	)
+	apiexternal.NewJellyfinClient(
+		general.JellyfinLimiterSeconds,
+		general.JellyfinLimiterCalls,
+		general.JellyfinDisableTLSVerify,
+		general.JellyfinTimeoutSeconds,
+	)
 
-	logger.LogDynamicany0("info", "Initialize Database")
+	logger.Logtype("info", 0).Msg("Initialize Database")
 	err = database.UpgradeDB()
 	if err != nil {
-		logger.LogDynamicanyErr("fatal", "Database Upgrade Failed", err)
+		logger.Logtype("fatal", 0).Err(err).Msg("Database Upgrade Failed")
 	}
 	database.UpgradeIMDB()
 	err = database.InitDB(general.DBLogLevel)
 	if err != nil {
-		logger.LogDynamicanyErr("fatal", "Database Initialization Failed", err)
+		logger.Logtype("fatal", 0).Err(err).Msg("Database Initialization Failed")
 	}
 	err = database.InitImdbdb()
 	if err != nil {
-		logger.LogDynamicanyErr("fatal", "IMDB Database Initialization Failed", err)
+		logger.Logtype("fatal", 0).Err(err).Msg("IMDB Database Initialization Failed")
 	}
 
 	if database.DBQuickCheck() != "ok" {
-		logger.LogDynamicany0("fatal", "integrity check failed")
+		logger.Logtype("fatal", 0).Msg("integrity check failed")
 		database.DBClose()
 		os.Exit(100)
 	}
-	logger.LogDynamicany0("info", "Set Vars")
+	logger.Logtype("info", 0).Msg("Set Vars")
 	// _ = html.UnescapeString("test")
 	database.SetVars()
 
-	logger.LogDynamicany0("info", "Generate All Quality Priorities")
+	logger.Logtype("info", 0).Msg("Generate All Quality Priorities")
 	parser.GenerateAllQualityPriorities()
 
-	logger.LogDynamicany0("info", "Load DB Patterns")
+	logger.Logtype("info", 0).Msg("Load DB Patterns")
 	parser.LoadDBPatterns()
 
-	logger.LogDynamicany0("info", "Load DB Cutoff")
+	logger.Logtype("info", 0).Msg("Load DB Cutoff")
 	parser.GenerateCutoffPriorities()
 	if general.SearcherSize == 0 {
 		general.SearcherSize = 5000
 	}
 	// searcher.DefineSearchPool(general.SearcherSize)
 
-	logger.LogDynamicany0("info", "Check Fill IMDB")
+	logger.Logtype("info", 0).Msg("Check Fill IMDB")
 	if database.Getdatarow[uint](true, "select count() from imdb_titles") == 0 {
 		utils.FillImdb()
 	}
 
 	if database.Getdatarow[uint](false, "select count() from dbmovies") == 0 {
-		logger.LogDynamicany0("info", "Initial Fill Movies")
+		logger.Logtype("info", 0).Msg("Initial Fill Movies")
 		utils.InitialFillMovies()
 	}
 	if database.Getdatarow[uint](false, "select count() from dbseries") == 0 {
-		logger.LogDynamicany0("info", "Initial Fill Series")
+		logger.Logtype("info", 0).Msg("Initial Fill Series")
 		utils.InitialFillSeries()
 	}
 
-	logger.LogDynamicany0("info", "Range Indexers")
+	logger.Logtype("info", 0).Msg("Range Indexers")
 	config.RangeSettingsIndexer(func(_ string, idx *config.IndexersConfig) {
 		apiexternal.Getnewznabclient(idx)
 	})
 
-	logger.LogDynamicany0("info", "Range Notification")
+	logger.Logtype("info", 0).Msg("Range Notification")
 	config.RangeSettingsNotification(func(_ string, idx *config.NotificationConfig) {
-		if idx.NotificationType == "pushover" {
+		switch idx.NotificationType {
+		case "pushover":
 			apiexternal.GetPushoverclient(idx.Apikey)
+		case "gotify":
+			if idx.ServerURL != "" {
+				apiexternal.GetGotifyClient(idx.ServerURL, idx.Apikey)
+			}
+		case "pushbullet":
+			if idx.Apikey != "" {
+				apiexternal.GetPushbulletClient(idx.Apikey)
+			}
+		case "apprise":
+			if idx.ServerURL != "" {
+				apiexternal.GetAppriseClient(idx.ServerURL)
+			}
 		}
 	})
 
-	logger.LogDynamicany0("info", "Create Cron Worker")
+	worker.RegisterWorkerSyncMaps()
+	logger.Logtype("info", 0).Msg("Create Cron Worker")
 	worker.CreateCronWorker()
 
-	logger.LogDynamicany0("info", "Inits")
+	logger.Logtype("info", 0).Msg("Inits")
 	utils.Init()
 	searcher.Init()
 
-	logger.LogDynamicany0("info", "Refresh Cache")
+	logger.Logtype("info", 0).Msg("Refresh Cache")
 	utils.Refreshcache(true)
 	utils.Refreshcache(false)
-	logger.LogDynamicany0("info", "Starting Scheduler")
+	logger.Logtype("info", 0).Msg("Starting Scheduler")
 	scheduler.InitScheduler()
 	worker.StartCronWorker()
 
-	logger.LogDynamicany0("info", "Starting API")
+	logger.Logtype("info", 0).Msg("Starting API")
 	router := gin.New()
 	router.Use(logger.GinLogger(), logger.ErrorLogger())
 	// router.Use(ginlog.SetLogger(ginlog.WithLogger(func(_ *gin.Context, l zerolog.Logger) zerolog.Logger {
@@ -293,12 +341,7 @@ func main() {
 	// webapp.Route("/web", &web.Home{})
 	// router.Handle("GET", "/web", gin.WrapH(&webapp.Handler{}))
 
-	logger.LogDynamicany(
-		"info",
-		"Starting API Webserver on port",
-		"port",
-		&general.WebPort,
-	)
+	logger.Logtype("info", 1).Str("port", general.WebPort).Msg("Starting API Webserver on port")
 	server := http.Server{
 		Addr:              ":" + general.WebPort,
 		Handler:           router,
@@ -310,39 +353,36 @@ func main() {
 		// service connections
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			database.DBClose()
-			logger.LogDynamicanyErr("error", "listen", err)
+			logger.Logtype("error", 0).Err(err).Msg("listen")
 			// logger.LogDynamicError("error", err, "listen")
 		}
 	}()
-	logger.LogDynamicany(
-		"info",
-		"Started API Webserver on port ",
-		"port",
-		&general.WebPort,
-	)
+	logger.Logtype("info", 1).Str("port", general.WebPort).Msg("Started API Webserver on port ")
 
 	// Wait for interrupt signal to gracefully shutdown the server with
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
-	logger.LogDynamicany0("info", "Server shutting down")
+	logger.Logtype("info", 0).Msg("Server shutting down")
 
 	worker.StopCronWorker()
 	worker.CloseWorkerPools()
+	syncops.Shutdown()
 
-	logger.LogDynamicany0("info", "Queues stopped")
+	logger.Logtype("info", 0).Msg("Queues stopped")
 
 	config.Slepping(true, 5)
+	database.StopCache()
 	database.DBClose()
-	logger.LogDynamicany0("info", "Databases stopped")
+	logger.Logtype("info", 0).Msg("Databases and cache stopped")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := server.Shutdown(ctx); err != nil {
-		logger.LogDynamicanyErr("error", "server shutdown", err)
+		logger.Logtype("error", 0).Err(err).Msg("server shutdown")
 		// logger.LogDynamicError("error", err, "server shutdown")
 	}
 	ctx.Done()
 
-	logger.LogDynamicany0("info", "Server exiting")
+	logger.Logtype("info", 0).Msg("Server exiting")
 }

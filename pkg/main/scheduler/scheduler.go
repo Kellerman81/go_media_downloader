@@ -28,6 +28,7 @@ func InitScheduler() {
 			IntervalScanData:           "1h",
 			IntervalScanDataMissing:    "1d",
 			IntervalScanDataimport:     "60m",
+			IntervalCacheRefresh:       "6h",
 		}})
 		config.WriteCfg()
 	}
@@ -69,19 +70,28 @@ func InitScheduler() {
 				logger.Underscore,
 				name,
 			)
+			def := config.GetSettingsScheduler("Default")
 			switch str {
 			case "refreshseriesfull":
-				intervalstr = config.GetSettingsScheduler("Default").IntervalFeedsRefreshSeriesFull
-				cronstr = config.GetSettingsScheduler("Default").CronFeedsRefreshSeriesFull
+				if def != nil {
+					intervalstr = config.GetSettingsScheduler("Default").IntervalFeedsRefreshSeriesFull
+					cronstr = config.GetSettingsScheduler("Default").CronFeedsRefreshSeriesFull
+				}
 			case "refreshseriesinc":
-				intervalstr = config.GetSettingsScheduler("Default").IntervalFeedsRefreshSeries
-				cronstr = config.GetSettingsScheduler("Default").CronFeedsRefreshSeries
+				if def != nil {
+					intervalstr = config.GetSettingsScheduler("Default").IntervalFeedsRefreshSeries
+					cronstr = config.GetSettingsScheduler("Default").CronFeedsRefreshSeries
+				}
 			case "refreshmoviesfull":
-				intervalstr = config.GetSettingsScheduler("Default").IntervalFeedsRefreshMoviesFull
-				cronstr = config.GetSettingsScheduler("Default").CronFeedsRefreshMoviesFull
+				if def != nil {
+					intervalstr = config.GetSettingsScheduler("Default").IntervalFeedsRefreshMoviesFull
+					cronstr = config.GetSettingsScheduler("Default").CronFeedsRefreshMoviesFull
+				}
 			case "refreshmoviesinc":
-				intervalstr = config.GetSettingsScheduler("Default").IntervalFeedsRefreshMovies
-				cronstr = config.GetSettingsScheduler("Default").CronFeedsRefreshMovies
+				if def != nil {
+					intervalstr = config.GetSettingsScheduler("Default").IntervalFeedsRefreshMovies
+					cronstr = config.GetSettingsScheduler("Default").CronFeedsRefreshMovies
+				}
 			case logger.StrSearchMissingInc:
 				intervalstr = cfgp.CfgScheduler.IntervalIndexerMissing
 				cronstr = cfgp.CfgScheduler.CronIndexerMissing
@@ -149,13 +159,13 @@ func InitScheduler() {
 		return nil
 	})
 
-	for _, str := range []string{"backupdb", "checkdb", "imdb"} {
+	for _, str := range []string{"backupdb", "checkdb", "imdb", "cacherefresh"} {
 		var usequeuename, name string
 		var intervalstr, cronstr string
 		// var fn func(uint32)
 		var jobname string
 		switch str {
-		case "backupdb", "checkdb":
+		case "backupdb", "checkdb", "cacherefresh":
 			usequeuename = "Data"
 		default:
 			usequeuename = "Feeds"
@@ -176,6 +186,11 @@ func InitScheduler() {
 			cronstr = config.GetSettingsScheduler("Default").CronDatabaseBackup
 			name = "Backup Database"
 			jobname = "BackupDatabase"
+		case "cacherefresh":
+			intervalstr = config.GetSettingsScheduler("Default").IntervalCacheRefresh
+			cronstr = config.GetSettingsScheduler("Default").CronCacheRefresh
+			name = "Refresh Cache"
+			jobname = "RefreshCache"
 		default:
 			continue
 		}
@@ -223,7 +238,7 @@ func schedulerdispatch(
 			dur, _ := time.ParseDuration(intervalstr)
 			err := worker.DispatchEvery(cfgpstr, dur, name, queue, jobname)
 			if err != nil {
-				logger.LogDynamicanyErr("error", "Cron", err)
+				logger.Logtype("error", 0).Err(err).Msg("Cron")
 			}
 		}
 	}
@@ -231,7 +246,7 @@ func schedulerdispatch(
 	if cronstr != "" {
 		err := worker.DispatchCron(cfgpstr, cronstr, name, queue, jobname)
 		if err != nil {
-			logger.LogDynamicanyErr("error", "Cron", err)
+			logger.Logtype("error", 0).Err(err).Msg("Cron")
 		}
 	}
 }

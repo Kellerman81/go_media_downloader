@@ -373,6 +373,27 @@ func renderGeneralConfigSections(configv *config.GeneralConfig, group string, co
 				{Name: "TmdbLimiterCalls", Type: "number", Value: configv.TmdbLimiterCalls},
 				{Name: "OmdbLimiterSeconds", Type: "number", Value: configv.OmdbLimiterSeconds},
 				{Name: "OmdbLimiterCalls", Type: "number", Value: configv.OmdbLimiterCalls},
+				{Name: "PlexLimiterSeconds", Type: "number", Value: configv.PlexLimiterSeconds},
+				{Name: "PlexLimiterCalls", Type: "number", Value: configv.PlexLimiterCalls},
+				{Name: "PlexTimeoutSeconds", Type: "number", Value: configv.PlexTimeoutSeconds},
+				{Name: "PlexDisableTLSVerify", Type: "checkbox", Value: configv.PlexDisableTLSVerify},
+				{Name: "JellyfinLimiterSeconds", Type: "number", Value: configv.JellyfinLimiterSeconds},
+				{Name: "JellyfinLimiterCalls", Type: "number", Value: configv.JellyfinLimiterCalls},
+				{Name: "JellyfinTimeoutSeconds", Type: "number", Value: configv.JellyfinTimeoutSeconds},
+				{Name: "JellyfinDisableTLSVerify", Type: "checkbox", Value: configv.JellyfinDisableTLSVerify},
+			}, group, comments, displayNames),
+
+		// External Tools
+		renderConfigGroup("External Tools", "external", false,
+			[]FormFieldDefinition{
+				{Name: "FfprobePath", Type: "text", Value: configv.FfprobePath},
+				{Name: "MediainfoPath", Type: "text", Value: configv.MediainfoPath},
+				{Name: "UseMediainfo", Type: "checkbox", Value: configv.UseMediainfo},
+				{Name: "UseMediaFallback", Type: "checkbox", Value: configv.UseMediaFallback},
+				{Name: "UnrarPath", Type: "text", Value: configv.UnrarPath},
+				{Name: "SevenZipPath", Type: "text", Value: configv.SevenZipPath},
+				{Name: "UnzipPath", Type: "text", Value: configv.UnzipPath},
+				{Name: "TarPath", Type: "text", Value: configv.TarPath},
 			}, group, comments, displayNames),
 
 		// Advanced Settings Section
@@ -391,10 +412,6 @@ func renderGeneralConfigSections(configv *config.GeneralConfig, group string, co
 				{Name: "TraktDisableTLSVerify", Type: "checkbox", Value: configv.TraktDisableTLSVerify},
 				{Name: "OmdbDisableTLSVerify", Type: "checkbox", Value: configv.OmdbDisableTLSVerify},
 				{Name: "TvdbDisableTLSVerify", Type: "checkbox", Value: configv.TvdbDisableTLSVerify},
-				{Name: "FfprobePath", Type: "text", Value: configv.FfprobePath},
-				{Name: "MediainfoPath", Type: "text", Value: configv.MediainfoPath},
-				{Name: "UseMediainfo", Type: "checkbox", Value: configv.UseMediainfo},
-				{Name: "UseMediaFallback", Type: "checkbox", Value: configv.UseMediaFallback},
 				{Name: "FailedIndexerBlockTime", Type: "number", Value: configv.FailedIndexerBlockTime},
 				{Name: "MaxDatabaseBackups", Type: "number", Value: configv.MaxDatabaseBackups},
 				{Name: "DatabaseBackupStopTasks", Type: "checkbox", Value: configv.DatabaseBackupStopTasks},
@@ -531,6 +548,7 @@ func renderMediaDataForm(prefix string, i int, configv *config.MediaDataConfig) 
 		{"TemplatePath", "select", configv.TemplatePath, config.GetSettingTemplatesFor("path")},
 		{"AddFound", "checkbox", configv.AddFound, nil},
 		{"AddFoundList", "text", configv.AddFoundList, nil},
+		{"EnableUnpacking", "checkbox", configv.EnableUnpacking, nil},
 	}
 	return renderArrayItemFormWithIndex(prefix, i, "Data", configv, fields)
 }
@@ -539,6 +557,7 @@ func renderMediaDataImportForm(prefix string, i int, configv *config.MediaDataIm
 	fields := []FormFieldDefinition{
 		{"", "removebutton", "", nil},
 		{"TemplatePath", "select", configv.TemplatePath, config.GetSettingTemplatesFor("path")},
+		{"EnableUnpacking", "checkbox", configv.EnableUnpacking, nil},
 	}
 	return renderArrayItemFormWithIndex(prefix, i, "Data Import", configv, fields)
 }
@@ -839,7 +858,7 @@ func renderDownloaderConfigSections(configv *config.DownloaderConfig, group stri
 }
 
 // renderOptimizedArrayItemForm creates an optimized array item form with organized sections
-func renderOptimizedArrayItemForm(itemType, name, displayName string, configv interface{}, sectionsContent Node) Node {
+func renderOptimizedArrayItemForm(itemType, name, displayName string, configv any, sectionsContent Node) Node {
 	// Sanitize name for use in HTML ID (replace spaces and special characters)
 	sanitizedName := strings.ReplaceAll(strings.ReplaceAll(name, " ", "-"), "_", "-")
 	collapseId := itemType + "_" + sanitizedName + "_collapse"
@@ -910,7 +929,7 @@ func renderListsConfigSections(configv *config.ListsConfig, group string, commen
 				{"", "removebutton", "", nil},
 				{"Name", "text", configv.Name, nil},
 				{"ListType", "select", configv.ListType, map[string][]string{
-					"options": {"seriesconfig", "traktpublicshowlist", "imdbcsv", "imdbfile", "traktpublicmovielist", "traktmoviepopular", "traktmovieanticipated", "traktmovietrending", "traktseriepopular", "traktserieanticipated", "traktserietrending", "newznabrss"},
+					"options": {"seriesconfig", "traktpublicshowlist", "imdbcsv", "imdbfile", "traktpublicmovielist", "traktmoviepopular", "traktmovieanticipated", "traktmovietrending", "traktseriepopular", "traktserieanticipated", "traktserietrending", "newznabrss", "plexwatchlist", "jellyfinwatchlist"},
 				}},
 				{"Enabled", "checkbox", configv.Enabled, nil},
 			}, group, comments, displayNames, accordionId),
@@ -949,6 +968,17 @@ func renderListsConfigSections(configv *config.ListsConfig, group string, commen
 				{"TmdbDiscover", "array", configv.TmdbDiscover, nil},
 				{"TmdbList", "arrayint", configv.TmdbList, nil},
 				{"RemoveFromList", "checkbox", configv.RemoveFromList, nil},
+			}, group, comments, displayNames, accordionId),
+
+		// Media Server Settings
+		renderConfigGroupWithParent("Media Server Settings", "mediaserver-lists-"+strings.ReplaceAll(strings.ReplaceAll(configv.Name, " ", "-"), "_", "-"), false,
+			[]FormFieldDefinition{
+				{"PlexServerURL", "text", configv.PlexServerURL, nil},
+				{"PlexToken", "text", configv.PlexToken, nil},
+				{"PlexUsername", "text", configv.PlexUsername, nil},
+				{"JellyfinServerURL", "text", configv.JellyfinServerURL, nil},
+				{"JellyfinToken", "text", configv.JellyfinToken, nil},
+				{"JellyfinUsername", "text", configv.JellyfinUsername, nil},
 			}, group, comments, displayNames, accordionId),
 	)
 }
@@ -1193,7 +1223,7 @@ func renderNotificationConfigSections(configv *config.NotificationConfig, group 
 				{"", "removebutton", "", nil},
 				{"Name", "text", configv.Name, nil},
 				{"NotificationType", "select", configv.NotificationType, map[string][]string{
-					"options": {"csv", "pushover"},
+					"options": {"csv", "pushover", "gotify", "pushbullet", "apprise"},
 				}},
 			}, group, comments, displayNames, accordionId),
 
@@ -1203,6 +1233,8 @@ func renderNotificationConfigSections(configv *config.NotificationConfig, group 
 				{"Apikey", "text", configv.Apikey, nil},
 				{"Recipient", "text", configv.Recipient, nil},
 				{"Outputto", "text", configv.Outputto, nil},
+				{"ServerURL", "text", configv.ServerURL, nil},
+				{"AppriseURLs", "text", configv.AppriseURLs, nil},
 			}, group, comments, displayNames, accordionId),
 	)
 }
@@ -1496,14 +1528,14 @@ func renderSchedulerConfigSections(configv *config.SchedulerConfig, group string
 		renderConfigGroupWithParent("Feed Scheduling", "feeds-"+strings.ReplaceAll(strings.ReplaceAll(configv.Name, " ", "-"), "_", "-"), false,
 			[]FormFieldDefinition{
 				{Name: "IntervalFeeds", Type: "text", Value: configv.IntervalFeeds},
-				{Name: "IntervalFeedsRefreshSeries", Type: "text", Value: configv.IntervalFeedsRefreshSeries},
-				{Name: "IntervalFeedsRefreshMovies", Type: "text", Value: configv.IntervalFeedsRefreshMovies},
-				{Name: "IntervalFeedsRefreshSeriesFull", Type: "text", Value: configv.IntervalFeedsRefreshSeriesFull},
-				{Name: "IntervalFeedsRefreshMoviesFull", Type: "text", Value: configv.IntervalFeedsRefreshMoviesFull},
 				{Name: "CronFeeds", Type: "text", Value: configv.CronFeeds},
+				{Name: "IntervalFeedsRefreshSeries", Type: "text", Value: configv.IntervalFeedsRefreshSeries},
 				{Name: "CronFeedsRefreshSeries", Type: "text", Value: configv.CronFeedsRefreshSeries},
+				{Name: "IntervalFeedsRefreshMovies", Type: "text", Value: configv.IntervalFeedsRefreshMovies},
 				{Name: "CronFeedsRefreshMovies", Type: "text", Value: configv.CronFeedsRefreshMovies},
+				{Name: "IntervalFeedsRefreshSeriesFull", Type: "text", Value: configv.IntervalFeedsRefreshSeriesFull},
 				{Name: "CronFeedsRefreshSeriesFull", Type: "text", Value: configv.CronFeedsRefreshSeriesFull},
+				{Name: "IntervalFeedsRefreshMoviesFull", Type: "text", Value: configv.IntervalFeedsRefreshMoviesFull},
 				{Name: "CronFeedsRefreshMoviesFull", Type: "text", Value: configv.CronFeedsRefreshMoviesFull},
 			}, group, comments, displayNames, "schedulerConfigAccordion-"+strings.ReplaceAll(strings.ReplaceAll(configv.Name, " ", "-"), "_", "-")),
 
@@ -1511,17 +1543,18 @@ func renderSchedulerConfigSections(configv *config.SchedulerConfig, group string
 		renderConfigGroupWithParent("Indexer Scheduling", "indexer-"+strings.ReplaceAll(strings.ReplaceAll(configv.Name, " ", "-"), "_", "-"), false,
 			[]FormFieldDefinition{
 				{Name: "IntervalIndexerMissing", Type: "text", Value: configv.IntervalIndexerMissing},
-				{Name: "IntervalIndexerUpgrade", Type: "text", Value: configv.IntervalIndexerUpgrade},
-				{Name: "IntervalIndexerMissingFull", Type: "text", Value: configv.IntervalIndexerMissingFull},
-				{Name: "IntervalIndexerUpgradeFull", Type: "text", Value: configv.IntervalIndexerUpgradeFull},
-				{Name: "IntervalIndexerRss", Type: "text", Value: configv.IntervalIndexerRss},
-				{Name: "IntervalIndexerRssSeasons", Type: "text", Value: configv.IntervalIndexerRssSeasons},
-				{Name: "IntervalIndexerRssSeasonsAll", Type: "text", Value: configv.IntervalIndexerRssSeasonsAll},
 				{Name: "CronIndexerMissing", Type: "text", Value: configv.CronIndexerMissing},
+				{Name: "IntervalIndexerUpgrade", Type: "text", Value: configv.IntervalIndexerUpgrade},
 				{Name: "CronIndexerUpgrade", Type: "text", Value: configv.CronIndexerUpgrade},
+				{Name: "IntervalIndexerMissingFull", Type: "text", Value: configv.IntervalIndexerMissingFull},
 				{Name: "CronIndexerMissingFull", Type: "text", Value: configv.CronIndexerMissingFull},
+				{Name: "IntervalIndexerUpgradeFull", Type: "text", Value: configv.IntervalIndexerUpgradeFull},
 				{Name: "CronIndexerUpgradeFull", Type: "text", Value: configv.CronIndexerUpgradeFull},
+				{Name: "IntervalIndexerRss", Type: "text", Value: configv.IntervalIndexerRss},
+				{Name: "CronIndexerRss", Type: "text", Value: configv.CronIndexerRss},
+				{Name: "IntervalIndexerRssSeasons", Type: "text", Value: configv.IntervalIndexerRssSeasons},
 				{Name: "CronIndexerRssSeasons", Type: "text", Value: configv.CronIndexerRssSeasons},
+				{Name: "IntervalIndexerRssSeasonsAll", Type: "text", Value: configv.IntervalIndexerRssSeasonsAll},
 				{Name: "CronIndexerRssSeasonsAll", Type: "text", Value: configv.CronIndexerRssSeasonsAll},
 			}, group, comments, displayNames, "schedulerConfigAccordion-"+strings.ReplaceAll(strings.ReplaceAll(configv.Name, " ", "-"), "_", "-")),
 
@@ -1529,12 +1562,12 @@ func renderSchedulerConfigSections(configv *config.SchedulerConfig, group string
 		renderConfigGroupWithParent("Title Search Scheduling", "titles-"+strings.ReplaceAll(strings.ReplaceAll(configv.Name, " ", "-"), "_", "-"), false,
 			[]FormFieldDefinition{
 				{Name: "IntervalIndexerMissingTitle", Type: "text", Value: configv.IntervalIndexerMissingTitle},
-				{Name: "IntervalIndexerUpgradeTitle", Type: "text", Value: configv.IntervalIndexerUpgradeTitle},
-				{Name: "IntervalIndexerMissingFullTitle", Type: "text", Value: configv.IntervalIndexerMissingFullTitle},
-				{Name: "IntervalIndexerUpgradeFullTitle", Type: "text", Value: configv.IntervalIndexerUpgradeFullTitle},
 				{Name: "CronIndexerMissingTitle", Type: "text", Value: configv.CronIndexerMissingTitle},
+				{Name: "IntervalIndexerUpgradeTitle", Type: "text", Value: configv.IntervalIndexerUpgradeTitle},
 				{Name: "CronIndexerUpgradeTitle", Type: "text", Value: configv.CronIndexerUpgradeTitle},
+				{Name: "IntervalIndexerMissingFullTitle", Type: "text", Value: configv.IntervalIndexerMissingFullTitle},
 				{Name: "CronIndexerMissingFullTitle", Type: "text", Value: configv.CronIndexerMissingFullTitle},
+				{Name: "IntervalIndexerUpgradeFullTitle", Type: "text", Value: configv.IntervalIndexerUpgradeFullTitle},
 				{Name: "CronIndexerUpgradeFullTitle", Type: "text", Value: configv.CronIndexerUpgradeFullTitle},
 			}, group, comments, displayNames, "schedulerConfigAccordion-"+strings.ReplaceAll(strings.ReplaceAll(configv.Name, " ", "-"), "_", "-")),
 
@@ -1542,13 +1575,19 @@ func renderSchedulerConfigSections(configv *config.SchedulerConfig, group string
 		renderConfigGroupWithParent("Data Scanning & Maintenance", "maintenance-"+strings.ReplaceAll(strings.ReplaceAll(configv.Name, " ", "-"), "_", "-"), false,
 			[]FormFieldDefinition{
 				{Name: "IntervalImdb", Type: "text", Value: configv.IntervalImdb},
-				{Name: "IntervalScanData", Type: "text", Value: configv.IntervalScanData},
-				{Name: "IntervalScanDataMissing", Type: "text", Value: configv.IntervalScanDataMissing},
-				{Name: "IntervalScanDataFlags", Type: "text", Value: configv.IntervalScanDataFlags},
-				{Name: "IntervalScanDataimport", Type: "text", Value: configv.IntervalScanDataimport},
-				{Name: "IntervalDatabaseBackup", Type: "text", Value: configv.IntervalDatabaseBackup},
-				{Name: "IntervalDatabaseCheck", Type: "text", Value: configv.IntervalDatabaseCheck},
 				{Name: "CronImdb", Type: "text", Value: configv.CronImdb},
+				{Name: "IntervalScanData", Type: "text", Value: configv.IntervalScanData},
+				{Name: "CronScanData", Type: "text", Value: configv.CronScanData},
+				{Name: "IntervalScanDataMissing", Type: "text", Value: configv.IntervalScanDataMissing},
+				{Name: "CronScanDataMissing", Type: "text", Value: configv.CronScanDataMissing},
+				{Name: "IntervalScanDataFlags", Type: "text", Value: configv.IntervalScanDataFlags},
+				{Name: "CronScanDataFlags", Type: "text", Value: configv.CronScanDataFlags},
+				{Name: "IntervalScanDataimport", Type: "text", Value: configv.IntervalScanDataimport},
+				{Name: "CronScanDataimport", Type: "text", Value: configv.CronScanDataimport},
+				{Name: "IntervalDatabaseBackup", Type: "text", Value: configv.IntervalDatabaseBackup},
+				{Name: "CronDatabaseBackup", Type: "text", Value: configv.CronDatabaseBackup},
+				{Name: "IntervalDatabaseCheck", Type: "text", Value: configv.IntervalDatabaseCheck},
+				{Name: "CronDatabaseCheck", Type: "text", Value: configv.CronDatabaseCheck},
 			}, group, comments, displayNames, "schedulerConfigAccordion-"+strings.ReplaceAll(strings.ReplaceAll(configv.Name, " ", "-"), "_", "-")),
 	)
 }

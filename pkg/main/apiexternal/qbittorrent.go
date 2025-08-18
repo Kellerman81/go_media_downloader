@@ -49,7 +49,7 @@ func newQBittorrentClient(urlv string) *qbtClient {
 	client := &qbtClient{}
 
 	// ensure url ends with "/"
-	if urlv[len(urlv)-1:] != "/" {
+	if len(urlv) == 0 || urlv[len(urlv)-1:] != "/" {
 		urlv += "/"
 	}
 

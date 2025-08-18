@@ -211,6 +211,7 @@ func TestAddBuffer_WriteInt(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			initializePools()
 			b := PlAddBuffer.Get()
 			b.WriteInt(tt.input)
 			if b.String() != tt.expected {
@@ -234,6 +235,7 @@ func TestAddBuffer_WriteUInt16(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			initializePools()
 			b := PlAddBuffer.Get()
 			b.WriteUInt16(tt.input)
 			if b.String() != tt.expected {
@@ -257,6 +259,7 @@ func TestAddBuffer_WriteUInt(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			initializePools()
 			b := PlAddBuffer.Get()
 			b.WriteUInt(tt.input)
 			if b.String() != tt.expected {
@@ -280,6 +283,7 @@ func TestAddBuffer_WriteStringMap(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			initializePools()
 			b := PlAddBuffer.Get()
 			b.WriteStringMap(tt.useseries, tt.typestr)
 			result := b.String()
@@ -311,6 +315,7 @@ func TestAddBuffer_WriteURL(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			initializePools()
 			b := PlAddBuffer.Get()
 			b.WriteURL(tt.input)
 			if b.String() != tt.expected {

@@ -272,8 +272,8 @@ func apimoviesAllJobs(c *gin.Context) {
 
 		switch c.Param(StrJobLower) {
 		case "data", logger.StrDataFull, logger.StrStructure, logger.StrClearHistory:
-			worker.Dispatch(c.Param(StrJobLower)+"_"+cfgpstr, func(key uint32) error {
-				return utils.SingleJobs(c.Param(StrJobLower), cfgpstr, "", true, key)
+			worker.Dispatch(c.Param(StrJobLower)+"_"+cfgpstr, func(key uint32, ctx context.Context) error {
+				return utils.SingleJobs(ctx, c.Param(StrJobLower), cfgpstr, "", true, key)
 			}, "Data")
 		case logger.StrSearchMissingFull,
 			logger.StrSearchMissingInc,
@@ -283,12 +283,12 @@ func apimoviesAllJobs(c *gin.Context) {
 			logger.StrSearchMissingIncTitle,
 			logger.StrSearchUpgradeFullTitle,
 			logger.StrSearchUpgradeIncTitle:
-			worker.Dispatch(c.Param(StrJobLower)+"_"+cfgpstr, func(key uint32) error {
-				return utils.SingleJobs(c.Param(StrJobLower), cfgpstr, "", true, key)
+			worker.Dispatch(c.Param(StrJobLower)+"_"+cfgpstr, func(key uint32, ctx context.Context) error {
+				return utils.SingleJobs(ctx, c.Param(StrJobLower), cfgpstr, "", true, key)
 			}, "Search")
 		case logger.StrRss:
-			worker.Dispatch(c.Param(StrJobLower)+"_"+cfgpstr, func(key uint32) error {
-				return utils.SingleJobs(c.Param(StrJobLower), cfgpstr, "", true, key)
+			worker.Dispatch(c.Param(StrJobLower)+"_"+cfgpstr, func(key uint32, ctx context.Context) error {
+				return utils.SingleJobs(ctx, c.Param(StrJobLower), cfgpstr, "", true, key)
 			}, "RSS")
 		case logger.StrFeeds,
 			logger.StrCheckMissing,
@@ -310,8 +310,8 @@ func apimoviesAllJobs(c *gin.Context) {
 				if c.Param(StrJobLower) == logger.StrFeeds {
 					if errsub := worker.Dispatch(
 						c.Param(StrJobLower)+"_"+cfgpstr+"_"+listname,
-						func(key uint32) error {
-							return utils.SingleJobs(c.Param(StrJobLower), cfgpstr, listname, true, key)
+						func(key uint32, ctx context.Context) error {
+							return utils.SingleJobs(ctx, c.Param(StrJobLower), cfgpstr, listname, true, key)
 						},
 						"Feeds",
 					); errsub != nil {
@@ -320,8 +320,8 @@ func apimoviesAllJobs(c *gin.Context) {
 				} else {
 					if errsub := worker.Dispatch(
 						c.Param(StrJobLower)+"_"+cfgpstr+"_"+listname,
-						func(key uint32) error {
-							return utils.SingleJobs(c.Param(StrJobLower), cfgpstr, listname, true, key)
+						func(key uint32, ctx context.Context) error {
+							return utils.SingleJobs(ctx, c.Param(StrJobLower), cfgpstr, listname, true, key)
 						},
 						"Data",
 					); errsub != nil {
@@ -333,8 +333,8 @@ func apimoviesAllJobs(c *gin.Context) {
 					c.Param(StrJobLower) == logger.StrReachedFlag {
 					if errsub := worker.Dispatch(
 						c.Param(StrJobLower)+"_"+cfgpstr+"_"+listname,
-						func(key uint32) error {
-							return utils.SingleJobs(c.Param(StrJobLower), cfgpstr, listname, true, key)
+						func(key uint32, ctx context.Context) error {
+							return utils.SingleJobs(ctx, c.Param(StrJobLower), cfgpstr, listname, true, key)
 						},
 						"Data",
 					); errsub != nil {
@@ -345,18 +345,18 @@ func apimoviesAllJobs(c *gin.Context) {
 			}
 			return err
 		case "refresh":
-			return worker.Dispatch(logger.StrRefreshMovies, func(key uint32) error {
-				return utils.SingleJobs("refresh", cfgpstr, "", false, key)
+			return worker.Dispatch(logger.StrRefreshMovies, func(key uint32, ctx context.Context) error {
+				return utils.SingleJobs(ctx, "refresh", cfgpstr, "", false, key)
 			}, "Feeds")
 		case "refreshinc":
-			return worker.Dispatch(logger.StrRefreshMoviesInc, func(key uint32) error {
-				return utils.SingleJobs("refreshinc", cfgpstr, "", false, key)
+			return worker.Dispatch(logger.StrRefreshMoviesInc, func(key uint32, ctx context.Context) error {
+				return utils.SingleJobs(ctx, "refreshinc", cfgpstr, "", false, key)
 			}, "Feeds")
 		case "":
 			return nil
 		default:
-			return worker.Dispatch(c.Param(StrJobLower)+"_"+cfgpstr, func(key uint32) error {
-				return utils.SingleJobs(c.Param(StrJobLower), cfgpstr, "", true, key)
+			return worker.Dispatch(c.Param(StrJobLower)+"_"+cfgpstr, func(key uint32, ctx context.Context) error {
+				return utils.SingleJobs(ctx, c.Param(StrJobLower), cfgpstr, "", true, key)
 			}, "Data")
 		}
 		return nil
@@ -386,8 +386,8 @@ func apimoviesJobs(c *gin.Context) {
 
 	switch c.Param(StrJobLower) {
 	case "data", logger.StrDataFull, logger.StrStructure, logger.StrClearHistory:
-		worker.Dispatch(c.Param(StrJobLower)+"_movies_"+c.Param("name"), func(key uint32) error {
-			return utils.SingleJobs(c.Param(StrJobLower), cfgpstr, "", true, key)
+		worker.Dispatch(c.Param(StrJobLower)+"_movies_"+c.Param("name"), func(key uint32, ctx context.Context) error {
+			return utils.SingleJobs(ctx, c.Param(StrJobLower), cfgpstr, "", true, key)
 		}, "Data")
 	case logger.StrSearchMissingFull,
 		logger.StrSearchMissingInc,
@@ -397,12 +397,12 @@ func apimoviesJobs(c *gin.Context) {
 		logger.StrSearchMissingIncTitle,
 		logger.StrSearchUpgradeFullTitle,
 		logger.StrSearchUpgradeIncTitle:
-		worker.Dispatch(c.Param(StrJobLower)+"_movies_"+c.Param("name"), func(key uint32) error {
-			return utils.SingleJobs(c.Param(StrJobLower), cfgpstr, "", true, key)
+		worker.Dispatch(c.Param(StrJobLower)+"_movies_"+c.Param("name"), func(key uint32, ctx context.Context) error {
+			return utils.SingleJobs(ctx, c.Param(StrJobLower), cfgpstr, "", true, key)
 		}, "Search")
 	case logger.StrRss:
-		worker.Dispatch(c.Param(StrJobLower)+"_movies_"+c.Param("name"), func(key uint32) error {
-			return utils.SingleJobs(c.Param(StrJobLower), cfgpstr, "", true, key)
+		worker.Dispatch(c.Param(StrJobLower)+"_movies_"+c.Param("name"), func(key uint32, ctx context.Context) error {
+			return utils.SingleJobs(ctx, c.Param(StrJobLower), cfgpstr, "", true, key)
 		}, "RSS")
 	case logger.StrFeeds,
 		logger.StrCheckMissing,
@@ -429,20 +429,13 @@ func apimoviesJobs(c *gin.Context) {
 					}
 					listname := media.Lists[idxlist].Name
 					if c.Param(StrJobLower) == logger.StrFeeds {
-						logger.LogDynamicany2StrAny(
-							"debug",
-							"add job",
-							logger.StrTitle,
-							media.Name,
-							"List",
-							&media.Lists[idxlist].Name,
-						)
+						logger.Logtype("debug", 2).Str(logger.StrTitle, media.Name).Any("List", &media.Lists[idxlist].Name).Msg("add job")
 						worker.Dispatch(
 							c.Param(
 								StrJobLower,
 							)+"_movies_"+media.Name+"_"+media.Lists[idxlist].Name,
-							func(key uint32) error {
-								return utils.SingleJobs(
+							func(key uint32, ctx context.Context) error {
+								return utils.SingleJobs(ctx,
 									c.Param(StrJobLower),
 									cfgpstr,
 									listname,
@@ -460,8 +453,8 @@ func apimoviesJobs(c *gin.Context) {
 							c.Param(
 								StrJobLower,
 							)+"_movies_"+media.Name+"_"+media.Lists[idxlist].Name,
-							func(key uint32) error {
-								return utils.SingleJobs(
+							func(key uint32, ctx context.Context) error {
+								return utils.SingleJobs(ctx,
 									c.Param(StrJobLower),
 									cfgpstr,
 									listname,
@@ -479,18 +472,18 @@ func apimoviesJobs(c *gin.Context) {
 			return nil
 		})
 	case "refresh":
-		worker.Dispatch(logger.StrRefreshMovies, func(key uint32) error {
-			return utils.SingleJobs("refresh", cfgpstr, "", false, key)
+		worker.Dispatch(logger.StrRefreshMovies, func(key uint32, ctx context.Context) error {
+			return utils.SingleJobs(ctx, "refresh", cfgpstr, "", false, key)
 		}, "Feeds")
 	case "refreshinc":
-		worker.Dispatch(logger.StrRefreshMoviesInc, func(key uint32) error {
-			return utils.SingleJobs("refreshinc", cfgpstr, "", false, key)
+		worker.Dispatch(logger.StrRefreshMoviesInc, func(key uint32, ctx context.Context) error {
+			return utils.SingleJobs(ctx, "refreshinc", cfgpstr, "", false, key)
 		}, "Feeds")
 	case "":
 		break
 	default:
-		worker.Dispatch(c.Param(StrJobLower)+"_movies_"+c.Param("name"), func(key uint32) error {
-			return utils.SingleJobs(c.Param(StrJobLower), cfgpstr, "", true, key)
+		worker.Dispatch(c.Param(StrJobLower)+"_movies_"+c.Param("name"), func(key uint32, ctx context.Context) error {
+			return utils.SingleJobs(ctx, c.Param(StrJobLower), cfgpstr, "", true, key)
 		}, "Data")
 	}
 	sendSuccess(c, returnval)
@@ -668,22 +661,13 @@ func apimoviesSearch(c *gin.Context) {
 			if strings.EqualFold(media.Lists[idxlist].Name, movie.Listname) {
 				worker.Dispatch(
 					"searchmovie_movies_"+media.Name+"_"+strconv.Itoa(int(movie.ID)),
-					func(uint32) error {
-						ctx := context.Background()
+					func(_ uint32, ctx context.Context) error {
 						searchvar := searcher.NewSearcher(media, nil, "", nil)
 						err = searchvar.MediaSearch(ctx, media, movie.ID, true, false, false)
 
 						if err != nil {
 							if err != nil && !errors.Is(err, logger.ErrDisabled) {
-								logger.LogDynamicany(
-									"error",
-									"Search Failed",
-									"id",
-									&movie.ID,
-									"typ",
-									&logger.StrMovie,
-									err,
-								)
+								logger.Logtype("error", 2).Any("id", &movie.ID).Str("typ", logger.StrMovie).Err(err).Msg("Search Failed")
 							}
 						} else {
 							if len(searchvar.Accepted) >= 1 {
@@ -851,8 +835,8 @@ func apirefreshMovies(c *gin.Context) {
 		}
 		return false
 	})
-	worker.Dispatch(logger.StrRefreshMovies, func(key uint32) error {
-		return utils.SingleJobs("refresh", cfgp.NamePrefix, "", false, key)
+	worker.Dispatch(logger.StrRefreshMovies, func(key uint32, ctx context.Context) error {
+		return utils.SingleJobs(ctx, "refresh", cfgp.NamePrefix, "", false, key)
 	}, "Feeds")
 	sendSuccess(c, StrStarted)
 }
@@ -875,7 +859,7 @@ func apirefreshMovie(c *gin.Context) {
 		return false
 	})
 	id := c.Param(logger.StrID)
-	worker.Dispatch("Refresh Single Movie_"+c.Param(logger.StrID), func(uint32) error {
+	worker.Dispatch("Refresh Single Movie_"+c.Param(logger.StrID), func(_ uint32, _ context.Context) error {
 		return utils.RefreshMovie(cfgp, &id)
 	}, "Feeds")
 	sendSuccess(c, StrStarted)
@@ -897,8 +881,8 @@ func apirefreshMoviesInc(c *gin.Context) {
 		}
 		return false
 	})
-	worker.Dispatch(logger.StrRefreshMoviesInc, func(key uint32) error {
-		return utils.SingleJobs("refreshinc", cfgp.NamePrefix, "", false, key)
+	worker.Dispatch(logger.StrRefreshMoviesInc, func(key uint32, ctx context.Context) error {
+		return utils.SingleJobs(ctx, "refreshinc", cfgp.NamePrefix, "", false, key)
 	}, "Feeds")
 	sendSuccess(c, StrStarted)
 }
@@ -912,7 +896,7 @@ func apirefreshMoviesInc(c *gin.Context) {
 // @Failure      401   {object}  Jsonerror
 // @Router       /api/movies/search/history/clear/{name} [get].
 func apimoviesClearHistoryName(c *gin.Context) {
-	utils.SingleJobs(logger.StrClearHistory, "movie_"+c.Param("name"), "", true, 0)
+	utils.SingleJobs(c, logger.StrClearHistory, "movie_"+c.Param("name"), "", true, 0)
 	sendSuccess(c, StrStarted)
 }
 

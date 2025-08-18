@@ -106,16 +106,22 @@ func InitCfg() {
 
 	err := UpgradeDB()
 	if err != nil {
-		logger.LogDynamicanyErr("fatal", "Database Upgrade Failed", err)
+		logger.Logtype("fatal", 0).
+			Err(err).
+			Msg("Database Upgrade Failed")
 	}
 	UpgradeIMDB()
 	err = InitDB(config.GetSettingsGeneral().DBLogLevel)
 	if err != nil {
-		logger.LogDynamicanyErr("fatal", "Database Initialization Failed", err)
+		logger.Logtype("fatal", 0).
+			Err(err).
+			Msg("Database Initialization Failed")
 	}
 	err = InitImdbdb()
 	if err != nil {
-		logger.LogDynamicanyErr("fatal", "IMDB Database Initialization Failed", err)
+		logger.Logtype("fatal", 0).
+			Err(err).
+			Msg("IMDB Database Initialization Failed")
 	}
 	SetVars()
 }
@@ -162,7 +168,7 @@ func InitDB(dbloglevel string) error {
 	dbData.SetMaxOpenConns(25)
 	dbData.SetConnMaxLifetime(5 * time.Minute) // Rotate connections
 	dbData.SetConnMaxIdleTime(1 * time.Minute) // Close idle
-	DBLogLevel = strings.ToLower(dbloglevel)
+	SetDBLogLevel(strings.ToLower(dbloglevel)) // Use thread-safe accessor
 	return nil
 }
 
@@ -181,7 +187,7 @@ func CloseImdb() {
 // This version string is used for database migration tracking and compatibility checks.
 // The version follows semantic versioning patterns and is updated during database upgrades.
 func GetVersion() string {
-	return DBVersion
+	return GetDBVersion() // Use thread-safe accessor
 }
 
 // SetVersion sets the global DBVersion variable to the given version string.
@@ -189,7 +195,7 @@ func GetVersion() string {
 // to update the current database schema version. Should be called after
 // successful database upgrades to maintain version consistency.
 func SetVersion(str string) {
-	DBVersion = str
+	SetDBVersion(str) // Use thread-safe accessor
 }
 
 // OpenImdbdb opens a connection to the imdb.db SQLite database.
@@ -257,6 +263,11 @@ func getqualityregexes(querystr, querycount string) []Qualities {
 // - DBConnect.QualityStrIn
 // - DBConnect.ResolutionStrIn.
 func SetVars() {
+	// Acquire write lock to safely modify DBConnect global variable
+	mu := getGlobalVarMutex()
+	mu.Lock()
+	defer mu.Unlock()
+
 	var totalAudioCap, totalCodecCap, totalQualityCap, totalResolutionCap int
 	// prepare regexes - if you don't do this - you might get a memory leak
 	DBConnect.GetresolutionsIn = getqualityregexes(
@@ -1066,10 +1077,14 @@ func backupdb(backupPath *string) error {
 func Backup(backupPath *string, maxbackups int) error {
 	err := backupdb(backupPath)
 	if err != nil {
-		logger.LogDynamicany1StringErr("error", "exec", err, "query", "VACUUM INTO ?")
+		logger.Logtype("error", 1).
+			Str("query", "VACUUM INTO ?").
+			Err(err).
+			Msg("exec")
 		return err
 	}
-	logger.LogDynamicany0("info", "End db backup")
+	logger.Logtype("info", 0).
+		Msg("End db backup")
 	if maxbackups == 0 {
 		return nil
 	}
@@ -1199,7 +1214,8 @@ func GetMediaQualityConfig(cfgp *config.MediaTypeConfig, mediaid *uint) *config.
 // listname is empty, or no list with that name exists.
 func GetMediaListIDGetListname(cfgp *config.MediaTypeConfig, mediaid *uint) int {
 	if cfgp == nil {
-		logger.LogDynamicany0("error", "the config couldnt be found")
+		logger.Logtype("error", 0).
+			Msg("the config couldnt be found")
 		return -1
 	}
 	if *mediaid == 0 {
@@ -1246,31 +1262,33 @@ func GetDBStaticOneStringOneIntIdx(tbl []DbstaticOneStringOneUInt, v string) int
 }
 
 func GetSettingTemplatesFor(key string) map[string][]string {
+	// Get a thread-safe copy of DBConnect
+	dbConnect := GetDBConnect()
 	var out map[string][]string = make(map[string][]string)
 
 	switch key {
 	case "quality":
-		out["options"] = make([]string, 0, len(DBConnect.QualityStrIn))
+		out["options"] = make([]string, 0, len(dbConnect.QualityStrIn))
 		out["options"] = append(out["options"], "")
-		for _, cfg := range DBConnect.QualityStrIn {
+		for _, cfg := range dbConnect.QualityStrIn {
 			out["options"] = append(out["options"], cfg)
 		}
 	case "resolution":
-		out["options"] = make([]string, 0, len(DBConnect.ResolutionStrIn))
+		out["options"] = make([]string, 0, len(dbConnect.ResolutionStrIn))
 		out["options"] = append(out["options"], "")
-		for _, cfg := range DBConnect.ResolutionStrIn {
+		for _, cfg := range dbConnect.ResolutionStrIn {
 			out["options"] = append(out["options"], cfg)
 		}
 	case "audio":
-		out["options"] = make([]string, 0, len(DBConnect.AudioStrIn))
+		out["options"] = make([]string, 0, len(dbConnect.AudioStrIn))
 		out["options"] = append(out["options"], "")
-		for _, cfg := range DBConnect.AudioStrIn {
+		for _, cfg := range dbConnect.AudioStrIn {
 			out["options"] = append(out["options"], cfg)
 		}
 	case "codec":
-		out["options"] = make([]string, 0, len(DBConnect.CodecStrIn))
+		out["options"] = make([]string, 0, len(dbConnect.CodecStrIn))
 		out["options"] = append(out["options"], "")
-		for _, cfg := range DBConnect.CodecStrIn {
+		for _, cfg := range dbConnect.CodecStrIn {
 			out["options"] = append(out["options"], cfg)
 		}
 	default:

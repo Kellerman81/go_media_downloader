@@ -103,8 +103,14 @@ func LoggerWithOptions(opt *Options) gin.HandlerFunc {
 
 		// Get payload from request
 		var payload []byte
+		var payloadErr error
 		if !opt.isExcluded(PayloadFieldName) {
-			payload, _ = io.ReadAll(ctx.Request.Body)
+			payload, payloadErr = io.ReadAll(ctx.Request.Body)
+			if payloadErr != nil {
+				// Log the error but continue processing
+				z.Warn().Err(payloadErr).Msg("Failed to read request payload")
+				payload = []byte{}
+			}
 			ctx.Request.Body = io.NopCloser(bytes.NewReader(payload))
 		}
 

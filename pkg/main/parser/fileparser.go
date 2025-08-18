@@ -100,16 +100,18 @@ func (pattern *regexpattern) getmatchesroot(
 
 	lensubmatches := len(matchest)
 	groupIndex := pattern.getgroup * 2
+	// Ensure we have enough groups for the requested index
 	if groupIndex+1 >= lensubmatches || matchest[groupIndex+1] == -1 {
 		return -1, -1
 	}
 
+	// For patterns with multiple groups, verify the specific group exists
 	if lensubmatches >= 4 && matchest[3] != -1 && groupIndex >= 4 {
 		return matchest[groupIndex], matchest[groupIndex+1]
-	} else if lensubmatches <= 2 && groupIndex < lensubmatches*2 {
+	} else if lensubmatches <= 2 {
 		return matchest[groupIndex], matchest[groupIndex+1]
-	} else if lensubmatches >= 4 && matchest[3] != -1 {
-		return -1, -1
+	} else if lensubmatches >= 4 {
+		return matchest[groupIndex], matchest[groupIndex+1]
 	}
 
 	return matchest[groupIndex], matchest[groupIndex+1]
@@ -791,6 +793,14 @@ func isVideoStream(stream *struct {
 	return stream.CodecType == "video" || strings.EqualFold(stream.CodecType, "video")
 }
 
+// normalizeDimensions ensures height is always smaller than width by swapping if necessary.
+// This normalizes dimensions for consistent processing.
+func normalizeDimensions(m *database.ParseInfo) {
+	if m.Height > m.Width {
+		m.Height, m.Width = m.Width, m.Height
+	}
+}
+
 // updateAudio updates the audio metadata in the ParseInfo struct based on the provided stream information.
 // It updates the audio codec and sets the corresponding audio ID using the Gettypeids method.
 // Returns true if the audio codec has changed, false otherwise.
@@ -851,9 +861,7 @@ func updateVideo(m *database.ParseInfo, stream *struct {
 	}
 
 	// Normalize dimensions
-	if m.Height > m.Width {
-		m.Height, m.Width = m.Width, m.Height
-	}
+	normalizeDimensions(m)
 
 	var resolutionChanged bool
 	if getreso := m.Parseresolution(); getreso != "" &&
@@ -976,9 +984,7 @@ func updateVideoFromMediaInfo(m *database.ParseInfo, track *struct {
 	m.Runtime = logger.StringToInt(splitByFull(track.Duration, '.'))
 
 	// Normalize dimensions
-	if m.Height > m.Width {
-		m.Height, m.Width = m.Width, m.Height
-	}
+	normalizeDimensions(m)
 
 	var resolutionChanged bool
 	if getreso := m.Parseresolution(); getreso != "" &&
@@ -1049,14 +1055,10 @@ func GetPriorityMapQual(
 	intid, cwanted := findPriorityIndex(reso, qual, codec, aud, quality, checkwanted)
 	if intid == -1 {
 		m.TempTitle = BuildPrioStr(reso, qual, codec, aud)
-		logger.LogDynamicany2StrAny(
-			"debug",
-			"prio not found",
-			"in",
-			quality.Name,
-			"searched for",
-			&m.TempTitle,
-		)
+		logger.Logtype("debug", 2).
+			Str("in", quality.Name).
+			Str("searched for", m.TempTitle).
+			Msg("prio not found")
 		m.Priority = 0
 		return
 	}
@@ -1132,7 +1134,17 @@ func applyPriorityModifiers(m *database.ParseInfo) {
 // GetwantedArrPrio returns the priority value from the allQualityPrioritiesWantedT slice
 // at the given index.
 func GetwantedArrPrio(intid int) int {
+	if intid < 0 || intid >= len(allQualityPrioritiesWantedT) {
+		return 0
+	}
 	return allQualityPrioritiesWantedT[intid].Priority
+}
+
+func GetAllArrPrio(intid int) int {
+	if intid < 0 || intid >= len(allQualityPrioritiesT) {
+		return 0
+	}
+	return allQualityPrioritiesT[intid].Priority
 }
 
 // findpriorityidxwanted searches through the allQualityPrioritiesWantedT slice

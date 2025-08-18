@@ -8,6 +8,7 @@ import (
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 )
 
 // getPathsToScan returns all media paths that should be scanned for cleanup
@@ -73,7 +74,7 @@ func findOrphanedFiles(scanPaths []string, mediaTypes string, minFileSize int64)
 
 	// Scan filesystem and check against database
 	for _, basePath := range scanPaths {
-		filepath.WalkDir(basePath, func(path string, d os.DirEntry, err error) error {
+		if err := filepath.WalkDir(basePath, func(path string, d os.DirEntry, err error) error {
 			if err != nil || d.IsDir() {
 				return nil
 			}
@@ -95,7 +96,12 @@ func findOrphanedFiles(scanPaths []string, mediaTypes string, minFileSize int64)
 			}
 
 			return nil
-		})
+		}); err != nil {
+			logger.Logtype("error", 1).
+				Str("path", basePath).
+				Err(err).
+				Msg("Failed to walk directory for orphaned files")
+		}
 	}
 
 	return orphanedFiles
@@ -108,7 +114,7 @@ func findDuplicateFiles(scanPaths []string, minFileSize int64) [][]string {
 
 	// Scan all files and group by size
 	for _, basePath := range scanPaths {
-		filepath.WalkDir(basePath, func(path string, d os.DirEntry, err error) error {
+		if err := filepath.WalkDir(basePath, func(path string, d os.DirEntry, err error) error {
 			if err != nil || d.IsDir() || !isMediaFile(path) {
 				return nil
 			}
@@ -125,7 +131,12 @@ func findDuplicateFiles(scanPaths []string, minFileSize int64) [][]string {
 
 			sizeMap[size] = append(sizeMap[size], path)
 			return nil
-		})
+		}); err != nil {
+			logger.Logtype("error", 1).
+				Str("path", basePath).
+				Err(err).
+				Msg("Failed to walk directory for duplicate files")
+		}
 	}
 
 	// Group files that have the same size (potential duplicates)
@@ -174,14 +185,14 @@ func findEmptyDirectories(scanPaths []string, minFileSize int64) []string {
 			continue
 		}
 
-		filepath.WalkDir(basePath, func(path string, d os.DirEntry, err error) error {
+		if err := filepath.WalkDir(basePath, func(path string, d os.DirEntry, err error) error {
 			if err != nil || !d.IsDir() || path == basePath {
 				return nil
 			}
 
 			// Check if directory has any media files
 			hasMediaFiles := false
-			filepath.WalkDir(path, func(filePath string, fileInfo os.DirEntry, fileErr error) error {
+			if err := filepath.WalkDir(path, func(filePath string, fileInfo os.DirEntry, fileErr error) error {
 				if fileErr != nil || fileInfo.IsDir() {
 					return nil
 				}
@@ -199,14 +210,24 @@ func findEmptyDirectories(scanPaths []string, minFileSize int64) []string {
 					}
 				}
 				return nil
-			})
+			}); err != nil {
+				logger.Logtype("error", 1).
+					Str("path", path).
+					Err(err).
+					Msg("Failed to walk directory checking for media files")
+			}
 
 			if !hasMediaFiles {
 				emptyDirs = append(emptyDirs, path)
 			}
 
 			return nil
-		})
+		}); err != nil {
+			logger.Logtype("error", 1).
+				Str("path", basePath).
+				Err(err).
+				Msg("Failed to walk directory for empty directories")
+		}
 	}
 
 	return emptyDirs

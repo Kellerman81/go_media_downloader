@@ -14,7 +14,7 @@ import (
 // checkSeriesMissingEpisodes finds missing episodes for series
 func checkSeriesMissingEpisodes(seriesName string, seasonNumber int, includeSpecials, onlyAired bool, dateRangeDays int, status string) ([]database.SerieEpisode, error) {
 	var queryWhere string
-	var queryArgs []interface{}
+	var queryArgs []any
 
 	// Base query for missing episodes
 	queryWhere = "serie_episodes.missing = 1"
@@ -182,11 +182,7 @@ func triggerEpisodeSearch(serie database.Serie, episode database.DbserieEpisode,
 	}
 
 	// Log the search attempt
-	logger.LogDynamicany("info", "Triggering episode search",
-		//"series", serie.Seriename,
-		"season", episode.Season,
-		"episode", episode.Episode,
-		"title", episode.Title)
+	logger.Logtype("info", 3).Str("season", episode.Season).Str("episode", episode.Episode).Str("title", episode.Title).Msg("Triggering episode search")
 
 	// Note: In a real implementation, you would call the actual search method
 	// For now, we'll mark the episode as being searched

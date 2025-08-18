@@ -60,14 +60,10 @@ func (d *downloadertype) downloadNzb() {
 			continue
 		}
 		if d.Quality.Indexer[idx].CategoryDownloader != "" {
-			logger.LogDynamicany2Str(
-				"debug",
-				"Download",
-				logger.StrIndexer,
-				d.Quality.Indexer[idx].TemplateIndexer,
-				"Downloader",
-				d.Quality.Indexer[idx].TemplateDownloader,
-			)
+			logger.Logtype("debug", 2).
+				Str(logger.StrIndexer, d.Quality.Indexer[idx].TemplateIndexer).
+				Str("Downloader", d.Quality.Indexer[idx].TemplateDownloader).
+				Msg("Download")
 			d.IndexerCfg = d.Quality.Indexer[idx].CfgIndexer
 			d.Category = d.Quality.Indexer[idx].CategoryDownloader
 			d.TargetCfg = d.Quality.Indexer[idx].CfgPath
@@ -78,36 +74,26 @@ func (d *downloadertype) downloadNzb() {
 	}
 
 	if d.Category == "" {
-		logger.LogDynamicany1String(
-			"debug",
-			"Downloader nzb config NOT found - quality",
-			"Quality",
-			d.Quality.Name,
-		)
+		logger.Logtype("debug", 1).
+			Str("Quality", d.Quality.Name).
+			Msg("Downloader nzb config NOT found - quality")
 
 		if d.Quality.Indexer[0].CfgPath == nil {
-			logger.LogDynamicanyErr(
-				"error",
-				"Error get Nzb Config",
-				errors.New("path template not found"),
-			)
+			logger.Logtype("error", 0).
+				Err(errors.New("path template not found")).
+				Msg("Error get Nzb Config")
 			return
 		}
 
 		if d.Quality.Indexer[0].CfgDownloader == nil {
-			logger.LogDynamicanyErr(
-				"error",
-				"Error get Nzb Config",
-				errors.New("downloader template not found"),
-			)
+			logger.Logtype("error", 0).
+				Err(errors.New("downloader template not found")).
+				Msg("Error get Nzb Config")
 			return
 		}
-		logger.LogDynamicany1String(
-			"debug",
-			"Downloader nzb config NOT found - use first",
-			"categories",
-			d.Quality.Indexer[0].CategoryDownloader,
-		)
+		logger.Logtype("debug", 1).
+			Str("categories", d.Quality.Indexer[0].CategoryDownloader).
+			Msg("Downloader nzb config NOT found - use first")
 
 		d.IndexerCfg = d.Quality.Indexer[0].CfgIndexer
 		d.Category = d.Quality.Indexer[0].CategoryDownloader
@@ -124,14 +110,10 @@ func (d *downloadertype) downloadNzb() {
 	logger.Path(&d.Targetfile, false)
 	logger.StringRemoveAllRunesP(&d.Targetfile, '[', ']')
 
-	logger.LogDynamicany2Str(
-		"debug",
-		"Downloading",
-		"nzb",
-		d.Nzb.NZB.Title,
-		"by",
-		d.DownloaderCfg.DlType,
-	)
+	logger.Logtype("debug", 2).
+		Str("nzb", d.Nzb.NZB.Title).
+		Str("by", d.DownloaderCfg.DlType).
+		Msg("Downloading")
 
 	var err error
 	switch d.DownloaderCfg.DlType {
@@ -150,11 +132,15 @@ func (d *downloadertype) downloadNzb() {
 	case "deluge":
 		err = d.downloadByDeluge()
 	default:
-		logger.LogDynamicanyErr("error", "Download", errors.New("unknown downloader"))
+		logger.Logtype("error", 0).
+			Err(errors.New("unknown downloader")).
+			Msg("Download")
 		return
 	}
 	if err != nil {
-		logger.LogDynamicanyErr("error", "Download", err)
+		logger.Logtype("error", 0).
+			Err(err).
+			Msg("Download")
 		return
 	}
 	d.notify()
@@ -323,29 +309,85 @@ func (d *downloadertype) notify() {
 		if bl {
 			continue
 		}
-		if strings.EqualFold(d.Cfgp.Notification[idx].CfgNotification.NotificationType, "csv") {
-			scanner.AppendCsv(d.Cfgp.Notification[idx].CfgNotification.Outputto, messagetext)
-			continue
-		}
-		bl, messageTitle, _ := logger.ParseStringTemplate(d.Cfgp.Notification[idx].Title, d)
-		if bl {
-			continue
-		}
+		cfgnot := d.Cfgp.Notification[idx].CfgNotification
 
-		if strings.EqualFold(
-			d.Cfgp.Notification[idx].CfgNotification.NotificationType,
-			"pushover",
-		) {
+		switch cfgnot.NotificationType {
+		case "csv":
+			scanner.AppendCsv(cfgnot.Outputto, messagetext)
+		case "pushover":
+			bl, messageTitle, _ := logger.ParseStringTemplate(d.Cfgp.Notification[idx].Title, d)
+			if bl {
+				continue
+			}
 			err = apiexternal.SendPushoverMessage(
-				d.Cfgp.Notification[idx].CfgNotification.Apikey,
+				cfgnot.Apikey,
 				messagetext,
 				messageTitle,
-				d.Cfgp.Notification[idx].CfgNotification.Recipient,
+				cfgnot.Recipient,
 			)
 			if err != nil {
-				logger.LogDynamicanyErr("error", "Error sending pushover", err)
+				logger.Logtype("error", 0).
+					Err(err).
+					Msg("Error sending pushover")
 			} else {
-				logger.LogDynamicany0("info", "Pushover message sent")
+				logger.Logtype("info", 0).
+					Msg("Pushover message sent")
+			}
+		case "gotify":
+			bl, messageTitle, _ := logger.ParseStringTemplate(d.Cfgp.Notification[idx].Title, d)
+			if bl {
+				continue
+			}
+			err = apiexternal.SendGotifyMessage(
+				cfgnot.ServerURL,
+				cfgnot.Apikey,
+				messagetext,
+				messageTitle,
+			)
+			if err != nil {
+				logger.Logtype("error", 0).
+					Err(err).
+					Msg("Error sending Gotify notification")
+			} else {
+				logger.Logtype("info", 0).
+					Msg("Gotify message sent")
+			}
+		case "pushbullet":
+			bl, messageTitle, _ := logger.ParseStringTemplate(d.Cfgp.Notification[idx].Title, d)
+			if bl {
+				continue
+			}
+			err = apiexternal.SendPushbulletMessage(
+				cfgnot.Apikey,
+				messagetext,
+				messageTitle,
+			)
+			if err != nil {
+				logger.Logtype("error", 0).
+					Err(err).
+					Msg("Error sending Pushbullet notification")
+			} else {
+				logger.Logtype("info", 0).
+					Msg("Pushbullet message sent")
+			}
+		case "apprise":
+			bl, messageTitle, _ := logger.ParseStringTemplate(d.Cfgp.Notification[idx].Title, d)
+			if bl {
+				continue
+			}
+			err = apiexternal.SendAppriseMessage(
+				cfgnot.ServerURL,
+				messagetext,
+				messageTitle,
+				cfgnot.AppriseURLs,
+			)
+			if err != nil {
+				logger.Logtype("error", 0).
+					Err(err).
+					Msg("Error sending Apprise notification")
+			} else {
+				logger.Logtype("info", 0).
+					Msg("Apprise message sent")
 			}
 		}
 	}
@@ -472,18 +514,18 @@ func DownloadMovie(cfgp *config.MediaTypeConfig, nzb *apiexternal.Nzbwithprio) {
 	d := newDownloader(cfgp, nzb)
 	err := d.Movie.GetMoviesByIDP(&nzb.NzbmovieID)
 	if err != nil {
-		logger.LogDynamicany1UIntErr("error", "not found", err, "movie not found", nzb.NzbmovieID)
+		logger.Logtype("error", 1).
+			Uint("movie not found", nzb.NzbmovieID).
+			Err(err).
+			Msg("not found")
 		return
 	}
 	err = d.Dbmovie.GetDbmovieByIDP(&d.Movie.DbmovieID)
 	if err != nil {
-		logger.LogDynamicany1UIntErr(
-			"error",
-			"not found",
-			err,
-			"dbmovie not found",
-			d.Movie.DbmovieID,
-		)
+		logger.Logtype("error", 1).
+			Uint("dbmovie not found", d.Movie.DbmovieID).
+			Err(err).
+			Msg("not found")
 		return
 	}
 	d.Quality = database.GetMediaQualityConfig(cfgp, &nzb.NzbmovieID)
@@ -496,46 +538,34 @@ func DownloadSeriesEpisode(cfgp *config.MediaTypeConfig, nzb *apiexternal.Nzbwit
 	d := newDownloader(cfgp, nzb)
 	err := d.Serieepisode.GetSerieEpisodesByIDP(&nzb.NzbepisodeID)
 	if err != nil {
-		logger.LogDynamicany1UIntErr(
-			"error",
-			"not found",
-			err,
-			"episode not found",
-			nzb.NzbepisodeID,
-		)
+		logger.Logtype("error", 1).
+			Uint("episode not found", nzb.NzbepisodeID).
+			Err(err).
+			Msg("not found")
 		return
 	}
 	err = d.Dbserie.GetDbserieByIDP(&d.Serieepisode.DbserieID)
 	if err != nil {
-		logger.LogDynamicany1UIntErr(
-			"error",
-			"not found",
-			err,
-			"dbserie not found",
-			d.Serieepisode.DbserieID,
-		)
+		logger.Logtype("error", 1).
+			Uint("dbserie not found", d.Serieepisode.DbserieID).
+			Err(err).
+			Msg("not found")
 		return
 	}
 	err = d.Dbserieepisode.GetDbserieEpisodesByIDP(&d.Serieepisode.DbserieEpisodeID)
 	if err != nil {
-		logger.LogDynamicany1UIntErr(
-			"error",
-			"not found",
-			err,
-			"dbepisode not found",
-			d.Serieepisode.DbserieEpisodeID,
-		)
+		logger.Logtype("error", 1).
+			Uint("dbepisode not found", d.Serieepisode.DbserieEpisodeID).
+			Err(err).
+			Msg("not found")
 		return
 	}
 	err = d.Serie.GetSerieByIDP(&d.Serieepisode.SerieID)
 	if err != nil {
-		logger.LogDynamicany1UIntErr(
-			"error",
-			"not found",
-			err,
-			"serie not found",
-			d.Serieepisode.SerieID,
-		)
+		logger.Logtype("error", 1).
+			Uint("serie not found", d.Serieepisode.SerieID).
+			Err(err).
+			Msg("not found")
 		return
 	}
 	d.Quality = database.GetMediaQualityConfig(cfgp, &nzb.NzbepisodeID)

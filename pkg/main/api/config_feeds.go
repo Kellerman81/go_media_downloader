@@ -24,10 +24,10 @@ import (
 func createJSONString(data map[string][]string) string {
 	if jsonBytes, err := json.Marshal(data); err == nil {
 		jsonStr := string(jsonBytes)
-		logger.LogDynamicany1String("debug", "JSON created for mediaToLists", "json", jsonStr)
+		logger.Logtype("debug", 1).Str("json", jsonStr).Msg("JSON created for mediaToLists")
 		return jsonStr
 	}
-	logger.LogDynamicany0("error", "Failed to marshal mediaToLists to JSON")
+	logger.Logtype("error", 0).Msg("Failed to marshal mediaToLists to JSON")
 	return "{}"
 }
 
@@ -66,11 +66,11 @@ func renderFeedParsingPage(csrfToken string) Node {
 	}
 
 	// Debug: log the mapping
-	logger.LogDynamicany1Any("debug", "Media to lists mapping created", "mediaToLists", mediaToLists)
+	logger.Logtype("debug", 1).Any("mediaToLists", mediaToLists).Msg("Media to lists mapping created")
 
 	// If no media configurations have lists, add some test data for debugging
 	if len(mediaToLists) == 0 {
-		logger.LogDynamicany0("debug", "No media configurations with lists found, creating test data")
+		logger.Logtype("debug", 0).Msg("No media configurations with lists found, creating test data")
 		mediaToLists["test_movies"] = []string{"test_list_1", "test_list_2"}
 		mediaToLists["test_series"] = []string{"test_series_list_1", "test_series_list_2"}
 		if len(mediaConfigs) == 0 {

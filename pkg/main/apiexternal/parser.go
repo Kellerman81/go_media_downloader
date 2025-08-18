@@ -4,29 +4,30 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/syncops"
 )
 
 // Nzbwithprio is a struct containing information about an NZB found on the index
 // It includes the parsed file name info, the NZB details, IDs, title,
 // alternate titles, quality, list name, priority, reasons, and search flags.
 type Nzbwithprio struct {
-	Info                database.ParseInfo                 // The parsed file name information
-	NZB                 Nzb                                // The NZB details
-	WantedAlternates    []database.DbstaticTwoStringOneInt // Alternate wanted titles
-	AdditionalReason    any                                // Any additional reason details
-	AdditionalReasonStr string                             // Any additional reason details
-	WantedTitle         string                             // The wanted title for this download
-	Quality             string                             // The quality of this NZB
-	Listname            string                             // The name of the list this NZB is from
-	Reason              string                             // The reason for denying this NZB
-	AdditionalReasonInt int64                              // Any additional reason details
-	NzbmovieID          uint                               // The associated movie ID if this is a movie
-	NzbepisodeID        uint                               // The associated episode ID if this is a TV episode
-	Dbid                uint                               // The DBMovie or DBEpisode ID
-	MinimumPriority     int                                // The minimum priority level
-	DontSearch          bool                               // Whether to avoid searching for this
-	DontUpgrade         bool                               // Whether to avoid upgrading this
-	IDSearched          bool                               // Whether this NZB has been searched using the IMDB ID/THETVDB ID
+	Info                database.ParseInfo                // The parsed file name information
+	NZB                 Nzb                               // The NZB details
+	WantedAlternates    []syncops.DbstaticTwoStringOneInt // Alternate wanted titles
+	AdditionalReason    any                               // Any additional reason details
+	AdditionalReasonStr string                            // Any additional reason details
+	WantedTitle         string                            // The wanted title for this download
+	Quality             string                            // The quality of this NZB
+	Listname            string                            // The name of the list this NZB is from
+	Reason              string                            // The reason for denying this NZB
+	AdditionalReasonInt int64                             // Any additional reason details
+	NzbmovieID          uint                              // The associated movie ID if this is a movie
+	NzbepisodeID        uint                              // The associated episode ID if this is a TV episode
+	Dbid                uint                              // The DBMovie or DBEpisode ID
+	MinimumPriority     int                               // The minimum priority level
+	DontSearch          bool                              // Whether to avoid searching for this
+	DontUpgrade         bool                              // Whether to avoid upgrading this
+	IDSearched          bool                              // Whether this NZB has been searched using the IMDB ID/THETVDB ID
 }
 
 // NZB represents an NZB found on the index.
@@ -97,7 +98,7 @@ type Nzb struct {
 // the Indexer list in the quality config, and falls back to the SettingsList
 // global config if no match is found. Returns nil if no match is found.
 func (s *Nzbwithprio) Getregexcfg(qual *config.QualityConfig) *config.RegexConfig {
-	if s.NZB.Indexer != nil {
+	if s.NZB.Indexer != nil && qual != nil && len(qual.Indexer) > 0 {
 		indcfg := qual.QualityIndexerByQualityAndTemplateCheckRegex(s.NZB.Indexer)
 		if indcfg != nil {
 			return indcfg
@@ -149,43 +150,30 @@ func (n *Nzb) saveAttributes(name, value string) {
 // - Season
 // - Episode.
 func (n *Nzb) setfield(field string, value []byte) {
+	var shouldSet bool
 	switch field {
 	case strtitle:
-		if n.Title != "" {
-			return
-		}
+		shouldSet = n.Title == ""
 	case strlink, "url":
-		if n.DownloadURL != "" {
-			return
-		}
+		shouldSet = n.DownloadURL == ""
 	case strguid:
-		if n.ID != "" {
-			return
-		}
+		shouldSet = n.ID == ""
 	case strsize, "length":
-		if n.Size != 0 {
-			return
-		}
+		shouldSet = n.Size == 0
 	case logger.StrImdb:
-		if n.IMDBID != "" {
-			return
-		}
+		shouldSet = n.IMDBID == ""
 	case "tvdbid":
-		if n.TVDBID != 0 {
-			return
-		}
+		shouldSet = n.TVDBID == 0
 	case "season":
-		if n.Season != "" {
-			return
-		}
+		shouldSet = n.Season == ""
 	case "episode":
-		if n.Episode != "" {
-			return
-		}
+		shouldSet = n.Episode == ""
 	default:
 		return
 	}
-	n.saveAttributes(field, string(value)) // BytesToString
+	if shouldSet {
+		n.saveAttributes(field, string(value))
+	}
 }
 
 // setfieldstr sets the specified field of the Nzb struct to the provided value,
@@ -199,43 +187,30 @@ func (n *Nzb) setfield(field string, value []byte) {
 // - Season
 // - Episode.
 func (n *Nzb) setfieldstr(field string, value string) {
+	var shouldSet bool
 	switch field {
 	case strtitle:
-		if n.Title != "" {
-			return
-		}
+		shouldSet = n.Title == ""
 	case strlink, "url":
-		if n.DownloadURL != "" {
-			return
-		}
+		shouldSet = n.DownloadURL == ""
 	case strguid:
-		if n.ID != "" {
-			return
-		}
+		shouldSet = n.ID == ""
 	case strsize, "length":
-		if n.Size != 0 {
-			return
-		}
+		shouldSet = n.Size == 0
 	case logger.StrImdb:
-		if n.IMDBID != "" {
-			return
-		}
+		shouldSet = n.IMDBID == ""
 	case "tvdbid":
-		if n.TVDBID != 0 {
-			return
-		}
+		shouldSet = n.TVDBID == 0
 	case "season":
-		if n.Season != "" {
-			return
-		}
+		shouldSet = n.Season == ""
 	case "episode":
-		if n.Episode != "" {
-			return
-		}
+		shouldSet = n.Episode == ""
 	default:
 		return
 	}
-	n.saveAttributes(field, value)
+	if shouldSet {
+		n.saveAttributes(field, value)
+	}
 }
 
 // generateIdentifierStringFromInt generates a season/episode identifier string

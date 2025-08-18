@@ -17,6 +17,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/pool"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/searcher"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/syncops"
 	"github.com/pelletier/go-toml/v2"
 )
 
@@ -42,7 +43,7 @@ var (
 // struct. It sets the initial capacity for the Movies and Series slices, and
 // provides a cleanup function to clear the slices when they are reused.
 func Init() {
-	plfeeds.Init(5, func(b *feedResults) {
+	plfeeds.Init(200, 5, func(b *feedResults) {
 		b.Movies = make([]string, 0, 10000)
 		b.Series = make([]config.SerieConfig, 0, 1000)
 	}, func(b *feedResults) bool {
@@ -146,13 +147,10 @@ func (d *feedResults) gettmdbmoviediscover(cfglist *config.MediaListsConfig) err
 	for idxdiscover := range cfglist.CfgList.TmdbDiscover {
 		arr, err := apiexternal.DiscoverTmdbMovie(cfglist.CfgList.TmdbDiscover[idxdiscover])
 		if err != nil {
-			logger.LogDynamicany1StringErr(
-				"debug",
-				"discover could not be executed",
-				err,
-				"query",
-				cfglist.CfgList.TmdbDiscover[idxdiscover],
-			)
+			logger.Logtype("debug", 1).
+				Str("query", cfglist.CfgList.TmdbDiscover[idxdiscover]).
+				Err(err).
+				Msg("discover could not be executed")
 			continue
 		}
 		for idx := range arr.Results {
@@ -166,7 +164,7 @@ func (d *feedResults) gettmdbmoviediscover(cfglist *config.MediaListsConfig) err
 					if config.GetSettingsGeneral().UseMediaCache {
 						if database.CacheOneStringTwoIntIndexFunc(
 							logger.CacheMovie,
-							func(elem *database.DbstaticOneStringTwoInt) bool {
+							func(elem *syncops.DbstaticOneStringTwoInt) bool {
 								return elem.Num1 == movieid &&
 									logger.SlicesContainsI(cfglist.IgnoreMapLists, elem.Str)
 							},
@@ -183,13 +181,10 @@ func (d *feedResults) gettmdbmoviediscover(cfglist *config.MediaListsConfig) err
 
 			moviedbexternal, err := apiexternal.GetTmdbMovieExternal(arr.Results[idx].ID)
 			if err != nil {
-				logger.LogDynamicany1IntErr(
-					"debug",
-					"imdb id could not be retrieved",
-					err,
-					logger.StrImdb,
-					arr.Results[idx].ID,
-				)
+				logger.Logtype("debug", 1).
+					Int(logger.StrImdb, arr.Results[idx].ID).
+					Err(err).
+					Msg("imdb id could not be retrieved")
 				continue
 			}
 			allowed, _ = importfeed.AllowMovieImport(&moviedbexternal.ImdbID, cfglist.CfgList)
@@ -338,7 +333,7 @@ func (d *feedResults) gettmdblist(cfglist *config.MediaListsConfig) error {
 					if config.GetSettingsGeneral().UseMediaCache {
 						if database.CacheOneStringTwoIntIndexFunc(
 							logger.CacheMovie,
-							func(elem *database.DbstaticOneStringTwoInt) bool {
+							func(elem *syncops.DbstaticOneStringTwoInt) bool {
 								return elem.Num1 == movieid &&
 									logger.SlicesContainsI(cfglist.IgnoreMapLists, elem.Str)
 							},
@@ -364,13 +359,7 @@ func (d *feedResults) gettmdblist(cfglist *config.MediaListsConfig) error {
 
 			moviedbexternal, err := apiexternal.GetTmdbMovieExternal(arr.Items[idx].ID)
 			if err != nil {
-				logger.LogDynamicany1IntErr(
-					"debug",
-					"imdb id could not be retrieved",
-					err,
-					logger.StrImdb,
-					arr.Items[idx].ID,
-				)
+				logger.Logtype("debug", 1).Int(logger.StrImdb, arr.Items[idx].ID).Err(err).Msg("imdb id could not be retrieved")
 				continue
 			}
 			allowed, _ = importfeed.AllowMovieImport(&moviedbexternal.ImdbID, cfglist.CfgList)
@@ -536,7 +525,7 @@ func (d *feedResults) parseimdbcsv(
 		// if logger.CheckContextEnded(ctx) != nil {
 		// 	break
 		// }
-		if record[1] == "" || record[1] == "Const" || record[1] == "tconst" {
+		if len(record) < 2 || record[1] == "" || record[1] == "Const" || record[1] == "tconst" {
 			continue
 		}
 		record[1] = logger.AddImdbPrefix(record[1])
@@ -551,7 +540,7 @@ func (d *feedResults) parseimdbcsv(
 				if config.GetSettingsGeneral().UseMediaCache {
 					if database.CacheOneStringTwoIntIndexFunc(
 						logger.CacheMovie,
-						func(elem *database.DbstaticOneStringTwoInt) bool {
+						func(elem *syncops.DbstaticOneStringTwoInt) bool {
 							return elem.Num1 == movieid &&
 								logger.SlicesContainsI(cfglistp.IgnoreMapLists, elem.Str)
 						},
@@ -565,7 +554,7 @@ func (d *feedResults) parseimdbcsv(
 				}
 			}
 		} else {
-			logger.LogDynamicany1String("debug", "dbmovie not found in cache", logger.StrImdb, record[1])
+			logger.Logtype("debug", 1).Str(logger.StrImdb, record[1]).Msg("dbmovie not found in cache")
 		}
 		allowed, _ = importfeed.AllowMovieImport(&record[1], cfglistp.CfgList)
 		if allowed || d.AddAll {
@@ -573,14 +562,7 @@ func (d *feedResults) parseimdbcsv(
 		}
 	}
 	i := len(d.Movies)
-	logger.LogDynamicany2StrAny(
-		"info",
-		"imdb list fetched",
-		logger.StrURL,
-		cfglistp.CfgList.URL,
-		strtoparse,
-		&i,
-	)
+	logger.Logtype("info", 2).Str(logger.StrURL, cfglistp.CfgList.URL).Any(strtoparse, &i).Msg("imdb list fetched")
 }
 
 // getimdbfile fetches the IMDB CSV file specified in the config and parses it using the parseimdbcsv method.
@@ -640,6 +622,10 @@ func Feeds(cfgp *config.MediaTypeConfig, list *config.MediaListsConfig, addall b
 		// TODO: trakt list cleanup
 	case "newznabrss":
 		return d, searcher.Getnewznabrss(cfgp, list)
+	case "plexwatchlist":
+		return d, d.getplexwatchlist(list)
+	case "jellyfinwatchlist":
+		return d, d.getjellyfinwatchlist(list)
 	}
 	return d, errors.New("switch not found " + list.CfgList.ListType)
 }
@@ -652,7 +638,7 @@ func getmovieid(dbid *uint, cfglistp *config.MediaListsConfig) bool {
 		dbidn := *dbid
 		if database.CacheOneStringTwoIntIndexFunc(
 			logger.CacheMovie,
-			func(elem *database.DbstaticOneStringTwoInt) bool {
+			func(elem *syncops.DbstaticOneStringTwoInt) bool {
 				return elem.Num1 == dbidn &&
 					(elem.Str == cfglistp.Name || strings.EqualFold(elem.Str, cfglistp.Name))
 			},
@@ -663,4 +649,94 @@ func getmovieid(dbid *uint, cfglistp *config.MediaListsConfig) bool {
 		return true
 	}
 	return false
+}
+
+// getplexwatchlist retrieves watchlist items from a Plex Media Server
+func (d *feedResults) getplexwatchlist(cfglist *config.MediaListsConfig) error {
+	if cfglist.CfgList.PlexServerURL == "" || cfglist.CfgList.PlexToken == "" || cfglist.CfgList.PlexUsername == "" {
+		return errors.New("plex server URL, token, and username are required")
+	}
+
+	logger.Logtype("info", 1).Str("server", cfglist.CfgList.PlexServerURL).Msg("Fetching Plex watchlist")
+
+	watchlistItems, err := apiexternal.GetPlexWatchlist(
+		cfglist.CfgList.PlexServerURL,
+		cfglist.CfgList.PlexToken,
+		cfglist.CfgList.PlexUsername,
+	)
+	if err != nil {
+		return err
+	}
+
+	logger.Logtype("info", 1).Str("server", cfglist.CfgList.PlexServerURL).Msg("Processing Plex watchlist items")
+
+	for _, item := range watchlistItems {
+		if apiexternal.IsPlexItemMovie(item) {
+			// Process movie
+			imdbID := apiexternal.ExtractIMDBFromPlexItem(item)
+			if imdbID != "" {
+				checkaddimdbfeed(&imdbID, cfglist, d)
+			} else {
+				logger.Logtype("debug", 1).Str("title", item.Title).Msg("No IMDB ID found for Plex movie")
+			}
+		} else if apiexternal.IsPlexItemShow(item) {
+			// Process TV show
+			tvdbID := apiexternal.ExtractTVDBFromPlexItem(item)
+			if tvdbID != 0 {
+				d.Series = append(d.Series, config.SerieConfig{
+					Name:   item.Title,
+					TvdbID: tvdbID,
+				})
+			} else {
+				logger.Logtype("debug", 1).Str("title", item.Title).Msg("No TVDB ID found for Plex show")
+			}
+		}
+	}
+
+	return nil
+}
+
+// getjellyfinwatchlist retrieves watchlist items from a Jellyfin Media Server
+func (d *feedResults) getjellyfinwatchlist(cfglist *config.MediaListsConfig) error {
+	if cfglist.CfgList.JellyfinServerURL == "" || cfglist.CfgList.JellyfinToken == "" || cfglist.CfgList.JellyfinUsername == "" {
+		return errors.New("jellyfin server URL, API key, and username are required")
+	}
+
+	logger.Logtype("info", 1).Str("server", cfglist.CfgList.JellyfinServerURL).Msg("Fetching Jellyfin watchlist")
+
+	watchlistItems, err := apiexternal.GetJellyfinWatchlist(
+		cfglist.CfgList.JellyfinServerURL,
+		cfglist.CfgList.JellyfinToken,
+		cfglist.CfgList.JellyfinUsername,
+	)
+	if err != nil {
+		return err
+	}
+
+	logger.Logtype("info", 1).Str("server", cfglist.CfgList.JellyfinServerURL).Msg("Processing Jellyfin watchlist items")
+
+	for _, item := range watchlistItems {
+		if apiexternal.IsJellyfinItemMovie(item) {
+			// Process movie
+			imdbID := apiexternal.ExtractIMDBFromJellyfinItem(item)
+			if imdbID != "" {
+				checkaddimdbfeed(&imdbID, cfglist, d)
+			} else {
+				logger.Logtype("debug", 1).Str("title", apiexternal.GetJellyfinItemTitle(item)).Msg("No IMDB ID found for Jellyfin movie")
+			}
+		} else if apiexternal.IsJellyfinItemSeries(item) {
+			// Process TV series
+			tvdbID := apiexternal.ExtractTVDBFromJellyfinItem(item)
+			if tvdbID != 0 {
+				d.Series = append(d.Series, config.SerieConfig{
+					Name:   apiexternal.GetJellyfinItemTitle(item),
+					TvdbID: tvdbID,
+				})
+			} else {
+				logger.Logtype("debug", 1).Str("title", apiexternal.GetJellyfinItemTitle(item)).Msg("No TVDB ID found for Jellyfin series")
+			}
+		}
+	}
+
+	return nil
 }

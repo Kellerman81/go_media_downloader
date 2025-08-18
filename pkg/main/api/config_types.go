@@ -103,7 +103,7 @@ var notificationValidator = &ConfigValidator[config.NotificationConfig]{
 	GetName:    func(c config.NotificationConfig) string { return c.Name },
 	Validators: []func(config.NotificationConfig) error{
 		requireNonEmptyString("name", func(c config.NotificationConfig) string { return c.Name }),
-		validateInStringList("type", []string{"csv", "pushover"},
+		validateInStringList("type", []string{"csv", "pushover", "gotify", "pushbullet", "apprise"},
 			func(c config.NotificationConfig) string { return c.NotificationType }),
 	},
 }
@@ -157,14 +157,14 @@ var globalConfigCache = &configCache{
 
 // Optimize string operations with a string builder pool
 var stringBuilderPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return &strings.Builder{}
 	},
 }
 
 // Node slice pooling for better memory management
 var nodeSlicePool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return make([]gomponents.Node, 0, 10) // Pre-allocate capacity for common use cases
 	},
 }

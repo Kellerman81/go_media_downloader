@@ -16,12 +16,14 @@ type Poolobj[t any] struct {
 
 // Get retrieves an object from the pool or creates a new one if none are
 // available. If a constructor was provided, it will be called to initialize
-// any newly created objects.
+// any newly created objects. Uses non-blocking channel operation to avoid race conditions.
 func (p *Poolobj[t]) Get() *t {
-	if len(p.objs) >= 1 {
-		return <-p.objs
+	select {
+	case obj := <-p.objs:
+		return obj
+	default:
+		return p.NewObj()
 	}
-	return p.NewObj()
 }
 
 // NewObj creates a new object of type T, optionally initializing it using the pool's constructor function.
@@ -37,33 +39,40 @@ func (p *Poolobj[t]) NewObj() *t {
 
 // Put returns an object to the pool.
 // If the pool is not at capacity, it calls the destructor function if provided,
-// then sends the object back on the channel.
+// then sends the object back on the channel. Uses non-blocking channel operation to avoid race conditions.
 func (p *Poolobj[t]) Put(bo *t) bool {
 	if bo == nil {
 		return false
 	}
 
-	if len(p.objs) < cap(p.objs) {
-		if p.destructor != nil {
-			if p.destructor(bo) {
-				// fmt.Println("destructor returned true")
-				return false
-			}
+	// Call destructor if provided
+	if p.destructor != nil {
+		if p.destructor(bo) {
+			return false
 		}
-		p.objs <- bo
-		return true
 	}
-	return false
+
+	// Try to put object back in pool using non-blocking send
+	select {
+	case p.objs <- bo:
+		return true
+	default:
+		return false // Pool is full
+	}
 }
 
 // Init initializes the Poolobj by setting the constructor and destructor functions,
-// creating the object channel with a capacity of 200, and optionally creating
+// creating the object channel with a specified capacity, and optionally creating
 // and adding the initial set of objects to the pool using the provided constructor.
-func (p *Poolobj[t]) Init(initcreate int, constructor func(*t), destructor func(*t) bool) {
+func (p *Poolobj[t]) Init(maxsize, initcreate int, constructor func(*t), destructor func(*t) bool) {
+	if maxsize <= 0 {
+		maxsize = 200 // default capacity
+	}
+	
 	p.constructor = constructor
 	p.destructor = destructor
 
-	p.objs = make(chan *t, 200)
+	p.objs = make(chan *t, maxsize)
 	if initcreate > 0 {
 		for range initcreate {
 			p.Put(p.NewObj())
@@ -89,17 +98,9 @@ func NewPool[t any](
 	constructor func(*t),
 	destructor func(*t) bool,
 ) *Poolobj[t] {
-	a := Poolobj[t]{
-		objs:        make(chan *t, maxsize),
-		constructor: constructor,
-		destructor:  destructor,
-	}
-	if initcreate > 0 {
-		for range initcreate {
-			a.Put(a.NewObj())
-		}
-	}
-	return &a
+	p := &Poolobj[t]{}
+	p.Init(maxsize, initcreate, constructor, destructor)
+	return p
 }
 
 type SizedWaitGroup struct {
@@ -143,6 +144,7 @@ func (s *SizedWaitGroup) Wait() {
 }
 
 // Close resets the SizedWaitGroup to its initial state, allowing it to be reused.
+// Note: This should only be called after Wait() has completed to avoid goroutine leaks.
 func (s *SizedWaitGroup) Close() {
 	*s = SizedWaitGroup{}
 }

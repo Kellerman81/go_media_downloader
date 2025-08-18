@@ -1,6 +1,7 @@
 package config
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math/rand"
@@ -224,6 +225,10 @@ type GeneralConfig struct {
 	OmdbLimiterSeconds uint8 `toml:"omdb_limiter_seconds" displayname:"OMDb Rate Limit Seconds" comment:"Time window in seconds for OMDb API rate limiting.\nDefines the time period over which OMDb" longcomment:"Time window in seconds for OMDb API rate limiting.\nDefines the time period over which OMDb API call limits are applied.\nWorks together with omdb_limiter_calls to prevent API rate limit violations.\nOMDb has strict rate limits that vary by subscription tier.\nFree tier typically allows 1000 calls per day with rate restrictions.\nDefault: 1 (one second time window)"`
 	// OmdbLimiterCalls defines calls limit for OMDb API in defined seconds - default: 1
 	OmdbLimiterCalls int `toml:"omdb_limiter_calls" displayname:"OMDb Calls Per Window" comment:"Maximum number of API calls allowed to OMDb within the defined time window.\nWorks with omdb_limiter_seconds" longcomment:"Maximum number of API calls allowed to OMDb within the defined time window.\nWorks with omdb_limiter_seconds to enforce rate limiting.\nOMDb free tier allows 1000 calls/day, paid tiers have higher limits.\nExceeding daily limits results in API key suspension until reset.\nConservative rate limiting prevents accidental limit violations.\nDefault: 1 (one call per time window)"`
+	// TvmazeLimiterSeconds defines seconds limit for TVmaze API calls - default: 1
+	TvmazeLimiterSeconds uint8 `toml:"tvmaze_limiter_seconds" displayname:"TVmaze Rate Limit Seconds" comment:"Time window in seconds for TVmaze API rate limiting.\nDefines the time period over which TVmaze" longcomment:"Time window in seconds for TVmaze API rate limiting.\nDefines the time period over which TVmaze API call limits are applied.\nWorks together with tvmaze_limiter_calls to prevent API rate limit violations.\nTVmaze has no API key requirement but enforces reasonable rate limits.\nBe respectful with request frequency to maintain good API citizenship.\nDefault: 1 (one second time window)"`
+	// TvmazeLimiterCalls defines calls limit for TVmaze API in defined seconds - default: 1
+	TvmazeLimiterCalls int `toml:"tvmaze_limiter_calls" displayname:"TVmaze Calls Per Window" comment:"Maximum number of API calls allowed to TVmaze within the defined time window.\nWorks with tvmaze_limiter_seconds" longcomment:"Maximum number of API calls allowed to TVmaze within the defined time window.\nWorks with tvmaze_limiter_seconds to enforce rate limiting.\nTVmaze doesn't publish official rate limits but prefers reasonable usage.\nTypical usage should stay well under their informal limits.\nConservative rate limiting ensures continued access to their free API.\nDefault: 1 (one call per time window)"`
 
 	// TheMovieDBDisableTLSVerify disables TLS certificate verification for TheMovieDB API requests
 	// Setting this to true may increase performance but reduces security
@@ -240,6 +245,10 @@ type GeneralConfig struct {
 	// TvdbDisableTLSVerify disables TLS certificate verification for TVDB API requests
 	// Setting this to true may increase performance but reduces security
 	TvdbDisableTLSVerify bool `toml:"tvdb_disable_tls_verify" displayname:"TVDB Disable SSL Verification" comment:"Disable SSL/TLS certificate verification for TVDB API requests.\nWhen true, SSL certificates are not validated (INSECURE).\nMay" longcomment:"Disable SSL/TLS certificate verification for TVDB API requests.\nWhen true, SSL certificates are not validated (INSECURE).\nMay slightly improve performance but significantly reduces security.\nOnly enable if you have certificate issues and understand the risks.\nAuthentication tokens could be compromised through insecure connections.\nDefault: false (secure connections with certificate verification)"`
+
+	// TvmazeDisableTLSVerify disables TLS certificate verification for TVmaze API requests
+	// Setting this to true may increase performance but reduces security
+	TvmazeDisableTLSVerify bool `toml:"tvmaze_disable_tls_verify" displayname:"TVmaze Disable SSL Verification" comment:"Disable SSL/TLS certificate verification for TVmaze API requests.\nWhen true, SSL certificates are not validated (INSECURE).\nMay" longcomment:"Disable SSL/TLS certificate verification for TVmaze API requests.\nWhen true, SSL certificates are not validated (INSECURE).\nMay slightly improve performance but significantly reduces security.\nOnly enable if you have certificate issues and understand the risks.\nAPI requests could be intercepted through compromised connections.\nDefault: false (secure connections with certificate verification)"`
 
 	// FfprobePath specifies the path to the ffprobe executable
 	// Used for media analysis
@@ -280,15 +289,48 @@ type GeneralConfig struct {
 	// TraktTimeoutSeconds defines the HTTP timeout in seconds for Trakt API calls
 	// Default is 10 seconds
 	TraktTimeoutSeconds uint16 `toml:"trakt_timeout_seconds" displayname:"Trakt Request Timeout Seconds" comment:"HTTP request timeout in seconds for Trakt API calls.\nMaximum time to wait for Trakt API" longcomment:"HTTP request timeout in seconds for Trakt API calls.\nMaximum time to wait for Trakt API responses before timing out.\nTrakt OAuth operations may take longer than simple API calls.\nLonger timeouts accommodate OAuth flows and complex requests.\nShorter timeouts provide faster failure detection.\nTypical range: 5-30 seconds\nDefault: 10"`
+	// TvmazeTimeoutSeconds defines the HTTP timeout in seconds for TVmaze API calls
+	// Default is 10 seconds
+	TvmazeTimeoutSeconds uint16 `toml:"tvmaze_timeout_seconds" displayname:"TVmaze Request Timeout Seconds" comment:"HTTP request timeout in seconds for TVmaze API calls.\nMaximum time to wait for TVmaze API" longcomment:"HTTP request timeout in seconds for TVmaze API calls.\nMaximum time to wait for TVmaze API responses before timing out.\nTVmaze generally has fast response times and good reliability.\nLonger timeouts accommodate network latency and peak usage times.\nShorter timeouts provide faster error detection for failing requests.\nTypical range: 5-30 seconds\nDefault: 10"`
+
+	// PlexLimiterSeconds defines seconds limit for Plex API calls - default: 1
+	PlexLimiterSeconds uint8 `toml:"plex_limiter_seconds" displayname:"Plex Rate Limit Seconds" comment:"Time window in seconds for Plex API rate limiting.\nDefines the time period over which Plex API call limits are applied" longcomment:"Time window in seconds for Plex API rate limiting.\nDefines the time period over which Plex API call limits are applied.\nWorks together with plex_limiter_calls to prevent API rate limit violations.\nPlex servers typically have generous rate limits but may vary by setup.\nLower values provide more granular rate limiting control.\nDefault: 1 (one second time window)"`
+	// PlexLimiterCalls defines calls limit for Plex API in defined seconds - default: 10
+	PlexLimiterCalls int `toml:"plex_limiter_calls" displayname:"Plex Calls Per Window" comment:"Maximum number of API calls allowed to Plex within the defined time window.\nWorks with plex_limiter_seconds" longcomment:"Maximum number of API calls allowed to Plex within the defined time window.\nWorks with plex_limiter_seconds to enforce rate limiting.\nPlex servers typically handle many concurrent requests well.\nAdjust based on your Plex server's performance and network capacity.\nConservative values prevent overwhelming your Plex server.\nDefault: 10 (ten calls per time window)"`
+	// PlexTimeoutSeconds defines the HTTP timeout in seconds for Plex API calls - default: 30
+	PlexTimeoutSeconds uint16 `toml:"plex_timeout_seconds" displayname:"Plex Request Timeout Seconds" comment:"HTTP request timeout in seconds for Plex API calls.\nMaximum time to wait for Plex API" longcomment:"HTTP request timeout in seconds for Plex API calls.\nMaximum time to wait for Plex API responses before timing out.\nPlex servers may respond slower on older hardware or with large libraries.\nWatchlist operations typically complete quickly but vary by server load.\nBalance between patience for slow responses and quick error detection.\nTypical range: 10-60 seconds\nDefault: 30"`
+	// PlexDisableTLSVerify specifies whether to disable TLS certificate verification for Plex API calls - default: false
+	PlexDisableTLSVerify bool `toml:"plex_disable_tls_verify" displayname:"Plex Disable TLS Verification" comment:"Disable TLS certificate verification for Plex API calls.\nWhen true, self-signed or invalid certificates are accepted" longcomment:"Disable TLS certificate verification for Plex API calls.\nWhen true, self-signed or invalid certificates are accepted.\nUseful for local Plex servers with self-signed certificates.\nSecurity risk: enables man-in-the-middle attacks.\nOnly enable for trusted local networks or development environments.\nDefault: false (verify certificates)"`
+
+	// JellyfinLimiterSeconds defines seconds limit for Jellyfin API calls - default: 1
+	JellyfinLimiterSeconds uint8 `toml:"jellyfin_limiter_seconds" displayname:"Jellyfin Rate Limit Seconds" comment:"Time window in seconds for Jellyfin API rate limiting.\nDefines the time period over which Jellyfin API call limits are applied" longcomment:"Time window in seconds for Jellyfin API rate limiting.\nDefines the time period over which Jellyfin API call limits are applied.\nWorks together with jellyfin_limiter_calls to prevent API rate limit violations.\nJellyfin servers typically have generous rate limits but may vary by setup.\nLower values provide more granular rate limiting control.\nDefault: 1 (one second time window)"`
+	// JellyfinLimiterCalls defines calls limit for Jellyfin API in defined seconds - default: 10
+	JellyfinLimiterCalls int `toml:"jellyfin_limiter_calls" displayname:"Jellyfin Calls Per Window" comment:"Maximum number of API calls allowed to Jellyfin within the defined time window.\nWorks with jellyfin_limiter_seconds" longcomment:"Maximum number of API calls allowed to Jellyfin within the defined time window.\nWorks with jellyfin_limiter_seconds to enforce rate limiting.\nJellyfin servers typically handle many concurrent requests well.\nAdjust based on your Jellyfin server's performance and network capacity.\nConservative values prevent overwhelming your Jellyfin server.\nDefault: 10 (ten calls per time window)"`
+	// JellyfinTimeoutSeconds defines the HTTP timeout in seconds for Jellyfin API calls - default: 30
+	JellyfinTimeoutSeconds uint16 `toml:"jellyfin_timeout_seconds" displayname:"Jellyfin Request Timeout Seconds" comment:"HTTP request timeout in seconds for Jellyfin API calls.\nMaximum time to wait for Jellyfin API" longcomment:"HTTP request timeout in seconds for Jellyfin API calls.\nMaximum time to wait for Jellyfin API responses before timing out.\nJellyfin servers may respond slower on older hardware or with large libraries.\nFavorites/watchlist operations typically complete quickly but vary by server load.\nBalance between patience for slow responses and quick error detection.\nTypical range: 10-60 seconds\nDefault: 30"`
+	// JellyfinDisableTLSVerify specifies whether to disable TLS certificate verification for Jellyfin API calls - default: false
+	JellyfinDisableTLSVerify bool `toml:"jellyfin_disable_tls_verify" displayname:"Jellyfin Disable TLS Verification" comment:"Disable TLS certificate verification for Jellyfin API calls.\nWhen true, self-signed or invalid certificates are accepted" longcomment:"Disable TLS certificate verification for Jellyfin API calls.\nWhen true, self-signed or invalid certificates are accepted.\nUseful for local Jellyfin servers with self-signed certificates.\nSecurity risk: enables man-in-the-middle attacks.\nOnly enable for trusted local networks or development environments.\nDefault: false (verify certificates)"`
 
 	// Jobs To Run
-	Jobs map[string]func(uint32) error `toml:"-" json:"-"`
+	Jobs map[string]func(uint32, context.Context) error `toml:"-" json:"-"`
 	// UseGoDir                           bool     `toml:"use_godir"`
 	// ConcurrentScheduler                int      `toml:"concurrent_scheduler"`
 	// EnableFileWatcher specifies whether the file watcher functionality is enabled
 	// When set to true, the application will monitor specified directories for file changes
 	// Default is false
 	EnableFileWatcher bool `toml:"enable_file_watcher" displayname:"Enable Configuration File Watcher" comment:"Enable automatic monitoring of configuration file changes.\nWhen true, the application will watch the config file" longcomment:"Enable automatic monitoring of configuration file changes.\nWhen true, the application will watch the config file and reload changes automatically.\nAllows configuration updates without restarting the application.\nUseful for live configuration adjustments during operation.\nMay consume additional system resources for file monitoring.\nDefault: false (manual restart required for config changes)"`
+
+	// UnrarPath specifies the path to the unrar executable for unpacking RAR archives
+	UnrarPath string `toml:"unrar_path" displayname:"Unrar Executable Path" comment:"Absolute path to the unrar executable for extracting RAR archives.\nSpecifying the full path improves performance" longcomment:"Absolute path to the unrar executable for extracting RAR archives.\nSpecifying the full path improves performance by avoiding PATH searches.\nRequired for unpacking RAR archives before media file organization.\nDownload from: https://www.rarlab.com/download.htm\nExample: '/usr/bin/unrar' or 'C:\\\\Program Files\\\\WinRAR\\\\unrar.exe'\nDefault: 'unrar' (search in PATH)"`
+
+	// SevenZipPath specifies the path to the 7z executable for unpacking various archive formats
+	SevenZipPath string `toml:"7zip_path" displayname:"7-Zip Executable Path" comment:"Absolute path to the 7z executable for extracting multiple archive formats.\nSpecifying the full path improves performance" longcomment:"Absolute path to the 7z executable for extracting multiple archive formats.\nSpecifying the full path improves performance by avoiding PATH searches.\nSupports: ZIP, 7Z, RAR, TAR, GZIP, BZIP2, XZ and many other formats.\nRecommended as primary unpacker due to wide format support.\nDownload from: https://www.7-zip.org/download.html\nExample: '/usr/bin/7z' or 'C:\\\\Program Files\\\\7-Zip\\\\7z.exe'\nDefault: '7z' (search in PATH)"`
+
+	// UnzipPath specifies the path to the unzip executable for unpacking ZIP archives
+	UnzipPath string `toml:"unzip_path" displayname:"Unzip Executable Path" comment:"Absolute path to the unzip executable for extracting ZIP archives.\nSpecifying the full path improves performance" longcomment:"Absolute path to the unzip executable for extracting ZIP archives.\nSpecifying the full path improves performance by avoiding PATH searches.\nUsed as fallback for ZIP files if 7-Zip is not available.\nAvailable on most Unix-like systems by default.\nExample: '/usr/bin/unzip' or 'C:\\\\Windows\\\\System32\\\\tar.exe'\nDefault: 'unzip' (search in PATH)"`
+
+	// TarPath specifies the path to the tar executable for unpacking TAR archives
+	TarPath string `toml:"tar_path" displayname:"Tar Executable Path" comment:"Absolute path to the tar executable for extracting TAR, TAR.GZ, TAR.BZ2 archives.\nSpecifying the full path improves performance" longcomment:"Absolute path to the tar executable for extracting TAR, TAR.GZ, TAR.BZ2 archives.\nSpecifying the full path improves performance by avoiding PATH searches.\nUsed for TAR-based archives including compressed variants.\nAvailable on most Unix-like systems and modern Windows.\nExample: '/usr/bin/tar' or 'C:\\\\Windows\\\\System32\\\\tar.exe'\nDefault: 'tar' (search in PATH)"`
 }
 
 // ImdbConfig defines the configuration for the IMDb indexer.
@@ -417,7 +459,7 @@ type MediaTypeConfig struct {
 	Notification []MediaNotificationConfig `toml:"notification" displayname:"Notification Configurations" comment:"Notification settings for this specific media group.\nDefines how and when you'll be alerted about media" longcomment:"Notification settings for this specific media group.\nDefines how and when you'll be alerted about media events.\nEach entry can reference:\n- Notification template configurations (from [notification] section)\n- Events to notify about (downloads, upgrades, failures)\n- Specific notification channels (Pushover, email, webhooks)\nAllows different notification preferences per media type.\nOptional: Only needed if you want notifications for this media group."`
 
 	// Jobs To Run
-	Jobs map[string]func(uint32) error `toml:"-" json:"-"`
+	Jobs map[string]func(uint32, context.Context) error `toml:"-" json:"-"`
 }
 
 // MediaDataConfig is a struct that defines configuration for media data.
@@ -433,6 +475,9 @@ type MediaDataConfig struct {
 	AddFoundList string `toml:"add_found_list" displayname:"Discovery Target List" comment:"Name of the list where automatically discovered media should be added.\nSpecifies which list configuration to" longcomment:"Name of the list where automatically discovered media should be added.\nSpecifies which list configuration to use when add_found is enabled.\nMust reference a list defined in the lists section of this media group.\nThe list determines:\n- Metadata sources and update behavior\n- Search and upgrade preferences\n- Quality requirements for discovered media\nRequired when add_found is true, ignored when false.\nExample: 'discovered-movies' for a list dedicated to found media"`
 	// AddFoundListCfg is a pointer to ListsConfig
 	AddFoundListCfg *ListsConfig `toml:"-"`
+
+	// EnableUnpacking enables automatic unpacking of archives before media file processing
+	EnableUnpacking bool `toml:"enable_unpacking" displayname:"Enable Archive Unpacking" comment:"Enable automatic unpacking of archives (RAR, ZIP, 7Z, TAR, etc.) before media file organization.\nWhen true, archives found" longcomment:"Enable automatic unpacking of archives (RAR, ZIP, 7Z, TAR, etc.) before media file organization.\nWhen true, archives found in the source path are automatically extracted before scanning for media files.\nSupported formats: RAR, ZIP, 7Z, TAR, TAR.GZ, TAR.BZ2, TAR.XZ, GZIP, BZIP2, XZ\nRequires appropriate unpacking tools to be configured in the general section.\nExtracted files are placed in a temporary directory within the source folder.\nOriginal archives are preserved after extraction.\nDefault: false (no automatic unpacking)"`
 }
 
 // MediaDataImportConfig defines the configuration for importing media data.
@@ -441,6 +486,9 @@ type MediaDataImportConfig struct {
 	TemplatePath string `toml:"template_path" displayname:"Import Path Template" comment:"Name of the path configuration template to use for importing existing media files.\nReferences a path" longcomment:"Name of the path configuration template to use for importing existing media files.\nReferences a path configuration defined in the paths section.\nThe import path template controls:\n- Source directories to scan for existing media files\n- File types and extensions to import\n- Size limits and quality filters for import\n- Whether to move, copy, or hardlink imported files\n- File organization and renaming during import\nMust exactly match the 'name' field of a paths configuration.\nTypically uses different settings than regular download paths.\nExample: 'import-movies' for a path optimized for importing existing collections"`
 	// CfgPath is the PathsConfig reference
 	CfgPath *PathsConfig `toml:"-"`
+
+	// EnableUnpacking enables automatic unpacking of archives before media file processing
+	EnableUnpacking bool `toml:"enable_unpacking" displayname:"Enable Archive Unpacking" comment:"Enable automatic unpacking of archives (RAR, ZIP, 7Z, TAR, etc.) before media file organization.\nWhen true, archives found" longcomment:"Enable automatic unpacking of archives (RAR, ZIP, 7Z, TAR, etc.) before media file organization.\nWhen true, archives found in the source path are automatically extracted before scanning for media files.\nSupported formats: RAR, ZIP, 7Z, TAR, TAR.GZ, TAR.BZ2, TAR.XZ, GZIP, BZIP2, XZ\nRequires appropriate unpacking tools to be configured in the general section.\nExtracted files are placed in a temporary directory within the source folder.\nOriginal archives are preserved after extraction.\nDefault: false (no automatic unpacking)"`
 }
 
 // MediaListsConfig defines a media list configuration.
@@ -524,7 +572,7 @@ type ListsConfig struct {
 	// Name is the name of the template
 	Name string `toml:"name" displayname:"List Configuration Name" comment:"Unique name for this list configuration.\nUsed to identify this list in logs and management interfaces.\nChoose" longcomment:"Unique name for this list configuration.\nUsed to identify this list in logs and management interfaces.\nChoose a descriptive name that indicates the list source and purpose.\nExample: 'imdb-top250', 'trakt-watchlist', 'popular-movies'"`
 	// ListType is the type of the list
-	ListType string `toml:"type" displayname:"List Source Type" comment:"Type of list source to import from.\nAvailable options:\n- 'imdbcsv': IMDB CSV export file\n- 'imdbfile': IMDB" longcomment:"Type of list source to import from.\nAvailable options:\n- 'imdbcsv': IMDB CSV export file\n- 'imdbfile': IMDB watchlist file\n- 'seriesconfig': Local TOML series configuration\n- 'traktpublicmovielist': Public Trakt movie list\n- 'traktpublicshowlist': Public Trakt TV show list\n- 'traktmoviepopular': Trakt popular movies\n- 'traktmovieanticipated': Trakt anticipated movies\n- 'traktmovietrending': Trakt trending movies\n- 'traktseriepopular': Trakt popular TV series\n- 'traktserieanticipated': Trakt anticipated TV series\n- 'traktserietrending': Trakt trending TV series\n- 'newznabrss': Newznab RSS feed\nExample: 'imdbcsv' or 'traktmoviepopular'"`
+	ListType string `toml:"type" displayname:"List Source Type" comment:"Type of list source to import from.\nAvailable options:\n- 'imdbcsv': IMDB CSV export file\n- 'imdbfile': IMDB" longcomment:"Type of list source to import from.\nAvailable options:\n- 'imdbcsv': IMDB CSV export file\n- 'imdbfile': IMDB watchlist file\n- 'seriesconfig': Local TOML series configuration\n- 'traktpublicmovielist': Public Trakt movie list\n- 'traktpublicshowlist': Public Trakt TV show list\n- 'traktmoviepopular': Trakt popular movies\n- 'traktmovieanticipated': Trakt anticipated movies\n- 'traktmovietrending': Trakt trending movies\n- 'traktseriepopular': Trakt popular TV series\n- 'traktserieanticipated': Trakt anticipated TV series\n- 'traktserietrending': Trakt trending TV series\n- 'newznabrss': Newznab RSS feed\n- 'plexwatchlist': Plex user watchlist\n- 'jellyfinwatchlist': Jellyfin user watchlist\nExample: 'imdbcsv' or 'traktmoviepopular' or 'plexwatchlist'"`
 	// URL is the url of the list
 	URL string `toml:"url" displayname:"External List URL" comment:"URL for the list source (when applicable).\nRequired for:\n- Trakt public lists: Full Trakt list URL\n-" longcomment:"URL for the list source (when applicable).\nRequired for:\n- Trakt public lists: Full Trakt list URL\n- RSS feeds: RSS feed URL\n- IMDB watchlists: IMDB watchlist URL\nNot needed for popular/trending lists or local files.\nExample: 'https://trakt.tv/users/username/lists/listname'\nExample: 'https://rss.example.com/movies.xml'"`
 	// Enabled indicates if this template is active
@@ -557,6 +605,20 @@ type ListsConfig struct {
 	// List IDs of TMDB Lists
 	TmdbList       []int `toml:"tmdb_list" displayname:"TMDB List IDs" comment:"List of TMDB list IDs to import from.\nThese are numeric IDs of public lists on" longcomment:"List of TMDB list IDs to import from.\nThese are numeric IDs of public lists on The Movie Database.\nFind list IDs in TMDB list URLs: themoviedb.org/list/{ID}\nMultiple list IDs can be specified to import from several lists.\nRequires themoviedb_apikey to be configured in general settings.\nExample: [1, 28, 1000] for list IDs 1, 28, and 1000"`
 	RemoveFromList bool  `toml:"remove_from_list" displayname:"Remove After Processing" comment:"Remove items from the list after successful processing.\nWhen true, items are removed from the source" longcomment:"Remove items from the list after successful processing.\nWhen true, items are removed from the source list after being imported.\nUseful for one-time imports or clearing processed items from lists.\nWhen false, items remain in the list for future processing.\nCaution: This permanently modifies the source list.\nDefault: false (keep items in list)"`
+
+	// PlexServerURL is the URL of the Plex Media Server
+	PlexServerURL string `toml:"plex_server_url" displayname:"Plex Server URL" comment:"URL of the Plex Media Server for watchlist access.\nShould include protocol and port if needed" longcomment:"URL of the Plex Media Server for watchlist access.\nShould include protocol (http:// or https://) and port if needed.\nRequired for Plex watchlist integration (type 'plexwatchlist').\nExample: 'https://plex.example.com:32400' or 'http://192.168.1.100:32400'\nLeave empty if not using Plex integration."`
+	// PlexToken is the authentication token for Plex API access
+	PlexToken string `toml:"plex_token" displayname:"Plex Authentication Token" comment:"Plex authentication token for API access.\nRequired to access Plex watchlists and user data" longcomment:"Plex authentication token for API access.\nRequired to access Plex watchlists and user data.\nGet your token from Plex Web App: Account Settings > Privacy > Show Token\nOr use the Plex API to generate a token programmatically.\nRequired for Plex watchlist integration (type 'plexwatchlist').\nExample: 'xxxxxxxxxxxxxxxxxxxx'\nKeep this token secret and secure."`
+	// PlexUsername is the Plex username for watchlist access
+	PlexUsername string `toml:"plex_username" displayname:"Plex Username" comment:"Plex username whose watchlist to import from.\nThis should be the username of the Plex account" longcomment:"Plex username whose watchlist to import from.\nThis should be the username of the Plex account whose watchlist you want to monitor.\nRequired for Plex watchlist integration (type 'plexwatchlist').\nUsually the same as your Plex account email or display name.\nExample: 'john.doe@example.com' or 'moviefan123'"`
+
+	// JellyfinServerURL is the URL of the Jellyfin Media Server
+	JellyfinServerURL string `toml:"jellyfin_server_url" displayname:"Jellyfin Server URL" comment:"URL of the Jellyfin Media Server for watchlist access.\nShould include protocol and port if needed" longcomment:"URL of the Jellyfin Media Server for watchlist access.\nShould include protocol (http:// or https://) and port if needed.\nRequired for Jellyfin watchlist integration (type 'jellyfinwatchlist').\nExample: 'https://jellyfin.example.com:8096' or 'http://192.168.1.100:8096'\nLeave empty if not using Jellyfin integration."`
+	// JellyfinToken is the authentication token for Jellyfin API access
+	JellyfinToken string `toml:"jellyfin_token" displayname:"Jellyfin API Key" comment:"Jellyfin API key for authentication and access.\nRequired to access Jellyfin watchlists and user data" longcomment:"Jellyfin API key for authentication and access.\nRequired to access Jellyfin watchlists and user data.\nGenerate from Jellyfin Admin Dashboard > API Keys > Add API Key\nRequired for Jellyfin watchlist integration (type 'jellyfinwatchlist').\nExample: 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'\nKeep this API key secret and secure."`
+	// JellyfinUsername is the Jellyfin username for watchlist access
+	JellyfinUsername string `toml:"jellyfin_username" displayname:"Jellyfin Username" comment:"Jellyfin username whose watchlist to import from.\nThis should be the username of the Jellyfin user account" longcomment:"Jellyfin username whose watchlist to import from.\nThis should be the username of the Jellyfin user account whose watchlist you want to monitor.\nRequired for Jellyfin watchlist integration (type 'jellyfinwatchlist').\nExample: 'john_doe' or 'moviefan123'"`
 }
 
 // IndexersConfig defines the configuration for indexers.
@@ -718,15 +780,19 @@ type PathsConfig struct {
 // NotificationConfig defines the configuration for notifications.
 type NotificationConfig struct {
 	// Name is the name of the notification template
-	Name string `toml:"name" displayname:"Notification Configuration Name" comment:"Unique name for this notification configuration.\nUsed to identify this notification method in media configurations.\nChoose a" longcomment:"Unique name for this notification configuration.\nUsed to identify this notification method in media configurations.\nChoose a descriptive name that indicates the notification type and purpose.\nExample: 'pushover-main', 'csv-log', 'slack-alerts'"`
-	// NotificationType is the type of notification - use csv or pushover
-	NotificationType string `toml:"type" displayname:"Notification Service Type" comment:"Type of notification service to use.\nAvailable options:\n- 'csv': Write notifications to a CSV file for logging/tracking" longcomment:"Type of notification service to use.\nAvailable options:\n- 'csv': Write notifications to a CSV file for logging/tracking\n- 'pushover': Send push notifications via Pushover service\nCSV is useful for record keeping, Pushover for real-time alerts.\nExample: 'pushover' for mobile notifications, 'csv' for logs"`
-	// Apikey is the pushover apikey - create here: https://pushover.net/apps/build
-	Apikey string `toml:"apikey" displayname:"Pushover API Key" comment:"API key for Pushover service (required when type is 'pushover').\nObtain by creating an application at:" longcomment:"API key for Pushover service (required when type is 'pushover').\nObtain by creating an application at: https://pushover.net/apps/build\nThis identifies your application to the Pushover service.\nKeep this key secure and don't share it publicly.\nLeave empty if using CSV notifications.\nExample: 'azGDORePK8gMaC0QOYAMyEEuzJnyUi'"`
-	// Recipient is the pushover recipient
-	Recipient string `toml:"recipient" displayname:"Pushover User Key" comment:"Pushover user key or group key to receive notifications.\nThis is the target recipient for Pushover" longcomment:"Pushover user key or group key to receive notifications.\nThis is the target recipient for Pushover notifications.\nFind your user key in your Pushover account dashboard.\nCan be a user key (for individual) or group key (for groups).\nRequired when type is 'pushover', ignored for CSV notifications.\nExample: 'uQiRzpo4DXghDmr9QzzfQu27cmVRsG'"`
+	Name string `toml:"name" displayname:"Notification Configuration Name" comment:"Unique name for this notification configuration.\nUsed to identify this notification method in media configurations.\nChoose a" longcomment:"Unique name for this notification configuration.\nUsed to identify this notification method in media configurations.\nChoose a descriptive name that indicates the notification type and purpose.\nExample: 'pushover-main', 'csv-log', 'gotify-alerts', 'pushbullet-mobile'"`
+	// NotificationType is the type of notification - use csv, pushover, gotify, pushbullet, or apprise
+	NotificationType string `toml:"type" displayname:"Notification Service Type" comment:"Type of notification service to use.\nAvailable options:\n- 'csv': Write notifications to a CSV file" longcomment:"Type of notification service to use.\nAvailable options:\n- 'csv': Write notifications to a CSV file for logging/tracking\n- 'pushover': Send push notifications via Pushover service\n- 'gotify': Send notifications to self-hosted Gotify server\n- 'pushbullet': Send push notifications via Pushbullet service\n- 'apprise': Send notifications via Apprise API server (supports 80+ services)\nExample: 'pushover' for mobile notifications, 'gotify' for self-hosted"`
+	// Apikey is the API key/token for the service
+	Apikey string `toml:"apikey" displayname:"API Key/Token" comment:"API key or token for the notification service.\nRequired for pushover, pushbullet, and gotify.\nLeave empty for" longcomment:"API key or token for the notification service.\nRequired for pushover, pushbullet, and gotify. Leave empty for CSV and Apprise.\nPushover: Get from https://pushover.net/apps/build\nPushbullet: Get from https://www.pushbullet.com/#settings/account\nGotify: Application token from your Gotify server\nExample: 'azGDORePK8gMaC0QOYAMyEEuzJnyUi'"`
+	// Recipient is the recipient for pushover notifications
+	Recipient string `toml:"recipient" displayname:"Pushover User Key" comment:"Pushover user key or group key to receive notifications.\nOnly used when type is 'pushover'" longcomment:"Pushover user key or group key to receive notifications.\nOnly used when type is 'pushover'. Find your user key in your Pushover account dashboard.\nCan be a user key (for individual) or group key (for groups).\nIgnored for other notification types.\nExample: 'uQiRzpo4DXghDmr9QzzfQu27cmVRsG'"`
 	// Outputto is the path to output csv notifications
-	Outputto string `toml:"output_to" displayname:"CSV Output File Path" comment:"File path for CSV notification output (required when type is 'csv').\nNotifications will be appended to" longcomment:"File path for CSV notification output (required when type is 'csv').\nNotifications will be appended to this CSV file with timestamps.\nPath can be absolute or relative to the application directory.\nFile will be created if it doesn't exist, appended to if it does.\nIgnored when using Pushover notifications.\nExample: './logs/notifications.csv' or '/var/log/media-notifications.csv'"`
+	Outputto string `toml:"output_to" displayname:"CSV Output File Path" comment:"File path for CSV notification output (required when type is 'csv').\nIgnored for other notification types" longcomment:"File path for CSV notification output (required when type is 'csv').\nNotifications will be appended to this CSV file with timestamps.\nPath can be absolute or relative to the application directory.\nFile will be created if it doesn't exist, appended to if it does.\nIgnored for push notification services.\nExample: './logs/notifications.csv' or '/var/log/media-notifications.csv'"`
+	// ServerURL is the server URL for self-hosted services
+	ServerURL string `toml:"server_url" displayname:"Server URL" comment:"Server URL for self-hosted notification services.\nRequired for gotify and apprise.\nLeave empty for" longcomment:"Server URL for self-hosted notification services.\nRequired for gotify and apprise. Leave empty for pushover, pushbullet, and CSV.\nGotify: URL to your Gotify server (e.g., 'https://gotify.example.com')\nApprise: URL to your Apprise API server (e.g., 'http://localhost:8000')\nExample: 'https://gotify.mydomain.com'"`
+	// AppriseURLs contains the notification service URLs for Apprise
+	AppriseURLs string `toml:"apprise_urls" displayname:"Apprise Service URLs" comment:"Comma-separated list of notification service URLs for Apprise.\nOnly used when type is 'apprise'" longcomment:"Comma-separated list of notification service URLs for Apprise.\nOnly used when type is 'apprise'. Each URL represents a different notification service.\nApprise supports 80+ notification services including Discord, Slack, Telegram, etc.\nSee Apprise documentation for URL format for each service.\nExample: 'discord://webhook_id/webhook_token,slack://TokenA/TokenB/TokenC/Channel'"`
 }
 
 // RegexConfig is a struct that defines a regex template
@@ -992,9 +1058,15 @@ type SchedulerConfig struct {
 	CronDatabaseBackup string `toml:"cron_database_backup" displayname:"Database Backup Cron Schedule" comment:"Cron schedule for automatic database backup operations (alternative to interval).\nUse cron format for precise timing" longcomment:"Cron schedule for automatic database backup operations (alternative to interval).\nUse cron format for precise timing control instead of simple intervals.\nStandard cron format: 'minute hour day month weekday'\nCommon examples:\n- '0 3 * * *': Daily at 3 AM\n- '0 2 * * 0': Weekly on Sunday at 2 AM\n- '0 1 1 * *': Monthly on first day at 1 AM\nDatabase backups temporarily lock database during operation.\nSchedule during absolute lowest system usage periods.\nExample: '0 3 * * *' for daily database backup at 3 AM"`
 	// CronDatabaseCheck is the cron schedule for database checks
 	CronDatabaseCheck string `toml:"cron_database_check" displayname:"Database Check Cron Schedule" comment:"Cron schedule for database integrity and consistency checks (alternative to interval).\nUse cron format for precise" longcomment:"Cron schedule for database integrity and consistency checks (alternative to interval).\nUse cron format for precise timing control instead of simple intervals.\nStandard cron format: 'minute hour day month weekday'\nCommon examples:\n- '0 4 * * 0': Weekly on Sunday at 4 AM\n- '0 5 1 * *': Monthly on first day at 5 AM\n- '0 6 1 */3 *': Quarterly on first day at 6 AM\nDatabase checks are resource-intensive and can slow operations.\nSchedule during lowest usage periods for minimal impact.\nExample: '0 4 * * 0' for weekly database integrity check on Sunday"`
+
+	// IntervalCacheRefresh is the interval for cache refreshes
+	IntervalCacheRefresh string `toml:"interval_cache_refresh" displayname:"Cache Refresh Interval" comment:"Time interval between automatic cache refresh operations.\nControls how often database caches are fully refreshed" longcomment:"Time interval between automatic cache refresh operations.\nControls how often database caches are fully refreshed to ensure data consistency.\nCache refreshes rebuild in-memory data from the database to prevent stale data.\nSupports Go duration format: '1h', '6h', '12h', '24h', '2d'\nAlso supports cron format for specific timing\nFrequent refreshes keep data current but increase system load.\nBalance between data freshness and performance impact.\nRecommended: '6h' for regular cache refresh, '24h' for light usage\nExample: '6h' for every 6 hours cache refresh"`
+
+	// CronCacheRefresh is the cron schedule for cache refreshes
+	CronCacheRefresh string `toml:"cron_cache_refresh" displayname:"Cache Refresh Cron Schedule" comment:"Cron schedule for automatic cache refresh operations (alternative to interval).\nUse cron format for precise timing" longcomment:"Cron schedule for automatic cache refresh operations (alternative to interval).\nUse cron format for precise timing control instead of simple intervals.\nStandard cron format: 'minute hour day month weekday'\nCommon examples:\n- '0 */6 * * *': Every 6 hours\n- '0 2,8,14,20 * * *': 4 times daily at 2 AM, 8 AM, 2 PM, 8 PM\n- '0 3 * * *': Daily at 3 AM\nCache refreshes rebuild in-memory data from database for consistency.\nSchedule during lower usage periods to minimize performance impact.\nExample: '0 */6 * * *' for every 6 hours cache refresh"`
 }
 
-const Configfile = "./config/config.toml"
+var Configfile = "./config/config.toml"
 
 var (
 	settings struct {
@@ -1038,7 +1110,7 @@ var (
 	// traktToken contains the trakt OAuth token.
 	traktToken *oauth2.Token
 
-	mu = sync.Mutex{}
+	mu = sync.RWMutex{}
 )
 
 // GetMediaListsEntryListID returns the index position of the list with the given
@@ -1048,7 +1120,7 @@ func (cfgp *MediaTypeConfig) GetMediaListsEntryListID(listname string) int {
 		return -1
 	}
 	if cfgp == nil {
-		logger.LogDynamicany0("error", "the config couldnt be found")
+		logger.Logtype("error", 0).Msg("the config couldnt be found")
 		return -1
 	}
 	k, ok := cfgp.ListsMapIdx[listname]
@@ -1068,8 +1140,8 @@ func (cfgp *MediaTypeConfig) GetMediaListsEntryListID(listname string) int {
 // set for that media in the database. If not, it returns the default
 // QualityConfig from cfgp.
 func (cfgp *MediaTypeConfig) GetMediaQualityConfigStr(str string) *QualityConfig {
-	mu.Lock()
-	defer mu.Unlock()
+	mu.RLock()
+	defer mu.RUnlock()
 	if str == "" {
 		return settings.SettingsQuality[cfgp.DefaultQuality]
 	}
@@ -1164,8 +1236,8 @@ func (quality *QualityConfig) QualityIndexerByQualityAndTemplateSkipEmpty(
 // getlistbyindexer returns the ListsConfig for the list matching the
 // given IndexersConfig name. Returns nil if no match is found.
 func (ind *IndexersConfig) Getlistbyindexer() *ListsConfig {
-	mu.Lock()
-	defer mu.Unlock()
+	mu.RLock()
+	defer mu.RUnlock()
 	for _, listcfg := range settings.SettingsList {
 		if listcfg.Name == ind.Name || strings.EqualFold(listcfg.Name, ind.Name) {
 			return listcfg
@@ -1204,18 +1276,37 @@ func LoadCfgDB(reload bool) error {
 		fmt.Println("Config file found. Loading config.")
 	}
 
+	// Load all settings first (this acquires and releases the config lock)
 	if err := Loadallsettings(reload); err != nil {
 		return err
 	}
 
-	configDB, _ := pudge.Open("./databases/config.db", &pudge.Config{SyncInterval: 0})
+	// Open and use pudge database AFTER config loading is complete
+	// This prevents deadlock by avoiding database operations while holding config lock
+	configDB, err := pudge.Open("./databases/config.db", &pudge.Config{SyncInterval: 0})
+	if err != nil {
+		logger.Logtype("error", 1).
+			Str(logger.StrFile, "./databases/config.db").
+			Err(err).
+			Msg("Failed to open config database")
+		return err
+	}
 	defer configDB.Close()
 	pudge.BackupAll("")
-	hastoken, _ := configDB.Has("trakt_token")
+	hastoken, err := configDB.Has("trakt_token")
+	if err != nil {
+		logger.Logtype("error", 1).
+			Str("key", "trakt_token").
+			Err(err).
+			Msg("Failed to check config database key")
+	}
 	if hastoken {
 		var token oauth2.Token
 		if configDB.Get("trakt_token", &token) == nil {
+			// Only lock briefly to set the token
+			mu.Lock()
 			traktToken = &token
+			mu.Unlock()
 		}
 	}
 
@@ -1231,10 +1322,14 @@ func Loadallsettings(reload bool) error {
 	defer mu.Unlock()
 	err := Readconfigtoml()
 	if err != nil {
+		fmt.Println(err)
 		return err
 	}
+	fmt.Println(settings.cachetoml)
+
 	ClearSettings(reload)
 	Getconfigtoml(reload)
+	fmt.Println(settings)
 	return nil
 }
 
@@ -1750,12 +1845,13 @@ func GetCfgAllJson() map[string]any {
 // based on the provided Conf struct. It saves the config values to
 // the config database.
 func UpdateCfgEntry(configIn Conf) {
-	configDB, _ := pudge.Open("./databases/config.db", &pudge.Config{SyncInterval: 0})
-
-	defer configDB.Close()
-
+	// Acquire config lock BEFORE opening database to maintain consistent lock ordering
 	mu.Lock()
 	defer mu.Unlock()
+
+	configDB, _ := pudge.Open("./databases/config.db", &pudge.Config{SyncInterval: 0})
+	defer configDB.Close()
+
 	handleConfigEntryWithDB(configIn, configDB)
 }
 
@@ -1800,12 +1896,13 @@ func UpdateCfgEntryAny(configIn any) error {
 // config maps. It handles entries for all major configuration categories like
 // general, downloader, indexer etc.
 func DeleteCfgEntry(name string) {
-	configDB, _ := pudge.Open("./databases/config.db", &pudge.Config{SyncInterval: 0})
-
-	defer configDB.Close()
-
+	// Acquire config lock BEFORE opening database to maintain consistent lock ordering
 	mu.Lock()
 	defer mu.Unlock()
+
+	configDB, _ := pudge.Open("./databases/config.db", &pudge.Config{SyncInterval: 0})
+	defer configDB.Close()
+
 	handleConfigDeletionWithDB(name, configDB)
 }
 
@@ -1842,15 +1939,25 @@ func ClearCfg() {
 			WorkerSearch:   1,
 			WorkerIndexer:  1,
 			// ConcurrentScheduler: 1,
-			OmdbLimiterSeconds:  1,
-			OmdbLimiterCalls:    1,
-			TmdbLimiterSeconds:  1,
-			TmdbLimiterCalls:    1,
-			TraktLimiterSeconds: 1,
-			TraktLimiterCalls:   1,
-			TvdbLimiterSeconds:  1,
-			TvdbLimiterCalls:    1,
-			SchedulerDisabled:   true,
+			OmdbLimiterSeconds:       1,
+			OmdbLimiterCalls:         1,
+			TmdbLimiterSeconds:       1,
+			TmdbLimiterCalls:         1,
+			TraktLimiterSeconds:      1,
+			TraktLimiterCalls:        1,
+			TvdbLimiterSeconds:       1,
+			TvdbLimiterCalls:         1,
+			TvmazeLimiterSeconds:     1,
+			TvmazeLimiterCalls:       1,
+			PlexLimiterSeconds:       1,
+			PlexLimiterCalls:         10,
+			PlexTimeoutSeconds:       30,
+			PlexDisableTLSVerify:     false,
+			JellyfinLimiterSeconds:   1,
+			JellyfinLimiterCalls:     10,
+			JellyfinTimeoutSeconds:   30,
+			JellyfinDisableTLSVerify: false,
+			SchedulerDisabled:        true,
 		},
 		Scheduler: []SchedulerConfig{{
 			Name:                       "Default",
@@ -1954,7 +2061,12 @@ func WriteCfg() {
 	if err != nil {
 		fmt.Println("Error loading config. " + err.Error())
 	}
-	os.WriteFile(Configfile, cnt, 0o777)
+	if err := os.WriteFile(Configfile, cnt, 0o777); err != nil {
+		logger.Logtype("error", 1).
+			Str(logger.StrFile, Configfile).
+			Err(err).
+			Msg("Failed to write config file")
+	}
 	settings.cachetoml = bla
 }
 
@@ -2023,105 +2135,105 @@ func GetMainConfig() MainConfig {
 }
 
 func GetSettingsGeneral() *GeneralConfig {
-	mu.Lock()
-	defer mu.Unlock()
+	mu.RLock()
+	defer mu.RUnlock()
 	return settings.SettingsGeneral
 }
 
 func GetSettingsImdb() *ImdbConfig {
-	mu.Lock()
-	defer mu.Unlock()
+	mu.RLock()
+	defer mu.RUnlock()
 	return settings.SettingsImdb
 }
 
 func GetSettingsMedia(name string) *MediaTypeConfig {
-	mu.Lock()
-	defer mu.Unlock()
+	mu.RLock()
+	defer mu.RUnlock()
 	return settings.SettingsMedia[name]
 }
 
 func GetSettingsMediaAll() *MediaConfig {
-	mu.Lock()
-	defer mu.Unlock()
+	mu.RLock()
+	defer mu.RUnlock()
 	return &settings.cachetoml.Media
 }
 
 func GetSettingsPath(name string) *PathsConfig {
-	mu.Lock()
-	defer mu.Unlock()
+	mu.RLock()
+	defer mu.RUnlock()
 	return settings.SettingsPath[name]
 }
 
 func GetSettingsPathAll() []PathsConfig {
-	mu.Lock()
-	defer mu.Unlock()
+	mu.RLock()
+	defer mu.RUnlock()
 	return settings.cachetoml.Paths
 }
 
 func GetSettingsDownloaderAll() []DownloaderConfig {
-	mu.Lock()
-	defer mu.Unlock()
+	mu.RLock()
+	defer mu.RUnlock()
 	return settings.cachetoml.Downloader
 }
 
 func GetSettingsRegexAll() []RegexConfig {
-	mu.Lock()
-	defer mu.Unlock()
+	mu.RLock()
+	defer mu.RUnlock()
 	return settings.cachetoml.Regex
 }
 
 func GetSettingsQuality(name string) *QualityConfig {
-	mu.Lock()
-	defer mu.Unlock()
+	mu.RLock()
+	defer mu.RUnlock()
 	return settings.SettingsQuality[name]
 }
 
 func GetSettingsQualityAll() []QualityConfig {
-	mu.Lock()
-	defer mu.Unlock()
+	mu.RLock()
+	defer mu.RUnlock()
 	return settings.cachetoml.Quality
 }
 
 func GetSettingsQualityOk(name string) (*QualityConfig, bool) {
-	mu.Lock()
-	defer mu.Unlock()
+	mu.RLock()
+	defer mu.RUnlock()
 	val, ok := settings.SettingsQuality[name]
 	return val, ok
 }
 
 func GetSettingsQualityLen() int {
-	mu.Lock()
-	defer mu.Unlock()
+	mu.RLock()
+	defer mu.RUnlock()
 	return len(settings.SettingsQuality)
 }
 
 func GetSettingsScheduler(name string) *SchedulerConfig {
-	mu.Lock()
-	defer mu.Unlock()
+	mu.RLock()
+	defer mu.RUnlock()
 	return settings.SettingsScheduler[name]
 }
 
 func GetSettingsSchedulerAll() []SchedulerConfig {
-	mu.Lock()
-	defer mu.Unlock()
+	mu.RLock()
+	defer mu.RUnlock()
 	return settings.cachetoml.Scheduler
 }
 
 func GetSettingsList(name string) *ListsConfig {
-	mu.Lock()
-	defer mu.Unlock()
+	mu.RLock()
+	defer mu.RUnlock()
 	return settings.SettingsList[name]
 }
 
 func GetSettingsListAll() []ListsConfig {
-	mu.Lock()
-	defer mu.Unlock()
+	mu.RLock()
+	defer mu.RUnlock()
 	return settings.cachetoml.Lists
 }
 
 func GetSettingsMediaListAll() []string {
-	mu.Lock()
-	defer mu.Unlock()
+	mu.RLock()
+	defer mu.RUnlock()
 	retlists := make([]string, 0, 50)
 	for _, cfg := range settings.SettingsMedia {
 		for i := range cfg.Lists {
@@ -2142,26 +2254,26 @@ func TestSettingsList(name string) bool {
 }
 
 func GetSettingsIndexer(name string) *IndexersConfig {
-	mu.Lock()
-	defer mu.Unlock()
+	mu.RLock()
+	defer mu.RUnlock()
 	return settings.SettingsIndexer[name]
 }
 
 func GetSettingsIndexerAll() []IndexersConfig {
-	mu.Lock()
-	defer mu.Unlock()
+	mu.RLock()
+	defer mu.RUnlock()
 	return settings.cachetoml.Indexers
 }
 
 func GetSettingsNotification(name string) *NotificationConfig {
-	mu.Lock()
-	defer mu.Unlock()
+	mu.RLock()
+	defer mu.RUnlock()
 	return settings.SettingsNotification[name]
 }
 
 func GetSettingsNotificationAll() []NotificationConfig {
-	mu.Lock()
-	defer mu.Unlock()
+	mu.RLock()
+	defer mu.RUnlock()
 	return settings.cachetoml.Notification
 }
 

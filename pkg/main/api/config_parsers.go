@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	gin "github.com/gin-gonic/gin"
 )
 
@@ -217,6 +216,8 @@ func createNotificationParser() *ConfigParser[config.NotificationConfig] {
 				Apikey:           builder.getString("Apikey"),
 				Recipient:        builder.getString("Recipient"),
 				Outputto:         builder.getString("Outputto"),
+				ServerURL:        builder.getString("ServerURL"),
+				AppriseURLs:      builder.getString("AppriseURLs"),
 			}
 		},
 		Validate: func(configs []config.NotificationConfig) error {
@@ -392,6 +393,9 @@ func parseMediaDataConfigs(c *gin.Context, mediaType, index string) []config.Med
 		if val := c.PostForm(fmt.Sprintf("%s_%s_AddFoundList", prefix, subIndex)); val != "" {
 			cfg.AddFoundList = val
 		}
+		if val := c.PostForm(fmt.Sprintf("%s_%s_EnableUnpacking", prefix, subIndex)); val != "" {
+			cfg.EnableUnpacking, _ = strconv.ParseBool(val)
+		}
 
 		configs = append(configs, cfg)
 	}
@@ -417,7 +421,13 @@ func parseMediaDataImportConfigs(c *gin.Context, mediaType, index string) []conf
 			continue
 		}
 
-		configs = append(configs, config.MediaDataImportConfig{TemplatePath: name})
+		enableUnpackingField := fmt.Sprintf("%s_%s_EnableUnpacking", prefix, subIndex)
+		enableUnpacking := c.PostForm(enableUnpackingField) == "on"
+
+		configs = append(configs, config.MediaDataImportConfig{
+			TemplatePath:    name,
+			EnableUnpacking: enableUnpacking,
+		})
 	}
 	return configs
 }
@@ -586,6 +596,10 @@ func parseGeneralConfig(c *gin.Context) config.GeneralConfig {
 		SetBool(&updatedConfig.UseMediainfo, "UseMediainfo").
 		SetString(&updatedConfig.MediainfoPath, "MediainfoPath").
 		SetString(&updatedConfig.FfprobePath, "FfprobePath").
+		SetString(&updatedConfig.UnrarPath, "UnrarPath").
+		SetString(&updatedConfig.SevenZipPath, "SevenZipPath").
+		SetString(&updatedConfig.UnzipPath, "UnzipPath").
+		SetString(&updatedConfig.TarPath, "TarPath").
 		SetBool(&updatedConfig.TvdbDisableTLSVerify, "TvdbDisableTLSVerify").
 		SetBool(&updatedConfig.OmdbDisableTLSVerify, "OmdbDisableTLSVerify").
 		SetBool(&updatedConfig.TraktDisableTLSVerify, "TraktDisableTLSVerify").
@@ -598,6 +612,14 @@ func parseGeneralConfig(c *gin.Context) config.GeneralConfig {
 		SetUint8(&updatedConfig.TvdbLimiterSeconds, "TvdbLimiterSeconds").
 		SetInt(&updatedConfig.TraktLimiterCalls, "TraktLimiterCalls").
 		SetUint8(&updatedConfig.TraktLimiterSeconds, "TraktLimiterSeconds").
+		SetUint8(&updatedConfig.PlexLimiterSeconds, "PlexLimiterSeconds").
+		SetInt(&updatedConfig.PlexLimiterCalls, "PlexLimiterCalls").
+		SetUint16(&updatedConfig.PlexTimeoutSeconds, "PlexTimeoutSeconds").
+		SetBool(&updatedConfig.PlexDisableTLSVerify, "PlexDisableTLSVerify").
+		SetUint8(&updatedConfig.JellyfinLimiterSeconds, "JellyfinLimiterSeconds").
+		SetInt(&updatedConfig.JellyfinLimiterCalls, "JellyfinLimiterCalls").
+		SetUint16(&updatedConfig.JellyfinTimeoutSeconds, "JellyfinTimeoutSeconds").
+		SetBool(&updatedConfig.JellyfinDisableTLSVerify, "JellyfinDisableTLSVerify").
 		SetBool(&updatedConfig.UseFileBufferCopy, "UseFileBufferCopy").
 		SetBool(&updatedConfig.UseCronInsteadOfInterval, "UseCronInsteadOfInterval").
 		SetBool(&updatedConfig.SchedulerDisabled, "SchedulerDisabled").
@@ -632,8 +654,6 @@ func parseConfigFromForm[T any](c *gin.Context, prefix string, createConfig func
 	if err := c.Request.ParseForm(); err != nil {
 		return nil
 	}
-	logger.LogDynamicany("info", "extractFormKeys debug",
-		"prefix", prefix, "total form -  fields", len(c.Request.PostForm), "all", c.Request.PostForm, "Form", c.Request.Form)
 	formKeys := extractFormKeys(c, prefix, "_Name")
 	configs := make([]T, 0, len(formKeys))
 

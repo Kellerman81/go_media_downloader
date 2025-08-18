@@ -192,14 +192,13 @@ func (movie *Dbmovie) GetImdbTitle(overwrite bool) error {
 		imdbdata.RuntimeMinutes != 0 {
 		if movie.Runtime != 0 &&
 			(imdbdata.RuntimeMinutes == 1 || imdbdata.RuntimeMinutes == 2 || imdbdata.RuntimeMinutes == 3 || imdbdata.RuntimeMinutes == 4) {
-			logger.LogDynamicany1String(
-				"debug",
-				"skipped imdb movie runtime for",
-				logger.StrImdb,
-				movie.ImdbID,
-			)
+			logger.Logtype("debug", 1).
+				Str(logger.StrImdb, movie.ImdbID).
+				Msg("skipped imdb movie runtime for")
 		} else {
-			logger.LogDynamicany1String("debug", "set imdb movie runtime for", logger.StrImdb, movie.ImdbID)
+			logger.Logtype("debug", 1).
+				Str(logger.StrImdb, movie.ImdbID).
+				Msg("set imdb movie runtime for")
 			movie.Runtime = imdbdata.RuntimeMinutes
 		}
 	}

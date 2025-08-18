@@ -702,7 +702,7 @@ func renderTableEditForm(table string, data map[string]any, id string, csrfToken
 		html.Input(html.Type("hidden"), html.Name("csrf_token"), html.Value(csrfToken)),
 	}
 
-	logger.LogDynamicany1Any("info", "testtable", "csrf", csrfToken)
+	// logger.Logtype("info", 1).Any("csrf", csrfToken).Msg("testtable")
 
 	// Get table columns for displaynames - use form-specific columns to exclude joined columns
 	tableColumns := getAdminFormColumns(table)

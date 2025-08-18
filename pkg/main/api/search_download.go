@@ -650,7 +650,7 @@ func performSearch(searchResults *searcher.ConfigSearcher, searchType, mediaConf
 		err = searchResults.SearchRSS(ctx, mediaTypeConfig, mediaTypeConfig.CfgQuality, false, false)
 
 	case "movies_search":
-		logger.LogDynamicany1Any("info", "movie search", "id", movieID)
+		// logger.Logtype("info", 1).Any("id", movieID).Msg("movie search")
 		if movieID <= 0 {
 			return &SearchResults{Accepted: []SearchResult{}, Denied: []SearchResult{}}, nil
 		}
@@ -661,7 +661,7 @@ func performSearch(searchResults *searcher.ConfigSearcher, searchType, mediaConf
 			movieID,
 		)
 		if movie.ID == 0 {
-			logger.LogDynamicany1Any("error", "movie db search", "id", movieID)
+			// logger.Logtype("error", 1).Any("id", movieID).Msg("movie db search")
 			return nil, fmt.Errorf("movie with ID %d not found", movieID)
 		}
 
@@ -675,7 +675,7 @@ func performSearch(searchResults *searcher.ConfigSearcher, searchType, mediaConf
 		}
 
 		if listConfig == nil {
-			logger.LogDynamicany1Any("info", "movie list search", "id", movieID)
+			// logger.Logtype("info", 1).Any("id", movieID).Msg("movie list search")
 			return nil, fmt.Errorf("list configuration for movie not found")
 		}
 

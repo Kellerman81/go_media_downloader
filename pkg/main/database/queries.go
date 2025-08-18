@@ -1,18 +1,17 @@
 package database
 
 import (
-	"cmp"
 	"context"
 	"database/sql"
 	"errors"
 	"os"
 	"reflect"
-	"slices"
 	"strings"
 	"sync"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/syncops"
 	"github.com/jmoiron/sqlx"
 )
 
@@ -40,6 +39,19 @@ type Querywithargs struct {
 	size uint
 }
 
+type FilePrio struct {
+	Location     string
+	DBID         uint
+	ID           uint
+	ResolutionID uint
+	QualityID    uint
+	CodecID      uint
+	AudioID      uint
+	Proper       bool
+	Repack       bool
+	Extended     bool
+}
+
 type DbstaticOneIntOneBool struct {
 	Num int  `db:"num"`
 	Bl  bool `db:"bl"`
@@ -53,17 +65,18 @@ type DbstaticOneStringOneUInt struct {
 	Str string `db:"str"`
 	Num uint   `db:"num"`
 }
-type DbstaticOneStringTwoInt struct {
-	Str  string `db:"str"`
-	Num1 uint   `db:"num1"`
-	Num2 uint   `db:"num2"`
-}
 
-type DbstaticTwoStringOneInt struct {
-	Str1 string `db:"str1"`
-	Str2 string `db:"str2"`
-	Num  uint   `db:"num"`
-}
+// type DbstaticOneStringTwoInt struct {
+// 	Str  string `db:"str"`
+// 	Num1 uint   `db:"num1"`
+// 	Num2 uint   `db:"num2"`
+// }
+
+//	type DbstaticTwoStringOneInt struct {
+//		Str1 string `db:"str1"`
+//		Str2 string `db:"str2"`
+//		Num  uint   `db:"num"`
+//	}
 type DbstaticTwoStringOneRInt struct {
 	Str1 string `db:"str1"`
 	Str2 string `db:"str2"`
@@ -80,30 +93,18 @@ type DbstaticThreeString struct {
 	Str2 string `db:"str2"`
 	Str3 string `db:"str3"`
 }
-type DbstaticThreeStringTwoInt struct {
-	Str1 string `db:"str1"`
-	Str2 string `db:"str2"`
-	Str3 string `db:"str3"`
-	Num1 int    `db:"num1"`
-	Num2 uint   `db:"num2"`
-}
+
+// type DbstaticThreeStringTwoInt struct {
+// 	Str1 string `db:"str1"`
+// 	Str2 string `db:"str2"`
+// 	Str3 string `db:"str3"`
+// 	Num1 int    `db:"num1"`
+// 	Num2 uint   `db:"num2"`
+// }
 
 type DbstaticTwoString struct {
 	Str1 string `db:"str1"`
 	Str2 string `db:"str2"`
-}
-
-type FilePrio struct {
-	Location     string
-	DBID         uint
-	ID           uint
-	ResolutionID uint
-	QualityID    uint
-	CodecID      uint
-	AudioID      uint
-	Proper       bool
-	Repack       bool
-	Extended     bool
 }
 
 const (
@@ -127,6 +128,7 @@ const (
 var (
 	strQuery    = "Query"
 	readWriteMu = sync.RWMutex{}
+	globalVarMu = sync.RWMutex{} // Protects DBConnect, DBVersion, DBLogLevel
 	sqlCTX      = context.Background()
 	DBConnect   DBGlobal
 	dbData      *sqlx.DB
@@ -138,6 +140,53 @@ var (
 // GetMutex returns the shared read-write mutex used for database operations.
 func GetMutex() *sync.RWMutex {
 	return &readWriteMu
+}
+
+// getGlobalVarMutex returns the mutex used to protect global variables.
+func getGlobalVarMutex() *sync.RWMutex {
+	return &globalVarMu
+}
+
+// GetDBConnect returns a copy of the DBConnect global variable in a thread-safe manner.
+func GetDBConnect() DBGlobal {
+	globalVarMu.RLock()
+	defer globalVarMu.RUnlock()
+	return DBConnect
+}
+
+// SetDBConnect updates the DBConnect global variable in a thread-safe manner.
+func SetDBConnect(dbConnect DBGlobal) {
+	globalVarMu.Lock()
+	defer globalVarMu.Unlock()
+	DBConnect = dbConnect
+}
+
+// GetDBVersion returns the current database version in a thread-safe manner.
+func GetDBVersion() string {
+	globalVarMu.RLock()
+	defer globalVarMu.RUnlock()
+	return DBVersion
+}
+
+// SetDBVersion updates the database version in a thread-safe manner.
+func SetDBVersion(version string) {
+	globalVarMu.Lock()
+	defer globalVarMu.Unlock()
+	DBVersion = version
+}
+
+// GetDBLogLevel returns the current database log level in a thread-safe manner.
+func GetDBLogLevel() string {
+	globalVarMu.RLock()
+	defer globalVarMu.RUnlock()
+	return DBLogLevel
+}
+
+// SetDBLogLevel updates the database log level in a thread-safe manner.
+func SetDBLogLevel(level string) {
+	globalVarMu.Lock()
+	defer globalVarMu.Unlock()
+	DBLogLevel = level
 }
 
 // getdb returns the database connection to use based on
@@ -212,15 +261,15 @@ func getfuncarr(u any, s *sqlx.Rows) error {
 		return s.Scan(&elem.Num, &elem.Bl)
 	case *DbstaticTwoUint:
 		return s.Scan(&elem.Num1, &elem.Num2)
-	case *DbstaticOneStringTwoInt:
+	case *syncops.DbstaticOneStringTwoInt:
 		return s.Scan(&elem.Str, &elem.Num1, &elem.Num2)
-	case *DbstaticTwoStringOneInt:
+	case *syncops.DbstaticTwoStringOneInt:
 		return s.Scan(&elem.Str1, &elem.Str2, &elem.Num)
 	case *DbstaticTwoStringOneRInt:
 		return s.Scan(&elem.Str1, &elem.Str2, &elem.Num)
 	case *DbstaticThreeString:
 		return s.Scan(&elem.Str1, &elem.Str2, &elem.Str3)
-	case *DbstaticThreeStringTwoInt:
+	case *syncops.DbstaticThreeStringTwoInt:
 		return s.Scan(&elem.Str1, &elem.Str2, &elem.Str3, &elem.Num1, &elem.Num2)
 	case *ImdbRatings:
 		return s.Scan(&elem.AverageRating, &elem.NumVotes)
@@ -865,33 +914,8 @@ func scandatarow(imdb bool, querystring string, s any, args []any) {
 //
 // Returns a *sql.Row from executing the query
 func queryRowContext(querystring string, imdb bool, args []any) *sql.Row {
-	stmtp := globalCache.getXStmtP(querystring)
-	if stmtp == nil {
-		// no pointer
-		stmt := globalCache.getXStmt(querystring, imdb)
-		return stmt.QueryRowContext(sqlCTX, args...)
-	}
+	stmtp := globalCache.getXStmt(querystring, imdb)
 	return stmtp.QueryRowContext(sqlCTX, args...)
-}
-
-// queryContext is a helper function that executes a SQL query with the provided arguments.
-// It uses the GlobalCache to cache the prepared statement for the given query string and database connection.
-// The function handles both cached statement pointers and non-pointer statements.
-//
-// The function takes the following arguments:
-// - querystring: the SQL query to execute
-// - imdb: a boolean indicating whether to use the "imdb" database connection or the default one
-// - args: variadic arguments to pass to the SQL query
-//
-// Returns a *sql.Rows and an error from executing the query
-func queryContext(querystring string, imdb bool, args []any) (*sql.Rows, error) {
-	stmtp := globalCache.getXStmtP(querystring)
-	if stmtp == nil {
-		// no pointer
-		stmt := globalCache.getXStmt(querystring, imdb)
-		return stmt.QueryContext(sqlCTX, args...)
-	}
-	return stmtp.QueryContext(sqlCTX, args...)
 }
 
 // queryRowxContext is a helper function that executes a SQL query using sqlx with the provided arguments.
@@ -905,13 +929,8 @@ func queryContext(querystring string, imdb bool, args []any) (*sql.Rows, error) 
 //
 // Returns a *sqlx.Row from executing the query
 func queryRowxContext(querystring string, imdb bool, args []any) *sqlx.Row {
-	stmtp := globalCache.getXStmtP(querystring)
-	if stmtp == nil {
-		// no pointer
-		stmt := globalCache.getXStmt(querystring, imdb)
-		return stmt.QueryRowxContext(sqlCTX, args...)
-	}
-	return stmtp.QueryRowxContext(sqlCTX, args...)
+	stmt := globalCache.getXStmt(querystring, imdb)
+	return stmt.QueryRowxContext(sqlCTX, args...)
 }
 
 // queryxContext is a helper function that executes a SQL query using sqlx with the provided arguments.
@@ -925,13 +944,8 @@ func queryRowxContext(querystring string, imdb bool, args []any) *sqlx.Row {
 //
 // Returns a *sqlx.Rows and an error from executing the query
 func queryxContext(querystring string, imdb bool, args []any) (*sqlx.Rows, error) {
-	stmtp := globalCache.getXStmtP(querystring)
-	if stmtp == nil {
-		// no pointer
-		stmt := globalCache.getXStmt(querystring, imdb)
-		return stmt.QueryxContext(sqlCTX, args...)
-	}
-	return stmtp.QueryxContext(sqlCTX, args...)
+	stmt := globalCache.getXStmt(querystring, imdb)
+	return stmt.QueryxContext(sqlCTX, args...)
 }
 
 // Getdatarow is a generic function that executes a SQL query with the provided arguments and
@@ -957,10 +971,13 @@ func logSQLError(err error, querystring string) {
 		return
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
-		logger.LogDynamicany1StringErr("error", "exec", err, strQuery, querystring)
+		logger.Logtype("error", 1).
+			Str(strQuery, querystring).
+			Err(err).
+			Msg("exec")
 	}
 	if err.Error() == "sql: database is closed" {
-		cache.itemsxstmt.DeleteFuncImdbVal(func(x bool) bool {
+		syncops.QueueSyncMapDeleteFuncImdbVal(syncops.MapTypeXStmt, func(x bool) bool {
 			return x
 		}, func(s sqlx.Stmt) {
 			s.Close()
@@ -1165,19 +1182,14 @@ func ExecNid(querystring string, args ...any) (int64, error) {
 func exec(querystring string, args []any) (sql.Result, error) {
 	readWriteMu.Lock()
 	defer readWriteMu.Unlock()
-	stmtp := globalCache.getXStmtP(querystring)
-	var r sql.Result
-	var err error
+	stmt := globalCache.getXStmt(querystring, false)
 
-	if stmtp == nil {
-		// no pointer
-		stmt := globalCache.getXStmt(querystring, false)
-		r, err = stmt.ExecContext(sqlCTX, args...)
-	} else {
-		r, err = stmtp.ExecContext(sqlCTX, args...)
-	}
+	r, err := stmt.ExecContext(sqlCTX, args...)
 	if err != nil {
-		logger.LogDynamicany1StringErr("error", "query exec", err, strQuery, querystring)
+		logger.Logtype("error", 1).
+			Str(strQuery, querystring).
+			Err(err).
+			Msg("query exec")
 		return nil, err
 	}
 	return r, nil
@@ -1239,8 +1251,11 @@ func DeleteRow(table, where string, args ...any) (sql.Result, error) {
 	if where != "" {
 		querystring = querystring + " where " + where
 	}
-	if DBLogLevel == logger.StrDebug {
-		logger.LogDynamicany2StrAny("debug", "query delete", strQuery, querystring, "args", args)
+	if GetDBLogLevel() == logger.StrDebug {
+		logger.Logtype("debug", 2).
+			Str(strQuery, querystring).
+			Interface("args", args).
+			Msg("query delete")
 	}
 	return exec(querystring, args)
 }
@@ -1256,7 +1271,10 @@ func queryrowfulllockconnect(query string) string {
 		return str
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
-		logger.LogDynamicany1StringErr("error", "select", err, strQuery, query)
+		logger.Logtype("error", 1).
+			Str(strQuery, query).
+			Err(err).
+			Msg("select")
 	}
 	return ""
 }
@@ -1267,7 +1285,8 @@ func queryrowfulllockconnect(query string) string {
 // The string result from running the statement is
 // returned.
 func DBQuickCheck() string {
-	logger.LogDynamicany0("info", "Check Database for Errors")
+	logger.Logtype("info", 0).
+		Msg("Check Database for Errors")
 	return queryrowfulllockconnect("PRAGMA quick_check;")
 }
 
@@ -1277,20 +1296,24 @@ func DBQuickCheck() string {
 // The string result from running the statement is
 // returned.
 func DBIntegrityCheck() string {
-	logger.LogDynamicany0("info", "Check Database for Integrity")
+	logger.Logtype("info", 0).
+		Msg("Check Database for Integrity")
 	return queryrowfulllockconnect("PRAGMA integrity_check;")
 }
 
 // Getentryalternatetitlesdirect retrieves a slice of DbstaticTwoStringOneInt objects that represent alternate titles for the movie with the given database ID. If the UseMediaCache setting is enabled, it will retrieve the titles from the cache. Otherwise, it will retrieve the titles directly from the database.
-func Getentryalternatetitlesdirect(dbid *uint, useseries bool) []DbstaticTwoStringOneInt {
+func Getentryalternatetitlesdirect(dbid *uint, useseries bool) []syncops.DbstaticTwoStringOneInt {
+	if dbid == nil {
+		return nil
+	}
 	if config.GetSettingsGeneral().UseMediaCache {
-		return GetCachedArr(cache.itemstwostring,
+		return GetCachedTwoStringArr(
 			logger.GetStringsMap(useseries, logger.CacheMediaTitles),
 			false,
 			true,
 		)
 	}
-	return Getrowssize[DbstaticTwoStringOneInt](
+	return Getrowssize[syncops.DbstaticTwoStringOneInt](
 		false,
 		logger.GetStringsMap(useseries, logger.DBCountDBTitlesDBID),
 		logger.GetStringsMap(useseries, logger.DBDistinctDBTitlesDBID),
@@ -1298,42 +1321,26 @@ func Getentryalternatetitlesdirect(dbid *uint, useseries bool) []DbstaticTwoStri
 	)
 }
 
-// GetDbstaticTwoStringOneInt returns a slice of DbstaticTwoStringOneInt objects that match the given id. It first finds the index of the first match, then sorts the slice and returns the subslice containing all matches.
-func GetDbstaticTwoStringOneInt(s []DbstaticTwoStringOneInt, id uint) []DbstaticTwoStringOneInt {
+// GetDbstaticTwoStringOneInt returns a slice of DbstaticTwoStringOneInt objects that match the given id.
+// It filters the input slice to include only elements where Num equals the specified id.
+func GetDbstaticTwoStringOneInt(s []syncops.DbstaticTwoStringOneInt, id uint) []syncops.DbstaticTwoStringOneInt {
 	if len(s) == 0 {
 		return nil
 	}
-	a := -1
+
+	// Filter elements that match the ID
+	var result []syncops.DbstaticTwoStringOneInt
 	for idx := range s {
 		if s[idx].Num == id {
-			if a == -1 {
-				a = idx
-				break
-			}
+			result = append(result, s[idx])
 		}
 	}
-	if a == -1 {
+
+	// Return nil if no matches found, otherwise return the filtered slice
+	if len(result) == 0 {
 		return nil
 	}
-	slices.SortFunc(s, func(a, b DbstaticTwoStringOneInt) int {
-		return cmp.Compare(a.Num, b.Num)
-	})
-	i, j := -1, -1
-	for idx := range s {
-		if s[idx].Num == id {
-			if i == -1 {
-				i = idx
-			}
-			j = idx
-		}
-	}
-	if i == -1 || j == -1 {
-		return nil
-	}
-	if j == 0 {
-		return s[i:]
-	}
-	return s[i : j+1]
+	return result
 }
 
 // ExchangeImdbDB exchanges the imdb.db file with a temp copy.
@@ -1354,13 +1361,21 @@ func ExchangeImdbDB() {
 	os.Remove(dbfile)
 	err := os.Rename(dbfiletemp, dbfile)
 	if err == nil {
-		logger.LogDynamicany1String("debug", "File renamed", logger.StrFile, dbfiletemp)
+		logger.Logtype("debug", 1).
+			Str(logger.StrFile, dbfiletemp).
+			Msg("File renamed")
+	} else {
+		logger.Logtype("error", 1).
+			Str(logger.StrFile, dbfiletemp).
+			Str("target", dbfile).
+			Err(err).
+			Msg("Failed to rename database file")
 	}
 	InitImdbdb()
 }
 
 // ChecknzbtitleC checks if the given nzbtitle matches the title or alternate title of the movie. It also allows checking for the movie title with the year before and after the given year.
-func (movie *DbstaticTwoStringOneInt) ChecknzbtitleC(
+func ChecknzbtitleC(movie *syncops.DbstaticTwoStringOneInt,
 	nzbtitle string,
 	allowpm1 bool,
 	yearu uint16,

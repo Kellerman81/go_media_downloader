@@ -16,8 +16,22 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/slidingwindow"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/syncops"
 	"github.com/goccy/go-json"
 )
+
+// Client is a type for interacting with a newznab or torznab api
+// It contains fields for the api key, base API URL, debug mode,
+// and a pointer to the rate limited HTTP client.
+type LimitedAPIClient struct {
+	Client        rlHTTPClient // pointer to the rate limited HTTP client
+	Lim           *slidingwindow.Limiter
+	apikey        string // the API key for authentication
+	aPIBaseURL    string // the base URL of the API
+	aPIBaseURLStr string // the base URL as a string
+	aPIUserID     string // the user ID for the API
+	debug         bool   // whether to enable debug logging
+}
 
 // rlHTTPClient is a rate limited HTTP client struct.
 // It contains fields for the underlying http.Client, name, timeouts,
@@ -50,16 +64,24 @@ const (
 
 var (
 	errDailyLimit = errors.New("daily limit reached")
+	// clientMu protects all global API client variables
+	clientMu sync.RWMutex
 	// traktAPI is a client for interacting with the Trakt API.
-	traktAPI traktClient
+	traktAPI *traktClient
 	// tvdbAPI is a client for interacting with the TVDB API.
-	tvdbAPI tvdbClient
+	tvdbAPI *tvdbClient
 	// tmdbAPI is a client for interacting with the TMDB API.
-	tmdbAPI tmdbClient
+	tmdbAPI *tmdbClient
 	// omdbAPI is a client for interacting with the OMDb API.
-	omdbAPI omdbClient
-	// newznabClients is a slice of newznab client structs.
-	newznabClients = logger.NewSyncMap[*client](10)
+	omdbAPI *omdbClient
+	// plexAPI is a client for interacting with the Plex API.
+	plexAPI *plexClient
+	// jellyfinAPI is a client for interacting with the Jellyfin API.
+	jellyfinAPI *jellyfinClient
+	// tvmazeAPI is a client for interacting with the TVMaze API.
+	tvmazeAPI *tvmazeClient
+	// NewznabClients is a map of newznab client structs.
+	NewznabClients = syncops.NewSyncMap[syncops.SyncAny](10)
 
 	// cl is a default HTTP client with rate limiting and timeouts.
 	lim = slidingwindow.NewLimiter(1*time.Second, 10)
@@ -80,6 +102,111 @@ var (
 	nzbmu                    = sync.Mutex{}
 )
 
+// Thread-safe accessor functions for API clients
+func getTraktAPI() *traktClient {
+	clientMu.RLock()
+	defer clientMu.RUnlock()
+	return traktAPI
+}
+
+// setTraktAPI safely sets the global Trakt API client instance.
+// Uses write lock to prevent concurrent modifications during assignment.
+//
+// Parameters:
+//   - client: New Trakt API client instance to set as the global client
+func setTraktAPI(client *traktClient) {
+	clientMu.Lock()
+	defer clientMu.Unlock()
+	traktAPI = client
+}
+
+// getTvdbAPI safely retrieves the global TVDB API client instance.
+// Uses read lock to prevent data races during concurrent access.
+//
+// Returns:
+//   - *tvdbClient: Current TVDB API client instance or nil if not initialized
+func getTvdbAPI() *tvdbClient {
+	clientMu.RLock()
+	defer clientMu.RUnlock()
+	return tvdbAPI
+}
+
+// setTvdbAPI safely sets the global TVDB API client instance.
+// Uses write lock to prevent concurrent modifications during assignment.
+//
+// Parameters:
+//   - client: New TVDB API client instance to set as the global client
+func setTvdbAPI(client *tvdbClient) {
+	clientMu.Lock()
+	defer clientMu.Unlock()
+	tvdbAPI = client
+}
+
+// getTmdbAPI safely retrieves the global TMDB API client instance.
+// Uses read lock to prevent data races during concurrent access.
+//
+// Returns:
+//   - *tmdbClient: Current TMDB API client instance or nil if not initialized
+func getTmdbAPI() *tmdbClient {
+	clientMu.RLock()
+	defer clientMu.RUnlock()
+	return tmdbAPI
+}
+
+func setTmdbAPI(client *tmdbClient) {
+	clientMu.Lock()
+	defer clientMu.Unlock()
+	tmdbAPI = client
+}
+
+func getOmdbAPI() *omdbClient {
+	clientMu.RLock()
+	defer clientMu.RUnlock()
+	return omdbAPI
+}
+
+func setOmdbAPI(client *omdbClient) {
+	clientMu.Lock()
+	defer clientMu.Unlock()
+	omdbAPI = client
+}
+
+func getPlexAPI() *plexClient {
+	clientMu.RLock()
+	defer clientMu.RUnlock()
+	return plexAPI
+}
+
+func setPlexAPI(client *plexClient) {
+	clientMu.Lock()
+	defer clientMu.Unlock()
+	plexAPI = client
+}
+
+func getJellyfinAPI() *jellyfinClient {
+	clientMu.RLock()
+	defer clientMu.RUnlock()
+	return jellyfinAPI
+}
+
+func setJellyfinAPI(client *jellyfinClient) {
+	clientMu.Lock()
+	defer clientMu.Unlock()
+	jellyfinAPI = client
+}
+
+func getTvmazeAPI() *tvmazeClient {
+	clientMu.RLock()
+	defer clientMu.RUnlock()
+	return tvmazeAPI
+}
+
+func setTvmazeAPI(client *tvmazeClient) {
+	clientMu.Lock()
+	defer clientMu.Unlock()
+	tvmazeAPI = client
+}
+
 // Add appends the given Nzbwithprio to the NzbSlice's Arr field, with synchronization
 // to ensure thread-safety.
 func (n *NzbSlice) Add(nzb *Nzbwithprio) {
@@ -92,7 +219,7 @@ func (n *NzbSlice) Add(nzb *Nzbwithprio) {
 // allow forces an allowance if true. retrycount is the max number of retries.
 // retryafterseconds is the initial backoff duration.
 // Returns true if allowed, false if rate limited after retries.
-func (c *rlHTTPClient) checkLimiter(_ context.Context, allow bool) (bool, error) {
+func (c *rlHTTPClient) checkLimiter(ctx context.Context, allow bool) (bool, error) {
 	if c.DailyLimiterEnabled {
 		if !c.DailyRatelimiter.CheckBool() {
 			return false, errDailyLimit
@@ -100,8 +227,21 @@ func (c *rlHTTPClient) checkLimiter(_ context.Context, allow bool) (bool, error)
 	}
 	waituntil := (time.Duration(1) * time.Second)
 	waituntilmax := (time.Duration(20) * time.Second)
-	for range 20 {
+
+	// logger.Logtype("debug", 1).Str("client", c.Clientname).Msg("Starting rate limit check")
+
+	for i := range 20 {
+		// Check if context is cancelled/timed out
+		select {
+		case <-ctx.Done():
+			logger.Logtype("debug", 1).Str("client", c.Clientname).Int("iteration", i).Msg("Rate limiter context cancelled")
+			return false, ctx.Err()
+		default:
+		}
+
 		ok, waitfor := c.Ratelimiter.Check()
+		// logger.Logtype("debug", 1).Str("client", c.Clientname).Int("iteration", i).Bool("ok", ok).Dur("waitfor", waitfor).Msg("Rate limit check result")
+
 		if ok {
 			if allow {
 				c.Ratelimiter.AllowForce()
@@ -109,27 +249,34 @@ func (c *rlHTTPClient) checkLimiter(_ context.Context, allow bool) (bool, error)
 					c.DailyRatelimiter.AllowForce()
 				}
 			}
+			// logger.Logtype("debug", 1).Str("client", c.Clientname).Msg("Rate limit check passed")
 			return true, nil
 		}
+
+		// Calculate total sleep time
+		var totalSleep time.Duration
 		if waitfor == 0 {
-			time.Sleep(waituntil)
-			// break
+			totalSleep += waituntil
 		}
-		time.Sleep(
-			(time.Duration(rand.New(config.RandomizerSource).Intn(500)+10) * time.Millisecond),
-		)
+		totalSleep += time.Duration(rand.New(config.RandomizerSource).Intn(500)+10) * time.Millisecond
 		if waitfor > waituntilmax {
 			return false, logger.ErrToWait
 		}
-		time.Sleep(waitfor)
+		totalSleep += waitfor
+
+		// Sleep with context cancellation check
+		select {
+		case <-ctx.Done():
+			logger.Logtype("debug", 1).Str("client", c.Clientname).Int("iteration", i).Msg("Rate limiter context cancelled during sleep")
+			return false, ctx.Err()
+		case <-time.After(totalSleep):
+			// Continue to next iteration
+		}
 	}
 
-	logger.LogDynamicany1String(
-		"warn",
-		"Hit rate limit - retrys failed",
-		logger.StrURL,
-		c.Clientname,
-	)
+	logger.Logtype("warn", 1).
+		Str(logger.StrURL, c.Clientname).
+		Msg("Hit rate limit - retrys failed")
 
 	return false, logger.ErrToWait
 }
@@ -190,14 +337,10 @@ func (c *rlHTTPClient) addwait(req *http.Request, resp *http.Response) bool {
 		if resp.StatusCode != http.StatusNotFound {
 			c.logwait(logger.TimeGetNow().Add(time.Duration(blockinterval)*time.Minute), nil)
 		}
-		logger.LogDynamicany2Str(
-			"error",
-			"error get response url",
-			logger.StrURL,
-			req.URL.String(),
-			logger.StrStatus,
-			resp.Status,
-		)
+		logger.Logtype("error", 2).
+			Str(logger.StrURL, req.URL.String()).
+			Str(logger.StrStatus, resp.Status).
+			Msg("error get response url")
 		return true
 
 	case http.StatusUnauthorized,
@@ -208,7 +351,7 @@ func (c *rlHTTPClient) addwait(req *http.Request, resp *http.Response) bool {
 		if !ok {
 			s, ok = resp.Header["X-Retry-After"]
 		}
-		if ok {
+		if ok && len(s) > 0 {
 			if strings.Contains(s[0], "Request limit reached. Retry in ") {
 				a := strings.Split(
 					logger.Trim(
@@ -269,17 +412,16 @@ func (c *rlHTTPClient) addwait(req *http.Request, resp *http.Response) bool {
 				c.logwait(logger.TimeGetNow().Add(3*time.Hour), nil)
 				return true
 			}
-			logger.LogDynamicany2Str("error", "error get response url", logger.StrURL, req.URL.String(), logger.StrStatus, resp.Status)
+			logger.Logtype("error", 2).
+				Str(logger.StrURL, req.URL.String()).
+				Str(logger.StrStatus, resp.Status).
+				Msg("error get response url")
 			return true
 		}
-		logger.LogDynamicany2Str(
-			"error",
-			"error get response url",
-			logger.StrURL,
-			req.URL.String(),
-			logger.StrStatus,
-			resp.Status,
-		)
+		logger.Logtype("error", 2).
+			Str(logger.StrURL, req.URL.String()).
+			Str(logger.StrStatus, resp.Status).
+			Msg("error get response url")
 		return true
 	}
 	return false
@@ -375,13 +517,10 @@ func ProcessHTTP(
 		req, err = http.NewRequestWithContext(ctx, http.MethodGet, urlv, http.NoBody)
 	}
 	if err != nil {
-		logger.LogDynamicany1StringErr(
-			"error",
-			"failed to get url",
-			err,
-			logger.StrURL,
-			urlv,
-		) // nopointer
+		logger.Logtype("error", 1).
+			Str(logger.StrURL, urlv).
+			Err(err).
+			Msg("failed to get url")
 		return err
 	}
 
@@ -390,25 +529,19 @@ func ProcessHTTP(
 	}
 	resp, err := c.client.Do(req)
 	if err != nil {
-		logger.LogDynamicany1StringErr(
-			"error",
-			"failed to process url",
-			err,
-			logger.StrURL,
-			urlv,
-		) // nopointer
+		logger.Logtype("error", 1).
+			Str(logger.StrURL, urlv).
+			Err(err).
+			Msg("failed to process url")
 		return err
 	}
 	defer resp.Body.Close()
 	err = c.checkresperror(resp, req, false)
 	if err != nil {
-		logger.LogDynamicany1StringErr(
-			"error",
-			"failed to process url",
-			err,
-			logger.StrURL,
-			urlv,
-		) // nopointer
+		logger.Logtype("error", 1).
+			Str(logger.StrURL, urlv).
+			Err(err).
+			Msg("failed to process url")
 		return err
 	}
 	return run(ctx, resp)
@@ -468,7 +601,7 @@ func ProcessHTTPNoRateCheck(
 	}
 	ctx, ctxcancel := context.WithTimeout(c.Ctx, cl.Timeout5)
 	defer ctxcancel()
-	
+
 	var req *http.Request
 	var err error
 	if len(body) >= 1 {
@@ -479,21 +612,21 @@ func ProcessHTTPNoRateCheck(
 	if err != nil {
 		return err
 	}
-	
+
 	// Set headers
 	for key, values := range headers {
 		for _, value := range values {
 			req.Header.Add(key, value)
 		}
 	}
-	
+
 	// Make the request directly without any rate limiting or error checking
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
-	
+
 	// Run the callback function
 	return run(ctx, resp)
 }

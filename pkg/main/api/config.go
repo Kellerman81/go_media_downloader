@@ -295,8 +295,6 @@ type RenderConfigOptions struct {
 // Returns a map of keys found in the form data
 func extractFormKeys(c *gin.Context, prefix string, fieldSuffix string) map[string]bool {
 	formKeys := make(map[string]bool)
-	logger.LogDynamicany("info", "extractFormKeys debug",
-		"prefix", prefix, "fieldSuffix", fieldSuffix, "total form -  fields", len(c.Request.PostForm), "all", c.Request.PostForm)
 	for key := range c.Request.PostForm {
 		if !strings.Contains(key, fieldSuffix) || !strings.Contains(key, prefix) {
 			continue
@@ -317,8 +315,6 @@ func extractFormKeys(c *gin.Context, prefix string, fieldSuffix string) map[stri
 			}
 		}
 	}
-	logger.LogDynamicany("info", "extractFormKeys debug",
-		"final formKeys", formKeys)
 	return formKeys
 }
 
@@ -420,6 +416,12 @@ func createListsConfig(index string, c *gin.Context) config.ListsConfig {
 		SetInt(&cfg.MinVotes, "MinVotes").
 		SetFloat32(&cfg.MinRating, "MinRating").
 		SetBool(&cfg.RemoveFromList, "RemoveFromList").
+		SetString(&cfg.PlexServerURL, "PlexServerURL").
+		SetString(&cfg.PlexToken, "PlexToken").
+		SetString(&cfg.PlexUsername, "PlexUsername").
+		SetString(&cfg.JellyfinServerURL, "JellyfinServerURL").
+		SetString(&cfg.JellyfinToken, "JellyfinToken").
+		SetString(&cfg.JellyfinUsername, "JellyfinUsername").
 		SetBool(&cfg.Enabled, "Enabled")
 
 	return cfg
@@ -525,7 +527,9 @@ func createNotificationConfig(index string, c *gin.Context) config.NotificationC
 		SetString(&cfg.NotificationType, "NotificationType").
 		SetString(&cfg.Apikey, "Apikey").
 		SetString(&cfg.Recipient, "Recipient").
-		SetString(&cfg.Outputto, "Outputto")
+		SetString(&cfg.Outputto, "Outputto").
+		SetString(&cfg.ServerURL, "ServerURL").
+		SetString(&cfg.AppriseURLs, "AppriseURLs")
 
 	return cfg
 }
@@ -592,10 +596,10 @@ func createCommentLines(comment string) []Node {
 func saveConfig(configv any) error {
 	d, err := json.Marshal(configv)
 	if err != nil {
-		logger.LogDynamicanyErr("info", "log struct failed", err)
+		logger.Logtype("info", 0).Err(err).Msg("log struct failed")
 		return err
 	}
-	logger.LogDynamicany1String("info", "log struct", "data", string(d))
+	logger.Logtype("info", 1).Str("data", string(d)).Msg("log struct")
 	return config.UpdateCfgEntryAny(configv)
 }
 

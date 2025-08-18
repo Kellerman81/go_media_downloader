@@ -57,11 +57,18 @@ func MoveFile(
 	return newpath, nil
 }
 
-// checkExtensionPermissions validates file extension permissions based on configuration and move options.
-// It determines whether a file can be processed and if renaming is allowed.
-// Returns two boolean values:
-//   - First indicates if the file is allowed to be processed
-//   - Second indicates if renaming is permitted
+// checkExtensionPermissions validates if a file extension is allowed for processing
+// based on the path configuration and processing flags.
+//
+// Parameters:
+//   - setpathcfg: Path configuration containing allowed extensions
+//   - ext: File extension to check (should include dot, e.g., ".mp4")
+//   - useother: Whether to check against "other" extensions list
+//   - usenil: Whether to skip validation entirely (returns true)
+//
+// Returns:
+//   - bool: True if extension is allowed for processing
+//   - bool: True if renaming is allowed for this extension
 func checkExtensionPermissions(
 	setpathcfg *config.PathsConfig,
 	ext string,
@@ -106,9 +113,17 @@ func prepareMove(file, newpath, renamepath string) error {
 	return os.Rename(file, renamepath)
 }
 
-// performMove moves a file from the rename path to the new path with optional file mode settings.
-// It supports two move strategies: buffer copy or direct drive move, with optional chmod operations.
-// The function handles logging, file mode configuration, and different move methods based on provided options.
+// performMove executes the actual file move operation from the renamed path to the final destination.
+// It handles different move strategies based on whether the source and destination are on the same drive,
+// and applies appropriate permissions after the move.
+//
+// Parameters:
+//   - renamepath: Intermediate path where the file was temporarily renamed
+//   - newpath: Final destination path for the file
+//   - opts: Move options containing chmod settings and buffer copy preferences
+//
+// Returns:
+//   - error: Any error encountered during the move operation
 func performMove(renamepath, newpath string, opts MoveFileOptions) error {
 	logger.Logtype("info", 0).
 		Str(logger.StrFile, renamepath).
@@ -143,7 +158,7 @@ func CheckExtensions(
 	ext string,
 ) (bool, bool) {
 	if checkvideo {
-		if ok, oknorename := checkVideoExtensions(pathcfg, ext); checkvideo && !checkother {
+		if ok, oknorename := checkVideoExtensions(pathcfg, ext); !checkother {
 			return ok, oknorename
 		} else if ok {
 			return ok, oknorename
@@ -204,10 +219,13 @@ func checkOtherExtensions(pathcfg *config.PathsConfig, ext string) (bool, bool) 
 	return false, false
 }
 
-// Setchmod sets the file mode permissions for the given file.
-// If chmod is 0, no change is made. Otherwise, it opens the file,
-// calls Chmod() to set the permissions, and closes the file.
-// Returns without error handling if the file failed to open.
+// setchmod sets file permissions on the specified file.
+// It logs any errors encountered during the chmod operation but does not return them.
+// This function is used to apply consistent permissions after file operations.
+//
+// Parameters:
+//   - file: Path to the file whose permissions should be changed
+//   - chmod: File mode/permissions to apply to the file
 func setchmod(file string, chmod fs.FileMode) {
 	if chmod == 0 {
 		return
@@ -222,6 +240,7 @@ func setchmod(file string, chmod fs.FileMode) {
 // It checks if the file exists first before removing.
 // Returns a bool indicating if the file was removed, and an error if one occurred.
 func RemoveFile(file string) (bool, error) {
+	// logger.Logtype("info", 1).Str("File", file).Msg("Pre RemoveFile1")
 	if !CheckFileExist(file) {
 		return false, nil
 	}
@@ -232,16 +251,22 @@ func RemoveFile(file string) (bool, error) {
 // it first attempts to change the file permissions to 0777 and then remove the file. If the file is successfully removed,
 // it logs an informational message. If the file cannot be removed, it logs an error message and returns the error.
 func SecureRemove(file string) (bool, error) {
+	// logger.Logtype("info", 1).Str("File", file).Msg("Pre RemoveFile1-1")
 	err := os.Remove(file)
 	if errors.Is(err, os.ErrPermission) {
 		os.Chmod(file, 0o777)
 		err = os.Remove(file)
 	}
 	if err == nil {
-		logger.LogDynamicany1String("info", "File removed", logger.StrFile, file)
+		logger.Logtype("info", 1).
+			Str(logger.StrFile, file).
+			Msg("File removed")
 		return true, nil
 	}
-	logger.LogDynamicany1StringErr("error", "File not removed", err, logger.StrFile, file)
+	logger.Logtype("error", 1).
+		Str(logger.StrFile, file).
+		Err(err).
+		Msg("File not removed")
 	return false, err
 }
 
@@ -342,8 +367,16 @@ func moveFileDrive(sourcePath, destPath string, chmodfolder, chmod fs.FileMode) 
 	return err
 }
 
-// checkFile checks if the file at fpath exists and/or is a regular file,
-// based on the provided checkexists and checkregular flags.
+// checkFile performs file validation checks based on the provided flags.
+// It can check for file existence and whether the file is a regular file (not a directory or special file).
+//
+// Parameters:
+//   - fpath: Path to the file to check
+//   - checkexists: Whether to verify the file exists
+//   - checkregular: Whether to verify the file is a regular file
+//
+// Returns:
+//   - bool: True if all requested checks pass, false otherwise
 func checkFile(fpath string, checkexists, checkregular bool) bool {
 	sfi, err := os.Stat(fpath)
 	if checkexists {
@@ -351,7 +384,7 @@ func checkFile(fpath string, checkexists, checkregular bool) bool {
 	}
 	if checkregular {
 		if err != nil {
-			return true
+			return false
 		}
 		return sfi.Mode().IsRegular()
 	}
@@ -402,9 +435,7 @@ func copyFile(src, dst string, allowFileLink bool, chmodfolder fs.FileMode) erro
 			os.Chmod(filepath.Dir(dst), chmodfolder)
 		}
 	}
-	if !checkFile(dstAbs, false, true) {
-		return errors.New("CopyFile: non-regular destination file " + dstAbs)
-	}
+	// The destination file doesn't exist yet, so we don't need to check if it's regular
 	// open dest file
 
 	if allowFileLink {
@@ -449,15 +480,22 @@ func AppendCsv(fpath, line string) {
 	f, err := os.OpenFile(fpath,
 		os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o777)
 	if err != nil {
-		logger.LogDynamicanyErr("error", "Error opening csv to write", err)
+		logger.Logtype("error", 1).
+			Str(logger.StrFile, fpath).
+			Err(err).
+			Msg("Error opening csv to write")
 		return
 	}
 	defer f.Close()
 	_, err = f.WriteString(logger.JoinStrings(line, "\n"))
 	if err != nil {
-		logger.LogDynamicanyErr("error", "Error writing to csv", err)
+		logger.Logtype("error", 1).
+			Str(logger.StrFile, fpath).
+			Err(err).
+			Msg("Error writing to csv")
 	} else {
-		logger.LogDynamicany0("info", "csv written")
+		logger.Logtype("debug", 0).
+			Msg("csv written")
 	}
 	f.Sync()
 }

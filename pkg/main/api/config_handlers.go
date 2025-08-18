@@ -102,8 +102,8 @@ func HandleMediaConfigUpdate(c *gin.Context) {
 		return
 	}
 
-	logger.LogDynamicany1Any("info", "log post", "form data", c.Request.Form)
-	logger.LogDynamicany1Any("info", "log post", "post data", c.Request.PostForm)
+	logger.Logtype("info", 1).Any("form data", c.Request.Form).Msg("log post")
+	logger.Logtype("info", 1).Any("post data", c.Request.PostForm).Msg("log post")
 
 	var newConfig config.MediaConfig
 	newConfig.Movies = parseMediaConfigs(c, "movies")
@@ -655,9 +655,23 @@ func handleRefreshTraktToken(c *gin.Context) {
 		return
 	}
 
-	// Note: Trakt API token refresh would need to be implemented in the apiexternal package
-	// For now, we'll just indicate that refresh is not yet implemented
-	c.String(http.StatusOK, renderAlert("Token refresh functionality is not yet implemented. Please re-authenticate if needed.", "info"))
+	// Attempt to refresh the token
+	newToken, err := apiexternal.RefreshTraktToken()
+	if err != nil {
+		c.String(http.StatusOK, renderAlert(fmt.Sprintf("Failed to refresh token: %v. Please re-authenticate if needed.", err), "danger"))
+		return
+	}
+
+	// Success message with new token info
+	message := fmt.Sprintf("Token refreshed successfully! New token expires: %s", 
+		func() string {
+			if newToken.Expiry.IsZero() {
+				return "Never"
+			}
+			return newToken.Expiry.Format("2006-01-02 15:04:05")
+		}())
+	
+	c.String(http.StatusOK, renderAlert(message, "success"))
 }
 
 // handleRevokeTraktToken revokes the current Trakt token

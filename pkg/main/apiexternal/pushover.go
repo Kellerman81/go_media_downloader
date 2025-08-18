@@ -10,10 +10,11 @@ import (
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/slidingwindow"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/syncops"
 )
 
 var (
-	pushOverClients     = logger.NewSyncMap[*client](5)
+	PushOverClients     = syncops.NewSyncMap[syncops.SyncAny](5)
 	pushovermessagesapi = "https://api.pushover.net/1/messages.json"
 )
 
@@ -59,53 +60,54 @@ func SendPushoverMessage(apikey, message, title, recipient string) error {
 		strings.NewReader(data.Encode()),
 	)
 	if err != nil {
-		logger.LogDynamicany1StringErr(
-			"error",
-			"failed to get url",
-			err,
-			logger.StrURL,
-			pushovermessagesapi,
-		)
+		logger.Logtype("error", 1).
+			Str(logger.StrURL, pushovermessagesapi).
+			Err(err).
+			Msg("failed to get url")
 		return err
 	}
 	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 
 	resp, err := c.Client.client.Do(req)
 	if err != nil {
-		logger.LogDynamicany1StringErr(
-			"error",
-			"failed to process url",
-			err,
-			logger.StrURL,
-			pushovermessagesapi,
-		)
+		logger.Logtype("error", 1).
+			Str(logger.StrURL, pushovermessagesapi).
+			Err(err).
+			Msg("failed to process url")
 		return err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		c.Client.addwait(req, resp)
-		logger.LogDynamicany1String(
-			"error",
-			"failed to process url",
-			logger.StrURL,
-			pushovermessagesapi,
-		)
+		logger.Logtype("error", 1).
+			Str(logger.StrURL, pushovermessagesapi).
+			Msg("failed to process url")
 		return logger.ErrToWait
 	}
 	return nil
 }
 
 // getPushoverclient returns a Pushover client instance for the given API key. If a client for the API key does not exist, it creates a new one and adds it to the cache.
-func GetPushoverclient(apikey string) *client {
-	if !pushOverClients.Check(apikey) {
-		d := client{
+func GetPushoverclient(apikey string) *LimitedAPIClient {
+	if !PushOverClients.Check(apikey) {
+		lim := slidingwindow.NewLimiter(10*time.Second, 3)
+		d := LimitedAPIClient{
 			apikey: apikey,
-			Lim:    slidingwindow.NewLimiter(10*time.Second, 3),
+			Lim:    &lim,
 		} // Client: pushover.New(apikey)}
-		d.Client = newClient("pushover", true, false, &d.Lim, false, nil, 30)
-		pushOverClients.Add(apikey, &d, 0, false, 0)
+		d.Client = newClient("pushover", true, false, &lim, false, nil, 30)
+		syncops.QueueSyncMapAdd(syncops.MapTypePushover, apikey, syncops.SyncAny{Value: &d}, 0, false, 0)
 		return &d
 	}
-	return pushOverClients.GetVal(apikey)
+	clt := PushOverClients.GetVal(apikey)
+	if clt.Value == nil {
+		logger.Logtype("debug", 0).Str("Apikey", apikey).Msg("NIL Client")
+		return nil
+	}
+	if c, ok := clt.Value.(*LimitedAPIClient); ok {
+		return c
+	}
+	logger.Logtype("debug", 0).Str("Apikey", apikey).Msg("Empty Client")
+	return nil
 }

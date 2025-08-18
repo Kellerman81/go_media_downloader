@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
@@ -17,6 +18,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/parser"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/pool"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/syncops"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/worker"
 	"github.com/alitto/pond/v2"
 )
@@ -31,7 +33,7 @@ type ConfigSearcher struct {
 	Accepted []apiexternal.Nzbwithprio
 	// searchActionType is a string indicating the search action type
 	searchActionType string // missing,upgrade,rss
-	Done             bool
+	Done             int32  // atomic flag: 0 = false, 1 = true
 	// Cfgp is a pointer to a MediaTypeConfig
 	Cfgp *config.MediaTypeConfig
 	// Quality is a pointer to a QualityConfig
@@ -45,7 +47,7 @@ type ConfigSearcher struct {
 
 type searchParams struct {
 	e               apiexternal.Nzbwithprio
-	sourcealttitles []database.DbstaticTwoStringOneInt
+	sourcealttitles []syncops.DbstaticTwoStringOneInt
 	season          string
 	searchtype      int
 	thetvdbid       int
@@ -116,7 +118,7 @@ func clearNzbSlice(slice []apiexternal.Nzbwithprio) {
 // marks the search as not done, and clears the Denied, Accepted, and Raw result arrays.
 func (s *ConfigSearcher) reset() {
 	s.searchActionType = ""
-	s.Done = false
+	atomic.StoreInt32(&s.Done, 0)
 
 	// Clear slices efficiently
 	clearNzbSlice(s.Denied)
@@ -140,11 +142,11 @@ func (s *ConfigSearcher) reset() {
 //
 // This initialization reduces memory allocations during frequent search operations.
 func Init() {
-	plsearchparam.Init(paramPoolSize, nil, func(cs *searchParams) bool {
+	plsearchparam.Init(200, paramPoolSize, nil, func(cs *searchParams) bool {
 		*cs = searchParams{}
 		return false
 	})
-	plsearcher.Init(searcherPoolSize, func(cs *ConfigSearcher) {
+	plsearcher.Init(200, searcherPoolSize, func(cs *ConfigSearcher) {
 		cs.Raw.Arr = make([]apiexternal.Nzbwithprio, 0, defaultRawCapacity)
 		// cs.Denied = make([]apiexternal.Nzbwithprio, 0, 1000)
 		// cs.Accepted = make([]apiexternal.Nzbwithprio, 0, 100)
@@ -172,6 +174,16 @@ func NewSearcher(
 	mediaid *uint,
 ) *ConfigSearcher {
 	s := plsearcher.Get()
+	if s == nil {
+		// Pool exhausted, create new instance
+		s = &ConfigSearcher{
+			Raw: apiexternal.NzbSlice{
+				Arr: make([]apiexternal.Nzbwithprio, 0, defaultRawCapacity),
+			},
+			indexerConfigMap: make(map[string]int, 10),
+		}
+		copy(s.episodeBuffer[:], episodePrefixes[:])
+	}
 	s.Cfgp = cfgp
 	s.searchActionType = searchActionType
 
@@ -199,6 +211,9 @@ func (s *ConfigSearcher) SearchRSS(
 	if autoclose {
 		defer s.Close()
 	}
+	if err := logger.CheckContextEnded(ctx); err != nil {
+		return err
+	}
 	if cfgp == nil {
 		return logger.ErrCfgpNotFound
 	}
@@ -207,7 +222,7 @@ func (s *ConfigSearcher) SearchRSS(
 	defer plsearchparam.Put(p)
 	p.searchtype = searchTypeRSS
 	s.searchindexers(ctx, true, p)
-	if s.Done {
+	if atomic.LoadInt32(&s.Done) != 0 {
 		s.processSearchResults(downloadresults, "", nil, s.Quality, nil)
 	}
 	return nil
@@ -232,6 +247,9 @@ func (s *ConfigSearcher) MediaSearch(
 	}
 	if autoclose {
 		defer s.Close()
+	}
+	if err := logger.CheckContextEnded(ctx); err != nil {
+		return err
 	}
 	if cfgp == nil {
 		logger.Logtype("error", 0).
@@ -283,6 +301,7 @@ func (s *ConfigSearcher) MediaSearch(
 	}
 
 	s.searchlog("info", "Search for media id", p)
+	// logger.Logtype("debug", 1).Uint("mediaid", mediaid).Bool("titlesearch", titlesearch).Msg("Pre Alternative Titles")
 
 	if titlesearch || s.Quality.BackupSearchForTitle || s.Quality.BackupSearchForAlternateTitle {
 		p.sourcealttitles = database.GetDbstaticTwoStringOneInt(
@@ -290,8 +309,10 @@ func (s *ConfigSearcher) MediaSearch(
 			p.e.Dbid,
 		)
 	}
+	// logger.Logtype("debug", 1).Uint("mediaid", mediaid).Msg("Pre searchindexers")
 	s.searchindexers(ctx, false, p)
-	if !s.Done {
+	// logger.Logtype("debug", 1).Uint("mediaid", mediaid).Msg("Post searchindexers")
+	if atomic.LoadInt32(&s.Done) == 0 {
 		s.searchlog("error", "All searches failed", p)
 		return nil
 	}
@@ -346,7 +367,7 @@ func (s *ConfigSearcher) searchindexers(ctx context.Context, userss bool, p *sea
 		pl = worker.WorkerPoolIndexer.NewGroupContext(ctx)
 	}
 
-	s.Done = false
+	atomic.StoreInt32(&s.Done, 0)
 	for _, indcfg := range s.Quality.IndexerCfg {
 		indcfg := indcfg
 		if userss && !indcfg.Rssenabled {
@@ -363,19 +384,23 @@ func (s *ConfigSearcher) searchindexers(ctx context.Context, userss bool, p *sea
 		}
 		pl.Submit(func() {
 			defer logger.HandlePanic()
+			// logger.Logtype("debug", 1).Str("indexer", indcfg.Name).Msg("Starting executeSearch")
 			err := s.executeSearch(p, indcfg)
-			if err == nil && !s.Done {
-				s.Done = true
+			// logger.Logtype("debug", 1).Str("indexer", indcfg.Name).Err(err).Msg("Completed executeSearch")
+			if err == nil {
+				atomic.CompareAndSwapInt32(&s.Done, 0, 1)
 			}
 		})
 	}
+	// logger.Logtype("debug", 1).Int("submitted_tasks", len(s.Quality.IndexerCfg)).Msg("Pre pl.Wait() in searchindexers")
 	errjobs := pl.Wait()
+	// logger.Logtype("debug", 1).Msg("Post pl.Wait() in searchindexers")
 	if errjobs != nil {
-		logger.LogDynamicanyErr(
-			"error",
-			"Error searching indexers",
-			errjobs,
-		)
+		logger.Logtype("error", 2).
+			Str("search_type", s.searchActionType).
+			Str("quality", s.Quality.Name).
+			Err(errjobs).
+			Msg("Failed to search indexers")
 	}
 }
 
@@ -384,6 +409,11 @@ func (s *ConfigSearcher) searchindexers(ctx context.Context, userss bool, p *sea
 // and handles potential errors during the search process.
 // Returns true if the RSS search is successful, false otherwise.
 func (s *ConfigSearcher) handleRSSSearch(indcfg *config.IndexersConfig, _ *searchParams) error {
+	logger.Logtype("debug", 2).
+		Str(logger.StrIndexer, indcfg.Name).
+		Str("quality", s.Quality.Name).
+		Msg("Starting RSS search")
+
 	firstid, err := apiexternal.QueryNewznabRSSLast(
 		indcfg,
 		s.Quality,
@@ -400,19 +430,27 @@ func (s *ConfigSearcher) handleRSSSearch(indcfg *config.IndexersConfig, _ *searc
 
 	if err == nil {
 		if firstid != "" {
+			logger.Logtype("info", 3).
+				Str(logger.StrIndexer, indcfg.Name).
+				Str("quality", s.Quality.Name).
+				Str("last_id", firstid).
+				Msg("RSS search completed with new entries")
 			addrsshistory(&indcfg.URL, &firstid, s.Quality, &s.Cfgp.NamePrefix)
+		} else {
+			logger.Logtype("debug", 2).
+				Str(logger.StrIndexer, indcfg.Name).
+				Str("quality", s.Quality.Name).
+				Msg("RSS search completed - no new entries")
 		}
 		return nil
 	}
 
 	if !errors.Is(err, logger.Errnoresults) && !errors.Is(err, logger.ErrToWait) {
-		logger.LogDynamicany1StringErr(
-			"error",
-			"Error searching indexer",
-			err,
-			logger.StrIndexer,
-			indcfg.Name,
-		)
+		logger.Logtype("error", 2).
+			Str(logger.StrIndexer, indcfg.Name).
+			Str("quality", s.Quality.Name).
+			Err(err).
+			Msg("RSS search failed for indexer")
 		return err
 	}
 	return nil
@@ -423,6 +461,13 @@ func (s *ConfigSearcher) handleRSSSearch(indcfg *config.IndexersConfig, _ *searc
 // errors during the search process. Returns true if the season search is successful,
 // false otherwise.
 func (s *ConfigSearcher) handleSeasonSearch(indcfg *config.IndexersConfig, p *searchParams) error {
+	logger.Logtype("debug", 4).
+		Str(logger.StrIndexer, indcfg.Name).
+		Str("quality", s.Quality.Name).
+		Int(logger.StrTvdb, p.thetvdbid).
+		Str(logger.StrSeason, p.season).
+		Msg("Starting season search")
+
 	_, _, err := apiexternal.QueryNewznabTvTvdb(
 		indcfg,
 		s.Quality,
@@ -435,17 +480,23 @@ func (s *ConfigSearcher) handleSeasonSearch(indcfg *config.IndexersConfig, p *se
 		&s.Raw,
 	)
 	if err == nil {
+		logger.Logtype("info", 4).
+			Str(logger.StrIndexer, indcfg.Name).
+			Str("quality", s.Quality.Name).
+			Int(logger.StrTvdb, p.thetvdbid).
+			Str(logger.StrSeason, p.season).
+			Msg("Season search completed successfully")
 		return nil
 	}
 
 	if !errors.Is(err, logger.Errnoresults) && !errors.Is(err, logger.ErrToWait) {
-		logger.LogDynamicany1StringErr(
-			"error",
-			"Error searching indexer",
-			err,
-			logger.StrIndexer,
-			indcfg.Name,
-		)
+		logger.Logtype("error", 5).
+			Str(logger.StrIndexer, indcfg.Name).
+			Str("quality", s.Quality.Name).
+			Int(logger.StrTvdb, p.thetvdbid).
+			Str(logger.StrSeason, p.season).
+			Str("error", err.Error()).
+			Msg("Season search failed for indexer")
 		return err
 	}
 	return nil
@@ -457,10 +508,20 @@ func (s *ConfigSearcher) handleSeasonSearch(indcfg *config.IndexersConfig, p *se
 // or a TV series. It also handles errors that may occur during the search and logs them.
 // The method returns a boolean indicating whether the search was successful.
 func (s *ConfigSearcher) searchnameid(p *searchParams, indcfg *config.IndexersConfig) error {
+	logger.Logtype("debug", 3).
+		Str(logger.StrIndexer, indcfg.Name).
+		Str("quality", s.Quality.Name).
+		Str("search_type", s.searchActionType).
+		Msg("Starting media search")
+
 	cats := s.Quality.QualityIndexerByQualityAndTemplate(indcfg)
 	if cats == -1 {
-		logger.LogDynamicany0("error", "Error getting quality config")
-		return errors.New("Error getting quality config")
+		logger.Logtype("error", 3).
+			Str(logger.StrIndexer, indcfg.Name).
+			Str("quality", s.Quality.Name).
+			Str("search_type", s.searchActionType).
+			Msg("Quality configuration not found for indexer")
+		return errors.New("quality configuration not found for indexer")
 	}
 
 	usequerysearch := p.titlesearch || (s.Cfgp.Useseries && p.e.NZB.TVDBID == 0) ||
@@ -470,20 +531,42 @@ func (s *ConfigSearcher) searchnameid(p *searchParams, indcfg *config.IndexersCo
 
 	// ID-based search (more efficient)
 	if !usequerysearch {
+		logger.Logtype("debug", 2).
+			Str(logger.StrIndexer, indcfg.Name).
+			Str("search_type", s.searchActionType).
+			Msg("Using ID-based search strategy")
 		err = s.performIDSearch(p, indcfg, cats)
 
 		// Check if we should fallback to title search
 		if s.Quality.SearchForTitleIfEmpty && len(s.Raw.Arr) == 0 {
+			logger.Logtype("debug", 2).
+				Str(logger.StrIndexer, indcfg.Name).
+				Str("search_type", s.searchActionType).
+				Msg("ID search returned no results, falling back to title search")
 			usequerysearch = true
 		}
 	}
 
 	// Title-based search
 	if usequerysearch {
+		logger.Logtype("debug", 2).
+			Str(logger.StrIndexer, indcfg.Name).
+			Str("search_type", s.searchActionType).
+			Msg("Using title-based search strategy")
 		errsub := s.performTitleSearch(p, indcfg, cats)
 		if err == nil && errsub != nil {
 			err = errsub
 		}
+	}
+
+	// Log search completion
+	if err == nil {
+		logger.Logtype("debug", 4).
+			Str(logger.StrIndexer, indcfg.Name).
+			Str("quality", s.Quality.Name).
+			Str("search_type", s.searchActionType).
+			Int("results", len(s.Raw.Arr)).
+			Msg("Media search completed successfully")
 	}
 
 	return err
@@ -499,10 +582,14 @@ func (s *ConfigSearcher) performTitleSearch(
 
 	// Primary title search
 	if p.titlesearch || s.Quality.BackupSearchForTitle {
+		// logger.Logtype("debug", 1).Str("indexer", indcfg.Name).Str("title", p.e.WantedTitle).Msg("Pre executeQuerySearch Title")
 		if err = s.executeQuerySearch(p, indcfg, cats, p.e.WantedTitle, "Title"); err == nil {
+			// logger.Logtype("debug", 1).Str("indexer", indcfg.Name).Msg("Post executeQuerySearch Title - success")
 			if s.Quality.CheckUntilFirstFound && len(s.Accepted) > 0 {
 				return nil
 			}
+		} else {
+			// logger.Logtype("debug", 1).Str("indexer", indcfg.Name).Err(err).Msg("Post executeQuerySearch Title - error")
 		}
 	}
 
@@ -545,20 +632,22 @@ func (s *ConfigSearcher) Download() {
 		entry := &s.Accepted[idx]
 		qualcfg := s.getentryquality(&entry.Info)
 		if qualcfg == nil {
-			logger.LogDynamicany(
-				"info",
-				"nzb found - start downloading",
-				&logger.StrSeries,
-				&s.Cfgp.Useseries,
-				&logger.StrTitle,
-				&entry.NZB.Title,
-				&logger.StrMinPrio,
-				&entry.MinimumPriority,
-				&logger.StrPriority,
-				&entry.Info.Priority,
-			)
+			logger.Logtype("info", 5).
+				Bool(logger.StrSeries, s.Cfgp.Useseries).
+				Str(logger.StrTitle, entry.NZB.Title).
+				Str("search_type", s.searchActionType).
+				Int(logger.StrMinPrio, entry.MinimumPriority).
+				Int(logger.StrPriority, entry.Info.Priority).
+				Msg("NZB found - starting download")
 		} else {
-			logger.LogDynamicany("info", "nzb found - start downloading", &logger.StrSeries, &s.Cfgp.Useseries, &logger.StrTitle, &entry.NZB.Title, &logger.StrQuality, &qualcfg.Name, &logger.StrMinPrio, &entry.MinimumPriority, &logger.StrPriority, &entry.Info.Priority)
+			logger.Logtype("info", 6).
+				Bool(logger.StrSeries, s.Cfgp.Useseries).
+				Str(logger.StrTitle, entry.NZB.Title).
+				Str(logger.StrQuality, qualcfg.Name).
+				Str("search_type", s.searchActionType).
+				Int(logger.StrMinPrio, entry.MinimumPriority).
+				Int(logger.StrPriority, entry.Info.Priority).
+				Msg("NZB found - starting download")
 		}
 		if entry.NzbmovieID != 0 {
 			downloaded = append(downloaded, entry.NzbmovieID)
@@ -666,7 +755,7 @@ func (s *ConfigSearcher) Close() {
 // by priority.
 func (s *ConfigSearcher) searchparse(
 	e *apiexternal.Nzbwithprio,
-	alttitles []database.DbstaticTwoStringOneInt,
+	alttitles []syncops.DbstaticTwoStringOneInt,
 ) {
 	if len(s.Raw.Arr) == 0 {
 		return
@@ -754,7 +843,9 @@ func (s *ConfigSearcher) searchparse(
 		}
 	}
 	if database.DBLogLevel == logger.StrDebug {
-		logger.LogDynamicany1Int("debug", "Entries found", "Count", len(s.Raw.Arr))
+		logger.Logtype("debug", 1).
+			Int("Count", len(s.Raw.Arr)).
+			Msg("Entries found")
 	}
 	if len(s.Accepted) > 1 {
 		slices.SortFunc(s.Accepted, func(a, b apiexternal.Nzbwithprio) int {
@@ -782,9 +873,11 @@ func (s *ConfigSearcher) executeQuerySearch(
 	cats int,
 	searchTerm, searchType string,
 ) error {
+	// logger.Logtype("debug", 1).Str("indexer", indcfg.Name).Str("searchterm", searchTerm).Msg("Pre QueryNewznabQuery")
 	_, _, err := apiexternal.QueryNewznabQuery(
 		s.Cfgp, &p.e, indcfg, s.Quality, searchTerm, cats, &s.Raw,
 	)
+	// logger.Logtype("debug", 1).Str("indexer", indcfg.Name).Err(err).Msg("Post QueryNewznabQuery")
 
 	if err != nil && !errors.Is(err, logger.ErrToWait) {
 		p.e.Info.TempID = p.mediaid
@@ -908,13 +1001,12 @@ func (s *ConfigSearcher) validateEntry(
 		return true
 	}
 
-	logger.LogDynamicany(
-		"debug", "Release ok",
-		&logger.StrQuality, &qual.Name,
-		&logger.StrTitle, &entry.NZB.Title,
-		&logger.StrMinPrio, &entry.MinimumPriority,
-		&logger.StrPriority, &entry.Info.Priority,
-	)
+	logger.Logtype("debug", 4).
+		Str(logger.StrQuality, qual.Name).
+		Str(logger.StrTitle, entry.NZB.Title).
+		Int(logger.StrMinPrio, entry.MinimumPriority).
+		Int(logger.StrPriority, entry.Info.Priority).
+		Msg("Release ok")
 
 	return false
 }
@@ -1243,7 +1335,7 @@ func (s *ConfigSearcher) checktitle(
 		return true
 	}
 	for idx := range entry.WantedAlternates {
-		if entry.WantedAlternates[idx].Str1 == "" {
+		if idx >= len(entry.WantedAlternates) || entry.WantedAlternates[idx].Str1 == "" {
 			continue
 		}
 		if database.ChecknzbtitleB(
@@ -1283,7 +1375,7 @@ func (s *ConfigSearcher) checkepisode(sourceentry, entry *apiexternal.Nzbwithpri
 	}
 	if sourceentry == nil {
 		s.logdenied("no sourceentry", entry)
-		return false
+		return true
 	}
 	if s.searchActionType == logger.StrRss && sourceentry.Info.Identifier == "" {
 		return false
@@ -1445,11 +1537,10 @@ func (s *ConfigSearcher) getRSSFeed(
 	}
 
 	if s.isIndexerBlocked(listentry.CfgList.URL) {
-		logger.LogDynamicany2StrAny(
-			"debug", "Indexer temporarily disabled due to fail in last",
-			logger.StrListname, listentry.TemplateList,
-			strMinutes, -1*config.GetSettingsGeneral().FailedIndexerBlockTime,
-		)
+		logger.Logtype("debug", 2).
+			Str(logger.StrListname, listentry.TemplateList).
+			Int(strMinutes, -1*config.GetSettingsGeneral().FailedIndexerBlockTime).
+			Msg("Indexer temporarily disabled due to fail in last")
 		return logger.ErrDisabled
 	}
 
@@ -1555,9 +1646,11 @@ func (s *ConfigSearcher) movieFillSearchVar(p *searchParams) error {
 		s.Quality,
 		false,
 	)
+	// logger.Logtype("debug", 1).Uint("movieid", p.e.NzbmovieID).Int("priority", p.e.MinimumPriority).Msg("Post Getpriobyfiles Movie")
 
 	var err error
 	s.searchActionType, err = getsearchtype(p.e.MinimumPriority, p.e.DontUpgrade, false)
+	// logger.Logtype("debug", 1).Uint("movieid", p.e.NzbmovieID).Str("searchtype", s.searchActionType).Msg("Post getsearchtype Movie")
 	if err != nil {
 		return err
 	}
@@ -1610,10 +1703,13 @@ func (s *ConfigSearcher) episodeFillSearchVar(p *searchParams) error {
 		s.Quality,
 		false,
 	)
+	// logger.Logtype("debug", 1).Uint("episodeid", p.e.NzbepisodeID).Int("priority", p.e.MinimumPriority).Msg("Post Getpriobyfiles Episode")
 
 	p.e.Info.ListID = s.Cfgp.GetMediaListsEntryListID(p.e.Listname)
+	// logger.Logtype("debug", 1).Uint("episodeid", p.e.NzbepisodeID).Int("listid", p.e.Info.ListID).Msg("Post GetMediaListsEntryListID Episode")
 	var err error
 	s.searchActionType, err = getsearchtype(p.e.MinimumPriority, p.e.DontUpgrade, false)
+	// logger.Logtype("debug", 1).Uint("episodeid", p.e.NzbepisodeID).Str("searchtype", s.searchActionType).Msg("Post getsearchtype Episode")
 	return err
 }
 
@@ -1881,17 +1977,13 @@ func (s *ConfigSearcher) searchSeriesRSSSeason(
 	p.season = season
 	p.useseason = useseason
 
-	logger.LogDynamicany2StrAny(
-		"info",
-		"Search for season",
-		logger.StrSeason,
-		p.season,
-		logger.StrTvdb,
-		&p.thetvdbid,
-	) // logpointerr
+	logger.Logtype("info", 2).
+		Str(logger.StrSeason, p.season).
+		Int(logger.StrTvdb, p.thetvdbid).
+		Msg("Search for season") // logpointerr
 	s.searchindexers(ctx, false, p)
 
-	if s.Done {
+	if atomic.LoadInt32(&s.Done) != 0 {
 		s.processSearchResults(downloadentries, "", nil, s.Quality, nil)
 
 		logger.Logtype("info", 0).
@@ -1908,7 +2000,7 @@ func (s *ConfigSearcher) searchSeriesRSSSeason(
 // random series. It selects up to 20 random series that have missing
 // episodes, gets the distinct seasons with missing episodes for each,
 // and searches the RSS feeds for those seasons.
-func SearchSeriesRSSSeasons(cfgp *config.MediaTypeConfig) error {
+func SearchSeriesRSSSeasons(ctx context.Context, cfgp *config.MediaTypeConfig) error {
 	args := logger.PLArrAny.Get()
 	defer logger.PLArrAny.Put(args)
 
@@ -1917,7 +2009,7 @@ func SearchSeriesRSSSeasons(cfgp *config.MediaTypeConfig) error {
 	}
 
 	return searchseasons(
-		context.Background(),
+		ctx,
 		cfgp,
 		logger.JoinStrings(
 			"select id, dbserie_id from series where listname in (?",
@@ -1934,7 +2026,7 @@ func SearchSeriesRSSSeasons(cfgp *config.MediaTypeConfig) error {
 // SearchSeriesRSSSeasonsAll searches all seasons for series matching the given
 // media type config. It searches series that have missing episodes and calls
 // searchseasons to perform the actual search.
-func SearchSeriesRSSSeasonsAll(cfgp *config.MediaTypeConfig) error {
+func SearchSeriesRSSSeasonsAll(ctx context.Context, cfgp *config.MediaTypeConfig) error {
 	args := logger.PLArrAny.Get()
 	defer logger.PLArrAny.Put(args)
 
@@ -1943,7 +2035,7 @@ func SearchSeriesRSSSeasonsAll(cfgp *config.MediaTypeConfig) error {
 	}
 
 	return searchseasons(
-		context.Background(),
+		ctx,
 		cfgp,
 		logger.JoinStrings(
 			"select id, dbserie_id from series where listname in (?",
@@ -2299,12 +2391,15 @@ func Getpriobyfiles(
 	if qualcfg == nil || id == nil || *id == 0 {
 		return 0, nil
 	}
+	// logger.Logtype("info", 1).Uint("id", *id).Msg("Pre File1")
+
 	arr := database.Getrowssize[database.FilePrio](
 		false,
 		logger.GetStringsMap(useseries, logger.DBCountFilesByMediaID),
 		logger.GetStringsMap(useseries, logger.DBFilePrioFilesByID),
 		id,
 	)
+	// logger.Logtype("info", 1).Uint("id", *id).Msg("Pre File2")
 
 	if len(arr) == 0 {
 		return 0, nil
@@ -2317,6 +2412,7 @@ func Getpriobyfiles(
 	}
 	var prio int
 
+	// logger.Logtype("info", 1).Uint("id", *id).Msg("Pre File3")
 	for i := range arr {
 		prio = calculateFilePriority(&arr[i], qualcfg, useall)
 
@@ -2328,6 +2424,7 @@ func Getpriobyfiles(
 			oldf = append(oldf, arr[i].Location)
 		}
 	}
+	// logger.Logtype("info", 1).Uint("id", *id).Msg("Pre File4")
 
 	if wantedprio == -1 || !getold {
 		return minPrio, nil
@@ -2367,19 +2464,22 @@ func calculateFilePriority(
 		}
 	}
 
+	var prio int
 	// Try wanted priorities first
 	intid := parser.Findpriorityidxwanted(r, q, c, a, qualcfg)
 	if intid == -1 {
 		intid = parser.Findpriorityidx(r, q, c, a, qualcfg)
-	}
-
-	var prio int
-	if intid != -1 {
-		prio = parser.GetwantedArrPrio(intid)
+		if intid != -1 {
+			prio = parser.GetAllArrPrio(intid)
+		} else {
+			logger.Logtype("debug", 2).
+				Str("in", qualcfg.Name).
+				Str("searched for", parser.BuildPrioStr(file.ResolutionID, file.QualityID, file.CodecID, file.AudioID)).
+				Msg("prio not found")
+			return 0
+		}
 	} else {
-		logger.LogDynamicany2Str("debug", "prio not found", "in", qualcfg.Name, "searched for",
-			parser.BuildPrioStr(file.ResolutionID, file.QualityID, file.CodecID, file.AudioID))
-		return 0
+		prio = parser.GetwantedArrPrio(intid)
 	}
 
 	// Add bonuses for special attributes

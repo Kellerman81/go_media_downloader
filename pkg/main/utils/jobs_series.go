@@ -134,6 +134,7 @@ func jobImportSeriesParseV2(
 // to select the series data, and the series ID as a query arg.
 func RefreshSerie(cfgp *config.MediaTypeConfig, id *string) error {
 	return refreshseries(
+		context.Background(),
 		cfgp,
 		database.GetrowsN[database.DbstaticTwoStringOneRInt](
 			false,
@@ -148,13 +149,16 @@ func RefreshSerie(cfgp *config.MediaTypeConfig, id *string) error {
 // JobImportDBSeriesStatic to refresh each one. It accepts a MediaTypeConfig, count of rows to process,
 // query to run, and optional query argument. It returns a slice of DbstaticTwoStringOneInt structs
 // containing series data.
-func refreshseries(cfgp *config.MediaTypeConfig, tbl []database.DbstaticTwoStringOneRInt) error {
+func refreshseries(ctx context.Context, cfgp *config.MediaTypeConfig, tbl []database.DbstaticTwoStringOneRInt) error {
 	if len(tbl) == 0 {
 		return nil
 	}
 	of := len(tbl)
 	var err error
 	for idx := range tbl {
+		if err := logger.CheckContextEnded(ctx); err != nil {
+			return err
+		}
 		logger.Logtype("info", 0).
 			Int(logger.StrTvdb, tbl[idx].Num).
 			Int("row", idx).
@@ -162,13 +166,10 @@ func refreshseries(cfgp *config.MediaTypeConfig, tbl []database.DbstaticTwoStrin
 			Msg("Refresh Serie")
 		errsub := importfeed.JobImportDBSeriesStatic(&tbl[idx], cfgp)
 		if errsub != nil {
-			logger.LogDynamicany1IntErr(
-				"error",
-				"Import series failed",
-				errsub,
-				logger.StrTvdb,
-				tbl[idx].Num,
-			)
+			logger.Logtype("error", 1).
+				Int(logger.StrTvdb, tbl[idx].Num).
+				Err(errsub).
+				Msg("Import series failed")
 			err = errsub
 		}
 	}
@@ -182,12 +183,15 @@ func SeriesAllJobs(job string, force bool) {
 	if job == "" {
 		return
 	}
-	logger.LogDynamicany1String("debug", "Started Jobfor all", logger.StrJob, job)
+	ctx := context.Background()
+	logger.Logtype("debug", 1).
+		Str(logger.StrJob, job).
+		Msg("Started Jobfor all")
 	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) error {
 		if !media.Useseries {
 			return nil
 		}
-		return SingleJobs(job, media.NamePrefix, "", force, 0)
+		return SingleJobs(ctx, job, media.NamePrefix, "", force, 0)
 	})
 }
 
@@ -196,25 +200,19 @@ func SeriesAllJobs(job string, force bool) {
 // through each configured folder, gets the template, and calls
 // structuresinglefolder to organize the files.
 func structurefolders(ctx context.Context, cfgp *config.MediaTypeConfig) error {
-	if cfgp.DataLen == 0 || len(cfgp.DataImport) == 0 {
+	if cfgp.DataLen == 0 || len(cfgp.DataImport) == 0 || len(cfgp.Data) == 0 {
 		return nil
 	}
 	if cfgp.Data[0].CfgPath == nil {
-		logger.LogDynamicany1String(
-			"error",
-			"Path not found",
-			logger.StrConfig,
-			cfgp.Data[0].TemplatePath,
-		)
+		logger.Logtype("error", 1).
+			Str(logger.StrConfig, cfgp.Data[0].TemplatePath).
+			Msg("Path not found")
 		return errors.New("Path not found")
 	}
 	if !cfgp.Structure {
-		logger.LogDynamicany1String(
-			"error",
-			"structure not allowed",
-			logger.StrConfig,
-			cfgp.NamePrefix,
-		)
+		logger.Logtype("error", 1).
+			Str(logger.StrConfig, cfgp.NamePrefix).
+			Msg("structure not allowed")
 		return nil
 	}
 
@@ -225,16 +223,13 @@ func structurefolders(ctx context.Context, cfgp *config.MediaTypeConfig) error {
 
 	var errret error
 	for idxi, dataimport := range cfgp.DataImportMap {
-		if err := ctx.Err(); err != nil {
+		if err := logger.CheckContextEnded(ctx); err != nil {
 			return err
 		}
 		if dataimport.CfgPath == nil {
-			logger.LogDynamicany1String(
-				"error",
-				"Path not found",
-				logger.StrConfig,
-				dataimport.TemplatePath,
-			)
+			logger.Logtype("error", 1).
+				Str(logger.StrConfig, dataimport.TemplatePath).
+				Msg("Path not found")
 			continue
 		}
 
@@ -244,18 +239,15 @@ func structurefolders(ctx context.Context, cfgp *config.MediaTypeConfig) error {
 
 		entry, err := os.ReadDir(dataimport.CfgPath.Path)
 		if err != nil {
-			logger.LogDynamicany1StringErr(
-				"error",
-				"Error reading directory",
-				err,
-				logger.StrFile,
-				dataimport.CfgPath.Path,
-			)
+			logger.Logtype("error", 1).
+				Str(logger.StrFile, dataimport.CfgPath.Path).
+				Err(err).
+				Msg("Error reading directory")
 			errret = err
 			continue
 		}
 		for idx := range entry {
-			if err := ctx.Err(); err != nil {
+			if err := logger.CheckContextEnded(ctx); err != nil {
 				return err
 			}
 			if entry[idx].IsDir() {
@@ -270,13 +262,10 @@ func structurefolders(ctx context.Context, cfgp *config.MediaTypeConfig) error {
 					0,
 				)
 				if err != nil {
-					logger.LogDynamicany1StringErr(
-						"error",
-						"Error organizing folder",
-						err,
-						logger.StrFile,
-						dataimport.CfgPath.Path,
-					)
+					logger.Logtype("error", 1).
+						Str(logger.StrFile, dataimport.CfgPath.Path).
+						Err(err).
+						Msg("Error organizing folder")
 					errret = err
 				}
 			}
@@ -293,18 +282,14 @@ func ReturnFeeds(feed *feedResults) {
 // It gets the feed for the given list, checks for new series, and spawns
 // goroutine workers to import each new series in parallel.
 func importnewseriessingle(
-	cfgp *config.MediaTypeConfig,
+	ctx context.Context, cfgp *config.MediaTypeConfig,
 	list *config.MediaListsConfig,
 	listid int,
 ) error {
-	logger.LogDynamicany2Str(
-		"info",
-		"get feeds for",
-		logger.StrConfig,
-		cfgp.NamePrefix,
-		logger.StrListname,
-		cfgp.Lists[listid].Name,
-	)
+	logger.Logtype("info", 2).
+		Str(logger.StrConfig, cfgp.NamePrefix).
+		Str(logger.StrListname, cfgp.Lists[listid].Name).
+		Msg("get feeds for")
 	if !list.Enabled || !list.CfgList.Enabled {
 		return logger.ErrDisabled
 	}
@@ -322,41 +307,36 @@ func importnewseriessingle(
 		return nil
 	}
 
-	ctx := context.Background()
-	defer ctx.Done()
 	pl := worker.WorkerPoolParse.NewGroupContext(ctx)
 	for idxserie2 := range feed.Series {
 		pl.Submit(func() {
 			defer logger.HandlePanic()
-			importfeed.JobImportDBSeries(&feed.Series[idxserie2], idxserie2, cfgp, listid)
+			importfeed.JobImportDBSeries(ctx, &feed.Series[idxserie2], idxserie2, cfgp, listid)
 		})
 	}
 	errjobs := pl.Wait()
 	if errjobs != nil {
-		logger.LogDynamicanyErr(
-			"error",
-			"Error importing series",
-			errjobs,
-		)
+		logger.Logtype("error", 0).
+			Err(errjobs).
+			Msg("Error importing series")
 	}
-	ctx.Done()
 	return nil
 }
 
 // checkreachedepisodesflag checks if episodes in a media list have reached
 // their target quality profile based on existing files. It updates the
 // quality_reached flag in the database accordingly.
-func checkreachedepisodesflag(listcfg *config.MediaListsConfig) error {
+func checkreachedepisodesflag(rootctx context.Context, listcfg *config.MediaListsConfig) error {
 	var minPrio, reached int
 	arr := database.QuerySerieEpisodes(&listcfg.Name)
 	for idx := range arr {
+		if err := logger.CheckContextEnded(rootctx); err != nil {
+			return err
+		}
 		if !config.CheckGroup("quality_", arr[idx].QualityProfile) {
-			logger.LogDynamicany1UInt(
-				"debug",
-				"Quality for Episode not found",
-				logger.StrID,
-				arr[idx].ID,
-			)
+			logger.Logtype("debug", 1).
+				Uint(logger.StrID, arr[idx].ID).
+				Msg("Quality for Episode not found")
 			continue
 		}
 		minPrio, _ = searcher.Getpriobyfiles(

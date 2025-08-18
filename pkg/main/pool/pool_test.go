@@ -51,7 +51,7 @@ func TestPoolObjInit(t *testing.T) {
 	var p Poolobj[int]
 	constructorCalled := 0
 
-	p.Init(3, func(i *int) {
+	p.Init(200, 3, func(i *int) {
 		constructorCalled++
 		*i = constructorCalled
 	}, nil)
@@ -83,10 +83,16 @@ func TestSizedWaitGroupConcurrent(t *testing.T) {
 		}()
 	}
 
+	// Give goroutines time to start and call Add()
+	time.Sleep(1 * time.Millisecond)
 	swg.Wait()
 
-	if len(results) != 4 {
-		t.Errorf("Expected 4 results, got %d", len(results))
+	mu.Lock()
+	resultLen := len(results)
+	mu.Unlock()
+
+	if resultLen != 4 {
+		t.Errorf("Expected 4 results, got %d", resultLen)
 	}
 }
 

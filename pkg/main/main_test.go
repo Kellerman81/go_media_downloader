@@ -34,6 +34,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/scheduler"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/searcher"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/structure"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/syncops"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/worker"
 	"github.com/pelletier/go-toml/v2"
 
@@ -113,7 +114,7 @@ func Init() {
 
 	database.InitImdbdb()
 
-	logger.LogDynamicany0("info", "Check Database for Upgrades")
+	logger.Logtype("info", 0).Msg("Check Database for Upgrades")
 	// database.UpgradeDB()
 	database.SetVars()
 
@@ -342,7 +343,7 @@ func TestGetTvdb(t *testing.T) {
 func TestSQL(t *testing.T) {
 	Init()
 	t.Run("test", func(t *testing.T) {
-		a := database.GetrowsN[database.DbstaticThreeStringTwoInt](
+		a := database.GetrowsN[syncops.DbstaticThreeStringTwoInt](
 			false,
 			database.Getdatarow[uint](false, "select count() from dbmovies")+100,
 			"select title, slug, imdb_id, year, id from dbmovies",
@@ -366,7 +367,7 @@ func TestSQL(t *testing.T) {
 			"select distinct title from dbmovies",
 		)
 		t.Log(b)
-		ab := database.GetrowsN[database.DbstaticTwoStringOneInt](
+		ab := database.GetrowsN[syncops.DbstaticTwoStringOneInt](
 			false,
 			database.Getdatarow[uint](
 				false,
@@ -1090,7 +1091,7 @@ func BenchmarkQueryLower(b *testing.B) {
 		)
 		// str = fmt.Sprint(id1, "_", id2, "_", id3, "_", id4)
 	}
-	logger.LogDynamicany0("info", str)
+	logger.Logtype("info", 0).Msg(str)
 }
 
 func BenchmarkQueryLower2(b *testing.B) {
@@ -1179,7 +1180,7 @@ func BenchmarkQuery15(b *testing.B) {
 
 func BenchmarkAllowRange(b *testing.B) {
 	Init()
-	arr := database.GetrowsN[database.DbstaticThreeStringTwoInt](
+	arr := database.GetrowsN[syncops.DbstaticThreeStringTwoInt](
 		false,
 		database.Getdatarow[uint](false, "select count() from dbmovies")+100,
 		"select title, slug, imdb_id, year, id from dbmovies",
@@ -1196,7 +1197,7 @@ func BenchmarkAllowRange(b *testing.B) {
 
 func BenchmarkAllowRange2(b *testing.B) {
 	Init()
-	arr := database.GetrowsN[database.DbstaticThreeStringTwoInt](
+	arr := database.GetrowsN[syncops.DbstaticThreeStringTwoInt](
 		false,
 		database.Getdatarow[uint](false, "select count() from dbmovies")+100,
 		"select title, slug, imdb_id, year, id from dbmovies",
@@ -1285,7 +1286,7 @@ func BenchmarkQuery5(b *testing.B) {
 				break
 			}
 			if err2 != nil {
-				logger.LogDynamicanyErr("error", "an error occurred while parsing csv", err)
+				logger.Logtype("error", 0).Err(err).Msg("an error occurred while parsing csv")
 				continue
 			}
 			year, err = strconv.ParseInt(record[10], 0, 16)
@@ -1860,7 +1861,7 @@ func BenchmarkClose1(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		_ = apiexternal.Nzbwithprio{
 			WantedTitle:      "ffff",
-			WantedAlternates: []database.DbstaticTwoStringOneInt{{Str1: "ffff", Str2: "ffff"}},
+			WantedAlternates: []syncops.DbstaticTwoStringOneInt{{Str1: "ffff", Str2: "ffff"}},
 			Quality:          "test",
 			Listname:         "test",
 		}
@@ -1874,7 +1875,7 @@ func BenchmarkClose2(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		_ = apiexternal.Nzbwithprio{
 			WantedTitle:      "ffff",
-			WantedAlternates: []database.DbstaticTwoStringOneInt{{Str1: "ffff", Str2: "ffff"}},
+			WantedAlternates: []syncops.DbstaticTwoStringOneInt{{Str1: "ffff", Str2: "ffff"}},
 			Quality:          "test",
 			Listname:         "test",
 		}

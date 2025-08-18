@@ -121,7 +121,7 @@ type TheMovieDBTVExternal struct {
 // and a pointer to the rate limited HTTP client.
 type tmdbClient struct {
 	Client         rlHTTPClient // Pointer to the rate limited HTTP client
-	Lim            slidingwindow.Limiter
+	Lim            *slidingwindow.Limiter
 	DefaultHeaders map[string][]string // Default headers to send with requests
 	APIKey         string              // The TMDB API key
 	QAPIKey        string              // The query parameter API key
@@ -143,20 +143,47 @@ func NewTmdbClient(
 	if calls == 0 {
 		calls = 1
 	}
-	tmdbAPI = tmdbClient{
+	lim := slidingwindow.NewLimiter(time.Duration(seconds)*time.Second, int64(calls))
+	client := &tmdbClient{
 		APIKey: apikey,
 		DefaultHeaders: map[string][]string{
 			"accept":        {"application/json"},
 			"Authorization": {"Bearer " + apikey},
 		},
-		Lim: slidingwindow.NewLimiter(time.Duration(seconds)*time.Second, int64(calls)),
+		Lim: &lim,
 		Client: newClient(
 			"tmdb",
 			disabletls,
 			true,
-			&tmdbAPI.Lim,
+			&lim,
 			false, nil, timeoutseconds),
 	}
+	setTmdbAPI(client)
+}
+
+// Helper functions for thread-safe access to tmdbAPI
+func getTmdbClient() *rlHTTPClient {
+	api := getTmdbAPI()
+	if api == nil {
+		return nil
+	}
+	return &api.Client
+}
+
+func getTmdbHeaders() map[string][]string {
+	api := getTmdbAPI()
+	if api == nil {
+		return nil
+	}
+	return api.DefaultHeaders
+}
+
+func getTmdbAPIKey() string {
+	api := getTmdbAPI()
+	if api == nil {
+		return ""
+	}
+	return api.APIKey
 }
 
 // SearchTmdbMovie searches for movies on TheMovieDB API by movie name.
@@ -167,12 +194,12 @@ func SearchTmdbMovie(name string) (*TheMovieDBSearch, error) {
 		return nil, logger.ErrNotFound
 	}
 	return doJSONTypeP[TheMovieDBSearch](
-		&tmdbAPI.Client,
+		getTmdbClient(),
 		logger.JoinStrings(
 			"https://api.themoviedb.org/3/search/movie?query=",
 			url.QueryEscape(name),
 		),
-		tmdbAPI.DefaultHeaders,
+		getTmdbHeaders(),
 	)
 }
 
@@ -185,9 +212,9 @@ func SearchTmdbTV(name string) (*TheMovieDBSearchTV, error) {
 	}
 
 	return doJSONTypeP[TheMovieDBSearchTV](
-		&tmdbAPI.Client,
+		getTmdbClient(),
 		logger.JoinStrings("https://api.themoviedb.org/3/search/tv?query=", url.QueryEscape(name)),
-		tmdbAPI.DefaultHeaders,
+		getTmdbHeaders(),
 	)
 }
 
@@ -199,9 +226,9 @@ func DiscoverTmdbMovie(query string) (*TheMovieDBSearch, error) {
 		return nil, logger.ErrNotFound
 	}
 	return doJSONTypeP[TheMovieDBSearch](
-		&tmdbAPI.Client,
+		getTmdbClient(),
 		logger.JoinStrings("https://api.themoviedb.org/3/discover/movie?", query),
-		tmdbAPI.DefaultHeaders,
+		getTmdbHeaders(),
 	)
 }
 
@@ -213,9 +240,9 @@ func DiscoverTmdbSerie(query string) (*TheMovieDBSearchTV, error) {
 		return nil, logger.ErrNotFound
 	}
 	return doJSONTypeP[TheMovieDBSearchTV](
-		&tmdbAPI.Client,
+		getTmdbClient(),
 		logger.JoinStrings("https://api.themoviedb.org/3/discover/tv?", query),
-		tmdbAPI.DefaultHeaders,
+		getTmdbHeaders(),
 	)
 }
 
@@ -225,9 +252,9 @@ func DiscoverTmdbSerie(query string) (*TheMovieDBSearchTV, error) {
 // Returns an error if the API call fails.
 func GetTmdbList(listid int) (TheMovieDBList, error) {
 	retdata, err := doJSONType[TheMovieDBList](
-		&tmdbAPI.Client,
+		getTmdbClient(),
 		logger.JoinStrings("https://api.themoviedb.org/3/list/", strconv.Itoa(listid), "&page=1"),
-		tmdbAPI.DefaultHeaders,
+		getTmdbHeaders(),
 	)
 	if err != nil {
 		return TheMovieDBList{}, err
@@ -239,14 +266,14 @@ func GetTmdbList(listid int) (TheMovieDBList, error) {
 	totalPages := retdata.ItemCount / pagesize
 	for i := 2; i <= totalPages; i++ {
 		listadd, err := doJSONTypeNoLimit[TheMovieDBList](
-			&tmdbAPI.Client,
+			getTmdbClient(),
 			logger.JoinStrings(
 				"https://api.themoviedb.org/3/list/",
 				strconv.Itoa(listid),
 				"?page=",
 				strconv.Itoa(i),
 			),
-			tmdbAPI.DefaultHeaders,
+			getTmdbHeaders(),
 		)
 		if err != nil {
 			continue
@@ -261,7 +288,7 @@ func GetTmdbList(listid int) (TheMovieDBList, error) {
 func RemoveFromTmdbList(listid int, remove int) error {
 	body := strings.NewReader(fmt.Sprintf(`{"media_id":%d}`, remove))
 	return ProcessHTTP(
-		&tmdbAPI.Client,
+		getTmdbClient(),
 		logger.JoinStrings(
 			"https://api.themoviedb.org/3/list/",
 			strconv.Itoa(listid),
@@ -269,7 +296,7 @@ func RemoveFromTmdbList(listid int, remove int) error {
 		),
 		true,
 		nil,
-		tmdbAPI.DefaultHeaders,
+		getTmdbHeaders(),
 		body,
 	)
 }
@@ -282,13 +309,13 @@ func FindTmdbImdb(imdbid string) (*TheMovieDBFind, error) {
 		return nil, logger.ErrNotFound
 	}
 	return doJSONTypeP[TheMovieDBFind](
-		&tmdbAPI.Client,
+		getTmdbClient(),
 		logger.JoinStrings(
 			"https://api.themoviedb.org/3/find/",
 			imdbid,
 			"?language=en-US&external_source=imdb_id",
 		),
-		tmdbAPI.DefaultHeaders,
+		getTmdbHeaders(),
 	)
 }
 
@@ -300,13 +327,13 @@ func FindTmdbTvdb(thetvdbid int) (*TheMovieDBFind, error) {
 		return nil, logger.ErrNotFound
 	}
 	return doJSONTypeP[TheMovieDBFind](
-		&tmdbAPI.Client,
+		getTmdbClient(),
 		logger.JoinStrings(
 			"https://api.themoviedb.org/3/find/",
 			strconv.Itoa(thetvdbid),
 			"?language=en-US&external_source=tvdb_id",
 		),
-		tmdbAPI.DefaultHeaders,
+		getTmdbHeaders(),
 	)
 }
 
@@ -318,9 +345,9 @@ func GetTmdbMovie(id int) (*TheMovieDBMovie, error) {
 		return nil, logger.ErrNotFound
 	}
 	return doJSONTypeP[TheMovieDBMovie](
-		&tmdbAPI.Client,
+		getTmdbClient(),
 		logger.JoinStrings(apiurltmdbmovies, strconv.Itoa(id)),
-		tmdbAPI.DefaultHeaders,
+		getTmdbHeaders(),
 	)
 }
 
@@ -332,9 +359,9 @@ func GetTmdbMovieTitles(id int) (*TheMovieDBMovieTitles, error) {
 		return nil, logger.ErrNotFound
 	}
 	return doJSONTypeP[TheMovieDBMovieTitles](
-		&tmdbAPI.Client,
+		getTmdbClient(),
 		logger.JoinStrings(apiurltmdbmovies, strconv.Itoa(id), "/alternative_titles"),
-		tmdbAPI.DefaultHeaders,
+		getTmdbHeaders(),
 	)
 }
 
@@ -346,9 +373,9 @@ func GetTmdbMovieExternal(id int) (*TheMovieDBTVExternal, error) {
 		return nil, logger.ErrNotFound
 	}
 	return doJSONTypeP[TheMovieDBTVExternal](
-		&tmdbAPI.Client,
+		getTmdbClient(),
 		logger.JoinStrings(apiurltmdbmovies, strconv.Itoa(id), "/external_ids"),
-		tmdbAPI.DefaultHeaders,
+		getTmdbHeaders(),
 	)
 }
 
@@ -360,9 +387,9 @@ func GetTVExternal(id int) (*TheMovieDBTVExternal, error) {
 		return nil, logger.ErrNotFound
 	}
 	return doJSONTypeP[TheMovieDBTVExternal](
-		&tmdbAPI.Client,
+		getTmdbClient(),
 		logger.JoinStrings("https://api.themoviedb.org/3/tv/", strconv.Itoa(id), "/external_ids"),
-		tmdbAPI.DefaultHeaders,
+		getTmdbHeaders(),
 	)
 }
 
@@ -370,19 +397,19 @@ func GetTVExternal(id int) (*TheMovieDBTVExternal, error) {
 // Returns status code and error if any
 func TestTMDBConnectivity(timeout time.Duration) (int, error) {
 	// Check if client is initialized
-	if tmdbAPI.APIKey == "" {
+	if getTmdbAPIKey() == "" {
 		return 0, fmt.Errorf("TMDB API client not initialized or missing API key")
 	}
 
 	statusCode := 0
 	err := ProcessHTTPNoRateCheck(
-		&tmdbAPI.Client,
+		getTmdbClient(),
 		"https://api.themoviedb.org/3/search/movie?query=test",
 		func(ctx context.Context, resp *http.Response) error {
 			statusCode = resp.StatusCode
 			return nil
 		},
-		tmdbAPI.DefaultHeaders,
+		getTmdbHeaders(),
 	)
 	return statusCode, err
 }

@@ -15,20 +15,8 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/slidingwindow"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/syncops"
 )
-
-// Client is a type for interacting with a newznab or torznab api
-// It contains fields for the api key, base API URL, debug mode,
-// and a pointer to the rate limited HTTP client.
-type client struct {
-	Client        rlHTTPClient // pointer to the rate limited HTTP client
-	Lim           slidingwindow.Limiter
-	apikey        string // the API key for authentication
-	aPIBaseURL    string // the base URL of the API
-	aPIBaseURLStr string // the base URL as a string
-	aPIUserID     string // the user ID for the API
-	debug         bool   // whether to enable debug logging
-}
 
 type searchResponseJSON1 struct {
 	Title   string `json:"title,omitempty"`
@@ -183,14 +171,14 @@ func processurl(
 	idsearched bool,
 ) (bool, string, error) {
 	c := Getnewznabclient(ind)
+	if c == nil {
+		return false, "", errors.New("No Client returned")
+	}
 	if ind.OutputAsJSON {
 		if !strings.Contains(urlv, "://") {
-			logger.LogDynamicany1String(
-				"error",
-				"failed to get url",
-				logger.StrURL,
-				urlv,
-			) // nopointer
+			logger.Logtype("error", 1).
+				Str(logger.StrURL, urlv).
+				Msg("failed to get url") // nopointer
 			return false, "", logger.Errnoresults
 		}
 		result, err := doJSONTypeP[searchResponseJSON1](&c.Client, urlv, nil)
@@ -200,9 +188,10 @@ func processurl(
 			}
 			return c.processjson1(result, ind, qual, tillid, results, idsearched)
 		}
+		firstErr := err
 		result2, err := doJSONTypeP[searchResponseJSON2](&c.Client, urlv, nil)
 		if err != nil {
-			return false, "", err
+			return false, "", firstErr
 		}
 		if len(result2.Item) == 0 {
 			return false, "", logger.Errnoresults
@@ -222,7 +211,9 @@ func processurl(
 	)
 
 	if !strings.Contains(urlv, "://") {
-		logger.LogDynamicany1String("error", "failed to get url", logger.StrURL, urlv) // nopointer
+		logger.Logtype("error", 1).
+			Str(logger.StrURL, urlv).
+			Msg("failed to get url") // nopointer
 		return false, "", logger.Errnoresults
 	}
 	if apiBaseURL == "" {
@@ -358,7 +349,7 @@ func processurl(
 // fields into the NZB struct, handling special cases like missing fields, and closing the
 // response when done. It returns bools indicating more results and if it hit the tillid,
 // the first id for more search continuation, and any error.
-func (c *client) processjson1(
+func (c *LimitedAPIClient) processjson1(
 	result *searchResponseJSON1,
 	ind *config.IndexersConfig,
 	qual *config.QualityConfig,
@@ -414,7 +405,7 @@ func (c *client) processjson1(
 // It iterates through the items in the result and converts them into Nzbwithprio structs,
 // populating the fields based on the attributes in the JSON. It returns whether more
 // results are available, the first ID and any error.
-func (c *client) processjson2(
+func (c *LimitedAPIClient) processjson2(
 	result2 *searchResponseJSON2,
 	ind *config.IndexersConfig,
 	qual *config.QualityConfig,
@@ -496,16 +487,15 @@ func (s *searchResponseJSON2) close() {
 // and calls checkLimiter on it to check if the rate limit has been hit.
 // Returns true if under limit, false if over limit, and error if there was a problem.
 func NewznabCheckLimiter(cfgindexer *config.IndexersConfig) bool {
-	if !newznabClients.Check(cfgindexer.URL) {
+	if !NewznabClients.Check(cfgindexer.URL) {
 		return true
 	}
-	ok, _ := newznabClients.GetVal(
-		cfgindexer.URL,
-	).Client.checkLimiter(
-		newznabClients.GetVal(cfgindexer.URL).Client.Ctx,
-		false,
-	)
-	return ok
+	client := NewznabClients.GetVal(cfgindexer.URL)
+	if client.Value == nil {
+		return true
+	}
+	canProceed, _ := client.Value.(*LimitedAPIClient).Client.checkLimiter(client.Value.(*LimitedAPIClient).Client.Ctx, false)
+	return canProceed
 }
 
 // QueryNewznabMovieImdb queries the Newznab indexer for movies matching
@@ -544,11 +534,19 @@ func QueryNewznabMovieImdb(
 // getnewznabclient returns a Client for the given IndexersConfig.
 // It checks if a client already exists for the given URL,
 // and returns it if found. Otherwise creates a new client and caches it.
-func Getnewznabclient(row *config.IndexersConfig) *client {
-	if !newznabClients.Check(row.URL) {
-		newznabClients.Add(row.URL, newNewznab(true, row), 0, false, 0)
+func Getnewznabclient(row *config.IndexersConfig) *LimitedAPIClient {
+	if !NewznabClients.Check(row.URL) {
+		client := newNewznab(true, row)
+		syncops.QueueSyncMapAdd(syncops.MapTypeNewznab, row.URL, syncops.SyncAny{Value: client}, 0, false, 0)
 	}
-	return newznabClients.GetVal(row.URL)
+	clt := NewznabClients.GetVal(row.URL)
+	if clt.Value == nil {
+		return nil
+	}
+	if c, ok := clt.Value.(*LimitedAPIClient); ok {
+		return c
+	}
+	return nil
 }
 
 // DownloadNZB downloads an NZB file from the given URL and saves it to the specified target path.
@@ -673,7 +671,9 @@ func QueryNewznabQuery(
 		b.WriteString(bquotes)
 	}
 
-	b.WriteString(url.QueryEscape(getaddstr(cfgp, title, e)))
+	enhancedTitle := getaddstr(cfgp, title, e)
+	// logger.Logtype("debug", 1).Str("original_title", title).Str("enhanced_title", enhancedTitle).Uint16("year", e.Info.Year).Str("identifier", e.Info.Identifier).Msg("Search term enhancement")
+	b.WriteString(url.QueryEscape(enhancedTitle))
 
 	if cfgind.Addquotesfortitlequery {
 		b.WriteString(bquotes)
@@ -788,7 +788,7 @@ func QueryNewznabRSSLast(
 // It takes in debug mode and indexer configuration row parameters.
 // It sets up rate limiting and timeouts based on the configuration.
 // It returns a pointer to the constructed Client instance.
-func newNewznab(debug bool, row *config.IndexersConfig) *client {
+func newNewznab(debug bool, row *config.IndexersConfig) *LimitedAPIClient {
 	if row.Limitercalls == 0 {
 		row.Limitercalls = 5
 	}
@@ -801,22 +801,23 @@ func newNewznab(debug bool, row *config.IndexersConfig) *client {
 		limiter = slidingwindow.NewLimiter(24*time.Hour, int64(row.LimitercallsDaily))
 	}
 
-	d := client{
+	lim := slidingwindow.NewLimiter(
+		time.Duration(row.Limiterseconds)*time.Second,
+		int64(row.Limitercalls),
+	)
+	d := LimitedAPIClient{
 		apikey:        row.Apikey,
 		aPIBaseURL:    row.URL,
 		aPIBaseURLStr: row.URL,
 		aPIUserID:     row.Userid,
 		debug:         debug,
-		Lim: slidingwindow.NewLimiter(
-			time.Duration(row.Limiterseconds)*time.Second,
-			int64(row.Limitercalls),
-		),
+		Lim:           &lim,
 	}
 	d.Client = newClient(
 		row.URL,
 		row.DisableTLSVerify,
 		row.DisableCompression,
-		&d.Lim,
+		&lim,
 		row.LimitercallsDaily != 0,
 		&limiter, row.TimeoutSeconds)
 	return &d

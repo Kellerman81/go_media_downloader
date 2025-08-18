@@ -1,6 +1,6 @@
 module github.com/Kellerman81/go_media_downloader/pkg/main
 
-go 1.24.5
+go 1.25
 
 require (
 	github.com/DeanThompson/ginpprof v0.0.0-20201112072838-007b1e56b2e1 //extend webserver with pprof tools

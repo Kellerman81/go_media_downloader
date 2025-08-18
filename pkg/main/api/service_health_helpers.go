@@ -29,7 +29,7 @@ type ServiceInfo struct {
 	Status       string // "online", "offline", "timeout", "error"
 	ResponseTime time.Duration
 	ErrorMessage string
-	Details      map[string]interface{}
+	Details      map[string]any
 }
 
 // performServiceHealthCheck performs comprehensive service health checks
@@ -155,7 +155,7 @@ func checkIMDBService(retries int, _ bool) ServiceInfo {
 		Name:    "IMDB",
 		Type:    "Database",
 		URL:     "Local IMDB Database",
-		Details: make(map[string]interface{}),
+		Details: make(map[string]any),
 	}
 
 	startTime := time.Now()
@@ -192,7 +192,7 @@ func checkTraktService(timeout time.Duration, retries int, _ bool) ServiceInfo {
 		Name:    "Trakt",
 		Type:    "Metadata",
 		URL:     "https://api.trakt.tv",
-		Details: make(map[string]interface{}),
+		Details: make(map[string]any),
 	}
 
 	startTime := time.Now()
@@ -253,7 +253,7 @@ func checkIndexerServices(timeout time.Duration, _ int, _ bool) []ServiceInfo {
 				Name:    indexer.Name,
 				Type:    "Indexer",
 				URL:     indexer.URL,
-				Details: make(map[string]interface{}),
+				Details: make(map[string]any),
 			}
 
 			// Store indexer config details
@@ -341,7 +341,7 @@ func checkNotificationServices(_ time.Duration, _ int, _ bool) []ServiceInfo {
 			service := ServiceInfo{
 				Name:    notification.Name,
 				Type:    "Notification",
-				Details: make(map[string]interface{}),
+				Details: make(map[string]any),
 			}
 
 			// Basic service availability check (simplified)
@@ -362,7 +362,7 @@ func checkOMDBService(timeout time.Duration, retries int, _ bool) ServiceInfo {
 		Name:    "OMDB",
 		Type:    "Metadata",
 		URL:     "http://www.omdbapi.com",
-		Details: make(map[string]interface{}),
+		Details: make(map[string]any),
 	}
 
 	startTime := time.Now()
@@ -412,7 +412,7 @@ func checkTVDBService(timeout time.Duration, retries int, _ bool) ServiceInfo {
 		Name:    "TVDB",
 		Type:    "Metadata",
 		URL:     "https://api.thetvdb.com",
-		Details: make(map[string]interface{}),
+		Details: make(map[string]any),
 	}
 
 	startTime := time.Now()
@@ -462,7 +462,7 @@ func checkTMDBService(timeout time.Duration, retries int, _ bool) ServiceInfo {
 		Name:    "TMDB",
 		Type:    "Metadata",
 		URL:     "https://api.themoviedb.org/3",
-		Details: make(map[string]interface{}),
+		Details: make(map[string]any),
 	}
 
 	startTime := time.Now()

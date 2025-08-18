@@ -14,6 +14,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/parser"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/searcher"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/structure"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/syncops"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/worker"
 )
 
@@ -32,6 +33,9 @@ func jobImportMovieParseV2(
 	}
 	if list.CfgQuality == nil {
 		return errors.New("quality template not found")
+	}
+	if len(cfgp.Data) == 0 {
+		return errors.New("no data configuration found")
 	}
 
 	if m.MovieID == 0 && addfound {
@@ -191,18 +195,17 @@ func getdbmovieidbyimdb(
 // It takes a media config and list ID, gets the feed, checks/filters movies,
 // and submits import jobs. It uses worker pools and caching for performance.
 func importnewmoviessingle(
-	cfgp *config.MediaTypeConfig,
+	ctx context.Context, cfgp *config.MediaTypeConfig,
 	list *config.MediaListsConfig,
 	listid int,
 ) error {
-	logger.LogDynamicany2Str(
-		"info",
-		"get feeds for",
-		logger.StrConfig,
-		cfgp.NamePrefix,
-		logger.StrListname,
-		list.Name,
-	)
+	if err := logger.CheckContextEnded(ctx); err != nil {
+		return err
+	}
+	logger.Logtype("info", 2).
+		Str(logger.StrConfig, cfgp.NamePrefix).
+		Str(logger.StrListname, list.Name).
+		Msg("get feeds for")
 	if !list.Enabled || !list.CfgList.Enabled {
 		return logger.ErrDisabled
 	}
@@ -222,8 +225,6 @@ func importnewmoviessingle(
 
 	listnamefilter := list.Getlistnamefilterignore()
 
-	ctx := context.Background()
-	defer ctx.Done()
 	pl := worker.WorkerPoolParse.NewGroupContext(ctx)
 
 	var getid uint
@@ -250,6 +251,9 @@ func importnewmoviessingle(
 		if feed.Movies[idx] == "" {
 			continue
 		}
+		if err := logger.CheckContextEnded(ctx); err != nil {
+			return err
+		}
 		if !logger.HasPrefixI(feed.Movies[idx], "tt") {
 			feed.Movies[idx] = logger.AddImdbPrefix(feed.Movies[idx])
 		}
@@ -259,7 +263,7 @@ func importnewmoviessingle(
 			if config.GetSettingsGeneral().UseMediaCache {
 				if database.CacheOneStringTwoIntIndexFunc(
 					logger.CacheMovie,
-					func(elem *database.DbstaticOneStringTwoInt) bool {
+					func(elem *syncops.DbstaticOneStringTwoInt) bool {
 						return elem.Num1 == movieid &&
 							(elem.Str == list.Name || strings.EqualFold(elem.Str, list.Name))
 					},
@@ -274,7 +278,7 @@ func importnewmoviessingle(
 				if config.GetSettingsGeneral().UseMediaCache {
 					if database.CacheOneStringTwoIntIndexFunc(
 						logger.CacheMovie,
-						func(elem *database.DbstaticOneStringTwoInt) bool {
+						func(elem *syncops.DbstaticOneStringTwoInt) bool {
 							return elem.Num1 == movieid &&
 								logger.SlicesContainsI(list.IgnoreMapLists, elem.Str)
 						},
@@ -293,38 +297,37 @@ func importnewmoviessingle(
 		if allowed {
 			pl.Submit(func() {
 				defer logger.HandlePanic()
-				importfeed.JobImportMoviesByList(feed.Movies[idx], idx, cfgp, listid, true)
+				importfeed.JobImportMoviesByList(ctx, feed.Movies[idx], idx, cfgp, listid, true)
 			})
 		} else {
-			logger.LogDynamicany1String("debug", "not allowed movie", logger.StrImdb, feed.Movies[idx])
+			logger.Logtype("debug", 1).
+				Str(logger.StrImdb, feed.Movies[idx]).
+				Msg("not allowed movie")
 		}
 	}
 	errjobs := pl.Wait()
 	if errjobs != nil {
-		logger.LogDynamicanyErr(
-			"error",
-			"Error importing movies",
-			errjobs,
-		)
+		logger.Logtype("error", 0).
+			Err(errjobs).
+			Msg("Error importing movies")
 	}
-	ctx.Done()
 	return nil
 }
 
 // checkreachedmoviesflag checks if the quality cutoff has been reached for all movies in the given list config.
 // It queries the movies table for the list, checks the priority of existing files against the config quality cutoff,
 // and updates the quality_reached flag in the database accordingly.
-func checkreachedmoviesflag(listcfg *config.MediaListsConfig) error {
+func checkreachedmoviesflag(rootctx context.Context, listcfg *config.MediaListsConfig) error {
 	var minPrio int
 	arr := database.QueryMovies(&listcfg.Name)
 	for idx := range arr {
+		if err := logger.CheckContextEnded(rootctx); err != nil {
+			return err
+		}
 		if !config.CheckGroup("quality_", arr[idx].QualityProfile) {
-			logger.LogDynamicany1UInt(
-				"debug",
-				"Quality for Movie not found",
-				logger.StrID,
-				arr[idx].ID,
-			)
+			logger.Logtype("debug", 1).
+				Uint(logger.StrID, arr[idx].ID).
+				Msg("Quality for Movie not found")
 			continue
 		}
 
@@ -354,6 +357,7 @@ func checkreachedmoviesflag(listcfg *config.MediaListsConfig) error {
 // It converts the ID to an int and calls refreshmovies to refresh that single movie.
 func RefreshMovie(cfgp *config.MediaTypeConfig, id *string) error {
 	return refreshmovies(
+		context.Background(),
 		cfgp,
 		database.GetrowsN[string](
 			false,
@@ -365,15 +369,20 @@ func RefreshMovie(cfgp *config.MediaTypeConfig, id *string) error {
 }
 
 // refreshmovies refreshes movie data for the given movies. It takes a media config, count of movies to refresh, a query to get the movie IDs, and an optional parameter for the query. It gets the list of movie IDs to refresh, logs info for each, looks up the list name, and calls the import job. Any errors are logged.
-func refreshmovies(cfgp *config.MediaTypeConfig, arr []string) error {
+func refreshmovies(ctx context.Context, cfgp *config.MediaTypeConfig, arr []string) error {
 	if len(arr) == 0 {
 		return nil
 	}
 	var err error
 	for idx := range arr {
-		logger.LogDynamicany1String("info", "Refresh Movie", logger.StrImdb, arr[idx])
+		if err := logger.CheckContextEnded(ctx); err != nil {
+			return err
+		}
+		logger.Logtype("info", 1).
+			Str(logger.StrImdb, arr[idx]).
+			Msg("Refresh Movie")
 		errsub := importfeed.JobImportMoviesByList(
-			arr[idx],
+			ctx, arr[idx],
 			idx,
 			cfgp,
 			getrefreshlistid(&arr[idx], cfgp),
@@ -414,10 +423,11 @@ func MoviesAllJobs(job string, force bool) {
 	if job == "" {
 		return
 	}
+	ctx := context.Background()
 	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) error {
 		if !strings.HasPrefix(media.NamePrefix, logger.StrMovie) {
 			return nil
 		}
-		return SingleJobs(job, media.NamePrefix, "", force, 0)
+		return SingleJobs(ctx, job, media.NamePrefix, "", force, 0)
 	})
 }
