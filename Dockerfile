@@ -1,11 +1,11 @@
 # Build stage
-FROM golang:latest AS builder
+FROM golang:1.25.0-bookworm AS builder
 
 LABEL org.opencontainers.image.authors="Kellerman81 <Kellerman81@gmail.com>"
 
 # Install build dependencies
 RUN apt-get update && \
-    apt-get -y install clang cmake gcc-i686-linux-gnu cross-gcc-dev gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf gcc-mingw-w64
+    apt-get -y install clang cmake gcc-i686-linux-gnu gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf gcc-mingw-w64
 RUN dpkg-reconfigure --frontend noninteractive tzdata
 
 # Set working directory
