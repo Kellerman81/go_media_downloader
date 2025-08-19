@@ -32,7 +32,7 @@ jobs:
       with:
         go-version: ${{ env.GO_VERSION }}
         check-latest: true
-        cache: false  # Enable Go module caching
+        cache: false  # Enable Go module caching 
 
     - name: Install cross-compilation tools
       run: |
