@@ -10,7 +10,7 @@ import (
 
 func TestNewPool(t *testing.T) {
 	t.Run("creates empty pool", func(t *testing.T) {
-		pool := NewPool[int](5, 0, nil, nil)
+		pool := newPool[int](5, 0, nil, nil)
 		if cap(pool.objs) != 5 {
 			t.Errorf("expected capacity 5, got %d", cap(pool.objs))
 		}
@@ -25,7 +25,7 @@ func TestNewPool(t *testing.T) {
 			*i = 42
 			constructorCalled++
 		}
-		pool := NewPool(5, 3, constructor, nil)
+		pool := newPool(5, 3, constructor, nil)
 
 		if len(pool.objs) != 3 {
 			t.Errorf("expected 3 objects, got %d", len(pool.objs))
@@ -38,7 +38,7 @@ func TestNewPool(t *testing.T) {
 
 func TestPoolGet(t *testing.T) {
 	t.Run("gets existing object", func(t *testing.T) {
-		pool := NewPool(5, 1, func(i *int) { *i = 42 }, nil)
+		pool := newPool(5, 1, func(i *int) { *i = 42 }, nil)
 		obj := pool.Get()
 		if *obj != 42 {
 			t.Errorf("expected 42, got %d", *obj)
@@ -50,7 +50,7 @@ func TestPoolGet(t *testing.T) {
 
 	t.Run("creates new object when empty", func(t *testing.T) {
 		constructorCalled := 0
-		pool := NewPool(5, 0, func(i *int) {
+		pool := newPool(5, 0, func(i *int) {
 			*i = 99
 			constructorCalled++
 		}, nil)
@@ -68,7 +68,7 @@ func TestPoolGet(t *testing.T) {
 func TestPoolPut(t *testing.T) {
 	t.Run("puts object back in pool", func(t *testing.T) {
 		destructorCalled := 0
-		pool := NewPool(5, 0, nil, func(i *int) {
+		pool := newPool(5, 0, nil, func(i *int) {
 			*i = 0
 			destructorCalled++
 		})
@@ -86,7 +86,7 @@ func TestPoolPut(t *testing.T) {
 	})
 
 	t.Run("ignores nil objects", func(t *testing.T) {
-		pool := NewPool[int](5, 0, nil, nil)
+		pool := newPool[int](5, 0, nil, nil)
 		pool.Put(nil)
 		if len(pool.objs) != 0 {
 			t.Errorf("pool should remain empty after putting nil")
@@ -94,7 +94,7 @@ func TestPoolPut(t *testing.T) {
 	})
 
 	t.Run("respects capacity limit", func(t *testing.T) {
-		pool := NewPool[int](2, 2, nil, nil)
+		pool := newPool[int](2, 2, nil, nil)
 		extra := new(int)
 		pool.Put(extra)
 		if len(pool.objs) != 2 {

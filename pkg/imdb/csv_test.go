@@ -41,8 +41,7 @@ func csvgetfloatarr_original(record string) float32 {
 	return float32(flo)
 }
 
-
-// Optimized versions (attempt 1 - length-based null check)  
+// Optimized versions (attempt 1 - length-based null check)
 func csvgetuint32arr_optimized1(record string) uint32 {
 	if len(record) == 0 || record == "0" || (len(record) == 2 && record == "\\N") {
 		return 0
@@ -157,35 +156,6 @@ func csvgetfloatarr_optimized3(record string) float32 {
 		return 0
 	}
 	return float32(flo)
-}
-
-// Test data for comprehensive testing
-var testData = []struct {
-	input    string
-	expected interface{}
-}{
-	// Standard cases
-	{"123", uint32(123)},
-	{"456", 456},
-	{"3.14", float32(3.14)},
-	{"t789", uint32(789)},
-	
-	// Null cases
-	{"", uint32(0)},
-	{"0", uint32(0)},
-	{"\\N", uint32(0)},
-	{"0.0", float32(0)},
-	
-	// Edge cases
-	{"4294967295", uint32(4294967295)}, // Max uint32
-	{"-123", 0},                        // Negative for uint32 should return 0
-	{"2147483647", 2147483647},         // Max int32
-	{"3.14159", float32(3.14159)},      // Precision test
-	
-	// Invalid cases
-	{"abc", uint32(0)},
-	{"12.34.56", float32(0)},
-	{"", 0},
 }
 
 // Tests for correctness
@@ -508,12 +478,12 @@ func unescapeString_original(record string) string {
 	if len(record) == 0 {
 		return ""
 	}
-	
+
 	// Fast \\N check (literal backslash followed by N = 2 characters)
 	if len(record) == 2 && record == "\\N" {
 		return ""
 	}
-	
+
 	// Fast path: check for '&' using indexing instead of ContainsRune
 	// This avoids UTF-8 decoding overhead since '&' is ASCII
 	for i := 0; i < len(record); i++ {
@@ -521,7 +491,7 @@ func unescapeString_original(record string) string {
 			return html.UnescapeString(record)
 		}
 	}
-	
+
 	return record
 }
 
@@ -530,19 +500,19 @@ func unescapeString_optimized1(record string) string {
 	if len(record) == 0 {
 		return ""
 	}
-	
+
 	// Fast \\N check with byte comparison (2 characters: \ and N)
 	if len(record) == 2 && record[0] == '\\' && record[1] == 'N' {
 		return ""
 	}
-	
+
 	// Fast path: check for '&' using byte indexing
 	for i := 0; i < len(record); i++ {
 		if record[i] == '&' {
 			return html.UnescapeString(record)
 		}
 	}
-	
+
 	return record
 }
 
@@ -551,17 +521,17 @@ func unescapeString_optimized2(record string) string {
 	if len(record) == 0 {
 		return ""
 	}
-	
+
 	// Fast \\N check with switch
 	if record == "\\N" {
 		return ""
 	}
-	
+
 	// Use strings.ContainsRune instead of manual loop
 	if strings.ContainsRune(record, '&') {
 		return html.UnescapeString(record)
 	}
-	
+
 	return record
 }
 
@@ -575,14 +545,14 @@ func unescapeString_optimized3(record string) string {
 			return ""
 		}
 	}
-	
+
 	// Fast path: check for '&' using byte indexing
 	for i := 0; i < len(record); i++ {
 		if record[i] == '&' {
 			return html.UnescapeString(record)
 		}
 	}
-	
+
 	return record
 }
 
@@ -636,9 +606,9 @@ func TestUnescapeString_Correctness(t *testing.T) {
 // Benchmark data for unescapeString - realistic distribution
 var unescapeBenchmarkInputs = []string{
 	"Regular title without entities",
-	"Title with &amp; ampersand", 
+	"Title with &amp; ampersand",
 	"Title with &#39;quotes&#39;",
-	"", // Empty string
+	"",    // Empty string
 	"\\N", // Null value
 	"No entities at all here",
 	"&lt;The Matrix&gt;",
@@ -762,30 +732,30 @@ func stringToSlug_original(instr string) string {
 	if len(instr) == 0 {
 		return ""
 	}
-	
+
 	inbyte := unidecode2(instr)
 	if len(inbyte) == 0 {
 		return ""
 	}
-	
+
 	// Optimize trimming by finding actual start/end positions
 	start := 0
 	end := len(inbyte)
-	
+
 	// Find start position (skip leading hyphens and spaces)
 	for start < end && (inbyte[start] == '-' || inbyte[start] == ' ') {
 		start++
 	}
-	
-	// Find end position (skip trailing hyphens and spaces)  
+
+	// Find end position (skip trailing hyphens and spaces)
 	for end > start && (inbyte[end-1] == '-' || inbyte[end-1] == ' ') {
 		end--
 	}
-	
+
 	if start >= end {
 		return ""
 	}
-	
+
 	return string(inbyte[start:end])
 }
 
@@ -794,12 +764,12 @@ func stringToSlug_optimized1(instr string) string {
 	if len(instr) == 0 {
 		return ""
 	}
-	
+
 	inbyte := unidecode2(instr)
 	if len(inbyte) == 0 {
 		return ""
 	}
-	
+
 	// Optimize trimming with early bounds check
 	if len(inbyte) == 1 {
 		if inbyte[0] == '-' || inbyte[0] == ' ' {
@@ -807,24 +777,24 @@ func stringToSlug_optimized1(instr string) string {
 		}
 		return string(inbyte)
 	}
-	
+
 	// Find start position (skip leading hyphens and spaces)
 	start := 0
 	for start < len(inbyte) && (inbyte[start] == '-' || inbyte[start] == ' ') {
 		start++
 	}
-	
+
 	// Early exit if all characters are separators
 	if start >= len(inbyte) {
 		return ""
 	}
-	
-	// Find end position (skip trailing hyphens and spaces)  
+
+	// Find end position (skip trailing hyphens and spaces)
 	end := len(inbyte)
 	for end > start && (inbyte[end-1] == '-' || inbyte[end-1] == ' ') {
 		end--
 	}
-	
+
 	return string(inbyte[start:end])
 }
 
@@ -842,16 +812,16 @@ func stringToSlug_optimized2(instr string) string {
 			return instr
 		}
 	}
-	
+
 	inbyte := unidecode2(instr)
 	if len(inbyte) == 0 {
 		return ""
 	}
-	
+
 	// Use bytes.TrimSpace equivalent for our specific characters
 	start := 0
 	end := len(inbyte)
-	
+
 	// Trim leading
 	for start < end {
 		if inbyte[start] != '-' && inbyte[start] != ' ' {
@@ -859,7 +829,7 @@ func stringToSlug_optimized2(instr string) string {
 		}
 		start++
 	}
-	
+
 	// Trim trailing
 	for end > start {
 		if inbyte[end-1] != '-' && inbyte[end-1] != ' ' {
@@ -867,11 +837,11 @@ func stringToSlug_optimized2(instr string) string {
 		}
 		end--
 	}
-	
+
 	if start >= end {
 		return ""
 	}
-	
+
 	return string(inbyte[start:end])
 }
 
@@ -880,30 +850,30 @@ func stringToSlug_optimized3(instr string) string {
 	if len(instr) == 0 {
 		return ""
 	}
-	
+
 	// Always use unidecode2 for consistency with original
 	// The complexity of detecting "clean" strings isn't worth the optimization
 	inbyte := unidecode2(instr)
 	if len(inbyte) == 0 {
 		return ""
 	}
-	
+
 	// Trim efficiently
 	start := 0
 	end := len(inbyte)
-	
+
 	for start < end && (inbyte[start] == '-' || inbyte[start] == ' ') {
 		start++
 	}
-	
+
 	for end > start && (inbyte[end-1] == '-' || inbyte[end-1] == ' ') {
 		end--
 	}
-	
+
 	if start >= end {
 		return ""
 	}
-	
+
 	return string(inbyte[start:end])
 }
 
@@ -966,23 +936,23 @@ func TestStringToSlug_Correctness(t *testing.T) {
 
 // Benchmark data for stringToSlug - realistic IMDB title distribution
 var slugBenchmarkInputs = []string{
-	"The Matrix",              // Common movie title
-	"Action",                  // Single word genre
-	"Film & Television",       // With ampersand
-	"José's Movie",           // With accent and apostrophe
-	"",                       // Empty string
-	"\\N",                    // Null value
-	"Movie (2023)",           // With parentheses and year
+	"The Matrix",        // Common movie title
+	"Action",            // Single word genre
+	"Film & Television", // With ampersand
+	"José's Movie",      // With accent and apostrophe
+	"",                  // Empty string
+	"\\N",               // Null value
+	"Movie (2023)",      // With parentheses and year
 	"The Lord of the Rings: The Fellowship of the Ring", // Long title
-	"a",                      // Single character
-	"TV Show",                // Short title
-	"Horror",                 // Another genre
-	"Café",                   // With accent
-	"Test's Adventure",       // With apostrophe
-	"   Leading Spaces",      // With leading spaces
-	"Trailing Spaces   ",     // With trailing spaces
-	"Multiple   Spaces",      // With multiple spaces
-	"- Hyphenated -",         // With hyphens
+	"a",                  // Single character
+	"TV Show",            // Short title
+	"Horror",             // Another genre
+	"Café",               // With accent
+	"Test's Adventure",   // With apostrophe
+	"   Leading Spaces",  // With leading spaces
+	"Trailing Spaces   ", // With trailing spaces
+	"Multiple   Spaces",  // With multiple spaces
+	"- Hyphenated -",     // With hyphens
 	// Add more common patterns
 	"Comedy", "Drama", "Thriller", "Romance", "Adventure",
 	// More nulls as they're common
