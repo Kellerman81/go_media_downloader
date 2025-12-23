@@ -11,42 +11,50 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/metadata"
 	gin "github.com/gin-gonic/gin"
-	. "maragu.dev/gomponents"
+	"maragu.dev/gomponents"
 	hx "maragu.dev/gomponents-htmx"
-	. "maragu.dev/gomponents/html"
+	"maragu.dev/gomponents/html"
 )
 
-// renderMovieMetadataPage renders a page for testing movie metadata lookup
-func renderMovieMetadataPage(csrfToken string) Node {
-	return Div(
-		Class("config-section-enhanced"),
-		
+// renderMovieMetadataPage renders a page for testing movie metadata lookup.
+func renderMovieMetadataPage(csrfToken string) gomponents.Node {
+	return html.Div(
+		html.Class("config-section-enhanced"),
+
 		// Enhanced page header with gradient background
-		Div(
-			Class("page-header-enhanced"),
-			Div(
-				Class("header-content"),
-				Div(
-					Class("header-icon-wrapper"),
-					I(Class("fa-solid fa-info-circle header-icon")),
+		html.Div(
+			html.Class("page-header-enhanced"),
+			html.Div(
+				html.Class("header-content"),
+				html.Div(
+					html.Class("header-icon-wrapper"),
+					html.I(html.Class("fa-solid fa-info-circle header-icon")),
 				),
-				Div(
-					Class("header-text"),
-					H2(Class("header-title"), Text("Media Metadata Lookup")),
-					P(Class("header-subtitle"), Text("Lookup metadata from various providers (IMDB, TMDB, OMDB, Trakt, TVDB). Support for movies, TV series, and episodes with comprehensive information retrieval.")),
+				html.Div(
+					html.Class("header-text"),
+					html.H2(html.Class("header-title"), gomponents.Text("Media Metadata Lookup")),
+					html.P(
+						html.Class("header-subtitle"),
+						gomponents.Text(
+							"Lookup metadata from various providers (IMDB, TMDB, OMDB, Trakt, TVDB). Support for movies, TV series, and episodes with comprehensive information retrieval.",
+						),
+					),
 				),
 			),
 		),
 
-		Form(
-			Class("config-form"),
-			ID("metadataTestForm"),
+		html.Form(
+			html.Class("config-form"),
+			html.ID("metadataTestForm"),
 
-			Div(
-				Class("row"),
-				Div(
-					Class("col-md-6"),
-					H5(Class("form-section-title"), Text("Media Type & Identification")),
+			html.Div(
+				html.Class("row"),
+				html.Div(
+					html.Class("col-md-6"),
+					html.H5(
+						html.Class("form-section-title"),
+						gomponents.Text("Media Type & Identification"),
+					),
 
 					renderFormGroup("metadata", map[string]string{
 						"MediaType": "Select the type of media to lookup",
@@ -62,9 +70,9 @@ func renderMovieMetadataPage(csrfToken string) Node {
 						"ImdbID": "IMDB ID",
 					}, "ImdbID", "text", "", nil),
 
-					Div(
-						ID("tvdbFields"),
-						Style("display: none;"),
+					html.Div(
+						html.ID("tvdbFields"),
+						html.Style("display: none;"),
 						renderFormGroup("metadata", map[string]string{
 							"TvdbID": "Enter a TVDB ID for series/episodes (e.g., '81189' for Breaking Bad)",
 						}, map[string]string{
@@ -73,13 +81,16 @@ func renderMovieMetadataPage(csrfToken string) Node {
 					),
 				),
 
-				Div(
-					Class("col-md-6"),
-					H5(Class("form-section-title"), Text("Additional Parameters")),
+				html.Div(
+					html.Class("col-md-6"),
+					html.H5(
+						html.Class("form-section-title"),
+						gomponents.Text("Additional Parameters"),
+					),
 
-					Div(
-						ID("episodeFields"),
-						Style("display: none;"),
+					html.Div(
+						html.ID("episodeFields"),
+						html.Style("display: none;"),
 
 						renderFormGroup("metadata", map[string]string{
 							"Season": "Season number for episode lookup",
@@ -110,94 +121,138 @@ func renderMovieMetadataPage(csrfToken string) Node {
 				),
 			),
 
-			Div(
-				Class("form-group submit-group"),
-				Button(
-					Class(ClassBtnPrimary),
-					Text("Get Metadata"),
-					Type("button"),
+			html.Div(
+				html.Class("form-group submit-group"),
+				html.Button(
+					html.Class(ClassBtnPrimary),
+					gomponents.Text("Get Metadata"),
+					html.Type("button"),
 					hx.Target("#metadataResults"),
 					hx.Swap("innerHTML"),
 					hx.Post("/api/admin/moviemetadata"),
 					hx.Headers(createHTMXHeaders(csrfToken)),
 					hx.Include("#metadataTestForm"),
 				),
-				Button(
-					Type("button"),
-					Class("btn btn-secondary ml-2"),
-					Attr("onclick", "document.getElementById('metadataTestForm').reset(); document.getElementById('metadataResults').innerHTML = '';"),
-					Text("Reset"),
+				html.Button(
+					html.Type("button"),
+					html.Class("btn btn-secondary ml-2"),
+					gomponents.Attr(
+						"onclick",
+						"document.getElementById('metadataTestForm').reset(); document.getElementById('metadataResults').innerHTML = '';",
+					),
+					gomponents.Text("Reset"),
 				),
 			),
 		),
 
-		Div(
-			ID("metadataResults"),
-			Class("mt-4"),
-			Style("min-height: 50px;"),
+		html.Div(
+			html.ID("metadataResults"),
+			html.Class("mt-4"),
+			html.Style("min-height: 50px;"),
 		),
 
 		// Instructions
-		Div(
-			Class("mt-4 card border-0 shadow-sm border-info mb-4"),
-			Div(
-				Class("card-header border-0"),
-				Style("background: linear-gradient(135deg, #d1ecf1 0%, #bee5eb 100%); border-radius: 15px 15px 0 0;"),
-				Div(
-					Class("d-flex align-items-center"),
-					Span(Class("badge bg-info me-3"), I(Class("fas fa-search me-1")), Text("Instructions")),
-					H5(Class("card-title mb-0 text-info fw-bold"), Text("Metadata Lookup Instructions")),
+		html.Div(
+			html.Class("mt-4 card border-0 shadow-sm border-info mb-4"),
+			html.Div(
+				html.Class("card-header border-0"),
+				html.Style(
+					"background: linear-gradient(135deg, #d1ecf1 0%, #bee5eb 100%); border-radius: 15px 15px 0 0;",
+				),
+				html.Div(
+					html.Class("d-flex align-items-center"),
+					html.Span(
+						html.Class("badge bg-info me-3"),
+						html.I(html.Class("fas fa-search me-1")),
+						gomponents.Text("Instructions"),
+					),
+					html.H5(
+						html.Class("card-title mb-0 text-info fw-bold"),
+						gomponents.Text("Metadata Lookup Instructions"),
+					),
 				),
 			),
-			Div(
-				Class("card-body"),
-				P(Class("card-text text-muted mb-3"), Text("Follow these guidelines to lookup metadata for your media")),
-				Ul(
-					Class("list-unstyled mb-3"),
-					Li(Class("mb-2"),
-						Span(Class("badge bg-success me-2"), I(Class("fas fa-film me-1")), Text("Movies")),
-						Text("Use IMDB ID (e.g., 'tt0133093' for The Matrix)"),
+			html.Div(
+				html.Class("card-body"),
+				html.P(
+					html.Class("card-text text-muted mb-3"),
+					gomponents.Text("Follow these guidelines to lookup metadata for your media"),
+				),
+				html.Ul(
+					html.Class("list-unstyled mb-3"),
+					html.Li(
+						html.Class("mb-2"),
+						html.Span(
+							html.Class("badge bg-success me-2"),
+							html.I(html.Class("fas fa-film me-1")),
+							gomponents.Text("Movies"),
+						),
+						gomponents.Text("Use IMDB ID (e.g., 'tt0133093' for The Matrix)"),
 					),
-					Li(Class("mb-2"),
-						Span(Class("badge bg-info me-2"), I(Class("fas fa-tv me-1")), Text("Series")),
-						Text("Use IMDB ID or TVDB ID (e.g., TVDB '81189' for Breaking Bad)"),
+					html.Li(
+						html.Class("mb-2"),
+						html.Span(
+							html.Class("badge bg-info me-2"),
+							html.I(html.Class("fas fa-tv me-1")),
+							gomponents.Text("Series"),
+						),
+						gomponents.Text(
+							"Use IMDB ID or TVDB ID (e.g., TVDB '81189' for Breaking Bad)",
+						),
 					),
-					Li(Class("mb-2"),
-						Span(Class("badge bg-warning me-2"), I(Class("fas fa-play-circle me-1")), Text("Episodes")),
-						Text("Use IMDB ID or TVDB ID plus season and episode numbers"),
+					html.Li(
+						html.Class("mb-2"),
+						html.Span(
+							html.Class("badge bg-warning me-2"),
+							html.I(html.Class("fas fa-play-circle me-1")),
+							gomponents.Text("Episodes"),
+						),
+						gomponents.Text("Use IMDB ID or TVDB ID plus season and episode numbers"),
 					),
 				),
 
-				Div(
-					Class("alert alert-light border-0 mt-3 mb-3"),
-					Style("background-color: rgba(13, 110, 253, 0.1); border-radius: 8px; padding: 0.75rem 1rem;"),
-					Div(
-						Class("d-flex align-items-start"),
-						I(Class("fas fa-database me-2 mt-1"), Style("color: #0d6efd; font-size: 0.9rem;")),
-						Div(
-							Strong(Style("color: #0d6efd;"), Text("Providers: ")),
-							Text("Different providers offer different information. IMDB and TMDB are best for movies, TVDB is essential for TV series."),
+				html.Div(
+					html.Class("alert alert-light border-0 mt-3 mb-3"),
+					html.Style(
+						"background-color: rgba(13, 110, 253, 0.1); border-radius: 8px; padding: 0.75rem 1rem;",
+					),
+					html.Div(
+						html.Class("d-flex align-items-start"),
+						html.I(
+							html.Class("fas fa-database me-2 mt-1"),
+							html.Style("color: #0d6efd; font-size: 0.9rem;"),
+						),
+						html.Div(
+							html.Strong(
+								html.Style("color: #0d6efd;"),
+								gomponents.Text("Providers: "),
+							),
+							gomponents.Text(
+								"Different providers offer different information. IMDB and TMDB are best for movies, TVDB is essential for TV series.",
+							),
 						),
 					),
 				),
 
-				P(
-					Class("mb-0"),
-					Strong(Text("Update Database: ")),
-					Text("Check this option to save retrieved metadata to your local database."),
+				html.P(
+					html.Class("mb-0"),
+					html.Strong(gomponents.Text("Update Database: ")),
+					gomponents.Text(
+						"Check this option to save retrieved metadata to your local database.",
+					),
 				),
 			),
 		),
 
 		// JavaScript for dynamic field visibility
 		// Simplified JavaScript for Metadata - CSS classes handle field visibility via HTMX
-		Script(Raw(`
+		html.Script(gomponents.Raw(`
 			// No JavaScript needed - HTMX and CSS handle field visibility
 		`)),
 	)
 }
 
-// HandleMovieMetadata handles media metadata lookup requests (movies, series, episodes)
+// HandleMovieMetadata handles media metadata lookup requests (movies, series, episodes).
 func HandleMovieMetadata(c *gin.Context) {
 	if err := c.Request.ParseForm(); err != nil {
 		c.String(http.StatusOK, renderAlert("Failed to parse form data: "+err.Error(), "danger"))
@@ -214,29 +269,64 @@ func HandleMovieMetadata(c *gin.Context) {
 	switch mediaType {
 	case "movie":
 		if imdbID == "" {
-			c.String(http.StatusOK, renderAlert("Please enter an IMDB ID for movie lookup", "warning"))
+			c.String(
+				http.StatusOK,
+				renderAlert("Please enter an IMDB ID for movie lookup", "warning"),
+			)
+
 			return
 		}
+
 		if !strings.HasPrefix(imdbID, "tt") || len(imdbID) < 9 {
-			c.String(http.StatusOK, renderAlert("Invalid IMDB ID format. Expected format: tt0133093", "warning"))
+			c.String(
+				http.StatusOK,
+				renderAlert("Invalid IMDB ID format. Expected format: tt0133093", "warning"),
+			)
+
 			return
 		}
+
 	case "series":
 		if imdbID == "" && tvdbID == "" {
-			c.String(http.StatusOK, renderAlert("Please enter either an IMDB ID or TVDB ID for series lookup", "warning"))
+			c.String(
+				http.StatusOK,
+				renderAlert(
+					"Please enter either an IMDB ID or TVDB ID for series lookup",
+					"warning",
+				),
+			)
+
 			return
 		}
+
 	case "episode":
 		seasonStr := c.PostForm("metadata_Season")
+
 		episodeStr := c.PostForm("metadata_Episode")
 		if imdbID == "" && tvdbID == "" {
-			c.String(http.StatusOK, renderAlert("Please enter either an IMDB ID or TVDB ID for episode lookup", "warning"))
+			c.String(
+				http.StatusOK,
+				renderAlert(
+					"Please enter either an IMDB ID or TVDB ID for episode lookup",
+					"warning",
+				),
+			)
+
 			return
 		}
+
 		if seasonStr == "" || episodeStr == "" {
-			c.String(http.StatusOK, renderAlert("Please enter both season and episode numbers for episode lookup", "warning"))
+			c.String(
+				http.StatusOK,
+				renderAlert(
+					"Please enter both season and episode numbers for episode lookup",
+					"warning",
+				),
+			)
+
 			return
 		}
+
 	default:
 		c.String(http.StatusOK, renderAlert("Invalid media type", "danger"))
 		return
@@ -256,6 +346,7 @@ func HandleMovieMetadata(c *gin.Context) {
 				Err(err).
 				Msg("Failed to parse season number")
 		}
+
 		episodeNum, err := strconv.Atoi(c.PostForm("metadata_Episode"))
 		if err != nil {
 			logger.Logtype("error", 1).
@@ -263,11 +354,15 @@ func HandleMovieMetadata(c *gin.Context) {
 				Err(err).
 				Msg("Failed to parse episode number")
 		}
-		c.String(http.StatusOK, handleEpisodeMetadataLookup(imdbID, tvdbID, seasonNum, episodeNum, provider, updateDB))
+
+		c.String(
+			http.StatusOK,
+			handleEpisodeMetadataLookup(imdbID, tvdbID, seasonNum, episodeNum, provider, updateDB),
+		)
 	}
 }
 
-// handleMovieMetadataLookup handles movie metadata lookup
+// handleMovieMetadataLookup handles movie metadata lookup.
 func handleMovieMetadataLookup(imdbID, provider string, updateDB bool) string {
 	result := map[string]any{
 		"media_type": "movie",
@@ -279,7 +374,9 @@ func handleMovieMetadataLookup(imdbID, provider string, updateDB bool) string {
 	var imdb, omdb, tmdb, trakt bool
 
 	var dbmovie database.Dbmovie
+
 	dbmovie.ImdbID = imdbID
+
 	switch provider {
 	case logger.StrImdb:
 		imdb = true
@@ -295,9 +392,12 @@ func handleMovieMetadataLookup(imdbID, provider string, updateDB bool) string {
 		tmdb = true
 		trakt = true
 	}
+
 	metadata.MovieGetMetadata(&dbmovie, imdb, tmdb, omdb, trakt)
+
 	if updateDB {
 		dbmovie.MovieFindDBIDByImdbParser()
+
 		if dbmovie.ID == 0 {
 			dbresult, err := database.ExecNid(
 				"insert into dbmovies (Imdb_ID) VALUES (?)",
@@ -307,6 +407,7 @@ func handleMovieMetadataLookup(imdbID, provider string, updateDB bool) string {
 				dbmovie.ID = uint(dbresult)
 			}
 		}
+
 		database.ExecN(
 			"update dbmovies SET Title = ? , Release_Date = ? , Year = ? , Adult = ? , Budget = ? , Genres = ? , Original_Language = ? , Original_Title = ? , Overview = ? , Popularity = ? , Revenue = ? , Runtime = ? , Spoken_Languages = ? , Status = ? , Tagline = ? , Vote_Average = ? , Vote_Count = ? , Trakt_ID = ? , Moviedb_ID = ? , Imdb_ID = ? , Freebase_M_ID = ? , Freebase_ID = ? , Facebook_ID = ? , Instagram_ID = ? , Twitter_ID = ? , URL = ? , Backdrop = ? , Poster = ? , Slug = ? where id = ?",
 			&dbmovie.Title,
@@ -353,30 +454,35 @@ func handleMovieMetadataLookup(imdbID, provider string, updateDB bool) string {
 		"status":           dbmovie.Status,
 		"tagline":          dbmovie.Tagline,
 		"imdb_id":          dbmovie.ImdbID,
-		"trakt_id":         fmt.Sprintf("%d", dbmovie.TraktID),   // Convert to string as expected
-		"tmdb_id":          fmt.Sprintf("%d", dbmovie.MoviedbID), // renderMovieMetadataDisplay expects "tmdb_id"
-		"freebase_m_id":    dbmovie.FreebaseMID,
-		"freebase_id":      dbmovie.FreebaseID,
-		"facebook_id":      dbmovie.FacebookID,
-		"instagram_id":     dbmovie.InstagramID,
-		"twitter_id":       dbmovie.TwitterID,
-		"website":          dbmovie.URL, // renderMovieMetadataDisplay expects "website"
-		"backdrop":         dbmovie.Backdrop,
-		"poster":           dbmovie.Poster,
-		"slug":             dbmovie.Slug,
-		"release_date":     dbmovie.ReleaseDate,
-		"released":         dbmovie.ReleaseDate.Time.Format("2006-01-02"), // renderMovieMetadataDisplay expects "released" as string
-		"created_at":       dbmovie.CreatedAt,
-		"updated_at":       dbmovie.UpdatedAt,
-		"popularity":       dbmovie.Popularity,
-		"rating":           dbmovie.VoteAverage, // renderMovieMetadataDisplay expects "rating"
-		"votes":            dbmovie.VoteCount,   // renderMovieMetadataDisplay expects "votes"
-		"budget":           dbmovie.Budget,
-		"revenue":          dbmovie.Revenue,
-		"runtime":          dbmovie.Runtime,
-		"year":             int(dbmovie.Year), // Convert uint16 to int as expected
-		"adult":            dbmovie.Adult,
-		"id":               dbmovie.ID,
+		"trakt_id":         fmt.Sprintf("%d", dbmovie.TraktID), // Convert to string as expected
+		"tmdb_id": fmt.Sprintf(
+			"%d",
+			dbmovie.MoviedbID,
+		), // renderMovieMetadataDisplay expects "tmdb_id"
+		"freebase_m_id": dbmovie.FreebaseMID,
+		"freebase_id":   dbmovie.FreebaseID,
+		"facebook_id":   dbmovie.FacebookID,
+		"instagram_id":  dbmovie.InstagramID,
+		"twitter_id":    dbmovie.TwitterID,
+		"website":       dbmovie.URL, // renderMovieMetadataDisplay expects "website"
+		"backdrop":      dbmovie.Backdrop,
+		"poster":        dbmovie.Poster,
+		"slug":          dbmovie.Slug,
+		"release_date":  dbmovie.ReleaseDate,
+		"released": dbmovie.ReleaseDate.Time.Format(
+			"2006-01-02",
+		), // renderMovieMetadataDisplay expects "released" as string
+		"created_at": dbmovie.CreatedAt,
+		"updated_at": dbmovie.UpdatedAt,
+		"popularity": dbmovie.Popularity,
+		"rating":     dbmovie.VoteAverage, // renderMovieMetadataDisplay expects "rating"
+		"votes":      dbmovie.VoteCount,   // renderMovieMetadataDisplay expects "votes"
+		"budget":     dbmovie.Budget,
+		"revenue":    dbmovie.Revenue,
+		"runtime":    dbmovie.Runtime,
+		"year":       int(dbmovie.Year), // Convert uint16 to int as expected
+		"adult":      dbmovie.Adult,
+		"id":         dbmovie.ID,
 	}
 
 	// Merge movie data into result
@@ -389,12 +495,14 @@ func handleMovieMetadataLookup(imdbID, provider string, updateDB bool) string {
 	// If no data was found, return detailed error information
 	if result["title"] == nil {
 		result["error"] = "No movie data found for the provided IMDB ID"
+
 		result["placeholder"] = true
 		if lastError != "" {
 			result["note"] = fmt.Sprintf("API errors encountered: %s", lastError)
 		} else {
 			result["note"] = "Unable to retrieve movie metadata from OMDB or Trakt APIs. Please check that the IMDB ID is correct and that API services are configured properly."
 		}
+
 		result["debug_info"] = map[string]any{
 			"imdb_id_provided": imdbID != "",
 			"last_error":       lastError,
@@ -404,7 +512,7 @@ func handleMovieMetadataLookup(imdbID, provider string, updateDB bool) string {
 	return renderMetadataResults(result)
 }
 
-// handleSeriesMetadataLookup handles series metadata lookup
+// handleSeriesMetadataLookup handles series metadata lookup.
 func handleSeriesMetadataLookup(imdbID, tvdbID, provider string, updateDB bool) string {
 	result := map[string]any{
 		"media_type": "series",
@@ -419,7 +527,8 @@ func handleSeriesMetadataLookup(imdbID, tvdbID, provider string, updateDB bool) 
 	// Try TVDB lookup first if TVDB ID is provided
 	if tvdbID != "" {
 		if tvdbIDInt, err := strconv.Atoi(tvdbID); err == nil {
-			if tvdbSeries, err := apiexternal.GetTvdbSeries(tvdbIDInt, "en"); err == nil && tvdbSeries != nil {
+			if tvdbSeries, err := apiexternal.GetTvdbSeries(tvdbIDInt, "en"); err == nil &&
+				tvdbSeries != nil {
 				result["title"] = tvdbSeries.Data.SeriesName
 				result["plot"] = tvdbSeries.Data.Overview
 				result["first_aired"] = tvdbSeries.Data.FirstAired
@@ -428,10 +537,12 @@ func handleSeriesMetadataLookup(imdbID, tvdbID, provider string, updateDB bool) 
 				result["rating"] = tvdbSeries.Data.Rating
 				result["runtime"] = tvdbSeries.Data.Runtime
 				result["genres"] = strings.Join(tvdbSeries.Data.Genre, ", ")
+
 				result["banner"] = tvdbSeries.Data.Banner
 				if tvdbSeries.Data.ImdbID != "" && imdbID == "" {
 					result["imdb_id"] = tvdbSeries.Data.ImdbID
 				}
+
 				result["data_source"] = "TVDB"
 			} else if err != nil {
 				lastError = fmt.Sprintf("TVDB API error: %v", err)
@@ -458,7 +569,8 @@ func handleSeriesMetadataLookup(imdbID, tvdbID, provider string, updateDB bool) 
 			result["data_source"] = "Trakt"
 
 			// Get seasons information from Trakt
-			if seasons, err := apiexternal.GetTraktSerieSeasons(imdbID); err == nil && len(seasons) > 0 {
+			if seasons, err := apiexternal.GetTraktSerieSeasons(imdbID); err == nil &&
+				len(seasons) > 0 {
 				result["seasons"] = len(seasons)
 				result["season_details"] = seasons
 			}
@@ -466,6 +578,7 @@ func handleSeriesMetadataLookup(imdbID, tvdbID, provider string, updateDB bool) 
 			if lastError != "" {
 				lastError += "; "
 			}
+
 			lastError += fmt.Sprintf("Trakt API error: %v", err)
 		}
 	}
@@ -473,12 +586,14 @@ func handleSeriesMetadataLookup(imdbID, tvdbID, provider string, updateDB bool) 
 	// If no data was found, return detailed error information
 	if result["title"] == nil {
 		result["error"] = "No series data found for the provided IDs"
+
 		result["placeholder"] = true
 		if lastError != "" {
 			result["note"] = fmt.Sprintf("API errors encountered: %s", lastError)
 		} else {
 			result["note"] = "Unable to retrieve series metadata from TVDB or Trakt APIs. Please check that the IDs are correct and that API services are configured properly."
 		}
+
 		result["debug_info"] = map[string]any{
 			"tvdb_id_provided": tvdbID != "",
 			"imdb_id_provided": imdbID != "",
@@ -489,8 +604,13 @@ func handleSeriesMetadataLookup(imdbID, tvdbID, provider string, updateDB bool) 
 	return renderMetadataResults(result)
 }
 
-// handleEpisodeMetadataLookup handles episode metadata lookup
-func handleEpisodeMetadataLookup(imdbID, tvdbID string, season, episode int, provider string, updateDB bool) string {
+// handleEpisodeMetadataLookup handles episode metadata lookup.
+func handleEpisodeMetadataLookup(
+	imdbID, tvdbID string,
+	season, episode int,
+	provider string,
+	updateDB bool,
+) string {
 	result := map[string]any{
 		"media_type": "episode",
 		"imdb_id":    imdbID,
@@ -507,7 +627,8 @@ func handleEpisodeMetadataLookup(imdbID, tvdbID string, season, episode int, pro
 	var seriesImdbID string
 	if tvdbID != "" && imdbID == "" {
 		if tvdbIDInt, err := strconv.Atoi(tvdbID); err == nil {
-			if tvdbSeries, err := apiexternal.GetTvdbSeries(tvdbIDInt, "en"); err == nil && tvdbSeries != nil {
+			if tvdbSeries, err := apiexternal.GetTvdbSeries(tvdbIDInt, "en"); err == nil &&
+				tvdbSeries != nil {
 				seriesImdbID = tvdbSeries.Data.ImdbID
 			} else if err != nil {
 				lastError = fmt.Sprintf("TVDB series lookup error: %v", err)
@@ -522,7 +643,8 @@ func handleEpisodeMetadataLookup(imdbID, tvdbID string, season, episode int, pro
 	// Try Trakt episode lookup with the series IMDB ID
 	if result["title"] == nil && seriesImdbID != "" {
 		seasonStr := strconv.Itoa(season)
-		if episodes, err := apiexternal.GetTraktSerieSeasonEpisodes(seriesImdbID, seasonStr); err == nil && len(episodes) > 0 {
+		if episodes, err := apiexternal.GetTraktSerieSeasonEpisodes(seriesImdbID, seasonStr); err == nil &&
+			len(episodes) > 0 {
 			// Find the specific episode
 			for _, ep := range episodes {
 				if ep.Episode == episode {
@@ -533,6 +655,7 @@ func handleEpisodeMetadataLookup(imdbID, tvdbID string, season, episode int, pro
 					result["episode"] = ep.Episode
 					result["runtime"] = ep.Runtime
 					result["data_source"] = "Trakt"
+
 					break
 				}
 			}
@@ -540,19 +663,26 @@ func handleEpisodeMetadataLookup(imdbID, tvdbID string, season, episode int, pro
 			if lastError != "" {
 				lastError += "; "
 			}
+
 			lastError += fmt.Sprintf("Trakt episodes API error: %v", err)
 		}
 	}
 
 	// If no data was found, return detailed error information
 	if result["title"] == nil {
-		result["error"] = fmt.Sprintf("No episode data found for Season %d Episode %d", season, episode)
+		result["error"] = fmt.Sprintf(
+			"No episode data found for Season %d Episode %d",
+			season,
+			episode,
+		)
+
 		result["placeholder"] = true
 		if lastError != "" {
 			result["note"] = fmt.Sprintf("API errors encountered: %s", lastError)
 		} else {
 			result["note"] = "Unable to retrieve episode metadata from TVDB or Trakt APIs. Please check that the IDs and episode numbers are correct and that API services are configured properly."
 		}
+
 		result["debug_info"] = map[string]any{
 			"tvdb_id_provided": tvdbID != "",
 			"imdb_id_provided": imdbID != "",
@@ -566,7 +696,7 @@ func handleEpisodeMetadataLookup(imdbID, tvdbID string, season, episode int, pro
 	return renderMetadataResults(result)
 }
 
-// renderMetadataResults renders metadata lookup results for movies, series, and episodes
+// renderMetadataResults renders metadata lookup results for movies, series, and episodes.
 func renderMetadataResults(result map[string]any) string {
 	mediaType, _ := result["media_type"].(string)
 
@@ -580,322 +710,663 @@ func renderMetadataResults(result map[string]any) string {
 		return renderEpisodeMetadataDisplay(result)
 	default:
 		return renderComponentToString(
-			Div(
-				Class("card border-0 shadow-sm border-danger mb-4"),
-				Div(
-					Class("card-header border-0"),
-					Style("background: linear-gradient(135deg, #f8d7da 0%, #f5c6cb 100%); border-radius: 15px 15px 0 0;"),
-					Div(
-						Class("d-flex align-items-center"),
-						Span(Class("badge bg-danger me-3"), I(Class("fas fa-exclamation-triangle me-1")), Text("Error")),
-						H5(Class("card-title mb-0 text-danger fw-bold"), Text("Unknown Media Type")),
+			html.Div(
+				html.Class("card border-0 shadow-sm border-danger mb-4"),
+				html.Div(
+					html.Class("card-header border-0"),
+					html.Style(
+						"background: linear-gradient(135deg, #f8d7da 0%, #f5c6cb 100%); border-radius: 15px 15px 0 0;",
+					),
+					html.Div(
+						html.Class("d-flex align-items-center"),
+						html.Span(
+							html.Class("badge bg-danger me-3"),
+							html.I(html.Class("fas fa-exclamation-triangle me-1")),
+							gomponents.Text("Error"),
+						),
+						html.H5(
+							html.Class("card-title mb-0 text-danger fw-bold"),
+							gomponents.Text("Unknown Media Type"),
+						),
 					),
 				),
-				Div(
-					Class("card-body"),
-					P(Class("card-text text-muted mb-0"), Text("Unable to render metadata for unknown media type: "+mediaType)),
+				html.Div(
+					html.Class("card-body"),
+					html.P(
+						html.Class("card-text text-muted mb-0"),
+						gomponents.Text(
+							"Unable to render metadata for unknown media type: "+mediaType,
+						),
+					),
 				),
 			),
 		)
 	}
 }
 
-// renderMovieMetadataDisplay renders movie metadata in a formatted table
+// renderMovieMetadataDisplay renders movie metadata in a formatted table.
 func renderMovieMetadataDisplay(result map[string]any) string {
-	resultRows := []Node{
-		Tr(Td(Strong(Text("Movie Metadata:"))), Td(Text(""))),
+	resultRows := []gomponents.Node{
+		html.Tr(
+			html.Td(html.Strong(gomponents.Text("Movie Metadata:"))),
+			html.Td(gomponents.Text("")),
+		),
 	}
 
 	// Add metadata fields based on what's available in the result
 	if title, ok := result["title"].(string); ok {
-		resultRows = append(resultRows, Tr(Td(Text("Title:")), Td(Text(title))))
+		resultRows = append(
+			resultRows,
+			html.Tr(html.Td(gomponents.Text("Title:")), html.Td(gomponents.Text(title))),
+		)
 	}
+
 	if dataSource, ok := result["data_source"].(string); ok {
-		resultRows = append(resultRows, Tr(Td(Text("Data Source:")), Td(Text(dataSource))))
+		resultRows = append(
+			resultRows,
+			html.Tr(html.Td(gomponents.Text("Data Source:")), html.Td(gomponents.Text(dataSource))),
+		)
 	}
 	// Handle year as both int and string (depending on source)
 	if year, ok := result["year"].(int); ok {
-		resultRows = append(resultRows, Tr(Td(Text("Year:")), Td(Text(fmt.Sprintf("%d", year)))))
+		resultRows = append(
+			resultRows,
+			html.Tr(
+				html.Td(gomponents.Text("Year:")),
+				html.Td(gomponents.Text(fmt.Sprintf("%d", year))),
+			),
+		)
 	} else if yearStr, ok := result["year"].(string); ok && yearStr != "" {
-		resultRows = append(resultRows, Tr(Td(Text("Year:")), Td(Text(yearStr))))
+		resultRows = append(resultRows, html.Tr(html.Td(gomponents.Text("Year:")), html.Td(gomponents.Text(yearStr))))
 	}
+
 	if imdbID, ok := result["imdb_id"].(string); ok && imdbID != "" {
-		resultRows = append(resultRows, Tr(Td(Text("IMDB ID:")), Td(Text(imdbID))))
+		resultRows = append(
+			resultRows,
+			html.Tr(html.Td(gomponents.Text("IMDB ID:")), html.Td(gomponents.Text(imdbID))),
+		)
 	}
+
 	if tmdbID, ok := result["tmdb_id"].(string); ok && tmdbID != "" && tmdbID != "0" {
-		resultRows = append(resultRows, Tr(Td(Text("TMDB ID:")), Td(Text(tmdbID))))
+		resultRows = append(
+			resultRows,
+			html.Tr(html.Td(gomponents.Text("TMDB ID:")), html.Td(gomponents.Text(tmdbID))),
+		)
 	}
+
 	if traktID, ok := result["trakt_id"].(string); ok && traktID != "" && traktID != "0" {
-		resultRows = append(resultRows, Tr(Td(Text("Trakt ID:")), Td(Text(traktID))))
+		resultRows = append(
+			resultRows,
+			html.Tr(html.Td(gomponents.Text("Trakt ID:")), html.Td(gomponents.Text(traktID))),
+		)
 	}
+
 	if plot, ok := result["plot"].(string); ok && plot != "" {
-		resultRows = append(resultRows, Tr(Td(Text("Plot:")), Td(Text(plot))))
+		resultRows = append(
+			resultRows,
+			html.Tr(html.Td(gomponents.Text("Plot:")), html.Td(gomponents.Text(plot))),
+		)
 	}
+
 	if tagline, ok := result["tagline"].(string); ok && tagline != "" {
-		resultRows = append(resultRows, Tr(Td(Text("Tagline:")), Td(Text(tagline))))
+		resultRows = append(
+			resultRows,
+			html.Tr(html.Td(gomponents.Text("Tagline:")), html.Td(gomponents.Text(tagline))),
+		)
 	}
+
 	if genre, ok := result["genre"].(string); ok && genre != "" {
-		resultRows = append(resultRows, Tr(Td(Text("Genre:")), Td(Text(genre))))
+		resultRows = append(
+			resultRows,
+			html.Tr(html.Td(gomponents.Text("Genre:")), html.Td(gomponents.Text(genre))),
+		)
 	}
+
 	if genres, ok := result["genres"].(string); ok && genres != "" {
-		resultRows = append(resultRows, Tr(Td(Text("Genres:")), Td(Text(genres))))
+		resultRows = append(
+			resultRows,
+			html.Tr(html.Td(gomponents.Text("Genres:")), html.Td(gomponents.Text(genres))),
+		)
 	}
 	// Handle runtime as both int and string
 	if runtime, ok := result["runtime"].(int); ok && runtime > 0 {
-		resultRows = append(resultRows, Tr(Td(Text("Runtime:")), Td(Text(fmt.Sprintf("%d minutes", runtime)))))
+		resultRows = append(
+			resultRows,
+			html.Tr(
+				html.Td(gomponents.Text("Runtime:")),
+				html.Td(gomponents.Text(fmt.Sprintf("%d minutes", runtime))),
+			),
+		)
 	} else if runtimeStr, ok := result["runtime"].(string); ok && runtimeStr != "" {
-		resultRows = append(resultRows, Tr(Td(Text("Runtime:")), Td(Text(runtimeStr))))
+		resultRows = append(resultRows, html.Tr(html.Td(gomponents.Text("Runtime:")), html.Td(gomponents.Text(runtimeStr))))
 	}
 	// Handle rating as both float32 and string
 	if rating, ok := result["rating"].(float32); ok && rating > 0 {
-		resultRows = append(resultRows, Tr(Td(Text("Rating:")), Td(Text(fmt.Sprintf("%.1f", rating)))))
+		resultRows = append(
+			resultRows,
+			html.Tr(
+				html.Td(gomponents.Text("Rating:")),
+				html.Td(gomponents.Text(fmt.Sprintf("%.1f", rating))),
+			),
+		)
 	} else if ratingStr, ok := result["rating"].(string); ok && ratingStr != "" {
-		resultRows = append(resultRows, Tr(Td(Text("IMDB Rating:")), Td(Text(ratingStr))))
+		resultRows = append(resultRows, html.Tr(html.Td(gomponents.Text("IMDB Rating:")), html.Td(gomponents.Text(ratingStr))))
 	}
+
 	if votes, ok := result["votes"].(string); ok && votes != "" {
-		resultRows = append(resultRows, Tr(Td(Text("IMDB Votes:")), Td(Text(votes))))
+		resultRows = append(
+			resultRows,
+			html.Tr(html.Td(gomponents.Text("IMDB Votes:")), html.Td(gomponents.Text(votes))),
+		)
 	} else if votesInt, ok := result["votes"].(int32); ok && votesInt > 0 {
-		resultRows = append(resultRows, Tr(Td(Text("Votes:")), Td(Text(fmt.Sprintf("%d", votesInt)))))
+		resultRows = append(resultRows, html.Tr(html.Td(gomponents.Text("Votes:")), html.Td(gomponents.Text(fmt.Sprintf("%d", votesInt)))))
 	}
+
 	if language, ok := result["language"].(string); ok && language != "" {
-		resultRows = append(resultRows, Tr(Td(Text("Language:")), Td(Text(language))))
+		resultRows = append(
+			resultRows,
+			html.Tr(html.Td(gomponents.Text("Language:")), html.Td(gomponents.Text(language))),
+		)
 	}
+
 	if country, ok := result["country"].(string); ok && country != "" {
-		resultRows = append(resultRows, Tr(Td(Text("Country:")), Td(Text(country))))
+		resultRows = append(
+			resultRows,
+			html.Tr(html.Td(gomponents.Text("Country:")), html.Td(gomponents.Text(country))),
+		)
 	}
+
 	if released, ok := result["released"].(string); ok && released != "" {
-		resultRows = append(resultRows, Tr(Td(Text("Released:")), Td(Text(released))))
+		resultRows = append(
+			resultRows,
+			html.Tr(html.Td(gomponents.Text("Released:")), html.Td(gomponents.Text(released))),
+		)
 	}
+
 	if status, ok := result["status"].(string); ok && status != "" {
-		resultRows = append(resultRows, Tr(Td(Text("Status:")), Td(Text(status))))
+		resultRows = append(
+			resultRows,
+			html.Tr(html.Td(gomponents.Text("Status:")), html.Td(gomponents.Text(status))),
+		)
 	}
+
 	if website, ok := result["website"].(string); ok && website != "" {
-		resultRows = append(resultRows, Tr(Td(Text("Website:")), Td(Text(website))))
+		resultRows = append(
+			resultRows,
+			html.Tr(html.Td(gomponents.Text("Website:")), html.Td(gomponents.Text(website))),
+		)
 	}
+
 	if originalTitle, ok := result["original_title"].(string); ok && originalTitle != "" {
-		resultRows = append(resultRows, Tr(Td(Text("Original Title:")), Td(Text(originalTitle))))
+		resultRows = append(
+			resultRows,
+			html.Tr(
+				html.Td(gomponents.Text("Original Title:")),
+				html.Td(gomponents.Text(originalTitle)),
+			),
+		)
 	}
+
 	if spokenLanguages, ok := result["spoken_languages"].(string); ok && spokenLanguages != "" {
-		resultRows = append(resultRows, Tr(Td(Text("Spoken Languages:")), Td(Text(spokenLanguages))))
+		resultRows = append(
+			resultRows,
+			html.Tr(
+				html.Td(gomponents.Text("Spoken Languages:")),
+				html.Td(gomponents.Text(spokenLanguages)),
+			),
+		)
 	}
+
 	if popularity, ok := result["popularity"].(float32); ok && popularity > 0 {
-		resultRows = append(resultRows, Tr(Td(Text("Popularity:")), Td(Text(fmt.Sprintf("%.1f", popularity)))))
+		resultRows = append(
+			resultRows,
+			html.Tr(
+				html.Td(gomponents.Text("Popularity:")),
+				html.Td(gomponents.Text(fmt.Sprintf("%.1f", popularity))),
+			),
+		)
 	}
+
 	if budget, ok := result["budget"].(int); ok && budget > 0 {
-		resultRows = append(resultRows, Tr(Td(Text("Budget:")), Td(Text(fmt.Sprintf("$%d", budget)))))
+		resultRows = append(
+			resultRows,
+			html.Tr(
+				html.Td(gomponents.Text("Budget:")),
+				html.Td(gomponents.Text(fmt.Sprintf("$%d", budget))),
+			),
+		)
 	}
+
 	if revenue, ok := result["revenue"].(int); ok && revenue > 0 {
-		resultRows = append(resultRows, Tr(Td(Text("Revenue:")), Td(Text(fmt.Sprintf("$%d", revenue)))))
+		resultRows = append(
+			resultRows,
+			html.Tr(
+				html.Td(gomponents.Text("Revenue:")),
+				html.Td(gomponents.Text(fmt.Sprintf("$%d", revenue))),
+			),
+		)
 	}
+
 	if adult, ok := result["adult"].(bool); ok {
 		adultStr := "No"
 		if adult {
 			adultStr = "Yes"
 		}
-		resultRows = append(resultRows, Tr(Td(Text("Adult Content:")), Td(Text(adultStr))))
+
+		resultRows = append(
+			resultRows,
+			html.Tr(html.Td(gomponents.Text("Adult Content:")), html.Td(gomponents.Text(adultStr))),
+		)
 	}
+
 	if backdrop, ok := result["backdrop"].(string); ok && backdrop != "" {
-		resultRows = append(resultRows, Tr(Td(Text("Backdrop:")), Td(Text(backdrop))))
+		resultRows = append(
+			resultRows,
+			html.Tr(html.Td(gomponents.Text("Backdrop:")), html.Td(gomponents.Text(backdrop))),
+		)
 	}
+
 	if poster, ok := result["poster"].(string); ok && poster != "" {
-		resultRows = append(resultRows, Tr(Td(Text("Poster:")), Td(Text(poster))))
+		resultRows = append(
+			resultRows,
+			html.Tr(html.Td(gomponents.Text("Poster:")), html.Td(gomponents.Text(poster))),
+		)
 	}
+
 	if slug, ok := result["slug"].(string); ok && slug != "" {
-		resultRows = append(resultRows, Tr(Td(Text("Slug:")), Td(Text(slug))))
+		resultRows = append(
+			resultRows,
+			html.Tr(html.Td(gomponents.Text("Slug:")), html.Td(gomponents.Text(slug))),
+		)
 	}
+
 	if freebaseMID, ok := result["freebase_m_id"].(string); ok && freebaseMID != "" {
-		resultRows = append(resultRows, Tr(Td(Text("Freebase Machine ID:")), Td(Text(freebaseMID))))
+		resultRows = append(
+			resultRows,
+			html.Tr(
+				html.Td(gomponents.Text("Freebase Machine ID:")),
+				html.Td(gomponents.Text(freebaseMID)),
+			),
+		)
 	}
+
 	if freebaseID, ok := result["freebase_id"].(string); ok && freebaseID != "" {
-		resultRows = append(resultRows, Tr(Td(Text("Freebase ID:")), Td(Text(freebaseID))))
+		resultRows = append(
+			resultRows,
+			html.Tr(html.Td(gomponents.Text("Freebase ID:")), html.Td(gomponents.Text(freebaseID))),
+		)
 	}
+
 	if facebookID, ok := result["facebook_id"].(string); ok && facebookID != "" {
-		resultRows = append(resultRows, Tr(Td(Text("Facebook ID:")), Td(Text(facebookID))))
+		resultRows = append(
+			resultRows,
+			html.Tr(html.Td(gomponents.Text("Facebook ID:")), html.Td(gomponents.Text(facebookID))),
+		)
 	}
+
 	if instagramID, ok := result["instagram_id"].(string); ok && instagramID != "" {
-		resultRows = append(resultRows, Tr(Td(Text("Instagram ID:")), Td(Text(instagramID))))
+		resultRows = append(
+			resultRows,
+			html.Tr(
+				html.Td(gomponents.Text("Instagram ID:")),
+				html.Td(gomponents.Text(instagramID)),
+			),
+		)
 	}
+
 	if twitterID, ok := result["twitter_id"].(string); ok && twitterID != "" {
-		resultRows = append(resultRows, Tr(Td(Text("Twitter ID:")), Td(Text(twitterID))))
+		resultRows = append(
+			resultRows,
+			html.Tr(html.Td(gomponents.Text("Twitter ID:")), html.Td(gomponents.Text(twitterID))),
+		)
 	}
+
 	if movieID, ok := result["id"].(uint); ok && movieID > 0 {
-		resultRows = append(resultRows, Tr(Td(Text("Database ID:")), Td(Text(fmt.Sprintf("%d", movieID)))))
+		resultRows = append(
+			resultRows,
+			html.Tr(
+				html.Td(gomponents.Text("Database ID:")),
+				html.Td(gomponents.Text(fmt.Sprintf("%d", movieID))),
+			),
+		)
 	}
 
 	return renderComponentToString(
-		Div(
-			Class("card border-0 shadow-sm border-success mb-4"),
-			Div(
-				Class("card-header border-0"),
-				Style("background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%); border-radius: 15px 15px 0 0;"),
-				Div(
-					Class("d-flex align-items-center justify-content-between"),
-					Div(
-						Class("d-flex align-items-center"),
-						Span(Class("badge bg-success me-3"), I(Class("fas fa-check-circle me-1")), Text("Retrieved")),
-						H5(Class("card-title mb-0 text-success fw-bold"), Text("Movie Metadata Retrieved")),
+		html.Div(
+			html.Class("card border-0 shadow-sm border-success mb-4"),
+			html.Div(
+				html.Class("card-header border-0"),
+				html.Style(
+					"background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%); border-radius: 15px 15px 0 0;",
+				),
+				html.Div(
+					html.Class("d-flex align-items-center justify-content-between"),
+					html.Div(
+						html.Class("d-flex align-items-center"),
+						html.Span(
+							html.Class("badge bg-success me-3"),
+							html.I(html.Class("fas fa-check-circle me-1")),
+							gomponents.Text("Retrieved"),
+						),
+						html.H5(
+							html.Class("card-title mb-0 text-success fw-bold"),
+							gomponents.Text("Movie Metadata Retrieved"),
+						),
 					),
-					Span(Class("badge bg-success"), I(Class("fas fa-film me-1")), Text("Movie")),
+					html.Span(
+						html.Class("badge bg-success"),
+						html.I(html.Class("fas fa-film me-1")),
+						gomponents.Text("Movie"),
+					),
 				),
 			),
-			Div(
-				Class("card-body p-0"),
-				Table(
-					Class("table table-hover mb-0"),
-					Style("background: transparent;"),
-					TBody(Group(resultRows)),
+			html.Div(
+				html.Class("card-body p-0"),
+				html.Table(
+					html.Class("table table-hover mb-0"),
+					html.Style("background: transparent;"),
+					html.TBody(gomponents.Group(resultRows)),
 				),
 			),
 		),
 	)
 }
 
-// renderSeriesMetadataDisplay renders series metadata in a formatted table
+// renderSeriesMetadataDisplay renders series metadata in a formatted table.
 func renderSeriesMetadataDisplay(result map[string]any) string {
-	resultRows := []Node{
-		Tr(Td(Strong(Text("Series Metadata:"))), Td(Text(""))),
+	resultRows := []gomponents.Node{
+		html.Tr(
+			html.Td(html.Strong(gomponents.Text("Series Metadata:"))),
+			html.Td(gomponents.Text("")),
+		),
 	}
 
 	// Add metadata fields based on what's available in the result
 	if title, ok := result["title"].(string); ok {
-		resultRows = append(resultRows, Tr(Td(Text("Title:")), Td(Text(title))))
+		resultRows = append(
+			resultRows,
+			html.Tr(html.Td(gomponents.Text("Title:")), html.Td(gomponents.Text(title))),
+		)
 	}
+
 	if dataSource, ok := result["data_source"].(string); ok {
-		resultRows = append(resultRows, Tr(Td(Text("Data Source:")), Td(Text(dataSource))))
+		resultRows = append(
+			resultRows,
+			html.Tr(html.Td(gomponents.Text("Data Source:")), html.Td(gomponents.Text(dataSource))),
+		)
 	}
+
 	if imdbID, ok := result["imdb_id"].(string); ok && imdbID != "" {
-		resultRows = append(resultRows, Tr(Td(Text("IMDB ID:")), Td(Text(imdbID))))
+		resultRows = append(
+			resultRows,
+			html.Tr(html.Td(gomponents.Text("IMDB ID:")), html.Td(gomponents.Text(imdbID))),
+		)
 	}
+
 	if tvdbID, ok := result["tvdb_id"].(string); ok && tvdbID != "" {
-		resultRows = append(resultRows, Tr(Td(Text("TVDB ID:")), Td(Text(tvdbID))))
+		resultRows = append(
+			resultRows,
+			html.Tr(html.Td(gomponents.Text("TVDB ID:")), html.Td(gomponents.Text(tvdbID))),
+		)
 	}
+
 	if tmdbID, ok := result["tmdb_id"].(string); ok && tmdbID != "" && tmdbID != "0" {
-		resultRows = append(resultRows, Tr(Td(Text("TMDB ID:")), Td(Text(tmdbID))))
+		resultRows = append(
+			resultRows,
+			html.Tr(html.Td(gomponents.Text("TMDB ID:")), html.Td(gomponents.Text(tmdbID))),
+		)
 	}
+
 	if traktID, ok := result["trakt_id"].(string); ok && traktID != "" && traktID != "0" {
-		resultRows = append(resultRows, Tr(Td(Text("Trakt ID:")), Td(Text(traktID))))
+		resultRows = append(
+			resultRows,
+			html.Tr(html.Td(gomponents.Text("Trakt ID:")), html.Td(gomponents.Text(traktID))),
+		)
 	}
+
 	if plot, ok := result["plot"].(string); ok && plot != "" {
-		resultRows = append(resultRows, Tr(Td(Text("Plot:")), Td(Text(plot))))
+		resultRows = append(
+			resultRows,
+			html.Tr(html.Td(gomponents.Text("Plot:")), html.Td(gomponents.Text(plot))),
+		)
 	}
+
 	if firstAired, ok := result["first_aired"].(string); ok && firstAired != "" {
-		resultRows = append(resultRows, Tr(Td(Text("First Aired:")), Td(Text(firstAired))))
+		resultRows = append(
+			resultRows,
+			html.Tr(html.Td(gomponents.Text("First Aired:")), html.Td(gomponents.Text(firstAired))),
+		)
 	}
+
 	if network, ok := result["network"].(string); ok && network != "" {
-		resultRows = append(resultRows, Tr(Td(Text("Network:")), Td(Text(network))))
+		resultRows = append(
+			resultRows,
+			html.Tr(html.Td(gomponents.Text("Network:")), html.Td(gomponents.Text(network))),
+		)
 	}
+
 	if status, ok := result["status"].(string); ok && status != "" {
-		resultRows = append(resultRows, Tr(Td(Text("Status:")), Td(Text(status))))
+		resultRows = append(
+			resultRows,
+			html.Tr(html.Td(gomponents.Text("Status:")), html.Td(gomponents.Text(status))),
+		)
 	}
+
 	if rating, ok := result["rating"].(string); ok && rating != "" {
-		resultRows = append(resultRows, Tr(Td(Text("Rating:")), Td(Text(rating))))
+		resultRows = append(
+			resultRows,
+			html.Tr(html.Td(gomponents.Text("Rating:")), html.Td(gomponents.Text(rating))),
+		)
 	}
+
 	if runtime, ok := result["runtime"].(string); ok && runtime != "" {
-		resultRows = append(resultRows, Tr(Td(Text("Runtime:")), Td(Text(runtime+" minutes"))))
+		resultRows = append(
+			resultRows,
+			html.Tr(
+				html.Td(gomponents.Text("Runtime:")),
+				html.Td(gomponents.Text(runtime+" minutes")),
+			),
+		)
 	}
+
 	if genres, ok := result["genres"].(string); ok && genres != "" {
-		resultRows = append(resultRows, Tr(Td(Text("Genres:")), Td(Text(genres))))
+		resultRows = append(
+			resultRows,
+			html.Tr(html.Td(gomponents.Text("Genres:")), html.Td(gomponents.Text(genres))),
+		)
 	}
+
 	if language, ok := result["language"].(string); ok && language != "" {
-		resultRows = append(resultRows, Tr(Td(Text("Language:")), Td(Text(language))))
+		resultRows = append(
+			resultRows,
+			html.Tr(html.Td(gomponents.Text("Language:")), html.Td(gomponents.Text(language))),
+		)
 	}
+
 	if country, ok := result["country"].(string); ok && country != "" {
-		resultRows = append(resultRows, Tr(Td(Text("Country:")), Td(Text(country))))
+		resultRows = append(
+			resultRows,
+			html.Tr(html.Td(gomponents.Text("Country:")), html.Td(gomponents.Text(country))),
+		)
 	}
+
 	if seasons, ok := result["seasons"].(int); ok {
-		resultRows = append(resultRows, Tr(Td(Text("Seasons:")), Td(Text(fmt.Sprintf("%d", seasons)))))
+		resultRows = append(
+			resultRows,
+			html.Tr(
+				html.Td(gomponents.Text("Seasons:")),
+				html.Td(gomponents.Text(fmt.Sprintf("%d", seasons))),
+			),
+		)
 	}
 
 	return renderComponentToString(
-		Div(
-			Class("card border-0 shadow-sm border-success mb-4"),
-			Div(
-				Class("card-header border-0"),
-				Style("background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%); border-radius: 15px 15px 0 0;"),
-				Div(
-					Class("d-flex align-items-center justify-content-between"),
-					Div(
-						Class("d-flex align-items-center"),
-						Span(Class("badge bg-success me-3"), I(Class("fas fa-check-circle me-1")), Text("Retrieved")),
-						H5(Class("card-title mb-0 text-success fw-bold"), Text("Series Metadata Retrieved")),
+		html.Div(
+			html.Class("card border-0 shadow-sm border-success mb-4"),
+			html.Div(
+				html.Class("card-header border-0"),
+				html.Style(
+					"background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%); border-radius: 15px 15px 0 0;",
+				),
+				html.Div(
+					html.Class("d-flex align-items-center justify-content-between"),
+					html.Div(
+						html.Class("d-flex align-items-center"),
+						html.Span(
+							html.Class("badge bg-success me-3"),
+							html.I(html.Class("fas fa-check-circle me-1")),
+							gomponents.Text("Retrieved"),
+						),
+						html.H5(
+							html.Class("card-title mb-0 text-success fw-bold"),
+							gomponents.Text("Series Metadata Retrieved"),
+						),
 					),
-					Span(Class("badge bg-success"), I(Class("fas fa-tv me-1")), Text("Series")),
+					html.Span(
+						html.Class("badge bg-success"),
+						html.I(html.Class("fas fa-tv me-1")),
+						gomponents.Text("Series"),
+					),
 				),
 			),
-			Div(
-				Class("card-body p-0"),
-				Table(
-					Class("table table-hover mb-0"),
-					Style("background: transparent;"),
-					TBody(Group(resultRows)),
+			html.Div(
+				html.Class("card-body p-0"),
+				html.Table(
+					html.Class("table table-hover mb-0"),
+					html.Style("background: transparent;"),
+					html.TBody(gomponents.Group(resultRows)),
 				),
 			),
 		),
 	)
 }
 
-// renderEpisodeMetadataDisplay renders episode metadata in a formatted table
+// renderEpisodeMetadataDisplay renders episode metadata in a formatted table.
 func renderEpisodeMetadataDisplay(result map[string]any) string {
-	resultRows := []Node{
-		Tr(Td(Strong(Text("Episode Metadata:"))), Td(Text(""))),
+	resultRows := []gomponents.Node{
+		html.Tr(
+			html.Td(html.Strong(gomponents.Text("Episode Metadata:"))),
+			html.Td(gomponents.Text("")),
+		),
 	}
 
 	// Add metadata fields based on what's available in the result
 	if title, ok := result["title"].(string); ok {
-		resultRows = append(resultRows, Tr(Td(Text("Episode Title:")), Td(Text(title))))
+		resultRows = append(
+			resultRows,
+			html.Tr(html.Td(gomponents.Text("Episode Title:")), html.Td(gomponents.Text(title))),
+		)
 	}
+
 	if dataSource, ok := result["data_source"].(string); ok {
-		resultRows = append(resultRows, Tr(Td(Text("Data Source:")), Td(Text(dataSource))))
+		resultRows = append(
+			resultRows,
+			html.Tr(html.Td(gomponents.Text("Data Source:")), html.Td(gomponents.Text(dataSource))),
+		)
 	}
+
 	if season, ok := result["season"].(int); ok {
-		resultRows = append(resultRows, Tr(Td(Text("Season:")), Td(Text(fmt.Sprintf("%d", season)))))
+		resultRows = append(
+			resultRows,
+			html.Tr(
+				html.Td(gomponents.Text("Season:")),
+				html.Td(gomponents.Text(fmt.Sprintf("%d", season))),
+			),
+		)
 	}
+
 	if episode, ok := result["episode"].(int); ok {
-		resultRows = append(resultRows, Tr(Td(Text("Episode:")), Td(Text(fmt.Sprintf("%d", episode)))))
+		resultRows = append(
+			resultRows,
+			html.Tr(
+				html.Td(gomponents.Text("Episode:")),
+				html.Td(gomponents.Text(fmt.Sprintf("%d", episode))),
+			),
+		)
 	}
+
 	if imdbID, ok := result["imdb_id"].(string); ok && imdbID != "" {
-		resultRows = append(resultRows, Tr(Td(Text("Series IMDB ID:")), Td(Text(imdbID))))
+		resultRows = append(
+			resultRows,
+			html.Tr(html.Td(gomponents.Text("Series IMDB ID:")), html.Td(gomponents.Text(imdbID))),
+		)
 	}
+
 	if tvdbID, ok := result["tvdb_id"].(string); ok && tvdbID != "" {
-		resultRows = append(resultRows, Tr(Td(Text("Series TVDB ID:")), Td(Text(tvdbID))))
+		resultRows = append(
+			resultRows,
+			html.Tr(html.Td(gomponents.Text("Series TVDB ID:")), html.Td(gomponents.Text(tvdbID))),
+		)
 	}
+
 	if plot, ok := result["plot"].(string); ok && plot != "" {
-		resultRows = append(resultRows, Tr(Td(Text("Plot:")), Td(Text(plot))))
+		resultRows = append(
+			resultRows,
+			html.Tr(html.Td(gomponents.Text("Plot:")), html.Td(gomponents.Text(plot))),
+		)
 	}
+
 	if firstAired, ok := result["first_aired"].(string); ok && firstAired != "" {
-		resultRows = append(resultRows, Tr(Td(Text("First Aired:")), Td(Text(firstAired))))
+		resultRows = append(
+			resultRows,
+			html.Tr(html.Td(gomponents.Text("First Aired:")), html.Td(gomponents.Text(firstAired))),
+		)
 	}
+
 	if runtime, ok := result["runtime"]; ok {
 		if runtimeInt, ok := runtime.(int); ok && runtimeInt > 0 {
-			resultRows = append(resultRows, Tr(Td(Text("Runtime:")), Td(Text(fmt.Sprintf("%d minutes", runtimeInt)))))
+			resultRows = append(
+				resultRows,
+				html.Tr(
+					html.Td(gomponents.Text("Runtime:")),
+					html.Td(gomponents.Text(fmt.Sprintf("%d minutes", runtimeInt))),
+				),
+			)
 		}
 	}
+
 	if poster, ok := result["poster"].(string); ok && poster != "" {
-		resultRows = append(resultRows, Tr(Td(Text("Poster:")), Td(Text(poster))))
+		resultRows = append(
+			resultRows,
+			html.Tr(html.Td(gomponents.Text("Poster:")), html.Td(gomponents.Text(poster))),
+		)
 	}
 
 	return renderComponentToString(
-		Div(
-			Class("card border-0 shadow-sm border-success mb-4"),
-			Div(
-				Class("card-header border-0"),
-				Style("background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%); border-radius: 15px 15px 0 0;"),
-				Div(
-					Class("d-flex align-items-center justify-content-between"),
-					Div(
-						Class("d-flex align-items-center"),
-						Span(Class("badge bg-success me-3"), I(Class("fas fa-check-circle me-1")), Text("Retrieved")),
-						H5(Class("card-title mb-0 text-success fw-bold"), Text("Episode Metadata Retrieved")),
+		html.Div(
+			html.Class("card border-0 shadow-sm border-success mb-4"),
+			html.Div(
+				html.Class("card-header border-0"),
+				html.Style(
+					"background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%); border-radius: 15px 15px 0 0;",
+				),
+				html.Div(
+					html.Class("d-flex align-items-center justify-content-between"),
+					html.Div(
+						html.Class("d-flex align-items-center"),
+						html.Span(
+							html.Class("badge bg-success me-3"),
+							html.I(html.Class("fas fa-check-circle me-1")),
+							gomponents.Text("Retrieved"),
+						),
+						html.H5(
+							html.Class("card-title mb-0 text-success fw-bold"),
+							gomponents.Text("Episode Metadata Retrieved"),
+						),
 					),
-					Span(Class("badge bg-success"), I(Class("fas fa-play-circle me-1")), Text("Episode")),
+					html.Span(
+						html.Class("badge bg-success"),
+						html.I(html.Class("fas fa-play-circle me-1")),
+						gomponents.Text("Episode"),
+					),
 				),
 			),
-			Div(
-				Class("card-body p-0"),
-				Table(
-					Class("table table-hover mb-0"),
-					Style("background: transparent;"),
-					TBody(Group(resultRows)),
+			html.Div(
+				html.Class("card-body p-0"),
+				html.Table(
+					html.Class("table table-hover mb-0"),
+					html.Style("background: transparent;"),
+					html.TBody(gomponents.Group(resultRows)),
 				),
 			),
 		),

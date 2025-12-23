@@ -47,9 +47,16 @@ func renderNamingGeneratorPage(csrfToken string) gomponents.Node {
 				),
 				html.Div(
 					html.Class("header-text"),
-					html.H2(html.Class("header-title"), gomponents.Text("Advanced Template Generator")),
-					html.P(html.Class("header-subtitle"),
-						gomponents.Text("Generate Go templates with drag-and-drop fields and template structures")),
+					html.H2(
+						html.Class("header-title"),
+						gomponents.Text("Advanced Template Generator"),
+					),
+					html.P(
+						html.Class("header-subtitle"),
+						gomponents.Text(
+							"Generate Go templates with drag-and-drop fields and template structures",
+						),
+					),
 				),
 			),
 		),
@@ -64,7 +71,9 @@ func renderNamingGeneratorPage(csrfToken string) gomponents.Node {
 					html.Style("border-radius: 15px; overflow: hidden;"),
 					html.Div(
 						html.Class("card-header border-0"),
-						html.Style("background: linear-gradient(135deg, #0d6efd 0%, #0056b3 100%); color: white; padding: 1.5rem;"),
+						html.Style(
+							"background: linear-gradient(135deg, #0d6efd 0%, #0056b3 100%); color: white; padding: 1.5rem;",
+						),
 						html.H5(html.Class("card-title mb-0"), html.Style("font-weight: 600;"),
 							gomponents.Text("Data Source Selection")),
 					),
@@ -76,12 +85,29 @@ func renderNamingGeneratorPage(csrfToken string) gomponents.Node {
 							html.Select(
 								html.Class("form-select form-select-lg"),
 								html.ID("dataTypeSelector"),
-								html.Option(html.Value(""), gomponents.Text("Choose data structure to work with")),
-								html.Option(html.Value("parser"), gomponents.Text("Parser Type - Media file parsing and naming templates")),
-								html.Option(html.Value("notification"), gomponents.Text("Notification Type - Media processing notifications")),
+								html.Option(
+									html.Value(""),
+									gomponents.Text("Choose data structure to work with"),
+								),
+								html.Option(
+									html.Value("parser"),
+									gomponents.Text(
+										"Parser Type - Media file parsing and naming templates",
+									),
+								),
+								html.Option(
+									html.Value("notification"),
+									gomponents.Text(
+										"Notification Type - Media processing notifications",
+									),
+								),
 							),
-							html.Small(html.Class("form-text text-muted"),
-								gomponents.Text("Different data types provide different available fields")),
+							html.Small(
+								html.Class("form-text text-muted"),
+								gomponents.Text(
+									"Different data types provide different available fields",
+								),
+							),
 						),
 					),
 				),
@@ -97,22 +123,35 @@ func renderNamingGeneratorPage(csrfToken string) gomponents.Node {
 					html.Style("border-radius: 15px; overflow: hidden;"),
 					html.Div(
 						html.Class("card-header border-0"),
-						html.Style("background: linear-gradient(135deg, #0d6efd 0%, #0056b3 100%); color: white; padding: 1.5rem;"),
+						html.Style(
+							"background: linear-gradient(135deg, #0d6efd 0%, #0056b3 100%); color: white; padding: 1.5rem;",
+						),
 						html.H5(html.Class("card-title mb-0"), html.Style("font-weight: 600;"),
 							gomponents.Text("Examples")),
 					),
 					html.Div(
 						html.Class("card-body p-4"),
-						html.Div(html.Class("form-group mb-4"),
-							gomponents.Text(`Parser Type: {{.Dbserie.Seriename}}/Season {{.DbserieEpisode.Season}}/{{.Dbserie.Seriename}} - S{{printf "%02s" .DbserieEpisode.Season}}{{range .Episodes}}E{{printf "%02d" . }}{{end}} - {{.DbserieEpisode.Title}} [{{.Source.Resolution}} {{.Source.Quality}} {{.Source.Codec}} {{.Source.Audio}}{{if eq .Source.Proper true}} proper{{end}}] ({{.Source.Tvdb}})`),
+						html.Div(
+							html.Class("form-group mb-4"),
+							gomponents.Text(
+								`Parser Type: {{.Dbserie.Seriename}}/Season {{.DbserieEpisode.Season}}/{{.Dbserie.Seriename}} - S{{printf "%02s" .DbserieEpisode.Season}}{{range .Episodes}}E{{printf "%02d" . }}{{end}} - {{.DbserieEpisode.Title}} [{{.Source.Resolution}} {{.Source.Quality}} {{.Source.Codec}} {{.Source.Audio}}{{if eq .Source.Proper true}} proper{{end}}] ({{.Source.Tvdb}})`,
+							),
 							html.Br(),
-							gomponents.Text(`Parser Type: {{.Dbserie.Seriename}}/{{.Dbserie.Seriename}} {{.DbserieEpisode.Identifier}} {{.EpisodeTitleSource}} - [{{.Source.Resolution}} {{.Source.Quality}} {{.Source.Codec}} {{.Source.Audio}}{{if eq .Source.Proper true}} proper{{end}}]`),
+							gomponents.Text(
+								`Parser Type: {{.Dbserie.Seriename}}/{{.Dbserie.Seriename}} {{.DbserieEpisode.Identifier}} {{.EpisodeTitleSource}} - [{{.Source.Resolution}} {{.Source.Quality}} {{.Source.Codec}} {{.Source.Audio}}{{if eq .Source.Proper true}} proper{{end}}]`,
+							),
 							html.Br(),
-							gomponents.Text(`Parser Type: {{.Dbmovie.Title}} ({{.Dbmovie.Year}})/{{.Dbmovie.Title}} ({{.Dbmovie.Year}}) [{{.Source.Resolution}} {{.Source.Quality}} {{.Source.Codec}} {{.Source.Audio}}{{if eq .Source.Proper true}} proper{{end}}{{if eq .Source.Extended true}} extended{{end}}] ({{.Source.Imdb}})`),
+							gomponents.Text(
+								`Parser Type: {{.Dbmovie.Title}} ({{.Dbmovie.Year}})/{{.Dbmovie.Title}} ({{.Dbmovie.Year}}) [{{.Source.Resolution}} {{.Source.Quality}} {{.Source.Codec}} {{.Source.Audio}}{{if eq .Source.Proper true}} proper{{end}}{{if eq .Source.Extended true}} extended{{end}}] ({{.Source.Imdb}})`,
+							),
 							html.Br(),
-							gomponents.Text(`Notification Type: {{.Time}};{{.Title}};{{.Identifier}};{{.SourcePath}};{{.Targetpath}};{{ range .Replaced }}{{.}},{{end}}`),
+							gomponents.Text(
+								`Notification Type: {{.Time}};{{.Title}};{{.Identifier}};{{.SourcePath}};{{.Targetpath}};{{ range .Replaced }}{{.}},{{end}}`,
+							),
 							html.Br(),
-							gomponents.Text(`Notification Type: {{.Title}} - moved from {{.SourcePath}} to {{.Targetpath}}{{if .Replaced }} Replaced: {{ range .Replaced }}{{.}},{{end}}{{end}}`),
+							gomponents.Text(
+								`Notification Type: {{.Title}} - moved from {{.SourcePath}} to {{.Targetpath}}{{if .Replaced }} Replaced: {{ range .Replaced }}{{.}},{{end}}{{end}}`,
+							),
 							html.Br(),
 						),
 					),
@@ -131,7 +170,9 @@ func renderNamingGeneratorPage(csrfToken string) gomponents.Node {
 					html.Style("border-radius: 15px; overflow: hidden;"),
 					html.Div(
 						html.Class("card-header border-0"),
-						html.Style("background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white; padding: 1rem;"),
+						html.Style(
+							"background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white; padding: 1rem;",
+						),
 						html.H6(html.Class("card-title mb-2"), html.Style("font-weight: 600;"),
 							gomponents.Text("Available Fields & Structures")),
 						html.Div(
@@ -167,8 +208,12 @@ func renderNamingGeneratorPage(csrfToken string) gomponents.Node {
 					html.Class("card border-0 shadow-sm h-100"),
 					html.Style("border-radius: 15px; overflow: hidden;"),
 					html.Div(
-						html.Class("card-header border-0 d-flex justify-content-between align-items-center"),
-						html.Style("background: linear-gradient(135deg, #6f42c1 0%, #5a2d91 100%); color: white; padding: 1rem;"),
+						html.Class(
+							"card-header border-0 d-flex justify-content-between align-items-center",
+						),
+						html.Style(
+							"background: linear-gradient(135deg, #6f42c1 0%, #5a2d91 100%); color: white; padding: 1rem;",
+						),
 						html.H6(html.Class("card-title mb-0"), html.Style("font-weight: 600;"),
 							gomponents.Text("Template Editor")),
 						html.Div(html.Class("btn-group btn-group-sm"),
@@ -193,12 +238,17 @@ func renderNamingGeneratorPage(csrfToken string) gomponents.Node {
 						html.Textarea(
 							html.Class("form-control"),
 							html.ID("templateEditor"),
-							html.Style("height: 400px; border: none; font-family: 'Monaco', 'Consolas', 'Courier New', monospace; font-size: 14px; resize: vertical;"),
-							html.Placeholder("Build your Go template here...\n\nDrag fields from the left panel or click to insert.\nUse template structures for conditional logic and loops."),
+							html.Style(
+								"height: 400px; border: none; font-family: 'Monaco', 'Consolas', 'Courier New', monospace; font-size: 14px; resize: vertical;",
+							),
+							html.Placeholder(
+								"Build your Go template here...\n\nDrag fields from the left panel or click to insert.\nUse template structures for conditional logic and loops.",
+							),
 						),
 						html.Div(
 							html.Class("p-3 border-top bg-light"),
-							html.Div(html.Class("d-flex justify-content-between align-items-center"),
+							html.Div(
+								html.Class("d-flex justify-content-between align-items-center"),
 								html.Div(html.Class("btn-group"),
 									html.Button(
 										html.Class("btn btn-success"),
@@ -215,8 +265,12 @@ func renderNamingGeneratorPage(csrfToken string) gomponents.Node {
 										gomponents.Text("Verify Template"),
 									),
 								),
-								html.Small(html.Class("text-muted"),
-									gomponents.Text("Drag fields from left panel or click to insert • Use Ctrl+A to select all")),
+								html.Small(
+									html.Class("text-muted"),
+									gomponents.Text(
+										"Drag fields from left panel or click to insert • Use Ctrl+A to select all",
+									),
+								),
 							),
 						),
 					),
@@ -235,7 +289,9 @@ func renderNamingGeneratorPage(csrfToken string) gomponents.Node {
 					html.Style("border-radius: 15px; overflow: hidden;"),
 					html.Div(
 						html.Class("card-header border-0"),
-						html.Style("background: linear-gradient(135deg, #fd7e14 0%, #e55a2b 100%); color: white; padding: 1rem;"),
+						html.Style(
+							"background: linear-gradient(135deg, #fd7e14 0%, #e55a2b 100%); color: white; padding: 1rem;",
+						),
 						html.H6(html.Class("card-title mb-0"), html.Style("font-weight: 600;"),
 							gomponents.Text("Template Preview")),
 					),
@@ -740,13 +796,17 @@ func HandleNamingPreview(ctx *gin.Context) {
 	}
 
 	// Generate preview with sample data
-	var outstr string
-	var err error
+	var (
+		outstr string
+		err    error
+	)
+
 	switch dataType {
 	case "notification":
 		{
 			outstr, err = structure.TestInputnotifier(template)
 		}
+
 	case "parser":
 		{
 			outstr, err = structure.TestParsertype(template)
@@ -852,215 +912,1454 @@ func getFieldsForDataType(dataType string) ([]TemplateField, []TemplateStructure
 func getParserFields() []TemplateField {
 	return []TemplateField{
 		// Dbmovie fields (nested struct)
-		{Name: "Dbmovie.Title", Type: "string", Template: "{{.Dbmovie.Title}}", Description: "Movie title", Example: "Inception", Category: "Movie Information"},
-		{Name: "Dbmovie.Year", Type: "int", Template: "{{.Dbmovie.Year}}", Description: "Movie year", Example: "2000", Category: "Movie Information"},
-		{Name: "Dbmovie.OriginalTitle", Type: "string", Template: "{{.Dbmovie.OriginalTitle}}", Description: "Original movie title", Example: "Inception", Category: "Movie Information"},
-		{Name: "Dbmovie.Overview", Type: "string", Template: "{{.Dbmovie.Overview}}", Description: "Movie plot summary", Example: "A thief who steals secrets...", Category: "Movie Information"},
-		{Name: "Dbmovie.Tagline", Type: "string", Template: "{{.Dbmovie.Tagline}}", Description: "Movie tagline", Example: "Your mind is the scene of the crime", Category: "Movie Information"},
-		{Name: "Dbmovie.Genres", Type: "string", Template: "{{.Dbmovie.Genres}}", Description: "Movie genres", Example: "Action, Sci-Fi, Thriller", Category: "Movie Information"},
-		{Name: "Dbmovie.Runtime", Type: "int", Template: "{{.Dbmovie.Runtime}}", Description: "Movie runtime in minutes", Example: "148", Category: "Movie Information"},
-		{Name: "Dbmovie.ReleaseDate", Type: "time", Template: "{{.Dbmovie.ReleaseDate}}", Description: "Movie release date", Example: "2010-07-16", Category: "Movie Information"},
-		{Name: "Dbmovie.Status", Type: "string", Template: "{{.Dbmovie.Status}}", Description: "Release status", Example: "Released", Category: "Movie Information"},
-		{Name: "Dbmovie.OriginalLanguage", Type: "string", Template: "{{.Dbmovie.OriginalLanguage}}", Description: "Original language", Example: "en", Category: "Movie Information"},
-		{Name: "Dbmovie.SpokenLanguages", Type: "string", Template: "{{.Dbmovie.SpokenLanguages}}", Description: "Spoken languages", Example: "English, Japanese", Category: "Movie Information"},
-		{Name: "Dbmovie.ImdbID", Type: "string", Template: "{{.Dbmovie.ImdbID}}", Description: "IMDB ID", Example: "tt1375666", Category: "Movie External IDs"},
-		{Name: "Dbmovie.MoviedbID", Type: "int", Template: "{{.Dbmovie.MoviedbID}}", Description: "MovieDB ID", Example: "27205", Category: "Movie External IDs"},
-		{Name: "Dbmovie.TraktID", Type: "int", Template: "{{.Dbmovie.TraktID}}", Description: "Trakt ID", Example: "1390", Category: "Movie External IDs"},
-		{Name: "Dbmovie.FacebookID", Type: "string", Template: "{{.Dbmovie.FacebookID}}", Description: "Facebook page ID", Example: "inception", Category: "Movie External IDs"},
-		{Name: "Dbmovie.InstagramID", Type: "string", Template: "{{.Dbmovie.InstagramID}}", Description: "Instagram ID", Example: "inception", Category: "Movie External IDs"},
-		{Name: "Dbmovie.TwitterID", Type: "string", Template: "{{.Dbmovie.TwitterID}}", Description: "Twitter ID", Example: "inception", Category: "Movie External IDs"},
-		{Name: "Dbmovie.VoteAverage", Type: "float32", Template: "{{.Dbmovie.VoteAverage}}", Description: "Average user rating", Example: "8.3", Category: "Movie Ratings"},
-		{Name: "Dbmovie.VoteCount", Type: "int32", Template: "{{.Dbmovie.VoteCount}}", Description: "Number of votes", Example: "31280", Category: "Movie Ratings"},
-		{Name: "Dbmovie.Popularity", Type: "float32", Template: "{{.Dbmovie.Popularity}}", Description: "Popularity score", Example: "108.6", Category: "Movie Ratings"},
-		{Name: "Dbmovie.Budget", Type: "int", Template: "{{.Dbmovie.Budget}}", Description: "Production budget", Example: "160000000", Category: "Movie Financial"},
-		{Name: "Dbmovie.Revenue", Type: "int", Template: "{{.Dbmovie.Revenue}}", Description: "Box office revenue", Example: "825532764", Category: "Movie Financial"},
-		{Name: "Dbmovie.Poster", Type: "string", Template: "{{.Dbmovie.Poster}}", Description: "Poster image path", Example: "/poster.jpg", Category: "Movie Images"},
-		{Name: "Dbmovie.Backdrop", Type: "string", Template: "{{.Dbmovie.Backdrop}}", Description: "Backdrop image path", Example: "/backdrop.jpg", Category: "Movie Images"},
-		{Name: "Dbmovie.Slug", Type: "string", Template: "{{.Dbmovie.Slug}}", Description: "URL slug", Example: "inception-2010", Category: "Movie Information"},
+		{
+			Name:        "Dbmovie.Title",
+			Type:        "string",
+			Template:    "{{.Dbmovie.Title}}",
+			Description: "Movie title",
+			Example:     "Inception",
+			Category:    "Movie Information",
+		},
+		{
+			Name:        "Dbmovie.Year",
+			Type:        "int",
+			Template:    "{{.Dbmovie.Year}}",
+			Description: "Movie year",
+			Example:     "2000",
+			Category:    "Movie Information",
+		},
+		{
+			Name:        "Dbmovie.OriginalTitle",
+			Type:        "string",
+			Template:    "{{.Dbmovie.OriginalTitle}}",
+			Description: "Original movie title",
+			Example:     "Inception",
+			Category:    "Movie Information",
+		},
+		{
+			Name:        "Dbmovie.Overview",
+			Type:        "string",
+			Template:    "{{.Dbmovie.Overview}}",
+			Description: "Movie plot summary",
+			Example:     "A thief who steals secrets...",
+			Category:    "Movie Information",
+		},
+		{
+			Name:        "Dbmovie.Tagline",
+			Type:        "string",
+			Template:    "{{.Dbmovie.Tagline}}",
+			Description: "Movie tagline",
+			Example:     "Your mind is the scene of the crime",
+			Category:    "Movie Information",
+		},
+		{
+			Name:        "Dbmovie.Genres",
+			Type:        "string",
+			Template:    "{{.Dbmovie.Genres}}",
+			Description: "Movie genres",
+			Example:     "Action, Sci-Fi, Thriller",
+			Category:    "Movie Information",
+		},
+		{
+			Name:        "Dbmovie.Runtime",
+			Type:        "int",
+			Template:    "{{.Dbmovie.Runtime}}",
+			Description: "Movie runtime in minutes",
+			Example:     "148",
+			Category:    "Movie Information",
+		},
+		{
+			Name:        "Dbmovie.ReleaseDate",
+			Type:        "time",
+			Template:    "{{.Dbmovie.ReleaseDate}}",
+			Description: "Movie release date",
+			Example:     "2010-07-16",
+			Category:    "Movie Information",
+		},
+		{
+			Name:        "Dbmovie.Status",
+			Type:        "string",
+			Template:    "{{.Dbmovie.Status}}",
+			Description: "Release status",
+			Example:     "Released",
+			Category:    "Movie Information",
+		},
+		{
+			Name:        "Dbmovie.OriginalLanguage",
+			Type:        "string",
+			Template:    "{{.Dbmovie.OriginalLanguage}}",
+			Description: "Original language",
+			Example:     "en",
+			Category:    "Movie Information",
+		},
+		{
+			Name:        "Dbmovie.SpokenLanguages",
+			Type:        "string",
+			Template:    "{{.Dbmovie.SpokenLanguages}}",
+			Description: "Spoken languages",
+			Example:     "English, Japanese",
+			Category:    "Movie Information",
+		},
+		{
+			Name:        "Dbmovie.ImdbID",
+			Type:        "string",
+			Template:    "{{.Dbmovie.ImdbID}}",
+			Description: "IMDB ID",
+			Example:     "tt1375666",
+			Category:    "Movie External IDs",
+		},
+		{
+			Name:        "Dbmovie.MoviedbID",
+			Type:        "int",
+			Template:    "{{.Dbmovie.MoviedbID}}",
+			Description: "MovieDB ID",
+			Example:     "27205",
+			Category:    "Movie External IDs",
+		},
+		{
+			Name:        "Dbmovie.TraktID",
+			Type:        "int",
+			Template:    "{{.Dbmovie.TraktID}}",
+			Description: "Trakt ID",
+			Example:     "1390",
+			Category:    "Movie External IDs",
+		},
+		{
+			Name:        "Dbmovie.FacebookID",
+			Type:        "string",
+			Template:    "{{.Dbmovie.FacebookID}}",
+			Description: "Facebook page ID",
+			Example:     "inception",
+			Category:    "Movie External IDs",
+		},
+		{
+			Name:        "Dbmovie.InstagramID",
+			Type:        "string",
+			Template:    "{{.Dbmovie.InstagramID}}",
+			Description: "Instagram ID",
+			Example:     "inception",
+			Category:    "Movie External IDs",
+		},
+		{
+			Name:        "Dbmovie.TwitterID",
+			Type:        "string",
+			Template:    "{{.Dbmovie.TwitterID}}",
+			Description: "Twitter ID",
+			Example:     "inception",
+			Category:    "Movie External IDs",
+		},
+		{
+			Name:        "Dbmovie.VoteAverage",
+			Type:        "float32",
+			Template:    "{{.Dbmovie.VoteAverage}}",
+			Description: "Average user rating",
+			Example:     "8.3",
+			Category:    "Movie Ratings",
+		},
+		{
+			Name:        "Dbmovie.VoteCount",
+			Type:        "int32",
+			Template:    "{{.Dbmovie.VoteCount}}",
+			Description: "Number of votes",
+			Example:     "31280",
+			Category:    "Movie Ratings",
+		},
+		{
+			Name:        "Dbmovie.Popularity",
+			Type:        "float32",
+			Template:    "{{.Dbmovie.Popularity}}",
+			Description: "Popularity score",
+			Example:     "108.6",
+			Category:    "Movie Ratings",
+		},
+		{
+			Name:        "Dbmovie.Budget",
+			Type:        "int",
+			Template:    "{{.Dbmovie.Budget}}",
+			Description: "Production budget",
+			Example:     "160000000",
+			Category:    "Movie Financial",
+		},
+		{
+			Name:        "Dbmovie.Revenue",
+			Type:        "int",
+			Template:    "{{.Dbmovie.Revenue}}",
+			Description: "Box office revenue",
+			Example:     "825532764",
+			Category:    "Movie Financial",
+		},
+		{
+			Name:        "Dbmovie.Poster",
+			Type:        "string",
+			Template:    "{{.Dbmovie.Poster}}",
+			Description: "Poster image path",
+			Example:     "/poster.jpg",
+			Category:    "Movie Images",
+		},
+		{
+			Name:        "Dbmovie.Backdrop",
+			Type:        "string",
+			Template:    "{{.Dbmovie.Backdrop}}",
+			Description: "Backdrop image path",
+			Example:     "/backdrop.jpg",
+			Category:    "Movie Images",
+		},
+		{
+			Name:        "Dbmovie.Slug",
+			Type:        "string",
+			Template:    "{{.Dbmovie.Slug}}",
+			Description: "URL slug",
+			Example:     "inception-2010",
+			Category:    "Movie Information",
+		},
 
 		// Dbserie fields (nested struct)
-		{Name: "Dbserie.Seriename", Type: "string", Template: "{{.Dbserie.Seriename}}", Description: "Series name", Example: "Breaking Bad", Category: "Series Information"},
-		{Name: "Dbserie.Aliases", Type: "string", Template: "{{.Dbserie.Aliases}}", Description: "Alternative series names", Example: "Breaking Bad, BB", Category: "Series Information"},
-		{Name: "Dbserie.Overview", Type: "string", Template: "{{.Dbserie.Overview}}", Description: "Series plot summary", Example: "A high school chemistry teacher...", Category: "Series Information"},
-		{Name: "Dbserie.Status", Type: "string", Template: "{{.Dbserie.Status}}", Description: "Series status", Example: "Ended", Category: "Series Information"},
-		{Name: "Dbserie.Firstaired", Type: "string", Template: "{{.Dbserie.Firstaired}}", Description: "First air date", Example: "2008-01-20", Category: "Series Information"},
-		{Name: "Dbserie.Network", Type: "string", Template: "{{.Dbserie.Network}}", Description: "Broadcasting network", Example: "AMC", Category: "Series Information"},
-		{Name: "Dbserie.Runtime", Type: "string", Template: "{{.Dbserie.Runtime}}", Description: "Episode runtime", Example: "47", Category: "Series Information"},
-		{Name: "Dbserie.Language", Type: "string", Template: "{{.Dbserie.Language}}", Description: "Primary language", Example: "en", Category: "Series Information"},
-		{Name: "Dbserie.Genre", Type: "string", Template: "{{.Dbserie.Genre}}", Description: "Series genres", Example: "Crime, Drama, Thriller", Category: "Series Information"},
-		{Name: "Dbserie.Rating", Type: "string", Template: "{{.Dbserie.Rating}}", Description: "Content rating", Example: "TV-MA", Category: "Series Information"},
-		{Name: "Dbserie.Siterating", Type: "string", Template: "{{.Dbserie.Siterating}}", Description: "Site user rating", Example: "9.5", Category: "Series Ratings"},
-		{Name: "Dbserie.SiteratingCount", Type: "string", Template: "{{.Dbserie.SiteratingCount}}", Description: "Rating vote count", Example: "1,654,876", Category: "Series Ratings"},
-		{Name: "Dbserie.ImdbID", Type: "string", Template: "{{.Dbserie.ImdbID}}", Description: "IMDB ID", Example: "tt0903747", Category: "Series External IDs"},
-		{Name: "Dbserie.ThetvdbID", Type: "int", Template: "{{.Dbserie.ThetvdbID}}", Description: "TVDB ID", Example: "81189", Category: "Series External IDs"},
-		{Name: "Dbserie.TraktID", Type: "int", Template: "{{.Dbserie.TraktID}}", Description: "Trakt ID", Example: "1388", Category: "Series External IDs"},
-		{Name: "Dbserie.TvrageID", Type: "int", Template: "{{.Dbserie.TvrageID}}", Description: "TVRage ID", Example: "18164", Category: "Series External IDs"},
-		{Name: "Dbserie.Facebook", Type: "string", Template: "{{.Dbserie.Facebook}}", Description: "Facebook page URL", Example: "https://www.facebook.com/BreakingBad", Category: "Series External IDs"},
-		{Name: "Dbserie.Instagram", Type: "string", Template: "{{.Dbserie.Instagram}}", Description: "Instagram URL", Example: "https://www.instagram.com/breakingbad", Category: "Series External IDs"},
-		{Name: "Dbserie.Twitter", Type: "string", Template: "{{.Dbserie.Twitter}}", Description: "Twitter URL", Example: "https://twitter.com/BreakingBad_AMC", Category: "Series External IDs"},
-		{Name: "Dbserie.Banner", Type: "string", Template: "{{.Dbserie.Banner}}", Description: "Banner image path", Example: "/banner.jpg", Category: "Series Images"},
-		{Name: "Dbserie.Poster", Type: "string", Template: "{{.Dbserie.Poster}}", Description: "Poster image path", Example: "/poster.jpg", Category: "Series Images"},
-		{Name: "Dbserie.Fanart", Type: "string", Template: "{{.Dbserie.Fanart}}", Description: "Fanart image path", Example: "/fanart.jpg", Category: "Series Images"},
-		{Name: "Dbserie.Identifiedby", Type: "string", Template: "{{.Dbserie.Identifiedby}}", Description: "Episode ID method", Example: "ep", Category: "Series Information"},
-		{Name: "Dbserie.Slug", Type: "string", Template: "{{.Dbserie.Slug}}", Description: "URL slug", Example: "breaking-bad", Category: "Series Information"},
+		{
+			Name:        "Dbserie.Seriename",
+			Type:        "string",
+			Template:    "{{.Dbserie.Seriename}}",
+			Description: "Series name",
+			Example:     "Breaking Bad",
+			Category:    "Series Information",
+		},
+		{
+			Name:        "Dbserie.Aliases",
+			Type:        "string",
+			Template:    "{{.Dbserie.Aliases}}",
+			Description: "Alternative series names",
+			Example:     "Breaking Bad, BB",
+			Category:    "Series Information",
+		},
+		{
+			Name:        "Dbserie.Overview",
+			Type:        "string",
+			Template:    "{{.Dbserie.Overview}}",
+			Description: "Series plot summary",
+			Example:     "A high school chemistry teacher...",
+			Category:    "Series Information",
+		},
+		{
+			Name:        "Dbserie.Status",
+			Type:        "string",
+			Template:    "{{.Dbserie.Status}}",
+			Description: "Series status",
+			Example:     "Ended",
+			Category:    "Series Information",
+		},
+		{
+			Name:        "Dbserie.Firstaired",
+			Type:        "string",
+			Template:    "{{.Dbserie.Firstaired}}",
+			Description: "First air date",
+			Example:     "2008-01-20",
+			Category:    "Series Information",
+		},
+		{
+			Name:        "Dbserie.Network",
+			Type:        "string",
+			Template:    "{{.Dbserie.Network}}",
+			Description: "Broadcasting network",
+			Example:     "AMC",
+			Category:    "Series Information",
+		},
+		{
+			Name:        "Dbserie.Runtime",
+			Type:        "string",
+			Template:    "{{.Dbserie.Runtime}}",
+			Description: "Episode runtime",
+			Example:     "47",
+			Category:    "Series Information",
+		},
+		{
+			Name:        "Dbserie.Language",
+			Type:        "string",
+			Template:    "{{.Dbserie.Language}}",
+			Description: "Primary language",
+			Example:     "en",
+			Category:    "Series Information",
+		},
+		{
+			Name:        "Dbserie.Genre",
+			Type:        "string",
+			Template:    "{{.Dbserie.Genre}}",
+			Description: "Series genres",
+			Example:     "Crime, Drama, Thriller",
+			Category:    "Series Information",
+		},
+		{
+			Name:        "Dbserie.Rating",
+			Type:        "string",
+			Template:    "{{.Dbserie.Rating}}",
+			Description: "Content rating",
+			Example:     "TV-MA",
+			Category:    "Series Information",
+		},
+		{
+			Name:        "Dbserie.Siterating",
+			Type:        "string",
+			Template:    "{{.Dbserie.Siterating}}",
+			Description: "Site user rating",
+			Example:     "9.5",
+			Category:    "Series Ratings",
+		},
+		{
+			Name:        "Dbserie.SiteratingCount",
+			Type:        "string",
+			Template:    "{{.Dbserie.SiteratingCount}}",
+			Description: "Rating vote count",
+			Example:     "1,654,876",
+			Category:    "Series Ratings",
+		},
+		{
+			Name:        "Dbserie.ImdbID",
+			Type:        "string",
+			Template:    "{{.Dbserie.ImdbID}}",
+			Description: "IMDB ID",
+			Example:     "tt0903747",
+			Category:    "Series External IDs",
+		},
+		{
+			Name:        "Dbserie.ThetvdbID",
+			Type:        "int",
+			Template:    "{{.Dbserie.ThetvdbID}}",
+			Description: "TVDB ID",
+			Example:     "81189",
+			Category:    "Series External IDs",
+		},
+		{
+			Name:        "Dbserie.TraktID",
+			Type:        "int",
+			Template:    "{{.Dbserie.TraktID}}",
+			Description: "Trakt ID",
+			Example:     "1388",
+			Category:    "Series External IDs",
+		},
+		{
+			Name:        "Dbserie.TvrageID",
+			Type:        "int",
+			Template:    "{{.Dbserie.TvrageID}}",
+			Description: "TVRage ID",
+			Example:     "18164",
+			Category:    "Series External IDs",
+		},
+		{
+			Name:        "Dbserie.Facebook",
+			Type:        "string",
+			Template:    "{{.Dbserie.Facebook}}",
+			Description: "Facebook page URL",
+			Example:     "https://www.facebook.com/BreakingBad",
+			Category:    "Series External IDs",
+		},
+		{
+			Name:        "Dbserie.Instagram",
+			Type:        "string",
+			Template:    "{{.Dbserie.Instagram}}",
+			Description: "Instagram URL",
+			Example:     "https://www.instagram.com/breakingbad",
+			Category:    "Series External IDs",
+		},
+		{
+			Name:        "Dbserie.Twitter",
+			Type:        "string",
+			Template:    "{{.Dbserie.Twitter}}",
+			Description: "Twitter URL",
+			Example:     "https://twitter.com/BreakingBad_AMC",
+			Category:    "Series External IDs",
+		},
+		{
+			Name:        "Dbserie.Banner",
+			Type:        "string",
+			Template:    "{{.Dbserie.Banner}}",
+			Description: "Banner image path",
+			Example:     "/banner.jpg",
+			Category:    "Series Images",
+		},
+		{
+			Name:        "Dbserie.Poster",
+			Type:        "string",
+			Template:    "{{.Dbserie.Poster}}",
+			Description: "Poster image path",
+			Example:     "/poster.jpg",
+			Category:    "Series Images",
+		},
+		{
+			Name:        "Dbserie.Fanart",
+			Type:        "string",
+			Template:    "{{.Dbserie.Fanart}}",
+			Description: "Fanart image path",
+			Example:     "/fanart.jpg",
+			Category:    "Series Images",
+		},
+		{
+			Name:        "Dbserie.Identifiedby",
+			Type:        "string",
+			Template:    "{{.Dbserie.Identifiedby}}",
+			Description: "Episode ID method",
+			Example:     "ep",
+			Category:    "Series Information",
+		},
+		{
+			Name:        "Dbserie.Slug",
+			Type:        "string",
+			Template:    "{{.Dbserie.Slug}}",
+			Description: "URL slug",
+			Example:     "breaking-bad",
+			Category:    "Series Information",
+		},
 
 		// DbserieEpisode fields (nested struct)
-		{Name: "DbserieEpisode.Title", Type: "string", Template: "{{.DbserieEpisode.Title}}", Description: "Episode title", Example: "Pilot", Category: "Episode Information"},
-		{Name: "DbserieEpisode.Season", Type: "string", Template: "{{.DbserieEpisode.Season}}", Description: "Season number", Example: "1", Category: "Episode Information"},
-		{Name: "DbserieEpisode.Episode", Type: "string", Template: "{{.DbserieEpisode.Episode}}", Description: "Episode number", Example: "1", Category: "Episode Information"},
-		{Name: "DbserieEpisode.Identifier", Type: "string", Template: "{{.DbserieEpisode.Identifier}}", Description: "Episode identifier", Example: "S01E01", Category: "Episode Information"},
-		{Name: "DbserieEpisode.Overview", Type: "string", Template: "{{.DbserieEpisode.Overview}}", Description: "Episode summary", Example: "Walter White begins cooking...", Category: "Episode Information"},
-		{Name: "DbserieEpisode.FirstAired", Type: "time", Template: "{{.DbserieEpisode.FirstAired}}", Description: "Original air date", Example: "2008-01-20", Category: "Episode Information"},
-		{Name: "DbserieEpisode.Runtime", Type: "int", Template: "{{.DbserieEpisode.Runtime}}", Description: "Episode runtime in minutes", Example: "58", Category: "Episode Information"},
-		{Name: "DbserieEpisode.Poster", Type: "string", Template: "{{.DbserieEpisode.Poster}}", Description: "Episode poster image", Example: "/episode_poster.jpg", Category: "Episode Images"},
+		{
+			Name:        "DbserieEpisode.Title",
+			Type:        "string",
+			Template:    "{{.DbserieEpisode.Title}}",
+			Description: "Episode title",
+			Example:     "Pilot",
+			Category:    "Episode Information",
+		},
+		{
+			Name:        "DbserieEpisode.Season",
+			Type:        "string",
+			Template:    "{{.DbserieEpisode.Season}}",
+			Description: "Season number",
+			Example:     "1",
+			Category:    "Episode Information",
+		},
+		{
+			Name:        "DbserieEpisode.Episode",
+			Type:        "string",
+			Template:    "{{.DbserieEpisode.Episode}}",
+			Description: "Episode number",
+			Example:     "1",
+			Category:    "Episode Information",
+		},
+		{
+			Name:        "DbserieEpisode.Identifier",
+			Type:        "string",
+			Template:    "{{.DbserieEpisode.Identifier}}",
+			Description: "Episode identifier",
+			Example:     "S01E01",
+			Category:    "Episode Information",
+		},
+		{
+			Name:        "DbserieEpisode.Overview",
+			Type:        "string",
+			Template:    "{{.DbserieEpisode.Overview}}",
+			Description: "Episode summary",
+			Example:     "Walter White begins cooking...",
+			Category:    "Episode Information",
+		},
+		{
+			Name:        "DbserieEpisode.FirstAired",
+			Type:        "time",
+			Template:    "{{.DbserieEpisode.FirstAired}}",
+			Description: "Original air date",
+			Example:     "2008-01-20",
+			Category:    "Episode Information",
+		},
+		{
+			Name:        "DbserieEpisode.Runtime",
+			Type:        "int",
+			Template:    "{{.DbserieEpisode.Runtime}}",
+			Description: "Episode runtime in minutes",
+			Example:     "58",
+			Category:    "Episode Information",
+		},
+		{
+			Name:        "DbserieEpisode.Poster",
+			Type:        "string",
+			Template:    "{{.DbserieEpisode.Poster}}",
+			Description: "Episode poster image",
+			Example:     "/episode_poster.jpg",
+			Category:    "Episode Images",
+		},
 
 		// Source (ParseInfo) fields (nested struct pointer)
-		{Name: "Source.Title", Type: "string", Template: "{{.Source.Title}}", Description: "Parsed media title", Example: "Breaking Bad", Category: "Source Information"},
-		{Name: "Source.Year", Type: "uint16", Template: "{{.Source.Year}}", Description: "Parsed release year", Example: "2008", Category: "Source Information"},
-		{Name: "Source.Season", Type: "int", Template: "{{.Source.Season}}", Description: "Parsed season number", Example: "1", Category: "Source Information"},
-		{Name: "Source.Episode", Type: "int", Template: "{{.Source.Episode}}", Description: "Parsed episode number", Example: "1", Category: "Source Information"},
-		{Name: "Source.Quality", Type: "string", Template: "{{.Source.Quality}}", Description: "Video quality", Example: "bluray", Category: "Source Quality"},
-		{Name: "Source.Resolution", Type: "string", Template: "{{.Source.Resolution}}", Description: "Video resolution", Example: "1080p", Category: "Source Quality"},
-		{Name: "Source.Codec", Type: "string", Template: "{{.Source.Codec}}", Description: "Video codec", Example: "x264", Category: "Source Quality"},
-		{Name: "Source.Audio", Type: "string", Template: "{{.Source.Audio}}", Description: "Audio codec", Example: "AC3", Category: "Source Quality"},
-		{Name: "Source.File", Type: "string", Template: "{{.Source.File}}", Description: "File path", Example: "/path/to/file.mkv", Category: "Source File"},
-		{Name: "Source.Size", Type: "int64", Template: "{{.Source.Size}}", Description: "File size in bytes", Example: "1073741824", Category: "Source File"},
-		{Name: "Source.Runtime", Type: "int", Template: "{{.Source.Runtime}}", Description: "Runtime in minutes", Example: "58", Category: "Source File"},
-		{Name: "Source.Height", Type: "int", Template: "{{.Source.Height}}", Description: "Video height", Example: "1080", Category: "Source Quality"},
-		{Name: "Source.Width", Type: "int", Template: "{{.Source.Width}}", Description: "Video width", Example: "1920", Category: "Source Quality"},
-		{Name: "Source.Imdb", Type: "string", Template: "{{.Source.Imdb}}", Description: "IMDB ID from source", Example: "tt0903747", Category: "Source External IDs"},
-		{Name: "Source.Tvdb", Type: "string", Template: "{{.Source.Tvdb}}", Description: "TVDB ID from source", Example: "tvdb81189", Category: "Source External IDs"},
-		{Name: "Source.Identifier", Type: "string", Template: "{{.Source.Identifier}}", Description: "Source identifier", Example: "S01E01", Category: "Source Information"},
-		{Name: "Source.Date", Type: "string", Template: "{{.Source.Date}}", Description: "Source release date", Example: "2008-01-20", Category: "Source Information"},
-		{Name: "Source.Proper", Type: "bool", Template: "{{.Source.Proper}}", Description: "Is proper release", Example: "false", Category: "Source Quality"},
-		{Name: "Source.Extended", Type: "bool", Template: "{{.Source.Extended}}", Description: "Is extended version", Example: "false", Category: "Source Quality"},
-		{Name: "Source.Repack", Type: "bool", Template: "{{.Source.Repack}}", Description: "Is repack release", Example: "false", Category: "Source Quality"},
-		{Name: "Source.Languages", Type: "[]string", Template: "{{range .Source.Languages}}{{.}}{{end}}", Description: "Available languages", Example: "English, Spanish", Category: "Source Information"},
+		{
+			Name:        "Source.Title",
+			Type:        "string",
+			Template:    "{{.Source.Title}}",
+			Description: "Parsed media title",
+			Example:     "Breaking Bad",
+			Category:    "Source Information",
+		},
+		{
+			Name:        "Source.Year",
+			Type:        "uint16",
+			Template:    "{{.Source.Year}}",
+			Description: "Parsed release year",
+			Example:     "2008",
+			Category:    "Source Information",
+		},
+		{
+			Name:        "Source.Season",
+			Type:        "int",
+			Template:    "{{.Source.Season}}",
+			Description: "Parsed season number",
+			Example:     "1",
+			Category:    "Source Information",
+		},
+		{
+			Name:        "Source.Episode",
+			Type:        "int",
+			Template:    "{{.Source.Episode}}",
+			Description: "Parsed episode number",
+			Example:     "1",
+			Category:    "Source Information",
+		},
+		{
+			Name:        "Source.Quality",
+			Type:        "string",
+			Template:    "{{.Source.Quality}}",
+			Description: "Video quality",
+			Example:     "bluray",
+			Category:    "Source Quality",
+		},
+		{
+			Name:        "Source.Resolution",
+			Type:        "string",
+			Template:    "{{.Source.Resolution}}",
+			Description: "Video resolution",
+			Example:     "1080p",
+			Category:    "Source Quality",
+		},
+		{
+			Name:        "Source.Codec",
+			Type:        "string",
+			Template:    "{{.Source.Codec}}",
+			Description: "Video codec",
+			Example:     "x264",
+			Category:    "Source Quality",
+		},
+		{
+			Name:        "Source.Audio",
+			Type:        "string",
+			Template:    "{{.Source.Audio}}",
+			Description: "Audio codec",
+			Example:     "AC3",
+			Category:    "Source Quality",
+		},
+		{
+			Name:        "Source.File",
+			Type:        "string",
+			Template:    "{{.Source.File}}",
+			Description: "File path",
+			Example:     "/path/to/file.mkv",
+			Category:    "Source File",
+		},
+		{
+			Name:        "Source.Size",
+			Type:        "int64",
+			Template:    "{{.Source.Size}}",
+			Description: "File size in bytes",
+			Example:     "1073741824",
+			Category:    "Source File",
+		},
+		{
+			Name:        "Source.Runtime",
+			Type:        "int",
+			Template:    "{{.Source.Runtime}}",
+			Description: "Runtime in minutes",
+			Example:     "58",
+			Category:    "Source File",
+		},
+		{
+			Name:        "Source.Height",
+			Type:        "int",
+			Template:    "{{.Source.Height}}",
+			Description: "Video height",
+			Example:     "1080",
+			Category:    "Source Quality",
+		},
+		{
+			Name:        "Source.Width",
+			Type:        "int",
+			Template:    "{{.Source.Width}}",
+			Description: "Video width",
+			Example:     "1920",
+			Category:    "Source Quality",
+		},
+		{
+			Name:        "Source.Imdb",
+			Type:        "string",
+			Template:    "{{.Source.Imdb}}",
+			Description: "IMDB ID from source",
+			Example:     "tt0903747",
+			Category:    "Source External IDs",
+		},
+		{
+			Name:        "Source.Tvdb",
+			Type:        "string",
+			Template:    "{{.Source.Tvdb}}",
+			Description: "TVDB ID from source",
+			Example:     "tvdb81189",
+			Category:    "Source External IDs",
+		},
+		{
+			Name:        "Source.Identifier",
+			Type:        "string",
+			Template:    "{{.Source.Identifier}}",
+			Description: "Source identifier",
+			Example:     "S01E01",
+			Category:    "Source Information",
+		},
+		{
+			Name:        "Source.Date",
+			Type:        "string",
+			Template:    "{{.Source.Date}}",
+			Description: "Source release date",
+			Example:     "2008-01-20",
+			Category:    "Source Information",
+		},
+		{
+			Name:        "Source.Proper",
+			Type:        "bool",
+			Template:    "{{.Source.Proper}}",
+			Description: "Is proper release",
+			Example:     "false",
+			Category:    "Source Quality",
+		},
+		{
+			Name:        "Source.Extended",
+			Type:        "bool",
+			Template:    "{{.Source.Extended}}",
+			Description: "Is extended version",
+			Example:     "false",
+			Category:    "Source Quality",
+		},
+		{
+			Name:        "Source.Repack",
+			Type:        "bool",
+			Template:    "{{.Source.Repack}}",
+			Description: "Is repack release",
+			Example:     "false",
+			Category:    "Source Quality",
+		},
+		{
+			Name:        "Source.Languages",
+			Type:        "[]string",
+			Template:    "{{range .Source.Languages}}{{.}}{{end}}",
+			Description: "Available languages",
+			Example:     "English, Spanish",
+			Category:    "Source Information",
+		},
 
 		// Top-level parsertype fields
-		{Name: "TitleSource", Type: "string", Template: "{{.TitleSource}}", Description: "Source title from filename", Example: "Breaking.Bad.S01E01.Pilot.1080p.BluRay.x264-ROVERS", Category: "Parser Information"},
-		{Name: "EpisodeTitleSource", Type: "string", Template: "{{.EpisodeTitleSource}}", Description: "Episode title from source", Example: "Pilot", Category: "Parser Information"},
-		{Name: "Identifier", Type: "string", Template: "{{.Identifier}}", Description: "Parsed identifier", Example: "S01E01", Category: "Parser Information"},
-		{Name: "Episodes", Type: "[]int", Template: "{{range .Episodes}}{{.}}{{end}}", Description: "Episode numbers array", Example: "1, 2, 3", Category: "Parser Information"},
+		{
+			Name:        "TitleSource",
+			Type:        "string",
+			Template:    "{{.TitleSource}}",
+			Description: "Source title from filename",
+			Example:     "Breaking.Bad.S01E01.Pilot.1080p.BluRay.x264-ROVERS",
+			Category:    "Parser Information",
+		},
+		{
+			Name:        "EpisodeTitleSource",
+			Type:        "string",
+			Template:    "{{.EpisodeTitleSource}}",
+			Description: "Episode title from source",
+			Example:     "Pilot",
+			Category:    "Parser Information",
+		},
+		{
+			Name:        "Identifier",
+			Type:        "string",
+			Template:    "{{.Identifier}}",
+			Description: "Parsed identifier",
+			Example:     "S01E01",
+			Category:    "Parser Information",
+		},
+		{
+			Name:        "Episodes",
+			Type:        "[]int",
+			Template:    "{{range .Episodes}}{{.}}{{end}}",
+			Description: "Episode numbers array",
+			Example:     "1, 2, 3",
+			Category:    "Parser Information",
+		},
 	}
 }
 
 func getNotificationFields() []TemplateField {
 	return []TemplateField{
 		// Dbmovie fields (nested struct) - same as parser
-		{Name: "Dbmovie.Title", Type: "string", Template: "{{.Dbmovie.Title}}", Description: "Movie title", Example: "Inception", Category: "Movie Information"},
-		{Name: "Dbmovie.Year", Type: "int", Template: "{{.Dbmovie.Year}}", Description: "Movie year", Example: "2000", Category: "Movie Information"},
-		{Name: "Dbmovie.OriginalTitle", Type: "string", Template: "{{.Dbmovie.OriginalTitle}}", Description: "Original movie title", Example: "Inception", Category: "Movie Information"},
-		{Name: "Dbmovie.Overview", Type: "string", Template: "{{.Dbmovie.Overview}}", Description: "Movie plot summary", Example: "A thief who steals secrets...", Category: "Movie Information"},
-		{Name: "Dbmovie.Tagline", Type: "string", Template: "{{.Dbmovie.Tagline}}", Description: "Movie tagline", Example: "Your mind is the scene of the crime", Category: "Movie Information"},
-		{Name: "Dbmovie.Genres", Type: "string", Template: "{{.Dbmovie.Genres}}", Description: "Movie genres", Example: "Action, Sci-Fi, Thriller", Category: "Movie Information"},
-		{Name: "Dbmovie.Runtime", Type: "int", Template: "{{.Dbmovie.Runtime}}", Description: "Movie runtime in minutes", Example: "148", Category: "Movie Information"},
-		{Name: "Dbmovie.ReleaseDate", Type: "time", Template: "{{.Dbmovie.ReleaseDate}}", Description: "Movie release date", Example: "2010-07-16", Category: "Movie Information"},
-		{Name: "Dbmovie.Status", Type: "string", Template: "{{.Dbmovie.Status}}", Description: "Release status", Example: "Released", Category: "Movie Information"},
-		{Name: "Dbmovie.OriginalLanguage", Type: "string", Template: "{{.Dbmovie.OriginalLanguage}}", Description: "Original language", Example: "en", Category: "Movie Information"},
-		{Name: "Dbmovie.SpokenLanguages", Type: "string", Template: "{{.Dbmovie.SpokenLanguages}}", Description: "Spoken languages", Example: "English, Japanese", Category: "Movie Information"},
-		{Name: "Dbmovie.ImdbID", Type: "string", Template: "{{.Dbmovie.ImdbID}}", Description: "IMDB ID", Example: "tt1375666", Category: "Movie External IDs"},
-		{Name: "Dbmovie.MoviedbID", Type: "int", Template: "{{.Dbmovie.MoviedbID}}", Description: "MovieDB ID", Example: "27205", Category: "Movie External IDs"},
-		{Name: "Dbmovie.TraktID", Type: "int", Template: "{{.Dbmovie.TraktID}}", Description: "Trakt ID", Example: "1390", Category: "Movie External IDs"},
-		{Name: "Dbmovie.FacebookID", Type: "string", Template: "{{.Dbmovie.FacebookID}}", Description: "Facebook page ID", Example: "inception", Category: "Movie External IDs"},
-		{Name: "Dbmovie.InstagramID", Type: "string", Template: "{{.Dbmovie.InstagramID}}", Description: "Instagram ID", Example: "inception", Category: "Movie External IDs"},
-		{Name: "Dbmovie.TwitterID", Type: "string", Template: "{{.Dbmovie.TwitterID}}", Description: "Twitter ID", Example: "inception", Category: "Movie External IDs"},
-		{Name: "Dbmovie.VoteAverage", Type: "float32", Template: "{{.Dbmovie.VoteAverage}}", Description: "Average user rating", Example: "8.3", Category: "Movie Ratings"},
-		{Name: "Dbmovie.VoteCount", Type: "int32", Template: "{{.Dbmovie.VoteCount}}", Description: "Number of votes", Example: "31280", Category: "Movie Ratings"},
-		{Name: "Dbmovie.Popularity", Type: "float32", Template: "{{.Dbmovie.Popularity}}", Description: "Popularity score", Example: "108.6", Category: "Movie Ratings"},
-		{Name: "Dbmovie.Budget", Type: "int", Template: "{{.Dbmovie.Budget}}", Description: "Production budget", Example: "160000000", Category: "Movie Financial"},
-		{Name: "Dbmovie.Revenue", Type: "int", Template: "{{.Dbmovie.Revenue}}", Description: "Box office revenue", Example: "825532764", Category: "Movie Financial"},
-		{Name: "Dbmovie.Poster", Type: "string", Template: "{{.Dbmovie.Poster}}", Description: "Poster image path", Example: "/poster.jpg", Category: "Movie Images"},
-		{Name: "Dbmovie.Backdrop", Type: "string", Template: "{{.Dbmovie.Backdrop}}", Description: "Backdrop image path", Example: "/backdrop.jpg", Category: "Movie Images"},
-		{Name: "Dbmovie.Slug", Type: "string", Template: "{{.Dbmovie.Slug}}", Description: "URL slug", Example: "inception-2010", Category: "Movie Information"},
+		{
+			Name:        "Dbmovie.Title",
+			Type:        "string",
+			Template:    "{{.Dbmovie.Title}}",
+			Description: "Movie title",
+			Example:     "Inception",
+			Category:    "Movie Information",
+		},
+		{
+			Name:        "Dbmovie.Year",
+			Type:        "int",
+			Template:    "{{.Dbmovie.Year}}",
+			Description: "Movie year",
+			Example:     "2000",
+			Category:    "Movie Information",
+		},
+		{
+			Name:        "Dbmovie.OriginalTitle",
+			Type:        "string",
+			Template:    "{{.Dbmovie.OriginalTitle}}",
+			Description: "Original movie title",
+			Example:     "Inception",
+			Category:    "Movie Information",
+		},
+		{
+			Name:        "Dbmovie.Overview",
+			Type:        "string",
+			Template:    "{{.Dbmovie.Overview}}",
+			Description: "Movie plot summary",
+			Example:     "A thief who steals secrets...",
+			Category:    "Movie Information",
+		},
+		{
+			Name:        "Dbmovie.Tagline",
+			Type:        "string",
+			Template:    "{{.Dbmovie.Tagline}}",
+			Description: "Movie tagline",
+			Example:     "Your mind is the scene of the crime",
+			Category:    "Movie Information",
+		},
+		{
+			Name:        "Dbmovie.Genres",
+			Type:        "string",
+			Template:    "{{.Dbmovie.Genres}}",
+			Description: "Movie genres",
+			Example:     "Action, Sci-Fi, Thriller",
+			Category:    "Movie Information",
+		},
+		{
+			Name:        "Dbmovie.Runtime",
+			Type:        "int",
+			Template:    "{{.Dbmovie.Runtime}}",
+			Description: "Movie runtime in minutes",
+			Example:     "148",
+			Category:    "Movie Information",
+		},
+		{
+			Name:        "Dbmovie.ReleaseDate",
+			Type:        "time",
+			Template:    "{{.Dbmovie.ReleaseDate}}",
+			Description: "Movie release date",
+			Example:     "2010-07-16",
+			Category:    "Movie Information",
+		},
+		{
+			Name:        "Dbmovie.Status",
+			Type:        "string",
+			Template:    "{{.Dbmovie.Status}}",
+			Description: "Release status",
+			Example:     "Released",
+			Category:    "Movie Information",
+		},
+		{
+			Name:        "Dbmovie.OriginalLanguage",
+			Type:        "string",
+			Template:    "{{.Dbmovie.OriginalLanguage}}",
+			Description: "Original language",
+			Example:     "en",
+			Category:    "Movie Information",
+		},
+		{
+			Name:        "Dbmovie.SpokenLanguages",
+			Type:        "string",
+			Template:    "{{.Dbmovie.SpokenLanguages}}",
+			Description: "Spoken languages",
+			Example:     "English, Japanese",
+			Category:    "Movie Information",
+		},
+		{
+			Name:        "Dbmovie.ImdbID",
+			Type:        "string",
+			Template:    "{{.Dbmovie.ImdbID}}",
+			Description: "IMDB ID",
+			Example:     "tt1375666",
+			Category:    "Movie External IDs",
+		},
+		{
+			Name:        "Dbmovie.MoviedbID",
+			Type:        "int",
+			Template:    "{{.Dbmovie.MoviedbID}}",
+			Description: "MovieDB ID",
+			Example:     "27205",
+			Category:    "Movie External IDs",
+		},
+		{
+			Name:        "Dbmovie.TraktID",
+			Type:        "int",
+			Template:    "{{.Dbmovie.TraktID}}",
+			Description: "Trakt ID",
+			Example:     "1390",
+			Category:    "Movie External IDs",
+		},
+		{
+			Name:        "Dbmovie.FacebookID",
+			Type:        "string",
+			Template:    "{{.Dbmovie.FacebookID}}",
+			Description: "Facebook page ID",
+			Example:     "inception",
+			Category:    "Movie External IDs",
+		},
+		{
+			Name:        "Dbmovie.InstagramID",
+			Type:        "string",
+			Template:    "{{.Dbmovie.InstagramID}}",
+			Description: "Instagram ID",
+			Example:     "inception",
+			Category:    "Movie External IDs",
+		},
+		{
+			Name:        "Dbmovie.TwitterID",
+			Type:        "string",
+			Template:    "{{.Dbmovie.TwitterID}}",
+			Description: "Twitter ID",
+			Example:     "inception",
+			Category:    "Movie External IDs",
+		},
+		{
+			Name:        "Dbmovie.VoteAverage",
+			Type:        "float32",
+			Template:    "{{.Dbmovie.VoteAverage}}",
+			Description: "Average user rating",
+			Example:     "8.3",
+			Category:    "Movie Ratings",
+		},
+		{
+			Name:        "Dbmovie.VoteCount",
+			Type:        "int32",
+			Template:    "{{.Dbmovie.VoteCount}}",
+			Description: "Number of votes",
+			Example:     "31280",
+			Category:    "Movie Ratings",
+		},
+		{
+			Name:        "Dbmovie.Popularity",
+			Type:        "float32",
+			Template:    "{{.Dbmovie.Popularity}}",
+			Description: "Popularity score",
+			Example:     "108.6",
+			Category:    "Movie Ratings",
+		},
+		{
+			Name:        "Dbmovie.Budget",
+			Type:        "int",
+			Template:    "{{.Dbmovie.Budget}}",
+			Description: "Production budget",
+			Example:     "160000000",
+			Category:    "Movie Financial",
+		},
+		{
+			Name:        "Dbmovie.Revenue",
+			Type:        "int",
+			Template:    "{{.Dbmovie.Revenue}}",
+			Description: "Box office revenue",
+			Example:     "825532764",
+			Category:    "Movie Financial",
+		},
+		{
+			Name:        "Dbmovie.Poster",
+			Type:        "string",
+			Template:    "{{.Dbmovie.Poster}}",
+			Description: "Poster image path",
+			Example:     "/poster.jpg",
+			Category:    "Movie Images",
+		},
+		{
+			Name:        "Dbmovie.Backdrop",
+			Type:        "string",
+			Template:    "{{.Dbmovie.Backdrop}}",
+			Description: "Backdrop image path",
+			Example:     "/backdrop.jpg",
+			Category:    "Movie Images",
+		},
+		{
+			Name:        "Dbmovie.Slug",
+			Type:        "string",
+			Template:    "{{.Dbmovie.Slug}}",
+			Description: "URL slug",
+			Example:     "inception-2010",
+			Category:    "Movie Information",
+		},
 
 		// Dbserie fields (nested struct)
-		{Name: "Dbserie.Seriename", Type: "string", Template: "{{.Dbserie.Seriename}}", Description: "Series name", Example: "Breaking Bad", Category: "Series Information"},
-		{Name: "Dbserie.Aliases", Type: "string", Template: "{{.Dbserie.Aliases}}", Description: "Alternative series names", Example: "Breaking Bad, BB", Category: "Series Information"},
-		{Name: "Dbserie.Overview", Type: "string", Template: "{{.Dbserie.Overview}}", Description: "Series plot summary", Example: "A high school chemistry teacher...", Category: "Series Information"},
-		{Name: "Dbserie.Status", Type: "string", Template: "{{.Dbserie.Status}}", Description: "Series status", Example: "Ended", Category: "Series Information"},
-		{Name: "Dbserie.Firstaired", Type: "string", Template: "{{.Dbserie.Firstaired}}", Description: "First air date", Example: "2008-01-20", Category: "Series Information"},
-		{Name: "Dbserie.Network", Type: "string", Template: "{{.Dbserie.Network}}", Description: "Broadcasting network", Example: "AMC", Category: "Series Information"},
-		{Name: "Dbserie.Runtime", Type: "string", Template: "{{.Dbserie.Runtime}}", Description: "Episode runtime", Example: "47", Category: "Series Information"},
-		{Name: "Dbserie.Language", Type: "string", Template: "{{.Dbserie.Language}}", Description: "Primary language", Example: "en", Category: "Series Information"},
-		{Name: "Dbserie.Genre", Type: "string", Template: "{{.Dbserie.Genre}}", Description: "Series genres", Example: "Crime, Drama, Thriller", Category: "Series Information"},
-		{Name: "Dbserie.Rating", Type: "string", Template: "{{.Dbserie.Rating}}", Description: "Content rating", Example: "TV-MA", Category: "Series Information"},
-		{Name: "Dbserie.Siterating", Type: "string", Template: "{{.Dbserie.Siterating}}", Description: "Site user rating", Example: "9.5", Category: "Series Ratings"},
-		{Name: "Dbserie.SiteratingCount", Type: "string", Template: "{{.Dbserie.SiteratingCount}}", Description: "Rating vote count", Example: "1,654,876", Category: "Series Ratings"},
-		{Name: "Dbserie.ImdbID", Type: "string", Template: "{{.Dbserie.ImdbID}}", Description: "IMDB ID", Example: "tt0903747", Category: "Series External IDs"},
-		{Name: "Dbserie.ThetvdbID", Type: "int", Template: "{{.Dbserie.ThetvdbID}}", Description: "TVDB ID", Example: "81189", Category: "Series External IDs"},
-		{Name: "Dbserie.TraktID", Type: "int", Template: "{{.Dbserie.TraktID}}", Description: "Trakt ID", Example: "1388", Category: "Series External IDs"},
-		{Name: "Dbserie.TvrageID", Type: "int", Template: "{{.Dbserie.TvrageID}}", Description: "TVRage ID", Example: "18164", Category: "Series External IDs"},
-		{Name: "Dbserie.Facebook", Type: "string", Template: "{{.Dbserie.Facebook}}", Description: "Facebook page URL", Example: "https://www.facebook.com/BreakingBad", Category: "Series External IDs"},
-		{Name: "Dbserie.Instagram", Type: "string", Template: "{{.Dbserie.Instagram}}", Description: "Instagram URL", Example: "https://www.instagram.com/breakingbad", Category: "Series External IDs"},
-		{Name: "Dbserie.Twitter", Type: "string", Template: "{{.Dbserie.Twitter}}", Description: "Twitter URL", Example: "https://twitter.com/BreakingBad_AMC", Category: "Series External IDs"},
-		{Name: "Dbserie.Banner", Type: "string", Template: "{{.Dbserie.Banner}}", Description: "Banner image path", Example: "/banner.jpg", Category: "Series Images"},
-		{Name: "Dbserie.Poster", Type: "string", Template: "{{.Dbserie.Poster}}", Description: "Poster image path", Example: "/poster.jpg", Category: "Series Images"},
-		{Name: "Dbserie.Fanart", Type: "string", Template: "{{.Dbserie.Fanart}}", Description: "Fanart image path", Example: "/fanart.jpg", Category: "Series Images"},
-		{Name: "Dbserie.Identifiedby", Type: "string", Template: "{{.Dbserie.Identifiedby}}", Description: "Episode ID method", Example: "ep", Category: "Series Information"},
-		{Name: "Dbserie.Slug", Type: "string", Template: "{{.Dbserie.Slug}}", Description: "URL slug", Example: "breaking-bad", Category: "Series Information"},
+		{
+			Name:        "Dbserie.Seriename",
+			Type:        "string",
+			Template:    "{{.Dbserie.Seriename}}",
+			Description: "Series name",
+			Example:     "Breaking Bad",
+			Category:    "Series Information",
+		},
+		{
+			Name:        "Dbserie.Aliases",
+			Type:        "string",
+			Template:    "{{.Dbserie.Aliases}}",
+			Description: "Alternative series names",
+			Example:     "Breaking Bad, BB",
+			Category:    "Series Information",
+		},
+		{
+			Name:        "Dbserie.Overview",
+			Type:        "string",
+			Template:    "{{.Dbserie.Overview}}",
+			Description: "Series plot summary",
+			Example:     "A high school chemistry teacher...",
+			Category:    "Series Information",
+		},
+		{
+			Name:        "Dbserie.Status",
+			Type:        "string",
+			Template:    "{{.Dbserie.Status}}",
+			Description: "Series status",
+			Example:     "Ended",
+			Category:    "Series Information",
+		},
+		{
+			Name:        "Dbserie.Firstaired",
+			Type:        "string",
+			Template:    "{{.Dbserie.Firstaired}}",
+			Description: "First air date",
+			Example:     "2008-01-20",
+			Category:    "Series Information",
+		},
+		{
+			Name:        "Dbserie.Network",
+			Type:        "string",
+			Template:    "{{.Dbserie.Network}}",
+			Description: "Broadcasting network",
+			Example:     "AMC",
+			Category:    "Series Information",
+		},
+		{
+			Name:        "Dbserie.Runtime",
+			Type:        "string",
+			Template:    "{{.Dbserie.Runtime}}",
+			Description: "Episode runtime",
+			Example:     "47",
+			Category:    "Series Information",
+		},
+		{
+			Name:        "Dbserie.Language",
+			Type:        "string",
+			Template:    "{{.Dbserie.Language}}",
+			Description: "Primary language",
+			Example:     "en",
+			Category:    "Series Information",
+		},
+		{
+			Name:        "Dbserie.Genre",
+			Type:        "string",
+			Template:    "{{.Dbserie.Genre}}",
+			Description: "Series genres",
+			Example:     "Crime, Drama, Thriller",
+			Category:    "Series Information",
+		},
+		{
+			Name:        "Dbserie.Rating",
+			Type:        "string",
+			Template:    "{{.Dbserie.Rating}}",
+			Description: "Content rating",
+			Example:     "TV-MA",
+			Category:    "Series Information",
+		},
+		{
+			Name:        "Dbserie.Siterating",
+			Type:        "string",
+			Template:    "{{.Dbserie.Siterating}}",
+			Description: "Site user rating",
+			Example:     "9.5",
+			Category:    "Series Ratings",
+		},
+		{
+			Name:        "Dbserie.SiteratingCount",
+			Type:        "string",
+			Template:    "{{.Dbserie.SiteratingCount}}",
+			Description: "Rating vote count",
+			Example:     "1,654,876",
+			Category:    "Series Ratings",
+		},
+		{
+			Name:        "Dbserie.ImdbID",
+			Type:        "string",
+			Template:    "{{.Dbserie.ImdbID}}",
+			Description: "IMDB ID",
+			Example:     "tt0903747",
+			Category:    "Series External IDs",
+		},
+		{
+			Name:        "Dbserie.ThetvdbID",
+			Type:        "int",
+			Template:    "{{.Dbserie.ThetvdbID}}",
+			Description: "TVDB ID",
+			Example:     "81189",
+			Category:    "Series External IDs",
+		},
+		{
+			Name:        "Dbserie.TraktID",
+			Type:        "int",
+			Template:    "{{.Dbserie.TraktID}}",
+			Description: "Trakt ID",
+			Example:     "1388",
+			Category:    "Series External IDs",
+		},
+		{
+			Name:        "Dbserie.TvrageID",
+			Type:        "int",
+			Template:    "{{.Dbserie.TvrageID}}",
+			Description: "TVRage ID",
+			Example:     "18164",
+			Category:    "Series External IDs",
+		},
+		{
+			Name:        "Dbserie.Facebook",
+			Type:        "string",
+			Template:    "{{.Dbserie.Facebook}}",
+			Description: "Facebook page URL",
+			Example:     "https://www.facebook.com/BreakingBad",
+			Category:    "Series External IDs",
+		},
+		{
+			Name:        "Dbserie.Instagram",
+			Type:        "string",
+			Template:    "{{.Dbserie.Instagram}}",
+			Description: "Instagram URL",
+			Example:     "https://www.instagram.com/breakingbad",
+			Category:    "Series External IDs",
+		},
+		{
+			Name:        "Dbserie.Twitter",
+			Type:        "string",
+			Template:    "{{.Dbserie.Twitter}}",
+			Description: "Twitter URL",
+			Example:     "https://twitter.com/BreakingBad_AMC",
+			Category:    "Series External IDs",
+		},
+		{
+			Name:        "Dbserie.Banner",
+			Type:        "string",
+			Template:    "{{.Dbserie.Banner}}",
+			Description: "Banner image path",
+			Example:     "/banner.jpg",
+			Category:    "Series Images",
+		},
+		{
+			Name:        "Dbserie.Poster",
+			Type:        "string",
+			Template:    "{{.Dbserie.Poster}}",
+			Description: "Poster image path",
+			Example:     "/poster.jpg",
+			Category:    "Series Images",
+		},
+		{
+			Name:        "Dbserie.Fanart",
+			Type:        "string",
+			Template:    "{{.Dbserie.Fanart}}",
+			Description: "Fanart image path",
+			Example:     "/fanart.jpg",
+			Category:    "Series Images",
+		},
+		{
+			Name:        "Dbserie.Identifiedby",
+			Type:        "string",
+			Template:    "{{.Dbserie.Identifiedby}}",
+			Description: "Episode ID method",
+			Example:     "ep",
+			Category:    "Series Information",
+		},
+		{
+			Name:        "Dbserie.Slug",
+			Type:        "string",
+			Template:    "{{.Dbserie.Slug}}",
+			Description: "URL slug",
+			Example:     "breaking-bad",
+			Category:    "Series Information",
+		},
 
 		// DbserieEpisode fields (nested struct)
-		{Name: "DbserieEpisode.Title", Type: "string", Template: "{{.DbserieEpisode.Title}}", Description: "Episode title", Example: "Pilot", Category: "Episode Information"},
-		{Name: "DbserieEpisode.Season", Type: "string", Template: "{{.DbserieEpisode.Season}}", Description: "Season number", Example: "1", Category: "Episode Information"},
-		{Name: "DbserieEpisode.Episode", Type: "string", Template: "{{.DbserieEpisode.Episode}}", Description: "Episode number", Example: "1", Category: "Episode Information"},
-		{Name: "DbserieEpisode.Identifier", Type: "string", Template: "{{.DbserieEpisode.Identifier}}", Description: "Episode identifier", Example: "S01E01", Category: "Episode Information"},
-		{Name: "DbserieEpisode.Overview", Type: "string", Template: "{{.DbserieEpisode.Overview}}", Description: "Episode summary", Example: "Walter White begins cooking...", Category: "Episode Information"},
-		{Name: "DbserieEpisode.FirstAired", Type: "time", Template: "{{.DbserieEpisode.FirstAired}}", Description: "Original air date", Example: "2008-01-20", Category: "Episode Information"},
-		{Name: "DbserieEpisode.Runtime", Type: "int", Template: "{{.DbserieEpisode.Runtime}}", Description: "Episode runtime in minutes", Example: "58", Category: "Episode Information"},
-		{Name: "DbserieEpisode.Poster", Type: "string", Template: "{{.DbserieEpisode.Poster}}", Description: "Episode poster image", Example: "/episode_poster.jpg", Category: "Episode Images"},
+		{
+			Name:        "DbserieEpisode.Title",
+			Type:        "string",
+			Template:    "{{.DbserieEpisode.Title}}",
+			Description: "Episode title",
+			Example:     "Pilot",
+			Category:    "Episode Information",
+		},
+		{
+			Name:        "DbserieEpisode.Season",
+			Type:        "string",
+			Template:    "{{.DbserieEpisode.Season}}",
+			Description: "Season number",
+			Example:     "1",
+			Category:    "Episode Information",
+		},
+		{
+			Name:        "DbserieEpisode.Episode",
+			Type:        "string",
+			Template:    "{{.DbserieEpisode.Episode}}",
+			Description: "Episode number",
+			Example:     "1",
+			Category:    "Episode Information",
+		},
+		{
+			Name:        "DbserieEpisode.Identifier",
+			Type:        "string",
+			Template:    "{{.DbserieEpisode.Identifier}}",
+			Description: "Episode identifier",
+			Example:     "S01E01",
+			Category:    "Episode Information",
+		},
+		{
+			Name:        "DbserieEpisode.Overview",
+			Type:        "string",
+			Template:    "{{.DbserieEpisode.Overview}}",
+			Description: "Episode summary",
+			Example:     "Walter White begins cooking...",
+			Category:    "Episode Information",
+		},
+		{
+			Name:        "DbserieEpisode.FirstAired",
+			Type:        "time",
+			Template:    "{{.DbserieEpisode.FirstAired}}",
+			Description: "Original air date",
+			Example:     "2008-01-20",
+			Category:    "Episode Information",
+		},
+		{
+			Name:        "DbserieEpisode.Runtime",
+			Type:        "int",
+			Template:    "{{.DbserieEpisode.Runtime}}",
+			Description: "Episode runtime in minutes",
+			Example:     "58",
+			Category:    "Episode Information",
+		},
+		{
+			Name:        "DbserieEpisode.Poster",
+			Type:        "string",
+			Template:    "{{.DbserieEpisode.Poster}}",
+			Description: "Episode poster image",
+			Example:     "/episode_poster.jpg",
+			Category:    "Episode Images",
+		},
 
 		// Top-level inputNotifier fields
-		{Name: "Title", Type: "string", Template: "{{.Title}}", Description: "Media title", Example: "Inception", Category: "Basic Information"},
-		{Name: "Year", Type: "string", Template: "{{.Year}}", Description: "Release year", Example: "2010", Category: "Basic Information"},
-		{Name: "Season", Type: "string", Template: "{{.Season}}", Description: "Season number", Example: "1", Category: "Basic Information"},
-		{Name: "Episode", Type: "string", Template: "{{.Episode}}", Description: "Episode number", Example: "5", Category: "Basic Information"},
-		{Name: "Identifier", Type: "string", Template: "{{.Identifier}}", Description: "Media identifier", Example: "S01E05", Category: "Basic Information"},
-		{Name: "Series", Type: "string", Template: "{{.Series}}", Description: "Series name", Example: "Breaking Bad", Category: "Basic Information"},
-		{Name: "EpisodeTitle", Type: "string", Template: "{{.EpisodeTitle}}", Description: "Episode title", Example: "Pilot", Category: "Basic Information"},
-		{Name: "Configuration", Type: "string", Template: "{{.Configuration}}", Description: "Configuration name", Example: "movies-4k", Category: "Basic Information"},
+		{
+			Name:        "Title",
+			Type:        "string",
+			Template:    "{{.Title}}",
+			Description: "Media title",
+			Example:     "Inception",
+			Category:    "Basic Information",
+		},
+		{
+			Name:        "Year",
+			Type:        "string",
+			Template:    "{{.Year}}",
+			Description: "Release year",
+			Example:     "2010",
+			Category:    "Basic Information",
+		},
+		{
+			Name:        "Season",
+			Type:        "string",
+			Template:    "{{.Season}}",
+			Description: "Season number",
+			Example:     "1",
+			Category:    "Basic Information",
+		},
+		{
+			Name:        "Episode",
+			Type:        "string",
+			Template:    "{{.Episode}}",
+			Description: "Episode number",
+			Example:     "5",
+			Category:    "Basic Information",
+		},
+		{
+			Name:        "Identifier",
+			Type:        "string",
+			Template:    "{{.Identifier}}",
+			Description: "Media identifier",
+			Example:     "S01E05",
+			Category:    "Basic Information",
+		},
+		{
+			Name:        "Series",
+			Type:        "string",
+			Template:    "{{.Series}}",
+			Description: "Series name",
+			Example:     "Breaking Bad",
+			Category:    "Basic Information",
+		},
+		{
+			Name:        "EpisodeTitle",
+			Type:        "string",
+			Template:    "{{.EpisodeTitle}}",
+			Description: "Episode title",
+			Example:     "Pilot",
+			Category:    "Basic Information",
+		},
+		{
+			Name:        "Configuration",
+			Type:        "string",
+			Template:    "{{.Configuration}}",
+			Description: "Configuration name",
+			Example:     "movies-4k",
+			Category:    "Basic Information",
+		},
 
 		// Paths & Locations
-		{Name: "SourcePath", Type: "string", Template: "{{.SourcePath}}", Description: "Original file path", Example: "/downloads/movie.mkv", Category: "Paths & Locations"},
-		{Name: "Targetpath", Type: "string", Template: "{{.Targetpath}}", Description: "Final organized path", Example: "/media/movies/Inception (2010)/Inception.mkv", Category: "Paths & Locations"},
-		{Name: "Rootpath", Type: "string", Template: "{{.Rootpath}}", Description: "Root media path", Example: "/media/movies", Category: "Paths & Locations"},
+		{
+			Name:        "SourcePath",
+			Type:        "string",
+			Template:    "{{.SourcePath}}",
+			Description: "Original file path",
+			Example:     "/downloads/movie.mkv",
+			Category:    "Paths & Locations",
+		},
+		{
+			Name:        "Targetpath",
+			Type:        "string",
+			Template:    "{{.Targetpath}}",
+			Description: "Final organized path",
+			Example:     "/media/movies/Inception (2010)/Inception.mkv",
+			Category:    "Paths & Locations",
+		},
+		{
+			Name:        "Rootpath",
+			Type:        "string",
+			Template:    "{{.Rootpath}}",
+			Description: "Root media path",
+			Example:     "/media/movies",
+			Category:    "Paths & Locations",
+		},
 
 		// External IDs
-		{Name: "Imdb", Type: "string", Template: "{{.Imdb}}", Description: "IMDB ID", Example: "tt1375666", Category: "External IDs"},
-		{Name: "Tvdb", Type: "string", Template: "{{.Tvdb}}", Description: "TVDB ID", Example: "290434", Category: "External IDs"},
+		{
+			Name:        "Imdb",
+			Type:        "string",
+			Template:    "{{.Imdb}}",
+			Description: "IMDB ID",
+			Example:     "tt1375666",
+			Category:    "External IDs",
+		},
+		{
+			Name:        "Tvdb",
+			Type:        "string",
+			Template:    "{{.Tvdb}}",
+			Description: "TVDB ID",
+			Example:     "290434",
+			Category:    "External IDs",
+		},
 
 		// Dates & Times
-		{Name: "Time", Type: "string", Template: "{{.Time}}", Description: "Processing timestamp", Example: "2024-01-15 14:30:00", Category: "Dates & Times"},
-		{Name: "Date", Type: "string", Template: "{{.Date}}", Description: "Processing date", Example: "2024-01-15", Category: "Dates & Times"},
+		{
+			Name:        "Time",
+			Type:        "string",
+			Template:    "{{.Time}}",
+			Description: "Processing timestamp",
+			Example:     "2024-01-15 14:30:00",
+			Category:    "Dates & Times",
+		},
+		{
+			Name:        "Date",
+			Type:        "string",
+			Template:    "{{.Date}}",
+			Description: "Processing date",
+			Example:     "2024-01-15",
+			Category:    "Dates & Times",
+		},
 
 		// Processing Information
-		{Name: "ReplacedPrefix", Type: "string", Template: "{{.ReplacedPrefix}}", Description: "Prefix for replaced files", Example: "Replaced: ", Category: "Processing Information"},
+		{
+			Name:        "ReplacedPrefix",
+			Type:        "string",
+			Template:    "{{.ReplacedPrefix}}",
+			Description: "Prefix for replaced files",
+			Example:     "Replaced: ",
+			Category:    "Processing Information",
+		},
 
 		// Arrays & Lists
-		{Name: "Replaced", Type: "[]string", Template: "{{range .Replaced}}{{.}}{{end}}", Description: "List of replaced files", Example: "old_file1.mkv, old_file2.mkv", Category: "Arrays & Lists"},
+		{
+			Name:        "Replaced",
+			Type:        "[]string",
+			Template:    "{{range .Replaced}}{{.}}{{end}}",
+			Description: "List of replaced files",
+			Example:     "old_file1.mkv, old_file2.mkv",
+			Category:    "Arrays & Lists",
+		},
 
 		// Source (ParseInfo) fields (nested struct pointer) - subset for notifications
-		{Name: "Source.Title", Type: "string", Template: "{{.Source.Title}}", Description: "Parsed media title", Example: "Breaking Bad", Category: "Source Information"},
-		{Name: "Source.Year", Type: "uint16", Template: "{{.Source.Year}}", Description: "Parsed release year", Example: "2008", Category: "Source Information"},
-		{Name: "Source.Season", Type: "int", Template: "{{.Source.Season}}", Description: "Parsed season number", Example: "1", Category: "Source Information"},
-		{Name: "Source.Episode", Type: "int", Template: "{{.Source.Episode}}", Description: "Parsed episode number", Example: "1", Category: "Source Information"},
-		{Name: "Source.Quality", Type: "string", Template: "{{.Source.Quality}}", Description: "Video quality", Example: "bluray", Category: "Source Quality"},
-		{Name: "Source.Resolution", Type: "string", Template: "{{.Source.Resolution}}", Description: "Video resolution", Example: "1080p", Category: "Source Quality"},
-		{Name: "Source.Codec", Type: "string", Template: "{{.Source.Codec}}", Description: "Video codec", Example: "x264", Category: "Source Quality"},
-		{Name: "Source.Audio", Type: "string", Template: "{{.Source.Audio}}", Description: "Audio codec", Example: "AC3", Category: "Source Quality"},
-		{Name: "Source.File", Type: "string", Template: "{{.Source.File}}", Description: "File path", Example: "/path/to/file.mkv", Category: "Source File"},
-		{Name: "Source.Size", Type: "int64", Template: "{{.Source.Size}}", Description: "File size in bytes", Example: "1073741824", Category: "Source File"},
-		{Name: "Source.Runtime", Type: "int", Template: "{{.Source.Runtime}}", Description: "Runtime in minutes", Example: "58", Category: "Source File"},
-		{Name: "Source.Height", Type: "int", Template: "{{.Source.Height}}", Description: "Video height", Example: "1080", Category: "Source Quality"},
-		{Name: "Source.Width", Type: "int", Template: "{{.Source.Width}}", Description: "Video width", Example: "1920", Category: "Source Quality"},
-		{Name: "Source.Imdb", Type: "string", Template: "{{.Source.Imdb}}", Description: "IMDB ID from source", Example: "tt0903747", Category: "Source External IDs"},
-		{Name: "Source.Tvdb", Type: "string", Template: "{{.Source.Tvdb}}", Description: "TVDB ID from source", Example: "tvdb81189", Category: "Source External IDs"},
-		{Name: "Source.Identifier", Type: "string", Template: "{{.Source.Identifier}}", Description: "Source identifier", Example: "S01E01", Category: "Source Information"},
-		{Name: "Source.Date", Type: "string", Template: "{{.Source.Date}}", Description: "Source release date", Example: "2008-01-20", Category: "Source Information"},
-		{Name: "Source.Proper", Type: "bool", Template: "{{.Source.Proper}}", Description: "Is proper release", Example: "false", Category: "Source Quality"},
-		{Name: "Source.Extended", Type: "bool", Template: "{{.Source.Extended}}", Description: "Is extended version", Example: "false", Category: "Source Quality"},
-		{Name: "Source.Repack", Type: "bool", Template: "{{.Source.Repack}}", Description: "Is repack release", Example: "false", Category: "Source Quality"},
-		{Name: "Source.Languages", Type: "[]string", Template: "{{range .Source.Languages}}{{.}}{{end}}", Description: "Available languages", Example: "English, Spanish", Category: "Source Information"},
+		{
+			Name:        "Source.Title",
+			Type:        "string",
+			Template:    "{{.Source.Title}}",
+			Description: "Parsed media title",
+			Example:     "Breaking Bad",
+			Category:    "Source Information",
+		},
+		{
+			Name:        "Source.Year",
+			Type:        "uint16",
+			Template:    "{{.Source.Year}}",
+			Description: "Parsed release year",
+			Example:     "2008",
+			Category:    "Source Information",
+		},
+		{
+			Name:        "Source.Season",
+			Type:        "int",
+			Template:    "{{.Source.Season}}",
+			Description: "Parsed season number",
+			Example:     "1",
+			Category:    "Source Information",
+		},
+		{
+			Name:        "Source.Episode",
+			Type:        "int",
+			Template:    "{{.Source.Episode}}",
+			Description: "Parsed episode number",
+			Example:     "1",
+			Category:    "Source Information",
+		},
+		{
+			Name:        "Source.Quality",
+			Type:        "string",
+			Template:    "{{.Source.Quality}}",
+			Description: "Video quality",
+			Example:     "bluray",
+			Category:    "Source Quality",
+		},
+		{
+			Name:        "Source.Resolution",
+			Type:        "string",
+			Template:    "{{.Source.Resolution}}",
+			Description: "Video resolution",
+			Example:     "1080p",
+			Category:    "Source Quality",
+		},
+		{
+			Name:        "Source.Codec",
+			Type:        "string",
+			Template:    "{{.Source.Codec}}",
+			Description: "Video codec",
+			Example:     "x264",
+			Category:    "Source Quality",
+		},
+		{
+			Name:        "Source.Audio",
+			Type:        "string",
+			Template:    "{{.Source.Audio}}",
+			Description: "Audio codec",
+			Example:     "AC3",
+			Category:    "Source Quality",
+		},
+		{
+			Name:        "Source.File",
+			Type:        "string",
+			Template:    "{{.Source.File}}",
+			Description: "File path",
+			Example:     "/path/to/file.mkv",
+			Category:    "Source File",
+		},
+		{
+			Name:        "Source.Size",
+			Type:        "int64",
+			Template:    "{{.Source.Size}}",
+			Description: "File size in bytes",
+			Example:     "1073741824",
+			Category:    "Source File",
+		},
+		{
+			Name:        "Source.Runtime",
+			Type:        "int",
+			Template:    "{{.Source.Runtime}}",
+			Description: "Runtime in minutes",
+			Example:     "58",
+			Category:    "Source File",
+		},
+		{
+			Name:        "Source.Height",
+			Type:        "int",
+			Template:    "{{.Source.Height}}",
+			Description: "Video height",
+			Example:     "1080",
+			Category:    "Source Quality",
+		},
+		{
+			Name:        "Source.Width",
+			Type:        "int",
+			Template:    "{{.Source.Width}}",
+			Description: "Video width",
+			Example:     "1920",
+			Category:    "Source Quality",
+		},
+		{
+			Name:        "Source.Imdb",
+			Type:        "string",
+			Template:    "{{.Source.Imdb}}",
+			Description: "IMDB ID from source",
+			Example:     "tt0903747",
+			Category:    "Source External IDs",
+		},
+		{
+			Name:        "Source.Tvdb",
+			Type:        "string",
+			Template:    "{{.Source.Tvdb}}",
+			Description: "TVDB ID from source",
+			Example:     "tvdb81189",
+			Category:    "Source External IDs",
+		},
+		{
+			Name:        "Source.Identifier",
+			Type:        "string",
+			Template:    "{{.Source.Identifier}}",
+			Description: "Source identifier",
+			Example:     "S01E01",
+			Category:    "Source Information",
+		},
+		{
+			Name:        "Source.Date",
+			Type:        "string",
+			Template:    "{{.Source.Date}}",
+			Description: "Source release date",
+			Example:     "2008-01-20",
+			Category:    "Source Information",
+		},
+		{
+			Name:        "Source.Proper",
+			Type:        "bool",
+			Template:    "{{.Source.Proper}}",
+			Description: "Is proper release",
+			Example:     "false",
+			Category:    "Source Quality",
+		},
+		{
+			Name:        "Source.Extended",
+			Type:        "bool",
+			Template:    "{{.Source.Extended}}",
+			Description: "Is extended version",
+			Example:     "false",
+			Category:    "Source Quality",
+		},
+		{
+			Name:        "Source.Repack",
+			Type:        "bool",
+			Template:    "{{.Source.Repack}}",
+			Description: "Is repack release",
+			Example:     "false",
+			Category:    "Source Quality",
+		},
+		{
+			Name:        "Source.Languages",
+			Type:        "[]string",
+			Template:    "{{range .Source.Languages}}{{.}}{{end}}",
+			Description: "Available languages",
+			Example:     "English, Spanish",
+			Category:    "Source Information",
+		},
 	}
 }
 
@@ -1094,6 +2393,7 @@ func verifyGoTemplate(templateStr, dataType string) TemplateVerification {
 			validFields["Identifier"] = true
 			validFields["Episodes"] = true
 		}
+
 	case "notification":
 		{
 			validFields["Title"] = true
@@ -1124,16 +2424,23 @@ func verifyGoTemplate(templateStr, dataType string) TemplateVerification {
 	if strings.Contains(templateStr, "{{") && strings.Contains(templateStr, "}}") {
 		// Check for unmatched braces
 		openCount := strings.Count(templateStr, "{{")
+
 		closeCount := strings.Count(templateStr, "}}")
 		if openCount != closeCount {
 			verification.Valid = false
-			verification.Errors = append(verification.Errors, "Unmatched template braces - ensure every {{ has a matching }}")
+			verification.Errors = append(
+				verification.Errors,
+				"Unmatched template braces - ensure every {{ has a matching }}",
+			)
 		}
 
 		// Check for nested template syntax errors
 		if strings.Contains(templateStr, "{{{") || strings.Contains(templateStr, "}}}") {
 			verification.Valid = false
-			verification.Errors = append(verification.Errors, "Invalid template syntax - avoid triple braces {{{ or }}}")
+			verification.Errors = append(
+				verification.Errors,
+				"Invalid template syntax - avoid triple braces {{{ or }}}",
+			)
 		}
 
 		// Find all template references
@@ -1154,29 +2461,45 @@ func verifyGoTemplate(templateStr, dataType string) TemplateVerification {
 			fieldName := extractFieldName(ref)
 			if fieldName != "" && !validFields[fieldName] {
 				verification.Valid = false
-				verification.Errors = append(verification.Errors, "Unknown field reference: "+fieldName)
+				verification.Errors = append(
+					verification.Errors,
+					"Unknown field reference: "+fieldName,
+				)
 
 				// Suggest similar field names
 				suggestion := findSimilarField(fieldName, validFields)
 				if suggestion != "" {
-					verification.Suggestions = append(verification.Suggestions, "Did you mean '"+suggestion+"' instead of '"+fieldName+"'?")
+					verification.Suggestions = append(
+						verification.Suggestions,
+						"Did you mean '"+suggestion+"' instead of '"+fieldName+"'?",
+					)
 				}
 			}
 		}
 
 		// Add helpful suggestions
-		if dataType == "parser" && !strings.Contains(templateStr, ".Dbmovie.") && !strings.Contains(templateStr, ".Dbserie.") {
-			verification.Suggestions = append(verification.Suggestions, "Consider using nested fields like {{.Dbmovie.Title}} or {{.Dbserie.Seriename}} for richer data")
+		if dataType == "parser" && !strings.Contains(templateStr, ".Dbmovie.") &&
+			!strings.Contains(templateStr, ".Dbserie.") {
+			verification.Suggestions = append(
+				verification.Suggestions,
+				"Consider using nested fields like {{.Dbmovie.Title}} or {{.Dbserie.Seriename}} for richer data",
+			)
 		}
 
 		if !strings.Contains(templateStr, "{{if") && len(templateRefs) > 3 {
-			verification.Suggestions = append(verification.Suggestions, "Consider using conditional statements like {{if .Field}}...{{end}} to handle optional fields")
+			verification.Suggestions = append(
+				verification.Suggestions,
+				"Consider using conditional statements like {{if .Field}}...{{end}} to handle optional fields",
+			)
 		}
 
-		if dataType == "notification" && !strings.Contains(templateStr, ".Replaced") && !strings.Contains(templateStr, "range") {
-			verification.Suggestions = append(verification.Suggestions, "For notifications, consider showing replaced files using {{range .Replaced}}{{.}}{{end}}")
+		if dataType == "notification" && !strings.Contains(templateStr, ".Replaced") &&
+			!strings.Contains(templateStr, "range") {
+			verification.Suggestions = append(
+				verification.Suggestions,
+				"For notifications, consider showing replaced files using {{range .Replaced}}{{.}}{{end}}",
+			)
 		}
-
 	} else {
 		verification.Valid = false
 		verification.Errors = append(verification.Errors, "Template appears to be plain text - use Go template syntax with {{ }} for dynamic content")
@@ -1201,12 +2524,14 @@ func findTemplateReferences(template string) []string {
 		if startIdx == -1 {
 			break
 		}
+
 		startIdx += start
 
 		endIdx := strings.Index(template[startIdx:], "}}")
 		if endIdx == -1 {
 			break
 		}
+
 		endIdx += startIdx
 
 		ref := strings.TrimSpace(template[startIdx+2 : endIdx])
@@ -1222,7 +2547,20 @@ func findTemplateReferences(template string) []string {
 
 func isTemplateFunction(ref string) bool {
 	// Common Go template functions and structures
-	functions := []string{"range", "if", "else", "end", "with", "printf", "eq", "ne", "lt", "le", "gt", "ge"}
+	functions := []string{
+		"range",
+		"if",
+		"else",
+		"end",
+		"with",
+		"printf",
+		"eq",
+		"ne",
+		"lt",
+		"le",
+		"gt",
+		"ge",
+	}
 
 	for _, fn := range functions {
 		if strings.HasPrefix(ref, fn+" ") || ref == fn {
@@ -1263,11 +2601,13 @@ func extractFieldName(ref string) string {
 
 func findSimilarField(target string, validFields map[string]bool) string {
 	target = strings.ToLower(target)
+
 	bestMatch := ""
 	bestScore := 0
 
 	for field := range validFields {
 		fieldLower := strings.ToLower(field)
+
 		score := calculateSimilarity(target, fieldLower)
 		if score > bestScore && score > 50 { // Only suggest if > 50% similar
 			bestScore = score

@@ -11,19 +11,19 @@ import (
 	"time"
 )
 
-// readLogFiles reads and parses log files from the specified cutoff time
+// readLogFiles reads and parses log files from the specified cutoff time.
 func readLogFiles(cutoffTime time.Time, logLevel string, maxLines int64) ([]LogEntry, error) {
 	var entries []LogEntry
 
 	// Get log file path
 	logFile, err := getLogFilePath()
 	if err != nil {
-		return nil, fmt.Errorf("failed to locate log file: %v", err)
+		return nil, fmt.Errorf("failed to locate log file: %w", err)
 	}
 
 	file, err := os.Open(logFile)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open log file: %v", err)
+		return nil, fmt.Errorf("failed to open log file: %w", err)
 	}
 	defer file.Close()
 
@@ -58,7 +58,7 @@ func readLogFiles(cutoffTime time.Time, logLevel string, maxLines int64) ([]LogE
 	}
 
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("error reading log file: %v", err)
+		return nil, fmt.Errorf("error reading log file: %w", err)
 	}
 
 	// Sort entries by timestamp (newest first)
@@ -69,7 +69,7 @@ func readLogFiles(cutoffTime time.Time, logLevel string, maxLines int64) ([]LogE
 	return entries, nil
 }
 
-// parseLogLine parses a single log line into a LogEntry
+// parseLogLine parses a single log line into a LogEntry.
 func parseLogLine(line string, timestampRegex, levelRegex *regexp.Regexp) *LogEntry {
 	// Extract timestamp
 	timestampMatch := timestampRegex.FindString(line)
@@ -78,8 +78,10 @@ func parseLogLine(line string, timestampRegex, levelRegex *regexp.Regexp) *LogEn
 	}
 
 	// Parse timestamp
-	var timestamp time.Time
-	var err error
+	var (
+		timestamp time.Time
+		err       error
+	)
 
 	// Try different timestamp formats
 	formats := []string{
@@ -121,20 +123,30 @@ func parseLogLine(line string, timestampRegex, levelRegex *regexp.Regexp) *LogEn
 	}
 }
 
-// analyzeErrorPatterns analyzes log entries for error patterns
+// analyzeErrorPatterns analyzes log entries for error patterns.
 func analyzeErrorPatterns(entries []LogEntry) []ErrorPattern {
 	errorCounts := make(map[string]int)
 	errorExamples := make(map[string]string)
 
 	// Regex patterns for common error types
 	patterns := map[string]*regexp.Regexp{
-		"Connection Error":     regexp.MustCompile(`(?i)(connection.*fail|timeout|refused|unreachable)`),
-		"Database Error":       regexp.MustCompile(`(?i)(database|sql|query).*error`),
-		"File System Error":    regexp.MustCompile(`(?i)(file.*not.*found|permission.*denied|disk.*full|no.*space)`),
-		"Authentication Error": regexp.MustCompile(`(?i)(auth.*fail|unauthorized|forbidden|invalid.*token)`),
-		"Network Error":        regexp.MustCompile(`(?i)(network.*error|dns.*error|host.*not.*found)`),
-		"Parse Error":          regexp.MustCompile(`(?i)(parse.*error|invalid.*format|malformed)`),
-		"Configuration Error":  regexp.MustCompile(`(?i)(config.*error|missing.*setting|invalid.*config)`),
+		"Connection Error": regexp.MustCompile(
+			`(?i)(connection.*fail|timeout|refused|unreachable)`,
+		),
+		"Database Error": regexp.MustCompile(`(?i)(database|sql|query).*error`),
+		"File System Error": regexp.MustCompile(
+			`(?i)(file.*not.*found|permission.*denied|disk.*full|no.*space)`,
+		),
+		"Authentication Error": regexp.MustCompile(
+			`(?i)(auth.*fail|unauthorized|forbidden|invalid.*token)`,
+		),
+		"Network Error": regexp.MustCompile(
+			`(?i)(network.*error|dns.*error|host.*not.*found)`,
+		),
+		"Parse Error": regexp.MustCompile(`(?i)(parse.*error|invalid.*format|malformed)`),
+		"Configuration Error": regexp.MustCompile(
+			`(?i)(config.*error|missing.*setting|invalid.*config)`,
+		),
 	}
 
 	for _, entry := range entries {
@@ -147,7 +159,9 @@ func analyzeErrorPatterns(entries []LogEntry) []ErrorPattern {
 					if errorExamples[patternName] == "" {
 						errorExamples[patternName] = entry.Message
 					}
+
 					matched = true
+
 					break
 				}
 			}
@@ -155,6 +169,7 @@ func analyzeErrorPatterns(entries []LogEntry) []ErrorPattern {
 			// If no pattern matched, categorize as "Other Error"
 			if !matched {
 				errorCounts["Other Error"]++
+
 				if errorExamples["Other Error"] == "" {
 					errorExamples["Other Error"] = entry.Message
 				}
@@ -181,13 +196,17 @@ func analyzeErrorPatterns(entries []LogEntry) []ErrorPattern {
 	return patterns_result
 }
 
-// analyzePerformanceMetrics analyzes log entries for performance data
+// analyzePerformanceMetrics analyzes log entries for performance data.
 func analyzePerformanceMetrics(entries []LogEntry) []PerformanceMetric {
 	var metrics []PerformanceMetric
 
 	// Regex patterns for performance metrics
-	durationRegex := regexp.MustCompile(`(?i)(took|duration|elapsed).*?(\d+(?:\.\d+)?)\s*(ms|milliseconds|s|seconds)`)
-	responseTimeRegex := regexp.MustCompile(`(?i)(response.*time|latency).*?(\d+(?:\.\d+)?)\s*(ms|milliseconds|s|seconds)`)
+	durationRegex := regexp.MustCompile(
+		`(?i)(took|duration|elapsed).*?(\d+(?:\.\d+)?)\s*(ms|milliseconds|s|seconds)`,
+	)
+	responseTimeRegex := regexp.MustCompile(
+		`(?i)(response.*time|latency).*?(\d+(?:\.\d+)?)\s*(ms|milliseconds|s|seconds)`,
+	)
 
 	responseTimes := make([]float64, 0)
 	slowQueries := 0
@@ -200,6 +219,7 @@ func analyzePerformanceMetrics(entries []LogEntry) []PerformanceMetric {
 				if strings.Contains(matches[3], "s") && !strings.Contains(matches[3], "ms") {
 					duration *= 1000
 				}
+
 				responseTimes = append(responseTimes, duration)
 
 				// Flag slow operations (>1000ms)
@@ -216,6 +236,7 @@ func analyzePerformanceMetrics(entries []LogEntry) []PerformanceMetric {
 				if strings.Contains(matches[3], "s") && !strings.Contains(matches[3], "ms") {
 					responseTime *= 1000
 				}
+
 				responseTimes = append(responseTimes, responseTime)
 			}
 		}
@@ -266,7 +287,7 @@ func analyzePerformanceMetrics(entries []LogEntry) []PerformanceMetric {
 	return metrics
 }
 
-// analyzeAccessPatterns analyzes log entries for access pattern data
+// analyzeAccessPatterns analyzes log entries for access pattern data.
 func analyzeAccessPatterns(entries []LogEntry) []AccessPattern {
 	var patterns []AccessPattern
 
@@ -285,6 +306,7 @@ func analyzeAccessPatterns(entries []LogEntry) []AccessPattern {
 			endpoint := matches[2]
 
 			httpMethodCounts[method]++
+
 			endpointCounts[endpoint]++
 		}
 
@@ -310,10 +332,12 @@ func analyzeAccessPatterns(entries []LogEntry) []AccessPattern {
 		endpoint string
 		count    int
 	}
+
 	var endpoints []endpointCount
 	for endpoint, count := range endpointCounts {
 		endpoints = append(endpoints, endpointCount{endpoint, count})
 	}
+
 	sort.Slice(endpoints, func(i, j int) bool {
 		return endpoints[i].count > endpoints[j].count
 	})
@@ -323,6 +347,7 @@ func analyzeAccessPatterns(entries []LogEntry) []AccessPattern {
 		if i >= 10 {
 			break
 		}
+
 		patterns = append(patterns, AccessPattern{
 			Pattern:     fmt.Sprintf("Endpoint: %s", ep.endpoint),
 			Count:       ep.count,
@@ -333,7 +358,7 @@ func analyzeAccessPatterns(entries []LogEntry) []AccessPattern {
 	return patterns
 }
 
-// analyzeSystemHealth analyzes log entries for system health indicators
+// analyzeSystemHealth analyzes log entries for system health indicators.
 func analyzeSystemHealth(entries []LogEntry) []SystemHealthIndicator {
 	var indicators []SystemHealthIndicator
 
@@ -365,9 +390,11 @@ func analyzeSystemHealth(entries []LogEntry) []SystemHealthIndicator {
 		if memoryRegex.MatchString(entry.Message) {
 			memoryIssues++
 		}
+
 		if diskRegex.MatchString(entry.Message) {
 			diskIssues++
 		}
+
 		if networkRegex.MatchString(entry.Message) {
 			networkIssues++
 		}
@@ -424,7 +451,7 @@ func analyzeSystemHealth(entries []LogEntry) []SystemHealthIndicator {
 	return indicators
 }
 
-// Helper functions for statistics
+// Helper functions for statistics.
 func calculateAverage(values []float64) float64 {
 	if len(values) == 0 {
 		return 0
@@ -434,6 +461,7 @@ func calculateAverage(values []float64) float64 {
 	for _, v := range values {
 		sum += v
 	}
+
 	return sum / float64(len(values))
 }
 
@@ -447,10 +475,12 @@ func calculateMinMax(values []float64) (float64, float64) {
 		if v < min {
 			min = v
 		}
+
 		if v > max {
 			max = v
 		}
 	}
+
 	return min, max
 }
 
@@ -477,10 +507,11 @@ func getHealthStatus(value, threshold float64) string {
 	} else if value >= threshold {
 		return "warning"
 	}
+
 	return "healthy"
 }
 
-// Data structures for log analysis
+// Data structures for log analysis.
 type LogEntry struct {
 	Timestamp time.Time
 	Level     string

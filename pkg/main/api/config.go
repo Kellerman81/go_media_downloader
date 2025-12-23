@@ -12,19 +12,19 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	gin "github.com/gin-gonic/gin"
-	. "maragu.dev/gomponents"
-	. "maragu.dev/gomponents/html"
+	"maragu.dev/gomponents"
+	"maragu.dev/gomponents/html"
 )
 
-// Constants for common strings and values
+// Constants for common strings and values.
 const (
-	// HTTP Status Classes
+	// HTTP Status Classes.
 	AlertSuccess = "card border-0 shadow-sm border-success mb-4"
 	AlertDanger  = "card border-0 shadow-sm border-danger mb-4"
 	AlertWarning = "card border-0 shadow-sm border-warning mb-4"
 	AlertInfo    = "card border-0 shadow-sm border-info mb-4"
 
-	// CSS Classes
+	// CSS Classes.
 	ClassFormControl     = "form-control"
 	ClassFormGroup       = "form-group"
 	ClassFormCheck       = "form-check"
@@ -54,7 +54,7 @@ const (
 	ClassDFlex           = "d-flex mb-2"
 	ClassMb3             = "mb-3"
 
-	// Common Form Field Types
+	// Common Form Field Types.
 	FieldTypeText     = "text"
 	FieldTypePassword = "password"
 	FieldTypeNumber   = "number"
@@ -62,11 +62,11 @@ const (
 	FieldTypeSelect   = "select"
 	FieldTypeArray    = "array"
 
-	// API Endpoints
+	// API Endpoints.
 	APIAdminFeedParse       = "/api/admin/feedparse"
 	APIAdminFolderStructure = "/api/admin/folderstructure"
 
-	// Default Values
+	// Default Values.
 	DefaultLimit             = 0
 	MaxDisplayItems          = 20
 	DefaultProcessingTimeout = 30 * time.Second
@@ -74,7 +74,7 @@ const (
 
 // Helper functions for common operations
 
-// Optimized config builder with field caching
+// Optimized config builder with field caching.
 type OptimizedConfigBuilder struct {
 	c      *gin.Context
 	prefix string
@@ -82,7 +82,7 @@ type OptimizedConfigBuilder struct {
 	cache  map[string]string // Cache form values to avoid repeated lookups
 }
 
-// NewOptimizedConfigBuilder creates a new optimized config builder
+// NewOptimizedConfigBuilder creates a new optimized config builder.
 func NewOptimizedConfigBuilder(c *gin.Context, prefix, index string) *OptimizedConfigBuilder {
 	return &OptimizedConfigBuilder{
 		c:      c,
@@ -92,48 +92,55 @@ func NewOptimizedConfigBuilder(c *gin.Context, prefix, index string) *OptimizedC
 	}
 }
 
-// getString gets a string value with caching
+// getString gets a string value with caching.
 func (b *OptimizedConfigBuilder) getString(field string) string {
 	key := fmt.Sprintf("%s_%s_%s", b.prefix, b.index, field)
 	if cached, exists := b.cache[key]; exists {
 		return cached
 	}
+
 	value := b.c.PostForm(key)
+
 	b.cache[key] = value
+
 	return value
 }
 
-// getInt gets an int value with caching and default
+// getInt gets an int value with caching and default.
 func (b *OptimizedConfigBuilder) getInt(field string, defaultValue int) int {
 	str := b.getString(field)
 	if str == "" {
 		return defaultValue
 	}
+
 	if parsed, err := strconv.Atoi(str); err == nil {
 		return parsed
 	}
+
 	return defaultValue
 }
 
-// getBool gets a bool value with caching
+// getBool gets a bool value with caching.
 func (b *OptimizedConfigBuilder) getBool(field string) bool {
 	str := b.getString(field)
 	return str == "on" || str == "true"
 }
 
-// getFloat32 gets a float32 value with caching and default
+// getFloat32 gets a float32 value with caching and default.
 func (b *OptimizedConfigBuilder) getFloat32(field string, defaultValue float32) float32 {
 	str := b.getString(field)
 	if str == "" {
 		return defaultValue
 	}
+
 	if parsed, err := strconv.ParseFloat(str, 32); err == nil {
 		return float32(parsed)
 	}
+
 	return defaultValue
 }
 
-// getStringArray gets a string array value with efficient parsing
+// getStringArray gets a string array value with efficient parsing.
 func (b *OptimizedConfigBuilder) getStringArray(field string) []string {
 	key := fmt.Sprintf("%s_%s_%s", b.prefix, b.index, field)
 	values := b.c.PostFormArray(key)
@@ -145,10 +152,11 @@ func (b *OptimizedConfigBuilder) getStringArray(field string) []string {
 			result = append(result, strings.TrimSpace(v))
 		}
 	}
+
 	return result
 }
 
-// getIntArray gets an int array value with efficient parsing
+// getIntArray gets an int array value with efficient parsing.
 func (b *OptimizedConfigBuilder) getIntArray(field string) []int {
 	key := fmt.Sprintf("%s_%s_%s", b.prefix, b.index, field)
 	values := b.c.PostFormArray(key)
@@ -161,17 +169,18 @@ func (b *OptimizedConfigBuilder) getIntArray(field string) []int {
 			}
 		}
 	}
+
 	return result
 }
 
-// Cache for expensive template and configuration lookups
+// Cache for expensive template and configuration lookups.
 type configCache struct {
 	templates map[string]map[string][]string
 	mutex     sync.RWMutex
 	lastClear time.Time
 }
 
-// getTemplatesWithCache caches template lookups to avoid repeated config reads
+// getTemplatesWithCache caches template lookups to avoid repeated config reads.
 func getTemplatesWithCache(templateType string) []string {
 	globalConfigCache.mutex.RLock()
 
@@ -179,6 +188,7 @@ func getTemplatesWithCache(templateType string) []string {
 	if time.Since(globalConfigCache.lastClear) > 5*time.Minute {
 		globalConfigCache.mutex.RUnlock()
 		globalConfigCache.mutex.Lock()
+
 		globalConfigCache.templates = make(map[string]map[string][]string)
 		globalConfigCache.lastClear = time.Now()
 		globalConfigCache.mutex.Unlock()
@@ -189,6 +199,7 @@ func getTemplatesWithCache(templateType string) []string {
 		globalConfigCache.mutex.RUnlock()
 		return cached["options"]
 	}
+
 	globalConfigCache.mutex.RUnlock()
 
 	// Get fresh data and cache it
@@ -202,42 +213,48 @@ func getTemplatesWithCache(templateType string) []string {
 		if opts, exists := templateMap["options"]; exists {
 			templates = opts
 		}
+
 	case "list":
 		templateMap := config.GetSettingTemplatesFor("list")
 		if opts, exists := templateMap["options"]; exists {
 			templates = opts
 		}
+
 	case "quality":
 		templateMap := config.GetSettingTemplatesFor("quality")
 		if opts, exists := templateMap["options"]; exists {
 			templates = opts
 		}
+
 	case "scheduler":
 		templateMap := config.GetSettingTemplatesFor("scheduler")
 		if opts, exists := templateMap["options"]; exists {
 			templates = opts
 		}
+
 	case "notification":
 		templateMap := config.GetSettingTemplatesFor("notification")
 		if opts, exists := templateMap["options"]; exists {
 			templates = opts
 		}
+
 	default:
 		templates = []string{}
 	}
 
 	globalConfigCache.templates[templateType] = map[string][]string{"options": templates}
+
 	return templates
 }
 
-// BatchOperationResult represents the result of a batch operation
+// BatchOperationResult represents the result of a batch operation.
 type BatchOperationResult struct {
 	Successful int
 	Failed     int
 	Errors     []error
 }
 
-// processBatchOperation processes multiple items with error collection
+// processBatchOperation processes multiple items with error collection.
 func processBatchOperation[T any](items []T, processor func(T) error) BatchOperationResult {
 	result := BatchOperationResult{
 		Errors: make([]error, 0),
@@ -246,6 +263,7 @@ func processBatchOperation[T any](items []T, processor func(T) error) BatchOpera
 	for _, item := range items {
 		if err := processor(item); err != nil {
 			result.Failed++
+
 			result.Errors = append(result.Errors, err)
 		} else {
 			result.Successful++
@@ -255,32 +273,32 @@ func processBatchOperation[T any](items []T, processor func(T) error) BatchOpera
 	return result
 }
 
-// getStringBuilder gets a string builder from the pool
+// getStringBuilder gets a string builder from the pool.
 func getStringBuilder() *strings.Builder {
 	sb := stringBuilderPool.Get().(*strings.Builder)
 	sb.Reset()
 	return sb
 }
 
-// putStringBuilder returns a string builder to the pool
+// putStringBuilder returns a string builder to the pool.
 func putStringBuilder(sb *strings.Builder) {
 	stringBuilderPool.Put(sb)
 }
 
-// getNodeSlice gets a Node slice from the pool
-func getNodeSlice() []Node {
-	slice := nodeSlicePool.Get().([]Node)
+// getNodeSlice gets a Node slice from the pool.
+func getNodeSlice() []gomponents.Node {
+	slice := nodeSlicePool.Get().([]gomponents.Node)
 	return slice[:0] // Reset length but keep capacity
 }
 
-// putNodeSlice returns a Node slice to the pool
-func putNodeSlice(slice []Node) {
+// putNodeSlice returns a Node slice to the pool.
+func putNodeSlice(slice []gomponents.Node) {
 	if cap(slice) <= 100 { // Only pool reasonably sized slices
 		nodeSlicePool.Put(slice)
 	}
 }
 
-// Generic render config pattern to reduce duplication
+// Generic render config pattern to reduce duplication.
 type RenderConfigOptions struct {
 	Title          string
 	Subtitle       string
@@ -292,13 +310,14 @@ type RenderConfigOptions struct {
 }
 
 // extractFormKeys extracts form keys based on a prefix and field suffix pattern
-// Returns a map of keys found in the form data
+// Returns a map of keys found in the form data.
 func extractFormKeys(c *gin.Context, prefix string, fieldSuffix string) map[string]bool {
 	formKeys := make(map[string]bool)
 	for key := range c.Request.PostForm {
 		if !strings.Contains(key, fieldSuffix) || !strings.Contains(key, prefix) {
 			continue
 		}
+
 		parts := strings.Split(key, "_")
 		if len(parts) > 1 {
 			keyIndex := ""
@@ -310,15 +329,17 @@ func extractFormKeys(c *gin.Context, prefix string, fieldSuffix string) map[stri
 			} else {
 				keyIndex = parts[1] // downloader_X_Name -> X
 			}
+
 			if keyIndex != "" {
 				formKeys[keyIndex] = true
 			}
 		}
 	}
+
 	return formKeys
 }
 
-// ConfigSectionOptions holds configuration for rendering config sections
+// ConfigSectionOptions holds configuration for rendering config sections.
 type ConfigSectionOptions struct {
 	SectionTitle    string
 	SectionSubtitle string
@@ -329,13 +350,15 @@ type ConfigSectionOptions struct {
 	UpdatePath      string
 }
 
-// getFormField builds a form field name and retrieves its value
+// getFormField builds a form field name and retrieves its value.
 func getFormField(c *gin.Context, prefix string, index string, fieldName string) string {
 	if index == "" {
 		fieldKey := fmt.Sprintf("%s_%s", prefix, fieldName)
 		return c.PostForm(fieldKey)
 	}
+
 	fieldKey := fmt.Sprintf("%s_%s_%s", prefix, index, fieldName)
+
 	return c.PostForm(fieldKey)
 }
 
@@ -344,16 +367,19 @@ func getFormFieldArray(c *gin.Context, prefix string, index string, fieldName st
 		fieldKey := fmt.Sprintf("%s_%s", prefix, fieldName)
 		return c.PostFormArray(fieldKey)
 	}
+
 	fieldKey := fmt.Sprintf("%s_%s_%s", prefix, index, fieldName)
+
 	return c.PostFormArray(fieldKey)
 }
 
-// getFormFieldInt builds a form field name and retrieves its integer value
+// getFormFieldInt builds a form field name and retrieves its integer value.
 func getFormFieldInt(c *gin.Context, prefix string, index string, fieldName string) (int, error) {
 	value := getFormField(c, prefix, index, fieldName)
 	if value == "" {
 		return 0, nil
 	}
+
 	return strconv.Atoi(value)
 }
 
@@ -361,15 +387,16 @@ func getFormFieldInt(c *gin.Context, prefix string, index string, fieldName stri
 
 // validateNonNegative checks if a value is not negative
 
-// getFormFieldBool builds a form field name and retrieves its boolean value
+// getFormFieldBool builds a form field name and retrieves its boolean value.
 func getFormFieldBool(c *gin.Context, prefix string, index string, fieldName string) bool {
 	value := getFormField(c, prefix, index, fieldName)
 	return value == "on" || value == "true" || value == "1"
 }
 
-// createDownloaderConfig creates a DownloaderConfig from form data
+// createDownloaderConfig creates a DownloaderConfig from form data.
 func createDownloaderConfig(index string, c *gin.Context) config.DownloaderConfig {
 	var cfg config.DownloaderConfig
+
 	builder := NewConfigBuilder(c, fmt.Sprintf("downloader_%s", index), "")
 
 	builder.
@@ -389,14 +416,15 @@ func createDownloaderConfig(index string, c *gin.Context) config.DownloaderConfi
 	return cfg
 }
 
-// saveDownloaderConfigs saves the downloader configurations
+// saveDownloaderConfigs saves the downloader configurations.
 func saveDownloaderConfigs(configs []config.DownloaderConfig) error {
 	return saveConfig(configs)
 }
 
-// createListsConfig creates a ListsConfig from form data
+// createListsConfig creates a ListsConfig from form data.
 func createListsConfig(index string, c *gin.Context) config.ListsConfig {
 	var cfg config.ListsConfig
+
 	builder := NewConfigBuilder(c, fmt.Sprintf("lists_%s", index), "")
 
 	builder.
@@ -422,19 +450,52 @@ func createListsConfig(index string, c *gin.Context) config.ListsConfig {
 		SetString(&cfg.JellyfinServerURL, "JellyfinServerURL").
 		SetString(&cfg.JellyfinToken, "JellyfinToken").
 		SetString(&cfg.JellyfinUsername, "JellyfinUsername").
-		SetBool(&cfg.Enabled, "Enabled")
+		SetBool(&cfg.Enabled, "Enabled").
+		// Movie Scraper Configuration
+		SetString(&cfg.MovieScraperType, "MovieScraperType").
+		SetString(&cfg.MovieScraperStartURL, "MovieScraperStartURL").
+		SetString(&cfg.MovieScraperSiteURL, "MovieScraperSiteURL").
+		SetUint(&cfg.MovieScraperSiteID, "MovieScraperSiteID").
+		SetString(&cfg.MovieSceneNodeXPath, "MovieSceneNodeXPath").
+		SetString(&cfg.MovieTitleXPath, "MovieTitleXPath").
+		SetString(&cfg.MovieYearXPath, "MovieYearXPath").
+		SetString(&cfg.MovieImdbIDXPath, "MovieImdbIDXPath").
+		SetString(&cfg.MovieURLXPath, "MovieURLXPath").
+		SetString(&cfg.MovieRatingXPath, "MovieRatingXPath").
+		SetString(&cfg.MovieGenreXPath, "MovieGenreXPath").
+		SetString(&cfg.MovieReleaseDateXPath, "MovieReleaseDateXPath").
+		SetString(&cfg.MovieTitleAttribute, "MovieTitleAttribute").
+		SetString(&cfg.MovieURLAttribute, "MovieURLAttribute").
+		SetString(&cfg.MoviePaginationType, "MoviePaginationType").
+		SetInt(&cfg.MoviePageIncrement, "MoviePageIncrement").
+		SetString(&cfg.MoviePageURLPattern, "MoviePageURLPattern").
+		SetString(&cfg.MovieCSRFCookieName, "MovieCSRFCookieName").
+		SetString(&cfg.MovieCSRFHeaderName, "MovieCSRFHeaderName").
+		SetString(&cfg.MovieAPIURLPattern, "MovieAPIURLPattern").
+		SetInt(&cfg.MoviePageStartIndex, "MoviePageStartIndex").
+		SetString(&cfg.MovieResultsArrayPath, "MovieResultsArrayPath").
+		SetString(&cfg.MovieTitleField, "MovieTitleField").
+		SetString(&cfg.MovieYearField, "MovieYearField").
+		SetString(&cfg.MovieImdbIDField, "MovieImdbIDField").
+		SetString(&cfg.MovieURLField, "MovieURLField").
+		SetString(&cfg.MovieRatingField, "MovieRatingField").
+		SetString(&cfg.MovieGenreField, "MovieGenreField").
+		SetString(&cfg.MovieReleaseDateField, "MovieReleaseDateField").
+		SetString(&cfg.MovieDateFormat, "MovieDateFormat").
+		SetInt(&cfg.MovieWaitSeconds, "MovieWaitSeconds")
 
 	return cfg
 }
 
-// saveListsConfigs saves the lists configurations
+// saveListsConfigs saves the lists configurations.
 func saveListsConfigs(configs []config.ListsConfig) error {
 	return saveConfig(configs)
 }
 
-// createIndexersConfig creates an IndexersConfig from form data
+// createIndexersConfig creates an IndexersConfig from form data.
 func createIndexersConfig(index string, c *gin.Context) config.IndexersConfig {
 	var cfg config.IndexersConfig
+
 	builder := NewConfigBuilder(c, fmt.Sprintf("indexers_%s", index), "")
 
 	builder.
@@ -468,14 +529,15 @@ func createIndexersConfig(index string, c *gin.Context) config.IndexersConfig {
 	return cfg
 }
 
-// saveIndexersConfigs saves the indexers configurations
+// saveIndexersConfigs saves the indexers configurations.
 func saveIndexersConfigs(configs []config.IndexersConfig) error {
 	return saveConfig(configs)
 }
 
-// createPathsConfig creates a PathsConfig from form data
+// createPathsConfig creates a PathsConfig from form data.
 func createPathsConfig(index string, c *gin.Context) config.PathsConfig {
 	var cfg config.PathsConfig
+
 	builder := NewConfigBuilder(c, fmt.Sprintf("paths_%s", index), "")
 
 	builder.
@@ -512,14 +574,15 @@ func createPathsConfig(index string, c *gin.Context) config.PathsConfig {
 	return cfg
 }
 
-// savePathsConfigs saves the paths configurations
+// savePathsConfigs saves the paths configurations.
 func savePathsConfigs(configs []config.PathsConfig) error {
 	return saveConfig(configs)
 }
 
-// createNotificationConfig creates a NotificationConfig from form data
+// createNotificationConfig creates a NotificationConfig from form data.
 func createNotificationConfig(index string, c *gin.Context) config.NotificationConfig {
 	var cfg config.NotificationConfig
+
 	builder := NewConfigBuilder(c, fmt.Sprintf("notification_%s", index), "")
 
 	builder.
@@ -534,12 +597,12 @@ func createNotificationConfig(index string, c *gin.Context) config.NotificationC
 	return cfg
 }
 
-// saveNotificationConfigs saves the notification configurations
+// saveNotificationConfigs saves the notification configurations.
 func saveNotificationConfigs(configs []config.NotificationConfig) error {
 	return saveConfig(configs)
 }
 
-// fieldNameToUserFriendly converts field names like "LogFileSize" to "Log File Size"
+// fieldNameToUserFriendly converts field names like "LogFileSize" to "Log File Size".
 func fieldNameToUserFriendly(fieldName string) string {
 	// Add space before capital letters (except the first one)
 	re := regexp.MustCompile(`([a-z])([A-Z])`)
@@ -576,36 +639,41 @@ func fieldNameToUserFriendly(fieldName string) string {
 	return result
 }
 
-// createCommentLines splits comment text into formatted lines
-func createCommentLines(comment string) []Node {
-	var lineNodes []Node
+// createCommentLines splits comment text into formatted lines.
+func createCommentLines(comment string) []gomponents.Node {
+	var lineNodes []gomponents.Node
+
 	lines := strings.Split(comment, "\n")
 	for _, line := range lines {
 		trimmedLine := strings.TrimSpace(line)
 		if trimmedLine != "" {
-			lineNodes = append(lineNodes, Div(
-				Style("margin-bottom: 0.25rem;"),
-				Text(trimmedLine),
+			lineNodes = append(lineNodes, html.Div(
+				html.Style("margin-bottom: 0.25rem;"),
+				gomponents.Text(trimmedLine),
 			))
 		}
 	}
+
 	return lineNodes
 }
 
-// Save function (implement according to your storage method)
+// Save function (implement according to your storage method).
 func saveConfig(configv any) error {
 	d, err := json.Marshal(configv)
 	if err != nil {
 		logger.Logtype("info", 0).Err(err).Msg("log struct failed")
 		return err
 	}
+
 	logger.Logtype("info", 1).Str("data", string(d)).Msg("log struct")
+
 	return config.UpdateCfgEntryAny(configv)
 }
 
-// createRegexConfig creates a RegexConfig from form data
+// createRegexConfig creates a RegexConfig from form data.
 func createRegexConfig(index string, c *gin.Context) config.RegexConfig {
 	var cfg config.RegexConfig
+
 	builder := NewConfigBuilder(c, fmt.Sprintf("regex_%s", index), "")
 
 	builder.
@@ -616,7 +684,7 @@ func createRegexConfig(index string, c *gin.Context) config.RegexConfig {
 	return cfg
 }
 
-// saveRegexConfigs saves regex configurations
+// saveRegexConfigs saves regex configurations.
 func saveRegexConfigs(configs []config.RegexConfig) error {
 	return saveConfig(configs)
 }
@@ -624,7 +692,7 @@ func saveRegexConfigs(configs []config.RegexConfig) error {
 // validateRegexConfig validates regex configuration
 // validateRegexConfig validates regex configuration
 
-// filterStringArray filters out empty strings from array
+// filterStringArray filters out empty strings from array.
 func filterStringArray(input []string) []string {
 	var filtered []string
 	for _, item := range input {
@@ -632,22 +700,26 @@ func filterStringArray(input []string) []string {
 			filtered = append(filtered, item)
 		}
 	}
+
 	return filtered
 }
 
-// createQualityReorderConfigs creates QualityReorderConfig slice from form data
+// createQualityReorderConfigs creates QualityReorderConfig slice from form data.
 func createQualityReorderConfigs(index string, c *gin.Context) []config.QualityReorderConfig {
 	subformKeys := make(map[string]bool)
 	for key := range c.Request.PostForm {
-		if !strings.Contains(key, "_Name") || !strings.Contains(key, "quality_") || !strings.Contains(key, "_reorder_") {
+		if !strings.Contains(key, "_Name") || !strings.Contains(key, "quality_") ||
+			!strings.Contains(key, "_reorder_") {
 			continue
 		}
+
 		subformKeys[strings.Split(key, "_")[3]] = true
 	}
 
 	var configs []config.QualityReorderConfig
 	for reorderIndex := range subformKeys {
 		nameField := fmt.Sprintf("quality_%s_reorder_%s_Name", index, reorderIndex)
+
 		name := c.PostForm(nameField)
 		if name == "" {
 			continue
@@ -669,22 +741,26 @@ func createQualityReorderConfigs(index string, c *gin.Context) []config.QualityR
 
 		configs = append(configs, addConfig)
 	}
+
 	return configs
 }
 
-// createQualityIndexerConfigs creates QualityIndexerConfig slice from form data
+// createQualityIndexerConfigs creates QualityIndexerConfig slice from form data.
 func createQualityIndexerConfigs(index string, c *gin.Context) []config.QualityIndexerConfig {
 	subformKeys := make(map[string]bool)
 	for key := range c.Request.PostForm {
-		if !strings.Contains(key, "_TemplateIndexer") || !strings.Contains(key, "quality_") || !strings.Contains(key, "_indexer_") {
+		if !strings.Contains(key, "_TemplateIndexer") || !strings.Contains(key, "quality_") ||
+			!strings.Contains(key, "_indexer_") {
 			continue
 		}
+
 		subformKeys[strings.Split(key, "_")[3]] = true
 	}
 
 	var configs []config.QualityIndexerConfig
 	for indexerIndex := range subformKeys {
 		nameField := fmt.Sprintf("quality_%s_indexer_%s_TemplateIndexer", index, indexerIndex)
+
 		name := c.PostForm(nameField)
 		if name == "" {
 			continue
@@ -728,16 +804,18 @@ func createQualityIndexerConfigs(index string, c *gin.Context) []config.QualityI
 
 		configs = append(configs, indexerConfig)
 	}
+
 	return configs
 }
 
-// createQualityConfig creates a QualityConfig from form data
+// createQualityConfig creates a QualityConfig from form data.
 func createQualityConfig(index string, c *gin.Context) config.QualityConfig {
 	builder := NewConfigBuilder(c, "quality_main", index)
 
 	var qualityConfig config.QualityConfig
 
 	builder.SetStringRequired(&qualityConfig.Name, "Name")
+
 	if qualityConfig.Name == "" {
 		return config.QualityConfig{}
 	}
@@ -775,12 +853,12 @@ func createQualityConfig(index string, c *gin.Context) config.QualityConfig {
 	return qualityConfig
 }
 
-// saveQualityConfigs saves quality configurations
+// saveQualityConfigs saves quality configurations.
 func saveQualityConfigs(configs []config.QualityConfig) error {
 	return saveConfig(configs)
 }
 
-// createSchedulerConfig creates a SchedulerConfig from form data
+// createSchedulerConfig creates a SchedulerConfig from form data.
 func createSchedulerConfig(index string, c *gin.Context) config.SchedulerConfig {
 	prefix := "scheduler"
 
@@ -792,69 +870,91 @@ func createSchedulerConfig(index string, c *gin.Context) config.SchedulerConfig 
 	if val := getFormField(c, prefix, index, "IntervalImdb"); val != "" {
 		addConfig.IntervalImdb = val
 	}
+
 	if val := getFormField(c, prefix, index, "IntervalFeeds"); val != "" {
 		addConfig.IntervalFeeds = val
 	}
+
 	if val := getFormField(c, prefix, index, "IntervalFeedsRefreshSeries"); val != "" {
 		addConfig.IntervalFeedsRefreshSeries = val
 	}
+
 	if val := getFormField(c, prefix, index, "IntervalFeedsRefreshMovies"); val != "" {
 		addConfig.IntervalFeedsRefreshMovies = val
 	}
+
 	if val := getFormField(c, prefix, index, "IntervalFeedsRefreshSeriesFull"); val != "" {
 		addConfig.IntervalFeedsRefreshSeriesFull = val
 	}
+
 	if val := getFormField(c, prefix, index, "IntervalFeedsRefreshMoviesFull"); val != "" {
 		addConfig.IntervalFeedsRefreshMoviesFull = val
 	}
+
 	if val := getFormField(c, prefix, index, "IntervalIndexerMissing"); val != "" {
 		addConfig.IntervalIndexerMissing = val
 	}
+
 	if val := getFormField(c, prefix, index, "IntervalIndexerUpgrade"); val != "" {
 		addConfig.IntervalIndexerUpgrade = val
 	}
+
 	if val := getFormField(c, prefix, index, "IntervalIndexerMissingFull"); val != "" {
 		addConfig.IntervalIndexerMissingFull = val
 	}
+
 	if val := getFormField(c, prefix, index, "IntervalIndexerUpgradeFull"); val != "" {
 		addConfig.IntervalIndexerUpgradeFull = val
 	}
+
 	if val := getFormField(c, prefix, index, "IntervalIndexerMissingTitle"); val != "" {
 		addConfig.IntervalIndexerMissingTitle = val
 	}
+
 	if val := getFormField(c, prefix, index, "IntervalIndexerUpgradeTitle"); val != "" {
 		addConfig.IntervalIndexerUpgradeTitle = val
 	}
+
 	if val := getFormField(c, prefix, index, "IntervalIndexerMissingFullTitle"); val != "" {
 		addConfig.IntervalIndexerMissingFullTitle = val
 	}
+
 	if val := getFormField(c, prefix, index, "IntervalIndexerUpgradeFullTitle"); val != "" {
 		addConfig.IntervalIndexerUpgradeFullTitle = val
 	}
+
 	if val := getFormField(c, prefix, index, "IntervalIndexerRss"); val != "" {
 		addConfig.IntervalIndexerRss = val
 	}
+
 	if val := getFormField(c, prefix, index, "IntervalScanData"); val != "" {
 		addConfig.IntervalScanData = val
 	}
+
 	if val := getFormField(c, prefix, index, "IntervalScanDataMissing"); val != "" {
 		addConfig.IntervalScanDataMissing = val
 	}
+
 	if val := getFormField(c, prefix, index, "IntervalScanDataFlags"); val != "" {
 		addConfig.IntervalScanDataFlags = val
 	}
+
 	if val := getFormField(c, prefix, index, "IntervalScanDataimport"); val != "" {
 		addConfig.IntervalScanDataimport = val
 	}
+
 	if val := getFormField(c, prefix, index, "IntervalDatabaseBackup"); val != "" {
 		addConfig.IntervalDatabaseBackup = val
 	}
+
 	if val := getFormField(c, prefix, index, "IntervalDatabaseCheck"); val != "" {
 		addConfig.IntervalDatabaseCheck = val
 	}
+
 	if val := getFormField(c, prefix, index, "IntervalIndexerRssSeasons"); val != "" {
 		addConfig.IntervalIndexerRssSeasons = val
 	}
+
 	if val := getFormField(c, prefix, index, "IntervalIndexerRssSeasonsAll"); val != "" {
 		addConfig.IntervalIndexerRssSeasonsAll = val
 	}
@@ -863,69 +963,91 @@ func createSchedulerConfig(index string, c *gin.Context) config.SchedulerConfig 
 	if val := getFormField(c, prefix, index, "CronIndexerRssSeasonsAll"); val != "" {
 		addConfig.CronIndexerRssSeasonsAll = val
 	}
+
 	if val := getFormField(c, prefix, index, "CronIndexerRssSeasons"); val != "" {
 		addConfig.CronIndexerRssSeasons = val
 	}
+
 	if val := getFormField(c, prefix, index, "CronImdb"); val != "" {
 		addConfig.CronImdb = val
 	}
+
 	if val := getFormField(c, prefix, index, "CronFeeds"); val != "" {
 		addConfig.CronFeeds = val
 	}
+
 	if val := getFormField(c, prefix, index, "CronFeedsRefreshSeries"); val != "" {
 		addConfig.CronFeedsRefreshSeries = val
 	}
+
 	if val := getFormField(c, prefix, index, "CronFeedsRefreshMovies"); val != "" {
 		addConfig.CronFeedsRefreshMovies = val
 	}
+
 	if val := getFormField(c, prefix, index, "CronFeedsRefreshSeriesFull"); val != "" {
 		addConfig.CronFeedsRefreshSeriesFull = val
 	}
+
 	if val := getFormField(c, prefix, index, "CronFeedsRefreshMoviesFull"); val != "" {
 		addConfig.CronFeedsRefreshMoviesFull = val
 	}
+
 	if val := getFormField(c, prefix, index, "CronIndexerMissing"); val != "" {
 		addConfig.CronIndexerMissing = val
 	}
+
 	if val := getFormField(c, prefix, index, "CronIndexerUpgrade"); val != "" {
 		addConfig.CronIndexerUpgrade = val
 	}
+
 	if val := getFormField(c, prefix, index, "CronIndexerMissingFull"); val != "" {
 		addConfig.CronIndexerMissingFull = val
 	}
+
 	if val := getFormField(c, prefix, index, "CronIndexerUpgradeFull"); val != "" {
 		addConfig.CronIndexerUpgradeFull = val
 	}
+
 	if val := getFormField(c, prefix, index, "CronIndexerMissingTitle"); val != "" {
 		addConfig.CronIndexerMissingTitle = val
 	}
+
 	if val := getFormField(c, prefix, index, "CronIndexerUpgradeTitle"); val != "" {
 		addConfig.CronIndexerUpgradeTitle = val
 	}
+
 	if val := getFormField(c, prefix, index, "CronIndexerMissingFullTitle"); val != "" {
 		addConfig.CronIndexerMissingFullTitle = val
 	}
+
 	if val := getFormField(c, prefix, index, "CronIndexerUpgradeFullTitle"); val != "" {
 		addConfig.CronIndexerUpgradeFullTitle = val
 	}
+
 	if val := getFormField(c, prefix, index, "CronIndexerRss"); val != "" {
 		addConfig.CronIndexerRss = val
 	}
+
 	if val := getFormField(c, prefix, index, "CronScanData"); val != "" {
 		addConfig.CronScanData = val
 	}
+
 	if val := getFormField(c, prefix, index, "CronScanDataMissing"); val != "" {
 		addConfig.CronScanDataMissing = val
 	}
+
 	if val := getFormField(c, prefix, index, "CronScanDataFlags"); val != "" {
 		addConfig.CronScanDataFlags = val
 	}
+
 	if val := getFormField(c, prefix, index, "CronScanDataimport"); val != "" {
 		addConfig.CronScanDataimport = val
 	}
+
 	if val := getFormField(c, prefix, index, "CronDatabaseBackup"); val != "" {
 		addConfig.CronDatabaseBackup = val
 	}
+
 	if val := getFormField(c, prefix, index, "CronDatabaseCheck"); val != "" {
 		addConfig.CronDatabaseCheck = val
 	}
@@ -933,7 +1055,7 @@ func createSchedulerConfig(index string, c *gin.Context) config.SchedulerConfig 
 	return addConfig
 }
 
-// saveSchedulerConfigs saves scheduler configurations
+// saveSchedulerConfigs saves scheduler configurations.
 func saveSchedulerConfigs(configs []config.SchedulerConfig) error {
 	return saveConfig(configs)
 }
@@ -942,14 +1064,14 @@ func saveSchedulerConfigs(configs []config.SchedulerConfig) error {
 // CONFIGBUILDER SYSTEM - OPTIMIZED CONFIGURATION PROCESSING
 // ================================================================================
 
-// ConfigBuilder provides a fluent interface for building config structs from form data
+// ConfigBuilder provides a fluent interface for building config structs from form data.
 type ConfigBuilder struct {
 	context *gin.Context
 	prefix  string
 	index   string
 }
 
-// NewConfigBuilder creates a new ConfigBuilder instance
+// NewConfigBuilder creates a new ConfigBuilder instance.
 func NewConfigBuilder(c *gin.Context, prefix, index string) *ConfigBuilder {
 	return &ConfigBuilder{
 		context: c,
@@ -958,7 +1080,7 @@ func NewConfigBuilder(c *gin.Context, prefix, index string) *ConfigBuilder {
 	}
 }
 
-// SetString sets a string field if the form value is not empty
+// SetString sets a string field if the form value is not empty.
 func (cb *ConfigBuilder) SetString(target *string, fieldName string) *ConfigBuilder {
 	if value := getFormField(cb.context, cb.prefix, cb.index, fieldName); value != "" {
 		*target = value
@@ -966,13 +1088,13 @@ func (cb *ConfigBuilder) SetString(target *string, fieldName string) *ConfigBuil
 	return cb
 }
 
-// SetStringRequired sets a string field (always, even if empty)
+// SetStringRequired sets a string field (always, even if empty).
 func (cb *ConfigBuilder) SetStringRequired(target *string, fieldName string) *ConfigBuilder {
 	*target = getFormField(cb.context, cb.prefix, cb.index, fieldName)
 	return cb
 }
 
-// SetInt sets an int field if the form value is valid
+// SetInt sets an int field if the form value is valid.
 func (cb *ConfigBuilder) SetInt(target *int, fieldName string) *ConfigBuilder {
 	if value, err := getFormFieldInt(cb.context, cb.prefix, cb.index, fieldName); err == nil {
 		*target = value
@@ -980,13 +1102,13 @@ func (cb *ConfigBuilder) SetInt(target *int, fieldName string) *ConfigBuilder {
 	return cb
 }
 
-// SetBool sets a bool field from form checkbox/toggle values
+// SetBool sets a bool field from form checkbox/toggle values.
 func (cb *ConfigBuilder) SetBool(target *bool, fieldName string) *ConfigBuilder {
 	*target = getFormFieldBool(cb.context, cb.prefix, cb.index, fieldName)
 	return cb
 }
 
-// SetStringArray sets a string array field by splitting comma-separated values
+// SetStringArray sets a string array field by splitting comma-separated values.
 func (cb *ConfigBuilder) SetStringArray(target *[]string, fieldName string) *ConfigBuilder {
 	if value := getFormField(cb.context, cb.prefix, cb.index, fieldName); value != "" {
 		*target = strings.Split(value, ",")
@@ -995,54 +1117,77 @@ func (cb *ConfigBuilder) SetStringArray(target *[]string, fieldName string) *Con
 			(*target)[i] = strings.TrimSpace(v)
 		}
 	}
+
 	return cb
 }
 
-func (cb *ConfigBuilder) SetStringMultiSelectArray(target *[]string, fieldName string) *ConfigBuilder {
+func (cb *ConfigBuilder) SetStringMultiSelectArray(
+	target *[]string,
+	fieldName string,
+) *ConfigBuilder {
 	value := getFormFieldArray(cb.context, cb.prefix, cb.index, fieldName)
+
 	(*target) = value
 	return cb
 }
 
-// SetFloat32 sets a float32 field if the form value is valid
+// SetFloat32 sets a float32 field if the form value is valid.
 func (cb *ConfigBuilder) SetFloat32(target *float32, fieldName string) *ConfigBuilder {
 	if value := getFormField(cb.context, cb.prefix, cb.index, fieldName); value != "" {
 		if floatVal, err := strconv.ParseFloat(value, 32); err == nil {
 			*target = float32(floatVal)
 		}
 	}
+
 	return cb
 }
 
-// SetUint8 sets a uint8 field if the form value is valid
+// SetUint8 sets a uint8 field if the form value is valid.
 func (cb *ConfigBuilder) SetUint8(target *uint8, fieldName string) *ConfigBuilder {
-	if value, err := getFormFieldInt(cb.context, cb.prefix, cb.index, fieldName); err == nil && value >= 0 && value <= 255 {
+	if value, err := getFormFieldInt(cb.context, cb.prefix, cb.index, fieldName); err == nil &&
+		value >= 0 &&
+		value <= 255 {
 		*target = uint8(value)
 	}
+
 	return cb
 }
 
-// SetStringArrayFromForm sets a string array field from PostFormArray
+// SetStringArrayFromForm sets a string array field from PostFormArray.
 func (cb *ConfigBuilder) SetStringArrayFromForm(target *[]string, fieldName string) *ConfigBuilder {
 	fieldKey := fmt.Sprintf("%s_%s_%s", cb.prefix, cb.index, fieldName)
 	if values := cb.context.PostFormArray(fieldKey); len(values) > 0 {
 		*target = filterStringArray(values)
 	}
+
 	return cb
 }
 
-// SetUint16 sets a uint16 field if the form value is valid
+// SetUint16 sets a uint16 field if the form value is valid.
 func (cb *ConfigBuilder) SetUint16(target *uint16, fieldName string) *ConfigBuilder {
-	if value, err := getFormFieldInt(cb.context, cb.prefix, cb.index, fieldName); err == nil && value >= 0 && value <= 65535 {
+	if value, err := getFormFieldInt(cb.context, cb.prefix, cb.index, fieldName); err == nil &&
+		value >= 0 &&
+		value <= 65535 {
 		*target = uint16(value)
 	}
+
 	return cb
 }
 
-// SetIntArray sets an int array field by parsing comma-separated values
+// SetUint sets a uint field if the form value is valid.
+func (cb *ConfigBuilder) SetUint(target *uint, fieldName string) *ConfigBuilder {
+	if value, err := getFormFieldInt(cb.context, cb.prefix, cb.index, fieldName); err == nil && value >= 0 {
+		*target = uint(value)
+	}
+
+	return cb
+}
+
+// SetIntArray sets an int array field by parsing comma-separated values.
 func (cb *ConfigBuilder) SetIntArray(target *[]int, fieldName string) *ConfigBuilder {
 	if value := getFormField(cb.context, cb.prefix, cb.index, fieldName); value != "" {
 		parts := strings.Split(value, ",")
+
 		var intArray []int
 		for _, part := range parts {
 			if trimmed := strings.TrimSpace(part); trimmed != "" {
@@ -1051,18 +1196,30 @@ func (cb *ConfigBuilder) SetIntArray(target *[]int, fieldName string) *ConfigBui
 				}
 			}
 		}
+
 		if len(intArray) > 0 {
 			*target = intArray
 		}
 	}
+
 	return cb
 }
 
 func createImdbConfigFields(configv *config.ImdbConfig) []FormFieldDefinition {
 	return []FormFieldDefinition{
-		{Name: "Indexedtypes", Type: "selectarray", Value: configv.Indexedtypes, Options: map[string][]string{
-			"options": {"movie", "tvMovie", "tvmovie", "tvSeries", "tvseries", "video"},
-		}},
+		{
+			Name:  "Indexedtypes",
+			Type:  "selectarray",
+			Value: configv.Indexedtypes,
+			Options: []SelectOption{
+				{Value: "movie", Label: "movie"},
+				{Value: "tvMovie", Label: "tvMovie"},
+				{Value: "tvmovie", Label: "tvmovie"},
+				{Value: "tvSeries", Label: "tvSeries"},
+				{Value: "tvseries", Label: "tvseries"},
+				{Value: "video", Label: "video"},
+			},
+		},
 		{Name: "Indexedlanguages", Type: "array", Value: configv.Indexedlanguages},
 		{Name: "Indexfull", Type: "checkbox", Value: configv.Indexfull},
 		{Name: "ImdbIDSize", Type: "number", Value: configv.ImdbIDSize},

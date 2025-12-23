@@ -12,12 +12,12 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/structure"
 	gin "github.com/gin-gonic/gin"
-	. "maragu.dev/gomponents"
+	"maragu.dev/gomponents"
 	hx "maragu.dev/gomponents-htmx"
-	. "maragu.dev/gomponents/html"
+	"maragu.dev/gomponents/html"
 )
 
-// FolderOrganizationResults represents the results from folder organization
+// FolderOrganizationResults represents the results from folder organization.
 type FolderOrganizationResults struct {
 	TotalFiles     int                 `json:"total_files"`
 	ProcessedFiles int                 `json:"processed_files"`
@@ -29,7 +29,7 @@ type FolderOrganizationResults struct {
 	Summary        OrganizationSummary `json:"summary"`
 }
 
-// FileOperation represents a single file operation during organization
+// FileOperation represents a single file operation during organization.
 type FileOperation struct {
 	SourcePath string `json:"source_path"`
 	TargetPath string `json:"target_path"`
@@ -41,13 +41,13 @@ type FileOperation struct {
 	Resolution string `json:"resolution"`
 }
 
-// OrganizationError represents an error that occurred during organization
+// OrganizationError represents an error that occurred during organization.
 type OrganizationError struct {
 	FilePath string `json:"file_path"`
 	Error    string `json:"error"`
 }
 
-// OrganizationSummary provides a summary of the organization operation
+// OrganizationSummary provides a summary of the organization operation.
 type OrganizationSummary struct {
 	ProcessingTime   string `json:"processing_time"`
 	MovedFiles       int    `json:"moved_files"`
@@ -62,52 +62,67 @@ type OrganizationSummary struct {
 // FOLDER STRUCTURE PAGE
 // ================================================================================
 
-// renderFolderStructurePage renders a page for organizing a single folder
-func renderFolderStructurePage(csrfToken string) Node {
+// renderFolderStructurePage renders a page for organizing a single folder.
+func renderFolderStructurePage(csrfToken string) gomponents.Node {
 	// Get available media configurations
 	media := config.GetSettingsMediaAll()
+
 	var mediaConfigs []string
 	for i := range media.Movies {
 		mediaConfigs = append(mediaConfigs, media.Movies[i].NamePrefix)
 	}
+
 	for i := range media.Series {
 		mediaConfigs = append(mediaConfigs, media.Series[i].NamePrefix)
 	}
+
 	cfgdata := config.GetSettingsPathAll()
+
 	var pathConfigs []string
 	for i := range cfgdata {
 		pathConfigs = append(pathConfigs, cfgdata[i].Name)
 	}
 
-	return Div(
-		Class("config-section-enhanced"),
+	return html.Div(
+		html.Class("config-section-enhanced"),
 
 		// Enhanced page header with gradient background
-		Div(
-			Class("page-header-enhanced"),
-			Div(
-				Class("header-content"),
-				Div(
-					Class("header-icon-wrapper"),
-					I(Class("fa-solid fa-folder header-icon")),
+		html.Div(
+			html.Class("page-header-enhanced"),
+			html.Div(
+				html.Class("header-content"),
+				html.Div(
+					html.Class("header-icon-wrapper"),
+					html.I(html.Class("fa-solid fa-folder header-icon")),
 				),
-				Div(
-					Class("header-text"),
-					H2(Class("header-title"), Text("Folder Structure Organizer")),
-					P(Class("header-subtitle"), Text("Organize and structure a single folder using your media configuration templates. This tool will scan the folder, parse media files, and organize them according to your naming conventions.")),
+				html.Div(
+					html.Class("header-text"),
+					html.H2(
+						html.Class("header-title"),
+						gomponents.Text("Folder Structure Organizer"),
+					),
+					html.P(
+						html.Class("header-subtitle"),
+						gomponents.Text(
+							"Organize and structure a single folder using your media configuration templates. This tool will scan the folder, parse media files, and organize them according to your naming conventions.",
+						),
+					),
 				),
 			),
 		),
 
-		Form(
-			Class("config-form"),
-			ID("folderStructureForm"),
+		html.Form(
+			html.Class("config-form"),
+			html.ID("folderStructureForm"),
 
-			Div(
-				Class("row"),
-				Div(
-					Class("col-md-6"),
-					H5(Class("form-section-title"), Text("Folder & Configuration")),
+			html.Div(
+				html.Class("row"),
+				html.Div(
+					html.Class("col-md-6"),
+					html.H5(
+						html.Class("form-section-title"),
+						gomponents.Text("Folder & Configuration"),
+					),
 
 					renderFormGroup("structure", map[string]string{
 						"FolderPath": "Path to the folder to organize (must exist)",
@@ -132,9 +147,12 @@ func renderFolderStructurePage(csrfToken string) Node {
 					}),
 				),
 
-				Div(
-					Class("col-md-6"),
-					H5(Class("form-section-title"), Text("Organization Options")),
+				html.Div(
+					html.Class("col-md-6"),
+					html.H5(
+						html.Class("form-section-title"),
+						gomponents.Text("Organization Options"),
+					),
 
 					renderFormGroup("structure", map[string]string{
 						"DefaultTemplate": "Default template for organization",
@@ -170,102 +188,177 @@ func renderFolderStructurePage(csrfToken string) Node {
 				),
 			),
 
-			Div(
-				Class("form-group submit-group"),
-				Button(
-					Class(ClassBtnPrimary),
-					Text("Organize Folder"),
-					Type("button"),
+			html.Div(
+				html.Class("form-group submit-group"),
+				html.Button(
+					html.Class(ClassBtnPrimary),
+					gomponents.Text("Organize Folder"),
+					html.Type("button"),
 					hx.Target("#structureResults"),
 					hx.Swap("innerHTML"),
 					hx.Post("/api/admin/folderstructure"),
 					hx.Headers(createHTMXHeaders(csrfToken)),
 					hx.Include("#folderStructureForm"),
 				),
-				Button(
-					Type("button"),
-					Class("btn btn-secondary ml-2"),
-					Attr("onclick", "document.getElementById('folderStructureForm').reset(); document.getElementById('structureResults').innerHTML = '';"),
-					Text("Reset"),
+				html.Button(
+					html.Type("button"),
+					html.Class("btn btn-secondary ml-2"),
+					gomponents.Attr(
+						"onclick",
+						"document.getElementById('folderStructureForm').reset(); document.getElementById('structureResults').innerHTML = '';",
+					),
+					gomponents.Text("Reset"),
 				),
 			),
 		),
 
-		Div(
-			ID("structureResults"),
-			Class("mt-4"),
-			Style("min-height: 50px;"),
+		html.Div(
+			html.ID("structureResults"),
+			html.Class("mt-4"),
+			html.Style("min-height: 50px;"),
 		),
 
 		// Instructions
-		Div(
-			Class("mt-4 card border-0 shadow-sm border-info mb-4"),
-			Div(
-				Class("card-header border-0"),
-				Style("background: linear-gradient(135deg, #d1ecf1 0%, #bee5eb 100%); border-radius: 15px 15px 0 0;"),
-				Div(
-					Class("d-flex align-items-center"),
-					Span(Class("badge bg-info me-3"), I(Class("fas fa-folder-open me-1")), Text("Organization")),
-					H5(Class("card-title mb-0 text-info fw-bold"), Text("Folder Organization Information")),
+		html.Div(
+			html.Class("mt-4 card border-0 shadow-sm border-info mb-4"),
+			html.Div(
+				html.Class("card-header border-0"),
+				html.Style(
+					"background: linear-gradient(135deg, #d1ecf1 0%, #bee5eb 100%); border-radius: 15px 15px 0 0;",
+				),
+				html.Div(
+					html.Class("d-flex align-items-center"),
+					html.Span(
+						html.Class("badge bg-info me-3"),
+						html.I(html.Class("fas fa-folder-open me-1")),
+						gomponents.Text("Organization"),
+					),
+					html.H5(
+						html.Class("card-title mb-0 text-info fw-bold"),
+						gomponents.Text("Folder Organization Information"),
+					),
 				),
 			),
-			Div(
-				Class("card-body"),
-				P(Class("card-text text-muted mb-3"), Text("Configure your folder organization settings and understand the options below:")),
-				Ul(
-					Class("list-unstyled mb-3"),
-					Li(Class("mb-2 d-flex align-items-start"),
-						I(Class("fas fa-folder me-2 mt-1 text-success")),
-						Div(Strong(Text("Folder Path: ")), Text("Full path to the folder containing media files to organize"))),
-					Li(Class("mb-2 d-flex align-items-start"),
-						I(Class("fas fa-cogs me-2 mt-1 text-info")),
-						Div(Strong(Text("Media Config: ")), Text("Configuration containing naming templates and organization rules"))),
-					Li(Class("mb-2 d-flex align-items-start"),
-						I(Class("fas fa-code me-2 mt-1 text-primary")),
-						Div(Strong(Text("Templates: ")), Text("Templates define how files should be named and organized"))),
-					Li(Class("mb-2 d-flex align-items-start"),
-						I(Class("fas fa-clock me-2 mt-1 text-warning")),
-						Div(Strong(Text("Check Runtime: ")), Text("Validates media file runtime against expected values"))),
-					Li(Class("mb-2 d-flex align-items-start"),
-						I(Class("fas fa-language me-2 mt-1 text-warning")),
-						Div(Strong(Text("Delete Wrong Language: ")), Text("Removes files that don't match language preferences"))),
-					Li(Class("mb-2 d-flex align-items-start"),
-						I(Class("fas fa-hashtag me-2 mt-1 text-primary")),
-						Div(Strong(Text("Manual ID: ")), Text("Override automatic ID detection with a specific value"))),
+			html.Div(
+				html.Class("card-body"),
+				html.P(
+					html.Class("card-text text-muted mb-3"),
+					gomponents.Text(
+						"Configure your folder organization settings and understand the options below:",
+					),
+				),
+				html.Ul(
+					html.Class("list-unstyled mb-3"),
+					html.Li(
+						html.Class("mb-2 d-flex align-items-start"),
+						html.I(html.Class("fas fa-folder me-2 mt-1 text-success")),
+						html.Div(
+							html.Strong(gomponents.Text("Folder Path: ")),
+							gomponents.Text(
+								"Full path to the folder containing media files to organize",
+							),
+						),
+					),
+					html.Li(
+						html.Class("mb-2 d-flex align-items-start"),
+						html.I(html.Class("fas fa-cogs me-2 mt-1 text-info")),
+						html.Div(
+							html.Strong(gomponents.Text("Media Config: ")),
+							gomponents.Text(
+								"Configuration containing naming templates and organization rules",
+							),
+						),
+					),
+					html.Li(
+						html.Class("mb-2 d-flex align-items-start"),
+						html.I(html.Class("fas fa-code me-2 mt-1 text-primary")),
+						html.Div(
+							html.Strong(gomponents.Text("Templates: ")),
+							gomponents.Text(
+								"Templates define how files should be named and organized",
+							),
+						),
+					),
+					html.Li(
+						html.Class("mb-2 d-flex align-items-start"),
+						html.I(html.Class("fas fa-clock me-2 mt-1 text-warning")),
+						html.Div(
+							html.Strong(gomponents.Text("Check Runtime: ")),
+							gomponents.Text("Validates media file runtime against expected values"),
+						),
+					),
+					html.Li(
+						html.Class("mb-2 d-flex align-items-start"),
+						html.I(html.Class("fas fa-language me-2 mt-1 text-warning")),
+						html.Div(
+							html.Strong(gomponents.Text("Delete Wrong Language: ")),
+							gomponents.Text("Removes files that don't match language preferences"),
+						),
+					),
+					html.Li(
+						html.Class("mb-2 d-flex align-items-start"),
+						html.I(html.Class("fas fa-hashtag me-2 mt-1 text-primary")),
+						html.Div(
+							html.Strong(gomponents.Text("Manual ID: ")),
+							gomponents.Text(
+								"Override automatic ID detection with a specific value",
+							),
+						),
+					),
 				),
 
-				Div(
-					Class("alert alert-light border-0 mt-3 mb-0"),
-					Style("background-color: rgba(13, 110, 253, 0.1); border-radius: 8px; padding: 0.75rem 1rem;"),
-					Div(
-						Class("d-flex align-items-start"),
-						I(Class("fas fa-eye me-2 mt-1"), Style("color: #0d6efd; font-size: 0.9rem;")),
-						Div(
-							Strong(Style("color: #0d6efd;"), Text("Dry Run: ")),
-							Text("When enabled, shows what changes would be made without actually moving or renaming files. Recommended for testing before actual organization."),
+				html.Div(
+					html.Class("alert alert-light border-0 mt-3 mb-0"),
+					html.Style(
+						"background-color: rgba(13, 110, 253, 0.1); border-radius: 8px; padding: 0.75rem 1rem;",
+					),
+					html.Div(
+						html.Class("d-flex align-items-start"),
+						html.I(
+							html.Class("fas fa-eye me-2 mt-1"),
+							html.Style("color: #0d6efd; font-size: 0.9rem;"),
+						),
+						html.Div(
+							html.Strong(
+								html.Style("color: #0d6efd;"),
+								gomponents.Text("Dry Run: "),
+							),
+							gomponents.Text(
+								"When enabled, shows what changes would be made without actually moving or renaming files. Recommended for testing before actual organization.",
+							),
 						),
 					),
 				),
 			),
 		),
 
-		Div(
-			Class("alert alert-warning border-0 mb-0"),
-			Style("background-color: rgba(255, 193, 7, 0.1); border-radius: 8px; padding: 0.75rem 1rem; border-left: 4px solid #ffc107;"),
-			Div(
-				Class("d-flex align-items-start"),
-				I(Class("fas fa-exclamation-triangle me-2 mt-1"), Style("color: #ffc107; font-size: 0.9rem;")),
-				Div(
-					Strong(Style("color: #856404;"), Text("Warning: ")),
-					Text("Organization will move and rename files according to your templates. Always test with dry run first!"),
+		html.Div(
+			html.Class("alert alert-warning border-0 mb-0"),
+			html.Style(
+				"background-color: rgba(255, 193, 7, 0.1); border-radius: 8px; padding: 0.75rem 1rem; border-left: 4px solid #ffc107;",
+			),
+			html.Div(
+				html.Class("d-flex align-items-start"),
+				html.I(
+					html.Class("fas fa-exclamation-triangle me-2 mt-1"),
+					html.Style("color: #ffc107; font-size: 0.9rem;"),
+				),
+				html.Div(
+					html.Strong(html.Style("color: #856404;"), gomponents.Text("Warning: ")),
+					gomponents.Text(
+						"Organization will move and rename files according to your templates. Always test with dry run first!",
+					),
 				),
 			),
 		),
 	)
 }
 
-// previewFolderOrganization scans a folder and shows what would be organized without making changes
-func previewFolderOrganization(ctx context.Context, folderPath string) (*FolderOrganizationResults, error) {
+// previewFolderOrganization scans a folder and shows what would be organized without making changes.
+func previewFolderOrganization(
+	ctx context.Context,
+	folderPath string,
+) (*FolderOrganizationResults, error) {
 	startTime := time.Now()
 	results := &FolderOrganizationResults{
 		FileOperations: make([]FileOperation, 0),
@@ -279,6 +372,7 @@ func previewFolderOrganization(ctx context.Context, folderPath string) (*FolderO
 				FilePath: fpath,
 				Error:    errw.Error(),
 			})
+
 			return nil // Continue processing other files
 		}
 
@@ -306,7 +400,12 @@ func previewFolderOrganization(ctx context.Context, folderPath string) (*FolderO
 		resolution := "HD"
 
 		// Simulate what the organized path would be
-		targetPath := filepath.Join(folderPath, "organized", mediaTitle+" ("+mediaYear+")", info.Name())
+		targetPath := filepath.Join(
+			folderPath,
+			"organized",
+			mediaTitle+" ("+mediaYear+")",
+			info.Name(),
+		)
 
 		operation := FileOperation{
 			SourcePath: fpath,
@@ -321,6 +420,7 @@ func previewFolderOrganization(ctx context.Context, folderPath string) (*FolderO
 
 		results.FileOperations = append(results.FileOperations, operation)
 		results.ProcessedFiles++
+
 		results.OrganizedFiles++
 
 		return nil
@@ -331,6 +431,7 @@ func previewFolderOrganization(ctx context.Context, folderPath string) (*FolderO
 
 	// Calculate summary
 	processingTime := time.Since(startTime)
+
 	results.Summary = OrganizationSummary{
 		ProcessingTime:   processingTime.String(),
 		MovedFiles:       results.OrganizedFiles,
@@ -344,8 +445,16 @@ func previewFolderOrganization(ctx context.Context, folderPath string) (*FolderO
 	return results, nil
 }
 
-// organizeFolderWithResults organizes a folder and returns detailed results
-func organizeFolderWithResults(ctx context.Context, folderPath string, mediaTypeConfig *config.MediaTypeConfig, dataImportConfig *config.MediaDataImportConfig, defaultTemplate string, checkRuntime, deleteWrongLanguage bool, manualID uint) (*FolderOrganizationResults, error) {
+// organizeFolderWithResults organizes a folder and returns detailed results.
+func organizeFolderWithResults(
+	ctx context.Context,
+	folderPath string,
+	mediaTypeConfig *config.MediaTypeConfig,
+	dataImportConfig *config.MediaDataImportConfig,
+	defaultTemplate string,
+	checkRuntime, deleteWrongLanguage bool,
+	manualID uint,
+) (*FolderOrganizationResults, error) {
 	startTime := time.Now()
 	results := &FolderOrganizationResults{
 		FileOperations: make([]FileOperation, 0),
@@ -363,7 +472,6 @@ func organizeFolderWithResults(ctx context.Context, folderPath string, mediaType
 		deleteWrongLanguage,
 		manualID,
 	)
-
 	if err != nil {
 		results.Errors = append(results.Errors, OrganizationError{
 			FilePath: folderPath,
@@ -379,7 +487,9 @@ func organizeFolderWithResults(ctx context.Context, folderPath string, mediaType
 		if errw != nil || info.IsDir() {
 			return nil
 		}
+
 		results.TotalFiles++
+
 		return nil
 	})
 
@@ -387,6 +497,7 @@ func organizeFolderWithResults(ctx context.Context, folderPath string, mediaType
 
 	// Calculate summary
 	processingTime := time.Since(startTime)
+
 	results.Summary = OrganizationSummary{
 		ProcessingTime:   processingTime.String(),
 		MovedFiles:       results.OrganizedFiles,
@@ -414,7 +525,7 @@ func organizeFolderWithResults(ctx context.Context, folderPath string, mediaType
 	return results, nil
 }
 
-// HandleFolderStructure handles folder structure organization requests
+// HandleFolderStructure handles folder structure organization requests.
 func HandleFolderStructure(c *gin.Context) {
 	if err := c.Request.ParseForm(); err != nil {
 		c.String(http.StatusOK, renderAlert("Failed to parse form data: "+err.Error(), "danger"))
@@ -431,7 +542,11 @@ func HandleFolderStructure(c *gin.Context) {
 	manualIDStr := c.PostForm("structure_ManualID")
 
 	if folderPath == "" || mediaConfig == "" {
-		c.String(http.StatusOK, renderAlert("Please fill in folder path and media configuration", "warning"))
+		c.String(
+			http.StatusOK,
+			renderAlert("Please fill in folder path and media configuration", "warning"),
+		)
+
 		return
 	}
 
@@ -444,6 +559,7 @@ func HandleFolderStructure(c *gin.Context) {
 			mediaTypeConfig = media
 			return nil
 		}
+
 		return nil
 	})
 
@@ -468,11 +584,14 @@ func HandleFolderStructure(c *gin.Context) {
 
 	// Run folder organization or preview
 	ctx := context.Background()
+
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	var organizationResults *FolderOrganizationResults
-	var err error
+	var (
+		organizationResults *FolderOrganizationResults
+		err                 error
+	)
 
 	if dryRun {
 		// Preview mode - scan folder and show what would be organized
@@ -503,7 +622,7 @@ func HandleFolderStructure(c *gin.Context) {
 	c.String(http.StatusOK, renderFolderStructureResults(result))
 }
 
-// renderFolderStructureResults renders the folder structure organization results
+// renderFolderStructureResults renders the folder structure organization results.
 func renderFolderStructureResults(result map[string]any) string {
 	folderPath, _ := result["folder_path"].(string)
 	mediaConfig, _ := result["media_config"].(string)
@@ -518,46 +637,81 @@ func renderFolderStructureResults(result map[string]any) string {
 	organizationResults, hasResults := result["organization_results"].(*FolderOrganizationResults)
 	if !hasResults {
 		return renderComponentToString(
-			Div(
-				Class("card border-0 shadow-sm border-danger mb-4"),
-				Div(
-					Class("card-header border-0"),
-					Style("background: linear-gradient(135deg, #f8d7da 0%, #f5c6cb 100%); border-radius: 15px 15px 0 0;"),
-					Div(
-						Class("d-flex align-items-center"),
-						Span(Class("badge bg-danger me-3"), I(Class("fas fa-exclamation-triangle me-1")), Text("Error")),
-						H5(Class("card-title mb-0 text-danger fw-bold"), Text("Organization Error")),
+			html.Div(
+				html.Class("card border-0 shadow-sm border-danger mb-4"),
+				html.Div(
+					html.Class("card-header border-0"),
+					html.Style(
+						"background: linear-gradient(135deg, #f8d7da 0%, #f5c6cb 100%); border-radius: 15px 15px 0 0;",
+					),
+					html.Div(
+						html.Class("d-flex align-items-center"),
+						html.Span(
+							html.Class("badge bg-danger me-3"),
+							html.I(html.Class("fas fa-exclamation-triangle me-1")),
+							gomponents.Text("Error"),
+						),
+						html.H5(
+							html.Class("card-title mb-0 text-danger fw-bold"),
+							gomponents.Text("Organization Error"),
+						),
 					),
 				),
-				Div(
-					Class("card-body"),
-					P(Class("card-text text-muted mb-0"), Text("No results were returned from the folder organization operation.")),
+				html.Div(
+					html.Class("card-body"),
+					html.P(
+						html.Class("card-text text-muted mb-0"),
+						gomponents.Text(
+							"No results were returned from the folder organization operation.",
+						),
+					),
 				),
 			),
 		)
 	}
 
 	// Create components for displaying results
-	var components []Node
+	var components []gomponents.Node
 
 	// Add basic information table
 	components = append(components,
-		Table(
-			Class("table table-sm"),
-			TBody(
-				Tr(Td(Text("Folder Path:")), Td(Text(folderPath))),
-				Tr(Td(Text("Media Configuration:")), Td(Text(mediaConfig))),
-				Tr(Td(Text("Data Import Template:")), Td(Text(dataImportTemplate))),
-				Tr(Td(Text("Default Template:")), Td(Text(defaultTemplate))),
-				Tr(Td(Text("Check Runtime:")), Td(Text(fmt.Sprintf("%t", checkRuntime)))),
-				Tr(Td(Text("Delete Wrong Language:")), Td(Text(fmt.Sprintf("%t", deleteWrongLanguage)))),
-				Tr(Td(Text("Manual ID:")), Td(Text(func() string {
-					if manualID > 0 {
-						return fmt.Sprintf("%d", manualID)
-					}
-					return "Auto-detect"
-				}()))),
-				Tr(Td(Text("Mode:")), Td(Text(func() string {
+		html.Table(
+			html.Class("table table-sm"),
+			html.TBody(
+				html.Tr(
+					html.Td(gomponents.Text("Folder Path:")),
+					html.Td(gomponents.Text(folderPath)),
+				),
+				html.Tr(
+					html.Td(gomponents.Text("Media Configuration:")),
+					html.Td(gomponents.Text(mediaConfig)),
+				),
+				html.Tr(
+					html.Td(gomponents.Text("Data Import Template:")),
+					html.Td(gomponents.Text(dataImportTemplate)),
+				),
+				html.Tr(
+					html.Td(gomponents.Text("Default Template:")),
+					html.Td(gomponents.Text(defaultTemplate)),
+				),
+				html.Tr(
+					html.Td(gomponents.Text("Check Runtime:")),
+					html.Td(gomponents.Text(fmt.Sprintf("%t", checkRuntime))),
+				),
+				html.Tr(
+					html.Td(gomponents.Text("Delete Wrong Language:")),
+					html.Td(gomponents.Text(fmt.Sprintf("%t", deleteWrongLanguage))),
+				),
+				html.Tr(
+					html.Td(gomponents.Text("Manual ID:")),
+					html.Td(gomponents.Text(func() string {
+						if manualID > 0 {
+							return fmt.Sprintf("%d", manualID)
+						}
+						return "Auto-detect"
+					}())),
+				),
+				html.Tr(html.Td(gomponents.Text("Mode:")), html.Td(gomponents.Text(func() string {
 					if dryRun {
 						return "Preview (Dry Run)"
 					}
@@ -569,29 +723,72 @@ func renderFolderStructureResults(result map[string]any) string {
 
 	// Add results summary
 	components = append(components,
-		Div(
-			Class("mt-3 card border-0 shadow-sm border-info mb-4"),
-			Div(
-				Class("card-header border-0"),
-				Style("background: linear-gradient(135deg, #d1ecf1 0%, #bee5eb 100%); border-radius: 15px 15px 0 0;"),
-				Div(
-					Class("d-flex align-items-center"),
-					Span(Class("badge bg-info me-3"), I(Class("fas fa-chart-bar me-1")), Text("Results")),
-					H5(Class("card-title mb-0 text-info fw-bold"), Text("Organization Results")),
+		html.Div(
+			html.Class("mt-3 card border-0 shadow-sm border-info mb-4"),
+			html.Div(
+				html.Class("card-header border-0"),
+				html.Style(
+					"background: linear-gradient(135deg, #d1ecf1 0%, #bee5eb 100%); border-radius: 15px 15px 0 0;",
+				),
+				html.Div(
+					html.Class("d-flex align-items-center"),
+					html.Span(
+						html.Class("badge bg-info me-3"),
+						html.I(html.Class("fas fa-chart-bar me-1")),
+						gomponents.Text("Results"),
+					),
+					html.H5(
+						html.Class("card-title mb-0 text-info fw-bold"),
+						gomponents.Text("Organization Results"),
+					),
 				),
 			),
-			Div(
-				Class("card-body p-0"),
-				Table(
-					Class("table table-hover mb-0"),
-					Style("background: transparent;"),
-					TBody(
-						Tr(Td(Text("Total Files:")), Td(Text(fmt.Sprintf("%d", organizationResults.TotalFiles)))),
-						Tr(Td(Text("Processed Files:")), Td(Text(fmt.Sprintf("%d", organizationResults.ProcessedFiles)))),
-						Tr(Td(Text("Organized Files:")), Td(Text(fmt.Sprintf("%d", organizationResults.OrganizedFiles)))),
-						Tr(Td(Text("Skipped Files:")), Td(Text(fmt.Sprintf("%d", organizationResults.SkippedFiles)))),
-						Tr(Td(Text("Error Files:")), Td(Text(fmt.Sprintf("%d", organizationResults.ErrorFiles)))),
-						Tr(Td(Text("Processing Time:")), Td(Text(organizationResults.Summary.ProcessingTime))),
+			html.Div(
+				html.Class("card-body p-0"),
+				html.Table(
+					html.Class("table table-hover mb-0"),
+					html.Style("background: transparent;"),
+					html.TBody(
+						html.Tr(
+							html.Td(gomponents.Text("Total Files:")),
+							html.Td(
+								gomponents.Text(fmt.Sprintf("%d", organizationResults.TotalFiles)),
+							),
+						),
+						html.Tr(
+							html.Td(gomponents.Text("Processed Files:")),
+							html.Td(
+								gomponents.Text(
+									fmt.Sprintf("%d", organizationResults.ProcessedFiles),
+								),
+							),
+						),
+						html.Tr(
+							html.Td(gomponents.Text("Organized Files:")),
+							html.Td(
+								gomponents.Text(
+									fmt.Sprintf("%d", organizationResults.OrganizedFiles),
+								),
+							),
+						),
+						html.Tr(
+							html.Td(gomponents.Text("Skipped Files:")),
+							html.Td(
+								gomponents.Text(
+									fmt.Sprintf("%d", organizationResults.SkippedFiles),
+								),
+							),
+						),
+						html.Tr(
+							html.Td(gomponents.Text("Error Files:")),
+							html.Td(
+								gomponents.Text(fmt.Sprintf("%d", organizationResults.ErrorFiles)),
+							),
+						),
+						html.Tr(
+							html.Td(gomponents.Text("Processing Time:")),
+							html.Td(gomponents.Text(organizationResults.Summary.ProcessingTime)),
+						),
 					),
 				),
 			),
@@ -600,9 +797,15 @@ func renderFolderStructureResults(result map[string]any) string {
 
 	// Display file operations if any
 	if len(organizationResults.FileOperations) > 0 {
-		var operationNodes []Node
-		operationNodes = append(operationNodes,
-			H6(Text(fmt.Sprintf("File Operations (%d)", len(organizationResults.FileOperations)))),
+		var operationNodes []gomponents.Node
+
+		operationNodes = append(
+			operationNodes,
+			html.H6(
+				gomponents.Text(
+					fmt.Sprintf("File Operations (%d)", len(organizationResults.FileOperations)),
+				),
+			),
 		)
 
 		// Show first 20 operations, with option to show more
@@ -611,9 +814,10 @@ func renderFolderStructureResults(result map[string]any) string {
 			maxDisplay = 20
 		}
 
-		var operationItems []Node
-		for i := 0; i < maxDisplay; i++ {
+		var operationItems []gomponents.Node
+		for i := range maxDisplay {
 			op := organizationResults.FileOperations[i]
+
 			operationClass := "list-group-item"
 			switch op.Operation {
 			case "move":
@@ -624,95 +828,194 @@ func renderFolderStructureResults(result map[string]any) string {
 				operationClass += " list-group-item-danger"
 			}
 
-			operationItems = append(operationItems, Div(
-				Class(operationClass),
-				Strong(Text(strings.ToTitle(op.Operation)+": ")),
-				Text(op.SourcePath),
-				If(op.TargetPath != "" && op.TargetPath != op.SourcePath,
-					Text(" → "+op.TargetPath),
+			operationItems = append(operationItems, html.Div(
+				html.Class(operationClass),
+				html.Strong(gomponents.Text(strings.ToTitle(op.Operation)+": ")),
+				gomponents.Text(op.SourcePath),
+				gomponents.If(op.TargetPath != "" && op.TargetPath != op.SourcePath,
+					gomponents.Text(" → "+op.TargetPath),
 				),
-				If(op.Reason != "",
-					Small(Class("text-muted d-block"), Text(op.Reason)),
+				gomponents.If(op.Reason != "",
+					html.Small(html.Class("text-muted d-block"), gomponents.Text(op.Reason)),
 				),
-				If(op.MediaTitle != "",
-					Small(Class("text-info d-block"),
-						Text(fmt.Sprintf("Media: %s (%s) - %s %s", op.MediaTitle, op.MediaYear, op.Quality, op.Resolution)),
+				gomponents.If(op.MediaTitle != "",
+					html.Small(
+						html.Class("text-info d-block"),
+						gomponents.Text(
+							fmt.Sprintf(
+								"Media: %s (%s) - %s %s",
+								op.MediaTitle,
+								op.MediaYear,
+								op.Quality,
+								op.Resolution,
+							),
+						),
 					),
 				),
 			))
 		}
 
 		if len(organizationResults.FileOperations) > 20 {
-			operationItems = append(operationItems, Div(
-				Class("list-group-item text-muted"),
-				Em(Text(fmt.Sprintf("... and %d more operations", len(organizationResults.FileOperations)-20))),
+			operationItems = append(operationItems, html.Div(
+				html.Class("list-group-item text-muted"),
+				html.Em(
+					gomponents.Text(
+						fmt.Sprintf(
+							"... and %d more operations",
+							len(organizationResults.FileOperations)-20,
+						),
+					),
+				),
 			))
 		}
 
-		operationListNodes := append([]Node{Class("list-group mt-2")}, operationItems...)
-		operationNodes = append(operationNodes, Div(operationListNodes...))
-		operationAllNodes := append([]Node{Class("mt-3")}, operationNodes...)
-		components = append(components, Div(operationAllNodes...))
+		operationListNodes := append(
+			[]gomponents.Node{html.Class("list-group mt-2")},
+			operationItems...)
+
+		operationNodes = append(operationNodes, html.Div(operationListNodes...))
+
+		operationAllNodes := append([]gomponents.Node{html.Class("mt-3")}, operationNodes...)
+
+		components = append(components, html.Div(operationAllNodes...))
 	}
 
 	// Display errors if any
 	if len(organizationResults.Errors) > 0 {
-		var errorNodes []Node
-		errorNodes = append(errorNodes,
-			H6(Text(fmt.Sprintf("Errors (%d)", len(organizationResults.Errors))), Class("text-danger")),
+		var errorNodes []gomponents.Node
+
+		errorNodes = append(
+			errorNodes,
+			html.H6(
+				gomponents.Text(fmt.Sprintf("Errors (%d)", len(organizationResults.Errors))),
+				html.Class("text-danger"),
+			),
 		)
 
-		var errorItems []Node
+		var errorItems []gomponents.Node
 		for _, err := range organizationResults.Errors {
-			errorItems = append(errorItems, Div(
-				Class("list-group-item list-group-item-danger"),
-				Strong(Text("Error: ")),
-				Text(err.FilePath),
-				Small(Class("text-muted d-block"), Text(err.Error)),
+			errorItems = append(errorItems, html.Div(
+				html.Class("list-group-item list-group-item-danger"),
+				html.Strong(gomponents.Text("Error: ")),
+				gomponents.Text(err.FilePath),
+				html.Small(html.Class("text-muted d-block"), gomponents.Text(err.Error)),
 			))
 		}
 
-		errorListNodes := append([]Node{Class("list-group mt-2")}, errorItems...)
-		errorNodes = append(errorNodes, Div(errorListNodes...))
-		errorAllNodes := append([]Node{Class("mt-3")}, errorNodes...)
-		components = append(components, Div(errorAllNodes...))
+		errorListNodes := append([]gomponents.Node{html.Class("list-group mt-2")}, errorItems...)
+
+		errorNodes = append(errorNodes, html.Div(errorListNodes...))
+
+		errorAllNodes := append([]gomponents.Node{html.Class("mt-3")}, errorNodes...)
+
+		components = append(components, html.Div(errorAllNodes...))
 	}
 
 	// Add summary statistics if available
-	if organizationResults.Summary.MovedFiles > 0 || organizationResults.Summary.CreatedFolders > 0 {
+	if organizationResults.Summary.MovedFiles > 0 ||
+		organizationResults.Summary.CreatedFolders > 0 {
 		components = append(components,
-			Div(
-				Class("mt-3 card border-0 shadow-sm border-success mb-4"),
-				Div(
-					Class("card-header border-0"),
-					Style("background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%); border-radius: 15px 15px 0 0;"),
-					Div(
-						Class("d-flex align-items-center"),
-						Span(Class("badge bg-success me-3"), I(Class("fas fa-check-circle me-1")), Text("Summary")),
-						H5(Class("card-title mb-0 text-success fw-bold"), Text("Summary Statistics")),
+			html.Div(
+				html.Class("mt-3 card border-0 shadow-sm border-success mb-4"),
+				html.Div(
+					html.Class("card-header border-0"),
+					html.Style(
+						"background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%); border-radius: 15px 15px 0 0;",
+					),
+					html.Div(
+						html.Class("d-flex align-items-center"),
+						html.Span(
+							html.Class("badge bg-success me-3"),
+							html.I(html.Class("fas fa-check-circle me-1")),
+							gomponents.Text("Summary"),
+						),
+						html.H5(
+							html.Class("card-title mb-0 text-success fw-bold"),
+							gomponents.Text("Summary Statistics"),
+						),
 					),
 				),
-				Div(
-					Class("card-body"),
-					Ul(
-						Class("list-unstyled mb-0"),
-						If(organizationResults.Summary.MovedFiles > 0,
-							Li(Class("mb-2"), I(Class("fas fa-arrow-right me-2 text-success")), Text(fmt.Sprintf("Files moved: %d", organizationResults.Summary.MovedFiles))),
+				html.Div(
+					html.Class("card-body"),
+					html.Ul(
+						html.Class("list-unstyled mb-0"),
+						gomponents.If(
+							organizationResults.Summary.MovedFiles > 0,
+							html.Li(
+								html.Class("mb-2"),
+								html.I(html.Class("fas fa-arrow-right me-2 text-success")),
+								gomponents.Text(
+									fmt.Sprintf(
+										"Files moved: %d",
+										organizationResults.Summary.MovedFiles,
+									),
+								),
+							),
 						),
-						If(organizationResults.Summary.RenamedFiles > 0,
-							Li(Class("mb-2"), I(Class("fas fa-edit me-2 text-info")), Text(fmt.Sprintf("Files renamed: %d", organizationResults.Summary.RenamedFiles))),
+						gomponents.If(
+							organizationResults.Summary.RenamedFiles > 0,
+							html.Li(
+								html.Class("mb-2"),
+								html.I(html.Class("fas fa-edit me-2 text-info")),
+								gomponents.Text(
+									fmt.Sprintf(
+										"Files renamed: %d",
+										organizationResults.Summary.RenamedFiles,
+									),
+								),
+							),
 						),
-						If(organizationResults.Summary.CreatedFolders > 0,
-							Li(Class("mb-2"), I(Class("fas fa-folder-plus me-2 text-primary")), Text(fmt.Sprintf("Folders created: %d", organizationResults.Summary.CreatedFolders))),
+						gomponents.If(
+							organizationResults.Summary.CreatedFolders > 0,
+							html.Li(
+								html.Class("mb-2"),
+								html.I(html.Class("fas fa-folder-plus me-2 text-primary")),
+								gomponents.Text(
+									fmt.Sprintf(
+										"Folders created: %d",
+										organizationResults.Summary.CreatedFolders,
+									),
+								),
+							),
 						),
-						If(organizationResults.Summary.DeletedFiles > 0,
-							Li(Class("mb-2"), I(Class("fas fa-trash me-2 text-danger")), Text(fmt.Sprintf("Files deleted: %d", organizationResults.Summary.DeletedFiles))),
+						gomponents.If(
+							organizationResults.Summary.DeletedFiles > 0,
+							html.Li(
+								html.Class("mb-2"),
+								html.I(html.Class("fas fa-trash me-2 text-danger")),
+								gomponents.Text(
+									fmt.Sprintf(
+										"Files deleted: %d",
+										organizationResults.Summary.DeletedFiles,
+									),
+								),
+							),
 						),
-						If(organizationResults.Summary.RuntimeVerified > 0,
-							Li(Class("mb-2"), I(Class("fas fa-clock me-2 text-warning")), Text(fmt.Sprintf("Runtime verified: %d", organizationResults.Summary.RuntimeVerified))),
+						gomponents.If(
+							organizationResults.Summary.RuntimeVerified > 0,
+							html.Li(
+								html.Class("mb-2"),
+								html.I(html.Class("fas fa-clock me-2 text-warning")),
+								gomponents.Text(
+									fmt.Sprintf(
+										"Runtime verified: %d",
+										organizationResults.Summary.RuntimeVerified,
+									),
+								),
+							),
 						),
-						If(organizationResults.Summary.LanguageFiltered > 0,
-							Li(Class("mb-2"), I(Class("fas fa-language me-2 text-info")), Text(fmt.Sprintf("Language filtered: %d", organizationResults.Summary.LanguageFiltered))),
+						gomponents.If(
+							organizationResults.Summary.LanguageFiltered > 0,
+							html.Li(
+								html.Class("mb-2"),
+								html.I(html.Class("fas fa-language me-2 text-info")),
+								gomponents.Text(
+									fmt.Sprintf(
+										"Language filtered: %d",
+										organizationResults.Summary.LanguageFiltered,
+									),
+								),
+							),
 						),
 					),
 				),
@@ -722,26 +1025,49 @@ func renderFolderStructureResults(result map[string]any) string {
 
 	if organizationResults.TotalFiles == 0 {
 		components = append(components,
-			Div(
-				Class("mt-3 card border-0 shadow-sm border-warning mb-4"),
-				Div(
-					Class("card-header border-0"),
-					Style("background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%); border-radius: 15px 15px 0 0;"),
-					Div(
-						Class("d-flex align-items-center"),
-						Span(Class("badge bg-warning me-3"), I(Class("fas fa-exclamation-triangle me-1")), Text("Warning")),
-						H5(Class("card-title mb-0 text-warning fw-bold"), Text("No Files Found")),
+			html.Div(
+				html.Class("mt-3 card border-0 shadow-sm border-warning mb-4"),
+				html.Div(
+					html.Class("card-header border-0"),
+					html.Style(
+						"background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%); border-radius: 15px 15px 0 0;",
+					),
+					html.Div(
+						html.Class("d-flex align-items-center"),
+						html.Span(
+							html.Class("badge bg-warning me-3"),
+							html.I(html.Class("fas fa-exclamation-triangle me-1")),
+							gomponents.Text("Warning"),
+						),
+						html.H5(
+							html.Class("card-title mb-0 text-warning fw-bold"),
+							gomponents.Text("No Files Found"),
+						),
 					),
 				),
-				Div(
-					Class("card-body"),
-					P(Class("card-text text-muted mb-3"), Text("No files were found in the specified folder path. This could be due to:")),
-					Ul(
-						Class("list-unstyled mb-0"),
-						Li(Class("mb-2"), Text("• Empty folder")),
-						Li(Class("mb-2"), Text("• No media files matching the configured extensions")),
-						Li(Class("mb-2"), Text("• Insufficient permissions to read folder contents")),
-						Li(Class("mb-2"), Text("• Folder path does not exist or is not accessible")),
+				html.Div(
+					html.Class("card-body"),
+					html.P(
+						html.Class("card-text text-muted mb-3"),
+						gomponents.Text(
+							"No files were found in the specified folder path. This could be due to:",
+						),
+					),
+					html.Ul(
+						html.Class("list-unstyled mb-0"),
+						html.Li(html.Class("mb-2"), gomponents.Text("• Empty folder")),
+						html.Li(
+							html.Class("mb-2"),
+							gomponents.Text("• No media files matching the configured extensions"),
+						),
+						html.Li(
+							html.Class("mb-2"),
+							gomponents.Text("• Insufficient permissions to read folder contents"),
+						),
+						html.Li(
+							html.Class("mb-2"),
+							gomponents.Text("• Folder path does not exist or is not accessible"),
+						),
 					),
 				),
 			),
@@ -749,8 +1075,10 @@ func renderFolderStructureResults(result map[string]any) string {
 	}
 
 	// Determine styling based on results
-	var borderClass, gradientStyle, badgeClass, badgeIcon, badgeText string
-	var statusText string
+	var (
+		borderClass, gradientStyle, badgeClass, badgeIcon, badgeText string
+		statusText                                                   string
+	)
 
 	if organizationResults.ErrorFiles > 0 {
 		borderClass = "border-warning"
@@ -775,21 +1103,26 @@ func renderFolderStructureResults(result map[string]any) string {
 	}
 
 	// Create header card
-	headerCard := Div(
-		Class("card border-0 shadow-sm "+borderClass+" mb-4"),
-		Div(
-			Class("card-header border-0"),
-			Style(gradientStyle),
-			Div(
-				Class("d-flex align-items-center"),
-				Span(Class("badge "+badgeClass+" me-3"), I(Class(badgeIcon+" me-1")), Text(badgeText)),
-				H5(Class("card-title mb-0 fw-bold"), Text(statusText)),
+	headerCard := html.Div(
+		html.Class("card border-0 shadow-sm "+borderClass+" mb-4"),
+		html.Div(
+			html.Class("card-header border-0"),
+			html.Style(gradientStyle),
+			html.Div(
+				html.Class("d-flex align-items-center"),
+				html.Span(
+					html.Class("badge "+badgeClass+" me-3"),
+					html.I(html.Class(badgeIcon+" me-1")),
+					gomponents.Text(badgeText),
+				),
+				html.H5(html.Class("card-title mb-0 fw-bold"), gomponents.Text(statusText)),
 			),
 		),
 	)
 
-	allNodes := append([]Node{headerCard}, components...)
+	allNodes := append([]gomponents.Node{headerCard}, components...)
+
 	return renderComponentToString(
-		Div(allNodes...),
+		html.Div(allNodes...),
 	)
 }

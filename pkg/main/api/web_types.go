@@ -1,6 +1,6 @@
 package api
 
-// TableInfo holds information about database tables
+// TableInfo holds information about database tables.
 type TableInfo struct {
 	Name      string           `json:"name"`
 	Columns   []ColumnInfo     `json:"columns"`
@@ -9,21 +9,21 @@ type TableInfo struct {
 	DeleteURL string           `json:"deleteURL"`
 }
 
-// ColumnInfo holds information about table columns
+// ColumnInfo holds information about table columns.
 type ColumnInfo struct {
 	Name        string `json:"name"`
 	Type        string `json:"type"`
 	DisplayName string `json:"displayName"`
 }
 
-// ConfigSection represents a configuration section for display
+// ConfigSection represents a configuration section for display.
 type ConfigSection struct {
 	Name string         `json:"name"`
 	Type string         `json:"type"`
 	Data map[string]any `json:"data"`
 }
 
-// DataTables response structure
+// DataTables response structure.
 type DataTablesResponse struct {
 	Echo                int        `json:"draw"`
 	TotalRecords        int        `json:"recordsTotal"`
@@ -31,7 +31,7 @@ type DataTablesResponse struct {
 	Data                [][]string `json:"data"`
 }
 
-// DataTables request parameters
+// DataTables request parameters.
 type DataTablesRequest struct {
 	Echo           int
 	DisplayStart   int
@@ -44,12 +44,12 @@ type DataTablesRequest struct {
 	ColumnSearches []string
 }
 
-// Mdata represents metadata for form fields
+// Mdata represents metadata for form fields.
 type Mdata struct {
 	Mdata any `json:"aaData"`
 }
 
-// FilterFieldDef defines a filter field configuration
+// FilterFieldDef defines a filter field configuration.
 type FilterFieldDef struct {
 	Field        string
 	Label        string
@@ -59,7 +59,7 @@ type FilterFieldDef struct {
 	OptionLabels []string // labels for select options
 }
 
-// FilterMapping defines how filters are mapped to database queries
+// FilterMapping defines how filters are mapped to database queries.
 type FilterMapping struct {
 	Column   string
 	Operator string // LIKE, =, >=, <=, etc.

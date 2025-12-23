@@ -158,6 +158,7 @@ func GetDBConnect() DBGlobal {
 func SetDBConnect(dbConnect DBGlobal) {
 	globalVarMu.Lock()
 	defer globalVarMu.Unlock()
+
 	DBConnect = dbConnect
 }
 
@@ -172,6 +173,7 @@ func GetDBVersion() string {
 func SetDBVersion(version string) {
 	globalVarMu.Lock()
 	defer globalVarMu.Unlock()
+
 	DBVersion = version
 }
 
@@ -186,6 +188,7 @@ func GetDBLogLevel() string {
 func SetDBLogLevel(level string) {
 	globalVarMu.Lock()
 	defer globalVarMu.Unlock()
+
 	DBLogLevel = level
 }
 
@@ -206,16 +209,20 @@ func Getdb(imdb bool) *sqlx.DB {
 // Size is a hint for the initial slice capacity.
 func queryGenericsT[t any](size uint, rows *sqlx.Rows, querystring string) []t {
 	var zero t
+
 	isSimpleType := isSimpleType(zero)
 
 	capacity := size
 	if capacity == 0 {
 		capacity = 16 // reasonable default
 	}
+
 	result := make([]t, 0, capacity)
 	for rows.Next() {
-		var u t
-		var err error
+		var (
+			u   t
+			err error
+		)
 
 		if isSimpleType {
 			err = rows.Scan(&u)
@@ -226,9 +233,12 @@ func queryGenericsT[t any](size uint, rows *sqlx.Rows, querystring string) []t {
 		if err != nil {
 			continue
 		}
+
 		result = append(result, u)
 	}
+
 	logSQLError(rows.Err(), querystring)
+
 	return result
 }
 
@@ -289,12 +299,15 @@ func getfuncarr(u any, s *sqlx.Rows) error {
 func Structscan[t any](querystring string, imdb bool, id ...any) (*t, error) {
 	readWriteMu.RLock()
 	defer readWriteMu.RUnlock()
+
 	var u t
+
 	err := queryRowxContext(querystring, imdb, id).StructScan(&u)
 	if err != nil {
 		logSQLError(err, querystring)
 		return nil, err
 	}
+
 	return &u, err
 }
 
@@ -318,16 +331,19 @@ func structscan1(querystring string, u any, id *uint) error {
 func StructscanT[t any](imdb bool, size uint, querystring string, args ...any) []t {
 	readWriteMu.RLock()
 	defer readWriteMu.RUnlock()
+
 	rows, err := queryxContext(querystring, imdb, args)
 	if err != nil {
 		logSQLError(err, querystring)
 		return nil
 	}
 	defer rows.Close()
+
 	var result []t
 	if size != 0 {
 		result = make([]t, 0, size)
 	}
+
 	var u t
 	for rows.Next() {
 		err = rows.StructScan(&u)
@@ -335,9 +351,12 @@ func StructscanT[t any](imdb bool, size uint, querystring string, args ...any) [
 			logSQLError(err, querystring)
 			continue
 		}
+
 		result = append(result, u)
 	}
+
 	logSQLError(rows.Err(), querystring)
+
 	return result
 }
 
@@ -362,11 +381,14 @@ func QueryDbmovie(qu Querywithargs, args ...any) []Dbmovie {
 	if qu.Limit >= 1 {
 		qu.size = qu.Limit
 	}
+
 	qu.Table = "dbmovies"
+
 	qu.defaultcolumns = "id,created_at,updated_at,title,release_date,year,adult,budget,genres,original_language,original_title,overview,popularity,revenue,runtime,spoken_languages,status,tagline,vote_average,vote_count,moviedb_id,imdb_id,freebase_m_id,freebase_id,facebook_id,instagram_id,twitter_id,url,backdrop,poster,slug,trakt_id"
 	if qu.QueryString == "" {
 		qu.buildquery()
 	}
+
 	return StructscanT[Dbmovie](false, qu.Limit, qu.QueryString, args...)
 }
 
@@ -389,6 +411,7 @@ func GetTableDefaults(table string) QueryParams {
 		q.DefaultQueryParamCount = 7
 		q.DefaultOrderBy = " order by id desc"
 		q.Object = Dbmovie{}
+
 	case "dbmovie_titles":
 		q.Table = "dbmovie_titles LEFT JOIN dbmovies ON dbmovie_titles.dbmovie_id = dbmovies.id"
 		q.DefaultColumns = "dbmovie_titles.id as id,dbmovie_titles.created_at as created_at,dbmovie_titles.updated_at as updated_at,dbmovie_titles.dbmovie_id as dbmovie_id,dbmovie_titles.title as title,dbmovie_titles.slug as slug,dbmovie_titles.region as region,dbmovies.title as movie_title"
@@ -396,6 +419,7 @@ func GetTableDefaults(table string) QueryParams {
 		q.DefaultQueryParamCount = 5
 		q.DefaultOrderBy = " order by dbmovie_titles.id desc"
 		q.Object = DbmovieTitle{}
+
 	case "dbseries":
 		q.Table = "dbseries"
 		q.DefaultColumns = "id,created_at,updated_at,seriename,aliases,season,status,firstaired,network,runtime,language,genre,overview,rating,siterating,siterating_count,slug,imdb_id,thetvdb_id,freebase_m_id,freebase_id,tvrage_id,facebook,instagram,twitter,banner,poster,fanart,identifiedby, trakt_id"
@@ -403,6 +427,7 @@ func GetTableDefaults(table string) QueryParams {
 		q.DefaultQueryParamCount = 7
 		q.DefaultOrderBy = " order by id desc"
 		q.Object = Dbserie{}
+
 	case "dbserie_alternates":
 		q.Table = "dbserie_alternates LEFT JOIN dbseries ON dbserie_alternates.dbserie_id = dbseries.id"
 		q.DefaultColumns = "dbserie_alternates.id as id,dbserie_alternates.created_at as created_at,dbserie_alternates.updated_at as updated_at,dbserie_alternates.dbserie_id as dbserie_id,dbserie_alternates.title as title,dbserie_alternates.slug as slug,dbserie_alternates.region as region,dbseries.seriename as series_name"
@@ -410,6 +435,7 @@ func GetTableDefaults(table string) QueryParams {
 		q.DefaultQueryParamCount = 5
 		q.DefaultOrderBy = " order by dbserie_alternates.id desc"
 		q.Object = DbserieAlternate{}
+
 	case "dbserie_episodes":
 		q.Table = "dbserie_episodes LEFT JOIN dbseries ON dbserie_episodes.dbserie_id = dbseries.id"
 		q.DefaultColumns = "dbserie_episodes.id as id,dbserie_episodes.created_at as created_at,dbserie_episodes.updated_at as updated_at,dbserie_episodes.episode as episode,dbserie_episodes.season as season,dbserie_episodes.identifier as identifier,dbserie_episodes.title as title,dbserie_episodes.first_aired as first_aired,dbserie_episodes.overview as overview,dbserie_episodes.poster as poster,dbserie_episodes.runtime as runtime,dbserie_episodes.dbserie_id as dbserie_id,dbseries.seriename as series_name"
@@ -417,13 +443,15 @@ func GetTableDefaults(table string) QueryParams {
 		q.DefaultQueryParamCount = 6
 		q.DefaultOrderBy = " order by dbserie_episodes.id desc"
 		q.Object = DbserieEpisode{}
+
 	case "movies":
 		q.Table = "movies LEFT JOIN dbmovies ON movies.dbmovie_id = dbmovies.id"
-		q.DefaultColumns = "movies.id as id,movies.created_at as created_at,movies.updated_at as updated_at,movies.blacklisted as blacklisted,movies.quality_reached as quality_reached,movies.quality_profile as quality_profile,movies.missing as missing,movies.dont_upgrade as dont_upgrade,movies.dont_search as dont_search,movies.listname as listname,movies.rootpath as rootpath,movies.dbmovie_id as dbmovie_id,dbmovies.title as movie_title"
+		q.DefaultColumns = "movies.id as id,movies.created_at as created_at,movies.updated_at as updated_at,movies.lastscan as lastscan,movies.blacklisted as blacklisted,movies.quality_reached as quality_reached,movies.quality_profile as quality_profile,movies.missing as missing,movies.dont_upgrade as dont_upgrade,movies.dont_search as dont_search,movies.listname as listname,movies.rootpath as rootpath,movies.dbmovie_id as dbmovie_id,dbmovies.title as movie_title"
 		q.DefaultQuery = " where movies.id like ? or movies.quality_profile like ? or movies.listname like ? or movies.rootpath like ? or movies.dbmovie_id like ?"
 		q.DefaultQueryParamCount = 5
 		q.DefaultOrderBy = " order by movies.id desc"
 		q.Object = Movie{}
+
 	case "series":
 		q.Table = "series LEFT JOIN dbseries ON series.dbserie_id = dbseries.id"
 		q.DefaultColumns = "series.id as id,series.created_at as created_at,series.updated_at as updated_at,series.listname as listname,series.rootpath as rootpath,series.dbserie_id as dbserie_id,series.dont_upgrade as dont_upgrade,series.dont_search as dont_search,dbseries.seriename as series_name"
@@ -431,13 +459,15 @@ func GetTableDefaults(table string) QueryParams {
 		q.DefaultQueryParamCount = 4
 		q.DefaultOrderBy = " order by series.id desc"
 		q.Object = Serie{}
+
 	case "serie_episodes":
 		q.Table = "serie_episodes LEFT JOIN dbserie_episodes ON serie_episodes.dbserie_episode_id = dbserie_episodes.id"
-		q.DefaultColumns = "serie_episodes.id as id,serie_episodes.created_at as created_at,serie_episodes.updated_at as updated_at,serie_episodes.blacklisted as blacklisted,serie_episodes.quality_reached as quality_reached,serie_episodes.quality_profile as quality_profile,serie_episodes.missing as missing,serie_episodes.dont_upgrade as dont_upgrade,serie_episodes.dont_search as dont_search,serie_episodes.dbserie_episode_id as dbserie_episode_id,serie_episodes.serie_id as serie_id,serie_episodes.dbserie_id as dbserie_id,dbserie_episodes.title as episode_title"
+		q.DefaultColumns = "serie_episodes.id as id,serie_episodes.created_at as created_at,serie_episodes.updated_at as updated_at,serie_episodes.lastscan as lastscan,serie_episodes.blacklisted as blacklisted,serie_episodes.quality_reached as quality_reached,serie_episodes.quality_profile as quality_profile,serie_episodes.missing as missing,serie_episodes.dont_upgrade as dont_upgrade,serie_episodes.dont_search as dont_search,serie_episodes.dbserie_episode_id as dbserie_episode_id,serie_episodes.serie_id as serie_id,serie_episodes.dbserie_id as dbserie_id,dbserie_episodes.title as episode_title"
 		q.DefaultQuery = " where serie_episodes.id like ? or serie_episodes.quality_profile like ? or serie_episodes.dbserie_episode_id like ? or serie_episodes.serie_id like ? or serie_episodes.dbserie_id like ?"
 		q.DefaultQueryParamCount = 5
 		q.DefaultOrderBy = " order by serie_episodes.id desc"
 		q.Object = SerieEpisode{}
+
 	case "job_histories":
 		q.Table = "job_histories"
 		q.DefaultColumns = "id,created_at,updated_at,job_type,job_category,job_group,started,ended,CASE WHEN started IS NOT NULL AND ended IS NOT NULL THEN ROUND((julianday(ended) - julianday(started)) * 86400) ELSE NULL END as duration"
@@ -445,6 +475,7 @@ func GetTableDefaults(table string) QueryParams {
 		q.DefaultQueryParamCount = 4
 		q.DefaultOrderBy = " order by started desc"
 		q.Object = JobHistory{}
+
 	case "serie_file_unmatcheds":
 		q.Table = "serie_file_unmatcheds LEFT JOIN series ON serie_file_unmatcheds.listname = series.listname"
 		q.DefaultColumns = "serie_file_unmatcheds.id as id,serie_file_unmatcheds.created_at as created_at,serie_file_unmatcheds.updated_at as updated_at,serie_file_unmatcheds.listname as listname,serie_file_unmatcheds.filepath as filepath,serie_file_unmatcheds.last_checked as last_checked,serie_file_unmatcheds.parsed_data as parsed_data,series.rootpath as series_rootpath"
@@ -452,6 +483,7 @@ func GetTableDefaults(table string) QueryParams {
 		q.DefaultQueryParamCount = 3
 		q.DefaultOrderBy = " order by serie_file_unmatcheds.id desc"
 		q.Object = SerieFileUnmatched{}
+
 	case "movie_file_unmatcheds":
 		q.Table = "movie_file_unmatcheds LEFT JOIN movies ON movie_file_unmatcheds.listname = movies.listname"
 		q.DefaultColumns = "movie_file_unmatcheds.id as id,movie_file_unmatcheds.created_at as created_at,movie_file_unmatcheds.updated_at as updated_at,movie_file_unmatcheds.listname as listname,movie_file_unmatcheds.filepath as filepath,movie_file_unmatcheds.last_checked as last_checked,movie_file_unmatcheds.parsed_data as parsed_data,movies.quality_profile as movie_quality_profile"
@@ -459,6 +491,7 @@ func GetTableDefaults(table string) QueryParams {
 		q.DefaultQueryParamCount = 3
 		q.DefaultOrderBy = " order by movie_file_unmatcheds.id desc"
 		q.Object = MovieFileUnmatched{}
+
 	case "qualities":
 		q.Table = "qualities"
 		q.DefaultColumns = "id,created_at,updated_at,name,regex,strings,type,priority,regexgroup,use_regex"
@@ -466,6 +499,7 @@ func GetTableDefaults(table string) QueryParams {
 		q.DefaultQueryParamCount = 6
 		q.DefaultOrderBy = " order by id desc"
 		q.Object = Qualities{}
+
 	case "movie_files":
 		q.Table = "movie_files LEFT JOIN dbmovies ON  movie_files.dbmovie_id = dbmovies.id"
 		q.DefaultColumns = "movie_files.id as id,movie_files.location as location,movie_files.filename as filename,movie_files.extension as extension,movie_files.quality_profile as quality_profile,movie_files.created_at as created_at,movie_files.updated_at as updated_at,movie_files.resolution_id as resolution_id,movie_files.quality_id as quality_id,movie_files.codec_id as codec_id,movie_files.audio_id as audio_id,movie_files.movie_id as movie_id,movie_files.dbmovie_id as dbmovie_id,movie_files.height as height,movie_files.width as width,movie_files.proper as proper,movie_files.extended as extended,movie_files.repack as repack,dbmovies.title as movie_title"
@@ -473,6 +507,7 @@ func GetTableDefaults(table string) QueryParams {
 		q.DefaultQueryParamCount = 7
 		q.DefaultOrderBy = " order by movie_files.id desc"
 		q.Object = MovieFile{}
+
 	case "serie_episode_files":
 		q.Table = "serie_episode_files LEFT JOIN dbserie_episodes ON serie_episode_files.dbserie_episode_id = dbserie_episodes.id"
 		q.DefaultColumns = "serie_episode_files.id as id,serie_episode_files.location as location,serie_episode_files.filename as filename,serie_episode_files.extension as extension,serie_episode_files.quality_profile as quality_profile,serie_episode_files.created_at as created_at,serie_episode_files.updated_at as updated_at,serie_episode_files.resolution_id as resolution_id,serie_episode_files.quality_id as quality_id,serie_episode_files.codec_id as codec_id,serie_episode_files.audio_id as audio_id,serie_episode_files.serie_id as serie_id,serie_episode_files.serie_episode_id as serie_episode_id,serie_episode_files.dbserie_episode_id as dbserie_episode_id,serie_episode_files.dbserie_id as dbserie_id,serie_episode_files.height as height,serie_episode_files.width as width,serie_episode_files.proper as proper,serie_episode_files.extended as extended,serie_episode_files.repack as repack,dbserie_episodes.title as episode_title"
@@ -480,6 +515,7 @@ func GetTableDefaults(table string) QueryParams {
 		q.DefaultQueryParamCount = 9
 		q.DefaultOrderBy = " order by serie_episode_files.id desc"
 		q.Object = SerieEpisodeFile{}
+
 	case "movie_histories":
 		q.Table = "movie_histories LEFT JOIN dbmovies ON movie_histories.dbmovie_id = dbmovies.id"
 		q.DefaultColumns = "movie_histories.id as id,movie_histories.title as title,movie_histories.url as url,movie_histories.indexer as indexer,movie_histories.type as type,movie_histories.target as target,movie_histories.quality_profile as quality_profile,movie_histories.created_at as created_at,movie_histories.updated_at as updated_at,movie_histories.downloaded_at as downloaded_at,movie_histories.resolution_id as resolution_id,movie_histories.quality_id as quality_id,movie_histories.codec_id as codec_id,movie_histories.audio_id as audio_id,movie_histories.movie_id as movie_id,movie_histories.dbmovie_id as dbmovie_id,movie_histories.blacklisted as blacklisted,dbmovies.title as movie_title"
@@ -487,6 +523,7 @@ func GetTableDefaults(table string) QueryParams {
 		q.DefaultQueryParamCount = 9
 		q.DefaultOrderBy = " order by movie_histories.id desc"
 		q.Object = MovieHistory{}
+
 	case "serie_episode_histories":
 		q.Table = "serie_episode_histories LEFT JOIN dbserie_episodes ON serie_episode_histories.dbserie_episode_id = dbserie_episodes.id"
 		q.DefaultColumns = "serie_episode_histories.id as id,serie_episode_histories.title as title,serie_episode_histories.url as url,serie_episode_histories.indexer as indexer,serie_episode_histories.type as type,serie_episode_histories.target as target,serie_episode_histories.quality_profile as quality_profile,serie_episode_histories.created_at as created_at,serie_episode_histories.updated_at as updated_at,serie_episode_histories.downloaded_at as downloaded_at,serie_episode_histories.resolution_id as resolution_id,serie_episode_histories.quality_id as quality_id,serie_episode_histories.codec_id as codec_id,serie_episode_histories.audio_id as audio_id,serie_episode_histories.serie_id as serie_id,serie_episode_histories.serie_episode_id as serie_episode_id,serie_episode_histories.dbserie_episode_id as dbserie_episode_id,serie_episode_histories.dbserie_id as dbserie_id,serie_episode_histories.blacklisted as blacklisted,dbserie_episodes.title as episode_title"
@@ -495,6 +532,7 @@ func GetTableDefaults(table string) QueryParams {
 		q.DefaultOrderBy = " order by serie_episode_histories.id desc"
 		q.Object = SerieEpisodeHistory{}
 	}
+
 	return q
 }
 
@@ -506,11 +544,14 @@ func QueryDbmovieTitle(qu Querywithargs, args ...any) []DbmovieTitle {
 	if qu.Limit >= 1 {
 		qu.size = qu.Limit
 	}
+
 	qu.Table = "dbmovie_titles"
+
 	qu.defaultcolumns = "id,created_at,updated_at,dbmovie_id,title,slug,region"
 	if qu.QueryString == "" {
 		qu.buildquery()
 	}
+
 	return StructscanT[DbmovieTitle](false, qu.Limit, qu.QueryString, args...)
 }
 
@@ -537,10 +578,12 @@ func QueryDbserie(qu Querywithargs, args ...any) []Dbserie {
 	}
 
 	qu.Table = "dbseries"
+
 	qu.defaultcolumns = "id,created_at,updated_at,seriename,aliases,season,status,firstaired,network,runtime,language,genre,overview,rating,siterating,siterating_count,slug,imdb_id,thetvdb_id,freebase_m_id,freebase_id,tvrage_id,facebook,instagram,twitter,banner,poster,fanart,identifiedby, trakt_id"
 	if qu.QueryString == "" {
 		qu.buildquery()
 	}
+
 	return StructscanT[Dbserie](false, qu.Limit, qu.QueryString, args...)
 }
 
@@ -556,10 +599,12 @@ func QueryDbserieEpisodes(qu Querywithargs, args ...any) []DbserieEpisode {
 	}
 
 	qu.Table = "dbserie_episodes"
+
 	qu.defaultcolumns = "id,created_at,updated_at,episode,season,identifier,title,first_aired,overview,poster,runtime,dbserie_id"
 	if qu.QueryString == "" {
 		qu.buildquery()
 	}
+
 	return StructscanT[DbserieEpisode](false, qu.Limit, qu.QueryString, args...)
 }
 
@@ -575,10 +620,12 @@ func QueryDbserieAlternates(qu Querywithargs, args ...any) []DbserieAlternate {
 	}
 
 	qu.Table = "dbserie_alternates"
+
 	qu.defaultcolumns = "id,created_at,updated_at,title,slug,region,dbserie_id"
 	if qu.QueryString == "" {
 		qu.buildquery()
 	}
+
 	return StructscanT[DbserieAlternate](false, qu.Limit, qu.QueryString, args...)
 }
 
@@ -589,10 +636,12 @@ func QueryDbserieAlternates(qu Querywithargs, args ...any) []DbserieAlternate {
 // Returns the Serie struct and any error.
 func GetSeries(qu Querywithargs, args ...any) (*Serie, error) {
 	qu.Table = logger.StrSeries
+
 	qu.defaultcolumns = "id,created_at,updated_at,listname,rootpath,dbserie_id,dont_upgrade,dont_search"
 	if qu.QueryString == "" {
 		qu.buildquery()
 	}
+
 	return Structscan[Serie](qu.QueryString, false, args...)
 }
 
@@ -603,10 +652,12 @@ func GetSeries(qu Querywithargs, args ...any) (*Serie, error) {
 // Returns a SerieEpisode struct and any error.
 func GetSerieEpisodes(qu Querywithargs, args ...any) (*SerieEpisode, error) {
 	qu.Table = "serie_episodes"
+
 	qu.defaultcolumns = "id,created_at,updated_at,blacklisted,quality_reached,quality_profile,missing,dont_upgrade,dont_search,dbserie_episode_id,serie_id,dbserie_id"
 	if qu.QueryString == "" {
 		qu.buildquery()
 	}
+
 	return Structscan[SerieEpisode](qu.QueryString, false, args...)
 }
 
@@ -633,10 +684,12 @@ func QuerySerieEpisodes(args *string) []SerieEpisode {
 // Returns the Movie struct and any error.
 func GetMovies(qu Querywithargs, args ...any) (*Movie, error) {
 	qu.Table = "movies"
+
 	qu.defaultcolumns = "id,created_at,updated_at,blacklisted,quality_reached,quality_profile,missing,dont_upgrade,dont_search,listname,rootpath,dbmovie_id"
 	if qu.QueryString == "" {
 		qu.buildquery()
 	}
+
 	return Structscan[Movie](qu.QueryString, false, args...)
 }
 
@@ -666,10 +719,12 @@ func QueryJobHistory(qu Querywithargs, args ...any) []JobHistory {
 	}
 
 	qu.Table = "job_histories"
+
 	qu.defaultcolumns = "id,created_at,updated_at,job_type,job_category,job_group,started,ended"
 	if qu.QueryString == "" {
 		qu.buildquery()
 	}
+
 	return StructscanT[JobHistory](false, qu.Limit, qu.QueryString, args...)
 }
 
@@ -683,10 +738,12 @@ func QuerySerieFileUnmatched(qu Querywithargs, args ...any) []SerieFileUnmatched
 	}
 
 	qu.Table = "serie_file_unmatcheds"
+
 	qu.defaultcolumns = "id,created_at,updated_at,listname,filepath,last_checked,parsed_data"
 	if qu.QueryString == "" {
 		qu.buildquery()
 	}
+
 	return StructscanT[SerieFileUnmatched](false, qu.Limit, qu.QueryString, args...)
 }
 
@@ -700,10 +757,12 @@ func QueryMovieFileUnmatched(qu Querywithargs, args ...any) []MovieFileUnmatched
 	}
 
 	qu.Table = "movie_file_unmatcheds"
+
 	qu.defaultcolumns = "id,created_at,updated_at,listname,filepath,last_checked,parsed_data"
 	if qu.QueryString == "" {
 		qu.buildquery()
 	}
+
 	return StructscanT[MovieFileUnmatched](false, qu.Limit, qu.QueryString, args...)
 }
 
@@ -715,11 +774,14 @@ func QueryResultMovies(qu Querywithargs, args ...any) []ResultMovies {
 	if qu.Limit >= 1 {
 		qu.size = qu.Limit
 	}
+
 	qu.Table = "movies"
+
 	qu.defaultcolumns = `dbmovies.id as dbmovie_id,dbmovies.created_at,dbmovies.updated_at,dbmovies.title,dbmovies.release_date,dbmovies.year,dbmovies.adult,dbmovies.budget,dbmovies.genres,dbmovies.original_language,dbmovies.original_title,dbmovies.overview,dbmovies.popularity,dbmovies.revenue,dbmovies.runtime,dbmovies.spoken_languages,dbmovies.status,dbmovies.tagline,dbmovies.vote_average,dbmovies.vote_count,dbmovies.moviedb_id,dbmovies.imdb_id,dbmovies.freebase_m_id,dbmovies.freebase_id,dbmovies.facebook_id,dbmovies.instagram_id,dbmovies.twitter_id,dbmovies.url,dbmovies.backdrop,dbmovies.poster,dbmovies.slug,dbmovies.trakt_id,movies.listname,movies.lastscan,movies.blacklisted,movies.quality_reached,movies.quality_profile,movies.rootpath,movies.missing,movies.id as id`
 	if qu.QueryString == "" {
 		qu.buildquery()
 	}
+
 	return StructscanT[ResultMovies](false, qu.Limit, qu.QueryString, args...)
 }
 
@@ -731,11 +793,14 @@ func QueryResultSeries(qu Querywithargs, args ...any) []ResultSeries {
 	if qu.Limit >= 1 {
 		qu.size = qu.Limit
 	}
+
 	qu.Table = logger.StrSeries
+
 	qu.defaultcolumns = `dbseries.id as dbserie_id,dbseries.created_at,dbseries.updated_at,dbseries.seriename,dbseries.aliases,dbseries.season,dbseries.status,dbseries.firstaired,dbseries.network,dbseries.runtime,dbseries.language,dbseries.genre,dbseries.overview,dbseries.rating,dbseries.siterating,dbseries.siterating_count,dbseries.slug,dbseries.imdb_id,dbseries.thetvdb_id,dbseries.freebase_m_id,dbseries.freebase_id,dbseries.tvrage_id,dbseries.facebook,dbseries.instagram,dbseries.twitter,dbseries.banner,dbseries.poster,dbseries.fanart,dbseries.identifiedby,dbseries.trakt_id,series.listname,series.rootpath,series.id as id`
 	if qu.QueryString == "" {
 		qu.buildquery()
 	}
+
 	return StructscanT[ResultSeries](false, qu.Limit, qu.QueryString, args...)
 }
 
@@ -749,10 +814,12 @@ func QueryResultSerieEpisodes(qu Querywithargs, args ...any) []ResultSerieEpisod
 	}
 
 	qu.Table = "serie_episodes"
+
 	qu.defaultcolumns = `dbserie_episodes.id as dbserie_episode_id,dbserie_episodes.created_at,dbserie_episodes.updated_at,dbserie_episodes.episode,dbserie_episodes.season,dbserie_episodes.identifier,dbserie_episodes.title,dbserie_episodes.first_aired,dbserie_episodes.overview,dbserie_episodes.poster,dbserie_episodes.dbserie_id,dbserie_episodes.runtime,series.listname,series.rootpath,serie_episodes.lastscan,serie_episodes.blacklisted,serie_episodes.quality_reached,serie_episodes.quality_profile,serie_episodes.missing,serie_episodes.id as id`
 	if qu.QueryString == "" {
 		qu.buildquery()
 	}
+
 	return StructscanT[ResultSerieEpisodes](false, qu.Limit, qu.QueryString, args...)
 }
 
@@ -762,7 +829,9 @@ func QueryResultSerieEpisodes(qu Querywithargs, args ...any) []ResultSerieEpisod
 func (qu *Querywithargs) buildquery() {
 	bld := logger.PlAddBuffer.Get()
 	defer logger.PlAddBuffer.Put(bld)
+
 	bld.WriteString("select ")
+
 	switch {
 	case qu.Select != "":
 		bld.WriteString(qu.Select)
@@ -776,28 +845,36 @@ func (qu *Querywithargs) buildquery() {
 			bld.WriteString(qu.defaultcolumns)
 		}
 	}
+
 	bld.WriteString(" from ")
 	bld.WriteString(qu.Table)
+
 	if qu.InnerJoin != "" {
 		bld.WriteString(" inner join ")
 		bld.WriteString(qu.InnerJoin)
 	}
+
 	if qu.Where != "" {
 		bld.WriteString(" where ")
 		bld.WriteString(qu.Where)
 	}
+
 	if qu.OrderBy != "" {
 		bld.WriteString(" order by ")
 		bld.WriteString(qu.OrderBy)
 	}
+
 	if qu.Limit != 0 {
 		bld.WriteString(" limit ")
+
 		if qu.Offset != 0 {
 			bld.WriteInt(qu.Offset)
 			bld.WriteByte(',')
 		}
+
 		bld.WriteUInt(qu.Limit)
 	}
+
 	qu.QueryString = bld.String()
 }
 
@@ -818,6 +895,7 @@ func Scanrowsdyn(imdb bool, querystring string, obj any, args ...any) {
 func ScanrowsNArr(imdb bool, querystring string, obj any, args []any) {
 	readWriteMu.RLock()
 	defer readWriteMu.RUnlock()
+
 	err := queryRowContext(querystring, imdb, args).Scan(obj)
 	logSQLErrorReset(
 		err,
@@ -836,51 +914,63 @@ func checkerrorvalue(obj any) {
 	if obj == nil {
 		return
 	}
+
 	switch val := obj.(type) {
 	case *int:
 		if *val != 0 {
 			*val = 0
 		}
+
 	case *int8:
 		if *val != 0 {
 			*val = 0
 		}
+
 	case *int16:
 		if *val != 0 {
 			*val = 0
 		}
+
 	case *int32:
 		if *val != 0 {
 			*val = 0
 		}
+
 	case *int64:
 		if *val != 0 {
 			*val = 0
 		}
+
 	case *uint:
 		if *val != 0 {
 			*val = 0
 		}
+
 	case *uint8:
 		if *val != 0 {
 			*val = 0
 		}
+
 	case *uint16:
 		if *val != 0 {
 			*val = 0
 		}
+
 	case *uint32:
 		if *val != 0 {
 			*val = 0
 		}
+
 	case *string:
 		if *val != "" {
 			*val = ""
 		}
+
 	case *bool:
 		if *val {
 			*val = false
 		}
+
 	default:
 		reflect.ValueOf(obj).Elem().SetZero()
 	}
@@ -899,6 +989,7 @@ func checkerrorvalue(obj any) {
 func scandatarow(imdb bool, querystring string, s any, args []any) {
 	readWriteMu.RLock()
 	defer readWriteMu.RUnlock()
+
 	err := queryRowContext(querystring, imdb, args).Scan(s)
 	logSQLErrorReset(err, s, querystring)
 }
@@ -912,9 +1003,15 @@ func scandatarow(imdb bool, querystring string, s any, args []any) {
 // - imdb: a boolean indicating whether to use the "imdb" database connection or the default one
 // - args: variadic arguments to pass to the SQL query
 //
-// Returns a *sql.Row from executing the query
+// Returns a *sql.Row from executing the query.
 func queryRowContext(querystring string, imdb bool, args []any) *sql.Row {
 	stmtp := globalCache.getXStmt(querystring, imdb)
+	if stmtp == nil {
+		logger.Logtype("error", 1).
+			Str(strQuery, querystring).
+			Msg("stmt failed")
+		return &sql.Row{}
+	}
 	return stmtp.QueryRowContext(sqlCTX, args...)
 }
 
@@ -927,9 +1024,15 @@ func queryRowContext(querystring string, imdb bool, args []any) *sql.Row {
 // - imdb: a boolean indicating whether to use the "imdb" database connection or the default one
 // - args: variadic arguments to pass to the SQL query
 //
-// Returns a *sqlx.Row from executing the query
+// Returns a *sqlx.Row from executing the query.
 func queryRowxContext(querystring string, imdb bool, args []any) *sqlx.Row {
 	stmt := globalCache.getXStmt(querystring, imdb)
+	if stmt == nil {
+		logger.Logtype("error", 1).
+			Str(strQuery, querystring).
+			Msg("stmt failed")
+		return &sqlx.Row{}
+	}
 	return stmt.QueryRowxContext(sqlCTX, args...)
 }
 
@@ -942,9 +1045,15 @@ func queryRowxContext(querystring string, imdb bool, args []any) *sqlx.Row {
 // - imdb: a boolean indicating whether to use the "imdb" database connection or the default one
 // - args: variadic arguments to pass to the SQL query
 //
-// Returns a *sqlx.Rows and an error from executing the query
+// Returns a *sqlx.Rows and an error from executing the query.
 func queryxContext(querystring string, imdb bool, args []any) (*sqlx.Rows, error) {
 	stmt := globalCache.getXStmt(querystring, imdb)
+	if stmt == nil {
+		logger.Logtype("error", 1).
+			Str(strQuery, querystring).
+			Msg("stmt failed")
+		return &sqlx.Rows{}, logger.ErrNotAllowed
+	}
 	return stmt.QueryxContext(sqlCTX, args...)
 }
 
@@ -970,12 +1079,14 @@ func logSQLError(err error, querystring string) {
 	if err == nil {
 		return
 	}
+
 	if !errors.Is(err, sql.ErrNoRows) {
 		logger.Logtype("error", 1).
 			Str(strQuery, querystring).
 			Err(err).
 			Msg("exec")
 	}
+
 	if err.Error() == "sql: database is closed" {
 		syncops.QueueSyncMapDeleteFuncImdbVal(syncops.MapTypeXStmt, func(x bool) bool {
 			return x
@@ -992,6 +1103,7 @@ func logSQLErrorReset(err error, s any, querystring string) {
 	if err != nil {
 		checkerrorvalue(s)
 	}
+
 	logSQLError(err, querystring)
 }
 
@@ -1001,6 +1113,7 @@ func logSQLErrorReset(err error, s any, querystring string) {
 func GetdatarowArgs(querystring string, arg any, objs ...any) {
 	readWriteMu.RLock()
 	defer readWriteMu.RUnlock()
+
 	err := queryRowContext(querystring, false, []any{arg}).Scan(objs...)
 	logSQLError(
 		err,
@@ -1015,11 +1128,13 @@ func GetdatarowArgs(querystring string, arg any, objs ...any) {
 func GetdatarowArgsImdb(querystring string, arg any, objs ...any) error {
 	readWriteMu.RLock()
 	defer readWriteMu.RUnlock()
+
 	err := queryRowContext(querystring, true, []any{arg}).Scan(objs...)
 	logSQLError(
 		err,
 		querystring,
 	)
+
 	return err
 }
 
@@ -1038,18 +1153,21 @@ func Getrowssize[t any](imdb bool, sizeq, querystring string, args ...any) []t {
 func GetrowsN[t any](imdb bool, size uint, querystring string, args ...any) []t {
 	readWriteMu.RLock()
 	defer readWriteMu.RUnlock()
+
 	rows, err := queryxContext(querystring, imdb, args)
 	if err != nil || rows == nil {
 		logSQLError(err, querystring)
 		return nil
 	}
 	defer rows.Close()
+
 	return queryGenericsT[t](size, rows, querystring)
 }
 
 func GetrowsType(o any, imdb bool, size uint, querystring string, args ...any) []map[string]any {
 	readWriteMu.RLock()
 	defer readWriteMu.RUnlock()
+
 	rows, err := queryxContext(querystring, imdb, args)
 	if err != nil || rows == nil {
 		logSQLError(err, querystring)
@@ -1061,10 +1179,12 @@ func GetrowsType(o any, imdb bool, size uint, querystring string, args ...any) [
 	if capacity == 0 {
 		capacity = 16 // reasonable default
 	}
+
 	result := make([]map[string]any, 0, capacity)
 
 	for rows.Next() {
 		o := make(map[string]any)
+
 		err := rows.MapScan(o)
 		if err == nil {
 			result = append(result, o)
@@ -1072,12 +1192,14 @@ func GetrowsType(o any, imdb bool, size uint, querystring string, args ...any) [
 	}
 
 	logSQLError(rows.Err(), querystring)
+
 	return result
 }
 
 func GetrowsTypeOLD(o any, imdb bool, size uint, querystring string, args ...any) []map[string]any {
 	readWriteMu.RLock()
 	defer readWriteMu.RUnlock()
+
 	rows, err := queryxContext(querystring, imdb, args)
 	if err != nil || rows == nil {
 		logSQLError(err, querystring)
@@ -1089,6 +1211,7 @@ func GetrowsTypeOLD(o any, imdb bool, size uint, querystring string, args ...any
 	if capacity == 0 {
 		capacity = 16 // reasonable default
 	}
+
 	result := make([]map[string]any, 0, capacity)
 
 	columns, _ := rows.Columns()
@@ -1112,6 +1235,7 @@ func GetrowsTypeOLD(o any, imdb bool, size uint, querystring string, args ...any
 	}
 
 	logSQLError(rows.Err(), querystring)
+
 	return result
 }
 
@@ -1127,12 +1251,14 @@ func GetrowsNuncached[t DbstaticTwoUint | DbstaticOneStringOneUInt | uint](
 ) []t {
 	readWriteMu.RLock()
 	defer readWriteMu.RUnlock()
+
 	rows, err := dbData.QueryxContext(sqlCTX, querystring, args...)
 	if err != nil {
 		logSQLError(err, querystring)
 		return nil
 	}
 	defer rows.Close()
+
 	return queryGenericsT[t](size, rows, querystring)
 }
 
@@ -1167,10 +1293,12 @@ func ExecNid(querystring string, args ...any) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
+
 	newid, err := dbresult.LastInsertId()
 	if err != nil {
 		return 0, err
 	}
+
 	return newid, nil
 }
 
@@ -1182,6 +1310,7 @@ func ExecNid(querystring string, args ...any) (int64, error) {
 func exec(querystring string, args []any) (sql.Result, error) {
 	readWriteMu.Lock()
 	defer readWriteMu.Unlock()
+
 	stmt := globalCache.getXStmt(querystring, false)
 
 	r, err := stmt.ExecContext(sqlCTX, args...)
@@ -1190,8 +1319,10 @@ func exec(querystring string, args []any) (sql.Result, error) {
 			Str(strQuery, querystring).
 			Err(err).
 			Msg("query exec")
+
 		return nil, err
 	}
+
 	return r, nil
 }
 
@@ -1203,16 +1334,34 @@ func InsertArray(table string, columns []string, values ...any) (sql.Result, err
 	if len(columns) != len(values) {
 		return nil, errors.New("wrong number of columns")
 	}
-	return exec(
-		"insert into "+table+" ("+strings.Join(
-			columns,
-			",",
-		)+") values (?"+strings.Repeat(
-			",?",
-			len(columns)-1,
-		)+")",
-		values,
-	)
+
+	// Use buffer pool to avoid allocations
+	bld := logger.PlAddBuffer.Get()
+	defer logger.PlAddBuffer.Put(bld)
+
+	bld.WriteString("insert into ")
+	bld.WriteString(table)
+	bld.WriteString(" (")
+
+	// Write column names
+	for idx, col := range columns {
+		if idx > 0 {
+			bld.WriteByte(',')
+		}
+
+		bld.WriteString(col)
+	}
+
+	bld.WriteString(") values (?")
+
+	// Write placeholders
+	for i := 1; i < len(columns); i++ {
+		bld.WriteString(",?")
+	}
+
+	bld.WriteByte(')')
+
+	return exec(bld.String(), values)
 }
 
 // UpdateArray updates rows in the given database table by setting the provided
@@ -1223,20 +1372,25 @@ func InsertArray(table string, columns []string, values ...any) (sql.Result, err
 func UpdateArray(table string, columns []string, where string, args ...any) (sql.Result, error) {
 	bld := logger.PlAddBuffer.Get()
 	defer logger.PlAddBuffer.Put(bld)
+
 	bld.WriteString("update ")
 	bld.WriteString(table)
 	bld.WriteString(" set ")
+
 	for idx := range columns {
 		if idx != 0 {
 			bld.WriteByte(',')
 		}
+
 		bld.WriteString(columns[idx])
 		bld.WriteString(" = ?")
 	}
+
 	if where != "" {
 		bld.WriteString(" where ")
 		bld.WriteString(where)
 	}
+
 	return exec(bld.String(), args)
 }
 
@@ -1251,12 +1405,14 @@ func DeleteRow(table, where string, args ...any) (sql.Result, error) {
 	if where != "" {
 		querystring = querystring + " where " + where
 	}
+
 	if GetDBLogLevel() == logger.StrDebug {
 		logger.Logtype("debug", 2).
 			Str(strQuery, querystring).
 			Interface("args", args).
 			Msg("query delete")
 	}
+
 	return exec(querystring, args)
 }
 
@@ -1265,17 +1421,21 @@ func DeleteRow(table, where string, args ...any) (sql.Result, error) {
 func queryrowfulllockconnect(query string) string {
 	readWriteMu.Lock()
 	defer readWriteMu.Unlock()
+
 	var str string
+
 	err := dbData.QueryRowContext(sqlCTX, query).Scan(&str)
 	if err == nil {
 		return str
 	}
+
 	if !errors.Is(err, sql.ErrNoRows) {
 		logger.Logtype("error", 1).
 			Str(strQuery, query).
 			Err(err).
 			Msg("select")
 	}
+
 	return ""
 }
 
@@ -1306,6 +1466,7 @@ func Getentryalternatetitlesdirect(dbid *uint, useseries bool) []syncops.Dbstati
 	if dbid == nil {
 		return nil
 	}
+
 	if config.GetSettingsGeneral().UseMediaCache {
 		return GetCachedTwoStringArr(
 			logger.GetStringsMap(useseries, logger.CacheMediaTitles),
@@ -1313,6 +1474,7 @@ func Getentryalternatetitlesdirect(dbid *uint, useseries bool) []syncops.Dbstati
 			true,
 		)
 	}
+
 	return Getrowssize[syncops.DbstaticTwoStringOneInt](
 		false,
 		logger.GetStringsMap(useseries, logger.DBCountDBTitlesDBID),
@@ -1323,7 +1485,10 @@ func Getentryalternatetitlesdirect(dbid *uint, useseries bool) []syncops.Dbstati
 
 // GetDbstaticTwoStringOneInt returns a slice of DbstaticTwoStringOneInt objects that match the given id.
 // It filters the input slice to include only elements where Num equals the specified id.
-func GetDbstaticTwoStringOneInt(s []syncops.DbstaticTwoStringOneInt, id uint) []syncops.DbstaticTwoStringOneInt {
+func GetDbstaticTwoStringOneInt(
+	s []syncops.DbstaticTwoStringOneInt,
+	id uint,
+) []syncops.DbstaticTwoStringOneInt {
 	if len(s) == 0 {
 		return nil
 	}
@@ -1340,6 +1505,7 @@ func GetDbstaticTwoStringOneInt(s []syncops.DbstaticTwoStringOneInt, id uint) []
 	if len(result) == 0 {
 		return nil
 	}
+
 	return result
 }
 
@@ -1350,15 +1516,19 @@ func GetDbstaticTwoStringOneInt(s []syncops.DbstaticTwoStringOneInt, id uint) []
 func ExchangeImdbDB() {
 	dbfile := "./databases/imdb.db"
 	dbfiletemp := "./databases/imdbtemp.db"
+
 	if !checkFile(dbfile) {
 		return
 	}
+
 	readWriteMu.Lock()
 	defer readWriteMu.Unlock()
+
 	dbImdb.Close()
 
 	os.Chmod(dbfile, 0o777)
 	os.Remove(dbfile)
+
 	err := os.Rename(dbfiletemp, dbfile)
 	if err == nil {
 		logger.Logtype("debug", 1).
@@ -1371,6 +1541,7 @@ func ExchangeImdbDB() {
 			Err(err).
 			Msg("Failed to rename database file")
 	}
+
 	InitImdbdb()
 }
 

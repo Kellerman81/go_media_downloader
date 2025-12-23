@@ -9,7 +9,7 @@ import (
 	gin "github.com/gin-gonic/gin"
 )
 
-// Generic config parsing pattern to reduce duplication
+// Generic config parsing pattern to reduce duplication.
 type ConfigParser[T any] struct {
 	Prefix       string
 	CreateConfig func(string, *gin.Context) T
@@ -17,10 +17,10 @@ type ConfigParser[T any] struct {
 	Save         func([]T) error
 }
 
-// ParseAndSave performs the complete config parsing, validation, and saving workflow
+// ParseAndSave performs the complete config parsing, validation, and saving workflow.
 func (cp *ConfigParser[T]) ParseAndSave(c *gin.Context) error {
 	if err := c.Request.ParseForm(); err != nil {
-		return fmt.Errorf("failed to parse form data: %v", err)
+		return fmt.Errorf("failed to parse form data: %w", err)
 	}
 
 	// Extract form keys
@@ -30,6 +30,7 @@ func (cp *ConfigParser[T]) ParseAndSave(c *gin.Context) error {
 	// Create configs from form data
 	for index := range formKeys {
 		config := cp.CreateConfig(index, c)
+
 		configs = append(configs, config)
 	}
 
@@ -48,12 +49,13 @@ func (cp *ConfigParser[T]) ParseAndSave(c *gin.Context) error {
 	return nil
 }
 
-// Pre-configured parsers for common config types
+// Pre-configured parsers for common config types.
 func createDownloaderParser() *ConfigParser[config.DownloaderConfig] {
 	return &ConfigParser[config.DownloaderConfig]{
 		Prefix: "downloader",
 		CreateConfig: func(index string, c *gin.Context) config.DownloaderConfig {
 			builder := NewOptimizedConfigBuilder(c, "downloader", index)
+
 			return config.DownloaderConfig{
 				Name:            builder.getString("Name"),
 				DlType:          builder.getString("DLType"),
@@ -78,12 +80,13 @@ func createDownloaderParser() *ConfigParser[config.DownloaderConfig] {
 	}
 }
 
-// Create indexer parser using the optimized pattern
+// Create indexer parser using the optimized pattern.
 func createIndexerParser() *ConfigParser[config.IndexersConfig] {
 	return &ConfigParser[config.IndexersConfig]{
 		Prefix: "indexers",
 		CreateConfig: func(index string, c *gin.Context) config.IndexersConfig {
 			builder := NewOptimizedConfigBuilder(c, "indexers", index)
+
 			return config.IndexersConfig{
 				Name:                   builder.getString("Name"),
 				IndexerType:            builder.getString("IndexerType"),
@@ -122,42 +125,47 @@ func createIndexerParser() *ConfigParser[config.IndexersConfig] {
 	}
 }
 
-// Create paths parser using the optimized pattern
+// Create paths parser using the optimized pattern.
 func createPathsParser() *ConfigParser[config.PathsConfig] {
 	return &ConfigParser[config.PathsConfig]{
 		Prefix: "paths",
 		CreateConfig: func(index string, c *gin.Context) config.PathsConfig {
 			builder := NewOptimizedConfigBuilder(c, "paths", index)
+
 			return config.PathsConfig{
-				Name:                           builder.getString("Name"),
-				Path:                           builder.getString("Path"),
-				AllowedVideoExtensions:         builder.getStringArray("AllowedVideoExtensions"),
-				AllowedOtherExtensions:         builder.getStringArray("AllowedOtherExtensions"),
-				AllowedVideoExtensionsNoRename: builder.getStringArray("AllowedVideoExtensionsNoRename"),
-				AllowedOtherExtensionsNoRename: builder.getStringArray("AllowedOtherExtensionsNoRename"),
-				Blocked:                        builder.getStringArray("Blocked"),
-				Disallowed:                     builder.getStringArray("Disallowed"),
-				AllowedLanguages:               builder.getStringArray("AllowedLanguages"),
-				MaxSize:                        builder.getInt("MaxSize", 0),
-				MinSize:                        builder.getInt("MinSize", 0),
-				MinVideoSize:                   builder.getInt("MinVideoSize", 0),
-				CleanupsizeMB:                  builder.getInt("CleanupsizeMB", 0),
-				UpgradeScanInterval:            builder.getInt("UpgradeScanInterval", 0),
-				MissingScanInterval:            builder.getInt("MissingScanInterval", 0),
-				MissingScanReleaseDatePre:      builder.getInt("MissingScanReleaseDatePre", 0),
-				MaxRuntimeDifference:           builder.getInt("MaxRuntimeDifference", 0),
-				PresortFolderPath:              builder.getString("PresortFolderPath"),
-				MoveReplacedTargetPath:         builder.getString("MoveReplacedTargetPath"),
-				SetChmod:                       builder.getString("SetChmod"),
-				SetChmodFolder:                 builder.getString("SetChmodFolder"),
-				Upgrade:                        builder.getBool("Upgrade"),
-				Replacelower:                   builder.getBool("Replacelower"),
-				Usepresort:                     builder.getBool("Usepresort"),
-				DeleteWrongLanguage:            builder.getBool("DeleteWrongLanguage"),
-				DeleteDisallowed:               builder.getBool("DeleteDisallowed"),
-				CheckRuntime:                   builder.getBool("CheckRuntime"),
-				DeleteWrongRuntime:             builder.getBool("DeleteWrongRuntime"),
-				MoveReplaced:                   builder.getBool("MoveReplaced"),
+				Name:                   builder.getString("Name"),
+				Path:                   builder.getString("Path"),
+				AllowedVideoExtensions: builder.getStringArray("AllowedVideoExtensions"),
+				AllowedOtherExtensions: builder.getStringArray("AllowedOtherExtensions"),
+				AllowedVideoExtensionsNoRename: builder.getStringArray(
+					"AllowedVideoExtensionsNoRename",
+				),
+				AllowedOtherExtensionsNoRename: builder.getStringArray(
+					"AllowedOtherExtensionsNoRename",
+				),
+				Blocked:                   builder.getStringArray("Blocked"),
+				Disallowed:                builder.getStringArray("Disallowed"),
+				AllowedLanguages:          builder.getStringArray("AllowedLanguages"),
+				MaxSize:                   builder.getInt("MaxSize", 0),
+				MinSize:                   builder.getInt("MinSize", 0),
+				MinVideoSize:              builder.getInt("MinVideoSize", 0),
+				CleanupsizeMB:             builder.getInt("CleanupsizeMB", 0),
+				UpgradeScanInterval:       builder.getInt("UpgradeScanInterval", 0),
+				MissingScanInterval:       builder.getInt("MissingScanInterval", 0),
+				MissingScanReleaseDatePre: builder.getInt("MissingScanReleaseDatePre", 0),
+				MaxRuntimeDifference:      builder.getInt("MaxRuntimeDifference", 0),
+				PresortFolderPath:         builder.getString("PresortFolderPath"),
+				MoveReplacedTargetPath:    builder.getString("MoveReplacedTargetPath"),
+				SetChmod:                  builder.getString("SetChmod"),
+				SetChmodFolder:            builder.getString("SetChmodFolder"),
+				Upgrade:                   builder.getBool("Upgrade"),
+				Replacelower:              builder.getBool("Replacelower"),
+				Usepresort:                builder.getBool("Usepresort"),
+				DeleteWrongLanguage:       builder.getBool("DeleteWrongLanguage"),
+				DeleteDisallowed:          builder.getBool("DeleteDisallowed"),
+				CheckRuntime:              builder.getBool("CheckRuntime"),
+				DeleteWrongRuntime:        builder.getBool("DeleteWrongRuntime"),
+				MoveReplaced:              builder.getBool("MoveReplaced"),
 			}
 		},
 		Validate: func(configs []config.PathsConfig) error {
@@ -169,12 +177,13 @@ func createPathsParser() *ConfigParser[config.PathsConfig] {
 	}
 }
 
-// Create lists parser using the optimized pattern
+// Create lists parser using the optimized pattern.
 func createListsParser() *ConfigParser[config.ListsConfig] {
 	return &ConfigParser[config.ListsConfig]{
 		Prefix: "lists",
 		CreateConfig: func(index string, c *gin.Context) config.ListsConfig {
 			builder := NewOptimizedConfigBuilder(c, "lists", index)
+
 			return config.ListsConfig{
 				Name:             builder.getString("Name"),
 				ListType:         builder.getString("ListType"),
@@ -204,12 +213,13 @@ func createListsParser() *ConfigParser[config.ListsConfig] {
 	}
 }
 
-// Create notification parser using the optimized pattern
+// Create notification parser using the optimized pattern.
 func createNotificationParser() *ConfigParser[config.NotificationConfig] {
 	return &ConfigParser[config.NotificationConfig]{
 		Prefix: "notifications",
 		CreateConfig: func(index string, c *gin.Context) config.NotificationConfig {
 			builder := NewOptimizedConfigBuilder(c, "notifications", index)
+
 			return config.NotificationConfig{
 				Name:             builder.getString("Name"),
 				NotificationType: builder.getString("NotificationType"),
@@ -229,12 +239,13 @@ func createNotificationParser() *ConfigParser[config.NotificationConfig] {
 	}
 }
 
-// Create regex parser using the optimized pattern
+// Create regex parser using the optimized pattern.
 func createRegexParser() *ConfigParser[config.RegexConfig] {
 	return &ConfigParser[config.RegexConfig]{
 		Prefix: "regex",
 		CreateConfig: func(index string, c *gin.Context) config.RegexConfig {
 			builder := NewOptimizedConfigBuilder(c, "regex", index)
+
 			return config.RegexConfig{
 				Name:     builder.getString("Name"),
 				Required: builder.getStringArray("Required"),
@@ -250,52 +261,57 @@ func createRegexParser() *ConfigParser[config.RegexConfig] {
 	}
 }
 
-// parseDownloaderConfigs parses form data into DownloaderConfig slice
+// parseDownloaderConfigs parses form data into DownloaderConfig slice.
 func parseDownloaderConfigs(c *gin.Context) ([]config.DownloaderConfig, error) {
 	configs := parseConfigFromForm(c, "downloader", createDownloaderConfig)
 	if err := validateDownloaderConfig(configs); err != nil {
 		return nil, err
 	}
+
 	return configs, nil
 }
 
-// parseListsConfigs parses form data into ListsConfig slice
+// parseListsConfigs parses form data into ListsConfig slice.
 func parseListsConfigs(c *gin.Context) ([]config.ListsConfig, error) {
 	configs := parseConfigFromForm(c, "lists", createListsConfig)
 	if err := validateListsConfig(configs); err != nil {
 		return nil, err
 	}
+
 	return configs, nil
 }
 
-// parseIndexersConfigs parses form data into IndexersConfig slice
+// parseIndexersConfigs parses form data into IndexersConfig slice.
 func parseIndexersConfigs(c *gin.Context) ([]config.IndexersConfig, error) {
 	configs := parseConfigFromForm(c, "indexers", createIndexersConfig)
 	if err := validateIndexersConfig(configs); err != nil {
 		return nil, err
 	}
+
 	return configs, nil
 }
 
-// parsePathsConfigs parses form data into PathsConfig slice
+// parsePathsConfigs parses form data into PathsConfig slice.
 func parsePathsConfigs(c *gin.Context) ([]config.PathsConfig, error) {
 	configs := parseConfigFromForm(c, "paths", createPathsConfig)
 	if err := validatePathsConfig(configs); err != nil {
 		return nil, err
 	}
+
 	return configs, nil
 }
 
-// parseNotificationConfigs parses form data into NotificationConfig slice
+// parseNotificationConfigs parses form data into NotificationConfig slice.
 func parseNotificationConfigs(c *gin.Context) ([]config.NotificationConfig, error) {
 	configs := parseConfigFromForm(c, "notifications", createNotificationConfig)
 	if err := validateNotificationConfig(configs); err != nil {
 		return nil, err
 	}
+
 	return configs, nil
 }
 
-// parseRegexConfigs parses form data into RegexConfig slice
+// parseRegexConfigs parses form data into RegexConfig slice.
 func parseRegexConfigs(c *gin.Context) ([]config.RegexConfig, error) {
 	formKeys := extractFormKeys(c, "regex_", "_Name")
 	configs := make([]config.RegexConfig, 0, len(formKeys))
@@ -309,13 +325,14 @@ func parseRegexConfigs(c *gin.Context) ([]config.RegexConfig, error) {
 	return configs, validateRegexConfig(configs)
 }
 
-// parseQualityConfigs parses form data into QualityConfig slice
+// parseQualityConfigs parses form data into QualityConfig slice.
 func parseQualityConfigs(c *gin.Context) ([]config.QualityConfig, error) {
 	formKeys := make(map[string]bool)
 	for key := range c.Request.PostForm {
 		if !strings.Contains(key, "_Name") || !strings.Contains(key, "quality_main_") {
 			continue
 		}
+
 		formKeys[strings.Split(key, "_")[2]] = true
 	}
 
@@ -329,7 +346,7 @@ func parseQualityConfigs(c *gin.Context) ([]config.QualityConfig, error) {
 	return configs, validateQualityConfig(configs)
 }
 
-// parseSchedulerConfigs parses form data into SchedulerConfig slice
+// parseSchedulerConfigs parses form data into SchedulerConfig slice.
 func parseSchedulerConfigs(c *gin.Context) ([]config.SchedulerConfig, error) {
 	formKeys := extractFormKeys(c, "scheduler_", "_Name")
 	configs := make([]config.SchedulerConfig, 0, len(formKeys))
@@ -343,8 +360,13 @@ func parseSchedulerConfigs(c *gin.Context) ([]config.SchedulerConfig, error) {
 	return configs, validateSchedulerConfig(configs)
 }
 
-func parseMediaTypeConfig[T any](c *gin.Context, mediaType, index string, builder *ConfigBuilder) config.MediaTypeConfig {
+func parseMediaTypeConfig[T any](
+	c *gin.Context,
+	mediaType, index string,
+	builder *ConfigBuilder,
+) config.MediaTypeConfig {
 	var cfg config.MediaTypeConfig
+
 	group := fmt.Sprintf("media_main_%s_%s", mediaType, index)
 
 	builder.context = c
@@ -374,12 +396,14 @@ func parseMediaDataConfigs(c *gin.Context, mediaType, index string) []config.Med
 		if !strings.Contains(key, "_TemplatePath") || !strings.Contains(key, prefix+"_") {
 			continue
 		}
+
 		subformKeys[strings.Split(key, "_")[4]] = true
 	}
 
 	var configs []config.MediaDataConfig
 	for subIndex := range subformKeys {
 		nameField := fmt.Sprintf("%s_%s_TemplatePath", prefix, subIndex)
+
 		name := c.PostForm(nameField)
 		if name == "" {
 			continue
@@ -390,19 +414,25 @@ func parseMediaDataConfigs(c *gin.Context, mediaType, index string) []config.Med
 		if val := c.PostForm(fmt.Sprintf("%s_%s_AddFound", prefix, subIndex)); val != "" {
 			cfg.AddFound, _ = strconv.ParseBool(val)
 		}
+
 		if val := c.PostForm(fmt.Sprintf("%s_%s_AddFoundList", prefix, subIndex)); val != "" {
 			cfg.AddFoundList = val
 		}
+
 		if val := c.PostForm(fmt.Sprintf("%s_%s_EnableUnpacking", prefix, subIndex)); val != "" {
 			cfg.EnableUnpacking, _ = strconv.ParseBool(val)
 		}
 
 		configs = append(configs, cfg)
 	}
+
 	return configs
 }
 
-func parseMediaDataImportConfigs(c *gin.Context, mediaType, index string) []config.MediaDataImportConfig {
+func parseMediaDataImportConfigs(
+	c *gin.Context,
+	mediaType, index string,
+) []config.MediaDataImportConfig {
 	prefix := fmt.Sprintf("media_%s_%s_dataimport", mediaType, index)
 	subformKeys := make(map[string]bool)
 
@@ -410,12 +440,14 @@ func parseMediaDataImportConfigs(c *gin.Context, mediaType, index string) []conf
 		if !strings.Contains(key, "_TemplatePath") || !strings.Contains(key, prefix+"_") {
 			continue
 		}
+
 		subformKeys[strings.Split(key, "_")[4]] = true
 	}
 
 	var configs []config.MediaDataImportConfig
 	for subIndex := range subformKeys {
 		nameField := fmt.Sprintf("%s_%s_TemplatePath", prefix, subIndex)
+
 		name := c.PostForm(nameField)
 		if name == "" {
 			continue
@@ -429,6 +461,7 @@ func parseMediaDataImportConfigs(c *gin.Context, mediaType, index string) []conf
 			EnableUnpacking: enableUnpacking,
 		})
 	}
+
 	return configs
 }
 
@@ -440,12 +473,14 @@ func parseMediaListsConfigs(c *gin.Context, mediaType, index string) []config.Me
 		if !strings.Contains(key, "_Name") || !strings.Contains(key, prefix+"_") {
 			continue
 		}
+
 		subformKeys[strings.Split(key, "_")[4]] = true
 	}
 
 	var configs []config.MediaListsConfig
 	for subIndex := range subformKeys {
 		nameField := fmt.Sprintf("%s_%s_Name", prefix, subIndex)
+
 		name := c.PostForm(nameField)
 		if name == "" {
 			continue
@@ -456,31 +491,45 @@ func parseMediaListsConfigs(c *gin.Context, mediaType, index string) []config.Me
 		if val := c.PostForm(fmt.Sprintf("%s_%s_TemplateList", prefix, subIndex)); val != "" {
 			cfg.TemplateList = val
 		}
+
 		if val := c.PostForm(fmt.Sprintf("%s_%s_TemplateQuality", prefix, subIndex)); val != "" {
 			cfg.TemplateQuality = val
 		}
+
 		if val := c.PostForm(fmt.Sprintf("%s_%s_TemplateScheduler", prefix, subIndex)); val != "" {
 			cfg.TemplateScheduler = val
 		}
-		if val := c.PostFormArray(fmt.Sprintf("%s_%s_IgnoreMapLists", prefix, subIndex)); len(val) != 0 {
+
+		if val := c.PostFormArray(fmt.Sprintf("%s_%s_IgnoreMapLists", prefix, subIndex)); len(
+			val,
+		) != 0 {
 			cfg.IgnoreMapLists = val
 		}
-		if val := c.PostFormArray(fmt.Sprintf("%s_%s_ReplaceMapLists", prefix, subIndex)); len(val) != 0 {
+
+		if val := c.PostFormArray(fmt.Sprintf("%s_%s_ReplaceMapLists", prefix, subIndex)); len(
+			val,
+		) != 0 {
 			cfg.ReplaceMapLists = val
 		}
+
 		if val := c.PostForm(fmt.Sprintf("%s_%s_Enabled", prefix, subIndex)); val != "" {
 			cfg.Enabled, _ = strconv.ParseBool(val)
 		}
+
 		if val := c.PostForm(fmt.Sprintf("%s_%s_Addfound", prefix, subIndex)); val != "" {
 			cfg.Addfound, _ = strconv.ParseBool(val)
 		}
 
 		configs = append(configs, cfg)
 	}
+
 	return configs
 }
 
-func parseMediaNotificationConfigs(c *gin.Context, mediaType, index string) []config.MediaNotificationConfig {
+func parseMediaNotificationConfigs(
+	c *gin.Context,
+	mediaType, index string,
+) []config.MediaNotificationConfig {
 	prefix := fmt.Sprintf("media_%s_%s_notification", mediaType, index)
 	subformKeys := make(map[string]bool)
 
@@ -488,12 +537,14 @@ func parseMediaNotificationConfigs(c *gin.Context, mediaType, index string) []co
 		if !strings.Contains(key, "_MapNotification") || !strings.Contains(key, prefix+"_") {
 			continue
 		}
+
 		subformKeys[strings.Split(key, "_")[4]] = true
 	}
 
 	var configs []config.MediaNotificationConfig
 	for subIndex := range subformKeys {
 		nameField := fmt.Sprintf("%s_%s_MapNotification", prefix, subIndex)
+
 		name := c.PostForm(nameField)
 		if name == "" {
 			continue
@@ -504,18 +555,22 @@ func parseMediaNotificationConfigs(c *gin.Context, mediaType, index string) []co
 		if val := c.PostForm(fmt.Sprintf("%s_%s_Event", prefix, subIndex)); val != "" {
 			cfg.Event = val
 		}
+
 		if val := c.PostForm(fmt.Sprintf("%s_%s_Title", prefix, subIndex)); val != "" {
 			cfg.Title = val
 		}
+
 		if val := c.PostForm(fmt.Sprintf("%s_%s_Message", prefix, subIndex)); val != "" {
 			cfg.Message = val
 		}
+
 		if val := c.PostForm(fmt.Sprintf("%s_%s_ReplacedPrefix", prefix, subIndex)); val != "" {
 			cfg.ReplacedPrefix = val
 		}
 
 		configs = append(configs, cfg)
 	}
+
 	return configs
 }
 
@@ -534,8 +589,10 @@ func parseMediaConfigs(c *gin.Context, mediaType string) []config.MediaTypeConfi
 		}
 	}
 
-	var configs []config.MediaTypeConfig
-	var builder ConfigBuilder
+	var (
+		configs []config.MediaTypeConfig
+		builder ConfigBuilder
+	)
 
 	for index := range formKeys {
 		cfg := parseMediaTypeConfig[config.MediaTypeConfig](c, mediaType, index, &builder)
@@ -550,6 +607,7 @@ func parseMediaConfigs(c *gin.Context, mediaType string) []config.MediaTypeConfi
 
 		configs = append(configs, cfg)
 	}
+
 	return configs
 }
 
@@ -649,22 +707,29 @@ func parseGeneralConfig(c *gin.Context) config.GeneralConfig {
 	return updatedConfig
 }
 
-// parseConfigFromForm is a generic helper to parse form data into config structs
-func parseConfigFromForm[T any](c *gin.Context, prefix string, createConfig func(string, *gin.Context) T) []T {
+// parseConfigFromForm is a generic helper to parse form data into config structs.
+func parseConfigFromForm[T any](
+	c *gin.Context,
+	prefix string,
+	createConfig func(string, *gin.Context) T,
+) []T {
 	if err := c.Request.ParseForm(); err != nil {
 		return nil
 	}
+
 	formKeys := extractFormKeys(c, prefix, "_Name")
 	configs := make([]T, 0, len(formKeys))
 
 	for i := range formKeys {
 		nameField := fmt.Sprintf("%s_%s_Name", prefix, i)
+
 		name := c.PostForm(nameField)
 		if name == "" {
 			continue // Skip entries without names
 		}
 
 		config := createConfig(i, c)
+
 		configs = append(configs, config)
 	}
 

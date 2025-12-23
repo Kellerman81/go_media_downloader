@@ -32,6 +32,7 @@ func getAdminTableColumns(tableName string) []ColumnInfo {
 	var columns []ColumnInfo
 	for _, name := range columnsIn {
 		name = strings.TrimSpace(name)
+
 		columnType := "TEXT"
 		for _, testname := range columnNames {
 			if strings.EqualFold(testname.Str1, name) {
@@ -68,7 +69,7 @@ func getAdminTableColumns(tableName string) []ColumnInfo {
 	return columns
 }
 
-// getAdminFormColumns returns only the actual table columns (excluding joined columns) for forms
+// getAdminFormColumns returns only the actual table columns (excluding joined columns) for forms.
 func getAdminFormColumns(tableName string) []ColumnInfo {
 	// For forms, we only want the actual table columns, not joined columns
 	nameQuery := fmt.Sprintf("SELECT name, type FROM pragma_table_info('%s')", tableName)
@@ -76,6 +77,7 @@ func getAdminFormColumns(tableName string) []ColumnInfo {
 
 	// Get the struct type for reflection
 	tableDefault := database.GetTableDefaults(tableName)
+
 	var structType reflect.Type
 	if tableDefault.Object != nil {
 		structType = reflect.TypeOf(tableDefault.Object)
@@ -99,7 +101,7 @@ func getAdminFormColumns(tableName string) []ColumnInfo {
 	return columns
 }
 
-// getStructFieldDisplayName uses reflection to get displayname tag from struct field
+// getStructFieldDisplayName uses reflection to get displayname tag from struct field.
 func getStructFieldDisplayName(structType reflect.Type, fieldName string) string {
 	// First try to get descriptive name from our field mappings
 	descriptiveName := getDescriptiveFieldName(fieldName)
@@ -121,16 +123,18 @@ func getStructFieldDisplayName(structType reflect.Type, fieldName string) string
 
 	// Fallback to formatted field name with proper capitalization
 	parts := strings.Split(fieldName, "_")
+
 	var capitalizedParts []string
 	for _, part := range parts {
 		if len(part) > 0 {
 			capitalizedParts = append(capitalizedParts, strings.ToTitle(strings.ToLower(part)))
 		}
 	}
+
 	return strings.Join(capitalizedParts, " ")
 }
 
-// getFieldMapping returns both struct field name and descriptive display name for a database field
+// getFieldMapping returns both struct field name and descriptive display name for a database field.
 func getFieldMapping(dbField string) FieldMapping {
 	switch dbField {
 	case "id":
@@ -329,29 +333,34 @@ func getFieldMapping(dbField string) FieldMapping {
 		// Convert snake_case to PascalCase with proper capitalization
 		parts := strings.Split(dbField, "_")
 		structField := ""
+
 		displayParts := make([]string, 0, len(parts))
 		for _, part := range parts {
 			if len(part) > 0 {
 				structField += strings.ToTitle(strings.ToLower(part))
+
 				displayParts = append(displayParts, strings.ToTitle(strings.ToLower(part)))
 			}
 		}
+
 		displayName := strings.Join(displayParts, " ")
+
 		return FieldMapping{structField, displayName}
 	}
 }
 
-// dbFieldToStructField converts database field names to Go struct field names (backward compatibility)
+// dbFieldToStructField converts database field names to Go struct field names (backward compatibility).
 func dbFieldToStructField(dbField string) string {
 	return getFieldMapping(dbField).StructField
 }
 
-// getDescriptiveFieldName returns descriptive field names (backward compatibility)
+// getDescriptiveFieldName returns descriptive field names (backward compatibility).
 func getDescriptiveFieldName(fieldName string) string {
 	mapping := getFieldMapping(fieldName)
 	if mapping.DisplayName == "" {
 		return ""
 	}
+
 	return mapping.DisplayName
 }
 
@@ -360,14 +369,17 @@ func insertAdminRecord(tableName string, data map[string]any) error {
 		return fmt.Errorf("table name and data are required")
 	}
 
-	var columns []string
-	var values []any
+	var (
+		columns []string
+		values  []any
+	)
 
 	for col, val := range data {
 		// Skip created_at and updated_at columns as they should be managed by the database
 		if col == "id" || col == "created_at" || col == "updated_at" || col == "csrf_token" {
 			continue
 		}
+
 		if val != "" && val != nil { // Skip empty values
 			columns = append(columns, col)
 			values = append(values, val)
@@ -380,6 +392,7 @@ func insertAdminRecord(tableName string, data map[string]any) error {
 
 	// Use project's database insert method
 	_, err := database.InsertArray(tableName, columns, values...)
+
 	return err
 }
 
@@ -397,8 +410,10 @@ func updateAdminRecord(tableName string, id int, data map[string]any) error {
 	}
 
 	// Build update data
-	var columns []string
-	var values []any
+	var (
+		columns []string
+		values  []any
+	)
 
 	for col, val := range data {
 		// Don't update id, created_at, updated_at, or csrf_token columns
@@ -414,10 +429,12 @@ func updateAdminRecord(tableName string, id int, data map[string]any) error {
 
 	// Add id as the where condition
 	values = append(values, id)
+
 	whereClause := "id = ?"
 
 	// Use project's database update method
 	_, err := database.UpdateArray(tableName, columns, whereClause, values...)
+
 	return err
 }
 
@@ -436,16 +453,25 @@ func deleteAdminRecord(tableName string, id int) error {
 
 	// Use project's database delete method
 	_, err := database.DeleteRow(tableName, "id = ?", id)
+
 	return err
 }
 
-// getReferenceTable determines the reference table name from a foreign key field
+// getReferenceTable determines the reference table name from a foreign key field.
 func getReferenceTable(fieldName string) string {
 	if !strings.HasSuffix(fieldName, "_id") {
 		return ""
 	}
 
-	if strings.EqualFold(fieldName, "imdb_id") || strings.EqualFold(fieldName, "thetvdb_id") || strings.EqualFold(fieldName, "freebase_m_id") || strings.EqualFold(fieldName, "freebase_id") || strings.EqualFold(fieldName, "tvrage_id") || strings.EqualFold(fieldName, "trakt_id") || strings.EqualFold(fieldName, "moviedb_id") || strings.EqualFold(fieldName, "facebook_id") || strings.EqualFold(fieldName, "instagram_id") || strings.EqualFold(fieldName, "twitter_id") {
+	if strings.EqualFold(fieldName, "imdb_id") || strings.EqualFold(fieldName, "thetvdb_id") ||
+		strings.EqualFold(fieldName, "freebase_m_id") ||
+		strings.EqualFold(fieldName, "freebase_id") ||
+		strings.EqualFold(fieldName, "tvrage_id") ||
+		strings.EqualFold(fieldName, "trakt_id") ||
+		strings.EqualFold(fieldName, "moviedb_id") ||
+		strings.EqualFold(fieldName, "facebook_id") ||
+		strings.EqualFold(fieldName, "instagram_id") ||
+		strings.EqualFold(fieldName, "twitter_id") {
 		return ""
 	}
 	// Map common field names to their reference tables
@@ -471,12 +497,49 @@ func getReferenceTable(fieldName string) string {
 	if strings.HasSuffix(baseName, "y") {
 		return strings.TrimSuffix(baseName, "y") + "ies"
 	}
+
 	return baseName + "s"
 }
 
 func buildCustomFilters(tableName string, ctx *gin.Context) (string, []any) {
-	var conditions []string
-	var args []any
+	var (
+		conditions []string
+		args       []any
+	)
+
+	// Handle universal ID filter for exact match (used by ID links)
+	if idValue := getParamValue(ctx, "filter-id"); idValue != "" {
+		// Determine the correct ID column name based on table
+		idColumn := "id"
+		switch tableName {
+		case "dbmovie_titles":
+			idColumn = "dbmovie_titles.id"
+		case "dbserie_alternates":
+			idColumn = "dbserie_alternates.id"
+		case "dbserie_episodes":
+			idColumn = "dbserie_episodes.id"
+		case "movies":
+			idColumn = "movies.id"
+		case "series":
+			idColumn = "series.id"
+		case "serie_episodes":
+			idColumn = "serie_episodes.id"
+		case "movie_files":
+			idColumn = "movie_files.id"
+		case "serie_episode_files":
+			idColumn = "serie_episode_files.id"
+		case "movie_file_unmatcheds":
+			idColumn = "movie_file_unmatcheds.id"
+		case "serie_file_unmatcheds":
+			idColumn = "serie_file_unmatcheds.id"
+		case "movie_histories":
+			idColumn = "movie_histories.id"
+		case "serie_episode_histories":
+			idColumn = "serie_episode_histories.id"
+		}
+		conditions = append(conditions, idColumn+" = ?")
+		args = append(args, idValue)
+	}
 
 	// Define filter mappings based on table structure
 	filterMappings := map[string]map[string]FilterMapping{
@@ -549,9 +612,11 @@ func buildCustomFilters(tableName string, ctx *gin.Context) (string, []any) {
 				case "LIKE":
 					conditions = append(conditions, mapping.Column+" LIKE ?")
 					args = append(args, "%"+value+"%")
+
 				case "=":
 					conditions = append(conditions, mapping.Column+" = ?")
 					args = append(args, value)
+
 				case ">=":
 					conditions = append(conditions, mapping.Column+" >= ?")
 					args = append(args, value)
@@ -562,16 +627,17 @@ func buildCustomFilters(tableName string, ctx *gin.Context) (string, []any) {
 
 	// Handle legacy cases and additional custom logic
 	switch tableName {
-
 	case "dbmovie_titles":
 		if title := getParamValue(ctx, "filter-title"); title != "" {
 			conditions = append(conditions, "dbmovie_titles.title LIKE ?")
 			args = append(args, "%"+title+"%")
 		}
+
 		if movieTitle := getParamValue(ctx, "filter-movie_title"); movieTitle != "" {
 			conditions = append(conditions, "dbmovies.title LIKE ?")
 			args = append(args, "%"+movieTitle+"%")
 		}
+
 		if region := getParamValue(ctx, "filter-region"); region != "" {
 			conditions = append(conditions, "dbmovie_titles.region LIKE ?")
 			args = append(args, "%"+region+"%")
@@ -582,6 +648,7 @@ func buildCustomFilters(tableName string, ctx *gin.Context) (string, []any) {
 			conditions = append(conditions, "seriename LIKE ?")
 			args = append(args, "%"+seriename+"%")
 		}
+
 		if tvdbID := getParamValue(ctx, "filter-thetvdb_id"); tvdbID != "" {
 			conditions = append(conditions, "thetvdb_id = ?")
 			args = append(args, tvdbID)
@@ -592,30 +659,37 @@ func buildCustomFilters(tableName string, ctx *gin.Context) (string, []any) {
 			conditions = append(conditions, "dbmovies.title LIKE ?")
 			args = append(args, "%"+title+"%")
 		}
+
 		if year := getParamValue(ctx, "filter-year"); year != "" {
 			conditions = append(conditions, "dbmovies.year = ?")
 			args = append(args, year)
 		}
+
 		if imdbID := getParamValue(ctx, "filter-imdb_id"); imdbID != "" {
 			conditions = append(conditions, "dbmovies.imdb_id LIKE ?")
 			args = append(args, "%"+imdbID+"%")
 		}
+
 		if listname := getParamValue(ctx, "filter-listname"); listname != "" {
 			conditions = append(conditions, "movies.listname = ?")
 			args = append(args, listname)
 		}
+
 		if qualityReached := getParamValue(ctx, "filter-quality_reached"); qualityReached != "" {
 			conditions = append(conditions, "movies.quality_reached = ?")
 			args = append(args, qualityReached)
 		}
+
 		if missing := getParamValue(ctx, "filter-missing"); missing != "" {
 			conditions = append(conditions, "movies.missing = ?")
 			args = append(args, missing)
 		}
+
 		if quality := getParamValue(ctx, "filter-quality_profile"); quality != "" {
 			conditions = append(conditions, "movies.quality_profile = ?")
 			args = append(args, quality)
 		}
+
 		if rootpath := getParamValue(ctx, "filter-rootpath"); rootpath != "" {
 			conditions = append(conditions, "movies.rootpath LIKE ?")
 			args = append(args, "%"+rootpath+"%")
@@ -626,53 +700,74 @@ func buildCustomFilters(tableName string, ctx *gin.Context) (string, []any) {
 			conditions = append(conditions, "dbseries.seriename LIKE ?")
 			args = append(args, "%"+seriename+"%")
 		}
+
 		if listname := getParamValue(ctx, "filter-listname"); listname != "" {
 			conditions = append(conditions, "series.listname = ?")
 			args = append(args, listname)
 		}
+
 		if rootpath := getParamValue(ctx, "filter-rootpath"); rootpath != "" {
 			conditions = append(conditions, "series.rootpath LIKE ?")
 			args = append(args, "%"+rootpath+"%")
 		}
+
 		if dontUpgrade := getParamValue(ctx, "filter-dont_upgrade"); dontUpgrade != "" {
 			conditions = append(conditions, "series.dont_upgrade = ?")
 			args = append(args, dontUpgrade)
 		}
+
 		if dontSearch := getParamValue(ctx, "filter-dont_search"); dontSearch != "" {
 			conditions = append(conditions, "series.dont_search = ?")
 			args = append(args, dontSearch)
 		}
+
 		if searchSpecials := getParamValue(ctx, "filter-search_specials"); searchSpecials != "" {
 			conditions = append(conditions, "series.search_specials = ?")
 			args = append(args, searchSpecials)
 		}
+
 		if ignoreRuntime := getParamValue(ctx, "filter-ignore_runtime"); ignoreRuntime != "" {
 			conditions = append(conditions, "series.ignore_runtime = ?")
 			args = append(args, ignoreRuntime)
 		}
 
 	case "movie_files":
+		if movieID := getParamValue(ctx, "filter-movie_id"); movieID != "" {
+			conditions = append(conditions, "movie_files.movie_id = ?")
+			args = append(args, movieID)
+		}
+
 		if filename := getParamValue(ctx, "filter-filename"); filename != "" {
 			conditions = append(conditions, "movie_files.filename LIKE ?")
 			args = append(args, "%"+filename+"%")
 		}
+
 		if quality := getParamValue(ctx, "filter-quality_profile"); quality != "" {
 			conditions = append(conditions, "movie_files.quality_profile LIKE ?")
 			args = append(args, "%"+quality+"%")
 		}
+
 		if resolution := getParamValue(ctx, "filter-resolution"); resolution != "" {
 			conditions = append(conditions, "movie_files.resolution LIKE ?")
 			args = append(args, "%"+resolution+"%")
 		}
+
 	case "serie_episode_files":
+		if episodeID := getParamValue(ctx, "filter-serie_episode_id"); episodeID != "" {
+			conditions = append(conditions, "serie_episode_files.serie_episode_id = ?")
+			args = append(args, episodeID)
+		}
+
 		if filename := getParamValue(ctx, "filter-filename"); filename != "" {
 			conditions = append(conditions, "serie_episode_files.filename LIKE ?")
 			args = append(args, "%"+filename+"%")
 		}
+
 		if quality := getParamValue(ctx, "filter-quality_profile"); quality != "" {
 			conditions = append(conditions, "serie_episode_files.quality_profile LIKE ?")
 			args = append(args, "%"+quality+"%")
 		}
+
 		if resolution := getParamValue(ctx, "filter-resolution"); resolution != "" {
 			conditions = append(conditions, "serie_episode_files.resolution LIKE ?")
 			args = append(args, "%"+resolution+"%")
@@ -683,10 +778,12 @@ func buildCustomFilters(tableName string, ctx *gin.Context) (string, []any) {
 			conditions = append(conditions, "dbserie_alternates.title LIKE ?")
 			args = append(args, "%"+title+"%")
 		}
+
 		if seriesName := getParamValue(ctx, "filter-series_name"); seriesName != "" {
 			conditions = append(conditions, "dbseries.seriename LIKE ?")
 			args = append(args, "%"+seriesName+"%")
 		}
+
 		if region := getParamValue(ctx, "filter-region"); region != "" {
 			conditions = append(conditions, "dbserie_alternates.region LIKE ?")
 			args = append(args, "%"+region+"%")
@@ -697,32 +794,43 @@ func buildCustomFilters(tableName string, ctx *gin.Context) (string, []any) {
 			conditions = append(conditions, "dbserie_episodes.title LIKE ?")
 			args = append(args, "%"+title+"%")
 		}
+
 		if seriesName := getParamValue(ctx, "filter-series_name"); seriesName != "" {
 			conditions = append(conditions, "dbseries.seriename LIKE ?")
 			args = append(args, "%"+seriesName+"%")
 		}
+
 		if season := getParamValue(ctx, "filter-season"); season != "" {
 			conditions = append(conditions, "dbserie_episodes.season = ?")
 			args = append(args, season)
 		}
+
 		if episode := getParamValue(ctx, "filter-episode"); episode != "" {
 			conditions = append(conditions, "dbserie_episodes.episode = ?")
 			args = append(args, episode)
 		}
+
 		if identifier := getParamValue(ctx, "filter-identifier"); identifier != "" {
 			conditions = append(conditions, "dbserie_episodes.identifier = ?")
 			args = append(args, identifier)
 		}
 
 	case "serie_episodes":
+		if tvdbID := getParamValue(ctx, "filter-tvdb_id"); tvdbID != "" {
+			conditions = append(conditions, "dbserie_episodes.thetvdb_id LIKE ?")
+			args = append(args, "%"+tvdbID+"%")
+		}
+
 		if episodeTitle := getParamValue(ctx, "filter-episode_title"); episodeTitle != "" {
 			conditions = append(conditions, "dbserie_episodes.title LIKE ?")
 			args = append(args, "%"+episodeTitle+"%")
 		}
+
 		if quality := getParamValue(ctx, "filter-quality_profile"); quality != "" {
 			conditions = append(conditions, "serie_episodes.quality_profile LIKE ?")
 			args = append(args, "%"+quality+"%")
 		}
+
 		if missing := getParamValue(ctx, "filter-missing"); missing != "" {
 			switch missing {
 			case "1":
@@ -737,14 +845,17 @@ func buildCustomFilters(tableName string, ctx *gin.Context) (string, []any) {
 			conditions = append(conditions, "job_type LIKE ?")
 			args = append(args, "%"+jobType+"%")
 		}
+
 		if jobCategory := getParamValue(ctx, "filter-job_category"); jobCategory != "" {
 			conditions = append(conditions, "job_category LIKE ?")
 			args = append(args, "%"+jobCategory+"%")
 		}
+
 		if jobGroup := getParamValue(ctx, "filter-job_group"); jobGroup != "" {
 			conditions = append(conditions, "job_group LIKE ?")
 			args = append(args, "%"+jobGroup+"%")
 		}
+
 		if ended := getParamValue(ctx, "filter-ended"); ended != "" {
 			switch ended {
 			case "1":
@@ -753,6 +864,7 @@ func buildCustomFilters(tableName string, ctx *gin.Context) (string, []any) {
 				conditions = append(conditions, "ended IS NULL")
 			}
 		}
+
 		if startedDate := getParamValue(ctx, "filter-started_date"); startedDate != "" {
 			conditions = append(conditions, "DATE(started) = ?")
 			args = append(args, startedDate)
@@ -763,14 +875,17 @@ func buildCustomFilters(tableName string, ctx *gin.Context) (string, []any) {
 			conditions = append(conditions, "type = ?")
 			args = append(args, qualityType)
 		}
+
 		if name := getParamValue(ctx, "filter-name"); name != "" {
 			conditions = append(conditions, "name LIKE ?")
 			args = append(args, "%"+name+"%")
 		}
+
 		if useRegex := getParamValue(ctx, "filter-use_regex"); useRegex != "" {
 			conditions = append(conditions, "use_regex = ?")
 			args = append(args, useRegex)
 		}
+
 		if priority := getParamValue(ctx, "filter-priority"); priority != "" {
 			conditions = append(conditions, "priority = ?")
 			args = append(args, priority)
@@ -781,10 +896,12 @@ func buildCustomFilters(tableName string, ctx *gin.Context) (string, []any) {
 			conditions = append(conditions, "movie_file_unmatcheds.filepath LIKE ?")
 			args = append(args, "%"+filepath+"%")
 		}
+
 		if listname := getParamValue(ctx, "filter-listname"); listname != "" {
 			conditions = append(conditions, "movie_file_unmatcheds.listname LIKE ?")
 			args = append(args, "%"+listname+"%")
 		}
+
 		if qualityProfile := getParamValue(ctx, "filter-movie_quality_profile"); qualityProfile != "" {
 			conditions = append(conditions, "movies.quality_profile LIKE ?")
 			args = append(args, "%"+qualityProfile+"%")
@@ -795,10 +912,12 @@ func buildCustomFilters(tableName string, ctx *gin.Context) (string, []any) {
 			conditions = append(conditions, "serie_file_unmatcheds.filepath LIKE ?")
 			args = append(args, "%"+filepath+"%")
 		}
+
 		if listname := getParamValue(ctx, "filter-listname"); listname != "" {
 			conditions = append(conditions, "serie_file_unmatcheds.listname LIKE ?")
 			args = append(args, "%"+listname+"%")
 		}
+
 		if rootpath := getParamValue(ctx, "filter-series_rootpath"); rootpath != "" {
 			conditions = append(conditions, "series.rootpath LIKE ?")
 			args = append(args, "%"+rootpath+"%")
@@ -809,14 +928,17 @@ func buildCustomFilters(tableName string, ctx *gin.Context) (string, []any) {
 			conditions = append(conditions, "movie_histories.title LIKE ?")
 			args = append(args, "%"+title+"%")
 		}
+
 		if indexer := getParamValue(ctx, "filter-indexer"); indexer != "" {
 			conditions = append(conditions, "movie_histories.indexer LIKE ?")
 			args = append(args, "%"+indexer+"%")
 		}
+
 		if quality := getParamValue(ctx, "filter-quality_profile"); quality != "" {
 			conditions = append(conditions, "movie_histories.quality_profile LIKE ?")
 			args = append(args, "%"+quality+"%")
 		}
+
 		if downloadedDate := getParamValue(ctx, "filter-downloaded_date"); downloadedDate != "" {
 			conditions = append(conditions, "DATE(movie_histories.downloaded_at) = ?")
 			args = append(args, downloadedDate)
@@ -827,19 +949,21 @@ func buildCustomFilters(tableName string, ctx *gin.Context) (string, []any) {
 			conditions = append(conditions, "serie_episode_histories.title LIKE ?")
 			args = append(args, "%"+title+"%")
 		}
+
 		if episodeTitle := getParamValue(ctx, "filter-episode_title"); episodeTitle != "" {
 			conditions = append(conditions, "dbserie_episodes.title LIKE ?")
 			args = append(args, "%"+episodeTitle+"%")
 		}
+
 		if indexer := getParamValue(ctx, "filter-indexer"); indexer != "" {
 			conditions = append(conditions, "serie_episode_histories.indexer LIKE ?")
 			args = append(args, "%"+indexer+"%")
 		}
+
 		if quality := getParamValue(ctx, "filter-quality_profile"); quality != "" {
 			conditions = append(conditions, "serie_episode_histories.quality_profile LIKE ?")
 			args = append(args, "%"+quality+"%")
 		}
-
 	}
 
 	if len(conditions) == 0 {

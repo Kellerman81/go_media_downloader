@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// LogAnalysisResults holds the results of log file analysis
+// LogAnalysisResults holds the results of log file analysis.
 type LogAnalysisResults struct {
 	TotalEntries      int64
 	ErrorCount        int64
@@ -27,7 +27,7 @@ type LogAnalysisResults struct {
 	SlowestOperation  string // slowest operation found
 }
 
-// getLogFilePath returns the path to the application log file
+// getLogFilePath returns the path to the application log file.
 func getLogFilePath() (string, error) {
 	// Try to get log file path from config or use default
 	logPaths := []string{
@@ -47,11 +47,15 @@ func getLogFilePath() (string, error) {
 	return "", fmt.Errorf("no log file found in standard locations")
 }
 
-// performLogAnalysis analyzes the log file and returns results
-func performLogAnalysis(logFile, timeRange, logLevel string, maxLines int64, errorPattern, performanceMetrics, accessPattern, systemHealth, includeStackTraces bool) (*LogAnalysisResults, error) {
+// performLogAnalysis analyzes the log file and returns results.
+func performLogAnalysis(
+	logFile, timeRange, logLevel string,
+	maxLines int64,
+	errorPattern, performanceMetrics, accessPattern, systemHealth, includeStackTraces bool,
+) (*LogAnalysisResults, error) {
 	file, err := os.Open(logFile)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open log file: %v", err)
+		return nil, fmt.Errorf("failed to open log file: %w", err)
 	}
 	defer file.Close()
 
@@ -65,27 +69,37 @@ func performLogAnalysis(logFile, timeRange, logLevel string, maxLines int64, err
 	errorRegex := regexp.MustCompile(`(?i)\b(error|failed|exception|panic)\b`)
 	warningRegex := regexp.MustCompile(`(?i)\b(warning|warn)\b`)
 	infoRegex := regexp.MustCompile(`(?i)\b(info|debug|trace)\b`)
-	performanceRegex := regexp.MustCompile(`(?i)(slow|timeout|took\s+(\d+(?:\.\d+)?)(\s*m?s)|response.*?time.*?(\d+(?:\.\d+)?)(\s*m?s))`)
+	performanceRegex := regexp.MustCompile(
+		`(?i)(slow|timeout|took\s+(\d+(?:\.\d+)?)(\s*m?s)|response.*?time.*?(\d+(?:\.\d+)?)(\s*m?s))`,
+	)
 	timingRegex := regexp.MustCompile(`(?i)took\s+(\d+(?:\.\d+)?)\s*(ms|s)`)
 	operationRegex := regexp.MustCompile(`(?i)(\w+(?:_\w+)*)\s+took\s+(\d+(?:\.\d+)?)\s*(ms|s)`)
 	accessRegex := regexp.MustCompile(`\b(GET|POST|PUT|DELETE|PATCH)\s+(/\S*)`)
-	
+
 	// More specific error pattern extraction
-	errorPatternRegex := regexp.MustCompile(`(?i)(failed to connect|connection refused|timeout|database error|not found|permission denied|out of memory|disk full|network error)`)
-	
+	errorPatternRegex := regexp.MustCompile(
+		`(?i)(failed to connect|connection refused|timeout|database error|not found|permission denied|out of memory|disk full|network error)`,
+	)
+
 	// Variables to track performance metrics
-	var totalResponseTimeMs float64
-	var responseTimeCount int
-	var maxResponseTimeMs float64
-	var maxResponseTimeStr string
-	var slowestOp string
-	var slowestOpTime float64
+	var (
+		totalResponseTimeMs float64
+		responseTimeCount   int
+		maxResponseTimeMs   float64
+		maxResponseTimeStr  string
+		slowestOp           string
+		slowestOpTime       float64
+	)
 
 	// Calculate time range filter
-	var timeRangeStart time.Time
-	var useTimeFilter bool
+	var (
+		timeRangeStart time.Time
+		useTimeFilter  bool
+	)
+
 	if timeRange != "" && timeRange != "all" {
 		useTimeFilter = true
+
 		now := time.Now()
 		switch timeRange {
 		case "1hour":
@@ -127,28 +141,32 @@ func performLogAnalysis(logFile, timeRange, logLevel string, maxLines int64, err
 	for scanner.Scan() && lineCount < maxLines {
 		line := scanner.Text()
 		lineCount++
-		
+
 		// Apply time range filter if specified
 		if useTimeFilter {
-			if timestampMatches := timestampRegex.FindStringSubmatch(line); len(timestampMatches) > 1 {
+			if timestampMatches := timestampRegex.FindStringSubmatch(line); len(
+				timestampMatches,
+			) > 1 {
 				timestampStr := timestampMatches[1]
 				// Try multiple timestamp formats
-				var logTime time.Time
-				var err error
-				
+				var (
+					logTime time.Time
+					err     error
+				)
+
 				layouts := []string{
 					"2006-01-02T15:04:05",
 					"2006-01-02 15:04:05",
 					"2006-01-02T15:04:05Z",
 					"2006-01-02 15:04:05.000",
 				}
-				
+
 				for _, layout := range layouts {
 					if logTime, err = time.Parse(layout, timestampStr); err == nil {
 						break
 					}
 				}
-				
+
 				if err == nil && logTime.Before(timeRangeStart) {
 					continue // Skip this line as it's outside the time range
 				}
@@ -181,23 +199,26 @@ func performLogAnalysis(logFile, timeRange, logLevel string, maxLines int64, err
 		// Analyze performance metrics
 		if performanceMetrics {
 			// Extract timing information
-			if timingMatches := timingRegex.FindAllStringSubmatch(line, -1); len(timingMatches) > 0 {
+			if timingMatches := timingRegex.FindAllStringSubmatch(line, -1); len(
+				timingMatches,
+			) > 0 {
 				for _, match := range timingMatches {
 					if len(match) >= 3 {
 						timeValue, err := strconv.ParseFloat(match[1], 64)
 						if err != nil {
 							continue
 						}
-						
+
 						timeUnit := strings.ToLower(match[2])
+
 						timeInMs := timeValue
 						if timeUnit == "s" {
 							timeInMs = timeValue * 1000
 						}
-						
+
 						totalResponseTimeMs += timeInMs
 						responseTimeCount++
-						
+
 						if timeInMs > maxResponseTimeMs {
 							maxResponseTimeMs = timeInMs
 							maxResponseTimeStr = fmt.Sprintf("%.2f%s", timeValue, timeUnit)
@@ -205,23 +226,25 @@ func performLogAnalysis(logFile, timeRange, logLevel string, maxLines int64, err
 					}
 				}
 			}
-			
+
 			// Extract operation timing
 			if opMatches := operationRegex.FindAllStringSubmatch(line, -1); len(opMatches) > 0 {
 				for _, match := range opMatches {
 					if len(match) >= 4 {
 						operation := match[1]
+
 						timeValue, err := strconv.ParseFloat(match[2], 64)
 						if err != nil {
 							continue
 						}
-						
+
 						timeUnit := strings.ToLower(match[3])
+
 						timeInMs := timeValue
 						if timeUnit == "s" {
 							timeInMs = timeValue * 1000
 						}
-						
+
 						if timeInMs > slowestOpTime {
 							slowestOpTime = timeInMs
 							slowestOp = fmt.Sprintf("%s (%.2f%s)", operation, timeValue, timeUnit)
@@ -229,10 +252,11 @@ func performLogAnalysis(logFile, timeRange, logLevel string, maxLines int64, err
 					}
 				}
 			}
-			
+
 			// Add to performance issues list for backward compatibility
 			if performanceRegex.MatchString(line) {
 				matches := performanceRegex.FindAllString(line, -1)
+
 				results.PerformanceIssues = append(results.PerformanceIssues, matches...)
 			}
 		}
@@ -250,7 +274,7 @@ func performLogAnalysis(logFile, timeRange, logLevel string, maxLines int64, err
 	}
 
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("error reading log file: %v", err)
+		return nil, fmt.Errorf("error reading log file: %w", err)
 	}
 
 	// Find the top error pattern
@@ -261,7 +285,7 @@ func performLogAnalysis(logFile, timeRange, logLevel string, maxLines int64, err
 			results.TopErrorPattern = fmt.Sprintf("%s (%d occurrences)", pattern, count)
 		}
 	}
-	
+
 	// Find the top access pattern
 	var maxAccessCount int
 	for endpoint, count := range results.AccessPatterns {
@@ -270,21 +294,22 @@ func performLogAnalysis(logFile, timeRange, logLevel string, maxLines int64, err
 			results.TopAccessPattern = fmt.Sprintf("%s (%d requests)", endpoint, count)
 		}
 	}
-	
+
 	// Calculate performance metrics
 	if responseTimeCount > 0 {
 		avgTimeMs := totalResponseTimeMs / float64(responseTimeCount)
+
 		results.AvgResponseTime = fmt.Sprintf("%.2fms", avgTimeMs)
 	} else {
 		results.AvgResponseTime = "No timing data found"
 	}
-	
+
 	if maxResponseTimeStr != "" {
 		results.MaxResponseTime = maxResponseTimeStr
 	} else {
 		results.MaxResponseTime = "No timing data found"
 	}
-	
+
 	if slowestOp != "" {
 		results.SlowestOperation = slowestOp
 	} else {

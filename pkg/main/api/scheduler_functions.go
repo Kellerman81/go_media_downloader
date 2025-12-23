@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// parseTimeRange parses time range strings and returns appropriate time
+// parseTimeRange parses time range strings and returns appropriate time.
 func parseTimeRange(timeRange string) time.Time {
 	switch strings.ToLower(timeRange) {
 	case "1h", "1 hour":
@@ -33,7 +33,7 @@ func parseTimeRange(timeRange string) time.Time {
 	}
 }
 
-// ScheduleExecutionResult holds the result of a scheduled task execution
+// ScheduleExecutionResult holds the result of a scheduled task execution.
 type ScheduleExecutionResult struct {
 	ScheduleName string
 	TaskType     string
@@ -44,7 +44,7 @@ type ScheduleExecutionResult struct {
 	Details      []string
 }
 
-// ScheduleInfo holds information about a scheduled task
+// ScheduleInfo holds information about a scheduled task.
 type ScheduleInfo struct {
 	Name           string
 	Description    string

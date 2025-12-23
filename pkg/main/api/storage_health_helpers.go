@@ -10,7 +10,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 )
 
-// StorageHealthResults holds the results of storage health checks
+// StorageHealthResults holds the results of storage health checks.
 type StorageHealthResults struct {
 	TotalPaths    int
 	HealthyPaths  int
@@ -22,7 +22,7 @@ type StorageHealthResults struct {
 	CheckDuration time.Duration
 }
 
-// StoragePathInfo contains details about a storage path
+// StoragePathInfo contains details about a storage path.
 type StoragePathInfo struct {
 	Path         string
 	Exists       bool
@@ -35,7 +35,7 @@ type StoragePathInfo struct {
 	IOTest       IOTestResult
 }
 
-// IOTestResult contains I/O performance test results
+// IOTestResult contains I/O performance test results.
 type IOTestResult struct {
 	ReadTest  bool
 	WriteTest bool
@@ -44,8 +44,11 @@ type IOTestResult struct {
 	Error     string
 }
 
-// performStorageHealthCheck performs comprehensive storage health checks
-func performStorageHealthCheck(checkDiskSpace, checkPermissions, _, checkIOHealth bool, lowSpaceThreshold, criticalSpaceThreshold, slowIOThreshold float64) *StorageHealthResults {
+// performStorageHealthCheck performs comprehensive storage health checks.
+func performStorageHealthCheck(
+	checkDiskSpace, checkPermissions, _, checkIOHealth bool,
+	lowSpaceThreshold, criticalSpaceThreshold, slowIOThreshold float64,
+) *StorageHealthResults {
 	startTime := time.Now()
 
 	results := &StorageHealthResults{
@@ -54,6 +57,7 @@ func performStorageHealthCheck(checkDiskSpace, checkPermissions, _, checkIOHealt
 
 	// Get configured media paths
 	mediaPaths := getConfiguredMediaPaths()
+
 	results.TotalPaths = len(mediaPaths)
 
 	for _, mediaPath := range mediaPaths {
@@ -130,10 +134,11 @@ func performStorageHealthCheck(checkDiskSpace, checkPermissions, _, checkIOHealt
 	}
 
 	results.CheckDuration = time.Since(startTime)
+
 	return results
 }
 
-// getConfiguredMediaPaths returns all configured media paths from the application config
+// getConfiguredMediaPaths returns all configured media paths from the application config.
 func getConfiguredMediaPaths() []string {
 	var paths []string
 
@@ -158,6 +163,7 @@ func getConfiguredMediaPaths() []string {
 
 	// Remove duplicates
 	pathSet := make(map[string]bool)
+
 	uniquePaths := make([]string, 0)
 	for _, path := range paths {
 		if !pathSet[path] {
@@ -169,17 +175,17 @@ func getConfiguredMediaPaths() []string {
 	return uniquePaths
 }
 
-// getDiskUsage returns free and total disk space for the given path
+// getDiskUsage returns free and total disk space for the given path.
 func getDiskUsage(path string) (free uint64, total uint64, err error) {
 	// Check if path exists
 	if _, err := os.Stat(path); err != nil {
-		return 0, 0, fmt.Errorf("path not accessible: %v", err)
+		return 0, 0, fmt.Errorf("path not accessible: %w", err)
 	}
 
 	// Get absolute path
 	absPath, err := filepath.Abs(path)
 	if err != nil {
-		return 0, 0, fmt.Errorf("failed to get absolute path: %v", err)
+		return 0, 0, fmt.Errorf("failed to get absolute path: %w", err)
 	}
 
 	switch runtime.GOOS {
@@ -197,12 +203,12 @@ func getDiskUsage(path string) (free uint64, total uint64, err error) {
 // Implementation is provided by platform-specific files:
 // - storage_health_helpers_windows.go for Windows systems
 
-// getDiskUsageUnix gets disk usage on Unix-like systems (Linux, macOS, BSD)  
+// getDiskUsageUnix gets disk usage on Unix-like systems (Linux, macOS, BSD)
 // Implementation is provided by platform-specific files:
 // - storage_health_helpers_unix.go for Unix-like systems
 // - storage_health_helpers_windows.go for Windows systems
 
-// getDiskUsageFallback provides basic disk usage estimation as fallback
+// getDiskUsageFallback provides basic disk usage estimation as fallback.
 func getDiskUsageFallback(path string) (free uint64, total uint64, err error) {
 	// Try to get some basic info by creating a test file and checking available space
 	testFile := filepath.Join(path, ".diskcheck_temp")
@@ -212,16 +218,18 @@ func getDiskUsageFallback(path string) (free uint64, total uint64, err error) {
 		// If we can create files, assume reasonable disk space
 		free = 100 * 1024 * 1024 * 1024  // 100 GB free
 		total = 500 * 1024 * 1024 * 1024 // 500 GB total
+
 		return free, total, nil
 	}
 
 	// If we can't even create test files, assume disk is nearly full
 	free = 1 * 1024 * 1024 * 1024    // 1 GB free
 	total = 100 * 1024 * 1024 * 1024 // 100 GB total
+
 	return free, total, fmt.Errorf("unable to determine disk usage, using fallback values")
 }
 
-// testPathPermissions tests if a path has read/write permissions
+// testPathPermissions tests if a path has read/write permissions.
 func testPathPermissions(path string) bool {
 	// Test read permission
 	if _, err := os.Open(path); err != nil {
@@ -239,7 +247,7 @@ func testPathPermissions(path string) bool {
 	}
 }
 
-// performIOTest performs basic I/O performance tests
+// performIOTest performs basic I/O performance tests.
 func performIOTest(path string, _ float64) IOTestResult {
 	result := IOTestResult{}
 
@@ -253,12 +261,16 @@ func performIOTest(path string, _ float64) IOTestResult {
 		return result
 	} else {
 		defer os.Remove(testFile)
+
 		if _, err := file.Write(testData); err != nil {
 			result.Error = fmt.Sprintf("Write test failed: %v", err)
+
 			file.Close()
 			return result
 		}
+
 		file.Close()
+
 		result.WriteTime = time.Since(writeStart)
 		result.WriteTest = true
 	}
@@ -272,10 +284,13 @@ func performIOTest(path string, _ float64) IOTestResult {
 		buffer := make([]byte, len(testData))
 		if _, err := file.Read(buffer); err != nil {
 			result.Error = fmt.Sprintf("Read test failed: %v", err)
+
 			file.Close()
 			return result
 		}
+
 		file.Close()
+
 		result.ReadTime = time.Since(readStart)
 		result.ReadTest = true
 	}

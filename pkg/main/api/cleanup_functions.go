@@ -11,7 +11,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 )
 
-// getPathsToScan returns all media paths that should be scanned for cleanup
+// getPathsToScan returns all media paths that should be scanned for cleanup.
 func getPathsToScan(paths string) []string {
 	var scanPaths []string
 
@@ -28,6 +28,7 @@ func getPathsToScan(paths string) []string {
 				}
 			}
 		}
+
 		for i := range media.Series {
 			for _, pathCfg := range media.Series[i].Data {
 				if pathCfg.CfgPath != nil && pathCfg.CfgPath.Path != "" {
@@ -39,6 +40,7 @@ func getPathsToScan(paths string) []string {
 
 	// Remove duplicates and empty paths
 	pathMap := make(map[string]bool)
+
 	var uniquePaths []string
 	for _, path := range scanPaths {
 		cleanPath := strings.TrimSpace(path)
@@ -51,7 +53,7 @@ func getPathsToScan(paths string) []string {
 	return uniquePaths
 }
 
-// findOrphanedFiles finds files on disk that are not tracked in the database
+// findOrphanedFiles finds files on disk that are not tracked in the database.
 func findOrphanedFiles(scanPaths []string, mediaTypes string, minFileSize int64) []string {
 	orphanedFiles := make([]string, 0)
 
@@ -59,14 +61,22 @@ func findOrphanedFiles(scanPaths []string, mediaTypes string, minFileSize int64)
 	dbFiles := make(map[string]bool)
 
 	if mediaTypes == "all" || mediaTypes == "movies" {
-		movieFiles := database.StructscanT[database.MovieFile](false, 0, "SELECT location FROM movie_files")
+		movieFiles := database.StructscanT[database.MovieFile](
+			false,
+			0,
+			"SELECT location FROM movie_files",
+		)
 		for i := range movieFiles {
 			dbFiles[movieFiles[i].Location] = true
 		}
 	}
 
 	if mediaTypes == "all" || mediaTypes == "series" {
-		serieFiles := database.StructscanT[database.SerieEpisodeFile](false, 0, "SELECT location FROM serie_episode_files")
+		serieFiles := database.StructscanT[database.SerieEpisodeFile](
+			false,
+			0,
+			"SELECT location FROM serie_episode_files",
+		)
 		for i := range serieFiles {
 			dbFiles[serieFiles[i].Location] = true
 		}
@@ -107,9 +117,10 @@ func findOrphanedFiles(scanPaths []string, mediaTypes string, minFileSize int64)
 	return orphanedFiles
 }
 
-// findDuplicateFiles finds files with identical sizes or checksums
+// findDuplicateFiles finds files with identical sizes or checksums.
 func findDuplicateFiles(scanPaths []string, minFileSize int64) [][]string {
 	sizeMap := make(map[int64][]string)
+
 	var duplicateGroups [][]string
 
 	// Scan all files and group by size
@@ -149,13 +160,17 @@ func findDuplicateFiles(scanPaths []string, minFileSize int64) [][]string {
 	return duplicateGroups
 }
 
-// findBrokenLinks finds database entries pointing to missing files
+// findBrokenLinks finds database entries pointing to missing files.
 func findBrokenLinks(mediaTypes string) []string {
 	brokenLinks := make([]string, 0)
 
 	// Check movie files if movies are included
 	if mediaTypes == "all" || mediaTypes == "movies" {
-		movieFiles := database.StructscanT[database.MovieFile](false, 0, "SELECT location FROM movie_files")
+		movieFiles := database.StructscanT[database.MovieFile](
+			false,
+			0,
+			"SELECT location FROM movie_files",
+		)
 		for i := range movieFiles {
 			if !checkFileExists(movieFiles[i].Location) {
 				brokenLinks = append(brokenLinks, movieFiles[i].Location)
@@ -165,7 +180,11 @@ func findBrokenLinks(mediaTypes string) []string {
 
 	// Check serie files if series are included
 	if mediaTypes == "all" || mediaTypes == "series" {
-		serieFiles := database.StructscanT[database.SerieEpisodeFile](false, 0, "SELECT location FROM serie_episode_files")
+		serieFiles := database.StructscanT[database.SerieEpisodeFile](
+			false,
+			0,
+			"SELECT location FROM serie_episode_files",
+		)
 		for i := range serieFiles {
 			if !checkFileExists(serieFiles[i].Location) {
 				brokenLinks = append(brokenLinks, serieFiles[i].Location)
@@ -176,7 +195,7 @@ func findBrokenLinks(mediaTypes string) []string {
 	return brokenLinks
 }
 
-// findEmptyDirectories finds directories with no media files
+// findEmptyDirectories finds directories with no media files.
 func findEmptyDirectories(scanPaths []string, minFileSize int64) []string {
 	emptyDirs := make([]string, 0)
 
@@ -233,8 +252,14 @@ func findEmptyDirectories(scanPaths []string, minFileSize int64) []string {
 	return emptyDirs
 }
 
-// performCleanupActions executes cleanup operations based on findings
-func performCleanupActions(orphanedFiles []string, duplicateGroups [][]string, brokenLinks []string, emptyDirs []string, dryRun bool) CleanupResults {
+// performCleanupActions executes cleanup operations based on findings.
+func performCleanupActions(
+	orphanedFiles []string,
+	duplicateGroups [][]string,
+	brokenLinks []string,
+	emptyDirs []string,
+	dryRun bool,
+) CleanupResults {
 	results := CleanupResults{
 		OrphanedFiles:    len(orphanedFiles),
 		DuplicateFiles:   0,
@@ -249,14 +274,21 @@ func performCleanupActions(orphanedFiles []string, duplicateGroups [][]string, b
 	}
 
 	if dryRun {
-		results.ActionsPerformed = append(results.ActionsPerformed, "DRY RUN - No actual changes made")
+		results.ActionsPerformed = append(
+			results.ActionsPerformed,
+			"DRY RUN - No actual changes made",
+		)
+
 		return results
 	}
 
 	// Remove orphaned files
 	for _, file := range orphanedFiles {
 		if err := os.Remove(file); err == nil {
-			results.ActionsPerformed = append(results.ActionsPerformed, fmt.Sprintf("Removed orphaned file: %s", file))
+			results.ActionsPerformed = append(
+				results.ActionsPerformed,
+				fmt.Sprintf("Removed orphaned file: %s", file),
+			)
 		}
 	}
 
@@ -264,7 +296,10 @@ func performCleanupActions(orphanedFiles []string, duplicateGroups [][]string, b
 	for _, group := range duplicateGroups {
 		for i := 1; i < len(group); i++ {
 			if err := os.Remove(group[i]); err == nil {
-				results.ActionsPerformed = append(results.ActionsPerformed, fmt.Sprintf("Removed duplicate file: %s", group[i]))
+				results.ActionsPerformed = append(
+					results.ActionsPerformed,
+					fmt.Sprintf("Removed duplicate file: %s", group[i]),
+				)
 			}
 		}
 	}
@@ -273,20 +308,27 @@ func performCleanupActions(orphanedFiles []string, duplicateGroups [][]string, b
 	for _, brokenFile := range brokenLinks {
 		database.ExecN("DELETE FROM movie_files WHERE location = ?", brokenFile)
 		database.ExecN("DELETE FROM serie_episode_files WHERE location = ?", brokenFile)
-		results.ActionsPerformed = append(results.ActionsPerformed, fmt.Sprintf("Removed broken link from database: %s", brokenFile))
+
+		results.ActionsPerformed = append(
+			results.ActionsPerformed,
+			fmt.Sprintf("Removed broken link from database: %s", brokenFile),
+		)
 	}
 
 	// Remove empty directories
 	for _, dir := range emptyDirs {
 		if err := os.Remove(dir); err == nil {
-			results.ActionsPerformed = append(results.ActionsPerformed, fmt.Sprintf("Removed empty directory: %s", dir))
+			results.ActionsPerformed = append(
+				results.ActionsPerformed,
+				fmt.Sprintf("Removed empty directory: %s", dir),
+			)
 		}
 	}
 
 	return results
 }
 
-// CleanupResults holds the results of cleanup operations
+// CleanupResults holds the results of cleanup operations.
 type CleanupResults struct {
 	OrphanedFiles    int
 	DuplicateFiles   int

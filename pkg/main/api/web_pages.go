@@ -893,7 +893,7 @@ func addCSS() gomponents.Node {
 						justify-content: center;
 					}
 					
-					.btn-action-edit, .btn-action-delete {
+					.btn-action-edit, .btn-action-delete, .btn-action-files, .btn-action-search, .btn-action-search-title, .btn-action-metadata-refresh {
 						background: none;
 						border: none;
 						padding: 0.5rem;
@@ -906,33 +906,97 @@ func addCSS() gomponents.Node {
 						width: 36px;
 						height: 36px;
 					}
-					
+
 					.btn-action-edit {
 						color: #0d6efd;
 						background: rgba(13, 110, 253, 0.1);
 					}
-					
+
 					.btn-action-edit:hover {
 						background: rgba(13, 110, 253, 0.2);
 						transform: translateY(-2px);
 						box-shadow: 0 4px 12px rgba(13, 110, 253, 0.3);
 					}
-					
+
 					.btn-action-delete {
 						color: #dc3545;
 						background: rgba(220, 53, 69, 0.1);
 					}
-					
+
 					.btn-action-delete:hover {
 						background: rgba(220, 53, 69, 0.2);
 						transform: translateY(-2px);
 						box-shadow: 0 4px 12px rgba(220, 53, 69, 0.3);
 					}
-					
-					.btn-action-edit i, .btn-action-delete i {
+
+					.btn-action-files {
+						color: #198754;
+						background: rgba(25, 135, 84, 0.1);
+					}
+
+					.btn-action-files:hover {
+						background: rgba(25, 135, 84, 0.2);
+						transform: translateY(-2px);
+						box-shadow: 0 4px 12px rgba(25, 135, 84, 0.3);
+					}
+
+					.btn-action-search {
+						color: #fd7e14;
+						background: rgba(253, 126, 20, 0.1);
+					}
+
+					.btn-action-search:hover {
+						background: rgba(253, 126, 20, 0.2);
+						transform: translateY(-2px);
+						box-shadow: 0 4px 12px rgba(253, 126, 20, 0.3);
+					}
+
+					.btn-action-search-title {
+						color: #6f42c1;
+						background: rgba(111, 66, 193, 0.1);
+					}
+
+					.btn-action-search-title:hover {
+						background: rgba(111, 66, 193, 0.2);
+						transform: translateY(-2px);
+						box-shadow: 0 4px 12px rgba(111, 66, 193, 0.3);
+					}
+
+					.btn-action-metadata-refresh {
+						color: #20c997;
+						background: rgba(32, 201, 151, 0.1);
+					}
+
+					.btn-action-metadata-refresh:hover {
+						background: rgba(32, 201, 151, 0.2);
+						transform: translateY(-2px);
+						box-shadow: 0 4px 12px rgba(32, 201, 151, 0.3);
+					}
+
+					.btn-action-edit i, .btn-action-delete i, .btn-action-files i, .btn-action-search i, .btn-action-search-title i, .btn-action-metadata-refresh i {
 						font-size: 0.9rem;
 					}
-					
+
+					/* ID Link Styling */
+					.id-link {
+						color: #0d6efd;
+						text-decoration: none;
+						font-weight: 500;
+						transition: all 0.2s ease;
+						padding: 2px 6px;
+						border-radius: 4px;
+					}
+
+					.id-link:hover {
+						color: #0a58ca;
+						background: rgba(13, 110, 253, 0.1);
+						text-decoration: underline;
+					}
+
+					.id-link:active {
+						transform: scale(0.98);
+					}
+
 					/* Enhanced Status Messages */
 					.alert-success-enhanced, .alert-danger-enhanced {
 						margin: 1.5rem;
@@ -1760,18 +1824,30 @@ func addCSS() gomponents.Node {
 				`))
 }
 
-func page(_ string, activeConfig bool, activeDatabase bool, activeManagement bool, addcontent ...gomponents.Node) gomponents.Node {
+func page(
+	_ string,
+	activeConfig bool,
+	activeDatabase bool,
+	activeManagement bool,
+	addcontent ...gomponents.Node,
+) gomponents.Node {
 	return html.Doctype(
 		html.HTML(
 			html.Lang("en"),
 			html.Head(
 				html.Meta(html.Charset("utf-8")),
-				html.Meta(html.Name("viewport"), html.Content("width=device-width, initial-scale=1")),
+				html.Meta(
+					html.Name("viewport"),
+					html.Content("width=device-width, initial-scale=1"),
+				),
 				html.Title("Media Downloader Management"),
 
 				// Load jQuery first
 				html.Script(html.Src("https://code.jquery.com/jquery-3.7.1.min.js")),
-				html.Link(html.Rel("stylesheet"), html.Href("/static/css/light.css")), // https://cdn.jsdelivr.net/npm/@adminkit/core@3.4.0/dist/css/app.min.css
+				html.Link(
+					html.Rel("stylesheet"),
+					html.Href("/static/css/light.css"),
+				), // https://cdn.jsdelivr.net/npm/@adminkit/core@3.4.0/dist/css/app.min.css
 				// Choices.js CSS and JS for searchable dropdowns
 				// html.Link(html.Rel("stylesheet"), html.Href("https://cdn.jsdelivr.net/npm/choices.js/public/assets/styles/choices.min.css")),
 				html.Script(html.Src("/static/js/app.js")),
@@ -1809,12 +1885,24 @@ func page(_ string, activeConfig bool, activeDatabase bool, activeManagement boo
 										html.Class("row align-items-center"),
 										html.Div(
 											html.Class("col-md-6"),
-											html.P(html.Class("mb-0"), gomponents.Text("© 2025 Go Media Downloader - Advanced Media Automation")),
+											html.P(
+												html.Class("mb-0"),
+												gomponents.Text(
+													"© 2025 Go Media Downloader - Advanced Media Automation",
+												),
+											),
 										),
 										html.Div(
 											html.Class("col-md-6 text-md-end"),
-											html.Span(html.Class("badge bg-success me-2"), html.I(html.Class("fas fa-circle me-1")), gomponents.Text("System Online")),
-											html.Small(html.Class("text-muted"), gomponents.Text("Web Interface v2.0")),
+											html.Span(
+												html.Class("badge bg-success me-2"),
+												html.I(html.Class("fas fa-circle me-1")),
+												gomponents.Text("System Online"),
+											),
+											html.Small(
+												html.Class("text-muted"),
+												gomponents.Text("Web Interface v2.0"),
+											),
 										),
 									),
 								),
@@ -1842,11 +1930,12 @@ func adminPage() string {
 	// Render to string
 	var buf strings.Builder
 	pageNode.Render(&buf)
+
 	return buf.String()
 }
 
 // adminPage generates the HTML page using gomponents
-// adminPageConfig - consolidated handler for all config pages
+// adminPageConfig - consolidated handler for all config pages.
 func adminPageConfig(ctx *gin.Context) {
 	configType, ok := getParamID(ctx, "configtype")
 	if !ok {
@@ -1854,42 +1943,101 @@ func adminPageConfig(ctx *gin.Context) {
 	}
 
 	var pageNode gomponents.Node
+
 	csrfToken := getCSRFToken(ctx)
 
 	switch configType {
 	case "general":
 		configv := config.GetSettingsGeneral()
-		pageNode = page("Config General", true, false, false, renderGeneralConfig(configv, csrfToken))
+
+		pageNode = page(
+			"Config General",
+			true,
+			false,
+			false,
+			renderGeneralConfig(configv, csrfToken),
+		)
+
 	case "imdb":
 		configv := config.GetSettingsImdb()
+
 		pageNode = page("Config Imdb", true, false, false, renderImdbConfig(configv, csrfToken))
+
 	case "media":
 		configv := config.GetSettingsMediaAll()
+
 		pageNode = page("Config Media", true, false, false, renderMediaConfig(configv, csrfToken))
+
 	case "downloader":
 		configv := config.GetSettingsDownloaderAll()
-		pageNode = page("Config Downloader", true, false, false, renderDownloaderConfig(configv, csrfToken))
+
+		pageNode = page(
+			"Config Downloader",
+			true,
+			false,
+			false,
+			renderDownloaderConfig(configv, csrfToken),
+		)
+
 	case "indexers":
 		configv := config.GetSettingsIndexerAll()
-		pageNode = page("Config Indexer", true, false, false, renderIndexersConfig(configv, csrfToken))
+
+		pageNode = page(
+			"Config Indexer",
+			true,
+			false,
+			false,
+			renderIndexersConfig(configv, csrfToken),
+		)
+
 	case "lists":
 		configv := config.GetSettingsListAll()
+
 		pageNode = page("Config Lists", true, false, false, renderListsConfig(configv, csrfToken))
+
 	case "paths":
 		configv := config.GetSettingsPathAll()
+
 		pageNode = page("Config Paths", true, false, false, renderPathsConfig(configv, csrfToken))
+
 	case "notifications":
 		configv := config.GetSettingsNotificationAll()
-		pageNode = page("Config Notifications", true, false, false, renderNotificationConfig(configv, csrfToken))
+
+		pageNode = page(
+			"Config Notifications",
+			true,
+			false,
+			false,
+			renderNotificationConfig(configv, csrfToken),
+		)
+
 	case "quality":
 		configv := config.GetSettingsQualityAll()
-		pageNode = page("Config Quality", true, false, false, renderQualityConfig(configv, csrfToken))
+
+		pageNode = page(
+			"Config Quality",
+			true,
+			false,
+			false,
+			renderQualityConfig(configv, csrfToken),
+		)
+
 	case "regex":
 		configv := config.GetSettingsRegexAll()
+
 		pageNode = page("Config Regex", true, false, false, renderRegexConfig(configv, csrfToken))
+
 	case "scheduler":
 		configv := config.GetSettingsSchedulerAll()
-		pageNode = page("Config Scheduler", true, false, false, renderSchedulerConfig(configv, csrfToken))
+
+		pageNode = page(
+			"Config Scheduler",
+			true,
+			false,
+			false,
+			renderSchedulerConfig(configv, csrfToken),
+		)
+
 	default:
 		sendNotFound(ctx, "unknown config type: "+configType)
 		return
@@ -1916,7 +2064,13 @@ func adminPageTestParse(ctx *gin.Context) {
 
 func adminPageMovieMetadata(ctx *gin.Context) {
 	csrfToken := getCSRFToken(ctx)
-	pageNode := page("Movie Metadata Lookup", false, false, true, renderMovieMetadataPage(csrfToken))
+	pageNode := page(
+		"Movie Metadata Lookup",
+		false,
+		false,
+		true,
+		renderMovieMetadataPage(csrfToken),
+	)
 
 	var buf strings.Builder
 	pageNode.Render(&buf)
@@ -1960,7 +2114,13 @@ func adminPageJobManagement(ctx *gin.Context) {
 
 func adminPageCronGenerator(ctx *gin.Context) {
 	csrfToken := getCSRFToken(ctx)
-	pageNode := page("Cron Expression Generator", false, false, true, renderCronGeneratorPage(csrfToken))
+	pageNode := page(
+		"Cron Expression Generator",
+		false,
+		false,
+		true,
+		renderCronGeneratorPage(csrfToken),
+	)
 
 	var buf strings.Builder
 	pageNode.Render(&buf)
@@ -1982,7 +2142,13 @@ func adminPageDebugStats(ctx *gin.Context) {
 
 func adminPageDatabaseMaintenance(ctx *gin.Context) {
 	csrfToken := getCSRFToken(ctx)
-	pageNode := page("Database Maintenance", false, false, true, renderDatabaseMaintenancePage(csrfToken))
+	pageNode := page(
+		"Database Maintenance",
+		false,
+		false,
+		true,
+		renderDatabaseMaintenancePage(csrfToken),
+	)
 
 	var buf strings.Builder
 	pageNode.Render(&buf)
@@ -2037,7 +2203,13 @@ func adminPageFeedParsing(ctx *gin.Context) {
 
 func adminPageFolderStructure(ctx *gin.Context) {
 	csrfToken := getCSRFToken(ctx)
-	pageNode := page("Folder Structure Organizer", false, false, true, renderFolderStructurePage(csrfToken))
+	pageNode := page(
+		"Folder Structure Organizer",
+		false,
+		false,
+		true,
+		renderFolderStructurePage(csrfToken),
+	)
 
 	var buf strings.Builder
 	pageNode.Render(&buf)
@@ -2046,10 +2218,16 @@ func adminPageFolderStructure(ctx *gin.Context) {
 	ctx.String(http.StatusOK, buf.String())
 }
 
-// New Management Tools Admin Page Handlers
+// New Management Tools Admin Page Handlers.
 func adminPageMediaCleanup(ctx *gin.Context) {
 	csrfToken := getCSRFToken(ctx)
-	pageNode := page("Media Cleanup Wizard", false, false, true, renderMediaCleanupWizardPage(csrfToken))
+	pageNode := page(
+		"Media Cleanup Wizard",
+		false,
+		false,
+		true,
+		renderMediaCleanupWizardPage(csrfToken),
+	)
 
 	var buf strings.Builder
 	pageNode.Render(&buf)
@@ -2060,7 +2238,13 @@ func adminPageMediaCleanup(ctx *gin.Context) {
 
 func adminPageMissingEpisodes(ctx *gin.Context) {
 	csrfToken := getCSRFToken(ctx)
-	pageNode := page("Missing Episodes Finder", false, false, true, renderMissingEpisodesFinderPage(csrfToken))
+	pageNode := page(
+		"Missing Episodes Finder",
+		false,
+		false,
+		true,
+		renderMissingEpisodesFinderPage(csrfToken),
+	)
 
 	var buf strings.Builder
 	pageNode.Render(&buf)
@@ -2071,7 +2255,13 @@ func adminPageMissingEpisodes(ctx *gin.Context) {
 
 func adminPageLogAnalysis(ctx *gin.Context) {
 	csrfToken := getCSRFToken(ctx)
-	pageNode := page("Log Analysis Dashboard", false, false, true, renderLogAnalysisDashboardPage(csrfToken))
+	pageNode := page(
+		"Log Analysis Dashboard",
+		false,
+		false,
+		true,
+		renderLogAnalysisDashboardPage(csrfToken),
+	)
 
 	var buf strings.Builder
 	pageNode.Render(&buf)
@@ -2082,7 +2272,13 @@ func adminPageLogAnalysis(ctx *gin.Context) {
 
 func adminPageStorageHealth(ctx *gin.Context) {
 	csrfToken := getCSRFToken(ctx)
-	pageNode := page("Storage Health Monitor", false, false, true, renderStorageHealthMonitorPage(csrfToken))
+	pageNode := page(
+		"Storage Health Monitor",
+		false,
+		false,
+		true,
+		renderStorageHealthMonitorPage(csrfToken),
+	)
 
 	var buf strings.Builder
 	pageNode.Render(&buf)
@@ -2093,7 +2289,13 @@ func adminPageStorageHealth(ctx *gin.Context) {
 
 func adminPageServiceHealth(ctx *gin.Context) {
 	csrfToken := getCSRFToken(ctx)
-	pageNode := page("External Service Health Check", false, false, true, renderExternalServiceHealthCheckPage(csrfToken))
+	pageNode := page(
+		"External Service Health Check",
+		false,
+		false,
+		true,
+		renderExternalServiceHealthCheckPage(csrfToken),
+	)
 
 	var buf strings.Builder
 	pageNode.Render(&buf)
@@ -2118,6 +2320,7 @@ func adminPageGrid(ctx *gin.Context) {
 	if !ok {
 		return
 	}
+
 	switch grid {
 	case "queue":
 		renderQueuePage(ctx)
@@ -2128,7 +2331,7 @@ func adminPageGrid(ctx *gin.Context) {
 	}
 }
 
-// adminPageDatabase - consolidated handler for all database table pages
+// adminPageDatabase - consolidated handler for all database table pages.
 func adminPageDatabase(ctx *gin.Context) {
 	tableName, ok := getParamID(ctx, "tablename")
 	if !ok {
@@ -2151,7 +2354,13 @@ func adminPageDatabase(ctx *gin.Context) {
 	// Create page title from table name
 	pageTitle := "Database " + strings.ToTitle(strings.ReplaceAll(tableName, "_", " "))
 
-	pageNode := page(pageTitle, false, true, false, adminDatabaseContent(tableName, getCSRFToken(ctx)))
+	pageNode := page(
+		pageTitle,
+		false,
+		true,
+		false,
+		adminDatabaseContent(tableName, getCSRFToken(ctx)),
+	)
 	// Render to string
 	var buf strings.Builder
 	pageNode.Render(&buf)
@@ -2172,7 +2381,13 @@ func AdminPageAny(ctx *gin.Context, pageTitle string, content gomponents.Node) {
 
 func adminPageQualityReorder(ctx *gin.Context) {
 	csrfToken := getCSRFToken(ctx)
-	pageNode := page("Quality Reorder Testing", false, false, true, renderQualityReorderPage(csrfToken))
+	pageNode := page(
+		"Quality Reorder Testing",
+		false,
+		false,
+		true,
+		renderQualityReorderPage(csrfToken),
+	)
 
 	var buf strings.Builder
 	pageNode.Render(&buf)
@@ -2194,7 +2409,13 @@ func adminPageRegexTester(ctx *gin.Context) {
 
 func adminPageNamingGenerator(ctx *gin.Context) {
 	csrfToken := getCSRFToken(ctx)
-	pageNode := page("Naming Template Generator", false, false, true, renderNamingGeneratorPage(csrfToken))
+	pageNode := page(
+		"Naming Template Generator",
+		false,
+		false,
+		true,
+		renderNamingGeneratorPage(csrfToken),
+	)
 
 	var buf strings.Builder
 	pageNode.Render(&buf)

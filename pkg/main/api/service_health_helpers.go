@@ -11,7 +11,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 )
 
-// ServiceHealthResults holds the results of service health checks
+// ServiceHealthResults holds the results of service health checks.
 type ServiceHealthResults struct {
 	TotalServices  int
 	OnlineServices int
@@ -21,7 +21,7 @@ type ServiceHealthResults struct {
 	OverallStatus  string
 }
 
-// ServiceInfo contains details about a service
+// ServiceInfo contains details about a service.
 type ServiceInfo struct {
 	Name         string
 	Type         string
@@ -32,8 +32,12 @@ type ServiceInfo struct {
 	Details      map[string]any
 }
 
-// performServiceHealthCheck performs comprehensive service health checks
-func performServiceHealthCheck(checkIMDB, checkTrakt, checkIndexers, checkNotifications, checkOMDB, checkTVDB, checkTMDB bool, timeout, retries int, detailedTest, _, _ bool) *ServiceHealthResults {
+// performServiceHealthCheck performs comprehensive service health checks.
+func performServiceHealthCheck(
+	checkIMDB, checkTrakt, checkIndexers, checkNotifications, checkOMDB, checkTVDB, checkTMDB bool,
+	timeout, retries int,
+	detailedTest, _, _ bool,
+) *ServiceHealthResults {
 	startTime := time.Now()
 
 	results := &ServiceHealthResults{
@@ -45,7 +49,9 @@ func performServiceHealthCheck(checkIMDB, checkTrakt, checkIndexers, checkNotifi
 	// Check IMDB service
 	if checkIMDB {
 		results.TotalServices++
+
 		imdbService := checkIMDBService(retries, detailedTest)
+
 		results.ServiceDetails = append(results.ServiceDetails, imdbService)
 		if imdbService.Status == "online" {
 			results.OnlineServices++
@@ -57,7 +63,9 @@ func performServiceHealthCheck(checkIMDB, checkTrakt, checkIndexers, checkNotifi
 	// Check Trakt service
 	if checkTrakt {
 		results.TotalServices++
+
 		traktService := checkTraktService(httpTimeout, retries, detailedTest)
+
 		results.ServiceDetails = append(results.ServiceDetails, traktService)
 		if traktService.Status == "online" {
 			results.OnlineServices++
@@ -103,7 +111,9 @@ func performServiceHealthCheck(checkIMDB, checkTrakt, checkIndexers, checkNotifi
 	// Check OMDB service
 	if checkOMDB {
 		results.TotalServices++
+
 		omdbService := checkOMDBService(httpTimeout, retries, detailedTest)
+
 		results.ServiceDetails = append(results.ServiceDetails, omdbService)
 		if omdbService.Status == "online" {
 			results.OnlineServices++
@@ -115,7 +125,9 @@ func performServiceHealthCheck(checkIMDB, checkTrakt, checkIndexers, checkNotifi
 	// Check TVDB service
 	if checkTVDB {
 		results.TotalServices++
+
 		tvdbService := checkTVDBService(httpTimeout, retries, detailedTest)
+
 		results.ServiceDetails = append(results.ServiceDetails, tvdbService)
 		if tvdbService.Status == "online" {
 			results.OnlineServices++
@@ -127,7 +139,9 @@ func performServiceHealthCheck(checkIMDB, checkTrakt, checkIndexers, checkNotifi
 	// Check TMDB service
 	if checkTMDB {
 		results.TotalServices++
+
 		tmdbService := checkTMDBService(httpTimeout, retries, detailedTest)
+
 		results.ServiceDetails = append(results.ServiceDetails, tmdbService)
 		if tmdbService.Status == "online" {
 			results.OnlineServices++
@@ -146,10 +160,11 @@ func performServiceHealthCheck(checkIMDB, checkTrakt, checkIndexers, checkNotifi
 	}
 
 	results.TestDuration = time.Since(startTime)
+
 	return results
 }
 
-// checkIMDBService checks IMDB service availability
+// checkIMDBService checks IMDB service availability.
 func checkIMDBService(retries int, _ bool) ServiceInfo {
 	service := ServiceInfo{
 		Name:    "IMDB",
@@ -161,17 +176,23 @@ func checkIMDBService(retries int, _ bool) ServiceInfo {
 	startTime := time.Now()
 
 	// Try to connect to IMDB database by listing tables
-	for attempt := 0; attempt < retries; attempt++ {
+	for attempt := range retries {
 		// Query the IMDB database to list tables
-		tables := database.GetrowsN[string](true, 10, "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+		tables := database.GetrowsN[string](
+			true,
+			10,
+			"SELECT name FROM sqlite_master WHERE type='table' ORDER BY name",
+		)
 		if len(tables) > 0 {
 			service.Status = "online"
 			service.ResponseTime = time.Since(startTime)
 			service.Details["table_count"] = len(tables)
 			service.Details["tables"] = tables
+
 			break
 		} else {
 			service.Status = "error"
+
 			service.ErrorMessage = fmt.Sprintf("No tables found in IMDB database (attempt %d/%d)", attempt+1, retries)
 			if attempt < retries-1 {
 				time.Sleep(100 * time.Millisecond) // Brief delay between retries
@@ -186,7 +207,7 @@ func checkIMDBService(retries int, _ bool) ServiceInfo {
 	return service
 }
 
-// checkTraktService checks Trakt service availability
+// checkTraktService checks Trakt service availability.
 func checkTraktService(timeout time.Duration, retries int, _ bool) ServiceInfo {
 	service := ServiceInfo{
 		Name:    "Trakt",
@@ -197,22 +218,25 @@ func checkTraktService(timeout time.Duration, retries int, _ bool) ServiceInfo {
 
 	startTime := time.Now()
 
-	var limit string = "5"
+	limit := "5"
 	// Try to connect to Trakt API using the traktAPI.Client
-	for attempt := 0; attempt < retries; attempt++ {
+	for attempt := range retries {
 		statusCode, _, err := apiexternal.TestTraktConnectivity(timeout, &limit)
 		if err != nil {
 			// Check if it's an initialization error vs connection error
-			if strings.Contains(err.Error(), "not initialized") || strings.Contains(err.Error(), "missing ClientID") {
+			if strings.Contains(err.Error(), "not initialized") ||
+				strings.Contains(err.Error(), "missing ClientID") {
 				service.Status = "error"
 				service.ErrorMessage = err.Error()
 				break // Don't retry initialization errors
 			} else {
 				service.Status = "timeout"
+
 				service.ErrorMessage = fmt.Sprintf("Connection failed (attempt %d/%d): %v", attempt+1, retries, err)
 				if attempt < retries-1 {
 					time.Sleep(100 * time.Millisecond) // Brief delay between retries
 				}
+
 				continue
 			}
 		}
@@ -237,7 +261,7 @@ func checkTraktService(timeout time.Duration, retries int, _ bool) ServiceInfo {
 	return service
 }
 
-// checkIndexerServices checks configured indexer services
+// checkIndexerServices checks configured indexer services.
 func checkIndexerServices(timeout time.Duration, _ int, _ bool) []ServiceInfo {
 	services := make([]ServiceInfo, 0)
 
@@ -312,6 +336,7 @@ func checkIndexerServices(timeout time.Duration, _ int, _ bool) []ServiceInfo {
 						service.Status = "error"
 						service.ErrorMessage = fmt.Sprintf("HTTP %d", resp.StatusCode)
 					}
+
 					resp.Body.Close()
 				}
 			} else {
@@ -326,7 +351,7 @@ func checkIndexerServices(timeout time.Duration, _ int, _ bool) []ServiceInfo {
 	return services
 }
 
-// checkNotificationServices checks configured notification services
+// checkNotificationServices checks configured notification services.
 func checkNotificationServices(_ time.Duration, _ int, _ bool) []ServiceInfo {
 	services := make([]ServiceInfo, 0)
 
@@ -356,7 +381,7 @@ func checkNotificationServices(_ time.Duration, _ int, _ bool) []ServiceInfo {
 	return services
 }
 
-// checkOMDBService checks OMDB service availability
+// checkOMDBService checks OMDB service availability.
 func checkOMDBService(timeout time.Duration, retries int, _ bool) ServiceInfo {
 	service := ServiceInfo{
 		Name:    "OMDB",
@@ -368,20 +393,23 @@ func checkOMDBService(timeout time.Duration, retries int, _ bool) ServiceInfo {
 	startTime := time.Now()
 
 	// Try to connect to OMDB API using the omdbAPI.Client
-	for attempt := 0; attempt < retries; attempt++ {
+	for attempt := range retries {
 		statusCode, err := apiexternal.TestOMDBConnectivity(timeout)
 		if err != nil {
 			// Check if it's an initialization error vs connection error
-			if strings.Contains(err.Error(), "not initialized") || strings.Contains(err.Error(), "missing API key") {
+			if strings.Contains(err.Error(), "not initialized") ||
+				strings.Contains(err.Error(), "missing API key") {
 				service.Status = "error"
 				service.ErrorMessage = err.Error()
 				break // Don't retry initialization errors
 			} else {
 				service.Status = "timeout"
+
 				service.ErrorMessage = fmt.Sprintf("Connection failed (attempt %d/%d): %v", attempt+1, retries, err)
 				if attempt < retries-1 {
 					time.Sleep(100 * time.Millisecond) // Brief delay between retries
 				}
+
 				continue
 			}
 		}
@@ -406,7 +434,7 @@ func checkOMDBService(timeout time.Duration, retries int, _ bool) ServiceInfo {
 	return service
 }
 
-// checkTVDBService checks TVDB service availability
+// checkTVDBService checks TVDB service availability.
 func checkTVDBService(timeout time.Duration, retries int, _ bool) ServiceInfo {
 	service := ServiceInfo{
 		Name:    "TVDB",
@@ -418,20 +446,23 @@ func checkTVDBService(timeout time.Duration, retries int, _ bool) ServiceInfo {
 	startTime := time.Now()
 
 	// Try to connect to TVDB API using the tvdbAPI.Client
-	for attempt := 0; attempt < retries; attempt++ {
+	for attempt := range retries {
 		statusCode, err := apiexternal.TestTVDBConnectivity(timeout)
 		if err != nil {
 			// Check if it's an initialization error vs connection error
-			if strings.Contains(err.Error(), "not initialized") || strings.Contains(err.Error(), "missing API key") {
+			if strings.Contains(err.Error(), "not initialized") ||
+				strings.Contains(err.Error(), "missing API key") {
 				service.Status = "error"
 				service.ErrorMessage = err.Error()
 				break // Don't retry initialization errors
 			} else {
 				service.Status = "timeout"
+
 				service.ErrorMessage = fmt.Sprintf("Connection failed (attempt %d/%d): %v", attempt+1, retries, err)
 				if attempt < retries-1 {
 					time.Sleep(100 * time.Millisecond) // Brief delay between retries
 				}
+
 				continue
 			}
 		}
@@ -456,7 +487,7 @@ func checkTVDBService(timeout time.Duration, retries int, _ bool) ServiceInfo {
 	return service
 }
 
-// checkTMDBService checks TMDB service availability
+// checkTMDBService checks TMDB service availability.
 func checkTMDBService(timeout time.Duration, retries int, _ bool) ServiceInfo {
 	service := ServiceInfo{
 		Name:    "TMDB",
@@ -468,20 +499,23 @@ func checkTMDBService(timeout time.Duration, retries int, _ bool) ServiceInfo {
 	startTime := time.Now()
 
 	// Try to connect to TMDB API using the tmdbAPI.Client
-	for attempt := 0; attempt < retries; attempt++ {
+	for attempt := range retries {
 		statusCode, err := apiexternal.TestTMDBConnectivity(timeout)
 		if err != nil {
 			// Check if it's an initialization error vs connection error
-			if strings.Contains(err.Error(), "not initialized") || strings.Contains(err.Error(), "missing API key") {
+			if strings.Contains(err.Error(), "not initialized") ||
+				strings.Contains(err.Error(), "missing API key") {
 				service.Status = "error"
 				service.ErrorMessage = err.Error()
 				break // Don't retry initialization errors
 			} else {
 				service.Status = "timeout"
+
 				service.ErrorMessage = fmt.Sprintf("Connection failed (attempt %d/%d): %v", attempt+1, retries, err)
 				if attempt < retries-1 {
 					time.Sleep(100 * time.Millisecond) // Brief delay between retries
 				}
+
 				continue
 			}
 		}

@@ -11,10 +11,18 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/searcher"
 )
 
-// checkSeriesMissingEpisodes finds missing episodes for series
-func checkSeriesMissingEpisodes(seriesName string, seasonNumber int, includeSpecials, onlyAired bool, dateRangeDays int, status string) ([]database.SerieEpisode, error) {
-	var queryWhere string
-	var queryArgs []any
+// checkSeriesMissingEpisodes finds missing episodes for series.
+func checkSeriesMissingEpisodes(
+	seriesName string,
+	seasonNumber int,
+	includeSpecials, onlyAired bool,
+	dateRangeDays int,
+	status string,
+) ([]database.SerieEpisode, error) {
+	var (
+		queryWhere string
+		queryArgs  []any
+	)
 
 	// Base query for missing episodes
 	queryWhere = "serie_episodes.missing = 1"
@@ -22,12 +30,14 @@ func checkSeriesMissingEpisodes(seriesName string, seasonNumber int, includeSpec
 	// Add series name filter if provided
 	if seriesName != "" {
 		queryWhere += " AND series.seriename LIKE ?"
+
 		queryArgs = append(queryArgs, "%"+seriesName+"%")
 	}
 
 	// Add season filter if provided
 	if seasonNumber > 0 {
 		queryWhere += " AND dbserie_episodes.season = ?"
+
 		queryArgs = append(queryArgs, strconv.Itoa(seasonNumber))
 	}
 
@@ -39,13 +49,16 @@ func checkSeriesMissingEpisodes(seriesName string, seasonNumber int, includeSpec
 	// Add aired date filter if requested
 	if onlyAired {
 		queryWhere += " AND (dbserie_episodes.first_aired IS NULL OR dbserie_episodes.first_aired <= ?)"
+
 		queryArgs = append(queryArgs, time.Now().Format("2006-01-02"))
 	}
 
 	// Add date range filter
 	if dateRangeDays > 0 {
 		cutoffDate := time.Now().AddDate(0, 0, -dateRangeDays)
+
 		queryWhere += " AND (dbserie_episodes.first_aired IS NULL OR dbserie_episodes.first_aired >= ?)"
+
 		queryArgs = append(queryArgs, cutoffDate.Format("2006-01-02"))
 	}
 
@@ -74,8 +87,12 @@ func checkSeriesMissingEpisodes(seriesName string, seasonNumber int, includeSpec
 	return missingEpisodes, nil
 }
 
-// triggerEpisodeDownloads initiates downloads for missing episodes
-func triggerEpisodeDownloads(episodes []database.SerieEpisode, qualityProfile string, autoDownload bool) (*EpisodeDownloadResults, error) {
+// triggerEpisodeDownloads initiates downloads for missing episodes.
+func triggerEpisodeDownloads(
+	episodes []database.SerieEpisode,
+	qualityProfile string,
+	autoDownload bool,
+) (*EpisodeDownloadResults, error) {
 	results := &EpisodeDownloadResults{
 		TotalEpisodes:      len(episodes),
 		TriggeredDownloads: 0,
@@ -85,8 +102,12 @@ func triggerEpisodeDownloads(episodes []database.SerieEpisode, qualityProfile st
 	}
 
 	if !autoDownload {
-		results.Details = append(results.Details, "Auto-download disabled - episodes marked for manual review")
+		results.Details = append(
+			results.Details,
+			"Auto-download disabled - episodes marked for manual review",
+		)
 		results.SkippedEpisodes = len(episodes)
+
 		return results, nil
 	}
 
@@ -97,7 +118,12 @@ func triggerEpisodeDownloads(episodes []database.SerieEpisode, qualityProfile st
 			"SELECT * FROM series WHERE id = ?", episode.SerieID)
 		if len(series) == 0 {
 			results.FailedDownloads++
-			results.Details = append(results.Details, fmt.Sprintf("Series not found for episode ID %d", episode.ID))
+
+			results.Details = append(
+				results.Details,
+				fmt.Sprintf("Series not found for episode ID %d", episode.ID),
+			)
+
 			continue
 		}
 
@@ -108,7 +134,12 @@ func triggerEpisodeDownloads(episodes []database.SerieEpisode, qualityProfile st
 			"SELECT * FROM dbserie_episodes WHERE id = ?", episode.DbserieEpisodeID)
 		if len(dbEpisode) == 0 {
 			results.FailedDownloads++
-			results.Details = append(results.Details, fmt.Sprintf("Episode details not found for ID %d", episode.ID))
+
+			results.Details = append(
+				results.Details,
+				fmt.Sprintf("Episode details not found for ID %d", episode.ID),
+			)
+
 			continue
 		}
 
@@ -124,12 +155,18 @@ func triggerEpisodeDownloads(episodes []database.SerieEpisode, qualityProfile st
 					return fmt.Errorf("found") // Break the loop
 				}
 			}
+
 			return nil
 		})
 
 		if mediaConfig == nil {
 			results.FailedDownloads++
-			results.Details = append(results.Details, fmt.Sprintf("No media configuration found for series ID %d", serieData.ID))
+
+			results.Details = append(
+				results.Details,
+				fmt.Sprintf("No media configuration found for series ID %d", serieData.ID),
+			)
+
 			continue
 		}
 
@@ -140,6 +177,7 @@ func triggerEpisodeDownloads(episodes []database.SerieEpisode, qualityProfile st
 				qualityConfig = qc
 			}
 		}
+
 		if qualityConfig == nil {
 			// Use media config's quality config
 			if mediaConfig.CfgQuality != nil {
@@ -149,7 +187,12 @@ func triggerEpisodeDownloads(episodes []database.SerieEpisode, qualityProfile st
 
 		if qualityConfig == nil {
 			results.FailedDownloads++
-			results.Details = append(results.Details, fmt.Sprintf("No quality configuration found for series ID %d", serieData.ID))
+
+			results.Details = append(
+				results.Details,
+				fmt.Sprintf("No quality configuration found for series ID %d", serieData.ID),
+			)
+
 			continue
 		}
 
@@ -157,14 +200,21 @@ func triggerEpisodeDownloads(episodes []database.SerieEpisode, qualityProfile st
 		err := triggerEpisodeSearch(serieData, episodeData, mediaConfig, qualityConfig)
 		if err != nil {
 			results.FailedDownloads++
+
 			seasonNum, _ := strconv.Atoi(episodeData.Season)
 			episodeNum, _ := strconv.Atoi(episodeData.Episode)
-			results.Details = append(results.Details, fmt.Sprintf("Search failed for series %d S%02dE%02d: %v",
-				serieData.ID, seasonNum, episodeNum, err))
+
+			results.Details = append(
+				results.Details,
+				fmt.Sprintf("Search failed for series %d S%02dE%02d: %v",
+					serieData.ID, seasonNum, episodeNum, err),
+			)
 		} else {
 			results.TriggeredDownloads++
+
 			seasonNum, _ := strconv.Atoi(episodeData.Season)
 			episodeNum, _ := strconv.Atoi(episodeData.Episode)
+
 			results.Details = append(results.Details, fmt.Sprintf("Search triggered for series %d S%02dE%02d",
 				serieData.ID, seasonNum, episodeNum))
 		}
@@ -173,16 +223,30 @@ func triggerEpisodeDownloads(episodes []database.SerieEpisode, qualityProfile st
 	return results, nil
 }
 
-// triggerEpisodeSearch initiates a search for a specific episode
-func triggerEpisodeSearch(serie database.Serie, episode database.DbserieEpisode, mediaConfig *config.MediaTypeConfig, qualityConfig *config.QualityConfig) error {
+// triggerEpisodeSearch initiates a search for a specific episode.
+func triggerEpisodeSearch(
+	serie database.Serie,
+	episode database.DbserieEpisode,
+	mediaConfig *config.MediaTypeConfig,
+	qualityConfig *config.QualityConfig,
+) error {
 	// Create searcher instance
-	searcherInstance := searcher.NewSearcher(mediaConfig, qualityConfig, logger.StrSearchMissingInc, nil)
+	searcherInstance := searcher.NewSearcher(
+		mediaConfig,
+		qualityConfig,
+		logger.StrSearchMissingInc,
+		nil,
+	)
 	if searcherInstance == nil {
 		return fmt.Errorf("failed to create searcher instance")
 	}
 
 	// Log the search attempt
-	logger.Logtype("info", 3).Str("season", episode.Season).Str("episode", episode.Episode).Str("title", episode.Title).Msg("Triggering episode search")
+	logger.Logtype("info", 3).
+		Str("season", episode.Season).
+		Str("episode", episode.Episode).
+		Str("title", episode.Title).
+		Msg("Triggering episode search")
 
 	// Note: In a real implementation, you would call the actual search method
 	// For now, we'll mark the episode as being searched
@@ -192,7 +256,7 @@ func triggerEpisodeSearch(serie database.Serie, episode database.DbserieEpisode,
 	return nil
 }
 
-// EpisodeDownloadResults holds the results of episode download operations
+// EpisodeDownloadResults holds the results of episode download operations.
 type EpisodeDownloadResults struct {
 	TotalEpisodes      int
 	TriggeredDownloads int
@@ -201,7 +265,7 @@ type EpisodeDownloadResults struct {
 	Details            []string
 }
 
-// EpisodeSearchCriteria holds search criteria for missing episodes
+// EpisodeSearchCriteria holds search criteria for missing episodes.
 type EpisodeSearchCriteria struct {
 	SeriesName      string
 	SeasonNumber    int

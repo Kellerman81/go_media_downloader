@@ -102,5 +102,6 @@ func getmediainfoFilename() string {
 	} else {
 		mediainfopath = filepath.Join(config.GetSettingsGeneral().MediainfoPath, "mediainfo")
 	}
+
 	return mediainfopath
 }

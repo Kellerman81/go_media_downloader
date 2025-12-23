@@ -7,29 +7,31 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/searcher"
 	"github.com/gin-gonic/gin"
-	. "maragu.dev/gomponents"
+	"maragu.dev/gomponents"
 	hx "maragu.dev/gomponents-htmx"
-	. "maragu.dev/gomponents/html"
+	"maragu.dev/gomponents/html"
 )
 
 // ================================================================================
 // SEARCH AND DOWNLOAD PAGE
 // ================================================================================
 
-// renderSearchDownloadPage renders a page for searching and downloading content
-func renderSearchDownloadPage(csrfToken string) Node {
+// renderSearchDownloadPage renders a page for searching and downloading content.
+func renderSearchDownloadPage(csrfToken string) gomponents.Node {
 	// Get available media configurations
 	media := config.GetSettingsMediaAll()
+
 	var mediaConfigs []string
 	for i := range media.Movies {
 		mediaConfigs = append(mediaConfigs, media.Movies[i].NamePrefix)
 	}
+
 	for i := range media.Series {
 		mediaConfigs = append(mediaConfigs, media.Series[i].NamePrefix)
 	}
@@ -40,45 +42,53 @@ func renderSearchDownloadPage(csrfToken string) Node {
 		"movies_rss", "movies_search", "series_rss", "series_search", "series_episode_search",
 	}
 
-	return Div(
-		Class("config-section-enhanced"),
+	return html.Div(
+		html.Class("config-section-enhanced"),
 
 		// Enhanced page header with gradient background
-		Div(
-			Class("page-header-enhanced"),
-			Div(
-				Class("header-content"),
-				Div(
-					Class("header-icon-wrapper"),
-					I(Class("fa-solid fa-magnifying-glass-arrow-right header-icon")),
+		html.Div(
+			html.Class("page-header-enhanced"),
+			html.Div(
+				html.Class("header-content"),
+				html.Div(
+					html.Class("header-icon-wrapper"),
+					html.I(html.Class("fa-solid fa-magnifying-glass-arrow-right header-icon")),
 				),
-				Div(
-					Class("header-text"),
-					H2(Class("header-title"), Text("Search & Download")),
-					P(Class("header-subtitle"), Text("Search for movies, TV series, and episodes across your configured indexers. View results and optionally download selected items.")),
+				html.Div(
+					html.Class("header-text"),
+					html.H2(html.Class("header-title"), gomponents.Text("Search & Download")),
+					html.P(
+						html.Class("header-subtitle"),
+						gomponents.Text(
+							"Search for movies, TV series, and episodes across your configured indexers. View results and optionally download selected items.",
+						),
+					),
 				),
 			),
 		),
 
-		Form(
-			Class("config-form"),
-			ID("searchForm"),
-			Input(Type("hidden"), Name("csrf_token"), Value(csrfToken)),
+		html.Form(
+			html.Class("config-form"),
+			html.ID("searchForm"),
+			html.Input(html.Type("hidden"), html.Name("csrf_token"), html.Value(csrfToken)),
 
-			Div(
-				Class("form-cards-grid"),
+			html.Div(
+				html.Class("form-cards-grid"),
 
 				// Search Configuration Card
-				Div(
-					Class("form-card"),
-					Div(
-						Class("card-header"),
-						I(Class("fas fa-cog card-icon")),
-						H5(Class("card-title"), Text("Search Configuration")),
-						P(Class("card-subtitle"), Text("Configure search type and settings")),
+				html.Div(
+					html.Class("form-card"),
+					html.Div(
+						html.Class("card-header"),
+						html.I(html.Class("fas fa-cog card-icon")),
+						html.H5(html.Class("card-title"), gomponents.Text("Search Configuration")),
+						html.P(
+							html.Class("card-subtitle"),
+							gomponents.Text("Configure search type and settings"),
+						),
 					),
-					Div(
-						Class("card-body"),
+					html.Div(
+						html.Class("card-body"),
 						renderFormGroup("search", map[string]string{
 							"SearchType": "Type of search to perform",
 						}, map[string]string{
@@ -110,58 +120,71 @@ func renderSearchDownloadPage(csrfToken string) Node {
 				),
 
 				// Search Parameters Card
-				Div(
-					Class("form-card"),
-					Div(
-						Class("card-header"),
-						I(Class("fas fa-target card-icon")),
-						H5(Class("card-title"), Text("Search Parameters")),
-						P(Class("card-subtitle"), Text("Select specific content to search for")),
+				html.Div(
+					html.Class("form-card"),
+					html.Div(
+						html.Class("card-header"),
+						html.I(html.Class("fas fa-target card-icon")),
+						html.H5(html.Class("card-title"), gomponents.Text("Search Parameters")),
+						html.P(
+							html.Class("card-subtitle"),
+							gomponents.Text("Select specific content to search for"),
+						),
 					),
-					Div(
-						Class("card-body"),
+					html.Div(
+						html.Class("card-body"),
 
-						Div(
-							Class("form-group-enhanced mb-4"),
-							Div(
-								Class("form-field-card p-3 border rounded-3"),
-								Style("background: #ffffff; border: 1px solid #dee2e6 !important; transition: all 0.3s ease; box-shadow: 0 1px 2px rgba(0,0,0,0.03);"),
-								Div(
-									Class("d-flex align-items-center mb-2"),
-									I(Class("fa-solid fa-list text-primary me-2")),
+						html.Div(
+							html.Class("form-group-enhanced mb-4"),
+							html.Div(
+								html.Class("form-field-card p-3 border rounded-3"),
+								html.Style(
+									"background: #ffffff; border: 1px solid #dee2e6 !important; transition: all 0.3s ease; box-shadow: 0 1px 2px rgba(0,0,0,0.03);",
+								),
+								html.Div(
+									html.Class("d-flex align-items-center mb-2"),
+									html.I(html.Class("fa-solid fa-list text-primary me-2")),
 									createFormLabel("MovieID", "Movie", false),
 								),
 
-								Select(
-									ID("MovieID"),
-									Name("MovieID"),
-									Class("form-select choices-ajax"),
-									Data("ajax-url", "/api/admin/dropdown/movies/dbmovie_id"),
-									Data("placeholder", "-- Select Movie --"),
-									Data("allow-clear", "true"),
-									Option(Attr("value", ""), Text("-- Select Movie --")),
+								html.Select(
+									html.ID("MovieID"),
+									html.Name("MovieID"),
+									html.Class("form-select choices-ajax"),
+									html.Data("ajax-url", "/api/admin/dropdown/movies/dbmovie_id"),
+									html.Data("placeholder", "-- Select Movie --"),
+									html.Data("allow-clear", "true"),
+									html.Option(
+										gomponents.Attr("value", ""),
+										gomponents.Text("-- Select Movie --"),
+									),
 								),
 							),
 						),
 
-						Div(
-							Class("form-group-enhanced mb-4"),
-							Div(
-								Class("form-field-card p-3 border rounded-3"),
-								Style("background: #ffffff; border: 1px solid #dee2e6 !important; transition: all 0.3s ease; box-shadow: 0 1px 2px rgba(0,0,0,0.03);"),
-								Div(
-									Class("d-flex align-items-center mb-2"),
-									I(Class("fa-solid fa-list text-primary me-2")),
+						html.Div(
+							html.Class("form-group-enhanced mb-4"),
+							html.Div(
+								html.Class("form-field-card p-3 border rounded-3"),
+								html.Style(
+									"background: #ffffff; border: 1px solid #dee2e6 !important; transition: all 0.3s ease; box-shadow: 0 1px 2px rgba(0,0,0,0.03);",
+								),
+								html.Div(
+									html.Class("d-flex align-items-center mb-2"),
+									html.I(html.Class("fa-solid fa-list text-primary me-2")),
 									createFormLabel("SerieID", "Series", false),
 								),
-								Select(
-									ID("SerieID"),
-									Name("SerieID"),
-									Class("form-select choices-ajax"),
-									Data("ajax-url", "/api/admin/dropdown/series/dbserie_id"),
-									Data("placeholder", "-- Select Series --"),
-									Data("allow-clear", "true"),
-									Option(Attr("value", ""), Text("-- Select Series --")),
+								html.Select(
+									html.ID("SerieID"),
+									html.Name("SerieID"),
+									html.Class("form-select choices-ajax"),
+									html.Data("ajax-url", "/api/admin/dropdown/series/dbserie_id"),
+									html.Data("placeholder", "-- Select Series --"),
+									html.Data("allow-clear", "true"),
+									html.Option(
+										gomponents.Attr("value", ""),
+										gomponents.Text("-- Select Series --"),
+									),
 								),
 							),
 						),
@@ -172,24 +195,29 @@ func renderSearchDownloadPage(csrfToken string) Node {
 							"SeasonNum": "Season Number",
 						}, "SeasonNum", "number", "", nil),
 
-						Div(
-							Class("form-group-enhanced mb-4"),
-							Div(
-								Class("form-field-card p-3 border rounded-3"),
-								Style("background: #ffffff; border: 1px solid #dee2e6 !important; transition: all 0.3s ease; box-shadow: 0 1px 2px rgba(0,0,0,0.03);"),
-								Div(
-									Class("d-flex align-items-center mb-2"),
-									I(Class("fa-solid fa-list text-primary me-2")),
+						html.Div(
+							html.Class("form-group-enhanced mb-4"),
+							html.Div(
+								html.Class("form-field-card p-3 border rounded-3"),
+								html.Style(
+									"background: #ffffff; border: 1px solid #dee2e6 !important; transition: all 0.3s ease; box-shadow: 0 1px 2px rgba(0,0,0,0.03);",
+								),
+								html.Div(
+									html.Class("d-flex align-items-center mb-2"),
+									html.I(html.Class("fa-solid fa-list text-primary me-2")),
 									createFormLabel("EpisodeNum", "Episode", false),
 								),
-								Select(
-									ID("EpisodeNum"),
-									Name("EpisodeNum"),
-									Class("form-select"),
-									Data("placeholder", "-- Select Series First --"),
-									Data("allow-clear", "true"),
-									Data("depends-on", "SerieID"),
-									Option(Attr("value", ""), Text("-- Select Series First --")),
+								html.Select(
+									html.ID("EpisodeNum"),
+									html.Name("EpisodeNum"),
+									html.Class("form-select"),
+									html.Data("placeholder", "-- Select Series First --"),
+									html.Data("allow-clear", "true"),
+									html.Data("depends-on", "SerieID"),
+									html.Option(
+										gomponents.Attr("value", ""),
+										gomponents.Text("-- Select Series First --"),
+									),
 								),
 							),
 						),
@@ -198,112 +226,144 @@ func renderSearchDownloadPage(csrfToken string) Node {
 			),
 
 			// Enhanced action buttons
-			Div(
-				Class("form-actions-enhanced"),
-				Button(
-					Class("btn-action-primary"),
-					ID("searchButton"),
-					Type("button"),
+			html.Div(
+				html.Class("form-actions-enhanced"),
+				html.Button(
+					html.Class("btn-action-primary"),
+					html.ID("searchButton"),
+					html.Type("button"),
 					hx.Target("#searchResults"),
 					hx.Swap("innerHTML"),
 					hx.Post("/api/admin/searchdownload"),
 					hx.Headers("{\"X-CSRF-Token\": \""+csrfToken+"\"}"),
 					hx.Include("#searchForm"),
-					I(Class("fas fa-search action-icon")),
-					Span(
-						Class("action-text"),
-						ID("searchButtonText"),
-						Text("Search"),
+					html.I(html.Class("fas fa-search action-icon")),
+					html.Span(
+						html.Class("action-text"),
+						html.ID("searchButtonText"),
+						gomponents.Text("Search"),
 					),
 				),
-				Button(
-					Type("button"),
-					Class("btn-action-secondary"),
-					Attr("onclick", "document.getElementById('searchForm').reset(); document.getElementById('searchResults').innerHTML = '';"),
-					I(Class("fas fa-undo action-icon")),
-					Span(Class("action-text"), Text("Reset Form")),
+				html.Button(
+					html.Type("button"),
+					html.Class("btn-action-secondary"),
+					gomponents.Attr(
+						"onclick",
+						"document.getElementById('searchForm').reset(); document.getElementById('searchResults').innerHTML = '';",
+					),
+					html.I(html.Class("fas fa-undo action-icon")),
+					html.Span(html.Class("action-text"), gomponents.Text("Reset Form")),
 				),
 			),
 		),
 
 		// Enhanced results container
-		Div(
-			Class("results-container-enhanced"),
-			ID("searchResults"),
+		html.Div(
+			html.Class("results-container-enhanced"),
+			html.ID("searchResults"),
 			// Search results will be injected here
 		),
 
 		// Enhanced help section with modern styling
-		Div(
-			Class("help-section-enhanced"),
-			Div(
-				Class("help-header"),
-				I(Class("fas fa-info-circle help-icon")),
-				H5(Class("help-title"), Text("Search Types & Options")),
+		html.Div(
+			html.Class("help-section-enhanced"),
+			html.Div(
+				html.Class("help-header"),
+				html.I(html.Class("fas fa-info-circle help-icon")),
+				html.H5(html.Class("help-title"), gomponents.Text("Search Types & Options")),
 			),
-			Div(
-				Class("help-content"),
-				Div(
-					Class("help-grid"),
-					Div(
-						Class("help-card"),
-						Div(Class("help-card-icon"), I(Class("fas fa-rss"))),
-						Div(Class("help-card-content"),
-							Strong(Text("RSS Searches")),
-							P(Text("Search RSS feeds for movies and TV series from your configured indexers")),
+			html.Div(
+				html.Class("help-content"),
+				html.Div(
+					html.Class("help-grid"),
+					html.Div(
+						html.Class("help-card"),
+						html.Div(html.Class("help-card-icon"), html.I(html.Class("fas fa-rss"))),
+						html.Div(
+							html.Class("help-card-content"),
+							html.Strong(gomponents.Text("RSS Searches")),
+							html.P(
+								gomponents.Text(
+									"Search RSS feeds for movies and TV series from your configured indexers",
+								),
+							),
 						),
 					),
-					Div(
-						Class("help-card"),
-						Div(Class("help-card-icon"), I(Class("fas fa-search"))),
-						Div(Class("help-card-content"),
-							Strong(Text("Targeted Search")),
-							P(Text("Search indexers for specific movies, series, or episodes with ID-based matching")),
+					html.Div(
+						html.Class("help-card"),
+						html.Div(html.Class("help-card-icon"), html.I(html.Class("fas fa-search"))),
+						html.Div(
+							html.Class("help-card-content"),
+							html.Strong(gomponents.Text("Targeted Search")),
+							html.P(
+								gomponents.Text(
+									"Search indexers for specific movies, series, or episodes with ID-based matching",
+								),
+							),
 						),
 					),
-					Div(
-						Class("help-card"),
-						Div(Class("help-card-icon"), I(Class("fas fa-filter"))),
-						Div(Class("help-card-content"),
-							Strong(Text("Advanced Filtering")),
-							P(Text("Season filtering for series and episode-specific searches with quality matching")),
+					html.Div(
+						html.Class("help-card"),
+						html.Div(html.Class("help-card-icon"), html.I(html.Class("fas fa-filter"))),
+						html.Div(
+							html.Class("help-card-content"),
+							html.Strong(gomponents.Text("Advanced Filtering")),
+							html.P(
+								gomponents.Text(
+									"Season filtering for series and episode-specific searches with quality matching",
+								),
+							),
 						),
 					),
-					Div(
-						Class("help-card"),
-						Div(Class("help-card-icon"), I(Class("fas fa-download"))),
-						Div(Class("help-card-content"),
-							Strong(Text("Direct Download")),
-							P(Text("View results with download links and quality information for immediate action")),
+					html.Div(
+						html.Class("help-card"),
+						html.Div(
+							html.Class("help-card-icon"),
+							html.I(html.Class("fas fa-download")),
+						),
+						html.Div(
+							html.Class("help-card-content"),
+							html.Strong(gomponents.Text("Direct Download")),
+							html.P(
+								gomponents.Text(
+									"View results with download links and quality information for immediate action",
+								),
+							),
 						),
 					),
 				),
-				Div(
-					Class("help-tips"),
-					Div(
-						Class("tip-item"),
-						I(Class("fas fa-lightbulb tip-icon")),
-						Strong(Text("Title Search: ")),
-						Text("Enable for better search results using titles instead of just database IDs. Recommended for most searches."),
+				html.Div(
+					html.Class("help-tips"),
+					html.Div(
+						html.Class("tip-item"),
+						html.I(html.Class("fas fa-lightbulb tip-icon")),
+						html.Strong(gomponents.Text("Title Search: ")),
+						gomponents.Text(
+							"Enable for better search results using titles instead of just database IDs. Recommended for most searches.",
+						),
 					),
-					Div(
-						Class("tip-item"),
-						I(Class("fas fa-calendar-alt tip-icon")),
-						Strong(Text("Season Filter: ")),
-						Text("For series RSS searches, specify a season number to search only for that season's episodes."),
+					html.Div(
+						html.Class("tip-item"),
+						html.I(html.Class("fas fa-calendar-alt tip-icon")),
+						html.Strong(gomponents.Text("Season Filter: ")),
+						gomponents.Text(
+							"For series RSS searches, specify a season number to search only for that season's episodes.",
+						),
 					),
-					Div(
-						Class("tip-item"),
-						I(Class("fas fa-shield-alt tip-icon")),
-						Strong(Text("Legal Notice: ")),
-						Text("Search results will include download links. Use caution when downloading content and ensure compliance with your local laws."),
+					html.Div(
+						html.Class("tip-item"),
+						html.I(html.Class("fas fa-shield-alt tip-icon")),
+						html.Strong(gomponents.Text("Legal Notice: ")),
+						gomponents.Text(
+							"Search results will include download links. Use caution when downloading content and ensure compliance with your local laws.",
+						),
 					),
 				),
 			),
 		),
 
 		// CSS for loading indicator
-		StyleEl(Raw(`
+		html.StyleEl(gomponents.Raw(`
 			#searchButton {
 				position: relative;
 			}
@@ -342,7 +402,7 @@ func renderSearchDownloadPage(csrfToken string) Node {
 
 		// JavaScript for dynamic field visibility and episode loading
 		// Simplified JavaScript for Search Download - HTMX handles field visibility and episode loading
-		Script(Raw(`
+		html.Script(gomponents.Raw(`
 			document.addEventListener('DOMContentLoaded', function() {
 				// Initialize Choices.js for enhanced selects
 				if (window.initChoicesGlobal) {
@@ -492,14 +552,14 @@ func renderSearchDownloadPage(csrfToken string) Node {
 		`)),
 
 		// Full page overlay to prevent clicks during search
-		Div(
-			Class("search-overlay"),
-			ID("searchOverlay"),
+		html.Div(
+			html.Class("search-overlay"),
+			html.ID("searchOverlay"),
 		),
 	)
 }
 
-// HandleSearchDownload handles search and download requests
+// HandleSearchDownload handles search and download requests.
 func HandleSearchDownload(c *gin.Context) {
 	if err := c.Request.ParseForm(); err != nil {
 		c.String(http.StatusOK, renderAlert("Failed to parse form data: "+err.Error(), "danger"))
@@ -511,7 +571,11 @@ func HandleSearchDownload(c *gin.Context) {
 	limitStr := c.PostForm("search_Limit")
 
 	if searchType == "" || mediaConfig == "" {
-		c.String(http.StatusOK, renderAlert("Please select search type and media configuration", "warning"))
+		c.String(
+			http.StatusOK,
+			renderAlert("Please select search type and media configuration", "warning"),
+		)
+
 		return
 	}
 
@@ -526,8 +590,10 @@ func HandleSearchDownload(c *gin.Context) {
 	titleSearch := c.PostForm("search_TitleSearch") == "on"
 
 	// Get search parameters based on type
-	var movieID, serieID, seasonNum, episodeID int
-	var err error
+	var (
+		movieID, serieID, seasonNum, episodeID int
+		err                                    error
+	)
 
 	if strings.Contains(searchType, "movies") {
 		movieIDStr := c.PostForm("MovieID")
@@ -561,11 +627,22 @@ func HandleSearchDownload(c *gin.Context) {
 			}
 		}
 	}
+
 	var searchResults *searcher.ConfigSearcher
 	defer searchResults.Close()
 
 	// Perform the search based on type
-	results, err := performSearch(searchResults, searchType, mediaConfig, movieID, serieID, seasonNum, episodeID, limit, titleSearch)
+	results, err := performSearch(
+		searchResults,
+		searchType,
+		mediaConfig,
+		movieID,
+		serieID,
+		seasonNum,
+		episodeID,
+		limit,
+		titleSearch,
+	)
 	if err != nil {
 		c.String(http.StatusOK, renderAlert("Search failed: "+err.Error(), "danger"))
 		return
@@ -575,14 +652,14 @@ func HandleSearchDownload(c *gin.Context) {
 	c.String(http.StatusOK, renderSearchResults(results, searchType, mediaConfig))
 }
 
-// SearchResults represents the response from search API functions
+// SearchResults represents the response from search API functions.
 type SearchResults struct {
 	Accepted []SearchResult `json:"accepted"`
 	Denied   []SearchResult `json:"denied"`
 }
 
-// convertNzbwithprioToSearchResult converts apiexternal.Nzbwithprio to SearchResult
-func convertNzbwithprioToSearchResult(nzb apiexternal.Nzbwithprio) SearchResult {
+// convertNzbwithprioToSearchResult converts apiexternal_v2.Nzbwithprio to SearchResult.
+func convertNzbwithprioToSearchResult(nzb apiexternal_v2.Nzbwithprio) SearchResult {
 	// Extract category from indexer if available
 	category := "Unknown"
 	if nzb.NZB.Indexer != nil {
@@ -604,7 +681,7 @@ func convertNzbwithprioToSearchResult(nzb apiexternal.Nzbwithprio) SearchResult 
 	}
 }
 
-// formatFileSize converts bytes to human readable format
+// formatFileSize converts bytes to human readable format.
 func formatFileSize(bytes int64) string {
 	if bytes == 0 {
 		return "Unknown"
@@ -620,11 +697,17 @@ func formatFileSize(bytes int64) string {
 		div *= unit
 		exp++
 	}
+
 	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
 }
 
-// performSearch executes real search calls based on the specified type and parameters
-func performSearch(searchResults *searcher.ConfigSearcher, searchType, mediaConfig string, movieID, serieID, seasonNum, episodeID, limit int, titleSearch bool) (*SearchResults, error) {
+// performSearch executes real search calls based on the specified type and parameters.
+func performSearch(
+	searchResults *searcher.ConfigSearcher,
+	searchType, mediaConfig string,
+	movieID, serieID, seasonNum, episodeID, limit int,
+	titleSearch bool,
+) (*SearchResults, error) {
 	// Get the media configuration
 	var mediaTypeConfig *config.MediaTypeConfig
 
@@ -633,6 +716,7 @@ func performSearch(searchResults *searcher.ConfigSearcher, searchType, mediaConf
 			mediaTypeConfig = media
 			return nil
 		}
+
 		return nil
 	})
 
@@ -641,13 +725,25 @@ func performSearch(searchResults *searcher.ConfigSearcher, searchType, mediaConf
 	}
 
 	ctx := context.Background()
+
 	var err error
 
 	switch searchType {
 	case "movies_rss":
 		// Call the actual movies RSS search
-		searchResults = searcher.NewSearcher(mediaTypeConfig, mediaTypeConfig.CfgQuality, logger.StrRss, nil)
-		err = searchResults.SearchRSS(ctx, mediaTypeConfig, mediaTypeConfig.CfgQuality, false, false)
+		searchResults = searcher.NewSearcher(
+			mediaTypeConfig,
+			mediaTypeConfig.CfgQuality,
+			logger.StrRss,
+			nil,
+		)
+		err = searchResults.SearchRSS(
+			ctx,
+			mediaTypeConfig,
+			mediaTypeConfig.CfgQuality,
+			false,
+			false,
+		)
 
 	case "movies_search":
 		// logger.Logtype("info", 1).Any("id", movieID).Msg("movie search")
@@ -679,7 +775,12 @@ func performSearch(searchResults *searcher.ConfigSearcher, searchType, mediaConf
 			return nil, fmt.Errorf("list configuration for movie not found")
 		}
 
-		searchResults = searcher.NewSearcher(mediaTypeConfig, listConfig.CfgQuality, "search", &movie.ID)
+		searchResults = searcher.NewSearcher(
+			mediaTypeConfig,
+			listConfig.CfgQuality,
+			"search",
+			&movie.ID,
+		)
 		err = searchResults.MediaSearch(ctx, mediaTypeConfig, movie.ID, titleSearch, false, false)
 
 	case "series_rss":
@@ -698,11 +799,18 @@ func performSearch(searchResults *searcher.ConfigSearcher, searchType, mediaConf
 
 		// Use season if provided, otherwise search all seasons
 		useseason := seasonNum > 0
+
 		seasonStr := ""
 		if useseason {
 			seasonStr = fmt.Sprintf("%d", seasonNum)
 		}
-		searchResults, err = searcher.SearchSerieRSSSeasonSingle(&serie.ID, seasonStr, useseason, mediaTypeConfig)
+
+		searchResults, err = searcher.SearchSerieRSSSeasonSingle(
+			&serie.ID,
+			seasonStr,
+			useseason,
+			mediaTypeConfig,
+		)
 
 	case "series_search":
 		if serieID <= 0 {
@@ -731,7 +839,12 @@ func performSearch(searchResults *searcher.ConfigSearcher, searchType, mediaConf
 			return nil, fmt.Errorf("list configuration for series not found")
 		}
 
-		searchResults = searcher.NewSearcher(mediaTypeConfig, listConfig.CfgQuality, "search", &serie.ID)
+		searchResults = searcher.NewSearcher(
+			mediaTypeConfig,
+			listConfig.CfgQuality,
+			"search",
+			&serie.ID,
+		)
 		err = searchResults.MediaSearch(ctx, mediaTypeConfig, serie.ID, titleSearch, false, false)
 
 	case "series_episode_search":
@@ -773,7 +886,12 @@ func performSearch(searchResults *searcher.ConfigSearcher, searchType, mediaConf
 			return nil, fmt.Errorf("list configuration for series not found")
 		}
 
-		searchResults = searcher.NewSearcher(mediaTypeConfig, listConfig.CfgQuality, "search", &episode.ID)
+		searchResults = searcher.NewSearcher(
+			mediaTypeConfig,
+			listConfig.CfgQuality,
+			"search",
+			&episode.ID,
+		)
 		err = searchResults.MediaSearch(ctx, mediaTypeConfig, episode.ID, titleSearch, false, false)
 
 	default:
@@ -809,6 +927,7 @@ func performSearch(searchResults *searcher.ConfigSearcher, searchType, mediaConf
 		if len(accepted) > limit {
 			accepted = accepted[:limit]
 		}
+
 		if len(denied) > limit {
 			denied = denied[:limit]
 		}
@@ -820,7 +939,7 @@ func performSearch(searchResults *searcher.ConfigSearcher, searchType, mediaConf
 	}, nil
 }
 
-// SearchResult represents a search result item
+// SearchResult represents a search result item.
 type SearchResult struct {
 	Title    string
 	Size     string
@@ -832,24 +951,38 @@ type SearchResult struct {
 	Reason   string
 }
 
-// renderSearchResults renders search results with separate accepted and denied datatables
+// renderSearchResults renders search results with separate accepted and denied datatables.
 func renderSearchResults(results *SearchResults, searchType, mediaConfig string) string {
 	if results == nil || (len(results.Accepted) == 0 && len(results.Denied) == 0) {
 		return renderComponentToString(
-			Div(
-				Class("card border-0 shadow-sm border-warning mb-4"),
-				Div(
-					Class("card-header border-0"),
-					Style("background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%); border-radius: 15px 15px 0 0;"),
-					Div(
-						Class("d-flex align-items-center"),
-						Span(Class("badge bg-warning me-3"), I(Class("fas fa-search me-1")), Text("Search")),
-						H5(Class("card-title mb-0 text-warning fw-bold"), Text("No Results Found")),
+			html.Div(
+				html.Class("card border-0 shadow-sm border-warning mb-4"),
+				html.Div(
+					html.Class("card-header border-0"),
+					html.Style(
+						"background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%); border-radius: 15px 15px 0 0;",
+					),
+					html.Div(
+						html.Class("d-flex align-items-center"),
+						html.Span(
+							html.Class("badge bg-warning me-3"),
+							html.I(html.Class("fas fa-search me-1")),
+							gomponents.Text("Search"),
+						),
+						html.H5(
+							html.Class("card-title mb-0 text-warning fw-bold"),
+							gomponents.Text("No Results Found"),
+						),
 					),
 				),
-				Div(
-					Class("card-body"),
-					P(Class("card-text text-muted mb-0"), Text("No search results were found matching your criteria. Try adjusting your search parameters or check your indexer configurations.")),
+				html.Div(
+					html.Class("card-body"),
+					html.P(
+						html.Class("card-text text-muted mb-0"),
+						gomponents.Text(
+							"No search results were found matching your criteria. Try adjusting your search parameters or check your indexer configurations.",
+						),
+					),
 				),
 			),
 		)
@@ -857,48 +990,72 @@ func renderSearchResults(results *SearchResults, searchType, mediaConfig string)
 
 	totalResults := len(results.Accepted) + len(results.Denied)
 
-	result := Div(
-		Class("w-100"),
+	result := html.Div(
+		html.Class("w-100"),
 
 		// Summary Header
-		Div(
-			Class("card border-0 shadow-sm border-success mb-4"),
-			Div(
-				Class("card-body"),
-				H5(Class("card-title fw-bold mb-3"), Text("Search Results")),
-				Div(Class("row g-3 mb-3"),
-					Div(Class("col-md-4"),
-						Div(Class("d-flex align-items-center"),
-							Span(Class("badge bg-primary me-2"), I(Class("fas fa-search me-1")), Text("Total")),
-							Span(Class("fw-bold text-primary"), Text(fmt.Sprintf("%d", totalResults))),
+		html.Div(
+			html.Class("card border-0 shadow-sm border-success mb-4"),
+			html.Div(
+				html.Class("card-body"),
+				html.H5(html.Class("card-title fw-bold mb-3"), gomponents.Text("Search Results")),
+				html.Div(html.Class("row g-3 mb-3"),
+					html.Div(html.Class("col-md-4"),
+						html.Div(
+							html.Class("d-flex align-items-center"),
+							html.Span(
+								html.Class("badge bg-primary me-2"),
+								html.I(html.Class("fas fa-search me-1")),
+								gomponents.Text("Total"),
+							),
+							html.Span(
+								html.Class("fw-bold text-primary"),
+								gomponents.Text(fmt.Sprintf("%d", totalResults)),
+							),
 						),
 					),
-					Div(Class("col-md-4"),
-						Div(Class("d-flex align-items-center"),
-							Span(Class("badge bg-success me-2"), I(Class("fas fa-check me-1")), Text("Accepted")),
-							Span(Class("fw-bold text-success"), Text(fmt.Sprintf("%d", len(results.Accepted)))),
+					html.Div(html.Class("col-md-4"),
+						html.Div(
+							html.Class("d-flex align-items-center"),
+							html.Span(
+								html.Class("badge bg-success me-2"),
+								html.I(html.Class("fas fa-check me-1")),
+								gomponents.Text("Accepted"),
+							),
+							html.Span(
+								html.Class("fw-bold text-success"),
+								gomponents.Text(fmt.Sprintf("%d", len(results.Accepted))),
+							),
 						),
 					),
-					Div(Class("col-md-4"),
-						Div(Class("d-flex align-items-center"),
-							Span(Class("badge bg-danger me-2"), I(Class("fas fa-times me-1")), Text("Denied")),
-							Span(Class("fw-bold text-danger"), Text(fmt.Sprintf("%d", len(results.Denied)))),
+					html.Div(html.Class("col-md-4"),
+						html.Div(
+							html.Class("d-flex align-items-center"),
+							html.Span(
+								html.Class("badge bg-danger me-2"),
+								html.I(html.Class("fas fa-times me-1")),
+								gomponents.Text("Denied"),
+							),
+							html.Span(
+								html.Class("fw-bold text-danger"),
+								gomponents.Text(fmt.Sprintf("%d", len(results.Denied))),
+							),
 						),
 					),
 				),
-				Div(Class("row g-2"),
-					Div(Class("col-md-6"),
-						Small(Class("text-muted"),
-							I(Class("fas fa-tag me-1")),
-							Text("Search Type: "),
-							Span(Class("fw-bold"), Text(searchType)),
+				html.Div(html.Class("row g-2"),
+					html.Div(html.Class("col-md-6"),
+						html.Small(html.Class("text-muted"),
+							html.I(html.Class("fas fa-tag me-1")),
+							gomponents.Text("Search Type: "),
+							html.Span(html.Class("fw-bold"), gomponents.Text(searchType)),
 						),
 					),
-					Div(Class("col-md-6"),
-						Small(Class("text-muted"),
-							I(Class("fas fa-cog me-1")),
-							Text("Media Config: "),
-							Span(Class("fw-bold"), Text(mediaConfig)),
+					html.Div(html.Class("col-md-6"),
+						html.Small(html.Class("text-muted"),
+							html.I(html.Class("fas fa-cog me-1")),
+							gomponents.Text("Media Config: "),
+							html.Span(html.Class("fw-bold"), gomponents.Text(mediaConfig)),
 						),
 					),
 				),
@@ -906,100 +1063,184 @@ func renderSearchResults(results *SearchResults, searchType, mediaConfig string)
 		),
 
 		// Accepted Results Section - Full Width
-		Div(
-			Class("card border-0 shadow-sm border-success mb-5"),
-			Div(
-				Class("card-header border-0"),
-				Style("background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%); border-radius: 15px 15px 0 0;"),
-				Div(
-					Class("d-flex align-items-center justify-content-between"),
-					Div(
-						Class("d-flex align-items-center"),
-						Span(Class("badge bg-success me-3"), I(Class("fas fa-check me-1")), Text("Accepted")),
-						H4(Class("card-title mb-0 text-success fw-bold"), Text("Accepted Results")),
+		html.Div(
+			html.Class("card border-0 shadow-sm border-success mb-5"),
+			html.Div(
+				html.Class("card-header border-0"),
+				html.Style(
+					"background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%); border-radius: 15px 15px 0 0;",
+				),
+				html.Div(
+					html.Class("d-flex align-items-center justify-content-between"),
+					html.Div(
+						html.Class("d-flex align-items-center"),
+						html.Span(
+							html.Class("badge bg-success me-3"),
+							html.I(html.Class("fas fa-check me-1")),
+							gomponents.Text("Accepted"),
+						),
+						html.H4(
+							html.Class("card-title mb-0 text-success fw-bold"),
+							gomponents.Text("Accepted Results"),
+						),
 					),
-					Span(Class("badge bg-success"), Text(fmt.Sprintf("%d", len(results.Accepted)))),
+					html.Span(
+						html.Class("badge bg-success"),
+						gomponents.Text(fmt.Sprintf("%d", len(results.Accepted))),
+					),
 				),
 			),
-			Div(
-				Class("card-body p-0"),
-				func() Node {
+			html.Div(
+				html.Class("card-body p-0"),
+				func() gomponents.Node {
 					if len(results.Accepted) == 0 {
-						return Div(
-							Class("text-center p-5"),
-							I(Class("fas fa-search mb-3"), Style("font-size: 3rem; color: #28a745; opacity: 0.3;")),
-							H5(Class("text-muted mb-2"), Text("No Accepted Results")),
-							P(Class("text-muted small mb-0"), Text("No results met the acceptance criteria for this search.")),
+						return html.Div(
+							html.Class("text-center p-5"),
+							html.I(
+								html.Class("fas fa-search mb-3"),
+								html.Style("font-size: 3rem; color: #28a745; opacity: 0.3;"),
+							),
+							html.H5(
+								html.Class("text-muted mb-2"),
+								gomponents.Text("No Accepted Results"),
+							),
+							html.P(
+								html.Class("text-muted small mb-0"),
+								gomponents.Text(
+									"No results met the acceptance criteria for this search.",
+								),
+							),
 						)
 					}
+
 					return renderResultsTable(results.Accepted, "accepted", true)
 				}(),
 			),
 		),
 
 		// Denied Results Section - Full Width
-		Div(
-			Class("card border-0 shadow-sm border-danger mb-5"),
-			Div(
-				Class("card-header border-0"),
-				Style("background: linear-gradient(135deg, #f8d7da 0%, #f1aeb5 100%); border-radius: 15px 15px 0 0;"),
-				Div(
-					Class("d-flex align-items-center justify-content-between"),
-					Div(
-						Class("d-flex align-items-center"),
-						Span(Class("badge bg-danger me-3"), I(Class("fas fa-times me-1")), Text("Denied")),
-						H4(Class("card-title mb-0 text-danger fw-bold"), Text("Denied Results")),
+		html.Div(
+			html.Class("card border-0 shadow-sm border-danger mb-5"),
+			html.Div(
+				html.Class("card-header border-0"),
+				html.Style(
+					"background: linear-gradient(135deg, #f8d7da 0%, #f1aeb5 100%); border-radius: 15px 15px 0 0;",
+				),
+				html.Div(
+					html.Class("d-flex align-items-center justify-content-between"),
+					html.Div(
+						html.Class("d-flex align-items-center"),
+						html.Span(
+							html.Class("badge bg-danger me-3"),
+							html.I(html.Class("fas fa-times me-1")),
+							gomponents.Text("Denied"),
+						),
+						html.H4(
+							html.Class("card-title mb-0 text-danger fw-bold"),
+							gomponents.Text("Denied Results"),
+						),
 					),
-					Span(Class("badge bg-danger"), Text(fmt.Sprintf("%d", len(results.Denied)))),
+					html.Span(
+						html.Class("badge bg-danger"),
+						gomponents.Text(fmt.Sprintf("%d", len(results.Denied))),
+					),
 				),
 			),
-			Div(
-				Class("card-body p-0"),
-				func() Node {
+			html.Div(
+				html.Class("card-body p-0"),
+				func() gomponents.Node {
 					if len(results.Denied) == 0 {
-						return Div(
-							Class("text-center p-5"),
-							I(Class("fas fa-filter mb-3"), Style("font-size: 3rem; color: #dc3545; opacity: 0.3;")),
-							H5(Class("text-muted mb-2"), Text("No Denied Results")),
-							P(Class("text-muted small mb-0"), Text("No results were filtered out during this search.")),
+						return html.Div(
+							html.Class("text-center p-5"),
+							html.I(
+								html.Class("fas fa-filter mb-3"),
+								html.Style("font-size: 3rem; color: #dc3545; opacity: 0.3;"),
+							),
+							html.H5(
+								html.Class("text-muted mb-2"),
+								gomponents.Text("No Denied Results"),
+							),
+							html.P(
+								html.Class("text-muted small mb-0"),
+								gomponents.Text("No results were filtered out during this search."),
+							),
 						)
 					}
+
 					return renderResultsTable(results.Denied, "denied", true)
 				}(),
 			),
 		),
 
 		// Information Footer
-		Div(
-			Class("card border-0 shadow-sm border-info"),
-			Div(
-				Class("card-body"),
-				H6(Class("card-title fw-bold mb-3"), Text("Search Results Information")),
-				P(Class("card-text text-muted mb-3"), Text("Real-time search results from your configured indexers")),
-				Ul(Class("list-unstyled"),
-					Li(Class("mb-2"),
-						Span(Class("badge bg-success me-2"), I(Class("fas fa-check me-1")), Text("Accepted")),
-						Text("Results that passed quality and criteria filters"),
+		html.Div(
+			html.Class("card border-0 shadow-sm border-info"),
+			html.Div(
+				html.Class("card-body"),
+				html.H6(
+					html.Class("card-title fw-bold mb-3"),
+					gomponents.Text("Search Results Information"),
+				),
+				html.P(
+					html.Class("card-text text-muted mb-3"),
+					gomponents.Text("Real-time search results from your configured indexers"),
+				),
+				html.Ul(html.Class("list-unstyled"),
+					html.Li(
+						html.Class("mb-2"),
+						html.Span(
+							html.Class("badge bg-success me-2"),
+							html.I(html.Class("fas fa-check me-1")),
+							gomponents.Text("Accepted"),
+						),
+						gomponents.Text("Results that passed quality and criteria filters"),
 					),
-					Li(Class("mb-2"),
-						Span(Class("badge bg-danger me-2"), I(Class("fas fa-times me-1")), Text("Denied")),
-						Text("Results that were filtered out with reasons (quality, size, etc.)"),
+					html.Li(
+						html.Class("mb-2"),
+						html.Span(
+							html.Class("badge bg-danger me-2"),
+							html.I(html.Class("fas fa-times me-1")),
+							gomponents.Text("Denied"),
+						),
+						gomponents.Text(
+							"Results that were filtered out with reasons (quality, size, etc.)",
+						),
 					),
-					Li(Class("mb-2"),
-						Span(Class("badge bg-primary me-2"), I(Class("fas fa-search me-1")), Text("Live Search")),
-						Text("Queries actual indexers using your media configuration"),
+					html.Li(
+						html.Class("mb-2"),
+						html.Span(
+							html.Class("badge bg-primary me-2"),
+							html.I(html.Class("fas fa-search me-1")),
+							gomponents.Text("Live Search"),
+						),
+						gomponents.Text("Queries actual indexers using your media configuration"),
 					),
-					Li(Class("mb-2"),
-						Span(Class("badge bg-info me-2"), I(Class("fas fa-chart-bar me-1")), Text("Quality Analysis")),
-						Text("Shows detailed quality matching and rejection reasons"),
+					html.Li(
+						html.Class("mb-2"),
+						html.Span(
+							html.Class("badge bg-info me-2"),
+							html.I(html.Class("fas fa-chart-bar me-1")),
+							gomponents.Text("Quality Analysis"),
+						),
+						gomponents.Text("Shows detailed quality matching and rejection reasons"),
 					),
-					Li(Class("mb-2"),
-						Span(Class("badge bg-secondary me-2"), I(Class("fas fa-download me-1")), Text("Download Available")),
-						Text("Both accepted and denied results can be downloaded"),
+					html.Li(
+						html.Class("mb-2"),
+						html.Span(
+							html.Class("badge bg-secondary me-2"),
+							html.I(html.Class("fas fa-download me-1")),
+							gomponents.Text("Download Available"),
+						),
+						gomponents.Text("Both accepted and denied results can be downloaded"),
 					),
-					Li(Class("mb-0"),
-						Span(Class("badge bg-warning me-2"), I(Class("fas fa-exclamation-triangle me-1")), Text("Manual Override")),
-						Text("Downloading denied results bypasses quality filters"),
+					html.Li(
+						html.Class("mb-0"),
+						html.Span(
+							html.Class("badge bg-warning me-2"),
+							html.I(html.Class("fas fa-exclamation-triangle me-1")),
+							gomponents.Text("Manual Override"),
+						),
+						gomponents.Text("Downloading denied results bypasses quality filters"),
 					),
 				),
 			),
@@ -1009,60 +1250,67 @@ func renderSearchResults(results *SearchResults, searchType, mediaConfig string)
 	return renderComponentToString(result)
 }
 
-// renderResultsTable creates a datatable for either accepted or denied results
-func renderResultsTable(results []SearchResult, tableType string, showDownload bool) Node {
+// renderResultsTable creates a datatable for either accepted or denied results.
+func renderResultsTable(
+	results []SearchResult,
+	tableType string,
+	showDownload bool,
+) gomponents.Node {
 	// Create table headers
-	headers := []Node{
-		Th(Class("sorting"), Text("Title")),
-		Th(Class("sorting"), Text("Size")),
-		Th(Class("sorting"), Text("Quality")),
-		Th(Class("sorting"), Text("Indexer")),
-		Th(Class("sorting"), Text("Category")),
-		Th(Class("sorting"), Text("Date")),
-		Th(Class("sorting"), Text("Reason")),
+	headers := []gomponents.Node{
+		html.Th(html.Class("sorting"), gomponents.Text("Title")),
+		html.Th(html.Class("sorting"), gomponents.Text("Size")),
+		html.Th(html.Class("sorting"), gomponents.Text("Quality")),
+		html.Th(html.Class("sorting"), gomponents.Text("Indexer")),
+		html.Th(html.Class("sorting"), gomponents.Text("Category")),
+		html.Th(html.Class("sorting"), gomponents.Text("Date")),
+		html.Th(html.Class("sorting"), gomponents.Text("Reason")),
 	}
 
 	if showDownload {
-		headers = append(headers, Th(Attr("data-orderable", "false"), Text("Actions")))
+		headers = append(
+			headers,
+			html.Th(gomponents.Attr("data-orderable", "false"), gomponents.Text("Actions")),
+		)
 	}
 
 	// Create table rows
-	var rows []Node
+	var rows []gomponents.Node
 	for i, result := range results {
-		rowCells := []Node{
-			Td(
-				Class("font-monospace small"),
-				Text(result.Title),
+		rowCells := []gomponents.Node{
+			html.Td(
+				html.Class("font-monospace small"),
+				gomponents.Text(result.Title),
 			),
-			Td(Text(result.Size)),
-			Td(
-				Span(
-					Class(func() string {
+			html.Td(gomponents.Text(result.Size)),
+			html.Td(
+				html.Span(
+					html.Class(func() string {
 						if showDownload {
 							return "badge bg-success"
 						}
 						return "badge bg-secondary"
 					}()),
-					Text(result.Quality),
+					gomponents.Text(result.Quality),
 				),
 			),
-			Td(Text(result.Indexer)),
-			Td(
-				Span(
-					Class("badge bg-secondary"),
-					Text(result.Category),
+			html.Td(gomponents.Text(result.Indexer)),
+			html.Td(
+				html.Span(
+					html.Class("badge bg-secondary"),
+					gomponents.Text(result.Category),
 				),
 			),
-			Td(Text(result.Date)),
-			Td(
-				Small(
-					Class(func() string {
+			html.Td(gomponents.Text(result.Date)),
+			html.Td(
+				html.Small(
+					html.Class(func() string {
 						if showDownload {
 							return "text-success"
 						}
 						return "text-danger"
 					}()),
-					Text(result.Reason),
+					gomponents.Text(result.Reason),
 				),
 			),
 		}
@@ -1070,6 +1318,7 @@ func renderResultsTable(results []SearchResult, tableType string, showDownload b
 		if showDownload {
 			// Determine button style based on table type
 			downloadBtnClass := "btn btn-success btn-sm"
+
 			downloadBtnText := "Download"
 			if tableType == "denied" {
 				downloadBtnClass = "btn btn-warning btn-sm"
@@ -1077,49 +1326,55 @@ func renderResultsTable(results []SearchResult, tableType string, showDownload b
 			}
 
 			rowCells = append(rowCells,
-				Td(
-					Div(
-						Class("btn-group-sm"),
-						Button(
-							Class(downloadBtnClass),
-							Text(downloadBtnText),
-							Type("button"),
+				html.Td(
+					html.Div(
+						html.Class("btn-group-sm"),
+						html.Button(
+							html.Class(downloadBtnClass),
+							gomponents.Text(downloadBtnText),
+							html.Type("button"),
 							hx.Post("/api/admin/searchdownload"),
 							hx.Target(fmt.Sprintf("#download-result-%s-%d", tableType, i)),
 							hx.Swap("innerHTML"),
-							hx.Vals(fmt.Sprintf(`{"action": "download", "link": "%s", "title": "%s"}`, result.Link, result.Title)),
+							hx.Vals(
+								fmt.Sprintf(
+									`{"action": "download", "link": "%s", "title": "%s"}`,
+									result.Link,
+									result.Title,
+								),
+							),
 						),
-						A(
-							Class("btn btn-info btn-sm ml-1"),
-							Href(result.Link),
-							Target("_blank"),
-							Text("Link"),
+						html.A(
+							html.Class("btn btn-info btn-sm ml-1"),
+							html.Href(result.Link),
+							html.Target("_blank"),
+							gomponents.Text("Link"),
 						),
 					),
-					Div(
-						ID(fmt.Sprintf("download-result-%s-%d", tableType, i)),
-						Style("min-height: 20px; margin-top: 5px;"),
+					html.Div(
+						html.ID(fmt.Sprintf("download-result-%s-%d", tableType, i)),
+						html.Style("min-height: 20px; margin-top: 5px;"),
 					),
 				),
 			)
 		}
 
-		rows = append(rows, Tr(Group(rowCells)))
+		rows = append(rows, html.Tr(gomponents.Group(rowCells)))
 	}
 
 	tableID := fmt.Sprintf("%s-results-table", tableType)
 
-	return Div(
-		Class("table-responsive w-100"),
-		Table(
-			Class("table table-striped w-100"),
-			ID(tableID),
-			THead(
-				Tr(Group(headers)),
+	return html.Div(
+		html.Class("table-responsive w-100"),
+		html.Table(
+			html.Class("table table-striped w-100"),
+			html.ID(tableID),
+			html.THead(
+				html.Tr(gomponents.Group(headers)),
 			),
-			TBody(Group(rows)),
+			html.TBody(gomponents.Group(rows)),
 		),
-		Script(Rawf(`
+		html.Script(gomponents.Rawf(`
 			$(document).ready(function() {
 				if (window.initDataTable) {
 					window.initDataTable('#%s', {

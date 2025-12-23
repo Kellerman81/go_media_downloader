@@ -8,7 +8,7 @@ import (
 )
 
 // SyncMap is an optimized version that only needs read locks since all writes
-// go through the SyncOpsManager single-writer system
+// go through the SyncOpsManager single-writer system.
 type SyncMap[T any] struct {
 	m        map[string]T
 	mp       map[string]*T
@@ -38,6 +38,7 @@ func NewSyncMap[T any](size int) *SyncMap[T] {
 func (s *SyncMap[T]) Add(key string, value T, expires int64, imdb bool, lastscan int64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	s.m[key] = value
 	s.expires[key] = expires
 	s.lastScan[key] = lastscan
@@ -51,10 +52,12 @@ func (s *SyncMap[T]) Add(key string, value T, expires int64, imdb bool, lastscan
 func (s *SyncMap[T]) AddPointer(key string, value T, expires int64, imdb bool, lastscan int64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	s.m[key] = value
 	if reflect.ValueOf(value).Kind() != reflect.Ptr {
 		s.mp[key] = &value
 	}
+
 	s.expires[key] = expires
 	s.lastScan[key] = lastscan
 	s.imdb[key] = imdb
@@ -67,6 +70,7 @@ func (s *SyncMap[T]) AddPointer(key string, value T, expires int64, imdb bool, l
 func (s *SyncMap[T]) UpdateVal(key string, value T) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	s.m[key] = value
 }
 
@@ -78,6 +82,7 @@ func (s *SyncMap[T]) UpdateVal(key string, value T) {
 func (s *SyncMap[T]) UpdateExpire(key string, value int64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	if s.expires[key] != 0 {
 		s.expires[key] = value
 	}
@@ -90,6 +95,7 @@ func (s *SyncMap[T]) UpdateExpire(key string, value int64) {
 func (s *SyncMap[T]) UpdateLastscan(key string, value int64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	s.lastScan[key] = value
 }
 
@@ -100,6 +106,7 @@ func (s *SyncMap[T]) UpdateLastscan(key string, value int64) {
 func (s *SyncMap[T]) Delete(key string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	s.delete(key)
 }
 
@@ -120,7 +127,9 @@ func (s *SyncMap[T]) delete(key string) {
 func (s *SyncMap[T]) Check(key string) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+
 	_, ok := s.m[key]
+
 	return ok
 }
 
@@ -170,12 +179,15 @@ func (s *SyncMap[T]) GetExpire(key string) int64 {
 func (s *SyncMap[T]) GetValP(key string) *T {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+
 	if ptr, exists := s.mp[key]; exists {
 		return ptr
 	}
+
 	if val, exists := s.m[key]; exists {
 		return &val
 	}
+
 	return nil
 }
 
@@ -199,6 +211,7 @@ func (s *SyncMap[T]) CheckExpires(key string, extend bool, dur int) bool {
 		}
 		return true
 	}
+
 	return false
 }
 
@@ -207,6 +220,7 @@ func (s *SyncMap[T]) CheckExpires(key string, extend bool, dur int) bool {
 func (s *SyncMap[T]) DeleteFunc(fn func(T) bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	for key, value := range s.m {
 		if fn(value) {
 			s.delete(key)
@@ -220,6 +234,7 @@ func (s *SyncMap[T]) DeleteFunc(fn func(T) bool) {
 func (s *SyncMap[T]) DeleteFuncExpires(fn func(int64) bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	for key := range s.expires {
 		if fn(s.expires[key]) {
 			s.delete(key)
@@ -233,6 +248,7 @@ func (s *SyncMap[T]) DeleteFuncExpires(fn func(int64) bool) {
 func (s *SyncMap[T]) DeleteFuncExpiresVal(fn func(int64) bool, fnVal func(T)) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	for key := range s.expires {
 		if fn(s.expires[key]) {
 			fnVal(s.m[key])
@@ -247,6 +263,7 @@ func (s *SyncMap[T]) DeleteFuncExpiresVal(fn func(int64) bool, fnVal func(T)) {
 func (s *SyncMap[T]) DeleteFuncImdbVal(fn func(bool) bool, fnVal func(T)) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	for key := range s.imdb {
 		if fn(s.imdb[key]) {
 			fnVal(s.m[key])
@@ -255,7 +272,7 @@ func (s *SyncMap[T]) DeleteFuncImdbVal(fn func(bool) bool, fnVal func(T)) {
 	}
 }
 
-// SyncMapUint is an optimized version for uint32 keys
+// SyncMapUint is an optimized version for uint32 keys.
 type SyncMapUint[T any] struct {
 	m  map[uint32]T
 	mu sync.RWMutex // Only needed for read protection during writes
@@ -275,6 +292,7 @@ func NewSyncMapUint[T any](size int) *SyncMapUint[T] {
 func (s *SyncMapUint[T]) Add(key uint32, value T) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	s.m[key] = value
 }
 
@@ -284,6 +302,7 @@ func (s *SyncMapUint[T]) Add(key uint32, value T) {
 func (s *SyncMapUint[T]) UpdateVal(key uint32, value T) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	s.m[key] = value
 }
 
@@ -292,6 +311,7 @@ func (s *SyncMapUint[T]) UpdateVal(key uint32, value T) {
 func (s *SyncMapUint[T]) Delete(key uint32) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	delete(s.m, key)
 }
 
@@ -300,7 +320,9 @@ func (s *SyncMapUint[T]) Delete(key uint32) {
 func (s *SyncMapUint[T]) Check(key uint32) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+
 	_, ok := s.m[key]
+
 	return ok
 }
 
@@ -317,6 +339,7 @@ func (s *SyncMapUint[T]) GetVal(key uint32) T {
 func (s *SyncMapUint[T]) Range(fn func(uint32, T) bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+
 	for key, value := range s.m {
 		if !fn(key, value) {
 			break
@@ -329,6 +352,7 @@ func (s *SyncMapUint[T]) Range(fn func(uint32, T) bool) {
 func (s *SyncMapUint[T]) DeleteIf(fn func(uint32, T) bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	for key, value := range s.m {
 		if fn(key, value) {
 			delete(s.m, key)
@@ -341,6 +365,7 @@ func (s *SyncMapUint[T]) DeleteIf(fn func(uint32, T) bool) {
 func (s *SyncMapUint[T]) ForEach(fn func(uint32, T)) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+
 	for key, value := range s.m {
 		fn(key, value)
 	}
@@ -356,6 +381,7 @@ func (s *SyncMapUint[T]) GetMap() map[uint32]T {
 	for k, v := range s.m {
 		copy[k] = v
 	}
+
 	return copy
 }
 
@@ -365,12 +391,15 @@ func (s *SyncMapUint[T]) GetMap() map[uint32]T {
 func (s *SyncMapUint[T]) FindFirst(predicate func(uint32, T) bool) (uint32, T, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+
 	var zero T
+
 	for k, v := range s.m {
 		if predicate(k, v) {
 			return k, v, true
 		}
 	}
+
 	return 0, zero, false
 }
 
@@ -379,11 +408,13 @@ func (s *SyncMapUint[T]) FindFirst(predicate func(uint32, T) bool) (uint32, T, b
 func (s *SyncMapUint[T]) Exists(predicate func(uint32, T) bool) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+
 	for k, v := range s.m {
 		if predicate(k, v) {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -411,6 +442,7 @@ func AtomicAppendToStringSlice(sm *SyncMap[[]string], key, value string) {
 	// Create new slice with extra capacity to reduce future allocations
 	newSlice := make([]string, len(current), len(current)+10)
 	copy(newSlice, current)
+
 	newSlice = append(newSlice, value)
 	sm.m[key] = newSlice
 }
@@ -436,6 +468,7 @@ func AtomicRemoveFromStringSlice(sm *SyncMap[[]string], key, value string) {
 				newSlice = append(newSlice, item)
 			}
 		}
+
 		sm.m[key] = newSlice
 	}
 }

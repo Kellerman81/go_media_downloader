@@ -33,7 +33,9 @@ func MoveFile(
 	if !CheckFileExist(file) {
 		return "", logger.ErrNotFound
 	}
+
 	ext := filepath.Ext(file)
+
 	ok, oknorename := checkExtensionPermissions(setpathcfg, ext, opts.UseOther, opts.UseNil)
 	if !ok {
 		return "", logger.ErrNotAllowed
@@ -54,6 +56,7 @@ func MoveFile(
 	}
 
 	logger.Logtype("info", 0).Str(logger.StrFile, file).Str("to", newpath).Msg("File moved from")
+
 	return newpath, nil
 }
 
@@ -84,7 +87,7 @@ func checkExtensionPermissions(
 // It handles filename generation based on provided parameters:
 // - If no new name is specified or renaming is allowed, it uses the original filename
 // - If a new name is provided, it uses that name
-// - Ensures the filename includes the original file extension
+// - Ensures the filename includes the original file extension.
 func determineNewFilename(file, newname, ext string, oknorename bool) string {
 	var newfilename string
 	if newname == "" || oknorename {
@@ -96,6 +99,7 @@ func determineNewFilename(file, newname, ext string, oknorename bool) string {
 	if !strings.HasSuffix(newfilename, ext) {
 		newfilename += ext
 	}
+
 	return newfilename
 }
 
@@ -146,6 +150,7 @@ func performMove(renamepath, newpath string, opts MoveFileOptions) error {
 	if len(opts.ChmodFolder) == 4 {
 		folderMode = logger.StringToFileMode(opts.ChmodFolder)
 	}
+
 	return moveFileDrive(renamepath, newpath, folderMode, fileMode)
 }
 
@@ -164,6 +169,7 @@ func CheckExtensions(
 			return ok, oknorename
 		}
 	}
+
 	if checkother {
 		return checkOtherExtensions(pathcfg, ext)
 	}
@@ -230,8 +236,10 @@ func setchmod(file string, chmod fs.FileMode) {
 	if chmod == 0 {
 		return
 	}
+
 	if f, err := os.Open(file); err == nil {
 		defer f.Close()
+
 		f.Chmod(chmod)
 	}
 }
@@ -255,18 +263,22 @@ func SecureRemove(file string) (bool, error) {
 	err := os.Remove(file)
 	if errors.Is(err, os.ErrPermission) {
 		os.Chmod(file, 0o777)
+
 		err = os.Remove(file)
 	}
+
 	if err == nil {
 		logger.Logtype("info", 1).
 			Str(logger.StrFile, file).
 			Msg("File removed")
 		return true, nil
 	}
+
 	logger.Logtype("error", 1).
 		Str(logger.StrFile, file).
 		Err(err).
 		Msg("File not removed")
+
 	return false, err
 }
 
@@ -305,10 +317,12 @@ func moveFileDriveBuffer(sourcePath, destPath string) error {
 
 	for {
 		buf := make([]byte, int64(bufferkb)*1024)
+
 		n, err := source.Read(buf)
 		if err != nil && !errors.Is(err, io.EOF) {
 			return err
 		}
+
 		if n == 0 {
 			break
 		}
@@ -317,6 +331,7 @@ func moveFileDriveBuffer(sourcePath, destPath string) error {
 			return err
 		}
 	}
+
 	return destination.Sync()
 }
 
@@ -327,12 +342,15 @@ func moveFileDriveBufferRemove(sourcePath, destPath string, chmod fs.FileMode) e
 	if err := moveFileDriveBuffer(sourcePath, destPath); err != nil {
 		return err
 	}
+
 	if _, err := SecureRemove(sourcePath); err != nil {
 		return errors.New("failed removing original file: " + err.Error())
 	}
+
 	if chmod != 0 {
 		os.Chmod(destPath, chmod)
 	}
+
 	return nil
 }
 
@@ -345,14 +363,17 @@ func moveFileDrive(sourcePath, destPath string, chmodfolder, chmod fs.FileMode) 
 		Str(logger.StrFile, sourcePath).
 		Str(strto, destPath).
 		Msg("File move begin")
+
 	if err := copyFile(sourcePath, destPath, false, chmodfolder); err != nil {
 		logger.Logtype("error", 0).
 			Str(logger.StrFile, sourcePath).
 			Str(strto, destPath).
 			Err(err).
 			Msg("Error copying source")
+
 		return err
 	}
+
 	logger.Logtype("info", 0).
 		Str(logger.StrFile, sourcePath).
 		Str(strto, destPath).
@@ -363,7 +384,9 @@ func moveFileDrive(sourcePath, destPath string, chmodfolder, chmod fs.FileMode) 
 			return err
 		}
 	}
+
 	_, err := SecureRemove(sourcePath)
+
 	return err
 }
 
@@ -382,12 +405,14 @@ func checkFile(fpath string, checkexists, checkregular bool) bool {
 	if checkexists {
 		return !errors.Is(err, os.ErrNotExist)
 	}
+
 	if checkregular {
 		if err != nil {
 			return false
 		}
 		return sfi.Mode().IsRegular()
 	}
+
 	return false
 }
 
@@ -408,10 +433,12 @@ func copyFile(src, dst string, allowFileLink bool, chmodfolder fs.FileMode) erro
 	if err != nil {
 		return err
 	}
+
 	dstAbs, err := filepath.Abs(dst)
 	if err != nil {
 		return err
 	}
+
 	if srcAbs == dstAbs {
 		return errors.New("same file")
 	}
@@ -427,10 +454,12 @@ func copyFile(src, dst string, allowFileLink bool, chmodfolder fs.FileMode) erro
 		if chmodfolder == 0 {
 			chmodfolder = 0o777
 		}
+
 		err = os.MkdirAll(filepath.Dir(dst), chmodfolder)
 		if err != nil {
 			return err
 		}
+
 		if chmodfolder != 0 {
 			os.Chmod(filepath.Dir(dst), chmodfolder)
 		}
@@ -484,9 +513,11 @@ func AppendCsv(fpath, line string) {
 			Str(logger.StrFile, fpath).
 			Err(err).
 			Msg("Error opening csv to write")
+
 		return
 	}
 	defer f.Close()
+
 	_, err = f.WriteString(logger.JoinStrings(line, "\n"))
 	if err != nil {
 		logger.Logtype("error", 1).
@@ -497,5 +528,6 @@ func AppendCsv(fpath, line string) {
 		logger.Logtype("debug", 0).
 			Msg("csv written")
 	}
+
 	f.Sync()
 }

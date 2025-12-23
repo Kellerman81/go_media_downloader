@@ -9,7 +9,7 @@ import (
 	gin "github.com/gin-gonic/gin"
 )
 
-// Redundant structs removed - using StandardResponse from common.go instead
+// Redundant structs removed - using StandardResponse from common.go instead.
 type JSONNaming struct {
 	M          database.ParseInfo `json:"m"`
 	Foldername string             `json:"foldername"`

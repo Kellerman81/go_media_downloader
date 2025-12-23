@@ -96,26 +96,33 @@ func LoggerWithOptions(opt *Options) gin.HandlerFunc {
 		// before executing the next handlers
 		begin := time.Now()
 		path := ctx.Request.URL.Path
+
 		raw := ctx.Request.URL.RawQuery
 		if raw != "" {
 			path = path + "?" + raw
 		}
 
 		// Get payload from request
-		var payload []byte
-		var payloadErr error
+		var (
+			payload    []byte
+			payloadErr error
+		)
+
 		if !opt.isExcluded(PayloadFieldName) {
 			payload, payloadErr = io.ReadAll(ctx.Request.Body)
 			if payloadErr != nil {
 				// Log the error but continue processing
 				z.Warn().Err(payloadErr).Msg("Failed to read request payload")
+
 				payload = []byte{}
 			}
+
 			ctx.Request.Body = io.NopCloser(bytes.NewReader(payload))
 		}
 
 		// Get a copy of the body
 		w := &responseBodyWriter{body: &bytes.Buffer{}, ResponseWriter: ctx.Writer}
+
 		ctx.Writer = w
 
 		// executes the pending handlers
@@ -196,8 +203,10 @@ func LoggerWithOptions(opt *Options) gin.HandlerFunc {
 					z.Error().
 						Interface("zerolog.DurationFieldUnit", zerolog.DurationFieldUnit).
 						Msg("unknown value for DurationFieldUnit")
+
 					durationFieldName = DurationFieldName
 				}
+
 				event.Dur(durationFieldName, duration)
 			}
 			// Referer field
@@ -211,10 +220,6 @@ func LoggerWithOptions(opt *Options) gin.HandlerFunc {
 			// DataLength field
 			if f == DataLengthFieldName && !opt.isExcluded(f) && ctx.Writer.Size() > 0 {
 				event.Int(DataLengthFieldName, ctx.Writer.Size())
-			}
-			// Body field
-			if f == BodyFieldName && !opt.isExcluded(f) && len(w.body.String()) > 0 {
-				// event.Str(BodyFieldName, w.body.String())
 			}
 		}
 
@@ -253,6 +258,7 @@ func (o *Options) isExcluded(field string) bool {
 	if o.FieldsExclude == nil {
 		return false
 	}
+
 	for _, f := range o.FieldsExclude {
 		if f == field {
 			return true

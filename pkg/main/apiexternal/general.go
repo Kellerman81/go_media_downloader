@@ -13,25 +13,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/slidingwindow"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/syncops"
-	"github.com/goccy/go-json"
 )
-
-// Client is a type for interacting with a newznab or torznab api
-// It contains fields for the api key, base API URL, debug mode,
-// and a pointer to the rate limited HTTP client.
-type LimitedAPIClient struct {
-	Client        rlHTTPClient // pointer to the rate limited HTTP client
-	Lim           *slidingwindow.Limiter
-	apikey        string // the API key for authentication
-	aPIBaseURL    string // the base URL of the API
-	aPIBaseURLStr string // the base URL as a string
-	aPIUserID     string // the user ID for the API
-	debug         bool   // whether to enable debug logging
-}
 
 // rlHTTPClient is a rate limited HTTP client struct.
 // It contains fields for the underlying http.Client, name, timeouts,
@@ -48,128 +34,28 @@ type rlHTTPClient struct {
 }
 
 type NzbSlice struct {
-	Arr []Nzbwithprio
+	Arr []apiexternal_v2.Nzbwithprio
 }
-
-const (
-	apiurltmdbmovies = "https://api.themoviedb.org/3/movie/"
-	apiurlshows      = "https://api.trakt.tv/shows/"
-	apiurlmovies     = "https://api.trakt.tv/movies/"
-	extendedfull     = "?extended=full"
-	strguid          = "guid"
-	strsize          = "size"
-	strlink          = "link"
-	strtitle         = "title"
-)
 
 var (
 	errDailyLimit = errors.New("daily limit reached")
-	// clientMu protects all global API client variables
+	// clientMu protects all global API client variables.
 	clientMu sync.RWMutex
-	// traktAPI is a client for interacting with the Trakt API.
-	traktAPI *traktClient
-	// tvdbAPI is a client for interacting with the TVDB API.
-	tvdbAPI *tvdbClient
-	// tmdbAPI is a client for interacting with the TMDB API.
-	tmdbAPI *tmdbClient
-	// omdbAPI is a client for interacting with the OMDb API.
-	omdbAPI *omdbClient
 	// plexAPI is a client for interacting with the Plex API.
 	plexAPI *plexClient
 	// jellyfinAPI is a client for interacting with the Jellyfin API.
 	jellyfinAPI *jellyfinClient
-	// tvmazeAPI is a client for interacting with the TVMaze API.
-	tvmazeAPI *tvmazeClient
-	// NewznabClients is a map of newznab client structs.
-	NewznabClients = syncops.NewSyncMap[syncops.SyncAny](10)
 
 	// cl is a default HTTP client with rate limiting and timeouts.
 	lim = slidingwindow.NewLimiter(1*time.Second, 10)
-	cl  = newClient("defaultdownloader", true, true, &lim, false, nil, 30)
+	cl  = newClient("defaultdownloader", true, true, lim, false, nil, 30)
 
 	tlsinsecure = tls.Config{InsecureSkipVerify: true}
 
-	// fieldmap maps XML element numbers to field names.
-	fieldmap = []string{
-		"",
-		strtitle,
-		strlink,
-		strguid,
-		strsize,
-	}
 	bytesRequestLimitReached = []byte("Request limit reached")
 	strtimefound             = "time found"
 	nzbmu                    = sync.Mutex{}
 )
-
-// Thread-safe accessor functions for API clients
-func getTraktAPI() *traktClient {
-	clientMu.RLock()
-	defer clientMu.RUnlock()
-	return traktAPI
-}
-
-// setTraktAPI safely sets the global Trakt API client instance.
-// Uses write lock to prevent concurrent modifications during assignment.
-//
-// Parameters:
-//   - client: New Trakt API client instance to set as the global client
-func setTraktAPI(client *traktClient) {
-	clientMu.Lock()
-	defer clientMu.Unlock()
-	traktAPI = client
-}
-
-// getTvdbAPI safely retrieves the global TVDB API client instance.
-// Uses read lock to prevent data races during concurrent access.
-//
-// Returns:
-//   - *tvdbClient: Current TVDB API client instance or nil if not initialized
-func getTvdbAPI() *tvdbClient {
-	clientMu.RLock()
-	defer clientMu.RUnlock()
-	return tvdbAPI
-}
-
-// setTvdbAPI safely sets the global TVDB API client instance.
-// Uses write lock to prevent concurrent modifications during assignment.
-//
-// Parameters:
-//   - client: New TVDB API client instance to set as the global client
-func setTvdbAPI(client *tvdbClient) {
-	clientMu.Lock()
-	defer clientMu.Unlock()
-	tvdbAPI = client
-}
-
-// getTmdbAPI safely retrieves the global TMDB API client instance.
-// Uses read lock to prevent data races during concurrent access.
-//
-// Returns:
-//   - *tmdbClient: Current TMDB API client instance or nil if not initialized
-func getTmdbAPI() *tmdbClient {
-	clientMu.RLock()
-	defer clientMu.RUnlock()
-	return tmdbAPI
-}
-
-func setTmdbAPI(client *tmdbClient) {
-	clientMu.Lock()
-	defer clientMu.Unlock()
-	tmdbAPI = client
-}
-
-func getOmdbAPI() *omdbClient {
-	clientMu.RLock()
-	defer clientMu.RUnlock()
-	return omdbAPI
-}
-
-func setOmdbAPI(client *omdbClient) {
-	clientMu.Lock()
-	defer clientMu.Unlock()
-	omdbAPI = client
-}
 
 func getPlexAPI() *plexClient {
 	clientMu.RLock()
@@ -180,6 +66,7 @@ func getPlexAPI() *plexClient {
 func setPlexAPI(client *plexClient) {
 	clientMu.Lock()
 	defer clientMu.Unlock()
+
 	plexAPI = client
 }
 
@@ -192,26 +79,16 @@ func getJellyfinAPI() *jellyfinClient {
 func setJellyfinAPI(client *jellyfinClient) {
 	clientMu.Lock()
 	defer clientMu.Unlock()
+
 	jellyfinAPI = client
-}
-
-func getTvmazeAPI() *tvmazeClient {
-	clientMu.RLock()
-	defer clientMu.RUnlock()
-	return tvmazeAPI
-}
-
-func setTvmazeAPI(client *tvmazeClient) {
-	clientMu.Lock()
-	defer clientMu.Unlock()
-	tvmazeAPI = client
 }
 
 // Add appends the given Nzbwithprio to the NzbSlice's Arr field, with synchronization
 // to ensure thread-safety.
-func (n *NzbSlice) Add(nzb *Nzbwithprio) {
+func (n *NzbSlice) Add(nzb *apiexternal_v2.Nzbwithprio) {
 	nzbmu.Lock()
 	defer nzbmu.Unlock()
+
 	n.Arr = append(n.Arr, *nzb)
 }
 
@@ -225,6 +102,7 @@ func (c *rlHTTPClient) checkLimiter(ctx context.Context, allow bool) (bool, erro
 			return false, errDailyLimit
 		}
 	}
+
 	waituntil := (time.Duration(1) * time.Second)
 	waituntilmax := (time.Duration(20) * time.Second)
 
@@ -234,8 +112,13 @@ func (c *rlHTTPClient) checkLimiter(ctx context.Context, allow bool) (bool, erro
 		// Check if context is cancelled/timed out
 		select {
 		case <-ctx.Done():
-			logger.Logtype("debug", 1).Str("client", c.Clientname).Int("iteration", i).Msg("Rate limiter context cancelled")
+			logger.Logtype("debug", 1).
+				Str("client", c.Clientname).
+				Int("iteration", i).
+				Msg("Rate limiter context cancelled")
+
 			return false, ctx.Err()
+
 		default:
 		}
 
@@ -245,6 +128,7 @@ func (c *rlHTTPClient) checkLimiter(ctx context.Context, allow bool) (bool, erro
 		if ok {
 			if allow {
 				c.Ratelimiter.AllowForce()
+
 				if c.DailyLimiterEnabled {
 					c.DailyRatelimiter.AllowForce()
 				}
@@ -258,17 +142,27 @@ func (c *rlHTTPClient) checkLimiter(ctx context.Context, allow bool) (bool, erro
 		if waitfor == 0 {
 			totalSleep += waituntil
 		}
-		totalSleep += time.Duration(rand.New(config.RandomizerSource).Intn(500)+10) * time.Millisecond
+
+		totalSleep += time.Duration(
+			rand.New(config.RandomizerSource).Intn(500)+10,
+		) * time.Millisecond
+
 		if waitfor > waituntilmax {
 			return false, logger.ErrToWait
 		}
+
 		totalSleep += waitfor
 
 		// Sleep with context cancellation check
 		select {
 		case <-ctx.Done():
-			logger.Logtype("debug", 1).Str("client", c.Clientname).Int("iteration", i).Msg("Rate limiter context cancelled during sleep")
+			logger.Logtype("debug", 1).
+				Str("client", c.Clientname).
+				Int("iteration", i).
+				Msg("Rate limiter context cancelled during sleep")
+
 			return false, ctx.Err()
+
 		case <-time.After(totalSleep):
 			// Continue to next iteration
 		}
@@ -279,15 +173,6 @@ func (c *rlHTTPClient) checkLimiter(ctx context.Context, allow bool) (bool, erro
 		Msg("Hit rate limit - retrys failed")
 
 	return false, logger.ErrToWait
-}
-
-// checklimiterwithdaily checks if the rate limiter and daily rate limiter
-// allow a request. It attempts to check the rate limiter up to the
-// specified number of retries and increasing backoff. If the daily rate
-// limiter is hit, it returns true to indicate the daily limit was reached.
-func (c *rlHTTPClient) checklimiterwithdaily(ctx context.Context) bool {
-	ok, _ := c.checkLimiter(ctx, true)
-	return !ok
 }
 
 // checkresperror checks the HTTP response status code and returns an error if the response indicates an error condition.
@@ -305,9 +190,11 @@ func (c *rlHTTPClient) checkresperror(
 		}
 		return errors.New("http status error " + resp.Status)
 	}
+
 	if checkhtml && resp.Header.Get("Content-Type") == "text/html" {
 		return logger.ErrNotAllowed
 	}
+
 	return nil
 }
 
@@ -320,6 +207,7 @@ func (c *rlHTTPClient) addwait(req *http.Request, resp *http.Response) bool {
 	if config.GetSettingsGeneral().FailedIndexerBlockTime != 0 {
 		blockinterval = config.GetSettingsGeneral().FailedIndexerBlockTime
 	}
+
 	if resp == nil {
 		c.logwait(logger.TimeGetNow().Add(time.Duration(blockinterval)*time.Minute), nil)
 		return true
@@ -337,10 +225,12 @@ func (c *rlHTTPClient) addwait(req *http.Request, resp *http.Response) bool {
 		if resp.StatusCode != http.StatusNotFound {
 			c.logwait(logger.TimeGetNow().Add(time.Duration(blockinterval)*time.Minute), nil)
 		}
+
 		logger.Logtype("error", 2).
 			Str(logger.StrURL, req.URL.String()).
 			Str(logger.StrStatus, resp.Status).
 			Msg("error get response url")
+
 		return true
 
 	case http.StatusUnauthorized,
@@ -351,6 +241,7 @@ func (c *rlHTTPClient) addwait(req *http.Request, resp *http.Response) bool {
 		if !ok {
 			s, ok = resp.Header["X-Retry-After"]
 		}
+
 		if ok && len(s) > 0 {
 			if strings.Contains(s[0], "Request limit reached. Retry in ") {
 				a := strings.Split(
@@ -365,8 +256,10 @@ func (c *rlHTTPClient) addwait(req *http.Request, resp *http.Response) bool {
 						logger.TimeGetNow().Add(time.Duration(blockinterval)*time.Minute),
 						&s[0],
 					)
+
 					return true
 				}
+
 				switch a[1] {
 				case "minutes":
 					c.logwait(
@@ -374,19 +267,24 @@ func (c *rlHTTPClient) addwait(req *http.Request, resp *http.Response) bool {
 							Add(time.Duration(logger.StringToDuration(a[0]))*time.Minute),
 						nil,
 					)
+
 					return true
+
 				case "hours":
 					c.logwait(
 						logger.TimeGetNow().
 							Add(time.Duration(logger.StringToDuration(a[0]))*time.Hour),
 						nil,
 					)
+
 					return true
+
 				default:
 					c.logwait(
 						logger.TimeGetNow().Add(time.Duration(blockinterval)*time.Minute),
 						&s[0],
 					)
+
 					return true
 				}
 			} else if sleep, err := strconv.Atoi(s[0]); err == nil {
@@ -412,18 +310,23 @@ func (c *rlHTTPClient) addwait(req *http.Request, resp *http.Response) bool {
 				c.logwait(logger.TimeGetNow().Add(3*time.Hour), nil)
 				return true
 			}
+
 			logger.Logtype("error", 2).
 				Str(logger.StrURL, req.URL.String()).
 				Str(logger.StrStatus, resp.Status).
 				Msg("error get response url")
+
 			return true
 		}
+
 		logger.Logtype("error", 2).
 			Str(logger.StrURL, req.URL.String()).
 			Str(logger.StrStatus, resp.Status).
 			Msg("error get response url")
+
 		return true
 	}
+
 	return false
 }
 
@@ -431,12 +334,14 @@ func (c *rlHTTPClient) addwait(req *http.Request, resp *http.Response) bool {
 // It waits until the specified time before returning.
 func (c *rlHTTPClient) logwait(waitfor time.Time, logfound *string) {
 	c.Ratelimiter.WaitTill(waitfor)
+
 	logv := logger.Logtype("debug", 1).
 		Time(logger.StrWaitfor, waitfor).
 		Str(logger.StrURL, c.Clientname)
 	if logfound != nil {
 		logv.Str(strtimefound, *logfound)
 	}
+
 	logv.Msg("Set Waittill")
 }
 
@@ -452,6 +357,7 @@ func newClient(
 	if timeoutseconds == 0 {
 		timeoutseconds = 10
 	}
+
 	var insecure *tls.Config
 	if skiptlsverify {
 		insecure = &tlsinsecure
@@ -497,6 +403,7 @@ func ProcessHTTP(
 	if c == nil {
 		c = &cl
 	}
+
 	ctx, ctxcancel := context.WithTimeout(c.Ctx, cl.Timeout5)
 	defer ctxcancel()
 
@@ -509,124 +416,51 @@ func ProcessHTTP(
 			return err
 		}
 	}
-	var req *http.Request
-	var err error
+
+	var (
+		req *http.Request
+		err error
+	)
+
 	if len(body) >= 1 {
 		req, err = http.NewRequestWithContext(ctx, http.MethodPost, urlv, body[0])
 	} else {
 		req, err = http.NewRequestWithContext(ctx, http.MethodGet, urlv, http.NoBody)
 	}
+
 	if err != nil {
 		logger.Logtype("error", 1).
 			Str(logger.StrURL, urlv).
 			Err(err).
 			Msg("failed to get url")
+
 		return err
 	}
 
 	if len(headers) >= 1 {
 		req.Header = headers
 	}
+
 	resp, err := c.client.Do(req)
 	if err != nil {
 		logger.Logtype("error", 1).
 			Str(logger.StrURL, urlv).
 			Err(err).
 			Msg("failed to process url")
+
 		return err
 	}
 	defer resp.Body.Close()
+
 	err = c.checkresperror(resp, req, false)
 	if err != nil {
 		logger.Logtype("error", 1).
 			Str(logger.StrURL, urlv).
 			Err(err).
 			Msg("failed to process url")
-		return err
-	}
-	return run(ctx, resp)
-}
 
-// doJSONType is a helper function that makes a GET request to the provided URL,
-// sets the specified headers, and decodes the JSON response into the provided type.
-// The function uses a context with a timeout of 5 times the client's configured timeout.
-// If the request fails, the function returns the provided type and the error.
-func doJSONType[S any](c *rlHTTPClient, urlv string, headers map[string][]string) (S, error) {
-	var v S
-	err := ProcessHTTP(c, urlv, true, func(ctx context.Context, resp *http.Response) error {
-		return json.NewDecoder(resp.Body).DecodeContext(ctx, &v)
-	}, headers)
-	return v, err
-}
-
-// doJSONTypeNoLimit is a helper function that makes a GET request to the provided URL,
-// sets the specified headers, and decodes the JSON response into the provided type.
-// The function does not use a context with a timeout, unlike doJSONType.
-// If the request fails, the function returns the provided type and the error.
-func doJSONTypeNoLimit[S any](
-	c *rlHTTPClient,
-	urlv string,
-	headers map[string][]string,
-) (S, error) {
-	var v S
-	err := ProcessHTTP(c, urlv, false, func(ctx context.Context, resp *http.Response) error {
-		return json.NewDecoder(resp.Body).DecodeContext(ctx, &v)
-	}, headers)
-	return v, err
-}
-
-// doJSONTypeP is a helper function that makes a GET request to the provided URL,
-// sets the specified headers, and decodes the JSON response into a pointer to the provided type.
-// The function uses a context with a timeout of 5 times the client's configured timeout.
-// If the request fails, the function returns a nil pointer to the provided type and the error.
-func doJSONTypeP[S any](c *rlHTTPClient, urlv string, headers map[string][]string) (*S, error) {
-	v, err := doJSONType[S](c, urlv, headers)
-	if err != nil {
-		return nil, err
-	}
-	return &v, err
-}
-
-// ProcessHTTPNoRateCheck is like ProcessHTTP but completely bypasses all rate limiting and response error checking
-// This is specifically for connectivity testing purposes
-func ProcessHTTPNoRateCheck(
-	c *rlHTTPClient,
-	urlv string,
-	run func(context.Context, *http.Response) error,
-	headers map[string][]string,
-	body ...io.Reader,
-) error {
-	if c == nil {
-		c = &cl
-	}
-	ctx, ctxcancel := context.WithTimeout(c.Ctx, cl.Timeout5)
-	defer ctxcancel()
-
-	var req *http.Request
-	var err error
-	if len(body) >= 1 {
-		req, err = http.NewRequestWithContext(ctx, http.MethodPost, urlv, body[0])
-	} else {
-		req, err = http.NewRequestWithContext(ctx, http.MethodGet, urlv, http.NoBody)
-	}
-	if err != nil {
 		return err
 	}
 
-	// Set headers
-	for key, values := range headers {
-		for _, value := range values {
-			req.Header.Add(key, value)
-		}
-	}
-
-	// Make the request directly without any rate limiting or error checking
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	// Run the callback function
 	return run(ctx, resp)
 }

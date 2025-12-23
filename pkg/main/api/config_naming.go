@@ -13,50 +13,61 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/parser"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/structure"
 	"github.com/gin-gonic/gin"
-	. "maragu.dev/gomponents"
+	"maragu.dev/gomponents"
 	hx "maragu.dev/gomponents-htmx"
-	. "maragu.dev/gomponents/html"
+	"maragu.dev/gomponents/html"
 )
 
-// renderNamingTestPage renders a page for testing naming conventions
-func renderNamingTestPage(csrfToken string) Node {
+// renderNamingTestPage renders a page for testing naming conventions.
+func renderNamingTestPage(csrfToken string) gomponents.Node {
 	media := config.GetSettingsMediaAll()
+
 	lists := make([]string, 0, len(media.Movies)+len(media.Series))
 	for i := range media.Movies {
 		lists = append(lists, media.Movies[i].NamePrefix)
 	}
+
 	for i := range media.Series {
 		lists = append(lists, media.Series[i].NamePrefix)
 	}
-	return Div(
-		Class("config-section-enhanced"),
+
+	return html.Div(
+		html.Class("config-section-enhanced"),
 
 		// Enhanced page header with gradient background
-		Div(
-			Class("page-header-enhanced"),
-			Div(
-				Class("header-content"),
-				Div(
-					Class("header-icon-wrapper"),
-					I(Class("fa-solid fa-edit header-icon")),
+		html.Div(
+			html.Class("page-header-enhanced"),
+			html.Div(
+				html.Class("header-content"),
+				html.Div(
+					html.Class("header-icon-wrapper"),
+					html.I(html.Class("fa-solid fa-edit header-icon")),
 				),
-				Div(
-					Class("header-text"),
-					H2(Class("header-title"), Text("Naming Convention Test")),
-					P(Class("header-subtitle"), Text("Test how your naming templates will format movie and episode filenames. This tool helps you preview the generated folder and file names before applying them to your media library.")),
+				html.Div(
+					html.Class("header-text"),
+					html.H2(html.Class("header-title"), gomponents.Text("Naming Convention Test")),
+					html.P(
+						html.Class("header-subtitle"),
+						gomponents.Text(
+							"Test how your naming templates will format movie and episode filenames. This tool helps you preview the generated folder and file names before applying them to your media library.",
+						),
+					),
 				),
 			),
 		),
 
-		Form(
-			Class("config-form"),
-			ID("namingTestForm"),
+		html.Form(
+			html.Class("config-form"),
+			html.ID("namingTestForm"),
 
-			Div(
-				Class("row"),
-				Div(
-					Class("col-md-6"),
-					H5(Class("form-section-title"), Text("Media Configuration")),
+			html.Div(
+				html.Class("row"),
+				html.Div(
+					html.Class("col-md-6"),
+					html.H5(
+						html.Class("form-section-title"),
+						gomponents.Text("Media Configuration"),
+					),
 
 					renderFormGroup("naming", map[string]string{
 						"MediaType": "Select whether you're testing movie or TV series naming",
@@ -75,20 +86,28 @@ func renderNamingTestPage(csrfToken string) Node {
 					}),
 
 					renderFormGroup("naming", map[string]string{
-						"FilePath": fmt.Sprintf("Example file path to test (e.g., '/downloads/Movie.%d.1080p.BluRay.mkv')", time.Now().Year()),
+						"FilePath": fmt.Sprintf(
+							"Example file path to test (e.g., '/downloads/Movie.%d.1080p.BluRay.mkv')",
+							time.Now().Year(),
+						),
 					}, map[string]string{
 						"FilePath": "File Path",
 					}, "FilePath", "text", "/downloads/The.Matrix.1999.1080p.BluRay.x264-RARBG.mkv", nil),
 				),
 
-				Div(
-					Class("col-md-6"),
-					H5(Class("form-section-title"), Text("Media Selection")),
-					P(Class("text-muted"), Text("Select existing media from your database to test naming conventions:")),
+				html.Div(
+					html.Class("col-md-6"),
+					html.H5(html.Class("form-section-title"), gomponents.Text("Media Selection")),
+					html.P(
+						html.Class("text-muted"),
+						gomponents.Text(
+							"Select existing media from your database to test naming conventions:",
+						),
+					),
 
-					Div(
-						ID("movieFields"),
-						Style("display: block;"),
+					html.Div(
+						html.ID("movieFields"),
+						html.Style("display: block;"),
 						renderFormGroup("naming", map[string]string{
 							"MovieID": "Enter the database ID of an existing movie",
 						}, map[string]string{
@@ -96,9 +115,9 @@ func renderNamingTestPage(csrfToken string) Node {
 						}, "MovieID", "number", "1", nil),
 					),
 
-					Div(
-						ID("serieFields"),
-						Style("display: none;"),
+					html.Div(
+						html.ID("serieFields"),
+						html.Style("display: none;"),
 						renderFormGroup("naming", map[string]string{
 							"SerieID": "Enter the database ID of an existing TV series",
 						}, map[string]string{
@@ -108,66 +127,109 @@ func renderNamingTestPage(csrfToken string) Node {
 				),
 			),
 
-			Div(
-				Class("form-group submit-group"),
-				Button(
-					Class("btn btn-primary"),
-					Text("Test Naming"),
-					Type("button"),
+			html.Div(
+				html.Class("form-group submit-group"),
+				html.Button(
+					html.Class("btn btn-primary"),
+					gomponents.Text("Test Naming"),
+					html.Type("button"),
 					hx.Target("#namingResults"),
 					hx.Swap("innerHTML"),
 					hx.Post("/api/admin/namingtest"),
 					hx.Headers("{\"X-CSRF-Token\": \""+csrfToken+"\"}"),
 					hx.Include("#namingTestForm"),
 				),
-				Button(
-					Type("button"),
-					Class("btn btn-secondary ml-2"),
-					Attr("onclick", "document.getElementById('namingTestForm').reset(); document.getElementById('namingResults').innerHTML = '';"),
-					Text("Reset"),
+				html.Button(
+					html.Type("button"),
+					html.Class("btn btn-secondary ml-2"),
+					gomponents.Attr(
+						"onclick",
+						"document.getElementById('namingTestForm').reset(); document.getElementById('namingResults').innerHTML = '';",
+					),
+					gomponents.Text("Reset"),
 				),
 			),
 		),
 
-		Div(
-			ID("namingResults"),
-			Class("mt-4"),
-			Style("min-height: 50px;"),
+		html.Div(
+			html.ID("namingResults"),
+			html.Class("mt-4"),
+			html.Style("min-height: 50px;"),
 		),
 
 		// Instructions
-		Div(
-			Class("mt-4 card border-0 shadow-sm border-info mb-4"),
-			Div(
-				Class("card-header border-0"),
-				Style("background: linear-gradient(135deg, #d1ecf1 0%, #bee5eb 100%); border-radius: 15px 15px 0 0;"),
-				Div(
-					Class("d-flex align-items-center"),
-					Span(Class("badge bg-info me-3"), I(Class("fas fa-info-circle me-1")), Text("Usage")),
-					H5(Class("card-title mb-0 text-info fw-bold"), Text("Usage Instructions")),
+		html.Div(
+			html.Class("mt-4 card border-0 shadow-sm border-info mb-4"),
+			html.Div(
+				html.Class("card-header border-0"),
+				html.Style(
+					"background: linear-gradient(135deg, #d1ecf1 0%, #bee5eb 100%); border-radius: 15px 15px 0 0;",
+				),
+				html.Div(
+					html.Class("d-flex align-items-center"),
+					html.Span(
+						html.Class("badge bg-info me-3"),
+						html.I(html.Class("fas fa-info-circle me-1")),
+						gomponents.Text("Usage"),
+					),
+					html.H5(
+						html.Class("card-title mb-0 text-info fw-bold"),
+						gomponents.Text("Usage Instructions"),
+					),
 				),
 			),
-			Div(
-				Class("card-body"),
-				P(Class("card-text text-muted mb-3"), Text("Follow these steps to test your naming templates")),
-				Ol(
-					Class("mb-3 list-unstyled"),
-					Li(Class("mb-2"), Text("1. Select the media type (Movie or TV Series)")),
-					Li(Class("mb-2"), Text("2. Choose the media configuration that contains your naming templates")),
-					Li(Class("mb-2"), Text("3. Enter a sample file path to test")),
-					Li(Class("mb-2"), Text("4. Provide the database ID of an existing movie or series")),
-					Li(Class("mb-2"), Text("5. Click 'Test Naming' to see how your templates will format the names")),
+			html.Div(
+				html.Class("card-body"),
+				html.P(
+					html.Class("card-text text-muted mb-3"),
+					gomponents.Text("Follow these steps to test your naming templates"),
+				),
+				html.Ol(
+					html.Class("mb-3 list-unstyled"),
+					html.Li(
+						html.Class("mb-2"),
+						gomponents.Text("1. Select the media type (Movie or TV Series)"),
+					),
+					html.Li(
+						html.Class("mb-2"),
+						gomponents.Text(
+							"2. Choose the media configuration that contains your naming templates",
+						),
+					),
+					html.Li(
+						html.Class("mb-2"),
+						gomponents.Text("3. Enter a sample file path to test"),
+					),
+					html.Li(
+						html.Class("mb-2"),
+						gomponents.Text(
+							"4. Provide the database ID of an existing movie or series",
+						),
+					),
+					html.Li(
+						html.Class("mb-2"),
+						gomponents.Text(
+							"5. Click 'Test Naming' to see how your templates will format the names",
+						),
+					),
 				),
 
-				Div(
-					Class("alert alert-light border-0 mt-3 mb-0"),
-					Style("background-color: rgba(13, 110, 253, 0.1); border-radius: 8px; padding: 0.75rem 1rem;"),
-					Div(
-						Class("d-flex align-items-start"),
-						I(Class("fas fa-lightbulb me-2 mt-1"), Style("color: #0d6efd; font-size: 0.9rem;")),
-						Div(
-							Strong(Style("color: #0d6efd;"), Text("Note: ")),
-							Text("The movie or series ID must exist in your database. You can find these IDs in the database management interface."),
+				html.Div(
+					html.Class("alert alert-light border-0 mt-3 mb-0"),
+					html.Style(
+						"background-color: rgba(13, 110, 253, 0.1); border-radius: 8px; padding: 0.75rem 1rem;",
+					),
+					html.Div(
+						html.Class("d-flex align-items-start"),
+						html.I(
+							html.Class("fas fa-lightbulb me-2 mt-1"),
+							html.Style("color: #0d6efd; font-size: 0.9rem;"),
+						),
+						html.Div(
+							html.Strong(html.Style("color: #0d6efd;"), gomponents.Text("Note: ")),
+							gomponents.Text(
+								"The movie or series ID must exist in your database. You can find these IDs in the database management interface.",
+							),
 						),
 					),
 				),
@@ -175,14 +237,14 @@ func renderNamingTestPage(csrfToken string) Node {
 		),
 
 		// JavaScript for toggling fields
-		// Simplified JavaScript for Naming - CSS classes handle field visibility  
-		Script(Raw(`
+		// Simplified JavaScript for Naming - CSS classes handle field visibility
+		html.Script(gomponents.Raw(`
 			// No JavaScript needed - CSS classes handle movie/series field visibility
 		`)),
 	)
 }
 
-// HandleNamingTest handles naming convention test requests
+// HandleNamingTest handles naming convention test requests.
 func HandleNamingTest(c *gin.Context) {
 	if err := c.Request.ParseForm(); err != nil {
 		c.String(200, renderAlert("Failed to parse form data: "+err.Error(), "danger"))
@@ -199,8 +261,10 @@ func HandleNamingTest(c *gin.Context) {
 	}
 
 	// Get the appropriate ID based on media type
-	var movieID, serieID int
-	var err error
+	var (
+		movieID, serieID int
+		err              error
+	)
 
 	if mediaType == "movie" {
 		movieIDStr := c.PostForm("naming_MovieID")
@@ -208,6 +272,7 @@ func HandleNamingTest(c *gin.Context) {
 			c.String(200, renderAlert("Please enter a Movie ID", "warning"))
 			return
 		}
+
 		movieID, err = strconv.Atoi(movieIDStr)
 		if err != nil {
 			c.String(200, renderAlert("Invalid Movie ID: "+err.Error(), "danger"))
@@ -219,6 +284,7 @@ func HandleNamingTest(c *gin.Context) {
 			c.String(200, renderAlert("Please enter a Series ID", "warning"))
 			return
 		}
+
 		serieID, err = strconv.Atoi(serieIDStr)
 		if err != nil {
 			c.String(200, renderAlert("Invalid Series ID: "+err.Error(), "danger"))
@@ -242,11 +308,13 @@ func HandleNamingTest(c *gin.Context) {
 			c.String(200, renderAlert("Movie not found", "danger"))
 			return
 		}
+
 		cfgp := config.GetSettingsMedia(cfg.CfgMedia)
 		if cfgp == nil {
 			c.String(200, renderAlert("Movie Config not found", "danger"))
 			return
 		}
+
 		s := structure.NewStructure(
 			cfgp,
 			config.GetSettingsMedia(cfg.CfgMedia).DataImport[0].TemplatePath,
@@ -256,12 +324,15 @@ func HandleNamingTest(c *gin.Context) {
 			c.String(200, renderAlert("Movie Structure failed", "danger"))
 			return
 		}
+
 		to := filepath.Dir(cfg.FilePath)
 
 		var orgadata2 structure.Organizerdata
+
 		orgadata2.Videofile = cfg.FilePath
 		orgadata2.Folder = to
 		orgadata2.Rootpath = movie.Rootpath
+
 		m := parser.ParseFile(
 			cfg.FilePath,
 			true,
@@ -273,15 +344,31 @@ func HandleNamingTest(c *gin.Context) {
 			c.String(200, renderAlert("Movie Parse failed", "danger"))
 			return
 		}
+
 		if m.ListID == -1 {
 			c.String(200, renderAlert("Movie List not found", "danger"))
 			return
 		}
+
 		orgadata2.Listid = m.ListID
 		s.ParseFileAdditional(&orgadata2, m, 0, false, false, s.Cfgp.Lists[m.ListID].CfgQuality)
 
 		s.GenerateNamingTemplate(&orgadata2, m, &movie.DbmovieID)
-		c.String(200, renderNamingResults(map[string]any{"foldername": orgadata2.Foldername, "filename": orgadata2.Filename, "m": m}, cfg.GroupType, cfg.CfgMedia, cfg.FilePath, cfg.MovieID, cfg.SerieID))
+		c.String(
+			200,
+			renderNamingResults(
+				map[string]any{
+					"foldername": orgadata2.Foldername,
+					"filename":   orgadata2.Filename,
+					"m":          m,
+				},
+				cfg.GroupType,
+				cfg.CfgMedia,
+				cfg.FilePath,
+				cfg.MovieID,
+				cfg.SerieID,
+			),
+		)
 	} else {
 		series, _ := database.GetSeries(database.Querywithargs{Where: logger.FilterByID}, cfg.SerieID)
 		if series == nil {
@@ -307,7 +394,9 @@ func HandleNamingTest(c *gin.Context) {
 		}
 		// defer s.Close()
 		to := filepath.Dir(cfg.FilePath)
+
 		var orgadata2 structure.Organizerdata
+
 		orgadata2.Videofile = cfg.FilePath
 		orgadata2.Folder = to
 		orgadata2.Rootpath = series.Rootpath
@@ -317,12 +406,15 @@ func HandleNamingTest(c *gin.Context) {
 			c.String(200, renderAlert("Series Parse failed", "danger"))
 			return
 		}
+
 		if m.ListID == -1 {
 			c.String(200, renderAlert("Series List not found", "danger"))
 			return
 		}
+
 		orgadata2.Listid = m.ListID
 		s.ParseFileAdditional(&orgadata2, m, 0, false, false, s.Cfgp.Lists[m.ListID].CfgQuality)
+
 		m.SerieID = series.ID
 		m.DbserieID = series.DbserieID
 		s.GetSeriesEpisodes(&orgadata2, m, true, s.Cfgp.Lists[orgadata2.Listid].CfgQuality)
@@ -338,33 +430,52 @@ func HandleNamingTest(c *gin.Context) {
 	}
 }
 
-// renderNamingResults renders the naming test results
-func renderNamingResults(result map[string]any, mediaType, configKey, filePath string, movieID, serieID int) string {
+// renderNamingResults renders the naming test results.
+func renderNamingResults(
+	result map[string]any,
+	mediaType, configKey, filePath string,
+	movieID, serieID int,
+) string {
 	// Check if there's an error in the result
 	if errMsg, ok := result["error"]; ok {
 		return renderComponentToString(
-			Div(
-				Class("card border-0 shadow-sm border-warning mb-4"),
-				Div(
-					Class("card-header border-0"),
-					Style("background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%); border-radius: 15px 15px 0 0;"),
-					Div(
-						Class("d-flex align-items-center"),
-						Span(Class("badge bg-warning me-3"), I(Class("fas fa-exclamation-triangle me-1")), Text("Error")),
-						H5(Class("card-title mb-0 text-warning fw-bold"), Text("API Integration Limitation")),
+			html.Div(
+				html.Class("card border-0 shadow-sm border-warning mb-4"),
+				html.Div(
+					html.Class("card-header border-0"),
+					html.Style(
+						"background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%); border-radius: 15px 15px 0 0;",
+					),
+					html.Div(
+						html.Class("d-flex align-items-center"),
+						html.Span(
+							html.Class("badge bg-warning me-3"),
+							html.I(html.Class("fas fa-exclamation-triangle me-1")),
+							gomponents.Text("Error"),
+						),
+						html.H5(
+							html.Class("card-title mb-0 text-warning fw-bold"),
+							gomponents.Text("API Integration Limitation"),
+						),
 					),
 				),
-				Div(
-					Class("card-body"),
-					P(Class("card-text text-muted mb-3"), Text(fmt.Sprintf("%v", errMsg))),
-					P(Class("card-text text-muted mb-3"), Text(fmt.Sprintf("Note: %v", result["note"]))),
-					Details(
-						Summary(Text("Technical Details")),
-						P(Text("Payload that would be sent to /api/naming:")),
-						Pre(
-							Class("bg-light p-3 mt-2"),
-							Style("border-radius: 6px;"),
-							Code(Text(fmt.Sprintf("%v", result["payload"]))),
+				html.Div(
+					html.Class("card-body"),
+					html.P(
+						html.Class("card-text text-muted mb-3"),
+						gomponents.Text(fmt.Sprintf("%v", errMsg)),
+					),
+					html.P(
+						html.Class("card-text text-muted mb-3"),
+						gomponents.Text(fmt.Sprintf("Note: %v", result["note"])),
+					),
+					html.Details(
+						html.Summary(gomponents.Text("Technical Details")),
+						html.P(gomponents.Text("Payload that would be sent to /api/naming:")),
+						html.Pre(
+							html.Class("bg-light p-3 mt-2"),
+							html.Style("border-radius: 6px;"),
+							html.Code(gomponents.Text(fmt.Sprintf("%v", result["payload"]))),
 						),
 					),
 				),
@@ -379,49 +490,69 @@ func renderNamingResults(result map[string]any, mediaType, configKey, filePath s
 	if fn, ok := result["foldername"]; ok {
 		foldername = fmt.Sprintf("%v", fn)
 	}
+
 	if fn, ok := result["filename"]; ok {
 		filename = fmt.Sprintf("%v", fn)
 	}
 
-	resultRows := []Node{
-		Tr(Td(Strong(Text("Input Parameters:"))), Td(Text(""))),
-		Tr(Td(Text("Media Type:")), Td(Text(mediaType))),
-		Tr(Td(Text("Config Used:")), Td(Text(configKey))),
-		Tr(Td(Text("File Path:")), Td(Text(filePath))),
-		func() Node {
+	resultRows := []gomponents.Node{
+		html.Tr(
+			html.Td(html.Strong(gomponents.Text("Input Parameters:"))),
+			html.Td(gomponents.Text("")),
+		),
+		html.Tr(html.Td(gomponents.Text("Media Type:")), html.Td(gomponents.Text(mediaType))),
+		html.Tr(html.Td(gomponents.Text("Config Used:")), html.Td(gomponents.Text(configKey))),
+		html.Tr(html.Td(gomponents.Text("File Path:")), html.Td(gomponents.Text(filePath))),
+		func() gomponents.Node {
 			if mediaType == "movie" {
-				return Tr(Td(Text("Movie ID:")), Td(Text(fmt.Sprintf("%d", movieID))))
+				return html.Tr(
+					html.Td(gomponents.Text("Movie ID:")),
+					html.Td(gomponents.Text(fmt.Sprintf("%d", movieID))),
+				)
 			}
-			return Tr(Td(Text("Series ID:")), Td(Text(fmt.Sprintf("%d", serieID))))
-		}(),
-		Tr(Td(Attr("colspan", "2"), Hr())),
 
-		Tr(Td(Strong(Text("Generated Names:"))), Td(Text(""))),
-		Tr(Td(Text("Folder Name:")), Td(Text(func() string {
+			return html.Tr(
+				html.Td(gomponents.Text("Series ID:")),
+				html.Td(gomponents.Text(fmt.Sprintf("%d", serieID))),
+			)
+		}(),
+		html.Tr(html.Td(gomponents.Attr("colspan", "2"), html.Hr())),
+
+		html.Tr(
+			html.Td(html.Strong(gomponents.Text("Generated Names:"))),
+			html.Td(gomponents.Text("")),
+		),
+		html.Tr(html.Td(gomponents.Text("Folder Name:")), html.Td(gomponents.Text(func() string {
 			if foldername != "" {
 				return foldername
 			}
 			return "No folder name generated"
 		}()))),
-		Tr(Td(Text("File Name:")), Td(Text(func() string {
+		html.Tr(html.Td(gomponents.Text("File Name:")), html.Td(gomponents.Text(func() string {
 			if filename != "" {
 				return filename
 			}
 			return "No filename generated"
 		}()))),
 
-		Tr(Td(Attr("colspan", "2"), Hr())),
-		Tr(Td(Strong(Text("Full Path Preview:"))), Td(Text(""))),
-		Tr(Td(Text("Complete Path:")), Td(Text(func() string {
+		html.Tr(html.Td(gomponents.Attr("colspan", "2"), html.Hr())),
+		html.Tr(
+			html.Td(html.Strong(gomponents.Text("Full Path Preview:"))),
+			html.Td(gomponents.Text("")),
+		),
+		html.Tr(html.Td(gomponents.Text("Complete Path:")), html.Td(gomponents.Text(func() string {
 			if foldername != "" && filename != "" {
 				return foldername + "/" + filename
 			}
+
 			if foldername != "" {
 				return foldername + "/[filename not generated]"
 			}
+
 			if filename != "" {
 				return "[folder not generated]/" + filename
 			}
+
 			return "No path generated"
 		}()))),
 	}
@@ -429,46 +560,127 @@ func renderNamingResults(result map[string]any, mediaType, configKey, filePath s
 	// Add parsed information if available
 	if m, ok := result["m"]; ok {
 		if parseInfo, ok := m.(*database.ParseInfo); ok {
-			resultRows = append(resultRows,
-				Tr(Td(Attr("colspan", "2"), Hr())),
-				Tr(Td(Strong(Text("Parsed Information:"))), Td(Text(""))),
-				Tr(Td(Text("Parsed Title:")), Td(Text(parseInfo.Title))),
-				Tr(Td(Text("Parsed Year:")), Td(Text(fmt.Sprintf("%d", parseInfo.Year)))),
-				Tr(Td(Text("Parsed Quality:")), Td(Text(parseInfo.Quality))),
-				Tr(Td(Text("Parsed Resolution:")), Td(Text(parseInfo.Resolution))),
-				Tr(Td(Text("Parsed Codec:")), Td(Text(parseInfo.Codec))),
-				Tr(Td(Text("Parsed Audio:")), Td(Text(parseInfo.Audio))),
+			resultRows = append(
+				resultRows,
+				html.Tr(html.Td(gomponents.Attr("colspan", "2"), html.Hr())),
+				html.Tr(
+					html.Td(html.Strong(gomponents.Text("Parsed Information:"))),
+					html.Td(gomponents.Text("")),
+				),
+				html.Tr(
+					html.Td(gomponents.Text("Parsed Title:")),
+					html.Td(gomponents.Text(parseInfo.Title)),
+				),
+				html.Tr(
+					html.Td(gomponents.Text("Parsed Year:")),
+					html.Td(gomponents.Text(fmt.Sprintf("%d", parseInfo.Year))),
+				),
+				html.Tr(
+					html.Td(gomponents.Text("Parsed Quality:")),
+					html.Td(gomponents.Text(parseInfo.Quality)),
+				),
+				html.Tr(
+					html.Td(gomponents.Text("Parsed Resolution:")),
+					html.Td(gomponents.Text(parseInfo.Resolution)),
+				),
+				html.Tr(
+					html.Td(gomponents.Text("Parsed Codec:")),
+					html.Td(gomponents.Text(parseInfo.Codec)),
+				),
+				html.Tr(
+					html.Td(gomponents.Text("Parsed Audio:")),
+					html.Td(gomponents.Text(parseInfo.Audio)),
+				),
 			)
 
 			// Add episode/season info if applicable
 			if parseInfo.Season > 0 || parseInfo.Episode > 0 {
-				resultRows = append(resultRows,
-					Tr(Td(Text("Season:")), Td(Text(fmt.Sprintf("%d", parseInfo.Season)))),
-					Tr(Td(Text("Episode:")), Td(Text(fmt.Sprintf("%d", parseInfo.Episode)))),
+				resultRows = append(
+					resultRows,
+					html.Tr(
+						html.Td(gomponents.Text("Season:")),
+						html.Td(gomponents.Text(fmt.Sprintf("%d", parseInfo.Season))),
+					),
+					html.Tr(
+						html.Td(gomponents.Text("Episode:")),
+						html.Td(gomponents.Text(fmt.Sprintf("%d", parseInfo.Episode))),
+					),
 				)
 			}
 
 			// Add additional useful fields
 			if parseInfo.Date != "" {
-				resultRows = append(resultRows, Tr(Td(Text("Release Date:")), Td(Text(parseInfo.Date))))
+				resultRows = append(
+					resultRows,
+					html.Tr(
+						html.Td(gomponents.Text("Release Date:")),
+						html.Td(gomponents.Text(parseInfo.Date)),
+					),
+				)
 			}
+
 			if len(parseInfo.Languages) > 0 {
-				resultRows = append(resultRows, Tr(Td(Text("Languages:")), Td(Text(strings.Join(parseInfo.Languages, ", ")))))
+				resultRows = append(
+					resultRows,
+					html.Tr(
+						html.Td(gomponents.Text("Languages:")),
+						html.Td(gomponents.Text(strings.Join(parseInfo.Languages, ", "))),
+					),
+				)
 			}
+
 			if parseInfo.Extended {
-				resultRows = append(resultRows, Tr(Td(Text("Extended Cut:")), Td(Text("Yes"))))
+				resultRows = append(
+					resultRows,
+					html.Tr(
+						html.Td(gomponents.Text("Extended Cut:")),
+						html.Td(gomponents.Text("Yes")),
+					),
+				)
 			}
+
 			if parseInfo.Proper {
-				resultRows = append(resultRows, Tr(Td(Text("Proper Release:")), Td(Text("Yes"))))
+				resultRows = append(
+					resultRows,
+					html.Tr(
+						html.Td(gomponents.Text("Proper Release:")),
+						html.Td(gomponents.Text("Yes")),
+					),
+				)
 			}
+
 			if parseInfo.Repack {
-				resultRows = append(resultRows, Tr(Td(Text("Repack Release:")), Td(Text("Yes"))))
+				resultRows = append(
+					resultRows,
+					html.Tr(
+						html.Td(gomponents.Text("Repack Release:")),
+						html.Td(gomponents.Text("Yes")),
+					),
+				)
 			}
+
 			if parseInfo.Runtime > 0 {
-				resultRows = append(resultRows, Tr(Td(Text("Runtime:")), Td(Text(fmt.Sprintf("%d min", parseInfo.Runtime)))))
+				resultRows = append(
+					resultRows,
+					html.Tr(
+						html.Td(gomponents.Text("Runtime:")),
+						html.Td(gomponents.Text(fmt.Sprintf("%d min", parseInfo.Runtime))),
+					),
+				)
 			}
+
 			if parseInfo.Width > 0 && parseInfo.Height > 0 {
-				resultRows = append(resultRows, Tr(Td(Text("Dimensions:")), Td(Text(fmt.Sprintf("%dx%d", parseInfo.Width, parseInfo.Height)))))
+				resultRows = append(
+					resultRows,
+					html.Tr(
+						html.Td(gomponents.Text("Dimensions:")),
+						html.Td(
+							gomponents.Text(
+								fmt.Sprintf("%dx%d", parseInfo.Width, parseInfo.Height),
+							),
+						),
+					),
+				)
 			}
 		}
 	}
@@ -490,87 +702,136 @@ func renderNamingResults(result map[string]any, mediaType, configKey, filePath s
 		icon = "fas fa-times-circle"
 		color = "#dc3545"
 	}
+
 	_ = color
 
-	results := Div(
-		Class(alertClass),
-		Div(
-			Class("card-header border-0"),
-			Style("background: linear-gradient(135deg, "+func() string {
+	results := html.Div(
+		html.Class(alertClass),
+		html.Div(
+			html.Class("card-header border-0"),
+			html.Style("background: linear-gradient(135deg, "+func() string {
 				if foldername != "" && filename != "" {
 					return "#d4edda 0%, #c3e6cb 100%"
 				} else if foldername != "" || filename != "" {
 					return "#fff3cd 0%, #ffeaa7 100%"
 				}
+
 				return "#f8d7da 0%, #f5c6cb 100%"
 			}()+"); border-radius: 15px 15px 0 0;"),
-			Div(
-				Class("d-flex align-items-center"),
-				Span(Class("badge "+func() string {
+			html.Div(
+				html.Class("d-flex align-items-center"),
+				html.Span(html.Class("badge "+func() string {
 					if foldername != "" && filename != "" {
 						return "bg-success"
 					} else if foldername != "" || filename != "" {
 						return "bg-warning"
 					}
+
 					return "bg-danger"
-				}()+" me-3"), I(Class(icon+" me-1")), Text(func() string {
+				}()+" me-3"), html.I(html.Class(icon+" me-1")), gomponents.Text(func() string {
 					if foldername != "" && filename != "" {
 						return "Success"
 					} else if foldername != "" || filename != "" {
 						return "Partial"
 					}
+
 					return "Failed"
 				}())),
-				H5(Class("card-title mb-0 "+func() string {
+				html.H5(html.Class("card-title mb-0 "+func() string {
 					if foldername != "" && filename != "" {
 						return "text-success"
 					} else if foldername != "" || filename != "" {
 						return "text-warning"
 					}
+
 					return "text-danger"
-				}()+" fw-bold"), Text(message)),
+				}()+" fw-bold"), gomponents.Text(message)),
 			),
 		),
-		Div(
-			Class("card-body p-0"),
-			Table(
-				Class("table table-hover mb-0"),
-				Style("background: transparent;"),
-				TBody(Group(resultRows)),
+		html.Div(
+			html.Class("card-body p-0"),
+			html.Table(
+				html.Class("table table-hover mb-0"),
+				html.Style("background: transparent;"),
+				html.TBody(gomponents.Group(resultRows)),
 			),
 		),
 
 		// Add helpful information about naming results
-		Div(
-			Class("mt-3 card border-0 shadow-sm border-info mb-4"),
-			Div(
-				Class("card-header border-0"),
-				Style("background: linear-gradient(135deg, #d1ecf1 0%, #bee5eb 100%); border-radius: 15px 15px 0 0;"),
-				Div(
-					Class("d-flex align-items-center"),
-					Span(Class("badge bg-info me-3"), I(Class("fas fa-info-circle me-1")), Text("Information")),
-					H5(Class("card-title mb-0 text-info fw-bold"), Text("Naming Test Information")),
+		html.Div(
+			html.Class("mt-3 card border-0 shadow-sm border-info mb-4"),
+			html.Div(
+				html.Class("card-header border-0"),
+				html.Style(
+					"background: linear-gradient(135deg, #d1ecf1 0%, #bee5eb 100%); border-radius: 15px 15px 0 0;",
+				),
+				html.Div(
+					html.Class("d-flex align-items-center"),
+					html.Span(
+						html.Class("badge bg-info me-3"),
+						html.I(html.Class("fas fa-info-circle me-1")),
+						gomponents.Text("Information"),
+					),
+					html.H5(
+						html.Class("card-title mb-0 text-info fw-bold"),
+						gomponents.Text("Naming Test Information"),
+					),
 				),
 			),
-			Div(
-				Class("card-body"),
-				P(Text("This page tests your naming conventions using real file parsing and naming generation:")),
-				Ul(
-					Li(Text("✅ File Parsing: Real parsing using your quality and regex configurations")),
-					Li(Text("📁 Folder Naming: Generated using your folder naming templates")),
-					Li(Text("📄 File Naming: Generated using your file naming templates")),
-					Li(Text("🔍 Quality Analysis: Shows parsed quality, resolution, codec, and audio information")),
-					Li(Text("📊 Media Details: Displays season/episode info for TV series")),
+			html.Div(
+				html.Class("card-body"),
+				html.P(
+					gomponents.Text(
+						"This page tests your naming conventions using real file parsing and naming generation:",
+					),
 				),
-				func() Node {
+				html.Ul(
+					html.Li(
+						gomponents.Text(
+							"✅ File Parsing: Real parsing using your quality and regex configurations",
+						),
+					),
+					html.Li(
+						gomponents.Text(
+							"📁 Folder Naming: Generated using your folder naming templates",
+						),
+					),
+					html.Li(
+						gomponents.Text(
+							"📄 File Naming: Generated using your file naming templates",
+						),
+					),
+					html.Li(
+						gomponents.Text(
+							"🔍 Quality Analysis: Shows parsed quality, resolution, codec, and audio information",
+						),
+					),
+					html.Li(
+						gomponents.Text(
+							"📊 Media Details: Displays season/episode info for TV series",
+						),
+					),
+				),
+				func() gomponents.Node {
 					if foldername == "" && filename == "" {
-						return P(Class("mt-2 text-warning"), Strong(Text("Note: ")), Text("No names were generated. Check your naming templates and ensure the media exists in your database."))
+						return html.P(
+							html.Class("mt-2 text-warning"),
+							html.Strong(gomponents.Text("Note: ")),
+							gomponents.Text(
+								"No names were generated. Check your naming templates and ensure the media exists in your database.",
+							),
+						)
 					} else if foldername == "" {
-						return P(Class("mt-2 text-warning"), Strong(Text("Note: ")), Text("Folder name not generated. Check your folder naming template configuration."))
+						return html.P(html.Class("mt-2 text-warning"), html.Strong(gomponents.Text("Note: ")), gomponents.Text("Folder name not generated. Check your folder naming template configuration."))
 					} else if filename == "" {
-						return P(Class("mt-2 text-warning"), Strong(Text("Note: ")), Text("File name not generated. Check your file naming template configuration."))
+						return html.P(html.Class("mt-2 text-warning"), html.Strong(gomponents.Text("Note: ")), gomponents.Text("File name not generated. Check your file naming template configuration."))
 					}
-					return P(Class("mt-2 text-success"), Strong(Text("Success: ")), Text("Both folder and file names generated successfully!"))
+
+					return html.P(
+						html.Class("mt-2 text-success"),
+						html.Strong(gomponents.Text("Success: ")),
+						gomponents.Text("Both folder and file names generated successfully!"),
+					)
 				}(),
 			),
 		),

@@ -14,13 +14,13 @@ import (
 	"maragu.dev/gomponents/html"
 )
 
-// SessionStore holds active sessions
+// SessionStore holds active sessions.
 type SessionStore struct {
 	sessions map[string]*Session
 	mutex    sync.RWMutex
 }
 
-// Session represents a user session
+// Session represents a user session.
 type Session struct {
 	ID        string
 	CreatedAt time.Time
@@ -33,24 +33,24 @@ var sessionStore = &SessionStore{
 	sessions: make(map[string]*Session),
 }
 
-// generateSessionID creates a cryptographically secure session ID
+// generateSessionID creates a cryptographically secure session ID.
 func generateSessionID() string {
 	return generateSecureToken(SessionIDLength)
 }
 
-// generateCSRFToken creates a CSRF token for the session
+// generateCSRFToken creates a CSRF token for the session.
 func generateCSRFToken() string {
 	return generateSecureToken(CSRFTokenLength)
 }
 
-// generateSecureToken creates a cryptographically secure token of specified length
+// generateSecureToken creates a cryptographically secure token of specified length.
 func generateSecureToken(length int) string {
 	bytes := make([]byte, length)
 	rand.Read(bytes)
 	return hex.EncodeToString(bytes)
 }
 
-// createSession creates a new session for the user
+// createSession creates a new session for the user.
 func (ss *SessionStore) createSession(userID string) *Session {
 	ss.mutex.Lock()
 	defer ss.mutex.Unlock()
@@ -67,10 +67,11 @@ func (ss *SessionStore) createSession(userID string) *Session {
 	}
 
 	ss.sessions[sessionID] = session
+
 	return session
 }
 
-// getSession retrieves a session by ID
+// getSession retrieves a session by ID.
 func (ss *SessionStore) getSession(sessionID string) (*Session, bool) {
 	ss.mutex.RLock()
 	defer ss.mutex.RUnlock()
@@ -86,14 +87,15 @@ func (ss *SessionStore) getSession(sessionID string) (*Session, bool) {
 	return session, true
 }
 
-// deleteSession removes a session
+// deleteSession removes a session.
 func (ss *SessionStore) deleteSession(sessionID string) {
 	ss.mutex.Lock()
 	defer ss.mutex.Unlock()
+
 	delete(ss.sessions, sessionID)
 }
 
-// cleanupExpiredSessions removes expired sessions
+// cleanupExpiredSessions removes expired sessions.
 func (ss *SessionStore) cleanupExpiredSessions() {
 	ss.mutex.Lock()
 	defer ss.mutex.Unlock()
@@ -106,7 +108,7 @@ func (ss *SessionStore) cleanupExpiredSessions() {
 	}
 }
 
-// Default authentication constants
+// Default authentication constants.
 const (
 	DefaultUsername = "admin"
 	DefaultPassword = "admin"
@@ -115,7 +117,7 @@ const (
 	SessionIDLength = 32
 )
 
-// authenticateUser checks if the provided credentials are valid
+// authenticateUser checks if the provided credentials are valid.
 func authenticateUser(username, password string) bool {
 	settings := config.GetSettingsGeneral()
 
@@ -128,7 +130,7 @@ func authenticateUser(username, password string) bool {
 	return username == DefaultUsername && password == expectedPassword
 }
 
-// requireAuth middleware checks for valid session
+// requireAuth middleware checks for valid session.
 func requireAuth(c *gin.Context) {
 	// Check for session cookie
 	sessionCookie, err := c.Cookie("session_id")
@@ -150,7 +152,7 @@ func requireAuth(c *gin.Context) {
 	c.Next()
 }
 
-// requireCSRF middleware checks CSRF token for state-changing operations
+// requireCSRF middleware checks CSRF token for state-changing operations.
 func requireCSRF(c *gin.Context) {
 	if c.Request.Method == "GET" || c.Request.Method == "HEAD" {
 		c.Next()
@@ -180,7 +182,7 @@ func requireCSRF(c *gin.Context) {
 	c.Next()
 }
 
-// redirectToLogin redirects user to login page
+// redirectToLogin redirects user to login page.
 func redirectToLogin(c *gin.Context) {
 	// Clear any existing session cookie
 	c.SetCookie("session_id", "", -1, "/", "", false, true)
@@ -200,7 +202,7 @@ func redirectToLogin(c *gin.Context) {
 	sendUnauthorized(c, "Authentication required")
 }
 
-// loginPage renders the enhanced login form
+// loginPage renders the enhanced login form.
 func loginPage(c *gin.Context) {
 	// Check if already logged in
 	if sessionCookie, err := c.Cookie("session_id"); err == nil {
@@ -217,10 +219,23 @@ func loginPage(c *gin.Context) {
 			html.Lang("en"),
 			html.Head(
 				html.Meta(html.Charset("utf-8")),
-				html.Meta(html.Name("viewport"), html.Content("width=device-width, initial-scale=1")),
+				html.Meta(
+					html.Name("viewport"),
+					html.Content("width=device-width, initial-scale=1"),
+				),
 				html.Title("Go Media Downloader - Admin Login"),
-				html.Link(html.Href("https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css"), html.Rel("stylesheet")),
-				html.Link(html.Href("https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"), html.Rel("stylesheet")),
+				html.Link(
+					html.Href(
+						"https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css",
+					),
+					html.Rel("stylesheet"),
+				),
+				html.Link(
+					html.Href(
+						"https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css",
+					),
+					html.Rel("stylesheet"),
+				),
 				html.StyleEl(gomponents.Raw(`
 					:root {
 						--primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -484,20 +499,49 @@ func loginPage(c *gin.Context) {
 			),
 			html.Body(
 				// Floating particles
-				html.Div(html.Class("particle"), html.Style("width: 4px; height: 4px; top: 20%; left: 10%; animation-delay: 0s;")),
-				html.Div(html.Class("particle"), html.Style("width: 6px; height: 6px; top: 60%; left: 80%; animation-delay: 2s;")),
-				html.Div(html.Class("particle"), html.Style("width: 3px; height: 3px; top: 40%; left: 70%; animation-delay: 4s;")),
-				html.Div(html.Class("particle"), html.Style("width: 5px; height: 5px; top: 80%; left: 20%; animation-delay: 1s;")),
-				html.Div(html.Class("particle"), html.Style("width: 4px; height: 4px; top: 30%; left: 90%; animation-delay: 3s;")),
+				html.Div(
+					html.Class("particle"),
+					html.Style(
+						"width: 4px; height: 4px; top: 20%; left: 10%; animation-delay: 0s;",
+					),
+				),
+				html.Div(
+					html.Class("particle"),
+					html.Style(
+						"width: 6px; height: 6px; top: 60%; left: 80%; animation-delay: 2s;",
+					),
+				),
+				html.Div(
+					html.Class("particle"),
+					html.Style(
+						"width: 3px; height: 3px; top: 40%; left: 70%; animation-delay: 4s;",
+					),
+				),
+				html.Div(
+					html.Class("particle"),
+					html.Style(
+						"width: 5px; height: 5px; top: 80%; left: 20%; animation-delay: 1s;",
+					),
+				),
+				html.Div(
+					html.Class("particle"),
+					html.Style(
+						"width: 4px; height: 4px; top: 30%; left: 90%; animation-delay: 3s;",
+					),
+				),
 
 				html.Div(html.Class("login-container"),
 					html.Div(html.Class("login-card"),
-						html.Div(html.Class("login-header"),
+						html.Div(
+							html.Class("login-header"),
 							html.Div(html.Class("login-logo"),
 								html.I(html.Class("fas fa-download")),
 							),
 							html.H1(html.Class("login-title"), gomponents.Text("Go Media")),
-							html.P(html.Class("login-subtitle"), gomponents.Text("Downloader Admin Panel")),
+							html.P(
+								html.Class("login-subtitle"),
+								gomponents.Text("Downloader Admin Panel"),
+							),
 						),
 
 						gomponents.If(errorMsg != "",
@@ -543,7 +587,10 @@ func loginPage(c *gin.Context) {
 								html.Class("btn-login"),
 								html.ID("loginBtn"),
 								html.Span(html.ID("loginText"), gomponents.Text("Sign In")),
-								html.I(html.Class("fas fa-spinner fa-spin d-none"), html.ID("loginSpinner")),
+								html.I(
+									html.Class("fas fa-spinner fa-spin d-none"),
+									html.ID("loginSpinner"),
+								),
 							),
 						),
 					),
@@ -627,12 +674,13 @@ func loginPage(c *gin.Context) {
 	)
 
 	c.Header("Content-Type", "text/html; charset=utf-8")
+
 	var buf strings.Builder
 	page.Render(&buf)
 	c.String(http.StatusOK, buf.String())
 }
 
-// handleLogin processes login form submission
+// handleLogin processes login form submission.
 func handleLogin(c *gin.Context) {
 	username := c.PostForm("username")
 	password := c.PostForm("password")
@@ -652,7 +700,7 @@ func handleLogin(c *gin.Context) {
 	c.Redirect(http.StatusFound, "/api/admin")
 }
 
-// handleLogout clears session and redirects to login
+// handleLogout clears session and redirects to login.
 func handleLogout(c *gin.Context) {
 	if sessionCookie, err := c.Cookie("session_id"); err == nil {
 		sessionStore.deleteSession(sessionCookie)
@@ -662,22 +710,23 @@ func handleLogout(c *gin.Context) {
 	c.Redirect(http.StatusFound, "/api/login")
 }
 
-// protectAdminRoutes middleware automatically protects admin and manage routes
+// protectAdminRoutes middleware automatically protects admin and manage routes.
 func protectAdminRoutes(c *gin.Context) {
 	path := c.Request.URL.Path
 
 	// Check if this is an admin or manage route (but not login/logout)
 	if (strings.HasPrefix(path, "/api/admin") || strings.HasPrefix(path, "/api/manage")) &&
 		path != "/api/login" && path != "/api/logout" {
-
 		// Use requireAuth for authentication
 		requireAuth(c)
+
 		if c.IsAborted() {
 			return
 		}
 
 		// Use requireCSRF for CSRF protection
 		requireCSRF(c)
+
 		if c.IsAborted() {
 			return
 		}
@@ -686,7 +735,7 @@ func protectAdminRoutes(c *gin.Context) {
 	c.Next()
 }
 
-// handleRootRedirect handles root path requests and redirects to admin or login
+// handleRootRedirect handles root path requests and redirects to admin or login.
 func handleRootRedirect(c *gin.Context) {
 	// Check if user is already authenticated
 	if sessionCookie, err := c.Cookie("session_id"); err == nil {
@@ -701,7 +750,7 @@ func handleRootRedirect(c *gin.Context) {
 	c.Redirect(http.StatusFound, "/api/login")
 }
 
-// startSessionCleanup starts a goroutine to periodically clean expired sessions
+// startSessionCleanup starts a goroutine to periodically clean expired sessions.
 func startSessionCleanup() {
 	go func() {
 		ticker := time.NewTicker(1 * time.Hour)

@@ -2,19 +2,19 @@ package apiexternal
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/base"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/trakt"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/slidingwindow"
-	"github.com/goccy/go-json"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/providers"
 	"golang.org/x/oauth2"
 )
 
@@ -155,22 +155,6 @@ type TraktMovieExtend struct {
 	// Certification         string   `json:"certification"`
 }
 
-// traktClient is a struct for interacting with the Trakt API
-// It contains fields for the API key, client ID, client secret, HTTP client,
-// OAuth2 config, access token, and default headers.
-type traktClient struct {
-	Client         rlHTTPClient            // The HTTP client for requests
-	Lim            *slidingwindow.Limiter
-	DefaultHeaders map[string][]string     // Default headers to send with requests
-	Auth           oauth2.Config           // The OAuth2 config
-	APIKey         string                  // The API key for authentication
-	ClientID       string                  // The client ID for OAuth2
-	ClientSecret   string                  // The client secret for OAuth2
-	Token          *oauth2.Token           // The OAuth2 access token
-	TokenSource    oauth2.TokenSource      // OAuth2 token source for automatic refresh
-	tokenMutex     sync.RWMutex            // Mutex for token operations
-}
-
 // NewTraktClient initializes a new traktClient instance for making requests to
 // the Trakt API. It takes in credentials and rate limiting settings and sets up
 // the OAuth2 configuration.
@@ -185,125 +169,30 @@ func NewTraktClient(
 	if seconds == 0 {
 		seconds = 1
 	}
+
 	if calls == 0 {
 		calls = 1
 	}
-	lim := slidingwindow.NewLimiter(time.Duration(seconds)*time.Second, int64(calls))
-	token := config.GetTrakt()
-	
-	client := &traktClient{
-		ClientID:     clientid,
-		ClientSecret: clientsecret,
-		Lim:          &lim,
-		Client: newClient(
-			"trakt",
-			disabletls,
-			true,
-			&lim,
-			false, nil, timeoutseconds),
-		Auth: oauth2.Config{
-			ClientID:     clientid,
-			ClientSecret: clientsecret,
-			RedirectURL:  redirecturl,
-			Endpoint: oauth2.Endpoint{
-				AuthURL:  "https://api.trakt.tv/oauth/authorize",
-				TokenURL: "https://api.trakt.tv/oauth/token",
-			},
-		},
-		Token: token,
-		DefaultHeaders: map[string][]string{
-			"Content-Type":      {"application/json"},
-			"trakt-api-version": {"2"},
-			"trakt-api-key":     {clientid},
-		},
-	}
-	
-	// Initialize OAuth2 TokenSource for automatic token refresh
-	if token != nil && token.RefreshToken != "" {
-		client.TokenSource = client.Auth.TokenSource(context.Background(), token)
-	}
-	
-	// Set initial authorization header
-	client.updateAuthorizationHeader()
-	setTraktAPI(client)
-}
 
-// updateAuthorizationHeader updates the Authorization header with the current token
-func (t *traktClient) updateAuthorizationHeader() {
-	t.tokenMutex.Lock()
-	defer t.tokenMutex.Unlock()
-	
-	if t.Token != nil && t.Token.AccessToken != "" {
-		t.DefaultHeaders["Authorization"] = []string{"Bearer " + t.Token.AccessToken}
-	} else {
-		delete(t.DefaultHeaders, "Authorization")
+	// Create v2 provider
+	traktConfig := base.ClientConfig{
+		Name:                      "trakt",
+		BaseURL:                   "https://api.trakt.tv",
+		Timeout:                   time.Duration(timeoutseconds) * time.Second,
+		AuthType:                  base.AuthNone, // Trakt provider handles OAuth internally via EnsureValidToken
+		RateLimitCalls:            calls,
+		RateLimitSeconds:          int(seconds),
+		CircuitBreakerThreshold:   5,
+		CircuitBreakerTimeout:     60 * time.Second,
+		CircuitBreakerHalfOpenMax: 2,
+		EnableStats:               true,
+		UserAgent:                 "go-media-downloader/2.0",
+		DisableTLSVerify:          disabletls,
 	}
-}
-
-// ensureValidToken ensures the token is valid and refreshes it if necessary
-func (t *traktClient) ensureValidToken() error {
-	t.tokenMutex.Lock()
-	defer t.tokenMutex.Unlock()
-	
-	// If no token source, cannot refresh
-	if t.TokenSource == nil {
-		if t.Token == nil || t.Token.AccessToken == "" {
-			return logger.ErrNotFound
-		}
-		return nil
+	if provider := trakt.NewProviderWithConfig(traktConfig, clientid, clientsecret, "http://localhost:9090"); provider != nil {
+		providers.SetTrakt(provider)
+		logger.Logtype(logger.StatusDebug, 0).Msg("Registered Trakt metadata provider with OAuth2")
 	}
-	
-	// Check if token needs refresh
-	if t.Token != nil && t.Token.Valid() {
-		return nil
-	}
-	
-	// Refresh the token
-	newToken, err := t.TokenSource.Token()
-	if err != nil {
-		logger.Logtype("error", 1).Err(err).Msg("Failed to refresh Trakt token")
-		return err
-	}
-	
-	// Update stored token if it changed
-	if t.Token == nil || newToken.AccessToken != t.Token.AccessToken {
-		t.Token = newToken
-		
-		// Update authorization header
-		if newToken.AccessToken != "" {
-			t.DefaultHeaders["Authorization"] = []string{"Bearer " + newToken.AccessToken}
-		}
-		
-		// Save the refreshed token to config
-		config.UpdateCfgEntry(config.Conf{Name: "trakt_token", Data: newToken})
-		
-		logger.Logtype("info", 1).Msg("Trakt token refreshed successfully")
-	}
-	
-	return nil
-}
-
-// Helper functions for thread-safe access to traktAPI
-func getTraktClient() *rlHTTPClient {
-	api := getTraktAPI()
-	if api == nil {
-		return nil
-	}
-	return &api.Client
-}
-
-func getTraktHeaders() map[string][]string {
-	api := getTraktAPI()
-	if api == nil {
-		return nil
-	}
-	
-	// Ensure token is valid before making requests
-	if err := api.ensureValidToken(); err != nil {
-		logger.Logtype("warning", 1).Err(err).Msg("Failed to ensure valid Trakt token")
-	}
-	
-	return api.DefaultHeaders
 }
 
 // GetTraktMoviePopular retrieves a list of popular movies from the Trakt API.
@@ -311,12 +200,28 @@ func getTraktHeaders() map[string][]string {
 // It returns a slice of TraktMovie structs containing the movie data,
 // or nil if there was an error.
 func GetTraktMoviePopular(limit *string) []TraktMovie {
-	arr, _ := doJSONType[[]TraktMovie](
-		getTraktClient(),
-		traktaddlimit("https://api.trakt.tv/movies/popular", limit),
-		getTraktHeaders(),
-	)
-	return arr
+	// Use v2 provider if available
+	if provider := providers.GetTrakt(); provider != nil {
+		// Convert limit to page number (Trakt v2 uses pagination)
+		page := 1
+
+		results, err := provider.GetPopularMovies(context.Background(), page)
+		if err == nil && results != nil && len(results.Results) > 0 {
+			movies := make([]TraktMovie, len(results.Results))
+			for i, r := range results.Results {
+				movies[i] = TraktMovie{
+					Title: r.Title,
+					Year:  r.Year,
+				}
+				movies[i].IDs.Trakt = r.ID
+				movies[i].IDs.Imdb = r.IMDbID
+			}
+
+			return movies
+		}
+	}
+
+	return nil
 }
 
 // GetTraktMovieTrending retrieves a list of trending movies from the Trakt API.
@@ -324,22 +229,29 @@ func GetTraktMoviePopular(limit *string) []TraktMovie {
 // It returns a slice of TraktMovieTrending structs containing the movie data,
 // or nil if there was an error.
 func GetTraktMovieTrending(limit *string) []TraktMovieTrending {
-	arr, _ := doJSONType[[]TraktMovieTrending](
-		getTraktClient(),
-		traktaddlimit("https://api.trakt.tv/movies/trending", limit),
-		getTraktHeaders(),
-	)
-	return arr
-}
+	// Use v2 provider if available
+	if provider := providers.GetTrakt(); provider != nil {
+		page := 1
 
-// traktaddlimit adds a limit query parameter to the Trakt API URL if a limit is specified.
-// It takes the limit as a string parameter.
-// Returns a URL query string with the limit, or an empty string if no limit provided.
-func traktaddlimit(urlv string, limit *string) string {
-	if limit != nil && *limit != "" && *limit != "0" {
-		return (urlv + "?limit=" + *limit)
+		results, err := provider.GetTrendingMovies(context.Background(), page)
+		if err == nil && results != nil && len(results.Results) > 0 {
+			movies := make([]TraktMovieTrending, len(results.Results))
+			for i, r := range results.Results {
+				movies[i] = TraktMovieTrending{
+					Movie: TraktMovie{
+						Title: r.Title,
+						Year:  r.Year,
+					},
+				}
+				movies[i].Movie.IDs.Trakt = r.ID
+				movies[i].Movie.IDs.Imdb = r.IMDbID
+			}
+
+			return movies
+		}
 	}
-	return urlv
+
+	return nil
 }
 
 // GetTraktMovieAnticipated retrieves a list of anticipated movies from the Trakt API.
@@ -347,12 +259,29 @@ func traktaddlimit(urlv string, limit *string) string {
 // It returns a slice of TraktMovieAnticipated structs containing the movie data,
 // or nil if there was an error.
 func GetTraktMovieAnticipated(limit *string) []TraktMovieAnticipated {
-	arr, _ := doJSONType[[]TraktMovieAnticipated](
-		getTraktClient(),
-		traktaddlimit("https://api.trakt.tv/movies/anticipated", limit),
-		getTraktHeaders(),
-	)
-	return arr
+	// Use v2 provider if available
+	if provider := providers.GetTrakt(); provider != nil {
+		page := 1
+
+		results, err := provider.GetUpcomingMovies(context.Background(), page)
+		if err == nil && results != nil && len(results.Results) > 0 {
+			movies := make([]TraktMovieAnticipated, len(results.Results))
+			for i, r := range results.Results {
+				movies[i] = TraktMovieAnticipated{
+					Movie: TraktMovie{
+						Title: r.Title,
+						Year:  r.Year,
+					},
+				}
+				movies[i].Movie.IDs.Trakt = r.ID
+				movies[i].Movie.IDs.Imdb = r.IMDbID
+			}
+
+			return movies
+		}
+	}
+
+	return nil
 }
 
 // GetTraktMovieAliases retrieves alias data from the Trakt API for the given movie ID.
@@ -363,12 +292,26 @@ func GetTraktMovieAliases(movieid string) []TraktAlias {
 	if movieid == "" {
 		return nil
 	}
-	arr, _ := doJSONType[[]TraktAlias](
-		getTraktClient(),
-		logger.JoinStrings(apiurlmovies, movieid, "/aliases"),
-		getTraktHeaders(),
-	)
-	return arr
+
+	// Use v2 provider if available and movieid is numeric (Trakt ID)
+	if provider := providers.GetTrakt(); provider != nil {
+		if id, err := strconv.Atoi(movieid); err == nil {
+			titles, err := provider.GetMovieAlternativeTitles(context.Background(), id)
+			if err == nil && len(titles) > 0 {
+				aliases := make([]TraktAlias, len(titles))
+				for i, t := range titles {
+					aliases[i] = TraktAlias{
+						Title:   t.Title,
+						Country: t.ISO3166_1,
+					}
+				}
+
+				return aliases
+			}
+		}
+	}
+
+	return nil
 }
 
 // GetTraktMovie retrieves extended data for a Trakt movie by ID.
@@ -379,26 +322,144 @@ func GetTraktMovie(movieid string) (*TraktMovieExtend, error) {
 	if movieid == "" {
 		return nil, logger.ErrNotFound
 	}
-	return doJSONTypeP[TraktMovieExtend](
-		getTraktClient(),
-		logger.JoinStrings(apiurlmovies, movieid, extendedfull),
-		getTraktHeaders(),
-	)
+
+	// Use v2 provider if available
+	if provider := providers.GetTrakt(); provider != nil {
+		var (
+			details *apiexternal_v2.MovieDetails
+			err     error
+		)
+
+		// Try to parse as integer for Trakt ID first
+
+		if id, parseErr := strconv.Atoi(movieid); parseErr == nil {
+			details, err = provider.GetMovieByID(context.Background(), id)
+		} else {
+			// Not a number, check if it's an IMDb ID
+			if strings.HasPrefix(movieid, "tt") {
+				// It's an IMDb ID, look it up first
+				findResult, findErr := provider.FindMovieByIMDbID(context.Background(), movieid)
+				if findErr == nil && findResult != nil && len(findResult.MovieResults) > 0 {
+					// Get full details using the Trakt ID from search results
+					details, err = provider.GetMovieByID(context.Background(), findResult.MovieResults[0].ID)
+				} else {
+					err = findErr
+				}
+			} else {
+				err = parseErr
+			}
+		}
+
+		if err == nil && details != nil {
+			// Convert MovieDetails to TraktMovieExtend
+			movie := &TraktMovieExtend{
+				Title:    details.Title,
+				Tagline:  details.Tagline,
+				Overview: details.Overview,
+				Status:   details.Status,
+				Language: details.OriginalLanguage,
+				Runtime:  details.Runtime,
+				Year:     uint16(details.Year),
+			}
+
+			movie.IDs.Trakt = details.ID
+			movie.IDs.Imdb = details.IMDbID
+			movie.Rating = float32(details.VoteAverage)
+			movie.Votes = int32(details.VoteCount)
+
+			if !details.ReleaseDate.IsZero() {
+				movie.Released = details.ReleaseDate.Format("2006-01-02")
+			}
+
+			// Convert genres
+			for _, g := range details.Genres {
+				movie.Genres = append(movie.Genres, g.Name)
+			}
+
+			return movie, nil
+		}
+	}
+
+	return nil, errors.New("no client")
 }
 
-// GetTraktSerie retrieves extended data for a Trakt TV show by its Trakt ID.
-// It takes the Trakt show ID as a string parameter.
+// GetTraktSerie retrieves extended data for a Trakt TV show by its Trakt ID or IMDb ID.
+// It takes the show ID as a string parameter (can be Trakt ID or IMDb ID).
 // It returns a TraktSerieData struct containing the show data,
 // or nil and an error if the show ID is invalid or there was an error retrieving data.
 func GetTraktSerie(showid string) (*TraktSerieData, error) {
 	if showid == "" {
 		return nil, logger.ErrNotFound
 	}
-	return doJSONTypeP[TraktSerieData](
-		getTraktClient(),
-		logger.JoinStrings(apiurlshows, showid, extendedfull),
-		getTraktHeaders(),
-	)
+
+	// Use v2 provider if available
+	if provider := providers.GetTrakt(); provider != nil {
+		var (
+			details *apiexternal_v2.SeriesDetails
+			err     error
+		)
+
+		// Try to parse as integer for Trakt ID first
+
+		if id, parseErr := strconv.Atoi(showid); parseErr == nil {
+			details, err = provider.GetSeriesByID(context.Background(), id)
+		} else {
+			// Not a number, check if it's an IMDb ID
+			if strings.HasPrefix(showid, "tt") {
+				// It's an IMDb ID, look it up first
+				findResult, findErr := provider.FindSeriesByIMDbID(context.Background(), showid)
+				if findErr == nil && findResult != nil && len(findResult.TVResults) > 0 {
+					// Get full details using the Trakt ID from search results
+					details, err = provider.GetSeriesByID(context.Background(), findResult.TVResults[0].ID)
+				} else {
+					err = findErr
+				}
+			} else {
+				return nil, fmt.Errorf("invalid show ID format: %s", showid)
+			}
+		}
+
+		if err == nil && details != nil {
+			// Convert SeriesDetails to TraktSerieData
+			serie := &TraktSerieData{
+				Title:    details.Name,
+				Overview: details.Overview,
+				Network:  "",
+				Country:  "",
+				Status:   details.Status,
+				Language: details.OriginalLanguage,
+				Year:     details.FirstAirDate.Year(),
+			}
+
+			serie.IDs.Trakt = details.ID
+			serie.IDs.Imdb = details.IMDbID
+			serie.IDs.Tvdb = details.TVDbID
+			serie.Rating = float32(details.VoteAverage)
+			serie.FirstAired = details.FirstAirDate
+
+			if len(details.EpisodeRunTime) > 0 {
+				serie.Runtime = details.EpisodeRunTime[0]
+			}
+
+			// Extract network from Networks array
+			if len(details.Networks) > 0 {
+				serie.Network = details.Networks[0].Name
+			}
+
+			// Convert genres
+			for _, g := range details.Genres {
+				serie.Genres = append(serie.Genres, g.Name)
+			}
+
+			return serie, nil
+		}
+
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return nil, errors.New("no client")
 }
 
 // GetTraktSerieAliases retrieves alias data from the Trakt API for the given Dbserie.
@@ -406,20 +467,23 @@ func GetTraktSerie(showid string) (*TraktSerieData, error) {
 // If no Trakt ID, it falls back to using the IMDb ID if available.
 // Returns a slice of TraktAlias structs or nil if no aliases found.
 func GetTraktSerieAliases(dbserie *database.Dbserie) []TraktAlias {
-	urlpart := dbserie.ImdbID
-	if dbserie.TraktID == 0 {
-		if dbserie.ImdbID == "" {
-			return nil
+	// Use v2 provider if available and TraktID is set
+	if provider := providers.GetTrakt(); provider != nil && dbserie.TraktID != 0 {
+		titles, err := provider.GetSeriesAlternativeTitles(context.Background(), dbserie.TraktID)
+		if err == nil && len(titles) > 0 {
+			aliases := make([]TraktAlias, len(titles))
+			for i, t := range titles {
+				aliases[i] = TraktAlias{
+					Title:   t.Title,
+					Country: t.ISO3166_1,
+				}
+			}
+
+			return aliases
 		}
-	} else {
-		urlpart = strconv.Itoa(dbserie.TraktID)
 	}
-	arr, _ := doJSONType[[]TraktAlias](
-		getTraktClient(),
-		logger.JoinStrings(apiurlshows, urlpart, "/aliases"),
-		getTraktHeaders(),
-	)
-	return arr
+
+	return nil
 }
 
 // GetTraktSerieSeasons retrieves a list of season numbers for a Trakt TV show by ID.
@@ -428,11 +492,31 @@ func GetTraktSerieSeasons(showid string) ([]TraktSerieSeason, error) {
 	if showid == "" {
 		return nil, nil
 	}
-	return doJSONType[[]TraktSerieSeason](
-		getTraktClient(),
-		logger.JoinStrings(apiurlshows, showid, "/seasons"),
-		getTraktHeaders(),
-	)
+
+	// Use v2 provider if available
+	if provider := providers.GetTrakt(); provider != nil {
+		id, err := strconv.Atoi(showid)
+		if err != nil {
+			return nil, err
+		}
+
+		seasons, err := provider.GetAllSeasons(context.Background(), id)
+		if err != nil {
+			return nil, err
+		}
+
+		// Convert to old format
+		result := make([]TraktSerieSeason, len(seasons))
+		for i, season := range seasons {
+			result[i] = TraktSerieSeason{
+				Number: strconv.Itoa(season.SeasonNumber),
+			}
+		}
+
+		return result, nil
+	}
+
+	return nil, errors.New("client empty")
 }
 
 // GetTraktSerieSeasonsAndEpisodes retrieves all seasons and episodes for the given Trakt show ID from the Trakt API.
@@ -444,51 +528,101 @@ func UpdateTraktSerieSeasonsAndEpisodes(showid string, id *uint) {
 	if showid == "" {
 		return
 	}
-	baseurl := (apiurlshows + showid + "/seasons")
-	result, err := doJSONType[[]TraktSerieSeason](
-		getTraktClient(),
-		baseurl,
-		getTraktHeaders(),
-	)
-	if err != nil {
-		return
-	}
-	tbl := database.Getrowssize[database.DbstaticTwoString](
-		false,
-		database.QueryDbserieEpisodesCountByDBID,
-		database.QueryDbserieEpisodesGetSeasonEpisodeByDBID,
-		id,
-	)
-	for idx := range result {
-		data, _ := doJSONType[[]TraktSerieSeasonEpisodes](
-			getTraktClient(),
-			logger.JoinStrings(baseurl, "/", result[idx].Number, extendedfull),
-			getTraktHeaders(),
+
+	// Use v2 provider if available
+	if provider := providers.GetTrakt(); provider != nil {
+		seriesID, err := strconv.Atoi(showid)
+		if err != nil {
+			return
+		}
+
+		seasons, err := provider.GetAllSeasons(context.Background(), seriesID)
+		if err != nil {
+			return
+		}
+
+		tbl := database.Getrowssize[database.DbstaticTwoString](
+			false,
+			database.QueryDbserieEpisodesCountByDBID,
+			database.QueryDbserieEpisodesGetSeasonEpisodeByDBID,
+			id,
 		)
-		for idx2 := range data {
-			if checkdbtwostrings(tbl, data[idx2].Season, data[idx2].Episode) {
+
+		for _, season := range seasons {
+			episodes, err := provider.GetSeasonEpisodes(
+				context.Background(),
+				seriesID,
+				season.SeasonNumber,
+			)
+			if err != nil {
 				continue
 			}
-			epi := strconv.Itoa(data[idx2].Episode)
-			seas := strconv.Itoa(data[idx2].Season)
-			ident := generateIdentifierStringFromInt(&data[idx2].Season, &data[idx2].Episode)
-			database.ExecN(
-				"insert into dbserie_episodes (episode, season, identifier, title, first_aired, overview, dbserie_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
-				&epi,
-				&seas,
-				&ident,
-				&data[idx2].Title,
-				&data[idx2].FirstAired,
-				&data[idx2].Overview,
-				id,
-			)
+
+			for _, ep := range episodes {
+				if checkdbtwostrings(tbl, ep.SeasonNumber, ep.EpisodeNumber) {
+					continue
+				}
+
+				epi := strconv.Itoa(ep.EpisodeNumber)
+				seas := strconv.Itoa(ep.SeasonNumber)
+				ident := generateIdentifierStringFromInt(&ep.SeasonNumber, &ep.EpisodeNumber)
+				database.ExecN(
+					"insert into dbserie_episodes (episode, season, identifier, title, first_aired, overview, dbserie_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+					&epi,
+					&seas,
+					&ident,
+					&ep.Name,
+					&ep.AirDate,
+					&ep.Overview,
+					id,
+				)
+			}
 		}
+
+		return
 	}
 }
 
 func Testaddtraktdbepisodes() ([]TraktSerieSeasonEpisodes, error) {
-	urlv, _ := url.JoinPath(apiurlshows, "tt1183865", "seasons", "1")
-	return doJSONType[[]TraktSerieSeasonEpisodes](getTraktClient(), urlv, getTraktHeaders())
+	// Use v2 provider if available
+	if provider := providers.GetTrakt(); provider != nil {
+		// Look up series by IMDB ID to get Trakt ID
+		findResult, err := provider.FindSeriesByIMDbID(context.Background(), "tt1183865")
+		if err != nil {
+			return nil, err
+		}
+
+		if len(findResult.TVResults) == 0 {
+			return nil, logger.ErrNotFound
+		}
+
+		// Get season 1 episodes using the first result's ID
+		episodes, err := provider.GetSeasonEpisodes(
+			context.Background(),
+			findResult.TVResults[0].ID,
+			1,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		// Convert to old format
+		result := make([]TraktSerieSeasonEpisodes, len(episodes))
+		for i, ep := range episodes {
+			result[i] = TraktSerieSeasonEpisodes{
+				Title:      ep.Name,
+				Overview:   ep.Overview,
+				FirstAired: ep.AirDate,
+				Season:     ep.SeasonNumber,
+				Episode:    ep.EpisodeNumber,
+				Runtime:    ep.Runtime,
+			}
+		}
+
+		return result, nil
+	}
+
+	return nil, errors.New("client empty")
 }
 
 // checkdbtwostrings checks if the given integer values int1 and int2 exist as a pair in the provided slice of database.DbstaticTwoString.
@@ -497,12 +631,14 @@ func checkdbtwostrings(tbl []database.DbstaticTwoString, int1, int2 int) bool {
 	if len(tbl) == 0 {
 		return false
 	}
+
 	v := database.DbstaticTwoString{Str1: strconv.Itoa(int1), Str2: strconv.Itoa(int2)}
 	for idx := range tbl {
 		if tbl[idx] == v {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -512,9 +648,11 @@ func padNumberWithZero(value *int) string {
 	if *value == 0 {
 		return "0"
 	}
+
 	if *value >= 10 {
 		return strconv.Itoa(*value)
 	}
+
 	return ("0" + strconv.Itoa(*value))
 }
 
@@ -526,11 +664,41 @@ func GetTraktSerieSeasonEpisodes(showid, season string) ([]TraktSerieSeasonEpiso
 	if showid == "" || season == "" {
 		return nil, errDailyLimit
 	}
-	return doJSONType[[]TraktSerieSeasonEpisodes](
-		getTraktClient(),
-		logger.JoinStrings(apiurlshows, showid, "/seasons/", season, extendedfull),
-		getTraktHeaders(),
-	)
+
+	// Use v2 provider if available
+	if provider := providers.GetTrakt(); provider != nil {
+		seriesID, err := strconv.Atoi(showid)
+		if err != nil {
+			return nil, err
+		}
+
+		seasonNum, err := strconv.Atoi(season)
+		if err != nil {
+			return nil, err
+		}
+
+		episodes, err := provider.GetSeasonEpisodes(context.Background(), seriesID, seasonNum)
+		if err != nil {
+			return nil, err
+		}
+
+		// Convert to old format
+		result := make([]TraktSerieSeasonEpisodes, len(episodes))
+		for i, ep := range episodes {
+			result[i] = TraktSerieSeasonEpisodes{
+				Title:      ep.Name,
+				Overview:   ep.Overview,
+				FirstAired: ep.AirDate,
+				Season:     ep.SeasonNumber,
+				Episode:    ep.EpisodeNumber,
+				Runtime:    ep.Runtime,
+			}
+		}
+
+		return result, nil
+	}
+
+	return nil, errors.New("client empty")
 }
 
 // GetTraktUserList retrieves a Trakt user list by username, list name, list type,
@@ -540,21 +708,69 @@ func GetTraktUserList(username, listname, listtype string, limit *string) ([]Tra
 	if username == "" || listname == "" || listtype == "" {
 		return nil, logger.ErrNotFound
 	}
-	return doJSONType[[]TraktUserList](
-		getTraktClient(),
-		traktaddlimit(
-			logger.JoinStrings(
-				"https://api.trakt.tv/users/",
-				username,
-				"/lists/",
-				listname,
-				"/items/",
-				listtype,
-			),
-			limit,
-		),
-		getTraktHeaders(),
-	)
+
+	// Use v2 provider if available
+	if provider := providers.GetTrakt(); provider != nil {
+		items, err := provider.GetTraktUserList(context.Background(), username, listname, listtype)
+		if err != nil {
+			return nil, err
+		}
+
+		// Convert to old format
+		result := make([]TraktUserList, 0, len(items))
+		for _, item := range items {
+			userListItem := TraktUserList{
+				TraktType: item.Type,
+			}
+			if item.Movie != nil {
+				userListItem.Movie = TraktMovie{
+					IDs: struct {
+						Slug   string `json:"slug"`
+						Imdb   string `json:"imdb"`
+						Trakt  int    `json:"trakt"`
+						Tmdb   int    `json:"tmdb"`
+						Tvdb   int    `json:"tvdb"`
+						Tvrage int    `json:"tvrage"`
+					}{
+						Slug:  item.Movie.IDs.Slug,
+						Imdb:  item.Movie.IDs.IMDB,
+						Trakt: item.Movie.IDs.Trakt,
+						Tmdb:  item.Movie.IDs.TMDB,
+						Tvdb:  item.Movie.IDs.TVDB,
+					},
+					Title: item.Movie.Title,
+					Year:  item.Movie.Year,
+				}
+			}
+
+			if item.Show != nil {
+				userListItem.Serie = TraktSerie{
+					IDs: struct {
+						Slug   string `json:"slug"`
+						Imdb   string `json:"imdb"`
+						Trakt  int    `json:"trakt"`
+						Tmdb   int    `json:"tmdb"`
+						Tvdb   int    `json:"tvdb"`
+						Tvrage int    `json:"tvrage"`
+					}{
+						Slug:  item.Show.IDs.Slug,
+						Imdb:  item.Show.IDs.IMDB,
+						Trakt: item.Show.IDs.Trakt,
+						Tmdb:  item.Show.IDs.TMDB,
+						Tvdb:  item.Show.IDs.TVDB,
+					},
+					Title: item.Show.Title,
+					Year:  item.Show.Year,
+				}
+			}
+
+			result = append(result, userListItem)
+		}
+
+		return result, nil
+	}
+
+	return nil, errors.New("client empty")
 }
 
 // RemoveMovieFromTraktUserList removes the specified movie from the given Trakt user list.
@@ -564,21 +780,21 @@ func RemoveMovieFromTraktUserList(username, listname, remove string) error {
 	if username == "" || listname == "" {
 		return logger.ErrNotFound
 	}
-	body := strings.NewReader(fmt.Sprintf(`{"movies": [{"ids": {"imdb": "%s"}}]}`, remove))
-	return ProcessHTTP(
-		getTraktClient(),
-		logger.JoinStrings(
-			"https://api.trakt.tv/users/",
+
+	// Use v2 provider if available
+	if provider := providers.GetTrakt(); provider != nil {
+		err := provider.RemoveMovieFromTraktUserList(
+			context.Background(),
 			username,
-			"/lists/",
 			listname,
-			"/items/remove",
-		),
-		true,
-		nil,
-		getTraktHeaders(),
-		body,
-	)
+			remove,
+		)
+		if err == nil {
+			return nil
+		}
+	}
+
+	return errors.New("client empty")
 }
 
 // RemoveSerieFromTraktUserList removes the specified TV show from the given Trakt user list.
@@ -588,21 +804,21 @@ func RemoveSerieFromTraktUserList(username, listname string, remove int) error {
 	if username == "" || listname == "" {
 		return logger.ErrNotFound
 	}
-	body := strings.NewReader(fmt.Sprintf(`{"shows": [{"ids": {"tvdb": %d}}]}`, remove))
-	return ProcessHTTP(
-		getTraktClient(),
-		logger.JoinStrings(
-			"https://api.trakt.tv/users/",
+
+	// Use v2 provider if available
+	if provider := providers.GetTrakt(); provider != nil {
+		err := provider.RemoveSerieFromTraktUserList(
+			context.Background(),
 			username,
-			"/lists/",
 			listname,
-			"/items/remove",
-		),
-		true,
-		nil,
-		getTraktHeaders(),
-		body,
-	)
+			remove,
+		)
+		if err == nil {
+			return nil
+		}
+	}
+
+	return errors.New("client empty")
 }
 
 // GetTraktSeriePopular retrieves popular TV shows from Trakt based on the
@@ -610,23 +826,59 @@ func RemoveSerieFromTraktUserList(username, listname string, remove int) error {
 // to limit the number of results returned. Returns a slice of TraktSerie
 // structs containing the popular show data.
 func GetTraktSeriePopular(limit *string) []TraktSerie {
-	arr, _ := doJSONType[[]TraktSerie](
-		getTraktClient(),
-		traktaddlimit("https://api.trakt.tv/shows/popular", limit),
-		getTraktHeaders(),
-	)
-	return arr
+	// Use v2 provider if available
+	if provider := providers.GetTrakt(); provider != nil {
+		page := 1
+
+		results, err := provider.GetPopularSeries(context.Background(), page)
+		if err == nil && results != nil && len(results.Results) > 0 {
+			series := make([]TraktSerie, len(results.Results))
+			for i, r := range results.Results {
+				series[i] = TraktSerie{
+					Title: r.Name,
+				}
+				if !r.FirstAirDate.IsZero() {
+					series[i].Year = r.FirstAirDate.Year()
+				}
+
+				series[i].IDs.Trakt = r.ID
+			}
+
+			return series
+		}
+	}
+
+	return nil
 }
 
 // GetTraktSerieTrending retrieves the trending TV shows from Trakt based on the limit parameter.
 // It returns a slice of TraktSerieTrending structs containing the trending show data.
 func GetTraktSerieTrending(limit *string) []TraktSerieTrending {
-	arr, _ := doJSONType[[]TraktSerieTrending](
-		getTraktClient(),
-		traktaddlimit("https://api.trakt.tv/shows/trending", limit),
-		getTraktHeaders(),
-	)
-	return arr
+	// Use v2 provider if available
+	if provider := providers.GetTrakt(); provider != nil {
+		page := 1
+
+		results, err := provider.GetTrendingSeries(context.Background(), page)
+		if err == nil && results != nil && len(results.Results) > 0 {
+			series := make([]TraktSerieTrending, len(results.Results))
+			for i, r := range results.Results {
+				series[i] = TraktSerieTrending{
+					Serie: TraktSerie{
+						Title: r.Name,
+					},
+				}
+				if !r.FirstAirDate.IsZero() {
+					series[i].Serie.Year = r.FirstAirDate.Year()
+				}
+
+				series[i].Serie.IDs.Trakt = r.ID
+			}
+
+			return series
+		}
+	}
+
+	return nil
 }
 
 // GetTraktSerieAnticipated retrieves the most anticipated TV shows from Trakt
@@ -634,46 +886,63 @@ func GetTraktSerieTrending(limit *string) []TraktSerieTrending {
 // the number of results returned. Returns a slice of TraktSerieAnticipated structs
 // containing the anticipated show data.
 func GetTraktSerieAnticipated(limit *string) []TraktSerieAnticipated {
-	arr, _ := doJSONType[[]TraktSerieAnticipated](
-		getTraktClient(),
-		traktaddlimit("https://api.trakt.tv/shows/anticipated", limit),
-		getTraktHeaders(),
-	)
-	return arr
+	// Use v2 provider if available
+	if provider := providers.GetTrakt(); provider != nil {
+		page := 1
+
+		results, err := provider.GetTrendingSeries(context.Background(), page)
+		if err == nil && results != nil && len(results.Results) > 0 {
+			series := make([]TraktSerieAnticipated, len(results.Results))
+			for i, r := range results.Results {
+				series[i] = TraktSerieAnticipated{
+					Serie: TraktSerie{
+						Title: r.Name,
+					},
+				}
+				if !r.FirstAirDate.IsZero() {
+					series[i].Serie.Year = r.FirstAirDate.Year()
+				}
+
+				series[i].Serie.IDs.Trakt = r.ID
+			}
+
+			return series
+		}
+	}
+
+	return nil
 }
 
 // GetTraktToken returns the token used to authenticate with Trakt. This is a wrapper around the traktAPI.
 func GetTraktToken() *oauth2.Token {
-	api := getTraktAPI()
-	if api == nil {
-		return nil
+	// Try to get token from v2 provider first
+	if provider := providers.GetTrakt(); provider != nil {
+		v2Token := provider.GetCurrentToken()
+		if v2Token != nil {
+			return &oauth2.Token{
+				AccessToken:  v2Token.AccessToken,
+				TokenType:    v2Token.TokenType,
+				RefreshToken: v2Token.RefreshToken,
+				Expiry:       v2Token.Expiry,
+			}
+		}
 	}
-	return api.Token
+
+	return nil
 }
 
 // SetTraktToken sets the OAuth 2.0 token used to authenticate
 // with the Trakt API.
 func SetTraktToken(tk *oauth2.Token) {
-	clientMu.Lock()
-	defer clientMu.Unlock()
-	
-	traktAPI.tokenMutex.Lock()
-	defer traktAPI.tokenMutex.Unlock()
-	
-	traktAPI.Token = tk
-	
-	// Update OAuth2 TokenSource if we have a refresh token
-	if tk != nil && tk.RefreshToken != "" {
-		traktAPI.TokenSource = traktAPI.Auth.TokenSource(context.Background(), tk)
-	} else {
-		traktAPI.TokenSource = nil
-	}
-	
-	// Update authorization header
-	if tk != nil && tk.AccessToken != "" {
-		traktAPI.DefaultHeaders["Authorization"] = []string{"Bearer " + tk.AccessToken}
-	} else {
-		delete(traktAPI.DefaultHeaders, "Authorization")
+	// Update v2 provider token if available
+	if provider := providers.GetTrakt(); provider != nil && tk != nil {
+		v2Token := &apiexternal_v2.OAuthToken{
+			AccessToken:  tk.AccessToken,
+			TokenType:    tk.TokenType,
+			RefreshToken: tk.RefreshToken,
+			Expiry:       tk.Expiry,
+		}
+		provider.SetToken(v2Token)
 	}
 }
 
@@ -681,85 +950,95 @@ func SetTraktToken(tk *oauth2.Token) {
 // to the Trakt consent page to request permission for the configured scopes.
 // It returns the generated authorization URL.
 func GetTraktAuthURL() string {
-	// Redirect user to consent page to ask for permission
-	// for the scopes specified above.
-	api := getTraktAPI()
-	if api == nil {
-		return ""
+	// Use v2 provider if available
+	if provider := providers.GetTrakt(); provider != nil {
+		urlv := provider.GetAuthorizationURL("state")
+		fmt.Println("Visit the URL for the auth dialog: ", urlv)
+		return urlv
 	}
-	urlv := api.Auth.AuthCodeURL("state", oauth2.AccessTypeOffline)
-	fmt.Println("Visit the URL for the auth dialog: ", urlv)
 
-	return urlv
+	return ""
 }
 
 // GetTraktAuthToken exchanges the authorization code for an OAuth 2.0 token
 // for the Trakt API. It takes the client code and returns the token, or nil and an
 // error if there was an issue exchanging the code.
 func GetTraktAuthToken(clientcode string) *oauth2.Token {
-	// Redirect user to consent page to ask for permission
-	// for the scopes specified above.
-	api := getTraktAPI()
-	if api == nil {
-		return nil
+	// Use v2 provider if available
+	if provider := providers.GetTrakt(); provider != nil {
+		v2Token, err := provider.ExchangeCodeForToken(context.Background(), clientcode)
+		if err != nil {
+			logger.Logtype("error", 1).
+				Err(err).
+				Msg("Error getting token")
+			return nil
+		}
+		// Convert v2 OAuthToken to oauth2.Token
+		return &oauth2.Token{
+			AccessToken:  v2Token.AccessToken,
+			TokenType:    v2Token.TokenType,
+			RefreshToken: v2Token.RefreshToken,
+			Expiry:       v2Token.Expiry,
+		}
 	}
-	tok, err := api.Auth.Exchange(context.Background(), clientcode)
-	if err != nil {
-		logger.Logtype("error", 1).
-			Err(err).
-			Msg("Error getting token")
-	}
-	return tok
+
+	return nil
 }
 
-// RefreshTraktToken manually refreshes the Trakt API token using the refresh token
+// RefreshTraktToken manually refreshes the Trakt API token using the refresh token.
 func RefreshTraktToken() (*oauth2.Token, error) {
-	api := getTraktAPI()
-	if api == nil {
-		return nil, fmt.Errorf("Trakt API not initialized")
+	// Use v2 provider if available
+	if provider := providers.GetTrakt(); provider != nil {
+		currentToken := GetTraktToken()
+		if currentToken == nil || currentToken.RefreshToken == "" {
+			return nil, fmt.Errorf("no refresh token available")
+		}
+
+		v2Token, err := provider.RefreshToken(context.Background(), currentToken.RefreshToken)
+		if err != nil {
+			return nil, fmt.Errorf("failed to refresh token: %w", err)
+		}
+
+		// Convert v2 OAuthToken to oauth2.Token
+		newToken := &oauth2.Token{
+			AccessToken:  v2Token.AccessToken,
+			TokenType:    v2Token.TokenType,
+			RefreshToken: v2Token.RefreshToken,
+			Expiry:       v2Token.Expiry,
+		}
+
+		// Update the stored token
+		SetTraktToken(newToken)
+
+		// Save to config
+		config.UpdateCfgEntry(config.Conf{Name: "trakt_token", Data: newToken})
+
+		logger.Logtype("info", 1).Msg("Trakt token manually refreshed")
+
+		return newToken, nil
 	}
-	
-	if api.TokenSource == nil {
-		return nil, fmt.Errorf("No token source available for refresh")
-	}
-	
-	// Force refresh by requesting a new token
-	newToken, err := api.TokenSource.Token()
-	if err != nil {
-		return nil, fmt.Errorf("failed to refresh token: %w", err)
-	}
-	
-	// Update the stored token
-	SetTraktToken(newToken)
-	
-	// Save to config
-	config.UpdateCfgEntry(config.Conf{Name: "trakt_token", Data: newToken})
-	
-	logger.Logtype("info", 1).Msg("Trakt token manually refreshed")
-	
-	return newToken, nil
+
+	return nil, errors.New("client empty")
 }
 
-// IsTokenExpired checks if the current Trakt token is expired or about to expire
+// IsTokenExpired checks if the current Trakt token is expired or about to expire.
 func IsTokenExpired() bool {
-	api := getTraktAPI()
-	if api == nil {
-		return true
+	// Check v2 provider token first
+	if provider := providers.GetTrakt(); provider != nil {
+		v2Token := provider.GetCurrentToken()
+		if v2Token == nil || v2Token.AccessToken == "" {
+			return true
+		}
+
+		// Check if token is expired or expires within 5 minutes
+		if v2Token.Expiry.IsZero() {
+			return false // No expiry means token doesn't expire
+		}
+
+		return time.Until(v2Token.Expiry) < 5*time.Minute
 	}
-	
-	api.tokenMutex.RLock()
-	defer api.tokenMutex.RUnlock()
-	
-	if api.Token == nil || api.Token.AccessToken == "" {
-		return true
-	}
-	
-	// Check if token is expired or expires within 5 minutes
-	if api.Token.Expiry.IsZero() {
-		return false // No expiry means token doesn't expire
-	}
-	
-	return time.Until(api.Token.Expiry) < 5*time.Minute
+
+	return false
 }
 
 // GetTraktUserListAuth retrieves a Trakt user list with authentication.
@@ -773,43 +1052,105 @@ func GetTraktUserListAuth(
 	if username == "" || listname == "" || listtype == "" {
 		return nil, logger.ErrNotFound
 	}
-	return doJSONType[[]TraktUserList](
-		getTraktClient(),
-		traktaddlimit(
-			logger.JoinStrings(
-				"https://api.trakt.tv/users/",
-				username,
-				"/lists/",
-				listname,
-				"/items/",
-				listtype,
-			),
-			limit,
-		),
-		getTraktHeaders(),
-	)
+
+	// Use v2 provider if available
+	if provider := providers.GetTrakt(); provider != nil {
+		items, err := provider.GetTraktUserList(context.Background(), username, listname, listtype)
+		if err != nil {
+			return nil, err
+		}
+
+		// Convert to old format
+		result := make([]TraktUserList, 0, len(items))
+		for _, item := range items {
+			userListItem := TraktUserList{
+				TraktType: item.Type,
+			}
+			if item.Movie != nil {
+				userListItem.Movie = TraktMovie{
+					IDs: struct {
+						Slug   string `json:"slug"`
+						Imdb   string `json:"imdb"`
+						Trakt  int    `json:"trakt"`
+						Tmdb   int    `json:"tmdb"`
+						Tvdb   int    `json:"tvdb"`
+						Tvrage int    `json:"tvrage"`
+					}{
+						Slug:  item.Movie.IDs.Slug,
+						Imdb:  item.Movie.IDs.IMDB,
+						Trakt: item.Movie.IDs.Trakt,
+						Tmdb:  item.Movie.IDs.TMDB,
+						Tvdb:  item.Movie.IDs.TVDB,
+					},
+					Title: item.Movie.Title,
+					Year:  item.Movie.Year,
+				}
+			}
+
+			if item.Show != nil {
+				userListItem.Serie = TraktSerie{
+					IDs: struct {
+						Slug   string `json:"slug"`
+						Imdb   string `json:"imdb"`
+						Trakt  int    `json:"trakt"`
+						Tmdb   int    `json:"tmdb"`
+						Tvdb   int    `json:"tvdb"`
+						Tvrage int    `json:"tvrage"`
+					}{
+						Slug:  item.Show.IDs.Slug,
+						Imdb:  item.Show.IDs.IMDB,
+						Trakt: item.Show.IDs.Trakt,
+						Tmdb:  item.Show.IDs.TMDB,
+						Tvdb:  item.Show.IDs.TVDB,
+					},
+					Title: item.Show.Title,
+					Year:  item.Show.Year,
+				}
+			}
+
+			result = append(result, userListItem)
+		}
+
+		return result, nil
+	}
+
+	return nil, errors.New("client empty")
 }
 
 // TestTraktConnectivity tests the connectivity to the Trakt API
-// Returns status code and error if any
-func TestTraktConnectivity(timeout time.Duration, limit *string) (int, []TraktMovieTrending, error) {
-	// Check if client is initialized
-	api := getTraktAPI()
-	if api == nil || api.ClientID == "" {
-		return 0, nil, fmt.Errorf("Trakt API client not initialized or missing ClientID")
+// Returns status code and error if any.
+func TestTraktConnectivity(
+	timeout time.Duration,
+	limit *string,
+) (int, []TraktMovieTrending, error) {
+	// Use v2 provider if available
+	if provider := providers.GetTrakt(); provider != nil {
+		// Test with a simple trending movies request
+		page := 1
+
+		results, err := provider.GetTrendingMovies(context.Background(), page)
+		if err != nil {
+			return 0, nil, err
+		}
+		// Convert to old format
+		if results != nil && len(results.Results) > 0 {
+			movies := make([]TraktMovieTrending, len(results.Results))
+			for i, r := range results.Results {
+				movies[i] = TraktMovieTrending{
+					Movie: TraktMovie{
+						Title: r.Title,
+						Year:  r.Year,
+					},
+				}
+				movies[i].Movie.IDs.Trakt = r.ID
+				movies[i].Movie.IDs.Imdb = r.IMDbID
+			}
+
+			return 200, movies, nil
+		}
+
+		return 200, []TraktMovieTrending{}, nil
 	}
 
-	statusCode := 0
-	var v []TraktMovieTrending
-	err := ProcessHTTPNoRateCheck(
-		getTraktClient(),
-		traktaddlimit("https://api.trakt.tv/movies/trending", limit),
-		func(ctx context.Context, resp *http.Response) error {
-			json.NewDecoder(resp.Body).DecodeContext(ctx, &v)
-			statusCode = resp.StatusCode
-			return nil
-		},
-		getTraktHeaders(),
-	)
-	return statusCode, v, err
+	return 400, nil, errors.New("client empty")
 }

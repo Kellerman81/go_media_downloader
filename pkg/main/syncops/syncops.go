@@ -13,7 +13,7 @@ import (
 	"github.com/robfig/cron/v3"
 )
 
-// Database static types used in SyncMap operations
+// Database static types used in SyncMap operations.
 type DbstaticOneStringTwoInt struct {
 	Str  string `db:"str"`
 	Num1 uint   `db:"num1"`
@@ -34,7 +34,7 @@ type DbstaticThreeStringTwoInt struct {
 	Num2 uint   `db:"num2"`
 }
 
-// Job represents a job to be run by a worker pool (from worker package)
+// Job represents a job to be run by a worker pool (from worker package).
 type Job struct {
 	Queue       string
 	JobName     string `json:"-"`
@@ -48,7 +48,7 @@ type Job struct {
 	CancelFunc  context.CancelFunc `json:"-"`
 }
 
-// JobSchedule represents a scheduled job (from worker package)
+// JobSchedule represents a scheduled job (from worker package).
 type JobSchedule struct {
 	JobName        string
 	ScheduleTyp    string
@@ -67,35 +67,35 @@ type SyncAny struct {
 	Value any
 }
 
-// Operation types for the unified single-writer system
+// Operation types for the unified single-writer system.
 type OpType string
 
 const (
-	// SyncMap operations (from logger package)
+	// SyncMap operations (from logger package).
 	OpSyncMapAdd          OpType = "syncMapAdd"
 	OpSyncMapUpdateVal    OpType = "syncMapUpdateVal"
 	OpSyncMapUpdateExpire OpType = "syncMapUpdateExpire"
 	OpSyncMapUpdateLscan  OpType = "syncMapUpdateLastscan"
 	OpSyncMapDelete       OpType = "syncMapDelete"
 
-	// SyncMapUint operations (from worker package)
+	// SyncMapUint operations (from worker package).
 	OpWorkerMapAdd         OpType = "workerMapAdd"
 	OpWorkerMapUpdate      OpType = "workerMapUpdate"
 	OpWorkerMapDelete      OpType = "workerMapDelete"
 	OpWorkerMapDeleteQueue OpType = "workerMapDeleteQueue"
 
-	// Cache operations (from database package)
+	// Cache operations (from database package).
 	OpCacheAppend OpType = "cacheAppend"
 	OpCacheRemove OpType = "cacheRemove"
 	OpCacheDelete OpType = "cacheDelete"
 	OpCacheRegex  OpType = "cacheRegex"
 	OpCacheStmt   OpType = "cacheStmt"
 
-	// Atomic slice operations
+	// Atomic slice operations.
 	OpSliceAppend OpType = "sliceAppend"
 	OpSliceRemove OpType = "sliceRemove"
 
-	// Advanced SyncMap operations
+	// Advanced SyncMap operations.
 	OpSyncMapCheckExpires         OpType = "syncMapCheckExpires"
 	OpSyncMapDeleteFunc           OpType = "syncMapDeleteFunc"
 	OpSyncMapDeleteFuncExpires    OpType = "syncMapDeleteFuncExpires"
@@ -104,15 +104,15 @@ const (
 	OpAtomicAppendString          OpType = "atomicAppendString"
 	OpAtomicRemoveString          OpType = "atomicRemoveString"
 
-	// Control operations
+	// Control operations.
 	OpFlush OpType = "flush"
 )
 
-// MapType identifies which map to operate on
+// MapType identifies which map to operate on.
 type MapType string
 
 const (
-	// Logger SyncMap types
+	// Logger SyncMap types.
 	MapTypeString      MapType = "string"
 	MapTypeTwoString   MapType = "twostring"
 	MapTypeThreeString MapType = "threestring"
@@ -120,22 +120,22 @@ const (
 	MapTypeXStmt       MapType = "xstmt"
 	MapTypeRegex       MapType = "regex"
 	MapTypeStructEmpty MapType = "structempty"
-	// MapTypeInterface   MapType = "interface"
+	// MapTypeInterface   MapType = "interface".
 	MapTypeAny MapType = "any"
 
-	// API Client SyncMap types
+	// API Client SyncMap types.
 	MapTypeNewznab    MapType = "newznab"
 	MapTypeApprise    MapType = "apprise"
 	MapTypeGotify     MapType = "gotify"
 	MapTypePushbullet MapType = "pushbullet"
 	MapTypePushover   MapType = "pushover"
 
-	// Worker SyncMapUint types
+	// Worker SyncMapUint types.
 	MapTypeSchedule MapType = "schedule"
 	MapTypeQueue    MapType = "queue"
 )
 
-// SyncOperation represents a synchronized operation to be processed by the single writer
+// SyncOperation represents a synchronized operation to be processed by the single writer.
 type SyncOperation struct {
 	OpType    OpType
 	MapType   MapType
@@ -160,7 +160,7 @@ type SyncOperation struct {
 	IsStarted bool   // For queue-based deletion
 }
 
-// SyncOpsManager manages all synchronized operations across the application
+// SyncOpsManager manages all synchronized operations across the application.
 type SyncOpsManager struct {
 	opQueue      chan SyncOperation
 	writerActive bool
@@ -174,11 +174,11 @@ type SyncOpsManager struct {
 }
 
 var (
-	// Global manager instance
+	// Global manager instance.
 	manager  *SyncOpsManager
 	initOnce sync.Once
-	
-	// Pool for reusing SyncOperation objects
+
+	// Pool for reusing SyncOperation objects.
 	plSyncOp pool.Poolobj[SyncOperation]
 )
 
@@ -217,7 +217,7 @@ func init() {
 			case <-op.ResultCh:
 			default:
 			}
-			
+
 			// Keep the object in pool (return false to retain)
 			return false
 		})
@@ -230,6 +230,7 @@ func init() {
 func InitSyncOps() {
 	initOnce.Do(func() {
 		ctx, cancel := context.WithCancel(context.Background())
+
 		manager = &SyncOpsManager{
 			opQueue:      make(chan SyncOperation, 10000),
 			writerActive: false,
@@ -252,6 +253,7 @@ func RegisterSyncMap(mapType MapType, syncMap any) {
 
 	manager.syncMapsMu.Lock()
 	defer manager.syncMapsMu.Unlock()
+
 	manager.syncMaps[mapType] = syncMap
 }
 
@@ -270,7 +272,7 @@ func QueueOperation(op SyncOperation) {
 
 	// Copy operation data to pooled object
 	*pooledOp = op
-	
+
 	// Ensure result channel is available
 	if pooledOp.ResultCh == nil {
 		pooledOp.ResultCh = make(chan bool, 1)
@@ -287,6 +289,7 @@ func QueueOperation(op SyncOperation) {
 			case manager.opQueue <- *pooledOp:
 				<-pooledOp.ResultCh // Wait for operation to complete
 				return
+
 			default:
 				time.Sleep(time.Millisecond)
 			}
@@ -297,7 +300,14 @@ func QueueOperation(op SyncOperation) {
 // QueueSyncMapAdd queues an Add operation for a SyncMap with full metadata.
 // Stores a key-value pair along with expiration time, IMDB flag, and last scan timestamp.
 // The operation is processed atomically by the single-writer goroutine to ensure thread safety.
-func QueueSyncMapAdd(mapType MapType, key string, value any, expires int64, imdb bool, lastscan int64) {
+func QueueSyncMapAdd(
+	mapType MapType,
+	key string,
+	value any,
+	expires int64,
+	imdb bool,
+	lastscan int64,
+) {
 	QueueOperation(SyncOperation{
 		OpType:   OpSyncMapAdd,
 		MapType:  mapType,
@@ -518,10 +528,13 @@ func Shutdown() {
 	if manager != nil {
 		manager.cancel()
 		manager.writerMu.Lock()
+
 		if manager.writerActive && manager.opQueue != nil {
 			close(manager.opQueue)
+
 			manager.writerActive = false
 		}
+
 		manager.writerMu.Unlock()
 	}
 }
@@ -543,6 +556,7 @@ func (m *SyncOpsManager) startWriter() {
 	go func() {
 		defer func() {
 			m.writerMu.Lock()
+
 			m.writerActive = false
 			m.writerMu.Unlock()
 		}()
@@ -635,6 +649,7 @@ func (m *SyncOpsManager) processSyncMapAdd(op SyncOperation) bool {
 				return true
 			}
 		}
+
 	case MapTypeTwoString:
 		if syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticTwoStringOneInt]); ok {
 			if v, ok := op.Value.([]DbstaticTwoStringOneInt); ok {
@@ -642,6 +657,7 @@ func (m *SyncOpsManager) processSyncMapAdd(op SyncOperation) bool {
 				return true
 			}
 		}
+
 	case MapTypeThreeString:
 		if syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticThreeStringTwoInt]); ok {
 			if v, ok := op.Value.([]DbstaticThreeStringTwoInt); ok {
@@ -649,6 +665,7 @@ func (m *SyncOpsManager) processSyncMapAdd(op SyncOperation) bool {
 				return true
 			}
 		}
+
 	case MapTypeTwoInt:
 		if syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticOneStringTwoInt]); ok {
 			if v, ok := op.Value.([]DbstaticOneStringTwoInt); ok {
@@ -656,6 +673,7 @@ func (m *SyncOpsManager) processSyncMapAdd(op SyncOperation) bool {
 				return true
 			}
 		}
+
 	case MapTypeXStmt:
 		if syncMap, ok := syncMapInterface.(*SyncMap[*sqlx.Stmt]); ok {
 			if v, ok := op.Value.(*sqlx.Stmt); ok {
@@ -663,6 +681,7 @@ func (m *SyncOpsManager) processSyncMapAdd(op SyncOperation) bool {
 				return true
 			}
 		}
+
 	case MapTypeRegex:
 		if syncMap, ok := syncMapInterface.(*SyncMap[*regexp.Regexp]); ok {
 			if v, ok := op.Value.(*regexp.Regexp); ok {
@@ -670,6 +689,7 @@ func (m *SyncOpsManager) processSyncMapAdd(op SyncOperation) bool {
 				return true
 			}
 		}
+
 	case MapTypeStructEmpty:
 		if syncMap, ok := syncMapInterface.(*SyncMap[struct{}]); ok {
 			if v, ok := op.Value.(struct{}); ok {
@@ -677,7 +697,13 @@ func (m *SyncOpsManager) processSyncMapAdd(op SyncOperation) bool {
 				return true
 			}
 		}
-	case MapTypeAny, MapTypeNewznab, MapTypeApprise, MapTypeGotify, MapTypePushbullet, MapTypePushover:
+
+	case MapTypeAny,
+		MapTypeNewznab,
+		MapTypeApprise,
+		MapTypeGotify,
+		MapTypePushbullet,
+		MapTypePushover:
 		if syncMap, ok := syncMapInterface.(*SyncMap[SyncAny]); ok {
 			if v, ok := op.Value.(SyncAny); ok {
 				syncMap.Add(op.Key, v, op.Expires, op.IMDB, op.Lastscan)
@@ -690,9 +716,11 @@ func (m *SyncOpsManager) processSyncMapAdd(op SyncOperation) bool {
 			if t.Kind() == reflect.Ptr {
 				t = t.Elem()
 			}
+
 			logger.Logtype("error", 0).Any("type", t.String()).Any("Kind", t.Kind().String()).Msg("Queue is not of Type SyncMap[SyncAny]")
 		}
 	}
+
 	return false
 }
 
@@ -713,6 +741,7 @@ func (m *SyncOpsManager) processSyncMapUpdateVal(op SyncOperation) bool {
 				return true
 			}
 		}
+
 	case MapTypeTwoString:
 		if syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticTwoStringOneInt]); ok {
 			if v, ok := op.Value.([]DbstaticTwoStringOneInt); ok {
@@ -720,6 +749,7 @@ func (m *SyncOpsManager) processSyncMapUpdateVal(op SyncOperation) bool {
 				return true
 			}
 		}
+
 	case MapTypeThreeString:
 		if syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticThreeStringTwoInt]); ok {
 			if v, ok := op.Value.([]DbstaticThreeStringTwoInt); ok {
@@ -727,6 +757,7 @@ func (m *SyncOpsManager) processSyncMapUpdateVal(op SyncOperation) bool {
 				return true
 			}
 		}
+
 	case MapTypeTwoInt:
 		if syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticOneStringTwoInt]); ok {
 			if v, ok := op.Value.([]DbstaticOneStringTwoInt); ok {
@@ -734,6 +765,7 @@ func (m *SyncOpsManager) processSyncMapUpdateVal(op SyncOperation) bool {
 				return true
 			}
 		}
+
 	case MapTypeXStmt:
 		if syncMap, ok := syncMapInterface.(*SyncMap[*sqlx.Stmt]); ok {
 			if v, ok := op.Value.(*sqlx.Stmt); ok {
@@ -741,6 +773,7 @@ func (m *SyncOpsManager) processSyncMapUpdateVal(op SyncOperation) bool {
 				return true
 			}
 		}
+
 	case MapTypeRegex:
 		if syncMap, ok := syncMapInterface.(*SyncMap[*regexp.Regexp]); ok {
 			if v, ok := op.Value.(*regexp.Regexp); ok {
@@ -748,6 +781,7 @@ func (m *SyncOpsManager) processSyncMapUpdateVal(op SyncOperation) bool {
 				return true
 			}
 		}
+
 	case MapTypeStructEmpty:
 		if syncMap, ok := syncMapInterface.(*SyncMap[struct{}]); ok {
 			if v, ok := op.Value.(struct{}); ok {
@@ -755,15 +789,23 @@ func (m *SyncOpsManager) processSyncMapUpdateVal(op SyncOperation) bool {
 				return true
 			}
 		}
-	case MapTypeAny, MapTypeNewznab, MapTypeApprise, MapTypeGotify, MapTypePushbullet, MapTypePushover:
+
+	case MapTypeAny,
+		MapTypeNewznab,
+		MapTypeApprise,
+		MapTypeGotify,
+		MapTypePushbullet,
+		MapTypePushover:
 		if syncMap, ok := syncMapInterface.(*SyncMap[SyncAny]); ok {
 			if v, ok := op.Value.(SyncAny); ok {
 				syncMap.UpdateVal(op.Key, v)
 				return true
 			}
+
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -782,42 +824,55 @@ func (m *SyncOpsManager) processSyncMapUpdateExpire(op SyncOperation) bool {
 			syncMap.UpdateExpire(op.Key, op.Expires)
 			return true
 		}
+
 	case MapTypeTwoString:
 		if syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticTwoStringOneInt]); ok {
 			syncMap.UpdateExpire(op.Key, op.Expires)
 			return true
 		}
+
 	case MapTypeThreeString:
 		if syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticThreeStringTwoInt]); ok {
 			syncMap.UpdateExpire(op.Key, op.Expires)
 			return true
 		}
+
 	case MapTypeTwoInt:
 		if syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticOneStringTwoInt]); ok {
 			syncMap.UpdateExpire(op.Key, op.Expires)
 			return true
 		}
+
 	case MapTypeXStmt:
 		if syncMap, ok := syncMapInterface.(*SyncMap[*sqlx.Stmt]); ok {
 			syncMap.UpdateExpire(op.Key, op.Expires)
 			return true
 		}
+
 	case MapTypeRegex:
 		if syncMap, ok := syncMapInterface.(*SyncMap[*regexp.Regexp]); ok {
 			syncMap.UpdateExpire(op.Key, op.Expires)
 			return true
 		}
+
 	case MapTypeStructEmpty:
 		if syncMap, ok := syncMapInterface.(*SyncMap[struct{}]); ok {
 			syncMap.UpdateExpire(op.Key, op.Expires)
 			return true
 		}
-	case MapTypeAny, MapTypeNewznab, MapTypeApprise, MapTypeGotify, MapTypePushbullet, MapTypePushover:
+
+	case MapTypeAny,
+		MapTypeNewznab,
+		MapTypeApprise,
+		MapTypeGotify,
+		MapTypePushbullet,
+		MapTypePushover:
 		if syncMap, ok := syncMapInterface.(*SyncMap[SyncAny]); ok {
 			syncMap.UpdateExpire(op.Key, op.Expires)
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -836,42 +891,55 @@ func (m *SyncOpsManager) processSyncMapUpdateLastscan(op SyncOperation) bool {
 			syncMap.UpdateLastscan(op.Key, op.Lastscan)
 			return true
 		}
+
 	case MapTypeTwoString:
 		if syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticTwoStringOneInt]); ok {
 			syncMap.UpdateLastscan(op.Key, op.Lastscan)
 			return true
 		}
+
 	case MapTypeThreeString:
 		if syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticThreeStringTwoInt]); ok {
 			syncMap.UpdateLastscan(op.Key, op.Lastscan)
 			return true
 		}
+
 	case MapTypeTwoInt:
 		if syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticOneStringTwoInt]); ok {
 			syncMap.UpdateLastscan(op.Key, op.Lastscan)
 			return true
 		}
+
 	case MapTypeXStmt:
 		if syncMap, ok := syncMapInterface.(*SyncMap[*sqlx.Stmt]); ok {
 			syncMap.UpdateLastscan(op.Key, op.Lastscan)
 			return true
 		}
+
 	case MapTypeRegex:
 		if syncMap, ok := syncMapInterface.(*SyncMap[*regexp.Regexp]); ok {
 			syncMap.UpdateLastscan(op.Key, op.Lastscan)
 			return true
 		}
+
 	case MapTypeStructEmpty:
 		if syncMap, ok := syncMapInterface.(*SyncMap[struct{}]); ok {
 			syncMap.UpdateLastscan(op.Key, op.Lastscan)
 			return true
 		}
-	case MapTypeAny, MapTypeNewznab, MapTypeApprise, MapTypeGotify, MapTypePushbullet, MapTypePushover:
+
+	case MapTypeAny,
+		MapTypeNewznab,
+		MapTypeApprise,
+		MapTypeGotify,
+		MapTypePushbullet,
+		MapTypePushover:
 		if syncMap, ok := syncMapInterface.(*SyncMap[SyncAny]); ok {
 			syncMap.UpdateLastscan(op.Key, op.Lastscan)
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -890,42 +958,55 @@ func (m *SyncOpsManager) processSyncMapDelete(op SyncOperation) bool {
 			syncMap.Delete(op.Key)
 			return true
 		}
+
 	case MapTypeTwoString:
 		if syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticTwoStringOneInt]); ok {
 			syncMap.Delete(op.Key)
 			return true
 		}
+
 	case MapTypeThreeString:
 		if syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticThreeStringTwoInt]); ok {
 			syncMap.Delete(op.Key)
 			return true
 		}
+
 	case MapTypeTwoInt:
 		if syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticOneStringTwoInt]); ok {
 			syncMap.Delete(op.Key)
 			return true
 		}
+
 	case MapTypeXStmt:
 		if syncMap, ok := syncMapInterface.(*SyncMap[*sqlx.Stmt]); ok {
 			syncMap.Delete(op.Key)
 			return true
 		}
+
 	case MapTypeRegex:
 		if syncMap, ok := syncMapInterface.(*SyncMap[*regexp.Regexp]); ok {
 			syncMap.Delete(op.Key)
 			return true
 		}
+
 	case MapTypeStructEmpty:
 		if syncMap, ok := syncMapInterface.(*SyncMap[struct{}]); ok {
 			syncMap.Delete(op.Key)
 			return true
 		}
-	case MapTypeAny, MapTypeNewznab, MapTypeApprise, MapTypeGotify, MapTypePushbullet, MapTypePushover:
+
+	case MapTypeAny,
+		MapTypeNewznab,
+		MapTypeApprise,
+		MapTypeGotify,
+		MapTypePushbullet,
+		MapTypePushover:
 		if syncMap, ok := syncMapInterface.(*SyncMap[SyncAny]); ok {
 			syncMap.Delete(op.Key)
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -946,12 +1027,14 @@ func (m *SyncOpsManager) processWorkerMapAdd(op SyncOperation) bool {
 				return true
 			}
 		}
+
 	case MapTypeQueue:
 		t := reflect.TypeOf(syncMapInterface)
 		// If it's a pointer, get the underlying type
 		if t.Kind() == reflect.Ptr {
 			t = t.Elem()
 		}
+
 		if syncMap, ok := syncMapInterface.(*SyncMapUint[Job]); ok {
 			if v, ok := op.Value.(Job); ok {
 				syncMap.Add(op.KeyUint32, v)
@@ -963,6 +1046,7 @@ func (m *SyncOpsManager) processWorkerMapAdd(op SyncOperation) bool {
 			logger.Logtype("error", 0).Any("type", t.String()).Any("Kind", t.Kind().String()).Msg("Queue is not of Type SyncMapUint[Job]")
 		}
 	}
+
 	return false
 }
 
@@ -983,6 +1067,7 @@ func (m *SyncOpsManager) processWorkerMapUpdate(op SyncOperation) bool {
 				return true
 			}
 		}
+
 	case MapTypeQueue:
 		if syncMap, ok := syncMapInterface.(*SyncMapUint[Job]); ok {
 			if v, ok := op.Value.(Job); ok {
@@ -991,6 +1076,7 @@ func (m *SyncOpsManager) processWorkerMapUpdate(op SyncOperation) bool {
 			}
 		}
 	}
+
 	return false
 }
 
@@ -1009,12 +1095,14 @@ func (m *SyncOpsManager) processWorkerMapDelete(op SyncOperation) bool {
 			syncMap.Delete(op.KeyUint32)
 			return true
 		}
+
 	case MapTypeQueue:
 		if syncMap, ok := syncMapInterface.(*SyncMapUint[Job]); ok {
 			syncMap.Delete(op.KeyUint32)
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -1040,14 +1128,18 @@ func (m *SyncOpsManager) processSliceAppend(op SyncOperation) bool {
 							return true // Already exists
 						}
 					}
+
 					newSlice := make([]string, len(current), len(current)+10)
 					copy(newSlice, current)
+
 					newSlice = append(newSlice, value)
 					syncMap.UpdateVal(op.Key, newSlice)
 				}
+
 				return true
 			}
 		}
+
 	case MapTypeThreeString:
 		if syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticThreeStringTwoInt]); ok {
 			if value, ok := op.Value.(DbstaticThreeStringTwoInt); ok {
@@ -1058,14 +1150,18 @@ func (m *SyncOpsManager) processSliceAppend(op SyncOperation) bool {
 							return true // Already exists
 						}
 					}
+
 					newSlice := make([]DbstaticThreeStringTwoInt, len(current), len(current)+10)
 					copy(newSlice, current)
+
 					newSlice = append(newSlice, value)
 					syncMap.UpdateVal(op.Key, newSlice)
 				}
+
 				return true
 			}
 		}
+
 	case MapTypeTwoString:
 		if syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticTwoStringOneInt]); ok {
 			if value, ok := op.Value.(DbstaticTwoStringOneInt); ok {
@@ -1076,14 +1172,18 @@ func (m *SyncOpsManager) processSliceAppend(op SyncOperation) bool {
 							return true // Already exists
 						}
 					}
+
 					newSlice := make([]DbstaticTwoStringOneInt, len(current), len(current)+10)
 					copy(newSlice, current)
+
 					newSlice = append(newSlice, value)
 					syncMap.UpdateVal(op.Key, newSlice)
 				}
+
 				return true
 			}
 		}
+
 	case MapTypeTwoInt:
 		if syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticOneStringTwoInt]); ok {
 			if value, ok := op.Value.(DbstaticOneStringTwoInt); ok {
@@ -1094,15 +1194,19 @@ func (m *SyncOpsManager) processSliceAppend(op SyncOperation) bool {
 							return true // Already exists
 						}
 					}
+
 					newSlice := make([]DbstaticOneStringTwoInt, len(current), len(current)+10)
 					copy(newSlice, current)
+
 					newSlice = append(newSlice, value)
 					syncMap.UpdateVal(op.Key, newSlice)
 				}
+
 				return true
 			}
 		}
 	}
+
 	return false
 }
 
@@ -1122,6 +1226,7 @@ func (m *SyncOpsManager) processSliceRemove(op SyncOperation) bool {
 			if value, ok := op.Value.(string); ok {
 				if syncMap.Check(op.Key) {
 					current := syncMap.GetVal(op.Key)
+
 					found := false
 					for _, item := range current {
 						if item == value {
@@ -1129,6 +1234,7 @@ func (m *SyncOpsManager) processSliceRemove(op SyncOperation) bool {
 							break
 						}
 					}
+
 					if found {
 						newSlice := make([]string, 0, len(current))
 						for _, item := range current {
@@ -1136,13 +1242,16 @@ func (m *SyncOpsManager) processSliceRemove(op SyncOperation) bool {
 								newSlice = append(newSlice, item)
 							}
 						}
+
 						syncMap.UpdateVal(op.Key, newSlice)
 					}
 				}
+
 				return true
 			}
 		}
 	}
+
 	return false
 }
 
@@ -1166,10 +1275,13 @@ func (m *SyncOpsManager) processWorkerMapDeleteQueue(op SyncOperation) bool {
 					}
 					return true
 				}
+
 				return false
 			})
+
 			return true
 		}
 	}
+
 	return false
 }

@@ -58,6 +58,10 @@ LABEL org.opencontainers.image.authors="Kellerman81 <Kellerman81@gmail.com>"
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         ffmpeg \
+        mediainfo \
+        p7zip \
+        p7zip-full \
+        p7zip-rar \
         graphviz \
         gv \
         tzdata \

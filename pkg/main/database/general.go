@@ -45,31 +45,31 @@ type DBGlobal struct {
 }
 
 type JobHistory struct {
-	CreatedAt   time.Time    `db:"created_at" displayname:"Date Created" comment:"Record creation timestamp"`
-	UpdatedAt   time.Time    `db:"updated_at" displayname:"Last Updated" comment:"Last modification timestamp"`
-	JobType     string       `db:"job_type" displayname:"Job Type" comment:"Type of job"`
+	CreatedAt   time.Time    `db:"created_at"   displayname:"Date Created" comment:"Record creation timestamp"`
+	UpdatedAt   time.Time    `db:"updated_at"   displayname:"Last Updated" comment:"Last modification timestamp"`
+	JobType     string       `db:"job_type"     displayname:"Job Type"     comment:"Type of job"`
 	JobCategory string       `db:"job_category" displayname:"Job Category" comment:"Job category classification"`
-	JobGroup    string       `db:"job_group" displayname:"Job Group" comment:"Job group identifier"`
-	Started     sql.NullTime `displayname:"Start Time" comment:"Job start timestamp"`
-	Ended       sql.NullTime `displayname:"End Time" comment:"Job completion timestamp"`
-	ID          uint         `displayname:"Job ID" comment:"Unique job identifier"`
+	JobGroup    string       `db:"job_group"    displayname:"Job Group"    comment:"Job group identifier"`
+	Started     sql.NullTime `                  displayname:"Start Time"   comment:"Job start timestamp"`
+	Ended       sql.NullTime `                  displayname:"End Time"     comment:"Job completion timestamp"`
+	ID          uint         `                  displayname:"Job ID"       comment:"Unique job identifier"`
 }
 
 type RSSHistory struct {
 	Config    string    `displayname:"Configuration Name" comment:"RSS configuration name"`
-	List      string    `displayname:"List Name" comment:"RSS list identifier"`
-	Indexer   string    `displayname:"Indexer Name" comment:"RSS indexer source"`
-	LastID    string    `db:"last_id" displayname:"Last Item ID" comment:"Last processed item"`
-	CreatedAt time.Time `db:"created_at" displayname:"Date Created" comment:"Record creation timestamp"`
-	UpdatedAt time.Time `db:"updated_at" displayname:"Last Updated" comment:"Last modification timestamp"`
-	ID        uint      `displayname:"RSS ID" comment:"Unique RSS identifier"`
+	List      string    `displayname:"List Name"          comment:"RSS list identifier"`
+	Indexer   string    `displayname:"Indexer Name"       comment:"RSS indexer source"`
+	LastID    string    `displayname:"Last Item ID"       comment:"Last processed item"         db:"last_id"`
+	CreatedAt time.Time `displayname:"Date Created"       comment:"Record creation timestamp"   db:"created_at"`
+	UpdatedAt time.Time `displayname:"Last Updated"       comment:"Last modification timestamp" db:"updated_at"`
+	ID        uint      `displayname:"RSS ID"             comment:"Unique RSS identifier"`
 }
 type IndexerFail struct {
 	Indexer   string       `displayname:"Indexer Name" comment:"Failed indexer name"`
-	LastFail  sql.NullTime `db:"last_fail" displayname:"Last Failure" comment:"Last failure timestamp"`
-	CreatedAt time.Time    `db:"created_at" displayname:"Date Created" comment:"Record creation timestamp"`
-	UpdatedAt time.Time    `db:"updated_at" displayname:"Last Updated" comment:"Last modification timestamp"`
-	ID        uint         `displayname:"Failure ID" comment:"Unique failure identifier"`
+	LastFail  sql.NullTime `displayname:"Last Failure" comment:"Last failure timestamp"      db:"last_fail"`
+	CreatedAt time.Time    `displayname:"Date Created" comment:"Record creation timestamp"   db:"created_at"`
+	UpdatedAt time.Time    `displayname:"Last Updated" comment:"Last modification timestamp" db:"updated_at"`
+	ID        uint         `displayname:"Failure ID"   comment:"Unique failure identifier"`
 }
 
 type backupInfo struct {
@@ -110,19 +110,23 @@ func InitCfg() {
 			Err(err).
 			Msg("Database Upgrade Failed")
 	}
+
 	UpgradeIMDB()
+
 	err = InitDB(config.GetSettingsGeneral().DBLogLevel)
 	if err != nil {
 		logger.Logtype("fatal", 0).
 			Err(err).
 			Msg("Database Initialization Failed")
 	}
+
 	err = InitImdbdb()
 	if err != nil {
 		logger.Logtype("fatal", 0).
 			Err(err).
 			Msg("IMDB Database Initialization Failed")
 	}
+
 	SetVars()
 }
 
@@ -131,9 +135,11 @@ func InitCfg() {
 // shutting down to cleanly close the connections.
 func DBClose() {
 	sqlCTX.Done()
+
 	if dbData != nil {
 		dbData.Close()
 	}
+
 	if dbImdb != nil {
 		dbImdb.Close()
 	}
@@ -156,7 +162,9 @@ func InitDB(dbloglevel string) error {
 			return err
 		}
 	}
+
 	var err error
+
 	dbData, err = sqlx.Connect(
 		"sqlite",
 		"file:./databases/data.db?_fk=1&mode=rwc&_mutex=full&rt=1&_cslike=0",
@@ -164,11 +172,13 @@ func InitDB(dbloglevel string) error {
 	if err != nil {
 		return err
 	}
+
 	dbData.SetMaxIdleConns(5)
 	dbData.SetMaxOpenConns(25)
 	dbData.SetConnMaxLifetime(5 * time.Minute) // Rotate connections
 	dbData.SetConnMaxIdleTime(1 * time.Minute) // Close idle
 	SetDBLogLevel(strings.ToLower(dbloglevel)) // Use thread-safe accessor
+
 	return nil
 }
 
@@ -216,7 +226,9 @@ func InitImdbdb() error {
 			return err
 		}
 	}
+
 	var err error
+
 	dbImdb, err = sqlx.Connect(
 		"sqlite",
 		"file:./databases/imdb.db?_fk=1&mode=rwc&_mutex=full&rt=1&_cslike=0",
@@ -224,10 +236,12 @@ func InitImdbdb() error {
 	if err != nil {
 		return err
 	}
+
 	dbImdb.SetMaxIdleConns(2)
 	dbImdb.SetMaxOpenConns(10)
 	dbImdb.SetConnMaxLifetime(5 * time.Minute) // Rotate connections
 	dbImdb.SetConnMaxIdleTime(2 * time.Minute) // Close idle
+
 	return nil
 }
 
@@ -239,15 +253,18 @@ func getqualityregexes(querystr, querycount string) []Qualities {
 	if count == 0 {
 		return nil
 	}
+
 	q := StructscanT[Qualities](false, count, querystr)
 	if len(q) == 0 {
 		return nil
 	}
+
 	for idx := range q {
 		q[idx].StringsLower = strings.ToLower(q[idx].Strings)
 		q[idx].StringsLowerSplitted = strings.Split(q[idx].StringsLower, ",")
 		globalCache.setStaticRegexp(q[idx].Regex)
 	}
+
 	return q
 }
 
@@ -265,6 +282,7 @@ func getqualityregexes(querystr, querycount string) []Qualities {
 func SetVars() {
 	// Acquire write lock to safely modify DBConnect global variable
 	mu := getGlobalVarMutex()
+
 	mu.Lock()
 	defer mu.Unlock()
 
@@ -297,6 +315,7 @@ func SetVars() {
 		for _, val := range cfgregex.Rejected {
 			globalCache.setStaticRegexp(val)
 		}
+
 		for _, val := range cfgregex.Required {
 			globalCache.setStaticRegexp(val)
 		}
@@ -306,12 +325,15 @@ func SetVars() {
 	for idx := range DBConnect.GetaudiosIn {
 		totalAudioCap += len(DBConnect.GetaudiosIn[idx].StringsLowerSplitted)
 	}
+
 	for idx := range DBConnect.GetcodecsIn {
 		totalCodecCap += len(DBConnect.GetcodecsIn[idx].StringsLowerSplitted)
 	}
+
 	for idx := range DBConnect.GetqualitiesIn {
 		totalQualityCap += len(DBConnect.GetqualitiesIn[idx].StringsLowerSplitted)
 	}
+
 	for idx := range DBConnect.GetresolutionsIn {
 		totalResolutionCap += len(DBConnect.GetresolutionsIn[idx].StringsLowerSplitted)
 	}
@@ -326,14 +348,17 @@ func SetVars() {
 		DBConnect.AudioStrIn = append(DBConnect.AudioStrIn,
 			DBConnect.GetaudiosIn[idx].StringsLowerSplitted...)
 	}
+
 	for idx := range DBConnect.GetcodecsIn {
 		DBConnect.CodecStrIn = append(DBConnect.CodecStrIn,
 			DBConnect.GetcodecsIn[idx].StringsLowerSplitted...)
 	}
+
 	for idx := range DBConnect.GetqualitiesIn {
 		DBConnect.QualityStrIn = append(DBConnect.QualityStrIn,
 			DBConnect.GetqualitiesIn[idx].StringsLowerSplitted...)
 	}
+
 	for idx := range DBConnect.GetresolutionsIn {
 		DBConnect.ResolutionStrIn = append(DBConnect.ResolutionStrIn,
 			DBConnect.GetresolutionsIn[idx].StringsLowerSplitted...)
@@ -400,6 +425,7 @@ func SetVars() {
 					false,
 				)
 			}
+
 			return nil
 		} else {
 			globalCache.addStaticXStmt(
@@ -418,6 +444,7 @@ func SetVars() {
 				),
 				false,
 			)
+
 			return nil
 		}
 	})
@@ -1068,7 +1095,9 @@ func Upgrade(_ *gin.Context) {
 func backupdb(backupPath *string) error {
 	readWriteMu.Lock()
 	defer readWriteMu.Unlock()
+
 	_, err := dbData.ExecContext(sqlCTX, "VACUUM INTO ?", backupPath)
+
 	return err
 }
 
@@ -1081,10 +1110,13 @@ func Backup(backupPath *string, maxbackups int) error {
 			Str("query", "VACUUM INTO ?").
 			Err(err).
 			Msg("exec")
+
 		return err
 	}
+
 	logger.Logtype("info", 0).
 		Msg("End db backup")
+
 	if maxbackups == 0 {
 		return nil
 	}
@@ -1093,20 +1125,27 @@ func Backup(backupPath *string, maxbackups int) error {
 	if err != nil {
 		return errors.New("can't read log file directory: " + err.Error())
 	}
+
 	if len(files) == 0 {
 		return nil
 	}
+
 	backupFiles := make([]backupInfo, 0, len(files))
 
-	var tu time.Time
-	var t time.Time
+	var (
+		tu time.Time
+		t  time.Time
+	)
+
 	for idx := range files {
 		if files[idx].IsDir() {
 			continue
 		}
+
 		if !logger.HasPrefixI(files[idx].Name(), "data.db.") {
 			continue
 		}
+
 		t = timeFromName(files[idx].Name(), "data.db.")
 		if !t.Equal(tu) {
 			backupFiles = append(backupFiles, backupInfo{timestamp: t, path: files[idx].Name()})
@@ -1117,13 +1156,16 @@ func Backup(backupPath *string, maxbackups int) error {
 	if maxbackups == 0 || maxbackups >= len(backupFiles) {
 		return nil
 	}
+
 	slices.SortFunc(backupFiles, func(a, b backupInfo) int {
 		if a.timestamp.Equal(b.timestamp) {
 			return 0
 		}
+
 		if logger.TimeAfter(a.timestamp, b.timestamp) {
 			return -1
 		}
+
 		return 1
 	})
 
@@ -1147,12 +1189,14 @@ func UpgradeDB() error {
 	}
 
 	vers, _, _ := m.Version()
+
 	DBVersion = strconv.FormatInt(int64(vers), 10)
 
 	err = m.Up()
 	if err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		return err
 	}
+
 	return nil
 }
 
@@ -1180,18 +1224,22 @@ func timeFromName(filename, prefix string) time.Time {
 	if !logger.HasPrefixI(filename, prefix) {
 		return time.Time{}
 	}
+
 	idx := strings.Index(filename[len(prefix):], logger.StrDot)
 	if idx != -1 {
 		t, err := time.Parse("20060102_150405", filename[len(prefix):][idx+1:])
 		if err != nil {
 			return time.Time{}
 		}
+
 		return t
 	}
+
 	t, err := time.Parse("20060102_150405", filename[len(prefix):])
 	if err != nil {
 		return time.Time{}
 	}
+
 	return t
 }
 
@@ -1218,9 +1266,11 @@ func GetMediaListIDGetListname(cfgp *config.MediaTypeConfig, mediaid *uint) int 
 			Msg("the config couldnt be found")
 		return -1
 	}
+
 	if *mediaid == 0 {
 		return -1
 	}
+
 	if config.GetSettingsGeneral().UseMediaCache {
 		id := cfgp.GetMediaListsEntryListID(
 			CacheOneStringTwoIntIndexFuncStr(cfgp.Useseries, logger.CacheMedia, *mediaid),
@@ -1228,8 +1278,10 @@ func GetMediaListIDGetListname(cfgp *config.MediaTypeConfig, mediaid *uint) int 
 		if id >= 0 {
 			return id
 		}
+
 		return -1
 	}
+
 	return cfgp.GetMediaListsEntryListID(
 		Getdatarow[string](
 			false,
@@ -1247,6 +1299,7 @@ func GetDBStaticTwoStringIdx1(tbl []DbstaticTwoString, v string) int {
 			return idx
 		}
 	}
+
 	return -1
 }
 
@@ -1258,41 +1311,40 @@ func GetDBStaticOneStringOneIntIdx(tbl []DbstaticOneStringOneUInt, v string) int
 			return idx
 		}
 	}
+
 	return -1
 }
 
 func GetSettingTemplatesFor(key string) map[string][]string {
 	// Get a thread-safe copy of DBConnect
 	dbConnect := GetDBConnect()
-	var out map[string][]string = make(map[string][]string)
+
+	out := make(map[string][]string)
 
 	switch key {
 	case "quality":
 		out["options"] = make([]string, 0, len(dbConnect.QualityStrIn))
 		out["options"] = append(out["options"], "")
-		for _, cfg := range dbConnect.QualityStrIn {
-			out["options"] = append(out["options"], cfg)
-		}
+		out["options"] = append(out["options"], dbConnect.QualityStrIn...)
+
 	case "resolution":
 		out["options"] = make([]string, 0, len(dbConnect.ResolutionStrIn))
 		out["options"] = append(out["options"], "")
-		for _, cfg := range dbConnect.ResolutionStrIn {
-			out["options"] = append(out["options"], cfg)
-		}
+		out["options"] = append(out["options"], dbConnect.ResolutionStrIn...)
+
 	case "audio":
 		out["options"] = make([]string, 0, len(dbConnect.AudioStrIn))
 		out["options"] = append(out["options"], "")
-		for _, cfg := range dbConnect.AudioStrIn {
-			out["options"] = append(out["options"], cfg)
-		}
+		out["options"] = append(out["options"], dbConnect.AudioStrIn...)
+
 	case "codec":
 		out["options"] = make([]string, 0, len(dbConnect.CodecStrIn))
 		out["options"] = append(out["options"], "")
-		for _, cfg := range dbConnect.CodecStrIn {
-			out["options"] = append(out["options"], cfg)
-		}
+		out["options"] = append(out["options"], dbConnect.CodecStrIn...)
+
 	default:
 		return nil
 	}
+
 	return out
 }

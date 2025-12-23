@@ -8,7 +8,7 @@ import (
 	"maragu.dev/gomponents/html"
 )
 
-// HTML generation helper functions
+// HTML generation helper functions.
 func formInput(inputType, name, id, class, value string, attrs ...gomponents.Node) gomponents.Node {
 	allAttrs := []gomponents.Node{
 		html.Type(inputType),
@@ -19,7 +19,9 @@ func formInput(inputType, name, id, class, value string, attrs ...gomponents.Nod
 	if value != "" {
 		allAttrs = append(allAttrs, html.Value(value))
 	}
+
 	allAttrs = append(allAttrs, attrs...)
+
 	return html.Input(allAttrs...)
 }
 
@@ -35,6 +37,7 @@ func createOption(value, text string, selected bool) gomponents.Node {
 	if selected {
 		attrs = append(attrs, html.Selected())
 	}
+
 	return html.Option(attrs...)
 }
 
@@ -48,11 +51,13 @@ func formCheckboxInput(name, id string, checked bool, attrs ...gomponents.Node) 
 	if checked {
 		allAttrs = append(allAttrs, html.Checked())
 	}
+
 	allAttrs = append(allAttrs, attrs...)
+
 	return html.Input(allAttrs...)
 }
 
-// Response helper functions
+// Response helper functions.
 func sendDataTablesResponse(ctx *gin.Context, total, final int, data any) {
 	ctx.JSON(http.StatusOK, gin.H{
 		"sEcho":                getParamValue(ctx, "sEcho"),
@@ -78,6 +83,7 @@ func sendOperationResult(ctx *gin.Context, err error) {
 	} else {
 		response["error"] = ""
 	}
+
 	ctx.JSON(http.StatusOK, response)
 }
 
@@ -102,6 +108,7 @@ func createSelect2OptionPtr(id any, text string) *map[string]any {
 		"id":   id,
 		"text": text,
 	}
+
 	return &option
 }
 
@@ -112,7 +119,7 @@ func createSelect2OptionString(value string, text string) map[string]any {
 	}
 }
 
-// getParam retrieves a parameter from either GET query or POST form data
+// getParam retrieves a parameter from either GET query or POST form data.
 func getParam(ctx *gin.Context, key, defaultValue string) string {
 	if ctx.Request.Method == "POST" {
 		return ctx.DefaultPostForm(key, defaultValue)
@@ -120,7 +127,7 @@ func getParam(ctx *gin.Context, key, defaultValue string) string {
 	return ctx.DefaultQuery(key, defaultValue)
 }
 
-// getParamValue retrieves a parameter from either GET query or POST form data (no default)
+// getParamValue retrieves a parameter from either GET query or POST form data (no default).
 func getParamValue(ctx *gin.Context, key string) string {
 	if ctx.Request.Method == "POST" {
 		return ctx.PostForm(key)

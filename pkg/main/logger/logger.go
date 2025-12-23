@@ -54,13 +54,16 @@ var logZeroValues bool
 // It sets the log level, output format, rotation options, etc.
 func InitLogger(config Config) {
 	initializePools()
+
 	if config.LogFileSize == 0 {
 		config.LogFileSize = 10
 	}
+
 	logZeroValues = config.LogZeroValues
 	if config.LogFileCount == 0 {
 		config.LogFileCount = 5
 	}
+
 	switch config.TimeFormat {
 	case "rfc3339":
 		timeFormat = time.RFC3339Nano
@@ -77,15 +80,19 @@ func InitLogger(config Config) {
 	default:
 		timeFormat = config.TimeFormat
 	}
+
 	var dbug bool
+
 	level := zerolog.InfoLevel
 	if strings.EqualFold(config.LogLevel, StrDebug) {
 		level = zerolog.DebugLevel
 		dbug = true
 	}
+
 	if strings.EqualFold(config.LogLevel, "warning") {
 		level = zerolog.WarnLevel
 	}
+
 	if config.TimeZone != "" {
 		switch {
 		case strings.EqualFold(config.TimeZone, "local"):
@@ -99,6 +106,7 @@ func InitLogger(config Config) {
 			}
 		}
 	}
+
 	var writers io.Writer
 
 	if !config.LogToFileOnly {
@@ -110,6 +118,7 @@ func InitLogger(config Config) {
 	} else {
 		writers = io.Discard
 	}
+
 	logctx := zerolog.New(zerolog.MultiLevelWriter(writers, &lumberjack.Logger{
 		Filename:   logfile,
 		MaxSize:    config.LogFileSize, // megabytes
@@ -144,8 +153,10 @@ func Logtype(typev string, skip int) *zerolog.Event {
 		}
 		return logFunc().CallerSkipFrame(skip)
 	}
+
 	if skip == 0 {
 		return log.Info()
 	}
+
 	return log.Info().CallerSkipFrame(skip)
 }

@@ -12,12 +12,13 @@ import (
 	gin "github.com/gin-gonic/gin"
 )
 
-// apiAdminDropdownData provides AJAX endpoint for dynamic dropdown data loading
+// apiAdminDropdownData provides AJAX endpoint for dynamic dropdown data loading.
 func apiAdminDropdownData(ctx *gin.Context) {
 	tableName, ok := getParamID(ctx, "table")
 	if !ok {
 		return
 	}
+
 	fieldName, ok := getParamID(ctx, "field")
 	if !ok {
 		return
@@ -60,59 +61,81 @@ func apiAdminDropdownData(ctx *gin.Context) {
 		}
 		// If ID lookup fails, return empty result
 		sendSelect2Response(ctx, []map[string]any{}, false)
+
 		return
 	}
 
-	var options []map[string]any
-	var hasMore bool
+	var (
+		options []map[string]any
+		hasMore bool
+	)
 
 	// Build search filter
 	searchFilter := ""
+
 	searchArgs := []any{}
 	if search != "" {
 		switch tableName {
 		case "dbmovies":
 			searchFilter = " WHERE title LIKE ?"
+
 			searchArgs = append(searchArgs, "%"+search+"%")
+
 		case "dbseries":
 			searchFilter = " WHERE seriename LIKE ?"
+
 			searchArgs = append(searchArgs, "%"+search+"%")
+
 		case "dbserie_episodes":
 			searchFilter = " WHERE (identifier LIKE ? OR title LIKE ?)"
+
 			searchArgs = append(searchArgs, "%"+search+"%", "%"+search+"%")
+
 		case "movies":
 			searchFilter = " WHERE dbmovies.title LIKE ?"
+
 			searchArgs = append(searchArgs, "%"+search+"%")
+
 		case "series":
 			searchFilter = " WHERE dbseries.seriename LIKE ?"
+
 			searchArgs = append(searchArgs, "%"+search+"%")
+
 		case "serie_episodes":
 			// Check if search is a series ID (numeric) or a text search
 			if seriesID, err := strconv.Atoi(search); err == nil && seriesID > 0 {
 				// Search is a series ID - filter episodes by this series
 				searchFilter = " WHERE series.id = ?"
+
 				searchArgs = append(searchArgs, seriesID)
 			} else if search != "" {
 				// Search is text - filter by episode title
 				searchFilter = " WHERE dbserie_episodes.title LIKE ?"
+
 				searchArgs = append(searchArgs, "%"+search+"%")
 			}
+
 		case "qualities":
 			searchFilter = " WHERE name LIKE ?"
+
 			searchArgs = append(searchArgs, "%"+search+"%")
+
 		case "listnames":
 			if tableName == "movies" {
 				searchFilter = " WHERE listname LIKE ?"
 			} else {
 				searchFilter = " WHERE listname LIKE ?"
 			}
+
 			searchArgs = append(searchArgs, "%"+search+"%")
+
 		case "quality_profiles":
 			if tableName == "movies" {
 				searchFilter = " WHERE quality_profile LIKE ?"
 			} else {
 				searchFilter = " WHERE quality_profile LIKE ?"
 			}
+
 			searchArgs = append(searchArgs, "%"+search+"%")
 		}
 	}
@@ -122,66 +145,127 @@ func apiAdminDropdownData(ctx *gin.Context) {
 
 	switch tableName {
 	case "dbmovies":
-		query := fmt.Sprintf("SELECT title, id FROM dbmovies%s ORDER BY title LIMIT ? OFFSET ?", searchFilter)
-		movies := database.GetrowsN[database.DbstaticOneStringOneInt](false, uint(pageSize+1), query, searchArgs...)
+		query := fmt.Sprintf(
+			"SELECT title, id FROM dbmovies%s ORDER BY title LIMIT ? OFFSET ?",
+			searchFilter,
+		)
+		movies := database.GetrowsN[database.DbstaticOneStringOneInt](
+			false,
+			uint(pageSize+1),
+			query,
+			searchArgs...)
+
 		hasMore = len(movies) > pageSize
 		if hasMore {
 			movies = movies[:pageSize]
 		}
+
 		for _, movie := range movies {
 			options = append(options, createSelect2Option(movie.Num, movie.Str))
 		}
+
 	case "dbseries":
-		query := fmt.Sprintf("SELECT seriename, id FROM dbseries%s ORDER BY seriename LIMIT ? OFFSET ?", searchFilter)
-		series := database.GetrowsN[database.DbstaticOneStringOneInt](false, uint(pageSize+1), query, searchArgs...)
+		query := fmt.Sprintf(
+			"SELECT seriename, id FROM dbseries%s ORDER BY seriename LIMIT ? OFFSET ?",
+			searchFilter,
+		)
+		series := database.GetrowsN[database.DbstaticOneStringOneInt](
+			false,
+			uint(pageSize+1),
+			query,
+			searchArgs...)
+
 		hasMore = len(series) > pageSize
 		if hasMore {
 			series = series[:pageSize]
 		}
+
 		for _, serie := range series {
 			options = append(options, createSelect2Option(serie.Num, serie.Str))
 		}
+
 	case "dbserie_episodes":
-		query := fmt.Sprintf("SELECT identifier, title, id FROM dbserie_episodes%s ORDER BY identifier LIMIT ? OFFSET ?", searchFilter)
-		episodes := database.GetrowsN[syncops.DbstaticTwoStringOneInt](false, uint(pageSize+1), query, searchArgs...)
+		query := fmt.Sprintf(
+			"SELECT identifier, title, id FROM dbserie_episodes%s ORDER BY identifier LIMIT ? OFFSET ?",
+			searchFilter,
+		)
+		episodes := database.GetrowsN[syncops.DbstaticTwoStringOneInt](
+			false,
+			uint(pageSize+1),
+			query,
+			searchArgs...)
+
 		hasMore = len(episodes) > pageSize
 		if hasMore {
 			episodes = episodes[:pageSize]
 		}
+
 		for _, episode := range episodes {
 			label := fmt.Sprintf("%s - %s", episode.Str1, episode.Str2)
+
 			options = append(options, createSelect2Option(episode.Num, label))
 		}
+
 	case "movies":
-		query := fmt.Sprintf("SELECT dbmovies.title || ' - ' || movies.listname, movies.id FROM movies LEFT JOIN dbmovies ON movies.dbmovie_id = dbmovies.id%s ORDER BY dbmovies.title LIMIT ? OFFSET ?", searchFilter)
-		movies := database.GetrowsN[database.DbstaticOneStringOneInt](false, uint(pageSize+1), query, searchArgs...)
+		query := fmt.Sprintf(
+			"SELECT dbmovies.title || ' - ' || movies.listname, movies.id FROM movies LEFT JOIN dbmovies ON movies.dbmovie_id = dbmovies.id%s ORDER BY dbmovies.title LIMIT ? OFFSET ?",
+			searchFilter,
+		)
+		movies := database.GetrowsN[database.DbstaticOneStringOneInt](
+			false,
+			uint(pageSize+1),
+			query,
+			searchArgs...)
+
 		hasMore = len(movies) > pageSize
 		if hasMore {
 			movies = movies[:pageSize]
 		}
+
 		for _, movie := range movies {
 			options = append(options, createSelect2Option(movie.Num, movie.Str))
 		}
+
 	case "series":
-		query := fmt.Sprintf("SELECT dbseries.seriename || ' - ' || series.listname, series.id FROM series LEFT JOIN dbseries ON series.dbserie_id = dbseries.id%s ORDER BY dbseries.seriename LIMIT ? OFFSET ?", searchFilter)
-		series := database.GetrowsN[database.DbstaticOneStringOneInt](false, uint(pageSize+1), query, searchArgs...)
+		query := fmt.Sprintf(
+			"SELECT dbseries.seriename || ' - ' || series.listname, series.id FROM series LEFT JOIN dbseries ON series.dbserie_id = dbseries.id%s ORDER BY dbseries.seriename LIMIT ? OFFSET ?",
+			searchFilter,
+		)
+		series := database.GetrowsN[database.DbstaticOneStringOneInt](
+			false,
+			uint(pageSize+1),
+			query,
+			searchArgs...)
+
 		hasMore = len(series) > pageSize
 		if hasMore {
 			series = series[:pageSize]
 		}
+
 		for _, serie := range series {
 			options = append(options, createSelect2Option(serie.Num, serie.Str))
 		}
+
 	case "serie_episodes":
-		query := fmt.Sprintf("SELECT COALESCE(dbseries.seriename, 'Unknown Series') || ' - ' || COALESCE(CASE WHEN dbserie_episodes.identifier IS NOT NULL AND dbserie_episodes.identifier != 'S00E00' THEN dbserie_episodes.identifier ELSE 'ID:' || serie_episodes.id END, 'Unknown') || ' - ' || COALESCE(CASE WHEN dbserie_episodes.title IS NOT NULL AND TRIM(dbserie_episodes.title) != '' THEN dbserie_episodes.title ELSE 'Episode ' || COALESCE(dbserie_episodes.episode, 'Unknown') END, 'Unknown Episode') || ' (' || series.listname || ')', serie_episodes.id FROM serie_episodes LEFT JOIN dbserie_episodes ON serie_episodes.dbserie_episode_id = dbserie_episodes.id LEFT JOIN series ON serie_episodes.serie_id = series.id LEFT JOIN dbseries ON series.dbserie_id = dbseries.id%s ORDER BY dbseries.seriename, series.listname, dbserie_episodes.season, dbserie_episodes.episode LIMIT ? OFFSET ?", searchFilter)
-		episodes := database.GetrowsN[database.DbstaticOneStringOneInt](false, uint(pageSize+1), query, searchArgs...)
+		query := fmt.Sprintf(
+			"SELECT COALESCE(dbseries.seriename, 'Unknown Series') || ' - ' || COALESCE(CASE WHEN dbserie_episodes.identifier IS NOT NULL AND dbserie_episodes.identifier != 'S00E00' THEN dbserie_episodes.identifier ELSE 'ID:' || serie_episodes.id END, 'Unknown') || ' - ' || COALESCE(CASE WHEN dbserie_episodes.title IS NOT NULL AND TRIM(dbserie_episodes.title) != '' THEN dbserie_episodes.title ELSE 'Episode ' || COALESCE(dbserie_episodes.episode, 'Unknown') END, 'Unknown Episode') || ' (' || series.listname || ')', serie_episodes.id FROM serie_episodes LEFT JOIN dbserie_episodes ON serie_episodes.dbserie_episode_id = dbserie_episodes.id LEFT JOIN series ON serie_episodes.serie_id = series.id LEFT JOIN dbseries ON series.dbserie_id = dbseries.id%s ORDER BY dbseries.seriename, series.listname, dbserie_episodes.season, dbserie_episodes.episode LIMIT ? OFFSET ?",
+			searchFilter,
+		)
+		episodes := database.GetrowsN[database.DbstaticOneStringOneInt](
+			false,
+			uint(pageSize+1),
+			query,
+			searchArgs...)
+
 		hasMore = len(episodes) > pageSize
 		if hasMore {
 			episodes = episodes[:pageSize]
 		}
+
 		for _, episode := range episodes {
 			options = append(options, createSelect2Option(episode.Num, episode.Str))
 		}
+
 	case "qualities":
 		// Determine quality type based on field name
 		var typeFilter string
@@ -205,52 +289,109 @@ func apiAdminDropdownData(ctx *gin.Context) {
 			searchFilter = searchFilter + typeFilter
 		}
 
-		query := fmt.Sprintf("SELECT name, id FROM qualities%s ORDER BY name LIMIT ? OFFSET ?", searchFilter)
-		qualities := database.GetrowsN[database.DbstaticOneStringOneInt](false, uint(pageSize+1), query, searchArgs...)
+		query := fmt.Sprintf(
+			"SELECT name, id FROM qualities%s ORDER BY name LIMIT ? OFFSET ?",
+			searchFilter,
+		)
+		qualities := database.GetrowsN[database.DbstaticOneStringOneInt](
+			false,
+			uint(pageSize+1),
+			query,
+			searchArgs...)
+
 		hasMore = len(qualities) > pageSize
 		if hasMore {
 			qualities = qualities[:pageSize]
 		}
+
 		for _, quality := range qualities {
 			options = append(options, createSelect2Option(quality.Num, quality.Str))
 		}
+
 	case "listnames":
 		var query string
 		switch tableName {
 		case "movies":
-			query = fmt.Sprintf("SELECT DISTINCT listname, listname FROM movies%s ORDER BY listname LIMIT ? OFFSET ?", searchFilter)
+			query = fmt.Sprintf(
+				"SELECT DISTINCT listname, listname FROM movies%s ORDER BY listname LIMIT ? OFFSET ?",
+				searchFilter,
+			)
+
 		case "series":
-			query = fmt.Sprintf("SELECT DISTINCT listname, listname FROM series%s ORDER BY listname LIMIT ? OFFSET ?", searchFilter)
+			query = fmt.Sprintf(
+				"SELECT DISTINCT listname, listname FROM series%s ORDER BY listname LIMIT ? OFFSET ?",
+				searchFilter,
+			)
+
 		default:
-			query = fmt.Sprintf("SELECT DISTINCT listname, listname FROM %s%s ORDER BY listname LIMIT ? OFFSET ?", tableName, searchFilter)
+			query = fmt.Sprintf(
+				"SELECT DISTINCT listname, listname FROM %s%s ORDER BY listname LIMIT ? OFFSET ?",
+				tableName,
+				searchFilter,
+			)
 		}
-		listnames := database.GetrowsN[database.DbstaticTwoString](false, uint(pageSize+1), query, searchArgs...)
+
+		listnames := database.GetrowsN[database.DbstaticTwoString](
+			false,
+			uint(pageSize+1),
+			query,
+			searchArgs...)
+
 		hasMore = len(listnames) > pageSize
 		if hasMore {
 			listnames = listnames[:pageSize]
 		}
+
 		for _, listname := range listnames {
 			options = append(options, createSelect2OptionString(listname.Str1, listname.Str1))
 		}
+
 	case "quality_profiles":
 		var query string
 		switch tableName {
 		case "movies":
-			query = fmt.Sprintf("SELECT DISTINCT quality_profile, quality_profile FROM movies%s ORDER BY quality_profile LIMIT ? OFFSET ?", searchFilter)
+			query = fmt.Sprintf(
+				"SELECT DISTINCT quality_profile, quality_profile FROM movies%s ORDER BY quality_profile LIMIT ? OFFSET ?",
+				searchFilter,
+			)
+
 		case "series":
-			query = fmt.Sprintf("SELECT DISTINCT quality_profile, quality_profile FROM serie_episodes%s ORDER BY quality_profile LIMIT ? OFFSET ?", searchFilter)
+			query = fmt.Sprintf(
+				"SELECT DISTINCT quality_profile, quality_profile FROM serie_episodes%s ORDER BY quality_profile LIMIT ? OFFSET ?",
+				searchFilter,
+			)
+
 		case "movie_histories":
-			query = fmt.Sprintf("SELECT DISTINCT quality_profile, quality_profile FROM movie_histories%s ORDER BY quality_profile LIMIT ? OFFSET ?", searchFilter)
+			query = fmt.Sprintf(
+				"SELECT DISTINCT quality_profile, quality_profile FROM movie_histories%s ORDER BY quality_profile LIMIT ? OFFSET ?",
+				searchFilter,
+			)
+
 		case "serie_episode_histories":
-			query = fmt.Sprintf("SELECT DISTINCT quality_profile, quality_profile FROM serie_episode_histories%s ORDER BY quality_profile LIMIT ? OFFSET ?", searchFilter)
+			query = fmt.Sprintf(
+				"SELECT DISTINCT quality_profile, quality_profile FROM serie_episode_histories%s ORDER BY quality_profile LIMIT ? OFFSET ?",
+				searchFilter,
+			)
+
 		default:
-			query = fmt.Sprintf("SELECT DISTINCT quality_profile, quality_profile FROM %s%s ORDER BY quality_profile LIMIT ? OFFSET ?", tableName, searchFilter)
+			query = fmt.Sprintf(
+				"SELECT DISTINCT quality_profile, quality_profile FROM %s%s ORDER BY quality_profile LIMIT ? OFFSET ?",
+				tableName,
+				searchFilter,
+			)
 		}
-		profiles := database.GetrowsN[database.DbstaticTwoString](false, uint(pageSize+1), query, searchArgs...)
+
+		profiles := database.GetrowsN[database.DbstaticTwoString](
+			false,
+			uint(pageSize+1),
+			query,
+			searchArgs...)
+
 		hasMore = len(profiles) > pageSize
 		if hasMore {
 			profiles = profiles[:pageSize]
 		}
+
 		for _, profile := range profiles {
 			if profile.Str1 != "" {
 				options = append(options, createSelect2OptionString(profile.Str1, profile.Str1))
@@ -271,7 +412,7 @@ func apiAdminDropdownData(ctx *gin.Context) {
 // @Success      200    {object} gin.H{"success": bool}
 // @Failure      400    {object} Jsonerror
 // @Failure      401    {object} Jsonerror
-// @Router       /api/admin/table/{name}/insert [post]
+// @Router       /api/admin/table/{name}/insert [post].
 func apiAdminTableInsert(ctx *gin.Context) {
 	tableName, ok := getParamID(ctx, StrName)
 	if !ok {
@@ -296,9 +437,10 @@ func apiAdminTableInsert(ctx *gin.Context) {
 
 		data = make(map[string]any)
 		for key, values := range ctx.Request.PostForm {
-			if strings.HasPrefix(key, "field-") == false {
+			if !strings.HasPrefix(key, "field-") {
 				continue
 			}
+
 			key = strings.TrimPrefix(key, "field-")
 			if len(values) > 0 {
 				data[key] = values[0] // Take first value if multiple
@@ -320,12 +462,13 @@ func apiAdminTableInsert(ctx *gin.Context) {
 // @Success      200    {object} gin.H{"success": bool}
 // @Failure      400    {object} Jsonerror
 // @Failure      401    {object} Jsonerror
-// @Router       /api/admin/table/{name}/update/{index} [post]
+// @Router       /api/admin/table/{name}/update/{index} [post].
 func apiAdminTableUpdate(ctx *gin.Context) {
 	tableName, ok := getParamID(ctx, StrName)
 	if !ok {
 		return
 	}
+
 	indexStr, ok := getParamID(ctx, "index")
 	if !ok {
 		return
@@ -355,9 +498,10 @@ func apiAdminTableUpdate(ctx *gin.Context) {
 
 		data = make(map[string]any)
 		for key, values := range ctx.Request.PostForm {
-			if strings.HasPrefix(key, "field-") == false {
+			if !strings.HasPrefix(key, "field-") {
 				continue
 			}
+
 			key = strings.TrimPrefix(key, "field-")
 			if len(values) > 0 {
 				data[key] = values[0] // Take first value if multiple
@@ -378,12 +522,13 @@ func apiAdminTableUpdate(ctx *gin.Context) {
 // @Success      200    {object} gin.H{"success": bool}
 // @Failure      400    {object} Jsonerror
 // @Failure      401    {object} Jsonerror
-// @Router       /api/admin/table/{name}/delete/{index} [post]
+// @Router       /api/admin/table/{name}/delete/{index} [post].
 func apiAdminTableDelete(ctx *gin.Context) {
 	tableName, ok := getParamID(ctx, StrName)
 	if !ok {
 		return
 	}
+
 	indexStr, ok := getParamID(ctx, "index")
 	if !ok {
 		return
@@ -405,7 +550,7 @@ func apiAdminTableDelete(ctx *gin.Context) {
 // @Param        apikey query     string    true  "apikey"
 // @Success      200    {string}  string  "HTML content"
 // @Failure      401    {object}  Jsonerror
-// @Router       /api/admin [get]
+// @Router       /api/admin [get].
 func apiAdminInterface(ctx *gin.Context) {
 	// Generate HTML using gomponents
 	csrfToken := getCSRFToken(ctx)
@@ -433,12 +578,13 @@ func apiAdminTableDataJson(ctx *gin.Context) {
 	columns := strings.Split(tabledefault.DefaultColumns, ",")
 
 	orderid := getParam(ctx, "iSortCol_0", "0")
+
 	order := columns[logger.StringToInt(orderid)]
 	if logger.ContainsI(order, " as ") {
 		order = strings.Split(order, " as ")[1]
 	}
-	var direction string
-	direction = getParam(ctx, "sSortDir_0", "asc")
+
+	direction := getParam(ctx, "sSortDir_0", "asc")
 
 	orderby := "order by " + order + " " + direction
 	searchValue := getParamValue(ctx, "sSearch")
@@ -475,11 +621,14 @@ func apiAdminTableDataJson(ctx *gin.Context) {
 	case "serie_episode_histories":
 		countTable = "serie_episode_histories"
 	}
+
 	database.Scanrowsdyn(false, "select Count(*) as frequency FROM "+countTable, &total)
 
 	// Build the complete WHERE clause
-	var whereClause string
-	var queryArgs []any
+	var (
+		whereClause string
+		queryArgs   []any
+	)
 
 	if searchValue != "" || customFilters != "" {
 		var conditions []string
@@ -487,11 +636,19 @@ func apiAdminTableDataJson(ctx *gin.Context) {
 		// Add general search condition
 		if searchValue != "" {
 			var aux []any
-			for i := 0; i < tabledefault.DefaultQueryParamCount; i++ {
+			for range tabledefault.DefaultQueryParamCount {
 				aux = append(aux, "%"+searchValue+"%")
 			}
+
 			if tabledefault.DefaultQuery != "" {
-				conditions = append(conditions, strings.TrimPrefix(tabledefault.DefaultQuery, "WHERE "))
+				// Trim both " where " and " WHERE " prefixes (case insensitive)
+				queryCondition := strings.TrimSpace(tabledefault.DefaultQuery)
+				queryCondition = strings.TrimPrefix(queryCondition, "WHERE ")
+				queryCondition = strings.TrimPrefix(queryCondition, "where ")
+				conditions = append(
+					conditions,
+					queryCondition,
+				)
 				queryArgs = append(queryArgs, aux...)
 			}
 		}
@@ -506,8 +663,14 @@ func apiAdminTableDataJson(ctx *gin.Context) {
 			whereClause = "WHERE " + strings.Join(conditions, " AND ")
 		}
 
-		data := database.GetrowsType(tabledefault.Object, false, 1000, "select "+tabledefault.DefaultColumns+" from "+tabledefault.Table+" "+whereClause+" "+orderby+" LIMIT ?, ?", append(queryArgs, start, size)...)
+		data := database.GetrowsType(
+			tabledefault.Object,
+			false,
+			1000,
+			"select "+tabledefault.DefaultColumns+" from "+tabledefault.Table+" "+whereClause+" "+orderby+" LIMIT ?, ?",
+			append(queryArgs, start, size)...)
 		retdata := make([][]string, 0, len(data))
+
 		splitted := strings.Split(tabledefault.DefaultColumns, ",")
 		for _, loop := range data {
 			row := make([]string, 0, len(splitted))
@@ -516,18 +679,26 @@ func apiAdminTableDataJson(ctx *gin.Context) {
 				if logger.ContainsI(v, " as ") {
 					v = strings.Split(v, " as ")[1]
 				}
+
 				row = append(row, fmt.Sprint(loop[v]))
 			}
+
 			retdata = append(retdata, row)
 		}
 
 		// Count filtered results
-		database.Scanrowsdyn(false, "select Count(*) as frequency FROM "+tabledefault.Table+" "+whereClause, &final, queryArgs...)
+		database.Scanrowsdyn(
+			false,
+			"select Count(*) as frequency FROM "+tabledefault.Table+" "+whereClause,
+			&final,
+			queryArgs...)
 		sendDataTablesResponse(ctx, total, final, retdata)
+
 		return
 	} else {
 		data := database.GetrowsType(tabledefault.Object, false, 1000, "select "+tabledefault.DefaultColumns+" from "+tabledefault.Table+" "+orderby+" LIMIT ?, ?", start, size)
 		retdata := make([][]string, 0, len(data))
+
 		splitted := strings.Split(tabledefault.DefaultColumns, ",")
 		for _, loop := range data {
 			row := make([]string, 0, len(splitted))
@@ -536,10 +707,13 @@ func apiAdminTableDataJson(ctx *gin.Context) {
 				if logger.ContainsI(v, " as ") {
 					v = strings.Split(v, " as ")[1]
 				}
+
 				row = append(row, fmt.Sprint(loop[v]))
 			}
+
 			retdata = append(retdata, row)
 		}
+
 		database.Scanrowsdyn(false, "select Count(*) as frequency FROM "+countTable, &final)
 		sendDataTablesResponse(ctx, total, final, retdata)
 	}
@@ -550,20 +724,27 @@ func apiAdminTableDataEditForm(ctx *gin.Context) {
 	if !ok {
 		return
 	}
+
 	id, ok := getParamID(ctx, StrID)
 	if !ok {
 		return
 	}
+
 	var rowMap map[string]any
 
 	switch tableName {
 	case "dbmovies":
 		// Get real movie data using StructscanT
-		movie, err := database.Structscan[database.Dbmovie]("SELECT ID, Title, Year, Imdb_id, Original_title, overview, runtime, genres, original_language, status, vote_average, vote_count, popularity, budget, revenue, created_at, updated_at FROM dbmovies WHERE ID = ?", false, id)
+		movie, err := database.Structscan[database.Dbmovie](
+			"SELECT ID, Title, Year, Imdb_id, Original_title, overview, runtime, genres, original_language, status, vote_average, vote_count, popularity, budget, revenue, created_at, updated_at FROM dbmovies WHERE ID = ?",
+			false,
+			id,
+		)
 		if err != nil {
 			sendBadRequest(ctx, err.Error())
 			return
 		}
+
 		rowMap = map[string]any{
 			"id":                movie.ID,
 			"title":             movie.Title,
@@ -583,12 +764,18 @@ func apiAdminTableDataEditForm(ctx *gin.Context) {
 			"created_at":        movie.CreatedAt,
 			"updated_at":        movie.UpdatedAt,
 		}
+
 	case "dbmovie_titles":
-		dbmovietitle, err := database.Structscan[database.DbmovieTitle]("SELECT id, title, slug, region, created_at, updated_at, dbmovie_id FROM dbmovie_titles WHERE ID = ?", false, id)
+		dbmovietitle, err := database.Structscan[database.DbmovieTitle](
+			"SELECT id, title, slug, region, created_at, updated_at, dbmovie_id FROM dbmovie_titles WHERE ID = ?",
+			false,
+			id,
+		)
 		if err != nil {
 			sendBadRequest(ctx, err.Error())
 			return
 		}
+
 		rowMap = map[string]any{
 			"id":         dbmovietitle.ID,
 			"title":      dbmovietitle.Title,
@@ -598,13 +785,19 @@ func apiAdminTableDataEditForm(ctx *gin.Context) {
 			"updated_at": dbmovietitle.UpdatedAt,
 			"dbmovie_id": dbmovietitle.DbmovieID,
 		}
+
 	case "dbseries":
 		// Get real series data using StructscanT
-		serie, err := database.Structscan[database.Dbserie]("SELECT id, seriename, imdb_id, thetvdb_id, status, firstaired, network, runtime, language, genre, overview, rating, created_at, updated_at FROM dbseries WHERE ID = ?", false, id)
+		serie, err := database.Structscan[database.Dbserie](
+			"SELECT id, seriename, imdb_id, thetvdb_id, status, firstaired, network, runtime, language, genre, overview, rating, created_at, updated_at FROM dbseries WHERE ID = ?",
+			false,
+			id,
+		)
 		if err != nil {
 			sendBadRequest(ctx, err.Error())
 			return
 		}
+
 		rowMap = map[string]any{
 			"id":         serie.ID,
 			"seriename":  serie.Seriename,
@@ -624,11 +817,16 @@ func apiAdminTableDataEditForm(ctx *gin.Context) {
 
 	case "dbserie_episodes":
 		// Get real episode data using StructscanT
-		episode, err := database.Structscan[database.DbserieEpisode]("SELECT id, title, season, episode, identifier, first_aired, overview, runtime, dbserie_id, created_at, updated_at FROM dbserie_episodes WHERE ID = ?", false, id)
+		episode, err := database.Structscan[database.DbserieEpisode](
+			"SELECT id, title, season, episode, identifier, first_aired, overview, runtime, dbserie_id, created_at, updated_at FROM dbserie_episodes WHERE ID = ?",
+			false,
+			id,
+		)
 		if err != nil {
 			sendBadRequest(ctx, err.Error())
 			return
 		}
+
 		rowMap = map[string]any{
 			"id":          episode.ID,
 			"title":       episode.Title,
@@ -645,11 +843,16 @@ func apiAdminTableDataEditForm(ctx *gin.Context) {
 
 	case "dbserie_alternates":
 		// Get real alternate data using StructscanT
-		alt, err := database.Structscan[database.DbserieAlternate]("SELECT id, title, slug, region, dbserie_id, created_at, updated_at FROM dbserie_alternates WHERE ID = ?", false, id)
+		alt, err := database.Structscan[database.DbserieAlternate](
+			"SELECT id, title, slug, region, dbserie_id, created_at, updated_at FROM dbserie_alternates WHERE ID = ?",
+			false,
+			id,
+		)
 		if err != nil {
 			sendBadRequest(ctx, err.Error())
 			return
 		}
+
 		rowMap = map[string]any{
 			"id":         alt.ID,
 			"title":      alt.Title,
@@ -659,13 +862,19 @@ func apiAdminTableDataEditForm(ctx *gin.Context) {
 			"created_at": alt.CreatedAt,
 			"updated_at": alt.UpdatedAt,
 		}
+
 	case "movies":
 		// Get real movies table data using StructscanT
-		movie, err := database.Structscan[database.Movie]("SELECT id, listname, rootpath, dbmovie_id, quality_profile, quality_reached, missing, blacklisted, dont_upgrade, dont_search, created_at, updated_at FROM movies WHERE ID = ?", false, id)
+		movie, err := database.Structscan[database.Movie](
+			"SELECT id, listname, rootpath, dbmovie_id, quality_profile, quality_reached, missing, blacklisted, dont_upgrade, dont_search, created_at, updated_at FROM movies WHERE ID = ?",
+			false,
+			id,
+		)
 		if err != nil {
 			sendBadRequest(ctx, err.Error())
 			return
 		}
+
 		rowMap = map[string]any{
 			"id":              movie.ID,
 			"listname":        movie.Listname,
@@ -680,13 +889,19 @@ func apiAdminTableDataEditForm(ctx *gin.Context) {
 			"created_at":      movie.CreatedAt,
 			"updated_at":      movie.UpdatedAt,
 		}
+
 	case "movie_file_unmatcheds":
 		// Get real movie file unmatched data using StructscanT
-		movieFileUnmatched, err := database.Structscan[database.MovieFileUnmatched]("SELECT id, listname, filepath, parsed_data, last_checked, created_at, updated_at FROM movie_file_unmatcheds WHERE ID = ?", false, id)
+		movieFileUnmatched, err := database.Structscan[database.MovieFileUnmatched](
+			"SELECT id, listname, filepath, parsed_data, last_checked, created_at, updated_at FROM movie_file_unmatcheds WHERE ID = ?",
+			false,
+			id,
+		)
 		if err != nil {
 			sendBadRequest(ctx, err.Error())
 			return
 		}
+
 		rowMap = map[string]any{
 			"id":           movieFileUnmatched.ID,
 			"listname":     movieFileUnmatched.Listname,
@@ -696,13 +911,19 @@ func apiAdminTableDataEditForm(ctx *gin.Context) {
 			"created_at":   movieFileUnmatched.CreatedAt,
 			"updated_at":   movieFileUnmatched.UpdatedAt,
 		}
+
 	case "movie_histories":
 		// Get real movie history data using StructscanT
-		movieHistory, err := database.Structscan[database.MovieHistory]("SELECT id, title, url, indexer, target, quality_profile, created_at, updated_at, downloaded_at, resolution_id, quality_id, codec_id, audio_id, movie_id, dbmovie_id, blacklisted FROM movie_histories WHERE ID = ?", false, id)
+		movieHistory, err := database.Structscan[database.MovieHistory](
+			"SELECT id, title, url, indexer, target, quality_profile, created_at, updated_at, downloaded_at, resolution_id, quality_id, codec_id, audio_id, movie_id, dbmovie_id, blacklisted FROM movie_histories WHERE ID = ?",
+			false,
+			id,
+		)
 		if err != nil {
 			sendBadRequest(ctx, err.Error())
 			return
 		}
+
 		rowMap = map[string]any{
 			"id":              movieHistory.ID,
 			"title":           movieHistory.Title,
@@ -721,13 +942,19 @@ func apiAdminTableDataEditForm(ctx *gin.Context) {
 			"dbmovie_id":      movieHistory.DbmovieID,
 			"blacklisted":     movieHistory.Blacklisted,
 		}
+
 	case "movie_files":
 		// Get real movie files data using StructscanT
-		movieFile, err := database.Structscan[database.MovieFile]("SELECT id, location, extension, quality_profile, created_at, updated_at, resolution_id, quality_id, codec_id, audio_id, movie_id, dbmovie_id, height, width, proper, extended, repack FROM movie_files WHERE ID = ?", false, id)
+		movieFile, err := database.Structscan[database.MovieFile](
+			"SELECT id, location, extension, quality_profile, created_at, updated_at, resolution_id, quality_id, codec_id, audio_id, movie_id, dbmovie_id, height, width, proper, extended, repack FROM movie_files WHERE ID = ?",
+			false,
+			id,
+		)
 		if err != nil {
 			sendBadRequest(ctx, err.Error())
 			return
 		}
+
 		rowMap = map[string]any{
 			"id":              movieFile.ID,
 			"location":        movieFile.Location,
@@ -750,11 +977,16 @@ func apiAdminTableDataEditForm(ctx *gin.Context) {
 
 	case "series":
 		// Get real series table data using StructscanT
-		serie, err := database.Structscan[database.Serie]("SELECT id, listname, rootpath, dbserie_id, dont_upgrade, dont_search, created_at, updated_at FROM series WHERE ID = ?", false, id)
+		serie, err := database.Structscan[database.Serie](
+			"SELECT id, listname, rootpath, dbserie_id, dont_upgrade, dont_search, created_at, updated_at FROM series WHERE ID = ?",
+			false,
+			id,
+		)
 		if err != nil {
 			sendBadRequest(ctx, err.Error())
 			return
 		}
+
 		rowMap = map[string]any{
 			"id":           serie.ID,
 			"listname":     serie.Listname,
@@ -768,11 +1000,16 @@ func apiAdminTableDataEditForm(ctx *gin.Context) {
 
 	case "serie_episodes":
 		// Get real serie episodes data using StructscanT
-		episode, err := database.Structscan[database.SerieEpisode]("SELECT id, quality_profile, lastscan, created_at, updated_at, dbserie_episode_id, serie_id, dbserie_id, blacklisted, quality_reached, missing, dont_upgrade, dont_search, ignore_runtime FROM serie_episodes WHERE ID = ?", false, id)
+		episode, err := database.Structscan[database.SerieEpisode](
+			"SELECT id, quality_profile, lastscan, created_at, updated_at, dbserie_episode_id, serie_id, dbserie_id, blacklisted, quality_reached, missing, dont_upgrade, dont_search, ignore_runtime FROM serie_episodes WHERE ID = ?",
+			false,
+			id,
+		)
 		if err != nil {
 			sendBadRequest(ctx, err.Error())
 			return
 		}
+
 		rowMap = map[string]any{
 			"id":                 episode.ID,
 			"quality_profile":    episode.QualityProfile,
@@ -789,13 +1026,19 @@ func apiAdminTableDataEditForm(ctx *gin.Context) {
 			"dont_search":        episode.DontSearch,
 			"ignore_runtime":     episode.IgnoreRuntime,
 		}
+
 	case "serie_episode_files":
 		// Get real serie files
-		serieFile, err := database.Structscan[database.SerieEpisodeFile]("SELECT id, location, filename, extension, quality_profile, created_at, updated_at, resolution_id, quality_id, codec_id, audio_id, serie_id, serie_episode_id, dbserie_id, dbserie_episode_id, proper, extended, repack FROM serie_episode_files WHERE ID = ?", false, id)
+		serieFile, err := database.Structscan[database.SerieEpisodeFile](
+			"SELECT id, location, filename, extension, quality_profile, created_at, updated_at, resolution_id, quality_id, codec_id, audio_id, serie_id, serie_episode_id, dbserie_id, dbserie_episode_id, proper, extended, repack FROM serie_episode_files WHERE ID = ?",
+			false,
+			id,
+		)
 		if err != nil {
 			sendBadRequest(ctx, err.Error())
 			return
 		}
+
 		rowMap = map[string]any{
 			"id":                 serieFile.ID,
 			"location":           serieFile.Location,
@@ -818,13 +1061,19 @@ func apiAdminTableDataEditForm(ctx *gin.Context) {
 			"extended":           serieFile.Extended,
 			"repack":             serieFile.Repack,
 		}
+
 	case "serie_file_unmatcheds":
 		// Get real serie file unmatched data using StructscanT
-		serieFileUnmatched, err := database.Structscan[database.SerieFileUnmatched]("SELECT id, listname, filepath, parsed_data, last_checked, created_at, updated_at FROM serie_file_unmatcheds WHERE ID = ?", false, id)
+		serieFileUnmatched, err := database.Structscan[database.SerieFileUnmatched](
+			"SELECT id, listname, filepath, parsed_data, last_checked, created_at, updated_at FROM serie_file_unmatcheds WHERE ID = ?",
+			false,
+			id,
+		)
 		if err != nil {
 			sendBadRequest(ctx, err.Error())
 			return
 		}
+
 		rowMap = map[string]any{
 			"id":           serieFileUnmatched.ID,
 			"listname":     serieFileUnmatched.Listname,
@@ -834,13 +1083,19 @@ func apiAdminTableDataEditForm(ctx *gin.Context) {
 			"created_at":   serieFileUnmatched.CreatedAt,
 			"updated_at":   serieFileUnmatched.UpdatedAt,
 		}
+
 	case "serie_episode_histories":
 		// Get real serie episode history data using StructscanT
-		serieEpisodeHistory, err := database.Structscan[database.SerieEpisodeHistory]("SELECT id, title, url, indexer, target, quality_profile, created_at, updated_at, downloaded_at, resolution_id, quality_id, codec_id, audio_id, serie_id, serie_episode_id, dbserie_id, dbserie_episode_id FROM serie_episode_histories WHERE ID = ?", false, id)
+		serieEpisodeHistory, err := database.Structscan[database.SerieEpisodeHistory](
+			"SELECT id, title, url, indexer, target, quality_profile, created_at, updated_at, downloaded_at, resolution_id, quality_id, codec_id, audio_id, serie_id, serie_episode_id, dbserie_id, dbserie_episode_id FROM serie_episode_histories WHERE ID = ?",
+			false,
+			id,
+		)
 		if err != nil {
 			sendBadRequest(ctx, err.Error())
 			return
 		}
+
 		rowMap = map[string]any{
 			"id":                 serieEpisodeHistory.ID,
 			"title":              serieEpisodeHistory.Title,
@@ -860,13 +1115,19 @@ func apiAdminTableDataEditForm(ctx *gin.Context) {
 			"dbserie_episode_id": serieEpisodeHistory.DbserieEpisodeID,
 			"dbserie_id":         serieEpisodeHistory.DbserieID,
 		}
+
 	case "job_histories":
 		// Get real job history data using StructscanT
-		job, err := database.Structscan[database.JobHistory]("SELECT id, job_type, job_category, job_group, started, ended, created_at, updated_at FROM job_histories WHERE ID = ?", false, id)
+		job, err := database.Structscan[database.JobHistory](
+			"SELECT id, job_type, job_category, job_group, started, ended, created_at, updated_at FROM job_histories WHERE ID = ?",
+			false,
+			id,
+		)
 		if err != nil {
 			sendBadRequest(ctx, err.Error())
 			return
 		}
+
 		rowMap = map[string]any{
 			"id":           job.ID,
 			"job_type":     job.JobType,
@@ -877,13 +1138,19 @@ func apiAdminTableDataEditForm(ctx *gin.Context) {
 			"created_at":   job.CreatedAt,
 			"updated_at":   job.UpdatedAt,
 		}
+
 	case "qualities":
 		// Get real quality data using StructscanT
-		quality, err := database.Structscan[database.Qualities]("SELECT id, name, regex, strings, created_at, updated_at, type, priority, regexgroup, use_regex FROM qualities WHERE ID = ?", false, id)
+		quality, err := database.Structscan[database.Qualities](
+			"SELECT id, name, regex, strings, created_at, updated_at, type, priority, regexgroup, use_regex FROM qualities WHERE ID = ?",
+			false,
+			id,
+		)
 		if err != nil {
 			sendBadRequest(ctx, err.Error())
 			return
 		}
+
 		rowMap = map[string]any{
 			"id":         quality.ID,
 			"name":       quality.Name,
@@ -897,6 +1164,7 @@ func apiAdminTableDataEditForm(ctx *gin.Context) {
 			"use_regex":  quality.UseRegex,
 		}
 	}
+
 	var buf strings.Builder
 	renderTableEditForm(tableName, rowMap, id, getCSRFToken(ctx)).Render(&buf)
 	ctx.Header("Content-Type", "text/html; charset=utf-8")

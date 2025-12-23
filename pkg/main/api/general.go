@@ -80,6 +80,11 @@ func AddGeneralRoutes(routerapi *gin.RouterGroup) {
 		routerapi.POST("/cache/add", apiCacheAdd)
 		routerapi.DELETE("/cache/remove/:key", apiCacheRemove)
 		routerapi.DELETE("/cache/clear/:type", apiCacheClear)
+
+		routerapi.GET("/statistics", apiStatistics)
+		routerapi.GET("/statistics/movies", apiMovieStatistics)
+		routerapi.GET("/statistics/series", apiSeriesStatistics)
+		routerapi.GET("/statistics/workers", apiWorkerStatistics)
 	}
 }
 
@@ -105,8 +110,14 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 
 	// All admin and manage routes are automatically protected by the middleware
 	routerapi.GET("/admin", apiAdminInterface)
-	routerapi.GET("/admin/:configtype", adminPageConfig)
-	routerapi.POST("/admin/:configtype/update", HandleConfigUpdate)
+	routerapi.GET("/admin/config/:configtype", adminPageConfig)
+	routerapi.POST("/admin/config/:configtype/update", HandleConfigUpdate)
+	routerapi.GET("/admin/seriesconfig", renderSeriesConfigPage)
+	routerapi.GET("/admin/seriesconfig/add", handleSeriesConfigAdd)
+	routerapi.GET("/admin/seriesconfig/edit", handleSeriesConfigEdit)
+	routerapi.GET("/admin/seriesconfig/delete", handleSeriesConfigDelete)
+	routerapi.POST("/admin/seriesconfig/update", handleSeriesConfigUpdate)
+	routerapi.GET("/admin/seriesconfig/helper", handleScraperHelper)
 	routerapi.GET("/admin/testparse", adminPageTestParse)
 	routerapi.POST("/admin/testparse", HandleTestParse)
 	routerapi.GET("/admin/moviemetadata", adminPageMovieMetadata)
@@ -160,6 +171,18 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 	routerapi.POST("/admin/quality-reorder/reset-rules", HandleQualityReorderResetRules)
 	routerapi.GET("/admin/quality-profile-rules", HandleQualityProfileRules)
 
+	routerapi.GET("/admin/statistics", webStatisticsPage)
+	routerapi.GET("/admin/statistics/data", webStatisticsData)
+	routerapi.GET("/admin/statistics/movies", webStatisticsMovies)
+	routerapi.GET("/admin/statistics/series", webStatisticsSeries)
+	routerapi.GET("/admin/statistics/storage", webStatisticsStorage)
+	routerapi.GET("/admin/statistics/workers", webStatisticsWorkers)
+	routerapi.GET("/admin/statistics/http", webStatisticsHTTP)
+	routerapi.GET("/admin/statistics/metadata", webStatisticsMetadata)
+	routerapi.GET("/admin/statistics/notification", webStatisticsNotification)
+	routerapi.GET("/admin/statistics/downloader", webStatisticsDownloader)
+	routerapi.GET("/admin/statistics/system", webStatisticsSystem)
+
 	routerapi.GET("/admin/regex-tester", adminPageRegexTester)
 	routerapi.POST("/admin/regex-tester/test", HandleRegexTesting)
 	routerapi.GET("/admin/naming-generator", adminPageNamingGenerator)
@@ -194,14 +217,23 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 			ctx.String(http.StatusOK, "")
 			return
 		}
+
 		formKeys := make(map[any]bool)
 		for key := range ctx.Request.PostForm {
-			if (strings.Contains(key, "_Name")) == false || (strings.Contains(key, "media_main_"+ctx.Param("typev")+"_")) == false {
+			if !(strings.Contains(key, "_Name")) ||
+				!(strings.Contains(key, "media_main_"+ctx.Param("typev")+"_")) {
 				continue
 			}
+
 			formKeys[strings.Split(key, "_")[3]] = true
 		}
-		form := renderMediaForm(ctx.Param("typev"), &config.MediaTypeConfig{Name: "new" + strconv.Itoa(len(formKeys))}, getCSRFToken(ctx))
+
+		form := renderMediaForm(
+			ctx.Param("typev"),
+			&config.MediaTypeConfig{Name: "new" + strconv.Itoa(len(formKeys))},
+			getCSRFToken(ctx),
+		)
+
 		var buf strings.Builder
 		form.Render(&buf)
 		ctx.Header("Content-Type", "text/html")
@@ -212,14 +244,20 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 			ctx.String(http.StatusOK, "")
 			return
 		}
+
 		formKeys := make(map[any]bool)
 		for key := range ctx.Request.PostForm {
-			if (strings.Contains(key, "_Name")) == false || (strings.Contains(key, "downloader_")) == false {
+			if !(strings.Contains(key, "_Name")) || !(strings.Contains(key, "downloader_")) {
 				continue
 			}
+
 			formKeys[strings.Split(key, "_")[1]] = true
 		}
-		form := renderDownloaderForm(&config.DownloaderConfig{Name: "new" + strconv.Itoa(len(formKeys))})
+
+		form := renderDownloaderForm(
+			&config.DownloaderConfig{Name: "new" + strconv.Itoa(len(formKeys))},
+		)
+
 		var buf strings.Builder
 		form.Render(&buf)
 		ctx.Header("Content-Type", "text/html")
@@ -230,14 +268,18 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 			ctx.String(http.StatusOK, "")
 			return
 		}
+
 		formKeys := make(map[any]bool)
 		for key := range ctx.Request.PostForm {
-			if (strings.Contains(key, "_Name")) == false || (strings.Contains(key, "lists_")) == false {
+			if !(strings.Contains(key, "_Name")) || !(strings.Contains(key, "lists_")) {
 				continue
 			}
+
 			formKeys[strings.Split(key, "_")[1]] = true
 		}
+
 		form := renderListsForm(&config.ListsConfig{Name: "new" + strconv.Itoa(len(formKeys))})
+
 		var buf strings.Builder
 		form.Render(&buf)
 		ctx.Header("Content-Type", "text/html")
@@ -248,14 +290,20 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 			ctx.String(http.StatusOK, "")
 			return
 		}
+
 		formKeys := make(map[any]bool)
 		for key := range ctx.Request.PostForm {
-			if (strings.Contains(key, "_Name")) == false || (strings.Contains(key, "indexers_")) == false {
+			if !(strings.Contains(key, "_Name")) || !(strings.Contains(key, "indexers_")) {
 				continue
 			}
+
 			formKeys[strings.Split(key, "_")[1]] = true
 		}
-		form := renderIndexersForm(&config.IndexersConfig{Name: "new" + strconv.Itoa(len(formKeys))})
+
+		form := renderIndexersForm(
+			&config.IndexersConfig{Name: "new" + strconv.Itoa(len(formKeys))},
+		)
+
 		var buf strings.Builder
 		form.Render(&buf)
 		ctx.Header("Content-Type", "text/html")
@@ -266,14 +314,18 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 			ctx.String(http.StatusOK, "")
 			return
 		}
+
 		formKeys := make(map[any]bool)
 		for key := range ctx.Request.PostForm {
-			if (strings.Contains(key, "_Name")) == false || (strings.Contains(key, "paths_")) == false {
+			if !(strings.Contains(key, "_Name")) || !(strings.Contains(key, "paths_")) {
 				continue
 			}
+
 			formKeys[strings.Split(key, "_")[1]] = true
 		}
+
 		form := renderPathsForm(&config.PathsConfig{Name: "new" + strconv.Itoa(len(formKeys))})
+
 		var buf strings.Builder
 		form.Render(&buf)
 		ctx.Header("Content-Type", "text/html")
@@ -284,14 +336,20 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 			ctx.String(http.StatusOK, "")
 			return
 		}
+
 		formKeys := make(map[any]bool)
 		for key := range ctx.Request.PostForm {
-			if (strings.Contains(key, "_Name")) == false || (strings.Contains(key, "notifications_")) == false {
+			if !(strings.Contains(key, "_Name")) || !(strings.Contains(key, "notifications_")) {
 				continue
 			}
+
 			formKeys[strings.Split(key, "_")[1]] = true
 		}
-		form := renderNotificationForm(&config.NotificationConfig{Name: "new" + strconv.Itoa(len(formKeys))})
+
+		form := renderNotificationForm(
+			&config.NotificationConfig{Name: "new" + strconv.Itoa(len(formKeys))},
+		)
+
 		var buf strings.Builder
 		form.Render(&buf)
 		ctx.Header("Content-Type", "text/html")
@@ -302,14 +360,18 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 			ctx.String(http.StatusOK, "")
 			return
 		}
+
 		formKeys := make(map[any]bool)
 		for key := range ctx.Request.PostForm {
-			if (strings.Contains(key, "_Name")) == false || (strings.Contains(key, "regex_")) == false {
+			if !(strings.Contains(key, "_Name")) || !(strings.Contains(key, "regex_")) {
 				continue
 			}
+
 			formKeys[strings.Split(key, "_")[1]] = true
 		}
+
 		form := renderRegexForm(&config.RegexConfig{Name: "new" + strconv.Itoa(len(formKeys))})
+
 		var buf strings.Builder
 		form.Render(&buf)
 		ctx.Header("Content-Type", "text/html")
@@ -320,14 +382,21 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 			ctx.String(http.StatusOK, "")
 			return
 		}
+
 		formKeys := make(map[any]bool)
 		for key := range ctx.Request.PostForm {
-			if (strings.Contains(key, "_Name")) == false || (strings.Contains(key, "quality_main_")) == false {
+			if !(strings.Contains(key, "_Name")) || !(strings.Contains(key, "quality_main_")) {
 				continue
 			}
+
 			formKeys[strings.Split(key, "_")[2]] = true
 		}
-		form := renderQualityForm(&config.QualityConfig{Name: "new" + strconv.Itoa(len(formKeys))}, getCSRFToken(ctx))
+
+		form := renderQualityForm(
+			&config.QualityConfig{Name: "new" + strconv.Itoa(len(formKeys))},
+			getCSRFToken(ctx),
+		)
+
 		var buf strings.Builder
 		form.Render(&buf)
 		ctx.Header("Content-Type", "text/html")
@@ -335,6 +404,7 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 	})
 	routerapi.Any("/manage/qualityreorder/form/:typev", func(ctx *gin.Context) {
 		var count int
+
 		a, err := goquery.NewDocumentFromReader(ctx.Request.Body)
 		if err == nil {
 			a.Find("#qualityContainer").Children().Each(
@@ -349,7 +419,9 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 				},
 			)
 		}
+
 		form := renderQualityReorderForm(count, ctx.Param("typev"), &config.QualityReorderConfig{})
+
 		var buf strings.Builder
 		form.Render(&buf)
 		ctx.Header("Content-Type", "text/html")
@@ -357,6 +429,7 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 	})
 	routerapi.Any("/manage/qualityindexer/form/:typev", func(ctx *gin.Context) {
 		var count int
+
 		a, err := goquery.NewDocumentFromReader(ctx.Request.Body)
 		if err == nil {
 			a.Find("#qualityContainer").Children().Each(
@@ -371,7 +444,9 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 				},
 			)
 		}
+
 		form := renderQualityIndexerForm(count, ctx.Param("typev"), &config.QualityIndexerConfig{})
+
 		var buf strings.Builder
 		form.Render(&buf)
 		ctx.Header("Content-Type", "text/html")
@@ -382,14 +457,20 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 			ctx.String(http.StatusOK, "")
 			return
 		}
+
 		formKeys := make(map[any]bool)
 		for key := range ctx.Request.PostForm {
-			if (strings.Contains(key, "_Name")) == false || (strings.Contains(key, "scheduler_")) == false {
+			if !(strings.Contains(key, "_Name")) || !(strings.Contains(key, "scheduler_")) {
 				continue
 			}
+
 			formKeys[strings.Split(key, "_")[1]] = true
 		}
-		form := renderSchedulerForm(&config.SchedulerConfig{Name: "new" + strconv.Itoa(len(formKeys))})
+
+		form := renderSchedulerForm(
+			&config.SchedulerConfig{Name: "new" + strconv.Itoa(len(formKeys))},
+		)
+
 		var buf strings.Builder
 		form.Render(&buf)
 		ctx.Header("Content-Type", "text/html")
@@ -400,20 +481,29 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 			ctx.String(http.StatusOK, "")
 			return
 		}
+
 		prefix := "media_" + ctx.Param("prefix") + "_" + ctx.Param("configv") + "_data"
 		logger.Logtype("info", 1).Str("prefix", prefix).Msg("prefix")
+
 		formKeys := make(map[any]bool)
 		for key := range ctx.Request.PostForm {
 			logger.Logtype("info", 1).Str("key", key).Msg("key")
-			if (strings.Contains(key, "_TemplatePath")) == false || (strings.Contains(key, prefix+"_")) == false {
+
+			if !(strings.Contains(key, "_TemplatePath")) || !(strings.Contains(key, prefix+"_")) {
 				continue
 			}
-			logger.Logtype("info", 1).Str("splitted", fmt.Sprintf("%v", strings.Split(key, "_"))).Msg("key")
+
+			logger.Logtype("info", 1).
+				Str("splitted", fmt.Sprintf("%v", strings.Split(key, "_"))).
+				Msg("key")
+
 			formKeys[strings.Split(key, "_")[4]] = true
 		}
-		jv, _ := json.Marshal(formKeys)
-		logger.Logtype("info", 1).Str("keys", string(jv)).Msg("keys")
+
+		logger.Logtype("info", 1).Any("keys", formKeys).Msg("keys")
+
 		form := renderMediaDataForm(prefix, len(formKeys), &config.MediaDataConfig{})
+
 		var buf strings.Builder
 		form.Render(&buf)
 		ctx.Header("Content-Type", "text/html")
@@ -424,15 +514,20 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 			ctx.String(http.StatusOK, "")
 			return
 		}
+
 		prefix := "media_" + ctx.Param("prefix") + "_" + ctx.Param("configv") + "_dataimport"
+
 		formKeys := make(map[any]bool)
 		for key := range ctx.Request.PostForm {
-			if (strings.Contains(key, "_TemplatePath")) == false || (strings.Contains(key, prefix+"_")) == false {
+			if !(strings.Contains(key, "_TemplatePath")) || !(strings.Contains(key, prefix+"_")) {
 				continue
 			}
+
 			formKeys[strings.Split(key, "_")[4]] = true
 		}
+
 		form := renderMediaDataImportForm(prefix, len(formKeys), &config.MediaDataImportConfig{})
+
 		var buf strings.Builder
 		form.Render(&buf)
 		ctx.Header("Content-Type", "text/html")
@@ -443,15 +538,25 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 			ctx.String(http.StatusOK, "")
 			return
 		}
+
 		prefix := "media_" + ctx.Param("prefix") + "_" + ctx.Param("configv") + "_notification"
+
 		formKeys := make(map[any]bool)
 		for key := range ctx.Request.PostForm {
-			if (strings.Contains(key, "_MapNotification")) == false || (strings.Contains(key, prefix+"_")) == false {
+			if !(strings.Contains(key, "_MapNotification")) ||
+				!(strings.Contains(key, prefix+"_")) {
 				continue
 			}
+
 			formKeys[strings.Split(key, "_")[4]] = true
 		}
-		form := renderMediaNotificationForm(prefix, len(formKeys), &config.MediaNotificationConfig{})
+
+		form := renderMediaNotificationForm(
+			prefix,
+			len(formKeys),
+			&config.MediaNotificationConfig{},
+		)
+
 		var buf strings.Builder
 		form.Render(&buf)
 		ctx.Header("Content-Type", "text/html")
@@ -462,15 +567,20 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 			ctx.String(http.StatusOK, "")
 			return
 		}
+
 		prefix := "media_" + ctx.Param("prefix") + "_" + ctx.Param("configv") + "_lists"
+
 		formKeys := make(map[any]bool)
 		for key := range ctx.Request.PostForm {
-			if (strings.Contains(key, "_Name")) == false || (strings.Contains(key, prefix+"_")) == false {
+			if !(strings.Contains(key, "_Name")) || !(strings.Contains(key, prefix+"_")) {
 				continue
 			}
+
 			formKeys[strings.Split(key, "_")[4]] = true
 		}
+
 		form := renderMediaListsForm(prefix, len(formKeys), &config.MediaListsConfig{})
+
 		var buf strings.Builder
 		form.Render(&buf)
 		ctx.Header("Content-Type", "text/html")
@@ -497,8 +607,10 @@ type apiparse struct {
 func apiDebugStats(ctx *gin.Context) {
 	var gc debug.GCStats
 	debug.ReadGCStats(&gc)
+
 	var mem runtime.MemStats
 	runtime.ReadMemStats(&mem)
+
 	gcjson, _ := json.Marshal(gc)
 	memjson, _ := json.Marshal(mem)
 
@@ -560,6 +672,7 @@ func apiQueueListStarted(ctx *gin.Context) {
 	if query.OrderBy == "" {
 		query.OrderBy = "ID desc"
 	}
+
 	if query.Limit == 0 {
 		query.Limit = 100
 	}
@@ -592,6 +705,7 @@ func apiTraktGetStoreToken(ctx *gin.Context) {
 	if !ok {
 		return
 	}
+
 	apiexternal.SetTraktToken(apiexternal.GetTraktAuthToken(code))
 
 	config.UpdateCfgEntry(config.Conf{Name: "trakt_token", Data: apiexternal.GetTraktToken()})
@@ -612,6 +726,7 @@ func apiTraktGetUserList(ctx *gin.Context) {
 	if !ok {
 		return
 	}
+
 	listParam, ok := getParamID(ctx, "list")
 	if !ok {
 		return
@@ -631,6 +746,7 @@ func apiTraktGetUserList(ctx *gin.Context) {
 // @Router       /api/slug [get].
 func apiDBRefreshSlugs(ctx *gin.Context) {
 	dbmovies := database.QueryDbmovie(database.Querywithargs{})
+
 	var slug string
 	for idx := range dbmovies {
 		slug = logger.StringToSlug(dbmovies[idx].Title)
@@ -662,6 +778,7 @@ func apiDBRefreshSlugs(ctx *gin.Context) {
 			&dbserietitles[idx].ID,
 		)
 	}
+
 	sendSuccess(ctx, StrOK)
 }
 
@@ -679,16 +796,19 @@ func apiParseString(ctx *gin.Context) {
 	if !bindJSONWithValidation(ctx, &getcfg) {
 		return
 	}
+
 	var cfgv string
 	if getcfg.Typ == logger.StrMovie {
 		cfgv = "movie_" + getcfg.Config
 	} else {
 		cfgv = "serie_" + getcfg.Config
 	}
+
 	cfgp := config.GetSettingsMedia(cfgv)
 	parse := parser.ParseFile(getcfg.Name, false, false, cfgp, -1)
 	// parse := parser.NewFileParser(getcfg.Name, cfgp, false, -1)
 	parser.GetPriorityMapQual(parse, cfgp, config.GetSettingsQuality(getcfg.Quality), true, true)
+
 	err := parser.GetDBIDs(parse, cfgp, true)
 	ctx.JSON(http.StatusOK, gin.H{"data": parse, "error": err})
 	parse.Close()
@@ -708,12 +828,14 @@ func apiParseFile(ctx *gin.Context) {
 	if !bindJSONWithValidation(ctx, &getcfg) {
 		return
 	}
+
 	var cfgv string
 	if getcfg.Typ == logger.StrMovie {
 		cfgv = "movie_" + getcfg.Config
 	} else {
 		cfgv = "serie_" + getcfg.Config
 	}
+
 	cfgp := config.GetSettingsMedia(cfgv)
 	// defer parse.Close()
 	parse := parser.ParseFile(getcfg.Path, true, false, cfgp, -1)
@@ -801,9 +923,11 @@ func apiDBBackup(ctx *gin.Context) {
 		worker.StopCronWorker()
 		worker.CloseWorkerPools()
 	}
+
 	backupto := "./backup/data.db." + database.GetVersion() + "." + time.Now().
 		Format("20060102_150405")
 	database.Backup(&backupto, config.GetSettingsGeneral().MaxDatabaseBackups)
+
 	if config.GetSettingsGeneral().DatabaseBackupStopTasks {
 		worker.InitWorkerPools(
 			config.GetSettingsGeneral().WorkerSearch,
@@ -814,6 +938,7 @@ func apiDBBackup(ctx *gin.Context) {
 		)
 		worker.StartCronWorker()
 	}
+
 	sendSuccess(ctx, StrOK)
 }
 
@@ -843,6 +968,7 @@ func apiDBClear(ctx *gin.Context) {
 	}
 
 	err := database.ExecNErr("DELETE from " + tableName)
+
 	database.ExecN("VACUUM")
 	handleDBError(ctx, err, StrOK)
 }
@@ -909,6 +1035,7 @@ func apiDBRemoveOldJobs(ctx *gin.Context) {
 		sendForbidden(ctx, "days missing")
 		return
 	}
+
 	if queryParam == "" {
 		sendForbidden(ctx, "days empty")
 		return
@@ -954,8 +1081,10 @@ func apiQualityDelete(ctx *gin.Context) {
 	if !ok {
 		return
 	}
+
 	database.DeleteRow("qualities", logger.FilterByID, id)
 	database.SetVars()
+
 	data := database.StructscanT[database.Qualities](
 		false,
 		database.Getdatarow[uint](false, "select count() from qualities"),
@@ -978,6 +1107,7 @@ func apiQualityUpdate(ctx *gin.Context) {
 	if !bindJSONWithValidation(ctx, &quality) {
 		return
 	}
+
 	counter := database.Getdatarow[uint](
 		false,
 		"select count() from qualities where id != 0 and id = ?",
@@ -999,7 +1129,9 @@ func apiQualityUpdate(ctx *gin.Context) {
 		database.UpdateArray("qualities", []string{"Type", "Name", "Regex", "Strings", "Priority", "Use_Regex"},
 			"id != 0 and id = ?", quality.QualityType, quality.Name, quality.Regex, quality.Strings, quality.Priority, quality.UseRegex, quality.ID)
 	}
+
 	database.SetVars()
+
 	data := database.StructscanT[database.Qualities](
 		false,
 		database.Getdatarow[uint](false, "select count() from qualities"),
@@ -1022,16 +1154,19 @@ func apiListQualityPriorities(ctx *gin.Context) {
 	if !ok {
 		return
 	}
+
 	if !config.CheckGroup("quality_", name) {
 		sendNotFound(ctx, "quality not found")
 		return
 	}
+
 	returnprios := make([]parser.Prioarr, 0, 1000)
 	for _, prio := range parser.Getallprios() {
 		if prio.QualityGroup == name {
 			returnprios = append(returnprios, prio)
 		}
 	}
+
 	sendJSONResponse(ctx, http.StatusOK, returnprios)
 }
 
@@ -1096,6 +1231,7 @@ func apiConfigGet(ctx *gin.Context) {
 	if !ok {
 		return
 	}
+
 	sendJSONResponse(ctx, http.StatusOK, config.GetCfgAll()[name])
 }
 
@@ -1112,6 +1248,7 @@ func apiConfigDelete(ctx *gin.Context) {
 	if !ok {
 		return
 	}
+
 	config.DeleteCfgEntry(name)
 	config.WriteCfg()
 	sendJSONResponse(ctx, http.StatusOK, config.GetCfgAll())
@@ -1145,79 +1282,103 @@ func apiConfigUpdate(ctx *gin.Context) {
 	if !ok {
 		return
 	}
+
 	left, right := logger.SplitByLR(name, '_')
 	if left == "" {
 		left = right
 	}
+
 	switch left {
 	case "general":
 		var getcfg config.GeneralConfig
 		if !bindJSONWithValidation(ctx, &getcfg) {
 			return
 		}
+
 		config.UpdateCfgEntry(config.Conf{Name: name, Data: getcfg})
+
 	case "downloader":
 		var getcfg config.DownloaderConfig
 		if !bindJSONWithValidation(ctx, &getcfg) {
 			return
 		}
+
 		config.UpdateCfgEntry(config.Conf{Name: name, Data: getcfg})
+
 	case logger.StrImdb:
 		var getcfg config.ImdbConfig
 		if !bindJSONWithValidation(ctx, &getcfg) {
 			return
 		}
+
 		config.UpdateCfgEntry(config.Conf{Name: name, Data: getcfg})
+
 	case "indexer":
 		var getcfg config.IndexersConfig
 		if !bindJSONWithValidation(ctx, &getcfg) {
 			return
 		}
+
 		config.UpdateCfgEntry(config.Conf{Name: name, Data: getcfg})
+
 	case "list":
 		var getcfg config.ListsConfig
 		if !bindJSONWithValidation(ctx, &getcfg) {
 			return
 		}
+
 		config.UpdateCfgEntry(config.Conf{Name: name, Data: getcfg})
+
 	case "serie":
 	case "movie":
 		var getcfg config.MediaTypeConfig
 		if !bindJSONWithValidation(ctx, &getcfg) {
 			return
 		}
+
 		config.UpdateCfgEntry(config.Conf{Name: name, Data: getcfg})
+
 	case "notification":
 		var getcfg config.NotificationConfig
 		if !bindJSONWithValidation(ctx, &getcfg) {
 			return
 		}
+
 		config.UpdateCfgEntry(config.Conf{Name: name, Data: getcfg})
+
 	case "path":
 		var getcfg config.PathsConfig
 		if !bindJSONWithValidation(ctx, &getcfg) {
 			return
 		}
+
 		config.UpdateCfgEntry(config.Conf{Name: name, Data: getcfg})
+
 	case "quality":
 		var getcfg config.QualityConfig
 		if !bindJSONWithValidation(ctx, &getcfg) {
 			return
 		}
+
 		config.UpdateCfgEntry(config.Conf{Name: name, Data: getcfg})
+
 	case "regex":
 		var getcfg config.RegexConfig
 		if !bindJSONWithValidation(ctx, &getcfg) {
 			return
 		}
+
 		config.UpdateCfgEntry(config.Conf{Name: name, Data: getcfg})
+
 	case "scheduler":
 		var getcfg config.SchedulerConfig
 		if !bindJSONWithValidation(ctx, &getcfg) {
 			return
 		}
+
 		config.UpdateCfgEntry(config.Conf{Name: name, Data: getcfg})
 	}
+
 	config.WriteCfg()
 	sendJSONResponse(ctx, http.StatusOK, config.GetCfgAll())
 }
@@ -1232,14 +1393,17 @@ func apiConfigUpdate(ctx *gin.Context) {
 // @Router       /api/config/type/{type} [get].
 func apiListConfigType(ctx *gin.Context) {
 	list := make(map[string]any)
+
 	name, ok := getParamID(ctx, "type")
 	if !ok {
 		return
 	}
+
 	left, right := logger.SplitByLR(name, '_')
 	if left == "" {
 		left = right
 	}
+
 	switch left {
 	case "general":
 		list["general"] = config.GetSettingsGeneral()
@@ -1251,18 +1415,21 @@ func apiListConfigType(ctx *gin.Context) {
 				list["downloader_"+key] = cfgdata
 			}
 		})
+
 	case "indexer":
 		config.RangeSettingsIndexer(func(key string, cfgdata *config.IndexersConfig) {
 			if strings.HasPrefix(key, right) {
 				list["indexer_"+key] = cfgdata
 			}
 		})
+
 	case "list":
 		config.RangeSettingsList(func(key string, cfgdata *config.ListsConfig) {
 			if strings.HasPrefix(key, right) {
 				list["list_"+key] = cfgdata
 			}
 		})
+
 	case logger.StrSerie:
 		config.RangeSettingsMedia(func(key string, cfgdata *config.MediaTypeConfig) error {
 			if strings.HasPrefix(key, right) {
@@ -1270,6 +1437,7 @@ func apiListConfigType(ctx *gin.Context) {
 			}
 			return nil
 		})
+
 	case logger.StrMovie:
 		config.RangeSettingsMedia(func(key string, cfgdata *config.MediaTypeConfig) error {
 			if strings.HasPrefix(key, right) {
@@ -1277,30 +1445,35 @@ func apiListConfigType(ctx *gin.Context) {
 			}
 			return nil
 		})
+
 	case "notification":
 		config.RangeSettingsNotification(func(key string, cfgdata *config.NotificationConfig) {
 			if strings.HasPrefix(key, right) {
 				list["notification_"+key] = cfgdata
 			}
 		})
+
 	case "path":
 		config.RangeSettingsPath(func(key string, cfgdata *config.PathsConfig) {
 			if strings.HasPrefix(key, right) {
 				list["path_"+key] = cfgdata
 			}
 		})
+
 	case "quality":
 		config.RangeSettingsQuality(func(key string, cfgdata *config.QualityConfig) {
 			if strings.HasPrefix(key, right) {
 				list["quality_"+key] = cfgdata
 			}
 		})
+
 	case "regex":
 		config.RangeSettingsRegex(func(key string, cfgdata *config.RegexConfig) {
 			if strings.HasPrefix(key, right) {
 				list["regex_"+key] = cfgdata
 			}
 		})
+
 	case "scheduler":
 		config.RangeSettingsScheduler(func(key string, cfgdata *config.SchedulerConfig) {
 			if strings.HasPrefix(key, right) {
@@ -1350,9 +1523,11 @@ func apiNamingGenerate(ctx *gin.Context) {
 		to := filepath.Dir(cfg.FilePath)
 
 		var orgadata2 structure.Organizerdata
+
 		orgadata2.Videofile = cfg.FilePath
 		orgadata2.Folder = to
 		orgadata2.Rootpath = movie.Rootpath
+
 		m := parser.ParseFile(
 			cfg.FilePath,
 			true,
@@ -1360,6 +1535,7 @@ func apiNamingGenerate(ctx *gin.Context) {
 			cfgp,
 			cfgp.GetMediaListsEntryListID(movie.Listname),
 		)
+
 		orgadata2.Listid = m.ListID
 		s.ParseFileAdditional(&orgadata2, m, 0, false, false, s.Cfgp.Lists[m.ListID].CfgQuality)
 
@@ -1381,14 +1557,18 @@ func apiNamingGenerate(ctx *gin.Context) {
 		)
 		// defer s.Close()
 		to := filepath.Dir(cfg.FilePath)
+
 		var orgadata2 structure.Organizerdata
+
 		orgadata2.Videofile = cfg.FilePath
 		orgadata2.Folder = to
 		orgadata2.Rootpath = series.Rootpath
 
 		m := parser.ParseFile(cfg.FilePath, true, true, cfgp, cfgp.GetMediaListsEntryListID(series.Listname))
+
 		orgadata2.Listid = m.ListID
 		s.ParseFileAdditional(&orgadata2, m, 0, false, false, s.Cfgp.Lists[m.ListID].CfgQuality)
+
 		m.SerieID = series.ID
 		m.DbserieID = series.DbserieID
 		s.GetSeriesEpisodes(&orgadata2, m, true, s.Cfgp.Lists[orgadata2.Listid].CfgQuality)
@@ -1418,8 +1598,8 @@ type apiStructureJSON struct {
 
 type apiCacheAddJSON struct {
 	CacheType string `json:"cache_type" binding:"required"`
-	Key       string `json:"key" binding:"required"`
-	Value     string `json:"value" binding:"required"`
+	Key       string `json:"key"        binding:"required"`
+	Value     string `json:"value"      binding:"required"`
 }
 
 // @Summary      Structure Single Item
@@ -1441,6 +1621,7 @@ func apiStructure(ctx *gin.Context) {
 	if strings.EqualFold(cfg.Grouptype, logger.StrMovie) {
 		getconfig = "movie_" + cfg.Configentry
 	}
+
 	if strings.EqualFold(cfg.Grouptype, logger.StrSeries) {
 		getconfig = "serie_" + cfg.Configentry
 	}
@@ -1459,10 +1640,12 @@ func apiStructure(ctx *gin.Context) {
 		sendBadRequest(ctx, "target config not found")
 		return
 	}
+
 	if !scanner.CheckFileExist(cfg.Folder) {
 		sendBadRequest(ctx, "folder not found")
 		return
 	}
+
 	cfgp := config.GetSettingsMedia(getconfig)
 
 	var cfgimport *config.MediaDataImportConfig
@@ -1477,6 +1660,7 @@ func apiStructure(ctx *gin.Context) {
 	if cfg.Disableruntimecheck {
 		checkruntime = false
 	}
+
 	deletewronglanguage := config.GetSettingsPath(cfg.Sourcepathtemplate).DeleteWrongLanguage
 	if cfg.Disabledeletewronglanguage {
 		deletewronglanguage = false
@@ -1507,7 +1691,7 @@ func apiStructure(ctx *gin.Context) {
 // @Failure      400    {object} Jsonerror
 // @Failure      401    {object} Jsonerror
 // @Failure      404    {object} Jsonerror
-// @Router       /api/queue/cancel/{id} [delete]
+// @Router       /api/queue/cancel/{id} [delete].
 func apiQueueCancel(ctx *gin.Context) {
 	idStr := ctx.Param("id")
 	if idStr == "" {
@@ -1530,6 +1714,7 @@ func apiQueueCancel(ctx *gin.Context) {
 			"success": false,
 			"error":   "Queue job not found",
 		})
+
 		return
 	}
 
@@ -1640,7 +1825,11 @@ func apiCacheAdd(ctx *gin.Context) {
 	// For simplicity, most cache types use string append
 	database.AppendCache(req.Key, req.Value)
 
-	logger.Logtype("info", 0).Str("type", req.CacheType).Str("key", req.Key).Str("value", req.Value).Msg("Manual cache entry added")
+	logger.Logtype("info", 0).
+		Str("type", req.CacheType).
+		Str("key", req.Key).
+		Str("value", req.Value).
+		Msg("Manual cache entry added")
 	sendSuccess(ctx, "Cache entry added successfully")
 }
 

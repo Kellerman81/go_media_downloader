@@ -1400,7 +1400,7 @@ func BenchmarkByte3(b *testing.B) {
 	byteArray := []byte{'J', 'A', 'N', 'E'}
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		str1 := fmt.Sprintf("%s", byteArray)
+		str1 := string(byteArray)
 		_ = str1
 	}
 }

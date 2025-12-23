@@ -3,12 +3,12 @@ package apiexternal
 import (
 	"context"
 	"fmt"
-	"net/http"
-	"net/url"
 	"time"
 
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/base"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/omdb"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/slidingwindow"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/providers"
 )
 
 type OmDBMovie struct {
@@ -49,16 +49,6 @@ type OmDBMovieSearchGlobal struct {
 	// Response     bool              `json:"Response"`
 }
 
-// omdbClient is a struct for interacting with the OMDb API.
-// It contains fields for the API key, query parameter API key,
-// and a pointer to the rate limited HTTP client.
-type omdbClient struct {
-	Client     rlHTTPClient // Pointer to the rate limited HTTP client
-	Lim        *slidingwindow.Limiter
-	OmdbAPIKey string // The OMDb API key
-	QAPIKey    string // The query parameter API key
-}
-
 // NewOmdbClient creates a new omdbClient instance for making requests to the
 // OMDb API. It takes the API key, rate limit seconds, rate limit calls per
 // second, whether to disable TLS, and request timeout in seconds.
@@ -73,47 +63,31 @@ func NewOmdbClient(
 	if seconds == 0 {
 		seconds = 1
 	}
+
 	if calls == 0 {
 		calls = 1
 	}
-	lim := slidingwindow.NewLimiter(time.Duration(seconds)*time.Second, int64(calls))
-	client := &omdbClient{
-		OmdbAPIKey: apikey,
-		QAPIKey:    "&apikey=" + apikey,
-		Lim:        &lim,
-		Client: newClient(
-			"omdb",
-			disabletls,
-			true,
-			&lim,
-			false, nil, timeoutseconds),
-	}
-	setOmdbAPI(client)
-}
 
-// Helper functions for thread-safe access to omdbAPI
-func getOmdbClient() *rlHTTPClient {
-	api := getOmdbAPI()
-	if api == nil {
-		return nil
+	// Create v2 provider
+	omdbConfig := base.ClientConfig{
+		Name:                      "omdb",
+		BaseURL:                   "http://www.omdbapi.com",
+		Timeout:                   time.Duration(timeoutseconds) * time.Second,
+		AuthType:                  base.AuthAPIKeyURL,
+		APIKey:                    apikey,
+		APIKeyParam:               "apikey",
+		RateLimitCalls:            calls,
+		RateLimitSeconds:          int(seconds),
+		CircuitBreakerThreshold:   5,
+		CircuitBreakerTimeout:     60 * time.Second,
+		CircuitBreakerHalfOpenMax: 2,
+		EnableStats:               true,
+		UserAgent:                 "go-media-downloader/2.0",
+		DisableTLSVerify:          disabletls,
 	}
-	return &api.Client
-}
-
-func getOmdbAPIKey() string {
-	api := getOmdbAPI()
-	if api == nil {
-		return ""
+	if provider := omdb.NewProviderWithConfig(omdbConfig); provider != nil {
+		providers.SetOMDB(provider)
 	}
-	return api.OmdbAPIKey
-}
-
-func getQAPIKey() string {
-	api := getOmdbAPI()
-	if api == nil {
-		return ""
-	}
-	return api.QAPIKey
 }
 
 // GetOmdbMovie retrieves movie details from the OMDb API by imdbid.
@@ -124,11 +98,53 @@ func GetOmdbMovie(imdbid string) (*OmDBMovie, error) {
 	if imdbid == "" {
 		return nil, logger.ErrNotFound
 	}
-	return doJSONTypeP[OmDBMovie](
-		getOmdbClient(),
-		logger.JoinStrings("http://www.omdbapi.com/?i=", imdbid, getQAPIKey()),
-		nil,
-	)
+
+	// Use v2 provider if available
+	if provider := providers.GetOMDB(); provider != nil {
+		details, err := provider.GetDetailsByIMDb(context.Background(), imdbid)
+		if err != nil {
+			return nil, err
+		}
+
+		// Convert genres slice to comma-separated string
+		genreNames := make([]string, len(details.Genres))
+		for i, g := range details.Genres {
+			genreNames[i] = g.Name
+		}
+
+		genre := ""
+		if len(genreNames) > 0 {
+			genre = logger.JoinStrings(genreNames...)
+		}
+
+		// Convert spoken languages to comma-separated string
+		languageNames := make([]string, len(details.SpokenLanguages))
+		for i, l := range details.SpokenLanguages {
+			languageNames[i] = l.EnglishName
+		}
+
+		language := ""
+		if len(languageNames) > 0 {
+			language = logger.JoinStrings(languageNames...)
+		}
+
+		// Convert v2 result to old format
+		return &OmDBMovie{
+			Title:      details.Title,
+			Year:       fmt.Sprintf("%d", details.Year),
+			Genre:      genre,
+			Language:   language,
+			Country:    "", // Not available in v2 MovieDetails
+			ImdbRating: fmt.Sprintf("%.1f", details.VoteAverage),
+			ImdbVotes:  fmt.Sprintf("%d", details.VoteCount),
+			ImdbID:     details.IMDbID,
+			Plot:       details.Overview,
+			Website:    details.Homepage,
+			Runtime:    fmt.Sprintf("%d min", details.Runtime),
+		}, nil
+	}
+
+	return nil, logger.ErrNotFound
 }
 
 // SearchOmdbMovie searches the OMDb API for movies matching the given title and release year.
@@ -140,43 +156,56 @@ func SearchOmdbMovie(title, yearin string) (*OmDBMovieSearchGlobal, error) {
 	if title == "" {
 		return nil, logger.ErrNotFound
 	}
-	if yearin != "" && yearin != "0" {
-		return doJSONTypeP[OmDBMovieSearchGlobal](
-			getOmdbClient(),
-			logger.JoinStrings(
-				"http://www.omdbapi.com/?s=",
-				url.QueryEscape(title),
-				"&y=",
-				yearin,
-				getQAPIKey(),
-			),
-			nil,
-		)
+
+	// Use v2 provider if available
+	if provider := providers.GetOMDB(); provider != nil {
+		year := 0
+		if yearin != "" && yearin != "0" {
+			if y, err := fmt.Sscanf(yearin, "%d", &year); err == nil && y == 1 {
+				// year parsed successfully
+			} else {
+				year = 0
+			}
+		}
+
+		results, err := provider.SearchByTitle(context.Background(), title, year, "")
+		if err != nil {
+			return nil, err
+		}
+
+		// Convert v2 results to old format
+		search := &OmDBMovieSearchGlobal{
+			Search: make([]struct {
+				Title  string `json:"Title"`
+				Year   string `json:"Year"`
+				ImdbID string `json:"imdbID"`
+			}, len(results)),
+		}
+		for i, r := range results {
+			search.Search[i].Title = r.Title
+			search.Search[i].Year = r.Year
+			search.Search[i].ImdbID = r.ImdbID
+		}
+
+		return search, nil
 	}
-	return doJSONTypeP[OmDBMovieSearchGlobal](
-		getOmdbClient(),
-		logger.JoinStrings("http://www.omdbapi.com/?s=", url.QueryEscape(title), getQAPIKey()),
-		nil,
-	)
+
+	return nil, logger.ErrNotFound
 }
 
 // TestOMDBConnectivity tests the connectivity to the OMDB API
-// Returns status code and error if any
+// Returns status code and error if any.
 func TestOMDBConnectivity(timeout time.Duration) (int, error) {
-	// Check if client is initialized
-	if getOmdbAPIKey() == "" {
-		return 0, fmt.Errorf("OMDB API client not initialized or missing API key")
+	// Use v2 provider if available
+	if provider := providers.GetOMDB(); provider != nil {
+		// Test with a simple search
+		_, err := provider.SearchByTitle(context.Background(), "test", 0, "")
+		if err != nil {
+			return 0, err
+		}
+
+		return 200, nil
 	}
 
-	statusCode := 0
-	err := ProcessHTTPNoRateCheck(
-		getOmdbClient(),
-		"http://www.omdbapi.com/?s=test",
-		func(ctx context.Context, resp *http.Response) error {
-			statusCode = resp.StatusCode
-			return nil
-		},
-		nil,
-	)
-	return statusCode, err
+	return 0, logger.ErrNotFound
 }

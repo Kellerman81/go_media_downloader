@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
@@ -94,26 +95,20 @@ var (
 	// globalQueueSet is a sync.Map to store dispatcherQueue objects.
 	globalQueueSet = syncops.NewSyncMapUint[syncops.Job](1000)
 
-	// Recent jobs cache for duplicate detection
+	// Recent jobs cache for duplicate detection.
 	recentJobs   = make(map[string]time.Time)
 	recentJobsMu sync.RWMutex
 
-	// These legacy timestamp variables have been replaced by the thread-safe lastAddedTimes struct
+	// Job name index for O(1) lookup - maps job name to job ID for fast duplicate detection.
+	jobNameIndex = syncops.NewSyncMap[uint32](1000)
 
-	lastAddedTimes = struct {
-		sync.RWMutex
-		data   time.Time
-		feeds  time.Time
-		search time.Time
-		rss    time.Time
-		other  time.Time
-	}{
-		data:   time.Now(),
-		feeds:  time.Now(),
-		search: time.Now(),
-		rss:    time.Now(),
-		other:  time.Now(),
-	}
+	// Optimized last added times using atomic operations to reduce lock contention
+	// Store Unix nanoseconds as int64 for atomic access.
+	lastAddedData   atomic.Int64
+	lastAddedFeeds  atomic.Int64
+	lastAddedSearch atomic.Int64
+	lastAddedRSS    atomic.Int64
+	lastAddedOther  atomic.Int64
 
 	ErrNotQueued    = errors.New("not queued")
 	ErrQueueFull    = errors.New("queue is full")
@@ -123,6 +118,16 @@ var (
 	// 	logger.LogDynamicany2StrAny("error", "Recovered from panic (dispatcher)", strMsg, logger.Stack(), strMsg, p)
 	// }).
 )
+
+func init() {
+	// Initialize atomic timestamps to current time
+	now := time.Now().UnixNano()
+	lastAddedData.Store(now)
+	lastAddedFeeds.Store(now)
+	lastAddedSearch.Store(now)
+	lastAddedRSS.Store(now)
+	lastAddedOther.Store(now)
+}
 
 type wrappedLogger struct {
 	// cron.Logger
@@ -225,14 +230,18 @@ func SetScheduleStarted(id uint32) {
 	if !globalScheduleSet.Check(id) {
 		return
 	}
+
 	s := globalScheduleSet.GetVal(id)
+
 	s.IsRunning = true
+
 	s.LastRun = logger.TimeGetNow()
 	if s.ScheduleTyp == "cron" {
 		s.NextRun = s.CronSchedule.Next(logger.TimeGetNow())
 	} else {
 		s.NextRun = logger.TimeGetNow().Add(s.Interval)
 	}
+
 	syncops.QueueWorkerMapUpdate(syncops.MapTypeSchedule, id, s)
 }
 
@@ -245,10 +254,12 @@ func SetScheduleEnded(id uint32) {
 	if !globalScheduleSet.Check(id) {
 		return
 	}
+
 	s := globalScheduleSet.GetVal(id)
 	if !s.IsRunning {
 		return
 	}
+
 	s.IsRunning = false
 	syncops.QueueWorkerMapUpdate(syncops.MapTypeSchedule, id, s)
 }
@@ -266,9 +277,10 @@ func CreateCronWorker() {
 	opts := []cron.Option{
 		cron.WithLocation(logger.GetTimeZone()),
 		cron.WithLogger(&loggerworker),
-		cron.WithChain(cron.Recover(&loggerworker)), //, cron.SkipIfStillRunning(&loggerworker)
+		cron.WithChain(cron.Recover(&loggerworker)), // , cron.SkipIfStillRunning(&loggerworker)
 		cron.WithSeconds(),
 	}
+
 	cronWorkerData = cron.New(opts...)
 	cronWorkerFeeds = cron.New(opts...)
 	cronWorkerSearch = cron.New(opts...)
@@ -323,11 +335,12 @@ func getcron(queue string) *cron.Cron {
 	case QueueRSS:
 		return cronWorkerSearch
 	}
+
 	return nil
 }
 
 // getPoolAndLastAdded retrieves the worker pool and the last added timestamp for a given queue type.
-// It safely accesses the lastAddedTimes structure using a read lock to prevent concurrent modifications.
+// Uses atomic operations for lock-free access to reduce contention under high load.
 //
 // Parameters:
 //   - queue: String identifier for the queue type
@@ -336,45 +349,40 @@ func getcron(queue string) *cron.Cron {
 //   - pond.Pool: The worker pool associated with the specified queue
 //   - time.Time: The timestamp of when a job was last added to the queue
 func getPoolAndLastAdded(queue string) (pond.Pool, time.Time) {
-	lastAddedTimes.RLock()
-	defer lastAddedTimes.RUnlock()
-
 	switch queue {
 	case QueueData:
-		return workerPoolFiles, lastAddedTimes.data
+		return workerPoolFiles, time.Unix(0, lastAddedData.Load())
 	case QueueFeeds:
-		return workerPoolMetadata, lastAddedTimes.feeds
+		return workerPoolMetadata, time.Unix(0, lastAddedFeeds.Load())
 	case QueueSearch:
-		return workerPoolSearch, lastAddedTimes.search
+		return workerPoolSearch, time.Unix(0, lastAddedSearch.Load())
 	case QueueRSS:
-		return workerPoolRSS, lastAddedTimes.rss
+		return workerPoolRSS, time.Unix(0, lastAddedRSS.Load())
 	default:
-		return nil, lastAddedTimes.other
+		return nil, time.Unix(0, lastAddedOther.Load())
 	}
 }
 
 // updateLastAdded updates the timestamp for the last job added to a specific worker queue.
-// It uses a mutex lock to safely update the lastAddedTimes structure with the current time.
+// Uses atomic operations for lock-free updates to reduce contention under high load.
 // The queue parameter determines which specific queue's timestamp is updated.
 //
 // Parameters:
 //   - queue: String identifier for the queue type (e.g., QueueData, QueueFeeds)
 func updateLastAdded(queue string) {
-	now := time.Now()
-	lastAddedTimes.Lock()
-	defer lastAddedTimes.Unlock()
+	now := time.Now().UnixNano()
 
 	switch queue {
 	case QueueData:
-		lastAddedTimes.data = now
+		lastAddedData.Store(now)
 	case QueueFeeds:
-		lastAddedTimes.feeds = now
+		lastAddedFeeds.Store(now)
 	case QueueSearch:
-		lastAddedTimes.search = now
+		lastAddedSearch.Store(now)
 	case QueueRSS:
-		lastAddedTimes.rss = now
+		lastAddedRSS.Store(now)
 	default:
-		lastAddedTimes.other = now
+		lastAddedOther.Store(now)
 	}
 }
 
@@ -403,6 +411,7 @@ func validateJobConfig(cfgpstr, jobname string) bool {
 	}
 
 	cfg := config.GetSettingsMedia(cfgpstr)
+
 	return cfg != nil && cfg.Jobs[jobname] != nil
 }
 
@@ -439,12 +448,14 @@ func DispatchCron(cfgpstr string, cronStr string, name string, queue string, job
 	if dc == nil {
 		return ErrInvalidQueue
 	}
+
 	cjob, err := dc.AddFunc(cronStr, func() {
 		addjob(context.Background(), cfgpstr, newUUID(), name, jobname, queue, schedulerID)
 	})
 	if err != nil {
 		return err
 	}
+
 	dcentry := dc.Entry(cjob)
 	syncops.QueueWorkerMapAdd(syncops.MapTypeSchedule, schedulerID, syncops.JobSchedule{
 		JobName:        name,
@@ -457,6 +468,7 @@ func DispatchCron(cfgpstr string, cronStr string, name string, queue string, job
 		CronSchedule:   dcentry.Schedule,
 		CronID:         cjob,
 	})
+
 	return nil
 }
 
@@ -508,6 +520,9 @@ func addjob(
 	cleanupCompletedJobs(workpool, queue)
 
 	ctx, cancel := context.WithCancel(rootctx)
+	// Don't defer cancel here - it will be handled by runjobcron when the job completes
+	// Deferring here would cancel the context before the worker pool job even starts
+	_ = cancel // Keep cancel for potential cleanup in error paths
 	syncops.QueueWorkerMapAdd(syncops.MapTypeQueue, id, syncops.Job{
 		Added:       logger.TimeGetNow(),
 		Name:        name,
@@ -519,11 +534,16 @@ func addjob(
 		Ctx:         ctx,
 		CancelFunc:  cancel,
 	})
+	// Add to job name index for O(1) lookup
+	syncops.QueueSyncMapAdd(syncops.MapTypeStructEmpty, name, struct{}{}, 0, false, 0)
+
 	if _, ok := workpool.TrySubmitErr(runjobcron(id)); !ok {
 		logger.Logtype("error", 1).
 			Str(logger.StrJob, name).
 			Msg("not queued")
+		cancel() // Cancel context if job submission failed
 		syncops.QueueWorkerMapDelete(syncops.MapTypeQueue, id)
+		syncops.QueueSyncMapDelete(syncops.MapTypeStructEmpty, name)
 	}
 }
 
@@ -545,8 +565,10 @@ func checkQueueCapacity(capa int, waiting uint64, queue, name string) error {
 			Str("queue", queue).
 			Str(logger.StrJob, name).
 			Msg("queue limit reached")
+
 		return ErrQueueFull
 	}
+
 	return nil
 }
 
@@ -558,7 +580,9 @@ func waitForQueueAvailability(added time.Time, name string) error {
 		if !logger.TimeAfter(added, time.Now().Add(queueCheckInterval)) {
 			break
 		}
+
 		time.Sleep(queueCheckDelay)
+
 		if idx == maxQueueRetries {
 			logger.Logtype("error", 1).
 				Str(logger.StrJob, name).
@@ -566,6 +590,7 @@ func waitForQueueAvailability(added time.Time, name string) error {
 			return ErrNotQueued
 		}
 	}
+
 	return nil
 }
 
@@ -589,14 +614,20 @@ func runjobcron(id uint32) func() error {
 				Msg("Job not found")
 			return errors.New("job not found")
 		}
+		defer globalQueueSet.Delete(id)
+
+		s := globalQueueSet.GetVal(id)
 
 		defer func() {
 			logger.HandlePanic()
-			// Clean up the job from queue when finished
-			syncops.QueueWorkerMapDelete(syncops.MapTypeQueue, id)
-		}()
+			// Cancel the context and clean up the job from queue and name index when finished
+			if s.CancelFunc != nil {
+				s.CancelFunc()
+			}
 
-		s := globalQueueSet.GetVal(id)
+			syncops.QueueWorkerMapDelete(syncops.MapTypeQueue, id)
+			syncops.QueueSyncMapDelete(syncops.MapTypeStructEmpty, s.Name)
+		}()
 
 		// Check if job was cancelled before starting
 
@@ -611,6 +642,14 @@ func runjobcron(id uint32) func() error {
 		syncops.QueueWorkerMapUpdate(syncops.MapTypeQueue, id, s)
 
 		err := executeJob(s)
+		if err != nil {
+			logger.Logtype("error", 2).
+				Err(err).
+				Str("job", s.JobName).
+				Str("cfgp", s.Cfgpstr).
+				Msg("Cron Job failed")
+		}
+
 		if s.Cfgpstr == "" {
 			if config.GetSettingsGeneral().Jobs[s.JobName] != nil {
 				err = config.GetSettingsGeneral().Jobs[s.JobName](id, s.Ctx)
@@ -637,6 +676,7 @@ func runjobcron(id uint32) func() error {
 				}
 			}
 		}
+
 		return err
 	}
 }
@@ -669,6 +709,7 @@ func CancelQueueEntry(id uint32) {
 				job.CancelFunc()
 			}
 		}
+
 		syncops.QueueWorkerMapDelete(syncops.MapTypeQueue, id)
 	}
 }
@@ -700,6 +741,7 @@ func DispatchEvery(
 
 	go func() {
 		defer t.Stop()
+
 		for {
 			select {
 			case <-ctx.Done():
@@ -725,6 +767,7 @@ func DispatchEvery(
 		Interval:       interval,
 		NextRun:        logger.TimeGetNow().Add(interval),
 	})
+
 	return nil
 }
 
@@ -769,6 +812,7 @@ func Dispatch(name string, fn func(uint32, context.Context) error, queue string)
 			Str("job_name", name).
 			Str("queue", queue).
 			Msg("Dispatch: Invalid queue - workpool is nil")
+
 		return ErrInvalidQueue
 	}
 
@@ -808,6 +852,8 @@ func Dispatch(name string, fn func(uint32, context.Context) error, queue string)
 		Ctx:         ctx,
 		CancelFunc:  cancel,
 	})
+	// Add to job name index for O(1) lookup
+	syncops.QueueSyncMapAdd(syncops.MapTypeStructEmpty, name, struct{}{}, 0, false, 0)
 
 	// Verify the job was actually added
 	logger.Logtype("debug", 0).
@@ -829,6 +875,8 @@ func Dispatch(name string, fn func(uint32, context.Context) error, queue string)
 			Uint32("job_id", id).
 			Msg("Dispatch: Failed to submit job to worker pool")
 		syncops.QueueWorkerMapDelete(syncops.MapTypeQueue, id)
+		syncops.QueueSyncMapDelete(syncops.MapTypeStructEmpty, name)
+
 		return ErrNotQueued
 	}
 
@@ -872,7 +920,8 @@ func executeJob(s syncops.Job) error {
 				Str("job", s.JobName).
 				Str("cfgp", s.Cfgpstr).
 				Msg("Cron Job Config not found")
-			return errors.New("Cron Job Config not found")
+
+			return errors.New("cron Job Config not found")
 		}
 
 		if jobFunc := cfg.Jobs[s.JobName]; jobFunc != nil {
@@ -882,9 +931,11 @@ func executeJob(s syncops.Job) error {
 				Str("job", s.JobName).
 				Str("cfgp", s.Cfgpstr).
 				Msg("Cron Job not found")
-			return errors.New("Cron Job not found")
+
+			return errors.New("cron Job not found")
 		}
 	}
+
 	return nil
 }
 
@@ -920,16 +971,22 @@ func runjob(id uint32, fn func(uint32, context.Context) error) func() error {
 			return ErrNotQueued
 		}
 
+		s := globalQueueSet.GetVal(id)
+
 		defer func() {
 			logger.HandlePanic()
-			// Clean up the job from queue when finished
+			// Cancel the context and clean up the job from queue and name index when finished
+			if s.CancelFunc != nil {
+				s.CancelFunc()
+			}
+
 			syncops.QueueWorkerMapDelete(syncops.MapTypeQueue, id)
+			syncops.QueueSyncMapDelete(syncops.MapTypeStructEmpty, s.Name)
 			logger.Logtype("debug", 0).
 				Uint32("job_id", id).
 				Msg("runjob: Job execution completed and cleaned up")
 		}()
 
-		s := globalQueueSet.GetVal(id)
 		logger.Logtype("debug", 0).
 			Uint32("job_id", id).
 			Str("job_name", s.Name).
@@ -942,6 +999,7 @@ func runjob(id uint32, fn func(uint32, context.Context) error) func() error {
 				Uint32("job_id", id).
 				Err(err).
 				Msg("runjob: Job context was cancelled")
+
 			return err
 		}
 
@@ -963,6 +1021,7 @@ func runjob(id uint32, fn func(uint32, context.Context) error) func() error {
 				Uint32("job_id", id).
 				Msg("runjob: Job function completed successfully")
 		}
+
 		return err
 	}
 }
@@ -977,22 +1036,33 @@ func runjob(id uint32, fn func(uint32, context.Context) error) func() error {
 //   - workermeta: Number of workers for metadata operations (defaults to 1 if 0)
 //   - workerrss: Number of workers for RSS operations (defaults to 1 if 0)
 //   - workerindex: Number of workers for indexing operations (defaults to 1 if 0)
-func InitWorkerPools(workersearch int, workerfiles int, workermeta int, workerrss int, workerindex int) {
+func InitWorkerPools(
+	workersearch int,
+	workerfiles int,
+	workermeta int,
+	workerrss int,
+	workerindex int,
+) {
 	if workersearch == 0 {
 		workersearch = 1
 	}
+
 	if workerfiles == 0 {
 		workerfiles = 1
 	}
+
 	if workermeta == 0 {
 		workermeta = 1
 	}
+
 	if workerrss == 0 {
 		workerrss = 1
 	}
+
 	if workerindex == 0 {
 		workerindex = 1
 	}
+
 	workerPoolSearch = pond.NewPool(workersearch)
 	workerPoolRSS = pond.NewPool(workerrss)
 	workerPoolFiles = pond.NewPool(workerfiles)
@@ -1021,6 +1091,7 @@ func CloseWorkerPools() {
 			pool.Stop()
 		}
 	}
+
 	globalQueueSet.ForEach(func(key uint32, getjob syncops.Job) {
 		if getjob.CancelFunc != nil {
 			getjob.CancelFunc()
@@ -1045,6 +1116,7 @@ func Cleanqueue() error {
 			DeleteQueue(queueName)
 		}
 	}
+
 	return nil
 }
 
@@ -1066,6 +1138,7 @@ func GetJobContext(id uint32) context.Context {
 			return job.Ctx
 		}
 	}
+
 	return context.Background()
 }
 
@@ -1137,6 +1210,7 @@ var jobAlternatives = map[string][]string{
 func addRecentJob(jobname string) {
 	recentJobsMu.Lock()
 	defer recentJobsMu.Unlock()
+
 	recentJobs[jobname] = time.Now()
 
 	// Clean up old entries (older than 10 seconds)
@@ -1163,6 +1237,7 @@ func isRecentJob(jobname string) bool {
 	if timestamp, exists := recentJobs[jobname]; exists {
 		return time.Since(timestamp) < 5*time.Second
 	}
+
 	return false
 }
 
@@ -1179,6 +1254,7 @@ func isRecentJob(jobname string) bool {
 func checkQueue(jobname string) bool {
 	// First check if job is currently in the queue
 	idx := strings.LastIndexByte(jobname, '_')
+
 	var inQueue bool
 	if idx <= 0 || idx >= len(jobname)-1 {
 		inQueue = checkQueueStarted(jobname, false, "", "")
@@ -1195,31 +1271,34 @@ func checkQueue(jobname string) bool {
 }
 
 // checkQueueStarted checks if a job with the given name is currently in the global queue.
+// Optimized with O(1) lookup using job name index instead of O(n) iteration.
 // It supports checking alternative job name formats based on the provided prefix and suffix.
-// Returns true if the job is found in the queue with an unstarted status, false otherwise.
+// Returns true if the job is found in the queue, false otherwise.
 func checkQueueStarted(jobname string, checkalternatives bool, prefix string, suffix string) bool {
-	alternatives, hasAlternatives := jobAlternatives[prefix]
+	// O(1) check for exact match using name index
+	if jobNameIndex.Check(jobname) {
+		return true
+	}
 
-	return globalQueueSet.Exists(func(key uint32, getjob syncops.Job) bool {
-		// Check exact match first
-		if getjob.Name == jobname {
+	// Only check alternatives if requested and alternatives exist
+	if !checkalternatives {
+		return false
+	}
+
+	alternatives, hasAlternatives := jobAlternatives[prefix]
+	if !hasAlternatives {
+		return false
+	}
+
+	// Check each alternative name with O(1) lookups instead of O(n) iteration
+	for _, alt := range alternatives {
+		altName := alt + suffix
+		if jobNameIndex.Check(altName) {
 			return true
 		}
+	}
 
-		// Check alternatives if requested
-		if !hasAlternatives || !checkalternatives {
-			return false
-		}
-
-		if strings.HasSuffix(getjob.Name, suffix) {
-			for _, alt := range alternatives {
-				if getjob.Name == alt+suffix {
-					return true
-				}
-			}
-		}
-		return false
-	})
+	return false
 }
 
 // DeleteJobQueue removes jobs from the global queue set that match the given queue name.
@@ -1253,4 +1332,5 @@ func DeleteQueueRunning(queue string) {
 func RegisterWorkerSyncMaps() {
 	syncops.RegisterSyncMap(syncops.MapTypeQueue, globalQueueSet)
 	syncops.RegisterSyncMap(syncops.MapTypeSchedule, globalScheduleSet)
+	syncops.RegisterSyncMap(syncops.MapTypeStructEmpty, jobNameIndex)
 }

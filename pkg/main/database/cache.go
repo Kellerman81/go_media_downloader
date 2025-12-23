@@ -11,6 +11,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/syncops"
+	"github.com/dgraph-io/ristretto"
 	"github.com/jmoiron/sqlx"
 )
 
@@ -29,12 +30,24 @@ type tcache struct {
 	itemstwoint      *syncops.SyncMap[[]syncops.DbstaticOneStringTwoInt]
 	itemsthreestring *syncops.SyncMap[[]syncops.DbstaticThreeStringTwoInt]
 	itemstwostring   *syncops.SyncMap[[]syncops.DbstaticTwoStringOneInt]
-	itemsxstmt       *syncops.SyncMap[*sqlx.Stmt]     // sync.Map
-	itemsregex       *syncops.SyncMap[*regexp.Regexp] // sync.Map
-	janitor          *time.Timer
-	janitorCtx       context.Context
-	janitorCancel    context.CancelFunc
-	mu               sync.RWMutex
+	itemsxstmt       *syncops.SyncMap[*sqlx.Stmt]     // DEPRECATED: Use ristrettoStmt
+	itemsregex       *syncops.SyncMap[*regexp.Regexp] // DEPRECATED: Use ristrettoRegex
+
+	// NEW: Ristretto caches for high-performance lookups
+	ristrettoStmt  *ristretto.Cache
+	ristrettoRegex *ristretto.Cache
+
+	// NEW: Hybrid indexes for O(1) lookups on struct arrays
+	indexThreeStringByStr3 *syncops.SyncMap[map[string]*syncops.DbstaticThreeStringTwoInt] // IMDB ID -> entry
+	indexThreeStringByNum2 *syncops.SyncMap[map[uint]*syncops.DbstaticThreeStringTwoInt]   // DB ID -> entry
+	indexTwoIntComposite   *syncops.SyncMap[map[string]*syncops.DbstaticOneStringTwoInt]   // "mediaID:listname" -> entry
+	indexTwoStringByStr1   *syncops.SyncMap[map[string][]*syncops.DbstaticTwoStringOneInt] // title -> entries (one-to-many)
+	indexStringSet         *syncops.SyncMap[map[string]struct{}]                           // normalized string -> exists
+
+	janitor       *time.Timer
+	janitorCtx    context.Context
+	janitorCancel context.CancelFunc
+	mu            sync.RWMutex
 }
 
 var (
@@ -66,54 +79,88 @@ func (c *globalcache) getexpiressql(static bool) int64 {
 	}
 
 	c.mu.RLock()
+
 	defaultExt := c.defaultextension
 	c.mu.RUnlock()
 
 	if defaultExt > 0 {
 		return time.Now().Add(defaultExt).UnixNano()
 	}
+
 	return 0
 }
 
-// addStaticXStmt adds a prepared SQL statement to the cache with the given key and database connection.
+// addStaticXStmt adds a prepared SQL statement to the Ristretto cache with the given key.
 // If the statement already exists in the cache, it returns without doing anything.
-// Otherwise, it queues the operation to be processed by the single cache writer.
-// The function takes a key string and a boolean indicating whether to use the IMDB database connection.
-// It returns nothing.
+// Static statements are cached permanently. Falls back to old implementation if Ristretto not initialized.
 func (c *globalcache) addStaticXStmt(key string, imdb bool) {
-	if !cache.itemsxstmt.Check(key) {
-		stmt := preparestmt(imdb, key)
-		syncops.QueueSyncMapAdd(syncops.MapTypeXStmt, key, stmt, c.getexpiressql(true), imdb, time.Now().UnixNano())
+	// if cache.ristrettoStmt == nil {
+	// 	// Fallback to old implementation
+	// 	if !cache.itemsxstmt.Check(key) {
+	// 		stmt := preparestmt(imdb, key)
+	// 		syncops.QueueSyncMapAdd(syncops.MapTypeXStmt, key, stmt, c.getexpiressql(true), imdb, time.Now().UnixNano())
+	// 	}
+	// 	return
+	// }
+
+	// Check if already in Ristretto cache
+	if _, found := cache.ristrettoStmt.Get(key); found {
+		return
+	}
+
+	stmt := preparestmt(imdb, key)
+	if stmt != nil {
+		cache.ristrettoStmt.Set(key, stmt, 1) // Static statements never expire
+		cache.ristrettoStmt.Wait()
 	}
 }
 
-// getXStmt retrieves a cached SQL statement with the given key and database connection.
-// If the statement is not found in the cache, it prepares the statement using the provided
-// database connection and adds it to the cache. If the cache auto-extend feature is enabled,
-// it will extend the expiration time of the cached statement.
-// The function takes a key string, a boolean indicating whether to use the IMDB database
-// connection, and an optional slice of int64 values representing the expiration time in
-// nanoseconds. It returns the cached SQL statement.
+// getXStmt retrieves a cached SQL statement using Ristretto cache.
+// If the statement is not found, it prepares the statement and caches it.
+// Falls back to old implementation if Ristretto not initialized.
 func (c *globalcache) getXStmt(key string, imdb bool) *sqlx.Stmt {
-	if cache.itemsxstmt.Check(key) {
-		expires := cache.itemsxstmt.GetExpire(key)
-		if config.GetSettingsGeneral().CacheAutoExtend ||
-			expires != 0 && (time.Now().UnixNano() > expires) {
-			// Queue the expire update operation to avoid race conditions
-			syncops.QueueSyncMapUpdateExpire(syncops.MapTypeXStmt, key, c.getexpiressql(false))
+	// if cache.ristrettoStmt == nil {
+	// 	// Fallback to old implementation
+	// 	return c.getXStmtOld(key, imdb)
+	// }
+
+	// Try Ristretto cache first
+	if value, found := cache.ristrettoStmt.Get(key); found {
+		if stmt, ok := value.(*sqlx.Stmt); ok {
+			return stmt
 		}
-		return cache.itemsxstmt.GetVal(key)
-	} else {
-		// For statements that don't exist, we need to create them synchronously
-		// since this function needs to return the statement immediately
-		stmt := preparestmt(imdb, key)
-
-		// Queue the add operation asynchronously
-		syncops.QueueSyncMapAdd(syncops.MapTypeXStmt, key, stmt, c.getexpiressql(false), imdb, time.Now().UnixNano())
-
-		return stmt
 	}
+
+	// Cache miss - prepare statement and cache it
+	stmt := preparestmt(imdb, key)
+	if stmt != nil {
+		cache.ristrettoStmt.Set(key, stmt, 1)
+		cache.ristrettoStmt.Wait()
+	} else {
+		_, err := Getdb(imdb).Preparex(key)
+		logger.Logtype("error", 1).
+			Str(strQuery, key).
+			Err(err).
+			Msg("stmt failed")
+	}
+
+	return stmt
 }
+
+// getXStmtOld is the old implementation using syncops - kept as fallback
+// func (c *globalcache) getXStmtOld(key string, imdb bool) *sqlx.Stmt {
+// 	if cache.itemsxstmt.Check(key) {
+// 		expires := cache.itemsxstmt.GetExpire(key)
+// 		if config.GetSettingsGeneral().CacheAutoExtend ||
+// 			expires != 0 && (time.Now().UnixNano() > expires) {
+// 			syncops.QueueSyncMapUpdateExpire(syncops.MapTypeXStmt, key, c.getexpiressql(false))
+// 		}
+// 		return cache.itemsxstmt.GetVal(key)
+// 	}
+// 	stmt := preparestmt(imdb, key)
+// 	syncops.QueueSyncMapAdd(syncops.MapTypeXStmt, key, stmt, c.getexpiressql(false), imdb, time.Now().UnixNano())
+// 	return stmt
+// }
 
 // preparestmt prepares a SQL statement using the provided database connection and SQL query key.
 // If an error occurs or the prepared statement is nil, it returns an empty sqlx.Stmt.
@@ -123,54 +170,90 @@ func preparestmt(imdb bool, key string) *sqlx.Stmt {
 	if err != nil || sq == nil {
 		return nil
 	}
+
 	return sq
 }
 
 // setStaticRegexp sets a cached regular expression with the given key. If the cached regular expression
-// does not exist, it queues the operation to be processed by the single cache writer. This function is used to cache regular
+// does not exist, it compiles and caches it using Ristretto. This function is used to cache regular
 // expressions that are used statically throughout the application.
 func (c *globalcache) setStaticRegexp(key string) {
-	if !cache.itemsregex.Check(key) {
-		syncops.QueueSyncMapAdd(syncops.MapTypeRegex, key, getregexP(key), 0, false, time.Now().UnixNano())
+	// if cache.ristrettoRegex == nil {
+	// 	// Fallback to old implementation if Ristretto not initialized
+	// 	if !cache.itemsregex.Check(key) {
+	// 		syncops.QueueSyncMapAdd(syncops.MapTypeRegex, key, getregexP(key), 0, false, time.Now().UnixNano())
+	// 	}
+	// 	return
+	// }
+
+	// Check if already cached in Ristretto
+	if _, found := cache.ristrettoRegex.Get(key); found {
+		return
 	}
+
+	rgx := getregexP(key)
+	cache.ristrettoRegex.Set(key, rgx, 1) // Static patterns never expire (cost=1)
+	cache.ristrettoRegex.Wait()
 }
 
-// setRegexp sets a cached regular expression with the given key. If the cached regular expression
-// does not exist, it creates a new one and adds it to the cache. If the cached regular expression
-// already exists, it checks if the expiration time has passed and updates the expiration time if
-// necessary.
-// The function takes a key string and a duration time.Duration. If the duration is 0, it uses the
-// default extension time. The function returns the cached regular expression.
+// setRegexp sets a cached regular expression with the given key using Ristretto cache.
+// If the cached regular expression does not exist, it creates a new one and adds it to the cache.
+// The function takes a key string and a duration time.Duration for TTL.
+// If duration is 0, patterns are cached permanently. Returns the compiled regexp.
 func (c *globalcache) setRegexp(key string, duration time.Duration) *regexp.Regexp {
-	if !cache.itemsregex.Check(key) {
-		// For regex that doesn't exist, we need to create it synchronously
-		// since this function needs to return the regex immediately
-		rgx := getregexP(key)
+	// if cache.ristrettoRegex == nil {
+	// 	// Fallback to old implementation if Ristretto not initialized
+	// 	return c.setRegexpOld(key, duration)
+	// }
 
-		// Queue the add operation asynchronously
-		expires := getexpireskey(duration)
-		if duration == 0 {
-			c.mu.RLock()
-			defaultExt := c.defaultextension
-			c.mu.RUnlock()
-			expires = getexpireskey(defaultExt)
-		}
-		syncops.QueueSyncMapAdd(syncops.MapTypeRegex, key, rgx, expires, false, time.Now().UnixNano())
-
-		return rgx
-	}
-	expires := cache.itemsregex.GetExpire(key)
-	if config.GetSettingsGeneral().CacheAutoExtend || expires != 0 && (time.Now().UnixNano() > expires) {
-		if duration != 0 && key != "RegexSeriesIdentifier" && key != "RegexSeriesTitle" {
-			c.mu.RLock()
-			defaultExt := c.defaultextension
-			c.mu.RUnlock()
-			// Queue the expire update operation to avoid race conditions
-			syncops.QueueSyncMapUpdateExpire(syncops.MapTypeRegex, key, getexpireskey(defaultExt))
+	// Try Ristretto cache first
+	if value, found := cache.ristrettoRegex.Get(key); found {
+		if rgx, ok := value.(*regexp.Regexp); ok {
+			return rgx
 		}
 	}
-	return cache.itemsregex.GetVal(key)
+
+	// Cache miss - compile and cache
+	rgx := getregexP(key)
+
+	if duration > 0 {
+		// Cache with TTL
+		cache.ristrettoRegex.SetWithTTL(key, rgx, 1, duration)
+	} else {
+		// Cache permanently
+		cache.ristrettoRegex.Set(key, rgx, 1)
+	}
+
+	cache.ristrettoRegex.Wait() // Ensure write completes
+
+	return rgx
 }
+
+// setRegexpOld is the old implementation using syncops - kept as fallback
+// func (c *globalcache) setRegexpOld(key string, duration time.Duration) *regexp.Regexp {
+// 	if !cache.itemsregex.Check(key) {
+// 		rgx := getregexP(key)
+// 		expires := getexpireskey(duration)
+// 		if duration == 0 {
+// 			c.mu.RLock()
+// 			defaultExt := c.defaultextension
+// 			c.mu.RUnlock()
+// 			expires = getexpireskey(defaultExt)
+// 		}
+// 		syncops.QueueSyncMapAdd(syncops.MapTypeRegex, key, rgx, expires, false, time.Now().UnixNano())
+// 		return rgx
+// 	}
+// 	expires := cache.itemsregex.GetExpire(key)
+// 	if config.GetSettingsGeneral().CacheAutoExtend || expires != 0 && (time.Now().UnixNano() > expires) {
+// 		if duration != 0 && key != "RegexSeriesIdentifier" && key != "RegexSeriesTitle" {
+// 			c.mu.RLock()
+// 			defaultExt := c.defaultextension
+// 			c.mu.RUnlock()
+// 			syncops.QueueSyncMapUpdateExpire(syncops.MapTypeRegex, key, getexpireskey(defaultExt))
+// 		}
+// 	}
+// 	return cache.itemsregex.GetVal(key)
+// }
 
 // InitCache initializes the global cache by creating a new Cache instance
 // with the provided expiration times and logger. It is called on startup
@@ -183,24 +266,29 @@ func InitCache() {
 func ClearCaches() {
 	syncops.QueueSyncMapDeleteFunc(syncops.MapTypeString, func(item []string) bool {
 		clear(item)
-		item = nil
 		return true
 	})
-	syncops.QueueSyncMapDeleteFunc(syncops.MapTypeThreeString, func(item []syncops.DbstaticThreeStringTwoInt) bool {
-		clear(item)
-		item = nil
-		return true
-	})
-	syncops.QueueSyncMapDeleteFunc(syncops.MapTypeTwoInt, func(item []syncops.DbstaticOneStringTwoInt) bool {
-		clear(item)
-		item = nil
-		return true
-	})
-	syncops.QueueSyncMapDeleteFunc(syncops.MapTypeTwoString, func(item []syncops.DbstaticTwoStringOneInt) bool {
-		clear(item)
-		item = nil
-		return true
-	})
+	syncops.QueueSyncMapDeleteFunc(
+		syncops.MapTypeThreeString,
+		func(item []syncops.DbstaticThreeStringTwoInt) bool {
+			clear(item)
+			return true
+		},
+	)
+	syncops.QueueSyncMapDeleteFunc(
+		syncops.MapTypeTwoInt,
+		func(item []syncops.DbstaticOneStringTwoInt) bool {
+			clear(item)
+			return true
+		},
+	)
+	syncops.QueueSyncMapDeleteFunc(
+		syncops.MapTypeTwoString,
+		func(item []syncops.DbstaticTwoStringOneInt) bool {
+			clear(item)
+			return true
+		},
+	)
 	syncops.QueueSyncMapDeleteFunc(syncops.MapTypeXStmt, func(item *sqlx.Stmt) bool {
 		item.Close()
 		return true
@@ -292,6 +380,7 @@ func SlicesCacheContainsI(useseries bool, query string, w *string) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -320,6 +409,7 @@ func CacheOneStringTwoIntIndexFunc(s string, f func(*syncops.DbstaticOneStringTw
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -333,6 +423,7 @@ func CacheOneStringTwoIntIndexFuncRet(s string, id uint, listname string) uint {
 			return a.Num2
 		}
 	}
+
 	return 0
 }
 
@@ -346,6 +437,7 @@ func CacheOneStringTwoIntIndexFuncStr(useseries bool, query string, i uint) stri
 			return a.Str
 		}
 	}
+
 	return ""
 }
 
@@ -356,12 +448,14 @@ func CacheThreeStringIntIndexFunc(s string, u *string) uint {
 	if u == nil || *u == "" {
 		return 0
 	}
+
 	t := *u
 	for _, a := range GetCachedThreeStringArr(s, false, true) {
 		if a.Str3 == t || strings.EqualFold(a.Str3, t) {
 			return a.Num2
 		}
 	}
+
 	return 0
 }
 
@@ -374,6 +468,7 @@ func CacheThreeStringIntIndexFuncGetYear(s string, i uint) uint16 {
 			return uint16(a.Num1)
 		}
 	}
+
 	return 0
 }
 
@@ -400,6 +495,7 @@ func refreshCacheDBInternal[t comparable](
 ) {
 	mapvar := logger.GetStringsMap(useseries, maptypestr)
 	item := getCachedArrayDirect(cachevar, mapvar, true, false)
+
 	count := Getdatarow[uint](
 		false,
 		logger.GetStringsMap(useseries, mapcountsql),
@@ -408,6 +504,7 @@ func refreshCacheDBInternal[t comparable](
 	if !force && len(item) == int(count) {
 		return
 	}
+
 	if count == 0 {
 		if len(item) > 0 || !cachevar.Check(mapvar) {
 			storeMapType(
@@ -420,12 +517,15 @@ func refreshCacheDBInternal[t comparable](
 				time.Now().UnixNano(),
 			)
 		}
+
 		return
 	}
+
 	lastscan := cachevar.GetLastScan(mapvar)
 	if !force && lastscan != 0 && lastscan > time.Now().Add(-1*time.Minute).UnixNano() {
 		return
 	}
+
 	logger.Logtype("debug", 1).
 		Str(strcache, mapvar).
 		Msg("refresh cache")
@@ -462,7 +562,15 @@ func RefreshMediaCacheDB(useseries bool, force bool) {
 	if !config.GetSettingsGeneral().UseMediaCache {
 		return
 	}
-	refreshCacheDBInternal(useseries, force, logger.CacheDBMedia, logger.DBCountDBMedia, logger.DBCacheDBMedia, cache.itemsthreestring)
+
+	refreshCacheDBInternal(
+		useseries,
+		force,
+		logger.CacheDBMedia,
+		logger.DBCountDBMedia,
+		logger.DBCacheDBMedia,
+		cache.itemsthreestring,
+	)
 }
 
 // RefreshMediaCacheList refreshes the media caches for movies and series.
@@ -474,7 +582,15 @@ func RefreshMediaCacheList(useseries bool, force bool) {
 	if !config.GetSettingsGeneral().UseMediaCache {
 		return
 	}
-	refreshCacheDBInternal(useseries, force, logger.CacheMedia, logger.DBCountMedia, logger.DBCacheMedia, cache.itemstwoint)
+
+	refreshCacheDBInternal(
+		useseries,
+		force,
+		logger.CacheMedia,
+		logger.DBCountMedia,
+		logger.DBCacheMedia,
+		cache.itemstwoint,
+	)
 }
 
 // Refreshhistorycachetitle refreshes the cached history title arrays for movies or series.
@@ -485,7 +601,15 @@ func Refreshhistorycachetitle(useseries bool, force bool) {
 	if !config.GetSettingsGeneral().UseHistoryCache {
 		return
 	}
-	refreshCacheDBInternal(useseries, force, logger.CacheHistoryTitle, logger.DBCountHistoriesTitle, logger.DBHistoriesTitle, cache.itemsstring)
+
+	refreshCacheDBInternal(
+		useseries,
+		force,
+		logger.CacheHistoryTitle,
+		logger.DBCountHistoriesTitle,
+		logger.DBHistoriesTitle,
+		cache.itemsstring,
+	)
 }
 
 // Refreshhistorycacheurl refreshes the cached history URL arrays for movies or series.
@@ -496,7 +620,15 @@ func Refreshhistorycacheurl(useseries bool, force bool) {
 	if !config.GetSettingsGeneral().UseHistoryCache {
 		return
 	}
-	refreshCacheDBInternal(useseries, force, logger.CacheHistoryURL, logger.DBCountHistoriesURL, logger.DBHistoriesURL, cache.itemsstring)
+
+	refreshCacheDBInternal(
+		useseries,
+		force,
+		logger.CacheHistoryURL,
+		logger.DBCountHistoriesURL,
+		logger.DBHistoriesURL,
+		cache.itemsstring,
+	)
 }
 
 // RefreshMediaCacheTitles refreshes the cached media title arrays for movies or series.
@@ -506,7 +638,15 @@ func RefreshMediaCacheTitles(useseries bool, force bool) {
 	if !config.GetSettingsGeneral().UseMediaCache {
 		return
 	}
-	refreshCacheDBInternal(useseries, force, logger.CacheMediaTitles, logger.DBCountDBTitles, logger.DBCacheDBTitles, cache.itemstwostring)
+
+	refreshCacheDBInternal(
+		useseries,
+		force,
+		logger.CacheMediaTitles,
+		logger.DBCountDBTitles,
+		logger.DBCacheDBTitles,
+		cache.itemstwostring,
+	)
 }
 
 // Refreshfilescached refreshes the cached file location arrays for movies or series.
@@ -516,7 +656,15 @@ func Refreshfilescached(useseries bool, force bool) {
 	if !config.GetSettingsGeneral().UseFileCache {
 		return
 	}
-	refreshCacheDBInternal(useseries, force, logger.CacheFiles, logger.DBCountFiles, logger.DBCacheFiles, cache.itemsstring)
+
+	refreshCacheDBInternal(
+		useseries,
+		force,
+		logger.CacheFiles,
+		logger.DBCountFiles,
+		logger.DBCacheFiles,
+		cache.itemsstring,
+	)
 }
 
 // Refreshunmatchedcached refreshes the cached string array of unmatched files for movies or series.
@@ -526,27 +674,57 @@ func Refreshunmatchedcached(useseries bool, force bool) {
 	if !config.GetSettingsGeneral().UseFileCache {
 		return
 	}
+
 	ExecNMap(useseries, "DBRemoveUnmatched", &config.GetSettingsGeneral().CacheDuration2)
-	refreshCacheDBInternal(useseries, force, logger.CacheUnmatched, logger.DBCountUnmatched, logger.DBCacheUnmatched, cache.itemsstring)
+	refreshCacheDBInternal(
+		useseries,
+		force,
+		logger.CacheUnmatched,
+		logger.DBCountUnmatched,
+		logger.DBCacheUnmatched,
+		cache.itemsstring,
+	)
 }
 
 // RefreshCached refreshes the cached data for the specified key. It calls the appropriate
-// refresh function based on the key, such as RefreshMediaCache, RefreshMediaCacheTitles,
-// Refreshunmatchedcached, Refreshfilescached, or Refreshhistorycache.
+// refresh function based on the key. Uses indexed versions when UseIndexedCache is enabled.
 func RefreshCached(key string, force bool) {
+	// Use indexed refresh functions if enabled for better performance
+	useIndexed := config.GetSettingsGeneral().UseIndexedCache
+
 	switch key {
 	case logger.CacheMovie:
 		RefreshMediaCacheList(false, force)
 	case logger.CacheSeries:
 		RefreshMediaCacheList(true, force)
 	case logger.CacheDBMovie:
-		RefreshMediaCacheDB(false, force)
+		if useIndexed {
+			RefreshMediaCacheDBIndexed(false, force)
+		} else {
+			RefreshMediaCacheDB(false, force)
+		}
+
 	case logger.CacheDBSeriesAlt:
-		RefreshMediaCacheTitles(true, force)
+		if useIndexed {
+			RefreshMediaCacheTitlesIndexed(true, force)
+		} else {
+			RefreshMediaCacheTitles(true, force)
+		}
+
 	case logger.CacheDBSeries:
-		RefreshMediaCacheDB(true, force)
+		if useIndexed {
+			RefreshMediaCacheDBIndexed(true, force)
+		} else {
+			RefreshMediaCacheDB(true, force)
+		}
+
 	case logger.CacheTitlesMovie:
-		RefreshMediaCacheTitles(false, force)
+		if useIndexed {
+			RefreshMediaCacheTitlesIndexed(false, force)
+		} else {
+			RefreshMediaCacheTitles(false, force)
+		}
+
 	case logger.CacheUnmatchedMovie:
 		Refreshunmatchedcached(false, force)
 	case logger.CacheUnmatchedSeries:
@@ -556,13 +734,32 @@ func RefreshCached(key string, force bool) {
 	case logger.CacheFilesSeries:
 		Refreshfilescached(true, force)
 	case logger.CacheHistoryURLMovie:
-		Refreshhistorycacheurl(false, force)
+		if useIndexed {
+			RefreshhistorycacheurlIndexed(false, force)
+		} else {
+			Refreshhistorycacheurl(false, force)
+		}
+
 	case logger.CacheHistoryTitleMovie:
-		Refreshhistorycachetitle(false, force)
+		if useIndexed {
+			RefreshhistorycachetitleIndexed(false, force)
+		} else {
+			Refreshhistorycachetitle(false, force)
+		}
+
 	case logger.CacheHistoryURLSeries:
-		Refreshhistorycacheurl(true, force)
+		if useIndexed {
+			RefreshhistorycacheurlIndexed(true, force)
+		} else {
+			Refreshhistorycacheurl(true, force)
+		}
+
 	case logger.CacheHistoryTitleSeries:
-		Refreshhistorycachetitle(true, force)
+		if useIndexed {
+			RefreshhistorycachetitleIndexed(true, force)
+		} else {
+			Refreshhistorycachetitle(true, force)
+		}
 	}
 }
 
@@ -570,7 +767,11 @@ func RefreshCached(key string, force bool) {
 // If no cached object is found for the key, or the cached object has expired, it returns nil.
 // The checkexpire parameter determines whether to check if the cached object has expired.
 // The retry parameter determines whether to refresh the cached object if it is empty or the zero value.
-func GetCachedTwoStringArr(key string, checkexpire bool, retry bool) []syncops.DbstaticTwoStringOneInt {
+func GetCachedTwoStringArr(
+	key string,
+	checkexpire bool,
+	retry bool,
+) []syncops.DbstaticTwoStringOneInt {
 	if cache.itemstwostring.Check(key) {
 		if checkexpire {
 			syncops.QueueSyncMapCheckExpires(
@@ -580,11 +781,14 @@ func GetCachedTwoStringArr(key string, checkexpire bool, retry bool) []syncops.D
 				config.GetSettingsGeneral().CacheDuration,
 			)
 		}
+
 		return cache.itemstwostring.GetVal(key)
 	}
+
 	if retry {
 		return getrefresh(cache.itemstwostring, key, retry)
 	}
+
 	return nil
 }
 
@@ -592,7 +796,11 @@ func GetCachedTwoStringArr(key string, checkexpire bool, retry bool) []syncops.D
 // If no cached object is found for the key, or the cached object has expired, it returns nil.
 // The checkexpire parameter determines whether to check if the cached object has expired.
 // The retry parameter determines whether to refresh the cached object if it is empty or the zero value.
-func GetCachedTwoIntArr(key string, checkexpire bool, retry bool) []syncops.DbstaticOneStringTwoInt {
+func GetCachedTwoIntArr(
+	key string,
+	checkexpire bool,
+	retry bool,
+) []syncops.DbstaticOneStringTwoInt {
 	if cache.itemstwoint.Check(key) {
 		if checkexpire {
 			syncops.QueueSyncMapCheckExpires(
@@ -602,11 +810,14 @@ func GetCachedTwoIntArr(key string, checkexpire bool, retry bool) []syncops.Dbst
 				config.GetSettingsGeneral().CacheDuration,
 			)
 		}
+
 		return cache.itemstwoint.GetVal(key)
 	}
+
 	if retry {
 		return getrefresh(cache.itemstwoint, key, retry)
 	}
+
 	return nil
 }
 
@@ -614,7 +825,11 @@ func GetCachedTwoIntArr(key string, checkexpire bool, retry bool) []syncops.Dbst
 // If no cached object is found for the key, or the cached object has expired, it returns nil.
 // The checkexpire parameter determines whether to check if the cached object has expired.
 // The retry parameter determines whether to refresh the cached object if it is empty or the zero value.
-func GetCachedThreeStringArr(key string, checkexpire bool, retry bool) []syncops.DbstaticThreeStringTwoInt {
+func GetCachedThreeStringArr(
+	key string,
+	checkexpire bool,
+	retry bool,
+) []syncops.DbstaticThreeStringTwoInt {
 	if cache.itemsthreestring.Check(key) {
 		if checkexpire {
 			syncops.QueueSyncMapCheckExpires(
@@ -624,11 +839,14 @@ func GetCachedThreeStringArr(key string, checkexpire bool, retry bool) []syncops
 				config.GetSettingsGeneral().CacheDuration,
 			)
 		}
+
 		return cache.itemsthreestring.GetVal(key)
 	}
+
 	if retry {
 		return getrefresh(cache.itemsthreestring, key, retry)
 	}
+
 	return nil
 }
 
@@ -646,11 +864,14 @@ func GetCachedStringArr(key string, checkexpire bool, retry bool) []string {
 				config.GetSettingsGeneral().CacheDuration,
 			)
 		}
+
 		return cache.itemsstring.GetVal(key)
 	}
+
 	if retry {
 		return getrefresh(cache.itemsstring, key, retry)
 	}
+
 	return nil
 }
 
@@ -676,11 +897,14 @@ func getCachedArrayDirect[t comparable](
 				return nil
 			}
 		}
+
 		return c.GetVal(key)
 	}
+
 	if retry {
 		return getrefresh(c, key, retry)
 	}
+
 	return nil
 }
 
@@ -699,6 +923,7 @@ func getrefresh[T comparable](s *syncops.SyncMap[[]T], key string, retry bool) [
 			}
 		}
 	}
+
 	return t
 }
 
@@ -737,6 +962,7 @@ func storeMapType[t any](
 			// Log error if map type cannot be determined
 			logger.Logtype("error", 1).Str("key", s).Msg("Unable to determine MapType for SyncMap in storeMapType")
 		}
+
 		return
 	}
 	// Use syncops for Add operation as well
@@ -749,7 +975,7 @@ func storeMapType[t any](
 	}
 }
 
-// getMapTypeForSyncMap determines the MapType for a given SyncMap pointer
+// getMapTypeForSyncMap determines the MapType for a given SyncMap pointer.
 func getMapTypeForSyncMap(c any) syncops.MapType {
 	switch c {
 	case cache.itemsstring:
@@ -777,6 +1003,7 @@ func CheckcachedTitleHistory(useseries bool, file *string) bool {
 	if config.GetSettingsGeneral().UseFileCache {
 		return SlicesCacheContainsI(useseries, logger.CacheHistoryTitle, file)
 	}
+
 	return Getdatarow[uint](
 		false,
 		logger.GetStringsMap(useseries, logger.DBCountHistoriesByTitle),
@@ -792,6 +1019,7 @@ func CheckcachedURLHistory(useseries bool, file *string) bool {
 	if config.GetSettingsGeneral().UseFileCache {
 		return SlicesCacheContainsI(useseries, logger.CacheHistoryURL, file)
 	}
+
 	return Getdatarow[uint](
 		false,
 		logger.GetStringsMap(useseries, logger.DBCountHistoriesByURL),
@@ -823,14 +1051,17 @@ func getregexP(key string) *regexp.Regexp {
 		return regexp.MustCompile(
 			`^(.*)(?i)(?:(?:\.| - |-)s?[0-9]{1,4}((?:(?:(?: )?-?(?: )?[ex-][0-9]{1,3})+))|(\d{2,4}(?:\.|-| |_)\d{1,2}(?:\.|-| |_)\d{1,2})(?:[^0-9]|$))`,
 		)
+
 	case "RegexSeriesTitleDate":
 		return regexp.MustCompile(
 			`^(.*)(?i)(?:\.|-| |_)(\d{2,4}(?:\.|-| |_)\d{1,2}(?:\.|-| |_)\d{1,2})(?:[^0-9]|$)`,
 		)
+
 	case "RegexSeriesIdentifier":
 		return regexp.MustCompile(
 			`(?i)s?[0-9]{1,4}((?:(?:(?: )?-?(?: )?[ex-][0-9]{1,3})+))|(\d{2,4}(?:\.|-| |_)\d{1,2}(?:\.|-| |_)\d{1,2})(?:\b|_)`,
 		)
+
 	default:
 		return regexp.MustCompile(key)
 	}
@@ -847,8 +1078,10 @@ func RunRetRegex(key string, matchfor string, useall bool) []int {
 		if len(matches) < 1 || len(matches[len(matches)-1]) < 1 {
 			return nil
 		}
+
 		return matches[len(matches)-1]
 	}
+
 	return findStringSubmatchIndex(key, matchfor)
 }
 
@@ -924,19 +1157,24 @@ func RegexGetMatchesStr1Str2(cached bool, key, matchfor string) (string, string)
 		if matches[3] != -1 && matches[5] != -1 {
 			return matchfor[matches[2]:matches[3]], matchfor[matches[4]:matches[5]]
 		}
+
 		if matches[3] == -1 && matches[5] != -1 {
 			return "", matchfor[matches[4]:matches[5]]
 		}
+
 		if matches[3] != -1 {
 			return matchfor[matches[2]:matches[3]], ""
 		}
+
 	case len(matches) >= 4:
 		if matches[3] != -1 {
 			return matchfor[matches[2]:matches[3]], ""
 		}
+
 	default:
 		return "", ""
 	}
+
 	return "", ""
 }
 
@@ -953,6 +1191,7 @@ func startJanitor() {
 	go func() {
 		defer func() {
 			janitorActive = false
+
 			if cache.janitor != nil {
 				cache.janitor.Stop()
 			}
@@ -967,9 +1206,12 @@ func startJanitor() {
 				syncops.QueueSyncMapDeleteFuncExpires(syncops.MapTypeString, func(d int64) bool {
 					return d != 0 && now >= d
 				})
-				syncops.QueueSyncMapDeleteFuncExpires(syncops.MapTypeThreeString, func(d int64) bool {
-					return d != 0 && now >= d
-				})
+				syncops.QueueSyncMapDeleteFuncExpires(
+					syncops.MapTypeThreeString,
+					func(d int64) bool {
+						return d != 0 && now >= d
+					},
+				)
 				syncops.QueueSyncMapDeleteFuncExpires(syncops.MapTypeTwoInt, func(d int64) bool {
 					return d != 0 && now >= d
 				})
@@ -999,9 +1241,9 @@ func startJanitor() {
 
 // getexpireskey returns the expiration time in nanoseconds for the given cache key
 // and duration. Special cases like 0 duration or predefined keys will not expire.
-func getexpireskey(duration time.Duration) int64 {
-	return time.Now().Add(duration).UnixNano()
-}
+// func getexpireskey(duration time.Duration) int64 {
+// 	return time.Now().Add(duration).UnixNano()
+// }
 
 // startCacheWriter starts the single cache writer goroutine to serialize cache operations
 // Old cache writer functions removed - functionality moved to syncops package
@@ -1015,8 +1257,58 @@ func NewCache(cleaningInterval, extension time.Duration) {
 	initOnce.Do(func() {
 		if cleaningInterval >= 1 {
 			cache.interval = cleaningInterval
+
 			startJanitor() // for cache items
 		}
+
+		// Initialize Ristretto caches for regex and SQL statements
+		var err error
+
+		// Regex cache: ~1000 patterns, 10MB max
+		cache.ristrettoRegex, err = ristretto.NewCache(&ristretto.Config{
+			NumCounters: 100_000,  // 10x expected items
+			MaxCost:     10 << 20, // 10MB
+			BufferItems: 64,
+			Metrics:     false,
+			OnEvict: func(item *ristretto.Item) {
+				// Regex patterns don't need cleanup
+			},
+		})
+		if err != nil {
+			logger.Logtype("error", 1).Err(err).Msg("Failed to initialize Ristretto regex cache")
+		}
+
+		// SQL statement cache: ~1000 statements, 10MB max
+		cache.ristrettoStmt, err = ristretto.NewCache(&ristretto.Config{
+			NumCounters: 100_000,
+			MaxCost:     10 << 20,
+			BufferItems: 64,
+			Metrics:     false,
+			OnEvict: func(item *ristretto.Item) {
+				// Close SQL statement on eviction
+				if stmt, ok := item.Value.(*sqlx.Stmt); ok && stmt != nil {
+					stmt.Close()
+				}
+			},
+		})
+		if err != nil {
+			logger.Logtype("error", 1).Err(err).Msg("Failed to initialize Ristretto stmt cache")
+		}
+
+		// Initialize hybrid index SyncMaps
+		cache.indexThreeStringByStr3 = syncops.NewSyncMap[map[string]*syncops.DbstaticThreeStringTwoInt](
+			20,
+		)
+		cache.indexThreeStringByNum2 = syncops.NewSyncMap[map[uint]*syncops.DbstaticThreeStringTwoInt](
+			20,
+		)
+		cache.indexTwoIntComposite = syncops.NewSyncMap[map[string]*syncops.DbstaticOneStringTwoInt](
+			20,
+		)
+		cache.indexTwoStringByStr1 = syncops.NewSyncMap[map[string][]*syncops.DbstaticTwoStringOneInt](
+			20,
+		)
+		cache.indexStringSet = syncops.NewSyncMap[map[string]struct{}](20)
 
 		// Initialize syncops and register all SyncMaps
 		syncops.InitSyncOps()
@@ -1048,8 +1340,18 @@ func StopCache() {
 	if cache.janitorCancel != nil {
 		cache.janitorCancel()
 	}
+
 	if cache.janitor != nil {
 		cache.janitor.Stop()
+	}
+
+	// Close Ristretto caches
+	if cache.ristrettoRegex != nil {
+		cache.ristrettoRegex.Close()
+	}
+
+	if cache.ristrettoStmt != nil {
+		cache.ristrettoStmt.Close()
 	}
 
 	// Shutdown syncops manager
@@ -1080,16 +1382,25 @@ func ClearCacheType(cacheType string) {
 		syncops.QueueSyncMapDeleteFunc(syncops.MapTypeString, func(value []string) bool {
 			return true // Clear all entries
 		})
+
 	case logger.CacheDBMovie, logger.CacheDBSeries, logger.CacheDBSeriesAlt:
 		// Clear database caches
-		syncops.QueueSyncMapDeleteFunc(syncops.MapTypeThreeString, func(value []syncops.DbstaticThreeStringTwoInt) bool {
-			return true // Clear all entries
-		})
+		syncops.QueueSyncMapDeleteFunc(
+			syncops.MapTypeThreeString,
+			func(value []syncops.DbstaticThreeStringTwoInt) bool {
+				return true // Clear all entries
+			},
+		)
+
 	case logger.CacheTitlesMovie:
 		// Clear title caches
-		syncops.QueueSyncMapDeleteFunc(syncops.MapTypeTwoString, func(value []syncops.DbstaticTwoStringOneInt) bool {
-			return true // Clear all entries
-		})
+		syncops.QueueSyncMapDeleteFunc(
+			syncops.MapTypeTwoString,
+			func(value []syncops.DbstaticTwoStringOneInt) bool {
+				return true // Clear all entries
+			},
+		)
+
 	case logger.CacheUnmatchedMovie, logger.CacheUnmatchedSeries,
 		logger.CacheFilesMovie, logger.CacheFilesSeries,
 		logger.CacheHistoryURLMovie, logger.CacheHistoryTitleMovie,

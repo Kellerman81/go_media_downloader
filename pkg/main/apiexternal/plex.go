@@ -14,48 +14,51 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/slidingwindow"
 )
 
-// plexClient is a struct for interacting with Plex API
+// plexClient is a struct for interacting with Plex API.
 type plexClient struct {
 	Client rlHTTPClient
 	Lim    *slidingwindow.Limiter
 }
 
-// NewPlexClient creates a new plexClient instance
+// NewPlexClient creates a new plexClient instance.
 func NewPlexClient(seconds uint8, calls int, disabletls bool, timeoutseconds uint16) {
 	if seconds == 0 {
 		seconds = 1
 	}
+
 	if calls == 0 {
 		calls = 1
 	}
+
 	if timeoutseconds == 0 {
 		timeoutseconds = 30
 	}
 
 	lim := slidingwindow.NewLimiter(time.Duration(seconds)*time.Second, int64(calls))
 	client := &plexClient{
-		Lim: &lim,
+		Lim: lim,
 		Client: newClient(
 			"plex",
 			disabletls,
 			true,
-			&lim,
+			lim,
 			false, nil, timeoutseconds,
 		),
 	}
 	setPlexAPI(client)
 }
 
-// Helper function for thread-safe access to plexAPI
+// Helper function for thread-safe access to plexAPI.
 func getPlexClient() *rlHTTPClient {
 	api := getPlexAPI()
 	if api == nil {
 		return nil
 	}
+
 	return &api.Client
 }
 
-// PlexWatchlistItem represents an item from a Plex watchlist
+// PlexWatchlistItem represents an item from a Plex watchlist.
 type PlexWatchlistItem struct {
 	RatingKey             string     `json:"ratingKey"`
 	Key                   string     `json:"key"`
@@ -77,17 +80,17 @@ type PlexWatchlistItem struct {
 	GUIDS                 []PlexGUID `json:"Guid,omitempty"`
 }
 
-// PlexGUID represents external IDs for Plex items
+// PlexGUID represents external IDs for Plex items.
 type PlexGUID struct {
 	ID string `json:"id"`
 }
 
-// PlexWatchlistResponse represents the response from Plex watchlist API
+// PlexWatchlistResponse represents the response from Plex watchlist API.
 type PlexWatchlistResponse struct {
 	MediaContainer PlexMediaContainer `json:"MediaContainer"`
 }
 
-// PlexMediaContainer contains the actual watchlist items
+// PlexMediaContainer contains the actual watchlist items.
 type PlexMediaContainer struct {
 	Size                int                 `json:"size"`
 	AllowSync           int                 `json:"allowSync"`
@@ -100,7 +103,7 @@ type PlexMediaContainer struct {
 	Metadata            []PlexWatchlistItem `json:"Metadata"`
 }
 
-// PlexUserResponse represents user account information from Plex
+// PlexUserResponse represents user account information from Plex.
 type PlexUserResponse struct {
 	MediaContainer struct {
 		Size int        `json:"size"`
@@ -108,7 +111,7 @@ type PlexUserResponse struct {
 	} `json:"MediaContainer"`
 }
 
-// PlexUser represents a Plex user account
+// PlexUser represents a Plex user account.
 type PlexUser struct {
 	ID       int    `json:"id"`
 	UUID     string `json:"uuid"`
@@ -118,7 +121,7 @@ type PlexUser struct {
 	Thumb    string `json:"thumb"`
 }
 
-// GetPlexWatchlist retrieves the watchlist from a Plex server
+// GetPlexWatchlist retrieves the watchlist from a Plex server.
 func GetPlexWatchlist(serverURL, token, username string) ([]PlexWatchlistItem, error) {
 	if serverURL == "" || token == "" || username == "" {
 		return nil, fmt.Errorf("plex server URL, token, and username are required")
@@ -142,14 +145,22 @@ func GetPlexWatchlist(serverURL, token, username string) ([]PlexWatchlistItem, e
 		Msg("Fetching Plex watchlist")
 
 	var response PlexWatchlistResponse
-	err := ProcessHTTP(getPlexClient(), fullURL, false, func(ctx context.Context, r *http.Response) error {
-		return json.NewDecoder(r.Body).Decode(&response)
-	}, nil)
+
+	err := ProcessHTTP(
+		getPlexClient(),
+		fullURL,
+		false,
+		func(ctx context.Context, r *http.Response) error {
+			return json.NewDecoder(r.Body).Decode(&response)
+		},
+		nil,
+	)
 	if err != nil {
 		logger.Logtype("error", 1).
 			Str("url", serverURL).
 			Err(err).
 			Msg("Failed to fetch Plex watchlist")
+
 		return nil, err
 	}
 
@@ -160,7 +171,7 @@ func GetPlexWatchlist(serverURL, token, username string) ([]PlexWatchlistItem, e
 	return response.MediaContainer.Metadata, nil
 }
 
-// getPlexUserID retrieves the user ID for a given username
+// getPlexUserID retrieves the user ID for a given username.
 func getPlexUserID(serverURL, token, username string) (int, error) {
 	usersURL := fmt.Sprintf("%s/accounts", strings.TrimSuffix(serverURL, "/"))
 
@@ -170,9 +181,16 @@ func getPlexUserID(serverURL, token, username string) (int, error) {
 	fullURL := fmt.Sprintf("%s?%s", usersURL, params.Encode())
 
 	var response PlexUserResponse
-	err := ProcessHTTP(getPlexClient(), fullURL, false, func(ctx context.Context, r *http.Response) error {
-		return json.NewDecoder(r.Body).Decode(&response)
-	}, nil)
+
+	err := ProcessHTTP(
+		getPlexClient(),
+		fullURL,
+		false,
+		func(ctx context.Context, r *http.Response) error {
+			return json.NewDecoder(r.Body).Decode(&response)
+		},
+		nil,
+	)
 	if err != nil {
 		return 0, err
 	}
@@ -187,7 +205,7 @@ func getPlexUserID(serverURL, token, username string) (int, error) {
 	return 0, fmt.Errorf("user '%s' not found on Plex server", username)
 }
 
-// ExtractIMDBFromPlexItem extracts IMDB ID from a Plex watchlist item
+// ExtractIMDBFromPlexItem extracts IMDB ID from a Plex watchlist item.
 func ExtractIMDBFromPlexItem(item PlexWatchlistItem) string {
 	// Check GUIDs for IMDB ID
 	for _, guid := range item.GUIDS {
@@ -204,7 +222,7 @@ func ExtractIMDBFromPlexItem(item PlexWatchlistItem) string {
 	return ""
 }
 
-// ExtractTVDBFromPlexItem extracts TVDB ID from a Plex watchlist item
+// ExtractTVDBFromPlexItem extracts TVDB ID from a Plex watchlist item.
 func ExtractTVDBFromPlexItem(item PlexWatchlistItem) int {
 	// Check GUIDs for TVDB ID
 	for _, guid := range item.GUIDS {
@@ -227,12 +245,12 @@ func ExtractTVDBFromPlexItem(item PlexWatchlistItem) int {
 	return 0
 }
 
-// IsPlexItemMovie determines if a Plex item is a movie
+// IsPlexItemMovie determines if a Plex item is a movie.
 func IsPlexItemMovie(item PlexWatchlistItem) bool {
 	return item.Type == "movie"
 }
 
-// IsPlexItemShow determines if a Plex item is a TV show
+// IsPlexItemShow determines if a Plex item is a TV show.
 func IsPlexItemShow(item PlexWatchlistItem) bool {
 	return item.Type == "show"
 }

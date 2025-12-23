@@ -32,8 +32,8 @@ Inspirations: Radarr/Sonarr and Flexget
 - Moved config.toml to config subfolder
 - Moved logs to logs subfolder
 - added first webinterface (admin only - crashes sometimes - not many data validity checks)
-- Webinterface Login: User: admin  -  Password: admin
-- Webinterface V2 Login (/api/admin): User: admin  -  Password: <WebApiKey from config>
+- Webinterface v1 removed
+- Webinterface V2 Login (/): User: admin  -  Password: <WebApiKey from config>
 - IMDB List Url not supported any more
 ## Features
 
@@ -88,6 +88,9 @@ Inspirations: Radarr/Sonarr and Flexget
 
 - Pushover
 - CSV (Write custom csv row)
+- Gotify
+- Apprise
+- Pushbullet
 
 #### Media Templates
 
@@ -111,20 +114,20 @@ Inspirations: Radarr/Sonarr and Flexget
 - Downloading of images from Meta Sites (unlikely)
 - Handle multi media releases (ex. -CD1 -CD2) (maybe even joining those) (at the bottom of the list)
 - Maybe also add the ability to download non matched episodes (which could't be found on a meta source site - risky since you might get a lot unwanted stuff) (at the bottom of the list) - using the download API you can Download excluded releases
-- Unpacking of Downloaded stuff? Currently I let the downloaders do that and don't care about it that much
+- Unpacking of Downloaded stuff? Currently I let the downloaders do that and don't care about it that much - but added a first version anyway
 - Other Media Type Support (i could think of music but don't want to include this currently)
 - Switch to db only configuration if I include a full webinterface
 - Other Feed Sources (currently i don't need more - start a discussion if you want one specific - also you can add stuff using the API)
 - Other Indexer Sources (currently i don't need more - start a discussion if you want one specific)
 - Other Downloaders (currently i don't need more - start a discussion if you want one specific - ex qBittorrent)
-- Other Notifications (currently i don't need more - start a discussion if you want one specific)
+- Other Notifications (currently i don't need more - start a discussion if you want one specific) - added a few
 - Always: Add Additional Logging (currently mostly debugging stuff)
 - Always: API Changes
 
 ## Ram Usage
 
 Currently seen: 
-Constanly in use - between 30MB-400MB-peek:1-1.5GB
+Constanly in use - between 100MB-500MB-peek:1-1.5GB
 Swap Memory: Default ~300-600MB - on a file move action the swap memory will grow to at least the complete file size - so for a 8GB file expect also this much!
 
 ## Get started
@@ -168,7 +171,7 @@ https://go-media-downloader.readme.io/
 ## After first Start - Trakt Authorize
 
 - (This part is optional and only needed if you want to get private trakt lists)
-- Create a Application within Trakt: https://trakt.tv/oauth/applications
+- Create a Application within Trakt: https://trakt.tv/oauth/applications - redirect url needs to be: http://localhost:9090
 - Write down ClientID and Secret
 - Put ClientID and Secret into the config.toml
 - Start app
@@ -177,7 +180,7 @@ https://go-media-downloader.readme.io/
 - Open : http://{server}:{port}/api/trakt/token/{code}?apikey={apikey}  to get the token and save it - the code is in the url from the step above
 - Best Practice restart App - You need to do this only once every 3 month if the expiry is reached
 
-- The Auth can now also be done from the new Webinterface
+- The Auth can now also be done from the new Webinterface which is now the preferred way
 
 ## Donate
 

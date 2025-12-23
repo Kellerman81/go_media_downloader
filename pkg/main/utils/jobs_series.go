@@ -30,9 +30,11 @@ func jobImportSeriesParseV2(
 	if list == nil {
 		return logger.ErrListnameEmpty
 	}
+
 	if list.CfgQuality == nil {
 		return logger.ErrListnameEmpty
 	}
+
 	if m.DbserieID == 0 || m.SerieID == 0 {
 		m.TempTitle = pathv
 		m.AddUnmatched(cfgp, &list.Name, errUnmatched)
@@ -47,7 +49,9 @@ func jobImportSeriesParseV2(
 	}
 
 	parser.GetPriorityMapQual(m, cfgp, list.CfgQuality, true, false)
+
 	m.File = pathv
+
 	err = parser.ParseVideoFile(m, list.CfgQuality)
 	if err != nil {
 		return err
@@ -60,6 +64,7 @@ func jobImportSeriesParseV2(
 
 	basefile := filepath.Base(pathv)
 	extfile := filepath.Ext(pathv)
+
 	var count uint
 	for idx := range m.Episodes {
 		database.Scanrowsdyn(
@@ -69,6 +74,7 @@ func jobImportSeriesParseV2(
 			&m.File,
 			&m.Episodes[idx].Num1,
 		)
+
 		if count >= 1 {
 			continue
 		}
@@ -100,6 +106,7 @@ func jobImportSeriesParseV2(
 			&reached,
 			&m.Episodes[idx].Num1,
 		)
+
 		if list.Name != "" {
 			database.ExecN(
 				"update serie_episodes set quality_profile = ? where id = ?",
@@ -115,6 +122,7 @@ func jobImportSeriesParseV2(
 		database.SlicesCacheContainsDelete(logger.CacheUnmatchedSeries, pathv)
 		database.AppendCache(logger.CacheFilesSeries, pathv)
 	}
+
 	if m.SerieID != 0 {
 		if database.Getdatarow[string](
 			false,
@@ -124,6 +132,7 @@ func jobImportSeriesParseV2(
 			structure.UpdateRootpath(pathv, logger.StrSeries, &m.SerieID, cfgp)
 		}
 	}
+
 	return nil
 }
 
@@ -149,30 +158,40 @@ func RefreshSerie(cfgp *config.MediaTypeConfig, id *string) error {
 // JobImportDBSeriesStatic to refresh each one. It accepts a MediaTypeConfig, count of rows to process,
 // query to run, and optional query argument. It returns a slice of DbstaticTwoStringOneInt structs
 // containing series data.
-func refreshseries(ctx context.Context, cfgp *config.MediaTypeConfig, tbl []database.DbstaticTwoStringOneRInt) error {
+func refreshseries(
+	ctx context.Context,
+	cfgp *config.MediaTypeConfig,
+	tbl []database.DbstaticTwoStringOneRInt,
+) error {
 	if len(tbl) == 0 {
 		return nil
 	}
+
 	of := len(tbl)
+
 	var err error
 	for idx := range tbl {
 		if err := logger.CheckContextEnded(ctx); err != nil {
 			return err
 		}
+
 		logger.Logtype("info", 0).
 			Int(logger.StrTvdb, tbl[idx].Num).
 			Int("row", idx).
 			Int("of", of).
 			Msg("Refresh Serie")
+
 		errsub := importfeed.JobImportDBSeriesStatic(&tbl[idx], cfgp)
 		if errsub != nil {
 			logger.Logtype("error", 1).
 				Int(logger.StrTvdb, tbl[idx].Num).
 				Err(errsub).
 				Msg("Import series failed")
+
 			err = errsub
 		}
 	}
+
 	return err
 }
 
@@ -183,7 +202,9 @@ func SeriesAllJobs(job string, force bool) {
 	if job == "" {
 		return
 	}
+
 	ctx := context.Background()
+
 	logger.Logtype("debug", 1).
 		Str(logger.StrJob, job).
 		Msg("Started Jobfor all")
@@ -203,12 +224,14 @@ func structurefolders(ctx context.Context, cfgp *config.MediaTypeConfig) error {
 	if cfgp.DataLen == 0 || len(cfgp.DataImport) == 0 || len(cfgp.Data) == 0 {
 		return nil
 	}
+
 	if cfgp.Data[0].CfgPath == nil {
 		logger.Logtype("error", 1).
 			Str(logger.StrConfig, cfgp.Data[0].TemplatePath).
 			Msg("Path not found")
-		return errors.New("Path not found")
+		return errors.New("path not found")
 	}
+
 	if !cfgp.Structure {
 		logger.Logtype("error", 1).
 			Str(logger.StrConfig, cfgp.NamePrefix).
@@ -226,6 +249,7 @@ func structurefolders(ctx context.Context, cfgp *config.MediaTypeConfig) error {
 		if err := logger.CheckContextEnded(ctx); err != nil {
 			return err
 		}
+
 		if dataimport.CfgPath == nil {
 			logger.Logtype("error", 1).
 				Str(logger.StrConfig, dataimport.TemplatePath).
@@ -243,13 +267,17 @@ func structurefolders(ctx context.Context, cfgp *config.MediaTypeConfig) error {
 				Str(logger.StrFile, dataimport.CfgPath.Path).
 				Err(err).
 				Msg("Error reading directory")
+
 			errret = err
+
 			continue
 		}
+
 		for idx := range entry {
 			if err := logger.CheckContextEnded(ctx); err != nil {
 				return err
 			}
+
 			if entry[idx].IsDir() {
 				err = structure.OrganizeSingleFolder(
 					ctx,
@@ -266,11 +294,13 @@ func structurefolders(ctx context.Context, cfgp *config.MediaTypeConfig) error {
 						Str(logger.StrFile, dataimport.CfgPath.Path).
 						Err(err).
 						Msg("Error organizing folder")
+
 					errret = err
 				}
 			}
 		}
 	}
+
 	return errret
 }
 
@@ -290,9 +320,11 @@ func importnewseriessingle(
 		Str(logger.StrConfig, cfgp.NamePrefix).
 		Str(logger.StrListname, cfgp.Lists[listid].Name).
 		Msg("get feeds for")
+
 	if !list.Enabled || !list.CfgList.Enabled {
 		return logger.ErrDisabled
 	}
+
 	if list.CfgList == nil {
 		return errors.New("list template not found")
 	}
@@ -303,6 +335,7 @@ func importnewseriessingle(
 		return err
 	}
 	defer plfeeds.Put(feed)
+
 	if len(feed.Series) == 0 {
 		return nil
 	}
@@ -311,15 +344,18 @@ func importnewseriessingle(
 	for idxserie2 := range feed.Series {
 		pl.Submit(func() {
 			defer logger.HandlePanic()
+
 			importfeed.JobImportDBSeries(ctx, &feed.Series[idxserie2], idxserie2, cfgp, listid)
 		})
 	}
+
 	errjobs := pl.Wait()
 	if errjobs != nil {
 		logger.Logtype("error", 0).
 			Err(errjobs).
 			Msg("Error importing series")
 	}
+
 	return nil
 }
 
@@ -328,17 +364,20 @@ func importnewseriessingle(
 // quality_reached flag in the database accordingly.
 func checkreachedepisodesflag(rootctx context.Context, listcfg *config.MediaListsConfig) error {
 	var minPrio, reached int
+
 	arr := database.QuerySerieEpisodes(&listcfg.Name)
 	for idx := range arr {
 		if err := logger.CheckContextEnded(rootctx); err != nil {
 			return err
 		}
+
 		if !config.CheckGroup("quality_", arr[idx].QualityProfile) {
 			logger.Logtype("debug", 1).
 				Uint(logger.StrID, arr[idx].ID).
 				Msg("Quality for Episode not found")
 			continue
 		}
+
 		minPrio, _ = searcher.Getpriobyfiles(
 			true,
 			&arr[idx].ID,
@@ -347,15 +386,18 @@ func checkreachedepisodesflag(rootctx context.Context, listcfg *config.MediaList
 			config.GetSettingsQuality(arr[idx].QualityProfile),
 			false,
 		)
+
 		reached = 0
 		if minPrio >= config.GetSettingsQuality(arr[idx].QualityProfile).CutoffPriority {
 			reached = 1
 		}
+
 		if arr[idx].QualityReached && reached == 0 {
 			database.ExecN(
 				"update Serie_episodes set quality_reached = 0 where id = ?",
 				&arr[idx].ID,
 			)
+
 			continue
 		}
 
@@ -366,5 +408,6 @@ func checkreachedepisodesflag(rootctx context.Context, listcfg *config.MediaList
 			)
 		}
 	}
+
 	return nil
 }

@@ -22,22 +22,26 @@ func (m *SyncOpsManager) processSyncMapCheckExpires(op SyncOperation) bool {
 			syncMap.CheckExpires(op.Key, op.Extend, op.Duration)
 			return true
 		}
+
 	case MapTypeTwoString:
 		if syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticTwoStringOneInt]); ok {
 			syncMap.CheckExpires(op.Key, op.Extend, op.Duration)
 			return true
 		}
+
 	case MapTypeThreeString:
 		if syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticThreeStringTwoInt]); ok {
 			syncMap.CheckExpires(op.Key, op.Extend, op.Duration)
 			return true
 		}
+
 	case MapTypeTwoInt:
 		if syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticOneStringTwoInt]); ok {
 			syncMap.CheckExpires(op.Key, op.Extend, op.Duration)
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -59,6 +63,7 @@ func (m *SyncOpsManager) processSyncMapDeleteFunc(op SyncOperation) bool {
 				return true
 			}
 		}
+
 	case MapTypeTwoString:
 		if syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticTwoStringOneInt]); ok {
 			if filterFunc, ok := op.FilterFunc.(func([]DbstaticTwoStringOneInt) bool); ok {
@@ -66,6 +71,7 @@ func (m *SyncOpsManager) processSyncMapDeleteFunc(op SyncOperation) bool {
 				return true
 			}
 		}
+
 	case MapTypeThreeString:
 		if syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticThreeStringTwoInt]); ok {
 			if filterFunc, ok := op.FilterFunc.(func([]DbstaticThreeStringTwoInt) bool); ok {
@@ -73,6 +79,7 @@ func (m *SyncOpsManager) processSyncMapDeleteFunc(op SyncOperation) bool {
 				return true
 			}
 		}
+
 	case MapTypeTwoInt:
 		if syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticOneStringTwoInt]); ok {
 			if filterFunc, ok := op.FilterFunc.(func([]DbstaticOneStringTwoInt) bool); ok {
@@ -81,6 +88,7 @@ func (m *SyncOpsManager) processSyncMapDeleteFunc(op SyncOperation) bool {
 			}
 		}
 	}
+
 	return false
 }
 
@@ -102,6 +110,7 @@ func (m *SyncOpsManager) processSyncMapDeleteFuncExpires(op SyncOperation) bool 
 				return true
 			}
 		}
+
 	case MapTypeTwoString:
 		if syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticTwoStringOneInt]); ok {
 			if filterFunc, ok := op.FilterFunc.(func(int64) bool); ok {
@@ -109,6 +118,7 @@ func (m *SyncOpsManager) processSyncMapDeleteFuncExpires(op SyncOperation) bool 
 				return true
 			}
 		}
+
 	case MapTypeThreeString:
 		if syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticThreeStringTwoInt]); ok {
 			if filterFunc, ok := op.FilterFunc.(func(int64) bool); ok {
@@ -116,6 +126,7 @@ func (m *SyncOpsManager) processSyncMapDeleteFuncExpires(op SyncOperation) bool 
 				return true
 			}
 		}
+
 	case MapTypeTwoInt:
 		if syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticOneStringTwoInt]); ok {
 			if filterFunc, ok := op.FilterFunc.(func(int64) bool); ok {
@@ -123,6 +134,7 @@ func (m *SyncOpsManager) processSyncMapDeleteFuncExpires(op SyncOperation) bool 
 				return true
 			}
 		}
+
 	case MapTypeXStmt:
 		if syncMap, ok := syncMapInterface.(*SyncMap[*sqlx.Stmt]); ok {
 			if filterFunc, ok := op.FilterFunc.(func(int64) bool); ok {
@@ -130,6 +142,7 @@ func (m *SyncOpsManager) processSyncMapDeleteFuncExpires(op SyncOperation) bool 
 				return true
 			}
 		}
+
 	case MapTypeRegex:
 		if syncMap, ok := syncMapInterface.(*SyncMap[*regexp.Regexp]); ok {
 			if filterFunc, ok := op.FilterFunc.(func(int64) bool); ok {
@@ -138,6 +151,7 @@ func (m *SyncOpsManager) processSyncMapDeleteFuncExpires(op SyncOperation) bool 
 			}
 		}
 	}
+
 	return false
 }
 
@@ -162,6 +176,7 @@ func (m *SyncOpsManager) processSyncMapDeleteFuncExpiresVal(op SyncOperation) bo
 				}
 			}
 		}
+
 	case MapTypeTwoString:
 		if syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticTwoStringOneInt]); ok {
 			if filterFunc, ok := op.FilterFunc.(func(int64) bool); ok {
@@ -171,6 +186,7 @@ func (m *SyncOpsManager) processSyncMapDeleteFuncExpiresVal(op SyncOperation) bo
 				}
 			}
 		}
+
 	case MapTypeThreeString:
 		if syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticThreeStringTwoInt]); ok {
 			if filterFunc, ok := op.FilterFunc.(func(int64) bool); ok {
@@ -180,6 +196,7 @@ func (m *SyncOpsManager) processSyncMapDeleteFuncExpiresVal(op SyncOperation) bo
 				}
 			}
 		}
+
 	case MapTypeTwoInt:
 		if syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticOneStringTwoInt]); ok {
 			if filterFunc, ok := op.FilterFunc.(func(int64) bool); ok {
@@ -189,6 +206,7 @@ func (m *SyncOpsManager) processSyncMapDeleteFuncExpiresVal(op SyncOperation) bo
 				}
 			}
 		}
+
 	case MapTypeXStmt:
 		if syncMap, ok := syncMapInterface.(*SyncMap[*sqlx.Stmt]); ok {
 			if filterFunc, ok := op.FilterFunc.(func(int64) bool); ok {
@@ -199,6 +217,7 @@ func (m *SyncOpsManager) processSyncMapDeleteFuncExpiresVal(op SyncOperation) bo
 			}
 		}
 	}
+
 	return false
 }
 
@@ -223,6 +242,7 @@ func (m *SyncOpsManager) processSyncMapDeleteFuncImdbVal(op SyncOperation) bool 
 				}
 			}
 		}
+
 	case MapTypeTwoString:
 		if syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticTwoStringOneInt]); ok {
 			if filterFunc, ok := op.FilterFunc.(func(bool) bool); ok {
@@ -232,6 +252,7 @@ func (m *SyncOpsManager) processSyncMapDeleteFuncImdbVal(op SyncOperation) bool 
 				}
 			}
 		}
+
 	case MapTypeThreeString:
 		if syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticThreeStringTwoInt]); ok {
 			if filterFunc, ok := op.FilterFunc.(func(bool) bool); ok {
@@ -241,6 +262,7 @@ func (m *SyncOpsManager) processSyncMapDeleteFuncImdbVal(op SyncOperation) bool 
 				}
 			}
 		}
+
 	case MapTypeTwoInt:
 		if syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticOneStringTwoInt]); ok {
 			if filterFunc, ok := op.FilterFunc.(func(bool) bool); ok {
@@ -250,6 +272,7 @@ func (m *SyncOpsManager) processSyncMapDeleteFuncImdbVal(op SyncOperation) bool 
 				}
 			}
 		}
+
 	case MapTypeXStmt:
 		if syncMap, ok := syncMapInterface.(*SyncMap[*sqlx.Stmt]); ok {
 			if filterFunc, ok := op.FilterFunc.(func(bool) bool); ok {
@@ -260,6 +283,7 @@ func (m *SyncOpsManager) processSyncMapDeleteFuncImdbVal(op SyncOperation) bool 
 			}
 		}
 	}
+
 	return false
 }
 
@@ -282,6 +306,7 @@ func (m *SyncOpsManager) processAtomicAppendString(op SyncOperation) bool {
 			}
 		}
 	}
+
 	return false
 }
 
@@ -304,5 +329,6 @@ func (m *SyncOpsManager) processAtomicRemoveString(op SyncOperation) bool {
 			}
 		}
 	}
+
 	return false
 }

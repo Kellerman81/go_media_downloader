@@ -144,6 +144,7 @@ func (m *ParseInfo) StripTitlePrefixPostfixGetQual(quality *config.QualityConfig
 	if m.Title == "" {
 		return
 	}
+
 	for _, suffix := range quality.TitleStripSuffixForSearch {
 		if idx := logger.IndexI(m.Title, suffix); idx != -1 {
 			if newTitle := m.Title[:idx]; newTitle != "" {
@@ -154,9 +155,11 @@ func (m *ParseInfo) StripTitlePrefixPostfixGetQual(quality *config.QualityConfig
 					m.Title = newTitle
 				}
 			}
+
 			break // Only process first match
 		}
 	}
+
 	for _, prefix := range quality.TitleStripPrefixForSearch {
 		if logger.HasPrefixI(m.Title, prefix) {
 			if idx := logger.IndexI(m.Title, prefix); idx != -1 {
@@ -169,6 +172,7 @@ func (m *ParseInfo) StripTitlePrefixPostfixGetQual(quality *config.QualityConfig
 					}
 				}
 			}
+
 			break // Only process first match
 		}
 	}
@@ -181,12 +185,14 @@ func (m *ParseInfo) moviegetimdbtitle(dbid *uint) bool {
 	if m.Year == 0 {
 		return false
 	}
+
 	var year uint16
 	if config.GetSettingsGeneral().UseMediaCache {
-		year = CacheThreeStringIntIndexFuncGetYear(logger.CacheDBMovie, *dbid)
+		year = CacheThreeStringIntIndexFuncGetYearFast(logger.CacheDBMovie, *dbid)
 	} else {
 		year = Getdatarow[uint16](false, "select year from dbmovies where id = ?", dbid)
 	}
+
 	if year == 0 {
 		return false
 	}
@@ -201,19 +207,24 @@ func (m *ParseInfo) moviegetimdbtitle(dbid *uint) bool {
 // If a movie ID is found, it attempts to retrieve the IMDB title using the Moviegetimdbtitleparser method.
 // If the IMDB title is not found, the DbmovieID is set to 0.
 func (m *ParseInfo) Findmoviedbidbytitle(slugged bool) {
-	if m == nil || m.TempTitle == "" {
-		if m != nil {
-			m.DbmovieID = 0
-		}
+	if m == nil {
 		return
 	}
+
+	if m.TempTitle == "" {
+		m.DbmovieID = 0
+		return
+	}
+
 	if slugged {
 		m.TempTitle = logger.StringToSlug(m.Title)
 	}
+
 	if config.GetSettingsGeneral().UseMediaCache {
 		m.findMovieInCache()
 		return
 	}
+
 	m.findMovieInDB(slugged)
 }
 
@@ -250,12 +261,14 @@ func (m *ParseInfo) findMovieInCache() {
 func (m *ParseInfo) findMovieInDB(slugged bool) {
 	// Try main movies table
 	Scanrowsdyn(false, GetSluggedMap(slugged, "dbmovies"), &m.DbmovieID, &m.TempTitle)
+
 	if m.DbmovieID != 0 && m.moviegetimdbtitle(&m.DbmovieID) {
 		return
 	}
 
 	// Try alternate titles
 	Scanrowsdyn(false, GetSluggedMap(slugged, "dbmoviesalt"), &m.DbmovieID, &m.TempTitle)
+
 	if m.DbmovieID != 0 && m.moviegetimdbtitle(&m.DbmovieID) {
 		return
 	}
@@ -263,10 +276,9 @@ func (m *ParseInfo) findMovieInDB(slugged bool) {
 	m.DbmovieID = 0
 }
 
-// matchesTitle checks if temp title matches either string (exact or case-insensitive).
+// matchesTitle checks if temp title matches either string (case-insensitive).
 func (m *ParseInfo) matchesTitle(str1, str2 string) bool {
-	return m.TempTitle == str1 || m.TempTitle == str2 ||
-		strings.EqualFold(m.TempTitle, str1) || strings.EqualFold(m.TempTitle, str2)
+	return strings.EqualFold(m.TempTitle, str1) || strings.EqualFold(m.TempTitle, str2)
 }
 
 // Parseresolution determines the video resolution based on the height and width of the media.
@@ -274,11 +286,13 @@ func (m *ParseInfo) matchesTitle(str1, str2 string) bool {
 // If the resolution cannot be determined, it returns "Unknown Resolution".
 func (m *ParseInfo) Parseresolution() string {
 	height := m.Height
+
 	width := m.Width
 	if m.Height > m.Width {
 		height = m.Width
 		width = m.Height
 	}
+
 	aspectRatio := float64(width) / float64(height)
 
 	// For ultra-wide content (aspect ratio > 2.5), prioritize width
@@ -291,6 +305,7 @@ func (m *ParseInfo) Parseresolution() string {
 				return "2160p"
 			}
 			return "2880p"
+
 		case width >= 3840: // 4K/UHD (3840x2160)
 			return "2160p"
 		case width >= 2560: // 1440p/QHD (2560x1440)
@@ -298,6 +313,7 @@ func (m *ParseInfo) Parseresolution() string {
 				return "1080p"
 			}
 			return "1440p"
+
 		case width >= 1920: // 1080p/FHD (1920x1080)
 			return "1080p"
 		case width >= 1280: // 720p/HD (1280x720)
@@ -309,6 +325,7 @@ func (m *ParseInfo) Parseresolution() string {
 				return "480p"
 			}
 			return "360p"
+
 		default:
 			return "SD"
 		}
@@ -324,6 +341,7 @@ func (m *ParseInfo) Parseresolution() string {
 				return "2160p"
 			}
 			return "2880p"
+
 		case width >= 3840: // 4K/UHD (3840x2160)
 			return "2160p"
 		case width >= 2560: // 1440p/QHD (2560x1440)
@@ -331,6 +349,7 @@ func (m *ParseInfo) Parseresolution() string {
 				return "1080p"
 			}
 			return "1440p"
+
 		case width >= 1920: // 1080p/FHD (1920x1080)
 			return "1080p"
 		case width >= 1280: // 720p/HD (1280x720)
@@ -340,11 +359,13 @@ func (m *ParseInfo) Parseresolution() string {
 				return "576p"
 			}
 			return "480p"
+
 		case width >= 640: // 360p (640x360)
 			if height > 360 {
 				return "480p"
 			}
 			return "360p"
+
 		case width >= 426: // 240p (426x240)
 			return "240p"
 		default:
@@ -387,11 +408,13 @@ func (m *ParseInfo) MovieFindDBIDByImdbParser() {
 		m.DbmovieID = 0
 		return
 	}
+
 	m.Imdb = logger.AddImdbPrefix(m.Imdb)
 	if config.GetSettingsGeneral().UseMediaCache {
-		m.DbmovieID = CacheThreeStringIntIndexFunc(logger.CacheDBMovie, &m.Imdb)
+		m.DbmovieID = CacheThreeStringIntIndexFuncFast(logger.CacheDBMovie, &m.Imdb)
 		return
 	}
+
 	Scanrowsdyn(false, "select id from dbmovies where imdb_id = ?", &m.DbmovieID, &m.Imdb)
 }
 
@@ -405,12 +428,15 @@ func (m *ParseInfo) Getepisodestoimport() error {
 			m.Episodes = []DbstaticTwoUint{{Num1: m.SerieEpisodeID, Num2: m.DbserieEpisodeID}}
 			return nil
 		}
+
 		return logger.ErrNotFoundEpisode
 	}
+
 	str1, str2 := RegexGetMatchesStr1Str2(true, strRegexSeriesIdentifier, m.Identifier)
 	if str1 == "" && str2 == "" {
 		return logger.ErrNotFoundEpisode
 	}
+
 	splitby := m.determineSplitChar(str1)
 	if splitby == "" {
 		return logger.ErrNotFoundEpisode
@@ -420,6 +446,7 @@ func (m *ParseInfo) Getepisodestoimport() error {
 	if episodeArray[0] == "" {
 		episodeArray = episodeArray[1:]
 	}
+
 	if splitby != logger.StrDash && len(episodeArray) == 1 {
 		if strings.ContainsRune(episodeArray[0], '-') {
 			episodeArray = strings.Split(episodeArray[0], logger.StrDash)
@@ -430,9 +457,11 @@ func (m *ParseInfo) Getepisodestoimport() error {
 		m.Episodes = []DbstaticTwoUint{{Num1: m.SerieEpisodeID, Num2: m.DbserieEpisodeID}}
 		return nil
 	}
+
 	if len(episodeArray) == 0 {
 		return logger.ErrNotFoundEpisode
 	}
+
 	var err error
 	for idx := range episodeArray {
 		m.Episode, err = strconv.Atoi(
@@ -442,9 +471,12 @@ func (m *ParseInfo) Getepisodestoimport() error {
 			m.Episode = 0
 			return logger.ErrNotFoundEpisode
 		}
+
 		m.SetDBEpisodeIDfromM()
+
 		if m.DbserieEpisodeID != 0 {
 			m.SetEpisodeIDfromM()
+
 			if m.SerieEpisodeID != 0 {
 				if idx == 0 {
 					m.Episodes = []DbstaticTwoUint{
@@ -456,6 +488,7 @@ func (m *ParseInfo) Getepisodestoimport() error {
 			}
 		}
 	}
+
 	return nil
 }
 
@@ -468,6 +501,7 @@ func (m *ParseInfo) determineSplitChar(str1 string) string {
 			return char
 		}
 	}
+
 	return ""
 }
 
@@ -484,9 +518,11 @@ func (m *ParseInfo) Checktitle(
 			Msg("qualcfg empty")
 		return true
 	}
+
 	if !qualcfg.CheckTitle {
 		return false
 	}
+
 	var (
 		wantedTitle string
 		wantedslug  string
@@ -498,6 +534,7 @@ func (m *ParseInfo) Checktitle(
 	} else {
 		id = m.DbmovieID
 	}
+
 	GetdatarowArgs(
 		logger.GetStringsMap(cfgp.Useseries, logger.DBMediaTitlesID),
 		&id,
@@ -511,9 +548,11 @@ func (m *ParseInfo) Checktitle(
 			Msg("wanttitle empty")
 		return true
 	}
+
 	if qualcfg.Name != "" {
 		m.StripTitlePrefixPostfixGetQual(qualcfg)
 	}
+
 	if m.Title == "" {
 		logger.Logtype("debug", 0).
 			Msg("m Title empty")
@@ -527,15 +566,18 @@ func (m *ParseInfo) Checktitle(
 				Uint16(logger.StrFound, m.Year).
 				Uint16(logger.StrWanted, year).
 				Msg("year different")
+
 			return true
 		}
 	}
+
 	if wantedTitle != "" {
 		if qualcfg.CheckTitle &&
 			ChecknzbtitleB(wantedTitle, wantedslug, title, qualcfg.CheckYear1, m.Year) {
 			return false
 		}
 	}
+
 	if !qualcfg.CheckTitle {
 		logger.Logtype("debug", 1).
 			Str(logger.StrTitle, m.Title).
@@ -550,6 +592,7 @@ func (m *ParseInfo) Checktitle(
 			true,
 		), id, qualcfg, title)
 	}
+
 	return m.checkalternatetitles(
 		Getentryalternatetitlesdirect(&id, cfgp.Useseries),
 		id,
@@ -573,19 +616,23 @@ func (m *ParseInfo) checkalternatetitles(
 			Msg("no alternate titles found") // , "checked", arr - better use string array
 		return true
 	}
+
 	for idx := range FilterDbstaticTwoStringOneInt(arr, id) {
 		if idx.Str1 == "" {
 			continue
 		}
+
 		if ChecknzbtitleB(idx.Str1, idx.Str2, title, qualcfg.CheckYear1, m.Year) {
 			return false
 		}
 	}
+
 	logger.Logtype("debug", 3).
 		Str(logger.StrTitle, m.Title).
 		Uint16("Year", m.Year).
 		Interface("Titles", GetDbstaticTwoStringOneInt(arr, id)).
 		Msg("no alternate title match found")
+
 	return true
 }
 
@@ -617,6 +664,7 @@ func (m *ParseInfo) ExecParsed(cfgp *config.MediaTypeConfig, err error, listname
 		&m.TempTitle,
 		listname,
 	) // testing
+
 	bld := logger.PlAddBuffer.Get()
 	defer logger.PlAddBuffer.Put(bld)
 
@@ -624,50 +672,62 @@ func (m *ParseInfo) ExecParsed(cfgp *config.MediaTypeConfig, err error, listname
 		bld.WriteString(" Audioid: ")
 		bld.WriteUInt(m.AudioID)
 	}
+
 	if m.CodecID != 0 {
 		bld.WriteString(" Codecid: ")
 		bld.WriteUInt(m.CodecID)
 	}
+
 	if m.QualityID != 0 {
 		bld.WriteString(" Qualityid: ")
 		bld.WriteUInt(m.QualityID)
 	}
+
 	if m.ResolutionID != 0 {
 		bld.WriteString(" Resolutionid: ")
 		bld.WriteUInt(m.ResolutionID)
 	}
+
 	if m.EpisodeStr != "" {
 		bld.WriteString(" Episode: ")
 		bld.WriteString(m.EpisodeStr)
 	}
+
 	if m.Identifier != "" {
 		bld.WriteString(" Identifier: ")
 		bld.WriteString(m.Identifier)
 	}
+
 	if m.ListID != -1 {
 		bld.WriteString(" Listname: ")
 		bld.WriteInt(m.ListID)
 	}
+
 	if m.SeasonStr != "" {
 		bld.WriteString(" Season: ")
 		bld.WriteString(m.SeasonStr)
 	}
+
 	if m.Title != "" {
 		bld.WriteString(" Title: ")
 		bld.WriteString(m.Title)
 	}
+
 	if m.Tvdb != "" {
 		bld.WriteString(" Tvdb: ")
 		bld.WriteString(m.Tvdb)
 	}
+
 	if m.Imdb != "" {
 		bld.WriteString(" Imdb: ")
 		bld.WriteString(m.Imdb)
 	}
+
 	if m.Year != 0 {
 		bld.WriteString(" Year: ")
 		bld.WriteUInt16(m.Year)
 	}
+
 	if err != nil {
 		bld.WriteString(" Error: ")
 		bld.WriteString(err.Error())
@@ -679,6 +739,7 @@ func (m *ParseInfo) ExecParsed(cfgp *config.MediaTypeConfig, err error, listname
 		if config.GetSettingsGeneral().UseFileCache {
 			AppendCacheMap(cfgp.Useseries, logger.CacheUnmatched, m.TempTitle)
 		}
+
 		ExecN(logger.GetStringsMap(cfgp.Useseries, "InsertUnmatched"), &str, listname, &m.TempTitle)
 	} else {
 		ExecN(logger.GetStringsMap(cfgp.Useseries, "UpdateUnmatched"), &str, &id)
@@ -695,36 +756,53 @@ func (m *ParseInfo) FindDbserieByName(slugged bool) {
 	if m.TempTitle == "" {
 		return
 	}
+
 	if slugged {
 		m.TempTitle = logger.StringToSlug(m.TempTitle)
 	}
+
 	if config.GetSettingsGeneral().UseMediaCache {
+		// Try indexed lookup first (O(1) if enabled)
+		if config.GetSettingsGeneral().UseIndexedCache {
+			if id := FindSeriesIDByTitleFast(m.TempTitle); id != 0 {
+				m.DbserieID = id
+				return
+			}
+		}
+
+		// Fallback to linear search if indexed lookup not enabled or not found
 		for _, a := range GetCachedThreeStringArr(logger.CacheDBSeries, false, true) {
-			if a.Str1 == m.TempTitle || a.Str2 == m.TempTitle ||
-				strings.EqualFold(a.Str1, m.TempTitle) ||
+			if strings.EqualFold(a.Str1, m.TempTitle) ||
 				strings.EqualFold(a.Str2, m.TempTitle) {
 				m.DbserieID = a.Num2
 				return
 			}
 		}
+
 		for _, b := range GetCachedTwoStringArr(logger.CacheDBSeriesAlt, false, true) {
-			if b.Str1 == m.TempTitle || b.Str2 == m.TempTitle ||
-				strings.EqualFold(b.Str1, m.TempTitle) ||
+			if strings.EqualFold(b.Str1, m.TempTitle) ||
 				strings.EqualFold(b.Str2, m.TempTitle) {
 				m.DbserieID = b.Num
 				return
 			}
 		}
+
 		m.DbserieID = 0
+
 		return
 	}
-	if m.DbserieID == 0 {
-		Scanrowsdyn(false, GetSluggedMap(slugged, "dbseries"), &m.DbserieID, &m.TempTitle)
-		if m.DbserieID != 0 {
-			return
-		}
-		Scanrowsdyn(false, GetSluggedMap(slugged, "dbseriesalt"), &m.DbserieID, &m.TempTitle)
+
+	if m.DbserieID != 0 {
+		return
 	}
+
+	Scanrowsdyn(false, GetSluggedMap(slugged, "dbseries"), &m.DbserieID, &m.TempTitle)
+
+	if m.DbserieID != 0 {
+		return
+	}
+
+	Scanrowsdyn(false, GetSluggedMap(slugged, "dbseriesalt"), &m.DbserieID, &m.TempTitle)
 }
 
 // RegexGetMatchesStr1 extracts the series name from the filename
@@ -738,14 +816,18 @@ func (m *ParseInfo) RegexGetMatchesStr1(cfgp *config.MediaTypeConfig) {
 	if cfgp.Useseries && m.Date != "" {
 		runrgx = strRegexSeriesTitleDate
 	}
+
 	matches := RunRetRegex(runrgx, matchfor, false)
 	if len(matches) == 0 && cfgp.Useseries && m.Date != "" {
 		matches = RunRetRegex(strRegexSeriesTitle, matchfor, false)
 	}
+
 	if len(matches) == 0 || len(matches) < 4 || matches[3] == -1 {
 		return
 	}
+
 	titleStr := matchfor[matches[2]:matches[3]]
+
 	var title string
 	if strings.ContainsRune(titleStr, '.') {
 		title = logger.TrimRight(
@@ -757,6 +839,7 @@ func (m *ParseInfo) RegexGetMatchesStr1(cfgp *config.MediaTypeConfig) {
 	} else {
 		title = logger.TrimRight(titleStr, '-', '.', ' ')
 	}
+
 	if title != m.Title {
 		m.FindDbserieByNameWithSlug(title)
 	}
@@ -769,6 +852,7 @@ func (m *ParseInfo) RegexGetMatchesStr1(cfgp *config.MediaTypeConfig) {
 func (m *ParseInfo) FindDbserieByNameWithSlug(title string) {
 	m.TempTitle = logger.TrimSpace(title)
 	m.FindDbserieByName(false)
+
 	if m.DbserieID == 0 {
 		m.FindDbserieByName(true)
 	}
@@ -782,6 +866,7 @@ func (m *ParseInfo) SetEpisodeIDfromM() {
 		m.SerieEpisodeID = 0
 		return
 	}
+
 	Scanrowsdyn(
 		false,
 		"select id from serie_episodes where dbserie_episode_id = ? and serie_id = ?",
@@ -793,59 +878,42 @@ func (m *ParseInfo) SetEpisodeIDfromM() {
 
 // SetDBEpisodeIDfromM sets the DbserieEpisodeID field on the FileParser struct by looking
 // up the episode ID in the database based on the season, episode, and identifier fields.
-// It first tries looking up by season and episode number strings, then falls back to the identifier.
+// Optimized to use a single database query with multiple conditions instead of sequential queries.
 func (m *ParseInfo) SetDBEpisodeIDfromM() {
 	if m.DbserieID == 0 {
 		m.DbserieEpisodeID = 0
 		return
 	}
-	if m.SeasonStr != "" && m.EpisodeStr != "" {
-		Scanrowsdyn(
-			false,
-			"select id from dbserie_episodes where dbserie_id = ? and season = ? and episode = ?",
-			&m.DbserieEpisodeID,
-			&m.DbserieID,
-			&m.SeasonStr,
-			&m.EpisodeStr,
-		)
-		if m.DbserieEpisodeID != 0 {
-			return
-		}
+
+	// Build identifier variations for the query
+	identifierDot := m.Identifier
+
+	identifierDash := m.Identifier
+	if strings.ContainsRune(m.Identifier, '.') {
+		identifierDot = logger.StringReplaceWith(m.Identifier, '.', ' ')
 	}
 
-	if m.Identifier != "" {
-		Scanrowsdyn(
-			false,
-			"select id from dbserie_episodes where dbserie_id = ? and identifier = ? COLLATE NOCASE",
-			&m.DbserieEpisodeID,
-			&m.DbserieID,
-			&m.Identifier,
-		)
-		if m.DbserieEpisodeID != 0 {
-			return
-		}
-		if strings.ContainsRune(m.Identifier, '.') {
-			Scanrowsdyn(
-				false,
-				QueryDBSerieEpisodeGetIDByDBSerieIDIdentifierDot,
-				&m.DbserieEpisodeID,
-				&m.DbserieID,
-				&m.Identifier,
-			)
-			if m.DbserieEpisodeID != 0 {
-				return
-			}
-		}
-		if strings.ContainsRune(m.Identifier, ' ') {
-			Scanrowsdyn(
-				false,
-				QueryDBSerieEpisodeGetIDByDBSerieIDIdentifierDash,
-				&m.DbserieEpisodeID,
-				&m.DbserieID,
-				&m.Identifier,
-			)
-		}
+	if strings.ContainsRune(m.Identifier, ' ') {
+		identifierDash = logger.StringReplaceWith(m.Identifier, ' ', '-')
 	}
+
+	// Single query with all conditions combined
+	Scanrowsdyn(
+		false,
+		`select id from dbserie_episodes where dbserie_id = ? and (
+			(season = ? and episode = ?) or
+			identifier = ? COLLATE NOCASE or
+			identifier = ? COLLATE NOCASE or
+			identifier = ? COLLATE NOCASE
+		) limit 1`,
+		&m.DbserieEpisodeID,
+		&m.DbserieID,
+		&m.SeasonStr,
+		&m.EpisodeStr,
+		&m.Identifier,
+		&identifierDot,
+		&identifierDash,
+	)
 }
 
 // GenerateIdentifierString generates an identifier string for a movie or episode
@@ -860,9 +928,12 @@ func (m *ParseInfo) ClearArr() {
 	if m == nil {
 		return
 	}
+
 	clear(m.Languages)
+
 	m.Languages = nil
 	clear(m.Episodes)
+
 	m.Episodes = nil
 }
 
@@ -903,11 +974,13 @@ func (m *ParseInfo) Getqualityidxbyid(tbl []Qualities, i uint8) int {
 	case 4:
 		id = m.CodecID
 	}
+
 	for idx := range tbl {
 		if tbl[idx].ID == id {
 			return idx
 		}
 	}
+
 	return -1
 }
 
@@ -924,11 +997,13 @@ func (m *ParseInfo) Gettypeids(inval string, qualitytype []Qualities) uint {
 				return qual.ID
 			}
 		}
+
 		if qual.UseRegex && qual.Regex != "" &&
 			RegexGetMatchesFind(qual.Regex, inval, 2) {
 			return qual.ID
 		}
 	}
+
 	return 0
 }
 
@@ -937,25 +1012,30 @@ func (m *ParseInfo) Gettypeids(inval string, qualitytype []Qualities) uint {
 // If the matched substring is not empty and is not part of a larger word, the function updates the corresponding field in the ParseInfo struct based on the name parameter. If onlyifempty is true, the function will only update the field if it is currently empty.
 // The function supports the following names: "audio", "codec", "quality", "resolution", "extended", "proper", and "repack".
 func (m *ParseInfo) Parsegroup(name string, onlyifempty bool, group []string) {
-	for idx := range group {
-		index := logger.IndexI(m.Str, group[idx])
+	for _, groupItem := range group {
+		index := logger.IndexI(m.Str, groupItem)
 		if index == -1 {
 			continue
 		}
-		indexmax := index + len(group[idx])
+
+		indexmax := index + len(groupItem)
 
 		if m.Str[index:indexmax] == "" {
 			continue
 		}
+
 		if indexmax < len(m.Str) && checkDigitLetter((m.Str[indexmax])) {
 			continue
 		}
+
 		if index > 0 && checkDigitLetter((m.Str[index-1])) {
 			continue
 		}
+
 		if m.FirstIDX == 0 || index < m.FirstIDX {
 			m.FirstIDX = index
 		}
+
 		switch name {
 		case "audio":
 			if onlyifempty && m.Audio != "" {
@@ -963,21 +1043,28 @@ func (m *ParseInfo) Parsegroup(name string, onlyifempty bool, group []string) {
 			}
 
 			m.Audio = m.getstrvalue(index, indexmax)
+
 		case "codec":
 			if onlyifempty && m.Codec != "" {
 				continue
 			}
+
 			m.Codec = m.getstrvalue(index, indexmax)
+
 		case "quality":
 			if onlyifempty && m.Quality != "" {
 				continue
 			}
+
 			m.Quality = m.getstrvalue(index, indexmax)
+
 		case "resolution":
 			if onlyifempty && m.Resolution != "" {
 				continue
 			}
+
 			m.Resolution = m.getstrvalue(index, indexmax)
+
 		case "extended":
 			m.Extended = true
 		case "proper":
@@ -1002,10 +1089,12 @@ func (m *ParseInfo) ParsegroupEntry(group string) {
 	if index == -1 {
 		return
 	}
+
 	indexmax := index + len(group)
 	if indexmax < len(m.Str) && checkDigitLetter((m.Str[indexmax])) {
 		return
 	}
+
 	if index > 0 && checkDigitLetter((m.Str[index-1])) {
 		return
 	}
@@ -1013,6 +1102,7 @@ func (m *ParseInfo) ParsegroupEntry(group string) {
 	if m.Str[index:indexmax] == "" {
 		return
 	}
+
 	switch group {
 	case "audio":
 		m.Audio = m.Str[index:indexmax]
@@ -1055,6 +1145,7 @@ func FilterDbstaticTwoStringOneInt(
 			if s[idx].Num != id {
 				continue
 			}
+
 			if !yield(s[idx]) {
 				return
 			}
@@ -1072,11 +1163,13 @@ func Getqualityidxbyname(tbl []Qualities, cfgp *config.MediaTypeConfig, reso boo
 	case false:
 		str = cfgp.DefaultQuality
 	}
+
 	for idx := range tbl {
-		if tbl[idx].Name == str || strings.EqualFold(tbl[idx].Name, str) {
+		if strings.EqualFold(tbl[idx].Name, str) {
 			return idx
 		}
 	}
+
 	return -1
 }
 

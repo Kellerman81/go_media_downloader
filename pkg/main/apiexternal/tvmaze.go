@@ -2,12 +2,14 @@ package apiexternal
 
 import (
 	"context"
-	"net/url"
-	"strconv"
 	"time"
 
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/base"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/tvmaze"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/slidingwindow"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/providers"
 )
 
 type TVmazeSearchResults []TVmazeShow
@@ -115,227 +117,80 @@ type TVmazeSeason struct {
 	Summary      string           `json:"summary"`
 }
 
-type tvmazeClient struct {
-	DefaultHeaders map[string][]string
-	Lim            *slidingwindow.Limiter
-	Client         rlHTTPClient
-}
-
 // NewTVmazeClient creates a new TVmaze client for making API requests.
 // TVmaze has no API key requirement and allows reasonable rate limiting.
 func NewTVmazeClient(seconds uint8, calls int, disabletls bool, timeoutseconds uint16) {
-	if seconds == 0 {
-		seconds = 1
-	}
-	if calls == 0 {
-		calls = 1
-	}
-	lim := slidingwindow.NewLimiter(time.Duration(seconds)*time.Second, int64(calls))
-	client := &tvmazeClient{
-		DefaultHeaders: map[string][]string{
-			"User-Agent": {"go-media-downloader/1.0"},
-		},
-		Lim: &lim,
-		Client: newClient(
-			"tvmaze",
-			disabletls,
-			true,
-			&lim,
-			false, nil, timeoutseconds),
-	}
-	setTvmazeAPI(client)
-}
+	general := config.GetSettingsGeneral()
 
-// Helper functions for thread-safe access to tvmazeAPI
-func getTvmazeClient() *rlHTTPClient {
-	api := getTvmazeAPI()
-	if api == nil {
-		return nil
+	tvmazeConfig := base.ClientConfig{
+		Name:                      "tvmaze",
+		BaseURL:                   "https://api.tvmaze.com",
+		Timeout:                   time.Duration(general.TvmazeTimeoutSeconds) * time.Second,
+		AuthType:                  base.AuthNone,
+		RateLimitCalls:            general.TvmazeLimiterCalls,
+		RateLimitSeconds:          int(general.TvmazeLimiterSeconds),
+		RateLimitPer24h:           20000, // TVMaze has generous limits
+		CircuitBreakerThreshold:   5,
+		CircuitBreakerTimeout:     60 * time.Second,
+		CircuitBreakerHalfOpenMax: 2,
+		EnableStats:               true,
+		UserAgent:                 "go-media-downloader/2.0",
+		DisableTLSVerify:          general.TvmazeDisableTLSVerify,
 	}
-	return &api.Client
-}
+	if provider := tvmaze.NewProviderWithConfig(tvmazeConfig); provider != nil {
+		// Store in direct providers registry
+		providers.SetTVMaze(provider)
 
-func getTvmazeHeaders() map[string][]string {
-	api := getTvmazeAPI()
-	if api == nil {
-		return nil
+		logger.Logtype(logger.StatusDebug, 0).
+			Msg("Registered TVMaze metadata provider with rate limiting")
 	}
-	return api.DefaultHeaders
-}
-
-// Helper function to check rate limit with timeout for TVmaze
-func checkTvmazeRateLimit(ctx context.Context) (bool, error) {
-	api := getTvmazeAPI()
-	if api == nil {
-		return false, logger.ErrNotFound
-	}
-	return api.Client.checkLimiter(ctx, true)
-}
-
-// Helper function to get timeout context for TVmaze
-func getTvmazeTimeoutContext() (context.Context, context.CancelFunc) {
-	api := getTvmazeAPI()
-	if api == nil {
-		return context.Background(), func() {}
-	}
-	return context.WithTimeout(api.Client.Ctx, api.Client.Timeout5)
 }
 
 // SearchTVmaze searches for TV shows on TVmaze API by name.
 // Returns a slice of shows that match the search query.
-func SearchTVmaze(name string) (TVmazeSearchResults, error) {
+func SearchTVmaze(name string) ([]apiexternal_v2.SeriesSearchResult, error) {
 	if name == "" {
 		return nil, logger.ErrNotFound
 	}
-
-	ctx, ctxcancel := getTvmazeTimeoutContext()
-	defer ctxcancel()
-	ok, err := checkTvmazeRateLimit(ctx)
-	if !ok {
-		if err == nil {
-			return nil, logger.ErrToWait
-		}
-		return nil, err
-	}
-
-	return doJSONType[TVmazeSearchResults](
-		getTvmazeClient(),
-		logger.JoinStrings(
-			"https://api.tvmaze.com/search/shows?q=",
-			url.QueryEscape(name),
-		),
-		getTvmazeHeaders(),
-	)
+	return providers.GetTVMaze().SearchSeries(context.Background(), name, 0)
 }
 
 // GetTVmazeShowByID gets a TV show from TVmaze API by its TVmaze ID.
-func GetTVmazeShowByID(id int) (*TVmazeShow, error) {
+func GetTVmazeShowByID(id int) (*apiexternal_v2.SeriesDetails, error) {
 	if id == 0 {
 		return nil, logger.ErrNotFound
 	}
-
-	ctx, ctxcancel := getTvmazeTimeoutContext()
-	defer ctxcancel()
-	ok, err := checkTvmazeRateLimit(ctx)
-	if !ok {
-		if err == nil {
-			return nil, logger.ErrToWait
-		}
-		return nil, err
-	}
-
-	return doJSONTypeP[TVmazeShow](
-		getTvmazeClient(),
-		logger.JoinStrings(
-			"https://api.tvmaze.com/shows/",
-			strconv.Itoa(id),
-		),
-		getTvmazeHeaders(),
-	)
+	return providers.GetTVMaze().GetSeriesByID(context.Background(), id)
 }
 
 // GetTVmazeShowByTVDBID gets a TV show from TVmaze API by TVDB ID.
-func GetTVmazeShowByTVDBID(tvdbID int) (*TVmazeShow, error) {
+func GetTVmazeShowByTVDBID(tvdbID int) (*apiexternal_v2.SeriesDetails, error) {
 	if tvdbID == 0 {
 		return nil, logger.ErrNotFound
 	}
-
-	ctx, ctxcancel := getTvmazeTimeoutContext()
-	defer ctxcancel()
-	ok, err := checkTvmazeRateLimit(ctx)
-	if !ok {
-		if err == nil {
-			return nil, logger.ErrToWait
-		}
-		return nil, err
-	}
-
-	return doJSONTypeP[TVmazeShow](
-		getTvmazeClient(),
-		logger.JoinStrings(
-			"https://api.tvmaze.com/lookup/shows?thetvdb=",
-			strconv.Itoa(tvdbID),
-		),
-		getTvmazeHeaders(),
-	)
+	return providers.GetTVMaze().FindSeriesByTVDbID(context.Background(), tvdbID)
 }
 
 // GetTVmazeShowByIMDBID gets a TV show from TVmaze API by IMDB ID.
-func GetTVmazeShowByIMDBID(imdbID string) (*TVmazeShow, error) {
+func GetTVmazeShowByIMDBID(imdbID string) (*apiexternal_v2.FindByIMDbResult, error) {
 	if imdbID == "" {
 		return nil, logger.ErrNotFound
 	}
-
-	ctx, ctxcancel := getTvmazeTimeoutContext()
-	defer ctxcancel()
-	ok, err := checkTvmazeRateLimit(ctx)
-	if !ok {
-		if err == nil {
-			return nil, logger.ErrToWait
-		}
-		return nil, err
-	}
-
-	return doJSONTypeP[TVmazeShow](
-		getTvmazeClient(),
-		logger.JoinStrings(
-			"https://api.tvmaze.com/lookup/shows?imdb=",
-			url.QueryEscape(imdbID),
-		),
-		getTvmazeHeaders(),
-	)
+	return providers.GetTVMaze().FindSeriesByIMDbID(context.Background(), imdbID)
 }
 
 // GetTVmazeEpisodes gets all episodes for a TV show from TVmaze API.
-func GetTVmazeEpisodes(showID int) ([]TVmazeEpisode, error) {
+func GetTVmazeEpisodes(showID int) ([]*apiexternal_v2.Episode, error) {
 	if showID == 0 {
 		return nil, logger.ErrNotFound
 	}
-
-	ctx, ctxcancel := getTvmazeTimeoutContext()
-	defer ctxcancel()
-	ok, err := checkTvmazeRateLimit(ctx)
-	if !ok {
-		if err == nil {
-			return nil, logger.ErrToWait
-		}
-		return nil, err
-	}
-
-	return doJSONType[[]TVmazeEpisode](
-		getTvmazeClient(),
-		logger.JoinStrings(
-			"https://api.tvmaze.com/shows/",
-			strconv.Itoa(showID),
-			"/episodes",
-		),
-		getTvmazeHeaders(),
-	)
+	return providers.GetTVMaze().GetEpisodes(context.Background(), showID)
 }
 
 // GetTVmazeSeasons gets all seasons for a TV show from TVmaze API.
-func GetTVmazeSeasons(showID int) (TVmazeSeasons, error) {
+func GetTVmazeSeasons(showID int) ([]*apiexternal_v2.Season, error) {
 	if showID == 0 {
 		return nil, logger.ErrNotFound
 	}
-
-	ctx, ctxcancel := getTvmazeTimeoutContext()
-	defer ctxcancel()
-	ok, err := checkTvmazeRateLimit(ctx)
-	if !ok {
-		if err == nil {
-			return nil, logger.ErrToWait
-		}
-		return nil, err
-	}
-
-	return doJSONType[TVmazeSeasons](
-		getTvmazeClient(),
-		logger.JoinStrings(
-			"https://api.tvmaze.com/shows/",
-			strconv.Itoa(showID),
-			"/seasons",
-		),
-		getTvmazeHeaders(),
-	)
+	return providers.GetTVMaze().GetSeasons(context.Background(), showID)
 }

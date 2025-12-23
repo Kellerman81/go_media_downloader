@@ -39,8 +39,11 @@ func renderRegexTesterPage(csrfToken string) gomponents.Node {
 	qualityConfigs := config.GetSettingsQualityAll()
 
 	// Get qualities with regex patterns from database
-	qualities := database.GetrowsN[database.DbstaticTwoString](false, 200,
-		"SELECT name, regex FROM qualities WHERE use_regex = 1 AND regex IS NOT NULL AND regex != '' ORDER BY name")
+	qualities := database.GetrowsN[database.DbstaticTwoString](
+		false,
+		200,
+		"SELECT name, regex FROM qualities WHERE use_regex = 1 AND regex IS NOT NULL AND regex != '' ORDER BY name",
+	)
 
 	return html.Div(
 		html.Class("config-section-enhanced"),
@@ -57,8 +60,12 @@ func renderRegexTesterPage(csrfToken string) gomponents.Node {
 				html.Div(
 					html.Class("header-text"),
 					html.H2(html.Class("header-title"), gomponents.Text("Regex Pattern Tester")),
-					html.P(html.Class("header-subtitle"),
-						gomponents.Text("Test strings against regex configurations, quality patterns, and global scan patterns")),
+					html.P(
+						html.Class("header-subtitle"),
+						gomponents.Text(
+							"Test strings against regex configurations, quality patterns, and global scan patterns",
+						),
+					),
 				),
 			),
 		),
@@ -73,7 +80,9 @@ func renderRegexTesterPage(csrfToken string) gomponents.Node {
 					html.Style("border-radius: 15px; overflow: hidden;"),
 					html.Div(
 						html.Class("card-header border-0"),
-						html.Style("background: linear-gradient(135deg, #0d6efd 0%, #0056b3 100%); color: white; padding: 1.5rem;"),
+						html.Style(
+							"background: linear-gradient(135deg, #0d6efd 0%, #0056b3 100%); color: white; padding: 1.5rem;",
+						),
 						html.H5(html.Class("card-title mb-0"), html.Style("font-weight: 600;"),
 							gomponents.Text("Test Input")),
 					),
@@ -85,23 +94,36 @@ func renderRegexTesterPage(csrfToken string) gomponents.Node {
 							html.Action("/api/admin/regex-tester/test"),
 
 							// CSRF Token
-							html.Input(html.Type("hidden"), html.Name("csrf_token"), html.Value(csrfToken)),
+							html.Input(
+								html.Type("hidden"),
+								html.Name("csrf_token"),
+								html.Value(csrfToken),
+							),
 
 							// Test String Input
 							html.Div(
 								html.Class("form-group mb-4"),
-								html.Label(html.Class("form-label fw-semibold"), html.For("test_string"),
-									gomponents.Text("Test String")),
+								html.Label(
+									html.Class("form-label fw-semibold"),
+									html.For("test_string"),
+									gomponents.Text("Test String"),
+								),
 								html.Textarea(
 									html.Class("form-control"),
 									html.ID("test_string"),
 									html.Name("test_string"),
 									html.Rows("3"),
-									html.Placeholder("Enter the string you want to test against regex patterns..."),
+									html.Placeholder(
+										"Enter the string you want to test against regex patterns...",
+									),
 									html.Style("font-family: 'Courier New', monospace;"),
 								),
-								html.Small(html.Class("form-text text-muted"),
-									gomponents.Text("Enter a release name, filename, or any text to test against patterns")),
+								html.Small(
+									html.Class("form-text text-muted"),
+									gomponents.Text(
+										"Enter a release name, filename, or any text to test against patterns",
+									),
+								),
 							),
 
 							// Test Type Selection
@@ -114,7 +136,8 @@ func renderRegexTesterPage(csrfToken string) gomponents.Node {
 								html.Div(html.Class("row"),
 									// Regex Configurations
 									html.Div(html.Class("col-md-4"),
-										html.Div(html.Class("form-check form-switch mb-2"),
+										html.Div(
+											html.Class("form-check form-switch mb-2"),
 											html.Input(
 												html.Class("form-check-input"),
 												html.Style("margin-left: 35px;"),
@@ -124,8 +147,11 @@ func renderRegexTesterPage(csrfToken string) gomponents.Node {
 												html.Value("true"),
 												html.Checked(),
 											),
-											html.Label(html.Class("form-check-label"), html.For("test_config"),
-												gomponents.Text("Regex Configurations")),
+											html.Label(
+												html.Class("form-check-label"),
+												html.For("test_config"),
+												gomponents.Text("Regex Configurations"),
+											),
 										),
 										html.Select(
 											html.Class("form-select form-select-sm mt-2"),
@@ -133,10 +159,24 @@ func renderRegexTesterPage(csrfToken string) gomponents.Node {
 											html.Name("selected_regex_config"),
 											func() gomponents.Node {
 												var options []gomponents.Node
-												options = append(options, html.Option(html.Value(""), gomponents.Text("All Configurations")))
+
+												options = append(
+													options,
+													html.Option(
+														html.Value(""),
+														gomponents.Text("All Configurations"),
+													),
+												)
 												for _, regexConfig := range regexConfigs {
-													options = append(options, html.Option(html.Value(regexConfig.Name), gomponents.Text(regexConfig.Name)))
+													options = append(
+														options,
+														html.Option(
+															html.Value(regexConfig.Name),
+															gomponents.Text(regexConfig.Name),
+														),
+													)
 												}
+
 												return gomponents.Group(options)
 											}(),
 										),
@@ -144,7 +184,8 @@ func renderRegexTesterPage(csrfToken string) gomponents.Node {
 
 									// Quality Patterns
 									html.Div(html.Class("col-md-4"),
-										html.Div(html.Class("form-check form-switch mb-2"),
+										html.Div(
+											html.Class("form-check form-switch mb-2"),
 											html.Input(
 												html.Class("form-check-input"),
 												html.Style("margin-left: 35px;"),
@@ -154,8 +195,11 @@ func renderRegexTesterPage(csrfToken string) gomponents.Node {
 												html.Value("true"),
 												html.Checked(),
 											),
-											html.Label(html.Class("form-check-label"), html.For("test_qualities"),
-												gomponents.Text("Quality Patterns")),
+											html.Label(
+												html.Class("form-check-label"),
+												html.For("test_qualities"),
+												gomponents.Text("Quality Patterns"),
+											),
 										),
 										html.Select(
 											html.Class("form-select form-select-sm mt-2"),
@@ -163,10 +207,24 @@ func renderRegexTesterPage(csrfToken string) gomponents.Node {
 											html.Name("selected_quality_config"),
 											func() gomponents.Node {
 												var options []gomponents.Node
-												options = append(options, html.Option(html.Value(""), gomponents.Text("All Quality Profiles")))
+
+												options = append(
+													options,
+													html.Option(
+														html.Value(""),
+														gomponents.Text("All Quality Profiles"),
+													),
+												)
 												for _, qualityConfig := range qualityConfigs {
-													options = append(options, html.Option(html.Value(qualityConfig.Name), gomponents.Text(qualityConfig.Name)))
+													options = append(
+														options,
+														html.Option(
+															html.Value(qualityConfig.Name),
+															gomponents.Text(qualityConfig.Name),
+														),
+													)
 												}
+
 												return gomponents.Group(options)
 											}(),
 										),
@@ -174,7 +232,8 @@ func renderRegexTesterPage(csrfToken string) gomponents.Node {
 
 									// Global Scan Patterns
 									html.Div(html.Class("col-md-4"),
-										html.Div(html.Class("form-check form-switch mb-2"),
+										html.Div(
+											html.Class("form-check form-switch mb-2"),
 											html.Input(
 												html.Class("form-check-input"),
 												html.Style("margin-left: 35px;"),
@@ -184,8 +243,11 @@ func renderRegexTesterPage(csrfToken string) gomponents.Node {
 												html.Value("true"),
 												html.Checked(),
 											),
-											html.Label(html.Class("form-check-label"), html.For("test_global"),
-												gomponents.Text("Global Scan Patterns")),
+											html.Label(
+												html.Class("form-check-label"),
+												html.For("test_global"),
+												gomponents.Text("Global Scan Patterns"),
+											),
 										),
 									),
 								),
@@ -197,7 +259,9 @@ func renderRegexTesterPage(csrfToken string) gomponents.Node {
 								html.Button(
 									html.Class("btn btn-primary btn-lg px-5"),
 									html.Type("submit"),
-									html.Style("border-radius: 25px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px;"),
+									html.Style(
+										"border-radius: 25px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px;",
+									),
 									html.I(html.Class("fas fa-play me-2")),
 									gomponents.Text("Run Tests"),
 								),
@@ -221,7 +285,9 @@ func renderRegexTesterPage(csrfToken string) gomponents.Node {
 						html.Style("border-radius: 15px; overflow: hidden;"),
 						html.Div(
 							html.Class("card-header border-0"),
-							html.Style("background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white; padding: 1.5rem;"),
+							html.Style(
+								"background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white; padding: 1.5rem;",
+							),
 							html.H5(html.Class("card-title mb-0"), html.Style("font-weight: 600;"),
 								gomponents.Text("Test Results")),
 						),
@@ -241,10 +307,14 @@ func renderRegexTesterPage(csrfToken string) gomponents.Node {
 				html.Class("col-12"),
 				html.Div(
 					html.Class("card border-0 shadow-sm"),
-					html.Style("border-radius: 15px; overflow: hidden; background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);"),
+					html.Style(
+						"border-radius: 15px; overflow: hidden; background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);",
+					),
 					html.Div(
 						html.Class("card-header border-0"),
-						html.Style("background: linear-gradient(135deg, #6c757d 0%, #495057 100%); color: white; padding: 1.5rem;"),
+						html.Style(
+							"background: linear-gradient(135deg, #6c757d 0%, #495057 100%); color: white; padding: 1.5rem;",
+						),
 						html.H5(html.Class("card-title mb-0"), html.Style("font-weight: 600;"),
 							gomponents.Text("Available Patterns")),
 					),
@@ -258,14 +328,27 @@ func renderRegexTesterPage(csrfToken string) gomponents.Node {
 									gomponents.Text("Regex Configurations")),
 								func() gomponents.Node {
 									if len(regexConfigs) == 0 {
-										return html.P(html.Class("text-muted"), gomponents.Text("No regex configurations found"))
+										return html.P(
+											html.Class("text-muted"),
+											gomponents.Text("No regex configurations found"),
+										)
 									}
+
 									var items []gomponents.Node
 									for _, regexConfig := range regexConfigs {
-										items = append(items, html.Li(html.Class("mb-1"),
-											html.Code(html.Class("text-primary"), gomponents.Text(regexConfig.Name))))
+										items = append(items, html.Li(
+											html.Class("mb-1"),
+											html.Code(
+												html.Class("text-primary"),
+												gomponents.Text(regexConfig.Name),
+											),
+										))
 									}
-									return html.Ul(html.Class("list-unstyled"), gomponents.Group(items))
+
+									return html.Ul(
+										html.Class("list-unstyled"),
+										gomponents.Group(items),
+									)
 								}(),
 							),
 
@@ -276,14 +359,27 @@ func renderRegexTesterPage(csrfToken string) gomponents.Node {
 									gomponents.Text("Quality Patterns")),
 								func() gomponents.Node {
 									if len(qualities) == 0 {
-										return html.P(html.Class("text-muted"), gomponents.Text("No quality patterns found"))
+										return html.P(
+											html.Class("text-muted"),
+											gomponents.Text("No quality patterns found"),
+										)
 									}
+
 									var items []gomponents.Node
 									for _, quality := range qualities {
-										items = append(items, html.Li(html.Class("mb-1"),
-											html.Code(html.Class("text-warning"), gomponents.Text(quality.Str1))))
+										items = append(items, html.Li(
+											html.Class("mb-1"),
+											html.Code(
+												html.Class("text-warning"),
+												gomponents.Text(quality.Str1),
+											),
+										))
 									}
-									return html.Ul(html.Class("list-unstyled"), gomponents.Group(items))
+
+									return html.Ul(
+										html.Class("list-unstyled"),
+										gomponents.Group(items),
+									)
 								}(),
 							),
 
@@ -292,15 +388,64 @@ func renderRegexTesterPage(csrfToken string) gomponents.Node {
 								html.H6(html.Class("fw-bold mb-3"),
 									html.I(html.Class("fas fa-globe me-2 text-success")),
 									gomponents.Text("Global Scan Patterns")),
-								html.Ul(html.Class("list-unstyled"),
-									html.Li(html.Class("mb-1"), html.Code(html.Class("text-success"), gomponents.Text("season"))),
-									html.Li(html.Class("mb-1"), html.Code(html.Class("text-success"), gomponents.Text("episode"))),
-									html.Li(html.Class("mb-1"), html.Code(html.Class("text-success"), gomponents.Text("identifier"))),
-									html.Li(html.Class("mb-1"), html.Code(html.Class("text-success"), gomponents.Text("date"))),
-									html.Li(html.Class("mb-1"), html.Code(html.Class("text-success"), gomponents.Text("year"))),
-									html.Li(html.Class("mb-1"), html.Code(html.Class("text-success"), gomponents.Text("audio"))),
-									html.Li(html.Class("mb-1"), html.Code(html.Class("text-success"), gomponents.Text("imdb"))),
-									html.Li(html.Class("mb-1"), html.Code(html.Class("text-success"), gomponents.Text("tvdb"))),
+								html.Ul(
+									html.Class("list-unstyled"),
+									html.Li(
+										html.Class("mb-1"),
+										html.Code(
+											html.Class("text-success"),
+											gomponents.Text("season"),
+										),
+									),
+									html.Li(
+										html.Class("mb-1"),
+										html.Code(
+											html.Class("text-success"),
+											gomponents.Text("episode"),
+										),
+									),
+									html.Li(
+										html.Class("mb-1"),
+										html.Code(
+											html.Class("text-success"),
+											gomponents.Text("identifier"),
+										),
+									),
+									html.Li(
+										html.Class("mb-1"),
+										html.Code(
+											html.Class("text-success"),
+											gomponents.Text("date"),
+										),
+									),
+									html.Li(
+										html.Class("mb-1"),
+										html.Code(
+											html.Class("text-success"),
+											gomponents.Text("year"),
+										),
+									),
+									html.Li(
+										html.Class("mb-1"),
+										html.Code(
+											html.Class("text-success"),
+											gomponents.Text("audio"),
+										),
+									),
+									html.Li(
+										html.Class("mb-1"),
+										html.Code(
+											html.Class("text-success"),
+											gomponents.Text("imdb"),
+										),
+									),
+									html.Li(
+										html.Class("mb-1"),
+										html.Code(
+											html.Class("text-success"),
+											gomponents.Text("tvdb"),
+										),
+									),
 								),
 							),
 						),
@@ -452,6 +597,7 @@ func HandleRegexTesting(ctx *gin.Context) {
 	}
 
 	response.TestString = testString
+
 	selectedRegexConfig := ctx.PostForm("selected_regex_config")
 	selectedQualityConfig := ctx.PostForm("selected_quality_config")
 
@@ -467,6 +613,7 @@ func HandleRegexTesting(ctx *gin.Context) {
 				if pattern == "" {
 					continue
 				}
+
 				result := RegexTestResult{
 					Type:    "Config",
 					Name:    name + " (Required)",
@@ -477,11 +624,13 @@ func HandleRegexTesting(ctx *gin.Context) {
 					result.Error = err.Error()
 				} else {
 					matches := compiled.FindStringSubmatch(testString)
+
 					result.Match = len(matches) > 0
 					if result.Match && len(matches) > 1 {
 						result.MatchString = strings.Join(matches[1:], ", ")
 					}
 				}
+
 				response.Results = append(response.Results, result)
 			}
 
@@ -490,6 +639,7 @@ func HandleRegexTesting(ctx *gin.Context) {
 				if pattern == "" {
 					continue
 				}
+
 				result := RegexTestResult{
 					Type:    "Config",
 					Name:    name + " (Rejected)",
@@ -500,11 +650,13 @@ func HandleRegexTesting(ctx *gin.Context) {
 					result.Error = err.Error()
 				} else {
 					matches := compiled.FindStringSubmatch(testString)
+
 					result.Match = len(matches) > 0
 					if result.Match && len(matches) > 1 {
 						result.MatchString = strings.Join(matches[1:], ", ")
 					}
 				}
+
 				response.Results = append(response.Results, result)
 			}
 		})
@@ -514,8 +666,12 @@ func HandleRegexTesting(ctx *gin.Context) {
 	if ctx.PostForm("test_qualities") == "on" || ctx.PostForm("test_qualities") == "true" {
 		if selectedQualityConfig != "" {
 			// Test quality patterns from database filtered by name containing the quality config name
-			qualities := database.GetrowsN[database.DbstaticTwoString](false, 200,
-				"SELECT name, regex FROM qualities WHERE use_regex = 1 AND regex IS NOT NULL AND regex != '' AND LOWER(name) LIKE ? ORDER BY name", "%"+strings.ToLower(selectedQualityConfig)+"%")
+			qualities := database.GetrowsN[database.DbstaticTwoString](
+				false,
+				200,
+				"SELECT name, regex FROM qualities WHERE use_regex = 1 AND regex IS NOT NULL AND regex != '' AND LOWER(name) LIKE ? ORDER BY name",
+				"%"+strings.ToLower(selectedQualityConfig)+"%",
+			)
 
 			for _, quality := range qualities {
 				result := RegexTestResult{
@@ -528,11 +684,13 @@ func HandleRegexTesting(ctx *gin.Context) {
 					result.Error = err.Error()
 				} else {
 					matches := compiled.FindStringSubmatch(testString)
+
 					result.Match = len(matches) > 0
 					if result.Match && len(matches) > 1 {
 						result.MatchString = strings.Join(matches[1:], ", ")
 					}
 				}
+
 				response.Results = append(response.Results, result)
 			}
 		} else {
@@ -551,11 +709,13 @@ func HandleRegexTesting(ctx *gin.Context) {
 					result.Error = err.Error()
 				} else {
 					matches := compiled.FindStringSubmatch(testString)
+
 					result.Match = len(matches) > 0
 					if result.Match && len(matches) > 1 {
 						result.MatchString = strings.Join(matches[1:], ", ")
 					}
 				}
+
 				response.Results = append(response.Results, result)
 			}
 		}
@@ -569,7 +729,10 @@ func HandleRegexTesting(ctx *gin.Context) {
 		}{
 			{"season", `(?i)(s?(\d{1,4}))(?: )?[ex]`},
 			{"episode", `(?i)((?:\d{1,4})(?: )?[ex](?: )?(\d{1,3})(?:\b|_|e|$))`},
-			{"identifier", `(?i)((s?\d{1,4}(?:(?:(?: )?-?(?: )?[ex-]\d{1,3})+)|\d{2,4}(?:\.|-| |_)\d{1,2}(?:\.|-| |_)\d{1,2}))(?:\b|_)`},
+			{
+				"identifier",
+				`(?i)((s?\d{1,4}(?:(?:(?: )?-?(?: )?[ex-]\d{1,3})+)|\d{2,4}(?:\.|-| |_)\d{1,2}(?:\.|-| |_)\d{1,2}))(?:\b|_)`,
+			},
 			{"date", `(?i)(?:\b|_)((\d{2,4}(?:\.|-| |_)\d{1,2}(?:\.|-| |_)\d{1,2}))(?:\b|_)`},
 			{"year", `(?:\b|_)(((?:19\d|20\d)\d))(?:\b|_)`},
 			{"audio", `(?i)(?:\b|_)((dd[0-9\\.]+|dd[p+][0-9\\.]+|dts\W?hd(?:\W?ma)?))(?:\b|_)`},
@@ -588,11 +751,13 @@ func HandleRegexTesting(ctx *gin.Context) {
 				result.Error = err.Error()
 			} else {
 				matches := compiled.FindStringSubmatch(testString)
+
 				result.Match = len(matches) > 0
 				if result.Match && len(matches) > 1 {
 					result.MatchString = strings.Join(matches[1:], ", ")
 				}
 			}
+
 			response.Results = append(response.Results, result)
 		}
 	}

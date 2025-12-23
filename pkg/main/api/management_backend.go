@@ -18,7 +18,7 @@ import (
 	"github.com/robfig/cron/v3"
 )
 
-// MediaCleanupResult represents the results of a media cleanup scan
+// MediaCleanupResult represents the results of a media cleanup scan.
 type MediaCleanupResult struct {
 	OrphanedFiles    []OrphanedFile `json:"orphaned_files"`
 	DuplicateFiles   []DuplicateSet `json:"duplicate_files"`
@@ -60,8 +60,13 @@ type BrokenLink struct {
 	SuggestedFix string `json:"suggested_fix"`
 }
 
-// PerformMediaCleanup executes the media cleanup scan
-func PerformMediaCleanup(findOrphans, findDuplicates, findBroken, findEmpty bool, mediaTypes, paths string, minFileSize int64, dryRun bool) (*MediaCleanupResult, error) {
+// PerformMediaCleanup executes the media cleanup scan.
+func PerformMediaCleanup(
+	findOrphans, findDuplicates, findBroken, findEmpty bool,
+	mediaTypes, paths string,
+	minFileSize int64,
+	dryRun bool,
+) (*MediaCleanupResult, error) {
 	startTime := time.Now()
 	result := &MediaCleanupResult{
 		OrphanedFiles:    []OrphanedFile{},
@@ -73,59 +78,90 @@ func PerformMediaCleanup(findOrphans, findDuplicates, findBroken, findEmpty bool
 
 	// Get paths to scan
 	scanPaths := getPathsToScan(paths)
+
 	result.PathsScanned = scanPaths
 
 	// Perform scans based on options
-	var wg sync.WaitGroup
-	var mu sync.Mutex
+	var (
+		wg sync.WaitGroup
+		mu sync.Mutex
+	)
 
 	if findOrphans {
 		wg.Add(1)
+
 		go func() {
 			defer wg.Done()
+
 			orphans := findOrphanedFiles(scanPaths, mediaTypes, minFileSize)
+
 			mu.Lock()
+
 			result.OrphanedFiles = convertOrphanedFiles(orphans)
+
 			mu.Unlock()
 		}()
 	}
 
 	if findDuplicates {
 		wg.Add(1)
+
 		go func() {
 			defer wg.Done()
+
 			duplicates := findDuplicateFiles(scanPaths, minFileSize)
+
 			mu.Lock()
+
 			result.DuplicateFiles = convertDuplicateFiles(duplicates)
+
 			mu.Unlock()
 		}()
 	}
 
 	if findBroken {
 		wg.Add(1)
+
 		go func() {
 			defer wg.Done()
+
 			broken := findBrokenLinks(mediaTypes)
+
 			mu.Lock()
+
 			result.BrokenLinks = convertBrokenLinks(broken)
+
 			mu.Unlock()
 		}()
 	}
 
 	if findEmpty {
 		wg.Add(1)
+
 		go func() {
 			defer wg.Done()
+
 			empty := findEmptyDirectories(scanPaths, minFileSize)
+
 			mu.Lock()
+
 			result.EmptyDirectories = empty
+
 			mu.Unlock()
 		}()
 	}
 
 	wg.Wait()
 
-	result.TotalIssues = len(result.OrphanedFiles) + len(result.DuplicateFiles) + len(result.BrokenLinks) + len(result.EmptyDirectories)
+	result.TotalIssues = len(
+		result.OrphanedFiles,
+	) + len(
+		result.DuplicateFiles,
+	) + len(
+		result.BrokenLinks,
+	) + len(
+		result.EmptyDirectories,
+	)
 	result.ScanDuration = time.Since(startTime)
 
 	// If not dry run, perform cleanup
@@ -142,6 +178,7 @@ func PerformMediaCleanup(findOrphans, findDuplicates, findBroken, findEmpty bool
 			for j, file := range dupSet.Files {
 				group[j] = file.Path
 			}
+
 			duplicateGroups[i] = group
 		}
 
@@ -150,15 +187,25 @@ func PerformMediaCleanup(findOrphans, findDuplicates, findBroken, findEmpty bool
 			brokenPaths[i] = broken.FilePath
 		}
 
-		performCleanupActions(orphanedPaths, duplicateGroups, brokenPaths, result.EmptyDirectories, dryRun)
+		performCleanupActions(
+			orphanedPaths,
+			duplicateGroups,
+			brokenPaths,
+			result.EmptyDirectories,
+			dryRun,
+		)
 	}
 
-	logger.Logtype("info", 3).Int("total_issues", result.TotalIssues).Str("duration", result.ScanDuration.String()).Bool("dry_run", dryRun).Msg("Media cleanup completed")
+	logger.Logtype("info", 3).
+		Int("total_issues", result.TotalIssues).
+		Str("duration", result.ScanDuration.String()).
+		Bool("dry_run", dryRun).
+		Msg("Media cleanup completed")
 
 	return result, nil
 }
 
-// MissingEpisodesResult represents missing episodes scan results
+// MissingEpisodesResult represents missing episodes scan results.
 type MissingEpisodesResult struct {
 	MissingEpisodes   []MissingEpisode `json:"missing_episodes"`
 	SeriesScanned     int              `json:"series_scanned"`
@@ -178,20 +225,34 @@ type MissingEpisode struct {
 	QualityWanted string    `json:"quality_wanted"`
 }
 
-// FindMissingEpisodes searches for missing episodes
-func FindMissingEpisodes(seriesName string, seasonNumber int, status string, includeSpecials, onlyAired, autoDownload bool, dateRangeDays int, qualityProfile string) (*MissingEpisodesResult, error) {
+// FindMissingEpisodes searches for missing episodes.
+func FindMissingEpisodes(
+	seriesName string,
+	seasonNumber int,
+	status string,
+	includeSpecials, onlyAired, autoDownload bool,
+	dateRangeDays int,
+	qualityProfile string,
+) (*MissingEpisodesResult, error) {
 	startTime := time.Now()
 	result := &MissingEpisodesResult{
 		MissingEpisodes: []MissingEpisode{},
 	}
 
 	// Get series to scan
-	var series []database.Serie
-	var err error
+	var (
+		series []database.Serie
+		err    error
+	)
 
 	if seriesName != "" {
 		// Search specific series
-		series = database.StructscanT[database.Serie](false, 0, "Select * from series Where seriename LIKE ?", "%"+seriesName+"%")
+		series = database.StructscanT[database.Serie](
+			false,
+			0,
+			"Select * from series Where seriename LIKE ?",
+			"%"+seriesName+"%",
+		)
 	} else {
 		// Get all series based on status
 		statusFilter := ""
@@ -218,30 +279,53 @@ func FindMissingEpisodes(seriesName string, seasonNumber int, status string, inc
 	// Check each series for missing episodes
 	for _, serie := range series {
 		// Get series name from dbserie table
-		dbserie := database.StructscanT[database.Dbserie](false, 1, "SELECT seriename FROM dbseries WHERE id = ?", serie.DbserieID)
+		dbserie := database.StructscanT[database.Dbserie](
+			false,
+			1,
+			"SELECT seriename FROM dbseries WHERE id = ?",
+			serie.DbserieID,
+		)
+
 		seriesName := ""
 		if len(dbserie) > 0 {
 			seriesName = dbserie[0].Seriename
 		}
 
-		missing, err := checkSeriesMissingEpisodes(seriesName, seasonNumber, includeSpecials, onlyAired, dateRangeDays, status)
+		missing, err := checkSeriesMissingEpisodes(
+			seriesName,
+			seasonNumber,
+			includeSpecials,
+			onlyAired,
+			dateRangeDays,
+			status,
+		)
 		if err != nil {
-			logger.Logtype("warning", 2).Uint("series_id", serie.ID).Str("error", err.Error()).Msg("Failed to check series for missing episodes")
+			logger.Logtype("warning", 2).
+				Uint("series_id", serie.ID).
+				Str("error", err.Error()).
+				Msg("Failed to check series for missing episodes")
+
 			continue
 		}
 
 		// Convert to MissingEpisode format
 		for _, ep := range missing {
-			result.MissingEpisodes = append(result.MissingEpisodes, convertToMissingEpisode(ep, serie, seriesName))
+			result.MissingEpisodes = append(
+				result.MissingEpisodes,
+				convertToMissingEpisode(ep, serie, seriesName),
+			)
 		}
 
 		// Trigger downloads if requested
 		if autoDownload && len(missing) > 0 {
 			downloadResult, err := triggerEpisodeDownloads(missing, qualityProfile, autoDownload)
 			if err != nil {
-				logger.Logtype("warning", 1).Str("error", err.Error()).Msg("Failed to trigger episode downloads")
+				logger.Logtype("warning", 1).
+					Str("error", err.Error()).
+					Msg("Failed to trigger episode downloads")
 				continue
 			}
+
 			result.DownloadTriggered += downloadResult.TriggeredDownloads
 		}
 	}
@@ -249,12 +333,17 @@ func FindMissingEpisodes(seriesName string, seasonNumber int, status string, inc
 	result.TotalMissing = len(result.MissingEpisodes)
 	result.ScanDuration = time.Since(startTime)
 
-	logger.Logtype("info", 4).Int("series_scanned", result.SeriesScanned).Int("total_missing", result.TotalMissing).Int("downloads_triggered", result.DownloadTriggered).Str("duration", result.ScanDuration.String()).Msg("Missing episodes scan completed")
+	logger.Logtype("info", 4).
+		Int("series_scanned", result.SeriesScanned).
+		Int("total_missing", result.TotalMissing).
+		Int("downloads_triggered", result.DownloadTriggered).
+		Str("duration", result.ScanDuration.String()).
+		Msg("Missing episodes scan completed")
 
 	return result, nil
 }
 
-// LogAnalysisResult represents log analysis results
+// LogAnalysisResult represents log analysis results.
 type LogAnalysisResult struct {
 	TimeRange        string              `json:"time_range"`
 	TotalEntries     int64               `json:"total_entries"`
@@ -313,8 +402,12 @@ type DatabaseStats struct {
 	ConnectionsActive int     `json:"connections_active"`
 }
 
-// AnalyzeLogs performs comprehensive log analysis
-func AnalyzeLogs(timeRange, logLevel string, maxLines int64, analyzeErrors, analyzePerformance, analyzeAccess, analyzeHealth bool) (*LogAnalysisResult, error) {
+// AnalyzeLogs performs comprehensive log analysis.
+func AnalyzeLogs(
+	timeRange, logLevel string,
+	maxLines int64,
+	analyzeErrors, analyzePerformance, analyzeAccess, analyzeHealth bool,
+) (*LogAnalysisResult, error) {
 	startTime := time.Now()
 	result := &LogAnalysisResult{
 		TimeRange:      timeRange,
@@ -368,6 +461,7 @@ func AnalyzeLogs(timeRange, logLevel string, maxLines int64, analyzeErrors, anal
 	if analyzeHealth {
 		// Convert to SystemHealthMetrics type
 		healthIndicators := analyzeSystemHealth(logEntries)
+
 		result.SystemHealth = SystemHealthMetrics{
 			MemoryUsage:     []MemoryDataPoint{},
 			CPUUsage:        []CPUDataPoint{},
@@ -378,12 +472,16 @@ func AnalyzeLogs(timeRange, logLevel string, maxLines int64, analyzeErrors, anal
 
 	result.AnalysisDuration = time.Since(startTime)
 
-	logger.Logtype("info", 3).Int64("total_entries", result.TotalEntries).Int64("error_count", result.ErrorCount).Str("duration", result.AnalysisDuration.String()).Msg("Log analysis completed")
+	logger.Logtype("info", 3).
+		Int64("total_entries", result.TotalEntries).
+		Int64("error_count", result.ErrorCount).
+		Str("duration", result.AnalysisDuration.String()).
+		Msg("Log analysis completed")
 
 	return result, nil
 }
 
-// StorageHealthResult represents storage health check results
+// StorageHealthResult represents storage health check results.
 type StorageHealthResult struct {
 	CheckTime        time.Time         `json:"check_time"`
 	OverallHealth    string            `json:"overall_health"`
@@ -420,8 +518,11 @@ type HealthSummary struct {
 	OverallScore  float64 `json:"overall_score"`
 }
 
-// CheckStorageHealth performs comprehensive storage health check
-func CheckStorageHealth(checkDiskSpace, checkPermission, checkMounts, checkIO bool, lowSpaceThreshold, criticalSpaceThreshold, slowIOThreshold float64) (*StorageHealthResult, error) {
+// CheckStorageHealth performs comprehensive storage health check.
+func CheckStorageHealth(
+	checkDiskSpace, checkPermission, checkMounts, checkIO bool,
+	lowSpaceThreshold, criticalSpaceThreshold, slowIOThreshold float64,
+) (*StorageHealthResult, error) {
 	result := &StorageHealthResult{
 		CheckTime:        time.Now(),
 		DiskSpaceStatus:  []DiskSpaceInfo{},
@@ -434,17 +535,25 @@ func CheckStorageHealth(checkDiskSpace, checkPermission, checkMounts, checkIO bo
 	// Get all configured media paths
 	mediaPaths := getAllMediaPaths()
 
-	var wg sync.WaitGroup
-	var mu sync.Mutex
+	var (
+		wg sync.WaitGroup
+		mu sync.Mutex
+	)
 
 	// Check disk space
+
 	if checkDiskSpace {
 		wg.Add(1)
+
 		go func() {
 			defer wg.Done()
+
 			diskInfo := checkDiskSpaceStatus(mediaPaths, lowSpaceThreshold, criticalSpaceThreshold)
+
 			mu.Lock()
+
 			result.DiskSpaceStatus = convertStorageDiskInfo(diskInfo)
+
 			mu.Unlock()
 		}()
 	}
@@ -452,11 +561,16 @@ func CheckStorageHealth(checkDiskSpace, checkPermission, checkMounts, checkIO bo
 	// Check permissions
 	if checkPermission {
 		wg.Add(1)
+
 		go func() {
 			defer wg.Done()
+
 			permIssues := checkPermissions(mediaPaths)
+
 			mu.Lock()
+
 			result.PermissionIssues = convertStoragePermissionInfo(permIssues)
+
 			mu.Unlock()
 		}()
 	}
@@ -464,11 +578,16 @@ func CheckStorageHealth(checkDiskSpace, checkPermission, checkMounts, checkIO bo
 	// Check mount status
 	if checkMounts {
 		wg.Add(1)
+
 		go func() {
 			defer wg.Done()
+
 			mountInfo := checkMountStatus(mediaPaths)
+
 			mu.Lock()
+
 			result.MountStatus = convertStorageMountInfo(mountInfo)
+
 			mu.Unlock()
 		}()
 	}
@@ -476,11 +595,16 @@ func CheckStorageHealth(checkDiskSpace, checkPermission, checkMounts, checkIO bo
 	// Check I/O health
 	if checkIO {
 		wg.Add(1)
+
 		go func() {
 			defer wg.Done()
+
 			ioInfo := checkIOHealth(mediaPaths, slowIOThreshold)
+
 			mu.Lock()
+
 			result.IOHealth = convertStorageIOHealthInfo(ioInfo)
+
 			mu.Unlock()
 		}()
 	}
@@ -518,6 +642,7 @@ func CheckStorageHealth(checkDiskSpace, checkPermission, checkMounts, checkIO bo
 	}
 
 	healthStatus := calculateOverallHealth(diskInfo, permInfo, mountInfo, ioInfo)
+
 	result.OverallHealth = healthStatus.OverallStatus
 	result.Summary = HealthSummary{
 		TotalPaths:    len(diskInfo) + len(mountInfo) + len(ioInfo),
@@ -527,12 +652,18 @@ func CheckStorageHealth(checkDiskSpace, checkPermission, checkMounts, checkIO bo
 		OverallScore:  healthStatus.HealthScore,
 	}
 
-	logger.Logtype("info", 5).Int("total_paths", result.Summary.TotalPaths).Int("healthy_paths", result.Summary.HealthyPaths).Int("warning_paths", result.Summary.WarningPaths).Int("critical_paths", result.Summary.CriticalPaths).Float64("overall_score", result.Summary.OverallScore).Msg("Storage health check completed")
+	logger.Logtype("info", 5).
+		Int("total_paths", result.Summary.TotalPaths).
+		Int("healthy_paths", result.Summary.HealthyPaths).
+		Int("warning_paths", result.Summary.WarningPaths).
+		Int("critical_paths", result.Summary.CriticalPaths).
+		Float64("overall_score", result.Summary.OverallScore).
+		Msg("Storage health check completed")
 
 	return result, nil
 }
 
-// ServiceHealthResult represents external service health check results
+// ServiceHealthResult represents external service health check results.
 type ServiceHealthResult struct {
 	CheckTime          time.Time            `json:"check_time"`
 	OverallStatus      string               `json:"overall_status"`
@@ -580,8 +711,12 @@ type ServiceHealthSummary struct {
 	OverallScore    float64 `json:"overall_score"`
 }
 
-// CheckServiceHealth performs comprehensive external service health checks
-func CheckServiceHealth(checkIMDB, checkTrakt, checkIndexers, checkNotifications bool, timeoutSeconds, retries int, detailedTest, measurePerformance bool) (*ServiceHealthResult, error) {
+// CheckServiceHealth performs comprehensive external service health checks.
+func CheckServiceHealth(
+	checkIMDB, checkTrakt, checkIndexers, checkNotifications bool,
+	timeoutSeconds, retries int,
+	detailedTest, measurePerformance bool,
+) (*ServiceHealthResult, error) {
 	startTime := time.Now()
 	result := &ServiceHealthResult{
 		CheckTime:          time.Now(),
@@ -596,30 +731,38 @@ func CheckServiceHealth(checkIMDB, checkTrakt, checkIndexers, checkNotifications
 	if checkIMDB {
 		servicesToCheck = append(servicesToCheck, "imdb")
 	}
+
 	if checkTrakt {
 		servicesToCheck = append(servicesToCheck, "trakt")
 	}
+
 	if checkIndexers {
 		// Get configured indexers
 		indexers := getConfiguredIndexers()
+
 		servicesToCheck = append(servicesToCheck, indexers...)
 	}
+
 	if checkNotifications {
 		servicesToCheck = append(servicesToCheck, "pushover")
 	}
 
 	// Test each service
-	var wg sync.WaitGroup
-	var mu sync.Mutex
+	var (
+		wg sync.WaitGroup
+		mu sync.Mutex
+	)
 
 	for _, serviceName := range servicesToCheck {
 		wg.Add(1)
+
 		go func(service string) {
 			defer wg.Done()
 
 			status := testServiceHealth(service, timeoutSeconds, retries, detailedTest)
 
 			mu.Lock()
+
 			result.ServiceResults = append(result.ServiceResults, status)
 
 			if status.Status != "online" {
@@ -631,6 +774,7 @@ func CheckServiceHealth(checkIMDB, checkTrakt, checkIndexers, checkNotifications
 					Timestamp:   time.Now(),
 				})
 			}
+
 			mu.Unlock()
 		}(serviceName)
 	}
@@ -646,7 +790,13 @@ func CheckServiceHealth(checkIMDB, checkTrakt, checkIndexers, checkNotifications
 	result.OverallStatus, result.Summary = calculateServiceHealth(result.ServiceResults)
 	result.TestDuration = time.Since(startTime)
 
-	logger.Logtype("info", 5).Int("total_services", result.Summary.TotalServices).Int("online_services", result.Summary.OnlineServices).Int("failed_services", result.Summary.FailedServices).Float64("avg_response_time", result.Summary.AvgResponseTime).Str("duration", result.TestDuration.String()).Msg("Service health check completed")
+	logger.Logtype("info", 5).
+		Int("total_services", result.Summary.TotalServices).
+		Int("online_services", result.Summary.OnlineServices).
+		Int("failed_services", result.Summary.FailedServices).
+		Float64("avg_response_time", result.Summary.AvgResponseTime).
+		Str("duration", result.TestDuration.String()).
+		Msg("Service health check completed")
 
 	return result, nil
 }
@@ -666,22 +816,25 @@ func CheckServiceHealth(checkIMDB, checkTrakt, checkIndexers, checkNotifications
 // - Configuration management
 // - Notification systems
 
-// getConfiguredIndexers returns list of configured indexer names (only enabled ones)
+// getConfiguredIndexers returns list of configured indexer names (only enabled ones).
 func getConfiguredIndexers() []string {
 	indexers := config.GetSettingsIndexerAll()
+
 	var indexerNames []string
 	for _, indexer := range indexers {
 		if indexer.Enabled { // Only include enabled indexers
 			indexerNames = append(indexerNames, indexer.Name)
 		}
 	}
+
 	if len(indexerNames) == 0 {
 		return []string{} // No enabled indexers configured
 	}
+
 	return indexerNames
 }
 
-// testServiceHealth tests the health of an individual service
+// testServiceHealth tests the health of an individual service.
 func testServiceHealth(serviceName string, _, _ int, detailed bool) ServiceStatus {
 	status := ServiceStatus{
 		ServiceName: serviceName,
@@ -706,7 +859,7 @@ func testServiceHealth(serviceName string, _, _ int, detailed bool) ServiceStatu
 	return status
 }
 
-// testIMDBHealth checks IMDB database connectivity
+// testIMDBHealth checks IMDB database connectivity.
 func testIMDBHealth(detailed bool) ServiceStatus {
 	status := ServiceStatus{
 		ServiceName: "IMDB Database",
@@ -730,9 +883,18 @@ func testIMDBHealth(detailed bool) ServiceStatus {
 
 	if detailed {
 		// Get additional database info
-		titleCount := database.Getdatarow[struct{ Count int }](true, "SELECT COUNT(*) as count FROM title_basics")
-		ratingsCount := database.Getdatarow[struct{ Count int }](true, "SELECT COUNT(*) as count FROM title_ratings")
-		akasCount := database.Getdatarow[struct{ Count int }](true, "SELECT COUNT(*) as count FROM title_akas")
+		titleCount := database.Getdatarow[struct{ Count int }](
+			true,
+			"SELECT COUNT(*) as count FROM title_basics",
+		)
+		ratingsCount := database.Getdatarow[struct{ Count int }](
+			true,
+			"SELECT COUNT(*) as count FROM title_ratings",
+		)
+		akasCount := database.Getdatarow[struct{ Count int }](
+			true,
+			"SELECT COUNT(*) as count FROM title_akas",
+		)
 
 		status.Details["title_basics_count"] = titleCount.Count
 		status.Details["title_ratings_count"] = ratingsCount.Count
@@ -748,7 +910,7 @@ func testIMDBHealth(detailed bool) ServiceStatus {
 	return status
 }
 
-// testTraktHealth checks Trakt service connectivity
+// testTraktHealth checks Trakt service connectivity.
 func testTraktHealth(detailed bool) ServiceStatus {
 	status := ServiceStatus{
 		ServiceName: "Trakt",
@@ -757,6 +919,7 @@ func testTraktHealth(detailed bool) ServiceStatus {
 
 	// Simple connectivity test to Trakt API
 	client := &http.Client{Timeout: 10 * time.Second}
+
 	resp, err := client.Get("https://api.trakt.tv")
 	if err != nil {
 		status.Status = "offline"
@@ -768,6 +931,7 @@ func testTraktHealth(detailed bool) ServiceStatus {
 	// Trakt API may return different codes, but connectivity is what matters
 	if resp.StatusCode < 500 {
 		status.Status = "online"
+
 		status.Details["status_code"] = resp.StatusCode
 		if detailed {
 			status.Details["api_version"] = resp.Header.Get("Trakt-API-Version")
@@ -780,7 +944,7 @@ func testTraktHealth(detailed bool) ServiceStatus {
 	return status
 }
 
-// testDatabaseHealth checks database connectivity and health
+// testDatabaseHealth checks database connectivity and health.
 func testDatabaseHealth(detailed bool) ServiceStatus {
 	status := ServiceStatus{
 		ServiceName: "Database",
@@ -788,7 +952,11 @@ func testDatabaseHealth(detailed bool) ServiceStatus {
 	}
 
 	// Test database connection by attempting a simple query
-	testRows := database.GetrowsN[database.DbstaticTwoUint](false, 1, "SELECT 1 as count, 2 as yeah")
+	testRows := database.GetrowsN[database.DbstaticTwoUint](
+		false,
+		1,
+		"SELECT 1 as count, 2 as yeah",
+	)
 	if len(testRows) == 0 {
 		status.Status = "offline"
 		status.Details["error"] = "Database query failed"
@@ -806,7 +974,7 @@ func testDatabaseHealth(detailed bool) ServiceStatus {
 	return status
 }
 
-// testFilesystemHealth checks filesystem health
+// testFilesystemHealth checks filesystem health.
 func testFilesystemHealth(detailed bool) ServiceStatus {
 	status := ServiceStatus{
 		ServiceName: "Filesystem",
@@ -841,7 +1009,7 @@ func testFilesystemHealth(detailed bool) ServiceStatus {
 	return status
 }
 
-// testGenericServiceHealth tests a generic service health
+// testGenericServiceHealth tests a generic service health.
 func testGenericServiceHealth(serviceName string, detailed bool) ServiceStatus {
 	status := ServiceStatus{
 		ServiceName: serviceName,
@@ -859,23 +1027,27 @@ func testGenericServiceHealth(serviceName string, detailed bool) ServiceStatus {
 				status.Details["url"] = indexer.URL
 				status.Details["message"] = "Indexer is disabled in configuration"
 				status.Details["enabled"] = false
+
 				return status
 			}
 
 			// Test indexer with actual query
 			if indexer.URL != "" && indexer.Apikey != "" {
 				testResult := testIndexerQuery(indexer, detailed)
+
 				status.Status = testResult.Status
 				status.Details = testResult.Details
 				status.Details["url"] = indexer.URL
 				status.Details["enabled"] = indexer.Enabled
 				status.Details["type"] = indexer.IndexerType
+
 				return status
 			} else {
 				status.Status = "misconfigured"
 				status.Details["url"] = indexer.URL
 				status.Details["error"] = "Missing URL or API key"
 				status.Details["enabled"] = indexer.Enabled
+
 				return status
 			}
 		}
@@ -893,10 +1065,11 @@ func testGenericServiceHealth(serviceName string, detailed bool) ServiceStatus {
 
 	status.Status = "not_configured"
 	status.Details["message"] = "Service not found in configuration"
+
 	return status
 }
 
-// testIndexerQuery performs an actual test query against an indexer
+// testIndexerQuery performs an actual test query against an indexer.
 func testIndexerQuery(indexer config.IndexersConfig, detailed bool) ServiceStatus {
 	status := ServiceStatus{
 		ServiceName: indexer.Name,
@@ -914,6 +1087,7 @@ func testIndexerQuery(indexer config.IndexersConfig, detailed bool) ServiceStatu
 	resp, err := client.Get(testURL)
 
 	queryDuration := time.Since(queryStart)
+
 	status.ResponseTime = queryDuration
 	status.Details["response_time_ms"] = queryDuration.Milliseconds()
 
@@ -923,6 +1097,7 @@ func testIndexerQuery(indexer config.IndexersConfig, detailed bool) ServiceStatu
 		status.Details["error"] = err.Error()
 		return status
 	}
+
 	defer resp.Body.Close()
 
 	status.StatusCode = resp.StatusCode
@@ -939,7 +1114,8 @@ func testIndexerQuery(indexer config.IndexersConfig, detailed bool) ServiceStatu
 				status.Details["response_size"] = len(body)
 
 				// Check if response looks like valid Newznab XML
-				if strings.Contains(string(body), "<caps>") || strings.Contains(string(body), "<categories>") {
+				if strings.Contains(string(body), "<caps>") ||
+					strings.Contains(string(body), "<categories>") {
 					status.Details["api_format"] = "newznab"
 					status.Details["caps_available"] = true
 
@@ -973,18 +1149,7 @@ func testIndexerQuery(indexer config.IndexersConfig, detailed bool) ServiceStatu
 	return status
 }
 
-// testURLConnectivity tests if a URL is reachable
-func testURLConnectivity(url string) bool {
-	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Get(url)
-	if err != nil {
-		return false
-	}
-	defer resp.Body.Close()
-	return resp.StatusCode < 500
-}
-
-// determineSeverity determines the severity of a service error
+// determineSeverity determines the severity of a service error.
 func determineSeverity(service, error string) string {
 	serviceLower := strings.ToLower(service)
 	errorLower := strings.ToLower(error)
@@ -1027,27 +1192,33 @@ func getSuggestion(service, error string) string {
 		if strings.Contains(errorLower, "connection") {
 			return "Check database connection settings and ensure the database is running"
 		}
+
 		if strings.Contains(errorLower, "timeout") {
 			return "Increase connection timeout or check database performance"
 		}
+
 		return "Verify database configuration and connectivity"
 
 	case "trakt", "trakt.tv":
 		if strings.Contains(errorLower, "unauthorized") || strings.Contains(errorLower, "401") {
 			return "Update Trakt.tv API credentials or re-authenticate"
 		}
+
 		if strings.Contains(errorLower, "rate limit") || strings.Contains(errorLower, "429") {
 			return "Reduce request frequency, Trakt.tv API rate limit exceeded"
 		}
+
 		return "Verify Trakt.tv API settings and network connectivity"
 
 	case "imdb":
 		if strings.Contains(errorLower, "timeout") {
 			return "Check network connectivity to IMDB or increase timeout"
 		}
+
 		if strings.Contains(errorLower, "forbidden") {
 			return "IMDB may be blocking requests, consider using proxy or reducing frequency"
 		}
+
 		return "Check IMDB connectivity and request patterns"
 
 	default:
@@ -1055,21 +1226,27 @@ func getSuggestion(service, error string) string {
 		if strings.Contains(errorLower, "unauthorized") || strings.Contains(errorLower, "401") {
 			return "Update API credentials or authentication settings"
 		}
+
 		if strings.Contains(errorLower, "timeout") {
 			return "Check network connectivity and increase timeout if needed"
 		}
+
 		if strings.Contains(errorLower, "not found") || strings.Contains(errorLower, "404") {
 			return "Verify service URL and endpoint configuration"
 		}
+
 		if strings.Contains(errorLower, "rate limit") || strings.Contains(errorLower, "429") {
 			return "Reduce request frequency to avoid rate limiting"
 		}
+
 		if strings.Contains(errorLower, "connection refused") {
 			return "Ensure service is running and accessible on the configured port"
 		}
+
 		if strings.Contains(errorLower, "ssl") || strings.Contains(errorLower, "certificate") {
 			return "Check SSL/TLS certificate configuration or disable SSL verification"
 		}
+
 		return "Check service configuration and network connectivity"
 	}
 }
@@ -1118,6 +1295,7 @@ func calculateServiceHealth(results []ServiceStatus) (string, ServiceHealthSumma
 	}
 
 	var totalResponseTime time.Duration
+
 	responseTimeCount := 0
 	onlineCount := 0
 	failedCount := 0
@@ -1138,7 +1316,11 @@ func calculateServiceHealth(results []ServiceStatus) (string, ServiceHealthSumma
 
 	avgResponseTime := 0.0
 	if responseTimeCount > 0 {
-		avgResponseTime = float64(totalResponseTime.Nanoseconds()) / float64(responseTimeCount) / 1e6 // Convert to milliseconds
+		avgResponseTime = float64(
+			totalResponseTime.Nanoseconds(),
+		) / float64(
+			responseTimeCount,
+		) / 1e6 // Convert to milliseconds
 	}
 
 	totalServices := len(results)
@@ -1167,7 +1349,7 @@ func calculateServiceHealth(results []ServiceStatus) (string, ServiceHealthSumma
 	return status, summary
 }
 
-// Conversion helper functions to bridge between different data structures
+// Conversion helper functions to bridge between different data structures.
 func convertOrphanedFiles(files []string) []OrphanedFile {
 	result := make([]OrphanedFile, len(files))
 	for i, file := range files {
@@ -1181,6 +1363,7 @@ func convertOrphanedFiles(files []string) []OrphanedFile {
 			}
 		}
 	}
+
 	return result
 }
 
@@ -1188,6 +1371,7 @@ func convertDuplicateFiles(groups [][]string) []DuplicateSet {
 	result := make([]DuplicateSet, len(groups))
 	for i, group := range groups {
 		files := make([]DuplicateFile, len(group))
+
 		totalSize := int64(0)
 		for j, file := range group {
 			if stat, err := os.Stat(file); err == nil {
@@ -1197,9 +1381,11 @@ func convertDuplicateFiles(groups [][]string) []DuplicateSet {
 					ModTime: stat.ModTime(),
 					Hash:    "",
 				}
+
 				totalSize += stat.Size()
 			}
 		}
+
 		result[i] = DuplicateSet{
 			Files:      files,
 			CommonName: filepath.Base(group[0]),
@@ -1207,6 +1393,7 @@ func convertDuplicateFiles(groups [][]string) []DuplicateSet {
 			Confidence: 0.8,
 		}
 	}
+
 	return result
 }
 
@@ -1222,17 +1409,25 @@ func convertBrokenLinks(files []string) []BrokenLink {
 			SuggestedFix: "Remove from database",
 		}
 	}
+
 	return result
 }
 
-func convertToMissingEpisode(episode database.SerieEpisode, serie database.Serie, seriesName string) MissingEpisode {
-	var dbEpisode database.DbserieEpisode
-	var airDate time.Time
-	var hasAired bool
-	var episodeTitle string
-	var seasonNumber, episodeNumber int
+func convertToMissingEpisode(
+	episode database.SerieEpisode,
+	serie database.Serie,
+	seriesName string,
+) MissingEpisode {
+	var (
+		dbEpisode                   database.DbserieEpisode
+		airDate                     time.Time
+		hasAired                    bool
+		episodeTitle                string
+		seasonNumber, episodeNumber int
+	)
 
 	// Try to get episode details from database
+
 	if err := dbEpisode.GetDbserieEpisodesByIDP(&episode.DbserieEpisodeID); err == nil {
 		episodeTitle = dbEpisode.Title
 		if dbEpisode.FirstAired.Valid {
@@ -1244,6 +1439,7 @@ func convertToMissingEpisode(episode database.SerieEpisode, serie database.Serie
 		if seasonNum, err := strconv.Atoi(dbEpisode.Season); err == nil {
 			seasonNumber = seasonNum
 		}
+
 		if epNum, err := strconv.Atoi(dbEpisode.Episode); err == nil {
 			episodeNumber = epNum
 		}
@@ -1266,7 +1462,7 @@ func convertToMissingEpisode(episode database.SerieEpisode, serie database.Serie
 	}
 }
 
-// Storage type conversion functions - convert from storage_functions.go types to management types
+// Storage type conversion functions - convert from storage_functions.go types to management types.
 func convertStorageDiskInfo(diskInfo []DiskSpaceInfo) []DiskSpaceInfo {
 	// Types are the same, just return as-is
 	return diskInfo
@@ -1285,6 +1481,7 @@ func convertStoragePermissionInfo(permInfo []PermissionInfo) []PermissionIssue {
 			})
 		}
 	}
+
 	return result
 }
 
@@ -1298,12 +1495,12 @@ func convertStorageIOHealthInfo(ioInfo []IOHealthInfo) []IOHealthInfo {
 	return ioInfo
 }
 
-// CronValidationRequest represents a request to validate a cron expression
+// CronValidationRequest represents a request to validate a cron expression.
 type CronValidationRequest struct {
 	Expression string `json:"expression"`
 }
 
-// CronValidationResponse represents the response for cron validation
+// CronValidationResponse represents the response for cron validation.
 type CronValidationResponse struct {
 	Valid       bool     `json:"valid"`
 	Description string   `json:"description"`
@@ -1311,7 +1508,7 @@ type CronValidationResponse struct {
 	Error       string   `json:"error"`
 }
 
-// HandleCronValidation validates a cron expression and provides description
+// HandleCronValidation validates a cron expression and provides description.
 func HandleCronValidation(ctx *gin.Context) {
 	// Get expression from form data (frontend sends as form data, not JSON)
 	expression := strings.TrimSpace(ctx.PostForm("expression"))
@@ -1322,15 +1519,20 @@ func HandleCronValidation(ctx *gin.Context) {
 			<i class="fa-solid fa-exclamation-triangle me-2"></i>
 			<strong>Empty Expression</strong> - Please enter a cron expression to validate.
 		</div>`)
+
 		return
 	}
 
 	// Parse and validate the cron expression using robfig/cron with 6-field support (seconds included)
-	parser := cron.NewParser(cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
+	parser := cron.NewParser(
+		cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow,
+	)
+
 	schedule, err := parser.Parse(expression)
 	if err != nil {
 		// Try 5-field format if 6-field fails
 		parser5 := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
+
 		schedule5, err5 := parser5.Parse(expression)
 		if err5 != nil {
 			ctx.Header("Content-Type", "text/html")
@@ -1339,6 +1541,7 @@ func HandleCronValidation(ctx *gin.Context) {
 				<strong>Invalid Expression</strong> - %s
 				<br><small class="text-muted mt-1 d-block">Supports both 5-field (minute hour day month weekday) and 6-field (second minute hour day month weekday) formats.</small>
 			</div>`, err.Error())
+
 			return
 		}
 		// Use 5-field schedule
@@ -1351,14 +1554,16 @@ func HandleCronValidation(ctx *gin.Context) {
 	// Calculate next 5 run times
 	now := time.Now()
 	nextRuns := make([]string, 0, 5)
+
 	nextTime := now
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		nextTime = schedule.Next(nextTime)
 		nextRuns = append(nextRuns, nextTime.Format("Mon, 02 Jan 2006 15:04:05"))
 	}
 
 	// Return formatted HTML response
 	ctx.Header("Content-Type", "text/html")
+
 	var html strings.Builder
 	html.WriteString(`<div class="alert alert-success mb-3">
 		<i class="fa-solid fa-check-circle me-2"></i>
@@ -1389,7 +1594,7 @@ func HandleCronValidation(ctx *gin.Context) {
 	ctx.String(http.StatusOK, html.String())
 }
 
-// generateCronDescription creates a human-readable description of a cron expression
+// generateCronDescription creates a human-readable description of a cron expression.
 func generateCronDescription(expression string) string {
 	parts := strings.Fields(expression)
 	if len(parts) != 5 && len(parts) != 6 {
@@ -1449,7 +1654,8 @@ func generateCronDescription(expression string) string {
 	desc.WriteString("Run ")
 
 	// Frequency - handle both 5 and 6 field expressions
-	if second == "*" && minute == "*" && hour == "*" && day == "*" && month == "*" && weekday == "*" {
+	if second == "*" && minute == "*" && hour == "*" && day == "*" && month == "*" &&
+		weekday == "*" {
 		desc.WriteString("every second")
 	} else if minute == "*" && hour == "*" && day == "*" && month == "*" && weekday == "*" {
 		if strings.HasPrefix(second, "*/") {
@@ -1482,10 +1688,12 @@ func generateCronDescription(expression string) string {
 			{
 				desc.WriteString(fmt.Sprintf("monthly on the 1st at %s", timeStr))
 			}
+
 		case "15":
 			{
 				desc.WriteString(fmt.Sprintf("monthly on the 15th at %s", timeStr))
 			}
+
 		default:
 			{
 				desc.WriteString(fmt.Sprintf("monthly on day %s at %s", day, timeStr))
@@ -1499,56 +1707,73 @@ func generateCronDescription(expression string) string {
 	} else {
 		// Complex schedule
 		desc.WriteString("on a complex schedule")
+
 		if len(parts) == 6 && second != "*" && second != "0" {
 			desc.WriteString(fmt.Sprintf(" (second: %s", second))
 		} else {
 			desc.WriteString(" (")
 		}
+
 		needComma := false
 		if len(parts) == 6 && second != "*" && second != "0" {
 			needComma = true
 		}
+
 		if minute != "*" {
 			if needComma {
 				desc.WriteString(", ")
 			}
+
 			desc.WriteString(fmt.Sprintf("minute: %s", minute))
+
 			needComma = true
 		}
+
 		if hour != "*" {
 			if needComma {
 				desc.WriteString(", ")
 			}
+
 			desc.WriteString(fmt.Sprintf("hour: %s", hour))
+
 			needComma = true
 		}
+
 		if day != "*" {
 			if needComma {
 				desc.WriteString(", ")
 			}
+
 			desc.WriteString(fmt.Sprintf("day: %s", day))
+
 			needComma = true
 		}
+
 		if month != "*" {
 			if needComma {
 				desc.WriteString(", ")
 			}
+
 			desc.WriteString(fmt.Sprintf("month: %s", month))
+
 			needComma = true
 		}
+
 		if weekday != "*" {
 			if needComma {
 				desc.WriteString(", ")
 			}
+
 			desc.WriteString(fmt.Sprintf("weekday: %s", weekday))
 		}
+
 		desc.WriteString(")")
 	}
 
 	return desc.String()
 }
 
-// formatTimeWithSeconds formats hour, minute, and second parts into readable time
+// formatTimeWithSeconds formats hour, minute, and second parts into readable time.
 func formatTimeWithSeconds(hour, minute, second string) string {
 	h, hErr := strconv.Atoi(hour)
 	m, mErr := strconv.Atoi(minute)
@@ -1570,7 +1795,7 @@ func formatTimeWithSeconds(hour, minute, second string) string {
 	return fmt.Sprintf("%02d:%02d:%02d", h, m, s)
 }
 
-// getWeekdayName converts weekday number to name
+// getWeekdayName converts weekday number to name.
 func getWeekdayName(weekday string) string {
 	switch weekday {
 	case "0":

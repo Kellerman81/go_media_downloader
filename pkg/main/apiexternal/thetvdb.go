@@ -3,13 +3,14 @@ package apiexternal
 import (
 	"context"
 	"errors"
-	"net/http"
 	"strconv"
 	"time"
 
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/base"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/tvdb"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/slidingwindow"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/providers"
 )
 
 type TheTVDBSeries struct {
@@ -64,23 +65,6 @@ type TheTVDBEpisodes struct {
 	} `json:"links"`
 }
 
-// type theTVDBEpisodeLanguage struct {
-// 	EpisodeName string `json:"episodeName"`
-// 	Overview    string `json:"overview"`
-// }
-
-// tvdbClient is a struct for interacting with TheTVDB API.
-// It contains a field Client which is a pointer to a rate limited HTTP client.
-type tvdbClient struct {
-	// Client is a pointer to a rate limited HTTP client for making requests.
-	Client rlHTTPClient
-	Lim    *slidingwindow.Limiter
-}
-
-// type tvdbHeader struct {
-// 	Header map[string][]string
-// }
-
 // NewTvdbClient creates a new tvdbClient instance for making requests to
 // the TheTVDB API. It configures rate limiting and TLS based on the
 // provided parameters.
@@ -88,40 +72,31 @@ func NewTvdbClient(seconds uint8, calls int, disabletls bool, timeoutseconds uin
 	if seconds == 0 {
 		seconds = 1
 	}
+
 	if calls == 0 {
 		calls = 1
 	}
-	lim := slidingwindow.NewLimiter(time.Duration(seconds)*time.Second, int64(calls))
-	client := &tvdbClient{
-		Lim: &lim,
-		Client: newClient(
-			"tvdb",
-			disabletls,
-			true,
-			&lim,
-			false, nil, timeoutseconds),
+
+	// Create v2 provider with empty credentials (will need to be set separately)
+	tvdbConfig := base.ClientConfig{
+		Name:                      "tvdb",
+		BaseURL:                   "https://api.thetvdb.com",
+		Timeout:                   time.Duration(timeoutseconds) * time.Second,
+		AuthType:                  base.AuthNone, // TVDB uses JWT, handled by provider
+		RateLimitCalls:            calls,
+		RateLimitSeconds:          int(seconds),
+		CircuitBreakerThreshold:   5,
+		CircuitBreakerTimeout:     60 * time.Second,
+		CircuitBreakerHalfOpenMax: 2,
+		EnableStats:               true,
+		UserAgent:                 "go-media-downloader/2.0",
+		DisableTLSVerify:          disabletls,
 	}
-	setTvdbAPI(client)
-}
-
-// Helper functions for thread-safe access to tvdbAPI
-func getTvdbClient() *rlHTTPClient {
-	api := getTvdbAPI()
-	if api == nil {
-		return nil
+	// Note: apiKey, userKey, username would need to be provided from config
+	if provider := tvdb.NewProviderWithConfig(tvdbConfig, "", "", ""); provider != nil {
+		providers.SetTVDB(provider)
 	}
-	return &api.Client
 }
-
-// var plheader = pool.NewPool(100, 5, func(t *tvdbHeader) { *t = tvdbHeader{Header: make(map[string][]string, 5)} }, func(b *tvdbHeader) bool {
-// 	for idx := range b.Header {
-// 		clear(b.Header[idx])
-// 	}
-// 	clear(b.Header)
-// 	return false
-// })
-
-var maptvdblanguageheader = make(map[string]map[string][]string, 5)
 
 // GetTvdbSeries retrieves TV series data from the TheTVDB API for the given series ID.
 // If a non-empty language is provided, it will be set in the API request headers.
@@ -130,15 +105,50 @@ func GetTvdbSeries(id int, language string) (*TheTVDBSeries, error) {
 	if id == 0 {
 		return nil, logger.ErrNotFound
 	}
-	urlv := logger.JoinStrings("https://api.thetvdb.com/series/", strconv.Itoa(id))
-	if language != "" {
-		_, ok := maptvdblanguageheader[language]
-		if !ok {
-			maptvdblanguageheader[language] = map[string][]string{"Accept-Language": {language}}
+
+	// Use v2 provider if available
+	if provider := providers.GetTVDB(); provider != nil {
+		details, err := provider.GetSeriesByID(context.Background(), id)
+		if err != nil {
+			return nil, err
 		}
-		return doJSONTypeP[TheTVDBSeries](getTvdbClient(), urlv, maptvdblanguageheader[language])
+
+		// Convert v2 SeriesDetails to old TheTVDBSeries format
+		series := &TheTVDBSeries{}
+
+		series.Data.ID = details.ID
+		series.Data.SeriesName = details.Name
+		series.Data.Status = details.Status
+		series.Data.Overview = details.Overview
+		series.Data.ImdbID = details.IMDbID
+		series.Data.Poster = details.PosterPath
+		series.Data.Fanart = details.BackdropPath
+		series.Data.SiteRating = float32(details.VoteAverage)
+		series.Data.SiteRatingCount = details.VoteCount
+
+		if !details.FirstAirDate.IsZero() {
+			series.Data.FirstAired = details.FirstAirDate.Format("2006-01-02")
+		}
+
+		if len(details.EpisodeRunTime) > 0 {
+			series.Data.Runtime = strconv.Itoa(details.EpisodeRunTime[0])
+		}
+
+		series.Data.Language = details.OriginalLanguage
+
+		if len(details.Networks) > 0 {
+			series.Data.Network = details.Networks[0].Name
+		}
+
+		// Convert genres
+		for _, g := range details.Genres {
+			series.Data.Genre = append(series.Data.Genre, g.Name)
+		}
+
+		return series, nil
 	}
-	return doJSONTypeP[TheTVDBSeries](getTvdbClient(), urlv, nil)
+
+	return nil, errors.New("client empty")
 }
 
 // GetTvdbSeriesEpisodes retrieves all episodes for the given TV series ID from
@@ -147,109 +157,67 @@ func GetTvdbSeries(id int, language string) (*TheTVDBSeries, error) {
 // duplicates, and inserts any missing episodes into the database. If there are
 // multiple pages of results, it fetches additional pages.
 func UpdateTvdbSeriesEpisodes(id int, language string, dbid *uint) {
-	api := getTvdbAPI()
-	if id == 0 || api == nil || api.Client.checklimiterwithdaily(api.Client.Ctx) {
-		return
-	}
-	urlv := logger.JoinStrings("https://api.thetvdb.com/series/", strconv.Itoa(id), "/episodes")
-	result, err := querytvdb(language, urlv)
-	if err != nil {
-		if !errors.Is(err, logger.ErrToWait) {
+	// Use v2 provider if available
+	if provider := providers.GetTVDB(); provider != nil {
+		episodes, err := provider.GetAllEpisodes(context.Background(), id)
+		if err != nil {
 			logger.Logtype("error", 1).
-				Str(logger.StrURL, urlv).
+				Int("series_id", id).
 				Err(err).
-				Msg("Error calling") // logpointer
-		}
-		return
-	}
-	tbl := database.Getrowssize[database.DbstaticTwoString](
-		false,
-		database.QueryDbserieEpisodesCountByDBID,
-		database.QueryDbserieEpisodesGetSeasonEpisodeByDBID,
-		dbid,
-	)
-	result.addthetvdbepisodes(dbid, tbl)
-	if result.Links.Next > 0 && (result.Links.First+1) < result.Links.Last {
-		for k := result.Links.First + 1; k <= result.Links.Last; k++ {
-			resultadd, err := querytvdb(
-				language,
-				logger.JoinStrings(urlv, "?page=", strconv.Itoa(k)),
-			)
-			if err == nil {
-				resultadd.addthetvdbepisodes(dbid, tbl)
-			}
-		}
-	}
-}
+				Msg("Error getting episodes from v2 provider")
 
-// querytvdb queries the TheTVDB API for episode data, using the provided language
-// if specified. It returns the episode data or an error if one occurs.
-func querytvdb(language, urlv string) (*TheTVDBEpisodes, error) {
-	if language != "" {
-		_, ok := maptvdblanguageheader[language]
-		if !ok {
-			maptvdblanguageheader[language] = map[string][]string{"Accept-Language": {language}}
+			return
 		}
-		return doJSONTypeP[TheTVDBEpisodes](getTvdbClient(), urlv, maptvdblanguageheader[language])
-	}
-	return doJSONTypeP[TheTVDBEpisodes](getTvdbClient(), urlv, nil)
-}
 
-// addthetvdbepisodes iterates through the episodes in the given TheTVDBEpisodes
-// result and inserts any missing episodes into the dbserie_episodes table for
-// the series matching the given dbid. It returns false if no error occurs.
-func (t *TheTVDBEpisodes) addthetvdbepisodes(dbid *uint, tbl []database.DbstaticTwoString) {
-	for idx := range t.Data {
-		if checkdbtwostrings(tbl, t.Data[idx].AiredSeason, t.Data[idx].AiredEpisodeNumber) {
-			continue
-		}
-		epi := strconv.Itoa(t.Data[idx].AiredEpisodeNumber)
-		seas := strconv.Itoa(t.Data[idx].AiredSeason)
-		ident := generateIdentifierStringFromInt(
-			&t.Data[idx].AiredSeason,
-			&t.Data[idx].AiredEpisodeNumber,
-		)
-		aired := parseDateTime(t.Data[idx].FirstAired)
-		database.ExecN(
-			"insert into dbserie_episodes (episode, season, identifier, title, first_aired, overview, poster, dbserie_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-			&epi,
-			&seas,
-			&ident,
-			&t.Data[idx].EpisodeName,
-			&aired,
-			&t.Data[idx].Overview,
-			&t.Data[idx].Poster,
+		// Get existing episodes to avoid duplicates
+		tbl := database.Getrowssize[database.DbstaticTwoString](
+			false,
+			database.QueryDbserieEpisodesCountByDBID,
+			database.QueryDbserieEpisodesGetSeasonEpisodeByDBID,
 			dbid,
 		)
-	}
-}
 
-// ParseDate parses a date string in "2006-01-02" format and returns a time.Time.
-// Returns a zero time.Time if the date string is empty or fails to parse.
-func parseDateTime(date string) time.Time {
-	if date == "" {
-		return time.Time{}
+		// Insert missing episodes
+		for _, ep := range episodes {
+			if checkdbtwostrings(tbl, ep.SeasonNumber, ep.EpisodeNumber) {
+				continue
+			}
+
+			epi := strconv.Itoa(ep.EpisodeNumber)
+			seas := strconv.Itoa(ep.SeasonNumber)
+			ident := generateIdentifierStringFromInt(&ep.SeasonNumber, &ep.EpisodeNumber)
+
+			database.ExecN(
+				"insert into dbserie_episodes (episode, season, identifier, title, first_aired, overview, poster, dbserie_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+				&epi,
+				&seas,
+				&ident,
+				&ep.Name,
+				&ep.AirDate,
+				&ep.Overview,
+				&ep.StillPath,
+				dbid,
+			)
+		}
+
+		return
 	}
-	t, err := time.Parse("2006-01-02", date)
-	if err != nil {
-		return time.Time{}
-	}
-	return t
 }
 
 // TestTVDBConnectivity tests the connectivity to the TVDB API
 // Note: timeout parameter is currently unused as ProcessHTTPNoRateCheck handles its own timeouts
-// Returns status code and error if any
+// Returns status code and error if any.
 func TestTVDBConnectivity(timeout time.Duration) (int, error) {
-	statusCode := 0
-	err := ProcessHTTPNoRateCheck(
-		getTvdbClient(),
-		"https://api.thetvdb.com/series/1",
-		func(ctx context.Context, resp *http.Response) error {
-			statusCode = resp.StatusCode
-			return nil
-		},
-		nil,
-	)
-	return statusCode, err
+	// Use v2 provider if available
+	if provider := providers.GetTVDB(); provider != nil {
+		// Test with a simple series lookup
+		_, err := provider.GetSeriesByID(context.Background(), 1)
+		if err != nil {
+			return 0, err
+		}
+
+		return 200, nil
+	}
+
+	return 400, errors.New("client empty")
 }

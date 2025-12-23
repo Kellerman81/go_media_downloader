@@ -126,7 +126,9 @@ func getFFProbeFilename() string {
 	if runtime.GOOS == "windows" {
 		executable += ".exe"
 	}
+
 	ffprobepath = filepath.Join(config.GetSettingsGeneral().FfprobePath, executable)
+
 	return ffprobepath
 }
 
@@ -166,11 +168,13 @@ func getcmd(file, typ string) *exec.Cmd {
 			return nil
 		}
 		return buildFFProbeCmd(file)
+
 	case "mediainfo":
 		if file == "" {
 			return nil
 		}
 		return buildMediaInfoCmd(file)
+
 	default:
 		return exec.Command(getImdbFilename())
 	}
@@ -192,6 +196,7 @@ func ExecCmdJSON[T mediaInfoJSON | ffProbeJSON](
 	}
 
 	outputBuf := logger.PlAddBuffer.Get()
+
 	stdErr := logger.PlAddBuffer.Get()
 	defer func() {
 		logger.PlAddBuffer.Put(outputBuf)
@@ -199,6 +204,7 @@ func ExecCmdJSON[T mediaInfoJSON | ffProbeJSON](
 	}()
 
 	cmd.Stdout = outputBuf
+
 	cmd.Stderr = stdErr
 	if err := cmd.Run(); err != nil {
 		return errors.New(
@@ -209,16 +215,19 @@ func ExecCmdJSON[T mediaInfoJSON | ffProbeJSON](
 	if stdErr.Len() > 0 {
 		return errors.New("cmd error: " + stdErr.String())
 	}
+
 	var result T
 	if err := json.Unmarshal(outputBuf.Bytes(), &result); err != nil {
 		return err
 	}
+
 	switch v := any(&result).(type) {
 	case *mediaInfoJSON:
 		return parsemediainfo(m, quality, v)
 	case *ffProbeJSON:
 		return parseffprobe(m, quality, v)
 	}
+
 	return nil
 }
 
@@ -233,6 +242,7 @@ func ExecCmdString[t []byte | mediaInfoJSON | ffProbeJSON](file, typ string) (st
 	}
 
 	outputBuf := logger.PlAddBuffer.Get()
+
 	stdErr := logger.PlAddBuffer.Get()
 	defer func() {
 		logger.PlAddBuffer.Put(outputBuf)
@@ -241,6 +251,8 @@ func ExecCmdString[t []byte | mediaInfoJSON | ffProbeJSON](file, typ string) (st
 
 	cmd.Stdout = outputBuf
 	cmd.Stderr = stdErr
+
 	err := cmd.Run()
+
 	return outputBuf.String(), err
 }

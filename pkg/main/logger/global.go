@@ -10,6 +10,7 @@ import (
 	"path"
 	"reflect"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -32,6 +33,18 @@ type mapmovieserie struct {
 	Movie string
 	Serie string
 }
+
+const (
+	StatusAll     = "all"
+	StatusSuccess = "success"
+	StatusInfo    = "info"
+	StatusWarning = "warning"
+	StatusError   = "error"
+	StatusDanger  = "danger"
+	StatusDebug   = "debug"
+	StatusFatal   = "fatal"
+	StatusPanic   = "panic"
+)
 
 const (
 	ParseFailedIDs            = "parse failed ids"
@@ -546,50 +559,9 @@ var (
 	timeFormat = time.RFC3339Nano
 	log        zerolog.Logger
 	timeZone   = *time.UTC
-	// textparser is a template engine instance used for parsing and rendering text templates
+	// textparser is a template engine instance used for parsing and rendering text templates.
 	textparser = template.New("master")
 	poolsOnce  sync.Once
-	// subRune is a set of allowed characters for slugging, filename or path generation.
-	// It contains lowercase letters, numbers, and hyphens to ensure safe and consistent naming.
-	subRune = map[rune]struct{}{
-		'a': {},
-		'b': {},
-		'c': {},
-		'd': {},
-		'e': {},
-		'f': {},
-		'g': {},
-		'h': {},
-		'i': {},
-		'j': {},
-		'k': {},
-		'l': {},
-		'm': {},
-		'n': {},
-		'o': {},
-		'p': {},
-		'q': {},
-		'r': {},
-		's': {},
-		't': {},
-		'u': {},
-		'v': {},
-		'w': {},
-		'x': {},
-		'y': {},
-		'z': {},
-		'0': {},
-		'1': {},
-		'2': {},
-		'3': {},
-		'4': {},
-		'5': {},
-		'6': {},
-		'7': {},
-		'8': {},
-		'9': {},
-		'-': {},
-	}
 	// subRuneSet is a pre-computed boolean array that efficiently checks if a rune is an allowed character
 	// for filename or path generation, including lowercase letters, numbers, and hyphen.
 	subRuneSet = [256]bool{
@@ -603,7 +575,7 @@ var (
 	// It handles character substitutions for filename or path sanitization, including:
 	// - Removing or replacing punctuation and whitespace
 	// - Converting diacritical characters to their base ASCII equivalents
-	// - Replacing special symbols with readable text
+	// - Replacing special symbols with readable text.
 	substituteRuneSpace = map[rune]string{
 		'&':  "and",
 		'@':  "at",
@@ -662,13 +634,14 @@ var (
 	}
 )
 
-// initializePools initializes the object pools safely with sync.Once
+// initializePools initializes the object pools safely with sync.Once.
 func initializePools() {
 	poolsOnce.Do(func() {
 		PlAddBuffer.Init(200, 10, func(b *AddBuffer) {
 			if b.Cap() < 900 {
 				b.Grow(900)
 			}
+
 			if b.Len() > 1 {
 				b.Reset()
 			}
@@ -678,10 +651,13 @@ func initializePools() {
 		})
 		PLArrAny.Init(200, 5, func(a *Arrany) { a.Arr = make([]any, 0, 20) }, func(a *Arrany) bool {
 			clear(a.Arr)
+
 			if cap(a.Arr) > 200 {
 				return true
 			}
+
 			a.Arr = a.Arr[:0]
+
 			return false
 		})
 	})
@@ -743,27 +719,35 @@ func ParseStringTemplate(message string, messagedata any) (bool, string, error) 
 	tmplmessage := textparser.Lookup(message)
 	if tmplmessage == nil {
 		var err error
+
 		tmplmessage, err = textparser.New(message).Parse(message)
 		if err != nil {
 			Logtype("error", 1).Err(err).Msg("template")
 			return true, "", err
 		}
 	}
+
 	initializePools()
+
 	doc := PlAddBuffer.Get()
 	defer PlAddBuffer.Put(doc)
+
 	if err := tmplmessage.Execute(doc, messagedata); err != nil {
 		Logtype("error", 1).Err(err).Msg("template")
 		return true, "", err
 	}
+
 	return false, doc.String(), nil
 }
 
 func BytesToString(b []byte) string {
 	initializePools()
+
 	bld := PlAddBuffer.Get()
 	defer PlAddBuffer.Put(bld)
+
 	bld.Write(b)
+
 	return bld.String()
 }
 
@@ -781,14 +765,17 @@ func Checkhtmlentities(instr string) string {
 	if !strings.ContainsRune(instr, '&') {
 		return instr
 	}
+
 	if strings.ContainsRune(instr, ';') {
 		return html.UnescapeString(instr)
 	}
+
 	for idx := range ArrHTMLEntities {
 		if strings.Contains(instr, ArrHTMLEntities[idx]) {
 			return html.UnescapeString(instr)
 		}
 	}
+
 	return instr
 }
 
@@ -797,13 +784,16 @@ func Checkhtmlentities(instr string) string {
 // hyphens with a single hyphen, and trimming leading/trailing hyphens.
 func StringToSlugBytes(instr string) []byte {
 	initializePools()
+
 	ret := PlAddBuffer.Get()
 	defer PlAddBuffer.Put(ret)
+
 	stringToSlugBuffer(ret, Checkhtmlentities(instr))
 	// Create a copy to avoid referencing pool memory after Put()
 	trimmed := bytes.Trim(ret.Bytes(), "- ")
 	result := make([]byte, len(trimmed))
 	copy(result, trimmed)
+
 	return result
 }
 
@@ -815,6 +805,7 @@ func stringToSlugBuffer(ret *AddBuffer, instr string) {
 	if len(instr) == 0 {
 		return
 	}
+
 	var (
 		lastrune, section, position rune
 		laststr                     string
@@ -823,6 +814,7 @@ func stringToSlugBuffer(ret *AddBuffer, instr string) {
 		if val, ok := substituteRuneSpace[r]; ok {
 			if (laststr == "" || val != laststr) && (lastrune != '-' || val != StrDash) {
 				ret.WriteString(val)
+
 				laststr = val
 
 				if val == StrDash {
@@ -831,6 +823,7 @@ func stringToSlugBuffer(ret *AddBuffer, instr string) {
 					lastrune = ' '
 				}
 			}
+
 			continue
 		}
 
@@ -847,18 +840,23 @@ func stringToSlugBuffer(ret *AddBuffer, instr string) {
 			if r < 256 && subRuneSet[r] {
 				if lastrune != '-' || r != '-' {
 					ret.WriteRune(r)
+
 					lastrune = r
 				}
 			} else if lastrune != '-' {
 				ret.WriteByte('-')
+
 				lastrune = '-'
 			}
+
 		case r <= 0xeffff:
 			section = r >> 8
+
 			position = r % 256
 			if tb, ok := table.Tables[section]; ok && len(tb) > int(position) {
 				if len(tb[position]) >= 1 && tb[position][0] > unicode.MaxASCII && lastrune != '-' {
 					ret.WriteByte('-')
+
 					lastrune = '-'
 				} else if lastrune != '-' || tb[position] != StrDash {
 					ret.WriteString(tb[position])
@@ -884,14 +882,17 @@ func Path(s *string, allowslash bool) {
 	if s == nil || *s == "" {
 		return
 	}
-	
+
 	// Read once to avoid concurrent modification issues
 	original := *s
+
 	newpath := path.Clean(UnquoteUnescape(original))
 	if !allowslash {
 		StringRemoveAllRunesP(&newpath, '\\', '/')
 	}
+
 	initializePools()
+
 	bld := PlAddBuffer.Get()
 	defer PlAddBuffer.Put(bld)
 
@@ -899,6 +900,7 @@ func Path(s *string, allowslash bool) {
 	for _, z := range newpath {
 		if r, ok := diacriticsmap[z]; ok {
 			bld.WriteString(r)
+
 			bl = true
 		} else if _, ok := pathmap[z]; !ok {
 			bld.WriteRune(z)
@@ -906,6 +908,7 @@ func Path(s *string, allowslash bool) {
 			bl = true
 		}
 	}
+
 	if bl {
 		*s = TrimSpace(bld.String())
 	}
@@ -927,17 +930,22 @@ func Trim(s string, cutset ...rune) string {
 	if len(s) == 0 {
 		return s
 	}
+
 	i := getfirstinstring(s, cutset)
+
 	j := getlastinstring(s, cutset)
 	if i == -1 && j == -1 {
 		return s
 	}
+
 	if i == -1 {
 		return s[:j]
 	}
+
 	if j == -1 {
 		return s[i:]
 	}
+
 	return s[i:j]
 }
 
@@ -947,9 +955,11 @@ func TrimLeft(s string, cutset ...rune) string {
 	if len(s) == 0 {
 		return s
 	}
+
 	if i := getfirstinstring(s, cutset); i != -1 {
 		return s[i:]
 	}
+
 	return s
 }
 
@@ -958,14 +968,9 @@ func TrimLeft(s string, cutset ...rune) string {
 func getfirstinstring(s string, cutset []rune) int {
 	runeIdx := 0
 	byteIdx := 0
+
 	for _, y := range s {
-		found := false
-		for _, z := range cutset {
-			if y == z {
-				found = true
-				break
-			}
-		}
+		found := slices.Contains(cutset, y)
 
 		if !found {
 			if runeIdx == 0 {
@@ -973,34 +978,84 @@ func getfirstinstring(s string, cutset []rune) int {
 			}
 			return byteIdx
 		}
+
 		runeIdx++
+
 		byteIdx += len(string(y))
 	}
+
 	return -1
 }
+
+// func getfirstinstring(s string, cutset []rune) int {
+// 	runeIdx := 0
+// 	byteIdx := 0
+// 	for _, y := range s {
+// 		found := false
+// 		for _, z := range cutset {
+// 			if y == z {
+// 				found = true
+// 				break
+// 			}
+// 		}
+
+// 		if !found {
+// 			if runeIdx == 0 {
+// 				return -1
+// 			}
+// 			return byteIdx
+// 		}
+// 		runeIdx++
+// 		byteIdx += len(string(y))
+// 	}
+// 	return -1
+// }
 
 // getlastinstring returns the index of the last character in the string s that is not in the cutset.
 // If no such character is found, it returns -1.
 func getlastinstring(s string, cutset []rune) int {
-	runes := []rune(s)
-	for idx := len(runes) - 1; idx >= 0; idx-- {
+	for idx := len(s) - 1; idx >= 0; idx-- {
 		found := false
-		for _, z := range cutset {
-			if runes[idx] == z {
-				found = true
+
+		var x rune
+
+		for idx2, y := range s {
+			if idx2 == idx {
+				x = y
 				break
 			}
 		}
+
+		if slices.Contains(cutset, x) {
+			found = true
+		}
+
 		if !found && idx == 0 {
 			return -1
 		}
+
 		if !found && idx > 0 {
-			// Convert rune index back to byte index
-			return len(string(runes[:idx+1]))
+			return idx + 1
 		}
 	}
+
 	return -1
 }
+
+// func getlastinstring(s string, cutset []rune) int {
+// 	runes := []rune(s)
+// 	for idx := len(runes) - 1; idx >= 0; idx-- {
+// 		found := slices.Contains(cutset, runes[idx])
+// 		if !found && idx == 0 {
+// 			return -1
+// 		}
+// 		if !found && idx > 0 {
+// 			// Convert rune index back to byte index
+// 			return len(string(runes[:idx+1]))
+// 		}
+// 	}
+// 	return -1
+// }
 
 // TrimRight returns a slice of the string s, with all trailing
 // Unicode code points contained in cutset removed.
@@ -1008,9 +1063,11 @@ func TrimRight(s string, cutset ...rune) string {
 	if len(s) == 0 {
 		return s
 	}
+
 	if i := getlastinstring(s, cutset); i != -1 {
 		return s[:i]
 	}
+
 	return s
 }
 
@@ -1030,9 +1087,11 @@ func ContainsByteI(a, b []byte) bool {
 	if bytes.Contains(a, b) {
 		return true
 	}
+
 	if len(a) < len(b) {
 		return false
 	}
+
 	return bytes.Contains(bytes.ToLower(a), bytes.ToLower(b))
 }
 
@@ -1057,10 +1116,12 @@ func HasPrefixI(s, prefix string) bool {
 // nanosecond parts of the times to determine the order.
 func TimeAfter(a, b time.Time) bool {
 	as := a.Unix()
+
 	bs := b.Unix()
 	if as == bs {
 		return a.UnixNano() > b.UnixNano()
 	}
+
 	return as > bs
 }
 
@@ -1086,18 +1147,23 @@ func JoinStrings(elems ...string) string {
 		if elems[0] == "" {
 			return elems[1]
 		}
+
 		if elems[1] == "" {
 			return elems[0]
 		}
 	}
+
 	initializePools()
+
 	b := PlAddBuffer.Get()
 	defer PlAddBuffer.Put(b)
+
 	for idx := range elems {
 		if elems[idx] != "" {
 			b.WriteString(elems[idx])
 		}
 	}
+
 	return b.String()
 }
 
@@ -1111,18 +1177,23 @@ func JoinStringsSep(elems []string, sep string) string {
 	case 1:
 		return elems[0]
 	}
+
 	initializePools()
+
 	b := PlAddBuffer.Get()
 	defer PlAddBuffer.Put(b)
+
 	l := len(elems)
 	for idx, val := range elems {
 		if val != "" {
 			b.WriteString(val)
+
 			if idx < l-1 {
 				b.WriteString(sep)
 			}
 		}
 	}
+
 	return b.String()
 }
 
@@ -1136,8 +1207,10 @@ func IndexI(a, b string) int {
 	if len(b) > len(a) {
 		return -1
 	}
+
 	hasUppera, hasUpperb := false, false
 	isASCIIb := true
+
 	for _, c := range a {
 		if c >= utf8.RuneSelf {
 			if _, ok := diacriticslowermap[c]; !ok {
@@ -1145,6 +1218,7 @@ func IndexI(a, b string) int {
 				break
 			}
 		}
+
 		hasUppera = hasUppera || ('A' <= c && c <= 'Z') || c == 'Ö' || c == 'Ü' || c == 'Ä'
 	}
 
@@ -1156,18 +1230,23 @@ func IndexI(a, b string) int {
 				break
 			}
 		}
+
 		hasUpperb = hasUpperb || ('A' <= c && c <= 'Z') || c == 'Ö' || c == 'Ü' || c == 'Ä'
 	}
 
 	if !isASCIIb {
 		return strings.Index(strings.Map(unicode.ToLower, a), strings.Map(unicode.ToLower, b))
 	}
+
 	if !hasUppera && !hasUpperb {
 		return strings.Index(a, b)
 	}
+
 	initializePools()
+
 	bufa := PlAddBuffer.Get()
 	defer PlAddBuffer.Put(bufa)
+
 	for _, c := range a {
 		if 'A' <= c && c <= 'Z' {
 			c += 'a' - 'A'
@@ -1177,11 +1256,13 @@ func IndexI(a, b string) int {
 				c = d
 			}
 		}
+
 		bufa.WriteRune(c)
 	}
 
 	bufb := PlAddBuffer.Get()
 	defer PlAddBuffer.Put(bufb)
+
 	for _, c := range b {
 		if 'A' <= c && c <= 'Z' {
 			c += 'a' - 'A'
@@ -1191,6 +1272,7 @@ func IndexI(a, b string) int {
 				c = d
 			}
 		}
+
 		bufb.WriteRune(c)
 	}
 
@@ -1219,10 +1301,12 @@ func StringToFileMode(s string) fs.FileMode {
 	if s == "" {
 		return 0
 	}
+
 	in, err := strconv.ParseUint(s, 8, 0)
 	if err != nil {
 		return 0
 	}
+
 	return fs.FileMode(uint32(in))
 }
 
@@ -1233,17 +1317,21 @@ func StringToInt(s string) int {
 	if s == "" || s == "0" {
 		return 0
 	}
+
 	if strings.ContainsRune(s, '.') || strings.ContainsRune(s, ',') {
 		in, err := strconv.ParseFloat(StringReplaceWith(s, ',', '.'), 64)
 		if err != nil {
 			return 0
 		}
+
 		return int(in)
 	}
+
 	in, err := strconv.Atoi(s)
 	if err != nil {
 		return 0
 	}
+
 	return in
 }
 
@@ -1255,17 +1343,21 @@ func StringToDuration(s string) int {
 	if s == "" || s == "0" {
 		return 0
 	}
+
 	if strings.ContainsRune(s, '.') || strings.ContainsRune(s, ',') {
 		in, err := strconv.ParseFloat(StringReplaceWith(s, ',', '.'), 64)
 		if err != nil {
 			return 0
 		}
+
 		return int(in)
 	}
+
 	in, err := strconv.Atoi(s)
 	if err != nil {
 		return 0
 	}
+
 	return in
 }
 
@@ -1277,17 +1369,21 @@ func StringToInt32(s string) int32 {
 	if s == "" || s == "0" {
 		return 0
 	}
+
 	if strings.ContainsRune(s, '.') || strings.ContainsRune(s, ',') {
 		in, err := strconv.ParseFloat(StringReplaceWith(s, ',', '.'), 64)
 		if err != nil {
 			return 0
 		}
+
 		return int32(in)
 	}
+
 	i, err := strconv.ParseInt(s, 10, 32)
 	if err != nil {
 		return 0
 	}
+
 	return int32(i)
 }
 
@@ -1298,10 +1394,12 @@ func StringToUInt16(s string) uint16 {
 	if s == "" || s == "0" {
 		return 0
 	}
+
 	i, err := strconv.ParseUint(s, 10, 16)
 	if err != nil {
 		return 0
 	}
+
 	return uint16(i)
 }
 
@@ -1312,10 +1410,12 @@ func StringToInt64(s string) int64 {
 	if s == "" || s == "0" {
 		return 0
 	}
+
 	i, err := strconv.ParseInt(s, 10, 64)
 	if err != nil {
 		return 0
 	}
+
 	return i
 }
 
@@ -1337,6 +1437,7 @@ func UnquoteUnescape(s string) string {
 			return Checkhtmlentities(u)
 		}
 	}
+
 	return Checkhtmlentities(s)
 }
 
@@ -1348,6 +1449,7 @@ func SplitByLR(str string, splitby byte) (string, string) { // left, right
 	if idx == -1 || idx == 0 || idx == len(str) {
 		return "", str
 	}
+
 	return str[:idx], str[idx+1:]
 }
 
@@ -1358,6 +1460,7 @@ func SlicesContainsI(s []string, v string) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -1369,6 +1472,7 @@ func SlicesIndexI(s []string, v string) int {
 			return idx
 		}
 	}
+
 	return -1
 }
 
@@ -1379,6 +1483,7 @@ func SlicesContainsPart2I(s []string, v string) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -1392,12 +1497,15 @@ func StringRemoveAllRunesP(s *string, r ...byte) {
 	if s == nil || *s == "" {
 		return
 	}
+
 	if len(r) == 0 {
 		return
 	}
+
 	if len(r) == 1 && !strings.ContainsRune(*s, rune(r[0])) {
 		return
 	}
+
 	if len(r) > 1 {
 		var bl bool
 		for idx := range r {
@@ -1406,31 +1514,32 @@ func StringRemoveAllRunesP(s *string, r ...byte) {
 				break
 			}
 		}
+
 		if !bl {
 			return
 		}
 	}
+
 	initializePools()
+
 	out := PlAddBuffer.Get()
 	defer PlAddBuffer.Put(out)
+
 	for idx := range *s {
 		if isruneinbyteslice((*s)[idx], r) {
 			continue
 		}
+
 		out.WriteByte((*s)[idx])
 	}
+
 	*s = out.String()
 }
 
 // isruneinbyteslice checks if the given byte r is present in the slice of bytes rs.
 // It returns true if r is found in rs, false otherwise.
 func isruneinbyteslice(r byte, rs []byte) bool {
-	for idx := range rs {
-		if r == rs[idx] {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(rs, r)
 }
 
 // StringReplaceWith replaces all occurrences of the byte r in s with the byte t.
@@ -1439,12 +1548,16 @@ func StringReplaceWith(s string, r, t byte) string {
 	if s == "" {
 		return s
 	}
+
 	if !strings.ContainsRune(s, rune(r)) {
 		return s
 	}
+
 	initializePools()
+
 	buf := PlAddBuffer.Get()
 	defer PlAddBuffer.Put(buf)
+
 	for idx := range s {
 		if s[idx] == r {
 			buf.WriteByte(t)
@@ -1452,6 +1565,7 @@ func StringReplaceWith(s string, r, t byte) string {
 			buf.WriteByte(s[idx])
 		}
 	}
+
 	return buf.String()
 }
 
@@ -1461,12 +1575,16 @@ func StringReplaceWithP(s *string, r, t byte) {
 	if s == nil || *s == "" {
 		return
 	}
+
 	if !strings.ContainsRune(*s, rune(r)) {
 		return
 	}
+
 	initializePools()
+
 	buf := PlAddBuffer.Get()
 	defer PlAddBuffer.Put(buf)
+
 	for idx := range *s {
 		if (*s)[idx] == r {
 			buf.WriteByte(t)
@@ -1474,6 +1592,7 @@ func StringReplaceWithP(s *string, r, t byte) {
 			buf.WriteByte((*s)[idx])
 		}
 	}
+
 	*s = buf.String()
 }
 
@@ -1483,6 +1602,7 @@ func StringReplaceWithStr(s, r, t string) string {
 	if s == "" || r == "" {
 		return s
 	}
+
 	if !strings.Contains(s, r) {
 		return s
 	}
@@ -1494,15 +1614,19 @@ func StringReplaceWithStr(s, r, t string) string {
 
 	// Apply replacements to buffer.
 	initializePools()
+
 	buf := PlAddBuffer.Get()
 	defer PlAddBuffer.Put(buf)
+
 	start := 0
+
 	lenr := len(r)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		j := start
 		if lenr == 0 {
 			if i > 0 {
 				_, wid := utf8.DecodeRuneInString(s[start:])
+
 				j += wid
 			}
 		} else {
@@ -1511,13 +1635,18 @@ func StringReplaceWithStr(s, r, t string) string {
 				// This shouldn't happen given our Count check, but handle gracefully
 				break
 			}
+
 			j = start + idx
 		}
+
 		buf.WriteString(s[start:j])
 		buf.WriteString(t)
+
 		start = j + lenr
 	}
+
 	buf.WriteString(s[start:])
+
 	return buf.String()
 }
 
@@ -1555,12 +1684,14 @@ func HandlePanic() {
 
 func Stack() string {
 	buf := make([]byte, 1024)
+
 	maxSize := 64 * 1024 // Prevent runaway memory usage
 	for len(buf) <= maxSize {
 		n := runtime.Stack(buf, false)
 		if n < len(buf) {
 			return string(buf[:n])
 		}
+
 		buf = make([]byte, 2*len(buf))
 	}
 	// Fallback if stack is exceptionally large
@@ -1574,7 +1705,7 @@ func TryTimeParse(layout string, s string) (time.Time, bool) {
 	return sleeptime, err == nil
 }
 
-// GetFieldComments returns a map of field names to their comment values
+// GetFieldComments returns a map of field names to their comment values.
 func GetFieldComments(v any) map[string]string {
 	comments := make(map[string]string)
 
@@ -1586,7 +1717,7 @@ func GetFieldComments(v any) map[string]string {
 	if t == nil {
 		return comments
 	}
-	
+
 	// If it's a pointer, get the underlying type
 	if t.Kind() == reflect.Ptr {
 		t = t.Elem()
@@ -1601,8 +1732,9 @@ func GetFieldComments(v any) map[string]string {
 	}
 
 	// Iterate through all fields
-	for i := 0; i < t.NumField(); i++ {
+	for i := range t.NumField() {
 		field := t.Field(i)
+
 		comment := field.Tag.Get("longcomment")
 		if comment != "" {
 			comments[field.Name] = comment
@@ -1612,7 +1744,7 @@ func GetFieldComments(v any) map[string]string {
 	return comments
 }
 
-// GetFieldDisplayNames returns a map of field names to their displayname tag values
+// GetFieldDisplayNames returns a map of field names to their displayname tag values.
 func GetFieldDisplayNames(v any) map[string]string {
 	displayNames := make(map[string]string)
 
@@ -1624,7 +1756,7 @@ func GetFieldDisplayNames(v any) map[string]string {
 	if t == nil {
 		return displayNames
 	}
-	
+
 	// If it's a pointer, get the underlying type
 	if t.Kind() == reflect.Ptr {
 		t = t.Elem()
@@ -1639,8 +1771,9 @@ func GetFieldDisplayNames(v any) map[string]string {
 	}
 
 	// Iterate through all fields
-	for i := 0; i < t.NumField(); i++ {
+	for i := range t.NumField() {
 		field := t.Field(i)
+
 		displayName := field.Tag.Get("displayname")
 		if displayName != "" {
 			displayNames[field.Name] = displayName
@@ -1650,7 +1783,7 @@ func GetFieldDisplayNames(v any) map[string]string {
 	return displayNames
 }
 
-// GetFieldCommentByName returns the comment for a specific field
+// GetFieldCommentByName returns the comment for a specific field.
 func GetFieldCommentByName(v any, fieldName string) string {
 	if v == nil || fieldName == "" {
 		return ""
@@ -1660,7 +1793,7 @@ func GetFieldCommentByName(v any, fieldName string) string {
 	if t == nil {
 		return ""
 	}
-	
+
 	if t.Kind() == reflect.Ptr {
 		t = t.Elem()
 		if t == nil {

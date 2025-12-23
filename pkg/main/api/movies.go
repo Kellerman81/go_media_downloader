@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/downloader"
@@ -110,6 +110,7 @@ func apiMovieDelete(ctx *gin.Context) {
 	}
 
 	database.DeleteRow("movies", "dbmovie_id=?", id)
+
 	_, err := database.DeleteRow("dbmovies", "id=?", id)
 
 	handleDBError(ctx, err, StrOK)
@@ -134,6 +135,7 @@ func apiMovieListGet(ctx *gin.Context) {
 
 	params := parsePaginationParams(ctx)
 	query := buildQueryWithWhere(params, "movies.listname = ? COLLATE NOCASE")
+
 	query.InnerJoin = "dbmovies on movies.dbmovie_id=dbmovies.id"
 
 	rows := database.Getdatarow[uint](
@@ -159,6 +161,7 @@ func apiMovieMetadataGet(ctx *gin.Context) {
 	var imdb, omdb, tmdb, trakt bool
 
 	var dbmovie database.Dbmovie
+
 	dbmovie.ImdbID = ctx.Param("imdb")
 	if queryParam, ok := ctx.GetQuery("provider"); ok {
 		switch queryParam {
@@ -171,12 +174,15 @@ func apiMovieMetadataGet(ctx *gin.Context) {
 		case "trakt":
 			trakt = true
 		}
+
 		metadata.MovieGetMetadata(&dbmovie, imdb, tmdb, omdb, trakt)
 	} else {
 		metadata.Getmoviemetadata(&dbmovie, true, false, nil, false)
 	}
+
 	if queryParam, ok := ctx.GetQuery("update"); ok && queryParam == "1" {
 		dbmovie.MovieFindDBIDByImdbParser()
+
 		if dbmovie.ID == 0 {
 			dbresult, err := database.ExecNid(
 				"insert into dbmovies (Imdb_ID) VALUES (?)",
@@ -186,6 +192,7 @@ func apiMovieMetadataGet(ctx *gin.Context) {
 				dbmovie.ID = uint(dbresult)
 			}
 		}
+
 		database.ExecN(
 			"update dbmovies SET Title = ? , Release_Date = ? , Year = ? , Adult = ? , Budget = ? , Genres = ? , Original_Language = ? , Original_Title = ? , Overview = ? , Popularity = ? , Revenue = ? , Runtime = ? , Spoken_Languages = ? , Status = ? , Tagline = ? , Vote_Average = ? , Vote_Count = ? , Trakt_ID = ? , Moviedb_ID = ? , Imdb_ID = ? , Freebase_M_ID = ? , Freebase_ID = ? , Facebook_ID = ? , Instagram_ID = ? , Twitter_ID = ? , URL = ? , Backdrop = ? , Poster = ? , Slug = ? where id = ?",
 			&dbmovie.Title,
@@ -220,6 +227,7 @@ func apiMovieMetadataGet(ctx *gin.Context) {
 			&dbmovie.ID,
 		)
 	}
+
 	ctx.JSON(http.StatusOK, gin.H{"data": dbmovie})
 }
 
@@ -272,9 +280,14 @@ func apimoviesAllJobs(c *gin.Context) {
 
 		switch c.Param(StrJobLower) {
 		case "data", logger.StrDataFull, logger.StrStructure, logger.StrClearHistory:
-			worker.Dispatch(c.Param(StrJobLower)+"_"+cfgpstr, func(key uint32, ctx context.Context) error {
-				return utils.SingleJobs(ctx, c.Param(StrJobLower), cfgpstr, "", true, key)
-			}, "Data")
+			worker.Dispatch(
+				c.Param(StrJobLower)+"_"+cfgpstr,
+				func(key uint32, ctx context.Context) error {
+					return utils.SingleJobs(ctx, c.Param(StrJobLower), cfgpstr, "", true, key)
+				},
+				"Data",
+			)
+
 		case logger.StrSearchMissingFull,
 			logger.StrSearchMissingInc,
 			logger.StrSearchUpgradeFull,
@@ -283,13 +296,23 @@ func apimoviesAllJobs(c *gin.Context) {
 			logger.StrSearchMissingIncTitle,
 			logger.StrSearchUpgradeFullTitle,
 			logger.StrSearchUpgradeIncTitle:
-			worker.Dispatch(c.Param(StrJobLower)+"_"+cfgpstr, func(key uint32, ctx context.Context) error {
-				return utils.SingleJobs(ctx, c.Param(StrJobLower), cfgpstr, "", true, key)
-			}, "Search")
+			worker.Dispatch(
+				c.Param(StrJobLower)+"_"+cfgpstr,
+				func(key uint32, ctx context.Context) error {
+					return utils.SingleJobs(ctx, c.Param(StrJobLower), cfgpstr, "", true, key)
+				},
+				"Search",
+			)
+
 		case logger.StrRss:
-			worker.Dispatch(c.Param(StrJobLower)+"_"+cfgpstr, func(key uint32, ctx context.Context) error {
-				return utils.SingleJobs(ctx, c.Param(StrJobLower), cfgpstr, "", true, key)
-			}, "RSS")
+			worker.Dispatch(
+				c.Param(StrJobLower)+"_"+cfgpstr,
+				func(key uint32, ctx context.Context) error {
+					return utils.SingleJobs(ctx, c.Param(StrJobLower), cfgpstr, "", true, key)
+				},
+				"RSS",
+			)
+
 		case logger.StrFeeds,
 			logger.StrCheckMissing,
 			logger.StrCheckMissingFlag,
@@ -299,6 +322,7 @@ func apimoviesAllJobs(c *gin.Context) {
 				if !media.Lists[idxi].Enabled {
 					continue
 				}
+
 				if media.Lists[idxi].CfgList == nil {
 					continue
 				}
@@ -306,6 +330,7 @@ func apimoviesAllJobs(c *gin.Context) {
 				if !config.GetSettingsList(media.Lists[idxi].TemplateList).Enabled {
 					continue
 				}
+
 				listname := media.Lists[idxi].Name
 				if c.Param(StrJobLower) == logger.StrFeeds {
 					if errsub := worker.Dispatch(
@@ -328,6 +353,7 @@ func apimoviesAllJobs(c *gin.Context) {
 						err = errsub
 					}
 				}
+
 				if c.Param(StrJobLower) == logger.StrCheckMissing ||
 					c.Param(StrJobLower) == logger.StrCheckMissingFlag ||
 					c.Param(StrJobLower) == logger.StrReachedFlag {
@@ -343,22 +369,39 @@ func apimoviesAllJobs(c *gin.Context) {
 				}
 				// cfg_list.Close()
 			}
+
 			return err
+
 		case "refresh":
-			return worker.Dispatch(logger.StrRefreshMovies, func(key uint32, ctx context.Context) error {
-				return utils.SingleJobs(ctx, "refresh", cfgpstr, "", false, key)
-			}, "Feeds")
+			return worker.Dispatch(
+				logger.StrRefreshMovies,
+				func(key uint32, ctx context.Context) error {
+					return utils.SingleJobs(ctx, "refresh", cfgpstr, "", false, key)
+				},
+				"Feeds",
+			)
+
 		case "refreshinc":
-			return worker.Dispatch(logger.StrRefreshMoviesInc, func(key uint32, ctx context.Context) error {
-				return utils.SingleJobs(ctx, "refreshinc", cfgpstr, "", false, key)
-			}, "Feeds")
+			return worker.Dispatch(
+				logger.StrRefreshMoviesInc,
+				func(key uint32, ctx context.Context) error {
+					return utils.SingleJobs(ctx, "refreshinc", cfgpstr, "", false, key)
+				},
+				"Feeds",
+			)
+
 		case "":
 			return nil
 		default:
-			return worker.Dispatch(c.Param(StrJobLower)+"_"+cfgpstr, func(key uint32, ctx context.Context) error {
-				return utils.SingleJobs(ctx, c.Param(StrJobLower), cfgpstr, "", true, key)
-			}, "Data")
+			return worker.Dispatch(
+				c.Param(StrJobLower)+"_"+cfgpstr,
+				func(key uint32, ctx context.Context) error {
+					return utils.SingleJobs(ctx, c.Param(StrJobLower), cfgpstr, "", true, key)
+				},
+				"Data",
+			)
 		}
+
 		return nil
 	})
 	sendSuccess(c, returnval)
@@ -386,9 +429,14 @@ func apimoviesJobs(c *gin.Context) {
 
 	switch c.Param(StrJobLower) {
 	case "data", logger.StrDataFull, logger.StrStructure, logger.StrClearHistory:
-		worker.Dispatch(c.Param(StrJobLower)+"_movies_"+c.Param("name"), func(key uint32, ctx context.Context) error {
-			return utils.SingleJobs(ctx, c.Param(StrJobLower), cfgpstr, "", true, key)
-		}, "Data")
+		worker.Dispatch(
+			c.Param(StrJobLower)+"_movies_"+c.Param("name"),
+			func(key uint32, ctx context.Context) error {
+				return utils.SingleJobs(ctx, c.Param(StrJobLower), cfgpstr, "", true, key)
+			},
+			"Data",
+		)
+
 	case logger.StrSearchMissingFull,
 		logger.StrSearchMissingInc,
 		logger.StrSearchUpgradeFull,
@@ -397,29 +445,40 @@ func apimoviesJobs(c *gin.Context) {
 		logger.StrSearchMissingIncTitle,
 		logger.StrSearchUpgradeFullTitle,
 		logger.StrSearchUpgradeIncTitle:
-		worker.Dispatch(c.Param(StrJobLower)+"_movies_"+c.Param("name"), func(key uint32, ctx context.Context) error {
-			return utils.SingleJobs(ctx, c.Param(StrJobLower), cfgpstr, "", true, key)
-		}, "Search")
+		worker.Dispatch(
+			c.Param(StrJobLower)+"_movies_"+c.Param("name"),
+			func(key uint32, ctx context.Context) error {
+				return utils.SingleJobs(ctx, c.Param(StrJobLower), cfgpstr, "", true, key)
+			},
+			"Search",
+		)
+
 	case logger.StrRss:
-		worker.Dispatch(c.Param(StrJobLower)+"_movies_"+c.Param("name"), func(key uint32, ctx context.Context) error {
-			return utils.SingleJobs(ctx, c.Param(StrJobLower), cfgpstr, "", true, key)
-		}, "RSS")
+		worker.Dispatch(
+			c.Param(StrJobLower)+"_movies_"+c.Param("name"),
+			func(key uint32, ctx context.Context) error {
+				return utils.SingleJobs(ctx, c.Param(StrJobLower), cfgpstr, "", true, key)
+			},
+			"RSS",
+		)
+
 	case logger.StrFeeds,
 		logger.StrCheckMissing,
 		logger.StrCheckMissingFlag,
 		logger.StrReachedFlag:
-
 		// defer cfgMovie.Close()
 		// defer cfg_list.Close()
 		config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) error {
 			if !strings.HasPrefix(media.NamePrefix, logger.StrMovie) {
 				return nil
 			}
+
 			if strings.EqualFold(media.Name, c.Param("name")) {
 				for idxlist := range media.Lists {
 					if !media.Lists[idxlist].Enabled {
 						continue
 					}
+
 					if media.Lists[idxlist].CfgList == nil {
 						continue
 					}
@@ -427,9 +486,13 @@ func apimoviesJobs(c *gin.Context) {
 					if !config.GetSettingsList(media.Lists[idxlist].TemplateList).Enabled {
 						continue
 					}
+
 					listname := media.Lists[idxlist].Name
 					if c.Param(StrJobLower) == logger.StrFeeds {
-						logger.Logtype("debug", 2).Str(logger.StrTitle, media.Name).Any("List", &media.Lists[idxlist].Name).Msg("add job")
+						logger.Logtype("debug", 2).
+							Str(logger.StrTitle, media.Name).
+							Any("List", &media.Lists[idxlist].Name).
+							Msg("add job")
 						worker.Dispatch(
 							c.Param(
 								StrJobLower,
@@ -446,6 +509,7 @@ func apimoviesJobs(c *gin.Context) {
 							"Feeds",
 						)
 					}
+
 					if c.Param(StrJobLower) == logger.StrCheckMissing ||
 						c.Param(StrJobLower) == logger.StrCheckMissingFlag ||
 						c.Param(StrJobLower) == logger.StrReachedFlag {
@@ -471,21 +535,29 @@ func apimoviesJobs(c *gin.Context) {
 			// cfgMovie.Close()
 			return nil
 		})
+
 	case "refresh":
 		worker.Dispatch(logger.StrRefreshMovies, func(key uint32, ctx context.Context) error {
 			return utils.SingleJobs(ctx, "refresh", cfgpstr, "", false, key)
 		}, "Feeds")
+
 	case "refreshinc":
 		worker.Dispatch(logger.StrRefreshMoviesInc, func(key uint32, ctx context.Context) error {
 			return utils.SingleJobs(ctx, "refreshinc", cfgpstr, "", false, key)
 		}, "Feeds")
+
 	case "":
 		break
 	default:
-		worker.Dispatch(c.Param(StrJobLower)+"_movies_"+c.Param("name"), func(key uint32, ctx context.Context) error {
-			return utils.SingleJobs(ctx, c.Param(StrJobLower), cfgpstr, "", true, key)
-		}, "Data")
+		worker.Dispatch(
+			c.Param(StrJobLower)+"_movies_"+c.Param("name"),
+			func(key uint32, ctx context.Context) error {
+				return utils.SingleJobs(ctx, c.Param(StrJobLower), cfgpstr, "", true, key)
+			},
+			"Data",
+		)
 	}
+
 	sendSuccess(c, returnval)
 }
 
@@ -504,13 +576,18 @@ func updateDBMovie(c *gin.Context) {
 	if !bindJSONWithValidation(c, &dbmovie) {
 		return
 	}
+
 	counter := database.Getdatarow[uint](
 		false,
 		"select count() from dbmovies where id != 0 and id = ?",
 		&dbmovie.ID,
 	)
-	var inres sql.Result
-	var err error
+
+	var (
+		inres sql.Result
+		err   error
+	)
+
 	if counter == 0 {
 		inres, err = database.InsertArray(
 			"dbmovies",
@@ -579,6 +656,7 @@ func updateDBMovie(c *gin.Context) {
 		inres, err = database.UpdateArray("dbmovies", []string{"Title", "Release_Date", "Year", "Adult", "Budget", "Genres", "Original_Language", "Original_Title", "Overview", "Popularity", "Revenue", "Runtime", "Spoken_Languages", "Status", "Tagline", "Vote_Average", "Vote_Count", "Trakt_ID", "Moviedb_ID", "Imdb_ID", "Freebase_M_ID", "Freebase_ID", "Facebook_ID", "Instagram_ID", "Twitter_ID", "URL", "Backdrop", "Poster", "Slug"},
 			"id != 0 and id = ?", dbmovie.Title, dbmovie.ReleaseDate, dbmovie.Year, dbmovie.Adult, dbmovie.Budget, dbmovie.Genres, dbmovie.OriginalLanguage, dbmovie.OriginalTitle, dbmovie.Overview, dbmovie.Popularity, dbmovie.Revenue, dbmovie.Runtime, dbmovie.SpokenLanguages, dbmovie.Status, dbmovie.Tagline, dbmovie.VoteAverage, dbmovie.VoteCount, dbmovie.TraktID, dbmovie.MoviedbID, dbmovie.ImdbID, dbmovie.FreebaseMID, dbmovie.FreebaseID, dbmovie.FacebookID, dbmovie.InstagramID, dbmovie.TwitterID, dbmovie.URL, dbmovie.Backdrop, dbmovie.Poster, dbmovie.Slug, dbmovie.ID)
 	}
+
 	handleDBInsertOrUpdate(c, inres, err, counter == 0)
 }
 
@@ -597,13 +675,18 @@ func updateMovie(c *gin.Context) {
 	if !bindJSONWithValidation(c, &movie) {
 		return
 	}
+
 	counter := database.Getdatarow[uint](
 		false,
 		"select count() from dbmovies where id != 0 and id = ?",
 		&movie.ID,
 	)
-	var inres sql.Result
-	var err error
+
+	var (
+		inres sql.Result
+		err   error
+	)
+
 	if counter == 0 {
 		inres, err = database.InsertArray(
 			"movies",
@@ -632,6 +715,7 @@ func updateMovie(c *gin.Context) {
 		inres, err = database.UpdateArray("dbmovies", []string{"missing", "listname", "dbmovie_id", "quality_profile", "blacklisted", "quality_reached", "dont_upgrade", "dont_search", "rootpath"},
 			"id != 0 and id = ?", movie.Missing, movie.Listname, movie.DbmovieID, movie.QualityProfile, movie.Blacklisted, movie.QualityReached, movie.DontUpgrade, movie.DontSearch, movie.Rootpath, movie.ID)
 	}
+
 	handleDBInsertOrUpdate(c, inres, err, counter == 0)
 }
 
@@ -650,8 +734,11 @@ func apimoviesSearch(c *gin.Context) {
 		c.Param(logger.StrID),
 	)
 	// defer logger.ClearVar(&movie)
-	var idxlist int
-	var err error
+	var (
+		idxlist int
+		err     error
+	)
+
 	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) error {
 		if !strings.HasPrefix(media.NamePrefix, logger.StrMovie) {
 			return nil
@@ -663,26 +750,34 @@ func apimoviesSearch(c *gin.Context) {
 					"searchmovie_movies_"+media.Name+"_"+strconv.Itoa(int(movie.ID)),
 					func(_ uint32, ctx context.Context) error {
 						searchvar := searcher.NewSearcher(media, nil, "", nil)
-						err = searchvar.MediaSearch(ctx, media, movie.ID, true, false, false)
 
+						err = searchvar.MediaSearch(ctx, media, movie.ID, true, false, false)
 						if err != nil {
 							if err != nil && !errors.Is(err, logger.ErrDisabled) {
-								logger.Logtype("error", 2).Any("id", &movie.ID).Str("typ", logger.StrMovie).Err(err).Msg("Search Failed")
+								logger.Logtype("error", 2).
+									Any("id", &movie.ID).
+									Str("typ", logger.StrMovie).
+									Err(err).
+									Msg("Search Failed")
 							}
 						} else {
 							if len(searchvar.Accepted) >= 1 {
 								searchvar.Download()
 							}
 						}
+
 						searchvar.Close()
+
 						return err
 					},
 					"Search",
 				)
 				sendSuccess(c, StrStarted)
+
 				return nil
 			}
 		}
+
 		return nil
 	})
 	sendJSONError(c, http.StatusNoContent, StrNothingDone)
@@ -711,15 +806,18 @@ func apimoviesSearchList(c *gin.Context) {
 			titlesearch = true
 		}
 	}
+
 	var err error
 	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) error {
 		if !strings.HasPrefix(media.NamePrefix, logger.StrMovie) {
 			return nil
 		}
+
 		for idxlist := range media.Lists {
 			if strings.EqualFold(media.Lists[idxlist].Name, movie.Listname) {
 				ctx := context.Background()
 				searchresults := searcher.NewSearcher(media, nil, "", nil)
+
 				err = searchresults.MediaSearch(ctx, media, movie.ID, titlesearch, false, false)
 				if err != nil {
 					str := "failed with " + err.Error()
@@ -727,18 +825,22 @@ func apimoviesSearchList(c *gin.Context) {
 					searchresults.Close()
 					return err
 				}
-				if _, ok := c.GetQuery("download"); ok {
+
+				if val, ok := c.GetQuery("download"); ok && strings.EqualFold(val, "true") {
 					searchresults.Download()
 				}
+
 				c.JSON(
 					http.StatusOK,
 					gin.H{"accepted": searchresults.Accepted, "denied": searchresults.Denied},
 				)
 				// searchnow.Close()
 				searchresults.Close()
+
 				return nil
 			}
 		}
+
 		return nil
 	})
 	sendJSONError(c, http.StatusNoContent, StrNothingDone)
@@ -757,9 +859,11 @@ func apiMoviesRssSearchList(c *gin.Context) {
 		if !strings.HasPrefix(media.NamePrefix, logger.StrMovie) {
 			return nil
 		}
+
 		if strings.EqualFold(media.Name, c.Param("group")) {
 			ctx := context.Background()
 			searchresults := searcher.NewSearcher(media, media.CfgQuality, logger.StrRss, nil)
+
 			err := searchresults.SearchRSS(ctx, media, media.CfgQuality, false, false)
 			if err != nil {
 				str := "failed with " + err.Error()
@@ -767,13 +871,16 @@ func apiMoviesRssSearchList(c *gin.Context) {
 				searchresults.Close()
 				return err
 			}
+
 			c.JSON(
 				http.StatusOK,
 				gin.H{"accepted": searchresults.Accepted, "denied": searchresults.Denied},
 			)
 			searchresults.Close()
+
 			return nil
 		}
+
 		return nil
 	})
 	sendJSONError(c, http.StatusNoContent, StrNothingDone)
@@ -782,7 +889,7 @@ func apiMoviesRssSearchList(c *gin.Context) {
 // @Summary      Download a movie (manual)
 // @Description  Downloads a release after select
 // @Tags         movie
-// @Param        nzb  body      apiexternal.Nzbwithprio  true  "Nzb: Req. Title, Indexer, imdbid, downloadurl, parseinfo"
+// @Param        nzb  body      apiexternal_v2.Nzbwithprio  true  "Nzb: Req. Title, Indexer, imdbid, downloadurl, parseinfo"
 // @Param        id   path      int                     true  "Movie ID"
 // @Param        apikey query     string    true  "apikey"
 // @Success      200  {object}  string "returns started"
@@ -797,7 +904,7 @@ func apimoviesSearchDownload(c *gin.Context) {
 	)
 	// defer logger.ClearVar(&movie)
 
-	var nzb apiexternal.Nzbwithprio
+	var nzb apiexternal_v2.Nzbwithprio
 	if err := c.ShouldBindJSON(&nzb); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -807,6 +914,7 @@ func apimoviesSearchDownload(c *gin.Context) {
 		if !strings.HasPrefix(media.NamePrefix, logger.StrMovie) {
 			return nil
 		}
+
 		for idxlist := range media.Lists {
 			if strings.EqualFold(media.Lists[idxlist].Name, movie.Listname) {
 				downloader.DownloadMovie(media, &nzb)
@@ -814,6 +922,7 @@ func apimoviesSearchDownload(c *gin.Context) {
 				return nil
 			}
 		}
+
 		return nil
 	})
 	sendJSONError(c, http.StatusNoContent, StrNothingDone)
@@ -833,6 +942,7 @@ func apirefreshMovies(c *gin.Context) {
 			cfgp = media
 			return true
 		}
+
 		return false
 	})
 	worker.Dispatch(logger.StrRefreshMovies, func(key uint32, ctx context.Context) error {
@@ -856,12 +966,18 @@ func apirefreshMovie(c *gin.Context) {
 			cfgp = media
 			return true
 		}
+
 		return false
 	})
+
 	id := c.Param(logger.StrID)
-	worker.Dispatch("Refresh Single Movie_"+c.Param(logger.StrID), func(_ uint32, _ context.Context) error {
-		return utils.RefreshMovie(cfgp, &id)
-	}, "Feeds")
+	worker.Dispatch(
+		"Refresh Single Movie_"+c.Param(logger.StrID),
+		func(_ uint32, _ context.Context) error {
+			return utils.RefreshMovie(cfgp, &id)
+		},
+		"Feeds",
+	)
 	sendSuccess(c, StrStarted)
 }
 
@@ -879,6 +995,7 @@ func apirefreshMoviesInc(c *gin.Context) {
 			cfgp = media
 			return true
 		}
+
 		return false
 	})
 	worker.Dispatch(logger.StrRefreshMoviesInc, func(key uint32, ctx context.Context) error {
