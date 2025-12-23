@@ -61,7 +61,6 @@ RUN apt-get update && \
         mediainfo \
         p7zip \
         p7zip-full \
-        p7zip-rar \
         graphviz \
         gv \
         tzdata \
