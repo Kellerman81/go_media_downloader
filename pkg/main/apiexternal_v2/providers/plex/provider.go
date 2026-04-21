@@ -3,17 +3,18 @@ package plex
 import (
 	"context"
 	"crypto/tls"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
-	"regexp"
 	"strconv"
 	"time"
 
+	"github.com/goccy/go-json"
+
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/base"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 )
 
 //
@@ -169,7 +170,7 @@ func (p *Provider) GetWatchlist(
 
 // extractIMDbIDFromGuids extracts IMDb ID from Plex GUIDs.
 func extractIMDbIDFromGuids(guids []PlexGuid) string {
-	imdbPattern := regexp.MustCompile(`imdb://([a-z0-9]+)`)
+	imdbPattern := database.GetCachedRegexp(`imdb://([a-z0-9]+)`)
 	for _, guid := range guids {
 		if matches := imdbPattern.FindStringSubmatch(guid.ID); len(matches) > 1 {
 			return matches[1]
@@ -181,12 +182,15 @@ func extractIMDbIDFromGuids(guids []PlexGuid) string {
 
 // extractTVDbIDFromGuids extracts TVDB ID from Plex GUIDs.
 func extractTVDbIDFromGuids(guids []PlexGuid) int {
-	tvdbPattern := regexp.MustCompile(`tvdb://(\d+)`)
+	tvdbPattern := database.GetCachedRegexp(`tvdb://(\d+)`)
 	for _, guid := range guids {
-		if matches := tvdbPattern.FindStringSubmatch(guid.ID); len(matches) > 1 {
-			if id, err := strconv.Atoi(matches[1]); err == nil {
-				return id
-			}
+		matches := tvdbPattern.FindStringSubmatch(guid.ID)
+		if len(matches) <= 1 {
+			continue
+		}
+
+		if id, err := strconv.Atoi(matches[1]); err == nil {
+			return id
 		}
 	}
 

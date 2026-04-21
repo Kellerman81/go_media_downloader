@@ -7,6 +7,7 @@ import (
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/base"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/omdb"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/providers"
 )
@@ -82,7 +83,7 @@ func NewOmdbClient(
 		CircuitBreakerTimeout:     60 * time.Second,
 		CircuitBreakerHalfOpenMax: 2,
 		EnableStats:               true,
-		UserAgent:                 "go-media-downloader/2.0",
+		UserAgent:                 config.GetSettingsGeneral().UserAgent,
 		DisableTLSVerify:          disabletls,
 	}
 	if provider := omdb.NewProviderWithConfig(omdbConfig); provider != nil {

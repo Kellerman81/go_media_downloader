@@ -28,11 +28,11 @@ func TestSyncMapUintRaceConditions(t *testing.T) {
 		iterations := 100
 
 		// Writers
-		for i := 0; i < numGoroutines; i++ {
+		for i := range numGoroutines {
 			wg.Add(1)
 			go func(id int) {
 				defer wg.Done()
-				for j := 0; j < iterations; j++ {
+				for j := range iterations {
 					key := uint32(id*iterations + j)
 					data := TestData{
 						ID:    key,
@@ -62,7 +62,7 @@ func TestSyncMapUintRaceConditions(t *testing.T) {
 			wg.Add(1)
 			go func(id int) {
 				defer wg.Done()
-				for j := 0; j < iterations; j++ {
+				for j := range iterations {
 					key := uint32((id + j) % (numGoroutines * iterations))
 					sm.Delete(key)
 				}
@@ -76,7 +76,7 @@ func TestSyncMapUintRaceConditions(t *testing.T) {
 		sm := syncops.NewSyncMapUint[TestData](50)
 
 		// Pre-populate with some data
-		for i := uint32(0); i < 50; i++ {
+		for i := range uint32(50) {
 			sm.Add(i, TestData{ID: i, Name: "initial", Value: 0})
 		}
 
@@ -84,11 +84,11 @@ func TestSyncMapUintRaceConditions(t *testing.T) {
 		var updates int64
 
 		// Multiple updaters
-		for i := 0; i < 20; i++ {
+		for i := range 20 {
 			wg.Add(1)
 			go func(id int) {
 				defer wg.Done()
-				for j := 0; j < 100; j++ {
+				for j := range 100 {
 					key := uint32(j % 50)
 					data := TestData{
 						ID:    key,
@@ -102,16 +102,14 @@ func TestSyncMapUintRaceConditions(t *testing.T) {
 		}
 
 		// Concurrent readers
-		for i := 0; i < 10; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				for j := 0; j < 200; j++ {
+		for range 10 {
+			wg.Go(func() {
+				for j := range 200 {
 					key := uint32(j % 50)
 					data := sm.GetVal(key)
 					_ = data.Name // Use the data
 				}
-			}()
+			})
 		}
 
 		wg.Wait()
@@ -122,18 +120,18 @@ func TestSyncMapUintRaceConditions(t *testing.T) {
 		sm := syncops.NewSyncMapUint[TestData](100)
 
 		// Pre-populate
-		for i := uint32(0); i < 100; i++ {
+		for i := range uint32(100) {
 			sm.Add(i, TestData{ID: i, Name: fmt.Sprintf("item_%d", i), Value: int64(i)})
 		}
 
 		var wg sync.WaitGroup
 
 		// Multiple GetMap calls
-		for i := 0; i < 20; i++ {
+		for i := range 20 {
 			wg.Add(1)
 			go func(id int) {
 				defer wg.Done()
-				for j := 0; j < 50; j++ {
+				for range 50 {
 					mapCopy := sm.GetMap()
 					// Map can grow beyond 100 due to concurrent additions
 					if len(mapCopy) > 200 {
@@ -144,11 +142,11 @@ func TestSyncMapUintRaceConditions(t *testing.T) {
 		}
 
 		// Concurrent modifications
-		for i := 0; i < 10; i++ {
+		for i := range 10 {
 			wg.Add(1)
 			go func(id int) {
 				defer wg.Done()
-				for j := 0; j < 25; j++ {
+				for j := range 25 {
 					key := uint32(100 + id*25 + j)
 					sm.Add(key, TestData{ID: key, Name: "new_item", Value: int64(key)})
 					sm.Delete(key)
@@ -166,7 +164,7 @@ func TestSyncMapUintAdvancedOperations(t *testing.T) {
 		sm := syncops.NewSyncMapUint[TestData](50)
 
 		// Pre-populate
-		for i := uint32(0); i < 50; i++ {
+		for i := range uint32(50) {
 			sm.Add(i, TestData{ID: i, Name: fmt.Sprintf("item_%d", i), Value: int64(i)})
 		}
 
@@ -174,25 +172,23 @@ func TestSyncMapUintAdvancedOperations(t *testing.T) {
 		var forEachCalls int64
 
 		// Multiple ForEach operations
-		for i := 0; i < 10; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				for j := 0; j < 20; j++ {
+		for range 10 {
+			wg.Go(func() {
+				for range 20 {
 					sm.ForEach(func(key uint32, data TestData) {
 						atomic.AddInt64(&forEachCalls, 1)
 						_ = data.Name // Use the data
 					})
 				}
-			}()
+			})
 		}
 
 		// Concurrent modifications
-		for i := 0; i < 5; i++ {
+		for i := range 5 {
 			wg.Add(1)
 			go func(id int) {
 				defer wg.Done()
-				for j := 0; j < 10; j++ {
+				for j := range 10 {
 					key := uint32(50 + id*10 + j)
 					sm.Add(key, TestData{ID: key, Name: "concurrent", Value: int64(key)})
 				}
@@ -207,14 +203,14 @@ func TestSyncMapUintAdvancedOperations(t *testing.T) {
 		sm := syncops.NewSyncMapUint[TestData](100)
 
 		// Pre-populate
-		for i := uint32(0); i < 100; i++ {
+		for i := range uint32(100) {
 			sm.Add(i, TestData{ID: i, Name: fmt.Sprintf("item_%d", i), Value: int64(i % 10)})
 		}
 
 		var wg sync.WaitGroup
 
 		// Multiple DeleteIf operations
-		for i := 0; i < 5; i++ {
+		for i := range 5 {
 			wg.Add(1)
 			go func(id int) {
 				defer wg.Done()
@@ -227,15 +223,13 @@ func TestSyncMapUintAdvancedOperations(t *testing.T) {
 		}
 
 		// Concurrent readers
-		for i := 0; i < 10; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				for j := 0; j < 50; j++ {
+		for range 10 {
+			wg.Go(func() {
+				for j := range 50 {
 					key := uint32(j % 100)
 					_ = sm.Check(key)
 				}
-			}()
+			})
 		}
 
 		wg.Wait()
@@ -249,7 +243,7 @@ func TestSyncMapUintAdvancedOperations(t *testing.T) {
 		sm := syncops.NewSyncMapUint[TestData](100)
 
 		// Pre-populate
-		for i := uint32(0); i < 100; i++ {
+		for i := range uint32(100) {
 			sm.Add(i, TestData{ID: i, Name: fmt.Sprintf("item_%d", i), Value: int64(i % 20)})
 		}
 
@@ -257,11 +251,11 @@ func TestSyncMapUintAdvancedOperations(t *testing.T) {
 		var foundCount int64
 
 		// Multiple FindFirst operations
-		for i := 0; i < 20; i++ {
+		for i := range 20 {
 			wg.Add(1)
 			go func(id int) {
 				defer wg.Done()
-				for j := 0; j < 50; j++ {
+				for j := range 50 {
 					searchValue := int64(j % 20)
 					_, _, found := sm.FindFirst(func(key uint32, data TestData) bool {
 						return data.Value == searchValue
@@ -274,11 +268,11 @@ func TestSyncMapUintAdvancedOperations(t *testing.T) {
 		}
 
 		// Concurrent modifications
-		for i := 0; i < 5; i++ {
+		for i := range 5 {
 			wg.Add(1)
 			go func(id int) {
 				defer wg.Done()
-				for j := 0; j < 20; j++ {
+				for j := range 20 {
 					key := uint32(100 + id*20 + j)
 					sm.Add(key, TestData{ID: key, Name: "new", Value: int64(j % 5)})
 				}
@@ -293,7 +287,7 @@ func TestSyncMapUintAdvancedOperations(t *testing.T) {
 		sm := syncops.NewSyncMapUint[TestData](50)
 
 		// Pre-populate
-		for i := uint32(0); i < 50; i++ {
+		for i := range uint32(50) {
 			sm.Add(i, TestData{ID: i, Name: fmt.Sprintf("special_%d", i%5), Value: int64(i)})
 		}
 
@@ -301,11 +295,11 @@ func TestSyncMapUintAdvancedOperations(t *testing.T) {
 		var existsCount int64
 
 		// Multiple Exists operations
-		for i := 0; i < 15; i++ {
+		for i := range 15 {
 			wg.Add(1)
 			go func(id int) {
 				defer wg.Done()
-				for j := 0; j < 100; j++ {
+				for j := range 100 {
 					searchName := fmt.Sprintf("special_%d", j%5)
 					exists := sm.Exists(func(key uint32, data TestData) bool {
 						return data.Name == searchName
@@ -318,11 +312,11 @@ func TestSyncMapUintAdvancedOperations(t *testing.T) {
 		}
 
 		// Concurrent deletions
-		for i := 0; i < 5; i++ {
+		for i := range 5 {
 			wg.Add(1)
 			go func(id int) {
 				defer wg.Done()
-				for j := 0; j < 10; j++ {
+				for j := range 10 {
 					key := uint32(id*10 + j)
 					sm.Delete(key)
 				}
@@ -346,7 +340,7 @@ func TestSyncMapUintStress(t *testing.T) {
 	duration := 5 * time.Second
 
 	// High-volume readers
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		wg.Add(1)
 		go func(workerID int) {
 			defer wg.Done()
@@ -375,7 +369,7 @@ func TestSyncMapUintStress(t *testing.T) {
 	}
 
 	// High-volume writers
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		wg.Add(1)
 		go func(workerID int) {
 			defer wg.Done()
@@ -413,7 +407,7 @@ func BenchmarkSyncMapUintConcurrency(b *testing.B) {
 	sm := syncops.NewSyncMapUint[TestData](1000)
 
 	// Pre-populate
-	for i := uint32(0); i < 1000; i++ {
+	for i := range uint32(1000) {
 		sm.Add(i, TestData{ID: i, Name: fmt.Sprintf("bench_%d", i), Value: int64(i)})
 	}
 

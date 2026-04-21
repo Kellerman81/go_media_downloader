@@ -55,6 +55,7 @@ func SendGotifyMessage(configName, serverURL, token, message, title string) erro
 			if err == nil {
 				return nil
 			}
+
 			// Log error but fall through to legacy client
 			logger.Logtype("debug", 0).
 				Err(err).

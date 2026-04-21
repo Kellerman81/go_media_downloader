@@ -2,7 +2,6 @@ package metadata
 
 import (
 	"strconv"
-	"strings"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
@@ -10,72 +9,71 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 )
 
+// fieldTracker efficiently tracks which fields were updated during metadata retrieval.
+// Uses a bitmask for O(1) operations instead of slice appends.
+type fieldTracker uint16
+
+const (
+	fieldName fieldTracker = 1 << iota
+	fieldStatus
+	fieldNetwork
+	fieldLanguage
+	fieldOverview
+	fieldRuntime
+	fieldRating
+	fieldPremiered
+	fieldGenres
+	fieldPoster
+	fieldBanner
+	fieldExternalIDs
+	fieldSlug
+)
+
+// fieldNames maps bitmask values to field names for logging.
+var fieldNames = [...]string{
+	"name", "status", "network", "language", "overview",
+	"runtime", "rating", "premiered", "genres", "poster",
+	"banner", "external_ids", "slug",
+}
+
+// String returns a comma-separated list of updated field names.
+func (f fieldTracker) String() string {
+	if f == 0 {
+		return ""
+	}
+
+	bld := logger.PlAddBuffer.Get()
+	defer logger.PlAddBuffer.Put(bld)
+
+	first := true
+	for i, name := range fieldNames {
+		if f&(1<<i) == 0 {
+			continue
+		}
+
+		if !first {
+			bld.WriteByte(',')
+		}
+
+		bld.WriteString(name)
+
+		first = false
+	}
+
+	return bld.String()
+}
+
 // serieGetMetadataTvmaze fetches series metadata from TVmaze API and updates the serie struct.
 // It tries to find the show using TVDB ID first, then IMDB ID if available.
 // Returns error if API calls fail or if no identifiers are available.
 func serieGetMetadataTvmaze(serie *database.Dbserie, overwrite bool) error {
 	logger.Logtype("debug", 2).
 		Str(logger.StrTitle, serie.Seriename).
-		Str(logger.StrID, strconv.Itoa(int(serie.ID))).
+		Uint(logger.StrID, serie.ID).
 		Msg("Starting TVmaze metadata retrieval")
 
-	var (
-		show         *apiexternal_v2.SeriesDetails
-		err          error
-		lookupMethod string
-	)
-
-	// Try to find show by TVDB ID first
-
-	if serie.ThetvdbID != 0 {
-		logger.Logtype("debug", 2).
-			Str(logger.StrTvdb, strconv.Itoa(serie.ThetvdbID)).
-			Str(logger.StrTitle, serie.Seriename).
-			Msg("TVmaze lookup by TVDB ID")
-
-		lookupMethod = "TVDB ID"
-
-		show, err = apiexternal.GetTVmazeShowByTVDBID(serie.ThetvdbID)
-		if err != nil && serie.ImdbID != "" {
-			logger.Logtype("debug", 2).
-				Str(logger.StrImdb, serie.ImdbID).
-				Str(logger.StrTitle, serie.Seriename).
-				Msg("TVmaze TVDB lookup failed, trying IMDB fallback")
-
-			lookupMethod = "IMDB ID (fallback)"
-
-			var imdbResult *apiexternal_v2.FindByIMDbResult
-
-			imdbResult, err = apiexternal.GetTVmazeShowByIMDBID(serie.ImdbID)
-			if err == nil && imdbResult != nil && len(imdbResult.TVResults) > 0 {
-				// Get full details using the TVmaze ID from search result
-				show, err = apiexternal.GetTVmazeShowByID(imdbResult.TVResults[0].ID)
-			}
-		}
-	} else if serie.ImdbID != "" {
-		logger.Logtype("debug", 2).Str(logger.StrImdb, serie.ImdbID).Str(logger.StrTitle, serie.Seriename).Msg("TVmaze lookup by IMDB ID")
-
-		lookupMethod = "IMDB ID"
-
-		var imdbResult *apiexternal_v2.FindByIMDbResult
-
-		imdbResult, err = apiexternal.GetTVmazeShowByIMDBID(serie.ImdbID)
-		if err == nil && imdbResult != nil && len(imdbResult.TVResults) > 0 {
-			// Get full details using the TVmaze ID from search result
-			show, err = apiexternal.GetTVmazeShowByID(imdbResult.TVResults[0].ID)
-		}
-	} else {
-		logger.Logtype("debug", 1).Str(logger.StrTitle, serie.Seriename).Msg("TVmaze lookup skipped - no identifiers available")
-		return logger.ErrNotFound
-	}
-
+	show, lookupMethod, err := lookupTVmazeShow(serie)
 	if err != nil {
-		logger.Logtype("error", 2).
-			Str(logger.StrTitle, serie.Seriename).
-			Str("method", lookupMethod).
-			Err(err).
-			Msg("TVmaze API request failed")
-
 		return err
 	}
 
@@ -96,146 +94,219 @@ func serieGetMetadataTvmaze(serie *database.Dbserie, overwrite bool) error {
 		Str("network", getNetworkName(show)).
 		Msg("TVmaze show found (v2)")
 
-	// Track what gets updated for logging
-	var updatedFields []string
+	// Apply metadata updates and track changes
+	updated := applyTVmazeMetadata(serie, show, overwrite)
 
-	// Update series fields using TVmaze data
-	oldName := serie.Seriename
-	updateStringField(&serie.Seriename, show.Name, overwrite, nil)
-
-	if serie.Seriename != oldName {
-		updatedFields = append(updatedFields, "name")
+	// Log summary of updates
+	if updated != 0 {
+		logger.Logtype("info", 2).
+			Str(logger.StrTitle, serie.Seriename).
+			Str("fields", updated.String()).
+			Msg("TVmaze metadata updated")
+	} else {
+		logger.Logtype("debug", 1).
+			Str(logger.StrTitle, serie.Seriename).
+			Msg("No TVmaze metadata updates needed")
 	}
 
-	oldStatus := serie.Status
-	updateStringField(&serie.Status, show.Status, overwrite, nil)
+	return nil
+}
 
-	if serie.Status != oldStatus {
-		updatedFields = append(updatedFields, "status")
+// lookupTVmazeShow attempts to find a show on TVmaze using available identifiers.
+// Returns the show details, the lookup method used, and any error.
+func lookupTVmazeShow(serie *database.Dbserie) (*apiexternal_v2.SeriesDetails, string, error) {
+	if serie.ThetvdbID != 0 {
+		return lookupByTVDBID(serie)
 	}
 
-	oldNetwork := serie.Network
-	updateStringField(&serie.Network, getNetworkName(show), overwrite, nil)
-
-	if serie.Network != oldNetwork {
-		updatedFields = append(updatedFields, "network")
+	if serie.ImdbID != "" {
+		return lookupByIMDBID(serie.ImdbID, serie.Seriename, "IMDB ID")
 	}
 
-	oldLanguage := serie.Language
-	updateStringField(&serie.Language, show.OriginalLanguage, overwrite, nil)
+	logger.Logtype("debug", 1).
+		Str(logger.StrTitle, serie.Seriename).
+		Msg("TVmaze lookup skipped - no identifiers available")
 
-	if serie.Language != oldLanguage {
-		updatedFields = append(updatedFields, "language")
+	return nil, "", logger.ErrNotFound
+}
+
+// lookupByTVDBID attempts to find a show using TVDB ID, with IMDB fallback.
+func lookupByTVDBID(serie *database.Dbserie) (*apiexternal_v2.SeriesDetails, string, error) {
+	logger.Logtype("debug", 2).
+		Int(logger.StrTvdb, serie.ThetvdbID).
+		Str(logger.StrTitle, serie.Seriename).
+		Msg("TVmaze lookup by TVDB ID")
+
+	show, err := apiexternal.GetTVmazeShowByTVDBID(serie.ThetvdbID)
+	if err == nil {
+		return show, "TVDB ID", nil
 	}
 
-	oldOverview := serie.Overview
-	updateStringField(&serie.Overview, show.Overview, overwrite, nil)
+	// Try IMDB fallback if TVDB lookup failed
+	if serie.ImdbID != "" {
+		logger.Logtype("debug", 2).
+			Str(logger.StrImdb, serie.ImdbID).
+			Str(logger.StrTitle, serie.Seriename).
+			Msg("TVmaze TVDB lookup failed, trying IMDB fallback")
 
-	if serie.Overview != oldOverview {
-		updatedFields = append(updatedFields, "overview")
+		return lookupByIMDBID(serie.ImdbID, serie.Seriename, "IMDB ID (fallback)")
 	}
 
-	// Handle runtime - v2 API provides EpisodeRunTime as array
-	oldRuntime := serie.Runtime
+	return nil, "TVDB ID", err
+}
+
+// lookupByIMDBID attempts to find a show using IMDB ID.
+func lookupByIMDBID(
+	imdbID, serieName, method string,
+) (*apiexternal_v2.SeriesDetails, string, error) {
+	logger.Logtype("debug", 2).
+		Str(logger.StrImdb, imdbID).
+		Str(logger.StrTitle, serieName).
+		Msg("TVmaze lookup by IMDB ID")
+
+	imdbResult, err := apiexternal.GetTVmazeShowByIMDBID(imdbID)
+	if err != nil {
+		logger.Logtype("error", 2).
+			Str(logger.StrTitle, serieName).
+			Str("method", method).
+			Err(err).
+			Msg("TVmaze API request failed")
+
+		return nil, method, err
+	}
+
+	if imdbResult == nil || len(imdbResult.TVResults) == 0 {
+		return nil, method, nil
+	}
+
+	// Get full details using the TVmaze ID from search result
+	show, err := apiexternal.GetTVmazeShowByID(imdbResult.TVResults[0].ID)
+	if err != nil {
+		logger.Logtype("error", 2).
+			Str(logger.StrTitle, serieName).
+			Str("method", method).
+			Err(err).
+			Msg("TVmaze API request failed")
+
+		return nil, method, err
+	}
+
+	return show, method, nil
+}
+
+// applyTVmazeMetadata applies show metadata to the series and returns which fields were updated.
+func applyTVmazeMetadata(
+	serie *database.Dbserie,
+	show *apiexternal_v2.SeriesDetails,
+	overwrite bool,
+) fieldTracker {
+	var updated fieldTracker
+
+	// Update basic string fields
+	if updateStringFieldTracked(&serie.Seriename, show.Name, overwrite, nil) {
+		updated |= fieldName
+	}
+
+	if updateStringFieldTracked(&serie.Status, show.Status, overwrite, nil) {
+		updated |= fieldStatus
+	}
+
+	if updateStringFieldTracked(&serie.Network, getNetworkName(show), overwrite, nil) {
+		updated |= fieldNetwork
+	}
+
+	if updateStringFieldTracked(&serie.Language, show.OriginalLanguage, overwrite, nil) {
+		updated |= fieldLanguage
+	}
+
+	if updateStringFieldTracked(&serie.Overview, show.Overview, overwrite, nil) {
+		updated |= fieldOverview
+	}
+
+	// Handle runtime
 	if len(show.EpisodeRunTime) > 0 && show.EpisodeRunTime[0] > 0 {
 		if shouldUpdateSerieRuntime(serie.Runtime, show.EpisodeRunTime[0], overwrite) {
 			serie.Runtime = strconv.Itoa(show.EpisodeRunTime[0])
-			logger.Logtype("debug", 2).
-				Str(logger.StrTitle, serie.Seriename).
-				Str("runtime", strconv.Itoa(show.EpisodeRunTime[0])).
-				Msg("Updated runtime from TVmaze")
+
+			updated |= fieldRuntime
 		}
 	}
 
-	if serie.Runtime != oldRuntime {
-		updatedFields = append(updatedFields, "runtime")
+	// Handle rating
+	if show.VoteAverage > 0 && (serie.Rating == "" || overwrite) {
+		serie.Rating = strconv.FormatFloat(show.VoteAverage, 'f', 1, 64)
+
+		updated |= fieldRating
 	}
 
-	// Update rating if available
-	oldRating := serie.Rating
-	if show.VoteAverage > 0 {
-		if serie.Rating == "" || overwrite {
-			serie.Rating = strconv.FormatFloat(show.VoteAverage, 'f', 1, 64)
-			logger.Logtype("debug", 2).
-				Str(logger.StrTitle, serie.Seriename).
-				Str("rating", serie.Rating).
-				Msg("Updated rating from TVmaze")
-		}
-	}
-
-	if serie.Rating != oldRating {
-		updatedFields = append(updatedFields, "rating")
-	}
-
-	// Update premiere date
-	oldFirstaired := serie.Firstaired
+	// Handle premiere date
 	if !show.FirstAirDate.IsZero() {
-		updateStringField(&serie.Firstaired, show.FirstAirDate.Format("2006-01-02"), overwrite, nil)
+		if updateStringFieldTracked(
+			&serie.Firstaired,
+			show.FirstAirDate.Format("2006-01-02"),
+			overwrite,
+			nil,
+		) {
+			updated |= fieldPremiered
+		}
 	}
 
-	if serie.Firstaired != oldFirstaired {
-		updatedFields = append(updatedFields, "premiered")
-	}
-
-	// Update genre information
-	oldGenre := serie.Genre
+	// Handle genres
 	if len(show.Genres) > 0 {
-		var genreNames []string
-		for _, genre := range show.Genres {
-			genreNames = append(genreNames, genre.Name)
-		}
-
-		genres := strings.Join(genreNames, ",")
-		updateStringField(&serie.Genre, genres, overwrite, nil)
-
-		if serie.Genre != oldGenre {
-			logger.Logtype("debug", 2).
-				Str(logger.StrTitle, serie.Seriename).
-				Str("genres", genres).
-				Msg("Updated genres from TVmaze")
+		genres := buildGenreNamesString(show.Genres)
+		if updateStringFieldTracked(&serie.Genre, genres, overwrite, nil) {
+			updated |= fieldGenres
 		}
 	}
 
-	if serie.Genre != oldGenre {
-		updatedFields = append(updatedFields, "genres")
-	}
-
-	// Update images if available
-	oldPoster := serie.Poster
+	// Handle images
 	if show.PosterPath != "" {
-		updateStringField(&serie.Poster, show.PosterPath, overwrite, nil)
+		if updateStringFieldTracked(&serie.Poster, show.PosterPath, overwrite, nil) {
+			updated |= fieldPoster
+		}
 	}
 
-	if serie.Poster != oldPoster {
-		updatedFields = append(updatedFields, "poster")
-	}
-
-	oldBanner := serie.Banner
 	if show.BackdropPath != "" {
-		updateStringField(&serie.Banner, show.BackdropPath, overwrite, nil)
+		if updateStringFieldTracked(&serie.Banner, show.BackdropPath, overwrite, nil) {
+			updated |= fieldBanner
+		}
 	}
 
-	if serie.Banner != oldBanner {
-		updatedFields = append(updatedFields, "banner")
+	// Handle external IDs (only update if missing)
+	if applyExternalIDs(serie, show) {
+		updated |= fieldExternalIDs
 	}
 
-	// Update external IDs if we don't have them yet
-	var newIDs []string
+	// Update slug
+	if (serie.Slug == "" || overwrite) && serie.Seriename != "" {
+		newSlug := logger.StringToSlug(serie.Seriename)
+		if serie.Slug != newSlug {
+			serie.Slug = newSlug
+
+			updated |= fieldSlug
+		}
+	}
+
+	return updated
+}
+
+// applyExternalIDs updates missing external IDs and returns true if any were added.
+func applyExternalIDs(serie *database.Dbserie, show *apiexternal_v2.SeriesDetails) bool {
+	var added bool
+
 	if serie.ThetvdbID == 0 && show.TVDbID > 0 {
 		serie.ThetvdbID = show.TVDbID
-
-		newIDs = append(newIDs, "TVDB")
+		added = true
 
 		logger.Logtype("info", 2).
 			Str(logger.StrTitle, serie.Seriename).
-			Str(logger.StrTvdb, strconv.Itoa(show.TVDbID)).
+			Int(logger.StrTvdb, show.TVDbID).
 			Msg("Found TVDB ID from TVmaze")
 	}
 
 	if serie.ImdbID == "" && show.IMDbID != "" {
 		serie.ImdbID = show.IMDbID
-
-		newIDs = append(newIDs, "IMDB")
+		added = true
 
 		logger.Logtype("info", 2).
 			Str(logger.StrTitle, serie.Seriename).
@@ -243,31 +314,32 @@ func serieGetMetadataTvmaze(serie *database.Dbserie, overwrite bool) error {
 			Msg("Found IMDB ID from TVmaze")
 	}
 
-	if len(newIDs) > 0 {
-		updatedFields = append(updatedFields, "external_ids")
+	return added
+}
+
+// buildGenreNamesString builds a comma-separated string of genre names.
+func buildGenreNamesString(genres []apiexternal_v2.Genre) string {
+	if len(genres) == 0 {
+		return ""
 	}
 
-	// Update slug
-	oldSlug := serie.Slug
-	if serie.Slug == "" || overwrite {
-		serie.Slug = logger.StringToSlug(serie.Seriename)
+	// Fast path for single genre
+	if len(genres) == 1 {
+		return genres[0].Name
 	}
 
-	if serie.Slug != oldSlug {
-		updatedFields = append(updatedFields, "slug")
+	bld := logger.PlAddBuffer.Get()
+	defer logger.PlAddBuffer.Put(bld)
+
+	for i, genre := range genres {
+		if i > 0 {
+			bld.WriteByte(',')
+		}
+
+		bld.WriteString(genre.Name)
 	}
 
-	// Log summary of updates
-	if len(updatedFields) > 0 {
-		logger.Logtype("info", 2).
-			Str(logger.StrTitle, serie.Seriename).
-			Str("fields", strings.Join(updatedFields, ",")).
-			Msg("TVmaze metadata updated")
-	} else {
-		logger.Logtype("debug", 1).Str(logger.StrTitle, serie.Seriename).Msg("No TVmaze metadata updates needed")
-	}
-
-	return nil
+	return bld.String()
 }
 
 // getNetworkName extracts network name from TVmaze show data.
@@ -275,5 +347,28 @@ func getNetworkName(show *apiexternal_v2.SeriesDetails) string {
 	if len(show.Networks) > 0 && show.Networks[0].Name != "" {
 		return show.Networks[0].Name
 	}
+
 	return ""
+}
+
+// updateStringField updates a string field and returns true if it was changed.
+// This version returns a boolean to support the fieldTracker pattern.
+func updateStringFieldTracked(
+	field *string,
+	newValue string,
+	overwrite bool,
+	transform func(string) string,
+) bool {
+	if (*field == "" || overwrite) && newValue != "" {
+		oldValue := *field
+		if transform != nil {
+			*field = transform(newValue)
+		} else {
+			*field = newValue
+		}
+
+		return *field != oldValue
+	}
+
+	return false
 }

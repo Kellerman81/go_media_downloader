@@ -115,9 +115,18 @@ func TestCSRFAPIIntegration(t *testing.T) {
 			page        int
 			expectedURL string
 		}{
-			{1, "https://www.vivthomas.com/api/updates?tab=STREAM&page=1&order=DATE&direction=DESC"},
-			{2, "https://www.vivthomas.com/api/updates?tab=STREAM&page=2&order=DATE&direction=DESC"},
-			{10, "https://www.vivthomas.com/api/updates?tab=STREAM&page=10&order=DATE&direction=DESC"},
+			{
+				1,
+				"https://www.vivthomas.com/api/updates?tab=STREAM&page=1&order=DATE&direction=DESC",
+			},
+			{
+				2,
+				"https://www.vivthomas.com/api/updates?tab=STREAM&page=2&order=DATE&direction=DESC",
+			},
+			{
+				10,
+				"https://www.vivthomas.com/api/updates?tab=STREAM&page=10&order=DATE&direction=DESC",
+			},
 		}
 
 		for _, tc := range testCases {
@@ -191,7 +200,7 @@ func TestCSRFAPIIntegration(t *testing.T) {
 
 		// Validate first result structure if available
 		if len(results) > 0 {
-			firstResult, ok := results[0].(map[string]interface{})
+			firstResult, ok := results[0].(map[string]any)
 			if !ok {
 				t.Error("First result is not a map")
 				return
@@ -220,7 +229,7 @@ func TestCSRFAPIIntegration(t *testing.T) {
 	// Test 5: Test JSON field extraction
 	t.Run("JSONFieldExtraction", func(t *testing.T) {
 		// Test extractStringField
-		testObj := map[string]interface{}{
+		testObj := map[string]any{
 			"name":        "Test Title",
 			"path":        "/video/12345",
 			"publishedAt": "2024-03-15T10:30:00Z",
@@ -237,10 +246,10 @@ func TestCSRFAPIIntegration(t *testing.T) {
 		}
 
 		// Test extractActors
-		testObjWithActors := map[string]interface{}{
-			"models": []interface{}{
-				map[string]interface{}{"name": "Actor One"},
-				map[string]interface{}{"name": "Actor Two"},
+		testObjWithActors := map[string]any{
+			"models": []any{
+				map[string]any{"name": "Actor One"},
+				map[string]any{"name": "Actor Two"},
 			},
 		}
 
@@ -257,7 +266,7 @@ func TestCSRFAPIIntegration(t *testing.T) {
 	t.Run("ParseDateFormats", func(t *testing.T) {
 		testCases := []struct {
 			name       string
-			dateVal    interface{}
+			dateVal    any
 			shouldFail bool
 		}{
 			{
@@ -304,7 +313,11 @@ func TestCSRFAPIIntegration(t *testing.T) {
 					return
 				}
 
-				t.Logf("Successfully parsed date: %v -> %s", tc.dateVal, parsed.Format(time.RFC3339))
+				t.Logf(
+					"Successfully parsed date: %v -> %s",
+					tc.dateVal,
+					parsed.Format(time.RFC3339),
+				)
 			})
 		}
 	})
@@ -336,28 +349,53 @@ func TestCSRFAPIIntegration(t *testing.T) {
 			errMsg string
 		}{
 			{
-				name:   "MissingSiteName",
-				config: &Config{StartURL: "https://example.com", SerieName: "test", APIURLPattern: "https://api.example.com/{page}", ResultsArrayPath: "data"},
+				name: "MissingSiteName",
+				config: &Config{
+					StartURL:         "https://example.com",
+					SerieName:        "test",
+					APIURLPattern:    "https://api.example.com/{page}",
+					ResultsArrayPath: "data",
+				},
 				errMsg: "site_name is required",
 			},
 			{
-				name:   "MissingStartURL",
-				config: &Config{SiteName: "test", SerieName: "test", APIURLPattern: "https://api.example.com/{page}", ResultsArrayPath: "data"},
+				name: "MissingStartURL",
+				config: &Config{
+					SiteName:         "test",
+					SerieName:        "test",
+					APIURLPattern:    "https://api.example.com/{page}",
+					ResultsArrayPath: "data",
+				},
 				errMsg: "start_url is required",
 			},
 			{
-				name:   "MissingSerieName",
-				config: &Config{SiteName: "test", StartURL: "https://example.com", APIURLPattern: "https://api.example.com/{page}", ResultsArrayPath: "data"},
+				name: "MissingSerieName",
+				config: &Config{
+					SiteName:         "test",
+					StartURL:         "https://example.com",
+					APIURLPattern:    "https://api.example.com/{page}",
+					ResultsArrayPath: "data",
+				},
 				errMsg: "serie_name is required",
 			},
 			{
-				name:   "MissingAPIURLPattern",
-				config: &Config{SiteName: "test", StartURL: "https://example.com", SerieName: "test", ResultsArrayPath: "data"},
+				name: "MissingAPIURLPattern",
+				config: &Config{
+					SiteName:         "test",
+					StartURL:         "https://example.com",
+					SerieName:        "test",
+					ResultsArrayPath: "data",
+				},
 				errMsg: "api_url_pattern is required",
 			},
 			{
-				name:   "MissingResultsArrayPath",
-				config: &Config{SiteName: "test", StartURL: "https://example.com", SerieName: "test", APIURLPattern: "https://api.example.com/{page}"},
+				name: "MissingResultsArrayPath",
+				config: &Config{
+					SiteName:      "test",
+					StartURL:      "https://example.com",
+					SerieName:     "test",
+					APIURLPattern: "https://api.example.com/{page}",
+				},
 				errMsg: "results_array_path is required",
 			},
 		}
@@ -396,19 +434,31 @@ func TestCSRFAPIIntegration(t *testing.T) {
 
 		// Check defaults
 		if testScraper.config.CSRFCookieName != "_csrf" {
-			t.Errorf("Expected default CSRF cookie name '_csrf', got: %s", testScraper.config.CSRFCookieName)
+			t.Errorf(
+				"Expected default CSRF cookie name '_csrf', got: %s",
+				testScraper.config.CSRFCookieName,
+			)
 		}
 
 		if testScraper.config.CSRFHeaderName != "csrf-token" {
-			t.Errorf("Expected default CSRF header name 'csrf-token', got: %s", testScraper.config.CSRFHeaderName)
+			t.Errorf(
+				"Expected default CSRF header name 'csrf-token', got: %s",
+				testScraper.config.CSRFHeaderName,
+			)
 		}
 
 		if testScraper.config.PageStartIndex != 1 {
-			t.Errorf("Expected default page start index 1, got: %d", testScraper.config.PageStartIndex)
+			t.Errorf(
+				"Expected default page start index 1, got: %d",
+				testScraper.config.PageStartIndex,
+			)
 		}
 
 		if testScraper.config.PaginationStyle != "page" {
-			t.Errorf("Expected default pagination style 'page', got: %s", testScraper.config.PaginationStyle)
+			t.Errorf(
+				"Expected default pagination style 'page', got: %s",
+				testScraper.config.PaginationStyle,
+			)
 		}
 
 		if testScraper.config.WaitSeconds != 2 {
@@ -425,38 +475,38 @@ func TestCSRFAPIIntegration(t *testing.T) {
 	// Test 10: Test runtime field filtering
 	t.Run("RuntimeFieldFiltering", func(t *testing.T) {
 		testCases := []struct {
-			name          string
-			result        map[string]interface{}
-			shouldSkip    bool
-			runtimeField  string
+			name         string
+			result       map[string]any
+			shouldSkip   bool
+			runtimeField string
 		}{
 			{
 				name:         "ValidRuntime",
-				result:       map[string]interface{}{"runtime": 1200},
+				result:       map[string]any{"runtime": 1200},
 				shouldSkip:   false,
 				runtimeField: "runtime",
 			},
 			{
 				name:         "InvalidRuntimeNegative",
-				result:       map[string]interface{}{"runtime": -1},
+				result:       map[string]any{"runtime": -1},
 				shouldSkip:   true,
 				runtimeField: "runtime",
 			},
 			{
 				name:         "InvalidRuntimeString",
-				result:       map[string]interface{}{"runtime": "-1"},
+				result:       map[string]any{"runtime": "-1"},
 				shouldSkip:   true,
 				runtimeField: "runtime",
 			},
 			{
 				name:         "MissingRuntime",
-				result:       map[string]interface{}{},
+				result:       map[string]any{},
 				shouldSkip:   true,
 				runtimeField: "runtime",
 			},
 			{
 				name:         "NoRuntimeCheck",
-				result:       map[string]interface{}{"runtime": -1},
+				result:       map[string]any{"runtime": -1},
 				shouldSkip:   false,
 				runtimeField: "",
 			},
@@ -473,7 +523,11 @@ func TestCSRFAPIIntegration(t *testing.T) {
 				}
 
 				if shouldSkip != tc.shouldSkip {
-					t.Errorf("Expected shouldSkip=%v, got %v for runtime check", tc.shouldSkip, shouldSkip)
+					t.Errorf(
+						"Expected shouldSkip=%v, got %v for runtime check",
+						tc.shouldSkip,
+						shouldSkip,
+					)
 				} else {
 					t.Logf("Runtime filtering correctly determined: skip=%v", shouldSkip)
 				}
@@ -502,27 +556,27 @@ func TestCSRFAPIHelperFunctions(t *testing.T) {
 
 	t.Run("ExtractStringField", func(t *testing.T) {
 		tests := []struct {
-			obj      map[string]interface{}
+			obj      map[string]any
 			field    string
 			expected string
 		}{
 			{
-				obj:      map[string]interface{}{"title": "Test Title"},
+				obj:      map[string]any{"title": "Test Title"},
 				field:    "title",
 				expected: "Test Title",
 			},
 			{
-				obj:      map[string]interface{}{"title": ""},
+				obj:      map[string]any{"title": ""},
 				field:    "title",
 				expected: "",
 			},
 			{
-				obj:      map[string]interface{}{"other": "value"},
+				obj:      map[string]any{"other": "value"},
 				field:    "title",
 				expected: "",
 			},
 			{
-				obj:      map[string]interface{}{"title": 123},
+				obj:      map[string]any{"title": 123},
 				field:    "title",
 				expected: "",
 			},
@@ -540,27 +594,27 @@ func TestCSRFAPIHelperFunctions(t *testing.T) {
 	t.Run("ExtractResults", func(t *testing.T) {
 		tests := []struct {
 			name     string
-			data     map[string]interface{}
+			data     map[string]any
 			expected int
 		}{
 			{
 				name: "ValidResults",
-				data: map[string]interface{}{
-					"results": []interface{}{
-						map[string]interface{}{"id": 1},
-						map[string]interface{}{"id": 2},
+				data: map[string]any{
+					"results": []any{
+						map[string]any{"id": 1},
+						map[string]any{"id": 2},
 					},
 				},
 				expected: 2,
 			},
 			{
 				name:     "MissingResults",
-				data:     map[string]interface{}{},
+				data:     map[string]any{},
 				expected: 0,
 			},
 			{
 				name: "WrongType",
-				data: map[string]interface{}{
+				data: map[string]any{
 					"results": "not an array",
 				},
 				expected: 0,

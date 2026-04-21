@@ -2,7 +2,6 @@ package qbittorrent
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,6 +13,8 @@ import (
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/base"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/goccy/go-json"
 )
 
 //
@@ -108,7 +109,7 @@ func (p *Provider) AddTorrent(
 	}
 
 	if len(request.Tags) > 0 {
-		formData.Set("tags", strings.Join(request.Tags, ","))
+		formData.Set("tags", logger.JoinStringsSep(request.Tags, ","))
 	}
 
 	for k, v := range request.Options {

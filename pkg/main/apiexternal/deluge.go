@@ -39,8 +39,10 @@ func SendToDeluge(
 		if err == nil {
 			return nil
 		}
+
 		// Fall through to legacy client on error
 	}
+
 	// cl := delugeclient.NewV2(delugeclient.Settings{
 	// 	Hostname:             host,
 	// 	Port:                 logger.IntToUint(port),

@@ -3,7 +3,6 @@ package transmission
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -11,6 +10,7 @@ import (
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/base"
+	"github.com/goccy/go-json"
 )
 
 //
@@ -120,8 +120,19 @@ func (p *Provider) GetTorrentInfo(
 	hash string,
 ) (*apiexternal_v2.TorrentInfo, error) {
 	fields := []string{
-		"id", "name", "hashString", "status", "percentDone", "totalSize",
-		"downloadedEver", "uploadedEver", "rateDownload", "rateUpload", "eta", "downloadDir", "addedDate",
+		"id",
+		"name",
+		"hashString",
+		"status",
+		"percentDone",
+		"totalSize",
+		"downloadedEver",
+		"uploadedEver",
+		"rateDownload",
+		"rateUpload",
+		"eta",
+		"downloadDir",
+		"addedDate",
 	}
 
 	args := map[string]any{
@@ -161,8 +172,19 @@ func (p *Provider) ListTorrents(
 	filter string,
 ) (*apiexternal_v2.TorrentListResponse, error) {
 	fields := []string{
-		"id", "name", "hashString", "status", "percentDone", "totalSize",
-		"downloadedEver", "uploadedEver", "rateDownload", "rateUpload", "eta", "downloadDir", "addedDate",
+		"id",
+		"name",
+		"hashString",
+		"status",
+		"percentDone",
+		"totalSize",
+		"downloadedEver",
+		"uploadedEver",
+		"rateDownload",
+		"rateUpload",
+		"eta",
+		"downloadDir",
+		"addedDate",
 	}
 
 	args := map[string]any{
@@ -190,13 +212,16 @@ func (p *Provider) ListTorrents(
 
 	torrents := make([]apiexternal_v2.TorrentInfo, 0, len(torrentsData))
 	for _, data := range torrentsData {
-		if torrentMap, ok := data.(map[string]any); ok {
-			torrent := parseTorrentInfo(torrentMap)
-			// Apply filter if specified
-			if filter == "" ||
-				strings.Contains(strings.ToLower(torrent.State), strings.ToLower(filter)) {
-				torrents = append(torrents, *torrent)
-			}
+		torrentMap, ok := data.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		torrent := parseTorrentInfo(torrentMap)
+		// Apply filter if specified
+		if filter == "" ||
+			strings.Contains(strings.ToLower(torrent.State), strings.ToLower(filter)) {
+			torrents = append(torrents, *torrent)
 		}
 	}
 

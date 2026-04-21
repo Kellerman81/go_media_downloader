@@ -4,12 +4,12 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/antchfx/htmlquery"
 	"golang.org/x/net/html"
@@ -22,16 +22,16 @@ type MovieConfig struct {
 	BaseURL  string
 
 	// XPath selectors for extracting movie data
-	SceneNodeXPath       string // XPath to select each movie container
-	TitleXPath           string // XPath relative to movie node for title
-	YearXPath            string // XPath relative to movie node for year
-	ImdbIDXPath          string // XPath relative to movie node for IMDB ID
-	URLXPath             string // XPath relative to movie node for URL
-	RatingXPath          string // XPath relative to movie node for rating/score
-	GenreXPath           string // XPath relative to movie node for genre(s)
-	ReleaseDateXPath     string // XPath relative to movie node for full release date
-	TitleAttribute       string // Optional: HTML attribute to extract title from
-	URLAttribute         string // Optional: HTML attribute to extract URL from
+	SceneNodeXPath   string // XPath to select each movie container
+	TitleXPath       string // XPath relative to movie node for title
+	YearXPath        string // XPath relative to movie node for year
+	ImdbIDXPath      string // XPath relative to movie node for IMDB ID
+	URLXPath         string // XPath relative to movie node for URL
+	RatingXPath      string // XPath relative to movie node for rating/score
+	GenreXPath       string // XPath relative to movie node for genre(s)
+	ReleaseDateXPath string // XPath relative to movie node for full release date
+	TitleAttribute   string // Optional: HTML attribute to extract title from
+	URLAttribute     string // Optional: HTML attribute to extract URL from
 
 	// Pagination settings
 	PaginationType string // "sequential" (page 1, 2, 3) or "offset" (0, 12, 24)
@@ -62,7 +62,7 @@ type MovieData struct {
 	ReleaseDate string
 }
 
-var imdbIDRegex = regexp.MustCompile(`tt\d{7,}`)
+const reMovieIMDbID = `tt\d{7,}`
 
 // NewMovieScraper creates a new HTML/XPath movie scraper instance.
 func NewMovieScraper(cfg *MovieConfig) (*MovieScraper, error) {
@@ -118,6 +118,7 @@ func NewMovieScraper(cfg *MovieConfig) (*MovieScraper, error) {
 // Scrape executes the scraping process and returns a list of IMDB IDs.
 func (s *MovieScraper) Scrape(ctx context.Context, maxPages int) ([]string, error) {
 	var imdbIDs []string
+
 	seenIDs := make(map[string]bool)
 
 	logger.Logtype("info", 1).
@@ -147,7 +148,7 @@ func (s *MovieScraper) Scrape(ctx context.Context, maxPages int) ([]string, erro
 		maxPages = 10 // Default to 10 pages
 	}
 
-	for page := 0; page < maxPages; page++ {
+	for page := range maxPages {
 		// Build page URL
 		pageNum := s.getPageNumber(page)
 		url := strings.ReplaceAll(s.config.PageURLPattern, "{page}", fmt.Sprintf("%d", pageNum))
@@ -163,6 +164,7 @@ func (s *MovieScraper) Scrape(ctx context.Context, maxPages int) ([]string, erro
 				Err(err).
 				Int("page", page+1).
 				Msg("Failed to scrape page, stopping")
+
 			break
 		}
 
@@ -188,6 +190,7 @@ func (s *MovieScraper) Scrape(ctx context.Context, maxPages int) ([]string, erro
 						Int("year", movies[idx].Year).
 						Str("imdb_id", imdbID).
 						Msg("Found IMDB ID via search")
+
 					imdbIDs = append(imdbIDs, imdbID)
 					seenIDs[imdbID] = true
 				} else {
@@ -292,8 +295,10 @@ func (s *MovieScraper) extractMovieData(node *html.Node) MovieData {
 			if imdbText == "" {
 				imdbText = htmlquery.SelectAttr(imdbNode, "href")
 			}
+
 			// Extract IMDB ID using regex
-			if matches := imdbIDRegex.FindString(imdbText); matches != "" {
+			if matches := database.GetCachedRegexp(reMovieIMDbID).
+				FindString(imdbText); matches != "" {
 				movie.ImdbID = matches
 			}
 		}
@@ -322,6 +327,7 @@ func (s *MovieScraper) extractMovieData(node *html.Node) MovieData {
 	// Extract genre
 	if s.config.GenreXPath != "" {
 		genreNodes := htmlquery.Find(node, s.config.GenreXPath)
+
 		var genres []string
 		for _, gNode := range genreNodes {
 			genre := strings.TrimSpace(htmlquery.InnerText(gNode))
@@ -329,8 +335,9 @@ func (s *MovieScraper) extractMovieData(node *html.Node) MovieData {
 				genres = append(genres, genre)
 			}
 		}
+
 		if len(genres) > 0 {
-			movie.Genre = strings.Join(genres, ", ")
+			movie.Genre = logger.JoinStringsSep(genres, ", ")
 		}
 	}
 
@@ -367,6 +374,7 @@ func (s *MovieScraper) getPageNumber(pageIndex int) int {
 	if s.config.PaginationType == "offset" {
 		return pageIndex * s.config.PageIncrement
 	}
+
 	return pageIndex + 1 // Sequential: 1, 2, 3, ...
 }
 

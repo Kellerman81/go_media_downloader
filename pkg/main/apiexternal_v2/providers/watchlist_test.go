@@ -58,12 +58,9 @@ func TestPlexWatchlist(t *testing.T) {
 
 	if len(watchlist) > 0 {
 		t.Log("\nWatchlist items (showing first 5):")
-		maxItems := 5
-		if len(watchlist) < maxItems {
-			maxItems = len(watchlist)
-		}
+		maxItems := min(len(watchlist), 5)
 
-		for i := 0; i < maxItems; i++ {
+		for i := range maxItems {
 			item := watchlist[i]
 			t.Logf("  [%d] %s (%d)", i+1, item.Title, item.Year)
 			t.Logf("      Type: %s", item.Type)
@@ -134,12 +131,9 @@ func TestJellyfinWatchlist(t *testing.T) {
 
 	if len(watchlist) > 0 {
 		t.Log("\nWatchlist items (showing first 5):")
-		maxItems := 5
-		if len(watchlist) < maxItems {
-			maxItems = len(watchlist)
-		}
+		maxItems := min(len(watchlist), 5)
 
-		for i := 0; i < maxItems; i++ {
+		for i := range maxItems {
 			item := watchlist[i]
 			t.Logf("  [%d] %s (%d)", i+1, item.Title, item.Year)
 			t.Logf("      Type: %s", item.Type)

@@ -51,7 +51,7 @@ func getLogFilePath() (string, error) {
 func performLogAnalysis(
 	logFile, timeRange, logLevel string,
 	maxLines int64,
-	errorPattern, performanceMetrics, accessPattern, systemHealth, includeStackTraces bool,
+	errorPattern, performanceMetrics, accessPattern bool, _, _ bool,
 ) (*LogAnalysisResults, error) {
 	file, err := os.Open(logFile)
 	if err != nil {

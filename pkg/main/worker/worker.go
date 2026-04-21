@@ -13,7 +13,6 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/syncops"
 	"github.com/alitto/pond/v2"
 	"github.com/google/uuid"
-
 	"github.com/robfig/cron/v3"
 )
 
@@ -42,13 +41,13 @@ type Stats struct {
 const (
 	strMsg = "msg"
 
-	// Queue names.
+	// QueueData and related constants are queue names.
 	QueueData   = "Data"
 	QueueFeeds  = "Feeds"
 	QueueSearch = "Search"
 	QueueRSS    = "RSS"
 
-	// Schedule types.
+	// ScheduleTypeCron and related constants are schedule types.
 	ScheduleTypeCron     = "cron"
 	ScheduleTypeInterval = "interval"
 
@@ -59,13 +58,13 @@ const (
 )
 
 var (
-	// workerPoolIndexer is a WorkerPool for executing indexer tasks.
+	// WorkerPoolIndexer is a WorkerPool for executing indexer tasks.
 	WorkerPoolIndexer pond.Pool
 
-	// workerPoolIndexerRSS is a WorkerPool for executing indexer tasks for RSS Searches.
+	// WorkerPoolIndexerRSS is a WorkerPool for executing indexer tasks for RSS Searches.
 	WorkerPoolIndexerRSS pond.Pool
 
-	// workerPoolParse is a WorkerPool for executing parse tasks.
+	// WorkerPoolParse is a WorkerPool for executing parse tasks.
 	WorkerPoolParse pond.Pool
 
 	// workerPoolSearch is a WorkerPool for executing search tasks.
@@ -504,7 +503,12 @@ func addjob(
 		return
 	}
 
-	if err := checkQueueCapacity(workpool.QueueSize(), workpool.WaitingTasks(), queue, name); err != nil {
+	if err := checkQueueCapacity(
+		workpool.QueueSize(),
+		workpool.WaitingTasks(),
+		queue,
+		name,
+	); err != nil {
 		return
 	}
 
@@ -537,14 +541,17 @@ func addjob(
 	// Add to job name index for O(1) lookup
 	syncops.QueueSyncMapAdd(syncops.MapTypeStructEmpty, name, struct{}{}, 0, false, 0)
 
-	if _, ok := workpool.TrySubmitErr(runjobcron(id)); !ok {
-		logger.Logtype("error", 1).
-			Str(logger.StrJob, name).
-			Msg("not queued")
-		cancel() // Cancel context if job submission failed
-		syncops.QueueWorkerMapDelete(syncops.MapTypeQueue, id)
-		syncops.QueueSyncMapDelete(syncops.MapTypeStructEmpty, name)
+	_, ok := workpool.TrySubmitErr(runjobcron(id))
+	if ok {
+		return
 	}
+
+	logger.Logtype("error", 1).
+		Str(logger.StrJob, name).
+		Msg("not queued")
+	cancel() // Cancel context if job submission failed
+	syncops.QueueWorkerMapDelete(syncops.MapTypeQueue, id)
+	syncops.QueueSyncMapDelete(syncops.MapTypeStructEmpty, name)
 }
 
 // checkQueueCapacity validates if a job can be added to a queue based on capacity limits.
@@ -614,6 +621,7 @@ func runjobcron(id uint32) func() error {
 				Msg("Job not found")
 			return errors.New("job not found")
 		}
+
 		defer globalQueueSet.Delete(id)
 
 		s := globalQueueSet.GetVal(id)
@@ -648,33 +656,6 @@ func runjobcron(id uint32) func() error {
 				Str("job", s.JobName).
 				Str("cfgp", s.Cfgpstr).
 				Msg("Cron Job failed")
-		}
-
-		if s.Cfgpstr == "" {
-			if config.GetSettingsGeneral().Jobs[s.JobName] != nil {
-				err = config.GetSettingsGeneral().Jobs[s.JobName](id, s.Ctx)
-			} else {
-				logger.Logtype("error", 2).
-					Str("job", s.JobName).
-					Str("cfgp", s.Cfgpstr).
-					Msg("Cron Job not found")
-			}
-		} else {
-			if config.GetSettingsMedia(s.Cfgpstr) == nil {
-				logger.Logtype("error", 2).
-					Str("job", s.JobName).
-					Str("cfgp", s.Cfgpstr).
-					Msg("Cron Job Config not found")
-			} else {
-				if config.GetSettingsMedia(s.Cfgpstr).Jobs[s.JobName] != nil {
-					err = config.GetSettingsMedia(s.Cfgpstr).Jobs[s.JobName](id, s.Ctx)
-				} else {
-					logger.Logtype("error", 2).
-						Str("job", s.JobName).
-						Str("cfgp", s.Cfgpstr).
-						Msg("Cron Job not found")
-				}
-			}
 		}
 
 		return err
@@ -823,7 +804,12 @@ func Dispatch(name string, fn func(uint32, context.Context) error, queue string)
 		Uint64("waiting_tasks", workpool.WaitingTasks()).
 		Msg("Dispatch: Got workpool")
 
-	if err := checkQueueCapacity(workpool.QueueSize(), workpool.WaitingTasks(), queue, name); err != nil {
+	if err := checkQueueCapacity(
+		workpool.QueueSize(),
+		workpool.WaitingTasks(),
+		queue,
+		name,
+	); err != nil {
 		return err
 	}
 

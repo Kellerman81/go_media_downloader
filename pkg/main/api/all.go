@@ -9,7 +9,7 @@ import (
 	gin "github.com/gin-gonic/gin"
 )
 
-// Redundant structs removed - using StandardResponse from common.go instead.
+// JSONNaming holds media parse info with folder and filename context.
 type JSONNaming struct {
 	M          database.ParseInfo `json:"m"`
 	Foldername string             `json:"foldername"`
@@ -48,8 +48,7 @@ func AddAllRoutes(rg *gin.RouterGroup) {
 // @Failure      401  {object}  Jsonerror
 // @Router       /api/all/feeds [get].
 func apiAllGetFeeds(c *gin.Context) {
-	utils.MoviesAllJobs(logger.StrFeeds, true)
-	utils.SeriesAllJobs(logger.StrFeeds, true)
+	utils.AllJobs(utils.MediaTypeAll, logger.StrFeeds, true)
 	sendSuccess(c, StrOK)
 }
 
@@ -61,8 +60,7 @@ func apiAllGetFeeds(c *gin.Context) {
 // @Failure      401  {object}  Jsonerror
 // @Router       /api/all/data [get].
 func apiAllGetData(c *gin.Context) {
-	utils.MoviesAllJobs("data", true)
-	utils.SeriesAllJobs("data", true)
+	utils.AllJobs(utils.MediaTypeAll, "data", true)
 	sendSuccess(c, StrOK)
 }
 
@@ -74,8 +72,7 @@ func apiAllGetData(c *gin.Context) {
 // @Failure      401  {object}  Jsonerror
 // @Router       /api/all/search/rss [get].
 func apiAllGetRss(c *gin.Context) {
-	utils.MoviesAllJobs(logger.StrRss, true)
-	utils.SeriesAllJobs(logger.StrRss, true)
+	utils.AllJobs(utils.MediaTypeAll, logger.StrRss, true)
 	sendSuccess(c, StrOK)
 }
 
@@ -87,8 +84,7 @@ func apiAllGetRss(c *gin.Context) {
 // @Failure      401  {object}  Jsonerror
 // @Router       /api/all/search/missing/full [get].
 func apiAllGetMissingFull(c *gin.Context) {
-	utils.MoviesAllJobs(logger.StrSearchMissingFull, true)
-	utils.SeriesAllJobs(logger.StrSearchMissingFull, true)
+	utils.AllJobs(utils.MediaTypeAll, logger.StrSearchMissingFull, true)
 	sendSuccess(c, StrOK)
 }
 
@@ -100,8 +96,7 @@ func apiAllGetMissingFull(c *gin.Context) {
 // @Failure      401  {object}  Jsonerror
 // @Router       /api/all/search/missing/inc [get].
 func apiAllGetMissingInc(c *gin.Context) {
-	utils.MoviesAllJobs(logger.StrSearchMissingInc, true)
-	utils.SeriesAllJobs(logger.StrSearchMissingInc, true)
+	utils.AllJobs(utils.MediaTypeAll, logger.StrSearchMissingInc, true)
 	sendSuccess(c, StrOK)
 }
 
@@ -113,8 +108,7 @@ func apiAllGetMissingInc(c *gin.Context) {
 // @Failure      401  {object}  Jsonerror
 // @Router       /api/all/search/upgrade/full [get].
 func apiAllGetUpgradeFull(c *gin.Context) {
-	utils.MoviesAllJobs(logger.StrSearchUpgradeFull, true)
-	utils.SeriesAllJobs(logger.StrSearchUpgradeFull, true)
+	utils.AllJobs(utils.MediaTypeAll, logger.StrSearchUpgradeFull, true)
 	sendSuccess(c, StrOK)
 }
 
@@ -126,8 +120,7 @@ func apiAllGetUpgradeFull(c *gin.Context) {
 // @Failure      401  {object}  Jsonerror
 // @Router       /api/all/search/upgrade/inc [get].
 func apiAllGetUpgradeInc(c *gin.Context) {
-	utils.MoviesAllJobs(logger.StrSearchUpgradeInc, true)
-	utils.SeriesAllJobs(logger.StrSearchUpgradeInc, true)
+	utils.AllJobs(utils.MediaTypeAll, logger.StrSearchUpgradeInc, true)
 	sendSuccess(c, StrOK)
 }
 

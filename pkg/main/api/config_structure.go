@@ -598,7 +598,16 @@ func HandleFolderStructure(c *gin.Context) {
 		organizationResults, err = previewFolderOrganization(ctx, folderPath)
 	} else {
 		// Actual organization
-		organizationResults, err = organizeFolderWithResults(ctx, folderPath, mediaTypeConfig, dataImportConfig, defaultTemplate, checkRuntime, deleteWrongLanguage, manualID)
+		organizationResults, err = organizeFolderWithResults(
+			ctx,
+			folderPath,
+			mediaTypeConfig,
+			dataImportConfig,
+			defaultTemplate,
+			checkRuntime,
+			deleteWrongLanguage,
+			manualID,
+		)
 	}
 
 	if err != nil {
@@ -708,6 +717,7 @@ func renderFolderStructureResults(result map[string]any) string {
 						if manualID > 0 {
 							return fmt.Sprintf("%d", manualID)
 						}
+
 						return "Auto-detect"
 					}())),
 				),
@@ -715,6 +725,7 @@ func renderFolderStructureResults(result map[string]any) string {
 					if dryRun {
 						return "Preview (Dry Run)"
 					}
+
 					return "Actual Organization"
 				}()))),
 			),
@@ -809,10 +820,7 @@ func renderFolderStructureResults(result map[string]any) string {
 		)
 
 		// Show first 20 operations, with option to show more
-		maxDisplay := len(organizationResults.FileOperations)
-		if maxDisplay > 20 {
-			maxDisplay = 20
-		}
+		maxDisplay := min(len(organizationResults.FileOperations), 20)
 
 		var operationItems []gomponents.Node
 		for i := range maxDisplay {

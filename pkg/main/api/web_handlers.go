@@ -23,6 +23,7 @@ func apiAdminDropdownData(ctx *gin.Context) {
 	if !ok {
 		return
 	}
+
 	// Handle both GET and POST parameters
 	var search, page, idLookup string
 	if ctx.Request.Method == "POST" {
@@ -59,6 +60,7 @@ func apiAdminDropdownData(ctx *gin.Context) {
 				return
 			}
 		}
+
 		// If ID lookup fails, return empty result
 		sendSelect2Response(ctx, []map[string]any{}, false)
 
@@ -117,6 +119,79 @@ func apiAdminDropdownData(ctx *gin.Context) {
 
 		case "qualities":
 			searchFilter = " WHERE name LIKE ?"
+
+			searchArgs = append(searchArgs, "%"+search+"%")
+
+		// Book tables
+		case "dbbooks":
+			searchFilter = " WHERE title LIKE ?"
+
+			searchArgs = append(searchArgs, "%"+search+"%")
+
+		case "dbauthors":
+			searchFilter = " WHERE name LIKE ?"
+
+			searchArgs = append(searchArgs, "%"+search+"%")
+
+		case "dbbook_series":
+			searchFilter = " WHERE name LIKE ?"
+
+			searchArgs = append(searchArgs, "%"+search+"%")
+
+		case "books":
+			searchFilter = " WHERE dbbooks.title LIKE ?"
+
+			searchArgs = append(searchArgs, "%"+search+"%")
+
+		case "authors":
+			searchFilter = " WHERE dbauthors.name LIKE ?"
+
+			searchArgs = append(searchArgs, "%"+search+"%")
+
+		case "book_series":
+			searchFilter = " WHERE dbbook_series.name LIKE ?"
+
+			searchArgs = append(searchArgs, "%"+search+"%")
+
+		// Audiobook tables
+		case "dbaudiobooks":
+			searchFilter = " WHERE title LIKE ?"
+
+			searchArgs = append(searchArgs, "%"+search+"%")
+
+		case "dbnarrators":
+			searchFilter = " WHERE name LIKE ?"
+
+			searchArgs = append(searchArgs, "%"+search+"%")
+
+		case "audiobooks":
+			searchFilter = " WHERE dbaudiobooks.title LIKE ?"
+
+			searchArgs = append(searchArgs, "%"+search+"%")
+
+		// Music tables
+		case "dbalbums":
+			searchFilter = " WHERE title LIKE ?"
+
+			searchArgs = append(searchArgs, "%"+search+"%")
+
+		case "dbartists":
+			searchFilter = " WHERE name LIKE ?"
+
+			searchArgs = append(searchArgs, "%"+search+"%")
+
+		case "dbtracks":
+			searchFilter = " WHERE title LIKE ?"
+
+			searchArgs = append(searchArgs, "%"+search+"%")
+
+		case "artists":
+			searchFilter = " WHERE dbartists.name LIKE ?"
+
+			searchArgs = append(searchArgs, "%"+search+"%")
+
+		case "albums":
+			searchFilter = " WHERE dbalbums.title LIKE ?"
 
 			searchArgs = append(searchArgs, "%"+search+"%")
 
@@ -397,6 +472,291 @@ func apiAdminDropdownData(ctx *gin.Context) {
 				options = append(options, createSelect2OptionString(profile.Str1, profile.Str1))
 			}
 		}
+
+	// Book tables
+	case "dbbooks":
+		query := fmt.Sprintf(
+			"SELECT title, id FROM dbbooks%s ORDER BY title LIMIT ? OFFSET ?",
+			searchFilter,
+		)
+		books := database.GetrowsN[database.DbstaticOneStringOneInt](
+			false,
+			uint(pageSize+1),
+			query,
+			searchArgs...)
+
+		hasMore = len(books) > pageSize
+		if hasMore {
+			books = books[:pageSize]
+		}
+
+		for _, book := range books {
+			options = append(options, createSelect2Option(book.Num, book.Str))
+		}
+
+	case "dbauthors":
+		query := fmt.Sprintf(
+			"SELECT name, id FROM dbauthors%s ORDER BY name LIMIT ? OFFSET ?",
+			searchFilter,
+		)
+		authors := database.GetrowsN[database.DbstaticOneStringOneInt](
+			false,
+			uint(pageSize+1),
+			query,
+			searchArgs...)
+
+		hasMore = len(authors) > pageSize
+		if hasMore {
+			authors = authors[:pageSize]
+		}
+
+		for _, author := range authors {
+			options = append(options, createSelect2Option(author.Num, author.Str))
+		}
+
+	case "books":
+		query := fmt.Sprintf(
+			"SELECT dbbooks.title || ' - ' || books.listname, books.id FROM books LEFT JOIN dbbooks ON books.dbbook_id = dbbooks.id%s ORDER BY dbbooks.title LIMIT ? OFFSET ?",
+			searchFilter,
+		)
+		books := database.GetrowsN[database.DbstaticOneStringOneInt](
+			false,
+			uint(pageSize+1),
+			query,
+			searchArgs...)
+
+		hasMore = len(books) > pageSize
+		if hasMore {
+			books = books[:pageSize]
+		}
+
+		for _, book := range books {
+			options = append(options, createSelect2Option(book.Num, book.Str))
+		}
+
+	// Audiobook tables
+	case "dbaudiobooks":
+		query := fmt.Sprintf(
+			"SELECT title, id FROM dbaudiobooks%s ORDER BY title LIMIT ? OFFSET ?",
+			searchFilter,
+		)
+		audiobooks := database.GetrowsN[database.DbstaticOneStringOneInt](
+			false,
+			uint(pageSize+1),
+			query,
+			searchArgs...)
+
+		hasMore = len(audiobooks) > pageSize
+		if hasMore {
+			audiobooks = audiobooks[:pageSize]
+		}
+
+		for _, audiobook := range audiobooks {
+			options = append(options, createSelect2Option(audiobook.Num, audiobook.Str))
+		}
+
+	case "dbnarrators":
+		query := fmt.Sprintf(
+			"SELECT name, id FROM dbnarrators%s ORDER BY name LIMIT ? OFFSET ?",
+			searchFilter,
+		)
+		narrators := database.GetrowsN[database.DbstaticOneStringOneInt](
+			false,
+			uint(pageSize+1),
+			query,
+			searchArgs...)
+
+		hasMore = len(narrators) > pageSize
+		if hasMore {
+			narrators = narrators[:pageSize]
+		}
+
+		for _, narrator := range narrators {
+			options = append(options, createSelect2Option(narrator.Num, narrator.Str))
+		}
+
+	case "audiobooks":
+		query := fmt.Sprintf(
+			"SELECT dbaudiobooks.title || ' - ' || audiobooks.listname, audiobooks.id FROM audiobooks LEFT JOIN dbaudiobooks ON audiobooks.dbaudiobook_id = dbaudiobooks.id%s ORDER BY dbaudiobooks.title LIMIT ? OFFSET ?",
+			searchFilter,
+		)
+		audiobooks := database.GetrowsN[database.DbstaticOneStringOneInt](
+			false,
+			uint(pageSize+1),
+			query,
+			searchArgs...)
+
+		hasMore = len(audiobooks) > pageSize
+		if hasMore {
+			audiobooks = audiobooks[:pageSize]
+		}
+
+		for _, audiobook := range audiobooks {
+			options = append(options, createSelect2Option(audiobook.Num, audiobook.Str))
+		}
+
+	// Music tables
+	case "dbalbums":
+		query := fmt.Sprintf(
+			"SELECT title, id FROM dbalbums%s ORDER BY title LIMIT ? OFFSET ?",
+			searchFilter,
+		)
+		albums := database.GetrowsN[database.DbstaticOneStringOneInt](
+			false,
+			uint(pageSize+1),
+			query,
+			searchArgs...)
+
+		hasMore = len(albums) > pageSize
+		if hasMore {
+			albums = albums[:pageSize]
+		}
+
+		for _, album := range albums {
+			options = append(options, createSelect2Option(album.Num, album.Str))
+		}
+
+	case "dbartists":
+		query := fmt.Sprintf(
+			"SELECT name, id FROM dbartists%s ORDER BY name LIMIT ? OFFSET ?",
+			searchFilter,
+		)
+		artists := database.GetrowsN[database.DbstaticOneStringOneInt](
+			false,
+			uint(pageSize+1),
+			query,
+			searchArgs...)
+
+		hasMore = len(artists) > pageSize
+		if hasMore {
+			artists = artists[:pageSize]
+		}
+
+		for _, artist := range artists {
+			options = append(options, createSelect2Option(artist.Num, artist.Str))
+		}
+
+	case "albums":
+		query := fmt.Sprintf(
+			"SELECT dbalbums.title || ' - ' || albums.listname, albums.id FROM albums LEFT JOIN dbalbums ON albums.dbalbum_id = dbalbums.id%s ORDER BY dbalbums.title LIMIT ? OFFSET ?",
+			searchFilter,
+		)
+		albums := database.GetrowsN[database.DbstaticOneStringOneInt](
+			false,
+			uint(pageSize+1),
+			query,
+			searchArgs...)
+
+		hasMore = len(albums) > pageSize
+		if hasMore {
+			albums = albums[:pageSize]
+		}
+
+		for _, album := range albums {
+			options = append(options, createSelect2Option(album.Num, album.Str))
+		}
+
+	// Additional book tables
+	case "dbbook_series":
+		query := fmt.Sprintf(
+			"SELECT name, id FROM dbbook_series%s ORDER BY name LIMIT ? OFFSET ?",
+			searchFilter,
+		)
+		series := database.GetrowsN[database.DbstaticOneStringOneInt](
+			false,
+			uint(pageSize+1),
+			query,
+			searchArgs...)
+
+		hasMore = len(series) > pageSize
+		if hasMore {
+			series = series[:pageSize]
+		}
+
+		for _, s := range series {
+			options = append(options, createSelect2Option(s.Num, s.Str))
+		}
+
+	case "authors":
+		query := fmt.Sprintf(
+			"SELECT dbauthors.name || ' - ' || authors.listname, authors.id FROM authors LEFT JOIN dbauthors ON authors.dbauthor_id = dbauthors.id%s ORDER BY dbauthors.name LIMIT ? OFFSET ?",
+			searchFilter,
+		)
+		authors := database.GetrowsN[database.DbstaticOneStringOneInt](
+			false,
+			uint(pageSize+1),
+			query,
+			searchArgs...)
+
+		hasMore = len(authors) > pageSize
+		if hasMore {
+			authors = authors[:pageSize]
+		}
+
+		for _, author := range authors {
+			options = append(options, createSelect2Option(author.Num, author.Str))
+		}
+
+	case "book_series":
+		query := fmt.Sprintf(
+			"SELECT dbbook_series.name || ' - ' || book_series.listname, book_series.id FROM book_series LEFT JOIN dbbook_series ON book_series.dbbook_series_id = dbbook_series.id%s ORDER BY dbbook_series.name LIMIT ? OFFSET ?",
+			searchFilter,
+		)
+		series := database.GetrowsN[database.DbstaticOneStringOneInt](
+			false,
+			uint(pageSize+1),
+			query,
+			searchArgs...)
+
+		hasMore = len(series) > pageSize
+		if hasMore {
+			series = series[:pageSize]
+		}
+
+		for _, s := range series {
+			options = append(options, createSelect2Option(s.Num, s.Str))
+		}
+
+	// Additional music tables
+	case "dbtracks":
+		query := fmt.Sprintf(
+			"SELECT title, id FROM dbtracks%s ORDER BY track_number LIMIT ? OFFSET ?",
+			searchFilter,
+		)
+		tracks := database.GetrowsN[database.DbstaticOneStringOneInt](
+			false,
+			uint(pageSize+1),
+			query,
+			searchArgs...)
+
+		hasMore = len(tracks) > pageSize
+		if hasMore {
+			tracks = tracks[:pageSize]
+		}
+
+		for _, track := range tracks {
+			options = append(options, createSelect2Option(track.Num, track.Str))
+		}
+
+	case "artists":
+		query := fmt.Sprintf(
+			"SELECT dbartists.name || ' - ' || artists.listname, artists.id FROM artists LEFT JOIN dbartists ON artists.dbartist_id = dbartists.id%s ORDER BY dbartists.name LIMIT ? OFFSET ?",
+			searchFilter,
+		)
+		artists := database.GetrowsN[database.DbstaticOneStringOneInt](
+			false,
+			uint(pageSize+1),
+			query,
+			searchArgs...)
+
+		hasMore = len(artists) > pageSize
+		if hasMore {
+			artists = artists[:pageSize]
+		}
+
+		for _, artist := range artists {
+			options = append(options, createSelect2Option(artist.Num, artist.Str))
+		}
 	}
 
 	// Return Select2 compatible JSON response
@@ -620,6 +980,64 @@ func apiAdminTableDataJson(ctx *gin.Context) {
 		countTable = "movie_histories"
 	case "serie_episode_histories":
 		countTable = "serie_episode_histories"
+
+	// Book tables
+	case "dbbooks":
+		countTable = "dbbooks"
+	case "dbauthors":
+		countTable = "dbauthors"
+	case "dbbook_titles":
+		countTable = "dbbook_titles"
+	case "dbbook_series":
+		countTable = "dbbook_series"
+	case "books":
+		countTable = "books"
+	case "book_files":
+		countTable = "book_files"
+	case "authors":
+		countTable = "authors"
+	case "book_series":
+		countTable = "book_series"
+	case "book_file_unmatcheds":
+		countTable = "book_file_unmatcheds"
+	case "book_histories":
+		countTable = "book_histories"
+
+	// Audiobook tables
+	case "dbaudiobooks":
+		countTable = "dbaudiobooks"
+	case "dbnarrators":
+		countTable = "dbnarrators"
+	case "dbaudiobook_titles":
+		countTable = "dbaudiobook_titles"
+	case "audiobooks":
+		countTable = "audiobooks"
+	case "audiobook_files":
+		countTable = "audiobook_files"
+	case "audiobook_file_unmatcheds":
+		countTable = "audiobook_file_unmatcheds"
+	case "audiobook_histories":
+		countTable = "audiobook_histories"
+
+	// Music tables
+	case "dbalbums":
+		countTable = "dbalbums"
+	case "dbartists":
+		countTable = "dbartists"
+	case "dbalbum_titles":
+		countTable = "dbalbum_titles"
+	case "dbtracks":
+		countTable = "dbtracks"
+	case "albums":
+		countTable = "albums"
+	case "album_files":
+		countTable = "album_files"
+	case "artists":
+		countTable = "artists"
+	case "album_file_unmatcheds":
+		countTable = "album_file_unmatcheds"
+	case "album_histories":
+		countTable = "album_histories"
 	}
 
 	database.Scanrowsdyn(false, "select Count(*) as frequency FROM "+countTable, &total)
@@ -643,6 +1061,7 @@ func apiAdminTableDataJson(ctx *gin.Context) {
 			if tabledefault.DefaultQuery != "" {
 				// Trim both " where " and " WHERE " prefixes (case insensitive)
 				queryCondition := strings.TrimSpace(tabledefault.DefaultQuery)
+
 				queryCondition = strings.TrimPrefix(queryCondition, "WHERE ")
 				queryCondition = strings.TrimPrefix(queryCondition, "where ")
 				conditions = append(
@@ -696,7 +1115,14 @@ func apiAdminTableDataJson(ctx *gin.Context) {
 
 		return
 	} else {
-		data := database.GetrowsType(tabledefault.Object, false, 1000, "select "+tabledefault.DefaultColumns+" from "+tabledefault.Table+" "+orderby+" LIMIT ?, ?", start, size)
+		data := database.GetrowsType(
+			tabledefault.Object,
+			false,
+			1000,
+			"select "+tabledefault.DefaultColumns+" from "+tabledefault.Table+" "+orderby+" LIMIT ?, ?",
+			start,
+			size,
+		)
 		retdata := make([][]string, 0, len(data))
 
 		splitted := strings.Split(tabledefault.DefaultColumns, ",")
@@ -1162,6 +1588,684 @@ func apiAdminTableDataEditForm(ctx *gin.Context) {
 			"priority":   quality.Priority,
 			"regexgroup": quality.Regexgroup,
 			"use_regex":  quality.UseRegex,
+		}
+
+	// Book tables
+	case "dbbooks":
+		book, err := database.Structscan[database.Dbbook](
+			"SELECT id, title, original_title, isbn_13, isbn_10, asin, openlibrary_id, goodreads_id, description, publisher, publish_date, page_count, language, genres, cover_url, dbauthor_id, dbbook_series_id, series_position, average_rating, ratings_count, year, slug, created_at, updated_at FROM dbbooks WHERE ID = ?",
+			false,
+			id,
+		)
+		if err != nil {
+			sendBadRequest(ctx, err.Error())
+			return
+		}
+
+		rowMap = map[string]any{
+			"id":               book.ID,
+			"title":            book.Title,
+			"original_title":   book.OriginalTitle,
+			"isbn_13":          book.ISBN13,
+			"isbn_10":          book.ISBN10,
+			"asin":             book.ASIN,
+			"openlibrary_id":   book.OpenlibraryID,
+			"goodreads_id":     book.GoodreadsID,
+			"description":      book.Description,
+			"publisher":        book.Publisher,
+			"publish_date":     book.PublishDate.Time,
+			"page_count":       book.PageCount,
+			"language":         book.Language,
+			"genres":           book.Genres,
+			"cover_url":        book.CoverURL,
+			"dbauthor_id":      book.DbauthorID,
+			"dbbook_series_id": book.DbbookSeriesID,
+			"series_position":  book.SeriesPosition,
+			"average_rating":   book.AverageRating,
+			"ratings_count":    book.RatingsCount,
+			"year":             book.Year,
+			"slug":             book.Slug,
+			"created_at":       book.CreatedAt,
+			"updated_at":       book.UpdatedAt,
+		}
+
+	case "dbauthors":
+		author, err := database.Structscan[database.Dbauthor](
+			"SELECT id, name, aliases, bio, birth_date, death_date, goodreads_id, openlibrary_id, website, image_url, created_at, updated_at FROM dbauthors WHERE ID = ?",
+			false,
+			id,
+		)
+		if err != nil {
+			sendBadRequest(ctx, err.Error())
+			return
+		}
+
+		rowMap = map[string]any{
+			"id":             author.ID,
+			"name":           author.Name,
+			"aliases":        author.Aliases,
+			"bio":            author.Bio,
+			"birth_date":     author.BirthDate,
+			"death_date":     author.DeathDate,
+			"goodreads_id":   author.GoodreadsID,
+			"openlibrary_id": author.OpenlibraryID,
+			"website":        author.Website,
+			"image_url":      author.ImageURL,
+			"created_at":     author.CreatedAt,
+			"updated_at":     author.UpdatedAt,
+		}
+
+	case "dbbook_titles":
+		bookTitle, err := database.Structscan[database.DbbookTitle](
+			"SELECT id, title, slug, region, dbbook_id, created_at, updated_at FROM dbbook_titles WHERE ID = ?",
+			false,
+			id,
+		)
+		if err != nil {
+			sendBadRequest(ctx, err.Error())
+			return
+		}
+
+		rowMap = map[string]any{
+			"id":         bookTitle.ID,
+			"title":      bookTitle.Title,
+			"slug":       bookTitle.Slug,
+			"region":     bookTitle.Region,
+			"dbbook_id":  bookTitle.DbbookID,
+			"created_at": bookTitle.CreatedAt,
+			"updated_at": bookTitle.UpdatedAt,
+		}
+
+	case "dbbook_series":
+		bookSeries, err := database.Structscan[database.DbbookSeries](
+			"SELECT id, name, description, goodreads_id, openlibrary_id, created_at, updated_at FROM dbbook_series WHERE ID = ?",
+			false,
+			id,
+		)
+		if err != nil {
+			sendBadRequest(ctx, err.Error())
+			return
+		}
+
+		rowMap = map[string]any{
+			"id":             bookSeries.ID,
+			"name":           bookSeries.Name,
+			"description":    bookSeries.Description,
+			"goodreads_id":   bookSeries.GoodreadsID,
+			"openlibrary_id": bookSeries.OpenlibraryID,
+			"created_at":     bookSeries.CreatedAt,
+			"updated_at":     bookSeries.UpdatedAt,
+		}
+
+	case "books":
+		book, err := database.Structscan[database.Book](
+			"SELECT id, quality_profile, listname, rootpath, lastscan, created_at, updated_at, dbbook_id, book_series_id, author_id, blacklisted, quality_reached, missing, dont_upgrade, dont_search FROM books WHERE ID = ?",
+			false,
+			id,
+		)
+		if err != nil {
+			sendBadRequest(ctx, err.Error())
+			return
+		}
+
+		rowMap = map[string]any{
+			"id":              book.ID,
+			"quality_profile": book.QualityProfile,
+			"listname":        book.Listname,
+			"rootpath":        book.Rootpath,
+			"lastscan":        book.Lastscan.Time,
+			"created_at":      book.CreatedAt,
+			"updated_at":      book.UpdatedAt,
+			"dbbook_id":       book.DbbookID,
+			"book_series_id":  book.BookSeriesID,
+			"author_id":       book.AuthorID,
+			"blacklisted":     book.Blacklisted,
+			"quality_reached": book.QualityReached,
+			"missing":         book.Missing,
+			"dont_upgrade":    book.DontUpgrade,
+			"dont_search":     book.DontSearch,
+		}
+
+	case "book_files":
+		bookFile, err := database.Structscan[database.BookFile](
+			"SELECT id, location, filename, extension, format, quality_profile, created_at, updated_at, book_id, dbbook_id, file_size FROM book_files WHERE ID = ?",
+			false,
+			id,
+		)
+		if err != nil {
+			sendBadRequest(ctx, err.Error())
+			return
+		}
+
+		rowMap = map[string]any{
+			"id":              bookFile.ID,
+			"location":        bookFile.Location,
+			"filename":        bookFile.Filename,
+			"extension":       bookFile.Extension,
+			"format":          bookFile.Format,
+			"quality_profile": bookFile.QualityProfile,
+			"created_at":      bookFile.CreatedAt,
+			"updated_at":      bookFile.UpdatedAt,
+			"book_id":         bookFile.BookID,
+			"dbbook_id":       bookFile.DbbookID,
+			"file_size":       bookFile.FileSize,
+		}
+
+	case "authors":
+		author, err := database.Structscan[database.Author](
+			"SELECT id, listname, track_mode, created_at, updated_at, dbauthor_id, dont_search FROM authors WHERE ID = ?",
+			false,
+			id,
+		)
+		if err != nil {
+			sendBadRequest(ctx, err.Error())
+			return
+		}
+
+		rowMap = map[string]any{
+			"id":          author.ID,
+			"listname":    author.Listname,
+			"track_mode":  author.TrackMode,
+			"created_at":  author.CreatedAt,
+			"updated_at":  author.UpdatedAt,
+			"dbauthor_id": author.DbauthorID,
+			"dont_search": author.DontSearch,
+		}
+
+	case "book_series":
+		bookSeries, err := database.Structscan[database.BookSeries](
+			"SELECT id, listname, created_at, updated_at, dbbook_series_id, author_id, dont_search FROM book_series WHERE ID = ?",
+			false,
+			id,
+		)
+		if err != nil {
+			sendBadRequest(ctx, err.Error())
+			return
+		}
+
+		rowMap = map[string]any{
+			"id":               bookSeries.ID,
+			"listname":         bookSeries.Listname,
+			"created_at":       bookSeries.CreatedAt,
+			"updated_at":       bookSeries.UpdatedAt,
+			"dbbook_series_id": bookSeries.DbbookSeriesID,
+			"author_id":        bookSeries.AuthorID,
+			"dont_search":      bookSeries.DontSearch,
+		}
+
+	case "book_file_unmatcheds":
+		bookFileUnmatched, err := database.Structscan[database.BookFileUnmatched](
+			"SELECT id, listname, filepath, parsed_data, last_checked, created_at, updated_at FROM book_file_unmatcheds WHERE ID = ?",
+			false,
+			id,
+		)
+		if err != nil {
+			sendBadRequest(ctx, err.Error())
+			return
+		}
+
+		rowMap = map[string]any{
+			"id":           bookFileUnmatched.ID,
+			"listname":     bookFileUnmatched.Listname,
+			"filepath":     bookFileUnmatched.Filepath,
+			"parsed_data":  bookFileUnmatched.ParsedData,
+			"last_checked": bookFileUnmatched.LastChecked.Time,
+			"created_at":   bookFileUnmatched.CreatedAt,
+			"updated_at":   bookFileUnmatched.UpdatedAt,
+		}
+
+	case "book_histories":
+		bookHistory, err := database.Structscan[database.BookHistory](
+			"SELECT id, title, url, indexer, type, target, quality_profile, created_at, updated_at, downloaded_at, book_id, dbbook_id, blacklisted FROM book_histories WHERE ID = ?",
+			false,
+			id,
+		)
+		if err != nil {
+			sendBadRequest(ctx, err.Error())
+			return
+		}
+
+		rowMap = map[string]any{
+			"id":              bookHistory.ID,
+			"title":           bookHistory.Title,
+			"url":             bookHistory.URL,
+			"indexer":         bookHistory.Indexer,
+			"type":            bookHistory.HistoryType,
+			"target":          bookHistory.Target,
+			"quality_profile": bookHistory.QualityProfile,
+			"created_at":      bookHistory.CreatedAt,
+			"updated_at":      bookHistory.UpdatedAt,
+			"downloaded_at":   bookHistory.DownloadedAt,
+			"book_id":         bookHistory.BookID,
+			"dbbook_id":       bookHistory.DbbookID,
+			"blacklisted":     bookHistory.Blacklisted,
+		}
+
+	// Audiobook tables
+	case "dbaudiobooks":
+		audiobook, err := database.Structscan[database.Dbaudiobook](
+			"SELECT id, title, asin, audible_id, runtime_minutes, chapter_count, release_date, publisher, language, abridged, cover_url, sample_url, average_rating, ratings_count, year, slug, dbbook_id, description, created_at, updated_at FROM dbaudiobooks WHERE ID = ?",
+			false,
+			id,
+		)
+		if err != nil {
+			sendBadRequest(ctx, err.Error())
+			return
+		}
+
+		rowMap = map[string]any{
+			"id":              audiobook.ID,
+			"title":           audiobook.Title,
+			"asin":            audiobook.ASIN,
+			"audible_id":      audiobook.AudibleID,
+			"runtime_minutes": audiobook.RuntimeMinutes,
+			"chapter_count":   audiobook.ChapterCount,
+			"release_date":    audiobook.ReleaseDate.Time,
+			"publisher":       audiobook.Publisher,
+			"language":        audiobook.Language,
+			"abridged":        audiobook.Abridged,
+			"cover_url":       audiobook.CoverURL,
+			"sample_url":      audiobook.SampleURL,
+			"average_rating":  audiobook.AverageRating,
+			"ratings_count":   audiobook.RatingsCount,
+			"year":            audiobook.Year,
+			"slug":            audiobook.Slug,
+			"dbbook_id":       audiobook.DbbookID,
+			"description":     audiobook.Description,
+			"created_at":      audiobook.CreatedAt,
+			"updated_at":      audiobook.UpdatedAt,
+		}
+
+	case "dbnarrators":
+		narrator, err := database.Structscan[database.Dbnarrator](
+			"SELECT id, name, audible_id, bio, image_url, created_at, updated_at FROM dbnarrators WHERE ID = ?",
+			false,
+			id,
+		)
+		if err != nil {
+			sendBadRequest(ctx, err.Error())
+			return
+		}
+
+		rowMap = map[string]any{
+			"id":         narrator.ID,
+			"name":       narrator.Name,
+			"audible_id": narrator.AudibleID,
+			"bio":        narrator.Bio,
+			"image_url":  narrator.ImageURL,
+			"created_at": narrator.CreatedAt,
+			"updated_at": narrator.UpdatedAt,
+		}
+
+	case "dbaudiobook_titles":
+		audiobookTitle, err := database.Structscan[database.DbaudiobookTitle](
+			"SELECT id, title, slug, region, dbaudiobook_id, created_at, updated_at FROM dbaudiobook_titles WHERE ID = ?",
+			false,
+			id,
+		)
+		if err != nil {
+			sendBadRequest(ctx, err.Error())
+			return
+		}
+
+		rowMap = map[string]any{
+			"id":             audiobookTitle.ID,
+			"title":          audiobookTitle.Title,
+			"slug":           audiobookTitle.Slug,
+			"region":         audiobookTitle.Region,
+			"dbaudiobook_id": audiobookTitle.DbaudiobookID,
+			"created_at":     audiobookTitle.CreatedAt,
+			"updated_at":     audiobookTitle.UpdatedAt,
+		}
+
+	case "audiobooks":
+		audiobook, err := database.Structscan[database.Audiobook](
+			"SELECT id, quality_profile, listname, rootpath, lastscan, created_at, updated_at, dbaudiobook_id, author_id, book_series_id, blacklisted, quality_reached, missing, dont_upgrade, dont_search FROM audiobooks WHERE ID = ?",
+			false,
+			id,
+		)
+		if err != nil {
+			sendBadRequest(ctx, err.Error())
+			return
+		}
+
+		rowMap = map[string]any{
+			"id":              audiobook.ID,
+			"quality_profile": audiobook.QualityProfile,
+			"listname":        audiobook.Listname,
+			"rootpath":        audiobook.Rootpath,
+			"lastscan":        audiobook.Lastscan.Time,
+			"created_at":      audiobook.CreatedAt,
+			"updated_at":      audiobook.UpdatedAt,
+			"dbaudiobook_id":  audiobook.DbaudiobookID,
+			"author_id":       audiobook.AuthorID,
+			"book_series_id":  audiobook.BookSeriesID,
+			"blacklisted":     audiobook.Blacklisted,
+			"quality_reached": audiobook.QualityReached,
+			"missing":         audiobook.Missing,
+			"dont_upgrade":    audiobook.DontUpgrade,
+			"dont_search":     audiobook.DontSearch,
+		}
+
+	case "audiobook_files":
+		audiobookFile, err := database.Structscan[database.AudiobookFile](
+			"SELECT id, location, filename, extension, format, quality_profile, created_at, updated_at, audiobook_id, dbaudiobook_id, file_size, bitrate, runtime_ms, track_number, disc_number FROM audiobook_files WHERE ID = ?",
+			false,
+			id,
+		)
+		if err != nil {
+			sendBadRequest(ctx, err.Error())
+			return
+		}
+
+		rowMap = map[string]any{
+			"id":              audiobookFile.ID,
+			"location":        audiobookFile.Location,
+			"filename":        audiobookFile.Filename,
+			"extension":       audiobookFile.Extension,
+			"format":          audiobookFile.Format,
+			"quality_profile": audiobookFile.QualityProfile,
+			"created_at":      audiobookFile.CreatedAt,
+			"updated_at":      audiobookFile.UpdatedAt,
+			"audiobook_id":    audiobookFile.AudiobookID,
+			"dbaudiobook_id":  audiobookFile.DbaudiobookID,
+			"file_size":       audiobookFile.FileSize,
+			"bitrate":         audiobookFile.Bitrate,
+			"runtime_ms":      audiobookFile.RuntimeMs,
+			"track_number":    audiobookFile.TrackNumber,
+			"disc_number":     audiobookFile.DiscNumber,
+		}
+
+	case "audiobook_file_unmatcheds":
+		audiobookFileUnmatched, err := database.Structscan[database.AudiobookFileUnmatched](
+			"SELECT id, listname, filepath, parsed_data, last_checked, created_at, updated_at FROM audiobook_file_unmatcheds WHERE ID = ?",
+			false,
+			id,
+		)
+		if err != nil {
+			sendBadRequest(ctx, err.Error())
+			return
+		}
+
+		rowMap = map[string]any{
+			"id":           audiobookFileUnmatched.ID,
+			"listname":     audiobookFileUnmatched.Listname,
+			"filepath":     audiobookFileUnmatched.Filepath,
+			"parsed_data":  audiobookFileUnmatched.ParsedData,
+			"last_checked": audiobookFileUnmatched.LastChecked.Time,
+			"created_at":   audiobookFileUnmatched.CreatedAt,
+			"updated_at":   audiobookFileUnmatched.UpdatedAt,
+		}
+
+	case "audiobook_histories":
+		audiobookHistory, err := database.Structscan[database.AudiobookHistory](
+			"SELECT id, title, url, indexer, type, target, quality_profile, created_at, updated_at, downloaded_at, audiobook_id, dbaudiobook_id, blacklisted FROM audiobook_histories WHERE ID = ?",
+			false,
+			id,
+		)
+		if err != nil {
+			sendBadRequest(ctx, err.Error())
+			return
+		}
+
+		rowMap = map[string]any{
+			"id":              audiobookHistory.ID,
+			"title":           audiobookHistory.Title,
+			"url":             audiobookHistory.URL,
+			"indexer":         audiobookHistory.Indexer,
+			"type":            audiobookHistory.HistoryType,
+			"target":          audiobookHistory.Target,
+			"quality_profile": audiobookHistory.QualityProfile,
+			"created_at":      audiobookHistory.CreatedAt,
+			"updated_at":      audiobookHistory.UpdatedAt,
+			"downloaded_at":   audiobookHistory.DownloadedAt,
+			"audiobook_id":    audiobookHistory.AudiobookID,
+			"dbaudiobook_id":  audiobookHistory.DbaudiobookID,
+			"blacklisted":     audiobookHistory.Blacklisted,
+		}
+
+	// Music tables
+	case "dbalbums":
+		album, err := database.Structscan[database.Dbalbum](
+			"SELECT id, title, musicbrainz_release_group_id, musicbrainz_release_id, discogs_master_id, discogs_release_id, spotify_id, upc, release_date, release_type, format, label, country, total_tracks, total_runtime_ms, genres, styles, cover_url, year, slug, created_at, updated_at FROM dbalbums WHERE ID = ?",
+			false,
+			id,
+		)
+		if err != nil {
+			sendBadRequest(ctx, err.Error())
+			return
+		}
+
+		rowMap = map[string]any{
+			"id":                           album.ID,
+			"title":                        album.Title,
+			"musicbrainz_release_group_id": album.MusicbrainzReleaseGroupID,
+			"musicbrainz_release_id":       album.MusicbrainzReleaseID,
+			"discogs_master_id":            album.DiscogsMasterID,
+			"discogs_release_id":           album.DiscogsReleaseID,
+			"spotify_id":                   album.SpotifyID,
+			"upc":                          album.UPC,
+			"release_date":                 album.ReleaseDate.Time,
+			"release_type":                 album.ReleaseType,
+			"format":                       album.Format,
+			"label":                        album.Label,
+			"country":                      album.Country,
+			"total_tracks":                 album.TotalTracks,
+			"total_runtime_ms":             album.TotalRuntimeMs,
+			"genres":                       album.Genres,
+			"styles":                       album.Styles,
+			"cover_url":                    album.CoverURL,
+			"year":                         album.Year,
+			"slug":                         album.Slug,
+			"created_at":                   album.CreatedAt,
+			"updated_at":                   album.UpdatedAt,
+		}
+
+	case "dbartists":
+		artist, err := database.Structscan[database.Dbartist](
+			"SELECT id, name, sort_name, musicbrainz_id, discogs_id, spotify_id, artist_type, country, begin_date, end_date, disambiguation, bio, image_url, genres, created_at, updated_at FROM dbartists WHERE ID = ?",
+			false,
+			id,
+		)
+		if err != nil {
+			sendBadRequest(ctx, err.Error())
+			return
+		}
+
+		rowMap = map[string]any{
+			"id":             artist.ID,
+			"name":           artist.Name,
+			"sort_name":      artist.SortName,
+			"musicbrainz_id": artist.MusicbrainzID,
+			"discogs_id":     artist.DiscogsID,
+			"spotify_id":     artist.SpotifyID,
+			"artist_type":    artist.ArtistType,
+			"country":        artist.Country,
+			"begin_date":     artist.BeginDate,
+			"end_date":       artist.EndDate,
+			"disambiguation": artist.Disambiguation,
+			"bio":            artist.Bio,
+			"image_url":      artist.ImageURL,
+			"genres":         artist.Genres,
+			"created_at":     artist.CreatedAt,
+			"updated_at":     artist.UpdatedAt,
+		}
+
+	case "dbalbum_titles":
+		albumTitle, err := database.Structscan[database.DbalbumTitle](
+			"SELECT id, title, slug, region, dbalbum_id, created_at, updated_at FROM dbalbum_titles WHERE ID = ?",
+			false,
+			id,
+		)
+		if err != nil {
+			sendBadRequest(ctx, err.Error())
+			return
+		}
+
+		rowMap = map[string]any{
+			"id":         albumTitle.ID,
+			"title":      albumTitle.Title,
+			"slug":       albumTitle.Slug,
+			"region":     albumTitle.Region,
+			"dbalbum_id": albumTitle.DbalbumID,
+			"created_at": albumTitle.CreatedAt,
+			"updated_at": albumTitle.UpdatedAt,
+		}
+
+	case "dbtracks":
+		track, err := database.Structscan[database.Dbtrack](
+			"SELECT id, title, musicbrainz_recording_id, isrc, acoustid, created_at, updated_at, runtime_ms, dbalbum_id, disc_number, track_number, explicit FROM dbtracks WHERE ID = ?",
+			false,
+			id,
+		)
+		if err != nil {
+			sendBadRequest(ctx, err.Error())
+			return
+		}
+
+		rowMap = map[string]any{
+			"id":                       track.ID,
+			"title":                    track.Title,
+			"musicbrainz_recording_id": track.MusicbrainzRecordingID,
+			"isrc":                     track.ISRC,
+			"acoustid":                 track.AcoustID,
+			"created_at":               track.CreatedAt,
+			"updated_at":               track.UpdatedAt,
+			"runtime_ms":               track.RuntimeMs,
+			"dbalbum_id":               track.DbalbumID,
+			"disc_number":              track.DiscNumber,
+			"track_number":             track.TrackNumber,
+			"explicit":                 track.Explicit,
+		}
+
+	case "artists":
+		artist, err := database.Structscan[database.Artist](
+			"SELECT id, listname, track_mode, created_at, updated_at, dbartist_id, dont_search FROM artists WHERE ID = ?",
+			false,
+			id,
+		)
+		if err != nil {
+			sendBadRequest(ctx, err.Error())
+			return
+		}
+
+		rowMap = map[string]any{
+			"id":          artist.ID,
+			"listname":    artist.Listname,
+			"track_mode":  artist.TrackMode,
+			"created_at":  artist.CreatedAt,
+			"updated_at":  artist.UpdatedAt,
+			"dbartist_id": artist.DbartistID,
+			"dont_search": artist.DontSearch,
+		}
+
+	case "albums":
+		album, err := database.Structscan[database.Album](
+			"SELECT id, quality_profile, listname, rootpath, lastscan, created_at, updated_at, dbalbum_id, artist_id, blacklisted, quality_reached, missing, dont_upgrade, dont_search FROM albums WHERE ID = ?",
+			false,
+			id,
+		)
+		if err != nil {
+			sendBadRequest(ctx, err.Error())
+			return
+		}
+
+		rowMap = map[string]any{
+			"id":              album.ID,
+			"quality_profile": album.QualityProfile,
+			"listname":        album.Listname,
+			"rootpath":        album.Rootpath,
+			"lastscan":        album.Lastscan.Time,
+			"created_at":      album.CreatedAt,
+			"updated_at":      album.UpdatedAt,
+			"dbalbum_id":      album.DbalbumID,
+			"artist_id":       album.ArtistID,
+			"blacklisted":     album.Blacklisted,
+			"quality_reached": album.QualityReached,
+			"missing":         album.Missing,
+			"dont_upgrade":    album.DontUpgrade,
+			"dont_search":     album.DontSearch,
+		}
+
+	case "album_files":
+		albumFile, err := database.Structscan[database.AlbumFile](
+			"SELECT id, location, filename, extension, format, quality_profile, acoustid, created_at, updated_at, album_id, dbalbum_id, dbtrack_id, file_size, bitrate, sample_rate, bit_depth, runtime_ms, disc_number, track_number FROM album_files WHERE ID = ?",
+			false,
+			id,
+		)
+		if err != nil {
+			sendBadRequest(ctx, err.Error())
+			return
+		}
+
+		rowMap = map[string]any{
+			"id":              albumFile.ID,
+			"location":        albumFile.Location,
+			"filename":        albumFile.Filename,
+			"extension":       albumFile.Extension,
+			"format":          albumFile.Format,
+			"quality_profile": albumFile.QualityProfile,
+			"acoustid":        albumFile.AcoustID,
+			"created_at":      albumFile.CreatedAt,
+			"updated_at":      albumFile.UpdatedAt,
+			"album_id":        albumFile.AlbumID,
+			"dbalbum_id":      albumFile.DbalbumID,
+			"dbtrack_id":      albumFile.DbtrackID,
+			"file_size":       albumFile.FileSize,
+			"bitrate":         albumFile.Bitrate,
+			"sample_rate":     albumFile.SampleRate,
+			"bit_depth":       albumFile.BitDepth,
+			"runtime_ms":      albumFile.RuntimeMs,
+			"disc_number":     albumFile.DiscNumber,
+			"track_number":    albumFile.TrackNumber,
+		}
+
+	case "album_file_unmatcheds":
+		albumFileUnmatched, err := database.Structscan[database.AlbumFileUnmatched](
+			"SELECT id, listname, filepath, parsed_data, last_checked, created_at, updated_at FROM album_file_unmatcheds WHERE ID = ?",
+			false,
+			id,
+		)
+		if err != nil {
+			sendBadRequest(ctx, err.Error())
+			return
+		}
+
+		rowMap = map[string]any{
+			"id":           albumFileUnmatched.ID,
+			"listname":     albumFileUnmatched.Listname,
+			"filepath":     albumFileUnmatched.Filepath,
+			"parsed_data":  albumFileUnmatched.ParsedData,
+			"last_checked": albumFileUnmatched.LastChecked.Time,
+			"created_at":   albumFileUnmatched.CreatedAt,
+			"updated_at":   albumFileUnmatched.UpdatedAt,
+		}
+
+	case "album_histories":
+		albumHistory, err := database.Structscan[database.AlbumHistory](
+			"SELECT id, title, url, indexer, type, target, quality_profile, created_at, updated_at, downloaded_at, album_id, dbalbum_id, blacklisted FROM album_histories WHERE ID = ?",
+			false,
+			id,
+		)
+		if err != nil {
+			sendBadRequest(ctx, err.Error())
+			return
+		}
+
+		rowMap = map[string]any{
+			"id":              albumHistory.ID,
+			"title":           albumHistory.Title,
+			"url":             albumHistory.URL,
+			"indexer":         albumHistory.Indexer,
+			"type":            albumHistory.HistoryType,
+			"target":          albumHistory.Target,
+			"quality_profile": albumHistory.QualityProfile,
+			"created_at":      albumHistory.CreatedAt,
+			"updated_at":      albumHistory.UpdatedAt,
+			"downloaded_at":   albumHistory.DownloadedAt,
+			"album_id":        albumHistory.AlbumID,
+			"dbalbum_id":      albumHistory.DbalbumID,
+			"blacklisted":     albumHistory.Blacklisted,
 		}
 	}
 

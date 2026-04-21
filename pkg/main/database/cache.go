@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"iter"
 	"regexp"
 	"slices"
 	"strings"
@@ -10,8 +11,9 @@ import (
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/mediatype/mtstrings"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/syncops"
-	"github.com/dgraph-io/ristretto"
+	"github.com/dgraph-io/ristretto/v2"
 	"github.com/jmoiron/sqlx"
 )
 
@@ -30,12 +32,12 @@ type tcache struct {
 	itemstwoint      *syncops.SyncMap[[]syncops.DbstaticOneStringTwoInt]
 	itemsthreestring *syncops.SyncMap[[]syncops.DbstaticThreeStringTwoInt]
 	itemstwostring   *syncops.SyncMap[[]syncops.DbstaticTwoStringOneInt]
-	itemsxstmt       *syncops.SyncMap[*sqlx.Stmt]     // DEPRECATED: Use ristrettoStmt
-	itemsregex       *syncops.SyncMap[*regexp.Regexp] // DEPRECATED: Use ristrettoRegex
+	// itemsxstmt       *syncops.SyncMap[*sqlx.Stmt]     // DEPRECATED: Use ristrettoStmt
+	// itemsregex       *syncops.SyncMap[*regexp.Regexp] // DEPRECATED: Use ristrettoRegex
 
 	// NEW: Ristretto caches for high-performance lookups
-	ristrettoStmt  *ristretto.Cache
-	ristrettoRegex *ristretto.Cache
+	ristrettoStmt  *ristretto.Cache[string, *sqlx.Stmt]
+	ristrettoRegex *ristretto.Cache[string, *regexp.Regexp]
 
 	// NEW: Hybrid indexes for O(1) lookups on struct arrays
 	indexThreeStringByStr3 *syncops.SyncMap[map[string]*syncops.DbstaticThreeStringTwoInt] // IMDB ID -> entry
@@ -61,9 +63,9 @@ var (
 		itemstwoint:      syncops.NewSyncMap[[]syncops.DbstaticOneStringTwoInt](20),
 		itemsthreestring: syncops.NewSyncMap[[]syncops.DbstaticThreeStringTwoInt](20),
 		itemstwostring:   syncops.NewSyncMap[[]syncops.DbstaticTwoStringOneInt](20),
-		itemsxstmt:       syncops.NewSyncMap[*sqlx.Stmt](1000),
-		itemsregex:       syncops.NewSyncMap[*regexp.Regexp](1000),
-		interval:         10 * time.Minute, // Set default interval to 10 minutes
+		// itemsxstmt:       syncops.NewSyncMap[*sqlx.Stmt](1000),
+		// itemsregex:       syncops.NewSyncMap[*regexp.Regexp](1000),
+		interval: 10 * time.Minute, // Set default interval to 10 minutes
 	}
 	globalCache   *globalcache
 	initOnce      sync.Once // To make sure that the cache is only initialized once
@@ -94,15 +96,6 @@ func (c *globalcache) getexpiressql(static bool) int64 {
 // If the statement already exists in the cache, it returns without doing anything.
 // Static statements are cached permanently. Falls back to old implementation if Ristretto not initialized.
 func (c *globalcache) addStaticXStmt(key string, imdb bool) {
-	// if cache.ristrettoStmt == nil {
-	// 	// Fallback to old implementation
-	// 	if !cache.itemsxstmt.Check(key) {
-	// 		stmt := preparestmt(imdb, key)
-	// 		syncops.QueueSyncMapAdd(syncops.MapTypeXStmt, key, stmt, c.getexpiressql(true), imdb, time.Now().UnixNano())
-	// 	}
-	// 	return
-	// }
-
 	// Check if already in Ristretto cache
 	if _, found := cache.ristrettoStmt.Get(key); found {
 		return
@@ -125,10 +118,8 @@ func (c *globalcache) getXStmt(key string, imdb bool) *sqlx.Stmt {
 	// }
 
 	// Try Ristretto cache first
-	if value, found := cache.ristrettoStmt.Get(key); found {
-		if stmt, ok := value.(*sqlx.Stmt); ok {
-			return stmt
-		}
+	if stmt, found := cache.ristrettoStmt.Get(key); found {
+		return stmt
 	}
 
 	// Cache miss - prepare statement and cache it
@@ -147,21 +138,6 @@ func (c *globalcache) getXStmt(key string, imdb bool) *sqlx.Stmt {
 	return stmt
 }
 
-// getXStmtOld is the old implementation using syncops - kept as fallback
-// func (c *globalcache) getXStmtOld(key string, imdb bool) *sqlx.Stmt {
-// 	if cache.itemsxstmt.Check(key) {
-// 		expires := cache.itemsxstmt.GetExpire(key)
-// 		if config.GetSettingsGeneral().CacheAutoExtend ||
-// 			expires != 0 && (time.Now().UnixNano() > expires) {
-// 			syncops.QueueSyncMapUpdateExpire(syncops.MapTypeXStmt, key, c.getexpiressql(false))
-// 		}
-// 		return cache.itemsxstmt.GetVal(key)
-// 	}
-// 	stmt := preparestmt(imdb, key)
-// 	syncops.QueueSyncMapAdd(syncops.MapTypeXStmt, key, stmt, c.getexpiressql(false), imdb, time.Now().UnixNano())
-// 	return stmt
-// }
-
 // preparestmt prepares a SQL statement using the provided database connection and SQL query key.
 // If an error occurs or the prepared statement is nil, it returns an empty sqlx.Stmt.
 // Otherwise, it returns the prepared statement.
@@ -178,14 +154,6 @@ func preparestmt(imdb bool, key string) *sqlx.Stmt {
 // does not exist, it compiles and caches it using Ristretto. This function is used to cache regular
 // expressions that are used statically throughout the application.
 func (c *globalcache) setStaticRegexp(key string) {
-	// if cache.ristrettoRegex == nil {
-	// 	// Fallback to old implementation if Ristretto not initialized
-	// 	if !cache.itemsregex.Check(key) {
-	// 		syncops.QueueSyncMapAdd(syncops.MapTypeRegex, key, getregexP(key), 0, false, time.Now().UnixNano())
-	// 	}
-	// 	return
-	// }
-
 	// Check if already cached in Ristretto
 	if _, found := cache.ristrettoRegex.Get(key); found {
 		return
@@ -201,16 +169,9 @@ func (c *globalcache) setStaticRegexp(key string) {
 // The function takes a key string and a duration time.Duration for TTL.
 // If duration is 0, patterns are cached permanently. Returns the compiled regexp.
 func (c *globalcache) setRegexp(key string, duration time.Duration) *regexp.Regexp {
-	// if cache.ristrettoRegex == nil {
-	// 	// Fallback to old implementation if Ristretto not initialized
-	// 	return c.setRegexpOld(key, duration)
-	// }
-
 	// Try Ristretto cache first
-	if value, found := cache.ristrettoRegex.Get(key); found {
-		if rgx, ok := value.(*regexp.Regexp); ok {
-			return rgx
-		}
+	if rgx, found := cache.ristrettoRegex.Get(key); found {
+		return rgx
 	}
 
 	// Cache miss - compile and cache
@@ -229,37 +190,16 @@ func (c *globalcache) setRegexp(key string, duration time.Duration) *regexp.Rege
 	return rgx
 }
 
-// setRegexpOld is the old implementation using syncops - kept as fallback
-// func (c *globalcache) setRegexpOld(key string, duration time.Duration) *regexp.Regexp {
-// 	if !cache.itemsregex.Check(key) {
-// 		rgx := getregexP(key)
-// 		expires := getexpireskey(duration)
-// 		if duration == 0 {
-// 			c.mu.RLock()
-// 			defaultExt := c.defaultextension
-// 			c.mu.RUnlock()
-// 			expires = getexpireskey(defaultExt)
-// 		}
-// 		syncops.QueueSyncMapAdd(syncops.MapTypeRegex, key, rgx, expires, false, time.Now().UnixNano())
-// 		return rgx
-// 	}
-// 	expires := cache.itemsregex.GetExpire(key)
-// 	if config.GetSettingsGeneral().CacheAutoExtend || expires != 0 && (time.Now().UnixNano() > expires) {
-// 		if duration != 0 && key != "RegexSeriesIdentifier" && key != "RegexSeriesTitle" {
-// 			c.mu.RLock()
-// 			defaultExt := c.defaultextension
-// 			c.mu.RUnlock()
-// 			syncops.QueueSyncMapUpdateExpire(syncops.MapTypeRegex, key, getexpireskey(defaultExt))
-// 		}
-// 	}
-// 	return cache.itemsregex.GetVal(key)
-// }
-
 // InitCache initializes the global cache by creating a new Cache instance
 // with the provided expiration times and logger. It is called on startup
 // to initialize the cache before it is used.
 func InitCache() {
-	NewCache(1*time.Hour, time.Hour*time.Duration(config.GetSettingsGeneral().CacheDuration))
+	duration := time.Duration(24)
+	if s := config.GetSettingsGeneral(); s != nil {
+		duration = time.Duration(s.CacheDuration)
+	}
+
+	NewCache(1*time.Hour, time.Hour*duration)
 }
 
 // ClearCaches iterates over the cached string, three string two int, and two string int arrays, sets the Expire field on each cached array object to two hours in the past based on the config cache duration, and updates the cache with the expired array object. This effectively clears those cached arrays by expiring all entries.
@@ -289,19 +229,39 @@ func ClearCaches() {
 			return true
 		},
 	)
-	syncops.QueueSyncMapDeleteFunc(syncops.MapTypeXStmt, func(item *sqlx.Stmt) bool {
-		item.Close()
-		return true
-	})
-	syncops.QueueSyncMapDeleteFunc(syncops.MapTypeRegex, func(_ *regexp.Regexp) bool {
-		return true
-	})
+
+	// Clear all index maps
+	cache.indexThreeStringByStr3.DeleteFunc(
+		func(_ map[string]*syncops.DbstaticThreeStringTwoInt) bool { return true },
+	)
+	cache.indexThreeStringByNum2.DeleteFunc(
+		func(_ map[uint]*syncops.DbstaticThreeStringTwoInt) bool { return true },
+	)
+	cache.indexTwoStringByStr1.DeleteFunc(
+		func(_ map[string][]*syncops.DbstaticTwoStringOneInt) bool { return true },
+	)
+	cache.indexStringSet.DeleteFunc(func(_ map[string]struct{}) bool { return true })
+	cache.indexTwoIntComposite.DeleteFunc(
+		func(_ map[string]*syncops.DbstaticOneStringTwoInt) bool { return true },
+	)
+
+	if cache.ristrettoStmt != nil {
+		cache.ristrettoStmt.Clear()
+	}
 }
 
 // AppendCache appends the given value v to the cached array for the given key a.
-// This function is now thread-safe using atomic slice operations.
+// If the cache has an associated indexStringSet, the normalized key is also added
+// to that index so lookups remain consistent without a full rebuild.
 func AppendCache(a string, v string) {
 	syncops.QueueAtomicAppendString(syncops.MapTypeString, a, v)
+
+	if entry, ok := cacheDispatchMap[a]; ok && entry.indexKind == indexStringSet {
+		normalizedV := normalizeKey(v)
+		cache.indexStringSet.ModifyInPlace(a, func(m map[string]struct{}) {
+			m[normalizedV] = struct{}{}
+		})
+	}
 }
 
 // AppendCacheThreeString appends the given syncops.DbstaticThreeStringTwoInt value v to the cached array
@@ -317,6 +277,7 @@ func AppendCacheThreeString(a string, v syncops.DbstaticThreeStringTwoInt) {
 			Num2: v.Num2,
 		}
 		syncops.QueueSliceAppend(syncops.MapTypeThreeString, a, syncopsValue)
+		appendIndexThreeString(a, syncopsValue)
 	}
 }
 
@@ -331,6 +292,7 @@ func AppendCacheTwoInt(a string, v syncops.DbstaticOneStringTwoInt) {
 			Num2: v.Num2,
 		}
 		syncops.QueueSliceAppend(syncops.MapTypeTwoInt, a, syncopsValue)
+		appendIndexTwoInt(a, syncopsValue)
 	}
 }
 
@@ -345,14 +307,15 @@ func AppendCacheTwoString(a string, v syncops.DbstaticTwoStringOneInt) {
 			Num:  v.Num,
 		}
 		syncops.QueueSliceAppend(syncops.MapTypeTwoString, a, syncopsValue)
+		appendIndexTwoString(a, syncopsValue)
 	}
 }
 
 // AppendCacheMap appends a value to the cache map for the given query string.
-// If useseries is true, it appends to the logger.Mapstringsseries map, otherwise it appends to the logger.Mapstringsmovies map.
+// If isType is true, it appends to the logger.Mapstringsseries map, otherwise it appends to the logger.Mapstringsmovies map.
 // The value is appended using the AppendCache function.
-func AppendCacheMap(useseries bool, query string, v string) {
-	AppendCache(logger.GetStringsMap(useseries, query), v)
+func AppendCacheMap(isType uint, query string, v string) {
+	AppendCache(mtstrings.GetStringsMap(isType, query), v)
 }
 
 // ArrStructContains checks if the given slice s contains the value v.
@@ -373,9 +336,12 @@ func ArrStructContainsString(s []string, v string) bool {
 // identified by s using a case-insensitive comparison. It gets the cached
 // array, iterates over it, compares each element to v with EqualFold,
 // and returns true if a match is found.
-func SlicesCacheContainsI(useseries bool, query string, w *string) bool {
+func SlicesCacheContainsI(isType uint, query string, w *string) bool {
+	if w == nil || *w == "" {
+		return false
+	}
 	v := *w
-	for _, a := range GetCachedStringArr(logger.GetStringsMap(useseries, query), false, true) {
+	for a := range GetCachedStringSeq(mtstrings.GetStringsMap(isType, query), false, true) {
 		if v == a || strings.EqualFold(v, a) {
 			return true
 		}
@@ -386,26 +352,33 @@ func SlicesCacheContainsI(useseries bool, query string, w *string) bool {
 
 // SlicesCacheContains checks if the cached string array identified by s contains
 // the value v. It iterates over the array and returns true if a match is found.
-func SlicesCacheContains(useseries bool, query, v string) bool {
+func SlicesCacheContains(isType uint, query, v string) bool {
 	return slices.Contains(
-		GetCachedStringArr(logger.GetStringsMap(useseries, query), false, true),
+		GetCachedStringArr(mtstrings.GetStringsMap(isType, query), false, true),
 		v,
 	)
 }
 
 // SlicesCacheContainsDelete removes an element matching v from the cached string
-// array identified by s. This function is now thread-safe using atomic slice operations.
+// array identified by s. If the cache has an associated indexStringSet, the
+// normalized key is also removed from that index so lookups remain consistent.
 func SlicesCacheContainsDelete(s, v string) {
 	syncops.QueueAtomicRemoveString(syncops.MapTypeString, s, v)
+
+	if entry, ok := cacheDispatchMap[s]; ok && entry.indexKind == indexStringSet {
+		normalizedV := normalizeKey(v)
+		cache.indexStringSet.ModifyInPlace(s, func(m map[string]struct{}) {
+			delete(m, normalizedV)
+		})
+	}
 }
 
 // CacheOneStringTwoIntIndexFunc looks up the cached one string two int array
 // identified by s and calls the passed in function f on each element.
 // Returns true if f returns true for any element.
 func CacheOneStringTwoIntIndexFunc(s string, f func(*syncops.DbstaticOneStringTwoInt) bool) bool {
-	a := GetCachedTwoIntArr(s, false, true)
-	for idx := range a {
-		if f(&a[idx]) {
+	for a := range GetCachedTwoIntSeq(s, false, true) {
+		if f(a) {
 			return true
 		}
 	}
@@ -418,7 +391,7 @@ func CacheOneStringTwoIntIndexFunc(s string, f func(*syncops.DbstaticOneStringTw
 // true for any element, the Num2 field of that element is returned. If no match is
 // found, 0 is returned.
 func CacheOneStringTwoIntIndexFuncRet(s string, id uint, listname string) uint {
-	for _, a := range GetCachedTwoIntArr(s, false, true) {
+	for a := range GetCachedTwoIntSeq(s, false, true) {
 		if a.Num1 == id && strings.EqualFold(a.Str, listname) {
 			return a.Num2
 		}
@@ -431,8 +404,8 @@ func CacheOneStringTwoIntIndexFuncRet(s string, id uint, listname string) uint {
 // identified by s and returns the string value for the entry where the
 // second int matches the passed in uint i. It stores the returned string in
 // listname. If no match is found, it sets listname to an empty string.
-func CacheOneStringTwoIntIndexFuncStr(useseries bool, query string, i uint) string {
-	for _, a := range GetCachedTwoIntArr(logger.GetStringsMap(useseries, query), false, true) {
+func CacheOneStringTwoIntIndexFuncStr(isType uint, query string, i uint) string {
+	for a := range GetCachedTwoIntSeq(mtstrings.GetStringsMap(isType, query), false, true) {
 		if a.Num2 == i {
 			return a.Str
 		}
@@ -450,7 +423,7 @@ func CacheThreeStringIntIndexFunc(s string, u *string) uint {
 	}
 
 	t := *u
-	for _, a := range GetCachedThreeStringArr(s, false, true) {
+	for a := range GetCachedThreeStringSeq(s, false, true) {
 		if a.Str3 == t || strings.EqualFold(a.Str3, t) {
 			return a.Num2
 		}
@@ -463,7 +436,7 @@ func CacheThreeStringIntIndexFunc(s string, u *string) uint {
 // identified by s and returns the first int value for the entry where the second int
 // matches the int str. Returns 0 if no match found.
 func CacheThreeStringIntIndexFuncGetYear(s string, i uint) uint16 {
-	for _, a := range GetCachedThreeStringArr(s, false, true) {
+	for a := range GetCachedThreeStringSeq(s, false, true) {
 		if a.Num2 == i {
 			return uint16(a.Num1)
 		}
@@ -479,26 +452,26 @@ func CacheThreeStringIntIndexFuncGetYear(s string, i uint) uint16 {
 // This function should only be called from the single cache writer goroutine.
 //
 // Parameters:
-//   - useseries: Determines whether to use series-specific or movie-specific data
+//   - isType: Determines whether to use series-specific or movie-specific data
 //   - force: If true, forces a cache refresh regardless of existing cache state
 //   - maptypestr: String identifier for the map type
 //   - mapcountsql: SQL query to get the count of items in the cache
 //   - mapsql: SQL query to retrieve the cache items
 //   - cachevar: Synchronized map to store the cache items
 func refreshCacheDBInternal[t comparable](
-	useseries bool,
+	isType uint,
 	force bool,
 	maptypestr string,
 	mapcountsql string,
 	mapsql string,
 	cachevar *syncops.SyncMap[[]t],
 ) {
-	mapvar := logger.GetStringsMap(useseries, maptypestr)
+	mapvar := mtstrings.GetStringsMap(isType, maptypestr)
 	item := getCachedArrayDirect(cachevar, mapvar, true, false)
 
 	count := Getdatarow[uint](
 		false,
-		logger.GetStringsMap(useseries, mapcountsql),
+		mtstrings.GetStringsMap(isType, mapcountsql),
 		&config.GetSettingsGeneral().CacheDuration,
 	)
 	if !force && len(item) == int(count) {
@@ -533,7 +506,7 @@ func refreshCacheDBInternal[t comparable](
 	data := GetrowsN[t](
 		false,
 		count+100,
-		logger.GetStringsMap(useseries, mapsql),
+		mtstrings.GetStringsMap(isType, mapsql),
 		&config.GetSettingsGeneral().CacheDuration,
 	)
 	if len(data) > 0 {
@@ -554,17 +527,15 @@ func refreshCacheDBInternal[t comparable](
 }
 
 // RefreshMediaCacheDB refreshes the media caches for movies and series.
-// It will refresh the caches based on the useseries parameter:
-// - if useseries is false, it will refresh the movie caches
-// - if useseries is true, it will refresh the series caches
+// It will refresh the caches based on the isType parameter:
 // Operations are queued to the single cache writer to prevent concurrent access issues.
-func RefreshMediaCacheDB(useseries bool, force bool) {
+func RefreshMediaCacheDB(isType uint, force bool) {
 	if !config.GetSettingsGeneral().UseMediaCache {
 		return
 	}
 
 	refreshCacheDBInternal(
-		useseries,
+		isType,
 		force,
 		logger.CacheDBMedia,
 		logger.DBCountDBMedia,
@@ -574,17 +545,15 @@ func RefreshMediaCacheDB(useseries bool, force bool) {
 }
 
 // RefreshMediaCacheList refreshes the media caches for movies and series.
-// It will refresh the caches based on the useseries parameter:
-// - if useseries is false, it will refresh the movie caches
-// - if useseries is true, it will refresh the series caches
+// It will refresh the caches based on the isType parameter:
 // Operations are queued to the single cache writer to prevent concurrent access issues.
-func RefreshMediaCacheList(useseries bool, force bool) {
+func RefreshMediaCacheList(isType uint, force bool) {
 	if !config.GetSettingsGeneral().UseMediaCache {
 		return
 	}
 
 	refreshCacheDBInternal(
-		useseries,
+		isType,
 		force,
 		logger.CacheMedia,
 		logger.DBCountMedia,
@@ -594,16 +563,16 @@ func RefreshMediaCacheList(useseries bool, force bool) {
 }
 
 // Refreshhistorycachetitle refreshes the cached history title arrays for movies or series.
-// The useseries parameter determines if it refreshes the cache for series or movies.
+// The isType parameter determines if it refreshes the cache for series or movies.
 // The force parameter determines if the cache should be refreshed regardless of the last scan time.
 // Operations are queued to the single cache writer to prevent concurrent access issues.
-func Refreshhistorycachetitle(useseries bool, force bool) {
+func Refreshhistorycachetitle(isType uint, force bool) {
 	if !config.GetSettingsGeneral().UseHistoryCache {
 		return
 	}
 
 	refreshCacheDBInternal(
-		useseries,
+		isType,
 		force,
 		logger.CacheHistoryTitle,
 		logger.DBCountHistoriesTitle,
@@ -613,16 +582,16 @@ func Refreshhistorycachetitle(useseries bool, force bool) {
 }
 
 // Refreshhistorycacheurl refreshes the cached history URL arrays for movies or series.
-// The useseries parameter determines if it refreshes the cache for series or movies.
+// The isType parameter determines if it refreshes the cache for series or movies.
 // The force parameter determines if the cache should be refreshed regardless of the last scan time.
 // Operations are queued to the single cache writer to prevent concurrent access issues.
-func Refreshhistorycacheurl(useseries bool, force bool) {
+func Refreshhistorycacheurl(isType uint, force bool) {
 	if !config.GetSettingsGeneral().UseHistoryCache {
 		return
 	}
 
 	refreshCacheDBInternal(
-		useseries,
+		isType,
 		force,
 		logger.CacheHistoryURL,
 		logger.DBCountHistoriesURL,
@@ -632,15 +601,15 @@ func Refreshhistorycacheurl(useseries bool, force bool) {
 }
 
 // RefreshMediaCacheTitles refreshes the cached media title arrays for movies or series.
-// The useseries parameter determines if it refreshes the cache for series or movies.
+// The isType parameter determines if it refreshes the cache for series or movies.
 // Operations are queued to the single cache writer to prevent concurrent access issues.
-func RefreshMediaCacheTitles(useseries bool, force bool) {
+func RefreshMediaCacheTitles(isType uint, force bool) {
 	if !config.GetSettingsGeneral().UseMediaCache {
 		return
 	}
 
 	refreshCacheDBInternal(
-		useseries,
+		isType,
 		force,
 		logger.CacheMediaTitles,
 		logger.DBCountDBTitles,
@@ -650,15 +619,15 @@ func RefreshMediaCacheTitles(useseries bool, force bool) {
 }
 
 // Refreshfilescached refreshes the cached file location arrays for movies or series.
-// The useseries parameter determines if it refreshes the cache for series or movies.
+// The isType parameter determines if it refreshes the cache for series or movies.
 // Operations are queued to the single cache writer to prevent concurrent access issues.
-func Refreshfilescached(useseries bool, force bool) {
+func Refreshfilescached(isType uint, force bool) {
 	if !config.GetSettingsGeneral().UseFileCache {
 		return
 	}
 
 	refreshCacheDBInternal(
-		useseries,
+		isType,
 		force,
 		logger.CacheFiles,
 		logger.DBCountFiles,
@@ -668,16 +637,16 @@ func Refreshfilescached(useseries bool, force bool) {
 }
 
 // Refreshunmatchedcached refreshes the cached string array of unmatched files for movies or series.
-// The useseries parameter determines if it refreshes the cache for series or movies.
+// The isType parameter determines if it refreshes the cache for series or movies.
 // Operations are queued to the single cache writer to prevent concurrent access issues.
-func Refreshunmatchedcached(useseries bool, force bool) {
+func Refreshunmatchedcached(isType uint, force bool) {
 	if !config.GetSettingsGeneral().UseFileCache {
 		return
 	}
 
-	ExecNMap(useseries, "DBRemoveUnmatched", &config.GetSettingsGeneral().CacheDuration2)
+	ExecNMap(isType, "DBRemoveUnmatched", &config.GetSettingsGeneral().CacheDuration2)
 	refreshCacheDBInternal(
-		useseries,
+		isType,
 		force,
 		logger.CacheUnmatched,
 		logger.DBCountUnmatched,
@@ -686,81 +655,513 @@ func Refreshunmatchedcached(useseries bool, force bool) {
 	)
 }
 
-// RefreshCached refreshes the cached data for the specified key. It calls the appropriate
-// refresh function based on the key. Uses indexed versions when UseIndexedCache is enabled.
+// varKind selects which SyncMap is used for a cache entry.
+const (
+	varKindThreeString     uint8 = iota // cache.itemsthreestring
+	varKindTwoString                    // cache.itemstwostring
+	varKindOneStringTwoInt              // cache.itemstwoint
+	varKindString                       // cache.itemsstring
+)
+
+// guardXxx selects which enabled-setting guards a cache refresh.
+const (
+	guardMedia uint8 = iota
+	guardHistory
+	guardFile
+)
+
+// indexXxx selects which index (if any) to build after a data refresh.
+const (
+	indexNone        uint8 = iota
+	indexThreeString       // indexThreeStringByStr3 + indexThreeStringByNum2
+	indexTwoString         // indexTwoStringByStr1
+	indexStringSet         // indexStringSet
+)
+
+// cacheDispatchEntry holds everything RefreshCached needs to refresh one cache key.
+// cacheKey/countKey/dataKey are GENERIC keys resolved via mtstrings.GetStringsMap(isType, …)
+// inside refreshCacheDBInternal, so they are identical across all media types.
+type cacheDispatchEntry struct {
+	isType    uint
+	cacheKey  string // generic cache key (also used for lastScan lookup)
+	countKey  string // generic count-SQL key
+	dataKey   string // generic data-SQL key
+	varKind   uint8
+	guard     uint8
+	removeKey string // if non-empty, ExecNMap is called before refresh (unmatched only)
+	indexKind uint8
+}
+
+var cacheDispatchMap = map[string]cacheDispatchEntry{
+	// Movies
+	logger.CacheMovie: {
+		config.MediaTypeMovie,
+		logger.CacheMedia,
+		logger.DBCountMedia,
+		logger.DBCacheMedia,
+		varKindOneStringTwoInt,
+		guardMedia,
+		"",
+		indexNone,
+	},
+	logger.CacheDBMovie: {
+		config.MediaTypeMovie,
+		logger.CacheDBMedia,
+		logger.DBCountDBMedia,
+		logger.DBCacheDBMedia,
+		varKindThreeString,
+		guardMedia,
+		"",
+		indexThreeString,
+	},
+	logger.CacheTitlesMovie: {
+		config.MediaTypeMovie,
+		logger.CacheMediaTitles,
+		logger.DBCountDBTitles,
+		logger.DBCacheDBTitles,
+		varKindTwoString,
+		guardMedia,
+		"",
+		indexTwoString,
+	},
+	logger.CacheUnmatchedMovie: {
+		config.MediaTypeMovie,
+		logger.CacheUnmatched,
+		logger.DBCountUnmatched,
+		logger.DBCacheUnmatched,
+		varKindString,
+		guardFile,
+		"DBRemoveUnmatched",
+		indexNone,
+	},
+	logger.CacheFilesMovie: {
+		config.MediaTypeMovie,
+		logger.CacheFiles,
+		logger.DBCountFiles,
+		logger.DBCacheFiles,
+		varKindString,
+		guardFile,
+		"",
+		indexNone,
+	},
+	logger.CacheHistoryURLMovie: {
+		config.MediaTypeMovie,
+		logger.CacheHistoryURL,
+		logger.DBCountHistoriesURL,
+		logger.DBHistoriesURL,
+		varKindString,
+		guardHistory,
+		"",
+		indexStringSet,
+	},
+	logger.CacheHistoryTitleMovie: {
+		config.MediaTypeMovie,
+		logger.CacheHistoryTitle,
+		logger.DBCountHistoriesTitle,
+		logger.DBHistoriesTitle,
+		varKindString,
+		guardHistory,
+		"",
+		indexStringSet,
+	},
+	// Series (CacheDBSeriesAlt resolves from CacheMediaTitles via series StringsMap)
+	logger.CacheSeries: {
+		config.MediaTypeSeries,
+		logger.CacheMedia,
+		logger.DBCountMedia,
+		logger.DBCacheMedia,
+		varKindOneStringTwoInt,
+		guardMedia,
+		"",
+		indexNone,
+	},
+	logger.CacheDBSeries: {
+		config.MediaTypeSeries,
+		logger.CacheDBMedia,
+		logger.DBCountDBMedia,
+		logger.DBCacheDBMedia,
+		varKindThreeString,
+		guardMedia,
+		"",
+		indexThreeString,
+	},
+	logger.CacheDBSeriesAlt: {
+		config.MediaTypeSeries,
+		logger.CacheMediaTitles,
+		logger.DBCountDBTitles,
+		logger.DBCacheDBTitles,
+		varKindTwoString,
+		guardMedia,
+		"",
+		indexTwoString,
+	},
+	logger.CacheUnmatchedSeries: {
+		config.MediaTypeSeries,
+		logger.CacheUnmatched,
+		logger.DBCountUnmatched,
+		logger.DBCacheUnmatched,
+		varKindString,
+		guardFile,
+		"DBRemoveUnmatched",
+		indexNone,
+	},
+	logger.CacheFilesSeries: {
+		config.MediaTypeSeries,
+		logger.CacheFiles,
+		logger.DBCountFiles,
+		logger.DBCacheFiles,
+		varKindString,
+		guardFile,
+		"",
+		indexNone,
+	},
+	logger.CacheHistoryURLSeries: {
+		config.MediaTypeSeries,
+		logger.CacheHistoryURL,
+		logger.DBCountHistoriesURL,
+		logger.DBHistoriesURL,
+		varKindString,
+		guardHistory,
+		"",
+		indexStringSet,
+	},
+	logger.CacheHistoryTitleSeries: {
+		config.MediaTypeSeries,
+		logger.CacheHistoryTitle,
+		logger.DBCountHistoriesTitle,
+		logger.DBHistoriesTitle,
+		varKindString,
+		guardHistory,
+		"",
+		indexStringSet,
+	},
+	// Books
+	logger.CacheBook: {
+		config.MediaTypeBook,
+		logger.CacheMedia,
+		logger.DBCountMedia,
+		logger.DBCacheMedia,
+		varKindOneStringTwoInt,
+		guardMedia,
+		"",
+		indexNone,
+	},
+	logger.CacheDBBook: {
+		config.MediaTypeBook,
+		logger.CacheDBMedia,
+		logger.DBCountDBMedia,
+		logger.DBCacheDBMedia,
+		varKindThreeString,
+		guardMedia,
+		"",
+		indexThreeString,
+	},
+	logger.CacheTitlesBook: {
+		config.MediaTypeBook,
+		logger.CacheMediaTitles,
+		logger.DBCountDBTitles,
+		logger.DBCacheDBTitles,
+		varKindTwoString,
+		guardMedia,
+		"",
+		indexTwoString,
+	},
+	logger.CacheUnmatchedBook: {
+		config.MediaTypeBook,
+		logger.CacheUnmatched,
+		logger.DBCountUnmatched,
+		logger.DBCacheUnmatched,
+		varKindString,
+		guardFile,
+		"DBRemoveUnmatched",
+		indexNone,
+	},
+	logger.CacheFilesBook: {
+		config.MediaTypeBook,
+		logger.CacheFiles,
+		logger.DBCountFiles,
+		logger.DBCacheFiles,
+		varKindString,
+		guardFile,
+		"",
+		indexNone,
+	},
+	logger.CacheHistoryURLBook: {
+		config.MediaTypeBook,
+		logger.CacheHistoryURL,
+		logger.DBCountHistoriesURL,
+		logger.DBHistoriesURL,
+		varKindString,
+		guardHistory,
+		"",
+		indexStringSet,
+	},
+	logger.CacheHistoryTitleBook: {
+		config.MediaTypeBook,
+		logger.CacheHistoryTitle,
+		logger.DBCountHistoriesTitle,
+		logger.DBHistoriesTitle,
+		varKindString,
+		guardHistory,
+		"",
+		indexStringSet,
+	},
+	// Audiobooks
+	logger.CacheAudiobook: {
+		config.MediaTypeAudiobook,
+		logger.CacheMedia,
+		logger.DBCountMedia,
+		logger.DBCacheMedia,
+		varKindOneStringTwoInt,
+		guardMedia,
+		"",
+		indexNone,
+	},
+	logger.CacheDBAudiobook: {
+		config.MediaTypeAudiobook,
+		logger.CacheDBMedia,
+		logger.DBCountDBMedia,
+		logger.DBCacheDBMedia,
+		varKindThreeString,
+		guardMedia,
+		"",
+		indexThreeString,
+	},
+	logger.CacheTitlesAudiobook: {
+		config.MediaTypeAudiobook,
+		logger.CacheMediaTitles,
+		logger.DBCountDBTitles,
+		logger.DBCacheDBTitles,
+		varKindTwoString,
+		guardMedia,
+		"",
+		indexTwoString,
+	},
+	logger.CacheUnmatchedAudiobook: {
+		config.MediaTypeAudiobook,
+		logger.CacheUnmatched,
+		logger.DBCountUnmatched,
+		logger.DBCacheUnmatched,
+		varKindString,
+		guardFile,
+		"DBRemoveUnmatched",
+		indexNone,
+	},
+	logger.CacheFilesAudiobook: {
+		config.MediaTypeAudiobook,
+		logger.CacheFiles,
+		logger.DBCountFiles,
+		logger.DBCacheFiles,
+		varKindString,
+		guardFile,
+		"",
+		indexStringSet,
+	},
+	logger.CacheHistoryURLAudiobook: {
+		config.MediaTypeAudiobook,
+		logger.CacheHistoryURL,
+		logger.DBCountHistoriesURL,
+		logger.DBHistoriesURL,
+		varKindString,
+		guardHistory,
+		"",
+		indexStringSet,
+	},
+	logger.CacheHistoryTitleAudiobook: {
+		config.MediaTypeAudiobook,
+		logger.CacheHistoryTitle,
+		logger.DBCountHistoriesTitle,
+		logger.DBHistoriesTitle,
+		varKindString,
+		guardHistory,
+		"",
+		indexStringSet,
+	},
+	// Music / Albums
+	logger.CacheAlbum: {
+		config.MediaTypeMusic,
+		logger.CacheMedia,
+		logger.DBCountMedia,
+		logger.DBCacheMedia,
+		varKindOneStringTwoInt,
+		guardMedia,
+		"",
+		indexNone,
+	},
+	logger.CacheDBAlbum: {
+		config.MediaTypeMusic,
+		logger.CacheDBMedia,
+		logger.DBCountDBMedia,
+		logger.DBCacheDBMedia,
+		varKindThreeString,
+		guardMedia,
+		"",
+		indexThreeString,
+	},
+	logger.CacheTitlesAlbum: {
+		config.MediaTypeMusic,
+		logger.CacheMediaTitles,
+		logger.DBCountDBTitles,
+		logger.DBCacheDBTitles,
+		varKindTwoString,
+		guardMedia,
+		"",
+		indexTwoString,
+	},
+	logger.CacheUnmatchedAlbum: {
+		config.MediaTypeMusic,
+		logger.CacheUnmatched,
+		logger.DBCountUnmatched,
+		logger.DBCacheUnmatched,
+		varKindString,
+		guardFile,
+		"DBRemoveUnmatched",
+		indexNone,
+	},
+	logger.CacheFilesAlbum: {
+		config.MediaTypeMusic,
+		logger.CacheFiles,
+		logger.DBCountFiles,
+		logger.DBCacheFiles,
+		varKindString,
+		guardFile,
+		"",
+		indexStringSet,
+	},
+	logger.CacheHistoryURLAlbum: {
+		config.MediaTypeMusic,
+		logger.CacheHistoryURL,
+		logger.DBCountHistoriesURL,
+		logger.DBHistoriesURL,
+		varKindString,
+		guardHistory,
+		"",
+		indexStringSet,
+	},
+	logger.CacheHistoryTitleAlbum: {
+		config.MediaTypeMusic,
+		logger.CacheHistoryTitle,
+		logger.DBCountHistoriesTitle,
+		logger.DBHistoriesTitle,
+		varKindString,
+		guardHistory,
+		"",
+		indexStringSet,
+	},
+	logger.CacheRootpathAlbum: {
+		config.MediaTypeMusic,
+		logger.CacheRootpath,
+		logger.DBCountRootpath,
+		logger.DBCacheRootpath,
+		varKindString,
+		guardFile,
+		"",
+		indexStringSet,
+	},
+	logger.CacheRootpathAudiobook: {
+		config.MediaTypeAudiobook,
+		logger.CacheRootpath,
+		logger.DBCountRootpath,
+		logger.DBCacheRootpath,
+		varKindString,
+		guardFile,
+		"",
+		indexStringSet,
+	},
+}
+
+// doRefreshInternal calls refreshCacheDBInternal with the SyncMap selected by e.varKind.
+func doRefreshInternal(e cacheDispatchEntry, force bool) {
+	switch e.varKind {
+	case varKindThreeString:
+		refreshCacheDBInternal(
+			e.isType,
+			force,
+			e.cacheKey,
+			e.countKey,
+			e.dataKey,
+			cache.itemsthreestring,
+		)
+	case varKindTwoString:
+		refreshCacheDBInternal(
+			e.isType,
+			force,
+			e.cacheKey,
+			e.countKey,
+			e.dataKey,
+			cache.itemstwostring,
+		)
+	case varKindOneStringTwoInt:
+		refreshCacheDBInternal(
+			e.isType,
+			force,
+			e.cacheKey,
+			e.countKey,
+			e.dataKey,
+			cache.itemstwoint,
+		)
+	case varKindString:
+		refreshCacheDBInternal(
+			e.isType,
+			force,
+			e.cacheKey,
+			e.countKey,
+			e.dataKey,
+			cache.itemsstring,
+		)
+	}
+}
+
+// RefreshCached refreshes the cached data for the specified key.
+// Guard check, optional pre-step, data refresh, and index build are all handled here.
 func RefreshCached(key string, force bool) {
-	// Use indexed refresh functions if enabled for better performance
-	useIndexed := config.GetSettingsGeneral().UseIndexedCache
+	entry, ok := cacheDispatchMap[key]
+	if !ok {
+		return
+	}
 
-	switch key {
-	case logger.CacheMovie:
-		RefreshMediaCacheList(false, force)
-	case logger.CacheSeries:
-		RefreshMediaCacheList(true, force)
-	case logger.CacheDBMovie:
-		if useIndexed {
-			RefreshMediaCacheDBIndexed(false, force)
-		} else {
-			RefreshMediaCacheDB(false, force)
+	switch entry.guard {
+	case guardMedia:
+		if !config.GetSettingsGeneral().UseMediaCache {
+			return
 		}
 
-	case logger.CacheDBSeriesAlt:
-		if useIndexed {
-			RefreshMediaCacheTitlesIndexed(true, force)
-		} else {
-			RefreshMediaCacheTitles(true, force)
+	case guardHistory:
+		if !config.GetSettingsGeneral().UseHistoryCache {
+			return
 		}
 
-	case logger.CacheDBSeries:
-		if useIndexed {
-			RefreshMediaCacheDBIndexed(true, force)
-		} else {
-			RefreshMediaCacheDB(true, force)
-		}
-
-	case logger.CacheTitlesMovie:
-		if useIndexed {
-			RefreshMediaCacheTitlesIndexed(false, force)
-		} else {
-			RefreshMediaCacheTitles(false, force)
-		}
-
-	case logger.CacheUnmatchedMovie:
-		Refreshunmatchedcached(false, force)
-	case logger.CacheUnmatchedSeries:
-		Refreshunmatchedcached(true, force)
-	case logger.CacheFilesMovie:
-		Refreshfilescached(false, force)
-	case logger.CacheFilesSeries:
-		Refreshfilescached(true, force)
-	case logger.CacheHistoryURLMovie:
-		if useIndexed {
-			RefreshhistorycacheurlIndexed(false, force)
-		} else {
-			Refreshhistorycacheurl(false, force)
-		}
-
-	case logger.CacheHistoryTitleMovie:
-		if useIndexed {
-			RefreshhistorycachetitleIndexed(false, force)
-		} else {
-			Refreshhistorycachetitle(false, force)
-		}
-
-	case logger.CacheHistoryURLSeries:
-		if useIndexed {
-			RefreshhistorycacheurlIndexed(true, force)
-		} else {
-			Refreshhistorycacheurl(true, force)
-		}
-
-	case logger.CacheHistoryTitleSeries:
-		if useIndexed {
-			RefreshhistorycachetitleIndexed(true, force)
-		} else {
-			Refreshhistorycachetitle(true, force)
+	case guardFile:
+		if !config.GetSettingsGeneral().UseFileCache {
+			return
 		}
 	}
+
+	if entry.removeKey != "" {
+		ExecNMap(entry.isType, entry.removeKey, &config.GetSettingsGeneral().CacheDuration2)
+	}
+
+	if entry.indexKind == indexNone {
+		doRefreshInternal(entry, force)
+		return
+	}
+
+	mapvar := mtstrings.GetStringsMap(entry.isType, entry.cacheKey)
+	lastScanBefore := getLastScanForKind(entry.indexKind, mapvar)
+	doRefreshInternal(entry, force)
+
+	if !config.GetSettingsGeneral().UseIndexedCache {
+		return
+	}
+
+	kind := entry.indexKind
+	syncops.QueueFunc(func() {
+		if !force && lastScanBefore != 0 && getLastScanForKind(kind, mapvar) == lastScanBefore {
+			return
+		}
+
+		buildAndStoreIndex(kind, mapvar)
+	})
 }
 
 // GetCachedTwoStringArr retrieves the cached array of syncops.DbstaticTwoStringOneInt objects associated with the given key.
@@ -848,6 +1249,74 @@ func GetCachedThreeStringArr(
 	}
 
 	return nil
+}
+
+// GetCachedThreeStringSeq returns an iterator over the cached ThreeString slice.
+// Yields pointers into the underlying slice to avoid per-element struct copies.
+// Safe for early exit: the caller may return or break without draining the sequence.
+func GetCachedThreeStringSeq(
+	key string,
+	checkexpire bool,
+	retry bool,
+) iter.Seq[*syncops.DbstaticThreeStringTwoInt] {
+	arr := GetCachedThreeStringArr(key, checkexpire, retry)
+
+	return func(yield func(*syncops.DbstaticThreeStringTwoInt) bool) {
+		for i := range arr {
+			if !yield(&arr[i]) {
+				return
+			}
+		}
+	}
+}
+
+// GetCachedTwoStringSeq returns an iterator over the cached TwoString slice.
+// Yields pointers into the underlying slice to avoid per-element struct copies.
+func GetCachedTwoStringSeq(
+	key string,
+	checkexpire bool,
+	retry bool,
+) iter.Seq[*syncops.DbstaticTwoStringOneInt] {
+	arr := GetCachedTwoStringArr(key, checkexpire, retry)
+
+	return func(yield func(*syncops.DbstaticTwoStringOneInt) bool) {
+		for i := range arr {
+			if !yield(&arr[i]) {
+				return
+			}
+		}
+	}
+}
+
+// GetCachedTwoIntSeq returns an iterator over the cached TwoInt slice.
+// Yields pointers into the underlying slice to avoid per-element struct copies.
+func GetCachedTwoIntSeq(
+	key string,
+	checkexpire bool,
+	retry bool,
+) iter.Seq[*syncops.DbstaticOneStringTwoInt] {
+	arr := GetCachedTwoIntArr(key, checkexpire, retry)
+
+	return func(yield func(*syncops.DbstaticOneStringTwoInt) bool) {
+		for i := range arr {
+			if !yield(&arr[i]) {
+				return
+			}
+		}
+	}
+}
+
+// GetCachedStringSeq returns an iterator over the cached string slice.
+func GetCachedStringSeq(key string, checkexpire bool, retry bool) iter.Seq[string] {
+	arr := GetCachedStringArr(key, checkexpire, retry)
+
+	return func(yield func(string) bool) {
+		for _, s := range arr {
+			if !yield(s) {
+				return
+			}
+		}
+	}
 }
 
 // GetCachedStringArr retrieves a cached array of strings.
@@ -960,18 +1429,23 @@ func storeMapType[t any](
 			syncops.QueueSyncMapUpdateLastscan(mapType, s, lastscan)
 		} else {
 			// Log error if map type cannot be determined
-			logger.Logtype("error", 1).Str("key", s).Msg("Unable to determine MapType for SyncMap in storeMapType")
+			logger.Logtype("error", 1).
+				Str("key", s).
+				Msg("Unable to determine MapType for SyncMap in storeMapType")
 		}
 
 		return
 	}
+
 	// Use syncops for Add operation as well
 	mapType := getMapTypeForSyncMap(c)
 	if mapType != "" {
 		syncops.QueueSyncMapAdd(mapType, s, val, expires, false, lastscan)
 	} else {
 		// Log error if map type cannot be determined
-		logger.Logtype("error", 1).Str("key", s).Msg("Unable to determine MapType for SyncMap in storeMapType Add")
+		logger.Logtype("error", 1).
+			Str("key", s).
+			Msg("Unable to determine MapType for SyncMap in storeMapType Add")
 	}
 }
 
@@ -986,56 +1460,51 @@ func getMapTypeForSyncMap(c any) syncops.MapType {
 		return syncops.MapTypeThreeString
 	case cache.itemstwoint:
 		return syncops.MapTypeTwoInt
-	case cache.itemsxstmt:
-		return syncops.MapTypeXStmt
-	case cache.itemsregex:
-		return syncops.MapTypeRegex
 	default:
 		return ""
 	}
 }
 
-// CheckcachedMovieTitleHistory checks if the given movie title exists in the
+// CheckcachedTitleHistory checks if the given title exists in the
 // movie_histories table. It first checks the file cache if enabled,
 // otherwise queries the database. Returns true if the title exists, false
 // otherwise.
-func CheckcachedTitleHistory(useseries bool, file *string) bool {
+func CheckcachedTitleHistory(isType uint, file *string) bool {
 	if config.GetSettingsGeneral().UseFileCache {
-		return SlicesCacheContainsI(useseries, logger.CacheHistoryTitle, file)
+		return SlicesCacheContainsI(isType, logger.CacheHistoryTitle, file)
 	}
 
 	return Getdatarow[uint](
 		false,
-		logger.GetStringsMap(useseries, logger.DBCountHistoriesByTitle),
+		mtstrings.GetStringsMap(isType, logger.DBCountHistoriesByTitle),
 		file,
 	) >= 1
 }
 
-// CheckcachedMovieUrlHistory checks if the given movie URL exists in the
+// CheckcachedURLHistory checks if the given URL exists in the
 // movie_histories table. It first checks the file cache if enabled,
 // otherwise queries the database. Returns true if the URL exists, false
 // otherwise.
-func CheckcachedURLHistory(useseries bool, file *string) bool {
+func CheckcachedURLHistory(isType uint, file *string) bool {
 	if config.GetSettingsGeneral().UseFileCache {
-		return SlicesCacheContainsI(useseries, logger.CacheHistoryURL, file)
+		return SlicesCacheContainsI(isType, logger.CacheHistoryURL, file)
 	}
 
 	return Getdatarow[uint](
 		false,
-		logger.GetStringsMap(useseries, logger.DBCountHistoriesByURL),
+		mtstrings.GetStringsMap(isType, logger.DBCountHistoriesByURL),
 		file,
 	) >= 1
 }
 
-// InvalidateImdbStmt iterates over the cache.items sync.Map and deletes any
-// cached items that have the imdb field set to true. This is likely used to
-// invalidate any cached IMDB-related data when needed.
+// InvalidateImdbStmt clears all cached prepared statements.
+// Since we use Ristretto which doesn't track IMDB vs non-IMDB statements,
+// we clear all statements and let them be re-prepared on demand.
+// This is called when the IMDB database is exchanged.
 func InvalidateImdbStmt() {
-	syncops.QueueSyncMapDeleteFuncImdbVal(syncops.MapTypeXStmt, func(b bool) bool {
-		return b
-	}, func(s *sqlx.Stmt) {
-		s.Close()
-	})
+	if cache.ristrettoStmt != nil {
+		cache.ristrettoStmt.Clear()
+	}
 }
 
 // getregexP returns a compiled regular expression based on the provided key.
@@ -1111,6 +1580,7 @@ func RegexGetMatchesFind(key, matchfor string, mincount int) bool {
 	if mincount == 1 {
 		return len(findStringIndex(key, matchfor)) >= 1
 	}
+
 	return len(findAllStringIndex(key, matchfor, mincount)) >= mincount
 }
 
@@ -1139,6 +1609,7 @@ func getmatches(cached bool, key, matchfor string) []int {
 	if !cached {
 		return regexp.MustCompile(key).FindStringSubmatchIndex(matchfor)
 	}
+
 	return RunRetRegex(key, matchfor, false)
 }
 
@@ -1219,15 +1690,6 @@ func startJanitor() {
 					return d != 0 && now >= d
 				})
 
-				syncops.QueueSyncMapDeleteFuncExpiresVal(syncops.MapTypeXStmt, func(d int64) bool {
-					return d != 0 && now >= d
-				}, func(s *sqlx.Stmt) {
-					s.Close()
-				})
-				syncops.QueueSyncMapDeleteFuncExpires(syncops.MapTypeRegex, func(d int64) bool {
-					return d != 0 && now >= d
-				})
-
 				select {
 				case <-cache.janitorCtx.Done():
 					return
@@ -1265,12 +1727,12 @@ func NewCache(cleaningInterval, extension time.Duration) {
 		var err error
 
 		// Regex cache: ~1000 patterns, 10MB max
-		cache.ristrettoRegex, err = ristretto.NewCache(&ristretto.Config{
+		cache.ristrettoRegex, err = ristretto.NewCache(&ristretto.Config[string, *regexp.Regexp]{
 			NumCounters: 100_000,  // 10x expected items
 			MaxCost:     10 << 20, // 10MB
 			BufferItems: 64,
 			Metrics:     false,
-			OnEvict: func(item *ristretto.Item) {
+			OnEvict: func(item *ristretto.Item[*regexp.Regexp]) {
 				// Regex patterns don't need cleanup
 			},
 		})
@@ -1279,15 +1741,15 @@ func NewCache(cleaningInterval, extension time.Duration) {
 		}
 
 		// SQL statement cache: ~1000 statements, 10MB max
-		cache.ristrettoStmt, err = ristretto.NewCache(&ristretto.Config{
+		cache.ristrettoStmt, err = ristretto.NewCache(&ristretto.Config[string, *sqlx.Stmt]{
 			NumCounters: 100_000,
 			MaxCost:     10 << 20,
 			BufferItems: 64,
 			Metrics:     false,
-			OnEvict: func(item *ristretto.Item) {
+			OnEvict: func(item *ristretto.Item[*sqlx.Stmt]) {
 				// Close SQL statement on eviction
-				if stmt, ok := item.Value.(*sqlx.Stmt); ok && stmt != nil {
-					stmt.Close()
+				if item.Value != nil {
+					item.Value.Close()
 				}
 			},
 		})
@@ -1316,8 +1778,6 @@ func NewCache(cleaningInterval, extension time.Duration) {
 		syncops.RegisterSyncMap(syncops.MapTypeTwoInt, cache.itemstwoint)
 		syncops.RegisterSyncMap(syncops.MapTypeThreeString, cache.itemsthreestring)
 		syncops.RegisterSyncMap(syncops.MapTypeTwoString, cache.itemstwostring)
-		syncops.RegisterSyncMap(syncops.MapTypeXStmt, cache.itemsxstmt)
-		syncops.RegisterSyncMap(syncops.MapTypeRegex, cache.itemsregex)
 
 		globalCache = &globalcache{
 			defaultextension: extension,
@@ -1332,6 +1792,12 @@ func NewCache(cleaningInterval, extension time.Duration) {
 // movie/series titles, quality detection, and file pattern matching.
 func SetStaticRegexp(key string) {
 	globalCache.setStaticRegexp(key)
+}
+
+// GetCachedRegexp returns the compiled regexp for the given pattern,
+// compiling and caching it permanently on first call.
+func GetCachedRegexp(pattern string) *regexp.Regexp {
+	return globalCache.setRegexp(pattern, 0)
 }
 
 // StopCache gracefully shuts down the cache janitor goroutine and cleans up resources.
@@ -1366,8 +1832,17 @@ func DeleteCacheEntry(key string) {
 	syncops.QueueSyncMapDelete(syncops.MapTypeTwoInt, key)
 	syncops.QueueSyncMapDelete(syncops.MapTypeThreeString, key)
 	syncops.QueueSyncMapDelete(syncops.MapTypeTwoString, key)
-	syncops.QueueSyncMapDelete(syncops.MapTypeXStmt, key)
-	syncops.QueueSyncMapDelete(syncops.MapTypeRegex, key)
+
+	// Delete from all index maps
+	cache.indexThreeStringByStr3.Delete(key)
+	cache.indexThreeStringByNum2.Delete(key)
+	cache.indexTwoStringByStr1.Delete(key)
+	cache.indexStringSet.Delete(key)
+	cache.indexTwoIntComposite.Delete(key)
+
+	if cache.ristrettoStmt != nil {
+		cache.ristrettoStmt.Del(key)
+	}
 }
 
 // ClearCacheType clears all entries from a specific cache type.
@@ -1382,6 +1857,7 @@ func ClearCacheType(cacheType string) {
 		syncops.QueueSyncMapDeleteFunc(syncops.MapTypeString, func(value []string) bool {
 			return true // Clear all entries
 		})
+		cache.indexStringSet.DeleteFunc(func(_ map[string]struct{}) bool { return true })
 
 	case logger.CacheDBMovie, logger.CacheDBSeries, logger.CacheDBSeriesAlt:
 		// Clear database caches
@@ -1390,6 +1866,12 @@ func ClearCacheType(cacheType string) {
 			func(value []syncops.DbstaticThreeStringTwoInt) bool {
 				return true // Clear all entries
 			},
+		)
+		cache.indexThreeStringByStr3.DeleteFunc(
+			func(_ map[string]*syncops.DbstaticThreeStringTwoInt) bool { return true },
+		)
+		cache.indexThreeStringByNum2.DeleteFunc(
+			func(_ map[uint]*syncops.DbstaticThreeStringTwoInt) bool { return true },
 		)
 
 	case logger.CacheTitlesMovie:
@@ -1400,6 +1882,9 @@ func ClearCacheType(cacheType string) {
 				return true // Clear all entries
 			},
 		)
+		cache.indexTwoStringByStr1.DeleteFunc(
+			func(_ map[string][]*syncops.DbstaticTwoStringOneInt) bool { return true },
+		)
 
 	case logger.CacheUnmatchedMovie, logger.CacheUnmatchedSeries,
 		logger.CacheFilesMovie, logger.CacheFilesSeries,
@@ -1409,6 +1894,7 @@ func ClearCacheType(cacheType string) {
 		syncops.QueueSyncMapDeleteFunc(syncops.MapTypeString, func(value []string) bool {
 			return true // Clear all entries
 		})
+		cache.indexStringSet.DeleteFunc(func(_ map[string]struct{}) bool { return true })
 	}
 }
 

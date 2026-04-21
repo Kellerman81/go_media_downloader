@@ -1123,9 +1123,9 @@ func getParserFields() []TemplateField {
 			Category:    "Series Information",
 		},
 		{
-			Name:        "Dbserie.Aliases",
+			Name:        "Serie.Aliases",
 			Type:        "string",
-			Template:    "{{.Dbserie.Aliases}}",
+			Template:    "{{.Serie.Aliases}}",
 			Description: "Alternative series names",
 			Example:     "Breaking Bad, BB",
 			Category:    "Series Information",
@@ -1793,9 +1793,9 @@ func getNotificationFields() []TemplateField {
 			Category:    "Series Information",
 		},
 		{
-			Name:        "Dbserie.Aliases",
+			Name:        "Serie.Aliases",
 			Type:        "string",
-			Template:    "{{.Dbserie.Aliases}}",
+			Template:    "{{.Serie.Aliases}}",
 			Description: "Alternative series names",
 			Example:     "Breaking Bad, BB",
 			Category:    "Series Information",
@@ -2502,7 +2502,10 @@ func verifyGoTemplate(templateStr, dataType string) TemplateVerification {
 		}
 	} else {
 		verification.Valid = false
-		verification.Errors = append(verification.Errors, "Template appears to be plain text - use Go template syntax with {{ }} for dynamic content")
+		verification.Errors = append(
+			verification.Errors,
+			"Template appears to be plain text - use Go template syntax with {{ }} for dynamic content",
+		)
 	}
 
 	if verification.Valid && len(verification.Errors) == 0 {
@@ -2586,8 +2589,8 @@ func extractFieldName(ref string) string {
 	}
 
 	// Extract field from patterns like ".Field", "if .Field", "range .Array", etc.
-	words := strings.Fields(ref)
-	for _, word := range words {
+	words := strings.FieldsSeq(ref)
+	for word := range words {
 		if strings.HasPrefix(word, ".") && len(word) > 1 {
 			// Remove leading dot and extract the field path
 			field := word[1:]
@@ -2637,10 +2640,7 @@ func calculateSimilarity(s1, s2 string) int {
 		}
 	}
 
-	maxLen := len(s1)
-	if len(s2) > maxLen {
-		maxLen = len(s2)
-	}
+	maxLen := max(len(s2), len(s1))
 
 	if maxLen == 0 {
 		return 0

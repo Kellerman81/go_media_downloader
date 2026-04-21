@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"maps"
 	"net/http"
 	"strconv"
 	"strings"
@@ -341,7 +342,7 @@ func HandleMovieMetadata(c *gin.Context) {
 	case "episode":
 		seasonNum, err := strconv.Atoi(c.PostForm("metadata_Season"))
 		if err != nil {
-			logger.Logtype("error", 1).
+			logger.Logtype("error", 0).
 				Str("value", c.PostForm("metadata_Season")).
 				Err(err).
 				Msg("Failed to parse season number")
@@ -349,7 +350,7 @@ func HandleMovieMetadata(c *gin.Context) {
 
 		episodeNum, err := strconv.Atoi(c.PostForm("metadata_Episode"))
 		if err != nil {
-			logger.Logtype("error", 1).
+			logger.Logtype("error", 0).
 				Str("value", c.PostForm("metadata_Episode")).
 				Err(err).
 				Msg("Failed to parse episode number")
@@ -486,9 +487,7 @@ func handleMovieMetadataLookup(imdbID, provider string, updateDB bool) string {
 	}
 
 	// Merge movie data into result
-	for key, value := range movieData {
-		result[key] = value
-	}
+	maps.Copy(result, movieData)
 
 	var lastError string
 
@@ -643,7 +642,10 @@ func handleEpisodeMetadataLookup(
 	// Try Trakt episode lookup with the series IMDB ID
 	if result["title"] == nil && seriesImdbID != "" {
 		seasonStr := strconv.Itoa(season)
-		if episodes, err := apiexternal.GetTraktSerieSeasonEpisodes(seriesImdbID, seasonStr); err == nil &&
+		if episodes, err := apiexternal.GetTraktSerieSeasonEpisodes(
+			seriesImdbID,
+			seasonStr,
+		); err == nil &&
 			len(episodes) > 0 {
 			// Find the specific episode
 			for _, ep := range episodes {
@@ -767,6 +769,7 @@ func renderMovieMetadataDisplay(result map[string]any) string {
 			html.Tr(html.Td(gomponents.Text("Data Source:")), html.Td(gomponents.Text(dataSource))),
 		)
 	}
+
 	// Handle year as both int and string (depending on source)
 	if year, ok := result["year"].(int); ok {
 		resultRows = append(
@@ -777,7 +780,10 @@ func renderMovieMetadataDisplay(result map[string]any) string {
 			),
 		)
 	} else if yearStr, ok := result["year"].(string); ok && yearStr != "" {
-		resultRows = append(resultRows, html.Tr(html.Td(gomponents.Text("Year:")), html.Td(gomponents.Text(yearStr))))
+		resultRows = append(
+			resultRows,
+			html.Tr(html.Td(gomponents.Text("Year:")), html.Td(gomponents.Text(yearStr))),
+		)
 	}
 
 	if imdbID, ok := result["imdb_id"].(string); ok && imdbID != "" {
@@ -828,6 +834,7 @@ func renderMovieMetadataDisplay(result map[string]any) string {
 			html.Tr(html.Td(gomponents.Text("Genres:")), html.Td(gomponents.Text(genres))),
 		)
 	}
+
 	// Handle runtime as both int and string
 	if runtime, ok := result["runtime"].(int); ok && runtime > 0 {
 		resultRows = append(
@@ -838,8 +845,12 @@ func renderMovieMetadataDisplay(result map[string]any) string {
 			),
 		)
 	} else if runtimeStr, ok := result["runtime"].(string); ok && runtimeStr != "" {
-		resultRows = append(resultRows, html.Tr(html.Td(gomponents.Text("Runtime:")), html.Td(gomponents.Text(runtimeStr))))
+		resultRows = append(
+			resultRows,
+			html.Tr(html.Td(gomponents.Text("Runtime:")), html.Td(gomponents.Text(runtimeStr))),
+		)
 	}
+
 	// Handle rating as both float32 and string
 	if rating, ok := result["rating"].(float32); ok && rating > 0 {
 		resultRows = append(
@@ -850,7 +861,10 @@ func renderMovieMetadataDisplay(result map[string]any) string {
 			),
 		)
 	} else if ratingStr, ok := result["rating"].(string); ok && ratingStr != "" {
-		resultRows = append(resultRows, html.Tr(html.Td(gomponents.Text("IMDB Rating:")), html.Td(gomponents.Text(ratingStr))))
+		resultRows = append(
+			resultRows,
+			html.Tr(html.Td(gomponents.Text("IMDB Rating:")), html.Td(gomponents.Text(ratingStr))),
+		)
 	}
 
 	if votes, ok := result["votes"].(string); ok && votes != "" {
@@ -859,7 +873,13 @@ func renderMovieMetadataDisplay(result map[string]any) string {
 			html.Tr(html.Td(gomponents.Text("IMDB Votes:")), html.Td(gomponents.Text(votes))),
 		)
 	} else if votesInt, ok := result["votes"].(int32); ok && votesInt > 0 {
-		resultRows = append(resultRows, html.Tr(html.Td(gomponents.Text("Votes:")), html.Td(gomponents.Text(fmt.Sprintf("%d", votesInt)))))
+		resultRows = append(
+			resultRows,
+			html.Tr(
+				html.Td(gomponents.Text("Votes:")),
+				html.Td(gomponents.Text(fmt.Sprintf("%d", votesInt))),
+			),
+		)
 	}
 
 	if language, ok := result["language"].(string); ok && language != "" {

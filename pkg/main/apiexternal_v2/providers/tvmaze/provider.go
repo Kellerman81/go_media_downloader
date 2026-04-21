@@ -160,16 +160,16 @@ func (p *Provider) GetSeasonDetails(
 	}
 
 	// Find the specific season
-	for _, s := range response {
-		if s.Number == seasonNumber {
-			return convertSeasonToDetails(&s), nil
+	for i := range response {
+		if response[i].Number == seasonNumber {
+			return convertSeasonToDetails(&response[i]), nil
 		}
 	}
 
 	return nil, fmt.Errorf("season %d not found", seasonNumber)
 }
 
-// GetSeasonDetails retrieves detailed information about a season.
+// GetEpisodes retrieves all episodes for the given series.
 func (p *Provider) GetEpisodes(
 	ctx context.Context,
 	seriesID int,
@@ -189,7 +189,7 @@ func (p *Provider) GetEpisodes(
 	return episodes, nil
 }
 
-// GetSeasonDetails retrieves detailed information about a season.
+// GetSeasons retrieves detailed information about all seasons.
 func (p *Provider) GetSeasons(
 	ctx context.Context,
 	seriesID int,

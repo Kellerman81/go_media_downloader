@@ -8,27 +8,6 @@ import (
 	"maragu.dev/gomponents/html"
 )
 
-// HTML generation helper functions.
-func formInput(inputType, name, id, class, value string, attrs ...gomponents.Node) gomponents.Node {
-	allAttrs := []gomponents.Node{
-		html.Type(inputType),
-		html.Name(name),
-		html.ID(id),
-		html.Class(class),
-	}
-	if value != "" {
-		allAttrs = append(allAttrs, html.Value(value))
-	}
-
-	allAttrs = append(allAttrs, attrs...)
-
-	return html.Input(allAttrs...)
-}
-
-func formTextInput(name, id, value string, attrs ...gomponents.Node) gomponents.Node {
-	return formInput("text", name, id, "form-control-modern", value, attrs...)
-}
-
 func createOption(value, text string, selected bool) gomponents.Node {
 	attrs := []gomponents.Node{
 		html.Value(value),
@@ -39,22 +18,6 @@ func createOption(value, text string, selected bool) gomponents.Node {
 	}
 
 	return html.Option(attrs...)
-}
-
-func formCheckboxInput(name, id string, checked bool, attrs ...gomponents.Node) gomponents.Node {
-	allAttrs := []gomponents.Node{
-		html.Type("checkbox"),
-		html.Name(name),
-		html.ID(id),
-		html.Class("form-check-input-modern"),
-	}
-	if checked {
-		allAttrs = append(allAttrs, html.Checked())
-	}
-
-	allAttrs = append(allAttrs, attrs...)
-
-	return html.Input(allAttrs...)
 }
 
 // Response helper functions.
@@ -124,6 +87,7 @@ func getParam(ctx *gin.Context, key, defaultValue string) string {
 	if ctx.Request.Method == "POST" {
 		return ctx.DefaultPostForm(key, defaultValue)
 	}
+
 	return ctx.DefaultQuery(key, defaultValue)
 }
 
@@ -132,5 +96,6 @@ func getParamValue(ctx *gin.Context, key string) string {
 	if ctx.Request.Method == "POST" {
 		return ctx.PostForm(key)
 	}
+
 	return ctx.Query(key)
 }

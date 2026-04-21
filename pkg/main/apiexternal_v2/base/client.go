@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -16,6 +16,7 @@ import (
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/slidingwindow"
+	"github.com/goccy/go-json"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/clientcredentials"
 )
@@ -106,6 +107,10 @@ type BaseClient struct {
 
 	// Statistics
 	stats *ClientStats
+
+	// Pre-built user agent string and header slice (computed once at construction).
+	userAgent       string
+	userAgentHeader []string // []string{userAgent} — avoids per-request allocation
 
 	// Config change callback unsubscribe function
 	configUnsubscribe func()
@@ -224,6 +229,14 @@ func (s *defaultOAuth2Storage) DeleteToken(clientName string) error {
 	return nil
 }
 
+// Pre-allocated header value slices for fixed headers — avoids per-request []string allocations.
+// These are never mutated after init (net/http only reads request headers).
+var (
+	headerAcceptJSON       = []string{"application/json"}
+	headerContentTypeJSON  = []string{"application/json"}
+	headerAcceptEncodingGZ = []string{"gzip, deflate"}
+)
+
 var (
 	// Global default OAuth2 token storage (can be replaced with custom implementation).
 	defaultTokenStorage OAuth2TokenStorage = newDefaultOAuth2Storage()
@@ -282,10 +295,17 @@ func NewBaseClient(cfg ClientConfig) *BaseClient {
 		Transport: transport,
 	}
 
+	ua := cfg.UserAgent
+	if ua == "" {
+		ua = "GoMediaDownloader/" + cfg.Name + " (https://github.com/Kellerman81/go_media_downloader)"
+	}
+
 	client := &BaseClient{
-		config:     cfg,
-		httpClient: httpClient,
-		stats:      &ClientStats{},
+		config:          cfg,
+		httpClient:      httpClient,
+		stats:           &ClientStats{},
+		userAgent:       ua,
+		userAgentHeader: []string{ua},
 	}
 
 	// Initialize rate limiters with configurable time window
@@ -298,6 +318,7 @@ func NewBaseClient(cfg ClientConfig) *BaseClient {
 	if cfg.RateLimitPer24h > 0 {
 		client.rateLimiter24h = slidingwindow.NewLimiter(24*time.Hour, int64(cfg.RateLimitPer24h))
 	}
+
 	// rateLimiterTotal is an int64 counter, initialized to 0
 
 	// Initialize circuit breaker
@@ -319,32 +340,9 @@ func NewBaseClient(cfg ClientConfig) *BaseClient {
 	return client
 }
 
-// NewBaseClientWithConfigProvider creates a client with configuration hot-reload support.
-// func newBaseClientWithConfigProvider(
-// 	cfg ClientConfig,
-// 	provider config.ConfigProvider,
-// 	configName string,
-// ) *BaseClient {
-// 	client := NewBaseClient(cfg)
-
-// 	client.configProvider = provider
-// 	client.configName = configName
-
-// 	// Subscribe to configuration changes if ConfigManager interface is available
-// 	if manager, ok := provider.(config.ConfigManager); ok {
-// 		client.configUnsubscribe = manager.OnConfigChange(func(newProvider config.ConfigProvider) {
-// 			// Configuration changed - trigger reload
-// 			if err := client.RefreshConfig(); err != nil {
-// 				logger.Logtype(logger.StatusError, 0).
-// 					Err(err).
-// 					Str("client", cfg.Name).
-// 					Msg("Failed to refresh configuration after change notification")
-// 			}
-// 		})
-// 	}
-
-// 	return client
-// }
+func (bc *BaseClient) SetBaseURL(baseURL string) {
+	bc.config.BaseURL = baseURL
+}
 
 // initializeOAuth2 sets up OAuth2 configuration and loads existing token.
 func (bc *BaseClient) initializeOAuth2() {
@@ -378,8 +376,8 @@ func (bc *BaseClient) initializeOAuth2() {
 }
 
 func (bc *BaseClient) CheckFree() error {
-	// Check circuit breaker
-	if !bc.circuitBreaker.CanMakeRequest() {
+	// Check circuit breaker (with nil protection)
+	if bc.circuitBreaker != nil && !bc.circuitBreaker.CanMakeRequest() {
 		cbState := bc.circuitBreaker.GetState()
 		failureCount := bc.circuitBreaker.GetFailureCount()
 
@@ -410,8 +408,8 @@ func (bc *BaseClient) CheckFree() error {
 // Downloads will wait up to 2 minutes for a rate limit slot to become available
 // and are executed with priority (next in queue).
 func (bc *BaseClient) CheckFreeForDownload() error {
-	// Check circuit breaker
-	if !bc.circuitBreaker.CanMakeRequest() {
+	// Check circuit breaker (with nil protection)
+	if bc.circuitBreaker != nil && !bc.circuitBreaker.CanMakeRequest() {
 		cbState := bc.circuitBreaker.GetState()
 		failureCount := bc.circuitBreaker.GetFailureCount()
 
@@ -441,8 +439,8 @@ func (bc *BaseClient) CheckFreeForDownload() error {
 // Returns nil if a request slot is available immediately, otherwise returns an error.
 // This is useful for pre-flight checks before queuing work.
 func (bc *BaseClient) CheckFreeNonBlocking() error {
-	// Check circuit breaker
-	if !bc.circuitBreaker.CanMakeRequest() {
+	// Check circuit breaker (with nil protection)
+	if bc.circuitBreaker != nil && !bc.circuitBreaker.CanMakeRequest() {
 		return fmt.Errorf("circuit breaker is open for %s", bc.config.Name)
 	}
 
@@ -489,7 +487,15 @@ func (bc *BaseClient) MakeRequestForDownload(
 	target any,
 	targetfunc func(*http.Response) error,
 ) error {
-	return bc.MakeRequestWithGracePeriod(ctx, method, endpoint, body, target, targetfunc, 120*time.Second)
+	return bc.MakeRequestWithGracePeriod(
+		ctx,
+		method,
+		endpoint,
+		body,
+		target,
+		targetfunc,
+		120*time.Second,
+	)
 }
 
 // MakeRequestWithGracePeriod - Request handler with configurable grace period for rate limiting
@@ -507,8 +513,8 @@ func (bc *BaseClient) MakeRequestWithGracePeriod(
 	targetfunc func(*http.Response) error,
 	gracePeriod time.Duration,
 ) error {
-	// Check circuit breaker
-	if !bc.circuitBreaker.CanMakeRequest() {
+	// Check circuit breaker (with nil protection)
+	if bc.circuitBreaker != nil && !bc.circuitBreaker.CanMakeRequest() {
 		cbState := bc.circuitBreaker.GetState()
 		failureCount := bc.circuitBreaker.GetFailureCount()
 
@@ -545,7 +551,10 @@ func (bc *BaseClient) MakeRequestWithGracePeriod(
 	// Otherwise, concatenate with BaseURL
 	url := endpoint
 	if !strings.HasPrefix(endpoint, "http://") && !strings.HasPrefix(endpoint, "https://") {
-		url = bc.config.BaseURL + strings.ReplaceAll(endpoint, bc.config.BaseURL, "")
+		url = logger.JoinStrings(
+			bc.config.BaseURL,
+			strings.ReplaceAll(endpoint, bc.config.BaseURL, ""),
+		)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, method, url, body)
@@ -586,32 +595,37 @@ func (bc *BaseClient) MakeRequestWithGracePeriod(
 			break // Success or client error (4xx) - don't retry
 		}
 
-		if attempt < bc.config.MaxRetries {
-			backoff := bc.config.RetryBackoff * time.Duration(attempt+1)
-			logger.Logtype(logger.StatusDebug, 2).
-				Err(reqErr).
-				Str("url", req.RequestURI).
-				Str("client", bc.config.Name).
-				Int("attempt", attempt+1).
-				Dur("backoff", backoff).
-				Msg("Retrying request")
-			time.Sleep(backoff)
+		if attempt >= bc.config.MaxRetries {
+			continue
 		}
+
+		backoff := bc.config.RetryBackoff * time.Duration(attempt+1)
+		logger.Logtype(logger.StatusDebug, 2).
+			Err(reqErr).
+			Str("url", req.URL.String()).
+			Str("client", bc.config.Name).
+			Int("attempt", attempt+1).
+			Dur("backoff", backoff).
+			Msg("Retrying request")
+		time.Sleep(backoff)
 	}
 
 	duration := time.Since(startTime)
 
 	if reqErr != nil {
-		bc.circuitBreaker.RecordFailure()
-		cbState := bc.circuitBreaker.GetState()
+		if bc.circuitBreaker != nil {
+			bc.circuitBreaker.RecordFailure()
 
-		logger.Logtype(logger.StatusDebug, 0).
-			Str("client", bc.config.Name).
-			Err(reqErr).
-			Int("threshold", bc.config.CircuitBreakerThreshold).
-			Str("circuit_state", cbState).
-			Str("url", req.RequestURI).
-			Msg("Circuit breaker: recorded failure with request")
+			cbState := bc.circuitBreaker.GetState()
+
+			logger.Logtype(logger.StatusDebug, 0).
+				Str("client", bc.config.Name).
+				Err(reqErr).
+				Int("threshold", bc.config.CircuitBreakerThreshold).
+				Str("circuit_state", cbState).
+				Str("url", req.URL.String()).
+				Msg("Circuit breaker: recorded failure with request")
+		}
 
 		bc.recordStats(false, duration.Milliseconds(), reqErr.Error())
 
@@ -628,13 +642,22 @@ func (bc *BaseClient) MakeRequestWithGracePeriod(
 	// Check status code
 	if resp.StatusCode >= 400 {
 		bodyBytes, _ := io.ReadAll(resp.Body)
-		errMsg := fmt.Sprintf("HTTP %d: %s", resp.StatusCode, string(bodyBytes))
+		errMsg := logger.JoinStrings(
+			"HTTP ",
+			strconv.Itoa(resp.StatusCode),
+			": ",
+			string(bodyBytes),
+		)
 
 		// Handle rate limiting responses (429, 400, 401, 403)
 		if resp.StatusCode == 429 || resp.StatusCode == 400 || resp.StatusCode == 401 ||
 			resp.StatusCode == 403 {
 			bc.handleRateLimitResponse(resp, bodyBytes)
-			bc.circuitBreaker.RecordSuccess() // Don't penalize circuit breaker for rate limits
+
+			if bc.circuitBreaker != nil {
+				bc.circuitBreaker.RecordSuccess() // Don't penalize circuit breaker for rate limits
+			}
+
 			bc.recordRequestOnly(duration.Milliseconds())
 
 			return fmt.Errorf(
@@ -651,46 +674,67 @@ func (bc *BaseClient) MakeRequestWithGracePeriod(
 			resp.StatusCode == 408 ||
 			resp.StatusCode == 425
 
-		if shouldCountAsFailure {
-			bc.circuitBreaker.RecordFailure()
-			failureCount := bc.circuitBreaker.GetFailureCount()
-			cbState := bc.circuitBreaker.GetState()
+		if bc.circuitBreaker != nil {
+			if shouldCountAsFailure {
+				bc.circuitBreaker.RecordFailure()
 
-			logger.Logtype(logger.StatusDebug, 0).
-				Str("client", bc.config.Name).
-				Int("status_code", resp.StatusCode).
-				Int("failure_count", failureCount).
-				Int("threshold", bc.config.CircuitBreakerThreshold).
-				Str("circuit_state", cbState).
-				Msg("Circuit breaker: recorded failure on request")
-		} else {
-			bc.circuitBreaker.RecordSuccess()
+				failureCount := bc.circuitBreaker.GetFailureCount()
+				cbState := bc.circuitBreaker.GetState()
+
+				logger.Logtype(logger.StatusDebug, 0).
+					Str("client", bc.config.Name).
+					Int("status_code", resp.StatusCode).
+					Int("failure_count", failureCount).
+					Int("threshold", bc.config.CircuitBreakerThreshold).
+					Str("circuit_state", cbState).
+					Msg("Circuit breaker: recorded failure on request")
+			} else {
+				bc.circuitBreaker.RecordSuccess()
+			}
 		}
 
 		bc.recordStats(resp.StatusCode < 500, duration.Milliseconds(), errMsg)
 
-		return fmt.Errorf("[%s] %s", bc.config.Name, errMsg)
+		return errors.New(logger.JoinStrings("[", bc.config.Name, "] ", errMsg))
 	}
 
 	// Parse response into target
 	if target != nil {
-		if err := json.NewDecoder(resp.Body).Decode(target); err != nil {
-			bc.circuitBreaker.RecordSuccess()
+		data, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
 			bc.recordStats(true, duration.Milliseconds(), "json decode error")
+
+			return fmt.Errorf("[%s] failed to read response: %w", bc.config.Name, readErr)
+		}
+
+		if err := json.Unmarshal(data, target); err != nil {
+			if bc.circuitBreaker != nil {
+				bc.circuitBreaker.RecordSuccess()
+			}
+
+			bc.recordStats(true, duration.Milliseconds(), "json decode error")
+
 			return fmt.Errorf("[%s] failed to decode response: %w", bc.config.Name, err)
 		}
 	}
 
 	if targetfunc != nil {
 		if err := targetfunc(resp); err != nil {
-			bc.circuitBreaker.RecordSuccess()
+			if bc.circuitBreaker != nil {
+				bc.circuitBreaker.RecordSuccess()
+			}
+
 			bc.recordStats(true, duration.Milliseconds(), "response processing error")
+
 			return err
 		}
 	}
 
 	// Record success
-	bc.circuitBreaker.RecordSuccess()
+	if bc.circuitBreaker != nil {
+		bc.circuitBreaker.RecordSuccess()
+	}
+
 	bc.recordStats(true, duration.Milliseconds(), "")
 
 	return nil
@@ -707,8 +751,8 @@ func (bc *BaseClient) MakeRequestWithHeaders(
 	targetfunc func(*http.Response) error,
 	customHeaders map[string]string,
 ) error {
-	// Check circuit breaker
-	if !bc.circuitBreaker.CanMakeRequest() {
+	// Check circuit breaker (with nil protection)
+	if bc.circuitBreaker != nil && !bc.circuitBreaker.CanMakeRequest() {
 		cbState := bc.circuitBreaker.GetState()
 		failureCount := bc.circuitBreaker.GetFailureCount()
 
@@ -745,7 +789,10 @@ func (bc *BaseClient) MakeRequestWithHeaders(
 	// Otherwise, concatenate with BaseURL
 	url := endpoint
 	if !strings.HasPrefix(endpoint, "http://") && !strings.HasPrefix(endpoint, "https://") {
-		url = bc.config.BaseURL + strings.ReplaceAll(endpoint, bc.config.BaseURL, "")
+		url = logger.JoinStrings(
+			bc.config.BaseURL,
+			strings.ReplaceAll(endpoint, bc.config.BaseURL, ""),
+		)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, method, url, body)
@@ -758,16 +805,17 @@ func (bc *BaseClient) MakeRequestWithHeaders(
 		return fmt.Errorf("[%s] authentication failed: %w", bc.config.Name, err)
 	}
 
-	// Set default headers
-	req.Header.Set("User-Agent", bc.getUserAgent())
-	req.Header.Set("Accept", "application/json")
+	// Set default headers — direct map assignment skips textproto.CanonicalMIMEHeaderKey
+	// (all keys here are already in canonical form) and reuses pre-allocated slices.
+	req.Header["User-Agent"] = bc.userAgentHeader
+	req.Header["Accept"] = headerAcceptJSON
 
 	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
+		req.Header["Content-Type"] = headerContentTypeJSON
 	}
 
 	if bc.config.EnableCompression {
-		req.Header.Set("Accept-Encoding", "gzip, deflate")
+		req.Header["Accept-Encoding"] = headerAcceptEncodingGZ
 	}
 
 	// Apply custom headers (can override defaults)
@@ -789,34 +837,42 @@ func (bc *BaseClient) MakeRequestWithHeaders(
 			break // Success or client error (4xx) - don't retry
 		}
 
-		if attempt < bc.config.MaxRetries {
-			backoff := bc.config.RetryBackoff * time.Duration(attempt+1)
-			logger.Logtype(logger.StatusDebug, 2).
-				Err(reqErr).
-				Str("url", req.RequestURI).
-				Str("client", bc.config.Name).
-				Int("attempt", attempt+1).
-				Dur("backoff", backoff).
-				Msg("Retrying request")
-			time.Sleep(backoff)
+		if attempt >= bc.config.MaxRetries {
+			continue
 		}
+
+		backoff := bc.config.RetryBackoff * time.Duration(attempt+1)
+		logger.Logtype(logger.StatusDebug, 2).
+			Err(reqErr).
+			Str("url", req.URL.String()).
+			Str("client", bc.config.Name).
+			Int("attempt", attempt+1).
+			Dur("backoff", backoff).
+			Msg("Retrying request")
+		time.Sleep(backoff)
 	}
 
 	duration := time.Since(startTime)
 
 	if reqErr != nil {
-		bc.circuitBreaker.RecordFailure()
+		if bc.circuitBreaker != nil {
+			bc.circuitBreaker.RecordFailure()
 
-		cbState := bc.circuitBreaker.GetState()
+			cbState := bc.circuitBreaker.GetState()
 
-		logger.Logtype(logger.StatusDebug, 0).
-			Str("client", bc.config.Name).
-			Int("status_code", resp.StatusCode).
-			Err(reqErr).
-			Int("threshold", bc.config.CircuitBreakerThreshold).
-			Str("circuit_state", cbState).
-			Str("url", req.RequestURI).
-			Msg("Circuit breaker: recorded failure with request")
+			logEntry := logger.Logtype(logger.StatusDebug, 0).
+				Str("client", bc.config.Name)
+
+			if resp != nil {
+				logEntry = logEntry.Int("status_code", resp.StatusCode)
+			}
+
+			logEntry.Err(reqErr).
+				Int("threshold", bc.config.CircuitBreakerThreshold).
+				Str("circuit_state", cbState).
+				Str("url", req.URL.String()).
+				Msg("Circuit breaker: recorded failure with request")
+		}
 
 		bc.recordStats(false, duration.Milliseconds(), reqErr.Error())
 
@@ -833,16 +889,42 @@ func (bc *BaseClient) MakeRequestWithHeaders(
 	// Check status code
 	if resp.StatusCode >= 400 {
 		bodyBytes, _ := io.ReadAll(resp.Body)
-		errMsg := fmt.Sprintf("HTTP %d: %s", resp.StatusCode, string(bodyBytes))
+
+		errMsg := logger.JoinStrings(
+			"HTTP ",
+			strconv.Itoa(resp.StatusCode),
+			": ",
+			string(bodyBytes),
+		)
 
 		// Handle rate limiting responses (429, 400, 401, 403)
 		// These status codes can indicate rate limits with Retry-After headers or body content
 		if resp.StatusCode == 429 || resp.StatusCode == 400 || resp.StatusCode == 401 ||
 			resp.StatusCode == 403 {
 			bc.handleRateLimitResponse(resp, bodyBytes)
-			bc.circuitBreaker.RecordSuccess() // Don't penalize circuit breaker for rate limits
+
+			if resp.StatusCode != 429 {
+				if bc.circuitBreaker != nil {
+					bc.circuitBreaker.RecordFailure() // Don't penalize circuit breaker for rate limits
+				}
+			} else {
+				if bc.circuitBreaker != nil {
+					bc.circuitBreaker.RecordSuccess() // Don't penalize circuit breaker for rate limits
+				}
+			}
+
 			// Record that we made a request without counting it as success or failure
 			bc.recordRequestOnly(duration.Milliseconds())
+
+			if resp.StatusCode != 429 {
+				logger.Logtype(logger.StatusDebug, 0).
+					Str("client", bc.config.Name).
+					Int("status_code", resp.StatusCode).
+					Err(reqErr).
+					Int("threshold", bc.config.CircuitBreakerThreshold).
+					Str("url", req.URL.String()).
+					Msg("server rate limit: requests paused")
+			}
 
 			return fmt.Errorf(
 				"[%s] server rate limit (HTTP %d), requests paused",
@@ -862,55 +944,67 @@ func (bc *BaseClient) MakeRequestWithHeaders(
 			resp.StatusCode == 408 ||
 			resp.StatusCode == 425
 
-		if shouldCountAsFailure {
-			bc.circuitBreaker.RecordFailure()
+		if bc.circuitBreaker != nil {
+			if shouldCountAsFailure {
+				bc.circuitBreaker.RecordFailure()
 
-			failureCount := bc.circuitBreaker.GetFailureCount()
-			cbState := bc.circuitBreaker.GetState()
+				failureCount := bc.circuitBreaker.GetFailureCount()
+				cbState := bc.circuitBreaker.GetState()
 
-			logger.Logtype(logger.StatusDebug, 0).
-				Str("client", bc.config.Name).
-				Int("status_code", resp.StatusCode).
-				Int("failure_count", failureCount).
-				Int("threshold", bc.config.CircuitBreakerThreshold).
-				Str("circuit_state", cbState).
-				Msg("Circuit breaker: recorded failure")
-
-			// Log when circuit opens
-			if cbState == string(StateOpen) && failureCount == bc.config.CircuitBreakerThreshold {
-				logger.Logtype(logger.StatusWarning, 0).
+				logger.Logtype(logger.StatusDebug, 0).
 					Str("client", bc.config.Name).
+					Int("status_code", resp.StatusCode).
 					Int("failure_count", failureCount).
 					Int("threshold", bc.config.CircuitBreakerThreshold).
-					Float64("timeout_seconds", bc.config.CircuitBreakerTimeout.Seconds()).
-					Msg("Circuit breaker OPENED - requests will be blocked")
+					Str("circuit_state", cbState).
+					Msg("Circuit breaker: recorded failure")
+
+				// Log when circuit opens
+				if cbState == string(StateOpen) &&
+					failureCount == bc.config.CircuitBreakerThreshold {
+					logger.Logtype(logger.StatusWarning, 0).
+						Str("client", bc.config.Name).
+						Int("failure_count", failureCount).
+						Int("threshold", bc.config.CircuitBreakerThreshold).
+						Float64("timeout_seconds", bc.config.CircuitBreakerTimeout.Seconds()).
+						Msg("Circuit breaker OPENED - requests will be blocked")
+				}
+			} else {
+				bc.circuitBreaker.RecordSuccess()
 			}
-		} else {
-			bc.circuitBreaker.RecordSuccess()
 		}
 
 		bc.recordStats(resp.StatusCode < 500, duration.Milliseconds(), errMsg)
 
-		return fmt.Errorf("[%s] %s", bc.config.Name, errMsg)
+		return errors.New(logger.JoinStrings("[", bc.config.Name, "] ", errMsg))
 	}
 
 	// Parse response into target
 	if target != nil {
-		if err := json.NewDecoder(resp.Body).Decode(target); err != nil {
+		data, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			bc.recordStats(true, duration.Milliseconds(), "json decode error")
+
+			return fmt.Errorf("[%s] failed to read response: %w", bc.config.Name, readErr)
+		}
+
+		if err := json.Unmarshal(data, target); err != nil {
 			// JSON decode errors are application-level parsing issues, not infrastructure failures
 			// The HTTP request succeeded (200 OK), so don't penalize the circuit breaker
-			bc.circuitBreaker.RecordSuccess()
+			if bc.circuitBreaker != nil {
+				bc.circuitBreaker.RecordSuccess()
 
-			cbState := bc.circuitBreaker.GetState()
+				cbState := bc.circuitBreaker.GetState()
 
-			logger.Logtype(logger.StatusDebug, 0).
-				Str("client", bc.config.Name).
-				Int("status_code", resp.StatusCode).
-				Err(err).
-				Int("threshold", bc.config.CircuitBreakerThreshold).
-				Str("circuit_state", cbState).
-				Str("url", req.RequestURI).
-				Msg("JSON decode error (not a circuit breaker failure)")
+				logger.Logtype(logger.StatusDebug, 0).
+					Str("client", bc.config.Name).
+					Int("status_code", resp.StatusCode).
+					Err(err).
+					Int("threshold", bc.config.CircuitBreakerThreshold).
+					Str("circuit_state", cbState).
+					Str("url", req.URL.String()).
+					Msg("JSON decode error (not a circuit breaker failure)")
+			}
 
 			bc.recordStats(true, duration.Milliseconds(), "json decode error")
 
@@ -922,18 +1016,22 @@ func (bc *BaseClient) MakeRequestWithHeaders(
 		if err := targetfunc(resp); err != nil {
 			// targetfunc errors are application-level (parsing, validation), not infrastructure failures
 			// The HTTP request succeeded (200 OK), so don't penalize the circuit breaker
-			bc.circuitBreaker.RecordSuccess()
+			if bc.circuitBreaker != nil {
+				bc.circuitBreaker.RecordSuccess()
 
-			cbState := bc.circuitBreaker.GetState()
+				cbState := bc.circuitBreaker.GetState()
 
-			logger.Logtype(logger.StatusDebug, 0).
-				Str("client", bc.config.Name).
-				Int("status_code", resp.StatusCode).
-				Err(err).
-				Int("threshold", bc.config.CircuitBreakerThreshold).
-				Str("url", req.RequestURI).
-				Str("circuit_state", cbState).
-				Msg("Response processing returned error (not a circuit breaker failure)")
+				if err.Error() != "broke" {
+					logger.Logtype(logger.StatusDebug, 0).
+						Str("client", bc.config.Name).
+						Int("status_code", resp.StatusCode).
+						Err(err).
+						Int("threshold", bc.config.CircuitBreakerThreshold).
+						Str("url", req.URL.String()).
+						Str("circuit_state", cbState).
+						Msg("Response processing returned error (not a circuit breaker failure)")
+				}
+			}
 
 			bc.recordStats(true, duration.Milliseconds(), "response processing error")
 
@@ -942,7 +1040,10 @@ func (bc *BaseClient) MakeRequestWithHeaders(
 	}
 
 	// Record success
-	bc.circuitBreaker.RecordSuccess()
+	if bc.circuitBreaker != nil {
+		bc.circuitBreaker.RecordSuccess()
+	}
+
 	// cbState := bc.circuitBreaker.GetState()
 	// logger.Logtype(logger.StatusDebug, 0).
 	// 	Str("client", bc.config.Name).
@@ -1051,6 +1152,7 @@ func (bc *BaseClient) handleRateLimitResponse(resp *http.Response, bodyBytes []b
 					}
 				}
 			}
+
 			// Custom format parse failed, fall through to default
 		} else if seconds, err := strconv.Atoi(retryAfter); err == nil {
 			// Parse as integer seconds - subtract rate limiter interval (legacy behavior)
@@ -1290,6 +1392,7 @@ func (bc *BaseClient) checkRateLimitsWithExtendedGrace() error {
 // - This allows flexible rate limit handling for different operation types.
 func (bc *BaseClient) checkRateLimitsWithGracePeriod(gracePeriod time.Duration) error {
 	const retryInterval = 1 * time.Second
+
 	maxGracePeriod := gracePeriod
 
 	now := time.Now()
@@ -1597,7 +1700,11 @@ func (bc *BaseClient) refreshOAuthToken(ctx context.Context) error {
 		}
 	} else {
 		// Use client credentials flow (if no refresh token available)
-		newToken, err = bc.oauthConfig.PasswordCredentialsToken(ctx, bc.config.Username, bc.config.Password)
+		newToken, err = bc.oauthConfig.PasswordCredentialsToken(
+			ctx,
+			bc.config.Username,
+			bc.config.Password,
+		)
 		if err != nil {
 			// Try client credentials grant using clientcredentials package
 			ccConfig := &clientcredentials.Config{
@@ -1770,7 +1877,9 @@ func (bc *BaseClient) recordStats(success bool, durationMs int64, errorMsg strin
 		bc.stats.AvgResponseTimeMs = bc.stats.totalResponseTimeMs / bc.stats.responseCount
 	}
 
-	bc.stats.CircuitBreakerState = bc.circuitBreaker.GetState()
+	if bc.circuitBreaker != nil {
+		bc.stats.CircuitBreakerState = bc.circuitBreaker.GetState()
+	}
 
 	// Add timestamp to sliding window for time-based tracking
 	bc.stats.requestTimestamps = append(bc.stats.requestTimestamps, now)
@@ -1809,7 +1918,9 @@ func (bc *BaseClient) recordRequestOnly(durationMs int64) {
 		bc.stats.AvgResponseTimeMs = bc.stats.totalResponseTimeMs / bc.stats.responseCount
 	}
 
-	bc.stats.CircuitBreakerState = bc.circuitBreaker.GetState()
+	if bc.circuitBreaker != nil {
+		bc.stats.CircuitBreakerState = bc.circuitBreaker.GetState()
+	}
 
 	// Add timestamp to sliding window for time-based tracking
 	bc.stats.requestTimestamps = append(bc.stats.requestTimestamps, now)
@@ -1841,9 +1952,13 @@ func (bc *BaseClient) cleanupOldTimestamps() {
 		validIdx++
 	}
 
-	// Keep only timestamps within the 24h window
+	// Keep only timestamps within the 24h window.
+	// Use copy to a new slice rather than reslicing — reslicing keeps the old
+	// backing array alive, causing the slice to grow without bound over time.
 	if validIdx > 0 {
-		bc.stats.requestTimestamps = bc.stats.requestTimestamps[validIdx:]
+		trimmed := make([]time.Time, len(bc.stats.requestTimestamps)-validIdx)
+		copy(trimmed, bc.stats.requestTimestamps[validIdx:])
+		bc.stats.requestTimestamps = trimmed
 	}
 }
 
@@ -1901,6 +2016,13 @@ func (bc *BaseClient) saveStatsToDatabase() {
 	// }
 }
 
+// GetRateLimiter returns the hourly sliding-window rate limiter so callers can
+// call Check() to determine how long to wait before the next request is allowed.
+// Returns nil if no hourly rate limiter was configured.
+func (bc *BaseClient) GetRateLimiter() *slidingwindow.Limiter {
+	return bc.rateLimiterHour
+}
+
 // GetStats returns current statistics.
 // Returns a copy of the stats without the mutex to avoid copying locks.
 func (bc *BaseClient) GetStats() ClientStats {
@@ -1936,12 +2058,18 @@ func (bc *BaseClient) GetHTTPClient() *http.Client {
 	return bc.httpClient
 }
 
-// getUserAgent returns the user agent string.
-func (bc *BaseClient) getUserAgent() string {
-	if bc.config.UserAgent != "" {
-		return bc.config.UserAgent
+// ResetCircuitBreaker resets the circuit breaker to closed state.
+// Call this after a successful authentication to clear failure state from
+// previous auth errors that should not affect regular API calls.
+func (bc *BaseClient) ResetCircuitBreaker() {
+	if bc.circuitBreaker != nil {
+		bc.circuitBreaker.Reset()
 	}
-	return fmt.Sprintf("GoMediaDownloader/%s", bc.config.Name)
+}
+
+// getUserAgent returns the pre-built user agent string.
+func (bc *BaseClient) getUserAgent() string {
+	return bc.userAgent
 }
 
 // GetName returns the client name.

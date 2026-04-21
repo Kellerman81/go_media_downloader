@@ -215,8 +215,11 @@ func triggerEpisodeDownloads(
 			seasonNum, _ := strconv.Atoi(episodeData.Season)
 			episodeNum, _ := strconv.Atoi(episodeData.Episode)
 
-			results.Details = append(results.Details, fmt.Sprintf("Search triggered for series %d S%02dE%02d",
-				serieData.ID, seasonNum, episodeNum))
+			results.Details = append(
+				results.Details,
+				fmt.Sprintf("Search triggered for series %d S%02dE%02d",
+					serieData.ID, seasonNum, episodeNum),
+			)
 		}
 	}
 
@@ -225,7 +228,7 @@ func triggerEpisodeDownloads(
 
 // triggerEpisodeSearch initiates a search for a specific episode.
 func triggerEpisodeSearch(
-	serie database.Serie,
+	_ database.Serie,
 	episode database.DbserieEpisode,
 	mediaConfig *config.MediaTypeConfig,
 	qualityConfig *config.QualityConfig,

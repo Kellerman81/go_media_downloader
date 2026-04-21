@@ -33,6 +33,7 @@ func SendToTransmission(
 		if err == nil {
 			return nil
 		}
+
 		// Fall through to legacy client on error
 	}
 

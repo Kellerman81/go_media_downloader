@@ -1,6 +1,7 @@
 package tvmaze
 
 import (
+	"strings"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
@@ -176,14 +177,14 @@ func convertSearchResults(
 ) []apiexternal_v2.SeriesSearchResult {
 	results := make([]apiexternal_v2.SeriesSearchResult, 0, len(tvmazeResults))
 
-	for _, r := range tvmazeResults {
+	for i := range tvmazeResults {
 		results = append(results, apiexternal_v2.SeriesSearchResult{
-			ID:           r.Show.ID,
-			Name:         r.Show.Name,
-			FirstAirDate: parseTVMazeDate(r.Show.Premiered),
-			Overview:     stripHTML(r.Show.Summary),
-			PosterPath:   getImageURL(r.Show.Image),
-			VoteAverage:  r.Show.Rating.Average,
+			ID:           tvmazeResults[i].Show.ID,
+			Name:         tvmazeResults[i].Show.Name,
+			FirstAirDate: parseTVMazeDate(tvmazeResults[i].Show.Premiered),
+			Overview:     stripHTML(tvmazeResults[i].Show.Summary),
+			PosterPath:   getImageURL(tvmazeResults[i].Show.Image),
+			VoteAverage:  tvmazeResults[i].Show.Rating.Average,
 			ProviderName: provider,
 		})
 	}
@@ -357,7 +358,7 @@ func stripHTML(s string) string {
 	}
 
 	// Simple HTML tag removal
-	result := ""
+	var result strings.Builder
 
 	inTag := false
 	for _, r := range s {
@@ -372,11 +373,11 @@ func stripHTML(s string) string {
 		}
 
 		if !inTag {
-			result += string(r)
+			result.WriteString(string(r))
 		}
 	}
 
-	return result
+	return result.String()
 }
 
 func getImageURL(image *tvmazeImage) string {

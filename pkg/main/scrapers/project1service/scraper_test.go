@@ -220,7 +220,12 @@ func TestProject1ServiceIntegration(t *testing.T) {
 			identifier := dateStr[2:]
 
 			if len(identifier) < 8 {
-				t.Errorf("Release %d (%s) generates invalid identifier: %s", i, release.Title, identifier)
+				t.Errorf(
+					"Release %d (%s) generates invalid identifier: %s",
+					i,
+					release.Title,
+					identifier,
+				)
 				continue
 			}
 

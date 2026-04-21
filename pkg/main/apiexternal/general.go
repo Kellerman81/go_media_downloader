@@ -133,6 +133,7 @@ func (c *rlHTTPClient) checkLimiter(ctx context.Context, allow bool) (bool, erro
 					c.DailyRatelimiter.AllowForce()
 				}
 			}
+
 			// logger.Logtype("debug", 1).Str("client", c.Clientname).Msg("Rate limit check passed")
 			return true, nil
 		}
@@ -188,6 +189,7 @@ func (c *rlHTTPClient) checkresperror(
 		if c.addwait(req, resp) {
 			return logger.ErrToWait
 		}
+
 		return errors.New("http status error " + resp.Status)
 	}
 
@@ -288,7 +290,12 @@ func (c *rlHTTPClient) addwait(req *http.Request, resp *http.Response) bool {
 					return true
 				}
 			} else if sleep, err := strconv.Atoi(s[0]); err == nil {
-				c.logwait(logger.TimeGetNow().Add((time.Duration(sleep)*time.Second)-c.Ratelimiter.Interval()), nil)
+				c.logwait(
+					logger.TimeGetNow().
+						Add((time.Duration(sleep)*time.Second)-c.Ratelimiter.Interval()),
+					nil,
+				)
+
 				return true
 			} else if strings.ContainsRune(s[0], ' ') && strings.ContainsRune(s[0], ':') {
 				if sleeptime, ok := logger.TryTimeParse(time.RFC1123, s[0]); ok {
@@ -413,6 +420,7 @@ func ProcessHTTP(
 			if err == nil {
 				return logger.ErrToWait
 			}
+
 			return err
 		}
 	}

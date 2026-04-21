@@ -32,33 +32,33 @@ func addCSS() gomponents.Node {
 						margin-bottom: 1.5rem;
 						font-size: 1.5rem;
 					}
-					.array-item, .array-item-enhanced { 
-						background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
-						border: 2px solid #e3f2fd !important;
-						border-radius: 12px;
-						margin-bottom: 1.5rem;
-						box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+					.array-item, .array-item-enhanced {
+						background: #fff;
+						border: 1px solid #dee2e6 !important;
+						border-radius: 8px;
+						margin-bottom: 1rem;
+						box-shadow: 0 2px 8px rgba(0,0,0,0.05);
 						transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 						overflow: hidden;
 					}
 					.array-item:hover, .array-item-enhanced:hover {
-						transform: translateY(-3px);
-						box-shadow: 0 8px 25px rgba(13, 110, 253, 0.15);
-						border-color: #0d6efd !important;
+						transform: translateY(-2px);
+						box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+						border-color: #adb5bd !important;
 					}
 					.array-item-enhanced .card-header {
-						background: linear-gradient(135deg, #0d6efd 0%, #0056b3 100%) !important;
-						color: white !important;
+						background: #f8f9fa !important;
+						color: #212529 !important;
 						font-weight: 600;
 						padding: 1rem 1.5rem;
-						border: none !important;
+						border-bottom: 1px solid #dee2e6 !important;
 						transition: all 0.3s ease;
 					}
 					.array-item-enhanced .card-header:hover {
-						background: linear-gradient(135deg, #0056b3 0%, #004085 100%) !important;
+						background: #e9ecef !important;
 					}
 					.array-item-enhanced .card-body {
-						background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%) !important;
+						background: #fff !important;
 						padding: 1.5rem;
 						border: none !important;
 					}
@@ -103,7 +103,7 @@ func addCSS() gomponents.Node {
 						position: relative;
 					}
 					.card-header[data-bs-toggle="collapse"]:hover {
-						background: linear-gradient(135deg, #0056b3 0%, #004085 100%) !important;
+						background: linear-gradient(135deg, #7f8081ff 0%, #f8f9fa 100%) !important;
 					}
 					
 					/* Loading states for HTMX requests */
@@ -470,7 +470,7 @@ func addCSS() gomponents.Node {
 					}
 					
 					.database-header-card {
-						background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+						background: linear-gradient(135deg, #6c757d 0%, #495057 100%);
 						padding: 2rem;
 						color: white;
 						position: relative;
@@ -587,7 +587,7 @@ func addCSS() gomponents.Node {
 					}
 					
 					.filters-icon {
-						background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+						background: linear-gradient(135deg, #6c757d 0%, #495057 100%);
 						color: white;
 						padding: 0.5rem;
 						border-radius: 8px;
@@ -641,7 +641,7 @@ func addCSS() gomponents.Node {
 					}
 					
 					.filters-body .form-control:focus {
-						border-color: #667eea;
+						border-color: #6c757d;
 						box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
 					}
 					
@@ -688,7 +688,7 @@ func addCSS() gomponents.Node {
 					
 					.dataTables_wrapper .dataTables_length select:focus {
 						outline: none;
-						border-color: #667eea;
+						border-color: #6c757d;
 						box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
 					}
 					
@@ -705,7 +705,7 @@ func addCSS() gomponents.Node {
 					
 					.dataTables_wrapper .dataTables_filter input:focus {
 						outline: none;
-						border-color: #667eea;
+						border-color: #6c757d;
 						background: white;
 						box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
 					}
@@ -740,15 +740,15 @@ func addCSS() gomponents.Node {
 					}
 					
 					.dataTables_wrapper .dataTables_paginate .paginate_button:hover {
-						background: #667eea;
-						border-color: #667eea;
+						background: #6c757d;
+						border-color: #6c757d;
 						color: white !important;
 						transform: translateY(-1px);
 					}
 					
 					.dataTables_wrapper .dataTables_paginate .paginate_button.current {
-						background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-						border-color: #667eea;
+						background: linear-gradient(135deg, #6c757d 0%, #495057 100%);
+						border-color: #6c757d;
 						color: white !important;
 					}
 					
@@ -831,7 +831,7 @@ func addCSS() gomponents.Node {
 						width: 40px;
 						height: 40px;
 						border: 3px solid #f3f3f3;
-						border-top: 3px solid #667eea;
+						border-top: 3px solid #6c757d;
 						border-radius: 50%;
 						animation: spin 1s linear infinite;
 						margin: 0 auto 1rem;
@@ -1051,7 +1051,7 @@ func addCSS() gomponents.Node {
 					
 					.modal-header-enhanced,
 					#editFormModal .modal-header {
-						background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+						background: linear-gradient(135deg, #6c757d 0%, #495057 100%);
 						color: white;
 						padding: 1.5rem 2rem;
 						border-bottom: none;
@@ -1197,74 +1197,53 @@ func addCSS() gomponents.Node {
 						padding: 0;
 						margin: 0;
 					}
-					
+
 					.page-header-enhanced {
-						background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-						color: white;
-						padding: 1rem 0;
-						margin-bottom: 2rem;
-						position: relative;
-						overflow: hidden;
+						background: #fff;
+						border-bottom: 1px solid #dee2e6;
+						padding: 1.5rem 0;
+						margin-bottom: 1.5rem;
 					}
-					
-					.page-header-enhanced::before {
-						content: '';
-						position: absolute;
-						top: 0;
-						left: 0;
-						right: 0;
-						bottom: 0;
-						background: url('data:image/svg+xml,<svg width="60" height="60" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg"><g fill="none" fill-rule="evenodd"><g fill="%23ffffff" fill-opacity="0.05"><circle cx="30" cy="30" r="4"/></g></svg>');
-						animation: drift 20s infinite linear;
-					}
-					
-					@keyframes drift {
-						0% { transform: rotate(0deg) translate(-50%, -50%); }
-						100% { transform: rotate(360deg) translate(-50%, -50%); }
-					}
-					
+
 					.header-content {
 						display: flex;
 						align-items: center;
-						gap: 2rem;
+						gap: 1.5rem;
 						max-width: 1200px;
 						margin: 0 auto;
-						padding: 0 2rem;
-						position: relative;
-						z-index: 2;
+						padding: 0 1.5rem;
 					}
-					
+
 					.header-icon-wrapper {
-						background: rgba(255,255,255,0.2);
-						padding: 1.5rem;
-						border-radius: 20px;
-						backdrop-filter: blur(10px);
+						background: #f5f7fb;
+						padding: 1rem;
+						border-radius: 12px;
 						display: flex;
 						align-items: center;
 						justify-content: center;
 					}
-					
+
 					.header-icon {
-						font-size: 2.5rem;
-						color: white;
+						font-size: 2rem;
+						color: #3b7ddd;
 					}
-					
+
 					.header-text {
 						flex: 1;
 					}
-					
+
 					.header-title {
-						margin: 0 0 0.5rem 0;
-						font-size: 2.5rem;
-						font-weight: 700;
-						text-shadow: 0 2px 10px rgba(0,0,0,0.3);
+						margin: 0 0 0.25rem 0;
+						font-size: 1.75rem;
+						font-weight: 600;
+						color: #212529;
 					}
-					
+
 					.header-subtitle {
 						margin: 0;
-						font-size: 1.1rem;
-						opacity: 0.9;
-						line-height: 1.6;
+						font-size: 0.95rem;
+						color: #6c757d;
+						line-height: 1.5;
 					}
 					
 					/* Enhanced Form Container */
@@ -1311,7 +1290,7 @@ func addCSS() gomponents.Node {
 					}
 					
 					.card-icon {
-						color: #667eea;
+						color: #6c757d;
 						font-size: 1.5rem;
 					}
 					
@@ -1360,7 +1339,7 @@ func addCSS() gomponents.Node {
 					}
 					
 					.btn-action-primary {
-						background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+						background: linear-gradient(135deg, #6c757d 0%, #495057 100%);
 						color: white;
 						box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
 					}
@@ -1414,7 +1393,7 @@ func addCSS() gomponents.Node {
 					}
 					
 					.help-icon {
-						color: #667eea;
+						color: #6c757d;
 						font-size: 1.5rem;
 					}
 					
@@ -1463,7 +1442,7 @@ func addCSS() gomponents.Node {
 					}
 					
 					.help-card-icon i {
-						color: #667eea;
+						color: #6c757d;
 						font-size: 1.25rem;
 					}
 					
@@ -1499,11 +1478,11 @@ func addCSS() gomponents.Node {
 						padding: 1rem;
 						background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
 						border-radius: 10px;
-						border-left: 4px solid #667eea;
+						border-left: 4px solid #6c757d;
 					}
 					
 					.tip-icon {
-						color: #667eea;
+						color: #6c757d;
 						font-size: 1rem;
 						margin-top: 0.1rem;
 					}
@@ -1592,7 +1571,7 @@ func addCSS() gomponents.Node {
 					}
 					
 					.form-field-enhanced:hover {
-						border-color: #667eea;
+						border-color: #6c757d;
 						box-shadow: 0 4px 12px rgba(102, 126, 234, 0.1);
 						transform: translateY(-2px);
 					}
@@ -1610,7 +1589,7 @@ func addCSS() gomponents.Node {
 					}
 					
 					.field-icon {
-						background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+						background: linear-gradient(135deg, #6c757d 0%, #495057 100%);
 						color: white;
 						padding: 0.4rem;
 						border-radius: 6px;
@@ -1629,7 +1608,7 @@ func addCSS() gomponents.Node {
 					
 					.form-control-modern:focus {
 						outline: none;
-						border-color: #667eea;
+						border-color: #6c757d;
 						background: white;
 						box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
 					}
@@ -1654,7 +1633,7 @@ func addCSS() gomponents.Node {
 					
 					.choices.is-focused .choices__inner,
 					.choices.is-open .choices__inner {
-						border-color: #667eea;
+						border-color: #6c757d;
 						background: white;
 						box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
 					}
@@ -1678,7 +1657,7 @@ func addCSS() gomponents.Node {
 					}
 					
 					.choices__list--dropdown {
-						border: 2px solid #667eea;
+						border: 2px solid #6c757d;
 						border-radius: 8px;
 						box-shadow: 0 4px 12px rgba(102, 126, 234, 0.15);
 						background: white;
@@ -1697,7 +1676,7 @@ func addCSS() gomponents.Node {
 					}
 					
 					.choices__item--choice.is-highlighted {
-						background: #667eea;
+						background: #6c757d;
 						color: white;
 					}
 					
@@ -1706,7 +1685,7 @@ func addCSS() gomponents.Node {
 					}
 					
 					.choices__item--choice.is-highlighted:hover {
-						background: #667eea;
+						background: #6c757d;
 					}
 					
 					.choices__placeholder {
@@ -1894,6 +1873,16 @@ func page(
 										),
 										html.Div(
 											html.Class("col-md-6 text-md-end"),
+											html.A(
+												html.Href(
+													"https://github.com/Kellerman81/go_media_downloader",
+												),
+												html.Target("_blank"),
+												html.Class("btn btn-outline-light btn-sm me-3"),
+												html.Rel("noopener noreferrer"),
+												html.I(html.Class("fab fa-github me-1")),
+												gomponents.Text("GitHub"),
+											),
 											html.Span(
 												html.Class("badge bg-success me-2"),
 												html.I(html.Class("fas fa-circle me-1")),
@@ -1917,6 +1906,167 @@ func page(
 					html.ID("toastContainer"),
 					html.Style("z-index: 1055;"),
 				),
+
+				// Config Preview Modal
+				html.Div(
+					html.ID("configPreviewModal"),
+					html.Class("modal fade"),
+					html.TabIndex("-1"),
+					gomponents.Attr("aria-labelledby", "configPreviewModalLabel"),
+					gomponents.Attr("aria-hidden", "true"),
+					html.Div(
+						html.Class("modal-dialog modal-lg modal-dialog-scrollable"),
+						html.Div(
+							html.Class("modal-content"),
+							html.Div(
+								html.Class("modal-header bg-light"),
+								html.H5(
+									html.ID("configPreviewModalLabel"),
+									html.Class("modal-title"),
+									html.I(html.Class("fas fa-eye me-2 text-primary")),
+									gomponents.Text("Configuration Preview"),
+								),
+								html.Button(
+									html.Type("button"),
+									html.Class("btn-close"),
+									html.Data("bs-dismiss", "modal"),
+									gomponents.Attr("aria-label", "Close"),
+								),
+							),
+							html.Div(
+								html.ID("configPreviewBody"),
+								html.Class("modal-body"),
+								html.Div(
+									html.Class("d-flex justify-content-center"),
+									html.Div(
+										html.Class("spinner-border text-primary"),
+										html.Role("status"),
+										html.Span(
+											html.Class("visually-hidden"),
+											gomponents.Text("Loading..."),
+										),
+									),
+								),
+							),
+							html.Div(
+								html.Class("modal-footer"),
+								html.Button(
+									html.Type("button"),
+									html.Class("btn btn-secondary"),
+									html.Data("bs-dismiss", "modal"),
+									gomponents.Text("Close"),
+								),
+							),
+						),
+					),
+				),
+
+				// Config Preview JavaScript
+				html.Script(gomponents.Raw(`
+function showConfigPreview(configType, configName, fieldName) {
+    if (!configName) {
+        return;
+    }
+
+    const modal = new bootstrap.Modal(document.getElementById('configPreviewModal'));
+    const modalBody = document.getElementById('configPreviewBody');
+    const modalLabel = document.getElementById('configPreviewModalLabel');
+
+    // Show loading spinner
+    modalBody.innerHTML = '<div class="d-flex justify-content-center p-5"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div></div>';
+
+    // Update modal title
+    modalLabel.innerHTML = '<i class="fas fa-eye me-2 text-primary"></i>Preview: ' + fieldName + ' - ' + configName;
+
+    // Show modal
+    modal.show();
+
+    // Fetch preview content
+    fetch('/api/manage/config/preview/' + configType + '/' + encodeURIComponent(configName))
+        .then(response => response.text())
+        .then(html => {
+            modalBody.innerHTML = html;
+            // After inserting HTML, expand all collapsed sections
+            expandAllCollapsedSections(modalBody);
+        })
+        .catch(error => {
+            modalBody.innerHTML = '<div class="alert alert-danger">Error loading preview: ' + error.message + '</div>';
+        });
+}
+
+// Helper function to expand all collapsed sections in a container
+function expandAllCollapsedSections(container) {
+    if (!container) return;
+
+    // Add 'show' class to all collapse elements to make them visible
+    container.querySelectorAll('.collapse').forEach(function(el) {
+        el.classList.add('show');
+    });
+
+    // Update accordion buttons to show expanded state
+    container.querySelectorAll('.accordion-button').forEach(function(el) {
+        el.classList.remove('collapsed');
+        el.setAttribute('aria-expanded', 'true');
+    });
+
+    // Also handle any buttons with data-bs-toggle="collapse"
+    container.querySelectorAll('[data-bs-toggle="collapse"]').forEach(function(el) {
+        el.classList.remove('collapsed');
+        el.setAttribute('aria-expanded', 'true');
+    });
+}
+
+// Open config page with hash anchor for auto-expand
+function openConfigPage(baseUrl, configName) {
+    if (!configName) {
+        window.open(baseUrl, '_blank');
+        return;
+    }
+    // Create URL with hash anchor for the config name
+    // The config pages will use this to auto-expand the correct item
+    window.open(baseUrl + '#' + encodeURIComponent(configName), '_blank');
+}
+
+// On page load, check for hash anchor and expand the matching config item
+document.addEventListener('DOMContentLoaded', function() {
+    if (window.location.hash) {
+        var configName = decodeURIComponent(window.location.hash.substring(1));
+        if (configName) {
+            // Find and expand the matching accordion item
+            // Look for buttons/headers containing the config name
+            setTimeout(function() {
+                var found = false;
+                // Try to find accordion buttons with matching text
+                document.querySelectorAll('.accordion-button, .card-header button, [data-bs-toggle="collapse"]').forEach(function(btn) {
+                    if (btn.textContent && btn.textContent.includes(configName)) {
+                        // Found matching item - expand it
+                        var collapseTarget = btn.getAttribute('data-bs-target') || btn.getAttribute('href');
+                        if (collapseTarget) {
+                            var collapseEl = document.querySelector(collapseTarget);
+                            if (collapseEl) {
+                                // Use Bootstrap's collapse API to show
+                                var bsCollapse = new bootstrap.Collapse(collapseEl, {toggle: false});
+                                bsCollapse.show();
+                                // Remove collapsed class from button
+                                btn.classList.remove('collapsed');
+                                btn.setAttribute('aria-expanded', 'true');
+                                // Scroll into view
+                                btn.scrollIntoView({behavior: 'smooth', block: 'center'});
+                                // Highlight briefly
+                                btn.style.backgroundColor = '#fff3cd';
+                                setTimeout(function() {
+                                    btn.style.backgroundColor = '';
+                                }, 2000);
+                                found = true;
+                            }
+                        }
+                    }
+                });
+            }, 300); // Small delay to ensure DOM is ready
+        }
+    }
+});
+`)),
 
 				adminJavaScript(),
 			),

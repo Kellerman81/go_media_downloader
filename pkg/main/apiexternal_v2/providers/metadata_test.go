@@ -27,7 +27,7 @@ const (
 	testIMDbIDShawshank = "tt0111161"
 
 	// Test IMDb IDs for TV shows (TVDB is primarily for TV series)
-	testIMDbIDBreakingBad = "tt0903747" // Breaking Bad
+	testIMDbIDBreakingBad   = "tt0903747" // Breaking Bad
 	testIMDbIDGameOfThrones = "tt0944947" // Game of Thrones
 
 	// Test TVDB IDs
@@ -93,17 +93,28 @@ func TestTMDBFindMovieByIMDbID(t *testing.T) {
 
 	// Test with both Nosferatu (the failing case) and Shawshank (baseline)
 	t.Run("Nosferatu-2024", func(t *testing.T) {
-		t.Logf("Testing TMDB FindMovieByIMDbID for IMDb ID: %s (Nosferatu 2024)", testIMDbIDNosferatu)
+		t.Logf(
+			"Testing TMDB FindMovieByIMDbID for IMDb ID: %s (Nosferatu 2024)",
+			testIMDbIDNosferatu,
+		)
 		testTMDBMovieLookup(t, provider, ctx, testIMDbIDNosferatu)
 	})
 
 	t.Run("Shawshank-Redemption", func(t *testing.T) {
-		t.Logf("Testing TMDB FindMovieByIMDbID for IMDb ID: %s (Shawshank Redemption)", testIMDbIDShawshank)
+		t.Logf(
+			"Testing TMDB FindMovieByIMDbID for IMDb ID: %s (Shawshank Redemption)",
+			testIMDbIDShawshank,
+		)
 		testTMDBMovieLookup(t, provider, ctx, testIMDbIDShawshank)
 	})
 }
 
-func testTMDBMovieLookup(t *testing.T, provider *tmdb.Provider, ctx context.Context, imdbID string) {
+func testTMDBMovieLookup(
+	t *testing.T,
+	provider *tmdb.Provider,
+	ctx context.Context,
+	imdbID string,
+) {
 	result, err := provider.FindMovieByIMDbID(ctx, imdbID)
 	if err != nil {
 		t.Fatalf("TMDB FindMovieByIMDbID failed: %v", err)
@@ -170,17 +181,28 @@ func TestTraktFindMovieByIMDbID(t *testing.T) {
 
 	// Test with both Nosferatu (the failing case) and Shawshank (baseline)
 	t.Run("Nosferatu-2024", func(t *testing.T) {
-		t.Logf("Testing Trakt FindMovieByIMDbID for IMDb ID: %s (Nosferatu 2024)", testIMDbIDNosferatu)
+		t.Logf(
+			"Testing Trakt FindMovieByIMDbID for IMDb ID: %s (Nosferatu 2024)",
+			testIMDbIDNosferatu,
+		)
 		testTraktMovieLookup(t, provider, ctx, testIMDbIDNosferatu)
 	})
 
 	t.Run("Shawshank-Redemption", func(t *testing.T) {
-		t.Logf("Testing Trakt FindMovieByIMDbID for IMDb ID: %s (Shawshank Redemption)", testIMDbIDShawshank)
+		t.Logf(
+			"Testing Trakt FindMovieByIMDbID for IMDb ID: %s (Shawshank Redemption)",
+			testIMDbIDShawshank,
+		)
 		testTraktMovieLookup(t, provider, ctx, testIMDbIDShawshank)
 	})
 }
 
-func testTraktMovieLookup(t *testing.T, provider *trakt.Provider, ctx context.Context, imdbID string) {
+func testTraktMovieLookup(
+	t *testing.T,
+	provider *trakt.Provider,
+	ctx context.Context,
+	imdbID string,
+) {
 	result, err := provider.FindMovieByIMDbID(ctx, imdbID)
 	if err != nil {
 		t.Fatalf("Trakt FindMovieByIMDbID failed: %v", err)
@@ -258,17 +280,28 @@ func TestOMDBFindMovieByIMDbID(t *testing.T) {
 
 	// Test with both Nosferatu (the failing case) and Shawshank (baseline)
 	t.Run("Nosferatu-2024", func(t *testing.T) {
-		t.Logf("Testing OMDB GetDetailsByIMDb for IMDb ID: %s (Nosferatu 2024)", testIMDbIDNosferatu)
+		t.Logf(
+			"Testing OMDB GetDetailsByIMDb for IMDb ID: %s (Nosferatu 2024)",
+			testIMDbIDNosferatu,
+		)
 		testOMDBMovieLookup(t, provider, ctx, testIMDbIDNosferatu)
 	})
 
 	t.Run("Shawshank-Redemption", func(t *testing.T) {
-		t.Logf("Testing OMDB GetDetailsByIMDb for IMDb ID: %s (Shawshank Redemption)", testIMDbIDShawshank)
+		t.Logf(
+			"Testing OMDB GetDetailsByIMDb for IMDb ID: %s (Shawshank Redemption)",
+			testIMDbIDShawshank,
+		)
 		testOMDBMovieLookup(t, provider, ctx, testIMDbIDShawshank)
 	})
 }
 
-func testOMDBMovieLookup(t *testing.T, provider *omdb.Provider, ctx context.Context, imdbID string) {
+func testOMDBMovieLookup(
+	t *testing.T,
+	provider *omdb.Provider,
+	ctx context.Context,
+	imdbID string,
+) {
 	result, err := provider.GetDetailsByIMDb(ctx, imdbID)
 	if err != nil {
 		t.Fatalf("OMDB GetDetailsByIMDb failed: %v", err)
@@ -318,17 +351,28 @@ func TestTVDBFindSeriesByIMDbID(t *testing.T) {
 
 	// Test with TV shows (TVDB is primarily for TV series)
 	t.Run("BreakingBad", func(t *testing.T) {
-		t.Logf("Testing TVDB FindSeriesByIMDbID for IMDb ID: %s (Breaking Bad)", testIMDbIDBreakingBad)
+		t.Logf(
+			"Testing TVDB FindSeriesByIMDbID for IMDb ID: %s (Breaking Bad)",
+			testIMDbIDBreakingBad,
+		)
 		testTVDBSeriesLookup(t, provider, ctx, testIMDbIDBreakingBad)
 	})
 
 	t.Run("GameOfThrones", func(t *testing.T) {
-		t.Logf("Testing TVDB FindSeriesByIMDbID for IMDb ID: %s (Game of Thrones)", testIMDbIDGameOfThrones)
+		t.Logf(
+			"Testing TVDB FindSeriesByIMDbID for IMDb ID: %s (Game of Thrones)",
+			testIMDbIDGameOfThrones,
+		)
 		testTVDBSeriesLookup(t, provider, ctx, testIMDbIDGameOfThrones)
 	})
 }
 
-func testTVDBSeriesLookup(t *testing.T, provider *tvdb.Provider, ctx context.Context, imdbID string) {
+func testTVDBSeriesLookup(
+	t *testing.T,
+	provider *tvdb.Provider,
+	ctx context.Context,
+	imdbID string,
+) {
 	result, err := provider.FindSeriesByIMDbID(ctx, imdbID)
 	if err != nil {
 		// TVDB requires authentication - skip test if we get 401 or rate limit error

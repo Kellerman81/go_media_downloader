@@ -5,7 +5,6 @@ import (
 	"errors"
 	"slices"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
@@ -15,15 +14,14 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/syncops"
 )
 
-var (
-	errTmdbNotFound = errors.New("tmdb not found")
+var errTmdbNotFound = errors.New("tmdb not found")
 
-	// Common runtime values that should be skipped.
-	invalidRuntimes = []int{1, 2, 3, 4, 60, 90, 120}
-)
+// invalidRuntimes is a sorted slice for binary search.
+// This is more memory efficient than a map for small sets.
+var invalidRuntimes = []int{1, 2, 3, 4, 60, 90, 120}
 
 // checkaddmovietitlewoslug adds a movie title to the dbmovie_titles table if it does not already exist.
-// It takes the title string, movie ID uint, region string, and current movie titles slice.
+// It takes the title string, movie ID uint, region string, current movie titles slice, and cache setting.
 // It returns nothing.
 // It checks if the title already exists for that movie ID, slugifies the title,
 // inserts into dbmovie_titles if it does not exist, and updates the cache if enabled.
@@ -33,6 +31,7 @@ func checkaddmovietitlewoslug(
 	title *string,
 	region *string,
 	titles []database.DbstaticTwoString,
+	useMediaCache bool,
 ) {
 	if title == nil || *title == "" || database.GetDBStaticTwoStringIdx1(titles, *title) != -1 {
 		return
@@ -46,22 +45,24 @@ func checkaddmovietitlewoslug(
 		title,
 	)
 
-	if *checkid == 0 {
-		slug := logger.StringToSlug(*title)
-		database.ExecN(
-			"Insert into dbmovie_titles (title, slug, dbmovie_id, region) values (?, ?, ?, ?)",
-			title,
-			&slug,
-			dbmovieid,
-			region,
-		)
+	if *checkid != 0 {
+		return
+	}
 
-		if config.GetSettingsGeneral().UseMediaCache {
-			database.AppendCacheTwoString(
-				logger.CacheTitlesMovie,
-				syncops.DbstaticTwoStringOneInt{Num: *dbmovieid, Str1: *title, Str2: slug},
-			)
-		}
+	slug := logger.StringToSlug(*title)
+	database.ExecN(
+		"Insert into dbmovie_titles (title, slug, dbmovie_id, region) values (?, ?, ?, ?)",
+		title,
+		&slug,
+		dbmovieid,
+		region,
+	)
+
+	if useMediaCache {
+		database.AppendCacheTwoString(
+			logger.CacheTitlesMovie,
+			syncops.DbstaticTwoStringOneInt{Num: *dbmovieid, Str1: *title, Str2: slug},
+		)
 	}
 }
 
@@ -81,8 +82,10 @@ func parseDate(date string) sql.NullTime {
 }
 
 // isValidRuntime checks if a runtime value is valid (not in the invalid list).
+// Uses binary search on sorted slice for O(log n) performance with less memory than map.
 func isValidRuntime(runtime int) bool {
-	return !slices.Contains(invalidRuntimes, runtime)
+	_, found := slices.BinarySearch(invalidRuntimes, runtime)
+	return !found
 }
 
 // shouldUpdateRuntime determines if runtime should be updated based on current and new values.
@@ -104,44 +107,45 @@ func shouldUpdateRuntime(currentRuntime, newRuntime int, overwrite bool) bool {
 	return currentRuntime == 0
 }
 
-// buildGenreString efficiently builds a comma-separated genre string.
-func buildGenreString(genres []apiexternal.TheMovieDBMovieGenres) string {
-	if len(genres) == 0 {
+// buildCommaSeparated efficiently builds a comma-separated string from a slice.
+// Uses a pooled buffer to reduce allocations.
+// The getName function extracts the string value from each element.
+func buildCommaSeparated[T any](items []T, getName func(T) string) string {
+	if len(items) == 0 {
 		return ""
+	}
+
+	// Fast path for single item - avoid buffer allocation
+	if len(items) == 1 {
+		return getName(items[0])
 	}
 
 	bld := logger.PlAddBuffer.Get()
 	defer logger.PlAddBuffer.Put(bld)
 
-	for i, genre := range genres {
+	for i, item := range items {
 		if i > 0 {
 			bld.WriteByte(',')
 		}
 
-		bld.WriteString(genre.Name)
+		bld.WriteString(getName(item))
 	}
 
 	return bld.String()
 }
 
+// buildGenreString efficiently builds a comma-separated genre string.
+func buildGenreString(genres []apiexternal.TheMovieDBMovieGenres) string {
+	return buildCommaSeparated(genres, func(g apiexternal.TheMovieDBMovieGenres) string {
+		return g.Name
+	})
+}
+
 // buildLanguageString efficiently builds a comma-separated language string.
 func buildLanguageString(languages []apiexternal.TheMovieDBMovieLanguages) string {
-	if len(languages) == 0 {
-		return ""
-	}
-
-	bld := logger.PlAddBuffer.Get()
-	defer logger.PlAddBuffer.Put(bld)
-
-	for i, lang := range languages {
-		if i > 0 {
-			bld.WriteByte(',')
-		}
-
-		bld.WriteString(lang.EnglishName)
-	}
-
-	return bld.String()
+	return buildCommaSeparated(languages, func(l apiexternal.TheMovieDBMovieLanguages) string {
+		return l.EnglishName
+	})
 }
 
 // movieGetTmdbMetadata fetches movie metadata from TMDb.
@@ -160,6 +164,7 @@ func movieGetTmdbMetadata(movie *database.Dbmovie, overwrite bool) error {
 			if errors.Is(err, logger.ErrNotFound) {
 				return nil
 			}
+
 			return err
 		}
 
@@ -244,12 +249,14 @@ func updateStringField(
 	overwrite bool,
 	transform func(string) string,
 ) {
-	if (*field == "" || overwrite) && newValue != "" {
-		if transform != nil {
-			*field = transform(newValue)
-		} else {
-			*field = newValue
-		}
+	if (*field != "" && !overwrite) || newValue == "" {
+		return
+	}
+
+	if transform != nil {
+		*field = transform(newValue)
+	} else {
+		*field = newValue
 	}
 }
 
@@ -349,7 +356,7 @@ func movieGetTraktMetadata(movie *database.Dbmovie, overwrite bool) error {
 	}
 
 	if (movie.Genres == "" || overwrite) && len(traktdetails.Genres) > 0 {
-		movie.Genres = strings.Join(traktdetails.Genres, ",")
+		movie.Genres = logger.JoinStringsSep(traktdetails.Genres, ",")
 	}
 
 	updateInt32Field(&movie.VoteCount, traktdetails.Votes, overwrite)
@@ -426,9 +433,13 @@ func Getmoviemetadata(
 	cfgp *config.MediaTypeConfig,
 	dbmovieadded bool,
 ) {
+	// Cache config lookup to avoid repeated map access
+	generalSettings := config.GetSettingsGeneral()
+	priorities := generalSettings.MovieMetaSourcePriority
+
 	var errTmdb, errTrakt, errImdb error
-	for idx := range config.GetSettingsGeneral().MovieMetaSourcePriority {
-		switch config.GetSettingsGeneral().MovieMetaSourcePriority[idx] {
+	for _, source := range priorities {
+		switch source {
 		case logger.StrImdb:
 			errImdb = dbmovie.MovieGetImdbMetadata(refresh)
 		case "tmdb":
@@ -490,27 +501,27 @@ func Getmoviemetadata(
 		var checkid int
 
 		// Process IMDb alternate titles
-		if config.GetSettingsGeneral().MovieAlternateTitleMetaSourceImdb && dbmovie.ImdbID != "" &&
+		if generalSettings.MovieAlternateTitleMetaSourceImdb && dbmovie.ImdbID != "" &&
 			errImdb == nil {
 			processImdbAlternateTitles(dbmovie, titles, &checkid)
 		}
 
 		// Process TMDb alternate titles
-		if config.GetSettingsGeneral().MovieAlternateTitleMetaSourceTmdb &&
+		if generalSettings.MovieAlternateTitleMetaSourceTmdb &&
 			dbmovie.MoviedbID != 0 &&
 			errTmdb == nil {
 			processTmdbAlternateTitles(dbmovie, titles, &checkid)
 		}
 
 		// Process Trakt alternate titles
-		if config.GetSettingsGeneral().MovieAlternateTitleMetaSourceTrakt && dbmovie.ImdbID != "" &&
+		if generalSettings.MovieAlternateTitleMetaSourceTrakt && dbmovie.ImdbID != "" &&
 			errTrakt == nil {
 			processTraktAlternateTitles(dbmovie, titles, &checkid)
 		}
 	}
 
 	if dbmovieadded {
-		if config.GetSettingsGeneral().UseMediaCache {
+		if generalSettings.UseMediaCache {
 			database.AppendCacheThreeString(
 				logger.CacheDBMovie,
 				syncops.DbstaticThreeStringTwoInt{
@@ -524,21 +535,23 @@ func Getmoviemetadata(
 		}
 	}
 
-	if dbmovie.Title == "" {
-		database.Scanrowsdyn(
-			false,
-			database.QueryDbmovieTitlesGetTitleByIDLmit1,
+	if dbmovie.Title != "" {
+		return
+	}
+
+	database.Scanrowsdyn(
+		false,
+		database.QueryDbmovieTitlesGetTitleByIDLmit1,
+		&dbmovie.Title,
+		&dbmovie.ID,
+	)
+
+	if dbmovie.Title != "" {
+		database.ExecN(
+			"update dbmovies SET Title = ? where id = ?",
 			&dbmovie.Title,
 			&dbmovie.ID,
 		)
-
-		if dbmovie.Title != "" {
-			database.ExecN(
-				"update dbmovies SET Title = ? where id = ?",
-				&dbmovie.Title,
-				&dbmovie.ID,
-			)
-		}
 	}
 }
 
@@ -550,7 +563,18 @@ func Getmoviemetatitles(movie *database.Dbmovie, cfgp *config.MediaTypeConfig) {
 		return
 	}
 
-	// size +5
+	// Cache config lookup once
+	gs := config.GetSettingsGeneral()
+
+	// Early exit if no alternate title sources are enabled
+	hasImdb := gs.MovieAlternateTitleMetaSourceImdb && movie.ImdbID != ""
+	hasTmdb := gs.MovieAlternateTitleMetaSourceTmdb && movie.MoviedbID != 0
+	hasTrakt := gs.MovieAlternateTitleMetaSourceTrakt && movie.ImdbID != ""
+
+	if !hasImdb && !hasTmdb && !hasTrakt {
+		return
+	}
+
 	titles := database.Getrowssize[database.DbstaticTwoString](
 		false,
 		"select count() from dbmovie_titles where dbmovie_id = ?",
@@ -560,18 +584,15 @@ func Getmoviemetatitles(movie *database.Dbmovie, cfgp *config.MediaTypeConfig) {
 
 	var checkid int
 
-	// Process IMDb alternate titles
-	if config.GetSettingsGeneral().MovieAlternateTitleMetaSourceImdb && movie.ImdbID != "" {
+	if hasImdb {
 		processImdbAlternateTitles(movie, titles, &checkid)
 	}
 
-	// Process TMDb alternate titles
-	if config.GetSettingsGeneral().MovieAlternateTitleMetaSourceTmdb && movie.MoviedbID != 0 {
+	if hasTmdb {
 		processTmdbAlternateTitles(movie, titles, &checkid)
 	}
 
-	// Process Trakt alternate titles
-	if config.GetSettingsGeneral().MovieAlternateTitleMetaSourceTrakt && movie.ImdbID != "" {
+	if hasTrakt {
 		processTraktAlternateTitles(movie, titles, &checkid)
 	}
 }
@@ -591,6 +612,13 @@ func processImdbAlternateTitles(
 		&movie.ImdbID,
 	)
 
+	if len(arr) == 0 {
+		return
+	}
+
+	// Cache config lookup outside loop
+	useMediaCache := config.GetSettingsGeneral().UseMediaCache
+
 	for idx := range arr {
 		aka := &arr[idx]
 		if !shouldProcessTitle(aka.Str1, aka.Str2, titles) {
@@ -601,7 +629,7 @@ func processImdbAlternateTitles(
 			aka.Str3 = logger.StringToSlug(aka.Str2)
 		}
 
-		insertMovieTitle(checkid, &movie.ID, &aka.Str2, &aka.Str3, &aka.Str1)
+		insertMovieTitle(checkid, &movie.ID, &aka.Str2, &aka.Str3, &aka.Str1, useMediaCache)
 	}
 }
 
@@ -612,9 +640,12 @@ func processTmdbAlternateTitles(
 	checkid *int,
 ) {
 	tbl, err := apiexternal.GetTmdbMovieTitles(movie.MoviedbID)
-	if err != nil {
+	if err != nil || len(tbl.Titles) == 0 {
 		return
 	}
+
+	// Cache config lookup outside loop
+	useMediaCache := config.GetSettingsGeneral().UseMediaCache
 
 	for idx := range tbl.Titles {
 		title := &tbl.Titles[idx]
@@ -622,7 +653,14 @@ func processTmdbAlternateTitles(
 			continue
 		}
 
-		checkaddmovietitlewoslug(checkid, &movie.ID, &title.Title, &title.Iso31661, titles)
+		checkaddmovietitlewoslug(
+			checkid,
+			&movie.ID,
+			&title.Title,
+			&title.Iso31661,
+			titles,
+			useMediaCache,
+		)
 	}
 }
 
@@ -633,6 +671,12 @@ func processTraktAlternateTitles(
 	checkid *int,
 ) {
 	arr := apiexternal.GetTraktMovieAliases(movie.ImdbID)
+	if len(arr) == 0 {
+		return
+	}
+
+	// Cache config lookup outside loop
+	useMediaCache := config.GetSettingsGeneral().UseMediaCache
 
 	for idx := range arr {
 		alias := &arr[idx]
@@ -640,11 +684,22 @@ func processTraktAlternateTitles(
 			continue
 		}
 
-		checkaddmovietitlewoslug(checkid, &movie.ID, &alias.Title, &alias.Country, titles)
+		checkaddmovietitlewoslug(
+			checkid,
+			&movie.ID,
+			&alias.Title,
+			&alias.Country,
+			titles,
+			useMediaCache,
+		)
 	}
 }
 
+// errFound is a sentinel error for early loop termination.
+var errFound = errors.New("found")
+
 // shouldProcessTitle checks if a title should be processed based on language filters.
+// Optimized to avoid repeated allocations by collecting languages more efficiently.
 func shouldProcessTitle(
 	region, title string,
 	titles []database.DbstaticTwoString,
@@ -653,24 +708,40 @@ func shouldProcessTitle(
 		return false
 	}
 
-	// Collect all MetadataTitleLanguages from all movie configs
-	allLanguages := make([]string, 0)
-	config.RangeSettingsMedia(func(name string, mediaCfg *config.MediaTypeConfig) error {
-		if mediaCfg != nil && !mediaCfg.Useseries && len(mediaCfg.MetadataTitleLanguages) > 0 {
-			allLanguages = append(allLanguages, mediaCfg.MetadataTitleLanguages...)
+	// Early return if no region filter needed
+	if region == "" {
+		return true
+	}
+
+	// Check if any media config has language restrictions
+	var hasMatch, hasLanguages bool
+	config.RangeSettingsMedia(func(_ string, mediaCfg *config.MediaTypeConfig) error {
+		if mediaCfg == nil || len(mediaCfg.MetadataTitleLanguages) == 0 {
+			return nil
 		}
+
+		hasLanguages = true
+
+		if logger.SlicesContainsI(mediaCfg.MetadataTitleLanguages, region) {
+			hasMatch = true
+			return errFound // Early termination
+		}
+
 		return nil
 	})
 
-	if len(allLanguages) >= 1 && region != "" {
-		return logger.SlicesContainsI(allLanguages, region)
-	}
-
-	return true
+	// If no language restrictions configured, allow all
+	return !hasLanguages || hasMatch
 }
 
 // insertMovieTitle inserts a movie title into the database.
-func insertMovieTitle(checkid *int, movieID *uint, title, slug, region *string) {
+// Accepts useMediaCache parameter to avoid repeated config lookups in loops.
+func insertMovieTitle(
+	checkid *int,
+	movieID *uint,
+	title, slug, region *string,
+	useMediaCache bool,
+) {
 	database.Scanrowsdyn(
 		false,
 		"select count() from dbmovie_titles where dbmovie_id = ? and title = ? COLLATE NOCASE",
@@ -679,25 +750,27 @@ func insertMovieTitle(checkid *int, movieID *uint, title, slug, region *string) 
 		title,
 	)
 
-	if *checkid == 0 {
-		database.ExecN(
-			"Insert into dbmovie_titles (title, slug, dbmovie_id, region) values (?, ?, ?, ?)",
-			title,
-			slug,
-			movieID,
-			region,
-		)
+	if *checkid != 0 {
+		return
+	}
 
-		if config.GetSettingsGeneral().UseMediaCache {
-			database.AppendCacheTwoString(
-				logger.CacheTitlesMovie,
-				syncops.DbstaticTwoStringOneInt{
-					Num:  *movieID,
-					Str1: *title,
-					Str2: *slug,
-				},
-			)
-		}
+	database.ExecN(
+		"Insert into dbmovie_titles (title, slug, dbmovie_id, region) values (?, ?, ?, ?)",
+		title,
+		slug,
+		movieID,
+		region,
+	)
+
+	if useMediaCache {
+		database.AppendCacheTwoString(
+			logger.CacheTitlesMovie,
+			syncops.DbstaticTwoStringOneInt{
+				Num:  *movieID,
+				Str1: *title,
+				Str2: *slug,
+			},
+		)
 	}
 }
 
@@ -754,7 +827,7 @@ func serieGetMetadataTrakt(serie *database.Dbserie, overwrite bool) error {
 
 	// Handle genres
 	if (serie.Genre == "" || overwrite) && len(traktdetails.Genres) > 0 {
-		serie.Genre = strings.Join(traktdetails.Genres, ",")
+		serie.Genre = logger.JoinStringsSep(traktdetails.Genres, ",")
 	}
 
 	// Handle numeric fields with string conversion
@@ -853,14 +926,9 @@ func serieGetMetadataTvdb(
 	updateStringField(&serie.Fanart, tvdbdetails.Data.Fanart, overwrite, nil)
 	updateStringField(&serie.ImdbID, tvdbdetails.Data.ImdbID, overwrite, nil)
 
-	// Handle aliases
-	if (serie.Aliases == "" || overwrite) && len(tvdbdetails.Data.Aliases) > 0 {
-		serie.Aliases = strings.Join(tvdbdetails.Data.Aliases, ",")
-	}
-
 	// Handle genres
 	if (serie.Genre == "" || overwrite) && len(tvdbdetails.Data.Genre) > 0 {
-		serie.Genre = strings.Join(tvdbdetails.Data.Genre, ",")
+		serie.Genre = logger.JoinStringsSep(tvdbdetails.Data.Genre, ",")
 	}
 
 	// Handle numeric fields with string conversion
@@ -889,7 +957,6 @@ func serieGetMetadataTvdb(
 // TVDB, TMDB, Trakt etc. based on the provided flags. It takes in a pointer to a
 // Dbserie struct, language string, flags to query TMDB and Trakt APIs, a flag to
 // overwrite existing metadata, and a slice of existing aliases.
-
 // It returns a slice of aliases after querying the different metadata sources. The
 // function handles errors from the API calls and logs them. It progressively
 // queries more APIs, using data from previous ones. Overall it populates serie
@@ -963,18 +1030,22 @@ func SerieGetMetadata(
 // an updated slice of aliases after processing Trakt aliases.
 func processTraktSerieAliases(serie *database.Dbserie, aliases []string) []string {
 	traktAliases := apiexternal.GetTraktSerieAliases(serie)
+	if len(traktAliases) == 0 {
+		return aliases
+	}
 
-	for _, alias := range traktAliases {
-		if shouldAddAlias(alias.Title, alias.Country, aliases) {
-			aliases = append(aliases, alias.Title)
+	// Cache indexed languages to avoid repeated config lookups
+	indexedLangs := config.GetSettingsImdb().Indexedlanguages
+
+	// Pre-allocate capacity for potential additions
+	result := aliases
+	for i := range traktAliases {
+		if traktAliases[i].Title != "" &&
+			!logger.SlicesContainsI(result, traktAliases[i].Title) &&
+			logger.SlicesContainsI(indexedLangs, traktAliases[i].Country) {
+			result = append(result, traktAliases[i].Title)
 		}
 	}
 
-	return aliases
-}
-
-// shouldAddAlias determines if an alias should be added based on existing aliases and language settings.
-func shouldAddAlias(title, country string, existingAliases []string) bool {
-	return !logger.SlicesContainsI(existingAliases, title) &&
-		logger.SlicesContainsI(config.GetSettingsImdb().Indexedlanguages, country)
+	return result
 }

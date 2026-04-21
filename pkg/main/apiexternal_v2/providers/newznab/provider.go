@@ -1,8 +1,8 @@
 package newznab
 
 import (
+	"bytes"
 	"context"
-	"encoding/json"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -19,6 +19,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/base"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/goccy/go-json"
 )
 
 //
@@ -44,6 +45,7 @@ type ProviderConfig struct {
 	LimiterCalls      int    // Number of API calls allowed within LimiterSeconds (default: 200)
 	LimiterSeconds    uint8  // Time window in seconds for rate limiting (default: 3600)
 	LimiterCallsDaily int    // Maximum number of API calls allowed per day (default: 2000)
+	Enabled           bool   // Whether this indexer is active; skips capability fetch if false
 }
 
 // Provider implements the IndexerProvider interface for Newznab/Torznab.
@@ -62,6 +64,10 @@ type Provider struct {
 	maxAge            uint16 // Maximum age of releases in days
 	maxEntries        uint16 // Maximum number of entries per request
 	addQuotesForTitle bool   // Add quotes around title queries
+
+	// SupportedCategories contains all category IDs (including subcategories) reported by the
+	// indexer's caps endpoint. Populated once during NewProvider and used for resolution inference.
+	SupportedCategories []string
 }
 
 var ErrBroke = errors.New("broke")
@@ -135,7 +141,7 @@ func NewProvider(config ProviderConfig) *Provider {
 		RetryBackoff:            2 * time.Second,
 	}
 
-	return &Provider{
+	p := &Provider{
 		BaseClient:        base.NewBaseClient(clientConfig),
 		DownloadClient:    base.NewBaseClient(downloadClientConfig),
 		baseURL:           config.BaseURL,
@@ -152,6 +158,16 @@ func NewProvider(config ProviderConfig) *Provider {
 		isTorznab: strings.Contains(strings.ToLower(config.BaseURL), "torznab") ||
 			strings.Contains(strings.ToLower(config.BaseURL), "torrent"),
 	}
+
+	// Fetch indexer capabilities and cache supported category IDs for resolution inference.
+	// Skip for disabled indexers to avoid unnecessary network requests.
+	if config.Enabled {
+		if caps, err := p.GetCapabilities(context.Background()); err == nil {
+			p.SupportedCategories = flattenCategoryIDs(caps.Categories)
+		}
+	}
+
+	return p
 }
 
 // GetProviderType returns the provider type.
@@ -159,6 +175,7 @@ func (p *Provider) GetProviderType() apiexternal_v2.IndexerProviderType {
 	if p.isTorznab {
 		return apiexternal_v2.IndexerTorznab
 	}
+
 	return apiexternal_v2.IndexerNewznab
 }
 
@@ -167,6 +184,7 @@ func (p *Provider) GetProviderName() string {
 	if p.isTorznab {
 		return "torznab"
 	}
+
 	return "newznab"
 }
 
@@ -228,9 +246,9 @@ func (p *Provider) Search(
 
 	// Add categories
 	if len(request.Categories) > 0 {
-		params.Set("cat", strings.Join(request.Categories, ","))
+		params.Set("cat", logger.JoinStringsSep(request.Categories, ","))
 	} else if len(p.categories) > 0 {
-		params.Set("cat", strings.Join(p.categories, ","))
+		params.Set("cat", logger.JoinStringsSep(p.categories, ","))
 	}
 
 	// Add limits - use provider default if not specified in request
@@ -415,6 +433,7 @@ func (p *Provider) GetCapabilities(
 			if decodeErr := xml.NewDecoder(resp.Body).Decode(&caps); decodeErr != nil {
 				return decodeErr
 			}
+
 			return nil
 		},
 	)
@@ -456,9 +475,9 @@ func (p *Provider) GetRSSFeed(
 
 	// Add categories
 	if len(categories) > 0 {
-		params.Set("cat", strings.Join(categories, ","))
+		params.Set("cat", logger.JoinStringsSep(categories, ","))
 	} else if len(p.categories) > 0 {
-		params.Set("cat", strings.Join(p.categories, ","))
+		params.Set("cat", logger.JoinStringsSep(p.categories, ","))
 	}
 
 	// Add limit - use provider default if not specified
@@ -533,6 +552,7 @@ func (p *Provider) MakeSearchRequest(
 	if errors.Is(err, ErrBroke) {
 		return arr, nil
 	}
+
 	return arr, err
 }
 
@@ -578,10 +598,11 @@ func (p *Provider) makeRSSRequest(
 	if errors.Is(err, ErrBroke) {
 		return arr, nil
 	}
+
 	return arr, err
 }
 
-// executeRequest performs the HTTP request and parses the response.
+// ExecuteRequest performs the HTTP request and parses the response.
 // This is shared by both makeSearchRequest and makeRSSRequest to avoid code duplication.
 // tillid parameter is used for RSS feeds to stop parsing at a specific entry ID.
 func (p *Provider) ExecuteRequest(
@@ -606,6 +627,7 @@ func (p *Provider) ExecuteRequest(
 
 		return err
 	})
+
 	return ret, err
 }
 
@@ -678,6 +700,7 @@ func (p *Provider) parseXMLResponse(
 		lastfield  int8 // Tracks which field CharData should populate: 1=title, 2=link, 3=guid, 4=size
 		nameidx    int
 		valueidx   int
+		data       string
 	)
 
 	for {
@@ -686,6 +709,7 @@ func (p *Provider) parseXMLResponse(
 			if errors.Is(err, io.EOF) {
 				break
 			}
+
 			return nil, fmt.Errorf("failed to parse XML: %w", err)
 		}
 
@@ -715,80 +739,120 @@ func (p *Provider) parseXMLResponse(
 			case "size":
 				lastfield = 4
 
+			case "category":
+				lastfield = 5
+
 			case "enclosure", "source":
 				// Extract attributes directly from enclosure/source elements
-				if inItem {
-					for idx := range t.Attr {
-						switch t.Attr[idx].Name.Local {
-						case "url":
-							if currentNZB.DownloadURL == "" {
-								currentNZB.DownloadURL = t.Attr[idx].Value
-							}
+				if !inItem {
+					break
+				}
 
-						case "length":
-							if currentNZB.Size == 0 {
-								if size, err := strconv.ParseInt(t.Attr[idx].Value, 10, 64); err == nil {
-									currentNZB.Size = size
-								}
-							}
+				for idx := range t.Attr {
+					switch t.Attr[idx].Name.Local {
+					case "url":
+						if currentNZB.DownloadURL == "" {
+							currentNZB.DownloadURL = t.Attr[idx].Value
+						}
+
+					case "length":
+						if currentNZB.Size != 0 {
+							break
+						}
+
+						size, err := strconv.ParseInt(
+							t.Attr[idx].Value,
+							10,
+							64,
+						)
+						if err == nil {
+							currentNZB.Size = size
 						}
 					}
 				}
 
 			case "attr":
 				// Newznab attribute element with name/value pairs
-				if inItem {
-					nameidx = -1
+				if !inItem {
+					break
+				}
 
-					valueidx = -1
-					for idx := range t.Attr {
-						switch t.Attr[idx].Name.Local {
-						case "name":
-							nameidx = idx
-						case "value":
-							valueidx = idx
-						}
+				nameidx = -1
+
+				valueidx = -1
+				for idx := range t.Attr {
+					switch t.Attr[idx].Name.Local {
+					case "name":
+						nameidx = idx
+					case "value":
+						valueidx = idx
+					}
+				}
+
+				// Apply the attribute if both name and value are found
+				if nameidx == -1 || valueidx == -1 || t.Attr[valueidx].Value == "" {
+					break
+				}
+
+				switch t.Attr[nameidx].Value {
+				case "imdb", "imdbid":
+					if currentNZB.IMDBID == "" {
+						currentNZB.IMDBID = t.Attr[valueidx].Value
 					}
 
-					// Apply the attribute if both name and value are found
-					if nameidx != -1 && valueidx != -1 && t.Attr[valueidx].Value != "" {
-						switch t.Attr[nameidx].Value {
-						case "imdb", "imdbid":
-							if currentNZB.IMDBID == "" {
-								currentNZB.IMDBID = t.Attr[valueidx].Value
-							}
+				case "tvdbid":
+					if currentNZB.TVDBID != 0 {
+						break
+					}
 
-						case "tvdbid":
-							if currentNZB.TVDBID == 0 {
-								if tvdbID, err := strconv.Atoi(t.Attr[valueidx].Value); err == nil {
-									currentNZB.TVDBID = tvdbID
-								}
-							}
+					tvdbID, err := strconv.Atoi(t.Attr[valueidx].Value)
+					if err == nil {
+						currentNZB.TVDBID = tvdbID
+					}
 
-						case "season":
-							if currentNZB.Season == "" {
-								currentNZB.Season = t.Attr[valueidx].Value
-							}
+				case "season":
+					if currentNZB.Season == "" {
+						currentNZB.Season = t.Attr[valueidx].Value
+					}
 
-						case "episode":
-							if currentNZB.Episode == "" {
-								currentNZB.Episode = t.Attr[valueidx].Value
-							}
-						}
+				case "episode":
+					if currentNZB.Episode == "" {
+						currentNZB.Episode = t.Attr[valueidx].Value
+					}
+
+				case "category":
+					if currentNZB.Category == "" {
+						currentNZB.Category = t.Attr[valueidx].Value
+					}
+
+				case "size", "length":
+					if currentNZB.Size != 0 {
+						break
+					}
+
+					size, err := strconv.ParseInt(
+						t.Attr[valueidx].Value,
+						10,
+						64,
+					)
+					if err == nil {
+						currentNZB.Size = size
 					}
 				}
 			}
 
 		case xml.CharData:
 			// Only process CharData if we're in an item and lastfield is set
-			if !inItem || lastfield <= 0 || lastfield >= 5 || len(t) == 0 {
+			if !inItem || lastfield <= 0 || lastfield >= 6 || len(t) == 0 {
 				continue
 			}
 
-			data := strings.TrimSpace(string(t))
-			if data == "" {
+			trimmed := bytes.TrimSpace(t)
+			if len(trimmed) == 0 {
 				continue
 			}
+
+			data = string(trimmed)
 
 			// Check if field is already populated; if so, reset lastfield to prevent overwriting
 			switch lastfield {
@@ -825,33 +889,40 @@ func (p *Provider) parseXMLResponse(
 				if size, err := strconv.ParseInt(data, 10, 64); err == nil {
 					currentNZB.Size = size
 				}
+
+			case 5: // category
+				if currentNZB.Category == "" {
+					currentNZB.Category = data
+				}
 			}
 
 		case xml.EndElement:
-			if t.Name.Local == "item" && inItem {
-				// Finalize the NZB item
-				// Use DownloadURL as ID fallback if ID is empty
-				if currentNZB.ID == "" {
-					currentNZB.ID = currentNZB.DownloadURL
-				}
-
-				// Check if this is the tillid entry - if so, stop parsing here
-				// This prevents processing old entries we've already seen
-				if tillid != "" && currentNZB.ID == tillid {
-					// logger.Logtype(logger.StatusDebug, 1).
-					// 	Str("tillid", tillid).
-					// 	Int("new_entries", len(results)).
-					// 	Msg("Reached tillid entry - stopping RSS parsing")
-					return results, ErrBroke
-				}
-
-				results = append(results, apiexternal_v2.Nzbwithprio{
-					NZB:         currentNZB,
-					WantedTitle: currentNZB.Title,
-				})
-
-				inItem = false
+			if t.Name.Local != "item" || !inItem {
+				break
 			}
+
+			// Finalize the NZB item
+			// Use DownloadURL as ID fallback if ID is empty
+			if currentNZB.ID == "" {
+				currentNZB.ID = currentNZB.DownloadURL
+			}
+
+			// Check if this is the tillid entry - if so, stop parsing here
+			// This prevents processing old entries we've already seen
+			if tillid != "" && currentNZB.ID == tillid {
+				// logger.Logtype(logger.StatusDebug, 1).
+				// 	Str("tillid", tillid).
+				// 	Int("new_entries", len(results)).
+				// 	Msg("Reached tillid entry - stopping RSS parsing")
+				return results, ErrBroke
+			}
+
+			results = append(results, apiexternal_v2.Nzbwithprio{
+				NZB:         currentNZB,
+				WantedTitle: currentNZB.Title,
+			})
+
+			inItem = false
 		}
 	}
 
@@ -927,7 +998,11 @@ func (p *Provider) convertJSON1Items(
 
 			// Parse size from enclosure if not in main item
 			if nzb.Size == 0 && item.Enclosure.Attributes.Length != "" {
-				if size, err := strconv.ParseInt(item.Enclosure.Attributes.Length, 10, 64); err == nil {
+				if size, err := strconv.ParseInt(
+					item.Enclosure.Attributes.Length,
+					10,
+					64,
+				); err == nil {
 					nzb.Size = size
 				}
 			}
@@ -949,6 +1024,10 @@ func (p *Provider) convertJSON1Items(
 				nzb.Season = attr.Attribute.Value
 			case "episode":
 				nzb.Episode = attr.Attribute.Value
+			case "category":
+				if nzb.Category == "" {
+					nzb.Category = attr.Attribute.Value
+				}
 			}
 		}
 
@@ -1055,11 +1134,19 @@ func (p *Provider) processAttributeForNzb(
 		nzb.Season = value
 	case "episode":
 		nzb.Episode = value
+	case "category":
+		if nzb.Category == "" {
+			nzb.Category = value
+		}
+
 	case "size":
-		if nzb.Size == 0 {
-			if size, err := strconv.ParseInt(value, 10, 64); err == nil {
-				nzb.Size = size
-			}
+		if nzb.Size != 0 {
+			break
+		}
+
+		size, err := strconv.ParseInt(value, 10, 64)
+		if err == nil {
+			nzb.Size = size
 		}
 	}
 }
@@ -1144,4 +1231,22 @@ func convertCategory(cat *newznabCategory) apiexternal_v2.IndexerCategory {
 		Name:          cat.Name,
 		Subcategories: subcats,
 	}
+}
+
+// flattenCategoryIDs recursively collects all category IDs (including subcategories)
+// from an IndexerCapabilities category list into a flat string slice.
+func flattenCategoryIDs(cats []apiexternal_v2.IndexerCategory) []string {
+	ids := make([]string, 0, len(cats)*3)
+
+	var collect func(c []apiexternal_v2.IndexerCategory)
+
+	collect = func(c []apiexternal_v2.IndexerCategory) {
+		for i := range c {
+			ids = append(ids, c[i].ID)
+			collect(c[i].Subcategories)
+		}
+	}
+	collect(cats)
+
+	return ids
 }

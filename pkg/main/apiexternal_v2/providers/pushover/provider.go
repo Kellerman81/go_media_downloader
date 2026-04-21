@@ -2,7 +2,6 @@ package pushover
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,6 +12,8 @@ import (
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/base"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/goccy/go-json"
 )
 
 //
@@ -169,7 +170,7 @@ func (p *Provider) SendNotification(
 	}
 
 	if pushoverResp.Status != 1 {
-		errorMsg := strings.Join(pushoverResp.Errors, ", ")
+		errorMsg := logger.JoinStringsSep(pushoverResp.Errors, ", ")
 
 		return &apiexternal_v2.NotificationResponse{
 			Success:   false,
@@ -223,7 +224,7 @@ func (p *Provider) TestConnection(ctx context.Context) error {
 	}
 
 	if pushoverResp.Status != 1 {
-		errorMsg := strings.Join(pushoverResp.Errors, ", ")
+		errorMsg := logger.JoinStringsSep(pushoverResp.Errors, ", ")
 		return fmt.Errorf("pushover validation failed: %s", errorMsg)
 	}
 
@@ -255,7 +256,7 @@ func (p *Provider) GetSounds(ctx context.Context) (map[string]string, error) {
 	}
 
 	if soundsResp.Status != 1 {
-		errorMsg := strings.Join(soundsResp.Errors, ", ")
+		errorMsg := logger.JoinStringsSep(soundsResp.Errors, ", ")
 		return nil, fmt.Errorf("pushover sounds request failed: %s", errorMsg)
 	}
 

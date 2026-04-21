@@ -2,13 +2,14 @@ package deluge
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/cookiejar"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/goccy/go-json"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/base"
@@ -208,14 +209,17 @@ func (p *Provider) ListTorrents(
 
 	torrents := make([]apiexternal_v2.TorrentInfo, 0, len(torrentsData))
 	for hash, data := range torrentsData {
-		if torrentMap, ok := data.(map[string]any); ok {
-			torrent := parseTorrentInfo(hash, torrentMap)
+		torrentMap, ok := data.(map[string]any)
+		if !ok {
+			continue
+		}
 
-			// Apply filter if specified
-			if filter == "" ||
-				strings.Contains(strings.ToLower(torrent.State), strings.ToLower(filter)) {
-				torrents = append(torrents, *torrent)
-			}
+		torrent := parseTorrentInfo(hash, torrentMap)
+
+		// Apply filter if specified
+		if filter == "" ||
+			strings.Contains(strings.ToLower(torrent.State), strings.ToLower(filter)) {
+			torrents = append(torrents, *torrent)
 		}
 	}
 

@@ -217,7 +217,7 @@ type TMDBListResponse struct {
 	CreatedBy     string                  `json:"created_by"`
 	Description   string                  `json:"description"`
 	FavoriteCount int                     `json:"favorite_count"`
-	ID            string                  `json:"id"`
+	ID            int                     `json:"id"`
 	Items         []tmdbMovieSearchResult `json:"items"`
 	ItemCount     int                     `json:"item_count"`
 	ISO6391       string                  `json:"iso_639_1"`

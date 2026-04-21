@@ -3,17 +3,16 @@ package algolia
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
-	"regexp"
 	"strings"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/goccy/go-json"
 )
 
 // AlgoliaHit represents a single scene from Algolia search results.
@@ -29,19 +28,19 @@ type AlgoliaHit struct {
 	Categories      []CategoryInfo `json:"categories"`
 	AvailableOnSite []string       `json:"availableOnSite"`
 	ContentTags     []string       `json:"content_tags"`
-	Lesbian         interface{}    `json:"lesbian"` // Can be bool or string
-	Bisex           interface{}    `json:"bisex"`   // Can be bool or string
+	Lesbian         any            `json:"lesbian"` // Can be bool or string
+	Bisex           any            `json:"bisex"`   // Can be bool or string
 	ClipType        string         `json:"clip_type"`
-	ClipLength      interface{}    `json:"clip_length"` // Can be string or int
-	MovieID         interface{}    `json:"movie_id"`    // Can be string or int
+	ClipLength      any            `json:"clip_length"` // Can be string or int
+	MovieID         any            `json:"movie_id"`    // Can be string or int
 	MovieTitle      string         `json:"movie_title"`
 	MovieDesc       string         `json:"movie_desc"`
-	Compilation     interface{}    `json:"compilation"` // Can be bool or string
-	SerieID         interface{}    `json:"serie_id"`    // Can be string or int
+	Compilation     any            `json:"compilation"` // Can be bool or string
+	SerieID         any            `json:"serie_id"`    // Can be string or int
 	SerieName       string         `json:"serie_name"`
-	StudioID        interface{}    `json:"studio_id"` // Can be string or int
+	StudioID        any            `json:"studio_id"` // Can be string or int
 	StudioName      string         `json:"studio_name"`
-	NetworkID       interface{}    `json:"network_id"` // Can be string or int
+	NetworkID       any            `json:"network_id"` // Can be string or int
 	NetworkName     string         `json:"network_name"`
 	URLMovieTitle   string         `json:"url_movie_title"`
 }
@@ -196,7 +195,7 @@ func (s *Scraper) extractAlgoliaCredentials(ctx context.Context) error {
 	content := string(body)
 
 	// Try pattern 1: "applicationID":"...","apiKey":"..."
-	re1 := regexp.MustCompile(
+	re1 := database.GetCachedRegexp(
 		`"applicationID":"([a-zA-Z0-9]{1,})","apiKey":"([a-zA-Z0-9=,\.]{1,})"`,
 	)
 	matches := re1.FindStringSubmatch(content)
@@ -212,7 +211,7 @@ func (s *Scraper) extractAlgoliaCredentials(ctx context.Context) error {
 	}
 
 	// Try pattern 2: "apiKey":"...","applicationID":"..."
-	re2 := regexp.MustCompile(
+	re2 := database.GetCachedRegexp(
 		`"apiKey":"([a-zA-Z0-9=,\.]{1,})","applicationID":"([a-zA-Z0-9]{1,})"`,
 	)
 
@@ -338,8 +337,13 @@ func (s *Scraper) fetchPage(ctx context.Context, page int) ([]AlgoliaHit, error)
 		return nil, fmt.Errorf("algolia API returned status %d for page %d", resp.StatusCode, page)
 	}
 
+	data, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		return nil, fmt.Errorf("failed to read response: %w", readErr)
+	}
+
 	var apiResp AlgoliaResponse
-	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
+	if err := json.Unmarshal(data, &apiResp); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
@@ -367,7 +371,7 @@ func joinActorNames(actors []ActorInfo) string {
 		names[i] = actor.Name
 	}
 
-	return strings.Join(names, ", ")
+	return logger.JoinStringsSep(names, ", ")
 }
 
 // joinCategoryNames concatenates category names into a comma-separated string.
@@ -387,7 +391,7 @@ func joinCategoryNames(categories []CategoryInfo) string {
 		names[i] = category.Name
 	}
 
-	return strings.Join(names, ", ")
+	return logger.JoinStringsSep(names, ", ")
 }
 
 // createEpisode creates or updates an episode in the database.
@@ -542,11 +546,11 @@ func (s *Scraper) Scrape(ctx context.Context, firstpageonly bool) (int, error) {
 		}
 
 		processedThisPage := 0
-		for _, hit := range hits {
-			if err := s.createEpisode(ctx, &hit); err != nil {
+		for i := range hits {
+			if err := s.createEpisode(ctx, &hits[i]); err != nil {
 				logger.Logtype(logger.StatusError, 0).
 					Err(err).
-					Str("title", hit.Title).
+					Str("title", hits[i].Title).
 					Msg("Failed to create episode")
 
 				continue

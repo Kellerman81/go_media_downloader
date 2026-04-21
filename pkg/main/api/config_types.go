@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"maragu.dev/gomponents"
@@ -21,7 +20,7 @@ type ConfigValidationSet struct {
 	Rules []ValidationRule
 }
 
-// Generic validation patterns for common config types.
+// ConfigValidator is a generic validation pattern for common config types.
 type ConfigValidator[T any] struct {
 	ConfigType string
 	GetName    func(T) string
@@ -100,11 +99,26 @@ var listsValidator = &ConfigValidator[config.ListsConfig]{
 				"traktpublicmovielist",
 				"traktmoviepopular",
 				"traktmovieanticipated",
+				"tmdbmovieupcoming",
 				"traktmovietrending",
 				"traktseriepopular",
 				"traktserieanticipated",
 				"traktserietrending",
+				"tmdbmoviepopular",
+				"tmdbmovietrending",
+				"tmdbmoviediscover",
+				"tmdblist",
+				"tmdbseriepopular",
+				"tmdbserietrending",
+				"tmdbshowdiscover",
+				"tmdbshowlist",
 				"newznabrss",
+				"plexwatchlist",
+				"jellyfinwatchlist",
+				"moviescraper",
+				"audiobookconfig",
+				"bookconfig",
+				"musicconfig",
 			},
 			func(c config.ListsConfig) string { return c.ListType },
 		),
@@ -145,6 +159,7 @@ var regexValidator = &ConfigValidator[config.RegexConfig]{
 			if len(c.Required) == 0 && len(c.Rejected) == 0 {
 				return fmt.Errorf("regex must have at least one required or rejected pattern")
 			}
+
 			return nil
 		},
 	},
@@ -166,6 +181,7 @@ var pathsValidator = &ConfigValidator[config.PathsConfig]{
 			if c.MinSize > 0 && c.MaxSize > 0 && c.MinSize > c.MaxSize {
 				return fmt.Errorf("minimum size cannot be greater than maximum size")
 			}
+
 			return nil
 		},
 	},
@@ -181,10 +197,10 @@ var schedulerValidator = &ConfigValidator[config.SchedulerConfig]{
 	},
 }
 
-var globalConfigCache = &configCache{
-	templates: make(map[string]map[string][]string),
-	lastClear: time.Now(),
-}
+// var globalConfigCache = &configCache{
+// 	templates: make(map[string]map[string][]string),
+// 	lastClear: time.Now(),
+// }
 
 // Optimize string operations with a string builder pool.
 var stringBuilderPool = sync.Pool{

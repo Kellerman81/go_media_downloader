@@ -14,6 +14,15 @@ import (
 	"github.com/pelletier/go-toml/v2"
 )
 
+const (
+	MediaTypeMovie uint = iota
+	MediaTypeSeries
+	MediaTypeBook
+	MediaTypeAudiobook
+	MediaTypeMusic
+	MediaTypeCustom uint = 999
+)
+
 var (
 	Configfile       = "./config/config.toml"
 	RandomizerSource = rand.NewSource(time.Now().UnixNano())
@@ -71,9 +80,6 @@ func Loadallsettings(reload bool) error {
 	// Build snapshot from default config
 	snapshot, err := buildConfigSnapshot(defaultConfig, reload)
 	if err != nil {
-		logger.Logtype(logger.StatusError, 0).
-			Err(err).
-			Msg("Failed to build default config snapshot")
 		return err
 	}
 
@@ -138,6 +144,10 @@ func Getconfigtoml(reload bool, snapshot *ConfigSnapshot, tomlConfig *MainConfig
 
 	snapshot.General.CacheDuration2 = 2 * snapshot.General.CacheDuration
 
+	if snapshot.General.UserAgent == "" {
+		snapshot.General.UserAgent = "go-media-downloader/2.0"
+	}
+
 	if len(snapshot.General.MovieMetaSourcePriority) == 0 {
 		snapshot.General.MovieMetaSourcePriority = []string{"imdb", "tmdb", "omdb", "trakt"}
 	}
@@ -151,17 +161,58 @@ func Getconfigtoml(reload bool, snapshot *ConfigSnapshot, tomlConfig *MainConfig
 	setupQualityConfigs(snapshot)
 
 	for idx := range snapshot.cachetoml.Media.Movies {
-		setupMediaTypeConfig(&snapshot.cachetoml.Media.Movies[idx], "movie_", false, snapshot)
+		setupMediaTypeConfig(
+			&snapshot.cachetoml.Media.Movies[idx],
+			"movie_",
+			MediaTypeMovie,
+			snapshot,
+		)
 		setupMediaConfigLists(&snapshot.cachetoml.Media.Movies[idx], snapshot)
 
 		snapshot.Media["movie_"+snapshot.cachetoml.Media.Movies[idx].Name] = &snapshot.cachetoml.Media.Movies[idx]
 	}
 
 	for idx := range snapshot.cachetoml.Media.Series {
-		setupMediaTypeConfig(&snapshot.cachetoml.Media.Series[idx], "serie_", true, snapshot)
+		setupMediaTypeConfig(
+			&snapshot.cachetoml.Media.Series[idx],
+			"serie_",
+			MediaTypeSeries,
+			snapshot,
+		)
 		setupMediaConfigLists(&snapshot.cachetoml.Media.Series[idx], snapshot)
 
 		snapshot.Media["serie_"+snapshot.cachetoml.Media.Series[idx].Name] = &snapshot.cachetoml.Media.Series[idx]
+	}
+
+	for idx := range snapshot.cachetoml.Media.Books {
+		setupMediaTypeConfig(&snapshot.cachetoml.Media.Books[idx], "book_", MediaTypeBook, snapshot)
+		setupMediaConfigLists(&snapshot.cachetoml.Media.Books[idx], snapshot)
+
+		snapshot.Media["book_"+snapshot.cachetoml.Media.Books[idx].Name] = &snapshot.cachetoml.Media.Books[idx]
+	}
+
+	for idx := range snapshot.cachetoml.Media.AudioBooks {
+		setupMediaTypeConfig(
+			&snapshot.cachetoml.Media.AudioBooks[idx],
+			"audiobook_",
+			MediaTypeAudiobook,
+			snapshot,
+		)
+		setupMediaConfigLists(&snapshot.cachetoml.Media.AudioBooks[idx], snapshot)
+
+		snapshot.Media["audiobook_"+snapshot.cachetoml.Media.AudioBooks[idx].Name] = &snapshot.cachetoml.Media.AudioBooks[idx]
+	}
+
+	for idx := range snapshot.cachetoml.Media.Music {
+		setupMediaTypeConfig(
+			&snapshot.cachetoml.Media.Music[idx],
+			"music_",
+			MediaTypeMusic,
+			snapshot,
+		)
+		setupMediaConfigLists(&snapshot.cachetoml.Media.Music[idx], snapshot)
+
+		snapshot.Media["music_"+snapshot.cachetoml.Media.Music[idx].Name] = &snapshot.cachetoml.Media.Music[idx]
 	}
 }
 
@@ -169,7 +220,7 @@ func Getconfigtoml(reload bool, snapshot *ConfigSnapshot, tomlConfig *MainConfig
 func setupMediaTypeConfig(
 	mediaConfig *MediaTypeConfig,
 	prefix string,
-	isSeriesType bool,
+	isMediaType uint,
 	snapshot *ConfigSnapshot,
 ) {
 	// Initialize maps
@@ -179,7 +230,7 @@ func setupMediaTypeConfig(
 	// Setup Data configs
 	for idx2 := range mediaConfig.Data {
 		mediaConfig.Data[idx2].CfgPath = snapshot.Path[mediaConfig.Data[idx2].TemplatePath]
-		if !isSeriesType && mediaConfig.Data[idx2].AddFoundList != "" {
+		if isMediaType == 0 && mediaConfig.Data[idx2].AddFoundList != "" {
 			mediaConfig.Data[idx2].AddFoundListCfg = snapshot.List[mediaConfig.Data[idx2].AddFoundList]
 		}
 
@@ -201,7 +252,7 @@ func setupMediaTypeConfig(
 	mediaConfig.CfgQuality = snapshot.Quality[mediaConfig.TemplateQuality]
 	mediaConfig.CfgScheduler = snapshot.Scheduler[mediaConfig.TemplateScheduler]
 	mediaConfig.NamePrefix = prefix + mediaConfig.Name
-	mediaConfig.Useseries = isSeriesType
+	mediaConfig.IsType = isMediaType
 
 	// Setup Lists maps and related fields
 	mediaConfig.ListsMap = make(map[string]*MediaListsConfig, len(mediaConfig.Lists))
@@ -393,6 +444,7 @@ func populateConfigsInMap(configMap map[string]any,
 	for key := range snapshot.Media {
 		configMap[snapshot.Media[key].NamePrefix] = *snapshot.Media[key]
 	}
+
 	// All other configs use standard prefixes
 	for key := range snapshot.Downloader {
 		configMap["downloader_"+key] = *snapshot.Downloader[key]
@@ -567,15 +619,20 @@ func updateTomlEntry(toml *MainConfig, val Conf) {
 		if !ok {
 			break
 		}
+
 		// Find and update the downloader in the slice
 		found := false
 		for i := range toml.Downloader {
-			if toml.Downloader[i].Name == data.Name {
-				toml.Downloader[i] = data
-				found = true
-				break
+			if toml.Downloader[i].Name != data.Name {
+				continue
 			}
+
+			toml.Downloader[i] = data
+			found = true
+
+			break
 		}
+
 		// If not found, append it
 		if !found {
 			toml.Downloader = append(toml.Downloader, data)
@@ -591,15 +648,20 @@ func updateTomlEntry(toml *MainConfig, val Conf) {
 		if !ok {
 			break
 		}
+
 		// Find and update the indexer in the slice
 		found := false
 		for i := range toml.Indexers {
-			if toml.Indexers[i].Name == data.Name {
-				toml.Indexers[i] = data
-				found = true
-				break
+			if toml.Indexers[i].Name != data.Name {
+				continue
 			}
+
+			toml.Indexers[i] = data
+			found = true
+
+			break
 		}
+
 		// If not found, append it
 		if !found {
 			toml.Indexers = append(toml.Indexers, data)
@@ -610,15 +672,20 @@ func updateTomlEntry(toml *MainConfig, val Conf) {
 		if !ok {
 			break
 		}
+
 		// Find and update the list in the slice
 		found := false
 		for i := range toml.Lists {
-			if toml.Lists[i].Name == data.Name {
-				toml.Lists[i] = data
-				found = true
-				break
+			if toml.Lists[i].Name != data.Name {
+				continue
 			}
+
+			toml.Lists[i] = data
+			found = true
+
+			break
 		}
+
 		// If not found, append it
 		if !found {
 			toml.Lists = append(toml.Lists, data)
@@ -629,15 +696,20 @@ func updateTomlEntry(toml *MainConfig, val Conf) {
 		if !ok {
 			break
 		}
+
 		// Find and update the series in the slice
 		found := false
 		for i := range toml.Media.Series {
-			if toml.Media.Series[i].Name == data.Name {
-				toml.Media.Series[i] = data
-				found = true
-				break
+			if toml.Media.Series[i].Name != data.Name {
+				continue
 			}
+
+			toml.Media.Series[i] = data
+			found = true
+
+			break
 		}
+
 		// If not found, append it
 		if !found {
 			toml.Media.Series = append(toml.Media.Series, data)
@@ -648,15 +720,20 @@ func updateTomlEntry(toml *MainConfig, val Conf) {
 		if !ok {
 			break
 		}
+
 		// Find and update the movie in the slice
 		found := false
 		for i := range toml.Media.Movies {
-			if toml.Media.Movies[i].Name == data.Name {
-				toml.Media.Movies[i] = data
-				found = true
-				break
+			if toml.Media.Movies[i].Name != data.Name {
+				continue
 			}
+
+			toml.Media.Movies[i] = data
+			found = true
+
+			break
 		}
+
 		// If not found, append it
 		if !found {
 			toml.Media.Movies = append(toml.Media.Movies, data)
@@ -667,15 +744,20 @@ func updateTomlEntry(toml *MainConfig, val Conf) {
 		if !ok {
 			break
 		}
+
 		// Find and update the notification in the slice
 		found := false
 		for i := range toml.Notification {
-			if toml.Notification[i].Name == data.Name {
-				toml.Notification[i] = data
-				found = true
-				break
+			if toml.Notification[i].Name != data.Name {
+				continue
 			}
+
+			toml.Notification[i] = data
+			found = true
+
+			break
 		}
+
 		// If not found, append it
 		if !found {
 			toml.Notification = append(toml.Notification, data)
@@ -686,15 +768,20 @@ func updateTomlEntry(toml *MainConfig, val Conf) {
 		if !ok {
 			break
 		}
+
 		// Find and update the path in the slice
 		found := false
 		for i := range toml.Paths {
-			if toml.Paths[i].Name == data.Name {
-				toml.Paths[i] = data
-				found = true
-				break
+			if toml.Paths[i].Name != data.Name {
+				continue
 			}
+
+			toml.Paths[i] = data
+			found = true
+
+			break
 		}
+
 		// If not found, append it
 		if !found {
 			toml.Paths = append(toml.Paths, data)
@@ -705,15 +792,20 @@ func updateTomlEntry(toml *MainConfig, val Conf) {
 		if !ok {
 			break
 		}
+
 		// Find and update the quality in the slice
 		found := false
 		for i := range toml.Quality {
-			if toml.Quality[i].Name == data.Name {
-				toml.Quality[i] = data
-				found = true
-				break
+			if toml.Quality[i].Name != data.Name {
+				continue
 			}
+
+			toml.Quality[i] = data
+			found = true
+
+			break
 		}
+
 		// If not found, append it
 		if !found {
 			toml.Quality = append(toml.Quality, data)
@@ -724,15 +816,20 @@ func updateTomlEntry(toml *MainConfig, val Conf) {
 		if !ok {
 			break
 		}
+
 		// Find and update the regex in the slice
 		found := false
 		for i := range toml.Regex {
-			if toml.Regex[i].Name == data.Name {
-				toml.Regex[i] = data
-				found = true
-				break
+			if toml.Regex[i].Name != data.Name {
+				continue
 			}
+
+			toml.Regex[i] = data
+			found = true
+
+			break
 		}
+
 		// If not found, append it
 		if !found {
 			toml.Regex = append(toml.Regex, data)
@@ -743,15 +840,20 @@ func updateTomlEntry(toml *MainConfig, val Conf) {
 		if !ok {
 			break
 		}
+
 		// Find and update the scheduler in the slice
 		found := false
 		for i := range toml.Scheduler {
-			if toml.Scheduler[i].Name == data.Name {
-				toml.Scheduler[i] = data
-				found = true
-				break
+			if toml.Scheduler[i].Name != data.Name {
+				continue
 			}
+
+			toml.Scheduler[i] = data
+			found = true
+
+			break
 		}
+
 		// If not found, append it
 		if !found {
 			toml.Scheduler = append(toml.Scheduler, data)

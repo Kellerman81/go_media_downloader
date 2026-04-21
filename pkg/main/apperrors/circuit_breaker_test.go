@@ -41,7 +41,7 @@ func TestCircuitBreakerClosed(t *testing.T) {
 
 	// Successful operations should work normally
 	callCount := 0
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		err := cb.Execute(func() error {
 			callCount++
 			return nil
@@ -62,7 +62,7 @@ func TestCircuitBreakerOpens(t *testing.T) {
 	cb := newCircuitBreaker("test-service", maxFailures, 1*time.Second)
 
 	// Trigger failures to open circuit
-	for i := 0; i < maxFailures; i++ {
+	for range maxFailures {
 		err := cb.Execute(func() error {
 			return fmt.Errorf("operation failed")
 		})
@@ -101,7 +101,7 @@ func TestCircuitBreakerHalfOpen(t *testing.T) {
 	cb := newCircuitBreaker("test-service", maxFailures, resetTimeout)
 
 	// Open the circuit
-	for i := 0; i < maxFailures; i++ {
+	for range maxFailures {
 		cb.Execute(func() error {
 			return fmt.Errorf("failure")
 		})
@@ -129,10 +129,15 @@ func TestCircuitBreakerHalfOpenToClose(t *testing.T) {
 	maxFailures := 2
 	resetTimeout := 100 * time.Millisecond
 	halfOpenMaxCalls := 3
-	cb := newCircuitBreakerWithHalfOpenCalls("test-service", maxFailures, resetTimeout, halfOpenMaxCalls)
+	cb := newCircuitBreakerWithHalfOpenCalls(
+		"test-service",
+		maxFailures,
+		resetTimeout,
+		halfOpenMaxCalls,
+	)
 
 	// Open the circuit
-	for i := 0; i < maxFailures; i++ {
+	for range maxFailures {
 		cb.Execute(func() error {
 			return fmt.Errorf("failure")
 		})
@@ -143,14 +148,19 @@ func TestCircuitBreakerHalfOpenToClose(t *testing.T) {
 	time.Sleep(resetTimeout + 50*time.Millisecond)
 
 	// Execute enough successful operations to close the circuit
-	for i := 0; i < halfOpenMaxCalls; i++ {
+	for i := range halfOpenMaxCalls {
 		err := cb.Execute(func() error {
 			return nil
 		})
 		assert.NoError(t, err)
 
 		if i < halfOpenMaxCalls-1 {
-			assert.Equal(t, StateHalfOpen, cb.GetState(), "should remain half-open until enough successes")
+			assert.Equal(
+				t,
+				StateHalfOpen,
+				cb.GetState(),
+				"should remain half-open until enough successes",
+			)
 		}
 	}
 
@@ -170,7 +180,7 @@ func TestCircuitBreakerHalfOpenToOpen(t *testing.T) {
 	cb := newCircuitBreaker("test-service", maxFailures, resetTimeout)
 
 	// Open the circuit
-	for i := 0; i < maxFailures; i++ {
+	for range maxFailures {
 		cb.Execute(func() error {
 			return fmt.Errorf("failure")
 		})
@@ -202,7 +212,7 @@ func TestCircuitBreakerReset(t *testing.T) {
 	cb := newCircuitBreaker("test-service", maxFailures, 1*time.Second)
 
 	// Open the circuit
-	for i := 0; i < maxFailures; i++ {
+	for range maxFailures {
 		cb.Execute(func() error {
 			return fmt.Errorf("failure")
 		})
@@ -253,12 +263,12 @@ func TestCircuitBreakerConcurrency(t *testing.T) {
 	var failureCount atomic.Int32
 
 	// Launch concurrent operations
-	for i := 0; i < goroutines; i++ {
+	for i := range goroutines {
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
 
-			for j := 0; j < operationsPerGoroutine; j++ {
+			for j := range operationsPerGoroutine {
 				err := cb.Execute(func() error {
 					// Simulate some work
 					time.Sleep(1 * time.Millisecond)
@@ -300,7 +310,7 @@ func TestCircuitBreakerGetStats(t *testing.T) {
 	assert.Equal(t, 0, successes)
 
 	// Add some failures
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		cb.Execute(func() error {
 			return fmt.Errorf("failure")
 		})
@@ -324,13 +334,18 @@ func TestCircuitBreakerStateTransitions(t *testing.T) {
 	maxFailures := 2
 	resetTimeout := 100 * time.Millisecond
 	halfOpenMaxCalls := 2
-	cb := newCircuitBreakerWithHalfOpenCalls("test-service", maxFailures, resetTimeout, halfOpenMaxCalls)
+	cb := newCircuitBreakerWithHalfOpenCalls(
+		"test-service",
+		maxFailures,
+		resetTimeout,
+		halfOpenMaxCalls,
+	)
 
 	// Initial state: Closed
 	assert.Equal(t, StateClosed, cb.GetState())
 
 	// Transition 1: Closed -> Open (after max failures)
-	for i := 0; i < maxFailures; i++ {
+	for i := range maxFailures {
 		cb.Execute(func() error {
 			return fmt.Errorf("failure %d", i)
 		})
@@ -380,7 +395,7 @@ func TestCircuitBreakerStateTransitionHalfOpenToOpen(t *testing.T) {
 	cb := newCircuitBreaker("test-service", maxFailures, resetTimeout)
 
 	// Open the circuit
-	for i := 0; i < maxFailures; i++ {
+	for range maxFailures {
 		cb.Execute(func() error {
 			return fmt.Errorf("failure")
 		})
@@ -408,7 +423,7 @@ func TestCircuitBreakerPartialFailures(t *testing.T) {
 	cb := newCircuitBreaker("test-service", maxFailures, 1*time.Second)
 
 	// Mix of successes and failures (not enough to open)
-	for i := 0; i < 4; i++ {
+	for range 4 {
 		cb.Execute(func() error {
 			return fmt.Errorf("failure")
 		})
@@ -457,7 +472,7 @@ func TestCircuitBreakerMultipleResets(t *testing.T) {
 	assert.Equal(t, StateOpen, cb.GetState())
 
 	// Reset multiple times
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		cb.Reset()
 		assert.Equal(t, StateClosed, cb.GetState())
 		failures, successes := cb.GetStats()
@@ -473,7 +488,7 @@ func TestCircuitBreakerTimeoutPrecision(t *testing.T) {
 	cb := newCircuitBreaker("test-service", maxFailures, resetTimeout)
 
 	// Open the circuit
-	for i := 0; i < maxFailures; i++ {
+	for range maxFailures {
 		cb.Execute(func() error {
 			return fmt.Errorf("failure")
 		})
@@ -512,25 +527,21 @@ func TestCircuitBreakerConcurrentStateReads(t *testing.T) {
 	readers := 100
 
 	// Concurrent state reads
-	for i := 0; i < readers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for j := 0; j < 100; j++ {
+	for range readers {
+		wg.Go(func() {
+			for range 100 {
 				_ = cb.GetState()
 				_ = cb.IsOpen()
 				_ = cb.IsClosed()
 				_ = cb.IsHalfOpen()
 				_, _ = cb.GetStats()
 			}
-		}()
+		})
 	}
 
 	// Concurrent writes
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for i := 0; i < 50; i++ {
+	wg.Go(func() {
+		for i := range 50 {
 			cb.Execute(func() error {
 				if i%2 == 0 {
 					return fmt.Errorf("failure")
@@ -538,7 +549,7 @@ func TestCircuitBreakerConcurrentStateReads(t *testing.T) {
 				return nil
 			})
 		}
-	}()
+	})
 
 	// Should not race
 	wg.Wait()

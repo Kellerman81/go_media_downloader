@@ -111,7 +111,12 @@ func getFilterableFieldsForTable(tableName string) []gomponents.Node {
 			{Field: "quality_profile", Label: "Quality", Type: "text", Placeholder: "Quality..."},
 		},
 		"serie_episode_files": {
-			{Field: "serie_episode_id", Label: "Episode ID", Type: "text", Placeholder: "Episode ID..."},
+			{
+				Field:       "serie_episode_id",
+				Label:       "Episode ID",
+				Type:        "text",
+				Placeholder: "Episode ID...",
+			},
 			{Field: "location", Label: "Location", Type: "text", Placeholder: "File path..."},
 			{Field: "filename", Label: "Filename", Type: "text", Placeholder: "Filename..."},
 			{Field: "extension", Label: "Extension", Type: "text", Placeholder: "Extension..."},
@@ -146,6 +151,259 @@ func getFilterableFieldsForTable(tableName string) []gomponents.Node {
 				Label:       "Ended After",
 				Type:        "datetime-local",
 				Placeholder: "End date...",
+			},
+		},
+		// Book tables
+		"dbbooks": {
+			{Field: "title", Label: "Title", Type: "text", Placeholder: "Filter by title..."},
+			{Field: "isbn", Label: "ISBN", Type: "text", Placeholder: "ISBN-10 or ISBN-13..."},
+			{Field: "author", Label: "Author", Type: "text", Placeholder: "Author name..."},
+			{Field: "publisher", Label: "Publisher", Type: "text", Placeholder: "Publisher..."},
+			{Field: "language", Label: "Language", Type: "text", Placeholder: "Language..."},
+			{Field: "year", Label: "Year", Type: "number", Placeholder: "Year..."},
+		},
+		"dbauthors": {
+			{Field: "name", Label: "Name", Type: "text", Placeholder: "Author name..."},
+			{
+				Field:       "goodreads_id",
+				Label:       "Goodreads ID",
+				Type:        "text",
+				Placeholder: "Goodreads ID...",
+			},
+		},
+		"dbbook_titles": {
+			{Field: "title", Label: "Title", Type: "text", Placeholder: "Filter by title..."},
+			{Field: "book_title", Label: "Book Title", Type: "text", Placeholder: "Book title..."},
+			{Field: "region", Label: "Region", Type: "text", Placeholder: "Region..."},
+		},
+		"dbbook_series": {
+			{Field: "name", Label: "Series Name", Type: "text", Placeholder: "Series name..."},
+			{
+				Field:       "goodreads_id",
+				Label:       "Goodreads ID",
+				Type:        "text",
+				Placeholder: "Goodreads ID...",
+			},
+		},
+		"books": {
+			{Field: "title", Label: "Book Title", Type: "text", Placeholder: "Filter by title..."},
+			{Field: "author", Label: "Author", Type: "text", Placeholder: "Author name..."},
+			{Field: "listname", Label: "List Name", Type: "text", Placeholder: "List name..."},
+			{
+				Field:       "quality_profile",
+				Label:       "Quality Profile",
+				Type:        "text",
+				Placeholder: "Quality...",
+			},
+			{
+				Field:        "missing",
+				Label:        "Missing",
+				Type:         "select",
+				Options:      []string{"", "0", "1"},
+				OptionLabels: []string{"All", "No", "Yes"},
+			},
+			{
+				Field:        "quality_reached",
+				Label:        "Quality Reached",
+				Type:         "select",
+				Options:      []string{"", "0", "1"},
+				OptionLabels: []string{"All", "No", "Yes"},
+			},
+		},
+		"book_files": {
+			{Field: "book_id", Label: "Book ID", Type: "text", Placeholder: "Book ID..."},
+			{Field: "title", Label: "Book Title", Type: "text", Placeholder: "Book title..."},
+			{Field: "filename", Label: "Filename", Type: "text", Placeholder: "Filename..."},
+			{Field: "location", Label: "Location", Type: "text", Placeholder: "File path..."},
+		},
+		"authors": {
+			{Field: "name", Label: "Author Name", Type: "text", Placeholder: "Author name..."},
+			{Field: "listname", Label: "List Name", Type: "text", Placeholder: "List name..."},
+		},
+		"book_series": {
+			{Field: "name", Label: "Series Name", Type: "text", Placeholder: "Series name..."},
+			{Field: "listname", Label: "List Name", Type: "text", Placeholder: "List name..."},
+		},
+		"book_file_unmatcheds": {
+			{Field: "filepath", Label: "File Path", Type: "text", Placeholder: "File path..."},
+			{Field: "listname", Label: "List Name", Type: "text", Placeholder: "List name..."},
+		},
+		"book_histories": {
+			{Field: "title", Label: "Title", Type: "text", Placeholder: "Release title..."},
+			{Field: "indexer", Label: "Indexer", Type: "text", Placeholder: "Indexer..."},
+			{
+				Field:       "quality_profile",
+				Label:       "Quality Profile",
+				Type:        "text",
+				Placeholder: "Quality...",
+			},
+		},
+		// Audiobook tables
+		"dbaudiobooks": {
+			{Field: "title", Label: "Title", Type: "text", Placeholder: "Filter by title..."},
+			{Field: "asin", Label: "ASIN", Type: "text", Placeholder: "Amazon ASIN..."},
+			{Field: "narrator", Label: "Narrator", Type: "text", Placeholder: "Narrator name..."},
+			{Field: "publisher", Label: "Publisher", Type: "text", Placeholder: "Publisher..."},
+			{Field: "language", Label: "Language", Type: "text", Placeholder: "Language..."},
+			{Field: "year", Label: "Year", Type: "number", Placeholder: "Year..."},
+		},
+		"dbnarrators": {
+			{Field: "name", Label: "Name", Type: "text", Placeholder: "Narrator name..."},
+			{Field: "audible_id", Label: "Audible ID", Type: "text", Placeholder: "Audible ID..."},
+		},
+		"dbaudiobook_titles": {
+			{Field: "title", Label: "Title", Type: "text", Placeholder: "Filter by title..."},
+			{
+				Field:       "audiobook_title",
+				Label:       "Audiobook Title",
+				Type:        "text",
+				Placeholder: "Audiobook title...",
+			},
+			{Field: "region", Label: "Region", Type: "text", Placeholder: "Region..."},
+		},
+		"audiobooks": {
+			{
+				Field:       "title",
+				Label:       "Audiobook Title",
+				Type:        "text",
+				Placeholder: "Filter by title...",
+			},
+			{Field: "narrator", Label: "Narrator", Type: "text", Placeholder: "Narrator name..."},
+			{Field: "listname", Label: "List Name", Type: "text", Placeholder: "List name..."},
+			{
+				Field:       "quality_profile",
+				Label:       "Quality Profile",
+				Type:        "text",
+				Placeholder: "Quality...",
+			},
+			{
+				Field:        "missing",
+				Label:        "Missing",
+				Type:         "select",
+				Options:      []string{"", "0", "1"},
+				OptionLabels: []string{"All", "No", "Yes"},
+			},
+			{
+				Field:        "quality_reached",
+				Label:        "Quality Reached",
+				Type:         "select",
+				Options:      []string{"", "0", "1"},
+				OptionLabels: []string{"All", "No", "Yes"},
+			},
+		},
+		"audiobook_files": {
+			{
+				Field:       "audiobook_id",
+				Label:       "Audiobook ID",
+				Type:        "text",
+				Placeholder: "Audiobook ID...",
+			},
+			{
+				Field:       "title",
+				Label:       "Audiobook Title",
+				Type:        "text",
+				Placeholder: "Audiobook title...",
+			},
+			{Field: "filename", Label: "Filename", Type: "text", Placeholder: "Filename..."},
+			{Field: "location", Label: "Location", Type: "text", Placeholder: "File path..."},
+		},
+		"audiobook_file_unmatcheds": {
+			{Field: "filepath", Label: "File Path", Type: "text", Placeholder: "File path..."},
+			{Field: "listname", Label: "List Name", Type: "text", Placeholder: "List name..."},
+		},
+		"audiobook_histories": {
+			{Field: "title", Label: "Title", Type: "text", Placeholder: "Release title..."},
+			{Field: "indexer", Label: "Indexer", Type: "text", Placeholder: "Indexer..."},
+			{
+				Field:       "quality_profile",
+				Label:       "Quality Profile",
+				Type:        "text",
+				Placeholder: "Quality...",
+			},
+		},
+		// Music tables
+		"dbalbums": {
+			{Field: "title", Label: "Title", Type: "text", Placeholder: "Filter by title..."},
+			{Field: "artist", Label: "Artist", Type: "text", Placeholder: "Artist name..."},
+			{Field: "label", Label: "Label", Type: "text", Placeholder: "Record label..."},
+			{Field: "year", Label: "Year", Type: "number", Placeholder: "Year..."},
+		},
+		"dbartists": {
+			{Field: "name", Label: "Name", Type: "text", Placeholder: "Artist name..."},
+			{Field: "country", Label: "Country", Type: "text", Placeholder: "Country..."},
+		},
+		"dbalbum_titles": {
+			{Field: "title", Label: "Title", Type: "text", Placeholder: "Filter by title..."},
+			{
+				Field:       "album_title",
+				Label:       "Album Title",
+				Type:        "text",
+				Placeholder: "Album title...",
+			},
+			{Field: "region", Label: "Region", Type: "text", Placeholder: "Region..."},
+		},
+		"dbtracks": {
+			{Field: "title", Label: "Title", Type: "text", Placeholder: "Track title..."},
+			{
+				Field:       "album_title",
+				Label:       "Album Title",
+				Type:        "text",
+				Placeholder: "Album title...",
+			},
+			{
+				Field:       "track_number",
+				Label:       "Track Number",
+				Type:        "number",
+				Placeholder: "Track #...",
+			},
+		},
+		"artists": {
+			{Field: "name", Label: "Artist Name", Type: "text", Placeholder: "Artist name..."},
+			{Field: "listname", Label: "List Name", Type: "text", Placeholder: "List name..."},
+		},
+		"albums": {
+			{Field: "title", Label: "Album Title", Type: "text", Placeholder: "Filter by title..."},
+			{Field: "artist", Label: "Artist", Type: "text", Placeholder: "Artist name..."},
+			{Field: "listname", Label: "List Name", Type: "text", Placeholder: "List name..."},
+			{
+				Field:       "quality_profile",
+				Label:       "Quality Profile",
+				Type:        "text",
+				Placeholder: "Quality...",
+			},
+			{
+				Field:        "missing",
+				Label:        "Missing",
+				Type:         "select",
+				Options:      []string{"", "0", "1"},
+				OptionLabels: []string{"All", "No", "Yes"},
+			},
+			{
+				Field:        "quality_reached",
+				Label:        "Quality Reached",
+				Type:         "select",
+				Options:      []string{"", "0", "1"},
+				OptionLabels: []string{"All", "No", "Yes"},
+			},
+		},
+		"album_files": {
+			{Field: "album_id", Label: "Album ID", Type: "text", Placeholder: "Album ID..."},
+			{Field: "title", Label: "Album Title", Type: "text", Placeholder: "Album title..."},
+			{Field: "filename", Label: "Filename", Type: "text", Placeholder: "Filename..."},
+			{Field: "location", Label: "Location", Type: "text", Placeholder: "File path..."},
+		},
+		"album_file_unmatcheds": {
+			{Field: "filepath", Label: "File Path", Type: "text", Placeholder: "File path..."},
+			{Field: "listname", Label: "List Name", Type: "text", Placeholder: "List name..."},
+		},
+		"album_histories": {
+			{Field: "title", Label: "Title", Type: "text", Placeholder: "Release title..."},
+			{Field: "indexer", Label: "Indexer", Type: "text", Placeholder: "Indexer..."},
+			{
+				Field:       "quality_profile",
+				Label:       "Quality Profile",
+				Type:        "text",
+				Placeholder: "Quality...",
 			},
 		},
 	}
@@ -265,8 +523,11 @@ func createNavbar(activeConfig bool, activeDatabase bool, activeManagement bool)
 						html.Class(cssRootConfig),
 						html.ID("Configuration"),
 						html.Data("bs-parent", "#sidebar"),
-						html.Li(html.Class("sidebar-item"),
-							html.A(html.Class("sidebar-link"), html.Href("/api/admin/config/general"),
+						html.Li(
+							html.Class("sidebar-item"),
+							html.A(
+								html.Class("sidebar-link"),
+								html.Href("/api/admin/config/general"),
 								html.I(html.Class("align-middle fa-solid fa-sliders")),
 								html.Span(html.Class("align-middle"), gomponents.Text("General")),
 							),
@@ -300,8 +561,11 @@ func createNavbar(activeConfig bool, activeDatabase bool, activeManagement bool)
 								html.Span(html.Class("align-middle"), gomponents.Text("Lists")),
 							),
 						),
-						html.Li(html.Class("sidebar-item"),
-							html.A(html.Class("sidebar-link"), html.Href("/api/admin/config/indexers"),
+						html.Li(
+							html.Class("sidebar-item"),
+							html.A(
+								html.Class("sidebar-link"),
+								html.Href("/api/admin/config/indexers"),
 								html.I(html.Class("align-middle fa-solid fa-search")),
 								html.Span(html.Class("align-middle"), gomponents.Text("Indexers")),
 							),
@@ -330,22 +594,33 @@ func createNavbar(activeConfig bool, activeDatabase bool, activeManagement bool)
 								html.Span(html.Class("align-middle"), gomponents.Text("Regex")),
 							),
 						),
-						html.Li(html.Class("sidebar-item"),
-							html.A(html.Class("sidebar-link"), html.Href("/api/admin/config/quality"),
+						html.Li(
+							html.Class("sidebar-item"),
+							html.A(
+								html.Class("sidebar-link"),
+								html.Href("/api/admin/config/quality"),
 								html.I(html.Class("align-middle fa-solid fa-star")),
 								html.Span(html.Class("align-middle"), gomponents.Text("Quality")),
 							),
 						),
-						html.Li(html.Class("sidebar-item"),
-							html.A(html.Class("sidebar-link"), html.Href("/api/admin/config/scheduler"),
+						html.Li(
+							html.Class("sidebar-item"),
+							html.A(
+								html.Class("sidebar-link"),
+								html.Href("/api/admin/config/scheduler"),
 								html.I(html.Class("align-middle fa-solid fa-clock")),
 								html.Span(html.Class("align-middle"), gomponents.Text("Scheduler")),
 							),
 						),
 						html.Li(html.Class("sidebar-item"),
-							html.A(html.Class("sidebar-link"), html.Href("/api/admin/seriesconfig"),
+							html.A(
+								html.Class("sidebar-link"),
+								html.Href("/api/admin/seriesconfig"),
 								html.I(html.Class("align-middle fa-solid fa-tv")),
-								html.Span(html.Class("align-middle"), gomponents.Text("Series Config")),
+								html.Span(
+									html.Class("align-middle"),
+									gomponents.Text("Series Config"),
+								),
 							),
 						),
 					),
@@ -540,6 +815,135 @@ func createNavbar(activeConfig bool, activeDatabase bool, activeManagement bool)
 								),
 							),
 						),
+						// Books section
+						html.Li(
+							html.Class("sidebar-item"),
+							html.A(
+								html.Class("sidebar-link"),
+								html.Href("/api/admin/database/dbbooks"),
+								html.I(html.Class("align-middle fa-solid fa-book")),
+								html.Span(html.Class("align-middle"), gomponents.Text("DBBooks")),
+							),
+						),
+						html.Li(
+							html.Class("sidebar-item"),
+							html.A(
+								html.Class("sidebar-link"),
+								html.Href("/api/admin/database/dbauthors"),
+								html.I(html.Class("align-middle fa-solid fa-user-pen")),
+								html.Span(html.Class("align-middle"), gomponents.Text("DBAuthors")),
+							),
+						),
+						html.Li(
+							html.Class("sidebar-item"),
+							html.A(
+								html.Class("sidebar-link"),
+								html.Href("/api/admin/database/books"),
+								html.I(html.Class("align-middle fa-solid fa-book-open")),
+								html.Span(html.Class("align-middle"), gomponents.Text("Books")),
+							),
+						),
+						html.Li(
+							html.Class("sidebar-item"),
+							html.A(
+								html.Class("sidebar-link"),
+								html.Href("/api/admin/database/book_files"),
+								html.I(html.Class("align-middle fa-solid fa-file-pdf")),
+								html.Span(
+									html.Class("align-middle"),
+									gomponents.Text("Book Files"),
+								),
+							),
+						),
+						// Audiobooks section
+						html.Li(
+							html.Class("sidebar-item"),
+							html.A(
+								html.Class("sidebar-link"),
+								html.Href("/api/admin/database/dbaudiobooks"),
+								html.I(html.Class("align-middle fa-solid fa-headphones")),
+								html.Span(
+									html.Class("align-middle"),
+									gomponents.Text("DBAudiobooks"),
+								),
+							),
+						),
+						html.Li(
+							html.Class("sidebar-item"),
+							html.A(
+								html.Class("sidebar-link"),
+								html.Href("/api/admin/database/dbnarrators"),
+								html.I(html.Class("align-middle fa-solid fa-microphone")),
+								html.Span(
+									html.Class("align-middle"),
+									gomponents.Text("DBNarrators"),
+								),
+							),
+						),
+						html.Li(
+							html.Class("sidebar-item"),
+							html.A(
+								html.Class("sidebar-link"),
+								html.Href("/api/admin/database/audiobooks"),
+								html.I(html.Class("align-middle fa-solid fa-headphones-alt")),
+								html.Span(
+									html.Class("align-middle"),
+									gomponents.Text("Audiobooks"),
+								),
+							),
+						),
+						html.Li(
+							html.Class("sidebar-item"),
+							html.A(
+								html.Class("sidebar-link"),
+								html.Href("/api/admin/database/audiobook_files"),
+								html.I(html.Class("align-middle fa-solid fa-file-audio")),
+								html.Span(
+									html.Class("align-middle"),
+									gomponents.Text("Audiobook Files"),
+								),
+							),
+						),
+						// Music section
+						html.Li(
+							html.Class("sidebar-item"),
+							html.A(
+								html.Class("sidebar-link"),
+								html.Href("/api/admin/database/dbalbums"),
+								html.I(html.Class("align-middle fa-solid fa-compact-disc")),
+								html.Span(html.Class("align-middle"), gomponents.Text("DBAlbums")),
+							),
+						),
+						html.Li(
+							html.Class("sidebar-item"),
+							html.A(
+								html.Class("sidebar-link"),
+								html.Href("/api/admin/database/dbartists"),
+								html.I(html.Class("align-middle fa-solid fa-guitar")),
+								html.Span(html.Class("align-middle"), gomponents.Text("DBArtists")),
+							),
+						),
+						html.Li(
+							html.Class("sidebar-item"),
+							html.A(
+								html.Class("sidebar-link"),
+								html.Href("/api/admin/database/albums"),
+								html.I(html.Class("align-middle fa-solid fa-music")),
+								html.Span(html.Class("align-middle"), gomponents.Text("Albums")),
+							),
+						),
+						html.Li(
+							html.Class("sidebar-item"),
+							html.A(
+								html.Class("sidebar-link"),
+								html.Href("/api/admin/database/album_files"),
+								html.I(html.Class("align-middle fa-solid fa-file-audio")),
+								html.Span(
+									html.Class("align-middle"),
+									gomponents.Text("Album Files"),
+								),
+							),
+						),
 					),
 				),
 				html.Li(
@@ -584,6 +988,61 @@ func createNavbar(activeConfig bool, activeDatabase bool, activeManagement bool)
 								html.Span(
 									html.Class("align-middle"),
 									gomponents.Text("Statistics Dashboard"),
+								),
+							),
+						),
+						html.Li(html.Class("sidebar-item"),
+							html.A(
+								html.Class("sidebar-link"),
+								html.Href("/api/admin/calendar"),
+								html.I(html.Class("align-middle fa-solid fa-calendar-alt")),
+								html.Span(
+									html.Class("align-middle"),
+									gomponents.Text("Calendar"),
+								),
+							),
+						),
+						html.Li(html.Class("sidebar-item"),
+							html.A(
+								html.Class("sidebar-link"),
+								html.Href("/api/admin/metadata-search/movies"),
+								html.I(html.Class("align-middle fa-solid fa-film")),
+								html.Span(
+									html.Class("align-middle"),
+									gomponents.Text("Add Movies"),
+								),
+							),
+						),
+						html.Li(html.Class("sidebar-item"),
+							html.A(
+								html.Class("sidebar-link"),
+								html.Href("/api/admin/metadata-search/series"),
+								html.I(html.Class("align-middle fa-solid fa-tv")),
+								html.Span(
+									html.Class("align-middle"),
+									gomponents.Text("Add Series"),
+								),
+							),
+						),
+						html.Li(html.Class("sidebar-item"),
+							html.A(
+								html.Class("sidebar-link"),
+								html.Href("/api/admin/metadata-search/audiobooks"),
+								html.I(html.Class("align-middle fa-solid fa-headphones")),
+								html.Span(
+									html.Class("align-middle"),
+									gomponents.Text("Add Audiobooks"),
+								),
+							),
+						),
+						html.Li(html.Class("sidebar-item"),
+							html.A(
+								html.Class("sidebar-link"),
+								html.Href("/api/admin/metadata-search/music"),
+								html.I(html.Class("align-middle fa-solid fa-music")),
+								html.Span(
+									html.Class("align-middle"),
+									gomponents.Text("Add Music"),
 								),
 							),
 						),
@@ -637,7 +1096,7 @@ func createNavbar(activeConfig bool, activeDatabase bool, activeManagement bool)
 									gomponents.Text("Search & Download"),
 								),
 								html.Span(
-									html.Class("badge bg-success ms-auto"),
+									html.Class("badge bg-success ms-1"),
 									html.Style("font-size: 0.6rem;"),
 									gomponents.Text("NEW"),
 								),
@@ -675,7 +1134,7 @@ func createNavbar(activeConfig bool, activeDatabase bool, activeManagement bool)
 									gomponents.Text("Feed Parser"),
 								),
 								html.Span(
-									html.Class("badge bg-info ms-auto"),
+									html.Class("badge bg-info ms-1"),
 									html.Style("font-size: 0.6rem;"),
 									gomponents.Text("BETA"),
 								),
@@ -839,7 +1298,7 @@ func createNavbar(activeConfig bool, activeDatabase bool, activeManagement bool)
 									gomponents.Text("Regex Tester"),
 								),
 								html.Span(
-									html.Class("badge bg-info ms-auto"),
+									html.Class("badge bg-info ms-1"),
 									html.Style("font-size: 0.6rem;"),
 									gomponents.Text("NEW"),
 								),
@@ -856,7 +1315,7 @@ func createNavbar(activeConfig bool, activeDatabase bool, activeManagement bool)
 									gomponents.Text("Naming Generator"),
 								),
 								html.Span(
-									html.Class("badge bg-success ms-auto"),
+									html.Class("badge bg-success ms-1"),
 									html.Style("font-size: 0.6rem;"),
 									gomponents.Text("NEW"),
 								),
@@ -932,52 +1391,57 @@ func adminDatabaseContent(tableName string, csrfToken string) gomponents.Node {
 
 		// Enhanced main container with modern styling
 		html.Div(
-			html.Class("database-content-container"),
+			html.Class("config-section-enhanced"),
 
 			// Enhanced status messages with modern alerts
 			html.Div(html.Class("alert-success-enhanced d-none"), html.ID("db-success")),
 			html.Div(html.Class("alert-danger-enhanced d-none"), html.ID("db-error")),
 
-			// Enhanced page header with modern design
+			// Enhanced page header with AdminKit design
 			html.Div(
-				html.Class("database-header-card"),
+				html.Class("page-header-enhanced"),
 				html.Div(
-					html.Class("database-header-content"),
+					html.Class("header-content"),
 					html.Div(
-						html.Class("database-title-section"),
+						html.Class("header-icon-wrapper"),
+						html.I(html.Class("fas fa-database header-icon")),
+					),
+					html.Div(
+						html.Class("header-text"),
 						html.H2(
-							html.Class("database-title"),
-							html.I(html.Class("fas fa-database database-icon")),
-							gomponents.Text(" "),
+							html.Class("header-title"),
 							gomponents.Text(strings.ReplaceAll(tableName, "_", " ")),
 						),
 						html.P(
-							html.Class("database-subtitle"),
+							html.Class("header-subtitle"),
 							gomponents.Text(
 								"Manage database records with advanced filtering and real-time operations",
 							),
 						),
 					),
 					html.Div(
-						html.Class("database-actions"),
+						html.Class("ms-auto d-flex gap-2"),
 						html.Button(
-							html.Class("btn-database-add"),
+							html.Class("btn btn-outline-secondary btn-sm"),
 							html.Type("button"),
 							html.Data("bs-toggle", "modal"),
 							html.Data("bs-target", "#addRecordModal"),
-							html.I(html.Class("fas fa-plus")),
-							gomponents.Text(" Add Record"),
+							html.I(html.Class("fas fa-plus me-1")),
+							gomponents.Text("Add Record"),
 						),
 						html.Button(
-							html.Class("btn-database-refresh"),
+							html.Class("btn btn-outline-secondary btn-sm"),
 							html.Type("button"),
 							html.ID("refresh-table"),
-							html.I(html.Class("fas fa-sync-alt")),
-							gomponents.Text(" Refresh"),
+							html.I(html.Class("fas fa-sync-alt me-1")),
+							gomponents.Text("Refresh"),
 						),
 					),
 				),
 			),
+
+			// Button description region
+			adminButtonDescription(tableName),
 
 			// Enhanced custom filters
 			renderCustomFilters(tableName),
@@ -989,6 +1453,50 @@ func adminDatabaseContent(tableName string, csrfToken string) gomponents.Node {
 				renderTable(&tableInfo, csrfToken),
 			),
 		),
+	)
+}
+
+// adminButtonDescription returns a description panel explaining the available action buttons for the given table.
+func adminButtonDescription(tableName string) gomponents.Node {
+	var desc string
+	switch tableName {
+	case "dbmovies":
+		desc = "Edit: Edit record | Delete: Remove record | Refresh: Refresh movie metadata from external sources"
+	case "dbseries":
+		desc = "Edit: Edit record | Delete: Remove record | Refresh: Refresh series metadata from external sources"
+	case "dbalbums":
+		desc = "Edit: Edit record | Delete: Remove record | Refresh: Start metadata refresh job for all albums"
+	case "dbaudiobooks":
+		desc = "Edit: Edit record | Delete: Remove record | Refresh: Start metadata refresh job for all audiobooks"
+	case "dbbooks":
+		desc = "Edit: Edit record | Delete: Remove record | Refresh: Start metadata refresh job for all books"
+	case "movies":
+		desc = "Edit: Edit record | Delete: Remove record | Files: View associated files | Search: Search by IMDB ID | Search+: Search by title"
+	case "serie_episodes":
+		desc = "Edit: Edit record | Delete: Remove record | Files: View associated files | Search: Search by TVDB ID | Search+: Search by title"
+	case "albums":
+		desc = "Edit: Edit record | Delete: Remove record | Files: View album files | Search+: Search for missing albums in this list"
+	case "audiobooks":
+		desc = "Edit: Edit record | Delete: Remove record | Files: View audiobook files | Search+: Search for missing audiobooks in this list"
+	case "books":
+		desc = "Edit: Edit record | Delete: Remove record | Files: View book files | Search+: Search for missing books in this list"
+	case "dbartists":
+		desc = "Edit: Edit record | Delete: Remove record | List: View albums by this artist"
+	case "artists":
+		desc = "Edit: Edit record | Delete: Remove record | List: View albums by this artist | Search: Search for missing albums by artist | Discover: Discover and import all series albums"
+	case "dbauthors":
+		desc = "Edit: Edit record | Delete: Remove record | List: View books or audiobooks by this author"
+	case "authors":
+		desc = "Edit: Edit record | Delete: Remove record | List: View books or audiobooks by this author | Search: Search for missing books/audiobooks by author"
+	default:
+		desc = "Edit: Edit record | Delete: Remove record"
+	}
+
+	return html.Div(
+		html.Class("alert alert-info py-2 px-3 mb-3"),
+		html.StyleAttr("font-size: 0.85rem;"),
+		html.I(html.Class("fas fa-info-circle me-2")),
+		gomponents.Text(desc),
 	)
 }
 
@@ -1476,17 +1984,29 @@ func adminJavaScript() gomponents.Node {
 func getDropdownOptionByID(tableName, fieldName string, id int) *map[string]any {
 	switch tableName {
 	case "dbmovies":
-		if movie, err := database.Structscan[database.Dbmovie]("SELECT id, title FROM dbmovies WHERE id = ?", false, id); err == nil {
+		if movie, err := database.Structscan[database.Dbmovie](
+			"SELECT id, title FROM dbmovies WHERE id = ?",
+			false,
+			id,
+		); err == nil {
 			return createSelect2OptionPtr(movie.ID, movie.Title)
 		}
 
 	case "dbseries":
-		if serie, err := database.Structscan[database.Dbserie]("SELECT id, seriename FROM dbseries WHERE id = ?", false, id); err == nil {
+		if serie, err := database.Structscan[database.Dbserie](
+			"SELECT id, seriename FROM dbseries WHERE id = ?",
+			false,
+			id,
+		); err == nil {
 			return createSelect2OptionPtr(serie.ID, serie.Seriename)
 		}
 
 	case "dbserie_episodes":
-		if episode, err := database.Structscan[database.DbserieEpisode]("SELECT id, identifier, title FROM dbserie_episodes WHERE id = ?", false, id); err == nil {
+		if episode, err := database.Structscan[database.DbserieEpisode](
+			"SELECT id, identifier, title FROM dbserie_episodes WHERE id = ?",
+			false,
+			id,
+		); err == nil {
 			label := fmt.Sprintf("%s - %s", episode.Identifier, episode.Title)
 			return createSelect2OptionPtr(episode.ID, label)
 		}
@@ -1543,6 +2063,177 @@ func getDropdownOptionByID(tableName, fieldName string, id int) *map[string]any 
 		query := fmt.Sprintf("SELECT id, name FROM qualities WHERE id = ?%s", typeFilter)
 		if quality, err := database.Structscan[database.Qualities](query, false, id); err == nil {
 			return createSelect2OptionPtr(quality.ID, quality.Name)
+		}
+
+	// Book tables
+	case "dbbooks":
+		if book, err := database.Structscan[database.Dbbook](
+			"SELECT id, title FROM dbbooks WHERE id = ?",
+			false,
+			id,
+		); err == nil {
+			return createSelect2OptionPtr(book.ID, book.Title)
+		}
+
+	case "dbauthors":
+		if author, err := database.Structscan[database.Dbauthor](
+			"SELECT id, name FROM dbauthors WHERE id = ?",
+			false,
+			id,
+		); err == nil {
+			return createSelect2OptionPtr(author.ID, author.Name)
+		}
+
+	case "books":
+		result := database.GetrowsN[database.DbstaticOneStringOneUInt](
+			false,
+			1,
+			"SELECT dbbooks.title || ' - ' || books.listname, books.id FROM books LEFT JOIN dbbooks ON books.dbbook_id = dbbooks.id WHERE books.id = ?",
+			id,
+		)
+		if len(result) > 0 {
+			return createSelect2OptionPtr(result[0].Num, result[0].Str)
+		}
+
+	// Audiobook tables
+	case "dbaudiobooks":
+		if audiobook, err := database.Structscan[database.Dbaudiobook](
+			"SELECT id, title FROM dbaudiobooks WHERE id = ?",
+			false,
+			id,
+		); err == nil {
+			return createSelect2OptionPtr(audiobook.ID, audiobook.Title)
+		}
+
+	case "dbnarrators":
+		if narrator, err := database.Structscan[database.Dbnarrator](
+			"SELECT id, name FROM dbnarrators WHERE id = ?",
+			false,
+			id,
+		); err == nil {
+			return createSelect2OptionPtr(narrator.ID, narrator.Name)
+		}
+
+	case "audiobooks":
+		result := database.GetrowsN[database.DbstaticOneStringOneUInt](
+			false,
+			1,
+			"SELECT dbaudiobooks.title || ' - ' || audiobooks.listname, audiobooks.id FROM audiobooks LEFT JOIN dbaudiobooks ON audiobooks.dbaudiobook_id = dbaudiobooks.id WHERE audiobooks.id = ?",
+			id,
+		)
+		if len(result) > 0 {
+			return createSelect2OptionPtr(result[0].Num, result[0].Str)
+		}
+
+	// Music tables
+	case "dbalbums":
+		if album, err := database.Structscan[database.Dbalbum](
+			"SELECT id, title FROM dbalbums WHERE id = ?",
+			false,
+			id,
+		); err == nil {
+			return createSelect2OptionPtr(album.ID, album.Title)
+		}
+
+	case "dbartists":
+		if artist, err := database.Structscan[database.Dbartist](
+			"SELECT id, name FROM dbartists WHERE id = ?",
+			false,
+			id,
+		); err == nil {
+			return createSelect2OptionPtr(artist.ID, artist.Name)
+		}
+
+	case "albums":
+		result := database.GetrowsN[database.DbstaticOneStringOneUInt](
+			false,
+			1,
+			"SELECT dbalbums.title || ' - ' || albums.listname, albums.id FROM albums LEFT JOIN dbalbums ON albums.dbalbum_id = dbalbums.id WHERE albums.id = ?",
+			id,
+		)
+		if len(result) > 0 {
+			return createSelect2OptionPtr(result[0].Num, result[0].Str)
+		}
+
+	// Alternative title tables
+	case "dbbook_titles":
+		if title, err := database.Structscan[database.DbbookTitle](
+			"SELECT id, title FROM dbbook_titles WHERE id = ?",
+			false,
+			id,
+		); err == nil {
+			return createSelect2OptionPtr(title.ID, title.Title)
+		}
+
+	case "dbaudiobook_titles":
+		if title, err := database.Structscan[database.DbaudiobookTitle](
+			"SELECT id, title FROM dbaudiobook_titles WHERE id = ?",
+			false,
+			id,
+		); err == nil {
+			return createSelect2OptionPtr(title.ID, title.Title)
+		}
+
+	case "dbalbum_titles":
+		if title, err := database.Structscan[database.DbalbumTitle](
+			"SELECT id, title FROM dbalbum_titles WHERE id = ?",
+			false,
+			id,
+		); err == nil {
+			return createSelect2OptionPtr(title.ID, title.Title)
+		}
+
+	// Series and track tables
+	case "dbbook_series":
+		if series, err := database.Structscan[database.DbbookSeries](
+			"SELECT id, name FROM dbbook_series WHERE id = ?",
+			false,
+			id,
+		); err == nil {
+			return createSelect2OptionPtr(series.ID, series.Name)
+		}
+
+	case "book_series":
+		result := database.GetrowsN[database.DbstaticOneStringOneUInt](
+			false,
+			1,
+			"SELECT dbbook_series.name || ' - ' || book_series.listname, book_series.id FROM book_series LEFT JOIN dbbook_series ON book_series.dbbook_series_id = dbbook_series.id WHERE book_series.id = ?",
+			id,
+		)
+		if len(result) > 0 {
+			return createSelect2OptionPtr(result[0].Num, result[0].Str)
+		}
+
+	case "dbtracks":
+		if track, err := database.Structscan[database.Dbtrack](
+			"SELECT id, title FROM dbtracks WHERE id = ?",
+			false,
+			id,
+		); err == nil {
+			return createSelect2OptionPtr(track.ID, track.Title)
+		}
+
+	// Tracked authors and artists
+	case "authors":
+		result := database.GetrowsN[database.DbstaticOneStringOneUInt](
+			false,
+			1,
+			"SELECT dbauthors.name || ' - ' || authors.listname, authors.id FROM authors LEFT JOIN dbauthors ON authors.dbauthor_id = dbauthors.id WHERE authors.id = ?",
+			id,
+		)
+		if len(result) > 0 {
+			return createSelect2OptionPtr(result[0].Num, result[0].Str)
+		}
+
+	case "artists":
+		result := database.GetrowsN[database.DbstaticOneStringOneUInt](
+			false,
+			1,
+			"SELECT dbartists.name || ' - ' || artists.listname, artists.id FROM artists LEFT JOIN dbartists ON artists.dbartist_id = dbartists.id WHERE artists.id = ?",
+			id,
+		)
+		if len(result) > 0 {
+			return createSelect2OptionPtr(result[0].Num, result[0].Str)
 		}
 	}
 

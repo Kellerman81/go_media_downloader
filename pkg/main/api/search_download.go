@@ -902,6 +902,7 @@ func performSearch(
 		if searchResults != nil {
 			searchResults.Close()
 		}
+
 		return nil, fmt.Errorf("search failed: %w", err)
 	}
 
@@ -1289,6 +1290,7 @@ func renderResultsTable(
 						if showDownload {
 							return "badge bg-success"
 						}
+
 						return "badge bg-secondary"
 					}()),
 					gomponents.Text(result.Quality),
@@ -1308,6 +1310,7 @@ func renderResultsTable(
 						if showDownload {
 							return "text-success"
 						}
+
 						return "text-danger"
 					}()),
 					gomponents.Text(result.Reason),

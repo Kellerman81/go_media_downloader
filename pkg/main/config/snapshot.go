@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -60,49 +61,31 @@ func (s *ConfigSnapshot) Clone() *ConfigSnapshot {
 
 	// Deep copy maps
 	clone.Path = make(map[string]*PathsConfig, len(s.Path))
-	for k, v := range s.Path {
-		clone.Path[k] = v
-	}
+	maps.Copy(clone.Path, s.Path)
 
 	clone.Quality = make(map[string]*QualityConfig, len(s.Quality))
-	for k, v := range s.Quality {
-		clone.Quality[k] = v
-	}
+	maps.Copy(clone.Quality, s.Quality)
 
 	clone.List = make(map[string]*ListsConfig, len(s.List))
-	for k, v := range s.List {
-		clone.List[k] = v
-	}
+	maps.Copy(clone.List, s.List)
 
 	clone.Indexer = make(map[string]*IndexersConfig, len(s.Indexer))
-	for k, v := range s.Indexer {
-		clone.Indexer[k] = v
-	}
+	maps.Copy(clone.Indexer, s.Indexer)
 
 	clone.Regex = make(map[string]*RegexConfig, len(s.Regex))
-	for k, v := range s.Regex {
-		clone.Regex[k] = v
-	}
+	maps.Copy(clone.Regex, s.Regex)
 
 	clone.Media = make(map[string]*MediaTypeConfig, len(s.Media))
-	for k, v := range s.Media {
-		clone.Media[k] = v
-	}
+	maps.Copy(clone.Media, s.Media)
 
 	clone.Notification = make(map[string]*NotificationConfig, len(s.Notification))
-	for k, v := range s.Notification {
-		clone.Notification[k] = v
-	}
+	maps.Copy(clone.Notification, s.Notification)
 
 	clone.Downloader = make(map[string]*DownloaderConfig, len(s.Downloader))
-	for k, v := range s.Downloader {
-		clone.Downloader[k] = v
-	}
+	maps.Copy(clone.Downloader, s.Downloader)
 
 	clone.Scheduler = make(map[string]*SchedulerConfig, len(s.Scheduler))
-	for k, v := range s.Scheduler {
-		clone.Scheduler[k] = v
-	}
+	maps.Copy(clone.Scheduler, s.Scheduler)
 
 	return clone
 }
@@ -120,6 +103,7 @@ func getCurrentConfig() *ConfigSnapshot {
 	if snapshot, ok := configSnapshot.Load().(*ConfigSnapshot); ok {
 		return snapshot
 	}
+
 	return nil
 }
 
@@ -387,16 +371,14 @@ func buildConfigSnapshot(tomlConfig *MainConfig, reload bool) (*ConfigSnapshot, 
 	} else {
 		// Preserve existing scheduler configurations during reload
 		if current := getCurrentConfig(); current != nil {
-			for k, v := range current.Scheduler {
-				snapshot.Scheduler[k] = v
-			}
+			maps.Copy(snapshot.Scheduler, current.Scheduler)
 		}
 	}
 
 	// Setup media configurations
 	for idx := range tomlConfig.Media.Movies {
 		cfg := &tomlConfig.Media.Movies[idx]
-		setupMediaTypeConfig(cfg, "movie_", false, snapshot)
+		setupMediaTypeConfig(cfg, "movie_", MediaTypeMovie, snapshot)
 		setupMediaConfigLists(cfg, snapshot)
 
 		snapshot.Media["movie_"+cfg.Name] = cfg
@@ -404,10 +386,34 @@ func buildConfigSnapshot(tomlConfig *MainConfig, reload bool) (*ConfigSnapshot, 
 
 	for idx := range tomlConfig.Media.Series {
 		cfg := &tomlConfig.Media.Series[idx]
-		setupMediaTypeConfig(cfg, "serie_", true, snapshot)
+		setupMediaTypeConfig(cfg, "serie_", MediaTypeSeries, snapshot)
 		setupMediaConfigLists(cfg, snapshot)
 
 		snapshot.Media["serie_"+cfg.Name] = cfg
+	}
+
+	for idx := range tomlConfig.Media.Books {
+		cfg := &tomlConfig.Media.Books[idx]
+		setupMediaTypeConfig(cfg, "book_", MediaTypeBook, snapshot)
+		setupMediaConfigLists(cfg, snapshot)
+
+		snapshot.Media["book_"+cfg.Name] = cfg
+	}
+
+	for idx := range tomlConfig.Media.AudioBooks {
+		cfg := &tomlConfig.Media.AudioBooks[idx]
+		setupMediaTypeConfig(cfg, "audiobook_", MediaTypeAudiobook, snapshot)
+		setupMediaConfigLists(cfg, snapshot)
+
+		snapshot.Media["audiobook_"+cfg.Name] = cfg
+	}
+
+	for idx := range tomlConfig.Media.Music {
+		cfg := &tomlConfig.Media.Music[idx]
+		setupMediaTypeConfig(cfg, "music_", MediaTypeMusic, snapshot)
+		setupMediaConfigLists(cfg, snapshot)
+
+		snapshot.Media["music_"+cfg.Name] = cfg
 	}
 
 	return snapshot, nil

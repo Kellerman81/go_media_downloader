@@ -2,6 +2,7 @@ package apiexternal_v2
 
 import (
 	"fmt"
+	"maps"
 	"sync"
 )
 
@@ -206,9 +207,7 @@ func (cm *ClientManager) GetAllNotificationProviders() map[string]NotificationPr
 	defer cm.mu.RUnlock()
 
 	providers := make(map[string]NotificationProvider, len(cm.notificationProviders))
-	for name, provider := range cm.notificationProviders {
-		providers[name] = provider
-	}
+	maps.Copy(providers, cm.notificationProviders)
 
 	return providers
 }

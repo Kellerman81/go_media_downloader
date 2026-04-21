@@ -4,51 +4,75 @@ import (
 	"strings"
 	"sync"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/mediatype/mtstrings"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/syncops"
 )
 
 // normKeyPool provides reusable byte buffers for normalizeKey to reduce allocations.
 var normKeyPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		b := make([]byte, 0, 256)
 		return &b
 	},
 }
 
-// normalizeKey converts a string to lowercase and trims whitespace for case-insensitive lookups
-// Uses sync.Pool to reuse buffers and reduce allocations.
+// normalizeKey converts a string to lowercase and trims whitespace for
+// case-insensitive lookups. Uses a fast path for already-lowercase ASCII
+// strings (e.g. slugs) that returns the input directly with zero allocations.
 func normalizeKey(s string) string {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return ""
 	}
 
-	// Get buffer from pool
+	// Fast path: scan for any uppercase ASCII or non-ASCII byte.
+	// Slugs and already-normalised strings skip the pool entirely.
+	needsConversion := false
+	for i := range len(s) {
+		c := s[i]
+		if c >= 'A' && c <= 'Z' || c >= 0x80 {
+			needsConversion = true
+			break
+		}
+	}
+
+	if !needsConversion {
+		return s
+	}
+
+	// Slow path: byte-level loop avoids per-character rune decoding for ASCII.
 	bufPtr := normKeyPool.Get().(*[]byte)
 	buf := (*bufPtr)[:0]
 
-	// Convert to lowercase manually to avoid strings.ToLower allocation
-	for _, r := range s {
-		if r <= unicode.MaxASCII {
-			if r >= 'A' && r <= 'Z' {
-				buf = append(buf, byte(r+32))
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c < 0x80 {
+			if c >= 'A' && c <= 'Z' {
+				buf = append(buf, c+32)
 			} else {
-				buf = append(buf, byte(r))
+				buf = append(buf, c)
 			}
 		} else {
-			// For non-ASCII characters, use unicode.ToLower
-			for _, b := range string(unicode.ToLower(r)) {
-				buf = append(buf, byte(b))
-			}
+			// Non-ASCII: decode rune, lowercase, re-encode without allocating
+			// an intermediate string.
+			r, size := utf8.DecodeRuneInString(s[i:])
+
+			var tmp [utf8.UTFMax]byte
+
+			n := utf8.EncodeRune(tmp[:], unicode.ToLower(r))
+
+			buf = append(buf, tmp[:n]...)
+
+			i += size - 1
 		}
 	}
 
 	result := string(buf)
 
-	// Return buffer to pool
 	*bufPtr = buf
 	normKeyPool.Put(bufPtr)
 
@@ -57,7 +81,7 @@ func normalizeKey(s string) string {
 
 // compositeKeyPool provides reusable byte buffers for makeCompositeKey.
 var compositeKeyPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		b := make([]byte, 0, 64) // Most composite keys are under 64 bytes
 		return &b
 	},
@@ -121,6 +145,99 @@ func appendUint(buf []byte, n uint) []byte {
 	return buf
 }
 
+// ========== Index Append Functions ==========
+
+// appendIndexThreeString adds a single entry to the ThreeString index maps so that
+// indexed lookups remain accurate immediately after an insert, without a full rebuild.
+// A new heap-allocated pointer is used so the index entry is independent of the slice.
+func appendIndexThreeString(mapvar string, entry syncops.DbstaticThreeStringTwoInt) {
+	if !config.GetSettingsGeneral().UseIndexedCache {
+		return
+	}
+
+	entryPtr := &syncops.DbstaticThreeStringTwoInt{
+		Str1: entry.Str1,
+		Str2: entry.Str2,
+		Str3: entry.Str3,
+		Num1: entry.Num1,
+		Num2: entry.Num2,
+	}
+	if entry.Str3 != "" {
+		key := normalizeKey(entry.Str3)
+		cache.indexThreeStringByStr3.ModifyInPlace(
+			mapvar,
+			func(m map[string]*syncops.DbstaticThreeStringTwoInt) {
+				m[key] = entryPtr
+			},
+		)
+	}
+
+	cache.indexThreeStringByNum2.ModifyInPlace(
+		mapvar,
+		func(m map[uint]*syncops.DbstaticThreeStringTwoInt) {
+			m[entry.Num2] = entryPtr
+		},
+	)
+}
+
+// appendIndexTwoString adds a single entry to the TwoString index map (title -> entries)
+// so that title-based indexed lookups remain accurate immediately after an insert.
+// Both Str1 and Str2 are indexed, mirroring buildIndexTwoStringByStr1.
+func appendIndexTwoString(mapvar string, entry syncops.DbstaticTwoStringOneInt) {
+	if !config.GetSettingsGeneral().UseIndexedCache {
+		return
+	}
+
+	entryPtr := &syncops.DbstaticTwoStringOneInt{
+		Str1: entry.Str1,
+		Str2: entry.Str2,
+		Num:  entry.Num,
+	}
+
+	var key1, key2 string
+	if entry.Str1 != "" {
+		key1 = normalizeKey(entry.Str1)
+	}
+
+	if entry.Str2 != "" {
+		key2 = normalizeKey(entry.Str2)
+	}
+
+	cache.indexTwoStringByStr1.ModifyInPlace(
+		mapvar,
+		func(m map[string][]*syncops.DbstaticTwoStringOneInt) {
+			if key1 != "" {
+				m[key1] = append(m[key1], entryPtr)
+			}
+
+			if key2 != "" {
+				m[key2] = append(m[key2], entryPtr)
+			}
+		},
+	)
+}
+
+// appendIndexTwoInt adds a single entry to the TwoInt composite index map so that
+// indexed lookups remain accurate immediately after an insert.
+func appendIndexTwoInt(mapvar string, entry syncops.DbstaticOneStringTwoInt) {
+	if !config.GetSettingsGeneral().UseIndexedCache {
+		return
+	}
+
+	entryPtr := &syncops.DbstaticOneStringTwoInt{
+		Str:  entry.Str,
+		Num1: entry.Num1,
+		Num2: entry.Num2,
+	}
+	key := makeCompositeKey(entry.Num1, entry.Str)
+	cache.indexTwoIntComposite.ModifyInPlace(
+		mapvar,
+		func(m map[string]*syncops.DbstaticOneStringTwoInt) {
+			m[key] = entryPtr
+		},
+	)
+}
+
 // ========== Index Building Functions ==========
 
 // buildIndexThreeStringByStr3 creates an index mapping normalized Str3 (e.g., IMDB ID) to struct pointer.
@@ -131,9 +248,7 @@ func buildIndexThreeStringByStr3(
 
 	for i := range arr {
 		if arr[i].Str3 != "" {
-			key := normalizeKey(arr[i].Str3)
-
-			index[key] = &arr[i]
+			index[normalizeKey(arr[i].Str3)] = &arr[i]
 		}
 	}
 
@@ -157,10 +272,12 @@ func buildIndexThreeStringByNum2(
 func buildIndexTwoStringByStr1(
 	arr []syncops.DbstaticTwoStringOneInt,
 ) map[string][]*syncops.DbstaticTwoStringOneInt {
+	// Hint len(arr)*2 because the map holds up to two keys per entry (Str1 and
+	// Str2), so this pre-sizes buckets to exactly the expected load and avoids
+	// any rehash during the fill loop.
 	index := make(map[string][]*syncops.DbstaticTwoStringOneInt, len(arr)*2)
 
 	for i := range arr {
-		// Index by both Str1 and Str2 for title and slug lookups
 		if arr[i].Str1 != "" {
 			key := normalizeKey(arr[i].Str1)
 
@@ -204,8 +321,7 @@ func CacheThreeStringIntIndexFuncFast(s string, u *string) uint {
 	// Try indexed lookup first
 	indexMap := cache.indexThreeStringByStr3.GetVal(s)
 	if indexMap != nil {
-		key := normalizeKey(*u)
-		if entry, exists := indexMap[key]; exists {
+		if entry, exists := indexMap[normalizeKey(*u)]; exists {
 			return entry.Num2
 		}
 	}
@@ -257,12 +373,10 @@ func FindSeriesIDByTitleFast(title string) uint {
 		return 0
 	}
 
-	normalizedTitle := normalizeKey(title)
-
 	// Try alternate titles cache first (most common)
 	altIndexMap := cache.indexTwoStringByStr1.GetVal(logger.CacheDBSeriesAlt)
 	if altIndexMap != nil {
-		if entries, exists := altIndexMap[normalizedTitle]; exists && len(entries) > 0 {
+		if entries, exists := altIndexMap[normalizeKey(title)]; exists && len(entries) > 0 {
 			return entries[0].Num
 		}
 	}
@@ -274,140 +388,61 @@ func FindSeriesIDByTitleFast(title string) uint {
 
 // SlicesCacheContainsIFast - O(1) case-insensitive contains check for string arrays
 // Returns true if the string exists in the cache (case-insensitive).
-func SlicesCacheContainsIFast(useseries bool, query string, w *string) bool {
+func SlicesCacheContainsIFast(isType uint, query string, w *string) bool {
 	if !config.GetSettingsGeneral().UseIndexedCache || w == nil || *w == "" {
-		return SlicesCacheContainsI(useseries, query, w)
+		return SlicesCacheContainsI(isType, query, w)
 	}
 
-	indexMap := cache.indexStringSet.GetVal(logger.GetStringsMap(useseries, query))
+	indexMap := cache.indexStringSet.GetVal(mtstrings.GetStringsMap(isType, query))
 	if indexMap != nil {
 		_, exists := indexMap[normalizeKey(*w)]
 		return exists
 	}
 
-	return SlicesCacheContainsI(useseries, query, w)
+	return SlicesCacheContainsI(isType, query, w)
 }
 
-// ========== Index Refresh Functions ==========
+// ========== Index Helpers (called from RefreshCached via syncops.QueueFunc) ==========
 
-// RefreshMediaCacheDBIndexed refreshes the media cache and builds indexes.
-func RefreshMediaCacheDBIndexed(useseries bool, force bool) {
-	if !config.GetSettingsGeneral().UseMediaCache {
-		return
+// getLastScanForKind returns the last-scan timestamp from the SyncMap that corresponds
+// to the given index kind. Used to detect whether a data refresh actually occurred.
+func getLastScanForKind(kind uint8, mapvar string) int64 {
+	switch kind {
+	case indexThreeString:
+		return cache.itemsthreestring.GetLastScan(mapvar)
+	case indexTwoString:
+		return cache.itemstwostring.GetLastScan(mapvar)
+	case indexStringSet:
+		return cache.itemsstring.GetLastScan(mapvar)
 	}
 
-	// Call standard refresh first
-	RefreshMediaCacheDB(useseries, force)
-
-	// Build indexes if enabled
-	if !config.GetSettingsGeneral().UseIndexedCache {
-		return
-	}
-
-	mapvar := logger.GetStringsMap(useseries, logger.CacheDBMedia)
-
-	// Get the refreshed array
-	arr := GetCachedThreeStringArr(mapvar, false, false)
-	if len(arr) == 0 {
-		return
-	}
-
-	// logger.Logtype("debug", 1).
-	// 	Str("cache", mapvar).
-	// 	Int("count", len(arr)).
-	// 	Msg("building cache indexes")
-
-	// Build and store indexes
-	indexStr3 := buildIndexThreeStringByStr3(arr)
-	indexNum2 := buildIndexThreeStringByNum2(arr)
-
-	// Store indexes using SyncMap's Add method (no expiration for indexes)
-	cache.indexThreeStringByStr3.Add(mapvar, indexStr3, 0, false, 0)
-	cache.indexThreeStringByNum2.Add(mapvar, indexNum2, 0, false, 0)
-
-	// logger.Logtype("debug", 1).
-	// 	Str("cache", mapvar).
-	// 	Int("str3_keys", len(indexStr3)).
-	// 	Int("num2_keys", len(indexNum2)).
-	// 	Msg("cache indexes built")
+	return 0
 }
 
-// RefreshMediaCacheTitlesIndexed refreshes title cache and builds indexes.
-func RefreshMediaCacheTitlesIndexed(useseries bool, force bool) {
-	if !config.GetSettingsGeneral().UseMediaCache {
-		return
-	}
+// buildAndStoreIndex builds and stores the index for the given kind.
+// Must be called from the writer goroutine (via syncops.QueueFunc) to avoid
+// races with concurrent slice appends.
+func buildAndStoreIndex(kind uint8, mapvar string) {
+	switch kind {
+	case indexThreeString:
+		arr := getCachedArrayDirect(cache.itemsthreestring, mapvar, false, false)
+		if len(arr) == 0 {
+			return
+		}
 
-	RefreshMediaCacheTitles(useseries, force)
+		cache.indexThreeStringByStr3.Add(mapvar, buildIndexThreeStringByStr3(arr), 0, false, 0)
+		cache.indexThreeStringByNum2.Add(mapvar, buildIndexThreeStringByNum2(arr), 0, false, 0)
 
-	if !config.GetSettingsGeneral().UseIndexedCache {
-		return
-	}
+	case indexTwoString:
+		arr := getCachedArrayDirect(cache.itemstwostring, mapvar, false, false)
+		if len(arr) > 0 {
+			cache.indexTwoStringByStr1.Add(mapvar, buildIndexTwoStringByStr1(arr), 0, false, 0)
+		}
 
-	mapvar := logger.GetStringsMap(useseries, logger.CacheMediaTitles)
-	arr := GetCachedTwoStringArr(mapvar, false, false)
-
-	if len(arr) > 0 {
-		// logger.Logtype("debug", 1).
-		// 	Str("cache", mapvar).
-		// 	Int("count", len(arr)).
-		// 	Msg("building title cache indexes")
-		indexByStr1 := buildIndexTwoStringByStr1(arr)
-		cache.indexTwoStringByStr1.Add(mapvar, indexByStr1, 0, false, 0)
-
-		// logger.Logtype("debug", 1).
-		// 	Str("cache", mapvar).
-		// 	Int("keys", len(indexByStr1)).
-		// 	Msg("title cache indexes built")
-	}
-}
-
-// RefreshhistorycacheurlIndexed refreshes history URL cache and builds set index.
-func RefreshhistorycacheurlIndexed(useseries bool, force bool) {
-	if !config.GetSettingsGeneral().UseHistoryCache {
-		return
-	}
-
-	Refreshhistorycacheurl(useseries, force)
-
-	if !config.GetSettingsGeneral().UseIndexedCache {
-		return
-	}
-
-	mapvar := logger.GetStringsMap(useseries, logger.CacheHistoryURL)
-	arr := GetCachedStringArr(mapvar, false, false)
-
-	if len(arr) > 0 {
-		// logger.Logtype("debug", 2).
-		// 	Str("cache", mapvar).
-		// 	Int("count", len(arr)).
-		// 	Msg("building history URL cache index")
-		indexSet := buildIndexStringSet(arr)
-		cache.indexStringSet.Add(mapvar, indexSet, 0, false, 0)
-	}
-}
-
-// RefreshhistorycachetitleIndexed refreshes history title cache and builds set index.
-func RefreshhistorycachetitleIndexed(useseries bool, force bool) {
-	if !config.GetSettingsGeneral().UseHistoryCache {
-		return
-	}
-
-	Refreshhistorycachetitle(useseries, force)
-
-	if !config.GetSettingsGeneral().UseIndexedCache {
-		return
-	}
-
-	mapvar := logger.GetStringsMap(useseries, logger.CacheHistoryTitle)
-	arr := GetCachedStringArr(mapvar, false, false)
-
-	if len(arr) > 0 {
-		// logger.Logtype("debug", 2).
-		// 	Str("cache", mapvar).
-		// 	Int("count", len(arr)).
-		// 	Msg("building history title cache index")
-		indexSet := buildIndexStringSet(arr)
-		cache.indexStringSet.Add(mapvar, indexSet, 0, false, 0)
+	case indexStringSet:
+		arr := getCachedArrayDirect(cache.itemsstring, mapvar, false, false)
+		if len(arr) > 0 {
+			cache.indexStringSet.Add(mapvar, buildIndexStringSet(arr), 0, false, 0)
+		}
 	}
 }

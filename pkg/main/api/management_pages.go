@@ -444,6 +444,7 @@ func HandleJobManagement(c *gin.Context) {
 													if listName != "" {
 														return gomponents.Text(listName)
 													}
+
 													return gomponents.Text("(all lists)")
 												}(),
 											),
@@ -835,6 +836,7 @@ func HandleDebugStats(c *gin.Context) {
 									if gc.NumGC > 0 {
 										return (gc.PauseTotal / time.Duration(gc.NumGC)).String()
 									}
+
 									return "0"
 								}())),
 							),
@@ -1984,11 +1986,20 @@ func HandlePushoverTest(c *gin.Context) {
 			html.Class("card border-0 shadow-sm border-success mb-4"),
 			html.Div(
 				html.Class("card-header border-0"),
-				html.Style("background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%); border-radius: 15px 15px 0 0;"),
+				html.Style(
+					"background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%); border-radius: 15px 15px 0 0;",
+				),
 				html.Div(
 					html.Class("d-flex align-items-center"),
-					html.Span(html.Class("badge bg-success me-3"), html.I(html.Class("fas fa-paper-plane me-1")), gomponents.Text("Success")),
-					html.H5(html.Class("card-title mb-0 text-success fw-bold"), gomponents.Text("Message Sent Successfully")),
+					html.Span(
+						html.Class("badge bg-success me-3"),
+						html.I(html.Class("fas fa-paper-plane me-1")),
+						gomponents.Text("Success"),
+					),
+					html.H5(
+						html.Class("card-title mb-0 text-success fw-bold"),
+						gomponents.Text("Message Sent Successfully"),
+					),
 				),
 			),
 
@@ -1997,22 +2008,39 @@ func HandlePushoverTest(c *gin.Context) {
 				html.Style("background: rgba(40, 167, 69, 0.05); border-radius: 8px;"),
 				html.Div(
 					html.Class("card-body p-3"),
-					html.P(html.Class("mb-3 text-center"), html.Style("color: #495057;"), gomponents.Text("Test message sent via Pushover with the following details:")),
-
+					html.P(
+						html.Class("mb-3 text-center"),
+						html.Style("color: #495057;"),
+						gomponents.Text(
+							"Test message sent via Pushover with the following details:",
+						),
+					),
 					html.Div(
 						html.Class("row g-2"),
 						html.Div(
 							html.Class("col-sm-6"),
 							html.Div(
 								html.Class("card border-0"),
-								html.Style("background: rgba(40, 167, 69, 0.1); border-radius: 6px;"),
+								html.Style(
+									"background: rgba(40, 167, 69, 0.1); border-radius: 6px;",
+								),
 								html.Div(
 									html.Class("card-body p-2"),
-									html.Div(html.Class("d-flex align-items-center"),
-										html.I(html.Class("fas fa-cogs me-2"), html.Style("color: #28a745;")),
+									html.Div(
+										html.Class("d-flex align-items-center"),
+										html.I(
+											html.Class("fas fa-cogs me-2"),
+											html.Style("color: #28a745;"),
+										),
 										html.Div(
-											html.Div(html.Class("small fw-bold text-muted"), gomponents.Text("Configuration")),
-											html.Div(html.Class("fw-semibold"), gomponents.Text(notificationConfig)),
+											html.Div(
+												html.Class("small fw-bold text-muted"),
+												gomponents.Text("Configuration"),
+											),
+											html.Div(
+												html.Class("fw-semibold"),
+												gomponents.Text(notificationConfig),
+											),
 										),
 									),
 								),
@@ -2022,14 +2050,26 @@ func HandlePushoverTest(c *gin.Context) {
 							html.Class("col-sm-6"),
 							html.Div(
 								html.Class("card border-0"),
-								html.Style("background: rgba(40, 167, 69, 0.1); border-radius: 6px;"),
+								html.Style(
+									"background: rgba(40, 167, 69, 0.1); border-radius: 6px;",
+								),
 								html.Div(
 									html.Class("card-body p-2"),
-									html.Div(html.Class("d-flex align-items-center"),
-										html.I(html.Class("fas fa-user me-2"), html.Style("color: #28a745;")),
+									html.Div(
+										html.Class("d-flex align-items-center"),
+										html.I(
+											html.Class("fas fa-user me-2"),
+											html.Style("color: #28a745;"),
+										),
 										html.Div(
-											html.Div(html.Class("small fw-bold text-muted"), gomponents.Text("Recipient")),
-											html.Div(html.Class("fw-semibold"), gomponents.Text(notifCfg.Recipient)),
+											html.Div(
+												html.Class("small fw-bold text-muted"),
+												gomponents.Text("Recipient"),
+											),
+											html.Div(
+												html.Class("fw-semibold"),
+												gomponents.Text(notifCfg.Recipient),
+											),
 										),
 									),
 								),
@@ -2039,15 +2079,31 @@ func HandlePushoverTest(c *gin.Context) {
 							html.Class("col-12"),
 							html.Div(
 								html.Class("card border-0"),
-								html.Style("background: rgba(40, 167, 69, 0.1); border-radius: 6px;"),
+								html.Style(
+									"background: rgba(40, 167, 69, 0.1); border-radius: 6px;",
+								),
 								html.Div(
 									html.Class("card-body p-2"),
-									html.Div(html.Class("d-flex align-items-start"),
-										html.I(html.Class("fas fa-envelope me-2 mt-1"), html.Style("color: #28a745;")),
-										html.Div(html.Class("flex-grow-1"),
-											html.Div(html.Class("small fw-bold text-muted"), gomponents.Text("Message Details")),
-											html.Div(html.Class("fw-semibold mb-1"), gomponents.Text("Title: "+messageTitle)),
-											html.Div(html.Class("text-muted small"), gomponents.Text(messageText)),
+									html.Div(
+										html.Class("d-flex align-items-start"),
+										html.I(
+											html.Class("fas fa-envelope me-2 mt-1"),
+											html.Style("color: #28a745;"),
+										),
+										html.Div(
+											html.Class("flex-grow-1"),
+											html.Div(
+												html.Class("small fw-bold text-muted"),
+												gomponents.Text("Message Details"),
+											),
+											html.Div(
+												html.Class("fw-semibold mb-1"),
+												gomponents.Text("Title: "+messageTitle),
+											),
+											html.Div(
+												html.Class("text-muted small"),
+												gomponents.Text(messageText),
+											),
 										),
 									),
 								),
@@ -2059,10 +2115,15 @@ func HandlePushoverTest(c *gin.Context) {
 
 			html.Div(
 				html.Class("alert alert-light border-0 mb-0"),
-				html.Style("background-color: rgba(40, 167, 69, 0.1); border-radius: 8px; padding: 0.75rem 1rem;"),
+				html.Style(
+					"background-color: rgba(40, 167, 69, 0.1); border-radius: 8px; padding: 0.75rem 1rem;",
+				),
 				html.Div(
 					html.Class("d-flex align-items-start"),
-					html.I(html.Class("fas fa-mobile-alt me-2 mt-1"), html.Style("color: #28a745; font-size: 0.9rem;")),
+					html.I(
+						html.Class("fas fa-mobile-alt me-2 mt-1"),
+						html.Style("color: #28a745; font-size: 0.9rem;"),
+					),
 					html.Small(
 						html.Style("color: #495057; line-height: 1.4;"),
 						html.Strong(gomponents.Text("Next Step: ")),
@@ -2333,6 +2394,7 @@ func HandleLogViewer(c *gin.Context) {
 					if logLevel != "" {
 						return gomponents.Text(" - Filtered by level: " + logLevel)
 					}
+
 					return gomponents.Text("")
 				}(),
 			),

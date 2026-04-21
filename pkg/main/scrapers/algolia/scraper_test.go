@@ -350,10 +350,17 @@ func TestAlgoliaIntegration(t *testing.T) {
 					matchingFilter++
 				}
 			}
-			t.Logf("Hits matching site filter '%s': %d/%d", cfg.SiteFilterName, matchingFilter, len(hits))
+			t.Logf(
+				"Hits matching site filter '%s': %d/%d",
+				cfg.SiteFilterName,
+				matchingFilter,
+				len(hits),
+			)
 
 			if matchingFilter == 0 {
-				t.Logf("Warning: No hits match the site filter - filter may not be working correctly")
+				t.Logf(
+					"Warning: No hits match the site filter - filter may not be working correctly",
+				)
 			}
 		}
 	})

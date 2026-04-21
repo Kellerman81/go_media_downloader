@@ -1,13 +1,13 @@
 package api
 
 import (
-	"encoding/json"
 	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
+
+	"github.com/goccy/go-json"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
@@ -18,13 +18,13 @@ import (
 
 // Constants for common strings and values.
 const (
-	// HTTP Status Classes.
+	// AlertSuccess is a CSS card class for success alert state.
 	AlertSuccess = "card border-0 shadow-sm border-success mb-4"
 	AlertDanger  = "card border-0 shadow-sm border-danger mb-4"
 	AlertWarning = "card border-0 shadow-sm border-warning mb-4"
 	AlertInfo    = "card border-0 shadow-sm border-info mb-4"
 
-	// CSS Classes.
+	// ClassFormControl is the CSS class for form control elements.
 	ClassFormControl     = "form-control"
 	ClassFormGroup       = "form-group"
 	ClassFormCheck       = "form-check"
@@ -54,7 +54,7 @@ const (
 	ClassDFlex           = "d-flex mb-2"
 	ClassMb3             = "mb-3"
 
-	// Common Form Field Types.
+	// FieldTypeText is the HTML input type value for text fields.
 	FieldTypeText     = "text"
 	FieldTypePassword = "password"
 	FieldTypeNumber   = "number"
@@ -62,11 +62,11 @@ const (
 	FieldTypeSelect   = "select"
 	FieldTypeArray    = "array"
 
-	// API Endpoints.
+	// APIAdminFeedParse is the URL path for the admin feed parse endpoint.
 	APIAdminFeedParse       = "/api/admin/feedparse"
 	APIAdminFolderStructure = "/api/admin/folderstructure"
 
-	// Default Values.
+	// DefaultLimit is the default pagination limit value (0 means no limit).
 	DefaultLimit             = 0
 	MaxDisplayItems          = 20
 	DefaultProcessingTimeout = 30 * time.Second
@@ -74,7 +74,7 @@ const (
 
 // Helper functions for common operations
 
-// Optimized config builder with field caching.
+// OptimizedConfigBuilder is a config builder with form field caching.
 type OptimizedConfigBuilder struct {
 	c      *gin.Context
 	prefix string
@@ -174,78 +174,78 @@ func (b *OptimizedConfigBuilder) getIntArray(field string) []int {
 }
 
 // Cache for expensive template and configuration lookups.
-type configCache struct {
-	templates map[string]map[string][]string
-	mutex     sync.RWMutex
-	lastClear time.Time
-}
+// type configCache struct {
+// 	templates map[string]map[string][]string
+// 	mutex     sync.RWMutex
+// 	lastClear time.Time
+// }
 
-// getTemplatesWithCache caches template lookups to avoid repeated config reads.
-func getTemplatesWithCache(templateType string) []string {
-	globalConfigCache.mutex.RLock()
+// // getTemplatesWithCache caches template lookups to avoid repeated config reads.
+// func getTemplatesWithCache(templateType string) []string {
+// 	globalConfigCache.mutex.RLock()
 
-	// Clear cache every 5 minutes to ensure fresh data
-	if time.Since(globalConfigCache.lastClear) > 5*time.Minute {
-		globalConfigCache.mutex.RUnlock()
-		globalConfigCache.mutex.Lock()
+// 	// Clear cache every 5 minutes to ensure fresh data
+// 	if time.Since(globalConfigCache.lastClear) > 5*time.Minute {
+// 		globalConfigCache.mutex.RUnlock()
+// 		globalConfigCache.mutex.Lock()
 
-		globalConfigCache.templates = make(map[string]map[string][]string)
-		globalConfigCache.lastClear = time.Now()
-		globalConfigCache.mutex.Unlock()
-		globalConfigCache.mutex.RLock()
-	}
+// 		globalConfigCache.templates = make(map[string]map[string][]string)
+// 		globalConfigCache.lastClear = time.Now()
+// 		globalConfigCache.mutex.Unlock()
+// 		globalConfigCache.mutex.RLock()
+// 	}
 
-	if cached, exists := globalConfigCache.templates[templateType]; exists {
-		globalConfigCache.mutex.RUnlock()
-		return cached["options"]
-	}
+// 	if cached, exists := globalConfigCache.templates[templateType]; exists {
+// 		globalConfigCache.mutex.RUnlock()
+// 		return cached["options"]
+// 	}
 
-	globalConfigCache.mutex.RUnlock()
+// 	globalConfigCache.mutex.RUnlock()
 
-	// Get fresh data and cache it
-	globalConfigCache.mutex.Lock()
-	defer globalConfigCache.mutex.Unlock()
+// 	// Get fresh data and cache it
+// 	globalConfigCache.mutex.Lock()
+// 	defer globalConfigCache.mutex.Unlock()
 
-	var templates []string
-	switch templateType {
-	case "path":
-		templateMap := config.GetSettingTemplatesFor("path")
-		if opts, exists := templateMap["options"]; exists {
-			templates = opts
-		}
+// 	var templates []string
+// 	switch templateType {
+// 	case "path":
+// 		templateMap := config.GetSettingTemplatesFor("path")
+// 		if opts, exists := templateMap["options"]; exists {
+// 			templates = opts
+// 		}
 
-	case "list":
-		templateMap := config.GetSettingTemplatesFor("list")
-		if opts, exists := templateMap["options"]; exists {
-			templates = opts
-		}
+// 	case "list":
+// 		templateMap := config.GetSettingTemplatesFor("list")
+// 		if opts, exists := templateMap["options"]; exists {
+// 			templates = opts
+// 		}
 
-	case "quality":
-		templateMap := config.GetSettingTemplatesFor("quality")
-		if opts, exists := templateMap["options"]; exists {
-			templates = opts
-		}
+// 	case "quality":
+// 		templateMap := config.GetSettingTemplatesFor("quality")
+// 		if opts, exists := templateMap["options"]; exists {
+// 			templates = opts
+// 		}
 
-	case "scheduler":
-		templateMap := config.GetSettingTemplatesFor("scheduler")
-		if opts, exists := templateMap["options"]; exists {
-			templates = opts
-		}
+// 	case "scheduler":
+// 		templateMap := config.GetSettingTemplatesFor("scheduler")
+// 		if opts, exists := templateMap["options"]; exists {
+// 			templates = opts
+// 		}
 
-	case "notification":
-		templateMap := config.GetSettingTemplatesFor("notification")
-		if opts, exists := templateMap["options"]; exists {
-			templates = opts
-		}
+// 	case "notification":
+// 		templateMap := config.GetSettingTemplatesFor("notification")
+// 		if opts, exists := templateMap["options"]; exists {
+// 			templates = opts
+// 		}
 
-	default:
-		templates = []string{}
-	}
+// 	default:
+// 		templates = []string{}
+// 	}
 
-	globalConfigCache.templates[templateType] = map[string][]string{"options": templates}
+// 	globalConfigCache.templates[templateType] = map[string][]string{"options": templates}
 
-	return templates
-}
+// 	return templates
+// }
 
 // BatchOperationResult represents the result of a batch operation.
 type BatchOperationResult struct {
@@ -298,7 +298,7 @@ func putNodeSlice(slice []gomponents.Node) {
 	}
 }
 
-// Generic render config pattern to reduce duplication.
+// RenderConfigOptions holds options for rendering a config page.
 type RenderConfigOptions struct {
 	Title          string
 	Subtitle       string
@@ -432,7 +432,7 @@ func createListsConfig(index string, c *gin.Context) config.ListsConfig {
 		SetString(&cfg.ListType, "ListType").
 		SetString(&cfg.URL, "URL").
 		SetString(&cfg.IMDBCSVFile, "IMDBCSVFile").
-		SetString(&cfg.SeriesConfigFile, "SeriesConfigFile").
+		SetString(&cfg.ManualConfigFile, "ManualConfigFile").
 		SetString(&cfg.TraktUsername, "TraktUsername").
 		SetString(&cfg.TraktListName, "TraktListName").
 		SetString(&cfg.TraktListType, "TraktListType").
@@ -643,8 +643,8 @@ func fieldNameToUserFriendly(fieldName string) string {
 func createCommentLines(comment string) []gomponents.Node {
 	var lineNodes []gomponents.Node
 
-	lines := strings.Split(comment, "\n")
-	for _, line := range lines {
+	lines := strings.SplitSeq(comment, "\n")
+	for line := range lines {
 		trimmedLine := strings.TrimSpace(line)
 		if trimmedLine != "" {
 			lineNodes = append(lineNodes, html.Div(
@@ -729,11 +729,15 @@ func createQualityReorderConfigs(index string, c *gin.Context) []config.QualityR
 			Name: name,
 		}
 
-		if reorderType := c.PostForm(fmt.Sprintf("quality_%s_reorder_%s_ReorderType", index, reorderIndex)); reorderType != "" {
+		if reorderType := c.PostForm(
+			fmt.Sprintf("quality_%s_reorder_%s_ReorderType", index, reorderIndex),
+		); reorderType != "" {
 			addConfig.ReorderType = reorderType
 		}
 
-		if newPriority := c.PostForm(fmt.Sprintf("quality_%s_reorder_%s_Newpriority", index, reorderIndex)); newPriority != "" {
+		if newPriority := c.PostForm(
+			fmt.Sprintf("quality_%s_reorder_%s_Newpriority", index, reorderIndex),
+		); newPriority != "" {
 			if priority, err := strconv.Atoi(newPriority); err == nil {
 				addConfig.Newpriority = priority
 			}
@@ -770,35 +774,51 @@ func createQualityIndexerConfigs(index string, c *gin.Context) []config.QualityI
 			TemplateIndexer: name,
 		}
 
-		if templateDownloader := c.PostForm(fmt.Sprintf("quality_%s_indexer_%s_TemplateDownloader", index, indexerIndex)); templateDownloader != "" {
+		if templateDownloader := c.PostForm(
+			fmt.Sprintf("quality_%s_indexer_%s_TemplateDownloader", index, indexerIndex),
+		); templateDownloader != "" {
 			indexerConfig.TemplateDownloader = templateDownloader
 		}
 
-		if templateRegex := c.PostForm(fmt.Sprintf("quality_%s_indexer_%s_TemplateRegex", index, indexerIndex)); templateRegex != "" {
+		if templateRegex := c.PostForm(
+			fmt.Sprintf("quality_%s_indexer_%s_TemplateRegex", index, indexerIndex),
+		); templateRegex != "" {
 			indexerConfig.TemplateRegex = templateRegex
 		}
 
-		if templatePathNzb := c.PostForm(fmt.Sprintf("quality_%s_indexer_%s_TemplatePathNzb", index, indexerIndex)); templatePathNzb != "" {
+		if templatePathNzb := c.PostForm(
+			fmt.Sprintf("quality_%s_indexer_%s_TemplatePathNzb", index, indexerIndex),
+		); templatePathNzb != "" {
 			indexerConfig.TemplatePathNzb = templatePathNzb
 		}
 
-		if categoryDownloader := c.PostForm(fmt.Sprintf("quality_%s_indexer_%s_CategoryDownloader", index, indexerIndex)); categoryDownloader != "" {
+		if categoryDownloader := c.PostForm(
+			fmt.Sprintf("quality_%s_indexer_%s_CategoryDownloader", index, indexerIndex),
+		); categoryDownloader != "" {
 			indexerConfig.CategoryDownloader = categoryDownloader
 		}
 
-		if additionalQueryParams := c.PostForm(fmt.Sprintf("quality_%s_indexer_%s_AdditionalQueryParams", index, indexerIndex)); additionalQueryParams != "" {
+		if additionalQueryParams := c.PostForm(
+			fmt.Sprintf("quality_%s_indexer_%s_AdditionalQueryParams", index, indexerIndex),
+		); additionalQueryParams != "" {
 			indexerConfig.AdditionalQueryParams = additionalQueryParams
 		}
 
-		if skipEmptySize := c.PostForm(fmt.Sprintf("quality_%s_indexer_%s_SkipEmptySize", index, indexerIndex)); skipEmptySize == "on" {
+		if skipEmptySize := c.PostForm(
+			fmt.Sprintf("quality_%s_indexer_%s_SkipEmptySize", index, indexerIndex),
+		); skipEmptySize == "on" {
 			indexerConfig.SkipEmptySize = true
 		}
 
-		if historyCheckTitle := c.PostForm(fmt.Sprintf("quality_%s_indexer_%s_HistoryCheckTitle", index, indexerIndex)); historyCheckTitle == "on" {
+		if historyCheckTitle := c.PostForm(
+			fmt.Sprintf("quality_%s_indexer_%s_HistoryCheckTitle", index, indexerIndex),
+		); historyCheckTitle == "on" {
 			indexerConfig.HistoryCheckTitle = true
 		}
 
-		if categoriesIndexer := c.PostForm(fmt.Sprintf("quality_%s_indexer_%s_CategoriesIndexer", index, indexerIndex)); categoriesIndexer != "" {
+		if categoriesIndexer := c.PostForm(
+			fmt.Sprintf("quality_%s_indexer_%s_CategoriesIndexer", index, indexerIndex),
+		); categoriesIndexer != "" {
 			indexerConfig.CategoriesIndexer = categoriesIndexer
 		}
 
@@ -1085,6 +1105,7 @@ func (cb *ConfigBuilder) SetString(target *string, fieldName string) *ConfigBuil
 	if value := getFormField(cb.context, cb.prefix, cb.index, fieldName); value != "" {
 		*target = value
 	}
+
 	return cb
 }
 
@@ -1099,6 +1120,7 @@ func (cb *ConfigBuilder) SetInt(target *int, fieldName string) *ConfigBuilder {
 	if value, err := getFormFieldInt(cb.context, cb.prefix, cb.index, fieldName); err == nil {
 		*target = value
 	}
+
 	return cb
 }
 
@@ -1176,7 +1198,13 @@ func (cb *ConfigBuilder) SetUint16(target *uint16, fieldName string) *ConfigBuil
 
 // SetUint sets a uint field if the form value is valid.
 func (cb *ConfigBuilder) SetUint(target *uint, fieldName string) *ConfigBuilder {
-	if value, err := getFormFieldInt(cb.context, cb.prefix, cb.index, fieldName); err == nil && value >= 0 {
+	if value, err := getFormFieldInt(
+		cb.context,
+		cb.prefix,
+		cb.index,
+		fieldName,
+	); err == nil &&
+		value >= 0 {
 		*target = uint(value)
 	}
 

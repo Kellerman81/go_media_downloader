@@ -151,6 +151,7 @@ func Logtype(typev string, skip int) *zerolog.Event {
 		if skip == 0 {
 			return logFunc()
 		}
+
 		return logFunc().CallerSkipFrame(skip)
 	}
 

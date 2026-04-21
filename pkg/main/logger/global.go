@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"html"
 	"io/fs"
 	"net/url"
@@ -19,19 +20,14 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/Kellerman81/go_media_downloader/pkg/main/mediatype/mtstrings"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/pool"
-
 	"github.com/mozillazg/go-unidecode/table"
 	"github.com/rs/zerolog"
 )
 
 type AddBuffer struct {
 	bytes.Buffer
-}
-
-type mapmovieserie struct {
-	Movie string
-	Serie string
 }
 
 const (
@@ -47,103 +43,138 @@ const (
 )
 
 const (
-	ParseFailedIDs            = "parse failed ids"
-	FilterByID                = "id = ?"
-	StrRefreshMovies          = "Refresh Movies"
-	StrRefreshMoviesInc       = "Refresh Movies Incremental"
-	StrRefreshSeries          = "Refresh Series"
-	StrRefreshSeriesInc       = "Refresh Series Incremental"
-	StrDebug                  = "debug"
-	StrDate                   = "date"
-	StrSearchMissingInc       = "searchmissinginc"
-	StrSearchMissingFull      = "searchmissingfull"
-	StrSearchMissingIncTitle  = "searchmissinginctitle"
-	StrSearchMissingFullTitle = "searchmissingfulltitle"
-	StrSearchUpgradeInc       = "searchupgradeinc"
-	StrSearchUpgradeFull      = "searchupgradefull"
-	StrSearchUpgradeIncTitle  = "searchupgradeinctitle"
-	StrSearchUpgradeFullTitle = "searchupgradefulltitle"
-	StrCheckMissing           = "checkmissing"
-	StrCheckMissingFlag       = "checkmissingflag"
-	StrUpgradeFlag            = "checkupgradeflag"
-	StrReachedFlag            = "checkreachedflag"
-	StrClearHistory           = "clearhistory"
-	StrRssSeasonsAll          = "rssseasonsall"
-	StrSerie                  = "serie"
-	StrRssSeasons             = "rssseasons"
-	StrRss                    = "rss"
-	Underscore                = "_"
-	StrTt                     = "tt"
-	CacheDBMedia              = "CacheDBMedia"
-	DBCountDBMedia            = "DBCountDBMedia"
-	DBCacheDBMedia            = "DBCacheDBMedia"
-	CacheMedia                = "CacheMedia"
-	DBCountMedia              = "DBCountMedia"
-	DBCacheMedia              = "DBCacheMedia"
-	CacheHistoryTitle         = "CacheHistoryTitle"
-	CacheHistoryURL           = "CacheHistoryUrl"
-	DBHistoriesURL            = "DBHistoriesUrl"
-	DBHistoriesTitle          = "DBHistoriesTitle"
-	DBCountHistoriesURL       = "DBCountHistoriesUrl"
-	DBCountHistoriesTitle     = "DBCountHistoriesTitle"
-	CacheMediaTitles          = "CacheMediaTitles"
-	DBCountDBTitles           = "DBCountDBTitles"
-	DBCacheDBTitles           = "DBCacheDBTitles"
-	CacheFiles                = "CacheFiles"
-	DBCountFiles              = "DBCountFiles"
-	DBCacheFiles              = "DBCacheFiles"
-	CacheUnmatched            = "CacheUnmatched"
-	DBCountUnmatched          = "DBCountUnmatched"
-	DBCacheUnmatched          = "DBCacheUnmatched"
-	DBCountFilesLocation      = "DBCountFilesLocation"
-	DBCountUnmatchedPath      = "DBCountUnmatchedPath"
-	DBCountDBTitlesDBID       = "DBCountDBTitlesDBID"
-	DBDistinctDBTitlesDBID    = "DBDistinctDBTitlesDBID"
-	DBMediaTitlesID           = "DBMediaTitlesID"
-	DBFilesQuality            = "DBFilesQuality"
-	DBCountFilesByList        = "DBCountFilesByList"
-	DBLocationFilesByList     = "DBLocationFilesByList"
-	DBIDsFilesByLocation      = "DBIDsFilesByLocation"
-	DBCountFilesByMediaID     = "DBCountFilesByMediaID"
-	DBCountFilesByLocation    = "DBCountFilesByLocation"
-	TableFiles                = "TableFiles"
-	TableMedia                = "TableMedia"
-	DBCountMediaByList        = "DBCountMediaByList"
-	DBIDMissingMediaByList    = "DBIDMissingMediaByList"
-	DBUpdateMissing           = "DBUpdateMissing"
-	DBListnameByMediaID       = "DBListnameByMediaID"
-	DBRootPathFromMediaID     = "DBRootPathFromMediaID"
-	DBDeleteFileByIDLocation  = "DBDeleteFileByIDLocation"
-	DBCountHistoriesByTitle   = "DBCountHistoriesByTitle"
-	DBCountHistoriesByURL     = "DBCountHistoriesByUrl"
-	DBLocationIDFilesByID     = "DBLocationIDFilesByID"
-	DBFilePrioFilesByID       = "DBFilePrioFilesByID"
-	UpdateMediaLastscan       = "UpdateMediaLastscan"
-	DBQualityMediaByID        = "DBQualityMediaByID"
-	SearchGenSelect           = "SearchGenSelect"
-	SearchGenTable            = "SearchGenTable"
-	SearchGenMissing          = "SearchGenMissing"
-	SearchGenMissingEnd       = "SearchGenMissingEnd"
-	SearchGenReached          = "SearchGenReached"
-	SearchGenLastScan         = "SearchGenLastScan"
-	SearchGenDate             = "SearchGenDate"
-	SearchGenOrder            = "SearchGenOrder"
-	CacheMovie                = "CacheMovie"
-	CacheSeries               = "CacheSeries"
-	CacheDBMovie              = "CacheDBMovie"
-	CacheDBSeries             = "CacheDBSeries"
-	CacheDBSeriesAlt          = "CacheDBSeriesAlt"
-	CacheTitlesMovie          = "CacheTitlesMovie"
-	CacheUnmatchedMovie       = "CacheUnmatchedMovie"
-	CacheUnmatchedSeries      = "CacheUnmatchedSeries"
-	CacheFilesMovie           = "CacheFilesMovie"
-	CacheFilesSeries          = "CacheFilesSeries"
-	CacheHistoryURLMovie      = "CacheHistoryUrlMovie"
-	CacheHistoryTitleMovie    = "CacheHistoryTitleMovie"
-	CacheHistoryURLSeries     = "CacheHistoryUrlSeries"
-	CacheHistoryTitleSeries   = "CacheHistoryTitleSeries"
-	DBIDUnmatchedPathList     = "DBIDUnmatchedPathList"
-	DBMovieDetails            = "select id,created_at,updated_at,title,year,adult,budget,genres,original_language,original_title,overview,popularity,revenue,runtime,spoken_languages,status,tagline,vote_average,vote_count,moviedb_id,imdb_id,freebase_m_id,freebase_id,facebook_id,instagram_id,twitter_id,url,backdrop,poster,slug,trakt_id from dbmovies where id = ?"
+	ParseFailedIDs             = "parse failed ids"
+	FilterByID                 = "id = ?"
+	StrRefreshMovies           = "Refresh Movies"
+	StrRefreshMoviesInc        = "Refresh Movies Incremental"
+	StrRefreshSeries           = "Refresh Series"
+	StrRefreshSeriesInc        = "Refresh Series Incremental"
+	StrRefreshAudiobooks       = "Refresh Audiobooks"
+	StrRefreshAudiobooksInc    = "Refresh Audiobooks Incremental"
+	StrRefreshMusic            = "Refresh Music"
+	StrRefreshMusicInc         = "Refresh Music Incremental"
+	StrDebug                   = "debug"
+	StrDate                    = "date"
+	StrSearchMissingInc        = "searchmissinginc"
+	StrSearchMissingFull       = "searchmissingfull"
+	StrSearchMissingIncTitle   = "searchmissinginctitle"
+	StrSearchMissingFullTitle  = "searchmissingfulltitle"
+	StrSearchUpgradeInc        = "searchupgradeinc"
+	StrSearchUpgradeFull       = "searchupgradefull"
+	StrSearchUpgradeIncTitle   = "searchupgradeinctitle"
+	StrSearchUpgradeFullTitle  = "searchupgradefulltitle"
+	StrCheckMissing            = "checkmissing"
+	StrCheckMissingFlag        = "checkmissingflag"
+	StrUpgradeFlag             = "checkupgradeflag"
+	StrReachedFlag             = "checkreachedflag"
+	StrClearHistory            = "clearhistory"
+	StrRssSeasonsAll           = "rssseasonsall"
+	StrSerie                   = "serie"
+	StrRssSeasons              = "rssseasons"
+	StrRssArtists              = "rssartists"
+	StrRssArtistsUpgrade       = "rssartistsupgrade"
+	StrRssAuthors              = "rssauthors"
+	StrRssAuthorsUpgrade       = "rssauthorsupgrade"
+	StrRss                     = "rss"
+	Underscore                 = "_"
+	StrTt                      = "tt"
+	CacheDBMedia               = "CacheDBMedia"
+	DBCountDBMedia             = "DBCountDBMedia"
+	DBCacheDBMedia             = "DBCacheDBMedia"
+	CacheMedia                 = "CacheMedia"
+	DBCountMedia               = "DBCountMedia"
+	DBCacheMedia               = "DBCacheMedia"
+	CacheRootpath              = "CacheRootpath"
+	DBCountRootpath            = "DBCountRootpath"
+	DBCacheRootpath            = "DBCacheRootpath"
+	CacheHistoryTitle          = "CacheHistoryTitle"
+	CacheHistoryURL            = "CacheHistoryUrl"
+	DBHistoriesURL             = "DBHistoriesUrl"
+	DBHistoriesTitle           = "DBHistoriesTitle"
+	DBCountHistoriesURL        = "DBCountHistoriesUrl"
+	DBCountHistoriesTitle      = "DBCountHistoriesTitle"
+	CacheMediaTitles           = "CacheMediaTitles"
+	DBCountDBTitles            = "DBCountDBTitles"
+	DBCacheDBTitles            = "DBCacheDBTitles"
+	CacheFiles                 = "CacheFiles"
+	DBCountFiles               = "DBCountFiles"
+	DBCacheFiles               = "DBCacheFiles"
+	CacheUnmatched             = "CacheUnmatched"
+	DBCountUnmatched           = "DBCountUnmatched"
+	DBCacheUnmatched           = "DBCacheUnmatched"
+	DBCountFilesLocation       = "DBCountFilesLocation"
+	DBCountUnmatchedPath       = "DBCountUnmatchedPath"
+	DBCountDBTitlesDBID        = "DBCountDBTitlesDBID"
+	DBDistinctDBTitlesDBID     = "DBDistinctDBTitlesDBID"
+	DBMediaTitlesID            = "DBMediaTitlesID"
+	DBFilesQuality             = "DBFilesQuality"
+	DBCountFilesByList         = "DBCountFilesByList"
+	DBLocationFilesByList      = "DBLocationFilesByList"
+	DBIDsFilesByLocation       = "DBIDsFilesByLocation"
+	DBCountFilesByMediaID      = "DBCountFilesByMediaID"
+	DBCountFilesByLocation     = "DBCountFilesByLocation"
+	TableFiles                 = "TableFiles"
+	TableMedia                 = "TableMedia"
+	DBCountMediaByList         = "DBCountMediaByList"
+	DBIDMissingMediaByList     = "DBIDMissingMediaByList"
+	DBUpdateMissing            = "DBUpdateMissing"
+	DBListnameByMediaID        = "DBListnameByMediaID"
+	DBRootPathFromMediaID      = "DBRootPathFromMediaID"
+	DBDeleteFileByIDLocation   = "DBDeleteFileByIDLocation"
+	DBCountHistoriesByTitle    = "DBCountHistoriesByTitle"
+	DBCountHistoriesByURL      = "DBCountHistoriesByUrl"
+	DBLocationIDFilesByID      = "DBLocationIDFilesByID"
+	DBFilePrioFilesByID        = "DBFilePrioFilesByID"
+	DBAudioFilePrioFilesByID   = "DBAudioFilePrioFilesByID"
+	UpdateMediaLastscan        = "UpdateMediaLastscan"
+	DBQualityMediaByID         = "DBQualityMediaByID"
+	SearchGenSelect            = "SearchGenSelect"
+	SearchGenTable             = "SearchGenTable"
+	SearchGenMissing           = "SearchGenMissing"
+	SearchGenMissingEnd        = "SearchGenMissingEnd"
+	SearchGenReached           = "SearchGenReached"
+	SearchGenLastScan          = "SearchGenLastScan"
+	SearchGenDate              = "SearchGenDate"
+	SearchGenOrder             = "SearchGenOrder"
+	CacheMovie                 = "CacheMovie"
+	CacheSeries                = "CacheSeries"
+	CacheDBMovie               = "CacheDBMovie"
+	CacheDBSeries              = "CacheDBSeries"
+	CacheDBSeriesAlt           = "CacheDBSeriesAlt"
+	CacheTitlesMovie           = "CacheTitlesMovie"
+	CacheUnmatchedMovie        = "CacheUnmatchedMovie"
+	CacheUnmatchedSeries       = "CacheUnmatchedSeries"
+	CacheFilesMovie            = "CacheFilesMovie"
+	CacheFilesSeries           = "CacheFilesSeries"
+	CacheHistoryURLMovie       = "CacheHistoryUrlMovie"
+	CacheHistoryTitleMovie     = "CacheHistoryTitleMovie"
+	CacheHistoryURLSeries      = "CacheHistoryUrlSeries"
+	CacheHistoryTitleSeries    = "CacheHistoryTitleSeries"
+	CacheBook                  = "CacheBook"
+	CacheDBBook                = "CacheDBBook"
+	CacheTitlesBook            = "CacheTitlesBook"
+	CacheUnmatchedBook         = "CacheUnmatchedBook"
+	CacheFilesBook             = "CacheFilesBook"
+	CacheHistoryURLBook        = "CacheHistoryUrlBook"
+	CacheHistoryTitleBook      = "CacheHistoryTitleBook"
+	CacheAudiobook             = "CacheAudiobook"
+	CacheDBAudiobook           = "CacheDBAudiobook"
+	CacheTitlesAudiobook       = "CacheTitlesAudiobook"
+	CacheUnmatchedAudiobook    = "CacheUnmatchedAudiobook"
+	CacheFilesAudiobook        = "CacheFilesAudiobook"
+	CacheHistoryURLAudiobook   = "CacheHistoryUrlAudiobook"
+	CacheHistoryTitleAudiobook = "CacheHistoryTitleAudiobook"
+	CacheAlbum                 = "CacheAlbum"
+	CacheDBAlbum               = "CacheDBAlbum"
+	CacheTitlesAlbum           = "CacheTitlesAlbum"
+	CacheUnmatchedAlbum        = "CacheUnmatchedAlbum"
+	CacheFilesAlbum            = "CacheFilesAlbum"
+	CacheHistoryURLAlbum       = "CacheHistoryUrlAlbum"
+	CacheHistoryTitleAlbum     = "CacheHistoryTitleAlbum"
+	CacheRootpathAlbum         = "CacheRootpathAlbum"
+	CacheRootpathAudiobook     = "CacheRootpathAudiobook"
+	DBIDUnmatchedPathList      = "DBIDUnmatchedPathList"
+	DBMovieDetails             = "select id,created_at,updated_at,title,year,adult,budget,genres,original_language,original_title,overview,popularity,revenue,runtime,spoken_languages,status,tagline,vote_average,vote_count,moviedb_id,imdb_id,freebase_m_id,freebase_id,facebook_id,instagram_id,twitter_id,url,backdrop,poster,slug,trakt_id from dbmovies where id = ?"
 
 	Strstructure = "structure"
 	StrStatus    = "status"
@@ -167,6 +198,9 @@ var (
 	V0              = 0
 	StrMovie        = "movie"
 	StrSeries       = "series"
+	StrBook         = "book"
+	StrAudiobook    = "audiobook"
+	StrAlbum        = "album"
 	StrID           = "id"
 	StrWaitfor      = "waitfor"
 	StrURL          = "Url"
@@ -290,268 +324,34 @@ var (
 		"&yen",
 		"&yuml",
 	}
-	ErrNoID                  = errors.New("no id")
-	ErrNotFound              = errors.New("not found")
-	ErrNotAllowed            = errors.New("not allowed")
-	ErrDisabled              = errors.New("disabled")
-	ErrToWait                = errors.New("please wait")
-	ErrContextCanceled       = errors.New("context canceled")
-	Errnoresults             = errors.New("no results")
-	ErrNotFoundDbmovie       = errors.New("dbmovie not found")
-	ErrNotFoundMovie         = errors.New("movie not found")
-	ErrNotFoundDbserie       = errors.New("dbserie not found")
-	ErrCfgpNotFound          = errors.New("cfgpstr not found")
-	ErrNotFoundEpisode       = errors.New("episode not found")
-	ErrListnameEmpty         = errors.New("listname empty")
-	ErrListnameTemplateEmpty = errors.New("listname template empty")
-	ErrTvdbEmpty             = errors.New("tvdb empty")
-	ErrImdbEmpty             = errors.New("imdb empty")
-	ErrTracksEmpty           = errors.New("tracks empty")
-	PlAddBuffer              pool.Poolobj[AddBuffer]
-	PLArrAny                 pool.Poolobj[Arrany]
-
-	mapStrings = map[string]mapmovieserie{
-		"CacheDBMedia": {
-			Movie: "CacheDBMovie",
-			Serie: "CacheDBSeries",
-		},
-		"DBCountDBMedia": {
-			Movie: "select count() from dbmovies",
-			Serie: "select count() from dbseries",
-		},
-		"DBCacheDBMedia": {
-			Movie: "select title, slug, imdb_id, year, id from dbmovies",
-			Serie: "select seriename, slug, '', 0, id from dbseries",
-		},
-		"CacheMedia": {
-			Movie: "CacheMovie",
-			Serie: "CacheSeries",
-		},
-		"DBCountMedia": {
-			Movie: "select count() from movies",
-			Serie: "select count() from series",
-		},
-		"DBCacheMedia": {
-			Movie: "select lower(listname), dbmovie_id, id from movies",
-			Serie: "select lower(listname), dbserie_id, id from series",
-		},
-		"CacheHistoryTitle": {
-			Movie: CacheHistoryTitleMovie,
-			Serie: CacheHistoryTitleSeries,
-		},
-		"CacheHistoryUrl": {
-			Movie: CacheHistoryURLMovie,
-			Serie: CacheHistoryURLSeries,
-		},
-		"DBHistoriesUrl": {
-			Movie: "select distinct url from movie_histories",
-			Serie: "select distinct url from serie_episode_histories",
-		},
-		"DBHistoriesTitle": {
-			Movie: "select distinct title from movie_histories",
-			Serie: "select distinct title from serie_episode_histories",
-		},
-		"DBCountHistoriesUrl": {
-			Movie: "select count() from (select distinct url from movie_histories)",
-			Serie: "select count() from (select distinct url from serie_episode_histories)",
-		},
-		"DBCountHistoriesTitle": {
-			Movie: "select count() from (select distinct title from movie_histories)",
-			Serie: "select count() from (select distinct title from serie_episode_histories)",
-		},
-		"CacheMediaTitles": {
-			Movie: "CacheTitlesMovie",
-			Serie: "CacheDBSeriesAlt",
-		},
-		"DBCountDBTitles": {
-			Movie: "select count() from dbmovie_titles where title != ''",
-			Serie: "select count() from dbserie_alternates where title != ''",
-		},
-		"DBCacheDBTitles": {
-			Movie: "select title, slug, dbmovie_id from dbmovie_titles where title != ''",
-			Serie: "select title, slug, dbserie_id from dbserie_alternates where title != ''",
-		},
-		"CacheFiles": {
-			Movie: CacheFilesMovie,
-			Serie: CacheFilesSeries,
-		},
-		"DBCountFiles": {
-			Movie: "select count() from movie_files",
-			Serie: "select count() from serie_episode_files",
-		},
-		"DBCacheFiles": {
-			Movie: "select location from movie_files",
-			Serie: "select location from serie_episode_files",
-		},
-		"CacheUnmatched": {
-			Movie: CacheUnmatchedMovie,
-			Serie: CacheUnmatchedSeries,
-		},
-		"DBCountUnmatched": {
-			Movie: "select count() from movie_file_unmatcheds where (last_checked > datetime('now','-'||?||' hours') or last_checked is null)",
-			Serie: "select count() from serie_file_unmatcheds where (last_checked > datetime('now','-'||?||' hours') or last_checked is null)",
-		},
-		"DBRemoveUnmatched": {
-			Movie: "delete from movie_file_unmatcheds where (last_checked < datetime('now','-'||?||' hours') and last_checked is not null)",
-			Serie: "delete from serie_file_unmatcheds where (last_checked < datetime('now','-'||?||' hours') and last_checked is not null)",
-		},
-		"DBCacheUnmatched": {
-			Movie: "select filepath from movie_file_unmatcheds where (last_checked > datetime('now','-'||?||' hours') or last_checked is null)",
-			Serie: "select filepath from serie_file_unmatcheds where (last_checked > datetime('now','-'||?||' hours') or last_checked is null)",
-		},
-		"DBCountFilesLocation": {
-			Movie: "select count() from movie_files where location = ?",
-			Serie: "select count() from serie_episode_files where location = ?",
-		},
-		"DBCountUnmatchedPath": {
-			Movie: "select count() from movie_file_unmatcheds where filepath = ?",
-			Serie: "select count() from serie_file_unmatcheds where filepath = ?",
-		},
-		"DBCountDBTitlesDBID": {
-			Movie: "select count() from (select distinct title, slug from dbmovie_titles where dbmovie_id = ? and title != '')",
-			Serie: "select count() from (select distinct title, slug from dbserie_alternates where dbserie_id = ? and title != '')",
-		},
-		"DBDistinctDBTitlesDBID": {
-			Movie: "select distinct title, slug, dbmovie_id from dbmovie_titles where dbmovie_id = ? and title != ''",
-			Serie: "select distinct title, slug, dbserie_id from dbserie_alternates where dbserie_id = ? and title != ''",
-		},
-		"DBMediaTitlesID": {
-			Movie: "select year, title, slug from dbmovies where id = ?",
-			Serie: "select 0, seriename, slug from dbseries where id = ?",
-		},
-		"DBFilesQuality": {
-			Movie: "select resolution_id, quality_id, codec_id, audio_id, proper, extended, repack from movie_files where id = ?",
-			Serie: "select resolution_id, quality_id, codec_id, audio_id, proper, extended, repack from serie_episode_files where id = ?",
-		},
-		"DBCountFilesByList": {
-			Movie: "select count() from movie_files where movie_id in (select id from movies where listname = ? COLLATE NOCASE)",
-			Serie: "select count() from serie_episode_files where serie_id in (Select id from series where listname = ? COLLATE NOCASE)",
-		},
-		"DBLocationFilesByList": {
-			Movie: "select location from movie_files where movie_id in (select id from movies where listname = ? COLLATE NOCASE)",
-			Serie: "select location from serie_episode_files where serie_id in (Select id from series where listname = ? COLLATE NOCASE)",
-		},
-		"DBIDsFilesByLocation": {
-			Movie: "select location, id, movie_id from movie_files",
-			Serie: "select location, id, serie_episode_id from serie_episode_files",
-		},
-		"DBCountFilesByMediaID": {
-			Movie: "select count() from movie_files where movie_id = ?",
-			Serie: "select count() from serie_episode_files where serie_episode_id = ?",
-		},
-		"DBCountFilesByLocation": {
-			Movie: "select count() from movie_files",
-			Serie: "select count() from serie_episode_files",
-		},
-		"TableFiles": {
-			Movie: "movie_files",
-			Serie: "serie_episode_files",
-		},
-		"TableMedia": {
-			Movie: "movies",
-			Serie: "serie_episodes",
-		},
-		"DBCountMediaByList": {
-			Movie: "select count() from movies where listname = ? COLLATE NOCASE",
-			Serie: "select count() from serie_episodes where serie_id in (select id from series where listname = ? COLLATE NOCASE)",
-		},
-		"DBIDMissingMediaByList": {
-			Movie: "select id,missing from movies where listname = ? COLLATE NOCASE",
-			Serie: "select id, missing from serie_episodes where serie_id in (select id from series where listname = ? COLLATE NOCASE)",
-		},
-		"DBUpdateMissing": {
-			Movie: "update movies set missing = ? where id = ?",
-			Serie: "update serie_episodes set missing = ? where id = ?",
-		},
-		"DBListnameByMediaID": {
-			Movie: "select listname from movies where id = ?",
-			Serie: "select listname from series where id = ?",
-		},
-		"DBRootPathFromMediaID": {
-			Movie: "select rootpath from movies where id = ?",
-			Serie: "select rootpath from series where id = ?",
-		},
-		"DBDeleteFileByIDLocation": {
-			Movie: "delete from movie_files where movie_id = ? and location = ?",
-			Serie: "delete from serie_episode_files where serie_id = ? and location = ?",
-		},
-		"DBCountHistoriesByTitle": {
-			Movie: "select count() from movie_histories where title = ?",
-			Serie: "select count() from serie_episode_histories where title = ?",
-		},
-		"DBCountHistoriesByUrl": {
-			Movie: "select count() from movie_histories where url = ?",
-			Serie: "select count() from serie_episode_histories where url = ?",
-		},
-		"DBLocationIDFilesByID": {
-			Movie: "select location, id from movie_files where movie_id = ?",
-			Serie: "select location, id from serie_episode_files where serie_episode_id = ?",
-		},
-		"DBFilePrioFilesByID": {
-			Movie: "select location, movie_id, id, resolution_id, quality_id, codec_id, audio_id, proper, repack, extended from movie_files where movie_id = ?",
-			Serie: "select location, serie_episode_id, id, resolution_id, quality_id, codec_id, audio_id, proper, repack, extended from serie_episode_files where serie_episode_id = ?",
-		},
-		"UpdateMediaLastscan": {
-			Movie: "update movies set lastscan = datetime('now','localtime') where id = ?",
-			Serie: "update serie_episodes set lastscan = datetime('now','localtime') where id = ?",
-		},
-		"DBQualityMediaByID": {
-			Movie: "select quality_profile from movies where id = ?",
-			Serie: "select quality_profile from serie_episodes where id = ?",
-		},
-		"SearchGenSelect": {
-			Movie: "select movies.quality_profile, movies.id ",
-			Serie: "select serie_episodes.quality_profile, serie_episodes.id ",
-		},
-		"SearchGenTable": {
-			Movie: " from movies inner join dbmovies on dbmovies.id=movies.dbmovie_id where ",
-			Serie: " from serie_episodes inner join dbserie_episodes on dbserie_episodes.id=serie_episodes.dbserie_episode_id inner join series on series.id=serie_episodes.serie_id where ",
-		},
-		"SearchGenMissing": {
-			Movie: "dbmovies.year != 0 and movies.missing = 1 and movies.listname in (?",
-			Serie: "serie_episodes.missing = 1 and ((dbserie_episodes.season != '0' and series.search_specials=0) or (series.search_specials=1)) and series.listname in (?",
-		},
-		"SearchGenMissingEnd": {
-			Movie: ")",
-			Serie: ") and serie_episodes.dbserie_episode_id in (select id from dbserie_episodes group by dbserie_id, identifier having count() = 1)",
-		},
-		"SearchGenReached": {
-			Movie: "dbmovies.year != 0 and quality_reached = 0 and missing = 0 and listname in (?",
-			Serie: "serie_episodes.missing = 0 and serie_episodes.quality_reached = 0 and ((dbserie_episodes.Season != '0' and series.search_specials=0) or (series.search_specials=1)) and series.listname in (?",
-		},
-		"SearchGenLastScan": {
-			Movie: " and (movies.lastscan is null or movies.Lastscan < ?)",
-			Serie: " and (serie_episodes.lastscan is null or serie_episodes.lastscan < ?)",
-		},
-		"SearchGenDate": {
-			Movie: " and (dbmovies.release_date < ? or dbmovies.release_date is null)",
-			Serie: " and (dbserie_episodes.first_aired < ? or dbserie_episodes.first_aired is null)",
-		},
-		"SearchGenOrder": {
-			Movie: " order by movies.Lastscan asc",
-			Serie: " order by serie_episodes.Lastscan asc",
-		},
-		"DBIDUnmatchedPathList": {
-			Movie: "select id from movie_file_unmatcheds where filepath = ? and listname = ? COLLATE NOCASE",
-			Serie: "select id from serie_file_unmatcheds where filepath = ? and listname = ? COLLATE NOCASE",
-		},
-		"InsertUnmatched": {
-			Movie: "Insert into movie_file_unmatcheds (parsed_data, listname, filepath, last_checked) values (?, ?, ?, datetime('now','localtime'))",
-			Serie: "Insert into serie_file_unmatcheds (parsed_data, listname, filepath, last_checked) values (?, ?, ?, datetime('now','localtime'))",
-		},
-		"UpdateUnmatched": {
-			Movie: "update movie_file_unmatcheds SET parsed_data = ?, last_checked = datetime('now','localtime') where id = ?",
-			Serie: "update serie_file_unmatcheds SET parsed_data = ?, last_checked = datetime('now','localtime') where id = ?",
-		},
-		"GetRSSData": {
-			Movie: "select movies.dont_search, movies.dont_upgrade, movies.listname, movies.quality_profile, dbmovies.title from movies inner join dbmovies ON dbmovies.id=movies.dbmovie_id where movies.id = ?",
-			Serie: "select serie_episodes.dont_search, serie_episodes.dont_upgrade, series.listname, serie_episodes.quality_profile, dbseries.seriename from serie_episodes inner join series ON series.id=serie_episodes.serie_id inner join dbseries ON dbseries.id=serie_episodes.dbserie_id where serie_episodes.id = ?",
-		},
-		"GetOrganizeData": {
-			Movie: "select dbmovie_id, rootpath, listname from movies where id = ?",
-			Serie: "select dbserie_id, rootpath, listname from series where id = ?",
-		},
-	}
+	ErrNoID                   = errors.New("no id")
+	ErrNotFound               = errors.New("not found")
+	ErrNotAllowed             = errors.New("not allowed")
+	ErrDisabled               = errors.New("disabled")
+	ErrToWait                 = errors.New("please wait")
+	ErrContextCanceled        = errors.New("context canceled")
+	Errnoresults              = errors.New("no results")
+	ErrNotFoundDbmovie        = errors.New("dbmovie not found")
+	ErrNotFoundMovie          = errors.New("movie not found")
+	ErrNotFoundDbserie        = errors.New("dbserie not found")
+	ErrNotFoundSerie          = errors.New("serie not found")
+	ErrNotFoundDbserieEpisode = errors.New("dbserie episode not found")
+	ErrCfgpNotFound           = errors.New("cfgpstr not found")
+	ErrNotFoundEpisode        = errors.New("episode not found")
+	ErrNotFoundDbbook         = errors.New("dbbook not found")
+	ErrNotFoundBook           = errors.New("book not found")
+	ErrNotFoundDbaudiobook    = errors.New("dbaudiobook not found")
+	ErrNotFoundAudiobook      = errors.New("audiobook not found")
+	ErrNotFoundDbalbum        = errors.New("dbalbum not found")
+	ErrNotFoundAlbum          = errors.New("album not found")
+	ErrListnameEmpty          = errors.New("listname empty")
+	ErrListnameTemplateEmpty  = errors.New("listname template empty")
+	ErrTvdbEmpty              = errors.New("tvdb empty")
+	ErrImdbEmpty              = errors.New("imdb empty")
+	ErrTracksEmpty            = errors.New("tracks empty")
+	ErrYearEmpty              = errors.New("year empty")
+	PlAddBuffer               pool.Poolobj[AddBuffer]
+	PLArrAny                  pool.Poolobj[Arrany]
 )
 
 // local vars.
@@ -560,8 +360,18 @@ var (
 	log        zerolog.Logger
 	timeZone   = *time.UTC
 	// textparser is a template engine instance used for parsing and rendering text templates.
-	textparser = template.New("master")
-	poolsOnce  sync.Once
+	textparser = template.New("master").Funcs(template.FuncMap{
+		"firstLetter": firstLetter,
+		"pad":         pad,
+		"pad3":        pad3,
+		"discTrack":   discTrack,
+		"se":          se,
+		"seNoPad":     seNoPad,
+		"xe":          xe,
+		"seMulti":     seMulti,
+		"titleThe":    titleThe,
+	})
+	poolsOnce sync.Once
 	// subRuneSet is a pre-computed boolean array that efficiently checks if a rune is an allowed character
 	// for filename or path generation, including lowercase letters, numbers, and hyphen.
 	subRuneSet = [256]bool{
@@ -685,15 +495,38 @@ func (b *AddBuffer) WriteUInt(i uint) {
 }
 
 // WriteStringMap writes a string to the buffer based on the provided boolean and string parameters.
-// If useseries is true, it writes the value from the Mapstringsseries map using the typestr key.
-// If useseries is false, it writes the value from the Mapstringsmovies map using the typestr key.
-func (b *AddBuffer) WriteStringMap(useseries bool, typestr string) {
-	b.WriteString(GetStringsMap(useseries, typestr))
+// If isType is true, it writes the value from the Mapstringsseries map using the typestr key.
+// If isType is false, it writes the value from the Mapstringsmovies map using the typestr key.
+func (b *AddBuffer) WriteStringMap(isType uint, typestr string) {
+	b.WriteString(mtstrings.GetStringsMap(isType, typestr))
 }
 
 // WriteURL writes the given string to the buffer after escaping it for use in a URL.
 func (b *AddBuffer) WriteURL(s string) {
 	b.WriteString(url.QueryEscape(s))
+}
+
+// hexUpperTable maps nibble → uppercase hex character.
+const hexUpperTable = "0123456789ABCDEF"
+
+// WriteHex2 writes v as exactly 2 uppercase hex digits (zero-padded).
+// Equivalent to fmt.Fprintf(w, "%02X", v) but allocation-free.
+func (b *AddBuffer) WriteHex2(v byte) {
+	b.WriteByte(hexUpperTable[v>>4])
+	b.WriteByte(hexUpperTable[v&0xF])
+}
+
+// WriteHex8 writes v as exactly 8 uppercase hex digits (zero-padded).
+// Equivalent to fmt.Fprintf(w, "%08X", v) but allocation-free.
+func (b *AddBuffer) WriteHex8(v uint32) {
+	b.WriteByte(hexUpperTable[(v>>28)&0xF])
+	b.WriteByte(hexUpperTable[(v>>24)&0xF])
+	b.WriteByte(hexUpperTable[(v>>20)&0xF])
+	b.WriteByte(hexUpperTable[(v>>16)&0xF])
+	b.WriteByte(hexUpperTable[(v>>12)&0xF])
+	b.WriteByte(hexUpperTable[(v>>8)&0xF])
+	b.WriteByte(hexUpperTable[(v>>4)&0xF])
+	b.WriteByte(hexUpperTable[v&0xF])
 }
 
 // GetTimeZone returns a pointer to the time.Location representing the
@@ -707,6 +540,77 @@ func GetTimeZone() *time.Location {
 // This allows checking the current time format.
 func GetTimeFormat() string {
 	return timeFormat
+}
+
+func firstLetter(s string) string {
+	r, _ := utf8.DecodeRuneInString(strings.TrimSpace(s))
+	return strings.ToUpper(string(r))
+}
+
+// pad zero-pads an integer to 2 digits: pad 1 → "01", pad 12 → "12".
+func pad(n int) string {
+	return fmt.Sprintf("%02d", n)
+}
+
+// pad3 zero-pads an integer to 3 digits: pad3 1 → "001".
+func pad3(n int) string {
+	return fmt.Sprintf("%03d", n)
+}
+
+// discTrack formats disc-track as "D-TT": discTrack 2 5 → "2-05".
+func discTrack(disc, track int) string {
+	return fmt.Sprintf("%d-%02d", disc, track)
+}
+
+// se formats season/episode as S01E01. Season is a string, episode is an int.
+func se(season string, episode int) string {
+	s, _ := strconv.Atoi(season)
+	return fmt.Sprintf("S%02dE%02d", s, episode)
+}
+
+// seNoPad formats season/episode without zero-padding: S1E1.
+func seNoPad(season string, episode int) string {
+	return fmt.Sprintf("S%sE%d", season, episode)
+}
+
+// xe formats season/episode as 1x01 (season unpadded, episode padded).
+func xe(season string, episode int) string {
+	return fmt.Sprintf("%sx%02d", season, episode)
+}
+
+// seMulti formats a season with multiple episodes as S01E01-E03.
+// Episodes slice must be sorted.
+func seMulti(season string, episodes []int) string {
+	s, _ := strconv.Atoi(season)
+	if len(episodes) == 0 {
+		return fmt.Sprintf("S%02d", s)
+	}
+
+	if len(episodes) == 1 {
+		return fmt.Sprintf("S%02dE%02d", s, episodes[0])
+	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "S%02d", s)
+
+	for _, ep := range episodes {
+		fmt.Fprintf(&b, "E%02d", ep)
+	}
+
+	return b.String()
+}
+
+// titleThe moves leading articles ("The ", "A ", "An ") to the end:
+// "The Hobbit" → "Hobbit, The", "A Song" → "Song, A".
+func titleThe(s string) string {
+	s = strings.TrimSpace(s)
+	for _, article := range []string{"The ", "A ", "An "} {
+		if strings.HasPrefix(s, article) {
+			return s[len(article):] + ", " + strings.TrimSpace(article)
+		}
+	}
+
+	return s
 }
 
 // ParseStringTemplate parses a text/template string into a template.Template, caches it, and executes it with the given data.
@@ -755,7 +659,14 @@ func BytesToString(b []byte) string {
 // unwanted characters, transliterating accented characters, replacing multiple
 // hyphens with a single hyphen, and trimming leading/trailing hyphens.
 func StringToSlug(instr string) string {
-	return string(StringToSlugBytes(instr)) // BytesToString
+	initializePools()
+
+	ret := PlAddBuffer.Get()
+	defer PlAddBuffer.Put(ret)
+
+	stringToSlugBuffer(ret, Checkhtmlentities(instr))
+
+	return string(bytes.Trim(ret.Bytes(), "- "))
 }
 
 // Checkhtmlentities checks if the input string contains HTML entities, and if so,
@@ -779,7 +690,26 @@ func Checkhtmlentities(instr string) string {
 	return instr
 }
 
-// StringToSlug converts the given string to a slug format by replacing
+// StringToSlugWild converts the given string to a %slug% wildcard in one allocation.
+// The caller can derive the plain slug as a free subslice: wild[1:len(wild)-1].
+func StringToSlugWild(instr string) string {
+	ret := PlAddBuffer.Get()
+	defer PlAddBuffer.Put(ret)
+
+	stringToSlugBuffer(ret, Checkhtmlentities(instr))
+
+	trimmed := bytes.Trim(ret.Bytes(), "- ")
+
+	var sb strings.Builder
+	sb.Grow(len(trimmed) + 2)
+	sb.WriteByte('%')
+	sb.Write(trimmed)
+	sb.WriteByte('%')
+
+	return sb.String()
+}
+
+// StringToSlugBytes converts the given string to a slug byte slice by replacing
 // unwanted characters, transliterating accented characters, replacing multiple
 // hyphens with a single hyphen, and trimming leading/trailing hyphens.
 func StringToSlugBytes(instr string) []byte {
@@ -836,6 +766,7 @@ func stringToSlugBuffer(ret *AddBuffer, instr string) {
 			if 'A' <= r && r <= 'Z' {
 				r += 'a' - 'A'
 			}
+
 			// if _, ok = subRune[r]; ok {
 			if r < 256 && subRuneSet[r] {
 				if lastrune != '-' || r != '-' {
@@ -853,25 +784,30 @@ func stringToSlugBuffer(ret *AddBuffer, instr string) {
 			section = r >> 8
 
 			position = r % 256
-			if tb, ok := table.Tables[section]; ok && len(tb) > int(position) {
-				if len(tb[position]) >= 1 && tb[position][0] > unicode.MaxASCII && lastrune != '-' {
-					ret.WriteByte('-')
 
-					lastrune = '-'
-				} else if lastrune != '-' || tb[position] != StrDash {
-					ret.WriteString(tb[position])
-				}
+			tb, ok := table.Tables[section]
+			if !ok || len(tb) <= int(position) {
+				break
+			}
+
+			if len(tb[position]) >= 1 && tb[position][0] > unicode.MaxASCII && lastrune != '-' {
+				ret.WriteByte('-')
+
+				lastrune = '-'
+			} else if lastrune != '-' || tb[position] != StrDash {
+				ret.WriteString(tb[position])
 			}
 		}
 	}
 }
 
-// AddImdbPrefixP adds the "tt" prefix to the given string if it doesn't already have the prefix.
+// AddImdbPrefix adds the "tt" prefix to the given string if it doesn't already have the prefix.
 // If the string is nil or has a length less than 1, this function does nothing.
 func AddImdbPrefix(str string) string {
 	if len(str) >= 1 && !HasPrefixI(str, StrTt) {
 		return JoinStrings(StrTt, str)
 	}
+
 	return str
 }
 
@@ -896,7 +832,7 @@ func Path(s *string, allowslash bool) {
 	bld := PlAddBuffer.Get()
 	defer PlAddBuffer.Put(bld)
 
-	var bl bool
+	bl := newpath != original
 	for _, z := range newpath {
 		if r, ok := diacriticsmap[z]; ok {
 			bld.WriteString(r)
@@ -921,6 +857,7 @@ func TrimSpace(s string) string {
 	if len(s) == 0 {
 		return s
 	}
+
 	return Trim(s, ' ')
 }
 
@@ -976,6 +913,7 @@ func getfirstinstring(s string, cutset []rune) int {
 			if runeIdx == 0 {
 				return -1
 			}
+
 			return byteIdx
 		}
 
@@ -1135,6 +1073,32 @@ func HasSuffixI(s, suffix string) bool {
 		(s[len(s)-len(suffix):] == suffix || strings.EqualFold(s[len(s)-len(suffix):], suffix))
 }
 
+// ExtToFormat converts a file extension to a lowercase format string without
+// the leading dot, e.g. ".MP3" → "mp3", "FLAC" → "flac".
+func ExtToFormat(ext string) string {
+	return strings.ToLower(strings.TrimPrefix(ext, "."))
+}
+
+// TrimPrefixI returns s with prefix removed using a case-insensitive match,
+// preserving the original case of the remaining string.
+// If s does not start with prefix, s is returned unchanged.
+func TrimPrefixI(s, prefix string) string {
+	if HasPrefixI(s, prefix) {
+		return s[len(prefix):]
+	}
+	return s
+}
+
+// TrimSuffixI returns s with suffix removed using a case-insensitive match,
+// preserving the original case of the remaining string.
+// If s does not end with suffix, s is returned unchanged.
+func TrimSuffixI(s, suffix string) string {
+	if HasSuffixI(s, suffix) {
+		return s[:len(s)-len(suffix)]
+	}
+	return s
+}
+
 // JoinStrings concatenates any number of strings together.
 // It is optimized to avoid unnecessary allocations when there are few elements.
 func JoinStrings(elems ...string) string {
@@ -1185,12 +1149,14 @@ func JoinStringsSep(elems []string, sep string) string {
 
 	l := len(elems)
 	for idx, val := range elems {
-		if val != "" {
-			b.WriteString(val)
+		if val == "" {
+			continue
+		}
 
-			if idx < l-1 {
-				b.WriteString(sep)
-			}
+		b.WriteString(val)
+
+		if idx < l-1 {
+			b.WriteString(sep)
 		}
 	}
 
@@ -1279,11 +1245,12 @@ func IndexI(a, b string) int {
 	return bytes.Index(bufa.Bytes(), bufb.Bytes())
 }
 
-// IntToUint converts an int64 to a uint, returning 0 if the input is negative.
+// Int64ToUint converts an int64 to a uint, returning 0 if the input is negative.
 func Int64ToUint(in int64) uint {
 	if in < 0 {
 		return 0
 	}
+
 	return uint(in)
 }
 
@@ -1292,6 +1259,7 @@ func IntToUint(in int) uint {
 	if in < 0 {
 		return 0
 	}
+
 	return uint(in)
 }
 
@@ -1453,7 +1421,7 @@ func SplitByLR(str string, splitby byte) (string, string) { // left, right
 	return str[:idx], str[idx+1:]
 }
 
-// Contains reports whether v is present in s - case insensitive.
+// SlicesContainsI reports whether v is present in s - case insensitive.
 func SlicesContainsI(s []string, v string) bool {
 	for idx := range s {
 		if v == s[idx] || strings.EqualFold(v, s[idx]) {
@@ -1476,7 +1444,7 @@ func SlicesIndexI(s []string, v string) int {
 	return -1
 }
 
-// Contains reports whether s is contained in v - case insensitive.
+// SlicesContainsPart2I reports whether any element of s is contained in v - case insensitive.
 func SlicesContainsPart2I(s []string, v string) bool {
 	for idx := range s {
 		if ContainsI(v, s[idx]) {
@@ -1606,6 +1574,7 @@ func StringReplaceWithStr(s, r, t string) string {
 	if !strings.Contains(s, r) {
 		return s
 	}
+
 	// Compute number of replacements.
 	n := strings.Count(s, r)
 	if n == 0 {
@@ -1650,16 +1619,6 @@ func StringReplaceWithStr(s, r, t string) string {
 	return buf.String()
 }
 
-// GetStringsMap returns the map of strings for the given type based on
-// whether to use the series or movies map. If useseries is true, it returns
-// the mapstringsseries map, otherwise it returns the mapstringsmovies map.
-func GetStringsMap(useseries bool, typestr string) string {
-	if useseries {
-		return mapStrings[typestr].Serie
-	}
-	return mapStrings[typestr].Movie
-}
-
 // CheckContextEnded checks if the provided context has been canceled or has expired.
 // If the context has been canceled or has expired, it returns the context's error.
 // Otherwise, it returns nil.
@@ -1694,6 +1653,7 @@ func Stack() string {
 
 		buf = make([]byte, 2*len(buf))
 	}
+
 	// Fallback if stack is exceptionally large
 	return "Stack trace too large"
 }
@@ -1811,4 +1771,12 @@ func GetFieldCommentByName(v any, fieldName string) string {
 	}
 
 	return field.Tag.Get("comment")
+}
+
+// GetStringsMap returns the map of strings for the given type based on
+// whether to use the series or movies map. If isType is true, it returns
+// the mapstringsseries map, otherwise it returns the mapstringsmovies map.
+// Deprecated: Use mtstrings.GetStringsMap directly instead.
+func GetStringsMap(isType uint, typestr string) string {
+	return mtstrings.GetStringsMap(isType, typestr)
 }

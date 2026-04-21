@@ -10,7 +10,7 @@ func renderModernAdminIntro() gomponents.Node {
 	return html.Div(
 		html.Class("container-fluid"),
 		html.Style(
-			"background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; padding: 0;",
+			"background: linear-gradient(135deg, #6c757d 0%, #495057 100%); min-height: 100vh; padding: 0;",
 		),
 
 		// Hero Section
@@ -20,7 +20,7 @@ func renderModernAdminIntro() gomponents.Node {
 				html.Class("col-12"),
 				html.Div(
 					html.Style(
-						"background: linear-gradient(135deg, rgba(102,126,234,0.9) 0%, rgba(118,75,162,0.9) 100%); color: white; padding: 4rem 0; text-align: center;",
+						"background: linear-gradient(135deg, rgba(108,117,125,0.9) 0%, rgba(73,80,87,0.9) 100%); color: white; padding: 4rem 0; text-align: center;",
 					),
 					html.Div(
 						html.Class("container"),

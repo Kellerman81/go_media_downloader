@@ -8,6 +8,7 @@ import (
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/base"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/tmdb"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/providers"
 )
@@ -146,7 +147,7 @@ func NewTmdbClient(
 		CircuitBreakerTimeout:     60 * time.Second,
 		CircuitBreakerHalfOpenMax: 2,
 		EnableStats:               true,
-		UserAgent:                 "go-media-downloader/2.0",
+		UserAgent:                 config.GetSettingsGeneral().UserAgent,
 		DisableTLSVerify:          disabletls,
 	}
 	if provider := tmdb.NewProviderWithConfig(tmdbConfig, apikey); provider != nil {
@@ -170,6 +171,7 @@ func SearchTmdbMovie(name string) (*TheMovieDBSearch, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		// Convert v2 results to old format
 		search := &TheMovieDBSearch{
 			Results: make([]TheMovieDBFindMovieresults, len(results)),
@@ -214,6 +216,7 @@ func SearchTmdbTV(name string) (*TheMovieDBSearchTV, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		// Convert v2 results to old format
 		search := &TheMovieDBSearchTV{
 			Results: make([]TheMovieDBFindTvresults, len(results)),
@@ -257,6 +260,7 @@ func DiscoverTmdbMovie(query string) (*TheMovieDBSearch, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		// Convert v2 results to old format
 		search := &TheMovieDBSearch{
 			Results: make([]TheMovieDBFindMovieresults, len(results.Results)),
@@ -300,6 +304,7 @@ func DiscoverTmdbSerie(query string) (*TheMovieDBSearchTV, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		// Convert v2 results to old format
 		search := &TheMovieDBSearchTV{
 			Results: make([]TheMovieDBFindTvresults, len(results.Results)),
@@ -372,6 +377,7 @@ func RemoveFromTmdbList(listid int, remove int) error {
 	if provider := providers.GetTMDB(); provider != nil {
 		return provider.RemoveFromTMDBList(context.Background(), listid, remove)
 	}
+
 	return logger.ErrNotFound
 }
 
@@ -389,6 +395,7 @@ func FindTmdbImdb(imdbid string) (*TheMovieDBFind, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		// Convert v2 result to old format
 		find := &TheMovieDBFind{
 			MovieResults: make([]TheMovieDBFindMovieresults, len(result.MovieResults)),
@@ -453,6 +460,7 @@ func FindTmdbTvdb(thetvdbid int) (*TheMovieDBFind, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		// Convert v2 result to old format
 		find := &TheMovieDBFind{
 			MovieResults: []TheMovieDBFindMovieresults{},
@@ -497,6 +505,7 @@ func GetTmdbMovie(id int) (*TheMovieDBMovie, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		// Convert v2 details to old format
 		releaseDate := ""
 		if !details.ReleaseDate.IsZero() {
@@ -549,6 +558,7 @@ func GetTmdbMovieTitles(id int) (*TheMovieDBMovieTitles, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		// Convert v2 titles to old format
 		result := &TheMovieDBMovieTitles{
 			Titles: make([]struct {
@@ -583,6 +593,7 @@ func GetTmdbMovieExternal(id int) (*TheMovieDBTVExternal, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		// Convert v2 result to old format
 		return &TheMovieDBTVExternal{
 			ID:          externalIDs.TMDbID,
@@ -614,6 +625,7 @@ func GetTVExternal(id int) (*TheMovieDBTVExternal, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		// Convert v2 result to old format
 		return &TheMovieDBTVExternal{
 			ID:          externalIDs.TMDbID,
@@ -648,6 +660,279 @@ func TestTMDBConnectivity(timeout time.Duration) (int, error) {
 	return 0, logger.ErrNotFound
 }
 
+// GetTmdbPopularMovies retrieves popular movies from TheMovieDB API.
+// It takes a limit pointer to control pagination.
+// Returns a TheMovieDBSearch struct containing the popular movies.
+func GetTmdbPopularMovies(limit *string) (*TheMovieDBSearch, error) {
+	if provider := providers.GetTMDB(); provider != nil {
+		page := 1
+
+		maxItems := 20
+		if limit != nil && *limit != "" {
+			if limitInt, err := strconv.Atoi(*limit); err == nil && limitInt > 0 {
+				maxItems = limitInt
+				if limitInt > 20 {
+					page = (limitInt + 19) / 20
+				}
+			}
+		}
+
+		results, err := provider.GetPopularMovies(context.Background(), page)
+		if err != nil {
+			return nil, err
+		}
+
+		search := &TheMovieDBSearch{
+			Results: make([]TheMovieDBFindMovieresults, 0, len(results.Results)),
+		}
+
+		for i, r := range results.Results {
+			if i >= maxItems {
+				break
+			}
+
+			releaseDate := ""
+			if !r.ReleaseDate.IsZero() {
+				releaseDate = r.ReleaseDate.Format("2006-01-02")
+			}
+
+			search.Results = append(search.Results, TheMovieDBFindMovieresults{
+				ID:            r.ID,
+				Title:         r.Title,
+				OriginalTitle: r.OriginalTitle,
+				Overview:      r.Overview,
+				ReleaseDate:   releaseDate,
+				Popularity:    float32(r.Popularity),
+				VoteAverage:   float32(r.VoteAverage),
+				VoteCount:     r.VoteCount,
+				Adult:         r.Adult,
+			})
+		}
+
+		return search, nil
+	}
+
+	return nil, logger.ErrNotFound
+}
+
+// GetTmdbTrendingMovies retrieves trending movies from TheMovieDB API.
+// It takes a limit pointer to control pagination.
+// Returns a TheMovieDBSearch struct containing the trending movies.
+func GetTmdbTrendingMovies(limit *string) (*TheMovieDBSearch, error) {
+	if provider := providers.GetTMDB(); provider != nil {
+		page := 1
+
+		maxItems := 20
+		if limit != nil && *limit != "" {
+			if limitInt, err := strconv.Atoi(*limit); err == nil && limitInt > 0 {
+				maxItems = limitInt
+				if limitInt > 20 {
+					page = (limitInt + 19) / 20
+				}
+			}
+		}
+
+		results, err := provider.GetTrendingMovies(context.Background(), page)
+		if err != nil {
+			return nil, err
+		}
+
+		search := &TheMovieDBSearch{
+			Results: make([]TheMovieDBFindMovieresults, 0, len(results.Results)),
+		}
+
+		for i, r := range results.Results {
+			if i >= maxItems {
+				break
+			}
+
+			releaseDate := ""
+			if !r.ReleaseDate.IsZero() {
+				releaseDate = r.ReleaseDate.Format("2006-01-02")
+			}
+
+			search.Results = append(search.Results, TheMovieDBFindMovieresults{
+				ID:            r.ID,
+				Title:         r.Title,
+				OriginalTitle: r.OriginalTitle,
+				Overview:      r.Overview,
+				ReleaseDate:   releaseDate,
+				Popularity:    float32(r.Popularity),
+				VoteAverage:   float32(r.VoteAverage),
+				VoteCount:     r.VoteCount,
+				Adult:         r.Adult,
+			})
+		}
+
+		return search, nil
+	}
+
+	return nil, logger.ErrNotFound
+}
+
+// GetTmdbUpcomingMovies retrieves upcoming movies from TheMovieDB API.
+// It takes a limit pointer to control pagination.
+// Returns a TheMovieDBSearch struct containing the upcoming movies.
+func GetTmdbUpcomingMovies(limit *string) (*TheMovieDBSearch, error) {
+	if provider := providers.GetTMDB(); provider != nil {
+		page := 1
+
+		maxItems := 20
+		if limit != nil && *limit != "" {
+			if limitInt, err := strconv.Atoi(*limit); err == nil && limitInt > 0 {
+				maxItems = limitInt
+				if limitInt > 20 {
+					page = (limitInt + 19) / 20
+				}
+			}
+		}
+
+		results, err := provider.GetUpcomingMovies(context.Background(), page)
+		if err != nil {
+			return nil, err
+		}
+
+		search := &TheMovieDBSearch{
+			Results: make([]TheMovieDBFindMovieresults, 0, len(results.Results)),
+		}
+
+		for i, r := range results.Results {
+			if i >= maxItems {
+				break
+			}
+
+			releaseDate := ""
+			if !r.ReleaseDate.IsZero() {
+				releaseDate = r.ReleaseDate.Format("2006-01-02")
+			}
+
+			search.Results = append(search.Results, TheMovieDBFindMovieresults{
+				ID:            r.ID,
+				Title:         r.Title,
+				OriginalTitle: r.OriginalTitle,
+				Overview:      r.Overview,
+				ReleaseDate:   releaseDate,
+				Popularity:    float32(r.Popularity),
+				VoteAverage:   float32(r.VoteAverage),
+				VoteCount:     r.VoteCount,
+				Adult:         r.Adult,
+			})
+		}
+
+		return search, nil
+	}
+
+	return nil, logger.ErrNotFound
+}
+
+// GetTmdbPopularSeries retrieves popular TV series from TheMovieDB API.
+// It takes a limit pointer to control pagination.
+// Returns a TheMovieDBSearchTV struct containing the popular series.
+func GetTmdbPopularSeries(limit *string) (*TheMovieDBSearchTV, error) {
+	if provider := providers.GetTMDB(); provider != nil {
+		page := 1
+
+		maxItems := 20
+		if limit != nil && *limit != "" {
+			if limitInt, err := strconv.Atoi(*limit); err == nil && limitInt > 0 {
+				maxItems = limitInt
+				if limitInt > 20 {
+					page = (limitInt + 19) / 20
+				}
+			}
+		}
+
+		results, err := provider.GetPopularSeries(context.Background(), page)
+		if err != nil {
+			return nil, err
+		}
+
+		search := &TheMovieDBSearchTV{
+			Results: make([]TheMovieDBFindTvresults, 0, len(results.Results)),
+		}
+
+		for i, r := range results.Results {
+			if i >= maxItems {
+				break
+			}
+
+			firstAirDate := ""
+			if !r.FirstAirDate.IsZero() {
+				firstAirDate = r.FirstAirDate.Format("2006-01-02")
+			}
+
+			search.Results = append(search.Results, TheMovieDBFindTvresults{
+				ID:           r.ID,
+				Name:         r.Name,
+				OriginalName: r.OriginalName,
+				Overview:     r.Overview,
+				FirstAirDate: firstAirDate,
+				Popularity:   float32(r.Popularity),
+				VoteAverage:  float32(r.VoteAverage),
+				VoteCount:    r.VoteCount,
+			})
+		}
+
+		return search, nil
+	}
+
+	return nil, logger.ErrNotFound
+}
+
+// GetTmdbTrendingSeries retrieves trending TV series from TheMovieDB API.
+// It takes a limit pointer to control pagination.
+// Returns a TheMovieDBSearchTV struct containing the trending series.
+func GetTmdbTrendingSeries(limit *string) (*TheMovieDBSearchTV, error) {
+	if provider := providers.GetTMDB(); provider != nil {
+		page := 1
+
+		maxItems := 20
+		if limit != nil && *limit != "" {
+			if limitInt, err := strconv.Atoi(*limit); err == nil && limitInt > 0 {
+				maxItems = limitInt
+				if limitInt > 20 {
+					page = (limitInt + 19) / 20
+				}
+			}
+		}
+
+		results, err := provider.GetTrendingSeries(context.Background(), page)
+		if err != nil {
+			return nil, err
+		}
+
+		search := &TheMovieDBSearchTV{
+			Results: make([]TheMovieDBFindTvresults, 0, len(results.Results)),
+		}
+
+		for i, r := range results.Results {
+			if i >= maxItems {
+				break
+			}
+
+			firstAirDate := ""
+			if !r.FirstAirDate.IsZero() {
+				firstAirDate = r.FirstAirDate.Format("2006-01-02")
+			}
+
+			search.Results = append(search.Results, TheMovieDBFindTvresults{
+				ID:           r.ID,
+				Name:         r.Name,
+				OriginalName: r.OriginalName,
+				Overview:     r.Overview,
+				FirstAirDate: firstAirDate,
+				Popularity:   float32(r.Popularity),
+				VoteAverage:  float32(r.VoteAverage),
+				VoteCount:    r.VoteCount,
+			})
+		}
+
+		return search, nil
+	}
+
+	return nil, logger.ErrNotFound
+}
+
 // SearchTMDBMovieImdbID searches for a movie by title and year, then retrieves its IMDB ID.
 // Returns the IMDB ID if found, empty string and error otherwise.
 func SearchTMDBMovieImdbID(title string, year int) (string, error) {
@@ -677,13 +962,15 @@ func SearchTMDBMovieImdbID(title string, year int) (string, error) {
 
 		// If year is provided, verify it matches
 		if year > 0 && result.ReleaseDate != "" {
-			if len(result.ReleaseDate) >= 4 {
-				releaseYear, err := strconv.Atoi(result.ReleaseDate[:4])
-				if err == nil && releaseYear == year && titleMatch {
-					// Exact match on both title and year
-					bestMatch = result
-					break
-				}
+			if len(result.ReleaseDate) < 4 {
+				continue
+			}
+
+			releaseYear, err := strconv.Atoi(result.ReleaseDate[:4])
+			if err == nil && releaseYear == year && titleMatch {
+				// Exact match on both title and year
+				bestMatch = result
+				break
 			}
 		} else if titleMatch {
 			// No year provided or no release date, match on title only

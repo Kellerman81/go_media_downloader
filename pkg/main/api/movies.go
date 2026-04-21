@@ -1,4 +1,4 @@
-// movies
+// Package api provides the movies API handlers.
 package api
 
 import (
@@ -336,7 +336,14 @@ func apimoviesAllJobs(c *gin.Context) {
 					if errsub := worker.Dispatch(
 						c.Param(StrJobLower)+"_"+cfgpstr+"_"+listname,
 						func(key uint32, ctx context.Context) error {
-							return utils.SingleJobs(ctx, c.Param(StrJobLower), cfgpstr, listname, true, key)
+							return utils.SingleJobs(
+								ctx,
+								c.Param(StrJobLower),
+								cfgpstr,
+								listname,
+								true,
+								key,
+							)
 						},
 						"Feeds",
 					); errsub != nil {
@@ -346,7 +353,14 @@ func apimoviesAllJobs(c *gin.Context) {
 					if errsub := worker.Dispatch(
 						c.Param(StrJobLower)+"_"+cfgpstr+"_"+listname,
 						func(key uint32, ctx context.Context) error {
-							return utils.SingleJobs(ctx, c.Param(StrJobLower), cfgpstr, listname, true, key)
+							return utils.SingleJobs(
+								ctx,
+								c.Param(StrJobLower),
+								cfgpstr,
+								listname,
+								true,
+								key,
+							)
 						},
 						"Data",
 					); errsub != nil {
@@ -360,13 +374,21 @@ func apimoviesAllJobs(c *gin.Context) {
 					if errsub := worker.Dispatch(
 						c.Param(StrJobLower)+"_"+cfgpstr+"_"+listname,
 						func(key uint32, ctx context.Context) error {
-							return utils.SingleJobs(ctx, c.Param(StrJobLower), cfgpstr, listname, true, key)
+							return utils.SingleJobs(
+								ctx,
+								c.Param(StrJobLower),
+								cfgpstr,
+								listname,
+								true,
+								key,
+							)
 						},
 						"Data",
 					); errsub != nil {
 						err = errsub
 					}
 				}
+
 				// cfg_list.Close()
 			}
 
@@ -529,9 +551,11 @@ func apimoviesJobs(c *gin.Context) {
 							"Data",
 						)
 					}
+
 					// cfg_list.Close()
 				}
 			}
+
 			// cfgMovie.Close()
 			return nil
 		})
@@ -653,8 +677,71 @@ func updateDBMovie(c *gin.Context) {
 			dbmovie.Slug,
 		)
 	} else {
-		inres, err = database.UpdateArray("dbmovies", []string{"Title", "Release_Date", "Year", "Adult", "Budget", "Genres", "Original_Language", "Original_Title", "Overview", "Popularity", "Revenue", "Runtime", "Spoken_Languages", "Status", "Tagline", "Vote_Average", "Vote_Count", "Trakt_ID", "Moviedb_ID", "Imdb_ID", "Freebase_M_ID", "Freebase_ID", "Facebook_ID", "Instagram_ID", "Twitter_ID", "URL", "Backdrop", "Poster", "Slug"},
-			"id != 0 and id = ?", dbmovie.Title, dbmovie.ReleaseDate, dbmovie.Year, dbmovie.Adult, dbmovie.Budget, dbmovie.Genres, dbmovie.OriginalLanguage, dbmovie.OriginalTitle, dbmovie.Overview, dbmovie.Popularity, dbmovie.Revenue, dbmovie.Runtime, dbmovie.SpokenLanguages, dbmovie.Status, dbmovie.Tagline, dbmovie.VoteAverage, dbmovie.VoteCount, dbmovie.TraktID, dbmovie.MoviedbID, dbmovie.ImdbID, dbmovie.FreebaseMID, dbmovie.FreebaseID, dbmovie.FacebookID, dbmovie.InstagramID, dbmovie.TwitterID, dbmovie.URL, dbmovie.Backdrop, dbmovie.Poster, dbmovie.Slug, dbmovie.ID)
+		inres, err = database.UpdateArray(
+			"dbmovies",
+			[]string{
+				"Title",
+				"Release_Date",
+				"Year",
+				"Adult",
+				"Budget",
+				"Genres",
+				"Original_Language",
+				"Original_Title",
+				"Overview",
+				"Popularity",
+				"Revenue",
+				"Runtime",
+				"Spoken_Languages",
+				"Status",
+				"Tagline",
+				"Vote_Average",
+				"Vote_Count",
+				"Trakt_ID",
+				"Moviedb_ID",
+				"Imdb_ID",
+				"Freebase_M_ID",
+				"Freebase_ID",
+				"Facebook_ID",
+				"Instagram_ID",
+				"Twitter_ID",
+				"URL",
+				"Backdrop",
+				"Poster",
+				"Slug",
+			},
+			"id != 0 and id = ?",
+			dbmovie.Title,
+			dbmovie.ReleaseDate,
+			dbmovie.Year,
+			dbmovie.Adult,
+			dbmovie.Budget,
+			dbmovie.Genres,
+			dbmovie.OriginalLanguage,
+			dbmovie.OriginalTitle,
+			dbmovie.Overview,
+			dbmovie.Popularity,
+			dbmovie.Revenue,
+			dbmovie.Runtime,
+			dbmovie.SpokenLanguages,
+			dbmovie.Status,
+			dbmovie.Tagline,
+			dbmovie.VoteAverage,
+			dbmovie.VoteCount,
+			dbmovie.TraktID,
+			dbmovie.MoviedbID,
+			dbmovie.ImdbID,
+			dbmovie.FreebaseMID,
+			dbmovie.FreebaseID,
+			dbmovie.FacebookID,
+			dbmovie.InstagramID,
+			dbmovie.TwitterID,
+			dbmovie.URL,
+			dbmovie.Backdrop,
+			dbmovie.Poster,
+			dbmovie.Slug,
+			dbmovie.ID,
+		)
 	}
 
 	handleDBInsertOrUpdate(c, inres, err, counter == 0)
@@ -712,8 +799,31 @@ func updateMovie(c *gin.Context) {
 			movie.Rootpath,
 		)
 	} else {
-		inres, err = database.UpdateArray("dbmovies", []string{"missing", "listname", "dbmovie_id", "quality_profile", "blacklisted", "quality_reached", "dont_upgrade", "dont_search", "rootpath"},
-			"id != 0 and id = ?", movie.Missing, movie.Listname, movie.DbmovieID, movie.QualityProfile, movie.Blacklisted, movie.QualityReached, movie.DontUpgrade, movie.DontSearch, movie.Rootpath, movie.ID)
+		inres, err = database.UpdateArray(
+			"dbmovies",
+			[]string{
+				"missing",
+				"listname",
+				"dbmovie_id",
+				"quality_profile",
+				"blacklisted",
+				"quality_reached",
+				"dont_upgrade",
+				"dont_search",
+				"rootpath",
+			},
+			"id != 0 and id = ?",
+			movie.Missing,
+			movie.Listname,
+			movie.DbmovieID,
+			movie.QualityProfile,
+			movie.Blacklisted,
+			movie.QualityReached,
+			movie.DontUpgrade,
+			movie.DontSearch,
+			movie.Rootpath,
+			movie.ID,
+		)
 	}
 
 	handleDBInsertOrUpdate(c, inres, err, counter == 0)
@@ -909,6 +1019,7 @@ func apimoviesSearchDownload(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+
 	// defer logger.ClearVar(&nzb)
 	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) error {
 		if !strings.HasPrefix(media.NamePrefix, logger.StrMovie) {

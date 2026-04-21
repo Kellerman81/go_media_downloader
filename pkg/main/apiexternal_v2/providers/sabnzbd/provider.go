@@ -2,13 +2,14 @@ package sabnzbd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/goccy/go-json"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/base"
@@ -134,7 +135,10 @@ func (p *Provider) GetProviderName() string {
 }
 
 // GetTorrentInfo retrieves information about a specific NZB download
-func (p *Provider) GetTorrentInfo(ctx context.Context, hash string) (*apiexternal_v2.TorrentInfo, error) {
+func (p *Provider) GetTorrentInfo(
+	ctx context.Context,
+	hash string,
+) (*apiexternal_v2.TorrentInfo, error) {
 	// Get all downloads and find the specific one
 	list, err := p.ListTorrents(ctx, "")
 	if err != nil {
@@ -151,7 +155,10 @@ func (p *Provider) GetTorrentInfo(ctx context.Context, hash string) (*apiexterna
 }
 
 // ListTorrents lists all NZB downloads in the queue
-func (p *Provider) ListTorrents(ctx context.Context, filter string) (*apiexternal_v2.TorrentListResponse, error) {
+func (p *Provider) ListTorrents(
+	ctx context.Context,
+	filter string,
+) (*apiexternal_v2.TorrentListResponse, error) {
 	params := url.Values{
 		"mode":   {"queue"},
 		"output": {"json"},
@@ -374,7 +381,6 @@ func (p *Provider) makeRequest(ctx context.Context, params url.Values) (*http.Re
 		},
 		headers,
 	)
-
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}

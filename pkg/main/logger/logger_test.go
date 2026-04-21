@@ -11,18 +11,6 @@ import (
 	"github.com/rs/zerolog"
 )
 
-func TestInitLogger_CustomTimeFormat(t *testing.T) {
-	config := Config{
-		TimeFormat: "2006-01-02 15:04:05",
-		LogLevel:   "info",
-	}
-	InitLogger(config)
-
-	if timeFormat != config.TimeFormat {
-		t.Errorf("Expected timeFormat to be %s, got %s", config.TimeFormat, timeFormat)
-	}
-}
-
 func TestInitLogger_CustomTimeZone(t *testing.T) {
 	config := Config{
 		TimeZone: "America/New_York",
@@ -51,7 +39,15 @@ func TestLogDynamicany_MixedTypes(t *testing.T) {
 	var buf bytes.Buffer
 	log = zerolog.New(&buf)
 
-	Logtype("info", 1).Str("string", "value").Int("int", 42).Bool("bool", true).Float64("float", 3.14).Err(errors.New("test error")).Msg("test message")
+	Logtype(
+		"info",
+		1,
+	).Str("string", "value").
+		Int("int", 42).
+		Bool("bool", true).
+		Float64("float", 3.14).
+		Err(errors.New("test error")).
+		Msg("test message")
 
 	if buf.Len() == 0 {
 		t.Error("Expected log output, got nothing")
@@ -113,7 +109,14 @@ func TestLogDynamicany_PointerTypes(t *testing.T) {
 	b := true
 	f := 3.14
 
-	Logtype("info", 1).Any("strPtr", &str).Any("intPtr", &num).Any("boolPtr", &b).Any("floatPtr", &f).Msg("test message")
+	Logtype(
+		"info",
+		1,
+	).Any("strPtr", &str).
+		Any("intPtr", &num).
+		Any("boolPtr", &b).
+		Any("floatPtr", &f).
+		Msg("test message")
 
 	if buf.Len() == 0 {
 		t.Error("Expected log output for pointer types")

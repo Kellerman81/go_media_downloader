@@ -88,6 +88,7 @@ func (e *ClassifiedError) Error() string {
 		bld.WriteString(" Error: ")
 		bld.WriteString(e.Err.Error())
 	}
+
 	// if e.Operation != "" {
 	// 	return fmt.Sprintf("[%s] %s: %v", e.Class, e.Operation, e.Err)
 	// }

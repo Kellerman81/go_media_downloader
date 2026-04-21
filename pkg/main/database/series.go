@@ -6,160 +6,162 @@ import (
 )
 
 type Serie struct {
-	Listname       string    `displayname:"Configuration List" comment:"Configuration list name"`
-	Rootpath       string    `displayname:"Storage Path"       comment:"Series storage directory"`
-	CreatedAt      time.Time `displayname:"Date Created"       comment:"Record creation timestamp"   db:"created_at"`
-	UpdatedAt      time.Time `displayname:"Last Updated"       comment:"Last modification timestamp" db:"updated_at"`
-	ID             uint      `displayname:"Series ID"          comment:"Unique series identifier"`
-	DbserieID      uint      `displayname:"Database Reference" comment:"Database series reference"   db:"dbserie_id"`
-	DontUpgrade    bool      `displayname:"Upgrades Disabled"  comment:"Disable quality upgrades"    db:"dont_upgrade"`
-	DontSearch     bool      `displayname:"Search Disabled"    comment:"Disable new searches"        db:"dont_search"`
-	SearchSpecials bool      `displayname:"Include Specials"   comment:"Include season zero"         db:"search_specials"`
-	IgnoreRuntime  bool      `displayname:"Skip Runtime Check" comment:"Skip runtime validation"     db:"ignore_runtime"`
+	Listname       string    `comment:"Configuration list name"                             displayname:"Configuration List"`
+	Rootpath       string    `comment:"Series storage directory"                            displayname:"Storage Path"`
+	Aliases        string    `comment:"Alternative series names (language/config specific)" displayname:"Alternative Names"`
+	CreatedAt      time.Time `comment:"Record creation timestamp"                           displayname:"Date Created"       db:"created_at"`
+	UpdatedAt      time.Time `comment:"Last modification timestamp"                         displayname:"Last Updated"       db:"updated_at"`
+	ID             uint      `comment:"Unique series identifier"                            displayname:"Series ID"`
+	DbserieID      uint      `comment:"Database series reference"                           displayname:"Database Reference" db:"dbserie_id"`
+	DontUpgrade    bool      `comment:"Disable quality upgrades"                            displayname:"Upgrades Disabled"  db:"dont_upgrade"`
+	DontSearch     bool      `comment:"Disable new searches"                                displayname:"Search Disabled"    db:"dont_search"`
+	SearchSpecials bool      `comment:"Include season zero"                                 displayname:"Include Specials"   db:"search_specials"`
+	IgnoreRuntime  bool      `comment:"Skip runtime validation"                             displayname:"Skip Runtime Check" db:"ignore_runtime"`
 }
 type SerieEpisode struct {
-	QualityProfile   string       `db:"quality_profile"    displayname:"Quality Settings"   comment:"Episode quality settings"`
-	Lastscan         sql.NullTime `                        displayname:"Last Scanned"       comment:"Last scan timestamp"`
-	CreatedAt        time.Time    `db:"created_at"         displayname:"Date Created"       comment:"Record creation timestamp"`
-	UpdatedAt        time.Time    `db:"updated_at"         displayname:"Last Updated"       comment:"Last modification timestamp"`
-	DbserieEpisodeID uint         `db:"dbserie_episode_id" displayname:"Episode Reference"  comment:"Database episode reference"`
-	SerieID          uint         `db:"serie_id"           displayname:"Parent Series"      comment:"Parent series reference"`
-	DbserieID        uint         `db:"dbserie_id"         displayname:"Series Reference"   comment:"Database series reference"`
-	ID               uint         `                        displayname:"Episode ID"         comment:"Unique episode identifier"`
-	Blacklisted      bool         `                        displayname:"Is Blacklisted"     comment:"Episode is blacklisted"`
-	QualityReached   bool         `db:"quality_reached"    displayname:"Quality Target Met" comment:"Target quality achieved"`
-	Missing          bool         `                        displayname:"Is Missing"         comment:"Episode is missing"`
-	DontUpgrade      bool         `db:"dont_upgrade"       displayname:"Upgrades Disabled"  comment:"Disable quality upgrades"`
-	DontSearch       bool         `db:"dont_search"        displayname:"Search Disabled"    comment:"Disable new searches"`
-	IgnoreRuntime    bool         `db:"ignore_runtime"     displayname:"Skip Runtime Check" comment:"Skip runtime validation"`
+	QualityProfile   string       `comment:"Episode quality settings"    db:"quality_profile"    displayname:"Quality Settings"`
+	Lastscan         sql.NullTime `comment:"Last scan timestamp"                                 displayname:"Last Scanned"`
+	CreatedAt        time.Time    `comment:"Record creation timestamp"   db:"created_at"         displayname:"Date Created"`
+	UpdatedAt        time.Time    `comment:"Last modification timestamp" db:"updated_at"         displayname:"Last Updated"`
+	DbserieEpisodeID uint         `comment:"Database episode reference"  db:"dbserie_episode_id" displayname:"Episode Reference"`
+	SerieID          uint         `comment:"Parent series reference"     db:"serie_id"           displayname:"Parent Series"`
+	DbserieID        uint         `comment:"Database series reference"   db:"dbserie_id"         displayname:"Series Reference"`
+	ID               uint         `comment:"Unique episode identifier"                           displayname:"Episode ID"`
+	Blacklisted      bool         `comment:"Episode is blacklisted"                              displayname:"Is Blacklisted"`
+	QualityReached   bool         `comment:"Target quality achieved"     db:"quality_reached"    displayname:"Quality Target Met"`
+	Missing          bool         `comment:"Episode is missing"                                  displayname:"Is Missing"`
+	DontUpgrade      bool         `comment:"Disable quality upgrades"    db:"dont_upgrade"       displayname:"Upgrades Disabled"`
+	DontSearch       bool         `comment:"Disable new searches"        db:"dont_search"        displayname:"Search Disabled"`
+	IgnoreRuntime    bool         `comment:"Skip runtime validation"     db:"ignore_runtime"     displayname:"Skip Runtime Check"`
 }
 type SerieFileUnmatched struct {
-	Listname    string       `displayname:"Configuration List" comment:"Configuration list name"`
-	Filepath    string       `displayname:"File Location"      comment:"Unmatched file location"`
-	ParsedData  string       `displayname:"Parse Results"      comment:"File parsing results"        db:"parsed_data"`
-	LastChecked sql.NullTime `displayname:"Last Check"         comment:"Last check timestamp"        db:"last_checked"`
-	CreatedAt   time.Time    `displayname:"Date Created"       comment:"Record creation timestamp"   db:"created_at"`
-	UpdatedAt   time.Time    `displayname:"Last Updated"       comment:"Last modification timestamp" db:"updated_at"`
-	ID          uint         `displayname:"Record ID"          comment:"Unique record identifier"`
+	Listname    string       `comment:"Configuration list name"     displayname:"Configuration List"`
+	Filepath    string       `comment:"Unmatched file location"     displayname:"File Location"`
+	ParsedData  string       `comment:"File parsing results"        displayname:"Parse Results"      db:"parsed_data"`
+	LastChecked sql.NullTime `comment:"Last check timestamp"        displayname:"Last Check"         db:"last_checked"`
+	CreatedAt   time.Time    `comment:"Record creation timestamp"   displayname:"Date Created"       db:"created_at"`
+	UpdatedAt   time.Time    `comment:"Last modification timestamp" displayname:"Last Updated"       db:"updated_at"`
+	ID          uint         `comment:"Unique record identifier"    displayname:"Record ID"`
 }
 type SerieEpisodeFile struct {
-	Location         string    `displayname:"File Path"         comment:"File storage path"`
-	Filename         string    `displayname:"File Name"         comment:"File name only"`
-	Extension        string    `displayname:"File Type"         comment:"File extension type"`
-	QualityProfile   string    `displayname:"Quality Settings"  comment:"File quality settings"       db:"quality_profile"`
-	CreatedAt        time.Time `displayname:"Date Created"      comment:"Record creation timestamp"   db:"created_at"`
-	UpdatedAt        time.Time `displayname:"Last Updated"      comment:"Last modification timestamp" db:"updated_at"`
-	ID               uint      `displayname:"File ID"           comment:"Unique file identifier"`
-	ResolutionID     uint      `displayname:"Video Resolution"  comment:"Video resolution reference"  db:"resolution_id"`
-	QualityID        uint      `displayname:"Source Quality"    comment:"Quality type reference"      db:"quality_id"`
-	CodecID          uint      `displayname:"Video Codec"       comment:"Video codec reference"       db:"codec_id"`
-	AudioID          uint      `displayname:"Audio Codec"       comment:"Audio codec reference"       db:"audio_id"`
-	SerieID          uint      `displayname:"Parent Series"     comment:"Parent series reference"     db:"serie_id"`
-	SerieEpisodeID   uint      `displayname:"Episode Link"      comment:"Episode reference"           db:"serie_episode_id"`
-	DbserieEpisodeID uint      `displayname:"Episode Reference" comment:"Database episode reference"  db:"dbserie_episode_id"`
-	DbserieID        uint      `displayname:"Series Reference"  comment:"Database series reference"   db:"dbserie_id"`
-	Height           uint16    `displayname:"Video Height"      comment:"Video height pixels"`
-	Width            uint16    `displayname:"Video Width"       comment:"Video width pixels"`
-	Proper           bool      `displayname:"Proper Release"    comment:"Proper release flag"`
-	Extended         bool      `displayname:"Extended Cut"      comment:"Extended cut flag"`
-	Repack           bool      `displayname:"Repack Release"    comment:"Repack release flag"`
+	Location         string    `comment:"File storage path"           displayname:"File Path"`
+	Filename         string    `comment:"File name only"              displayname:"File Name"`
+	Extension        string    `comment:"File extension type"         displayname:"File Type"`
+	QualityProfile   string    `comment:"File quality settings"       displayname:"Quality Settings"  db:"quality_profile"`
+	CreatedAt        time.Time `comment:"Record creation timestamp"   displayname:"Date Created"      db:"created_at"`
+	UpdatedAt        time.Time `comment:"Last modification timestamp" displayname:"Last Updated"      db:"updated_at"`
+	ID               uint      `comment:"Unique file identifier"      displayname:"File ID"`
+	ResolutionID     uint      `comment:"Video resolution reference"  displayname:"Video Resolution"  db:"resolution_id"`
+	QualityID        uint      `comment:"Quality type reference"      displayname:"Source Quality"    db:"quality_id"`
+	CodecID          uint      `comment:"Video codec reference"       displayname:"Video Codec"       db:"codec_id"`
+	AudioID          uint      `comment:"Audio codec reference"       displayname:"Audio Codec"       db:"audio_id"`
+	SerieID          uint      `comment:"Parent series reference"     displayname:"Parent Series"     db:"serie_id"`
+	SerieEpisodeID   uint      `comment:"Episode reference"           displayname:"Episode Link"      db:"serie_episode_id"`
+	DbserieEpisodeID uint      `comment:"Database episode reference"  displayname:"Episode Reference" db:"dbserie_episode_id"`
+	DbserieID        uint      `comment:"Database series reference"   displayname:"Series Reference"  db:"dbserie_id"`
+	Height           uint16    `comment:"Video height pixels"         displayname:"Video Height"`
+	Width            uint16    `comment:"Video width pixels"          displayname:"Video Width"`
+	Proper           bool      `comment:"Proper release flag"         displayname:"Proper Release"`
+	Extended         bool      `comment:"Extended cut flag"           displayname:"Extended Cut"`
+	Repack           bool      `comment:"Repack release flag"         displayname:"Repack Release"`
 }
 type SerieEpisodeHistory struct {
-	Title            string    `displayname:"Release Title"     comment:"Release title name"`
-	URL              string    `displayname:"Download URL"      comment:"Download source URL"`
-	Indexer          string    `displayname:"Source Indexer"    comment:"Source indexer name"`
-	SerieType        string    `displayname:"Media Type"        comment:"Series category type"          db:"type"`
-	Target           string    `displayname:"Target Path"       comment:"Download target path"`
-	QualityProfile   string    `displayname:"Quality Settings"  comment:"Quality settings used"         db:"quality_profile"`
-	CreatedAt        time.Time `displayname:"Date Created"      comment:"Record creation timestamp"     db:"created_at"`
-	UpdatedAt        time.Time `displayname:"Last Updated"      comment:"Last modification timestamp"   db:"updated_at"`
-	DownloadedAt     time.Time `displayname:"Download Date"     comment:"Download completion timestamp" db:"downloaded_at"`
-	ID               uint      `displayname:"History ID"        comment:"Unique history identifier"`
-	ResolutionID     uint      `displayname:"Video Resolution"  comment:"Video resolution reference"    db:"resolution_id"`
-	QualityID        uint      `displayname:"Source Quality"    comment:"Quality type reference"        db:"quality_id"`
-	CodecID          uint      `displayname:"Video Codec"       comment:"Video codec reference"         db:"codec_id"`
-	AudioID          uint      `displayname:"Audio Codec"       comment:"Audio codec reference"         db:"audio_id"`
-	SerieID          uint      `displayname:"Parent Series"     comment:"Parent series reference"       db:"serie_id"`
-	SerieEpisodeID   uint      `displayname:"Episode Link"      comment:"Episode reference"             db:"serie_episode_id"`
-	DbserieEpisodeID uint      `displayname:"Episode Reference" comment:"Database episode reference"    db:"dbserie_episode_id"`
-	DbserieID        uint      `displayname:"Series Reference"  comment:"Database series reference"     db:"dbserie_id"`
-	Blacklisted      bool      `displayname:"Is Blacklisted"    comment:"Entry is blacklisted"`
+	Title            string    `comment:"Release title name"            displayname:"Release Title"`
+	URL              string    `comment:"Download source URL"           displayname:"Download URL"`
+	Indexer          string    `comment:"Source indexer name"           displayname:"Source Indexer"`
+	SerieType        string    `comment:"Series category type"          displayname:"Media Type"        db:"type"`
+	Target           string    `comment:"Download target path"          displayname:"Target Path"`
+	QualityProfile   string    `comment:"Quality settings used"         displayname:"Quality Settings"  db:"quality_profile"`
+	CreatedAt        time.Time `comment:"Record creation timestamp"     displayname:"Date Created"      db:"created_at"`
+	UpdatedAt        time.Time `comment:"Last modification timestamp"   displayname:"Last Updated"      db:"updated_at"`
+	DownloadedAt     time.Time `comment:"Download completion timestamp" displayname:"Download Date"     db:"downloaded_at"`
+	ID               uint      `comment:"Unique history identifier"     displayname:"History ID"`
+	ResolutionID     uint      `comment:"Video resolution reference"    displayname:"Video Resolution"  db:"resolution_id"`
+	QualityID        uint      `comment:"Quality type reference"        displayname:"Source Quality"    db:"quality_id"`
+	CodecID          uint      `comment:"Video codec reference"         displayname:"Video Codec"       db:"codec_id"`
+	AudioID          uint      `comment:"Audio codec reference"         displayname:"Audio Codec"       db:"audio_id"`
+	SerieID          uint      `comment:"Parent series reference"       displayname:"Parent Series"     db:"serie_id"`
+	SerieEpisodeID   uint      `comment:"Episode reference"             displayname:"Episode Link"      db:"serie_episode_id"`
+	DbserieEpisodeID uint      `comment:"Database episode reference"    displayname:"Episode Reference" db:"dbserie_episode_id"`
+	DbserieID        uint      `comment:"Database series reference"     displayname:"Series Reference"  db:"dbserie_id"`
+	Blacklisted      bool      `comment:"Entry is blacklisted"          displayname:"Is Blacklisted"`
 }
 
 type ResultSeries struct {
 	Dbserie
-	Listname  string `displayname:"Configuration List" comment:"Configuration list name"`
-	Rootpath  string `displayname:"Storage Path"       comment:"Series storage directory"`
-	DbserieID uint   `displayname:"Series Reference"   comment:"Database series reference" db:"dbserie_id"`
+	Listname  string `comment:"Configuration list name"   displayname:"Configuration List"`
+	Rootpath  string `comment:"Series storage directory"  displayname:"Storage Path"`
+	Aliases   string `comment:"Alternative series names"  displayname:"Alternative Names"`
+	DbserieID uint   `comment:"Database series reference" displayname:"Series Reference"   db:"dbserie_id"`
 }
 type Dbserie struct {
-	Seriename       string    `displayname:"Series Title"        comment:"Primary series title"`
-	Aliases         string    `displayname:"Alternative Names"   comment:"Alternative series names"`
-	Season          string    `displayname:"Current Season"      comment:"Current season info"`
-	Status          string    `displayname:"Airing Status"       comment:"Series airing status"`
-	Firstaired      string    `displayname:"First Air Date"      comment:"Original air date"`
-	Network         string    `displayname:"TV Network"          comment:"Broadcasting network name"`
-	Runtime         string    `displayname:"Episode Runtime"     comment:"Episode duration minutes"`
-	Language        string    `displayname:"Primary Language"    comment:"Primary series language"`
-	Genre           string    `displayname:"Genre Category"      comment:"Series genre classification"`
-	Overview        string    `displayname:"Plot Summary"        comment:"Series plot summary"`
-	Rating          string    `displayname:"Content Rating"      comment:"Content rating level"`
-	Siterating      string    `displayname:"User Rating"         comment:"External site rating"`
-	SiteratingCount string    `displayname:"Rating Votes"        comment:"Rating vote count"             db:"siterating_count"`
-	Slug            string    `displayname:"URL Slug"            comment:"URL friendly identifier"`
-	ImdbID          string    `displayname:"IMDB Identifier"     comment:"IMDB database identifier"      db:"imdb_id"`
-	FreebaseMID     string    `displayname:"Freebase Machine ID" comment:"Freebase machine identifier"   db:"freebase_m_id"`
-	FreebaseID      string    `displayname:"Freebase Identifier" comment:"Freebase database identifier"  db:"freebase_id"`
-	Facebook        string    `displayname:"Facebook Page"       comment:"Facebook page URL"`
-	Instagram       string    `displayname:"Instagram Profile"   comment:"Instagram profile URL"`
-	Twitter         string    `displayname:"Twitter Profile"     comment:"Twitter profile URL"`
-	Banner          string    `displayname:"Banner Image"        comment:"Series banner image"`
-	Poster          string    `displayname:"Poster Image"        comment:"Series poster image"`
-	Fanart          string    `displayname:"Fanart Image"        comment:"Series fanart image"`
-	Identifiedby    string    `displayname:"ID Method"           comment:"Episode identification method"`
-	CreatedAt       time.Time `displayname:"Date Created"        comment:"Record creation timestamp"     db:"created_at"`
-	UpdatedAt       time.Time `displayname:"Last Updated"        comment:"Last modification timestamp"   db:"updated_at"`
-	TraktID         int       `displayname:"Trakt Identifier"    comment:"Trakt database identifier"     db:"trakt_id"`
-	ThetvdbID       int       `displayname:"TVDB Identifier"     comment:"TheTVDB database identifier"   db:"thetvdb_id"`
-	TvrageID        int       `displayname:"TVRage Identifier"   comment:"TVRage database identifier"    db:"tvrage_id"`
-	ID              uint      `displayname:"Series ID"           comment:"Unique series identifier"`
+	Seriename       string    `comment:"Primary series title"          displayname:"Series Title"`
+	Season          string    `comment:"Current season info"           displayname:"Current Season"`
+	Status          string    `comment:"Series airing status"          displayname:"Airing Status"`
+	Firstaired      string    `comment:"Original air date"             displayname:"First Air Date"`
+	Network         string    `comment:"Broadcasting network name"     displayname:"TV Network"`
+	Runtime         string    `comment:"Episode duration minutes"      displayname:"Episode Runtime"`
+	Language        string    `comment:"Primary series language"       displayname:"Primary Language"`
+	Genre           string    `comment:"Series genre classification"   displayname:"Genre Category"`
+	Overview        string    `comment:"Series plot summary"           displayname:"Plot Summary"`
+	Rating          string    `comment:"Content rating level"          displayname:"Content Rating"`
+	Siterating      string    `comment:"External site rating"          displayname:"User Rating"`
+	SiteratingCount string    `comment:"Rating vote count"             displayname:"Rating Votes"        db:"siterating_count"`
+	Slug            string    `comment:"URL friendly identifier"       displayname:"URL Slug"`
+	ImdbID          string    `comment:"IMDB database identifier"      displayname:"IMDB Identifier"     db:"imdb_id"`
+	FreebaseMID     string    `comment:"Freebase machine identifier"   displayname:"Freebase Machine ID" db:"freebase_m_id"`
+	FreebaseID      string    `comment:"Freebase database identifier"  displayname:"Freebase Identifier" db:"freebase_id"`
+	Facebook        string    `comment:"Facebook page URL"             displayname:"Facebook Page"`
+	Instagram       string    `comment:"Instagram profile URL"         displayname:"Instagram Profile"`
+	Twitter         string    `comment:"Twitter profile URL"           displayname:"Twitter Profile"`
+	Banner          string    `comment:"Series banner image"           displayname:"Banner Image"`
+	Poster          string    `comment:"Series poster image"           displayname:"Poster Image"`
+	Fanart          string    `comment:"Series fanart image"           displayname:"Fanart Image"`
+	Identifiedby    string    `comment:"Episode identification method" displayname:"ID Method"`
+	CreatedAt       time.Time `comment:"Record creation timestamp"     displayname:"Date Created"        db:"created_at"`
+	UpdatedAt       time.Time `comment:"Last modification timestamp"   displayname:"Last Updated"        db:"updated_at"`
+	TraktID         int       `comment:"Trakt database identifier"     displayname:"Trakt Identifier"    db:"trakt_id"`
+	ThetvdbID       int       `comment:"TheTVDB database identifier"   displayname:"TVDB Identifier"     db:"thetvdb_id"`
+	TvrageID        int       `comment:"TVRage database identifier"    displayname:"TVRage Identifier"   db:"tvrage_id"`
+	ID              uint      `comment:"Unique series identifier"      displayname:"Series ID"`
 }
 
 type DbserieAlternate struct {
-	Title     string    `displayname:"Alternative Title" comment:"Alternative series title"`
-	Slug      string    `displayname:"URL Slug"          comment:"URL friendly identifier"`
-	Region    string    `displayname:"Regional Code"     comment:"Title regional variant"`
-	CreatedAt time.Time `displayname:"Date Created"      comment:"Record creation timestamp"   db:"created_at"`
-	UpdatedAt time.Time `displayname:"Last Updated"      comment:"Last modification timestamp" db:"updated_at"`
-	ID        uint      `displayname:"Alternate ID"      comment:"Unique alternate identifier"`
-	DbserieID uint      `displayname:"Series Reference"  comment:"Parent series reference"     db:"dbserie_id"`
+	Title     string    `comment:"Alternative series title"    displayname:"Alternative Title"`
+	Slug      string    `comment:"URL friendly identifier"     displayname:"URL Slug"`
+	Region    string    `comment:"Title regional variant"      displayname:"Regional Code"`
+	CreatedAt time.Time `comment:"Record creation timestamp"   displayname:"Date Created"      db:"created_at"`
+	UpdatedAt time.Time `comment:"Last modification timestamp" displayname:"Last Updated"      db:"updated_at"`
+	ID        uint      `comment:"Unique alternate identifier" displayname:"Alternate ID"`
+	DbserieID uint      `comment:"Parent series reference"     displayname:"Series Reference"  db:"dbserie_id"`
 }
 
 type ResultSerieEpisodes struct {
 	DbserieEpisode
-	Listname         string       `displayname:"Configuration List" comment:"Configuration list name"`
-	Rootpath         string       `displayname:"Storage Path"       comment:"Series storage directory"`
-	QualityProfile   string       `displayname:"Quality Settings"   comment:"Episode quality settings"   db:"quality_profile"`
-	Lastscan         sql.NullTime `displayname:"Last Scanned"       comment:"Last scan timestamp"`
-	DbserieEpisodeID uint         `displayname:"Episode Reference"  comment:"Database episode reference" db:"dbserie_episode_id"`
-	Blacklisted      bool         `displayname:"Is Blacklisted"     comment:"Episode is blacklisted"`
-	QualityReached   bool         `displayname:"Quality Target Met" comment:"Target quality achieved"    db:"quality_reached"`
-	Missing          bool         `displayname:"Is Missing"         comment:"Episode is missing"`
+	Listname         string       `comment:"Configuration list name"    displayname:"Configuration List"`
+	Rootpath         string       `comment:"Series storage directory"   displayname:"Storage Path"`
+	QualityProfile   string       `comment:"Episode quality settings"   displayname:"Quality Settings"   db:"quality_profile"`
+	Lastscan         sql.NullTime `comment:"Last scan timestamp"        displayname:"Last Scanned"`
+	DbserieEpisodeID uint         `comment:"Database episode reference" displayname:"Episode Reference"  db:"dbserie_episode_id"`
+	Blacklisted      bool         `comment:"Episode is blacklisted"     displayname:"Is Blacklisted"`
+	QualityReached   bool         `comment:"Target quality achieved"    displayname:"Quality Target Met" db:"quality_reached"`
+	Missing          bool         `comment:"Episode is missing"         displayname:"Is Missing"`
 }
 
 type DbserieEpisode struct {
-	Episode    string       `displayname:"Episode Number"     comment:"Episode number identifier"`
-	Season     string       `displayname:"Season Number"      comment:"Season number identifier"`
-	Identifier string       `displayname:"Episode Identifier" comment:"Unique episode identifier"`
-	Title      string       `displayname:"Episode Title"      comment:"Episode title name"`
-	Overview   string       `displayname:"Episode Summary"    comment:"Episode plot summary"`
-	Poster     string       `displayname:"Episode Poster"     comment:"Episode poster image"`
-	FirstAired sql.NullTime `displayname:"Original Air Date"  comment:"Original air date"           db:"first_aired" json:"first_aired" time_format:"2006-01-02" time_utc:"1"`
-	CreatedAt  time.Time    `displayname:"Date Created"       comment:"Record creation timestamp"   db:"created_at"`
-	UpdatedAt  time.Time    `displayname:"Last Updated"       comment:"Last modification timestamp" db:"updated_at"`
-	Runtime    int          `displayname:"Episode Duration"   comment:"Episode duration minutes"`
-	ID         uint         `displayname:"Episode ID"         comment:"Unique episode identifier"`
-	DbserieID  uint         `displayname:"Series Reference"   comment:"Parent series reference"     db:"dbserie_id"`
+	Episode         string       `comment:"Episode number identifier"   displayname:"Episode Number"`
+	Season          string       `comment:"Season number identifier"    displayname:"Season Number"`
+	Identifier      string       `comment:"Unique episode identifier"   displayname:"Episode Identifier"`
+	Title           string       `comment:"Episode title name"          displayname:"Episode Title"`
+	Overview        string       `comment:"Episode plot summary"        displayname:"Episode Summary"`
+	Poster          string       `comment:"Episode poster image"        displayname:"Episode Poster"`
+	FirstAired      sql.NullTime `comment:"Original air date"           displayname:"Original Air Date"  db:"first_aired"      json:"first_aired" time_format:"2006-01-02" time_utc:"1"`
+	CreatedAt       time.Time    `comment:"Record creation timestamp"   displayname:"Date Created"       db:"created_at"`
+	UpdatedAt       time.Time    `comment:"Last modification timestamp" displayname:"Last Updated"       db:"updated_at"`
+	Runtime         int          `comment:"Episode duration minutes"    displayname:"Episode Duration"`
+	AbsoluteEpisode int          `comment:"Absolute episode number"     displayname:"Absolute Episode"   db:"absolute_episode"`
+	ID              uint         `comment:"Unique episode identifier"   displayname:"Episode ID"`
+	DbserieID       uint         `comment:"Parent series reference"     displayname:"Series Reference"   db:"dbserie_id"`
 }
 
 // GetDbserieByIDP retrieves a Dbserie by ID. It takes a uint ID
@@ -169,7 +171,7 @@ type DbserieEpisode struct {
 // Returns an error if there was a problem retrieving the data.
 func (s *Dbserie) GetDbserieByIDP(id *uint) error {
 	return structscan1(
-		"select id,created_at,updated_at,seriename,aliases,season,status,firstaired,network,runtime,language,genre,overview,rating,siterating,siterating_count,slug,imdb_id,thetvdb_id,freebase_m_id,freebase_id,tvrage_id,facebook,instagram,twitter,banner,poster,fanart,identifiedby, trakt_id from dbseries where id = ?",
+		"select id,created_at,updated_at,seriename,season,status,firstaired,network,runtime,language,genre,overview,rating,siterating,siterating_count,slug,imdb_id,thetvdb_id,freebase_m_id,freebase_id,tvrage_id,facebook,instagram,twitter,banner,poster,fanart,identifiedby, trakt_id from dbseries where id = ?",
 		s,
 		id,
 	)
@@ -195,7 +197,7 @@ func (u *DbserieEpisode) GetDbserieEpisodesByIDP(id *uint) error {
 // Returns an error if there was a problem retrieving the data.
 func (u *Serie) GetSerieByIDP(id *uint) error {
 	return structscan1(
-		"select id,created_at,updated_at,listname,rootpath,dbserie_id,dont_upgrade,dont_search from series where id = ?",
+		"select id,created_at,updated_at,listname,rootpath,aliases,dbserie_id,dont_upgrade,dont_search from series where id = ?",
 		u,
 		id,
 	)
@@ -212,4 +214,58 @@ func (u *SerieEpisode) GetSerieEpisodesByIDP(id *uint) error {
 		u,
 		id,
 	)
+}
+
+// InsertEpisodeFile inserts an episode file record into the database.
+func InsertEpisodeFile(
+	serieEpisodeID uint,
+	location, filename, extension string,
+	resolutionID, qualityID, codecID, audioID uint,
+) error {
+	if serieEpisodeID == 0 {
+		return nil
+	}
+
+	var (
+		proper, repack, extended             bool
+		serieID, dbserieID, dbserieEpisodeID uint
+		height, width                        int
+		qualityProfile                       string
+	)
+
+	// Get related IDs from serie_episode
+
+	Scanrowsdyn(
+		false,
+		"SELECT serie_id, dbserie_id, dbserie_episode_id FROM serie_episodes WHERE id = ?",
+		&serieID,
+		&serieEpisodeID,
+	)
+	Scanrowsdyn(false, "SELECT dbserie_id, dbserie_episode_id FROM serie_episodes WHERE id = ?",
+		&dbserieID, &serieEpisodeID)
+	Scanrowsdyn(false, "SELECT dbserie_episode_id FROM serie_episodes WHERE id = ?",
+		&dbserieEpisodeID, &serieEpisodeID)
+
+	ExecN(
+		"insert into serie_episode_files (location, filename, extension, quality_profile, resolution_id, quality_id, codec_id, audio_id, proper, repack, extended, serie_id, serie_episode_id, dbserie_episode_id, dbserie_id, height, width) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		&location,
+		&filename,
+		&extension,
+		&qualityProfile,
+		&resolutionID,
+		&qualityID,
+		&codecID,
+		&audioID,
+		&proper,
+		&repack,
+		&extended,
+		&serieID,
+		&serieEpisodeID,
+		&dbserieEpisodeID,
+		&dbserieID,
+		&height,
+		&width,
+	)
+
+	return nil
 }

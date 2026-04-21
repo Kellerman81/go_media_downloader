@@ -31,8 +31,10 @@ func SendToRtorrent(
 		if err == nil {
 			return nil
 		}
+
 		// Fall through to legacy client on error
 	}
+
 	// cl := rtorrent.New(hostname, insecure)
 
 	// return cl.Add(urlv, rtorrent.DBasePath.SetValue(dlpath), rtorrent.DName.SetValue(name))

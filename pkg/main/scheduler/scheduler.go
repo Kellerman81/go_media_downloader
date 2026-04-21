@@ -8,6 +8,9 @@ import (
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/mediatype"
+	_ "github.com/Kellerman81/go_media_downloader/pkg/main/mediatype/movies" // Register movie handler
+	_ "github.com/Kellerman81/go_media_downloader/pkg/main/mediatype/series" // Register series handler
 	"github.com/Kellerman81/go_media_downloader/pkg/main/utils"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/worker"
 )
@@ -37,13 +40,9 @@ func InitScheduler() {
 	utils.LoadSchedulerConfig()
 	config.RangeSettingsMedia(func(_ string, cfgp *config.MediaTypeConfig) error {
 		name := cfgp.Name
+		groupnamestr := mediatype.GetCategoryName(cfgp.IsType)
 
-		groupnamestr := logger.StrSeries
-		if !cfgp.Useseries {
-			groupnamestr = logger.StrMovie
-		}
-
-		for _, str := range []string{"refreshseriesfull", "refreshseriesinc", "refreshmoviesfull", "refreshmoviesinc", logger.StrSearchMissingInc, logger.StrSearchMissingFull, logger.StrSearchUpgradeInc, logger.StrSearchUpgradeFull, logger.StrSearchMissingIncTitle, logger.StrSearchMissingFullTitle, logger.StrSearchUpgradeIncTitle, logger.StrSearchUpgradeFullTitle, logger.StrRss, logger.StrDataFull, logger.StrStructure, logger.StrFeeds, logger.StrCheckMissing, logger.StrCheckMissingFlag, logger.StrUpgradeFlag, logger.StrRssSeasons, logger.StrRssSeasonsAll} {
+		for _, str := range []string{"refreshseriesfull", "refreshseriesinc", "refreshmoviesfull", "refreshmoviesinc", logger.StrSearchMissingInc, logger.StrSearchMissingFull, logger.StrSearchUpgradeInc, logger.StrSearchUpgradeFull, logger.StrSearchMissingIncTitle, logger.StrSearchMissingFullTitle, logger.StrSearchUpgradeIncTitle, logger.StrSearchUpgradeFullTitle, logger.StrRss, logger.StrDataFull, logger.StrStructure, logger.StrFeeds, logger.StrCheckMissing, logger.StrCheckMissingFlag, logger.StrUpgradeFlag, logger.StrRssSeasons, logger.StrRssSeasonsAll, logger.StrRssArtists, logger.StrRssArtistsUpgrade, logger.StrRssAuthors, logger.StrRssAuthorsUpgrade} {
 			var (
 				usequeuename         string
 				intervalstr, cronstr string
@@ -64,7 +63,11 @@ func InitScheduler() {
 				usequeuename = "Feeds"
 			case logger.StrRss,
 				logger.StrRssSeasons,
-				logger.StrRssSeasonsAll:
+				logger.StrRssSeasonsAll,
+				logger.StrRssArtists,
+				logger.StrRssArtistsUpgrade,
+				logger.StrRssAuthors,
+				logger.StrRssAuthorsUpgrade:
 				usequeuename = "RSS"
 			default:
 				usequeuename = "Search"
@@ -168,17 +171,16 @@ func InitScheduler() {
 				intervalstr = cfgp.CfgScheduler.IntervalScanDataFlags
 				cronstr = cfgp.CfgScheduler.CronScanDataFlags
 
-			case logger.StrRssSeasons:
-				if !cfgp.Useseries {
-					intervalstr = cfgp.CfgScheduler.IntervalIndexerRssSeasons
-					cronstr = cfgp.CfgScheduler.CronIndexerRssSeasons
-				}
+			case logger.StrRssSeasons, logger.StrRssSeasonsAll:
+				intervalstr, cronstr = mediatype.Get(cfgp.IsType).
+					GetSchedulerRssSeasons(cfgp.CfgScheduler, str)
 
-			case logger.StrRssSeasonsAll:
-				if !cfgp.Useseries {
-					intervalstr = cfgp.CfgScheduler.IntervalIndexerRssSeasonsAll
-					cronstr = cfgp.CfgScheduler.CronIndexerRssSeasonsAll
-				}
+			case logger.StrRssArtists,
+				logger.StrRssArtistsUpgrade,
+				logger.StrRssAuthors,
+				logger.StrRssAuthorsUpgrade:
+				intervalstr, cronstr = mediatype.Get(cfgp.IsType).
+					GetSchedulerRssArtistsAuthors(cfgp.CfgScheduler, str)
 
 			default:
 				continue
@@ -290,12 +292,14 @@ func schedulerdispatch(
 		}
 	}
 
-	if cronstr != "" {
-		err := worker.DispatchCron(cfgpstr, cronstr, name, queue, jobname)
-		if err != nil {
-			logger.Logtype("error", 0).Err(err).Str("name", name).Msg("Cron")
-		} else {
-			logger.Logtype("debug", 0).Str("name", name).Msg("Cron added")
-		}
+	if cronstr == "" {
+		return
+	}
+
+	err := worker.DispatchCron(cfgpstr, cronstr, name, queue, jobname)
+	if err != nil {
+		logger.Logtype("error", 0).Err(err).Str("name", name).Msg("Cron")
+	} else {
+		logger.Logtype("debug", 0).Str("name", name).Msg("Cron added")
 	}
 }

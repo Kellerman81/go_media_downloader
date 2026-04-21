@@ -50,7 +50,7 @@ const (
 	decimalBase = 10
 	trueValue   = "true"
 
-	// HTML attributes.
+	// AttrHxTarget is the HTMX attribute for specifying the target element.
 	AttrHxTarget         = "hx-target"
 	AttrHxPost           = "hx-post"
 	AttrHxHeaders        = "hx-headers"
@@ -64,17 +64,17 @@ const (
 	AttrHxPatch          = "hx-patch"
 	AttrHxPut            = "hx-put"
 
-	// Action icons.
+	// IconTimes is the FontAwesome CSS class for the close/times icon.
 	IconTimes = "fas fa-times"
 
-	// System icons.
+	// IconCog is the FontAwesome CSS class for the settings/cog icon.
 	IconCog = "fas fa-cog"
 
-	// Data icons.
+	// IconList is the FontAwesome CSS class for the list icon.
 	IconList         = "fas fa-list"
 	IconCalendarDays = "fas fa-calendar-days"
 
-	// Additional FontAwesome icons.
+	// IconFont is the FontAwesome CSS class for the font icon.
 	IconFont       = "fas fa-font"
 	IconHashtag    = "fas fa-hashtag"
 	IconToggleOn   = "fas fa-toggle-on"
@@ -389,6 +389,11 @@ func renderSchedulerGrid() gomponents.Node {
 		})
 	}
 
+	// Sort by job name
+	slices.SortFunc(schedulerData, func(a, b map[string]any) int {
+		return strings.Compare(a["job"].(string), b["job"].(string))
+	})
+
 	var rows []gomponents.Node
 	for _, item := range schedulerData {
 		isRunning := item["isrunning"].(bool)
@@ -398,6 +403,7 @@ func renderSchedulerGrid() gomponents.Node {
 				if isRunning {
 					return "#28a745"
 				}
+
 				return "#6c757d"
 			}()+"; transition: all 0.2s;"),
 			html.Td(
@@ -713,6 +719,7 @@ func renderStatsGrid() gomponents.Node {
 				if typ == "movies" {
 					return "#007bff"
 				}
+
 				return "#28a745"
 			}()+"; transition: all 0.2s;"),
 			html.Td(
@@ -996,6 +1003,7 @@ func renderTableEditForm(
 		if displayName, exists := columnMap[fieldName]; exists {
 			return displayName
 		}
+
 		// Fallback to formatted field name
 		parts := strings.Split(fieldName, "_")
 
@@ -1547,6 +1555,7 @@ func renderCustomFilters(tableName string) gomponents.Node {
 			for _, qc := range qualityConfigs {
 				qualoptions = append(qualoptions, createOption(qc.Name, qc.Name, false))
 			}
+
 			// var listoptions []gomponents.Node
 			// listoptions = append(listoptions, html.Class("form-control custom-filter"))
 			// listoptions = append(listoptions, html.ID("filter-listname"))
@@ -1775,7 +1784,7 @@ func renderTable(tableInfo *TableInfo, csrfToken string) gomponents.Node {
 		)
 
 		// Extract the alias from "table.column as alias" format for display
-		var columnAlias string = col.Name
+		columnAlias := col.Name
 		if strings.Contains(strings.ToLower(col.Name), " as ") {
 			parts := strings.Split(col.Name, " as ")
 			if len(parts) == 2 {
@@ -1810,6 +1819,7 @@ func renderTable(tableInfo *TableInfo, csrfToken string) gomponents.Node {
 		o = append(o, Mdata{Mdata: col.Name})
 		// footer = append(footer, html.Th(html.Role("columnfooter"), html.Input(html.Type("text"), html.Name("search_"+col.Name), html.Value("Search "+col.Name), html.Class("search_init"))))
 	}
+
 	// Add Actions column header
 	header = append(
 		header,
@@ -1825,7 +1835,7 @@ func renderTable(tableInfo *TableInfo, csrfToken string) gomponents.Node {
 
 	// For DataTables 1.13 with server-side processing, we don't need aoColumns
 	// The server already knows the column structure and returns data correctly
-	var columnsStr string = "" // Empty - no aoColumns configuration needed
+	columnsStr := "" // Empty - no aoColumns configuration needed
 
 	return gomponents.Group(
 		[]gomponents.Node{
@@ -1918,6 +1928,35 @@ func renderTable(tableInfo *TableInfo, csrfToken string) gomponents.Node {
 											buttons += '<button class="btn-action-metadata-refresh" data-id="' + id + '" data-type="movie" title="Refresh Metadata"><i class="fa fa-sync"></i></button>';
 										} else if (tableName === 'dbseries') {
 											buttons += '<button class="btn-action-metadata-refresh" data-id="' + id + '" data-type="serie" title="Refresh Metadata"><i class="fa fa-sync"></i></button>';
+										} else if (tableName === 'dbalbums') {
+											buttons += '<button class="btn-action-metadata-refresh" data-id="' + id + '" data-type="album" title="Refresh Metadata"><i class="fa fa-sync"></i></button>';
+										} else if (tableName === 'dbaudiobooks') {
+											buttons += '<button class="btn-action-metadata-refresh" data-id="' + id + '" data-type="audiobook" title="Refresh Metadata"><i class="fa fa-sync"></i></button>';
+										} else if (tableName === 'dbbooks') {
+											buttons += '<button class="btn-action-metadata-refresh" data-id="' + id + '" data-type="book" title="Refresh Metadata"><i class="fa fa-sync"></i></button>';
+										} else if (tableName === 'albums') {
+											buttons += '<button class="btn-action-files" data-id="' + id + '" title="View Files"><i class="fa fa-file"></i></button>' +
+												'<button class="btn-action-search-list" data-id="' + id + '" data-media="music" title="Search List"><i class="fa fa-search-plus"></i></button>';
+										} else if (tableName === 'audiobooks') {
+											buttons += '<button class="btn-action-files" data-id="' + id + '" title="View Files"><i class="fa fa-file"></i></button>' +
+												'<button class="btn-action-search-list" data-id="' + id + '" data-media="audiobooks" title="Search List"><i class="fa fa-search-plus"></i></button>';
+										} else if (tableName === 'books') {
+											buttons += '<button class="btn-action-files" data-id="' + id + '" title="View Files"><i class="fa fa-file"></i></button>' +
+												'<button class="btn-action-search-list" data-id="' + id + '" data-media="books" title="Search List"><i class="fa fa-search-plus"></i></button>';
+										} else if (tableName === 'dbartists') {
+											buttons += '<button class="btn-action-list-sub" data-id="' + id + '" data-target="albums" data-filter="dbartist_id" title="View Albums"><i class="fa fa-list"></i></button>';
+										} else if (tableName === 'artists') {
+											buttons += '<button class="btn-action-list-sub" data-id="' + id + '" data-target="albums" data-filter="artist_id" title="View Albums"><i class="fa fa-list"></i></button>' +
+												'<button class="btn-action-search-artist" data-id="' + id + '" data-media="music" data-endpoint="artists" title="Search Missing Albums"><i class="fa fa-search"></i></button>' +
+												'<button class="btn-action-discover-series" data-id="' + id + '" title="Discover Series Albums"><i class="fa fa-layer-group"></i></button>';
+										} else if (tableName === 'dbauthors') {
+											buttons += '<button class="btn-action-list-sub" data-id="' + id + '" data-target="books" data-filter="dbauthor_id" title="View Books"><i class="fa fa-list"></i></button>' +
+												'<button class="btn-action-list-sub" data-id="' + id + '" data-target="audiobooks" data-filter="author_id" title="View Audiobooks"><i class="fa fa-list"></i></button>';
+										} else if (tableName === 'authors') {
+											buttons += '<button class="btn-action-list-sub" data-id="' + id + '" data-target="books" data-filter="author_id" title="View Books"><i class="fa fa-list"></i></button>' +
+												'<button class="btn-action-list-sub" data-id="' + id + '" data-target="audiobooks" data-filter="author_id" title="View Audiobooks"><i class="fa fa-list"></i></button>' +
+												'<button class="btn-action-search-artist" data-id="' + id + '" data-media="books" data-endpoint="authors" title="Search Missing Books"><i class="fa fa-search"></i></button>' +
+												'<button class="btn-action-search-artist" data-id="' + id + '" data-media="audiobooks" data-endpoint="authors" title="Search Missing Audiobooks"><i class="fa fa-search-plus"></i></button>';
 										}
 
 										buttons += '</div>';
@@ -1943,7 +1982,21 @@ func renderTable(tableInfo *TableInfo, csrfToken string) gomponents.Node {
 											'dbserie_id': 'dbseries',
 											'serie_id': 'series',
 											'serie_episode_id': 'serie_episodes',
-											'dbserie_episode_id': 'dbserie_episodes'
+											'dbserie_episode_id': 'dbserie_episodes',
+											'dbbook_id': 'dbbooks',
+											'book_id': 'books',
+											'dbauthor_id': 'dbauthors',
+											'author_id': 'authors',
+											'dbbook_series_id': 'dbbook_series',
+											'book_series_id': 'book_series',
+											'dbaudiobook_id': 'dbaudiobooks',
+											'audiobook_id': 'audiobooks',
+											'dbnarrator_id': 'dbnarrators',
+											'dbalbum_id': 'dbalbums',
+											'album_id': 'albums',
+											'dbartist_id': 'dbartists',
+											'artist_id': 'artists',
+											'dbtrack_id': 'dbtracks'
 										};
 
 										// Check if this column is an ID column that should be a link
@@ -2034,6 +2087,35 @@ func renderTable(tableInfo *TableInfo, csrfToken string) gomponents.Node {
 											buttons += '<button class="btn-action-metadata-refresh" data-id="' + id + '" data-type="movie" title="Refresh Metadata"><i class="fa fa-sync"></i></button>';
 										} else if (tableName === 'dbseries') {
 											buttons += '<button class="btn-action-metadata-refresh" data-id="' + id + '" data-type="serie" title="Refresh Metadata"><i class="fa fa-sync"></i></button>';
+										} else if (tableName === 'dbalbums') {
+											buttons += '<button class="btn-action-metadata-refresh" data-id="' + id + '" data-type="album" title="Refresh Metadata"><i class="fa fa-sync"></i></button>';
+										} else if (tableName === 'dbaudiobooks') {
+											buttons += '<button class="btn-action-metadata-refresh" data-id="' + id + '" data-type="audiobook" title="Refresh Metadata"><i class="fa fa-sync"></i></button>';
+										} else if (tableName === 'dbbooks') {
+											buttons += '<button class="btn-action-metadata-refresh" data-id="' + id + '" data-type="book" title="Refresh Metadata"><i class="fa fa-sync"></i></button>';
+										} else if (tableName === 'albums') {
+											buttons += '<button class="btn-action-files" data-id="' + id + '" title="View Files"><i class="fa fa-file"></i></button>' +
+												'<button class="btn-action-search-list" data-id="' + id + '" data-media="music" title="Search List"><i class="fa fa-search-plus"></i></button>';
+										} else if (tableName === 'audiobooks') {
+											buttons += '<button class="btn-action-files" data-id="' + id + '" title="View Files"><i class="fa fa-file"></i></button>' +
+												'<button class="btn-action-search-list" data-id="' + id + '" data-media="audiobooks" title="Search List"><i class="fa fa-search-plus"></i></button>';
+										} else if (tableName === 'books') {
+											buttons += '<button class="btn-action-files" data-id="' + id + '" title="View Files"><i class="fa fa-file"></i></button>' +
+												'<button class="btn-action-search-list" data-id="' + id + '" data-media="books" title="Search List"><i class="fa fa-search-plus"></i></button>';
+										} else if (tableName === 'dbartists') {
+											buttons += '<button class="btn-action-list-sub" data-id="' + id + '" data-target="albums" data-filter="dbartist_id" title="View Albums"><i class="fa fa-list"></i></button>';
+										} else if (tableName === 'artists') {
+											buttons += '<button class="btn-action-list-sub" data-id="' + id + '" data-target="albums" data-filter="artist_id" title="View Albums"><i class="fa fa-list"></i></button>' +
+												'<button class="btn-action-search-artist" data-id="' + id + '" data-media="music" data-endpoint="artists" title="Search Missing Albums"><i class="fa fa-search"></i></button>' +
+												'<button class="btn-action-discover-series" data-id="' + id + '" title="Discover Series Albums"><i class="fa fa-layer-group"></i></button>';
+										} else if (tableName === 'dbauthors') {
+											buttons += '<button class="btn-action-list-sub" data-id="' + id + '" data-target="books" data-filter="dbauthor_id" title="View Books"><i class="fa fa-list"></i></button>' +
+												'<button class="btn-action-list-sub" data-id="' + id + '" data-target="audiobooks" data-filter="author_id" title="View Audiobooks"><i class="fa fa-list"></i></button>';
+										} else if (tableName === 'authors') {
+											buttons += '<button class="btn-action-list-sub" data-id="' + id + '" data-target="books" data-filter="author_id" title="View Books"><i class="fa fa-list"></i></button>' +
+												'<button class="btn-action-list-sub" data-id="' + id + '" data-target="audiobooks" data-filter="author_id" title="View Audiobooks"><i class="fa fa-list"></i></button>' +
+												'<button class="btn-action-search-artist" data-id="' + id + '" data-media="books" data-endpoint="authors" title="Search Missing Books"><i class="fa fa-search"></i></button>' +
+												'<button class="btn-action-search-artist" data-id="' + id + '" data-media="audiobooks" data-endpoint="authors" title="Search Missing Audiobooks"><i class="fa fa-search-plus"></i></button>';
 										}
 
 										buttons += '</div>';
@@ -2059,7 +2141,21 @@ func renderTable(tableInfo *TableInfo, csrfToken string) gomponents.Node {
 											'dbserie_id': 'dbseries',
 											'serie_id': 'series',
 											'serie_episode_id': 'serie_episodes',
-											'dbserie_episode_id': 'dbserie_episodes'
+											'dbserie_episode_id': 'dbserie_episodes',
+											'dbbook_id': 'dbbooks',
+											'book_id': 'books',
+											'dbauthor_id': 'dbauthors',
+											'author_id': 'authors',
+											'dbbook_series_id': 'dbbook_series',
+											'book_series_id': 'book_series',
+											'dbaudiobook_id': 'dbaudiobooks',
+											'audiobook_id': 'audiobooks',
+											'dbnarrator_id': 'dbnarrators',
+											'dbalbum_id': 'dbalbums',
+											'album_id': 'albums',
+											'dbartist_id': 'dbartists',
+											'artist_id': 'artists',
+											'dbtrack_id': 'dbtracks'
 										};
 
 										// Check if this column is an ID column that should be a link
@@ -2083,7 +2179,21 @@ func renderTable(tableInfo *TableInfo, csrfToken string) gomponents.Node {
 							'dbserie_id': 'dbseries',
 							'serie_id': 'series',
 							'serie_episode_id': 'serie_episodes',
-							'dbserie_episode_id': 'dbserie_episodes'
+							'dbserie_episode_id': 'dbserie_episodes',
+							'dbbook_id': 'dbbooks',
+							'book_id': 'books',
+							'dbauthor_id': 'dbauthors',
+							'author_id': 'authors',
+							'dbbook_series_id': 'dbbook_series',
+							'book_series_id': 'book_series',
+							'dbaudiobook_id': 'dbaudiobooks',
+							'audiobook_id': 'audiobooks',
+							'dbnarrator_id': 'dbnarrators',
+							'dbalbum_id': 'dbalbums',
+							'album_id': 'albums',
+							'dbartist_id': 'dbartists',
+							'artist_id': 'artists',
+							'dbtrack_id': 'dbtracks'
 						};
 
 						// Label to column name mapping (handles display names like "Database Movie ID")
@@ -2093,7 +2203,19 @@ func renderTable(tableInfo *TableInfo, csrfToken string) gomponents.Node {
 							'database_serie_episode_id': 'dbserie_episode_id',
 							'db_movie_id': 'dbmovie_id',
 							'db_serie_id': 'dbserie_id',
-							'db_serie_episode_id': 'dbserie_episode_id'
+							'db_serie_episode_id': 'dbserie_episode_id',
+							'database_book_id': 'dbbook_id',
+							'database_author_id': 'dbauthor_id',
+							'database_audiobook_id': 'dbaudiobook_id',
+							'database_narrator_id': 'dbnarrator_id',
+							'database_album_id': 'dbalbum_id',
+							'database_artist_id': 'dbartist_id',
+							'database_track_id': 'dbtrack_id',
+							'db_book_id': 'dbbook_id',
+							'db_author_id': 'dbauthor_id',
+							'db_audiobook_id': 'dbaudiobook_id',
+							'db_album_id': 'dbalbum_id',
+							'db_artist_id': 'dbartist_id'
 						};
 
 						// Process all child rows
@@ -2168,7 +2290,13 @@ func renderTable(tableInfo *TableInfo, csrfToken string) gomponents.Node {
 							$('#editFormModal .modal-body').append('<div class="alert alert-warning mt-3">Request is taking longer than expected...</div>');
 						}, 10000);
 						
-						$.get(url)
+						$.ajax({
+							url: url,
+							type: 'GET',
+							headers: {
+								'X-CSRF-Token': $('input[name="csrf_token"]').val() || ''
+							}
+						})
 							.done(function(data) {
 								clearTimeout(requestTimeout);
 								$('#editFormModal .modal-body').html(data);
@@ -2213,16 +2341,20 @@ func renderTable(tableInfo *TableInfo, csrfToken string) gomponents.Node {
 						}
 					});
 
-					// Handle Files button clicks (movies and serie_episodes tables)
+					// Handle Files button clicks
 					$(document).on('click', '.btn-action-files', function() {
 						var id = $(this).data('id');
 						var tableName = '%s';
 						if (tableName === 'movies') {
-							// Navigate to movie_files table with filter
 							window.location.href = '/api/admin/database/movie_files?filter-movie_id=' + id;
 						} else if (tableName === 'serie_episodes') {
-							// Navigate to serie_episode_files table with filter
 							window.location.href = '/api/admin/database/serie_episode_files?filter-serie_episode_id=' + id;
+						} else if (tableName === 'albums') {
+							window.location.href = '/api/admin/database/album_files?filter-album_id=' + id;
+						} else if (tableName === 'audiobooks') {
+							window.location.href = '/api/admin/database/audiobook_files?filter-audiobook_id=' + id;
+						} else if (tableName === 'books') {
+							window.location.href = '/api/admin/database/book_files?filter-book_id=' + id;
 						}
 					});
 
@@ -2235,6 +2367,9 @@ func renderTable(tableInfo *TableInfo, csrfToken string) gomponents.Node {
 								$.ajax({
 									url: '/api/movies/search/list/' + id + '?apikey=%s&searchByTitle=false&download=true',
 									type: 'GET',
+									headers: {
+										'X-CSRF-Token': $('input[name="csrf_token"]').val() || ''
+									},
 									success: function(data) {
 										var msg = 'Search completed!\n';
 										msg += 'Accepted: ' + (data.accepted ? data.accepted.length : 0) + '\n';
@@ -2252,6 +2387,9 @@ func renderTable(tableInfo *TableInfo, csrfToken string) gomponents.Node {
 								$.ajax({
 									url: '/api/series/episodes/search/list/' + id + '?apikey=%s&searchByTitle=false&download=true',
 									type: 'GET',
+									headers: {
+										'X-CSRF-Token': $('input[name="csrf_token"]').val() || ''
+									},
 									success: function(data) {
 										var msg = 'Search completed!\n';
 										msg += 'Accepted: ' + (data.accepted ? data.accepted.length : 0) + '\n';
@@ -2276,6 +2414,9 @@ func renderTable(tableInfo *TableInfo, csrfToken string) gomponents.Node {
 								$.ajax({
 									url: '/api/movies/search/list/' + id + '?apikey=%s&searchByTitle=true&download=true',
 									type: 'GET',
+									headers: {
+										'X-CSRF-Token': $('input[name="csrf_token"]').val() || ''
+									},
 									success: function(data) {
 										var msg = 'Search completed!\n';
 										msg += 'Accepted: ' + (data.accepted ? data.accepted.length : 0) + '\n';
@@ -2293,6 +2434,9 @@ func renderTable(tableInfo *TableInfo, csrfToken string) gomponents.Node {
 								$.ajax({
 									url: '/api/series/episodes/search/list/' + id + '?apikey=%s&searchByTitle=true&download=true',
 									type: 'GET',
+									headers: {
+										'X-CSRF-Token': $('input[name="csrf_token"]').val() || ''
+									},
 									success: function(data) {
 										var msg = 'Search completed!\n';
 										msg += 'Accepted: ' + (data.accepted ? data.accepted.length : 0) + '\n';
@@ -2308,48 +2452,154 @@ func renderTable(tableInfo *TableInfo, csrfToken string) gomponents.Node {
 						}
 					});
 
-					// Handle Metadata Refresh button clicks (dbmovies and dbseries tables)
+					// Handle Metadata Refresh button clicks
 					$(document).on('click', '.btn-action-metadata-refresh', function() {
 						var dbId = $(this).data('id');
 						var type = $(this).data('type');
-						var apiUrl = type === 'movie' ? '/api/movies/refresh/' : '/api/series/refresh/';
 
 						if (confirm('Refresh metadata for this ' + type + '?')) {
-							// First, find the related movie/serie record using dbmovie_id/dbserie_id
-							$.ajax({
-								url: '/api/admin/tablejson/' + (type === 'movie' ? 'movies' : 'series') + '?apikey=%s',
-								type: 'POST',
-								data: {
-									sSearch: dbId,
-									iDisplayStart: 0,
-									iDisplayLength: 1
-								},
-								success: function(response) {
-									if (response.aaData && response.aaData.length > 0) {
-										var recordId = response.aaData[0][0]; // First column is ID
-										// Now call the metadata refresh API
-										$.ajax({
-											url: apiUrl + recordId + '?apikey=%s',
-											type: 'GET',
-											success: function(data) {
-												alert('Metadata refresh started successfully!');
-												oTable.ajax.reload();
-											},
-											error: function(xhr) {
-												alert('Error starting metadata refresh: ' + (xhr.responseText || 'Unknown error'));
-											}
-										});
-									} else {
-										alert('No related ' + type + ' record found for this db' + type + ' ID');
+							if (type === 'album' || type === 'audiobook' || type === 'book') {
+								// Bulk refresh job (no per-record endpoint for these types)
+								var jobUrl = '';
+								if (type === 'album') jobUrl = '/api/music/job/refresh';
+								else if (type === 'audiobook') jobUrl = '/api/audiobooks/job/refresh';
+								else if (type === 'book') jobUrl = '/api/books/job/refresh';
+								$.ajax({
+									url: jobUrl + '?apikey=%s',
+									type: 'GET',
+									headers: { 'X-CSRF-Token': $('input[name="csrf_token"]').val() || '' },
+									success: function(data) {
+										alert('Metadata refresh job started successfully!');
+										oTable.ajax.reload();
+									},
+									error: function(xhr) {
+										alert('Error starting metadata refresh: ' + (xhr.responseText || 'Unknown error'));
 									}
+								});
+							} else {
+								// Per-record refresh for movies/series (two-step lookup)
+								var apiUrl = type === 'movie' ? '/api/movies/refresh/' : '/api/series/refresh/';
+								$.ajax({
+									url: '/api/admin/tablejson/' + (type === 'movie' ? 'movies' : 'series') + '?apikey=%s',
+									type: 'POST',
+									headers: { 'X-CSRF-Token': $('input[name="csrf_token"]').val() || '' },
+									data: { sSearch: dbId, iDisplayStart: 0, iDisplayLength: 1 },
+									success: function(response) {
+										if (response.aaData && response.aaData.length > 0) {
+											var recordId = response.aaData[0][0];
+											$.ajax({
+												url: apiUrl + recordId + '?apikey=%s',
+												type: 'GET',
+												headers: { 'X-CSRF-Token': $('input[name="csrf_token"]').val() || '' },
+												success: function(data) {
+													alert('Metadata refresh started successfully!');
+													oTable.ajax.reload();
+												},
+												error: function(xhr) {
+													alert('Error starting metadata refresh: ' + (xhr.responseText || 'Unknown error'));
+												}
+											});
+										} else {
+											alert('No related ' + type + ' record found for this db' + type + ' ID');
+										}
+									},
+									error: function(xhr) {
+										alert('Error finding related record: ' + (xhr.responseText || 'Unknown error'));
+									}
+								});
+							}
+						}
+					});
+
+					// Handle Search List button clicks (albums, audiobooks, books)
+					$(document).on('click', '.btn-action-search-list', function() {
+						var id = $(this).data('id');
+						var media = $(this).data('media');
+						var row = oTable.row($(this).closest('tr')).data();
+						var headers = $('#table-data thead th');
+						var listIdx = -1;
+						headers.each(function(i) {
+							if ($(this).attr('data-column-name') === 'listname') listIdx = i;
+						});
+						if (listIdx === -1 || !row || !row[listIdx]) {
+							alert('Could not determine list name for this record');
+							return;
+						}
+						var listname = row[listIdx];
+						if (confirm('Start search for ' + media + ' list "' + listname + '"?')) {
+							$.ajax({
+								url: '/api/' + media + '/search/list/' + listname + '?apikey=%s',
+								type: 'GET',
+								headers: { 'X-CSRF-Token': $('input[name="csrf_token"]').val() || '' },
+								success: function(data) {
+									alert('Search started for ' + media + ' list: ' + listname);
+									oTable.ajax.reload();
 								},
 								error: function(xhr) {
-									alert('Error finding related record: ' + (xhr.responseText || 'Unknown error'));
+									alert('Error starting search: ' + (xhr.responseText || 'Unknown error'));
 								}
 							});
 						}
 					});
-					`, tableInfo.Name, columnsStr, csrfToken, tableInfo.Name, "", tableInfo.Name, columnsStr, csrfToken, tableInfo.Name, tableInfo.Name, config.GetSettingsGeneral().WebAPIKey, tableInfo.Name, config.GetSettingsGeneral().WebAPIKey, tableInfo.Name, tableInfo.Name, config.GetSettingsGeneral().WebAPIKey, config.GetSettingsGeneral().WebAPIKey, tableInfo.Name, config.GetSettingsGeneral().WebAPIKey, config.GetSettingsGeneral().WebAPIKey, config.GetSettingsGeneral().WebAPIKey, config.GetSettingsGeneral().WebAPIKey)),
+
+					// Handle List Sub button clicks (artists/authors -> albums/books/audiobooks)
+					$(document).on('click', '.btn-action-list-sub', function() {
+						var id = $(this).data('id');
+						var target = $(this).data('target');
+						var filter = $(this).data('filter');
+						window.location.href = '/api/admin/database/' + target + '?filter-' + filter + '=' + id;
+					});
+
+					// Handle Search Artist/Author button clicks
+					$(document).on('click', '.btn-action-search-artist', function() {
+						var id = $(this).data('id');
+						var media = $(this).data('media');
+						var endpoint = $(this).data('endpoint');
+						var row = oTable.row($(this).closest('tr')).data();
+						var headers = $('#table-data thead th');
+						var listIdx = -1;
+						headers.each(function(i) {
+							if ($(this).attr('data-column-name') === 'listname') listIdx = i;
+						});
+						if (listIdx === -1 || !row || !row[listIdx]) {
+							alert('Could not determine list name for this record');
+							return;
+						}
+						var listname = row[listIdx];
+						if (confirm('Search missing ' + media + ' for ' + endpoint + ' in list "' + listname + '"?')) {
+							$.ajax({
+								url: '/api/' + media + '/search/' + endpoint + '/missing/' + listname + '?apikey=%s',
+								type: 'GET',
+								headers: { 'X-CSRF-Token': $('input[name="csrf_token"]').val() || '' },
+								success: function(data) {
+									alert('Search started for missing ' + media + ' by ' + endpoint + ' in list: ' + listname);
+									oTable.ajax.reload();
+								},
+								error: function(xhr) {
+									alert('Error starting search: ' + (xhr.responseText || 'Unknown error'));
+								}
+							});
+						}
+					});
+
+					// Handle Discover Series Albums button clicks
+					$(document).on('click', '.btn-action-discover-series', function() {
+						var id = $(this).data('id');
+						if (confirm('Discover and import series albums for artist #' + id + '?')) {
+							$.ajax({
+								url: '/api/music/discover/series/artist/' + id + '?apikey=%s',
+								type: 'GET',
+								headers: { 'X-CSRF-Token': $('input[name="csrf_token"]').val() || '' },
+								success: function(data) {
+									alert('Discover series albums queued for artist #' + id);
+								},
+								error: function(xhr) {
+									alert('Error: ' + (xhr.responseText || 'Unknown error'));
+								}
+							});
+						}
+					});
+					`, tableInfo.Name, columnsStr, csrfToken, tableInfo.Name, "", tableInfo.Name, columnsStr, csrfToken, tableInfo.Name, tableInfo.Name, config.GetSettingsGeneral().WebAPIKey, tableInfo.Name, config.GetSettingsGeneral().WebAPIKey, tableInfo.Name, tableInfo.Name, config.GetSettingsGeneral().WebAPIKey, config.GetSettingsGeneral().WebAPIKey, tableInfo.Name, config.GetSettingsGeneral().WebAPIKey, config.GetSettingsGeneral().WebAPIKey, config.GetSettingsGeneral().WebAPIKey, config.GetSettingsGeneral().WebAPIKey, config.GetSettingsGeneral().WebAPIKey, config.GetSettingsGeneral().WebAPIKey, config.GetSettingsGeneral().WebAPIKey, config.GetSettingsGeneral().WebAPIKey)),
 			),
 		})
 }
@@ -2396,15 +2646,33 @@ func generateFormField(col, fieldName, displayName string, fieldData any) gompon
 
 	case time.Time:
 		valformat := val.Format("2006-01-02")
-		return RenderFormGroup("", "", displayName, fieldName, "date", valformat, map[string][]string{
-			"class": {"form-control datepicker"},
-		})
+
+		return RenderFormGroup(
+			"",
+			"",
+			displayName,
+			fieldName,
+			"date",
+			valformat,
+			map[string][]string{
+				"class": {"form-control datepicker"},
+			},
+		)
 
 	case sql.NullTime:
 		valformat := val.Time.Format("2006-01-02")
-		return RenderFormGroup("", "", displayName, fieldName, "date", valformat, map[string][]string{
-			"class": {"form-control datepicker"},
-		})
+
+		return RenderFormGroup(
+			"",
+			"",
+			displayName,
+			fieldName,
+			"date",
+			valformat,
+			map[string][]string{
+				"class": {"form-control datepicker"},
+			},
+		)
 
 	default:
 		return RenderFormGroup("",
@@ -2645,8 +2913,7 @@ func AjaxSelectField(options AjaxSelectOptions) gomponents.Node {
 						gomponents.Attr("data-bs-target", "#help-"+options.ID),
 						gomponents.Attr("aria-expanded", "false"),
 						gomponents.Attr("title", "Show detailed help"),
-						html.I(html.Class("fas fa-info-circle me-1")),
-						gomponents.Text("Help"),
+						html.I(html.Class("fas fa-info-circle")),
 					),
 				),
 				html.Div(
@@ -2751,13 +3018,8 @@ func isCheckboxFieldRefactored(col string) bool {
 		"proper", "extended", "repack", "ignore_runtime", "adult",
 		"search_specials", "quality_reached",
 	}
-	for _, field := range checkboxFields {
-		if col == field {
-			return true
-		}
-	}
 
-	return false
+	return slices.Contains(checkboxFields, col)
 }
 
 // RenderFormGroup creates form group with proper input type handling.
@@ -3327,17 +3589,17 @@ func createArraySelectInput(
 
 // buildOptionString builds HTML option string for JavaScript.
 func buildOptionString(options map[string][]string) string {
-	var optionString string
+	var optionString strings.Builder
 	if opts, ok := options[keyOptions]; ok {
 		opts2 := sort.StringSlice(opts)
 		opts2.Sort()
 
 		for _, opt := range opts2 {
-			optionString += "<option value=\"" + opt + "\">" + opt + "</option>"
+			optionString.WriteString("<option value=\"" + opt + "\">" + opt + "</option>")
 		}
 	}
 
-	return optionString
+	return optionString.String()
 }
 
 // createArraySelectRow creates a row with select dropdown.
@@ -3551,11 +3813,12 @@ func createFormLayout(
 	)
 }
 
-// parseIntOrDefault parses int with default value.
+// ParseIntOrDefault parses an integer from s, returning defaultVal if parsing fails.
 func ParseIntOrDefault(s string, defaultVal int) int {
 	if val, err := strconv.Atoi(s); err == nil {
 		return val
 	}
+
 	return defaultVal
 }
 
@@ -3619,7 +3882,7 @@ func CreateAddButton(
 	return html.Button(attrs...)
 }
 
-// createHTMXHeaders creates standardized HTMX headers with CSRF token.
+// CreateHTMXHeaders creates standardized HTMX headers with CSRF token.
 func CreateHTMXHeaders(csrfToken string) string {
 	return "{\"X-CSRF-Token\": \"" + csrfToken + "\"}"
 }
@@ -3689,7 +3952,7 @@ func CreateImdbConfigFields(configv *config.ImdbConfig) []FormFieldDefinition {
 	}
 }
 
-// renderFormFields renders a list of form fields.
+// RenderFormFields renders a list of form fields into gomponents nodes.
 func RenderFormFields(
 	group string,
 	comments, displayNames map[string]string,
@@ -3727,14 +3990,14 @@ func RenderFormFields(
 	return formGroups
 }
 
-// Optimize string operations with a string builder pool.
+// StringBuilderPool optimizes string operations via a reusable pool of string builders.
 var StringBuilderPool = sync.Pool{
 	New: func() any {
 		return &strings.Builder{}
 	},
 }
 
-// getStringBuilder gets a string builder from a pool (simplified implementation).
+// GetStringBuilder gets a string builder from the pool.
 func GetStringBuilder() *strings.Builder {
 	sb, ok := StringBuilderPool.Get().(*strings.Builder)
 	if !ok {
@@ -3746,12 +4009,12 @@ func GetStringBuilder() *strings.Builder {
 	return sb
 }
 
-// putStringBuilder returns a string builder to the pool (simplified implementation).
+// PutStringBuilder returns a string builder to the pool.
 func PutStringBuilder(builder *strings.Builder) {
 	StringBuilderPool.Put(builder)
 }
 
-// parseUintOrDefault parses uint with default value.
+// ParseUintOrDefault parses a uint from s, returning defaultVal if parsing fails.
 func ParseUintOrDefault(s string, defaultVal uint) uint {
 	if s == "" {
 		return defaultVal
@@ -3764,7 +4027,7 @@ func ParseUintOrDefault(s string, defaultVal uint) uint {
 	return defaultVal
 }
 
-// getCSRFToken extracts CSRF token from gin context if available.
+// GetCSRFToken extracts CSRF token from gin context if available.
 func GetCSRFToken(c *gin.Context) string {
 	if token, exists := c.Get("csrf_token"); exists {
 		if str, ok := token.(string); ok {

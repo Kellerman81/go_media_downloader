@@ -134,7 +134,7 @@ func NewTVmazeClient(seconds uint8, calls int, disabletls bool, timeoutseconds u
 		CircuitBreakerTimeout:     60 * time.Second,
 		CircuitBreakerHalfOpenMax: 2,
 		EnableStats:               true,
-		UserAgent:                 "go-media-downloader/2.0",
+		UserAgent:                 config.GetSettingsGeneral().UserAgent,
 		DisableTLSVerify:          general.TvmazeDisableTLSVerify,
 	}
 	if provider := tvmaze.NewProviderWithConfig(tvmazeConfig); provider != nil {
@@ -152,6 +152,7 @@ func SearchTVmaze(name string) ([]apiexternal_v2.SeriesSearchResult, error) {
 	if name == "" {
 		return nil, logger.ErrNotFound
 	}
+
 	return providers.GetTVMaze().SearchSeries(context.Background(), name, 0)
 }
 
@@ -160,6 +161,7 @@ func GetTVmazeShowByID(id int) (*apiexternal_v2.SeriesDetails, error) {
 	if id == 0 {
 		return nil, logger.ErrNotFound
 	}
+
 	return providers.GetTVMaze().GetSeriesByID(context.Background(), id)
 }
 
@@ -168,6 +170,7 @@ func GetTVmazeShowByTVDBID(tvdbID int) (*apiexternal_v2.SeriesDetails, error) {
 	if tvdbID == 0 {
 		return nil, logger.ErrNotFound
 	}
+
 	return providers.GetTVMaze().FindSeriesByTVDbID(context.Background(), tvdbID)
 }
 
@@ -176,6 +179,7 @@ func GetTVmazeShowByIMDBID(imdbID string) (*apiexternal_v2.FindByIMDbResult, err
 	if imdbID == "" {
 		return nil, logger.ErrNotFound
 	}
+
 	return providers.GetTVMaze().FindSeriesByIMDbID(context.Background(), imdbID)
 }
 
@@ -184,6 +188,7 @@ func GetTVmazeEpisodes(showID int) ([]*apiexternal_v2.Episode, error) {
 	if showID == 0 {
 		return nil, logger.ErrNotFound
 	}
+
 	return providers.GetTVMaze().GetEpisodes(context.Background(), showID)
 }
 
@@ -192,5 +197,6 @@ func GetTVmazeSeasons(showID int) ([]*apiexternal_v2.Season, error) {
 	if showID == 0 {
 		return nil, logger.ErrNotFound
 	}
+
 	return providers.GetTVMaze().GetSeasons(context.Background(), showID)
 }

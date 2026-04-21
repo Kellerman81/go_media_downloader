@@ -23,7 +23,7 @@ type ConfigSection struct {
 	Data map[string]any `json:"data"`
 }
 
-// DataTables response structure.
+// DataTablesResponse is the AJAX response structure for DataTables.
 type DataTablesResponse struct {
 	Echo                int        `json:"draw"`
 	TotalRecords        int        `json:"recordsTotal"`
@@ -31,7 +31,7 @@ type DataTablesResponse struct {
 	Data                [][]string `json:"data"`
 }
 
-// DataTables request parameters.
+// DataTablesRequest holds request parameters from a DataTables AJAX call.
 type DataTablesRequest struct {
 	Echo           int
 	DisplayStart   int

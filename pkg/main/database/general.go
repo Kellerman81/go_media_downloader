@@ -13,18 +13,16 @@ import (
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/mediatype/mtstrings"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-migrate/migrate/v4"
+	_ "github.com/golang-migrate/migrate/v4/database/sqlite" // Needed for Migrate
+	_ "github.com/golang-migrate/migrate/v4/source/file"     // Needed for Migrate
 	"github.com/jmoiron/sqlx"
-
-	_ "github.com/golang-migrate/migrate/v4/database/sqlite3" // Needed for Migrate
-	_ "github.com/golang-migrate/migrate/v4/source/file"      // Needed for Migrate
-
-	_ "github.com/mattn/go-sqlite3" // Needed for DB Upgrade
 	_ "modernc.org/sqlite"
 )
 
-// dbGlobal stores globally accessible slices and arrays.
+// DBGlobal stores globally accessible slices and arrays.
 type DBGlobal struct {
 	// AudioStrIn is a globally accessible slice of audio strings
 	AudioStrIn []string
@@ -42,34 +40,36 @@ type DBGlobal struct {
 	GetcodecsIn []Qualities
 	// GetaudiosIn is a globally accessible slice of Qualities structs
 	GetaudiosIn []Qualities
+	// GetaudioformatsIn is a globally accessible slice of Qualities structs for audio format (type 5)
+	GetaudioformatsIn []Qualities
 }
 
 type JobHistory struct {
-	CreatedAt   time.Time    `db:"created_at"   displayname:"Date Created" comment:"Record creation timestamp"`
-	UpdatedAt   time.Time    `db:"updated_at"   displayname:"Last Updated" comment:"Last modification timestamp"`
-	JobType     string       `db:"job_type"     displayname:"Job Type"     comment:"Type of job"`
-	JobCategory string       `db:"job_category" displayname:"Job Category" comment:"Job category classification"`
-	JobGroup    string       `db:"job_group"    displayname:"Job Group"    comment:"Job group identifier"`
-	Started     sql.NullTime `                  displayname:"Start Time"   comment:"Job start timestamp"`
-	Ended       sql.NullTime `                  displayname:"End Time"     comment:"Job completion timestamp"`
-	ID          uint         `                  displayname:"Job ID"       comment:"Unique job identifier"`
+	CreatedAt   time.Time    `comment:"Record creation timestamp"   db:"created_at"   displayname:"Date Created"`
+	UpdatedAt   time.Time    `comment:"Last modification timestamp" db:"updated_at"   displayname:"Last Updated"`
+	JobType     string       `comment:"Type of job"                 db:"job_type"     displayname:"Job Type"`
+	JobCategory string       `comment:"Job category classification" db:"job_category" displayname:"Job Category"`
+	JobGroup    string       `comment:"Job group identifier"        db:"job_group"    displayname:"Job Group"`
+	Started     sql.NullTime `comment:"Job start timestamp"                           displayname:"Start Time"`
+	Ended       sql.NullTime `comment:"Job completion timestamp"                      displayname:"End Time"`
+	ID          uint         `comment:"Unique job identifier"                         displayname:"Job ID"`
 }
 
 type RSSHistory struct {
-	Config    string    `displayname:"Configuration Name" comment:"RSS configuration name"`
-	List      string    `displayname:"List Name"          comment:"RSS list identifier"`
-	Indexer   string    `displayname:"Indexer Name"       comment:"RSS indexer source"`
-	LastID    string    `displayname:"Last Item ID"       comment:"Last processed item"         db:"last_id"`
-	CreatedAt time.Time `displayname:"Date Created"       comment:"Record creation timestamp"   db:"created_at"`
-	UpdatedAt time.Time `displayname:"Last Updated"       comment:"Last modification timestamp" db:"updated_at"`
-	ID        uint      `displayname:"RSS ID"             comment:"Unique RSS identifier"`
+	Config    string    `comment:"RSS configuration name"      displayname:"Configuration Name"`
+	List      string    `comment:"RSS list identifier"         displayname:"List Name"`
+	Indexer   string    `comment:"RSS indexer source"          displayname:"Indexer Name"`
+	LastID    string    `comment:"Last processed item"         displayname:"Last Item ID"       db:"last_id"`
+	CreatedAt time.Time `comment:"Record creation timestamp"   displayname:"Date Created"       db:"created_at"`
+	UpdatedAt time.Time `comment:"Last modification timestamp" displayname:"Last Updated"       db:"updated_at"`
+	ID        uint      `comment:"Unique RSS identifier"       displayname:"RSS ID"`
 }
 type IndexerFail struct {
-	Indexer   string       `displayname:"Indexer Name" comment:"Failed indexer name"`
-	LastFail  sql.NullTime `displayname:"Last Failure" comment:"Last failure timestamp"      db:"last_fail"`
-	CreatedAt time.Time    `displayname:"Date Created" comment:"Record creation timestamp"   db:"created_at"`
-	UpdatedAt time.Time    `displayname:"Last Updated" comment:"Last modification timestamp" db:"updated_at"`
-	ID        uint         `displayname:"Failure ID"   comment:"Unique failure identifier"`
+	Indexer   string       `comment:"Failed indexer name"         displayname:"Indexer Name"`
+	LastFail  sql.NullTime `comment:"Last failure timestamp"      displayname:"Last Failure" db:"last_fail"`
+	CreatedAt time.Time    `comment:"Record creation timestamp"   displayname:"Date Created" db:"created_at"`
+	UpdatedAt time.Time    `comment:"Last modification timestamp" displayname:"Last Updated" db:"updated_at"`
+	ID        uint         `comment:"Unique failure identifier"   displayname:"Failure ID"`
 }
 
 type backupInfo struct {
@@ -101,7 +101,7 @@ func InitCfg() {
 		LogColorize:   config.GetSettingsGeneral().LogColorize,
 		TimeFormat:    config.GetSettingsGeneral().TimeFormat,
 		TimeZone:      config.GetSettingsGeneral().TimeZone,
-		LogZeroValues: config.GetSettingsGeneral().LogZeroValues,
+		// LogZeroValues: config.GetSettingsGeneral().LogZeroValues,
 	})
 
 	err := UpgradeDB()
@@ -118,6 +118,11 @@ func InitCfg() {
 		logger.Logtype("fatal", 0).
 			Err(err).
 			Msg("Database Initialization Failed")
+	}
+
+	// Populate slugs for existing records if DB version >= 23
+	if vers, _ := strconv.Atoi(DBVersion); vers >= 23 {
+		PopulateSlugs(false)
 	}
 
 	err = InitImdbdb()
@@ -268,7 +273,7 @@ func getqualityregexes(querystr, querycount string) []Qualities {
 	return q
 }
 
-// GetVars populates the global regex variables from the database.
+// SetVars populates the global regex variables from the database.
 // It retrieves the quality regexes from the database and processes them to populate:
 // - DBConnect.GetresolutionsIn
 // - DBConnect.GetqualitiesIn
@@ -306,6 +311,11 @@ func SetVars() {
 	DBConnect.GetaudiosIn = getqualityregexes(
 		"select * from qualities where type=4 order by priority desc",
 		"select count() from qualities where type=4",
+	)
+
+	DBConnect.GetaudioformatsIn = getqualityregexes(
+		"select * from qualities where type=5 order by priority desc",
+		"select count() from qualities where type=5",
 	)
 
 	globalCache.setStaticRegexp(strRegexSeriesIdentifier)
@@ -406,47 +416,8 @@ func SetVars() {
 	globalCache.addStaticXStmt("select region, title, slug from imdb_akas where tconst = ?", true)
 
 	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) error {
-		if !media.Useseries {
-			for _, cfgplist := range media.ListsMap {
-				globalCache.addStaticXStmt(
-					logger.JoinStrings(
-						"select count() from movies where listname in (?",
-						cfgplist.IgnoreMapListsQu,
-						") and dbmovie_id = ?",
-					),
-					false,
-				)
-				globalCache.addStaticXStmt(
-					logger.JoinStrings(
-						"select count() from movies where listname in (?",
-						cfgplist.IgnoreMapListsQu,
-						") and dbmovie_id = ?",
-					),
-					false,
-				)
-			}
-
-			return nil
-		} else {
-			globalCache.addStaticXStmt(
-				logger.JoinStrings(
-					"select id, dbserie_id from series where listname in (?",
-					media.ListsQu,
-					") and (select count() from serie_episodes inner join dbserie_episodes on dbserie_episodes.id = serie_episodes.dbserie_episode_id and serie_episodes.dbserie_id=series.dbserie_id where ((serie_episodes.missing=1 and series.search_specials=1) or (serie_episodes.missing=1 and dbserie_episodes.season != '0' and series.search_specials=0)) and serie_episodes.serie_id = series.id) >= 1 ORDER BY RANDOM() limit 20",
-				),
-				false,
-			)
-			globalCache.addStaticXStmt(
-				logger.JoinStrings(
-					"select id, dbserie_id from series where listname in (?",
-					media.ListsQu,
-					") and (select count() from serie_episodes inner join dbserie_episodes on dbserie_episodes.id = serie_episodes.dbserie_episode_id and serie_episodes.dbserie_id=series.dbserie_id where (series.search_specials=1 or (dbserie_episodes.season != '0' and series.search_specials=0)) and serie_episodes.serie_id = series.id) >= 1",
-				),
-				false,
-			)
-
-			return nil
-		}
+		SetVarsType(media.IsType, media)
+		return nil
 	})
 
 	globalCache.addStaticXStmt(
@@ -781,12 +752,12 @@ func SetVars() {
 	globalCache.addStaticXStmt("select rootpath from series where id = ?", false)
 	globalCache.addStaticXStmt("update series SET listname = ?, dbserie_id = ? where id = ?", false)
 	globalCache.addStaticXStmt(
-		"update series SET search_specials=?, dont_search=?, dont_upgrade=? where dbserie_id = ? and listname = ?",
+		"update series SET aliases=?, search_specials=?, dont_search=?, dont_upgrade=? where dbserie_id = ? and listname = ?",
 		false,
 	)
 	globalCache.addStaticXStmt("update series set rootpath = ? where id = ?", false)
 	globalCache.addStaticXStmt(
-		"Insert into series (dbserie_id, listname, rootpath, search_specials, dont_search, dont_upgrade) values (?, ?, ?, ?, ?, ?)",
+		"Insert into series (dbserie_id, listname, rootpath, aliases, search_specials, dont_search, dont_upgrade) values (?, ?, ?, ?, ?, ?, ?)",
 		false,
 	)
 
@@ -864,11 +835,11 @@ func SetVars() {
 	globalCache.addStaticXStmt("select id from dbseries where slug = ?", false)
 	globalCache.addStaticXStmt("select id from dbseries where seriename = ? COLLATE NOCASE", false)
 	globalCache.addStaticXStmt(
-		"select id,created_at,updated_at,seriename,aliases,season,status,firstaired,network,runtime,language,genre,overview,rating,siterating,siterating_count,slug,imdb_id,thetvdb_id,freebase_m_id,freebase_id,tvrage_id,facebook,instagram,twitter,banner,poster,fanart,identifiedby, trakt_id from dbseries where id = ?",
+		"select id,created_at,updated_at,seriename,season,status,firstaired,network,runtime,language,genre,overview,rating,siterating,siterating_count,slug,imdb_id,thetvdb_id,freebase_m_id,freebase_id,tvrage_id,facebook,instagram,twitter,banner,poster,fanart,identifiedby, trakt_id from dbseries where id = ?",
 		false,
 	)
 	globalCache.addStaticXStmt(
-		"select id,created_at,updated_at,seriename,aliases,season,status,firstaired,network,runtime,language,genre,overview,rating,siterating,siterating_count,slug,imdb_id,thetvdb_id,freebase_m_id,freebase_id,tvrage_id,facebook,instagram,twitter,banner,poster,fanart,identifiedby, trakt_id from dbseries where id = ?",
+		"select id,created_at,updated_at,seriename,season,status,firstaired,network,runtime,language,genre,overview,rating,siterating,siterating_count,slug,imdb_id,thetvdb_id,freebase_m_id,freebase_id,tvrage_id,facebook,instagram,twitter,banner,poster,fanart,identifiedby, trakt_id from dbseries where id = ?",
 		false,
 	)
 	globalCache.addStaticXStmt("select lower(identifiedby) from dbseries where id = ?", false)
@@ -890,11 +861,11 @@ func SetVars() {
 		false,
 	)
 	globalCache.addStaticXStmt(
-		"update dbseries SET Seriename = ?, Aliases = ?, Season = ?, Status = ?, Firstaired = ?, Network = ?, Runtime = ?, Language = ?, Genre = ?, Overview = ?, Rating = ?, Siterating = ?, Siterating_Count = ?, Slug = ?, Trakt_ID = ?, Imdb_ID = ?, Thetvdb_ID = ?, Freebase_M_ID = ?, Freebase_ID = ?, Tvrage_ID = ?, Facebook = ?, Instagram = ?, Twitter = ?, Banner = ?, Poster = ?, Fanart = ?, Identifiedby = ? where id = ?",
+		"update dbseries SET Seriename = ?, Season = ?, Status = ?, Firstaired = ?, Network = ?, Runtime = ?, Language = ?, Genre = ?, Overview = ?, Rating = ?, Siterating = ?, Siterating_Count = ?, Slug = ?, Trakt_ID = ?, Imdb_ID = ?, Thetvdb_ID = ?, Freebase_M_ID = ?, Freebase_ID = ?, Tvrage_ID = ?, Facebook = ?, Instagram = ?, Twitter = ?, Banner = ?, Poster = ?, Fanart = ?, Identifiedby = ? where id = ?",
 		false,
 	)
 	globalCache.addStaticXStmt(
-		"insert into dbseries (seriename, aliases, thetvdb_id, identifiedby) values (?, ?, ?, ?)",
+		"insert into dbseries (seriename, thetvdb_id, identifiedby) values (?, ?, ?)",
 		false,
 	)
 
@@ -1084,9 +1055,129 @@ func SetVars() {
 	)
 }
 
+func SetVarsType(isType uint, media *config.MediaTypeConfig) {
+	switch isType {
+	case config.MediaTypeMovie:
+		{
+			for _, cfgplist := range media.ListsMap {
+				globalCache.addStaticXStmt(
+					logger.JoinStrings(
+						"select count() from movies where listname in (?",
+						cfgplist.IgnoreMapListsQu,
+						") and dbmovie_id = ?",
+					),
+					false,
+				)
+				globalCache.addStaticXStmt(
+					logger.JoinStrings(
+						"select count() from movies where listname in (?",
+						cfgplist.IgnoreMapListsQu,
+						") and dbmovie_id = ?",
+					),
+					false,
+				)
+			}
+		}
+
+	case config.MediaTypeSeries:
+		{
+			globalCache.addStaticXStmt(
+				logger.JoinStrings(
+					"select id, dbserie_id from series where listname in (?",
+					media.ListsQu,
+					") and (select count() from serie_episodes inner join dbserie_episodes on dbserie_episodes.id = serie_episodes.dbserie_episode_id and serie_episodes.dbserie_id=series.dbserie_id where ((serie_episodes.missing=1 and series.search_specials=1) or (serie_episodes.missing=1 and dbserie_episodes.season != '0' and series.search_specials=0)) and serie_episodes.serie_id = series.id) >= 1 ORDER BY RANDOM() limit 20",
+				),
+				false,
+			)
+			globalCache.addStaticXStmt(
+				logger.JoinStrings(
+					"select id, dbserie_id from series where listname in (?",
+					media.ListsQu,
+					") and (select count() from serie_episodes inner join dbserie_episodes on dbserie_episodes.id = serie_episodes.dbserie_episode_id and serie_episodes.dbserie_id=series.dbserie_id where (series.search_specials=1 or (dbserie_episodes.season != '0' and series.search_specials=0)) and serie_episodes.serie_id = series.id) >= 1",
+				),
+				false,
+			)
+		}
+
+	case config.MediaTypeBook:
+		{
+			for _, cfgplist := range media.ListsMap {
+				globalCache.addStaticXStmt(
+					logger.JoinStrings(
+						"select count() from books where listname in (?",
+						cfgplist.IgnoreMapListsQu,
+						") and dbbook_id = ?",
+					),
+					false,
+				)
+			}
+		}
+
+	case config.MediaTypeAudiobook:
+		{
+			for _, cfgplist := range media.ListsMap {
+				globalCache.addStaticXStmt(
+					logger.JoinStrings(
+						"select count() from audiobooks where listname in (?",
+						cfgplist.IgnoreMapListsQu,
+						") and dbaudiobook_id = ?",
+					),
+					false,
+				)
+			}
+		}
+
+	case config.MediaTypeMusic:
+		{
+			for _, cfgplist := range media.ListsMap {
+				globalCache.addStaticXStmt(
+					logger.JoinStrings(
+						"select count() from albums where listname in (?",
+						cfgplist.IgnoreMapListsQu,
+						") and dbalbum_id = ?",
+					),
+					false,
+				)
+			}
+		}
+	}
+}
+
 // Upgrade handles upgrading the database by calling UpgradeDB.
 func Upgrade(_ *gin.Context) {
 	UpgradeDB()
+}
+
+// ApiPopulateSlugs handles populating slugs for existing records via API call.
+// Supports force query parameter to update all slugs, not just empty ones.
+func ApiPopulateSlugs(ctx *gin.Context) {
+	force := ctx.Query("force") == "true"
+	PopulateAllSlugs(force)
+}
+
+// PopulateAllSlugs updates slug fields for all tables that have slugs.
+// If force is true, updates all records; otherwise only those with empty slugs.
+func PopulateAllSlugs(force bool) {
+	// Movies and series tables
+	populateTableSlugs("dbmovies", "title", force)
+	populateTableSlugs("dbmovie_titles", "title", force)
+	populateTableSlugs("dbseries", "seriename", force)
+	populateTableSlugs("dbserie_alternates", "title", force)
+
+	// Books tables
+	populateTableSlugs("dbbooks", "title", force)
+	populateTableSlugs("dbbook_titles", "title", force)
+
+	// Audiobooks tables
+	populateTableSlugs("dbaudiobooks", "title", force)
+	populateTableSlugs("dbaudiobook_titles", "title", force)
+
+	// Music tables
+	populateTableSlugs("dbalbums", "title", force)
+	populateTableSlugs("dbalbum_titles", "title", force)
+
+	// Authors/artists/series tables (from migration 23)
+	PopulateSlugs(force)
 }
 
 // backupdb backs up the database to the specified backupPath. It acquires a
@@ -1182,22 +1273,83 @@ func Backup(backupPath *string, maxbackups int) error {
 func UpgradeDB() error {
 	m, err := migrate.New(
 		"file://./schema/db",
-		"sqlite3://./databases/data.db?_fk=1&_cslike=0",
+		"sqlite://./databases/data.db?_fk=1&_cslike=0",
 	)
 	if err != nil {
 		return err
 	}
-
-	vers, _, _ := m.Version()
-
-	DBVersion = strconv.FormatInt(int64(vers), 10)
 
 	err = m.Up()
 	if err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		return err
 	}
 
+	versionAfter, _, _ := m.Version()
+
+	DBVersion = strconv.FormatInt(int64(versionAfter), 10)
+
 	return nil
+}
+
+// PopulateSlugs updates empty slug fields for existing records in
+// dbauthors, dbbook_series, dbartists, and dbartist_aliases tables.
+// If force is true, updates all slugs regardless of whether they're empty.
+// Note: Caller must hold readWriteMu lock when calling via API.
+func PopulateSlugs(force bool) {
+	// Populate slugs for dbauthors
+	populateTableSlugs("dbauthors", "name", force)
+
+	// Populate slugs for dbbook_series
+	populateTableSlugs("dbbook_series", "name", force)
+
+	// Populate slugs for dbartists
+	populateTableSlugs("dbartists", "name", force)
+
+	// Populate slugs for dbartist_aliases
+	populateTableSlugs("dbartist_aliases", "alias", force)
+}
+
+// populateTableSlugs updates slug fields for a specific table.
+// If force is true, updates all records; otherwise only those with empty slugs.
+// Uses GetrowsNuncached and ExecN for consistency with other database operations.
+func populateTableSlugs(tableName, nameColumn string, force bool) {
+	var query string
+	if force {
+		query = fmt.Sprintf("SELECT %s as str, id as num FROM %s", nameColumn, tableName)
+	} else {
+		query = fmt.Sprintf(
+			"SELECT %s as str, id as num FROM %s WHERE slug = '' OR slug IS NULL",
+			nameColumn,
+			tableName,
+		)
+	}
+
+	records := GetrowsNuncached[DbstaticOneStringOneUInt](0, query, nil)
+	if len(records) == 0 {
+		return
+	}
+
+	updateQuery := fmt.Sprintf("UPDATE %s SET slug = ? WHERE id = ?", tableName)
+
+	var count int
+
+	for idx := range records {
+		slug := logger.StringToSlug(records[idx].Str)
+		if slug == "" {
+			continue
+		}
+
+		ExecN(updateQuery, slug, &records[idx].Num)
+
+		count++
+	}
+
+	if count > 0 {
+		logger.Logtype("info", 0).
+			Str("table", tableName).
+			Int("count", count).
+			Msg("Populated slugs for existing records")
+	}
 }
 
 // UpgradeIMDB migrates the imdb database to the latest version. It initializes
@@ -1206,7 +1358,7 @@ func UpgradeDB() error {
 func UpgradeIMDB() {
 	m, err := migrate.New(
 		"file://./schema/imdbdb",
-		"sqlite3://./databases/imdb.db?_fk=1&_mutex=no&_cslike=0",
+		"sqlite://./databases/imdb.db?_fk=1&_mutex=no&_cslike=0",
 	)
 	if err != nil {
 		fmt.Println(fmt.Errorf("migration failed... %w", err))
@@ -1251,13 +1403,13 @@ func GetMediaQualityConfig(cfgp *config.MediaTypeConfig, mediaid *uint) *config.
 	return cfgp.GetMediaQualityConfigStr(
 		Getdatarow[string](
 			false,
-			logger.GetStringsMap(cfgp.Useseries, logger.DBQualityMediaByID),
+			mtstrings.GetStringsMap(cfgp.IsType, logger.DBQualityMediaByID),
 			mediaid,
 		),
 	)
 }
 
-// GetMediaListIDMovies returns the index of the media list with the given name
+// GetMediaListIDGetListname returns the index of the media list with the given name
 // in cfgp for the movie with the given ID. It returns -1 if cfgp is nil,
 // listname is empty, or no list with that name exists.
 func GetMediaListIDGetListname(cfgp *config.MediaTypeConfig, mediaid *uint) int {
@@ -1273,7 +1425,7 @@ func GetMediaListIDGetListname(cfgp *config.MediaTypeConfig, mediaid *uint) int 
 
 	if config.GetSettingsGeneral().UseMediaCache {
 		id := cfgp.GetMediaListsEntryListID(
-			CacheOneStringTwoIntIndexFuncStr(cfgp.Useseries, logger.CacheMedia, *mediaid),
+			CacheOneStringTwoIntIndexFuncStr(cfgp.IsType, logger.CacheMedia, *mediaid),
 		)
 		if id >= 0 {
 			return id
@@ -1285,13 +1437,13 @@ func GetMediaListIDGetListname(cfgp *config.MediaTypeConfig, mediaid *uint) int 
 	return cfgp.GetMediaListsEntryListID(
 		Getdatarow[string](
 			false,
-			logger.GetStringsMap(cfgp.Useseries, logger.DBListnameByMediaID),
+			mtstrings.GetStringsMap(cfgp.IsType, logger.DBListnameByMediaID),
 			mediaid,
 		),
 	)
 }
 
-// GetDbStaticTwoStringIdx1 returns the index of the DbstaticTwoString element
+// GetDBStaticTwoStringIdx1 returns the index of the DbstaticTwoString element
 // with Str1 equal to v, or -1 if not found.
 func GetDBStaticTwoStringIdx1(tbl []DbstaticTwoString, v string) int {
 	for idx := range tbl {
@@ -1303,7 +1455,7 @@ func GetDBStaticTwoStringIdx1(tbl []DbstaticTwoString, v string) int {
 	return -1
 }
 
-// GetDbStaticOneStringOneIntIdx searches tbl for an element where Str equals v, and returns
+// GetDBStaticOneStringOneIntIdx searches tbl for an element where Str equals v, and returns
 // the index of that element, or -1 if not found.
 func GetDBStaticOneStringOneIntIdx(tbl []DbstaticOneStringOneUInt, v string) int {
 	for idx := range tbl {
@@ -1348,3 +1500,16 @@ func GetSettingTemplatesFor(key string) map[string][]string {
 
 	return out
 }
+
+// types
+// have
+// movie: dbmovies + titles, movies
+// series: dbseries + episodes + alternates, series + episodes - match single episodes to a series
+
+// maybe
+// books: dbauthors + dbseries + dbbooks [key: isbn or if not there some other identifier], authors + series + books - difference to series: the possibility to not track all books of an author (track book only + track series only) - possible source for implementation: https://gitlab.com/LazyLibrarian/LazyLibrarian
+// audiobooks: dbauthors + dbseries + dbaudiobooks + (+tracks but only for organize and as live query) [asin from audible], authors + series + audiobooks - difference to series: the possibility to not track all audiobooks of an author (track audiobook only + track series only + track all albums of author) - audiobooks contains multiple files (tracks) and the files need to be matched to tracks and maybe resorted to match the runtimes - a max different calculation is needed with an option to define strength for author, album, title, track, length - software https://github.com/beetbox/beets can be used as inspiration and https://github.com/Neurrone/beets-audible for matching and metadata - if possible with the option to enable a tag-writer
+// music: dbauthors + dbseries + dbalbums (on album can have different releases like in musicbrainz) + (+tracks but only for organize and as live query) (+format column), authors+series+albums - difference to series: the possibility to not track all albums of an author (track album only + track series only + track all albums of author) - albums contains multiple files (tracks) and the files need to be matched to tracks and maybe resorted to match the runtimes - a max different calculation is needed with an option to define strength for author, album, title, track, length - software https://github.com/beetbox/beets can be used as inspiration - if possible with the option to enable a tag-writer
+// needed for music and audiobooks: (references from beets) fetchart, Chromaprint/Acoustid, Discogs, musicbrainz, audible, goodreads, embedart, autotagger
+// for movies: maybe a trailer downloader and a subtitle downloader
+// the idea would be to use the authors and series for all - but the series/dbseries can be empty - its just needed for naming and for searching series only - but we need then for series and authors an option to define if we want to search books, audiobooks and/or music

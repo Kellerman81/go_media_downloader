@@ -2,174 +2,47 @@ package utils
 
 import (
 	"context"
-	"errors"
-	"path/filepath"
-	"slices"
-	"strings"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/importfeed"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/parser"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/searcher"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/structure"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/syncops"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/worker"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/mediatype/movies"
 )
+
+// SQL query constant for movie lookup.
+const querySelectMovieByImdb = "select id from movies where dbmovie_id in (Select id from dbmovies where imdb_id = ?) and listname = ? COLLATE NOCASE"
+
+func init() {
+	// Register movie-specific functions with the mediatype handler
+	// movies.RegisterImportParse(jobImportMovieParseV2)
+	movies.RegisterRefresh(refreshMoviesWrapper)
+	// movies.RegisterInitialFill(InitialFillMovies)
+}
+
+// Wrapper functions to match the mediatype function signatures
+
+func refreshMoviesWrapper(ctx context.Context, cfgp *config.MediaTypeConfig, data any) error {
+	if arr, ok := data.([]string); ok {
+		return refreshmovies(ctx, cfgp, arr)
+	}
+
+	return nil
+}
 
 // jobImportMovieParseV2 parses a movie file at the given path using the
 // provided parser and list config. It handles adding new movies to the DB,
 // updating existing movie records, and caching parsed data.
-func jobImportMovieParseV2(
-	m *database.ParseInfo,
-	pathv string,
-	cfgp *config.MediaTypeConfig,
-	list *config.MediaListsConfig,
-	addfound bool,
-) error {
-	if m == nil {
-		return logger.ErrNotFound
-	}
-
-	if list.CfgQuality == nil {
-		return errors.New("quality template not found")
-	}
-
-	if len(cfgp.Data) == 0 {
-		return errors.New("no data configuration found")
-	}
-
-	if m.MovieID == 0 && addfound {
-		if m.Imdb != "" {
-			if getdbmovieidbyimdb(m, cfgp, list) {
-				return logger.ErrNotFoundMovie
-			}
-		}
-
-		if m.Imdb == "" {
-			importfeed.MovieFindImdbIDByTitle(cfgp.Data[0].AddFound, m, cfgp)
-		}
-
-		var bl bool
-		if m.Imdb != "" {
-			m.MovieFindDBIDByImdbParser()
-
-			if m.DbmovieID != 0 {
-				bl = true
-			}
-		}
-
-		if bl && list.Name == cfgp.Data[0].AddFoundList && cfgp.Data[0].AddFound {
-			database.Scanrowsdyn(
-				false,
-				database.QueryMoviesGetIDByDBIDListname,
-				&m.MovieID,
-				&m.DbmovieID,
-				&list.Name,
-			)
-
-			if m.MovieID == 0 {
-				if m.Imdb == "" {
-					if config.GetSettingsGeneral().UseMediaCache {
-						m.CacheThreeStringIntIndexFuncGetImdb()
-					} else {
-						database.Scanrowsdyn(false, "select imdb_id from dbmovies where id = ?", &m.Imdb, &m.DbmovieID)
-					}
-				}
-
-				if m.Imdb != "" {
-					if getdbmovieidbyimdb(m, cfgp, list) {
-						return logger.ErrNotFoundMovie
-					}
-				}
-			}
-		} else if list.Name == cfgp.Data[0].AddFoundList && cfgp.Data[0].AddFound {
-			importfeed.MovieFindImdbIDByTitle(cfgp.Data[0].AddFound, m, cfgp)
-
-			var err error
-			if m.DbmovieID == 0 {
-				m.DbmovieID, err = importfeed.JobImportMovies(m.Imdb, cfgp, cfgp.GetMediaListsEntryListID(list.Name), true)
-			}
-
-			if err != nil && m.MovieID == 0 {
-				database.Scanrowsdyn(false, database.QueryMoviesGetIDByDBIDListname, &m.MovieID, &m.DbmovieID, &list.Name)
-
-				if m.MovieID == 0 {
-					err = logger.ErrNotFoundMovie
-				}
-			}
-
-			if err != nil {
-				return err
-			}
-		}
-	}
-
-	if m.MovieID == 0 {
-		m.TempTitle = pathv
-		m.AddUnmatched(cfgp, &list.Name, logger.ErrNotFoundMovie)
-		return logger.ErrNotFoundMovie
-	}
-
-	parser.GetPriorityMapQual(m, cfgp, list.CfgQuality, true, false)
-
-	m.File = pathv
-
-	err := parser.ParseVideoFile(m, list.CfgQuality)
-	if err != nil {
-		return err
-	}
-
-	var i int
-	if m.Priority >= list.CfgQuality.CutoffPriority {
-		i = 1
-	}
-
-	m.TempTitle = pathv
-
-	base := filepath.Base(pathv)
-	ext := filepath.Ext(pathv)
-
-	if m.MovieID != 0 &&
-		database.Getdatarow[string](
-			false,
-			"select rootpath from movies where id = ?",
-			&m.MovieID,
-		) == "" {
-		structure.UpdateRootpath(pathv, "movies", &m.MovieID, cfgp)
-	}
-
-	database.ExecN(
-		"insert into movie_files (location, filename, extension, quality_profile, resolution_id, quality_id, codec_id, audio_id, proper, repack, extended, movie_id, dbmovie_id, height, width) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-		&m.TempTitle,
-		&base,
-		&ext,
-		&list.CfgQuality.Name,
-		&m.ResolutionID,
-		&m.QualityID,
-		&m.CodecID,
-		&m.AudioID,
-		&m.Proper,
-		&m.Repack,
-		&m.Extended,
-		&m.MovieID,
-		&m.DbmovieID,
-		&m.Height,
-		&m.Width,
-	)
-	database.ExecN("update movies set missing = 0 where id = ?", &m.MovieID)
-	database.ExecN("update movies set quality_reached = ? where id = ?", &i, &m.MovieID)
-
-	if config.GetSettingsGeneral().UseFileCache {
-		database.SlicesCacheContainsDelete(logger.CacheUnmatchedMovie, pathv)
-		database.AppendCache(logger.CacheFilesMovie, pathv)
-	}
-
-	database.ExecN("delete from movie_file_unmatcheds where filepath = ?", pathv)
-
-	return nil
-}
+// func jobImportMovieParseV2(
+// 	m *database.ParseInfo,
+// 	pathv string,
+// 	cfgp *config.MediaTypeConfig,
+// 	list *config.MediaListsConfig,
+// 	addfound bool,
+// ) error {
+// 	// Use unified function for the common file import logic
+// 	return jobImportParseCommon(m, pathv, cfgp, list, addfound)
+// }
 
 // getdbmovieidbyimdb retrieves the database movie ID for the given movie struct by looking it up based on the IMDB ID.
 // It first checks if the movie struct already has the ID populated, otherwise it calls the import job to add the movie to the database if needed.
@@ -197,7 +70,7 @@ func getdbmovieidbyimdb(
 	if m.MovieID == 0 {
 		database.Scanrowsdyn(
 			false,
-			"select id from movies where dbmovie_id in (Select id from dbmovies where imdb_id = ?) and listname = ? COLLATE NOCASE",
+			querySelectMovieByImdb,
 			&m.MovieID,
 			&m.Imdb,
 			&list.Name,
@@ -214,183 +87,142 @@ func getdbmovieidbyimdb(
 // importnewmoviessingle imports new movies from a feed for a single list.
 // It takes a media config and list ID, gets the feed, checks/filters movies,
 // and submits import jobs. It uses worker pools and caching for performance.
-func importnewmoviessingle(
-	ctx context.Context, cfgp *config.MediaTypeConfig,
-	list *config.MediaListsConfig,
-	listid int,
-) error {
-	if err := logger.CheckContextEnded(ctx); err != nil {
-		return err
-	}
+// func importnewmoviessingle(
+// 	ctx context.Context, cfgp *config.MediaTypeConfig,
+// 	list *config.MediaListsConfig,
+// 	listid int,
+// ) error {
+// 	if err := logger.CheckContextEnded(ctx); err != nil {
+// 		return err
+// 	}
 
-	logger.Logtype("info", 2).
-		Str(logger.StrConfig, cfgp.NamePrefix).
-		Str(logger.StrListname, list.Name).
-		Msg("get feeds for")
+// 	logger.Logtype("info", 2).
+// 		Str(logger.StrConfig, cfgp.NamePrefix).
+// 		Str(logger.StrListname, list.Name).
+// 		Msg("get feeds for")
 
-	if !list.Enabled || !list.CfgList.Enabled {
-		return logger.ErrDisabled
-	}
+// 	if !list.Enabled || !list.CfgList.Enabled {
+// 		return logger.ErrDisabled
+// 	}
 
-	if list.CfgList == nil {
-		return errors.New("list template not found")
-	}
+// 	if list.CfgList == nil {
+// 		return errors.New("list template not found")
+// 	}
 
-	feed, err := Feeds(cfgp, list, false)
-	if err != nil {
-		plfeeds.Put(feed)
-		return err
-	}
-	defer plfeeds.Put(feed)
+// 	feed, err := Feeds(cfgp, list, false)
+// 	if err != nil {
+// 		plfeeds.Put(feed)
+// 		return err
+// 	}
+// 	defer plfeeds.Put(feed)
 
-	if len(feed.Movies) == 0 {
-		return nil
-	}
+// 	if len(feed.Movies) == 0 {
+// 		return nil
+// 	}
 
-	listnamefilter := list.Getlistnamefilterignore()
+// 	listnamefilter := list.Getlistnamefilterignore()
 
-	pl := worker.WorkerPoolParse.NewGroupContext(ctx)
+// 	pl := worker.WorkerPoolParse.NewGroupContext(ctx)
 
-	var getid uint
+// 	var getid uint
 
-	args := logger.PLArrAny.Get()
-	defer logger.PLArrAny.Put(args)
+// 	args := logger.PLArrAny.Get()
+// 	defer logger.PLArrAny.Put(args)
 
-	for idx := range list.IgnoreMapLists {
-		args.Arr = append(args.Arr, &list.IgnoreMapLists[idx])
-	}
+// 	for idx := range list.IgnoreMapLists {
+// 		args.Arr = append(args.Arr, &list.IgnoreMapLists[idx])
+// 	}
 
-	var existing []uint
-	if !config.GetSettingsGeneral().UseMediaCache && listnamefilter != "" {
-		existing = database.GetrowsNuncached[uint](
-			database.Getdatarow[uint](
-				false,
-				logger.JoinStrings("select count() from movies where "+listnamefilter),
-				args.Arr...,
-			),
-			logger.JoinStrings("select dbmovie_id from movies where "+listnamefilter),
-			args.Arr,
-		)
-	}
+// 	var existing []uint
+// 	if !config.GetSettingsGeneral().UseMediaCache && listnamefilter != "" {
+// 		existing = database.GetrowsNuncached[uint](
+// 			database.Getdatarow[uint](
+// 				false,
+// 				logger.JoinStrings("select count() from movies where "+listnamefilter),
+// 				args.Arr...,
+// 			),
+// 			logger.JoinStrings("select dbmovie_id from movies where "+listnamefilter),
+// 			args.Arr,
+// 		)
+// 	}
 
-	var (
-		allowed bool
-		movieid uint
-	)
+// 	var (
+// 		allowed bool
+// 		movieid uint
+// 	)
 
-	for idx := range feed.Movies {
-		if feed.Movies[idx] == "" {
-			continue
-		}
+// 	for idx := range feed.Movies {
+// 		if feed.Movies[idx] == "" {
+// 			continue
+// 		}
 
-		if err := logger.CheckContextEnded(ctx); err != nil {
-			return err
-		}
+// 		if err := logger.CheckContextEnded(ctx); err != nil {
+// 			return err
+// 		}
 
-		if !logger.HasPrefixI(feed.Movies[idx], "tt") {
-			feed.Movies[idx] = logger.AddImdbPrefix(feed.Movies[idx])
-		}
+// 		if !logger.HasPrefixI(feed.Movies[idx], "tt") {
+// 			feed.Movies[idx] = logger.AddImdbPrefix(feed.Movies[idx])
+// 		}
 
-		movieid = importfeed.MovieFindDBIDByImdb(&feed.Movies[idx])
+// 		movieid = importfeed.MovieFindDBIDByImdb(&feed.Movies[idx])
 
-		if movieid != 0 {
-			if config.GetSettingsGeneral().UseMediaCache {
-				if database.CacheOneStringTwoIntIndexFunc(
-					logger.CacheMovie,
-					func(elem *syncops.DbstaticOneStringTwoInt) bool {
-						return elem.Num1 == movieid &&
-							(elem.Str == list.Name || strings.EqualFold(elem.Str, list.Name))
-					},
-				) {
-					continue
-				}
-			} else if database.Scanrowsdyn(false, database.QueryCountMoviesByDBIDList, &getid, &movieid, &list.Name); getid >= 1 {
-				continue
-			}
+// 		if movieid != 0 {
+// 			if config.GetSettingsGeneral().UseMediaCache {
+// 				if database.CacheOneStringTwoIntIndexFunc(
+// 					logger.CacheMovie,
+// 					func(elem *syncops.DbstaticOneStringTwoInt) bool {
+// 						return elem.Num1 == movieid &&
+// 							(elem.Str == list.Name || strings.EqualFold(elem.Str, list.Name))
+// 					},
+// 				) {
+// 					continue
+// 				}
+// 			} else if database.Scanrowsdyn(false, database.QueryCountMoviesByDBIDList, &getid, &movieid, &list.Name); getid >= 1 {
+// 				continue
+// 			}
 
-			if list.IgnoreMapListsLen >= 1 {
-				if config.GetSettingsGeneral().UseMediaCache {
-					if database.CacheOneStringTwoIntIndexFunc(
-						logger.CacheMovie,
-						func(elem *syncops.DbstaticOneStringTwoInt) bool {
-							return elem.Num1 == movieid &&
-								logger.SlicesContainsI(list.IgnoreMapLists, elem.Str)
-						},
-					) {
-						continue
-					}
-				} else {
-					if slices.Contains(existing, movieid) {
-						continue
-					}
-				}
-			}
-		}
+// 			if list.IgnoreMapListsLen >= 1 {
+// 				if config.GetSettingsGeneral().UseMediaCache {
+// 					if database.CacheOneStringTwoIntIndexFunc(
+// 						logger.CacheMovie,
+// 						func(elem *syncops.DbstaticOneStringTwoInt) bool {
+// 							return elem.Num1 == movieid &&
+// 								logger.SlicesContainsI(list.IgnoreMapLists, elem.Str)
+// 						},
+// 					) {
+// 						continue
+// 					}
+// 				} else {
+// 					if slices.Contains(existing, movieid) {
+// 						continue
+// 					}
+// 				}
+// 			}
+// 		}
 
-		allowed, _ = importfeed.AllowMovieImport(&feed.Movies[idx], list.CfgList)
-		if allowed {
-			pl.Submit(func() {
-				defer logger.HandlePanic()
+// 		allowed, _ = importfeed.AllowMovieImport(&feed.Movies[idx], list.CfgList)
+// 		if allowed {
+// 			pl.Submit(func() {
+// 				defer logger.HandlePanic()
 
-				importfeed.JobImportMoviesByList(ctx, feed.Movies[idx], idx, cfgp, listid, true)
-			})
-		} else {
-			logger.Logtype("debug", 1).
-				Str(logger.StrImdb, feed.Movies[idx]).
-				Msg("not allowed movie")
-		}
-	}
+// 				importfeed.JobImportMoviesByList(ctx, feed.Movies[idx], idx, cfgp, listid, true)
+// 			})
+// 		} else {
+// 			logger.Logtype("debug", 1).
+// 				Str(logger.StrImdb, feed.Movies[idx]).
+// 				Msg("not allowed movie")
+// 		}
+// 	}
 
-	errjobs := pl.Wait()
-	if errjobs != nil {
-		logger.Logtype("error", 0).
-			Err(errjobs).
-			Msg("Error importing movies")
-	}
+// 	errjobs := pl.Wait()
+// 	if errjobs != nil {
+// 		logger.Logtype("error", 0).
+// 			Err(errjobs).
+// 			Msg("Error importing movies")
+// 	}
 
-	return nil
-}
-
-// checkreachedmoviesflag checks if the quality cutoff has been reached for all movies in the given list config.
-// It queries the movies table for the list, checks the priority of existing files against the config quality cutoff,
-// and updates the quality_reached flag in the database accordingly.
-func checkreachedmoviesflag(rootctx context.Context, listcfg *config.MediaListsConfig) error {
-	var minPrio int
-
-	arr := database.QueryMovies(&listcfg.Name)
-	for idx := range arr {
-		if err := logger.CheckContextEnded(rootctx); err != nil {
-			return err
-		}
-
-		if !config.CheckGroup("quality_", arr[idx].QualityProfile) {
-			logger.Logtype("debug", 1).
-				Uint(logger.StrID, arr[idx].ID).
-				Msg("Quality for Movie not found")
-			continue
-		}
-
-		minPrio, _ = searcher.Getpriobyfiles(
-			false,
-			&arr[idx].ID,
-			false,
-			-1,
-			config.GetSettingsQuality(arr[idx].QualityProfile),
-			false,
-		)
-		if minPrio >= config.GetSettingsQuality(arr[idx].QualityProfile).CutoffPriority {
-			if !arr[idx].QualityReached {
-				database.ExecN("update movies set quality_reached = 1 where id = ?", &arr[idx].ID)
-			}
-		} else {
-			if arr[idx].QualityReached {
-				database.ExecN("update movies set quality_reached = 0 where id = ?", &arr[idx].ID)
-			}
-		}
-	}
-
-	return nil
-}
+// 	return nil
+// }
 
 // RefreshMovie refreshes the data for the given movie by looking up its ID and calling refreshmovies.
 // It takes the media config and the movie ID string.
@@ -459,22 +291,4 @@ func getrefreshlistid(imdb *string, cfgp *config.MediaTypeConfig) int {
 	}
 
 	return cfgp.GetMediaListsEntryListID(listname)
-}
-
-// MoviesAllJobs runs the specified job for all movie media types.
-// It iterates through the global config.SettingsMedia, checks for movie
-// media types by prefix, and calls SingleJobs on each matching one.
-// The job and force params are passed through to SingleJobs.
-func MoviesAllJobs(job string, force bool) {
-	if job == "" {
-		return
-	}
-
-	ctx := context.Background()
-	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) error {
-		if !strings.HasPrefix(media.NamePrefix, logger.StrMovie) {
-			return nil
-		}
-		return SingleJobs(ctx, job, media.NamePrefix, "", force, 0)
-	})
 }

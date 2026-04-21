@@ -3,8 +3,8 @@ package csrfapi
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
@@ -13,6 +13,7 @@ import (
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/goccy/go-json"
 )
 
 // Config holds the configuration for the CSRF API scraper.
@@ -203,15 +204,17 @@ func (s *Scraper) extractCSRFToken(ctx context.Context) error {
 	cookies := s.cookieJar.Cookies(parsedURL)
 
 	for _, cookie := range cookies {
-		if cookie.Name == s.config.CSRFCookieName {
-			s.csrfToken = cookie.Value
-			logger.Logtype(logger.StatusDebug, 0).
-				Str("site", s.config.SiteName).
-				Int("token_length", len(s.csrfToken)).
-				Msg("Extracted CSRF token")
-
-			return nil
+		if cookie.Name != s.config.CSRFCookieName {
+			continue
 		}
+
+		s.csrfToken = cookie.Value
+		logger.Logtype(logger.StatusDebug, 0).
+			Str("site", s.config.SiteName).
+			Int("token_length", len(s.csrfToken)).
+			Msg("Extracted CSRF token")
+
+		return nil
 	}
 
 	return fmt.Errorf("CSRF cookie '%s' not found", s.config.CSRFCookieName)
@@ -226,7 +229,7 @@ func (s *Scraper) extractCSRFToken(ctx context.Context) error {
 // Returns:
 //   - map[string]interface{}: Parsed JSON response
 //   - error: Any errors during fetch or parse
-func (s *Scraper) fetchAPIPage(ctx context.Context, pageNum int) (map[string]interface{}, error) {
+func (s *Scraper) fetchAPIPage(ctx context.Context, pageNum int) (map[string]any, error) {
 	// Build API URL
 	url := strings.ReplaceAll(s.config.APIURLPattern, "{page}", fmt.Sprintf("%d", pageNum))
 
@@ -254,8 +257,13 @@ func (s *Scraper) fetchAPIPage(ctx context.Context, pageNum int) (map[string]int
 	}
 
 	// Parse JSON response
-	var result map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	data, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		return nil, fmt.Errorf("failed to read response: %w", readErr)
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal(data, &result); err != nil {
 		return nil, fmt.Errorf("failed to decode JSON: %w", err)
 	}
 
@@ -269,13 +277,13 @@ func (s *Scraper) fetchAPIPage(ctx context.Context, pageNum int) (map[string]int
 //
 // Returns:
 //   - []interface{}: Array of results
-func (s *Scraper) extractResults(data map[string]interface{}) []interface{} {
+func (s *Scraper) extractResults(data map[string]any) []any {
 	resultsRaw, ok := data[s.config.ResultsArrayPath]
 	if !ok {
 		return nil
 	}
 
-	results, ok := resultsRaw.([]interface{})
+	results, ok := resultsRaw.([]any)
 	if !ok {
 		return nil
 	}
@@ -291,7 +299,7 @@ func (s *Scraper) extractResults(data map[string]interface{}) []interface{} {
 //
 // Returns:
 //   - string: Extracted value
-func (s *Scraper) extractStringField(obj map[string]interface{}, fieldName string) string {
+func (s *Scraper) extractStringField(obj map[string]any, fieldName string) string {
 	if fieldName == "" {
 		return ""
 	}
@@ -316,7 +324,7 @@ func (s *Scraper) extractStringField(obj map[string]interface{}, fieldName strin
 //
 // Returns:
 //   - string: Comma-separated actor names
-func (s *Scraper) extractActors(obj map[string]interface{}) string {
+func (s *Scraper) extractActors(obj map[string]any) string {
 	if s.config.ActorsField == "" {
 		return ""
 	}
@@ -326,14 +334,14 @@ func (s *Scraper) extractActors(obj map[string]interface{}) string {
 		return ""
 	}
 
-	actors, ok := actorsRaw.([]interface{})
+	actors, ok := actorsRaw.([]any)
 	if !ok {
 		return ""
 	}
 
 	var names []string
 	for _, actorRaw := range actors {
-		actor, ok := actorRaw.(map[string]interface{})
+		actor, ok := actorRaw.(map[string]any)
 		if !ok {
 			continue
 		}
@@ -344,7 +352,7 @@ func (s *Scraper) extractActors(obj map[string]interface{}) string {
 		}
 	}
 
-	return strings.Join(names, ", ")
+	return logger.JoinStringsSep(names, ", ")
 }
 
 // parseDate parses a date string or time object.
@@ -355,7 +363,7 @@ func (s *Scraper) extractActors(obj map[string]interface{}) string {
 // Returns:
 //   - time.Time: Parsed date
 //   - error: Parsing errors
-func (s *Scraper) parseDate(dateVal interface{}) (time.Time, error) {
+func (s *Scraper) parseDate(dateVal any) (time.Time, error) {
 	// Check if it's already a time.Time
 	if t, ok := dateVal.(time.Time); ok {
 		return t, nil
@@ -526,7 +534,7 @@ func (s *Scraper) Scrape(ctx context.Context, firstpageonly bool) (int, error) {
 
 		processedInPage := false
 		for _, resultRaw := range results {
-			result, ok := resultRaw.(map[string]interface{})
+			result, ok := resultRaw.(map[string]any)
 			if !ok {
 				continue
 			}

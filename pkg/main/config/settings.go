@@ -222,6 +222,10 @@ func RangeSettingsMedia(fn func(string, *MediaTypeConfig) error) {
 	}
 
 	for key, cfg := range currentSnapshot.Media {
+		if cfg == nil {
+			continue
+		}
+
 		fn(key, cfg)
 	}
 }
@@ -244,6 +248,10 @@ func RangeSettingsMediaBreak(fn func(string, *MediaTypeConfig) bool) {
 	}
 
 	for key, cfg := range currentSnapshot.Media {
+		if cfg == nil {
+			continue
+		}
+
 		if fn(key, cfg) {
 			break
 		}
@@ -325,6 +333,44 @@ func RangeSettingsRegex(fn func(string, *RegexConfig)) {
 	for key, cfg := range currentSnapshot.Regex {
 		fn(key, cfg)
 	}
+}
+
+// defaultMusicMetaSourcePriority is used when MusicMetaSourcePriority is empty.
+var defaultMusicMetaSourcePriority = []string{"musicbrainz", "acoustid", "lastfm", "discogs", "deezer", "theaudiodb", "itunes"}
+
+// GetMusicMetaSourcePriority returns the ordered list of music metadata providers to use.
+// When MusicMetaSourcePriority is empty all providers are returned in the default order.
+// Providers that require an API key ("acoustid", "lastfm") are excluded when their key
+// is not configured, regardless of their position in the list.
+// "musicbrainz" and "discogs" have no key requirement and are never auto-excluded.
+func GetMusicMetaSourcePriority() []string {
+	cfg := GetSettingsGeneral()
+	if cfg == nil {
+		return defaultMusicMetaSourcePriority
+	}
+
+	base := cfg.MusicMetaSourcePriority
+	if len(base) == 0 {
+		base = defaultMusicMetaSourcePriority
+	}
+
+	// Only filter providers whose required credentials are absent.
+	// "musicbrainz" and "discogs" are unconditional — no key needed.
+	out := make([]string, 0, len(base))
+	for _, p := range base {
+		switch p {
+		case "acoustid":
+			if cfg.AcoustIDAPIKey == "" {
+				continue
+			}
+		case "lastfm":
+			if cfg.LastFMAPIKey == "" {
+				continue
+			}
+		}
+		out = append(out, p)
+	}
+	return out
 }
 
 func RangeSettingsDownloader(fn func(string, *DownloaderConfig)) {

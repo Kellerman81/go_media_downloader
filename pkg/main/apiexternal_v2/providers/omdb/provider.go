@@ -8,6 +8,7 @@ import (
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/base"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 )
 
 //
@@ -52,9 +53,9 @@ func (p *Provider) SearchMovies(
 	query string,
 	year int,
 ) ([]apiexternal_v2.MovieSearchResult, error) {
-	endpoint := fmt.Sprintf("/?s=%s&type=movie", query)
+	endpoint := logger.JoinStrings("/?s=", query, "&type=movie")
 	if year > 0 {
-		endpoint += fmt.Sprintf("&y=%d", year)
+		endpoint += logger.JoinStrings("&y=", strconv.Itoa(year))
 	}
 
 	var response omdbSearchResponse
@@ -81,7 +82,7 @@ func (p *Provider) FindMovieByIMDbID(
 	ctx context.Context,
 	imdbID string,
 ) (*apiexternal_v2.FindByIMDbResult, error) {
-	endpoint := fmt.Sprintf("/?i=%s&plot=full", imdbID)
+	endpoint := logger.JoinStrings("/?i=", imdbID, "&plot=full")
 
 	var response omdbDetailsResponse
 	if err := p.MakeRequest(ctx, "GET", endpoint, nil, &response, nil); err != nil {
@@ -117,9 +118,9 @@ func (p *Provider) SearchSeries(
 	query string,
 	year int,
 ) ([]apiexternal_v2.SeriesSearchResult, error) {
-	endpoint := fmt.Sprintf("/?s=%s&type=series", query)
+	endpoint := logger.JoinStrings("/?s=", query, "&type=series")
 	if year > 0 {
-		endpoint += fmt.Sprintf("&y=%d", year)
+		endpoint += logger.JoinStrings("&y=", strconv.Itoa(year))
 	}
 
 	var response omdbSearchResponse
@@ -161,7 +162,14 @@ func (p *Provider) GetEpisodeDetailsByIMDb(
 	seasonNumber int,
 	episodeNumber int,
 ) (*apiexternal_v2.Episode, error) {
-	endpoint := fmt.Sprintf("/?i=%s&Season=%d&Episode=%d", imdbID, seasonNumber, episodeNumber)
+	endpoint := logger.JoinStrings(
+		"/?i=",
+		imdbID,
+		"&Season=",
+		strconv.Itoa(seasonNumber),
+		"&Episode=",
+		strconv.Itoa(episodeNumber),
+	)
 
 	var response omdbDetailsResponse
 	if err := p.MakeRequest(ctx, "GET", endpoint, nil, &response, nil); err != nil {
@@ -184,7 +192,7 @@ func (p *Provider) GetMovieCreditsByIMDb(
 	ctx context.Context,
 	imdbID string,
 ) (*apiexternal_v2.Credits, error) {
-	endpoint := fmt.Sprintf("/?i=%s&plot=full", imdbID)
+	endpoint := logger.JoinStrings("/?i=", imdbID, "&plot=full")
 
 	var response omdbDetailsResponse
 	if err := p.MakeRequest(ctx, "GET", endpoint, nil, &response, nil); err != nil {
@@ -203,7 +211,7 @@ func (p *Provider) GetDetailsByIMDb(
 	ctx context.Context,
 	imdbID string,
 ) (*apiexternal_v2.MovieDetails, error) {
-	endpoint := fmt.Sprintf("/?i=%s&plot=full", imdbID)
+	endpoint := logger.JoinStrings("/?i=", imdbID, "&plot=full")
 
 	var response omdbDetailsResponse
 	if err := p.MakeRequest(ctx, "GET", endpoint, nil, &response, nil); err != nil {
@@ -224,13 +232,13 @@ func (p *Provider) SearchByTitle(
 	year int,
 	mediaType string,
 ) ([]OmdbSearchResult, error) {
-	endpoint := fmt.Sprintf("/?s=%s", title)
+	endpoint := logger.JoinStrings("/?s=", title)
 	if year > 0 {
-		endpoint += fmt.Sprintf("&y=%d", year)
+		endpoint += logger.JoinStrings("&y=", strconv.Itoa(year))
 	}
 
 	if mediaType != "" {
-		endpoint += fmt.Sprintf("&type=%s", mediaType) // movie, series, episode
+		endpoint += logger.JoinStrings("&type=", mediaType) // movie, series, episode
 	}
 
 	var response omdbSearchResponse
@@ -276,5 +284,6 @@ func parseRating(ratingStr string) float64 {
 	if rating, err := strconv.ParseFloat(ratingStr, 64); err == nil {
 		return rating
 	}
+
 	return 0.0
 }

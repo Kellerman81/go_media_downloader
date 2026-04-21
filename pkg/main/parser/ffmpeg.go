@@ -16,21 +16,29 @@ import (
 
 type ffProbeJSON struct {
 	Streams []struct {
-		Tags struct {
-			Language string `json:"language"`
-		} `json:"tags"`
-		CodecName      string `json:"codec_name"`
-		CodecTagString string `json:"codec_tag_string"`
-		CodecType      string `json:"codec_type"`
-		Height         int    `json:"height,omitempty"`
-		Width          int    `json:"width,omitempty"`
+		//Tags struct {
+		//	Language string `json:"language"`
+		//} `json:"tags"`
+		Tags           map[string]string `json:"tags"`
+		CodecName      string            `json:"codec_name"`
+		CodecTagString string            `json:"codec_tag_string"`
+		CodecType      string            `json:"codec_type"`
+		Height         int               `json:"height,omitempty"`
+		Width          int               `json:"width,omitempty"`
+		SampleRate     string            `json:"sample_rate"`
+		Channels       int               `json:"channels"`
+		BitRate        string            `json:"bit_rate"`
+		Duration       string            `json:"duration"`
 	} `json:"streams"`
 	Format struct {
 		// BitRate is a string containing the bit rate of the media
 		// BitRate        string `json:"bit_rate"`
 
 		// Duration is a string containing the duration of the media
-		Duration string `json:"duration"`
+		Duration string            `json:"duration"`
+		Filename string            `json:"filename"`
+		BitRate  string            `json:"bit_rate"`
+		Tags     map[string]string `json:"tags"`
 	} `json:"format"`
 	Error struct {
 		String string `json:"string"`
@@ -143,7 +151,7 @@ func buildFFProbeCmd(file string) *exec.Cmd {
 		"-print_format",
 		"json",
 		"-show_entries",
-		"format=duration : stream=codec_name,codec_tag_string,codec_type,height,width : stream_tags=Language : error",
+		"format=filename,duration,bit_rate,tags : stream=codec_name,codec_tag_string,codec_type,height,width,sample_rate,bit_rate,channels,tags : error",
 		file,
 	)
 }
@@ -167,12 +175,14 @@ func getcmd(file, typ string) *exec.Cmd {
 		if file == "" {
 			return nil
 		}
+
 		return buildFFProbeCmd(file)
 
 	case "mediainfo":
 		if file == "" {
 			return nil
 		}
+
 		return buildMediaInfoCmd(file)
 
 	default:
@@ -180,7 +190,7 @@ func getcmd(file, typ string) *exec.Cmd {
 	}
 }
 
-// ExecCmdJson executes the given command with the provided arguments and returns
+// ExecCmdJSON executes the given command with the provided arguments and returns
 // the parsed JSON output as either a mediaInfoJSON or ffProbeJSON struct, or an error.
 // The command type is specified by the 'typ' parameter, which can be either "ffprobe" or "mediainfo".
 // The 'file' parameter is the path to the file to analyze.

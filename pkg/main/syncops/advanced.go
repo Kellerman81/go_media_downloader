@@ -1,11 +1,5 @@
 package syncops
 
-import (
-	"regexp"
-
-	"github.com/jmoiron/sqlx"
-)
-
 // processSyncMapCheckExpires checks and manages expiration for sync map entries.
 // It validates if an entry exists for the given key, optionally extends the expiration time,
 // and handles different map types (String, TwoString, ThreeString, TwoInt).
@@ -40,6 +34,9 @@ func (m *SyncOpsManager) processSyncMapCheckExpires(op SyncOperation) bool {
 			syncMap.CheckExpires(op.Key, op.Extend, op.Duration)
 			return true
 		}
+
+	default:
+		// Other map types do not support CheckExpires
 	}
 
 	return false
@@ -57,36 +54,67 @@ func (m *SyncOpsManager) processSyncMapDeleteFunc(op SyncOperation) bool {
 
 	switch op.MapType {
 	case MapTypeString:
-		if syncMap, ok := syncMapInterface.(*SyncMap[[]string]); ok {
-			if filterFunc, ok := op.FilterFunc.(func([]string) bool); ok {
-				syncMap.DeleteFunc(filterFunc)
-				return true
-			}
+		syncMap, ok := syncMapInterface.(*SyncMap[[]string])
+		if !ok {
+			break
 		}
+
+		filterFunc, ok := op.FilterFunc.(func([]string) bool)
+		if !ok {
+			break
+		}
+
+		syncMap.DeleteFunc(filterFunc)
+
+		return true
 
 	case MapTypeTwoString:
-		if syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticTwoStringOneInt]); ok {
-			if filterFunc, ok := op.FilterFunc.(func([]DbstaticTwoStringOneInt) bool); ok {
-				syncMap.DeleteFunc(filterFunc)
-				return true
-			}
+		syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticTwoStringOneInt])
+		if !ok {
+			break
 		}
+
+		filterFunc, ok := op.FilterFunc.(func([]DbstaticTwoStringOneInt) bool)
+		if !ok {
+			break
+		}
+
+		syncMap.DeleteFunc(filterFunc)
+
+		return true
 
 	case MapTypeThreeString:
-		if syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticThreeStringTwoInt]); ok {
-			if filterFunc, ok := op.FilterFunc.(func([]DbstaticThreeStringTwoInt) bool); ok {
-				syncMap.DeleteFunc(filterFunc)
-				return true
-			}
+		syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticThreeStringTwoInt])
+		if !ok {
+			break
 		}
 
-	case MapTypeTwoInt:
-		if syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticOneStringTwoInt]); ok {
-			if filterFunc, ok := op.FilterFunc.(func([]DbstaticOneStringTwoInt) bool); ok {
-				syncMap.DeleteFunc(filterFunc)
-				return true
-			}
+		filterFunc, ok := op.FilterFunc.(func([]DbstaticThreeStringTwoInt) bool)
+		if !ok {
+			break
 		}
+
+		syncMap.DeleteFunc(filterFunc)
+
+		return true
+
+	case MapTypeTwoInt:
+		syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticOneStringTwoInt])
+		if !ok {
+			break
+		}
+
+		filterFunc, ok := op.FilterFunc.(func([]DbstaticOneStringTwoInt) bool)
+		if !ok {
+			break
+		}
+
+		syncMap.DeleteFunc(filterFunc)
+
+		return true
+
+	default:
+		// Other map types do not support DeleteFunc
 	}
 
 	return false
@@ -104,52 +132,67 @@ func (m *SyncOpsManager) processSyncMapDeleteFuncExpires(op SyncOperation) bool 
 
 	switch op.MapType {
 	case MapTypeString:
-		if syncMap, ok := syncMapInterface.(*SyncMap[[]string]); ok {
-			if filterFunc, ok := op.FilterFunc.(func(int64) bool); ok {
-				syncMap.DeleteFuncExpires(filterFunc)
-				return true
-			}
+		syncMap, ok := syncMapInterface.(*SyncMap[[]string])
+		if !ok {
+			break
 		}
+
+		filterFunc, ok := op.FilterFunc.(func(int64) bool)
+		if !ok {
+			break
+		}
+
+		syncMap.DeleteFuncExpires(filterFunc)
+
+		return true
 
 	case MapTypeTwoString:
-		if syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticTwoStringOneInt]); ok {
-			if filterFunc, ok := op.FilterFunc.(func(int64) bool); ok {
-				syncMap.DeleteFuncExpires(filterFunc)
-				return true
-			}
+		syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticTwoStringOneInt])
+		if !ok {
+			break
 		}
+
+		filterFunc, ok := op.FilterFunc.(func(int64) bool)
+		if !ok {
+			break
+		}
+
+		syncMap.DeleteFuncExpires(filterFunc)
+
+		return true
 
 	case MapTypeThreeString:
-		if syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticThreeStringTwoInt]); ok {
-			if filterFunc, ok := op.FilterFunc.(func(int64) bool); ok {
-				syncMap.DeleteFuncExpires(filterFunc)
-				return true
-			}
+		syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticThreeStringTwoInt])
+		if !ok {
+			break
 		}
+
+		filterFunc, ok := op.FilterFunc.(func(int64) bool)
+		if !ok {
+			break
+		}
+
+		syncMap.DeleteFuncExpires(filterFunc)
+
+		return true
 
 	case MapTypeTwoInt:
-		if syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticOneStringTwoInt]); ok {
-			if filterFunc, ok := op.FilterFunc.(func(int64) bool); ok {
-				syncMap.DeleteFuncExpires(filterFunc)
-				return true
-			}
+		syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticOneStringTwoInt])
+		if !ok {
+			break
 		}
 
-	case MapTypeXStmt:
-		if syncMap, ok := syncMapInterface.(*SyncMap[*sqlx.Stmt]); ok {
-			if filterFunc, ok := op.FilterFunc.(func(int64) bool); ok {
-				syncMap.DeleteFuncExpires(filterFunc)
-				return true
-			}
+		filterFunc, ok := op.FilterFunc.(func(int64) bool)
+		if !ok {
+			break
 		}
 
-	case MapTypeRegex:
-		if syncMap, ok := syncMapInterface.(*SyncMap[*regexp.Regexp]); ok {
-			if filterFunc, ok := op.FilterFunc.(func(int64) bool); ok {
-				syncMap.DeleteFuncExpires(filterFunc)
-				return true
-			}
-		}
+		syncMap.DeleteFuncExpires(filterFunc)
+
+		return true
+
+	default:
+		// Other map types do not support DeleteFuncExpires
 	}
 
 	return false
@@ -168,54 +211,84 @@ func (m *SyncOpsManager) processSyncMapDeleteFuncExpiresVal(op SyncOperation) bo
 
 	switch op.MapType {
 	case MapTypeString:
-		if syncMap, ok := syncMapInterface.(*SyncMap[[]string]); ok {
-			if filterFunc, ok := op.FilterFunc.(func(int64) bool); ok {
-				if valueFunc, ok := op.ValueFunc.(func([]string)); ok {
-					syncMap.DeleteFuncExpiresVal(filterFunc, valueFunc)
-					return true
-				}
-			}
+		syncMap, ok := syncMapInterface.(*SyncMap[[]string])
+		if !ok {
+			break
 		}
+
+		filterFunc, ok := op.FilterFunc.(func(int64) bool)
+		if !ok {
+			break
+		}
+
+		valueFunc, ok := op.ValueFunc.(func([]string))
+		if !ok {
+			break
+		}
+
+		syncMap.DeleteFuncExpiresVal(filterFunc, valueFunc)
+
+		return true
 
 	case MapTypeTwoString:
-		if syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticTwoStringOneInt]); ok {
-			if filterFunc, ok := op.FilterFunc.(func(int64) bool); ok {
-				if valueFunc, ok := op.ValueFunc.(func([]DbstaticTwoStringOneInt)); ok {
-					syncMap.DeleteFuncExpiresVal(filterFunc, valueFunc)
-					return true
-				}
-			}
+		syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticTwoStringOneInt])
+		if !ok {
+			break
 		}
+
+		filterFunc, ok := op.FilterFunc.(func(int64) bool)
+		if !ok {
+			break
+		}
+
+		valueFunc, ok := op.ValueFunc.(func([]DbstaticTwoStringOneInt))
+		if !ok {
+			break
+		}
+
+		syncMap.DeleteFuncExpiresVal(filterFunc, valueFunc)
+
+		return true
 
 	case MapTypeThreeString:
-		if syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticThreeStringTwoInt]); ok {
-			if filterFunc, ok := op.FilterFunc.(func(int64) bool); ok {
-				if valueFunc, ok := op.ValueFunc.(func([]DbstaticThreeStringTwoInt)); ok {
-					syncMap.DeleteFuncExpiresVal(filterFunc, valueFunc)
-					return true
-				}
-			}
+		syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticThreeStringTwoInt])
+		if !ok {
+			break
 		}
+
+		filterFunc, ok := op.FilterFunc.(func(int64) bool)
+		if !ok {
+			break
+		}
+
+		valueFunc, ok := op.ValueFunc.(func([]DbstaticThreeStringTwoInt))
+		if !ok {
+			break
+		}
+
+		syncMap.DeleteFuncExpiresVal(filterFunc, valueFunc)
+
+		return true
 
 	case MapTypeTwoInt:
-		if syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticOneStringTwoInt]); ok {
-			if filterFunc, ok := op.FilterFunc.(func(int64) bool); ok {
-				if valueFunc, ok := op.ValueFunc.(func([]DbstaticOneStringTwoInt)); ok {
-					syncMap.DeleteFuncExpiresVal(filterFunc, valueFunc)
-					return true
-				}
-			}
+		syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticOneStringTwoInt])
+		if !ok {
+			break
 		}
 
-	case MapTypeXStmt:
-		if syncMap, ok := syncMapInterface.(*SyncMap[*sqlx.Stmt]); ok {
-			if filterFunc, ok := op.FilterFunc.(func(int64) bool); ok {
-				if valueFunc, ok := op.ValueFunc.(func(*sqlx.Stmt)); ok {
-					syncMap.DeleteFuncExpiresVal(filterFunc, valueFunc)
-					return true
-				}
-			}
+		filterFunc, ok := op.FilterFunc.(func(int64) bool)
+		if !ok {
+			break
 		}
+
+		valueFunc, ok := op.ValueFunc.(func([]DbstaticOneStringTwoInt))
+		if !ok {
+			break
+		}
+
+		syncMap.DeleteFuncExpiresVal(filterFunc, valueFunc)
+
+		return true
 	}
 
 	return false
@@ -234,54 +307,84 @@ func (m *SyncOpsManager) processSyncMapDeleteFuncImdbVal(op SyncOperation) bool 
 
 	switch op.MapType {
 	case MapTypeString:
-		if syncMap, ok := syncMapInterface.(*SyncMap[[]string]); ok {
-			if filterFunc, ok := op.FilterFunc.(func(bool) bool); ok {
-				if valueFunc, ok := op.ValueFunc.(func([]string)); ok {
-					syncMap.DeleteFuncImdbVal(filterFunc, valueFunc)
-					return true
-				}
-			}
+		syncMap, ok := syncMapInterface.(*SyncMap[[]string])
+		if !ok {
+			break
 		}
+
+		filterFunc, ok := op.FilterFunc.(func(bool) bool)
+		if !ok {
+			break
+		}
+
+		valueFunc, ok := op.ValueFunc.(func([]string))
+		if !ok {
+			break
+		}
+
+		syncMap.DeleteFuncImdbVal(filterFunc, valueFunc)
+
+		return true
 
 	case MapTypeTwoString:
-		if syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticTwoStringOneInt]); ok {
-			if filterFunc, ok := op.FilterFunc.(func(bool) bool); ok {
-				if valueFunc, ok := op.ValueFunc.(func([]DbstaticTwoStringOneInt)); ok {
-					syncMap.DeleteFuncImdbVal(filterFunc, valueFunc)
-					return true
-				}
-			}
+		syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticTwoStringOneInt])
+		if !ok {
+			break
 		}
+
+		filterFunc, ok := op.FilterFunc.(func(bool) bool)
+		if !ok {
+			break
+		}
+
+		valueFunc, ok := op.ValueFunc.(func([]DbstaticTwoStringOneInt))
+		if !ok {
+			break
+		}
+
+		syncMap.DeleteFuncImdbVal(filterFunc, valueFunc)
+
+		return true
 
 	case MapTypeThreeString:
-		if syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticThreeStringTwoInt]); ok {
-			if filterFunc, ok := op.FilterFunc.(func(bool) bool); ok {
-				if valueFunc, ok := op.ValueFunc.(func([]DbstaticThreeStringTwoInt)); ok {
-					syncMap.DeleteFuncImdbVal(filterFunc, valueFunc)
-					return true
-				}
-			}
+		syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticThreeStringTwoInt])
+		if !ok {
+			break
 		}
+
+		filterFunc, ok := op.FilterFunc.(func(bool) bool)
+		if !ok {
+			break
+		}
+
+		valueFunc, ok := op.ValueFunc.(func([]DbstaticThreeStringTwoInt))
+		if !ok {
+			break
+		}
+
+		syncMap.DeleteFuncImdbVal(filterFunc, valueFunc)
+
+		return true
 
 	case MapTypeTwoInt:
-		if syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticOneStringTwoInt]); ok {
-			if filterFunc, ok := op.FilterFunc.(func(bool) bool); ok {
-				if valueFunc, ok := op.ValueFunc.(func([]DbstaticOneStringTwoInt)); ok {
-					syncMap.DeleteFuncImdbVal(filterFunc, valueFunc)
-					return true
-				}
-			}
+		syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticOneStringTwoInt])
+		if !ok {
+			break
 		}
 
-	case MapTypeXStmt:
-		if syncMap, ok := syncMapInterface.(*SyncMap[*sqlx.Stmt]); ok {
-			if filterFunc, ok := op.FilterFunc.(func(bool) bool); ok {
-				if valueFunc, ok := op.ValueFunc.(func(*sqlx.Stmt)); ok {
-					syncMap.DeleteFuncImdbVal(filterFunc, valueFunc)
-					return true
-				}
-			}
+		filterFunc, ok := op.FilterFunc.(func(bool) bool)
+		if !ok {
+			break
 		}
+
+		valueFunc, ok := op.ValueFunc.(func([]DbstaticOneStringTwoInt))
+		if !ok {
+			break
+		}
+
+		syncMap.DeleteFuncImdbVal(filterFunc, valueFunc)
+
+		return true
 	}
 
 	return false

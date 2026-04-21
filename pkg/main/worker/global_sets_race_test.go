@@ -28,11 +28,11 @@ func TestGlobalQueueSetRaceConditions(t *testing.T) {
 		jobsPerWorker := 50
 
 		// Workers adding jobs
-		for i := 0; i < numWorkers; i++ {
+		for i := range numWorkers {
 			wg.Add(1)
 			go func(workerID int) {
 				defer wg.Done()
-				for j := 0; j < jobsPerWorker; j++ {
+				for j := range jobsPerWorker {
 					ctx, cancel := context.WithCancel(context.Background())
 					job := syncops.Job{
 						ID:         uint32(workerID*jobsPerWorker + j),
@@ -62,15 +62,13 @@ func TestGlobalQueueSetRaceConditions(t *testing.T) {
 
 		// Workers reading jobs
 		for i := 0; i < numWorkers/4; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				for j := 0; j < jobsPerWorker*2; j++ {
 					jobID := uint32(j % (numWorkers * jobsPerWorker))
 					_ = globalQueueSet.Check(jobID)
 					_ = globalQueueSet.GetVal(jobID)
 				}
-			}()
+			})
 		}
 
 		wg.Wait()
@@ -95,11 +93,11 @@ func TestGlobalQueueSetRaceConditions(t *testing.T) {
 		var operationsCount int64
 
 		// Test RemoveQueueEntry
-		for i := 0; i < 10; i++ {
+		for i := range 10 {
 			wg.Add(1)
 			go func(workerID int) {
 				defer wg.Done()
-				for j := 0; j < 20; j++ {
+				for j := range 20 {
 					ctx, cancel := context.WithCancel(context.Background())
 					jobID := uint32(workerID*100 + j)
 					job := syncops.Job{
@@ -121,13 +119,13 @@ func TestGlobalQueueSetRaceConditions(t *testing.T) {
 		}
 
 		// Test DeleteJobQueue
-		for i := 0; i < 5; i++ {
+		for i := range 5 {
 			wg.Add(1)
 			go func(workerID int) {
 				defer wg.Done()
-				for j := 0; j < 10; j++ {
+				for j := range 10 {
 					// Add jobs to delete
-					for k := 0; k < 5; k++ {
+					for k := range 5 {
 						ctx, cancel := context.WithCancel(context.Background())
 						jobID := uint32(workerID*1000 + j*10 + k)
 						job := syncops.Job{
@@ -151,16 +149,14 @@ func TestGlobalQueueSetRaceConditions(t *testing.T) {
 		}
 
 		// Test GetQueues
-		for i := 0; i < 5; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				for j := 0; j < 50; j++ {
+		for range 5 {
+			wg.Go(func() {
+				for range 50 {
 					queues := GetQueues()
 					_ = len(queues) // Use the result
 					atomic.AddInt64(&operationsCount, 1)
 				}
-			}()
+			})
 		}
 
 		wg.Wait()
@@ -185,7 +181,7 @@ func TestGlobalQueueSetRaceConditions(t *testing.T) {
 		var wg sync.WaitGroup
 
 		// Add some jobs for checking
-		for i := 0; i < 20; i++ {
+		for i := range 20 {
 			ctx, cancel := context.WithCancel(context.Background())
 			job := syncops.Job{
 				ID:         uint32(i),
@@ -200,26 +196,31 @@ func TestGlobalQueueSetRaceConditions(t *testing.T) {
 		}
 
 		// Concurrent checkers
-		for i := 0; i < 15; i++ {
+		for i := range 15 {
 			wg.Add(1)
 			go func(workerID int) {
 				defer wg.Done()
-				for j := 0; j < 100; j++ {
+				for j := range 100 {
 					jobName := fmt.Sprintf("check_test_%d", j%20)
 					_ = checkQueueStarted(jobName, false, "", "")
 
 					// Test with alternatives
-					_ = checkQueueStarted("searchmissinginctitle_test", true, "searchmissinginc", "_test")
+					_ = checkQueueStarted(
+						"searchmissinginctitle_test",
+						true,
+						"searchmissinginc",
+						"_test",
+					)
 				}
 			}(i)
 		}
 
 		// Concurrent job modifications
-		for i := 0; i < 5; i++ {
+		for i := range 5 {
 			wg.Add(1)
 			go func(workerID int) {
 				defer wg.Done()
-				for j := 0; j < 20; j++ {
+				for j := range 20 {
 					jobID := uint32(20 + workerID*20 + j)
 					ctx, cancel := context.WithCancel(context.Background())
 					job := syncops.Job{
@@ -263,11 +264,11 @@ func TestGlobalScheduleSetRaceConditions(t *testing.T) {
 		schedulesPerWorker := 30
 
 		// Workers adding schedules
-		for i := 0; i < numWorkers; i++ {
+		for i := range numWorkers {
 			wg.Add(1)
 			go func(workerID int) {
 				defer wg.Done()
-				for j := 0; j < schedulesPerWorker; j++ {
+				for j := range schedulesPerWorker {
 					scheduleID := uint32(workerID*schedulesPerWorker + j)
 					schedule := syncops.JobSchedule{
 						ID:             scheduleID,
@@ -298,15 +299,13 @@ func TestGlobalScheduleSetRaceConditions(t *testing.T) {
 
 		// Workers reading schedules
 		for i := 0; i < numWorkers/3; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				for j := 0; j < schedulesPerWorker*2; j++ {
 					scheduleID := uint32(j % (numWorkers * schedulesPerWorker))
 					_ = globalScheduleSet.Check(scheduleID)
 					_ = globalScheduleSet.GetVal(scheduleID)
 				}
-			}()
+			})
 		}
 
 		wg.Wait()
@@ -324,7 +323,7 @@ func TestGlobalScheduleSetRaceConditions(t *testing.T) {
 		var operations int64
 
 		// Pre-populate with some schedules
-		for i := uint32(0); i < 20; i++ {
+		for i := range uint32(20) {
 			cronSchedule, _ := cron.ParseStandard("*/1 * * * *")
 			schedule := syncops.JobSchedule{
 				ID:           i,
@@ -339,11 +338,11 @@ func TestGlobalScheduleSetRaceConditions(t *testing.T) {
 		}
 
 		// Test SetScheduleStarted
-		for i := 0; i < 10; i++ {
+		for i := range 10 {
 			wg.Add(1)
 			go func(workerID int) {
 				defer wg.Done()
-				for j := 0; j < 20; j++ {
+				for j := range 20 {
 					scheduleID := uint32(j % 20)
 					SetScheduleStarted(scheduleID)
 					atomic.AddInt64(&operations, 1)
@@ -352,11 +351,11 @@ func TestGlobalScheduleSetRaceConditions(t *testing.T) {
 		}
 
 		// Test SetScheduleEnded
-		for i := 0; i < 10; i++ {
+		for i := range 10 {
 			wg.Add(1)
 			go func(workerID int) {
 				defer wg.Done()
-				for j := 0; j < 20; j++ {
+				for j := range 20 {
 					scheduleID := uint32(j % 20)
 					SetScheduleEnded(scheduleID)
 					atomic.AddInt64(&operations, 1)
@@ -365,16 +364,14 @@ func TestGlobalScheduleSetRaceConditions(t *testing.T) {
 		}
 
 		// Test GetSchedules
-		for i := 0; i < 5; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				for j := 0; j < 50; j++ {
+		for range 5 {
+			wg.Go(func() {
+				for range 50 {
 					schedules := GetSchedules()
 					_ = len(schedules) // Use the result
 					atomic.AddInt64(&operations, 1)
 				}
-			}()
+			})
 		}
 
 		wg.Wait()
@@ -406,12 +403,12 @@ func TestJobLifecycleRace(t *testing.T) {
 	var completedJobs int64
 
 	// Simulate job lifecycle: schedule -> queue -> execute -> complete
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		wg.Add(1)
 		go func(workerID int) {
 			defer wg.Done()
 
-			for j := 0; j < 10; j++ {
+			for j := range 10 {
 				// Create schedule
 				scheduleID := uint32(workerID*10 + j)
 				schedule := syncops.JobSchedule{
@@ -461,16 +458,14 @@ func TestJobLifecycleRace(t *testing.T) {
 	}
 
 	// Concurrent monitoring
-	for i := 0; i < 5; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for j := 0; j < 100; j++ {
+	for range 5 {
+		wg.Go(func() {
+			for range 100 {
 				_ = GetQueues()
 				_ = GetSchedules()
 				time.Sleep(time.Microsecond)
 			}
-		}()
+		})
 	}
 
 	wg.Wait()
@@ -514,7 +509,7 @@ func TestGlobalSetsStress(t *testing.T) {
 	duration := 3 * time.Second
 
 	// High-volume job operations
-	for i := 0; i < 15; i++ {
+	for i := range 15 {
 		wg.Add(1)
 		go func(workerID int) {
 			defer wg.Done()
@@ -553,7 +548,7 @@ func TestGlobalSetsStress(t *testing.T) {
 	}
 
 	// High-volume schedule operations
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		wg.Add(1)
 		go func(workerID int) {
 			defer wg.Done()
@@ -603,7 +598,7 @@ func BenchmarkGlobalSetsConcurrency(b *testing.B) {
 	testSchedule := syncops.NewSyncMapUint[syncops.JobSchedule](500)
 
 	// Pre-populate
-	for i := uint32(0); i < 500; i++ {
+	for i := range uint32(500) {
 		ctx, cancel := context.WithCancel(context.Background())
 		job := syncops.Job{
 			ID:         i,

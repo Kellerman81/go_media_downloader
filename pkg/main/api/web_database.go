@@ -3,6 +3,7 @@ package api
 import (
 	"fmt"
 	"reflect"
+	"strconv"
 	"strings"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
@@ -329,15 +330,82 @@ func getFieldMapping(dbField string) FieldMapping {
 		return FieldMapping{"LastID", "Last ID"}
 	case "last_fail":
 		return FieldMapping{"LastFail", "Last Fail"}
+
+	// Book fields
+	case "dbbook_id":
+		return FieldMapping{"DbbookID", "Database Book ID"}
+	case "dbauthor_id":
+		return FieldMapping{"DbauthorID", "Database Author ID"}
+	case "book_id":
+		return FieldMapping{"BookID", "Book ID"}
+	case "isbn_13":
+		return FieldMapping{"ISBN13", "ISBN-13"}
+	case "isbn_10":
+		return FieldMapping{"ISBN10", "ISBN-10"}
+	case "asin":
+		return FieldMapping{"ASIN", "Amazon ASIN"}
+	case "openlibrary_id":
+		return FieldMapping{"OpenLibraryID", "OpenLibrary ID"}
+	case "goodreads_id":
+		return FieldMapping{"GoodreadsID", "Goodreads ID"}
+	case "page_count":
+		return FieldMapping{"PageCount", "Page Count"}
+	case "publish_date":
+		return FieldMapping{"PublishDate", "Publish Date"}
+	case "series_position":
+		return FieldMapping{"SeriesPosition", "Series Position"}
+	case "dbbook_series_id":
+		return FieldMapping{"DbbookSeriesID", "Book Series ID"}
+
+	// Audiobook fields
+	case "dbaudiobook_id":
+		return FieldMapping{"DbaudiobookID", "Database Audiobook ID"}
+	case "dbnarrator_id":
+		return FieldMapping{"DbnarratorID", "Database Narrator ID"}
+	case "audiobook_id":
+		return FieldMapping{"AudiobookID", "Audiobook ID"}
+	case "audible_id":
+		return FieldMapping{"AudibleID", "Audible ID"}
+	case "runtime_minutes":
+		return FieldMapping{"RuntimeMinutes", "Runtime (minutes)"}
+	case "chapter_count":
+		return FieldMapping{"ChapterCount", "Chapter Count"}
+	case "abridged":
+		return FieldMapping{"Abridged", "Is Abridged"}
+	case "narrator":
+		return FieldMapping{"Narrator", "Narrator Name"}
+
+	// Music fields
+	case "dbalbum_id":
+		return FieldMapping{"DbalbumID", "Database Album ID"}
+	case "dbartist_id":
+		return FieldMapping{"DbartistID", "Database Artist ID"}
+	case "album_id":
+		return FieldMapping{"AlbumID", "Album ID"}
+	case "musicbrainz_id":
+		return FieldMapping{"MusicBrainzID", "MusicBrainz ID"}
+	case "discogs_id":
+		return FieldMapping{"DiscogsID", "Discogs ID"}
+	case "track_count":
+		return FieldMapping{"TrackCount", "Track Count"}
+	case "disc_count":
+		return FieldMapping{"DiscCount", "Disc Count"}
+	case "catalog_number":
+		return FieldMapping{"CatalogNumber", "Catalog Number"}
+	case "label":
+		return FieldMapping{"Label", "Record Label"}
+	case "barcode":
+		return FieldMapping{"Barcode", "Barcode"}
 	default:
 		// Convert snake_case to PascalCase with proper capitalization
 		parts := strings.Split(dbField, "_")
-		structField := ""
+
+		var structField strings.Builder
 
 		displayParts := make([]string, 0, len(parts))
 		for _, part := range parts {
 			if len(part) > 0 {
-				structField += strings.ToTitle(strings.ToLower(part))
+				structField.WriteString(strings.ToTitle(strings.ToLower(part)))
 
 				displayParts = append(displayParts, strings.ToTitle(strings.ToLower(part)))
 			}
@@ -345,7 +413,7 @@ func getFieldMapping(dbField string) FieldMapping {
 
 		displayName := strings.Join(displayParts, " ")
 
-		return FieldMapping{structField, displayName}
+		return FieldMapping{structField.String(), displayName}
 	}
 }
 
@@ -364,10 +432,59 @@ func getDescriptiveFieldName(fieldName string) string {
 	return mapping.DisplayName
 }
 
+// getColumnTypes returns a map of column names to their SQLite types for a table.
+func getColumnTypes(tableName string) map[string]string {
+	nameQuery := fmt.Sprintf("SELECT name, type FROM pragma_table_info('%s')", tableName)
+	columnNames := database.GetrowsN[database.DbstaticTwoString](false, 100, nameQuery)
+
+	columnTypes := make(map[string]string, len(columnNames))
+	for _, col := range columnNames {
+		columnTypes[strings.ToLower(col.Str1)] = strings.ToUpper(col.Str2)
+	}
+
+	return columnTypes
+}
+
+// isIntegerType checks if a SQLite type should be treated as an integer.
+func isIntegerType(sqliteType string) bool {
+	upper := strings.ToUpper(sqliteType)
+	return strings.Contains(upper, "INT") || upper == "BOOLEAN"
+}
+
+// convertValueForColumn converts a string value to the appropriate type based on column type.
+func convertValueForColumn(val any, colName string, columnTypes map[string]string) any {
+	strVal, ok := val.(string)
+	if !ok {
+		return val
+	}
+
+	// Check if this is a checkbox field first
+	if isCheckboxFieldRefactored(colName) {
+		if strVal == "on" || strVal == "true" || strVal == "1" || strVal == "yes" {
+			return 1
+		}
+
+		return 0
+	}
+
+	// Check if column type is integer
+	colType, exists := columnTypes[strings.ToLower(colName)]
+	if exists && isIntegerType(colType) {
+		if intVal, err := strconv.Atoi(strVal); err == nil {
+			return intVal
+		}
+	}
+
+	return val
+}
+
 func insertAdminRecord(tableName string, data map[string]any) error {
 	if tableName == "" || len(data) == 0 {
 		return fmt.Errorf("table name and data are required")
 	}
+
+	// Get column types for the table
+	columnTypes := getColumnTypes(tableName)
 
 	var (
 		columns []string
@@ -382,7 +499,7 @@ func insertAdminRecord(tableName string, data map[string]any) error {
 
 		if val != "" && val != nil { // Skip empty values
 			columns = append(columns, col)
-			values = append(values, val)
+			values = append(values, convertValueForColumn(val, col, columnTypes))
 		}
 	}
 
@@ -409,6 +526,9 @@ func updateAdminRecord(tableName string, id int, data map[string]any) error {
 		return fmt.Errorf("record not found")
 	}
 
+	// Get column types for the table
+	columnTypes := getColumnTypes(tableName)
+
 	// Build update data
 	var (
 		columns []string
@@ -419,7 +539,7 @@ func updateAdminRecord(tableName string, id int, data map[string]any) error {
 		// Don't update id, created_at, updated_at, or csrf_token columns
 		if col != "id" && col != "created_at" && col != "updated_at" && col != "csrf_token" {
 			columns = append(columns, col)
-			values = append(values, val)
+			values = append(values, convertValueForColumn(val, col, columnTypes))
 		}
 	}
 
@@ -474,6 +594,7 @@ func getReferenceTable(fieldName string) string {
 		strings.EqualFold(fieldName, "twitter_id") {
 		return ""
 	}
+
 	// Map common field names to their reference tables
 	referenceMap := map[string]string{
 		"dbmovie_id":         "dbmovies",
@@ -486,6 +607,19 @@ func getReferenceTable(fieldName string) string {
 		"quality_id":         "qualities",
 		"codec_id":           "qualities",
 		"audio_id":           "qualities",
+		// Book tables
+		"dbbook_id":        "dbbooks",
+		"dbauthor_id":      "dbauthors",
+		"book_id":          "books",
+		"dbbook_series_id": "dbbook_series",
+		// Audiobook tables
+		"dbaudiobook_id": "dbaudiobooks",
+		"dbnarrator_id":  "dbnarrators",
+		"audiobook_id":   "audiobooks",
+		// Music tables
+		"dbalbum_id":  "dbalbums",
+		"dbartist_id": "dbartists",
+		"album_id":    "albums",
 	}
 
 	if refTable, exists := referenceMap[fieldName]; exists {
@@ -494,8 +628,8 @@ func getReferenceTable(fieldName string) string {
 
 	// Default: remove _id suffix and add 's' for pluralization
 	baseName := strings.TrimSuffix(fieldName, "_id")
-	if strings.HasSuffix(baseName, "y") {
-		return strings.TrimSuffix(baseName, "y") + "ies"
+	if before, ok := strings.CutSuffix(baseName, "y"); ok {
+		return before + "ies"
 	}
 
 	return baseName + "s"
@@ -537,6 +671,7 @@ func buildCustomFilters(tableName string, ctx *gin.Context) (string, []any) {
 		case "serie_episode_histories":
 			idColumn = "serie_episode_histories.id"
 		}
+
 		conditions = append(conditions, idColumn+" = ?")
 		args = append(args, idValue)
 	}
@@ -602,25 +737,202 @@ func buildCustomFilters(tableName string, ctx *gin.Context) (string, []any) {
 			"started":      {Column: "started", Operator: ">="},
 			"ended":        {Column: "ended", Operator: ">="},
 		},
+		// Book tables
+		"dbbooks": {
+			"title":           {Column: "title", Operator: "LIKE"},
+			"publisher":       {Column: "publisher", Operator: "LIKE"},
+			"language":        {Column: "language", Operator: "="},
+			"genres":          {Column: "genres", Operator: "LIKE"},
+			"year":            {Column: "year", Operator: "="},
+			"goodreads_id":    {Column: "goodreads_id", Operator: "LIKE"},
+			"openlibrary_id":  {Column: "openlibrary_id", Operator: "LIKE"},
+			"page_count":      {Column: "page_count", Operator: ">="},
+			"series_position": {Column: "series_position", Operator: "LIKE"},
+		},
+		"dbauthors": {
+			"name":           {Column: "name", Operator: "LIKE"},
+			"goodreads_id":   {Column: "goodreads_id", Operator: "LIKE"},
+			"openlibrary_id": {Column: "openlibrary_id", Operator: "LIKE"},
+		},
+		"books": {
+			"quality_profile": {Column: "quality_profile", Operator: "LIKE"},
+			"listname":        {Column: "listname", Operator: "LIKE"},
+			"rootpath":        {Column: "rootpath", Operator: "LIKE"},
+			"quality_reached": {Column: "quality_reached", Operator: "="},
+			"missing":         {Column: "missing", Operator: "="},
+			"dont_upgrade":    {Column: "dont_upgrade", Operator: "="},
+			"dont_search":     {Column: "dont_search", Operator: "="},
+			"blacklisted":     {Column: "blacklisted", Operator: "="},
+			"author_id":       {Column: "books.author_id", Operator: "="},
+		},
+		"book_files": {
+			"location":        {Column: "location", Operator: "LIKE"},
+			"filename":        {Column: "filename", Operator: "LIKE"},
+			"extension":       {Column: "extension", Operator: "="},
+			"format":          {Column: "format", Operator: "="},
+			"quality_profile": {Column: "quality_profile", Operator: "LIKE"},
+		},
+		"dbbook_titles": {
+			"title":      {Column: "dbbook_titles.title", Operator: "LIKE"},
+			"book_title": {Column: "dbbooks.title", Operator: "LIKE"},
+			"region":     {Column: "dbbook_titles.region", Operator: "LIKE"},
+		},
+		"dbbook_series": {
+			"name":           {Column: "name", Operator: "LIKE"},
+			"goodreads_id":   {Column: "goodreads_id", Operator: "LIKE"},
+			"openlibrary_id": {Column: "openlibrary_id", Operator: "LIKE"},
+		},
+		"authors": {
+			"listname":    {Column: "listname", Operator: "LIKE"},
+			"track_mode":  {Column: "track_mode", Operator: "="},
+			"dont_search": {Column: "dont_search", Operator: "="},
+		},
+		"book_series": {
+			"listname":    {Column: "listname", Operator: "LIKE"},
+			"dont_search": {Column: "dont_search", Operator: "="},
+		},
+		"book_file_unmatcheds": {
+			"filepath": {Column: "filepath", Operator: "LIKE"},
+			"listname": {Column: "listname", Operator: "LIKE"},
+		},
+		"book_histories": {
+			"title":           {Column: "title", Operator: "LIKE"},
+			"indexer":         {Column: "indexer", Operator: "LIKE"},
+			"quality_profile": {Column: "quality_profile", Operator: "LIKE"},
+		},
+		// Audiobook tables
+		"dbaudiobooks": {
+			"title":           {Column: "title", Operator: "LIKE"},
+			"publisher":       {Column: "publisher", Operator: "LIKE"},
+			"language":        {Column: "language", Operator: "="},
+			"year":            {Column: "year", Operator: "="},
+			"asin":            {Column: "asin", Operator: "LIKE"},
+			"audible_id":      {Column: "audible_id", Operator: "LIKE"},
+			"runtime_minutes": {Column: "runtime_minutes", Operator: ">="},
+			"abridged":        {Column: "abridged", Operator: "="},
+		},
+		"dbnarrators": {
+			"name":       {Column: "name", Operator: "LIKE"},
+			"audible_id": {Column: "audible_id", Operator: "LIKE"},
+		},
+		"audiobooks": {
+			"quality_profile": {Column: "quality_profile", Operator: "LIKE"},
+			"listname":        {Column: "listname", Operator: "LIKE"},
+			"rootpath":        {Column: "rootpath", Operator: "LIKE"},
+			"quality_reached": {Column: "quality_reached", Operator: "="},
+			"missing":         {Column: "missing", Operator: "="},
+			"dont_upgrade":    {Column: "dont_upgrade", Operator: "="},
+			"dont_search":     {Column: "dont_search", Operator: "="},
+			"blacklisted":     {Column: "blacklisted", Operator: "="},
+			"author_id":       {Column: "audiobooks.author_id", Operator: "="},
+		},
+		"audiobook_files": {
+			"location":        {Column: "location", Operator: "LIKE"},
+			"filename":        {Column: "filename", Operator: "LIKE"},
+			"extension":       {Column: "extension", Operator: "="},
+			"format":          {Column: "format", Operator: "="},
+			"quality_profile": {Column: "quality_profile", Operator: "LIKE"},
+			"bitrate":         {Column: "bitrate", Operator: ">="},
+		},
+		"dbaudiobook_titles": {
+			"title":           {Column: "dbaudiobook_titles.title", Operator: "LIKE"},
+			"audiobook_title": {Column: "dbaudiobooks.title", Operator: "LIKE"},
+			"region":          {Column: "dbaudiobook_titles.region", Operator: "LIKE"},
+		},
+		"audiobook_file_unmatcheds": {
+			"filepath": {Column: "filepath", Operator: "LIKE"},
+			"listname": {Column: "listname", Operator: "LIKE"},
+		},
+		"audiobook_histories": {
+			"title":           {Column: "title", Operator: "LIKE"},
+			"indexer":         {Column: "indexer", Operator: "LIKE"},
+			"quality_profile": {Column: "quality_profile", Operator: "LIKE"},
+		},
+		// Music tables
+		"dbalbums": {
+			"title":          {Column: "title", Operator: "LIKE"},
+			"label":          {Column: "label", Operator: "LIKE"},
+			"year":           {Column: "year", Operator: "="},
+			"release_type":   {Column: "release_type", Operator: "="},
+			"format":         {Column: "format", Operator: "="},
+			"country":        {Column: "country", Operator: "="},
+			"musicbrainz_id": {Column: "musicbrainz_release_id", Operator: "LIKE"},
+			"discogs_id":     {Column: "discogs_release_id", Operator: "LIKE"},
+		},
+		"dbartists": {
+			"name":           {Column: "name", Operator: "LIKE"},
+			"country":        {Column: "country", Operator: "="},
+			"artist_type":    {Column: "artist_type", Operator: "="},
+			"musicbrainz_id": {Column: "musicbrainz_id", Operator: "LIKE"},
+			"discogs_id":     {Column: "discogs_id", Operator: "LIKE"},
+		},
+		"artists": {
+			"listname":    {Column: "listname", Operator: "LIKE"},
+			"track_mode":  {Column: "track_mode", Operator: "="},
+			"dont_search": {Column: "dont_search", Operator: "="},
+		},
+		"albums": {
+			"quality_profile": {Column: "quality_profile", Operator: "LIKE"},
+			"listname":        {Column: "listname", Operator: "LIKE"},
+			"rootpath":        {Column: "rootpath", Operator: "LIKE"},
+			"quality_reached": {Column: "quality_reached", Operator: "="},
+			"missing":         {Column: "missing", Operator: "="},
+			"dont_upgrade":    {Column: "dont_upgrade", Operator: "="},
+			"dont_search":     {Column: "dont_search", Operator: "="},
+			"blacklisted":     {Column: "blacklisted", Operator: "="},
+			"artist_id":       {Column: "albums.artist_id", Operator: "="},
+		},
+		"album_files": {
+			"location":        {Column: "location", Operator: "LIKE"},
+			"filename":        {Column: "filename", Operator: "LIKE"},
+			"extension":       {Column: "extension", Operator: "="},
+			"format":          {Column: "format", Operator: "="},
+			"quality_profile": {Column: "quality_profile", Operator: "LIKE"},
+			"bitrate":         {Column: "bitrate", Operator: ">="},
+			"sample_rate":     {Column: "sample_rate", Operator: ">="},
+		},
+		"dbalbum_titles": {
+			"title":       {Column: "dbalbum_titles.title", Operator: "LIKE"},
+			"album_title": {Column: "dbalbums.title", Operator: "LIKE"},
+			"region":      {Column: "dbalbum_titles.region", Operator: "LIKE"},
+		},
+		"dbtracks": {
+			"title":        {Column: "title", Operator: "LIKE"},
+			"track_number": {Column: "track_number", Operator: "="},
+			"disc_number":  {Column: "disc_number", Operator: "="},
+			"explicit":     {Column: "explicit", Operator: "="},
+		},
+		"album_file_unmatcheds": {
+			"filepath": {Column: "filepath", Operator: "LIKE"},
+			"listname": {Column: "listname", Operator: "LIKE"},
+		},
+		"album_histories": {
+			"title":           {Column: "title", Operator: "LIKE"},
+			"indexer":         {Column: "indexer", Operator: "LIKE"},
+			"quality_profile": {Column: "quality_profile", Operator: "LIKE"},
+		},
 	}
 
 	// Apply filters dynamically
 	if mappings, exists := filterMappings[tableName]; exists {
 		for filterName, mapping := range mappings {
-			if value := getParamValue(ctx, "filter-"+filterName); value != "" {
-				switch mapping.Operator {
-				case "LIKE":
-					conditions = append(conditions, mapping.Column+" LIKE ?")
-					args = append(args, "%"+value+"%")
+			value := getParamValue(ctx, "filter-"+filterName)
+			if value == "" {
+				continue
+			}
 
-				case "=":
-					conditions = append(conditions, mapping.Column+" = ?")
-					args = append(args, value)
+			switch mapping.Operator {
+			case "LIKE":
+				conditions = append(conditions, mapping.Column+" LIKE ?")
+				args = append(args, "%"+value+"%")
 
-				case ">=":
-					conditions = append(conditions, mapping.Column+" >= ?")
-					args = append(args, value)
-				}
+			case "=":
+				conditions = append(conditions, mapping.Column+" = ?")
+				args = append(args, value)
+
+			case ">=":
+				conditions = append(conditions, mapping.Column+" >= ?")
+				args = append(args, value)
 			}
 		}
 	}
@@ -831,13 +1143,16 @@ func buildCustomFilters(tableName string, ctx *gin.Context) (string, []any) {
 			args = append(args, "%"+quality+"%")
 		}
 
-		if missing := getParamValue(ctx, "filter-missing"); missing != "" {
-			switch missing {
-			case "1":
-				conditions = append(conditions, "serie_episodes.missing = 1")
-			case "0":
-				conditions = append(conditions, "serie_episodes.missing = 0")
-			}
+		missing := getParamValue(ctx, "filter-missing")
+		if missing == "" {
+			break
+		}
+
+		switch missing {
+		case "1":
+			conditions = append(conditions, "serie_episodes.missing = 1")
+		case "0":
+			conditions = append(conditions, "serie_episodes.missing = 0")
 		}
 
 	case "job_histories":
@@ -902,7 +1217,10 @@ func buildCustomFilters(tableName string, ctx *gin.Context) (string, []any) {
 			args = append(args, "%"+listname+"%")
 		}
 
-		if qualityProfile := getParamValue(ctx, "filter-movie_quality_profile"); qualityProfile != "" {
+		if qualityProfile := getParamValue(
+			ctx,
+			"filter-movie_quality_profile",
+		); qualityProfile != "" {
 			conditions = append(conditions, "movies.quality_profile LIKE ?")
 			args = append(args, "%"+qualityProfile+"%")
 		}
@@ -963,6 +1281,426 @@ func buildCustomFilters(tableName string, ctx *gin.Context) (string, []any) {
 		if quality := getParamValue(ctx, "filter-quality_profile"); quality != "" {
 			conditions = append(conditions, "serie_episode_histories.quality_profile LIKE ?")
 			args = append(args, "%"+quality+"%")
+		}
+
+	// Book tables
+	case "dbbooks":
+		if title := getParamValue(ctx, "filter-title"); title != "" {
+			conditions = append(conditions, "title LIKE ?")
+			args = append(args, "%"+title+"%")
+		}
+
+		if isbn := getParamValue(ctx, "filter-isbn"); isbn != "" {
+			conditions = append(conditions, "(isbn_13 LIKE ? OR isbn_10 LIKE ?)")
+			args = append(args, "%"+isbn+"%", "%"+isbn+"%")
+		}
+
+		if author := getParamValue(ctx, "filter-author"); author != "" {
+			conditions = append(conditions, "dbauthors.name LIKE ?")
+			args = append(args, "%"+author+"%")
+		}
+
+		if publisher := getParamValue(ctx, "filter-publisher"); publisher != "" {
+			conditions = append(conditions, "publisher LIKE ?")
+			args = append(args, "%"+publisher+"%")
+		}
+
+	case "dbauthors":
+		if name := getParamValue(ctx, "filter-name"); name != "" {
+			conditions = append(conditions, "name LIKE ?")
+			args = append(args, "%"+name+"%")
+		}
+
+	case "books":
+		if title := getParamValue(ctx, "filter-title"); title != "" {
+			conditions = append(conditions, "dbbooks.title LIKE ?")
+			args = append(args, "%"+title+"%")
+		}
+
+		if author := getParamValue(ctx, "filter-author"); author != "" {
+			conditions = append(conditions, "dbauthors.name LIKE ?")
+			args = append(args, "%"+author+"%")
+		}
+
+		if listname := getParamValue(ctx, "filter-listname"); listname != "" {
+			conditions = append(conditions, "books.listname = ?")
+			args = append(args, listname)
+		}
+
+		if missing := getParamValue(ctx, "filter-missing"); missing != "" {
+			conditions = append(conditions, "books.missing = ?")
+			args = append(args, missing)
+		}
+
+		if qualityReached := getParamValue(ctx, "filter-quality_reached"); qualityReached != "" {
+			conditions = append(conditions, "books.quality_reached = ?")
+			args = append(args, qualityReached)
+		}
+
+		if authorID := getParamValue(ctx, "filter-author_id"); authorID != "" {
+			conditions = append(conditions, "books.author_id = ?")
+			args = append(args, authorID)
+		}
+
+		if dbauthorID := getParamValue(ctx, "filter-dbauthor_id"); dbauthorID != "" {
+			conditions = append(
+				conditions,
+				"books.author_id IN (SELECT id FROM authors WHERE dbauthor_id = ?)",
+			)
+			args = append(args, dbauthorID)
+		}
+
+	case "book_files":
+		if bookID := getParamValue(ctx, "filter-book_id"); bookID != "" {
+			conditions = append(conditions, "book_files.book_id = ?")
+			args = append(args, bookID)
+		}
+
+		if filename := getParamValue(ctx, "filter-filename"); filename != "" {
+			conditions = append(conditions, "book_files.filename LIKE ?")
+			args = append(args, "%"+filename+"%")
+		}
+
+		if title := getParamValue(ctx, "filter-title"); title != "" {
+			conditions = append(conditions, "dbbooks.title LIKE ?")
+			args = append(args, "%"+title+"%")
+		}
+
+	case "dbbook_titles":
+		if title := getParamValue(ctx, "filter-title"); title != "" {
+			conditions = append(conditions, "dbbook_titles.title LIKE ?")
+			args = append(args, "%"+title+"%")
+		}
+
+		if bookTitle := getParamValue(ctx, "filter-book_title"); bookTitle != "" {
+			conditions = append(conditions, "dbbooks.title LIKE ?")
+			args = append(args, "%"+bookTitle+"%")
+		}
+
+		if region := getParamValue(ctx, "filter-region"); region != "" {
+			conditions = append(conditions, "dbbook_titles.region LIKE ?")
+			args = append(args, "%"+region+"%")
+		}
+
+	case "dbbook_series":
+		if name := getParamValue(ctx, "filter-name"); name != "" {
+			conditions = append(conditions, "name LIKE ?")
+			args = append(args, "%"+name+"%")
+		}
+
+	case "authors":
+		if name := getParamValue(ctx, "filter-name"); name != "" {
+			conditions = append(conditions, "dbauthors.name LIKE ?")
+			args = append(args, "%"+name+"%")
+		}
+
+		if listname := getParamValue(ctx, "filter-listname"); listname != "" {
+			conditions = append(conditions, "authors.listname = ?")
+			args = append(args, listname)
+		}
+
+	case "book_series":
+		if name := getParamValue(ctx, "filter-name"); name != "" {
+			conditions = append(conditions, "dbbook_series.name LIKE ?")
+			args = append(args, "%"+name+"%")
+		}
+
+		if listname := getParamValue(ctx, "filter-listname"); listname != "" {
+			conditions = append(conditions, "book_series.listname = ?")
+			args = append(args, listname)
+		}
+
+	case "book_file_unmatcheds":
+		if filepath := getParamValue(ctx, "filter-filepath"); filepath != "" {
+			conditions = append(conditions, "filepath LIKE ?")
+			args = append(args, "%"+filepath+"%")
+		}
+
+		if listname := getParamValue(ctx, "filter-listname"); listname != "" {
+			conditions = append(conditions, "listname = ?")
+			args = append(args, listname)
+		}
+
+	case "book_histories":
+		if title := getParamValue(ctx, "filter-title"); title != "" {
+			conditions = append(conditions, "title LIKE ?")
+			args = append(args, "%"+title+"%")
+		}
+
+		if indexer := getParamValue(ctx, "filter-indexer"); indexer != "" {
+			conditions = append(conditions, "indexer LIKE ?")
+			args = append(args, "%"+indexer+"%")
+		}
+
+		if downloadedDate := getParamValue(ctx, "filter-downloaded_date"); downloadedDate != "" {
+			conditions = append(conditions, "DATE(downloaded_at) = ?")
+			args = append(args, downloadedDate)
+		}
+
+	// Audiobook tables
+	case "dbaudiobooks":
+		if title := getParamValue(ctx, "filter-title"); title != "" {
+			conditions = append(conditions, "title LIKE ?")
+			args = append(args, "%"+title+"%")
+		}
+
+		if asin := getParamValue(ctx, "filter-asin"); asin != "" {
+			conditions = append(conditions, "asin LIKE ?")
+			args = append(args, "%"+asin+"%")
+		}
+
+		if narrator := getParamValue(ctx, "filter-narrator"); narrator != "" {
+			conditions = append(conditions, "dbnarrators.name LIKE ?")
+			args = append(args, "%"+narrator+"%")
+		}
+
+		if publisher := getParamValue(ctx, "filter-publisher"); publisher != "" {
+			conditions = append(conditions, "publisher LIKE ?")
+			args = append(args, "%"+publisher+"%")
+		}
+
+	case "dbnarrators":
+		if name := getParamValue(ctx, "filter-name"); name != "" {
+			conditions = append(conditions, "name LIKE ?")
+			args = append(args, "%"+name+"%")
+		}
+
+	case "audiobooks":
+		if title := getParamValue(ctx, "filter-title"); title != "" {
+			conditions = append(conditions, "dbaudiobooks.title LIKE ?")
+			args = append(args, "%"+title+"%")
+		}
+
+		if narrator := getParamValue(ctx, "filter-narrator"); narrator != "" {
+			conditions = append(conditions, "dbnarrators.name LIKE ?")
+			args = append(args, "%"+narrator+"%")
+		}
+
+		if listname := getParamValue(ctx, "filter-listname"); listname != "" {
+			conditions = append(conditions, "audiobooks.listname = ?")
+			args = append(args, listname)
+		}
+
+		if missing := getParamValue(ctx, "filter-missing"); missing != "" {
+			conditions = append(conditions, "audiobooks.missing = ?")
+			args = append(args, missing)
+		}
+
+		if qualityReached := getParamValue(ctx, "filter-quality_reached"); qualityReached != "" {
+			conditions = append(conditions, "audiobooks.quality_reached = ?")
+			args = append(args, qualityReached)
+		}
+
+		if authorID := getParamValue(ctx, "filter-author_id"); authorID != "" {
+			conditions = append(conditions, "audiobooks.author_id = ?")
+			args = append(args, authorID)
+		}
+
+	case "audiobook_files":
+		if audiobookID := getParamValue(ctx, "filter-audiobook_id"); audiobookID != "" {
+			conditions = append(conditions, "audiobook_files.audiobook_id = ?")
+			args = append(args, audiobookID)
+		}
+
+		if filename := getParamValue(ctx, "filter-filename"); filename != "" {
+			conditions = append(conditions, "audiobook_files.filename LIKE ?")
+			args = append(args, "%"+filename+"%")
+		}
+
+		if title := getParamValue(ctx, "filter-title"); title != "" {
+			conditions = append(conditions, "dbaudiobooks.title LIKE ?")
+			args = append(args, "%"+title+"%")
+		}
+
+	case "dbaudiobook_titles":
+		if title := getParamValue(ctx, "filter-title"); title != "" {
+			conditions = append(conditions, "dbaudiobook_titles.title LIKE ?")
+			args = append(args, "%"+title+"%")
+		}
+
+		if audiobookTitle := getParamValue(ctx, "filter-audiobook_title"); audiobookTitle != "" {
+			conditions = append(conditions, "dbaudiobooks.title LIKE ?")
+			args = append(args, "%"+audiobookTitle+"%")
+		}
+
+		if region := getParamValue(ctx, "filter-region"); region != "" {
+			conditions = append(conditions, "dbaudiobook_titles.region LIKE ?")
+			args = append(args, "%"+region+"%")
+		}
+
+	case "audiobook_file_unmatcheds":
+		if filepath := getParamValue(ctx, "filter-filepath"); filepath != "" {
+			conditions = append(conditions, "filepath LIKE ?")
+			args = append(args, "%"+filepath+"%")
+		}
+
+		if listname := getParamValue(ctx, "filter-listname"); listname != "" {
+			conditions = append(conditions, "listname = ?")
+			args = append(args, listname)
+		}
+
+	case "audiobook_histories":
+		if title := getParamValue(ctx, "filter-title"); title != "" {
+			conditions = append(conditions, "title LIKE ?")
+			args = append(args, "%"+title+"%")
+		}
+
+		if indexer := getParamValue(ctx, "filter-indexer"); indexer != "" {
+			conditions = append(conditions, "indexer LIKE ?")
+			args = append(args, "%"+indexer+"%")
+		}
+
+		if downloadedDate := getParamValue(ctx, "filter-downloaded_date"); downloadedDate != "" {
+			conditions = append(conditions, "DATE(downloaded_at) = ?")
+			args = append(args, downloadedDate)
+		}
+
+	// Music tables
+	case "dbalbums":
+		if title := getParamValue(ctx, "filter-title"); title != "" {
+			conditions = append(conditions, "title LIKE ?")
+			args = append(args, "%"+title+"%")
+		}
+
+		if artist := getParamValue(ctx, "filter-artist"); artist != "" {
+			conditions = append(conditions, "dbartists.name LIKE ?")
+			args = append(args, "%"+artist+"%")
+		}
+
+		if label := getParamValue(ctx, "filter-label"); label != "" {
+			conditions = append(conditions, "label LIKE ?")
+			args = append(args, "%"+label+"%")
+		}
+
+	case "dbartists":
+		if name := getParamValue(ctx, "filter-name"); name != "" {
+			conditions = append(conditions, "name LIKE ?")
+			args = append(args, "%"+name+"%")
+		}
+
+	case "artists":
+		if name := getParamValue(ctx, "filter-name"); name != "" {
+			conditions = append(conditions, "dbartists.name LIKE ?")
+			args = append(args, "%"+name+"%")
+		}
+
+		if listname := getParamValue(ctx, "filter-listname"); listname != "" {
+			conditions = append(conditions, "artists.listname = ?")
+			args = append(args, listname)
+		}
+
+	case "albums":
+		if title := getParamValue(ctx, "filter-title"); title != "" {
+			conditions = append(conditions, "dbalbums.title LIKE ?")
+			args = append(args, "%"+title+"%")
+		}
+
+		if artist := getParamValue(ctx, "filter-artist"); artist != "" {
+			conditions = append(conditions, "dbartists.name LIKE ?")
+			args = append(args, "%"+artist+"%")
+		}
+
+		if listname := getParamValue(ctx, "filter-listname"); listname != "" {
+			conditions = append(conditions, "albums.listname = ?")
+			args = append(args, listname)
+		}
+
+		if missing := getParamValue(ctx, "filter-missing"); missing != "" {
+			conditions = append(conditions, "albums.missing = ?")
+			args = append(args, missing)
+		}
+
+		if qualityReached := getParamValue(ctx, "filter-quality_reached"); qualityReached != "" {
+			conditions = append(conditions, "albums.quality_reached = ?")
+			args = append(args, qualityReached)
+		}
+
+		if artistID := getParamValue(ctx, "filter-artist_id"); artistID != "" {
+			conditions = append(conditions, "albums.artist_id = ?")
+			args = append(args, artistID)
+		}
+
+		if dbartistID := getParamValue(ctx, "filter-dbartist_id"); dbartistID != "" {
+			conditions = append(
+				conditions,
+				"albums.artist_id IN (SELECT id FROM artists WHERE dbartist_id = ?)",
+			)
+			args = append(args, dbartistID)
+		}
+
+	case "album_files":
+		if albumID := getParamValue(ctx, "filter-album_id"); albumID != "" {
+			conditions = append(conditions, "album_files.album_id = ?")
+			args = append(args, albumID)
+		}
+
+		if filename := getParamValue(ctx, "filter-filename"); filename != "" {
+			conditions = append(conditions, "album_files.filename LIKE ?")
+			args = append(args, "%"+filename+"%")
+		}
+
+		if title := getParamValue(ctx, "filter-title"); title != "" {
+			conditions = append(conditions, "dbalbums.title LIKE ?")
+			args = append(args, "%"+title+"%")
+		}
+
+	case "dbalbum_titles":
+		if title := getParamValue(ctx, "filter-title"); title != "" {
+			conditions = append(conditions, "dbalbum_titles.title LIKE ?")
+			args = append(args, "%"+title+"%")
+		}
+
+		if albumTitle := getParamValue(ctx, "filter-album_title"); albumTitle != "" {
+			conditions = append(conditions, "dbalbums.title LIKE ?")
+			args = append(args, "%"+albumTitle+"%")
+		}
+
+		if region := getParamValue(ctx, "filter-region"); region != "" {
+			conditions = append(conditions, "dbalbum_titles.region LIKE ?")
+			args = append(args, "%"+region+"%")
+		}
+
+	case "dbtracks":
+		if title := getParamValue(ctx, "filter-title"); title != "" {
+			conditions = append(conditions, "title LIKE ?")
+			args = append(args, "%"+title+"%")
+		}
+
+		if albumTitle := getParamValue(ctx, "filter-album_title"); albumTitle != "" {
+			conditions = append(conditions, "dbalbums.title LIKE ?")
+			args = append(args, "%"+albumTitle+"%")
+		}
+
+		if trackNumber := getParamValue(ctx, "filter-track_number"); trackNumber != "" {
+			conditions = append(conditions, "track_number = ?")
+			args = append(args, trackNumber)
+		}
+
+	case "album_file_unmatcheds":
+		if filepath := getParamValue(ctx, "filter-filepath"); filepath != "" {
+			conditions = append(conditions, "filepath LIKE ?")
+			args = append(args, "%"+filepath+"%")
+		}
+
+		if listname := getParamValue(ctx, "filter-listname"); listname != "" {
+			conditions = append(conditions, "listname = ?")
+			args = append(args, listname)
+		}
+
+	case "album_histories":
+		if title := getParamValue(ctx, "filter-title"); title != "" {
+			conditions = append(conditions, "title LIKE ?")
+			args = append(args, "%"+title+"%")
+		}
+
+		if indexer := getParamValue(ctx, "filter-indexer"); indexer != "" {
+			conditions = append(conditions, "indexer LIKE ?")
+			args = append(args, "%"+indexer+"%")
+		}
+
+		if downloadedDate := getParamValue(ctx, "filter-downloaded_date"); downloadedDate != "" {
+			conditions = append(conditions, "DATE(downloaded_at) = ?")
+			args = append(args, downloadedDate)
 		}
 	}
 

@@ -113,7 +113,7 @@ func runConcurrencyTest(
 	startTime := time.Now()
 
 	// Launch goroutines
-	for i := 0; i < testGoroutines; i++ {
+	for i := range testGoroutines {
 		wg.Add(1)
 		go func(goroutineID int) {
 			defer wg.Done()
@@ -121,7 +121,9 @@ func runConcurrencyTest(
 			for time.Since(startTime) < testDuration {
 				// Track concurrent requests
 				atomic.AddInt64(&currentConcurrent, 1)
-				if current := atomic.LoadInt64(&currentConcurrent); current > results.MaxConcurrent {
+				if current := atomic.LoadInt64(
+					&currentConcurrent,
+				); current > results.MaxConcurrent {
 					atomic.StoreInt64(&results.MaxConcurrent, current)
 				}
 
@@ -187,7 +189,7 @@ func countRateLimitViolations(requestTimes []time.Time) int64 {
 	}
 
 	// Check each window for violations
-	for i := 0; i < len(requestTimes); i++ {
+	for i := range requestTimes {
 		windowStart := requestTimes[i]
 		windowEnd := windowStart.Add(testInterval)
 		count := 0
@@ -219,12 +221,10 @@ func testRaceConditions(t *testing.T, limiterName string, createLimiter func() R
 	startTime := time.Now()
 
 	// Launch many goroutines simultaneously
-	for i := 0; i < raceGoroutines; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range raceGoroutines {
+		wg.Go(func() {
 
-			for j := 0; j < raceIterations; j++ {
+			for j := range raceIterations {
 				allowed, _ := limiter.Allow()
 				if allowed {
 					atomic.AddInt64(&allowedCount, 1)
@@ -237,7 +237,7 @@ func testRaceConditions(t *testing.T, limiterName string, createLimiter func() R
 					time.Sleep(time.Microsecond)
 				}
 			}
-		}()
+		})
 	}
 
 	wg.Wait()
@@ -323,7 +323,7 @@ func TestReservationSystem(t *testing.T) {
 	}
 
 	// Test reservation when at capacity
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		limiter.Allow()
 	}
 
@@ -662,7 +662,7 @@ func TestZeroRateLimitViolations(t *testing.T) {
 	lim := NewLimiter(100*time.Millisecond, 3)
 
 	// Allow the maximum number of requests
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		allowed, _ := lim.Allow()
 		if !allowed {
 			t.Errorf("Request %d should have been allowed", i+1)

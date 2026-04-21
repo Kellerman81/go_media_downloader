@@ -2,6 +2,7 @@ package parser
 
 import (
 	"errors"
+	"os"
 	"runtime"
 	"testing"
 
@@ -18,6 +19,7 @@ func TestBuildPrioStr(t *testing.T) {
 		q        uint
 		c        uint
 		a        uint
+		af       uint
 		expected string
 	}{
 		{
@@ -26,7 +28,8 @@ func TestBuildPrioStr(t *testing.T) {
 			q:        0,
 			c:        0,
 			a:        0,
-			expected: "0_0_0_0",
+			af:       0,
+			expected: "0_0_0_0_0",
 		},
 		{
 			name:     "Mixed values",
@@ -34,7 +37,8 @@ func TestBuildPrioStr(t *testing.T) {
 			q:        2,
 			c:        3,
 			a:        4,
-			expected: "1080_2_3_4",
+			af:       0,
+			expected: "1080_2_3_4_0",
 		},
 		{
 			name:     "Large values",
@@ -42,20 +46,22 @@ func TestBuildPrioStr(t *testing.T) {
 			q:        999,
 			c:        888,
 			a:        777,
-			expected: "4320_999_888_777",
+			af:       0,
+			expected: "4320_999_888_777_0",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := BuildPrioStr(tt.r, tt.q, tt.c, tt.a)
+			result := BuildPrioStr(tt.r, tt.q, tt.c, tt.a, tt.af)
 			if result != tt.expected {
 				t.Errorf(
-					"BuildPrioStr(%d, %d, %d, %d) = %s; want %s",
+					"BuildPrioStr(%d, %d, %d, %d, %d) = %s; want %s",
 					tt.r,
 					tt.q,
 					tt.c,
 					tt.a,
+					tt.af,
 					result,
 					tt.expected,
 				)
@@ -65,7 +71,26 @@ func TestBuildPrioStr(t *testing.T) {
 }
 
 func TestGetDBIDs(t *testing.T) {
-	config.LoadCfgDB(true)
+	if err := os.Chdir(".."); err != nil {
+		t.Fatal("Failed to change to parent directory: ", err)
+	}
+	if err := config.LoadCfgDB(false); err != nil {
+		t.Skip("Skipping: config not available - ", err)
+	}
+	general := config.GetSettingsGeneral()
+	if general == nil {
+		t.Skip("Skipping: settings not available")
+	}
+	logger.InitLogger(logger.Config{
+		LogLevel:     "Warning",
+		LogFileSize:  general.LogFileSize,
+		LogFileCount: general.LogFileCount,
+		LogCompress:  general.LogCompress,
+	})
+	database.UpgradeDB()
+	if err := database.InitDB(general.DBLogLevel); err != nil {
+		t.Fatal("Failed to init database: ", err)
+	}
 	database.InitCache()
 	tests := []struct {
 		name           string
@@ -88,9 +113,10 @@ func TestGetDBIDs(t *testing.T) {
 				Title: "",
 				Imdb:  "",
 			},
-			cfgp:          &config.MediaTypeConfig{Useseries: false},
-			allowSearch:   true,
-			expectedError: logger.ErrNotFoundDbmovie,
+			cfgp:           &config.MediaTypeConfig{IsType: config.MediaTypeMovie},
+			allowSearch:    true,
+			expectedError:  logger.ErrNotFoundDbmovie,
+			expectedListID: -1,
 		},
 		{
 			name: "Invalid IMDB ID",
@@ -98,15 +124,16 @@ func TestGetDBIDs(t *testing.T) {
 				Title: "Test Movie",
 				Imdb:  "invalid",
 			},
-			cfgp:          &config.MediaTypeConfig{Useseries: false},
-			allowSearch:   true,
-			expectedError: logger.ErrNotFoundDbmovie,
+			cfgp:           &config.MediaTypeConfig{IsType: config.MediaTypeMovie},
+			allowSearch:    true,
+			expectedError:  logger.ErrNotFoundDbmovie,
+			expectedListID: -1,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := GetDBIDs(tt.parseInfo, tt.cfgp, tt.allowSearch)
+			err := GetDBIDs(tt.parseInfo, tt.cfgp, tt.allowSearch, false)
 			if !errors.Is(err, tt.expectedError) {
 				t.Errorf("GetDBIDs() error = %v, expectedError %v", err, tt.expectedError)
 			}
@@ -155,9 +182,18 @@ func TestLoadDBPatterns(t *testing.T) {
 }
 
 func TestGenerateAllQualityPriorities(t *testing.T) {
-	config.LoadCfgDB(false)
+	// Tests run from parser/ dir, but config expects ./config/config.toml from pkg/main/
+	if err := os.Chdir(".."); err != nil {
+		t.Fatal("Failed to change to parent directory: ", err)
+	}
+	if err := config.LoadCfgDB(false); err != nil {
+		t.Skip("Skipping: config not available - ", err)
+	}
 	database.InitCache()
 	general := config.GetSettingsGeneral()
+	if general == nil {
+		t.Skip("Skipping: settings not available")
+	}
 	worker.InitWorkerPools(
 		general.WorkerSearch,
 		general.WorkerFiles,
@@ -174,19 +210,14 @@ func TestGenerateAllQualityPriorities(t *testing.T) {
 		LogColorize:   general.LogColorize,
 		TimeFormat:    general.TimeFormat,
 		TimeZone:      general.TimeZone,
-		LogZeroValues: general.LogZeroValues,
 	})
 	err := database.InitDB(general.DBLogLevel)
 	if err != nil {
-		logger.Logtype("fatal", 0).
-			Err(err).
-			Msg("Database Initialization Failed")
+		t.Skip("Skipping: database not available - ", err)
 	}
 	err = database.InitImdbdb()
 	if err != nil {
-		logger.Logtype("fatal", 0).
-			Err(err).
-			Msg("IMDB Database Initialization Failed")
+		t.Skip("Skipping: IMDB database not available - ", err)
 	}
 	database.SetVars()
 	GenerateAllQualityPriorities()
@@ -208,10 +239,16 @@ func TestGenerateAllQualityPriorities(t *testing.T) {
 		t.Error("GenerateAllQualityPriorities() failed to generate any wanted priorities")
 	}
 
-	// Verify priorities are unique
+	// Verify priorities are unique per quality group
 	seen := make(map[string]bool)
 	for _, p := range allQualityPrioritiesT {
-		key := BuildPrioStr(p.ResolutionID, p.QualityID, p.CodecID, p.AudioID)
+		key := p.QualityGroup + "_" + BuildPrioStr(
+			p.ResolutionID,
+			p.QualityID,
+			p.CodecID,
+			p.AudioID,
+			p.AudioFormatID,
+		)
 		if seen[key] {
 			t.Errorf("GenerateAllQualityPriorities() generated duplicate priority: %s", key)
 		}
@@ -256,7 +293,7 @@ func TestGetImdbFilename(t *testing.T) {
 			// Note: We can't actually change runtime.GOOS in tests,
 			// so we test the actual function on the current OS
 			result := getImdbFilename()
-			
+
 			// On current OS, verify the result matches expected pattern
 			if runtime.GOOS == "windows" {
 				if result != "init_imdb.exe" {
@@ -277,15 +314,33 @@ func TestGetImdbFilename(t *testing.T) {
 func TestGetallprios(t *testing.T) {
 	// Initialize test data
 	allQualityPrioritiesWantedT = []Prioarr{
-		{QualityGroup: "test1", Priority: 100, ResolutionID: 1, QualityID: 2, CodecID: 3, AudioID: 4},
-		{QualityGroup: "test2", Priority: 200, ResolutionID: 5, QualityID: 6, CodecID: 7, AudioID: 8},
+		{
+			QualityGroup: "test1",
+			Priority:     100,
+			ResolutionID: 1,
+			QualityID:    2,
+			CodecID:      3,
+			AudioID:      4,
+		},
+		{
+			QualityGroup: "test2",
+			Priority:     200,
+			ResolutionID: 5,
+			QualityID:    6,
+			CodecID:      7,
+			AudioID:      8,
+		},
 	}
 
 	result := Getallprios()
 
 	// Verify we get a copy of the data
 	if len(result) != len(allQualityPrioritiesWantedT) {
-		t.Errorf("Getallprios() returned %d items; want %d", len(result), len(allQualityPrioritiesWantedT))
+		t.Errorf(
+			"Getallprios() returned %d items; want %d",
+			len(result),
+			len(allQualityPrioritiesWantedT),
+		)
 	}
 
 	// Verify content matches
@@ -294,7 +349,7 @@ func TestGetallprios(t *testing.T) {
 			t.Errorf("Getallprios() missing item at index %d", i)
 			continue
 		}
-		
+
 		actual := result[i]
 		if actual.QualityGroup != expected.QualityGroup ||
 			actual.Priority != expected.Priority ||
@@ -306,17 +361,12 @@ func TestGetallprios(t *testing.T) {
 		}
 	}
 
-	// NOTE: The function comment says it returns a copy, but it actually returns a reference
-	// This test documents the actual behavior, not the expected behavior from the comment
+	// Verify that Getallprios returns a copy, not a reference.
+	// Mutating the returned slice must not affect the underlying allQualityPrioritiesWantedT.
 	if len(result) > 0 {
-		originalPriority := result[0].Priority
 		result[0].Priority = 999
 		if allQualityPrioritiesWantedT[0].Priority == 999 {
-			t.Log("Getallprios() returns a reference (not a copy as documented)")
-			// This is the actual behavior, restore for other tests
-			result[0].Priority = originalPriority
-		} else {
-			t.Error("Getallprios() should return a reference but didn't")
+			t.Error("Getallprios() returned a reference; expected an independent copy")
 		}
 	}
 }
@@ -324,16 +374,41 @@ func TestGetallprios(t *testing.T) {
 func TestGetcompleteallprios(t *testing.T) {
 	// Initialize test data
 	allQualityPrioritiesT = []Prioarr{
-		{QualityGroup: "complete1", Priority: 150, ResolutionID: 10, QualityID: 20, CodecID: 30, AudioID: 40},
-		{QualityGroup: "complete2", Priority: 250, ResolutionID: 50, QualityID: 60, CodecID: 70, AudioID: 80},
-		{QualityGroup: "complete3", Priority: 350, ResolutionID: 90, QualityID: 100, CodecID: 110, AudioID: 120},
+		{
+			QualityGroup: "complete1",
+			Priority:     150,
+			ResolutionID: 10,
+			QualityID:    20,
+			CodecID:      30,
+			AudioID:      40,
+		},
+		{
+			QualityGroup: "complete2",
+			Priority:     250,
+			ResolutionID: 50,
+			QualityID:    60,
+			CodecID:      70,
+			AudioID:      80,
+		},
+		{
+			QualityGroup: "complete3",
+			Priority:     350,
+			ResolutionID: 90,
+			QualityID:    100,
+			CodecID:      110,
+			AudioID:      120,
+		},
 	}
 
 	result := Getcompleteallprios()
 
 	// Verify we get a copy of the data
 	if len(result) != len(allQualityPrioritiesT) {
-		t.Errorf("Getcompleteallprios() returned %d items; want %d", len(result), len(allQualityPrioritiesT))
+		t.Errorf(
+			"Getcompleteallprios() returned %d items; want %d",
+			len(result),
+			len(allQualityPrioritiesT),
+		)
 	}
 
 	// Verify content matches
@@ -342,7 +417,7 @@ func TestGetcompleteallprios(t *testing.T) {
 			t.Errorf("Getcompleteallprios() missing item at index %d", i)
 			continue
 		}
-		
+
 		actual := result[i]
 		if actual.QualityGroup != expected.QualityGroup ||
 			actual.Priority != expected.Priority ||
@@ -404,9 +479,14 @@ func TestSplitByFull(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result := splitByFull(tt.str, tt.splitby)
 			if result != tt.expected {
-				t.Errorf("splitByFull(%q, %q) = %q; want %q", tt.str, tt.splitby, result, tt.expected)
+				t.Errorf(
+					"splitByFull(%q, %q) = %q; want %q",
+					tt.str,
+					tt.splitby,
+					result,
+					tt.expected,
+				)
 			}
 		})
 	}
 }
-

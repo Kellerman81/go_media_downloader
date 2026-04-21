@@ -16,6 +16,84 @@ import (
 	"maragu.dev/gomponents/html"
 )
 
+// templateConfigInfo maps template field names to their configuration page URLs and types.
+type templateConfigInfo struct {
+	URL  string // The config page URL
+	Type string // The config type for the preview endpoint
+}
+
+// getTemplateConfigInfo returns the config URL and type for a template field name.
+// Returns empty struct if the field is not a template reference field.
+func getTemplateConfigInfo(fieldName string) templateConfigInfo {
+	mapping := map[string]templateConfigInfo{
+		"TemplatePath":       {URL: "/api/admin/config/paths", Type: "path"},
+		"TemplatePathNzb":    {URL: "/api/admin/config/paths", Type: "path"},
+		"TemplateList":       {URL: "/api/admin/config/lists", Type: "list"},
+		"TemplateQuality":    {URL: "/api/admin/config/quality", Type: "quality"},
+		"TemplateScheduler":  {URL: "/api/admin/config/scheduler", Type: "scheduler"},
+		"TemplateIndexer":    {URL: "/api/admin/config/indexers", Type: "indexer"},
+		"TemplateDownloader": {URL: "/api/admin/config/downloader", Type: "downloader"},
+		"TemplateRegex":      {URL: "/api/admin/config/regex", Type: "regex"},
+		"MapNotification":    {URL: "/api/admin/config/notifications", Type: "notification"},
+	}
+
+	return mapping[fieldName]
+}
+
+// isTemplateField returns true if the field name is a template reference field.
+// func isTemplateField(fieldName string) bool {
+// 	info := getTemplateConfigInfo(fieldName)
+// 	return info.URL != ""
+// }
+
+// renderConfigPreviewReadonly wraps a config form in a readonly preview container.
+// This is used for the modal preview of template configurations.
+// Note: The JavaScript to expand collapsed sections is in web_pages.go (expandAllCollapsedSections)
+// and runs after the fetch completes, since inline scripts don't execute when inserted via innerHTML.
+// CSS disables form inputs while keeping collapse buttons and scrolling interactive.
+func renderConfigPreviewReadonly(title string, content gomponents.Node) gomponents.Node {
+	return html.Div(
+		html.Class("config-preview-readonly"),
+		html.Div(
+			html.Class("preview-header mb-3 pb-2 border-bottom"),
+			html.H5(
+				html.Class("text-primary mb-0"),
+				html.I(html.Class("fas fa-eye me-2")),
+				gomponents.Text(title),
+			),
+			html.Small(
+				html.Class("text-muted"),
+				gomponents.Text("Read-only preview - click headers to expand/collapse"),
+			),
+		),
+		html.Div(
+			html.Class("preview-content"),
+			html.Style("max-height: 60vh; overflow-y: auto;"),
+			content,
+		),
+		// CSS to disable form inputs but keep collapse buttons and scrolling working
+		html.StyleEl(
+			gomponents.Raw(`
+				.config-preview-readonly input,
+				.config-preview-readonly select,
+				.config-preview-readonly textarea,
+				.config-preview-readonly .btn-danger,
+				.config-preview-readonly .btn-primary,
+				.config-preview-readonly .btn-secondary:not([data-bs-toggle="collapse"]),
+				.config-preview-readonly .selectwithpreview button {
+					pointer-events: none;
+					opacity: 0.7;
+				}
+				.config-preview-readonly .accordion-button,
+				.config-preview-readonly [data-bs-toggle="collapse"] {
+					pointer-events: auto;
+					cursor: pointer;
+				}
+			`),
+		),
+	)
+}
+
 // renderEnhancedPageHeader creates a standardized enhanced page header with gradient background.
 func renderEnhancedPageHeader(iconClass, title, subtitle string) gomponents.Node {
 	return html.Div(
@@ -117,19 +195,6 @@ func renderGenericConfigSection[T any](
 	)
 }
 
-// Common render patterns using the optimized builder.
-func renderStandardArrayForm[T any](
-	prefix string,
-	i int,
-	title string,
-	config T,
-	buildFields func(*OptimizedFieldBuilder, T) *OptimizedFieldBuilder,
-) gomponents.Node {
-	builder := NewOptimizedFieldBuilder(10) // Pre-allocate for common case
-	fields := buildFields(builder, config).Build()
-	return renderArrayItemFormWithIndex(prefix, i, title, config, fields)
-}
-
 // renderConfigSection creates a generic config section with form elements.
 func renderConfigSection[T any](
 	configList []T,
@@ -174,14 +239,13 @@ func renderConfigSection[T any](
 				options.AddFormPath,
 				csrfToken,
 			),
-			gomponents.Group(
-				createConfigFormButtons(
-					"Save Configuration",
-					"#addalert",
-					options.UpdatePath,
-					csrfToken,
-				),
+			createFormSubmitGroup(
+				"Save Configuration",
+				"#addalert",
+				options.UpdatePath,
+				csrfToken,
 			),
+			html.Div(html.ID("addalert")),
 			html.Script(
 				gomponents.Raw(`
 					document.addEventListener('DOMContentLoaded', function() {
@@ -404,6 +468,7 @@ func renderGeneralConfigSections(
 					}),
 				},
 				{Name: "TimeZone", Type: "text", Value: configv.TimeZone},
+				{Name: "UserAgent", Type: "text", Value: configv.UserAgent},
 				{Name: "WebPort", Type: "text", Value: configv.WebPort},
 				{Name: "WebAPIKey", Type: "text", Value: configv.WebAPIKey},
 				{Name: "WebPortalEnabled", Type: "checkbox", Value: configv.WebPortalEnabled},
@@ -413,23 +478,27 @@ func renderGeneralConfigSections(
 		renderConfigGroup("Logging Settings", "logging", false,
 			[]FormFieldDefinition{
 				{
-					Name:    "LogLevel",
-					Type:    "select",
-					Value:   configv.LogLevel,
-					Options: convertMapToSelectOptions(map[string][]string{"options": {"info", "debug"}}),
+					Name:  "LogLevel",
+					Type:  "select",
+					Value: configv.LogLevel,
+					Options: convertMapToSelectOptions(
+						map[string][]string{"options": {"info", "debug"}},
+					),
 				},
 				{
-					Name:    "DBLogLevel",
-					Type:    "select",
-					Value:   configv.DBLogLevel,
-					Options: convertMapToSelectOptions(map[string][]string{"options": {"info", "debug"}}),
+					Name:  "DBLogLevel",
+					Type:  "select",
+					Value: configv.DBLogLevel,
+					Options: convertMapToSelectOptions(
+						map[string][]string{"options": {"info", "debug"}},
+					),
 				},
 				{Name: "LogFileSize", Type: "number", Value: configv.LogFileSize},
 				{Name: "LogFileCount", Type: "number", Value: configv.LogFileCount},
 				{Name: "LogCompress", Type: "checkbox", Value: configv.LogCompress},
 				{Name: "LogToFileOnly", Type: "checkbox", Value: configv.LogToFileOnly},
 				{Name: "LogColorize", Type: "checkbox", Value: configv.LogColorize},
-				{Name: "LogZeroValues", Type: "checkbox", Value: configv.LogZeroValues},
+				// {Name: "LogZeroValues", Type: "checkbox", Value: configv.LogZeroValues},
 			}, group, comments, displayNames),
 
 		// Worker Settings Section
@@ -451,6 +520,7 @@ func renderGeneralConfigSections(
 				{Name: "UseHistoryCache", Type: "checkbox", Value: configv.UseHistoryCache},
 				{Name: "CacheDuration", Type: "number", Value: configv.CacheDuration},
 				{Name: "CacheAutoExtend", Type: "checkbox", Value: configv.CacheAutoExtend},
+				{Name: "UseIndexedCache", Type: "checkbox", Value: configv.UseIndexedCache},
 				{Name: "SearcherSize", Type: "number", Value: configv.SearcherSize},
 			}, group, comments, displayNames),
 
@@ -462,6 +532,9 @@ func renderGeneralConfigSections(
 				{Name: "TraktClientID", Type: "text", Value: configv.TraktClientID},
 				{Name: "TraktClientSecret", Type: "text", Value: configv.TraktClientSecret},
 				{Name: "TraktRedirectUrl", Type: "text", Value: configv.TraktRedirectUrl},
+				{Name: "SpotifyClientID", Type: "text", Value: configv.SpotifyClientID},
+				{Name: "SpotifyClientSecret", Type: "text", Value: configv.SpotifyClientSecret},
+				{Name: "SpotifyRegion", Type: "text", Value: configv.SpotifyRegion},
 			}, group, comments, displayNames),
 
 		// Metadata Sources Section
@@ -524,6 +597,8 @@ func renderGeneralConfigSections(
 				{Name: "TmdbLimiterCalls", Type: "number", Value: configv.TmdbLimiterCalls},
 				{Name: "OmdbLimiterSeconds", Type: "number", Value: configv.OmdbLimiterSeconds},
 				{Name: "OmdbLimiterCalls", Type: "number", Value: configv.OmdbLimiterCalls},
+				{Name: "TvmazeLimiterSeconds", Type: "number", Value: configv.TvmazeLimiterSeconds},
+				{Name: "TvmazeLimiterCalls", Type: "number", Value: configv.TvmazeLimiterCalls},
 				{Name: "PlexLimiterSeconds", Type: "number", Value: configv.PlexLimiterSeconds},
 				{Name: "PlexLimiterCalls", Type: "number", Value: configv.PlexLimiterCalls},
 				{Name: "PlexTimeoutSeconds", Type: "number", Value: configv.PlexTimeoutSeconds},
@@ -555,12 +630,88 @@ func renderGeneralConfigSections(
 			[]FormFieldDefinition{
 				{Name: "FfprobePath", Type: "text", Value: configv.FfprobePath},
 				{Name: "MediainfoPath", Type: "text", Value: configv.MediainfoPath},
+				{Name: "MetaflacPath", Type: "text", Value: configv.MetaflacPath},
+				{Name: "FpcalcPath", Type: "text", Value: configv.FpcalcPath},
 				{Name: "UseMediainfo", Type: "checkbox", Value: configv.UseMediainfo},
 				{Name: "UseMediaFallback", Type: "checkbox", Value: configv.UseMediaFallback},
 				{Name: "UnrarPath", Type: "text", Value: configv.UnrarPath},
 				{Name: "SevenZipPath", Type: "text", Value: configv.SevenZipPath},
 				{Name: "UnzipPath", Type: "text", Value: configv.UnzipPath},
 				{Name: "TarPath", Type: "text", Value: configv.TarPath},
+			}, group, comments, displayNames),
+
+		// Book/Audiobook/Music Provider API Keys
+		renderConfigGroup("Book/Music Provider API Keys", "provider_keys", false,
+			[]FormFieldDefinition{
+				{Name: "GoodreadsAPIKey", Type: "text", Value: configv.GoodreadsAPIKey},
+				{Name: "DiscogsToken", Type: "text", Value: configv.DiscogsToken},
+				{Name: "AcoustIDAPIKey", Type: "text", Value: configv.AcoustIDAPIKey},
+				{Name: "LastFMAPIKey", Type: "text", Value: configv.LastFMAPIKey},
+			}, group, comments, displayNames),
+
+		// Book/Audiobook/Music Provider Rate Limits
+		renderConfigGroup("Book/Music Provider Rate Limits", "provider_limits", false,
+			[]FormFieldDefinition{
+				{
+					Name:  "OpenLibraryLimiterSeconds",
+					Type:  "number",
+					Value: configv.OpenLibraryLimiterSeconds,
+				},
+				{
+					Name:  "OpenLibraryLimiterCalls",
+					Type:  "number",
+					Value: configv.OpenLibraryLimiterCalls,
+				},
+				{
+					Name:  "GoodreadsLimiterSeconds",
+					Type:  "number",
+					Value: configv.GoodreadsLimiterSeconds,
+				},
+				{
+					Name:  "GoodreadsLimiterCalls",
+					Type:  "number",
+					Value: configv.GoodreadsLimiterCalls,
+				},
+				{
+					Name:  "AudibleLimiterSeconds",
+					Type:  "number",
+					Value: configv.AudibleLimiterSeconds,
+				},
+				{Name: "AudibleLimiterCalls", Type: "number", Value: configv.AudibleLimiterCalls},
+				{Name: "AudnexLimiterSeconds", Type: "number", Value: configv.AudnexLimiterSeconds},
+				{Name: "AudnexLimiterCalls", Type: "number", Value: configv.AudnexLimiterCalls},
+				{
+					Name:  "MusicBrainzLimiterSeconds",
+					Type:  "number",
+					Value: configv.MusicBrainzLimiterSeconds,
+				},
+				{
+					Name:  "MusicBrainzLimiterCalls",
+					Type:  "number",
+					Value: configv.MusicBrainzLimiterCalls,
+				},
+				{
+					Name:  "DiscogsLimiterSeconds",
+					Type:  "number",
+					Value: configv.DiscogsLimiterSeconds,
+				},
+				{Name: "DiscogsLimiterCalls", Type: "number", Value: configv.DiscogsLimiterCalls},
+				{
+					Name:  "AcoustIDLimiterSeconds",
+					Type:  "number",
+					Value: configv.AcoustIDLimiterSeconds,
+				},
+				{Name: "AcoustIDLimiterCalls", Type: "number", Value: configv.AcoustIDLimiterCalls},
+				{Name: "LastFMLimiterSeconds", Type: "number", Value: configv.LastFMLimiterSeconds},
+				{Name: "LastFMLimiterCalls", Type: "number", Value: configv.LastFMLimiterCalls},
+				{Name: "DeezerLimiterSeconds", Type: "number", Value: configv.DeezerLimiterSeconds},
+				{Name: "DeezerLimiterCalls", Type: "number", Value: configv.DeezerLimiterCalls},
+			}, group, comments, displayNames),
+
+		// Music Metadata Sources
+		renderConfigGroup("Music Metadata Sources", "music_meta_sources", false,
+			[]FormFieldDefinition{
+				{Name: "MusicMetaSourcePriority", Type: "array", Value: configv.MusicMetaSourcePriority},
 			}, group, comments, displayNames),
 
 		// Advanced Settings Section
@@ -594,7 +745,7 @@ func renderGeneralConfigSections(
 					Value: configv.UseCronInsteadOfInterval,
 				},
 				{Name: "UseFileBufferCopy", Type: "checkbox", Value: configv.UseFileBufferCopy},
-				{Name: "DisableSwagger", Type: "checkbox", Value: configv.DisableSwagger},
+				// {Name: "DisableSwagger", Type: "checkbox", Value: configv.DisableSwagger},
 				{
 					Name:  "TheMovieDBDisableTLSVerify",
 					Type:  "checkbox",
@@ -616,6 +767,11 @@ func renderGeneralConfigSections(
 					Value: configv.TvdbDisableTLSVerify,
 				},
 				{
+					Name:  "TvmazeDisableTLSVerify",
+					Type:  "checkbox",
+					Value: configv.TvmazeDisableTLSVerify,
+				},
+				{
 					Name:  "FailedIndexerBlockTime",
 					Type:  "number",
 					Value: configv.FailedIndexerBlockTime,
@@ -626,15 +782,16 @@ func renderGeneralConfigSections(
 					Type:  "checkbox",
 					Value: configv.DatabaseBackupStopTasks,
 				},
-				{
-					Name:  "DisableVariableCleanup",
-					Type:  "checkbox",
-					Value: configv.DisableVariableCleanup,
-				},
+				// {
+				// 	Name:  "DisableVariableCleanup",
+				// 	Type:  "checkbox",
+				// 	Value: configv.DisableVariableCleanup,
+				// },
 				{Name: "OmdbTimeoutSeconds", Type: "number", Value: configv.OmdbTimeoutSeconds},
 				{Name: "TmdbTimeoutSeconds", Type: "number", Value: configv.TmdbTimeoutSeconds},
 				{Name: "TvdbTimeoutSeconds", Type: "number", Value: configv.TvdbTimeoutSeconds},
 				{Name: "TraktTimeoutSeconds", Type: "number", Value: configv.TraktTimeoutSeconds},
+				{Name: "TvmazeTimeoutSeconds", Type: "number", Value: configv.TvmazeTimeoutSeconds},
 				{Name: "EnableFileWatcher", Type: "checkbox", Value: configv.EnableFileWatcher},
 			}, group, comments, displayNames),
 	)
@@ -817,10 +974,83 @@ func renderImdbConfig(configv *config.ImdbConfig, csrfToken string) gomponents.N
 func renderMediaDataForm(prefix string, i int, configv *config.MediaDataConfig) gomponents.Node {
 	fields := []FormFieldDefinition{
 		{Name: "", Type: "removebutton", Value: "", Options: nil},
-		{Name: "TemplatePath", Type: "select", Value: configv.TemplatePath, Options: convertMapToSelectOptions(config.GetSettingTemplatesFor("path"))},
+		{
+			Name:    "TemplatePath",
+			Type:    "selectwithpreview",
+			Value:   configv.TemplatePath,
+			Options: convertMapToSelectOptions(config.GetSettingTemplatesFor("path")),
+		},
 		{Name: "AddFound", Type: "checkbox", Value: configv.AddFound, Options: nil},
 		{Name: "AddFoundList", Type: "text", Value: configv.AddFoundList, Options: nil},
 		{Name: "EnableUnpacking", Type: "checkbox", Value: configv.EnableUnpacking, Options: nil},
+		{Name: "WriteRenameLog", Type: "checkbox", Value: configv.WriteRenameLog, Options: nil},
+		{Name: "EmbedArt", Type: "checkbox", Value: configv.EmbedArt, Options: nil},
+		{
+			Name:    "SkipSeriesTrackMatch",
+			Type:    "checkbox",
+			Value:   configv.SkipSeriesTrackMatch,
+			Options: nil,
+		},
+		{
+			Name:    "AllowAlternativeReleases",
+			Type:    "checkbox",
+			Value:   configv.AllowAlternativeReleases,
+			Options: nil,
+		},
+		{
+			Name:    "AllowedReleaseTypes",
+			Type:    "array",
+			Value:   configv.AllowedReleaseTypes,
+			Options: nil,
+		},
+		{Name: "MBMediaFormats", Type: "array", Value: configv.MBMediaFormats, Options: nil},
+		{
+			Name:    "AllowAllFormatsWhenStructuring",
+			Type:    "checkbox",
+			Value:   configv.AllowAllFormatsWhenStructuring,
+			Options: nil,
+		},
+		{
+			Name:    "PerTrackToleranceSeconds",
+			Type:    "number",
+			Value:   configv.PerTrackToleranceSeconds,
+			Options: nil,
+		},
+		{
+			Name:    "PerTrackToleranceSecondsMax",
+			Type:    "number",
+			Value:   configv.PerTrackToleranceSecondsMax,
+			Options: nil,
+		},
+		{
+			Name:    "MaxTotalDifferenceSeconds",
+			Type:    "number",
+			Value:   configv.MaxTotalDifferenceSeconds,
+			Options: nil,
+		},
+		{
+			Name:    "AllowMissingTracks",
+			Type:    "checkbox",
+			Value:   configv.AllowMissingTracks,
+			Options: nil,
+		},
+		{
+			Name:    "ExceedToleranceIfTotalMatch",
+			Type:    "checkbox",
+			Value:   configv.ExceedToleranceIfTotalMatch,
+			Options: nil,
+		},
+		{Name: "TrackTitleWeight", Type: "number", Value: configv.TrackTitleWeight, Options: nil},
+		{Name: "TrackIndexWeight", Type: "number", Value: configv.TrackIndexWeight, Options: nil},
+		{Name: "TrackLengthWeight", Type: "number", Value: configv.TrackLengthWeight, Options: nil},
+		{Name: "TrackArtistWeight", Type: "number", Value: configv.TrackArtistWeight, Options: nil},
+		{Name: "TrackIdWeight", Type: "number", Value: configv.TrackIdWeight, Options: nil},
+		{
+			Name:    "DiscoverSeriesAlbums",
+			Type:    "checkbox",
+			Value:   configv.DiscoverSeriesAlbums,
+			Options: nil,
+		},
 	}
 
 	return renderArrayItemFormWithIndex(prefix, i, "Data", configv, fields)
@@ -833,31 +1063,113 @@ func renderMediaDataImportForm(
 ) gomponents.Node {
 	fields := []FormFieldDefinition{
 		{Name: "", Type: "removebutton", Value: "", Options: nil},
-		{Name: "TemplatePath", Type: "select", Value: configv.TemplatePath, Options: convertMapToSelectOptions(config.GetSettingTemplatesFor("path"))},
+		{
+			Name:    "TemplatePath",
+			Type:    "selectwithpreview",
+			Value:   configv.TemplatePath,
+			Options: convertMapToSelectOptions(config.GetSettingTemplatesFor("path")),
+		},
 		{Name: "EnableUnpacking", Type: "checkbox", Value: configv.EnableUnpacking, Options: nil},
+		{Name: "AddFound", Type: "checkbox", Value: configv.AddFound, Options: nil},
+		{Name: "AddFoundList", Type: "text", Value: configv.AddFoundList, Options: nil},
+		{
+			Name:    "AllowAlternativeReleases",
+			Type:    "checkbox",
+			Value:   configv.AllowAlternativeReleases,
+			Options: nil,
+		},
+		{Name: "MoveUnprocessed", Type: "text", Value: configv.MoveUnprocessed, Options: nil},
+		{Name: "EmbedArt", Type: "checkbox", Value: configv.EmbedArt, Options: nil},
+		{
+			Name:    "AllowAllFormatsWhenStructuring",
+			Type:    "checkbox",
+			Value:   configv.AllowAllFormatsWhenStructuring,
+			Options: nil,
+		},
+		{
+			Name:    "AllowedReleaseTypes",
+			Type:    "array",
+			Value:   configv.AllowedReleaseTypes,
+			Options: nil,
+		},
+		{Name: "MBMediaFormats", Type: "array", Value: configv.MBMediaFormats, Options: nil},
+		{
+			Name:    "PerTrackToleranceSeconds",
+			Type:    "number",
+			Value:   configv.PerTrackToleranceSeconds,
+			Options: nil,
+		},
+		{
+			Name:    "PerTrackToleranceSecondsMax",
+			Type:    "number",
+			Value:   configv.PerTrackToleranceSecondsMax,
+			Options: nil,
+		},
+		{
+			Name:    "MaxTotalDifferenceSeconds",
+			Type:    "number",
+			Value:   configv.MaxTotalDifferenceSeconds,
+			Options: nil,
+		},
+		{
+			Name:    "AllowMissingTracks",
+			Type:    "checkbox",
+			Value:   configv.AllowMissingTracks,
+			Options: nil,
+		},
+		{
+			Name:    "ExceedToleranceIfTotalMatch",
+			Type:    "checkbox",
+			Value:   configv.ExceedToleranceIfTotalMatch,
+			Options: nil,
+		},
+		{Name: "StrongRecThresh", Type: "number", Value: configv.StrongRecThresh, Options: nil},
+		{Name: "MediumRecThresh", Type: "number", Value: configv.MediumRecThresh, Options: nil},
+		{Name: "TrackTitleWeight", Type: "number", Value: configv.TrackTitleWeight, Options: nil},
+		{Name: "TrackIndexWeight", Type: "number", Value: configv.TrackIndexWeight, Options: nil},
+		{Name: "TrackLengthWeight", Type: "number", Value: configv.TrackLengthWeight, Options: nil},
+		{Name: "TrackArtistWeight", Type: "number", Value: configv.TrackArtistWeight, Options: nil},
+		{Name: "TrackIdWeight", Type: "number", Value: configv.TrackIdWeight, Options: nil},
+		{
+			Name:    "DiscoverSeriesAlbums",
+			Type:    "checkbox",
+			Value:   configv.DiscoverSeriesAlbums,
+			Options: nil,
+		},
 	}
 
 	return renderArrayItemFormWithIndex(prefix, i, "Data Import", configv, fields)
 }
 
 func renderMediaListsForm(prefix string, i int, configv *config.MediaListsConfig) gomponents.Node {
-	return renderStandardArrayForm(
-		prefix,
-		i,
-		"List",
-		configv,
-		func(b *OptimizedFieldBuilder, config *config.MediaListsConfig) *OptimizedFieldBuilder {
-			return b.
-				AddText("Name", config.Name).
-				AddSelectCached("TemplateList", config.TemplateList, "list").
-				AddSelectCached("TemplateQuality", config.TemplateQuality, "quality").
-				AddSelectCached("TemplateScheduler", config.TemplateScheduler, "scheduler").
-				AddArray("IgnoreMapLists", config.IgnoreMapLists).
-				AddArray("ReplaceMapLists", config.ReplaceMapLists).
-				AddCheckbox("Enabled", config.Enabled).
-				AddCheckbox("AddFound", config.Addfound)
+	fields := []FormFieldDefinition{
+		{Name: "", Type: "removebutton", Value: "", Options: nil},
+		{Name: "Name", Type: "text", Value: configv.Name, Options: nil},
+		{
+			Name:    "TemplateList",
+			Type:    "selectwithpreview",
+			Value:   configv.TemplateList,
+			Options: convertMapToSelectOptions(config.GetSettingTemplatesFor("list")),
 		},
-	)
+		{
+			Name:    "TemplateQuality",
+			Type:    "selectwithpreview",
+			Value:   configv.TemplateQuality,
+			Options: convertMapToSelectOptions(config.GetSettingTemplatesFor("quality")),
+		},
+		{
+			Name:    "TemplateScheduler",
+			Type:    "selectwithpreview",
+			Value:   configv.TemplateScheduler,
+			Options: convertMapToSelectOptions(config.GetSettingTemplatesFor("scheduler")),
+		},
+		{Name: "IgnoreMapLists", Type: "array", Value: configv.IgnoreMapLists, Options: nil},
+		{Name: "ReplaceMapLists", Type: "array", Value: configv.ReplaceMapLists, Options: nil},
+		{Name: "Enabled", Type: "checkbox", Value: configv.Enabled, Options: nil},
+		{Name: "AddFound", Type: "checkbox", Value: configv.Addfound, Options: nil},
+	}
+
+	return renderArrayItemFormWithIndex(prefix, i, "List", configv, fields)
 }
 
 func renderMediaNotificationForm(
@@ -865,20 +1177,28 @@ func renderMediaNotificationForm(
 	i int,
 	configv *config.MediaNotificationConfig,
 ) gomponents.Node {
-	return renderStandardArrayForm(
-		prefix,
-		i,
-		"Notification",
-		configv,
-		func(b *OptimizedFieldBuilder, config *config.MediaNotificationConfig) *OptimizedFieldBuilder {
-			return b.
-				AddSelectCached("MapNotification", config.MapNotification, "notification").
-				AddSelect("Event", config.Event, []string{"added_download", "added_data", "upgraded_data"}).
-				AddText("Title", config.Title).
-				AddText("Message", config.Message).
-				AddText("ReplacedPrefix", config.ReplacedPrefix)
+	fields := []FormFieldDefinition{
+		{Name: "", Type: "removebutton", Value: "", Options: nil},
+		{
+			Name:    "MapNotification",
+			Type:    "selectwithpreview",
+			Value:   configv.MapNotification,
+			Options: convertMapToSelectOptions(config.GetSettingTemplatesFor("notification")),
 		},
-	)
+		{
+			Name:  "Event",
+			Type:  "select",
+			Value: configv.Event,
+			Options: convertMapToSelectOptions(
+				map[string][]string{"options": {"added_download", "added_data", "upgraded_data"}},
+			),
+		},
+		{Name: "Title", Type: "text", Value: configv.Title, Options: nil},
+		{Name: "Message", Type: "text", Value: configv.Message, Options: nil},
+		{Name: "ReplacedPrefix", Type: "text", Value: configv.ReplacedPrefix, Options: nil},
+	}
+
+	return renderArrayItemFormWithIndex(prefix, i, "Notification", configv, fields)
 }
 
 func renderMediaForm(
@@ -969,8 +1289,21 @@ func renderMediaConfigSections(
 				{Name: "", Type: "removebutton", Value: "", Options: nil},
 				{Name: "Name", Type: "text", Value: configv.Name, Options: nil},
 				{Name: "Naming", Type: "text", Value: configv.Naming, Options: nil},
-				{Name: "MetadataLanguage", Type: "text", Value: configv.MetadataLanguage, Options: nil},
+				{
+					Name:    "MetadataLanguage",
+					Type:    "text",
+					Value:   configv.MetadataLanguage,
+					Options: nil,
+				},
 				{Name: "Structure", Type: "checkbox", Value: configv.Structure, Options: nil},
+				{
+					Name:  "AudibleRegion",
+					Type:  "select",
+					Value: configv.AudibleRegion,
+					Options: convertMapToSelectOptions(map[string][]string{
+						"options": {"us", "uk", "ca", "au", "de", "fr", "it", "es", "in", "jp"},
+					}),
+				},
 			}, "media_main_"+typev+"_"+configv.Name, comments, displayNames, accordionId),
 
 		// Quality & Templates
@@ -990,20 +1323,22 @@ func renderMediaConfigSections(
 					Options: convertMapToSelectOptions(database.GetSettingTemplatesFor("quality")),
 				},
 				{
-					Name:    "DefaultResolution",
-					Type:    "select",
-					Value:   configv.DefaultResolution,
-					Options: convertMapToSelectOptions(database.GetSettingTemplatesFor("resolution")),
+					Name:  "DefaultResolution",
+					Type:  "select",
+					Value: configv.DefaultResolution,
+					Options: convertMapToSelectOptions(
+						database.GetSettingTemplatesFor("resolution"),
+					),
 				},
 				{
 					Name:    "TemplateQuality",
-					Type:    "select",
+					Type:    "selectwithpreview",
 					Value:   configv.TemplateQuality,
 					Options: convertMapToSelectOptions(config.GetSettingTemplatesFor("quality")),
 				},
 				{
 					Name:    "TemplateScheduler",
-					Type:    "select",
+					Type:    "selectwithpreview",
 					Value:   configv.TemplateScheduler,
 					Options: convertMapToSelectOptions(config.GetSettingTemplatesFor("scheduler")),
 				},
@@ -1024,9 +1359,24 @@ func renderMediaConfigSections(
 			),
 			false,
 			[]FormFieldDefinition{
-				{Name: "MetadataTitleLanguages", Type: "array", Value: configv.MetadataTitleLanguages, Options: nil},
-				{Name: "SearchmissingIncremental", Type: "number", Value: configv.SearchmissingIncremental, Options: nil},
-				{Name: "SearchupgradeIncremental", Type: "number", Value: configv.SearchupgradeIncremental, Options: nil},
+				{
+					Name:    "MetadataTitleLanguages",
+					Type:    "array",
+					Value:   configv.MetadataTitleLanguages,
+					Options: nil,
+				},
+				{
+					Name:    "SearchmissingIncremental",
+					Type:    "number",
+					Value:   configv.SearchmissingIncremental,
+					Options: nil,
+				},
+				{
+					Name:    "SearchupgradeIncremental",
+					Type:    "number",
+					Value:   configv.SearchupgradeIncremental,
+					Options: nil,
+				},
 			},
 			"media_main_"+typev+"_"+configv.Name,
 			comments,
@@ -1093,6 +1443,11 @@ func renderMediaArraySection(
 		collapseClass += " show"
 	}
 
+	buttonClass := "accordion-button"
+	if !expanded {
+		buttonClass += " collapsed"
+	}
+
 	return html.Div(
 		html.Class("accordion-item"),
 		html.Style("border: 1px solid #dee2e6; border-radius: 8px; margin-bottom: 0.5rem;"),
@@ -1100,20 +1455,19 @@ func renderMediaArraySection(
 			html.Class("accordion-header"),
 			html.ID("heading"+id),
 			html.Button(
-				html.Class("accordion-button"),
-				gomponents.If(!expanded, gomponents.Attr("class", "accordion-button collapsed")),
+				html.Class(buttonClass),
 				html.Style(
-					"background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); border: none; padding: 0.75rem 1rem; font-weight: 600;",
+					"background-color: #fff; border: none; padding: 0.75rem 1rem; font-weight: 600;",
 				),
 				html.Type("button"),
 				gomponents.Attr("data-bs-toggle", "collapse"),
 				gomponents.Attr("data-bs-target", "#collapse"+id),
 				gomponents.Attr("aria-expanded", fmt.Sprintf("%t", expanded)),
 				gomponents.Attr("aria-controls", "collapse"+id),
-				html.I(html.Class("fas fa-list me-2 text-primary")),
+				html.I(html.Class("fas fa-list me-2 text-muted")),
 				gomponents.Text(title),
 				html.Span(
-					html.Class("badge bg-primary ms-2"),
+					html.Class("badge bg-secondary ms-2"),
 					gomponents.Text(fmt.Sprintf("%d", len(items))),
 				),
 			),
@@ -1125,13 +1479,13 @@ func renderMediaArraySection(
 			gomponents.Attr("data-bs-parent", "#"+parentAccordion),
 			html.Div(
 				html.Class("accordion-body p-3"),
-				html.Style("background-color: #fdfdfe;"),
+				html.Style("background-color: #fff;"),
 				gomponents.If(len(items) > 0,
 					html.Div(html.Class("mb-3"), gomponents.Group(items)),
 				),
 				html.Button(
 					html.Type("button"),
-					html.Class("btn btn-outline-primary btn-sm"),
+					html.Class("btn btn-outline-secondary btn-sm"),
 					hx.Post(addEndpoint),
 					hx.Target("#collapse"+id+" .accordion-body"),
 					hx.Swap("beforeend"),
@@ -1156,6 +1510,21 @@ func renderMediaConfig(configv *config.MediaConfig, csrfToken string) gomponents
 		Series = append(Series, renderMediaForm("series", &mediaType, csrfToken))
 	}
 
+	var Books []gomponents.Node
+	for _, mediaType := range configv.Books {
+		Books = append(Books, renderMediaForm("books", &mediaType, csrfToken))
+	}
+
+	var AudioBooks []gomponents.Node
+	for _, mediaType := range configv.AudioBooks {
+		AudioBooks = append(AudioBooks, renderMediaForm("audiobooks", &mediaType, csrfToken))
+	}
+
+	var Music []gomponents.Node
+	for _, mediaType := range configv.Music {
+		Music = append(Music, renderMediaForm("music", &mediaType, csrfToken))
+	}
+
 	return html.Div(
 		html.Class("config-section-enhanced"),
 
@@ -1163,7 +1532,7 @@ func renderMediaConfig(configv *config.MediaConfig, csrfToken string) gomponents
 		renderEnhancedPageHeader(
 			"fa-solid fa-video",
 			"Media Configuration",
-			"Configure media types, lists, qualities, indexers, and organizational settings for movies and TV series.",
+			"Configure media types, lists, qualities, indexers, and organizational settings for movies, TV series, books, audiobooks, and music.",
 		),
 
 		html.Form(
@@ -1199,6 +1568,54 @@ func renderMediaConfig(configv *config.MediaConfig, csrfToken string) gomponents
 					"Add Movie",
 					"#moviesContainer",
 					"/api/manage/media/form/movies",
+					csrfToken,
+				),
+			),
+
+			// Books section
+			html.Div(
+				html.Class("mb-4"),
+				html.H4(gomponents.Text("Books")),
+				html.Div(
+					html.ID("booksContainer"),
+					gomponents.Group(Books),
+				),
+				createAddButton(
+					"Add Book Config",
+					"#booksContainer",
+					"/api/manage/media/form/books",
+					csrfToken,
+				),
+			),
+
+			// AudioBooks section
+			html.Div(
+				html.Class("mb-4"),
+				html.H4(gomponents.Text("AudioBooks")),
+				html.Div(
+					html.ID("audiobooksContainer"),
+					gomponents.Group(AudioBooks),
+				),
+				createAddButton(
+					"Add AudioBook Config",
+					"#audiobooksContainer",
+					"/api/manage/media/form/audiobooks",
+					csrfToken,
+				),
+			),
+
+			// Music section
+			html.Div(
+				html.Class("mb-4"),
+				html.H4(gomponents.Text("Music")),
+				html.Div(
+					html.ID("musicContainer"),
+					gomponents.Group(Music),
+				),
+				createAddButton(
+					"Add Music Config",
+					"#musicContainer",
+					"/api/manage/media/form/music",
 					csrfToken,
 				),
 			),
@@ -1244,17 +1661,22 @@ func renderDownloaderConfigSections(
 			[]FormFieldDefinition{
 				{Name: "", Type: "removebutton", Value: "", Options: nil},
 				{Name: "Name", Type: "text", Value: configv.Name, Options: nil},
-				{Name: "DlType", Type: "select", Value: configv.DlType, Options: convertMapToSelectOptions(map[string][]string{
-					"options": {
-						"drone",
-						"nzbget",
-						"sabnzbd",
-						"transmission",
-						"rtorrent",
-						"qbittorrent",
-						"deluge",
-					},
-				})},
+				{
+					Name:  "DlType",
+					Type:  "select",
+					Value: configv.DlType,
+					Options: convertMapToSelectOptions(map[string][]string{
+						"options": {
+							"drone",
+							"nzbget",
+							"sabnzbd",
+							"transmission",
+							"rtorrent",
+							"qbittorrent",
+							"deluge",
+						},
+					}),
+				},
 				{Name: "Enabled", Type: "checkbox", Value: configv.Enabled, Options: nil},
 			}, group, comments, displayNames, accordionId),
 
@@ -1309,7 +1731,12 @@ func renderDownloaderConfigSections(
 			false,
 			[]FormFieldDefinition{
 				{Name: "DelugeDlTo", Type: "text", Value: configv.DelugeDlTo, Options: nil},
-				{Name: "DelugeMoveAfter", Type: "checkbox", Value: configv.DelugeMoveAfter, Options: nil},
+				{
+					Name:    "DelugeMoveAfter",
+					Type:    "checkbox",
+					Value:   configv.DelugeMoveAfter,
+					Options: nil,
+				},
 				{Name: "DelugeMoveTo", Type: "text", Value: configv.DelugeMoveTo, Options: nil},
 			},
 			group,
@@ -1323,7 +1750,7 @@ func renderDownloaderConfigSections(
 // renderOptimizedArrayItemForm creates an optimized array item form with organized sections.
 func renderOptimizedArrayItemForm(
 	itemType, name, displayName string,
-	configv any,
+	_ any,
 	sectionsContent gomponents.Node,
 ) gomponents.Node {
 	// Sanitize name for use in HTML ID (replace spaces and special characters)
@@ -1408,25 +1835,42 @@ func renderListsConfigSections(
 			[]FormFieldDefinition{
 				{Name: "", Type: "removebutton", Value: "", Options: nil},
 				{Name: "Name", Type: "text", Value: configv.Name, Options: nil},
-				{Name: "ListType", Type: "select", Value: configv.ListType, Options: convertMapToSelectOptions(map[string][]string{
-					"options": {
-						"seriesconfig",
-						"traktpublicshowlist",
-						"imdbcsv",
-						"imdbfile",
-						"traktpublicmovielist",
-						"traktmoviepopular",
-						"traktmovieanticipated",
-						"traktmovietrending",
-						"traktseriepopular",
-						"traktserieanticipated",
-						"traktserietrending",
-						"newznabrss",
-						"plexwatchlist",
-						"jellyfinwatchlist",
-						"moviescraper",
-					},
-				})},
+				{
+					Name:  "ListType",
+					Type:  "select",
+					Value: configv.ListType,
+					Options: convertMapToSelectOptions(map[string][]string{
+						"options": {
+							"seriesconfig",
+							"traktpublicshowlist",
+							"imdbcsv",
+							"imdbfile",
+							"traktpublicmovielist",
+							"traktmoviepopular",
+							"traktmovieanticipated",
+							"tmdbmovieupcoming",
+							"traktmovietrending",
+							"traktseriepopular",
+							"traktserieanticipated",
+							"traktserietrending",
+							"tmdbmoviepopular",
+							"tmdbmovietrending",
+							"tmdbmoviediscover",
+							"tmdblist",
+							"tmdbseriepopular",
+							"tmdbserietrending",
+							"tmdbshowdiscover",
+							"tmdbshowlist",
+							"newznabrss",
+							"plexwatchlist",
+							"jellyfinwatchlist",
+							"moviescraper",
+							"audiobookconfig",
+							"bookconfig",
+							"musicconfig",
+						},
+					}),
+				},
 				{Name: "Enabled", Type: "checkbox", Value: configv.Enabled, Options: nil},
 			}, group, comments, displayNames, accordionId),
 
@@ -1442,7 +1886,12 @@ func renderListsConfigSections(
 			[]FormFieldDefinition{
 				{Name: "URL", Type: "text", Value: configv.URL, Options: nil},
 				{Name: "IMDBCSVFile", Type: "text", Value: configv.IMDBCSVFile, Options: nil},
-				{Name: "SeriesConfigFile", Type: "text", Value: configv.SeriesConfigFile, Options: nil},
+				{
+					Name:    "ManualConfigFile",
+					Type:    "text",
+					Value:   configv.ManualConfigFile,
+					Options: nil,
+				},
 			},
 			group,
 			comments,
@@ -1458,9 +1907,14 @@ func renderListsConfigSections(
 			[]FormFieldDefinition{
 				{Name: "TraktUsername", Type: "text", Value: configv.TraktUsername, Options: nil},
 				{Name: "TraktListName", Type: "text", Value: configv.TraktListName, Options: nil},
-				{Name: "TraktListType", Type: "select", Value: configv.TraktListType, Options: convertMapToSelectOptions(map[string][]string{
-					"options": {"movie", "show"},
-				})},
+				{
+					Name:  "TraktListType",
+					Type:  "select",
+					Value: configv.TraktListType,
+					Options: convertMapToSelectOptions(map[string][]string{
+						"options": {"movie", "show"},
+					}),
+				},
 			},
 			group,
 			comments,
@@ -1498,7 +1952,12 @@ func renderListsConfigSections(
 			[]FormFieldDefinition{
 				{Name: "TmdbDiscover", Type: "array", Value: configv.TmdbDiscover, Options: nil},
 				{Name: "TmdbList", Type: "arrayint", Value: configv.TmdbList, Options: nil},
-				{Name: "RemoveFromList", Type: "checkbox", Value: configv.RemoveFromList, Options: nil},
+				{
+					Name:    "RemoveFromList",
+					Type:    "checkbox",
+					Value:   configv.RemoveFromList,
+					Options: nil,
+				},
 			},
 			group,
 			comments,
@@ -1519,9 +1978,19 @@ func renderListsConfigSections(
 				{Name: "PlexServerURL", Type: "text", Value: configv.PlexServerURL, Options: nil},
 				{Name: "PlexToken", Type: "text", Value: configv.PlexToken, Options: nil},
 				{Name: "PlexUsername", Type: "text", Value: configv.PlexUsername, Options: nil},
-				{Name: "JellyfinServerURL", Type: "text", Value: configv.JellyfinServerURL, Options: nil},
+				{
+					Name:    "JellyfinServerURL",
+					Type:    "text",
+					Value:   configv.JellyfinServerURL,
+					Options: nil,
+				},
 				{Name: "JellyfinToken", Type: "text", Value: configv.JellyfinToken, Options: nil},
-				{Name: "JellyfinUsername", Type: "text", Value: configv.JellyfinUsername, Options: nil},
+				{
+					Name:    "JellyfinUsername",
+					Type:    "text",
+					Value:   configv.JellyfinUsername,
+					Options: nil,
+				},
 			},
 			group,
 			comments,
@@ -1532,15 +2001,39 @@ func renderListsConfigSections(
 		// Movie Scraper - Basic Configuration
 		renderConfigGroupWithParent(
 			"Movie Scraper - Basic Configuration",
-			"moviescraper-basic-"+strings.ReplaceAll(strings.ReplaceAll(configv.Name, " ", "-"), "_", "-"),
+			"moviescraper-basic-"+strings.ReplaceAll(
+				strings.ReplaceAll(configv.Name, " ", "-"),
+				"_",
+				"-",
+			),
 			false,
 			[]FormFieldDefinition{
-				{Name: "MovieScraperType", Type: "select", Value: configv.MovieScraperType, Options: convertMapToSelectOptions(map[string][]string{
-					"options": {"htmlxpath", "csrfapi"},
-				})},
-				{Name: "MovieScraperStartURL", Type: "text", Value: configv.MovieScraperStartURL, Options: nil},
-				{Name: "MovieScraperSiteURL", Type: "text", Value: configv.MovieScraperSiteURL, Options: nil},
-				{Name: "MovieScraperSiteID", Type: "number", Value: configv.MovieScraperSiteID, Options: nil},
+				{
+					Name:  "MovieScraperType",
+					Type:  "select",
+					Value: configv.MovieScraperType,
+					Options: convertMapToSelectOptions(map[string][]string{
+						"options": {"htmlxpath", "csrfapi", "project1service", "algolia"},
+					}),
+				},
+				{
+					Name:    "MovieScraperStartURL",
+					Type:    "text",
+					Value:   configv.MovieScraperStartURL,
+					Options: nil,
+				},
+				{
+					Name:    "MovieScraperSiteURL",
+					Type:    "text",
+					Value:   configv.MovieScraperSiteURL,
+					Options: nil,
+				},
+				{
+					Name:    "MovieScraperSiteID",
+					Type:    "number",
+					Value:   configv.MovieScraperSiteID,
+					Options: nil,
+				},
 			},
 			group,
 			comments,
@@ -1551,19 +2044,63 @@ func renderListsConfigSections(
 		// Movie Scraper - HTML/XPath Settings
 		renderConfigGroupWithParent(
 			"Movie Scraper - HTML/XPath Settings",
-			"moviescraper-xpath-"+strings.ReplaceAll(strings.ReplaceAll(configv.Name, " ", "-"), "_", "-"),
+			"moviescraper-xpath-"+strings.ReplaceAll(
+				strings.ReplaceAll(configv.Name, " ", "-"),
+				"_",
+				"-",
+			),
 			false,
 			[]FormFieldDefinition{
-				{Name: "MovieSceneNodeXPath", Type: "text", Value: configv.MovieSceneNodeXPath, Options: nil},
-				{Name: "MovieTitleXPath", Type: "text", Value: configv.MovieTitleXPath, Options: nil},
+				{
+					Name:    "MovieSceneNodeXPath",
+					Type:    "text",
+					Value:   configv.MovieSceneNodeXPath,
+					Options: nil,
+				},
+				{
+					Name:    "MovieTitleXPath",
+					Type:    "text",
+					Value:   configv.MovieTitleXPath,
+					Options: nil,
+				},
 				{Name: "MovieYearXPath", Type: "text", Value: configv.MovieYearXPath, Options: nil},
-				{Name: "MovieImdbIDXPath", Type: "text", Value: configv.MovieImdbIDXPath, Options: nil},
+				{
+					Name:    "MovieImdbIDXPath",
+					Type:    "text",
+					Value:   configv.MovieImdbIDXPath,
+					Options: nil,
+				},
 				{Name: "MovieURLXPath", Type: "text", Value: configv.MovieURLXPath, Options: nil},
-				{Name: "MovieReleaseDateXPath", Type: "text", Value: configv.MovieReleaseDateXPath, Options: nil},
-				{Name: "MovieGenreXPath", Type: "text", Value: configv.MovieGenreXPath, Options: nil},
-				{Name: "MovieRatingXPath", Type: "text", Value: configv.MovieRatingXPath, Options: nil},
-				{Name: "MovieTitleAttribute", Type: "text", Value: configv.MovieTitleAttribute, Options: nil},
-				{Name: "MovieURLAttribute", Type: "text", Value: configv.MovieURLAttribute, Options: nil},
+				{
+					Name:    "MovieReleaseDateXPath",
+					Type:    "text",
+					Value:   configv.MovieReleaseDateXPath,
+					Options: nil,
+				},
+				{
+					Name:    "MovieGenreXPath",
+					Type:    "text",
+					Value:   configv.MovieGenreXPath,
+					Options: nil,
+				},
+				{
+					Name:    "MovieRatingXPath",
+					Type:    "text",
+					Value:   configv.MovieRatingXPath,
+					Options: nil,
+				},
+				{
+					Name:    "MovieTitleAttribute",
+					Type:    "text",
+					Value:   configv.MovieTitleAttribute,
+					Options: nil,
+				},
+				{
+					Name:    "MovieURLAttribute",
+					Type:    "text",
+					Value:   configv.MovieURLAttribute,
+					Options: nil,
+				},
 			},
 			group,
 			comments,
@@ -1574,14 +2111,33 @@ func renderListsConfigSections(
 		// Movie Scraper - Pagination Settings
 		renderConfigGroupWithParent(
 			"Movie Scraper - Pagination Settings",
-			"moviescraper-pagination-"+strings.ReplaceAll(strings.ReplaceAll(configv.Name, " ", "-"), "_", "-"),
+			"moviescraper-pagination-"+strings.ReplaceAll(
+				strings.ReplaceAll(configv.Name, " ", "-"),
+				"_",
+				"-",
+			),
 			false,
 			[]FormFieldDefinition{
-				{Name: "MoviePaginationType", Type: "select", Value: configv.MoviePaginationType, Options: convertMapToSelectOptions(map[string][]string{
-					"options": {"increment", "urlpattern"},
-				})},
-				{Name: "MoviePageIncrement", Type: "number", Value: configv.MoviePageIncrement, Options: nil},
-				{Name: "MoviePageURLPattern", Type: "text", Value: configv.MoviePageURLPattern, Options: nil},
+				{
+					Name:  "MoviePaginationType",
+					Type:  "select",
+					Value: configv.MoviePaginationType,
+					Options: convertMapToSelectOptions(map[string][]string{
+						"options": {"increment", "urlpattern"},
+					}),
+				},
+				{
+					Name:    "MoviePageIncrement",
+					Type:    "number",
+					Value:   configv.MoviePageIncrement,
+					Options: nil,
+				},
+				{
+					Name:    "MoviePageURLPattern",
+					Type:    "text",
+					Value:   configv.MoviePageURLPattern,
+					Options: nil,
+				},
 			},
 			group,
 			comments,
@@ -1592,21 +2148,75 @@ func renderListsConfigSections(
 		// Movie Scraper - CSRF API Settings
 		renderConfigGroupWithParent(
 			"Movie Scraper - CSRF API Settings",
-			"moviescraper-csrfapi-"+strings.ReplaceAll(strings.ReplaceAll(configv.Name, " ", "-"), "_", "-"),
+			"moviescraper-csrfapi-"+strings.ReplaceAll(
+				strings.ReplaceAll(configv.Name, " ", "-"),
+				"_",
+				"-",
+			),
 			false,
 			[]FormFieldDefinition{
-				{Name: "MovieCSRFCookieName", Type: "text", Value: configv.MovieCSRFCookieName, Options: nil},
-				{Name: "MovieCSRFHeaderName", Type: "text", Value: configv.MovieCSRFHeaderName, Options: nil},
-				{Name: "MovieAPIURLPattern", Type: "text", Value: configv.MovieAPIURLPattern, Options: nil},
-				{Name: "MoviePageStartIndex", Type: "number", Value: configv.MoviePageStartIndex, Options: nil},
-				{Name: "MovieResultsArrayPath", Type: "text", Value: configv.MovieResultsArrayPath, Options: nil},
-				{Name: "MovieTitleField", Type: "text", Value: configv.MovieTitleField, Options: nil},
+				{
+					Name:    "MovieCSRFCookieName",
+					Type:    "text",
+					Value:   configv.MovieCSRFCookieName,
+					Options: nil,
+				},
+				{
+					Name:    "MovieCSRFHeaderName",
+					Type:    "text",
+					Value:   configv.MovieCSRFHeaderName,
+					Options: nil,
+				},
+				{
+					Name:    "MovieAPIURLPattern",
+					Type:    "text",
+					Value:   configv.MovieAPIURLPattern,
+					Options: nil,
+				},
+				{
+					Name:    "MoviePageStartIndex",
+					Type:    "number",
+					Value:   configv.MoviePageStartIndex,
+					Options: nil,
+				},
+				{
+					Name:    "MovieResultsArrayPath",
+					Type:    "text",
+					Value:   configv.MovieResultsArrayPath,
+					Options: nil,
+				},
+				{
+					Name:    "MovieTitleField",
+					Type:    "text",
+					Value:   configv.MovieTitleField,
+					Options: nil,
+				},
 				{Name: "MovieYearField", Type: "text", Value: configv.MovieYearField, Options: nil},
-				{Name: "MovieImdbIDField", Type: "text", Value: configv.MovieImdbIDField, Options: nil},
+				{
+					Name:    "MovieImdbIDField",
+					Type:    "text",
+					Value:   configv.MovieImdbIDField,
+					Options: nil,
+				},
 				{Name: "MovieURLField", Type: "text", Value: configv.MovieURLField, Options: nil},
-				{Name: "MovieRatingField", Type: "text", Value: configv.MovieRatingField, Options: nil},
-				{Name: "MovieGenreField", Type: "text", Value: configv.MovieGenreField, Options: nil},
-				{Name: "MovieReleaseDateField", Type: "text", Value: configv.MovieReleaseDateField, Options: nil},
+				{
+					Name:    "MovieRatingField",
+					Type:    "text",
+					Value:   configv.MovieRatingField,
+					Options: nil,
+				},
+				{
+					Name:    "MovieGenreField",
+					Type:    "text",
+					Value:   configv.MovieGenreField,
+					Options: nil,
+				},
+				{
+					Name:    "MovieReleaseDateField",
+					Type:    "text",
+					Value:   configv.MovieReleaseDateField,
+					Options: nil,
+				},
 			},
 			group,
 			comments,
@@ -1617,11 +2227,46 @@ func renderListsConfigSections(
 		// Movie Scraper - Common Settings
 		renderConfigGroupWithParent(
 			"Movie Scraper - Common Settings",
-			"moviescraper-common-"+strings.ReplaceAll(strings.ReplaceAll(configv.Name, " ", "-"), "_", "-"),
+			"moviescraper-common-"+strings.ReplaceAll(
+				strings.ReplaceAll(configv.Name, " ", "-"),
+				"_",
+				"-",
+			),
 			false,
 			[]FormFieldDefinition{
-				{Name: "MovieDateFormat", Type: "text", Value: configv.MovieDateFormat, Options: nil},
-				{Name: "MovieWaitSeconds", Type: "number", Value: configv.MovieWaitSeconds, Options: nil},
+				{
+					Name:    "MovieDateFormat",
+					Type:    "text",
+					Value:   configv.MovieDateFormat,
+					Options: nil,
+				},
+				{
+					Name:    "MovieWaitSeconds",
+					Type:    "number",
+					Value:   configv.MovieWaitSeconds,
+					Options: nil,
+				},
+			},
+			group,
+			comments,
+			displayNames,
+			accordionId,
+		),
+
+		// Chart / Bestseller Scraper Settings
+		renderConfigGroupWithParent(
+			"Chart / Bestseller Scraper Settings",
+			"chartscraper-"+strings.ReplaceAll(strings.ReplaceAll(configv.Name, " ", "-"), "_", "-"),
+			false,
+			[]FormFieldDefinition{
+				{Name: "ChartEntryNodeXPath", Type: "text", Value: configv.ChartEntryNodeXPath, Options: nil},
+				{Name: "ChartTitleXPath", Type: "text", Value: configv.ChartTitleXPath, Options: nil},
+				{Name: "ChartArtistXPath", Type: "text", Value: configv.ChartArtistXPath, Options: nil},
+				{Name: "ChartTitleAttribute", Type: "text", Value: configv.ChartTitleAttribute, Options: nil},
+				{Name: "ChartArtistAttribute", Type: "text", Value: configv.ChartArtistAttribute, Options: nil},
+				{Name: "ChartDefaultArtist", Type: "text", Value: configv.ChartDefaultArtist, Options: nil},
+				{Name: "ChartDateURLPattern", Type: "text", Value: configv.ChartDateURLPattern, Options: nil},
+				{Name: "ChartDateFormat", Type: "text", Value: configv.ChartDateFormat, Options: nil},
 			},
 			group,
 			comments,
@@ -1682,9 +2327,14 @@ func renderIndexersConfigSections(
 			[]FormFieldDefinition{
 				{Name: "", Type: "removebutton", Value: "", Options: nil},
 				{Name: "Name", Type: "text", Value: configv.Name, Options: nil},
-				{Name: "IndexerType", Type: "select", Value: configv.IndexerType, Options: convertMapToSelectOptions(map[string][]string{
-					"options": {"torznab", "newznab", "torrent", "torrentrss"},
-				})},
+				{
+					Name:  "IndexerType",
+					Type:  "select",
+					Value: configv.IndexerType,
+					Options: convertMapToSelectOptions(map[string][]string{
+						"options": {"torznab", "newznab", "torrent", "torrentrss"},
+					}),
+				},
 				{Name: "Enabled", Type: "checkbox", Value: configv.Enabled, Options: nil},
 			}, group, comments, displayNames, accordionId),
 
@@ -1701,9 +2351,24 @@ func renderIndexersConfigSections(
 				{Name: "URL", Type: "text", Value: configv.URL, Options: nil},
 				{Name: "Apikey", Type: "password", Value: configv.Apikey, Options: nil},
 				{Name: "Userid", Type: "text", Value: configv.Userid, Options: nil},
-				{Name: "DisableTLSVerify", Type: "checkbox", Value: configv.DisableTLSVerify, Options: nil},
-				{Name: "DisableCompression", Type: "checkbox", Value: configv.DisableCompression, Options: nil},
-				{Name: "TimeoutSeconds", Type: "number", Value: configv.TimeoutSeconds, Options: nil},
+				{
+					Name:    "DisableTLSVerify",
+					Type:    "checkbox",
+					Value:   configv.DisableTLSVerify,
+					Options: nil,
+				},
+				{
+					Name:    "DisableCompression",
+					Type:    "checkbox",
+					Value:   configv.DisableCompression,
+					Options: nil,
+				},
+				{
+					Name:    "TimeoutSeconds",
+					Type:    "number",
+					Value:   configv.TimeoutSeconds,
+					Options: nil,
+				},
 			},
 			group,
 			comments,
@@ -1722,9 +2387,19 @@ func renderIndexersConfigSections(
 			false,
 			[]FormFieldDefinition{
 				{Name: "Rssenabled", Type: "checkbox", Value: configv.Rssenabled, Options: nil},
-				{Name: "RssEntriesloop", Type: "number", Value: configv.RssEntriesloop, Options: nil},
+				{
+					Name:    "RssEntriesloop",
+					Type:    "number",
+					Value:   configv.RssEntriesloop,
+					Options: nil,
+				},
 				{Name: "Customrssurl", Type: "text", Value: configv.Customrssurl, Options: nil},
-				{Name: "Customrsscategory", Type: "text", Value: configv.Customrsscategory, Options: nil},
+				{
+					Name:    "Customrsscategory",
+					Type:    "text",
+					Value:   configv.Customrsscategory,
+					Options: nil,
+				},
 			},
 			group,
 			comments,
@@ -1742,12 +2417,32 @@ func renderIndexersConfigSections(
 			),
 			false,
 			[]FormFieldDefinition{
-				{Name: "Addquotesfortitlequery", Type: "checkbox", Value: configv.Addquotesfortitlequery, Options: nil},
+				{
+					Name:    "Addquotesfortitlequery",
+					Type:    "checkbox",
+					Value:   configv.Addquotesfortitlequery,
+					Options: nil,
+				},
 				{Name: "MaxEntries", Type: "number", Value: configv.MaxEntries, Options: nil},
 				{Name: "MaxAge", Type: "number", Value: configv.MaxAge, Options: nil},
-				{Name: "TrustWithIMDBIDs", Type: "checkbox", Value: configv.TrustWithIMDBIDs, Options: nil},
-				{Name: "TrustWithTVDBIDs", Type: "checkbox", Value: configv.TrustWithTVDBIDs, Options: nil},
-				{Name: "CheckTitleOnIDSearch", Type: "checkbox", Value: configv.CheckTitleOnIDSearch, Options: nil},
+				{
+					Name:    "TrustWithIMDBIDs",
+					Type:    "checkbox",
+					Value:   configv.TrustWithIMDBIDs,
+					Options: nil,
+				},
+				{
+					Name:    "TrustWithTVDBIDs",
+					Type:    "checkbox",
+					Value:   configv.TrustWithTVDBIDs,
+					Options: nil,
+				},
+				{
+					Name:    "CheckTitleOnIDSearch",
+					Type:    "checkbox",
+					Value:   configv.CheckTitleOnIDSearch,
+					Options: nil,
+				},
 			},
 			group,
 			comments,
@@ -1766,8 +2461,18 @@ func renderIndexersConfigSections(
 			false,
 			[]FormFieldDefinition{
 				{Name: "Limitercalls", Type: "number", Value: configv.Limitercalls, Options: nil},
-				{Name: "Limiterseconds", Type: "number", Value: configv.Limiterseconds, Options: nil},
-				{Name: "LimitercallsDaily", Type: "number", Value: configv.LimitercallsDaily, Options: nil},
+				{
+					Name:    "Limiterseconds",
+					Type:    "number",
+					Value:   configv.Limiterseconds,
+					Options: nil,
+				},
+				{
+					Name:    "LimitercallsDaily",
+					Type:    "number",
+					Value:   configv.LimitercallsDaily,
+					Options: nil,
+				},
 			},
 			group,
 			comments,
@@ -1855,8 +2560,18 @@ func renderPathsConfigSections(
 		// File Extensions
 		renderConfigGroupWithParent("File Extensions", "extensions-paths-"+sanitizedName, false,
 			[]FormFieldDefinition{
-				{Name: "AllowedVideoExtensions", Type: "array", Value: configv.AllowedVideoExtensions, Options: nil},
-				{Name: "AllowedOtherExtensions", Type: "array", Value: configv.AllowedOtherExtensions, Options: nil},
+				{
+					Name:    "AllowedVideoExtensions",
+					Type:    "array",
+					Value:   configv.AllowedVideoExtensions,
+					Options: nil,
+				},
+				{
+					Name:    "AllowedOtherExtensions",
+					Type:    "array",
+					Value:   configv.AllowedOtherExtensions,
+					Options: nil,
+				},
 				{
 					Name:    "AllowedVideoExtensionsNoRename",
 					Type:    "array",
@@ -1882,7 +2597,12 @@ func renderPathsConfigSections(
 				{Name: "MaxSize", Type: "number", Value: configv.MaxSize, Options: nil},
 				{Name: "MinVideoSize", Type: "number", Value: configv.MinVideoSize, Options: nil},
 				{Name: "CleanupsizeMB", Type: "number", Value: configv.CleanupsizeMB, Options: nil},
-				{Name: "AllowedLanguages", Type: "array", Value: configv.AllowedLanguages, Options: nil},
+				{
+					Name:    "AllowedLanguages",
+					Type:    "array",
+					Value:   configv.AllowedLanguages,
+					Options: nil,
+				},
 				{Name: "Disallowed", Type: "array", Value: configv.Disallowed, Options: nil},
 			},
 			group,
@@ -1894,19 +2614,54 @@ func renderPathsConfigSections(
 		// Scanning Settings
 		renderConfigGroupWithParent("Scanning Settings", "scanning-paths-"+sanitizedName, false,
 			[]FormFieldDefinition{
-				{Name: "UpgradeScanInterval", Type: "number", Value: configv.UpgradeScanInterval, Options: nil},
-				{Name: "MissingScanInterval", Type: "number", Value: configv.MissingScanInterval, Options: nil},
-				{Name: "MissingScanReleaseDatePre", Type: "number", Value: configv.MissingScanReleaseDatePre, Options: nil},
+				{
+					Name:    "UpgradeScanInterval",
+					Type:    "number",
+					Value:   configv.UpgradeScanInterval,
+					Options: nil,
+				},
+				{
+					Name:    "MissingScanInterval",
+					Type:    "number",
+					Value:   configv.MissingScanInterval,
+					Options: nil,
+				},
+				{
+					Name:    "MissingScanReleaseDatePre",
+					Type:    "number",
+					Value:   configv.MissingScanReleaseDatePre,
+					Options: nil,
+				},
 			}, group, comments, displayNames, accordionId),
 
 		// Quality Control
 		renderConfigGroupWithParent("Quality Control", "quality-paths-"+sanitizedName, false,
 			[]FormFieldDefinition{
 				{Name: "CheckRuntime", Type: "checkbox", Value: configv.CheckRuntime, Options: nil},
-				{Name: "MaxRuntimeDifference", Type: "number", Value: configv.MaxRuntimeDifference, Options: nil},
-				{Name: "DeleteWrongRuntime", Type: "checkbox", Value: configv.DeleteWrongRuntime, Options: nil},
-				{Name: "DeleteWrongLanguage", Type: "checkbox", Value: configv.DeleteWrongLanguage, Options: nil},
-				{Name: "DeleteDisallowed", Type: "checkbox", Value: configv.DeleteDisallowed, Options: nil},
+				{
+					Name:    "MaxRuntimeDifference",
+					Type:    "number",
+					Value:   configv.MaxRuntimeDifference,
+					Options: nil,
+				},
+				{
+					Name:    "DeleteWrongRuntime",
+					Type:    "checkbox",
+					Value:   configv.DeleteWrongRuntime,
+					Options: nil,
+				},
+				{
+					Name:    "DeleteWrongLanguage",
+					Type:    "checkbox",
+					Value:   configv.DeleteWrongLanguage,
+					Options: nil,
+				},
+				{
+					Name:    "DeleteDisallowed",
+					Type:    "checkbox",
+					Value:   configv.DeleteDisallowed,
+					Options: nil,
+				},
 			}, group, comments, displayNames, accordionId),
 
 		// File Organization
@@ -1914,9 +2669,19 @@ func renderPathsConfigSections(
 			[]FormFieldDefinition{
 				{Name: "Replacelower", Type: "checkbox", Value: configv.Replacelower, Options: nil},
 				{Name: "Usepresort", Type: "checkbox", Value: configv.Usepresort, Options: nil},
-				{Name: "PresortFolderPath", Type: "text", Value: configv.PresortFolderPath, Options: nil},
+				{
+					Name:    "PresortFolderPath",
+					Type:    "text",
+					Value:   configv.PresortFolderPath,
+					Options: nil,
+				},
 				{Name: "MoveReplaced", Type: "checkbox", Value: configv.MoveReplaced, Options: nil},
-				{Name: "MoveReplacedTargetPath", Type: "text", Value: configv.MoveReplacedTargetPath, Options: nil},
+				{
+					Name:    "MoveReplacedTargetPath",
+					Type:    "text",
+					Value:   configv.MoveReplacedTargetPath,
+					Options: nil,
+				},
 			}, group, comments, displayNames, accordionId),
 
 		// File Permissions
@@ -1980,9 +2745,14 @@ func renderNotificationConfigSections(
 			[]FormFieldDefinition{
 				{Name: "", Type: "removebutton", Value: "", Options: nil},
 				{Name: "Name", Type: "text", Value: configv.Name, Options: nil},
-				{Name: "NotificationType", Type: "select", Value: configv.NotificationType, Options: convertMapToSelectOptions(map[string][]string{
-					"options": {"csv", "pushover", "gotify", "pushbullet", "apprise"},
-				})},
+				{
+					Name:  "NotificationType",
+					Type:  "select",
+					Value: configv.NotificationType,
+					Options: convertMapToSelectOptions(map[string][]string{
+						"options": {"csv", "pushover", "gotify", "pushbullet", "apprise"},
+					}),
+				},
 			}, group, comments, displayNames, accordionId),
 
 		// Configuration
@@ -2116,9 +2886,22 @@ func renderQualityReorderForm(
 	fields := []FormFieldDefinition{
 		{Name: "", Type: "removebutton", Value: "", Options: nil},
 		{Name: "Name", Type: "text", Value: configv.Name, Options: nil},
-		{Name: "ReorderType", Type: "select", Value: configv.ReorderType, Options: convertMapToSelectOptions(map[string][]string{
-			"options": {"resolution", "quality", "codec", "audio", "position", "combined_res_qual"},
-		})},
+		{
+			Name:  "ReorderType",
+			Type:  "select",
+			Value: configv.ReorderType,
+			Options: convertMapToSelectOptions(map[string][]string{
+				"options": {
+					"resolution",
+					"quality",
+					"codec",
+					"audio",
+					"audio_format",
+					"position",
+					"combined_res_qual",
+				},
+			}),
+		},
 		{Name: "Newpriority", Type: "number", Value: configv.Newpriority, Options: nil},
 	}
 
@@ -2141,27 +2924,42 @@ func renderQualityIndexerForm(
 		{Name: "", Type: "removebutton", Value: "", Options: nil},
 		{
 			Name:    "TemplateIndexer",
-			Type:    "select",
+			Type:    "selectwithpreview",
 			Value:   configv.TemplateIndexer,
 			Options: convertMapToSelectOptions(config.GetSettingTemplatesFor("indexer")),
 		},
 		{
 			Name:    "TemplateDownloader",
-			Type:    "select",
+			Type:    "selectwithpreview",
 			Value:   configv.TemplateDownloader,
 			Options: convertMapToSelectOptions(config.GetSettingTemplatesFor("downloader")),
 		},
-		{Name: "TemplateRegex", Type: "select", Value: configv.TemplateRegex, Options: convertMapToSelectOptions(config.GetSettingTemplatesFor("regex"))},
+		{
+			Name:    "TemplateRegex",
+			Type:    "selectwithpreview",
+			Value:   configv.TemplateRegex,
+			Options: convertMapToSelectOptions(config.GetSettingTemplatesFor("regex")),
+		},
 		{
 			Name:    "TemplatePathNzb",
-			Type:    "select",
+			Type:    "selectwithpreview",
 			Value:   configv.TemplatePathNzb,
 			Options: convertMapToSelectOptions(config.GetSettingTemplatesFor("path")),
 		},
 		{Name: "CategoryDownloader", Type: "text", Value: configv.CategoryDownloader, Options: nil},
-		{Name: "AdditionalQueryParams", Type: "text", Value: configv.AdditionalQueryParams, Options: nil},
+		{
+			Name:    "AdditionalQueryParams",
+			Type:    "text",
+			Value:   configv.AdditionalQueryParams,
+			Options: nil,
+		},
 		{Name: "SkipEmptySize", Type: "checkbox", Value: configv.SkipEmptySize, Options: nil},
-		{Name: "HistoryCheckTitle", Type: "checkbox", Value: configv.HistoryCheckTitle, Options: nil},
+		{
+			Name:    "HistoryCheckTitle",
+			Type:    "checkbox",
+			Value:   configv.HistoryCheckTitle,
+			Options: nil,
+		},
 		{Name: "CategoriesIndexer", Type: "text", Value: configv.CategoriesIndexer, Options: nil},
 	}
 
@@ -2261,10 +3059,12 @@ func renderQualityConfigSections(
 			false,
 			[]FormFieldDefinition{
 				{
-					Name:    "WantedResolution",
-					Type:    "arrayselectarray",
-					Value:   configv.WantedResolution,
-					Options: convertMapToSelectOptions(database.GetSettingTemplatesFor("resolution")),
+					Name:  "WantedResolution",
+					Type:  "arrayselectarray",
+					Value: configv.WantedResolution,
+					Options: convertMapToSelectOptions(
+						database.GetSettingTemplatesFor("resolution"),
+					),
 				},
 				{
 					Name:    "WantedQuality",
@@ -2285,10 +3085,12 @@ func renderQualityConfigSections(
 					Options: convertMapToSelectOptions(database.GetSettingTemplatesFor("codec")),
 				},
 				{
-					Name:    "CutoffResolution",
-					Type:    "arrayselect",
-					Value:   configv.CutoffResolution,
-					Options: convertMapToSelectOptions(database.GetSettingTemplatesFor("resolution")),
+					Name:  "CutoffResolution",
+					Type:  "arrayselect",
+					Value: configv.CutoffResolution,
+					Options: convertMapToSelectOptions(
+						database.GetSettingTemplatesFor("resolution"),
+					),
 				},
 				{
 					Name:    "CutoffQuality",
@@ -2313,8 +3115,18 @@ func renderQualityConfigSections(
 			),
 			false,
 			[]FormFieldDefinition{
-				{Name: "SearchForTitleIfEmpty", Type: "checkbox", Value: configv.SearchForTitleIfEmpty, Options: nil},
-				{Name: "BackupSearchForTitle", Type: "checkbox", Value: configv.BackupSearchForTitle, Options: nil},
+				{
+					Name:    "SearchForTitleIfEmpty",
+					Type:    "checkbox",
+					Value:   configv.SearchForTitleIfEmpty,
+					Options: nil,
+				},
+				{
+					Name:    "BackupSearchForTitle",
+					Type:    "checkbox",
+					Value:   configv.BackupSearchForTitle,
+					Options: nil,
+				},
 				{
 					Name:    "SearchForAlternateTitleIfEmpty",
 					Type:    "checkbox",
@@ -2327,9 +3139,24 @@ func renderQualityConfigSections(
 					Value:   configv.BackupSearchForAlternateTitle,
 					Options: nil,
 				},
-				{Name: "ExcludeYearFromTitleSearch", Type: "checkbox", Value: configv.ExcludeYearFromTitleSearch, Options: nil},
-				{Name: "TitleStripSuffixForSearch", Type: "array", Value: configv.TitleStripSuffixForSearch, Options: nil},
-				{Name: "TitleStripPrefixForSearch", Type: "array", Value: configv.TitleStripPrefixForSearch, Options: nil},
+				{
+					Name:    "ExcludeYearFromTitleSearch",
+					Type:    "checkbox",
+					Value:   configv.ExcludeYearFromTitleSearch,
+					Options: nil,
+				},
+				{
+					Name:    "TitleStripSuffixForSearch",
+					Type:    "array",
+					Value:   configv.TitleStripSuffixForSearch,
+					Options: nil,
+				},
+				{
+					Name:    "TitleStripPrefixForSearch",
+					Type:    "array",
+					Value:   configv.TitleStripPrefixForSearch,
+					Options: nil,
+				},
 			},
 			group,
 			comments,
@@ -2347,9 +3174,19 @@ func renderQualityConfigSections(
 			),
 			false,
 			[]FormFieldDefinition{
-				{Name: "CheckUntilFirstFound", Type: "checkbox", Value: configv.CheckUntilFirstFound, Options: nil},
+				{
+					Name:    "CheckUntilFirstFound",
+					Type:    "checkbox",
+					Value:   configv.CheckUntilFirstFound,
+					Options: nil,
+				},
 				{Name: "CheckTitle", Type: "checkbox", Value: configv.CheckTitle, Options: nil},
-				{Name: "CheckTitleOnIDSearch", Type: "checkbox", Value: configv.CheckTitleOnIDSearch, Options: nil},
+				{
+					Name:    "CheckTitleOnIDSearch",
+					Type:    "checkbox",
+					Value:   configv.CheckTitleOnIDSearch,
+					Options: nil,
+				},
 				{Name: "CheckYear", Type: "checkbox", Value: configv.CheckYear, Options: nil},
 				{Name: "CheckYear1", Type: "checkbox", Value: configv.CheckYear1, Options: nil},
 			},
@@ -2369,12 +3206,42 @@ func renderQualityConfigSections(
 			),
 			false,
 			[]FormFieldDefinition{
-				{Name: "UseForPriorityResolution", Type: "checkbox", Value: configv.UseForPriorityResolution, Options: nil},
-				{Name: "UseForPriorityQuality", Type: "checkbox", Value: configv.UseForPriorityQuality, Options: nil},
-				{Name: "UseForPriorityAudio", Type: "checkbox", Value: configv.UseForPriorityAudio, Options: nil},
-				{Name: "UseForPriorityCodec", Type: "checkbox", Value: configv.UseForPriorityCodec, Options: nil},
-				{Name: "UseForPriorityOther", Type: "checkbox", Value: configv.UseForPriorityOther, Options: nil},
-				{Name: "UseForPriorityMinDifference", Type: "number", Value: configv.UseForPriorityMinDifference, Options: nil},
+				{
+					Name:    "UseForPriorityResolution",
+					Type:    "checkbox",
+					Value:   configv.UseForPriorityResolution,
+					Options: nil,
+				},
+				{
+					Name:    "UseForPriorityQuality",
+					Type:    "checkbox",
+					Value:   configv.UseForPriorityQuality,
+					Options: nil,
+				},
+				{
+					Name:    "UseForPriorityAudio",
+					Type:    "checkbox",
+					Value:   configv.UseForPriorityAudio,
+					Options: nil,
+				},
+				{
+					Name:    "UseForPriorityCodec",
+					Type:    "checkbox",
+					Value:   configv.UseForPriorityCodec,
+					Options: nil,
+				},
+				{
+					Name:    "UseForPriorityOther",
+					Type:    "checkbox",
+					Value:   configv.UseForPriorityOther,
+					Options: nil,
+				},
+				{
+					Name:    "UseForPriorityMinDifference",
+					Type:    "number",
+					Value:   configv.UseForPriorityMinDifference,
+					Options: nil,
+				},
 			},
 			group,
 			comments,
@@ -2862,6 +3729,78 @@ func renderFormGroup(
 			gomponents.Group(optionElements),
 		)
 
+	case "selectwithpreview":
+		// Select with preview link and modal - used for template reference fields
+		var optionElements []gomponents.Node
+		if opts, ok := options["options"]; ok {
+			opts2 := sort.StringSlice(opts)
+			opts2.Sort()
+
+			for _, opt := range opts2 {
+				selected := opt == value.(string)
+				if selected {
+					optionElements = append(optionElements, html.Option(
+						html.Value(opt),
+						gomponents.Text(opt),
+						html.Selected(),
+					))
+				} else {
+					optionElements = append(optionElements, html.Option(
+						html.Value(opt),
+						gomponents.Text(opt),
+					))
+				}
+			}
+		}
+
+		// Get template config info for the link and preview
+		templateInfo := getTemplateConfigInfo(name)
+		selectID := group + "_" + name
+		previewBtnID := selectID + "_preview_btn"
+
+		// Create the select with preview buttons
+		input = html.Div(
+			html.Class("input-group"),
+			html.Select(
+				html.Class("form-select"),
+				html.ID(selectID),
+				html.Name(selectID),
+				gomponents.Group(optionElements),
+			),
+			// Preview button - opens modal with readonly preview
+			html.Button(
+				html.Type("button"),
+				html.Class("btn btn-outline-info"),
+				html.ID(previewBtnID),
+				html.Title("Preview configuration"),
+				gomponents.Attr(
+					"onclick",
+					fmt.Sprintf(
+						"showConfigPreview('%s', document.getElementById('%s').value, '%s')",
+						templateInfo.Type,
+						selectID,
+						name,
+					),
+				),
+				html.I(html.Class("fas fa-eye")),
+			),
+			// Link button - opens config page in new tab with hash anchor to auto-expand
+			html.Button(
+				html.Type("button"),
+				html.Class("btn btn-outline-secondary"),
+				html.Title("Open configuration page"),
+				gomponents.Attr(
+					"onclick",
+					fmt.Sprintf(
+						"openConfigPage('%s', document.getElementById('%s').value)",
+						templateInfo.URL,
+						selectID,
+					),
+				),
+				html.I(html.Class("fas fa-external-link-alt")),
+			),
+		)
+
 	case "checkbox":
 		var addnode gomponents.Node
 		switch val := value.(type) {
@@ -2870,6 +3809,7 @@ func renderFormGroup(
 				addnode = html.Checked()
 			}
 		}
+
 		// Use createFormField for checkbox with custom checkbox-specific styling
 		if addnode != nil {
 			input = html.Input(
@@ -2953,7 +3893,7 @@ func renderFormGroup(
 									"onclick",
 									"if(this.parentElement) this.parentElement.remove()",
 								),
-								gomponents.Text("Remove"),
+								html.I(html.Class("fa fa-trash")),
 							),
 						))
 					}
@@ -2973,7 +3913,7 @@ func renderFormGroup(
 								const container = document.getElementById(group + '_' + name + '-container');
 								const newRow = document.createElement('div');
 								newRow.className = 'd-flex mb-2';
-								newRow.innerHTML = '<input class="form-control me-2" type="text" name="%s"><button class="btn btn-danger" type="button" onclick="if(this.parentElement) this.parentElement.remove()">Remove</button>';
+								newRow.innerHTML = '<input class="form-control me-2" type="text" name="%s"><button class="btn btn-danger" type="button" onclick="if(this.parentElement) this.parentElement.remove()"><i class="fa fa-trash"></i></button>';
 								container.insertBefore(newRow, container.lastElementChild);
 							}
 						`, name, group+"_"+name)),
@@ -2983,13 +3923,13 @@ func renderFormGroup(
 		)
 
 	case "arrayselectarray":
-		var optionString string
+		var optionString strings.Builder
 		if opts, ok := options["options"]; ok {
 			opts2 := sort.StringSlice(opts)
 			opts2.Sort()
 
 			for _, opt := range opts2 {
-				optionString += "<option value=\"" + opt + "\">" + opt + "</option>"
+				optionString.WriteString("<option value=\"" + opt + "\">" + opt + "</option>")
 			}
 		}
 
@@ -3034,7 +3974,7 @@ func renderFormGroup(
 									"onclick",
 									"if(this.parentElement) this.parentElement.remove()",
 								),
-								gomponents.Text("Remove"),
+								html.I(html.Class("fa fa-trash")),
 							),
 						))
 					}
@@ -3054,10 +3994,10 @@ func renderFormGroup(
 								const container = document.getElementById(group + '_' + name + '-container');
 								const newRow = document.createElement('div');
 								newRow.className = 'd-flex mb-2';
-								newRow.innerHTML = '<select class="form-select me-2" name="%s">%s</select><button class="btn btn-danger" type="button" onclick="if(this.parentElement) this.parentElement.remove()">Remove</button>';
+								newRow.innerHTML = '<select class="form-select me-2" name="%s">%s</select><button class="btn btn-danger" type="button" onclick="if(this.parentElement) this.parentElement.remove()"><i class="fa fa-trash"></i></button>';
 								container.insertBefore(newRow, container.lastElementChild);
 							}
-						`, name, group+"_"+name, optionString)),
+						`, name, group+"_"+name, optionString.String())),
 					)
 				}(),
 			),
@@ -3141,7 +4081,7 @@ func renderFormGroup(
 									"onclick",
 									"if(this.parentElement) this.parentElement.remove()",
 								),
-								gomponents.Text("Remove"),
+								html.I(html.Class("fa fa-trash")),
 							),
 						))
 					}
@@ -3161,7 +4101,7 @@ func renderFormGroup(
 								const container = document.getElementById(group + '_' + name + '-container');
 								const newRow = document.createElement('div');
 								newRow.className = 'd-flex mb-2';
-								newRow.innerHTML = '<input class="form-control me-2" type="number" name="%s"><button class="btn btn-danger" type="button" onclick="if(this.parentElement) this.parentElement.remove()">Remove</button>';
+								newRow.innerHTML = '<input class="form-control me-2" type="number" name="%s"><button class="btn btn-danger" type="button" onclick="if(this.parentElement) this.parentElement.remove()"><i class="fa fa-trash"></i></button>';
 								container.insertBefore(newRow, container.lastElementChild);
 							}
 						`, name, group+"_"+name)),
@@ -3209,8 +4149,7 @@ func renderFormGroup(
 						gomponents.Attr("data-bs-target", "#help-"+group+"-"+name),
 						gomponents.Attr("aria-expanded", "false"),
 						gomponents.Attr("title", "Show detailed help"),
-						html.I(html.Class("fas fa-info-circle me-1")),
-						gomponents.Text("Help"),
+						html.I(html.Class("fas fa-info-circle")),
 					),
 				),
 				html.Div(
@@ -3697,6 +4636,7 @@ func renderTraktAuthPage(csrfToken string) gomponents.Node {
 				if hasValidToken {
 					return html.Class("card border-0 shadow-sm")
 				}
+
 				return html.Class("card border-0 shadow-sm border-warning")
 			}(),
 			html.Div(
@@ -3770,6 +4710,7 @@ func renderTraktAuthPage(csrfToken string) gomponents.Node {
 										if token.Expiry.IsZero() {
 											return "Never expires"
 										}
+
 										return token.Expiry.Format("2006-01-02 15:04:05")
 									}()),
 								),

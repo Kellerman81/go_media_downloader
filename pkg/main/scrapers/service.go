@@ -244,7 +244,7 @@ func (s *Service) RunScrapersForSeries(
 // Returns:
 //   - *config.SerieConfig: The found series configuration
 //   - error: Any errors during search or file loading
-func (s *Service) findSeriesConfig(serieName string) (*config.SerieConfig, error) {
+func (s *Service) findSeriesConfig(serieName string) (*config.ManualConfig, error) {
 	// Get the config directory path (hardcoded to ./config)
 	configDir := "./config"
 
@@ -272,7 +272,7 @@ func (s *Service) findSeriesConfig(serieName string) (*config.SerieConfig, error
 			continue
 		}
 
-		var seriesConfig config.MainSerieConfig
+		var seriesConfig config.MainManualConfig
 		if err := toml.Unmarshal(content, &seriesConfig); err != nil {
 			logger.Logtype(logger.StatusWarning, 0).
 				Err(err).
@@ -283,14 +283,14 @@ func (s *Service) findSeriesConfig(serieName string) (*config.SerieConfig, error
 		}
 
 		// Search for the series by name
-		for idx := range seriesConfig.Serie {
-			if strings.EqualFold(seriesConfig.Serie[idx].Name, serieName) {
+		for idx := range seriesConfig.Config {
+			if strings.EqualFold(seriesConfig.Config[idx].Name, serieName) {
 				logger.Logtype(logger.StatusDebug, 0).
 					Str("series", serieName).
 					Str("file", filePath).
 					Msg("Found series configuration")
 
-				return &seriesConfig.Serie[idx], nil
+				return &seriesConfig.Config[idx], nil
 			}
 		}
 	}
@@ -307,7 +307,7 @@ func (s *Service) findSeriesConfig(serieName string) (*config.SerieConfig, error
 //   - Scraper: Initialized scraper instance
 //   - error: Any errors during scraper creation
 func (s *Service) createScraperFromSerieConfig(
-	cfg *config.SerieConfig,
+	cfg *config.ManualConfig,
 	firstPageDBOnly bool,
 ) (Scraper, error) {
 	scraperType := ScraperType(strings.ToLower(cfg.ScraperType))
@@ -335,7 +335,7 @@ func (s *Service) createScraperFromSerieConfig(
 //   - Scraper: Initialized Project1Service scraper
 //   - error: Any errors during scraper creation
 func (s *Service) createProject1ServiceScraperFromSerie(
-	cfg *config.SerieConfig,
+	cfg *config.ManualConfig,
 	firstPageDBOnly bool,
 ) (Scraper, error) {
 	scraperCfg := &project1service.Config{
@@ -359,7 +359,7 @@ func (s *Service) createProject1ServiceScraperFromSerie(
 //   - Scraper: Initialized Algolia scraper
 //   - error: Any errors during scraper creation
 func (s *Service) createAlgoliaScraperFromSerie(
-	cfg *config.SerieConfig,
+	cfg *config.ManualConfig,
 	firstPageDBOnly bool,
 ) (Scraper, error) {
 	scraperCfg := &algolia.Config{
@@ -386,7 +386,7 @@ func (s *Service) createAlgoliaScraperFromSerie(
 //   - Scraper: Initialized HTML/XPath scraper
 //   - error: Any errors during scraper creation
 func (s *Service) createHTMLXPathScraperFromSerie(
-	cfg *config.SerieConfig,
+	cfg *config.ManualConfig,
 	firstPageDBOnly bool,
 ) (Scraper, error) {
 	scraperCfg := &htmlxpath.Config{
@@ -429,7 +429,7 @@ func (s *Service) createHTMLXPathScraperFromSerie(
 //   - Scraper: Initialized CSRF API scraper
 //   - error: Any errors during scraper creation
 func (s *Service) createCSRFAPIScraperFromSerie(
-	cfg *config.SerieConfig,
+	cfg *config.ManualConfig,
 	firstPageDBOnly bool,
 ) (Scraper, error) {
 	scraperCfg := &csrfapi.Config{

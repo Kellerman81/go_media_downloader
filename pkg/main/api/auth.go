@@ -81,6 +81,7 @@ func (ss *SessionStore) getSession(sessionID string) (*Session, bool) {
 		if exists {
 			delete(ss.sessions, sessionID)
 		}
+
 		return nil, false
 	}
 
@@ -202,7 +203,7 @@ func redirectToLogin(c *gin.Context) {
 	sendUnauthorized(c, "Authentication required")
 }
 
-// loginPage renders the enhanced login form.
+// loginPage renders the enhanced login form using AdminKit layout.
 func loginPage(c *gin.Context) {
 	// Check if already logged in
 	if sessionCookie, err := c.Cookie("session_id"); err == nil {
@@ -221,9 +222,15 @@ func loginPage(c *gin.Context) {
 				html.Meta(html.Charset("utf-8")),
 				html.Meta(
 					html.Name("viewport"),
-					html.Content("width=device-width, initial-scale=1"),
+					html.Content("width=device-width, initial-scale=1, shrink-to-fit=no"),
 				),
-				html.Title("Go Media Downloader - Admin Login"),
+				html.Title("Go Media Downloader - Sign In"),
+				html.Link(
+					html.Href(
+						"https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap",
+					),
+					html.Rel("stylesheet"),
+				),
 				html.Link(
 					html.Href(
 						"https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css",
@@ -237,359 +244,276 @@ func loginPage(c *gin.Context) {
 					html.Rel("stylesheet"),
 				),
 				html.StyleEl(gomponents.Raw(`
-					:root {
-						--primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-						--success-gradient: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
-						--glass-bg: rgba(255, 255, 255, 0.25);
-						--glass-bg-dark: rgba(255, 255, 255, 0.1);
-					}
-					
-					* {
-						margin: 0;
-						padding: 0;
-						box-sizing: border-box;
-					}
-					
 					body {
-						font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-						background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
-						min-height: 100vh;
-						display: flex;
-						align-items: center;
-						justify-content: center;
-						position: relative;
-						overflow: hidden;
+						font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+						background: #f5f7fb;
 					}
-					
-					/* Animated background elements */
-					body::before {
-						content: '';
-						position: absolute;
-						top: -50%;
-						left: -50%;
-						width: 200%;
-						height: 200%;
-						background: url('data:image/svg+xml,<svg width="60" height="60" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg"><g fill="none" fill-rule="evenodd"><g fill="%23ffffff" fill-opacity="0.05"><circle cx="30" cy="30" r="4"/></g></svg>');
-						animation: drift 20s infinite linear;
-						z-index: 1;
-					}
-					
-					@keyframes drift {
-						0% { transform: rotate(0deg) translate(-50%, -50%); }
-						100% { transform: rotate(360deg) translate(-50%, -50%); }
-					}
-					
-					.login-container {
-						position: relative;
-						z-index: 10;
+
+					.d-table {
+						display: table;
 						width: 100%;
-						max-width: 400px;
+					}
+
+					.d-table-cell {
+						display: table-cell;
+					}
+
+					.text-center {
+						text-align: center;
+					}
+
+					.card {
+						border: 0;
+						border-radius: 0.5rem;
+						box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+					}
+
+					.card-body {
 						padding: 2rem;
 					}
-					
-					.login-card {
-						background: var(--glass-bg);
-						backdrop-filter: blur(20px);
-						border: 1px solid rgba(255, 255, 255, 0.2);
-						border-radius: 20px;
-						box-shadow: 0 25px 50px rgba(0, 0, 0, 0.2);
-						padding: 2.5rem;
-						animation: slideUp 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-						transition: all 0.3s ease;
+
+					.form-control-lg {
+						font-size: 1rem;
+						padding: 0.75rem 1rem;
+						border-radius: 0.375rem;
 					}
-					
-					.login-card:hover {
-						transform: translateY(-5px);
-						box-shadow: 0 30px 60px rgba(0, 0, 0, 0.3);
+
+					.form-label {
+						font-weight: 600;
+						color: #495057;
 					}
-					
-					@keyframes slideUp {
-						from {
-							opacity: 0;
-							transform: translateY(50px);
-						}
-						to {
-							opacity: 1;
-							transform: translateY(0);
-						}
+
+					.btn-primary {
+						background-color: #3b7ddd;
+						border-color: #3b7ddd;
 					}
-					
-					.login-header {
-						text-align: center;
-						margin-bottom: 2rem;
+
+					.btn-primary:hover {
+						background-color: #326abc;
+						border-color: #326abc;
 					}
-					
-					.login-logo {
-						width: 80px;
-						height: 80px;
-						background: var(--primary-gradient);
+
+					.btn-lg {
+						padding: 0.75rem 1rem;
+						font-size: 1rem;
+					}
+
+					.lead {
+						color: #6c757d;
+					}
+
+					.alert-danger {
+						background-color: #f8d7da;
+						border-color: #f5c2c7;
+						color: #842029;
+					}
+
+					.form-check-input:checked {
+						background-color: #3b7ddd;
+						border-color: #3b7ddd;
+					}
+
+					.spinner-border-sm {
+						width: 1rem;
+						height: 1rem;
+					}
+
+					a {
+						color: #3b7ddd;
+						text-decoration: none;
+					}
+
+					a:hover {
+						color: #326abc;
+						text-decoration: underline;
+					}
+
+					.logo-icon {
+						width: 64px;
+						height: 64px;
+						background: linear-gradient(135deg, #3b7ddd 0%, #6f42c1 100%);
 						border-radius: 50%;
 						display: flex;
 						align-items: center;
 						justify-content: center;
 						margin: 0 auto 1rem;
-						box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
-						animation: pulse 2s infinite;
+						box-shadow: 0 4px 12px rgba(59, 125, 221, 0.3);
 					}
-					
-					@keyframes pulse {
-						0%, 100% { transform: scale(1); }
-						50% { transform: scale(1.05); }
-					}
-					
-					.login-logo i {
-						font-size: 2rem;
+
+					.logo-icon i {
+						font-size: 1.75rem;
 						color: white;
-					}
-					
-					.login-title {
-						color: white;
-						font-size: 1.5rem;
-						font-weight: 700;
-						margin-bottom: 0.5rem;
-						text-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
-					}
-					
-					.login-subtitle {
-						color: rgba(255, 255, 255, 0.8);
-						font-size: 0.9rem;
-						font-weight: 400;
-					}
-					
-					.form-group {
-						position: relative;
-						margin-bottom: 1.5rem;
-					}
-					
-					.form-control {
-						background: var(--glass-bg-dark);
-						border: 1px solid rgba(255, 255, 255, 0.3);
-						border-radius: 12px;
-						color: white;
-						font-size: 1rem;
-						padding: 1rem 1rem 1rem 3rem;
-						width: 100%;
-						transition: all 0.3s ease;
-						backdrop-filter: blur(10px);
-					}
-					
-					.form-control:focus {
-						outline: none;
-						border-color: rgba(255, 255, 255, 0.6);
-						background: rgba(255, 255, 255, 0.15);
-						box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.3);
-						transform: translateY(-2px);
-					}
-					
-					.form-control::placeholder {
-						color: rgba(255, 255, 255, 0.6);
-					}
-					
-					.form-icon {
-						position: absolute;
-						left: 1rem;
-						top: 50%;
-						transform: translateY(-50%);
-						color: rgba(255, 255, 255, 0.7);
-						font-size: 1.1rem;
-						transition: all 0.3s ease;
-					}
-					
-					.form-group:focus-within .form-icon {
-						color: white;
-						transform: translateY(-50%) scale(1.1);
-					}
-					
-					.btn-login {
-						background: var(--success-gradient);
-						border: none;
-						border-radius: 12px;
-						color: white;
-						font-size: 1.1rem;
-						font-weight: 600;
-						padding: 1rem 2rem;
-						width: 100%;
-						cursor: pointer;
-						transition: all 0.3s ease;
-						margin-top: 0.5rem;
-						box-shadow: 0 10px 30px rgba(17, 153, 142, 0.3);
-						position: relative;
-						overflow: hidden;
-					}
-					
-					.btn-login::before {
-						content: '';
-						position: absolute;
-						top: 0;
-						left: -100%;
-						width: 100%;
-						height: 100%;
-						background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
-						transition: left 0.5s;
-					}
-					
-					.btn-login:hover::before {
-						left: 100%;
-					}
-					
-					.btn-login:hover {
-						transform: translateY(-3px);
-						box-shadow: 0 15px 40px rgba(17, 153, 142, 0.4);
-					}
-					
-					.btn-login:active {
-						transform: translateY(-1px);
-					}
-					
-					.alert {
-						background: rgba(220, 53, 69, 0.2);
-						border: 1px solid rgba(220, 53, 69, 0.3);
-						color: white;
-						border-radius: 12px;
-						padding: 1rem;
-						margin-bottom: 1.5rem;
-						backdrop-filter: blur(10px);
-						animation: shake 0.5s ease-in-out;
-					}
-					
-					@keyframes shake {
-						0%, 100% { transform: translateX(0); }
-						25% { transform: translateX(-5px); }
-						75% { transform: translateX(5px); }
-					}
-					
-					.loading {
-						pointer-events: none;
-						opacity: 0.7;
-					}
-					
-					.loading .btn-login {
-						background: #6c757d;
-					}
-					
-					@media (max-width: 768px) {
-						.login-container {
-							padding: 1rem;
-						}
-						
-						.login-card {
-							padding: 2rem;
-						}
-					}
-					
-					/* Floating particles animation */
-					.particle {
-						position: absolute;
-						background: rgba(255, 255, 255, 0.1);
-						border-radius: 50%;
-						animation: float 6s ease-in-out infinite;
-					}
-					
-					@keyframes float {
-						0%, 100% { 
-							transform: translateY(0px) translateX(0px);
-							opacity: 0.7;
-						}
-						50% { 
-							transform: translateY(-20px) translateX(10px);
-							opacity: 0.3;
-						}
 					}
 				`)),
 			),
 			html.Body(
-				// Floating particles
-				html.Div(
-					html.Class("particle"),
-					html.Style(
-						"width: 4px; height: 4px; top: 20%; left: 10%; animation-delay: 0s;",
-					),
-				),
-				html.Div(
-					html.Class("particle"),
-					html.Style(
-						"width: 6px; height: 6px; top: 60%; left: 80%; animation-delay: 2s;",
-					),
-				),
-				html.Div(
-					html.Class("particle"),
-					html.Style(
-						"width: 3px; height: 3px; top: 40%; left: 70%; animation-delay: 4s;",
-					),
-				),
-				html.Div(
-					html.Class("particle"),
-					html.Style(
-						"width: 5px; height: 5px; top: 80%; left: 20%; animation-delay: 1s;",
-					),
-				),
-				html.Div(
-					html.Class("particle"),
-					html.Style(
-						"width: 4px; height: 4px; top: 30%; left: 90%; animation-delay: 3s;",
-					),
-				),
-
-				html.Div(html.Class("login-container"),
-					html.Div(html.Class("login-card"),
+				html.Main(
+					html.Class("d-flex w-100 h-100"),
+					html.Div(
+						html.Class("container d-flex flex-column"),
 						html.Div(
-							html.Class("login-header"),
-							html.Div(html.Class("login-logo"),
-								html.I(html.Class("fas fa-download")),
-							),
-							html.H1(html.Class("login-title"), gomponents.Text("Go Media")),
-							html.P(
-								html.Class("login-subtitle"),
-								gomponents.Text("Downloader Admin Panel"),
-							),
-						),
-
-						gomponents.If(errorMsg != "",
-							html.Div(html.Class("alert"),
-								html.I(html.Class("fas fa-exclamation-triangle me-2")),
-								gomponents.Text(errorMsg),
-							),
-						),
-
-						html.Form(
-							html.Method("POST"),
-							html.Action("/api/login"),
-							html.ID("loginForm"),
-
-							html.Div(html.Class("form-group"),
-								html.I(html.Class("form-icon fas fa-user")),
-								html.Input(
-									html.Type("text"),
-									html.Name("username"),
-									html.ID("username"),
-									html.Class("form-control"),
-									html.Placeholder("Username"),
-									html.Required(),
-									gomponents.Attr("autocomplete", "username"),
+							html.Class("row vh-100"),
+							html.Div(
+								html.Class(
+									"col-sm-10 col-md-8 col-lg-6 col-xl-5 mx-auto d-table h-100",
 								),
-							),
+								html.Div(
+									html.Class("d-table-cell align-middle"),
 
-							html.Div(html.Class("form-group"),
-								html.I(html.Class("form-icon fas fa-lock")),
-								html.Input(
-									html.Type("password"),
-									html.Name("password"),
-									html.ID("password"),
-									html.Class("form-control"),
-									html.Placeholder("Password"),
-									html.Required(),
-									gomponents.Attr("autocomplete", "current-password"),
-								),
-							),
+									// Header section
+									html.Div(
+										html.Class("text-center mt-4"),
+										html.Div(
+											html.Class("logo-icon"),
+											html.I(html.Class("fas fa-download")),
+										),
+										html.H1(
+											html.Class("h2"),
+											gomponents.Text("Welcome back!"),
+										),
+										html.P(
+											html.Class("lead"),
+											gomponents.Text("Sign in to Go Media Downloader"),
+										),
+									),
 
-							html.Button(
-								html.Type("submit"),
-								html.Class("btn-login"),
-								html.ID("loginBtn"),
-								html.Span(html.ID("loginText"), gomponents.Text("Sign In")),
-								html.I(
-									html.Class("fas fa-spinner fa-spin d-none"),
-									html.ID("loginSpinner"),
+									// Card section
+									html.Div(
+										html.Class("card"),
+										html.Div(
+											html.Class("card-body"),
+											html.Div(
+												html.Class("m-sm-3"),
+
+												// Error message
+												gomponents.If(errorMsg != "",
+													html.Div(
+														html.Class("alert alert-danger"),
+														html.Role("alert"),
+														html.I(
+															html.Class(
+																"fas fa-exclamation-triangle me-2",
+															),
+														),
+														gomponents.Text(errorMsg),
+													),
+												),
+
+												// Login form
+												html.Form(
+													html.Method("POST"),
+													html.Action("/api/login"),
+													html.ID("loginForm"),
+
+													html.Div(
+														html.Class("mb-3"),
+														html.Label(
+															html.Class("form-label"),
+															html.For("username"),
+															gomponents.Text("Username"),
+														),
+														html.Input(
+															html.Type("text"),
+															html.Class(
+																"form-control form-control-lg",
+															),
+															html.Name("username"),
+															html.ID("username"),
+															html.Placeholder("Enter your username"),
+															html.Required(),
+															gomponents.Attr(
+																"autocomplete",
+																"username",
+															),
+														),
+													),
+
+													html.Div(
+														html.Class("mb-3"),
+														html.Label(
+															html.Class("form-label"),
+															html.For("password"),
+															gomponents.Text("Password"),
+														),
+														html.Input(
+															html.Type("password"),
+															html.Class(
+																"form-control form-control-lg",
+															),
+															html.Name("password"),
+															html.ID("password"),
+															html.Placeholder("Enter your password"),
+															html.Required(),
+															gomponents.Attr(
+																"autocomplete",
+																"current-password",
+															),
+														),
+													),
+
+													html.Div(
+														html.Div(
+															html.Class(
+																"form-check align-items-center",
+															),
+															html.Input(
+																html.ID("rememberMe"),
+																html.Type("checkbox"),
+																html.Class("form-check-input"),
+																html.Name("remember-me"),
+																html.Value("remember-me"),
+															),
+															html.Label(
+																html.Class(
+																	"form-check-label text-small",
+																),
+																html.For("rememberMe"),
+																gomponents.Text("Remember me"),
+															),
+														),
+													),
+
+													html.Div(
+														html.Class("d-grid gap-2 mt-3"),
+														html.Button(
+															html.Type("submit"),
+															html.Class("btn btn-lg btn-primary"),
+															html.ID("loginBtn"),
+															html.Span(
+																html.ID("loginText"),
+																gomponents.Text("Sign in"),
+															),
+															html.Span(
+																html.Class(
+																	"spinner-border spinner-border-sm ms-2 d-none",
+																),
+																html.ID("loginSpinner"),
+																html.Role("status"),
+																gomponents.Attr(
+																	"aria-hidden",
+																	"true",
+																),
+															),
+														),
+													),
+												),
+											),
+										),
+									),
+
+									// Footer link
+									html.Div(
+										html.Class("text-center mb-3"),
+										html.A(
+											html.Href(
+												"https://github.com/Kellerman81/go_media_downloader",
+											),
+											html.Target("_blank"),
+											html.Rel("noopener noreferrer"),
+											html.I(html.Class("fab fa-github me-1")),
+											gomponents.Text("View on GitHub"),
+										),
+									),
 								),
 							),
 						),
@@ -604,67 +528,23 @@ func loginPage(c *gin.Context) {
 						const loginSpinner = document.getElementById('loginSpinner');
 						const usernameInput = document.getElementById('username');
 						const passwordInput = document.getElementById('password');
-						
+
 						// Focus first input
 						usernameInput.focus();
-						
-						// Add input validation styling
-						[usernameInput, passwordInput].forEach(input => {
-							input.addEventListener('input', function() {
-								if (this.value.length > 0) {
-									this.style.borderColor = 'rgba(56, 239, 125, 0.6)';
-								} else {
-									this.style.borderColor = 'rgba(255, 255, 255, 0.3)';
-								}
-							});
-							
-							input.addEventListener('keypress', function(e) {
-								if (e.key === 'Enter' && this === usernameInput) {
-									passwordInput.focus();
-									e.preventDefault();
-								}
-							});
-						});
-						
+
 						// Enhanced form submission
 						form.addEventListener('submit', function(e) {
 							// Add loading state
-							document.body.classList.add('loading');
-							loginText.textContent = 'Signing In...';
+							loginText.textContent = 'Signing in...';
 							loginSpinner.classList.remove('d-none');
 							loginBtn.disabled = true;
-							
-							// Add slight delay for UX
-							setTimeout(() => {
-								// Form will submit naturally
-							}, 500);
 						});
-						
-						// Add enter key support
-						document.addEventListener('keypress', function(e) {
-							if (e.key === 'Enter' && !loginBtn.disabled) {
-								form.submit();
-							}
-						});
-						
-						// Add some interactive particles on mouse move
-						let mouseX = 0, mouseY = 0;
-						document.addEventListener('mousemove', function(e) {
-							mouseX = e.clientX;
-							mouseY = e.clientY;
-							
-							// Create temporary particle
-							if (Math.random() < 0.1) {
-								const particle = document.createElement('div');
-								particle.className = 'particle';
-								particle.style.cssText = 'width: 2px; height: 2px; position: fixed; pointer-events: none; z-index: 1;';
-								particle.style.left = mouseX + 'px';
-								particle.style.top = mouseY + 'px';
-								document.body.appendChild(particle);
-								
-								setTimeout(() => {
-									particle.remove();
-								}, 2000);
+
+						// Enter key navigation
+						usernameInput.addEventListener('keypress', function(e) {
+							if (e.key === 'Enter') {
+								e.preventDefault();
+								passwordInput.focus();
 							}
 						});
 					});
@@ -733,6 +613,137 @@ func protectAdminRoutes(c *gin.Context) {
 	}
 
 	c.Next()
+}
+
+// NotFoundPage renders a 404 page in AdminKit layout.
+func NotFoundPage(c *gin.Context) {
+	page := html.Doctype(
+		html.HTML(
+			html.Lang("en"),
+			html.Head(
+				html.Meta(html.Charset("utf-8")),
+				html.Meta(
+					html.Name("viewport"),
+					html.Content("width=device-width, initial-scale=1, shrink-to-fit=no"),
+				),
+				html.Title("404 - Page Not Found | Go Media Downloader"),
+				html.Link(
+					html.Href(
+						"https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap",
+					),
+					html.Rel("stylesheet"),
+				),
+				html.Link(
+					html.Href(
+						"https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css",
+					),
+					html.Rel("stylesheet"),
+				),
+				html.Link(
+					html.Href(
+						"https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css",
+					),
+					html.Rel("stylesheet"),
+				),
+				html.StyleEl(gomponents.Raw(`
+					body {
+						font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+						background: #f5f7fb;
+					}
+
+					.d-table {
+						display: table;
+						width: 100%;
+					}
+
+					.d-table-cell {
+						display: table-cell;
+					}
+
+					.display-1 {
+						font-size: 6rem;
+						font-weight: 700;
+						color: #3b7ddd;
+					}
+
+					.btn-primary {
+						background-color: #3b7ddd;
+						border-color: #3b7ddd;
+					}
+
+					.btn-primary:hover {
+						background-color: #326abc;
+						border-color: #326abc;
+					}
+
+					.btn-lg {
+						padding: 0.75rem 1.5rem;
+						font-size: 1rem;
+					}
+
+					a {
+						color: #3b7ddd;
+						text-decoration: none;
+					}
+
+					a:hover {
+						color: #326abc;
+						text-decoration: underline;
+					}
+				`)),
+			),
+			html.Body(
+				html.Main(
+					html.Class("d-flex w-100 h-100"),
+					html.Div(
+						html.Class("container d-flex flex-column"),
+						html.Div(
+							html.Class("row vh-100"),
+							html.Div(
+								html.Class(
+									"col-sm-10 col-md-8 col-lg-6 col-xl-5 mx-auto d-table h-100",
+								),
+								html.Div(
+									html.Class("d-table-cell align-middle"),
+
+									html.Div(
+										html.Class("text-center"),
+										html.H1(
+											html.Class("display-1 fw-bold"),
+											gomponents.Text("404"),
+										),
+										html.P(
+											html.Class("h2"),
+											gomponents.Text("Page not found."),
+										),
+										html.P(
+											html.Class("lead fw-normal mt-3 mb-4"),
+											gomponents.Text(
+												"The page you are looking for might have been removed or is temporarily unavailable.",
+											),
+										),
+										html.A(
+											html.Href("/api/admin"),
+											html.Class("btn btn-primary btn-lg"),
+											html.I(html.Class("fas fa-home me-2")),
+											gomponents.Text("Return to Home"),
+										),
+									),
+								),
+							),
+						),
+					),
+				),
+			),
+		),
+	)
+
+	c.Header("Content-Type", "text/html; charset=utf-8")
+	c.Status(http.StatusNotFound)
+
+	var buf strings.Builder
+	page.Render(&buf)
+	c.String(http.StatusNotFound, buf.String())
 }
 
 // handleRootRedirect handles root path requests and redirects to admin or login.

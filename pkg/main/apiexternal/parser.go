@@ -29,7 +29,7 @@ type Nzbwithprio struct {
 	IDSearched          bool                              // Whether this NZB has been searched using the IMDB ID/THETVDB ID
 }
 
-// NZB represents an NZB found on the index.
+// Nzb represents an NZB found on the index.
 type Nzb struct {
 	// ID is the unique identifier for the NZB
 	ID string `json:"id,omitempty"`

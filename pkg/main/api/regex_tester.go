@@ -608,6 +608,7 @@ func HandleRegexTesting(ctx *gin.Context) {
 			if selectedRegexConfig != "" && name != selectedRegexConfig {
 				return
 			}
+
 			// Test Required patterns
 			for _, pattern := range regexConfig.Required {
 				if pattern == "" {
@@ -695,8 +696,11 @@ func HandleRegexTesting(ctx *gin.Context) {
 			}
 		} else {
 			// Test all quality patterns from database
-			qualities := database.GetrowsN[database.DbstaticTwoString](false, 200,
-				"SELECT name, regex FROM qualities WHERE use_regex = 1 AND regex IS NOT NULL AND regex != '' ORDER BY name")
+			qualities := database.GetrowsN[database.DbstaticTwoString](
+				false,
+				200,
+				"SELECT name, regex FROM qualities WHERE use_regex = 1 AND regex IS NOT NULL AND regex != '' ORDER BY name",
+			)
 
 			for _, quality := range qualities {
 				result := RegexTestResult{

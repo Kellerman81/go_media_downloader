@@ -11,6 +11,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/mediatype"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/providers"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/scanner"
 )
@@ -19,9 +20,15 @@ type downloadertype struct {
 	Dbmovie        database.Dbmovie
 	Dbserie        database.Dbserie
 	Dbserieepisode database.DbserieEpisode
+	Dbbook         database.Dbbook
+	Dbaudiobook    database.Dbaudiobook
+	Dbalbum        database.Dbalbum
 	Movie          database.Movie
 	Serie          database.Serie
 	Serieepisode   database.SerieEpisode
+	Book           database.Book
+	Audiobook      database.Audiobook
+	Album          database.Album
 	Category       string
 	Downloader     string
 	Targetfile     string
@@ -36,8 +43,6 @@ type downloadertype struct {
 	TargetCfg     *config.PathsConfig
 	DownloaderCfg *config.DownloaderConfig
 }
-
-const strTvdbid = " (tvdb"
 
 // downloadNzb orchestrates the download process for an NZB file using the configured
 // downloader client. It performs the following operations:
@@ -63,20 +68,22 @@ func (d *downloadertype) downloadNzb() {
 			continue
 		}
 
-		if d.Quality.Indexer[idx].CategoryDownloader != "" {
-			logger.Logtype("debug", 2).
-				Str(logger.StrIndexer, d.Quality.Indexer[idx].TemplateIndexer).
-				Str("Downloader", d.Quality.Indexer[idx].TemplateDownloader).
-				Msg("Download")
-
-			d.IndexerCfg = d.Quality.Indexer[idx].CfgIndexer
-			d.Category = d.Quality.Indexer[idx].CategoryDownloader
-			d.TargetCfg = d.Quality.Indexer[idx].CfgPath
-			d.Downloader = d.Quality.Indexer[idx].TemplateDownloader
-			d.DownloaderCfg = d.Quality.Indexer[idx].CfgDownloader
-
-			break
+		if d.Quality.Indexer[idx].CategoryDownloader == "" {
+			continue
 		}
+
+		logger.Logtype("debug", 2).
+			Str(logger.StrIndexer, d.Quality.Indexer[idx].TemplateIndexer).
+			Str("Downloader", d.Quality.Indexer[idx].TemplateDownloader).
+			Msg("Download")
+
+		d.IndexerCfg = d.Quality.Indexer[idx].CfgIndexer
+		d.Category = d.Quality.Indexer[idx].CategoryDownloader
+		d.TargetCfg = d.Quality.Indexer[idx].CfgPath
+		d.Downloader = d.Quality.Indexer[idx].TemplateDownloader
+		d.DownloaderCfg = d.Quality.Indexer[idx].CfgDownloader
+
+		break
 	}
 
 	if d.Category == "" {
@@ -110,8 +117,8 @@ func (d *downloadertype) downloadNzb() {
 	}
 
 	if config.GetSettingsGeneral().UseHistoryCache {
-		database.AppendCacheMap(d.Cfgp.Useseries, logger.CacheHistoryTitle, d.Nzb.NZB.Title)
-		database.AppendCacheMap(d.Cfgp.Useseries, logger.CacheHistoryURL, d.Nzb.NZB.DownloadURL)
+		database.AppendCacheMap(d.Cfgp.IsType, logger.CacheHistoryTitle, d.Nzb.NZB.Title)
+		database.AppendCacheMap(d.Cfgp.IsType, logger.CacheHistoryURL, d.Nzb.NZB.DownloadURL)
 	}
 
 	d.Targetfile = d.getdownloadtargetfolder()
@@ -155,103 +162,13 @@ func (d *downloadertype) downloadNzb() {
 
 	d.notify()
 
-	if !d.Cfgp.Useseries {
-		if d.Movie.ID == 0 {
-			d.Movie.ID = d.Nzb.NzbmovieID
-		}
+	d.downloadNzbType(d.Cfgp.IsType)
+}
 
-		if d.Movie.ID != 0 && d.Movie.QualityProfile == "" {
-			database.Scanrowsdyn(
-				false,
-				"select quality_profile from movies where id = ?",
-				&d.Movie.QualityProfile,
-				&d.Nzb.NzbmovieID,
-			)
-		}
-
-		if d.Movie.DbmovieID == 0 && d.Nzb.NzbmovieID != 0 {
-			database.Scanrowsdyn(
-				false,
-				"select dbmovie_id from movies where id = ?",
-				&d.Movie.DbmovieID,
-				&d.Nzb.NzbmovieID,
-			)
-		}
-
-		database.ExecN(
-			"Insert into movie_histories (title, url, target, indexer, downloaded_at, movie_id, dbmovie_id, resolution_id, quality_id, codec_id, audio_id, quality_profile) VALUES (?, ?, ?, ?, datetime('now','localtime'), ?, ?, ?, ?, ?, ?, ?)",
-			&d.Nzb.NZB.Title,
-			&d.Nzb.NZB.DownloadURL,
-			&d.TargetCfg.Path,
-			&d.Nzb.NZB.Indexer.Name,
-			&d.Movie.ID,
-			&d.Movie.DbmovieID,
-			&d.Nzb.Info.ResolutionID,
-			&d.Nzb.Info.QualityID,
-			&d.Nzb.Info.CodecID,
-			&d.Nzb.Info.AudioID,
-			&d.Movie.QualityProfile,
-		)
-
-		return
+func (d *downloadertype) downloadNzbType(isType uint) {
+	if handler := mediatype.Get(isType); handler != nil {
+		handler.RecordDownloadHistory(d.Nzb, d.TargetCfg.Path)
 	}
-
-	if d.Serie.ID == 0 {
-		database.Scanrowsdyn(
-			false,
-			database.QuerySerieEpisodesGetSerieIDByID,
-			&d.Serie.ID,
-			&d.Nzb.NzbepisodeID,
-		)
-	}
-
-	if d.Dbserie.ID == 0 {
-		database.Scanrowsdyn(
-			false,
-			database.QuerySerieEpisodesGetDBSerieIDByID,
-			&d.Dbserie.ID,
-			&d.Nzb.NzbepisodeID,
-		)
-	}
-
-	if d.Serieepisode.ID == 0 {
-		d.Serieepisode.ID = d.Nzb.NzbepisodeID
-	}
-
-	if d.Serieepisode.QualityProfile == "" {
-		database.Scanrowsdyn(
-			false,
-			"select quality_profile from serie_episodes where id = ?",
-			&d.Serieepisode.QualityProfile,
-			&d.Nzb.NzbepisodeID,
-		)
-	}
-
-	if d.Dbserieepisode.ID == 0 {
-		database.Scanrowsdyn(
-			false,
-			database.QuerySerieEpisodesGetDBSerieEpisodeIDByID,
-			&d.Dbserieepisode.ID,
-			&d.Nzb.NzbepisodeID,
-		)
-	}
-
-	database.ExecN(
-		"Insert into serie_episode_histories (title, url, target, indexer, downloaded_at, serie_id, serie_episode_id, dbserie_episode_id, dbserie_id, resolution_id, quality_id, codec_id, audio_id, quality_profile) VALUES (?, ?, ?, ?, datetime('now','localtime'), ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-		&d.Nzb.NZB.Title,
-		&d.Nzb.NZB.DownloadURL,
-		&d.TargetCfg.Path,
-		&d.Nzb.NZB.Indexer.Name,
-		&d.Serie.ID,
-		&d.Serieepisode.ID,
-		&d.Dbserieepisode.ID,
-		&d.Dbserie.ID,
-		&d.Nzb.Info.ResolutionID,
-		&d.Nzb.Info.QualityID,
-		&d.Nzb.Info.CodecID,
-		&d.Nzb.Info.AudioID,
-		&d.Serieepisode.QualityProfile,
-	)
 }
 
 // getdownloadtargetfolder returns the target download folder path for a download based on whether it is a movie or TV show download.
@@ -259,49 +176,45 @@ func (d *downloadertype) downloadNzb() {
 // For TV shows it tries to use the episode title and TVDB ID if available.
 // Falls back to just using the title if IDs are not available.
 func (d *downloadertype) getdownloadtargetfolder() string {
-	if !d.Cfgp.Useseries {
-		if d.Dbmovie.ImdbID != "" {
-			return logger.JoinStrings(d.Nzb.NZB.Title, " (", d.Dbmovie.ImdbID, ")")
-		} else if d.Nzb.NZB.IMDBID != "" {
-			d.Nzb.NZB.IMDBID = logger.AddImdbPrefix(d.Nzb.NZB.IMDBID)
-			if d.Nzb.NZB.Title == "" {
-				return logger.JoinStrings(d.Nzb.Info.Title, "[", d.Nzb.Info.Resolution, logger.StrSpace, d.Nzb.Info.Quality, "] (", d.Nzb.NZB.IMDBID, ")")
+	if handler := mediatype.Get(d.Cfgp.IsType); handler != nil {
+		// Get the external ID from the appropriate db entity
+		var externalID string
+		switch d.Cfgp.IsType {
+		case config.MediaTypeMovie:
+			externalID = d.Dbmovie.ImdbID
+		case config.MediaTypeSeries:
+			if d.Dbserie.ThetvdbID != 0 {
+				externalID = strconv.Itoa(d.Dbserie.ThetvdbID)
 			}
 
-			return logger.JoinStrings(d.Nzb.NZB.Title, " (", d.Nzb.NZB.IMDBID, ")")
+		case config.MediaTypeBook:
+			if d.Dbbook.GoodreadsID != "" {
+				externalID = d.Dbbook.GoodreadsID
+			} else if d.Dbbook.ISBN13 != "" {
+				externalID = d.Dbbook.ISBN13
+			}
+
+		case config.MediaTypeAudiobook:
+			if d.Dbaudiobook.AudibleID != "" {
+				externalID = d.Dbaudiobook.AudibleID
+			} else if d.Dbaudiobook.ASIN != "" {
+				externalID = d.Dbaudiobook.ASIN
+			}
+
+		case config.MediaTypeMusic:
+			if d.Dbalbum.MusicbrainzReleaseGroupID != "" {
+				externalID = d.Dbalbum.MusicbrainzReleaseGroupID
+			} else if d.Dbalbum.SpotifyID != "" {
+				externalID = d.Dbalbum.SpotifyID
+			}
 		}
 
-		return d.Nzb.NZB.Title
+		if folder := handler.GetDownloadTargetFolder(d.Nzb, externalID); folder != "" {
+			return folder
+		}
 	}
 
-	if d.Dbserie.ThetvdbID != 0 {
-		if d.Nzb.NZB.Title == "" {
-			return logger.JoinStrings(
-				d.Nzb.Info.Title,
-				"[",
-				d.Nzb.Info.Resolution,
-				logger.StrSpace,
-				d.Nzb.Info.Quality,
-				"]",
-				strTvdbid,
-				strconv.Itoa(d.Dbserie.ThetvdbID),
-				")",
-			)
-		}
-
-		return logger.JoinStrings(
-			d.Nzb.NZB.Title,
-			strTvdbid,
-			strconv.Itoa(d.Dbserie.ThetvdbID),
-			")",
-		)
-	} else if d.Nzb.NZB.TVDBID != 0 {
-		if d.Nzb.NZB.Title == "" {
-			return logger.JoinStrings(d.Nzb.Info.Title, "[", d.Nzb.Info.Resolution, logger.StrSpace, d.Nzb.Info.Quality, "]", strTvdbid, strconv.Itoa(d.Nzb.NZB.TVDBID), ")")
-		}
-		return logger.JoinStrings(d.Nzb.NZB.Title, strTvdbid, strconv.Itoa(d.Nzb.NZB.TVDBID), ")")
-	}
-
+	// Fallback: return title with quality info
 	if d.Nzb.NZB.Title == "" {
 		return logger.JoinStrings(
 			d.Nzb.Info.Title,
@@ -642,5 +555,92 @@ func DownloadSeriesEpisode(cfgp *config.MediaTypeConfig, nzb *apiexternal_v2.Nzb
 	}
 
 	d.Quality = database.GetMediaQualityConfig(cfgp, &nzb.NzbepisodeID)
+	d.downloadNzb()
+}
+
+// DownloadBook initializes a downloader, gets the book and related database
+// objects by ID, sets the quality config, and calls the download method.
+func DownloadBook(cfgp *config.MediaTypeConfig, nzb *apiexternal_v2.Nzbwithprio) {
+	d := newDownloader(cfgp, nzb)
+
+	err := d.Book.GetBooksByIDP(&nzb.NzbbookID)
+	if err != nil {
+		logger.Logtype("error", 1).
+			Uint("book not found", nzb.NzbbookID).
+			Err(err).
+			Msg("not found")
+
+		return
+	}
+
+	err = d.Dbbook.GetDbbookByIDP(&d.Book.DbbookID)
+	if err != nil {
+		logger.Logtype("error", 1).
+			Uint("dbbook not found", d.Book.DbbookID).
+			Err(err).
+			Msg("not found")
+
+		return
+	}
+
+	d.Quality = database.GetMediaQualityConfig(cfgp, &nzb.NzbbookID)
+	d.downloadNzb()
+}
+
+// DownloadAudiobook initializes a downloader, gets the audiobook and related database
+// objects by ID, sets the quality config, and calls the download method.
+func DownloadAudiobook(cfgp *config.MediaTypeConfig, nzb *apiexternal_v2.Nzbwithprio) {
+	d := newDownloader(cfgp, nzb)
+
+	err := d.Audiobook.GetAudiobooksByIDP(&nzb.NzbaudiobookID)
+	if err != nil {
+		logger.Logtype("error", 1).
+			Uint("audiobook not found", nzb.NzbaudiobookID).
+			Err(err).
+			Msg("not found")
+
+		return
+	}
+
+	err = d.Dbaudiobook.GetDbaudiobookByIDP(&d.Audiobook.DbaudiobookID)
+	if err != nil {
+		logger.Logtype("error", 1).
+			Uint("dbaudiobook not found", d.Audiobook.DbaudiobookID).
+			Err(err).
+			Msg("not found")
+
+		return
+	}
+
+	d.Quality = database.GetMediaQualityConfig(cfgp, &nzb.NzbaudiobookID)
+	d.downloadNzb()
+}
+
+// DownloadAlbum initializes a downloader, gets the album and related database
+// objects by ID, sets the quality config, and calls the download method.
+func DownloadAlbum(cfgp *config.MediaTypeConfig, nzb *apiexternal_v2.Nzbwithprio) {
+	d := newDownloader(cfgp, nzb)
+
+	err := d.Album.GetAlbumsByIDP(&nzb.NzbalbumID)
+	if err != nil {
+		logger.Logtype("error", 1).
+			Uint("album not found", nzb.NzbalbumID).
+			Err(err).
+			Msg("not found")
+
+		return
+	}
+
+	err = d.Dbalbum.GetDbalbumByIDP(&d.Album.DbalbumID)
+	if err != nil {
+		logger.Logtype("error", 1).
+			Uint("dbalbum not found", d.Album.DbalbumID).
+			Err(err).
+			Msg("not found")
+
+		return
+	}
+
+	d.Quality = database.GetMediaQualityConfig(cfgp, &nzb.NzbalbumID)
 	d.downloadNzb()
 }

@@ -9,6 +9,7 @@ import (
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/base"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 )
 
 //
@@ -91,12 +92,12 @@ func (p *Provider) SendNotification(
 	subject := request.Title
 	body := request.Message
 
-	msg := []byte(fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\n\r\n%s\r\n",
+	msg := fmt.Appendf(nil, "From: %s\r\nTo: %s\r\nSubject: %s\r\n\r\n%s\r\n",
 		p.from,
-		strings.Join(recipients, ", "),
+		logger.JoinStringsSep(recipients, ", "),
 		subject,
 		body,
-	))
+	)
 
 	// Setup authentication
 	auth := smtp.PlainAuth("", p.username, p.password, p.smtpHost)

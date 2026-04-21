@@ -188,7 +188,25 @@ func createRemoveButton(float bool) gomponents.Node {
 		html.I(html.Class("fa-solid fa-trash me-2")),
 		gomponents.Text("Remove Item"),
 		// Attr("onclick", "if(confirm('Are you sure you want to remove this item?') && this.parentElement.parentElement.parentElement) this.parentElement.parentElement.parentElement.remove()"),
-		gomponents.Attr("onclick", "this.parentElement.parentElement.parentElement.remove()"),
+		// gomponents.Attr("onclick", "this.parentElement.parentElement.parentElement.remove()"),
+		gomponents.Attr("onclick", `
+			// For array items, remove the card container
+			const arrayItem = this.closest('.card');
+			if (arrayItem) {
+				arrayItem.remove();
+				return;
+			}
+			
+			// For main forms, remove the card container (ID ends with _card)
+			const cardElement = this.closest('[id$="_card"]');
+			if (cardElement) {
+				cardElement.remove();
+				return;
+			}
+			
+			// Fallback to parent element removal
+			this.parentElement.remove();
+		`),
 		// Attr("onmouseover", "this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 20px rgba(220, 53, 69, 0.4)'"),
 		// Attr("onmouseout", "this.style.transform='translateY(0)'; this.style.boxShadow='0 2px 4px rgba(0,0,0,0.1)'"),
 	)
@@ -293,18 +311,6 @@ func createHTMXHeaders(csrfToken string) string {
 }
 
 // Form group utilities
-
-// createConfigFormButtons creates standardized form submit and reset buttons.
-func createConfigFormButtons(submitText, target, endpoint, csrfToken string) []gomponents.Node {
-	return []gomponents.Node{
-		html.Div(
-			html.Class("form-group submit-group"),
-			createSubmitButton(submitText, target, endpoint, csrfToken),
-			createResetButton("Reset"),
-		),
-		html.Div(html.ID("addalert")),
-	}
-}
 
 // createFormSubmitGroup creates a standardized form submit group with HTMX.
 func createFormSubmitGroup(text, target, endpoint, csrfToken string) gomponents.Node {

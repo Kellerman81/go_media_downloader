@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -14,6 +13,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/base"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/goccy/go-json"
 )
 
 //
@@ -121,7 +121,10 @@ func (p *Provider) GetProviderName() string {
 }
 
 // GetTorrentInfo retrieves information about a specific NZB download
-func (p *Provider) GetTorrentInfo(ctx context.Context, hash string) (*apiexternal_v2.TorrentInfo, error) {
+func (p *Provider) GetTorrentInfo(
+	ctx context.Context,
+	hash string,
+) (*apiexternal_v2.TorrentInfo, error) {
 	// Parse hash as NZBID
 	nzbID, err := strconv.Atoi(hash)
 	if err != nil {
@@ -156,7 +159,10 @@ func (p *Provider) GetTorrentInfo(ctx context.Context, hash string) (*apiexterna
 }
 
 // ListTorrents lists all NZB downloads in the queue
-func (p *Provider) ListTorrents(ctx context.Context, filter string) (*apiexternal_v2.TorrentListResponse, error) {
+func (p *Provider) ListTorrents(
+	ctx context.Context,
+	filter string,
+) (*apiexternal_v2.TorrentListResponse, error) {
 	var queueItems []nzbGetQueueItem
 
 	result, err := p.makeJSONRPCCall(ctx, "listgroups", []any{})
@@ -295,7 +301,11 @@ func (p *Provider) GetHTTPClient() *http.Client {
 }
 
 // makeJSONRPCCall makes a JSON-RPC call to NZBGet
-func (p *Provider) makeJSONRPCCall(ctx context.Context, method string, params []any) (json.RawMessage, error) {
+func (p *Provider) makeJSONRPCCall(
+	ctx context.Context,
+	method string,
+	params []any,
+) (json.RawMessage, error) {
 	request := jsonRPCRequest{
 		Method: method,
 		Params: params,
@@ -333,7 +343,11 @@ func (p *Provider) makeJSONRPCCall(ctx context.Context, method string, params []
 			}
 
 			if response.Error != nil {
-				return fmt.Errorf("JSON-RPC error %d: %s", response.Error.Code, response.Error.Message)
+				return fmt.Errorf(
+					"JSON-RPC error %d: %s",
+					response.Error.Code,
+					response.Error.Message,
+				)
 			}
 
 			return nil
@@ -414,7 +428,9 @@ func (p *Provider) getHistory(ctx context.Context, hidden bool) ([]nzbGetQueueIt
 }
 
 // convertHistoryItemToTorrentInfo converts history item to TorrentInfo
-func (p *Provider) convertHistoryItemToTorrentInfo(item nzbGetQueueItem) *apiexternal_v2.TorrentInfo {
+func (p *Provider) convertHistoryItemToTorrentInfo(
+	item nzbGetQueueItem,
+) *apiexternal_v2.TorrentInfo {
 	torrent := &apiexternal_v2.TorrentInfo{
 		Hash: strconv.Itoa(item.NZBID),
 		Name: item.NZBName,
@@ -444,7 +460,12 @@ func (p *Provider) AddNZB(ctx context.Context, nzbURL, category string, priority
 //
 // This is an extended method with additional parameters not in the DownloadProvider interface,
 // but useful for clients that need direct NZB support with more options
-func (p *Provider) AddNZBExtended(ctx context.Context, nzbURL, category string, priority int, addPaused bool) (int, error) {
+func (p *Provider) AddNZBExtended(
+	ctx context.Context,
+	nzbURL, category string,
+	priority int,
+	addPaused bool,
+) (int, error) {
 	// Download the NZB file using BaseClient infrastructure
 	var buf bytes.Buffer
 	var contentDisposition string

@@ -13,14 +13,26 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/DeanThompson/ginpprof"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/api"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/base"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/apprise"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/acoustid"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/audible"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/audnex"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/deluge"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/deezer"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/itunes"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/theaudiodb"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/discogs"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/goodreads"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/gotify"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/lastfm"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/musicbrainz"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/nzbget"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/openlibrary"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/pushbullet"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/pushover"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/qbittorrent"
@@ -39,11 +51,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/utils"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/worker"
 	"github.com/fsnotify/fsnotify"
-
-	"github.com/DeanThompson/ginpprof"
 	"github.com/gin-gonic/gin"
-	// webapp "github.com/maxence-charriere/go-app/v9/pkg/app"
-	// ginlog "github.com/toorop/gin-logrus".
 )
 
 // @title                       Go Media Downloader API
@@ -74,8 +82,8 @@ func parseServerURL(serverURL string) (host string, port int, useSSL bool) {
 		useSSL = true
 		port = 443
 		serverURL = strings.TrimPrefix(serverURL, "https://")
-	} else if strings.HasPrefix(serverURL, "http://") {
-		serverURL = strings.TrimPrefix(serverURL, "http://")
+	} else if after, ok := strings.CutPrefix(serverURL, "http://"); ok {
+		serverURL = after
 	}
 
 	// Extract host and port
@@ -132,9 +140,13 @@ func initproviders() {
 				CircuitBreakerTimeout:     30 * time.Second,
 				CircuitBreakerHalfOpenMax: 1,
 				EnableStats:               true,
-				UserAgent:                 "go-media-downloader/2.0",
+				UserAgent:                 config.GetSettingsGeneral().UserAgent,
 			}
-			if provider := pushover.NewProviderWithConfig(pushoverConfig, notifCfg.Apikey, notifCfg.Recipient); provider != nil {
+			if provider := pushover.NewProviderWithConfig(
+				pushoverConfig,
+				notifCfg.Apikey,
+				notifCfg.Recipient,
+			); provider != nil {
 				cm.RegisterNotificationProvider("pushover_"+notifCfg.Name, provider)
 				logger.Logtype(logger.StatusDebug, 0).
 					Str("notification", name).
@@ -146,6 +158,7 @@ func initproviders() {
 			if notifCfg.ServerURL == "" || notifCfg.Apikey == "" {
 				break
 			}
+
 			// Parse server URL to extract host, port, and SSL settings
 			host, port, useSSL := parseServerURL(notifCfg.ServerURL)
 
@@ -159,9 +172,15 @@ func initproviders() {
 				CircuitBreakerTimeout:     30 * time.Second,
 				CircuitBreakerHalfOpenMax: 1,
 				EnableStats:               true,
-				UserAgent:                 "go-media-downloader/2.0",
+				UserAgent:                 config.GetSettingsGeneral().UserAgent,
 			}
-			if provider := gotify.NewProviderWithConfig(gotifyConfig, host, port, notifCfg.Apikey, useSSL); provider != nil {
+			if provider := gotify.NewProviderWithConfig(
+				gotifyConfig,
+				host,
+				port,
+				notifCfg.Apikey,
+				useSSL,
+			); provider != nil {
 				cm.RegisterNotificationProvider(name, provider)
 				logger.Logtype(logger.StatusDebug, 0).
 					Str("notification", name).
@@ -190,7 +209,13 @@ func initproviders() {
 			host, port, useSSL := parseServerURL(notifCfg.ServerURL)
 
 			urls := strings.Split(notifCfg.AppriseURLs, ",")
-			if provider := apprise.NewProvider(host, port, notifCfg.Apikey, urls, useSSL); provider != nil {
+			if provider := apprise.NewProvider(
+				host,
+				port,
+				notifCfg.Apikey,
+				urls,
+				useSSL,
+			); provider != nil {
 				cm.RegisterNotificationProvider(name, provider)
 				logger.Logtype(logger.StatusDebug, 0).
 					Str("notification", name).
@@ -229,7 +254,13 @@ func initproviders() {
 				break
 			}
 
-			if provider, err := qbittorrent.NewProvider(dlCfg.Hostname, dlCfg.Port, dlCfg.Username, dlCfg.Password, strings.HasPrefix(dlCfg.Hostname, "https")); err == nil &&
+			if provider, err := qbittorrent.NewProvider(
+				dlCfg.Hostname,
+				dlCfg.Port,
+				dlCfg.Username,
+				dlCfg.Password,
+				strings.HasPrefix(dlCfg.Hostname, "https"),
+			); err == nil &&
 				provider != nil {
 				providers.SetQBittorrent(name, provider)
 				logger.Logtype(logger.StatusDebug, 0).
@@ -247,7 +278,11 @@ func initproviders() {
 				dlCfg.Port,
 				strings.HasPrefix(dlCfg.Hostname, "https"),
 			)
-			if provider := deluge.NewProvider(baseURL, dlCfg.Username, dlCfg.Password); provider != nil {
+			if provider := deluge.NewProvider(
+				baseURL,
+				dlCfg.Username,
+				dlCfg.Password,
+			); provider != nil {
 				providers.SetDeluge(name, provider)
 				logger.Logtype(logger.StatusDebug, 0).
 					Str("downloader", name).
@@ -264,7 +299,11 @@ func initproviders() {
 				dlCfg.Port,
 				strings.HasPrefix(dlCfg.Hostname, "https"),
 			)
-			if provider := transmission.NewProvider(baseURL, dlCfg.Username, dlCfg.Password); provider != nil {
+			if provider := transmission.NewProvider(
+				baseURL,
+				dlCfg.Username,
+				dlCfg.Password,
+			); provider != nil {
 				providers.SetTransmission(name, provider)
 				logger.Logtype(logger.StatusDebug, 0).
 					Str("downloader", name).
@@ -277,7 +316,14 @@ func initproviders() {
 			}
 
 			urlBase := ""
-			if provider, err := rtorrent.NewProvider(dlCfg.Hostname, dlCfg.Port, dlCfg.Username, dlCfg.Password, strings.HasPrefix(dlCfg.Hostname, "https"), urlBase); err == nil &&
+			if provider, err := rtorrent.NewProvider(
+				dlCfg.Hostname,
+				dlCfg.Port,
+				dlCfg.Username,
+				dlCfg.Password,
+				strings.HasPrefix(dlCfg.Hostname, "https"),
+				urlBase,
+			); err == nil &&
 				provider != nil {
 				providers.SetRTorrent(name, provider)
 				logger.Logtype(logger.StatusDebug, 0).
@@ -290,7 +336,12 @@ func initproviders() {
 				break
 			}
 
-			if provider, err := sabnzbd.NewProvider(dlCfg.Hostname, dlCfg.Port, dlCfg.Password, strings.HasPrefix(dlCfg.Hostname, "https")); err == nil &&
+			if provider, err := sabnzbd.NewProvider(
+				dlCfg.Hostname,
+				dlCfg.Port,
+				dlCfg.Password,
+				strings.HasPrefix(dlCfg.Hostname, "https"),
+			); err == nil &&
 				provider != nil {
 				providers.SetSABnzbd(name, provider)
 				logger.Logtype(logger.StatusDebug, 0).
@@ -303,7 +354,13 @@ func initproviders() {
 				break
 			}
 
-			if provider, err := nzbget.NewProvider(dlCfg.Hostname, dlCfg.Port, dlCfg.Username, dlCfg.Password, strings.HasPrefix(dlCfg.Hostname, "https")); err == nil &&
+			if provider, err := nzbget.NewProvider(
+				dlCfg.Hostname,
+				dlCfg.Port,
+				dlCfg.Username,
+				dlCfg.Password,
+				strings.HasPrefix(dlCfg.Hostname, "https"),
+			); err == nil &&
 				provider != nil {
 				providers.SetNZBGet(name, provider)
 				logger.Logtype(logger.StatusDebug, 0).
@@ -312,6 +369,113 @@ func initproviders() {
 			}
 		}
 	})
+
+	// Register book/audiobook/music metadata providers
+	general := config.GetSettingsGeneral()
+
+	// Initialize OpenLibrary provider (free, no API key required)
+	if provider := openlibrary.NewProviderWithConfig(base.ClientConfig{
+		Timeout:          30 * time.Second,
+		RateLimitCalls:   100,
+		RateLimitSeconds: 60,
+		UserAgent:        general.UserAgent,
+	}); provider != nil {
+		providers.SetOpenLibrary(provider)
+		logger.Logtype(logger.StatusDebug, 0).Msg("Registered OpenLibrary provider")
+	}
+
+	// Initialize Goodreads provider if API key is configured
+	if apiKey := general.GoodreadsAPIKey; apiKey != "" {
+		if provider := goodreads.NewProvider(apiKey); provider != nil {
+			providers.SetGoodreads(provider)
+			logger.Logtype(logger.StatusDebug, 0).Msg("Registered Goodreads provider")
+		}
+	}
+
+	// Initialize music metadata providers according to the priority list.
+	// GetMusicMetaSourcePriority returns all providers when the list is empty (backwards-compatible).
+	for _, source := range config.GetMusicMetaSourcePriority() {
+		switch source {
+		case "musicbrainz":
+			if provider := musicbrainz.NewProviderWithConfig(base.ClientConfig{
+				Timeout:          30 * time.Second,
+				RateLimitCalls:   1,
+				RateLimitSeconds: 1,
+				UserAgent:        general.UserAgent,
+			}); provider != nil {
+				providers.SetMusicBrainz(provider)
+				logger.Logtype(logger.StatusDebug, 0).Msg("Registered MusicBrainz provider")
+			}
+		case "acoustid":
+			// API key already validated by GetMusicMetaSourcePriority.
+			if provider := acoustid.NewProviderWithConfig(base.ClientConfig{
+				Timeout:          15 * time.Second,
+				RateLimitCalls:   3,
+				RateLimitSeconds: 1,
+				UserAgent:        general.UserAgent,
+			}, general.AcoustIDAPIKey); provider != nil {
+				providers.SetAcoustID(provider)
+				logger.Logtype(logger.StatusDebug, 0).Msg("Registered AcoustID provider")
+			}
+		case "lastfm":
+			// API key already validated by GetMusicMetaSourcePriority.
+			if provider := lastfm.NewProvider(); provider != nil {
+				providers.SetLastFM(provider)
+				logger.Logtype(logger.StatusDebug, 0).Msg("Registered Last.fm provider")
+			}
+		case "discogs":
+			var dProvider *discogs.Provider
+			if general.DiscogsToken != "" {
+				dProvider = discogs.NewProviderWithToken(general.DiscogsToken)
+			} else {
+				dProvider = discogs.NewProvider()
+			}
+			if dProvider != nil {
+				providers.SetDiscogs(dProvider)
+				logger.Logtype(logger.StatusDebug, 0).Msg("Registered Discogs provider")
+			}
+		case "deezer":
+			if dzProvider := deezer.NewProvider(); dzProvider != nil {
+				providers.SetDeezer(dzProvider)
+				logger.Logtype(logger.StatusDebug, 0).Msg("Registered Deezer provider")
+			}
+		case "theaudiodb":
+			if tadbProvider := theaudiodb.NewProvider(); tadbProvider != nil {
+				providers.SetTheAudioDB(tadbProvider)
+				logger.Logtype(logger.StatusDebug, 0).Msg("Registered TheAudioDB provider")
+			}
+		case "itunes":
+			if itProvider := itunes.NewProvider(); itProvider != nil {
+				providers.SetITunes(itProvider)
+				logger.Logtype(logger.StatusDebug, 0).Msg("Registered iTunes provider")
+			}
+		}
+	}
+
+	// Initialize Audnex provider (region-agnostic, provides chapter data)
+	if provider := audnex.NewProviderWithConfig(base.ClientConfig{
+		Timeout:          30 * time.Second,
+		RateLimitCalls:   10,
+		RateLimitSeconds: 1,
+		UserAgent:        general.UserAgent,
+	}); provider != nil {
+		providers.SetAudnex(provider)
+		logger.Logtype(logger.StatusDebug, 0).Msg("Registered Audnex provider")
+	}
+
+	// Initialize Audible provider for US region (default)
+	// Region-specific providers will be created on-demand based on media type configs
+	if provider := audible.NewProviderWithConfig(base.ClientConfig{
+		Timeout:          30 * time.Second,
+		RateLimitCalls:   1,
+		RateLimitSeconds: 2,
+		UserAgent:        general.UserAgent,
+	}, audible.RegionUS); provider != nil {
+		providers.SetAudible("us", provider)
+		logger.Logtype(logger.StatusDebug, 0).
+			Str("region", "us").
+			Msg("Registered Audible provider (default US region)")
+	}
 }
 
 // main initializes and starts the Go Media Downloader application server.
@@ -364,6 +528,7 @@ func main() {
 					}
 
 					fmt.Printf("ERROR: %s", err)
+
 				// Read from Events.
 				case e, ok := <-watcher.Events:
 					if !ok { // Channel was closed (i.e. Watcher.Close() was called).
@@ -412,7 +577,7 @@ func main() {
 		LogColorize:   general.LogColorize,
 		TimeFormat:    general.TimeFormat,
 		TimeZone:      general.TimeZone,
-		LogZeroValues: general.LogZeroValues,
+		// LogZeroValues: general.LogZeroValues,
 	})
 	logger.Logtype("info", 0).Msg("Starting go_media_downloader")
 	logger.Logtype("info", 0).Msg("Version: " + version + " " + githash)
@@ -568,8 +733,11 @@ func main() {
 	searcher.Init()
 
 	logger.Logtype("info", 0).Msg("Refresh Cache")
-	utils.Refreshcache(true)
-	utils.Refreshcache(false)
+	utils.Refreshcache(config.MediaTypeSeries)
+	utils.Refreshcache(config.MediaTypeMovie)
+	utils.Refreshcache(config.MediaTypeBook)
+	utils.Refreshcache(config.MediaTypeAudiobook)
+	utils.Refreshcache(config.MediaTypeMusic)
 	logger.Logtype("info", 0).Msg("Starting Scheduler")
 	scheduler.InitScheduler()
 	worker.StartCronWorker()
@@ -590,6 +758,7 @@ func main() {
 	if !strings.EqualFold(general.LogLevel, logger.StrDebug) {
 		gin.SetMode(gin.ReleaseMode)
 	}
+
 	// router.Use(ginlog.Logger(logger.Log), cors.New(corsconfig), gin.Recovery())
 	router.Static("/static", "./static")
 
@@ -604,6 +773,12 @@ func main() {
 	api.AddAllRoutes(routerapi.Group("/all"))
 	api.AddMoviesRoutes(routerapi.Group("/movies"))
 	api.AddSeriesRoutes(routerapi.Group("/series"))
+	api.AddBooksRoutes(routerapi.Group("/books"))
+	api.AddAudiobooksRoutes(routerapi.Group("/audiobooks"))
+	api.AddMusicRoutes(routerapi.Group("/music"))
+
+	// 404 handler for unmatched routes
+	router.NoRoute(api.NotFoundPage)
 
 	// Less RAM Usage for static file - don't forget to recreate html file
 	router.Static("/swagger", "./docs")

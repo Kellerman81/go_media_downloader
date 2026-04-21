@@ -12,7 +12,10 @@ import (
 // and priority as parameters.
 // It returns any error from creating the Sabnzbd client, authenticating,
 // validating the authentication method, or adding the NZB.
-func SendToSabnzbd(downloaderName, server, apikey, urlv, category, nzbname string, priority int) error {
+func SendToSabnzbd(
+	downloaderName, server, apikey, urlv, category, nzbname string,
+	priority int,
+) error {
 	// Try v2 provider first
 	provider := providers.GetSABnzbd(downloaderName)
 	if provider != nil {

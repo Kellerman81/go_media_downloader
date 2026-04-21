@@ -50,6 +50,7 @@ func SendPushbulletMessage(configName, token, message, title string) error {
 			if err == nil {
 				return nil
 			}
+
 			// Log error but fall through to legacy client
 			logger.Logtype("debug", 0).
 				Err(err).

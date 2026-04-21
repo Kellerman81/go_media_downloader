@@ -14,7 +14,7 @@ func TestPoolObjGet(t *testing.T) {
 		t.Errorf("Expected initialized object, got %v", obj)
 	}
 
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		p.Put(obj)
 		obj2 := p.Get()
 		if obj != obj2 {
@@ -70,8 +70,7 @@ func TestSizedWaitGroupConcurrent(t *testing.T) {
 	results := make([]int, 0, 4)
 	var mu sync.Mutex
 
-	for i := 0; i < 4; i++ {
-		i := i
+	for i := range 4 {
 		go func() {
 			swg.Add()
 			defer swg.Done()

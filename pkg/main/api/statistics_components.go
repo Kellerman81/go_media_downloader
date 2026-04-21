@@ -96,8 +96,13 @@ func renderMovieDetails(stats MovieStatistics) gomponents.Node {
 		for quality, count := range stats.ByQuality {
 			qualityRows = append(qualityRows, html.Tr(
 				html.Td(gomponents.Text(quality)),
-				html.Td(html.Class("text-right"),
-					html.Span(html.Class("badge badge-primary text-dark"), gomponents.Textf("%d", count))),
+				html.Td(
+					html.Class("text-right"),
+					html.Span(
+						html.Class("badge badge-primary text-dark"),
+						gomponents.Textf("%d", count),
+					),
+				),
 			))
 		}
 	}
@@ -112,8 +117,13 @@ func renderMovieDetails(stats MovieStatistics) gomponents.Node {
 		for list, count := range stats.ByList {
 			listRows = append(listRows, html.Tr(
 				html.Td(gomponents.Text(list)),
-				html.Td(html.Class("text-right"),
-					html.Span(html.Class("badge badge-info text-dark"), gomponents.Textf("%d", count))),
+				html.Td(
+					html.Class("text-right"),
+					html.Span(
+						html.Class("badge badge-info text-dark"),
+						gomponents.Textf("%d", count),
+					),
+				),
 			))
 		}
 	}
@@ -164,8 +174,13 @@ func renderSeriesDetails(stats SeriesStatistics) gomponents.Node {
 		for quality, count := range stats.ByQuality {
 			qualityRows = append(qualityRows, html.Tr(
 				html.Td(gomponents.Text(quality)),
-				html.Td(html.Class("text-right"),
-					html.Span(html.Class("badge badge-success text-dark"), gomponents.Textf("%d", count))),
+				html.Td(
+					html.Class("text-right"),
+					html.Span(
+						html.Class("badge badge-success text-dark"),
+						gomponents.Textf("%d", count),
+					),
+				),
 			))
 		}
 	}
@@ -180,8 +195,13 @@ func renderSeriesDetails(stats SeriesStatistics) gomponents.Node {
 		for list, count := range stats.ByList {
 			listRows = append(listRows, html.Tr(
 				html.Td(gomponents.Text(list)),
-				html.Td(html.Class("text-right"),
-					html.Span(html.Class("badge badge-info text-dark"), gomponents.Textf("%d", count))),
+				html.Td(
+					html.Class("text-right"),
+					html.Span(
+						html.Class("badge badge-info text-dark"),
+						gomponents.Textf("%d", count),
+					),
+				),
 			))
 		}
 	}
@@ -239,8 +259,14 @@ func renderStorageDetails(stats StorageStatistics) gomponents.Node {
 				html.Td(html.Strong(gomponents.Text(mediaType))),
 				html.Td(html.Small(html.Class("text-muted"), gomponents.Text(info.Path))),
 				html.Td(html.Class("text-right text-dark"), gomponents.Textf("%d", info.FileCount)),
-				html.Td(html.Class("text-right text-dark"), gomponents.Textf("%d", info.FolderCount)),
-				html.Td(html.Class("text-right text-dark"), gomponents.Text(formatBytes(uint64(info.TotalSize)))),
+				html.Td(
+					html.Class("text-right text-dark"),
+					gomponents.Textf("%d", info.FolderCount),
+				),
+				html.Td(
+					html.Class("text-right text-dark"),
+					gomponents.Text(formatBytes(uint64(info.TotalSize))),
+				),
 			))
 		}
 	}
@@ -619,6 +645,7 @@ func formatTimestamp(t time.Time) string {
 	if t.IsZero() {
 		return "-"
 	}
+
 	return t.Format("2006-01-02 15:04:05")
 }
 
@@ -626,5 +653,6 @@ func truncateString(s string, maxLen int) string {
 	if len(s) <= maxLen {
 		return s
 	}
+
 	return s[:maxLen-3] + "..."
 }

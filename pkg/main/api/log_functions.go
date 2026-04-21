@@ -230,15 +230,18 @@ func analyzePerformanceMetrics(entries []LogEntry) []PerformanceMetric {
 		}
 
 		// Look for response time information
-		if matches := responseTimeRegex.FindStringSubmatch(entry.Message); matches != nil {
-			if responseTime, err := strconv.ParseFloat(matches[2], 64); err == nil {
-				// Convert to milliseconds
-				if strings.Contains(matches[3], "s") && !strings.Contains(matches[3], "ms") {
-					responseTime *= 1000
-				}
+		matches := responseTimeRegex.FindStringSubmatch(entry.Message)
+		if matches == nil {
+			continue
+		}
 
-				responseTimes = append(responseTimes, responseTime)
+		if responseTime, err := strconv.ParseFloat(matches[2], 64); err == nil {
+			// Convert to milliseconds
+			if strings.Contains(matches[3], "s") && !strings.Contains(matches[3], "ms") {
+				responseTime *= 1000
 			}
+
+			responseTimes = append(responseTimes, responseTime)
 		}
 	}
 
@@ -311,10 +314,13 @@ func analyzeAccessPatterns(entries []LogEntry) []AccessPattern {
 		}
 
 		// Analyze IP addresses
-		if matches := ipRegex.FindAllString(entry.Message, -1); matches != nil {
-			for _, ip := range matches {
-				ipCounts[ip]++
-			}
+		matches := ipRegex.FindAllString(entry.Message, -1)
+		if matches == nil {
+			continue
+		}
+
+		for _, ip := range matches {
+			ipCounts[ip]++
 		}
 	}
 
@@ -511,7 +517,7 @@ func getHealthStatus(value, threshold float64) string {
 	return "healthy"
 }
 
-// Data structures for log analysis.
+// LogEntry represents a parsed log entry for log analysis.
 type LogEntry struct {
 	Timestamp time.Time
 	Level     string

@@ -20,11 +20,11 @@ func TestPoolobjRaceConditions(t *testing.T) {
 		numGoroutines := 50
 		iterations := 100
 
-		for i := 0; i < numGoroutines; i++ {
+		for i := range numGoroutines {
 			wg.Add(1)
 			go func(id int) {
 				defer wg.Done()
-				for j := 0; j < iterations; j++ {
+				for range iterations {
 					// Get object from pool
 					obj := pool.Get()
 					if obj == nil {
@@ -55,11 +55,9 @@ func TestPoolobjRaceConditions(t *testing.T) {
 		var putObjects int64
 
 		// Goroutines creating new objects
-		for i := 0; i < 10; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				for j := 0; j < 100; j++ {
+		for range 10 {
+			wg.Go(func() {
+				for range 100 {
 					obj := pool.NewObj()
 					atomic.AddInt64(&createdObjects, 1)
 
@@ -68,15 +66,13 @@ func TestPoolobjRaceConditions(t *testing.T) {
 						atomic.AddInt64(&putObjects, 1)
 					}
 				}
-			}()
+			})
 		}
 
 		// Goroutines getting and putting objects
-		for i := 0; i < 10; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				for j := 0; j < 50; j++ {
+		for range 10 {
+			wg.Go(func() {
+				for range 50 {
 					obj := pool.Get()
 					if obj != nil {
 						// Simulate some work
@@ -84,7 +80,7 @@ func TestPoolobjRaceConditions(t *testing.T) {
 						pool.Put(obj)
 					}
 				}
-			}()
+			})
 		}
 
 		wg.Wait()
@@ -97,7 +93,7 @@ func TestPoolobjRaceConditions(t *testing.T) {
 		numPools := 20
 
 		// Create multiple pools concurrently
-		for i := 0; i < numPools; i++ {
+		for i := range numPools {
 			wg.Add(1)
 			go func(id int) {
 				defer wg.Done()
@@ -108,7 +104,7 @@ func TestPoolobjRaceConditions(t *testing.T) {
 				)
 
 				// Immediately start using the pool
-				for j := 0; j < 10; j++ {
+				for range 10 {
 					obj := pool.Get()
 					if obj != nil {
 						pool.Put(obj)
@@ -128,7 +124,7 @@ func TestSizedWaitGroupRaceConditions(t *testing.T) {
 		var wg sync.WaitGroup
 		numGoroutines := 50
 
-		for i := 0; i < numGoroutines; i++ {
+		for i := range numGoroutines {
 			wg.Add(1)
 			go func(id int) {
 				defer wg.Done()
@@ -155,7 +151,7 @@ func TestSizedWaitGroupRaceConditions(t *testing.T) {
 		var wg sync.WaitGroup
 		numGroups := 10
 
-		for i := 0; i < numGroups; i++ {
+		for i := range numGroups {
 			wg.Add(1)
 			go func(id int) {
 				defer wg.Done()
@@ -164,7 +160,7 @@ func TestSizedWaitGroupRaceConditions(t *testing.T) {
 				var localWg sync.WaitGroup
 
 				// Start workers for this group
-				for j := 0; j < 20; j++ {
+				for j := range 20 {
 					localWg.Add(1)
 					go func(workerID int) {
 						defer localWg.Done()
@@ -196,7 +192,7 @@ func TestSizedWaitGroupRaceConditions(t *testing.T) {
 		var completed int64
 
 		// Start many workers
-		for i := 0; i < 1000; i++ {
+		for i := range 1000 {
 			go func(id int) {
 				swg.Add()
 				defer swg.Done()
@@ -233,7 +229,7 @@ func TestPoolStressTest(t *testing.T) {
 		duration := 3 * time.Second
 
 		// Start many workers
-		for i := 0; i < 50; i++ {
+		for i := range 50 {
 			wg.Add(1)
 			go func(workerID int) {
 				defer wg.Done()
@@ -304,16 +300,14 @@ func TestPoolDestructorRace(t *testing.T) {
 	var wg sync.WaitGroup
 
 	// Multiple goroutines putting objects
-	for i := 0; i < 20; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for j := 0; j < 10; j++ {
+	for range 20 {
+		wg.Go(func() {
+			for range 10 {
 				obj := pool.NewObj()
 				*obj = "test_data"
 				pool.Put(obj) // This should call destructor
 			}
-		}()
+		})
 	}
 
 	wg.Wait()

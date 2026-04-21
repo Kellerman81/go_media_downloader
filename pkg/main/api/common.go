@@ -2,10 +2,13 @@ package api
 
 import (
 	"database/sql"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/gin-gonic/gin"
 )
@@ -15,7 +18,6 @@ const (
 	StrStarted     = "started"
 	StrOK          = "ok"
 	StrNothingDone = "Nothing Done"
-	StrData        = "data"
 	StrTotal       = "total"
 	StrError       = "error"
 	StrJobLower    = "job"
@@ -157,7 +159,7 @@ func validateJobParam(job string, allowedJobs string) bool {
 // splitAndTrim splits a string by delimiter and trims whitespace.
 func splitAndTrim(s, delimiter string) []string {
 	parts := make([]string, 0)
-	for _, part := range strings.Split(s, delimiter) {
+	for part := range strings.SplitSeq(s, delimiter) {
 		if trimmed := strings.TrimSpace(part); trimmed != "" {
 			parts = append(parts, trimmed)
 		}
@@ -204,10 +206,45 @@ func handleDBInsertOrUpdate(ctx *gin.Context, result sql.Result, err error, isIn
 	sendJSONResponse(ctx, http.StatusOK, rows)
 }
 
+// buildChartDateURL constructs the date-specific chart URL by formatting the
+// supplied date according to cfg.ChartDateFormat and substituting the {date}
+// placeholder in cfg.ChartDateURLPattern.
+//
+// ChartDateFormat semantics:
+//   - "" or "timestamp_ms" → Unix millisecond timestamp (offiziellecharts.de)
+//   - "timestamp"          → Unix second timestamp
+//   - anything else        → Go time.Format layout (e.g. "20060102" for officialcharts.com)
+//
+// Returns an error when ChartDateURLPattern is empty or the date cannot be parsed.
+func buildChartDateURL(cfg *config.ListsConfig, dateStr string) (string, error) {
+	if cfg.ChartDateURLPattern == "" {
+		return "", fmt.Errorf("chart_date_url_pattern is not configured for this list")
+	}
+
+	t, err := time.Parse("2006-01-02", dateStr)
+	if err != nil {
+		return "", fmt.Errorf("invalid date %q: expected YYYY-MM-DD: %w", dateStr, err)
+	}
+
+	var dateValue string
+
+	switch cfg.ChartDateFormat {
+	case "", "timestamp_ms":
+		dateValue = strconv.FormatInt(t.UnixMilli(), 10)
+	case "timestamp":
+		dateValue = strconv.FormatInt(t.Unix(), 10)
+	default:
+		dateValue = t.Format(cfg.ChartDateFormat)
+	}
+
+	return strings.ReplaceAll(cfg.ChartDateURLPattern, "{date}", dateValue), nil
+}
+
 // getCSRFToken extracts CSRF token from gin context if available.
 func getCSRFToken(c *gin.Context) string {
 	if token, exists := c.Get("csrf_token"); exists {
 		return token.(string)
 	}
+
 	return ""
 }

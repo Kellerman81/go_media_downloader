@@ -3,6 +3,7 @@ package api
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
@@ -238,11 +239,5 @@ func isMediaFile(filename string) bool {
 		".mpg", ".mpeg", ".3gp", ".ogv", ".ts", ".m2ts",
 	}
 
-	for _, mediaExt := range mediaExtensions {
-		if ext == mediaExt {
-			return true
-		}
-	}
-
-	return false
+	return slices.Contains(mediaExtensions, ext)
 }

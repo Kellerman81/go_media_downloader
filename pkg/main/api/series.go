@@ -1,4 +1,3 @@
-// series
 package api
 
 import (
@@ -14,6 +13,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/downloader"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/metadata"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/searcher"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/utils"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/worker"
@@ -30,6 +30,8 @@ func AddSeriesRoutes(routerseries *gin.RouterGroup) {
 		routerseries.GET("/list/:name", apiSeriesListGet)
 		routerseries.POST("/list/", updateSeries)
 		routerseries.DELETE("/list/:id", apiSeriesListDelete)
+
+		routerseries.GET("/metadata/:tvdb", apiSeriesMetadataGet)
 
 		routerseries.GET("/all/refresh", apirefreshSeriesInc)
 		routerseries.GET("/all/refreshall", apirefreshSeries)
@@ -420,10 +422,22 @@ func apiseriesAllJobs(c *gin.Context) {
 						"Feeds",
 					)
 				} else if c.Param(StrJobLower) == logger.StrCheckMissing || c.Param(StrJobLower) == logger.StrCheckMissingFlag || c.Param(StrJobLower) == logger.StrReachedFlag {
-					worker.Dispatch(c.Param(StrJobLower)+"_series_"+media.Name, func(key uint32, ctx context.Context) error {
-						return utils.SingleJobs(ctx, c.Param(StrJobLower), cfgpstr, listname, true, key)
-					}, "Data")
+					worker.Dispatch(
+						c.Param(StrJobLower)+"_series_"+media.Name,
+						func(key uint32, ctx context.Context) error {
+							return utils.SingleJobs(
+								ctx,
+								c.Param(StrJobLower),
+								cfgpstr,
+								listname,
+								true,
+								key,
+							)
+						},
+						"Data",
+					)
 				}
+
 				// cfg_list.Close()
 			}
 
@@ -441,6 +455,7 @@ func apiseriesAllJobs(c *gin.Context) {
 				"Data",
 			)
 		}
+
 		// cfgSerie.Close()
 		return nil
 	})
@@ -472,7 +487,7 @@ func apiseriesAllJobs(c *gin.Context) {
 // @Router       /api/series/job/{job}/{name} [get].
 func apiseriesJobs(c *gin.Context) {
 	allowed := false
-	for _, allow := range strings.Split(allowedjobsseriesstr, ",") {
+	for allow := range strings.SplitSeq(allowedjobsseriesstr, ",") {
 		if strings.EqualFold(allow, c.Param(StrJobLower)) {
 			allowed = true
 			break
@@ -575,6 +590,7 @@ func apiseriesJobs(c *gin.Context) {
 							"Data",
 						)
 					}
+
 					// cfg_list.Close()
 				},
 			)
@@ -644,7 +660,6 @@ func updateDBSeries(c *gin.Context) {
 			"dbseries",
 			[]string{
 				"Seriename",
-				"Aliases",
 				"Season",
 				"Status",
 				"Firstaired",
@@ -672,7 +687,6 @@ func updateDBSeries(c *gin.Context) {
 				"Identifiedby",
 			},
 			dbserie.Seriename,
-			dbserie.Aliases,
 			dbserie.Season,
 			dbserie.Status,
 			dbserie.Firstaired,
@@ -700,8 +714,65 @@ func updateDBSeries(c *gin.Context) {
 			dbserie.Identifiedby,
 		)
 	} else {
-		inres, inerr = database.UpdateArray("dbseries", []string{"Seriename", "Aliases", "Season", "Status", "Firstaired", "Network", "Runtime", "Language", "Genre", "Overview", "Rating", "Siterating", "Siterating_Count", "Slug", "Trakt_ID", "Imdb_ID", "Thetvdb_ID", "Freebase_M_ID", "Freebase_ID", "Tvrage_ID", "Facebook", "Instagram", "Twitter", "Banner", "Poster", "Fanart", "Identifiedby"},
-			"id != 0 and id = ?", dbserie.Seriename, dbserie.Aliases, dbserie.Season, dbserie.Status, dbserie.Firstaired, dbserie.Network, dbserie.Runtime, dbserie.Language, dbserie.Genre, dbserie.Overview, dbserie.Rating, dbserie.Siterating, dbserie.SiteratingCount, dbserie.Slug, dbserie.TraktID, dbserie.ImdbID, dbserie.ThetvdbID, dbserie.FreebaseMID, dbserie.FreebaseID, dbserie.TvrageID, dbserie.Facebook, dbserie.Instagram, dbserie.Twitter, dbserie.Banner, dbserie.Poster, dbserie.Fanart, dbserie.Identifiedby, dbserie.ID)
+		inres, inerr = database.UpdateArray(
+			"dbseries",
+			[]string{
+				"Seriename",
+				"Season",
+				"Status",
+				"Firstaired",
+				"Network",
+				"Runtime",
+				"Language",
+				"Genre",
+				"Overview",
+				"Rating",
+				"Siterating",
+				"Siterating_Count",
+				"Slug",
+				"Trakt_ID",
+				"Imdb_ID",
+				"Thetvdb_ID",
+				"Freebase_M_ID",
+				"Freebase_ID",
+				"Tvrage_ID",
+				"Facebook",
+				"Instagram",
+				"Twitter",
+				"Banner",
+				"Poster",
+				"Fanart",
+				"Identifiedby",
+			},
+			"id != 0 and id = ?",
+			dbserie.Seriename,
+			dbserie.Season,
+			dbserie.Status,
+			dbserie.Firstaired,
+			dbserie.Network,
+			dbserie.Runtime,
+			dbserie.Language,
+			dbserie.Genre,
+			dbserie.Overview,
+			dbserie.Rating,
+			dbserie.Siterating,
+			dbserie.SiteratingCount,
+			dbserie.Slug,
+			dbserie.TraktID,
+			dbserie.ImdbID,
+			dbserie.ThetvdbID,
+			dbserie.FreebaseMID,
+			dbserie.FreebaseID,
+			dbserie.TvrageID,
+			dbserie.Facebook,
+			dbserie.Instagram,
+			dbserie.Twitter,
+			dbserie.Banner,
+			dbserie.Poster,
+			dbserie.Fanart,
+			dbserie.Identifiedby,
+			dbserie.ID,
+		)
 	}
 
 	handleDBInsertOrUpdate(c, inres, inerr, counter == 0)
@@ -757,8 +828,29 @@ func updateDBEpisode(c *gin.Context) {
 			dbserieepisode.DbserieID,
 		)
 	} else {
-		inres, inerr = database.UpdateArray("dbserie_episodes", []string{"episode", "season", "identifier", "title", "first_aired", "overview", "poster", "dbserie_id"},
-			"id != 0 and id = ?", dbserieepisode.Episode, dbserieepisode.Season, dbserieepisode.Identifier, dbserieepisode.Title, dbserieepisode.FirstAired, dbserieepisode.Overview, dbserieepisode.Poster, dbserieepisode.DbserieID, dbserieepisode.ID)
+		inres, inerr = database.UpdateArray(
+			"dbserie_episodes",
+			[]string{
+				"episode",
+				"season",
+				"identifier",
+				"title",
+				"first_aired",
+				"overview",
+				"poster",
+				"dbserie_id",
+			},
+			"id != 0 and id = ?",
+			dbserieepisode.Episode,
+			dbserieepisode.Season,
+			dbserieepisode.Identifier,
+			dbserieepisode.Title,
+			dbserieepisode.FirstAired,
+			dbserieepisode.Overview,
+			dbserieepisode.Poster,
+			dbserieepisode.DbserieID,
+			dbserieepisode.ID,
+		)
 	}
 
 	handleDBInsertOrUpdate(c, inres, inerr, counter == 0)
@@ -802,8 +894,17 @@ func updateSeries(c *gin.Context) {
 			serie.DontSearch,
 		)
 	} else {
-		inres, inerr = database.UpdateArray(logger.StrSeries, []string{"dbserie_id", "listname", "rootpath", "dont_upgrade", "dont_search"},
-			"id != 0 and id = ?", serie.DbserieID, serie.Listname, serie.Rootpath, serie.DontUpgrade, serie.DontSearch, serie.ID)
+		inres, inerr = database.UpdateArray(
+			logger.StrSeries,
+			[]string{"dbserie_id", "listname", "rootpath", "dont_upgrade", "dont_search"},
+			"id != 0 and id = ?",
+			serie.DbserieID,
+			serie.Listname,
+			serie.Rootpath,
+			serie.DontUpgrade,
+			serie.DontSearch,
+			serie.ID,
+		)
 	}
 
 	handleDBInsertOrUpdate(c, inres, inerr, counter == 0)
@@ -861,8 +962,31 @@ func updateEpisode(c *gin.Context) {
 			serieepisode.DontSearch,
 		)
 	} else {
-		inres, inerr = database.UpdateArray("serie_episodes", []string{"dbserie_id", "serie_id", "missing", "quality_profile", "dbserie_episode_id", "blacklisted", "quality_reached", "dont_upgrade", "dont_search"},
-			"id != 0 and id = ?", serieepisode.DbserieID, serieepisode.SerieID, serieepisode.Missing, serieepisode.QualityProfile, serieepisode.DbserieEpisodeID, serieepisode.Blacklisted, serieepisode.QualityReached, serieepisode.DontUpgrade, serieepisode.DontSearch, serieepisode.ID)
+		inres, inerr = database.UpdateArray(
+			"serie_episodes",
+			[]string{
+				"dbserie_id",
+				"serie_id",
+				"missing",
+				"quality_profile",
+				"dbserie_episode_id",
+				"blacklisted",
+				"quality_reached",
+				"dont_upgrade",
+				"dont_search",
+			},
+			"id != 0 and id = ?",
+			serieepisode.DbserieID,
+			serieepisode.SerieID,
+			serieepisode.Missing,
+			serieepisode.QualityProfile,
+			serieepisode.DbserieEpisodeID,
+			serieepisode.Blacklisted,
+			serieepisode.QualityReached,
+			serieepisode.DontUpgrade,
+			serieepisode.DontSearch,
+			serieepisode.ID,
+		)
 	}
 
 	handleDBInsertOrUpdate(c, inres, inerr, counter == 0)
@@ -1479,6 +1603,7 @@ func apiSeriesEpisodeSearchDownload(c *gin.Context) {
 	if !bindJSONWithValidation(c, &nzb) {
 		return
 	}
+
 	// defer logger.ClearVar(&nzb)
 
 	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) error {
@@ -1529,4 +1654,92 @@ func apiSeriesClearHistoryID(c *gin.Context) {
 
 	inres, inerr := database.DeleteRow("serie_episode_histories", "serie_episode_id = ?", id)
 	handleDBInsertOrUpdate(c, inres, inerr, false)
+}
+
+// @Summary      Get Series Metadata
+// @Description  Gets metadata of a series by TVDB ID (for testing). Use ?update=1 to save results to DB.
+// @Tags         series
+// @Param        tvdb      path   int     true   "TVDB ID"
+// @Param        provider  query  string  false  "Provider: tvdb (default), tmdb, trakt"
+// @Param        update    query  string  false  "Save to DB: 1"
+// @Param        apikey    query  string  true   "apikey"
+// @Success      200  {object}  Jsondata{data=database.Dbserie}
+// @Failure      401  {object}  Jsonerror
+// @Router       /api/series/metadata/{tvdb} [get].
+func apiSeriesMetadataGet(ctx *gin.Context) {
+	tvdbID, err := strconv.Atoi(ctx.Param("tvdb"))
+	if err != nil || tvdbID == 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid tvdb id"})
+		return
+	}
+
+	var dbserie database.Dbserie
+
+	dbserie.ThetvdbID = tvdbID
+
+	var querytmdb, querytrakt bool
+	if queryParam, ok := ctx.GetQuery("provider"); ok {
+		switch queryParam {
+		case "tmdb":
+			querytmdb = true
+		case "trakt":
+			querytrakt = true
+		}
+	} else {
+		querytmdb = config.GetSettingsGeneral().SerieMetaSourceTmdb
+		querytrakt = config.GetSettingsGeneral().SerieMetaSourceTrakt
+	}
+
+	metadata.SerieGetMetadata(&dbserie, "", querytmdb, querytrakt, true, nil)
+
+	if queryParam, ok := ctx.GetQuery("update"); ok && queryParam == "1" {
+		database.Scanrowsdyn(false, database.QueryDbseriesGetIDByTvdb, &dbserie.ID, &tvdbID)
+
+		if dbserie.ID == 0 {
+			inres, inErr := database.ExecNid(
+				"insert into dbseries (seriename, thetvdb_id, identifiedby) values (?, ?, ?)",
+				&dbserie.Seriename,
+				&tvdbID,
+				&dbserie.Identifiedby,
+			)
+			if inErr == nil {
+				dbserie.ID = logger.Int64ToUint(inres)
+			}
+		}
+
+		if dbserie.ID != 0 {
+			database.ExecN(
+				"update dbseries SET Seriename = ?, Season = ?, Status = ?, Firstaired = ?, Network = ?, Runtime = ?, Language = ?, Genre = ?, Overview = ?, Rating = ?, Siterating = ?, Siterating_Count = ?, Slug = ?, Trakt_ID = ?, Imdb_ID = ?, Thetvdb_ID = ?, Freebase_M_ID = ?, Freebase_ID = ?, Tvrage_ID = ?, Facebook = ?, Instagram = ?, Twitter = ?, Banner = ?, Poster = ?, Fanart = ?, Identifiedby = ? where id = ?",
+				&dbserie.Seriename,
+				&dbserie.Season,
+				&dbserie.Status,
+				&dbserie.Firstaired,
+				&dbserie.Network,
+				&dbserie.Runtime,
+				&dbserie.Language,
+				&dbserie.Genre,
+				&dbserie.Overview,
+				&dbserie.Rating,
+				&dbserie.Siterating,
+				&dbserie.SiteratingCount,
+				&dbserie.Slug,
+				&dbserie.TraktID,
+				&dbserie.ImdbID,
+				&dbserie.ThetvdbID,
+				&dbserie.FreebaseMID,
+				&dbserie.FreebaseID,
+				&dbserie.TvrageID,
+				&dbserie.Facebook,
+				&dbserie.Instagram,
+				&dbserie.Twitter,
+				&dbserie.Banner,
+				&dbserie.Poster,
+				&dbserie.Fanart,
+				&dbserie.Identifiedby,
+				&dbserie.ID,
+			)
+		}
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"data": dbserie})
 }

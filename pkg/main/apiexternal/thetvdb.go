@@ -8,10 +8,23 @@ import (
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/base"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/tvdb"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/providers"
 )
+
+// CollectedEpisode represents episode data collected from TVDB and/or Trakt.
+// This struct is used to merge data from both sources before writing to the database.
+type CollectedEpisode struct {
+	Season         int
+	Episode        int
+	AbsoluteNumber int
+	Title          string
+	FirstAired     time.Time
+	Overview       string
+	Poster         string
+}
 
 type TheTVDBSeries struct {
 	Data struct {
@@ -89,7 +102,7 @@ func NewTvdbClient(seconds uint8, calls int, disabletls bool, timeoutseconds uin
 		CircuitBreakerTimeout:     60 * time.Second,
 		CircuitBreakerHalfOpenMax: 2,
 		EnableStats:               true,
-		UserAgent:                 "go-media-downloader/2.0",
+		UserAgent:                 config.GetSettingsGeneral().UserAgent,
 		DisableTLSVerify:          disabletls,
 	}
 	// Note: apiKey, userKey, username would need to be provided from config
@@ -141,8 +154,8 @@ func GetTvdbSeries(id int, language string) (*TheTVDBSeries, error) {
 		}
 
 		// Convert genres
-		for _, g := range details.Genres {
-			series.Data.Genre = append(series.Data.Genre, g.Name)
+		for i := range details.Genres {
+			series.Data.Genre = append(series.Data.Genre, details.Genres[i].Name)
 		}
 
 		return series, nil
@@ -151,57 +164,101 @@ func GetTvdbSeries(id int, language string) (*TheTVDBSeries, error) {
 	return nil, errors.New("client empty")
 }
 
-// GetTvdbSeriesEpisodes retrieves all episodes for the given TV series ID from
-// TheTVDB API. It accepts the series ID, preferred language, and database series
-// ID. It retrieves the episode data, checks for existing episodes to avoid
-// duplicates, and inserts any missing episodes into the database. If there are
-// multiple pages of results, it fetches additional pages.
-func UpdateTvdbSeriesEpisodes(id int, language string, dbid *uint) {
+// CollectTvdbSeriesEpisodes retrieves all episodes for the given TV series ID from
+// TheTVDB API and returns them as a map keyed by "season-episode" for easy merging.
+// This function does NOT write to the database - use WriteCollectedEpisodesToDB for that.
+func CollectTvdbSeriesEpisodes(id int, language string) map[string]*CollectedEpisode {
+	episodes := make(map[string]*CollectedEpisode)
+
 	// Use v2 provider if available
 	if provider := providers.GetTVDB(); provider != nil {
-		episodes, err := provider.GetAllEpisodes(context.Background(), id)
+		apiEpisodes, err := provider.GetAllEpisodes(context.Background(), id)
 		if err != nil {
 			logger.Logtype("error", 1).
 				Int("series_id", id).
 				Err(err).
 				Msg("Error getting episodes from v2 provider")
 
-			return
+			return episodes
 		}
 
-		// Get existing episodes to avoid duplicates
-		tbl := database.Getrowssize[database.DbstaticTwoString](
-			false,
-			database.QueryDbserieEpisodesCountByDBID,
-			database.QueryDbserieEpisodesGetSeasonEpisodeByDBID,
-			dbid,
-		)
+		for i := range apiEpisodes {
+			ep := apiEpisodes[i]
 
-		// Insert missing episodes
-		for _, ep := range episodes {
-			if checkdbtwostrings(tbl, ep.SeasonNumber, ep.EpisodeNumber) {
-				continue
+			episodes[strconv.Itoa(ep.SeasonNumber)+"-"+strconv.Itoa(ep.EpisodeNumber)] = &CollectedEpisode{
+				Season:         ep.SeasonNumber,
+				Episode:        ep.EpisodeNumber,
+				AbsoluteNumber: ep.AbsoluteNumber,
+				Title:          ep.Name,
+				FirstAired:     ep.AirDate,
+				Overview:       ep.Overview,
+				Poster:         ep.StillPath,
 			}
+		}
+	}
 
-			epi := strconv.Itoa(ep.EpisodeNumber)
-			seas := strconv.Itoa(ep.SeasonNumber)
-			ident := generateIdentifierStringFromInt(&ep.SeasonNumber, &ep.EpisodeNumber)
+	return episodes
+}
 
+// WriteCollectedEpisodesToDB writes the collected episodes to the database.
+// It checks for existing episodes and updates them, or inserts new ones.
+func WriteCollectedEpisodesToDB(episodes map[string]*CollectedEpisode, dbid *uint) {
+	if len(episodes) == 0 {
+		return
+	}
+
+	// Get existing episodes to check for updates
+	tbl := database.Getrowssize[database.DbstaticTwoString](
+		false,
+		database.QueryDbserieEpisodesCountByDBID,
+		database.QueryDbserieEpisodesGetSeasonEpisodeByDBID,
+		dbid,
+	)
+
+	var epi, seas, ident string
+	for _, ep := range episodes {
+		epi = strconv.Itoa(ep.Episode)
+		seas = strconv.Itoa(ep.Season)
+		ident = generateIdentifierStringFromInt(&ep.Season, &ep.Episode)
+
+		if checkdbtwostrings(tbl, ep.Season, ep.Episode) {
+			// Episode exists - update it
 			database.ExecN(
-				"insert into dbserie_episodes (episode, season, identifier, title, first_aired, overview, poster, dbserie_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+				"UPDATE dbserie_episodes SET title = ?, first_aired = ?, overview = ?, poster = ?, absolute_episode = ?, updated_at = CURRENT_TIMESTAMP WHERE dbserie_id = ? AND season = ? AND episode = ?",
+				&ep.Title,
+				&ep.FirstAired,
+				&ep.Overview,
+				&ep.Poster,
+				&ep.AbsoluteNumber,
+				dbid,
+				&seas,
+				&epi,
+			)
+		} else {
+			// Episode doesn't exist - insert it
+			database.ExecN(
+				"INSERT INTO dbserie_episodes (episode, season, identifier, title, first_aired, overview, poster, absolute_episode, dbserie_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
 				&epi,
 				&seas,
 				&ident,
-				&ep.Name,
-				&ep.AirDate,
+				&ep.Title,
+				&ep.FirstAired,
 				&ep.Overview,
-				&ep.StillPath,
+				&ep.Poster,
+				&ep.AbsoluteNumber,
 				dbid,
 			)
 		}
-
-		return
 	}
+}
+
+// UpdateTvdbSeriesEpisodes retrieves all episodes for the given TV series ID from
+// TheTVDB API and writes them to the database. This is a convenience function that
+// combines CollectTvdbSeriesEpisodes and WriteCollectedEpisodesToDB.
+// Deprecated: Use CollectTvdbSeriesEpisodes + MergeTraktIntoCollectedEpisodes + WriteCollectedEpisodesToDB instead.
+func UpdateTvdbSeriesEpisodes(id int, language string, dbid *uint) {
+	episodes := CollectTvdbSeriesEpisodes(id, language)
+	WriteCollectedEpisodesToDB(episodes, dbid)
 }
 
 // TestTVDBConnectivity tests the connectivity to the TVDB API

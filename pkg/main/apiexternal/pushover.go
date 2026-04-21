@@ -35,7 +35,9 @@ func SendPushoverMessage(cfgname, apikey, message, title, recipient string) erro
 
 	// Try v2 provider first
 	if cm, exists := apiexternal_v2.GetGlobalClientManager(); exists {
-		if provider, providerExists := cm.GetNotificationProvider("pushover_" + cfgname); providerExists {
+		if provider, providerExists := cm.GetNotificationProvider(
+			"pushover_" + cfgname,
+		); providerExists {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 
@@ -51,6 +53,7 @@ func SendPushoverMessage(cfgname, apikey, message, title, recipient string) erro
 			if err == nil {
 				return nil
 			}
+
 			// Log error but fall through to legacy client
 			logger.Logtype("debug", 0).
 				Err(err).

@@ -1,12 +1,24 @@
 package providers
 
 import (
+	"maps"
 	"sync"
 
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/acoustid"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/audible"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/audnex"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/deluge"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/deezer"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/itunes"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/theaudiodb"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/discogs"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/goodreads"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/lastfm"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/musicbrainz"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/newznab"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/nzbget"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/omdb"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/openlibrary"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/qbittorrent"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/rtorrent"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/sabnzbd"
@@ -42,6 +54,19 @@ var (
 	traktProvider  *trakt.Provider
 	tvdbProvider   *tvdb.Provider
 	tvmazeProvider *tvmaze.Provider
+
+	// Book/Audiobook/Music providers - stored as concrete types.
+	acoustidProvider    *acoustid.Provider
+	audibleProviders    = make(map[string]*audible.Provider) // Keyed by region
+	audnexProvider      *audnex.Provider
+	openlibraryProvider *openlibrary.Provider
+	goodreadsProvider   *goodreads.Provider
+	musicbrainzProvider *musicbrainz.Provider
+	lastfmProvider      *lastfm.Provider
+	discogsProvider     *discogs.Provider
+	deezerProvider      *deezer.Provider
+	theaudiodbProvider  *theaudiodb.Provider
+	itunesProvider      *itunes.Provider
 
 	// Indexer providers - map by name for configuration-driven lookup.
 	indexerProviders = make(map[string]*newznab.Provider)
@@ -166,20 +191,18 @@ func GetAllIndexers() map[string]*newznab.Provider {
 	defer registryMutex.RUnlock()
 
 	providers := make(map[string]*newznab.Provider, len(indexerProviders))
-	for name, provider := range indexerProviders {
-		providers[name] = provider
-	}
+	maps.Copy(providers, indexerProviders)
 
 	return providers
 }
 
 // GetAllIndexerDownloadClients returns the download clients from all indexer providers.
 // These track download statistics separately from search statistics.
-func GetAllIndexerDownloadClients() map[string]interface{} {
+func GetAllIndexerDownloadClients() map[string]any {
 	registryMutex.RLock()
 	defer registryMutex.RUnlock()
 
-	clients := make(map[string]interface{})
+	clients := make(map[string]any)
 	for name, provider := range indexerProviders {
 		if provider != nil && provider.DownloadClient != nil {
 			// Use the name from the DownloadClient which includes "_download" suffix
@@ -289,11 +312,11 @@ func GetNZBGet(name string) *nzbget.Provider {
 //
 
 // GetAllMetadataProviders returns all registered metadata providers.
-func GetAllMetadataProviders() map[string]interface{} {
+func GetAllMetadataProviders() map[string]any {
 	registryMutex.RLock()
 	defer registryMutex.RUnlock()
 
-	providers := make(map[string]interface{})
+	providers := make(map[string]any)
 	if omdbProvider != nil {
 		providers["omdb"] = omdbProvider
 	}
@@ -314,17 +337,39 @@ func GetAllMetadataProviders() map[string]interface{} {
 		providers["tvmaze"] = tvmazeProvider
 	}
 
+	if audnexProvider != nil {
+		providers["audnex"] = audnexProvider
+	}
+
+	if openlibraryProvider != nil {
+		providers["openlibrary"] = openlibraryProvider
+	}
+
+	if goodreadsProvider != nil {
+		providers["goodreads"] = goodreadsProvider
+	}
+
+	if musicbrainzProvider != nil {
+		providers["musicbrainz"] = musicbrainzProvider
+	}
+
+	for region, p := range audibleProviders {
+		if p != nil {
+			providers["audible_"+region] = p
+		}
+	}
+
 	return providers
 }
 
 // GetAllDownloadProviders returns all registered download providers.
 // This includes traditional download clients (qBittorrent, etc.) and
 // indexer download clients (which track NZB file downloads separately from searches).
-func GetAllDownloadProviders() map[string]interface{} {
+func GetAllDownloadProviders() map[string]any {
 	registryMutex.RLock()
 	defer registryMutex.RUnlock()
 
-	providers := make(map[string]interface{})
+	providers := make(map[string]any)
 	for name, provider := range qbittorrentProviders {
 		providers[name] = provider
 	}
@@ -348,6 +393,7 @@ func GetAllDownloadProviders() map[string]interface{} {
 	for name, provider := range nzbgetProviders {
 		providers[name] = provider
 	}
+
 	// Add indexer download clients (track NZB downloads separately from searches)
 	for name, provider := range indexerProviders {
 		if provider != nil && provider.DownloadClient != nil {
@@ -356,4 +402,181 @@ func GetAllDownloadProviders() map[string]interface{} {
 	}
 
 	return providers
+}
+
+//
+// Book/Audiobook/Music Providers
+//
+
+// SetAudible registers an Audible provider by region.
+func SetAudible(region string, provider *audible.Provider) {
+	registryMutex.Lock()
+	defer registryMutex.Unlock()
+
+	audibleProviders[region] = provider
+}
+
+// GetAudible returns an Audible provider for the specified region.
+// Returns nil if not found.
+func GetAudible(region string) *audible.Provider {
+	registryMutex.RLock()
+	defer registryMutex.RUnlock()
+	return audibleProviders[region]
+}
+
+// SetAudnex sets the global Audnex provider instance.
+func SetAudnex(provider *audnex.Provider) {
+	registryMutex.Lock()
+	defer registryMutex.Unlock()
+
+	audnexProvider = provider
+}
+
+// GetAudnex returns the global Audnex provider instance.
+// Returns nil if not initialized.
+func GetAudnex() *audnex.Provider {
+	registryMutex.RLock()
+	defer registryMutex.RUnlock()
+	return audnexProvider
+}
+
+// SetOpenLibrary sets the global OpenLibrary provider instance.
+func SetOpenLibrary(provider *openlibrary.Provider) {
+	registryMutex.Lock()
+	defer registryMutex.Unlock()
+
+	openlibraryProvider = provider
+}
+
+// GetOpenLibrary returns the global OpenLibrary provider instance.
+// Returns nil if not initialized.
+func GetOpenLibrary() *openlibrary.Provider {
+	registryMutex.RLock()
+	defer registryMutex.RUnlock()
+	return openlibraryProvider
+}
+
+// SetGoodreads sets the global Goodreads provider instance.
+func SetGoodreads(provider *goodreads.Provider) {
+	registryMutex.Lock()
+	defer registryMutex.Unlock()
+
+	goodreadsProvider = provider
+}
+
+// GetGoodreads returns the global Goodreads provider instance.
+// Returns nil if not initialized.
+func GetGoodreads() *goodreads.Provider {
+	registryMutex.RLock()
+	defer registryMutex.RUnlock()
+	return goodreadsProvider
+}
+
+// SetLastFM sets the global Last.fm provider instance.
+func SetLastFM(provider *lastfm.Provider) {
+	registryMutex.Lock()
+	defer registryMutex.Unlock()
+
+	lastfmProvider = provider
+}
+
+// GetLastFM returns the global Last.fm provider instance.
+// Returns nil if not initialized.
+func GetLastFM() *lastfm.Provider {
+	registryMutex.RLock()
+	defer registryMutex.RUnlock()
+	return lastfmProvider
+}
+
+// SetDiscogs sets the global Discogs provider instance.
+func SetDiscogs(provider *discogs.Provider) {
+	registryMutex.Lock()
+	defer registryMutex.Unlock()
+
+	discogsProvider = provider
+}
+
+// GetDiscogs returns the global Discogs provider instance.
+// Returns nil if not initialized.
+func GetDiscogs() *discogs.Provider {
+	registryMutex.RLock()
+	defer registryMutex.RUnlock()
+	return discogsProvider
+}
+
+// SetITunes sets the global iTunes provider instance.
+func SetITunes(provider *itunes.Provider) {
+	registryMutex.Lock()
+	defer registryMutex.Unlock()
+	itunesProvider = provider
+}
+
+// GetITunes returns the global iTunes provider instance.
+// Returns nil if not initialized.
+func GetITunes() *itunes.Provider {
+	registryMutex.RLock()
+	defer registryMutex.RUnlock()
+	return itunesProvider
+}
+
+// SetTheAudioDB sets the global TheAudioDB provider instance.
+func SetTheAudioDB(provider *theaudiodb.Provider) {
+	registryMutex.Lock()
+	defer registryMutex.Unlock()
+	theaudiodbProvider = provider
+}
+
+// GetTheAudioDB returns the global TheAudioDB provider instance.
+// Returns nil if not initialized.
+func GetTheAudioDB() *theaudiodb.Provider {
+	registryMutex.RLock()
+	defer registryMutex.RUnlock()
+	return theaudiodbProvider
+}
+
+// SetDeezer sets the global Deezer provider instance.
+func SetDeezer(provider *deezer.Provider) {
+	registryMutex.Lock()
+	defer registryMutex.Unlock()
+	deezerProvider = provider
+}
+
+// GetDeezer returns the global Deezer provider instance.
+// Returns nil if not initialized.
+func GetDeezer() *deezer.Provider {
+	registryMutex.RLock()
+	defer registryMutex.RUnlock()
+	return deezerProvider
+}
+
+// SetMusicBrainz sets the global MusicBrainz provider instance.
+func SetMusicBrainz(provider *musicbrainz.Provider) {
+	registryMutex.Lock()
+	defer registryMutex.Unlock()
+
+	musicbrainzProvider = provider
+}
+
+// GetMusicBrainz returns the global MusicBrainz provider instance.
+// Returns nil if not initialized.
+func GetMusicBrainz() *musicbrainz.Provider {
+	registryMutex.RLock()
+	defer registryMutex.RUnlock()
+	return musicbrainzProvider
+}
+
+// SetAcoustID sets the global AcoustID provider instance.
+func SetAcoustID(provider *acoustid.Provider) {
+	registryMutex.Lock()
+	defer registryMutex.Unlock()
+
+	acoustidProvider = provider
+}
+
+// GetAcoustID returns the global AcoustID provider instance.
+// Returns nil if not initialized.
+func GetAcoustID() *acoustid.Provider {
+	registryMutex.RLock()
+	defer registryMutex.RUnlock()
+	return acoustidProvider
 }

@@ -124,7 +124,12 @@ func TestPushoverConfigLoad(t *testing.T) {
 	}
 
 	t.Logf("✓ Successfully loaded Pushover configuration")
-	t.Logf("  API Token: %s...%s (length: %d)", apiToken[:6], apiToken[len(apiToken)-4:], len(apiToken))
+	t.Logf(
+		"  API Token: %s...%s (length: %d)",
+		apiToken[:6],
+		apiToken[len(apiToken)-4:],
+		len(apiToken),
+	)
 	t.Logf("  User Key: %s...%s (length: %d)", userKey[:6], userKey[len(userKey)-4:], len(userKey))
 }
 

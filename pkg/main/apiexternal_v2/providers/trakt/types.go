@@ -193,16 +193,16 @@ func convertSearchResults(
 ) []apiexternal_v2.MovieSearchResult {
 	results := make([]apiexternal_v2.MovieSearchResult, 0, len(traktResults))
 
-	for _, r := range traktResults {
-		if r.Type == "movie" && r.Movie != nil {
+	for i := range traktResults {
+		if traktResults[i].Type == "movie" && traktResults[i].Movie != nil {
 			results = append(results, apiexternal_v2.MovieSearchResult{
-				ID:           r.Movie.IDs.Trakt,
-				Title:        r.Movie.Title,
-				Year:         r.Movie.Year,
-				ReleaseDate:  parseTraktDate(r.Movie.Released),
-				Overview:     r.Movie.Overview,
-				VoteAverage:  r.Movie.Rating,
-				IMDbID:       r.Movie.IDs.IMDB,
+				ID:           traktResults[i].Movie.IDs.Trakt,
+				Title:        traktResults[i].Movie.Title,
+				Year:         traktResults[i].Movie.Year,
+				ReleaseDate:  parseTraktDate(traktResults[i].Movie.Released),
+				Overview:     traktResults[i].Movie.Overview,
+				VoteAverage:  traktResults[i].Movie.Rating,
+				IMDbID:       traktResults[i].Movie.IDs.IMDB,
 				ProviderName: provider,
 			})
 		}
@@ -217,14 +217,14 @@ func convertSearchToSeriesResults(
 ) []apiexternal_v2.SeriesSearchResult {
 	results := make([]apiexternal_v2.SeriesSearchResult, 0, len(traktResults))
 
-	for _, r := range traktResults {
-		if r.Type == "show" && r.Show != nil {
+	for i := range traktResults {
+		if traktResults[i].Type == "show" && traktResults[i].Show != nil {
 			results = append(results, apiexternal_v2.SeriesSearchResult{
-				ID:           r.Show.IDs.Trakt,
-				Name:         r.Show.Title,
-				FirstAirDate: parseTraktDate(r.Show.FirstAired),
-				Overview:     r.Show.Overview,
-				VoteAverage:  r.Show.Rating,
+				ID:           traktResults[i].Show.IDs.Trakt,
+				Name:         traktResults[i].Show.Title,
+				FirstAirDate: parseTraktDate(traktResults[i].Show.FirstAired),
+				Overview:     traktResults[i].Show.Overview,
+				VoteAverage:  traktResults[i].Show.Rating,
 				ProviderName: provider,
 			})
 		}
@@ -312,15 +312,16 @@ func convertSeasonToDetails(season *traktSeasonResponse) *apiexternal_v2.Season 
 
 func convertEpisodeToDetails(episode *traktEpisode) *apiexternal_v2.Episode {
 	return &apiexternal_v2.Episode{
-		ID:            episode.IDs.Trakt,
-		EpisodeNumber: episode.Number,
-		SeasonNumber:  episode.Season,
-		Name:          episode.Title,
-		Overview:      episode.Overview,
-		AirDate:       parseTraktDate(episode.FirstAired),
-		Runtime:       episode.Runtime,
-		VoteAverage:   episode.Rating,
-		VoteCount:     episode.Votes,
+		ID:             episode.IDs.Trakt,
+		EpisodeNumber:  episode.Number,
+		SeasonNumber:   episode.Season,
+		AbsoluteNumber: episode.NumberAbs,
+		Name:           episode.Title,
+		Overview:       episode.Overview,
+		AirDate:        parseTraktDate(episode.FirstAired),
+		Runtime:        episode.Runtime,
+		VoteAverage:    episode.Rating,
+		VoteCount:      episode.Votes,
 	}
 }
 
@@ -330,16 +331,16 @@ func convertPopularMovies(
 ) *apiexternal_v2.PopularMoviesResponse {
 	results := make([]apiexternal_v2.MovieSearchResult, 0, len(items))
 
-	for _, item := range items {
-		if item.Movie != nil {
+	for i := range items {
+		if items[i].Movie != nil {
 			results = append(results, apiexternal_v2.MovieSearchResult{
-				ID:           item.Movie.IDs.Trakt,
-				Title:        item.Movie.Title,
-				Year:         item.Movie.Year,
-				ReleaseDate:  parseTraktDate(item.Movie.Released),
-				Overview:     item.Movie.Overview,
-				VoteAverage:  item.Movie.Rating,
-				IMDbID:       item.Movie.IDs.IMDB,
+				ID:           items[i].Movie.IDs.Trakt,
+				Title:        items[i].Movie.Title,
+				Year:         items[i].Movie.Year,
+				ReleaseDate:  parseTraktDate(items[i].Movie.Released),
+				Overview:     items[i].Movie.Overview,
+				VoteAverage:  items[i].Movie.Rating,
+				IMDbID:       items[i].Movie.IDs.IMDB,
 				ProviderName: "trakt",
 			})
 		}
@@ -359,14 +360,14 @@ func convertPopularSeries(
 ) *apiexternal_v2.PopularSeriesResponse {
 	results := make([]apiexternal_v2.SeriesSearchResult, 0, len(items))
 
-	for _, item := range items {
-		if item.Show != nil {
+	for i := range items {
+		if items[i].Show != nil {
 			results = append(results, apiexternal_v2.SeriesSearchResult{
-				ID:           item.Show.IDs.Trakt,
-				Name:         item.Show.Title,
-				FirstAirDate: parseTraktDate(item.Show.FirstAired),
-				Overview:     item.Show.Overview,
-				VoteAverage:  item.Show.Rating,
+				ID:           items[i].Show.IDs.Trakt,
+				Name:         items[i].Show.Title,
+				FirstAirDate: parseTraktDate(items[i].Show.FirstAired),
+				Overview:     items[i].Show.Overview,
+				VoteAverage:  items[i].Show.Rating,
 				ProviderName: "trakt",
 			})
 		}
@@ -382,22 +383,22 @@ func convertPopularSeries(
 
 func convertCredits(credits *traktCreditsResponse) *apiexternal_v2.Credits {
 	cast := make([]apiexternal_v2.CastMember, len(credits.Cast))
-	for i, c := range credits.Cast {
+	for i := range credits.Cast {
 		cast[i] = apiexternal_v2.CastMember{
-			ID:        c.Person.IDs.Trakt,
-			Name:      c.Person.Name,
-			Character: c.Character,
+			ID:        credits.Cast[i].Person.IDs.Trakt,
+			Name:      credits.Cast[i].Person.Name,
+			Character: credits.Cast[i].Character,
 			Order:     i,
 		}
 	}
 
 	crew := []apiexternal_v2.CrewMember{}
-	for department, members := range credits.Crew {
-		for _, m := range members {
+	for department := range credits.Crew {
+		for i := range credits.Crew[department] {
 			crew = append(crew, apiexternal_v2.CrewMember{
-				ID:         m.Person.IDs.Trakt,
-				Name:       m.Person.Name,
-				Job:        m.Job,
+				ID:         credits.Crew[department][i].Person.IDs.Trakt,
+				Name:       credits.Crew[department][i].Person.Name,
+				Job:        credits.Crew[department][i].Job,
 				Department: department,
 			})
 		}

@@ -3,7 +3,7 @@ package slidingwindow
 import (
 	"context"
 	"runtime"
-	"sort"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -164,27 +164,17 @@ type Limiter struct {
 	updateStart   time.Time
 	lastViolation time.Time
 	healthy       int32 // atomic boolean
-	lastAlert     time.Time
-	alertCount    int64
-
-	// Enhanced observability
-	statusCallbacks  []StatusCallback
-	alertCallbacks   []AlertCallback
-	metricsCallbacks []MetricsCallback
 }
 
 // NewLimiter creates a new improved sliding window rate limiter
 // with comprehensive metrics and performance optimizations.
 func NewLimiter(interval time.Duration, maxRequests int64) *Limiter {
-	capacity := int(maxRequests)
-	if capacity < 10 {
-		capacity = 10
-	}
+	capacity := max(int(maxRequests), 10)
 
 	limiter := &Limiter{
 		interval:         interval,
 		max:              maxRequests,
-		requests:         make([]time.Time, 0, capacity),
+		requests:         make([]time.Time, 0, capacity*2),
 		reservations:     make(map[string]time.Time),
 		cleanupInterval:  interval / 4, // Cleanup every quarter interval
 		capacityHint:     capacity,
@@ -194,14 +184,6 @@ func NewLimiter(interval time.Duration, maxRequests int64) *Limiter {
 		updateStart:      time.Now(),
 		healthy:          1, // Start healthy
 		lastCleanup:      time.Now(),
-		statusCallbacks:  make([]StatusCallback, 0),
-		alertCallbacks:   make([]AlertCallback, 0),
-		metricsCallbacks: make([]MetricsCallback, 0),
-	}
-
-	// Pre-allocate slice to prevent reallocations during normal operation
-	if capacity > 0 {
-		limiter.requests = make([]time.Time, 0, capacity*2)
 	}
 
 	return limiter
@@ -274,7 +256,7 @@ func (l *Limiter) cleanupOldRequests(now time.Time) {
 
 	// Trigger GC hint if we freed significant memory
 	if forceCleanup && len(l.requests) < l.cleanupThreshold/4 {
-		runtime.GC()
+		// runtime.GC()
 	}
 }
 
@@ -493,7 +475,10 @@ func (l *Limiter) AllowForce() bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	l.requests = append(l.requests, time.Now())
+	now := time.Now()
+	l.cleanupOldRequests(now)
+
+	l.requests = append(l.requests, now)
 
 	return true
 }
@@ -534,14 +519,10 @@ func (l *Limiter) AllowWithWaitContextAndMaxWait(ctx context.Context, maxWait ti
 	retryCount := 0
 
 	// Adaptive sleep time based on window size
-	minSleepTime := l.interval / time.Duration(l.max*4)
-	if minSleepTime < time.Millisecond {
-		minSleepTime = time.Millisecond
-	}
-
-	if minSleepTime > defaultsleeptime*time.Millisecond {
-		minSleepTime = defaultsleeptime * time.Millisecond
-	}
+	minSleepTime := min(
+		max(l.interval/time.Duration(l.max*4), time.Millisecond),
+		defaultsleeptime*time.Millisecond,
+	)
 
 	for retryCount < maxRetries {
 		// Try to get a slot immediately
@@ -564,10 +545,7 @@ func (l *Limiter) AllowWithWaitContextAndMaxWait(ctx context.Context, maxWait ti
 		}
 
 		// Adaptive sleep time calculation
-		sleepTime := waitFor
-		if sleepTime < minSleepTime {
-			sleepTime = minSleepTime
-		}
+		sleepTime := max(waitFor, minSleepTime)
 
 		// Ensure we don't sleep past the maximum wait time
 		remainingWait := maxWait - elapsed
@@ -587,10 +565,7 @@ func (l *Limiter) AllowWithWaitContextAndMaxWait(ctx context.Context, maxWait ti
 				backoffMultiplier = 2.0
 			}
 
-			sleepTime = time.Duration(float64(sleepTime) * backoffMultiplier)
-			if sleepTime > remainingWait {
-				sleepTime = remainingWait
-			}
+			sleepTime = min(time.Duration(float64(sleepTime)*backoffMultiplier), remainingWait)
 		}
 
 		select {
@@ -616,14 +591,10 @@ func (l *Limiter) CheckWithWait(ctx context.Context) bool {
 	maxRetries := 1000
 
 	// Adaptive sleep time based on window size
-	minSleepTime := l.interval / time.Duration(l.max*4)
-	if minSleepTime < time.Millisecond {
-		minSleepTime = time.Millisecond
-	}
-
-	if minSleepTime > defaultsleeptime*time.Millisecond {
-		minSleepTime = defaultsleeptime * time.Millisecond
-	}
+	minSleepTime := min(
+		max(l.interval/time.Duration(l.max*4), time.Millisecond),
+		defaultsleeptime*time.Millisecond,
+	)
 
 	for retryCount < maxRetries {
 		// Try to check if a slot is available immediately
@@ -640,10 +611,7 @@ func (l *Limiter) CheckWithWait(ctx context.Context) bool {
 		}
 
 		// Adaptive sleep time calculation
-		sleepTime := waitFor
-		if sleepTime < minSleepTime {
-			sleepTime = minSleepTime
-		}
+		sleepTime := max(waitFor, minSleepTime)
 
 		// Use exponential backoff for failed attempts
 		if retryCount > 10 {
@@ -729,9 +697,7 @@ func (l *Limiter) GetMetrics() LimiterMetrics {
 		sortedTimes := make([]time.Duration, len(l.responseTimes))
 		copy(sortedTimes, l.responseTimes)
 		// Use built-in sort for better performance
-		sort.Slice(sortedTimes, func(i, j int) bool {
-			return sortedTimes[i] < sortedTimes[j]
-		})
+		slices.Sort(sortedTimes)
 
 		p99Index := int(float64(len(sortedTimes)) * 0.99)
 		if p99Index >= len(sortedTimes) {
@@ -828,30 +794,6 @@ func (l *Limiter) SetCapacityHint(hint int) {
 	l.capacityHint = hint
 }
 
-// AddStatusCallback adds a callback that will be called when status changes.
-func (l *Limiter) AddStatusCallback(callback StatusCallback) {
-	l.callbacksMu.Lock()
-	defer l.callbacksMu.Unlock()
-
-	l.statusCallbacks = append(l.statusCallbacks, callback)
-}
-
-// AddAlertCallback adds a callback that will be called when alerts are triggered.
-func (l *Limiter) AddAlertCallback(callback AlertCallback) {
-	l.callbacksMu.Lock()
-	defer l.callbacksMu.Unlock()
-
-	l.alertCallbacks = append(l.alertCallbacks, callback)
-}
-
-// AddMetricsCallback adds a callback that will be called periodically with metrics.
-func (l *Limiter) AddMetricsCallback(callback MetricsCallback) {
-	l.callbacksMu.Lock()
-	defer l.callbacksMu.Unlock()
-
-	l.metricsCallbacks = append(l.metricsCallbacks, callback)
-}
-
 // getCurrentStatus returns the current status of the limiter.
 func (l *Limiter) getCurrentStatus() LimiterStatus {
 	metrics := l.GetMetrics()
@@ -863,18 +805,6 @@ func (l *Limiter) getCurrentStatus() LimiterStatus {
 		AvgResponseTime: metrics.AvgResponseTime,
 		LastViolation:   l.lastViolation,
 	}
-}
-
-// GetAlertCount returns the total number of alerts triggered.
-func (l *Limiter) GetAlertCount() int64 {
-	return atomic.LoadInt64(&l.alertCount)
-}
-
-// GetLastAlert returns the timestamp of the last alert.
-func (l *Limiter) GetLastAlert() time.Time {
-	l.mu.RLock()
-	defer l.mu.RUnlock()
-	return l.lastAlert
 }
 
 // GetStatus returns the current status of the limiter.

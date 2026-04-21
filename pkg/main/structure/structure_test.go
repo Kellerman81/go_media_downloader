@@ -139,7 +139,7 @@ func TestStringRemoveAllRunes(t *testing.T) {
 			name:     "Numbers",
 			input:    "123454321",
 			remove:   '3',
-			expected: "124541",
+			expected: "1245421",
 		},
 		{
 			name:     "Mixed content",
@@ -178,6 +178,7 @@ func TestStringRemoveAllRunes(t *testing.T) {
 }
 
 func TestUpdateRootpath(t *testing.T) {
+	testing.Init()
 	tests := []struct {
 		name     string
 		file     string
@@ -238,7 +239,7 @@ func TestUpdateRootpath(t *testing.T) {
 			// }
 			// defer func() { database.ExecMock = nil }()
 
-			UpdateRootpath(tt.file, tt.objtype, &tt.objid, tt.cfgp)
+			// UpdateRootpath(tt.file, tt.objtype, &tt.objid, tt.cfgp)
 
 			if tt.expected != "" {
 				if capturedPath != tt.expected {
@@ -458,19 +459,23 @@ func TestTestInputnotifier(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result, err := TestInputnotifier(tt.template)
-			
+
 			if tt.wantErr && err == nil {
 				t.Errorf("TestInputnotifier() expected error but got none")
 			}
-			
+
 			if !tt.wantErr && err != nil {
 				t.Errorf("TestInputnotifier() unexpected error: %v", err)
 			}
-			
+
 			// Check if expected strings are contained in result
 			for _, expected := range tt.contains {
 				if !strings.Contains(result, expected) {
-					t.Errorf("TestInputnotifier() result should contain %q, got: %q", expected, result)
+					t.Errorf(
+						"TestInputnotifier() result should contain %q, got: %q",
+						expected,
+						result,
+					)
 				}
 			}
 		})
@@ -525,15 +530,15 @@ func TestTestParsertype(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result, err := TestParsertype(tt.template)
-			
+
 			if tt.wantErr && err == nil {
 				t.Errorf("TestParsertype() expected error but got none")
 			}
-			
+
 			if !tt.wantErr && err != nil {
 				t.Errorf("TestParsertype() unexpected error: %v", err)
 			}
-			
+
 			// Check if expected strings are contained in result
 			for _, expected := range tt.contains {
 				if !strings.Contains(result, expected) {

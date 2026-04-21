@@ -3,15 +3,17 @@ package tmdb
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/goccy/go-json"
+
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/base"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/slidingwindow"
 )
 
 //
@@ -685,6 +687,7 @@ func (p *Provider) RemoveFromTMDBList(ctx context.Context, listID int, mediaID i
 			if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 				return fmt.Errorf("TMDB API returned status %d", resp.StatusCode)
 			}
+
 			return nil
 		},
 		headers,
@@ -805,9 +808,9 @@ func (p *Provider) makeRequest(ctx context.Context, url string, target any) erro
 	// TMDB URLs come in as full URLs like "https://api.themoviedb.org/3/search/movie?..."
 	// We need to extract the path AFTER "/3/" since BaseURL already includes "/3"
 	endpoint := url
-	if idx := strings.Index(url, "/3/"); idx != -1 {
+	if _, after, ok := strings.Cut(url, "/3/"); ok {
 		// Extract everything AFTER "/3/", not including "/3/"
-		endpoint = url[idx+3:] // +3 to skip over "/3/"
+		endpoint = after // +3 to skip over "/3/"
 	}
 
 	// Use BaseClient's MakeRequestWithHeaders with custom Bearer token
@@ -823,6 +826,12 @@ func (p *Provider) makeRequest(ctx context.Context, url string, target any) erro
 			"Accept":        "application/json",
 		},
 	)
+}
+
+// GetRateLimiter returns the underlying hourly sliding-window rate limiter.
+// Callers can use Check() on it to determine how long to wait before the next request.
+func (p *Provider) GetRateLimiter() *slidingwindow.Limiter {
+	return p.baseClient.GetRateLimiter()
 }
 
 // Helper function to convert year from release date.

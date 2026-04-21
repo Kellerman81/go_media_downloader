@@ -11,6 +11,7 @@ import (
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/mediatype/mtstrings"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/syncops"
 	"github.com/jmoiron/sqlx"
 )
@@ -52,6 +53,18 @@ type FilePrio struct {
 	Extended     bool
 }
 
+// AudioFilePrio contains audio file priority data for music/audiobooks.
+// Used for calculating quality priority based on audio attributes.
+type AudioFilePrio struct {
+	Location   string
+	DBID       uint
+	ID         uint
+	Format     string
+	Bitrate    int
+	SampleRate int
+	BitDepth   int
+}
+
 type DbstaticOneIntOneBool struct {
 	Num int  `db:"num"`
 	Bl  bool `db:"bl"`
@@ -72,11 +85,7 @@ type DbstaticOneStringOneUInt struct {
 // 	Num2 uint   `db:"num2"`
 // }
 
-//	type DbstaticTwoStringOneInt struct {
-//		Str1 string `db:"str1"`
-//		Str2 string `db:"str2"`
-//		Num  uint   `db:"num"`
-//	}
+// DbstaticTwoStringOneRInt holds two string fields and one int field for static DB results.
 type DbstaticTwoStringOneRInt struct {
 	Str1 string `db:"str1"`
 	Str2 string `db:"str2"`
@@ -192,7 +201,7 @@ func SetDBLogLevel(level string) {
 	DBLogLevel = level
 }
 
-// getdb returns the database connection to use based on
+// Getdb returns the database connection to use based on
 // the imdb parameter. If imdb is true, it returns the
 // dbImdb connection, otherwise it returns the dbData
 // connection.
@@ -200,6 +209,7 @@ func Getdb(imdb bool) *sqlx.DB {
 	if imdb {
 		return dbImdb
 	}
+
 	return dbData
 }
 
@@ -210,7 +220,7 @@ func Getdb(imdb bool) *sqlx.DB {
 func queryGenericsT[t any](size uint, rows *sqlx.Rows, querystring string) []t {
 	var zero t
 
-	isSimpleType := isSimpleType(zero)
+	isSimple := isSimpleType(zero)
 
 	capacity := size
 	if capacity == 0 {
@@ -218,15 +228,20 @@ func queryGenericsT[t any](size uint, rows *sqlx.Rows, querystring string) []t {
 	}
 
 	result := make([]t, 0, capacity)
-	for rows.Next() {
-		var (
-			u   t
-			err error
-		)
 
-		if isSimpleType {
+	var (
+		u   t
+		err error
+	)
+	for rows.Next() {
+		u = zero
+		if isSimple {
 			err = rows.Scan(&u)
 		} else {
+			// Pass &u as *t (typed pointer) — getfuncarr is generic so &u is NOT
+			// wrapped in an untyped any here. Inside getfuncarr, any(u) boxes the
+			// pointer (8 bytes on stack), not the struct, so the struct stays on
+			// the stack and there is no per-row heap allocation.
 			err = getfuncarr(&u, rows)
 		}
 
@@ -247,20 +262,32 @@ func queryGenericsT[t any](size uint, rows *sqlx.Rows, querystring string) []t {
 // and false for complex types like structs or pointers.
 func isSimpleType[T any](v T) bool {
 	switch any(v).(type) {
-	case string, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float32, float64, bool:
+	case string,
+		int,
+		int8,
+		int16,
+		int32,
+		int64,
+		uint,
+		uint8,
+		uint16,
+		uint32,
+		uint64,
+		float32,
+		float64,
+		bool:
 		return true
 	default:
 		return false
 	}
 }
 
-// getfuncarr is a helper function that scans the results of a SQL query into a
-// generic struct type. It uses a type switch to determine the appropriate
-// fields to scan into the struct based on its type. This allows the function
-// to be used with a variety of different struct types that have the
-// appropriate field types.
-func getfuncarr(u any, s *sqlx.Rows) error {
-	switch elem := u.(type) {
+// getfuncarr scans one row into u. u must be a pointer to the target type.
+// Being generic means the call site passes &u as *T (a typed pointer), not as
+// untyped any, so the escape analyzer can keep the struct value on the stack.
+// Inside, any(u) boxes the already-pointer u — boxing a pointer never allocates.
+func getfuncarr[T any](u *T, s *sqlx.Rows) error {
+	switch elem := any(u).(type) {
 	case *DbstaticTwoString:
 		return s.Scan(&elem.Str1, &elem.Str2)
 	case *DbstaticOneStringOneInt:
@@ -284,15 +311,60 @@ func getfuncarr(u any, s *sqlx.Rows) error {
 	case *ImdbRatings:
 		return s.Scan(&elem.AverageRating, &elem.NumVotes)
 	case *FilePrio:
-		return s.Scan(&elem.Location, &elem.DBID, &elem.ID, &elem.ResolutionID, &elem.QualityID, &elem.CodecID, &elem.AudioID, &elem.Proper, &elem.Repack, &elem.Extended)
-	case *string, *int, *int8, *int16, *int32, *int64, *uint, *uint8, *uint16, *uint32, *uint64, *float32, *float64, *bool:
+		return s.Scan(
+			&elem.Location,
+			&elem.DBID,
+			&elem.ID,
+			&elem.ResolutionID,
+			&elem.QualityID,
+			&elem.CodecID,
+			&elem.AudioID,
+			&elem.Proper,
+			&elem.Repack,
+			&elem.Extended,
+		)
+
+	case *AudioFilePrio:
+		return s.Scan(
+			&elem.Location,
+			&elem.DBID,
+			&elem.ID,
+			&elem.Format,
+			&elem.Bitrate,
+			&elem.SampleRate,
+			&elem.BitDepth,
+		)
+
+	case *Dbtrack:
+		return s.Scan(
+			&elem.ID,
+			&elem.Title,
+			&elem.TrackNumber,
+			&elem.DiscNumber,
+			&elem.DbalbumID,
+			&elem.RuntimeMs,
+		)
+	case *string,
+		*int,
+		*int8,
+		*int16,
+		*int32,
+		*int64,
+		*uint,
+		*uint8,
+		*uint16,
+		*uint32,
+		*uint64,
+		*float32,
+		*float64,
+		*bool:
 		return s.Scan(u)
 	default:
-		return s.StructScan(&u)
+		return s.StructScan(u)
 	}
 }
 
-// structscan queries the database using the given query string and scans the
+// Structscan queries the database using the given query string and scans the
 // result into the given struct pointer. It handles locking/unlocking the read
 // write mutex, logging any errors, and returning sql.ErrNoRows if no rows were
 // returned.
@@ -422,7 +494,7 @@ func GetTableDefaults(table string) QueryParams {
 
 	case "dbseries":
 		q.Table = "dbseries"
-		q.DefaultColumns = "id,created_at,updated_at,seriename,aliases,season,status,firstaired,network,runtime,language,genre,overview,rating,siterating,siterating_count,slug,imdb_id,thetvdb_id,freebase_m_id,freebase_id,tvrage_id,facebook,instagram,twitter,banner,poster,fanart,identifiedby, trakt_id"
+		q.DefaultColumns = "id,created_at,updated_at,seriename,season,status,firstaired,network,runtime,language,genre,overview,rating,siterating,siterating_count,slug,imdb_id,thetvdb_id,freebase_m_id,freebase_id,tvrage_id,facebook,instagram,twitter,banner,poster,fanart,identifiedby, trakt_id"
 		q.DefaultQuery = " where id like ? or seriename like ? or season like ? or slug like ? or imdb_id like ? or thetvdb_id like ? or trakt_id like ?"
 		q.DefaultQueryParamCount = 7
 		q.DefaultOrderBy = " order by id desc"
@@ -454,7 +526,7 @@ func GetTableDefaults(table string) QueryParams {
 
 	case "series":
 		q.Table = "series LEFT JOIN dbseries ON series.dbserie_id = dbseries.id"
-		q.DefaultColumns = "series.id as id,series.created_at as created_at,series.updated_at as updated_at,series.listname as listname,series.rootpath as rootpath,series.dbserie_id as dbserie_id,series.dont_upgrade as dont_upgrade,series.dont_search as dont_search,dbseries.seriename as series_name"
+		q.DefaultColumns = "series.id as id,series.created_at as created_at,series.updated_at as updated_at,series.listname as listname,series.rootpath as rootpath,series.dbserie_id as dbserie_id,series.dont_upgrade as dont_upgrade,series.dont_search as dont_search,series.aliases as aliases,dbseries.seriename as series_name"
 		q.DefaultQuery = " where series.id like ? or series.listname like ? or series.rootpath like ? or series.dbserie_id like ?"
 		q.DefaultQueryParamCount = 4
 		q.DefaultOrderBy = " order by series.id desc"
@@ -531,6 +603,121 @@ func GetTableDefaults(table string) QueryParams {
 		q.DefaultQueryParamCount = 11
 		q.DefaultOrderBy = " order by serie_episode_histories.id desc"
 		q.Object = SerieEpisodeHistory{}
+
+	// Books section
+	case "dbbooks":
+		q.Table = "dbbooks LEFT JOIN dbauthors ON dbbooks.dbauthor_id = dbauthors.id"
+		q.DefaultColumns = "dbbooks.id as id,dbbooks.created_at as created_at,dbbooks.updated_at as updated_at,dbbooks.title as title,dbbooks.original_title as original_title,dbbooks.isbn_13 as isbn_13,dbbooks.isbn_10 as isbn_10,dbbooks.asin as asin,dbbooks.openlibrary_id as openlibrary_id,dbbooks.goodreads_id as goodreads_id,dbbooks.description as description,dbbooks.publisher as publisher,dbbooks.publish_date as publish_date,dbbooks.page_count as page_count,dbbooks.language as language,dbbooks.genres as genres,dbbooks.cover_url as cover_url,dbbooks.dbauthor_id as dbauthor_id,dbbooks.dbbook_series_id as dbbook_series_id,dbbooks.series_position as series_position,dbbooks.average_rating as average_rating,dbbooks.ratings_count as ratings_count,dbbooks.year as year,dbbooks.slug as slug,dbauthors.name as author_name"
+		q.DefaultQuery = " where dbbooks.id like ? or dbbooks.title like ? or dbbooks.isbn_13 like ? or dbbooks.isbn_10 like ? or dbbooks.asin like ? or dbbooks.goodreads_id like ? or dbbooks.slug like ?"
+		q.DefaultQueryParamCount = 7
+		q.DefaultOrderBy = " order by dbbooks.id desc"
+		q.Object = Dbbook{}
+
+	case "dbauthors":
+		q.Table = "dbauthors"
+		q.DefaultColumns = "id,created_at,updated_at,name,aliases,bio,birth_date,death_date,goodreads_id,openlibrary_id,website,image_url"
+		q.DefaultQuery = " where id like ? or name like ? or goodreads_id like ? or openlibrary_id like ?"
+		q.DefaultQueryParamCount = 4
+		q.DefaultOrderBy = " order by id desc"
+		q.Object = Dbauthor{}
+
+	case "books":
+		q.Table = "books LEFT JOIN dbbooks ON books.dbbook_id = dbbooks.id"
+		q.DefaultColumns = "books.id as id,books.created_at as created_at,books.updated_at as updated_at,books.blacklisted as blacklisted,books.quality_reached as quality_reached,books.quality_profile as quality_profile,books.missing as missing,books.dont_upgrade as dont_upgrade,books.dont_search as dont_search,books.listname as listname,books.rootpath as rootpath,books.dbbook_id as dbbook_id,books.book_series_id as book_series_id,books.author_id as author_id,dbbooks.title as book_title"
+		q.DefaultQuery = " where books.id like ? or books.quality_profile like ? or books.listname like ? or books.rootpath like ? or books.dbbook_id like ?"
+		q.DefaultQueryParamCount = 5
+		q.DefaultOrderBy = " order by books.id desc"
+		q.Object = Book{}
+
+	case "book_files":
+		q.Table = "book_files LEFT JOIN dbbooks ON book_files.dbbook_id = dbbooks.id"
+		q.DefaultColumns = "book_files.id as id,book_files.created_at as created_at,book_files.updated_at as updated_at,book_files.location as location,book_files.filename as filename,book_files.extension as extension,book_files.format as format,book_files.quality_profile as quality_profile,book_files.book_id as book_id,book_files.dbbook_id as dbbook_id,book_files.file_size as file_size,dbbooks.title as book_title"
+		q.DefaultQuery = " where book_files.id like ? or book_files.location like ? or book_files.filename like ? or book_files.format like ? or book_files.book_id like ? or book_files.dbbook_id like ?"
+		q.DefaultQueryParamCount = 6
+		q.DefaultOrderBy = " order by book_files.id desc"
+		q.Object = BookFile{}
+
+	// Audiobooks section
+	case "dbaudiobooks":
+		q.Table = "dbaudiobooks"
+		q.DefaultColumns = "id,created_at,updated_at,title,asin,audible_id,runtime_minutes,chapter_count,release_date,publisher,language,abridged,cover_url,sample_url,average_rating,ratings_count,year,slug,dbbook_id,description"
+		q.DefaultQuery = " where id like ? or title like ? or asin like ? or audible_id like ? or slug like ?"
+		q.DefaultQueryParamCount = 5
+		q.DefaultOrderBy = " order by id desc"
+		q.Object = Dbaudiobook{}
+
+	case "dbnarrators":
+		q.Table = "dbnarrators"
+		q.DefaultColumns = "id,created_at,updated_at,name,audible_id,bio,image_url"
+		q.DefaultQuery = " where id like ? or name like ? or audible_id like ?"
+		q.DefaultQueryParamCount = 3
+		q.DefaultOrderBy = " order by id desc"
+		q.Object = Dbnarrator{}
+
+	case "audiobooks":
+		q.Table = "audiobooks LEFT JOIN dbaudiobooks ON audiobooks.dbaudiobook_id = dbaudiobooks.id"
+		q.DefaultColumns = "audiobooks.id as id,audiobooks.created_at as created_at,audiobooks.updated_at as updated_at,audiobooks.blacklisted as blacklisted,audiobooks.quality_reached as quality_reached,audiobooks.quality_profile as quality_profile,audiobooks.missing as missing,audiobooks.dont_upgrade as dont_upgrade,audiobooks.dont_search as dont_search,audiobooks.listname as listname,audiobooks.rootpath as rootpath,audiobooks.dbaudiobook_id as dbaudiobook_id,audiobooks.author_id as author_id,audiobooks.book_series_id as book_series_id,dbaudiobooks.title as audiobook_title"
+		q.DefaultQuery = " where audiobooks.id like ? or audiobooks.quality_profile like ? or audiobooks.listname like ? or audiobooks.rootpath like ? or audiobooks.dbaudiobook_id like ?"
+		q.DefaultQueryParamCount = 5
+		q.DefaultOrderBy = " order by audiobooks.id desc"
+		q.Object = Audiobook{}
+
+	case "audiobook_files":
+		q.Table = "audiobook_files LEFT JOIN dbaudiobooks ON audiobook_files.dbaudiobook_id = dbaudiobooks.id"
+		q.DefaultColumns = "audiobook_files.id as id,audiobook_files.created_at as created_at,audiobook_files.updated_at as updated_at,audiobook_files.location as location,audiobook_files.filename as filename,audiobook_files.extension as extension,audiobook_files.format as format,audiobook_files.quality_profile as quality_profile,audiobook_files.audiobook_id as audiobook_id,audiobook_files.dbaudiobook_id as dbaudiobook_id,audiobook_files.file_size as file_size,audiobook_files.bitrate as bitrate,audiobook_files.runtime_ms as runtime_ms,audiobook_files.track_number as track_number,audiobook_files.disc_number as disc_number,dbaudiobooks.title as audiobook_title"
+		q.DefaultQuery = " where audiobook_files.id like ? or audiobook_files.location like ? or audiobook_files.filename like ? or audiobook_files.format like ? or audiobook_files.audiobook_id like ? or audiobook_files.dbaudiobook_id like ?"
+		q.DefaultQueryParamCount = 6
+		q.DefaultOrderBy = " order by audiobook_files.id desc"
+		q.Object = AudiobookFile{}
+
+	// Music section
+	case "dbalbums":
+		q.Table = "dbalbums"
+		q.DefaultColumns = "id,created_at,updated_at,title,musicbrainz_release_group_id,musicbrainz_release_id,discogs_master_id,discogs_release_id,spotify_id,upc,release_date,release_type,format,label,country,total_tracks,total_runtime_ms,genres,styles,cover_url,year,slug"
+		q.DefaultQuery = " where id like ? or title like ? or musicbrainz_release_id like ? or discogs_release_id like ? or spotify_id like ? or upc like ? or slug like ?"
+		q.DefaultQueryParamCount = 7
+		q.DefaultOrderBy = " order by id desc"
+		q.Object = Dbalbum{}
+
+	case "dbartists":
+		q.Table = "dbartists"
+		q.DefaultColumns = "id,created_at,updated_at,name,sort_name,musicbrainz_id,discogs_id,spotify_id,artist_type,country,begin_date,end_date,disambiguation,bio,image_url,genres"
+		q.DefaultQuery = " where id like ? or name like ? or musicbrainz_id like ? or discogs_id like ? or spotify_id like ?"
+		q.DefaultQueryParamCount = 5
+		q.DefaultOrderBy = " order by id desc"
+		q.Object = Dbartist{}
+
+	case "albums":
+		q.Table = "albums LEFT JOIN dbalbums ON albums.dbalbum_id = dbalbums.id"
+		q.DefaultColumns = "albums.id as id,albums.created_at as created_at,albums.updated_at as updated_at,albums.blacklisted as blacklisted,albums.quality_reached as quality_reached,albums.quality_profile as quality_profile,albums.missing as missing,albums.dont_upgrade as dont_upgrade,albums.dont_search as dont_search,albums.listname as listname,albums.rootpath as rootpath,albums.dbalbum_id as dbalbum_id,albums.artist_id as artist_id,dbalbums.title as album_title"
+		q.DefaultQuery = " where albums.id like ? or albums.quality_profile like ? or albums.listname like ? or albums.rootpath like ? or albums.dbalbum_id like ?"
+		q.DefaultQueryParamCount = 5
+		q.DefaultOrderBy = " order by albums.id desc"
+		q.Object = Album{}
+
+	case "album_files":
+		q.Table = "album_files LEFT JOIN dbalbums ON album_files.dbalbum_id = dbalbums.id"
+		q.DefaultColumns = "album_files.id as id,album_files.created_at as created_at,album_files.updated_at as updated_at,album_files.location as location,album_files.filename as filename,album_files.extension as extension,album_files.format as format,album_files.quality_profile as quality_profile,album_files.album_id as album_id,album_files.dbalbum_id as dbalbum_id,album_files.dbtrack_id as dbtrack_id,album_files.file_size as file_size,album_files.bitrate as bitrate,album_files.sample_rate as sample_rate,album_files.bit_depth as bit_depth,album_files.runtime_ms as runtime_ms,album_files.disc_number as disc_number,album_files.track_number as track_number,dbalbums.title as album_title"
+		q.DefaultQuery = " where album_files.id like ? or album_files.location like ? or album_files.filename like ? or album_files.format like ? or album_files.album_id like ? or album_files.dbalbum_id like ?"
+		q.DefaultQueryParamCount = 6
+		q.DefaultOrderBy = " order by album_files.id desc"
+		q.Object = AlbumFile{}
+
+	case "artists":
+		q.Table = "artists LEFT JOIN dbartists ON artists.dbartist_id = dbartists.id"
+		q.DefaultColumns = "artists.id as id,artists.created_at as created_at,artists.updated_at as updated_at,artists.listname as listname,artists.dbartist_id as dbartist_id,artists.track_mode as track_mode,artists.dont_search as dont_search,dbartists.name as artist_name"
+		q.DefaultQuery = " where artists.id like ? or artists.listname like ? or artists.dbartist_id like ?"
+		q.DefaultQueryParamCount = 3
+		q.DefaultOrderBy = " order by artists.id desc"
+		q.Object = Artist{}
+
+	case "authors":
+		q.Table = "authors LEFT JOIN dbauthors ON authors.dbauthor_id = dbauthors.id"
+		q.DefaultColumns = "authors.id as id,authors.created_at as created_at,authors.updated_at as updated_at,authors.listname as listname,authors.dbauthor_id as dbauthor_id,authors.track_mode as track_mode,authors.dont_search as dont_search,dbauthors.name as author_name"
+		q.DefaultQuery = " where authors.id like ? or authors.listname like ? or authors.dbauthor_id like ?"
+		q.DefaultQueryParamCount = 3
+		q.DefaultOrderBy = " order by authors.id desc"
+		q.Object = Author{}
 	}
 
 	return q
@@ -562,7 +749,7 @@ func QueryDbmovieTitle(qu Querywithargs, args ...any) []DbmovieTitle {
 // Returns an error if there was a problem retrieving the data.
 func GetDbserieByID(id *uint) (*Dbserie, error) {
 	return Structscan[Dbserie](
-		"select id,created_at,updated_at,seriename,aliases,season,status,firstaired,network,runtime,language,genre,overview,rating,siterating,siterating_count,slug,imdb_id,thetvdb_id,freebase_m_id,freebase_id,tvrage_id,facebook,instagram,twitter,banner,poster,fanart,identifiedby, trakt_id from dbseries where id = ?",
+		"select id,created_at,updated_at,seriename,season,status,firstaired,network,runtime,language,genre,overview,rating,siterating,siterating_count,slug,imdb_id,thetvdb_id,freebase_m_id,freebase_id,tvrage_id,facebook,instagram,twitter,banner,poster,fanart,identifiedby, trakt_id from dbseries where id = ?",
 		false,
 		id,
 	)
@@ -579,7 +766,7 @@ func QueryDbserie(qu Querywithargs, args ...any) []Dbserie {
 
 	qu.Table = "dbseries"
 
-	qu.defaultcolumns = "id,created_at,updated_at,seriename,aliases,season,status,firstaired,network,runtime,language,genre,overview,rating,siterating,siterating_count,slug,imdb_id,thetvdb_id,freebase_m_id,freebase_id,tvrage_id,facebook,instagram,twitter,banner,poster,fanart,identifiedby, trakt_id"
+	qu.defaultcolumns = "id,created_at,updated_at,seriename,season,status,firstaired,network,runtime,language,genre,overview,rating,siterating,siterating_count,slug,imdb_id,thetvdb_id,freebase_m_id,freebase_id,tvrage_id,facebook,instagram,twitter,banner,poster,fanart,identifiedby, trakt_id"
 	if qu.QueryString == "" {
 		qu.buildquery()
 	}
@@ -796,7 +983,7 @@ func QueryResultSeries(qu Querywithargs, args ...any) []ResultSeries {
 
 	qu.Table = logger.StrSeries
 
-	qu.defaultcolumns = `dbseries.id as dbserie_id,dbseries.created_at,dbseries.updated_at,dbseries.seriename,dbseries.aliases,dbseries.season,dbseries.status,dbseries.firstaired,dbseries.network,dbseries.runtime,dbseries.language,dbseries.genre,dbseries.overview,dbseries.rating,dbseries.siterating,dbseries.siterating_count,dbseries.slug,dbseries.imdb_id,dbseries.thetvdb_id,dbseries.freebase_m_id,dbseries.freebase_id,dbseries.tvrage_id,dbseries.facebook,dbseries.instagram,dbseries.twitter,dbseries.banner,dbseries.poster,dbseries.fanart,dbseries.identifiedby,dbseries.trakt_id,series.listname,series.rootpath,series.id as id`
+	qu.defaultcolumns = `dbseries.id as dbserie_id,dbseries.created_at,dbseries.updated_at,dbseries.seriename,dbseries.season,dbseries.status,dbseries.firstaired,dbseries.network,dbseries.runtime,dbseries.language,dbseries.genre,dbseries.overview,dbseries.rating,dbseries.siterating,dbseries.siterating_count,dbseries.slug,dbseries.imdb_id,dbseries.thetvdb_id,dbseries.freebase_m_id,dbseries.freebase_id,dbseries.tvrage_id,dbseries.facebook,dbseries.instagram,dbseries.twitter,dbseries.banner,dbseries.poster,dbseries.fanart,dbseries.identifiedby,dbseries.trakt_id,series.listname,series.rootpath,series.aliases,series.id as id`
 	if qu.QueryString == "" {
 		qu.buildquery()
 	}
@@ -878,7 +1065,7 @@ func (qu *Querywithargs) buildquery() {
 	qu.QueryString = bld.String()
 }
 
-// Scanrows1dyn executes a SQL query and scans the result into the provided object.
+// Scanrowsdyn executes a SQL query and scans the result into the provided object.
 // The query string and arguments are passed as parameters.
 // If the query fails, the error is logged and returned.
 // The function acquires a read lock on the readWriteMu mutex before executing the query,
@@ -987,11 +1174,32 @@ func checkerrorvalue(obj any) {
 // - s: the object to scan the result into.
 // - arg, arg2, arg3: the arguments to pass to the SQL query.
 func scandatarow(imdb bool, querystring string, s any, args []any) {
+	if querystring == "" {
+		return
+	}
+
 	readWriteMu.RLock()
 	defer readWriteMu.RUnlock()
 
 	err := queryRowContext(querystring, imdb, args).Scan(s)
 	logSQLErrorReset(err, s, querystring)
+}
+
+// ScanRowVal2 executes a query with two typed arguments and returns the first column as R.
+func ScanRowVal2[A, B, R any](query string, arg1 A, arg2 B) R {
+	stmtp := globalCache.getXStmt(query, false)
+	if stmtp == nil {
+		var zero R
+		return zero
+	}
+
+	readWriteMu.RLock()
+	defer readWriteMu.RUnlock()
+
+	var result R
+	stmtp.QueryRowContext(sqlCTX, arg1, arg2).Scan(&result) //nolint:errcheck
+
+	return result
 }
 
 // queryRowContext is a helper function that executes a SQL query with the provided arguments.
@@ -1012,6 +1220,7 @@ func queryRowContext(querystring string, imdb bool, args []any) *sql.Row {
 			Msg("stmt failed")
 		return &sql.Row{}
 	}
+
 	return stmtp.QueryRowContext(sqlCTX, args...)
 }
 
@@ -1033,6 +1242,7 @@ func queryRowxContext(querystring string, imdb bool, args []any) *sqlx.Row {
 			Msg("stmt failed")
 		return &sqlx.Row{}
 	}
+
 	return stmt.QueryRowxContext(sqlCTX, args...)
 }
 
@@ -1054,6 +1264,7 @@ func queryxContext(querystring string, imdb bool, args []any) (*sqlx.Rows, error
 			Msg("stmt failed")
 		return &sqlx.Rows{}, logger.ErrNotAllowed
 	}
+
 	return stmt.QueryxContext(sqlCTX, args...)
 }
 
@@ -1067,8 +1278,18 @@ func queryxContext(querystring string, imdb bool, args []any) (*sqlx.Rows, error
 //
 // The function returns a value of type uint, which is the result of the SQL query.
 func Getdatarow[o any](imdb bool, querystring string, args ...any) o {
+	stmtp := globalCache.getXStmt(querystring, imdb)
+	if stmtp == nil {
+		var zero o
+		return zero
+	}
+
+	readWriteMu.RLock()
+	defer readWriteMu.RUnlock()
+
 	var s o
-	scandatarow(imdb, querystring, &s, args)
+	stmtp.QueryRowContext(sqlCTX, args...).Scan(&s) //nolint:errcheck
+
 	return s
 }
 
@@ -1087,12 +1308,12 @@ func logSQLError(err error, querystring string) {
 			Msg("exec")
 	}
 
-	if err.Error() == "sql: database is closed" {
-		syncops.QueueSyncMapDeleteFuncImdbVal(syncops.MapTypeXStmt, func(x bool) bool {
-			return x
-		}, func(s sqlx.Stmt) {
-			s.Close()
-		})
+	if err.Error() != "sql: database is closed" {
+		return
+	}
+
+	if cache.ristrettoStmt != nil {
+		cache.ristrettoStmt.Clear()
 	}
 }
 
@@ -1159,6 +1380,7 @@ func GetrowsN[t any](imdb bool, size uint, querystring string, args ...any) []t 
 		logSQLError(err, querystring)
 		return nil
 	}
+
 	defer rows.Close()
 
 	return queryGenericsT[t](size, rows, querystring)
@@ -1173,6 +1395,7 @@ func GetrowsType(o any, imdb bool, size uint, querystring string, args ...any) [
 		logSQLError(err, querystring)
 		return nil
 	}
+
 	defer rows.Close()
 
 	capacity := size
@@ -1205,6 +1428,7 @@ func GetrowsTypeOLD(o any, imdb bool, size uint, querystring string, args ...any
 		logSQLError(err, querystring)
 		return nil
 	}
+
 	defer rows.Close()
 
 	capacity := size
@@ -1279,12 +1503,12 @@ func ExecNErr(querystring string, args ...any) error {
 }
 
 // ExecNMap executes a database query using the provided query string and arguments.
-// If useseries is true, it uses the query string from the logger.Mapstringsseries map,
+// If isType is true, it uses the query string from the logger.Mapstringsseries map,
 // otherwise it uses the query string from the logger.Mapstringsmovies map.
 // The function acquires a read/write lock before executing the query and releases it after the query is executed.
 // If an error occurs during the query execution, it is logged using the logExecError function.
-func ExecNMap(useseries bool, query string, args ...any) {
-	ExecN(logger.GetStringsMap(useseries, query), args...)
+func ExecNMap(isType uint, query string, args ...any) {
+	ExecN(mtstrings.GetStringsMap(isType, query), args...)
 }
 
 // ExecNid executes the given querystring with multiple arguments, returns the generated ID from the insert statement, handles errors.
@@ -1462,14 +1686,14 @@ func DBIntegrityCheck() string {
 }
 
 // Getentryalternatetitlesdirect retrieves a slice of DbstaticTwoStringOneInt objects that represent alternate titles for the movie with the given database ID. If the UseMediaCache setting is enabled, it will retrieve the titles from the cache. Otherwise, it will retrieve the titles directly from the database.
-func Getentryalternatetitlesdirect(dbid *uint, useseries bool) []syncops.DbstaticTwoStringOneInt {
+func Getentryalternatetitlesdirect(dbid *uint, isType uint) []syncops.DbstaticTwoStringOneInt {
 	if dbid == nil {
 		return nil
 	}
 
 	if config.GetSettingsGeneral().UseMediaCache {
 		return GetCachedTwoStringArr(
-			logger.GetStringsMap(useseries, logger.CacheMediaTitles),
+			mtstrings.GetStringsMap(isType, logger.CacheMediaTitles),
 			false,
 			true,
 		)
@@ -1477,8 +1701,8 @@ func Getentryalternatetitlesdirect(dbid *uint, useseries bool) []syncops.Dbstati
 
 	return Getrowssize[syncops.DbstaticTwoStringOneInt](
 		false,
-		logger.GetStringsMap(useseries, logger.DBCountDBTitlesDBID),
-		logger.GetStringsMap(useseries, logger.DBDistinctDBTitlesDBID),
+		mtstrings.GetStringsMap(isType, logger.DBCountDBTitlesDBID),
+		mtstrings.GetStringsMap(isType, logger.DBDistinctDBTitlesDBID),
 		dbid,
 	)
 }
@@ -1524,6 +1748,7 @@ func ExchangeImdbDB() {
 	readWriteMu.Lock()
 	defer readWriteMu.Unlock()
 
+	InvalidateImdbStmt()
 	dbImdb.Close()
 
 	os.Chmod(dbfile, 0o777)
@@ -1554,5 +1779,6 @@ func ChecknzbtitleC(movie *syncops.DbstaticTwoStringOneInt,
 	if strings.EqualFold(movie.Str1, nzbtitle) {
 		return true
 	}
+
 	return ChecknzbtitleB(movie.Str1, movie.Str2, nzbtitle, allowpm1, yearu)
 }

@@ -303,7 +303,7 @@ func NewWithOptions(class ErrorClass, operation string, options ...errorOption) 
 	return classified
 }
 
-// Option types for configurable components.
+// ErrorOptions defines option types for configurable components.
 type ErrorOptions struct {
 	Message    string
 	MessageFor string

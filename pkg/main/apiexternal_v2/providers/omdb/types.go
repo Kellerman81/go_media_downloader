@@ -81,15 +81,15 @@ func convertSearchResults(
 ) []apiexternal_v2.MovieSearchResult {
 	results := make([]apiexternal_v2.MovieSearchResult, 0, len(omdbResults))
 
-	for _, r := range omdbResults {
-		if strings.ToLower(r.Type) == "movie" {
+	for i := range omdbResults {
+		if strings.ToLower(omdbResults[i].Type) == "movie" {
 			results = append(results, apiexternal_v2.MovieSearchResult{
 				ID:           0, // OMDB doesn't use numeric IDs
-				Title:        r.Title,
-				Year:         parseYear(r.Year),
-				PosterPath:   r.Poster,
+				Title:        omdbResults[i].Title,
+				Year:         parseYear(omdbResults[i].Year),
+				PosterPath:   omdbResults[i].Poster,
 				ProviderName: provider,
-				IMDbID:       r.ImdbID, // OMDB provides IMDb ID directly in search results
+				IMDbID:       omdbResults[i].ImdbID, // OMDB provides IMDb ID directly in search results
 			})
 		}
 	}
@@ -103,12 +103,12 @@ func convertSearchToSeriesResults(
 ) []apiexternal_v2.SeriesSearchResult {
 	results := make([]apiexternal_v2.SeriesSearchResult, 0, len(omdbResults))
 
-	for _, r := range omdbResults {
-		if strings.ToLower(r.Type) == "series" {
+	for i := range omdbResults {
+		if strings.ToLower(omdbResults[i].Type) == "series" {
 			results = append(results, apiexternal_v2.SeriesSearchResult{
 				ID:           0, // OMDB doesn't use numeric IDs
-				Name:         r.Title,
-				PosterPath:   r.Poster,
+				Name:         omdbResults[i].Title,
+				PosterPath:   omdbResults[i].Poster,
 				ProviderName: provider,
 			})
 		}
@@ -160,8 +160,8 @@ func convertDetailsToMovieDetails(details *omdbDetailsResponse) *apiexternal_v2.
 	// Parse spoken languages
 	languages := []apiexternal_v2.SpokenLanguage{}
 	if details.Language != "" {
-		langNames := strings.Split(details.Language, ", ")
-		for _, name := range langNames {
+		langNames := strings.SplitSeq(details.Language, ", ")
+		for name := range langNames {
 			languages = append(languages, apiexternal_v2.SpokenLanguage{
 				Name:        name,
 				EnglishName: name,

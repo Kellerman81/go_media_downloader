@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/goccy/go-json"
+
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/gin-gonic/gin"
@@ -20,7 +21,7 @@ import (
 	"maragu.dev/gomponents/html"
 )
 
-// renderSeriesConfigPage renders the series configuration file editor page
+// renderSeriesConfigPage renders the series configuration file editor page.
 func renderSeriesConfigPage(ctx *gin.Context) {
 	// Get selected file from query param
 	selectedFile := ctx.Query("file")
@@ -28,16 +29,26 @@ func renderSeriesConfigPage(ctx *gin.Context) {
 	// Get list of series config files
 	files, err := getSeriesConfigFiles()
 	if err != nil {
-		sendJSONError(ctx, http.StatusInternalServerError, "Error listing config files: "+err.Error())
+		sendJSONError(
+			ctx,
+			http.StatusInternalServerError,
+			"Error listing config files: "+err.Error(),
+		)
+
 		return
 	}
 
 	// Load the selected file's config if specified
-	var seriesConfig *config.MainSerieConfig
+	var seriesConfig *config.MainManualConfig
 	if selectedFile != "" {
 		seriesConfig, err = loadSeriesConfigFile(selectedFile)
 		if err != nil {
-			sendJSONError(ctx, http.StatusInternalServerError, "Error loading config file: "+err.Error())
+			sendJSONError(
+				ctx,
+				http.StatusInternalServerError,
+				"Error loading config file: "+err.Error(),
+			)
+
 			return
 		}
 	}
@@ -59,7 +70,7 @@ func renderSeriesConfigPage(ctx *gin.Context) {
 	ctx.String(http.StatusOK, buf.String())
 }
 
-// getSeriesConfigFiles returns a list of series config .toml files
+// getSeriesConfigFiles returns a list of series config .toml files.
 func getSeriesConfigFiles() ([]string, error) {
 	configDir := config.GetConfigDir()
 
@@ -73,6 +84,7 @@ func getSeriesConfigFiles() ([]string, error) {
 		if entry.IsDir() {
 			continue
 		}
+
 		name := entry.Name()
 		// Look for series config files - files ending in .toml but exclude the main config
 		// Common patterns: series.toml, series_*.toml, etc.
@@ -88,8 +100,8 @@ func getSeriesConfigFiles() ([]string, error) {
 	return files, nil
 }
 
-// loadSeriesConfigFile loads a MainSerieConfig from the specified file
-func loadSeriesConfigFile(filename string) (*config.MainSerieConfig, error) {
+// loadSeriesConfigFile loads a MainSerieConfig from the specified file.
+func loadSeriesConfigFile(filename string) (*config.MainManualConfig, error) {
 	configDir := config.GetConfigDir()
 	filePath := filepath.Join(configDir, filename)
 
@@ -98,7 +110,7 @@ func loadSeriesConfigFile(filename string) (*config.MainSerieConfig, error) {
 		return nil, err
 	}
 
-	var cfg config.MainSerieConfig
+	var cfg config.MainManualConfig
 	if err := toml.Unmarshal(data, &cfg); err != nil {
 		return nil, err
 	}
@@ -106,8 +118,8 @@ func loadSeriesConfigFile(filename string) (*config.MainSerieConfig, error) {
 	return &cfg, nil
 }
 
-// saveSeriesConfigFile saves a MainSerieConfig to the specified file
-func saveSeriesConfigFile(filename string, cfg *config.MainSerieConfig) error {
+// saveSeriesConfigFile saves a MainSerieConfig to the specified file.
+func saveSeriesConfigFile(filename string, cfg *config.MainManualConfig) error {
 	configDir := config.GetConfigDir()
 	filePath := filepath.Join(configDir, filename)
 
@@ -119,8 +131,13 @@ func saveSeriesConfigFile(filename string, cfg *config.MainSerieConfig) error {
 	return os.WriteFile(filePath, data, 0o644)
 }
 
-// renderSeriesConfigContent renders the main content for series config page
-func renderSeriesConfigContent(files []string, selectedFile string, seriesConfig *config.MainSerieConfig, csrfToken string) gomponents.Node {
+// renderSeriesConfigContent renders the main content for series config page.
+func renderSeriesConfigContent(
+	files []string,
+	selectedFile string,
+	seriesConfig *config.MainManualConfig,
+	csrfToken string,
+) gomponents.Node {
 	return html.Div(
 		html.Class("container-fluid p-4"),
 
@@ -130,8 +147,11 @@ func renderSeriesConfigContent(files []string, selectedFile string, seriesConfig
 			html.Div(
 				html.Class("col-12"),
 				html.H1(html.Class("h3 mb-3"), gomponents.Text("Series Configuration Files")),
-				html.P(html.Class("text-muted"),
-					gomponents.Text("Select a series configuration file to view and edit TV series settings."),
+				html.P(
+					html.Class("text-muted"),
+					gomponents.Text(
+						"Select a series configuration file to view and edit TV series settings.",
+					),
 				),
 			),
 		),
@@ -145,19 +165,29 @@ func renderSeriesConfigContent(files []string, selectedFile string, seriesConfig
 					html.Class("card"),
 					html.Div(
 						html.Class("card-body"),
-						html.H5(html.Class("card-title"), gomponents.Text("Select Configuration File")),
+						html.H5(
+							html.Class("card-title"),
+							gomponents.Text("Select Configuration File"),
+						),
 						html.Form(
 							html.Method("GET"),
 							html.Action("/api/admin/seriesconfig"),
 							html.Div(
 								html.Class("mb-3"),
-								html.Label(html.Class("form-label"), html.For("file-select"), gomponents.Text("Configuration File")),
+								html.Label(
+									html.Class("form-label"),
+									html.For("file-select"),
+									gomponents.Text("Configuration File"),
+								),
 								html.Select(
 									html.Class("form-select"),
 									html.ID("file-select"),
 									html.Name("file"),
 									gomponents.Attr("onchange", "this.form.submit()"),
-									html.Option(html.Value(""), gomponents.Text("-- Select a file --")),
+									html.Option(
+										html.Value(""),
+										gomponents.Text("-- Select a file --"),
+									),
 									renderFileOptions(files, selectedFile),
 								),
 							),
@@ -174,7 +204,7 @@ func renderSeriesConfigContent(files []string, selectedFile string, seriesConfig
 	)
 }
 
-// renderFileOptions renders option elements for file select dropdown
+// renderFileOptions renders option elements for file select dropdown.
 func renderFileOptions(files []string, selectedFile string) gomponents.Node {
 	var options []gomponents.Node
 	for _, file := range files {
@@ -184,11 +214,16 @@ func renderFileOptions(files []string, selectedFile string) gomponents.Node {
 			gomponents.Text(file),
 		))
 	}
+
 	return gomponents.Group(options)
 }
 
-// renderSeriesConfigEditor renders the editor for series entries
-func renderSeriesConfigEditor(filename string, cfg *config.MainSerieConfig, csrfToken string) gomponents.Node {
+// renderSeriesConfigEditor renders the editor for series entries.
+func renderSeriesConfigEditor(
+	filename string,
+	cfg *config.MainManualConfig,
+	_ string,
+) gomponents.Node {
 	// Safety check for nil config
 	if cfg == nil {
 		return html.Div(
@@ -212,8 +247,12 @@ func renderSeriesConfigEditor(filename string, cfg *config.MainSerieConfig, csrf
 				),
 				html.Div(
 					html.Class("card-body"),
-					html.P(html.Class("text-muted mb-3"),
-						gomponents.Textf("This file contains %d TV series configuration(s).", len(cfg.Serie)),
+					html.P(
+						html.Class("text-muted mb-3"),
+						gomponents.Textf(
+							"This file contains %d TV series configuration(s).",
+							len(cfg.Config),
+						),
 					),
 
 					// Add new series button
@@ -222,15 +261,21 @@ func renderSeriesConfigEditor(filename string, cfg *config.MainSerieConfig, csrf
 						html.Button(
 							html.Class("btn btn-primary"),
 							html.Type("button"),
-							gomponents.Attr("onclick", fmt.Sprintf("window.location.href='/api/admin/seriesconfig/add?file=%s'", filename)),
+							gomponents.Attr(
+								"onclick",
+								fmt.Sprintf(
+									"window.location.href='/api/admin/seriesconfig/add?file=%s'",
+									filename,
+								),
+							),
 							html.I(html.Class("fa-solid fa-plus me-2")),
 							gomponents.Text("Add New Series"),
 						),
 					),
 
 					// Series list
-					gomponents.If(len(cfg.Serie) > 0,
-						renderSeriesList(filename, cfg.Serie),
+					gomponents.If(len(cfg.Config) > 0,
+						renderSeriesList(filename, cfg.Config),
 					),
 				),
 			),
@@ -238,8 +283,8 @@ func renderSeriesConfigEditor(filename string, cfg *config.MainSerieConfig, csrf
 	)
 }
 
-// renderSeriesList renders the list of series configurations
-func renderSeriesList(filename string, series []config.SerieConfig) gomponents.Node {
+// renderSeriesList renders the list of series configurations.
+func renderSeriesList(filename string, series []config.ManualConfig) gomponents.Node {
 	return html.Div(
 		html.Class("table-responsive"),
 		html.Table(
@@ -261,8 +306,8 @@ func renderSeriesList(filename string, series []config.SerieConfig) gomponents.N
 	)
 }
 
-// renderSeriesRows renders table rows for each series
-func renderSeriesRows(filename string, series []config.SerieConfig) gomponents.Node {
+// renderSeriesRows renders table rows for each series.
+func renderSeriesRows(filename string, series []config.ManualConfig) gomponents.Node {
 	var rows []gomponents.Node
 	for i, s := range series {
 		searchStatus := "Enabled"
@@ -279,22 +324,30 @@ func renderSeriesRows(filename string, series []config.SerieConfig) gomponents.N
 			html.Td(
 				html.A(
 					html.Class("btn btn-sm btn-primary me-2"),
-					html.Href(fmt.Sprintf("/api/admin/seriesconfig/edit?file=%s&index=%d", filename, i)),
+					html.Href(
+						fmt.Sprintf("/api/admin/seriesconfig/edit?file=%s&index=%d", filename, i),
+					),
 					html.I(html.Class("fa-solid fa-edit")),
 				),
 				html.A(
 					html.Class("btn btn-sm btn-danger"),
-					html.Href(fmt.Sprintf("/api/admin/seriesconfig/delete?file=%s&index=%d", filename, i)),
-					gomponents.Attr("onclick", "return confirm('Are you sure you want to delete this series configuration?')"),
+					html.Href(
+						fmt.Sprintf("/api/admin/seriesconfig/delete?file=%s&index=%d", filename, i),
+					),
+					gomponents.Attr(
+						"onclick",
+						"return confirm('Are you sure you want to delete this series configuration?')",
+					),
 					html.I(html.Class("fa-solid fa-trash")),
 				),
 			),
 		))
 	}
+
 	return gomponents.Group(rows)
 }
 
-// handleSeriesConfigDelete handles deletion of a series entry
+// handleSeriesConfigDelete handles deletion of a series entry.
 func handleSeriesConfigDelete(ctx *gin.Context) {
 	filename := ctx.Query("file")
 	index := ctx.Query("index")
@@ -319,13 +372,13 @@ func handleSeriesConfigDelete(ctx *gin.Context) {
 	}
 
 	// Validate index
-	if idx < 0 || idx >= len(cfg.Serie) {
+	if idx < 0 || idx >= len(cfg.Config) {
 		sendBadRequest(ctx, "Index out of range")
 		return
 	}
 
 	// Remove entry
-	cfg.Serie = append(cfg.Serie[:idx], cfg.Serie[idx+1:]...)
+	cfg.Config = append(cfg.Config[:idx], cfg.Config[idx+1:]...)
 
 	// Save
 	if err := saveSeriesConfigFile(filename, cfg); err != nil {
@@ -337,7 +390,7 @@ func handleSeriesConfigDelete(ctx *gin.Context) {
 	ctx.Redirect(http.StatusFound, "/api/admin/seriesconfig?file="+filename)
 }
 
-// handleSeriesConfigEdit handles the edit form page
+// handleSeriesConfigEdit handles the edit form page.
 func handleSeriesConfigEdit(ctx *gin.Context) {
 	filename := ctx.Query("file")
 	index := ctx.Query("index")
@@ -362,7 +415,7 @@ func handleSeriesConfigEdit(ctx *gin.Context) {
 	}
 
 	// Validate index
-	if idx < 0 || idx >= len(cfg.Serie) {
+	if idx < 0 || idx >= len(cfg.Config) {
 		sendBadRequest(ctx, "Index out of range")
 		return
 	}
@@ -374,7 +427,7 @@ func handleSeriesConfigEdit(ctx *gin.Context) {
 		true,
 		false,
 		false,
-		renderSeriesConfigForm(filename, &cfg.Serie[idx], idx, csrfToken),
+		renderSeriesConfigForm(filename, &cfg.Config[idx], idx, csrfToken),
 	)
 
 	var buf strings.Builder
@@ -384,7 +437,7 @@ func handleSeriesConfigEdit(ctx *gin.Context) {
 	ctx.String(http.StatusOK, buf.String())
 }
 
-// handleSeriesConfigAdd handles the add form page
+// handleSeriesConfigAdd handles the add form page.
 func handleSeriesConfigAdd(ctx *gin.Context) {
 	filename := ctx.Query("file")
 
@@ -396,7 +449,7 @@ func handleSeriesConfigAdd(ctx *gin.Context) {
 	csrfToken := getCSRFToken(ctx)
 
 	// Create empty serie config
-	emptySerie := &config.SerieConfig{
+	emptySerie := &config.ManualConfig{
 		Identifiedby: "ep",
 		Source:       "tvdb",
 	}
@@ -416,9 +469,15 @@ func handleSeriesConfigAdd(ctx *gin.Context) {
 	ctx.String(http.StatusOK, buf.String())
 }
 
-// renderSeriesConfigForm renders the add/edit form for a series configuration
-func renderSeriesConfigForm(filename string, serie *config.SerieConfig, index int, csrfToken string) gomponents.Node {
+// renderSeriesConfigForm renders the add/edit form for a series configuration.
+func renderSeriesConfigForm(
+	filename string,
+	serie *config.ManualConfig,
+	index int,
+	csrfToken string,
+) gomponents.Node {
 	isEdit := index >= 0
+
 	title := "Add New Series"
 	if isEdit {
 		title = "Edit Series: " + serie.Name
@@ -442,10 +501,23 @@ func renderSeriesConfigForm(filename string, serie *config.SerieConfig, index in
 						html.Form(
 							html.Method("POST"),
 							html.Action("/api/admin/seriesconfig/update"),
-							html.Input(html.Type("hidden"), html.Name("csrf_token"), html.Value(csrfToken)),
-							html.Input(html.Type("hidden"), html.Name("file"), html.Value(filename)),
-							gomponents.If(isEdit,
-								html.Input(html.Type("hidden"), html.Name("index"), html.Value(fmt.Sprintf("%d", index))),
+							html.Input(
+								html.Type("hidden"),
+								html.Name("csrf_token"),
+								html.Value(csrfToken),
+							),
+							html.Input(
+								html.Type("hidden"),
+								html.Name("file"),
+								html.Value(filename),
+							),
+							gomponents.If(
+								isEdit,
+								html.Input(
+									html.Type("hidden"),
+									html.Name("index"),
+									html.Value(fmt.Sprintf("%d", index)),
+								),
 							),
 
 							// Render form sections
@@ -462,7 +534,13 @@ func renderSeriesConfigForm(filename string, serie *config.SerieConfig, index in
 								),
 								html.A(
 									html.Class("btn btn-info me-2"),
-									html.Href(fmt.Sprintf("/api/admin/seriesconfig/helper?file=%s&index=%d", filename, index)),
+									html.Href(
+										fmt.Sprintf(
+											"/api/admin/seriesconfig/helper?file=%s&index=%d",
+											filename,
+											index,
+										),
+									),
 									html.I(html.Class("fa-solid fa-question-circle me-2")),
 									gomponents.Text("Scraper Helper"),
 								),
@@ -480,16 +558,16 @@ func renderSeriesConfigForm(filename string, serie *config.SerieConfig, index in
 	)
 }
 
-// getSerieConfigMetadata extracts field comments and display names from SerieConfig struct tags
+// getSerieConfigMetadata extracts field comments and display names from SerieConfig struct tags.
 func getSerieConfigMetadata() (map[string]string, map[string]string) {
-	comments := logger.GetFieldComments(config.SerieConfig{})
-	displayNames := logger.GetFieldDisplayNames(config.SerieConfig{})
+	comments := logger.GetFieldComments(config.ManualConfig{})
+	displayNames := logger.GetFieldDisplayNames(config.ManualConfig{})
 	return comments, displayNames
 }
 
-// renderSeriesConfigSections organizes series config fields into logical groups
+// renderSeriesConfigSections organizes series config fields into logical groups.
 func renderSeriesConfigSections(
-	serie *config.SerieConfig,
+	serie *config.ManualConfig,
 	group string,
 	comments map[string]string,
 	displayNames map[string]string,
@@ -498,6 +576,7 @@ func renderSeriesConfigSections(
 	if sanitizedName == "" {
 		sanitizedName = "new-series"
 	}
+
 	accordionId := "serieConfigAccordion-" + sanitizedName
 
 	return html.Div(
@@ -511,47 +590,109 @@ func renderSeriesConfigSections(
 				{Name: "TvdbID", Type: "number", Value: serie.TvdbID, Options: nil},
 				{Name: "AlternateName", Type: "array", Value: serie.AlternateName, Options: nil},
 				{Name: "DisallowedName", Type: "array", Value: serie.DisallowedName, Options: nil},
-				{Name: "Identifiedby", Type: "select", Value: serie.Identifiedby, Options: convertMapToSelectOptions(map[string][]string{
-					"options": {"ep", "date"},
-				})},
-				{Name: "Source", Type: "select", Value: serie.Source, Options: convertMapToSelectOptions(map[string][]string{
-					"options": {"tvdb", "scraper", "none"},
-				})},
+				{
+					Name:  "Identifiedby",
+					Type:  "select",
+					Value: serie.Identifiedby,
+					Options: convertMapToSelectOptions(map[string][]string{
+						"options": {"ep", "date"},
+					}),
+				},
+				{
+					Name:  "Source",
+					Type:  "select",
+					Value: serie.Source,
+					Options: convertMapToSelectOptions(map[string][]string{
+						"options": {"tvdb", "scraper", "none"},
+					}),
+				},
 				{Name: "Target", Type: "text", Value: serie.Target, Options: nil},
 			}, group, comments, displayNames, accordionId),
 
 		// Search & Upgrade Settings
-		renderConfigGroupWithParent("Search & Upgrade Settings", "search-serie-"+sanitizedName, false,
+		renderConfigGroupWithParent(
+			"Search & Upgrade Settings",
+			"search-serie-"+sanitizedName,
+			false,
 			[]FormFieldDefinition{
 				{Name: "DontUpgrade", Type: "checkbox", Value: serie.DontUpgrade, Options: nil},
 				{Name: "DontSearch", Type: "checkbox", Value: serie.DontSearch, Options: nil},
-				{Name: "SearchSpecials", Type: "checkbox", Value: serie.SearchSpecials, Options: nil},
+				{
+					Name:    "SearchSpecials",
+					Type:    "checkbox",
+					Value:   serie.SearchSpecials,
+					Options: nil,
+				},
 				{Name: "IgnoreRuntime", Type: "checkbox", Value: serie.IgnoreRuntime, Options: nil},
-			}, group, comments, displayNames, accordionId),
+			},
+			group,
+			comments,
+			displayNames,
+			accordionId,
+		),
 
 		// Scraper Settings (when source = "scraper")
-		renderConfigGroupWithParent("Scraper - Basic Configuration", "scraper-basic-"+sanitizedName, false,
+		renderConfigGroupWithParent(
+			"Scraper - Basic Configuration",
+			"scraper-basic-"+sanitizedName,
+			false,
 			[]FormFieldDefinition{
-				{Name: "ScraperType", Type: "select", Value: serie.ScraperType, Options: convertMapToSelectOptions(map[string][]string{
-					"options": {"project1service", "algolia", "htmlxpath", "csrfapi"},
-				})},
+				{
+					Name:  "ScraperType",
+					Type:  "select",
+					Value: serie.ScraperType,
+					Options: convertMapToSelectOptions(map[string][]string{
+						"options": {"project1service", "algolia", "htmlxpath", "csrfapi"},
+					}),
+				},
 				{Name: "StartURL", Type: "text", Value: serie.StartURL, Options: nil},
 				{Name: "SiteURL", Type: "text", Value: serie.SiteURL, Options: nil},
 				{Name: "SiteID", Type: "number", Value: serie.SiteID, Options: nil},
-			}, group, comments, displayNames, accordionId),
+			},
+			group,
+			comments,
+			displayNames,
+			accordionId,
+		),
 
 		// Project1Service / Algolia Settings
-		renderConfigGroupWithParent("Scraper - Filter Settings", "scraper-filters-"+sanitizedName, false,
+		renderConfigGroupWithParent(
+			"Scraper - Filter Settings",
+			"scraper-filters-"+sanitizedName,
+			false,
 			[]FormFieldDefinition{
-				{Name: "FilterCollectionID", Type: "number", Value: serie.FilterCollectionID, Options: nil},
+				{
+					Name:    "FilterCollectionID",
+					Type:    "number",
+					Value:   serie.FilterCollectionID,
+					Options: nil,
+				},
 				{Name: "SiteFilterName", Type: "text", Value: serie.SiteFilterName, Options: nil},
 				{Name: "SerieFilterName", Type: "text", Value: serie.SerieFilterName, Options: nil},
-				{Name: "NetworkFilterName", Type: "text", Value: serie.NetworkFilterName, Options: nil},
-				{Name: "NetworkSiteFilterName", Type: "text", Value: serie.NetworkSiteFilterName, Options: nil},
-			}, group, comments, displayNames, accordionId),
+				{
+					Name:    "NetworkFilterName",
+					Type:    "text",
+					Value:   serie.NetworkFilterName,
+					Options: nil,
+				},
+				{
+					Name:    "NetworkSiteFilterName",
+					Type:    "text",
+					Value:   serie.NetworkSiteFilterName,
+					Options: nil,
+				},
+			},
+			group,
+			comments,
+			displayNames,
+			accordionId,
+		),
 
 		// HTML/XPath Scraper Settings
-		renderConfigGroupWithParent("Scraper - HTML/XPath Settings", "scraper-xpath-"+sanitizedName, false,
+		renderConfigGroupWithParent(
+			"Scraper - HTML/XPath Settings",
+			"scraper-xpath-"+sanitizedName,
+			false,
 			[]FormFieldDefinition{
 				{Name: "SceneNodeXPath", Type: "text", Value: serie.SceneNodeXPath, Options: nil},
 				{Name: "TitleXPath", Type: "text", Value: serie.TitleXPath, Options: nil},
@@ -560,44 +701,118 @@ func renderSeriesConfigSections(
 				{Name: "ActorsXPath", Type: "text", Value: serie.ActorsXPath, Options: nil},
 				{Name: "TitleAttribute", Type: "text", Value: serie.TitleAttribute, Options: nil},
 				{Name: "URLAttribute", Type: "text", Value: serie.URLAttribute, Options: nil},
-			}, group, comments, displayNames, accordionId),
+			},
+			group,
+			comments,
+			displayNames,
+			accordionId,
+		),
 
 		// Pagination Settings
-		renderConfigGroupWithParent("Scraper - Pagination Settings", "scraper-pagination-"+sanitizedName, false,
+		renderConfigGroupWithParent(
+			"Scraper - Pagination Settings",
+			"scraper-pagination-"+sanitizedName,
+			false,
 			[]FormFieldDefinition{
-				{Name: "PaginationType", Type: "select", Value: serie.PaginationType, Options: convertMapToSelectOptions(map[string][]string{
-					"options": {"sequential", "offset"},
-				})},
+				{
+					Name:  "PaginationType",
+					Type:  "select",
+					Value: serie.PaginationType,
+					Options: convertMapToSelectOptions(map[string][]string{
+						"options": {"sequential", "offset"},
+					}),
+				},
 				{Name: "PageIncrement", Type: "number", Value: serie.PageIncrement, Options: nil},
 				{Name: "PageURLPattern", Type: "text", Value: serie.PageURLPattern, Options: nil},
-			}, group, comments, displayNames, accordionId),
+			},
+			group,
+			comments,
+			displayNames,
+			accordionId,
+		),
 
 		// CSRF API Scraper Settings
-		renderConfigGroupWithParent("Scraper - CSRF API Settings", "scraper-csrfapi-"+sanitizedName, false,
+		renderConfigGroupWithParent(
+			"Scraper - CSRF API Settings",
+			"scraper-csrfapi-"+sanitizedName,
+			false,
 			[]FormFieldDefinition{
 				{Name: "CSRFCookieName", Type: "text", Value: serie.CSRFCookieName, Options: nil},
 				{Name: "CSRFHeaderName", Type: "text", Value: serie.CSRFHeaderName, Options: nil},
 				{Name: "APIURLPattern", Type: "text", Value: serie.APIURLPattern, Options: nil},
 				{Name: "PageStartIndex", Type: "number", Value: serie.PageStartIndex, Options: nil},
-				{Name: "ResultsArrayPath", Type: "text", Value: serie.ResultsArrayPath, Options: nil},
+				{
+					Name:    "ResultsArrayPath",
+					Type:    "text",
+					Value:   serie.ResultsArrayPath,
+					Options: nil,
+				},
 				{Name: "TitleField", Type: "text", Value: serie.TitleField, Options: nil},
 				{Name: "DateField", Type: "text", Value: serie.DateField, Options: nil},
 				{Name: "URLField", Type: "text", Value: serie.URLField, Options: nil},
 				{Name: "ActorsField", Type: "text", Value: serie.ActorsField, Options: nil},
 				{Name: "ActorNameField", Type: "text", Value: serie.ActorNameField, Options: nil},
 				{Name: "RuntimeField", Type: "text", Value: serie.RuntimeField, Options: nil},
-			}, group, comments, displayNames, accordionId),
+			},
+			group,
+			comments,
+			displayNames,
+			accordionId,
+		),
 
 		// Common Scraper Settings
-		renderConfigGroupWithParent("Scraper - Common Settings", "scraper-common-"+sanitizedName, false,
+		renderConfigGroupWithParent(
+			"Scraper - Common Settings",
+			"scraper-common-"+sanitizedName,
+			false,
 			[]FormFieldDefinition{
 				{Name: "DateFormat", Type: "text", Value: serie.DateFormat, Options: nil},
 				{Name: "WaitSeconds", Type: "number", Value: serie.WaitSeconds, Options: nil},
-			}, group, comments, displayNames, accordionId),
+			},
+			group,
+			comments,
+			displayNames,
+			accordionId,
+		),
+
+		// Audiobook Configuration
+		renderConfigGroupWithParent(
+			"Audiobook Configuration",
+			"audiobook-"+sanitizedName,
+			false,
+			[]FormFieldDefinition{
+				{Name: "AuthorName", Type: "text", Value: serie.AuthorName, Options: nil},
+				{Name: "AuthorID", Type: "text", Value: serie.AuthorID, Options: nil},
+				{Name: "BookSeriesName", Type: "text", Value: serie.BookSeriesName, Options: nil},
+				{Name: "BookSeriesID", Type: "text", Value: serie.BookSeriesID, Options: nil},
+			},
+			group,
+			comments,
+			displayNames,
+			accordionId,
+		),
+
+		// Music Configuration
+		renderConfigGroupWithParent(
+			"Music Configuration",
+			"music-"+sanitizedName,
+			false,
+			[]FormFieldDefinition{
+				{Name: "ArtistName", Type: "text", Value: serie.ArtistName, Options: nil},
+				{Name: "ArtistID", Type: "text", Value: serie.ArtistID, Options: nil},
+				{Name: "AlbumSeriesName", Type: "text", Value: serie.AlbumSeriesName, Options: nil},
+				{Name: "AlbumSeriesID", Type: "text", Value: serie.AlbumSeriesID, Options: nil},
+				{Name: "MBMediaFormats", Type: "array", Value: serie.MBMediaFormats, Options: nil},
+			},
+			group,
+			comments,
+			displayNames,
+			accordionId,
+		),
 	)
 }
 
-// handleSeriesConfigUpdate handles form submission for add/edit
+// handleSeriesConfigUpdate handles form submission for add/edit.
 func handleSeriesConfigUpdate(ctx *gin.Context) {
 	filename := ctx.PostForm("file")
 	indexStr := ctx.PostForm("index")
@@ -626,15 +841,15 @@ func handleSeriesConfigUpdate(ctx *gin.Context) {
 			return
 		}
 
-		if idx < 0 || idx >= len(cfg.Serie) {
+		if idx < 0 || idx >= len(cfg.Config) {
 			sendBadRequest(ctx, "Index out of range")
 			return
 		}
 
-		cfg.Serie[idx] = serie
+		cfg.Config[idx] = serie
 	} else {
 		// Add new entry
-		cfg.Serie = append(cfg.Serie, serie)
+		cfg.Config = append(cfg.Config, serie)
 	}
 
 	// Save config
@@ -647,9 +862,9 @@ func handleSeriesConfigUpdate(ctx *gin.Context) {
 	ctx.Redirect(http.StatusFound, "/api/admin/seriesconfig?file="+filename)
 }
 
-// parseSerieConfigForm parses form data into a SerieConfig struct
-func parseSerieConfigForm(ctx *gin.Context) config.SerieConfig {
-	serie := config.SerieConfig{}
+// parseSerieConfigForm parses form data into a SerieConfig struct.
+func parseSerieConfigForm(ctx *gin.Context) config.ManualConfig {
+	serie := config.ManualConfig{}
 
 	// Basic fields
 	serie.Name = ctx.PostForm("serie_Name")
@@ -662,6 +877,7 @@ func parseSerieConfigForm(ctx *gin.Context) config.SerieConfig {
 	if altNames := ctx.PostForm("serie_AlternateName"); altNames != "" {
 		serie.AlternateName = parseArrayField(altNames)
 	}
+
 	if disallowed := ctx.PostForm("serie_DisallowedName"); disallowed != "" {
 		serie.DisallowedName = parseArrayField(disallowed)
 	}
@@ -684,6 +900,7 @@ func parseSerieConfigForm(ctx *gin.Context) config.SerieConfig {
 	if siteID := ctx.PostForm("serie_SiteID"); siteID != "" {
 		var id uint
 		fmt.Sscanf(siteID, "%d", &id)
+
 		serie.SiteID = id
 	}
 
@@ -710,6 +927,7 @@ func parseSerieConfigForm(ctx *gin.Context) config.SerieConfig {
 	if pageInc := ctx.PostForm("serie_PageIncrement"); pageInc != "" {
 		fmt.Sscanf(pageInc, "%d", &serie.PageIncrement)
 	}
+
 	serie.PageURLPattern = ctx.PostForm("serie_PageURLPattern")
 
 	// CSRF API fields
@@ -735,10 +953,26 @@ func parseSerieConfigForm(ctx *gin.Context) config.SerieConfig {
 		fmt.Sscanf(waitSec, "%d", &serie.WaitSeconds)
 	}
 
+	// Audiobook fields
+	serie.AuthorName = ctx.PostForm("serie_AuthorName")
+	serie.AuthorID = ctx.PostForm("serie_AuthorID")
+	serie.BookSeriesName = ctx.PostForm("serie_BookSeriesName")
+	serie.BookSeriesID = ctx.PostForm("serie_BookSeriesID")
+
+	// Music fields
+	serie.ArtistName = ctx.PostForm("serie_ArtistName")
+	serie.ArtistID = ctx.PostForm("serie_ArtistID")
+	serie.AlbumSeriesName = ctx.PostForm("serie_AlbumSeriesName")
+
+	serie.AlbumSeriesID = ctx.PostForm("serie_AlbumSeriesID")
+	if val := ctx.PostFormArray("serie_MBMediaFormats"); len(val) != 0 {
+		serie.MBMediaFormats = val
+	}
+
 	return serie
 }
 
-// parseArrayField parses a comma-separated string into a string slice
+// parseArrayField parses a comma-separated string into a string slice.
 func parseArrayField(value string) []string {
 	if value == "" {
 		return nil
@@ -746,6 +980,7 @@ func parseArrayField(value string) []string {
 
 	// Split by comma and trim whitespace
 	parts := strings.Split(value, ",")
+
 	var result []string
 	for _, part := range parts {
 		trimmed := strings.TrimSpace(part)
@@ -757,7 +992,7 @@ func parseArrayField(value string) []string {
 	return result
 }
 
-// handleScraperHelper handles the scraper helper/discovery page
+// handleScraperHelper handles the scraper helper/discovery page.
 func handleScraperHelper(ctx *gin.Context) {
 	filename := ctx.Query("file")
 	index := ctx.Query("index")
@@ -797,7 +1032,7 @@ func handleScraperHelper(ctx *gin.Context) {
 	ctx.String(http.StatusOK, buf.String())
 }
 
-// ScraperDiscoveryData holds discovered configuration values
+// ScraperDiscoveryData holds discovered configuration values.
 type ScraperDiscoveryData struct {
 	Error              string
 	AlgoliaAppID       string
@@ -815,19 +1050,19 @@ type ScraperDiscoveryData struct {
 	SampleResponse     string
 }
 
-// FacetValue represents a facet value with count
+// FacetValue represents a facet value with count.
 type FacetValue struct {
 	Value string
 	Count int
 }
 
-// CollectionInfo holds collection information
+// CollectionInfo holds collection information.
 type CollectionInfo struct {
 	ID   int
 	Name string
 }
 
-// detectScraperType automatically detects the scraper type by analyzing the URL and page content
+// detectScraperType automatically detects the scraper type by analyzing the URL and page content.
 func detectScraperType(startURL string) string {
 	client := &http.Client{
 		Timeout: 15 * time.Second,
@@ -856,6 +1091,7 @@ func detectScraperType(startURL string) string {
 
 	// Parse URL for domain-based detection
 	parsedURL, _ := url.Parse(startURL)
+
 	domain := ""
 	if parsedURL != nil {
 		domain = strings.ToLower(parsedURL.Host)
@@ -864,6 +1100,7 @@ func detectScraperType(startURL string) string {
 	// Priority 1: Check for Algolia credentials in page
 	// Algolia is used by Gamma Entertainment/Adult Time network
 	algoliaPattern1 := regexp.MustCompile(`"applicationID":"([^"]+)","apiKey":"([^"]+)"`)
+
 	algoliaPattern2 := regexp.MustCompile(`algoliaApplicationId:"([^"]+)",algoliaApiKey:"([^"]+)"`)
 	if algoliaPattern1.MatchString(content) || algoliaPattern2.MatchString(content) {
 		return "algolia"
@@ -931,7 +1168,7 @@ func detectScraperType(startURL string) string {
 	return "htmlxpath"
 }
 
-// discoverScraperConfig discovers configuration values by analyzing the target URL
+// discoverScraperConfig discovers configuration values by analyzing the target URL.
 func discoverScraperConfig(scraperType, startURL string) *ScraperDiscoveryData {
 	data := &ScraperDiscoveryData{}
 
@@ -985,10 +1222,11 @@ func getAlgoliaCredentials(resp *http.Response) (string, string, error) {
 		// s.applicationID = matches[2]
 		return matches[2], matches[1], nil
 	}
+
 	return "", "", fmt.Errorf("algolia API credentials not found")
 }
 
-// discoverAlgoliaConfig discovers Algolia configuration
+// discoverAlgoliaConfig discovers Algolia configuration.
 func discoverAlgoliaConfig(startURL string, data *ScraperDiscoveryData) {
 	client := &http.Client{Timeout: 30 * time.Second}
 
@@ -1018,9 +1256,9 @@ func discoverAlgoliaConfig(startURL string, data *ScraperDiscoveryData) {
 
 	// Decode base64 API key if needed
 	if strings.Contains(data.AlgoliaAPIKey, "=") {
-		//decoded, err := base64.StdEncoding.DecodeString(data.AlgoliaAPIKey)
-		//if err == nil {
-		//data.AlgoliaAPIKey = string(decoded)
+		// decoded, err := base64.StdEncoding.DecodeString(data.AlgoliaAPIKey)
+		// if err == nil {
+		// data.AlgoliaAPIKey = string(decoded)
 		//}
 	}
 
@@ -1028,7 +1266,7 @@ func discoverAlgoliaConfig(startURL string, data *ScraperDiscoveryData) {
 	fetchAlgoliaSample(startURL, data)
 }
 
-// fetchAlgoliaSample fetches comprehensive data from Algolia using their advanced API
+// fetchAlgoliaSample fetches comprehensive data from Algolia using their advanced API.
 func fetchAlgoliaSample(startURL string, data *ScraperDiscoveryData) {
 	client := &http.Client{Timeout: 30 * time.Second}
 
@@ -1057,17 +1295,21 @@ func fetchAlgoliaSample(startURL string, data *ScraperDiscoveryData) {
 		if a < b {
 			return a
 		}
+
 		return b
 	}
 
 	// Try each possible index name
-	var successfulIndex string
-	var result struct {
-		Facets map[string]map[string]int `json:"facets"`
-		Hits   []map[string]interface{}  `json:"hits"`
-	}
+	var (
+		successfulIndex string
+		result          struct {
+			Facets map[string]map[string]int `json:"facets"`
+			Hits   []map[string]any          `json:"hits"`
+		}
+	)
 
 	var lastError string
+
 	var debugInfo string // Store debug information
 	for _, indexName := range possibleIndexNames {
 		// Request with faceting enabled - get ALL facets with counts
@@ -1098,9 +1340,17 @@ func fetchAlgoliaSample(startURL string, data *ScraperDiscoveryData) {
 		// Check HTTP status
 		if resp.StatusCode != http.StatusOK {
 			// Build debug info for 403 errors
-			debugInfo = fmt.Sprintf("\n\nDEBUG INFO:\nAPI URL: %s\nApp ID: %s\nAPI Key: %s\nRequest Body: %s\nReferer: %s\nHTTP Status: %d",
-				apiURL, data.AlgoliaAppID, data.AlgoliaAPIKey, requestBody, startURL, resp.StatusCode)
+			debugInfo = fmt.Sprintf(
+				"\n\nDEBUG INFO:\nAPI URL: %s\nApp ID: %s\nAPI Key: %s\nRequest Body: %s\nReferer: %s\nHTTP Status: %d",
+				apiURL,
+				data.AlgoliaAppID,
+				data.AlgoliaAPIKey,
+				requestBody,
+				startURL,
+				resp.StatusCode,
+			)
 			lastError = fmt.Sprintf("Index '%s' returned HTTP %d", indexName, resp.StatusCode)
+
 			continue // Try next index
 		}
 
@@ -1114,19 +1364,30 @@ func fetchAlgoliaSample(startURL string, data *ScraperDiscoveryData) {
 		var algoliaResp struct {
 			Results []struct {
 				Facets map[string]map[string]int `json:"facets"`
-				Hits   []map[string]interface{}  `json:"hits"`
+				Hits   []map[string]any          `json:"hits"`
 			} `json:"results"`
 			Message string `json:"message"` // Algolia error message
 		}
 
 		if err := json.Unmarshal(body, &algoliaResp); err != nil {
-			lastError = fmt.Sprintf("Failed to parse JSON for index '%s': %v. Response: %s", indexName, err, string(body[:min(200, len(body))]))
+			lastError = fmt.Sprintf(
+				"Failed to parse JSON for index '%s': %v. Response: %s",
+				indexName,
+				err,
+				string(body[:min(200, len(body))]),
+			)
+
 			continue // Try next index
 		}
 
 		// Check for Algolia error message
 		if algoliaResp.Message != "" {
-			lastError = fmt.Sprintf("Algolia error for index '%s': %s", indexName, algoliaResp.Message)
+			lastError = fmt.Sprintf(
+				"Algolia error for index '%s': %s",
+				indexName,
+				algoliaResp.Message,
+			)
+
 			continue // Try next index
 		}
 
@@ -1154,19 +1415,26 @@ func fetchAlgoliaSample(startURL string, data *ScraperDiscoveryData) {
 		} else {
 			data.SampleResponse = string(body)
 		}
+
 		break // Exit loop, we found data
 	}
 
 	// Check if we found any working index
 	if successfulIndex == "" {
-		errorMsg := "Could not find valid Algolia index. Tried: " + strings.Join(possibleIndexNames, ", ")
+		errorMsg := "Could not find valid Algolia index. Tried: " + strings.Join(
+			possibleIndexNames,
+			", ",
+		)
 		if lastError != "" {
 			errorMsg += ". Last error: " + lastError
 		}
+
 		if debugInfo != "" {
 			errorMsg += debugInfo
 		}
+
 		data.Error = errorMsg
+
 		return
 	}
 
@@ -1181,6 +1449,7 @@ func fetchAlgoliaSample(startURL string, data *ScraperDiscoveryData) {
 		for value, count := range facetValues {
 			values = append(values, FacetValue{Value: value, Count: count})
 		}
+
 		data.AlgoliaFacets[facetName] = values
 
 		// Populate specific known facets for easy access
@@ -1204,7 +1473,7 @@ func fetchAlgoliaSample(startURL string, data *ScraperDiscoveryData) {
 	}
 }
 
-// discoverProject1ServiceConfig discovers Project1Service configuration
+// discoverProject1ServiceConfig discovers Project1Service configuration.
 func discoverProject1ServiceConfig(startURL string, data *ScraperDiscoveryData) {
 	client := &http.Client{Timeout: 30 * time.Second}
 
@@ -1237,14 +1506,15 @@ func discoverProject1ServiceConfig(startURL string, data *ScraperDiscoveryData) 
 	}
 
 	// Parse URL to get site domain and path
-	//parsedURL, err := url.Parse(startURL)
-	//if err != nil {
+	// parsedURL, err := url.Parse(startURL)
+	// if err != nil {
 	//	data.Error = "Invalid URL: " + err.Error()
 	//	return
 	//}
 
 	// Fetch collections from API
 	apiURL := "https://site-api.project1service.com/v1/collections?limit=100"
+
 	req, err = http.NewRequest(http.MethodGet, apiURL, nil)
 	if err != nil {
 		data.Error = "Failed to create API request: " + err.Error()
@@ -1286,7 +1556,7 @@ func discoverProject1ServiceConfig(startURL string, data *ScraperDiscoveryData) 
 	}
 }
 
-// discoverCSRFAPIConfig discovers CSRF API configuration
+// discoverCSRFAPIConfig discovers CSRF API configuration.
 func discoverCSRFAPIConfig(startURL string, data *ScraperDiscoveryData) {
 	client := &http.Client{Timeout: 30 * time.Second}
 
@@ -1320,7 +1590,7 @@ func discoverCSRFAPIConfig(startURL string, data *ScraperDiscoveryData) {
 	data.CSRFHeader = "csrf-token (check Network tab in DevTools for exact header name)"
 }
 
-// getScraperTypeDisplayName returns a user-friendly display name for a scraper type
+// getScraperTypeDisplayName returns a user-friendly display name for a scraper type.
 func getScraperTypeDisplayName(scraperType string) string {
 	switch scraperType {
 	case "htmlxpath":
@@ -1336,8 +1606,12 @@ func getScraperTypeDisplayName(scraperType string) string {
 	}
 }
 
-// renderScraperHelperPage renders the scraper helper interface
-func renderScraperHelperPage(filename, index, scraperType, startURL string, discoveredData *ScraperDiscoveryData, csrfToken string) gomponents.Node {
+// renderScraperHelperPage renders the scraper helper interface.
+func renderScraperHelperPage(
+	filename, index, scraperType, startURL string,
+	discoveredData *ScraperDiscoveryData,
+	_ string,
+) gomponents.Node {
 	// Check if scraper type was auto-detected
 	autoDetected := startURL != "" && scraperType != ""
 
@@ -1353,7 +1627,11 @@ func renderScraperHelperPage(filename, index, scraperType, startURL string, disc
 			),
 			html.Div(
 				html.Class("card-body"),
-				html.P(gomponents.Text("Enter a URL below and the helper will automatically detect the scraper type and extract available configuration values.")),
+				html.P(
+					gomponents.Text(
+						"Enter a URL below and the helper will automatically detect the scraper type and extract available configuration values.",
+					),
+				),
 
 				// Show auto-detection notice
 				gomponents.If(autoDetected,
@@ -1383,23 +1661,56 @@ func renderScraperHelperPage(filename, index, scraperType, startURL string, disc
 							html.Value(startURL),
 							html.Required(),
 						),
-						html.Div(html.Class("form-text"), gomponents.Text("The URL will be analyzed to auto-detect the scraper type")),
+						html.Div(
+							html.Class("form-text"),
+							gomponents.Text(
+								"The URL will be analyzed to auto-detect the scraper type",
+							),
+						),
 					),
 
 					html.Div(
 						html.Class("mb-3"),
-						html.Label(html.Class("form-label"), gomponents.Text("Scraper Type (optional - auto-detected if blank)")),
+						html.Label(
+							html.Class("form-label"),
+							gomponents.Text("Scraper Type (optional - auto-detected if blank)"),
+						),
 						html.Select(
 							html.Class("form-select"),
 							html.Name("type"),
 							html.ID("scraper-type"),
-							html.Option(html.Value(""), gomponents.Text("Auto-detect"), gomponents.If(scraperType == "", html.Selected())),
-							html.Option(html.Value("htmlxpath"), gomponents.Text("HTML/XPath"), gomponents.If(scraperType == "htmlxpath", html.Selected())),
-							html.Option(html.Value("csrfapi"), gomponents.Text("CSRF API"), gomponents.If(scraperType == "csrfapi", html.Selected())),
-							html.Option(html.Value("algolia"), gomponents.Text("Algolia"), gomponents.If(scraperType == "algolia", html.Selected())),
-							html.Option(html.Value("project1service"), gomponents.Text("Project1Service"), gomponents.If(scraperType == "project1service", html.Selected())),
+							html.Option(
+								html.Value(""),
+								gomponents.Text("Auto-detect"),
+								gomponents.If(scraperType == "", html.Selected()),
+							),
+							html.Option(
+								html.Value("htmlxpath"),
+								gomponents.Text("HTML/XPath"),
+								gomponents.If(scraperType == "htmlxpath", html.Selected()),
+							),
+							html.Option(
+								html.Value("csrfapi"),
+								gomponents.Text("CSRF API"),
+								gomponents.If(scraperType == "csrfapi", html.Selected()),
+							),
+							html.Option(
+								html.Value("algolia"),
+								gomponents.Text("Algolia"),
+								gomponents.If(scraperType == "algolia", html.Selected()),
+							),
+							html.Option(
+								html.Value("project1service"),
+								gomponents.Text("Project1Service"),
+								gomponents.If(scraperType == "project1service", html.Selected()),
+							),
 						),
-						html.Div(html.Class("form-text"), gomponents.Text("Leave as 'Auto-detect' to automatically determine the scraper type")),
+						html.Div(
+							html.Class("form-text"),
+							gomponents.Text(
+								"Leave as 'Auto-detect' to automatically determine the scraper type",
+							),
+						),
 					),
 
 					html.Button(
@@ -1411,19 +1722,31 @@ func renderScraperHelperPage(filename, index, scraperType, startURL string, disc
 
 					html.A(
 						html.Class("btn btn-secondary ms-2"),
-						html.Href(fmt.Sprintf("/api/admin/seriesconfig/edit?file=%s&index=%s", filename, index)),
+						html.Href(
+							fmt.Sprintf(
+								"/api/admin/seriesconfig/edit?file=%s&index=%s",
+								filename,
+								index,
+							),
+						),
 						gomponents.Text("Back to Edit"),
 					),
 				),
 			),
 		),
 
-		gomponents.If(discoveredData != nil, renderScraperHelperResults(scraperType, startURL, discoveredData)),
+		gomponents.If(
+			discoveredData != nil,
+			renderScraperHelperResults(scraperType, startURL, discoveredData),
+		),
 	)
 }
 
-// renderScraperHelperResults renders the analysis results
-func renderScraperHelperResults(scraperType, startURL string, data *ScraperDiscoveryData) gomponents.Node {
+// renderScraperHelperResults renders the analysis results.
+func renderScraperHelperResults(
+	scraperType, _ string,
+	data *ScraperDiscoveryData,
+) gomponents.Node {
 	// Safety check for nil data
 	if data == nil {
 		return html.Div(
@@ -1460,20 +1783,32 @@ func renderScraperHelperResults(scraperType, startURL string, data *ScraperDisco
 			),
 
 			// Show discovered data based on scraper type
-			gomponents.If(scraperType == "algolia" && data.Error == "", renderAlgoliaDiscoveredData(data)),
-			gomponents.If(scraperType == "project1service" && data.Error == "", renderProject1ServiceDiscoveredData(data)),
-			gomponents.If(scraperType == "csrfapi" && data.Error == "", renderCSRFAPIDiscoveredData(data)),
+			gomponents.If(
+				scraperType == "algolia" && data.Error == "",
+				renderAlgoliaDiscoveredData(data),
+			),
+			gomponents.If(
+				scraperType == "project1service" && data.Error == "",
+				renderProject1ServiceDiscoveredData(data),
+			),
+			gomponents.If(
+				scraperType == "csrfapi" && data.Error == "",
+				renderCSRFAPIDiscoveredData(data),
+			),
 
 			// Always show the help guide
 			gomponents.If(scraperType == "htmlxpath", renderXPathHelp()),
 			gomponents.If(scraperType == "csrfapi" && data.CSRFCookie == "", renderCSRFAPIHelp()),
 			gomponents.If(scraperType == "algolia" && data.AlgoliaAppID == "", renderAlgoliaHelp()),
-			gomponents.If(scraperType == "project1service" && len(data.Collections) == 0, renderProject1ServiceHelp()),
+			gomponents.If(
+				scraperType == "project1service" && len(data.Collections) == 0,
+				renderProject1ServiceHelp(),
+			),
 		),
 	)
 }
 
-// renderAlgoliaDiscoveredData renders discovered Algolia configuration
+// renderAlgoliaDiscoveredData renders discovered Algolia configuration.
 func renderAlgoliaDiscoveredData(data *ScraperDiscoveryData) gomponents.Node {
 	return html.Div(
 		html.Div(
@@ -1506,7 +1841,11 @@ func renderAlgoliaDiscoveredData(data *ScraperDiscoveryData) gomponents.Node {
 				html.H6(gomponents.Text("Available Index Fields")),
 				html.Div(
 					html.Class("alert alert-secondary"),
-					html.Small(gomponents.Text("These are the fields available in the Algolia index that you can use for filtering and extraction:")),
+					html.Small(
+						gomponents.Text(
+							"These are the fields available in the Algolia index that you can use for filtering and extraction:",
+						),
+					),
 					html.Div(
 						html.Class("mt-2"),
 						renderFieldList(data.AlgoliaIndexFields),
@@ -1519,7 +1858,11 @@ func renderAlgoliaDiscoveredData(data *ScraperDiscoveryData) gomponents.Node {
 		gomponents.If(len(data.AvailableSites) > 0,
 			html.Div(
 				html.Class("mt-4"),
-				html.H6(gomponents.Text("Available Sites ("+fmt.Sprintf("%d", len(data.AvailableSites))+")")),
+				html.H6(
+					gomponents.Text(
+						"Available Sites ("+fmt.Sprintf("%d", len(data.AvailableSites))+")",
+					),
+				),
 				html.Div(
 					html.Class("alert alert-info mb-2"),
 					html.Small(
@@ -1551,7 +1894,11 @@ func renderAlgoliaDiscoveredData(data *ScraperDiscoveryData) gomponents.Node {
 		gomponents.If(len(data.AvailableSeries) > 0,
 			html.Div(
 				html.Class("mt-4"),
-				html.H6(gomponents.Text("Available Series ("+fmt.Sprintf("%d", len(data.AvailableSeries))+")")),
+				html.H6(
+					gomponents.Text(
+						"Available Series ("+fmt.Sprintf("%d", len(data.AvailableSeries))+")",
+					),
+				),
 				html.Div(
 					html.Class("alert alert-info mb-2"),
 					html.Small(
@@ -1583,7 +1930,14 @@ func renderAlgoliaDiscoveredData(data *ScraperDiscoveryData) gomponents.Node {
 		gomponents.If(len(data.AvailableNetworks0) > 0,
 			html.Div(
 				html.Class("mt-4"),
-				html.H6(gomponents.Text("Available Networks Lvl0 ("+fmt.Sprintf("%d", len(data.AvailableNetworks0))+")")),
+				html.H6(
+					gomponents.Text(
+						"Available Networks Lvl0 ("+fmt.Sprintf(
+							"%d",
+							len(data.AvailableNetworks0),
+						)+")",
+					),
+				),
 				html.Div(
 					html.Class("alert alert-info mb-2"),
 					html.Small(
@@ -1615,7 +1969,14 @@ func renderAlgoliaDiscoveredData(data *ScraperDiscoveryData) gomponents.Node {
 		gomponents.If(len(data.AvailableNetworks1) > 0,
 			html.Div(
 				html.Class("mt-4"),
-				html.H6(gomponents.Text("Available Networks Lvl1 ("+fmt.Sprintf("%d", len(data.AvailableNetworks1))+")")),
+				html.H6(
+					gomponents.Text(
+						"Available Networks Lvl1 ("+fmt.Sprintf(
+							"%d",
+							len(data.AvailableNetworks1),
+						)+")",
+					),
+				),
 				html.Div(
 					html.Class("alert alert-info mb-2"),
 					html.Small(
@@ -1654,7 +2015,7 @@ func renderAlgoliaDiscoveredData(data *ScraperDiscoveryData) gomponents.Node {
 	)
 }
 
-// renderProject1ServiceDiscoveredData renders discovered Project1Service configuration
+// renderProject1ServiceDiscoveredData renders discovered Project1Service configuration.
 func renderProject1ServiceDiscoveredData(data *ScraperDiscoveryData) gomponents.Node {
 	return html.Div(
 		html.Div(
@@ -1665,7 +2026,11 @@ func renderProject1ServiceDiscoveredData(data *ScraperDiscoveryData) gomponents.
 
 		gomponents.If(len(data.Collections) > 0,
 			html.Div(
-				html.H6(gomponents.Text("Available Collections ("+fmt.Sprintf("%d", len(data.Collections))+")")),
+				html.H6(
+					gomponents.Text(
+						"Available Collections ("+fmt.Sprintf("%d", len(data.Collections))+")",
+					),
+				),
 				html.Div(
 					html.Class("table-responsive mt-3"),
 					html.Table(
@@ -1684,14 +2049,16 @@ func renderProject1ServiceDiscoveredData(data *ScraperDiscoveryData) gomponents.
 				html.Div(
 					html.Class("alert alert-info mt-3"),
 					html.Strong(gomponents.Text("Usage: ")),
-					gomponents.Text("Copy the ID number from the table above and use it as FilterCollectionID in your configuration."),
+					gomponents.Text(
+						"Copy the ID number from the table above and use it as FilterCollectionID in your configuration.",
+					),
 				),
 			),
 		),
 	)
 }
 
-// renderCSRFAPIDiscoveredData renders discovered CSRF API configuration
+// renderCSRFAPIDiscoveredData renders discovered CSRF API configuration.
 func renderCSRFAPIDiscoveredData(data *ScraperDiscoveryData) gomponents.Node {
 	return html.Div(
 		gomponents.If(data.CSRFCookie != "",
@@ -1716,7 +2083,7 @@ func renderCSRFAPIDiscoveredData(data *ScraperDiscoveryData) gomponents.Node {
 	)
 }
 
-// renderFacetRows renders facet values with counts as table rows
+// renderFacetRows renders facet values with counts as table rows.
 func renderFacetRows(facets []FacetValue) gomponents.Node {
 	var rows []gomponents.Node
 	for _, facet := range facets {
@@ -1725,10 +2092,11 @@ func renderFacetRows(facets []FacetValue) gomponents.Node {
 			html.Td(gomponents.Text(fmt.Sprintf("%d", facet.Count))),
 		))
 	}
+
 	return gomponents.Group(rows)
 }
 
-// renderFieldList renders a list of field names
+// renderFieldList renders a list of field names.
 func renderFieldList(fields []string) gomponents.Node {
 	var nodes []gomponents.Node
 	for _, field := range fields {
@@ -1737,10 +2105,11 @@ func renderFieldList(fields []string) gomponents.Node {
 			gomponents.Text(field),
 		))
 	}
+
 	return gomponents.Group(nodes)
 }
 
-// renderOtherFacets renders all facets that aren't the main three
+// renderOtherFacets renders all facets that aren't the main three.
 func renderOtherFacets(allFacets map[string][]FacetValue) gomponents.Node {
 	var nodes []gomponents.Node
 
@@ -1764,9 +2133,13 @@ func renderOtherFacets(allFacets map[string][]FacetValue) gomponents.Node {
 
 		nodes = append(nodes, html.Div(
 			html.Class("mb-3"),
-			html.H6(html.Class("text-muted"),
+			html.H6(
+				html.Class("text-muted"),
 				gomponents.Text(facetName),
-				html.Small(html.Class("ms-2"), gomponents.Text(fmt.Sprintf("(%d values)", len(values)))),
+				html.Small(
+					html.Class("ms-2"),
+					gomponents.Text(fmt.Sprintf("(%d values)", len(values))),
+				),
 			),
 			html.Div(
 				html.Class("table-responsive"),
@@ -1798,7 +2171,7 @@ func renderOtherFacets(allFacets map[string][]FacetValue) gomponents.Node {
 	return gomponents.Group(nodes)
 }
 
-// renderCollectionRows renders collection table rows
+// renderCollectionRows renders collection table rows.
 func renderCollectionRows(collections []CollectionInfo) gomponents.Node {
 	var rows []gomponents.Node
 	for _, col := range collections {
@@ -1807,19 +2180,28 @@ func renderCollectionRows(collections []CollectionInfo) gomponents.Node {
 			html.Td(gomponents.Text(col.Name)),
 		))
 	}
+
 	return gomponents.Group(rows)
 }
 
-// renderXPathHelp renders XPath configuration help
+// renderXPathHelp renders XPath configuration help.
 func renderXPathHelp() gomponents.Node {
 	return html.Div(
 		html.H6(gomponents.Text("HTML/XPath Scraper Configuration Guide")),
-		html.P(gomponents.Text("To configure an HTML/XPath scraper, you need to inspect the website's HTML structure using browser DevTools (F12):")),
+		html.P(
+			gomponents.Text(
+				"To configure an HTML/XPath scraper, you need to inspect the website's HTML structure using browser DevTools (F12):",
+			),
+		),
 		html.Ol(
 			html.Li(gomponents.Text("Open the target URL in your browser")),
 			html.Li(gomponents.Text("Press F12 to open DevTools, go to Elements/Inspector tab")),
 			html.Li(gomponents.Text("Right-click on a video/scene container → Inspect")),
-			html.Li(gomponents.Text("Find the common container element (e.g., <div class=\"video-thumb\">)")),
+			html.Li(
+				gomponents.Text(
+					"Find the common container element (e.g., <div class=\"video-thumb\">)",
+				),
+			),
 			html.Li(gomponents.Text("Right-click the element → Copy → Copy XPath")),
 		),
 
@@ -1827,10 +2209,22 @@ func renderXPathHelp() gomponents.Node {
 			html.Class("alert alert-secondary mt-3"),
 			html.H6(gomponents.Text("Common XPath Patterns:")),
 			html.Ul(
-				html.Li(html.Code(gomponents.Text("//div[@class=\"video-thumb\"]")), gomponents.Text(" - Scene containers")),
-				html.Li(html.Code(gomponents.Text(".//a[@class=\"title\"]")), gomponents.Text(" - Title link (relative to container)")),
-				html.Li(html.Code(gomponents.Text(".//span[@class=\"date\"]")), gomponents.Text(" - Date element")),
-				html.Li(html.Code(gomponents.Text(".//div[@class=\"models\"]/a")), gomponents.Text(" - Actor links")),
+				html.Li(
+					html.Code(gomponents.Text("//div[@class=\"video-thumb\"]")),
+					gomponents.Text(" - Scene containers"),
+				),
+				html.Li(
+					html.Code(gomponents.Text(".//a[@class=\"title\"]")),
+					gomponents.Text(" - Title link (relative to container)"),
+				),
+				html.Li(
+					html.Code(gomponents.Text(".//span[@class=\"date\"]")),
+					gomponents.Text(" - Date element"),
+				),
+				html.Li(
+					html.Code(gomponents.Text(".//div[@class=\"models\"]/a")),
+					gomponents.Text(" - Actor links"),
+				),
 			),
 		),
 
@@ -1844,16 +2238,24 @@ func renderXPathHelp() gomponents.Node {
 	)
 }
 
-// renderCSRFAPIHelp renders CSRF API configuration help
+// renderCSRFAPIHelp renders CSRF API configuration help.
 func renderCSRFAPIHelp() gomponents.Node {
 	return html.Div(
 		html.H6(gomponents.Text("CSRF API Scraper Configuration Guide")),
-		html.P(gomponents.Text("To configure a CSRF API scraper, you need to inspect the website's API calls using browser DevTools:")),
+		html.P(
+			gomponents.Text(
+				"To configure a CSRF API scraper, you need to inspect the website's API calls using browser DevTools:",
+			),
+		),
 		html.Ol(
 			html.Li(gomponents.Text("Open the target URL in your browser")),
 			html.Li(gomponents.Text("Press F12 → Network tab → Filter to 'Fetch/XHR'")),
 			html.Li(gomponents.Text("Reload the page or navigate to see API calls")),
-			html.Li(gomponents.Text("Look for JSON API requests (usually contain 'api', 'page', 'gallery', etc.)")),
+			html.Li(
+				gomponents.Text(
+					"Look for JSON API requests (usually contain 'api', 'page', 'gallery', etc.)",
+				),
+			),
 			html.Li(gomponents.Text("Click on the API call → Headers tab")),
 		),
 
@@ -1861,30 +2263,66 @@ func renderCSRFAPIHelp() gomponents.Node {
 			html.Class("alert alert-secondary mt-3"),
 			html.H6(gomponents.Text("What to find:")),
 			html.Ul(
-				html.Li(html.Strong(gomponents.Text("CSRF Cookie: ")), gomponents.Text("Application tab → Cookies → look for cookies like '_csrf', 'csrf_token', 'XSRF-TOKEN'")),
-				html.Li(html.Strong(gomponents.Text("CSRF Header: ")), gomponents.Text("Request Headers → look for 'csrf-token', 'X-CSRF-Token', 'X-XSRF-TOKEN'")),
-				html.Li(html.Strong(gomponents.Text("API URL: ")), gomponents.Text("Copy the Request URL, replace page number with {page}")),
+				html.Li(
+					html.Strong(gomponents.Text("CSRF Cookie: ")),
+					gomponents.Text(
+						"Application tab → Cookies → look for cookies like '_csrf', 'csrf_token', 'XSRF-TOKEN'",
+					),
+				),
+				html.Li(
+					html.Strong(gomponents.Text("CSRF Header: ")),
+					gomponents.Text(
+						"Request Headers → look for 'csrf-token', 'X-CSRF-Token', 'X-XSRF-TOKEN'",
+					),
+				),
+				html.Li(
+					html.Strong(gomponents.Text("API URL: ")),
+					gomponents.Text("Copy the Request URL, replace page number with {page}"),
+				),
 			),
 		),
 
 		html.Div(
 			html.Class("alert alert-info mt-3"),
 			html.H6(gomponents.Text("JSON Response Fields:")),
-			gomponents.Text("Click on the API call → Response/Preview tab to see the JSON structure:"),
+			gomponents.Text(
+				"Click on the API call → Response/Preview tab to see the JSON structure:",
+			),
 			html.Ul(
-				html.Li(html.Code(gomponents.Text("galleries")), gomponents.Text(", "), html.Code(gomponents.Text("scenes")), gomponents.Text(", "), html.Code(gomponents.Text("data.results")), gomponents.Text(" - common array paths")),
-				html.Li(html.Code(gomponents.Text("name")), gomponents.Text(", "), html.Code(gomponents.Text("title")), gomponents.Text(" - title fields")),
-				html.Li(html.Code(gomponents.Text("publishedAt")), gomponents.Text(", "), html.Code(gomponents.Text("release_date")), gomponents.Text(" - date fields")),
+				html.Li(
+					html.Code(gomponents.Text("galleries")),
+					gomponents.Text(", "),
+					html.Code(gomponents.Text("scenes")),
+					gomponents.Text(", "),
+					html.Code(gomponents.Text("data.results")),
+					gomponents.Text(" - common array paths"),
+				),
+				html.Li(
+					html.Code(gomponents.Text("name")),
+					gomponents.Text(", "),
+					html.Code(gomponents.Text("title")),
+					gomponents.Text(" - title fields"),
+				),
+				html.Li(
+					html.Code(gomponents.Text("publishedAt")),
+					gomponents.Text(", "),
+					html.Code(gomponents.Text("release_date")),
+					gomponents.Text(" - date fields"),
+				),
 			),
 		),
 	)
 }
 
-// renderAlgoliaHelp renders Algolia configuration help
+// renderAlgoliaHelp renders Algolia configuration help.
 func renderAlgoliaHelp() gomponents.Node {
 	return html.Div(
 		html.H6(gomponents.Text("Algolia Scraper Configuration Guide")),
-		html.P(gomponents.Text("Algolia scrapers are used for Gamma Entertainment/Adult Time network sites:")),
+		html.P(
+			gomponents.Text(
+				"Algolia scrapers are used for Gamma Entertainment/Adult Time network sites:",
+			),
+		),
 
 		html.Div(
 			html.Class("alert alert-secondary mt-3"),
@@ -1903,19 +2341,33 @@ func renderAlgoliaHelp() gomponents.Node {
 			html.Class("alert alert-info mt-3"),
 			html.H6(gomponents.Text("Common Filter Values:")),
 			html.Ul(
-				html.Li(html.Strong(gomponents.Text("SiteFilterName: ")), html.Code(gomponents.Text("sitename:girlsway")), gomponents.Text(" → use 'girlsway'")),
-				html.Li(html.Strong(gomponents.Text("SerieFilterName: ")), gomponents.Text("Usually the series/channel name")),
-				html.Li(html.Strong(gomponents.Text("NetworkFilterName: ")), gomponents.Text("The network name if filtering by network")),
+				html.Li(
+					html.Strong(gomponents.Text("SiteFilterName: ")),
+					html.Code(gomponents.Text("sitename:girlsway")),
+					gomponents.Text(" → use 'girlsway'"),
+				),
+				html.Li(
+					html.Strong(gomponents.Text("SerieFilterName: ")),
+					gomponents.Text("Usually the series/channel name"),
+				),
+				html.Li(
+					html.Strong(gomponents.Text("NetworkFilterName: ")),
+					gomponents.Text("The network name if filtering by network"),
+				),
 			),
 		),
 	)
 }
 
-// renderProject1ServiceHelp renders Project1Service configuration help
+// renderProject1ServiceHelp renders Project1Service configuration help.
 func renderProject1ServiceHelp() gomponents.Node {
 	return html.Div(
 		html.H6(gomponents.Text("Project1Service Scraper Configuration Guide")),
-		html.P(gomponents.Text("Project1Service scrapers are used for Aylo/MindGeek network sites (Brazzers, RealityKings, etc.):")),
+		html.P(
+			gomponents.Text(
+				"Project1Service scrapers are used for Aylo/MindGeek network sites (Brazzers, RealityKings, etc.):",
+			),
+		),
 
 		html.Div(
 			html.Class("alert alert-secondary mt-3"),
@@ -1933,7 +2385,9 @@ func renderProject1ServiceHelp() gomponents.Node {
 			html.H6(gomponents.Text("Example:")),
 			html.P(
 				gomponents.Text("If the URL is: "),
-				html.Code(gomponents.Text("https://www.twistys.com/collection/227/when-girls-play")),
+				html.Code(
+					gomponents.Text("https://www.twistys.com/collection/227/when-girls-play"),
+				),
 			),
 			html.P(
 				gomponents.Text("Then "),
@@ -1944,7 +2398,9 @@ func renderProject1ServiceHelp() gomponents.Node {
 		html.Div(
 			html.Class("alert alert-warning mt-3"),
 			html.Strong(gomponents.Text("Note: ")),
-			gomponents.Text("You may need to filter by site first to see collections. Set to 0 to disable filtering and get all scenes from the site."),
+			gomponents.Text(
+				"You may need to filter by site first to see collections. Set to 0 to disable filtering and get all scenes from the site.",
+			),
 		),
 	)
 }

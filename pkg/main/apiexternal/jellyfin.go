@@ -2,7 +2,6 @@ package apiexternal
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -12,6 +11,7 @@ import (
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/slidingwindow"
+	"github.com/goccy/go-json"
 )
 
 // jellyfinClient is a struct for interacting with Jellyfin API.
@@ -66,7 +66,7 @@ type JellyfinWatchlistItem struct {
 	RunTimeTicks            int64             `json:"RunTimeTicks,omitempty"`
 	ProductionYear          int               `json:"ProductionYear,omitempty"`
 	Type                    string            `json:"Type"`
-	UserData                JellyfinUserData  `json:"UserData,omitempty"`
+	UserData                JellyfinUserData  `json:"UserData"`
 	PrimaryImageAspectRatio float64           `json:"PrimaryImageAspectRatio,omitempty"`
 	OriginalTitle           string            `json:"OriginalTitle,omitempty"`
 	Overview                string            `json:"Overview,omitempty"`
@@ -262,5 +262,6 @@ func GetJellyfinItemTitle(item JellyfinWatchlistItem) string {
 	if item.OriginalTitle != "" {
 		return item.OriginalTitle
 	}
+
 	return item.Name
 }

@@ -2,7 +2,6 @@ package apiexternal
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -12,6 +11,7 @@ import (
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/slidingwindow"
+	"github.com/goccy/go-json"
 )
 
 // plexClient is a struct for interacting with Plex API.
@@ -172,51 +172,51 @@ func GetPlexWatchlist(serverURL, token, username string) ([]PlexWatchlistItem, e
 }
 
 // getPlexUserID retrieves the user ID for a given username.
-func getPlexUserID(serverURL, token, username string) (int, error) {
-	usersURL := fmt.Sprintf("%s/accounts", strings.TrimSuffix(serverURL, "/"))
+// func getPlexUserID(serverURL, token, username string) (int, error) {
+// 	usersURL := fmt.Sprintf("%s/accounts", strings.TrimSuffix(serverURL, "/"))
 
-	params := url.Values{}
-	params.Set("X-Plex-Token", token)
+// 	params := url.Values{}
+// 	params.Set("X-Plex-Token", token)
 
-	fullURL := fmt.Sprintf("%s?%s", usersURL, params.Encode())
+// 	fullURL := fmt.Sprintf("%s?%s", usersURL, params.Encode())
 
-	var response PlexUserResponse
+// 	var response PlexUserResponse
 
-	err := ProcessHTTP(
-		getPlexClient(),
-		fullURL,
-		false,
-		func(ctx context.Context, r *http.Response) error {
-			return json.NewDecoder(r.Body).Decode(&response)
-		},
-		nil,
-	)
-	if err != nil {
-		return 0, err
-	}
+// 	err := ProcessHTTP(
+// 		getPlexClient(),
+// 		fullURL,
+// 		false,
+// 		func(ctx context.Context, r *http.Response) error {
+// 			return json.NewDecoder(r.Body).Decode(&response)
+// 		},
+// 		nil,
+// 	)
+// 	if err != nil {
+// 		return 0, err
+// 	}
 
-	// Find the user by username
-	for _, user := range response.MediaContainer.User {
-		if strings.EqualFold(user.Username, username) || strings.EqualFold(user.Email, username) {
-			return user.ID, nil
-		}
-	}
+// 	// Find the user by username
+// 	for _, user := range response.MediaContainer.User {
+// 		if strings.EqualFold(user.Username, username) || strings.EqualFold(user.Email, username) {
+// 			return user.ID, nil
+// 		}
+// 	}
 
-	return 0, fmt.Errorf("user '%s' not found on Plex server", username)
-}
+// 	return 0, fmt.Errorf("user '%s' not found on Plex server", username)
+// }
 
 // ExtractIMDBFromPlexItem extracts IMDB ID from a Plex watchlist item.
 func ExtractIMDBFromPlexItem(item PlexWatchlistItem) string {
 	// Check GUIDs for IMDB ID
 	for _, guid := range item.GUIDS {
-		if strings.HasPrefix(guid.ID, "imdb://") {
-			return strings.TrimPrefix(guid.ID, "imdb://")
+		if after, ok := strings.CutPrefix(guid.ID, "imdb://"); ok {
+			return after
 		}
 	}
 
 	// Fallback: check main GUID field
-	if strings.HasPrefix(item.GUID, "imdb://") {
-		return strings.TrimPrefix(item.GUID, "imdb://")
+	if after, ok := strings.CutPrefix(item.GUID, "imdb://"); ok {
+		return after
 	}
 
 	return ""
@@ -226,17 +226,19 @@ func ExtractIMDBFromPlexItem(item PlexWatchlistItem) string {
 func ExtractTVDBFromPlexItem(item PlexWatchlistItem) int {
 	// Check GUIDs for TVDB ID
 	for _, guid := range item.GUIDS {
-		if strings.HasPrefix(guid.ID, "tvdb://") {
-			tvdbStr := strings.TrimPrefix(guid.ID, "tvdb://")
-			if tvdbID, err := strconv.Atoi(tvdbStr); err == nil {
-				return tvdbID
-			}
+		if !strings.HasPrefix(guid.ID, "tvdb://") {
+			continue
+		}
+
+		tvdbStr := strings.TrimPrefix(guid.ID, "tvdb://")
+		if tvdbID, err := strconv.Atoi(tvdbStr); err == nil {
+			return tvdbID
 		}
 	}
 
 	// Fallback: check main GUID field
-	if strings.HasPrefix(item.GUID, "tvdb://") {
-		tvdbStr := strings.TrimPrefix(item.GUID, "tvdb://")
+	if after, ok := strings.CutPrefix(item.GUID, "tvdb://"); ok {
+		tvdbStr := after
 		if tvdbID, err := strconv.Atoi(tvdbStr); err == nil {
 			return tvdbID
 		}

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
@@ -27,6 +28,7 @@ func validateRequiredField(value, fieldName string) error {
 	if strings.TrimSpace(value) == "" {
 		return fmt.Errorf("%s cannot be empty", fieldName)
 	}
+
 	return nil
 }
 
@@ -64,24 +66,28 @@ func validateConfigStructure[T any](configs []T, configType string, validator fu
 			configValue = configValue.Elem()
 		}
 
-		if configValue.Kind() == reflect.Struct {
-			nameField := configValue.FieldByName("Name")
-			if nameField.IsValid() && nameField.Kind() == reflect.String {
-				name := nameField.String()
-				if name != "" {
-					if prevIndex, exists := nameMap[name]; exists {
-						return fmt.Errorf(
-							"%s config %d: duplicate name '%s' (already used in config %d)",
-							configType,
-							i,
-							name,
-							prevIndex,
-						)
-					}
+		if configValue.Kind() != reflect.Struct {
+			continue
+		}
 
-					nameMap[name] = i
-				}
+		nameField := configValue.FieldByName("Name")
+		if !nameField.IsValid() || nameField.Kind() != reflect.String {
+			continue
+		}
+
+		name := nameField.String()
+		if name != "" {
+			if prevIndex, exists := nameMap[name]; exists {
+				return fmt.Errorf(
+					"%s config %d: duplicate name '%s' (already used in config %d)",
+					configType,
+					i,
+					name,
+					prevIndex,
+				)
 			}
+
+			nameMap[name] = i
 		}
 	}
 
@@ -116,6 +122,7 @@ func validatePositiveInteger(value int, fieldName string) error {
 	if value <= 0 {
 		return fmt.Errorf("%s must be positive (greater than 0)", fieldName)
 	}
+
 	return nil
 }
 
@@ -124,6 +131,7 @@ func validateWithContext(configType, configName string, validator func() error) 
 	if err := validator(); err != nil {
 		return fmt.Errorf("%s config '%s': %w", configType, configName, err)
 	}
+
 	return nil
 }
 
@@ -147,6 +155,7 @@ func (cv *ConfigValidator[T]) ValidateAll(configs []T) error {
 		if len(result.Errors) == 1 {
 			return result.Errors[0]
 		}
+
 		// Combine multiple errors into a single comprehensive error message
 		sb := stringBuilderPool.Get().(*strings.Builder)
 		defer stringBuilderPool.Put(sb)
@@ -181,10 +190,8 @@ func validateInStringList[T any](
 			return nil // Allow empty values
 		}
 
-		for _, valid := range validValues {
-			if value == valid {
-				return nil
-			}
+		if slices.Contains(validValues, value) {
+			return nil
 		}
 
 		return fmt.Errorf("invalid %s: %s, must be one of: %v", fieldName, value, validValues)
@@ -250,6 +257,7 @@ func validateRange(value int, min int, max int, fieldName string) error {
 	if value < min || value > max {
 		return fmt.Errorf("invalid %s: %d (must be between %d and %d)", fieldName, value, min, max)
 	}
+
 	return nil
 }
 
@@ -262,13 +270,7 @@ func validateGeneralConfig(config *config.GeneralConfig) error {
 
 	validTimeFormats := []string{"rfc3339", "iso8601", "rfc1123", "rfc822", "rfc850"}
 
-	isValidTimeFormat := false
-	for _, format := range validTimeFormats {
-		if config.TimeFormat == format {
-			isValidTimeFormat = true
-			break
-		}
-	}
+	isValidTimeFormat := slices.Contains(validTimeFormats, config.TimeFormat)
 
 	if !isValidTimeFormat {
 		return errors.New("invalid time format")
@@ -301,13 +303,7 @@ func validateImdbConfig(config *config.ImdbConfig) error {
 
 	validTypes := []string{"movie", "tvMovie", "tvmovie", "tvSeries", "tvseries", "video"}
 	for _, indexedType := range config.Indexedtypes {
-		isValid := false
-		for _, validType := range validTypes {
-			if indexedType == validType {
-				isValid = true
-				break
-			}
-		}
+		isValid := slices.Contains(validTypes, indexedType)
 
 		if !isValid {
 			return fmt.Errorf("invalid indexed type: %s", indexedType)
@@ -317,7 +313,7 @@ func validateImdbConfig(config *config.ImdbConfig) error {
 	return nil
 }
 
-// Example validation using the example validator with forbidden values.
+// ValidateListsConfigWithExampleValidator validates list configs using the example validator with forbidden values.
 func ValidateListsConfigWithExampleValidator(configs []config.ListsConfig) error {
 	exampleValidator := createExampleValidatorWithForbiddenValues()
 	return exampleValidator.ValidateAll(configs)

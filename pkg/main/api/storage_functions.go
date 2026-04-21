@@ -365,6 +365,7 @@ func testExecutePermission(path string) bool {
 	if _, err := os.ReadDir(path); err == nil {
 		return true
 	}
+
 	return false
 }
 
@@ -412,6 +413,7 @@ func calculateThroughput(bytes int64, duration time.Duration) float64 {
 	if duration.Seconds() == 0 {
 		return 0
 	}
+
 	return float64(bytes) / (1024 * 1024) / duration.Seconds() // MB/s
 }
 
@@ -433,7 +435,7 @@ func calculateHealthScore(totalChecks, criticalIssues, warnings int) float64 {
 	return score
 }
 
-// Data structures.
+// DiskSpaceInfo holds disk space metrics for a filesystem path.
 type DiskSpaceInfo struct {
 	Path         string
 	FreeBytes    uint64

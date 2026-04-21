@@ -1,29 +1,31 @@
 package api
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
-	// "github.com/goccy/go-json".
+	"github.com/goccy/go-json"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/parser"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/parser_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/scanner"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/structure"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/worker"
 	"github.com/PuerkitoBio/goquery"
 	gin "github.com/gin-gonic/gin"
+	"maragu.dev/gomponents"
 )
 
 // AddGeneralRoutes configures general API routes for the application.
@@ -56,6 +58,7 @@ func AddGeneralRoutes(routerapi *gin.RouterGroup) {
 		routerapi.POST("/parse/file", apiParseFile)
 		routerapi.POST("/naming", apiNamingGenerate)
 		routerapi.POST("/structure", apiStructure)
+		routerapi.POST("/album/force-match", apiAlbumForceMatch)
 		routerapi.GET("/quality", apiGetQualities)
 		routerapi.DELETE("/quality/:id", apiQualityDelete)
 		routerapi.POST("/quality", apiQualityUpdate)
@@ -192,6 +195,39 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 
 	routerapi.GET("/admin/database/:tablename", adminPageDatabase)
 	routerapi.GET("/admin/grid/:grid", adminPageGrid)
+
+	// Calendar routes
+	routerapi.GET("/admin/calendar", CalendarPageHandler)
+	routerapi.GET("/admin/calendar/controls", CalendarControlsHandler)
+	routerapi.GET("/admin/calendar/content", CalendarContentHandler)
+	routerapi.GET("/admin/calendar/events", CalendarEventsHandler)
+	routerapi.GET("/admin/calendar/day-events", CalendarDayEventsHandler)
+	routerapi.GET("/admin/calendar/ical", CalendarICalHandler)
+
+	// Metadata search routes
+	routerapi.GET("/admin/metadata-search/movies", MovieMetadataSearchPage)
+	routerapi.GET("/admin/metadata-search/series", SeriesMetadataSearchPage)
+	routerapi.GET("/admin/metadata-search/books", BookMetadataSearchPage)
+	routerapi.GET("/admin/metadata-search/audiobooks", AudiobookMetadataSearchPage)
+	routerapi.GET("/admin/metadata-search/music", MusicMetadataSearchPage)
+	routerapi.POST("/admin/search/movies", SearchMovieMetadata)
+	routerapi.POST("/admin/search/series", SearchSeriesMetadata)
+	routerapi.POST("/admin/search/books", SearchBookMetadata)
+	routerapi.POST("/admin/search/audiobooks", SearchAudiobookMetadata)
+	routerapi.POST("/admin/search/music", SearchMusicMetadata)
+	routerapi.POST("/admin/search/music/series", SearchMusicSeriesMetadata)
+	routerapi.POST("/admin/search/music/artist", SearchArtistOnMusicBrainz)
+	routerapi.POST("/admin/discover/series-albums", DiscoverSeriesAlbumsByName)
+	routerapi.POST("/admin/add/movie", AddMovieToDatabase)
+	routerapi.POST("/admin/add/series", AddSeriesToDatabase)
+	routerapi.POST("/admin/add/book", AddBookToDatabase)
+	routerapi.POST("/admin/add/audiobook", AddAudiobookToDatabase)
+	routerapi.POST("/admin/add/movie/manual", AddMovieManual)
+	routerapi.POST("/admin/add/series/manual", AddSeriesManual)
+	routerapi.POST("/admin/add/book/manual", AddBookManual)
+	routerapi.POST("/admin/add/audiobook/manual", AddAudiobookManual)
+	routerapi.POST("/admin/add/album", AddAlbumToDatabase)
+	routerapi.POST("/admin/discover/artist-albums", DiscoverArtistAlbums)
 
 	// Handle POST requests to database routes - these should not be used for form submissions
 	// but provide helpful error message to prevent 404s
@@ -483,24 +519,24 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 		}
 
 		prefix := "media_" + ctx.Param("prefix") + "_" + ctx.Param("configv") + "_data"
-		logger.Logtype("info", 1).Str("prefix", prefix).Msg("prefix")
+		logger.Logtype("info", 0).Str("prefix", prefix).Msg("prefix")
 
 		formKeys := make(map[any]bool)
 		for key := range ctx.Request.PostForm {
-			logger.Logtype("info", 1).Str("key", key).Msg("key")
+			logger.Logtype("info", 0).Str("key", key).Msg("key")
 
 			if !(strings.Contains(key, "_TemplatePath")) || !(strings.Contains(key, prefix+"_")) {
 				continue
 			}
 
-			logger.Logtype("info", 1).
+			logger.Logtype("info", 0).
 				Str("splitted", fmt.Sprintf("%v", strings.Split(key, "_"))).
 				Msg("key")
 
 			formKeys[strings.Split(key, "_")[4]] = true
 		}
 
-		logger.Logtype("info", 1).Any("keys", formKeys).Msg("keys")
+		logger.Logtype("info", 0).Any("keys", formKeys).Msg("keys")
 
 		form := renderMediaDataForm(prefix, len(formKeys), &config.MediaDataConfig{})
 
@@ -580,6 +616,97 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 		}
 
 		form := renderMediaListsForm(prefix, len(formKeys), &config.MediaListsConfig{})
+
+		var buf strings.Builder
+		form.Render(&buf)
+		ctx.Header("Content-Type", "text/html")
+		ctx.String(http.StatusOK, buf.String())
+	})
+
+	// Config preview endpoint - returns readonly HTML view of a config item
+	routerapi.GET("/manage/config/preview/:type/:name", func(ctx *gin.Context) {
+		configType := ctx.Param("type")
+		configName := ctx.Param("name")
+
+		if configName == "" {
+			ctx.String(
+				http.StatusOK,
+				"<div class='alert alert-warning'>No configuration selected</div>",
+			)
+
+			return
+		}
+
+		var form gomponents.Node
+		switch configType {
+		case "path":
+			if cfg := config.GetSettingsPath(configName); cfg != nil {
+				form = renderConfigPreviewReadonly("Path: "+configName, renderPathsForm(cfg))
+			}
+
+		case "list":
+			if cfg := config.GetSettingsList(configName); cfg != nil {
+				form = renderConfigPreviewReadonly("List: "+configName, renderListsForm(cfg))
+			}
+
+		case "quality":
+			if cfg := config.GetSettingsQuality(configName); cfg != nil {
+				form = renderConfigPreviewReadonly(
+					"Quality: "+configName,
+					renderQualityForm(cfg, ""),
+				)
+			}
+
+		case "scheduler":
+			if cfg := config.GetSettingsScheduler(configName); cfg != nil {
+				form = renderConfigPreviewReadonly(
+					"Scheduler: "+configName,
+					renderSchedulerForm(cfg),
+				)
+			}
+
+		case "indexer":
+			if cfg := config.GetSettingsIndexer(configName); cfg != nil {
+				form = renderConfigPreviewReadonly("Indexer: "+configName, renderIndexersForm(cfg))
+			}
+
+		case "downloader":
+			for _, cfg := range config.GetSettingsDownloaderAll() {
+				if cfg.Name == configName {
+					form = renderConfigPreviewReadonly(
+						"Downloader: "+configName,
+						renderDownloaderForm(&cfg),
+					)
+
+					break
+				}
+			}
+
+		case "regex":
+			for _, cfg := range config.GetSettingsRegexAll() {
+				if cfg.Name == configName {
+					form = renderConfigPreviewReadonly("Regex: "+configName, renderRegexForm(&cfg))
+					break
+				}
+			}
+
+		case "notification":
+			if cfg := config.GetSettingsNotification(configName); cfg != nil {
+				form = renderConfigPreviewReadonly(
+					"Notification: "+configName,
+					renderNotificationForm(cfg),
+				)
+			}
+		}
+
+		if form == nil {
+			ctx.String(
+				http.StatusOK,
+				"<div class='alert alert-warning'>Configuration not found: "+configType+"/"+configName+"</div>",
+			)
+
+			return
+		}
 
 		var buf strings.Builder
 		form.Render(&buf)
@@ -706,7 +833,8 @@ func apiTraktGetStoreToken(ctx *gin.Context) {
 		return
 	}
 
-	apiexternal.SetTraktToken(apiexternal.GetTraktAuthToken(code))
+	tk, _ := apiexternal.GetTraktAuthToken(code)
+	apiexternal.SetTraktToken(tk)
 
 	config.UpdateCfgEntry(config.Conf{Name: "trakt_token", Data: apiexternal.GetTraktToken()})
 	sendJSONResponse(ctx, http.StatusOK, apiexternal.GetTraktToken())
@@ -738,46 +866,19 @@ func apiTraktGetUserList(ctx *gin.Context) {
 }
 
 // @Summary      Refresh Slugs
-// @Description  Regenerates Slugs
+// @Description  Regenerates slugs for all tables. By default only populates empty slugs. Use force=true to regenerate all slugs.
 // @Tags         general
 // @Param        apikey query     string    true  "apikey"
+// @Param        force  query     string    false "Set to 'true' to regenerate all slugs, not just empty ones"
 // @Success      200   {object}  string "returns ok"
 // @Failure      401   {object}  Jsonerror
 // @Router       /api/slug [get].
 func apiDBRefreshSlugs(ctx *gin.Context) {
-	dbmovies := database.QueryDbmovie(database.Querywithargs{})
+	// Check for force parameter - if true, update all slugs; otherwise only empty ones
+	force := ctx.Query("force") == "true"
 
-	var slug string
-	for idx := range dbmovies {
-		slug = logger.StringToSlug(dbmovies[idx].Title)
-		database.ExecN("update dbmovies set slug = ? where id = ?", slug, &dbmovies[idx].ID)
-	}
-
-	dbmoviestitles := database.QueryDbmovieTitle(database.Querywithargs{})
-	for idx := range dbmoviestitles {
-		slug = logger.StringToSlug(dbmoviestitles[idx].Title)
-		database.ExecN(
-			"update dbmovie_titles set slug = ? where id = ?",
-			slug,
-			&dbmoviestitles[idx].ID,
-		)
-	}
-
-	dbserie := database.QueryDbserie(database.Querywithargs{})
-	for idx := range dbserie {
-		slug = logger.StringToSlug(dbserie[idx].Seriename)
-		database.ExecN("update dbseries set slug = ? where id = ?", slug, &dbserie[idx].ID)
-	}
-
-	dbserietitles := database.QueryDbserieAlternates(database.Querywithargs{})
-	for idx := range dbserietitles {
-		slug = logger.StringToSlug(dbserietitles[idx].Title)
-		database.ExecN(
-			"update dbserie_alternates set slug = ? where id = ?",
-			slug,
-			&dbserietitles[idx].ID,
-		)
-	}
+	// Populate slugs for all tables using the unified function
+	database.PopulateAllSlugs(force)
 
 	sendSuccess(ctx, StrOK)
 }
@@ -805,11 +906,11 @@ func apiParseString(ctx *gin.Context) {
 	}
 
 	cfgp := config.GetSettingsMedia(cfgv)
-	parse := parser.ParseFile(getcfg.Name, false, false, cfgp, -1)
+	parse := parser_v2.ParseFile(getcfg.Name, false, false, cfgp, -1)
 	// parse := parser.NewFileParser(getcfg.Name, cfgp, false, -1)
 	parser.GetPriorityMapQual(parse, cfgp, config.GetSettingsQuality(getcfg.Quality), true, true)
 
-	err := parser.GetDBIDs(parse, cfgp, true)
+	err := parser.GetDBIDs(parse, cfgp, true, false)
 	ctx.JSON(http.StatusOK, gin.H{"data": parse, "error": err})
 	parse.Close()
 }
@@ -838,12 +939,12 @@ func apiParseFile(ctx *gin.Context) {
 
 	cfgp := config.GetSettingsMedia(cfgv)
 	// defer parse.Close()
-	parse := parser.ParseFile(getcfg.Path, true, false, cfgp, -1)
+	parse := parser_v2.ParseFile(getcfg.Path, true, false, cfgp, -1)
 	// parse := parser.NewFileParser(filepath.Base(getcfg.Path), cfgp, false, -1)
 	parse.File = getcfg.Path
 	parser.ParseVideoFile(parse, config.GetSettingsQuality(getcfg.Quality))
 	parser.GetPriorityMapQual(parse, cfgp, config.GetSettingsQuality(getcfg.Quality), true, true)
-	parser.GetDBIDs(parse, cfgp, true)
+	parser.GetDBIDs(parse, cfgp, true, false)
 	ctx.JSON(http.StatusOK, gin.H{"data": parse})
 	parse.Close()
 }
@@ -1126,8 +1227,18 @@ func apiQualityUpdate(ctx *gin.Context) {
 			quality.UseRegex,
 		)
 	} else {
-		database.UpdateArray("qualities", []string{"Type", "Name", "Regex", "Strings", "Priority", "Use_Regex"},
-			"id != 0 and id = ?", quality.QualityType, quality.Name, quality.Regex, quality.Strings, quality.Priority, quality.UseRegex, quality.ID)
+		database.UpdateArray(
+			"qualities",
+			[]string{"Type", "Name", "Regex", "Strings", "Priority", "Use_Regex"},
+			"id != 0 and id = ?",
+			quality.QualityType,
+			quality.Name,
+			quality.Regex,
+			quality.Strings,
+			quality.Priority,
+			quality.UseRegex,
+			quality.ID,
+		)
 	}
 
 	database.SetVars()
@@ -1435,6 +1546,7 @@ func apiListConfigType(ctx *gin.Context) {
 			if strings.HasPrefix(key, right) {
 				list["serie_"+key] = cfgdata
 			}
+
 			return nil
 		})
 
@@ -1443,6 +1555,7 @@ func apiListConfigType(ctx *gin.Context) {
 			if strings.HasPrefix(key, right) {
 				list["movie_"+key] = cfgdata
 			}
+
 			return nil
 		})
 
@@ -1524,11 +1637,11 @@ func apiNamingGenerate(ctx *gin.Context) {
 
 		var orgadata2 structure.Organizerdata
 
-		orgadata2.Videofile = cfg.FilePath
+		orgadata2.MediaFile = cfg.FilePath
 		orgadata2.Folder = to
 		orgadata2.Rootpath = movie.Rootpath
 
-		m := parser.ParseFile(
+		m := parser_v2.ParseFile(
 			cfg.FilePath,
 			true,
 			true,
@@ -1545,7 +1658,10 @@ func apiNamingGenerate(ctx *gin.Context) {
 			gin.H{"foldername": orgadata2.Foldername, "filename": orgadata2.Filename, "m": m},
 		)
 	} else {
-		series, _ := database.GetSeries(database.Querywithargs{Where: logger.FilterByID}, cfg.SerieID)
+		series, _ := database.GetSeries(
+			database.Querywithargs{Where: logger.FilterByID},
+			cfg.SerieID,
+		)
 		// defer logger.ClearVar(&series)
 		cfgp := config.GetSettingsMedia(cfg.CfgMedia)
 
@@ -1560,11 +1676,17 @@ func apiNamingGenerate(ctx *gin.Context) {
 
 		var orgadata2 structure.Organizerdata
 
-		orgadata2.Videofile = cfg.FilePath
+		orgadata2.MediaFile = cfg.FilePath
 		orgadata2.Folder = to
 		orgadata2.Rootpath = series.Rootpath
 
-		m := parser.ParseFile(cfg.FilePath, true, true, cfgp, cfgp.GetMediaListsEntryListID(series.Listname))
+		m := parser_v2.ParseFile(
+			cfg.FilePath,
+			true,
+			true,
+			cfgp,
+			cfgp.GetMediaListsEntryListID(series.Listname),
+		)
 
 		orgadata2.Listid = m.ListID
 		s.ParseFileAdditional(&orgadata2, m, 0, false, false, s.Cfgp.Lists[m.ListID].CfgQuality)
@@ -1580,7 +1702,10 @@ func apiNamingGenerate(ctx *gin.Context) {
 		}
 
 		s.GenerateNamingTemplate(&orgadata2, m, &firstepiid)
-		ctx.JSON(http.StatusOK, gin.H{"foldername": orgadata2.Foldername, "filename": orgadata2.Filename, "m": m})
+		ctx.JSON(
+			http.StatusOK,
+			gin.H{"foldername": orgadata2.Foldername, "filename": orgadata2.Filename, "m": m},
+		)
 	}
 }
 
@@ -1597,9 +1722,9 @@ type apiStructureJSON struct {
 }
 
 type apiCacheAddJSON struct {
-	CacheType string `json:"cache_type" binding:"required"`
-	Key       string `json:"key"        binding:"required"`
-	Value     string `json:"value"      binding:"required"`
+	CacheType string `binding:"required" json:"cache_type"`
+	Key       string `binding:"required" json:"key"`
+	Value     string `binding:"required" json:"value"`
 }
 
 // @Summary      Structure Single Item
@@ -1625,6 +1750,7 @@ func apiStructure(ctx *gin.Context) {
 	if strings.EqualFold(cfg.Grouptype, logger.StrSeries) {
 		getconfig = "serie_" + cfg.Configentry
 	}
+
 	// defer media.Close()
 	if config.GetSettingsMedia(getconfig).Name != cfg.Configentry {
 		sendBadRequest(ctx, "media config not found")
@@ -1665,6 +1791,7 @@ func apiStructure(ctx *gin.Context) {
 	if cfg.Disabledeletewronglanguage {
 		deletewronglanguage = false
 	}
+
 	// structurevar := structure.NewStructure(cfgp, cfgimport, cfg.Sourcepathtemplate, cfg.Targetpathtemplate, false, false, 0)
 
 	// structurevar.ManualId = cfg.Forceid
@@ -1680,6 +1807,104 @@ func apiStructure(ctx *gin.Context) {
 	)
 
 	ctx.JSON(http.StatusOK, gin.H{})
+}
+
+type apiAlbumForceMatchJSON struct {
+	Folder             string `json:"folder"             binding:"required"`
+	Configentry        string `json:"configentry"        binding:"required"`
+	Grouptype          string `json:"grouptype"          binding:"required"`
+	Sourcepathtemplate string `json:"sourcepathtemplate" binding:"required"`
+	Targetpathtemplate string `json:"targetpathtemplate" binding:"required"`
+	ForcedID           string `json:"forced_id"          binding:"required"`
+	Preview            bool   `json:"preview"`
+}
+
+// @Summary      Force-match album folder
+// @Description  Match a folder against a specific MBID or ASIN and either preview the rename plan or execute the full organize workflow
+// @Tags         general
+// @Param        config  body      apiAlbumForceMatchJSON  true  "Config"
+// @Param        apikey  query     string                  true  "apikey"
+// @Success      200     {object}  structure.AlbumForceMatchPreview
+// @Failure      400     {object}  Jsonerror
+// @Failure      401     {object}  Jsonerror
+// @Router       /api/album/force-match [post].
+func apiAlbumForceMatch(ctx *gin.Context) {
+	var cfg apiAlbumForceMatchJSON
+	if !bindJSONWithValidation(ctx, &cfg) {
+		return
+	}
+
+	var getconfig string
+	if strings.EqualFold(cfg.Grouptype, "music") {
+		getconfig = "music_" + cfg.Configentry
+	} else if strings.EqualFold(cfg.Grouptype, "audiobook") {
+		getconfig = "audiobook_" + cfg.Configentry
+	} else {
+		sendBadRequest(ctx, "grouptype must be music or audiobook")
+		return
+	}
+
+	if config.GetSettingsMedia(getconfig).Name != cfg.Configentry {
+		sendBadRequest(ctx, "media config not found")
+		return
+	}
+
+	if !config.CheckGroup("path_", cfg.Sourcepathtemplate) {
+		sendBadRequest(ctx, "source config not found")
+		return
+	}
+
+	if !config.CheckGroup("path_", cfg.Targetpathtemplate) {
+		sendBadRequest(ctx, "target config not found")
+		return
+	}
+
+	if !scanner.CheckFileExist(cfg.Folder) {
+		sendBadRequest(ctx, "folder not found")
+		return
+	}
+
+	cfgp := config.GetSettingsMedia(getconfig)
+
+	var cfgimport *config.MediaDataImportConfig
+	for _, imp := range cfgp.DataImport {
+		if strings.EqualFold(imp.TemplatePath, cfg.Sourcepathtemplate) {
+			cfgimport = &imp
+			break
+		}
+	}
+
+	s := structure.NewStructure(
+		cfgp,
+		cfg.Sourcepathtemplate,
+		cfg.Targetpathtemplate,
+		false,
+		false,
+		0,
+	)
+	if s == nil {
+		sendBadRequest(ctx, "failed to create organizer")
+		return
+	}
+
+	preview, err := s.ForceMatchAlbumFolder(
+		ctx,
+		cfg.Folder,
+		cfgp,
+		cfgimport,
+		&cfg.ForcedID,
+		cfg.Preview,
+	)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if cfg.Preview {
+		ctx.JSON(http.StatusOK, preview)
+	} else {
+		ctx.JSON(http.StatusOK, gin.H{})
+	}
 }
 
 // @Summary      Cancel Queue Job
@@ -1808,13 +2033,7 @@ func apiCacheAdd(ctx *gin.Context) {
 		logger.CacheHistoryURLSeries, logger.CacheHistoryTitleSeries,
 	}
 
-	valid := false
-	for _, validType := range validTypes {
-		if req.CacheType == validType {
-			valid = true
-			break
-		}
-	}
+	valid := slices.Contains(validTypes, req.CacheType)
 
 	if !valid {
 		sendBadRequest(ctx, "Invalid cache type. Use /api/cache/list to see available types")
@@ -1881,13 +2100,7 @@ func apiCacheClear(ctx *gin.Context) {
 		logger.CacheHistoryURLSeries, logger.CacheHistoryTitleSeries,
 	}
 
-	valid := false
-	for _, validType := range validTypes {
-		if cacheType == validType {
-			valid = true
-			break
-		}
-	}
+	valid := slices.Contains(validTypes, cacheType)
 
 	if !valid {
 		sendBadRequest(ctx, "Invalid cache type. Use /api/cache/list to see available types")

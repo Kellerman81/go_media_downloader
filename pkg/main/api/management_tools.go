@@ -1,13 +1,14 @@
 package api
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/goccy/go-json"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
@@ -2152,7 +2153,9 @@ func HandleQualityReorderRules(c *gin.Context) {
 
 			// Type column
 			html.WriteString(`<div class="col-md-2">`)
-			html.WriteString(`<select class="form-select form-select-sm" name="rule_type" disabled>`)
+			html.WriteString(
+				`<select class="form-select form-select-sm" name="rule_type" disabled>`,
+			)
 			html.WriteString(`<option value="`)
 			html.WriteString(rule.ReorderType)
 			html.WriteString(`" selected>`)
@@ -2163,14 +2166,18 @@ func HandleQualityReorderRules(c *gin.Context) {
 
 			// Pattern column
 			html.WriteString(`<div class="col-md-3">`)
-			html.WriteString(`<input type="text" class="form-control form-control-sm" name="rule_pattern" value="`)
+			html.WriteString(
+				`<input type="text" class="form-control form-control-sm" name="rule_pattern" value="`,
+			)
 			html.WriteString(rule.Name)
 			html.WriteString(`" placeholder="Pattern/Name">`)
 			html.WriteString(`</div>`)
 
 			// Priority column
 			html.WriteString(`<div class="col-md-2">`)
-			html.WriteString(`<input type="number" class="form-control form-control-sm" name="rule_priority" value="`)
+			html.WriteString(
+				`<input type="number" class="form-control form-control-sm" name="rule_priority" value="`,
+			)
 			html.WriteString(strconv.Itoa(rule.Newpriority))
 			html.WriteString(`" min="-1000000" max="1000000" step="1">`)
 			html.WriteString(`</div>`)
@@ -2178,7 +2185,9 @@ func HandleQualityReorderRules(c *gin.Context) {
 			// Enabled column
 			html.WriteString(`<div class="col-md-3">`)
 			html.WriteString(`<div class="form-check">`)
-			html.WriteString(`<input type="checkbox" class="form-check-input" name="rule_enabled" checked>`)
+			html.WriteString(
+				`<input type="checkbox" class="form-check-input" name="rule_enabled" checked>`,
+			)
 			html.WriteString(`<label class="form-check-label">Profile Rule (Editable)</label>`)
 			html.WriteString(`</div>`)
 			html.WriteString(`</div>`)
@@ -2213,6 +2222,7 @@ func HandleQualityReorderAddRule(c *gin.Context) {
 				<option value="quality">Quality</option>
 				<option value="codec">Codec</option>
 				<option value="audio">Audio</option>
+				<option value="audio_format">Audio Format</option>
 				<option value="position">Position</option>
 				<option value="combined_res_qual">Resolution,Quality</option>
 			</select>
@@ -2393,6 +2403,7 @@ func HandleMediaCleanup(c *gin.Context) {
 			if dryRun {
 				return "Yes (preview only)"
 			}
+
 			return "No (will make changes)"
 		}()))),
 		html.Tr(
@@ -2473,7 +2484,10 @@ func HandleMediaCleanup(c *gin.Context) {
 		)
 	} else if totalIssues > 5 {
 		alertClass = "card border-0 shadow-sm border-warning mb-4"
-		message = fmt.Sprintf("Cleanup Scan Complete - %d Issues Found (Review Required)", totalIssues)
+		message = fmt.Sprintf(
+			"Cleanup Scan Complete - %d Issues Found (Review Required)",
+			totalIssues,
+		)
 	}
 
 	result := html.Div(
@@ -2562,6 +2576,7 @@ func HandleMissingEpisodes(c *gin.Context) {
 	if err != nil {
 		dateRangeDays = 30
 	}
+
 	// Use variable to avoid "declared and not used" warning
 	_ = dateRangeDays
 
@@ -2644,12 +2659,14 @@ func HandleMissingEpisodes(c *gin.Context) {
 			if seriesName == "" {
 				return "All series"
 			}
+
 			return seriesName
 		}()))),
 		html.Tr(html.Td(gomponents.Text("Season:")), html.Td(gomponents.Text(func() string {
 			if seasonNumber == 0 {
 				return "All seasons"
 			}
+
 			return fmt.Sprintf("Season %d", seasonNumber)
 		}()))),
 		html.Tr(html.Td(gomponents.Text("Status Filter:")), html.Td(gomponents.Text(status))),
@@ -2659,6 +2676,7 @@ func HandleMissingEpisodes(c *gin.Context) {
 				if includeSpecials {
 					return "Yes"
 				}
+
 				return "No"
 			}())),
 		),
@@ -2666,6 +2684,7 @@ func HandleMissingEpisodes(c *gin.Context) {
 			if onlyAired {
 				return "Yes"
 			}
+
 			return "No"
 		}()))),
 		html.Tr(
@@ -2702,10 +2721,9 @@ func HandleMissingEpisodes(c *gin.Context) {
 			// Show actual missing episode details (first few episodes)
 			var sampleEpisodes []string
 
-			limit := 5 // Show first 5 missing episodes
-			if len(missingEpisodes) < limit {
-				limit = len(missingEpisodes)
-			}
+			limit := min(
+				// Show first 5 missing episodes
+				len(missingEpisodes), 5)
 
 			for i := range limit {
 				// Get episode details from database
@@ -2726,8 +2744,12 @@ func HandleMissingEpisodes(c *gin.Context) {
 			}
 
 			if len(sampleEpisodes) > 0 {
-				results = append(results,
-					html.Tr(html.Td(gomponents.Text("Sample Missing:")), html.Td(gomponents.Text(strings.Join(sampleEpisodes, ", ")))),
+				results = append(
+					results,
+					html.Tr(
+						html.Td(gomponents.Text("Sample Missing:")),
+						html.Td(gomponents.Text(strings.Join(sampleEpisodes, ", "))),
+					),
 				)
 			}
 		}
@@ -2791,6 +2813,7 @@ func HandleMissingEpisodes(c *gin.Context) {
 						if episode.Missing {
 							return "Missing"
 						}
+
 						return "Available"
 					}())),
 					html.Td(gomponents.Text(episode.QualityProfile)),
@@ -3010,6 +3033,7 @@ func HandleLogAnalysis(c *gin.Context) {
 				if includeStackTraces {
 					return "Yes"
 				}
+
 				return "No"
 			}())),
 		),
@@ -3249,6 +3273,7 @@ func HandleStorageHealth(c *gin.Context) {
 			if enableAlerts {
 				return "Yes"
 			}
+
 			return "No"
 		}()))),
 		html.Tr(html.Td(gomponents.Attr("colspan", "2"), html.Hr())),
@@ -3342,7 +3367,10 @@ func HandleStorageHealth(c *gin.Context) {
 					fmt.Sprintf("%s: R: %.1f MB/s, W: %.1f MB/s", pathInfo.Path, readMB, writeMB),
 				)
 			} else if pathInfo.IOTest.Error != "" {
-				ioResults = append(ioResults, fmt.Sprintf("%s: %s", pathInfo.Path, pathInfo.IOTest.Error))
+				ioResults = append(
+					ioResults,
+					fmt.Sprintf("%s: %s", pathInfo.Path, pathInfo.IOTest.Error),
+				)
 			}
 		}
 
@@ -3357,8 +3385,12 @@ func HandleStorageHealth(c *gin.Context) {
 				)
 			}
 		} else {
-			results = append(results,
-				html.Tr(html.Td(gomponents.Text("I/O Performance:")), html.Td(gomponents.Text("No I/O tests performed"))),
+			results = append(
+				results,
+				html.Tr(
+					html.Td(gomponents.Text("I/O Performance:")),
+					html.Td(gomponents.Text("No I/O tests performed")),
+				),
 			)
 		}
 	}
@@ -3613,6 +3645,7 @@ func HandleServiceHealth(c *gin.Context) {
 			if detailedTest {
 				return "Yes"
 			}
+
 			return "No"
 		}()))),
 		html.Tr(
@@ -3981,7 +4014,13 @@ func HandleQualityReorder(c *gin.Context) {
 
 	getcodecs = append(getcodecs, regex0)
 
-	if len(getresolutions) <= 1 && len(getqualities) <= 1 {
+	// Include audio formats for music/audiobook profiles
+	var getaudioformats []database.Qualities
+
+	getaudioformats = append(getaudioformats, regex0)
+	getaudioformats = append(getaudioformats, database.DBConnect.GetaudioformatsIn...)
+
+	if len(getresolutions) <= 1 && len(getqualities) <= 1 && len(getaudioformats) <= 1 {
 		c.String(
 			http.StatusOK,
 			renderAlert("No wanted quality combinations found for this profile", "info"),
@@ -3995,12 +4034,14 @@ func HandleQualityReorder(c *gin.Context) {
 		Quality               string
 		Codec                 string
 		Audio                 string
+		AudioFormat           string
 		TotalPriority         int
 		OriginalTotalPriority int
 		ResoPriority          int
 		QualPriority          int
 		CodecPriority         int
 		AudioPriority         int
+		AudioFormatPriority   int
 		OriginalResoPriority  int
 		OriginalQualPriority  int
 		ReorderApplied        bool
@@ -4013,111 +4054,124 @@ func HandleQualityReorder(c *gin.Context) {
 		for idxqual := range getqualities {
 			for idxcodec := range getcodecs {
 				for idxaudio := range getaudios {
-					// Calculate ORIGINAL priorities (using original config without temp rules)
-					originalResoPriority := getresolutions[idxreso].Gettypeidprioritysingle(
-						"resolution",
-						originalConfig,
-					)
-					originalQualPriority := getqualities[idxqual].Gettypeidprioritysingle(
-						"quality",
-						originalConfig,
-					)
-					originalCodecPriority := getcodecs[idxcodec].Gettypeidprioritysingle(
-						"codec",
-						originalConfig,
-					)
-					originalAudioPriority := getaudios[idxaudio].Gettypeidprioritysingle(
-						"audio",
-						originalConfig,
-					)
+					for idxaf := range getaudioformats {
+						// Calculate ORIGINAL priorities (using original config without temp rules)
+						originalResoPriority := getresolutions[idxreso].Gettypeidprioritysingle(
+							"resolution",
+							originalConfig,
+						)
+						originalQualPriority := getqualities[idxqual].Gettypeidprioritysingle(
+							"quality",
+							originalConfig,
+						)
+						originalCodecPriority := getcodecs[idxcodec].Gettypeidprioritysingle(
+							"codec",
+							originalConfig,
+						)
+						originalAudioPriority := getaudios[idxaudio].Gettypeidprioritysingle(
+							"audio",
+							originalConfig,
+						)
+						originalAFPriority := getaudioformats[idxaf].Gettypeidprioritysingle(
+							"audio_format",
+							originalConfig,
+						)
 
-					// Apply original config reorder rules to original priorities
-					originalFinalResoPrio := originalResoPriority
+						// Apply original config reorder rules to original priorities
+						originalFinalResoPrio := originalResoPriority
 
-					originalFinalQualPrio := originalQualPriority
-					for idx := range originalConfig.QualityReorder {
-						reorder := &originalConfig.QualityReorder[idx]
-						if reorder.ReorderType == "combined_res_qual" ||
-							strings.EqualFold(reorder.ReorderType, "combined_res_qual") {
-							if strings.ContainsRune(reorder.Name, ',') {
-								parts := strings.Split(reorder.Name, ",")
-								if len(parts) == 2 {
-									if (strings.TrimSpace(parts[0]) == getresolutions[idxreso].Name || strings.EqualFold(strings.TrimSpace(parts[0]), getresolutions[idxreso].Name)) &&
-										(strings.TrimSpace(parts[1]) == getqualities[idxqual].Name || strings.EqualFold(strings.TrimSpace(parts[1]), getqualities[idxqual].Name)) {
-										originalFinalResoPrio = reorder.Newpriority
-										originalFinalQualPrio = 0
+						originalFinalQualPrio := originalQualPriority
+						for idx := range originalConfig.QualityReorder {
+							reorder := &originalConfig.QualityReorder[idx]
+							if reorder.ReorderType == "combined_res_qual" ||
+								strings.EqualFold(reorder.ReorderType, "combined_res_qual") {
+								if strings.ContainsRune(reorder.Name, ',') {
+									parts := strings.Split(reorder.Name, ",")
+									if len(parts) == 2 {
+										if (strings.TrimSpace(parts[0]) == getresolutions[idxreso].Name || strings.EqualFold(strings.TrimSpace(parts[0]), getresolutions[idxreso].Name)) &&
+											(strings.TrimSpace(parts[1]) == getqualities[idxqual].Name || strings.EqualFold(strings.TrimSpace(parts[1]), getqualities[idxqual].Name)) {
+											originalFinalResoPrio = reorder.Newpriority
+											originalFinalQualPrio = 0
+										}
 									}
 								}
 							}
 						}
-					}
 
-					// Calculate MODIFIED priorities (using modified config with temp rules)
-					modifiedResoPriority := getresolutions[idxreso].Gettypeidprioritysingle(
-						"resolution",
-						qualityConfig,
-					)
-					modifiedQualPriority := getqualities[idxqual].Gettypeidprioritysingle(
-						"quality",
-						qualityConfig,
-					)
-					modifiedCodecPriority := getcodecs[idxcodec].Gettypeidprioritysingle(
-						"codec",
-						qualityConfig,
-					)
-					modifiedAudioPriority := getaudios[idxaudio].Gettypeidprioritysingle(
-						"audio",
-						qualityConfig,
-					)
+						// Calculate MODIFIED priorities (using modified config with temp rules)
+						modifiedResoPriority := getresolutions[idxreso].Gettypeidprioritysingle(
+							"resolution",
+							qualityConfig,
+						)
+						modifiedQualPriority := getqualities[idxqual].Gettypeidprioritysingle(
+							"quality",
+							qualityConfig,
+						)
+						modifiedCodecPriority := getcodecs[idxcodec].Gettypeidprioritysingle(
+							"codec",
+							qualityConfig,
+						)
+						modifiedAudioPriority := getaudios[idxaudio].Gettypeidprioritysingle(
+							"audio",
+							qualityConfig,
+						)
+						modifiedAFPriority := getaudioformats[idxaf].Gettypeidprioritysingle(
+							"audio_format",
+							qualityConfig,
+						)
 
-					// Apply modified config reorder rules to modified priorities
-					modifiedFinalResoPrio := modifiedResoPriority
-					modifiedFinalQualPrio := modifiedQualPriority
+						// Apply modified config reorder rules to modified priorities
+						modifiedFinalResoPrio := modifiedResoPriority
+						modifiedFinalQualPrio := modifiedQualPriority
 
-					reorderApplied := false
-					for idx := range qualityConfig.QualityReorder {
-						reorder := &qualityConfig.QualityReorder[idx]
-						if reorder.ReorderType == "combined_res_qual" ||
-							strings.EqualFold(reorder.ReorderType, "combined_res_qual") {
-							if strings.ContainsRune(reorder.Name, ',') {
-								parts := strings.Split(reorder.Name, ",")
-								if len(parts) == 2 {
-									if (strings.TrimSpace(parts[0]) == getresolutions[idxreso].Name || strings.EqualFold(strings.TrimSpace(parts[0]), getresolutions[idxreso].Name)) &&
-										(strings.TrimSpace(parts[1]) == getqualities[idxqual].Name || strings.EqualFold(strings.TrimSpace(parts[1]), getqualities[idxqual].Name)) {
-										modifiedFinalResoPrio = reorder.Newpriority
-										modifiedFinalQualPrio = 0
-										reorderApplied = true
+						reorderApplied := false
+						for idx := range qualityConfig.QualityReorder {
+							reorder := &qualityConfig.QualityReorder[idx]
+							if reorder.ReorderType == "combined_res_qual" ||
+								strings.EqualFold(reorder.ReorderType, "combined_res_qual") {
+								if strings.ContainsRune(reorder.Name, ',') {
+									parts := strings.Split(reorder.Name, ",")
+									if len(parts) == 2 {
+										if (strings.TrimSpace(parts[0]) == getresolutions[idxreso].Name || strings.EqualFold(strings.TrimSpace(parts[0]), getresolutions[idxreso].Name)) &&
+											(strings.TrimSpace(parts[1]) == getqualities[idxqual].Name || strings.EqualFold(strings.TrimSpace(parts[1]), getqualities[idxqual].Name)) {
+											modifiedFinalResoPrio = reorder.Newpriority
+											modifiedFinalQualPrio = 0
+											reorderApplied = true
+										}
 									}
 								}
 							}
 						}
+
+						// Check if priorities changed due to temporary rules
+						if modifiedFinalResoPrio != originalFinalResoPrio ||
+							modifiedFinalQualPrio != originalFinalQualPrio ||
+							modifiedAFPriority != originalAFPriority {
+							reorderApplied = true
+						}
+
+						// Calculate total priorities
+						originalTotalPriority := originalFinalResoPrio + originalFinalQualPrio + originalCodecPriority + originalAudioPriority + originalAFPriority
+						modifiedTotalPriority := modifiedFinalResoPrio + modifiedFinalQualPrio + modifiedCodecPriority + modifiedAudioPriority + modifiedAFPriority
+
+						combinations = append(combinations, QualityCombination{
+							Resolution:            getresolutions[idxreso].Name,
+							Quality:               getqualities[idxqual].Name,
+							Codec:                 getcodecs[idxcodec].Name,
+							Audio:                 getaudios[idxaudio].Name,
+							AudioFormat:           getaudioformats[idxaf].Name,
+							TotalPriority:         modifiedTotalPriority,
+							OriginalTotalPriority: originalTotalPriority,
+							ResoPriority:          modifiedFinalResoPrio,
+							QualPriority:          modifiedFinalQualPrio,
+							CodecPriority:         modifiedCodecPriority,
+							AudioPriority:         modifiedAudioPriority,
+							AudioFormatPriority:   modifiedAFPriority,
+							OriginalResoPriority:  originalFinalResoPrio,
+							OriginalQualPriority:  originalFinalQualPrio,
+							ReorderApplied:        reorderApplied,
+						})
 					}
-
-					// Check if priorities changed due to temporary rules
-					if modifiedFinalResoPrio != originalFinalResoPrio ||
-						modifiedFinalQualPrio != originalFinalQualPrio {
-						reorderApplied = true
-					}
-
-					// Calculate total priorities
-					originalTotalPriority := originalFinalResoPrio + originalFinalQualPrio + originalCodecPriority + originalAudioPriority
-					modifiedTotalPriority := modifiedFinalResoPrio + modifiedFinalQualPrio + modifiedCodecPriority + modifiedAudioPriority
-
-					combinations = append(combinations, QualityCombination{
-						Resolution:            getresolutions[idxreso].Name,
-						Quality:               getqualities[idxqual].Name,
-						Codec:                 getcodecs[idxcodec].Name,
-						Audio:                 getaudios[idxaudio].Name,
-						TotalPriority:         modifiedTotalPriority,
-						OriginalTotalPriority: originalTotalPriority,
-						ResoPriority:          modifiedFinalResoPrio,
-						QualPriority:          modifiedFinalQualPrio,
-						CodecPriority:         modifiedCodecPriority,
-						AudioPriority:         modifiedAudioPriority,
-						OriginalResoPriority:  originalFinalResoPrio,
-						OriginalQualPriority:  originalFinalQualPrio,
-						ReorderApplied:        reorderApplied,
-					})
 				}
 			}
 		}
@@ -4144,16 +4198,32 @@ func HandleQualityReorder(c *gin.Context) {
 			combinationDisplay += combo.Quality
 		}
 
+		if combo.AudioFormat != "" {
+			if combinationDisplay != "" {
+				combinationDisplay += " + "
+			}
+
+			combinationDisplay += combo.AudioFormat
+		}
+
 		if combinationDisplay == "" {
 			combinationDisplay = "No specific resolution/quality"
 		}
 
-		// Build priority breakdown (only resolution + quality)
+		// Build priority breakdown
 		priorityBreakdown := fmt.Sprintf("%d", combo.ResoPriority)
 		if combo.QualPriority >= 0 {
 			priorityBreakdown += fmt.Sprintf("+%d", combo.QualPriority)
 		} else {
 			priorityBreakdown += fmt.Sprintf("%d", combo.QualPriority)
+		}
+
+		if combo.AudioFormatPriority != 0 {
+			if combo.AudioFormatPriority >= 0 {
+				priorityBreakdown += fmt.Sprintf("+%d", combo.AudioFormatPriority)
+			} else {
+				priorityBreakdown += fmt.Sprintf("%d", combo.AudioFormatPriority)
+			}
 		}
 
 		// Calculate priority change
@@ -4171,7 +4241,10 @@ func HandleQualityReorder(c *gin.Context) {
 			)
 			changeClass = "table-success"
 		} else if priorityChange < 0 {
-			changeDisplay = html.Span(html.Class("text-danger"), gomponents.Text(fmt.Sprintf("%d", priorityChange)))
+			changeDisplay = html.Span(
+				html.Class("text-danger"),
+				gomponents.Text(fmt.Sprintf("%d", priorityChange)),
+			)
 			changeClass = "table-warning"
 		} else {
 			changeDisplay = html.Span(html.Class("text-muted"), gomponents.Text("0"))

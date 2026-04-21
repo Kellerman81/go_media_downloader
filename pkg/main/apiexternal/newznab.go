@@ -172,7 +172,7 @@ func processurl(
 	urlv string,
 	tillid string,
 	results *NzbSlice,
-	idsearched bool,
+	_ bool,
 ) (bool, string, error) {
 	c := Getnewznabclient(ind)
 	if c == nil {
@@ -569,7 +569,7 @@ func QueryNewznabMovieImdb(
 	)
 }
 
-// getnewznabclient returns a Client for the given IndexersConfig.
+// Getnewznabclient returns a Client for the given IndexersConfig.
 // It checks if a client already exists for the given URL,
 // and returns it if found. Otherwise creates a new client and caches it.
 func Getnewznabclient(indcfg *config.IndexersConfig) *newznab.Provider {
@@ -677,14 +677,29 @@ func QueryNewznabTvTvdb(
 }
 
 // getaddstr constructs the search query string for a Newznab API request based on the
-// given media type configuration, title, and Nzbwithprio information. If the media type
-// configuration indicates the content is a series and the Nzbwithprio has a non-zero
-// year, the year is appended to the title. Otherwise, if the Nzbwithprio has an
-// identifier, it is appended to the title. Otherwise, the title is returned as-is.
+// given media type configuration, title, and Nzbwithprio information.
+// For movies: appends year if available
+// For books/audiobooks/music: returns title as-is (SearchFor already contains "Title Author/Artist")
+// For series: appends identifier (e.g., "S01E05") if available.
 func getaddstr(cfgp *config.MediaTypeConfig, title string, e *apiexternal_v2.Nzbwithprio) string {
-	if !cfgp.Useseries && e.Info.Year != 0 {
-		return logger.JoinStrings(title, logger.StrSpace, logger.IntToString(e.Info.Year))
-	} else if e.Info.Identifier != "" {
+	switch cfgp.IsType {
+	case config.MediaTypeMovie:
+		{
+			// Only append year for movies
+			if e.Info.Year != 0 {
+				return logger.JoinStrings(title, logger.StrSpace, logger.IntToString(e.Info.Year))
+			}
+		}
+
+	case config.MediaTypeBook, config.MediaTypeAudiobook, config.MediaTypeMusic:
+		{
+			// For books, audiobooks, and music, the SearchFor field already contains
+			// "Title Author/Artist" so don't append year here
+			// The title passed in will be the SearchFor value which already includes author/artist
+		}
+	}
+
+	if e.Info.Identifier != "" {
 		return logger.JoinStrings(title, logger.StrSpace, e.Info.Identifier)
 	}
 
@@ -848,7 +863,7 @@ func QueryNewznabRSSLast(
 // It takes in debug mode and indexer configuration row parameters.
 // It sets up rate limiting and timeouts based on the configuration.
 // It returns a pointer to the constructed Client instance.
-func newNewznab(debug bool, idxCfg *config.IndexersConfig) {
+func newNewznab(_ bool, idxCfg *config.IndexersConfig) {
 	if idxCfg.Limitercalls == 0 {
 		idxCfg.Limitercalls = 5
 	}
@@ -875,6 +890,7 @@ func newNewznab(debug bool, idxCfg *config.IndexersConfig) {
 		LimiterCalls:      idxCfg.Limitercalls,
 		LimiterSeconds:    idxCfg.Limiterseconds,
 		LimiterCallsDaily: idxCfg.LimitercallsDaily,
+		Enabled:           idxCfg.Enabled,
 	})
 
 	// Store in direct providers registry

@@ -9,7 +9,7 @@ import (
 	gin "github.com/gin-gonic/gin"
 )
 
-// Generic config parsing pattern to reduce duplication.
+// ConfigParser is a generic config parsing pattern to reduce code duplication.
 type ConfigParser[T any] struct {
 	Prefix       string
 	CreateConfig func(string, *gin.Context) T
@@ -189,7 +189,7 @@ func createListsParser() *ConfigParser[config.ListsConfig] {
 				ListType:         builder.getString("ListType"),
 				URL:              builder.getString("URL"),
 				IMDBCSVFile:      builder.getString("IMDBCSVFile"),
-				SeriesConfigFile: builder.getString("SeriesConfigFile"),
+				ManualConfigFile: builder.getString("ManualConfigFile"),
 				TraktUsername:    builder.getString("TraktUsername"),
 				TraktListName:    builder.getString("TraktListName"),
 				TraktListType:    builder.getString("TraktListType"),
@@ -202,6 +202,67 @@ func createListsParser() *ConfigParser[config.ListsConfig] {
 				MinRating:        builder.getFloat32("MinRating", 0),
 				RemoveFromList:   builder.getBool("RemoveFromList"),
 				Enabled:          builder.getBool("Enabled"),
+
+				// Plex
+				PlexServerURL: builder.getString("PlexServerURL"),
+				PlexToken:     builder.getString("PlexToken"),
+				PlexUsername:  builder.getString("PlexUsername"),
+
+				// Jellyfin
+				JellyfinServerURL: builder.getString("JellyfinServerURL"),
+				JellyfinToken:     builder.getString("JellyfinToken"),
+				JellyfinUsername:  builder.getString("JellyfinUsername"),
+
+				// Movie scraper - basic
+				MovieScraperType:     builder.getString("MovieScraperType"),
+				MovieScraperStartURL: builder.getString("MovieScraperStartURL"),
+				MovieScraperSiteURL:  builder.getString("MovieScraperSiteURL"),
+				MovieScraperSiteID:   uint(builder.getInt("MovieScraperSiteID", 0)),
+
+				// Movie scraper - HTML/XPath
+				MovieSceneNodeXPath:   builder.getString("MovieSceneNodeXPath"),
+				MovieTitleXPath:       builder.getString("MovieTitleXPath"),
+				MovieYearXPath:        builder.getString("MovieYearXPath"),
+				MovieImdbIDXPath:      builder.getString("MovieImdbIDXPath"),
+				MovieURLXPath:         builder.getString("MovieURLXPath"),
+				MovieRatingXPath:      builder.getString("MovieRatingXPath"),
+				MovieGenreXPath:       builder.getString("MovieGenreXPath"),
+				MovieReleaseDateXPath: builder.getString("MovieReleaseDateXPath"),
+				MovieTitleAttribute:   builder.getString("MovieTitleAttribute"),
+				MovieURLAttribute:     builder.getString("MovieURLAttribute"),
+
+				// Movie scraper - pagination
+				MoviePaginationType: builder.getString("MoviePaginationType"),
+				MoviePageIncrement:  builder.getInt("MoviePageIncrement", 0),
+				MoviePageURLPattern: builder.getString("MoviePageURLPattern"),
+
+				// Movie scraper - CSRF API
+				MovieCSRFCookieName:   builder.getString("MovieCSRFCookieName"),
+				MovieCSRFHeaderName:   builder.getString("MovieCSRFHeaderName"),
+				MovieAPIURLPattern:    builder.getString("MovieAPIURLPattern"),
+				MoviePageStartIndex:   builder.getInt("MoviePageStartIndex", 0),
+				MovieResultsArrayPath: builder.getString("MovieResultsArrayPath"),
+				MovieTitleField:       builder.getString("MovieTitleField"),
+				MovieYearField:        builder.getString("MovieYearField"),
+				MovieImdbIDField:      builder.getString("MovieImdbIDField"),
+				MovieURLField:         builder.getString("MovieURLField"),
+				MovieRatingField:      builder.getString("MovieRatingField"),
+				MovieGenreField:       builder.getString("MovieGenreField"),
+				MovieReleaseDateField: builder.getString("MovieReleaseDateField"),
+
+				// Movie scraper - common
+				MovieDateFormat:  builder.getString("MovieDateFormat"),
+				MovieWaitSeconds: builder.getInt("MovieWaitSeconds", 0),
+
+				// Chart / bestseller scraper
+				ChartEntryNodeXPath:  builder.getString("ChartEntryNodeXPath"),
+				ChartTitleXPath:      builder.getString("ChartTitleXPath"),
+				ChartArtistXPath:     builder.getString("ChartArtistXPath"),
+				ChartTitleAttribute:  builder.getString("ChartTitleAttribute"),
+				ChartArtistAttribute: builder.getString("ChartArtistAttribute"),
+				ChartDefaultArtist:   builder.getString("ChartDefaultArtist"),
+				ChartDateURLPattern:  builder.getString("ChartDateURLPattern"),
+				ChartDateFormat:      builder.getString("ChartDateFormat"),
 			}
 		},
 		Validate: func(configs []config.ListsConfig) error {
@@ -383,7 +444,8 @@ func parseMediaTypeConfig[T any](
 		SetStringArray(&cfg.MetadataTitleLanguages, "MetadataTitleLanguages").
 		SetBool(&cfg.Structure, "Structure").
 		SetUint16(&cfg.SearchmissingIncremental, "SearchmissingIncremental").
-		SetUint16(&cfg.SearchupgradeIncremental, "SearchupgradeIncremental")
+		SetUint16(&cfg.SearchupgradeIncremental, "SearchupgradeIncremental").
+		SetString(&cfg.AudibleRegion, "AudibleRegion")
 
 	return cfg
 }
@@ -423,6 +485,106 @@ func parseMediaDataConfigs(c *gin.Context, mediaType, index string) []config.Med
 			cfg.EnableUnpacking, _ = strconv.ParseBool(val)
 		}
 
+		if val := c.PostForm(fmt.Sprintf("%s_%s_WriteRenameLog", prefix, subIndex)); val != "" {
+			cfg.WriteRenameLog, _ = strconv.ParseBool(val)
+		}
+
+		if val := c.PostForm(fmt.Sprintf("%s_%s_EmbedArt", prefix, subIndex)); val != "" {
+			cfg.EmbedArt, _ = strconv.ParseBool(val)
+		}
+
+		if val := c.PostForm(
+			fmt.Sprintf("%s_%s_SkipSeriesTrackMatch", prefix, subIndex),
+		); val != "" {
+			cfg.SkipSeriesTrackMatch, _ = strconv.ParseBool(val)
+		}
+
+		if val := c.PostForm(
+			fmt.Sprintf("%s_%s_AllowAlternativeReleases", prefix, subIndex),
+		); val != "" {
+			cfg.AllowAlternativeReleases, _ = strconv.ParseBool(val)
+		}
+
+		if val := c.PostFormArray(
+			fmt.Sprintf("%s_%s_AllowedReleaseTypes", prefix, subIndex),
+		); len(
+			val,
+		) != 0 {
+			cfg.AllowedReleaseTypes = val
+		}
+
+		if val := c.PostFormArray(
+			fmt.Sprintf("%s_%s_MBMediaFormats", prefix, subIndex),
+		); len(
+			val,
+		) != 0 {
+			cfg.MBMediaFormats = val
+		}
+
+		if val := c.PostForm(
+			fmt.Sprintf("%s_%s_AllowAllFormatsWhenStructuring", prefix, subIndex),
+		); val != "" {
+			cfg.AllowAllFormatsWhenStructuring = val == "true" || val == "1"
+		}
+
+		if val := c.PostForm(
+			fmt.Sprintf("%s_%s_PerTrackToleranceSeconds", prefix, subIndex),
+		); val != "" {
+			n, _ := strconv.Atoi(val)
+
+			cfg.PerTrackToleranceSeconds = n
+		}
+
+		if val := c.PostForm(
+			fmt.Sprintf("%s_%s_PerTrackToleranceSecondsMax", prefix, subIndex),
+		); val != "" {
+			n, _ := strconv.Atoi(val)
+
+			cfg.PerTrackToleranceSecondsMax = n
+		}
+
+		if val := c.PostForm(
+			fmt.Sprintf("%s_%s_MaxTotalDifferenceSeconds", prefix, subIndex),
+		); val != "" {
+			n, _ := strconv.Atoi(val)
+
+			cfg.MaxTotalDifferenceSeconds = n
+		}
+
+		if val := c.PostForm(fmt.Sprintf("%s_%s_AllowMissingTracks", prefix, subIndex)); val != "" {
+			cfg.AllowMissingTracks, _ = strconv.ParseBool(val)
+		}
+
+		if val := c.PostForm(
+			fmt.Sprintf("%s_%s_ExceedToleranceIfTotalMatch", prefix, subIndex),
+		); val != "" {
+			cfg.ExceedToleranceIfTotalMatch, _ = strconv.ParseBool(val)
+		}
+
+		if val := c.PostForm(fmt.Sprintf("%s_%s_TrackTitleWeight", prefix, subIndex)); val != "" {
+			cfg.TrackTitleWeight, _ = strconv.ParseFloat(val, 64)
+		}
+
+		if val := c.PostForm(fmt.Sprintf("%s_%s_TrackIndexWeight", prefix, subIndex)); val != "" {
+			cfg.TrackIndexWeight, _ = strconv.ParseFloat(val, 64)
+		}
+
+		if val := c.PostForm(fmt.Sprintf("%s_%s_TrackLengthWeight", prefix, subIndex)); val != "" {
+			cfg.TrackLengthWeight, _ = strconv.ParseFloat(val, 64)
+		}
+
+		if val := c.PostForm(fmt.Sprintf("%s_%s_TrackArtistWeight", prefix, subIndex)); val != "" {
+			cfg.TrackArtistWeight, _ = strconv.ParseFloat(val, 64)
+		}
+
+		if val := c.PostForm(fmt.Sprintf("%s_%s_TrackIdWeight", prefix, subIndex)); val != "" {
+			cfg.TrackIdWeight, _ = strconv.ParseFloat(val, 64)
+		}
+
+		if val := c.PostForm(fmt.Sprintf("%s_%s_DiscoverSeriesAlbums", prefix, subIndex)); val != "" {
+			cfg.DiscoverSeriesAlbums, _ = strconv.ParseBool(val)
+		}
+
 		configs = append(configs, cfg)
 	}
 
@@ -453,13 +615,117 @@ func parseMediaDataImportConfigs(
 			continue
 		}
 
-		enableUnpackingField := fmt.Sprintf("%s_%s_EnableUnpacking", prefix, subIndex)
-		enableUnpacking := c.PostForm(enableUnpackingField) == "on"
+		cfg := config.MediaDataImportConfig{TemplatePath: name}
 
-		configs = append(configs, config.MediaDataImportConfig{
-			TemplatePath:    name,
-			EnableUnpacking: enableUnpacking,
-		})
+		if val := c.PostForm(fmt.Sprintf("%s_%s_EnableUnpacking", prefix, subIndex)); val != "" {
+			cfg.EnableUnpacking, _ = strconv.ParseBool(val)
+		}
+
+		if val := c.PostForm(fmt.Sprintf("%s_%s_AddFound", prefix, subIndex)); val != "" {
+			cfg.AddFound, _ = strconv.ParseBool(val)
+		}
+
+		if val := c.PostForm(fmt.Sprintf("%s_%s_AddFoundList", prefix, subIndex)); val != "" {
+			cfg.AddFoundList = val
+		}
+
+		if val := c.PostForm(
+			fmt.Sprintf("%s_%s_AllowAlternativeReleases", prefix, subIndex),
+		); val != "" {
+			cfg.AllowAlternativeReleases, _ = strconv.ParseBool(val)
+		}
+
+		cfg.MoveUnprocessed = c.PostForm(fmt.Sprintf("%s_%s_MoveUnprocessed", prefix, subIndex))
+
+		if val := c.PostForm(fmt.Sprintf("%s_%s_EmbedArt", prefix, subIndex)); val != "" {
+			cfg.EmbedArt, _ = strconv.ParseBool(val)
+		}
+
+		if val := c.PostForm(
+			fmt.Sprintf("%s_%s_AllowAllFormatsWhenStructuring", prefix, subIndex),
+		); val != "" {
+			cfg.AllowAllFormatsWhenStructuring = val == "true" || val == "1"
+		}
+
+		if val := c.PostFormArray(
+			fmt.Sprintf("%s_%s_AllowedReleaseTypes", prefix, subIndex),
+		); len(val) != 0 {
+			cfg.AllowedReleaseTypes = val
+		}
+
+		if val := c.PostFormArray(
+			fmt.Sprintf("%s_%s_MBMediaFormats", prefix, subIndex),
+		); len(val) != 0 {
+			cfg.MBMediaFormats = val
+		}
+
+		if val := c.PostForm(
+			fmt.Sprintf("%s_%s_PerTrackToleranceSeconds", prefix, subIndex),
+		); val != "" {
+			n, _ := strconv.Atoi(val)
+
+			cfg.PerTrackToleranceSeconds = n
+		}
+
+		if val := c.PostForm(
+			fmt.Sprintf("%s_%s_PerTrackToleranceSecondsMax", prefix, subIndex),
+		); val != "" {
+			n, _ := strconv.Atoi(val)
+
+			cfg.PerTrackToleranceSecondsMax = n
+		}
+
+		if val := c.PostForm(
+			fmt.Sprintf("%s_%s_MaxTotalDifferenceSeconds", prefix, subIndex),
+		); val != "" {
+			n, _ := strconv.Atoi(val)
+
+			cfg.MaxTotalDifferenceSeconds = n
+		}
+
+		if val := c.PostForm(fmt.Sprintf("%s_%s_AllowMissingTracks", prefix, subIndex)); val != "" {
+			cfg.AllowMissingTracks, _ = strconv.ParseBool(val)
+		}
+
+		if val := c.PostForm(
+			fmt.Sprintf("%s_%s_ExceedToleranceIfTotalMatch", prefix, subIndex),
+		); val != "" {
+			cfg.ExceedToleranceIfTotalMatch, _ = strconv.ParseBool(val)
+		}
+
+		if val := c.PostForm(fmt.Sprintf("%s_%s_StrongRecThresh", prefix, subIndex)); val != "" {
+			cfg.StrongRecThresh, _ = strconv.ParseFloat(val, 64)
+		}
+
+		if val := c.PostForm(fmt.Sprintf("%s_%s_MediumRecThresh", prefix, subIndex)); val != "" {
+			cfg.MediumRecThresh, _ = strconv.ParseFloat(val, 64)
+		}
+
+		if val := c.PostForm(fmt.Sprintf("%s_%s_TrackTitleWeight", prefix, subIndex)); val != "" {
+			cfg.TrackTitleWeight, _ = strconv.ParseFloat(val, 64)
+		}
+
+		if val := c.PostForm(fmt.Sprintf("%s_%s_TrackIndexWeight", prefix, subIndex)); val != "" {
+			cfg.TrackIndexWeight, _ = strconv.ParseFloat(val, 64)
+		}
+
+		if val := c.PostForm(fmt.Sprintf("%s_%s_TrackLengthWeight", prefix, subIndex)); val != "" {
+			cfg.TrackLengthWeight, _ = strconv.ParseFloat(val, 64)
+		}
+
+		if val := c.PostForm(fmt.Sprintf("%s_%s_TrackArtistWeight", prefix, subIndex)); val != "" {
+			cfg.TrackArtistWeight, _ = strconv.ParseFloat(val, 64)
+		}
+
+		if val := c.PostForm(fmt.Sprintf("%s_%s_TrackIdWeight", prefix, subIndex)); val != "" {
+			cfg.TrackIdWeight, _ = strconv.ParseFloat(val, 64)
+		}
+
+		if val := c.PostForm(fmt.Sprintf("%s_%s_DiscoverSeriesAlbums", prefix, subIndex)); val != "" {
+			cfg.DiscoverSeriesAlbums, _ = strconv.ParseBool(val)
+		}
+
+		configs = append(configs, cfg)
 	}
 
 	return configs
@@ -582,6 +848,7 @@ func parseMediaConfigs(c *gin.Context, mediaType string) []config.MediaTypeConfi
 		if !strings.Contains(key, "_Name") || !strings.Contains(key, searchKey) {
 			continue
 		}
+
 		// Extract the index part (e.g., "new0" from "media_main_series_new0_Name")
 		parts := strings.Split(key, "_")
 		if len(parts) >= 4 {
@@ -617,6 +884,7 @@ func parseGeneralConfig(c *gin.Context) config.GeneralConfig {
 	builder := &ConfigBuilder{context: c, prefix: "general"}
 	builder.SetString(&updatedConfig.TimeFormat, "TimeFormat").
 		SetString(&updatedConfig.TimeZone, "TimeZone").
+		SetString(&updatedConfig.UserAgent, "UserAgent").
 		SetString(&updatedConfig.LogLevel, "LogLevel").
 		SetString(&updatedConfig.DBLogLevel, "DBLogLevel").
 		SetInt(&updatedConfig.LogFileSize, "LogFileSize").
@@ -624,16 +892,16 @@ func parseGeneralConfig(c *gin.Context) config.GeneralConfig {
 		SetInt(&updatedConfig.WorkerMetadata, "WorkerMetadata").
 		SetInt(&updatedConfig.WorkerFiles, "WorkerFiles").
 		SetString(&updatedConfig.WebPort, "WebPort").
-		SetBool(&updatedConfig.DisableVariableCleanup, "DisableVariableCleanup").
+		// SetBool(&updatedConfig.DisableVariableCleanup, "DisableVariableCleanup").
 		SetBool(&updatedConfig.DisableParserStringMatch, "DisableParserStringMatch").
 		SetBool(&updatedConfig.UseMediaCache, "UseMediaCache").
 		SetInt(&updatedConfig.CacheDuration, "CacheDuration").
-		SetBool(&updatedConfig.DisableSwagger, "DisableSwagger").
+		// SetBool(&updatedConfig.DisableSwagger, "DisableSwagger").
 		SetString(&updatedConfig.WebAPIKey, "WebAPIKey").
 		SetBool(&updatedConfig.LogCompress, "LogCompress").
 		SetBool(&updatedConfig.LogToFileOnly, "LogToFileOnly").
 		SetBool(&updatedConfig.LogColorize, "LogColorize").
-		SetBool(&updatedConfig.LogZeroValues, "LogZeroValues").
+		// SetBool(&updatedConfig.LogZeroValues, "LogZeroValues").
 		SetInt(&updatedConfig.WorkerParse, "WorkerParse").
 		SetInt(&updatedConfig.WorkerSearch, "WorkerSearch").
 		SetInt(&updatedConfig.WorkerIndexer, "WorkerIndexer").
@@ -654,6 +922,7 @@ func parseGeneralConfig(c *gin.Context) config.GeneralConfig {
 		SetBool(&updatedConfig.UseMediainfo, "UseMediainfo").
 		SetString(&updatedConfig.MediainfoPath, "MediainfoPath").
 		SetString(&updatedConfig.FfprobePath, "FfprobePath").
+		SetString(&updatedConfig.MetaflacPath, "MetaflacPath").
 		SetString(&updatedConfig.UnrarPath, "UnrarPath").
 		SetString(&updatedConfig.SevenZipPath, "SevenZipPath").
 		SetString(&updatedConfig.UnzipPath, "UnzipPath").
@@ -702,7 +971,46 @@ func parseGeneralConfig(c *gin.Context) config.GeneralConfig {
 		SetBool(&updatedConfig.UseHistoryCache, "UseHistoryCache").
 		SetBool(&updatedConfig.UseFileCache, "UseFileCache").
 		SetString(&updatedConfig.OmdbAPIKey, "OmdbAPIKey").
-		SetInt(&updatedConfig.WorkerRSS, "WorkerRSS")
+		SetInt(&updatedConfig.WorkerRSS, "WorkerRSS").
+		// Book/Audiobook/Music Provider Settings
+		SetString(&updatedConfig.FpcalcPath, "FpcalcPath").
+		SetString(&updatedConfig.GoodreadsAPIKey, "GoodreadsAPIKey").
+		SetString(&updatedConfig.DiscogsToken, "DiscogsToken").
+		SetString(&updatedConfig.AcoustIDAPIKey, "AcoustIDAPIKey").
+		// Book/Audiobook/Music Provider Rate Limits
+		SetUint8(&updatedConfig.OpenLibraryLimiterSeconds, "OpenLibraryLimiterSeconds").
+		SetInt(&updatedConfig.OpenLibraryLimiterCalls, "OpenLibraryLimiterCalls").
+		SetUint8(&updatedConfig.GoodreadsLimiterSeconds, "GoodreadsLimiterSeconds").
+		SetInt(&updatedConfig.GoodreadsLimiterCalls, "GoodreadsLimiterCalls").
+		SetUint8(&updatedConfig.AudibleLimiterSeconds, "AudibleLimiterSeconds").
+		SetInt(&updatedConfig.AudibleLimiterCalls, "AudibleLimiterCalls").
+		SetUint8(&updatedConfig.AudnexLimiterSeconds, "AudnexLimiterSeconds").
+		SetInt(&updatedConfig.AudnexLimiterCalls, "AudnexLimiterCalls").
+		SetUint8(&updatedConfig.MusicBrainzLimiterSeconds, "MusicBrainzLimiterSeconds").
+		SetInt(&updatedConfig.MusicBrainzLimiterCalls, "MusicBrainzLimiterCalls").
+		SetUint8(&updatedConfig.DiscogsLimiterSeconds, "DiscogsLimiterSeconds").
+		SetInt(&updatedConfig.DiscogsLimiterCalls, "DiscogsLimiterCalls").
+		SetUint8(&updatedConfig.AcoustIDLimiterSeconds, "AcoustIDLimiterSeconds").
+		SetInt(&updatedConfig.AcoustIDLimiterCalls, "AcoustIDLimiterCalls").
+		SetUint8(&updatedConfig.LastFMLimiterSeconds, "LastFMLimiterSeconds").
+		SetInt(&updatedConfig.LastFMLimiterCalls, "LastFMLimiterCalls").
+		SetUint8(&updatedConfig.DeezerLimiterSeconds, "DeezerLimiterSeconds").
+		SetInt(&updatedConfig.DeezerLimiterCalls, "DeezerLimiterCalls").
+		// Cache
+		SetBool(&updatedConfig.UseIndexedCache, "UseIndexedCache").
+		// TVmaze
+		SetUint8(&updatedConfig.TvmazeLimiterSeconds, "TvmazeLimiterSeconds").
+		SetInt(&updatedConfig.TvmazeLimiterCalls, "TvmazeLimiterCalls").
+		SetBool(&updatedConfig.TvmazeDisableTLSVerify, "TvmazeDisableTLSVerify").
+		SetUint16(&updatedConfig.TvmazeTimeoutSeconds, "TvmazeTimeoutSeconds").
+		// Spotify
+		SetString(&updatedConfig.SpotifyClientID, "SpotifyClientID").
+		SetString(&updatedConfig.SpotifyClientSecret, "SpotifyClientSecret").
+		SetString(&updatedConfig.SpotifyRegion, "SpotifyRegion").
+		// Last.fm
+		SetString(&updatedConfig.LastFMAPIKey, "LastFMAPIKey").
+		// Music metadata source priority
+		SetStringArray(&updatedConfig.MusicMetaSourcePriority, "MusicMetaSourcePriority")
 
 	return updatedConfig
 }

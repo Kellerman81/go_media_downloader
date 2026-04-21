@@ -139,14 +139,15 @@ func convertV2SeriesToDetails(series *tvdbV2Series) *apiexternal_v2.SeriesDetail
 // convertV2EpisodeToDetails converts TVDB v2 episode to common Episode format.
 func convertV2EpisodeToDetails(episode *tvdbV2Episode) *apiexternal_v2.Episode {
 	return &apiexternal_v2.Episode{
-		ID:            episode.ID,
-		EpisodeNumber: episode.AiredEpisodeNumber,
-		SeasonNumber:  episode.AiredSeason,
-		Name:          episode.EpisodeName,
-		Overview:      episode.Overview,
-		AirDate:       parseTVDBDate(episode.FirstAired),
-		VoteAverage:   episode.SiteRating,
-		StillPath:     episode.Filename,
+		ID:             episode.ID,
+		EpisodeNumber:  episode.AiredEpisodeNumber,
+		SeasonNumber:   episode.AiredSeason,
+		AbsoluteNumber: episode.AbsoluteNumber,
+		Name:           episode.EpisodeName,
+		Overview:       episode.Overview,
+		AirDate:        parseTVDBDate(episode.FirstAired),
+		VoteAverage:    episode.SiteRating,
+		StillPath:      episode.Filename,
 	}
 }
 
@@ -409,15 +410,15 @@ func convertSearchResults(
 ) []apiexternal_v2.SeriesSearchResult {
 	results := make([]apiexternal_v2.SeriesSearchResult, 0, len(tvdbResults))
 
-	for _, r := range tvdbResults {
-		id, _ := strconv.Atoi(r.TVDBid)
+	for i := range tvdbResults {
+		id, _ := strconv.Atoi(tvdbResults[i].TVDBid)
 
 		results = append(results, apiexternal_v2.SeriesSearchResult{
 			ID:           id,
-			Name:         r.Name,
-			FirstAirDate: parseTVDBDate(r.FirstAirTime),
-			PosterPath:   r.ImageURL,
-			Overview:     r.Overview,
+			Name:         tvdbResults[i].Name,
+			FirstAirDate: parseTVDBDate(tvdbResults[i].FirstAirTime),
+			PosterPath:   tvdbResults[i].ImageURL,
+			Overview:     tvdbResults[i].Overview,
 			ProviderName: provider,
 		})
 	}

@@ -2,7 +2,6 @@ package csrfapi
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,6 +13,7 @@ import (
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/goccy/go-json"
 )
 
 // MovieConfig holds the configuration for the CSRF API movie scraper.
@@ -129,6 +129,7 @@ func NewMovieScraper(cfg *MovieConfig) (*MovieScraper, error) {
 // Scrape executes the scraping process and returns a list of IMDB IDs.
 func (s *MovieScraper) Scrape(ctx context.Context, maxPages int) ([]string, error) {
 	var imdbIDs []string
+
 	seenIDs := make(map[string]bool)
 
 	logger.Logtype("info", 1).
@@ -146,7 +147,7 @@ func (s *MovieScraper) Scrape(ctx context.Context, maxPages int) ([]string, erro
 	}
 
 	// Paginated scraping
-	for page := 0; page < maxPages; page++ {
+	for page := range maxPages {
 		// Build page URL
 		pageNum := s.config.PageStartIndex + page
 		apiURL := strings.ReplaceAll(s.config.APIURLPattern, "{page}", fmt.Sprintf("%d", pageNum))
@@ -162,6 +163,7 @@ func (s *MovieScraper) Scrape(ctx context.Context, maxPages int) ([]string, erro
 				Err(err).
 				Int("page", page+1).
 				Msg("Failed to scrape page, stopping")
+
 			break
 		}
 
@@ -187,6 +189,7 @@ func (s *MovieScraper) Scrape(ctx context.Context, maxPages int) ([]string, erro
 						Int("year", movies[idx].Year).
 						Str("imdb_id", imdbID).
 						Msg("Found IMDB ID via search")
+
 					imdbIDs = append(imdbIDs, imdbID)
 					seenIDs[imdbID] = true
 				} else {
@@ -238,13 +241,16 @@ func (s *MovieScraper) extractCSRFToken(ctx context.Context) error {
 
 	cookies := s.client.Jar.Cookies(parsedURL)
 	for _, cookie := range cookies {
-		if cookie.Name == s.config.CSRFCookieName {
-			s.csrfToken = cookie.Value
-			logger.Logtype("debug", 1).
-				Str("cookie", s.config.CSRFCookieName).
-				Msg("Extracted CSRF token")
-			return nil
+		if cookie.Name != s.config.CSRFCookieName {
+			continue
 		}
+
+		s.csrfToken = cookie.Value
+		logger.Logtype("debug", 1).
+			Str("cookie", s.config.CSRFCookieName).
+			Msg("Extracted CSRF token")
+
+		return nil
 	}
 
 	return fmt.Errorf("CSRF cookie '%s' not found", s.config.CSRFCookieName)
@@ -276,7 +282,7 @@ func (s *MovieScraper) scrapePage(ctx context.Context, apiURL string) ([]MovieDa
 		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	var data map[string]interface{}
+	var data map[string]any
 	if err := json.Unmarshal(body, &data); err != nil {
 		return nil, fmt.Errorf("failed to parse JSON: %w", err)
 	}
@@ -299,40 +305,47 @@ func (s *MovieScraper) scrapePage(ctx context.Context, apiURL string) ([]MovieDa
 }
 
 // extractResultsArray extracts the results array from JSON data using the configured path.
-func (s *MovieScraper) extractResultsArray(data map[string]interface{}) ([]map[string]interface{}, error) {
+func (s *MovieScraper) extractResultsArray(
+	data map[string]any,
+) ([]map[string]any, error) {
 	// Handle simple path (e.g., "movies")
 	if !strings.Contains(s.config.ResultsArrayPath, ".") {
-		if arr, ok := data[s.config.ResultsArrayPath].([]interface{}); ok {
-			results := make([]map[string]interface{}, 0, len(arr))
+		if arr, ok := data[s.config.ResultsArrayPath].([]any); ok {
+			results := make([]map[string]any, 0, len(arr))
 			for _, item := range arr {
-				if m, ok := item.(map[string]interface{}); ok {
+				if m, ok := item.(map[string]any); ok {
 					results = append(results, m)
 				}
 			}
+
 			return results, nil
 		}
+
 		return nil, fmt.Errorf("results array '%s' not found or invalid", s.config.ResultsArrayPath)
 	}
 
 	// Handle nested path (e.g., "data.results")
 	parts := strings.Split(s.config.ResultsArrayPath, ".")
-	var current interface{} = data
+
+	var current any = data
 
 	for i, part := range parts {
-		if m, ok := current.(map[string]interface{}); ok {
-			current = m[part]
-		} else {
-			return nil, fmt.Errorf("invalid path at '%s'", strings.Join(parts[:i+1], "."))
+		m, ok := current.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("invalid path at '%s'", logger.JoinStringsSep(parts[:i+1], "."))
 		}
+
+		current = m[part]
 	}
 
-	if arr, ok := current.([]interface{}); ok {
-		results := make([]map[string]interface{}, 0, len(arr))
+	if arr, ok := current.([]any); ok {
+		results := make([]map[string]any, 0, len(arr))
 		for _, item := range arr {
-			if m, ok := item.(map[string]interface{}); ok {
+			if m, ok := item.(map[string]any); ok {
 				results = append(results, m)
 			}
 		}
+
 		return results, nil
 	}
 
@@ -340,7 +353,7 @@ func (s *MovieScraper) extractResultsArray(data map[string]interface{}) ([]map[s
 }
 
 // extractMovieData extracts movie data from a single JSON object.
-func (s *MovieScraper) extractMovieData(data map[string]interface{}) MovieData {
+func (s *MovieScraper) extractMovieData(data map[string]any) MovieData {
 	movie := MovieData{}
 
 	// Extract title
@@ -358,10 +371,12 @@ func (s *MovieScraper) extractMovieData(data map[string]interface{}) MovieData {
 				if int(v) > 1800 && int(v) < 2100 {
 					movie.Year = int(v)
 				}
+
 			case int:
 				if v > 1800 && v < 2100 {
 					movie.Year = v
 				}
+
 			case string:
 				if y, err := strconv.Atoi(v); err == nil && y > 1800 && y < 2100 {
 					movie.Year = y
@@ -397,14 +412,15 @@ func (s *MovieScraper) extractMovieData(data map[string]interface{}) MovieData {
 			switch v := genre.(type) {
 			case string:
 				movie.Genre = v
-			case []interface{}:
+			case []any:
 				var genres []string
 				for _, g := range v {
 					if gs, ok := g.(string); ok {
 						genres = append(genres, gs)
 					}
 				}
-				movie.Genre = strings.Join(genres, ", ")
+
+				movie.Genre = logger.JoinStringsSep(genres, ", ")
 			}
 		}
 	}

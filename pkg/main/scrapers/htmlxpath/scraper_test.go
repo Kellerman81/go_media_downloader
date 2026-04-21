@@ -105,10 +105,10 @@ func TestHTMLXPathIntegration(t *testing.T) {
 	// Test 2: Build page URLs
 	t.Run("BuildPageURLs", func(t *testing.T) {
 		testCases := []struct {
-			page         int
-			expectedURL  string
+			page           int
+			expectedURL    string
 			paginationType string
-			pageIncrement int
+			pageIncrement  int
 		}{
 			{0, "https://momsteachsex.com/video/gallery/0", "offset", 12},
 			{1, "https://momsteachsex.com/video/gallery/12", "offset", 12},
@@ -153,8 +153,8 @@ func TestHTMLXPathIntegration(t *testing.T) {
 	// Test 4: Parse date format
 	t.Run("ParseDateFormat", func(t *testing.T) {
 		testCases := []struct {
-			dateStr  string
-			expected time.Time
+			dateStr    string
+			expected   time.Time
 			shouldFail bool
 		}{
 			{"Jan 2, 2006", time.Date(2006, 1, 2, 0, 0, 0, 0, time.UTC), false},
@@ -183,7 +183,11 @@ func TestHTMLXPathIntegration(t *testing.T) {
 				t.Errorf("Date mismatch for %q: expected %v, got %v",
 					tc.dateStr, tc.expected, parsed)
 			} else {
-				t.Logf("Successfully parsed date: %q -> %s", tc.dateStr, parsed.Format("2006-01-02"))
+				t.Logf(
+					"Successfully parsed date: %q -> %s",
+					tc.dateStr,
+					parsed.Format("2006-01-02"),
+				)
 			}
 		}
 	})
@@ -274,7 +278,10 @@ func TestHTMLXPathIntegration(t *testing.T) {
 		}
 
 		if seqScraper.config.PaginationType != "sequential" {
-			t.Errorf("Expected pagination type 'sequential', got: %s", seqScraper.config.PaginationType)
+			t.Errorf(
+				"Expected pagination type 'sequential', got: %s",
+				seqScraper.config.PaginationType,
+			)
 		}
 
 		t.Logf("Sequential pagination scraper created for: %s", seqCfg.SiteName)
@@ -285,7 +292,11 @@ func TestHTMLXPathIntegration(t *testing.T) {
 		if err != nil {
 			t.Errorf("Failed to parse sequential config date: %v", err)
 		} else {
-			t.Logf("Sequential config date parsing: %q -> %s", testDate, parsed.Format("2006-01-02"))
+			t.Logf(
+				"Sequential config date parsing: %q -> %s",
+				testDate,
+				parsed.Format("2006-01-02"),
+			)
 		}
 	})
 

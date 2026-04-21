@@ -212,6 +212,9 @@ func (cb *CircuitBreaker) onSuccess() {
 				Msg("circuit breaker recovered")
 			cb.toClosed()
 		}
+
+	default:
+		// StateOpen: success while open has no effect
 	}
 }
 
@@ -249,6 +252,9 @@ func (cb *CircuitBreaker) onFailure() {
 			Str("to_state", "open").
 			Msg("circuit breaker reopened after half-open failure")
 		cb.toOpen()
+
+	default:
+		// StateOpen: circuit already open, failures tracked but no state change
 	}
 }
 

@@ -28,6 +28,7 @@ func parseTimeRange(timeRange string) time.Time {
 		if days, err := strconv.Atoi(strings.TrimSuffix(timeRange, "d")); err == nil {
 			return time.Now().Add(-time.Duration(days) * 24 * time.Hour)
 		}
+
 		// Default to 24 hours
 		return time.Now().Add(-24 * time.Hour)
 	}

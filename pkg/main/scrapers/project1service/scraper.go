@@ -3,16 +3,16 @@ package project1service
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
-	"regexp"
 	"strings"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/goccy/go-json"
 )
 
 // SceneRelease represents a scene/release from the Project1Service API.
@@ -168,14 +168,16 @@ func (s *Scraper) getInstanceToken(ctx context.Context) error {
 
 	// Extract instance_token from cookies
 	for _, cookie := range resp.Cookies() {
-		if cookie.Name == "instance_token" {
-			s.instanceToken = cookie.Value
-			logger.Logtype(logger.StatusDebug, 0).
-				Str("site", s.config.SiteName).
-				Msg("Retrieved instance token")
-
-			return nil
+		if cookie.Name != "instance_token" {
+			continue
 		}
+
+		s.instanceToken = cookie.Value
+		logger.Logtype(logger.StatusDebug, 0).
+			Str("site", s.config.SiteName).
+			Msg("Retrieved instance token")
+
+		return nil
 	}
 
 	return fmt.Errorf("instance_token cookie not found")
@@ -240,8 +242,13 @@ func (s *Scraper) fetchPage(ctx context.Context, page int) ([]SceneRelease, erro
 		return nil, fmt.Errorf("API returned status %d for page %d", resp.StatusCode, page)
 	}
 
+	data, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		return nil, fmt.Errorf("failed to read response: %w", readErr)
+	}
+
 	var apiResp APIResponse
-	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
+	if err := json.Unmarshal(data, &apiResp); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
@@ -267,7 +274,7 @@ func cleanTitle(title string) string {
 	cleaned = strings.ReplaceAll(cleaned, "/", "-")
 
 	// Replace multiple consecutive dashes with single dash
-	re := regexp.MustCompile(`-+`)
+	re := database.GetCachedRegexp(`-+`)
 
 	cleaned = re.ReplaceAllString(cleaned, "-")
 

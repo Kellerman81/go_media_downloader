@@ -3,9 +3,9 @@ package trakt
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sync"
@@ -15,6 +15,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/base"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/goccy/go-json"
 )
 
 //
@@ -104,7 +105,7 @@ func (p *Provider) makeRequestWithHeaders(
 		"trakt-api-version": "2",
 		"trakt-api-key":     p.clientID,
 		"Content-Type":      "application/json",
-		"User-Agent":        "go-media-downloader/2.0",
+		"User-Agent":        config.GetSettingsGeneral().UserAgent,
 	}
 
 	// Add authorization header if we have a token
@@ -477,8 +478,12 @@ func (p *Provider) GetSeasonEpisodes(
 func (p *Provider) GetPopularMovies(
 	ctx context.Context,
 	page int,
+	extraParams string,
 ) (*apiexternal_v2.PopularMoviesResponse, error) {
 	endpoint := fmt.Sprintf("/movies/popular?page=%d&limit=20&extended=full", page)
+	if extraParams != "" {
+		endpoint += "&" + extraParams
+	}
 
 	var response traktPopularResponse
 	if err := p.MakeRequest(ctx, "GET", endpoint, nil, &response); err != nil {
@@ -492,8 +497,12 @@ func (p *Provider) GetPopularMovies(
 func (p *Provider) GetPopularSeries(
 	ctx context.Context,
 	page int,
+	extraParams string,
 ) (*apiexternal_v2.PopularSeriesResponse, error) {
 	endpoint := fmt.Sprintf("/shows/popular?page=%d&limit=20&extended=full", page)
+	if extraParams != "" {
+		endpoint += "&" + extraParams
+	}
 
 	var response traktPopularResponse
 	if err := p.MakeRequest(ctx, "GET", endpoint, nil, &response); err != nil {
@@ -507,8 +516,12 @@ func (p *Provider) GetPopularSeries(
 func (p *Provider) GetTrendingMovies(
 	ctx context.Context,
 	page int,
+	extraParams string,
 ) (*apiexternal_v2.PopularMoviesResponse, error) {
 	endpoint := fmt.Sprintf("/movies/trending?page=%d&limit=20&extended=full", page)
+	if extraParams != "" {
+		endpoint += "&" + extraParams
+	}
 
 	var response traktPopularResponse
 	if err := p.MakeRequest(ctx, "GET", endpoint, nil, &response); err != nil {
@@ -522,8 +535,12 @@ func (p *Provider) GetTrendingMovies(
 func (p *Provider) GetTrendingSeries(
 	ctx context.Context,
 	page int,
+	extraParams string,
 ) (*apiexternal_v2.PopularSeriesResponse, error) {
 	endpoint := fmt.Sprintf("/shows/trending?page=%d&limit=20&extended=full", page)
+	if extraParams != "" {
+		endpoint += "&" + extraParams
+	}
 
 	var response traktPopularResponse
 	if err := p.MakeRequest(ctx, "GET", endpoint, nil, &response); err != nil {
@@ -537,8 +554,12 @@ func (p *Provider) GetTrendingSeries(
 func (p *Provider) GetUpcomingMovies(
 	ctx context.Context,
 	page int,
+	extraParams string,
 ) (*apiexternal_v2.PopularMoviesResponse, error) {
 	endpoint := fmt.Sprintf("/movies/anticipated?page=%d&limit=20&extended=full", page)
+	if extraParams != "" {
+		endpoint += "&" + extraParams
+	}
 
 	var response traktPopularResponse
 	if err := p.MakeRequest(ctx, "GET", endpoint, nil, &response); err != nil {
@@ -730,7 +751,7 @@ func (p *Provider) GetWatchlist(
 	ctx context.Context,
 	userID string,
 	mediaType string,
-) ([]apiexternal_v2.MovieSearchResult, error) {
+) ([]TraktUserListItem, error) {
 	endpoint := fmt.Sprintf("/users/%s/watchlist/%s?extended=full", userID, mediaType)
 
 	var response traktPopularResponse
@@ -738,7 +759,16 @@ func (p *Provider) GetWatchlist(
 		return nil, err
 	}
 
-	return convertPopularMovies(response, 1).Results, nil
+	results := make([]TraktUserListItem, 0, len(response))
+
+	for i := range response {
+		results = append(results, TraktUserListItem{
+			Movie: response[i].Movie,
+			Show:  response[i].Show,
+		})
+	}
+
+	return results, nil
 }
 
 // GetUserLists retrieves user's lists (requires OAuth).
@@ -764,6 +794,9 @@ func (p *Provider) GetTraktUserList(
 	username, listname, listtype string,
 ) ([]TraktUserListItem, error) {
 	endpoint := fmt.Sprintf("/users/%s/lists/%s/items/%s", username, listname, listtype)
+	if listname == "watchlist" {
+		endpoint = fmt.Sprintf("/users/%s/watchlist/%s?extended=full", username, listtype)
+	}
 
 	var response []TraktUserListItem
 	if err := p.MakeRequest(ctx, "GET", endpoint, nil, &response); err != nil {
@@ -813,7 +846,13 @@ func (p *Provider) RemoveMovieFromTraktUserList(
 	}
 
 	var response map[string]any
-	if err := p.MakeRequest(ctx, "POST", endpoint, bytes.NewReader(bodyBytes), &response); err != nil {
+	if err := p.MakeRequest(
+		ctx,
+		"POST",
+		endpoint,
+		bytes.NewReader(bodyBytes),
+		&response,
+	); err != nil {
 		return err
 	}
 
@@ -845,7 +884,13 @@ func (p *Provider) RemoveSerieFromTraktUserList(
 	}
 
 	var response map[string]any
-	if err := p.MakeRequest(ctx, "POST", endpoint, bytes.NewReader(bodyBytes), &response); err != nil {
+	if err := p.MakeRequest(
+		ctx,
+		"POST",
+		endpoint,
+		bytes.NewReader(bodyBytes),
+		&response,
+	); err != nil {
 		return err
 	}
 
@@ -1003,6 +1048,48 @@ func (p *Provider) GetAuthorizationURL(state string) string {
 	return fmt.Sprintf("https://trakt.tv/oauth/authorize?%s", queryString)
 }
 
+// doTokenRequest makes a direct HTTP POST to Trakt's /oauth/token endpoint.
+// It bypasses the circuit breaker and rate limiter because token operations
+// are rare, user-initiated auth actions — not regular API calls.
+// Returning the real Trakt error body on failure is intentional.
+func (p *Provider) doTokenRequest(ctx context.Context, bodyBytes []byte) ([]byte, error) {
+	req, err := http.NewRequestWithContext(
+		ctx,
+		"POST",
+		"https://api.trakt.tv/oauth/token",
+		bytes.NewReader(bodyBytes),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create token request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("trakt-api-version", "2")
+	req.Header.Set("trakt-api-key", p.clientID)
+
+	resp, err := p.GetHTTPClient().Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("token request failed: %w", err)
+	}
+
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read token response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf(
+			"token request failed (HTTP %d): %s",
+			resp.StatusCode,
+			string(respBody),
+		)
+	}
+
+	return respBody, nil
+}
+
 // ExchangeCodeForToken exchanges an authorization code for an access token.
 func (p *Provider) ExchangeCodeForToken(
 	ctx context.Context,
@@ -1021,6 +1108,11 @@ func (p *Provider) ExchangeCodeForToken(
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
+	respBody, err := p.doTokenRequest(ctx, bodyBytes)
+	if err != nil {
+		return nil, err
+	}
+
 	var tokenResp struct {
 		AccessToken  string `json:"access_token"`
 		TokenType    string `json:"token_type"`
@@ -1030,9 +1122,8 @@ func (p *Provider) ExchangeCodeForToken(
 		CreatedAt    int64  `json:"created_at"`
 	}
 
-	// Use makeRequestWithHeaders directly to avoid token validation during token exchange
-	if err := p.makeRequestWithHeaders(ctx, "POST", "/oauth/token", bytes.NewReader(bodyBytes), &tokenResp); err != nil {
-		return nil, err
+	if err := json.Unmarshal(respBody, &tokenResp); err != nil {
+		return nil, fmt.Errorf("failed to decode token response: %w", err)
 	}
 
 	// Calculate expiry time
@@ -1054,6 +1145,9 @@ func (p *Provider) ExchangeCodeForToken(
 	if err := p.SetToken(token); err != nil {
 		return nil, fmt.Errorf("failed to store token: %w", err)
 	}
+
+	// Reset circuit breaker so previous auth failures don't block API calls
+	p.ResetCircuitBreaker()
 
 	// Save token to disk for persistence
 	if err := p.saveTokenToDisk(token); err != nil {
@@ -1088,6 +1182,11 @@ func (p *Provider) RefreshToken(
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
+	respBody, err := p.doTokenRequest(ctx, bodyBytes)
+	if err != nil {
+		return nil, err
+	}
+
 	var tokenResp struct {
 		AccessToken  string `json:"access_token"`
 		TokenType    string `json:"token_type"`
@@ -1097,9 +1196,8 @@ func (p *Provider) RefreshToken(
 		CreatedAt    int64  `json:"created_at"`
 	}
 
-	// Use makeRequestWithHeaders directly to avoid token validation during token refresh
-	if err := p.makeRequestWithHeaders(ctx, "POST", "/oauth/token", bytes.NewReader(bodyBytes), &tokenResp); err != nil {
-		return nil, err
+	if err := json.Unmarshal(respBody, &tokenResp); err != nil {
+		return nil, fmt.Errorf("failed to decode token response: %w", err)
 	}
 
 	// Calculate expiry time

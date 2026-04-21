@@ -107,7 +107,7 @@ func findOrphanedFiles(scanPaths []string, mediaTypes string, minFileSize int64)
 
 			return nil
 		}); err != nil {
-			logger.Logtype("error", 1).
+			logger.Logtype("error", 0).
 				Str("path", basePath).
 				Err(err).
 				Msg("Failed to walk directory for orphaned files")
@@ -141,9 +141,10 @@ func findDuplicateFiles(scanPaths []string, minFileSize int64) [][]string {
 			}
 
 			sizeMap[size] = append(sizeMap[size], path)
+
 			return nil
 		}); err != nil {
-			logger.Logtype("error", 1).
+			logger.Logtype("error", 0).
 				Str("path", basePath).
 				Err(err).
 				Msg("Failed to walk directory for duplicate files")
@@ -211,26 +212,31 @@ func findEmptyDirectories(scanPaths []string, minFileSize int64) []string {
 
 			// Check if directory has any media files
 			hasMediaFiles := false
-			if err := filepath.WalkDir(path, func(filePath string, fileInfo os.DirEntry, fileErr error) error {
-				if fileErr != nil || fileInfo.IsDir() {
+			if err := filepath.WalkDir(
+				path,
+				func(filePath string, fileInfo os.DirEntry, fileErr error) error {
+					if fileErr != nil || fileInfo.IsDir() {
+						return nil
+					}
+
+					// Check if it's a media file and meets size requirements
+					if isMediaFile(filePath) {
+						if minFileSize == 0 {
+							hasMediaFiles = true
+							return filepath.SkipAll
+						}
+
+						if info, statErr := fileInfo.Info(); statErr == nil &&
+							info.Size() >= minFileSize {
+							hasMediaFiles = true
+							return filepath.SkipAll
+						}
+					}
+
 					return nil
-				}
-
-				// Check if it's a media file and meets size requirements
-				if isMediaFile(filePath) {
-					if minFileSize == 0 {
-						hasMediaFiles = true
-						return filepath.SkipAll
-					}
-
-					if info, statErr := fileInfo.Info(); statErr == nil && info.Size() >= minFileSize {
-						hasMediaFiles = true
-						return filepath.SkipAll
-					}
-				}
-				return nil
-			}); err != nil {
-				logger.Logtype("error", 1).
+				},
+			); err != nil {
+				logger.Logtype("error", 0).
 					Str("path", path).
 					Err(err).
 					Msg("Failed to walk directory checking for media files")
@@ -242,7 +248,7 @@ func findEmptyDirectories(scanPaths []string, minFileSize int64) []string {
 
 			return nil
 		}); err != nil {
-			logger.Logtype("error", 1).
+			logger.Logtype("error", 0).
 				Str("path", basePath).
 				Err(err).
 				Msg("Failed to walk directory for empty directories")

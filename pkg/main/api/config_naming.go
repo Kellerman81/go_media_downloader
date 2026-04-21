@@ -11,6 +11,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/parser"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/parser_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/structure"
 	"github.com/gin-gonic/gin"
 	"maragu.dev/gomponents"
@@ -329,11 +330,11 @@ func HandleNamingTest(c *gin.Context) {
 
 		var orgadata2 structure.Organizerdata
 
-		orgadata2.Videofile = cfg.FilePath
+		orgadata2.MediaFile = cfg.FilePath
 		orgadata2.Folder = to
 		orgadata2.Rootpath = movie.Rootpath
 
-		m := parser.ParseFile(
+		m := parser_v2.ParseFile(
 			cfg.FilePath,
 			true,
 			true,
@@ -370,11 +371,15 @@ func HandleNamingTest(c *gin.Context) {
 			),
 		)
 	} else {
-		series, _ := database.GetSeries(database.Querywithargs{Where: logger.FilterByID}, cfg.SerieID)
+		series, _ := database.GetSeries(
+			database.Querywithargs{Where: logger.FilterByID},
+			cfg.SerieID,
+		)
 		if series == nil {
 			c.String(200, renderAlert("Series not found", "danger"))
 			return
 		}
+
 		// defer logger.ClearVar(&series)
 		cfgp := config.GetSettingsMedia(cfg.CfgMedia)
 		if cfgp == nil {
@@ -392,16 +397,23 @@ func HandleNamingTest(c *gin.Context) {
 			c.String(200, renderAlert("Series Structure failed", "danger"))
 			return
 		}
+
 		// defer s.Close()
 		to := filepath.Dir(cfg.FilePath)
 
 		var orgadata2 structure.Organizerdata
 
-		orgadata2.Videofile = cfg.FilePath
+		orgadata2.MediaFile = cfg.FilePath
 		orgadata2.Folder = to
 		orgadata2.Rootpath = series.Rootpath
 
-		m := parser.ParseFile(cfg.FilePath, true, true, cfgp, cfgp.GetMediaListsEntryListID(series.Listname))
+		m := parser.ParseFile(
+			cfg.FilePath,
+			true,
+			true,
+			cfgp,
+			cfgp.GetMediaListsEntryListID(series.Listname),
+		)
 		if m == nil {
 			c.String(200, renderAlert("Series Parse failed", "danger"))
 			return
@@ -426,7 +438,21 @@ func HandleNamingTest(c *gin.Context) {
 		}
 
 		s.GenerateNamingTemplate(&orgadata2, m, &firstepiid)
-		c.String(200, renderNamingResults(map[string]any{"foldername": orgadata2.Foldername, "filename": orgadata2.Filename, "m": m}, cfg.GroupType, cfg.CfgMedia, cfg.FilePath, cfg.MovieID, cfg.SerieID))
+		c.String(
+			200,
+			renderNamingResults(
+				map[string]any{
+					"foldername": orgadata2.Foldername,
+					"filename":   orgadata2.Filename,
+					"m":          m,
+				},
+				cfg.GroupType,
+				cfg.CfgMedia,
+				cfg.FilePath,
+				cfg.MovieID,
+				cfg.SerieID,
+			),
+		)
 	}
 }
 
@@ -526,12 +552,14 @@ func renderNamingResults(
 			if foldername != "" {
 				return foldername
 			}
+
 			return "No folder name generated"
 		}()))),
 		html.Tr(html.Td(gomponents.Text("File Name:")), html.Td(gomponents.Text(func() string {
 			if filename != "" {
 				return filename
 			}
+
 			return "No filename generated"
 		}()))),
 
@@ -822,9 +850,21 @@ func renderNamingResults(
 							),
 						)
 					} else if foldername == "" {
-						return html.P(html.Class("mt-2 text-warning"), html.Strong(gomponents.Text("Note: ")), gomponents.Text("Folder name not generated. Check your folder naming template configuration."))
+						return html.P(
+							html.Class("mt-2 text-warning"),
+							html.Strong(gomponents.Text("Note: ")),
+							gomponents.Text(
+								"Folder name not generated. Check your folder naming template configuration.",
+							),
+						)
 					} else if filename == "" {
-						return html.P(html.Class("mt-2 text-warning"), html.Strong(gomponents.Text("Note: ")), gomponents.Text("File name not generated. Check your file naming template configuration."))
+						return html.P(
+							html.Class("mt-2 text-warning"),
+							html.Strong(gomponents.Text("Note: ")),
+							gomponents.Text(
+								"File name not generated. Check your file naming template configuration.",
+							),
+						)
 					}
 
 					return html.P(

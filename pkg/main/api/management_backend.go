@@ -88,11 +88,7 @@ func PerformMediaCleanup(
 	)
 
 	if findOrphans {
-		wg.Add(1)
-
-		go func() {
-			defer wg.Done()
-
+		wg.Go(func() {
 			orphans := findOrphanedFiles(scanPaths, mediaTypes, minFileSize)
 
 			mu.Lock()
@@ -100,15 +96,11 @@ func PerformMediaCleanup(
 			result.OrphanedFiles = convertOrphanedFiles(orphans)
 
 			mu.Unlock()
-		}()
+		})
 	}
 
 	if findDuplicates {
-		wg.Add(1)
-
-		go func() {
-			defer wg.Done()
-
+		wg.Go(func() {
 			duplicates := findDuplicateFiles(scanPaths, minFileSize)
 
 			mu.Lock()
@@ -116,15 +108,11 @@ func PerformMediaCleanup(
 			result.DuplicateFiles = convertDuplicateFiles(duplicates)
 
 			mu.Unlock()
-		}()
+		})
 	}
 
 	if findBroken {
-		wg.Add(1)
-
-		go func() {
-			defer wg.Done()
-
+		wg.Go(func() {
 			broken := findBrokenLinks(mediaTypes)
 
 			mu.Lock()
@@ -132,15 +120,11 @@ func PerformMediaCleanup(
 			result.BrokenLinks = convertBrokenLinks(broken)
 
 			mu.Unlock()
-		}()
+		})
 	}
 
 	if findEmpty {
-		wg.Add(1)
-
-		go func() {
-			defer wg.Done()
-
+		wg.Go(func() {
 			empty := findEmptyDirectories(scanPaths, minFileSize)
 
 			mu.Lock()
@@ -148,7 +132,7 @@ func PerformMediaCleanup(
 			result.EmptyDirectories = empty
 
 			mu.Unlock()
-		}()
+		})
 	}
 
 	wg.Wait()
@@ -267,7 +251,11 @@ func FindMissingEpisodes(
 			statusFilter = "1=1" // All series
 		}
 
-		series = database.StructscanT[database.Serie](false, 0, "Select * from series Where "+statusFilter)
+		series = database.StructscanT[database.Serie](
+			false,
+			0,
+			"Select * from series Where "+statusFilter,
+		)
 	}
 
 	if len(series) == 0 {
@@ -543,11 +531,7 @@ func CheckStorageHealth(
 	// Check disk space
 
 	if checkDiskSpace {
-		wg.Add(1)
-
-		go func() {
-			defer wg.Done()
-
+		wg.Go(func() {
 			diskInfo := checkDiskSpaceStatus(mediaPaths, lowSpaceThreshold, criticalSpaceThreshold)
 
 			mu.Lock()
@@ -555,16 +539,12 @@ func CheckStorageHealth(
 			result.DiskSpaceStatus = convertStorageDiskInfo(diskInfo)
 
 			mu.Unlock()
-		}()
+		})
 	}
 
 	// Check permissions
 	if checkPermission {
-		wg.Add(1)
-
-		go func() {
-			defer wg.Done()
-
+		wg.Go(func() {
 			permIssues := checkPermissions(mediaPaths)
 
 			mu.Lock()
@@ -572,16 +552,12 @@ func CheckStorageHealth(
 			result.PermissionIssues = convertStoragePermissionInfo(permIssues)
 
 			mu.Unlock()
-		}()
+		})
 	}
 
 	// Check mount status
 	if checkMounts {
-		wg.Add(1)
-
-		go func() {
-			defer wg.Done()
-
+		wg.Go(func() {
 			mountInfo := checkMountStatus(mediaPaths)
 
 			mu.Lock()
@@ -589,16 +565,12 @@ func CheckStorageHealth(
 			result.MountStatus = convertStorageMountInfo(mountInfo)
 
 			mu.Unlock()
-		}()
+		})
 	}
 
 	// Check I/O health
 	if checkIO {
-		wg.Add(1)
-
-		go func() {
-			defer wg.Done()
-
+		wg.Go(func() {
 			ioInfo := checkIOHealth(mediaPaths, slowIOThreshold)
 
 			mu.Lock()
@@ -606,7 +578,7 @@ func CheckStorageHealth(
 			result.IOHealth = convertStorageIOHealthInfo(ioInfo)
 
 			mu.Unlock()
-		}()
+		})
 	}
 
 	wg.Wait()
@@ -1415,7 +1387,7 @@ func convertBrokenLinks(files []string) []BrokenLink {
 
 func convertToMissingEpisode(
 	episode database.SerieEpisode,
-	serie database.Serie,
+	_ database.Serie,
 	seriesName string,
 ) MissingEpisode {
 	var (
@@ -1544,6 +1516,7 @@ func HandleCronValidation(ctx *gin.Context) {
 
 			return
 		}
+
 		// Use 5-field schedule
 		schedule = schedule5
 	}
@@ -1579,11 +1552,11 @@ func HandleCronValidation(ctx *gin.Context) {
 			<ul class="list-unstyled mb-0">`)
 
 	for i, runTime := range nextRuns {
-		html.WriteString(fmt.Sprintf(`
+		fmt.Fprintf(&html, `
 				<li class="d-flex align-items-center mb-2">
 					<span class="badge bg-primary me-3">%d</span>
 					<span class="font-monospace">%s</span>
-				</li>`, i+1, runTime))
+				</li>`, i+1, runTime)
 	}
 
 	html.WriteString(`
@@ -1640,6 +1613,7 @@ func generateCronDescription(expression string) string {
 		return "Every 15 minutes"
 	case "0 * * * *", "0 0 * * * *":
 		return "Every hour at minute 0"
+
 	// 6-field specific patterns
 	case "*/30 * * * * *":
 		return "Every 30 seconds"
@@ -1658,58 +1632,58 @@ func generateCronDescription(expression string) string {
 		weekday == "*" {
 		desc.WriteString("every second")
 	} else if minute == "*" && hour == "*" && day == "*" && month == "*" && weekday == "*" {
-		if strings.HasPrefix(second, "*/") {
-			interval := strings.TrimPrefix(second, "*/")
-			desc.WriteString(fmt.Sprintf("every %s seconds", interval))
+		if after, ok := strings.CutPrefix(second, "*/"); ok {
+			interval := after
+			fmt.Fprintf(&desc, "every %s seconds", interval)
 		} else if second == "0" || len(parts) == 5 {
 			desc.WriteString("every minute")
 		} else {
-			desc.WriteString(fmt.Sprintf("at second %s of every minute", second))
+			fmt.Fprintf(&desc, "at second %s of every minute", second)
 		}
 	} else if hour == "*" && day == "*" && month == "*" && weekday == "*" {
-		if strings.HasPrefix(minute, "*/") {
-			interval := strings.TrimPrefix(minute, "*/")
-			desc.WriteString(fmt.Sprintf("every %s minutes", interval))
+		if after, ok := strings.CutPrefix(minute, "*/"); ok {
+			interval := after
+			fmt.Fprintf(&desc, "every %s minutes", interval)
 		} else if minute == "0" {
 			desc.WriteString("every hour")
 		} else {
 			timeStr := formatTimeWithSeconds(hour, minute, second)
-			desc.WriteString(fmt.Sprintf("at %s of every hour", timeStr))
+			fmt.Fprintf(&desc, "at %s of every hour", timeStr)
 		}
 	} else if day == "*" && month == "*" && weekday == "*" {
 		// Daily
 		timeStr := formatTimeWithSeconds(hour, minute, second)
-		desc.WriteString(fmt.Sprintf("daily at %s", timeStr))
+		fmt.Fprintf(&desc, "daily at %s", timeStr)
 	} else if month == "*" && weekday == "*" {
 		// Monthly
 		timeStr := formatTimeWithSeconds(hour, minute, second)
 		switch day {
 		case "1":
 			{
-				desc.WriteString(fmt.Sprintf("monthly on the 1st at %s", timeStr))
+				fmt.Fprintf(&desc, "monthly on the 1st at %s", timeStr)
 			}
 
 		case "15":
 			{
-				desc.WriteString(fmt.Sprintf("monthly on the 15th at %s", timeStr))
+				fmt.Fprintf(&desc, "monthly on the 15th at %s", timeStr)
 			}
 
 		default:
 			{
-				desc.WriteString(fmt.Sprintf("monthly on day %s at %s", day, timeStr))
+				fmt.Fprintf(&desc, "monthly on day %s at %s", day, timeStr)
 			}
 		}
 	} else if month == "*" && day == "*" {
 		// Weekly
 		timeStr := formatTimeWithSeconds(hour, minute, second)
 		weekdayName := getWeekdayName(weekday)
-		desc.WriteString(fmt.Sprintf("weekly on %s at %s", weekdayName, timeStr))
+		fmt.Fprintf(&desc, "weekly on %s at %s", weekdayName, timeStr)
 	} else {
 		// Complex schedule
 		desc.WriteString("on a complex schedule")
 
 		if len(parts) == 6 && second != "*" && second != "0" {
-			desc.WriteString(fmt.Sprintf(" (second: %s", second))
+			fmt.Fprintf(&desc, " (second: %s", second)
 		} else {
 			desc.WriteString(" (")
 		}
@@ -1724,7 +1698,7 @@ func generateCronDescription(expression string) string {
 				desc.WriteString(", ")
 			}
 
-			desc.WriteString(fmt.Sprintf("minute: %s", minute))
+			fmt.Fprintf(&desc, "minute: %s", minute)
 
 			needComma = true
 		}
@@ -1734,7 +1708,7 @@ func generateCronDescription(expression string) string {
 				desc.WriteString(", ")
 			}
 
-			desc.WriteString(fmt.Sprintf("hour: %s", hour))
+			fmt.Fprintf(&desc, "hour: %s", hour)
 
 			needComma = true
 		}
@@ -1744,7 +1718,7 @@ func generateCronDescription(expression string) string {
 				desc.WriteString(", ")
 			}
 
-			desc.WriteString(fmt.Sprintf("day: %s", day))
+			fmt.Fprintf(&desc, "day: %s", day)
 
 			needComma = true
 		}
@@ -1754,7 +1728,7 @@ func generateCronDescription(expression string) string {
 				desc.WriteString(", ")
 			}
 
-			desc.WriteString(fmt.Sprintf("month: %s", month))
+			fmt.Fprintf(&desc, "month: %s", month)
 
 			needComma = true
 		}
@@ -1764,7 +1738,7 @@ func generateCronDescription(expression string) string {
 				desc.WriteString(", ")
 			}
 
-			desc.WriteString(fmt.Sprintf("weekday: %s", weekday))
+			fmt.Fprintf(&desc, "weekday: %s", weekday)
 		}
 
 		desc.WriteString(")")
@@ -1784,6 +1758,7 @@ func formatTimeWithSeconds(hour, minute, second string) string {
 		if sErr != nil {
 			return fmt.Sprintf("%s:%s", hour, minute)
 		}
+
 		return fmt.Sprintf("%s:%s:%02d", hour, minute, s)
 	}
 

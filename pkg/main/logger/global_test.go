@@ -272,25 +272,25 @@ func TestAddBuffer_WriteUInt(t *testing.T) {
 
 func TestAddBuffer_WriteStringMap(t *testing.T) {
 	tests := []struct {
-		name      string
-		useseries bool
-		typestr   string
-		expected  string
+		name     string
+		isType   uint
+		typestr  string
+		expected string
 	}{
-		{"Series map", true, "test", ""},
-		{"Movies map", false, "test", ""},
+		{"Series map", 1, "test", ""},
+		{"Movies map", 0, "test", ""},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			initializePools()
 			b := PlAddBuffer.Get()
-			b.WriteStringMap(tt.useseries, tt.typestr)
+			b.WriteStringMap(tt.isType, tt.typestr)
 			result := b.String()
-			if result != GetStringsMap(tt.useseries, tt.typestr) {
+			if result != GetStringsMap(tt.isType, tt.typestr) {
 				t.Errorf(
 					"WriteStringMap(%v, %s) wrote %s; want %s",
-					tt.useseries,
+					tt.isType,
 					tt.typestr,
 					result,
 					tt.expected,

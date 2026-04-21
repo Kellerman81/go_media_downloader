@@ -182,9 +182,9 @@ func (p *Provider) GetSeasonDetails(
 
 	// Filter episodes for this season
 	var seasonEpisodes []tvdbV2Episode
-	for _, ep := range response.Data {
-		if ep.AiredSeason == seasonNumber {
-			seasonEpisodes = append(seasonEpisodes, ep)
+	for i := range response.Data {
+		if response.Data[i].AiredSeason == seasonNumber {
+			seasonEpisodes = append(seasonEpisodes, response.Data[i])
 		}
 	}
 
@@ -215,9 +215,10 @@ func (p *Provider) GetEpisodeDetails(
 	}
 
 	// Find the specific episode
-	for _, ep := range response.Data {
-		if ep.AiredSeason == seasonNumber && ep.AiredEpisodeNumber == episodeNumber {
-			return convertV2EpisodeToDetails(&ep), nil
+	for i := range response.Data {
+		if response.Data[i].AiredSeason == seasonNumber &&
+			response.Data[i].AiredEpisodeNumber == episodeNumber {
+			return convertV2EpisodeToDetails(&response.Data[i]), nil
 		}
 	}
 

@@ -151,13 +151,18 @@ func (cb *CircuitBreaker) RecordSuccess() {
 	case StateHalfOpen:
 		cb.halfOpenSuccess++
 		// If all half-open requests succeeded, close the circuit
-		if cb.halfOpenSuccess >= cb.config.HalfOpenMax {
-			cb.state = StateClosed
-			cb.failures = 0
-			cb.halfOpenSuccess = 0
-			cb.halfOpenAttempts = 0
-			cb.firstOpenTime = time.Time{} // Clear open time tracker
+		if cb.halfOpenSuccess < cb.config.HalfOpenMax {
+			break
 		}
+
+		cb.state = StateClosed
+		cb.failures = 0
+		cb.halfOpenSuccess = 0
+		cb.halfOpenAttempts = 0
+		cb.firstOpenTime = time.Time{} // Clear open time tracker
+
+	default:
+		// StateOpen: success while open has no effect
 	}
 }
 
@@ -184,6 +189,9 @@ func (cb *CircuitBreaker) RecordFailure() {
 		cb.halfOpenSuccess = 0
 		cb.halfOpenAttempts = 0
 		// Don't reset firstOpenTime - keep tracking total open duration
+
+	default:
+		// StateOpen: circuit already open, failures tracked but no state change
 	}
 }
 

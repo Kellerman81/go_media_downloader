@@ -130,7 +130,7 @@ type OverallStatistics struct {
 // Statistics collection functions
 
 // getMovieStatistics retrieves movie statistics from the database.
-func getMovieStatistics(ctx context.Context) (MovieStatistics, error) {
+func getMovieStatistics(_ context.Context) (MovieStatistics, error) {
 	stats := MovieStatistics{
 		ByQuality: make(map[string]int),
 		ByList:    make(map[string]int),
@@ -186,7 +186,7 @@ func getMovieStatistics(ctx context.Context) (MovieStatistics, error) {
 }
 
 // getSeriesStatistics retrieves series statistics from the database.
-func getSeriesStatistics(ctx context.Context) (SeriesStatistics, error) {
+func getSeriesStatistics(_ context.Context) (SeriesStatistics, error) {
 	stats := SeriesStatistics{
 		ByQuality: make(map[string]int),
 		ByList:    make(map[string]int),
@@ -320,7 +320,7 @@ func getStorageStatistics(ctx context.Context) StorageStatistics {
 }
 
 // walkPath walks a filesystem path and returns statistics.
-func walkPath(ctx context.Context, rootPath string, mediaType string) PathStatistic {
+func walkPath(ctx context.Context, rootPath string, _ string) PathStatistic {
 	stat := PathStatistic{
 		Path: rootPath,
 	}
@@ -682,7 +682,7 @@ func apiStatistics(ctx *gin.Context) {
 
 	stats, err := gatherAllStatistics(requestCtx)
 	if err != nil {
-		logger.Logtype(logger.StatusError, 1).Err(err).Msg("Failed to gather statistics")
+		logger.Logtype(logger.StatusError, 0).Err(err).Msg("Failed to gather statistics")
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -719,7 +719,7 @@ func apiMovieStatistics(ctx *gin.Context) {
 
 	stats, err := getMovieStatistics(requestCtx)
 	if err != nil {
-		logger.Logtype(logger.StatusError, 1).Err(err).Msg("Failed to get movie statistics")
+		logger.Logtype(logger.StatusError, 0).Err(err).Msg("Failed to get movie statistics")
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -741,7 +741,7 @@ func apiSeriesStatistics(ctx *gin.Context) {
 
 	stats, err := getSeriesStatistics(requestCtx)
 	if err != nil {
-		logger.Logtype(logger.StatusError, 1).Err(err).Msg("Failed to get series statistics")
+		logger.Logtype(logger.StatusError, 0).Err(err).Msg("Failed to get series statistics")
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

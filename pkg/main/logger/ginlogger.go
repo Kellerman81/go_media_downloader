@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io"
 	"os"
+	"slices"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -48,16 +49,18 @@ func ErrorLoggerT(typ gin.ErrorType) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Next()
 
-		if !c.Writer.Written() {
-			json := c.Errors.ByType(typ).JSON()
-			if json != nil {
-				c.JSON(-1, json)
-			}
+		if c.Writer.Written() {
+			return
+		}
+
+		json := c.Errors.ByType(typ).JSON()
+		if json != nil {
+			c.JSON(-1, json)
 		}
 	}
 }
 
-// Logger is a gin middleware which use zerolog.
+// GinLogger is a gin middleware that uses zerolog for structured logging.
 func GinLogger() gin.HandlerFunc {
 	o := Options{
 		FieldsOrder: ginDefaultFieldsOrder(),
@@ -155,34 +158,42 @@ func LoggerWithOptions(opt *Options) gin.HandlerFunc {
 			if f == NameFieldName && !opt.isExcluded(f) && len(opt.Name) > 0 {
 				event.Str(NameFieldName, opt.Name)
 			}
+
 			// Hostname field
 			if f == HostnameFieldName && !opt.isExcluded(f) && len(hostname) > 0 {
 				event.Str(HostnameFieldName, hostname)
 			}
+
 			// ClientIP field
 			if f == ClientIPFieldName && !opt.isExcluded(f) {
 				event.Str(ClientIPFieldName, ctx.ClientIP())
 			}
+
 			// UserAgent field
 			if f == UserAgentFieldName && !opt.isExcluded(f) && len(ctx.Request.UserAgent()) > 0 {
 				event.Str(UserAgentFieldName, ctx.Request.UserAgent())
 			}
+
 			// Method field
 			if f == MethodFieldName && !opt.isExcluded(f) {
 				event.Str(MethodFieldName, ctx.Request.Method)
 			}
+
 			// Path field
 			if f == PathFieldName && !opt.isExcluded(f) && len(path) > 0 {
 				event.Str(PathFieldName, path)
 			}
+
 			// Payload field
 			if f == PayloadFieldName && !opt.isExcluded(f) && len(payload) > 0 {
 				event.Str(PayloadFieldName, string(payload))
 			}
+
 			// Timestamp field
 			if f == TimestampFieldName && !opt.isExcluded(f) {
 				event.Time(TimestampFieldName, begin)
 			}
+
 			// Duration field
 			if f == DurationFieldName && !opt.isExcluded(f) {
 				var durationFieldName string
@@ -209,14 +220,17 @@ func LoggerWithOptions(opt *Options) gin.HandlerFunc {
 
 				event.Dur(durationFieldName, duration)
 			}
+
 			// Referer field
 			if f == RefererFieldName && !opt.isExcluded(f) && len(ctx.Request.Referer()) > 0 {
 				event.Str(RefererFieldName, ctx.Request.Referer())
 			}
+
 			// statusCode field
 			if f == statusCodeFieldName && !opt.isExcluded(f) {
 				event.Int(statusCodeFieldName, statusCode)
 			}
+
 			// DataLength field
 			if f == DataLengthFieldName && !opt.isExcluded(f) && ctx.Writer.Size() > 0 {
 				event.Int(DataLengthFieldName, ctx.Writer.Size())
@@ -259,13 +273,7 @@ func (o *Options) isExcluded(field string) bool {
 		return false
 	}
 
-	for _, f := range o.FieldsExclude {
-		if f == field {
-			return true
-		}
-	}
-
-	return false
+	return slices.Contains(o.FieldsExclude, field)
 }
 
 type responseBodyWriter struct {

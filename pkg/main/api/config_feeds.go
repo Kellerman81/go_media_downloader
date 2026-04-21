@@ -24,11 +24,17 @@ func renderFeedParsingPage(csrfToken string) gomponents.Node {
 
 	var mediaConfigs []SelectOption
 	for i := range media.Movies {
-		mediaConfigs = append(mediaConfigs, SelectOption{Label: media.Movies[i].NamePrefix, Value: media.Movies[i].NamePrefix})
+		mediaConfigs = append(
+			mediaConfigs,
+			SelectOption{Label: media.Movies[i].NamePrefix, Value: media.Movies[i].NamePrefix},
+		)
 	}
 
 	for i := range media.Series {
-		mediaConfigs = append(mediaConfigs, SelectOption{Label: media.Series[i].NamePrefix, Value: media.Series[i].NamePrefix})
+		mediaConfigs = append(
+			mediaConfigs,
+			SelectOption{Label: media.Series[i].NamePrefix, Value: media.Series[i].NamePrefix},
+		)
 	}
 
 	// Create a mapping of media configs to their lists
@@ -42,7 +48,10 @@ func renderFeedParsingPage(csrfToken string) gomponents.Node {
 		}
 
 		if len(lists) > 0 {
-			mediaToLists = append(mediaToLists, SelectOption{Label: config.NamePrefix, Value: lists})
+			mediaToLists = append(
+				mediaToLists,
+				SelectOption{Label: config.NamePrefix, Value: lists},
+			)
 		}
 	}
 
@@ -55,12 +64,15 @@ func renderFeedParsingPage(csrfToken string) gomponents.Node {
 		}
 
 		if len(lists) > 0 {
-			mediaToLists = append(mediaToLists, SelectOption{Label: config.NamePrefix, Value: lists})
+			mediaToLists = append(
+				mediaToLists,
+				SelectOption{Label: config.NamePrefix, Value: lists},
+			)
 		}
 	}
 
 	// Debug: log the mapping
-	logger.Logtype("debug", 1).
+	logger.Logtype("debug", 0).
 		Any("mediaToLists", mediaToLists).
 		Msg("Media to lists mapping created")
 
@@ -69,28 +81,66 @@ func renderFeedParsingPage(csrfToken string) gomponents.Node {
 		logger.Logtype("debug", 0).
 			Msg("No media configurations with lists found, creating test data")
 
-		mediaToLists = append(mediaToLists, SelectOption{Label: "test_movies", Value: []string{"test_list_1", "test_list_2"}})
-		mediaToLists = append(mediaToLists, SelectOption{Label: "test_series", Value: []string{"test_series_list_1", "test_series_list_2"}})
+		mediaToLists = append(
+			mediaToLists,
+			SelectOption{Label: "test_movies", Value: []string{"test_list_1", "test_list_2"}},
+		)
+		mediaToLists = append(
+			mediaToLists,
+			SelectOption{
+				Label: "test_series",
+				Value: []string{"test_series_list_1", "test_series_list_2"},
+			},
+		)
 	}
 
 	// Create better feed type descriptions
 	feedTypes := []SelectOption{
 		{Value: "imdbcsv", Label: "IMDB CSV - Import from IMDB CSV list"},
 		{Value: "imdbfile", Label: "IMDB File - Import from local IMDB file"},
-		{Value: "traktpublicmovielist", Label: "Trakt Public Movie List - User's public movie list"},
+		{
+			Value: "traktpublicmovielist",
+			Label: "Trakt Public Movie List - User's public movie list",
+		},
 		{Value: "traktmoviepopular", Label: "Trakt Popular Movies - Currently popular movies"},
-		{Value: "traktmovieanticipated", Label: "Trakt Anticipated Movies - Most anticipated movies"},
+		{Value: "tmdbmoviepopular", Label: "TMDB Popular Movies - Currently popular movies"},
+		{
+			Value: "traktmovieanticipated",
+			Label: "Trakt Anticipated Movies - Most anticipated movies",
+		},
+		{Value: "tmdbmovieupcoming", Label: "TMDB Upcoming Movies"},
 		{Value: "traktmovietrending", Label: "Trakt Trending Movies - Currently trending movies"},
+		{Value: "tmdbmovietrending", Label: "TMDB Trending Movies - Currently trending movies"},
 		{Value: "tmdbmoviediscover", Label: "TMDB Movie Discovery - Discover movies by criteria"},
 		{Value: "tmdblist", Label: "TMDB List - Import from TMDB list"},
 		{Value: "seriesconfig", Label: "Series Config File - Import from series configuration"},
-		{Value: "traktpublicshowlist", Label: "Trakt Public Series List - User's public series list"},
+		{
+			Value: "traktpublicshowlist",
+			Label: "Trakt Public Series List - User's public series list",
+		},
 		{Value: "traktseriepopular", Label: "Trakt Popular Series - Currently popular series"},
-		{Value: "traktserieanticipated", Label: "Trakt Anticipated Series - Most anticipated series"},
+		{Value: "tmdbseriepopular", Label: "TMDB Popular Series - Currently popular series"},
+		{
+			Value: "traktserieanticipated",
+			Label: "Trakt Anticipated Series - Most anticipated series",
+		},
 		{Value: "traktserietrending", Label: "Trakt Trending Series - Currently trending series"},
+		{Value: "tmdbserietrending", Label: "TMDB Trending Series - Currently trending series"},
 		{Value: "tmdbshowdiscover", Label: "TMDB Series Discovery - Discover series by criteria"},
 		{Value: "tmdbshowlist", Label: "TMDB Series List - Import from TMDB series list"},
 		{Value: "newznabrss", Label: "Newznab RSS - Import from RSS feed"},
+		{Value: "plexwatchlist", Label: "Plex Watchlist - Import from a Plex Watchlist"},
+		{
+			Value: "jellyfinwatchlist",
+			Label: "Jellyfin Watchlist - Import from a Jellyfin Watchlist",
+		},
+		{Value: "moviescraper", Label: "Movie Scraper - Scrape Movies from an API or Website"},
+		{
+			Value: "audiobookconfig",
+			Label: "Audiobook Config File - Import from audiobook configuration",
+		},
+		{Value: "bookconfig", Label: "Book Config File - Import from book configuration"},
+		{Value: "musicconfig", Label: "Music Config File - Import from music/album configuration"},
 	}
 
 	return html.Div(
@@ -466,7 +516,7 @@ func HandleFeedLists(c *gin.Context) {
 	result.WriteString(`<option value="">-- Select a list --</option>`)
 
 	for _, list := range lists {
-		result.WriteString(fmt.Sprintf(`<option value="%s">%s</option>`, list, list))
+		fmt.Fprintf(&result, `<option value="%s">%s</option>`, list, list)
 	}
 
 	c.String(http.StatusOK, result.String())
@@ -546,7 +596,7 @@ func HandleFeedParsing(c *gin.Context) {
 		return
 	}
 
-	feedResults, err := utils.Feeds(mediaTypeConfig, tempListConfig, req.DryRun)
+	feedResults, err := utils.Feeds(c.Request.Context(), mediaTypeConfig, tempListConfig, req.DryRun)
 	if err != nil {
 		utils.ReturnFeeds(feedResults)
 		c.String(http.StatusOK, renderAlert("Feed parsing failed: "+err.Error(), "danger"))
@@ -612,6 +662,7 @@ func renderFeedParsingResults(result map[string]any) string {
 						if limit > 0 {
 							return fmt.Sprintf("%d items", limit)
 						}
+
 						return "No limit"
 					}())),
 				),
@@ -637,10 +688,7 @@ func renderFeedParsingResults(result map[string]any) string {
 			)
 
 			// Show first 20 movies, with option to show more
-			maxDisplay := count
-			if maxDisplay > 20 {
-				maxDisplay = 20
-			}
+			maxDisplay := min(count, 20)
 
 			var movieItems []gomponents.Node
 			for i := range maxDisplay {
@@ -658,7 +706,7 @@ func renderFeedParsingResults(result map[string]any) string {
 			feedComponents = append(feedComponents, html.Ul(movieItems...))
 		}
 	} else {
-		series, _ := result["series"].([]config.SerieConfig)
+		series, _ := result["series"].([]config.ManualConfig)
 
 		count = len(series)
 		// Display series if found
@@ -669,10 +717,7 @@ func renderFeedParsingResults(result map[string]any) string {
 			)
 
 			// Show first 20 series, with option to show more
-			maxDisplay := count
-			if maxDisplay > 20 {
-				maxDisplay = 20
-			}
+			maxDisplay := min(count, 20)
 
 			var seriesItems []gomponents.Node
 			for i := range maxDisplay {

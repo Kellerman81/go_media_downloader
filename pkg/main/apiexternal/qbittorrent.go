@@ -32,8 +32,10 @@ func SendToQBittorrent(
 		if err == nil {
 			return nil
 		}
+
 		// Fall through to legacy client on error
 	}
+
 	// cl := newQBittorrentClient("http://" + host + ":" + port + "/")
 	// _, err := cl.Login(username, password)
 	// if err == nil {

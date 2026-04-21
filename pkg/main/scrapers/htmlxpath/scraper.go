@@ -264,7 +264,7 @@ func (s *Scraper) extractActors(node *html.Node, xpath string) string {
 		}
 	}
 
-	return strings.Join(actors, ", ")
+	return logger.JoinStringsSep(actors, ", ")
 }
 
 // parseDate parses a date string using the configured format.

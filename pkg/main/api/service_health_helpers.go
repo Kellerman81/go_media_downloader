@@ -80,13 +80,15 @@ func performServiceHealthCheck(
 		for _, service := range indexerServices {
 			results.ServiceDetails = append(results.ServiceDetails, service)
 			// Only count enabled services in metrics
-			if service.Status != "disabled" {
-				results.TotalServices++
-				if service.Status == "online" {
-					results.OnlineServices++
-				} else {
-					results.FailedServices++
-				}
+			if service.Status == "disabled" {
+				continue
+			}
+
+			results.TotalServices++
+			if service.Status == "online" {
+				results.OnlineServices++
+			} else {
+				results.FailedServices++
 			}
 		}
 	}
@@ -193,7 +195,11 @@ func checkIMDBService(retries int, _ bool) ServiceInfo {
 		} else {
 			service.Status = "error"
 
-			service.ErrorMessage = fmt.Sprintf("No tables found in IMDB database (attempt %d/%d)", attempt+1, retries)
+			service.ErrorMessage = fmt.Sprintf(
+				"No tables found in IMDB database (attempt %d/%d)",
+				attempt+1,
+				retries,
+			)
 			if attempt < retries-1 {
 				time.Sleep(100 * time.Millisecond) // Brief delay between retries
 			}
@@ -232,7 +238,12 @@ func checkTraktService(timeout time.Duration, retries int, _ bool) ServiceInfo {
 			} else {
 				service.Status = "timeout"
 
-				service.ErrorMessage = fmt.Sprintf("Connection failed (attempt %d/%d): %v", attempt+1, retries, err)
+				service.ErrorMessage = fmt.Sprintf(
+					"Connection failed (attempt %d/%d): %v",
+					attempt+1,
+					retries,
+					err,
+				)
 				if attempt < retries-1 {
 					time.Sleep(100 * time.Millisecond) // Brief delay between retries
 				}
@@ -331,7 +342,10 @@ func checkIndexerServices(timeout time.Duration, _ int, _ bool) []ServiceInfo {
 						}
 					} else if resp.StatusCode == 401 || resp.StatusCode == 403 {
 						service.Status = "error"
-						service.ErrorMessage = fmt.Sprintf("Authentication failed (HTTP %d) - check API key", resp.StatusCode)
+						service.ErrorMessage = fmt.Sprintf(
+							"Authentication failed (HTTP %d) - check API key",
+							resp.StatusCode,
+						)
 					} else {
 						service.Status = "error"
 						service.ErrorMessage = fmt.Sprintf("HTTP %d", resp.StatusCode)
@@ -405,7 +419,12 @@ func checkOMDBService(timeout time.Duration, retries int, _ bool) ServiceInfo {
 			} else {
 				service.Status = "timeout"
 
-				service.ErrorMessage = fmt.Sprintf("Connection failed (attempt %d/%d): %v", attempt+1, retries, err)
+				service.ErrorMessage = fmt.Sprintf(
+					"Connection failed (attempt %d/%d): %v",
+					attempt+1,
+					retries,
+					err,
+				)
 				if attempt < retries-1 {
 					time.Sleep(100 * time.Millisecond) // Brief delay between retries
 				}
@@ -458,7 +477,12 @@ func checkTVDBService(timeout time.Duration, retries int, _ bool) ServiceInfo {
 			} else {
 				service.Status = "timeout"
 
-				service.ErrorMessage = fmt.Sprintf("Connection failed (attempt %d/%d): %v", attempt+1, retries, err)
+				service.ErrorMessage = fmt.Sprintf(
+					"Connection failed (attempt %d/%d): %v",
+					attempt+1,
+					retries,
+					err,
+				)
 				if attempt < retries-1 {
 					time.Sleep(100 * time.Millisecond) // Brief delay between retries
 				}
@@ -511,7 +535,12 @@ func checkTMDBService(timeout time.Duration, retries int, _ bool) ServiceInfo {
 			} else {
 				service.Status = "timeout"
 
-				service.ErrorMessage = fmt.Sprintf("Connection failed (attempt %d/%d): %v", attempt+1, retries, err)
+				service.ErrorMessage = fmt.Sprintf(
+					"Connection failed (attempt %d/%d): %v",
+					attempt+1,
+					retries,
+					err,
+				)
 				if attempt < retries-1 {
 					time.Sleep(100 * time.Millisecond) // Brief delay between retries
 				}

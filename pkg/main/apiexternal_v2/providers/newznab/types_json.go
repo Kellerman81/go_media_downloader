@@ -9,7 +9,7 @@ type searchResponseJSON1 struct {
 	Title   string `json:"title,omitempty"`
 	Channel struct {
 		Item []json1Item `json:"item"`
-	} `json:"channel,omitempty"`
+	} `json:"channel"`
 }
 
 // json1Item represents an item in the first JSON format.
@@ -18,7 +18,7 @@ type json1Item struct {
 	Link  string `json:"link,omitempty"`
 	GUID  struct {
 		Text string `json:"_text,omitempty"`
-	} `json:"guid,omitempty"`
+	} `json:"guid"`
 	Size    int64  `json:"size,omitempty"`
 	PubDate string `json:"pubDate,omitempty"`
 
@@ -26,14 +26,14 @@ type json1Item struct {
 		Attributes struct {
 			URL    string `json:"url"`
 			Length string `json:"length,omitempty"`
-		} `json:"@attributes,omitempty"`
-	} `json:"enclosure,omitempty"`
+		} `json:"@attributes"`
+	} `json:"enclosure"`
 
 	Attributes []struct {
 		Attribute struct {
 			Name  string `json:"name"`
 			Value string `json:"value"`
-		} `json:"@attributes,omitempty"`
+		} `json:"@attributes"`
 	} `json:"attr,omitempty"`
 }
 
@@ -48,8 +48,8 @@ type json2Item struct {
 	Link        string           `json:"link,omitempty"`
 	Size        int64            `json:"size,omitempty"`
 	PubDate     string           `json:"pubDate,omitempty"`
-	GUID        guidField        `json:"guid,omitempty"`
-	Enclosure   enclosureField   `json:"enclosure,omitempty"`
+	GUID        guidField        `json:"guid"`
+	Enclosure   enclosureField   `json:"enclosure"`
 	Attributes  []attributeField `json:"newznab:attr,omitempty"`
 	Attributes2 []attributeField `json:"nntmux:attr,omitempty"`
 }
