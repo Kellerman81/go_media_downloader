@@ -110,9 +110,11 @@ func moveUnprocessedFolder(
 func rptColInt(buf *logger.AddBuffer, n, width int) {
 	s := strconv.Itoa(n)
 	buf.WriteString(s)
+
 	for i := len(s); i < width; i++ {
 		buf.WriteByte(' ')
 	}
+
 	buf.WriteByte(' ')
 }
 
@@ -120,9 +122,11 @@ func rptColInt(buf *logger.AddBuffer, n, width int) {
 func rptColStr(buf *logger.AddBuffer, s string, width int) {
 	n := min(len(s), width)
 	buf.WriteString(s[:n])
+
 	for i := n; i < width; i++ {
 		buf.WriteByte(' ')
 	}
+
 	buf.WriteByte(' ')
 }
 
@@ -150,30 +154,36 @@ func writeMatchReportFile(targetFolder string, report *importfeed.MatchReport) {
 		buf.WriteInt(i + 1)
 		buf.WriteString("  (album dist: ")
 		buf.WriteString(strconv.FormatFloat(cr.AlbumDist, 'f', 3, 64))
+
 		if cr.FullDist > 0 {
 			buf.WriteString(", full dist: ")
 			buf.WriteString(strconv.FormatFloat(cr.FullDist, 'f', 3, 64))
 		}
+
 		buf.WriteString(")\n  Title:    ")
 		buf.WriteString(cr.Title)
 		buf.WriteString("\n  Artist:   ")
 		buf.WriteString(cr.Artist)
 		buf.WriteByte('\n')
+
 		if cr.MBID != "" {
 			buf.WriteString("  ID:       ")
 			buf.WriteString(cr.MBID)
 			buf.WriteByte('\n')
 		}
+
 		if cr.Year > 0 {
 			buf.WriteString("  Year:     ")
 			buf.WriteInt(cr.Year)
 			buf.WriteByte('\n')
 		}
+
 		buf.WriteString("  Expected: ")
 		buf.WriteInt(cr.ExpectedTracks)
 		buf.WriteString(" tracks, ")
 		buf.WriteString(matchReportDuration(int64(cr.ExpectedRuntimeMS)))
 		buf.WriteString(" runtime\n")
+
 		if len(cr.Tracks) > 0 {
 			buf.WriteString("  ")
 			rptColStr(buf, "Track", 5)
@@ -182,33 +192,40 @@ func writeMatchReportFile(targetFolder string, report *importfeed.MatchReport) {
 			rptColStr(buf, "DB Runtime", 11)
 			rptColStr(buf, "Local", 11)
 			buf.WriteString("Dist\n")
+
 			for _, tr := range cr.Tracks {
 				title := tr.Title
 				if len(title) > 32 {
 					title = title[:29] + "..."
 				}
+
 				buf.WriteString("  ")
 				rptColInt(buf, tr.TrackNumber, 5)
 				rptColInt(buf, tr.DiscNumber, 4)
 				rptColStr(buf, title, 32)
+
 				switch {
 				case tr.LocalOnly:
 					rptColStr(buf, "---", 11)
 					rptColStr(buf, matchReportDuration(tr.LocalRuntimeMS), 11)
 					buf.WriteString("(local only)")
+
 				case tr.Unmatched:
 					rptColStr(buf, matchReportDuration(tr.DBRuntimeMS), 11)
 					rptColStr(buf, matchReportDuration(tr.LocalRuntimeMS), 11)
 					buf.WriteString(strconv.FormatFloat(tr.TrackDist, 'f', 3, 64))
 					buf.WriteString(" (unmatched)")
+
 				default:
 					rptColStr(buf, matchReportDuration(tr.DBRuntimeMS), 11)
 					rptColStr(buf, matchReportDuration(tr.LocalRuntimeMS), 11)
 					buf.WriteString(strconv.FormatFloat(tr.TrackDist, 'f', 3, 64))
 				}
+
 				buf.WriteByte('\n')
 			}
 		}
+
 		buf.WriteByte('\n')
 	}
 
@@ -220,13 +237,16 @@ func matchReportDuration(ms int64) string {
 	if ms <= 0 {
 		return "0:00"
 	}
+
 	s := ms / 1000
 	h := s / 3600
 	m := (s % 3600) / 60
+
 	sec := s % 60
 	if h > 0 {
 		return fmt.Sprintf("%d:%02d:%02d", h, m, sec)
 	}
+
 	return fmt.Sprintf("%d:%02d", m, sec)
 }
 
@@ -865,6 +885,7 @@ func (s *Organizer) writeRenameLog(
 				break
 			}
 		}
+
 		if needsLFM {
 			if lfm := providers.GetLastFM(); lfm != nil {
 				if rel, err := lfm.GetAlbumInfo(
@@ -877,10 +898,12 @@ func (s *Organizer) writeRenameLog(
 					lfmRuntimeByPos = make(map[int]int64, len(rel.Tracks))
 					for i := range rel.Tracks {
 						t := &rel.Tracks[i]
+
 						pos := t.Position
 						if pos == 0 {
 							pos = i + 1
 						}
+
 						lfmRuntimeByPos[pos] = t.Duration.Milliseconds()
 					}
 				}
@@ -1269,9 +1292,11 @@ func (s *Organizer) generateTrackFilenames(
 
 	// Hoist per-track temporaries outside the loop so they escape to heap once
 	// (at function entry) rather than once per track.
-	var trackM database.ParseInfo
-	var forparser parsertype
-	var namingData mediatype.NamingData
+	var (
+		trackM     database.ParseInfo
+		forparser  parsertype
+		namingData mediatype.NamingData
+	)
 
 	filenames := make([]string, len(album.Tracks))
 	for idx, track := range album.Tracks {
@@ -1309,6 +1334,7 @@ func (s *Organizer) generateTrackFilenames(
 		} else {
 			forparser.TotalDiscs = totalDiscs
 		}
+
 		forparser.Dbaudiobook = namingData.Dbaudiobook
 		forparser.DbaudiobookChapter = namingData.DbaudiobookChapter
 		forparser.Author = namingData.Author
@@ -1582,11 +1608,13 @@ func fetchCoverArt(coverURL string) ([]byte, string) {
 // It uses the tags package to write tags based on the album and track information.
 func (s *Organizer) tagAlbumFiles(album *parser_v2.AlbumInfo) error {
 	embedArt := false
+
 	embedLyrics := false
 	for idx := range s.Cfgp.Data {
 		if s.Cfgp.Data[idx].EmbedArt {
 			embedArt = true
 		}
+
 		if s.Cfgp.Data[idx].EmbedLyrics {
 			embedLyrics = true
 		}
@@ -1763,7 +1791,9 @@ func TagAlbumFiles(mediaType uint, embedArt, embedLyrics bool, album *parser_v2.
 		if embedLyrics && audioTags.Title != "" {
 			lyrCtx, lyrCancel := context.WithTimeout(context.Background(), 15*time.Second)
 			lyr := lyrics.Fetch(lyrCtx, audioTags.Artist, audioTags.Title, audioTags.Album)
+
 			lyrCancel()
+
 			if lyr != "" {
 				audioTags.Lyrics = lyr
 				logger.Logtype("debug", 0).
@@ -1851,30 +1881,37 @@ func (s *Organizer) ForceMatchAlbumFolder(
 		dataCfg.AllowedReleaseTypes = data.AllowedReleaseTypes
 		dataCfg.EmbedArt = data.EmbedArt
 		dataCfg.ExceedToleranceIfTotalMatch = data.ExceedToleranceIfTotalMatch
+
 		dataCfg.DiscoverSeriesAlbums = data.DiscoverSeriesAlbums
 		if data.AddFound {
 			dataCfg.AddFound = true
 			dataCfg.AddFoundList = data.AddFoundList
 		}
 	}
+
 	for idx := range cfgp.Data {
 		if cfgp.Data[idx].AddFound && !dataCfg.AddFound {
 			dataCfg.AddFound = true
 			dataCfg.AddFoundList = cfgp.Data[idx].AddFoundList
 		}
+
 		if !dataCfg.WriteRenameLog && cfgp.Data[idx].WriteRenameLog {
 			dataCfg.WriteRenameLog = true
 		}
+
 		if !dataCfg.EmbedArt && cfgp.Data[idx].EmbedArt {
 			dataCfg.EmbedArt = true
 		}
+
 		if !dataCfg.AllowAllFormatsWhenStructuring &&
 			cfgp.Data[idx].AllowAllFormatsWhenStructuring {
 			dataCfg.AllowAllFormatsWhenStructuring = true
 		}
+
 		if !dataCfg.AllowMissingTracks && cfgp.Data[idx].AllowMissingTracks {
 			dataCfg.AllowMissingTracks = true
 		}
+
 		if len(dataCfg.MBMediaFormats) == 0 && len(cfgp.Data[idx].MBMediaFormats) > 0 {
 			dataCfg.MBMediaFormats = cfgp.Data[idx].MBMediaFormats
 		}
@@ -1890,12 +1927,15 @@ func (s *Organizer) ForceMatchAlbumFolder(
 
 	// Build the ParseInfo / Organizerdata needed for naming.
 	m := database.ParseInfo{}
+
 	m.Title = album.Title
+
 	m.Year = uint16(album.Year)
 	switch cfgp.IsType {
 	case config.MediaTypeAudiobook:
 		m.DbaudiobookID = album.DatabaseID
 		m.AudiobookID = album.DatabaseID
+
 	case config.MediaTypeMusic:
 		m.DbalbumID = album.DatabaseID
 		m.AlbumID = album.DatabaseID
@@ -1907,6 +1947,7 @@ func (s *Organizer) ForceMatchAlbumFolder(
 		database.GetdatarowArgs(
 			"SELECT listname, rootpath FROM audiobooks WHERE dbaudiobook_id = ? LIMIT 1",
 			album.DatabaseID, &listname, &rootpath)
+
 	case config.MediaTypeMusic:
 		database.GetdatarowArgs(
 			"SELECT listname, rootpath FROM albums WHERE dbalbum_id = ? LIMIT 1",
@@ -1924,6 +1965,7 @@ func (s *Organizer) ForceMatchAlbumFolder(
 	for idx, track := range album.Tracks {
 		o.MediaFiles[idx] = track.Filepath
 	}
+
 	if len(o.MediaFiles) > 0 {
 		o.MediaFile = o.MediaFiles[0]
 	}
@@ -1955,6 +1997,7 @@ func (s *Organizer) ForceMatchAlbumFolder(
 			if idx < len(o.Filenames) {
 				targetName = o.Filenames[idx]
 			}
+
 			result.Tracks = append(result.Tracks, AlbumForceMatchTrack{
 				Source:      filepath.Base(track.Filepath),
 				Target:      targetName,
@@ -1964,16 +2007,21 @@ func (s *Organizer) ForceMatchAlbumFolder(
 				DBRuntimeMS: track.ExpectedRuntimeMS,
 			})
 		}
+
 		return result, nil
 	}
 
 	// Run mode — hand off to the normal organize pipeline via organizeAlbumFolderViaAPI.
 	// Store the forced ID on the Organizer so organizeAlbumFolderViaAPI uses it.
 	s.forcedAlbumID = *forcedID
+
 	matchReason, _, err := s.organizeAlbumFolderViaAPI(ctx, folder, cfgp, data)
+
 	s.forcedAlbumID = "" // reset after use
+
 	if err != nil {
 		return nil, fmt.Errorf("organize failed: %s: %w", matchReason, err)
 	}
+
 	return nil, nil
 }

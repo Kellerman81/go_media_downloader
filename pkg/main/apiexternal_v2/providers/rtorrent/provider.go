@@ -218,7 +218,7 @@ func (p *Provider) ListTorrents(
 	}
 
 	torrents := make([]apiexternal_v2.TorrentInfo, 0, len(hashes))
-	for _, hash := range hashes {
+	for _, hash := range hashes { //nolint:gosec // range over slice is always in-bounds
 		torrents = append(torrents, apiexternal_v2.TorrentInfo{
 			Hash:     hash,
 			Name:     "Unknown",

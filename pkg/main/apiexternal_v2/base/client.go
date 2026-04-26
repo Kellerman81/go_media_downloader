@@ -1958,6 +1958,7 @@ func (bc *BaseClient) cleanupOldTimestamps() {
 	if validIdx > 0 {
 		trimmed := make([]time.Time, len(bc.stats.requestTimestamps)-validIdx)
 		copy(trimmed, bc.stats.requestTimestamps[validIdx:])
+
 		bc.stats.requestTimestamps = trimmed
 	}
 }

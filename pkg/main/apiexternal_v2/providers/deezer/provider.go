@@ -28,12 +28,15 @@ func NewProvider() *Provider {
 	cfg := config.GetSettingsGeneral()
 	rateSec := cfg.DeezerLimiterSeconds
 	rateCalls := cfg.DeezerLimiterCalls
+
 	if rateSec == 0 {
 		rateSec = 5
 	}
+
 	if rateCalls == 0 {
 		rateCalls = 50
 	}
+
 	return NewProviderWithConfig(base.ClientConfig{
 		RateLimitSeconds: int(rateSec),
 		RateLimitCalls:   rateCalls,
@@ -46,15 +49,19 @@ func NewProviderWithConfig(cfg base.ClientConfig) *Provider {
 	if cfg.BaseURL == "" {
 		cfg.BaseURL = defaultBaseURL
 	}
+
 	if cfg.Timeout == 0 {
 		cfg.Timeout = 30 * time.Second
 	}
+
 	if cfg.RateLimitCalls == 0 {
 		cfg.RateLimitCalls = 50
 	}
+
 	if cfg.RateLimitSeconds == 0 {
 		cfg.RateLimitSeconds = 5
 	}
+
 	return &Provider{BaseClient: base.NewBaseClient(cfg)}
 }
 
@@ -84,6 +91,7 @@ func (p *Provider) SearchAlbums(
 	buf.WriteURL(query)
 	buf.WriteString("&limit=")
 	buf.WriteInt(limit)
+
 	endpoint := buf.String()
 	logger.PlAddBuffer.Put(buf)
 
@@ -103,6 +111,7 @@ func (p *Provider) GetAlbumByID(
 	buf := logger.PlAddBuffer.Get()
 	buf.WriteString("/album/")
 	buf.WriteInt(id)
+
 	endpoint := buf.String()
 	logger.PlAddBuffer.Put(buf)
 

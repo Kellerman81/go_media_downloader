@@ -211,6 +211,24 @@ func (s *ConfigSearcher) validateEntry(
 		return true
 	}
 
+	// Reject multi-episode packs for date-identified series.
+	// A title containing 2+ date patterns is a pack, not a single episode.
+	if entry.Info.Date != "" &&
+		entry.Info.DbserieID != 0 &&
+		database.Getdatarow[string](
+			false,
+			database.QueryDbseriesGetIdentifiedByID,
+			&entry.Info.DbserieID,
+		) == logger.StrDate &&
+		database.RegexGetMatchesFind(
+			`\d{2,4}(?:\.|-| |_)\d{1,2}(?:\.|-| |_)\d{1,2}`,
+			entry.NZB.Title,
+			2,
+		) {
+		s.logdenied("multi-date pack", entry)
+		return true
+	}
+
 	// Regex filtering
 	if s.filterRegexNzbs(entry, qual) {
 		return true
@@ -864,9 +882,11 @@ func sortedIsSubset(sub, super []string) bool {
 		for j < len(super) && super[j] < w {
 			j++
 		}
+
 		if j >= len(super) || super[j] != w {
 			return false
 		}
 	}
+
 	return true
 }

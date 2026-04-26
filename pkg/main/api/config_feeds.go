@@ -596,7 +596,12 @@ func HandleFeedParsing(c *gin.Context) {
 		return
 	}
 
-	feedResults, err := utils.Feeds(c.Request.Context(), mediaTypeConfig, tempListConfig, req.DryRun)
+	feedResults, err := utils.Feeds(
+		c.Request.Context(),
+		mediaTypeConfig,
+		tempListConfig,
+		req.DryRun,
+	)
 	if err != nil {
 		utils.ReturnFeeds(feedResults)
 		c.String(http.StatusOK, renderAlert("Feed parsing failed: "+err.Error(), "danger"))

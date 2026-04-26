@@ -347,7 +347,10 @@ func SearchSeriesRSSSeasonsAll(ctx context.Context, cfgp *config.MediaTypeConfig
 // handleSeasonDateSearch performs a name-only RSS search for date-identified series.
 // Instead of querying by TVDB ID + season, it searches by series name so that all
 // recent releases are returned and matched against episodes we don't have yet.
-func (s *ConfigSearcher) handleSeasonDateSearch(indcfg *config.IndexersConfig, p *searchParams) error {
+func (s *ConfigSearcher) handleSeasonDateSearch(
+	indcfg *config.IndexersConfig,
+	p *searchParams,
+) error {
 	if p.e.SearchFor == "" {
 		return nil
 	}
@@ -365,6 +368,7 @@ func (s *ConfigSearcher) handleSeasonDateSearch(indcfg *config.IndexersConfig, p
 
 	// Pass an empty entry so getaddstr never appends a stale identifier to the query.
 	emptyEntry := searchParams{}
+
 	_, _, err := apiexternal.QueryNewznabQuery(
 		s.Cfgp,
 		&emptyEntry.e,
@@ -444,8 +448,16 @@ func searchseason(
 	}
 
 	// Date-identified series: search by name only, no season iteration
-	if database.Getdatarow[string](false, "select lower(identifiedby) from dbseries where id = ?", &row.Num2) == logger.StrDate {
-		seriename := database.Getdatarow[string](false, "select seriename from dbseries where id = ?", &row.Num2)
+	if database.Getdatarow[string](
+		false,
+		"select lower(identifiedby) from dbseries where id = ?",
+		&row.Num2,
+	) == logger.StrDate {
+		seriename := database.Getdatarow[string](
+			false,
+			"select seriename from dbseries where id = ?",
+			&row.Num2,
+		)
 		if seriename == "" {
 			return nil
 		}
@@ -554,7 +566,11 @@ func SearchSerieRSSSeasonSingle(
 
 	// Date-identified series have no TVDB ID — search by name instead
 	if tvdb == 0 {
-		seriename := database.Getdatarow[string](false, "select seriename from dbseries where id = ?", &dbserieid)
+		seriename := database.Getdatarow[string](
+			false,
+			"select seriename from dbseries where id = ?",
+			&dbserieid,
+		)
 		if seriename == "" {
 			return nil, logger.ErrTvdbEmpty
 		}

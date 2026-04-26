@@ -88,6 +88,7 @@ func (p *Provider) LookupByFingerprint(
 	buf.WriteString("&duration=")
 	buf.WriteInt(duration)
 	buf.WriteString("&meta=recordings%2Breleasegroups%2Breleases%2Btracks%2Bcompress&format=json")
+
 	endpoint := buf.String()
 	logger.PlAddBuffer.Put(buf)
 
@@ -122,6 +123,7 @@ func (p *Provider) LookupByFingerprintWithMeta(
 	buf.WriteString("&meta=")
 	buf.WriteURL(meta)
 	buf.WriteString("&format=json")
+
 	endpoint := buf.String()
 	logger.PlAddBuffer.Put(buf)
 
@@ -150,6 +152,7 @@ func (p *Provider) LookupByTrackID(
 	buf.WriteString("&meta=")
 	buf.WriteURL("recordings+releasegroups+releases+tracks+compress")
 	buf.WriteString("&format=json")
+
 	endpoint := buf.String()
 	logger.PlAddBuffer.Put(buf)
 
@@ -187,6 +190,7 @@ func (p *Provider) BatchLookup(
 	buf.WriteString("&meta=recordings%2Breleasegroups%2Breleases%2Btracks%2Bcompress")
 	buf.WriteString("&format=json")
 	buf.WriteString("&batch=1")
+
 	for i, item := range items {
 		buf.WriteString("&fingerprint.")
 		buf.WriteInt(i)
@@ -197,6 +201,7 @@ func (p *Provider) BatchLookup(
 		buf.WriteString("=")
 		buf.WriteInt(item.Duration)
 	}
+
 	endpoint := buf.String()
 	logger.PlAddBuffer.Put(buf)
 
@@ -244,10 +249,12 @@ func (p *Provider) SubmitFingerprint(
 	buf.WriteString("/submit?client=")
 	buf.WriteURL(p.apiKey)
 	buf.WriteString("&format=json")
+
 	if submission.UserAPIKey != "" {
 		buf.WriteString("&user=")
 		buf.WriteURL(submission.UserAPIKey)
 	}
+
 	buf.WriteString("&fingerprint=")
 	buf.WriteURL(submission.Fingerprint)
 	buf.WriteString("&duration=")

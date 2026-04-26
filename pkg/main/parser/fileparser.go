@@ -843,9 +843,9 @@ func parseffprobe(m *database.ParseInfo, quality *config.QualityConfig, result *
 // isAudioStream checks if the given stream is an audio stream by comparing its codec type.
 // It returns true if the stream's codec type is "audio" (case-insensitive), false otherwise.
 func isAudioStream(stream *struct {
-	//Tags struct {
+	// Tags struct {
 	//	Language string `json:"language"`
-	//} `json:"tags"`
+	// } `json:"tags"`
 	Tags           map[string]string `json:"tags"`
 	CodecName      string            `json:"codec_name"`
 	CodecTagString string            `json:"codec_tag_string"`
@@ -864,9 +864,9 @@ func isAudioStream(stream *struct {
 // isVideoStream checks if the given stream is a video stream by comparing its codec type.
 // It returns true if the stream's codec type is "video" (case-insensitive), false otherwise.
 func isVideoStream(stream *struct {
-	//Tags struct {
+	// Tags struct {
 	//	Language string `json:"language"`
-	//} `json:"tags"`
+	// } `json:"tags"`
 	Tags           map[string]string `json:"tags"`
 	CodecName      string            `json:"codec_name"`
 	CodecTagString string            `json:"codec_tag_string"`
@@ -896,7 +896,7 @@ func normalizeDimensions(m *database.ParseInfo) {
 func updateAudio(m *database.ParseInfo, stream *struct {
 	//	Tags struct {
 	//	Language string `json:"language"`
-	//} `json:"tags"`
+	// } `json:"tags"`
 	Tags           map[string]string `json:"tags"`
 	CodecName      string            `json:"codec_name"`
 	CodecTagString string            `json:"codec_tag_string"`
@@ -923,9 +923,9 @@ func updateAudio(m *database.ParseInfo, stream *struct {
 // it updates the corresponding IDs using the Gettypeids method. Returns true if either the
 // codec or resolution has changed, false otherwise.
 func updateVideo(m *database.ParseInfo, stream *struct {
-	//Tags struct {
+	// Tags struct {
 	//	Language string `json:"language"`
-	//} `json:"tags"`
+	// } `json:"tags"`
 	Tags           map[string]string `json:"tags"`
 	CodecName      string            `json:"codec_name"`
 	CodecTagString string            `json:"codec_tag_string"`

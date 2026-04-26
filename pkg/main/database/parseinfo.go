@@ -1044,8 +1044,11 @@ func cachedResolveArtist(cache map[string][]resolvedArtist, name string) []resol
 	if r, ok := cache[name]; ok {
 		return r
 	}
+
 	r := resolveArtistNamesForAlbum(name)
+
 	cache[name] = r
+
 	return r
 }
 
@@ -1054,8 +1057,11 @@ func cachedResolveAuthor(cache map[string][]resolvedAuthor, name string) []resol
 	if r, ok := cache[name]; ok {
 		return r
 	}
+
 	r := resolveAuthorNames(name)
+
 	cache[name] = r
+
 	return r
 }
 
@@ -1063,18 +1069,25 @@ func cachedResolveAuthor(cache map[string][]resolvedAuthor, name string) []resol
 // tryFindArtistAndAlbumFromWantedList so that the artist DB lookups are not repeated
 // when they fall back to their respective Stripped variants with the same artistName.
 func resolveArtistNamesForAlbum(artistName string) []resolvedArtist {
-	names := splitMultiArtist(artistName)
+	single, names := splitMultiArtist(artistName)
+	if single != "" {
+		names = []string{single}
+	}
 
 	names = expandVANames(names)
 
 	out := make([]resolvedArtist, 0, len(names))
-	var slug string
-	var withPeriods string
+
+	var (
+		slug          string
+		withPeriods   string
+		ids, aliasIDs []uint
+	)
 
 	for i := range names {
 		slug = logger.StringToSlug(names[i])
 		withPeriods = addPeriodsToInitials(names[i])
-		ids := Getrowssize[uint](
+		ids = Getrowssize[uint](
 			false,
 			"select count() from dbartists where name = ? COLLATE NOCASE or sort_name = ? COLLATE NOCASE or slug = ? or name = ? COLLATE NOCASE",
 			"select id from dbartists where name = ? COLLATE NOCASE or sort_name = ? COLLATE NOCASE or slug = ? or name = ? COLLATE NOCASE",
@@ -1083,7 +1096,7 @@ func resolveArtistNamesForAlbum(artistName string) []resolvedArtist {
 			&slug,
 			&withPeriods,
 		)
-		aliasIDs := Getrowssize[uint](
+		aliasIDs = Getrowssize[uint](
 			false,
 			"select count() from dbartist_aliases where alias = ? COLLATE NOCASE or slug = ?",
 			"select dbartist_id from dbartist_aliases where alias = ? COLLATE NOCASE or slug = ?",
@@ -1105,14 +1118,39 @@ func resolveArtistNamesForAlbum(artistName string) []resolvedArtist {
 // tryFindAuthorAndAudiobook, and tryFindAuthorAndAudiobookFromWantedList so that
 // StringToSlug + addPeriodsToInitials + GetrowsN are not repeated per function.
 func resolveAuthorNames(authorName string) []resolvedAuthor {
-	parts := splitMultiArtist(authorName)
+	single, parts := splitMultiArtist(authorName)
 
-	out := make([]resolvedAuthor, 0, len(parts))
-	for i := range parts {
-		slug := logger.StringToSlug(parts[i])
-		withPeriods := addPeriodsToInitials(parts[i])
+	if single != "" {
+		slug := logger.StringToSlug(single)
+		withPeriods := addPeriodsToInitials(single)
 
 		ids := Getrowssize[uint](
+			false,
+			"select count() from dbauthors where name = ? COLLATE NOCASE or slug = ? or name = ? COLLATE NOCASE",
+			"select id from dbauthors where name = ? COLLATE NOCASE or slug = ? or name = ? COLLATE NOCASE",
+			&single,
+			&slug,
+			&withPeriods,
+		)
+		if len(ids) > 0 {
+			return []resolvedAuthor{{name: single, ids: ids}}
+		}
+
+		return nil
+	}
+
+	out := make([]resolvedAuthor, 0, len(parts))
+
+	var (
+		slug, withPeriods string
+		ids               []uint
+	)
+
+	for i := range parts {
+		slug = logger.StringToSlug(parts[i])
+		withPeriods = addPeriodsToInitials(parts[i])
+
+		ids = Getrowssize[uint](
 			false,
 			"select count() from dbauthors where name = ? COLLATE NOCASE or slug = ? or name = ? COLLATE NOCASE",
 			"select id from dbauthors where name = ? COLLATE NOCASE or slug = ? or name = ? COLLATE NOCASE",
@@ -2124,7 +2162,9 @@ func (m *ParseInfo) tryFindVariousArtistsAlbum(albumTitle *string) bool {
 
 // splitMultiArtist splits a multi-artist string into individual artist names.
 // Handles common separators like "&", " and ", "+", "feat.", "ft.", and double spaces.
-func splitMultiArtist(artistStr string) []string {
+// Returns (single, nil) when there is exactly one artist (no heap allocation),
+// or ("", many) when multiple artists are found.
+func splitMultiArtist(artistStr string) (string, []string) {
 	// Normalize separators to a common delimiter
 	normalized := artistStr
 
@@ -2140,10 +2180,10 @@ func splitMultiArtist(artistStr string) []string {
 	if !hasSep {
 		trimmed := strings.TrimSpace(artistStr)
 		if len(trimmed) >= 2 {
-			return []string{trimmed}
+			return trimmed, nil
 		}
 
-		return nil
+		return "", nil
 	}
 
 	// Search case-insensitively (lowerNormalized) but replace in original-case (normalized).
@@ -2181,7 +2221,7 @@ func splitMultiArtist(artistStr string) []string {
 		artists = append(artists, strings.TrimSpace(artistStr))
 	}
 
-	return artists
+	return "", artists
 }
 
 // expandVANames expands VA/V.A. to "Various Artists" and vice versa in an artist name list.
@@ -2276,6 +2316,7 @@ func (m *ParseInfo) tryFindArtistAndAlbum(resolved []resolvedArtist, albumTitle 
 					if strings.Count(cand.Str, " ") < 1 {
 						continue
 					}
+
 					cs := logger.StringToSlug(cand.Str)
 
 					titleMatch := logger.HasPrefixI(*albumTitle, cand.Str) &&
@@ -2607,10 +2648,11 @@ func (m *ParseInfo) FindDbaudiobookByAuthorFirst() {
 	authorCache := make(map[string][]resolvedAuthor)
 
 	// Try " - " first (standard format: "Author - Title")
+	var potentialAuthor, potentialTitle string
 	if before, after, ok := strings.Cut(rawTitle, " - "); ok {
-		potentialAuthor := strings.TrimSpace(before)
+		potentialAuthor = strings.TrimSpace(before)
 
-		potentialTitle := strings.TrimSpace(after)
+		potentialTitle = strings.TrimSpace(after)
 		if m.tryFindAuthorAndAudiobook(
 			cachedResolveAuthor(authorCache, potentialAuthor),
 			&potentialTitle,
@@ -2621,8 +2663,8 @@ func (m *ParseInfo) FindDbaudiobookByAuthorFirst() {
 
 	// Try "-" without spaces (scene format: "Author-Title-Quality-Year-Group")
 	if before, after, ok := strings.Cut(rawTitle, "-"); ok {
-		potentialAuthor := strings.TrimSpace(before)
-		potentialTitle := strings.TrimSpace(after)
+		potentialAuthor = strings.TrimSpace(before)
+		potentialTitle = strings.TrimSpace(after)
 
 		potentialAuthor = strings.ReplaceAll(potentialAuthor, ".", " ")
 		potentialTitle = strings.ReplaceAll(potentialTitle, ".", " ")
@@ -2638,9 +2680,9 @@ func (m *ParseInfo) FindDbaudiobookByAuthorFirst() {
 
 	// Try comma separator (some formats use "Author, Title")
 	if before, after, ok := strings.Cut(rawTitle, ","); ok {
-		potentialAuthor := strings.TrimSpace(before)
+		potentialAuthor = strings.TrimSpace(before)
 
-		potentialTitle := strings.TrimSpace(after)
+		potentialTitle = strings.TrimSpace(after)
 		if m.tryFindAuthorAndAudiobook(
 			cachedResolveAuthor(authorCache, potentialAuthor),
 			&potentialTitle,
@@ -2653,9 +2695,9 @@ func (m *ParseInfo) FindDbaudiobookByAuthorFirst() {
 	words := strings.Fields(rawTitle)
 	if len(words) >= 3 {
 		// Try "FirstName LastName" as author, rest as title
-		potentialAuthor := logger.JoinStrings(words[0], " ", words[1])
+		potentialAuthor = logger.JoinStrings(words[0], " ", words[1])
 
-		potentialTitle := logger.JoinStringsSep(words[2:], " ")
+		potentialTitle = logger.JoinStringsSep(words[2:], " ")
 		if m.tryFindAuthorAndAudiobook(
 			cachedResolveAuthor(authorCache, potentialAuthor),
 			&potentialTitle,
@@ -2736,8 +2778,15 @@ func (m *ParseInfo) tryFindAuthorAndAudiobook(resolved []resolvedAuthor, bookTit
 	sluggedTitle := logger.StringToSlug(*bookTitle)
 	doPrefixMatch := strings.Count(*bookTitle, " ") >= 2
 
-	for _, ra := range resolved {
-		for k := range ra.ids {
+	var (
+		prefixCandidates      []syncops.DbstaticTwoStringOneInt
+		altPrefixCandidates   []syncops.DbstaticTwoStringOneInt
+		cl                    int
+		titleMatch, slugMatch bool
+	)
+
+	for resolvedid := range resolved {
+		for k := range resolved[resolvedid].ids {
 			// Try main audiobooks table with author filter
 			Scanrowsdyn(false,
 				`SELECT ab.id FROM dbaudiobooks ab
@@ -2745,10 +2794,10 @@ func (m *ParseInfo) tryFindAuthorAndAudiobook(resolved []resolvedAuthor, bookTit
 				 WHERE aa.dbauthor_id = ?
 				 AND (ab.title = ? COLLATE NOCASE OR ab.slug = ?)
 				 LIMIT 1`,
-				&m.DbaudiobookID, &ra.ids[k], bookTitle, &sluggedTitle)
+				&m.DbaudiobookID, &resolved[resolvedid].ids[k], bookTitle, &sluggedTitle)
 
 			if m.DbaudiobookID != 0 {
-				m.Artist = ra.name
+				m.Artist = resolved[resolvedid].name
 				return true
 			}
 
@@ -2759,49 +2808,55 @@ func (m *ParseInfo) tryFindAuthorAndAudiobook(resolved []resolvedAuthor, bookTit
 				 WHERE aa.dbauthor_id = ?
 				 AND (abt.title = ? COLLATE NOCASE OR abt.slug = ?)
 				 LIMIT 1`,
-				&m.DbaudiobookID, &ra.ids[k], bookTitle, &sluggedTitle)
+				&m.DbaudiobookID, &resolved[resolvedid].ids[k], bookTitle, &sluggedTitle)
 
 			if m.DbaudiobookID != 0 {
-				m.Artist = ra.name
+				m.Artist = resolved[resolvedid].name
 				return true
 			}
 
 			// Try word-skipping: fetch all audiobook titles for this author once,
 			// then match word-prefixes of bookTitle in Go (replaces O(Nx2) SQL queries).
 			if doPrefixMatch {
-				prefixCandidates := Getrowssize[syncops.DbstaticTwoStringOneInt](
+				prefixCandidates = Getrowssize[syncops.DbstaticTwoStringOneInt](
 					false,
 					`SELECT count() FROM dbaudiobooks ab JOIN dbaudiobook_authors aa ON ab.id = aa.dbaudiobook_id WHERE aa.dbauthor_id = ?`,
 					`SELECT ab.title, ab.slug, ab.id FROM dbaudiobooks ab
 					 JOIN dbaudiobook_authors aa ON ab.id = aa.dbaudiobook_id
 					 WHERE aa.dbauthor_id = ?`,
-					&ra.ids[k],
+					&resolved[resolvedid].ids[k],
 				)
-				altPrefixCandidates := Getrowssize[syncops.DbstaticTwoStringOneInt](
+				altPrefixCandidates = Getrowssize[syncops.DbstaticTwoStringOneInt](
 					false,
 					`SELECT count() FROM dbaudiobook_titles abt JOIN dbaudiobook_authors aa ON abt.dbaudiobook_id = aa.dbaudiobook_id WHERE aa.dbauthor_id = ?`,
 					`SELECT abt.title, abt.slug, abt.dbaudiobook_id FROM dbaudiobook_titles abt
 					 JOIN dbaudiobook_authors aa ON abt.dbaudiobook_id = aa.dbaudiobook_id
 					 WHERE aa.dbauthor_id = ?`,
-					&ra.ids[k],
+					&resolved[resolvedid].ids[k],
 				)
 
 				prefixCandidates = append(prefixCandidates, altPrefixCandidates...)
-				for _, cand := range prefixCandidates {
-					if !strings.Contains(cand.Str1, " ") {
+				for prefixCandidatesid := range prefixCandidates {
+					if !strings.Contains(prefixCandidates[prefixCandidatesid].Str1, " ") {
 						continue
 					}
 
-					cl := len(cand.Str1)
-					titleMatch := len(*bookTitle) >= cl &&
-						strings.EqualFold((*bookTitle)[:cl], cand.Str1) &&
+					cl = len(prefixCandidates[prefixCandidatesid].Str1)
+					titleMatch = len(*bookTitle) >= cl &&
+						strings.EqualFold(
+							(*bookTitle)[:cl],
+							prefixCandidates[prefixCandidatesid].Str1,
+						) &&
 						(len(*bookTitle) == cl || (*bookTitle)[cl] == ' ')
 
-					slugMatch := strings.HasPrefix(sluggedTitle, cand.Str2) &&
-						(len(sluggedTitle) == len(cand.Str2) || sluggedTitle[len(cand.Str2)] == '-')
+					slugMatch = strings.HasPrefix(
+						sluggedTitle,
+						prefixCandidates[prefixCandidatesid].Str2,
+					) &&
+						(len(sluggedTitle) == len(prefixCandidates[prefixCandidatesid].Str2) || sluggedTitle[len(prefixCandidates[prefixCandidatesid].Str2)] == '-')
 					if titleMatch || slugMatch {
-						m.DbaudiobookID = cand.Num
-						m.Artist = ra.name
+						m.DbaudiobookID = prefixCandidates[prefixCandidatesid].Num
+						m.Artist = resolved[resolvedid].name
 						return true
 					}
 				}
@@ -2834,11 +2889,13 @@ func (m *ParseInfo) FindDbaudiobookByAuthorFirstFromWantedList(listnames []strin
 
 	authorCache := make(map[string][]resolvedAuthor)
 
+	var potentialAuthor, potentialTitle string
+
 	// Try " - " first (standard format: "Author - Title")
 	if before, after, ok := strings.Cut(rawTitle, " - "); ok {
-		potentialAuthor := strings.TrimSpace(before)
+		potentialAuthor = strings.TrimSpace(before)
 
-		potentialTitle := strings.TrimSpace(after)
+		potentialTitle = strings.TrimSpace(after)
 		if m.tryFindAuthorAndAudiobookFromWantedList(
 			cachedResolveAuthor(authorCache, potentialAuthor),
 			&potentialTitle,
@@ -2850,8 +2907,8 @@ func (m *ParseInfo) FindDbaudiobookByAuthorFirstFromWantedList(listnames []strin
 
 	// Try "-" without spaces (scene format)
 	if before, after, ok := strings.Cut(rawTitle, "-"); ok {
-		potentialAuthor := strings.TrimSpace(before)
-		potentialTitle := strings.TrimSpace(after)
+		potentialAuthor = strings.TrimSpace(before)
+		potentialTitle = strings.TrimSpace(after)
 
 		potentialAuthor = strings.ReplaceAll(potentialAuthor, ".", " ")
 		potentialTitle = strings.ReplaceAll(potentialTitle, ".", " ")
@@ -2977,7 +3034,11 @@ func (m *ParseInfo) SetDBEpisodeIDfromM() {
 	}
 
 	ident2 := logger.StringReplaceWith(m.Identifier, '.', ' ')
-	ident3 := logger.StringReplaceWith(m.Identifier, '.', '-') // scraper stores "YY-MM-DD" (dots→dashes)
+	ident3 := logger.StringReplaceWith(
+		m.Identifier,
+		'.',
+		'-',
+	) // scraper stores "YY-MM-DD" (dots→dashes)
 	ident4 := logger.StringReplaceWith(m.Identifier, ' ', '-')
 
 	// Only match by season+episode when they were actually parsed from the title.
@@ -3342,11 +3403,14 @@ func addPeriodsToInitials(name string) string {
 		if !first {
 			buf.WriteByte(' ')
 		}
+
 		buf.WriteString(word)
+
 		if len(word) == 1 &&
 			((word[0] >= 'A' && word[0] <= 'Z') || (word[0] >= 'a' && word[0] <= 'z')) {
 			buf.WriteByte('.')
 		}
+
 		first = false
 	}
 
@@ -3503,6 +3567,7 @@ func stripReleaseType(album string) string {
 				changed = true
 			}
 		}
+
 		if !changed {
 			break
 		}

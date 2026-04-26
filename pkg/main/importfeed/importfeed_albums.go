@@ -78,11 +78,14 @@ func AddAlbumByMusicBrainzID(
 	if mbid == "" {
 		return logger.ErrNotFound
 	}
+
 	release := apiexternal_v2.ReleaseSearchResult{
 		ID:            mbid,
 		MusicBrainzID: mbid,
 	}
+
 	var str string
+
 	return addAlbumToDatabase(ctx, &release, cfgp, listid, &str)
 }
 
@@ -252,6 +255,7 @@ func importAlbumsBySeries(
 		}
 
 		const pageSize = 100
+
 		var str string
 		for offset := 0; ; offset += pageSize {
 			if err := logger.CheckContextEnded(ctx); err != nil {
@@ -639,6 +643,7 @@ func addAlbumToDatabase(
 					artistNameMBID = releaseDetails.Artists[di].ID
 				}
 			}
+
 			artistID := addOrGetArtist(artistName, &artistNameMBID)
 			if artistID > 0 {
 				var existingRelation uint
@@ -844,6 +849,7 @@ func addOrGetArtist(artistName, mbid *string) uint {
 				&artistID,
 			)
 		}
+
 		return artistID
 	}
 
@@ -859,6 +865,7 @@ func addOrGetArtist(artistName, mbid *string) uint {
 			Err(err).
 			Str("artist", *artistName).
 			Msg("Failed to insert artist")
+
 		return 0
 	}
 
@@ -1245,7 +1252,8 @@ func DiscoverAndAddSeriesAlbums(
 		}
 
 		// Add the album - use "Various Artists" as the artist name
-		var strArtistName string = VariousArtistsName
+		strArtistName := VariousArtistsName
+
 		err = addAlbumToDatabase(ctx, releaseToAdd, cfgp, listid, &strArtistName)
 		if err == nil {
 			albumsAdded++

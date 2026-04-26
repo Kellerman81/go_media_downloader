@@ -4,9 +4,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/goccy/go-json"
-
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
+	"github.com/goccy/go-json"
 )
 
 //
@@ -47,7 +46,9 @@ func (t *lfmTagList) UnmarshalJSON(data []byte) error {
 		// Empty string, null, or any non-object — treat as no tags.
 		return nil
 	}
+
 	type lfmTagListAlias lfmTagList
+
 	return json.Unmarshal(data, (*lfmTagListAlias)(t))
 }
 
@@ -61,12 +62,15 @@ func (d *lfmDuration) UnmarshalJSON(data []byte) error {
 	if len(s) >= 2 && s[0] == '"' {
 		s = s[1 : len(s)-1]
 	}
+
 	n, err := strconv.Atoi(s)
 	if err != nil {
 		*d = 0
 		return nil
 	}
+
 	*d = lfmDuration(n)
+
 	return nil
 }
 
@@ -106,12 +110,12 @@ type lfmChartTopArtistsResponse struct {
 // -------- chart.getTopTracks --------
 
 type lfmChartTrack struct {
-	Name       string     `json:"name"`
-	Duration   string     `json:"duration"`
-	Playcount  string     `json:"playcount"`
-	Listeners  string     `json:"listeners"`
-	MBID       string     `json:"mbid"`
-	URL        string     `json:"url"`
+	Name       string `json:"name"`
+	Duration   string `json:"duration"`
+	Playcount  string `json:"playcount"`
+	Listeners  string `json:"listeners"`
+	MBID       string `json:"mbid"`
+	URL        string `json:"url"`
 	Streamable struct {
 		Text      string `json:"#text"`
 		Fulltrack string `json:"fulltrack"`
@@ -315,11 +319,13 @@ func bestImage(images []lfmImage) string {
 			}
 		}
 	}
+
 	for i := range images {
 		if images[i].URL != "" {
 			return images[i].URL
 		}
 	}
+
 	return ""
 }
 
@@ -340,6 +346,7 @@ func convertChartArtists(artists []lfmChartArtist) []ChartEntry {
 			Rank:      i + 1,
 		})
 	}
+
 	return out
 }
 
@@ -356,6 +363,7 @@ func convertChartTracks(tracks []lfmChartTrack) []ChartEntry {
 			Rank:      i + 1,
 		})
 	}
+
 	return out
 }
 
@@ -370,6 +378,7 @@ func convertTagAlbums(albums []lfmTagAlbum) []ChartEntry {
 			Rank:     i + 1,
 		})
 	}
+
 	return out
 }
 
@@ -391,6 +400,7 @@ func convertArtistInfoToDetails(a *lfmArtistInfo) *apiexternal_v2.ArtistDetails 
 		for i := range a.Tags.Tag {
 			genres = append(genres, a.Tags.Tag[i].Name)
 		}
+
 		details.Genres = genres
 	}
 
@@ -418,6 +428,7 @@ func convertAlbumInfoToRelease(al *lfmAlbumInfo) *apiexternal_v2.ReleaseDetails 
 		for i := range al.Tags.Tag {
 			genres = append(genres, al.Tags.Tag[i].Name)
 		}
+
 		details.Genres = genres
 	}
 
@@ -430,12 +441,15 @@ func convertAlbumInfoToRelease(al *lfmAlbumInfo) *apiexternal_v2.ReleaseDetails 
 		tracks := make([]apiexternal_v2.Track, 0, len(al.Tracks.Track))
 		for i := range al.Tracks.Track {
 			t := al.Tracks.Track[i]
+
 			rank := int(t.Attr.Rank)
 			if rank == 0 {
 				rank = i + 1
 			}
+
 			secs := int(t.Duration)
 			dur := time.Duration(secs) * time.Second
+
 			tracks = append(tracks, apiexternal_v2.Track{
 				Title:      t.Name,
 				Position:   rank,
@@ -443,6 +457,7 @@ func convertAlbumInfoToRelease(al *lfmAlbumInfo) *apiexternal_v2.ReleaseDetails 
 				DurationMs: secs * 1000,
 			})
 		}
+
 		details.Tracks = tracks
 		details.TrackCount = len(tracks)
 	}
@@ -450,7 +465,9 @@ func convertAlbumInfoToRelease(al *lfmAlbumInfo) *apiexternal_v2.ReleaseDetails 
 	return details
 }
 
-func convertArtistSearchResults(artists []lfmArtistSearchResult) []apiexternal_v2.ArtistSearchResult {
+func convertArtistSearchResults(
+	artists []lfmArtistSearchResult,
+) []apiexternal_v2.ArtistSearchResult {
 	out := make([]apiexternal_v2.ArtistSearchResult, 0, len(artists))
 	for i := range artists {
 		out = append(out, apiexternal_v2.ArtistSearchResult{
@@ -461,6 +478,7 @@ func convertArtistSearchResults(artists []lfmArtistSearchResult) []apiexternal_v
 			ProviderType:  apiexternal_v2.ProviderLastFM,
 		})
 	}
+
 	return out
 }
 
@@ -477,5 +495,6 @@ func convertAlbumSearchResults(albums []lfmAlbumSearchResult) []apiexternal_v2.R
 			out[len(out)-1].Artists = []apiexternal_v2.ArtistRef{{Name: albums[i].Artist}}
 		}
 	}
+
 	return out
 }

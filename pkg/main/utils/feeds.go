@@ -1383,8 +1383,14 @@ func fetchAndParseChartPage(url string, fn func(*html.Node)) error {
 		return fmt.Errorf("chart page request: %w", err)
 	}
 
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
-	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
+	req.Header.Set(
+		"User-Agent",
+		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+	)
+	req.Header.Set(
+		"Accept",
+		"text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+	)
 	req.Header.Set("Accept-Language", "de-DE,de;q=0.9,en;q=0.8")
 	req.Header.Set("Connection", "keep-alive")
 	req.Header.Set("Upgrade-Insecure-Requests", "1")
@@ -1571,6 +1577,7 @@ func (d *feedResults) getbookbestsellers(cfglist *config.MediaListsConfig) error
 	var replaceBookQuery string
 	if checkReplaceBook {
 		replaceBookQu := strings.Repeat(",?", cfglist.ReplaceMapListsLen-1)
+
 		replaceBookQuery = "SELECT books.id FROM books JOIN dbbooks ON books.dbbook_id = dbbooks.id WHERE LOWER(dbbooks.title) = LOWER(?) AND books.listname IN (?" + replaceBookQu + ")"
 	}
 

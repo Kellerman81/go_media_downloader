@@ -11,7 +11,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 )
 
-// discIDBase64Replacer applies MusicBrainz base64 substitutions: + → .  / → _  = → -
+// discIDBase64Replacer applies MusicBrainz base64 substitutions: + → .  / → _  = → -.
 var discIDBase64Replacer = strings.NewReplacer("+", ".", "/", "_", "=", "-")
 
 // CalculateDiscID computes a MusicBrainz DiscID from a list of audio files.
@@ -69,6 +69,7 @@ func CalculateDiscID(files []string) (string, error) {
 	const leadIn int64 = 150
 
 	offsets := make([]int64, len(entries))
+
 	offsets[0] = leadIn
 
 	for i := 1; i < len(entries); i++ {
@@ -101,6 +102,7 @@ func CalculateDiscID(files []string) (string, error) {
 	// SHA1 → base64 with MusicBrainz substitutions: + → .   / → _   = → -
 	h := sha1.Sum(buf.Bytes())
 	enc := base64.StdEncoding.EncodeToString(h[:])
+
 	enc = discIDBase64Replacer.Replace(enc)
 
 	return enc, nil

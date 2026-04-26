@@ -304,6 +304,7 @@ func convertSearchResultsToReleases(
 		// Discogs search returns titles as "Artist - Release Title".
 		// Split on the first " - " to populate Artists and clean up the title.
 		title := r.Title
+
 		var artists []apiexternal_v2.ArtistRef
 		if idx := strings.Index(title, " - "); idx >= 0 {
 			artists = []apiexternal_v2.ArtistRef{{Name: title[:idx]}}
@@ -540,17 +541,20 @@ func convertReleaseToDetails(release *discogsReleaseResponse) *apiexternal_v2.Re
 	// Tracklist
 	if len(release.Tracklist) > 0 {
 		tracks := make([]apiexternal_v2.Track, 0, len(release.Tracklist))
+
 		seq := 0 // 1-based sequential position across all tracks
 		for _, t := range release.Tracklist {
 			if t.Type != "track" && t.Type != "" {
 				continue
 			}
+
 			seq++
 
 			disc, trackNum := parseDiscTrack(t.Position)
 			if disc == 0 {
 				disc = 1
 			}
+
 			if trackNum == 0 {
 				trackNum = seq
 			}
@@ -649,6 +653,7 @@ func convertMasterToDetails(master *discogsMasterResponse) *apiexternal_v2.Relea
 			if disc == 0 {
 				disc = 1
 			}
+
 			if trackNum == 0 {
 				trackNum = seq + 1
 			}
@@ -796,9 +801,11 @@ func parseTrackPosition(pos string, defaultPos int) int {
 	if disc == 0 && track == 0 {
 		return defaultPos
 	}
+
 	if track == 0 {
 		return disc // single-number position
 	}
+
 	return track // flat track-on-disc; disc info is in TrackNumber/DiscNumber
 }
 
@@ -836,6 +843,7 @@ func parseDiscTrack(pos string) (disc, track int) {
 				n = n*10 + int(r-'0')
 			}
 		}
+
 		return n
 	}
 
@@ -843,6 +851,7 @@ func parseDiscTrack(pos string) (disc, track int) {
 		left := pos[:sepIdx]
 		right := pos[sepIdx+1:]
 		leftNum := parseDigits(left)
+
 		rightNum := parseDigits(right)
 		if leftNum > 0 && rightNum > 0 {
 			return leftNum, rightNum

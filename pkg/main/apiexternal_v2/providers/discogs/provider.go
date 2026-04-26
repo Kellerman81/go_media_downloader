@@ -120,14 +120,17 @@ func (p *Provider) Search(
 	buf.WriteString("/database/search")
 	buf.WriteString("?q=")
 	buf.WriteURL(query) // URL-encode the query
+
 	if searchType != "" {
 		buf.WriteString("&type=")
 		buf.WriteString(searchType)
 	}
+
 	buf.WriteString("&per_page=")
 	buf.WriteInt(limit)
 	buf.WriteString("&page=")
 	buf.WriteInt(page)
+
 	endpoint := buf.String()
 	logger.PlAddBuffer.Put(buf)
 
@@ -225,6 +228,7 @@ func (p *Provider) GetArtistReleases(
 	buf.WriteString("&page=")
 	buf.WriteInt(page)
 	buf.WriteString("&sort=year&sort_order=desc")
+
 	endpoint := buf.String()
 	logger.PlAddBuffer.Put(buf)
 
@@ -280,6 +284,7 @@ func (p *Provider) GetReleaseByBarcode(
 	buf.WriteString("/database/search?barcode=")
 	buf.WriteURL(barcode)
 	buf.WriteString("&type=release")
+
 	endpoint := buf.String()
 	logger.PlAddBuffer.Put(buf)
 
@@ -354,6 +359,7 @@ func (p *Provider) GetMasterVersions(
 	buf.WriteInt(limit)
 	buf.WriteString("&page=")
 	buf.WriteInt(page)
+
 	endpoint := buf.String()
 	logger.PlAddBuffer.Put(buf)
 
@@ -419,6 +425,7 @@ func (p *Provider) GetLabelReleases(
 	buf.WriteInt(limit)
 	buf.WriteString("&page=")
 	buf.WriteInt(page)
+
 	endpoint := buf.String()
 	logger.PlAddBuffer.Put(buf)
 

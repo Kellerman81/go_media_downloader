@@ -111,7 +111,11 @@ func RetagAudiobook(cfgp *config.MediaTypeConfig, dbID uint) error {
 
 	files := database.StructscanT[fileRow](
 		false,
-		database.Getdatarow[uint](false, "SELECT count() FROM audiobook_files WHERE dbaudiobook_id = ?", &dbID),
+		database.Getdatarow[uint](
+			false,
+			"SELECT count() FROM audiobook_files WHERE dbaudiobook_id = ?",
+			&dbID,
+		),
 		"SELECT location, track_number, disc_number FROM audiobook_files WHERE dbaudiobook_id = ? ORDER BY disc_number, track_number",
 		&dbID,
 	)
@@ -135,7 +139,11 @@ func RetagAudiobook(cfgp *config.MediaTypeConfig, dbID uint) error {
 
 	chapters := database.StructscanT[chapterRow](
 		false,
-		database.Getdatarow[uint](false, "SELECT count() FROM dbaudiobook_chapters WHERE dbaudiobook_id = ?", &dbID),
+		database.Getdatarow[uint](
+			false,
+			"SELECT count() FROM dbaudiobook_chapters WHERE dbaudiobook_id = ?",
+			&dbID,
+		),
 		"SELECT title, chapter_number FROM dbaudiobook_chapters WHERE dbaudiobook_id = ? ORDER BY chapter_number",
 		&dbID,
 	)
@@ -179,11 +187,13 @@ func RetagAudiobook(cfgp *config.MediaTypeConfig, dbID uint) error {
 
 	// Determine embedArt and embedLyrics from config
 	embedArt := false
+
 	embedLyrics := false
 	for idx := range cfgp.Data {
 		if cfgp.Data[idx].EmbedArt {
 			embedArt = true
 		}
+
 		if cfgp.Data[idx].EmbedLyrics {
 			embedLyrics = true
 		}
@@ -194,10 +204,12 @@ func RetagAudiobook(cfgp *config.MediaTypeConfig, dbID uint) error {
 
 // RetagAuthorAudiobooks re-writes audio tags for all audiobooks by a given dbauthor ID.
 func RetagAuthorAudiobooks(cfgp *config.MediaTypeConfig, authorID uint) error {
-	ids := database.Getrowssize[uint](false,
+	ids := database.Getrowssize[uint](
+		false,
 		"SELECT count(DISTINCT ab.dbaudiobook_id) FROM audiobooks ab JOIN dbaudiobook_authors aba ON ab.dbaudiobook_id = aba.dbaudiobook_id WHERE aba.dbauthor_id = ?",
 		"SELECT DISTINCT ab.dbaudiobook_id FROM audiobooks ab JOIN dbaudiobook_authors aba ON ab.dbaudiobook_id = aba.dbaudiobook_id WHERE aba.dbauthor_id = ?",
-		&authorID)
+		&authorID,
+	)
 
 	var lastErr error
 	for _, id := range ids {

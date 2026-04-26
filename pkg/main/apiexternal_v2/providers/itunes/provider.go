@@ -28,12 +28,15 @@ func NewProvider() *Provider {
 	cfg := config.GetSettingsGeneral()
 	rateSec := cfg.ITunesLimiterSeconds
 	rateCalls := cfg.ITunesLimiterCalls
+
 	if rateSec == 0 {
 		rateSec = 60
 	}
+
 	if rateCalls == 0 {
 		rateCalls = 20
 	}
+
 	return NewProviderWithConfig(base.ClientConfig{
 		RateLimitSeconds: int(rateSec),
 		RateLimitCalls:   rateCalls,
@@ -46,15 +49,19 @@ func NewProviderWithConfig(cfg base.ClientConfig) *Provider {
 	if cfg.BaseURL == "" {
 		cfg.BaseURL = defaultBaseURL
 	}
+
 	if cfg.Timeout == 0 {
 		cfg.Timeout = 30 * time.Second
 	}
+
 	if cfg.RateLimitCalls == 0 {
 		cfg.RateLimitCalls = 20
 	}
+
 	if cfg.RateLimitSeconds == 0 {
 		cfg.RateLimitSeconds = 60
 	}
+
 	return &Provider{BaseClient: base.NewBaseClient(cfg)}
 }
 
@@ -87,6 +94,7 @@ func (p *Provider) SearchAlbums(
 	buf.WriteString("&entity=album")
 	buf.WriteString("&limit=")
 	buf.WriteInt(limit)
+
 	endpoint := buf.String()
 	logger.PlAddBuffer.Put(buf)
 
@@ -107,6 +115,7 @@ func (p *Provider) GetAlbumTracks(
 	buf.WriteString("/lookup?id=")
 	buf.WriteInt(collectionID)
 	buf.WriteString("&entity=song")
+
 	endpoint := buf.String()
 	logger.PlAddBuffer.Put(buf)
 

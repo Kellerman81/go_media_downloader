@@ -123,19 +123,23 @@ func convertSearchToReleases(results []deezerAlbumResult) []apiexternal_v2.Relea
 		if rel.CoverURL == "" {
 			rel.CoverURL = r.CoverBig
 		}
+
 		if r.Artist.Name != "" {
 			rel.Artists = []apiexternal_v2.ArtistRef{{
 				Name: r.Artist.Name,
 				ID:   strconv.Itoa(r.Artist.ID),
 			}}
 		}
+
 		if r.ReleaseDate != "" {
 			if year, _, ok := parseYear(r.ReleaseDate); ok {
 				rel.ReleaseYear = year
 			}
 		}
+
 		out = append(out, rel)
 	}
+
 	return out
 }
 
@@ -176,10 +180,12 @@ func convertAlbumToDetails(album *deezerAlbumDetail) *apiexternal_v2.ReleaseDeta
 		if tn == 0 {
 			tn = i + 1
 		}
+
 		dn := t.DiskNumber
 		if dn == 0 {
 			dn = 1
 		}
+
 		tracks = append(tracks, apiexternal_v2.Track{
 			Title:       t.Title,
 			Position:    i + 1,
@@ -193,6 +199,7 @@ func convertAlbumToDetails(album *deezerAlbumDetail) *apiexternal_v2.ReleaseDeta
 			}},
 		})
 	}
+
 	details.Tracks = tracks
 	details.TrackCount = len(tracks)
 
@@ -204,10 +211,13 @@ func parseYear(s string) (int, time.Time, bool) {
 	if len(s) < 4 {
 		return 0, time.Time{}, false
 	}
+
 	year, err := strconv.Atoi(s[:4])
 	if err != nil {
 		return 0, time.Time{}, false
 	}
+
 	t, _ := time.Parse("2006-01-02", s)
+
 	return year, t, true
 }

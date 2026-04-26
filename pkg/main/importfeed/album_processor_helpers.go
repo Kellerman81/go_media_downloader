@@ -93,6 +93,7 @@ func parseFolderMetadata(
 		idx < len(m.FolderBase)-1 &&
 		m.FolderArtist == "" {
 		r := strings.NewReplacer("_", " ", ".", " ")
+
 		m.RawArtist = r.Replace(strings.TrimSpace(m.FolderBase[:idx]))
 		m.RawAlbum = r.Replace(strings.TrimSpace(m.FolderBase[idx+1:]))
 	}
@@ -100,6 +101,7 @@ func parseFolderMetadata(
 	// First filename.
 	if len(files) > 0 {
 		first := parser_v2.ParseAudioFilename(files[0])
+
 		m.FilenameArtist = first.Artist
 		m.FilenameAlbum = first.Album
 		m.FilenameASIN = first.ASIN
@@ -107,9 +109,11 @@ func parseFolderMetadata(
 
 	// Parent directory — suppressed when it equals the configured walk path.
 	m.ParentDir = filepath.Dir(folder)
+
 	m.ParentArtist, m.ParentAlbum, _ = parser_v2.ParseAudioFolder(m.ParentDir)
 	if data != nil && data.CfgPath != nil && data.CfgPath.Path != "" {
 		walkBase := filepath.Base(data.CfgPath.Path)
+
 		parentBase := filepath.Base(m.ParentDir)
 		if strings.EqualFold(parentBase, walkBase) ||
 			strings.EqualFold(m.ParentDir, data.CfgPath.Path) {
@@ -152,14 +156,17 @@ func stripLeadingEpisodeNumber(title string) string {
 		if c >= '0' && c <= '9' {
 			continue
 		}
+
 		if i > 0 {
 			rest := strings.TrimLeft(title[i:], " .-_")
 			if rest != "" && len(rest) < len(title) {
 				return rest
 			}
 		}
+
 		break
 	}
+
 	return ""
 }
 
@@ -174,17 +181,21 @@ func stripSeriesPrefix(title string) string {
 		if !logger.HasPrefixI(title, kw) {
 			continue
 		}
+
 		rest := title[len(kw):]
+
 		i := 0
 		for i < len(rest) && (rest[i] == ' ' || (rest[i] >= '0' && rest[i] <= '9')) {
 			i++
 		}
+
 		if i > 0 && i < len(rest) {
 			if trimmed := strings.TrimLeft(rest[i:], ":.- "); trimmed != "" {
 				return trimmed
 			}
 		}
 	}
+
 	return ""
 }
 
@@ -196,6 +207,7 @@ func stripSeriesSuffix(title string) string {
 	if idx <= 0 {
 		return ""
 	}
+
 	suffix := title[idx:]
 	for _, kw := range []string{
 		"folge", "reihe", "chapter", "episode", "band", "teil",
@@ -205,11 +217,13 @@ func stripSeriesSuffix(title string) string {
 			return strings.TrimSpace(title[:idx])
 		}
 	}
+
 	for _, c := range suffix {
 		if c >= '0' && c <= '9' {
 			return strings.TrimSpace(title[:idx])
 		}
 	}
+
 	return ""
 }
 
@@ -228,21 +242,27 @@ func applyTrackDBOverrides(
 		if !matched[i] {
 			continue
 		}
+
 		if dbTracks[i].TrackNumber > 0 {
 			tr.TrackNumber = int(dbTracks[i].TrackNumber)
 		}
+
 		if dbTracks[i].DiscNumber > 0 {
 			tr.DiscNumber = int(dbTracks[i].DiscNumber)
 		}
+
 		if dbTracks[i].Title != "" {
 			tr.Title = dbTracks[i].Title
 		}
+
 		if dbTracks[i].RuntimeMs > 0 {
 			tr.ExpectedRuntimeMS = dbTracks[i].RuntimeMs
 		}
+
 		tr.TrackDist = trackDistance(&result[i], &dbTracks[i], isVA, isAudiobook, data)
 		out = append(out, tr)
 	}
+
 	return out
 }
 
@@ -259,9 +279,11 @@ func releaseArtistName(
 			return a.Name, a.ID
 		}
 	}
+
 	if localArtist != nil {
 		return *localArtist, ""
 	}
+
 	return "", ""
 }
 
@@ -273,9 +295,11 @@ func releaseTitleName(apiTitle string, localTitle *string) string {
 	if apiTitle != "" {
 		return apiTitle
 	}
+
 	if localTitle != nil {
 		return *localTitle
 	}
+
 	return ""
 }
 
@@ -289,23 +313,29 @@ func insertSyntheticTracks(dbalbumID *uint, tracks []apiexternal_v2.Track) {
 	for j := range tracks {
 		t := &tracks[j]
 		runtimeMs := t.Duration.Milliseconds()
+
 		tn := t.TrackNumber
 		if tn == 0 {
 			tn = t.Position
 		}
+
 		if tn == 0 {
 			tn = j + 1
 		}
+
 		dn := t.DiscNumber
 		if dn == 0 {
 			dn = 1
 		}
+
 		// Resolve collision: if (dn, tn) already used, increment disc until free.
 		key := uint32(dn)*10000 + uint32(tn)
 		for seen[key] {
 			dn++
+
 			key = uint32(dn)*10000 + uint32(tn)
 		}
+
 		seen[key] = true
 		_, _ = database.ExecNid(
 			`INSERT INTO dbtracks (dbalbum_id, title, track_number, disc_number, runtime_ms, acoustid)
@@ -327,11 +357,13 @@ func countUnmatched(matched, used []bool) (unmatchedDB, unusedLocal int) {
 			unmatchedDB++
 		}
 	}
+
 	for _, u := range used {
 		if !u {
 			unusedLocal++
 		}
 	}
+
 	return
 }
 
@@ -345,18 +377,22 @@ func runtimeDiffWithinTolerance(
 	if data == nil || expectedMs <= 0 {
 		return false
 	}
+
 	perTrackMs := int64(3000)
 	if data.PerTrackToleranceSeconds > 0 {
 		perTrackMs = int64(data.PerTrackToleranceSeconds) * 1000
 	}
+
 	toleranceMs := int64(fileCount) * perTrackMs
 	if data.MaxTotalDifferenceSeconds > 0 {
 		toleranceMs = int64(data.MaxTotalDifferenceSeconds) * 1000
 	}
+
 	diff := localMs - expectedMs
 	if diff < 0 {
 		diff = -diff
 	}
+
 	return diff <= toleranceMs
 }
 
@@ -372,11 +408,14 @@ func buildMusicSearchPairs(meta folderMetadata) []musicSearchPair {
 		if artist == "" || album == "" {
 			return
 		}
+
 		key := strings.ToLower(artist) + "|" + strings.ToLower(album)
 		if seen[key] {
 			return
 		}
+
 		seen[key] = true
+
 		pairs = append(pairs, musicSearchPair{artist, album, source})
 	}
 
@@ -390,9 +429,11 @@ func buildMusicSearchPairs(meta folderMetadata) []musicSearchPair {
 	add(meta.ParentArtist, meta.FilenameAlbum, "parent+filename")
 	add(meta.ParentArtist, meta.TagAlbum, "parent+tag")
 	add(meta.ParentArtist, meta.ParentAlbum, "parent")
+
 	if meta.IsDiscFolder {
 		add(meta.GrandparentArtist, meta.ParentAlbum, "grandparent+parent")
 	}
+
 	add(meta.FolderArtist, meta.ParentAlbum, "folder+parent")
 	add(meta.FilenameArtist, meta.ParentAlbum, "filename+parent")
 	add(meta.TagAlbumArtist, meta.TagAlbum, "tag-albumartist")
@@ -421,11 +462,13 @@ func buildMusicSearchPairs(meta folderMetadata) []musicSearchPair {
 		if stripped == "" {
 			continue
 		}
+
 		add(meta.FolderArtist, stripped, "stripped-ep+folder")
 		add(meta.FilenameArtist, stripped, "stripped-ep+filename")
 		add(meta.TagAlbumArtist, stripped, "stripped-ep+tag")
 		add(meta.TagArtist, stripped, "stripped-ep+tag-artist")
 		add(meta.ParentArtist, stripped, "stripped-ep+parent")
+
 		if idx := strings.Index(stripped, " - "); idx > 0 {
 			potArtist := strings.TrimSpace(stripped[:idx])
 			potAlbum := strings.TrimSpace(stripped[idx+3:])
@@ -452,11 +495,14 @@ func buildAudiobookSearchPairs(meta folderMetadata) []searchPair {
 		if author == "" || title == "" {
 			return
 		}
+
 		key := strings.ToLower(author) + "|" + strings.ToLower(title)
 		if seen[key] {
 			return
 		}
+
 		seen[key] = true
+
 		pairs = append(pairs, searchPair{author: author, title: title, source: source})
 	}
 
@@ -470,9 +516,11 @@ func buildAudiobookSearchPairs(meta folderMetadata) []searchPair {
 	add(meta.ParentArtist, meta.FilenameAlbum, "parent+filename")
 	add(meta.ParentArtist, meta.TagAlbum, "parent+tag")
 	add(meta.ParentArtist, meta.ParentAlbum, "parent")
+
 	if meta.IsDiscFolder {
 		add(meta.GrandparentArtist, meta.ParentAlbum, "grandparent+parent")
 	}
+
 	add(meta.FolderArtist, meta.ParentAlbum, "folder+parent")
 	add(meta.FilenameArtist, meta.ParentAlbum, "filename+parent")
 	add(meta.TagAlbumArtist, meta.TagAlbum, "tag-albumartist")
@@ -495,6 +543,7 @@ func buildAudiobookSearchPairs(meta folderMetadata) []searchPair {
 			add(meta.TagAlbumArtist, stripped, "stripped-ep+tag")
 			add(meta.TagArtist, stripped, "stripped-ep+tag-artist")
 			add(meta.ParentArtist, stripped, "stripped-ep+parent")
+
 			if idx := strings.Index(stripped, " - "); idx > 0 {
 				potAuthor := strings.TrimSpace(stripped[:idx])
 				potTitle := strings.TrimSpace(stripped[idx+3:])
@@ -516,6 +565,7 @@ func buildAudiobookSearchPairs(meta folderMetadata) []searchPair {
 			add(meta.TagArtist, stripped, "stripped-prefix+tag-artist")
 			add(meta.ParentArtist, stripped, "stripped-prefix+parent")
 		}
+
 		if stripped := stripSeriesSuffix(title); stripped != "" {
 			add(meta.FolderArtist, stripped, "stripped-series+folder")
 			add(meta.FilenameArtist, stripped, "stripped-series+filename")
@@ -558,6 +608,7 @@ func runMusicCandidateMatchingLoop(
 		if ps.dist <= skipBelow {
 			continue
 		}
+
 		if ps.dist > maxDist {
 			break
 		}
@@ -590,8 +641,10 @@ func runMusicCandidateMatchingLoop(
 			ps.c, artist, albumTitle, musicBrainzID, year,
 			albumTracks, dbTracks, isVA, data,
 		)
+
 		validMatches = append(validMatches, musicValidMatch{ps.c, fullDist, matchedTracks})
 	}
+
 	return validMatches
 }
 
@@ -607,12 +660,14 @@ func tierTwoRuntimeAccepted(
 	if data == nil || !data.ExceedToleranceIfTotalMatch {
 		return false
 	}
+
 	expectedMs := int64(c.TotalRuntime)
 	if expectedMs == 0 {
 		for _, dbt := range dbTracks {
 			expectedMs += dbt.RuntimeMs
 		}
 	}
+
 	return runtimeDiffWithinTolerance(localTotalMs, expectedMs, fileCount, data)
 }
 
@@ -652,6 +707,7 @@ func runMusicCandidatePasses(
 	sort.SliceStable(validMatches, func(i, j int) bool {
 		return validMatches[i].fullDist < validMatches[j].fullDist
 	})
+
 	return validMatches
 }
 
@@ -690,6 +746,7 @@ func runAudiobookCandidatePass(
 		}
 
 		result, matched, used := matchTracksByDistance(albumTracks, dbTracks, isVA, true, data)
+
 		unmatchedDB, unusedLocal := countUnmatched(matched, used)
 		if (unmatchedDB > 0 || unusedLocal > 0) && (data == nil || !data.AllowMissingTracks) {
 			continue
@@ -699,11 +756,14 @@ func runAudiobookCandidatePass(
 		fullDist := audiobookDistanceWithTracks(
 			candidate, albumTitle, artist, albumTracks, dbTracks, data,
 		)
+
 		validMatches = append(validMatches, audiobookValidMatch{candidate, fullDist, matchedTracks})
 	}
+
 	sort.SliceStable(validMatches, func(i, j int) bool {
 		return validMatches[i].fullDist < validMatches[j].fullDist
 	})
+
 	return validMatches
 }
 
@@ -748,6 +808,7 @@ func selectAudiobookCandidatesWithRefresh(
 
 		candidate.ChapterCount = len(audnexChapters)
 		refreshed = true
+
 		database.ExecN(
 			"UPDATE dbaudiobooks SET chapter_count = ? WHERE id = ?",
 			len(audnexChapters), &candidate.ID,
@@ -901,6 +962,7 @@ func importAudiobookWithAddFound(
 			}
 
 			candidateID := candidate.ID
+
 			fc := database.Getdatarow[int](
 				false,
 				"SELECT COUNT(*) FROM audiobook_files WHERE dbaudiobook_id = ?",
@@ -967,6 +1029,7 @@ func applyAudiobookRecommendation(
 
 	if recommendation(fullDists) >= recMedium {
 		best := validABMatches[0]
+
 		dbID = best.c.ID
 		expectedTracks = best.c.ChapterCount
 		matchedTracks = best.matchedTracks
@@ -1110,6 +1173,7 @@ func verifyAndImportMusicBrainzAddFound(
 	folder string,
 ) (dbID uint, expectedTracks int, newBestCandidates []*database.AlbumSearchResult, addFoundEntry *database.AlbumSearchResult) {
 	newBestCandidates = bestCandidates
+
 	isVAEarly := IsVariousArtists(artist)
 
 	shouldImport := false
@@ -1152,17 +1216,17 @@ func verifyAndImportMusicBrainzAddFound(
 	}
 
 	if !shouldImport {
-		return
+		return dbID, expectedTracks, newBestCandidates, addFoundEntry
 	}
 
 	importedID, importErr := JobImportAlbums(ctx, *musicBrainzID, cfgp, listid, true)
 	if importErr != nil || importedID == 0 {
-		return
+		return dbID, expectedTracks, newBestCandidates, addFoundEntry
 	}
 
 	imported, _ := database.FindAlbumByMusicBrainzID(musicBrainzID)
 	if imported == nil {
-		return
+		return dbID, expectedTracks, newBestCandidates, addFoundEntry
 	}
 
 	dbID = importedID
@@ -1176,7 +1240,7 @@ func verifyAndImportMusicBrainzAddFound(
 		Uint("databaseID", importedID).
 		Msg("AddFound: imported and verified album via MusicBrainzID")
 
-	return
+	return dbID, expectedTracks, newBestCandidates, addFoundEntry
 }
 
 // importMusicAddFoundTextSearch searches MusicBrainz by artist+title text and imports
@@ -1208,7 +1272,7 @@ func importMusicAddFoundTextSearch(
 		ctx, artist, &searchTitle, fileCount, totalRuntimeMs, cfgp, listid, nil, data,
 	)
 	if !found || importedID == 0 {
-		return
+		return dbID, expectedTracks, newBestCandidates, addFoundEntry
 	}
 
 	dbID = importedID
@@ -1220,6 +1284,7 @@ func importMusicAddFoundTextSearch(
 		&newTrackCount,
 		&importedID,
 	)
+
 	expectedTracks = newTrackCount
 
 	var ab database.Dbalbum
@@ -1234,6 +1299,7 @@ func importMusicAddFoundTextSearch(
 			Label:                ab.Label,
 			Country:              ab.Country,
 		}
+
 		newBestCandidates = append([]*database.AlbumSearchResult{imported}, bestCandidates...)
 		addFoundEntry = imported
 	}
@@ -1245,7 +1311,7 @@ func importMusicAddFoundTextSearch(
 		Uint("databaseID", importedID).
 		Msg("AddFound: imported album via text search (no MBID)")
 
-	return
+	return dbID, expectedTracks, newBestCandidates, addFoundEntry
 }
 
 // applyMusicRecommendation applies the beets recommendation logic (and tier-2 runtime
@@ -1258,7 +1324,7 @@ func applyMusicRecommendation(
 	data *config.MediaDataConfig,
 ) (dbID uint, expectedTracks int, matchedTracks []parser_v2.TrackInfo, sortSuccess bool) {
 	if len(validMatches) == 0 {
-		return
+		return dbID, expectedTracks, matchedTracks, sortSuccess
 	}
 
 	fullDists := make([]float64, len(validMatches))
@@ -1268,19 +1334,21 @@ func applyMusicRecommendation(
 
 	if recommendation(fullDists) >= recMedium {
 		best := validMatches[0]
+
 		dbID = best.c.ID
 		expectedTracks = best.c.TotalTracks
 		matchedTracks = best.matchedTracks
 		sortSuccess = true
 
-		return
+		return dbID, expectedTracks, matchedTracks, sortSuccess
 	}
 
 	if data == nil || !data.ExceedToleranceIfTotalMatch {
-		return
+		return dbID, expectedTracks, matchedTracks, sortSuccess
 	}
 
 	best := validMatches[0]
+
 	expectedBestRuntime := int64(best.c.TotalRuntime)
 	if expectedBestRuntime == 0 {
 		for _, mt := range best.matchedTracks {
@@ -1289,7 +1357,7 @@ func applyMusicRecommendation(
 	}
 
 	if expectedBestRuntime == 0 {
-		return
+		return dbID, expectedTracks, matchedTracks, sortSuccess
 	}
 
 	perTrackMs := int64(3000)
@@ -1314,7 +1382,7 @@ func applyMusicRecommendation(
 		sortSuccess = true
 	}
 
-	return
+	return dbID, expectedTracks, matchedTracks, sortSuccess
 }
 
 // tryMusicAlternativeRelease searches MusicBrainz for an alternative release when no
@@ -1334,19 +1402,20 @@ func tryMusicAlternativeRelease(
 	folder string,
 ) (dbID uint, expectedTracks int, matchedTracks []parser_v2.TrackInfo, sortSuccess bool) {
 	if data == nil || (!data.AddFound && !data.AllowAlternativeReleases) {
-		return
+		return dbID, expectedTracks, matchedTracks, sortSuccess
 	}
+
 	// AddFound requires a valid list; AllowAlternativeReleases can proceed with
 	// listid=-1 because JobImportAlbums resolves the list from the existing DB entry.
 	if data.AddFound && !data.AllowAlternativeReleases && listid == -1 {
-		return
+		return dbID, expectedTracks, matchedTracks, sortSuccess
 	}
 
 	importedID, found := searchAndImportAlternativeRelease(
 		ctx, artist, albumTitle, fileCount, localTotalMs, cfgp, listid, bestCandidates, data,
 	)
 	if !found || importedID == 0 {
-		return
+		return dbID, expectedTracks, matchedTracks, sortSuccess
 	}
 
 	var newTrackCount int
@@ -1367,7 +1436,7 @@ func tryMusicAlternativeRelease(
 
 	altDbTracks := resolveTracksForMatching(ctx, importedID, altMBID, "", "", *albumTitle, *artist)
 	if len(altDbTracks) == 0 {
-		return
+		return dbID, expectedTracks, matchedTracks, sortSuccess
 	}
 
 	altResult, altMatched, altUsed := matchTracksByDistance(
@@ -1383,7 +1452,7 @@ func tryMusicAlternativeRelease(
 		// Mirror runMusicCandidateMatchingLoop: try tier-2 runtime fallback before giving up.
 		altCandidate := &database.AlbumSearchResult{ID: importedID}
 		if !tierTwoRuntimeAccepted(altCandidate, altDbTracks, localTotalMs, *fileCount, data) {
-			return
+			return dbID, expectedTracks, matchedTracks, sortSuccess
 		}
 	}
 
@@ -1392,12 +1461,13 @@ func tryMusicAlternativeRelease(
 		ID:          importedID,
 		TotalTracks: newTrackCount,
 	}
+
 	fullDist := albumDistanceWithTracks(
 		altCandidate, *artist, *albumTitle, altMBID, 0,
 		albumTracks, altDbTracks, isVA, data,
 	)
 	if recommendation([]float64{fullDist}) < recMedium {
-		return
+		return dbID, expectedTracks, matchedTracks, sortSuccess
 	}
 
 	altMatchedTracks := applyTrackDBOverrides(altResult, altMatched, altDbTracks, isVA, false, data)
@@ -1413,7 +1483,7 @@ func tryMusicAlternativeRelease(
 	matchedTracks = altMatchedTracks
 	sortSuccess = true
 
-	return
+	return dbID, expectedTracks, matchedTracks, sortSuccess
 }
 
 // buildMusicFailureReport constructs a MatchReport for the "wrong_runtime" denial path,
@@ -1514,6 +1584,7 @@ func buildMusicFailureReport(
 					})
 				} else {
 					bestDist := math.MaxFloat64
+
 					var bestLocalMs int64
 					for k := range albumTracks {
 						d := trackDistance(&albumTracks[k], &rptTracks[j], isVA, false, data)
@@ -1600,6 +1671,7 @@ func discoverAddFoundArtistAlbums(
 					Str("series", seriesName).
 					Int("existing", otherCount).
 					Msg("Series already discovered, skipping")
+
 				return
 			}
 		}
@@ -1633,6 +1705,7 @@ func discoverAddFoundArtistAlbums(
 				Str("artist", *artist).
 				Int("existing", artistAlbumCount).
 				Msg("Artist already has albums, skipping discovery")
+
 			return
 		}
 
@@ -1692,6 +1765,7 @@ func tryMusicFallbacks(
 	folder string,
 ) []*database.AlbumSearchResult {
 	seenIDs := make(map[uint]bool)
+
 	var candidates []*database.AlbumSearchResult
 
 	addIDs := func(ids []uint) {
@@ -1699,6 +1773,7 @@ func tryMusicFallbacks(
 			if id == 0 || seenIDs[id] {
 				continue
 			}
+
 			seenIDs[id] = true
 			if c := database.FillAlbumResult(
 				&database.AlbumSearchResult{ID: id},
@@ -1723,6 +1798,7 @@ func tryMusicFallbacks(
 					folder,
 				),
 			)
+
 		case "discogs":
 			addIDs(
 				tryMusicDiscogsFallback(
@@ -1735,6 +1811,7 @@ func tryMusicFallbacks(
 					folder,
 				),
 			)
+
 		case "deezer":
 			addIDs(
 				tryMusicDeezerFallback(
@@ -1747,6 +1824,7 @@ func tryMusicFallbacks(
 					folder,
 				),
 			)
+
 		case "theaudiodb":
 			addIDs(
 				tryMusicTheAudioDBFallback(
@@ -1759,6 +1837,7 @@ func tryMusicFallbacks(
 					folder,
 				),
 			)
+
 		case "itunes":
 			addIDs(
 				tryMusicItunesFallback(
@@ -1811,6 +1890,7 @@ func tryMusicLastFMFallback(
 			Int("lfmTracks", len(release.Tracks)).
 			Int("fileCount", *fileCount).
 			Msg("Last.fm fallback: track count mismatch")
+
 		return nil
 	}
 
@@ -1828,11 +1908,14 @@ func tryMusicLastFMFallback(
 		} else if data != nil && data.PerTrackToleranceSeconds > 0 {
 			toleranceSec = data.PerTrackToleranceSeconds
 		}
+
 		toleranceMs := int64(toleranceSec) * int64(*fileCount) * 1000
+
 		diff := lfmTotalMs - localTotalMs
 		if diff < 0 {
 			diff = -diff
 		}
+
 		if diff > toleranceMs {
 			logger.Logtype("debug", 1).
 				Str("folder", folder).
@@ -1840,6 +1923,7 @@ func tryMusicLastFMFallback(
 				Int64("localTotalMs", localTotalMs).
 				Int64("toleranceMs", toleranceMs).
 				Msg("Last.fm fallback: runtime mismatch")
+
 			return nil
 		}
 	}
@@ -1877,6 +1961,7 @@ func tryMusicLastFMFallback(
 
 		lfmTitle := releaseTitleName(release.Title, albumTitle)
 		lfmSlug := logger.StringToSlug(lfmTitle)
+
 		result, insertErr := database.ExecNid(
 			`INSERT INTO dbalbums (title, musicbrainz_release_group_id, musicbrainz_release_id,
 			  discogs_release_id, discogs_master_id, upc, slug, year, release_type, format,
@@ -1893,14 +1978,18 @@ func tryMusicLastFMFallback(
 				Str("folder", folder).
 				Err(insertErr).
 				Msg("Last.fm fallback: failed to insert synthetic dbalbum")
+
 			return nil
 		}
+
 		existingID = logger.Int64ToUint(result)
 
 		lfmArtistName, lfmArtistMBID := releaseArtistName(release.Artists, artist)
+
 		lfmArtistNamePtr := &lfmArtistName
 		if artistID := addOrGetArtist(lfmArtistNamePtr, &lfmArtistMBID); artistID > 0 {
 			position := 0
+
 			_, _ = database.ExecNid(
 				`INSERT INTO dbalbum_artists (dbalbum_id, dbartist_id, position) VALUES (?, ?, ?)`,
 				&existingID,
@@ -1914,6 +2003,7 @@ func tryMusicLastFMFallback(
 			t := &release.Tracks[i]
 			runtimeMs := t.Duration.Milliseconds()
 			trackNum := i + 1
+
 			_, _ = database.ExecNid(
 				`INSERT INTO dbtracks (dbalbum_id, title, track_number, disc_number, runtime_ms, acoustid)
 				 VALUES (?, ?, ?, 1, ?, '')`,
@@ -1952,6 +2042,7 @@ func tryMusicDiscogsFallback(
 	}
 
 	query := *artist + " " + *albumTitle
+
 	results, err := dg.SearchReleases(ctx, query, 5)
 	if err != nil || len(results) == 0 {
 		return nil
@@ -1973,6 +2064,7 @@ func tryMusicDiscogsFallback(
 				Int("dgTracks", len(release.Tracks)).
 				Int("fileCount", *fileCount).
 				Msg("Discogs fallback: track count mismatch")
+
 			continue
 		}
 
@@ -1989,12 +2081,14 @@ func tryMusicDiscogsFallback(
 			} else if data != nil && data.PerTrackToleranceSeconds > 0 {
 				toleranceSec = data.PerTrackToleranceSeconds
 			}
+
 			toleranceMs := int64(toleranceSec) * int64(*fileCount) * 1000
 
 			diff := dgTotalMs - localTotalMs
 			if diff < 0 {
 				diff = -diff
 			}
+
 			if diff > toleranceMs {
 				logger.Logtype("debug", 1).
 					Str("folder", folder).
@@ -2002,6 +2096,7 @@ func tryMusicDiscogsFallback(
 					Int64("localTotalMs", localTotalMs).
 					Int64("toleranceMs", toleranceMs).
 					Msg("Discogs fallback: runtime mismatch")
+
 				continue
 			}
 		}
@@ -2017,6 +2112,7 @@ func tryMusicDiscogsFallback(
 				&release.DiscogsID,
 			)
 		}
+
 		if existingID == 0 && release.MasterID > 0 {
 			masterIDStr := strconv.Itoa(release.MasterID)
 			database.Scanrowsdyn(false,
@@ -2034,6 +2130,7 @@ func tryMusicDiscogsFallback(
 
 			dgTitle := releaseTitleName(release.Title, albumTitle)
 			slug := logger.StringToSlug(dgTitle)
+
 			masterIDStr := ""
 			if release.MasterID > 0 {
 				masterIDStr = strconv.Itoa(release.MasterID)
@@ -2061,15 +2158,19 @@ func tryMusicDiscogsFallback(
 					Str("folder", folder).
 					Err(insertErr).
 					Msg("Discogs fallback: failed to insert synthetic dbalbum")
+
 				continue
 			}
+
 			existingID = logger.Int64ToUint(result)
 
 			// Link artist — prefer name from Discogs response.
 			dgArtistName, dgArtistMBID := releaseArtistName(release.Artists, artist)
+
 			dgArtistNamePtr := &dgArtistName
 			if artistID := addOrGetArtist(dgArtistNamePtr, &dgArtistMBID); artistID > 0 {
 				position := 0
+
 				_, _ = database.ExecNid(
 					`INSERT INTO dbalbum_artists (dbalbum_id, dbartist_id, position) VALUES (?, ?, ?)`,
 					&existingID,
@@ -2111,6 +2212,7 @@ func tryMusicDeezerFallback(
 	}
 
 	query := *artist + " " + *albumTitle
+
 	results, err := dz.SearchAlbums(ctx, query, 5)
 	if err != nil || len(results) == 0 {
 		return nil
@@ -2125,6 +2227,7 @@ func tryMusicDeezerFallback(
 				Int("dzTracks", results[i].TrackCount).
 				Int("fileCount", *fileCount).
 				Msg("Deezer fallback: track count mismatch")
+
 			continue
 		}
 
@@ -2149,12 +2252,14 @@ func tryMusicDeezerFallback(
 			} else if data != nil && data.PerTrackToleranceSeconds > 0 {
 				toleranceSec = data.PerTrackToleranceSeconds
 			}
+
 			toleranceMs := int64(toleranceSec) * int64(*fileCount) * 1000
 
 			diff := dzTotalMs - localTotalMs
 			if diff < 0 {
 				diff = -diff
 			}
+
 			if diff > toleranceMs {
 				logger.Logtype("debug", 1).
 					Str("folder", folder).
@@ -2162,12 +2267,14 @@ func tryMusicDeezerFallback(
 					Int64("localTotalMs", localTotalMs).
 					Int64("toleranceMs", toleranceMs).
 					Msg("Deezer fallback: runtime mismatch")
+
 				continue
 			}
 		}
 
 		// Check for existing DB entry by Deezer ID.
 		deezerIDStr := release.DeezerID
+
 		var existingID uint
 		if deezerIDStr != "" {
 			database.Scanrowsdyn(false,
@@ -2183,6 +2290,7 @@ func tryMusicDeezerFallback(
 
 			dzTitle := releaseTitleName(release.Title, albumTitle)
 			slug := logger.StringToSlug(dzTitle)
+
 			result, insertErr := database.ExecNid(
 				`INSERT INTO dbalbums (title, musicbrainz_release_group_id, musicbrainz_release_id,
 				  discogs_release_id, discogs_master_id, upc, slug, year, release_type, format,
@@ -2203,14 +2311,18 @@ func tryMusicDeezerFallback(
 					Str("folder", folder).
 					Err(insertErr).
 					Msg("Deezer fallback: failed to insert synthetic dbalbum")
+
 				continue
 			}
+
 			existingID = logger.Int64ToUint(result)
 
 			dzArtistName, dzArtistMBID := releaseArtistName(release.Artists, artist)
+
 			dzArtistNamePtr := &dzArtistName
 			if aid := addOrGetArtist(dzArtistNamePtr, &dzArtistMBID); aid > 0 {
 				pos := 0
+
 				_, _ = database.ExecNid(
 					`INSERT INTO dbalbum_artists (dbalbum_id, dbartist_id, position) VALUES (?, ?, ?)`,
 					&existingID,
@@ -2275,6 +2387,7 @@ func tryMusicTheAudioDBFallback(
 				Int("tadbTracks", len(release.Tracks)).
 				Int("fileCount", *fileCount).
 				Msg("TheAudioDB fallback: track count mismatch")
+
 			continue
 		}
 
@@ -2290,12 +2403,14 @@ func tryMusicTheAudioDBFallback(
 			} else if data != nil && data.PerTrackToleranceSeconds > 0 {
 				toleranceSec = data.PerTrackToleranceSeconds
 			}
+
 			toleranceMs := int64(toleranceSec) * int64(*fileCount) * 1000
 
 			diff := tadbTotalMs - localTotalMs
 			if diff < 0 {
 				diff = -diff
 			}
+
 			if diff > toleranceMs {
 				logger.Logtype("debug", 1).
 					Str("folder", folder).
@@ -2303,6 +2418,7 @@ func tryMusicTheAudioDBFallback(
 					Int64("localTotalMs", localTotalMs).
 					Int64("toleranceMs", toleranceMs).
 					Msg("TheAudioDB fallback: runtime mismatch")
+
 				continue
 			}
 		}
@@ -2321,6 +2437,7 @@ func tryMusicTheAudioDBFallback(
 
 			tadbTitle := releaseTitleName(results[i].Title, albumTitle)
 			slug := logger.StringToSlug(tadbTitle)
+
 			result, insertErr := database.ExecNid(
 				`INSERT INTO dbalbums (title, musicbrainz_release_group_id, musicbrainz_release_id,
 				  discogs_release_id, discogs_master_id, upc, slug, year, release_type, format,
@@ -2340,14 +2457,18 @@ func tryMusicTheAudioDBFallback(
 					Str("folder", folder).
 					Err(insertErr).
 					Msg("TheAudioDB fallback: failed to insert synthetic dbalbum")
+
 				continue
 			}
+
 			existingID = logger.Int64ToUint(result)
 
 			tadbArtistName, tadbArtistMBID := releaseArtistName(release.Artists, artist)
+
 			tadbArtistNamePtr := &tadbArtistName
 			if aid := addOrGetArtist(tadbArtistNamePtr, &tadbArtistMBID); aid > 0 {
 				pos := 0
+
 				_, _ = database.ExecNid(
 					`INSERT INTO dbalbum_artists (dbalbum_id, dbartist_id, position) VALUES (?, ?, ?)`,
 					&existingID,
@@ -2415,6 +2536,7 @@ func tryMusicItunesFallback(
 				Int("itunesTracks", len(release.Tracks)).
 				Int("fileCount", *fileCount).
 				Msg("iTunes fallback: track count mismatch")
+
 			continue
 		}
 
@@ -2430,12 +2552,14 @@ func tryMusicItunesFallback(
 			} else if data != nil && data.PerTrackToleranceSeconds > 0 {
 				toleranceSec = data.PerTrackToleranceSeconds
 			}
+
 			toleranceMs := int64(toleranceSec) * int64(*fileCount) * 1000
 
 			diff := itunessTotalMs - localTotalMs
 			if diff < 0 {
 				diff = -diff
 			}
+
 			if diff > toleranceMs {
 				logger.Logtype("debug", 1).
 					Str("folder", folder).
@@ -2443,12 +2567,14 @@ func tryMusicItunesFallback(
 					Int64("localTotalMs", localTotalMs).
 					Int64("toleranceMs", toleranceMs).
 					Msg("iTunes fallback: runtime mismatch")
+
 				continue
 			}
 		}
 
 		// Check for existing DB entry by iTunes collection ID.
 		itunesIDStr := release.ITunesID
+
 		var existingID uint
 		if itunesIDStr != "" {
 			database.Scanrowsdyn(false,
@@ -2464,6 +2590,7 @@ func tryMusicItunesFallback(
 
 			itunesTitle := releaseTitleName(release.Title, albumTitle)
 			slug := logger.StringToSlug(itunesTitle)
+
 			result, insertErr := database.ExecNid(
 				`INSERT INTO dbalbums (title, musicbrainz_release_group_id, musicbrainz_release_id,
 				  discogs_release_id, discogs_master_id, upc, slug, year, release_type, format,
@@ -2482,14 +2609,18 @@ func tryMusicItunesFallback(
 					Str("folder", folder).
 					Err(insertErr).
 					Msg("iTunes fallback: failed to insert synthetic dbalbum")
+
 				continue
 			}
+
 			existingID = logger.Int64ToUint(result)
 
 			itunesArtistName, itunesArtistMBID := releaseArtistName(release.Artists, artist)
+
 			itunesArtistNamePtr := &itunesArtistName
 			if aid := addOrGetArtist(itunesArtistNamePtr, &itunesArtistMBID); aid > 0 {
 				pos := 0
+
 				_, _ = database.ExecNid(
 					`INSERT INTO dbalbum_artists (dbalbum_id, dbartist_id, position) VALUES (?, ?, ?)`,
 					&existingID,
@@ -2531,37 +2662,47 @@ func buildMatchedTracksWithFallback(
 		tr := result[i]
 		if !matched[i] {
 			bestDist := math.MaxFloat64
+
 			bestK := -1
 			for k := range albumTracks {
 				if used[k] {
 					continue
 				}
+
 				d := trackDistance(&albumTracks[k], &dbTracks[i], isVA, isAudiobook, data)
 				if d < bestDist {
 					bestDist = d
 					bestK = k
 				}
 			}
+
 			if bestK < 0 {
 				continue
 			}
+
 			tr = albumTracks[bestK]
 			used[bestK] = true
 		}
+
 		if dbTracks[i].TrackNumber > 0 {
 			tr.TrackNumber = int(dbTracks[i].TrackNumber)
 		}
+
 		if dbTracks[i].DiscNumber > 0 {
 			tr.DiscNumber = int(dbTracks[i].DiscNumber)
 		}
+
 		if dbTracks[i].Title != "" {
 			tr.Title = dbTracks[i].Title
 		}
+
 		if dbTracks[i].RuntimeMs > 0 {
 			tr.ExpectedRuntimeMS = dbTracks[i].RuntimeMs
 		}
+
 		tr.TrackDist = trackDistance(&tr, &dbTracks[i], isVA, isAudiobook, data)
 		matchedTracks = append(matchedTracks, tr)
 	}
+
 	return matchedTracks
 }

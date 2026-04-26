@@ -581,7 +581,9 @@ func parseMediaDataConfigs(c *gin.Context, mediaType, index string) []config.Med
 			cfg.TrackIdWeight, _ = strconv.ParseFloat(val, 64)
 		}
 
-		if val := c.PostForm(fmt.Sprintf("%s_%s_DiscoverSeriesAlbums", prefix, subIndex)); val != "" {
+		if val := c.PostForm(
+			fmt.Sprintf("%s_%s_DiscoverSeriesAlbums", prefix, subIndex),
+		); val != "" {
 			cfg.DiscoverSeriesAlbums, _ = strconv.ParseBool(val)
 		}
 
@@ -721,7 +723,9 @@ func parseMediaDataImportConfigs(
 			cfg.TrackIdWeight, _ = strconv.ParseFloat(val, 64)
 		}
 
-		if val := c.PostForm(fmt.Sprintf("%s_%s_DiscoverSeriesAlbums", prefix, subIndex)); val != "" {
+		if val := c.PostForm(
+			fmt.Sprintf("%s_%s_DiscoverSeriesAlbums", prefix, subIndex),
+		); val != "" {
 			cfg.DiscoverSeriesAlbums, _ = strconv.ParseBool(val)
 		}
 

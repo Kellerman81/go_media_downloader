@@ -163,7 +163,9 @@ func musicMetadataSearchContent(mediaConfigs []string, csrfToken string) gompone
 					html.Div(
 						html.Class("card shadow-sm"),
 						html.Div(
-							html.Class("card-header d-flex justify-content-between align-items-center"),
+							html.Class(
+								"card-header d-flex justify-content-between align-items-center",
+							),
 							html.H5(
 								html.Class("mb-0"),
 								html.I(html.Class("fas fa-layer-group me-2")),
@@ -230,7 +232,10 @@ func musicMetadataSearchContent(mediaConfigs []string, csrfToken string) gompone
 											html.Class("form-control"),
 											html.ID("discover_artist_query"),
 											html.Placeholder("Enter artist name..."),
-											gomponents.Attr("onkeydown", "if(event.key==='Enter'){event.preventDefault();searchDiscoverArtist();}"),
+											gomponents.Attr(
+												"onkeydown",
+												"if(event.key==='Enter'){event.preventDefault();searchDiscoverArtist();}",
+											),
 										),
 										html.Button(
 											html.Type("button"),
@@ -396,6 +401,7 @@ func SearchMusicMetadata(c *gin.Context) {
 	}
 
 	resultNodes := make([]gomponents.Node, 0, len(results)+1)
+
 	resultNodes = append(resultNodes, html.H5(
 		html.Class("mb-3"),
 		gomponents.Text(fmt.Sprintf("Search Results (%d albums found)", len(results))),
@@ -433,6 +439,7 @@ func AddAlbumToDatabase(c *gin.Context) {
 			http.StatusBadRequest,
 			gin.H{"error": "List '" + listName + "' not found in music configuration"},
 		)
+
 		return
 	}
 
@@ -502,6 +509,7 @@ func DiscoverArtistAlbums(c *gin.Context) {
 			http.StatusBadRequest,
 			gin.H{"error": "List '" + listName + "' not found in music configuration"},
 		)
+
 		return
 	}
 
@@ -558,7 +566,10 @@ func SearchArtistOnMusicBrainz(c *gin.Context) {
 
 	results, err := provider.SearchArtists(ctx, query, 10)
 	if err != nil {
-		logger.Logtype("error", 0).Err(err).Str("query", query).Msg("Failed to search artists on MusicBrainz")
+		logger.Logtype("error", 0).
+			Err(err).
+			Str("query", query).
+			Msg("Failed to search artists on MusicBrainz")
 		c.Header("Content-Type", "text/html; charset=utf-8")
 
 		var buf strings.Builder
@@ -587,13 +598,16 @@ func SearchArtistOnMusicBrainz(c *gin.Context) {
 	nodes := make([]gomponents.Node, 0, len(results))
 	for _, a := range results {
 		artist := a // capture
+
 		var meta []string
 		if artist.Type != "" {
 			meta = append(meta, artist.Type)
 		}
+
 		if artist.Country != "" {
 			meta = append(meta, artist.Country)
 		}
+
 		if artist.BeginYear != 0 {
 			meta = append(meta, fmt.Sprintf("est. %d", artist.BeginYear))
 		}
@@ -601,7 +615,9 @@ func SearchArtistOnMusicBrainz(c *gin.Context) {
 		metaText := strings.Join(meta, " · ")
 
 		nodes = append(nodes, html.Div(
-			html.Class("d-flex justify-content-between align-items-center border rounded px-3 py-2 mb-2"),
+			html.Class(
+				"d-flex justify-content-between align-items-center border rounded px-3 py-2 mb-2",
+			),
 			html.Div(
 				html.Span(html.Class("fw-semibold"), gomponents.Text(artist.Name)),
 				func() gomponents.Node {
@@ -611,12 +627,14 @@ func SearchArtistOnMusicBrainz(c *gin.Context) {
 							gomponents.Text("("+artist.Disambiguation+")"),
 						)
 					}
+
 					return gomponents.Text("")
 				}(),
 				func() gomponents.Node {
 					if metaText != "" {
 						return html.Div(html.Class("text-muted small"), gomponents.Text(metaText))
 					}
+
 					return gomponents.Text("")
 				}(),
 			),
@@ -636,6 +654,7 @@ func SearchArtistOnMusicBrainz(c *gin.Context) {
 	for _, n := range nodes {
 		n.Render(&buf)
 	}
+
 	c.String(http.StatusOK, buf.String())
 }
 
@@ -706,6 +725,7 @@ func SearchMusicSeriesMetadata(c *gin.Context) {
 							),
 						)
 					}
+
 					return nil
 				}(),
 			),
@@ -747,6 +767,7 @@ func DiscoverSeriesAlbumsByName(c *gin.Context) {
 			http.StatusBadRequest,
 			gin.H{"error": "List '" + listName + "' not found in music configuration"},
 		)
+
 		return
 	}
 
@@ -789,6 +810,7 @@ func createMusicResultCard(release *apiexternal_v2.ReleaseSearchResult) gomponen
 	for _, a := range release.Artists {
 		artistNames = append(artistNames, a.Name)
 	}
+
 	artistStr := strings.Join(artistNames, ", ")
 
 	year := ""

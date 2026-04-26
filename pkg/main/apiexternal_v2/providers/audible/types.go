@@ -353,7 +353,7 @@ func cleanDescription(text string) string {
 		"&#39;", "'",
 	}
 
-	for i := 0; i < len(replacements); i += 2 {
+	for i := 0; i+1 < len(replacements); i += 2 {
 		result = strings.ReplaceAll(result, replacements[i], replacements[i+1])
 	}
 

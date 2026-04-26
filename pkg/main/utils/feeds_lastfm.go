@@ -55,6 +55,7 @@ func (d *feedResults) getlastfmtopartists(
 	if listid == -1 {
 		return errors.New("lastfmtopartists: list not found in media config: " + list.Name)
 	}
+
 	p, err := getlastfmprovider()
 	if err != nil {
 		return err
@@ -137,6 +138,7 @@ func (d *feedResults) getlastfmtopartists(
 					Str("mbid", mbid).
 					Err(importErr).
 					Msg("lastfmtopartists: JobImportArtist failed; skipping album import")
+
 				continue
 			}
 

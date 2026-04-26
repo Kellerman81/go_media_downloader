@@ -86,9 +86,9 @@ type MatchReport struct {
 
 // beetsWeights mirrors beets' default distance_weights config (music).
 var beetsWeights = map[string]float64{
-	"artist":  3.0,
-	"album":   3.0,
-	"year":    1.0,
+	"artist": 3.0,
+	"album":  3.0,
+	"year":   1.0,
 	// "country": 0.5, // temporarily disabled
 	// "label":   0.5, // temporarily disabled
 	// "mediums":          1.0, // not used — no disc-format comparison implemented
@@ -131,15 +131,20 @@ func sdNormalize(s string) string {
 			i++
 			continue
 		}
+
 		break
 	}
+
 	if i == len(s) {
 		return s // already lowercase alnum — zero allocation
 	}
+
 	buf := logger.PlAddBuffer.Get()
 	defer logger.PlAddBuffer.Put(buf)
+
 	buf.Grow(len(s))
 	buf.WriteString(s[:i])
+
 	for ; i < len(s); i++ {
 		b := s[i]
 		switch {
@@ -149,6 +154,7 @@ func sdNormalize(s string) string {
 			buf.WriteByte(b + 32) // ASCII uppercase → lowercase
 		}
 	}
+
 	return buf.String()
 }
 
@@ -203,8 +209,10 @@ func (d *beetsDistance) weight(key string) float64 {
 
 func (d *beetsDistance) add(key string, dist float64) {
 	e := d.penalties[key]
+
 	e.sum += dist
 	e.count++
+
 	d.penalties[key] = e
 }
 
@@ -272,12 +280,14 @@ func levenshteinInt(a, b string) int {
 
 	// Allocate prev and curr as one contiguous buffer and reuse across calls.
 	need := 2 * (lb + 1)
+
 	buf := levBufPool.Get()
 	if cap(buf.data) < need {
 		buf.data = make([]int, need)
 	} else {
 		buf.data = buf.data[:need]
 	}
+
 	defer levBufPool.Put(buf)
 
 	prev := buf.data[:lb+1]
@@ -338,6 +348,7 @@ func stringDist(str1, str2 string) float64 {
 		if trimmed := logger.TrimSuffixI(str1, suffix); trimmed != str1 {
 			str1 = logger.JoinStrings(sdEndWordList[i], " ", trimmed)
 		}
+
 		if trimmed := logger.TrimSuffixI(str2, suffix); trimmed != str2 {
 			str2 = logger.JoinStrings(sdEndWordList[i], " ", trimmed)
 		}
@@ -353,14 +364,17 @@ func stringDist(str1, str2 string) float64 {
 	penalty := 0.0
 	for _, pat := range sdPatterns {
 		match1 := pat.re.MatchString(str1)
+
 		match2 := pat.re.MatchString(str2)
 		if !match1 && !match2 {
 			continue
 		}
+
 		case1 := str1
 		if match1 {
 			case1 = pat.re.ReplaceAllString(str1, "")
 		}
+
 		case2 := str2
 		if match2 {
 			case2 = pat.re.ReplaceAllString(str2, "")
@@ -576,9 +590,11 @@ func matchTracksByDistance(
 
 	// Single contiguous allocation; row headers slice into it — 2 allocs instead of size+1.
 	backing := make([]float64, size*size)
+
 	cost := make([][]float64, size)
 	for i := range cost {
 		row := backing[i*size : (i+1)*size]
+
 		cost[i] = row
 		if i < n {
 			for j := range size {
@@ -655,19 +671,23 @@ func matchTracksByDistance(
 			// LAP plausibly assigned the wrong-edition track here.
 			isTagSwap := false
 			localRt := tracks[j].RuntimeMS
+
 			var currentDiff int64
 			if d := localRt - dbTracks[i].RuntimeMs; d < 0 {
 				currentDiff = -d
 			} else {
 				currentDiff = d
 			}
+
 			for i2 := range n {
 				if i2 == i {
 					continue
 				}
+
 				if stringDist(tracks[j].Title, dbTracks[i2].Title) >= 0.3 {
 					continue
 				}
+
 				// tracks[j].Title closely matches dbTracks[i2].Title.
 				// If the current assignment beats i2 by runtime, it's a tag-swap.
 				var altDiff int64
@@ -676,11 +696,13 @@ func matchTracksByDistance(
 				} else {
 					altDiff = d
 				}
+
 				if currentDiff < altDiff {
 					isTagSwap = true
 					break
 				}
 			}
+
 			if !isTagSwap {
 				matched[i] = false
 				used[j] = false
@@ -728,14 +750,17 @@ func lapAssign(cost [][]float64) []int {
 	way := make([]int, n+1)
 	// minv and used are hoisted out of the per-row loop to avoid O(n) re-allocs.
 	minv := make([]float64, n+1)
+
 	used := make([]bool, n+1)
 	for i := 1; i <= n; i++ {
 		p[0] = i
 
 		j0 := 0
+
 		for j := range minv {
 			minv[j] = inf
 		}
+
 		clear(used)
 
 		for {
@@ -870,10 +895,12 @@ func albumMatchDistance(
 	if IsVariousArtists(localArtist) {
 		localArtist = VariousArtistsName
 	}
+
 	dbArtist := c.Artist
 	if IsVariousArtists(dbArtist) {
 		dbArtist = VariousArtistsName
 	}
+
 	dist.addString("artist", dbArtist, localArtist)
 
 	// Album title (weight 3.0).
@@ -1001,10 +1028,12 @@ func albumDistanceWithTracks(
 	if IsVariousArtists(localArtist) {
 		localArtist = VariousArtistsName
 	}
+
 	dbArtist := c.Artist
 	if IsVariousArtists(dbArtist) {
 		dbArtist = VariousArtistsName
 	}
+
 	dist.addString("artist", dbArtist, localArtist)
 	dist.addString("album", c.Title, album)
 
@@ -1265,6 +1294,7 @@ func selectBestAlbumMatches(
 		// When AllowMissingTracks is set, also apply the lenient cap to albums with more
 		// tracks than local files (m.TotalTracks >= fileCount), since the user accepts partial albums.
 		allowMissing := data != nil && data.AllowMissingTracks
+
 		isExactOrAllowed := m.TotalTracks == fileCount ||
 			(allowMissing && m.TotalTracks >= fileCount)
 		if (isExactOrAllowed && d <= exactTrackHardCap) || d <= matchDistanceThreshold {

@@ -60,7 +60,9 @@ func CalendarPageHandler(c *gin.Context) {
 					html.H2(html.Class("header-title"), gomponents.Text("Calendar")),
 					html.P(
 						html.Class("header-subtitle"),
-						gomponents.Text("Manage your movies, series, albums and audiobooks release schedule"),
+						gomponents.Text(
+							"Manage your movies, series, albums and audiobooks release schedule",
+						),
 					),
 				),
 			),

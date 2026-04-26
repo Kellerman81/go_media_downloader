@@ -7,12 +7,11 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/acoustid"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/audible"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/audnex"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/deluge"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/deezer"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/itunes"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/theaudiodb"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/deluge"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/discogs"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/goodreads"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/itunes"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/lastfm"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/musicbrainz"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/newznab"
@@ -22,6 +21,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/qbittorrent"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/rtorrent"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/sabnzbd"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/theaudiodb"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/tmdb"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/trakt"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/transmission"
@@ -508,6 +508,7 @@ func GetDiscogs() *discogs.Provider {
 func SetITunes(provider *itunes.Provider) {
 	registryMutex.Lock()
 	defer registryMutex.Unlock()
+
 	itunesProvider = provider
 }
 
@@ -523,6 +524,7 @@ func GetITunes() *itunes.Provider {
 func SetTheAudioDB(provider *theaudiodb.Provider) {
 	registryMutex.Lock()
 	defer registryMutex.Unlock()
+
 	theaudiodbProvider = provider
 }
 
@@ -538,6 +540,7 @@ func GetTheAudioDB() *theaudiodb.Provider {
 func SetDeezer(provider *deezer.Provider) {
 	registryMutex.Lock()
 	defer registryMutex.Unlock()
+
 	deezerProvider = provider
 }
 

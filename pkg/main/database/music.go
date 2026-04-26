@@ -482,7 +482,9 @@ func (d *albumResultDedup) add(id uint) bool {
 	if slices.Contains(d.seen, id) {
 		return false
 	}
+
 	d.seen = append(d.seen, id)
+
 	return true
 }
 

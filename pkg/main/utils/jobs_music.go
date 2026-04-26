@@ -114,7 +114,11 @@ func RetagAlbum(cfgp *config.MediaTypeConfig, dbID uint) error {
 
 	files := database.StructscanT[fileRow](
 		false,
-		database.Getdatarow[uint](false, "SELECT count() FROM album_files WHERE dbalbum_id = ?", &dbID),
+		database.Getdatarow[uint](
+			false,
+			"SELECT count() FROM album_files WHERE dbalbum_id = ?",
+			&dbID,
+		),
 		"SELECT location, track_number, disc_number, acoustid, dbtrack_id FROM album_files WHERE dbalbum_id = ? ORDER BY disc_number, track_number",
 		&dbID,
 	)
@@ -135,7 +139,11 @@ func RetagAlbum(cfgp *config.MediaTypeConfig, dbID uint) error {
 
 	dbTracks := database.StructscanT[trackMeta](
 		false,
-		database.Getdatarow[uint](false, "SELECT count() FROM dbtracks WHERE dbalbum_id = ?", &dbID),
+		database.Getdatarow[uint](
+			false,
+			"SELECT count() FROM dbtracks WHERE dbalbum_id = ?",
+			&dbID,
+		),
 		"SELECT id, title, musicbrainz_recording_id, isrc, acoustid, track_number, disc_number FROM dbtracks WHERE dbalbum_id = ?",
 		&dbID,
 	)
@@ -194,11 +202,13 @@ func RetagAlbum(cfgp *config.MediaTypeConfig, dbID uint) error {
 
 	// Determine embedArt and embedLyrics from config
 	embedArt := false
+
 	embedLyrics := false
 	for idx := range cfgp.Data {
 		if cfgp.Data[idx].EmbedArt {
 			embedArt = true
 		}
+
 		if cfgp.Data[idx].EmbedLyrics {
 			embedLyrics = true
 		}
@@ -209,10 +219,12 @@ func RetagAlbum(cfgp *config.MediaTypeConfig, dbID uint) error {
 
 // RetagArtistAlbums re-writes audio tags for all albums by a given dbartist ID.
 func RetagArtistAlbums(cfgp *config.MediaTypeConfig, artistID uint) error {
-	ids := database.Getrowssize[uint](false,
+	ids := database.Getrowssize[uint](
+		false,
 		"SELECT count(DISTINCT a.dbalbum_id) FROM albums a JOIN dbalbum_artists aa ON a.dbalbum_id = aa.dbalbum_id WHERE aa.dbartist_id = ?",
 		"SELECT DISTINCT a.dbalbum_id FROM albums a JOIN dbalbum_artists aa ON a.dbalbum_id = aa.dbalbum_id WHERE aa.dbartist_id = ?",
-		&artistID)
+		&artistID,
+	)
 
 	var lastErr error
 	for _, id := range ids {

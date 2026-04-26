@@ -140,6 +140,7 @@ func (n *NZBPreprocessor) Clean(input string) string {
 	if n.patterns.par2Suffix.MatchString(result) {
 		result = n.patterns.par2Suffix.ReplaceAllString(result, "")
 	}
+
 	// result = n.patterns.archiveSuffix.ReplaceAllString(result, "")
 
 	// Remove quoted filenames (we already tried to use them, they weren't useful)

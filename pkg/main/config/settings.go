@@ -336,7 +336,15 @@ func RangeSettingsRegex(fn func(string, *RegexConfig)) {
 }
 
 // defaultMusicMetaSourcePriority is used when MusicMetaSourcePriority is empty.
-var defaultMusicMetaSourcePriority = []string{"musicbrainz", "acoustid", "lastfm", "discogs", "deezer", "theaudiodb", "itunes"}
+var defaultMusicMetaSourcePriority = []string{
+	"musicbrainz",
+	"acoustid",
+	"lastfm",
+	"discogs",
+	"deezer",
+	"theaudiodb",
+	"itunes",
+}
 
 // GetMusicMetaSourcePriority returns the ordered list of music metadata providers to use.
 // When MusicMetaSourcePriority is empty all providers are returned in the default order.
@@ -363,13 +371,16 @@ func GetMusicMetaSourcePriority() []string {
 			if cfg.AcoustIDAPIKey == "" {
 				continue
 			}
+
 		case "lastfm":
 			if cfg.LastFMAPIKey == "" {
 				continue
 			}
 		}
+
 		out = append(out, p)
 	}
+
 	return out
 }
 

@@ -103,14 +103,17 @@ func endpoint(method string, extra ...string) string {
 	buf.WriteString("?method=")
 	buf.WriteString(method)
 	buf.WriteString("&format=json")
+
 	for i := 0; i+1 < len(extra); i += 2 {
 		buf.WriteByte('&')
 		buf.WriteString(extra[i])
 		buf.WriteByte('=')
 		buf.WriteURL(extra[i+1]) // URL-encode the value
 	}
+
 	ep := buf.String()
 	logger.PlAddBuffer.Put(buf)
+
 	return ep
 }
 
@@ -124,6 +127,7 @@ func (p *Provider) GetTopArtists(ctx context.Context, page, limit int) ([]ChartE
 	if limit <= 0 {
 		limit = 100
 	}
+
 	if page <= 0 {
 		page = 1
 	}
@@ -146,6 +150,7 @@ func (p *Provider) GetTopTracks(ctx context.Context, page, limit int) ([]ChartEn
 	if limit <= 0 {
 		limit = 100
 	}
+
 	if page <= 0 {
 		page = 1
 	}
@@ -165,10 +170,15 @@ func (p *Provider) GetTopTracks(ctx context.Context, page, limit int) ([]ChartEn
 
 // GetTopArtistsByCountry returns the top artists for a given country.
 // country should be an ISO 3166-1 country name (e.g. "germany", "united states").
-func (p *Provider) GetTopArtistsByCountry(ctx context.Context, country string, page, limit int) ([]ChartEntry, error) {
+func (p *Provider) GetTopArtistsByCountry(
+	ctx context.Context,
+	country string,
+	page, limit int,
+) ([]ChartEntry, error) {
 	if limit <= 0 {
 		limit = 100
 	}
+
 	if page <= 0 {
 		page = 1
 	}
@@ -188,10 +198,15 @@ func (p *Provider) GetTopArtistsByCountry(ctx context.Context, country string, p
 }
 
 // GetTopTracksByCountry returns the top tracks for a given country.
-func (p *Provider) GetTopTracksByCountry(ctx context.Context, country string, page, limit int) ([]ChartEntry, error) {
+func (p *Provider) GetTopTracksByCountry(
+	ctx context.Context,
+	country string,
+	page, limit int,
+) ([]ChartEntry, error) {
 	if limit <= 0 {
 		limit = 100
 	}
+
 	if page <= 0 {
 		page = 1
 	}
@@ -211,11 +226,16 @@ func (p *Provider) GetTopTracksByCountry(ctx context.Context, country string, pa
 }
 
 // GetTopAlbumsByTag returns the top albums for a given tag/genre.
-// tag examples: "rock", "electronic", "hip-hop"
-func (p *Provider) GetTopAlbumsByTag(ctx context.Context, tag string, page, limit int) ([]ChartEntry, error) {
+// tag examples: "rock", "electronic", "hip-hop".
+func (p *Provider) GetTopAlbumsByTag(
+	ctx context.Context,
+	tag string,
+	page, limit int,
+) ([]ChartEntry, error) {
 	if limit <= 0 {
 		limit = 100
 	}
+
 	if page <= 0 {
 		page = 1
 	}
@@ -235,10 +255,15 @@ func (p *Provider) GetTopAlbumsByTag(ctx context.Context, tag string, page, limi
 }
 
 // GetTopArtistsByTag returns the top artists for a given tag/genre.
-func (p *Provider) GetTopArtistsByTag(ctx context.Context, tag string, page, limit int) ([]ChartEntry, error) {
+func (p *Provider) GetTopArtistsByTag(
+	ctx context.Context,
+	tag string,
+	page, limit int,
+) ([]ChartEntry, error) {
 	if limit <= 0 {
 		limit = 100
 	}
+
 	if page <= 0 {
 		page = 1
 	}
@@ -264,7 +289,10 @@ func (p *Provider) GetTopArtistsByTag(ctx context.Context, tag string, page, lim
 
 // GetArtistInfo retrieves full artist metadata.
 // Provide either artistName or mbid (or both). mbid takes priority when present.
-func (p *Provider) GetArtistInfo(ctx context.Context, artistName, mbid string) (*apiexternal_v2.ArtistDetails, error) {
+func (p *Provider) GetArtistInfo(
+	ctx context.Context,
+	artistName, mbid string,
+) (*apiexternal_v2.ArtistDetails, error) {
 	if artistName == "" && mbid == "" {
 		return nil, fmt.Errorf("lastfm: GetArtistInfo requires artist name or mbid")
 	}
@@ -288,7 +316,10 @@ func (p *Provider) GetArtistInfo(ctx context.Context, artistName, mbid string) (
 
 // GetAlbumInfo retrieves full album metadata.
 // Provide either (artistName + albumName) or mbid. mbid takes priority when present.
-func (p *Provider) GetAlbumInfo(ctx context.Context, artistName, albumName, mbid string) (*apiexternal_v2.ReleaseDetails, error) {
+func (p *Provider) GetAlbumInfo(
+	ctx context.Context,
+	artistName, albumName, mbid string,
+) (*apiexternal_v2.ReleaseDetails, error) {
 	if mbid == "" && (artistName == "" || albumName == "") {
 		return nil, fmt.Errorf("lastfm: GetAlbumInfo requires (artist+album) or mbid")
 	}
@@ -315,7 +346,11 @@ func (p *Provider) GetAlbumInfo(ctx context.Context, artistName, albumName, mbid
 //
 
 // SearchArtists searches for artists by name.
-func (p *Provider) SearchArtists(ctx context.Context, query string, limit int) ([]apiexternal_v2.ArtistSearchResult, error) {
+func (p *Provider) SearchArtists(
+	ctx context.Context,
+	query string,
+	limit int,
+) ([]apiexternal_v2.ArtistSearchResult, error) {
 	if limit <= 0 {
 		limit = 30
 	}
@@ -334,7 +369,11 @@ func (p *Provider) SearchArtists(ctx context.Context, query string, limit int) (
 }
 
 // SearchAlbums searches for albums by title.
-func (p *Provider) SearchAlbums(ctx context.Context, query string, limit int) ([]apiexternal_v2.ReleaseSearchResult, error) {
+func (p *Provider) SearchAlbums(
+	ctx context.Context,
+	query string,
+	limit int,
+) ([]apiexternal_v2.ReleaseSearchResult, error) {
 	if limit <= 0 {
 		limit = 30
 	}

@@ -306,7 +306,9 @@ func FindAudiobooksByTitleAuthor(
 			false,
 			"SELECT count() FROM dbauthors WHERE name = ? COLLATE NOCASE OR slug = ? COLLATE NOCASE",
 			"SELECT id FROM dbauthors WHERE name = ? COLLATE NOCASE OR slug = ? COLLATE NOCASE",
-			author, authorSlug)
+			author,
+			authorSlug,
+		)
 		// For each author, look for albums with matching title
 		for _, authorID := range authorIDs {
 			if len(results) >= maxResults {

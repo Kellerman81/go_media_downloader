@@ -371,6 +371,7 @@ func convertReleaseSearchResults(releases []mbRelease) []apiexternal_v2.ReleaseS
 			totalTracks := 0
 			for j := range releases[i].Media {
 				mediaFormats[j] = releases[i].Media[j].Format
+
 				totalTracks += releases[i].Media[j].TrackCount
 			}
 

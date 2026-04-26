@@ -340,8 +340,9 @@ func SlicesCacheContainsI(isType uint, query string, w *string) bool {
 	if w == nil || *w == "" {
 		return false
 	}
+
 	v := *w
-	for a := range GetCachedStringSeq(mtstrings.GetStringsMap(isType, query), false, true) {
+	for _, a := range GetCachedStringArr(mtstrings.GetStringsMap(isType, query), false, true) {
 		if v == a || strings.EqualFold(v, a) {
 			return true
 		}
@@ -1082,6 +1083,7 @@ func doRefreshInternal(e cacheDispatchEntry, force bool) {
 			e.dataKey,
 			cache.itemsthreestring,
 		)
+
 	case varKindTwoString:
 		refreshCacheDBInternal(
 			e.isType,
@@ -1091,6 +1093,7 @@ func doRefreshInternal(e cacheDispatchEntry, force bool) {
 			e.dataKey,
 			cache.itemstwostring,
 		)
+
 	case varKindOneStringTwoInt:
 		refreshCacheDBInternal(
 			e.isType,
@@ -1100,6 +1103,7 @@ func doRefreshInternal(e cacheDispatchEntry, force bool) {
 			e.dataKey,
 			cache.itemstwoint,
 		)
+
 	case varKindString:
 		refreshCacheDBInternal(
 			e.isType,
@@ -1655,7 +1659,7 @@ func startJanitor() {
 		return
 	}
 
-	cache.janitorCtx, cache.janitorCancel = context.WithCancel(context.Background())
+	cache.janitorCtx, cache.janitorCancel = context.WithCancel(context.Background()) //nolint:gosec // cancel stored in cache.janitorCancel
 	cache.janitor = time.NewTimer(cache.interval)
 	janitorActive = true
 

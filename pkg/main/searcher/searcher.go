@@ -78,7 +78,7 @@ type searchParams struct {
 }
 
 const (
-	skippedstr        = "Skipped"
+	skippedstr           = "Skipped"
 	searchTypeMissing    = 1
 	searchTypeRSS        = 2
 	searchTypeSeason     = 3

@@ -733,12 +733,8 @@ func DispatchEvery(
 		}
 	}()
 
-	// Store the cancel function in a way that can be accessed for cleanup
-	// Note: This would need additional infrastructure to properly track and cancel
-	// these contexts during application shutdown
-	_ = cancel // For now, prevent unused variable warning
-
 	syncops.QueueWorkerMapAdd(syncops.MapTypeSchedule, schedulerID, syncops.JobSchedule{
+		CancelFunc:     cancel,
 		JobName:        name,
 		JobID:          newUUID(),
 		ID:             schedulerID,
@@ -820,7 +816,7 @@ func Dispatch(name string, fn func(uint32, context.Context) error, queue string)
 	updateLastAdded(queue)
 
 	id := newUUID()
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(context.Background()) //nolint:gosec // cancel stored in Job.CancelFunc
 
 	logger.Logtype("debug", 0).
 		Str("job_name", name).

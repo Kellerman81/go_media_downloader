@@ -18,17 +18,16 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/base"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/apprise"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/acoustid"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/apprise"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/audible"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/audnex"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/deluge"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/deezer"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/itunes"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/theaudiodb"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/deluge"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/discogs"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/goodreads"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/gotify"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/itunes"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/lastfm"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/musicbrainz"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/nzbget"
@@ -38,6 +37,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/qbittorrent"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/rtorrent"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/sabnzbd"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/theaudiodb"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/transmission"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
@@ -406,6 +406,7 @@ func initproviders() {
 				providers.SetMusicBrainz(provider)
 				logger.Logtype(logger.StatusDebug, 0).Msg("Registered MusicBrainz provider")
 			}
+
 		case "acoustid":
 			// API key already validated by GetMusicMetaSourcePriority.
 			if provider := acoustid.NewProviderWithConfig(base.ClientConfig{
@@ -417,12 +418,14 @@ func initproviders() {
 				providers.SetAcoustID(provider)
 				logger.Logtype(logger.StatusDebug, 0).Msg("Registered AcoustID provider")
 			}
+
 		case "lastfm":
 			// API key already validated by GetMusicMetaSourcePriority.
 			if provider := lastfm.NewProvider(); provider != nil {
 				providers.SetLastFM(provider)
 				logger.Logtype(logger.StatusDebug, 0).Msg("Registered Last.fm provider")
 			}
+
 		case "discogs":
 			var dProvider *discogs.Provider
 			if general.DiscogsToken != "" {
@@ -430,20 +433,24 @@ func initproviders() {
 			} else {
 				dProvider = discogs.NewProvider()
 			}
+
 			if dProvider != nil {
 				providers.SetDiscogs(dProvider)
 				logger.Logtype(logger.StatusDebug, 0).Msg("Registered Discogs provider")
 			}
+
 		case "deezer":
 			if dzProvider := deezer.NewProvider(); dzProvider != nil {
 				providers.SetDeezer(dzProvider)
 				logger.Logtype(logger.StatusDebug, 0).Msg("Registered Deezer provider")
 			}
+
 		case "theaudiodb":
 			if tadbProvider := theaudiodb.NewProvider(); tadbProvider != nil {
 				providers.SetTheAudioDB(tadbProvider)
 				logger.Logtype(logger.StatusDebug, 0).Msg("Registered TheAudioDB provider")
 			}
+
 		case "itunes":
 			if itProvider := itunes.NewProvider(); itProvider != nil {
 				providers.SetITunes(itProvider)

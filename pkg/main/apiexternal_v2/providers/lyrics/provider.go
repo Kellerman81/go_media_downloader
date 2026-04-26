@@ -39,6 +39,7 @@ func Fetch(ctx context.Context, artist, title, album string) string {
 	if lyr := fromLyricsOVH(ctx, artist, title); lyr != "" {
 		return lyr
 	}
+
 	return fromLRCLIB(ctx, artist, title, album)
 }
 
@@ -67,6 +68,7 @@ func fromLyricsOVH(ctx context.Context, artist, title string) string {
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return ""
 	}
+
 	if resp.Error != "" || resp.Lyrics == "" {
 		return ""
 	}
@@ -87,6 +89,7 @@ func fromLRCLIB(ctx context.Context, artist, title, album string) string {
 	params := url.Values{}
 	params.Set("artist_name", artist)
 	params.Set("track_name", title)
+
 	if album != "" {
 		params.Set("album_name", album)
 	}
@@ -100,6 +103,7 @@ func fromLRCLIB(ctx context.Context, artist, title, album string) string {
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return ""
 	}
+
 	if resp.Instrumental || resp.PlainLyrics == "" {
 		return ""
 	}
@@ -116,7 +120,11 @@ func get(ctx context.Context, rawURL string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "go_media_downloader/lyrics (+https://github.com/Kellerman81/go_media_downloader)")
+
+	req.Header.Set(
+		"User-Agent",
+		"go_media_downloader/lyrics (+https://github.com/Kellerman81/go_media_downloader)",
+	)
 
 	resp, err := httpClient.Do(req)
 	if err != nil {

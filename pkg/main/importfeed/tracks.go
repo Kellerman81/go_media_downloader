@@ -110,15 +110,18 @@ func retryOnRateLimit[T any](ctx context.Context, fn func() (T, error)) (T, erro
 		if err == nil || attempt >= rateLimitMaxRetries {
 			return result, err
 		}
+
 		if !strings.Contains(err.Error(), "rate limit") {
 			return result, err
 		}
+
 		logger.Logtype("warning", 1).
 			Int("attempt", attempt+1).
 			Int("max", rateLimitMaxRetries).
 			Dur("sleep", rateLimitSleep).
 			Err(err).
 			Msg("Provider rate limit hit, sleeping before retry")
+
 		select {
 		case <-ctx.Done():
 			return result, ctx.Err()
@@ -462,7 +465,7 @@ func findASINByTitleAuthor(
 }
 
 // luceneEscapeTo writes the Lucene-escaped form of s into buf.
-// Special characters: + - && || ! ( ) { } [ ] ^ " ~ * ? : \ /
+// Special characters: + - && || ! ( ) { } [ ] ^ " ~ * ? : \ /.
 func luceneEscapeTo(buf *logger.AddBuffer, s string) {
 	for _, c := range s {
 		switch c {
@@ -472,6 +475,7 @@ func luceneEscapeTo(buf *logger.AddBuffer, s string) {
 			// && and || are two-character operators; escape each rune individually.
 			buf.WriteByte('\\')
 		}
+
 		buf.WriteRune(c)
 	}
 }
@@ -481,7 +485,9 @@ func luceneEscapeTo(buf *logger.AddBuffer, s string) {
 func LuceneEscape(s string) string {
 	buf := logger.PlAddBuffer.Get()
 	defer logger.PlAddBuffer.Put(buf)
+
 	luceneEscapeTo(buf, s)
+
 	return buf.String()
 }
 
@@ -492,13 +498,16 @@ func LuceneEscape(s string) string {
 func BuildArtistAlbumSearch(album, artist string) []byte {
 	buf := logger.PlAddBuffer.Get()
 	defer logger.PlAddBuffer.Put(buf)
+
 	buf.WriteString("release:")
 	buf.WriteString(album)
+
 	if artist != "" && !IsVariousArtists(artist) {
 		buf.WriteString(` AND artist:"`)
 		luceneEscapeTo(buf, artist)
 		buf.WriteString(`"~2`)
 	}
+
 	return append([]byte(nil), buf.Bytes()...)
 }
 

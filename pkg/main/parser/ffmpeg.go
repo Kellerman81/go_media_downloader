@@ -16,9 +16,9 @@ import (
 
 type ffProbeJSON struct {
 	Streams []struct {
-		//Tags struct {
+		// Tags struct {
 		//	Language string `json:"language"`
-		//} `json:"tags"`
+		// } `json:"tags"`
 		Tags           map[string]string `json:"tags"`
 		CodecName      string            `json:"codec_name"`
 		CodecTagString string            `json:"codec_tag_string"`

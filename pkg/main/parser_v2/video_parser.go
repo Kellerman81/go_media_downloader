@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
@@ -106,31 +107,41 @@ const (
 	reVideoLanguage          = `(?i)[\s._](german|deutsch|french|francais|spanish|espanol|italiano|portuguese|portuguese|russian|japanese|korean|chinese|mandarin|hindi|arabic|dutch|polish|swedish|norwegian|danish|finnish|turkish|greek|hebrew|czech|hungarian|romanian|thai|vietnamese|indonesian|malay|tagalog|multi|dual[\s._-]?audio|dubbed|subbed|subs?)[\s._](?:(?:19|20)\d{2}[\s._]|$)`
 )
 
-// compileVideoPatterns returns the shared video pattern set, fetching each
-// compiled regexp from the global cache (compiled once, reused on every call).
+var (
+	sharedVideoPatterns     *videoPatterns
+	sharedVideoPatternOnce  sync.Once
+)
+
+// compileVideoPatterns returns the shared video pattern set.
+// The struct is built once and reused; the individual regexps inside are
+// already cached by the database package, so this eliminates the per-call
+// struct allocation that showed up in heap profiles.
 func compileVideoPatterns() *videoPatterns {
-	return &videoPatterns{
-		year:              database.GetCachedRegexp(reVideoYear),
-		imdb:              database.GetCachedRegexp(reVideoIMDB),
-		tvdb:              database.GetCachedRegexp(reVideoTVDB),
-		seasonEpisode:     database.GetCachedRegexp(reVideoSeasonEpisode),
-		seasonEpisodeAlt:  database.GetCachedRegexp(reVideoSeasonEpisodeAlt),
-		seasonEpisodeDate: database.GetCachedRegexp(reVideoSeasonEpisodeDate),
-		episodeOnly:       database.GetCachedRegexp(reVideoEpisodeOnly),
-		resolution:        database.GetCachedRegexp(reVideoResolution),
-		quality:           database.GetCachedRegexp(reVideoQuality),
-		codec:             database.GetCachedRegexp(reVideoCodec),
-		audio:             database.GetCachedRegexp(reVideoAudio),
-		group:             database.GetCachedRegexp(reVideoGroup),
-		extended:          database.GetCachedRegexp(reVideoExtended),
-		proper:            database.GetCachedRegexp(reVideoProper),
-		repack:            database.GetCachedRegexp(reVideoRepack),
-		remux:             database.GetCachedRegexp(reVideoRemux),
-		hdr:               database.GetCachedRegexp(reVideoHDR),
-		complete:          database.GetCachedRegexp(reVideoComplete),
-		multiSeason:       database.GetCachedRegexp(reVideoMultiSeason),
-		language:          database.GetCachedRegexp(reVideoLanguage),
-	}
+	sharedVideoPatternOnce.Do(func() {
+		sharedVideoPatterns = &videoPatterns{
+			year:              database.GetCachedRegexp(reVideoYear),
+			imdb:              database.GetCachedRegexp(reVideoIMDB),
+			tvdb:              database.GetCachedRegexp(reVideoTVDB),
+			seasonEpisode:     database.GetCachedRegexp(reVideoSeasonEpisode),
+			seasonEpisodeAlt:  database.GetCachedRegexp(reVideoSeasonEpisodeAlt),
+			seasonEpisodeDate: database.GetCachedRegexp(reVideoSeasonEpisodeDate),
+			episodeOnly:       database.GetCachedRegexp(reVideoEpisodeOnly),
+			resolution:        database.GetCachedRegexp(reVideoResolution),
+			quality:           database.GetCachedRegexp(reVideoQuality),
+			codec:             database.GetCachedRegexp(reVideoCodec),
+			audio:             database.GetCachedRegexp(reVideoAudio),
+			group:             database.GetCachedRegexp(reVideoGroup),
+			extended:          database.GetCachedRegexp(reVideoExtended),
+			proper:            database.GetCachedRegexp(reVideoProper),
+			repack:            database.GetCachedRegexp(reVideoRepack),
+			remux:             database.GetCachedRegexp(reVideoRemux),
+			hdr:               database.GetCachedRegexp(reVideoHDR),
+			complete:          database.GetCachedRegexp(reVideoComplete),
+			multiSeason:       database.GetCachedRegexp(reVideoMultiSeason),
+			language:          database.GetCachedRegexp(reVideoLanguage),
+		}
+	})
+	return sharedVideoPatterns
 }
 
 // Parse parses a video filename and returns extracted information.

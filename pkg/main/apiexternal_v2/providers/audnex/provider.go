@@ -79,6 +79,7 @@ func (p *Provider) GetBookByASIN(
 	buf.WriteString("?region=")
 	buf.WriteURL(region)
 	buf.WriteString("&update=1")
+
 	endpoint := buf.String()
 	logger.PlAddBuffer.Put(buf)
 
@@ -102,6 +103,7 @@ func (p *Provider) GetChaptersByASIN(
 	buf.WriteString("/chapters?region=")
 	buf.WriteURL(region)
 	buf.WriteString("&update=1")
+
 	endpoint := buf.String()
 	logger.PlAddBuffer.Put(buf)
 
@@ -125,6 +127,7 @@ func (p *Provider) GetAuthorByASIN(
 	buf := logger.PlAddBuffer.Get()
 	buf.WriteString("/authors/")
 	buf.WriteURL(asin)
+
 	endpoint := buf.String()
 	logger.PlAddBuffer.Put(buf)
 
@@ -145,6 +148,7 @@ func (p *Provider) GetAuthorBooks(
 	buf.WriteString("/authors/")
 	buf.WriteURL(asin)
 	buf.WriteString("/books")
+
 	endpoint := buf.String()
 	logger.PlAddBuffer.Put(buf)
 
@@ -166,6 +170,7 @@ func (p *Provider) SearchAuthorByName(
 	buf := logger.PlAddBuffer.Get()
 	buf.WriteString("/authors?name=")
 	buf.WriteURL(name)
+
 	endpoint := buf.String()
 	logger.PlAddBuffer.Put(buf)
 

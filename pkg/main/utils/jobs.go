@@ -1117,6 +1117,7 @@ func searchMusicBrainzByMetadata(
 			for i, a := range result.Artists {
 				artistNames[i] = a.Name
 			}
+
 			artistStr = logger.JoinStringsSep(artistNames, ", ")
 		}
 
@@ -1376,6 +1377,7 @@ func processMusicFolder(
 						trackInfos = append(trackInfos, parser_v2.TrackInfo{Artist: tags.Artist})
 					}
 				}
+
 				isVariousArtists := importfeed.DetectVA(artist, trackInfos)
 
 				if isVariousArtists && releaseGroupID != "" {

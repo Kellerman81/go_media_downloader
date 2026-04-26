@@ -272,10 +272,21 @@ func buildIndexThreeStringByNum2(
 func buildIndexTwoStringByStr1(
 	arr []syncops.DbstaticTwoStringOneInt,
 ) map[string][]*syncops.DbstaticTwoStringOneInt {
-	// Hint len(arr)*2 because the map holds up to two keys per entry (Str1 and
-	// Str2), so this pre-sizes buckets to exactly the expected load and avoids
-	// any rehash during the fill loop.
-	index := make(map[string][]*syncops.DbstaticTwoStringOneInt, len(arr)*2)
+	counts := make(map[string]int, len(arr)*2)
+	for i := range arr {
+		if arr[i].Str1 != "" {
+			counts[normalizeKey(arr[i].Str1)]++
+		}
+
+		if arr[i].Str2 != "" {
+			counts[normalizeKey(arr[i].Str2)]++
+		}
+	}
+
+	index := make(map[string][]*syncops.DbstaticTwoStringOneInt, len(counts))
+	for k, n := range counts {
+		index[k] = make([]*syncops.DbstaticTwoStringOneInt, 0, n)
+	}
 
 	for i := range arr {
 		if arr[i].Str1 != "" {

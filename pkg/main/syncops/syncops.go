@@ -49,6 +49,8 @@ type Job struct {
 
 // JobSchedule represents a scheduled job (from worker package).
 type JobSchedule struct {
+	CancelFunc     context.CancelFunc `json:"-"`
+	CronSchedule   cron.Schedule
 	JobName        string
 	ScheduleTyp    string
 	ScheduleString string
@@ -58,7 +60,6 @@ type JobSchedule struct {
 	CronID         cron.EntryID
 	JobID          uint32
 	ID             uint32
-	CronSchedule   cron.Schedule
 	IsRunning      bool
 }
 
@@ -234,7 +235,7 @@ func init() {
 // Subsequent calls are ignored due to sync.Once protection.
 func InitSyncOps() {
 	initOnce.Do(func() {
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(context.Background()) //nolint:gosec // cancel stored in manager.cancel
 
 		manager = &SyncOpsManager{
 			opQueue:      make(chan SyncOperation, 10000),

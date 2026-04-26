@@ -12,8 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/goccy/go-json"
-
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
@@ -25,6 +23,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/worker"
 	"github.com/PuerkitoBio/goquery"
 	gin "github.com/gin-gonic/gin"
+	"github.com/goccy/go-json"
 	"maragu.dev/gomponents"
 )
 
@@ -1810,13 +1809,13 @@ func apiStructure(ctx *gin.Context) {
 }
 
 type apiAlbumForceMatchJSON struct {
-	Folder             string `json:"folder"             binding:"required"`
-	Configentry        string `json:"configentry"        binding:"required"`
-	Grouptype          string `json:"grouptype"          binding:"required"`
-	Sourcepathtemplate string `json:"sourcepathtemplate" binding:"required"`
-	Targetpathtemplate string `json:"targetpathtemplate" binding:"required"`
-	ForcedID           string `json:"forced_id"          binding:"required"`
-	Preview            bool   `json:"preview"`
+	Folder             string `binding:"required" json:"folder"`
+	Configentry        string `binding:"required" json:"configentry"`
+	Grouptype          string `binding:"required" json:"grouptype"`
+	Sourcepathtemplate string `binding:"required" json:"sourcepathtemplate"`
+	Targetpathtemplate string `binding:"required" json:"targetpathtemplate"`
+	ForcedID           string `binding:"required" json:"forced_id"`
+	Preview            bool   `                   json:"preview"`
 }
 
 // @Summary      Force-match album folder

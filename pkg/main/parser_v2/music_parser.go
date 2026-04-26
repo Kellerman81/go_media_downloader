@@ -400,6 +400,7 @@ func (mp *MusicParser) parseAlbumName(name string, result *MusicParseResult) {
 	if mp.patterns.sceneGroup.MatchString(cleanedName) {
 		cleanedName = mp.patterns.sceneGroup.ReplaceAllString(cleanedName, "")
 	}
+
 	// Clean up multiple consecutive dashes and trailing dashes
 	for strings.Contains(cleanedName, "--") {
 		cleanedName = strings.ReplaceAll(cleanedName, "--", "-")
@@ -450,6 +451,7 @@ func (mp *MusicParser) extractArtistAlbum(name string, result *MusicParseResult)
 			mp.setArtistAlbumFromMatches(matches[1], matches[2], result)
 			return
 		}
+
 		if !yearStart && lhsIsNumericPrefix {
 			mp.extractArtistAlbum(matches[2], result)
 			return
@@ -525,7 +527,8 @@ func cleanAlbumTitle(album string) string {
 
 	// Remove trailing year + release group pattern (e.g., "2003 CGPABN INT", "1990 EMG INT")
 	// This must be done first before other patterns
-	if loc := database.GetCachedRegexp(`\s+\d{4}\s+[A-Z0-9]+(?:\s+INT)?$`).FindStringIndex(album); loc != nil {
+	if loc := database.GetCachedRegexp(`\s+\d{4}\s+[A-Z0-9]+(?:\s+INT)?$`).
+		FindStringIndex(album); loc != nil {
 		album = album[:loc[0]]
 	}
 
@@ -558,6 +561,7 @@ func cleanAlbumTitle(album string) string {
 				changed = true
 			}
 		}
+
 		if !changed {
 			break
 		}
@@ -565,7 +569,8 @@ func cleanAlbumTitle(album string) string {
 
 	// Normalize "Vol N" volume indicators: "Vol.58" or "Vol 58" → "58"
 	// Scene releases often use "Artist Vol.NN" while the DB title uses "Artist NN"
-	if loc := database.GetCachedRegexp(`(?i)\bVol\.?\s+(\d+)\b`).FindStringSubmatchIndex(album); loc != nil {
+	if loc := database.GetCachedRegexp(`(?i)\bVol\.?\s+(\d+)\b`).
+		FindStringSubmatchIndex(album); loc != nil {
 		album = album[:loc[0]] + album[loc[2]:loc[3]] + album[loc[1]:]
 	}
 
@@ -652,6 +657,7 @@ func StripReleaseType(album string) string {
 				changed = true
 			}
 		}
+
 		if !changed {
 			break
 		}

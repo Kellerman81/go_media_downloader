@@ -71,6 +71,7 @@ func (s *SyncMap[T]) AddPointer(key string, value T, expires int64, imdb bool, l
 // QueueOperation functions without risking a deadlock.
 func (s *SyncMap[T]) ModifyInPlace(key string, fn func(T)) {
 	s.mu.RLock()
+
 	val, ok := s.m[key]
 	s.mu.RUnlock()
 
@@ -237,12 +238,14 @@ func (s *SyncMap[T]) CheckExpires(key string, extend bool, dur int) bool {
 // so fn is safe to call other SyncMap or QueueOperation functions.
 func (s *SyncMap[T]) DeleteFunc(fn func(T) bool) {
 	s.mu.RLock()
+
 	var toDelete []string
 	for key, value := range s.m {
 		if fn(value) {
 			toDelete = append(toDelete, key)
 		}
 	}
+
 	s.mu.RUnlock()
 
 	if len(toDelete) == 0 {
@@ -253,6 +256,7 @@ func (s *SyncMap[T]) DeleteFunc(fn func(T) bool) {
 	for _, key := range toDelete {
 		s.delete(key)
 	}
+
 	s.mu.Unlock()
 }
 
@@ -261,12 +265,14 @@ func (s *SyncMap[T]) DeleteFunc(fn func(T) bool) {
 // fn is evaluated under a read lock; deletions are applied under a write lock.
 func (s *SyncMap[T]) DeleteFuncExpires(fn func(int64) bool) {
 	s.mu.RLock()
+
 	var toDelete []string
 	for key, expires := range s.expires {
 		if fn(expires) {
 			toDelete = append(toDelete, key)
 		}
 	}
+
 	s.mu.RUnlock()
 
 	if len(toDelete) == 0 {
@@ -277,6 +283,7 @@ func (s *SyncMap[T]) DeleteFuncExpires(fn func(int64) bool) {
 	for _, key := range toDelete {
 		s.delete(key)
 	}
+
 	s.mu.Unlock()
 }
 
@@ -291,12 +298,14 @@ func (s *SyncMap[T]) DeleteFuncExpiresVal(fn func(int64) bool, fnVal func(T)) {
 	}
 
 	s.mu.RLock()
+
 	var toDelete []entry
 	for key, expires := range s.expires {
 		if fn(expires) {
 			toDelete = append(toDelete, entry{key: key, value: s.m[key]})
 		}
 	}
+
 	s.mu.RUnlock()
 
 	if len(toDelete) == 0 {
@@ -311,6 +320,7 @@ func (s *SyncMap[T]) DeleteFuncExpiresVal(fn func(int64) bool, fnVal func(T)) {
 	for i := range toDelete {
 		s.delete(toDelete[i].key)
 	}
+
 	s.mu.Unlock()
 }
 
@@ -325,12 +335,14 @@ func (s *SyncMap[T]) DeleteFuncImdbVal(fn func(bool) bool, fnVal func(T)) {
 	}
 
 	s.mu.RLock()
+
 	var toDelete []entry
 	for key, imdb := range s.imdb {
 		if fn(imdb) {
 			toDelete = append(toDelete, entry{key: key, value: s.m[key]})
 		}
 	}
+
 	s.mu.RUnlock()
 
 	if len(toDelete) == 0 {
@@ -345,6 +357,7 @@ func (s *SyncMap[T]) DeleteFuncImdbVal(fn func(bool) bool, fnVal func(T)) {
 	for i := range toDelete {
 		s.delete(toDelete[i].key)
 	}
+
 	s.mu.Unlock()
 }
 
@@ -428,12 +441,14 @@ func (s *SyncMapUint[T]) GetVal(key uint32) T {
 // so fn is safe to call other SyncMap or QueueOperation functions.
 func (s *SyncMapUint[T]) DeleteIf(fn func(uint32, T) bool) {
 	s.mu.RLock()
+
 	var toDelete []uint32
 	for key, value := range s.m {
 		if fn(key, value) {
 			toDelete = append(toDelete, key)
 		}
 	}
+
 	s.mu.RUnlock()
 
 	if len(toDelete) == 0 {
@@ -444,6 +459,7 @@ func (s *SyncMapUint[T]) DeleteIf(fn func(uint32, T) bool) {
 	for _, key := range toDelete {
 		delete(s.m, key)
 	}
+
 	s.mu.Unlock()
 }
 

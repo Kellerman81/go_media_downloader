@@ -23,15 +23,15 @@ type tadTrackListResponse struct {
 
 // tadAlbum represents a single album entry from TheAudioDB.
 type tadAlbum struct {
-	IDAlbum           string `json:"idAlbum"`
-	StrAlbum          string `json:"strAlbum"`
-	StrArtist         string `json:"strArtist"`
-	IntYearReleased   string `json:"intYearReleased"`
-	StrAlbumThumb     string `json:"strAlbumThumb"`
-	StrMusicBrainzID  string `json:"strMusicBrainzID"`
-	IntScore          string `json:"intScore"`
-	StrReleaseFormat  string `json:"strReleaseFormat"`
-	StrLabel          string `json:"strLabel"`
+	IDAlbum          string `json:"idAlbum"`
+	StrAlbum         string `json:"strAlbum"`
+	StrArtist        string `json:"strArtist"`
+	IntYearReleased  string `json:"intYearReleased"`
+	StrAlbumThumb    string `json:"strAlbumThumb"`
+	StrMusicBrainzID string `json:"strMusicBrainzID"`
+	IntScore         string `json:"intScore"`
+	StrReleaseFormat string `json:"strReleaseFormat"`
+	StrLabel         string `json:"strLabel"`
 }
 
 // tadTrack represents a single track entry from TheAudioDB.
@@ -43,7 +43,7 @@ type tadTrack struct {
 	StrAlbum         string `json:"strAlbum"`
 	StrArtist        string `json:"strArtist"`
 	IntTrackNumber   string `json:"intTrackNumber"`
-	IntCD            string `json:"intCD"` // disc number
+	IntCD            string `json:"intCD"`       // disc number
 	IntDuration      string `json:"intDuration"` // milliseconds
 	StrMusicBrainzID string `json:"strMusicBrainzID"`
 }
@@ -56,22 +56,26 @@ func convertAlbumSearchToReleases(albums []tadAlbum) []apiexternal_v2.ReleaseSea
 	out := make([]apiexternal_v2.ReleaseSearchResult, 0, len(albums))
 	for i := range albums {
 		a := &albums[i]
+
 		rel := apiexternal_v2.ReleaseSearchResult{
-			ID:           a.IDAlbum,
-			TheAudioDBID: a.IDAlbum,
-			Title:        a.StrAlbum,
+			ID:            a.IDAlbum,
+			TheAudioDBID:  a.IDAlbum,
+			Title:         a.StrAlbum,
 			MusicBrainzID: a.StrMusicBrainzID,
-			CoverURL:     a.StrAlbumThumb,
-			ProviderType: apiexternal_v2.ProviderTheAudioDB,
+			CoverURL:      a.StrAlbumThumb,
+			ProviderType:  apiexternal_v2.ProviderTheAudioDB,
 		}
 		if a.StrArtist != "" {
 			rel.Artists = []apiexternal_v2.ArtistRef{{Name: a.StrArtist}}
 		}
+
 		if y, err := strconv.Atoi(a.IntYearReleased); err == nil {
 			rel.ReleaseYear = y
 		}
+
 		out = append(out, rel)
 	}
+
 	return out
 }
 
@@ -95,23 +99,27 @@ func convertTracksToDetails(albumID string, tracks []tadTrack) *apiexternal_v2.R
 		if tn == 0 {
 			tn = i + 1
 		}
+
 		dn, _ := strconv.Atoi(t.IntCD)
 		if dn == 0 {
 			dn = 1
 		}
+
 		var dur time.Duration
 		if ms, err := strconv.ParseInt(t.IntDuration, 10, 64); err == nil && ms > 0 {
 			dur = time.Duration(ms) * time.Millisecond
 		}
+
 		converted = append(converted, apiexternal_v2.Track{
-			Title:        t.StrTrack,
-			Position:     i + 1,
-			TrackNumber:  tn,
-			DiscNumber:   dn,
-			Duration:     dur,
+			Title:         t.StrTrack,
+			Position:      i + 1,
+			TrackNumber:   tn,
+			DiscNumber:    dn,
+			Duration:      dur,
 			MusicBrainzID: t.StrMusicBrainzID,
 		})
 	}
+
 	details.Tracks = converted
 	details.TrackCount = len(converted)
 

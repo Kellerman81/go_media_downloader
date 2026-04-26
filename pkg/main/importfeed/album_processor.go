@@ -104,6 +104,7 @@ func MatchAudioFolderAsAlbum(
 			}
 
 			subPath := filepath.Join(folder, entry.Name())
+
 			sf, err3 := parser_v2.CollectFilesOnly(subPath, parser_v2.AudioExtensions)
 			if err3 == nil && len(sf) > 0 {
 				if audioSub != "" {
@@ -145,6 +146,7 @@ func MatchAudioFolderAsAlbum(
 		}
 
 		return result, status, report
+
 	default:
 		logger.Logtype("debug", 0).
 			Str("folder", folder).
@@ -356,12 +358,15 @@ func matchAudiobookFolder(
 			data,
 		)
 	}
+
 	if asin == "" && meta.FilenameASIN != "" {
 		asin = verifyASINChapterCount(ctx, meta.FilenameASIN, cfgp.AudibleRegion, tracks, data)
 	}
+
 	if asin == "" && meta.TagASIN != "" {
 		asin = verifyASINChapterCount(ctx, meta.TagASIN, cfgp.AudibleRegion, tracks, data)
 	}
+
 	if meta.IsDiscFolder && meta.ParentAlbum != "" && asin == "" {
 		asin = verifyASINChapterCount(
 			ctx,
@@ -770,6 +775,7 @@ func matchAudiobookFolderForced(
 				dbMatch, _ = database.FindAudiobookByASIN(*forcedASIN)
 			}
 		}
+
 		if dbMatch == nil {
 			return nil, "no_match", nil
 		}
@@ -777,9 +783,11 @@ func matchAudiobookFolderForced(
 
 	// Step 2: parse folder metadata and build album struct.
 	tracks := parser_v2.CollectTracksFromFiles(files)
+
 	tracks = parser_v2.EnrichTracksWithTags(tracks)
 
 	tagData := parser_v2.ReadTagsForFirstFile(files)
+
 	var tagArtist, tagAlbumArtist, tagAlbum, tagGenre string
 	if tagData != nil {
 		tagArtist = tagData.Artist
@@ -787,6 +795,7 @@ func matchAudiobookFolderForced(
 		tagAlbum = tagData.Album
 		tagGenre = tagData.Genre
 	}
+
 	folderArtist, folderAlbum, year := parser_v2.ParseAudioFolder(folder)
 	firstTrack := parser_v2.ParseAudioFilename(files[0])
 	artist := coalesceStr(tagAlbumArtist, tagArtist, folderArtist, firstTrack.Artist)
@@ -803,11 +812,13 @@ func matchAudiobookFolderForced(
 		DatabaseID:     dbMatch.ID,
 		ExpectedTracks: dbMatch.ChapterCount,
 	}
+
 	album.Tracks = tracks
 	album.TotalRuntime = parser_v2.CalculateTotalRuntime(tracks)
 
 	// Step 3: get DB tracks and run the standard LAP matcher.
 	isVA := IsVariousArtists(artist)
+
 	dbTracks := resolveTracksForMatching(
 		ctx,
 		dbMatch.ID,
@@ -822,13 +833,16 @@ func matchAudiobookFolderForced(
 	}
 
 	forcedData := *data
+
 	forcedData.AllowMissingTracks = true
+
 	result, matched, used := matchTracksByDistance(album.Tracks, dbTracks, isVA, true, &forcedData)
 
 	// Step 4: build the matched-tracks slice with next-best fallback for unmatched DB tracks.
 	matchedTracks := buildMatchedTracksWithFallback(
 		album.Tracks, dbTracks, result, matched, used, isVA, true, &forcedData,
 	)
+
 	album.Tracks = matchedTracks
 	if album.ExpectedTracks == 0 {
 		album.ExpectedTracks = len(matchedTracks)
@@ -840,6 +854,7 @@ func matchAudiobookFolderForced(
 		if !addAudiobookFilesToDatabase(ctx, folder, album, cfgp, listid) {
 			return album, "no_match", nil
 		}
+
 		return album, "", nil
 	}
 
@@ -881,6 +896,7 @@ func matchMusicFolderForced(
 				dbMatch, _ = database.FindAlbumByMusicBrainzID(forcedMBID)
 			}
 		}
+
 		if dbMatch == nil {
 			return nil, "no_match", nil
 		}
@@ -888,6 +904,7 @@ func matchMusicFolderForced(
 
 	// Step 2: parse folder metadata and build album struct.
 	tagData := parser_v2.ReadTagsForFirstFile(files)
+
 	var tagArtist, tagAlbumArtist, tagAlbum, tagGenre string
 	if tagData != nil {
 		tagArtist = tagData.Artist
@@ -895,6 +912,7 @@ func matchMusicFolderForced(
 		tagAlbum = tagData.Album
 		tagGenre = tagData.Genre
 	}
+
 	folderArtist, folderAlbum, year := parser_v2.ParseAudioFolder(folder)
 	artist := coalesceStr(tagAlbumArtist, tagArtist, folderArtist)
 	albumTitle := coalesceStr(tagAlbum, folderAlbum, dbMatch.Title)
@@ -911,12 +929,14 @@ func matchMusicFolderForced(
 	}
 
 	tracks := parser_v2.CollectTracksFromFiles(files)
+
 	tracks = parser_v2.EnrichTracksWithTags(tracks)
 	album.Tracks = tracks
 	album.TotalRuntime = parser_v2.CalculateTotalRuntime(tracks)
 
 	// Step 3: get DB tracks and run the standard LAP matcher.
 	isVA := DetectVA(artist, tracks)
+
 	dbTracks := resolveTracksForMatching(ctx, dbMatch.ID, *forcedMBID, "", "", albumTitle, artist)
 	if len(dbTracks) == 0 {
 		return nil, "no_tracks", nil
@@ -925,7 +945,9 @@ func matchMusicFolderForced(
 	// Use a copy of data with AllowMissingTracks forced true so the matcher
 	// doesn't reject unmatched pairs before we can apply the fallback.
 	forcedData := *data
+
 	forcedData.AllowMissingTracks = true
+
 	result, matched, used := matchTracksByDistance(album.Tracks, dbTracks, isVA, false, &forcedData)
 
 	// Step 4: build the matched-tracks slice.
@@ -933,6 +955,7 @@ func matchMusicFolderForced(
 	matchedTracks := buildMatchedTracksWithFallback(
 		album.Tracks, dbTracks, result, matched, used, isVA, false, &forcedData,
 	)
+
 	album.Tracks = matchedTracks
 	if album.ExpectedTracks == 0 {
 		album.ExpectedTracks = len(matchedTracks)
@@ -944,6 +967,7 @@ func matchMusicFolderForced(
 		if !addAlbumFilesToDatabase(ctx, folder, album, cfgp, listid) {
 			return album, "no_match", nil
 		}
+
 		return album, "", nil
 	}
 
@@ -1200,7 +1224,9 @@ func matchMusicFolder(
 				data,
 				folder,
 			)
+
 			fallbacksRan = true
+
 			if len(fallbackCands) == 0 {
 				logger.Logtype("debug", 0).
 					Str("folder", folder).
@@ -1211,6 +1237,7 @@ func matchMusicFolder(
 
 				return nil, "no_match", nil
 			}
+
 			bestCandidates = append(bestCandidates, fallbackCands...)
 		}
 	}
@@ -1242,8 +1269,10 @@ func matchMusicFolder(
 			fileCount,
 			data,
 		)
+
 		preScored = append(preScored, preScoredC{c, d})
 	}
+
 	sort.SliceStable(
 		preScored,
 		func(i, j int) bool { return preScored[i].dist < preScored[j].dist },
@@ -1305,12 +1334,15 @@ func matchMusicFolder(
 						fileCount,
 						data,
 					)
+
 					fbPreScored = append(fbPreScored, preScoredC{c, d})
 				}
+
 				sort.SliceStable(
 					fbPreScored,
 					func(i, j int) bool { return fbPreScored[i].dist < fbPreScored[j].dist },
 				)
+
 				fbMatches := runMusicCandidatePasses(
 					ctx,
 					fbPreScored,
@@ -1336,6 +1368,7 @@ func matchMusicFolder(
 					sortSuccess = true
 				}
 			}
+
 			if !sortSuccess {
 				return nil, "wrong_runtime", buildMusicFailureReport(
 					ctx, preScored, bestCandidates, album.Tracks,
@@ -1407,6 +1440,7 @@ func searchAndImportAlternativeRelease(
 	if data != nil && data.PerTrackToleranceSeconds > 0 {
 		perTrackMs = int64(data.PerTrackToleranceSeconds) * 1000
 	}
+
 	toleranceMs := int64(*fileCount) * perTrackMs
 	if data != nil && data.MaxTotalDifferenceSeconds > 0 {
 		toleranceMs = int64(data.MaxTotalDifferenceSeconds) * 1000
@@ -1440,17 +1474,20 @@ func searchAndImportAlternativeRelease(
 			buf.WriteString(`release:"`)
 			buf.WriteString(LuceneEscape(*albumTitle))
 			buf.WriteString(`"~2`)
+
 			if searchArtist != "" && !IsVariousArtists(searchArtist) {
 				buf.WriteString(` AND artist:"`)
 				buf.WriteString(LuceneEscape(searchArtist))
 				buf.WriteString(`"~2`)
 			}
+
 			fuzzyQuery := buf.String()
 			logger.PlAddBuffer.Put(buf)
 			logger.Logtype("debug", 0).
 				Str("original_query", query).
 				Str("fuzzy_query", fuzzyQuery).
 				Msg("MB text search returned no results — retrying with fuzzy release query")
+
 			releases, err = retryOnRateLimit(
 				ctx,
 				func() ([]apiexternal_v2.ReleaseSearchResult, error) {
@@ -1465,6 +1502,7 @@ func searchAndImportAlternativeRelease(
 			existingHasFiles := false
 			for _, candidate := range existingCandidates {
 				candidateID := candidate.ID
+
 				fc := database.Getdatarow[int](
 					false,
 					"SELECT COUNT(*) FROM album_files WHERE dbalbum_id = ?",
@@ -1493,6 +1531,7 @@ func searchAndImportAlternativeRelease(
 							break
 						}
 					}
+
 					if !artistMatch {
 						continue
 					}
@@ -1514,6 +1553,7 @@ func searchAndImportAlternativeRelease(
 							Str("album", releases[i].Title).
 							Strs("disc_formats", releases[i].MediaFormats).
 							Msg("Alternative release format not allowed, skipping")
+
 						continue
 					}
 				}
@@ -1558,6 +1598,7 @@ func searchAndImportAlternativeRelease(
 								Uint("databaseID", dbID).
 								Str("releaseID", releases[i].MusicBrainzID).
 								Msg("Replaced existing release with alternative")
+
 							return dbID, true
 						}
 					}
@@ -1574,6 +1615,7 @@ func searchAndImportAlternativeRelease(
 							Uint("databaseID", dbID).
 							Str("releaseID", releases[i].MusicBrainzID).
 							Msg("Successfully imported alternative release as new entry")
+
 						return dbID, true
 					}
 
@@ -1601,6 +1643,7 @@ func searchAndImportAlternativeRelease(
 				if diff < 0 {
 					diff = -diff
 				}
+
 				runtimeOK = diff <= toleranceMs
 			}
 
@@ -1634,6 +1677,7 @@ func searchAndImportAlternativeRelease(
 					(data.AddFound || data.AllowAlternativeReleases) {
 					lfmAltTitle := releaseTitleName(release.Title, albumTitle)
 					lfmAltSlug := logger.StringToSlug(lfmAltTitle)
+
 					result, insertErr := database.ExecNid(
 						`INSERT INTO dbalbums (title, musicbrainz_release_group_id, musicbrainz_release_id,
 						  discogs_release_id, discogs_master_id, upc, slug, year, release_type, format,
@@ -1647,16 +1691,19 @@ func searchAndImportAlternativeRelease(
 					)
 					if insertErr == nil {
 						existingID = logger.Int64ToUint(result)
+
 						lfmAltArtistName, lfmAltArtistMBID := releaseArtistName(
 							release.Artists,
 							artist,
 						)
+
 						lfmAltArtistNamePtr := &lfmAltArtistName
 						if artistID := addOrGetArtist(
 							lfmAltArtistNamePtr,
 							&lfmAltArtistMBID,
 						); artistID > 0 {
 							pos := 0
+
 							_, _ = database.ExecNid(
 								`INSERT INTO dbalbum_artists (dbalbum_id, dbartist_id, position) VALUES (?, ?, ?)`,
 								&existingID,
@@ -1664,6 +1711,7 @@ func searchAndImportAlternativeRelease(
 								&pos,
 							)
 						}
+
 						for i := range release.Tracks {
 							t := &release.Tracks[i]
 							rms := t.Duration.Milliseconds()
@@ -1672,6 +1720,7 @@ func searchAndImportAlternativeRelease(
 							// multi-disc albums per-disc (1-5, 1-5) instead of globally
 							// (1-10), which would create duplicate (disc=1, track=N) rows.
 							tn := i + 1
+
 							_, _ = database.ExecNid(
 								`INSERT INTO dbtracks (dbalbum_id, title, track_number, disc_number, runtime_ms, acoustid)
 								 VALUES (?, ?, ?, 1, ?, '')`,
@@ -1681,6 +1730,7 @@ func searchAndImportAlternativeRelease(
 								&rms,
 							)
 						}
+
 						logger.Logtype("info", 1).
 							Str("artist", *artist).
 							Str("album", *albumTitle).
@@ -1717,6 +1767,7 @@ func searchAndImportAlternativeRelease(
 					if diff < 0 {
 						diff = -diff
 					}
+
 					runtimeOK = diff <= toleranceMs
 				}
 
@@ -1734,6 +1785,7 @@ func searchAndImportAlternativeRelease(
 						&release.DiscogsID,
 					)
 				}
+
 				if existingID == 0 && release.MasterID > 0 {
 					masterIDStr := strconv.Itoa(release.MasterID)
 					database.Scanrowsdyn(false,
@@ -1746,10 +1798,12 @@ func searchAndImportAlternativeRelease(
 					(data.AddFound || data.AllowAlternativeReleases) {
 					dgAltTitle := releaseTitleName(release.Title, albumTitle)
 					slug := logger.StringToSlug(dgAltTitle)
+
 					masterIDStr := ""
 					if release.MasterID > 0 {
 						masterIDStr = strconv.Itoa(release.MasterID)
 					}
+
 					result, insertErr := database.ExecNid(
 						`INSERT INTO dbalbums (title, musicbrainz_release_group_id, musicbrainz_release_id,
 						  discogs_release_id, discogs_master_id, upc, slug, year, release_type, format,
@@ -1769,13 +1823,16 @@ func searchAndImportAlternativeRelease(
 					)
 					if insertErr == nil {
 						existingID = logger.Int64ToUint(result)
+
 						dgAltArtistName, dgAltArtistMBID := releaseArtistName(
 							release.Artists,
 							artist,
 						)
+
 						dgAltArtistNamePtr := &dgAltArtistName
 						if aid := addOrGetArtist(dgAltArtistNamePtr, &dgAltArtistMBID); aid > 0 {
 							pos := 0
+
 							_, _ = database.ExecNid(
 								`INSERT INTO dbalbum_artists (dbalbum_id, dbartist_id, position) VALUES (?, ?, ?)`,
 								&existingID,
@@ -1783,6 +1840,7 @@ func searchAndImportAlternativeRelease(
 								&pos,
 							)
 						}
+
 						insertSyntheticTracks(&existingID, release.Tracks)
 						logger.Logtype("info", 1).
 							Str("artist", *artist).
@@ -1824,6 +1882,7 @@ func searchAndImportAlternativeRelease(
 					if diff < 0 {
 						diff = -diff
 					}
+
 					runtimeOK = diff <= toleranceMs
 				}
 
@@ -1832,6 +1891,7 @@ func searchAndImportAlternativeRelease(
 				}
 
 				deezerIDStr := release.DeezerID
+
 				var existingID uint
 				if deezerIDStr != "" {
 					database.Scanrowsdyn(false,
@@ -1844,6 +1904,7 @@ func searchAndImportAlternativeRelease(
 					(data.AddFound || data.AllowAlternativeReleases) {
 					dzAltTitle := releaseTitleName(release.Title, albumTitle)
 					slug := logger.StringToSlug(dzAltTitle)
+
 					result, insertErr := database.ExecNid(
 						`INSERT INTO dbalbums (title, musicbrainz_release_group_id, musicbrainz_release_id,
 						  discogs_release_id, discogs_master_id, upc, slug, year, release_type, format,
@@ -1861,13 +1922,16 @@ func searchAndImportAlternativeRelease(
 					)
 					if insertErr == nil {
 						existingID = logger.Int64ToUint(result)
+
 						dzAltArtistName, dzAltArtistMBID := releaseArtistName(
 							release.Artists,
 							artist,
 						)
+
 						dzAltArtistNamePtr := &dzAltArtistName
 						if aid := addOrGetArtist(dzAltArtistNamePtr, &dzAltArtistMBID); aid > 0 {
 							pos := 0
+
 							_, _ = database.ExecNid(
 								`INSERT INTO dbalbum_artists (dbalbum_id, dbartist_id, position) VALUES (?, ?, ?)`,
 								&existingID,
@@ -1875,6 +1939,7 @@ func searchAndImportAlternativeRelease(
 								&pos,
 							)
 						}
+
 						insertSyntheticTracks(&existingID, release.Tracks)
 						logger.Logtype("info", 1).
 							Str("artist", *artist).

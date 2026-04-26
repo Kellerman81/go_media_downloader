@@ -269,6 +269,7 @@ func structureFolderRecursive(
 		fp := folderPath
 		pl.Submit(func() {
 			defer logger.HandlePanic()
+
 			structure.OrganizeSingleFolder(
 				ctx,
 				fp,
@@ -280,6 +281,7 @@ func structureFolderRecursive(
 				0,
 			)
 		})
+
 		return
 	}
 

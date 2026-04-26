@@ -925,7 +925,8 @@ func apiMusicDiscoverSeriesForArtist(c *gin.Context) {
 
 	albums := database.StructscanT[seriesAlbumRow](
 		false,
-		database.Getdatarow[uint](false,
+		database.Getdatarow[uint](
+			false,
 			`SELECT count() FROM albums a INNER JOIN dbalbums da ON da.id = a.dbalbum_id WHERE a.artist_id = ? AND da.series_name != '' AND da.musicbrainz_release_group_id != ''`,
 			&id,
 		),

@@ -1831,8 +1831,6 @@ func renderTable(tableInfo *TableInfo, csrfToken string) gomponents.Node {
 			gomponents.Text("Actions"),
 		),
 	)
-	o = append(o, Mdata{Mdata: "actions"})
-
 	// For DataTables 1.13 with server-side processing, we don't need aoColumns
 	// The server already knows the column structure and returns data correctly
 	columnsStr := "" // Empty - no aoColumns configuration needed

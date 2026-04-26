@@ -711,7 +711,11 @@ func renderGeneralConfigSections(
 		// Music Metadata Sources
 		renderConfigGroup("Music Metadata Sources", "music_meta_sources", false,
 			[]FormFieldDefinition{
-				{Name: "MusicMetaSourcePriority", Type: "array", Value: configv.MusicMetaSourcePriority},
+				{
+					Name:  "MusicMetaSourcePriority",
+					Type:  "array",
+					Value: configv.MusicMetaSourcePriority,
+				},
 			}, group, comments, displayNames),
 
 		// Advanced Settings Section
@@ -2256,17 +2260,61 @@ func renderListsConfigSections(
 		// Chart / Bestseller Scraper Settings
 		renderConfigGroupWithParent(
 			"Chart / Bestseller Scraper Settings",
-			"chartscraper-"+strings.ReplaceAll(strings.ReplaceAll(configv.Name, " ", "-"), "_", "-"),
+			"chartscraper-"+strings.ReplaceAll(
+				strings.ReplaceAll(configv.Name, " ", "-"),
+				"_",
+				"-",
+			),
 			false,
 			[]FormFieldDefinition{
-				{Name: "ChartEntryNodeXPath", Type: "text", Value: configv.ChartEntryNodeXPath, Options: nil},
-				{Name: "ChartTitleXPath", Type: "text", Value: configv.ChartTitleXPath, Options: nil},
-				{Name: "ChartArtistXPath", Type: "text", Value: configv.ChartArtistXPath, Options: nil},
-				{Name: "ChartTitleAttribute", Type: "text", Value: configv.ChartTitleAttribute, Options: nil},
-				{Name: "ChartArtistAttribute", Type: "text", Value: configv.ChartArtistAttribute, Options: nil},
-				{Name: "ChartDefaultArtist", Type: "text", Value: configv.ChartDefaultArtist, Options: nil},
-				{Name: "ChartDateURLPattern", Type: "text", Value: configv.ChartDateURLPattern, Options: nil},
-				{Name: "ChartDateFormat", Type: "text", Value: configv.ChartDateFormat, Options: nil},
+				{
+					Name:    "ChartEntryNodeXPath",
+					Type:    "text",
+					Value:   configv.ChartEntryNodeXPath,
+					Options: nil,
+				},
+				{
+					Name:    "ChartTitleXPath",
+					Type:    "text",
+					Value:   configv.ChartTitleXPath,
+					Options: nil,
+				},
+				{
+					Name:    "ChartArtistXPath",
+					Type:    "text",
+					Value:   configv.ChartArtistXPath,
+					Options: nil,
+				},
+				{
+					Name:    "ChartTitleAttribute",
+					Type:    "text",
+					Value:   configv.ChartTitleAttribute,
+					Options: nil,
+				},
+				{
+					Name:    "ChartArtistAttribute",
+					Type:    "text",
+					Value:   configv.ChartArtistAttribute,
+					Options: nil,
+				},
+				{
+					Name:    "ChartDefaultArtist",
+					Type:    "text",
+					Value:   configv.ChartDefaultArtist,
+					Options: nil,
+				},
+				{
+					Name:    "ChartDateURLPattern",
+					Type:    "text",
+					Value:   configv.ChartDateURLPattern,
+					Options: nil,
+				},
+				{
+					Name:    "ChartDateFormat",
+					Type:    "text",
+					Value:   configv.ChartDateFormat,
+					Options: nil,
+				},
 			},
 			group,
 			comments,

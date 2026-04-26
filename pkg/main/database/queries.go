@@ -344,6 +344,7 @@ func getfuncarr[T any](u *T, s *sqlx.Rows) error {
 			&elem.DbalbumID,
 			&elem.RuntimeMs,
 		)
+
 	case *string,
 		*int,
 		*int8,

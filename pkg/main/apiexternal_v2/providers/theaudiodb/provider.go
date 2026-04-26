@@ -33,12 +33,15 @@ func NewProvider() *Provider {
 	apiKey := cfg.TheAudioDBAPIKey
 	rateSec := cfg.TheAudioDBLimiterSeconds
 	rateCalls := cfg.TheAudioDBLimiterCalls
+
 	if rateSec == 0 {
 		rateSec = 1
 	}
+
 	if rateCalls == 0 {
 		rateCalls = 2
 	}
+
 	return NewProviderWithConfig(base.ClientConfig{
 		RateLimitSeconds: int(rateSec),
 		RateLimitCalls:   rateCalls,
@@ -51,19 +54,24 @@ func NewProviderWithConfig(cfg base.ClientConfig, apiKey string) *Provider {
 	if apiKey == "" {
 		apiKey = "123"
 	}
+
 	cfg.Name = "theaudiodb"
 	if cfg.BaseURL == "" {
 		cfg.BaseURL = defaultBaseURL
 	}
+
 	if cfg.Timeout == 0 {
 		cfg.Timeout = 30 * time.Second
 	}
+
 	if cfg.RateLimitCalls == 0 {
 		cfg.RateLimitCalls = 2
 	}
+
 	if cfg.RateLimitSeconds == 0 {
 		cfg.RateLimitSeconds = 1
 	}
+
 	return &Provider{BaseClient: base.NewBaseClient(cfg), apiKey: apiKey}
 }
 
@@ -89,6 +97,7 @@ func (p *Provider) SearchAlbums(
 	buf.WriteURL(artist)
 	buf.WriteString("&a=")
 	buf.WriteURL(album)
+
 	endpoint := buf.String()
 	logger.PlAddBuffer.Put(buf)
 
@@ -110,6 +119,7 @@ func (p *Provider) GetTracksByAlbumID(
 	buf.WriteURL(p.apiKey)
 	buf.WriteString("/track.php?m=")
 	buf.WriteURL(albumID)
+
 	endpoint := buf.String()
 	logger.PlAddBuffer.Put(buf)
 
@@ -117,6 +127,7 @@ func (p *Provider) GetTracksByAlbumID(
 	if err := p.MakeRequest(ctx, "GET", endpoint, nil, &resp, nil); err != nil {
 		return nil, err
 	}
+
 	if len(resp.Track) == 0 {
 		return nil, nil
 	}

@@ -1086,6 +1086,7 @@ func TrimPrefixI(s, prefix string) string {
 	if HasPrefixI(s, prefix) {
 		return s[len(prefix):]
 	}
+
 	return s
 }
 
@@ -1096,6 +1097,7 @@ func TrimSuffixI(s, suffix string) string {
 	if HasSuffixI(s, suffix) {
 		return s[:len(s)-len(suffix)]
 	}
+
 	return s
 }
 

@@ -249,6 +249,7 @@ func (h *FLACHandler) WriteTags(filepath string, tags *AudioTags) error {
 	var stderr bytes.Buffer
 
 	removeCmd := exec.Command(metaflac, "--remove-all-tags", filepath)
+
 	removeCmd.Stderr = &stderr
 	if err := removeCmd.Run(); err != nil {
 		return &ErrWriteFailed{
@@ -266,6 +267,7 @@ func (h *FLACHandler) WriteTags(filepath string, tags *AudioTags) error {
 		setCmd := exec.Command(metaflac, args...)
 
 		stderr.Reset()
+
 		setCmd.Stderr = &stderr
 		if err := setCmd.Run(); err != nil {
 			return &ErrWriteFailed{

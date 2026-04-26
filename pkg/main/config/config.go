@@ -1320,7 +1320,7 @@ func WriteCfg() {
 		fmt.Println("Error loading config. " + err.Error())
 	}
 
-	if err := os.WriteFile(Configfile, cnt, 0o777); err != nil {
+	if err := os.WriteFile(Configfile, cnt, 0o600); err != nil {
 		logger.Logtype("error", 1).
 			Str(logger.StrFile, Configfile).
 			Err(err).
